@@ -1,0 +1,261 @@
+/* Базовый шрифт/раскладка */
+body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: 'Roboto', sans-serif;
+  background-color: #fff0f0;
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Верхнее табло */
+#scoreCanvas {
+  margin: 5px auto;
+  background-color: rgba(255, 255, 255, 0.9);
+  border-radius: 8px;
+  width: 95vw;
+  max-width: 350px;
+  height: 60px;
+  display: block;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Игровое поле */
+#gameCanvas {
+  margin: 5px auto;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+  border-radius: 12px;
+  background-color: #fffbea;
+  width: 95vw;
+  max-width: 350px;
+  height: calc(100vh - 120px);
+  max-height: 70vh;
+  display: block;
+}
+
+/* Нижнее табло */
+#scoreCanvasBottom {
+  margin: 5px auto;
+  background-color: rgba(255, 255, 255, 0.9);
+  border-radius: 8px;
+  width: 95vw;
+  max-width: 350px;
+  height: 60px;
+  display: block;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transform: rotate(180deg);
+}
+
+/* Меню выбора режима */
+#modeMenu {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: linear-gradient(135deg, #fffbe6, #ffe0b3);
+  border: 2px solid #ffd699;
+  border-radius: 15px;
+  text-align: center;
+  padding: 15px;
+  z-index: 1000;
+  box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+  width: 95vw;
+  max-width: 350px;
+  max-height: 95vh;
+  overflow-y: auto;
+}
+
+/* Заголовок */
+#modeMenu .game-title {
+  font-family: 'Patrick Hand', cursive;
+  font-size: 28px;
+  color: #e40e0e;
+  margin-bottom: 15px;
+  text-shadow: 1px 1px #ffe4b5;
+}
+
+/* Кнопки режимов */
+#modeMenu .mode-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+#modeMenu .mode-options button,
+#modeMenu #playBtn {
+  flex: 1;
+  padding: 12px 8px;
+  margin: 0;
+  font-size: 16px;
+  font-weight: bold;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #6c757d, #5a6268);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
+  min-width: 100px;
+}
+
+#modeMenu .mode-options button:hover:not(.selected) {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 16px rgba(0,0,0,0.35);
+}
+
+#modeMenu #playBtn {
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 15px;
+  font-size: 18px;
+  background: linear-gradient(145deg, #5bc0de, #31b0d5);
+}
+
+#modeMenu #playBtn.active {
+  background: linear-gradient(145deg, #5cb85c, #449d44);
+}
+
+#modeMenu #playBtn.disabled {
+  background: #d6d6d6;
+  cursor: not-allowed;
+}
+
+/* Disabled */
+#modeMenu .mode-options button:disabled,
+#modeMenu #playBtn.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Selected */
+#modeMenu .mode-options button.selected {
+  background: linear-gradient(145deg, #f80101, #d53131);
+  box-shadow: 0 8px 16px rgba(0,0,0,0.35);
+}
+
+/* Контролы */
+#modeMenu .control-group-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+#modeMenu .control-box {
+  background: linear-gradient(145deg, #eaeff1, #d6d9da);
+  border: 2px solid #ff0000c8;
+  border-radius: 12px;
+  padding: 10px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+/* Flight range */
+.flight-range-control {
+  display:flex; flex-direction:column; align-items:center;
+}
+.flight-range-control .control-label {
+  font-size: 16px; font-weight: bold; margin-bottom: 10px; color: #ff0000c8;
+}
+.flight-range-control .control-buttons { display:flex; gap:15px; margin-bottom:10px; }
+.flight-range-control .control-buttons button {
+  width: 40px; height: 40px; font-size: 20px; color:#fff; border:none; border-radius:50%;
+  background: linear-gradient(145deg, #6c757d, #5a6268);
+  box-shadow: 0 3px 6px rgba(0,0,0,0.2); cursor:pointer; transition: transform 0.2s, box-shadow 0.2s;
+}
+.flight-range-control .control-buttons button:hover { transform: translateY(-3px); box-shadow: 0 6px 12px rgba(0,0,0,0.3); }
+.flight-range-control .control-buttons button:disabled { background: #a1a1a1; cursor: not-allowed; }
+
+/* Индикатор-длина */
+#flightRangeArrow {
+  width: 100px;            /* будет меняться из JS */
+  height: 4px;
+  background-color: #6c757d;
+  border-radius: 2px;
+  position: relative;
+  margin-top: 16px;
+}
+
+/* Цифровой индикатор */
+#flightRangeDisplay {
+  position: relative;
+  display: block;
+  margin-top: 6px;
+  font-size: 18px;
+  color: #ee0000;
+  font-family: 'Patrick Hand', cursive;
+}
+
+/* Buildings control */
+#modeMenu .control-buttons button {
+  width: 40px; height: 40px; font-size: 20px; color:#fff; border:none; border-radius:50%;
+  background: linear-gradient(145deg, #6c757d, #5a6268);
+  box-shadow: 0 3px 6px rgba(0,0,0,0.2);
+  cursor:pointer; transition: transform 0.2s, box-shadow 0.2s;
+}
+#modeMenu .control-buttons button:hover { transform: translateY(-3px); box-shadow: 0 6px 12px rgba(0,0,0,0.3); }
+#modeMenu .control-box .control-label { font-size: 16px; font-weight: bold; margin-bottom: 10px; color: #555; }
+
+#buildingsCountDisplay {
+  font-size: 28px;
+  color: #ee0000;
+  font-family: 'Patrick Hand', cursive;
+  margin-top: 8px;
+}
+
+#buildingsCountValue {
+  font-weight: bold;
+}
+
+/* Aiming amplitude */
+.aiming-amplitude-control { display:flex; flex-direction:column; align-items:center; }
+.aiming-amplitude-control .control-label { font-size:16px; font-weight:bold; margin-bottom:10px; color:#555; }
+.aiming-amplitude-control .control-buttons { display:flex; gap:15px; margin-bottom:15px; }
+.aiming-amplitude-control .control-buttons button {
+  width: 40px; height: 40px; font-size:20px; color:#fff; border:none; border-radius:50%;
+  background: linear-gradient(145deg, #6c757d, #5a6268);
+  box-shadow: 0 3px 6px rgba(0,0,0,0.2);
+  cursor:pointer; transition: transform 0.2s, box-shadow 0.2s;
+}
+.aiming-amplitude-control .control-buttons button:disabled { background:#a1a1a1; cursor:not-allowed; }
+
+#amplitudeIndicator { position: relative; width: 100px; height: 100px; }
+.line3 {
+  position: absolute; width: 80px; height: 3px; background-color: #6c757d;
+  top: 50%; left: 10px; transform-origin: 0 50%; border-radius: 2px;
+}
+#amplitudeAngleDisplay {
+  position: absolute; left: 50%; top: 75%;
+  transform: translateX(-50%);
+  font-size: 22px; color: #ee0000; font-family: 'Patrick Hand', cursive;
+}
+
+/* Окно конца игры */
+#endGameButtons {
+  position: fixed; top:50%; left:50%; transform: translate(-50%, -50%);
+  background: linear-gradient(135deg, #ffffff, #eaeaea);
+  padding: 40px; border: 2px solid #c1c1c1; border-radius: 20px;
+  box-shadow: 0 12px 24px rgba(0,0,0,0.2);
+  text-align: center;
+}
+#endGameButtons p {
+  font-size: 24px; margin-bottom: 20px; font-family: 'Patrick Hand', cursive; color: #333;
+}
+#endGameButtons button {
+  padding: 15px 30px; margin: 10px; font-size: 18px; color:#fff; border:none; border-radius:15px;
+  background: linear-gradient(145deg, #6c757d, #5a6268);
+  cursor:pointer; transition: transform 0.2s, box-shadow 0.2s;
+}
+#endGameButtons button:hover { transform: translateY(-3px); box-shadow: 0 6px 12px rgba(0,0,0,0.3); }
+
+/* Плавные переходы */
+button, .control-box, #modeMenu, #endGameButtons { transition: all 0.3s ease; }
