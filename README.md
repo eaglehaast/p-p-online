@@ -1,6 +1,6 @@
 # Paper Wings
 
-**Paper Wings** is a browser game about launching paper airplanes and trying to eliminate your opponent's fleet. The entire game runs client-side and only requires a modern web browser. Это предложение я написал в интернет версии
+**Paper Wings** is a browser game about launching paper airplanes and trying to eliminate your opponent's fleet. The entire game runs client-side and only requires a modern web browser. Это предложение я написал как долбоеб
 
 ## Running the game
 
