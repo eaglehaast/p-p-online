@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Paper Wings</title>
+  <title>Paper Wings!</title>
   <link rel="stylesheet" href="styles.css" />
   <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Roboto&display=swap" rel="stylesheet">
 </head>
@@ -19,7 +19,7 @@
 
   <!-- Game Mode Selection Menu -->
   <div id="modeMenu">
-    <h1 class="game-title">Paper Wings</h1>
+    <h1 class="game-title">Paper Wings!</h1>
 
     <div class="mode-options">
       <button id="hotSeatBtn" class="mode-btn">Hot Seat</button>
@@ -30,20 +30,39 @@
     <button id="playBtn" class="disabled" disabled>Play</button>
 
     <div class="control-group-row">
-      <!-- Flight Range Control -->
-      <div class="control-box">
-        <div class="flight-range-control">
-          <div class="control-label">Flight Range</div>
-          <div class="control-buttons">
-            <button id="flightRangeMinus" class="control-btn">−</button>
-            <button id="flightRangePlus" class="control-btn">+</button>
+      <div class="control-pair-row">
+        <!-- Flight Range Control -->
+        <div class="control-box">
+          <div class="flight-range-control">
+            <div class="control-label">Flight Range</div>
+            <div class="control-buttons">
+              <button id="flightRangeMinus" class="control-btn">−</button>
+              <button id="flightRangePlus" class="control-btn">+</button>
+            </div>
+
+            <!-- Простой индикатор-длина (строка) -->
+            <div id="flightRangeArrow"></div>
+
+            <!-- Цифровой индикатор -->
+            <span id="flightRangeDisplay">10 cells</span>
           </div>
+        </div>
 
-          <!-- Простой индикатор-длина (строка) -->
-          <div id="flightRangeArrow"></div>
-
-          <!-- Цифровой индикатор -->
-          <span id="flightRangeDisplay">10 cells</span>
+        <!-- Aiming Amplitude Control -->
+        <div class="control-box">
+          <div class="aiming-amplitude-control">
+            <div class="control-label">Aiming Amplitude</div>
+            <div class="control-buttons">
+              <button id="amplitudeMinus" class="control-btn">−</button>
+              <button id="amplitudePlus" class="control-btn">+</button>
+            </div>
+            <div class="control-value">
+              <div id="amplitudeIndicator">
+                <div class="line3"></div>
+                <span id="amplitudeAngleDisplay">20°</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -56,23 +75,6 @@
         </div>
         <div id="buildingsCountDisplay" class="control-value">
           <span id="buildingsCountValue">0</span>
-        </div>
-      </div>
-
-      <!-- Aiming Amplitude Control -->
-      <div class="control-box">
-        <div class="aiming-amplitude-control">
-          <div class="control-label">Aiming Amplitude</div>
-          <div class="control-buttons">
-            <button id="amplitudeMinus" class="control-btn">−</button>
-            <button id="amplitudePlus" class="control-btn">+</button>
-          </div>
-          <div class="control-value">
-            <div id="amplitudeIndicator">
-              <div class="line3"></div>
-              <span id="amplitudeAngleDisplay">20°</span>
-            </div>
-          </div>
         </div>
       </div>
     </div> <!-- /control-group-row -->
