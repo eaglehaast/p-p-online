@@ -80,15 +80,13 @@ body {
 
 /* Кнопки режимов */
 #modeMenu .mode-options {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 10px;
   margin-bottom: 15px;
 }
 
-#modeMenu .mode-options button,
-#modeMenu #playBtn {
-  flex: 1;
+#modeMenu .mode-options button {
   padding: 12px 8px;
   margin: 0;
   font-size: 16px;
@@ -100,12 +98,6 @@ body {
   box-shadow: 0 4px 8px rgba(0,0,0,0.2);
   cursor: pointer;
   transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
-  min-width: 100px;
-}
-
-#modeMenu .mode-options button:hover:not(.selected) {
-  transform: translateY(-5px);
-  box-shadow: 0 8px 16px rgba(0,0,0,0.35);
 }
 
 #modeMenu #playBtn {
@@ -114,6 +106,11 @@ body {
   margin-bottom: 15px;
   font-size: 18px;
   background: linear-gradient(145deg, #5bc0de, #31b0d5);
+}
+
+#modeMenu .mode-options button:hover:not(.selected) {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 16px rgba(0,0,0,0.35);
 }
 
 #modeMenu #playBtn.active {
