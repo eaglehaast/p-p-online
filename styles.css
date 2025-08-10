@@ -144,6 +144,18 @@ body {
   margin-top: 10px;
 }
 
+#modeMenu .control-pair-row {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+#modeMenu .control-pair-row .control-box {
+  flex: 1;
+  width: auto;
+  aspect-ratio: 1 / 1;
+}
+
 #modeMenu .control-box {
   background: linear-gradient(145deg, #eaeff1, #d6d9da);
   border: 2px solid #ff0000c8;
