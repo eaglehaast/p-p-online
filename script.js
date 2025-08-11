@@ -1288,13 +1288,12 @@ function updateFlightRangeDisplay(){
 function updateFlightRangeFlame(){
   const flame = document.getElementById("flame");
   if(!flame) return;
-  const minScale = 1;
-  const maxScale = 8;
+  const minScale = 0.5;
+  const maxScale = 2;
   const t = (flightRangeCells - MIN_FLIGHT_RANGE_CELLS) /
             (MAX_FLIGHT_RANGE_CELLS - MIN_FLIGHT_RANGE_CELLS);
   const ratio = minScale + t*(maxScale - minScale);
   flame.style.transform = `translateY(-50%) scaleX(${ratio})`;
-  flame.style.setProperty('--flame-scale', ratio);
 }
 function resetFlightRangeFlame(){ updateFlightRangeFlame(); }
 
