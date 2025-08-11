@@ -196,6 +196,7 @@ body {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+
   width: 38px;
   height: 20px;
 }
@@ -208,6 +209,42 @@ body {
   fill: none;
   stroke: #6c757d;
   stroke-width: 2;
+
+  width: 40px;
+  height: 16px;
+}
+
+#flightRangeIndicator .jet-body {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 6px;
+  background-color: #6c757d;
+  transform: translateY(-50%);
+}
+#flightRangeIndicator .jet-body::after {
+  content: '';
+  position: absolute;
+  right: -12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  border-left: 12px solid #6c757d;
+}
+#flightRangeIndicator .jet-body::before {
+  content: '';
+  position: absolute;
+  left: 35%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 12px;
+  height: 4px;
+  background-color: #6c757d;
+
 }
 
 #flightRangeIndicator .jet-flame {
