@@ -199,52 +199,92 @@ body {
   right: 0;
   top: 50%;
   transform: translateY(-50%);
-  width: 20px;
-  height: 8px;
-  background-color: #6c757d;
-  border-radius: 2px;
+  width: 26px;
+  height: 12px;
 }
-#flightRangeIndicator .plane::before {
+
+#flightRangeIndicator .body {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  width: 18px;
+  height: 6px;
+  background-color: #6c757d;
+  transform: translateY(-50%);
+}
+#flightRangeIndicator .body::after {
   content: '';
   position: absolute;
-  right: -6px;
+  right: -8px;
   top: 50%;
   transform: translateY(-50%);
   width: 0;
   height: 0;
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  border-left: 6px solid #6c757d;
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+  border-left: 8px solid #6c757d;
 }
-#flightRangeIndicator .plane::after {
-  content: '';
+
+#flightRangeIndicator .wing {
   position: absolute;
   left: 4px;
+  width: 0;
+  height: 0;
+}
+#flightRangeIndicator .wing::before {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-left: 10px solid #6c757d;
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+}
+#flightRangeIndicator .wing-top {
+  top: 50%;
+  transform: translateY(-8px);
+}
+#flightRangeIndicator .wing-bottom {
+  top: 50%;
+  transform: translateY(5px) scaleY(-1);
+}
+
+#flightRangeIndicator .tail {
+  position: absolute;
+  left: -4px;
   top: 50%;
   transform: translateY(-50%);
-  width: 12px;
-  height: 2px;
-  background-color: #6c757d;
-  border-radius: 1px;
-  box-shadow: 0 4px 0 0 #6c757d;
+  width: 0;
+  height: 0;
+  border-right: 4px solid #6c757d;
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
 }
 
 .flame {
   position: absolute;
-  right: 20px;
+  right: calc(100% + 2px);
   top: 50%;
-  transform: translateY(-50%);
+  width: 10px;
   height: 6px;
-  width: 20px; /* будет меняться из JS */
   background: linear-gradient(270deg, #ffea00, #ff4500);
   border-radius: 0 3px 3px 0;
-  animation: flame-flicker 0.3s infinite alternate;
-  transform-origin: right center;
+  transform: translateY(-50%) scaleX(1);
+  transform-origin: left center;
+  animation: flame-flicker 0.15s infinite alternate;
 }
 
 @keyframes flame-flicker {
-  from { opacity: 0.8; }
-  to { opacity: 1; }
+  from {
+    width: 8px;
+    opacity: 0.8;
+    transform: translateY(-50%) scaleX(var(--flame-scale,1)) skewX(-5deg);
+  }
+  to {
+    width: 10px;
+    opacity: 1;
+    transform: translateY(-50%) scaleX(var(--flame-scale,1)) skewX(5deg);
+  }
 }
 
 /* Цифровой индикатор */
