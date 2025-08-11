@@ -151,10 +151,7 @@ body {
 }
 
 #modeMenu .control-pair-row .control-box {
-  flex: 1 1 calc(50% - 5px);
-  width: auto;
-  max-width: calc(50% - 5px);
-  min-width: 0;
+  flex: 1 1 0;
 }
 
 #modeMenu .control-box {
@@ -190,85 +187,37 @@ body {
 #flightRangeIndicator {
   position: relative;
   width: 130px;
-  height: 20px;
+  height: 30px;
   margin-top: 16px;
 }
 
-#flightRangeIndicator .plane {
+#flightRangeIndicator .jet {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 26px;
-  height: 12px;
+  width: 38px;
+  height: 20px;
 }
 
-#flightRangeIndicator .body {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  width: 18px;
-  height: 6px;
-  background-color: #6c757d;
-  transform: translateY(-50%);
+#flightRangeIndicator .jet-plane {
+  width: 100%;
+  height: 100%;
 }
-#flightRangeIndicator .body::after {
-  content: '';
-  position: absolute;
-  right: -8px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 0;
-  height: 0;
-  border-top: 3px solid transparent;
-  border-bottom: 3px solid transparent;
-  border-left: 8px solid #6c757d;
+#flightRangeIndicator .jet-plane polygon {
+  fill: none;
+  stroke: #6c757d;
+  stroke-width: 2;
 }
 
-#flightRangeIndicator .wing {
-  position: absolute;
-  left: 4px;
-  width: 0;
-  height: 0;
-}
-#flightRangeIndicator .wing::before {
-  content: '';
-  position: absolute;
-  width: 0;
-  height: 0;
-  border-left: 10px solid #6c757d;
-  border-top: 3px solid transparent;
-  border-bottom: 3px solid transparent;
-}
-#flightRangeIndicator .wing-top {
-  top: 50%;
-  transform: translateY(-8px);
-}
-#flightRangeIndicator .wing-bottom {
-  top: 50%;
-  transform: translateY(5px) scaleY(-1);
-}
-
-#flightRangeIndicator .tail {
-  position: absolute;
-  left: -4px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 0;
-  height: 0;
-  border-right: 4px solid #6c757d;
-  border-top: 3px solid transparent;
-  border-bottom: 3px solid transparent;
-}
-
-.flame {
+#flightRangeIndicator .jet-flame {
   position: absolute;
   right: calc(100% + 2px);
   top: 50%;
-  width: 14px;
+  width: 12px;
   height: 12px;
-  background: linear-gradient(270deg, #ffea00, #ff4500);
-  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  background: radial-gradient(circle at 0 50%, #ffea00, #ff4500);
+  clip-path: polygon(0 50%, 100% 0, 100% 100%);
   transform: translateY(-50%) scaleX(1);
   transform-origin: right center;
   animation: flame-flicker 0.2s infinite alternate;
@@ -277,11 +226,11 @@ body {
 @keyframes flame-flicker {
   from {
     opacity: 0.8;
-    clip-path: polygon(0 40%, 100% 50%, 0 100%);
+    clip-path: polygon(0 45%, 100% 0, 100% 100%);
   }
   to {
     opacity: 1;
-    clip-path: polygon(0 60%, 100% 50%, 0 100%);
+    clip-path: polygon(0 55%, 100% 0, 100% 100%);
   }
 }
 
