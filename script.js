@@ -1,6 +1,7 @@
 /***************************************************************
- * Paper Wings — версия с индикатором Flight Range в виде линии
- * Исправления: ориентация самолётов, ход ИИ, счётчик мини-иконок.
+ * Paper Wings — mobile-friendly build
+ * Flight range shown with a plane and animated exhaust flame.
+ * Includes fixes for plane orientation, AI turns, and mini-icon counter.
  ***************************************************************/
 
 /* ======= DOM ======= */
@@ -137,7 +138,7 @@ function resetGame(){
   aimingAmplitude = 10;
   updateAmplitudeDisplay();
   updateFlightRangeDisplay();
-  resetFlightRangeArrow();
+  resetFlightRangeFlame();
 
   // Кнопки активны
   setControlsEnabled(true);
@@ -1065,7 +1066,7 @@ flightRangeMinusBtn.addEventListener("mousedown",()=>{
   startButtonInterval(flightRangeMinusBtn, ()=>{
     if(flightRangeCells > MIN_FLIGHT_RANGE_CELLS){
       flightRangeCells--;
-      updateFlightRangeArrow();
+      updateFlightRangeFlame();
       updateFlightRangeDisplay();
     }
   });
@@ -1078,7 +1079,7 @@ flightRangePlusBtn.addEventListener("mousedown",()=>{
   startButtonInterval(flightRangePlusBtn, ()=>{
     if(flightRangeCells < MAX_FLIGHT_RANGE_CELLS){
       flightRangeCells++;
-      updateFlightRangeArrow();
+      updateFlightRangeFlame();
       updateFlightRangeDisplay();
     }
   });
@@ -1239,7 +1240,7 @@ function startNewRound(){
   aimingAmplitude = 10;
   updateAmplitudeDisplay();
   updateFlightRangeDisplay();
-  resetFlightRangeArrow();
+  resetFlightRangeFlame();
 
   setControlsEnabled(true);
 
@@ -1277,24 +1278,24 @@ function updateAmplitudeDisplay(){
   }
 }
 
-/* ======= Flight Range helpers (индикатор-линия) ======= */
+/* ======= Flight Range helpers (самолёт и пламя) ======= */
 function updateFlightRangeDisplay(){
   const el = document.getElementById("flightRangeDisplay");
   if(el){
     el.textContent = `${flightRangeCells} cells`;
   }
 }
-function updateFlightRangeArrow(){
-  const arrow = document.getElementById("flightRangeArrow");
-  if(!arrow) return;
-  const minWidth = 20;
-  const maxWidth = 200;
+function updateFlightRangeFlame(){
+  const flame = document.getElementById("flame");
+  if(!flame) return;
+  const minWidth = 10;
+  const maxWidth = 80;
   const t = (flightRangeCells - MIN_FLIGHT_RANGE_CELLS) /
             (MAX_FLIGHT_RANGE_CELLS - MIN_FLIGHT_RANGE_CELLS);
   const w = Math.round(minWidth + t*(maxWidth - minWidth));
-  arrow.style.width = `${w}px`;
+  flame.style.width = `${w}px`;
 }
-function resetFlightRangeArrow(){ updateFlightRangeArrow(); }
+function resetFlightRangeFlame(){ updateFlightRangeFlame(); }
 
 /* ======= CANVAS RESIZE ======= */
 function resizeCanvas() {
@@ -1327,7 +1328,7 @@ window.addEventListener('orientationchange', () => {
 /* ======= BOOTSTRAP ======= */
 resizeCanvas();
 initPoints();
-resetFlightRangeArrow();
+resetFlightRangeFlame();
 updateAmplitudeDisplay();
 updateFlightRangeDisplay();
 renderScoreboard();
