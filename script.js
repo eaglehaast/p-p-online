@@ -1,6 +1,7 @@
 /***************************************************************
- * Paper Wings — версия с индикатором Flight Range в виде линии
- * Исправления: ориентация самолётов, ход ИИ, счётчик мини-иконок.
+ * Paper Wings — mobile-friendly build
+ * Flight range shown with a plane and animated exhaust flame.
+ * Includes fixes for plane orientation, AI turns, and mini-icon counter.
  ***************************************************************/
 
 /* ======= DOM ======= */
