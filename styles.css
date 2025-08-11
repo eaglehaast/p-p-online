@@ -151,9 +151,10 @@ body {
 }
 
 #modeMenu .control-pair-row .control-box {
-  flex: 1;
+  flex: 1 1 calc(50% - 5px);
   width: auto;
-  aspect-ratio: 1 / 1;
+  max-width: calc(50% - 5px);
+  min-width: 0;
 }
 
 #modeMenu .control-box {
