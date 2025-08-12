@@ -32,6 +32,17 @@ const endGameDiv  = document.getElementById("endGameButtons");
 const yesBtn      = document.getElementById("yesButton");
 const noBtn       = document.getElementById("noButton");
 
+/* Disable pinch and double-tap zoom on mobile */
+document.addEventListener('touchmove', (event) => {
+  if (event.touches.length > 1) {
+    event.preventDefault();
+  }
+}, { passive: false });
+
+document.addEventListener('dblclick', (e) => {
+  e.preventDefault();
+});
+
 /* ======= CONFIG ======= */
 const CELL_SIZE            = 20;     // px
 const POINT_RADIUS         = 15;     // px (увеличено для мобильных)
@@ -1288,8 +1299,8 @@ function updateFlightRangeDisplay(){
 function updateFlightRangeFlame(){
   const flame = document.getElementById("flame");
   if(!flame) return;
-  const minScale = 0.5;
-  const maxScale = 2;
+  const minScale = 0.3;
+  const maxScale = 1.2;
   const t = (flightRangeCells - MIN_FLIGHT_RANGE_CELLS) /
             (MAX_FLIGHT_RANGE_CELLS - MIN_FLIGHT_RANGE_CELLS);
   const ratio = minScale + t*(maxScale - minScale);
