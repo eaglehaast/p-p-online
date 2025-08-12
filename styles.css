@@ -204,14 +204,13 @@ body {
 #flightRangeIndicator .jet-plane {
   width: 100%;
   height: 100%;
+  color: #6c757d;
 }
 #flightRangeIndicator .jet-plane polygon {
-  fill: #fff;
-  stroke: #6c757d;
+  fill: none;
+  stroke: currentColor;
   stroke-width: 2;
-
-  width: 40px;
-  height: 16px;
+  stroke-linejoin: round;
 }
 
 
