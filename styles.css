@@ -197,8 +197,8 @@ body {
   left: 50%;
   transform: translate(-50%, -50%);
 
-  width: 38px;
-  height: 20px;
+  width: 48px;
+  height: 24px;
 }
 
 #flightRangeIndicator .jet-plane {
@@ -218,10 +218,10 @@ body {
   position: absolute;
   right: calc(100% + 2px);
   top: 50%;
-  width: 12px;
-  height: 12px;
-  background: radial-gradient(circle at 0 50%, #ffea00, #ff4500);
-  clip-path: polygon(0 50%, 100% 0, 100% 100%);
+  width: 40px;
+  height: 8px;
+  background: radial-gradient(ellipse at 100% 50%, #ffea00, #ff4500);
+  border-radius: 4px;
   transform: translateY(-50%) scaleX(1);
   transform-origin: right center;
   animation: flame-flicker 0.2s infinite alternate;
@@ -230,11 +230,9 @@ body {
 @keyframes flame-flicker {
   from {
     opacity: 0.8;
-    clip-path: polygon(0 45%, 100% 0, 100% 100%);
   }
   to {
     opacity: 1;
-    clip-path: polygon(0 55%, 100% 0, 100% 100%);
   }
 }
 
