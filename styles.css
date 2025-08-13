@@ -56,7 +56,6 @@ body {
   height: 60px;
   display: block;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  transform: rotate(180deg);
 }
 
 /* Меню выбора режима */
@@ -268,6 +267,17 @@ body {
   background: linear-gradient(to left, rgba(230,230,230,0.8), rgba(230,230,230,0));
   opacity: 0.8;
 
+  border-radius: 1px;
+  transform-origin: right center;
+  transform: translateY(-50%);
+  filter: blur(0.5px);
+  animation: trail-wisp 3s infinite ease-in-out;
+}
+#flightRangeIndicator .wing-trail.top { top: 2px; }
+#flightRangeIndicator .wing-trail.bottom { bottom: 2px; }
+
+
+
 
   right: 100%;
   width: 35px;
@@ -292,6 +302,7 @@ body {
 }
 #flightRangeIndicator .wing-trail.top { top: 2px; }
 #flightRangeIndicator .wing-trail.bottom { bottom: 2px; }
+
 
 @keyframes trail-wisp {
   0% { transform: translateY(-50%) rotate(0deg); }
