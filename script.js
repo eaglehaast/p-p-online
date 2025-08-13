@@ -991,13 +991,22 @@ function drawPlayerPanel(ctx, color, victories, isTurn){
   ctx.stroke();
 
   // plane counters
-  const planes = points.filter(p=>p.color===color);
-  const startY = 10;
-  const spacingY = 12;
-  for(let i=0;i<planes.length;i++){
-    const p = planes[i];
-    const y = startY + i*spacingY;
-    drawMiniPlaneWithSpiral(ctx, sectionW/2, y, color, p.isAlive, p.burning, 0.8);
+  const bluePlanes  = points.filter(p => p.color === "blue");
+  const greenPlanes = points.filter(p => p.color === "green");
+  const maxPerRow = 4;
+  const spacingX = 20;
+  const startX = sectionW / 2 - ((maxPerRow - 1) * spacingX) / 2;
+  const blueY = 10;
+  const greenY = 30;
+  for (let i = 0; i < Math.min(bluePlanes.length, maxPerRow); i++) {
+    const p = bluePlanes[i];
+    const x = startX + i * spacingX;
+    drawMiniPlaneWithSpiral(ctx, x, blueY, "blue", p.isAlive, p.burning, 0.8);
+  }
+  for (let i = 0; i < Math.min(greenPlanes.length, maxPerRow); i++) {
+    const p = greenPlanes[i];
+    const x = startX + i * spacingX;
+    drawMiniPlaneWithSpiral(ctx, x, greenY, "green", p.isAlive, p.burning, 0.8);
   }
 
   // turn indicator
