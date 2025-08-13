@@ -32,6 +32,17 @@ const endGameDiv  = document.getElementById("endGameButtons");
 const yesBtn      = document.getElementById("yesButton");
 const noBtn       = document.getElementById("noButton");
 
+/* Disable pinch and double-tap zoom on mobile */
+document.addEventListener('touchmove', (event) => {
+  if (event.touches.length > 1) {
+    event.preventDefault();
+  }
+}, { passive: false });
+
+document.addEventListener('dblclick', (e) => {
+  e.preventDefault();
+});
+
 /* ======= CONFIG ======= */
 const CELL_SIZE            = 20;     // px
 const POINT_RADIUS         = 15;     // px (увеличено для мобильных)

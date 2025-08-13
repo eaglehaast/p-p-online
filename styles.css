@@ -10,6 +10,7 @@ body {
   padding: 0;
   height: 100vh;
   overflow: hidden;
+  touch-action: none;
 }
 
 /* Верхнее табло */
@@ -224,10 +225,12 @@ body {
   background: radial-gradient(ellipse at 100% 50%, #ffea00, #ff4500);
   border-radius: 4px;
 
+
   width: 8px;
   height: 8px;
   background: radial-gradient(circle at 0 50%, #ffea00, #ff4500);
   border-radius: 50%;
+
 
   transform: translateY(-50%) scaleX(1);
   transform-origin: right center;
