@@ -1326,12 +1326,6 @@ function updateFlightRangeFlame(){
       trail.style.height = `${baseTrailHeight}px`;
     });
   }
-
-  const baseWidth = 40;  // matches CSS default
-  const baseHeight = 12; // matches CSS default
-  flame.style.width = `${baseWidth * ratio}px`;
-  flame.style.height = `${baseHeight * (0.9 + 0.1 * ratio)}px`;
-
 }
 function resetFlightRangeFlame(){ updateFlightRangeFlame(); }
 
