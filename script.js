@@ -68,7 +68,11 @@ const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 
 // AA defaults and placement limits
 const AA_DEFAULTS = {
+
+  radius: 60,
+
   radius: 180,
+
   hp: 1,
   armingDelayMs: 300,
   dwellTimeMs: 250,
@@ -752,12 +756,18 @@ function handleAAForPlane(p, fp){
     const dist = Math.hypot(p.x - aa.x, p.y - aa.y);
     if(dist < POINT_RADIUS){
       aa.hp--;
+
+      if(aa.hp<=0){ aaUnits = aaUnits.filter(a=>a!==aa); }
+      if(p._aaTimes && p._aaTimes[aa.id]) delete p._aaTimes[aa.id];
+      continue;
+
       p.isAlive=false; p.burning=true;
       p.collisionX=p.x; p.collisionY=p.y;
       flyingPoints = flyingPoints.filter(x=>x!==fp);
       if(aa.hp<=0){ aaUnits = aaUnits.filter(a=>a!==aa); }
       checkVictory();
       return true;
+
     }
     if(dist <= aa.radius){
       if(!p._aaTimes) p._aaTimes={};
