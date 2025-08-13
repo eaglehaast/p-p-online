@@ -999,23 +999,11 @@ function drawPlayerPanel(ctx, color, victories, isTurn){
     const p = bluePlanes[i];
     const x = startX + i * spacingX;
     drawMiniPlaneWithCross(ctx, x, blueY, "blue", p.isAlive, p.burning, 0.8);
-
-  const blueY = 10;
-  const greenY = 30;
-  for (let i = 0; i < Math.min(bluePlanes.length, maxPerRow); i++) {
-    const p = bluePlanes[i];
-    const x = startX + i * spacingX;
-    drawMiniPlaneWithSpiral(ctx, x, blueY, "blue", p.isAlive, p.burning, 0.8);
-
   }
   for (let i = 0; i < Math.min(greenPlanes.length, maxPerRow); i++) {
     const p = greenPlanes[i];
     const x = startX + i * spacingX;
-
     drawMiniPlaneWithCross(ctx, x, greenY, "green", p.isAlive, p.burning, 0.8);
-
-    drawMiniPlaneWithSpiral(ctx, x, greenY, "green", p.isAlive, p.burning, 0.8);
->
   }
 
   // turn indicator
