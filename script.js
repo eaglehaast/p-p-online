@@ -71,7 +71,7 @@ const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 
 // AA defaults and placement limits
 const AA_DEFAULTS = {
-  radius: 60, // 3x smaller than original 180
+  radius: 180,
   hp: 1,
   armingDelayMs: 300,
   dwellTimeMs: 250,
@@ -108,7 +108,7 @@ let flyingPoints = [];
 let buildings    = [];
 let aaUnits     = [];
 
-let phase = "MENU"; // MENU | AA_PLACEMENT | TURN | ROUND_END
+let phase = "MENU"; // MENU | AA_PLACEMENT | ROUND_START | TURN | ROUND_END
 let currentPlacer = null; // 'green' | 'blue'
 
 let settings = {
@@ -279,7 +279,7 @@ playBtn.addEventListener("click",()=>{
     phase = 'AA_PLACEMENT';
     currentPlacer = 'green';
   } else {
-    phase = 'TURN';
+    phase = 'ROUND_START';
   }
   startGameLoop();
 });
@@ -383,7 +383,7 @@ function handleAAPlacement(e){
   if(currentPlacer === 'green'){
     currentPlacer = 'blue';
   } else {
-    phase = 'TURN';
+    phase = 'ROUND_START';
   }
 }
 
@@ -798,6 +798,10 @@ function gameDraw(){
   gameCtx.clearRect(0,0, gameCanvas.width, gameCanvas.height);
   drawNotebookBackground(gameCtx, gameCanvas.width, gameCanvas.height);
   aimCtx.clearRect(0,0, aimCanvas.width, aimCanvas.height);
+
+  if (phase === 'ROUND_START') {
+    phase = 'TURN';
+  }
 
   if(phase === 'AA_PLACEMENT'){
     drawBuildings();
@@ -1441,7 +1445,7 @@ function startNewRound(){
     phase = 'AA_PLACEMENT';
     currentPlacer = 'green';
   } else {
-    phase = 'TURN';
+    phase = 'ROUND_START';
   }
 
   aiMoveScheduled = false;
