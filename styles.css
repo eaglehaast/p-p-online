@@ -16,7 +16,7 @@ body {
   background-color: #fff0f0;
   margin: 0;
   padding: 0;
-  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   touch-action: none;
 }
@@ -41,8 +41,8 @@ body {
   background-color: #fffbea;
   width: 95vw;
   max-width: 350px;
-  height: calc(100vh - 120px);
-  max-height: 70vh;
+  height: calc(100dvh - 140px);
+  max-height: calc(100dvh - 140px);
   display: block;
 }
 
