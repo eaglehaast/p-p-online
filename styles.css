@@ -183,7 +183,7 @@ body {
 .flight-range-control .control-label {
   font-size: 16px; font-weight: bold; margin-bottom: 10px; color: #ff0000c8;
 }
-.flight-range-control .control-buttons { display:flex; gap:15px; margin-bottom:10px; }
+.flight-range-control .control-buttons { display:flex; gap:15px; margin-top:10px; }
 .flight-range-control .control-buttons button {
   width: 40px; height: 40px; font-size: 20px; color:#fff; border:none; border-radius:50%;
   background: linear-gradient(145deg, #6c757d, #5a6268);
@@ -272,6 +272,7 @@ body {
   cursor:pointer; transition: transform 0.2s, box-shadow 0.2s;
 }
 #modeMenu .control-buttons button:hover { transform: translateY(-3px); box-shadow: 0 6px 12px rgba(0,0,0,0.3); }
+#modeMenu .control-box .control-buttons { display:flex; gap:15px; margin-top:10px; }
 #modeMenu .control-box .control-label { font-size: 16px; font-weight: bold; margin-bottom: 10px; color: #555; }
 
 #buildingsCountDisplay {
@@ -288,7 +289,7 @@ body {
 /* Aiming amplitude */
 .aiming-amplitude-control { display:flex; flex-direction:column; align-items:center; }
 .aiming-amplitude-control .control-label { font-size:16px; font-weight:bold; margin-bottom:10px; color:#555; }
-.aiming-amplitude-control .control-buttons { display:flex; gap:15px; margin-bottom:15px; }
+#modeMenu .aiming-amplitude-control .control-buttons { display:flex; gap:15px; margin-top:15px; }
 .aiming-amplitude-control .control-buttons button {
   width: 40px; height: 40px; font-size:20px; color:#fff; border:none; border-radius:50%;
   background: linear-gradient(145deg, #6c757d, #5a6268);
