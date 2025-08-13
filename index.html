@@ -33,43 +33,33 @@
       <div class="control-pair-row">
         <!-- Flight Range Control -->
         <div class="control-box">
-          <div class="flight-range-control">
-            <div class="control-label">Flight Range</div>
-            <!-- Самолёт и пламя турбины для индикации дальности -->
-            <div id="flightRangeIndicator">
-              <div class="jet">
-
-                <svg class="jet-plane" viewBox="0 0 38 20">
-                  <polygon points="38,10 8,20 8,15 0,10 8,5 8,0" />
-                </svg>
-
-                <div id="flame" class="jet-flame"></div>
-              </div>
+          <div class="control-label">Flight Range</div>
+          <!-- Самолёт и пламя турбины для индикации дальности -->
+          <div id="flightRangeIndicator" class="control-visual">
+            <div class="jet">
+              <svg class="jet-plane" viewBox="0 0 38 20">
+                <polygon points="38,10 8,20 8,15 0,10 8,5 8,0" />
+              </svg>
+              <div id="flame" class="jet-flame"></div>
             </div>
-
-            <!-- Цифровой индикатор -->
-            <span id="flightRangeDisplay">10 cells</span>
-            <div class="control-buttons">
-              <button id="flightRangeMinus" class="control-btn">−</button>
-              <button id="flightRangePlus" class="control-btn">+</button>
-            </div>
+          </div>
+          <div class="control-value"><span id="flightRangeDisplay">10 cells</span></div>
+          <div class="control-buttons">
+            <button id="flightRangeMinus" class="control-btn">−</button>
+            <button id="flightRangePlus" class="control-btn">+</button>
           </div>
         </div>
 
         <!-- Aiming Amplitude Control -->
         <div class="control-box">
-          <div class="aiming-amplitude-control">
-            <div class="control-label">Aiming Amplitude</div>
-            <div class="control-value">
-              <div id="amplitudeIndicator">
-                <div class="line3"></div>
-                <span id="amplitudeAngleDisplay">20°</span>
-              </div>
-            </div>
-            <div class="control-buttons">
-              <button id="amplitudeMinus" class="control-btn">−</button>
-              <button id="amplitudePlus" class="control-btn">+</button>
-            </div>
+          <div class="control-label">Aiming Amplitude</div>
+          <div id="amplitudeIndicator" class="control-visual">
+            <div class="line3"></div>
+          </div>
+          <div class="control-value"><span id="amplitudeAngleDisplay">20°</span></div>
+          <div class="control-buttons">
+            <button id="amplitudeMinus" class="control-btn">−</button>
+            <button id="amplitudePlus" class="control-btn">+</button>
           </div>
         </div>
       </div>
@@ -77,6 +67,7 @@
       <!-- Buildings Control -->
       <div class="control-box">
         <div class="control-label">Buildings</div>
+        <div class="control-visual"></div>
         <div id="buildingsCountDisplay" class="control-value">
           <span id="buildingsCountValue">0</span>
         </div>
