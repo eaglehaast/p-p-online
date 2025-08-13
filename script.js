@@ -53,6 +53,7 @@ const ATTACK_RANGE_PX      = 300;    // px
 const MAX_TRAIL_SEGMENTS   = 120;
 const BUILDING_BUFFER      = CELL_SIZE / 2;
 const MAX_BUILDINGS_GLOBAL = 100;
+const PLANES_PER_SIDE      = 4;      // количество самолётов у каждой команды
 
 const MIN_FLIGHT_RANGE_CELLS = 1;
 const MAX_FLIGHT_RANGE_CELLS = 25;
@@ -96,14 +97,19 @@ let aiMoveScheduled = false;
 
 /* ======= INIT ======= */
 function initPoints(){
-  points=[];
-  // Green (низ поля) — смотрят ВВЕРХ (к сопернику) 
-  for(let x of [60, 120, 180, 240]){
-    points.push(makePlane(x, gameCanvas.height - 40, "green", 0));           // 0 рад — нос вверх
+  points = [];
+  const spacing = gameCanvas.width / (PLANES_PER_SIDE + 1);
+
+  // Green (низ поля) — смотрят ВВЕРХ (к сопернику)
+  for(let i = 1; i <= PLANES_PER_SIDE; i++){
+    const x = spacing * i;
+    points.push(makePlane(x, gameCanvas.height - 40, "green", 0)); // 0 рад — нос вверх
   }
+
   // Blue (верх поля) — смотрят ВНИЗ
-  for(let x of [60, 120, 180, 240]){
-    points.push(makePlane(x, 40, "blue", Math.PI));      // π рад — нос вниз
+  for(let i = 1; i <= PLANES_PER_SIDE; i++){
+    const x = spacing * i;
+    points.push(makePlane(x, 40, "blue", Math.PI)); // π рад — нос вниз
   }
 }
 function makePlane(x,y,color,angle){
