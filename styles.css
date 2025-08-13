@@ -249,16 +249,9 @@ body {
   top: 50%;
 
   width: 40px;
-  height: 8px;
+  height: 10px;
   background: radial-gradient(ellipse at 100% 50%, #ffea00, #ff4500);
-  border-radius: 4px;
-
-
-  width: 8px;
-  height: 8px;
-  background: radial-gradient(circle at 0 50%, #ffea00, #ff4500);
-  border-radius: 50%;
-
+  border-radius: 5px;
 
   transform: translateY(-50%) scaleX(1);
   transform-origin: right center;
