@@ -31,10 +31,6 @@ const buildingsPlusBtn    = document.getElementById("buildingsPlus");
 const amplitudeMinusBtn   = document.getElementById("amplitudeMinus");
 const amplitudePlusBtn    = document.getElementById("amplitudePlus");
 const addAAToggle         = document.getElementById("addAAToggle");
-
-// Remove legacy AA containers if still present
-document.querySelectorAll('#aaContainer, #aaControls').forEach(el => el.remove());
-
 const endGameDiv  = document.getElementById("endGameButtons");
 const yesBtn      = document.getElementById("yesButton");
 const noBtn       = document.getElementById("noButton");
