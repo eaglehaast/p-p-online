@@ -1022,15 +1022,8 @@ function drawPlayerPanel(ctx, color, victories, isTurn){
   ctx.font = "14px 'Patrick Hand', cursive";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  let statusText;
-  if (isTurn) {
-    statusText = "Your Turn";
-    ctx.fillStyle = color;
-  } else {
-    statusText = "Enemy Pilot's Turn";
-    ctx.fillStyle = "#888";
-  }
-  ctx.fillText(statusText, sectionW*1.5, canvas.height/2);
+  ctx.fillStyle = isTurn ? color : "#888";
+  ctx.fillText(isTurn ? "TURN" : "", sectionW*1.5, canvas.height/2);
 
   // victories
   ctx.fillStyle = color;
