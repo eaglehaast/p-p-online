@@ -35,12 +35,6 @@
         <div class="control-box">
           <div class="flight-range-control">
             <div class="control-label">Flight Range</div>
-            <div class="control-buttons">
-              <button id="flightRangeMinus" class="control-btn">−</button>
-              <button id="flightRangePlus" class="control-btn">+</button>
-            </div>
-
-
             <!-- Самолёт и пламя турбины для индикации дальности -->
             <div id="flightRangeIndicator">
               <div class="jet">
@@ -55,6 +49,10 @@
 
             <!-- Цифровой индикатор -->
             <span id="flightRangeDisplay">10 cells</span>
+            <div class="control-buttons">
+              <button id="flightRangeMinus" class="control-btn">−</button>
+              <button id="flightRangePlus" class="control-btn">+</button>
+            </div>
           </div>
         </div>
 
@@ -62,15 +60,15 @@
         <div class="control-box">
           <div class="aiming-amplitude-control">
             <div class="control-label">Aiming Amplitude</div>
-            <div class="control-buttons">
-              <button id="amplitudeMinus" class="control-btn">−</button>
-              <button id="amplitudePlus" class="control-btn">+</button>
-            </div>
             <div class="control-value">
               <div id="amplitudeIndicator">
                 <div class="line3"></div>
                 <span id="amplitudeAngleDisplay">20°</span>
               </div>
+            </div>
+            <div class="control-buttons">
+              <button id="amplitudeMinus" class="control-btn">−</button>
+              <button id="amplitudePlus" class="control-btn">+</button>
             </div>
           </div>
         </div>
@@ -79,12 +77,12 @@
       <!-- Buildings Control -->
       <div class="control-box">
         <div class="control-label">Buildings</div>
+        <div id="buildingsCountDisplay" class="control-value">
+          <span id="buildingsCountValue">0</span>
+        </div>
         <div class="control-buttons">
           <button id="buildingsMinus" class="control-btn">−</button>
           <button id="buildingsPlus" class="control-btn">+</button>
-        </div>
-        <div id="buildingsCountDisplay" class="control-value">
-          <span id="buildingsCountValue">0</span>
         </div>
       </div>
     </div> <!-- /control-group-row -->
