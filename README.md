@@ -17,7 +17,7 @@
 ## Basic rules
 
 - Each side controls a group of paper planes (green vs. blue).
-- Use the mouse to drag a plane, aim and release to launch it.
+- Use the mouse to drag a plane, aim and release to launch it. Releasing before the first tick mark cancels the move.
 - Controls let you tune the flight range, place buildings as obstacles and adjust aiming amplitude.
 - Hitting an enemy plane destroys it. When one colour has no planes left, the other wins the round.
 - After a round you can choose to play again or return to the menu.

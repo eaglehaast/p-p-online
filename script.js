@@ -353,6 +353,11 @@ function onHandleUp(){
   let dy= handleCircle.shakyY - plane.y;
 
   let dragDistance = Math.hypot(dx, dy);
+  // Cancel the move if released before the first tick mark
+  if(dragDistance < CELL_SIZE){
+    cleanupHandle();
+    return;
+  }
   if(dragDistance > MAX_DRAG_DISTANCE){
     dx *= MAX_DRAG_DISTANCE/dragDistance;
     dy *= MAX_DRAG_DISTANCE/dragDistance;
