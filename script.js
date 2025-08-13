@@ -1319,19 +1319,13 @@ function updateFlightRangeFlame(){
     flame.style.height = `${baseHeight * (0.9 + 0.1 * ratio)}px`;
   }
   if(trails.length){
-    const baseTrailWidth = 30;
-    const baseTrailHeight = 3;
+    const baseTrailWidth = 35;  // matches CSS default
+    const baseTrailHeight = 2;  // matches CSS default
     trails.forEach(trail => {
       trail.style.width = `${baseTrailWidth * ratio}px`;
-      trail.style.height = `${baseTrailHeight * (0.9 + 0.1 * ratio)}px`;
+      trail.style.height = `${baseTrailHeight}px`;
     });
   }
-
-  const baseWidth = 40;  // matches CSS default
-  const baseHeight = 12; // matches CSS default
-  flame.style.width = `${baseWidth * ratio}px`;
-  flame.style.height = `${baseHeight * (0.9 + 0.1 * ratio)}px`;
-
 }
 function resetFlightRangeFlame(){ updateFlightRangeFlame(); }
 
