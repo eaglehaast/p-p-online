@@ -990,6 +990,7 @@ function drawPlayerPanel(ctx, color, victories, isTurn){
   const maxPerRow = 4;
   const spacingX = 20;
   const startX = sectionW / 2 - ((maxPerRow - 1) * spacingX) / 2;
+
   const rowSpacingY = 20;
   const startY = canvas.height / 2 - rowSpacingY / 2;
   const blueY = startY;
@@ -998,19 +999,38 @@ function drawPlayerPanel(ctx, color, victories, isTurn){
     const p = bluePlanes[i];
     const x = startX + i * spacingX;
     drawMiniPlaneWithCross(ctx, x, blueY, "blue", p.isAlive, p.burning, 0.8);
+
+  const blueY = 10;
+  const greenY = 30;
+  for (let i = 0; i < Math.min(bluePlanes.length, maxPerRow); i++) {
+    const p = bluePlanes[i];
+    const x = startX + i * spacingX;
+    drawMiniPlaneWithSpiral(ctx, x, blueY, "blue", p.isAlive, p.burning, 0.8);
+
   }
   for (let i = 0; i < Math.min(greenPlanes.length, maxPerRow); i++) {
     const p = greenPlanes[i];
     const x = startX + i * spacingX;
+
     drawMiniPlaneWithCross(ctx, x, greenY, "green", p.isAlive, p.burning, 0.8);
+
+    drawMiniPlaneWithSpiral(ctx, x, greenY, "green", p.isAlive, p.burning, 0.8);
+>
   }
 
   // turn indicator
   ctx.font = "14px 'Patrick Hand', cursive";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillStyle = isTurn ? color : "#888";
-  ctx.fillText(isTurn ? "TURN" : "", sectionW*1.5, canvas.height/2);
+  let statusText;
+  if (isTurn) {
+    statusText = "Your Turn";
+    ctx.fillStyle = color;
+  } else {
+    statusText = "Enemy Pilot's Turn";
+    ctx.fillStyle = "#888";
+  }
+  ctx.fillText(statusText, sectionW*1.5, canvas.height/2);
 
   // victories
   ctx.fillStyle = color;
