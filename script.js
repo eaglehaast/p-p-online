@@ -14,6 +14,9 @@ const scoreCtxBottom    = scoreCanvasBottom.getContext("2d");
 const gameCanvas  = document.getElementById("gameCanvas");
 const gameCtx     = gameCanvas.getContext("2d");
 
+const aimCanvas   = document.getElementById("aimCanvas");
+const aimCtx      = aimCanvas.getContext("2d");
+
 const modeMenuDiv = document.getElementById("modeMenu");
 const hotSeatBtn  = document.getElementById("hotSeatBtn");
 const computerBtn = document.getElementById("computerBtn");
@@ -170,6 +173,7 @@ function resetGame(){
   scoreCanvas.style.display = "none";
   gameCanvas.style.display = "none";
   scoreCanvasBottom.style.display = "none";
+  aimCanvas.style.display = "none";
 
   // Остановить основной цикл
   stopGameLoop();
@@ -235,6 +239,7 @@ playBtn.addEventListener("click",()=>{
   scoreCanvas.style.display = "block";
   gameCanvas.style.display = "block";
   scoreCanvasBottom.style.display = "block";
+  aimCanvas.style.display = "block";
 
   stopMenuAnimation();
   startGameLoop();
@@ -647,6 +652,7 @@ function gameDraw(){
   // фон
   gameCtx.clearRect(0,0, gameCanvas.width, gameCanvas.height);
   drawNotebookBackground(gameCtx, gameCanvas.width, gameCanvas.height);
+  aimCtx.clearRect(0,0, aimCanvas.width, aimCanvas.height);
 
   // Планирование хода ИИ
   if (!isGameOver 
@@ -751,16 +757,23 @@ function gameDraw(){
       vdist = MAX_DRAG_DISTANCE;
     }
 
-    // линия натяжки
-    gameCtx.beginPath();
-    gameCtx.strokeStyle="black";
-    gameCtx.lineWidth=2;
-    gameCtx.moveTo(plane.x, plane.y);
-    gameCtx.lineTo(plane.x + vdx, plane.y + vdy);
-    gameCtx.stroke();
+    const rect = gameCanvas.getBoundingClientRect();
+    const scaleX = rect.width / gameCanvas.width;
+    const scaleY = rect.height / gameCanvas.height;
+    const startX = rect.left + plane.x * scaleX;
+    const startY = rect.top  + plane.y * scaleY;
+    const endX   = rect.left + (plane.x + vdx) * scaleX;
+    const endY   = rect.top  + (plane.y + vdy) * scaleY;
+
+    aimCtx.beginPath();
+    aimCtx.strokeStyle = "black";
+    aimCtx.lineWidth = 2;
+    aimCtx.moveTo(startX, startY);
+    aimCtx.lineTo(endX, endY);
+    aimCtx.stroke();
 
     // треугольник-рукоятка
-    drawHandleTriangle(gameCtx, plane.x + vdx, plane.y + vdy, vdx, vdy);
+    drawHandleTriangle(aimCtx, endX, endY, endX - startX, endY - startY);
 
     // деления на линии натяжки (до 5)
     const dragAngle = Math.atan2(vdy, vdx);
@@ -772,17 +785,22 @@ function gameDraw(){
       const posX = plane.x + d*Math.cos(dragAngle);
       const posY = plane.y + d*Math.sin(dragAngle);
       const halfTick = (CELL_SIZE/2)/2;
-      const startX = posX - halfTick*Math.cos(tickAngle);
-      const startY = posY - halfTick*Math.sin(tickAngle);
-      const endX   = posX + halfTick*Math.cos(tickAngle);
-      const endY   = posY + halfTick*Math.sin(tickAngle);
+      const startGX = posX - halfTick*Math.cos(tickAngle);
+      const startGY = posY - halfTick*Math.sin(tickAngle);
+      const endGX   = posX + halfTick*Math.cos(tickAngle);
+      const endGY   = posY + halfTick*Math.sin(tickAngle);
 
-      gameCtx.beginPath();
-      gameCtx.strokeStyle="black";
-      gameCtx.lineWidth=2;
-      gameCtx.moveTo(startX, startY);
-      gameCtx.lineTo(endX, endY);
-      gameCtx.stroke();
+      const startSX = rect.left + startGX * scaleX;
+      const startSY = rect.top  + startGY * scaleY;
+      const endSX   = rect.left + endGX   * scaleX;
+      const endSY   = rect.top  + endGY   * scaleY;
+
+      aimCtx.beginPath();
+      aimCtx.strokeStyle="black";
+      aimCtx.lineWidth=2;
+      aimCtx.moveTo(startSX, startSY);
+      aimCtx.lineTo(endSX, endSY);
+      aimCtx.stroke();
     }
   }
 
@@ -1314,11 +1332,16 @@ function resizeCanvas() {
   
   canvas.style.width = maxWidth + 'px';
   canvas.style.height = maxHeight + 'px';
-  
+
   // Масштабируем canvas пропорционально
   const scale = Math.min(maxWidth / 300, maxHeight / 400);
   canvas.width = 300 * scale;
   canvas.height = 400 * scale;
+
+  aimCanvas.style.width = window.innerWidth + 'px';
+  aimCanvas.style.height = window.innerHeight + 'px';
+  aimCanvas.width = window.innerWidth;
+  aimCanvas.height = window.innerHeight;
   
   // Переинициализируем самолёты
   if(points.length === 0) {
