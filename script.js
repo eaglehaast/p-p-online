@@ -1304,17 +1304,34 @@ function updateFlightRangeDisplay(){
 }
 function updateFlightRangeFlame(){
   const flame = document.getElementById("flame");
-  if(!flame) return;
+  const trails = document.querySelectorAll("#flightRangeIndicator .wing-trail");
   const minScale = 0.3;
   const maxScale = 1.2;
   const t = (flightRangeCells - MIN_FLIGHT_RANGE_CELLS) /
             (MAX_FLIGHT_RANGE_CELLS - MIN_FLIGHT_RANGE_CELLS);
   const ratio = minScale + t * (maxScale - minScale);
 
+
+  if(flame){
+    const baseWidth = 40;  // matches CSS default
+    const baseHeight = 12; // matches CSS default
+    flame.style.width = `${baseWidth * ratio}px`;
+    flame.style.height = `${baseHeight * (0.9 + 0.1 * ratio)}px`;
+  }
+  if(trails.length){
+    const baseTrailWidth = 30;
+    const baseTrailHeight = 3;
+    trails.forEach(trail => {
+      trail.style.width = `${baseTrailWidth * ratio}px`;
+      trail.style.height = `${baseTrailHeight * (0.9 + 0.1 * ratio)}px`;
+    });
+  }
+
   const baseWidth = 40;  // matches CSS default
   const baseHeight = 12; // matches CSS default
   flame.style.width = `${baseWidth * ratio}px`;
   flame.style.height = `${baseHeight * (0.9 + 0.1 * ratio)}px`;
+
 }
 function resetFlightRangeFlame(){ updateFlightRangeFlame(); }
 
