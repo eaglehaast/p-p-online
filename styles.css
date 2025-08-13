@@ -261,11 +261,19 @@ body {
 /* Wing contrails from wingtips */
 #flightRangeIndicator .wing-trail {
   position: absolute;
+
+  right: 100%;
+  width: 35px;
+  height: 2px;
+  background: linear-gradient(to left, rgba(200,200,200,0.6), rgba(200,200,200,0));
+  opacity: 0.7;
+
   right: calc(100% + 2px);
   width: 35px;
   height: 2px;
   background: linear-gradient(to left, rgba(160,160,160,0.5), rgba(160,160,160,0));
   opacity: 0.5;
+
   border-radius: 1px;
   transform-origin: right center;
   transform: translateY(-50%);
