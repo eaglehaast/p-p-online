@@ -1072,7 +1072,8 @@ function stopButtonInterval(button){
 }
 
 /* Flight Range */
-flightRangeMinusBtn.addEventListener("mousedown",()=>{
+flightRangeMinusBtn.addEventListener("pointerdown", (event)=>{
+  event.preventDefault();
   if(hasShotThisRound) return;
   startButtonInterval(flightRangeMinusBtn, ()=>{
     if(flightRangeCells > MIN_FLIGHT_RANGE_CELLS){
@@ -1082,10 +1083,11 @@ flightRangeMinusBtn.addEventListener("mousedown",()=>{
     }
   });
 });
-flightRangeMinusBtn.addEventListener("mouseup", ()=>stopButtonInterval(flightRangeMinusBtn));
-flightRangeMinusBtn.addEventListener("mouseleave", ()=>stopButtonInterval(flightRangeMinusBtn));
+flightRangeMinusBtn.addEventListener("pointerup", ()=>stopButtonInterval(flightRangeMinusBtn));
+flightRangeMinusBtn.addEventListener("pointerleave", ()=>stopButtonInterval(flightRangeMinusBtn));
 
-flightRangePlusBtn.addEventListener("mousedown",()=>{
+flightRangePlusBtn.addEventListener("pointerdown", (event)=>{
+  event.preventDefault();
   if(hasShotThisRound) return;
   startButtonInterval(flightRangePlusBtn, ()=>{
     if(flightRangeCells < MAX_FLIGHT_RANGE_CELLS){
@@ -1095,11 +1097,12 @@ flightRangePlusBtn.addEventListener("mousedown",()=>{
     }
   });
 });
-flightRangePlusBtn.addEventListener("mouseup", ()=>stopButtonInterval(flightRangePlusBtn));
-flightRangePlusBtn.addEventListener("mouseleave", ()=>stopButtonInterval(flightRangePlusBtn));
+flightRangePlusBtn.addEventListener("pointerup", ()=>stopButtonInterval(flightRangePlusBtn));
+flightRangePlusBtn.addEventListener("pointerleave", ()=>stopButtonInterval(flightRangePlusBtn));
 
 /* Buildings */
-buildingsMinusBtn.addEventListener("mousedown",()=>{
+buildingsMinusBtn.addEventListener("pointerdown", (event)=>{
+  event.preventDefault();
   if(hasShotThisRound) return;
   startButtonInterval(buildingsMinusBtn, ()=>{
     if(buildingsCount >= 4){
@@ -1112,10 +1115,11 @@ buildingsMinusBtn.addEventListener("mousedown",()=>{
     renderScoreboard();
   });
 });
-buildingsMinusBtn.addEventListener("mouseup", ()=>stopButtonInterval(buildingsMinusBtn));
-buildingsMinusBtn.addEventListener("mouseleave", ()=>stopButtonInterval(buildingsMinusBtn));
+buildingsMinusBtn.addEventListener("pointerup", ()=>stopButtonInterval(buildingsMinusBtn));
+buildingsMinusBtn.addEventListener("pointerleave", ()=>stopButtonInterval(buildingsMinusBtn));
 
-buildingsPlusBtn.addEventListener("mousedown",()=>{
+buildingsPlusBtn.addEventListener("pointerdown", (event)=>{
+  event.preventDefault();
   if(hasShotThisRound) return;
   startButtonInterval(buildingsPlusBtn, ()=>{
     if(buildingsCount < MAX_BUILDINGS_GLOBAL){
@@ -1127,11 +1131,12 @@ buildingsPlusBtn.addEventListener("mousedown",()=>{
     }
   });
 });
-buildingsPlusBtn.addEventListener("mouseup", ()=>stopButtonInterval(buildingsPlusBtn));
-buildingsPlusBtn.addEventListener("mouseleave", ()=>stopButtonInterval(buildingsPlusBtn));
+buildingsPlusBtn.addEventListener("pointerup", ()=>stopButtonInterval(buildingsPlusBtn));
+buildingsPlusBtn.addEventListener("pointerleave", ()=>stopButtonInterval(buildingsPlusBtn));
 
 /* Aiming amplitude */
-amplitudeMinusBtn.addEventListener("mousedown",()=>{
+amplitudeMinusBtn.addEventListener("pointerdown", (event)=>{
+  event.preventDefault();
   if(hasShotThisRound) return;
   startButtonInterval(amplitudeMinusBtn, ()=>{
     if(aimingAmplitude > MIN_AMPLITUDE){
@@ -1140,10 +1145,11 @@ amplitudeMinusBtn.addEventListener("mousedown",()=>{
     }
   });
 });
-amplitudeMinusBtn.addEventListener("mouseup", ()=>stopButtonInterval(amplitudeMinusBtn));
-amplitudeMinusBtn.addEventListener("mouseleave", ()=>stopButtonInterval(amplitudeMinusBtn));
+amplitudeMinusBtn.addEventListener("pointerup", ()=>stopButtonInterval(amplitudeMinusBtn));
+amplitudeMinusBtn.addEventListener("pointerleave", ()=>stopButtonInterval(amplitudeMinusBtn));
 
-amplitudePlusBtn.addEventListener("mousedown",()=>{
+amplitudePlusBtn.addEventListener("pointerdown", (event)=>{
+  event.preventDefault();
   if(hasShotThisRound) return;
   startButtonInterval(amplitudePlusBtn, ()=>{
     if(aimingAmplitude < MAX_AMPLITUDE){
@@ -1152,8 +1158,8 @@ amplitudePlusBtn.addEventListener("mousedown",()=>{
     }
   });
 });
-amplitudePlusBtn.addEventListener("mouseup", ()=>stopButtonInterval(amplitudePlusBtn));
-amplitudePlusBtn.addEventListener("mouseleave", ()=>stopButtonInterval(amplitudePlusBtn));
+amplitudePlusBtn.addEventListener("pointerup", ()=>stopButtonInterval(amplitudePlusBtn));
+amplitudePlusBtn.addEventListener("pointerleave", ()=>stopButtonInterval(amplitudePlusBtn));
 
 /* Поля/здания */
 const buildingTypes = ['rectangle', 'rectangle_double', 'rectangle_triple'];
