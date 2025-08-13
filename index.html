@@ -51,6 +51,21 @@
               <svg class="jet-plane" viewBox="0 0 38 20">
                 <polygon points="38,10 8,20 8,15 0,10 8,5 8,0" />
               </svg>
+
+              <svg id="flame" class="jet-flame" viewBox="0 0 40 20" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+                <defs>
+                  <radialGradient id="flameGradient" cx="100%" cy="50%" r="60%">
+                    <stop offset="0%" stop-color="#ffea00" />
+                    <stop offset="100%" stop-color="#ff4500" />
+                  </radialGradient>
+                </defs>
+
+                <path d="M40 10 C37 4 32 0 20 0 C5 0 0 10 20 20 C32 20 37 16 40 10 Z" fill="url(#flameGradient)" />
+
+                <path d="M0 10 Q20 0 40 10 Q20 20 0 10 Z" fill="url(#flameGradient)" />
+
+              </svg>
+
             </div>
           </div>
           <div class="control-value"><span id="flightRangeDisplay">10 cells</span></div>

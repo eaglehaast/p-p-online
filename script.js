@@ -1311,6 +1311,7 @@ function updateFlightRangeFlame(){
             (MAX_FLIGHT_RANGE_CELLS - MIN_FLIGHT_RANGE_CELLS);
   const ratio = minScale + t * (maxScale - minScale);
 
+
   if(flame){
     const baseWidth = 40;  // matches CSS default
     const baseHeight = 12; // matches CSS default
@@ -1325,6 +1326,12 @@ function updateFlightRangeFlame(){
       trail.style.height = `${baseTrailHeight * (0.9 + 0.1 * ratio)}px`;
     });
   }
+
+  const baseWidth = 40;  // matches CSS default
+  const baseHeight = 12; // matches CSS default
+  flame.style.width = `${baseWidth * ratio}px`;
+  flame.style.height = `${baseHeight * (0.9 + 0.1 * ratio)}px`;
+
 }
 function resetFlightRangeFlame(){ updateFlightRangeFlame(); }
 
