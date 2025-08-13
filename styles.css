@@ -58,6 +58,17 @@ body {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
+/* Overlay canvas for aiming line */
+#aimCanvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100dvh;
+  pointer-events: none;
+  z-index: 10;
+}
+
 /* Меню выбора режима */
 #modeMenu {
   position: fixed;
