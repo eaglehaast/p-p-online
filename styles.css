@@ -176,28 +176,40 @@ body {
   box-sizing: border-box;
 }
 
-/* Flight range */
-.flight-range-control {
-  display:flex; flex-direction:column; align-items:center;
+#modeMenu .control-box > .control-label {
+  font-size: 16px;
+  font-weight: bold;
+  margin-bottom: 10px;
+  color: #555;
 }
-.flight-range-control .control-label {
-  font-size: 16px; font-weight: bold; margin-bottom: 10px; color: #ff0000c8;
+
+#modeMenu .control-box > .control-visual {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 6px 0;
 }
-.flight-range-control .control-buttons { display:flex; gap:15px; margin-top:10px; }
-.flight-range-control .control-buttons button {
-  width: 40px; height: 40px; font-size: 20px; color:#fff; border:none; border-radius:50%;
-  background: linear-gradient(145deg, #6c757d, #5a6268);
-  box-shadow: 0 3px 6px rgba(0,0,0,0.2); cursor:pointer; transition: transform 0.2s, box-shadow 0.2s;
+
+#modeMenu .control-box > .control-value {
+  font-size: 22px;
+  color: #ee0000;
+  font-family: 'Patrick Hand', cursive;
+  margin-bottom: 10px;
+  text-align: center;
 }
-.flight-range-control .control-buttons button:hover { transform: translateY(-3px); box-shadow: 0 6px 12px rgba(0,0,0,0.3); }
-.flight-range-control .control-buttons button:disabled { background: #a1a1a1; cursor: not-allowed; }
+
+#modeMenu .control-box > .control-buttons {
+  display: flex;
+  gap: 15px;
+  margin-top: 10px;
+}
 
 /* Индикатор дальности — самолёт с огнём */
 #flightRangeIndicator {
   position: relative;
   width: 130px;
   height: 30px;
-  margin-top: 16px;
 }
 
 #flightRangeIndicator .jet {
@@ -258,13 +270,9 @@ body {
 #flightRangeDisplay {
   position: relative;
   display: block;
-  margin-top: 6px;
-  font-size: 18px;
-  color: #ee0000;
-  font-family: 'Patrick Hand', cursive;
 }
 
-/* Buildings control */
+/* Control buttons */
 #modeMenu .control-buttons button {
   width: 40px; height: 40px; font-size: 20px; color:#fff; border:none; border-radius:50%;
   background: linear-gradient(145deg, #6c757d, #5a6268);
@@ -272,31 +280,17 @@ body {
   cursor:pointer; transition: transform 0.2s, box-shadow 0.2s;
 }
 #modeMenu .control-buttons button:hover { transform: translateY(-3px); box-shadow: 0 6px 12px rgba(0,0,0,0.3); }
-#modeMenu .control-box .control-buttons { display:flex; gap:15px; margin-top:10px; }
-#modeMenu .control-box .control-label { font-size: 16px; font-weight: bold; margin-bottom: 10px; color: #555; }
+#modeMenu .control-buttons button:disabled { background:#a1a1a1; cursor:not-allowed; }
 
 #buildingsCountDisplay {
   font-size: 28px;
   color: #ee0000;
   font-family: 'Patrick Hand', cursive;
-  margin-top: 8px;
 }
 
 #buildingsCountValue {
   font-weight: bold;
 }
-
-/* Aiming amplitude */
-.aiming-amplitude-control { display:flex; flex-direction:column; align-items:center; }
-.aiming-amplitude-control .control-label { font-size:16px; font-weight:bold; margin-bottom:10px; color:#555; }
-#modeMenu .aiming-amplitude-control .control-buttons { display:flex; gap:15px; margin-top:15px; }
-.aiming-amplitude-control .control-buttons button {
-  width: 40px; height: 40px; font-size:20px; color:#fff; border:none; border-radius:50%;
-  background: linear-gradient(145deg, #6c757d, #5a6268);
-  box-shadow: 0 3px 6px rgba(0,0,0,0.2);
-  cursor:pointer; transition: transform 0.2s, box-shadow 0.2s;
-}
-.aiming-amplitude-control .control-buttons button:disabled { background:#a1a1a1; cursor:not-allowed; }
 
 #amplitudeIndicator { position: relative; width: 100px; height: 100px; }
 .line3 {
@@ -304,9 +298,9 @@ body {
   top: 50%; left: 10px; transform-origin: 0 50%; border-radius: 2px;
 }
 #amplitudeAngleDisplay {
-  position: absolute; left: 50%; top: 75%;
-  transform: translateX(-50%);
-  font-size: 22px; color: #ee0000; font-family: 'Patrick Hand', cursive;
+  font-size: 22px;
+  color: #ee0000;
+  font-family: 'Patrick Hand', cursive;
 }
 
 /* Окно конца игры */
