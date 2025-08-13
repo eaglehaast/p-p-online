@@ -839,21 +839,27 @@ function drawThinPlane(ctx2d, cx, cy, color, angle){
   ctx2d.restore();
 }
 
-function drawRedCross(ctx2d, cx, cy, size=20){
+function drawBurningSpiral(ctx2d, cx, cy){
   ctx2d.save();
   ctx2d.translate(cx, cy);
-  ctx2d.strokeStyle = "red";
-  ctx2d.lineWidth = 2;
+  ctx2d.strokeStyle="red";
+  ctx2d.lineWidth=2;
+
+  const steps=200, turns=5, maxR=30;
   ctx2d.beginPath();
-  ctx2d.moveTo(-size/2, -size/2);
-  ctx2d.lineTo( size/2,  size/2);
-  ctx2d.moveTo( size/2, -size/2);
-  ctx2d.lineTo(-size/2,  size/2);
+  for(let i=0; i<=steps; i++){
+    let t = i / steps;
+    let ang = turns * 2*Math.PI * t;
+    let r = maxR * t;
+    let xx= r * Math.cos(ang);
+    let yy= r * Math.sin(ang);
+    if(i===0) ctx2d.moveTo(xx,yy); else ctx2d.lineTo(xx,yy);
+  }
   ctx2d.stroke();
   ctx2d.restore();
 }
 
-function drawMiniPlaneWithCross(ctx2d, x, y, color, isAlive, isBurning, scale=1){
+function drawMiniPlaneWithSpiral(ctx2d, x, y, color, isAlive, isBurning, scale=1){
   ctx2d.save();
   ctx2d.translate(x, y);
   ctx2d.scale(scale, scale);
@@ -873,7 +879,7 @@ function drawMiniPlaneWithCross(ctx2d, x, y, color, isAlive, isBurning, scale=1)
   ctx2d.stroke();
 
   if(isBurning){
-    drawRedCross(ctx2d, 0, 0, 12);
+    drawBurningSpiral(ctx2d, 0, 0);
   }
   ctx2d.restore();
 }
@@ -891,7 +897,7 @@ function drawPlanesAndTrajectories(){
     }
     drawThinPlane(gameCtx, p.x, p.y, p.color, p.angle);
     if(p.burning){
-      drawRedCross(gameCtx, p.collisionX ?? p.x, p.collisionY ?? p.y, 16);
+      drawBurningSpiral(gameCtx, p.collisionX ?? p.x, p.collisionY ?? p.y);
     }
   }
 }
@@ -990,32 +996,17 @@ function drawPlayerPanel(ctx, color, victories, isTurn){
   const maxPerRow = 4;
   const spacingX = 20;
   const startX = sectionW / 2 - ((maxPerRow - 1) * spacingX) / 2;
-
-  const rowSpacingY = 20;
-  const startY = canvas.height / 2 - rowSpacingY / 2;
-  const blueY = startY;
-  const greenY = startY + rowSpacingY;
-  for (let i = 0; i < Math.min(bluePlanes.length, maxPerRow); i++) {
-    const p = bluePlanes[i];
-    const x = startX + i * spacingX;
-    drawMiniPlaneWithCross(ctx, x, blueY, "blue", p.isAlive, p.burning, 0.8);
-
   const blueY = 10;
   const greenY = 30;
   for (let i = 0; i < Math.min(bluePlanes.length, maxPerRow); i++) {
     const p = bluePlanes[i];
     const x = startX + i * spacingX;
     drawMiniPlaneWithSpiral(ctx, x, blueY, "blue", p.isAlive, p.burning, 0.8);
-
   }
   for (let i = 0; i < Math.min(greenPlanes.length, maxPerRow); i++) {
     const p = greenPlanes[i];
     const x = startX + i * spacingX;
-
-    drawMiniPlaneWithCross(ctx, x, greenY, "green", p.isAlive, p.burning, 0.8);
-
     drawMiniPlaneWithSpiral(ctx, x, greenY, "green", p.isAlive, p.burning, 0.8);
->
   }
 
   // turn indicator
