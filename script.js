@@ -859,14 +859,15 @@ function drawBurningSpiral(ctx2d, cx, cy){
   ctx2d.restore();
 }
 
-function drawMiniPlaneWithSpiral(ctx2d, x, y, color, isAlive, isBurning){
+function drawMiniPlaneWithSpiral(ctx2d, x, y, color, isAlive, isBurning, scale=1){
   ctx2d.save();
   ctx2d.translate(x, y);
+  ctx2d.scale(scale, scale);
   const angle = 0; // ВСЕГДА носом ВВЕРХ на табло
   ctx2d.rotate(angle);
 
   ctx2d.strokeStyle = color;
-  ctx2d.lineWidth = 2;
+  ctx2d.lineWidth = 2/scale;
   ctx2d.beginPath();
   ctx2d.moveTo(0, -8);
   ctx2d.lineTo(4, 4);
@@ -968,93 +969,47 @@ function checkVictory(){
 }
 
 /* ======= SCOREBOARD ======= */
+
 function renderScoreboard(){
-  drawScoreCanvas(scoreCtx);
-  drawEmptyScoreCanvasBottom(scoreCtxBottom);
+  drawPlayerPanel(scoreCtx, "blue", blueVictories, turnColors[turnIndex] === "blue");
+  drawPlayerPanel(scoreCtxBottom, "green", greenVictories, turnColors[turnIndex] === "green");
 }
 
-function drawScoreCanvasBg(ctx2d){
-  ctx2d.fillStyle="#fffbea";
-  ctx2d.fillRect(0,0, scoreCanvas.width, scoreCanvas.height);
+function drawPlayerPanel(ctx, color, victories, isTurn){
+  const canvas = ctx.canvas;
+  ctx.clearRect(0,0, canvas.width, canvas.height);
+  ctx.fillStyle = "#fffbea";
+  ctx.fillRect(0,0, canvas.width, canvas.height);
 
-  ctx2d.strokeStyle="rgba(255,165,0,0.1)";
-  ctx2d.lineWidth=1.5;
-  const cell=20;
-  for(let y=cell; y<scoreCanvas.height; y+=cell){
-    ctx2d.beginPath(); ctx2d.moveTo(0,y); ctx2d.lineTo(scoreCanvas.width,y); ctx2d.stroke();
-  }
-  for(let x=cell; x<scoreCanvas.width; x+=cell){
-    ctx2d.beginPath(); ctx2d.moveTo(x,0); ctx2d.lineTo(x,scoreCanvas.height); ctx2d.stroke();
-  }
-  ctx2d.beginPath(); ctx2d.moveTo(scoreCanvas.width-1,0); ctx2d.lineTo(scoreCanvas.width-1,scoreCanvas.height); ctx2d.stroke();
-  ctx2d.setLineDash([10,5]);
-  ctx2d.beginPath(); ctx2d.moveTo(0,scoreCanvas.height-1); ctx2d.lineTo(scoreCanvas.width,scoreCanvas.height-1); ctx2d.stroke();
-  ctx2d.setLineDash([]);
-}
+  const sectionW = canvas.width/3;
 
-function drawScoreCanvas(ctx){
-  drawScoreCanvasBg(ctx);
+  // separators
+  ctx.strokeStyle = "rgba(0,0,0,0.1)";
+  ctx.beginPath();
+  ctx.moveTo(sectionW,0); ctx.lineTo(sectionW,canvas.height);
+  ctx.moveTo(sectionW*2,0); ctx.lineTo(sectionW*2,canvas.height);
+  ctx.stroke();
 
-  // подписи
-  ctx.font = "20px 'Patrick Hand', cursive";
-  ctx.fillStyle = "green";
-  ctx.fillText("GREEN", 10, 25);
-
-  ctx.fillStyle = "blue";
-  const txtB = "BLUE";
-  const twB = ctx.measureText(txtB).width;
-  ctx.fillText(txtB, scoreCanvas.width - twB - 10, 25);
-
-  // --- GREEN minis
-  const greens = points.filter(p => p.color === "green");
-  const greenPlaneSpacing = 20;
-  const greenStartX = 50;
-  const greenY = 28;
-  for (let i = 0; i < greens.length; i++) {
-    const p = greens[i];
-    const planeX = greenStartX + i * greenPlaneSpacing;
-    drawMiniPlaneWithSpiral(ctx, planeX, greenY, "green", p.isAlive, p.burning);
+  // plane counters
+  const planes = points.filter(p=>p.color===color);
+  const startY = 10;
+  const spacingY = 12;
+  for(let i=0;i<planes.length;i++){
+    const p = planes[i];
+    const y = startY + i*spacingY;
+    drawMiniPlaneWithSpiral(ctx, sectionW/2, y, color, p.isAlive, p.burning, 0.8);
   }
 
-  // --- BLUE minis
-  const blues = points.filter(p => p.color === "blue");
-  const bluePlaneSpacing = 20;
-  const blueEndX = scoreCanvas.width - 50;
-  const blueY = 28;
-  for (let i = 0; i < blues.length; i++) {
-    const p = blues[i];
-    const planeX = blueEndX - (blues.length - 1 - i) * bluePlaneSpacing;
-    drawMiniPlaneWithSpiral(ctx, planeX, blueY, "blue", p.isAlive, p.burning);
-  }
+  // turn indicator
+  ctx.font = "14px 'Patrick Hand', cursive";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = isTurn ? color : "#888";
+  ctx.fillText(isTurn ? "TURN" : "", sectionW*1.5, canvas.height/2);
 
-  // центр
-  const xCenter = scoreCanvas.width/2;
-  const yCenter = scoreCanvas.height/2;
-
-  // счёт побед
-  ctx.font = "45px 'Patrick Hand', cursive";
-
-  ctx.fillStyle = "rgba(0,128,0,0.2)";
-  const gTxt = String(greenVictories);
-  ctx.fillText(gTxt, xCenter - 80, yCenter + CELL_SIZE/2);
-
-  ctx.fillStyle = "rgba(0,0,255,0.2)";
-  const bTxt = String(blueVictories);
-  ctx.fillText(bTxt, xCenter + 60, yCenter + CELL_SIZE/2);
-
-  // чей ход
-  const c = turnColors[turnIndex];
-  const turnTxt = "TURN: " + c.toUpperCase();
-  ctx.font = "24px 'Patrick Hand', cursive";
-  ctx.fillStyle = c;
-  const tw = ctx.measureText(turnTxt).width;
-  ctx.fillText(turnTxt, (scoreCanvas.width - tw)/2, 30 + CELL_SIZE/2);
-}
-
-function drawEmptyScoreCanvasBottom(ctx){
-  ctx.clearRect(0,0, scoreCanvasBottom.width, scoreCanvasBottom.height);
-  ctx.fillStyle="#fffbea";
-  ctx.fillRect(0,0, scoreCanvasBottom.width, scoreCanvasBottom.height);
+  // victories
+  ctx.fillStyle = color;
+  ctx.fillText(String(victories), sectionW*2.5, canvas.height/2);
 }
 
 /* ======= UI CONTROLS ======= */
@@ -1319,19 +1274,13 @@ function updateFlightRangeFlame(){
     flame.style.height = `${baseHeight * (0.9 + 0.1 * ratio)}px`;
   }
   if(trails.length){
-    const baseTrailWidth = 30;
-    const baseTrailHeight = 3;
+    const baseTrailWidth = 35;  // matches CSS default
+    const baseTrailHeight = 2;  // matches CSS default
     trails.forEach(trail => {
       trail.style.width = `${baseTrailWidth * ratio}px`;
-      trail.style.height = `${baseTrailHeight * (0.9 + 0.1 * ratio)}px`;
+      trail.style.height = `${baseTrailHeight}px`;
     });
   }
-
-  const baseWidth = 40;  // matches CSS default
-  const baseHeight = 12; // matches CSS default
-  flame.style.width = `${baseWidth * ratio}px`;
-  flame.style.height = `${baseHeight * (0.9 + 0.1 * ratio)}px`;
-
 }
 function resetFlightRangeFlame(){ updateFlightRangeFlame(); }
 

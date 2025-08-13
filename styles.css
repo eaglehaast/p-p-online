@@ -56,7 +56,6 @@ body {
   height: 60px;
   display: block;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  transform: rotate(180deg);
 }
 
 /* Меню выбора режима */
@@ -258,36 +257,28 @@ body {
   animation: flame-flicker 0.15s infinite alternate;
 }
 
+/* Wing contrails from wingtips */
 #flightRangeIndicator .wing-trail {
   position: absolute;
-  right: calc(100% + 2px);
-  width: 30px;
-  height: 3px;
-  background: linear-gradient(to left, rgba(255,255,255,0.7), rgba(255,255,255,0));
-  opacity: 0.6;
-  border-radius: 2px;
+  right: calc(100% - 10px);
+  width: 35px;
+  height: 2px;
+  background: linear-gradient(to left, rgba(230,230,230,0.8), rgba(230,230,230,0));
+  opacity: 0.8;
+  border-radius: 1px;
   transform-origin: right center;
-
-
-  height: 12px;
   transform: translateY(-50%);
-
-  height: 12px;
-  transform: translateY(-50%);
-
-  height: 10px;
-  background: radial-gradient(ellipse at 100% 50%, #ffea00, #ff4500);
-  border-radius: 5px;
-
-  transform: translateY(-50%) scaleX(1);
-
-
-  transform-origin: right center;
-  animation: flame-flicker 0.15s infinite alternate;
-
+  filter: blur(0.5px);
+  animation: trail-wisp 3s infinite ease-in-out;
 }
-#flightRangeIndicator .wing-trail.top { top: 4px; }
-#flightRangeIndicator .wing-trail.bottom { bottom: 4px; }
+#flightRangeIndicator .wing-trail.top { top: 2px; }
+#flightRangeIndicator .wing-trail.bottom { bottom: 2px; }
+
+@keyframes trail-wisp {
+  0% { transform: translateY(-50%) rotate(0deg); }
+  50% { transform: translateY(-52%) rotate(2deg); }
+  100% { transform: translateY(-50%) rotate(0deg); }
+}
 
 @keyframes flame-flicker {
   from {
