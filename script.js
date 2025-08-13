@@ -1309,8 +1309,12 @@ function updateFlightRangeFlame(){
   const maxScale = 1.2;
   const t = (flightRangeCells - MIN_FLIGHT_RANGE_CELLS) /
             (MAX_FLIGHT_RANGE_CELLS - MIN_FLIGHT_RANGE_CELLS);
-  const ratio = minScale + t*(maxScale - minScale);
-  flame.style.transform = `translateY(-50%) scaleX(${ratio})`;
+  const ratio = minScale + t * (maxScale - minScale);
+
+  const baseWidth = 40;  // matches CSS default
+  const baseHeight = 12; // matches CSS default
+  flame.style.width = `${baseWidth * ratio}px`;
+  flame.style.height = `${baseHeight * (0.9 + 0.1 * ratio)}px`;
 }
 function resetFlightRangeFlame(){ updateFlightRangeFlame(); }
 

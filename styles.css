@@ -253,11 +253,15 @@ body {
   height: 12px;
   transform: translateY(-50%);
 
+  height: 12px;
+  transform: translateY(-50%);
+
   height: 10px;
   background: radial-gradient(ellipse at 100% 50%, #ffea00, #ff4500);
   border-radius: 5px;
 
   transform: translateY(-50%) scaleX(1);
+
 
   transform-origin: right center;
   animation: flame-flicker 0.15s infinite alternate;
