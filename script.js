@@ -69,6 +69,9 @@ const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 // AA defaults and placement limits
 const AA_DEFAULTS = {
 
+  radius: 180,
+
+
   radius: 60, // 3x smaller than original 180
 
 
@@ -78,6 +81,7 @@ const AA_DEFAULTS = {
   radius: 60,
 
   radius: 180,
+
 
 
   hp: 1,
@@ -116,7 +120,11 @@ let flyingPoints = [];
 let buildings    = [];
 let aaUnits     = [];
 
+
+let phase = "MENU"; // MENU | AA_PLACEMENT | ROUND_START | TURN | ROUND_END
+
 let phase = "MENU"; // MENU | AA_PLACEMENT | TURN | ROUND_END
+
 let currentPlacer = null; // 'green' | 'blue'
 
 let settings = {
@@ -287,7 +295,11 @@ playBtn.addEventListener("click",()=>{
     phase = 'AA_PLACEMENT';
     currentPlacer = 'green';
   } else {
+
+    phase = 'ROUND_START';
+
     phase = 'TURN';
+
   }
   startGameLoop();
 });
@@ -391,7 +403,11 @@ function handleAAPlacement(e){
   if(currentPlacer === 'green'){
     currentPlacer = 'blue';
   } else {
+
+    phase = 'ROUND_START';
+
     phase = 'TURN';
+
   }
 }
 
@@ -403,10 +419,16 @@ function onCanvasPointerDown(e){
   }
 }
 
+
+gameCanvas.addEventListener("pointerdown", onCanvasPointerDown);
+
+function isValidAAPlacement(x,y){
+
 gameCanvas.addEventListener("mousedown", onCanvasPointerDown);
 gameCanvas.addEventListener("touchstart", onCanvasPointerDown);
 
 function isValidAAPlacement(x,y){
+
 
   const radius = AA_DEFAULTS.radius;
   if(x < AA_MIN_DIST_FROM_EDGES + radius || x > gameCanvas.width - AA_MIN_DIST_FROM_EDGES - radius) return false;
@@ -414,10 +436,12 @@ function isValidAAPlacement(x,y){
   if(currentPlacer === 'green' && y - radius < 40 + AA_MIN_DIST_FROM_OPPONENT_BASE) return false;
   if(currentPlacer === 'blue' && y + radius > gameCanvas.height - 40 - AA_MIN_DIST_FROM_OPPONENT_BASE) return false;
 
+
   if(x < AA_MIN_DIST_FROM_EDGES || x > gameCanvas.width - AA_MIN_DIST_FROM_EDGES) return false;
   if(y < AA_MIN_DIST_FROM_EDGES || y > gameCanvas.height - AA_MIN_DIST_FROM_EDGES) return false;
   if(currentPlacer === 'green' && y < 40 + AA_MIN_DIST_FROM_OPPONENT_BASE) return false;
   if(currentPlacer === 'blue' && y > gameCanvas.height - 40 - AA_MIN_DIST_FROM_OPPONENT_BASE) return false;
+
 
   for(const b of buildings){
     if(isPointInsideBuilding(x,y,b)) return false;
@@ -426,7 +450,11 @@ function isValidAAPlacement(x,y){
 
     if(Math.hypot(aa.x - x, aa.y - y) < aa.radius + radius) return false;
 
+
+    if(Math.hypot(aa.x - x, aa.y - y) < aa.radius + radius) return false;
+
     if(Math.hypot(aa.x - x, aa.y - y) < aa.radius) return false;
+
 
   }
   return true;
@@ -448,6 +476,12 @@ function placeAA({owner,x,y}){
     armingDelayMs: AA_DEFAULTS.armingDelayMs,
     dwellTimeMs: AA_DEFAULTS.dwellTimeMs,
     cooldownMs: AA_DEFAULTS.cooldownMs,
+
+
+    armingDelayMs: AA_DEFAULTS.armingDelayMs,
+    dwellTimeMs: AA_DEFAULTS.dwellTimeMs,
+    cooldownMs: AA_DEFAULTS.cooldownMs,
+
 
 
 
@@ -793,6 +827,7 @@ function handleAAForPlane(p, fp){
       if(p._aaTimes && p._aaTimes[aa.id]) delete p._aaTimes[aa.id];
       continue;
 
+
     const dist = Math.hypot(p.x - aa.x, p.y - aa.y);
     if(dist < POINT_RADIUS){
       aa.hp--;
@@ -812,6 +847,7 @@ function handleAAForPlane(p, fp){
       if(aa.hp<=0){ aaUnits = aaUnits.filter(a=>a!==aa); }
       checkVictory();
       return true;
+
 
 
 
@@ -853,6 +889,11 @@ function gameDraw(){
   gameCtx.clearRect(0,0, gameCanvas.width, gameCanvas.height);
   drawNotebookBackground(gameCtx, gameCanvas.width, gameCanvas.height);
   aimCtx.clearRect(0,0, aimCanvas.width, aimCanvas.height);
+
+
+  if (phase === 'ROUND_START') {
+    phase = 'TURN';
+  }
 
   if(phase === 'AA_PLACEMENT'){
     drawBuildings();
@@ -1305,11 +1346,21 @@ function stopButtonInterval(button){
 }
 
 // Add AA toggle
+
+if (addAAToggle) {
+  addAAToggle.checked = settings.addAA;
+  addAAToggle.addEventListener('change', (e)=>{
+    settings.addAA = e.target.checked;
+    localStorage.setItem('settings.addAA', settings.addAA);
+  });
+}
+
 addAAToggle.checked = settings.addAA;
 addAAToggle.addEventListener('change', (e)=>{
   settings.addAA = e.target.checked;
   localStorage.setItem('settings.addAA', settings.addAA);
 });
+
 
 /* Flight Range */
 flightRangeMinusBtn.addEventListener("pointerdown", (event)=>{
@@ -1494,7 +1545,11 @@ function startNewRound(){
     phase = 'AA_PLACEMENT';
     currentPlacer = 'green';
   } else {
+
+    phase = 'ROUND_START';
+
     phase = 'TURN';
+
   }
 
   aiMoveScheduled = false;
@@ -1615,6 +1670,7 @@ resizeCanvas();
 initPoints();
 resetFlightRangeFlame();
 updateAmplitudeDisplay();
+updateAmplitudeIndicator();
 updateFlightRangeDisplay();
 renderScoreboard();
 startMenuAnimation();      // пока в меню — крутится индикатор
