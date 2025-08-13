@@ -30,6 +30,7 @@ const buildingsMinusBtn   = document.getElementById("buildingsMinus");
 const buildingsPlusBtn    = document.getElementById("buildingsPlus");
 const amplitudeMinusBtn   = document.getElementById("amplitudeMinus");
 const amplitudePlusBtn    = document.getElementById("amplitudePlus");
+const addAAToggle         = document.getElementById("addAAToggle");
 
 const endGameDiv  = document.getElementById("endGameButtons");
 const yesBtn      = document.getElementById("yesButton");
@@ -65,6 +66,20 @@ const MIN_AMPLITUDE        = 0;
 const MAX_AMPLITUDE        = 30;     // UI показывает как *2°
 const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 
+// AA defaults and placement limits
+const AA_DEFAULTS = {
+  radius: 60,
+  hp: 1,
+  armingDelayMs: 300,
+  dwellTimeMs: 250,
+  cooldownMs: 1000,
+  sectorEnabled: false,
+  sectorFovDeg: 90,
+  rotationDegPerSec: 60
+};
+const AA_MIN_DIST_FROM_OPPONENT_BASE = 120;
+const AA_MIN_DIST_FROM_EDGES = 40;
+
 /* ======= STATE ======= */
 let flightRangeCells = 10;     // значение «в клетках» для меню/физики
 let buildingsCount   = 0;
@@ -88,9 +103,19 @@ let turnIndex    = lastFirstTurn;
 let points       = [];
 let flyingPoints = [];
 let buildings    = [];
+let aaUnits     = [];
+
+let phase = "MENU"; // MENU | AA_PLACEMENT | TURN | ROUND_END
+let currentPlacer = null; // 'green' | 'blue'
+
+let settings = {
+  addAA: localStorage.getItem('settings.addAA') === 'true'
+};
 
 let greenVictories = 0;
 let blueVictories  = 0;
+
+let planeIdSeq = 0;
 
 let animationFrameId = null;
 let menuAnimFrameId  = null;
@@ -117,6 +142,7 @@ function initPoints(){
 }
 function makePlane(x,y,color,angle){
   return {
+    id: 'p'+(planeIdSeq++),
     x, y,
     color,
     isAlive:true,
@@ -142,6 +168,10 @@ function resetGame(){
   flyingPoints= [];
   buildings = [];
   buildingsCount = 0;
+  aaUnits = [];
+
+  phase = 'MENU';
+  currentPlacer = null;
 
   hasShotThisRound = false;
 
@@ -242,6 +272,12 @@ playBtn.addEventListener("click",()=>{
   aimCanvas.style.display = "block";
 
   stopMenuAnimation();
+  if(settings.addAA){
+    phase = 'AA_PLACEMENT';
+    currentPlacer = 'green';
+  } else {
+    phase = 'TURN';
+  }
   startGameLoop();
 });
 
@@ -282,6 +318,7 @@ function getEventCoords(e) {
 
 function handleStart(e) {
   e.preventDefault();
+  if(phase !== 'TURN') return;
   if(isGameOver || !gameMode) return;
 
   const currentColor= turnColors[turnIndex];
@@ -325,8 +362,67 @@ function handleStart(e) {
   window.addEventListener("touchend", onHandleUp);
 }
 
-gameCanvas.addEventListener("mousedown", handleStart);
-gameCanvas.addEventListener("touchstart", handleStart);
+function handleAAPlacement(e){
+  e.preventDefault();
+  if(phase !== 'AA_PLACEMENT') return;
+
+  const coords = getEventCoords(e);
+  const rect = gameCanvas.getBoundingClientRect();
+  const scaleX = gameCanvas.width / rect.width;
+  const scaleY = gameCanvas.height / rect.height;
+  const x = (coords.clientX - rect.left) * scaleX;
+  const y = (coords.clientY - rect.top) * scaleY;
+
+  if(!isValidAAPlacement(x,y)) return;
+
+  placeAA({owner: currentPlacer, x, y});
+
+  if(currentPlacer === 'green'){
+    currentPlacer = 'blue';
+  } else {
+    phase = 'TURN';
+  }
+}
+
+function onCanvasPointerDown(e){
+  if(phase === 'AA_PLACEMENT'){
+    handleAAPlacement(e);
+  } else {
+    handleStart(e);
+  }
+}
+
+gameCanvas.addEventListener("mousedown", onCanvasPointerDown);
+gameCanvas.addEventListener("touchstart", onCanvasPointerDown);
+
+function isValidAAPlacement(x,y){
+  if(x < AA_MIN_DIST_FROM_EDGES || x > gameCanvas.width - AA_MIN_DIST_FROM_EDGES) return false;
+  if(y < AA_MIN_DIST_FROM_EDGES || y > gameCanvas.height - AA_MIN_DIST_FROM_EDGES) return false;
+  if(currentPlacer === 'green' && y < 40 + AA_MIN_DIST_FROM_OPPONENT_BASE) return false;
+  if(currentPlacer === 'blue' && y > gameCanvas.height - 40 - AA_MIN_DIST_FROM_OPPONENT_BASE) return false;
+  for(const b of buildings){
+    if(isPointInsideBuilding(x,y,b)) return false;
+  }
+  for(const aa of aaUnits){
+    if(Math.hypot(aa.x - x, aa.y - y) < aa.radius) return false;
+  }
+  return true;
+}
+
+function placeAA({owner,x,y}){
+  aaUnits.push({
+    id: 'aa'+Date.now()+Math.random().toString(16).slice(2),
+    owner,
+    x, y,
+    radius: AA_DEFAULTS.radius,
+    hp: AA_DEFAULTS.hp,
+    lastTriggerAt: null,
+    sectorEnabled: AA_DEFAULTS.sectorEnabled,
+    sectorAngleDeg: 0,
+    sectorFovDeg: AA_DEFAULTS.sectorFovDeg,
+    rotationDegPerSec: AA_DEFAULTS.rotationDegPerSec
+  });
+}
 
 function onHandleMove(e){
   if(!handleCircle.active)return;
@@ -650,6 +746,37 @@ function planeBuildingCollision(fp, b){
 
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 
+function handleAAForPlane(p, fp){
+  const now = performance.now();
+  for(const aa of aaUnits){
+    const dist = Math.hypot(p.x - aa.x, p.y - aa.y);
+    if(dist < POINT_RADIUS){
+      aa.hp--;
+      if(aa.hp<=0){ aaUnits = aaUnits.filter(a=>a!==aa); }
+      if(p._aaTimes && p._aaTimes[aa.id]) delete p._aaTimes[aa.id];
+      continue;
+    }
+    if(dist <= aa.radius){
+      if(!p._aaTimes) p._aaTimes={};
+      if(!p._aaTimes[aa.id]) p._aaTimes[aa.id]=now;
+      const enterTime = p._aaTimes[aa.id];
+      if(now - enterTime > aa.armingDelayMs + aa.dwellTimeMs){
+        if(!aa.lastTriggerAt || now - aa.lastTriggerAt > aa.cooldownMs){
+          aa.lastTriggerAt = now;
+          p.isAlive=false; p.burning=true;
+          p.collisionX=p.x; p.collisionY=p.y;
+          flyingPoints = flyingPoints.filter(x=>x!==fp);
+          checkVictory();
+          return true;
+        }
+      }
+    } else {
+      if(p._aaTimes && p._aaTimes[aa.id]) delete p._aaTimes[aa.id];
+    }
+  }
+  return false;
+}
+
 /* ======= GAME LOOP ======= */
 function gameDraw(){
   globalFrame++;
@@ -659,14 +786,34 @@ function gameDraw(){
   drawNotebookBackground(gameCtx, gameCanvas.width, gameCanvas.height);
   aimCtx.clearRect(0,0, aimCanvas.width, aimCanvas.height);
 
+  if(phase === 'AA_PLACEMENT'){
+    drawBuildings();
+    drawAAUnits();
+    drawPlanesAndTrajectories();
+    const msg = `${currentPlacer.charAt(0).toUpperCase() + currentPlacer.slice(1)}: place your AA`;
+    gameCtx.font = "24px 'Patrick Hand', cursive";
+    gameCtx.fillStyle = currentPlacer;
+    const w = gameCtx.measureText(msg).width;
+    gameCtx.fillText(msg, (gameCanvas.width - w)/2, 30);
+    renderScoreboard();
+    updateAmplitudeIndicator();
+    animationFrameId = requestAnimationFrame(gameDraw);
+    return;
+  }
+
   // Планирование хода ИИ
-  if (!isGameOver 
-      && gameMode === "computer" 
+  if (!isGameOver
+      && phase === 'TURN'
+      && gameMode === "computer"
       && turnColors[turnIndex] === "blue"
       && !aiMoveScheduled
       && !flyingPoints.some(fp => fp.plane.color === "blue")) {
     aiMoveScheduled = true;
     setTimeout(() => { doComputerMove(); }, 300);
+  }
+
+  for(const aa of aaUnits){
+    aa.sectorAngleDeg = (aa.sectorAngleDeg + aa.rotationDegPerSec/60) % 360;
   }
 
   // полёты
@@ -691,6 +838,8 @@ function gameDraw(){
           if(planeBuildingCollision(fp, b)) break;
         }
       }
+
+      if(handleAAForPlane(p, fp)) continue;
 
       // нос по текущей скорости
       p.angle = Math.atan2(fp.vy, fp.vx) + Math.PI / 2;
@@ -724,6 +873,9 @@ function gameDraw(){
 
   // здания
   drawBuildings();
+
+  // ПВО
+  drawAAUnits();
 
   // самолёты + их трейлы
   drawPlanesAndTrajectories();
@@ -936,6 +1088,22 @@ function drawBuildings(){
     gameCtx.restore();
   }
 }
+
+function drawAAUnits(){
+  for(const aa of aaUnits){
+    gameCtx.save();
+    gameCtx.beginPath();
+    gameCtx.arc(aa.x, aa.y, aa.radius, 0, Math.PI*2);
+    gameCtx.strokeStyle = 'rgba(0,0,0,0.2)';
+    gameCtx.lineWidth = 1;
+    gameCtx.stroke();
+    gameCtx.beginPath();
+    gameCtx.fillStyle = aa.owner;
+    gameCtx.arc(aa.x, aa.y, 6, 0, Math.PI*2);
+    gameCtx.fill();
+    gameCtx.restore();
+  }
+}
 function drawBuildingGrid(ctx, width, height, cellSize, gridColor){
   ctx.strokeStyle = gridColor; ctx.lineWidth = 0.5;
   for(let x=-width/2; x<=width/2; x+=cellSize){
@@ -1067,6 +1235,13 @@ function stopButtonInterval(button){
   clearTimeout(buttonIntervals[button.id]);
   delete buttonIntervals[button.id];
 }
+
+// Add AA toggle
+addAAToggle.checked = settings.addAA;
+addAAToggle.addEventListener('change', (e)=>{
+  settings.addAA = e.target.checked;
+  localStorage.setItem('settings.addAA', settings.addAA);
+});
 
 /* Flight Range */
 flightRangeMinusBtn.addEventListener("pointerdown", (event)=>{
@@ -1245,6 +1420,14 @@ function startNewRound(){
   globalFrame=0;
   flyingPoints=[];
   hasShotThisRound=false;
+
+  aaUnits = [];
+  if(settings.addAA){
+    phase = 'AA_PLACEMENT';
+    currentPlacer = 'green';
+  } else {
+    phase = 'TURN';
+  }
 
   aiMoveScheduled = false;
 
