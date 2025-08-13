@@ -68,7 +68,18 @@ const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 
 // AA defaults and placement limits
 const AA_DEFAULTS = {
+
   radius: 60, // 3x smaller than original 180
+
+
+  radius: 60, // 3x smaller than original 180
+
+
+  radius: 60,
+
+  radius: 180,
+
+
   hp: 1,
   armingDelayMs: 300,
   dwellTimeMs: 250,
@@ -396,16 +407,27 @@ gameCanvas.addEventListener("mousedown", onCanvasPointerDown);
 gameCanvas.addEventListener("touchstart", onCanvasPointerDown);
 
 function isValidAAPlacement(x,y){
+
   const radius = AA_DEFAULTS.radius;
   if(x < AA_MIN_DIST_FROM_EDGES + radius || x > gameCanvas.width - AA_MIN_DIST_FROM_EDGES - radius) return false;
   if(y < AA_MIN_DIST_FROM_EDGES + radius || y > gameCanvas.height - AA_MIN_DIST_FROM_EDGES - radius) return false;
   if(currentPlacer === 'green' && y - radius < 40 + AA_MIN_DIST_FROM_OPPONENT_BASE) return false;
   if(currentPlacer === 'blue' && y + radius > gameCanvas.height - 40 - AA_MIN_DIST_FROM_OPPONENT_BASE) return false;
+
+  if(x < AA_MIN_DIST_FROM_EDGES || x > gameCanvas.width - AA_MIN_DIST_FROM_EDGES) return false;
+  if(y < AA_MIN_DIST_FROM_EDGES || y > gameCanvas.height - AA_MIN_DIST_FROM_EDGES) return false;
+  if(currentPlacer === 'green' && y < 40 + AA_MIN_DIST_FROM_OPPONENT_BASE) return false;
+  if(currentPlacer === 'blue' && y > gameCanvas.height - 40 - AA_MIN_DIST_FROM_OPPONENT_BASE) return false;
+
   for(const b of buildings){
     if(isPointInsideBuilding(x,y,b)) return false;
   }
   for(const aa of aaUnits){
+
     if(Math.hypot(aa.x - x, aa.y - y) < aa.radius + radius) return false;
+
+    if(Math.hypot(aa.x - x, aa.y - y) < aa.radius) return false;
+
   }
   return true;
 }
@@ -417,9 +439,18 @@ function placeAA({owner,x,y}){
     x, y,
     radius: AA_DEFAULTS.radius,
     hp: AA_DEFAULTS.hp,
+
     armingDelayMs: AA_DEFAULTS.armingDelayMs,
     dwellTimeMs: AA_DEFAULTS.dwellTimeMs,
     cooldownMs: AA_DEFAULTS.cooldownMs,
+
+
+    armingDelayMs: AA_DEFAULTS.armingDelayMs,
+    dwellTimeMs: AA_DEFAULTS.dwellTimeMs,
+    cooldownMs: AA_DEFAULTS.cooldownMs,
+
+
+
     lastTriggerAt: null,
     sectorEnabled: AA_DEFAULTS.sectorEnabled,
     sectorAngleDeg: 0,
@@ -753,6 +784,7 @@ function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 function handleAAForPlane(p, fp){
   const now = performance.now();
   for(const aa of aaUnits){
+
     if(aa.owner === p.color) continue; // no friendly fire
     const dist = Math.hypot(p.x - aa.x, p.y - aa.y);
     if(dist < POINT_RADIUS){
@@ -760,6 +792,29 @@ function handleAAForPlane(p, fp){
       if(aa.hp<=0){ aaUnits = aaUnits.filter(a=>a!==aa); }
       if(p._aaTimes && p._aaTimes[aa.id]) delete p._aaTimes[aa.id];
       continue;
+
+    const dist = Math.hypot(p.x - aa.x, p.y - aa.y);
+    if(dist < POINT_RADIUS){
+      aa.hp--;
+
+      if(aa.hp<=0){ aaUnits = aaUnits.filter(a=>a!==aa); }
+      if(p._aaTimes && p._aaTimes[aa.id]) delete p._aaTimes[aa.id];
+      continue;
+
+
+      if(aa.hp<=0){ aaUnits = aaUnits.filter(a=>a!==aa); }
+      if(p._aaTimes && p._aaTimes[aa.id]) delete p._aaTimes[aa.id];
+      continue;
+
+      p.isAlive=false; p.burning=true;
+      p.collisionX=p.x; p.collisionY=p.y;
+      flyingPoints = flyingPoints.filter(x=>x!==fp);
+      if(aa.hp<=0){ aaUnits = aaUnits.filter(a=>a!==aa); }
+      checkVictory();
+      return true;
+
+
+
     }
     if(dist <= aa.radius){
       if(!p._aaTimes) p._aaTimes={};
@@ -772,12 +827,14 @@ function handleAAForPlane(p, fp){
           p.collisionX=p.x; p.collisionY=p.y;
           flyingPoints = flyingPoints.filter(x=>x!==fp);
           checkVictory();
+
           if(!isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
             turnIndex = (turnIndex + 1) % turnColors.length;
             if(gameMode === "computer" && turnColors[turnIndex] === "blue"){
               aiMoveScheduled = false;
             }
           }
+
           return true;
         }
       }
