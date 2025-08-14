@@ -106,6 +106,7 @@ let flyingPoints = [];
 let buildings    = [];
 
 let aaUnits     = [];
+let aaPlacementPreview = null;
 
 
 let phase = "MENU"; // MENU | AA_PLACEMENT | ROUND_START | TURN | ROUND_END
@@ -394,6 +395,21 @@ function onCanvasPointerDown(e){
 
 
 gameCanvas.addEventListener("pointerdown", onCanvasPointerDown);
+gameCanvas.addEventListener("pointermove", onCanvasPointerMove);
+gameCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; });
+
+function onCanvasPointerMove(e){
+  if(phase !== 'AA_PLACEMENT') return;
+
+  const coords = getEventCoords(e);
+  const rect = gameCanvas.getBoundingClientRect();
+  const scaleX = gameCanvas.width / rect.width;
+  const scaleY = gameCanvas.height / rect.height;
+  const x = (coords.clientX - rect.left) * scaleX;
+  const y = (coords.clientY - rect.top) * scaleY;
+
+  aaPlacementPreview = {x, y};
+}
 
 function isValidAAPlacement(x,y){
   // Allow AA placement anywhere within the player's half of the field.
@@ -425,6 +441,44 @@ function placeAA({owner,x,y}){
     beamWidthDeg: AA_DEFAULTS.beamWidthDeg,
     dwellTimeMs: AA_DEFAULTS.dwellTimeMs
   });
+}
+
+function drawAAPlacementZone(){
+  if(phase !== 'AA_PLACEMENT') return;
+
+  const half = gameCanvas.height / 2;
+  gameCtx.save();
+  const color = currentPlacer === 'green'
+    ? 'rgba(0,255,0,0.05)'
+    : 'rgba(0,0,255,0.05)';
+
+  gameCtx.fillStyle = color;
+  if(currentPlacer === 'green'){
+    gameCtx.fillRect(0, half, gameCanvas.width, half);
+  } else {
+    gameCtx.fillRect(0, 0, gameCanvas.width, half);
+  }
+  gameCtx.restore();
+}
+
+function drawAAPreview(){
+  if(phase !== 'AA_PLACEMENT' || !aaPlacementPreview) return;
+  const {x, y} = aaPlacementPreview;
+  if(!isValidAAPlacement(x, y)) return;
+
+  gameCtx.save();
+  gameCtx.globalAlpha = 0.3;
+  gameCtx.strokeStyle = currentPlacer;
+  gameCtx.beginPath();
+  gameCtx.arc(x, y, AA_DEFAULTS.radius, 0, Math.PI*2);
+  gameCtx.stroke();
+
+  gameCtx.globalAlpha = 0.4;
+  gameCtx.fillStyle = currentPlacer;
+  gameCtx.beginPath();
+  gameCtx.arc(x, y, 6, 0, Math.PI*2);
+  gameCtx.fill();
+  gameCtx.restore();
 }
 
 
@@ -882,14 +936,16 @@ function handleAAForPlane(p, fp){
       if(!flyingPoints.some(fp => fp.plane === p)){
         handleAAForPlane(p, null);
       }
-    }
+  }
   }
 
   // здания
+  drawAAPlacementZone();
   drawBuildings();
 
   // установки ПВО
   drawAAUnits();
+  drawAAPreview();
 
   // самолёты + их трейлы
   drawPlanesAndTrajectories();
