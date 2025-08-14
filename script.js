@@ -396,18 +396,19 @@ function onCanvasPointerDown(e){
 gameCanvas.addEventListener("pointerdown", onCanvasPointerDown);
 
 function isValidAAPlacement(x,y){
-  const radius = AA_DEFAULTS.radius;
-  if(x < AA_MIN_DIST_FROM_EDGES + radius || x > gameCanvas.width - AA_MIN_DIST_FROM_EDGES - radius) return false;
-  if(y < AA_MIN_DIST_FROM_EDGES + radius || y > gameCanvas.height - AA_MIN_DIST_FROM_EDGES - radius) return false;
-  if(currentPlacer === 'green' && y < 40 + AA_MIN_DIST_FROM_OPPONENT_BASE + radius) return false;
-  if(currentPlacer === 'blue' && y > gameCanvas.height - 40 - AA_MIN_DIST_FROM_OPPONENT_BASE - radius) return false;
-  for(const b of buildings){
-    if(isPointInsideBuilding(x,y,b)) return false;
+  // Allow AA placement anywhere within the player's half of the field.
+  // The center may touch field edges, overlap planes or buildings, and its
+  // radius may extend beyond the canvas boundaries.
+
+  const half = gameCanvas.height / 2;
+
+  if (currentPlacer === 'green') {
+    return y >= half && y <= gameCanvas.height;
   }
-  for(const aa of aaUnits){
-    if(Math.hypot(aa.x - x, aa.y - y) < aa.radius + radius) return false;
+  if (currentPlacer === 'blue') {
+    return y >= 0 && y <= half;
   }
-  return true;
+  return false;
 }
 
 function placeAA({owner,x,y}){
