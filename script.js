@@ -30,6 +30,7 @@ const buildingsMinusBtn   = document.getElementById("buildingsMinus");
 const buildingsPlusBtn    = document.getElementById("buildingsPlus");
 const amplitudeMinusBtn   = document.getElementById("amplitudeMinus");
 const amplitudePlusBtn    = document.getElementById("amplitudePlus");
+const addAAToggle         = document.getElementById("addAAToggle");
 
 const endGameDiv  = document.getElementById("endGameButtons");
 const yesBtn      = document.getElementById("yesButton");
@@ -171,11 +172,14 @@ function resetGame(){
   flyingPoints= [];
   buildings = [];
   buildingsCount = 0;
+  aaUnits = [];
 
   hasShotThisRound = false;
 
   selectedMode = null;
   gameMode = null;
+  phase = 'MENU';
+  currentPlacer = null;
 
   // UI reset
   hotSeatBtn.classList.remove("selected");
@@ -271,6 +275,12 @@ playBtn.addEventListener("click",()=>{
   aimCanvas.style.display = "block";
 
   stopMenuAnimation();
+  if (settings.addAA) {
+    phase = 'AA_PLACEMENT';
+    currentPlacer = 'green';
+  } else {
+    phase = 'TURN';
+  }
   startGameLoop();
 });
 
@@ -809,9 +819,9 @@ function handleAAForPlane(p, fp){
       }
     }
   }
-  return false;
+    return false;
+  }
 }
-
 
 /* ======= GAME LOOP ======= */
 function gameDraw(){
@@ -1457,6 +1467,7 @@ function startNewRound(){
   globalFrame=0;
   flyingPoints=[];
   hasShotThisRound=false;
+  aaUnits = [];
 
   aiMoveScheduled = false;
 
@@ -1476,7 +1487,12 @@ function startNewRound(){
 
   initPoints(); // ориентации на базе
   renderScoreboard();
-
+  if (settings.addAA) {
+    phase = 'AA_PLACEMENT';
+    currentPlacer = 'green';
+  } else {
+    phase = 'TURN';
+  }
   if(animationFrameId===null) startGameLoop();
 }
 
