@@ -50,6 +50,7 @@ document.addEventListener('dblclick', (e) => {
 /* ======= CONFIG ======= */
 const CELL_SIZE            = 20;     // px
 const POINT_RADIUS         = 15;     // px (увеличено для мобильных)
+const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit AA center
 const HANDLE_SIZE          = 10;     // px
 const BOUNCE_FRAMES        = 68;
 const MAX_DRAG_DISTANCE    = 100;    // px
@@ -73,7 +74,8 @@ const AA_DEFAULTS = {
   hp: 1,
   cooldownMs: 1000,
   rotationDegPerSec: 30, // slow radar sweep
-  beamWidthDeg: 4 // width of sweeping beam
+  beamWidthDeg: 4, // width of sweeping beam
+  dwellTimeMs: 0 // time beam must stay on target before firing
 };
 const AA_MIN_DIST_FROM_OPPONENT_BASE = 120;
 const AA_MIN_DIST_FROM_EDGES = 40;
@@ -419,7 +421,8 @@ function placeAA({owner,x,y}){
     lastTriggerAt: null,
     sweepAngleDeg: 0,
     rotationDegPerSec: AA_DEFAULTS.rotationDegPerSec,
-    beamWidthDeg: AA_DEFAULTS.beamWidthDeg
+    beamWidthDeg: AA_DEFAULTS.beamWidthDeg,
+    dwellTimeMs: AA_DEFAULTS.dwellTimeMs
   });
 }
 
@@ -757,43 +760,44 @@ function handleAAForPlane(p, fp){
   for(const aa of aaUnits){
     if(aa.owner === p.color) continue; // no friendly fire
     const dist = Math.hypot(p.x - aa.x, p.y - aa.y);
-    if(dist < POINT_RADIUS){
+    if(dist < AA_HIT_RADIUS){
       aa.hp--;
       if(aa.hp<=0){ aaUnits = aaUnits.filter(a=>a!==aa); }
       continue;
     }
     if(dist <= aa.radius){
-
       const angleToPlane = (Math.atan2(p.y - aa.y, p.x - aa.x) * 180/Math.PI + 360) % 360;
       if(angleDiffDeg(angleToPlane, aa.sweepAngleDeg) <= aa.beamWidthDeg/2){
-
-      if(!p._aaTimes) p._aaTimes={};
-      if(!p._aaTimes[aa.id]) p._aaTimes[aa.id]=now;
-      else if(now - p._aaTimes[aa.id] > aa.dwellTimeMs){
-
-        if(!aa.lastTriggerAt || now - aa.lastTriggerAt > aa.cooldownMs){
-          aa.lastTriggerAt = now;
-          p.isAlive=false; p.burning=true;
-          p.collisionX=p.x; p.collisionY=p.y;
-          flyingPoints = flyingPoints.filter(x=>x!==fp);
-          checkVictory();
-          if(!isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
-            turnIndex = (turnIndex + 1) % turnColors.length;
-            if(gameMode === "computer" && turnColors[turnIndex] === "blue"){
-              aiMoveScheduled = false;
+        if(!p._aaTimes) p._aaTimes={};
+        if(!p._aaTimes[aa.id]){
+          p._aaTimes[aa.id]=now;
+        } else if(now - p._aaTimes[aa.id] > aa.dwellTimeMs){
+          if(!aa.lastTriggerAt || now - aa.lastTriggerAt > aa.cooldownMs){
+            aa.lastTriggerAt = now;
+            p.isAlive=false; p.burning=true;
+            p.collisionX=p.x; p.collisionY=p.y;
+            if(fp) flyingPoints = flyingPoints.filter(x=>x!==fp);
+            checkVictory();
+            if(!isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
+              turnIndex = (turnIndex + 1) % turnColors.length;
+              if(gameMode === "computer" && turnColors[turnIndex] === "blue"){
+                aiMoveScheduled = false;
+              }
             }
+            return true;
           }
-          return true;
         }
+      } else if(p._aaTimes && p._aaTimes[aa.id]){
+        delete p._aaTimes[aa.id];
       }
+    } else if(p._aaTimes && p._aaTimes[aa.id]){
+      delete p._aaTimes[aa.id];
     }
   }
-    return false;
-  }
+  return false;
 }
-
-/* ======= GAME LOOP ======= */
-function gameDraw(){
+  /* ======= GAME LOOP ======= */
+  function gameDraw(){
   globalFrame++;
 
   // фон
@@ -854,6 +858,7 @@ function gameDraw(){
 
       // проверка попаданий по врагам
       checkPlaneHits(p, fp);
+      handleAAForPlane(p, fp);
 
       fp.framesLeft--;
       if(fp.framesLeft<=0){
@@ -865,6 +870,16 @@ function gameDraw(){
             aiMoveScheduled = false; // разрешаем планирование следующего хода ИИ
           }
         }
+      }
+    }
+  }
+
+  // AA against stationary planes
+  if(!isGameOver){
+    for(const p of points){
+      if(!p.isAlive || p.burning) continue;
+      if(!flyingPoints.some(fp => fp.plane === p)){
+        handleAAForPlane(p, null);
       }
     }
   }
