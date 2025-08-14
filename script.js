@@ -65,6 +65,23 @@ const MIN_AMPLITUDE        = 0;
 const MAX_AMPLITUDE        = 30;     // UI показывает как *2°
 const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 
+
+// AA defaults and placement limits
+const AA_DEFAULTS = {
+
+  radius: 60, // detection radius
+
+  radius: 60, // 3x smaller than original 180
+
+  hp: 1,
+  cooldownMs: 1000,
+  rotationDegPerSec: 30, // slow radar sweep
+  beamWidthDeg: 4 // width of sweeping beam
+};
+const AA_MIN_DIST_FROM_OPPONENT_BASE = 120;
+const AA_MIN_DIST_FROM_EDGES = 40;
+
+
 /* ======= STATE ======= */
 let flightRangeCells = 10;     // значение «в клетках» для меню/физики
 let buildingsCount   = 0;
@@ -88,6 +105,18 @@ let turnIndex    = lastFirstTurn;
 let points       = [];
 let flyingPoints = [];
 let buildings    = [];
+
+let aaUnits     = [];
+
+
+let phase = "MENU"; // MENU | AA_PLACEMENT | ROUND_START | TURN | ROUND_END
+
+let currentPlacer = null; // 'green' | 'blue'
+
+let settings = {
+  addAA: localStorage.getItem('settings.addAA') === 'true'
+};
+
 
 let greenVictories = 0;
 let blueVictories  = 0;
@@ -327,6 +356,94 @@ function handleStart(e) {
 
 gameCanvas.addEventListener("mousedown", handleStart);
 gameCanvas.addEventListener("touchstart", handleStart);
+
+function handleAAPlacement(e){
+  e.preventDefault();
+  if(phase !== 'AA_PLACEMENT') return;
+
+  const coords = getEventCoords(e);
+  const rect = gameCanvas.getBoundingClientRect();
+  const scaleX = gameCanvas.width / rect.width;
+  const scaleY = gameCanvas.height / rect.height;
+  const x = (coords.clientX - rect.left) * scaleX;
+  const y = (coords.clientY - rect.top) * scaleY;
+
+  if(!isValidAAPlacement(x,y)) return;
+
+  placeAA({owner: currentPlacer, x, y});
+
+  if(currentPlacer === 'green'){
+    currentPlacer = 'blue';
+  } else {
+
+    phase = 'ROUND_START';
+
+    phase = 'TURN';
+
+  }
+}
+
+function onCanvasPointerDown(e){
+  if(phase === 'AA_PLACEMENT'){
+    handleAAPlacement(e);
+  } else {
+    handleStart(e);
+  }
+}
+
+
+gameCanvas.addEventListener("pointerdown", onCanvasPointerDown);
+gameCanvas.addEventListener("mousedown", onCanvasPointerDown);
+gameCanvas.addEventListener("touchstart", onCanvasPointerDown);
+
+function isValidAAPlacement(x,y){
+
+
+  const radius = AA_DEFAULTS.radius;
+  if(x < AA_MIN_DIST_FROM_EDGES + radius || x > gameCanvas.width - AA_MIN_DIST_FROM_EDGES - radius) return false;
+  if(y < AA_MIN_DIST_FROM_EDGES + radius || y > gameCanvas.height - AA_MIN_DIST_FROM_EDGES - radius) return false;
+  if(currentPlacer === 'green' && y - radius < 40 + AA_MIN_DIST_FROM_OPPONENT_BASE) return false;
+  if(currentPlacer === 'blue' && y + radius > gameCanvas.height - 40 - AA_MIN_DIST_FROM_OPPONENT_BASE) return false;
+
+
+  if(x < AA_MIN_DIST_FROM_EDGES || x > gameCanvas.width - AA_MIN_DIST_FROM_EDGES) return false;
+  if(y < AA_MIN_DIST_FROM_EDGES || y > gameCanvas.height - AA_MIN_DIST_FROM_EDGES) return false;
+  if(currentPlacer === 'green' && y < 40 + AA_MIN_DIST_FROM_OPPONENT_BASE) return false;
+  if(currentPlacer === 'blue' && y > gameCanvas.height - 40 - AA_MIN_DIST_FROM_OPPONENT_BASE) return false;
+
+
+  for(const b of buildings){
+    if(isPointInsideBuilding(x,y,b)) return false;
+  }
+  for(const aa of aaUnits){
+
+    if(Math.hypot(aa.x - x, aa.y - y) < aa.radius + radius) return false;
+
+
+    if(Math.hypot(aa.x - x, aa.y - y) < aa.radius + radius) return false;
+
+    if(Math.hypot(aa.x - x, aa.y - y) < aa.radius) return false;
+
+
+  }
+  return true;
+}
+
+function placeAA({owner,x,y}){
+  aaUnits.push({
+    id: 'aa'+Date.now()+Math.random().toString(16).slice(2),
+    owner,
+    x, y,
+    radius: AA_DEFAULTS.radius,
+    hp: AA_DEFAULTS.hp,
+    cooldownMs: AA_DEFAULTS.cooldownMs,
+    lastTriggerAt: null,
+    sweepAngleDeg: 0,
+    rotationDegPerSec: AA_DEFAULTS.rotationDegPerSec,
+    beamWidthDeg: AA_DEFAULTS.beamWidthDeg
+  });
+}
+
 
 function onHandleMove(e){
   if(!handleCircle.active)return;
@@ -650,6 +767,52 @@ function planeBuildingCollision(fp, b){
 
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 
+
+function angleDiffDeg(a, b){
+  let diff = ((a - b + 540) % 360) - 180;
+  return Math.abs(diff);
+}
+
+function handleAAForPlane(p, fp){
+  const now = performance.now();
+  for(const aa of aaUnits){
+    if(aa.owner === p.color) continue; // no friendly fire
+    const dist = Math.hypot(p.x - aa.x, p.y - aa.y);
+    if(dist < POINT_RADIUS){
+      aa.hp--;
+      if(aa.hp<=0){ aaUnits = aaUnits.filter(a=>a!==aa); }
+      continue;
+    }
+    if(dist <= aa.radius){
+
+      const angleToPlane = (Math.atan2(p.y - aa.y, p.x - aa.x) * 180/Math.PI + 360) % 360;
+      if(angleDiffDeg(angleToPlane, aa.sweepAngleDeg) <= aa.beamWidthDeg/2){
+
+      if(!p._aaTimes) p._aaTimes={};
+      if(!p._aaTimes[aa.id]) p._aaTimes[aa.id]=now;
+      else if(now - p._aaTimes[aa.id] > aa.dwellTimeMs){
+
+        if(!aa.lastTriggerAt || now - aa.lastTriggerAt > aa.cooldownMs){
+          aa.lastTriggerAt = now;
+          p.isAlive=false; p.burning=true;
+          p.collisionX=p.x; p.collisionY=p.y;
+          flyingPoints = flyingPoints.filter(x=>x!==fp);
+          checkVictory();
+          if(!isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
+            turnIndex = (turnIndex + 1) % turnColors.length;
+            if(gameMode === "computer" && turnColors[turnIndex] === "blue"){
+              aiMoveScheduled = false;
+            }
+          }
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+
 /* ======= GAME LOOP ======= */
 function gameDraw(){
   globalFrame++;
@@ -668,6 +831,11 @@ function gameDraw(){
     aiMoveScheduled = true;
     setTimeout(() => { doComputerMove(); }, 300);
   }
+
+  for(const aa of aaUnits){
+    aa.sweepAngleDeg = (aa.sweepAngleDeg + aa.rotationDegPerSec/60) % 360;
+  }
+
 
   // полёты
   if(!isGameOver && flyingPoints.length){
@@ -936,6 +1104,37 @@ function drawBuildings(){
     gameCtx.restore();
   }
 }
+
+
+function drawAAUnits(){
+  for(const aa of aaUnits){
+    gameCtx.save();
+    gameCtx.beginPath();
+    gameCtx.arc(aa.x, aa.y, aa.radius, 0, Math.PI*2);
+    gameCtx.strokeStyle = 'rgba(0,0,0,0.2)';
+    gameCtx.lineWidth = 1;
+    gameCtx.stroke();
+
+    // radar sweep line
+    const ang = aa.sweepAngleDeg * Math.PI/180;
+    const endX = aa.x + Math.cos(ang) * aa.radius;
+    const endY = aa.y + Math.sin(ang) * aa.radius;
+    gameCtx.strokeStyle = aa.owner;
+    gameCtx.lineWidth = 2;
+    gameCtx.beginPath();
+    gameCtx.moveTo(aa.x, aa.y);
+    gameCtx.lineTo(endX, endY);
+    gameCtx.stroke();
+
+    // AA center
+    gameCtx.beginPath();
+    gameCtx.fillStyle = aa.owner;
+    gameCtx.arc(aa.x, aa.y, 6, 0, Math.PI*2);
+    gameCtx.fill();
+    gameCtx.restore();
+  }
+}
+
 function drawBuildingGrid(ctx, width, height, cellSize, gridColor){
   ctx.strokeStyle = gridColor; ctx.lineWidth = 0.5;
   for(let x=-width/2; x<=width/2; x+=cellSize){
@@ -1067,6 +1266,19 @@ function stopButtonInterval(button){
   clearTimeout(buttonIntervals[button.id]);
   delete buttonIntervals[button.id];
 }
+
+
+// Add AA toggle
+
+if (addAAToggle) {
+  addAAToggle.checked = settings.addAA;
+  addAAToggle.addEventListener('change', (e)=>{
+    settings.addAA = e.target.checked;
+    localStorage.setItem('settings.addAA', settings.addAA);
+  });
+}
+
+
 
 /* Flight Range */
 flightRangeMinusBtn.addEventListener("pointerdown", (event)=>{
