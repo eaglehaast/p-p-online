@@ -30,6 +30,7 @@ const buildingsMinusBtn   = document.getElementById("buildingsMinus");
 const buildingsPlusBtn    = document.getElementById("buildingsPlus");
 const amplitudeMinusBtn   = document.getElementById("amplitudeMinus");
 const amplitudePlusBtn    = document.getElementById("amplitudePlus");
+const addAAToggle         = document.getElementById("addAAToggle");
 
 const endGameDiv  = document.getElementById("endGameButtons");
 const yesBtn      = document.getElementById("yesButton");
@@ -809,9 +810,9 @@ function handleAAForPlane(p, fp){
       }
     }
   }
-  return false;
+    return false;
+  }
 }
-
 
 /* ======= GAME LOOP ======= */
 function gameDraw(){
