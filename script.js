@@ -68,22 +68,7 @@ const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 
 // AA defaults and placement limits
 const AA_DEFAULTS = {
-
-  radius: 180,
-
-
   radius: 60, // 3x smaller than original 180
-
-
-  radius: 60, // 3x smaller than original 180
-
-
-  radius: 60,
-
-  radius: 180,
-
-
-
   hp: 1,
   armingDelayMs: 300,
   dwellTimeMs: 250,
@@ -122,8 +107,6 @@ let aaUnits     = [];
 
 
 let phase = "MENU"; // MENU | AA_PLACEMENT | ROUND_START | TURN | ROUND_END
-
-let phase = "MENU"; // MENU | AA_PLACEMENT | TURN | ROUND_END
 
 let currentPlacer = null; // 'green' | 'blue'
 
@@ -421,9 +404,6 @@ function onCanvasPointerDown(e){
 
 
 gameCanvas.addEventListener("pointerdown", onCanvasPointerDown);
-
-function isValidAAPlacement(x,y){
-
 gameCanvas.addEventListener("mousedown", onCanvasPointerDown);
 gameCanvas.addEventListener("touchstart", onCanvasPointerDown);
 
@@ -818,7 +798,6 @@ function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 function handleAAForPlane(p, fp){
   const now = performance.now();
   for(const aa of aaUnits){
-
     if(aa.owner === p.color) continue; // no friendly fire
     const dist = Math.hypot(p.x - aa.x, p.y - aa.y);
     if(dist < POINT_RADIUS){
@@ -826,51 +805,23 @@ function handleAAForPlane(p, fp){
       if(aa.hp<=0){ aaUnits = aaUnits.filter(a=>a!==aa); }
       if(p._aaTimes && p._aaTimes[aa.id]) delete p._aaTimes[aa.id];
       continue;
-
-
-    const dist = Math.hypot(p.x - aa.x, p.y - aa.y);
-    if(dist < POINT_RADIUS){
-      aa.hp--;
-
-      if(aa.hp<=0){ aaUnits = aaUnits.filter(a=>a!==aa); }
-      if(p._aaTimes && p._aaTimes[aa.id]) delete p._aaTimes[aa.id];
-      continue;
-
-
-      if(aa.hp<=0){ aaUnits = aaUnits.filter(a=>a!==aa); }
-      if(p._aaTimes && p._aaTimes[aa.id]) delete p._aaTimes[aa.id];
-      continue;
-
-      p.isAlive=false; p.burning=true;
-      p.collisionX=p.x; p.collisionY=p.y;
-      flyingPoints = flyingPoints.filter(x=>x!==fp);
-      if(aa.hp<=0){ aaUnits = aaUnits.filter(a=>a!==aa); }
-      checkVictory();
-      return true;
-
-
-
-
     }
     if(dist <= aa.radius){
       if(!p._aaTimes) p._aaTimes={};
       if(!p._aaTimes[aa.id]) p._aaTimes[aa.id]=now;
-      const enterTime = p._aaTimes[aa.id];
-      if(now - enterTime > aa.armingDelayMs + aa.dwellTimeMs){
+      else if(now - p._aaTimes[aa.id] > aa.dwellTimeMs){
         if(!aa.lastTriggerAt || now - aa.lastTriggerAt > aa.cooldownMs){
           aa.lastTriggerAt = now;
           p.isAlive=false; p.burning=true;
           p.collisionX=p.x; p.collisionY=p.y;
           flyingPoints = flyingPoints.filter(x=>x!==fp);
           checkVictory();
-
           if(!isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
             turnIndex = (turnIndex + 1) % turnColors.length;
             if(gameMode === "computer" && turnColors[turnIndex] === "blue"){
               aiMoveScheduled = false;
             }
           }
-
           return true;
         }
       }
@@ -1354,12 +1305,6 @@ if (addAAToggle) {
     localStorage.setItem('settings.addAA', settings.addAA);
   });
 }
-
-addAAToggle.checked = settings.addAA;
-addAAToggle.addEventListener('change', (e)=>{
-  settings.addAA = e.target.checked;
-  localStorage.setItem('settings.addAA', settings.addAA);
-});
 
 
 /* Flight Range */
