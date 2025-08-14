@@ -55,7 +55,9 @@ const HANDLE_SIZE          = 10;     // px
 const BOUNCE_FRAMES        = 68;
 const MAX_DRAG_DISTANCE    = 100;    // px
 const ATTACK_RANGE_PX      = 300;    // px
-const MAX_TRAIL_SEGMENTS   = 120;
+// Используем бесконечное количество сегментов,
+// чтобы следы самолётов сохранялись до конца раунда.
+const MAX_TRAIL_SEGMENTS   = Infinity;
 const BUILDING_BUFFER      = CELL_SIZE / 2;
 const MAX_BUILDINGS_GLOBAL = 100;
 const PLANES_PER_SIDE      = 4;      // количество самолётов у каждой команды
