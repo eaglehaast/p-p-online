@@ -172,11 +172,14 @@ function resetGame(){
   flyingPoints= [];
   buildings = [];
   buildingsCount = 0;
+  aaUnits = [];
 
   hasShotThisRound = false;
 
   selectedMode = null;
   gameMode = null;
+  phase = 'MENU';
+  currentPlacer = null;
 
   // UI reset
   hotSeatBtn.classList.remove("selected");
@@ -272,6 +275,12 @@ playBtn.addEventListener("click",()=>{
   aimCanvas.style.display = "block";
 
   stopMenuAnimation();
+  if (settings.addAA) {
+    phase = 'AA_PLACEMENT';
+    currentPlacer = 'green';
+  } else {
+    phase = 'TURN';
+  }
   startGameLoop();
 });
 
@@ -1458,6 +1467,7 @@ function startNewRound(){
   globalFrame=0;
   flyingPoints=[];
   hasShotThisRound=false;
+  aaUnits = [];
 
   aiMoveScheduled = false;
 
@@ -1477,7 +1487,12 @@ function startNewRound(){
 
   initPoints(); // ориентации на базе
   renderScoreboard();
-
+  if (settings.addAA) {
+    phase = 'AA_PLACEMENT';
+    currentPlacer = 'green';
+  } else {
+    phase = 'TURN';
+  }
   if(animationFrameId===null) startGameLoop();
 }
 
