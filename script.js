@@ -1221,7 +1221,15 @@ function drawPlayerPanel(ctx, color, victories, isTurn){
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   let statusText;
-  if (isTurn) {
+  if (phase === 'AA_PLACEMENT') {
+    if (currentPlacer === color) {
+      statusText = color === 'green' ? 'Грин устанавливает ПВО' : 'Блю устанавливает ПВО';
+      ctx.fillStyle = color;
+    } else {
+      statusText = 'Противник устанавливает ПВО';
+      ctx.fillStyle = '#888';
+    }
+  } else if (isTurn) {
     statusText = "Your Turn";
     ctx.fillStyle = color;
   } else {
