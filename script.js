@@ -68,29 +68,11 @@ const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 
 // AA defaults and placement limits
 const AA_DEFAULTS = {
-
-  radius: 180,
-
-
-  radius: 60, // 3x smaller than original 180
-
-
-  radius: 60, // 3x smaller than original 180
-
-
-  radius: 60,
-
-  radius: 180,
-
-
-
+  radius: 60, // detection radius
   hp: 1,
-  armingDelayMs: 300,
-  dwellTimeMs: 250,
   cooldownMs: 1000,
-  sectorEnabled: false,
-  sectorFovDeg: 90,
-  rotationDegPerSec: 60
+  rotationDegPerSec: 30, // slow radar sweep
+  beamWidthDeg: 4 // width of sweeping beam
 };
 const AA_MIN_DIST_FROM_OPPONENT_BASE = 120;
 const AA_MIN_DIST_FROM_EDGES = 40;
@@ -122,8 +104,6 @@ let aaUnits     = [];
 
 
 let phase = "MENU"; // MENU | AA_PLACEMENT | ROUND_START | TURN | ROUND_END
-
-let phase = "MENU"; // MENU | AA_PLACEMENT | TURN | ROUND_END
 
 let currentPlacer = null; // 'green' | 'blue'
 
@@ -421,9 +401,6 @@ function onCanvasPointerDown(e){
 
 
 gameCanvas.addEventListener("pointerdown", onCanvasPointerDown);
-
-function isValidAAPlacement(x,y){
-
 gameCanvas.addEventListener("mousedown", onCanvasPointerDown);
 gameCanvas.addEventListener("touchstart", onCanvasPointerDown);
 
@@ -467,29 +444,11 @@ function placeAA({owner,x,y}){
     x, y,
     radius: AA_DEFAULTS.radius,
     hp: AA_DEFAULTS.hp,
-
-    armingDelayMs: AA_DEFAULTS.armingDelayMs,
-    dwellTimeMs: AA_DEFAULTS.dwellTimeMs,
     cooldownMs: AA_DEFAULTS.cooldownMs,
-
-
-    armingDelayMs: AA_DEFAULTS.armingDelayMs,
-    dwellTimeMs: AA_DEFAULTS.dwellTimeMs,
-    cooldownMs: AA_DEFAULTS.cooldownMs,
-
-
-    armingDelayMs: AA_DEFAULTS.armingDelayMs,
-    dwellTimeMs: AA_DEFAULTS.dwellTimeMs,
-    cooldownMs: AA_DEFAULTS.cooldownMs,
-
-
-
-
     lastTriggerAt: null,
-    sectorEnabled: AA_DEFAULTS.sectorEnabled,
-    sectorAngleDeg: 0,
-    sectorFovDeg: AA_DEFAULTS.sectorFovDeg,
-    rotationDegPerSec: AA_DEFAULTS.rotationDegPerSec
+    sweepAngleDeg: 0,
+    rotationDegPerSec: AA_DEFAULTS.rotationDegPerSec,
+    beamWidthDeg: AA_DEFAULTS.beamWidthDeg
   });
 }
 
@@ -815,67 +774,39 @@ function planeBuildingCollision(fp, b){
 
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 
+function angleDiffDeg(a, b){
+  let diff = ((a - b + 540) % 360) - 180;
+  return Math.abs(diff);
+}
+
 function handleAAForPlane(p, fp){
   const now = performance.now();
   for(const aa of aaUnits){
-
     if(aa.owner === p.color) continue; // no friendly fire
     const dist = Math.hypot(p.x - aa.x, p.y - aa.y);
     if(dist < POINT_RADIUS){
       aa.hp--;
       if(aa.hp<=0){ aaUnits = aaUnits.filter(a=>a!==aa); }
-      if(p._aaTimes && p._aaTimes[aa.id]) delete p._aaTimes[aa.id];
       continue;
-
-
-    const dist = Math.hypot(p.x - aa.x, p.y - aa.y);
-    if(dist < POINT_RADIUS){
-      aa.hp--;
-
-      if(aa.hp<=0){ aaUnits = aaUnits.filter(a=>a!==aa); }
-      if(p._aaTimes && p._aaTimes[aa.id]) delete p._aaTimes[aa.id];
-      continue;
-
-
-      if(aa.hp<=0){ aaUnits = aaUnits.filter(a=>a!==aa); }
-      if(p._aaTimes && p._aaTimes[aa.id]) delete p._aaTimes[aa.id];
-      continue;
-
-      p.isAlive=false; p.burning=true;
-      p.collisionX=p.x; p.collisionY=p.y;
-      flyingPoints = flyingPoints.filter(x=>x!==fp);
-      if(aa.hp<=0){ aaUnits = aaUnits.filter(a=>a!==aa); }
-      checkVictory();
-      return true;
-
-
-
-
     }
     if(dist <= aa.radius){
-      if(!p._aaTimes) p._aaTimes={};
-      if(!p._aaTimes[aa.id]) p._aaTimes[aa.id]=now;
-      const enterTime = p._aaTimes[aa.id];
-      if(now - enterTime > aa.armingDelayMs + aa.dwellTimeMs){
+      const angleToPlane = (Math.atan2(p.y - aa.y, p.x - aa.x) * 180/Math.PI + 360) % 360;
+      if(angleDiffDeg(angleToPlane, aa.sweepAngleDeg) <= aa.beamWidthDeg/2){
         if(!aa.lastTriggerAt || now - aa.lastTriggerAt > aa.cooldownMs){
           aa.lastTriggerAt = now;
           p.isAlive=false; p.burning=true;
           p.collisionX=p.x; p.collisionY=p.y;
           flyingPoints = flyingPoints.filter(x=>x!==fp);
           checkVictory();
-
           if(!isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
             turnIndex = (turnIndex + 1) % turnColors.length;
             if(gameMode === "computer" && turnColors[turnIndex] === "blue"){
               aiMoveScheduled = false;
             }
           }
-
           return true;
         }
       }
-    } else {
-      if(p._aaTimes && p._aaTimes[aa.id]) delete p._aaTimes[aa.id];
     }
   }
   return false;
@@ -922,7 +853,7 @@ function gameDraw(){
   }
 
   for(const aa of aaUnits){
-    aa.sectorAngleDeg = (aa.sectorAngleDeg + aa.rotationDegPerSec/60) % 360;
+    aa.sweepAngleDeg = (aa.sweepAngleDeg + aa.rotationDegPerSec/60) % 360;
   }
 
   // полёты
@@ -1206,6 +1137,19 @@ function drawAAUnits(){
     gameCtx.strokeStyle = 'rgba(0,0,0,0.2)';
     gameCtx.lineWidth = 1;
     gameCtx.stroke();
+
+    // radar sweep line
+    const ang = aa.sweepAngleDeg * Math.PI/180;
+    const endX = aa.x + Math.cos(ang) * aa.radius;
+    const endY = aa.y + Math.sin(ang) * aa.radius;
+    gameCtx.strokeStyle = aa.owner;
+    gameCtx.lineWidth = 2;
+    gameCtx.beginPath();
+    gameCtx.moveTo(aa.x, aa.y);
+    gameCtx.lineTo(endX, endY);
+    gameCtx.stroke();
+
+    // AA center
     gameCtx.beginPath();
     gameCtx.fillStyle = aa.owner;
     gameCtx.arc(aa.x, aa.y, 6, 0, Math.PI*2);
@@ -1354,12 +1298,6 @@ if (addAAToggle) {
     localStorage.setItem('settings.addAA', settings.addAA);
   });
 }
-
-addAAToggle.checked = settings.addAA;
-addAAToggle.addEventListener('change', (e)=>{
-  settings.addAA = e.target.checked;
-  localStorage.setItem('settings.addAA', settings.addAA);
-});
 
 
 /* Flight Range */
