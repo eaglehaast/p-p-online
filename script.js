@@ -69,11 +69,7 @@ const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 
 // AA defaults and placement limits
 const AA_DEFAULTS = {
-
-  radius: 60, // detection radius
-
-  radius: 60, // 3x smaller than original 180
-
+  radius: 60, // detection radius, 3x smaller than original 180
   hp: 1,
   cooldownMs: 1000,
   rotationDegPerSec: 30, // slow radar sweep
@@ -364,9 +360,6 @@ function handleStart(e) {
   window.addEventListener("touchend", onHandleUp);
 }
 
-gameCanvas.addEventListener("mousedown", handleStart);
-gameCanvas.addEventListener("touchstart", handleStart);
-
 function handleAAPlacement(e){
   e.preventDefault();
   if(phase !== 'AA_PLACEMENT') return;
@@ -385,11 +378,7 @@ function handleAAPlacement(e){
   if(currentPlacer === 'green'){
     currentPlacer = 'blue';
   } else {
-
-    phase = 'ROUND_START';
-
     phase = 'TURN';
-
   }
 }
 
@@ -403,38 +392,18 @@ function onCanvasPointerDown(e){
 
 
 gameCanvas.addEventListener("pointerdown", onCanvasPointerDown);
-gameCanvas.addEventListener("mousedown", onCanvasPointerDown);
-gameCanvas.addEventListener("touchstart", onCanvasPointerDown);
 
 function isValidAAPlacement(x,y){
-
-
   const radius = AA_DEFAULTS.radius;
   if(x < AA_MIN_DIST_FROM_EDGES + radius || x > gameCanvas.width - AA_MIN_DIST_FROM_EDGES - radius) return false;
   if(y < AA_MIN_DIST_FROM_EDGES + radius || y > gameCanvas.height - AA_MIN_DIST_FROM_EDGES - radius) return false;
-  if(currentPlacer === 'green' && y - radius < 40 + AA_MIN_DIST_FROM_OPPONENT_BASE) return false;
-  if(currentPlacer === 'blue' && y + radius > gameCanvas.height - 40 - AA_MIN_DIST_FROM_OPPONENT_BASE) return false;
-
-
-  if(x < AA_MIN_DIST_FROM_EDGES || x > gameCanvas.width - AA_MIN_DIST_FROM_EDGES) return false;
-  if(y < AA_MIN_DIST_FROM_EDGES || y > gameCanvas.height - AA_MIN_DIST_FROM_EDGES) return false;
-  if(currentPlacer === 'green' && y < 40 + AA_MIN_DIST_FROM_OPPONENT_BASE) return false;
-  if(currentPlacer === 'blue' && y > gameCanvas.height - 40 - AA_MIN_DIST_FROM_OPPONENT_BASE) return false;
-
-
+  if(currentPlacer === 'green' && y < 40 + AA_MIN_DIST_FROM_OPPONENT_BASE + radius) return false;
+  if(currentPlacer === 'blue' && y > gameCanvas.height - 40 - AA_MIN_DIST_FROM_OPPONENT_BASE - radius) return false;
   for(const b of buildings){
     if(isPointInsideBuilding(x,y,b)) return false;
   }
   for(const aa of aaUnits){
-
     if(Math.hypot(aa.x - x, aa.y - y) < aa.radius + radius) return false;
-
-
-    if(Math.hypot(aa.x - x, aa.y - y) < aa.radius + radius) return false;
-
-    if(Math.hypot(aa.x - x, aa.y - y) < aa.radius) return false;
-
-
   }
   return true;
 }
@@ -902,6 +871,9 @@ function gameDraw(){
 
   // здания
   drawBuildings();
+
+  // установки ПВО
+  drawAAUnits();
 
   // самолёты + их трейлы
   drawPlanesAndTrajectories();
