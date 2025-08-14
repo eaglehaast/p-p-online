@@ -68,7 +68,11 @@ const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 
 // AA defaults and placement limits
 const AA_DEFAULTS = {
+
   radius: 60, // detection radius
+
+  radius: 60, // 3x smaller than original 180
+
   hp: 1,
   cooldownMs: 1000,
   rotationDegPerSec: 30, // slow radar sweep
@@ -790,8 +794,14 @@ function handleAAForPlane(p, fp){
       continue;
     }
     if(dist <= aa.radius){
+
       const angleToPlane = (Math.atan2(p.y - aa.y, p.x - aa.x) * 180/Math.PI + 360) % 360;
       if(angleDiffDeg(angleToPlane, aa.sweepAngleDeg) <= aa.beamWidthDeg/2){
+
+      if(!p._aaTimes) p._aaTimes={};
+      if(!p._aaTimes[aa.id]) p._aaTimes[aa.id]=now;
+      else if(now - p._aaTimes[aa.id] > aa.dwellTimeMs){
+
         if(!aa.lastTriggerAt || now - aa.lastTriggerAt > aa.cooldownMs){
           aa.lastTriggerAt = now;
           p.isAlive=false; p.burning=true;
