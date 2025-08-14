@@ -60,8 +60,8 @@ const BUILDING_BUFFER      = CELL_SIZE / 2;
 const MAX_BUILDINGS_GLOBAL = 100;
 const PLANES_PER_SIDE      = 4;      // количество самолётов у каждой команды
 
-const MIN_FLIGHT_RANGE_CELLS = 1;
-const MAX_FLIGHT_RANGE_CELLS = 25;
+const MIN_FLIGHT_RANGE_CELLS = 5;
+const MAX_FLIGHT_RANGE_CELLS = 30;
 
 const MIN_AMPLITUDE        = 0;
 const MAX_AMPLITUDE        = 30;     // UI показывает как *2°
@@ -82,7 +82,7 @@ const AA_MIN_DIST_FROM_EDGES = 40;
 
 
 /* ======= STATE ======= */
-let flightRangeCells = 10;     // значение «в клетках» для меню/физики
+let flightRangeCells = 15;     // значение «в клетках» для меню/физики
 let buildingsCount   = 0;
 let aimingAmplitude  = 10;     // 0..30 (UI показывает *2)
 
