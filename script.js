@@ -107,6 +107,7 @@ let buildings    = [];
 
 let aaUnits     = [];
 let aaPlacementPreview = null;
+let aaPointerDown = false;
 
 
 let phase = "MENU"; // MENU | AA_PLACEMENT | ROUND_START | TURN | ROUND_END
@@ -363,17 +364,8 @@ function handleStart(e) {
   window.addEventListener("touchend", onHandleUp);
 }
 
-function handleAAPlacement(e){
-  e.preventDefault();
+function handleAAPlacement(x, y){
   if(phase !== 'AA_PLACEMENT') return;
-
-  const coords = getEventCoords(e);
-  const rect = gameCanvas.getBoundingClientRect();
-  const scaleX = gameCanvas.width / rect.width;
-  const scaleY = gameCanvas.height / rect.height;
-  const x = (coords.clientX - rect.left) * scaleX;
-  const y = (coords.clientY - rect.top) * scaleY;
-
   if(!isValidAAPlacement(x,y)) return;
 
   placeAA({owner: currentPlacer, x, y});
@@ -385,31 +377,46 @@ function handleAAPlacement(e){
   }
 }
 
-function onCanvasPointerDown(e){
-  if(phase === 'AA_PLACEMENT'){
-    handleAAPlacement(e);
-  } else {
-    handleStart(e);
-  }
-}
-
-
-gameCanvas.addEventListener("pointerdown", onCanvasPointerDown);
-gameCanvas.addEventListener("pointermove", onCanvasPointerMove);
-gameCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; });
-
-function onCanvasPointerMove(e){
-  if(phase !== 'AA_PLACEMENT') return;
-
+function updateAAPreviewFromEvent(e){
   const coords = getEventCoords(e);
   const rect = gameCanvas.getBoundingClientRect();
   const scaleX = gameCanvas.width / rect.width;
   const scaleY = gameCanvas.height / rect.height;
   const x = (coords.clientX - rect.left) * scaleX;
   const y = (coords.clientY - rect.top) * scaleY;
-
   aaPlacementPreview = {x, y};
 }
+
+function onCanvasPointerDown(e){
+  if(phase === 'AA_PLACEMENT'){
+    e.preventDefault();
+    aaPointerDown = true;
+    updateAAPreviewFromEvent(e);
+  } else {
+    handleStart(e);
+  }
+}
+
+function onCanvasPointerMove(e){
+  if(phase !== 'AA_PLACEMENT') return;
+  if(e.pointerType === 'mouse' || aaPointerDown){
+    updateAAPreviewFromEvent(e);
+  }
+}
+
+function onCanvasPointerUp(){
+  if(phase !== 'AA_PLACEMENT') return;
+  aaPointerDown = false;
+  if(!aaPlacementPreview) return;
+  const {x, y} = aaPlacementPreview;
+  handleAAPlacement(x, y);
+  aaPlacementPreview = null;
+}
+
+gameCanvas.addEventListener("pointerdown", onCanvasPointerDown);
+gameCanvas.addEventListener("pointermove", onCanvasPointerMove);
+gameCanvas.addEventListener("pointerup", onCanvasPointerUp);
+gameCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; aaPointerDown = false; });
 
 function isValidAAPlacement(x,y){
   // Allow AA placement anywhere within the player's half of the field.
