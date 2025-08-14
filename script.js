@@ -1223,10 +1223,10 @@ function drawPlayerPanel(ctx, color, victories, isTurn){
   let statusText;
   if (phase === 'AA_PLACEMENT') {
     if (currentPlacer === color) {
-      statusText = color === 'green' ? 'Грин устанавливает ПВО' : 'Блю устанавливает ПВО';
+      statusText = 'You are placing AA';
       ctx.fillStyle = color;
     } else {
-      statusText = 'Противник устанавливает ПВО';
+      statusText = 'Enemy is placing AA';
       ctx.fillStyle = '#888';
     }
   } else if (isTurn) {
