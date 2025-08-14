@@ -842,12 +842,6 @@ function handleAAForPlane(p, fp){
             p.collisionX=p.x; p.collisionY=p.y;
             if(fp) flyingPoints = flyingPoints.filter(x=>x!==fp);
             checkVictory();
-            if(!isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
-              turnIndex = (turnIndex + 1) % turnColors.length;
-              if(gameMode === "computer" && turnColors[turnIndex] === "blue"){
-                aiMoveScheduled = false;
-              }
-            }
             return true;
           }
         }
