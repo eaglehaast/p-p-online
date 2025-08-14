@@ -30,7 +30,6 @@ const buildingsMinusBtn   = document.getElementById("buildingsMinus");
 const buildingsPlusBtn    = document.getElementById("buildingsPlus");
 const amplitudeMinusBtn   = document.getElementById("amplitudeMinus");
 const amplitudePlusBtn    = document.getElementById("amplitudePlus");
-const addAAToggle         = document.getElementById("addAAToggle");
 
 const endGameDiv  = document.getElementById("endGameButtons");
 const yesBtn      = document.getElementById("yesButton");
@@ -66,6 +65,7 @@ const MIN_AMPLITUDE        = 0;
 const MAX_AMPLITUDE        = 30;     // UI показывает как *2°
 const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 
+
 // AA defaults and placement limits
 const AA_DEFAULTS = {
 
@@ -80,6 +80,7 @@ const AA_DEFAULTS = {
 };
 const AA_MIN_DIST_FROM_OPPONENT_BASE = 120;
 const AA_MIN_DIST_FROM_EDGES = 40;
+
 
 /* ======= STATE ======= */
 let flightRangeCells = 10;     // значение «в клетках» для меню/физики
@@ -104,6 +105,7 @@ let turnIndex    = lastFirstTurn;
 let points       = [];
 let flyingPoints = [];
 let buildings    = [];
+
 let aaUnits     = [];
 
 
@@ -115,10 +117,9 @@ let settings = {
   addAA: localStorage.getItem('settings.addAA') === 'true'
 };
 
+
 let greenVictories = 0;
 let blueVictories  = 0;
-
-let planeIdSeq = 0;
 
 let animationFrameId = null;
 let menuAnimFrameId  = null;
@@ -145,7 +146,6 @@ function initPoints(){
 }
 function makePlane(x,y,color,angle){
   return {
-    id: 'p'+(planeIdSeq++),
     x, y,
     color,
     isAlive:true,
@@ -171,10 +171,6 @@ function resetGame(){
   flyingPoints= [];
   buildings = [];
   buildingsCount = 0;
-  aaUnits = [];
-
-  phase = 'MENU';
-  currentPlacer = null;
 
   hasShotThisRound = false;
 
@@ -275,16 +271,6 @@ playBtn.addEventListener("click",()=>{
   aimCanvas.style.display = "block";
 
   stopMenuAnimation();
-  if(settings.addAA){
-    phase = 'AA_PLACEMENT';
-    currentPlacer = 'green';
-  } else {
-
-    phase = 'ROUND_START';
-
-    phase = 'TURN';
-
-  }
   startGameLoop();
 });
 
@@ -325,7 +311,6 @@ function getEventCoords(e) {
 
 function handleStart(e) {
   e.preventDefault();
-  if(phase !== 'TURN') return;
   if(isGameOver || !gameMode) return;
 
   const currentColor= turnColors[turnIndex];
@@ -368,6 +353,9 @@ function handleStart(e) {
   window.addEventListener("touchmove", onHandleMove);
   window.addEventListener("touchend", onHandleUp);
 }
+
+gameCanvas.addEventListener("mousedown", handleStart);
+gameCanvas.addEventListener("touchstart", handleStart);
 
 function handleAAPlacement(e){
   e.preventDefault();
@@ -455,6 +443,7 @@ function placeAA({owner,x,y}){
     beamWidthDeg: AA_DEFAULTS.beamWidthDeg
   });
 }
+
 
 function onHandleMove(e){
   if(!handleCircle.active)return;
@@ -778,6 +767,7 @@ function planeBuildingCollision(fp, b){
 
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 
+
 function angleDiffDeg(a, b){
   let diff = ((a - b + 540) % 360) - 180;
   return Math.abs(diff);
@@ -822,6 +812,7 @@ function handleAAForPlane(p, fp){
   return false;
 }
 
+
 /* ======= GAME LOOP ======= */
 function gameDraw(){
   globalFrame++;
@@ -831,30 +822,9 @@ function gameDraw(){
   drawNotebookBackground(gameCtx, gameCanvas.width, gameCanvas.height);
   aimCtx.clearRect(0,0, aimCanvas.width, aimCanvas.height);
 
-
-  if (phase === 'ROUND_START') {
-    phase = 'TURN';
-  }
-
-  if(phase === 'AA_PLACEMENT'){
-    drawBuildings();
-    drawAAUnits();
-    drawPlanesAndTrajectories();
-    const msg = `${currentPlacer.charAt(0).toUpperCase() + currentPlacer.slice(1)}: place your AA`;
-    gameCtx.font = "24px 'Patrick Hand', cursive";
-    gameCtx.fillStyle = currentPlacer;
-    const w = gameCtx.measureText(msg).width;
-    gameCtx.fillText(msg, (gameCanvas.width - w)/2, 30);
-    renderScoreboard();
-    updateAmplitudeIndicator();
-    animationFrameId = requestAnimationFrame(gameDraw);
-    return;
-  }
-
   // Планирование хода ИИ
-  if (!isGameOver
-      && phase === 'TURN'
-      && gameMode === "computer"
+  if (!isGameOver 
+      && gameMode === "computer" 
       && turnColors[turnIndex] === "blue"
       && !aiMoveScheduled
       && !flyingPoints.some(fp => fp.plane.color === "blue")) {
@@ -865,6 +835,7 @@ function gameDraw(){
   for(const aa of aaUnits){
     aa.sweepAngleDeg = (aa.sweepAngleDeg + aa.rotationDegPerSec/60) % 360;
   }
+
 
   // полёты
   if(!isGameOver && flyingPoints.length){
@@ -888,8 +859,6 @@ function gameDraw(){
           if(planeBuildingCollision(fp, b)) break;
         }
       }
-
-      if(handleAAForPlane(p, fp)) continue;
 
       // нос по текущей скорости
       p.angle = Math.atan2(fp.vy, fp.vx) + Math.PI / 2;
@@ -923,9 +892,6 @@ function gameDraw(){
 
   // здания
   drawBuildings();
-
-  // ПВО
-  drawAAUnits();
 
   // самолёты + их трейлы
   drawPlanesAndTrajectories();
@@ -1139,6 +1105,7 @@ function drawBuildings(){
   }
 }
 
+
 function drawAAUnits(){
   for(const aa of aaUnits){
     gameCtx.save();
@@ -1167,6 +1134,7 @@ function drawAAUnits(){
     gameCtx.restore();
   }
 }
+
 function drawBuildingGrid(ctx, width, height, cellSize, gridColor){
   ctx.strokeStyle = gridColor; ctx.lineWidth = 0.5;
   for(let x=-width/2; x<=width/2; x+=cellSize){
@@ -1299,6 +1267,7 @@ function stopButtonInterval(button){
   delete buttonIntervals[button.id];
 }
 
+
 // Add AA toggle
 
 if (addAAToggle) {
@@ -1308,6 +1277,7 @@ if (addAAToggle) {
     localStorage.setItem('settings.addAA', settings.addAA);
   });
 }
+
 
 
 /* Flight Range */
@@ -1488,18 +1458,6 @@ function startNewRound(){
   flyingPoints=[];
   hasShotThisRound=false;
 
-  aaUnits = [];
-  if(settings.addAA){
-    phase = 'AA_PLACEMENT';
-    currentPlacer = 'green';
-  } else {
-
-    phase = 'ROUND_START';
-
-    phase = 'TURN';
-
-  }
-
   aiMoveScheduled = false;
 
   // оставляем здания
@@ -1618,7 +1576,6 @@ resizeCanvas();
 initPoints();
 resetFlightRangeFlame();
 updateAmplitudeDisplay();
-updateAmplitudeIndicator();
 updateFlightRangeDisplay();
 renderScoreboard();
 startMenuAnimation();      // пока в меню — крутится индикатор
