@@ -795,39 +795,49 @@ function lineSegmentIntersection(x1,y1,x2,y2, x3,y3,x4,y4){
 /* Коллизии самолёт <-> здание */
 function planeBuildingCollision(fp, b){
   const p = fp.plane;
-  const closestX = clamp(p.x, b.x - b.width/2,  b.x + b.width/2);
-  const closestY = clamp(p.y, b.y - b.height/2, b.y + b.height/2);
-  const dx = p.x - closestX;
-  const dy = p.y - closestY;
-  const dist2 = dx*dx + dy*dy;
-  if(dist2 >= POINT_RADIUS*POINT_RADIUS) return false;
+  let collided = false;
 
-  // нормаль по минимальному проникновению
-  const penLeft   = Math.abs(p.x - (b.x - b.width/2));
-  const penRight  = Math.abs((b.x + b.width/2) - p.x);
-  const penTop    = Math.abs(p.y - (b.y - b.height/2));
-  const penBottom = Math.abs((b.y + b.height/2) - p.y);
+  // В углах самолёт может касаться двух граней сразу.
+  // Разрешаем до двух последовательных отражений за один кадр,
+  // чтобы избегать «проскальзывания» по ребру.
+  for(let i=0;i<2;i++){
+    const closestX = clamp(p.x, b.x - b.width/2,  b.x + b.width/2);
+    const closestY = clamp(p.y, b.y - b.height/2, b.y + b.height/2);
+    const dx = p.x - closestX;
+    const dy = p.y - closestY;
+    const dist2 = dx*dx + dy*dy;
+    if(dist2 >= POINT_RADIUS*POINT_RADIUS) break;
 
-  let nx=0, ny=0;
-  const minPen = Math.min(penLeft, penRight, penTop, penBottom);
-  if(minPen === penLeft)      { nx = -1; ny = 0; }
-  else if(minPen === penRight){ nx =  1; ny = 0; }
-  else if(minPen === penTop)  { nx =  0; ny = -1;}
-  else                        { nx =  0; ny =  1;}
+    collided = true;
 
-  // отражаем скорость
-  const dot = fp.vx*nx + fp.vy*ny;
-  fp.vx = fp.vx - 2*dot*nx;
-  fp.vy = fp.vy - 2*dot*ny;
+    // нормаль по минимальному проникновению
+    const penLeft   = Math.abs(p.x - (b.x - b.width/2));
+    const penRight  = Math.abs((b.x + b.width/2) - p.x);
+    const penTop    = Math.abs(p.y - (b.y - b.height/2));
+    const penBottom = Math.abs((b.y + b.height/2) - p.y);
 
-  // выталкивание
-  const EPS = 0.5;
-  p.x = p.x + nx * (POINT_RADIUS + EPS);
-  p.y = p.y + ny * (POINT_RADIUS + EPS);
+    let nx=0, ny=0;
+    const minPen = Math.min(penLeft, penRight, penTop, penBottom);
+    if(minPen === penLeft)      { nx = -1; ny = 0; }
+    else if(minPen === penRight){ nx =  1; ny = 0; }
+    else if(minPen === penTop)  { nx =  0; ny = -1;}
+    else                        { nx =  0; ny =  1;}
 
-  // cooldown
-  fp.collisionCooldown = 2;
-  return true;
+    // отражаем скорость
+    const dot = fp.vx*nx + fp.vy*ny;
+    fp.vx = fp.vx - 2*dot*nx;
+    fp.vy = fp.vy - 2*dot*ny;
+
+    // выталкивание за пределы
+    const EPS = 0.5;
+    p.x = p.x + nx * (POINT_RADIUS + EPS);
+    p.y = p.y + ny * (POINT_RADIUS + EPS);
+  }
+
+  if(collided){
+    fp.collisionCooldown = 2;
+  }
+  return collided;
 }
 
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
