@@ -499,6 +499,17 @@ function drawAAPreview(){
   gameCtx.arc(x, y, AA_DEFAULTS.radius, 0, Math.PI*2);
   gameCtx.stroke();
 
+  // rotating sweep line preview
+  const ang = (Date.now()/1000 * AA_DEFAULTS.rotationDegPerSec % 360) * Math.PI/180;
+  const endX = x + Math.cos(ang) * AA_DEFAULTS.radius;
+  const endY = y + Math.sin(ang) * AA_DEFAULTS.radius;
+  gameCtx.globalAlpha = 0.6;
+  gameCtx.lineWidth = 2;
+  gameCtx.beginPath();
+  gameCtx.moveTo(x, y);
+  gameCtx.lineTo(endX, endY);
+  gameCtx.stroke();
+
   gameCtx.globalAlpha = 0.4;
   gameCtx.fillStyle = currentPlacer;
   gameCtx.beginPath();
@@ -1142,6 +1153,7 @@ function drawHazardTapeEdges(ctx2d, w, h){
   ctx2d.save();
 
 
+
   // create diagonal red-white stripe pattern similar to construction tape
   const patternCanvas = document.createElement('canvas');
   patternCanvas.width = patternCanvas.height = 20;
@@ -1264,13 +1276,7 @@ function drawBuildings(){
 function drawAAUnits(){
   for(const aa of aaUnits){
     gameCtx.save();
-    gameCtx.beginPath();
-    gameCtx.arc(aa.x, aa.y, aa.radius, 0, Math.PI*2);
-    gameCtx.strokeStyle = 'rgba(0,0,0,0.2)';
-    gameCtx.lineWidth = 1;
-    gameCtx.stroke();
-
-    // radar sweep line
+    // radar sweep line only
     const ang = aa.sweepAngleDeg * Math.PI/180;
     const endX = aa.x + Math.cos(ang) * aa.radius;
     const endY = aa.y + Math.sin(ang) * aa.radius;
@@ -1281,11 +1287,13 @@ function drawAAUnits(){
     gameCtx.lineTo(endX, endY);
     gameCtx.stroke();
 
+
     // Anti-Aircraft center
     gameCtx.beginPath();
     gameCtx.fillStyle = aa.owner;
     gameCtx.arc(aa.x, aa.y, 6, 0, Math.PI*2);
     gameCtx.fill();
+
     gameCtx.restore();
   }
 }
