@@ -1133,12 +1133,12 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.setLineDash([]);
 
   if (MAPS[mapIndex] === "burning edges") {
-    drawBurntEdges(ctx2d, w, h);
+    drawHazardTapeEdges(ctx2d, w, h);
   }
 }
 
-function drawBurntEdges(ctx2d, w, h){
-  const edge = 20;
+function drawHazardTapeEdges(ctx2d, w, h){
+  const edge = 12;
   ctx2d.save();
 
   // create diagonal red-white stripe pattern similar to construction tape
@@ -1165,6 +1165,7 @@ function drawBurntEdges(ctx2d, w, h){
   ctx2d.fillRect(0,h-edge,w,edge);    // bottom
   ctx2d.fillRect(0,0,edge,h);         // left
   ctx2d.fillRect(w-edge,0,edge,h);    // right
+
 
   ctx2d.restore();
 }
