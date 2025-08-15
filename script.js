@@ -1131,6 +1131,67 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.setLineDash([10,5]);
   ctx2d.beginPath(); ctx2d.moveTo(0,h-1); ctx2d.lineTo(w,h-1); ctx2d.stroke();
   ctx2d.setLineDash([]);
+
+  if (MAPS[mapIndex] === "burning edges") {
+    drawBurntEdges(ctx2d, w, h);
+  }
+}
+
+function drawBurntEdges(ctx2d, w, h){
+  const edge = 20;
+  ctx2d.save();
+  let grad;
+
+  grad = ctx2d.createLinearGradient(0,0,0,edge);
+  grad.addColorStop(0,"rgba(0,0,0,0.7)");
+  grad.addColorStop(1,"rgba(0,0,0,0)");
+  ctx2d.fillStyle = grad;
+  ctx2d.fillRect(0,0,w,edge);
+
+  grad = ctx2d.createLinearGradient(0,h-edge,0,h);
+  grad.addColorStop(0,"rgba(0,0,0,0)");
+  grad.addColorStop(1,"rgba(0,0,0,0.7)");
+  ctx2d.fillStyle = grad;
+  ctx2d.fillRect(0,h-edge,w,edge);
+
+  grad = ctx2d.createLinearGradient(0,0,edge,0);
+  grad.addColorStop(0,"rgba(0,0,0,0.7)");
+  grad.addColorStop(1,"rgba(0,0,0,0)");
+  ctx2d.fillStyle = grad;
+  ctx2d.fillRect(0,0,edge,h);
+
+  grad = ctx2d.createLinearGradient(w-edge,0,w,0);
+  grad.addColorStop(0,"rgba(0,0,0,0)");
+  grad.addColorStop(1,"rgba(0,0,0,0.7)");
+  ctx2d.fillStyle = grad;
+  ctx2d.fillRect(w-edge,0,edge,h);
+
+  const glow = 10;
+  grad = ctx2d.createLinearGradient(0,0,0,glow);
+  grad.addColorStop(0,"rgba(255,180,0,0.4)");
+  grad.addColorStop(1,"rgba(255,180,0,0)");
+  ctx2d.fillStyle = grad;
+  ctx2d.fillRect(0,0,w,glow);
+
+  grad = ctx2d.createLinearGradient(0,h-glow,0,h);
+  grad.addColorStop(0,"rgba(255,180,0,0)");
+  grad.addColorStop(1,"rgba(255,180,0,0.4)");
+  ctx2d.fillStyle = grad;
+  ctx2d.fillRect(0,h-glow,w,glow);
+
+  grad = ctx2d.createLinearGradient(0,0,glow,0);
+  grad.addColorStop(0,"rgba(255,180,0,0.4)");
+  grad.addColorStop(1,"rgba(255,180,0,0)");
+  ctx2d.fillStyle = grad;
+  ctx2d.fillRect(0,0,glow,h);
+
+  grad = ctx2d.createLinearGradient(w-glow,0,w,0);
+  grad.addColorStop(0,"rgba(255,180,0,0)");
+  grad.addColorStop(1,"rgba(255,180,0,0.4)");
+  ctx2d.fillStyle = grad;
+  ctx2d.fillRect(w-glow,0,glow,h);
+
+  ctx2d.restore();
 }
 
 function drawThinPlane(ctx2d, cx, cy, color, angle){
