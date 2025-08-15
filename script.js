@@ -89,8 +89,10 @@ let flightRangeCells = 10;     // значение «в клетках» для 
 const MAPS = ["clear sky"];
 let mapIndex = 0;
 
+
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
 let buildingsCount   = 0;
+
 
 let aimingAmplitude  = 10;     // 0..30 (UI показывает *2)
 
@@ -116,7 +118,9 @@ let buildings    = [];
 let aaUnits     = [];
 let aaPlacementPreview = null;
 
+
 let aaPointerDown = false;
+
 
 
 
@@ -371,6 +375,8 @@ function handleStart(e) {
   window.addEventListener("mouseup", onHandleUp);
   window.addEventListener("touchmove", onHandleMove);
   window.addEventListener("touchend", onHandleUp);
+  window.addEventListener("pointermove", onHandleMove);
+  window.addEventListener("pointerup", onHandleUp);
 }
 
 function handleAAPlacement(x, y){
@@ -378,6 +384,7 @@ function handleAAPlacement(x, y){
   if(!isValidAAPlacement(x,y)) return;
 
   placeAA({owner: currentPlacer, x, y});
+  aaPlacementPreview = null;
 
   if(currentPlacer === 'green'){
     currentPlacer = 'blue';
@@ -586,6 +593,8 @@ function cleanupHandle(){
   window.removeEventListener("mouseup", onHandleUp);
   window.removeEventListener("touchmove", onHandleMove);
   window.removeEventListener("touchend", onHandleUp);
+  window.removeEventListener("pointermove", onHandleMove);
+  window.removeEventListener("pointerup", onHandleUp);
 }
 
 /* ======= AI ======= */
