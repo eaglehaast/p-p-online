@@ -1141,25 +1141,31 @@ function drawHazardTapeEdges(ctx2d, w, h){
   const edge = 12;
   ctx2d.save();
 
-  // create diagonal red-white hazard tape pattern
+  // create diagonal red-white stripe pattern similar to construction tape
   const patternCanvas = document.createElement('canvas');
-  patternCanvas.width = patternCanvas.height = 40;
+  patternCanvas.width = patternCanvas.height = 20;
   const pctx = patternCanvas.getContext('2d');
-  pctx.fillStyle = '#fff';
-  pctx.fillRect(0, 0, 40, 40);
-  pctx.translate(20, 20);
-  pctx.rotate(-Math.PI / 4);
-  pctx.fillStyle = '#d00';
-  for(let i = -40; i <= 40; i += 20){
-    pctx.fillRect(i, -40, 10, 80);
-  }
+  pctx.fillStyle = '#ffffff';
+  pctx.fillRect(0, 0, 20, 20);
+  pctx.strokeStyle = '#d00';
+  pctx.lineWidth = 10;
+  // draw two lines to ensure seamless stripes
+  pctx.beginPath();
+  pctx.moveTo(-10,20);
+  pctx.lineTo(20,-10);
+  pctx.stroke();
+  pctx.beginPath();
+  pctx.moveTo(0,20);
+  pctx.lineTo(20,0);
+  pctx.stroke();
   const pattern = ctx2d.createPattern(patternCanvas, 'repeat');
 
   ctx2d.fillStyle = pattern;
-  ctx2d.fillRect(0, 0, w, edge);         // top
-  ctx2d.fillRect(0, h - edge, w, edge);  // bottom
-  ctx2d.fillRect(0, 0, edge, h);         // left
-  ctx2d.fillRect(w - edge, 0, edge, h);  // right
+  ctx2d.fillRect(0,0,w,edge);        // top
+  ctx2d.fillRect(0,h-edge,w,edge);    // bottom
+  ctx2d.fillRect(0,0,edge,h);         // left
+  ctx2d.fillRect(w-edge,0,edge,h);    // right
+
 
   ctx2d.restore();
 }
