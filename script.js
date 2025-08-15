@@ -1191,6 +1191,47 @@ function drawBurntEdges(ctx2d, w, h){
   ctx2d.fillStyle = grad;
   ctx2d.fillRect(w-glow,0,glow,h);
 
+  const step = 20;
+  ctx2d.shadowColor = "rgba(255,80,0,0.8)";
+  ctx2d.shadowBlur = 15;
+  ctx2d.fillStyle = "#ff4500";
+
+  for(let x=0; x<w; x+=step){
+    const fh = 12 + Math.random()*8;
+    ctx2d.beginPath();
+    ctx2d.moveTo(x,0);
+    ctx2d.lineTo(x+step,0);
+    ctx2d.lineTo(x+step/2,fh);
+    ctx2d.closePath();
+    ctx2d.fill();
+
+    ctx2d.beginPath();
+    ctx2d.moveTo(x,h);
+    ctx2d.lineTo(x+step,h);
+    ctx2d.lineTo(x+step/2,h-fh);
+    ctx2d.closePath();
+    ctx2d.fill();
+  }
+
+  for(let y=0; y<h; y+=step){
+    const fw = 12 + Math.random()*8;
+    ctx2d.beginPath();
+    ctx2d.moveTo(0,y);
+    ctx2d.lineTo(0,y+step);
+    ctx2d.lineTo(fw,y+step/2);
+    ctx2d.closePath();
+    ctx2d.fill();
+
+    ctx2d.beginPath();
+    ctx2d.moveTo(w,y);
+    ctx2d.lineTo(w,y+step);
+    ctx2d.lineTo(w-fw,y+step/2);
+    ctx2d.closePath();
+    ctx2d.fill();
+  }
+
+  ctx2d.shadowBlur = 0;
+
   ctx2d.restore();
 }
 
