@@ -85,10 +85,8 @@ const AA_MIN_DIST_FROM_EDGES = 40;
 
 /* ======= STATE ======= */
 
-let flightRangeCells = 10;     // значение «в клетках» для меню/физики
-const MAPS = ["clear sky"];
+const MAPS = ["clear sky", "wall"];
 let mapIndex = 0;
-
 
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
 let buildingsCount   = 0;
@@ -185,7 +183,6 @@ function resetGame(){
   globalFrame=0;
   flyingPoints= [];
   buildings = [];
-  mapIndex = 0;
   applyCurrentMap();
   aaUnits = [];
 
@@ -431,22 +428,6 @@ function onCanvasPointerUp(){
 
 gameCanvas.addEventListener("pointerdown", onCanvasPointerDown);
 gameCanvas.addEventListener("pointermove", onCanvasPointerMove);
-
-gameCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; });
-
-function onCanvasPointerMove(e){
-  if(phase !== 'AA_PLACEMENT') return;
-
-  const coords = getEventCoords(e);
-  const rect = gameCanvas.getBoundingClientRect();
-  const scaleX = gameCanvas.width / rect.width;
-  const scaleY = gameCanvas.height / rect.height;
-  const x = (coords.clientX - rect.left) * scaleX;
-  const y = (coords.clientY - rect.top) * scaleY;
-
-  aaPlacementPreview = {x, y};
-}
-
 gameCanvas.addEventListener("pointerup", onCanvasPointerUp);
 gameCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; aaPointerDown = false; });
 
@@ -1365,6 +1346,28 @@ function stopButtonInterval(button){
   delete buttonIntervals[button.id];
 }
 
+// Helper to support pointer and touch/mouse events
+function setupRepeatButton(btn, step){
+  if(!btn) return;
+  const start = (event)=>{
+    event.preventDefault();
+    if(hasShotThisRound) return;
+    startButtonInterval(btn, step);
+  };
+  const stop = ()=>stopButtonInterval(btn);
+  if(window.PointerEvent){
+    btn.addEventListener("pointerdown", start);
+    btn.addEventListener("pointerup", stop);
+    btn.addEventListener("pointerleave", stop);
+  } else {
+    btn.addEventListener("mousedown", start);
+    btn.addEventListener("mouseup", stop);
+    btn.addEventListener("mouseleave", stop);
+    btn.addEventListener("touchstart", start);
+    btn.addEventListener("touchend", stop);
+  }
+}
+
 
 // Add AA toggle
 
@@ -1376,86 +1379,45 @@ if (addAAToggle) {
   });
 }
 
-
-
 /* Flight Range */
-flightRangeMinusBtn.addEventListener("pointerdown", (event)=>{
-  event.preventDefault();
-  if(hasShotThisRound) return;
-  startButtonInterval(flightRangeMinusBtn, ()=>{
-    if(flightRangeCells > MIN_FLIGHT_RANGE_CELLS){
-      flightRangeCells--;
-      updateFlightRangeFlame();
-      updateFlightRangeDisplay();
-    }
-  });
+setupRepeatButton(flightRangeMinusBtn, ()=>{
+  if(flightRangeCells > MIN_FLIGHT_RANGE_CELLS){
+    flightRangeCells--;
+    updateFlightRangeFlame();
+    updateFlightRangeDisplay();
+  }
 });
-flightRangeMinusBtn.addEventListener("pointerup", ()=>stopButtonInterval(flightRangeMinusBtn));
-flightRangeMinusBtn.addEventListener("pointerleave", ()=>stopButtonInterval(flightRangeMinusBtn));
-
-flightRangePlusBtn.addEventListener("pointerdown", (event)=>{
-  event.preventDefault();
-  if(hasShotThisRound) return;
-  startButtonInterval(flightRangePlusBtn, ()=>{
-    if(flightRangeCells < MAX_FLIGHT_RANGE_CELLS){
-      flightRangeCells++;
-      updateFlightRangeFlame();
-      updateFlightRangeDisplay();
-    }
-  });
+setupRepeatButton(flightRangePlusBtn, ()=>{
+  if(flightRangeCells < MAX_FLIGHT_RANGE_CELLS){
+    flightRangeCells++;
+    updateFlightRangeFlame();
+    updateFlightRangeDisplay();
+  }
 });
-flightRangePlusBtn.addEventListener("pointerup", ()=>stopButtonInterval(flightRangePlusBtn));
-flightRangePlusBtn.addEventListener("pointerleave", ()=>stopButtonInterval(flightRangePlusBtn));
 
 /* Map */
-mapMinusBtn.addEventListener("pointerdown", (event)=>{
-  event.preventDefault();
-  if(hasShotThisRound) return;
-  startButtonInterval(mapMinusBtn, ()=>{
-    mapIndex = (mapIndex - 1 + MAPS.length) % MAPS.length;
-    applyCurrentMap();
-  });
+setupRepeatButton(mapMinusBtn, ()=>{
+  mapIndex = (mapIndex - 1 + MAPS.length) % MAPS.length;
+  applyCurrentMap();
 });
-mapMinusBtn.addEventListener("pointerup", ()=>stopButtonInterval(mapMinusBtn));
-mapMinusBtn.addEventListener("pointerleave", ()=>stopButtonInterval(mapMinusBtn));
-
-mapPlusBtn.addEventListener("pointerdown", (event)=>{
-  event.preventDefault();
-  if(hasShotThisRound) return;
-  startButtonInterval(mapPlusBtn, ()=>{
-    mapIndex = (mapIndex + 1) % MAPS.length;
-    applyCurrentMap();
-  });
+setupRepeatButton(mapPlusBtn, ()=>{
+  mapIndex = (mapIndex + 1) % MAPS.length;
+  applyCurrentMap();
 });
-mapPlusBtn.addEventListener("pointerup", ()=>stopButtonInterval(mapPlusBtn));
-mapPlusBtn.addEventListener("pointerleave", ()=>stopButtonInterval(mapPlusBtn));
 
 /* Aiming amplitude */
-amplitudeMinusBtn.addEventListener("pointerdown", (event)=>{
-  event.preventDefault();
-  if(hasShotThisRound) return;
-  startButtonInterval(amplitudeMinusBtn, ()=>{
-    if(aimingAmplitude > MIN_AMPLITUDE){
-      aimingAmplitude--;
-      updateAmplitudeDisplay();
-    }
-  });
+setupRepeatButton(amplitudeMinusBtn, ()=>{
+  if(aimingAmplitude > MIN_AMPLITUDE){
+    aimingAmplitude--;
+    updateAmplitudeDisplay();
+  }
 });
-amplitudeMinusBtn.addEventListener("pointerup", ()=>stopButtonInterval(amplitudeMinusBtn));
-amplitudeMinusBtn.addEventListener("pointerleave", ()=>stopButtonInterval(amplitudeMinusBtn));
-
-amplitudePlusBtn.addEventListener("pointerdown", (event)=>{
-  event.preventDefault();
-  if(hasShotThisRound) return;
-  startButtonInterval(amplitudePlusBtn, ()=>{
-    if(aimingAmplitude < MAX_AMPLITUDE){
-      aimingAmplitude++;
-      updateAmplitudeDisplay();
-    }
-  });
+setupRepeatButton(amplitudePlusBtn, ()=>{
+  if(aimingAmplitude < MAX_AMPLITUDE){
+    aimingAmplitude++;
+    updateAmplitudeDisplay();
+  }
 });
-amplitudePlusBtn.addEventListener("pointerup", ()=>stopButtonInterval(amplitudePlusBtn));
-amplitudePlusBtn.addEventListener("pointerleave", ()=>stopButtonInterval(amplitudePlusBtn));
 
 /* Поля/здания */
 const buildingTypes = ['rectangle', 'rectangle_double', 'rectangle_triple'];
@@ -1548,8 +1510,8 @@ function startNewRound(){
 
   aiMoveScheduled = false;
 
-  // оставляем текущую карту
-  updateMapDisplay();
+  // оставляем текущую карту и заново строим её препятствия
+  applyCurrentMap();
 
   aimingAmplitude = 10;
   updateAmplitudeDisplay();
@@ -1608,6 +1570,17 @@ function applyCurrentMap(){
   buildings = [];
   if(MAPS[mapIndex] === "clear sky"){
     // no buildings to add
+  } else if (MAPS[mapIndex] === "wall") {
+    const wallWidth = CELL_SIZE * 8;
+    const wallHeight = CELL_SIZE;
+    buildings.push({
+      type: "wall",
+      x: gameCanvas.width / 2,
+      y: gameCanvas.height / 2,
+      width: wallWidth,
+      height: wallHeight,
+      color: "darkred"
+    });
   }
   updateMapDisplay();
   renderScoreboard();
@@ -1682,9 +1655,4 @@ window.addEventListener('orientationchange', () => {
 
 /* ======= BOOTSTRAP ======= */
 resizeCanvas();
-initPoints();
-resetFlightRangeFlame();
-updateAmplitudeDisplay();
-updateFlightRangeDisplay();
-applyCurrentMap();
-startMenuAnimation();      // пока в меню — крутится индикатор
+resetGame();
