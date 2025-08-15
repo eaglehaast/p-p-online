@@ -86,6 +86,8 @@ const AA_MIN_DIST_FROM_EDGES = 40;
 /* ======= STATE ======= */
 
 
+
+
 const MAPS = ["clear sky", "wall"];
 let mapIndex = 0;
 
@@ -96,6 +98,7 @@ const MAPS = ["clear sky", "wall"];
 const MAPS = ["clear sky"];
 
 let mapIndex = 0;
+
 
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
 let buildingsCount   = 0;
@@ -438,22 +441,6 @@ function onCanvasPointerUp(){
 
 gameCanvas.addEventListener("pointerdown", onCanvasPointerDown);
 gameCanvas.addEventListener("pointermove", onCanvasPointerMove);
-
-gameCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; });
-
-function onCanvasPointerMove(e){
-  if(phase !== 'AA_PLACEMENT') return;
-
-  const coords = getEventCoords(e);
-  const rect = gameCanvas.getBoundingClientRect();
-  const scaleX = gameCanvas.width / rect.width;
-  const scaleY = gameCanvas.height / rect.height;
-  const x = (coords.clientX - rect.left) * scaleX;
-  const y = (coords.clientY - rect.top) * scaleY;
-
-  aaPlacementPreview = {x, y};
-}
-
 gameCanvas.addEventListener("pointerup", onCanvasPointerUp);
 gameCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; aaPointerDown = false; });
 
@@ -1680,9 +1667,4 @@ window.addEventListener('orientationchange', () => {
 
 /* ======= BOOTSTRAP ======= */
 resizeCanvas();
-initPoints();
-resetFlightRangeFlame();
-updateAmplitudeDisplay();
-updateFlightRangeDisplay();
-applyCurrentMap();
-startMenuAnimation();      // пока в меню — крутится индикатор
+resetGame();
