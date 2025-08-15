@@ -85,7 +85,11 @@ const AA_MIN_DIST_FROM_EDGES = 40;
 
 /* ======= STATE ======= */
 
+
 const MAPS = ["clear sky", "wall"];
+
+const MAPS = ["clear sky"];
+
 let mapIndex = 0;
 
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
