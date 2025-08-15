@@ -88,7 +88,7 @@ const AA_MIN_DIST_FROM_EDGES = 40;
 
 
 
-const MAPS = ["clear sky", "wall"];
+const MAPS = ["clear sky", "wall", "burning edges"];
 let mapIndex = 0;
 
 
@@ -924,11 +924,34 @@ function handleAAForPlane(p, fp){
       p.x += fp.vx;
       p.y += fp.vy;
 
-      // отражения от границ поля
-      if(p.x < POINT_RADIUS){ p.x = POINT_RADIUS; fp.vx = -fp.vx; }
-      else if(p.x > gameCanvas.width - POINT_RADIUS){ p.x = gameCanvas.width - POINT_RADIUS; fp.vx = -fp.vx; }
-      if(p.y < POINT_RADIUS){ p.y = POINT_RADIUS; fp.vy = -fp.vy; }
-      else if(p.y > gameCanvas.height - POINT_RADIUS){ p.y = gameCanvas.height - POINT_RADIUS; fp.vy = -fp.vy; }
+      // отражения или смерть от границ поля
+      if(MAPS[mapIndex] === "burning edges"){
+        if(
+          p.x < POINT_RADIUS ||
+          p.x > gameCanvas.width - POINT_RADIUS ||
+          p.y < POINT_RADIUS ||
+          p.y > gameCanvas.height - POINT_RADIUS
+        ){
+          p.isAlive = false;
+          p.burning = true;
+          p.collisionX = p.x;
+          p.collisionY = p.y;
+          flyingPoints = flyingPoints.filter(x => x !== fp);
+          checkVictory();
+          if(!isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
+            turnIndex = (turnIndex + 1) % turnColors.length;
+            if(gameMode==="computer" && turnColors[turnIndex]==="blue"){
+              aiMoveScheduled = false;
+            }
+          }
+          continue;
+        }
+      } else {
+        if(p.x < POINT_RADIUS){ p.x = POINT_RADIUS; fp.vx = -fp.vx; }
+        else if(p.x > gameCanvas.width - POINT_RADIUS){ p.x = gameCanvas.width - POINT_RADIUS; fp.vx = -fp.vx; }
+        if(p.y < POINT_RADIUS){ p.y = POINT_RADIUS; fp.vy = -fp.vy; }
+        else if(p.y > gameCanvas.height - POINT_RADIUS){ p.y = gameCanvas.height - POINT_RADIUS; fp.vy = -fp.vy; }
+      }
 
       // столкновения со зданиями (cooldown)
       if(fp.collisionCooldown>0){ fp.collisionCooldown--; }
@@ -1603,6 +1626,8 @@ function applyCurrentMap(){
       height: wallHeight,
       color: "darkred"
     });
+  } else if (MAPS[mapIndex] === "burning edges") {
+    // no buildings; edges are lethal
   }
   updateMapDisplay();
   renderScoreboard();
