@@ -85,7 +85,11 @@ const AA_MIN_DIST_FROM_EDGES = 40;
 
 /* ======= STATE ======= */
 
+
+const MAPS = ["clear sky", "wall"];
+
 const MAPS = ["clear sky"];
+
 let mapIndex = 0;
 
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
@@ -1606,6 +1610,17 @@ function applyCurrentMap(){
   buildings = [];
   if(MAPS[mapIndex] === "clear sky"){
     // no buildings to add
+  } else if (MAPS[mapIndex] === "wall") {
+    const wallWidth = CELL_SIZE * 8;
+    const wallHeight = CELL_SIZE;
+    buildings.push({
+      type: "wall",
+      x: gameCanvas.width / 2,
+      y: gameCanvas.height / 2,
+      width: wallWidth,
+      height: wallHeight,
+      color: "darkred"
+    });
   }
   updateMapDisplay();
   renderScoreboard();
