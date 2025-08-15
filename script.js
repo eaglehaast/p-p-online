@@ -1140,97 +1140,31 @@ function drawNotebookBackground(ctx2d, w, h){
 function drawBurntEdges(ctx2d, w, h){
   const edge = 20;
   ctx2d.save();
-  let grad;
 
-  grad = ctx2d.createLinearGradient(0,0,0,edge);
-  grad.addColorStop(0,"rgba(0,0,0,0.7)");
-  grad.addColorStop(1,"rgba(0,0,0,0)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,0,w,edge);
+  // create diagonal red-white stripe pattern similar to construction tape
+  const patternCanvas = document.createElement('canvas');
+  patternCanvas.width = patternCanvas.height = 20;
+  const pctx = patternCanvas.getContext('2d');
+  pctx.fillStyle = '#ffffff';
+  pctx.fillRect(0, 0, 20, 20);
+  pctx.strokeStyle = '#d00';
+  pctx.lineWidth = 10;
+  // draw two lines to ensure seamless stripes
+  pctx.beginPath();
+  pctx.moveTo(-10,20);
+  pctx.lineTo(20,-10);
+  pctx.stroke();
+  pctx.beginPath();
+  pctx.moveTo(0,20);
+  pctx.lineTo(20,0);
+  pctx.stroke();
+  const pattern = ctx2d.createPattern(patternCanvas, 'repeat');
 
-  grad = ctx2d.createLinearGradient(0,h-edge,0,h);
-  grad.addColorStop(0,"rgba(0,0,0,0)");
-  grad.addColorStop(1,"rgba(0,0,0,0.7)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,h-edge,w,edge);
-
-  grad = ctx2d.createLinearGradient(0,0,edge,0);
-  grad.addColorStop(0,"rgba(0,0,0,0.7)");
-  grad.addColorStop(1,"rgba(0,0,0,0)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,0,edge,h);
-
-  grad = ctx2d.createLinearGradient(w-edge,0,w,0);
-  grad.addColorStop(0,"rgba(0,0,0,0)");
-  grad.addColorStop(1,"rgba(0,0,0,0.7)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(w-edge,0,edge,h);
-
-  const glow = 10;
-  grad = ctx2d.createLinearGradient(0,0,0,glow);
-  grad.addColorStop(0,"rgba(255,180,0,0.4)");
-  grad.addColorStop(1,"rgba(255,180,0,0)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,0,w,glow);
-
-  grad = ctx2d.createLinearGradient(0,h-glow,0,h);
-  grad.addColorStop(0,"rgba(255,180,0,0)");
-  grad.addColorStop(1,"rgba(255,180,0,0.4)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,h-glow,w,glow);
-
-  grad = ctx2d.createLinearGradient(0,0,glow,0);
-  grad.addColorStop(0,"rgba(255,180,0,0.4)");
-  grad.addColorStop(1,"rgba(255,180,0,0)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,0,glow,h);
-
-  grad = ctx2d.createLinearGradient(w-glow,0,w,0);
-  grad.addColorStop(0,"rgba(255,180,0,0)");
-  grad.addColorStop(1,"rgba(255,180,0,0.4)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(w-glow,0,glow,h);
-
-  const step = 20;
-  ctx2d.shadowColor = "rgba(255,80,0,0.8)";
-  ctx2d.shadowBlur = 15;
-  ctx2d.fillStyle = "#ff4500";
-
-  for(let x=0; x<w; x+=step){
-    const fh = 12 + Math.random()*8;
-    ctx2d.beginPath();
-    ctx2d.moveTo(x,0);
-    ctx2d.lineTo(x+step,0);
-    ctx2d.lineTo(x+step/2,fh);
-    ctx2d.closePath();
-    ctx2d.fill();
-
-    ctx2d.beginPath();
-    ctx2d.moveTo(x,h);
-    ctx2d.lineTo(x+step,h);
-    ctx2d.lineTo(x+step/2,h-fh);
-    ctx2d.closePath();
-    ctx2d.fill();
-  }
-
-  for(let y=0; y<h; y+=step){
-    const fw = 12 + Math.random()*8;
-    ctx2d.beginPath();
-    ctx2d.moveTo(0,y);
-    ctx2d.lineTo(0,y+step);
-    ctx2d.lineTo(fw,y+step/2);
-    ctx2d.closePath();
-    ctx2d.fill();
-
-    ctx2d.beginPath();
-    ctx2d.moveTo(w,y);
-    ctx2d.lineTo(w,y+step);
-    ctx2d.lineTo(w-fw,y+step/2);
-    ctx2d.closePath();
-    ctx2d.fill();
-  }
-
-  ctx2d.shadowBlur = 0;
+  ctx2d.fillStyle = pattern;
+  ctx2d.fillRect(0,0,w,edge);        // top
+  ctx2d.fillRect(0,h-edge,w,edge);    // bottom
+  ctx2d.fillRect(0,0,edge,h);         // left
+  ctx2d.fillRect(w-edge,0,edge,h);    // right
 
   ctx2d.restore();
 }
