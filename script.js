@@ -55,13 +55,15 @@ const HANDLE_SIZE          = 10;     // px
 const BOUNCE_FRAMES        = 68;
 const MAX_DRAG_DISTANCE    = 100;    // px
 const ATTACK_RANGE_PX      = 300;    // px
-const MAX_TRAIL_SEGMENTS   = 120;
+// Используем бесконечное количество сегментов,
+// чтобы следы самолётов сохранялись до конца раунда.
+const MAX_TRAIL_SEGMENTS   = Infinity;
 const BUILDING_BUFFER      = CELL_SIZE / 2;
 const MAX_BUILDINGS_GLOBAL = 100;
 const PLANES_PER_SIDE      = 4;      // количество самолётов у каждой команды
 
-const MIN_FLIGHT_RANGE_CELLS = 1;
-const MAX_FLIGHT_RANGE_CELLS = 25;
+const MIN_FLIGHT_RANGE_CELLS = 5;
+const MAX_FLIGHT_RANGE_CELLS = 30;
 
 const MIN_AMPLITUDE        = 0;
 const MAX_AMPLITUDE        = 30;     // UI показывает как *2°
@@ -82,9 +84,16 @@ const AA_MIN_DIST_FROM_EDGES = 40;
 
 
 /* ======= STATE ======= */
+
 let flightRangeCells = 10;     // значение «в клетках» для меню/физики
 const MAPS = ["clear sky"];
 let mapIndex = 0;
+
+
+let flightRangeCells = 15;     // значение «в клетках» для меню/физики
+let buildingsCount   = 0;
+
+
 let aimingAmplitude  = 10;     // 0..30 (UI показывает *2)
 
 let isGameOver   = false;
@@ -108,6 +117,11 @@ let buildings    = [];
 
 let aaUnits     = [];
 let aaPlacementPreview = null;
+
+
+let aaPointerDown = false;
+
+
 
 
 let phase = "MENU"; // MENU | AA_PLACEMENT | ROUND_START | TURN | ROUND_END
@@ -365,17 +379,8 @@ function handleStart(e) {
   window.addEventListener("pointerup", onHandleUp);
 }
 
-function handleAAPlacement(e){
-  e.preventDefault();
+function handleAAPlacement(x, y){
   if(phase !== 'AA_PLACEMENT') return;
-
-  const coords = getEventCoords(e);
-  const rect = gameCanvas.getBoundingClientRect();
-  const scaleX = gameCanvas.width / rect.width;
-  const scaleY = gameCanvas.height / rect.height;
-  const x = (coords.clientX - rect.left) * scaleX;
-  const y = (coords.clientY - rect.top) * scaleY;
-
   if(!isValidAAPlacement(x,y)) return;
 
   placeAA({owner: currentPlacer, x, y});
@@ -388,17 +393,45 @@ function handleAAPlacement(e){
   }
 }
 
+function updateAAPreviewFromEvent(e){
+  const coords = getEventCoords(e);
+  const rect = gameCanvas.getBoundingClientRect();
+  const scaleX = gameCanvas.width / rect.width;
+  const scaleY = gameCanvas.height / rect.height;
+  const x = (coords.clientX - rect.left) * scaleX;
+  const y = (coords.clientY - rect.top) * scaleY;
+  aaPlacementPreview = {x, y};
+}
+
 function onCanvasPointerDown(e){
   if(phase === 'AA_PLACEMENT'){
-    handleAAPlacement(e);
+    e.preventDefault();
+    aaPointerDown = true;
+    updateAAPreviewFromEvent(e);
   } else {
     handleStart(e);
   }
 }
 
+function onCanvasPointerMove(e){
+  if(phase !== 'AA_PLACEMENT') return;
+  if(e.pointerType === 'mouse' || aaPointerDown){
+    updateAAPreviewFromEvent(e);
+  }
+}
+
+function onCanvasPointerUp(){
+  if(phase !== 'AA_PLACEMENT') return;
+  aaPointerDown = false;
+  if(!aaPlacementPreview) return;
+  const {x, y} = aaPlacementPreview;
+  handleAAPlacement(x, y);
+  aaPlacementPreview = null;
+}
 
 gameCanvas.addEventListener("pointerdown", onCanvasPointerDown);
 gameCanvas.addEventListener("pointermove", onCanvasPointerMove);
+
 gameCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; });
 
 function onCanvasPointerMove(e){
@@ -413,6 +446,10 @@ function onCanvasPointerMove(e){
 
   aaPlacementPreview = {x, y};
 }
+
+gameCanvas.addEventListener("pointerup", onCanvasPointerUp);
+gameCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; aaPointerDown = false; });
+
 
 function isValidAAPlacement(x,y){
   // Allow AA placement anywhere within the player's half of the field.
@@ -838,12 +875,6 @@ function handleAAForPlane(p, fp){
             p.collisionX=p.x; p.collisionY=p.y;
             if(fp) flyingPoints = flyingPoints.filter(x=>x!==fp);
             checkVictory();
-            if(!isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
-              turnIndex = (turnIndex + 1) % turnColors.length;
-              if(gameMode === "computer" && turnColors[turnIndex] === "blue"){
-                aiMoveScheduled = false;
-              }
-            }
             return true;
           }
         }
