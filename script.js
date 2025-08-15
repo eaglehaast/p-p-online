@@ -92,14 +92,6 @@ const MAPS = ["clear sky", "wall"];
 let mapIndex = 0;
 
 
-
-const MAPS = ["clear sky", "wall"];
-
-const MAPS = ["clear sky"];
-
-let mapIndex = 0;
-
-
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
 let buildingsCount   = 0;
 
