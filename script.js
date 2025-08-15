@@ -810,18 +810,26 @@ function planeBuildingCollision(fp, b){
 
     collided = true;
 
-    // нормаль по минимальному проникновению
-    const penLeft   = Math.abs(p.x - (b.x - b.width/2));
-    const penRight  = Math.abs((b.x + b.width/2) - p.x);
-    const penTop    = Math.abs(p.y - (b.y - b.height/2));
-    const penBottom = Math.abs((b.y + b.height/2) - p.y);
-
     let nx=0, ny=0;
-    const minPen = Math.min(penLeft, penRight, penTop, penBottom);
-    if(minPen === penLeft)      { nx = -1; ny = 0; }
-    else if(minPen === penRight){ nx =  1; ny = 0; }
-    else if(minPen === penTop)  { nx =  0; ny = -1;}
-    else                        { nx =  0; ny =  1;}
+
+    // направление нормали из точки соприкосновения
+    if(dx !== 0 || dy !== 0){
+      const dist = Math.sqrt(dist2);
+      nx = dx / dist;
+      ny = dy / dist;
+    } else {
+      // если центр внутри прямоугольника – fallback по оси минимального проникновения
+      const penLeft   = Math.abs(p.x - (b.x - b.width/2));
+      const penRight  = Math.abs((b.x + b.width/2) - p.x);
+      const penTop    = Math.abs(p.y - (b.y - b.height/2));
+      const penBottom = Math.abs((b.y + b.height/2) - p.y);
+
+      const minPen = Math.min(penLeft, penRight, penTop, penBottom);
+      if(minPen === penLeft)      { nx = -1; ny = 0; }
+      else if(minPen === penRight){ nx =  1; ny = 0; }
+      else if(minPen === penTop)  { nx =  0; ny = -1;}
+      else                        { nx =  0; ny =  1;}
+    }
 
     // отражаем скорость
     const dot = fp.vx*nx + fp.vy*ny;
@@ -830,8 +838,8 @@ function planeBuildingCollision(fp, b){
 
     // выталкивание за пределы
     const EPS = 0.5;
-    p.x = p.x + nx * (POINT_RADIUS + EPS);
-    p.y = p.y + ny * (POINT_RADIUS + EPS);
+    p.x = closestX + nx * (POINT_RADIUS + EPS);
+    p.y = closestY + ny * (POINT_RADIUS + EPS);
   }
 
   if(collided){
