@@ -26,8 +26,8 @@ const playBtn     = document.getElementById("playBtn");
 
 const flightRangeMinusBtn = document.getElementById("flightRangeMinus");
 const flightRangePlusBtn  = document.getElementById("flightRangePlus");
-const buildingsMinusBtn   = document.getElementById("buildingsMinus");
-const buildingsPlusBtn    = document.getElementById("buildingsPlus");
+const mapMinusBtn   = document.getElementById("mapMinus");
+const mapPlusBtn    = document.getElementById("mapPlus");
 const amplitudeMinusBtn   = document.getElementById("amplitudeMinus");
 const amplitudePlusBtn    = document.getElementById("amplitudePlus");
 const addAAToggle         = document.getElementById("addAAToggle");
@@ -84,8 +84,14 @@ const AA_MIN_DIST_FROM_EDGES = 40;
 
 
 /* ======= STATE ======= */
+
+let flightRangeCells = 10;     // значение «в клетках» для меню/физики
+const MAPS = ["clear sky"];
+let mapIndex = 0;
+
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
 let buildingsCount   = 0;
+
 let aimingAmplitude  = 10;     // 0..30 (UI показывает *2)
 
 let isGameOver   = false;
@@ -109,7 +115,9 @@ let buildings    = [];
 
 let aaUnits     = [];
 let aaPlacementPreview = null;
+
 let aaPointerDown = false;
+
 
 
 let phase = "MENU"; // MENU | AA_PLACEMENT | ROUND_START | TURN | ROUND_END
@@ -173,7 +181,8 @@ function resetGame(){
   globalFrame=0;
   flyingPoints= [];
   buildings = [];
-  buildingsCount = 0;
+  mapIndex = 0;
+  applyCurrentMap();
   aaUnits = [];
 
   hasShotThisRound = false;
@@ -187,8 +196,6 @@ function resetGame(){
   hotSeatBtn.classList.remove("selected");
   computerBtn.classList.remove("selected");
   onlineBtn.classList.remove("selected");
-
-  document.getElementById("buildingsCountValue").textContent = buildingsCount;
 
   aimingAmplitude = 10;
   updateAmplitudeDisplay();
@@ -221,8 +228,8 @@ function resetGame(){
 function setControlsEnabled(enabled){
   flightRangeMinusBtn.disabled = !enabled;
   flightRangePlusBtn.disabled  = !enabled;
-  buildingsMinusBtn.disabled   = !enabled;
-  buildingsPlusBtn.disabled    = !enabled;
+  mapMinusBtn.disabled   = !enabled;
+  mapPlusBtn.disabled    = !enabled;
   amplitudeMinusBtn.disabled   = !enabled;
   amplitudePlusBtn.disabled    = !enabled;
 }
@@ -417,8 +424,25 @@ function onCanvasPointerUp(){
 
 gameCanvas.addEventListener("pointerdown", onCanvasPointerDown);
 gameCanvas.addEventListener("pointermove", onCanvasPointerMove);
+
+gameCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; });
+
+function onCanvasPointerMove(e){
+  if(phase !== 'AA_PLACEMENT') return;
+
+  const coords = getEventCoords(e);
+  const rect = gameCanvas.getBoundingClientRect();
+  const scaleX = gameCanvas.width / rect.width;
+  const scaleY = gameCanvas.height / rect.height;
+  const x = (coords.clientX - rect.left) * scaleX;
+  const y = (coords.clientY - rect.top) * scaleY;
+
+  aaPlacementPreview = {x, y};
+}
+
 gameCanvas.addEventListener("pointerup", onCanvasPointerUp);
 gameCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; aaPointerDown = false; });
+
 
 function isValidAAPlacement(x,y){
   // Allow AA placement anywhere within the player's half of the field.
@@ -1374,39 +1398,28 @@ flightRangePlusBtn.addEventListener("pointerdown", (event)=>{
 flightRangePlusBtn.addEventListener("pointerup", ()=>stopButtonInterval(flightRangePlusBtn));
 flightRangePlusBtn.addEventListener("pointerleave", ()=>stopButtonInterval(flightRangePlusBtn));
 
-/* Buildings */
-buildingsMinusBtn.addEventListener("pointerdown", (event)=>{
+/* Map */
+mapMinusBtn.addEventListener("pointerdown", (event)=>{
   event.preventDefault();
   if(hasShotThisRound) return;
-  startButtonInterval(buildingsMinusBtn, ()=>{
-    if(buildingsCount >= 4){
-      buildingsCount -= 4;
-      buildings.splice(-4,4);
-    } else if(buildingsCount>0){
-      buildingsCount = 0; buildings = [];
-    }
-    document.getElementById("buildingsCountValue").textContent = buildingsCount;
-    renderScoreboard();
+  startButtonInterval(mapMinusBtn, ()=>{
+    mapIndex = (mapIndex - 1 + MAPS.length) % MAPS.length;
+    applyCurrentMap();
   });
 });
-buildingsMinusBtn.addEventListener("pointerup", ()=>stopButtonInterval(buildingsMinusBtn));
-buildingsMinusBtn.addEventListener("pointerleave", ()=>stopButtonInterval(buildingsMinusBtn));
+mapMinusBtn.addEventListener("pointerup", ()=>stopButtonInterval(mapMinusBtn));
+mapMinusBtn.addEventListener("pointerleave", ()=>stopButtonInterval(mapMinusBtn));
 
-buildingsPlusBtn.addEventListener("pointerdown", (event)=>{
+mapPlusBtn.addEventListener("pointerdown", (event)=>{
   event.preventDefault();
   if(hasShotThisRound) return;
-  startButtonInterval(buildingsPlusBtn, ()=>{
-    if(buildingsCount < MAX_BUILDINGS_GLOBAL){
-      const add = Math.min(4, MAX_BUILDINGS_GLOBAL - buildingsCount);
-      buildingsCount += add;
-      addBuildingsRandomly(add);
-      document.getElementById("buildingsCountValue").textContent = buildingsCount;
-      renderScoreboard();
-    }
+  startButtonInterval(mapPlusBtn, ()=>{
+    mapIndex = (mapIndex + 1) % MAPS.length;
+    applyCurrentMap();
   });
 });
-buildingsPlusBtn.addEventListener("pointerup", ()=>stopButtonInterval(buildingsPlusBtn));
-buildingsPlusBtn.addEventListener("pointerleave", ()=>stopButtonInterval(buildingsPlusBtn));
+mapPlusBtn.addEventListener("pointerup", ()=>stopButtonInterval(mapPlusBtn));
+mapPlusBtn.addEventListener("pointerleave", ()=>stopButtonInterval(mapPlusBtn));
 
 /* Aiming amplitude */
 amplitudeMinusBtn.addEventListener("pointerdown", (event)=>{
@@ -1526,8 +1539,8 @@ function startNewRound(){
 
   aiMoveScheduled = false;
 
-  // оставляем здания
-  document.getElementById("buildingsCountValue").textContent = buildingsCount;
+  // оставляем текущую карту
+  updateMapDisplay();
 
   aimingAmplitude = 10;
   updateAmplitudeDisplay();
@@ -1573,6 +1586,22 @@ function updateAmplitudeDisplay(){
     const maxAngle = aimingAmplitude * 2;
     disp.textContent = `${maxAngle.toFixed(0)}°`;
   }
+}
+
+function updateMapDisplay(){
+  const el = document.getElementById("mapNameValue");
+  if(el){
+    el.textContent = MAPS[mapIndex];
+  }
+}
+
+function applyCurrentMap(){
+  buildings = [];
+  if(MAPS[mapIndex] === "clear sky"){
+    // no buildings to add
+  }
+  updateMapDisplay();
+  renderScoreboard();
 }
 
 /* ======= Flight Range helpers (самолёт и пламя) ======= */
@@ -1648,5 +1677,5 @@ initPoints();
 resetFlightRangeFlame();
 updateAmplitudeDisplay();
 updateFlightRangeDisplay();
-renderScoreboard();
+applyCurrentMap();
 startMenuAnimation();      // пока в меню — крутится индикатор

@@ -186,7 +186,7 @@ body {
   box-sizing: border-box;
 }
 
-#modeMenu #buildingsControl {
+#modeMenu #mapControl {
   grid-template-rows: auto auto auto;
 }
 
@@ -348,13 +348,13 @@ body {
 #modeMenu .control-buttons button:hover { transform: translateY(-3px); box-shadow: 0 6px 12px rgba(0,0,0,0.3); }
 #modeMenu .control-buttons button:disabled { background:#a1a1a1; cursor:not-allowed; }
 
-#buildingsCountDisplay {
+#mapNameDisplay {
   font-size: 28px;
   color: #ee0000;
   font-family: 'Patrick Hand', cursive;
 }
 
-#buildingsCountValue {
+#mapNameValue {
   font-weight: bold;
 }
 
