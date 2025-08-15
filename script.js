@@ -87,6 +87,11 @@ const AA_MIN_DIST_FROM_EDGES = 40;
 
 
 const MAPS = ["clear sky", "wall"];
+let mapIndex = 0;
+
+
+
+const MAPS = ["clear sky", "wall"];
 
 const MAPS = ["clear sky"];
 
@@ -1367,6 +1372,27 @@ function stopButtonInterval(button){
   delete buttonIntervals[button.id];
 }
 
+// Helper to support pointer and touch/mouse events
+function setupRepeatButton(btn, step){
+  const start = (event)=>{
+    event.preventDefault();
+    if(hasShotThisRound) return;
+    startButtonInterval(btn, step);
+  };
+  const stop = ()=>stopButtonInterval(btn);
+  if(window.PointerEvent){
+    btn.addEventListener("pointerdown", start);
+    btn.addEventListener("pointerup", stop);
+    btn.addEventListener("pointerleave", stop);
+  } else {
+    btn.addEventListener("mousedown", start);
+    btn.addEventListener("mouseup", stop);
+    btn.addEventListener("mouseleave", stop);
+    btn.addEventListener("touchstart", start);
+    btn.addEventListener("touchend", stop);
+  }
+}
+
 
 // Add AA toggle
 
@@ -1378,86 +1404,45 @@ if (addAAToggle) {
   });
 }
 
-
-
 /* Flight Range */
-flightRangeMinusBtn.addEventListener("pointerdown", (event)=>{
-  event.preventDefault();
-  if(hasShotThisRound) return;
-  startButtonInterval(flightRangeMinusBtn, ()=>{
-    if(flightRangeCells > MIN_FLIGHT_RANGE_CELLS){
-      flightRangeCells--;
-      updateFlightRangeFlame();
-      updateFlightRangeDisplay();
-    }
-  });
+setupRepeatButton(flightRangeMinusBtn, ()=>{
+  if(flightRangeCells > MIN_FLIGHT_RANGE_CELLS){
+    flightRangeCells--;
+    updateFlightRangeFlame();
+    updateFlightRangeDisplay();
+  }
 });
-flightRangeMinusBtn.addEventListener("pointerup", ()=>stopButtonInterval(flightRangeMinusBtn));
-flightRangeMinusBtn.addEventListener("pointerleave", ()=>stopButtonInterval(flightRangeMinusBtn));
-
-flightRangePlusBtn.addEventListener("pointerdown", (event)=>{
-  event.preventDefault();
-  if(hasShotThisRound) return;
-  startButtonInterval(flightRangePlusBtn, ()=>{
-    if(flightRangeCells < MAX_FLIGHT_RANGE_CELLS){
-      flightRangeCells++;
-      updateFlightRangeFlame();
-      updateFlightRangeDisplay();
-    }
-  });
+setupRepeatButton(flightRangePlusBtn, ()=>{
+  if(flightRangeCells < MAX_FLIGHT_RANGE_CELLS){
+    flightRangeCells++;
+    updateFlightRangeFlame();
+    updateFlightRangeDisplay();
+  }
 });
-flightRangePlusBtn.addEventListener("pointerup", ()=>stopButtonInterval(flightRangePlusBtn));
-flightRangePlusBtn.addEventListener("pointerleave", ()=>stopButtonInterval(flightRangePlusBtn));
 
 /* Map */
-mapMinusBtn.addEventListener("pointerdown", (event)=>{
-  event.preventDefault();
-  if(hasShotThisRound) return;
-  startButtonInterval(mapMinusBtn, ()=>{
-    mapIndex = (mapIndex - 1 + MAPS.length) % MAPS.length;
-    applyCurrentMap();
-  });
+setupRepeatButton(mapMinusBtn, ()=>{
+  mapIndex = (mapIndex - 1 + MAPS.length) % MAPS.length;
+  applyCurrentMap();
 });
-mapMinusBtn.addEventListener("pointerup", ()=>stopButtonInterval(mapMinusBtn));
-mapMinusBtn.addEventListener("pointerleave", ()=>stopButtonInterval(mapMinusBtn));
-
-mapPlusBtn.addEventListener("pointerdown", (event)=>{
-  event.preventDefault();
-  if(hasShotThisRound) return;
-  startButtonInterval(mapPlusBtn, ()=>{
-    mapIndex = (mapIndex + 1) % MAPS.length;
-    applyCurrentMap();
-  });
+setupRepeatButton(mapPlusBtn, ()=>{
+  mapIndex = (mapIndex + 1) % MAPS.length;
+  applyCurrentMap();
 });
-mapPlusBtn.addEventListener("pointerup", ()=>stopButtonInterval(mapPlusBtn));
-mapPlusBtn.addEventListener("pointerleave", ()=>stopButtonInterval(mapPlusBtn));
 
 /* Aiming amplitude */
-amplitudeMinusBtn.addEventListener("pointerdown", (event)=>{
-  event.preventDefault();
-  if(hasShotThisRound) return;
-  startButtonInterval(amplitudeMinusBtn, ()=>{
-    if(aimingAmplitude > MIN_AMPLITUDE){
-      aimingAmplitude--;
-      updateAmplitudeDisplay();
-    }
-  });
+setupRepeatButton(amplitudeMinusBtn, ()=>{
+  if(aimingAmplitude > MIN_AMPLITUDE){
+    aimingAmplitude--;
+    updateAmplitudeDisplay();
+  }
 });
-amplitudeMinusBtn.addEventListener("pointerup", ()=>stopButtonInterval(amplitudeMinusBtn));
-amplitudeMinusBtn.addEventListener("pointerleave", ()=>stopButtonInterval(amplitudeMinusBtn));
-
-amplitudePlusBtn.addEventListener("pointerdown", (event)=>{
-  event.preventDefault();
-  if(hasShotThisRound) return;
-  startButtonInterval(amplitudePlusBtn, ()=>{
-    if(aimingAmplitude < MAX_AMPLITUDE){
-      aimingAmplitude++;
-      updateAmplitudeDisplay();
-    }
-  });
+setupRepeatButton(amplitudePlusBtn, ()=>{
+  if(aimingAmplitude < MAX_AMPLITUDE){
+    aimingAmplitude++;
+    updateAmplitudeDisplay();
+  }
 });
-amplitudePlusBtn.addEventListener("pointerup", ()=>stopButtonInterval(amplitudePlusBtn));
-amplitudePlusBtn.addEventListener("pointerleave", ()=>stopButtonInterval(amplitudePlusBtn));
 
 /* Поля/здания */
 const buildingTypes = ['rectangle', 'rectangle_double', 'rectangle_triple'];
