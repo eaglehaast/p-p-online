@@ -50,7 +50,7 @@ document.addEventListener('dblclick', (e) => {
 /* ======= CONFIG ======= */
 const CELL_SIZE            = 20;     // px
 const POINT_RADIUS         = 15;     // px (увеличено для мобильных)
-const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit AA center
+const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit Anti-Aircraft center
 const HANDLE_SIZE          = 10;     // px
 const BOUNCE_FRAMES        = 68;
 const MAX_DRAG_DISTANCE    = 100;    // px
@@ -70,7 +70,7 @@ const MAX_AMPLITUDE        = 30;     // UI показывает как *2°
 const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 
 
-// AA defaults and placement limits
+// Anti-Aircraft defaults and placement limits
 const AA_DEFAULTS = {
   radius: 60, // detection radius, 3x smaller than original 180
   hp: 1,
@@ -126,7 +126,7 @@ let aaPointerDown = false;
 
 
 
-let phase = "MENU"; // MENU | AA_PLACEMENT | ROUND_START | TURN | ROUND_END
+let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_START | TURN | ROUND_END
 
 let currentPlacer = null; // 'green' | 'blue'
 
@@ -438,7 +438,7 @@ gameCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; a
 
 
 function isValidAAPlacement(x,y){
-  // Allow AA placement anywhere within the player's half of the field.
+  // Allow Anti-Aircraft placement anywhere within the player's half of the field.
   // The center may touch field edges, overlap planes or buildings, and its
   // radius may extend beyond the canvas boundaries.
 
@@ -992,7 +992,7 @@ function handleAAForPlane(p, fp){
     }
   }
 
-  // AA against stationary planes
+  // Anti-Aircraft against stationary planes
   if(!isGameOver){
     for(const p of points){
       if(!p.isAlive || p.burning) continue;
@@ -1133,104 +1133,33 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.setLineDash([]);
 
   if (MAPS[mapIndex] === "burning edges") {
-    drawBurntEdges(ctx2d, w, h);
+    drawHazardTapeEdges(ctx2d, w, h);
   }
 }
 
-function drawBurntEdges(ctx2d, w, h){
-  const edge = 20;
+function drawHazardTapeEdges(ctx2d, w, h){
+  const edge = 12;
   ctx2d.save();
-  let grad;
 
-  grad = ctx2d.createLinearGradient(0,0,0,edge);
-  grad.addColorStop(0,"rgba(0,0,0,0.7)");
-  grad.addColorStop(1,"rgba(0,0,0,0)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,0,w,edge);
-
-  grad = ctx2d.createLinearGradient(0,h-edge,0,h);
-  grad.addColorStop(0,"rgba(0,0,0,0)");
-  grad.addColorStop(1,"rgba(0,0,0,0.7)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,h-edge,w,edge);
-
-  grad = ctx2d.createLinearGradient(0,0,edge,0);
-  grad.addColorStop(0,"rgba(0,0,0,0.7)");
-  grad.addColorStop(1,"rgba(0,0,0,0)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,0,edge,h);
-
-  grad = ctx2d.createLinearGradient(w-edge,0,w,0);
-  grad.addColorStop(0,"rgba(0,0,0,0)");
-  grad.addColorStop(1,"rgba(0,0,0,0.7)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(w-edge,0,edge,h);
-
-  const glow = 10;
-  grad = ctx2d.createLinearGradient(0,0,0,glow);
-  grad.addColorStop(0,"rgba(255,180,0,0.4)");
-  grad.addColorStop(1,"rgba(255,180,0,0)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,0,w,glow);
-
-  grad = ctx2d.createLinearGradient(0,h-glow,0,h);
-  grad.addColorStop(0,"rgba(255,180,0,0)");
-  grad.addColorStop(1,"rgba(255,180,0,0.4)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,h-glow,w,glow);
-
-  grad = ctx2d.createLinearGradient(0,0,glow,0);
-  grad.addColorStop(0,"rgba(255,180,0,0.4)");
-  grad.addColorStop(1,"rgba(255,180,0,0)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,0,glow,h);
-
-  grad = ctx2d.createLinearGradient(w-glow,0,w,0);
-  grad.addColorStop(0,"rgba(255,180,0,0)");
-  grad.addColorStop(1,"rgba(255,180,0,0.4)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(w-glow,0,glow,h);
-
-  const step = 20;
-  ctx2d.shadowColor = "rgba(255,80,0,0.8)";
-  ctx2d.shadowBlur = 15;
-  ctx2d.fillStyle = "#ff4500";
-
-  for(let x=0; x<w; x+=step){
-    const fh = 12 + Math.random()*8;
-    ctx2d.beginPath();
-    ctx2d.moveTo(x,0);
-    ctx2d.lineTo(x+step,0);
-    ctx2d.lineTo(x+step/2,fh);
-    ctx2d.closePath();
-    ctx2d.fill();
-
-    ctx2d.beginPath();
-    ctx2d.moveTo(x,h);
-    ctx2d.lineTo(x+step,h);
-    ctx2d.lineTo(x+step/2,h-fh);
-    ctx2d.closePath();
-    ctx2d.fill();
+  // create diagonal red-white hazard tape pattern
+  const patternCanvas = document.createElement('canvas');
+  patternCanvas.width = patternCanvas.height = 40;
+  const pctx = patternCanvas.getContext('2d');
+  pctx.fillStyle = '#fff';
+  pctx.fillRect(0, 0, 40, 40);
+  pctx.translate(20, 20);
+  pctx.rotate(-Math.PI / 4);
+  pctx.fillStyle = '#d00';
+  for(let i = -40; i <= 40; i += 20){
+    pctx.fillRect(i, -40, 10, 80);
   }
+  const pattern = ctx2d.createPattern(patternCanvas, 'repeat');
 
-  for(let y=0; y<h; y+=step){
-    const fw = 12 + Math.random()*8;
-    ctx2d.beginPath();
-    ctx2d.moveTo(0,y);
-    ctx2d.lineTo(0,y+step);
-    ctx2d.lineTo(fw,y+step/2);
-    ctx2d.closePath();
-    ctx2d.fill();
-
-    ctx2d.beginPath();
-    ctx2d.moveTo(w,y);
-    ctx2d.lineTo(w,y+step);
-    ctx2d.lineTo(w-fw,y+step/2);
-    ctx2d.closePath();
-    ctx2d.fill();
-  }
-
-  ctx2d.shadowBlur = 0;
+  ctx2d.fillStyle = pattern;
+  ctx2d.fillRect(0, 0, w, edge);         // top
+  ctx2d.fillRect(0, h - edge, w, edge);  // bottom
+  ctx2d.fillRect(0, 0, edge, h);         // left
+  ctx2d.fillRect(w - edge, 0, edge, h);  // right
 
   ctx2d.restore();
 }
@@ -1345,7 +1274,7 @@ function drawAAUnits(){
     gameCtx.lineTo(endX, endY);
     gameCtx.stroke();
 
-    // AA center
+    // Anti-Aircraft center
     gameCtx.beginPath();
     gameCtx.fillStyle = aa.owner;
     gameCtx.arc(aa.x, aa.y, 6, 0, Math.PI*2);
@@ -1460,10 +1389,10 @@ function drawPlayerPanel(ctx, color, victories, isTurn){
   let statusText;
   if (phase === 'AA_PLACEMENT') {
     if (currentPlacer === color) {
-      statusText = 'You are placing AA';
+      statusText = 'You are placing Anti-Aircraft';
       ctx.fillStyle = color;
     } else {
-      statusText = 'Enemy is placing AA';
+      statusText = 'Enemy is placing Anti-Aircraft';
       ctx.fillStyle = '#888';
     }
   } else if (isTurn) {
@@ -1516,7 +1445,7 @@ function setupRepeatButton(btn, step){
 }
 
 
-// Add AA toggle
+// Add Anti-Aircraft toggle
 
 if (addAAToggle) {
   addAAToggle.checked = settings.addAA;
