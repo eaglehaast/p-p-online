@@ -81,6 +81,7 @@ const AA_DEFAULTS = {
 };
 const AA_MIN_DIST_FROM_OPPONENT_BASE = 120;
 const AA_MIN_DIST_FROM_EDGES = 40;
+const AA_TRAIL_MS = 600; // radar sweep afterglow duration
 
 
 /* ======= STATE ======= */
@@ -465,7 +466,8 @@ function placeAA({owner,x,y}){
     sweepAngleDeg: 0,
     rotationDegPerSec: AA_DEFAULTS.rotationDegPerSec,
     beamWidthDeg: AA_DEFAULTS.beamWidthDeg,
-    dwellTimeMs: AA_DEFAULTS.dwellTimeMs
+    dwellTimeMs: AA_DEFAULTS.dwellTimeMs,
+    trail: []
   });
 }
 
@@ -921,8 +923,11 @@ function handleAAForPlane(p, fp){
     setTimeout(() => { doComputerMove(); }, 300);
   }
 
+  const now = performance.now();
   for(const aa of aaUnits){
     aa.sweepAngleDeg = (aa.sweepAngleDeg + aa.rotationDegPerSec/60) % 360;
+    aa.trail.push({angleDeg: aa.sweepAngleDeg, time: now});
+    aa.trail = aa.trail.filter(seg => now - seg.time < AA_TRAIL_MS);
   }
 
 
@@ -1180,6 +1185,7 @@ function drawHazardTapeEdges(ctx2d, w, h){
   ctx2d.fillRect(w-edge,0,edge,h);    // right
 
 
+
   ctx2d.restore();
 }
 
@@ -1274,8 +1280,10 @@ function drawBuildings(){
 
 
 function drawAAUnits(){
+  const now = performance.now();
   for(const aa of aaUnits){
     gameCtx.save();
+
     // radar sweep line only
     const ang = aa.sweepAngleDeg * Math.PI/180;
     const endX = aa.x + Math.cos(ang) * aa.radius;
