@@ -961,16 +961,21 @@ function handleAAForPlane(p, fp){
   const now = performance.now();
   for(const aa of aaUnits){
     if(aa.owner === p.color) continue; // no friendly fire
-    const dist = Math.hypot(p.x - aa.x, p.y - aa.y);
+    const dx = p.x - aa.x;
+    const dy = p.y - aa.y;
+    const dist = Math.hypot(dx, dy);
     if(dist < AA_HIT_RADIUS){
       aa.hp--;
       if(aa.hp<=0){ aaUnits = aaUnits.filter(a=>a!==aa); }
       continue;
     }
-    if(dist <= aa.radius){
-      if(isPathClear(aa.x, aa.y, p.x, p.y)){
+    if(dist <= aa.radius + POINT_RADIUS){
+      const contactX = dist === 0 ? p.x : p.x - dx / dist * POINT_RADIUS;
+      const contactY = dist === 0 ? p.y : p.y - dy / dist * POINT_RADIUS;
+      if(isPathClear(aa.x, aa.y, contactX, contactY)){
         const angleToPlane = (Math.atan2(p.y - aa.y, p.x - aa.x) * 180/Math.PI + 360) % 360;
-        if(angleDiffDeg(angleToPlane, aa.sweepAngleDeg) <= aa.beamWidthDeg/2){
+        const angleBuffer = Math.asin(Math.min(1, POINT_RADIUS / Math.max(1, dist))) * 180/Math.PI;
+        if(angleDiffDeg(angleToPlane, aa.sweepAngleDeg) <= aa.beamWidthDeg/2 + angleBuffer){
           if(!p._aaTimes) p._aaTimes={};
           if(!p._aaTimes[aa.id]){
             p._aaTimes[aa.id]=now;
