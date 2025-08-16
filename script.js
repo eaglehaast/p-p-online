@@ -81,6 +81,7 @@ const AA_DEFAULTS = {
 };
 const AA_MIN_DIST_FROM_OPPONENT_BASE = 120;
 const AA_MIN_DIST_FROM_EDGES = 40;
+
 const AA_TRAIL_MS = 600; // radar sweep afterglow duration
 
 
@@ -1159,6 +1160,7 @@ function drawHazardTapeEdges(ctx2d, w, h){
 
 
 
+
   // create diagonal red-white stripe pattern similar to construction tape
   const patternCanvas = document.createElement('canvas');
   patternCanvas.width = patternCanvas.height = 20;
@@ -1284,6 +1286,7 @@ function drawAAUnits(){
   for(const aa of aaUnits){
     gameCtx.save();
 
+
     // radar sweep line only
     const ang = aa.sweepAngleDeg * Math.PI/180;
     const endX = aa.x + Math.cos(ang) * aa.radius;
@@ -1301,6 +1304,7 @@ function drawAAUnits(){
     gameCtx.fillStyle = aa.owner;
     gameCtx.arc(aa.x, aa.y, 6, 0, Math.PI*2);
     gameCtx.fill();
+
 
     gameCtx.restore();
   }
