@@ -1358,8 +1358,8 @@ function drawAAUnits(){
     gameCtx.lineTo(endX, endY);
     gameCtx.stroke();
 
-    // white highlight on sweep line
-    gameCtx.strokeStyle = "white";
+    // inner red highlight on sweep line
+    gameCtx.strokeStyle = "red";
     gameCtx.lineWidth = 1;
     gameCtx.beginPath();
     gameCtx.moveTo(aa.x, aa.y);
