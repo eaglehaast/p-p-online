@@ -92,7 +92,7 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 
 
-const MAPS = ["clear sky", "wall", "burning edges"];
+const MAPS = ["clear sky", "wall", "two walls", "burning edges"];
 let mapIndex = 1;
 
 
@@ -1826,6 +1826,26 @@ function applyCurrentMap(){
       type: "wall",
       x: gameCanvas.width / 2,
       y: gameCanvas.height / 2,
+      width: wallWidth,
+      height: wallHeight,
+      color: "darkred"
+    });
+  } else if (MAPS[mapIndex] === "two walls") {
+    const wallWidth = gameCanvas.width / 2;
+    const wallHeight = CELL_SIZE;
+    const offset = CELL_SIZE * 2;
+    buildings.push({
+      type: "wall",
+      x: wallWidth / 2,
+      y: gameCanvas.height / 2 + offset,
+      width: wallWidth,
+      height: wallHeight,
+      color: "darkred"
+    });
+    buildings.push({
+      type: "wall",
+      x: gameCanvas.width - wallWidth / 2,
+      y: gameCanvas.height / 2 - offset,
       width: wallWidth,
       height: wallHeight,
       color: "darkred"
