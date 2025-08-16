@@ -83,7 +83,9 @@ const AA_MIN_DIST_FROM_OPPONENT_BASE = 120;
 const AA_MIN_DIST_FROM_EDGES = 40;
 const AA_TRAIL_MS = 1000; // radar sweep afterglow duration
 
+
 const AA_TRAIL_MS = 600; // radar sweep afterglow duration
+
 
 
 /* ======= STATE ======= */
@@ -129,7 +131,9 @@ let aaPointerDown = false;
 
 
 
+
 let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_START | TURN | ROUND_END
+
 
 let currentPlacer = null; // 'green' | 'blue'
 
@@ -505,6 +509,7 @@ function drawAAPreview(){
 
   // rotating sweep line preview
   const ang = (Date.now()/1000 * AA_DEFAULTS.rotationDegPerSec % 360) * Math.PI/180;
+
 
   const endX = x + Math.cos(ang) * AA_DEFAULTS.radius;
   const endY = y + Math.sin(ang) * AA_DEFAULTS.radius;
@@ -1190,6 +1195,8 @@ function drawNotebookBackground(ctx2d, w, h){
 }
 
 function drawHazardTapeEdges(ctx2d, w, h){
+
+=======
   const edge = 12;
   ctx2d.save();
 
@@ -1324,6 +1331,7 @@ function drawAAUnits(){
 
 
 
+
     // radar sweep line only
     const ang = aa.sweepAngleDeg * Math.PI/180;
     const endX = aa.x + Math.cos(ang) * aa.radius;
@@ -1341,6 +1349,7 @@ function drawAAUnits(){
     gameCtx.fillStyle = aa.owner;
     gameCtx.arc(aa.x, aa.y, 6, 0, Math.PI*2);
     gameCtx.fill();
+
 
 
 
