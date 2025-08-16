@@ -81,7 +81,8 @@ const AA_DEFAULTS = {
 };
 const AA_MIN_DIST_FROM_OPPONENT_BASE = 120;
 const AA_MIN_DIST_FROM_EDGES = 40;
-const AA_TRAIL_MS = 1000; // radar sweep afterglow duration
+
+const AA_TRAIL_MS = 600; // radar sweep afterglow duration
 
 
 /* ======= STATE ======= */
@@ -1157,25 +1158,35 @@ function drawHazardTapeEdges(ctx2d, w, h){
   const edge = 12;
   ctx2d.save();
 
-  // create diagonal red-white hazard tape pattern
+
+
+
+  // create diagonal red-white stripe pattern similar to construction tape
   const patternCanvas = document.createElement('canvas');
-  patternCanvas.width = patternCanvas.height = 40;
+  patternCanvas.width = patternCanvas.height = 20;
   const pctx = patternCanvas.getContext('2d');
-  pctx.fillStyle = '#fff';
-  pctx.fillRect(0, 0, 40, 40);
-  pctx.translate(20, 20);
-  pctx.rotate(-Math.PI / 4);
-  pctx.fillStyle = '#d00';
-  for(let i = -40; i <= 40; i += 20){
-    pctx.fillRect(i, -40, 10, 80);
-  }
+  pctx.fillStyle = '#ffffff';
+  pctx.fillRect(0, 0, 20, 20);
+  pctx.strokeStyle = '#d00';
+  pctx.lineWidth = 10;
+  // draw two lines to ensure seamless stripes
+  pctx.beginPath();
+  pctx.moveTo(-10,20);
+  pctx.lineTo(20,-10);
+  pctx.stroke();
+  pctx.beginPath();
+  pctx.moveTo(0,20);
+  pctx.lineTo(20,0);
+  pctx.stroke();
   const pattern = ctx2d.createPattern(patternCanvas, 'repeat');
 
   ctx2d.fillStyle = pattern;
-  ctx2d.fillRect(0, 0, w, edge);         // top
-  ctx2d.fillRect(0, h - edge, w, edge);  // bottom
-  ctx2d.fillRect(0, 0, edge, h);         // left
-  ctx2d.fillRect(w - edge, 0, edge, h);  // right
+  ctx2d.fillRect(0,0,w,edge);        // top
+  ctx2d.fillRect(0,h-edge,w,edge);    // bottom
+  ctx2d.fillRect(0,0,edge,h);         // left
+  ctx2d.fillRect(w-edge,0,edge,h);    // right
+
+
 
   ctx2d.restore();
 }
@@ -1274,36 +1285,26 @@ function drawAAUnits(){
   const now = performance.now();
   for(const aa of aaUnits){
     gameCtx.save();
+
+
+    // radar sweep line only
+    const ang = aa.sweepAngleDeg * Math.PI/180;
+    const endX = aa.x + Math.cos(ang) * aa.radius;
+    const endY = aa.y + Math.sin(ang) * aa.radius;
     gameCtx.strokeStyle = aa.owner;
     gameCtx.lineWidth = 2;
+    gameCtx.beginPath();
+    gameCtx.moveTo(aa.x, aa.y);
+    gameCtx.lineTo(endX, endY);
+    gameCtx.stroke();
 
-    const len = aa.trail.length;
-    for(let i=0; i < len - 1; i++){
-      const seg = aa.trail[i];
-      const age = now - seg.time;
-      const alpha = 1 - age/AA_TRAIL_MS;
-      if(alpha <= 0) continue;
-      gameCtx.globalAlpha = alpha * 0.6;
-      const ang = seg.angleDeg * Math.PI/180;
-      const endX = aa.x + Math.cos(ang) * aa.radius;
-      const endY = aa.y + Math.sin(ang) * aa.radius;
-      gameCtx.beginPath();
-      gameCtx.moveTo(aa.x, aa.y);
-      gameCtx.lineTo(endX, endY);
-      gameCtx.stroke();
-    }
 
-    if(len){
-      const seg = aa.trail[len - 1];
-      const ang = seg.angleDeg * Math.PI/180;
-      const endX = aa.x + Math.cos(ang) * aa.radius;
-      const endY = aa.y + Math.sin(ang) * aa.radius;
-      gameCtx.globalAlpha = 1;
-      gameCtx.beginPath();
-      gameCtx.moveTo(aa.x, aa.y);
-      gameCtx.lineTo(endX, endY);
-      gameCtx.stroke();
-    }
+    // Anti-Aircraft center
+    gameCtx.beginPath();
+    gameCtx.fillStyle = aa.owner;
+    gameCtx.arc(aa.x, aa.y, 6, 0, Math.PI*2);
+    gameCtx.fill();
+
 
     gameCtx.restore();
   }
