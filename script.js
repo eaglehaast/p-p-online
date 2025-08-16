@@ -83,7 +83,7 @@ const AA_MIN_DIST_FROM_OPPONENT_BASE = 120;
 const AA_MIN_DIST_FROM_EDGES = 40;
 // Duration for how long the anti-aircraft radar sweep remains visible
 // Quarter-circle afterglow so the sweep persists for 90° of rotation
-const AA_TRAIL_MS = 3000; // radar sweep afterglow duration
+const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 
 
@@ -518,10 +518,11 @@ function drawAAPreview(){
 
   for(const seg of aaPreviewTrail){
     const age = now - seg.time;
-    const alpha = (1 - age/AA_TRAIL_MS) * 0.5;
+    const alpha = (1 - age/AA_TRAIL_MS) * 0.3;
     gameCtx.globalAlpha = alpha;
     gameCtx.strokeStyle = currentPlacer;
     gameCtx.lineWidth = 2;
+    gameCtx.lineCap = "round";
     const trailAng = seg.angleDeg * Math.PI/180;
     const trailEndX = x + Math.cos(trailAng) * AA_DEFAULTS.radius;
     const trailEndY = y + Math.sin(trailAng) * AA_DEFAULTS.radius;
@@ -540,6 +541,7 @@ function drawAAPreview(){
   gameCtx.globalAlpha = 0.6;
   gameCtx.strokeStyle = currentPlacer;
   gameCtx.lineWidth = 2;
+  gameCtx.lineCap = "round";
   gameCtx.beginPath();
   gameCtx.moveTo(x, y);
   gameCtx.lineTo(endX, endY);
@@ -549,6 +551,7 @@ function drawAAPreview(){
   gameCtx.globalAlpha = 0.5;
   gameCtx.strokeStyle = "white";
   gameCtx.lineWidth = 1;
+  gameCtx.lineCap = "round";
   gameCtx.beginPath();
   gameCtx.moveTo(x, y);
   gameCtx.lineTo(endX, endY);
@@ -962,10 +965,11 @@ function handleAAForPlane(p, fp){
       if(aa.hp<=0){ aaUnits = aaUnits.filter(a=>a!==aa); }
       continue;
     }
-    if(dist <= aa.radius){
+    if(dist <= aa.radius + POINT_RADIUS){
       if(isPathClear(aa.x, aa.y, p.x, p.y)){
         const angleToPlane = (Math.atan2(p.y - aa.y, p.x - aa.x) * 180/Math.PI + 360) % 360;
-        if(angleDiffDeg(angleToPlane, aa.sweepAngleDeg) <= aa.beamWidthDeg/2){
+        const edgeSlackDeg = Math.asin(Math.min(1, POINT_RADIUS / dist)) * 180/Math.PI;
+        if(angleDiffDeg(angleToPlane, aa.sweepAngleDeg) <= aa.beamWidthDeg/2 + edgeSlackDeg){
           if(!p._aaTimes) p._aaTimes={};
           if(!p._aaTimes[aa.id]){
             p._aaTimes[aa.id]=now;
@@ -1383,7 +1387,7 @@ function drawAAUnits(){
     // draw fading trail
     for(const seg of aa.trail){
       const age = now - seg.time;
-      const alpha = (1 - age/AA_TRAIL_MS) * 0.5;
+      const alpha = (1 - age/AA_TRAIL_MS) * 0.3;
       const trailAng = seg.angleDeg * Math.PI/180;
 
       gameCtx.save();
@@ -1400,6 +1404,7 @@ function drawAAUnits(){
       gameCtx.globalAlpha = alpha;
       gameCtx.strokeStyle = grad;
       gameCtx.lineWidth = width;
+      gameCtx.lineCap = "round";
       gameCtx.beginPath();
       gameCtx.moveTo(0, 0);
       gameCtx.lineTo(aa.radius, 0);
@@ -1414,6 +1419,7 @@ function drawAAUnits(){
     const endY = aa.y + Math.sin(ang) * aa.radius;
     gameCtx.strokeStyle = aa.owner;
     gameCtx.lineWidth = 2;
+    gameCtx.lineCap = "round";
     gameCtx.beginPath();
     gameCtx.moveTo(aa.x, aa.y);
     gameCtx.lineTo(endX, endY);
@@ -1423,6 +1429,7 @@ function drawAAUnits(){
     gameCtx.globalAlpha = 0.5;
     gameCtx.strokeStyle = "white";
     gameCtx.lineWidth = 1;
+    gameCtx.lineCap = "round";
     gameCtx.beginPath();
     gameCtx.moveTo(aa.x, aa.y);
     gameCtx.lineTo(endX, endY);
