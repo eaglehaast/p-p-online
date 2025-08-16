@@ -83,6 +83,8 @@ const AA_MIN_DIST_FROM_OPPONENT_BASE = 120;
 const AA_MIN_DIST_FROM_EDGES = 40;
 const AA_TRAIL_MS = 1000; // radar sweep afterglow duration
 
+const AA_TRAIL_MS = 600; // radar sweep afterglow duration
+
 
 /* ======= STATE ======= */
 
@@ -503,11 +505,10 @@ function drawAAPreview(){
 
   // rotating sweep line preview
   const ang = (Date.now()/1000 * AA_DEFAULTS.rotationDegPerSec % 360) * Math.PI/180;
-  const fullX = x + Math.cos(ang) * AA_DEFAULTS.radius;
-  const fullY = y + Math.sin(ang) * AA_DEFAULTS.radius;
-  const hit = firstBuildingIntersection(x, y, fullX, fullY);
-  const endX = hit ? hit.x : fullX;
-  const endY = hit ? hit.y : fullY;
+
+  const endX = x + Math.cos(ang) * AA_DEFAULTS.radius;
+  const endY = y + Math.sin(ang) * AA_DEFAULTS.radius;
+
   gameCtx.globalAlpha = 0.6;
   gameCtx.lineWidth = 2;
   gameCtx.beginPath();
@@ -1183,74 +1184,45 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.setLineDash([]);
 
   if (MAPS[mapIndex] === "burning edges") {
-    drawMetalSpikeEdges(ctx2d, w, h);
+
+    drawHazardTapeEdges(ctx2d, w, h);
   }
 }
 
-function drawMetalSpikeEdges(ctx2d, w, h){
-  const spikeBase = 16;
-  const spikeLen  = 12;
+function drawHazardTapeEdges(ctx2d, w, h){
+  const edge = 12;
   ctx2d.save();
-  ctx2d.lineWidth = 1;
-  ctx2d.strokeStyle = '#666';
 
-  // top and bottom edges
-  for(let x=0; x < w; x += spikeBase){
-    let gradTop = ctx2d.createLinearGradient(x, 0, x + spikeBase, spikeLen);
-    gradTop.addColorStop(0, '#e5e5e5');
-    gradTop.addColorStop(0.5, '#9e9e9e');
-    gradTop.addColorStop(1, '#d0d0d0');
-    ctx2d.fillStyle = gradTop;
-    ctx2d.beginPath();
-    ctx2d.moveTo(x, 0);
-    ctx2d.lineTo(x + spikeBase, 0);
-    ctx2d.lineTo(x + spikeBase / 2, spikeLen);
-    ctx2d.closePath();
-    ctx2d.fill();
-    ctx2d.stroke();
 
-    let gradBottom = ctx2d.createLinearGradient(x, h, x + spikeBase, h - spikeLen);
-    gradBottom.addColorStop(0, '#e5e5e5');
-    gradBottom.addColorStop(0.5, '#9e9e9e');
-    gradBottom.addColorStop(1, '#d0d0d0');
-    ctx2d.fillStyle = gradBottom;
-    ctx2d.beginPath();
-    ctx2d.moveTo(x, h);
-    ctx2d.lineTo(x + spikeBase, h);
-    ctx2d.lineTo(x + spikeBase / 2, h - spikeLen);
-    ctx2d.closePath();
-    ctx2d.fill();
-    ctx2d.stroke();
-  }
 
-  // left and right edges
-  for(let y=0; y < h; y += spikeBase){
-    let gradLeft = ctx2d.createLinearGradient(0, y, spikeLen, y + spikeBase);
-    gradLeft.addColorStop(0, '#e5e5e5');
-    gradLeft.addColorStop(0.5, '#9e9e9e');
-    gradLeft.addColorStop(1, '#d0d0d0');
-    ctx2d.fillStyle = gradLeft;
-    ctx2d.beginPath();
-    ctx2d.moveTo(0, y);
-    ctx2d.lineTo(0, y + spikeBase);
-    ctx2d.lineTo(spikeLen, y + spikeBase / 2);
-    ctx2d.closePath();
-    ctx2d.fill();
-    ctx2d.stroke();
 
-    let gradRight = ctx2d.createLinearGradient(w, y, w - spikeLen, y + spikeBase);
-    gradRight.addColorStop(0, '#e5e5e5');
-    gradRight.addColorStop(0.5, '#9e9e9e');
-    gradRight.addColorStop(1, '#d0d0d0');
-    ctx2d.fillStyle = gradRight;
-    ctx2d.beginPath();
-    ctx2d.moveTo(w, y);
-    ctx2d.lineTo(w, y + spikeBase);
-    ctx2d.lineTo(w - spikeLen, y + spikeBase / 2);
-    ctx2d.closePath();
-    ctx2d.fill();
-    ctx2d.stroke();
-  }
+  // create diagonal red-white stripe pattern similar to construction tape
+  const patternCanvas = document.createElement('canvas');
+  patternCanvas.width = patternCanvas.height = 20;
+  const pctx = patternCanvas.getContext('2d');
+  pctx.fillStyle = '#ffffff';
+  pctx.fillRect(0, 0, 20, 20);
+  pctx.strokeStyle = '#d00';
+  pctx.lineWidth = 10;
+  // draw two lines to ensure seamless stripes
+  pctx.beginPath();
+  pctx.moveTo(-10,20);
+  pctx.lineTo(20,-10);
+  pctx.stroke();
+  pctx.beginPath();
+  pctx.moveTo(0,20);
+  pctx.lineTo(20,0);
+  pctx.stroke();
+  const pattern = ctx2d.createPattern(patternCanvas, 'repeat');
+
+  ctx2d.fillStyle = pattern;
+  ctx2d.fillRect(0,0,w,edge);        // top
+  ctx2d.fillRect(0,h-edge,w,edge);    // bottom
+  ctx2d.fillRect(0,0,edge,h);         // left
+  ctx2d.fillRect(w-edge,0,edge,h);    // right
+
+
+
 
   ctx2d.restore();
 }
@@ -1349,42 +1321,28 @@ function drawAAUnits(){
   const now = performance.now();
   for(const aa of aaUnits){
     gameCtx.save();
+
+
+
+    // radar sweep line only
+    const ang = aa.sweepAngleDeg * Math.PI/180;
+    const endX = aa.x + Math.cos(ang) * aa.radius;
+    const endY = aa.y + Math.sin(ang) * aa.radius;
     gameCtx.strokeStyle = aa.owner;
     gameCtx.lineWidth = 2;
+    gameCtx.beginPath();
+    gameCtx.moveTo(aa.x, aa.y);
+    gameCtx.lineTo(endX, endY);
+    gameCtx.stroke();
 
-    const len = aa.trail.length;
-    for(let i=0; i < len - 1; i++){
-      const seg = aa.trail[i];
-      const age = now - seg.time;
-      const alpha = 1 - age/AA_TRAIL_MS;
-      if(alpha <= 0) continue;
-      gameCtx.globalAlpha = alpha * 0.6;
-      const ang = seg.angleDeg * Math.PI/180;
-      const fullX = aa.x + Math.cos(ang) * aa.radius;
-      const fullY = aa.y + Math.sin(ang) * aa.radius;
-      const hit = firstBuildingIntersection(aa.x, aa.y, fullX, fullY);
-      const endX = hit ? hit.x : fullX;
-      const endY = hit ? hit.y : fullY;
-      gameCtx.beginPath();
-      gameCtx.moveTo(aa.x, aa.y);
-      gameCtx.lineTo(endX, endY);
-      gameCtx.stroke();
-    }
 
-    if(len){
-      const seg = aa.trail[len - 1];
-      const ang = seg.angleDeg * Math.PI/180;
-      const fullX = aa.x + Math.cos(ang) * aa.radius;
-      const fullY = aa.y + Math.sin(ang) * aa.radius;
-      const hit = firstBuildingIntersection(aa.x, aa.y, fullX, fullY);
-      const endX = hit ? hit.x : fullX;
-      const endY = hit ? hit.y : fullY;
-      gameCtx.globalAlpha = 1;
-      gameCtx.beginPath();
-      gameCtx.moveTo(aa.x, aa.y);
-      gameCtx.lineTo(endX, endY);
-      gameCtx.stroke();
-    }
+    // Anti-Aircraft center
+    gameCtx.beginPath();
+    gameCtx.fillStyle = aa.owner;
+    gameCtx.arc(aa.x, aa.y, 6, 0, Math.PI*2);
+    gameCtx.fill();
+
+
 
     gameCtx.restore();
   }
