@@ -520,10 +520,25 @@ function drawAAPreview(){
   gameCtx.lineTo(endX, endY);
   gameCtx.stroke();
 
+  // white highlight on sweep line
+  gameCtx.strokeStyle = "white";
+  gameCtx.lineWidth = 1;
+  gameCtx.beginPath();
+  gameCtx.moveTo(x, y);
+  gameCtx.lineTo(endX, endY);
+  gameCtx.stroke();
+
   gameCtx.globalAlpha = 0.4;
   gameCtx.fillStyle = currentPlacer;
   gameCtx.beginPath();
   gameCtx.arc(x, y, 6, 0, Math.PI*2);
+  gameCtx.fill();
+
+  // inner white circle for volume
+  gameCtx.globalAlpha = 0.6;
+  gameCtx.fillStyle = "white";
+  gameCtx.beginPath();
+  gameCtx.arc(x, y, 4, 0, Math.PI*2);
   gameCtx.fill();
   gameCtx.restore();
 }
@@ -1332,11 +1347,7 @@ function drawAAUnits(){
   const now = performance.now();
   for(const aa of aaUnits){
     gameCtx.save();
-
-
-
-
-    // radar sweep line only
+    // radar sweep line with highlight
     const ang = aa.sweepAngleDeg * Math.PI/180;
     const endX = aa.x + Math.cos(ang) * aa.radius;
     const endY = aa.y + Math.sin(ang) * aa.radius;
@@ -1347,15 +1358,25 @@ function drawAAUnits(){
     gameCtx.lineTo(endX, endY);
     gameCtx.stroke();
 
+    // white highlight on sweep line
+    gameCtx.strokeStyle = "white";
+    gameCtx.lineWidth = 1;
+    gameCtx.beginPath();
+    gameCtx.moveTo(aa.x, aa.y);
+    gameCtx.lineTo(endX, endY);
+    gameCtx.stroke();
 
-    // Anti-Aircraft center
+    // Anti-Aircraft center ring
     gameCtx.beginPath();
     gameCtx.fillStyle = aa.owner;
     gameCtx.arc(aa.x, aa.y, 6, 0, Math.PI*2);
     gameCtx.fill();
 
-
-
+    // inner white circle to add volume
+    gameCtx.beginPath();
+    gameCtx.fillStyle = "white";
+    gameCtx.arc(aa.x, aa.y, 4, 0, Math.PI*2);
+    gameCtx.fill();
 
     gameCtx.restore();
   }
