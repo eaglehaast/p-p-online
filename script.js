@@ -50,7 +50,7 @@ document.addEventListener('dblclick', (e) => {
 /* ======= CONFIG ======= */
 const CELL_SIZE            = 20;     // px
 const POINT_RADIUS         = 15;     // px (увеличено для мобильных)
-const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit AA center
+const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit Anti-Aircraft center
 const HANDLE_SIZE          = 10;     // px
 const BOUNCE_FRAMES        = 68;
 const MAX_DRAG_DISTANCE    = 100;    // px
@@ -70,7 +70,7 @@ const MAX_AMPLITUDE        = 30;     // UI показывает как *2°
 const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 
 
-// AA defaults and placement limits
+// Anti-Aircraft defaults and placement limits
 const AA_DEFAULTS = {
   radius: 60, // detection radius, 3x smaller than original 180
   hp: 1,
@@ -82,6 +82,10 @@ const AA_DEFAULTS = {
 const AA_MIN_DIST_FROM_OPPONENT_BASE = 120;
 const AA_MIN_DIST_FROM_EDGES = 40;
 const AA_TRAIL_MS = 1000; // radar sweep afterglow duration
+
+
+const AA_TRAIL_MS = 600; // radar sweep afterglow duration
+
 
 
 /* ======= STATE ======= */
@@ -127,7 +131,9 @@ let aaPointerDown = false;
 
 
 
-let phase = "MENU"; // MENU | AA_PLACEMENT (AA placement) | ROUND_START | TURN | ROUND_END
+
+let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_START | TURN | ROUND_END
+
 
 let currentPlacer = null; // 'green' | 'blue'
 
@@ -439,7 +445,7 @@ gameCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; a
 
 
 function isValidAAPlacement(x,y){
-  // Allow AA placement anywhere within the player's half of the field.
+  // Allow Anti-Aircraft placement anywhere within the player's half of the field.
   // The center may touch field edges, overlap planes or buildings, and its
   // radius may extend beyond the canvas boundaries.
 
@@ -503,11 +509,11 @@ function drawAAPreview(){
 
   // rotating sweep line preview
   const ang = (Date.now()/1000 * AA_DEFAULTS.rotationDegPerSec % 360) * Math.PI/180;
-  const fullX = x + Math.cos(ang) * AA_DEFAULTS.radius;
-  const fullY = y + Math.sin(ang) * AA_DEFAULTS.radius;
-  const hit = firstBuildingIntersection(x, y, fullX, fullY);
-  const endX = hit ? hit.x : fullX;
-  const endY = hit ? hit.y : fullY;
+
+
+  const endX = x + Math.cos(ang) * AA_DEFAULTS.radius;
+  const endY = y + Math.sin(ang) * AA_DEFAULTS.radius;
+
   gameCtx.globalAlpha = 0.6;
   gameCtx.lineWidth = 2;
   gameCtx.beginPath();
@@ -1042,7 +1048,7 @@ function handleAAForPlane(p, fp){
     }
   }
 
-  // AA against stationary planes
+  // Anti-Aircraft against stationary planes
   if(!isGameOver){
     for(const p of points){
       if(!p.isAlive || p.burning) continue;
@@ -1183,32 +1189,48 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.setLineDash([]);
 
   if (MAPS[mapIndex] === "burning edges") {
+
     drawHazardTapeEdges(ctx2d, w, h);
   }
 }
 
 function drawHazardTapeEdges(ctx2d, w, h){
-  const tapeWidth = 12;
+
+=======
+  const edge = 12;
+  ctx2d.save();
+
+
+
+
+  // create diagonal red-white stripe pattern similar to construction tape
   const patternCanvas = document.createElement('canvas');
   patternCanvas.width = patternCanvas.height = 20;
   const pctx = patternCanvas.getContext('2d');
-  pctx.fillStyle = '#fff';
-  pctx.fillRect(0,0,20,20);
-  pctx.strokeStyle = '#f00';
+  pctx.fillStyle = '#ffffff';
+  pctx.fillRect(0, 0, 20, 20);
+  pctx.strokeStyle = '#d00';
   pctx.lineWidth = 10;
+  // draw two lines to ensure seamless stripes
   pctx.beginPath();
   pctx.moveTo(-10,20);
   pctx.lineTo(20,-10);
-  pctx.moveTo(0,30);
-  pctx.lineTo(30,0);
   pctx.stroke();
-  const pattern = ctx2d.createPattern(patternCanvas,'repeat');
-  ctx2d.save();
+  pctx.beginPath();
+  pctx.moveTo(0,20);
+  pctx.lineTo(20,0);
+  pctx.stroke();
+  const pattern = ctx2d.createPattern(patternCanvas, 'repeat');
+
   ctx2d.fillStyle = pattern;
-  ctx2d.fillRect(0,0,w,tapeWidth);
-  ctx2d.fillRect(0,h - tapeWidth,w,tapeWidth);
-  ctx2d.fillRect(0,0,tapeWidth,h);
-  ctx2d.fillRect(w - tapeWidth,0,tapeWidth,h);
+  ctx2d.fillRect(0,0,w,edge);        // top
+  ctx2d.fillRect(0,h-edge,w,edge);    // bottom
+  ctx2d.fillRect(0,0,edge,h);         // left
+  ctx2d.fillRect(w-edge,0,edge,h);    // right
+
+
+
+
   ctx2d.restore();
 }
 
@@ -1306,42 +1328,30 @@ function drawAAUnits(){
   const now = performance.now();
   for(const aa of aaUnits){
     gameCtx.save();
+
+
+
+
+    // radar sweep line only
+    const ang = aa.sweepAngleDeg * Math.PI/180;
+    const endX = aa.x + Math.cos(ang) * aa.radius;
+    const endY = aa.y + Math.sin(ang) * aa.radius;
     gameCtx.strokeStyle = aa.owner;
     gameCtx.lineWidth = 2;
+    gameCtx.beginPath();
+    gameCtx.moveTo(aa.x, aa.y);
+    gameCtx.lineTo(endX, endY);
+    gameCtx.stroke();
 
-    const len = aa.trail.length;
-    for(let i=0; i < len - 1; i++){
-      const seg = aa.trail[i];
-      const age = now - seg.time;
-      const alpha = 1 - age/AA_TRAIL_MS;
-      if(alpha <= 0) continue;
-      gameCtx.globalAlpha = alpha * 0.6;
-      const ang = seg.angleDeg * Math.PI/180;
-      const fullX = aa.x + Math.cos(ang) * aa.radius;
-      const fullY = aa.y + Math.sin(ang) * aa.radius;
-      const hit = firstBuildingIntersection(aa.x, aa.y, fullX, fullY);
-      const endX = hit ? hit.x : fullX;
-      const endY = hit ? hit.y : fullY;
-      gameCtx.beginPath();
-      gameCtx.moveTo(aa.x, aa.y);
-      gameCtx.lineTo(endX, endY);
-      gameCtx.stroke();
-    }
 
-    if(len){
-      const seg = aa.trail[len - 1];
-      const ang = seg.angleDeg * Math.PI/180;
-      const fullX = aa.x + Math.cos(ang) * aa.radius;
-      const fullY = aa.y + Math.sin(ang) * aa.radius;
-      const hit = firstBuildingIntersection(aa.x, aa.y, fullX, fullY);
-      const endX = hit ? hit.x : fullX;
-      const endY = hit ? hit.y : fullY;
-      gameCtx.globalAlpha = 1;
-      gameCtx.beginPath();
-      gameCtx.moveTo(aa.x, aa.y);
-      gameCtx.lineTo(endX, endY);
-      gameCtx.stroke();
-    }
+    // Anti-Aircraft center
+    gameCtx.beginPath();
+    gameCtx.fillStyle = aa.owner;
+    gameCtx.arc(aa.x, aa.y, 6, 0, Math.PI*2);
+    gameCtx.fill();
+
+
+
 
     gameCtx.restore();
   }
@@ -1453,10 +1463,10 @@ function drawPlayerPanel(ctx, color, victories, isTurn){
   let statusText;
   if (phase === 'AA_PLACEMENT') {
     if (currentPlacer === color) {
-      statusText = 'You are placing AA';
+      statusText = 'You are placing Anti-Aircraft';
       ctx.fillStyle = color;
     } else {
-      statusText = 'Enemy is placing AA';
+      statusText = 'Enemy is placing Anti-Aircraft';
       ctx.fillStyle = '#888';
     }
   } else if (isTurn) {
@@ -1509,7 +1519,7 @@ function setupRepeatButton(btn, step){
 }
 
 
-// Add AA toggle
+// Add Anti-Aircraft toggle
 
 if (addAAToggle) {
   addAAToggle.checked = settings.addAA;
