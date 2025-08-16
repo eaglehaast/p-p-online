@@ -1126,7 +1126,7 @@ function handleAAForPlane(p, fp){
     const endY   = rect.top  + (plane.y + vdy) * scaleY;
 
     aimCtx.beginPath();
-    aimCtx.strokeStyle = "red";
+    aimCtx.strokeStyle = "black";
     aimCtx.lineWidth = 2;
     aimCtx.moveTo(startX, startY);
     aimCtx.lineTo(endX, endY);
@@ -1156,7 +1156,7 @@ function handleAAForPlane(p, fp){
       const endSY   = rect.top  + endGY   * scaleY;
 
       aimCtx.beginPath();
-      aimCtx.strokeStyle="red";
+      aimCtx.strokeStyle="black";
       aimCtx.lineWidth=2;
       aimCtx.moveTo(startSX, startSY);
       aimCtx.lineTo(endSX, endSY);
