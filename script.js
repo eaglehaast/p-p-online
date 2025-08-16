@@ -520,7 +520,8 @@ function drawAAPreview(){
   gameCtx.lineTo(endX, endY);
   gameCtx.stroke();
 
-  // white highlight on sweep line
+  // translucent white highlight on sweep line
+  gameCtx.globalAlpha = 0.5;
   gameCtx.strokeStyle = "white";
   gameCtx.lineWidth = 1;
   gameCtx.beginPath();
@@ -1358,13 +1359,16 @@ function drawAAUnits(){
     gameCtx.lineTo(endX, endY);
     gameCtx.stroke();
 
-    // inner red highlight on sweep line
-    gameCtx.strokeStyle = "red";
+    // inner translucent white highlight on sweep line
+    gameCtx.globalAlpha = 0.5;
+    gameCtx.strokeStyle = "white";
     gameCtx.lineWidth = 1;
     gameCtx.beginPath();
     gameCtx.moveTo(aa.x, aa.y);
     gameCtx.lineTo(endX, endY);
     gameCtx.stroke();
+
+    gameCtx.globalAlpha = 1;
 
     // Anti-Aircraft center ring
     gameCtx.beginPath();
