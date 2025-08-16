@@ -81,6 +81,7 @@ const AA_DEFAULTS = {
 };
 const AA_MIN_DIST_FROM_OPPONENT_BASE = 120;
 const AA_MIN_DIST_FROM_EDGES = 40;
+const AA_TRAIL_MS = 1000; // radar sweep afterglow duration
 
 
 /* ======= STATE ======= */
@@ -126,7 +127,7 @@ let aaPointerDown = false;
 
 
 
-let phase = "MENU"; // MENU | AA_PLACEMENT | ROUND_START | TURN | ROUND_END
+let phase = "MENU"; // MENU | AA_PLACEMENT (AA placement) | ROUND_START | TURN | ROUND_END
 
 let currentPlacer = null; // 'green' | 'blue'
 
@@ -465,7 +466,8 @@ function placeAA({owner,x,y}){
     sweepAngleDeg: 0,
     rotationDegPerSec: AA_DEFAULTS.rotationDegPerSec,
     beamWidthDeg: AA_DEFAULTS.beamWidthDeg,
-    dwellTimeMs: AA_DEFAULTS.dwellTimeMs
+    dwellTimeMs: AA_DEFAULTS.dwellTimeMs,
+    trail: []
   });
 }
 
@@ -497,6 +499,20 @@ function drawAAPreview(){
   gameCtx.strokeStyle = currentPlacer;
   gameCtx.beginPath();
   gameCtx.arc(x, y, AA_DEFAULTS.radius, 0, Math.PI*2);
+  gameCtx.stroke();
+
+  // rotating sweep line preview
+  const ang = (Date.now()/1000 * AA_DEFAULTS.rotationDegPerSec % 360) * Math.PI/180;
+  const fullX = x + Math.cos(ang) * AA_DEFAULTS.radius;
+  const fullY = y + Math.sin(ang) * AA_DEFAULTS.radius;
+  const hit = firstBuildingIntersection(x, y, fullX, fullY);
+  const endX = hit ? hit.x : fullX;
+  const endY = hit ? hit.y : fullY;
+  gameCtx.globalAlpha = 0.6;
+  gameCtx.lineWidth = 2;
+  gameCtx.beginPath();
+  gameCtx.moveTo(x, y);
+  gameCtx.lineTo(endX, endY);
   gameCtx.stroke();
 
   gameCtx.globalAlpha = 0.4;
@@ -792,6 +808,33 @@ function lineSegmentIntersection(x1,y1,x2,y2, x3,y3,x4,y4){
   return null;
 }
 
+// Find the closest intersection point of a line segment with any building
+function firstBuildingIntersection(x1,y1,x2,y2){
+  let closest = null;
+  let minDist = Infinity;
+  for(const b of buildings){
+    const left = b.x - b.width/2, right = b.x + b.width/2;
+    const top  = b.y - b.height/2, bottom = b.y + b.height/2;
+    const edges = [
+      {x1:left, y1:top,    x2:right, y2:top   },
+      {x1:right,y1:top,    x2:right, y2:bottom},
+      {x1:right,y1:bottom, x2:left,  y2:bottom},
+      {x1:left, y1:bottom, x2:left,  y2:top   }
+    ];
+    for(const e of edges){
+      const hit = lineSegmentIntersection(x1,y1,x2,y2, e.x1,e.y1,e.x2,e.y2);
+      if(hit){
+        const d = Math.hypot(hit.x - x1, hit.y - y1);
+        if(d < minDist){
+          minDist = d;
+          closest = hit;
+        }
+      }
+    }
+  }
+  return closest;
+}
+
 /* Коллизии самолёт <-> здание */
 function planeBuildingCollision(fp, b){
   const p = fp.plane;
@@ -867,20 +910,24 @@ function handleAAForPlane(p, fp){
       continue;
     }
     if(dist <= aa.radius){
-      const angleToPlane = (Math.atan2(p.y - aa.y, p.x - aa.x) * 180/Math.PI + 360) % 360;
-      if(angleDiffDeg(angleToPlane, aa.sweepAngleDeg) <= aa.beamWidthDeg/2){
-        if(!p._aaTimes) p._aaTimes={};
-        if(!p._aaTimes[aa.id]){
-          p._aaTimes[aa.id]=now;
-        } else if(now - p._aaTimes[aa.id] > aa.dwellTimeMs){
-          if(!aa.lastTriggerAt || now - aa.lastTriggerAt > aa.cooldownMs){
-            aa.lastTriggerAt = now;
-            p.isAlive=false; p.burning=true;
-            p.collisionX=p.x; p.collisionY=p.y;
-            if(fp) flyingPoints = flyingPoints.filter(x=>x!==fp);
-            checkVictory();
-            return true;
+      if(isPathClear(aa.x, aa.y, p.x, p.y)){
+        const angleToPlane = (Math.atan2(p.y - aa.y, p.x - aa.x) * 180/Math.PI + 360) % 360;
+        if(angleDiffDeg(angleToPlane, aa.sweepAngleDeg) <= aa.beamWidthDeg/2){
+          if(!p._aaTimes) p._aaTimes={};
+          if(!p._aaTimes[aa.id]){
+            p._aaTimes[aa.id]=now;
+          } else if(now - p._aaTimes[aa.id] > aa.dwellTimeMs){
+            if(!aa.lastTriggerAt || now - aa.lastTriggerAt > aa.cooldownMs){
+              aa.lastTriggerAt = now;
+              p.isAlive=false; p.burning=true;
+              p.collisionX=p.x; p.collisionY=p.y;
+              if(fp) flyingPoints = flyingPoints.filter(x=>x!==fp);
+              checkVictory();
+              return true;
+            }
           }
+        } else if(p._aaTimes && p._aaTimes[aa.id]){
+          delete p._aaTimes[aa.id];
         }
       } else if(p._aaTimes && p._aaTimes[aa.id]){
         delete p._aaTimes[aa.id];
@@ -910,8 +957,11 @@ function handleAAForPlane(p, fp){
     setTimeout(() => { doComputerMove(); }, 300);
   }
 
+  const now = performance.now();
   for(const aa of aaUnits){
     aa.sweepAngleDeg = (aa.sweepAngleDeg + aa.rotationDegPerSec/60) % 360;
+    aa.trail.push({angleDeg: aa.sweepAngleDeg, time: now});
+    aa.trail = aa.trail.filter(seg => now - seg.time < AA_TRAIL_MS);
   }
 
 
@@ -1133,105 +1183,32 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.setLineDash([]);
 
   if (MAPS[mapIndex] === "burning edges") {
-    drawBurntEdges(ctx2d, w, h);
+    drawHazardTapeEdges(ctx2d, w, h);
   }
 }
 
-function drawBurntEdges(ctx2d, w, h){
-  const edge = 20;
+function drawHazardTapeEdges(ctx2d, w, h){
+  const tapeWidth = 12;
+  const patternCanvas = document.createElement('canvas');
+  patternCanvas.width = patternCanvas.height = 20;
+  const pctx = patternCanvas.getContext('2d');
+  pctx.fillStyle = '#fff';
+  pctx.fillRect(0,0,20,20);
+  pctx.strokeStyle = '#f00';
+  pctx.lineWidth = 10;
+  pctx.beginPath();
+  pctx.moveTo(-10,20);
+  pctx.lineTo(20,-10);
+  pctx.moveTo(0,30);
+  pctx.lineTo(30,0);
+  pctx.stroke();
+  const pattern = ctx2d.createPattern(patternCanvas,'repeat');
   ctx2d.save();
-  let grad;
-
-  grad = ctx2d.createLinearGradient(0,0,0,edge);
-  grad.addColorStop(0,"rgba(0,0,0,0.7)");
-  grad.addColorStop(1,"rgba(0,0,0,0)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,0,w,edge);
-
-  grad = ctx2d.createLinearGradient(0,h-edge,0,h);
-  grad.addColorStop(0,"rgba(0,0,0,0)");
-  grad.addColorStop(1,"rgba(0,0,0,0.7)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,h-edge,w,edge);
-
-  grad = ctx2d.createLinearGradient(0,0,edge,0);
-  grad.addColorStop(0,"rgba(0,0,0,0.7)");
-  grad.addColorStop(1,"rgba(0,0,0,0)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,0,edge,h);
-
-  grad = ctx2d.createLinearGradient(w-edge,0,w,0);
-  grad.addColorStop(0,"rgba(0,0,0,0)");
-  grad.addColorStop(1,"rgba(0,0,0,0.7)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(w-edge,0,edge,h);
-
-  const glow = 10;
-  grad = ctx2d.createLinearGradient(0,0,0,glow);
-  grad.addColorStop(0,"rgba(255,180,0,0.4)");
-  grad.addColorStop(1,"rgba(255,180,0,0)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,0,w,glow);
-
-  grad = ctx2d.createLinearGradient(0,h-glow,0,h);
-  grad.addColorStop(0,"rgba(255,180,0,0)");
-  grad.addColorStop(1,"rgba(255,180,0,0.4)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,h-glow,w,glow);
-
-  grad = ctx2d.createLinearGradient(0,0,glow,0);
-  grad.addColorStop(0,"rgba(255,180,0,0.4)");
-  grad.addColorStop(1,"rgba(255,180,0,0)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,0,glow,h);
-
-  grad = ctx2d.createLinearGradient(w-glow,0,w,0);
-  grad.addColorStop(0,"rgba(255,180,0,0)");
-  grad.addColorStop(1,"rgba(255,180,0,0.4)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(w-glow,0,glow,h);
-
-  const step = 20;
-  ctx2d.shadowColor = "rgba(255,80,0,0.8)";
-  ctx2d.shadowBlur = 15;
-  ctx2d.fillStyle = "#ff4500";
-
-  for(let x=0; x<w; x+=step){
-    const fh = 12 + Math.random()*8;
-    ctx2d.beginPath();
-    ctx2d.moveTo(x,0);
-    ctx2d.lineTo(x+step,0);
-    ctx2d.lineTo(x+step/2,fh);
-    ctx2d.closePath();
-    ctx2d.fill();
-
-    ctx2d.beginPath();
-    ctx2d.moveTo(x,h);
-    ctx2d.lineTo(x+step,h);
-    ctx2d.lineTo(x+step/2,h-fh);
-    ctx2d.closePath();
-    ctx2d.fill();
-  }
-
-  for(let y=0; y<h; y+=step){
-    const fw = 12 + Math.random()*8;
-    ctx2d.beginPath();
-    ctx2d.moveTo(0,y);
-    ctx2d.lineTo(0,y+step);
-    ctx2d.lineTo(fw,y+step/2);
-    ctx2d.closePath();
-    ctx2d.fill();
-
-    ctx2d.beginPath();
-    ctx2d.moveTo(w,y);
-    ctx2d.lineTo(w,y+step);
-    ctx2d.lineTo(w-fw,y+step/2);
-    ctx2d.closePath();
-    ctx2d.fill();
-  }
-
-  ctx2d.shadowBlur = 0;
-
+  ctx2d.fillStyle = pattern;
+  ctx2d.fillRect(0,0,w,tapeWidth);
+  ctx2d.fillRect(0,h - tapeWidth,w,tapeWidth);
+  ctx2d.fillRect(0,0,tapeWidth,h);
+  ctx2d.fillRect(w - tapeWidth,0,tapeWidth,h);
   ctx2d.restore();
 }
 
@@ -1326,30 +1303,46 @@ function drawBuildings(){
 
 
 function drawAAUnits(){
+  const now = performance.now();
   for(const aa of aaUnits){
     gameCtx.save();
-    gameCtx.beginPath();
-    gameCtx.arc(aa.x, aa.y, aa.radius, 0, Math.PI*2);
-    gameCtx.strokeStyle = 'rgba(0,0,0,0.2)';
-    gameCtx.lineWidth = 1;
-    gameCtx.stroke();
-
-    // radar sweep line
-    const ang = aa.sweepAngleDeg * Math.PI/180;
-    const endX = aa.x + Math.cos(ang) * aa.radius;
-    const endY = aa.y + Math.sin(ang) * aa.radius;
     gameCtx.strokeStyle = aa.owner;
     gameCtx.lineWidth = 2;
-    gameCtx.beginPath();
-    gameCtx.moveTo(aa.x, aa.y);
-    gameCtx.lineTo(endX, endY);
-    gameCtx.stroke();
 
-    // AA center
-    gameCtx.beginPath();
-    gameCtx.fillStyle = aa.owner;
-    gameCtx.arc(aa.x, aa.y, 6, 0, Math.PI*2);
-    gameCtx.fill();
+    const len = aa.trail.length;
+    for(let i=0; i < len - 1; i++){
+      const seg = aa.trail[i];
+      const age = now - seg.time;
+      const alpha = 1 - age/AA_TRAIL_MS;
+      if(alpha <= 0) continue;
+      gameCtx.globalAlpha = alpha * 0.6;
+      const ang = seg.angleDeg * Math.PI/180;
+      const fullX = aa.x + Math.cos(ang) * aa.radius;
+      const fullY = aa.y + Math.sin(ang) * aa.radius;
+      const hit = firstBuildingIntersection(aa.x, aa.y, fullX, fullY);
+      const endX = hit ? hit.x : fullX;
+      const endY = hit ? hit.y : fullY;
+      gameCtx.beginPath();
+      gameCtx.moveTo(aa.x, aa.y);
+      gameCtx.lineTo(endX, endY);
+      gameCtx.stroke();
+    }
+
+    if(len){
+      const seg = aa.trail[len - 1];
+      const ang = seg.angleDeg * Math.PI/180;
+      const fullX = aa.x + Math.cos(ang) * aa.radius;
+      const fullY = aa.y + Math.sin(ang) * aa.radius;
+      const hit = firstBuildingIntersection(aa.x, aa.y, fullX, fullY);
+      const endX = hit ? hit.x : fullX;
+      const endY = hit ? hit.y : fullY;
+      gameCtx.globalAlpha = 1;
+      gameCtx.beginPath();
+      gameCtx.moveTo(aa.x, aa.y);
+      gameCtx.lineTo(endX, endY);
+      gameCtx.stroke();
+    }
+
     gameCtx.restore();
   }
 }
