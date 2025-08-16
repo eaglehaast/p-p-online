@@ -81,6 +81,7 @@ const AA_DEFAULTS = {
 };
 const AA_MIN_DIST_FROM_OPPONENT_BASE = 120;
 const AA_MIN_DIST_FROM_EDGES = 40;
+const AA_TRAIL_MS = 1000; // radar sweep afterglow duration
 
 const AA_TRAIL_MS = 600; // radar sweep afterglow duration
 
@@ -504,8 +505,10 @@ function drawAAPreview(){
 
   // rotating sweep line preview
   const ang = (Date.now()/1000 * AA_DEFAULTS.rotationDegPerSec % 360) * Math.PI/180;
+
   const endX = x + Math.cos(ang) * AA_DEFAULTS.radius;
   const endY = y + Math.sin(ang) * AA_DEFAULTS.radius;
+
   gameCtx.globalAlpha = 0.6;
   gameCtx.lineWidth = 2;
   gameCtx.beginPath();
@@ -806,6 +809,33 @@ function lineSegmentIntersection(x1,y1,x2,y2, x3,y3,x4,y4){
   return null;
 }
 
+// Find the closest intersection point of a line segment with any building
+function firstBuildingIntersection(x1,y1,x2,y2){
+  let closest = null;
+  let minDist = Infinity;
+  for(const b of buildings){
+    const left = b.x - b.width/2, right = b.x + b.width/2;
+    const top  = b.y - b.height/2, bottom = b.y + b.height/2;
+    const edges = [
+      {x1:left, y1:top,    x2:right, y2:top   },
+      {x1:right,y1:top,    x2:right, y2:bottom},
+      {x1:right,y1:bottom, x2:left,  y2:bottom},
+      {x1:left, y1:bottom, x2:left,  y2:top   }
+    ];
+    for(const e of edges){
+      const hit = lineSegmentIntersection(x1,y1,x2,y2, e.x1,e.y1,e.x2,e.y2);
+      if(hit){
+        const d = Math.hypot(hit.x - x1, hit.y - y1);
+        if(d < minDist){
+          minDist = d;
+          closest = hit;
+        }
+      }
+    }
+  }
+  return closest;
+}
+
 /* Коллизии самолёт <-> здание */
 function planeBuildingCollision(fp, b){
   const p = fp.plane;
@@ -881,20 +911,24 @@ function handleAAForPlane(p, fp){
       continue;
     }
     if(dist <= aa.radius){
-      const angleToPlane = (Math.atan2(p.y - aa.y, p.x - aa.x) * 180/Math.PI + 360) % 360;
-      if(angleDiffDeg(angleToPlane, aa.sweepAngleDeg) <= aa.beamWidthDeg/2){
-        if(!p._aaTimes) p._aaTimes={};
-        if(!p._aaTimes[aa.id]){
-          p._aaTimes[aa.id]=now;
-        } else if(now - p._aaTimes[aa.id] > aa.dwellTimeMs){
-          if(!aa.lastTriggerAt || now - aa.lastTriggerAt > aa.cooldownMs){
-            aa.lastTriggerAt = now;
-            p.isAlive=false; p.burning=true;
-            p.collisionX=p.x; p.collisionY=p.y;
-            if(fp) flyingPoints = flyingPoints.filter(x=>x!==fp);
-            checkVictory();
-            return true;
+      if(isPathClear(aa.x, aa.y, p.x, p.y)){
+        const angleToPlane = (Math.atan2(p.y - aa.y, p.x - aa.x) * 180/Math.PI + 360) % 360;
+        if(angleDiffDeg(angleToPlane, aa.sweepAngleDeg) <= aa.beamWidthDeg/2){
+          if(!p._aaTimes) p._aaTimes={};
+          if(!p._aaTimes[aa.id]){
+            p._aaTimes[aa.id]=now;
+          } else if(now - p._aaTimes[aa.id] > aa.dwellTimeMs){
+            if(!aa.lastTriggerAt || now - aa.lastTriggerAt > aa.cooldownMs){
+              aa.lastTriggerAt = now;
+              p.isAlive=false; p.burning=true;
+              p.collisionX=p.x; p.collisionY=p.y;
+              if(fp) flyingPoints = flyingPoints.filter(x=>x!==fp);
+              checkVictory();
+              return true;
+            }
           }
+        } else if(p._aaTimes && p._aaTimes[aa.id]){
+          delete p._aaTimes[aa.id];
         }
       } else if(p._aaTimes && p._aaTimes[aa.id]){
         delete p._aaTimes[aa.id];
@@ -1150,6 +1184,7 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.setLineDash([]);
 
   if (MAPS[mapIndex] === "burning edges") {
+
     drawHazardTapeEdges(ctx2d, w, h);
   }
 }
@@ -1185,6 +1220,7 @@ function drawHazardTapeEdges(ctx2d, w, h){
   ctx2d.fillRect(0,h-edge,w,edge);    // bottom
   ctx2d.fillRect(0,0,edge,h);         // left
   ctx2d.fillRect(w-edge,0,edge,h);    // right
+
 
 
 
@@ -1287,6 +1323,7 @@ function drawAAUnits(){
     gameCtx.save();
 
 
+
     // radar sweep line only
     const ang = aa.sweepAngleDeg * Math.PI/180;
     const endX = aa.x + Math.cos(ang) * aa.radius;
@@ -1304,6 +1341,7 @@ function drawAAUnits(){
     gameCtx.fillStyle = aa.owner;
     gameCtx.arc(aa.x, aa.y, 6, 0, Math.PI*2);
     gameCtx.fill();
+
 
 
     gameCtx.restore();
