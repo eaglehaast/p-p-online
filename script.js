@@ -1188,45 +1188,52 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.setLineDash([]);
 
   if (MAPS[mapIndex] === "burning edges") {
-
-    drawHazardTapeEdges(ctx2d, w, h);
+    drawSpikeEdges(ctx2d, w, h);
   }
 }
 
-function drawHazardTapeEdges(ctx2d, w, h){
-  const edge = 12;
+function drawSpikeEdges(ctx2d, w, h){
+  const spikeHeight = 12;
+  const spikeWidth = 12;
   ctx2d.save();
+  ctx2d.fillStyle = '#d00';
 
-
-
-
-  // create diagonal red-white stripe pattern similar to construction tape
-  const patternCanvas = document.createElement('canvas');
-  patternCanvas.width = patternCanvas.height = 20;
-  const pctx = patternCanvas.getContext('2d');
-  pctx.fillStyle = '#ffffff';
-  pctx.fillRect(0, 0, 20, 20);
-  pctx.strokeStyle = '#d00';
-  pctx.lineWidth = 10;
-  // draw two lines to ensure seamless stripes
-  pctx.beginPath();
-  pctx.moveTo(-10,20);
-  pctx.lineTo(20,-10);
-  pctx.stroke();
-  pctx.beginPath();
-  pctx.moveTo(0,20);
-  pctx.lineTo(20,0);
-  pctx.stroke();
-  const pattern = ctx2d.createPattern(patternCanvas, 'repeat');
-
-  ctx2d.fillStyle = pattern;
-  ctx2d.fillRect(0,0,w,edge);        // top
-  ctx2d.fillRect(0,h-edge,w,edge);    // bottom
-  ctx2d.fillRect(0,0,edge,h);         // left
-  ctx2d.fillRect(w-edge,0,edge,h);    // right
-
-
-
+  // top edge
+  for(let x=0; x<w; x+=spikeWidth){
+    ctx2d.beginPath();
+    ctx2d.moveTo(x, 0);
+    ctx2d.lineTo(x + spikeWidth/2, spikeHeight);
+    ctx2d.lineTo(Math.min(x + spikeWidth, w), 0);
+    ctx2d.closePath();
+    ctx2d.fill();
+  }
+  // bottom edge
+  for(let x=0; x<w; x+=spikeWidth){
+    ctx2d.beginPath();
+    ctx2d.moveTo(x, h);
+    ctx2d.lineTo(x + spikeWidth/2, h - spikeHeight);
+    ctx2d.lineTo(Math.min(x + spikeWidth, w), h);
+    ctx2d.closePath();
+    ctx2d.fill();
+  }
+  // left edge
+  for(let y=0; y<h; y+=spikeWidth){
+    ctx2d.beginPath();
+    ctx2d.moveTo(0, y);
+    ctx2d.lineTo(spikeHeight, y + spikeWidth/2);
+    ctx2d.lineTo(0, Math.min(y + spikeWidth, h));
+    ctx2d.closePath();
+    ctx2d.fill();
+  }
+  // right edge
+  for(let y=0; y<h; y+=spikeWidth){
+    ctx2d.beginPath();
+    ctx2d.moveTo(w, y);
+    ctx2d.lineTo(w - spikeHeight, y + spikeWidth/2);
+    ctx2d.lineTo(w, Math.min(y + spikeWidth, h));
+    ctx2d.closePath();
+    ctx2d.fill();
+  }
 
   ctx2d.restore();
 }
