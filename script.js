@@ -82,8 +82,8 @@ const AA_DEFAULTS = {
 const AA_MIN_DIST_FROM_OPPONENT_BASE = 120;
 const AA_MIN_DIST_FROM_EDGES = 40;
 // Duration for how long the anti-aircraft radar sweep remains visible
-// Reduced to keep the trail effect brief and responsive.
-const AA_TRAIL_MS = 600; // radar sweep afterglow duration
+// Quarter-circle afterglow so the sweep persists for 90° of rotation
+const AA_TRAIL_MS = 3000; // radar sweep afterglow duration
 
 
 
@@ -1390,12 +1390,11 @@ function drawAAUnits(){
       gameCtx.translate(aa.x, aa.y);
       gameCtx.rotate(trailAng);
 
-      // wider beam with radial fade from owner colour to transparent
+      // wider beam with fade across its width
       const width = 8;
-      const fadeLen = aa.radius * 0.25;
-      const grad = gameCtx.createLinearGradient(0, 0, aa.radius, 0);
-      grad.addColorStop(0, aa.owner);
-      grad.addColorStop(fadeLen / aa.radius, "rgba(0,0,0,0)");
+      const grad = gameCtx.createLinearGradient(0, -width/2, 0, width/2);
+      grad.addColorStop(0, "rgba(0,0,0,0)");
+      grad.addColorStop(0.5, aa.owner);
       grad.addColorStop(1, "rgba(0,0,0,0)");
 
       gameCtx.globalAlpha = alpha;
