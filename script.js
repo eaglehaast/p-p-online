@@ -1390,11 +1390,12 @@ function drawAAUnits(){
       gameCtx.translate(aa.x, aa.y);
       gameCtx.rotate(trailAng);
 
-      // wider beam with gradient from owner colour to transparent
+      // wider beam with radial fade from owner colour to transparent
       const width = 8;
-      const grad = gameCtx.createLinearGradient(0, -width/2, 0, width/2);
-      grad.addColorStop(0, "rgba(0,0,0,0)");
-      grad.addColorStop(0.5, aa.owner);
+      const fadeLen = aa.radius * 0.25;
+      const grad = gameCtx.createLinearGradient(0, 0, aa.radius, 0);
+      grad.addColorStop(0, aa.owner);
+      grad.addColorStop(fadeLen / aa.radius, "rgba(0,0,0,0)");
       grad.addColorStop(1, "rgba(0,0,0,0)");
 
       gameCtx.globalAlpha = alpha;
