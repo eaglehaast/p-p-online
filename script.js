@@ -93,7 +93,7 @@ const AA_TRAIL_MS = 600; // radar sweep afterglow duration
 
 
 const MAPS = ["clear sky", "wall", "burning edges"];
-let mapIndex = 0;
+let mapIndex = 1;
 
 
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
@@ -193,7 +193,7 @@ function resetGame(){
   globalFrame=0;
   flyingPoints= [];
   buildings = [];
-  mapIndex = 0;
+  mapIndex = 1;
   applyCurrentMap();
   aaUnits = [];
 
