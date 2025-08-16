@@ -83,7 +83,7 @@ const AA_MIN_DIST_FROM_OPPONENT_BASE = 120;
 const AA_MIN_DIST_FROM_EDGES = 40;
 // Duration for how long the anti-aircraft radar sweep remains visible
 // Quarter-circle afterglow so the sweep persists for 90° of rotation
-const AA_TRAIL_MS = 3000; // radar sweep afterglow duration
+const AA_TRAIL_MS = 8000; // radar sweep afterglow duration
 
 
 
@@ -518,10 +518,12 @@ function drawAAPreview(){
 
   for(const seg of aaPreviewTrail){
     const age = now - seg.time;
-    const alpha = (1 - age/AA_TRAIL_MS) * 0.5;
+    const alpha = (1 - age/AA_TRAIL_MS) * 0.15;
     gameCtx.globalAlpha = alpha;
     gameCtx.strokeStyle = currentPlacer;
     gameCtx.lineWidth = 2;
+    gameCtx.lineCap = "round";
+    gameCtx.lineJoin = "round";
     const trailAng = seg.angleDeg * Math.PI/180;
     const trailEndX = x + Math.cos(trailAng) * AA_DEFAULTS.radius;
     const trailEndY = y + Math.sin(trailAng) * AA_DEFAULTS.radius;
@@ -537,18 +539,22 @@ function drawAAPreview(){
   const endX = x + Math.cos(ang) * AA_DEFAULTS.radius;
   const endY = y + Math.sin(ang) * AA_DEFAULTS.radius;
 
-  gameCtx.globalAlpha = 0.6;
+  gameCtx.globalAlpha = 0.4;
   gameCtx.strokeStyle = currentPlacer;
   gameCtx.lineWidth = 2;
+  gameCtx.lineCap = "round";
+  gameCtx.lineJoin = "round";
   gameCtx.beginPath();
   gameCtx.moveTo(x, y);
   gameCtx.lineTo(endX, endY);
   gameCtx.stroke();
 
   // translucent white highlight on sweep line
-  gameCtx.globalAlpha = 0.5;
+  gameCtx.globalAlpha = 0.3;
   gameCtx.strokeStyle = "white";
   gameCtx.lineWidth = 1;
+  gameCtx.lineCap = "round";
+  gameCtx.lineJoin = "round";
   gameCtx.beginPath();
   gameCtx.moveTo(x, y);
   gameCtx.lineTo(endX, endY);
@@ -962,10 +968,11 @@ function handleAAForPlane(p, fp){
       if(aa.hp<=0){ aaUnits = aaUnits.filter(a=>a!==aa); }
       continue;
     }
-    if(dist <= aa.radius){
+    if(dist <= aa.radius + POINT_RADIUS){
       if(isPathClear(aa.x, aa.y, p.x, p.y)){
         const angleToPlane = (Math.atan2(p.y - aa.y, p.x - aa.x) * 180/Math.PI + 360) % 360;
-        if(angleDiffDeg(angleToPlane, aa.sweepAngleDeg) <= aa.beamWidthDeg/2){
+        const edgeSlackDeg = Math.asin(Math.min(1, POINT_RADIUS / dist)) * 180/Math.PI;
+        if(angleDiffDeg(angleToPlane, aa.sweepAngleDeg) <= aa.beamWidthDeg/2 + edgeSlackDeg){
           if(!p._aaTimes) p._aaTimes={};
           if(!p._aaTimes[aa.id]){
             p._aaTimes[aa.id]=now;
@@ -1383,23 +1390,18 @@ function drawAAUnits(){
     // draw fading trail
     for(const seg of aa.trail){
       const age = now - seg.time;
-      const alpha = (1 - age/AA_TRAIL_MS) * 0.5;
+      const alpha = (1 - age/AA_TRAIL_MS) * 0.15;
       const trailAng = seg.angleDeg * Math.PI/180;
 
       gameCtx.save();
       gameCtx.translate(aa.x, aa.y);
       gameCtx.rotate(trailAng);
 
-      // wider beam with fade across its width
-      const width = 8;
-      const grad = gameCtx.createLinearGradient(0, -width/2, 0, width/2);
-      grad.addColorStop(0, "rgba(0,0,0,0)");
-      grad.addColorStop(0.5, aa.owner);
-      grad.addColorStop(1, "rgba(0,0,0,0)");
-
       gameCtx.globalAlpha = alpha;
-      gameCtx.strokeStyle = grad;
-      gameCtx.lineWidth = width;
+      gameCtx.strokeStyle = aa.owner;
+      gameCtx.lineWidth = 4;
+      gameCtx.lineCap = "round";
+      gameCtx.lineJoin = "round";
       gameCtx.beginPath();
       gameCtx.moveTo(0, 0);
       gameCtx.lineTo(aa.radius, 0);
@@ -1407,22 +1409,26 @@ function drawAAUnits(){
       gameCtx.restore();
     }
 
-    gameCtx.globalAlpha = 1;
+    gameCtx.globalAlpha = 0.8;
     // radar sweep line with highlight
     const ang = aa.sweepAngleDeg * Math.PI/180;
     const endX = aa.x + Math.cos(ang) * aa.radius;
     const endY = aa.y + Math.sin(ang) * aa.radius;
     gameCtx.strokeStyle = aa.owner;
     gameCtx.lineWidth = 2;
+    gameCtx.lineCap = "round";
+    gameCtx.lineJoin = "round";
     gameCtx.beginPath();
     gameCtx.moveTo(aa.x, aa.y);
     gameCtx.lineTo(endX, endY);
     gameCtx.stroke();
 
     // inner translucent white highlight on sweep line
-    gameCtx.globalAlpha = 0.5;
+    gameCtx.globalAlpha = 0.3;
     gameCtx.strokeStyle = "white";
     gameCtx.lineWidth = 1;
+    gameCtx.lineCap = "round";
+    gameCtx.lineJoin = "round";
     gameCtx.beginPath();
     gameCtx.moveTo(aa.x, aa.y);
     gameCtx.lineTo(endX, endY);
