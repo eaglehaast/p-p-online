@@ -123,6 +123,7 @@ let buildings    = [];
 
 let aaUnits     = [];
 let aaPlacementPreview = null;
+let aaPreviewTrail = [];
 
 
 let aaPointerDown = false;
@@ -393,6 +394,7 @@ function handleAAPlacement(x, y){
 
   placeAA({owner: currentPlacer, x, y});
   aaPlacementPreview = null;
+  aaPreviewTrail = [];
 
   if(currentPlacer === 'green'){
     currentPlacer = 'blue';
@@ -409,6 +411,7 @@ function updateAAPreviewFromEvent(e){
   const x = (coords.clientX - rect.left) * scaleX;
   const y = (coords.clientY - rect.top) * scaleY;
   aaPlacementPreview = {x, y};
+  aaPreviewTrail = [];
 }
 
 function onCanvasPointerDown(e){
@@ -435,12 +438,13 @@ function onCanvasPointerUp(){
   const {x, y} = aaPlacementPreview;
   handleAAPlacement(x, y);
   aaPlacementPreview = null;
+  aaPreviewTrail = [];
 }
 
 gameCanvas.addEventListener("pointerdown", onCanvasPointerDown);
 gameCanvas.addEventListener("pointermove", onCanvasPointerMove);
 gameCanvas.addEventListener("pointerup", onCanvasPointerUp);
-gameCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; aaPointerDown = false; });
+gameCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; aaPointerDown = false; aaPreviewTrail = []; });
 
 
 function isValidAAPlacement(x,y){
@@ -506,14 +510,35 @@ function drawAAPreview(){
   gameCtx.arc(x, y, AA_DEFAULTS.radius, 0, Math.PI*2);
   gameCtx.stroke();
 
-  // rotating sweep line preview
-  const ang = (Date.now()/1000 * AA_DEFAULTS.rotationDegPerSec % 360) * Math.PI/180;
+  // track preview sweep trail
+  const now = performance.now();
+  const angDeg = (now/1000 * AA_DEFAULTS.rotationDegPerSec) % 360;
+  aaPreviewTrail.push({angleDeg: angDeg, time: now});
+  aaPreviewTrail = aaPreviewTrail.filter(seg => now - seg.time < AA_TRAIL_MS);
 
+  for(const seg of aaPreviewTrail){
+    const age = now - seg.time;
+    const alpha = 1 - age/AA_TRAIL_MS;
+    gameCtx.globalAlpha = alpha;
+    gameCtx.strokeStyle = currentPlacer;
+    gameCtx.lineWidth = 2;
+    const trailAng = seg.angleDeg * Math.PI/180;
+    const trailEndX = x + Math.cos(trailAng) * AA_DEFAULTS.radius;
+    const trailEndY = y + Math.sin(trailAng) * AA_DEFAULTS.radius;
+    gameCtx.beginPath();
+    gameCtx.moveTo(x, y);
+    gameCtx.lineTo(trailEndX, trailEndY);
+    gameCtx.stroke();
+  }
+
+  // rotating sweep line preview
+  const ang = angDeg * Math.PI/180;
 
   const endX = x + Math.cos(ang) * AA_DEFAULTS.radius;
   const endY = y + Math.sin(ang) * AA_DEFAULTS.radius;
 
   gameCtx.globalAlpha = 0.6;
+  gameCtx.strokeStyle = currentPlacer;
   gameCtx.lineWidth = 2;
   gameCtx.beginPath();
   gameCtx.moveTo(x, y);
@@ -1355,6 +1380,23 @@ function drawAAUnits(){
   const now = performance.now();
   for(const aa of aaUnits){
     gameCtx.save();
+    // draw fading trail
+    for(const seg of aa.trail){
+      const age = now - seg.time;
+      const alpha = 1 - age/AA_TRAIL_MS;
+      gameCtx.globalAlpha = alpha;
+      gameCtx.strokeStyle = aa.owner;
+      gameCtx.lineWidth = 2;
+      const trailAng = seg.angleDeg * Math.PI/180;
+      const trailEndX = aa.x + Math.cos(trailAng) * aa.radius;
+      const trailEndY = aa.y + Math.sin(trailAng) * aa.radius;
+      gameCtx.beginPath();
+      gameCtx.moveTo(aa.x, aa.y);
+      gameCtx.lineTo(trailEndX, trailEndY);
+      gameCtx.stroke();
+    }
+
+    gameCtx.globalAlpha = 1;
     // radar sweep line with highlight
     const ang = aa.sweepAngleDeg * Math.PI/180;
     const endX = aa.x + Math.cos(ang) * aa.radius;
