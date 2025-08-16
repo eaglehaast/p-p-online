@@ -1372,10 +1372,7 @@ function drawBuildings(){
   for(const b of buildings){
     gameCtx.save();
     gameCtx.translate(b.x, b.y);
-    gameCtx.strokeStyle = 'black';
-    gameCtx.lineWidth = 1.5;
-    gameCtx.strokeRect(-b.width/2, -b.height/2, b.width, b.height);
-    drawBuildingGrid(gameCtx, b.width, b.height, 10, "darkred");
+    drawBrickWall(gameCtx, b.width, b.height);
     gameCtx.restore();
   }
 }
@@ -1456,14 +1453,33 @@ function drawAAUnits(){
   }
 }
 
-function drawBuildingGrid(ctx, width, height, cellSize, gridColor){
-  ctx.strokeStyle = gridColor; ctx.lineWidth = 0.5;
-  for(let x=-width/2; x<=width/2; x+=cellSize){
-    ctx.beginPath(); ctx.moveTo(x, -height/2); ctx.lineTo(x, height/2); ctx.stroke();
+function drawBrickWall(ctx, width, height){
+  const brickWidth = 20;
+  const brickHeight = 10;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(-width/2, -height/2, width, height);
+  ctx.clip();
+
+  ctx.fillStyle = '#B22222';
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = 2;
+
+  for(let y = -height/2; y < height/2 + brickHeight; y += brickHeight){
+    const row = Math.floor((y + height/2) / brickHeight);
+    const offset = row % 2 === 0 ? 0 : brickWidth / 2;
+    for(let x = -width/2 - brickWidth; x < width/2 + brickWidth; x += brickWidth){
+      ctx.fillRect(x + offset, y, brickWidth, brickHeight);
+      ctx.strokeRect(x + offset, y, brickWidth, brickHeight);
+    }
   }
-  for(let y=-height/2; y<=height/2; y+=cellSize){
-    ctx.beginPath(); ctx.moveTo(-width/2, y); ctx.lineTo(width/2, y); ctx.stroke();
-  }
+
+  ctx.restore();
+
+  ctx.strokeStyle = 'black';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(-width/2, -height/2, width, height);
 }
 
 function drawHandleTriangle(ctx, x, y, dx, dy){
