@@ -81,9 +81,8 @@ const AA_DEFAULTS = {
 };
 const AA_MIN_DIST_FROM_OPPONENT_BASE = 120;
 const AA_MIN_DIST_FROM_EDGES = 40;
-const AA_TRAIL_MS = 1000; // radar sweep afterglow duration
-
-
+// Duration for how long the anti-aircraft radar sweep remains visible
+// Reduced to keep the trail effect brief and responsive.
 const AA_TRAIL_MS = 600; // radar sweep afterglow duration
 
 
@@ -1195,8 +1194,6 @@ function drawNotebookBackground(ctx2d, w, h){
 }
 
 function drawHazardTapeEdges(ctx2d, w, h){
-
-=======
   const edge = 12;
   ctx2d.save();
 
