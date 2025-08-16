@@ -518,7 +518,7 @@ function drawAAPreview(){
 
   for(const seg of aaPreviewTrail){
     const age = now - seg.time;
-    const alpha = 1 - age/AA_TRAIL_MS;
+    const alpha = (1 - age/AA_TRAIL_MS) * 0.5;
     gameCtx.globalAlpha = alpha;
     gameCtx.strokeStyle = currentPlacer;
     gameCtx.lineWidth = 2;
@@ -1383,7 +1383,7 @@ function drawAAUnits(){
     // draw fading trail
     for(const seg of aa.trail){
       const age = now - seg.time;
-      const alpha = 1 - age/AA_TRAIL_MS;
+      const alpha = (1 - age/AA_TRAIL_MS) * 0.5;
       const trailAng = seg.angleDeg * Math.PI/180;
 
       gameCtx.save();
