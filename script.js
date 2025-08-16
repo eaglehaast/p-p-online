@@ -540,6 +540,13 @@ function drawAAPreview(){
   gameCtx.beginPath();
   gameCtx.arc(x, y, 4, 0, Math.PI*2);
   gameCtx.fill();
+
+  // colored center dot matching player color
+  gameCtx.globalAlpha = 1;
+  gameCtx.fillStyle = currentPlacer;
+  gameCtx.beginPath();
+  gameCtx.arc(x, y, 1.5, 0, Math.PI*2);
+  gameCtx.fill();
   gameCtx.restore();
 }
 
@@ -1376,6 +1383,12 @@ function drawAAUnits(){
     gameCtx.beginPath();
     gameCtx.fillStyle = "white";
     gameCtx.arc(aa.x, aa.y, 4, 0, Math.PI*2);
+    gameCtx.fill();
+
+    // colored center dot matching owner color
+    gameCtx.beginPath();
+    gameCtx.fillStyle = aa.owner;
+    gameCtx.arc(aa.x, aa.y, 1.5, 0, Math.PI*2);
     gameCtx.fill();
 
     gameCtx.restore();
