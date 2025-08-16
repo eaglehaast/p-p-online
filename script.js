@@ -50,7 +50,7 @@ document.addEventListener('dblclick', (e) => {
 /* ======= CONFIG ======= */
 const CELL_SIZE            = 20;     // px
 const POINT_RADIUS         = 15;     // px (увеличено для мобильных)
-const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit AA center
+const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit Anti-Aircraft center
 const HANDLE_SIZE          = 10;     // px
 const BOUNCE_FRAMES        = 68;
 const MAX_DRAG_DISTANCE    = 100;    // px
@@ -70,7 +70,7 @@ const MAX_AMPLITUDE        = 30;     // UI показывает как *2°
 const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 
 
-// AA defaults and placement limits
+// Anti-Aircraft defaults and placement limits
 const AA_DEFAULTS = {
   radius: 60, // detection radius, 3x smaller than original 180
   hp: 1,
@@ -81,6 +81,7 @@ const AA_DEFAULTS = {
 };
 const AA_MIN_DIST_FROM_OPPONENT_BASE = 120;
 const AA_MIN_DIST_FROM_EDGES = 40;
+const AA_TRAIL_MS = 1000; // radar sweep afterglow duration
 
 
 /* ======= STATE ======= */
@@ -126,7 +127,7 @@ let aaPointerDown = false;
 
 
 
-let phase = "MENU"; // MENU | AA_PLACEMENT | ROUND_START | TURN | ROUND_END
+let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_START | TURN | ROUND_END
 
 let currentPlacer = null; // 'green' | 'blue'
 
@@ -438,7 +439,7 @@ gameCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; a
 
 
 function isValidAAPlacement(x,y){
-  // Allow AA placement anywhere within the player's half of the field.
+  // Allow Anti-Aircraft placement anywhere within the player's half of the field.
   // The center may touch field edges, overlap planes or buildings, and its
   // radius may extend beyond the canvas boundaries.
 
@@ -465,7 +466,8 @@ function placeAA({owner,x,y}){
     sweepAngleDeg: 0,
     rotationDegPerSec: AA_DEFAULTS.rotationDegPerSec,
     beamWidthDeg: AA_DEFAULTS.beamWidthDeg,
-    dwellTimeMs: AA_DEFAULTS.dwellTimeMs
+    dwellTimeMs: AA_DEFAULTS.dwellTimeMs,
+    trail: []
   });
 }
 
@@ -497,6 +499,20 @@ function drawAAPreview(){
   gameCtx.strokeStyle = currentPlacer;
   gameCtx.beginPath();
   gameCtx.arc(x, y, AA_DEFAULTS.radius, 0, Math.PI*2);
+  gameCtx.stroke();
+
+  // rotating sweep line preview
+  const ang = (Date.now()/1000 * AA_DEFAULTS.rotationDegPerSec % 360) * Math.PI/180;
+  const fullX = x + Math.cos(ang) * AA_DEFAULTS.radius;
+  const fullY = y + Math.sin(ang) * AA_DEFAULTS.radius;
+  const hit = firstBuildingIntersection(x, y, fullX, fullY);
+  const endX = hit ? hit.x : fullX;
+  const endY = hit ? hit.y : fullY;
+  gameCtx.globalAlpha = 0.6;
+  gameCtx.lineWidth = 2;
+  gameCtx.beginPath();
+  gameCtx.moveTo(x, y);
+  gameCtx.lineTo(endX, endY);
   gameCtx.stroke();
 
   gameCtx.globalAlpha = 0.4;
@@ -792,6 +808,33 @@ function lineSegmentIntersection(x1,y1,x2,y2, x3,y3,x4,y4){
   return null;
 }
 
+// Find the closest intersection point of a line segment with any building
+function firstBuildingIntersection(x1,y1,x2,y2){
+  let closest = null;
+  let minDist = Infinity;
+  for(const b of buildings){
+    const left = b.x - b.width/2, right = b.x + b.width/2;
+    const top  = b.y - b.height/2, bottom = b.y + b.height/2;
+    const edges = [
+      {x1:left, y1:top,    x2:right, y2:top   },
+      {x1:right,y1:top,    x2:right, y2:bottom},
+      {x1:right,y1:bottom, x2:left,  y2:bottom},
+      {x1:left, y1:bottom, x2:left,  y2:top   }
+    ];
+    for(const e of edges){
+      const hit = lineSegmentIntersection(x1,y1,x2,y2, e.x1,e.y1,e.x2,e.y2);
+      if(hit){
+        const d = Math.hypot(hit.x - x1, hit.y - y1);
+        if(d < minDist){
+          minDist = d;
+          closest = hit;
+        }
+      }
+    }
+  }
+  return closest;
+}
+
 /* Коллизии самолёт <-> здание */
 function planeBuildingCollision(fp, b){
   const p = fp.plane;
@@ -867,20 +910,24 @@ function handleAAForPlane(p, fp){
       continue;
     }
     if(dist <= aa.radius){
-      const angleToPlane = (Math.atan2(p.y - aa.y, p.x - aa.x) * 180/Math.PI + 360) % 360;
-      if(angleDiffDeg(angleToPlane, aa.sweepAngleDeg) <= aa.beamWidthDeg/2){
-        if(!p._aaTimes) p._aaTimes={};
-        if(!p._aaTimes[aa.id]){
-          p._aaTimes[aa.id]=now;
-        } else if(now - p._aaTimes[aa.id] > aa.dwellTimeMs){
-          if(!aa.lastTriggerAt || now - aa.lastTriggerAt > aa.cooldownMs){
-            aa.lastTriggerAt = now;
-            p.isAlive=false; p.burning=true;
-            p.collisionX=p.x; p.collisionY=p.y;
-            if(fp) flyingPoints = flyingPoints.filter(x=>x!==fp);
-            checkVictory();
-            return true;
+      if(isPathClear(aa.x, aa.y, p.x, p.y)){
+        const angleToPlane = (Math.atan2(p.y - aa.y, p.x - aa.x) * 180/Math.PI + 360) % 360;
+        if(angleDiffDeg(angleToPlane, aa.sweepAngleDeg) <= aa.beamWidthDeg/2){
+          if(!p._aaTimes) p._aaTimes={};
+          if(!p._aaTimes[aa.id]){
+            p._aaTimes[aa.id]=now;
+          } else if(now - p._aaTimes[aa.id] > aa.dwellTimeMs){
+            if(!aa.lastTriggerAt || now - aa.lastTriggerAt > aa.cooldownMs){
+              aa.lastTriggerAt = now;
+              p.isAlive=false; p.burning=true;
+              p.collisionX=p.x; p.collisionY=p.y;
+              if(fp) flyingPoints = flyingPoints.filter(x=>x!==fp);
+              checkVictory();
+              return true;
+            }
           }
+        } else if(p._aaTimes && p._aaTimes[aa.id]){
+          delete p._aaTimes[aa.id];
         }
       } else if(p._aaTimes && p._aaTimes[aa.id]){
         delete p._aaTimes[aa.id];
@@ -910,8 +957,11 @@ function handleAAForPlane(p, fp){
     setTimeout(() => { doComputerMove(); }, 300);
   }
 
+  const now = performance.now();
   for(const aa of aaUnits){
     aa.sweepAngleDeg = (aa.sweepAngleDeg + aa.rotationDegPerSec/60) % 360;
+    aa.trail.push({angleDeg: aa.sweepAngleDeg, time: now});
+    aa.trail = aa.trail.filter(seg => now - seg.time < AA_TRAIL_MS);
   }
 
 
@@ -992,7 +1042,7 @@ function handleAAForPlane(p, fp){
     }
   }
 
-  // AA against stationary planes
+  // Anti-Aircraft against stationary planes
   if(!isGameOver){
     for(const p of points){
       if(!p.isAlive || p.burning) continue;
@@ -1133,104 +1183,74 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.setLineDash([]);
 
   if (MAPS[mapIndex] === "burning edges") {
-    drawBurntEdges(ctx2d, w, h);
+    drawMetalSpikeEdges(ctx2d, w, h);
   }
 }
 
-function drawBurntEdges(ctx2d, w, h){
-  const edge = 20;
+function drawMetalSpikeEdges(ctx2d, w, h){
+  const spikeBase = 16;
+  const spikeLen  = 12;
   ctx2d.save();
-  let grad;
+  ctx2d.lineWidth = 1;
+  ctx2d.strokeStyle = '#666';
 
-  grad = ctx2d.createLinearGradient(0,0,0,edge);
-  grad.addColorStop(0,"rgba(0,0,0,0.7)");
-  grad.addColorStop(1,"rgba(0,0,0,0)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,0,w,edge);
-
-  grad = ctx2d.createLinearGradient(0,h-edge,0,h);
-  grad.addColorStop(0,"rgba(0,0,0,0)");
-  grad.addColorStop(1,"rgba(0,0,0,0.7)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,h-edge,w,edge);
-
-  grad = ctx2d.createLinearGradient(0,0,edge,0);
-  grad.addColorStop(0,"rgba(0,0,0,0.7)");
-  grad.addColorStop(1,"rgba(0,0,0,0)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,0,edge,h);
-
-  grad = ctx2d.createLinearGradient(w-edge,0,w,0);
-  grad.addColorStop(0,"rgba(0,0,0,0)");
-  grad.addColorStop(1,"rgba(0,0,0,0.7)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(w-edge,0,edge,h);
-
-  const glow = 10;
-  grad = ctx2d.createLinearGradient(0,0,0,glow);
-  grad.addColorStop(0,"rgba(255,180,0,0.4)");
-  grad.addColorStop(1,"rgba(255,180,0,0)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,0,w,glow);
-
-  grad = ctx2d.createLinearGradient(0,h-glow,0,h);
-  grad.addColorStop(0,"rgba(255,180,0,0)");
-  grad.addColorStop(1,"rgba(255,180,0,0.4)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,h-glow,w,glow);
-
-  grad = ctx2d.createLinearGradient(0,0,glow,0);
-  grad.addColorStop(0,"rgba(255,180,0,0.4)");
-  grad.addColorStop(1,"rgba(255,180,0,0)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(0,0,glow,h);
-
-  grad = ctx2d.createLinearGradient(w-glow,0,w,0);
-  grad.addColorStop(0,"rgba(255,180,0,0)");
-  grad.addColorStop(1,"rgba(255,180,0,0.4)");
-  ctx2d.fillStyle = grad;
-  ctx2d.fillRect(w-glow,0,glow,h);
-
-  const step = 20;
-  ctx2d.shadowColor = "rgba(255,80,0,0.8)";
-  ctx2d.shadowBlur = 15;
-  ctx2d.fillStyle = "#ff4500";
-
-  for(let x=0; x<w; x+=step){
-    const fh = 12 + Math.random()*8;
+  // top and bottom edges
+  for(let x=0; x < w; x += spikeBase){
+    let gradTop = ctx2d.createLinearGradient(x, 0, x + spikeBase, spikeLen);
+    gradTop.addColorStop(0, '#e5e5e5');
+    gradTop.addColorStop(0.5, '#9e9e9e');
+    gradTop.addColorStop(1, '#d0d0d0');
+    ctx2d.fillStyle = gradTop;
     ctx2d.beginPath();
-    ctx2d.moveTo(x,0);
-    ctx2d.lineTo(x+step,0);
-    ctx2d.lineTo(x+step/2,fh);
+    ctx2d.moveTo(x, 0);
+    ctx2d.lineTo(x + spikeBase, 0);
+    ctx2d.lineTo(x + spikeBase / 2, spikeLen);
     ctx2d.closePath();
     ctx2d.fill();
+    ctx2d.stroke();
 
+    let gradBottom = ctx2d.createLinearGradient(x, h, x + spikeBase, h - spikeLen);
+    gradBottom.addColorStop(0, '#e5e5e5');
+    gradBottom.addColorStop(0.5, '#9e9e9e');
+    gradBottom.addColorStop(1, '#d0d0d0');
+    ctx2d.fillStyle = gradBottom;
     ctx2d.beginPath();
-    ctx2d.moveTo(x,h);
-    ctx2d.lineTo(x+step,h);
-    ctx2d.lineTo(x+step/2,h-fh);
+    ctx2d.moveTo(x, h);
+    ctx2d.lineTo(x + spikeBase, h);
+    ctx2d.lineTo(x + spikeBase / 2, h - spikeLen);
     ctx2d.closePath();
     ctx2d.fill();
+    ctx2d.stroke();
   }
 
-  for(let y=0; y<h; y+=step){
-    const fw = 12 + Math.random()*8;
+  // left and right edges
+  for(let y=0; y < h; y += spikeBase){
+    let gradLeft = ctx2d.createLinearGradient(0, y, spikeLen, y + spikeBase);
+    gradLeft.addColorStop(0, '#e5e5e5');
+    gradLeft.addColorStop(0.5, '#9e9e9e');
+    gradLeft.addColorStop(1, '#d0d0d0');
+    ctx2d.fillStyle = gradLeft;
     ctx2d.beginPath();
-    ctx2d.moveTo(0,y);
-    ctx2d.lineTo(0,y+step);
-    ctx2d.lineTo(fw,y+step/2);
+    ctx2d.moveTo(0, y);
+    ctx2d.lineTo(0, y + spikeBase);
+    ctx2d.lineTo(spikeLen, y + spikeBase / 2);
     ctx2d.closePath();
     ctx2d.fill();
+    ctx2d.stroke();
 
+    let gradRight = ctx2d.createLinearGradient(w, y, w - spikeLen, y + spikeBase);
+    gradRight.addColorStop(0, '#e5e5e5');
+    gradRight.addColorStop(0.5, '#9e9e9e');
+    gradRight.addColorStop(1, '#d0d0d0');
+    ctx2d.fillStyle = gradRight;
     ctx2d.beginPath();
-    ctx2d.moveTo(w,y);
-    ctx2d.lineTo(w,y+step);
-    ctx2d.lineTo(w-fw,y+step/2);
+    ctx2d.moveTo(w, y);
+    ctx2d.lineTo(w, y + spikeBase);
+    ctx2d.lineTo(w - spikeLen, y + spikeBase / 2);
     ctx2d.closePath();
     ctx2d.fill();
+    ctx2d.stroke();
   }
-
-  ctx2d.shadowBlur = 0;
 
   ctx2d.restore();
 }
@@ -1326,30 +1346,46 @@ function drawBuildings(){
 
 
 function drawAAUnits(){
+  const now = performance.now();
   for(const aa of aaUnits){
     gameCtx.save();
-    gameCtx.beginPath();
-    gameCtx.arc(aa.x, aa.y, aa.radius, 0, Math.PI*2);
-    gameCtx.strokeStyle = 'rgba(0,0,0,0.2)';
-    gameCtx.lineWidth = 1;
-    gameCtx.stroke();
-
-    // radar sweep line
-    const ang = aa.sweepAngleDeg * Math.PI/180;
-    const endX = aa.x + Math.cos(ang) * aa.radius;
-    const endY = aa.y + Math.sin(ang) * aa.radius;
     gameCtx.strokeStyle = aa.owner;
     gameCtx.lineWidth = 2;
-    gameCtx.beginPath();
-    gameCtx.moveTo(aa.x, aa.y);
-    gameCtx.lineTo(endX, endY);
-    gameCtx.stroke();
 
-    // AA center
-    gameCtx.beginPath();
-    gameCtx.fillStyle = aa.owner;
-    gameCtx.arc(aa.x, aa.y, 6, 0, Math.PI*2);
-    gameCtx.fill();
+    const len = aa.trail.length;
+    for(let i=0; i < len - 1; i++){
+      const seg = aa.trail[i];
+      const age = now - seg.time;
+      const alpha = 1 - age/AA_TRAIL_MS;
+      if(alpha <= 0) continue;
+      gameCtx.globalAlpha = alpha * 0.6;
+      const ang = seg.angleDeg * Math.PI/180;
+      const fullX = aa.x + Math.cos(ang) * aa.radius;
+      const fullY = aa.y + Math.sin(ang) * aa.radius;
+      const hit = firstBuildingIntersection(aa.x, aa.y, fullX, fullY);
+      const endX = hit ? hit.x : fullX;
+      const endY = hit ? hit.y : fullY;
+      gameCtx.beginPath();
+      gameCtx.moveTo(aa.x, aa.y);
+      gameCtx.lineTo(endX, endY);
+      gameCtx.stroke();
+    }
+
+    if(len){
+      const seg = aa.trail[len - 1];
+      const ang = seg.angleDeg * Math.PI/180;
+      const fullX = aa.x + Math.cos(ang) * aa.radius;
+      const fullY = aa.y + Math.sin(ang) * aa.radius;
+      const hit = firstBuildingIntersection(aa.x, aa.y, fullX, fullY);
+      const endX = hit ? hit.x : fullX;
+      const endY = hit ? hit.y : fullY;
+      gameCtx.globalAlpha = 1;
+      gameCtx.beginPath();
+      gameCtx.moveTo(aa.x, aa.y);
+      gameCtx.lineTo(endX, endY);
+      gameCtx.stroke();
+    }
+
     gameCtx.restore();
   }
 }
@@ -1460,10 +1496,10 @@ function drawPlayerPanel(ctx, color, victories, isTurn){
   let statusText;
   if (phase === 'AA_PLACEMENT') {
     if (currentPlacer === color) {
-      statusText = 'You are placing AA';
+      statusText = 'You are placing Anti-Aircraft';
       ctx.fillStyle = color;
     } else {
-      statusText = 'Enemy is placing AA';
+      statusText = 'Enemy is placing Anti-Aircraft';
       ctx.fillStyle = '#888';
     }
   } else if (isTurn) {
@@ -1516,7 +1552,7 @@ function setupRepeatButton(btn, step){
 }
 
 
-// Add AA toggle
+// Add Anti-Aircraft toggle
 
 if (addAAToggle) {
   addAAToggle.checked = settings.addAA;
