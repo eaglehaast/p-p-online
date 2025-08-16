@@ -1902,9 +1902,9 @@ async function pollLineColor() {
     const response = await fetch('config/color.json?cache=' + Date.now());
     const data = await response.json();
     const color = data.color;
-    const line = document.querySelector('#amplitudeIndicator .line3 path');
+    const line = document.querySelector('#amplitudeIndicator .line3');
     if (line && color) {
-      line.style.setProperty('--arrow-color', color);
+      line.style.backgroundColor = color;
     }
   } catch (err) {
     // ignore fetch errors

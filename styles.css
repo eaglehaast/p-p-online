@@ -369,18 +369,12 @@ body {
 #amplitudeIndicator .line3 {
   position: absolute;
   width: 80px;
-  height: 80px;
-  top: 10px;
+  height: 3px;
+  background-color: #6c757d;
+  top: 50%;
   left: 10px;
-  transform-origin: 0 100%;
-}
-
-#amplitudeIndicator .line3 path {
-  fill: none;
-  stroke: url(#amplitudeTrail);
-  stroke-width: 3px;
-  stroke-linecap: round;
-  --arrow-color: #666666;
+  transform-origin: 0 50%;
+  border-radius: 2px;
 }
 #amplitudeAngleDisplay {
   font-size: 22px;
