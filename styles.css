@@ -377,9 +377,10 @@ body {
 
 #amplitudeIndicator .line3 path {
   fill: none;
-  stroke: #666666;
+  stroke: url(#amplitudeTrail);
   stroke-width: 3px;
   stroke-linecap: round;
+  --arrow-color: #666666;
 }
 #amplitudeAngleDisplay {
   font-size: 22px;
