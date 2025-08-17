@@ -98,6 +98,8 @@ const MAPS = ["clear sky", "wall", "two walls", "burning edges"];
 let mapIndex = 1;
 
 
+
+
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
 let buildingsCount   = 0;
 
@@ -1273,6 +1275,7 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.beginPath(); ctx2d.moveTo(0,h-1); ctx2d.lineTo(w,h-1); ctx2d.stroke();
   ctx2d.setLineDash([]);
 
+  
 }
 
 function drawBrickEdges(ctx2d, w, h){
@@ -1935,6 +1938,11 @@ function resizeCanvas() {
   const scale = Math.min(maxWidth / 300, maxHeight / 400);
   canvas.width = 300 * scale;
   canvas.height = 400 * scale;
+
+  // Regenerate nails when resizing on burning edges
+  if (MAPS[mapIndex] === "burning edges") {
+    nailEdges = generateNailEdges(canvas.width, canvas.height);
+  }
 
   aimCanvas.style.width = window.innerWidth + 'px';
   aimCanvas.style.height = window.innerHeight + 'px';
