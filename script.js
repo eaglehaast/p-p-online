@@ -1138,16 +1138,14 @@ function handleAAForPlane(p, fp){
       if(!flyingPoints.some(fp => fp.plane === p)){
         handleAAForPlane(p, null);
       }
-  }
+    }
   }
 
   // здания
   drawAAPlacementZone();
   drawBuildings();
 
-
-    drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
-  }
+  drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
 
   // установки ПВО
   drawAAUnits();
