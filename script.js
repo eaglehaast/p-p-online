@@ -97,7 +97,8 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 const MAPS = ["clear sky", "wall", "two walls", "burning edges"];
 let mapIndex = 1;
 
-// Needle edge drawing for the "burning edges" map
+// Nail edge drawing for the "burning edges" map
+let nailEdgesCache = null;
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
 let buildingsCount   = 0;
 
@@ -1144,7 +1145,7 @@ function handleAAForPlane(p, fp){
 
   // redraw field edges above walls
     if (MAPS[mapIndex] === "burning edges") {
-      drawNeedleEdges(gameCtx, gameCanvas.width, gameCanvas.height);
+      drawNailEdges(gameCtx, gameCanvas.width, gameCanvas.height);
   } else {
     drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
   }
@@ -1276,22 +1277,32 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.setLineDash([]);
 
     if (MAPS[mapIndex] === "burning edges") {
-      drawNeedleEdges(ctx2d, w, h);
+      drawNailEdges(ctx2d, w, h);
   } else {
     drawBrickEdges(ctx2d, w, h);
   }
 }
 
-function drawNeedleEdges(ctx2d, w, h){
-  const spacing = 4;
-  const length = 12;
-  for(let x=0; x<=w; x+=spacing){
-    drawNeedle(ctx2d, x, 0, length, Math.PI/2);
-    drawNeedle(ctx2d, x, h, length, -Math.PI/2);
+function drawNailEdges(ctx2d, w, h){
+  if(!nailEdgesCache || nailEdgesCache.w !== w || nailEdgesCache.h !== h){
+    nailEdgesCache = { w, h, nails: [] };
+    const spacing = 6;
+    const nails = nailEdgesCache.nails;
+    for(let x=0; x<=w; x+=spacing){
+      nails.push({ x, y:0, length:10 + Math.random()*6, rotation:Math.PI/2,
+                   bend:(Math.random()-0.5)*0.3, rusty: Math.random() < 0.35 });
+      nails.push({ x, y:h, length:10 + Math.random()*6, rotation:-Math.PI/2,
+                   bend:(Math.random()-0.5)*0.3, rusty: Math.random() < 0.35 });
+    }
+    for(let y=0; y<=h; y+=spacing){
+      nails.push({ x:0, y, length:10 + Math.random()*6, rotation:0,
+                   bend:(Math.random()-0.5)*0.3, rusty: Math.random() < 0.35 });
+      nails.push({ x:w, y, length:10 + Math.random()*6, rotation:Math.PI,
+                   bend:(Math.random()-0.5)*0.3, rusty: Math.random() < 0.35 });
+    }
   }
-  for(let y=0; y<=h; y+=spacing){
-    drawNeedle(ctx2d, 0, y, length, 0);
-    drawNeedle(ctx2d, w, y, length, Math.PI);
+  for(const nail of nailEdgesCache.nails){
+    drawNail(ctx2d, nail.x, nail.y, nail.length, nail.rotation, nail.bend, nail.rusty);
   }
 }
 
@@ -1320,28 +1331,35 @@ function drawBrickEdges(ctx2d, w, h){
   }
 }
 
-function drawNeedle(ctx2d, x, y, length, rotation){
+function drawNail(ctx2d, x, y, length, rotation, bend = 0, rusty = false){
   ctx2d.save();
   ctx2d.translate(x, y);
   ctx2d.rotate(rotation);
 
-  const baseRadius = 1.5;
-  const baseWidth  = baseRadius * 2; // slightly wider base
-  const tipWidth   = 0.5;           // slimmer tip for a sharp look
-  ctx2d.fillStyle = '#808080';
+  const shaftWidth = 2;
+  const headRadius = 2.5;
+  const tipSize = 3;
+  const color = rusty ? '#8b4513' : '#b0b0b0';
 
-  // tapered needle body
+  ctx2d.fillStyle = color;
   ctx2d.beginPath();
-  ctx2d.moveTo(0, -baseWidth / 2);
-  ctx2d.lineTo(length, -tipWidth / 2);
-  ctx2d.lineTo(length, tipWidth / 2);
-  ctx2d.lineTo(0, baseWidth / 2);
+  ctx2d.moveTo(0, -shaftWidth/2);
+  ctx2d.quadraticCurveTo(length * bend, -shaftWidth/2, length - tipSize, -shaftWidth/2);
+  ctx2d.lineTo(length - tipSize, shaftWidth/2);
+  ctx2d.quadraticCurveTo(length * bend, shaftWidth/2, 0, shaftWidth/2);
   ctx2d.closePath();
   ctx2d.fill();
 
-  // circular base
   ctx2d.beginPath();
-  ctx2d.arc(0, 0, baseRadius, 0, Math.PI * 2);
+  ctx2d.moveTo(length - tipSize, -shaftWidth/2);
+  ctx2d.lineTo(length, 0);
+  ctx2d.lineTo(length - tipSize, shaftWidth/2);
+  ctx2d.closePath();
+  ctx2d.fill();
+
+  ctx2d.beginPath();
+  ctx2d.fillStyle = rusty ? '#8b4513' : '#d3d3d3';
+  ctx2d.arc(0, 0, headRadius, 0, Math.PI * 2);
   ctx2d.fill();
 
   ctx2d.restore();
@@ -1888,6 +1906,7 @@ function updateMapDisplay(){
 }
 
 function applyCurrentMap(){
+  nailEdgesCache = null;
   buildings = [];
   if(MAPS[mapIndex] === "clear sky"){
     // no buildings to add
