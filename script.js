@@ -97,6 +97,9 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 const MAPS = ["clear sky", "wall", "two walls", "burning edges"];
 let mapIndex = 1;
 
+
+
+
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
 let buildingsCount   = 0;
 
@@ -1142,10 +1145,7 @@ function handleAAForPlane(p, fp){
   drawAAPlacementZone();
   drawBuildings();
 
-  // redraw field edges above walls
-  if (MAPS[mapIndex] === "burning edges") {
-    drawNailEdges(gameCtx);
-  } else if (MAPS[mapIndex] !== "clear sky") {
+
     drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
   }
 
@@ -1274,6 +1274,8 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.setLineDash([10,5]);
   ctx2d.beginPath(); ctx2d.moveTo(0,h-1); ctx2d.lineTo(w,h-1); ctx2d.stroke();
   ctx2d.setLineDash([]);
+
+  
 }
 
 function drawBrickEdges(ctx2d, w, h){
@@ -1301,99 +1303,7 @@ function drawBrickEdges(ctx2d, w, h){
   }
 }
 
-function seededRand(seed) {
-  const x = Math.sin(seed) * 10000;
-  return x - Math.floor(x);
-}
 
-function generateNailEdges(w, h) {
-  const spacing = 20;
-  const nails = [];
-  for (let x = 0, i = 0; x <= w; x += spacing, i++) {
-    const seed = i * 6;
-    nails.push({
-      x,
-      y: 0,
-      edge: 'top',
-      length: 10 + seededRand(seed) * 10,
-      bend: (seededRand(seed + 1) - 0.5) * 0.4,
-      rust: seededRand(seed + 2)
-    });
-    nails.push({
-      x,
-      y: h,
-      edge: 'bottom',
-      length: 10 + seededRand(seed + 3) * 10,
-      bend: (seededRand(seed + 4) - 0.5) * 0.4,
-      rust: seededRand(seed + 5)
-    });
-  }
-  for (let y = spacing, i = 0; y <= h - spacing; y += spacing, i++) {
-    const seed = 1000 + i * 6;
-    nails.push({
-      x: 0,
-      y,
-      edge: 'left',
-      length: 10 + seededRand(seed) * 10,
-      bend: (seededRand(seed + 1) - 0.5) * 0.4,
-      rust: seededRand(seed + 2)
-    });
-    nails.push({
-      x: w,
-      y,
-      edge: 'right',
-      length: 10 + seededRand(seed + 3) * 10,
-      bend: (seededRand(seed + 4) - 0.5) * 0.4,
-      rust: seededRand(seed + 5)
-    });
-  }
-  return nails;
-}
-
-function drawNailEdges(ctx2d) {
-  for (const nail of nailEdges) {
-    drawNail(ctx2d, nail);
-  }
-}
-
-function drawNail(ctx2d, nail) {
-  ctx2d.save();
-  ctx2d.translate(nail.x, nail.y);
-  let angle = 0;
-  switch (nail.edge) {
-    case 'top': angle = 0; break;
-    case 'bottom': angle = Math.PI; break;
-    case 'left': angle = -Math.PI / 2; break;
-    case 'right': angle = Math.PI / 2; break;
-  }
-  ctx2d.rotate(angle + nail.bend);
-  const metallic = 70 - nail.rust * 20;
-  const rustHue = 25; // brownish
-  const useRust = nail.rust > 0.6;
-  const baseColor = useRust ? `hsl(${rustHue},40%,${40 + nail.rust * 20}%)` : `hsl(0,0%,${metallic}%)`;
-  ctx2d.strokeStyle = baseColor;
-  ctx2d.lineCap = 'round';
-  ctx2d.lineWidth = 2;
-  ctx2d.beginPath();
-  ctx2d.moveTo(0, 0);
-  ctx2d.lineTo(0, nail.length);
-  ctx2d.stroke();
-  if (!useRust) {
-    ctx2d.strokeStyle = `hsl(0,0%,${metallic + 20}%)`;
-    ctx2d.lineWidth = 1;
-    ctx2d.beginPath();
-    ctx2d.moveTo(1, 0);
-    ctx2d.lineTo(1, nail.length);
-    ctx2d.stroke();
-  }
-  ctx2d.strokeStyle = baseColor;
-  ctx2d.lineWidth = 3;
-  ctx2d.beginPath();
-  ctx2d.moveTo(-3, 0);
-  ctx2d.lineTo(3, 0);
-  ctx2d.stroke();
-  ctx2d.restore();
-}
 
 function drawThinPlane(ctx2d, cx, cy, color, angle){
   ctx2d.save();
