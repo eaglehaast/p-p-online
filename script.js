@@ -95,6 +95,9 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 const MAPS = ["clear sky", "wall", "two walls", "burning edges"];
 let mapIndex = 1;
 
+// Procedural flame drawing for the "burning edges" map
+// (derived from the turbine indicator shape)
+
 
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
 let buildingsCount   = 0;
@@ -1254,53 +1257,42 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.setLineDash([]);
 
   if (MAPS[mapIndex] === "burning edges") {
-    drawSpikeEdges(ctx2d, w, h);
+    drawFlameEdges(ctx2d, w, h);
   }
 }
 
-function drawSpikeEdges(ctx2d, w, h){
-  const spikeHeight = 12;
-  const spikeWidth = 12;
+function drawFlameEdges(ctx2d, w, h){
+  const spacing = 20;
+  const t = performance.now();
+
+  for(let x=0; x<=w; x+=spacing){
+    const scale = 0.8 + 0.2*Math.sin((t + x*20) * 0.02);
+    drawFlameSegment(ctx2d, x, 0, scale, Math.PI);     // top edge
+    drawFlameSegment(ctx2d, x, h, scale, 0);           // bottom edge
+  }
+  for(let y=0; y<=h; y+=spacing){
+    const scale = 0.8 + 0.2*Math.sin((t + y*20) * 0.02);
+    drawFlameSegment(ctx2d, 0, y, scale, -Math.PI/2);  // left edge
+    drawFlameSegment(ctx2d, w, y, scale, Math.PI/2);   // right edge
+  }
+}
+
+function drawFlameSegment(ctx2d, x, y, scale, rotation){
+  const base = 10 * scale;
+  const height = 20 * scale;
   ctx2d.save();
-  ctx2d.fillStyle = '#d00';
-
-  // top edge
-  for(let x=0; x<w; x+=spikeWidth){
-    ctx2d.beginPath();
-    ctx2d.moveTo(x, 0);
-    ctx2d.lineTo(x + spikeWidth/2, spikeHeight);
-    ctx2d.lineTo(Math.min(x + spikeWidth, w), 0);
-    ctx2d.closePath();
-    ctx2d.fill();
-  }
-  // bottom edge
-  for(let x=0; x<w; x+=spikeWidth){
-    ctx2d.beginPath();
-    ctx2d.moveTo(x, h);
-    ctx2d.lineTo(x + spikeWidth/2, h - spikeHeight);
-    ctx2d.lineTo(Math.min(x + spikeWidth, w), h);
-    ctx2d.closePath();
-    ctx2d.fill();
-  }
-  // left edge
-  for(let y=0; y<h; y+=spikeWidth){
-    ctx2d.beginPath();
-    ctx2d.moveTo(0, y);
-    ctx2d.lineTo(spikeHeight, y + spikeWidth/2);
-    ctx2d.lineTo(0, Math.min(y + spikeWidth, h));
-    ctx2d.closePath();
-    ctx2d.fill();
-  }
-  // right edge
-  for(let y=0; y<h; y+=spikeWidth){
-    ctx2d.beginPath();
-    ctx2d.moveTo(w, y);
-    ctx2d.lineTo(w - spikeHeight, y + spikeWidth/2);
-    ctx2d.lineTo(w, Math.min(y + spikeWidth, h));
-    ctx2d.closePath();
-    ctx2d.fill();
-  }
-
+  ctx2d.translate(x, y);
+  ctx2d.rotate(rotation);
+  const grad = ctx2d.createLinearGradient(0, 0, 0, -height);
+  grad.addColorStop(0, '#ff4500');
+  grad.addColorStop(1, '#ffea00');
+  ctx2d.fillStyle = grad;
+  ctx2d.beginPath();
+  ctx2d.moveTo(-base, 0);
+  ctx2d.lineTo(0, -height);
+  ctx2d.lineTo(base, 0);
+  ctx2d.closePath();
+  ctx2d.fill();
   ctx2d.restore();
 }
 

@@ -21,7 +21,7 @@
 - Use the mouse to drag a plane, aim and release to launch it. Releasing before the first tick mark cancels the move.
 - Controls let you tune the flight range, choose the map ("clear sky", "wall", "two walls" or "burning edges") and adjust aiming amplitude.
 
-- In the "burning edges" map the field border is lined with deadly spikes that destroy planes on contact.
+- In the "burning edges" map the field border blazes with small flames that destroy planes on contact.
 
 - Hitting an enemy plane destroys it. When one colour has no planes left, the other wins the round.
 - After a round you can choose to play again or return to the menu.
