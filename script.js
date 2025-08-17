@@ -1301,16 +1301,51 @@ function drawBrickEdges(ctx2d, w, h){
   }
 }
 
+function seededRand(seed) {
+  const x = Math.sin(seed) * 10000;
+  return x - Math.floor(x);
+}
+
 function generateNailEdges(w, h) {
   const spacing = 20;
   const nails = [];
-  for (let x = 0; x <= w; x += spacing) {
-    nails.push({ x, y: 0, edge: 'top', length: 10 + Math.random() * 10, bend: (Math.random() - 0.5) * 0.4, rust: Math.random() });
-    nails.push({ x, y: h, edge: 'bottom', length: 10 + Math.random() * 10, bend: (Math.random() - 0.5) * 0.4, rust: Math.random() });
+  for (let x = 0, i = 0; x <= w; x += spacing, i++) {
+    const seed = i * 6;
+    nails.push({
+      x,
+      y: 0,
+      edge: 'top',
+      length: 10 + seededRand(seed) * 10,
+      bend: (seededRand(seed + 1) - 0.5) * 0.4,
+      rust: seededRand(seed + 2)
+    });
+    nails.push({
+      x,
+      y: h,
+      edge: 'bottom',
+      length: 10 + seededRand(seed + 3) * 10,
+      bend: (seededRand(seed + 4) - 0.5) * 0.4,
+      rust: seededRand(seed + 5)
+    });
   }
-  for (let y = spacing; y <= h - spacing; y += spacing) {
-    nails.push({ x: 0, y, edge: 'left', length: 10 + Math.random() * 10, bend: (Math.random() - 0.5) * 0.4, rust: Math.random() });
-    nails.push({ x: w, y, edge: 'right', length: 10 + Math.random() * 10, bend: (Math.random() - 0.5) * 0.4, rust: Math.random() });
+  for (let y = spacing, i = 0; y <= h - spacing; y += spacing, i++) {
+    const seed = 1000 + i * 6;
+    nails.push({
+      x: 0,
+      y,
+      edge: 'left',
+      length: 10 + seededRand(seed) * 10,
+      bend: (seededRand(seed + 1) - 0.5) * 0.4,
+      rust: seededRand(seed + 2)
+    });
+    nails.push({
+      x: w,
+      y,
+      edge: 'right',
+      length: 10 + seededRand(seed + 3) * 10,
+      bend: (seededRand(seed + 4) - 0.5) * 0.4,
+      rust: seededRand(seed + 5)
+    });
   }
   return nails;
 }
@@ -1335,13 +1370,23 @@ function drawNail(ctx2d, nail) {
   const metallic = 70 - nail.rust * 20;
   const rustHue = 25; // brownish
   const useRust = nail.rust > 0.6;
-  ctx2d.strokeStyle = useRust ? `hsl(${rustHue},40%,${40 + nail.rust * 20}%)` : `hsl(0,0%,${metallic}%)`;
+  const baseColor = useRust ? `hsl(${rustHue},40%,${40 + nail.rust * 20}%)` : `hsl(0,0%,${metallic}%)`;
+  ctx2d.strokeStyle = baseColor;
   ctx2d.lineCap = 'round';
   ctx2d.lineWidth = 2;
   ctx2d.beginPath();
   ctx2d.moveTo(0, 0);
   ctx2d.lineTo(0, nail.length);
   ctx2d.stroke();
+  if (!useRust) {
+    ctx2d.strokeStyle = `hsl(0,0%,${metallic + 20}%)`;
+    ctx2d.lineWidth = 1;
+    ctx2d.beginPath();
+    ctx2d.moveTo(1, 0);
+    ctx2d.lineTo(1, nail.length);
+    ctx2d.stroke();
+  }
+  ctx2d.strokeStyle = baseColor;
   ctx2d.lineWidth = 3;
   ctx2d.beginPath();
   ctx2d.moveTo(-3, 0);
