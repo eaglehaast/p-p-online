@@ -1275,12 +1275,6 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.setLineDash([10,5]);
   ctx2d.beginPath(); ctx2d.moveTo(0,h-1); ctx2d.lineTo(w,h-1); ctx2d.stroke();
   ctx2d.setLineDash([]);
-
-    if (MAPS[mapIndex] === "burning edges") {
-      drawNailEdges(ctx2d, w, h);
-  } else {
-    drawBrickEdges(ctx2d, w, h);
-  }
 }
 
 function drawNailEdges(ctx2d, w, h){
