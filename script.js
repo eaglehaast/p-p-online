@@ -1144,9 +1144,9 @@ function handleAAForPlane(p, fp){
   drawBuildings();
 
   // redraw field edges above walls
-    if (MAPS[mapIndex] === "burning edges") {
-      drawNailEdges(gameCtx, gameCanvas.width, gameCanvas.height);
-  } else {
+  if (MAPS[mapIndex] === "burning edges") {
+    drawNailEdges(gameCtx, gameCanvas.width, gameCanvas.height);
+  } else if (MAPS[mapIndex] !== "clear sky") {
     drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
   }
 
@@ -1288,7 +1288,7 @@ function drawNailEdges(ctx2d, w, h){
       nails.push({ x, y:h, length:10 + Math.random()*6, rotation:-Math.PI/2,
                    bend:(Math.random()-0.5)*0.3, rusty: Math.random() < 0.35 });
     }
-    for(let y=0; y<=h; y+=spacing){
+    for(let y=spacing; y<h; y+=spacing){
       nails.push({ x:0, y, length:10 + Math.random()*6, rotation:0,
                    bend:(Math.random()-0.5)*0.3, rusty: Math.random() < 0.35 });
       nails.push({ x:w, y, length:10 + Math.random()*6, rotation:Math.PI,
