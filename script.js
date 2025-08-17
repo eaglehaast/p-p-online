@@ -468,18 +468,31 @@ gameCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; a
 
 function isValidAAPlacement(x,y){
   // Allow Anti-Aircraft placement anywhere within the player's half of the field.
-  // The center may touch field edges, overlap planes or buildings, and its
-  // radius may extend beyond the canvas boundaries.
+  // The center may touch field edges or overlap planes, but must not be inside
+  // any building so that AA can be destroyed by planes.
 
   const half = gameCanvas.height / 2;
 
   if (currentPlacer === 'green') {
-    return y >= half && y <= gameCanvas.height;
+    if (y < half || y > gameCanvas.height) return false;
+  } else if (currentPlacer === 'blue') {
+    if (y < 0 || y > half) return false;
+  } else {
+    return false;
   }
-  if (currentPlacer === 'blue') {
-    return y >= 0 && y <= half;
+
+  // Prevent placing the AA center inside any building
+  for(const b of buildings){
+    const left = b.x - b.width/2;
+    const right = b.x + b.width/2;
+    const top = b.y - b.height/2;
+    const bottom = b.y + b.height/2;
+    if(x >= left && x <= right && y >= top && y <= bottom){
+      return false;
+    }
   }
-  return false;
+
+  return true;
 }
 
 function placeAA({owner,x,y}){
