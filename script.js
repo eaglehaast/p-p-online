@@ -97,6 +97,7 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 const MAPS = ["clear sky", "wall", "two walls", "burning edges"];
 let mapIndex = 1;
 
+
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
 let buildingsCount   = 0;
 
@@ -1141,8 +1142,7 @@ function handleAAForPlane(p, fp){
   drawAAPlacementZone();
   drawBuildings();
 
-  // redraw field edges above walls (none for "burning edges")
-  if (MAPS[mapIndex] !== "clear sky" && MAPS[mapIndex] !== "burning edges") {
+
     drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
   }
 
@@ -1271,6 +1271,7 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.setLineDash([10,5]);
   ctx2d.beginPath(); ctx2d.moveTo(0,h-1); ctx2d.lineTo(w,h-1); ctx2d.stroke();
   ctx2d.setLineDash([]);
+
 }
 
 function drawBrickEdges(ctx2d, w, h){
@@ -1297,6 +1298,7 @@ function drawBrickEdges(ctx2d, w, h){
     ctx2d.strokeRect(w - brickHeight, y, brickHeight, brickWidth);
   }
 }
+
 
 function drawThinPlane(ctx2d, cx, cy, color, angle){
   ctx2d.save();
