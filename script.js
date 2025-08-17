@@ -1274,7 +1274,8 @@ function drawNotebookBackground(ctx2d, w, h){
 
   if (MAPS[mapIndex] === "burning edges") {
     drawFlameEdges(ctx2d, w, h);
-
+  } else {
+    drawBrickEdges(ctx2d, w, h);
   }
 }
 
@@ -1294,6 +1295,29 @@ function drawFlameEdges(ctx2d, w, h){
     const scale = 0.8 + 0.2*Math.sin((t + y*20) * 0.02);
     drawFlame(ctx2d, 0, y, scale, Math.PI);
     drawFlame(ctx2d, w, y, scale, 0);
+  }
+}
+
+function drawBrickEdges(ctx2d, w, h){
+  const brickWidth = 20;
+  const brickHeight = 10;
+
+  ctx2d.fillStyle = '#B22222';
+  ctx2d.strokeStyle = '#FFFFFF';
+  ctx2d.lineWidth = 1;
+
+  for(let x=0; x<w; x+=brickWidth){
+    ctx2d.fillRect(x, 0, brickWidth, brickHeight);
+    ctx2d.strokeRect(x, 0, brickWidth, brickHeight);
+    ctx2d.fillRect(x, h - brickHeight, brickWidth, brickHeight);
+    ctx2d.strokeRect(x, h - brickHeight, brickWidth, brickHeight);
+  }
+
+  for(let y=brickHeight; y<h - brickHeight; y+=brickHeight){
+    ctx2d.fillRect(0, y, brickWidth, brickHeight);
+    ctx2d.strokeRect(0, y, brickWidth, brickHeight);
+    ctx2d.fillRect(w - brickWidth, y, brickWidth, brickHeight);
+    ctx2d.strokeRect(w - brickWidth, y, brickWidth, brickHeight);
   }
 }
 
