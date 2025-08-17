@@ -1900,12 +1900,12 @@ function applyCurrentMap(){
       color: "darkred"
     });
   } else if (MAPS[mapIndex] === "two walls") {
-    const wallWidth = gameCanvas.width / 2;
+    const wallWidth = gameCanvas.width / 2 - CELL_SIZE;
     const wallHeight = CELL_SIZE;
     const offset = CELL_SIZE * 2;
     buildings.push({
       type: "wall",
-      x: wallWidth / 2,
+      x: CELL_SIZE + wallWidth / 2,
       y: gameCanvas.height / 2 + offset,
       width: wallWidth,
       height: wallHeight,
@@ -1913,7 +1913,7 @@ function applyCurrentMap(){
     });
     buildings.push({
       type: "wall",
-      x: gameCanvas.width - wallWidth / 2,
+      x: gameCanvas.width - CELL_SIZE - wallWidth / 2,
       y: gameCanvas.height / 2 - offset,
       width: wallWidth,
       height: wallHeight,
