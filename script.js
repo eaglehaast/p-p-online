@@ -1304,16 +1304,17 @@ function drawFlameEdges(ctx2d, w, h){
 
   const spacing = 20;
   const t = performance.now();
+  const speed = 0.02 / 3;
   if(!flameImg.complete) return;
 
   for(let x=0; x<=w; x+=spacing){
-    const scale = 0.8 + 0.2*Math.sin((t + x*20) * 0.02);
+    const scale = 0.8 + 0.2*Math.sin((t + x*20) * speed);
     // flames at top and bottom edges
     drawFlame(ctx2d, x, 0, scale, Math.PI/2);
     drawFlame(ctx2d, x, h, scale, -Math.PI/2);
   }
   for(let y=0; y<=h; y+=spacing){
-    const scale = 0.8 + 0.2*Math.sin((t + y*20) * 0.02);
+    const scale = 0.8 + 0.2*Math.sin((t + y*20) * speed);
     // flames at left and right edges
     drawFlame(ctx2d, 0, y, scale, 0);
     drawFlame(ctx2d, w, y, scale, Math.PI);
@@ -1346,8 +1347,8 @@ function drawBrickEdges(ctx2d, w, h){
 }
 
 function drawFlame(ctx2d, x, y, scale, rotation){
-  const width = 40 * scale;
-  const height = 20 * scale;
+  const width = 8 * scale;
+  const height = 4 * scale;
   ctx2d.save();
   ctx2d.translate(x, y);
   ctx2d.rotate(rotation);
