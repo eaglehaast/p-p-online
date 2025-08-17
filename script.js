@@ -122,6 +122,7 @@ let turnIndex    = lastFirstTurn;
 let points       = [];
 let flyingPoints = [];
 let buildings    = [];
+let nailEdges    = [];
 
 let aaUnits     = [];
 let aaPlacementPreview = null;
@@ -1300,6 +1301,7 @@ function drawBrickEdges(ctx2d, w, h){
 }
 
 
+
 function drawThinPlane(ctx2d, cx, cy, color, angle){
   ctx2d.save();
   ctx2d.translate(cx, cy);
@@ -1842,6 +1844,7 @@ function updateMapDisplay(){
 
 function applyCurrentMap(){
   buildings = [];
+  nailEdges = [];
   if(MAPS[mapIndex] === "clear sky"){
     // no buildings to add
   } else if (MAPS[mapIndex] === "wall") {
@@ -1876,7 +1879,8 @@ function applyCurrentMap(){
       color: "darkred"
     });
   } else if (MAPS[mapIndex] === "burning edges") {
-    // no buildings; edges are lethal
+    // no buildings; edges are lethal and lined with nails
+    nailEdges = generateNailEdges(gameCanvas.width, gameCanvas.height);
   }
   updateMapDisplay();
   renderScoreboard();
