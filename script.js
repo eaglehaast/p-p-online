@@ -121,7 +121,6 @@ let turnIndex    = lastFirstTurn;
 let points       = [];
 let flyingPoints = [];
 let buildings    = [];
-let nailEdgeCache = null;
 
 let aaUnits     = [];
 let aaPlacementPreview = null;
@@ -1142,10 +1141,8 @@ function handleAAForPlane(p, fp){
   drawAAPlacementZone();
   drawBuildings();
 
-  // redraw field edges above walls
-  if (MAPS[mapIndex] === "burning edges") {
-    drawNailEdges(gameCtx, gameCanvas.width, gameCanvas.height);
-  } else if (MAPS[mapIndex] !== "clear sky") {
+  // redraw field edges above walls (none for "burning edges")
+  if (MAPS[mapIndex] !== "clear sky" && MAPS[mapIndex] !== "burning edges") {
     drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
   }
 
@@ -1276,35 +1273,6 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.setLineDash([]);
 }
 
-function drawNailEdges(ctx2d, w, h){
-  if(!nailEdgeCache || nailEdgeCache.w !== w || nailEdgeCache.h !== h){
-    regenerateNailEdges(w, h);
-  }
-  for(const nail of nailEdgeCache.nails){
-    drawNail(ctx2d, nail.x, nail.y, nail.length, nail.angle, nail.rust);
-  }
-}
-
-function regenerateNailEdges(w, h){
-  nailEdgeCache = {w, h, nails: []};
-  const spacing = 8;
-  for(let x = 0; x <= w; x += spacing){
-    nailEdgeCache.nails.push(makeEdgeNail(x, 0, Math.PI/2));
-    nailEdgeCache.nails.push(makeEdgeNail(x, h, -Math.PI/2));
-  }
-  for(let y = spacing; y < h; y += spacing){
-    nailEdgeCache.nails.push(makeEdgeNail(0, y, 0));
-    nailEdgeCache.nails.push(makeEdgeNail(w, y, Math.PI));
-  }
-}
-
-function makeEdgeNail(x, y, baseAngle){
-  const length = 10 + Math.random() * 8;
-  const angle = baseAngle + (Math.random() - 0.5) * 0.4;
-  const rust = Math.random();
-  return {x, y, length, angle, rust};
-}
-
 function drawBrickEdges(ctx2d, w, h){
   const brickWidth = 20;
   const brickHeight = 10;
@@ -1328,36 +1296,6 @@ function drawBrickEdges(ctx2d, w, h){
     ctx2d.fillRect(w - brickHeight, y, brickHeight, brickWidth);
     ctx2d.strokeRect(w - brickHeight, y, brickHeight, brickWidth);
   }
-}
-
-function drawNail(ctx2d, x, y, length, rotation, rust=0){
-  ctx2d.save();
-  ctx2d.translate(x, y);
-  ctx2d.rotate(rotation);
-
-  const shaftWidth = 2;
-  const headRadius = 2.5;
-  const tipSize = 3;
-
-  const shaftColor = rust > 0.6 ? '#8b5a2b' : rust > 0.3 ? '#a0522d' : '#b0b0b0';
-  const headColor  = rust > 0.6 ? '#a0522d' : rust > 0.3 ? '#c08050' : '#d3d3d3';
-
-  ctx2d.fillStyle = shaftColor;
-  ctx2d.fillRect(0, -shaftWidth/2, length - tipSize, shaftWidth);
-
-  ctx2d.beginPath();
-  ctx2d.moveTo(length - tipSize, -shaftWidth/2);
-  ctx2d.lineTo(length, 0);
-  ctx2d.lineTo(length - tipSize, shaftWidth/2);
-  ctx2d.closePath();
-  ctx2d.fill();
-
-  ctx2d.beginPath();
-  ctx2d.fillStyle = headColor;
-  ctx2d.arc(0, 0, headRadius, 0, Math.PI * 2);
-  ctx2d.fill();
-
-  ctx2d.restore();
 }
 
 function drawThinPlane(ctx2d, cx, cy, color, angle){
@@ -1902,7 +1840,6 @@ function updateMapDisplay(){
 
 function applyCurrentMap(){
   buildings = [];
-  nailEdgeCache = null;
   if(MAPS[mapIndex] === "clear sky"){
     // no buildings to add
   } else if (MAPS[mapIndex] === "wall") {
@@ -1999,7 +1936,6 @@ function resizeCanvas() {
   aimCanvas.height = window.innerHeight;
 
   // Переинициализируем самолёты
-  nailEdgeCache = null;
   if(points.length === 0) {
     initPoints();
   }
