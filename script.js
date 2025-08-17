@@ -35,6 +35,13 @@ const addAAToggle         = document.getElementById("addAAToggle");
 const endGameDiv  = document.getElementById("endGameButtons");
 const yesBtn      = document.getElementById("yesButton");
 const noBtn       = document.getElementById("noButton");
+const flame       = document.getElementById("flame");
+let flameImg      = null;
+if (flame) {
+  const svgStr = new XMLSerializer().serializeToString(flame);
+  flameImg = new Image();
+  flameImg.src = "data:image/svg+xml;base64," + btoa(svgStr);
+}
 
 /* Disable pinch and double-tap zoom on mobile */
 document.addEventListener('touchmove', (event) => {
@@ -94,6 +101,9 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 const MAPS = ["clear sky", "wall", "two walls", "burning edges"];
 let mapIndex = 1;
+
+// Procedural flame drawing for the "burning edges" map
+// (derived from the turbine indicator shape)
 
 
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
@@ -1254,53 +1264,61 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.setLineDash([]);
 
   if (MAPS[mapIndex] === "burning edges") {
-    drawSpikeEdges(ctx2d, w, h);
+    drawFlameEdges(ctx2d, w, h);
+  } else {
+    drawBrickEdges(ctx2d, w, h);
   }
 }
 
-function drawSpikeEdges(ctx2d, w, h){
-  const spikeHeight = 12;
-  const spikeWidth = 12;
+function drawFlameEdges(ctx2d, w, h){
+  if (!flameImg || !flameImg.complete) return;
+  const spacing = 20;
+  const t = performance.now();
+
+  for(let x=0; x<=w; x+=spacing){
+    const scale = 0.8 + 0.2*Math.sin((t + x*20) * 0.02);
+    drawFlameSegment(ctx2d, x, 0, scale, Math.PI/2);     // top edge inward
+    drawFlameSegment(ctx2d, x, h, scale, -Math.PI/2);    // bottom edge inward
+  }
+  for(let y=0; y<=h; y+=spacing){
+    const scale = 0.8 + 0.2*Math.sin((t + y*20) * 0.02);
+    drawFlameSegment(ctx2d, 0, y, scale, Math.PI);       // left edge inward
+    drawFlameSegment(ctx2d, w, y, scale, 0);             // right edge inward
+  }
+}
+
+function drawBrickEdges(ctx2d, w, h){
+  const t = CELL_SIZE;
+
   ctx2d.save();
-  ctx2d.fillStyle = '#d00';
+  ctx2d.translate(w/2, t/2);
+  drawBrickWall(ctx2d, w, t);
+  ctx2d.restore();
 
-  // top edge
-  for(let x=0; x<w; x+=spikeWidth){
-    ctx2d.beginPath();
-    ctx2d.moveTo(x, 0);
-    ctx2d.lineTo(x + spikeWidth/2, spikeHeight);
-    ctx2d.lineTo(Math.min(x + spikeWidth, w), 0);
-    ctx2d.closePath();
-    ctx2d.fill();
-  }
-  // bottom edge
-  for(let x=0; x<w; x+=spikeWidth){
-    ctx2d.beginPath();
-    ctx2d.moveTo(x, h);
-    ctx2d.lineTo(x + spikeWidth/2, h - spikeHeight);
-    ctx2d.lineTo(Math.min(x + spikeWidth, w), h);
-    ctx2d.closePath();
-    ctx2d.fill();
-  }
-  // left edge
-  for(let y=0; y<h; y+=spikeWidth){
-    ctx2d.beginPath();
-    ctx2d.moveTo(0, y);
-    ctx2d.lineTo(spikeHeight, y + spikeWidth/2);
-    ctx2d.lineTo(0, Math.min(y + spikeWidth, h));
-    ctx2d.closePath();
-    ctx2d.fill();
-  }
-  // right edge
-  for(let y=0; y<h; y+=spikeWidth){
-    ctx2d.beginPath();
-    ctx2d.moveTo(w, y);
-    ctx2d.lineTo(w - spikeHeight, y + spikeWidth/2);
-    ctx2d.lineTo(w, Math.min(y + spikeWidth, h));
-    ctx2d.closePath();
-    ctx2d.fill();
-  }
+  ctx2d.save();
+  ctx2d.translate(w/2, h - t/2);
+  drawBrickWall(ctx2d, w, t);
+  ctx2d.restore();
 
+  ctx2d.save();
+  ctx2d.translate(t/2, h/2);
+  drawBrickWall(ctx2d, t, h);
+  ctx2d.restore();
+
+  ctx2d.save();
+  ctx2d.translate(w - t/2, h/2);
+  drawBrickWall(ctx2d, t, h);
+  ctx2d.restore();
+}
+
+function drawFlameSegment(ctx2d, x, y, scale, rotation){
+  if (!flameImg || !flameImg.complete) return;
+  const w = flameImg.width * scale * 0.5;
+  const h = flameImg.height * scale * 0.5;
+  ctx2d.save();
+  ctx2d.translate(x, y);
+  ctx2d.rotate(rotation);
+  ctx2d.drawImage(flameImg, -w, -h/2, w, h);
   ctx2d.restore();
 }
 
@@ -1894,7 +1912,6 @@ function updateFlightRangeDisplay(){
   }
 }
 function updateFlightRangeFlame(){
-  const flame = document.getElementById("flame");
   const trails = document.querySelectorAll("#flightRangeIndicator .wing-trail");
   const minScale = 0.3;
   const maxScale = 1.2;
