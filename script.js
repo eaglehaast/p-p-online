@@ -35,6 +35,13 @@ const addAAToggle         = document.getElementById("addAAToggle");
 const endGameDiv  = document.getElementById("endGameButtons");
 const yesBtn      = document.getElementById("yesButton");
 const noBtn       = document.getElementById("noButton");
+const flame       = document.getElementById("flame");
+let flameImg      = null;
+if (flame) {
+  const svgStr = new XMLSerializer().serializeToString(flame);
+  flameImg = new Image();
+  flameImg.src = "data:image/svg+xml;base64," + btoa(svgStr);
+}
 
 /* Disable pinch and double-tap zoom on mobile */
 document.addEventListener('touchmove', (event) => {
@@ -1262,37 +1269,30 @@ function drawNotebookBackground(ctx2d, w, h){
 }
 
 function drawFlameEdges(ctx2d, w, h){
+  if (!flameImg || !flameImg.complete) return;
   const spacing = 20;
   const t = performance.now();
 
   for(let x=0; x<=w; x+=spacing){
     const scale = 0.8 + 0.2*Math.sin((t + x*20) * 0.02);
-    drawFlameSegment(ctx2d, x, 0, scale, Math.PI);     // top edge
-    drawFlameSegment(ctx2d, x, h, scale, 0);           // bottom edge
+    drawFlameSegment(ctx2d, x, 0, scale, Math.PI/2);     // top edge inward
+    drawFlameSegment(ctx2d, x, h, scale, -Math.PI/2);    // bottom edge inward
   }
   for(let y=0; y<=h; y+=spacing){
     const scale = 0.8 + 0.2*Math.sin((t + y*20) * 0.02);
-    drawFlameSegment(ctx2d, 0, y, scale, -Math.PI/2);  // left edge
-    drawFlameSegment(ctx2d, w, y, scale, Math.PI/2);   // right edge
+    drawFlameSegment(ctx2d, 0, y, scale, Math.PI);       // left edge inward
+    drawFlameSegment(ctx2d, w, y, scale, 0);             // right edge inward
   }
 }
 
 function drawFlameSegment(ctx2d, x, y, scale, rotation){
-  const base = 10 * scale;
-  const height = 20 * scale;
+  if (!flameImg || !flameImg.complete) return;
+  const w = flameImg.width * scale * 0.5;
+  const h = flameImg.height * scale * 0.5;
   ctx2d.save();
   ctx2d.translate(x, y);
   ctx2d.rotate(rotation);
-  const grad = ctx2d.createLinearGradient(0, 0, 0, -height);
-  grad.addColorStop(0, '#ff4500');
-  grad.addColorStop(1, '#ffea00');
-  ctx2d.fillStyle = grad;
-  ctx2d.beginPath();
-  ctx2d.moveTo(-base, 0);
-  ctx2d.lineTo(0, -height);
-  ctx2d.lineTo(base, 0);
-  ctx2d.closePath();
-  ctx2d.fill();
+  ctx2d.drawImage(flameImg, -w, -h/2, w, h);
   ctx2d.restore();
 }
 
@@ -1886,7 +1886,6 @@ function updateFlightRangeDisplay(){
   }
 }
 function updateFlightRangeFlame(){
-  const flame = document.getElementById("flame");
   const trails = document.querySelectorAll("#flightRangeIndicator .wing-trail");
   const minScale = 0.3;
   const maxScale = 1.2;
