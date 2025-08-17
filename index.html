@@ -46,15 +46,24 @@
                 <polygon points="38,10 8,20 8,15 0,10 8,5 8,0" />
               </svg>
 
-              <svg id="flame" class="jet-flame" viewBox="0 0 40 20" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
-                <defs>
-                  <radialGradient id="flameGradient" cx="100%" cy="50%" r="60%">
-                    <stop offset="0%" stop-color="#ffea00" />
-                    <stop offset="100%" stop-color="#ff4500" />
-                  </radialGradient>
-                </defs>
-                <path d="M40 10 C37 4 32 0 20 0 C5 0 0 10 20 20 C32 20 37 16 40 10 Z" fill="url(#flameGradient)" />
-              </svg>
+                <svg id="flame" class="jet-flame" viewBox="0 0 40 20" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+                  <defs>
+                    <radialGradient id="flameGradient" cx="100%" cy="50%" r="60%">
+                      <stop offset="0%" stop-color="#ffea00" />
+                      <stop offset="100%" stop-color="#ff4500" />
+                    </radialGradient>
+                    <symbol id="sharpFlameTall" viewBox="0 0 10 20">
+                      <path d="M10 10 L5 0 L0 10 L5 20 Z" />
+                    </symbol>
+                    <symbol id="sharpFlameShort" viewBox="0 0 10 20">
+                      <path d="M10 10 L6 4 L0 10 L6 16 Z" />
+                    </symbol>
+                  </defs>
+                  <use href="#sharpFlameTall" x="0" fill="url(#flameGradient)" />
+                  <use href="#sharpFlameShort" x="10" fill="url(#flameGradient)" />
+                  <use href="#sharpFlameTall" x="20" fill="url(#flameGradient)" />
+                  <use href="#sharpFlameShort" x="30" fill="url(#flameGradient)" />
+                </svg>
 
             </div>
           </div>
