@@ -94,7 +94,7 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 
 
-const MAPS = ["clear sky", "wall", "two walls", "burning edges"];
+const MAPS = ["clear sky", "wall", "two walls", "burning edges", "sharp edges"];
 let mapIndex = 1;
 
 
@@ -1145,7 +1145,11 @@ function handleAAForPlane(p, fp){
   drawAAPlacementZone();
   drawBuildings();
 
-  drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
+  if (MAPS[mapIndex] === "burning edges" || MAPS[mapIndex] === "sharp edges") {
+    drawNailEdges(gameCtx, nailEdges);
+  } else {
+    drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
+  }
 
   // установки ПВО
   drawAAUnits();
@@ -1298,6 +1302,47 @@ function drawBrickEdges(ctx2d, w, h){
     // draw vertical bricks on the right side
     ctx2d.fillRect(w - brickHeight, y, brickHeight, brickWidth);
     ctx2d.strokeRect(w - brickHeight, y, brickHeight, brickWidth);
+  }
+}
+
+function generateNailEdges(w, h){
+  const spacing = 20;
+  const nails = [];
+  for(let x = spacing/2; x < w; x += spacing){
+    nails.push({x, y:0, orientation:"down"});
+    nails.push({x, y:h, orientation:"up"});
+  }
+  for(let y = spacing/2; y < h; y += spacing){
+    nails.push({x:0, y, orientation:"right"});
+    nails.push({x:w, y, orientation:"left"});
+  }
+  return nails;
+}
+
+function drawNailEdges(ctx2d, nails){
+  const size = 8;
+  ctx2d.fillStyle = "#555";
+  for(const n of nails){
+    ctx2d.beginPath();
+    if(n.orientation === "down"){
+      ctx2d.moveTo(n.x - size/2, n.y);
+      ctx2d.lineTo(n.x + size/2, n.y);
+      ctx2d.lineTo(n.x, n.y + size);
+    } else if(n.orientation === "up"){
+      ctx2d.moveTo(n.x - size/2, n.y);
+      ctx2d.lineTo(n.x + size/2, n.y);
+      ctx2d.lineTo(n.x, n.y - size);
+    } else if(n.orientation === "right"){
+      ctx2d.moveTo(n.x, n.y - size/2);
+      ctx2d.lineTo(n.x, n.y + size/2);
+      ctx2d.lineTo(n.x + size, n.y);
+    } else if(n.orientation === "left"){
+      ctx2d.moveTo(n.x, n.y - size/2);
+      ctx2d.lineTo(n.x, n.y + size/2);
+      ctx2d.lineTo(n.x - size, n.y);
+    }
+    ctx2d.closePath();
+    ctx2d.fill();
   }
 }
 
@@ -1879,8 +1924,8 @@ function applyCurrentMap(){
       height: wallHeight,
       color: "darkred"
     });
-  } else if (MAPS[mapIndex] === "burning edges") {
-    // no buildings; edges are lethal and lined with nails
+  } else if (MAPS[mapIndex] === "burning edges" || MAPS[mapIndex] === "sharp edges") {
+    // no buildings; edges are lined with nails
     nailEdges = generateNailEdges(gameCanvas.width, gameCanvas.height);
   }
   updateMapDisplay();
@@ -1937,8 +1982,8 @@ function resizeCanvas() {
   canvas.width = 300 * scale;
   canvas.height = 400 * scale;
 
-  // Regenerate nails when resizing on burning edges
-  if (MAPS[mapIndex] === "burning edges") {
+  // Regenerate nails when resizing on nail edge maps
+  if (MAPS[mapIndex] === "burning edges" || MAPS[mapIndex] === "sharp edges") {
     nailEdges = generateNailEdges(canvas.width, canvas.height);
   }
 
