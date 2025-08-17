@@ -97,7 +97,6 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 const MAPS = ["clear sky", "wall", "two walls", "burning edges"];
 let mapIndex = 1;
 
-// Needle edge drawing for the "burning edges" map
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
 let buildingsCount   = 0;
 
@@ -122,6 +121,7 @@ let turnIndex    = lastFirstTurn;
 let points       = [];
 let flyingPoints = [];
 let buildings    = [];
+let nailEdges    = [];
 
 let aaUnits     = [];
 let aaPlacementPreview = null;
@@ -1143,9 +1143,9 @@ function handleAAForPlane(p, fp){
   drawBuildings();
 
   // redraw field edges above walls
-    if (MAPS[mapIndex] === "burning edges") {
-      drawNeedleEdges(gameCtx, gameCanvas.width, gameCanvas.height);
-  } else {
+  if (MAPS[mapIndex] === "burning edges") {
+    drawNailEdges(gameCtx);
+  } else if (MAPS[mapIndex] !== "clear sky") {
     drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
   }
 
@@ -1274,25 +1274,6 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.setLineDash([10,5]);
   ctx2d.beginPath(); ctx2d.moveTo(0,h-1); ctx2d.lineTo(w,h-1); ctx2d.stroke();
   ctx2d.setLineDash([]);
-
-    if (MAPS[mapIndex] === "burning edges") {
-      drawNeedleEdges(ctx2d, w, h);
-  } else {
-    drawBrickEdges(ctx2d, w, h);
-  }
-}
-
-function drawNeedleEdges(ctx2d, w, h){
-  const spacing = 4;
-  const length = 12;
-  for(let x=0; x<=w; x+=spacing){
-    drawNeedle(ctx2d, x, 0, length, Math.PI/2);
-    drawNeedle(ctx2d, x, h, length, -Math.PI/2);
-  }
-  for(let y=0; y<=h; y+=spacing){
-    drawNeedle(ctx2d, 0, y, length, 0);
-    drawNeedle(ctx2d, w, y, length, Math.PI);
-  }
 }
 
 function drawBrickEdges(ctx2d, w, h){
@@ -1320,30 +1301,52 @@ function drawBrickEdges(ctx2d, w, h){
   }
 }
 
-function drawNeedle(ctx2d, x, y, length, rotation){
+function generateNailEdges(w, h) {
+  const spacing = 20;
+  const nails = [];
+  for (let x = 0; x <= w; x += spacing) {
+    nails.push({ x, y: 0, edge: 'top', length: 10 + Math.random() * 10, bend: (Math.random() - 0.5) * 0.4, rust: Math.random() });
+    nails.push({ x, y: h, edge: 'bottom', length: 10 + Math.random() * 10, bend: (Math.random() - 0.5) * 0.4, rust: Math.random() });
+  }
+  for (let y = spacing; y <= h - spacing; y += spacing) {
+    nails.push({ x: 0, y, edge: 'left', length: 10 + Math.random() * 10, bend: (Math.random() - 0.5) * 0.4, rust: Math.random() });
+    nails.push({ x: w, y, edge: 'right', length: 10 + Math.random() * 10, bend: (Math.random() - 0.5) * 0.4, rust: Math.random() });
+  }
+  return nails;
+}
+
+function drawNailEdges(ctx2d) {
+  for (const nail of nailEdges) {
+    drawNail(ctx2d, nail);
+  }
+}
+
+function drawNail(ctx2d, nail) {
   ctx2d.save();
-  ctx2d.translate(x, y);
-  ctx2d.rotate(rotation);
-
-  const baseRadius = 1.5;
-  const baseWidth  = baseRadius * 2; // slightly wider base
-  const tipWidth   = 0.5;           // slimmer tip for a sharp look
-  ctx2d.fillStyle = '#808080';
-
-  // tapered needle body
+  ctx2d.translate(nail.x, nail.y);
+  let angle = 0;
+  switch (nail.edge) {
+    case 'top': angle = 0; break;
+    case 'bottom': angle = Math.PI; break;
+    case 'left': angle = -Math.PI / 2; break;
+    case 'right': angle = Math.PI / 2; break;
+  }
+  ctx2d.rotate(angle + nail.bend);
+  const metallic = 70 - nail.rust * 20;
+  const rustHue = 25; // brownish
+  const useRust = nail.rust > 0.6;
+  ctx2d.strokeStyle = useRust ? `hsl(${rustHue},40%,${40 + nail.rust * 20}%)` : `hsl(0,0%,${metallic}%)`;
+  ctx2d.lineCap = 'round';
+  ctx2d.lineWidth = 2;
   ctx2d.beginPath();
-  ctx2d.moveTo(0, -baseWidth / 2);
-  ctx2d.lineTo(length, -tipWidth / 2);
-  ctx2d.lineTo(length, tipWidth / 2);
-  ctx2d.lineTo(0, baseWidth / 2);
-  ctx2d.closePath();
-  ctx2d.fill();
-
-  // circular base
+  ctx2d.moveTo(0, 0);
+  ctx2d.lineTo(0, nail.length);
+  ctx2d.stroke();
+  ctx2d.lineWidth = 3;
   ctx2d.beginPath();
-  ctx2d.arc(0, 0, baseRadius, 0, Math.PI * 2);
-  ctx2d.fill();
-
+  ctx2d.moveTo(-3, 0);
+  ctx2d.lineTo(3, 0);
+  ctx2d.stroke();
   ctx2d.restore();
 }
 
@@ -1889,6 +1892,7 @@ function updateMapDisplay(){
 
 function applyCurrentMap(){
   buildings = [];
+  nailEdges = [];
   if(MAPS[mapIndex] === "clear sky"){
     // no buildings to add
   } else if (MAPS[mapIndex] === "wall") {
@@ -1923,7 +1927,8 @@ function applyCurrentMap(){
       color: "darkred"
     });
   } else if (MAPS[mapIndex] === "burning edges") {
-    // no buildings; edges are lethal
+    // no buildings; edges are lethal and lined with nails
+    nailEdges = generateNailEdges(gameCanvas.width, gameCanvas.height);
   }
   updateMapDisplay();
   renderScoreboard();
@@ -1983,7 +1988,7 @@ function resizeCanvas() {
   aimCanvas.style.height = window.innerHeight + 'px';
   aimCanvas.width = window.innerWidth;
   aimCanvas.height = window.innerHeight;
-  
+
   // Переинициализируем самолёты
   if(points.length === 0) {
     initPoints();
