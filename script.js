@@ -1308,13 +1308,15 @@ function drawFlameEdges(ctx2d, w, h){
 
   for(let x=0; x<=w; x+=spacing){
     const scale = 0.8 + 0.2*Math.sin((t + x*20) * 0.02);
-    drawFlame(ctx2d, x, 0, scale, -Math.PI/2);
-    drawFlame(ctx2d, x, h, scale, Math.PI/2);
+    // flames at top and bottom edges
+    drawFlame(ctx2d, x, 0, scale, Math.PI/2);
+    drawFlame(ctx2d, x, h, scale, -Math.PI/2);
   }
   for(let y=0; y<=h; y+=spacing){
     const scale = 0.8 + 0.2*Math.sin((t + y*20) * 0.02);
-    drawFlame(ctx2d, 0, y, scale, Math.PI);
-    drawFlame(ctx2d, w, y, scale, 0);
+    // flames at left and right edges
+    drawFlame(ctx2d, 0, y, scale, 0);
+    drawFlame(ctx2d, w, y, scale, Math.PI);
   }
 }
 
