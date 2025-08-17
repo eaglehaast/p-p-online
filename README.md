@@ -22,7 +22,7 @@
 - Controls let you tune the flight range, choose the map ("clear sky", "wall", "two walls" or "burning edges") and adjust aiming amplitude.
 
 
- - In the "burning edges" map the field border is lined with tightly packed sewing needles that destroy planes on contact.
+ - In the "burning edges" map the field border is lined with metallic nails — some shiny, others rusty or bent — that destroy planes on contact.
 
 - Hitting an enemy plane destroys it. When one colour has no planes left, the other wins the round.
 - After a round you can choose to play again or return to the menu.
