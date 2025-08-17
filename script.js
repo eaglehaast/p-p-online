@@ -102,6 +102,9 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 const MAPS = ["clear sky", "wall", "two walls", "burning edges"];
 let mapIndex = 1;
 
+// Procedural flame drawing for the "burning edges" map
+// (derived from the turbine indicator shape)
+
 
 // Flame image for "burning edges" map, reused from the turbine indicator
 const flameSvg = `<svg viewBox="0 0 40 20" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"><defs><radialGradient id="flameGradient" cx="100%" cy="50%" r="60%"><stop offset="0%" stop-color="#ffea00"/><stop offset="100%" stop-color="#ff4500"/></radialGradient></defs><path d="M40 10 C37 4 32 0 20 0 C5 0 0 10 20 20 C32 20 37 16 40 10 Z" fill="url(#flameGradient)"/></svg>`;
@@ -1269,10 +1272,12 @@ function drawNotebookBackground(ctx2d, w, h){
 
   if (MAPS[mapIndex] === "burning edges") {
     drawFlameEdges(ctx2d, w, h);
+
   }
 }
 
 function drawFlameEdges(ctx2d, w, h){
+
 
   const spacing = 20;
   const t = performance.now();
@@ -1298,6 +1303,31 @@ function drawFlame(ctx2d, x, y, scale, rotation){
   ctx2d.rotate(rotation);
   ctx2d.drawImage(flameImg, 0, -height/2, width, height);
 
+
+  ctx2d.save();
+  ctx2d.translate(w/2, h - t/2);
+  drawBrickWall(ctx2d, w, t);
+  ctx2d.restore();
+
+  ctx2d.save();
+  ctx2d.translate(t/2, h/2);
+  drawBrickWall(ctx2d, t, h);
+  ctx2d.restore();
+
+  ctx2d.save();
+  ctx2d.translate(w - t/2, h/2);
+  drawBrickWall(ctx2d, t, h);
+  ctx2d.restore();
+}
+
+function drawFlameSegment(ctx2d, x, y, scale, rotation){
+  if (!flameImg || !flameImg.complete) return;
+  const w = flameImg.width * scale * 0.5;
+  const h = flameImg.height * scale * 0.5;
+  ctx2d.save();
+  ctx2d.translate(x, y);
+  ctx2d.rotate(rotation);
+  ctx2d.drawImage(flameImg, -w, -h/2, w, h);
   ctx2d.restore();
 }
 
