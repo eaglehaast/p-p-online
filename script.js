@@ -1324,16 +1324,26 @@ function drawNeedle(ctx2d, x, y, length, rotation){
   ctx2d.save();
   ctx2d.translate(x, y);
   ctx2d.rotate(rotation);
-  ctx2d.strokeStyle = '#808080';
-  ctx2d.lineWidth = 1;
-  ctx2d.beginPath();
-  ctx2d.moveTo(0, 0);
-  ctx2d.lineTo(length, 0);
-  ctx2d.stroke();
-  ctx2d.beginPath();
-  ctx2d.arc(0, 0, 1.5, 0, Math.PI * 2);
+
+  const baseRadius = 1.5;
+  const baseWidth  = baseRadius * 2; // slightly wider base
+  const tipWidth   = 0.5;           // slimmer tip for a sharp look
   ctx2d.fillStyle = '#808080';
+
+  // tapered needle body
+  ctx2d.beginPath();
+  ctx2d.moveTo(0, -baseWidth / 2);
+  ctx2d.lineTo(length, -tipWidth / 2);
+  ctx2d.lineTo(length, tipWidth / 2);
+  ctx2d.lineTo(0, baseWidth / 2);
+  ctx2d.closePath();
   ctx2d.fill();
+
+  // circular base
+  ctx2d.beginPath();
+  ctx2d.arc(0, 0, baseRadius, 0, Math.PI * 2);
+  ctx2d.fill();
+
   ctx2d.restore();
 }
 
