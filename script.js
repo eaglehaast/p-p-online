@@ -97,6 +97,7 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 const MAPS = ["clear sky", "wall", "two walls", "burning edges"];
 let mapIndex = 1;
 
+
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
 let buildingsCount   = 0;
 
@@ -1142,10 +1143,7 @@ function handleAAForPlane(p, fp){
   drawAAPlacementZone();
   drawBuildings();
 
-  // redraw field edges above walls
-  if (MAPS[mapIndex] === "burning edges") {
-    drawNailEdges(gameCtx);
-  } else if (MAPS[mapIndex] !== "clear sky") {
+
     drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
   }
 
@@ -1274,6 +1272,7 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.setLineDash([10,5]);
   ctx2d.beginPath(); ctx2d.moveTo(0,h-1); ctx2d.lineTo(w,h-1); ctx2d.stroke();
   ctx2d.setLineDash([]);
+
 }
 
 function drawBrickEdges(ctx2d, w, h){
@@ -1301,54 +1300,7 @@ function drawBrickEdges(ctx2d, w, h){
   }
 }
 
-function generateNailEdges(w, h) {
-  const spacing = 20;
-  const nails = [];
-  for (let x = 0; x <= w; x += spacing) {
-    nails.push({ x, y: 0, edge: 'top', length: 10 + Math.random() * 10, bend: (Math.random() - 0.5) * 0.4, rust: Math.random() });
-    nails.push({ x, y: h, edge: 'bottom', length: 10 + Math.random() * 10, bend: (Math.random() - 0.5) * 0.4, rust: Math.random() });
-  }
-  for (let y = spacing; y <= h - spacing; y += spacing) {
-    nails.push({ x: 0, y, edge: 'left', length: 10 + Math.random() * 10, bend: (Math.random() - 0.5) * 0.4, rust: Math.random() });
-    nails.push({ x: w, y, edge: 'right', length: 10 + Math.random() * 10, bend: (Math.random() - 0.5) * 0.4, rust: Math.random() });
-  }
-  return nails;
-}
 
-function drawNailEdges(ctx2d) {
-  for (const nail of nailEdges) {
-    drawNail(ctx2d, nail);
-  }
-}
-
-function drawNail(ctx2d, nail) {
-  ctx2d.save();
-  ctx2d.translate(nail.x, nail.y);
-  let angle = 0;
-  switch (nail.edge) {
-    case 'top': angle = 0; break;
-    case 'bottom': angle = Math.PI; break;
-    case 'left': angle = -Math.PI / 2; break;
-    case 'right': angle = Math.PI / 2; break;
-  }
-  ctx2d.rotate(angle + nail.bend);
-  const metallic = 70 - nail.rust * 20;
-  const rustHue = 25; // brownish
-  const useRust = nail.rust > 0.6;
-  ctx2d.strokeStyle = useRust ? `hsl(${rustHue},40%,${40 + nail.rust * 20}%)` : `hsl(0,0%,${metallic}%)`;
-  ctx2d.lineCap = 'round';
-  ctx2d.lineWidth = 2;
-  ctx2d.beginPath();
-  ctx2d.moveTo(0, 0);
-  ctx2d.lineTo(0, nail.length);
-  ctx2d.stroke();
-  ctx2d.lineWidth = 3;
-  ctx2d.beginPath();
-  ctx2d.moveTo(-3, 0);
-  ctx2d.lineTo(3, 0);
-  ctx2d.stroke();
-  ctx2d.restore();
-}
 
 function drawThinPlane(ctx2d, cx, cy, color, angle){
   ctx2d.save();
