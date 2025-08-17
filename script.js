@@ -108,8 +108,10 @@ let mapIndex = 1;
 
 // Flame image for "burning edges" map, reused from the turbine indicator
 const flameSvg = `<svg viewBox="0 0 40 20" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"><defs><radialGradient id="flameGradient" cx="100%" cy="50%" r="60%"><stop offset="0%" stop-color="#ffea00"/><stop offset="100%" stop-color="#ff4500"/></radialGradient></defs><path d="M40 10 C37 4 32 0 20 0 C5 0 0 10 20 20 C32 20 37 16 40 10 Z" fill="url(#flameGradient)"/></svg>`;
-const flameImg = new Image();
-flameImg.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(flameSvg);
+if (!flameImg) {
+  flameImg = new Image();
+  flameImg.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(flameSvg);
+}
 
 
 
@@ -1302,21 +1304,6 @@ function drawFlame(ctx2d, x, y, scale, rotation){
   ctx2d.translate(x, y);
   ctx2d.rotate(rotation);
   ctx2d.drawImage(flameImg, 0, -height/2, width, height);
-
-
-  ctx2d.save();
-  ctx2d.translate(w/2, h - t/2);
-  drawBrickWall(ctx2d, w, t);
-  ctx2d.restore();
-
-  ctx2d.save();
-  ctx2d.translate(t/2, h/2);
-  drawBrickWall(ctx2d, t, h);
-  ctx2d.restore();
-
-  ctx2d.save();
-  ctx2d.translate(w - t/2, h/2);
-  drawBrickWall(ctx2d, t, h);
   ctx2d.restore();
 }
 
