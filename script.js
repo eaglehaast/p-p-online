@@ -95,6 +95,11 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 const MAPS = ["clear sky", "wall", "two walls", "burning edges"];
 let mapIndex = 1;
 
+// Flame image for "burning edges" map, reused from the turbine indicator
+const flameSvg = `<svg viewBox="0 0 40 20" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"><defs><radialGradient id="flameGradient" cx="100%" cy="50%" r="60%"><stop offset="0%" stop-color="#ffea00"/><stop offset="100%" stop-color="#ff4500"/></radialGradient></defs><path d="M40 10 C37 4 32 0 20 0 C5 0 0 10 20 20 C32 20 37 16 40 10 Z" fill="url(#flameGradient)"/></svg>`;
+const flameImg = new Image();
+flameImg.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(flameSvg);
+
 
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
 let buildingsCount   = 0;
@@ -1254,53 +1259,34 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.setLineDash([]);
 
   if (MAPS[mapIndex] === "burning edges") {
-    drawSpikeEdges(ctx2d, w, h);
+    drawFlameEdges(ctx2d, w, h);
   }
 }
 
-function drawSpikeEdges(ctx2d, w, h){
-  const spikeHeight = 12;
-  const spikeWidth = 12;
+function drawFlameEdges(ctx2d, w, h){
+  const spacing = 20;
+  const t = performance.now();
+  if(!flameImg.complete) return;
+
+  for(let x=0; x<=w; x+=spacing){
+    const scale = 0.8 + 0.2*Math.sin((t + x*20) * 0.02);
+    drawFlame(ctx2d, x, 0, scale, -Math.PI/2);
+    drawFlame(ctx2d, x, h, scale, Math.PI/2);
+  }
+  for(let y=0; y<=h; y+=spacing){
+    const scale = 0.8 + 0.2*Math.sin((t + y*20) * 0.02);
+    drawFlame(ctx2d, 0, y, scale, Math.PI);
+    drawFlame(ctx2d, w, y, scale, 0);
+  }
+}
+
+function drawFlame(ctx2d, x, y, scale, rotation){
+  const width = 40 * scale;
+  const height = 20 * scale;
   ctx2d.save();
-  ctx2d.fillStyle = '#d00';
-
-  // top edge
-  for(let x=0; x<w; x+=spikeWidth){
-    ctx2d.beginPath();
-    ctx2d.moveTo(x, 0);
-    ctx2d.lineTo(x + spikeWidth/2, spikeHeight);
-    ctx2d.lineTo(Math.min(x + spikeWidth, w), 0);
-    ctx2d.closePath();
-    ctx2d.fill();
-  }
-  // bottom edge
-  for(let x=0; x<w; x+=spikeWidth){
-    ctx2d.beginPath();
-    ctx2d.moveTo(x, h);
-    ctx2d.lineTo(x + spikeWidth/2, h - spikeHeight);
-    ctx2d.lineTo(Math.min(x + spikeWidth, w), h);
-    ctx2d.closePath();
-    ctx2d.fill();
-  }
-  // left edge
-  for(let y=0; y<h; y+=spikeWidth){
-    ctx2d.beginPath();
-    ctx2d.moveTo(0, y);
-    ctx2d.lineTo(spikeHeight, y + spikeWidth/2);
-    ctx2d.lineTo(0, Math.min(y + spikeWidth, h));
-    ctx2d.closePath();
-    ctx2d.fill();
-  }
-  // right edge
-  for(let y=0; y<h; y+=spikeWidth){
-    ctx2d.beginPath();
-    ctx2d.moveTo(w, y);
-    ctx2d.lineTo(w - spikeHeight, y + spikeWidth/2);
-    ctx2d.lineTo(w, Math.min(y + spikeWidth, h));
-    ctx2d.closePath();
-    ctx2d.fill();
-  }
-
+  ctx2d.translate(x, y);
+  ctx2d.rotate(rotation);
+  ctx2d.drawImage(flameImg, 0, -height/2, width, height);
   ctx2d.restore();
 }
 
