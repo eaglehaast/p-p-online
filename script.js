@@ -94,7 +94,7 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 
 
-const MAPS = ["clear sky", "wall", "two walls", "burning edges", "sharp edges"];
+const MAPS = ["clear sky", "wall", "two walls", "sharp edges"];
 let mapIndex = 1;
 
 
@@ -1064,7 +1064,7 @@ function handleAAForPlane(p, fp){
       p.y += fp.vy;
 
       // отражения или смерть от границ поля
-      if(MAPS[mapIndex] === "burning edges"){
+      if(MAPS[mapIndex] === "sharp edges"){
         if(
           p.x < POINT_RADIUS ||
           p.x > gameCanvas.width - POINT_RADIUS ||
@@ -1145,7 +1145,7 @@ function handleAAForPlane(p, fp){
   drawAAPlacementZone();
   drawBuildings();
 
-  if (MAPS[mapIndex] === "burning edges" || MAPS[mapIndex] === "sharp edges") {
+  if (MAPS[mapIndex] === "sharp edges") {
     drawNailEdges(gameCtx, nailEdges);
   } else {
     drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
@@ -1924,7 +1924,7 @@ function applyCurrentMap(){
       height: wallHeight,
       color: "darkred"
     });
-  } else if (MAPS[mapIndex] === "burning edges" || MAPS[mapIndex] === "sharp edges") {
+  } else if (MAPS[mapIndex] === "sharp edges") {
     // no buildings; edges are lined with nails
     nailEdges = generateNailEdges(gameCanvas.width, gameCanvas.height);
   }
@@ -1983,7 +1983,7 @@ function resizeCanvas() {
   canvas.height = 400 * scale;
 
   // Regenerate nails when resizing on nail edge maps
-  if (MAPS[mapIndex] === "burning edges" || MAPS[mapIndex] === "sharp edges") {
+  if (MAPS[mapIndex] === "sharp edges") {
     nailEdges = generateNailEdges(canvas.width, canvas.height);
   }
 

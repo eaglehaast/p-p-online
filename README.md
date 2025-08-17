@@ -20,7 +20,7 @@
 - Each side controls a group of paper planes (green vs. blue).
 - Use the mouse to drag a plane, aim and release to launch it. Releasing before the first tick mark cancels the move.
 - Controls let you tune the flight range, choose the map ("clear sky", "wall", "two walls",
-  "burning edges" or "sharp edges") and adjust aiming amplitude.
+  or "sharp edges") and adjust aiming amplitude.
 
 
 
