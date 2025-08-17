@@ -984,8 +984,16 @@ function handleAAForPlane(p, fp){
               aa.lastTriggerAt = now;
               p.isAlive=false; p.burning=true;
               p.collisionX=p.x; p.collisionY=p.y;
-              if(fp) flyingPoints = flyingPoints.filter(x=>x!==fp);
+              if(fp) {
+                flyingPoints = flyingPoints.filter(x=>x!==fp);
+              }
               checkVictory();
+              if(fp && !isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
+                turnIndex = (turnIndex + 1) % turnColors.length;
+                if(gameMode==="computer" && turnColors[turnIndex]==="blue"){
+                  aiMoveScheduled = false;
+                }
+              }
               return true;
             }
           }
@@ -1089,7 +1097,7 @@ function handleAAForPlane(p, fp){
 
       // проверка попаданий по врагам
       checkPlaneHits(p, fp);
-      handleAAForPlane(p, fp);
+      if(handleAAForPlane(p, fp)) continue;
 
       fp.framesLeft--;
       if(fp.framesLeft<=0){
