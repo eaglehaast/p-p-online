@@ -36,12 +36,7 @@ const endGameDiv  = document.getElementById("endGameButtons");
 const yesBtn      = document.getElementById("yesButton");
 const noBtn       = document.getElementById("noButton");
 const flame       = document.getElementById("flame");
-let flameImg      = null;
-if (flame) {
-  const svgStr = new XMLSerializer().serializeToString(flame);
-  flameImg = new Image();
-  flameImg.src = "data:image/svg+xml;base64," + btoa(svgStr);
-}
+
 
 /* Disable pinch and double-tap zoom on mobile */
 document.addEventListener('touchmove', (event) => {
@@ -103,15 +98,12 @@ const MAPS = ["clear sky", "wall", "two walls", "burning edges"];
 let mapIndex = 1;
 
 // Procedural flame drawing for the "burning edges" map
-// (derived from the turbine indicator shape)
+// (uses a sharp flame wall distinct from the turbine flame)
 
-
-// Flame image for "burning edges" map, reused from the turbine indicator
-const flameSvg = `<svg viewBox="0 0 40 20" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"><defs><radialGradient id="flameGradient" cx="100%" cy="50%" r="60%"><stop offset="0%" stop-color="#ffea00"/><stop offset="100%" stop-color="#ff4500"/></radialGradient></defs><path d="M40 10 C37 4 32 0 20 0 C5 0 0 10 20 20 C32 20 37 16 40 10 Z" fill="url(#flameGradient)"/></svg>`;
-if (!flameImg) {
-  flameImg = new Image();
-  flameImg.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(flameSvg);
-}
+// Flame image for "burning edges" map
+const flameSvg = `<svg viewBox="0 0 40 20" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"><defs><radialGradient id="flameGradient" cx="100%" cy="50%" r="60%"><stop offset="0%" stop-color="#ffea00"/><stop offset="100%" stop-color="#ff4500"/></radialGradient><symbol id="sharpFlameTall" viewBox="0 0 10 20"><path d="M10 10 L5 0 L0 10 L5 20 Z"/></symbol><symbol id="sharpFlameShort" viewBox="0 0 10 20"><path d="M10 10 L6 4 L0 10 L6 16 Z"/></symbol></defs><use href="#sharpFlameTall" x="0" fill="url(#flameGradient)"/><use href="#sharpFlameShort" x="10" fill="url(#flameGradient)"/><use href="#sharpFlameTall" x="20" fill="url(#flameGradient)"/><use href="#sharpFlameShort" x="30" fill="url(#flameGradient)"/></svg>`;
+const flameImg = new Image();
+flameImg.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(flameSvg);
 
 
 
