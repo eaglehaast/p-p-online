@@ -97,16 +97,7 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 const MAPS = ["clear sky", "wall", "two walls", "burning edges"];
 let mapIndex = 1;
 
-// Procedural flame drawing for the "burning edges" map
-// (uses a sharp flame wall distinct from the turbine flame)
-
-// Flame image for "burning edges" map
-const flameSvg = `<svg viewBox="0 0 40 20" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"><defs><radialGradient id="flameGradient" cx="100%" cy="50%" r="60%"><stop offset="0%" stop-color="#ffea00"/><stop offset="100%" stop-color="#ff4500"/></radialGradient><symbol id="sharpFlameTall" viewBox="0 0 10 20"><path d="M10 10 L5 0 L0 10 L5 20 Z"/></symbol><symbol id="sharpFlameShort" viewBox="0 0 10 20"><path d="M10 10 L6 4 L0 10 L6 16 Z"/></symbol></defs><use href="#sharpFlameTall" x="0" fill="url(#flameGradient)"/><use href="#sharpFlameShort" x="10" fill="url(#flameGradient)"/><use href="#sharpFlameTall" x="20" fill="url(#flameGradient)"/><use href="#sharpFlameShort" x="30" fill="url(#flameGradient)"/></svg>`;
-const flameImg = new Image();
-flameImg.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(flameSvg);
-
-
-
+// Needle edge drawing for the "burning edges" map
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
 let buildingsCount   = 0;
 
@@ -1152,8 +1143,8 @@ function handleAAForPlane(p, fp){
   drawBuildings();
 
   // redraw field edges above walls
-  if (MAPS[mapIndex] === "burning edges") {
-    drawFlameEdges(gameCtx, gameCanvas.width, gameCanvas.height);
+    if (MAPS[mapIndex] === "burning edges") {
+      drawNeedleEdges(gameCtx, gameCanvas.width, gameCanvas.height);
   } else {
     drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
   }
@@ -1284,32 +1275,23 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.beginPath(); ctx2d.moveTo(0,h-1); ctx2d.lineTo(w,h-1); ctx2d.stroke();
   ctx2d.setLineDash([]);
 
-  if (MAPS[mapIndex] === "burning edges") {
-    drawFlameEdges(ctx2d, w, h);
+    if (MAPS[mapIndex] === "burning edges") {
+      drawNeedleEdges(ctx2d, w, h);
   } else {
     drawBrickEdges(ctx2d, w, h);
   }
 }
 
-function drawFlameEdges(ctx2d, w, h){
-
-
-  const spacing = 20;
-  const t = performance.now();
-  const speed = 0.02 / 3;
-  if(!flameImg.complete) return;
-
+function drawNeedleEdges(ctx2d, w, h){
+  const spacing = 4;
+  const length = 12;
   for(let x=0; x<=w; x+=spacing){
-    const scale = 0.8 + 0.2*Math.sin((t + x*20) * speed);
-    // flames at top and bottom edges
-    drawFlame(ctx2d, x, 0, scale, Math.PI/2);
-    drawFlame(ctx2d, x, h, scale, -Math.PI/2);
+    drawNeedle(ctx2d, x, 0, length, Math.PI/2);
+    drawNeedle(ctx2d, x, h, length, -Math.PI/2);
   }
   for(let y=0; y<=h; y+=spacing){
-    const scale = 0.8 + 0.2*Math.sin((t + y*20) * speed);
-    // flames at left and right edges
-    drawFlame(ctx2d, 0, y, scale, 0);
-    drawFlame(ctx2d, w, y, scale, Math.PI);
+    drawNeedle(ctx2d, 0, y, length, 0);
+    drawNeedle(ctx2d, w, y, length, Math.PI);
   }
 }
 
@@ -1338,13 +1320,20 @@ function drawBrickEdges(ctx2d, w, h){
   }
 }
 
-function drawFlame(ctx2d, x, y, scale, rotation){
-  const width = 20 * scale;
-  const height = 10 * scale;
+function drawNeedle(ctx2d, x, y, length, rotation){
   ctx2d.save();
   ctx2d.translate(x, y);
   ctx2d.rotate(rotation);
-  ctx2d.drawImage(flameImg, 0, -height/2, width, height);
+  ctx2d.strokeStyle = '#808080';
+  ctx2d.lineWidth = 1;
+  ctx2d.beginPath();
+  ctx2d.moveTo(0, 0);
+  ctx2d.lineTo(length, 0);
+  ctx2d.stroke();
+  ctx2d.beginPath();
+  ctx2d.arc(0, 0, 1.5, 0, Math.PI * 2);
+  ctx2d.fillStyle = '#808080';
+  ctx2d.fill();
   ctx2d.restore();
 }
 
