@@ -1347,23 +1347,12 @@ function drawBrickEdges(ctx2d, w, h){
 }
 
 function drawFlame(ctx2d, x, y, scale, rotation){
-  const width = 8 * scale;
-  const height = 4 * scale;
+  const width = 20 * scale;
+  const height = 10 * scale;
   ctx2d.save();
   ctx2d.translate(x, y);
   ctx2d.rotate(rotation);
   ctx2d.drawImage(flameImg, 0, -height/2, width, height);
-  ctx2d.restore();
-}
-
-function drawFlameSegment(ctx2d, x, y, scale, rotation){
-  if (!flameImg || !flameImg.complete) return;
-  const w = flameImg.width * scale * 0.5;
-  const h = flameImg.height * scale * 0.5;
-  ctx2d.save();
-  ctx2d.translate(x, y);
-  ctx2d.rotate(rotation);
-  ctx2d.drawImage(flameImg, -w, -h/2, w, h);
   ctx2d.restore();
 }
 
