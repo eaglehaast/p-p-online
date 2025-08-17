@@ -1313,11 +1313,13 @@ function drawBrickEdges(ctx2d, w, h){
     ctx2d.strokeRect(x, h - brickHeight, brickWidth, brickHeight);
   }
 
-  for(let y=brickHeight; y<h - brickHeight; y+=brickHeight){
-    ctx2d.fillRect(0, y, brickWidth, brickHeight);
-    ctx2d.strokeRect(0, y, brickWidth, brickHeight);
-    ctx2d.fillRect(w - brickWidth, y, brickWidth, brickHeight);
-    ctx2d.strokeRect(w - brickWidth, y, brickWidth, brickHeight);
+  for(let y=brickHeight; y<h - brickHeight; y+=brickWidth){
+    // draw vertical bricks on the left side
+    ctx2d.fillRect(0, y, brickHeight, brickWidth);
+    ctx2d.strokeRect(0, y, brickHeight, brickWidth);
+    // draw vertical bricks on the right side
+    ctx2d.fillRect(w - brickHeight, y, brickHeight, brickWidth);
+    ctx2d.strokeRect(w - brickHeight, y, brickHeight, brickWidth);
   }
 }
 
