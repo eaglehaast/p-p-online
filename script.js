@@ -1146,6 +1146,13 @@ function handleAAForPlane(p, fp){
   drawAAPlacementZone();
   drawBuildings();
 
+  // redraw field edges above walls
+  if (MAPS[mapIndex] === "burning edges") {
+    drawFlameEdges(gameCtx, gameCanvas.width, gameCanvas.height);
+  } else {
+    drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
+  }
+
   // установки ПВО
   drawAAUnits();
   drawAAPreview();
