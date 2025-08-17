@@ -97,8 +97,6 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 const MAPS = ["clear sky", "wall", "two walls", "burning edges"];
 let mapIndex = 1;
 
-// Nail edge drawing for the "burning edges" map
-let nailEdgesCache = null;
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
 let buildingsCount   = 0;
 
@@ -1278,25 +1276,16 @@ function drawNotebookBackground(ctx2d, w, h){
 }
 
 function drawNailEdges(ctx2d, w, h){
-  if(!nailEdgesCache || nailEdgesCache.w !== w || nailEdgesCache.h !== h){
-    nailEdgesCache = { w, h, nails: [] };
-    const spacing = 6;
-    const nails = nailEdgesCache.nails;
-    for(let x=0; x<=w; x+=spacing){
-      nails.push({ x, y:0, length:10 + Math.random()*6, rotation:Math.PI/2,
-                   bend:(Math.random()-0.5)*0.3, rusty: Math.random() < 0.35 });
-      nails.push({ x, y:h, length:10 + Math.random()*6, rotation:-Math.PI/2,
-                   bend:(Math.random()-0.5)*0.3, rusty: Math.random() < 0.35 });
-    }
-    for(let y=spacing; y<h; y+=spacing){
-      nails.push({ x:0, y, length:10 + Math.random()*6, rotation:0,
-                   bend:(Math.random()-0.5)*0.3, rusty: Math.random() < 0.35 });
-      nails.push({ x:w, y, length:10 + Math.random()*6, rotation:Math.PI,
-                   bend:(Math.random()-0.5)*0.3, rusty: Math.random() < 0.35 });
-    }
+  const spacing = 8;
+  const length = 14;
+
+  for(let x = 0; x <= w; x += spacing){
+    drawNail(ctx2d, x, 0, length, Math.PI/2);
+    drawNail(ctx2d, x, h, length, -Math.PI/2);
   }
-  for(const nail of nailEdgesCache.nails){
-    drawNail(ctx2d, nail.x, nail.y, nail.length, nail.rotation, nail.bend, nail.rusty);
+  for(let y = spacing; y < h; y += spacing){
+    drawNail(ctx2d, 0, y, length, 0);
+    drawNail(ctx2d, w, y, length, Math.PI);
   }
 }
 
@@ -1325,7 +1314,7 @@ function drawBrickEdges(ctx2d, w, h){
   }
 }
 
-function drawNail(ctx2d, x, y, length, rotation, bend = 0, rusty = false){
+function drawNail(ctx2d, x, y, length, rotation){
   ctx2d.save();
   ctx2d.translate(x, y);
   ctx2d.rotate(rotation);
@@ -1333,16 +1322,9 @@ function drawNail(ctx2d, x, y, length, rotation, bend = 0, rusty = false){
   const shaftWidth = 2;
   const headRadius = 2.5;
   const tipSize = 3;
-  const color = rusty ? '#8b4513' : '#b0b0b0';
 
-  ctx2d.fillStyle = color;
-  ctx2d.beginPath();
-  ctx2d.moveTo(0, -shaftWidth/2);
-  ctx2d.quadraticCurveTo(length * bend, -shaftWidth/2, length - tipSize, -shaftWidth/2);
-  ctx2d.lineTo(length - tipSize, shaftWidth/2);
-  ctx2d.quadraticCurveTo(length * bend, shaftWidth/2, 0, shaftWidth/2);
-  ctx2d.closePath();
-  ctx2d.fill();
+  ctx2d.fillStyle = '#b0b0b0';
+  ctx2d.fillRect(0, -shaftWidth/2, length - tipSize, shaftWidth);
 
   ctx2d.beginPath();
   ctx2d.moveTo(length - tipSize, -shaftWidth/2);
@@ -1352,7 +1334,7 @@ function drawNail(ctx2d, x, y, length, rotation, bend = 0, rusty = false){
   ctx2d.fill();
 
   ctx2d.beginPath();
-  ctx2d.fillStyle = rusty ? '#8b4513' : '#d3d3d3';
+  ctx2d.fillStyle = '#d3d3d3';
   ctx2d.arc(0, 0, headRadius, 0, Math.PI * 2);
   ctx2d.fill();
 
@@ -1900,7 +1882,6 @@ function updateMapDisplay(){
 }
 
 function applyCurrentMap(){
-  nailEdgesCache = null;
   buildings = [];
   if(MAPS[mapIndex] === "clear sky"){
     // no buildings to add
