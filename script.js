@@ -97,7 +97,7 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 const MAPS = ["clear sky", "wall", "two walls", "burning edges"];
 let mapIndex = 1;
 
-// Nail edge drawing for the "burning edges" map
+
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
 let buildingsCount   = 0;
 
@@ -1142,10 +1142,7 @@ function handleAAForPlane(p, fp){
   drawAAPlacementZone();
   drawBuildings();
 
-  // redraw field edges above walls
-    if (MAPS[mapIndex] === "burning edges") {
-      drawNailEdges(gameCtx, gameCanvas.width, gameCanvas.height);
-  } else {
+
     drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
   }
 
@@ -1275,23 +1272,6 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.beginPath(); ctx2d.moveTo(0,h-1); ctx2d.lineTo(w,h-1); ctx2d.stroke();
   ctx2d.setLineDash([]);
 
-    if (MAPS[mapIndex] === "burning edges") {
-      drawNailEdges(ctx2d, w, h);
-  } else {
-    drawBrickEdges(ctx2d, w, h);
-  }
-}
-
-function drawNailEdges(ctx2d, w, h){
-  const spacing = 6;
-  for(let x=0; x<=w; x+=spacing){
-    drawNail(ctx2d, x, 0, 10 + Math.random()*6, Math.PI/2);
-    drawNail(ctx2d, x, h, 10 + Math.random()*6, -Math.PI/2);
-  }
-  for(let y=0; y<=h; y+=spacing){
-    drawNail(ctx2d, 0, y, 10 + Math.random()*6, 0);
-    drawNail(ctx2d, w, y, 10 + Math.random()*6, Math.PI);
-  }
 }
 
 function drawBrickEdges(ctx2d, w, h){
@@ -1319,41 +1299,6 @@ function drawBrickEdges(ctx2d, w, h){
   }
 }
 
-function drawNail(ctx2d, x, y, length, rotation){
-  ctx2d.save();
-  ctx2d.translate(x, y);
-  ctx2d.rotate(rotation);
-
-  const shaftWidth = 2;
-  const headRadius = 2.5;
-  const tipSize = 3;
-  const bend = (Math.random() - 0.5) * 0.3;
-  const rusty = Math.random() < 0.35;
-  const color = rusty ? '#8b4513' : '#b0b0b0';
-
-  ctx2d.fillStyle = color;
-  ctx2d.beginPath();
-  ctx2d.moveTo(0, -shaftWidth/2);
-  ctx2d.quadraticCurveTo(length * bend, -shaftWidth/2, length - tipSize, -shaftWidth/2);
-  ctx2d.lineTo(length - tipSize, shaftWidth/2);
-  ctx2d.quadraticCurveTo(length * bend, shaftWidth/2, 0, shaftWidth/2);
-  ctx2d.closePath();
-  ctx2d.fill();
-
-  ctx2d.beginPath();
-  ctx2d.moveTo(length - tipSize, -shaftWidth/2);
-  ctx2d.lineTo(length, 0);
-  ctx2d.lineTo(length - tipSize, shaftWidth/2);
-  ctx2d.closePath();
-  ctx2d.fill();
-
-  ctx2d.beginPath();
-  ctx2d.fillStyle = rusty ? '#8b4513' : '#d3d3d3';
-  ctx2d.arc(0, 0, headRadius, 0, Math.PI * 2);
-  ctx2d.fill();
-
-  ctx2d.restore();
-}
 
 function drawThinPlane(ctx2d, cx, cy, color, angle){
   ctx2d.save();
@@ -1991,7 +1936,7 @@ function resizeCanvas() {
   aimCanvas.style.height = window.innerHeight + 'px';
   aimCanvas.width = window.innerWidth;
   aimCanvas.height = window.innerHeight;
-  
+
   // Переинициализируем самолёты
   if(points.length === 0) {
     initPoints();
