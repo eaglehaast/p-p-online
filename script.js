@@ -1324,9 +1324,6 @@ function drawNailEdges(ctx2d, nails){
   const headRadius = 3;
 
 
-    ctx2d.stroke();
-
-
     ctx2d.restore();
   }
 }
