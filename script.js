@@ -1324,15 +1324,16 @@ function drawNail(ctx2d, x, y, angle){
 
 function drawSharpEdges(ctx2d, w, h){
   const spacing = 40;
-  const edgeOffset = 1; // keep nails fully within the playable area
+  const edgeOffsetY = 1; // offset from top/bottom to keep nails visible
+  const edgeOffsetX = 2; // half nail width to keep side nails inside
   for(let x=0; x<w; x+=spacing){
-    drawNail(ctx2d, x + spacing/2, edgeOffset, 0);
-    drawNail(ctx2d, x + spacing/2, h - edgeOffset, Math.PI);
+    drawNail(ctx2d, x + spacing/2, edgeOffsetY, 0);
+    drawNail(ctx2d, x + spacing/2, h - edgeOffsetY, Math.PI);
   }
   for(let y=0; y<h; y+=spacing){
 
-    drawNail(ctx2d, 0, y + spacing/2, Math.PI/2);
-    drawNail(ctx2d, w, y + spacing/2, -Math.PI/2);
+    drawNail(ctx2d, edgeOffsetX, y + spacing/2, Math.PI/2);
+    drawNail(ctx2d, w - edgeOffsetX, y + spacing/2, -Math.PI/2);
 
   }
 }
