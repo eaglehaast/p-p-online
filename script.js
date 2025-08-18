@@ -1322,7 +1322,7 @@ function generateNailEdges(w, h){
 function drawNailEdges(ctx2d, nails){
   const shaftLength = 16; // full length including tip
   const headRadius = 3;
-  const tipLength = 2;    // how much of the shaft is carved into a point
+  const tipLength = 3;    // carve an extra pixel from the tip for sharpness
   const tipWidth = 1;     // half-width of the point for a sharper look
 
   ctx2d.fillStyle = "#555";
@@ -1344,9 +1344,9 @@ function drawNailEdges(ctx2d, nails){
 
       // point carved from shaft
       ctx2d.beginPath();
-      ctx2d.moveTo(n.x, n.y + shaftLength - tipLength);
-      ctx2d.lineTo(n.x - tipWidth, n.y + shaftLength);
-      ctx2d.lineTo(n.x + tipWidth, n.y + shaftLength);
+      ctx2d.moveTo(n.x - tipWidth, n.y + shaftLength - tipLength);
+      ctx2d.lineTo(n.x + tipWidth, n.y + shaftLength - tipLength);
+      ctx2d.lineTo(n.x, n.y + shaftLength);
       ctx2d.closePath();
       ctx2d.fill();
     } else if(n.orientation === "up"){
@@ -1360,9 +1360,9 @@ function drawNailEdges(ctx2d, nails){
       ctx2d.fill();
 
       ctx2d.beginPath();
-      ctx2d.moveTo(n.x, n.y - (shaftLength - tipLength));
-      ctx2d.lineTo(n.x - tipWidth, n.y - shaftLength);
-      ctx2d.lineTo(n.x + tipWidth, n.y - shaftLength);
+      ctx2d.moveTo(n.x - tipWidth, n.y - (shaftLength - tipLength));
+      ctx2d.lineTo(n.x + tipWidth, n.y - (shaftLength - tipLength));
+      ctx2d.lineTo(n.x, n.y - shaftLength);
       ctx2d.closePath();
       ctx2d.fill();
     } else if(n.orientation === "right"){
@@ -1376,9 +1376,9 @@ function drawNailEdges(ctx2d, nails){
       ctx2d.fill();
 
       ctx2d.beginPath();
-      ctx2d.moveTo(n.x + shaftLength - tipLength, n.y);
-      ctx2d.lineTo(n.x + shaftLength, n.y - tipWidth);
-      ctx2d.lineTo(n.x + shaftLength, n.y + tipWidth);
+      ctx2d.moveTo(n.x + shaftLength - tipLength, n.y - tipWidth);
+      ctx2d.lineTo(n.x + shaftLength - tipLength, n.y + tipWidth);
+      ctx2d.lineTo(n.x + shaftLength, n.y);
       ctx2d.closePath();
       ctx2d.fill();
     } else if(n.orientation === "left"){
@@ -1392,9 +1392,9 @@ function drawNailEdges(ctx2d, nails){
       ctx2d.fill();
 
       ctx2d.beginPath();
-      ctx2d.moveTo(n.x - (shaftLength - tipLength), n.y);
-      ctx2d.lineTo(n.x - shaftLength, n.y - tipWidth);
-      ctx2d.lineTo(n.x - shaftLength, n.y + tipWidth);
+      ctx2d.moveTo(n.x - (shaftLength - tipLength), n.y - tipWidth);
+      ctx2d.lineTo(n.x - (shaftLength - tipLength), n.y + tipWidth);
+      ctx2d.lineTo(n.x - shaftLength, n.y);
       ctx2d.closePath();
       ctx2d.fill();
     }
