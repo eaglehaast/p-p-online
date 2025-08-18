@@ -94,11 +94,8 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 
 
-const MAPS = ["clear sky", "wall", "two walls", "sharp edges"];
+const MAPS = ["clear sky", "wall", "two walls", "burning edges"];
 let mapIndex = 1;
-
-
-
 
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
 let buildingsCount   = 0;
@@ -124,7 +121,6 @@ let turnIndex    = lastFirstTurn;
 let points       = [];
 let flyingPoints = [];
 let buildings    = [];
-let nailEdges    = [];
 
 let aaUnits     = [];
 let aaPlacementPreview = null;
@@ -1064,7 +1060,7 @@ function handleAAForPlane(p, fp){
       p.y += fp.vy;
 
       // отражения или смерть от границ поля
-      if(MAPS[mapIndex] === "sharp edges"){
+      if(MAPS[mapIndex] === "burning edges"){
         if(
           p.x < POINT_RADIUS ||
           p.x > gameCanvas.width - POINT_RADIUS ||
@@ -1138,16 +1134,15 @@ function handleAAForPlane(p, fp){
       if(!flyingPoints.some(fp => fp.plane === p)){
         handleAAForPlane(p, null);
       }
-    }
+  }
   }
 
   // здания
   drawAAPlacementZone();
   drawBuildings();
 
-  if (MAPS[mapIndex] === "sharp edges") {
-    drawNailEdges(gameCtx, nailEdges);
-  } else {
+  // redraw field edges above walls (none for "burning edges")
+  if (MAPS[mapIndex] !== "clear sky" && MAPS[mapIndex] !== "burning edges") {
     drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
   }
 
@@ -1276,8 +1271,6 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.setLineDash([10,5]);
   ctx2d.beginPath(); ctx2d.moveTo(0,h-1); ctx2d.lineTo(w,h-1); ctx2d.stroke();
   ctx2d.setLineDash([]);
-
-  
 }
 
 function drawBrickEdges(ctx2d, w, h){
@@ -1304,103 +1297,6 @@ function drawBrickEdges(ctx2d, w, h){
     ctx2d.strokeRect(w - brickHeight, y, brickHeight, brickWidth);
   }
 }
-
-function generateNailEdges(w, h){
-  const spacing = 20;
-  const nails = [];
-  for(let x = spacing/2; x < w; x += spacing){
-    nails.push({x, y:0, orientation:"down"});
-    nails.push({x, y:h, orientation:"up"});
-  }
-  for(let y = spacing/2; y < h; y += spacing){
-    nails.push({x:0, y, orientation:"right"});
-    nails.push({x:w, y, orientation:"left"});
-  }
-  return nails;
-}
-
-function drawNailEdges(ctx2d, nails){
-  const shaftLength = 14; // trimmed to allow a small point
-  const headRadius = 3;
-  const shaftWidth = 2;
-  const tipLength = 6; // longer, slimmer tip
-  const tipBaseFactor = 0.1; // base width relative to shaft (narrowed further)
-  const shaftEnd = headRadius + shaftLength;
-
-  for(const n of nails){
-    ctx2d.save();
-
-    // rotate toward the field and offset so the head sits outside the border
-    let angle = 0, offsetX = 0, offsetY = 0;
-    if(n.orientation === "up"){ angle = Math.PI; offsetY = headRadius; }
-    else if(n.orientation === "right"){ angle = Math.PI/2; offsetX = -headRadius; }
-    else if(n.orientation === "left"){ angle = -Math.PI/2; offsetX = headRadius; }
-    else { offsetY = -headRadius; } // default "down"
-
-    ctx2d.translate(n.x + offsetX, n.y + offsetY);
-    ctx2d.rotate(angle);
-
-    // shaft with subtle metallic gradient
-    const shaftGrad = ctx2d.createLinearGradient(0, headRadius, 0, shaftEnd);
-    shaftGrad.addColorStop(0, "#cfcfcf");
-    shaftGrad.addColorStop(0.5, "#9a9a9a");
-    shaftGrad.addColorStop(1, "#5a5a5a");
-    ctx2d.fillStyle = shaftGrad;
-    ctx2d.fillRect(-shaftWidth/2, headRadius, shaftWidth, shaftLength);
-
-    // narrow highlight on shaft
-    ctx2d.strokeStyle = "rgba(255,255,255,0.7)";
-    ctx2d.lineWidth = 0.4;
-    ctx2d.beginPath();
-    ctx2d.moveTo(shaftWidth*0.2, headRadius);
-    ctx2d.lineTo(shaftWidth*0.2, shaftEnd);
-    ctx2d.stroke();
-
-    // rounded head with subtle stroke
-    // Use concentric circles with a tiny inner radius so the
-    // gradient API never receives zero or negative values.
-    // Negative coordinates on some browsers can throw, so keep
-    // everything relative to the nail center.
-    const headGrad = ctx2d.createRadialGradient(
-      0,
-      0,
-      headRadius * 0.3,
-      0,
-      0,
-      headRadius
-    );
-    headGrad.addColorStop(0, "#ffffff");
-    headGrad.addColorStop(1, "#646464");
-    ctx2d.fillStyle = headGrad;
-    ctx2d.beginPath();
-    ctx2d.arc(0, 0, headRadius, 0, Math.PI*2);
-    ctx2d.fill();
-    ctx2d.strokeStyle = "#444";
-    ctx2d.lineWidth = 0.4;
-    ctx2d.stroke();
-
-    // sharp metallic tip
-    const tipBaseWidth = shaftWidth * tipBaseFactor;
-    const tipGrad = ctx2d.createLinearGradient(0, shaftEnd, 0, shaftEnd + tipLength);
-    tipGrad.addColorStop(0, "#e0e0e0");
-    tipGrad.addColorStop(1, "#555");
-    ctx2d.fillStyle = tipGrad;
-    ctx2d.beginPath();
-    ctx2d.moveTo(-tipBaseWidth/2, shaftEnd);
-    ctx2d.lineTo(0, shaftEnd + tipLength);
-    ctx2d.lineTo(tipBaseWidth/2, shaftEnd);
-    ctx2d.closePath();
-    ctx2d.fill();
-    ctx2d.strokeStyle = "#333";
-    ctx2d.lineWidth = 0.2;
-    ctx2d.lineJoin = "miter";
-    ctx2d.stroke();
-
-    ctx2d.restore();
-  }
-}
-
-
 
 function drawThinPlane(ctx2d, cx, cy, color, angle){
   ctx2d.save();
@@ -1944,7 +1840,6 @@ function updateMapDisplay(){
 
 function applyCurrentMap(){
   buildings = [];
-  nailEdges = [];
   if(MAPS[mapIndex] === "clear sky"){
     // no buildings to add
   } else if (MAPS[mapIndex] === "wall") {
@@ -1978,9 +1873,8 @@ function applyCurrentMap(){
       height: wallHeight,
       color: "darkred"
     });
-  } else if (MAPS[mapIndex] === "sharp edges") {
-    // no buildings; edges are lined with nails
-    nailEdges = generateNailEdges(gameCanvas.width, gameCanvas.height);
+  } else if (MAPS[mapIndex] === "burning edges") {
+    // no buildings; edges are lethal
   }
   updateMapDisplay();
   renderScoreboard();
@@ -2035,11 +1929,6 @@ function resizeCanvas() {
   const scale = Math.min(maxWidth / 300, maxHeight / 400);
   canvas.width = 300 * scale;
   canvas.height = 400 * scale;
-
-  // Regenerate nails when resizing on nail edge maps
-  if (MAPS[mapIndex] === "sharp edges") {
-    nailEdges = generateNailEdges(canvas.width, canvas.height);
-  }
 
   aimCanvas.style.width = window.innerWidth + 'px';
   aimCanvas.style.height = window.innerHeight + 'px';
