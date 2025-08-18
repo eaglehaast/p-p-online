@@ -1322,81 +1322,69 @@ function generateNailEdges(w, h){
 function drawNailEdges(ctx2d, nails){
   const shaftLength = 14; // trimmed to allow a small point
   const headRadius = 3;
-  const tipLength = 2;
-
-  ctx2d.fillStyle = "#555";
-  ctx2d.strokeStyle = "#555";
-  ctx2d.lineWidth = 2;
+  const shaftWidth = 2;
+  const tipLength = 6; // longer, slimmer tip
+  const tipBaseFactor = 0.2; // base width relative to shaft (narrowed)
 
   for(const n of nails){
-    if(n.orientation === "down"){
-      // shaft
-      ctx2d.beginPath();
-      ctx2d.moveTo(n.x, n.y + headRadius);
-      ctx2d.lineTo(n.x, n.y + shaftLength);
-      ctx2d.stroke();
+    ctx2d.save();
 
-      // head
-      ctx2d.beginPath();
-      ctx2d.arc(n.x, n.y, headRadius, 0, Math.PI * 2);
-      ctx2d.fill();
+    // rotate toward the field and offset so the head sits outside the border
+    let angle = 0, offsetX = 0, offsetY = 0;
+    if(n.orientation === "up"){ angle = Math.PI; offsetY = headRadius; }
+    else if(n.orientation === "right"){ angle = Math.PI/2; offsetX = -headRadius; }
+    else if(n.orientation === "left"){ angle = -Math.PI/2; offsetX = headRadius; }
+    else { offsetY = -headRadius; } // default "down"
 
-      // point
-      ctx2d.beginPath();
-      ctx2d.moveTo(n.x, n.y + shaftLength);
-      ctx2d.lineTo(n.x - tipLength, n.y + shaftLength + tipLength);
-      ctx2d.lineTo(n.x + tipLength, n.y + shaftLength + tipLength);
-      ctx2d.closePath();
-      ctx2d.fill();
-    } else if(n.orientation === "up"){
-      ctx2d.beginPath();
-      ctx2d.moveTo(n.x, n.y - headRadius);
-      ctx2d.lineTo(n.x, n.y - shaftLength);
-      ctx2d.stroke();
+    ctx2d.translate(n.x + offsetX, n.y + offsetY);
+    ctx2d.rotate(angle);
 
-      ctx2d.beginPath();
-      ctx2d.arc(n.x, n.y, headRadius, 0, Math.PI * 2);
-      ctx2d.fill();
+    // shaft with subtle metallic gradient
+    const shaftGrad = ctx2d.createLinearGradient(0, headRadius, 0, shaftLength);
+    shaftGrad.addColorStop(0, "#cfcfcf");
+    shaftGrad.addColorStop(0.5, "#9a9a9a");
+    shaftGrad.addColorStop(1, "#5a5a5a");
+    ctx2d.fillStyle = shaftGrad;
+    ctx2d.fillRect(-shaftWidth/2, headRadius, shaftWidth, shaftLength);
 
-      ctx2d.beginPath();
-      ctx2d.moveTo(n.x, n.y - shaftLength);
-      ctx2d.lineTo(n.x - tipLength, n.y - shaftLength - tipLength);
-      ctx2d.lineTo(n.x + tipLength, n.y - shaftLength - tipLength);
-      ctx2d.closePath();
-      ctx2d.fill();
-    } else if(n.orientation === "right"){
-      ctx2d.beginPath();
-      ctx2d.moveTo(n.x + headRadius, n.y);
-      ctx2d.lineTo(n.x + shaftLength, n.y);
-      ctx2d.stroke();
+    // narrow highlight on shaft
+    ctx2d.strokeStyle = "rgba(255,255,255,0.7)";
+    ctx2d.lineWidth = 0.4;
+    ctx2d.beginPath();
+    ctx2d.moveTo(shaftWidth*0.2, headRadius);
+    ctx2d.lineTo(shaftWidth*0.2, shaftLength);
+    ctx2d.stroke();
 
-      ctx2d.beginPath();
-      ctx2d.arc(n.x, n.y, headRadius, 0, Math.PI * 2);
-      ctx2d.fill();
+    // rounded head with subtle stroke
+    const headGrad = ctx2d.createRadialGradient(-1, -1, 0, 0, 0, headRadius);
+    headGrad.addColorStop(0, "#ffffff");
+    headGrad.addColorStop(1, "#646464");
+    ctx2d.fillStyle = headGrad;
+    ctx2d.beginPath();
+    ctx2d.arc(0, 0, headRadius, 0, Math.PI*2);
+    ctx2d.fill();
+    ctx2d.strokeStyle = "#444";
+    ctx2d.lineWidth = 0.4;
+    ctx2d.stroke();
 
-      ctx2d.beginPath();
-      ctx2d.moveTo(n.x + shaftLength, n.y);
-      ctx2d.lineTo(n.x + shaftLength + tipLength, n.y - tipLength);
-      ctx2d.lineTo(n.x + shaftLength + tipLength, n.y + tipLength);
-      ctx2d.closePath();
-      ctx2d.fill();
-    } else if(n.orientation === "left"){
-      ctx2d.beginPath();
-      ctx2d.moveTo(n.x - headRadius, n.y);
-      ctx2d.lineTo(n.x - shaftLength, n.y);
-      ctx2d.stroke();
+    // sharp metallic tip
+    const tipBaseWidth = shaftWidth * tipBaseFactor;
+    const tipGrad = ctx2d.createLinearGradient(0, shaftLength, 0, shaftLength + tipLength);
+    tipGrad.addColorStop(0, "#e0e0e0");
+    tipGrad.addColorStop(1, "#555");
+    ctx2d.fillStyle = tipGrad;
+    ctx2d.beginPath();
+    ctx2d.moveTo(-tipBaseWidth/2, shaftLength);
+    ctx2d.lineTo(0, shaftLength + tipLength);
+    ctx2d.lineTo(tipBaseWidth/2, shaftLength);
+    ctx2d.closePath();
+    ctx2d.fill();
+    ctx2d.strokeStyle = "#333";
+    ctx2d.lineWidth = 0.2;
+    ctx2d.lineJoin = "miter";
+    ctx2d.stroke();
 
-      ctx2d.beginPath();
-      ctx2d.arc(n.x, n.y, headRadius, 0, Math.PI * 2);
-      ctx2d.fill();
-
-      ctx2d.beginPath();
-      ctx2d.moveTo(n.x - shaftLength, n.y);
-      ctx2d.lineTo(n.x - shaftLength - tipLength, n.y - tipLength);
-      ctx2d.lineTo(n.x - shaftLength - tipLength, n.y + tipLength);
-      ctx2d.closePath();
-      ctx2d.fill();
-    }
+    ctx2d.restore();
   }
 }
 
