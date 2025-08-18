@@ -1330,8 +1330,10 @@ function drawSharpEdges(ctx2d, w, h){
     drawNail(ctx2d, x + spacing/2, h - edgeOffset, Math.PI);
   }
   for(let y=0; y<h; y+=spacing){
-    drawNail(ctx2d, edgeOffset, y + spacing/2, -Math.PI/2);
-    drawNail(ctx2d, w - edgeOffset, y + spacing/2, Math.PI/2);
+
+    drawNail(ctx2d, 0, y + spacing/2, Math.PI/2);
+    drawNail(ctx2d, w, y + spacing/2, -Math.PI/2);
+
   }
 }
 
