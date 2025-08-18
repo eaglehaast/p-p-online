@@ -1322,6 +1322,7 @@ function generateNailEdges(w, h){
 function drawNailEdges(ctx2d, nails){
   const shaftLength = 14; // trimmed to allow a small point
   const headRadius = 3;
+
   const tipLength = 2;
   const shaftWidth = 2;
 
@@ -1378,6 +1379,7 @@ function drawNailEdges(ctx2d, nails){
     ctx2d.moveTo(-tipLength, shaftLength + tipLength);
     ctx2d.lineTo(0, shaftLength);
     ctx2d.lineTo(tipLength, shaftLength + tipLength);
+
     ctx2d.stroke();
 
     ctx2d.restore();
