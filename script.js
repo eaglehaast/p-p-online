@@ -1333,8 +1333,8 @@ function drawNailEdges(ctx2d, nails){
     // rotate toward the field and offset so the head sits outside the border
     let angle = 0, offsetX = 0, offsetY = 0;
     if(n.orientation === "up"){ angle = Math.PI; offsetY = headRadius; }
-    else if(n.orientation === "right"){ angle = -Math.PI/2; offsetX = -headRadius; }
-    else if(n.orientation === "left"){ angle = Math.PI/2; offsetX = headRadius; }
+    else if(n.orientation === "right"){ angle = Math.PI/2; offsetX = -headRadius; }
+    else if(n.orientation === "left"){ angle = -Math.PI/2; offsetX = headRadius; }
     else { offsetY = -headRadius; } // default "down"
 
     ctx2d.translate(n.x + offsetX, n.y + offsetY);
