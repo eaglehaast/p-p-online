@@ -1331,14 +1331,13 @@ function drawSharpEdges(ctx2d, w, h){
   for(let y=0; y<h; y+=spacing){
     drawNail(ctx2d, 0, y + spacing/2, Math.PI/2);
     drawNail(ctx2d, w, y + spacing/2, -Math.PI/2);
+  }
+}
 
 function drawNailEdges(ctx2d, nails){
-  const shaftLength = 14; // trimmed to allow a small point
-  const headRadius = 3;
-
-    ctx2d.restore();
-
-  }
+  nails.forEach(nail => {
+    drawNail(ctx2d, nail.x, nail.y, nail.angle);
+  });
 }
 
 function drawThinPlane(ctx2d, cx, cy, color, angle){
