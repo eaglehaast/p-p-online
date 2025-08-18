@@ -1360,24 +1360,25 @@ function drawNailEdges(ctx2d, nails){
     ctx2d.arc(0, 0, headRadius, 0, Math.PI * 2);
     ctx2d.fill();
 
-    // sharp tip
+    // sharp tip that's narrower than the shaft and points outward
+    const tipBaseWidth = shaftWidth * 0.6;
     let tipGrad = ctx2d.createLinearGradient(0, shaftLength, 0, shaftLength + tipLength);
     tipGrad.addColorStop(0, "#ddd");
     tipGrad.addColorStop(1, "#555");
     ctx2d.fillStyle = tipGrad;
     ctx2d.beginPath();
-    ctx2d.moveTo(0, shaftLength);
-    ctx2d.lineTo(-shaftWidth/2, shaftLength + tipLength);
-    ctx2d.lineTo(shaftWidth/2, shaftLength + tipLength);
+    ctx2d.moveTo(-tipBaseWidth/2, shaftLength);
+    ctx2d.lineTo(0, shaftLength + tipLength);
+    ctx2d.lineTo(tipBaseWidth/2, shaftLength);
     ctx2d.closePath();
     ctx2d.fill();
 
     ctx2d.strokeStyle = "#333";
     ctx2d.lineWidth = 0.5;
     ctx2d.beginPath();
-    ctx2d.moveTo(-shaftWidth/2, shaftLength + tipLength);
-    ctx2d.lineTo(0, shaftLength);
-    ctx2d.lineTo(shaftWidth/2, shaftLength + tipLength);
+    ctx2d.moveTo(-tipBaseWidth/2, shaftLength);
+    ctx2d.lineTo(0, shaftLength + tipLength);
+    ctx2d.lineTo(tipBaseWidth/2, shaftLength);
     ctx2d.stroke();
 
     ctx2d.restore();
