@@ -1321,6 +1321,7 @@ function drawNail(ctx2d, x, y, angle){
   ctx2d.restore();
 }
 
+
 function drawSharpEdges(ctx2d, w, h){
   const spacing = 40;
   for(let x=0; x<w; x+=spacing){
@@ -1330,6 +1331,13 @@ function drawSharpEdges(ctx2d, w, h){
   for(let y=0; y<h; y+=spacing){
     drawNail(ctx2d, 0, y + spacing/2, Math.PI/2);
     drawNail(ctx2d, w, y + spacing/2, -Math.PI/2);
+
+function drawNailEdges(ctx2d, nails){
+  const shaftLength = 14; // trimmed to allow a small point
+  const headRadius = 3;
+
+    ctx2d.restore();
+
   }
 }
 
