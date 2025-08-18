@@ -1320,8 +1320,9 @@ function generateNailEdges(w, h){
 }
 
 function drawNailEdges(ctx2d, nails){
-  const shaftLength = 16; // previous shaft + tip length
+  const shaftLength = 14; // trimmed to allow a small point
   const headRadius = 3;
+  const tipLength = 2;
 
   ctx2d.fillStyle = "#555";
   ctx2d.strokeStyle = "#555";
@@ -1339,6 +1340,14 @@ function drawNailEdges(ctx2d, nails){
       ctx2d.beginPath();
       ctx2d.arc(n.x, n.y, headRadius, 0, Math.PI * 2);
       ctx2d.fill();
+
+      // point
+      ctx2d.beginPath();
+      ctx2d.moveTo(n.x, n.y + shaftLength);
+      ctx2d.lineTo(n.x - tipLength, n.y + shaftLength + tipLength);
+      ctx2d.lineTo(n.x + tipLength, n.y + shaftLength + tipLength);
+      ctx2d.closePath();
+      ctx2d.fill();
     } else if(n.orientation === "up"){
       ctx2d.beginPath();
       ctx2d.moveTo(n.x, n.y - headRadius);
@@ -1347,6 +1356,13 @@ function drawNailEdges(ctx2d, nails){
 
       ctx2d.beginPath();
       ctx2d.arc(n.x, n.y, headRadius, 0, Math.PI * 2);
+      ctx2d.fill();
+
+      ctx2d.beginPath();
+      ctx2d.moveTo(n.x, n.y - shaftLength);
+      ctx2d.lineTo(n.x - tipLength, n.y - shaftLength - tipLength);
+      ctx2d.lineTo(n.x + tipLength, n.y - shaftLength - tipLength);
+      ctx2d.closePath();
       ctx2d.fill();
     } else if(n.orientation === "right"){
       ctx2d.beginPath();
@@ -1357,6 +1373,13 @@ function drawNailEdges(ctx2d, nails){
       ctx2d.beginPath();
       ctx2d.arc(n.x, n.y, headRadius, 0, Math.PI * 2);
       ctx2d.fill();
+
+      ctx2d.beginPath();
+      ctx2d.moveTo(n.x + shaftLength, n.y);
+      ctx2d.lineTo(n.x + shaftLength + tipLength, n.y - tipLength);
+      ctx2d.lineTo(n.x + shaftLength + tipLength, n.y + tipLength);
+      ctx2d.closePath();
+      ctx2d.fill();
     } else if(n.orientation === "left"){
       ctx2d.beginPath();
       ctx2d.moveTo(n.x - headRadius, n.y);
@@ -1365,6 +1388,13 @@ function drawNailEdges(ctx2d, nails){
 
       ctx2d.beginPath();
       ctx2d.arc(n.x, n.y, headRadius, 0, Math.PI * 2);
+      ctx2d.fill();
+
+      ctx2d.beginPath();
+      ctx2d.moveTo(n.x - shaftLength, n.y);
+      ctx2d.lineTo(n.x - shaftLength - tipLength, n.y - tipLength);
+      ctx2d.lineTo(n.x - shaftLength - tipLength, n.y + tipLength);
+      ctx2d.closePath();
       ctx2d.fill();
     }
   }
