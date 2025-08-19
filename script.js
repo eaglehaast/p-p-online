@@ -1147,7 +1147,11 @@ function handleAAForPlane(p, fp){
   drawBuildings();
 
   // redraw field edges
-  drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
+
+  if (MAPS[mapIndex] !== "clear sky") {
+    drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
+  }
+
 
   // установки ПВО
   drawAAUnits();
@@ -1280,29 +1284,27 @@ function drawBrickEdges(ctx2d, w, h){
   const brickWidth = 20;
   const brickHeight = 10;
 
-  // top border
-  ctx2d.save();
-  ctx2d.translate(w / 2, brickHeight / 2);
-  drawBrickWall(ctx2d, w, brickHeight);
-  ctx2d.restore();
 
-  // bottom border
-  ctx2d.save();
-  ctx2d.translate(w / 2, h - brickHeight / 2);
-  drawBrickWall(ctx2d, w, brickHeight);
-  ctx2d.restore();
+  ctx2d.fillStyle = '#B22222';
+  ctx2d.strokeStyle = '#FFFFFF';
+  ctx2d.lineWidth = 1;
 
-  // left border
-  ctx2d.save();
-  ctx2d.translate(brickHeight / 2, h / 2);
-  drawBrickWall(ctx2d, brickHeight, h);
-  ctx2d.restore();
+  for(let x=0; x<w; x+=brickWidth){
+    ctx2d.fillRect(x, 0, brickWidth, brickHeight);
+    ctx2d.strokeRect(x, 0, brickWidth, brickHeight);
+    ctx2d.fillRect(x, h - brickHeight, brickWidth, brickHeight);
+    ctx2d.strokeRect(x, h - brickHeight, brickWidth, brickHeight);
+  }
 
-  // right border
-  ctx2d.save();
-  ctx2d.translate(w - brickHeight / 2, h / 2);
-  drawBrickWall(ctx2d, brickHeight, h);
-  ctx2d.restore();
+  for(let y=brickHeight; y<h - brickHeight; y+=brickWidth){
+    // draw vertical bricks on the left side
+    ctx2d.fillRect(0, y, brickHeight, brickWidth);
+    ctx2d.strokeRect(0, y, brickHeight, brickWidth);
+    // draw vertical bricks on the right side
+    ctx2d.fillRect(w - brickHeight, y, brickHeight, brickWidth);
+    ctx2d.strokeRect(w - brickHeight, y, brickHeight, brickWidth);
+  }
+
 }
 
 function drawThinPlane(ctx2d, cx, cy, color, angle){
