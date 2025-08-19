@@ -536,7 +536,7 @@ function drawAAPreview(){
     const alpha = (1 - age/AA_TRAIL_MS) * 0.3;
 
     gameCtx.globalAlpha = alpha;
-    gameCtx.strokeStyle = currentPlacer;
+    gameCtx.strokeStyle = currentPlcer;
     gameCtx.lineWidth = 2;
     gameCtx.lineCap = "round";
     const trailAng = seg.angleDeg * Math.PI/180;
@@ -1146,12 +1146,10 @@ function handleAAForPlane(p, fp){
   drawAAPlacementZone();
   drawBuildings();
 
-  // redraw field edges
-
+  // redraw field edges (только если есть «стены» по краям карты)
   if (MAPS[mapIndex] !== "clear sky") {
     drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
   }
-
 
   // установки ПВО
   drawAAUnits();
@@ -1284,27 +1282,29 @@ function drawBrickEdges(ctx2d, w, h){
   const brickWidth = 20;
   const brickHeight = 10;
 
+  // top border
+  ctx2d.save();
+  ctx2d.translate(w / 2, brickHeight / 2);
+  drawBrickWall(ctx2d, w, brickHeight);
+  ctx2d.restore();
 
-  ctx2d.fillStyle = '#B22222';
-  ctx2d.strokeStyle = '#FFFFFF';
-  ctx2d.lineWidth = 1;
+  // bottom border
+  ctx2d.save();
+  ctx2d.translate(w / 2, h - brickHeight / 2);
+  drawBrickWall(ctx2d, w, brickHeight);
+  ctx2d.restore();
 
-  for(let x=0; x<w; x+=brickWidth){
-    ctx2d.fillRect(x, 0, brickWidth, brickHeight);
-    ctx2d.strokeRect(x, 0, brickWidth, brickHeight);
-    ctx2d.fillRect(x, h - brickHeight, brickWidth, brickHeight);
-    ctx2d.strokeRect(x, h - brickHeight, brickWidth, brickHeight);
-  }
+  // left border
+  ctx2d.save();
+  ctx2d.translate(brickWidth / 2, h / 2);
+  drawBrickWall(ctx2d, brickWidth, h);
+  ctx2d.restore();
 
-  for(let y=brickHeight; y<h - brickHeight; y+=brickWidth){
-    // draw vertical bricks on the left side
-    ctx2d.fillRect(0, y, brickHeight, brickWidth);
-    ctx2d.strokeRect(0, y, brickHeight, brickWidth);
-    // draw vertical bricks on the right side
-    ctx2d.fillRect(w - brickHeight, y, brickHeight, brickWidth);
-    ctx2d.strokeRect(w - brickHeight, y, brickHeight, brickWidth);
-  }
-
+  // right border
+  ctx2d.save();
+  ctx2d.translate(w - brickWidth / 2, h / 2);
+  drawBrickWall(ctx2d, brickWidth, h);
+  ctx2d.restore();
 }
 
 function drawThinPlane(ctx2d, cx, cy, color, angle){
