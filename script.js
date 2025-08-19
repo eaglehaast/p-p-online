@@ -57,6 +57,8 @@ const HANDLE_SIZE          = 10;     // px
 const BOUNCE_FRAMES        = 68;
 const MAX_DRAG_DISTANCE    = 100;    // px
 const ATTACK_RANGE_PX      = 300;    // px
+const FIELD_BORDER_THICKNESS = 10;    // px, ширина кирпичной рамки по краям
+const FIELD_BORDER_OFFSET    = FIELD_BORDER_THICKNESS / 2; // внутренняя граница для отражения
 // Используем бесконечное количество сегментов,
 // чтобы следы самолётов сохранялись до конца раунда.
 const MAX_TRAIL_SEGMENTS   = Infinity;
@@ -1076,32 +1078,32 @@ function handleAAForPlane(p, fp){
       p.y += fp.vy;
 
         // field borders
-        if (p.x < 0) {
-          p.x = 0;
+        if (p.x < FIELD_BORDER_OFFSET) {
+          p.x = FIELD_BORDER_OFFSET;
           if (MAPS[mapIndex] === "sharp edges") {
             destroyPlane(fp);
             continue;
           }
           fp.vx = -fp.vx;
         }
-        else if (p.x > gameCanvas.width) {
-          p.x = gameCanvas.width;
+        else if (p.x > gameCanvas.width - FIELD_BORDER_OFFSET) {
+          p.x = gameCanvas.width - FIELD_BORDER_OFFSET;
           if (MAPS[mapIndex] === "sharp edges") {
             destroyPlane(fp);
             continue;
           }
           fp.vx = -fp.vx;
         }
-        if (p.y < 0) {
-          p.y = 0;
+        if (p.y < FIELD_BORDER_OFFSET) {
+          p.y = FIELD_BORDER_OFFSET;
           if (MAPS[mapIndex] === "sharp edges") {
             destroyPlane(fp);
             continue;
           }
           fp.vy = -fp.vy;
         }
-        else if (p.y > gameCanvas.height) {
-          p.y = gameCanvas.height;
+        else if (p.y > gameCanvas.height - FIELD_BORDER_OFFSET) {
+          p.y = gameCanvas.height - FIELD_BORDER_OFFSET;
           if (MAPS[mapIndex] === "sharp edges") {
             destroyPlane(fp);
             continue;
@@ -1293,7 +1295,7 @@ function drawNotebookBackground(ctx2d, w, h){
 }
 
 function drawBrickEdges(ctx2d, w, h){
-  const brickHeight = 10;
+  const brickHeight = FIELD_BORDER_THICKNESS;
 
   // top border
   ctx2d.save();
