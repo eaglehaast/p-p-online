@@ -1906,15 +1906,17 @@ function startNewRound(){
 function updateAmplitudeIndicator(){
   const el = document.getElementById("amplitudeIndicator");
   if(!el) return;
-  const line = el.querySelector(".line3");
-  if(!line) return;
+  const sight = el.querySelector(".crosshair");
+  if(!sight) return;
 
-  const maxAngleDeg = aimingAmplitude * 2; // отображаемое в UI
-  const oscDeg = maxAngleDeg * Math.sin(oscillationPhase);
-  line.style.transform = `rotate(${oscDeg}deg) translateZ(0)`;
+  const maxOffsetPx = 35;
+  const ratio = aimingAmplitude / MAX_AMPLITUDE;
+  const oscPx = maxOffsetPx * ratio * Math.sin(oscillationPhase);
+  sight.style.transform = `translate(-50%, -50%) translateX(${oscPx}px)`;
 
   const disp = document.getElementById("amplitudeAngleDisplay");
   if(disp){
+    const maxAngleDeg = aimingAmplitude * 2;
     disp.textContent = `${maxAngleDeg.toFixed(0)}°`;
   }
 }
