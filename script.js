@@ -87,6 +87,10 @@ const AA_MIN_DIST_FROM_EDGES = 40;
 // Quarter-circle afterglow so the sweep persists for 90° of rotation
 const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
+// Nail dimensions for the "sharp edges" map
+const NAIL_LENGTH = 12;
+const NAIL_WIDTH  = 4;
+
 
 
 /* ======= STATE ======= */
@@ -1301,20 +1305,18 @@ function drawBrickEdges(ctx2d, w, h){
 }
 
 function drawNail(ctx2d, x, y, angle){
-  const length = 12;
-  const width = 4;
   ctx2d.save();
   ctx2d.translate(x, y);
   ctx2d.rotate(angle);
   ctx2d.fillStyle = '#bbbbbb';
   ctx2d.strokeStyle = '#666666';
   ctx2d.lineWidth = 1;
-  ctx2d.fillRect(-width/2, 0, width, length);
-  ctx2d.strokeRect(-width/2, 0, width, length);
+  ctx2d.fillRect(-NAIL_WIDTH/2, 0, NAIL_WIDTH, NAIL_LENGTH);
+  ctx2d.strokeRect(-NAIL_WIDTH/2, 0, NAIL_WIDTH, NAIL_LENGTH);
   ctx2d.beginPath();
-  ctx2d.moveTo(-width/2, length);
-  ctx2d.lineTo(width/2, length);
-  ctx2d.lineTo(0, length + width);
+  ctx2d.moveTo(-NAIL_WIDTH/2, NAIL_LENGTH);
+  ctx2d.lineTo(NAIL_WIDTH/2, NAIL_LENGTH);
+  ctx2d.lineTo(0, NAIL_LENGTH + NAIL_WIDTH);
   ctx2d.closePath();
   ctx2d.fill();
   ctx2d.stroke();
@@ -1324,31 +1326,15 @@ function drawNail(ctx2d, x, y, angle){
 
 function drawSharpEdges(ctx2d, w, h){
   const spacing = 40;
-// финальная версия без конфликтов
-function drawSharpEdges(ctx2d, w, h, spacing = 40) {
-  const edgeOffsetY = 1; // чуть отступить от верха/низа, чтобы гвозди не "резались"
-  const edgeOffsetX = 2; // небольшой отступ слева/справа
 
-  // верх и низ
-  for (let x = 0; x < w; x += spacing) {
-    drawNail(ctx2d, x + spacing / 2, edgeOffsetY, 0);          // верх, "смотрит" вверх
-    drawNail(ctx2d, x + spacing / 2, h - edgeOffsetY, Math.PI); // низ, "смотрит" вниз
+  for(let x = 0; x < w; x += spacing){
+    drawNail(ctx2d, x + spacing/2, edgeOffset, 0);           // top edge nails
+    drawNail(ctx2d, x + spacing/2, h - edgeOffset, Math.PI); // bottom edge nails
   }
-
-  // лево и право
-  for (let y = 0; y < h; y += spacing) {
-    drawNail(ctx2d, edgeOffsetX, y + spacing / 2, -Math.PI / 2); // лево, "смотрит" влево
-    drawNail(ctx2d, w - edgeOffsetX, y + spacing / 2,  Math.PI / 2); // право, "смотрит" вправо
+  for(let y = 0; y < h; y += spacing){
+    drawNail(ctx2d, sideOffset, y + spacing/2, -Math.PI/2);      // left edge nails
+    drawNail(ctx2d, w - sideOffset, y + spacing/2, Math.PI/2);   // right edge nails
   }
-}
-
-  }
-}
-
-function drawNailEdges(ctx2d, nails){
-  nails.forEach(nail => {
-    drawNail(ctx2d, nail.x, nail.y, nail.angle);
-  });
 }
 
 function drawThinPlane(ctx2d, cx, cy, color, angle){
