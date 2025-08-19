@@ -1075,21 +1075,21 @@ function handleAAForPlane(p, fp){
       p.x += fp.vx;
       p.y += fp.vy;
 
-      // field borders
-      if (p.x < POINT_RADIUS) {
-        p.x = POINT_RADIUS;
+      // field borders: walls surround canvas from outside
+      if (p.x < 0) {
+        p.x = 0;
         fp.vx = -fp.vx;
       }
-      else if (p.x > gameCanvas.width - POINT_RADIUS) {
-        p.x = gameCanvas.width - POINT_RADIUS;
+      else if (p.x > gameCanvas.width) {
+        p.x = gameCanvas.width;
         fp.vx = -fp.vx;
       }
-      if (p.y < POINT_RADIUS) {
-        p.y = POINT_RADIUS;
+      if (p.y < 0) {
+        p.y = 0;
         fp.vy = -fp.vy;
       }
-      else if (p.y > gameCanvas.height - POINT_RADIUS) {
-        p.y = gameCanvas.height - POINT_RADIUS;
+      else if (p.y > gameCanvas.height) {
+        p.y = gameCanvas.height;
         fp.vy = -fp.vy;
       }
 
