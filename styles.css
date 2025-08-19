@@ -202,10 +202,10 @@ body {
   width: 100%;
   height: 100%;
   border-radius: 50%;
-  background: linear-gradient(145deg, #d9d9d9, #7a7a7a);
+  background: linear-gradient(145deg, #3a3a3a, #000);
   position: relative;
-  box-shadow: inset 0 2px 2px rgba(255, 255, 255, 0.7),
-              inset 0 -2px 2px rgba(0, 0, 0, 0.4);
+  box-shadow: inset 0 2px 2px rgba(255, 255, 255, 0.2),
+              inset 0 -2px 2px rgba(0, 0, 0, 0.8);
 }
 
 .instrument .bezel::before {
@@ -213,7 +213,7 @@ body {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: repeating-conic-gradient(#b3b3b3 0deg, #b3b3b3 2deg, transparent 2deg, transparent 18deg);
+  background: repeating-conic-gradient(#ffffff 0deg, #ffffff 2deg, transparent 2deg, transparent 18deg);
   mask: radial-gradient(farthest-side, transparent calc(50% - 8px), #000 calc(50% - 8px));
   -webkit-mask: radial-gradient(farthest-side, transparent calc(50% - 8px), #000 calc(50% - 8px));
   pointer-events: none;
@@ -223,15 +223,15 @@ body {
   position: absolute;
   inset: 12px;
   border-radius: 50%;
-  background: linear-gradient(#d0d0d0, #b4b4b4);
+  background: linear-gradient(#222, #000);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #111;
+  color: #fff;
   text-align: center;
-  box-shadow: inset 0 0 4px rgba(0,0,0,0.3),
-              inset 0 0 2px rgba(255,255,255,0.4);
+  box-shadow: inset 0 0 6px rgba(0,0,0,0.8),
+              inset 0 0 2px rgba(255,255,255,0.2);
 }
 
 .instrument .instrument-display::after {
@@ -268,7 +268,7 @@ body {
   left: 50%;
   width: 4px;
   height: 45%;
-  background: #111;
+  background: #fff;
   transform-origin: 50% 100%;
   transform: translate(-50%, -100%) rotate(0deg);
   border-radius: 2px;
