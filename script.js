@@ -24,12 +24,10 @@ const onlineBtn   = document.getElementById("onlineBtn");
 
 const playBtn     = document.getElementById("playBtn");
 
-const flightRangeMinusBtn = document.getElementById("flightRangeMinus");
-const flightRangePlusBtn  = document.getElementById("flightRangePlus");
+const flightRangeBezel = document.getElementById("flightRangeBezel");
+const amplitudeBezel   = document.getElementById("amplitudeBezel");
 const mapMinusBtn   = document.getElementById("mapMinus");
 const mapPlusBtn    = document.getElementById("mapPlus");
-const amplitudeMinusBtn   = document.getElementById("amplitudeMinus");
-const amplitudePlusBtn    = document.getElementById("amplitudePlus");
 const addAAToggle         = document.getElementById("addAAToggle");
 
 const endGameDiv  = document.getElementById("endGameButtons");
@@ -242,12 +240,10 @@ function resetGame(){
   renderScoreboard();
 }
 function setControlsEnabled(enabled){
-  flightRangeMinusBtn.disabled = !enabled;
-  flightRangePlusBtn.disabled  = !enabled;
+  if(flightRangeBezel) flightRangeBezel.classList.toggle('disabled', !enabled);
   mapMinusBtn.disabled   = !enabled;
   mapPlusBtn.disabled    = !enabled;
-  amplitudeMinusBtn.disabled   = !enabled;
-  amplitudePlusBtn.disabled    = !enabled;
+  if(amplitudeBezel) amplitudeBezel.classList.toggle('disabled', !enabled);
 }
 
 function stopGameLoop(){
@@ -1735,6 +1731,42 @@ function setupRepeatButton(btn, step){
   }
 }
 
+function setupRotaryControl(bezel, min, max, initial, onChange){
+  if(!bezel) return;
+  let currentValue = initial;
+  onChange(currentValue);
+  let dragging = false;
+  bezel.addEventListener('pointerdown', e=>{
+    dragging = true;
+    bezel.setPointerCapture(e.pointerId);
+    update(e);
+  });
+  bezel.addEventListener('pointermove', e=>{
+    if(dragging) update(e);
+  });
+  const stop = (e)=>{
+    dragging = false;
+    try{ bezel.releasePointerCapture(e.pointerId); }catch(err){}
+  };
+  bezel.addEventListener('pointerup', stop);
+  bezel.addEventListener('pointerleave', ()=>{ dragging=false; });
+  bezel.addEventListener('wheel', e=>{
+    e.preventDefault();
+    currentValue = Math.min(max, Math.max(min, currentValue - Math.sign(e.deltaY)));
+    onChange(currentValue);
+  }, {passive:false});
+
+  function update(e){
+    const rect = bezel.getBoundingClientRect();
+    const cx = rect.left + rect.width/2;
+    const cy = rect.top + rect.height/2;
+    let deg = Math.atan2(e.clientY - cy, e.clientX - cx) * 180 / Math.PI + 180;
+    deg = (deg + 90) % 360;
+    currentValue = min + Math.round((deg / 360) * (max - min));
+    onChange(currentValue);
+  }
+}
+
 
 // Add Anti-Aircraft toggle
 
@@ -1747,19 +1779,10 @@ if (addAAToggle) {
 }
 
 /* Flight Range */
-setupRepeatButton(flightRangeMinusBtn, ()=>{
-  if(flightRangeCells > MIN_FLIGHT_RANGE_CELLS){
-    flightRangeCells--;
-    updateFlightRangeFlame();
-    updateFlightRangeDisplay();
-  }
-});
-setupRepeatButton(flightRangePlusBtn, ()=>{
-  if(flightRangeCells < MAX_FLIGHT_RANGE_CELLS){
-    flightRangeCells++;
-    updateFlightRangeFlame();
-    updateFlightRangeDisplay();
-  }
+setupRotaryControl(flightRangeBezel, MIN_FLIGHT_RANGE_CELLS, MAX_FLIGHT_RANGE_CELLS, flightRangeCells, (val)=>{
+  flightRangeCells = val;
+  updateFlightRangeFlame();
+  updateFlightRangeDisplay();
 });
 
 /* Map */
@@ -1773,17 +1796,10 @@ setupRepeatButton(mapPlusBtn, ()=>{
 });
 
 /* Aiming amplitude */
-setupRepeatButton(amplitudeMinusBtn, ()=>{
-  if(aimingAmplitude > MIN_AMPLITUDE){
-    aimingAmplitude--;
-    updateAmplitudeDisplay();
-  }
-});
-setupRepeatButton(amplitudePlusBtn, ()=>{
-  if(aimingAmplitude < MAX_AMPLITUDE){
-    aimingAmplitude++;
-    updateAmplitudeDisplay();
-  }
+setupRotaryControl(amplitudeBezel, MIN_AMPLITUDE, MAX_AMPLITUDE, aimingAmplitude, (val)=>{
+  aimingAmplitude = val;
+  updateAmplitudeDisplay();
+  updateAmplitudeIndicator();
 });
 
 /* Поля/здания */
@@ -1913,16 +1929,18 @@ function updateAmplitudeIndicator(){
   const oscDeg = maxAngleDeg * Math.sin(oscillationPhase);
   line.style.transform = `rotate(${oscDeg}deg) translateZ(0)`;
 
-  const disp = document.getElementById("amplitudeAngleDisplay");
-  if(disp){
-    disp.textContent = `${maxAngleDeg.toFixed(0)}°`;
-  }
+  updateAmplitudeDisplay();
 }
 function updateAmplitudeDisplay(){
   const disp = document.getElementById("amplitudeAngleDisplay");
   if(disp){
     const maxAngle = aimingAmplitude * 2;
     disp.textContent = `${maxAngle.toFixed(0)}°`;
+  }
+  const pointer = document.getElementById("amplitudePointer");
+  if(pointer){
+    const deg = (aimingAmplitude - MIN_AMPLITUDE) / (MAX_AMPLITUDE - MIN_AMPLITUDE) * 360;
+    pointer.style.transform = `translate(-50%, -100%) rotate(${deg}deg)`;
   }
 }
 
@@ -1978,7 +1996,12 @@ function applyCurrentMap(){
 function updateFlightRangeDisplay(){
   const el = document.getElementById("flightRangeDisplay");
   if(el){
-    el.textContent = `${flightRangeCells} cells`;
+    el.textContent = `${flightRangeCells}`;
+  }
+  const pointer = document.getElementById("flightRangePointer");
+  if(pointer){
+    const deg = (flightRangeCells - MIN_FLIGHT_RANGE_CELLS) / (MAX_FLIGHT_RANGE_CELLS - MIN_FLIGHT_RANGE_CELLS) * 360;
+    pointer.style.transform = `translate(-50%, -100%) rotate(${deg}deg)`;
   }
 }
 function updateFlightRangeFlame(){

@@ -186,6 +186,97 @@ body {
   box-sizing: border-box;
 }
 
+#modeMenu .control-pair-row .instrument {
+  flex: 1 1 0;
+  display: flex;
+  justify-content: center;
+}
+
+.instrument {
+  position: relative;
+  width: 140px;
+  height: 140px;
+}
+
+.instrument .bezel {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: #222;
+  position: relative;
+}
+
+.instrument .bezel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: repeating-conic-gradient(#666 0deg, #666 2deg, transparent 2deg, transparent 18deg);
+  mask: radial-gradient(farthest-side, transparent calc(50% - 8px), #000 calc(50% - 8px));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(50% - 8px), #000 calc(50% - 8px));
+  pointer-events: none;
+}
+
+.instrument .instrument-display {
+  position: absolute;
+  inset: 12px;
+  border-radius: 50%;
+  background: #111;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #0f0;
+  text-align: center;
+}
+
+.instrument .instrument-label {
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.instrument .instrument-visual {
+  width: 60%;
+  height: 40%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.instrument .instrument-value {
+  font-family: 'Patrick Hand', cursive;
+  font-size: 18px;
+  margin-top: 4px;
+}
+
+.bezel-pointer {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 45%;
+  background: #0f0;
+  transform-origin: 50% 100%;
+  transform: translate(-50%, -100%) rotate(0deg);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.bezel.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.instrument #flightRangeIndicator {
+  transform: scale(0.6);
+  transform-origin: center;
+}
+
+.instrument #amplitudeIndicator {
+  transform: scale(0.8);
+  transform-origin: center;
+}
+
 #modeMenu #mapControl {
   grid-template-rows: auto auto auto;
 }
@@ -277,33 +368,6 @@ body {
   height: 2px;
   background: linear-gradient(to left, rgba(230,230,230,0.8), rgba(230,230,230,0));
   opacity: 0.8;
-
-  border-radius: 1px;
-  transform-origin: right center;
-  transform: translateY(-50%);
-  filter: blur(0.5px);
-  animation: trail-wisp 3s infinite ease-in-out;
-}
-#flightRangeIndicator .wing-trail.top { top: 2px; }
-#flightRangeIndicator .wing-trail.bottom { bottom: 2px; }
-
-
-
-
-  right: 100%;
-  width: 35px;
-  height: 2px;
-  background: linear-gradient(to left, rgba(200,200,200,0.6), rgba(200,200,200,0));
-  opacity: 0.7;
-
-
-  right: calc(100% + 2px);
-  width: 35px;
-  height: 2px;
-  background: linear-gradient(to left, rgba(160,160,160,0.5), rgba(160,160,160,0));
-  opacity: 0.5;
-
-
 
   border-radius: 1px;
   transform-origin: right center;

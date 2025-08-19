@@ -34,47 +34,47 @@
 
     <div class="control-group-row">
       <div class="control-pair-row">
-        <!-- Flight Range Control -->
-        <div class="control-box">
-          <div class="control-label">Flight Range</div>
-          <!-- Самолёт и пламя турбины для индикации дальности -->
-            <div id="flightRangeIndicator" class="control-visual">
-            <div class="jet">
-              <div class="wing-trail top"></div>
-              <div class="wing-trail bottom"></div>
-              <svg class="jet-plane" viewBox="0 0 38 20">
-                <polygon points="38,10 8,20 8,15 0,10 8,5 8,0" />
-              </svg>
-
-                <svg id="flame" class="jet-flame" viewBox="0 0 40 20" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
-                <defs>
-                  <radialGradient id="flameGradient" cx="100%" cy="50%" r="60%">
-                    <stop offset="0%" stop-color="#ffea00" />
-                    <stop offset="100%" stop-color="#ff4500" />
-                  </radialGradient>
-                </defs>
-                <path d="M40 10 C37 4 32 0 20 0 C5 0 0 10 20 20 C32 20 37 16 40 10 Z" fill="url(#flameGradient)" />
-              </svg>
-
+        <!-- Flight Range Instrument -->
+        <div class="instrument" id="flightRangeControl">
+          <div class="bezel" id="flightRangeBezel">
+            <div class="bezel-pointer" id="flightRangePointer"></div>
+            <div class="instrument-display">
+              <div class="instrument-label">Flight Range</div>
+              <!-- Самолёт и пламя турбины для индикации дальности -->
+              <div id="flightRangeIndicator" class="instrument-visual">
+                <div class="jet">
+                  <div class="wing-trail top"></div>
+                  <div class="wing-trail bottom"></div>
+                  <svg class="jet-plane" viewBox="0 0 38 20">
+                    <polygon points="38,10 8,20 8,15 0,10 8,5 8,0" />
+                  </svg>
+                  <svg id="flame" class="jet-flame" viewBox="0 0 40 20" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+                    <defs>
+                      <radialGradient id="flameGradient" cx="100%" cy="50%" r="60%">
+                        <stop offset="0%" stop-color="#ffea00" />
+                        <stop offset="100%" stop-color="#ff4500" />
+                      </radialGradient>
+                    </defs>
+                    <path d="M40 10 C37 4 32 0 20 0 C5 0 0 10 20 20 C32 20 37 16 40 10 Z" fill="url(#flameGradient)" />
+                  </svg>
+                </div>
+              </div>
+              <div class="instrument-value" id="flightRangeDisplay">15</div>
             </div>
-          </div>
-          <div class="control-value"><span id="flightRangeDisplay">15 cells</span></div>
-          <div class="control-buttons">
-            <button id="flightRangeMinus" class="control-btn">−</button>
-            <button id="flightRangePlus" class="control-btn">+</button>
           </div>
         </div>
 
-        <!-- Aiming Amplitude Control -->
-        <div class="control-box">
-          <div class="control-label">Aiming Amplitude</div>
-          <div id="amplitudeIndicator" class="control-visual">
-            <div class="line3"></div>
-          </div>
-          <div class="control-value"><span id="amplitudeAngleDisplay">20°</span></div>
-          <div class="control-buttons">
-            <button id="amplitudeMinus" class="control-btn">−</button>
-            <button id="amplitudePlus" class="control-btn">+</button>
+        <!-- Aiming Amplitude Instrument -->
+        <div class="instrument" id="amplitudeControl">
+          <div class="bezel" id="amplitudeBezel">
+            <div class="bezel-pointer" id="amplitudePointer"></div>
+            <div class="instrument-display">
+              <div class="instrument-label">Aiming Amplitude</div>
+              <div id="amplitudeIndicator" class="instrument-visual">
+                <div class="line3"></div>
+              </div>
+              <div class="instrument-value" id="amplitudeAngleDisplay">20°</div>
+            </div>
           </div>
         </div>
       </div>
