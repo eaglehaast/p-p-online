@@ -1281,26 +1281,26 @@ function drawBrickEdges(ctx2d, w, h){
 
   // top border
   ctx2d.save();
-  ctx2d.translate(w / 2, brickHeight / 2);
+  ctx2d.translate(w / 2, -brickHeight / 2);
   drawBrickWall(ctx2d, w, brickHeight);
   ctx2d.restore();
 
   // bottom border
   ctx2d.save();
-  ctx2d.translate(w / 2, h - brickHeight / 2);
+  ctx2d.translate(w / 2, h + brickHeight / 2);
   drawBrickWall(ctx2d, w, brickHeight);
   ctx2d.restore();
 
   // left border
   ctx2d.save();
-  ctx2d.translate(brickHeight / 2, h / 2);
+  ctx2d.translate(-brickHeight / 2, h / 2);
   ctx2d.rotate(Math.PI / 2);
   drawBrickWall(ctx2d, h, brickHeight);
   ctx2d.restore();
 
   // right border
   ctx2d.save();
-  ctx2d.translate(w - brickHeight / 2, h / 2);
+  ctx2d.translate(w + brickHeight / 2, h / 2);
   ctx2d.rotate(Math.PI / 2);
   drawBrickWall(ctx2d, h, brickHeight);
   ctx2d.restore();
