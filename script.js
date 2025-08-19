@@ -1910,7 +1910,7 @@ function updateAmplitudeIndicator(){
   if(!sight) return;
 
   const angleDeg = aimingAmplitude * Math.sin(oscillationPhase);
-  sight.style.transform = `translateX(-50%) rotate(${angleDeg}deg)`;
+  sight.style.transform = `rotate(${angleDeg}deg) translateX(-50%)`;
 
   const disp = document.getElementById("amplitudeAngleDisplay");
   if(disp){
