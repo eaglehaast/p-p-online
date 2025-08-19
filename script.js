@@ -94,7 +94,7 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 
 
-const MAPS = ["clear sky", "wall", "two walls"];
+const MAPS = ["clear sky", "wall", "two walls", "sharp edges"];
 let mapIndex = 1;
 
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
@@ -1848,7 +1848,7 @@ function updateMapDisplay(){
 
 function applyCurrentMap(){
   buildings = [];
-  if(MAPS[mapIndex] === "clear sky"){
+  if(MAPS[mapIndex] === "clear sky" || MAPS[mapIndex] === "sharp edges"){
     // no buildings to add
   } else if (MAPS[mapIndex] === "wall") {
     const wallWidth = CELL_SIZE * 8;
