@@ -379,33 +379,6 @@ body {
 #flightRangeIndicator .wing-trail.bottom { bottom: 2px; }
 
 
-
-
-  right: 100%;
-  width: 35px;
-  height: 2px;
-  background: linear-gradient(to left, rgba(200,200,200,0.6), rgba(200,200,200,0));
-  opacity: 0.7;
-
-
-  right: calc(100% + 2px);
-  width: 35px;
-  height: 2px;
-  background: linear-gradient(to left, rgba(160,160,160,0.5), rgba(160,160,160,0));
-  opacity: 0.5;
-
-
-
-  border-radius: 1px;
-  transform-origin: right center;
-  transform: translateY(-50%);
-  filter: blur(0.5px);
-  animation: trail-wisp 3s infinite ease-in-out;
-}
-#flightRangeIndicator .wing-trail.top { top: 2px; }
-#flightRangeIndicator .wing-trail.bottom { bottom: 2px; }
-
-
 @keyframes trail-wisp {
   0% { transform: translateY(-50%) rotate(0deg); }
   50% { transform: translateY(-52%) rotate(2deg); }
