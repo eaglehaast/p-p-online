@@ -1279,7 +1279,6 @@ function drawNotebookBackground(ctx2d, w, h){
 }
 
 function drawBrickEdges(ctx2d, w, h){
-  const brickWidth = 20;
   const brickHeight = 10;
 
   // top border
@@ -1296,14 +1295,16 @@ function drawBrickEdges(ctx2d, w, h){
 
   // left border
   ctx2d.save();
-  ctx2d.translate(brickWidth / 2, h / 2);
-  drawBrickWall(ctx2d, brickWidth, h);
+  ctx2d.translate(brickHeight / 2, h / 2);
+  ctx2d.rotate(Math.PI / 2);
+  drawBrickWall(ctx2d, h, brickHeight);
   ctx2d.restore();
 
   // right border
   ctx2d.save();
-  ctx2d.translate(w - brickWidth / 2, h / 2);
-  drawBrickWall(ctx2d, brickWidth, h);
+  ctx2d.translate(w - brickHeight / 2, h / 2);
+  ctx2d.rotate(Math.PI / 2);
+  drawBrickWall(ctx2d, h, brickHeight);
   ctx2d.restore();
 }
 
