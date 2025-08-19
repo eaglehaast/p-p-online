@@ -1303,13 +1303,15 @@ function drawNailEdges(ctx2d, w, h){
   ctx2d.strokeStyle = "#333";
   ctx2d.lineWidth = 1;
 
+  const halfLine = ctx2d.lineWidth / 2;
+
   // top border nails
   for(let x = 0; x < w; x += spacing){
     const cx = x + spacing / 2;
     ctx2d.beginPath();
-    ctx2d.moveTo(cx - base/2, 0);
-    ctx2d.lineTo(cx + base/2, 0);
-    ctx2d.lineTo(cx, length);
+    ctx2d.moveTo(cx - base/2, halfLine);
+    ctx2d.lineTo(cx + base/2, halfLine);
+    ctx2d.lineTo(cx, length + halfLine);
     ctx2d.closePath();
     ctx2d.fill();
     ctx2d.stroke();
@@ -1319,9 +1321,9 @@ function drawNailEdges(ctx2d, w, h){
   for(let x = 0; x < w; x += spacing){
     const cx = x + spacing / 2;
     ctx2d.beginPath();
-    ctx2d.moveTo(cx - base/2, h);
-    ctx2d.lineTo(cx + base/2, h);
-    ctx2d.lineTo(cx, h - length);
+    ctx2d.moveTo(cx - base/2, h - halfLine);
+    ctx2d.lineTo(cx + base/2, h - halfLine);
+    ctx2d.lineTo(cx, h - length - halfLine);
     ctx2d.closePath();
     ctx2d.fill();
     ctx2d.stroke();
@@ -1331,9 +1333,9 @@ function drawNailEdges(ctx2d, w, h){
   for(let y = 0; y < h; y += spacing){
     const cy = y + spacing / 2;
     ctx2d.beginPath();
-    ctx2d.moveTo(0, cy - base/2);
-    ctx2d.lineTo(0, cy + base/2);
-    ctx2d.lineTo(length, cy);
+    ctx2d.moveTo(halfLine, cy - base/2);
+    ctx2d.lineTo(halfLine, cy + base/2);
+    ctx2d.lineTo(length + halfLine, cy);
     ctx2d.closePath();
     ctx2d.fill();
     ctx2d.stroke();
@@ -1343,9 +1345,9 @@ function drawNailEdges(ctx2d, w, h){
   for(let y = 0; y < h; y += spacing){
     const cy = y + spacing / 2;
     ctx2d.beginPath();
-    ctx2d.moveTo(w, cy - base/2);
-    ctx2d.lineTo(w, cy + base/2);
-    ctx2d.lineTo(w - length, cy);
+    ctx2d.moveTo(w - halfLine, cy - base/2);
+    ctx2d.lineTo(w - halfLine, cy + base/2);
+    ctx2d.lineTo(w - length - halfLine, cy);
     ctx2d.closePath();
     ctx2d.fill();
     ctx2d.stroke();
