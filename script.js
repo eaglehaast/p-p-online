@@ -87,6 +87,11 @@ const AA_MIN_DIST_FROM_EDGES = 40;
 // Quarter-circle afterglow so the sweep persists for 90° of rotation
 const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
+// Nail dimensions for the "sharp edges" map
+const NAIL_LENGTH = 12;
+const NAIL_WIDTH  = 4;
+const NAIL_HEAD_RADIUS = 6;
+
 
 
 /* ======= STATE ======= */
@@ -1301,20 +1306,28 @@ function drawBrickEdges(ctx2d, w, h){
 }
 
 function drawNail(ctx2d, x, y, angle){
-  const length = 12;
-  const width = 4;
   ctx2d.save();
   ctx2d.translate(x, y);
   ctx2d.rotate(angle);
   ctx2d.fillStyle = '#bbbbbb';
   ctx2d.strokeStyle = '#666666';
   ctx2d.lineWidth = 1;
-  ctx2d.fillRect(-width/2, 0, width, length);
-  ctx2d.strokeRect(-width/2, 0, width, length);
+
+  // head
   ctx2d.beginPath();
-  ctx2d.moveTo(-width/2, length);
-  ctx2d.lineTo(width/2, length);
-  ctx2d.lineTo(0, length + width);
+  ctx2d.arc(0, 0, NAIL_HEAD_RADIUS, 0, Math.PI*2);
+  ctx2d.fill();
+  ctx2d.stroke();
+
+  // shaft
+  ctx2d.fillRect(-NAIL_WIDTH/2, NAIL_HEAD_RADIUS, NAIL_WIDTH, NAIL_LENGTH);
+  ctx2d.strokeRect(-NAIL_WIDTH/2, NAIL_HEAD_RADIUS, NAIL_WIDTH, NAIL_LENGTH);
+
+  // tip
+  ctx2d.beginPath();
+  ctx2d.moveTo(-NAIL_WIDTH/2, NAIL_HEAD_RADIUS + NAIL_LENGTH);
+  ctx2d.lineTo(NAIL_WIDTH/2, NAIL_HEAD_RADIUS + NAIL_LENGTH);
+  ctx2d.lineTo(0, NAIL_HEAD_RADIUS + NAIL_LENGTH + NAIL_WIDTH);
   ctx2d.closePath();
   ctx2d.fill();
   ctx2d.stroke();
@@ -1324,23 +1337,17 @@ function drawNail(ctx2d, x, y, angle){
 
 function drawSharpEdges(ctx2d, w, h){
   const spacing = 40;
-  const edgeOffset = 1; // keep nails fully within the playable area
-  for(let x=0; x<w; x+=spacing){
-    drawNail(ctx2d, x + spacing/2, edgeOffset, 0);
-    drawNail(ctx2d, x + spacing/2, h - edgeOffset, Math.PI);
+  const edgeOffset = 0.5; // keep strokes inside the canvas
+  const centerOffset = NAIL_HEAD_RADIUS + edgeOffset;
+
+  for(let x = 0; x < w; x += spacing){
+    drawNail(ctx2d, x + spacing/2, centerOffset, 0);            // top edge nails
+    drawNail(ctx2d, x + spacing/2, h - centerOffset, Math.PI);  // bottom edge nails
   }
-  for(let y=0; y<h; y+=spacing){
-
-    drawNail(ctx2d, 0, y + spacing/2, Math.PI/2);
-    drawNail(ctx2d, w, y + spacing/2, -Math.PI/2);
-
+  for(let y = 0; y < h; y += spacing){
+    drawNail(ctx2d, centerOffset, y + spacing/2, -Math.PI/2);      // left edge nails
+    drawNail(ctx2d, w - centerOffset, y + spacing/2, Math.PI/2);   // right edge nails
   }
-}
-
-function drawNailEdges(ctx2d, nails){
-  nails.forEach(nail => {
-    drawNail(ctx2d, nail.x, nail.y, nail.angle);
-  });
 }
 
 function drawThinPlane(ctx2d, cx, cy, color, angle){
