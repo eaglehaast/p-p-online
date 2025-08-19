@@ -1147,9 +1147,11 @@ function handleAAForPlane(p, fp){
   drawBuildings();
 
   // redraw field edges
+
   if (MAPS[mapIndex] !== "clear sky") {
     drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
   }
+
 
   // установки ПВО
   drawAAUnits();
@@ -1282,6 +1284,7 @@ function drawBrickEdges(ctx2d, w, h){
   const brickWidth = 20;
   const brickHeight = 10;
 
+
   ctx2d.fillStyle = '#B22222';
   ctx2d.strokeStyle = '#FFFFFF';
   ctx2d.lineWidth = 1;
@@ -1301,6 +1304,7 @@ function drawBrickEdges(ctx2d, w, h){
     ctx2d.fillRect(w - brickHeight, y, brickHeight, brickWidth);
     ctx2d.strokeRect(w - brickHeight, y, brickHeight, brickWidth);
   }
+
 }
 
 function drawThinPlane(ctx2d, cx, cy, color, angle){
