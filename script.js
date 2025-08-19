@@ -1164,8 +1164,8 @@ function handleAAForPlane(p, fp){
   drawAAPlacementZone();
   drawBuildings();
 
-  // redraw field edges (кирпичные стены по краям карты)
-  drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
+  // redraw field edges (bricks or nails depending on map)
+  drawFieldEdges(gameCtx, gameCanvas.width, gameCanvas.height);
 
   // установки ПВО
   drawAAUnits();
@@ -1294,6 +1294,64 @@ function drawNotebookBackground(ctx2d, w, h){
   ctx2d.setLineDash([]);
 }
 
+function drawNailEdges(ctx2d, w, h){
+  const spacing = 20;
+  const base = 4;
+  const length = 8;
+
+  ctx2d.fillStyle = "#555";
+  ctx2d.strokeStyle = "#333";
+  ctx2d.lineWidth = 1;
+
+  // top border nails
+  for(let x = 0; x < w; x += spacing){
+    const cx = x + spacing / 2;
+    ctx2d.beginPath();
+    ctx2d.moveTo(cx - base/2, 0);
+    ctx2d.lineTo(cx + base/2, 0);
+    ctx2d.lineTo(cx, length);
+    ctx2d.closePath();
+    ctx2d.fill();
+    ctx2d.stroke();
+  }
+
+  // bottom border nails
+  for(let x = 0; x < w; x += spacing){
+    const cx = x + spacing / 2;
+    ctx2d.beginPath();
+    ctx2d.moveTo(cx - base/2, h);
+    ctx2d.lineTo(cx + base/2, h);
+    ctx2d.lineTo(cx, h - length);
+    ctx2d.closePath();
+    ctx2d.fill();
+    ctx2d.stroke();
+  }
+
+  // left border nails
+  for(let y = 0; y < h; y += spacing){
+    const cy = y + spacing / 2;
+    ctx2d.beginPath();
+    ctx2d.moveTo(0, cy - base/2);
+    ctx2d.lineTo(0, cy + base/2);
+    ctx2d.lineTo(length, cy);
+    ctx2d.closePath();
+    ctx2d.fill();
+    ctx2d.stroke();
+  }
+
+  // right border nails
+  for(let y = 0; y < h; y += spacing){
+    const cy = y + spacing / 2;
+    ctx2d.beginPath();
+    ctx2d.moveTo(w, cy - base/2);
+    ctx2d.lineTo(w, cy + base/2);
+    ctx2d.lineTo(w - length, cy);
+    ctx2d.closePath();
+    ctx2d.fill();
+    ctx2d.stroke();
+  }
+}
+
 function drawBrickEdges(ctx2d, w, h){
   const brickHeight = FIELD_BORDER_THICKNESS;
 
@@ -1323,6 +1381,14 @@ function drawBrickEdges(ctx2d, w, h){
   ctx2d.rotate(Math.PI / 2);
   drawBrickWall(ctx2d, h, brickHeight);
   ctx2d.restore();
+}
+
+function drawFieldEdges(ctx2d, w, h){
+  if(MAPS[mapIndex] === "sharp edges"){
+    drawNailEdges(ctx2d, w, h);
+  } else {
+    drawBrickEdges(ctx2d, w, h);
+  }
 }
 
 function drawThinPlane(ctx2d, cx, cy, color, angle){
