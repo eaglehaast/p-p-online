@@ -64,10 +64,6 @@ const BUILDING_BUFFER      = CELL_SIZE / 2;
 const MAX_BUILDINGS_GLOBAL = 100;
 const PLANES_PER_SIDE      = 4;      // количество самолётов у каждой команды
 
-const NAIL_LENGTH = 12;
-const NAIL_WIDTH  = 4;
-const NAIL_HEAD_RADIUS = NAIL_WIDTH / 2;
-const EDGE_OFFSET = 0.5;
 
 const MIN_FLIGHT_RANGE_CELLS = 5;
 const MAX_FLIGHT_RANGE_CELLS = 30;
@@ -98,7 +94,7 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 
 
-const MAPS = ["clear sky", "wall", "two walls", "sharp edges"];
+const MAPS = ["clear sky", "wall", "two walls"];
 let mapIndex = 1;
 
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
@@ -1080,33 +1076,21 @@ function handleAAForPlane(p, fp){
       p.y += fp.vy;
 
       // field borders
-      if(p.x < POINT_RADIUS){
-        if(MAPS[mapIndex] === "sharp edges"){
-          destroyPlane(fp);
-          continue;
-        }
-        p.x = POINT_RADIUS; fp.vx = -fp.vx;
+      if (p.x < POINT_RADIUS) {
+        p.x = POINT_RADIUS;
+        fp.vx = -fp.vx;
       }
-      else if(p.x > gameCanvas.width - POINT_RADIUS){
-        if(MAPS[mapIndex] === "sharp edges"){
-          destroyPlane(fp);
-          continue;
-        }
-        p.x = gameCanvas.width - POINT_RADIUS; fp.vx = -fp.vx;
+      else if (p.x > gameCanvas.width - POINT_RADIUS) {
+        p.x = gameCanvas.width - POINT_RADIUS;
+        fp.vx = -fp.vx;
       }
-      if(p.y < POINT_RADIUS){
-        if(MAPS[mapIndex] === "sharp edges"){
-          destroyPlane(fp);
-          continue;
-        }
-        p.y = POINT_RADIUS; fp.vy = -fp.vy;
+      if (p.y < POINT_RADIUS) {
+        p.y = POINT_RADIUS;
+        fp.vy = -fp.vy;
       }
-      else if(p.y > gameCanvas.height - POINT_RADIUS){
-        if(MAPS[mapIndex] === "sharp edges"){
-          destroyPlane(fp);
-          continue;
-        }
-        p.y = gameCanvas.height - POINT_RADIUS; fp.vy = -fp.vy;
+      else if (p.y > gameCanvas.height - POINT_RADIUS) {
+        p.y = gameCanvas.height - POINT_RADIUS;
+        fp.vy = -fp.vy;
       }
 
       // столкновения со зданиями (cooldown)
@@ -1163,11 +1147,7 @@ function handleAAForPlane(p, fp){
   drawBuildings();
 
   // redraw field edges
-  if (MAPS[mapIndex] === "sharp edges") {
-    drawSharpEdges(gameCtx, gameCanvas.width, gameCanvas.height);
-  } else if (MAPS[mapIndex] !== "clear sky") {
-    drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
-  }
+  drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
 
   // установки ПВО
   drawAAUnits();
@@ -1300,68 +1280,29 @@ function drawBrickEdges(ctx2d, w, h){
   const brickWidth = 20;
   const brickHeight = 10;
 
-  ctx2d.fillStyle = '#B22222';
-  ctx2d.strokeStyle = '#FFFFFF';
-  ctx2d.lineWidth = 1;
-
-  for(let x=0; x<w; x+=brickWidth){
-    ctx2d.fillRect(x, 0, brickWidth, brickHeight);
-    ctx2d.strokeRect(x, 0, brickWidth, brickHeight);
-    ctx2d.fillRect(x, h - brickHeight, brickWidth, brickHeight);
-    ctx2d.strokeRect(x, h - brickHeight, brickWidth, brickHeight);
-  }
-
-  for(let y=brickHeight; y<h - brickHeight; y+=brickWidth){
-    // draw vertical bricks on the left side
-    ctx2d.fillRect(0, y, brickHeight, brickWidth);
-    ctx2d.strokeRect(0, y, brickHeight, brickWidth);
-    // draw vertical bricks on the right side
-    ctx2d.fillRect(w - brickHeight, y, brickHeight, brickWidth);
-    ctx2d.strokeRect(w - brickHeight, y, brickHeight, brickWidth);
-  }
-}
-
-function drawNail(ctx2d, x, y, angle){
+  // top border
   ctx2d.save();
-  ctx2d.translate(x, y);
-  ctx2d.rotate(angle);
-  ctx2d.fillStyle = '#bbbbbb';
-  ctx2d.strokeStyle = '#666666';
-  ctx2d.lineWidth = 1;
-
-  ctx2d.beginPath();
-  ctx2d.arc(0, 0, NAIL_HEAD_RADIUS, 0, Math.PI*2);
-  ctx2d.fill();
-  ctx2d.stroke();
-
-  ctx2d.fillRect(-NAIL_WIDTH/2, 0, NAIL_WIDTH, NAIL_LENGTH);
-  ctx2d.strokeRect(-NAIL_WIDTH/2, 0, NAIL_WIDTH, NAIL_LENGTH);
-  ctx2d.beginPath();
-  ctx2d.moveTo(-NAIL_WIDTH/2, NAIL_LENGTH);
-  ctx2d.lineTo(NAIL_WIDTH/2, NAIL_LENGTH);
-  ctx2d.lineTo(0, NAIL_LENGTH + NAIL_WIDTH);
-
-  ctx2d.closePath();
-  ctx2d.fill();
-  ctx2d.stroke();
+  ctx2d.translate(w / 2, brickHeight / 2);
+  drawBrickWall(ctx2d, w, brickHeight);
   ctx2d.restore();
-}
 
-function drawSharpEdges(ctx2d, w, h){
-  const spacing = 40;
+  // bottom border
+  ctx2d.save();
+  ctx2d.translate(w / 2, h - brickHeight / 2);
+  drawBrickWall(ctx2d, w, brickHeight);
+  ctx2d.restore();
 
-  const offset = EDGE_OFFSET + NAIL_HEAD_RADIUS;
+  // left border
+  ctx2d.save();
+  ctx2d.translate(brickWidth / 2, h / 2);
+  drawBrickWall(ctx2d, brickWidth, h);
+  ctx2d.restore();
 
-
-  for(let x = 0; x < w; x += spacing){
-    drawNail(ctx2d, x + spacing/2, edgeOffset, 0);           // top edge nails
-    drawNail(ctx2d, x + spacing/2, h - edgeOffset, Math.PI); // bottom edge nails
-  }
-  for(let y = 0; y < h; y += spacing){
-    drawNail(ctx2d, sideOffset, y + spacing/2, -Math.PI/2);      // left edge nails
-    drawNail(ctx2d, w - sideOffset, y + spacing/2, Math.PI/2);   // right edge nails
-
-  }
+  // right border
+  ctx2d.save();
+  ctx2d.translate(w - brickWidth / 2, h / 2);
+  drawBrickWall(ctx2d, brickWidth, h);
+  ctx2d.restore();
 }
 
 function drawThinPlane(ctx2d, cx, cy, color, angle){
@@ -1939,8 +1880,6 @@ function applyCurrentMap(){
       height: wallHeight,
       color: "darkred"
     });
-  } else if (MAPS[mapIndex] === "sharp edges") {
-    // nails around the border, no additional buildings
   }
   updateMapDisplay();
   renderScoreboard();
