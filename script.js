@@ -1909,10 +1909,8 @@ function updateAmplitudeIndicator(){
   const sight = el.querySelector(".crosshair");
   if(!sight) return;
 
-  const maxOffsetPx = 35;
-  const ratio = aimingAmplitude / MAX_AMPLITUDE;
-  const oscPx = maxOffsetPx * ratio * Math.sin(oscillationPhase);
-  sight.style.transform = `translate(-50%, -50%) translateX(${oscPx}px)`;
+  const angleDeg = aimingAmplitude * Math.sin(oscillationPhase);
+  sight.style.transform = `translateX(-50%) rotate(${angleDeg}deg)`;
 
   const disp = document.getElementById("amplitudeAngleDisplay");
   if(disp){
