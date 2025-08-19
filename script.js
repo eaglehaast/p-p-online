@@ -87,19 +87,12 @@ const AA_MIN_DIST_FROM_EDGES = 40;
 // Quarter-circle afterglow so the sweep persists for 90° of rotation
 const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
-// Nail dimensions for the "sharp edges" map
-const NAIL_LENGTH = 12;
-const NAIL_WIDTH  = 4;
-const NAIL_HEAD_RADIUS = 6;
-
-
-
 /* ======= STATE ======= */
 
 
 
 
-const MAPS = ["clear sky", "wall", "two walls", "sharp edges"];
+const MAPS = ["clear sky", "wall", "two walls"];
 let mapIndex = 1;
 
 let flightRangeCells = 15;     // значение «в клетках» для меню/физики
@@ -1064,34 +1057,11 @@ function handleAAForPlane(p, fp){
       p.x += fp.vx;
       p.y += fp.vy;
 
-      // отражения или смерть от границ поля
-      if(MAPS[mapIndex] === "sharp edges"){
-        if(
-          p.x < POINT_RADIUS ||
-          p.x > gameCanvas.width - POINT_RADIUS ||
-          p.y < POINT_RADIUS ||
-          p.y > gameCanvas.height - POINT_RADIUS
-        ){
-          p.isAlive = false;
-          p.burning = true;
-          p.collisionX = p.x;
-          p.collisionY = p.y;
-          flyingPoints = flyingPoints.filter(x => x !== fp);
-          checkVictory();
-          if(!isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
-            turnIndex = (turnIndex + 1) % turnColors.length;
-            if(gameMode==="computer" && turnColors[turnIndex]==="blue"){
-              aiMoveScheduled = false;
-            }
-          }
-          continue;
-        }
-      } else {
-        if(p.x < POINT_RADIUS){ p.x = POINT_RADIUS; fp.vx = -fp.vx; }
-        else if(p.x > gameCanvas.width - POINT_RADIUS){ p.x = gameCanvas.width - POINT_RADIUS; fp.vx = -fp.vx; }
-        if(p.y < POINT_RADIUS){ p.y = POINT_RADIUS; fp.vy = -fp.vy; }
-        else if(p.y > gameCanvas.height - POINT_RADIUS){ p.y = gameCanvas.height - POINT_RADIUS; fp.vy = -fp.vy; }
-      }
+      // отражения от границ поля
+      if(p.x < POINT_RADIUS){ p.x = POINT_RADIUS; fp.vx = -fp.vx; }
+      else if(p.x > gameCanvas.width - POINT_RADIUS){ p.x = gameCanvas.width - POINT_RADIUS; fp.vx = -fp.vx; }
+      if(p.y < POINT_RADIUS){ p.y = POINT_RADIUS; fp.vy = -fp.vy; }
+      else if(p.y > gameCanvas.height - POINT_RADIUS){ p.y = gameCanvas.height - POINT_RADIUS; fp.vy = -fp.vy; }
 
       // столкновения со зданиями (cooldown)
       if(fp.collisionCooldown>0){ fp.collisionCooldown--; }
@@ -1147,9 +1117,7 @@ function handleAAForPlane(p, fp){
   drawBuildings();
 
   // redraw field edges
-  if (MAPS[mapIndex] === "sharp edges") {
-    drawSharpEdges(gameCtx, gameCanvas.width, gameCanvas.height);
-  } else if (MAPS[mapIndex] !== "clear sky") {
+  if (MAPS[mapIndex] !== "clear sky") {
     drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
   }
 
@@ -1302,51 +1270,6 @@ function drawBrickEdges(ctx2d, w, h){
     // draw vertical bricks on the right side
     ctx2d.fillRect(w - brickHeight, y, brickHeight, brickWidth);
     ctx2d.strokeRect(w - brickHeight, y, brickHeight, brickWidth);
-  }
-}
-
-function drawNail(ctx2d, x, y, angle){
-  ctx2d.save();
-  ctx2d.translate(x, y);
-  ctx2d.rotate(angle);
-  ctx2d.fillStyle = '#bbbbbb';
-  ctx2d.strokeStyle = '#666666';
-  ctx2d.lineWidth = 1;
-
-  // head
-  ctx2d.beginPath();
-  ctx2d.arc(0, 0, NAIL_HEAD_RADIUS, 0, Math.PI*2);
-  ctx2d.fill();
-  ctx2d.stroke();
-
-  // shaft
-  ctx2d.fillRect(-NAIL_WIDTH/2, NAIL_HEAD_RADIUS, NAIL_WIDTH, NAIL_LENGTH);
-  ctx2d.strokeRect(-NAIL_WIDTH/2, NAIL_HEAD_RADIUS, NAIL_WIDTH, NAIL_LENGTH);
-
-  // tip
-  ctx2d.beginPath();
-  ctx2d.moveTo(-NAIL_WIDTH/2, NAIL_HEAD_RADIUS + NAIL_LENGTH);
-  ctx2d.lineTo(NAIL_WIDTH/2, NAIL_HEAD_RADIUS + NAIL_LENGTH);
-  ctx2d.lineTo(0, NAIL_HEAD_RADIUS + NAIL_LENGTH + NAIL_WIDTH);
-  ctx2d.closePath();
-  ctx2d.fill();
-  ctx2d.stroke();
-  ctx2d.restore();
-}
-
-
-function drawSharpEdges(ctx2d, w, h){
-  const spacing = 40;
-  const edgeOffset = 0.5; // keep strokes inside the canvas
-  const centerOffset = NAIL_HEAD_RADIUS + edgeOffset;
-
-  for(let x = 0; x < w; x += spacing){
-    drawNail(ctx2d, x + spacing/2, centerOffset, 0);            // top edge nails
-    drawNail(ctx2d, x + spacing/2, h - centerOffset, Math.PI);  // bottom edge nails
-  }
-  for(let y = 0; y < h; y += spacing){
-    drawNail(ctx2d, centerOffset, y + spacing/2, -Math.PI/2);      // left edge nails
-    drawNail(ctx2d, w - centerOffset, y + spacing/2, Math.PI/2);   // right edge nails
   }
 }
 
@@ -1925,8 +1848,6 @@ function applyCurrentMap(){
       height: wallHeight,
       color: "darkred"
     });
-  } else if (MAPS[mapIndex] === "sharp edges") {
-    // no buildings; edges are lethal
   }
   updateMapDisplay();
   renderScoreboard();
