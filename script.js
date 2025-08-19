@@ -1326,8 +1326,6 @@ function drawNail(ctx2d, x, y, angle){
 
 function drawSharpEdges(ctx2d, w, h){
   const spacing = 40;
-  const edgeOffset = 0.5;      // keep strokes inside the canvas
-  const sideOffset = edgeOffset + NAIL_WIDTH / 2;
 
   for(let x = 0; x < w; x += spacing){
     drawNail(ctx2d, x + spacing/2, edgeOffset, 0);           // top edge nails
