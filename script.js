@@ -536,7 +536,7 @@ function drawAAPreview(){
     const alpha = (1 - age/AA_TRAIL_MS) * 0.3;
 
     gameCtx.globalAlpha = alpha;
-    gameCtx.strokeStyle = currentPlcer;
+    gameCtx.strokeStyle = currentPlacer;
     gameCtx.lineWidth = 2;
     gameCtx.lineCap = "round";
     const trailAng = seg.angleDeg * Math.PI/180;
