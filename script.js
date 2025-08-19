@@ -536,7 +536,7 @@ function drawAAPreview(){
     const alpha = (1 - age/AA_TRAIL_MS) * 0.3;
 
     gameCtx.globalAlpha = alpha;
-    gameCtx.strokeStyle = currentPlacer;
+    gameCtx.strokeStyle = currentPlcer;
     gameCtx.lineWidth = 2;
     gameCtx.lineCap = "round";
     const trailAng = seg.angleDeg * Math.PI/180;
@@ -1146,8 +1146,10 @@ function handleAAForPlane(p, fp){
   drawAAPlacementZone();
   drawBuildings();
 
-  // redraw field edges
-  drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
+  // redraw field edges (только если есть «стены» по краям карты)
+  if (MAPS[mapIndex] !== "clear sky") {
+    drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
+  }
 
   // установки ПВО
   drawAAUnits();
