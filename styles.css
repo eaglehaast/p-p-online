@@ -366,15 +366,32 @@ body {
   max-width: 100%;
   max-height: 100%;
 }
-#amplitudeIndicator .line3 {
+#amplitudeIndicator .crosshair {
   position: absolute;
-  width: 80px;
-  height: 3px;
-  background-color: #6c757d;
   top: 50%;
-  left: 10px;
-  transform-origin: 0 50%;
-  border-radius: 2px;
+  left: 50%;
+  width: 30px;
+  height: 30px;
+  transform: translate(-50%, -50%);
+}
+#amplitudeIndicator .crosshair .horizontal,
+#amplitudeIndicator .crosshair .vertical {
+  position: absolute;
+  background-color: #6c757d;
+}
+#amplitudeIndicator .crosshair .horizontal {
+  top: 50%;
+  left: 0;
+  width: 30px;
+  height: 3px;
+  transform: translateY(-50%);
+}
+#amplitudeIndicator .crosshair .vertical {
+  left: 50%;
+  top: 0;
+  width: 3px;
+  height: 30px;
+  transform: translateX(-50%);
 }
 #amplitudeAngleDisplay {
   font-size: 22px;
