@@ -5,9 +5,8 @@
 ## Running the game
 
 1. Clone or download this repository.
-2. Run `python color_controller.py` and choose a color.
-3. Open `index.html` in any browser.
-4. Choose a game mode and press **Play**.
+2. Open `index.html` in any browser.
+3. Choose a game mode and press **Play**.
 
 ## Game modes
 
