@@ -1075,23 +1075,39 @@ function handleAAForPlane(p, fp){
       p.x += fp.vx;
       p.y += fp.vy;
 
-      // field borders: walls surround canvas from outside
-      if (p.x < 0) {
-        p.x = 0;
-        fp.vx = -fp.vx;
-      }
-      else if (p.x > gameCanvas.width) {
-        p.x = gameCanvas.width;
-        fp.vx = -fp.vx;
-      }
-      if (p.y < 0) {
-        p.y = 0;
-        fp.vy = -fp.vy;
-      }
-      else if (p.y > gameCanvas.height) {
-        p.y = gameCanvas.height;
-        fp.vy = -fp.vy;
-      }
+        // field borders
+        if (p.x < 0) {
+          p.x = 0;
+          if (MAPS[mapIndex] === "sharp edges") {
+            destroyPlane(fp);
+            continue;
+          }
+          fp.vx = -fp.vx;
+        }
+        else if (p.x > gameCanvas.width) {
+          p.x = gameCanvas.width;
+          if (MAPS[mapIndex] === "sharp edges") {
+            destroyPlane(fp);
+            continue;
+          }
+          fp.vx = -fp.vx;
+        }
+        if (p.y < 0) {
+          p.y = 0;
+          if (MAPS[mapIndex] === "sharp edges") {
+            destroyPlane(fp);
+            continue;
+          }
+          fp.vy = -fp.vy;
+        }
+        else if (p.y > gameCanvas.height) {
+          p.y = gameCanvas.height;
+          if (MAPS[mapIndex] === "sharp edges") {
+            destroyPlane(fp);
+            continue;
+          }
+          fp.vy = -fp.vy;
+        }
 
       // столкновения со зданиями (cooldown)
       if(fp.collisionCooldown>0){ fp.collisionCooldown--; }
