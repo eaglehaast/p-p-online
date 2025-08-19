@@ -1324,16 +1324,23 @@ function drawNail(ctx2d, x, y, angle){
 
 function drawSharpEdges(ctx2d, w, h){
   const spacing = 40;
-  const edgeOffsetY = 1; // offset from top/bottom to keep nails visible
-  const edgeOffsetX = 2; // half nail width to keep side nails inside
-  for(let x=0; x<w; x+=spacing){
-    drawNail(ctx2d, x + spacing/2, edgeOffsetY, 0);
-    drawNail(ctx2d, x + spacing/2, h - edgeOffsetY, Math.PI);
-  }
-  for(let y=0; y<h; y+=spacing){
+// финальная версия без конфликтов
+function drawSharpEdges(ctx2d, w, h, spacing = 40) {
+  const edgeOffsetY = 1; // чуть отступить от верха/низа, чтобы гвозди не "резались"
+  const edgeOffsetX = 2; // небольшой отступ слева/справа
 
-    drawNail(ctx2d, edgeOffsetX, y + spacing/2, Math.PI/2);
-    drawNail(ctx2d, w - edgeOffsetX, y + spacing/2, -Math.PI/2);
+  // верх и низ
+  for (let x = 0; x < w; x += spacing) {
+    drawNail(ctx2d, x + spacing / 2, edgeOffsetY, 0);          // верх, "смотрит" вверх
+    drawNail(ctx2d, x + spacing / 2, h - edgeOffsetY, Math.PI); // низ, "смотрит" вниз
+  }
+
+  // лево и право
+  for (let y = 0; y < h; y += spacing) {
+    drawNail(ctx2d, edgeOffsetX, y + spacing / 2, -Math.PI / 2); // лево, "смотрит" влево
+    drawNail(ctx2d, w - edgeOffsetX, y + spacing / 2,  Math.PI / 2); // право, "смотрит" вправо
+  }
+}
 
   }
 }
