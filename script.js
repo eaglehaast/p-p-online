@@ -90,8 +90,10 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 // Nail dimensions for the "sharp edges" map
 const NAIL_LENGTH = 12;
 const NAIL_WIDTH  = 4;
+// Offsets keep strokes fully visible along the canvas edges
 const EDGE_OFFSET = 0.5;
 const SIDE_OFFSET = NAIL_WIDTH / 2 + EDGE_OFFSET;
+const NAIL_SPACING = 40; // distance between nails along borders
 
 /* ======= STATE ======= */
 
@@ -1297,15 +1299,13 @@ function drawNail(ctx2d, x, y, angle){
 }
 
 function drawSharpEdges(ctx2d, w, h){
-  const spacing = 40;
-
-  for(let x = 0; x < w; x += spacing){
-    drawNail(ctx2d, x + spacing/2 + 0.5, EDGE_OFFSET, 0);
-    drawNail(ctx2d, x + spacing/2 + 0.5, h - EDGE_OFFSET, Math.PI);
+  for(let x = 0; x < w; x += NAIL_SPACING){
+    drawNail(ctx2d, x + NAIL_SPACING/2 + 0.5, EDGE_OFFSET, 0);
+    drawNail(ctx2d, x + NAIL_SPACING/2 + 0.5, h - EDGE_OFFSET, Math.PI);
   }
-  for(let y = 0; y < h; y += spacing){
-    drawNail(ctx2d, SIDE_OFFSET, y + spacing/2 + 0.5, -Math.PI/2);
-    drawNail(ctx2d, w - SIDE_OFFSET, y + spacing/2 + 0.5, Math.PI/2);
+  for(let y = 0; y < h; y += NAIL_SPACING){
+    drawNail(ctx2d, SIDE_OFFSET, y + NAIL_SPACING/2 + 0.5, -Math.PI/2);
+    drawNail(ctx2d, w - SIDE_OFFSET, y + NAIL_SPACING/2 + 0.5, Math.PI/2);
   }
 }
 
