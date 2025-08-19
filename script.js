@@ -1324,14 +1324,24 @@ function drawNail(ctx2d, x, y, angle){
 
 function drawSharpEdges(ctx2d, w, h){
   const spacing = 40;
-  const edgeOffset = 0.5; // keep strokes inside the canvas
-  for(let x = 0; x < w; x += spacing){
-    drawNail(ctx2d, x + spacing/2, edgeOffset, 0);           // top edge nails
-    drawNail(ctx2d, x + spacing/2, h - edgeOffset, Math.PI); // bottom edge nails
+// финальная версия без конфликтов
+function drawSharpEdges(ctx2d, w, h, spacing = 40) {
+  const edgeOffsetY = 1; // чуть отступить от верха/низа, чтобы гвозди не "резались"
+  const edgeOffsetX = 2; // небольшой отступ слева/справа
+
+  // верх и низ
+  for (let x = 0; x < w; x += spacing) {
+    drawNail(ctx2d, x + spacing / 2, edgeOffsetY, 0);          // верх, "смотрит" вверх
+    drawNail(ctx2d, x + spacing / 2, h - edgeOffsetY, Math.PI); // низ, "смотрит" вниз
   }
-  for(let y = 0; y < h; y += spacing){
-    drawNail(ctx2d, edgeOffset, y + spacing/2, -Math.PI/2);      // left edge nails
-    drawNail(ctx2d, w - edgeOffset, y + spacing/2, Math.PI/2);   // right edge nails
+
+  // лево и право
+  for (let y = 0; y < h; y += spacing) {
+    drawNail(ctx2d, edgeOffsetX, y + spacing / 2, -Math.PI / 2); // лево, "смотрит" влево
+    drawNail(ctx2d, w - edgeOffsetX, y + spacing / 2,  Math.PI / 2); // право, "смотрит" вправо
+  }
+}
+
   }
 }
 
