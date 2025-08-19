@@ -58,7 +58,7 @@ const BOUNCE_FRAMES        = 68;
 const MAX_DRAG_DISTANCE    = 100;    // px
 const ATTACK_RANGE_PX      = 300;    // px
 const FIELD_BORDER_THICKNESS = 10;    // px, ширина кирпичной рамки по краям
-const FIELD_BORDER_OFFSET    = FIELD_BORDER_THICKNESS / 2; // внутренняя граница для отражения
+let FIELD_BORDER_OFFSET = FIELD_BORDER_THICKNESS; // внутренняя граница для отражения
 // Используем бесконечное количество сегментов,
 // чтобы следы самолётов сохранялись до конца раунда.
 const MAX_TRAIL_SEGMENTS   = Infinity;
@@ -1354,30 +1354,30 @@ function drawNailEdges(ctx2d, w, h){
 
 function drawBrickEdges(ctx2d, w, h){
   const brickHeight = FIELD_BORDER_THICKNESS;
+  // draw all walls fully inside the canvas
 
   // top border
   ctx2d.save();
-  // draw half of the wall inside the canvas so bricks remain visible
-  ctx2d.translate(w / 2, 0);
+  ctx2d.translate(w / 2, brickHeight / 2);
   drawBrickWall(ctx2d, w, brickHeight);
   ctx2d.restore();
 
   // bottom border
   ctx2d.save();
-  ctx2d.translate(w / 2, h);
+  ctx2d.translate(w / 2, h - brickHeight / 2);
   drawBrickWall(ctx2d, w, brickHeight);
   ctx2d.restore();
 
   // left border
   ctx2d.save();
-  ctx2d.translate(0, h / 2);
+  ctx2d.translate(brickHeight / 2, h / 2);
   ctx2d.rotate(Math.PI / 2);
   drawBrickWall(ctx2d, h, brickHeight);
   ctx2d.restore();
 
   // right border
   ctx2d.save();
-  ctx2d.translate(w, h / 2);
+  ctx2d.translate(w - brickHeight / 2, h / 2);
   ctx2d.rotate(Math.PI / 2);
   drawBrickWall(ctx2d, h, brickHeight);
   ctx2d.restore();
@@ -1933,6 +1933,7 @@ function updateMapDisplay(){
 
 function applyCurrentMap(){
   buildings = [];
+  FIELD_BORDER_OFFSET = (MAPS[mapIndex] === "sharp edges") ? 0 : FIELD_BORDER_THICKNESS;
   if(MAPS[mapIndex] === "clear sky" || MAPS[mapIndex] === "sharp edges"){
     // no buildings to add
   } else if (MAPS[mapIndex] === "wall") {
