@@ -92,6 +92,7 @@ const AA_MIN_DIST_FROM_EDGES = 40;
 // Quarter-circle afterglow so the sweep persists for 90° of rotation
 const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
+
 /* ======= STATE ======= */
 
 
@@ -1327,16 +1328,19 @@ function drawNail(ctx2d, x, y, angle){
   ctx2d.fillStyle = '#bbbbbb';
   ctx2d.strokeStyle = '#666666';
   ctx2d.lineWidth = 1;
+
   ctx2d.beginPath();
   ctx2d.arc(0, 0, NAIL_HEAD_RADIUS, 0, Math.PI*2);
   ctx2d.fill();
   ctx2d.stroke();
-  ctx2d.fillRect(-NAIL_WIDTH/2, NAIL_HEAD_RADIUS, NAIL_WIDTH, NAIL_LENGTH);
-  ctx2d.strokeRect(-NAIL_WIDTH/2, NAIL_HEAD_RADIUS, NAIL_WIDTH, NAIL_LENGTH);
+
+  ctx2d.fillRect(-NAIL_WIDTH/2, 0, NAIL_WIDTH, NAIL_LENGTH);
+  ctx2d.strokeRect(-NAIL_WIDTH/2, 0, NAIL_WIDTH, NAIL_LENGTH);
   ctx2d.beginPath();
-  ctx2d.moveTo(-NAIL_WIDTH/2, NAIL_HEAD_RADIUS + NAIL_LENGTH);
-  ctx2d.lineTo(NAIL_WIDTH/2, NAIL_HEAD_RADIUS + NAIL_LENGTH);
-  ctx2d.lineTo(0, NAIL_HEAD_RADIUS + NAIL_LENGTH + NAIL_HEAD_RADIUS);
+  ctx2d.moveTo(-NAIL_WIDTH/2, NAIL_LENGTH);
+  ctx2d.lineTo(NAIL_WIDTH/2, NAIL_LENGTH);
+  ctx2d.lineTo(0, NAIL_LENGTH + NAIL_WIDTH);
+
   ctx2d.closePath();
   ctx2d.fill();
   ctx2d.stroke();
@@ -1345,16 +1349,18 @@ function drawNail(ctx2d, x, y, angle){
 
 function drawSharpEdges(ctx2d, w, h){
   const spacing = 40;
+
   const offset = EDGE_OFFSET + NAIL_HEAD_RADIUS;
+
+
   for(let x = 0; x < w; x += spacing){
-    const cx = x + spacing/2;
-    drawNail(ctx2d, cx, offset, 0);
-    drawNail(ctx2d, cx, h - offset, Math.PI);
+    drawNail(ctx2d, x + spacing/2, edgeOffset, 0);           // top edge nails
+    drawNail(ctx2d, x + spacing/2, h - edgeOffset, Math.PI); // bottom edge nails
   }
   for(let y = 0; y < h; y += spacing){
-    const cy = y + spacing/2;
-    drawNail(ctx2d, offset, cy, -Math.PI/2);
-    drawNail(ctx2d, w - offset, cy, Math.PI/2);
+    drawNail(ctx2d, sideOffset, y + spacing/2, -Math.PI/2);      // left edge nails
+    drawNail(ctx2d, w - sideOffset, y + spacing/2, Math.PI/2);   // right edge nails
+
   }
 }
 
