@@ -1146,10 +1146,8 @@ function handleAAForPlane(p, fp){
   drawAAPlacementZone();
   drawBuildings();
 
-  // redraw field edges (только если есть «стены» по краям карты)
-  if (MAPS[mapIndex] !== "clear sky") {
-    drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
-  }
+  // redraw field edges (кирпичные стены по краям карты)
+  drawBrickEdges(gameCtx, gameCanvas.width, gameCanvas.height);
 
   // установки ПВО
   drawAAUnits();
