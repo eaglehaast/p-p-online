@@ -231,6 +231,7 @@ function resetGame(){
   buildings = [];
   mapIndex = 1;
   applyCurrentMap();
+
   if (settings.weather) {
     initWeather();
   } else {
@@ -238,6 +239,7 @@ function resetGame(){
     windParticles = [];
     clouds = [];
   }
+
   aaUnits = [];
 
   hasShotThisRound = false;
@@ -1132,10 +1134,12 @@ function handleAAForPlane(p, fp){
   // фон
   gameCtx.clearRect(0,0, gameCanvas.width, gameCanvas.height);
   drawNotebookBackground(gameCtx, gameCanvas.width, gameCanvas.height);
+
   if (settings.weather) {
     drawClouds();
     drawWind();
   }
+
   aimCtx.clearRect(0,0, aimCanvas.width, aimCanvas.height);
 
   // Планирование хода ИИ
@@ -2132,6 +2136,7 @@ function resizeCanvas() {
   aimCanvas.width = window.innerWidth;
   aimCanvas.height = window.innerHeight;
 
+
   if (settings.weather) {
     initWeather();
   } else {
@@ -2139,6 +2144,7 @@ function resizeCanvas() {
     windParticles = [];
     clouds = [];
   }
+
 
   // Переинициализируем самолёты
   if(points.length === 0) {
