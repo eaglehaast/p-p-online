@@ -128,6 +128,11 @@ let aaUnits     = [];
 let aaPlacementPreview = null;
 let aaPreviewTrail = [];
 
+// Weather visuals
+let windSystems = [];
+let windParticles = [];
+let clouds = [];
+
 
 let aaPointerDown = false;
 
@@ -186,6 +191,31 @@ function makePlane(x,y,color,angle){
   };
 }
 
+function initWeather(){
+  windSystems = [
+    { x: gameCanvas.width * 0.3, y: gameCanvas.height * 0.3, strength: 4000, dir: 1 },
+    { x: gameCanvas.width * 0.7, y: gameCanvas.height * 0.6, strength: 4000, dir: -1 }
+  ];
+
+  windParticles = [];
+  for (let i = 0; i < 40; i++) {
+    windParticles.push({
+      x: Math.random() * gameCanvas.width,
+      y: Math.random() * gameCanvas.height
+    });
+  }
+
+  clouds = [];
+  for (let i = 0; i < 5; i++) {
+    clouds.push({
+      x: Math.random() * gameCanvas.width,
+      y: Math.random() * gameCanvas.height * 0.5,
+      size: 30 + Math.random() * 40,
+      speed: 0.1 + Math.random() * 0.3
+    });
+  }
+}
+
 function resetGame(){
   isGameOver= false;
   winnerColor= null;
@@ -199,6 +229,7 @@ function resetGame(){
   buildings = [];
   mapIndex = 1;
   applyCurrentMap();
+  initWeather();
   aaUnits = [];
 
   hasShotThisRound = false;
@@ -494,6 +525,51 @@ function placeAA({owner,x,y}){
     dwellTimeMs: AA_DEFAULTS.dwellTimeMs,
     trail: []
   });
+}
+
+function drawClouds(){
+  gameCtx.save();
+  gameCtx.fillStyle = 'rgba(255,255,255,0.8)';
+  for(const c of clouds){
+    c.x += c.speed;
+    if(c.x - c.size > gameCanvas.width){
+      c.x = -c.size;
+      c.y = Math.random() * gameCanvas.height * 0.5;
+    }
+    gameCtx.beginPath();
+    gameCtx.ellipse(c.x, c.y, c.size, c.size * 0.6, 0, 0, Math.PI * 2);
+    gameCtx.fill();
+  }
+  gameCtx.restore();
+}
+
+function drawWind(){
+  gameCtx.save();
+  gameCtx.strokeStyle = 'rgba(150,150,255,0.7)';
+  gameCtx.lineWidth = 1;
+  for(const p of windParticles){
+    let vx = 0, vy = 0;
+    for(const sys of windSystems){
+      const dx = p.x - sys.x;
+      const dy = p.y - sys.y;
+      const distSq = dx * dx + dy * dy + 1;
+      const factor = sys.strength / distSq;
+      vx += -dy * sys.dir * factor;
+      vy += dx * sys.dir * factor;
+    }
+    p.x += vx;
+    p.y += vy;
+    if(p.x < 0) p.x = gameCanvas.width;
+    if(p.x > gameCanvas.width) p.x = 0;
+    if(p.y < 0) p.y = gameCanvas.height;
+    if(p.y > gameCanvas.height) p.y = 0;
+
+    gameCtx.beginPath();
+    gameCtx.moveTo(p.x, p.y);
+    gameCtx.lineTo(p.x - vx * 2, p.y - vy * 2);
+    gameCtx.stroke();
+  }
+  gameCtx.restore();
 }
 
 function drawAAPlacementZone(){
@@ -1048,6 +1124,8 @@ function handleAAForPlane(p, fp){
   // фон
   gameCtx.clearRect(0,0, gameCanvas.width, gameCanvas.height);
   drawNotebookBackground(gameCtx, gameCanvas.width, gameCanvas.height);
+  drawClouds();
+  drawWind();
   aimCtx.clearRect(0,0, aimCanvas.width, aimCanvas.height);
 
   // Планирование хода ИИ
@@ -2028,6 +2106,8 @@ function resizeCanvas() {
   aimCanvas.style.height = window.innerHeight + 'px';
   aimCanvas.width = window.innerWidth;
   aimCanvas.height = window.innerHeight;
+
+  initWeather();
 
   // Переинициализируем самолёты
   if(points.length === 0) {
