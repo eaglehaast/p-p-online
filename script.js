@@ -31,6 +31,7 @@ const mapPlusBtn    = document.getElementById("mapPlus");
 const amplitudeMinusBtn   = document.getElementById("amplitudeMinus");
 const amplitudePlusBtn    = document.getElementById("amplitudePlus");
 const addAAToggle         = document.getElementById("addAAToggle");
+const weatherToggle       = document.getElementById("weatherToggle");
 
 const endGameDiv  = document.getElementById("endGameButtons");
 const yesBtn      = document.getElementById("yesButton");
@@ -146,7 +147,8 @@ let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_STA
 let currentPlacer = null; // 'green' | 'blue'
 
 let settings = {
-  addAA: localStorage.getItem('settings.addAA') === 'true'
+  addAA: localStorage.getItem('settings.addAA') === 'true',
+  weather: localStorage.getItem('settings.weather') !== 'false'
 };
 
 
@@ -229,7 +231,15 @@ function resetGame(){
   buildings = [];
   mapIndex = 1;
   applyCurrentMap();
-  initWeather();
+
+  if (settings.weather) {
+    initWeather();
+  } else {
+    windSystems = [];
+    windParticles = [];
+    clouds = [];
+  }
+
   aaUnits = [];
 
   hasShotThisRound = false;
@@ -1124,8 +1134,12 @@ function handleAAForPlane(p, fp){
   // фон
   gameCtx.clearRect(0,0, gameCanvas.width, gameCanvas.height);
   drawNotebookBackground(gameCtx, gameCanvas.width, gameCanvas.height);
-  drawClouds();
-  drawWind();
+
+  if (settings.weather) {
+    drawClouds();
+    drawWind();
+  }
+
   aimCtx.clearRect(0,0, aimCanvas.width, aimCanvas.height);
 
   // Планирование хода ИИ
@@ -1824,6 +1838,21 @@ if (addAAToggle) {
   });
 }
 
+if (weatherToggle) {
+  weatherToggle.checked = settings.weather;
+  weatherToggle.addEventListener('change', (e)=>{
+    settings.weather = e.target.checked;
+    localStorage.setItem('settings.weather', settings.weather);
+    if (settings.weather) {
+      initWeather();
+    } else {
+      windSystems = [];
+      windParticles = [];
+      clouds = [];
+    }
+  });
+}
+
 /* Flight Range */
 setupRepeatButton(flightRangeMinusBtn, ()=>{
   if(flightRangeCells > MIN_FLIGHT_RANGE_CELLS){
@@ -2107,7 +2136,15 @@ function resizeCanvas() {
   aimCanvas.width = window.innerWidth;
   aimCanvas.height = window.innerHeight;
 
-  initWeather();
+
+  if (settings.weather) {
+    initWeather();
+  } else {
+    windSystems = [];
+    windParticles = [];
+    clouds = [];
+  }
+
 
   // Переинициализируем самолёты
   if(points.length === 0) {
