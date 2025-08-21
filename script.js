@@ -31,7 +31,6 @@ const mapPlusBtn    = document.getElementById("mapPlus");
 const amplitudeMinusBtn   = document.getElementById("amplitudeMinus");
 const amplitudePlusBtn    = document.getElementById("amplitudePlus");
 const addAAToggle         = document.getElementById("addAAToggle");
-const weatherToggle       = document.getElementById("weatherToggle");
 
 const endGameDiv  = document.getElementById("endGameButtons");
 const yesBtn      = document.getElementById("yesButton");
@@ -129,12 +128,6 @@ let aaUnits     = [];
 let aaPlacementPreview = null;
 let aaPreviewTrail = [];
 
-// Weather visuals
-let windSystems = [];
-let windParticles = [];
-let clouds = [];
-
-
 let aaPointerDown = false;
 
 
@@ -147,8 +140,7 @@ let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_STA
 let currentPlacer = null; // 'green' | 'blue'
 
 let settings = {
-  addAA: localStorage.getItem('settings.addAA') === 'true',
-  weather: localStorage.getItem('settings.weather') !== 'false'
+  addAA: localStorage.getItem('settings.addAA') === 'true'
 };
 
 
@@ -193,20 +185,6 @@ function makePlane(x,y,color,angle){
   };
 }
 
-function initWeather(){
-  windSystems = [];
-  windParticles = [];
-
-  clouds = [];
-  for (let i = 0; i < 5; i++) {
-    clouds.push({
-      x: Math.random() * gameCanvas.width,
-      y: Math.random() * gameCanvas.height,
-      size: 30 + Math.random() * 40,
-      speed: 0.1 + Math.random() * 0.3
-    });
-  }
-}
 
 function resetGame(){
   isGameOver= false;
@@ -221,14 +199,6 @@ function resetGame(){
   buildings = [];
   mapIndex = 1;
   applyCurrentMap();
-
-  if (settings.weather) {
-    initWeather();
-  } else {
-    windSystems = [];
-    windParticles = [];
-    clouds = [];
-  }
 
   aaUnits = [];
 
@@ -527,21 +497,6 @@ function placeAA({owner,x,y}){
   });
 }
 
-function drawClouds(){
-  gameCtx.save();
-  gameCtx.fillStyle = 'rgba(255,255,255,0.8)';
-  for(const c of clouds){
-    c.x += c.speed;
-    if(c.x - c.size > gameCanvas.width){
-      c.x = -c.size;
-      c.y = Math.random() * gameCanvas.height;
-    }
-    gameCtx.beginPath();
-    gameCtx.ellipse(c.x, c.y, c.size, c.size * 0.6, 0, 0, Math.PI * 2);
-    gameCtx.fill();
-  }
-  gameCtx.restore();
-}
 
 function drawAAPlacementZone(){
   if(phase !== 'AA_PLACEMENT') return;
@@ -1319,10 +1274,6 @@ function handleAAForPlane(p, fp){
     endGameDiv.style.display="block";
   }
 
-  if (settings.weather) {
-    drawClouds();
-  }
-
   animationFrameId = requestAnimationFrame(gameDraw);
 }
 
@@ -1798,21 +1749,6 @@ if (addAAToggle) {
   });
 }
 
-if (weatherToggle) {
-  weatherToggle.checked = settings.weather;
-  weatherToggle.addEventListener('change', (e)=>{
-    settings.weather = e.target.checked;
-    localStorage.setItem('settings.weather', settings.weather);
-    if (settings.weather) {
-      initWeather();
-    } else {
-      windSystems = [];
-      windParticles = [];
-      clouds = [];
-    }
-  });
-}
-
 /* Flight Range */
 setupRepeatButton(flightRangeMinusBtn, ()=>{
   if(flightRangeCells > MIN_FLIGHT_RANGE_CELLS){
@@ -2095,15 +2031,6 @@ function resizeCanvas() {
   aimCanvas.style.height = window.innerHeight + 'px';
   aimCanvas.width = window.innerWidth;
   aimCanvas.height = window.innerHeight;
-
-
-  if (settings.weather) {
-    initWeather();
-  } else {
-    windSystems = [];
-    windParticles = [];
-    clouds = [];
-  }
 
 
   // Переинициализируем самолёты
