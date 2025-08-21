@@ -185,6 +185,7 @@ function makePlane(x,y,color,angle){
   };
 }
 
+
 function resetGame(){
   isGameOver= false;
   winnerColor= null;
@@ -495,6 +496,7 @@ function placeAA({owner,x,y}){
     trail: []
   });
 }
+
 
 function drawAAPlacementZone(){
   if(phase !== 'AA_PLACEMENT') return;
@@ -1271,6 +1273,7 @@ function handleAAForPlane(p, fp){
 
     endGameDiv.style.display="block";
   }
+
   animationFrameId = requestAnimationFrame(gameDraw);
 }
 
