@@ -36,9 +36,7 @@ const endGameDiv  = document.getElementById("endGameButtons");
 const yesBtn      = document.getElementById("yesButton");
 const noBtn       = document.getElementById("noButton");
 const flame       = document.getElementById("flame");
-const parachuteImg = new Image();
-parachuteImg.src = "parachute.gif";
-let parachuteState = null;
+
 
 
 /* Disable pinch and double-tap zoom on mobile */
@@ -270,6 +268,42 @@ function startGameLoop(){
   }
 }
 
+/* ======= PARACHUTE ======= */
+function startParachuteAnimation(){
+  const img = parachuteImg;
+  if(!img) return;
+  const rect = gameCanvas.getBoundingClientRect();
+  img.style.display = "block";
+  const imgW = img.naturalWidth;
+  const imgH = img.naturalHeight;
+  img.style.left = (rect.left + rect.width/2 - imgW/2) + "px";
+  img.style.top = (rect.top - imgH) + "px";
+  img.style.opacity = "1";
+
+  const targetY = rect.top + rect.height/2 - imgH/2;
+  function step(){
+    const currentY = parseFloat(img.style.top);
+    if(currentY < targetY){
+      img.style.top = Math.min(currentY + 2, targetY) + "px";
+      requestAnimationFrame(step);
+    } else {
+      img.style.transition = "opacity 0.5s";
+      img.style.opacity = "0";
+      setTimeout(()=>{
+        img.style.display = "none";
+        img.style.transition = "";
+      }, 500);
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+function maybeStartParachute(){
+  if(turnColors[turnIndex] === "blue"){
+    startParachuteAnimation();
+  }
+}
+
 /* ======= MENU ======= */
 hotSeatBtn.addEventListener("click",()=>{
   selectedMode = (selectedMode==="hotSeat" ? null : "hotSeat");
@@ -315,8 +349,7 @@ playBtn.addEventListener("click",()=>{
     phase = 'TURN';
   }
   startGameLoop();
-  if(phase === 'TURN' && turnColors[turnIndex] === 'blue'){
-    playParachuteAnimation();
+
   }
 });
 
@@ -414,9 +447,7 @@ function handleAAPlacement(x, y){
     currentPlacer = 'blue';
   } else {
     phase = 'TURN';
-    if(turnColors[turnIndex] === 'blue'){
-      playParachuteAnimation();
-    }
+
   }
 }
 
@@ -996,6 +1027,7 @@ function destroyPlane(fp){
       }
       playParachuteAnimation();
     }
+    maybeStartParachute();
   }
 }
 
@@ -1046,6 +1078,7 @@ function handleAAForPlane(p, fp){
                   }
                   playParachuteAnimation();
                 }
+                maybeStartParachute();
               }
               return true;
             }
@@ -1170,6 +1203,7 @@ function handleAAForPlane(p, fp){
             }
             playParachuteAnimation();
           }
+          maybeStartParachute();
         }
       }
     }
@@ -1941,6 +1975,9 @@ function startNewRound(){
     }
   }
   if(animationFrameId===null) startGameLoop();
+  if(phase === 'TURN'){
+    maybeStartParachute();
+  }
 }
 
 /* ======= UI Helpers (амплитуда) ======= */
