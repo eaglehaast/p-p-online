@@ -36,6 +36,9 @@ const endGameDiv  = document.getElementById("endGameButtons");
 const yesBtn      = document.getElementById("yesButton");
 const noBtn       = document.getElementById("noButton");
 const flame       = document.getElementById("flame");
+const parachuteImg = new Image();
+parachuteImg.src = "parachute.gif";
+let parachuteState = null;
 
 
 /* Disable pinch and double-tap zoom on mobile */
@@ -48,6 +51,10 @@ document.addEventListener('touchmove', (event) => {
 document.addEventListener('dblclick', (e) => {
   e.preventDefault();
 });
+
+function playParachuteAnimation(){
+  parachuteState = { startTime: performance.now(), duration: 3000 };
+}
 
 /* ======= CONFIG ======= */
 const CELL_SIZE            = 20;     // px
@@ -308,6 +315,9 @@ playBtn.addEventListener("click",()=>{
     phase = 'TURN';
   }
   startGameLoop();
+  if(phase === 'TURN' && turnColors[turnIndex] === 'blue'){
+    playParachuteAnimation();
+  }
 });
 
 /* Меню: анимация индикатора амплитуды */
@@ -404,6 +414,9 @@ function handleAAPlacement(x, y){
     currentPlacer = 'blue';
   } else {
     phase = 'TURN';
+    if(turnColors[turnIndex] === 'blue'){
+      playParachuteAnimation();
+    }
   }
 }
 
@@ -977,8 +990,11 @@ function destroyPlane(fp){
   checkVictory();
   if(!isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
     turnIndex = (turnIndex + 1) % turnColors.length;
-    if(gameMode === "computer" && turnColors[turnIndex] === "blue"){
-      aiMoveScheduled = false;
+    if(turnColors[turnIndex] === "blue"){
+      if(gameMode === "computer"){
+        aiMoveScheduled = false;
+      }
+      playParachuteAnimation();
     }
   }
 }
@@ -1024,8 +1040,11 @@ function handleAAForPlane(p, fp){
               checkVictory();
               if(fp && !isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
                 turnIndex = (turnIndex + 1) % turnColors.length;
-                if(gameMode==="computer" && turnColors[turnIndex]==="blue"){
-                  aiMoveScheduled = false;
+                if(turnColors[turnIndex]==="blue"){
+                  if(gameMode==="computer"){
+                    aiMoveScheduled = false;
+                  }
+                  playParachuteAnimation();
                 }
               }
               return true;
@@ -1145,8 +1164,11 @@ function handleAAForPlane(p, fp){
         // смена хода, когда полётов текущего цвета больше нет
         if(!isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
           turnIndex = (turnIndex + 1) % turnColors.length;
-          if(gameMode==="computer" && turnColors[turnIndex]==="blue"){
-            aiMoveScheduled = false; // разрешаем планирование следующего хода ИИ
+          if(turnColors[turnIndex]==="blue"){
+            if(gameMode==="computer"){
+              aiMoveScheduled = false; // разрешаем планирование следующего хода ИИ
+            }
+            playParachuteAnimation();
           }
         }
       }
@@ -1255,6 +1277,23 @@ function handleAAForPlane(p, fp){
       aimCtx.moveTo(startSX, startSY);
       aimCtx.lineTo(endSX, endSY);
       aimCtx.stroke();
+    }
+  }
+
+  // парашют
+  if(parachuteState){
+    const t = (now - parachuteState.startTime) / parachuteState.duration;
+    if(t >= 1){
+      parachuteState = null;
+    } else {
+      const startY = -parachuteImg.height;
+      const endY = gameCanvas.height / 2 - parachuteImg.height / 2;
+      const y = startY + (endY - startY) * t;
+      const x = gameCanvas.width / 2 - parachuteImg.width / 2;
+      gameCtx.save();
+      gameCtx.globalAlpha = 1 - t;
+      gameCtx.drawImage(parachuteImg, x, y);
+      gameCtx.restore();
     }
   }
 
@@ -1396,25 +1435,23 @@ function drawFieldEdges(ctx2d, w, h){
   }
 }
 
-function drawThinPlane(ctx2d, cx, cy, color, angle){
-  ctx2d.save();
-  ctx2d.translate(cx, cy);
-  ctx2d.rotate(angle);
-  ctx2d.strokeStyle= color;
-  ctx2d.lineWidth=2;
-
-  ctx2d.beginPath();
-  ctx2d.moveTo(0, -20);
-  ctx2d.lineTo(10, 10);
-  ctx2d.lineTo(5, 10);
-  ctx2d.lineTo(0, 18);
-  ctx2d.lineTo(-5, 10);
-  ctx2d.lineTo(-10, 10);
-  ctx2d.closePath();
-  ctx2d.stroke();
-
-  ctx2d.restore();
-}
+  function drawThinPlane(ctx2d, cx, cy, color, angle){
+    ctx2d.save();
+    ctx2d.translate(cx, cy);
+    ctx2d.rotate(angle);
+    ctx2d.strokeStyle = color;
+    ctx2d.lineWidth = 2;
+    ctx2d.beginPath();
+    ctx2d.moveTo(0, -20);
+    ctx2d.lineTo(10, 10);
+    ctx2d.lineTo(5, 10);
+    ctx2d.lineTo(0, 18);
+    ctx2d.lineTo(-5, 10);
+    ctx2d.lineTo(-10, 10);
+    ctx2d.closePath();
+    ctx2d.stroke();
+    ctx2d.restore();
+  }
 
 function drawRedCross(ctx2d, cx, cy, size=20){
   ctx2d.save();
@@ -1430,30 +1467,28 @@ function drawRedCross(ctx2d, cx, cy, size=20){
   ctx2d.restore();
 }
 
-function drawMiniPlaneWithCross(ctx2d, x, y, color, isAlive, isBurning, scale=1){
-  ctx2d.save();
-  ctx2d.translate(x, y);
-  ctx2d.scale(scale, scale);
-  const angle = 0; // ВСЕГДА носом ВВЕРХ на табло
-  ctx2d.rotate(angle);
-
-  ctx2d.strokeStyle = color;
-  ctx2d.lineWidth = 2/scale;
-  ctx2d.beginPath();
-  ctx2d.moveTo(0, -8);
-  ctx2d.lineTo(4, 4);
-  ctx2d.lineTo(2, 4);
-  ctx2d.lineTo(0, 7);
-  ctx2d.lineTo(-2, 4);
-  ctx2d.lineTo(-4, 4);
-  ctx2d.closePath();
-  ctx2d.stroke();
-
-  if(isBurning){
-    drawRedCross(ctx2d, 0, 0, 12);
+  function drawMiniPlaneWithCross(ctx2d, x, y, color, isAlive, isBurning, scale=1){
+    ctx2d.save();
+    ctx2d.translate(x, y);
+    ctx2d.scale(scale, scale);
+    const angle = 0; // ВСЕГДА носом ВВЕРХ на табло
+    ctx2d.rotate(angle);
+    ctx2d.strokeStyle = color;
+    ctx2d.lineWidth = 2/scale;
+    ctx2d.beginPath();
+    ctx2d.moveTo(0, -8);
+    ctx2d.lineTo(4, 4);
+    ctx2d.lineTo(2, 4);
+    ctx2d.lineTo(0, 7);
+    ctx2d.lineTo(-2, 4);
+    ctx2d.lineTo(-4, 4);
+    ctx2d.closePath();
+    ctx2d.stroke();
+    if(isBurning){
+      drawRedCross(ctx2d, 0, 0, 12);
+    }
+    ctx2d.restore();
   }
-  ctx2d.restore();
-}
 
 function drawPlanesAndTrajectories(){
   for(const p of points){
@@ -1901,6 +1936,9 @@ function startNewRound(){
     currentPlacer = 'green';
   } else {
     phase = 'TURN';
+    if(turnColors[turnIndex] === 'blue'){
+      playParachuteAnimation();
+    }
   }
   if(animationFrameId===null) startGameLoop();
 }
