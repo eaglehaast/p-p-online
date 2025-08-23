@@ -1178,7 +1178,9 @@ function handleAAForPlane(p, fp){
   // здания
   drawAAPlacementZone();
   drawBuildings();
+
   drawFieldEdges(gameCtx, gameCanvas.width, gameCanvas.height);
+
 
   // установки ПВО
   drawAAUnits();
