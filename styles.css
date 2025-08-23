@@ -265,7 +265,16 @@ body {
   height: 12px;
   transform: translateY(-50%);
   transform-origin: right center;
-  animation: flame-flicker 0.15s infinite alternate;
+  animation: flame-flicker 0.3s infinite alternate;
+}
+
+#flameGradient stop:first-child {
+  stop-color: #80d8ff;
+  animation: flame-color-inner 2s infinite alternate;
+}
+#flameGradient stop:last-child {
+  stop-color: #0066ff;
+  animation: flame-color-outer 2s infinite alternate;
 }
 
 /* Wing contrails from wingtips */
@@ -324,12 +333,24 @@ body {
 @keyframes flame-flicker {
   from {
     transform: translateY(-50%) scaleX(1) scaleY(1);
+
     opacity: 0.85;
   }
   to {
     transform: translateY(-50%) scaleX(1.1) scaleY(0.9);
+
     opacity: 1;
   }
+}
+
+@keyframes flame-color-inner {
+  from { stop-color: #80d8ff; }
+  to   { stop-color: #ffffff; }
+}
+
+@keyframes flame-color-outer {
+  from { stop-color: #0066ff; }
+  to   { stop-color: #80d8ff; }
 }
 
 /* Цифровой индикатор */
