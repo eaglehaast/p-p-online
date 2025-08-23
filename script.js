@@ -2083,8 +2083,8 @@ function updateFlightRangeFlame(){
 
 
   if(flame){
-    const baseWidth = 20;  // matches CSS default
-    const baseHeight = 6; // matches CSS default
+    const baseWidth = 40;  // matches CSS default
+    const baseHeight = 12; // matches CSS default
     flame.style.width = `${baseWidth * ratio}px`;
     flame.style.height = `${baseHeight * (0.9 + 0.1 * ratio)}px`;
   }
