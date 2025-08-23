@@ -265,16 +265,20 @@ body {
   height: 12px;
   transform: translateY(-50%);
   transform-origin: right center;
+
   animation: flame-flicker 0.6s ease-in-out infinite alternate;
+
 }
 
 #flameGradient stop:first-child {
   stop-color: #80d8ff;
-  animation: flame-color-inner 3s infinite alternate;
+
+  animation: flame-color-inner 2s infinite alternate;
 }
 #flameGradient stop:last-child {
   stop-color: #0066ff;
-  animation: flame-color-outer 3s infinite alternate;
+  animation: flame-color-outer 2s infinite alternate;
+
 }
 
 /* Wing contrails from wingtips */
@@ -332,11 +336,13 @@ body {
 
 @keyframes flame-flicker {
   from {
+
     transform: translateY(-50%) scaleY(1);
     opacity: 0.9;
   }
   to {
     transform: translateY(-50%) scaleY(1.02);
+
     opacity: 1;
   }
 }
