@@ -270,13 +270,13 @@ body {
 
 }
 
-#flameGradient stop:first-child {
-  stop-color: #80d8ff;
+#menuFlameGradient stop:first-child {
+  stop-color: #ff8c00;
 
   animation: flame-color-inner 2s infinite alternate;
 }
-#flameGradient stop:last-child {
-  stop-color: #0066ff;
+#menuFlameGradient stop:last-child {
+  stop-color: #ff0000;
   animation: flame-color-outer 2s infinite alternate;
 
 }
@@ -319,13 +319,13 @@ body {
 }
 
 @keyframes flame-color-inner {
-  from { stop-color: #80d8ff; }
-  to   { stop-color: #ffffff; }
+  from { stop-color: #ff8c00; }
+  to   { stop-color: #ffff66; }
 }
 
 @keyframes flame-color-outer {
-  from { stop-color: #0066ff; }
-  to   { stop-color: #80d8ff; }
+  from { stop-color: #ff0000; }
+  to   { stop-color: #ff8c00; }
 }
 
 /* Цифровой индикатор */
