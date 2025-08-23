@@ -36,7 +36,6 @@ const endGameDiv  = document.getElementById("endGameButtons");
 const yesBtn      = document.getElementById("yesButton");
 const noBtn       = document.getElementById("noButton");
 const flame       = document.getElementById("flame");
-const parachuteImg = document.getElementById("parachute");
 
 
 
@@ -50,10 +49,6 @@ document.addEventListener('touchmove', (event) => {
 document.addEventListener('dblclick', (e) => {
   e.preventDefault();
 });
-
-function playParachuteAnimation(){
-  parachuteState = { startTime: performance.now(), duration: 3000 };
-}
 
 /* ======= CONFIG ======= */
 const CELL_SIZE            = 20;     // px
@@ -135,8 +130,6 @@ let aaPlacementPreview = null;
 let aaPreviewTrail = [];
 
 let aaPointerDown = false;
-
-let parachuteState = null;
 
 
 let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_START | TURN | ROUND_END
@@ -265,42 +258,6 @@ function stopGameLoop(){
 function startGameLoop(){
   if(animationFrameId === null){
     animationFrameId = requestAnimationFrame(gameDraw);
-  }
-}
-
-/* ======= PARACHUTE ======= */
-function startParachuteAnimation(){
-  const img = parachuteImg;
-  if(!img) return;
-  const rect = gameCanvas.getBoundingClientRect();
-  img.style.display = "block";
-  const imgW = img.naturalWidth;
-  const imgH = img.naturalHeight;
-  img.style.left = (rect.left + rect.width/2 - imgW/2) + "px";
-  img.style.top = (rect.top - imgH) + "px";
-  img.style.opacity = "1";
-
-  const targetY = rect.top + rect.height/2 - imgH/2;
-  function step(){
-    const currentY = parseFloat(img.style.top);
-    if(currentY < targetY){
-      img.style.top = Math.min(currentY + 2, targetY) + "px";
-      requestAnimationFrame(step);
-    } else {
-      img.style.transition = "opacity 0.5s";
-      img.style.opacity = "0";
-      setTimeout(()=>{
-        img.style.display = "none";
-        img.style.transition = "";
-      }, 500);
-    }
-  }
-  requestAnimationFrame(step);
-}
-
-function maybeStartParachute(){
-  if(turnColors[turnIndex] === "blue"){
-    startParachuteAnimation();
   }
 }
 
@@ -1019,13 +976,9 @@ function destroyPlane(fp){
   checkVictory();
   if(!isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
     turnIndex = (turnIndex + 1) % turnColors.length;
-    if(turnColors[turnIndex] === "blue"){
-      if(gameMode === "computer"){
-        aiMoveScheduled = false;
-      }
-      playParachuteAnimation();
+    if(turnColors[turnIndex] === "blue" && gameMode === "computer"){
+      aiMoveScheduled = false;
     }
-    maybeStartParachute();
   }
 }
 
@@ -1070,13 +1023,9 @@ function handleAAForPlane(p, fp){
               checkVictory();
               if(fp && !isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
                 turnIndex = (turnIndex + 1) % turnColors.length;
-                if(turnColors[turnIndex]==="blue"){
-                  if(gameMode==="computer"){
-                    aiMoveScheduled = false;
-                  }
-                  playParachuteAnimation();
+                if(turnColors[turnIndex]==="blue" && gameMode==="computer"){
+                  aiMoveScheduled = false;
                 }
-                maybeStartParachute();
               }
               return true;
             }
@@ -1195,13 +1144,9 @@ function handleAAForPlane(p, fp){
         // смена хода, когда полётов текущего цвета больше нет
         if(!isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
           turnIndex = (turnIndex + 1) % turnColors.length;
-          if(turnColors[turnIndex]==="blue"){
-            if(gameMode==="computer"){
-              aiMoveScheduled = false; // разрешаем планирование следующего хода ИИ
-            }
-            playParachuteAnimation();
+          if(turnColors[turnIndex]==="blue" && gameMode==="computer"){
+            aiMoveScheduled = false; // разрешаем планирование следующего хода ИИ
           }
-          maybeStartParachute();
         }
       }
     }
@@ -1312,22 +1257,6 @@ function handleAAForPlane(p, fp){
     }
   }
 
-  // парашют
-  if(parachuteState){
-    const t = (now - parachuteState.startTime) / parachuteState.duration;
-    if(t >= 1){
-      parachuteState = null;
-    } else {
-      const startY = -parachuteImg.height;
-      const endY = gameCanvas.height / 2 - parachuteImg.height / 2;
-      const y = startY + (endY - startY) * t;
-      const x = gameCanvas.width / 2 - parachuteImg.width / 2;
-      gameCtx.save();
-      gameCtx.globalAlpha = 1 - t;
-      gameCtx.drawImage(parachuteImg, x, y);
-      gameCtx.restore();
-    }
-  }
 
   // табло
   renderScoreboard();
@@ -1968,14 +1897,8 @@ function startNewRound(){
     currentPlacer = 'green';
   } else {
     phase = 'TURN';
-    if(turnColors[turnIndex] === 'blue'){
-      playParachuteAnimation();
-    }
   }
   if(animationFrameId===null) startGameLoop();
-  if(phase === 'TURN'){
-    maybeStartParachute();
-  }
 }
 
 /* ======= UI Helpers (амплитуда) ======= */
