@@ -42,6 +42,12 @@ const bluePlaneImg = new Image();
 bluePlaneImg.src = "blue plane 23.png"; // asset already present
 
 
+// Image for blue plane (static PNG)
+const bluePlaneImg = new Image();
+bluePlaneImg.src = "blue plane 23.png";
+
+
+
 
 /* Disable pinch and double-tap zoom on mobile */
 document.addEventListener('touchmove', (event) => {
@@ -1419,6 +1425,7 @@ function drawThinPlane(ctx2d, plane){
     ctx2d.lineTo(-10, 10);
     ctx2d.closePath();
     ctx2d.stroke();
+
   }
   ctx2d.restore();
 }
