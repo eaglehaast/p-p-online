@@ -44,6 +44,10 @@ bluePlaneImg.src = "blue plane 23.3.png";
 const greenPlaneImg = new Image();
 greenPlaneImg.src = "green plane.png";
 
+// Background field image
+const fieldImg = new Image();
+fieldImg.src = "field.png";
+
 
 
 
@@ -1057,7 +1061,7 @@ function handleAAForPlane(p, fp){
 
   // фон
   gameCtx.clearRect(0,0, gameCanvas.width, gameCanvas.height);
-  drawNotebookBackground(gameCtx, gameCanvas.width, gameCanvas.height);
+  drawFieldBackground(gameCtx, gameCanvas.width, gameCanvas.height);
 
   aimCtx.clearRect(0,0, aimCanvas.width, aimCanvas.height);
 
@@ -1174,8 +1178,6 @@ function handleAAForPlane(p, fp){
   // здания
   drawAAPlacementZone();
   drawBuildings();
-
-  // redraw field edges (bricks or nails depending on map)
   drawFieldEdges(gameCtx, gameCanvas.width, gameCanvas.height);
 
   // установки ПВО
@@ -1287,23 +1289,13 @@ function handleAAForPlane(p, fp){
 }
 
 /* ======= RENDER ======= */
-function drawNotebookBackground(ctx2d, w, h){
-  ctx2d.fillStyle="#fffbea";
-  ctx2d.fillRect(0,0,w,h);
-
-  ctx2d.strokeStyle="#d3d3d3";
-  ctx2d.lineWidth=1.5;
-  for(let y=CELL_SIZE; y<h; y+=CELL_SIZE){
-    ctx2d.beginPath(); ctx2d.moveTo(0,y); ctx2d.lineTo(w,y); ctx2d.stroke();
+function drawFieldBackground(ctx2d, w, h){
+  if(fieldImg.complete){
+    ctx2d.drawImage(fieldImg, 0, 0, w, h);
+  } else {
+    ctx2d.fillStyle = "#fffbea";
+    ctx2d.fillRect(0,0,w,h);
   }
-  for(let x=CELL_SIZE; x<w; x+=CELL_SIZE){
-    ctx2d.beginPath(); ctx2d.moveTo(x,0); ctx2d.lineTo(x,h); ctx2d.stroke();
-  }
-  ctx2d.beginPath(); ctx2d.moveTo(w-1,0); ctx2d.lineTo(w-1,h); ctx2d.stroke();
-
-  ctx2d.setLineDash([10,5]);
-  ctx2d.beginPath(); ctx2d.moveTo(0,h-1); ctx2d.lineTo(w,h-1); ctx2d.stroke();
-  ctx2d.setLineDash([]);
 }
 
 function drawNailEdges(ctx2d, w, h){
