@@ -37,6 +37,10 @@ const yesBtn      = document.getElementById("yesButton");
 const noBtn       = document.getElementById("noButton");
 const flame       = document.getElementById("flame");
 
+// Image for blue plane
+const bluePlaneImg = new Image();
+bluePlaneImg.src = "blue airplane.gif";
+
 
 
 /* Disable pinch and double-tap zoom on mobile */
@@ -1400,17 +1404,22 @@ function drawFieldEdges(ctx2d, w, h){
     ctx2d.save();
     ctx2d.translate(cx, cy);
     ctx2d.rotate(angle);
-    ctx2d.strokeStyle = color;
-    ctx2d.lineWidth = 2;
-    ctx2d.beginPath();
-    ctx2d.moveTo(0, -20);
-    ctx2d.lineTo(10, 10);
-    ctx2d.lineTo(5, 10);
-    ctx2d.lineTo(0, 18);
-    ctx2d.lineTo(-5, 10);
-    ctx2d.lineTo(-10, 10);
-    ctx2d.closePath();
-    ctx2d.stroke();
+    if(color === "blue" && bluePlaneImg.complete){
+      // Use animated GIF for blue plane
+      ctx2d.drawImage(bluePlaneImg, -20, -20, 40, 40);
+    } else {
+      ctx2d.strokeStyle = color;
+      ctx2d.lineWidth = 2;
+      ctx2d.beginPath();
+      ctx2d.moveTo(0, -20);
+      ctx2d.lineTo(10, 10);
+      ctx2d.lineTo(5, 10);
+      ctx2d.lineTo(0, 18);
+      ctx2d.lineTo(-5, 10);
+      ctx2d.lineTo(-10, 10);
+      ctx2d.closePath();
+      ctx2d.stroke();
+    }
     ctx2d.restore();
   }
 
