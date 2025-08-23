@@ -1463,7 +1463,7 @@ function drawThinPlane(ctx2d, plane){
   if(color === "blue"){
 
     const flicker = 1 + 0.2 * Math.sin(globalFrame * 0.1);
-    const idleScale = 2 * flicker;
+    const idleScale = flicker;
     drawJetFlame(ctx2d, idleScale);
 
     const fp = flyingPoints.find(fp => fp.plane === plane);
