@@ -1403,16 +1403,19 @@ function drawFieldEdges(ctx2d, w, h){
 }
 
 
-function drawJetFlame(ctx2d, scale){
-  if(scale <= 0) return;
+function drawJetFlame(ctx2d, widthScale){
+  if(widthScale <= 0) return;
   ctx2d.save();
   ctx2d.translate(0, 15);
-  ctx2d.scale(scale, scale);
+  ctx2d.scale(widthScale, 1);
   ctx2d.translate(0, -15);
 
+  const shimmer = (Math.sin(globalFrame * 0.02) + 1) / 2;
+  const innerL = 70 + shimmer * 30; // 70%..100%
+  const outerL = 45 + shimmer * 15; // 45%..60%
   const grad = ctx2d.createRadialGradient(0, 15, 0, 0, 15, 3.75);
-  grad.addColorStop(0, "#a0e9ff");
-  grad.addColorStop(1, "#0077ff");
+  grad.addColorStop(0, `hsl(200, 100%, ${innerL}%)`);
+  grad.addColorStop(1, `hsl(210, 100%, ${outerL}%)`);
   ctx2d.fillStyle = grad;
   ctx2d.beginPath();
   ctx2d.moveTo(0, 15);
@@ -1462,9 +1465,8 @@ function drawThinPlane(ctx2d, plane){
   ctx2d.rotate(angle);
   if(color === "blue"){
 
-    const flicker = 1 + 0.2 * Math.sin(globalFrame * 0.1);
-    const idleScale = flicker;
-    drawJetFlame(ctx2d, idleScale);
+    const flicker = 1 + 0.05 * Math.sin(globalFrame * 0.1);
+    drawJetFlame(ctx2d, flicker);
 
     const fp = flyingPoints.find(fp => fp.plane === plane);
     if(fp){
