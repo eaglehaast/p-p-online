@@ -39,7 +39,7 @@ const flame       = document.getElementById("flame");
 
 // Image for blue plane (updated PNG asset)
 const bluePlaneImg = new Image();
-bluePlaneImg.src = "blue plane 23.2.png";
+bluePlaneImg.src = "blue plane 23.3.png";
 
 
 
@@ -1402,13 +1402,54 @@ function drawFieldEdges(ctx2d, w, h){
   }
 }
 
+function drawJetFlame(ctx2d){
+  const grad = ctx2d.createRadialGradient(0, 20, 0, 0, 20, 10);
+  grad.addColorStop(0, "#ffea00");
+  grad.addColorStop(1, "#ff4500");
+  ctx2d.fillStyle = grad;
+  ctx2d.beginPath();
+  ctx2d.moveTo(0, 20);
+  ctx2d.quadraticCurveTo(8, 28, 0, 36);
+  ctx2d.quadraticCurveTo(-8, 28, 0, 20);
+  ctx2d.fill();
+}
+
+function drawWingTrails(ctx2d){
+  ctx2d.strokeStyle = "rgba(255,255,255,0.8)";
+  ctx2d.lineWidth = 1;
+  ctx2d.beginPath();
+  ctx2d.moveTo(12, 10);
+  ctx2d.lineTo(22, 28);
+  ctx2d.moveTo(-12, 10);
+  ctx2d.lineTo(-22, 28);
+  ctx2d.stroke();
+}
+
 function drawThinPlane(ctx2d, plane){
   const {x: cx, y: cy, color, angle} = plane;
   ctx2d.save();
   ctx2d.translate(cx, cy);
   ctx2d.rotate(angle);
-  if(color === "blue" && bluePlaneImg.complete){
-    ctx2d.drawImage(bluePlaneImg, -20, -20, 40, 40);
+  if(color === "blue"){
+    drawJetFlame(ctx2d);
+    if(flyingPoints.some(fp => fp.plane === plane)){
+      drawWingTrails(ctx2d);
+    }
+    if(bluePlaneImg.complete){
+      ctx2d.drawImage(bluePlaneImg, -20, -20, 40, 40);
+    } else {
+      ctx2d.strokeStyle = color;
+      ctx2d.lineWidth = 2;
+      ctx2d.beginPath();
+      ctx2d.moveTo(0, -20);
+      ctx2d.lineTo(10, 10);
+      ctx2d.lineTo(5, 10);
+      ctx2d.lineTo(0, 18);
+      ctx2d.lineTo(-5, 10);
+      ctx2d.lineTo(-10, 10);
+      ctx2d.closePath();
+      ctx2d.stroke();
+    }
   } else {
     ctx2d.strokeStyle = color;
     ctx2d.lineWidth = 2;
@@ -1421,7 +1462,6 @@ function drawThinPlane(ctx2d, plane){
     ctx2d.lineTo(-10, 10);
     ctx2d.closePath();
     ctx2d.stroke();
-
   }
   ctx2d.restore();
 }
