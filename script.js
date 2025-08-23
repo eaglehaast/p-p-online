@@ -37,20 +37,9 @@ const yesBtn      = document.getElementById("yesButton");
 const noBtn       = document.getElementById("noButton");
 const flame       = document.getElementById("flame");
 
-// Image for blue plane
+// Image for blue plane (static PNG)
 const bluePlaneImg = new Image();
-bluePlaneImg.src = "blue airplane.gif";
-
-// Static first frame of blue plane for when it is idle
-let bluePlaneStill = null;
-bluePlaneImg.addEventListener('load', () => {
-  const c = document.createElement('canvas');
-  c.width = bluePlaneImg.width;
-  c.height = bluePlaneImg.height;
-  c.getContext('2d').drawImage(bluePlaneImg, 0, 0);
-  bluePlaneStill = new Image();
-  bluePlaneStill.src = c.toDataURL();
-});
+bluePlaneImg.src = "blue plane 23.png";
 
 
 
@@ -1416,15 +1405,8 @@ function drawThinPlane(ctx2d, plane){
   ctx2d.save();
   ctx2d.translate(cx, cy);
   ctx2d.rotate(angle);
-  if(color === "blue" && (bluePlaneImg.complete || (bluePlaneStill && bluePlaneStill.complete))){
-    const isFlying = flyingPoints.some(fp => fp.plane === plane);
-    if(isFlying && bluePlaneImg.complete){
-      ctx2d.drawImage(bluePlaneImg, -20, -20, 40, 40);
-    } else if(bluePlaneStill && bluePlaneStill.complete){
-      ctx2d.drawImage(bluePlaneStill, -20, -20, 40, 40);
-    } else {
-      ctx2d.drawImage(bluePlaneImg, -20, -20, 40, 40);
-    }
+  if(color === "blue" && bluePlaneImg.complete){
+    ctx2d.drawImage(bluePlaneImg, -20, -20, 40, 40);
   } else {
     ctx2d.strokeStyle = color;
     ctx2d.lineWidth = 2;
