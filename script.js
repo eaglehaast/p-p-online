@@ -37,9 +37,12 @@ const yesBtn      = document.getElementById("yesButton");
 const noBtn       = document.getElementById("noButton");
 const menuFlame   = document.getElementById("menuFlame");
 
-// Image for blue plane (updated PNG asset)
+// Images for planes
 const bluePlaneImg = new Image();
 bluePlaneImg.src = "blue plane 23.3.png";
+
+const greenPlaneImg = new Image();
+greenPlaneImg.src = "green plane.png";
 
 
 
@@ -1458,6 +1461,20 @@ function drawWingTrails(ctx2d){
   ctx2d.stroke();
 }
 
+function drawPlaneOutline(ctx2d, color){
+  ctx2d.strokeStyle = color;
+  ctx2d.lineWidth = 2;
+  ctx2d.beginPath();
+  ctx2d.moveTo(0, -20);
+  ctx2d.lineTo(10, 10);
+  ctx2d.lineTo(5, 10);
+  ctx2d.lineTo(0, 18);
+  ctx2d.lineTo(-5, 10);
+  ctx2d.lineTo(-10, 10);
+  ctx2d.closePath();
+  ctx2d.stroke();
+}
+
 function drawThinPlane(ctx2d, plane){
   const {x: cx, y: cy, color, angle} = plane;
   ctx2d.save();
@@ -1479,30 +1496,16 @@ function drawThinPlane(ctx2d, plane){
     if(bluePlaneImg.complete){
       ctx2d.drawImage(bluePlaneImg, -20, -20, 40, 40);
     } else {
-      ctx2d.strokeStyle = color;
-      ctx2d.lineWidth = 2;
-      ctx2d.beginPath();
-      ctx2d.moveTo(0, -20);
-      ctx2d.lineTo(10, 10);
-      ctx2d.lineTo(5, 10);
-      ctx2d.lineTo(0, 18);
-      ctx2d.lineTo(-5, 10);
-      ctx2d.lineTo(-10, 10);
-      ctx2d.closePath();
-      ctx2d.stroke();
+      drawPlaneOutline(ctx2d, color);
+    }
+  } else if(color === "green"){
+    if(greenPlaneImg.complete){
+      ctx2d.drawImage(greenPlaneImg, -20, -20, 40, 40);
+    } else {
+      drawPlaneOutline(ctx2d, color);
     }
   } else {
-    ctx2d.strokeStyle = color;
-    ctx2d.lineWidth = 2;
-    ctx2d.beginPath();
-    ctx2d.moveTo(0, -20);
-    ctx2d.lineTo(10, 10);
-    ctx2d.lineTo(5, 10);
-    ctx2d.lineTo(0, 18);
-    ctx2d.lineTo(-5, 10);
-    ctx2d.lineTo(-10, 10);
-    ctx2d.closePath();
-    ctx2d.stroke();
+    drawPlaneOutline(ctx2d, color);
   }
   ctx2d.restore();
 }
