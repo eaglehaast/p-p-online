@@ -333,10 +333,12 @@ body {
 @keyframes flame-flicker {
   from {
     transform: translateY(-50%) scaleX(1) scaleY(1);
-    opacity: 0.9;
+
+    opacity: 0.85;
   }
   to {
-    transform: translateY(-50%) scaleX(1) scaleY(1.05);
+    transform: translateY(-50%) scaleX(1.1) scaleY(0.9);
+
     opacity: 1;
   }
 }
