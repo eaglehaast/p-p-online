@@ -2088,8 +2088,10 @@ function updateFlightRangeFlame(){
 
 
   if(menuFlame){
-    const baseWidth = 40;  // matches CSS default
-    const baseHeight = 12; // matches CSS default
+
+    const baseWidth = 32;  // matches CSS default after reduction
+    const baseHeight = 10; // matches CSS default after reduction
+
     menuFlame.style.width = `${baseWidth * ratio}px`;
     menuFlame.style.height = `${baseHeight * (0.9 + 0.1 * ratio)}px`;
 
