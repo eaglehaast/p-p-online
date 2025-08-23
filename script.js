@@ -2082,11 +2082,13 @@ function updateFlightRangeFlame(){
   const ratio = minScale + t * (maxScale - minScale);
 
 
-  if(menuFlame){
-    const baseWidth = 20;  // matches CSS default
-    const baseHeight = 6; // matches CSS default
-    menuFlame.style.width = `${baseWidth * ratio}px`;
-    menuFlame.style.height = `${baseHeight * (0.9 + 0.1 * ratio)}px`;
+
+  if(flame){
+    const baseWidth = 40;  // matches CSS default
+    const baseHeight = 12; // matches CSS default
+    flame.style.width = `${baseWidth * ratio}px`;
+    flame.style.height = `${baseHeight * (0.9 + 0.1 * ratio)}px`;
+
   }
   if(trails.length){
     const baseTrailWidth = 35;  // matches CSS default
