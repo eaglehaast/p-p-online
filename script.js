@@ -37,9 +37,11 @@ const yesBtn      = document.getElementById("yesButton");
 const noBtn       = document.getElementById("noButton");
 const flame       = document.getElementById("flame");
 
-// Image for blue plane
+
+// Image for blue plane (static PNG)
 const bluePlaneImg = new Image();
-bluePlaneImg.src = "blue airplane.gif";
+bluePlaneImg.src = "blue plane 23.png";
+
 
 
 
@@ -1400,28 +1402,29 @@ function drawFieldEdges(ctx2d, w, h){
   }
 }
 
-  function drawThinPlane(ctx2d, cx, cy, color, angle){
-    ctx2d.save();
-    ctx2d.translate(cx, cy);
-    ctx2d.rotate(angle);
-    if(color === "blue" && bluePlaneImg.complete){
-      // Use animated GIF for blue plane
-      ctx2d.drawImage(bluePlaneImg, -20, -20, 40, 40);
-    } else {
-      ctx2d.strokeStyle = color;
-      ctx2d.lineWidth = 2;
-      ctx2d.beginPath();
-      ctx2d.moveTo(0, -20);
-      ctx2d.lineTo(10, 10);
-      ctx2d.lineTo(5, 10);
-      ctx2d.lineTo(0, 18);
-      ctx2d.lineTo(-5, 10);
-      ctx2d.lineTo(-10, 10);
-      ctx2d.closePath();
-      ctx2d.stroke();
-    }
-    ctx2d.restore();
+function drawThinPlane(ctx2d, plane){
+  const {x: cx, y: cy, color, angle} = plane;
+  ctx2d.save();
+  ctx2d.translate(cx, cy);
+  ctx2d.rotate(angle);
+  if(color === "blue" && bluePlaneImg.complete){
+    ctx2d.drawImage(bluePlaneImg, -20, -20, 40, 40);
+  } else {
+    ctx2d.strokeStyle = color;
+    ctx2d.lineWidth = 2;
+    ctx2d.beginPath();
+    ctx2d.moveTo(0, -20);
+    ctx2d.lineTo(10, 10);
+    ctx2d.lineTo(5, 10);
+    ctx2d.lineTo(0, 18);
+    ctx2d.lineTo(-5, 10);
+    ctx2d.lineTo(-10, 10);
+    ctx2d.closePath();
+    ctx2d.stroke();
+
   }
+  ctx2d.restore();
+}
 
 function drawRedCross(ctx2d, cx, cy, size=20){
   ctx2d.save();
@@ -1471,7 +1474,7 @@ function drawPlanesAndTrajectories(){
       gameCtx.lineTo(seg.x2, seg.y2);
       gameCtx.stroke();
     }
-    drawThinPlane(gameCtx, p.x, p.y, p.color, p.angle);
+    drawThinPlane(gameCtx, p);
     if(p.burning){
       drawRedCross(gameCtx, p.collisionX ?? p.x, p.collisionY ?? p.y, 16);
     }
