@@ -35,7 +35,7 @@ const addAAToggle         = document.getElementById("addAAToggle");
 const endGameDiv  = document.getElementById("endGameButtons");
 const yesBtn      = document.getElementById("yesButton");
 const noBtn       = document.getElementById("noButton");
-const flame       = document.getElementById("flame");
+const menuFlame   = document.getElementById("menuFlame");
 
 // Image for blue plane (updated PNG asset)
 const bluePlaneImg = new Image();
@@ -2082,11 +2082,13 @@ function updateFlightRangeFlame(){
   const ratio = minScale + t * (maxScale - minScale);
 
 
+
   if(flame){
     const baseWidth = 40;  // matches CSS default
     const baseHeight = 12; // matches CSS default
     flame.style.width = `${baseWidth * ratio}px`;
     flame.style.height = `${baseHeight * (0.9 + 0.1 * ratio)}px`;
+
   }
   if(trails.length){
     const baseTrailWidth = 35;  // matches CSS default
