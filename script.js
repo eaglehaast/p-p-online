@@ -39,7 +39,7 @@ const flame       = document.getElementById("flame");
 
 // Image for blue plane (updated PNG asset)
 const bluePlaneImg = new Image();
-bluePlaneImg.src = "blue plane 23.2.png";
+bluePlaneImg.src = "blue plane 23.3.png";
 
 
 
