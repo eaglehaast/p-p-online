@@ -49,6 +49,7 @@ bluePlaneImg.src = "blue plane 23.png";
 
 
 
+
 /* Disable pinch and double-tap zoom on mobile */
 document.addEventListener('touchmove', (event) => {
   if (event.touches.length > 1) {
