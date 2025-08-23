@@ -1402,7 +1402,13 @@ function drawFieldEdges(ctx2d, w, h){
   }
 }
 
-function drawJetFlame(ctx2d){
+
+function drawJetFlame(ctx2d, scale){
+  if(scale <= 0) return;
+  ctx2d.save();
+  ctx2d.translate(0, 15);
+  ctx2d.scale(scale, scale);
+  ctx2d.translate(0, -15);
 
   const grad = ctx2d.createRadialGradient(0, 15, 0, 0, 15, 3.75);
   grad.addColorStop(0, "#a0e9ff");
@@ -1414,6 +1420,8 @@ function drawJetFlame(ctx2d){
   ctx2d.quadraticCurveTo(-3, 18, 0, 15);
 
   ctx2d.fill();
+  ctx2d.restore();
+
 }
 
 function drawBlueJetFlame(ctx2d, scale){
@@ -1432,6 +1440,7 @@ function drawBlueJetFlame(ctx2d, scale){
   ctx2d.quadraticCurveTo(-6, 21, 0, 15);
   ctx2d.fill();
   ctx2d.restore();
+
 
 }
 
@@ -1452,7 +1461,10 @@ function drawThinPlane(ctx2d, plane){
   ctx2d.translate(cx, cy);
   ctx2d.rotate(angle);
   if(color === "blue"){
-    drawJetFlame(ctx2d);
+
+    const flicker = 1 + 0.2 * Math.sin(globalFrame * 0.1);
+    const idleScale = 2 * flicker;
+    drawJetFlame(ctx2d, idleScale);
 
     const fp = flyingPoints.find(fp => fp.plane === plane);
     if(fp){
