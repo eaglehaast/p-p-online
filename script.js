@@ -37,14 +37,9 @@ const yesBtn      = document.getElementById("yesButton");
 const noBtn       = document.getElementById("noButton");
 const flame       = document.getElementById("flame");
 
-// Image for blue plane (uses updated PNG asset)
+// Image for blue plane (updated PNG asset)
 const bluePlaneImg = new Image();
-bluePlaneImg.src = "blue plane 23.1 .png"; // asset already present
-
-
-// Image for blue plane (static PNG)
-const bluePlaneImg = new Image();
-bluePlaneImg.src = "blue plane 23.png";
+bluePlaneImg.src = "blue plane 23.2.png";
 
 
 
