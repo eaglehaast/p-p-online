@@ -2079,8 +2079,8 @@ function updateFlightRangeDisplay(){
 }
 function updateFlightRangeFlame(){
   const trails = document.querySelectorAll("#flightRangeIndicator .wing-trail");
-  const minScale = 0.3;
-  const maxScale = 1.2;
+  const minScale = 0.8;
+  const maxScale = 1.6;
   const t = (flightRangeCells - MIN_FLIGHT_RANGE_CELLS) /
             (MAX_FLIGHT_RANGE_CELLS - MIN_FLIGHT_RANGE_CELLS);
   const ratio = minScale + t * (maxScale - minScale);
@@ -2088,8 +2088,8 @@ function updateFlightRangeFlame(){
 
 
   if(menuFlame){
-    const baseWidth = 20;  // matches CSS default
-    const baseHeight = 6; // matches CSS default
+    const baseWidth = 40;  // matches CSS default
+    const baseHeight = 12; // matches CSS default
     menuFlame.style.width = `${baseWidth * ratio}px`;
     menuFlame.style.height = `${baseHeight * (0.9 + 0.1 * ratio)}px`;
 
