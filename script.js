@@ -37,9 +37,16 @@ const yesBtn      = document.getElementById("yesButton");
 const noBtn       = document.getElementById("noButton");
 const flame       = document.getElementById("flame");
 
-// Image for blue plane (uses in-repo animated GIF)
+// Image for blue plane (uses updated PNG asset)
 const bluePlaneImg = new Image();
-bluePlaneImg.src = "blue airplane.gif"; // asset already present
+bluePlaneImg.src = "blue plane 23.1 .png"; // asset already present
+
+
+// Image for blue plane (static PNG)
+const bluePlaneImg = new Image();
+bluePlaneImg.src = "blue plane 23.png";
+
+
 
 
 
@@ -1419,6 +1426,7 @@ function drawThinPlane(ctx2d, plane){
     ctx2d.lineTo(-10, 10);
     ctx2d.closePath();
     ctx2d.stroke();
+
   }
   ctx2d.restore();
 }
