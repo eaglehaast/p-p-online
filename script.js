@@ -36,6 +36,7 @@ const endGameDiv  = document.getElementById("endGameButtons");
 const yesBtn      = document.getElementById("yesButton");
 const noBtn       = document.getElementById("noButton");
 const flame       = document.getElementById("flame");
+const parachuteImg = document.getElementById("parachute");
 
 
 
@@ -135,8 +136,7 @@ let aaPreviewTrail = [];
 
 let aaPointerDown = false;
 
-
-
+let parachuteState = null;
 
 
 let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_START | TURN | ROUND_END
@@ -349,8 +349,6 @@ playBtn.addEventListener("click",()=>{
     phase = 'TURN';
   }
   startGameLoop();
-
-  }
 });
 
 /* Меню: анимация индикатора амплитуды */
