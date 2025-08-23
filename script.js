@@ -1408,9 +1408,10 @@ function drawFieldEdges(ctx2d, w, h){
 
 function drawJetFlame(ctx2d, widthScale){
   if(widthScale <= 0) return;
+  const BASE_SCALE = 1.5;
   ctx2d.save();
   ctx2d.translate(0, 15);
-  ctx2d.scale(widthScale, 1);
+  ctx2d.scale(widthScale * BASE_SCALE, BASE_SCALE);
   ctx2d.translate(0, -15);
 
   const shimmer = (Math.sin(globalFrame * 0.02) + 1) / 2;
