@@ -1404,17 +1404,15 @@ function drawFieldEdges(ctx2d, w, h){
 
 function drawJetFlame(ctx2d){
 
-  const grad = ctx2d.createRadialGradient(0, 15, 0, 0, 15, 7.5);
-
-
-  grad.addColorStop(0, "#ffea00");
-  grad.addColorStop(1, "#ff4500");
+  const grad = ctx2d.createRadialGradient(0, 15, 0, 0, 15, 3.75);
+  grad.addColorStop(0, "#a0e9ff");
+  grad.addColorStop(1, "#0077ff");
   ctx2d.fillStyle = grad;
   ctx2d.beginPath();
-
   ctx2d.moveTo(0, 15);
-  ctx2d.quadraticCurveTo(6, 21, 0, 27);
-  ctx2d.quadraticCurveTo(-6, 21, 0, 15);
+  ctx2d.quadraticCurveTo(3, 18, 0, 21);
+  ctx2d.quadraticCurveTo(-3, 18, 0, 15);
+
   ctx2d.fill();
 }
 
