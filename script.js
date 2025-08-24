@@ -1443,6 +1443,29 @@ function drawBlueJetFlame(ctx2d, scale){
 
 }
 
+function drawDieselSmoke(ctx2d, scale){
+  if(scale <= 0) return;
+  const baseRadius = 5 * scale;
+  ctx2d.save();
+  ctx2d.translate(0, 15);
+  ctx2d.scale(0.5, 1); // make smoke column narrower
+  ctx2d.globalAlpha = 1; // stronger contrast
+
+  for(let i = 0; i < 3; i++){
+    const phase   = globalFrame * 0.2 + i;
+    const flicker = 0.8 + 0.2 * Math.sin(phase);
+    const radius  = baseRadius * (0.7 + 0.3 * Math.sin(phase * 0.7)) * flicker;
+    const offsetX = Math.sin(phase) * baseRadius * 0.3;
+    const offsetY = -i * baseRadius * 0.9;
+    ctx2d.beginPath();
+    ctx2d.arc(offsetX, offsetY, radius, 0, Math.PI * 2);
+    ctx2d.fillStyle = "#000";
+    ctx2d.fill();
+  }
+
+  ctx2d.restore();
+}
+
 function drawWingTrails(ctx2d){
   ctx2d.strokeStyle = "rgba(255,255,255,0.8)";
   ctx2d.lineWidth = 1;
@@ -1492,6 +1515,19 @@ function drawThinPlane(ctx2d, plane){
       drawPlaneOutline(ctx2d, color);
     }
   } else if(color === "green"){
+    const fp = flyingPoints.find(fp => fp.plane === plane);
+    if(fp){
+      const progress = (BOUNCE_FRAMES - fp.framesLeft) / BOUNCE_FRAMES;
+      let scale;
+      if(progress < 0.5){
+        scale = 4 - 4 * progress; // 20px -> 10px
+      } else {
+        scale = 3 - 2 * progress; // 10px -> 5px
+      }
+      drawDieselSmoke(ctx2d, scale);
+    } else {
+      drawDieselSmoke(ctx2d, 1);
+    }
     if(greenPlaneImg.complete){
       ctx2d.drawImage(greenPlaneImg, -20, -20, 40, 40);
     } else {
