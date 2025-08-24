@@ -1445,6 +1445,7 @@ function drawBlueJetFlame(ctx2d, scale){
 
 function drawDieselSmoke(ctx2d, scale){
   if(scale <= 0) return;
+
   const baseRadius = 5 * scale;
   ctx2d.save();
   ctx2d.translate(0, 15);
@@ -1462,6 +1463,7 @@ function drawDieselSmoke(ctx2d, scale){
     ctx2d.fillStyle = "#000";
     ctx2d.fill();
   }
+
 
   ctx2d.restore();
 }
