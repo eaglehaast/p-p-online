@@ -1443,6 +1443,20 @@ function drawBlueJetFlame(ctx2d, scale){
 
 }
 
+function drawDieselSmoke(ctx2d, scale){
+  if(scale <= 0) return;
+  const flicker = 0.9 + 0.2 * Math.sin(globalFrame * 0.2);
+  const radius  = 5 * scale * flicker;
+  ctx2d.save();
+  ctx2d.translate(0, 15);
+  ctx2d.globalAlpha = 0.6;
+  ctx2d.beginPath();
+  ctx2d.arc(0, 0, radius, 0, Math.PI * 2);
+  ctx2d.fillStyle = "#000";
+  ctx2d.fill();
+  ctx2d.restore();
+}
+
 function drawWingTrails(ctx2d){
   ctx2d.strokeStyle = "rgba(255,255,255,0.8)";
   ctx2d.lineWidth = 1;
@@ -1492,6 +1506,19 @@ function drawThinPlane(ctx2d, plane){
       drawPlaneOutline(ctx2d, color);
     }
   } else if(color === "green"){
+    const fp = flyingPoints.find(fp => fp.plane === plane);
+    if(fp){
+      const progress = (BOUNCE_FRAMES - fp.framesLeft) / BOUNCE_FRAMES;
+      let scale;
+      if(progress < 0.5){
+        scale = 4 - 4 * progress; // 20px -> 10px
+      } else {
+        scale = 3 - 2 * progress; // 10px -> 5px
+      }
+      drawDieselSmoke(ctx2d, scale);
+    } else {
+      drawDieselSmoke(ctx2d, 1);
+    }
     if(greenPlaneImg.complete){
       ctx2d.drawImage(greenPlaneImg, -20, -20, 40, 40);
     } else {
