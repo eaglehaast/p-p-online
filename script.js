@@ -1445,15 +1445,26 @@ function drawBlueJetFlame(ctx2d, scale){
 
 function drawDieselSmoke(ctx2d, scale){
   if(scale <= 0) return;
-  const flicker = 0.9 + 0.2 * Math.sin(globalFrame * 0.2);
-  const radius  = 5 * scale * flicker;
+
+  const baseRadius = 5 * scale;
   ctx2d.save();
   ctx2d.translate(0, 15);
-  ctx2d.globalAlpha = 0.6;
-  ctx2d.beginPath();
-  ctx2d.arc(0, 0, radius, 0, Math.PI * 2);
-  ctx2d.fillStyle = "#000";
-  ctx2d.fill();
+  ctx2d.scale(0.5, 1); // make smoke column narrower
+  ctx2d.globalAlpha = 1; // stronger contrast
+
+  for(let i = 0; i < 3; i++){
+    const phase   = globalFrame * 0.2 + i;
+    const flicker = 0.8 + 0.2 * Math.sin(phase);
+    const radius  = baseRadius * (0.7 + 0.3 * Math.sin(phase * 0.7)) * flicker;
+    const offsetX = Math.sin(phase) * baseRadius * 0.3;
+    const offsetY = -i * baseRadius * 0.9;
+    ctx2d.beginPath();
+    ctx2d.arc(offsetX, offsetY, radius, 0, Math.PI * 2);
+    ctx2d.fillStyle = "#000";
+    ctx2d.fill();
+  }
+
+
   ctx2d.restore();
 }
 
