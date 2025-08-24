@@ -39,15 +39,13 @@ const menuFlame   = document.getElementById("menuFlame");
 
 // Images for planes
 const bluePlaneImg = new Image();
-bluePlaneImg.src = "blue plane 23.3.png";
+bluePlaneImg.src = "blue plane 23.5.png";
 
 const greenPlaneImg = new Image();
-greenPlaneImg.src = "green plane.png";
 
-// Background field image
+greenPlaneImg.src = "green plane 2.png";
 const fieldImg = new Image();
-fieldImg.src = "field.png";
-
+fieldImg.src = "field 3.png";
 
 
 
