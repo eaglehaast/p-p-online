@@ -1450,15 +1450,17 @@ function drawDieselSmoke(ctx2d, scale){
   ctx2d.save();
   ctx2d.translate(0, 19);
   ctx2d.scale(0.5, 1); // make smoke column narrower
-  ctx2d.globalAlpha = 1; // stronger contrast
 
-  for(let i = 0; i < 3; i++){
-    const phase   = globalFrame * 0.2 + i;
+  const puffs = 3;
+  for(let i = 0; i < puffs; i++){
+    const phase   = globalFrame * 0.2 - i; // wave moves away from the plane
     const flicker = 0.8 + 0.2 * Math.sin(phase);
     const radius  = baseRadius * (0.7 + 0.3 * Math.sin(phase * 0.7)) * flicker;
     const offsetX = Math.sin(phase) * baseRadius * 0.3;
     const offsetY =  i * baseRadius * 0.9;
+    const alpha   = 1 - (i / (puffs - 1)) * 0.5; // fade to 50% transparency
     ctx2d.beginPath();
+    ctx2d.globalAlpha = alpha;
     ctx2d.arc(offsetX, offsetY, radius, 0, Math.PI * 2);
     ctx2d.fillStyle = "#000";
     ctx2d.fill();
