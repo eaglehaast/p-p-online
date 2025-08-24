@@ -46,7 +46,7 @@ greenPlaneImg.src = "green plane 2.png";
 
 // Background field image
 const fieldImg = new Image();
-fieldImg.src = "field 2.png";
+fieldImg.src = "field 3.png";
 
 
 
