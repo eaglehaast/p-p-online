@@ -309,12 +309,13 @@ if(classicRulesBtn){
 }
 if(advancedSettingsBtn){
   advancedSettingsBtn.addEventListener('click', () => {
-    classicRulesBtn?.classList.remove('selected');
-    advancedSettingsBtn.classList.add('selected');
-    applyCurrentMap();
-  });
-  advancedSettingsBtn.addEventListener('dblclick', () => {
-    window.location.href = 'settings.html';
+    if(advancedSettingsBtn.classList.contains('selected')){
+      window.location.href = 'settings.html';
+    } else {
+      classicRulesBtn?.classList.remove('selected');
+      advancedSettingsBtn.classList.add('selected');
+      applyCurrentMap();
+    }
   });
 }
 function updateModeSelection(){
