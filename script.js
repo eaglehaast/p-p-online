@@ -24,6 +24,7 @@ const onlineBtn   = document.getElementById("onlineBtn");
 
 const playBtn     = document.getElementById("playBtn");
 
+
 const flightRangeMinusBtn = document.getElementById("flightRangeMinus");
 const flightRangePlusBtn  = document.getElementById("flightRangePlus");
 const mapMinusBtn   = document.getElementById("mapMinus");
@@ -31,13 +32,13 @@ const mapPlusBtn    = document.getElementById("mapPlus");
 const amplitudeMinusBtn   = document.getElementById("amplitudeMinus");
 const amplitudePlusBtn    = document.getElementById("amplitudePlus");
 const addAAToggle         = document.getElementById("addAAToggle");
+
 const classicRulesBtn     = document.getElementById("classicRulesBtn");
 const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
 
 const endGameDiv  = document.getElementById("endGameButtons");
 const yesBtn      = document.getElementById("yesButton");
 const noBtn       = document.getElementById("noButton");
-const menuFlame   = document.getElementById("menuFlame");
 
 // Images for planes
 const bluePlaneImg = new Image();
@@ -159,7 +160,6 @@ let greenVictories = 0;
 let blueVictories  = 0;
 
 let animationFrameId = null;
-let menuAnimFrameId  = null;
 
 /* Планирование хода ИИ */
 let aiMoveScheduled = false;
@@ -224,13 +224,6 @@ function resetGame(){
   computerBtn.classList.remove("selected");
   onlineBtn.classList.remove("selected");
 
-  aimingAmplitude = 10;
-  updateAmplitudeDisplay();
-  updateFlightRangeDisplay();
-  resetFlightRangeFlame();
-
-  // Кнопки активны
-  setControlsEnabled(true);
 
   // Play disabled
   playBtn.disabled = true;
@@ -246,12 +239,11 @@ function resetGame(){
 
   // Остановить основной цикл
   stopGameLoop();
-  // Запустить анимацию меню (индикатор)
-  startMenuAnimation();
 
   initPoints();
   renderScoreboard();
 }
+
 function setControlsEnabled(enabled){
   if(flightRangeMinusBtn) flightRangeMinusBtn.disabled = !enabled;
   if(flightRangePlusBtn)  flightRangePlusBtn.disabled  = !enabled;
@@ -260,6 +252,7 @@ function setControlsEnabled(enabled){
   if(amplitudeMinusBtn)   amplitudeMinusBtn.disabled   = !enabled;
   if(amplitudePlusBtn)    amplitudePlusBtn.disabled    = !enabled;
 }
+
 
 function stopGameLoop(){
   if(animationFrameId !== null){
@@ -328,8 +321,6 @@ playBtn.addEventListener("click",()=>{
   gameCanvas.style.display = "block";
   scoreCanvasBottom.style.display = "block";
   aimCanvas.style.display = "block";
-
-  stopMenuAnimation();
   if (settings.addAA) {
     phase = 'AA_PLACEMENT';
     currentPlacer = 'green';
@@ -338,24 +329,6 @@ playBtn.addEventListener("click",()=>{
   }
   startGameLoop();
 });
-
-/* Меню: анимация индикатора амплитуды */
-function startMenuAnimation(){
-  if(menuAnimFrameId!==null) return;
-  oscillationPhase = 0;
-  const loop = ()=>{
-    updateAmplitudeIndicator();
-    oscillationPhase += oscillationSpeed;
-    menuAnimFrameId = requestAnimationFrame(loop);
-  };
-  loop();
-}
-function stopMenuAnimation(){
-  if(menuAnimFrameId!==null){
-    cancelAnimationFrame(menuAnimFrameId);
-    menuAnimFrameId = null;
-  }
-}
 
 /* ======= INPUT (slingshot) ======= */
 const handleCircle={
@@ -1292,9 +1265,6 @@ function handleAAForPlane(p, fp){
   // табло
   renderScoreboard();
 
-  // индикатор амплитуды
-  updateAmplitudeIndicator();
-
   if(isGameOver && winnerColor){
     gameCtx.font="48px 'Patrick Hand', cursive";
     gameCtx.fillStyle= winnerColor;
@@ -1848,91 +1818,6 @@ function drawPlayerPanel(ctx, color, victories, isTurn){
   ctx.fillText(String(victories), sectionW*2.5, canvas.height/2);
 }
 
-/* ======= UI CONTROLS ======= */
-const buttonIntervals = {};
-function startButtonInterval(button, action, delay=200, interval=100){
-  action();
-  buttonIntervals[button.id] = setTimeout(function repeat(){
-    action();
-    buttonIntervals[button.id] = setTimeout(repeat, interval);
-  }, delay);
-}
-function stopButtonInterval(button){
-  clearTimeout(buttonIntervals[button.id]);
-  delete buttonIntervals[button.id];
-}
-
-// Helper to support pointer and touch/mouse events
-function setupRepeatButton(btn, step){
-  const start = (event)=>{
-    event.preventDefault();
-    if(hasShotThisRound) return;
-    startButtonInterval(btn, step);
-  };
-  const stop = ()=>stopButtonInterval(btn);
-  if(window.PointerEvent){
-    btn.addEventListener("pointerdown", start);
-    btn.addEventListener("pointerup", stop);
-    btn.addEventListener("pointerleave", stop);
-  } else {
-    btn.addEventListener("mousedown", start);
-    btn.addEventListener("mouseup", stop);
-    btn.addEventListener("mouseleave", stop);
-    btn.addEventListener("touchstart", start);
-    btn.addEventListener("touchend", stop);
-  }
-}
-
-
-// Add Anti-Aircraft toggle
-
-if (addAAToggle) {
-  addAAToggle.checked = settings.addAA;
-  addAAToggle.addEventListener('change', (e)=>{
-    settings.addAA = e.target.checked;
-    localStorage.setItem('settings.addAA', settings.addAA);
-  });
-}
-
-/* Flight Range */
-if(flightRangeMinusBtn) setupRepeatButton(flightRangeMinusBtn, ()=>{
-  if(flightRangeCells > MIN_FLIGHT_RANGE_CELLS){
-    flightRangeCells--;
-    updateFlightRangeFlame();
-    updateFlightRangeDisplay();
-  }
-});
-if(flightRangePlusBtn) setupRepeatButton(flightRangePlusBtn, ()=>{
-  if(flightRangeCells < MAX_FLIGHT_RANGE_CELLS){
-    flightRangeCells++;
-    updateFlightRangeFlame();
-    updateFlightRangeDisplay();
-  }
-});
-
-/* Map */
-if(mapMinusBtn) setupRepeatButton(mapMinusBtn, ()=>{
-  mapIndex = (mapIndex - 1 + MAPS.length) % MAPS.length;
-  applyCurrentMap();
-});
-if(mapPlusBtn) setupRepeatButton(mapPlusBtn, ()=>{
-  mapIndex = (mapIndex + 1) % MAPS.length;
-  applyCurrentMap();
-});
-
-/* Aiming amplitude */
-if(amplitudeMinusBtn) setupRepeatButton(amplitudeMinusBtn, ()=>{
-  if(aimingAmplitude > MIN_AMPLITUDE){
-    aimingAmplitude--;
-    updateAmplitudeDisplay();
-  }
-});
-if(amplitudePlusBtn) setupRepeatButton(amplitudePlusBtn, ()=>{
-  if(aimingAmplitude < MAX_AMPLITUDE){
-    aimingAmplitude++;
-    updateAmplitudeDisplay();
-  }
-});
 
 /* Поля/здания */
 const buildingTypes = ['rectangle', 'rectangle_double', 'rectangle_triple'];
@@ -2026,14 +1911,6 @@ function startNewRound(){
   aiMoveScheduled = false;
 
   // оставляем текущую карту
-  updateMapDisplay();
-
-  aimingAmplitude = 10;
-  updateAmplitudeDisplay();
-  updateFlightRangeDisplay();
-  resetFlightRangeFlame();
-
-  setControlsEnabled(true);
 
   scoreCanvas.style.display = "block";
   gameCanvas.style.display = "block";
@@ -2050,37 +1927,7 @@ function startNewRound(){
   if(animationFrameId===null) startGameLoop();
 }
 
-/* ======= UI Helpers (амплитуда) ======= */
-function updateAmplitudeIndicator(){
-  const el = document.getElementById("amplitudeIndicator");
-  if(!el) return;
-  const sight = el.querySelector(".crosshair");
-  if(!sight) return;
-
-  const angleDeg = aimingAmplitude * Math.sin(oscillationPhase);
-  sight.style.transform = `rotate(${angleDeg}deg)`;
-
-  const disp = document.getElementById("amplitudeAngleDisplay");
-  if(disp){
-    const maxAngleDeg = aimingAmplitude * 2;
-    disp.textContent = `${maxAngleDeg.toFixed(0)}°`;
-  }
-}
-function updateAmplitudeDisplay(){
-  const disp = document.getElementById("amplitudeAngleDisplay");
-  if(disp){
-    const maxAngle = aimingAmplitude * 2;
-    disp.textContent = `${maxAngle.toFixed(0)}°`;
-  }
-}
-
-function updateMapDisplay(){
-  const el = document.getElementById("mapNameValue");
-  if(el){
-    el.textContent = MAPS[mapIndex];
-  }
-}
-
+/* ======= Map helpers ======= */
 function applyCurrentMap(){
   buildings = [];
   FIELD_BORDER_OFFSET = (MAPS[mapIndex] === "sharp edges") ? 0 : FIELD_BORDER_THICKNESS;
@@ -2118,46 +1965,8 @@ function applyCurrentMap(){
       color: "darkred"
     });
   }
-  updateMapDisplay();
   renderScoreboard();
 }
-
-/* ======= Flight Range helpers (самолёт и пламя) ======= */
-function updateFlightRangeDisplay(){
-  const el = document.getElementById("flightRangeDisplay");
-  if(el){
-    el.textContent = `${flightRangeCells} cells`;
-  }
-}
-function updateFlightRangeFlame(){
-  const trails = document.querySelectorAll("#flightRangeIndicator .wing-trail");
-  const minScale = 0.8;
-  const maxScale = 1.6;
-  const t = (flightRangeCells - MIN_FLIGHT_RANGE_CELLS) /
-            (MAX_FLIGHT_RANGE_CELLS - MIN_FLIGHT_RANGE_CELLS);
-  const ratio = minScale + t * (maxScale - minScale);
-
-
-
-  if(menuFlame){
-
-    const baseWidth = 32;  // matches CSS default after reduction
-    const baseHeight = 10; // matches CSS default after reduction
-
-    menuFlame.style.width = `${baseWidth * ratio}px`;
-    menuFlame.style.height = `${baseHeight * (0.9 + 0.1 * ratio)}px`;
-
-  }
-  if(trails.length){
-    const baseTrailWidth = 35;  // matches CSS default
-    const baseTrailHeight = 2;  // matches CSS default
-    trails.forEach(trail => {
-      trail.style.width = `${baseTrailWidth * ratio}px`;
-      trail.style.height = `${baseTrailHeight}px`;
-    });
-  }
-}
-function resetFlightRangeFlame(){ updateFlightRangeFlame(); }
 
 /* ======= CANVAS RESIZE ======= */
 function resizeCanvas() {
