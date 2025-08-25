@@ -106,7 +106,7 @@ body {
   margin-bottom: 15px;
 }
 
-#modeMenu .mode-options button {
+#modeMenu .mode-btn {
   padding: 12px 8px;
   margin: 0;
   font-size: 16px;
@@ -153,7 +153,13 @@ body {
   background: linear-gradient(145deg, #5bc0de, #31b0d5);
 }
 
-#modeMenu .mode-options button:hover:not(.selected) {
+#modeMenu #backBtn {
+  width: 100%;
+  padding: 12px;
+  margin-top: 15px;
+}
+
+#modeMenu .mode-btn:hover:not(.selected) {
   transform: translateY(-5px);
   box-shadow: 0 8px 16px rgba(0,0,0,0.35);
 }
@@ -168,7 +174,7 @@ body {
 }
 
 /* Disabled */
-#modeMenu .mode-options button:disabled,
+#modeMenu .mode-btn:disabled,
 #modeMenu #playBtn.disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -176,7 +182,7 @@ body {
 }
 
 /* Selected */
-#modeMenu .mode-options button.selected {
+#modeMenu .mode-btn.selected {
   background: linear-gradient(145deg, #f80101, #d53131);
   box-shadow: 0 8px 16px rgba(0,0,0,0.35);
 }

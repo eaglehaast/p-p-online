@@ -64,7 +64,7 @@ function animateAmplitudeIndicator(){
   const angle = Math.sin(ampPhase) * aimingAmplitude * 2;
   crosshair.style.transform = `rotate(${angle}deg)`;
   requestAnimationFrame(animateAmplitudeIndicator);
-
+}
 
 function updateMapDisplay(){
   const el = document.getElementById('mapNameValue');
@@ -161,5 +161,6 @@ if(backBtn){
 updateFlightRangeDisplay();
 updateFlightRangeFlame();
 updateAmplitudeDisplay();
+updateMapDisplay();
 
 animateAmplitudeIndicator();
