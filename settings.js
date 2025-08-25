@@ -55,15 +55,12 @@ function updateAmplitudeDisplay(){
   }
 }
 
-
-let ampPhase = 0;
-function animateAmplitudeIndicator(){
-  const crosshair = document.querySelector('#amplitudeIndicator .crosshair');
-  if(!crosshair) return;
-  ampPhase += 0.02;
-  const angle = Math.sin(ampPhase) * aimingAmplitude * 2;
-  crosshair.style.transform = `rotate(${angle}deg)`;
-  requestAnimationFrame(animateAmplitudeIndicator);
+function updateAmplitudeIndicator(){
+  const indicator = document.getElementById('amplitudeIndicator');
+  if(indicator){
+    const maxAngle = aimingAmplitude * 2;
+    indicator.style.setProperty('--amp', `${maxAngle}deg`);
+  }
 }
 
 function updateMapDisplay(){
@@ -127,9 +124,7 @@ setupRepeatButton(amplitudeMinusBtn, () => {
   if(aimingAmplitude > MIN_AMPLITUDE){
     aimingAmplitude--;
     updateAmplitudeDisplay();
-
     updateAmplitudeIndicator();
-
     saveSettings();
   }
 });
@@ -137,7 +132,7 @@ setupRepeatButton(amplitudePlusBtn, () => {
   if(aimingAmplitude < MAX_AMPLITUDE){
     aimingAmplitude++;
     updateAmplitudeDisplay();
-
+    updateAmplitudeIndicator();
     saveSettings();
   }
 });
@@ -162,5 +157,4 @@ updateFlightRangeDisplay();
 updateFlightRangeFlame();
 updateAmplitudeDisplay();
 updateMapDisplay();
-
-animateAmplitudeIndicator();
+updateAmplitudeIndicator();
