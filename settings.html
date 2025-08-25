@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Advanced Settings - Paper Wings!</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Roboto&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="modeMenu">
+    <h1 class="game-title">Advanced Settings</h1>
+    <div class="control-group-row">
+      <div class="control-pair-row">
+        <!-- Flight Range Control -->
+        <div class="control-box">
+          <div class="control-label">Flight Range</div>
+          <div id="flightRangeIndicator" class="control-visual">
+            <div class="jet">
+              <div class="wing-trail top"></div>
+              <div class="wing-trail bottom"></div>
+              <svg class="jet-plane" viewBox="0 0 38 20">
+                <polygon points="38,10 8,20 8,15 0,10 8,5 8,0" />
+              </svg>
+              <svg id="menuFlame" class="jet-flame" viewBox="0 0 40 20" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+                <defs>
+                  <radialGradient id="menuFlameGradient" cx="100%" cy="50%" r="60%">
+                    <stop offset="0%" stop-color="#ff8c00" />
+                    <stop offset="100%" stop-color="#ff0000" />
+                  </radialGradient>
+                </defs>
+                <path d="M40 10 C38 2 30 0 22 0 C14 0 6 8 8 14 C10 18 18 20 26 18 C34 16 38 14 40 10 Z" fill="url(#menuFlameGradient)" />
+              </svg>
+            </div>
+          </div>
+          <div class="control-value"><span id="flightRangeDisplay">15 cells</span></div>
+          <div class="control-buttons">
+            <button id="flightRangeMinus" class="control-btn">−</button>
+            <button id="flightRangePlus" class="control-btn">+</button>
+          </div>
+        </div>
+
+        <!-- Aiming Amplitude Control -->
+        <div class="control-box">
+          <div class="control-label">Aiming Amplitude</div>
+          <div id="amplitudeIndicator" class="control-visual">
+            <div class="crosshair">
+              <div class="inner-circle"></div>
+              <div class="center-dot"></div>
+              <div class="horizontal"></div>
+              <div class="vertical"></div>
+            </div>
+          </div>
+          <div class="control-value"><span id="amplitudeAngleDisplay">20°</span></div>
+          <div class="control-buttons">
+            <button id="amplitudeMinus" class="control-btn">−</button>
+            <button id="amplitudePlus" class="control-btn">+</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Map Control -->
+      <div class="control-box" id="mapControl">
+        <div class="control-label">Map</div>
+        <div id="mapNameDisplay" class="control-value">
+          <span id="mapNameValue">wall</span>
+        </div>
+        <div class="aa-toggle">
+          <label><input type="checkbox" id="addAAToggle" /> Add Anti-Aircraft</label>
+        </div>
+        <div class="control-buttons">
+          <button id="mapMinus" class="control-btn">−</button>
+          <button id="mapPlus" class="control-btn">+</button>
+        </div>
+      </div>
+    </div>
+    <button id="backBtn" class="mode-btn" style="margin-top:15px;">Back</button>
+  </div>
+  <script src="settings.js"></script>
+</body>
+</html>

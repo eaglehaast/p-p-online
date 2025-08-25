@@ -31,6 +31,8 @@ const mapPlusBtn    = document.getElementById("mapPlus");
 const amplitudeMinusBtn   = document.getElementById("amplitudeMinus");
 const amplitudePlusBtn    = document.getElementById("amplitudePlus");
 const addAAToggle         = document.getElementById("addAAToggle");
+const classicRulesBtn     = document.getElementById("classicRulesBtn");
+const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
 
 const endGameDiv  = document.getElementById("endGameButtons");
 const yesBtn      = document.getElementById("yesButton");
@@ -109,13 +111,13 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 
 const MAPS = ["clear sky", "wall", "two walls", "sharp edges"];
-let mapIndex = 1;
+let mapIndex = parseInt(localStorage.getItem('settings.mapIndex')) || 1;
 
-let flightRangeCells = 15;     // значение «в клетках» для меню/физики
+let flightRangeCells = parseInt(localStorage.getItem('settings.flightRangeCells')) || 15;     // значение «в клетках» для меню/физики
 let buildingsCount   = 0;
 
 
-let aimingAmplitude  = 10;     // 0..30 (UI показывает *2)
+let aimingAmplitude  = parseInt(localStorage.getItem('settings.aimingAmplitude')) || 10;     // 0..30 (UI показывает *2)
 
 let isGameOver   = false;
 let winnerColor  = null;
@@ -206,7 +208,6 @@ function resetGame(){
   globalFrame=0;
   flyingPoints= [];
   buildings = [];
-  mapIndex = 1;
   applyCurrentMap();
 
   aaUnits = [];
@@ -252,12 +253,12 @@ function resetGame(){
   renderScoreboard();
 }
 function setControlsEnabled(enabled){
-  flightRangeMinusBtn.disabled = !enabled;
-  flightRangePlusBtn.disabled  = !enabled;
-  mapMinusBtn.disabled   = !enabled;
-  mapPlusBtn.disabled    = !enabled;
-  amplitudeMinusBtn.disabled   = !enabled;
-  amplitudePlusBtn.disabled    = !enabled;
+  if(flightRangeMinusBtn) flightRangeMinusBtn.disabled = !enabled;
+  if(flightRangePlusBtn)  flightRangePlusBtn.disabled  = !enabled;
+  if(mapMinusBtn)   mapMinusBtn.disabled   = !enabled;
+  if(mapPlusBtn)    mapPlusBtn.disabled    = !enabled;
+  if(amplitudeMinusBtn)   amplitudeMinusBtn.disabled   = !enabled;
+  if(amplitudePlusBtn)    amplitudePlusBtn.disabled    = !enabled;
 }
 
 function stopGameLoop(){
@@ -285,6 +286,25 @@ onlineBtn.addEventListener("click",()=>{
   selectedMode = (selectedMode==="online" ? null : "online");
   updateModeSelection();
 });
+if(classicRulesBtn){
+  classicRulesBtn.addEventListener('click', () => {
+    flightRangeCells = 15;
+    aimingAmplitude = 10;
+    mapIndex = 1;
+    settings.addAA = false;
+    localStorage.removeItem('settings.flightRangeCells');
+    localStorage.removeItem('settings.aimingAmplitude');
+    localStorage.removeItem('settings.mapIndex');
+    localStorage.removeItem('settings.addAA');
+    applyCurrentMap();
+    classicRulesBtn.classList.add('selected');
+  });
+}
+if(advancedSettingsBtn){
+  advancedSettingsBtn.addEventListener('click', () => {
+    window.location.href = 'settings.html';
+  });
+}
 function updateModeSelection(){
   hotSeatBtn.classList.toggle("selected", selectedMode==="hotSeat");
   computerBtn.classList.toggle("selected", selectedMode==="computer");
@@ -1875,14 +1895,14 @@ if (addAAToggle) {
 }
 
 /* Flight Range */
-setupRepeatButton(flightRangeMinusBtn, ()=>{
+if(flightRangeMinusBtn) setupRepeatButton(flightRangeMinusBtn, ()=>{
   if(flightRangeCells > MIN_FLIGHT_RANGE_CELLS){
     flightRangeCells--;
     updateFlightRangeFlame();
     updateFlightRangeDisplay();
   }
 });
-setupRepeatButton(flightRangePlusBtn, ()=>{
+if(flightRangePlusBtn) setupRepeatButton(flightRangePlusBtn, ()=>{
   if(flightRangeCells < MAX_FLIGHT_RANGE_CELLS){
     flightRangeCells++;
     updateFlightRangeFlame();
@@ -1891,23 +1911,23 @@ setupRepeatButton(flightRangePlusBtn, ()=>{
 });
 
 /* Map */
-setupRepeatButton(mapMinusBtn, ()=>{
+if(mapMinusBtn) setupRepeatButton(mapMinusBtn, ()=>{
   mapIndex = (mapIndex - 1 + MAPS.length) % MAPS.length;
   applyCurrentMap();
 });
-setupRepeatButton(mapPlusBtn, ()=>{
+if(mapPlusBtn) setupRepeatButton(mapPlusBtn, ()=>{
   mapIndex = (mapIndex + 1) % MAPS.length;
   applyCurrentMap();
 });
 
 /* Aiming amplitude */
-setupRepeatButton(amplitudeMinusBtn, ()=>{
+if(amplitudeMinusBtn) setupRepeatButton(amplitudeMinusBtn, ()=>{
   if(aimingAmplitude > MIN_AMPLITUDE){
     aimingAmplitude--;
     updateAmplitudeDisplay();
   }
 });
-setupRepeatButton(amplitudePlusBtn, ()=>{
+if(amplitudePlusBtn) setupRepeatButton(amplitudePlusBtn, ()=>{
   if(aimingAmplitude < MAX_AMPLITUDE){
     aimingAmplitude++;
     updateAmplitudeDisplay();
