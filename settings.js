@@ -55,18 +55,16 @@ function updateAmplitudeDisplay(){
   }
 }
 
-function updateAmplitudeIndicator(){
-  const el = document.getElementById('amplitudeIndicator');
-  if(!el) return;
 
+let ampPhase = 0;
+function animateAmplitudeIndicator(){
+  const crosshair = document.querySelector('#amplitudeIndicator .crosshair');
+  if(!crosshair) return;
+  ampPhase += 0.02;
+  const angle = Math.sin(ampPhase) * aimingAmplitude * 2;
+  crosshair.style.transform = `rotate(${angle}deg)`;
+  requestAnimationFrame(animateAmplitudeIndicator);
 
-  const sight = el.querySelector('.crosshair');
-  if(!sight) return;
-  const angleDeg = aimingAmplitude;
-  sight.style.transform = `rotate(${angleDeg}deg)`;
-
-
-}
 
 function updateMapDisplay(){
   const el = document.getElementById('mapNameValue');
@@ -129,7 +127,9 @@ setupRepeatButton(amplitudeMinusBtn, () => {
   if(aimingAmplitude > MIN_AMPLITUDE){
     aimingAmplitude--;
     updateAmplitudeDisplay();
+
     updateAmplitudeIndicator();
+
     saveSettings();
   }
 });
@@ -137,7 +137,7 @@ setupRepeatButton(amplitudePlusBtn, () => {
   if(aimingAmplitude < MAX_AMPLITUDE){
     aimingAmplitude++;
     updateAmplitudeDisplay();
-    updateAmplitudeIndicator();
+
     saveSettings();
   }
 });
@@ -161,5 +161,5 @@ if(backBtn){
 updateFlightRangeDisplay();
 updateFlightRangeFlame();
 updateAmplitudeDisplay();
-updateAmplitudeIndicator();
-updateMapDisplay();
+
+animateAmplitudeIndicator();

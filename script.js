@@ -24,9 +24,9 @@ const onlineBtn   = document.getElementById("onlineBtn");
 
 const playBtn     = document.getElementById("playBtn");
 
-
 const classicRulesBtn     = document.getElementById("classicRulesBtn");
 const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
+
 
 
 
@@ -112,8 +112,8 @@ const MAPS = ["clear sky", "wall", "two walls", "sharp edges"];
 let mapIndex = parseInt(localStorage.getItem('settings.mapIndex')) || 1;
 
 
+
 let flightRangeCells = parseInt(localStorage.getItem('settings.flightRangeCells')) || 15; // cells for menu and physics
-=======
 
 let buildingsCount   = 0;
 
