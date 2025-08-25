@@ -23,6 +23,16 @@ const computerBtn = document.getElementById("computerBtn");
 const onlineBtn   = document.getElementById("onlineBtn");
 
 const playBtn     = document.getElementById("playBtn");
+
+
+const flightRangeMinusBtn = document.getElementById("flightRangeMinus");
+const flightRangePlusBtn  = document.getElementById("flightRangePlus");
+const mapMinusBtn   = document.getElementById("mapMinus");
+const mapPlusBtn    = document.getElementById("mapPlus");
+const amplitudeMinusBtn   = document.getElementById("amplitudeMinus");
+const amplitudePlusBtn    = document.getElementById("amplitudePlus");
+const addAAToggle         = document.getElementById("addAAToggle");
+
 const classicRulesBtn     = document.getElementById("classicRulesBtn");
 const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
 
@@ -233,6 +243,16 @@ function resetGame(){
   initPoints();
   renderScoreboard();
 }
+
+function setControlsEnabled(enabled){
+  if(flightRangeMinusBtn) flightRangeMinusBtn.disabled = !enabled;
+  if(flightRangePlusBtn)  flightRangePlusBtn.disabled  = !enabled;
+  if(mapMinusBtn)   mapMinusBtn.disabled   = !enabled;
+  if(mapPlusBtn)    mapPlusBtn.disabled    = !enabled;
+  if(amplitudeMinusBtn)   amplitudeMinusBtn.disabled   = !enabled;
+  if(amplitudePlusBtn)    amplitudePlusBtn.disabled    = !enabled;
+}
+
 
 function stopGameLoop(){
   if(animationFrameId !== null){
@@ -1797,6 +1817,7 @@ function drawPlayerPanel(ctx, color, victories, isTurn){
   ctx.fillStyle = color;
   ctx.fillText(String(victories), sectionW*2.5, canvas.height/2);
 }
+
 
 /* Поля/здания */
 const buildingTypes = ['rectangle', 'rectangle_double', 'rectangle_triple'];
