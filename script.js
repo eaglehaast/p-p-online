@@ -24,8 +24,10 @@ const onlineBtn   = document.getElementById("onlineBtn");
 
 const playBtn     = document.getElementById("playBtn");
 
+
 const classicRulesBtn     = document.getElementById("classicRulesBtn");
 const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
+
 
 
 const classicRulesBtn     = document.getElementById("classicRulesBtn");
@@ -109,7 +111,10 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 const MAPS = ["clear sky", "wall", "two walls", "sharp edges"];
 let mapIndex = parseInt(localStorage.getItem('settings.mapIndex')) || 1;
 
-let flightRangeCells = parseInt(localStorage.getItem('settings.flightRangeCells')) || 15;     // значение «в клетках» для меню/физики
+
+let flightRangeCells = parseInt(localStorage.getItem('settings.flightRangeCells')) || 15; // cells for menu and physics
+=======
+
 let buildingsCount   = 0;
 
 
@@ -238,7 +243,6 @@ function resetGame(){
   initPoints();
   renderScoreboard();
 }
-
 
 
 function stopGameLoop(){
