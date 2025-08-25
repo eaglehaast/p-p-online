@@ -119,6 +119,31 @@ body {
   transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
 }
 
+/* Rules buttons */
+#modeMenu .rules-options {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+#modeMenu .rules-options .rules-btn {
+  padding: 10px 15px;
+  font-size: 16px;
+  font-weight: bold;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #6c757d, #5a6268);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
+}
+
+#modeMenu .rules-options .rules-btn.selected {
+  background: linear-gradient(145deg, #28a745, #218838);
+}
+
 #modeMenu #playBtn {
   width: 100%;
   padding: 12px;
