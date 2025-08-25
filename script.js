@@ -23,6 +23,11 @@ const computerBtn = document.getElementById("computerBtn");
 const onlineBtn   = document.getElementById("onlineBtn");
 
 const playBtn     = document.getElementById("playBtn");
+
+const classicRulesBtn     = document.getElementById("classicRulesBtn");
+const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
+
+
 const classicRulesBtn     = document.getElementById("classicRulesBtn");
 const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
 
@@ -233,6 +238,8 @@ function resetGame(){
   initPoints();
   renderScoreboard();
 }
+
+
 
 function stopGameLoop(){
   if(animationFrameId !== null){
@@ -1797,6 +1804,7 @@ function drawPlayerPanel(ctx, color, victories, isTurn){
   ctx.fillStyle = color;
   ctx.fillText(String(victories), sectionW*2.5, canvas.height/2);
 }
+
 
 /* Поля/здания */
 const buildingTypes = ['rectangle', 'rectangle_double', 'rectangle_triple'];
