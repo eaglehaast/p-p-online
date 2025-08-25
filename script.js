@@ -84,7 +84,7 @@ const PLANES_PER_SIDE      = 4;      // количество самолётов 
 
 // Explosion effect
 const EXPLOSION_DURATION_MS = 500;   // time before showing cross
-const EXPLOSION_SIZE        = 32;    // px, larger for better visibility
+const EXPLOSION_SIZE        = 96;    // px, larger for better visibility
 
 
 const MIN_FLIGHT_RANGE_CELLS = 5;
@@ -1741,14 +1741,18 @@ function checkPlaneHits(plane, fp){
   for(const p of points){
     if(!p.isAlive || p.burning) continue;
     if(p.color !== enemyColor) continue;
-    const d = Math.hypot(plane.x - p.x, plane.y - p.y);
+    const dx = p.x - plane.x;
+    const dy = p.y - plane.y;
+    const d  = Math.hypot(dx, dy);
     if(d < POINT_RADIUS*2){
       p.isAlive = false;
       p.burning = true;
       p.explosionStart = performance.now();
       restartExplosionGif();
-      p.collisionX = p.x;
-      p.collisionY = p.y;
+      const cx = d === 0 ? plane.x : plane.x + dx / d * POINT_RADIUS;
+      const cy = d === 0 ? plane.y : plane.y + dy / d * POINT_RADIUS;
+      p.collisionX = cx;
+      p.collisionY = cy;
       fp.hit = true;
       checkVictory();
       if(isGameOver) return;
