@@ -45,6 +45,11 @@ fieldImg.src = "field 3.png";
 // Explosion animation (DOM element ensures GIF animates)
 const explosionImg = document.getElementById("explosionGif");
 
+function restartExplosionGif(){
+  const baseSrc = explosionImg.src.split('?')[0];
+  explosionImg.src = `${baseSrc}?t=${Date.now()}`;
+}
+
 
 
 
@@ -79,7 +84,7 @@ const PLANES_PER_SIDE      = 4;      // количество самолётов 
 
 // Explosion effect
 const EXPLOSION_DURATION_MS = 500;   // time before showing cross
-const EXPLOSION_SIZE        = 16;    // px, not bigger than red cross
+const EXPLOSION_SIZE        = 32;    // px, larger for better visibility
 
 
 const MIN_FLIGHT_RANGE_CELLS = 5;
@@ -970,6 +975,7 @@ function destroyPlane(fp){
   p.isAlive = false;
   p.burning = true;
   p.explosionStart = performance.now();
+  restartExplosionGif();
   p.collisionX = p.x;
   p.collisionY = p.y;
   flyingPoints = flyingPoints.filter(x=>x!==fp);
@@ -1017,6 +1023,7 @@ function handleAAForPlane(p, fp){
               aa.lastTriggerAt = now;
               p.isAlive=false; p.burning=true;
               p.explosionStart = performance.now();
+              restartExplosionGif();
               p.collisionX=p.x; p.collisionY=p.y;
               if(fp) {
                 flyingPoints = flyingPoints.filter(x=>x!==fp);
@@ -1739,6 +1746,7 @@ function checkPlaneHits(plane, fp){
       p.isAlive = false;
       p.burning = true;
       p.explosionStart = performance.now();
+      restartExplosionGif();
       p.collisionX = p.x;
       p.collisionY = p.y;
       fp.hit = true;
