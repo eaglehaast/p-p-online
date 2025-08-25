@@ -41,8 +41,10 @@ greenPlaneImg.src = "green plane 2.png";
 const fieldImg = new Image();
 fieldImg.src = "field 3.png";
 
+
 // Explosion animation (DOM element ensures GIF animates)
 const explosionImg = document.getElementById("explosionGif");
+
 
 
 
@@ -1585,15 +1587,9 @@ function drawPlanesAndTrajectories(){
       const cx = p.collisionX ?? p.x;
       const cy = p.collisionY ?? p.y;
       if(!isExplosionFinished(p)){
-        if (explosionImg.complete) {
-          gameCtx.drawImage(
-            explosionImg,
-            cx - EXPLOSION_SIZE / 2,
-            cy - EXPLOSION_SIZE / 2,
-            EXPLOSION_SIZE,
-            EXPLOSION_SIZE
-          );
-        }
+
+        gameCtx.drawImage(explosionImg, cx - EXPLOSION_SIZE/2, cy - EXPLOSION_SIZE/2, EXPLOSION_SIZE, EXPLOSION_SIZE);
+
       } else {
         drawRedCross(gameCtx, cx, cy, 16);
       }
