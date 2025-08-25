@@ -791,17 +791,23 @@ function getRandomDeviation(distance, maxDev){
 
 /* Зеркальный выстрел (одно отражение) */
 function findMirrorShot(plane, enemy){
-  let best = null; // {edge, mirrorTarget, totalDist}
+  let best = null; // {mirrorTarget, totalDist}
 
   for(const b of buildings){
     const left = b.x - b.width/2, right = b.x + b.width/2;
     const top  = b.y - b.height/2, bottom = b.y + b.height/2;
 
+    // учитываем радиус самолёта при планировании
+    const mLeft   = left   - POINT_RADIUS;
+    const mRight  = right  + POINT_RADIUS;
+    const mTop    = top    - POINT_RADIUS;
+    const mBottom = bottom + POINT_RADIUS;
+
     const edges = [
-      {type:"H", x1:left, y1:top,    x2:right, y2:top   },
-      {type:"H", x1:left, y1:bottom, x2:right, y2:bottom},
-      {type:"V", x1:left, y1:top,    x2:left,  y2:bottom},
-      {type:"V", x1:right,y1:top,    x2:right, y2:bottom}
+      {type:"H", x1:left, y1:top,    x2:right, y2:top,    big:{x1:mLeft,  y1:mTop,    x2:mRight, y2:mTop}},
+      {type:"H", x1:left, y1:bottom, x2:right, y2:bottom, big:{x1:mLeft,  y1:mBottom, x2:mRight, y2:mBottom}},
+      {type:"V", x1:left, y1:top,    x2:left,  y2:bottom, big:{x1:mLeft,  y1:mTop,    x2:mLeft,  y2:mBottom}},
+      {type:"V", x1:right,y1:top,    x2:right, y2:bottom, big:{x1:mRight, y1:mTop,    x2:mRight, y2:mBottom}}
     ];
 
     for(const e of edges){
@@ -823,14 +829,14 @@ function findMirrorShot(plane, enemy){
       if(!inter) continue;
 
       // Путь чист?
-      if(!isPathClearExceptEdge(plane.x, plane.y, inter.x, inter.y, b, e)) continue;
-      if(!isPathClearExceptEdge(inter.x, inter.y, enemy.x, enemy.y, b, e)) continue;
+      if(!isPathClearExceptEdge(plane.x, plane.y, inter.x, inter.y, b, e.big)) continue;
+      if(!isPathClearExceptEdge(inter.x, inter.y, enemy.x, enemy.y, b, e.big)) continue;
 
       const totalDist = Math.hypot(plane.x - inter.x, plane.y - inter.y) +
                         Math.hypot(inter.x  - enemy.x, inter.y  - enemy.y);
 
       if(!best || totalDist < best.totalDist){
-        best = {edge:e, mirrorTarget, totalDist};
+        best = {mirrorTarget, totalDist};
       }
     }
   }
@@ -863,8 +869,11 @@ function isPathClearExceptEdge(x1,y1,x2,y2, building, edge){
 }
 
 function checkLineIntersectionWithBuilding(x1,y1,x2,y2,b, ignoreEdge=null){
-  const left = b.x - b.width/2, right = b.x + b.width/2;
-  const top  = b.y - b.height/2, bottom = b.y + b.height/2;
+  const margin = POINT_RADIUS;
+  const left   = b.x - b.width/2  - margin,
+        right  = b.x + b.width/2  + margin,
+        top    = b.y - b.height/2 - margin,
+        bottom = b.y + b.height/2 + margin;
 
   const edges = [
     {id:"top",    x1:left, y1:top,    x2:right, y2:top   },
