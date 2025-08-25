@@ -58,10 +58,12 @@ function updateAmplitudeDisplay(){
 function updateAmplitudeIndicator(){
   const el = document.getElementById('amplitudeIndicator');
   if(!el) return;
+
   const sight = el.querySelector('.crosshair');
   if(!sight) return;
   const angleDeg = aimingAmplitude;
   sight.style.transform = `rotate(${angleDeg}deg)`;
+
 }
 
 function updateMapDisplay(){
