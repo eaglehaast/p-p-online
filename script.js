@@ -41,6 +41,9 @@ greenPlaneImg.src = "green plane 2.png";
 const fieldImg = new Image();
 fieldImg.src = "field 3.png";
 
+// Explosion animation (DOM element ensures GIF animates)
+const explosionImg = document.getElementById("explosionGif");
+
 
 
 
@@ -71,6 +74,10 @@ const MAX_TRAIL_SEGMENTS   = Infinity;
 const BUILDING_BUFFER      = CELL_SIZE / 2;
 const MAX_BUILDINGS_GLOBAL = 100;
 const PLANES_PER_SIDE      = 4;      // количество самолётов у каждой команды
+
+// Explosion effect
+const EXPLOSION_DURATION_MS = 500;   // time before showing cross
+const EXPLOSION_SIZE        = 16;    // px, not bigger than red cross
 
 
 const MIN_FLIGHT_RANGE_CELLS = 5;
@@ -181,6 +188,7 @@ function makePlane(x,y,color,angle){
     color,
     isAlive:true,
     burning:false,
+    explosionStart:null,
     angle,
     segments:[],
     collisionX:null,
@@ -959,6 +967,7 @@ function destroyPlane(fp){
   const p = fp.plane;
   p.isAlive = false;
   p.burning = true;
+  p.explosionStart = performance.now();
   p.collisionX = p.x;
   p.collisionY = p.y;
   flyingPoints = flyingPoints.filter(x=>x!==fp);
@@ -1005,6 +1014,7 @@ function handleAAForPlane(p, fp){
             if(!aa.lastTriggerAt || now - aa.lastTriggerAt > aa.cooldownMs){
               aa.lastTriggerAt = now;
               p.isAlive=false; p.burning=true;
+              p.explosionStart = performance.now();
               p.collisionX=p.x; p.collisionY=p.y;
               if(fp) {
                 flyingPoints = flyingPoints.filter(x=>x!==fp);
@@ -1532,6 +1542,10 @@ function drawRedCross(ctx2d, cx, cy, size=20){
   ctx2d.restore();
 }
 
+function isExplosionFinished(p){
+  return p.explosionStart && (performance.now() - p.explosionStart >= EXPLOSION_DURATION_MS);
+}
+
   function drawMiniPlaneWithCross(ctx2d, x, y, color, isAlive, isBurning, scale=1){
     ctx2d.save();
     ctx2d.translate(x, y);
@@ -1568,7 +1582,21 @@ function drawPlanesAndTrajectories(){
     }
     drawThinPlane(gameCtx, p);
     if(p.burning){
-      drawRedCross(gameCtx, p.collisionX ?? p.x, p.collisionY ?? p.y, 16);
+      const cx = p.collisionX ?? p.x;
+      const cy = p.collisionY ?? p.y;
+      if(!isExplosionFinished(p)){
+        if (explosionImg.complete) {
+          gameCtx.drawImage(
+            explosionImg,
+            cx - EXPLOSION_SIZE / 2,
+            cy - EXPLOSION_SIZE / 2,
+            EXPLOSION_SIZE,
+            EXPLOSION_SIZE
+          );
+        }
+      } else {
+        drawRedCross(gameCtx, cx, cy, 16);
+      }
     }
   }
 }
@@ -1714,6 +1742,7 @@ function checkPlaneHits(plane, fp){
     if(d < POINT_RADIUS*2){
       p.isAlive = false;
       p.burning = true;
+      p.explosionStart = performance.now();
       p.collisionX = p.x;
       p.collisionY = p.y;
       fp.hit = true;
@@ -1768,12 +1797,12 @@ function drawPlayerPanel(ctx, color, victories, isTurn){
   for (let i = 0; i < Math.min(bluePlanes.length, maxPerRow); i++) {
     const p = bluePlanes[i];
     const x = startX + i * spacingX;
-    drawMiniPlaneWithCross(ctx, x, blueY, "blue", p.isAlive, p.burning, 0.8);
+    drawMiniPlaneWithCross(ctx, x, blueY, "blue", p.isAlive, p.burning && isExplosionFinished(p), 0.8);
   }
   for (let i = 0; i < Math.min(greenPlanes.length, maxPerRow); i++) {
     const p = greenPlanes[i];
     const x = startX + i * spacingX;
-    drawMiniPlaneWithCross(ctx, x, greenY, "green", p.isAlive, p.burning, 0.8);
+    drawMiniPlaneWithCross(ctx, x, greenY, "green", p.isAlive, p.burning && isExplosionFinished(p), 0.8);
   }
 
   // turn indicator
