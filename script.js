@@ -163,6 +163,19 @@ let settings = {
   addAA: localStorage.getItem('settings.addAA') === 'true'
 };
 
+// Highlight advanced settings button if custom settings are stored
+const hasCustomSettings = [
+  'settings.flightRangeCells',
+  'settings.aimingAmplitude',
+  'settings.mapIndex',
+  'settings.addAA'
+].some(key => localStorage.getItem(key) !== null);
+
+if(hasCustomSettings && classicRulesBtn && advancedSettingsBtn){
+  classicRulesBtn.classList.remove('selected');
+  advancedSettingsBtn.classList.add('selected');
+}
+
 
 let greenVictories = 0;
 let blueVictories  = 0;
@@ -290,11 +303,17 @@ if(classicRulesBtn){
     localStorage.removeItem('settings.mapIndex');
     localStorage.removeItem('settings.addAA');
     applyCurrentMap();
+    advancedSettingsBtn?.classList.remove('selected');
     classicRulesBtn.classList.add('selected');
   });
 }
 if(advancedSettingsBtn){
   advancedSettingsBtn.addEventListener('click', () => {
+    classicRulesBtn?.classList.remove('selected');
+    advancedSettingsBtn.classList.add('selected');
+    applyCurrentMap();
+  });
+  advancedSettingsBtn.addEventListener('dblclick', () => {
     window.location.href = 'settings.html';
   });
 }
