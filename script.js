@@ -27,12 +27,6 @@ const playBtn     = document.getElementById("playBtn");
 const classicRulesBtn     = document.getElementById("classicRulesBtn");
 const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
 
-
-
-
-const classicRulesBtn     = document.getElementById("classicRulesBtn");
-const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
-
 const endGameDiv  = document.getElementById("endGameButtons");
 const yesBtn      = document.getElementById("yesButton");
 const noBtn       = document.getElementById("noButton");
