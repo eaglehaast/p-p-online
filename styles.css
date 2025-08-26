@@ -72,9 +72,9 @@ body {
 /* Меню выбора режима */
 #modeMenu {
   position: fixed;
-  top: 50%;
+  top: 0;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   background: linear-gradient(135deg, #fffbe6, #ffe0b3);
   border: 2px solid #ffd699;
   border-radius: 15px;
@@ -84,9 +84,12 @@ body {
   box-shadow: 0 8px 16px rgba(0,0,0,0.2);
   width: 95vw;
   max-width: 350px;
-  min-height: 400px;
-  max-height: 95vh;
+  height: 100dvh;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
 }
 
 /* Заголовок */
