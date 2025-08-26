@@ -42,12 +42,10 @@ const fieldImg = new Image();
 fieldImg.src = "field 5.png";
 
 
-// Explosion animation (DOM element ensures GIF animates)
-const explosionImg = document.getElementById("explosionGif");
-
-function restartExplosionGif(){
-  const baseSrc = explosionImg.src.split('?')[0];
-  explosionImg.src = `${baseSrc}?t=${Date.now()}`;
+function createExplosionImage(){
+  const img = new Image();
+  img.src = `explosion 4.gif?${Date.now()}`;
+  return img;
 }
 
 
@@ -214,6 +212,7 @@ function makePlane(x,y,color,angle){
     isAlive:true,
     burning:false,
     explosionStart:null,
+    explosionImg:null,
     angle,
     segments:[],
     collisionX:null,
@@ -1005,8 +1004,17 @@ function destroyPlane(fp){
   const p = fp.plane;
   p.isAlive = false;
   p.burning = true;
-  p.explosionStart = performance.now();
-  restartExplosionGif();
+  p.explosionImg = createExplosionImage();
+  const img = p.explosionImg;
+  img.onload = () => {
+    p.explosionStart = performance.now();
+    setTimeout(() => {
+      if (p.explosionImg === img) p.explosionImg = null;
+    }, EXPLOSION_DURATION_MS);
+  };
+  img.addEventListener('ended', () => {
+    if (p.explosionImg === img) p.explosionImg = null;
+  });
   p.collisionX = p.x;
   p.collisionY = p.y;
   flyingPoints = flyingPoints.filter(x=>x!==fp);
@@ -1052,9 +1060,19 @@ function handleAAForPlane(p, fp){
           } else if(now - p._aaTimes[aa.id] > aa.dwellTimeMs){
             if(!aa.lastTriggerAt || now - aa.lastTriggerAt > aa.cooldownMs){
               aa.lastTriggerAt = now;
-              p.isAlive=false; p.burning=true;
-              p.explosionStart = performance.now();
-              restartExplosionGif();
+              p.isAlive=false; 
+              p.burning=true;
+              p.explosionImg = createExplosionImage();
+              const img = p.explosionImg;
+              img.onload = () => {
+                p.explosionStart = performance.now();
+                setTimeout(() => {
+                  if (p.explosionImg === img) p.explosionImg = null;
+                }, EXPLOSION_DURATION_MS);
+              };
+              img.addEventListener('ended', () => {
+                if (p.explosionImg === img) p.explosionImg = null;
+              });
               p.collisionX=p.x; p.collisionY=p.y;
               if(fp) {
                 flyingPoints = flyingPoints.filter(x=>x!==fp);
@@ -1630,11 +1648,11 @@ function drawPlanesAndTrajectories(){
   }
 
   for(const {plane: p, cx, cy} of burningPlanes){
-    if(!isExplosionFinished(p)){
+    if(p.explosionImg && !isExplosionFinished(p)){
       gameCtx.save();
       gameCtx.globalAlpha = 1;
       gameCtx.globalCompositeOperation = "source-over";
-      gameCtx.drawImage(explosionImg, cx - EXPLOSION_SIZE/2, cy - EXPLOSION_SIZE/2, EXPLOSION_SIZE, EXPLOSION_SIZE);
+      gameCtx.drawImage(p.explosionImg, cx - EXPLOSION_SIZE/2, cy - EXPLOSION_SIZE/2, EXPLOSION_SIZE, EXPLOSION_SIZE);
       gameCtx.restore();
     } else {
       drawRedCross(gameCtx, cx, cy, 16);
@@ -1785,8 +1803,17 @@ function checkPlaneHits(plane, fp){
     if(d < POINT_RADIUS*2){
       p.isAlive = false;
       p.burning = true;
-      p.explosionStart = performance.now();
-      restartExplosionGif();
+      p.explosionImg = createExplosionImage();
+      const img = p.explosionImg;
+      img.onload = () => {
+        p.explosionStart = performance.now();
+        setTimeout(() => {
+          if (p.explosionImg === img) p.explosionImg = null;
+        }, EXPLOSION_DURATION_MS);
+      };
+      img.addEventListener('ended', () => {
+        if (p.explosionImg === img) p.explosionImg = null;
+      });
       const cx = d === 0 ? plane.x : plane.x + dx / d * POINT_RADIUS;
       const cy = d === 0 ? plane.y : plane.y + dy / d * POINT_RADIUS;
       p.collisionX = cx;
