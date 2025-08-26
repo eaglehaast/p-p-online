@@ -1610,6 +1610,7 @@ function isExplosionFinished(p){
   }
 
 function drawPlanesAndTrajectories(){
+  const burningPlanes = [];
   for(const p of points){
     if(!p.isAlive && !p.burning) continue;
     for(const seg of p.segments){
@@ -1624,13 +1625,19 @@ function drawPlanesAndTrajectories(){
     if(p.burning){
       const cx = p.collisionX ?? p.x;
       const cy = p.collisionY ?? p.y;
-      if(!isExplosionFinished(p)){
+      burningPlanes.push({plane: p, cx, cy});
+    }
+  }
 
-        gameCtx.drawImage(explosionImg, cx - EXPLOSION_SIZE/2, cy - EXPLOSION_SIZE/2, EXPLOSION_SIZE, EXPLOSION_SIZE);
-
-      } else {
-        drawRedCross(gameCtx, cx, cy, 16);
-      }
+  for(const {plane: p, cx, cy} of burningPlanes){
+    if(!isExplosionFinished(p)){
+      gameCtx.save();
+      gameCtx.globalAlpha = 1;
+      gameCtx.globalCompositeOperation = "source-over";
+      gameCtx.drawImage(explosionImg, cx - EXPLOSION_SIZE/2, cy - EXPLOSION_SIZE/2, EXPLOSION_SIZE, EXPLOSION_SIZE);
+      gameCtx.restore();
+    } else {
+      drawRedCross(gameCtx, cx, cy, 16);
     }
   }
 }
