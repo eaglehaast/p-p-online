@@ -117,16 +117,11 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 
 const MAPS = ["clear sky", "wall", "two walls", "sharp edges"];
-let mapIndex = parseInt(localStorage.getItem('settings.mapIndex')) || 1;
 
-
-
-let flightRangeCells = parseInt(localStorage.getItem('settings.flightRangeCells')) || 15; // cells for menu and physics
-
+let mapIndex;
+let flightRangeCells; // cells for menu and physics
 let buildingsCount   = 0;
-
-
-let aimingAmplitude  = parseInt(localStorage.getItem('settings.aimingAmplitude')) || 10;     // 0..30 (UI показывает *2)
+let aimingAmplitude;     // 0..30 (UI показывает *2)
 
 let isGameOver   = false;
 let winnerColor  = null;
@@ -159,9 +154,19 @@ let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_STA
 
 let currentPlacer = null; // 'green' | 'blue'
 
-let settings = {
-  addAA: localStorage.getItem('settings.addAA') === 'true'
-};
+let settings = { addAA: false };
+
+function loadSettings(){
+  const fr = parseInt(localStorage.getItem('settings.flightRangeCells'));
+  flightRangeCells = Number.isNaN(fr) ? 15 : fr;
+  const amp = parseInt(localStorage.getItem('settings.aimingAmplitude'));
+  aimingAmplitude = Number.isNaN(amp) ? 10 : amp;
+  const mi = parseInt(localStorage.getItem('settings.mapIndex'));
+  mapIndex = Number.isNaN(mi) ? 1 : mi;
+  settings.addAA = localStorage.getItem('settings.addAA') === 'true';
+}
+
+loadSettings();
 
 // Highlight advanced settings button if custom settings are stored
 const hasCustomSettings = [
@@ -298,10 +303,6 @@ if(classicRulesBtn){
     aimingAmplitude = 10;
     mapIndex = 1;
     settings.addAA = false;
-    localStorage.removeItem('settings.flightRangeCells');
-    localStorage.removeItem('settings.aimingAmplitude');
-    localStorage.removeItem('settings.mapIndex');
-    localStorage.removeItem('settings.addAA');
     applyCurrentMap();
     advancedSettingsBtn?.classList.remove('selected');
     classicRulesBtn.classList.add('selected');
@@ -312,6 +313,7 @@ if(advancedSettingsBtn){
     if(advancedSettingsBtn.classList.contains('selected')){
       window.location.href = 'settings.html';
     } else {
+      loadSettings();
       classicRulesBtn?.classList.remove('selected');
       advancedSettingsBtn.classList.add('selected');
       applyCurrentMap();
