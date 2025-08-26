@@ -4,9 +4,14 @@ const MIN_AMPLITUDE = 0;
 const MAX_AMPLITUDE = 30;
 const MAPS = ["clear sky", "wall", "two walls", "sharp edges"];
 
-let flightRangeCells = parseInt(localStorage.getItem('settings.flightRangeCells')) || 15;
-let aimingAmplitude  = parseInt(localStorage.getItem('settings.aimingAmplitude')) || 10;
-let mapIndex = parseInt(localStorage.getItem('settings.mapIndex')) || 1;
+function getIntSetting(key, defaultValue){
+  const value = parseInt(localStorage.getItem(key));
+  return Number.isNaN(value) ? defaultValue : value;
+}
+
+let flightRangeCells = getIntSetting('settings.flightRangeCells', 15);
+let aimingAmplitude  = getIntSetting('settings.aimingAmplitude', 10);
+let mapIndex = getIntSetting('settings.mapIndex', 1);
 let addAA = localStorage.getItem('settings.addAA') === 'true';
 
 const flightRangeMinusBtn = document.getElementById('flightRangeMinus');

@@ -117,16 +117,11 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 
 const MAPS = ["clear sky", "wall", "two walls", "sharp edges"];
-let mapIndex = parseInt(localStorage.getItem('settings.mapIndex')) || 1;
 
-
-
-let flightRangeCells = parseInt(localStorage.getItem('settings.flightRangeCells')) || 15; // cells for menu and physics
-
+let mapIndex;
+let flightRangeCells; // cells for menu and physics
 let buildingsCount   = 0;
-
-
-let aimingAmplitude  = parseInt(localStorage.getItem('settings.aimingAmplitude')) || 10;     // 0..30 (UI показывает *2)
+let aimingAmplitude;     // 0..30 (UI показывает *2)
 
 let isGameOver   = false;
 let winnerColor  = null;
@@ -159,9 +154,19 @@ let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_STA
 
 let currentPlacer = null; // 'green' | 'blue'
 
-let settings = {
-  addAA: localStorage.getItem('settings.addAA') === 'true'
-};
+let settings = { addAA: false };
+
+function loadSettings(){
+  const fr = parseInt(localStorage.getItem('settings.flightRangeCells'));
+  flightRangeCells = Number.isNaN(fr) ? 15 : fr;
+  const amp = parseInt(localStorage.getItem('settings.aimingAmplitude'));
+  aimingAmplitude = Number.isNaN(amp) ? 10 : amp;
+  const mi = parseInt(localStorage.getItem('settings.mapIndex'));
+  mapIndex = Number.isNaN(mi) ? 1 : mi;
+  settings.addAA = localStorage.getItem('settings.addAA') === 'true';
+}
+
+loadSettings();
 
 // Highlight advanced settings button if custom settings are stored
 const hasCustomSettings = [
@@ -298,10 +303,6 @@ if(classicRulesBtn){
     aimingAmplitude = 10;
     mapIndex = 1;
     settings.addAA = false;
-    localStorage.removeItem('settings.flightRangeCells');
-    localStorage.removeItem('settings.aimingAmplitude');
-    localStorage.removeItem('settings.mapIndex');
-    localStorage.removeItem('settings.addAA');
     applyCurrentMap();
     advancedSettingsBtn?.classList.remove('selected');
     classicRulesBtn.classList.add('selected');
@@ -312,6 +313,7 @@ if(advancedSettingsBtn){
     if(advancedSettingsBtn.classList.contains('selected')){
       window.location.href = 'settings.html';
     } else {
+      loadSettings();
       classicRulesBtn?.classList.remove('selected');
       advancedSettingsBtn.classList.add('selected');
       applyCurrentMap();
@@ -791,17 +793,23 @@ function getRandomDeviation(distance, maxDev){
 
 /* Зеркальный выстрел (одно отражение) */
 function findMirrorShot(plane, enemy){
-  let best = null; // {edge, mirrorTarget, totalDist}
+  let best = null; // {mirrorTarget, totalDist}
 
   for(const b of buildings){
     const left = b.x - b.width/2, right = b.x + b.width/2;
     const top  = b.y - b.height/2, bottom = b.y + b.height/2;
 
+    // учитываем радиус самолёта при планировании
+    const mLeft   = left   - POINT_RADIUS;
+    const mRight  = right  + POINT_RADIUS;
+    const mTop    = top    - POINT_RADIUS;
+    const mBottom = bottom + POINT_RADIUS;
+
     const edges = [
-      {type:"H", x1:left, y1:top,    x2:right, y2:top   },
-      {type:"H", x1:left, y1:bottom, x2:right, y2:bottom},
-      {type:"V", x1:left, y1:top,    x2:left,  y2:bottom},
-      {type:"V", x1:right,y1:top,    x2:right, y2:bottom}
+      {type:"H", x1:left, y1:top,    x2:right, y2:top,    big:{x1:mLeft,  y1:mTop,    x2:mRight, y2:mTop}},
+      {type:"H", x1:left, y1:bottom, x2:right, y2:bottom, big:{x1:mLeft,  y1:mBottom, x2:mRight, y2:mBottom}},
+      {type:"V", x1:left, y1:top,    x2:left,  y2:bottom, big:{x1:mLeft,  y1:mTop,    x2:mLeft,  y2:mBottom}},
+      {type:"V", x1:right,y1:top,    x2:right, y2:bottom, big:{x1:mRight, y1:mTop,    x2:mRight, y2:mBottom}}
     ];
 
     for(const e of edges){
@@ -823,14 +831,14 @@ function findMirrorShot(plane, enemy){
       if(!inter) continue;
 
       // Путь чист?
-      if(!isPathClearExceptEdge(plane.x, plane.y, inter.x, inter.y, b, e)) continue;
-      if(!isPathClearExceptEdge(inter.x, inter.y, enemy.x, enemy.y, b, e)) continue;
+      if(!isPathClearExceptEdge(plane.x, plane.y, inter.x, inter.y, b, e.big)) continue;
+      if(!isPathClearExceptEdge(inter.x, inter.y, enemy.x, enemy.y, b, e.big)) continue;
 
       const totalDist = Math.hypot(plane.x - inter.x, plane.y - inter.y) +
                         Math.hypot(inter.x  - enemy.x, inter.y  - enemy.y);
 
       if(!best || totalDist < best.totalDist){
-        best = {edge:e, mirrorTarget, totalDist};
+        best = {mirrorTarget, totalDist};
       }
     }
   }
@@ -863,8 +871,11 @@ function isPathClearExceptEdge(x1,y1,x2,y2, building, edge){
 }
 
 function checkLineIntersectionWithBuilding(x1,y1,x2,y2,b, ignoreEdge=null){
-  const left = b.x - b.width/2, right = b.x + b.width/2;
-  const top  = b.y - b.height/2, bottom = b.y + b.height/2;
+  const margin = POINT_RADIUS;
+  const left   = b.x - b.width/2  - margin,
+        right  = b.x + b.width/2  + margin,
+        top    = b.y - b.height/2 - margin,
+        bottom = b.y + b.height/2 + margin;
 
   const edges = [
     {id:"top",    x1:left, y1:top,    x2:right, y2:top   },
