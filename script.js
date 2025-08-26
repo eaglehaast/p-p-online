@@ -43,8 +43,12 @@ fieldImg.src = "field 5.png";
 
 
 function createExplosionImage(){
-  const img = new Image();
+  const img = document.createElement("img");
   img.src = `explosion 4.gif?${Date.now()}`;
+  img.style.position = "absolute";
+  img.style.left = "-1000px";
+  img.style.top = "-1000px";
+  document.body.appendChild(img);
   return img;
 }
 
@@ -1009,12 +1013,12 @@ function destroyPlane(fp){
   img.onload = () => {
     p.explosionStart = performance.now();
     setTimeout(() => {
-      if (p.explosionImg === img) p.explosionImg = null;
+      if (p.explosionImg === img) {
+        img.remove();
+        p.explosionImg = null;
+      }
     }, EXPLOSION_DURATION_MS);
   };
-  img.addEventListener('ended', () => {
-    if (p.explosionImg === img) p.explosionImg = null;
-  });
   p.collisionX = p.x;
   p.collisionY = p.y;
   flyingPoints = flyingPoints.filter(x=>x!==fp);
@@ -1067,12 +1071,12 @@ function handleAAForPlane(p, fp){
               img.onload = () => {
                 p.explosionStart = performance.now();
                 setTimeout(() => {
-                  if (p.explosionImg === img) p.explosionImg = null;
+                  if (p.explosionImg === img) {
+                    img.remove();
+                    p.explosionImg = null;
+                  }
                 }, EXPLOSION_DURATION_MS);
               };
-              img.addEventListener('ended', () => {
-                if (p.explosionImg === img) p.explosionImg = null;
-              });
               p.collisionX=p.x; p.collisionY=p.y;
               if(fp) {
                 flyingPoints = flyingPoints.filter(x=>x!==fp);
@@ -1808,12 +1812,12 @@ function checkPlaneHits(plane, fp){
       img.onload = () => {
         p.explosionStart = performance.now();
         setTimeout(() => {
-          if (p.explosionImg === img) p.explosionImg = null;
+          if (p.explosionImg === img) {
+            img.remove();
+            p.explosionImg = null;
+          }
         }, EXPLOSION_DURATION_MS);
       };
-      img.addEventListener('ended', () => {
-        if (p.explosionImg === img) p.explosionImg = null;
-      });
       const cx = d === 0 ? plane.x : plane.x + dx / d * POINT_RADIUS;
       const cy = d === 0 ? plane.y : plane.y + dy / d * POINT_RADIUS;
       p.collisionX = cx;
