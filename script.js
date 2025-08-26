@@ -118,7 +118,7 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 
 
-const MAPS = ["clear sky", "wall", "two walls", "sharp edges"];
+const MAPS = ["clear sky", "wall", "two walls"];
 
 let mapIndex;
 let flightRangeCells; // cells for menu and physics
@@ -156,7 +156,7 @@ let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_STA
 
 let currentPlacer = null; // 'green' | 'blue'
 
-let settings = { addAA: false };
+let settings = { addAA: false, sharpEdges: false };
 
 function loadSettings(){
   const fr = parseInt(localStorage.getItem('settings.flightRangeCells'));
@@ -166,6 +166,7 @@ function loadSettings(){
   const mi = parseInt(localStorage.getItem('settings.mapIndex'));
   mapIndex = Number.isNaN(mi) ? 1 : mi;
   settings.addAA = localStorage.getItem('settings.addAA') === 'true';
+  settings.sharpEdges = localStorage.getItem('settings.sharpEdges') === 'true';
 }
 
 loadSettings();
@@ -175,7 +176,8 @@ const hasCustomSettings = [
   'settings.flightRangeCells',
   'settings.aimingAmplitude',
   'settings.mapIndex',
-  'settings.addAA'
+  'settings.addAA',
+  'settings.sharpEdges'
 ].some(key => localStorage.getItem(key) !== null);
 
 if(hasCustomSettings && classicRulesBtn && advancedSettingsBtn){
@@ -306,6 +308,7 @@ if(classicRulesBtn){
     aimingAmplitude = 10;
     mapIndex = 1;
     settings.addAA = false;
+    settings.sharpEdges = false;
     applyCurrentMap();
     advancedSettingsBtn?.classList.remove('selected');
     classicRulesBtn.classList.add('selected');
@@ -1143,7 +1146,7 @@ function handleAAForPlane(p, fp){
         // field borders
         if (p.x < FIELD_BORDER_OFFSET) {
           p.x = FIELD_BORDER_OFFSET;
-          if (MAPS[mapIndex] === "sharp edges") {
+          if (settings.sharpEdges) {
             destroyPlane(fp);
             continue;
           }
@@ -1151,7 +1154,7 @@ function handleAAForPlane(p, fp){
         }
         else if (p.x > gameCanvas.width - FIELD_BORDER_OFFSET) {
           p.x = gameCanvas.width - FIELD_BORDER_OFFSET;
-          if (MAPS[mapIndex] === "sharp edges") {
+          if (settings.sharpEdges) {
             destroyPlane(fp);
             continue;
           }
@@ -1159,7 +1162,7 @@ function handleAAForPlane(p, fp){
         }
         if (p.y < FIELD_BORDER_OFFSET) {
           p.y = FIELD_BORDER_OFFSET;
-          if (MAPS[mapIndex] === "sharp edges") {
+          if (settings.sharpEdges) {
             destroyPlane(fp);
             continue;
           }
@@ -1167,7 +1170,7 @@ function handleAAForPlane(p, fp){
         }
         else if (p.y > gameCanvas.height - FIELD_BORDER_OFFSET) {
           p.y = gameCanvas.height - FIELD_BORDER_OFFSET;
-          if (MAPS[mapIndex] === "sharp edges") {
+          if (settings.sharpEdges) {
             destroyPlane(fp);
             continue;
           }
@@ -1437,7 +1440,7 @@ function drawBrickEdges(ctx2d, w, h){
 }
 
 function drawFieldEdges(ctx2d, w, h){
-  if(MAPS[mapIndex] === "sharp edges"){
+  if(settings.sharpEdges){
     drawNailEdges(ctx2d, w, h);
   } else {
     drawBrickEdges(ctx2d, w, h);
@@ -2025,8 +2028,8 @@ function startNewRound(){
 /* ======= Map helpers ======= */
 function applyCurrentMap(){
   buildings = [];
-  FIELD_BORDER_OFFSET = (MAPS[mapIndex] === "sharp edges") ? 0 : FIELD_BORDER_THICKNESS;
-  if(MAPS[mapIndex] === "clear sky" || MAPS[mapIndex] === "sharp edges"){
+  FIELD_BORDER_OFFSET = settings.sharpEdges ? 0 : FIELD_BORDER_THICKNESS;
+  if(MAPS[mapIndex] === "clear sky"){
     // no buildings to add
   } else if (MAPS[mapIndex] === "wall") {
     const wallWidth = CELL_SIZE * 8;

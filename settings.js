@@ -2,7 +2,7 @@ const MIN_FLIGHT_RANGE_CELLS = 5;
 const MAX_FLIGHT_RANGE_CELLS = 30;
 const MIN_AMPLITUDE = 0;
 const MAX_AMPLITUDE = 30;
-const MAPS = ["clear sky", "wall", "two walls", "sharp edges"];
+const MAPS = ["clear sky", "wall", "two walls"];
 
 function getIntSetting(key, defaultValue){
   const value = parseInt(localStorage.getItem(key));
@@ -13,6 +13,7 @@ let flightRangeCells = getIntSetting('settings.flightRangeCells', 15);
 let aimingAmplitude  = getIntSetting('settings.aimingAmplitude', 10);
 let mapIndex = getIntSetting('settings.mapIndex', 1);
 let addAA = localStorage.getItem('settings.addAA') === 'true';
+let sharpEdges = localStorage.getItem('settings.sharpEdges') === 'true';
 
 const flightRangeMinusBtn = document.getElementById('flightRangeMinus');
 const flightRangePlusBtn  = document.getElementById('flightRangePlus');
@@ -21,6 +22,7 @@ const amplitudePlusBtn    = document.getElementById('amplitudePlus');
 const mapMinusBtn = document.getElementById('mapMinus');
 const mapPlusBtn  = document.getElementById('mapPlus');
 const addAAToggle = document.getElementById('addAAToggle');
+const sharpEdgesToggle = document.getElementById('sharpEdgesToggle');
 const backBtn = document.getElementById('backBtn');
 
 function updateFlightRangeDisplay(){
@@ -78,6 +80,7 @@ function saveSettings(){
   localStorage.setItem('settings.aimingAmplitude', aimingAmplitude);
   localStorage.setItem('settings.mapIndex', mapIndex);
   localStorage.setItem('settings.addAA', addAA);
+  localStorage.setItem('settings.sharpEdges', sharpEdges);
 }
 
 function setupRepeatButton(btn, cb){
@@ -105,6 +108,14 @@ if(addAAToggle){
   addAAToggle.checked = addAA;
   addAAToggle.addEventListener('change', e => {
     addAA = e.target.checked;
+    saveSettings();
+  });
+}
+
+if(sharpEdgesToggle){
+  sharpEdgesToggle.checked = sharpEdges;
+  sharpEdgesToggle.addEventListener('change', e => {
+    sharpEdges = e.target.checked;
     saveSettings();
   });
 }
