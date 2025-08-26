@@ -1547,18 +1547,20 @@ function drawThinPlane(ctx2d, plane){
   ctx2d.save();
   ctx2d.translate(cx, cy);
   ctx2d.rotate(angle);
+  const showEngine = !(plane.burning && isExplosionFinished(plane));
   if(color === "blue"){
+    if(showEngine){
+      const flicker = 1 + 0.05 * Math.sin(globalFrame * 0.1);
+      drawJetFlame(ctx2d, flicker);
 
-    const flicker = 1 + 0.05 * Math.sin(globalFrame * 0.1);
-    drawJetFlame(ctx2d, flicker);
+      const fp = flyingPoints.find(fp => fp.plane === plane);
+      if(fp){
+        const progress = (BOUNCE_FRAMES - fp.framesLeft) / BOUNCE_FRAMES;
+        const scale = progress < 0.75 ? 4 * progress : 12 * (1 - progress);
+        drawBlueJetFlame(ctx2d, scale);
 
-    const fp = flyingPoints.find(fp => fp.plane === plane);
-    if(fp){
-      const progress = (BOUNCE_FRAMES - fp.framesLeft) / BOUNCE_FRAMES;
-      const scale = progress < 0.75 ? 4 * progress : 12 * (1 - progress);
-      drawBlueJetFlame(ctx2d, scale);
-
-      drawWingTrails(ctx2d);
+        drawWingTrails(ctx2d);
+      }
     }
     if(bluePlaneImg.complete){
       ctx2d.drawImage(bluePlaneImg, -20, -20, 40, 40);
@@ -1567,17 +1569,19 @@ function drawThinPlane(ctx2d, plane){
     }
   } else if(color === "green"){
     const fp = flyingPoints.find(fp => fp.plane === plane);
-    if(fp){
-      const progress = (BOUNCE_FRAMES - fp.framesLeft) / BOUNCE_FRAMES;
-      let scale;
-      if(progress < 0.5){
-        scale = 4 - 4 * progress; // 20px -> 10px
+    if(showEngine){
+      if(fp){
+        const progress = (BOUNCE_FRAMES - fp.framesLeft) / BOUNCE_FRAMES;
+        let scale;
+        if(progress < 0.5){
+          scale = 4 - 4 * progress; // 20px -> 10px
+        } else {
+          scale = 3 - 2 * progress; // 10px -> 5px
+        }
+        drawDieselSmoke(ctx2d, scale);
       } else {
-        scale = 3 - 2 * progress; // 10px -> 5px
+        drawDieselSmoke(ctx2d, 1);
       }
-      drawDieselSmoke(ctx2d, scale);
-    } else {
-      drawDieselSmoke(ctx2d, 1);
     }
     if(greenPlaneImg.complete){
       ctx2d.drawImage(greenPlaneImg, -20, -20, 40, 40);
