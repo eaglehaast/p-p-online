@@ -39,7 +39,7 @@ const greenPlaneImg = new Image();
 
 greenPlaneImg.src = "green plane 2.png";
 const fieldImg = new Image();
-fieldImg.src = "field 3.png";
+fieldImg.src = "field 5.png";
 
 
 // Explosion animation (DOM element ensures GIF animates)
