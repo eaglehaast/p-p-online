@@ -223,7 +223,15 @@ body {
 }
 
 #modeMenu #mapControl {
-  grid-template-rows: auto auto auto auto auto;
+  grid-template-rows: auto auto auto;
+}
+
+#modeMenu #additionalSettings {
+  grid-template-rows: auto auto auto;
+}
+
+#modeMenu #additionalSettings .aa-toggle {
+  margin: 5px 0;
 }
 
 #modeMenu .control-box > .control-label {
