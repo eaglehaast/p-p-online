@@ -43,7 +43,7 @@ fieldImg.src = "field 5.png";
 const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
 
 const brickFrameImg = new Image();
-brickFrameImg.src = "brick frame.png";
+brickFrameImg.src = "brick frame 2.png";
 let brickFrameBorderPx = FIELD_BORDER_THICKNESS;
 brickFrameImg.onload = () => {
   const tempCanvas = document.createElement("canvas");
