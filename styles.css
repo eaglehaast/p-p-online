@@ -228,6 +228,7 @@ body {
 
 #modeMenu #additionalSettings {
   grid-template-rows: auto auto auto;
+  margin-top: 10px;
 }
 
 #modeMenu #additionalSettings .aa-toggle {
