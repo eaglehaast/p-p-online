@@ -40,6 +40,7 @@ const greenPlaneImg = new Image();
 greenPlaneImg.src = "green plane 2.png";
 const fieldImg = new Image();
 fieldImg.src = "field 5.png";
+const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
 
 const brickFrameImg = new Image();
 brickFrameImg.src = "brick frame.png";
@@ -97,7 +98,6 @@ const HANDLE_SIZE          = 10;     // px
 const BOUNCE_FRAMES        = 68;
 const MAX_DRAG_DISTANCE    = 100;    // px
 const ATTACK_RANGE_PX      = 300;    // px
-const FIELD_BORDER_THICKNESS = 10;    // px, ширина кирпичной рамки по краям
 let FIELD_BORDER_OFFSET = FIELD_BORDER_THICKNESS; // внутренняя граница для отражения
 // Используем бесконечное количество сегментов,
 // чтобы следы самолётов сохранялись до конца раунда.
