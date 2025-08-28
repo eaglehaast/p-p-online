@@ -222,8 +222,9 @@ if(hasCustomSettings && classicRulesBtn && advancedSettingsBtn){
 }
 
 
-let greenVictories = 0;
-let blueVictories  = 0;
+const POINTS_TO_WIN = 25;
+let greenScore = 0;
+let blueScore  = 0;
 
 let animationFrameId = null;
 
@@ -274,6 +275,9 @@ function resetGame(){
   isGameOver= false;
   winnerColor= null;
   endGameDiv.style.display = "none";
+
+  greenScore = 0;
+  blueScore  = 0;
 
   lastFirstTurn= 1 - lastFirstTurn;
   turnIndex= lastFirstTurn;
@@ -1066,6 +1070,7 @@ function destroyPlane(fp){
   p.collisionX = p.x;
   p.collisionY = p.y;
   flyingPoints = flyingPoints.filter(x=>x!==fp);
+  awardPoint(p.color);
   checkVictory();
   if(!isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
     turnIndex = (turnIndex + 1) % turnColors.length;
@@ -1125,6 +1130,7 @@ function handleAAForPlane(p, fp){
               if(fp) {
                 flyingPoints = flyingPoints.filter(x=>x!==fp);
               }
+              awardPoint(p.color);
               checkVictory();
               if(fp && !isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
                 turnIndex = (turnIndex + 1) % turnColors.length;
@@ -1874,6 +1880,22 @@ function drawHandleTriangle(ctx, x, y, dx, dy){
 }
 
 /* ======= HITS / VICTORY ======= */
+function awardPoint(color){
+  if(isGameOver) return;
+  if(color === "blue"){
+    greenScore++;
+    if(greenScore >= POINTS_TO_WIN){
+      isGameOver = true;
+      winnerColor = "green";
+    }
+  } else if(color === "green"){
+    blueScore++;
+    if(blueScore >= POINTS_TO_WIN){
+      isGameOver = true;
+      winnerColor = "blue";
+    }
+  }
+}
 function checkPlaneHits(plane, fp){
   if(isGameOver) return;
   const enemyColor = (plane.color==="green") ? "blue" : "green";
@@ -1902,6 +1924,7 @@ function checkPlaneHits(plane, fp){
       p.collisionX = cx;
       p.collisionY = cy;
       fp.hit = true;
+      awardPoint(p.color);
       checkVictory();
       if(isGameOver) return;
     }
@@ -1911,20 +1934,20 @@ function checkVictory(){
   const greenAlive = points.filter(p=>p.isAlive && p.color==="green").length;
   const blueAlive  = points.filter(p=>p.isAlive && p.color==="blue").length;
   if(greenAlive===0 && !isGameOver){
-    isGameOver = true; winnerColor="blue"; blueVictories++;
+    isGameOver = true; winnerColor="blue";
   } else if(blueAlive===0 && !isGameOver){
-    isGameOver = true; winnerColor="green"; greenVictories++;
+    isGameOver = true; winnerColor="green";
   }
 }
 
 /* ======= SCOREBOARD ======= */
 
 function renderScoreboard(){
-  drawPlayerPanel(scoreCtx, "blue", blueVictories, turnColors[turnIndex] === "blue");
-  drawPlayerPanel(scoreCtxBottom, "green", greenVictories, turnColors[turnIndex] === "green");
+  drawPlayerPanel(scoreCtx, "blue", blueScore, turnColors[turnIndex] === "blue");
+  drawPlayerPanel(scoreCtxBottom, "green", greenScore, turnColors[turnIndex] === "green");
 }
 
-function drawPlayerPanel(ctx, color, victories, isTurn){
+function drawPlayerPanel(ctx, color, score, isTurn){
   const canvas = ctx.canvas;
   ctx.clearRect(0,0, canvas.width, canvas.height);
   ctx.fillStyle = "#fffbea";
@@ -1983,9 +2006,9 @@ function drawPlayerPanel(ctx, color, victories, isTurn){
   }
   ctx.fillText(statusText, sectionW*1.5, canvas.height/2);
 
-  // victories
+  // score
   ctx.fillStyle = color;
-  ctx.fillText(String(victories), sectionW*2.5, canvas.height/2);
+  ctx.fillText(String(score), sectionW*2.5, canvas.height/2);
 }
 
 
@@ -2058,6 +2081,10 @@ function isOverlappingWithBuildings(b){
 
 /* ======= SCORE / ROUND ======= */
 yesBtn.addEventListener("click", () => {
+  if (blueScore >= POINTS_TO_WIN || greenScore >= POINTS_TO_WIN) {
+    blueScore = 0;
+    greenScore = 0;
+  }
   startNewRound();
   endGameDiv.style.display="none";
 });
