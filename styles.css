@@ -79,11 +79,12 @@ body {
   border: 2px solid #ffd699;
   border-radius: 15px;
   text-align: center;
-  padding: 15px;
+  padding: 10px;
   z-index: 1000;
   box-shadow: 0 8px 16px rgba(0,0,0,0.2);
-  width: 300px;
-  height: 520px;
+  width: min(90vw, 300px);
+  height: auto;
+  max-height: 90vh;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -226,7 +227,7 @@ body {
   padding: 10px;
   width: 100%;
   display: grid;
-  grid-template-rows: auto 80px auto auto;
+  grid-template-rows: auto 60px auto auto;
   place-items: center;
   box-shadow: 0 4px 8px rgba(0,0,0,0.1);
   box-sizing: border-box;
@@ -253,7 +254,7 @@ body {
 }
 
 #modeMenu .control-box > .control-visual {
-  height: 80px;
+  height: 60px;
   width: 100%;
   display: flex;
   justify-content: center;
@@ -262,24 +263,24 @@ body {
 }
 
 #modeMenu .control-box > .control-value {
-  font-size: 22px;
+  font-size: 20px;
   color: #ee0000;
   font-family: 'Patrick Hand', cursive;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   text-align: center;
 }
 
 #modeMenu .control-box > .control-buttons {
   display: flex;
-  gap: 15px;
-  margin-top: 10px;
+  gap: 10px;
+  margin-top: 8px;
 }
 
 /* Индикатор дальности — самолёт с огнём */
 #flightRangeIndicator {
   position: relative;
-  width: 130px;
-  height: 30px;
+  width: 100px;
+  height: 24px;
   margin: auto;
   max-width: 100%;
   max-height: 100%;
@@ -291,8 +292,8 @@ body {
   left: 50%;
   transform: translate(-50%, -50%);
 
-  width: 48px;
-  height: 24px;
+  width: 40px;
+  height: 20px;
 }
 
 #flightRangeIndicator .jet-plane {
@@ -315,9 +316,9 @@ body {
   right: calc(100% + 2px);
   top: 50%;
 
-  width: 32px;
+  width: 24px;
 
-  height: 10px;
+  height: 8px;
   transform: translateY(-50%);
   transform-origin: right center;
 
@@ -340,8 +341,8 @@ body {
 #flightRangeIndicator .wing-trail {
   position: absolute;
 
-  right: calc(100% - 10px);
-  width: 35px;
+  right: calc(100% - 8px);
+  width: 25px;
   height: 2px;
   background: linear-gradient(to left, rgba(255,255,255,0.8), rgba(255,255,255,0));
   opacity: 0.8;
@@ -352,8 +353,8 @@ body {
   filter: blur(0.5px);
   animation: trail-wisp 3s infinite ease-in-out;
 }
-#flightRangeIndicator .wing-trail.top { top: 2px; }
-#flightRangeIndicator .wing-trail.bottom { bottom: 2px; }
+#flightRangeIndicator .wing-trail.top { top: 1px; }
+#flightRangeIndicator .wing-trail.bottom { bottom: 1px; }
 @keyframes trail-wisp {
   0% { transform: translateY(-50%) rotate(0deg); }
   50% { transform: translateY(-52%) rotate(2deg); }
@@ -387,7 +388,7 @@ body {
 
 /* Control buttons */
 #modeMenu .control-buttons button {
-  width: 40px; height: 40px; font-size: 20px; color:#fff; border:none; border-radius:50%;
+  width: 32px; height: 32px; font-size: 16px; color:#fff; border:none; border-radius:50%;
   background: linear-gradient(145deg, #6c757d, #5a6268);
   box-shadow: 0 3px 6px rgba(0,0,0,0.2);
   cursor:pointer; transition: transform 0.2s, box-shadow 0.2s;
@@ -396,7 +397,7 @@ body {
 #modeMenu .control-buttons button:disabled { background:#a1a1a1; cursor:not-allowed; }
 
 #mapNameDisplay {
-  font-size: 28px;
+  font-size: 24px;
   color: #ee0000;
   font-family: 'Patrick Hand', cursive;
 }
@@ -407,8 +408,8 @@ body {
 
 #amplitudeIndicator {
   position: relative;
-  width: 80px;
-  height: 80px;
+  width: 60px;
+  height: 60px;
   margin: auto;
   max-width: 100%;
   max-height: 100%;
@@ -416,14 +417,14 @@ body {
 }
 #amplitudeIndicator .crosshair {
   position: absolute;
-  top: 40px;
+  top: 30px;
   left: 50%;
-  width: 30px;
-  height: 30px;
-  margin-left: -15px;
+  width: 24px;
+  height: 24px;
+  margin-left: -12px;
   border: 3px solid #6c757d;
   border-radius: 50%;
-  transform-origin: 50% -40px;
+  transform-origin: 50% -30px;
   animation: swing 2s ease-in-out infinite alternate;
 }
 @keyframes swing {
@@ -433,10 +434,10 @@ body {
 #amplitudeIndicator .crosshair::before {
   content: "";
   position: absolute;
-  top: -40px;
+  top: -30px;
   left: 50%;
   width: 2px;
-  height: 40px;
+  height: 30px;
   background-color: #6c757d;
   transform: translateX(-50%);
 }
@@ -444,8 +445,8 @@ body {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border: 2px solid #6c757d;
   border-radius: 50%;
   transform: translate(-50%, -50%);
@@ -482,7 +483,7 @@ body {
   transform: translateX(-50%);
 }
 #amplitudeAngleDisplay {
-  font-size: 22px;
+  font-size: 20px;
   color: #ee0000;
   font-family: 'Patrick Hand', cursive;
 }
