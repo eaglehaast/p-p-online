@@ -105,6 +105,10 @@ const MAX_TRAIL_SEGMENTS   = Infinity;
 const BUILDING_BUFFER      = CELL_SIZE / 2;
 const MAX_BUILDINGS_GLOBAL = 100;
 const PLANES_PER_SIDE      = 4;      // количество самолётов у каждой команды
+const MIDDLE_GAP_EXTRA_PX  = 10;     // доп. расстояние между средними самолётами
+const FLAG_POLE_HEIGHT     = 20;     // высота флагштока
+const FLAG_WIDTH           = 12;     // ширина полотна флага
+const FLAG_HEIGHT          = 8;      // высота полотна флага
 
 // Explosion effect
 const EXPLOSION_DURATION_MS = 500;   // time before showing cross
@@ -230,16 +234,21 @@ let aiMoveScheduled = false;
 function initPoints(){
   points = [];
   const spacing = gameCanvas.width / (PLANES_PER_SIDE + 1);
+  const middleOffset = MIDDLE_GAP_EXTRA_PX / 2;
 
   // Green (низ поля) — смотрят ВВЕРХ (к сопернику)
   for(let i = 1; i <= PLANES_PER_SIDE; i++){
-    const x = spacing * i;
+    let x = spacing * i;
+    if(i === Math.ceil(PLANES_PER_SIDE / 2)) x -= middleOffset;
+    if(i === Math.ceil(PLANES_PER_SIDE / 2) + 1) x += middleOffset;
     points.push(makePlane(x, gameCanvas.height - 40, "green", 0)); // 0 рад — нос вверх
   }
 
   // Blue (верх поля) — смотрят ВНИЗ
   for(let i = 1; i <= PLANES_PER_SIDE; i++){
-    const x = spacing * i;
+    let x = spacing * i;
+    if(i === Math.ceil(PLANES_PER_SIDE / 2)) x -= middleOffset;
+    if(i === Math.ceil(PLANES_PER_SIDE / 2) + 1) x += middleOffset;
     points.push(makePlane(x, 40, "blue", Math.PI)); // π рад — нос вниз
   }
 }
@@ -1264,6 +1273,8 @@ function handleAAForPlane(p, fp){
 
   drawFieldEdges(gameCtx, gameCanvas.width, gameCanvas.height);
 
+  drawFlags();
+
 
   // установки ПВО
   drawAAUnits();
@@ -1714,6 +1725,31 @@ function drawBuildings(){
     drawBrickWall(gameCtx, b.width, b.height);
     gameCtx.restore();
   }
+}
+
+function drawFlag(ctx2d, x, y, color){
+  ctx2d.save();
+  ctx2d.strokeStyle = "#333";
+  ctx2d.lineWidth = 2;
+  ctx2d.beginPath();
+  ctx2d.moveTo(x, y);
+  ctx2d.lineTo(x, y - FLAG_POLE_HEIGHT);
+  ctx2d.stroke();
+
+  ctx2d.fillStyle = color;
+  ctx2d.beginPath();
+  ctx2d.moveTo(x, y - FLAG_POLE_HEIGHT);
+  ctx2d.lineTo(x + FLAG_WIDTH, y - FLAG_POLE_HEIGHT + FLAG_HEIGHT / 2);
+  ctx2d.lineTo(x, y - FLAG_POLE_HEIGHT + FLAG_HEIGHT);
+  ctx2d.closePath();
+  ctx2d.fill();
+  ctx2d.restore();
+}
+
+function drawFlags(){
+  const centerX = gameCanvas.width / 2;
+  drawFlag(gameCtx, centerX, 40, "blue");
+  drawFlag(gameCtx, centerX, gameCanvas.height - 40, "green");
 }
 
 
