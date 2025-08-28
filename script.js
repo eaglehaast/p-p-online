@@ -226,6 +226,28 @@ const POINTS_TO_WIN = 25;
 let greenScore = 0;
 let blueScore  = 0;
 
+let blueFlagCarrier = null;
+let greenFlagCarrier = null;
+let blueFlagStolenBy = null;
+let greenFlagStolenBy = null;
+
+function addScore(color, delta){
+  if(color === "blue"){
+    blueScore = Math.max(0, blueScore + delta);
+  } else if(color === "green"){
+    greenScore = Math.max(0, greenScore + delta);
+  }
+  if(!isGameOver){
+    if(blueScore >= POINTS_TO_WIN){
+      isGameOver = true;
+      winnerColor = "blue";
+    } else if(greenScore >= POINTS_TO_WIN){
+      isGameOver = true;
+      winnerColor = "green";
+    }
+  }
+}
+
 let animationFrameId = null;
 
 /* Планирование хода ИИ */
@@ -266,7 +288,8 @@ function makePlane(x,y,color,angle){
     collisionX:null,
     collisionY:null,
     prevX: x,
-    prevY: y
+    prevY: y,
+    flagColor:null
   };
 }
 
@@ -278,6 +301,11 @@ function resetGame(){
 
   greenScore = 0;
   blueScore  = 0;
+
+  blueFlagCarrier = null;
+  greenFlagCarrier = null;
+  blueFlagStolenBy = null;
+  greenFlagStolenBy = null;
 
   lastFirstTurn= 1 - lastFirstTurn;
   turnIndex= lastFirstTurn;
@@ -1054,6 +1082,16 @@ function planeBuildingCollision(fp, b){
 
 function destroyPlane(fp){
   const p = fp.plane;
+  if(p.flagColor){
+    if(p.flagColor === "blue"){
+      blueFlagCarrier = null;
+      blueFlagStolenBy = null;
+    } else {
+      greenFlagCarrier = null;
+      greenFlagStolenBy = null;
+    }
+    p.flagColor = null;
+  }
   p.isAlive = false;
   p.burning = true;
   p.explosionImg = createExplosionImage();
@@ -1247,6 +1285,7 @@ function handleAAForPlane(p, fp){
 
       // проверка попаданий по врагам
       checkPlaneHits(p, fp);
+      handleFlagInteractions(p);
       if(handleAAForPlane(p, fp)) continue;
 
       fp.framesLeft--;
@@ -1704,6 +1743,15 @@ function drawPlanesAndTrajectories(){
       gameCtx.stroke();
     }
     drawThinPlane(gameCtx, p);
+    if(p.flagColor){
+      gameCtx.save();
+      gameCtx.strokeStyle = p.flagColor;
+      gameCtx.lineWidth = 3;
+      gameCtx.beginPath();
+      gameCtx.arc(p.x, p.y, POINT_RADIUS + 5, 0, Math.PI*2);
+      gameCtx.stroke();
+      gameCtx.restore();
+    }
     if(p.burning){
       const cx = p.collisionX ?? p.x;
       const cy = p.collisionY ?? p.y;
@@ -1754,8 +1802,12 @@ function drawFlag(ctx2d, x, y, color){
 
 function drawFlags(){
   const centerX = gameCanvas.width / 2;
-  drawFlag(gameCtx, centerX, 40, "blue");
-  drawFlag(gameCtx, centerX, gameCanvas.height - 40, "green");
+  if(!blueFlagCarrier){
+    drawFlag(gameCtx, centerX, 40, "blue");
+  }
+  if(!greenFlagCarrier){
+    drawFlag(gameCtx, centerX, gameCanvas.height - 40, "green");
+  }
 }
 
 
@@ -1924,9 +1976,76 @@ function checkPlaneHits(plane, fp){
       p.collisionX = cx;
       p.collisionY = cy;
       fp.hit = true;
+      if(p.flagColor){
+        const flagColor = p.flagColor;
+        const stolenBy = flagColor === "blue" ? blueFlagStolenBy : greenFlagStolenBy;
+        if(stolenBy){
+          if(plane.color === flagColor){
+            addScore(stolenBy, -1);
+            addScore(flagColor, 1);
+          } else {
+            addScore(stolenBy, 1);
+            addScore(flagColor, -1);
+          }
+        }
+        plane.flagColor = flagColor;
+        if(flagColor === "blue"){
+          blueFlagCarrier = plane;
+        } else {
+          greenFlagCarrier = plane;
+        }
+        p.flagColor = null;
+      }
       awardPoint(p.color);
       checkVictory();
       if(isGameOver) return;
+    }
+  }
+}
+
+function handleFlagInteractions(plane){
+  const centerX = gameCanvas.width / 2;
+  const topY = 40;
+  const bottomY = gameCanvas.height - 40;
+  const flagRadius = POINT_RADIUS;
+  if(!plane.flagColor){
+    const enemyColor = plane.color === "green" ? "blue" : "green";
+    const flagY = enemyColor === "blue" ? topY : bottomY;
+    const dx = plane.x - centerX;
+    const dy = plane.y - flagY;
+    if(Math.hypot(dx, dy) < flagRadius){
+      plane.flagColor = enemyColor;
+      if(enemyColor === "blue"){
+        blueFlagCarrier = plane;
+        blueFlagStolenBy = plane.color;
+      } else {
+        greenFlagCarrier = plane;
+        greenFlagStolenBy = plane.color;
+      }
+      addScore(plane.color, 2);
+    }
+  } else {
+    const dx = plane.x - centerX;
+    const ownFlagY = plane.color === "blue" ? topY : bottomY;
+    const dyOwn = plane.y - ownFlagY;
+    if(Math.hypot(dx, dyOwn) < flagRadius){
+      if(plane.flagColor !== plane.color){
+        addScore(plane.color, 3);
+      } else {
+        const stolenBy = plane.flagColor === "blue" ? blueFlagStolenBy : greenFlagStolenBy;
+        if(stolenBy){
+          addScore(stolenBy, -1);
+          addScore(plane.color, 1);
+        }
+      }
+      if(plane.flagColor === "blue"){
+        blueFlagCarrier = null;
+        blueFlagStolenBy = null;
+      } else {
+        greenFlagCarrier = null;
+        greenFlagStolenBy = null;
+      }
+      plane.flagColor = null;
     }
   }
 }
@@ -2114,6 +2233,10 @@ function startNewRound(){
   scoreCanvasBottom.style.display = "block";
 
   initPoints(); // ориентации на базе
+  blueFlagCarrier = null;
+  greenFlagCarrier = null;
+  blueFlagStolenBy = null;
+  greenFlagStolenBy = null;
   renderScoreboard();
   if (settings.addAA) {
     phase = 'AA_PLACEMENT';
