@@ -82,10 +82,8 @@ body {
   padding: 15px;
   z-index: 1000;
   box-shadow: 0 8px 16px rgba(0,0,0,0.2);
-  width: 95vw;
-  max-width: 350px;
-  height: calc(100dvh - 20px);
-  max-height: calc(100dvh - 20px);
+  width: 300px;
+  height: 520px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -104,10 +102,14 @@ body {
 
 /* Кнопки режимов */
 #modeMenu .mode-options {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 10px;
   margin-bottom: 15px;
+  border: 2px solid #ffd699;
+  border-radius: 12px;
+  padding: 10px;
+  width: 100%;
 }
 
 #modeMenu .mode-btn {
@@ -122,14 +124,19 @@ body {
   box-shadow: 0 4px 8px rgba(0,0,0,0.2);
   cursor: pointer;
   transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
+  width: 100%;
 }
 
 /* Rules buttons */
 #modeMenu .rules-options {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
   gap: 10px;
   margin-top: 15px;
+  border: 2px solid #ffd699;
+  border-radius: 12px;
+  padding: 10px;
+  width: 100%;
 }
 
 #modeMenu .rules-options .rules-btn {
@@ -143,6 +150,7 @@ body {
   box-shadow: 0 4px 8px rgba(0,0,0,0.2);
   cursor: pointer;
   transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
+  width: 100%;
 }
 
 #modeMenu .rules-options .rules-btn.selected {
@@ -155,6 +163,8 @@ body {
   margin-bottom: 15px;
   font-size: 18px;
   background: linear-gradient(145deg, #5bc0de, #31b0d5);
+  border: 2px solid #ffd699;
+  border-radius: 12px;
 }
 
 #modeMenu #backBtn {
