@@ -251,6 +251,28 @@ function addScore(color, delta){
   }
 }
 
+let blueFlagCarrier = null;
+let greenFlagCarrier = null;
+let blueFlagStolenBy = null;
+let greenFlagStolenBy = null;
+
+function addScore(color, delta){
+  if(color === "blue"){
+    blueScore = Math.max(0, blueScore + delta);
+  } else if(color === "green"){
+    greenScore = Math.max(0, greenScore + delta);
+  }
+  if(!isGameOver){
+    if(blueScore >= POINTS_TO_WIN){
+      isGameOver = true;
+      winnerColor = "blue";
+    } else if(greenScore >= POINTS_TO_WIN){
+      isGameOver = true;
+      winnerColor = "green";
+    }
+  }
+}
+
 let animationFrameId = null;
 
 /* Планирование хода ИИ */
@@ -316,7 +338,10 @@ function resetGame(){
   blueFlagStolenBy = null;
   greenFlagStolenBy = null;
 
-  turnIndex = lastFirstTurn;
+
+  lastFirstTurn= 1 - lastFirstTurn;
+  turnIndex= lastFirstTurn;
+
 
   globalFrame=0;
   flyingPoints= [];
