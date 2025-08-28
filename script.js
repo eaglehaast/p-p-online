@@ -225,6 +225,31 @@ if(hasCustomSettings && classicRulesBtn && advancedSettingsBtn){
 const POINTS_TO_WIN = 25;
 let greenScore = 0;
 let blueScore  = 0;
+let roundNumber = 0;
+let roundTextTimer = 0;
+let roundTransitionTimeout = null;
+
+let blueFlagCarrier = null;
+let greenFlagCarrier = null;
+let blueFlagStolenBy = null;
+let greenFlagStolenBy = null;
+
+function addScore(color, delta){
+  if(color === "blue"){
+    blueScore = Math.max(0, blueScore + delta);
+  } else if(color === "green"){
+    greenScore = Math.max(0, greenScore + delta);
+  }
+  if(!isGameOver){
+    if(blueScore >= POINTS_TO_WIN){
+      isGameOver = true;
+      winnerColor = "blue";
+    } else if(greenScore >= POINTS_TO_WIN){
+      isGameOver = true;
+      winnerColor = "green";
+    }
+  }
+}
 
 let blueFlagCarrier = null;
 let greenFlagCarrier = null;
@@ -301,14 +326,22 @@ function resetGame(){
 
   greenScore = 0;
   blueScore  = 0;
+  roundNumber = 0;
+  roundTextTimer = 0;
+  if(roundTransitionTimeout){
+    clearTimeout(roundTransitionTimeout);
+    roundTransitionTimeout = null;
+  }
 
   blueFlagCarrier = null;
   greenFlagCarrier = null;
   blueFlagStolenBy = null;
   greenFlagStolenBy = null;
 
+
   lastFirstTurn= 1 - lastFirstTurn;
   turnIndex= lastFirstTurn;
+
 
   globalFrame=0;
   flyingPoints= [];
@@ -417,18 +450,7 @@ playBtn.addEventListener("click",()=>{
   }
   gameMode = selectedMode;
   modeMenuDiv.style.display = "none";
-
-  scoreCanvas.style.display = "block";
-  gameCanvas.style.display = "block";
-  scoreCanvasBottom.style.display = "block";
-  aimCanvas.style.display = "block";
-  if (settings.addAA) {
-    phase = 'AA_PLACEMENT';
-    currentPlacer = 'green';
-  } else {
-    phase = 'TURN';
-  }
-  startGameLoop();
+  startNewRound();
 });
 
 /* ======= INPUT (slingshot) ======= */
@@ -1420,7 +1442,18 @@ function handleAAForPlane(p, fp){
     const w= gameCtx.measureText(text).width;
     gameCtx.fillText(text, (gameCanvas.width - w)/2, gameCanvas.height/2 - 80);
 
-    endGameDiv.style.display="block";
+    if(blueScore >= POINTS_TO_WIN || greenScore >= POINTS_TO_WIN){
+      endGameDiv.style.display="block";
+    }
+  }
+
+  if(roundTextTimer > 0){
+    gameCtx.font="48px 'Patrick Hand', cursive";
+    gameCtx.fillStyle="black";
+    const text = `Round ${roundNumber}`;
+    const w = gameCtx.measureText(text).width;
+    gameCtx.fillText(text, (gameCanvas.width - w)/2, gameCanvas.height/2);
+    roundTextTimer--;
   }
 
   animationFrameId = requestAnimationFrame(gameDraw);
@@ -2054,8 +2087,14 @@ function checkVictory(){
   const blueAlive  = points.filter(p=>p.isAlive && p.color==="blue").length;
   if(greenAlive===0 && !isGameOver){
     isGameOver = true; winnerColor="blue";
+    if(blueScore < POINTS_TO_WIN && greenScore < POINTS_TO_WIN){
+      roundTransitionTimeout = setTimeout(startNewRound, 1500);
+    }
   } else if(blueAlive===0 && !isGameOver){
     isGameOver = true; winnerColor="green";
+    if(blueScore < POINTS_TO_WIN && greenScore < POINTS_TO_WIN){
+      roundTransitionTimeout = setTimeout(startNewRound, 1500);
+    }
   }
 }
 
@@ -2203,21 +2242,28 @@ yesBtn.addEventListener("click", () => {
   if (blueScore >= POINTS_TO_WIN || greenScore >= POINTS_TO_WIN) {
     blueScore = 0;
     greenScore = 0;
+    roundNumber = 0;
   }
   startNewRound();
-  endGameDiv.style.display="none";
 });
 noBtn.addEventListener("click", () => {
-  endGameDiv.style.display="none";
   modeMenuDiv.style.display="block";
   resetGame();
 });
 
 function startNewRound(){
+  if(roundTransitionTimeout){
+    clearTimeout(roundTransitionTimeout);
+    roundTransitionTimeout = null;
+  }
+  endGameDiv.style.display = "none";
   isGameOver=false; winnerColor=null;
 
   lastFirstTurn = 1 - lastFirstTurn;
   turnIndex = lastFirstTurn;
+
+  roundNumber++;
+  roundTextTimer = 120;
 
   globalFrame=0;
   flyingPoints=[];
@@ -2231,6 +2277,7 @@ function startNewRound(){
   scoreCanvas.style.display = "block";
   gameCanvas.style.display = "block";
   scoreCanvasBottom.style.display = "block";
+  aimCanvas.style.display = "block";
 
   initPoints(); // ориентации на базе
   blueFlagCarrier = null;
