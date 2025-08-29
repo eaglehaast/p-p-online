@@ -486,6 +486,7 @@ function handleStart(e) {
   handleCircle.offsetX=0; handleCircle.offsetY=0;
   handleCircle.active= true;
   handleCircle.pointRef= found;
+  roundTextTimer = 0; // Hide round label when player starts a move
 
   window.addEventListener("mousemove", onHandleMove);
   window.addEventListener("mouseup", onHandleUp);
@@ -862,6 +863,7 @@ function doComputerMove(){
       hasShotThisRound = true;
       renderScoreboard();
     }
+    roundTextTimer = 0; // Hide round label when AI makes a move
   }
 }
 function dist(a,b){ return Math.hypot(a.x-b.x,a.y-b.y); }
