@@ -748,12 +748,12 @@ function onHandleUp(){
 
   // дальность в пикселях
   const flightDistancePx = flightRangeCells * CELL_SIZE;
-  const speedPerFrame = (flightDistancePx / BOUNCE_FRAMES);
+  const speedPxPerSec = (flightDistancePx / BOUNCE_FRAMES) * 60;
   const scale = dragDistance / MAX_DRAG_DISTANCE;
 
-  // скорость — ПРОТИВ направления натяжки
-  let vx= -Math.cos(dragAngle) * scale * speedPerFrame;
-  let vy= -Math.sin(dragAngle) * scale * speedPerFrame;
+  // скорость — ПРОТИВ направления натяжки (px/sec)
+  let vx= -Math.cos(dragAngle) * scale * speedPxPerSec;
+  let vy= -Math.sin(dragAngle) * scale * speedPxPerSec;
 
   // нос по скорости
   plane.angle = Math.atan2(vy, vx) + Math.PI/2;
@@ -793,7 +793,7 @@ function doComputerMove(){
   let best = null; // {plane, enemy, vx, vy, totalDist}
 
   const flightDistancePx = flightRangeCells * CELL_SIZE;
-  const speedPerFrame    = (flightDistancePx / BOUNCE_FRAMES);
+  const speedPxPerSec    = (flightDistancePx / BOUNCE_FRAMES) * 60;
 
   for(const plane of aiPlanes){
     if(flyingPoints.some(fp=>fp.plane===plane)) continue;
@@ -810,8 +810,8 @@ function doComputerMove(){
         const dist = Math.hypot(dx,dy);
         const scale = Math.min(dist / MAX_DRAG_DISTANCE, 1);
 
-        const vx = Math.cos(ang) * scale * speedPerFrame;
-        const vy = Math.sin(ang) * scale * speedPerFrame;
+        const vx = Math.cos(ang) * scale * speedPxPerSec;
+        const vy = Math.sin(ang) * scale * speedPxPerSec;
         const totalDist = dist;
 
         if(!best || totalDist < best.totalDist){
@@ -826,8 +826,8 @@ function doComputerMove(){
           const ang = Math.atan2(dy, dx) + getRandomDeviation(mirror.totalDist, AI_MAX_ANGLE_DEVIATION);
 
           const scale = Math.min(mirror.totalDist / (2*MAX_DRAG_DISTANCE), 1);
-          const vx = Math.cos(ang) * scale * speedPerFrame;
-          const vy = Math.sin(ang) * scale * speedPerFrame;
+          const vx = Math.cos(ang) * scale * speedPxPerSec;
+          const vy = Math.sin(ang) * scale * speedPxPerSec;
 
           if(!best || mirror.totalDist < best.totalDist){
             best = {plane, enemy, vx, vy, totalDist: mirror.totalDist};
@@ -849,8 +849,8 @@ function doComputerMove(){
 
     best = {
       plane, enemy,
-      vx: Math.cos(ang)*scale*speedPerFrame,
-      vy: Math.sin(ang)*scale*speedPerFrame,
+      vx: Math.cos(ang)*scale*speedPxPerSec,
+      vy: Math.sin(ang)*scale*speedPxPerSec,
       totalDist: desired
     };
   }
@@ -1198,7 +1198,8 @@ function handleAAForPlane(p, fp){
   /* ======= GAME LOOP ======= */
   function gameDraw(){
   const now = performance.now();
-  const deltaSec = (now - lastFrameTime) / 1000;
+  let deltaSec = (now - lastFrameTime) / 1000;
+  deltaSec = Math.min(deltaSec, 0.05);
   const delta = deltaSec * 60;
   lastFrameTime = now;
   globalFrame += delta;
@@ -1232,8 +1233,8 @@ function handleAAForPlane(p, fp){
     for(const fp of current){
       const p = fp.plane;
 
-      p.x += fp.vx * delta;
-      p.y += fp.vy * delta;
+      p.x += fp.vx * deltaSec;
+      p.y += fp.vy * deltaSec;
 
         // field borders
         if (p.x < FIELD_BORDER_OFFSET) {
