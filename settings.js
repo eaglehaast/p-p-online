@@ -12,6 +12,10 @@ function getIntSetting(key, defaultValue){
 let flightRangeCells = getIntSetting('settings.flightRangeCells', 15);
 let aimingAmplitude  = getIntSetting('settings.aimingAmplitude', 10);
 let mapIndex = getIntSetting('settings.mapIndex', 1);
+// Ensure stored index points to an existing map
+if(mapIndex < 0 || mapIndex >= MAPS.length){
+  mapIndex = 1;
+}
 let addAA = localStorage.getItem('settings.addAA') === 'true';
 let sharpEdges = localStorage.getItem('settings.sharpEdges') === 'true';
 
@@ -72,6 +76,8 @@ function updateAmplitudeIndicator(){
 
 function updateMapDisplay(){
   const el = document.getElementById('mapNameValue');
+  // Normalize index in case map list changed
+  mapIndex = ((mapIndex % MAPS.length) + MAPS.length) % MAPS.length;
   if(el) el.textContent = MAPS[mapIndex];
 }
 
@@ -97,11 +103,10 @@ function setupRepeatButton(btn, cb){
     clearTimeout(timeoutId);
     clearInterval(intervalId);
   };
-  btn.addEventListener('mousedown', start);
-  btn.addEventListener('mouseup', stop);
-  btn.addEventListener('mouseleave', stop);
-  btn.addEventListener('touchstart', start);
-  btn.addEventListener('touchend', stop);
+  btn.addEventListener('pointerdown', start);
+  btn.addEventListener('pointerup', stop);
+  btn.addEventListener('pointerleave', stop);
+  btn.addEventListener('pointercancel', stop);
 }
 
 if(addAAToggle){
