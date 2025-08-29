@@ -792,16 +792,49 @@ function doComputerMove(){
   const enemies  = points.filter(p=> p.color==="green" && p.isAlive && !p.burning);
   if(!aiPlanes.length || !enemies.length) return;
 
-  let best = null; // {plane, enemy, vx, vy, totalDist}
+  const centerX = gameCanvas.width/2;
+  const topY    = 40;
+  const bottomY = gameCanvas.height - 40;
 
+  // 1. If we are carrying the enemy flag, prioritize returning home
+  const carrier = aiPlanes.find(p=>p.flagColor === "green" && !flyingPoints.some(fp=>fp.plane===p));
+  if(carrier){
+    const move = planPathToPoint(carrier, centerX, topY);
+    if(move){
+      issueAIMove(carrier, move.vx, move.vy);
+    }
+    return;
+  }
+
+  // 2. If our flag is stolen, focus fire on the carrier
+  let targetEnemies = enemies;
+  if(blueFlagCarrier && blueFlagCarrier.color !== "blue"){
+    targetEnemies = enemies.filter(e=>e===blueFlagCarrier);
+  } else if(!greenFlagCarrier){
+    // 3. Enemy flag available – attempt to steal it
+    let bestCap = null;
+    for(const plane of aiPlanes){
+      if(flyingPoints.some(fp=>fp.plane===plane)) continue;
+      const move = planPathToPoint(plane, centerX, bottomY);
+      if(move && (!bestCap || move.totalDist < bestCap.totalDist)){
+        bestCap = {plane, ...move};
+      }
+    }
+    if(bestCap){
+      issueAIMove(bestCap.plane, bestCap.vx, bestCap.vy);
+      return;
+    }
+  }
+
+  // 4. Attack logic (direct or with bounce)
   const flightDistancePx = flightRangeCells * CELL_SIZE;
   const speedPxPerSec    = flightDistancePx / FLIGHT_DURATION_SEC;
+  let best = null; // {plane, enemy, vx, vy, totalDist}
 
   for(const plane of aiPlanes){
     if(flyingPoints.some(fp=>fp.plane===plane)) continue;
 
-    for(const enemy of enemies){
-      // Прямой выстрел (если нет преград)
+    for(const enemy of targetEnemies){
       if(isPathClear(plane.x, plane.y, enemy.x, enemy.y)){
         let dx= enemy.x - plane.x;
         let dy= enemy.y - plane.y;
@@ -820,7 +853,6 @@ function doComputerMove(){
           best = {plane, enemy, vx, vy, totalDist};
         }
       } else {
-        // Одно отражение
         const mirror = findMirrorShot(plane, enemy);
         if(mirror){
           const dx = mirror.mirrorTarget.x - plane.x;
@@ -839,10 +871,10 @@ function doComputerMove(){
     }
   }
 
-  // Ничего подходящего — подползти
+  // 5. If nothing else, crawl closer to nearest enemy
   if(!best){
     const plane = aiPlanes[0];
-    const enemy = enemies.reduce((a,b)=> (dist(plane,a)<dist(plane,b)?a:b));
+    const enemy = targetEnemies.reduce((a,b)=> (dist(plane,a)<dist(plane,b)?a:b));
     const dx= enemy.x - plane.x, dy= enemy.y - plane.y;
     const ang = Math.atan2(dy, dx) + getRandomDeviation(Math.hypot(dx,dy), AI_MAX_ANGLE_DEVIATION);
 
@@ -858,17 +890,42 @@ function doComputerMove(){
   }
 
   if(best){
-    best.plane.angle = Math.atan2(best.vy, best.vx) + Math.PI/2;
-    flyingPoints.push({
-      plane: best.plane, vx: best.vx, vy: best.vy,
-      timeLeft: FLIGHT_DURATION_SEC, hit:false, collisionCooldown:0
-    });
-    if(!hasShotThisRound){
-      hasShotThisRound = true;
-      renderScoreboard();
-    }
-    roundTextTimer = 0; // Hide round label when AI makes a move
+    issueAIMove(best.plane, best.vx, best.vy);
   }
+}
+
+function planPathToPoint(plane, tx, ty){
+  const flightDistancePx = flightRangeCells * CELL_SIZE;
+  const speedPxPerSec    = flightDistancePx / FLIGHT_DURATION_SEC;
+
+  if(isPathClear(plane.x, plane.y, tx, ty)){
+    const dx = tx - plane.x;
+    const dy = ty - plane.y;
+    const ang = Math.atan2(dy, dx) + getRandomDeviation(Math.hypot(dx,dy), AI_MAX_ANGLE_DEVIATION);
+    const dist = Math.hypot(dx, dy);
+    const scale = Math.min(dist / MAX_DRAG_DISTANCE, 1);
+    return {vx: Math.cos(ang)*scale*speedPxPerSec, vy: Math.sin(ang)*scale*speedPxPerSec, totalDist: dist};
+  }
+
+  const mirror = findMirrorShot(plane, {x:tx, y:ty});
+  if(mirror){
+    const dx = mirror.mirrorTarget.x - plane.x;
+    const dy = mirror.mirrorTarget.y - plane.y;
+    const ang = Math.atan2(dy, dx) + getRandomDeviation(mirror.totalDist, AI_MAX_ANGLE_DEVIATION);
+    const scale = Math.min(mirror.totalDist / (2*MAX_DRAG_DISTANCE), 1);
+    return {vx: Math.cos(ang)*scale*speedPxPerSec, vy: Math.sin(ang)*scale*speedPxPerSec, totalDist: mirror.totalDist};
+  }
+  return null;
+}
+
+function issueAIMove(plane, vx, vy){
+  plane.angle = Math.atan2(vy, vx) + Math.PI/2;
+  flyingPoints.push({ plane, vx, vy, timeLeft: FLIGHT_DURATION_SEC, hit:false, collisionCooldown:0 });
+  if(!hasShotThisRound){
+    hasShotThisRound = true;
+    renderScoreboard();
+  }
+  roundTextTimer = 0;
 }
 function dist(a,b){ return Math.hypot(a.x-b.x,a.y-b.y); }
 function getRandomDeviation(distance, maxDev){
