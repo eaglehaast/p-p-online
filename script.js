@@ -169,6 +169,7 @@ let selectedMode = null;
 let hasShotThisRound = false;
 
 let globalFrame  = 0;
+let lastFrameTime = 0;
 let oscillationPhase = 0;
 const oscillationSpeed = 0.02;
 
@@ -369,6 +370,7 @@ function stopGameLoop(){
 }
 function startGameLoop(){
   if(animationFrameId === null){
+    lastFrameTime = performance.now();
     animationFrameId = requestAnimationFrame(gameDraw);
   }
 }
@@ -1195,7 +1197,11 @@ function handleAAForPlane(p, fp){
 }
   /* ======= GAME LOOP ======= */
   function gameDraw(){
-  globalFrame++;
+  const now = performance.now();
+  const deltaSec = (now - lastFrameTime) / 1000;
+  const delta = deltaSec * 60;
+  lastFrameTime = now;
+  globalFrame += delta;
 
   // фон
   gameCtx.clearRect(0,0, gameCanvas.width, gameCanvas.height);
@@ -1204,8 +1210,8 @@ function handleAAForPlane(p, fp){
   aimCtx.clearRect(0,0, aimCanvas.width, aimCanvas.height);
 
   // Планирование хода ИИ
-  if (!isGameOver 
-      && gameMode === "computer" 
+  if (!isGameOver
+      && gameMode === "computer"
       && turnColors[turnIndex] === "blue"
       && !aiMoveScheduled
       && !flyingPoints.some(fp => fp.plane.color === "blue")) {
@@ -1213,9 +1219,8 @@ function handleAAForPlane(p, fp){
     setTimeout(() => { doComputerMove(); }, 300);
   }
 
-  const now = performance.now();
   for(const aa of aaUnits){
-    aa.sweepAngleDeg = (aa.sweepAngleDeg + aa.rotationDegPerSec/60) % 360;
+    aa.sweepAngleDeg = (aa.sweepAngleDeg + aa.rotationDegPerSec * deltaSec) % 360;
     aa.trail.push({angleDeg: aa.sweepAngleDeg, time: now});
     aa.trail = aa.trail.filter(seg => now - seg.time < AA_TRAIL_MS);
   }
@@ -1227,8 +1232,8 @@ function handleAAForPlane(p, fp){
     for(const fp of current){
       const p = fp.plane;
 
-      p.x += fp.vx;
-      p.y += fp.vy;
+      p.x += fp.vx * delta;
+      p.y += fp.vy * delta;
 
         // field borders
         if (p.x < FIELD_BORDER_OFFSET) {
@@ -1265,7 +1270,7 @@ function handleAAForPlane(p, fp){
         }
 
       // столкновения со зданиями (cooldown)
-      if(fp.collisionCooldown>0){ fp.collisionCooldown--; }
+      if(fp.collisionCooldown>0){ fp.collisionCooldown -= delta; }
       if(fp.collisionCooldown<=0){
         for(const b of buildings){
           if(planeBuildingCollision(fp, b)) break;
@@ -1290,7 +1295,7 @@ function handleAAForPlane(p, fp){
       handleFlagInteractions(p);
       if(handleAAForPlane(p, fp)) continue;
 
-      fp.framesLeft--;
+      fp.framesLeft -= delta;
       if(fp.framesLeft<=0){
         flyingPoints = flyingPoints.filter(x => x !== fp);
         // смена хода, когда полётов текущего цвета больше нет
@@ -1332,7 +1337,7 @@ function handleAAForPlane(p, fp){
 
   // "ручка" при натяжке
   if(handleCircle.active && handleCircle.pointRef){
-    oscillationPhase += oscillationSpeed;
+    oscillationPhase += oscillationSpeed * delta;
 
     const plane= handleCircle.pointRef;
     let dx= handleCircle.baseX - plane.x;
@@ -1433,7 +1438,7 @@ function handleAAForPlane(p, fp){
     const text = `Round ${roundNumber}`;
     const w = gameCtx.measureText(text).width;
     gameCtx.fillText(text, (gameCanvas.width - w)/2, gameCanvas.height/2);
-    roundTextTimer--;
+    roundTextTimer -= delta;
   }
 
   animationFrameId = requestAnimationFrame(gameDraw);
