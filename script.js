@@ -96,6 +96,8 @@ const POINT_RADIUS         = 15;     // px (увеличено для мобил
 const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit Anti-Aircraft center
 const HANDLE_SIZE          = 10;     // px
 const BOUNCE_FRAMES        = 68;
+// Duration of a full-speed flight in seconds (previously measured in frames)
+const FLIGHT_DURATION_SEC  = BOUNCE_FRAMES / 60;
 const MAX_DRAG_DISTANCE    = 100;    // px
 const ATTACK_RANGE_PX      = 300;    // px
 let FIELD_BORDER_OFFSET = FIELD_BORDER_THICKNESS; // внутренняя граница для отражения
@@ -748,7 +750,7 @@ function onHandleUp(){
 
   // дальность в пикселях
   const flightDistancePx = flightRangeCells * CELL_SIZE;
-  const speedPxPerSec = (flightDistancePx / BOUNCE_FRAMES) * 60;
+  const speedPxPerSec = flightDistancePx / FLIGHT_DURATION_SEC;
   const scale = dragDistance / MAX_DRAG_DISTANCE;
 
   // скорость — ПРОТИВ направления натяжки (px/sec)
@@ -760,7 +762,7 @@ function onHandleUp(){
 
   flyingPoints.push({
     plane, vx, vy,
-    framesLeft: BOUNCE_FRAMES,
+    timeLeft: FLIGHT_DURATION_SEC,
     hit:false,
     collisionCooldown:0
   });
@@ -793,7 +795,7 @@ function doComputerMove(){
   let best = null; // {plane, enemy, vx, vy, totalDist}
 
   const flightDistancePx = flightRangeCells * CELL_SIZE;
-  const speedPxPerSec    = (flightDistancePx / BOUNCE_FRAMES) * 60;
+  const speedPxPerSec    = flightDistancePx / FLIGHT_DURATION_SEC;
 
   for(const plane of aiPlanes){
     if(flyingPoints.some(fp=>fp.plane===plane)) continue;
@@ -859,7 +861,7 @@ function doComputerMove(){
     best.plane.angle = Math.atan2(best.vy, best.vx) + Math.PI/2;
     flyingPoints.push({
       plane: best.plane, vx: best.vx, vy: best.vy,
-      framesLeft: BOUNCE_FRAMES, hit:false, collisionCooldown:0
+      timeLeft: FLIGHT_DURATION_SEC, hit:false, collisionCooldown:0
     });
     if(!hasShotThisRound){
       hasShotThisRound = true;
@@ -1299,8 +1301,8 @@ function handleAAForPlane(p, fp){
       handleFlagInteractions(p);
       if(handleAAForPlane(p, fp)) continue;
 
-      fp.framesLeft -= delta;
-      if(fp.framesLeft<=0){
+      fp.timeLeft -= deltaSec;
+      if(fp.timeLeft<=0){
         flyingPoints = flyingPoints.filter(x => x !== fp);
         // смена хода, когда полётов текущего цвета больше нет
         if(!isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
@@ -1672,7 +1674,7 @@ function drawThinPlane(ctx2d, plane){
 
       const fp = flyingPoints.find(fp => fp.plane === plane);
       if(fp){
-        const progress = (BOUNCE_FRAMES - fp.framesLeft) / BOUNCE_FRAMES;
+        const progress = (FLIGHT_DURATION_SEC - fp.timeLeft) / FLIGHT_DURATION_SEC;
         const scale = progress < 0.75 ? 4 * progress : 12 * (1 - progress);
         drawBlueJetFlame(ctx2d, scale);
 
@@ -1688,7 +1690,7 @@ function drawThinPlane(ctx2d, plane){
     const fp = flyingPoints.find(fp => fp.plane === plane);
     if(showEngine){
       if(fp){
-        const progress = (BOUNCE_FRAMES - fp.framesLeft) / BOUNCE_FRAMES;
+        const progress = (FLIGHT_DURATION_SEC - fp.timeLeft) / FLIGHT_DURATION_SEC;
         let scale;
         if(progress < 0.5){
           scale = 4 - 4 * progress; // 20px -> 10px
