@@ -1139,7 +1139,10 @@ function handleAAForPlane(p, fp){
     const dist = Math.hypot(dx, dy);
     if(dist < AA_HIT_RADIUS){
       aa.hp--;
-      if(aa.hp<=0){ aaUnits = aaUnits.filter(a=>a!==aa); }
+      if(aa.hp<=0){
+        aaUnits = aaUnits.filter(a=>a!==aa);
+        addScore(p.color, 1);
+      }
       continue;
     }
     if(dist <= aa.radius + POINT_RADIUS){
