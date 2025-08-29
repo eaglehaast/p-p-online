@@ -6,6 +6,10 @@ body, button {
   -webkit-tap-highlight-color: transparent;
 }
 
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
 /* Базовый шрифт/раскладка */
 body {
   position: relative;
