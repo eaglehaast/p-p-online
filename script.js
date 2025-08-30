@@ -445,7 +445,8 @@ const handleCircle={
   shakyX:0, shakyY:0,
   offsetX:0, offsetY:0,
   active:false,
-  pointRef:null
+  pointRef:null,
+  origAngle:null
 };
 
 // Поддержка мобильных устройств
@@ -494,6 +495,7 @@ function handleStart(e) {
   handleCircle.offsetX=0; handleCircle.offsetY=0;
   handleCircle.active= true;
   handleCircle.pointRef= found;
+  handleCircle.origAngle = found.angle;
   oscillationAngle = 0;
   oscillationDir = 1;
   roundTextTimer = 0; // Hide round label when player starts a move
@@ -731,17 +733,18 @@ function onHandleMove(e){
 
 function onHandleUp(){
   if(!handleCircle.active || !handleCircle.pointRef) return;
+  let plane= handleCircle.pointRef;
   if(isGameOver || !gameMode){
+    plane.angle = handleCircle.origAngle;
     cleanupHandle(); return;
   }
-
-  let plane= handleCircle.pointRef;
   let dx= handleCircle.shakyX - plane.x;
   let dy= handleCircle.shakyY - plane.y;
 
   let dragDistance = Math.hypot(dx, dy);
   // Cancel the move if released before the first tick mark
   if(dragDistance < CELL_SIZE){
+    plane.angle = handleCircle.origAngle;
     cleanupHandle();
     return;
   }
@@ -782,6 +785,7 @@ function onHandleUp(){
 function cleanupHandle(){
   handleCircle.active= false;
   handleCircle.pointRef= null;
+  handleCircle.origAngle = null;
   window.removeEventListener("mousemove", onHandleMove);
   window.removeEventListener("mouseup", onHandleUp);
   window.removeEventListener("touchmove", onHandleMove);
@@ -1401,9 +1405,6 @@ function handleAAForPlane(p, fp){
   drawAAUnits();
   drawAAPreview();
 
-  // самолёты + их трейлы
-  drawPlanesAndTrajectories();
-
   // "ручка" при натяжке
   if(handleCircle.active && handleCircle.pointRef){
 
@@ -1449,6 +1450,9 @@ function handleAAForPlane(p, fp){
       vdy *= MAX_DRAG_DISTANCE/vdist;
       vdist = MAX_DRAG_DISTANCE;
     }
+
+    // вращаем самолёт по направлению предполагаемого полёта
+    plane.angle = Math.atan2(-vdy, -vdx) + Math.PI/2;
 
     const rect = gameCanvas.getBoundingClientRect();
     const scaleX = rect.width / gameCanvas.width;
@@ -1634,6 +1638,9 @@ function handleAAForPlane(p, fp){
     // Draw the handle triangle on top
     drawHandleTriangle(aimCtx, endX, endY, endX - startX, endY - startY, arrowColor);
   }
+
+  // самолёты + их трейлы
+  drawPlanesAndTrajectories();
 
 
   // табло
