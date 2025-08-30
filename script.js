@@ -2153,17 +2153,18 @@ function drawBrickWall(ctx, width, height){
 
 function drawHandleTriangle(ctx, x, y, dx, dy, color = "black", baseScale = 1){
   const size = HANDLE_SIZE;
-  const angle = Math.atan2(dy, dx) - Math.PI/2;
+  const angle = Math.atan2(dy, dx) - Math.PI / 2;
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle);
-  ctx.beginPath();
-  ctx.moveTo(0, -size);
-  ctx.lineTo(-size * baseScale, size);
-  ctx.lineTo(size * baseScale, size);
-  ctx.closePath();
   ctx.fillStyle = color;
-  ctx.fill();
+
+  // Draw minimalistic arrow fletching using two rectangles
+  const rectW = size * baseScale;
+  const rectH = size * 2;
+  ctx.fillRect(-rectW, 0, rectW, rectH);
+  ctx.fillRect(0, 0, rectW, rectH);
+
   ctx.restore();
 }
 
