@@ -61,7 +61,7 @@ function updateFlightRangeFlame(){
 function updateAmplitudeDisplay(){
   const disp = document.getElementById('amplitudeAngleDisplay');
   if(disp){
-    const maxAngle = aimingAmplitude * 2;
+    const maxAngle = aimingAmplitude * 4;
     disp.textContent = `${maxAngle.toFixed(0)}°`;
   }
 }
@@ -69,7 +69,7 @@ function updateAmplitudeDisplay(){
 function updateAmplitudeIndicator(){
   const indicator = document.getElementById('amplitudeIndicator');
   if(indicator){
-    const maxAngle = aimingAmplitude * 2;
+    const maxAngle = aimingAmplitude * 4;
     indicator.style.setProperty('--amp', `${maxAngle}deg`);
   }
 }

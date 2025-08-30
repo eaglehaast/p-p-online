@@ -161,7 +161,7 @@ const MAPS = ["clear sky", "wall", "two walls"];
 let mapIndex;
 let flightRangeCells; // cells for menu and physics
 let buildingsCount   = 0;
-let aimingAmplitude;     // 0..30 (UI показывает *2)
+let aimingAmplitude;     // 0..30 (UI показывает *4)
 
 let isGameOver   = false;
 let winnerColor  = null;
@@ -172,7 +172,8 @@ let hasShotThisRound = false;
 
 let globalFrame  = 0;
 let lastFrameTime = 0;
-let oscillationPhase = 0;
+let oscillationAngle = 0;
+let oscillationDir = 1;
 const oscillationSpeed = 0.02;
 
 const turnColors = ["green","blue"];
@@ -493,6 +494,8 @@ function handleStart(e) {
   handleCircle.offsetX=0; handleCircle.offsetY=0;
   handleCircle.active= true;
   handleCircle.pointRef= found;
+  oscillationAngle = 0;
+  oscillationDir = 1;
   roundTextTimer = 0; // Hide round label when player starts a move
 
   window.addEventListener("mousemove", onHandleMove);
@@ -1403,27 +1406,43 @@ function handleAAForPlane(p, fp){
 
   // "ручка" при натяжке
   if(handleCircle.active && handleCircle.pointRef){
-    oscillationPhase += oscillationSpeed * delta;
+    const plane = handleCircle.pointRef;
+    let dx = handleCircle.baseX - plane.x;
+    let dy = handleCircle.baseY - plane.y;
+    let distPx = Math.hypot(dx, dy);
 
-    const plane= handleCircle.pointRef;
-    let dx= handleCircle.baseX - plane.x;
-    let dy= handleCircle.baseY - plane.y;
-    let distPx= Math.hypot(dx, dy);
+    // амплитуда зависит от расстояния до "ручки"
+    const clampedDist = Math.min(distPx, MAX_DRAG_DISTANCE);
+    const distCells   = clampedDist / CELL_SIZE;
 
-    // базовая амплитуда (чем сильнее натянул — тем больше дрожь)
-    let baseAmp=0;
-    const distCells= distPx / CELL_SIZE;
-    if(distCells <=5)       baseAmp = (distCells/5)*10/4;
-    else if(distCells <=10) baseAmp = (10 + ((distCells-5)*30)/5)/4;
-    else                    baseAmp = 10;
+    let maxAngleDeg = 0;
+    if(distCells > 4){
+      maxAngleDeg = aimingAmplitude * 4;
+    } else if(distCells > 3){
+      maxAngleDeg = aimingAmplitude * 2;
+    } else if(distCells > 2){
+      maxAngleDeg = aimingAmplitude;
+    }
+    const maxAngleRad = maxAngleDeg * Math.PI / 180;
 
-    const amp = baseAmp * (aimingAmplitude/3);
+    // обновляем текущий угол раскачивания
+    oscillationAngle += oscillationSpeed * delta * oscillationDir;
+    if(oscillationDir > 0 && oscillationAngle > maxAngleRad){
+      oscillationAngle = maxAngleRad;
+      oscillationDir = -1;
+    } else if(oscillationDir < 0 && oscillationAngle < -maxAngleRad){
+      oscillationAngle = -maxAngleRad;
+      oscillationDir = 1;
+    }
 
-    handleCircle.offsetX = amp * Math.cos(oscillationPhase);
-    handleCircle.offsetY = amp * Math.sin(oscillationPhase);
+    const baseAngle = Math.atan2(dy, dx);
+    const angle = baseAngle + oscillationAngle;
 
-    handleCircle.shakyX= handleCircle.baseX + handleCircle.offsetX;
-    handleCircle.shakyY= handleCircle.baseY + handleCircle.offsetY;
+    handleCircle.shakyX = plane.x + clampedDist * Math.cos(angle);
+    handleCircle.shakyY = plane.y + clampedDist * Math.sin(angle);
+
+    handleCircle.offsetX = handleCircle.shakyX - handleCircle.baseX;
+    handleCircle.offsetY = handleCircle.shakyY - handleCircle.baseY;
 
     // ограничение видимой длины
     let vdx = handleCircle.shakyX - plane.x;
