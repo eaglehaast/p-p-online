@@ -1479,11 +1479,13 @@ function handleAAForPlane(p, fp){
 
     // Predicted flight distance in cells based on current pull
     const travelCells = (vdist / MAX_DRAG_DISTANCE) * flightRangeCells;
-    const labelDist = HANDLE_SIZE * 2;
-    const labelGX = plane.x + labelDist * Math.cos(dragAngle);
-    const labelGY = plane.y + labelDist * Math.sin(dragAngle);
-    const labelSX = rect.left + labelGX * scaleX;
-    const labelSY = rect.top  + labelGY * scaleY;
+
+    const travelPx = travelCells * CELL_SIZE;
+    const travelEndGX = plane.x - travelPx * Math.cos(dragAngle);
+    const travelEndGY = plane.y - travelPx * Math.sin(dragAngle);
+    const travelEndSX = rect.left + travelEndGX * scaleX;
+    const travelEndSY = rect.top  + travelEndGY * scaleY;
+
 
     // Forward shadow aiming line (90% transparent)
     const forwardEndX = rect.left + (plane.x - vdx) * scaleX;
@@ -1631,18 +1633,23 @@ function handleAAForPlane(p, fp){
       startX - forwardEndX,
       startY - forwardEndY,
       "red",
-      0.3
+
+      0.5,
+      "black"
+
     );
     aimCtx.restore();
 
     // Predicted distance text with 90% transparency
     aimCtx.save();
     aimCtx.globalAlpha = 0.1;
+
     aimCtx.font = "18px 'Patrick Hand', cursive";
     aimCtx.fillStyle = plane.color;
     aimCtx.textAlign = "center";
     aimCtx.textBaseline = "middle";
     aimCtx.fillText(travelCells.toFixed(1), labelSX, labelSY);
+
     aimCtx.restore();
 
     // Draw the handle triangle in black
@@ -2169,20 +2176,37 @@ function drawBrickWall(ctx, width, height){
   ctx.strokeRect(-width/2, -height/2, width, height);
 }
 
-function drawHandleTriangle(ctx, x, y, dx, dy, color = "black", baseScale = 1){
+
+function drawHandleTriangle(ctx, x, y, dx, dy, color = "black", baseScale = 1, tailColor = color){
+
+
   const size = HANDLE_SIZE * baseScale;
   const angle = Math.atan2(dy, dx) - Math.PI/2;
+
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle);
 
-  // Minimalist arrowhead using two rectangles
-  const rectW = size;
-  const rectH = size * 2;
-  const rectY = -rectH;
+
+  // Draw forward pointing triangle (arrow tip)
+  ctx.beginPath();
+  ctx.moveTo(0, -size);
+  ctx.lineTo(-size, size);
+  ctx.lineTo(size, size);
+  ctx.closePath();
   ctx.fillStyle = color;
-  ctx.fillRect(-rectW, rectY, rectW, rectH);
-  ctx.fillRect(0, rectY, rectW, rectH);
+  ctx.fill();
+
+  // Draw arrow fletching using two rectangles at the tail
+
+  const rectW = size * baseScale;
+
+  const rectH = size * 2;
+  ctx.fillStyle = tailColor;
+  ctx.fillRect(-rectW, size, rectW, rectH);
+  ctx.fillRect(0, size, rectW, rectH);
+
+
 
   ctx.restore();
 }
