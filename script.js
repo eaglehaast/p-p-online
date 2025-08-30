@@ -1530,7 +1530,7 @@ function handleAAForPlane(p, fp){
       const seg1EndSY = rect.top  + seg1EndGY * scaleY;
 
       aimCtx.beginPath();
-      aimCtx.strokeStyle = "red";
+      aimCtx.strokeStyle = "black";
       aimCtx.lineWidth = 1;
       aimCtx.moveTo(start3SX, start3SY);
       aimCtx.lineTo(seg1EndSX, seg1EndSY);
@@ -1543,7 +1543,7 @@ function handleAAForPlane(p, fp){
         const seg2EndSY = rect.top  + seg2EndGY * scaleY;
 
         aimCtx.beginPath();
-        aimCtx.strokeStyle = "red";
+        aimCtx.strokeStyle = "black";
         aimCtx.lineWidth = 2;
         aimCtx.moveTo(seg1EndSX, seg1EndSY);
         aimCtx.lineTo(seg2EndSX, seg2EndSY);
@@ -1578,7 +1578,7 @@ function handleAAForPlane(p, fp){
       aimCtx.stroke();
     }
 
-    // Red overlay after the third tick mark
+    // Overlay after the third tick mark
     if(vdist > thirdDist){
       const start3GX = plane.x + thirdDist*Math.cos(dragAngle);
       const start3GY = plane.y + thirdDist*Math.sin(dragAngle);
@@ -1592,7 +1592,7 @@ function handleAAForPlane(p, fp){
       const seg1EndSY = rect.top  + seg1EndGY * scaleY;
 
       aimCtx.beginPath();
-      aimCtx.strokeStyle = "red";
+      aimCtx.strokeStyle = "black";
       aimCtx.lineWidth = 1;
       aimCtx.moveTo(start3SX, start3SY);
       aimCtx.lineTo(seg1EndSX, seg1EndSY);
@@ -1605,7 +1605,7 @@ function handleAAForPlane(p, fp){
         const seg2EndSY = rect.top  + seg2EndGY * scaleY;
 
         aimCtx.beginPath();
-        aimCtx.strokeStyle = "red";
+        aimCtx.strokeStyle = "black";
         aimCtx.lineWidth = 2;
         aimCtx.moveTo(seg1EndSX, seg1EndSY);
         aimCtx.lineTo(seg2EndSX, seg2EndSY);
@@ -1613,15 +1613,7 @@ function handleAAForPlane(p, fp){
       }
     }
 
-    // Handle triangle color based on stretch distance
-    let arrowColor = "black";
-    if(vdist > thirdDist){
-      const ratio = Math.min(1, (vdist - thirdDist) / CELL_SIZE);
-      const red = Math.floor(255 * ratio);
-      arrowColor = `rgb(${red},0,0)`;
-    }
-
-    // Draw forward arrow with transparency
+    // Draw forward arrowhead in red with transparency
     aimCtx.save();
     aimCtx.globalAlpha = 0.1;
     drawHandleTriangle(
@@ -1630,13 +1622,13 @@ function handleAAForPlane(p, fp){
       forwardEndY,
       startX - forwardEndX,
       startY - forwardEndY,
-      arrowColor,
+      "red",
       0.5
     );
     aimCtx.restore();
 
-    // Draw the handle triangle on top
-    drawHandleTriangle(aimCtx, endX, endY, endX - startX, endY - startY, arrowColor);
+    // Draw the handle triangle in black
+    drawHandleTriangle(aimCtx, endX, endY, endX - startX, endY - startY, "black");
   }
 
   // самолёты + их трейлы
