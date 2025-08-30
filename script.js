@@ -1477,6 +1477,14 @@ function handleAAForPlane(p, fp){
     const thirdDist = 3 * CELL_SIZE;
     const fourthDist = 4 * CELL_SIZE;
 
+    // Predicted flight distance in cells based on current pull
+    const travelCells = (vdist / MAX_DRAG_DISTANCE) * flightRangeCells;
+    const labelOffset = HANDLE_SIZE * 1.5;
+    const labelGX = plane.x + labelOffset * Math.cos(tickAngle);
+    const labelGY = plane.y + labelOffset * Math.sin(tickAngle);
+    const labelSX = rect.left + labelGX * scaleX;
+    const labelSY = rect.top  + labelGY * scaleY;
+
     // Forward shadow aiming line (90% transparent)
     const forwardEndX = rect.left + (plane.x - vdx) * scaleX;
     const forwardEndY = rect.top  + (plane.y - vdy) * scaleY;
@@ -1623,8 +1631,18 @@ function handleAAForPlane(p, fp){
       startX - forwardEndX,
       startY - forwardEndY,
       "red",
-      0.5
+      0.3
     );
+    aimCtx.restore();
+
+    // Predicted distance text with 90% transparency
+    aimCtx.save();
+    aimCtx.globalAlpha = 0.1;
+    aimCtx.font = "16px 'Patrick Hand', cursive";
+    aimCtx.fillStyle = plane.color;
+    aimCtx.textAlign = "center";
+    aimCtx.textBaseline = "middle";
+    aimCtx.fillText(travelCells.toFixed(1), labelSX, labelSY);
     aimCtx.restore();
 
     // Draw the handle triangle in black
@@ -2152,18 +2170,20 @@ function drawBrickWall(ctx, width, height){
 }
 
 function drawHandleTriangle(ctx, x, y, dx, dy, color = "black", baseScale = 1){
-  const size = HANDLE_SIZE;
+  const size = HANDLE_SIZE * baseScale;
   const angle = Math.atan2(dy, dx) - Math.PI/2;
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle);
-  ctx.beginPath();
-  ctx.moveTo(0, -size);
-  ctx.lineTo(-size * baseScale, size);
-  ctx.lineTo(size * baseScale, size);
-  ctx.closePath();
+
+  // Minimalist arrowhead using two rectangles
+  const rectW = size;
+  const rectH = size * 2;
+  const rectY = -rectH;
   ctx.fillStyle = color;
-  ctx.fill();
+  ctx.fillRect(-rectW, rectY, rectW, rectH);
+  ctx.fillRect(0, rectY, rectW, rectH);
+
   ctx.restore();
 }
 
