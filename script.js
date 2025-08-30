@@ -131,7 +131,7 @@ const MIN_FLIGHT_RANGE_CELLS = 5;
 const MAX_FLIGHT_RANGE_CELLS = 30;
 
 const MIN_AMPLITUDE        = 0;
-const MAX_AMPLITUDE        = 30;     // UI показывает как *2°
+const MAX_AMPLITUDE        = 30;     // UI показывает как *4°
 const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 
 
@@ -1407,29 +1407,37 @@ function handleAAForPlane(p, fp){
   // "ручка" при натяжке
   if(handleCircle.active && handleCircle.pointRef){
 
-    oscillationPhase += oscillationSpeed * delta;
+    const plane = handleCircle.pointRef;
+    let dx = handleCircle.baseX - plane.x;
+    let dy = handleCircle.baseY - plane.y;
+    let distPx = Math.hypot(dx, dy);
 
-    const plane= handleCircle.pointRef;
-    let dx= handleCircle.baseX - plane.x;
-    let dy= handleCircle.baseY - plane.y;
-    let distPx= Math.hypot(dx, dy);
-
-
-    // амплитуда зависит от расстояния до "ручки"
+    // амплитуда зависит от числа целых "клеток" натяжения
     const clampedDist = Math.min(distPx, MAX_DRAG_DISTANCE);
-    const distCells   = clampedDist / CELL_SIZE;
+    const distCells   = Math.floor(clampedDist / CELL_SIZE);
 
-
-    let angleDeg = 0;
-    if(distCells > 4){
-      angleDeg = aimingAmplitude * 4;
-    } else if(distCells > 3){
-      angleDeg = aimingAmplitude * 2;
-    } else if(distCells > 2){
-      angleDeg = aimingAmplitude;
+    let maxAngleDeg = 0;
+    if(distCells >= 5){
+      maxAngleDeg = aimingAmplitude * 4;
+    } else if(distCells >= 4){
+      maxAngleDeg = aimingAmplitude * 2;
+    } else if(distCells >= 3){
+      maxAngleDeg = aimingAmplitude;
     }
-    const angleRad = angleDeg * Math.PI / 180;
-    const amp = clampedDist * Math.sin(angleRad);
+    const maxAngleRad = maxAngleDeg * Math.PI / 180;
+
+    // обновляем текущий угол раскачивания
+    oscillationAngle += oscillationSpeed * delta * oscillationDir;
+    if(oscillationDir > 0 && oscillationAngle > maxAngleRad){
+      oscillationAngle = maxAngleRad;
+      oscillationDir = -1;
+    } else if(oscillationDir < 0 && oscillationAngle < -maxAngleRad){
+      oscillationAngle = -maxAngleRad;
+      oscillationDir = 1;
+    }
+
+    const baseAngle = Math.atan2(dy, dx);
+    const angle = baseAngle + oscillationAngle;
 
 
     handleCircle.shakyX = plane.x + clampedDist * Math.cos(angle);
