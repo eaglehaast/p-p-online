@@ -1406,6 +1406,7 @@ function handleAAForPlane(p, fp){
 
   // "ручка" при натяжке
   if(handleCircle.active && handleCircle.pointRef){
+
     const plane = handleCircle.pointRef;
     let dx = handleCircle.baseX - plane.x;
     let dy = handleCircle.baseY - plane.y;
@@ -1437,6 +1438,7 @@ function handleAAForPlane(p, fp){
 
     const baseAngle = Math.atan2(dy, dx);
     const angle = baseAngle + oscillationAngle;
+
 
     handleCircle.shakyX = plane.x + clampedDist * Math.cos(angle);
     handleCircle.shakyY = plane.y + clampedDist * Math.sin(angle);
