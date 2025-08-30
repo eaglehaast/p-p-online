@@ -2151,6 +2151,56 @@ function checkPlaneHits(plane, fp){
   }
 }
 
+function pointToSegmentDistance(px, py, x1, y1, x2, y2){
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const l2 = dx * dx + dy * dy;
+  if(l2 === 0) return Math.hypot(px - x1, py - y1);
+  let t = ((px - x1) * dx + (py - y1) * dy) / l2;
+  t = Math.max(0, Math.min(1, t));
+  const projX = x1 + t * dx;
+  const projY = y1 + t * dy;
+  return Math.hypot(px - projX, py - projY);
+}
+
+function pointInTriangle(px, py, ax, ay, bx, by, cx, cy){
+  const v0x = cx - ax, v0y = cy - ay;
+  const v1x = bx - ax, v1y = by - ay;
+  const v2x = px - ax, v2y = py - ay;
+  const dot00 = v0x * v0x + v0y * v0y;
+  const dot01 = v0x * v1x + v0y * v1y;
+  const dot02 = v0x * v2x + v0y * v2y;
+  const dot11 = v1x * v1x + v1y * v1y;
+  const dot12 = v1x * v2x + v1y * v2y;
+  const invDenom = 1 / (dot00 * dot11 - dot01 * dot01);
+  const u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+  const v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+  return u >= 0 && v >= 0 && (u + v) <= 1;
+}
+
+function distanceToFlag(px, py, baseX, baseY){
+  const topX = baseX;
+  const topY = baseY - FLAG_POLE_HEIGHT;
+  const tipX = baseX + FLAG_WIDTH;
+  const tipY = topY + FLAG_HEIGHT / 2;
+  const bottomFlagX = baseX;
+  const bottomFlagY = topY + FLAG_HEIGHT;
+
+  const poleDist = pointToSegmentDistance(px, py, baseX, baseY, topX, topY);
+  if(poleDist === 0) return 0;
+
+  const inTriangle = pointInTriangle(px, py, topX, topY, tipX, tipY, bottomFlagX, bottomFlagY);
+  if(inTriangle) return 0;
+
+  const triEdgeDist = Math.min(
+    pointToSegmentDistance(px, py, topX, topY, tipX, tipY),
+    pointToSegmentDistance(px, py, tipX, tipY, bottomFlagX, bottomFlagY),
+    pointToSegmentDistance(px, py, bottomFlagX, bottomFlagY, topX, topY)
+  );
+
+  return Math.min(poleDist, triEdgeDist);
+}
+
 function handleFlagInteractions(plane){
   const centerX = gameCanvas.width / 2;
   const topY = 40;
@@ -2159,9 +2209,8 @@ function handleFlagInteractions(plane){
   if(!plane.flagColor){
     const enemyColor = plane.color === "green" ? "blue" : "green";
     const flagY = enemyColor === "blue" ? topY : bottomY;
-    const dx = plane.x - centerX;
-    const dy = plane.y - flagY;
-    if(Math.hypot(dx, dy) < flagRadius){
+    const dist = distanceToFlag(plane.x, plane.y, centerX, flagY);
+    if(dist < flagRadius){
       plane.flagColor = enemyColor;
       if(enemyColor === "blue"){
         blueFlagCarrier = plane;
@@ -2173,10 +2222,9 @@ function handleFlagInteractions(plane){
       addScore(plane.color, 2);
     }
   } else {
-    const dx = plane.x - centerX;
     const ownFlagY = plane.color === "blue" ? topY : bottomY;
-    const dyOwn = plane.y - ownFlagY;
-    if(Math.hypot(dx, dyOwn) < flagRadius){
+    const distOwn = distanceToFlag(plane.x, plane.y, centerX, ownFlagY);
+    if(distOwn < flagRadius){
       if(plane.flagColor !== plane.color){
         addScore(plane.color, 3);
       } else {
