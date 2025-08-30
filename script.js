@@ -156,7 +156,7 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 
 
-const MAPS = ["clear sky", "wall", "two walls", "base towers", "cross", "checkerboard"];
+const MAPS = ["clear sky", "wall", "two walls"];
 
 let mapIndex;
 let flightRangeCells; // cells for menu and physics
@@ -204,6 +204,9 @@ function loadSettings(){
   aimingAmplitude = Number.isNaN(amp) ? 10 : amp;
   const mi = parseInt(localStorage.getItem('settings.mapIndex'));
   mapIndex = Number.isNaN(mi) ? 1 : mi;
+  if(mapIndex < 0 || mapIndex >= MAPS.length){
+    mapIndex = 1;
+  }
   settings.addAA = localStorage.getItem('settings.addAA') === 'true';
   settings.sharpEdges = localStorage.getItem('settings.sharpEdges') === 'true';
 }
@@ -2379,68 +2382,6 @@ function applyCurrentMap(){
       height: wallHeight,
       color: "darkred"
     });
-  } else if (MAPS[mapIndex] === "base towers") {
-    const towerWidth = CELL_SIZE * 5;
-    const towerHeight = CELL_SIZE * 6;
-    const offset = CELL_SIZE * 4;
-    buildings.push({
-      type: "wall",
-      x: gameCanvas.width / 2,
-      y: offset + towerHeight / 2,
-      width: towerWidth,
-      height: towerHeight,
-      color: "darkred"
-    });
-    buildings.push({
-      type: "wall",
-      x: gameCanvas.width / 2,
-      y: gameCanvas.height - offset - towerHeight / 2,
-      width: towerWidth,
-      height: towerHeight,
-      color: "darkred"
-    });
-  } else if (MAPS[mapIndex] === "cross") {
-    const thickness = CELL_SIZE;
-    const margin = CELL_SIZE * 2;
-    buildings.push({
-      type: "wall",
-      x: gameCanvas.width / 2,
-      y: gameCanvas.height / 2,
-      width: thickness,
-      height: gameCanvas.height - margin * 2,
-      color: "darkred"
-    });
-    buildings.push({
-      type: "wall",
-      x: gameCanvas.width / 2,
-      y: gameCanvas.height / 2,
-      width: gameCanvas.width - margin * 2,
-      height: thickness,
-      color: "darkred"
-    });
-  } else if (MAPS[mapIndex] === "checkerboard") {
-    const blockSize = CELL_SIZE * 2;
-    const margin = CELL_SIZE;
-    const startX = margin + blockSize / 2;
-    const startY = margin + blockSize / 2;
-    const endX = gameCanvas.width - margin - blockSize / 2;
-    const endY = gameCanvas.height - margin - blockSize / 2;
-    let row = 0;
-    for (let y = startY; y <= endY; y += blockSize, row++) {
-      let col = 0;
-      for (let x = startX; x <= endX; x += blockSize, col++) {
-        if ((row + col) % 2 === 0) {
-          buildings.push({
-            type: "wall",
-            x,
-            y,
-            width: blockSize,
-            height: blockSize,
-            color: "darkred"
-          });
-        }
-      }
-    }
   }
   renderScoreboard();
 }
