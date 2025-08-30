@@ -161,7 +161,7 @@ const MAPS = ["clear sky", "wall", "two walls"];
 let mapIndex;
 let flightRangeCells; // cells for menu and physics
 let buildingsCount   = 0;
-let aimingAmplitude;     // 0..30 (UI показывает *2)
+let aimingAmplitude;     // 0..30 (UI показывает *4)
 
 let isGameOver   = false;
 let winnerColor  = null;
@@ -1410,14 +1410,20 @@ function handleAAForPlane(p, fp){
     let dy= handleCircle.baseY - plane.y;
     let distPx= Math.hypot(dx, dy);
 
-    // базовая амплитуда (чем сильнее натянул — тем больше дрожь)
-    let baseAmp=0;
-    const distCells= distPx / CELL_SIZE;
-    if(distCells <=5)       baseAmp = (distCells/5)*10/4;
-    else if(distCells <=10) baseAmp = (10 + ((distCells-5)*30)/5)/4;
-    else                    baseAmp = 10;
+    // амплитуда зависит от расстояния до "ручки"
+    const clampedDist = Math.min(distPx, MAX_DRAG_DISTANCE);
+    const distCells   = clampedDist / CELL_SIZE;
 
-    const amp = baseAmp * (aimingAmplitude/3);
+    let angleDeg = 0;
+    if(distCells > 4){
+      angleDeg = aimingAmplitude * 4;
+    } else if(distCells > 3){
+      angleDeg = aimingAmplitude * 2;
+    } else if(distCells > 2){
+      angleDeg = aimingAmplitude;
+    }
+    const angleRad = angleDeg * Math.PI / 180;
+    const amp = clampedDist * Math.sin(angleRad);
 
     handleCircle.offsetX = amp * Math.cos(oscillationPhase);
     handleCircle.offsetY = amp * Math.sin(oscillationPhase);
