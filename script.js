@@ -172,7 +172,8 @@ let hasShotThisRound = false;
 
 let globalFrame  = 0;
 let lastFrameTime = 0;
-let oscillationPhase = 0;
+let oscillationAngle = 0;
+let oscillationDir = 1;
 const oscillationSpeed = 0.02;
 
 const turnColors = ["green","blue"];
@@ -493,6 +494,8 @@ function handleStart(e) {
   handleCircle.offsetX=0; handleCircle.offsetY=0;
   handleCircle.active= true;
   handleCircle.pointRef= found;
+  oscillationAngle = 0;
+  oscillationDir = 1;
   roundTextTimer = 0; // Hide round label when player starts a move
 
   window.addEventListener("mousemove", onHandleMove);
@@ -1403,6 +1406,7 @@ function handleAAForPlane(p, fp){
 
   // "ручка" при натяжке
   if(handleCircle.active && handleCircle.pointRef){
+
     oscillationPhase += oscillationSpeed * delta;
 
     const plane= handleCircle.pointRef;
@@ -1410,9 +1414,11 @@ function handleAAForPlane(p, fp){
     let dy= handleCircle.baseY - plane.y;
     let distPx= Math.hypot(dx, dy);
 
+
     // амплитуда зависит от расстояния до "ручки"
     const clampedDist = Math.min(distPx, MAX_DRAG_DISTANCE);
     const distCells   = clampedDist / CELL_SIZE;
+
 
     let angleDeg = 0;
     if(distCells > 4){
@@ -1425,11 +1431,12 @@ function handleAAForPlane(p, fp){
     const angleRad = angleDeg * Math.PI / 180;
     const amp = clampedDist * Math.sin(angleRad);
 
-    handleCircle.offsetX = amp * Math.cos(oscillationPhase);
-    handleCircle.offsetY = amp * Math.sin(oscillationPhase);
 
-    handleCircle.shakyX= handleCircle.baseX + handleCircle.offsetX;
-    handleCircle.shakyY= handleCircle.baseY + handleCircle.offsetY;
+    handleCircle.shakyX = plane.x + clampedDist * Math.cos(angle);
+    handleCircle.shakyY = plane.y + clampedDist * Math.sin(angle);
+
+    handleCircle.offsetX = handleCircle.shakyX - handleCircle.baseX;
+    handleCircle.offsetY = handleCircle.shakyY - handleCircle.baseY;
 
     // ограничение видимой длины
     let vdx = handleCircle.shakyX - plane.x;
