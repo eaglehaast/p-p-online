@@ -1620,7 +1620,15 @@ function handleAAForPlane(p, fp){
     // Draw forward arrow with transparency
     aimCtx.save();
     aimCtx.globalAlpha = 0.1;
-    drawHandleTriangle(aimCtx, forwardEndX, forwardEndY, forwardEndX - startX, forwardEndY - startY, arrowColor);
+    drawHandleTriangle(
+      aimCtx,
+      forwardEndX,
+      forwardEndY,
+      startX - forwardEndX,
+      startY - forwardEndY,
+      arrowColor,
+      0.5
+    );
     aimCtx.restore();
 
     // Draw the handle triangle on top
@@ -2144,7 +2152,7 @@ function drawBrickWall(ctx, width, height){
   ctx.strokeRect(-width/2, -height/2, width, height);
 }
 
-function drawHandleTriangle(ctx, x, y, dx, dy, color = "black"){
+function drawHandleTriangle(ctx, x, y, dx, dy, color = "black", baseScale = 1){
   const size = HANDLE_SIZE;
   const angle = Math.atan2(dy, dx) - Math.PI/2;
   ctx.save();
@@ -2152,8 +2160,8 @@ function drawHandleTriangle(ctx, x, y, dx, dy, color = "black"){
   ctx.rotate(angle);
   ctx.beginPath();
   ctx.moveTo(0, -size);
-  ctx.lineTo(-size, size);
-  ctx.lineTo(size, size);
+  ctx.lineTo(-size * baseScale, size);
+  ctx.lineTo(size * baseScale, size);
   ctx.closePath();
   ctx.fillStyle = color;
   ctx.fill();
