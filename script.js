@@ -2154,7 +2154,7 @@ function drawBrickWall(ctx, width, height){
 
 function drawHandleTriangle(ctx, x, y, dx, dy, color = "black", baseScale = 1, tailColor = color){
   const size = HANDLE_SIZE;
-  const angle = Math.atan2(dy, dx) - Math.PI/2;
+  const angle = Math.atan2(dy, dx) - Math.PI / 2;
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle);
@@ -2174,6 +2174,8 @@ function drawHandleTriangle(ctx, x, y, dx, dy, color = "black", baseScale = 1, t
   ctx.fillStyle = tailColor;
   ctx.fillRect(-rectW, size, rectW, rectH);
   ctx.fillRect(0, size, rectW, rectH);
+=======
+
 
   ctx.restore();
 }
