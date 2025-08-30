@@ -1479,9 +1479,9 @@ function handleAAForPlane(p, fp){
 
     // Predicted flight distance in cells based on current pull
     const travelCells = (vdist / MAX_DRAG_DISTANCE) * flightRangeCells;
-    const labelOffset = HANDLE_SIZE * 1.5;
-    const labelGX = plane.x + labelOffset * Math.cos(tickAngle);
-    const labelGY = plane.y + labelOffset * Math.sin(tickAngle);
+    const labelDist = HANDLE_SIZE * 2;
+    const labelGX = plane.x + labelDist * Math.cos(dragAngle);
+    const labelGY = plane.y + labelDist * Math.sin(dragAngle);
     const labelSX = rect.left + labelGX * scaleX;
     const labelSY = rect.top  + labelGY * scaleY;
 
@@ -1638,7 +1638,7 @@ function handleAAForPlane(p, fp){
     // Predicted distance text with 90% transparency
     aimCtx.save();
     aimCtx.globalAlpha = 0.1;
-    aimCtx.font = "16px 'Patrick Hand', cursive";
+    aimCtx.font = "18px 'Patrick Hand', cursive";
     aimCtx.fillStyle = plane.color;
     aimCtx.textAlign = "center";
     aimCtx.textBaseline = "middle";
