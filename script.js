@@ -1406,37 +1406,31 @@ function handleAAForPlane(p, fp){
 
   // "ручка" при натяжке
   if(handleCircle.active && handleCircle.pointRef){
-    const plane = handleCircle.pointRef;
-    let dx = handleCircle.baseX - plane.x;
-    let dy = handleCircle.baseY - plane.y;
-    let distPx = Math.hypot(dx, dy);
+
+    oscillationPhase += oscillationSpeed * delta;
+
+    const plane= handleCircle.pointRef;
+    let dx= handleCircle.baseX - plane.x;
+    let dy= handleCircle.baseY - plane.y;
+    let distPx= Math.hypot(dx, dy);
+
 
     // амплитуда зависит от расстояния до "ручки"
     const clampedDist = Math.min(distPx, MAX_DRAG_DISTANCE);
     const distCells   = clampedDist / CELL_SIZE;
 
-    let maxAngleDeg = 0;
+
+    let angleDeg = 0;
     if(distCells > 4){
-      maxAngleDeg = aimingAmplitude * 4;
+      angleDeg = aimingAmplitude * 4;
     } else if(distCells > 3){
-      maxAngleDeg = aimingAmplitude * 2;
+      angleDeg = aimingAmplitude * 2;
     } else if(distCells > 2){
-      maxAngleDeg = aimingAmplitude;
+      angleDeg = aimingAmplitude;
     }
-    const maxAngleRad = maxAngleDeg * Math.PI / 180;
+    const angleRad = angleDeg * Math.PI / 180;
+    const amp = clampedDist * Math.sin(angleRad);
 
-    // обновляем текущий угол раскачивания
-    oscillationAngle += oscillationSpeed * delta * oscillationDir;
-    if(oscillationDir > 0 && oscillationAngle > maxAngleRad){
-      oscillationAngle = maxAngleRad;
-      oscillationDir = -1;
-    } else if(oscillationDir < 0 && oscillationAngle < -maxAngleRad){
-      oscillationAngle = -maxAngleRad;
-      oscillationDir = 1;
-    }
-
-    const baseAngle = Math.atan2(dy, dx);
-    const angle = baseAngle + oscillationAngle;
 
     handleCircle.shakyX = plane.x + clampedDist * Math.cos(angle);
     handleCircle.shakyY = plane.y + clampedDist * Math.sin(angle);
