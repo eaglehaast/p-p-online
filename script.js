@@ -174,7 +174,7 @@ let globalFrame  = 0;
 let lastFrameTime = 0;
 let oscillationAngle = 0;
 let oscillationDir = 1;
-const oscillationSpeed = 0.02;
+const oscillationSpeed = 0.01;
 
 const turnColors = ["green","blue"];
 let lastFirstTurn= Math.floor(Math.random()*2);
