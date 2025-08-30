@@ -1477,6 +1477,14 @@ function handleAAForPlane(p, fp){
     const thirdDist = 3 * CELL_SIZE;
     const fourthDist = 4 * CELL_SIZE;
 
+    // Predicted flight distance in cells based on current pull
+    const travelCells = (vdist / MAX_DRAG_DISTANCE) * flightRangeCells;
+    const travelPx = travelCells * CELL_SIZE;
+    const travelEndGX = plane.x - travelPx * Math.cos(dragAngle);
+    const travelEndGY = plane.y - travelPx * Math.sin(dragAngle);
+    const travelEndSX = rect.left + travelEndGX * scaleX;
+    const travelEndSY = rect.top  + travelEndGY * scaleY;
+
     // Forward shadow aiming line (90% transparent)
     const forwardEndX = rect.left + (plane.x - vdx) * scaleX;
     const forwardEndY = rect.top  + (plane.y - vdy) * scaleY;
@@ -1623,8 +1631,19 @@ function handleAAForPlane(p, fp){
       startX - forwardEndX,
       startY - forwardEndY,
       "red",
-      0.5
+      0.5,
+      "black"
     );
+    aimCtx.restore();
+
+    // Predicted distance text with 90% transparency
+    aimCtx.save();
+    aimCtx.globalAlpha = 0.1;
+    aimCtx.font = "14px 'Patrick Hand', cursive";
+    aimCtx.fillStyle = plane.color;
+    aimCtx.textAlign = "center";
+    aimCtx.textBaseline = "middle";
+    aimCtx.fillText(travelCells.toFixed(1), travelEndSX, travelEndSY);
     aimCtx.restore();
 
     // Draw the handle triangle in black
@@ -2151,12 +2170,14 @@ function drawBrickWall(ctx, width, height){
   ctx.strokeRect(-width/2, -height/2, width, height);
 }
 
-function drawHandleTriangle(ctx, x, y, dx, dy, color = "black", baseScale = 1){
+function drawHandleTriangle(ctx, x, y, dx, dy, color = "black", baseScale = 1, tailColor = color){
   const size = HANDLE_SIZE;
   const angle = Math.atan2(dy, dx) - Math.PI/2;
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle);
+
+  // Draw forward pointing triangle (arrow tip)
   ctx.beginPath();
   ctx.moveTo(0, -size);
   ctx.lineTo(-size * baseScale, size);
@@ -2164,6 +2185,14 @@ function drawHandleTriangle(ctx, x, y, dx, dy, color = "black", baseScale = 1){
   ctx.closePath();
   ctx.fillStyle = color;
   ctx.fill();
+
+  // Draw arrow fletching using two rectangles at the tail
+  const rectW = size * baseScale;
+  const rectH = size * 2;
+  ctx.fillStyle = tailColor;
+  ctx.fillRect(-rectW, size, rectW, rectH);
+  ctx.fillRect(0, size, rectW, rectH);
+
   ctx.restore();
 }
 
