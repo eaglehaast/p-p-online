@@ -1623,7 +1623,8 @@ function handleAAForPlane(p, fp){
       startX - forwardEndX,
       startY - forwardEndY,
       "red",
-      0.5
+      0.5,
+      "black"
     );
     aimCtx.restore();
 
@@ -2151,19 +2152,30 @@ function drawBrickWall(ctx, width, height){
   ctx.strokeRect(-width/2, -height/2, width, height);
 }
 
-function drawHandleTriangle(ctx, x, y, dx, dy, color = "black", baseScale = 1){
+function drawHandleTriangle(ctx, x, y, dx, dy, color = "black", baseScale = 1, tailColor = color){
   const size = HANDLE_SIZE;
   const angle = Math.atan2(dy, dx) - Math.PI / 2;
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle);
-  ctx.fillStyle = color;
 
-  // Draw minimalistic arrow fletching using two rectangles
+  // Draw forward pointing triangle (arrow tip)
+  ctx.beginPath();
+  ctx.moveTo(0, -size);
+  ctx.lineTo(-size * baseScale, size);
+  ctx.lineTo(size * baseScale, size);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+
+  // Draw arrow fletching using two rectangles at the tail
   const rectW = size * baseScale;
   const rectH = size * 2;
-  ctx.fillRect(-rectW, 0, rectW, rectH);
-  ctx.fillRect(0, 0, rectW, rectH);
+  ctx.fillStyle = tailColor;
+  ctx.fillRect(-rectW, size, rectW, rectH);
+  ctx.fillRect(0, size, rectW, rectH);
+=======
+
 
   ctx.restore();
 }
