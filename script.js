@@ -1458,6 +1458,7 @@ function handleAAForPlane(p, fp){
     const endX   = rect.left + (plane.x + vdx) * scaleX;
     const endY   = rect.top  + (plane.y + vdy) * scaleY;
 
+    // Base aiming line
     aimCtx.beginPath();
     aimCtx.strokeStyle = "black";
     aimCtx.lineWidth = 2;
@@ -1465,13 +1466,12 @@ function handleAAForPlane(p, fp){
     aimCtx.lineTo(endX, endY);
     aimCtx.stroke();
 
-    // треугольник-рукоятка
-    drawHandleTriangle(aimCtx, endX, endY, endX - startX, endY - startY);
-
-    // деления на линии натяжки (до 5)
+    // Angles for ticks and overlays
     const dragAngle = Math.atan2(vdy, vdx);
     const tickAngle = dragAngle + Math.PI/2;
     const numTicks = Math.min(5, Math.floor(vdist / CELL_SIZE));
+
+    // Tick marks on the aiming line (up to 5)
     for(let i=1; i<=numTicks; i++){
       const d = i*CELL_SIZE;
       if(d > vdist) break;
@@ -1495,6 +1495,55 @@ function handleAAForPlane(p, fp){
       aimCtx.lineTo(endSX, endSY);
       aimCtx.stroke();
     }
+
+    // Red overlay after the third tick mark
+    const thirdDist = 3 * CELL_SIZE;
+    if(vdist > thirdDist){
+      const fourthDist = 4 * CELL_SIZE;
+
+      const start3GX = plane.x + thirdDist*Math.cos(dragAngle);
+      const start3GY = plane.y + thirdDist*Math.sin(dragAngle);
+      const start3SX = rect.left + start3GX * scaleX;
+      const start3SY = rect.top  + start3GY * scaleY;
+
+      const seg1EndDist = Math.min(vdist, fourthDist);
+      const seg1EndGX = plane.x + seg1EndDist*Math.cos(dragAngle);
+      const seg1EndGY = plane.y + seg1EndDist*Math.sin(dragAngle);
+      const seg1EndSX = rect.left + seg1EndGX * scaleX;
+      const seg1EndSY = rect.top  + seg1EndGY * scaleY;
+
+      aimCtx.beginPath();
+      aimCtx.strokeStyle = "red";
+      aimCtx.lineWidth = 1;
+      aimCtx.moveTo(start3SX, start3SY);
+      aimCtx.lineTo(seg1EndSX, seg1EndSY);
+      aimCtx.stroke();
+
+      if(vdist > fourthDist){
+        const seg2EndGX = plane.x + vdist*Math.cos(dragAngle);
+        const seg2EndGY = plane.y + vdist*Math.sin(dragAngle);
+        const seg2EndSX = rect.left + seg2EndGX * scaleX;
+        const seg2EndSY = rect.top  + seg2EndGY * scaleY;
+
+        aimCtx.beginPath();
+        aimCtx.strokeStyle = "red";
+        aimCtx.lineWidth = 2;
+        aimCtx.moveTo(seg1EndSX, seg1EndSY);
+        aimCtx.lineTo(seg2EndSX, seg2EndSY);
+        aimCtx.stroke();
+      }
+    }
+
+    // Handle triangle color based on stretch distance
+    let arrowColor = "black";
+    if(vdist > thirdDist){
+      const ratio = Math.min(1, (vdist - thirdDist) / CELL_SIZE);
+      const red = Math.floor(255 * ratio);
+      arrowColor = `rgb(${red},0,0)`;
+    }
+
+    // Draw the handle triangle on top
+    drawHandleTriangle(aimCtx, endX, endY, endX - startX, endY - startY, arrowColor);
   }
 
 
@@ -2014,7 +2063,7 @@ function drawBrickWall(ctx, width, height){
   ctx.strokeRect(-width/2, -height/2, width, height);
 }
 
-function drawHandleTriangle(ctx, x, y, dx, dy){
+function drawHandleTriangle(ctx, x, y, dx, dy, color = "black"){
   const size = HANDLE_SIZE;
   const angle = Math.atan2(dy, dx) - Math.PI/2;
   ctx.save();
@@ -2025,7 +2074,7 @@ function drawHandleTriangle(ctx, x, y, dx, dy){
   ctx.lineTo(-size, size);
   ctx.lineTo(size, size);
   ctx.closePath();
-  ctx.fillStyle = "black";
+  ctx.fillStyle = color;
   ctx.fill();
   ctx.restore();
 }
