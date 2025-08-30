@@ -174,7 +174,7 @@ let globalFrame  = 0;
 let lastFrameTime = 0;
 let oscillationAngle = 0;
 let oscillationDir = 1;
-const oscillationSpeed = 0.02;
+const oscillationSpeed = 0.01;
 
 const turnColors = ["green","blue"];
 let lastFirstTurn= Math.floor(Math.random()*2);
@@ -1412,18 +1412,12 @@ function handleAAForPlane(p, fp){
     let dy = handleCircle.baseY - plane.y;
     let distPx = Math.hypot(dx, dy);
 
-    // амплитуда зависит от числа целых "клеток" натяжения
+    // амплитуда зависит от расстояния натяжения
     const clampedDist = Math.min(distPx, MAX_DRAG_DISTANCE);
-    const distCells   = Math.floor(clampedDist / CELL_SIZE);
 
-    let maxAngleDeg = 0;
-    if(distCells >= 5){
-      maxAngleDeg = aimingAmplitude * 4;
-    } else if(distCells >= 4){
-      maxAngleDeg = aimingAmplitude * 2;
-    } else if(distCells >= 3){
-      maxAngleDeg = aimingAmplitude;
-    }
+    // scale wobble smoothly with drag distance
+    const distRatio = clampedDist / MAX_DRAG_DISTANCE;
+    const maxAngleDeg = aimingAmplitude * 4 * distRatio * distRatio;
     const maxAngleRad = maxAngleDeg * Math.PI / 180;
 
     // обновляем текущий угол раскачивания
