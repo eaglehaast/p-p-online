@@ -1470,6 +1470,84 @@ function handleAAForPlane(p, fp){
     const dragAngle = Math.atan2(vdy, vdx);
     const tickAngle = dragAngle + Math.PI/2;
     const numTicks = Math.min(5, Math.floor(vdist / CELL_SIZE));
+    const thirdDist = 3 * CELL_SIZE;
+    const fourthDist = 4 * CELL_SIZE;
+
+    // Forward shadow aiming line (90% transparent)
+    const forwardEndX = rect.left + (plane.x - vdx) * scaleX;
+    const forwardEndY = rect.top  + (plane.y - vdy) * scaleY;
+
+    aimCtx.save();
+    aimCtx.globalAlpha = 0.1;
+
+    aimCtx.beginPath();
+    aimCtx.strokeStyle = "black";
+    aimCtx.lineWidth = 2;
+    aimCtx.moveTo(startX, startY);
+    aimCtx.lineTo(forwardEndX, forwardEndY);
+    aimCtx.stroke();
+
+    // Tick marks on the shadow line
+    for(let i=1; i<=numTicks; i++){
+      const d = i*CELL_SIZE;
+      if(d > vdist) break;
+      const posX = plane.x - d*Math.cos(dragAngle);
+      const posY = plane.y - d*Math.sin(dragAngle);
+      const halfTick = (CELL_SIZE/2)/2;
+      const startGX = posX - halfTick*Math.cos(tickAngle);
+      const startGY = posY - halfTick*Math.sin(tickAngle);
+      const endGX   = posX + halfTick*Math.cos(tickAngle);
+      const endGY   = posY + halfTick*Math.sin(tickAngle);
+
+      const startSX = rect.left + startGX * scaleX;
+      const startSY = rect.top  + startGY * scaleY;
+      const endSX   = rect.left + endGX   * scaleX;
+      const endSY   = rect.top  + endGY   * scaleY;
+
+      aimCtx.beginPath();
+      aimCtx.strokeStyle="black";
+      aimCtx.lineWidth=2;
+      aimCtx.moveTo(startSX, startSY);
+      aimCtx.lineTo(endSX, endSY);
+      aimCtx.stroke();
+    }
+
+    // Red overlay on the shadow line
+    if(vdist > thirdDist){
+      const start3GX = plane.x - thirdDist*Math.cos(dragAngle);
+      const start3GY = plane.y - thirdDist*Math.sin(dragAngle);
+      const start3SX = rect.left + start3GX * scaleX;
+      const start3SY = rect.top  + start3GY * scaleY;
+
+      const seg1EndDist = Math.min(vdist, fourthDist);
+      const seg1EndGX = plane.x - seg1EndDist*Math.cos(dragAngle);
+      const seg1EndGY = plane.y - seg1EndDist*Math.sin(dragAngle);
+      const seg1EndSX = rect.left + seg1EndGX * scaleX;
+      const seg1EndSY = rect.top  + seg1EndGY * scaleY;
+
+      aimCtx.beginPath();
+      aimCtx.strokeStyle = "red";
+      aimCtx.lineWidth = 1;
+      aimCtx.moveTo(start3SX, start3SY);
+      aimCtx.lineTo(seg1EndSX, seg1EndSY);
+      aimCtx.stroke();
+
+      if(vdist > fourthDist){
+        const seg2EndGX = plane.x - vdist*Math.cos(dragAngle);
+        const seg2EndGY = plane.y - vdist*Math.sin(dragAngle);
+        const seg2EndSX = rect.left + seg2EndGX * scaleX;
+        const seg2EndSY = rect.top  + seg2EndGY * scaleY;
+
+        aimCtx.beginPath();
+        aimCtx.strokeStyle = "red";
+        aimCtx.lineWidth = 2;
+        aimCtx.moveTo(seg1EndSX, seg1EndSY);
+        aimCtx.lineTo(seg2EndSX, seg2EndSY);
+        aimCtx.stroke();
+      }
+    }
+
+    aimCtx.restore();
 
     // Tick marks on the aiming line (up to 5)
     for(let i=1; i<=numTicks; i++){
@@ -1497,10 +1575,7 @@ function handleAAForPlane(p, fp){
     }
 
     // Red overlay after the third tick mark
-    const thirdDist = 3 * CELL_SIZE;
     if(vdist > thirdDist){
-      const fourthDist = 4 * CELL_SIZE;
-
       const start3GX = plane.x + thirdDist*Math.cos(dragAngle);
       const start3GY = plane.y + thirdDist*Math.sin(dragAngle);
       const start3SX = rect.left + start3GX * scaleX;
@@ -1541,6 +1616,12 @@ function handleAAForPlane(p, fp){
       const red = Math.floor(255 * ratio);
       arrowColor = `rgb(${red},0,0)`;
     }
+
+    // Draw forward arrow with transparency
+    aimCtx.save();
+    aimCtx.globalAlpha = 0.1;
+    drawHandleTriangle(aimCtx, forwardEndX, forwardEndY, forwardEndX - startX, forwardEndY - startY, arrowColor);
+    aimCtx.restore();
 
     // Draw the handle triangle on top
     drawHandleTriangle(aimCtx, endX, endY, endX - startX, endY - startY, arrowColor);
