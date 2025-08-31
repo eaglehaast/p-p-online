@@ -1462,13 +1462,16 @@ function handleAAForPlane(p, fp){
     const endX   = rect.left + (plane.x + vdx) * scaleX;
     const endY   = rect.top  + (plane.y + vdy) * scaleY;
 
-    // Base aiming line
+    // Base aiming line with 50% transparency
+    aimCtx.save();
+    aimCtx.globalAlpha = 0.5;
     aimCtx.beginPath();
     aimCtx.strokeStyle = "black";
     aimCtx.lineWidth = 2;
     aimCtx.moveTo(startX, startY);
     aimCtx.lineTo(endX, endY);
     aimCtx.stroke();
+    aimCtx.restore();
 
     // Angles for ticks and overlays
     const dragAngle = Math.atan2(vdy, vdx);
@@ -1479,6 +1482,8 @@ function handleAAForPlane(p, fp){
 
     // Predicted flight distance in cells based on current pull
     const travelCells = (vdist / MAX_DRAG_DISTANCE) * flightRangeCells;
+    const labelSX = startX + CELL_SIZE * scaleX;
+    const labelSY = startY;
 
     const travelPx = travelCells * CELL_SIZE;
     const travelEndGX = plane.x - travelPx * Math.cos(dragAngle);
@@ -1563,7 +1568,10 @@ function handleAAForPlane(p, fp){
 
     aimCtx.restore();
 
-    // Tick marks on the aiming line (up to 5)
+    // Tick marks and overlay on the aiming line (50% transparent)
+    aimCtx.save();
+    aimCtx.globalAlpha = 0.5;
+
     for(let i=1; i<=numTicks; i++){
       const d = i*CELL_SIZE;
       if(d > vdist) break;
@@ -1623,6 +1631,8 @@ function handleAAForPlane(p, fp){
       }
     }
 
+    aimCtx.restore();
+
     // Draw forward arrowhead in red with transparency
     aimCtx.save();
     aimCtx.globalAlpha = 0.1;
@@ -1640,20 +1650,27 @@ function handleAAForPlane(p, fp){
     );
     aimCtx.restore();
 
-    // Predicted distance text with 90% transparency
+    // Predicted distance text with 40% transparency
     aimCtx.save();
-    aimCtx.globalAlpha = 0.1;
+    aimCtx.globalAlpha = 0.6;
 
     aimCtx.font = "18px 'Patrick Hand', cursive";
     aimCtx.fillStyle = plane.color;
-    aimCtx.textAlign = "center";
+    aimCtx.textAlign = "left";
     aimCtx.textBaseline = "middle";
     aimCtx.fillText(travelCells.toFixed(1), labelSX, labelSY);
 
+    aimCtx.font = "14px 'Patrick Hand', cursive";
+    aimCtx.textBaseline = "top";
+    aimCtx.fillText("cells", labelSX + 1, labelSY + 9);
+
     aimCtx.restore();
 
-    // Draw the handle triangle in black
+    // Draw the handle triangle in black at 50% opacity
+    aimCtx.save();
+    aimCtx.globalAlpha = 0.5;
     drawHandleTriangle(aimCtx, endX, endY, endX - startX, endY - startY, "black");
+    aimCtx.restore();
   }
 
   // самолёты + их трейлы
