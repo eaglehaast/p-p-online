@@ -1485,7 +1485,6 @@ function handleAAForPlane(p, fp){
     const labelSX = startX + CELL_SIZE * scaleX;
     const labelSY = startY;
 
-
     const travelPx = travelCells * CELL_SIZE;
     const travelEndGX = plane.x - travelPx * Math.cos(dragAngle);
     const travelEndGY = plane.y - travelPx * Math.sin(dragAngle);
@@ -1663,9 +1662,11 @@ function handleAAForPlane(p, fp){
     aimCtx.textBaseline = "middle";
     aimCtx.fillText(travelCells.toFixed(1), labelSX, labelSY);
 
-    aimCtx.font = "10px 'Patrick Hand', cursive";
+
+    aimCtx.font = "14px 'Patrick Hand', cursive";
     aimCtx.textBaseline = "top";
-    aimCtx.fillText("cells", labelSX, labelSY + 10);
+    aimCtx.fillText("cells", labelSX + 1, labelSY + 9);
+
 
     aimCtx.restore();
 
