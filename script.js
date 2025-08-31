@@ -1479,8 +1479,10 @@ function handleAAForPlane(p, fp){
 
     // Predicted flight distance in cells based on current pull
     const travelCells = (vdist / MAX_DRAG_DISTANCE) * flightRangeCells;
+
     const labelSX = startX + CELL_SIZE * scaleX;
     const labelSY = startY;
+
 
     const travelPx = travelCells * CELL_SIZE;
     const travelEndGX = plane.x - travelPx * Math.cos(dragAngle);
