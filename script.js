@@ -2225,16 +2225,28 @@ function drawHandleTriangle(ctx, x, y, dx, dy, color = "black", baseScale = 1, t
   ctx.fillStyle = color;
   ctx.fill();
 
-  // Draw arrow fletching using two rectangles at the tail
+  // Draw arrow fletching using two angled triangles at the tail
+  const fletchW = size * baseScale * 0.6;
+  const fletchH = size * 1.2;
+  const gap = fletchW * 0.2;
 
-  const rectW = size * baseScale;
-
-  const rectH = size * 2;
   ctx.fillStyle = tailColor;
-  ctx.fillRect(-rectW, size, rectW, rectH);
-  ctx.fillRect(0, size, rectW, rectH);
 
+  // Left feather
+  ctx.beginPath();
+  ctx.moveTo(-gap, size);
+  ctx.lineTo(-gap - fletchW, size + fletchH / 2);
+  ctx.lineTo(-gap, size + fletchH);
+  ctx.closePath();
+  ctx.fill();
 
+  // Right feather
+  ctx.beginPath();
+  ctx.moveTo(gap, size);
+  ctx.lineTo(gap + fletchW, size + fletchH / 2);
+  ctx.lineTo(gap, size + fletchH);
+  ctx.closePath();
+  ctx.fill();
 
   ctx.restore();
 }
