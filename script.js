@@ -1485,6 +1485,7 @@ function handleAAForPlane(p, fp){
     const labelSX = startX + CELL_SIZE * scaleX;
     const labelSY = startY;
 
+
     const travelPx = travelCells * CELL_SIZE;
     const travelEndGX = plane.x - travelPx * Math.cos(dragAngle);
     const travelEndGY = plane.y - travelPx * Math.sin(dragAngle);
@@ -1650,9 +1651,11 @@ function handleAAForPlane(p, fp){
     );
     aimCtx.restore();
 
+
     // Predicted distance text with 40% transparency
     aimCtx.save();
     aimCtx.globalAlpha = 0.6;
+
 
     aimCtx.font = "18px 'Patrick Hand', cursive";
     aimCtx.fillStyle = plane.color;
