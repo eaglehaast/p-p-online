@@ -1650,9 +1650,11 @@ function handleAAForPlane(p, fp){
     );
     aimCtx.restore();
 
+
     // Predicted distance text with 40% transparency
     aimCtx.save();
     aimCtx.globalAlpha = 0.6;
+
 
     aimCtx.font = "18px 'Patrick Hand', cursive";
     aimCtx.fillStyle = plane.color;
@@ -1660,9 +1662,11 @@ function handleAAForPlane(p, fp){
     aimCtx.textBaseline = "middle";
     aimCtx.fillText(travelCells.toFixed(1), labelSX, labelSY);
 
+
     aimCtx.font = "14px 'Patrick Hand', cursive";
     aimCtx.textBaseline = "top";
     aimCtx.fillText("cells", labelSX + 1, labelSY + 9);
+
 
     aimCtx.restore();
 
