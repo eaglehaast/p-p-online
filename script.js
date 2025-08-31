@@ -210,6 +210,13 @@ function loadSettings(){
   }
   settings.addAA = localStorage.getItem('settings.addAA') === 'true';
   settings.sharpEdges = localStorage.getItem('settings.sharpEdges') === 'true';
+
+  // Clamp loaded values so corrupted or out-of-range settings
+  // don't break the game on startup
+  flightRangeCells = Math.min(MAX_FLIGHT_RANGE_CELLS,
+                             Math.max(MIN_FLIGHT_RANGE_CELLS, flightRangeCells));
+  aimingAmplitude  = Math.min(MAX_AMPLITUDE,
+                             Math.max(MIN_AMPLITUDE, aimingAmplitude));
 }
 
 loadSettings();
