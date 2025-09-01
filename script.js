@@ -1652,7 +1652,9 @@ function handleAAForPlane(p, fp){
     // Draw arrow sprite under the plane
     gameCtx.save();
     gameCtx.globalAlpha = 0.8;
-    drawArrow(gameCtx, plane.x, plane.y, plane.x - vdx, plane.y - vdy);
+
+    drawArrow(gameCtx, plane.x, plane.y, plane.x + vdx, plane.y + vdy);
+
     gameCtx.restore();
 
 
