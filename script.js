@@ -1652,7 +1652,9 @@ function handleAAForPlane(p, fp){
     // Draw arrow sprite under the plane
     gameCtx.save();
     gameCtx.globalAlpha = 0.8;
+
     drawArrow(gameCtx, plane.x, plane.y, plane.x + vdx, plane.y + vdy);
+
     gameCtx.restore();
 
 
@@ -2210,6 +2212,7 @@ function drawArrow(ctx, x0, y0, x1, y1) {
   const shaftLen = Math.max(1, len - HEAD_W - TAIL_W);
 
   ctx.save();
+
   ctx.translate(x0, y0);
   ctx.rotate(ang);
 
