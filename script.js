@@ -44,6 +44,16 @@ const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
 
 const brickFrameImg = new Image();
 brickFrameImg.src = "brick frame 2.png";
+
+// Sprite used for the aiming arrow
+const arrowSprite = new Image();
+arrowSprite.src = "sprite_arrow.png";
+
+// Dimensions of arrow parts inside the sprite
+const HEAD_W = 95;
+const SHAFT_W = 290;
+const TAIL_W = 145;
+const PART_H = 256;
 let brickFrameBorderPx = FIELD_BORDER_THICKNESS;
 brickFrameImg.onload = () => {
   const tempCanvas = document.createElement("canvas");
@@ -94,7 +104,6 @@ document.addEventListener('dblclick', (e) => {
 const CELL_SIZE            = 20;     // px
 const POINT_RADIUS         = 15;     // px (увеличено для мобильных)
 const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit Anti-Aircraft center
-const HANDLE_SIZE          = 10;     // px
 const BOUNCE_FRAMES        = 68;
 // Duration of a full-speed flight in seconds (previously measured in frames)
 const FLIGHT_DURATION_SEC  = BOUNCE_FRAMES / 60;
@@ -1640,22 +1649,11 @@ function handleAAForPlane(p, fp){
 
     aimCtx.restore();
 
-    // Draw forward arrowhead in red with transparency
-    aimCtx.save();
-    aimCtx.globalAlpha = 0.1;
-    drawHandleTriangle(
-      aimCtx,
-      forwardEndX,
-      forwardEndY,
-      startX - forwardEndX,
-      startY - forwardEndY,
-      "red",
-
-      0.5,
-      "black"
-
-    );
-    aimCtx.restore();
+    // Draw arrow sprite under the plane
+    gameCtx.save();
+    gameCtx.globalAlpha = 0.8;
+    drawArrow(gameCtx, plane.x, plane.y, plane.x - vdx, plane.y - vdy);
+    gameCtx.restore();
 
 
     // Predicted distance text with 40% transparency
@@ -1677,11 +1675,6 @@ function handleAAForPlane(p, fp){
 
     aimCtx.restore();
 
-    // Draw the handle triangle in black at 50% opacity
-    aimCtx.save();
-    aimCtx.globalAlpha = 0.5;
-    drawHandleTriangle(aimCtx, endX, endY, endX - startX, endY - startY, "black");
-    aimCtx.restore();
   }
 
   // самолёты + их трейлы
@@ -2205,36 +2198,41 @@ function drawBrickWall(ctx, width, height){
 }
 
 
-function drawHandleTriangle(ctx, x, y, dx, dy, color = "black", baseScale = 1, tailColor = color){
+function drawArrow(ctx, x0, y0, x1, y1) {
+  if (!arrowSprite.complete) return;
 
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const len = Math.hypot(dx, dy);
+  const ang = Math.atan2(dy, dx);
 
-  const size = HANDLE_SIZE * baseScale;
-  const angle = Math.atan2(dy, dx) - Math.PI/2;
+  // Length of the stretchable shaft section
+  const shaftLen = Math.max(1, len - HEAD_W - TAIL_W);
 
   ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(angle);
+  ctx.translate(x0, y0);
+  ctx.rotate(ang);
 
+  // Tail (fixed size)
+  ctx.drawImage(
+    arrowSprite,
+    HEAD_W + SHAFT_W, 0, TAIL_W, PART_H,
+    -TAIL_W, -PART_H / 2, TAIL_W, PART_H
+  );
 
-  // Draw forward pointing triangle (arrow tip)
-  ctx.beginPath();
-  ctx.moveTo(0, -size);
-  ctx.lineTo(-size, size);
-  ctx.lineTo(size, size);
-  ctx.closePath();
-  ctx.fillStyle = color;
-  ctx.fill();
+  // Shaft (stretched to match distance)
+  ctx.drawImage(
+    arrowSprite,
+    HEAD_W, 0, SHAFT_W, PART_H,
+    0, -PART_H / 2, shaftLen, PART_H
+  );
 
-  // Draw arrow fletching using two rectangles at the tail
-
-  const rectW = size * baseScale;
-
-  const rectH = size * 2;
-  ctx.fillStyle = tailColor;
-  ctx.fillRect(-rectW, size, rectW, rectH);
-  ctx.fillRect(0, size, rectW, rectH);
-
-
+  // Head (fixed size)
+  ctx.drawImage(
+    arrowSprite,
+    0, 0, HEAD_W, PART_H,
+    shaftLen, -PART_H / 2, HEAD_W, PART_H
+  );
 
   ctx.restore();
 }
