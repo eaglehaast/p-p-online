@@ -50,11 +50,23 @@ const arrowSprite = new Image();
 // Use the PNG sprite that contains the arrow graphics
 arrowSprite.src = "sprite_ copy.png";
 
-// Dimensions of arrow parts inside the sprite
-const HEAD_W = 95;
-const SHAFT_W = 290;
-const TAIL_W = 145;
-const PART_H = 256;
+// Coordinates of arrow parts inside the sprite sheet
+const ARROW_Y = 358;   // vertical offset of arrow graphic
+const PART_H  = 254;   // height of arrow graphic
+
+// Horizontal slices for tail, shaft, and head within the sprite
+const TAIL_X  = 35;
+const TAIL_W  = 364;
+const SHAFT_X = 422;
+const SHAFT_W = 576;
+const HEAD_X  = 1034;
+const HEAD_W  = 336;
+
+// Scale factor to draw a small arrow around the plane
+const ARROW_SCALE = 0.03;
+const ARROW_DEST_H = PART_H * ARROW_SCALE;
+const TAIL_DEST_W  = TAIL_W * ARROW_SCALE;
+const HEAD_DEST_W  = HEAD_W * ARROW_SCALE;
 let brickFrameBorderPx = FIELD_BORDER_THICKNESS;
 brickFrameImg.onload = () => {
   const tempCanvas = document.createElement("canvas");
@@ -1476,19 +1488,6 @@ function handleAAForPlane(p, fp){
     const scaleY = rect.height / gameCanvas.height;
     const startX = rect.left + plane.x * scaleX;
     const startY = rect.top  + plane.y * scaleY;
-    const endX   = rect.left + (plane.x + vdx) * scaleX;
-    const endY   = rect.top  + (plane.y + vdy) * scaleY;
-
-    // Base aiming line with 50% transparency
-    aimCtx.save();
-    aimCtx.globalAlpha = 0.5;
-    aimCtx.beginPath();
-    aimCtx.strokeStyle = "black";
-    aimCtx.lineWidth = 2;
-    aimCtx.moveTo(startX, startY);
-    aimCtx.lineTo(endX, endY);
-    aimCtx.stroke();
-    aimCtx.restore();
 
     // Angles for ticks and overlays
     const dragAngle = Math.atan2(vdy, vdx);
@@ -1654,7 +1653,7 @@ function handleAAForPlane(p, fp){
     gameCtx.save();
     gameCtx.globalAlpha = 0.8;
 
-    drawArrow(gameCtx, plane.x, plane.y, plane.x + vdx, plane.y + vdy);
+    drawArrow(gameCtx, plane.x, plane.y, vdx, vdy);
 
     gameCtx.restore();
 
@@ -2201,41 +2200,42 @@ function drawBrickWall(ctx, width, height){
 }
 
 
-function drawArrow(ctx, x0, y0, x1, y1) {
+function drawArrow(ctx, cx, cy, dx, dy) {
   if (!arrowSprite.complete) return;
 
-  const dx = x1 - x0;
-  const dy = y1 - y0;
-  const len = Math.hypot(dx, dy);
+  // Total arrow length with the plane in the middle
+  const len = 2 * Math.hypot(dx, dy);
   const ang = Math.atan2(dy, dx);
 
   // Length of the stretchable shaft section
-  const shaftLen = Math.max(1, len - HEAD_W - TAIL_W);
+  const shaftLen = Math.max(0, len - HEAD_DEST_W - TAIL_DEST_W);
 
   ctx.save();
-
-  ctx.translate(x0, y0);
+  ctx.translate(cx, cy);
   ctx.rotate(ang);
 
   // Tail (fixed size)
   ctx.drawImage(
     arrowSprite,
-    HEAD_W + SHAFT_W, 0, TAIL_W, PART_H,
-    -TAIL_W, -PART_H / 2, TAIL_W, PART_H
+    TAIL_X, ARROW_Y, TAIL_W, PART_H,
+    -(shaftLen / 2 + TAIL_DEST_W), -ARROW_DEST_H / 2,
+    TAIL_DEST_W, ARROW_DEST_H
   );
 
   // Shaft (stretched to match distance)
   ctx.drawImage(
     arrowSprite,
-    HEAD_W, 0, SHAFT_W, PART_H,
-    0, -PART_H / 2, shaftLen, PART_H
+    SHAFT_X, ARROW_Y, SHAFT_W, PART_H,
+    -shaftLen / 2, -ARROW_DEST_H / 2,
+    shaftLen, ARROW_DEST_H
   );
 
   // Head (fixed size)
   ctx.drawImage(
     arrowSprite,
-    0, 0, HEAD_W, PART_H,
-    shaftLen, -PART_H / 2, HEAD_W, PART_H
+    HEAD_X, ARROW_Y, HEAD_W, PART_H,
+    shaftLen / 2, -ARROW_DEST_H / 2,
+    HEAD_DEST_W, ARROW_DEST_H
   );
 
   ctx.restore();
