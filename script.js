@@ -50,11 +50,17 @@ const arrowSprite = new Image();
 // Use the PNG sprite that contains the arrow graphics
 arrowSprite.src = "sprite_ copy.png";
 
-// Dimensions of arrow parts inside the sprite
-const HEAD_W = 95;
-const SHAFT_W = 290;
-const TAIL_W = 145;
-const PART_H = 256;
+// Coordinates of arrow parts inside the sprite sheet
+const ARROW_Y = 358;   // vertical offset of arrow graphic
+const PART_H  = 254;   // height of arrow graphic
+
+// Horizontal slices for tail, shaft, and head within the sprite
+const TAIL_X  = 35;
+const TAIL_W  = 364;
+const SHAFT_X = 422;
+const SHAFT_W = 576;
+const HEAD_X  = 1034;
+const HEAD_W  = 336;
 let brickFrameBorderPx = FIELD_BORDER_THICKNESS;
 brickFrameImg.onload = () => {
   const tempCanvas = document.createElement("canvas");
@@ -2220,21 +2226,21 @@ function drawArrow(ctx, x0, y0, x1, y1) {
   // Tail (fixed size)
   ctx.drawImage(
     arrowSprite,
-    HEAD_W + SHAFT_W, 0, TAIL_W, PART_H,
+    TAIL_X, ARROW_Y, TAIL_W, PART_H,
     -TAIL_W, -PART_H / 2, TAIL_W, PART_H
   );
 
   // Shaft (stretched to match distance)
   ctx.drawImage(
     arrowSprite,
-    HEAD_W, 0, SHAFT_W, PART_H,
+    SHAFT_X, ARROW_Y, SHAFT_W, PART_H,
     0, -PART_H / 2, shaftLen, PART_H
   );
 
   // Head (fixed size)
   ctx.drawImage(
     arrowSprite,
-    0, 0, HEAD_W, PART_H,
+    HEAD_X, ARROW_Y, HEAD_W, PART_H,
     shaftLen, -PART_H / 2, HEAD_W, PART_H
   );
 
