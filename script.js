@@ -2210,6 +2210,7 @@ function drawArrow(ctx, x0, y0, x1, y1) {
   const shaftLen = Math.max(1, len - HEAD_W - TAIL_W);
 
   ctx.save();
+
   ctx.translate(x0, y0);
   ctx.rotate(ang);
 
