@@ -47,7 +47,8 @@ brickFrameImg.src = "brick frame 2.png";
 
 // Sprite used for the aiming arrow
 const arrowSprite = new Image();
-arrowSprite.src = "sprite_arrow.png";
+// Use the PNG sprite that contains the arrow graphics
+arrowSprite.src = "sprite_ copy.png";
 
 // Dimensions of arrow parts inside the sprite
 const HEAD_W = 95;
