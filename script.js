@@ -1950,6 +1950,8 @@ function drawPlanesAndTrajectories(){
   }
 
   if(rangeTextInfo){
+    planeCtx.save();
+    planeCtx.globalAlpha = 0.5;
     planeCtx.font = "14px sans-serif";
     planeCtx.textAlign = "left";
     planeCtx.textBaseline = "middle";
@@ -1961,6 +1963,7 @@ function drawPlanesAndTrajectories(){
     planeCtx.fillText(numText, rangeTextInfo.x, rangeTextInfo.y - 8);
     planeCtx.strokeText("cells", rangeTextInfo.x, rangeTextInfo.y + 8);
     planeCtx.fillText("cells", rangeTextInfo.x, rangeTextInfo.y + 8);
+    planeCtx.restore();
   }
 
   planeCtx.restore();
