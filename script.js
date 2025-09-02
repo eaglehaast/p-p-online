@@ -1455,12 +1455,11 @@ function handleAAForPlane(p, fp){
     let dy = handleCircle.baseY - plane.y;
     let distPx = Math.hypot(dx, dy);
 
-    // амплитуда зависит от расстояния натяжения
+    // clamp drag distance but keep a fixed wobble amplitude in degrees
     const clampedDist = Math.min(distPx, MAX_DRAG_DISTANCE);
 
-    // scale wobble smoothly with drag distance
-    const distRatio = clampedDist / MAX_DRAG_DISTANCE;
-    const maxAngleDeg = aimingAmplitude * 4 * distRatio * distRatio;
+    // use a constant aiming amplitude (in degrees) independent of drag distance
+    const maxAngleDeg = aimingAmplitude * 4;
     const maxAngleRad = maxAngleDeg * Math.PI / 180;
 
     // обновляем текущий угол раскачивания
