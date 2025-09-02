@@ -54,17 +54,17 @@ arrowSprite.src = "sprite_ copy.png";
 const ARROW_Y = 358;   // vertical offset of arrow graphic
 const PART_H  = 254;   // height of arrow graphic
 
-// Horizontal slices for tail, shaft, and head within the sprite
-const TAIL_X  = 35;
-const TAIL_W  = 364;
+// Horizontal slices for head, shaft, and tail within the sprite
+const HEAD_X  = 35;
+const HEAD_W  = 364;
 const SHAFT_X = 422;
 const SHAFT_W = 576;
-const HEAD_X  = 1034;
-const HEAD_W  = 336;
+const TAIL_X  = 1034;
+const TAIL_W  = 336;
 
 
-// Scale factor to draw a small arrow around the plane
-const ARROW_SCALE = 0.03;
+// Scale factor so the arrow is about half the plane's size
+const ARROW_SCALE = 0.08;
 const ARROW_DEST_H = PART_H * ARROW_SCALE;
 const TAIL_DEST_W  = TAIL_W * ARROW_SCALE;
 const HEAD_DEST_W  = HEAD_W * ARROW_SCALE;
@@ -1653,7 +1653,7 @@ function handleAAForPlane(p, fp){
 
     // Draw arrow sprite under the plane
     gameCtx.save();
-    gameCtx.globalAlpha = 0.8;
+    gameCtx.globalAlpha = 0.5;
 
     drawArrow(gameCtx, plane.x, plane.y, vdx, vdy);
 
@@ -2205,45 +2205,36 @@ function drawBrickWall(ctx, width, height){
 function drawArrow(ctx, cx, cy, dx, dy) {
   if (!arrowSprite.complete) return;
 
-  // Total arrow length with the plane in the middle
-  const len = 2 * Math.hypot(dx, dy);
-  const ang = Math.atan2(dy, dx);
-
-  // Length of the stretchable shaft section
-  const shaftLen = Math.max(0, len - HEAD_DEST_W - TAIL_DEST_W);
+  // Shaft length doubles the pull distance so the plane sits in the middle
+  const shaftLen = 2 * Math.hypot(dx, dy);
+  const ang = Math.atan2(-dy, -dx); // head points toward flight direction
 
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(ang);
 
-  // Tail (fixed size)
+  // Tail (fixed size, anchored at the drag point)
   ctx.drawImage(
     arrowSprite,
     TAIL_X, ARROW_Y, TAIL_W, PART_H,
-
-    -(shaftLen / 2 + TAIL_DEST_W), -ARROW_DEST_H / 2,
+    -shaftLen / 2 - TAIL_DEST_W, -ARROW_DEST_H / 2,
     TAIL_DEST_W, ARROW_DEST_H
-
   );
 
   // Shaft (stretched to match distance)
   ctx.drawImage(
     arrowSprite,
     SHAFT_X, ARROW_Y, SHAFT_W, PART_H,
-
     -shaftLen / 2, -ARROW_DEST_H / 2,
     shaftLen, ARROW_DEST_H
-
   );
 
   // Head (fixed size)
   ctx.drawImage(
     arrowSprite,
     HEAD_X, ARROW_Y, HEAD_W, PART_H,
-
     shaftLen / 2, -ARROW_DEST_H / 2,
     HEAD_DEST_W, ARROW_DEST_H
-
   );
 
   ctx.restore();
