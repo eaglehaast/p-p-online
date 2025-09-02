@@ -48,6 +48,8 @@ body {
   height: calc(100dvh - 140px);
   max-height: calc(100dvh - 140px);
   display: block;
+  position: relative;
+  z-index: 11;
 }
 
 /* Нижнее табло */
