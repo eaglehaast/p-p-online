@@ -283,19 +283,19 @@ body {
 /* Индикатор дальности — самолёт с огнём */
 #flightRangeIndicator {
   position: relative;
-  width: 100px;
+  width: 120px;
   height: 24px;
   margin: auto;
   max-width: 100%;
   max-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  column-gap: 8px;
 }
 
 #flightRangeIndicator .jet {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-
+  position: relative;
   width: 40px;
   height: 20px;
 }
@@ -328,6 +328,13 @@ body {
 
   animation: flame-flicker 0.8s infinite;
 
+}
+
+/* Numeric display next to the plane */
+#flightRangeIndicator .range-display {
+  font-size: 20px;
+  color: #ee0000;
+  font-family: 'Patrick Hand', cursive;
 }
 
 #menuFlameGradient stop:first-child {
