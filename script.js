@@ -1888,6 +1888,7 @@ function drawPlanesAndTrajectories(){
       gameCtx.stroke();
     }
     drawThinPlane(planeCtx, p);
+
     if(handleCircle.active && handleCircle.pointRef === p){
       let vdx = handleCircle.shakyX - p.x;
       let vdy = handleCircle.shakyY - p.y;
@@ -1904,6 +1905,7 @@ function drawPlanesAndTrajectories(){
       planeCtx.fillText(`${cells}`, textX, p.y - 8);
       planeCtx.fillText("cells", textX, p.y + 8);
     }
+
     if(p.flagColor){
       planeCtx.save();
       planeCtx.strokeStyle = p.flagColor;

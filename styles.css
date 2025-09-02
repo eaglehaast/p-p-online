@@ -74,6 +74,7 @@ body {
   pointer-events: none;
   /* Ensure the arrow renders above the game field */
   z-index: 20;
+
 }
 
 /* Overlay canvas for planes */
