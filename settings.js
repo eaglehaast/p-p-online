@@ -31,7 +31,7 @@ const backBtn = document.getElementById('backBtn');
 
 function updateFlightRangeDisplay(){
   const el = document.getElementById('flightRangeDisplay');
-  if(el) el.textContent = `${flightRangeCells} cells`;
+  if(el) el.textContent = `${flightRangeCells}`;
 }
 
 function updateFlightRangeFlame(){
