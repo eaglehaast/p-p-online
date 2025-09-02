@@ -1863,28 +1863,43 @@ function isExplosionFinished(p){
   return p.explosionStart && (performance.now() - p.explosionStart >= EXPLOSION_DURATION_MS);
 }
 
-  function drawMiniPlaneWithCross(ctx2d, x, y, color, isAlive, isBurning, scale=1){
-    ctx2d.save();
-    ctx2d.translate(x, y);
-    ctx2d.scale(scale, scale);
-    const angle = 0; // ВСЕГДА носом ВВЕРХ на табло
-    ctx2d.rotate(angle);
+function drawMiniPlaneWithCross(ctx2d, x, y, color, isAlive, isBurning, scale = 1) {
+  ctx2d.save();
+  ctx2d.translate(x, y);
+
+  // Base size of the icon so it fits within the scoreboard cell
+  const size = 16 * scale;
+
+  let img = null;
+  if (color === "blue") {
+    img = bluePlaneImg;
+  } else if (color === "green") {
+    img = greenPlaneImg;
+  }
+
+  if (img && img.complete) {
+    ctx2d.drawImage(img, -size / 2, -size / 2, size, size);
+  } else {
+    // Fallback to simple outline if image isn't ready yet
     ctx2d.strokeStyle = colorFor(color);
-    ctx2d.lineWidth = 2/scale;
+    ctx2d.lineWidth = 2;
     ctx2d.beginPath();
-    ctx2d.moveTo(0, -8);
-    ctx2d.lineTo(4, 4);
-    ctx2d.lineTo(2, 4);
-    ctx2d.lineTo(0, 7);
-    ctx2d.lineTo(-2, 4);
-    ctx2d.lineTo(-4, 4);
+    ctx2d.moveTo(0, -size / 2);
+    ctx2d.lineTo(size / 4, size / 4);
+    ctx2d.lineTo(size / 8, size / 4);
+    ctx2d.lineTo(0, size / 2);
+    ctx2d.lineTo(-size / 8, size / 4);
+    ctx2d.lineTo(-size / 4, size / 4);
     ctx2d.closePath();
     ctx2d.stroke();
-    if(isBurning){
-      drawRedCross(ctx2d, 0, 0, 12);
-    }
-    ctx2d.restore();
   }
+
+  if (isBurning) {
+    drawRedCross(ctx2d, 0, 0, size * 0.8);
+  }
+
+  ctx2d.restore();
+}
 
 function drawPlanesAndTrajectories(){
   planeCtx.clearRect(0, 0, planeCanvas.width, planeCanvas.height);
