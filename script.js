@@ -1888,6 +1888,24 @@ function drawPlanesAndTrajectories(){
       gameCtx.stroke();
     }
     drawThinPlane(planeCtx, p);
+
+    if(handleCircle.active && handleCircle.pointRef === p){
+      let vdx = handleCircle.shakyX - p.x;
+      let vdy = handleCircle.shakyY - p.y;
+      let vdist = Math.hypot(vdx, vdy);
+      if(vdist > MAX_DRAG_DISTANCE){
+        vdist = MAX_DRAG_DISTANCE;
+      }
+      const cells = Math.round((vdist / MAX_DRAG_DISTANCE) * flightRangeCells);
+      const textX = p.x + POINT_RADIUS + 8;
+      planeCtx.fillStyle = p.color;
+      planeCtx.font = "14px sans-serif";
+      planeCtx.textAlign = "left";
+      planeCtx.textBaseline = "middle";
+      planeCtx.fillText(`${cells}`, textX, p.y - 8);
+      planeCtx.fillText("cells", textX, p.y + 8);
+    }
+
     if(p.flagColor){
       planeCtx.save();
       planeCtx.strokeStyle = p.flagColor;

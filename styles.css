@@ -87,7 +87,6 @@ body {
   pointer-events: none;
   /* Highest layer so planes appear above the aiming arrow */
   z-index: 30;
-
 }
 
 /* Меню выбора режима */
