@@ -1495,10 +1495,10 @@ function handleAAForPlane(p, fp){
     }
 
 
-    // Draw arrow sprite under the plane
+    // Draw arrow sprite under the plane with opacity based on pull distance
+    const arrowAlpha = 0.5 * (vdist / MAX_DRAG_DISTANCE);
     gameCtx.save();
-    gameCtx.globalAlpha = 0.5;
-
+    gameCtx.globalAlpha = arrowAlpha;
     drawArrow(gameCtx, plane.x, plane.y, baseDx, baseDy);
 
     gameCtx.restore();
