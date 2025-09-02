@@ -15,7 +15,6 @@ const gameCanvas  = document.getElementById("gameCanvas");
 const gameCtx     = gameCanvas.getContext("2d");
 
 const aimCanvas   = document.getElementById("aimCanvas");
-const aimCtx      = aimCanvas.getContext("2d");
 
 const modeMenuDiv = document.getElementById("modeMenu");
 const hotSeatBtn  = document.getElementById("hotSeatBtn");
@@ -1311,8 +1310,6 @@ function handleAAForPlane(p, fp){
   gameCtx.clearRect(0,0, gameCanvas.width, gameCanvas.height);
   drawFieldBackground(gameCtx, gameCanvas.width, gameCanvas.height);
 
-  aimCtx.clearRect(0,0, aimCanvas.width, aimCanvas.height);
-
   // Планирование хода ИИ
   if (!isGameOver
       && gameMode === "computer"
@@ -1485,199 +1482,13 @@ function handleAAForPlane(p, fp){
     // вращаем самолёт по направлению предполагаемого полёта
     plane.angle = Math.atan2(-vdy, -vdx) + Math.PI/2;
 
-    const rect = gameCanvas.getBoundingClientRect();
-    const scaleX = rect.width / gameCanvas.width;
-    const scaleY = rect.height / gameCanvas.height;
-    const startX = rect.left + plane.x * scaleX;
-    const startY = rect.top  + plane.y * scaleY;
-
-    // Angles for ticks and overlays
-    const dragAngle = Math.atan2(vdy, vdx);
-    const tickAngle = dragAngle + Math.PI/2;
-    const numTicks = Math.min(5, Math.floor(vdist / CELL_SIZE));
-    const thirdDist = 3 * CELL_SIZE;
-    const fourthDist = 4 * CELL_SIZE;
-
-    // Predicted flight distance in cells based on current pull
-    const travelCells = (vdist / MAX_DRAG_DISTANCE) * flightRangeCells;
-    const labelSX = startX + CELL_SIZE * scaleX;
-    const labelSY = startY;
-
-    const travelPx = travelCells * CELL_SIZE;
-    const travelEndGX = plane.x - travelPx * Math.cos(dragAngle);
-    const travelEndGY = plane.y - travelPx * Math.sin(dragAngle);
-    const travelEndSX = rect.left + travelEndGX * scaleX;
-    const travelEndSY = rect.top  + travelEndGY * scaleY;
-
-
-    // Forward shadow aiming line (90% transparent)
-    const forwardEndX = rect.left + (plane.x - vdx) * scaleX;
-    const forwardEndY = rect.top  + (plane.y - vdy) * scaleY;
-
-    aimCtx.save();
-    aimCtx.globalAlpha = 0.1;
-
-    aimCtx.beginPath();
-    aimCtx.strokeStyle = "black";
-    aimCtx.lineWidth = 2;
-    aimCtx.moveTo(startX, startY);
-    aimCtx.lineTo(forwardEndX, forwardEndY);
-    aimCtx.stroke();
-
-    // Tick marks on the shadow line
-    for(let i=1; i<=numTicks; i++){
-      const d = i*CELL_SIZE;
-      if(d > vdist) break;
-      const posX = plane.x - d*Math.cos(dragAngle);
-      const posY = plane.y - d*Math.sin(dragAngle);
-      const halfTick = (CELL_SIZE/2)/2;
-      const startGX = posX - halfTick*Math.cos(tickAngle);
-      const startGY = posY - halfTick*Math.sin(tickAngle);
-      const endGX   = posX + halfTick*Math.cos(tickAngle);
-      const endGY   = posY + halfTick*Math.sin(tickAngle);
-
-      const startSX = rect.left + startGX * scaleX;
-      const startSY = rect.top  + startGY * scaleY;
-      const endSX   = rect.left + endGX   * scaleX;
-      const endSY   = rect.top  + endGY   * scaleY;
-
-      aimCtx.beginPath();
-      aimCtx.strokeStyle="black";
-      aimCtx.lineWidth=2;
-      aimCtx.moveTo(startSX, startSY);
-      aimCtx.lineTo(endSX, endSY);
-      aimCtx.stroke();
-    }
-
-    // Red overlay on the shadow line
-    if(vdist > thirdDist){
-      const start3GX = plane.x - thirdDist*Math.cos(dragAngle);
-      const start3GY = plane.y - thirdDist*Math.sin(dragAngle);
-      const start3SX = rect.left + start3GX * scaleX;
-      const start3SY = rect.top  + start3GY * scaleY;
-
-      const seg1EndDist = Math.min(vdist, fourthDist);
-      const seg1EndGX = plane.x - seg1EndDist*Math.cos(dragAngle);
-      const seg1EndGY = plane.y - seg1EndDist*Math.sin(dragAngle);
-      const seg1EndSX = rect.left + seg1EndGX * scaleX;
-      const seg1EndSY = rect.top  + seg1EndGY * scaleY;
-
-      aimCtx.beginPath();
-      aimCtx.strokeStyle = "black";
-      aimCtx.lineWidth = 1;
-      aimCtx.moveTo(start3SX, start3SY);
-      aimCtx.lineTo(seg1EndSX, seg1EndSY);
-      aimCtx.stroke();
-
-      if(vdist > fourthDist){
-        const seg2EndGX = plane.x - vdist*Math.cos(dragAngle);
-        const seg2EndGY = plane.y - vdist*Math.sin(dragAngle);
-        const seg2EndSX = rect.left + seg2EndGX * scaleX;
-        const seg2EndSY = rect.top  + seg2EndGY * scaleY;
-
-        aimCtx.beginPath();
-        aimCtx.strokeStyle = "black";
-        aimCtx.lineWidth = 2;
-        aimCtx.moveTo(seg1EndSX, seg1EndSY);
-        aimCtx.lineTo(seg2EndSX, seg2EndSY);
-        aimCtx.stroke();
-      }
-    }
-
-    aimCtx.restore();
-
-    // Tick marks and overlay on the aiming line (50% transparent)
-    aimCtx.save();
-    aimCtx.globalAlpha = 0.5;
-
-    for(let i=1; i<=numTicks; i++){
-      const d = i*CELL_SIZE;
-      if(d > vdist) break;
-      const posX = plane.x + d*Math.cos(dragAngle);
-      const posY = plane.y + d*Math.sin(dragAngle);
-      const halfTick = (CELL_SIZE/2)/2;
-      const startGX = posX - halfTick*Math.cos(tickAngle);
-      const startGY = posY - halfTick*Math.sin(tickAngle);
-      const endGX   = posX + halfTick*Math.cos(tickAngle);
-      const endGY   = posY + halfTick*Math.sin(tickAngle);
-
-      const startSX = rect.left + startGX * scaleX;
-      const startSY = rect.top  + startGY * scaleY;
-      const endSX   = rect.left + endGX   * scaleX;
-      const endSY   = rect.top  + endGY   * scaleY;
-
-      aimCtx.beginPath();
-      aimCtx.strokeStyle="black";
-      aimCtx.lineWidth=2;
-      aimCtx.moveTo(startSX, startSY);
-      aimCtx.lineTo(endSX, endSY);
-      aimCtx.stroke();
-    }
-
-    // Overlay after the third tick mark
-    if(vdist > thirdDist){
-      const start3GX = plane.x + thirdDist*Math.cos(dragAngle);
-      const start3GY = plane.y + thirdDist*Math.sin(dragAngle);
-      const start3SX = rect.left + start3GX * scaleX;
-      const start3SY = rect.top  + start3GY * scaleY;
-
-      const seg1EndDist = Math.min(vdist, fourthDist);
-      const seg1EndGX = plane.x + seg1EndDist*Math.cos(dragAngle);
-      const seg1EndGY = plane.y + seg1EndDist*Math.sin(dragAngle);
-      const seg1EndSX = rect.left + seg1EndGX * scaleX;
-      const seg1EndSY = rect.top  + seg1EndGY * scaleY;
-
-      aimCtx.beginPath();
-      aimCtx.strokeStyle = "black";
-      aimCtx.lineWidth = 1;
-      aimCtx.moveTo(start3SX, start3SY);
-      aimCtx.lineTo(seg1EndSX, seg1EndSY);
-      aimCtx.stroke();
-
-      if(vdist > fourthDist){
-        const seg2EndGX = plane.x + vdist*Math.cos(dragAngle);
-        const seg2EndGY = plane.y + vdist*Math.sin(dragAngle);
-        const seg2EndSX = rect.left + seg2EndGX * scaleX;
-        const seg2EndSY = rect.top  + seg2EndGY * scaleY;
-
-        aimCtx.beginPath();
-        aimCtx.strokeStyle = "black";
-        aimCtx.lineWidth = 2;
-        aimCtx.moveTo(seg1EndSX, seg1EndSY);
-        aimCtx.lineTo(seg2EndSX, seg2EndSY);
-        aimCtx.stroke();
-      }
-    }
-
-    aimCtx.restore();
-
     // Draw arrow sprite under the plane
     gameCtx.save();
     gameCtx.globalAlpha = 0.5;
 
     drawArrow(gameCtx, plane.x, plane.y, vdx, vdy);
-
     gameCtx.restore();
 
-
-    // Predicted distance text with 40% transparency
-    aimCtx.save();
-    aimCtx.globalAlpha = 0.6;
-
-
-    aimCtx.font = "18px 'Patrick Hand', cursive";
-    aimCtx.fillStyle = plane.color;
-    aimCtx.textAlign = "left";
-    aimCtx.textBaseline = "middle";
-    aimCtx.fillText(travelCells.toFixed(1), labelSX, labelSY);
-
-
-    aimCtx.font = "14px 'Patrick Hand', cursive";
-    aimCtx.textBaseline = "top";
-    aimCtx.fillText("cells", labelSX + 1, labelSY + 9);
-
-
-    aimCtx.restore();
 
   }
 
@@ -2213,7 +2024,6 @@ function drawArrow(ctx, cx, cy, dx, dy) {
   ctx.translate(cx, cy);
   ctx.rotate(ang);
 
-
   // Tail (fixed size, anchored at the drag point, rotated 180°)
   const tailCenterX = -shaftLen / 2 - TAIL_DEST_W / 2;
   ctx.save();
@@ -2615,7 +2425,6 @@ function startNewRound(){
   scoreCanvas.style.display = "block";
   gameCanvas.style.display = "block";
   scoreCanvasBottom.style.display = "block";
-  aimCanvas.style.display = "block";
 
   initPoints(); // ориентации на базе
   blueFlagCarrier = null;
