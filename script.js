@@ -1482,11 +1482,25 @@ function handleAAForPlane(p, fp){
     // вращаем самолёт по направлению предполагаемого полёта
     plane.angle = Math.atan2(-vdy, -vdx) + Math.PI/2;
 
+    // Offset arrow so the drag point grabs the middle of the tail
+    const halfTail = TAIL_DEST_W / 2;
+    let baseDx = vdx;
+    let baseDy = vdy;
+    if (vdist > 0) {
+      const ux = vdx / vdist;
+      const uy = vdy / vdist;
+      const baseDist = Math.max(vdist - halfTail, 0);
+      baseDx = ux * baseDist;
+      baseDy = uy * baseDist;
+    }
+
+
     // Draw arrow sprite under the plane
     gameCtx.save();
     gameCtx.globalAlpha = 0.5;
 
-    drawArrow(gameCtx, plane.x, plane.y, vdx, vdy);
+    drawArrow(gameCtx, plane.x, plane.y, baseDx, baseDy);
+
     gameCtx.restore();
 
 
