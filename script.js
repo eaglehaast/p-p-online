@@ -1481,6 +1481,7 @@ function handleAAForPlane(p, fp){
 
     // вращаем самолёт по направлению предполагаемого полёта
     plane.angle = Math.atan2(-vdy, -vdx) + Math.PI/2;
+
     // Offset arrow so the drag point grabs the middle of the tail
     const halfTail = TAIL_DEST_W / 2;
     let baseDx = vdx;
@@ -1493,11 +1494,13 @@ function handleAAForPlane(p, fp){
       baseDy = uy * baseDist;
     }
 
+
     // Draw arrow sprite under the plane with opacity based on pull distance
     const arrowAlpha = 0.5 * (vdist / MAX_DRAG_DISTANCE);
     gameCtx.save();
     gameCtx.globalAlpha = arrowAlpha;
     drawArrow(gameCtx, plane.x, plane.y, baseDx, baseDy);
+
     gameCtx.restore();
 
 
@@ -2044,6 +2047,7 @@ function drawArrow(ctx, cx, cy, dx, dy) {
     arrowSprite,
     TAIL_X, ARROW_Y, TAIL_W, PART_H,
     -TAIL_DEST_W / 2, -ARROW_DEST_H / 2,
+
     TAIL_DEST_W, ARROW_DEST_H
   );
   ctx.restore();
@@ -2064,7 +2068,9 @@ function drawArrow(ctx, cx, cy, dx, dy) {
   ctx.drawImage(
     arrowSprite,
     HEAD_X, ARROW_Y, HEAD_W, PART_H,
+
     -HEAD_DEST_W / 2, -ARROW_DEST_H / 2,
+
     HEAD_DEST_W, ARROW_DEST_H
   );
   ctx.restore();
