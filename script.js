@@ -15,6 +15,7 @@ const gameCanvas  = document.getElementById("gameCanvas");
 const gameCtx     = gameCanvas.getContext("2d");
 
 const aimCanvas   = document.getElementById("aimCanvas");
+const aimCtx      = aimCanvas.getContext("2d");
 
 const modeMenuDiv = document.getElementById("modeMenu");
 const hotSeatBtn  = document.getElementById("hotSeatBtn");
@@ -530,6 +531,9 @@ function handleStart(e) {
   oscillationDir = 1;
   roundTextTimer = 0; // Hide round label when player starts a move
 
+  // Show overlay canvas for aiming arrow
+  aimCanvas.style.display = "block";
+
   window.addEventListener("mousemove", onHandleMove);
   window.addEventListener("mouseup", onHandleUp);
   window.addEventListener("touchmove", onHandleMove);
@@ -816,6 +820,9 @@ function cleanupHandle(){
   handleCircle.active= false;
   handleCircle.pointRef= null;
   handleCircle.origAngle = null;
+  // Hide overlay canvas when aiming ends
+  aimCanvas.style.display = "none";
+  aimCtx.clearRect(0,0,aimCanvas.width,aimCanvas.height);
   window.removeEventListener("mousemove", onHandleMove);
   window.removeEventListener("mouseup", onHandleUp);
   window.removeEventListener("touchmove", onHandleMove);
@@ -1495,15 +1502,22 @@ function handleAAForPlane(p, fp){
     }
 
 
-    // Draw arrow sprite under the plane with opacity based on pull distance
+    // Draw arrow on overlay canvas so it doesn't get clipped by game bounds
     const arrowAlpha = 0.5 * (vdist / MAX_DRAG_DISTANCE);
-    gameCtx.save();
-    gameCtx.globalAlpha = arrowAlpha;
-    drawArrow(gameCtx, plane.x, plane.y, baseDx, baseDy);
+    aimCtx.clearRect(0, 0, aimCanvas.width, aimCanvas.height);
+    aimCtx.save();
+    const rect = gameCanvas.getBoundingClientRect();
+    const scaleX = rect.width / gameCanvas.width;
+    const scaleY = rect.height / gameCanvas.height;
+    aimCtx.translate(rect.left, rect.top);
+    aimCtx.scale(scaleX, scaleY);
+    aimCtx.globalAlpha = arrowAlpha;
+    drawArrow(aimCtx, plane.x, plane.y, baseDx, baseDy);
+    aimCtx.restore();
 
-    gameCtx.restore();
-
-
+  } else {
+    // Clear overlay if not aiming
+    aimCtx.clearRect(0, 0, aimCanvas.width, aimCanvas.height);
   }
 
   // самолёты + их трейлы
