@@ -1877,6 +1877,7 @@ function drawPlanesAndTrajectories(){
   planeCtx.scale(scaleX, scaleY);
 
   const burningPlanes = [];
+  let rangeTextInfo = null;
   for(const p of points){
     if(!p.isAlive && !p.burning) continue;
     for(const seg of p.segments){
@@ -1898,12 +1899,7 @@ function drawPlanesAndTrajectories(){
       }
       const cells = Math.round((vdist / MAX_DRAG_DISTANCE) * flightRangeCells);
       const textX = p.x + POINT_RADIUS + 8;
-      planeCtx.fillStyle = p.color;
-      planeCtx.font = "14px sans-serif";
-      planeCtx.textAlign = "left";
-      planeCtx.textBaseline = "middle";
-      planeCtx.fillText(`${cells}`, textX, p.y - 8);
-      planeCtx.fillText("cells", textX, p.y + 8);
+      rangeTextInfo = { color: p.color, cells, x: textX, y: p.y };
     }
 
     if(p.flagColor){
@@ -1932,6 +1928,20 @@ function drawPlanesAndTrajectories(){
     } else {
       drawRedCross(planeCtx, cx, cy, 16);
     }
+  }
+
+  if(rangeTextInfo){
+    planeCtx.font = "14px sans-serif";
+    planeCtx.textAlign = "left";
+    planeCtx.textBaseline = "middle";
+    planeCtx.lineWidth = 1;
+    planeCtx.strokeStyle = "white";
+    planeCtx.fillStyle = rangeTextInfo.color;
+    const numText = `${rangeTextInfo.cells}`;
+    planeCtx.strokeText(numText, rangeTextInfo.x, rangeTextInfo.y - 8);
+    planeCtx.fillText(numText, rangeTextInfo.x, rangeTextInfo.y - 8);
+    planeCtx.strokeText("cells", rangeTextInfo.x, rangeTextInfo.y + 8);
+    planeCtx.fillText("cells", rangeTextInfo.x, rangeTextInfo.y + 8);
   }
 
   planeCtx.restore();
