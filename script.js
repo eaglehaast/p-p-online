@@ -1916,7 +1916,7 @@ function drawPlanesAndTrajectories(){
       if(vdist > MAX_DRAG_DISTANCE){
         vdist = MAX_DRAG_DISTANCE;
       }
-      const cells = Math.round((vdist / MAX_DRAG_DISTANCE) * flightRangeCells);
+      const cells = (vdist / MAX_DRAG_DISTANCE) * flightRangeCells;
       const textX = p.x + POINT_RADIUS + 8;
       rangeTextInfo = { color: colorFor(p.color), cells, x: textX, y: p.y };
     }
@@ -1958,7 +1958,7 @@ function drawPlanesAndTrajectories(){
     planeCtx.lineWidth = 1;
     planeCtx.strokeStyle = "white";
     planeCtx.fillStyle = rangeTextInfo.color;
-    const numText = `${rangeTextInfo.cells}`;
+    const numText = rangeTextInfo.cells.toFixed(1);
     planeCtx.strokeText(numText, rangeTextInfo.x, rangeTextInfo.y - 8);
     planeCtx.fillText(numText, rangeTextInfo.x, rangeTextInfo.y - 8);
     planeCtx.strokeText("cells", rangeTextInfo.x, rangeTextInfo.y + 8);
