@@ -55,7 +55,8 @@ const ARROW_Y = 358;   // vertical offset of arrow graphic
 const PART_H  = 254;   // height of arrow graphic
 
 // Horizontal slices for head, shaft, and tail within the sprite
-const HEAD_X  = 35;
+// Include the very first column so the arrow tip is visible
+const HEAD_X  = 34;
 const HEAD_W  = 364;
 const SHAFT_X = 422;
 const SHAFT_W = 576;
