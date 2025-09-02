@@ -2213,6 +2213,7 @@ function drawArrow(ctx, cx, cy, dx, dy) {
   ctx.translate(cx, cy);
   ctx.rotate(ang);
 
+
   // Tail (fixed size, anchored at the drag point, rotated 180°)
   const tailCenterX = -shaftLen / 2 - TAIL_DEST_W / 2;
   ctx.save();
@@ -2222,6 +2223,7 @@ function drawArrow(ctx, cx, cy, dx, dy) {
     arrowSprite,
     TAIL_X, ARROW_Y, TAIL_W, PART_H,
     -TAIL_DEST_W / 2, -ARROW_DEST_H / 2,
+
     TAIL_DEST_W, ARROW_DEST_H
   );
   ctx.restore();
@@ -2242,7 +2244,9 @@ function drawArrow(ctx, cx, cy, dx, dy) {
   ctx.drawImage(
     arrowSprite,
     HEAD_X, ARROW_Y, HEAD_W, PART_H,
+
     -HEAD_DEST_W / 2, -ARROW_DEST_H / 2,
+
     HEAD_DEST_W, ARROW_DEST_H
   );
   ctx.restore();
