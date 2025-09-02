@@ -230,8 +230,8 @@ let settings = { addAA: false, sharpEdges: false };
 function loadSettings(){
   const fr = parseInt(localStorage.getItem('settings.flightRangeCells'));
   flightRangeCells = Number.isNaN(fr) ? 15 : fr;
-  const amp = parseInt(localStorage.getItem('settings.aimingAmplitude'));
-  aimingAmplitude = Number.isNaN(amp) ? 10 : amp;
+  const amp = parseFloat(localStorage.getItem('settings.aimingAmplitude'));
+  aimingAmplitude = Number.isNaN(amp) ? 10 / 4 : amp;
   const mi = parseInt(localStorage.getItem('settings.mapIndex'));
   mapIndex = Number.isNaN(mi) ? 1 : mi;
   if(mapIndex < 0 || mapIndex >= MAPS.length){
@@ -435,7 +435,7 @@ onlineBtn.addEventListener("click",()=>{
 if(classicRulesBtn){
   classicRulesBtn.addEventListener('click', () => {
     flightRangeCells = 15;
-    aimingAmplitude = 10;
+    aimingAmplitude = 10 / 4; // 10°
     mapIndex = 1;
     settings.addAA = false;
     settings.sharpEdges = false;

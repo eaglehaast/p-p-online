@@ -10,7 +10,8 @@ function getIntSetting(key, defaultValue){
 }
 
 let flightRangeCells = getIntSetting('settings.flightRangeCells', 15);
-let aimingAmplitude  = getIntSetting('settings.aimingAmplitude', 10);
+let aimingAmplitude  = parseFloat(localStorage.getItem('settings.aimingAmplitude'));
+if(Number.isNaN(aimingAmplitude)) aimingAmplitude = 10 / 4;
 let mapIndex = getIntSetting('settings.mapIndex', 1);
 // Ensure stored index points to an existing map
 if(mapIndex < 0 || mapIndex >= MAPS.length){
