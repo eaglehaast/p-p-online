@@ -62,11 +62,13 @@ const SHAFT_W = 576;
 const HEAD_X  = 1034;
 const HEAD_W  = 336;
 
+
 // Scale factor to draw a small arrow around the plane
 const ARROW_SCALE = 0.03;
 const ARROW_DEST_H = PART_H * ARROW_SCALE;
 const TAIL_DEST_W  = TAIL_W * ARROW_SCALE;
 const HEAD_DEST_W  = HEAD_W * ARROW_SCALE;
+
 let brickFrameBorderPx = FIELD_BORDER_THICKNESS;
 brickFrameImg.onload = () => {
   const tempCanvas = document.createElement("canvas");
@@ -2218,24 +2220,30 @@ function drawArrow(ctx, cx, cy, dx, dy) {
   ctx.drawImage(
     arrowSprite,
     TAIL_X, ARROW_Y, TAIL_W, PART_H,
+
     -(shaftLen / 2 + TAIL_DEST_W), -ARROW_DEST_H / 2,
     TAIL_DEST_W, ARROW_DEST_H
+
   );
 
   // Shaft (stretched to match distance)
   ctx.drawImage(
     arrowSprite,
     SHAFT_X, ARROW_Y, SHAFT_W, PART_H,
+
     -shaftLen / 2, -ARROW_DEST_H / 2,
     shaftLen, ARROW_DEST_H
+
   );
 
   // Head (fixed size)
   ctx.drawImage(
     arrowSprite,
     HEAD_X, ARROW_Y, HEAD_W, PART_H,
+
     shaftLen / 2, -ARROW_DEST_H / 2,
     HEAD_DEST_W, ARROW_DEST_H
+
   );
 
   ctx.restore();
