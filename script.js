@@ -79,6 +79,23 @@ const ARROW_DEST_H = PART_H * ARROW_SCALE;
 const TAIL_DEST_W  = TAIL_W * ARROW_SCALE;
 const HEAD_DEST_W  = HEAD_W * ARROW_SCALE;
 
+const PLAYER_COLORS = {
+  green: '#7f8e40',
+  blue: '#013c83'
+};
+
+function colorFor(color){
+  return PLAYER_COLORS[color] || color;
+}
+
+function colorWithAlpha(color, alpha){
+  const hex = colorFor(color).slice(1);
+  const r = parseInt(hex.slice(0,2),16);
+  const g = parseInt(hex.slice(2,4),16);
+  const b = parseInt(hex.slice(4,6),16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 let brickFrameBorderPx = FIELD_BORDER_THICKNESS;
 brickFrameImg.onload = () => {
   const tempCanvas = document.createElement("canvas");
@@ -667,11 +684,7 @@ function drawAAPlacementZone(){
 
   const half = gameCanvas.height / 2;
   gameCtx.save();
-  const color = currentPlacer === 'green'
-    ? 'rgba(0,255,0,0.05)'
-    : 'rgba(0,0,255,0.05)';
-
-  gameCtx.fillStyle = color;
+  gameCtx.fillStyle = colorWithAlpha(currentPlacer, 0.05);
   if(currentPlacer === 'green'){
     gameCtx.fillRect(0, half, gameCanvas.width, half);
   } else {
@@ -687,7 +700,7 @@ function drawAAPreview(){
 
   gameCtx.save();
   gameCtx.globalAlpha = 0.3;
-  gameCtx.strokeStyle = currentPlacer;
+  gameCtx.strokeStyle = colorFor(currentPlacer);
   gameCtx.beginPath();
   gameCtx.arc(x, y, AA_DEFAULTS.radius, 0, Math.PI*2);
   gameCtx.stroke();
@@ -704,7 +717,7 @@ function drawAAPreview(){
     const alpha = (1 - age/AA_TRAIL_MS) * 0.3;
 
     gameCtx.globalAlpha = alpha;
-    gameCtx.strokeStyle = currentPlacer;
+    gameCtx.strokeStyle = colorFor(currentPlacer);
     gameCtx.lineWidth = 2;
     gameCtx.lineCap = "round";
     const trailAng = seg.angleDeg * Math.PI/180;
@@ -723,7 +736,7 @@ function drawAAPreview(){
   const endY = y + Math.sin(ang) * AA_DEFAULTS.radius;
 
   gameCtx.globalAlpha = 0.6;
-  gameCtx.strokeStyle = currentPlacer;
+  gameCtx.strokeStyle = colorFor(currentPlacer);
   gameCtx.lineWidth = 2;
   gameCtx.lineCap = "round";
   gameCtx.beginPath();
@@ -742,7 +755,7 @@ function drawAAPreview(){
   gameCtx.stroke();
 
   gameCtx.globalAlpha = 0.4;
-  gameCtx.fillStyle = currentPlacer;
+  gameCtx.fillStyle = colorFor(currentPlacer);
   gameCtx.beginPath();
   gameCtx.arc(x, y, 6, 0, Math.PI*2);
   gameCtx.fill();
@@ -756,7 +769,7 @@ function drawAAPreview(){
 
   // colored center dot matching player color
   gameCtx.globalAlpha = 1;
-  gameCtx.fillStyle = currentPlacer;
+  gameCtx.fillStyle = colorFor(currentPlacer);
   gameCtx.beginPath();
   gameCtx.arc(x, y, 1.5, 0, Math.PI*2);
   gameCtx.fill();
@@ -1546,7 +1559,7 @@ function handleAAForPlane(p, fp){
 
   if(isGameOver && winnerColor){
     gameCtx.font="48px 'Patrick Hand', cursive";
-    gameCtx.fillStyle= winnerColor;
+    gameCtx.fillStyle= colorFor(winnerColor);
     const text= `${winnerColor.charAt(0).toUpperCase() + winnerColor.slice(1)} wins!`;
     const w= gameCtx.measureText(text).width;
     gameCtx.fillText(text, (gameCanvas.width - w)/2, gameCanvas.height/2 - 80);
@@ -1766,7 +1779,7 @@ function drawWingTrails(ctx2d){
 }
 
 function drawPlaneOutline(ctx2d, color){
-  ctx2d.strokeStyle = color;
+  ctx2d.strokeStyle = colorFor(color);
   ctx2d.lineWidth = 2;
   ctx2d.beginPath();
   ctx2d.moveTo(0, -20);
@@ -1856,7 +1869,7 @@ function isExplosionFinished(p){
     ctx2d.scale(scale, scale);
     const angle = 0; // ВСЕГДА носом ВВЕРХ на табло
     ctx2d.rotate(angle);
-    ctx2d.strokeStyle = color;
+    ctx2d.strokeStyle = colorFor(color);
     ctx2d.lineWidth = 2/scale;
     ctx2d.beginPath();
     ctx2d.moveTo(0, -8);
@@ -1888,7 +1901,7 @@ function drawPlanesAndTrajectories(){
     if(!p.isAlive && !p.burning) continue;
     for(const seg of p.segments){
       gameCtx.beginPath();
-      gameCtx.strokeStyle = p.color;
+      gameCtx.strokeStyle = colorFor(p.color);
       gameCtx.lineWidth = seg.lineWidth || 3;
       gameCtx.moveTo(seg.x1, seg.y1);
       gameCtx.lineTo(seg.x2, seg.y2);
@@ -1905,12 +1918,12 @@ function drawPlanesAndTrajectories(){
       }
       const cells = Math.round((vdist / MAX_DRAG_DISTANCE) * flightRangeCells);
       const textX = p.x + POINT_RADIUS + 8;
-      rangeTextInfo = { color: p.color, cells, x: textX, y: p.y };
+      rangeTextInfo = { color: colorFor(p.color), cells, x: textX, y: p.y };
     }
 
     if(p.flagColor){
       planeCtx.save();
-      planeCtx.strokeStyle = p.flagColor;
+      planeCtx.strokeStyle = colorFor(p.flagColor);
       planeCtx.lineWidth = 3;
       planeCtx.beginPath();
       planeCtx.arc(p.x, p.y, POINT_RADIUS + 5, 0, Math.PI*2);
@@ -1971,7 +1984,7 @@ function drawFlag(ctx2d, x, y, color){
   ctx2d.lineTo(x, y - FLAG_POLE_HEIGHT);
   ctx2d.stroke();
 
-  ctx2d.fillStyle = color;
+  ctx2d.fillStyle = colorFor(color);
   ctx2d.beginPath();
   ctx2d.moveTo(x, y - FLAG_POLE_HEIGHT);
   ctx2d.lineTo(x + FLAG_WIDTH, y - FLAG_POLE_HEIGHT + FLAG_HEIGHT / 2);
@@ -2012,7 +2025,7 @@ function drawAAUnits(){
       const width = 8;
       const grad = gameCtx.createLinearGradient(0, -width/2, 0, width/2);
       grad.addColorStop(0, "rgba(0,0,0,0)");
-      grad.addColorStop(0.5, aa.owner);
+      grad.addColorStop(0.5, colorFor(aa.owner));
       grad.addColorStop(1, "rgba(0,0,0,0)");
 
       gameCtx.globalAlpha = alpha;
@@ -2031,7 +2044,7 @@ function drawAAUnits(){
     const ang = aa.sweepAngleDeg * Math.PI/180;
     const endX = aa.x + Math.cos(ang) * aa.radius;
     const endY = aa.y + Math.sin(ang) * aa.radius;
-    gameCtx.strokeStyle = aa.owner;
+    gameCtx.strokeStyle = colorFor(aa.owner);
     gameCtx.lineWidth = 2;
     gameCtx.lineCap = "round";
     gameCtx.beginPath();
@@ -2053,7 +2066,7 @@ function drawAAUnits(){
 
     // Anti-Aircraft center ring
     gameCtx.beginPath();
-    gameCtx.fillStyle = aa.owner;
+    gameCtx.fillStyle = colorFor(aa.owner);
     gameCtx.arc(aa.x, aa.y, 6, 0, Math.PI*2);
     gameCtx.fill();
 
@@ -2383,14 +2396,14 @@ function drawPlayerPanel(ctx, color, score, isTurn){
   if (phase === 'AA_PLACEMENT') {
     if (currentPlacer === color) {
       statusText = 'You are placing Anti-Aircraft';
-      ctx.fillStyle = color;
+      ctx.fillStyle = colorFor(color);
     } else {
       statusText = 'Enemy is placing Anti-Aircraft';
       ctx.fillStyle = '#888';
     }
   } else if (isTurn) {
     statusText = "Your Turn";
-    ctx.fillStyle = color;
+    ctx.fillStyle = colorFor(color);
   } else {
     statusText = "Enemy Pilot's Turn";
     ctx.fillStyle = "#888";
@@ -2398,7 +2411,7 @@ function drawPlayerPanel(ctx, color, score, isTurn){
   ctx.fillText(statusText, sectionW*1.5, canvas.height/2);
 
   // score
-  ctx.fillStyle = color;
+  ctx.fillStyle = colorFor(color);
   ctx.fillText(String(score), sectionW*2.5, canvas.height/2);
 }
 
