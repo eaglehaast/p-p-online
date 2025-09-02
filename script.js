@@ -17,6 +17,9 @@ const gameCtx     = gameCanvas.getContext("2d");
 const aimCanvas   = document.getElementById("aimCanvas");
 const aimCtx      = aimCanvas.getContext("2d");
 
+const planeCanvas = document.getElementById("planeCanvas");
+const planeCtx    = planeCanvas.getContext("2d");
+
 const modeMenuDiv = document.getElementById("modeMenu");
 const hotSeatBtn  = document.getElementById("hotSeatBtn");
 const computerBtn = document.getElementById("computerBtn");
@@ -392,6 +395,8 @@ function resetGame(){
   gameCanvas.style.display = "none";
   scoreCanvasBottom.style.display = "none";
   aimCanvas.style.display = "none";
+  planeCanvas.style.display = "none";
+  planeCtx.clearRect(0,0,planeCanvas.width,planeCanvas.height);
 
   // Остановить основной цикл
   stopGameLoop();
@@ -1863,26 +1868,34 @@ function isExplosionFinished(p){
   }
 
 function drawPlanesAndTrajectories(){
+  planeCtx.clearRect(0, 0, planeCanvas.width, planeCanvas.height);
+  const rect = gameCanvas.getBoundingClientRect();
+  const scaleX = rect.width / gameCanvas.width;
+  const scaleY = rect.height / gameCanvas.height;
+  planeCtx.save();
+  planeCtx.translate(rect.left, rect.top);
+  planeCtx.scale(scaleX, scaleY);
+
   const burningPlanes = [];
   for(const p of points){
     if(!p.isAlive && !p.burning) continue;
     for(const seg of p.segments){
       gameCtx.beginPath();
-      gameCtx.strokeStyle= p.color;
-      gameCtx.lineWidth= seg.lineWidth || 3;
+      gameCtx.strokeStyle = p.color;
+      gameCtx.lineWidth = seg.lineWidth || 3;
       gameCtx.moveTo(seg.x1, seg.y1);
       gameCtx.lineTo(seg.x2, seg.y2);
       gameCtx.stroke();
     }
-    drawThinPlane(gameCtx, p);
+    drawThinPlane(planeCtx, p);
     if(p.flagColor){
-      gameCtx.save();
-      gameCtx.strokeStyle = p.flagColor;
-      gameCtx.lineWidth = 3;
-      gameCtx.beginPath();
-      gameCtx.arc(p.x, p.y, POINT_RADIUS + 5, 0, Math.PI*2);
-      gameCtx.stroke();
-      gameCtx.restore();
+      planeCtx.save();
+      planeCtx.strokeStyle = p.flagColor;
+      planeCtx.lineWidth = 3;
+      planeCtx.beginPath();
+      planeCtx.arc(p.x, p.y, POINT_RADIUS + 5, 0, Math.PI*2);
+      planeCtx.stroke();
+      planeCtx.restore();
     }
     if(p.burning){
       const cx = p.collisionX ?? p.x;
@@ -1893,15 +1906,17 @@ function drawPlanesAndTrajectories(){
 
   for(const {plane: p, cx, cy} of burningPlanes){
     if(p.explosionImg && !isExplosionFinished(p)){
-      gameCtx.save();
-      gameCtx.globalAlpha = 1;
-      gameCtx.globalCompositeOperation = "source-over";
-      gameCtx.drawImage(p.explosionImg, cx - EXPLOSION_SIZE/2, cy - EXPLOSION_SIZE/2, EXPLOSION_SIZE, EXPLOSION_SIZE);
-      gameCtx.restore();
+      planeCtx.save();
+      planeCtx.globalAlpha = 1;
+      planeCtx.globalCompositeOperation = "source-over";
+      planeCtx.drawImage(p.explosionImg, cx - EXPLOSION_SIZE/2, cy - EXPLOSION_SIZE/2, EXPLOSION_SIZE, EXPLOSION_SIZE);
+      planeCtx.restore();
     } else {
-      drawRedCross(gameCtx, cx, cy, 16);
+      drawRedCross(planeCtx, cx, cy, 16);
     }
   }
+
+  planeCtx.restore();
 }
 
 function drawBuildings(){
@@ -2460,6 +2475,7 @@ function startNewRound(){
   scoreCanvas.style.display = "block";
   gameCanvas.style.display = "block";
   scoreCanvasBottom.style.display = "block";
+  planeCanvas.style.display = "block";
 
   initPoints(); // ориентации на базе
   blueFlagCarrier = null;
@@ -2540,6 +2556,11 @@ function resizeCanvas() {
   aimCanvas.style.height = window.innerHeight + 'px';
   aimCanvas.width = window.innerWidth;
   aimCanvas.height = window.innerHeight;
+
+  planeCanvas.style.width = window.innerWidth + 'px';
+  planeCanvas.style.height = window.innerHeight + 'px';
+  planeCanvas.width = window.innerWidth;
+  planeCanvas.height = window.innerHeight;
 
 
   // Переинициализируем самолёты

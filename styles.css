@@ -74,6 +74,20 @@ body {
   pointer-events: none;
   /* Ensure the arrow renders above the game field */
   z-index: 20;
+
+}
+
+/* Overlay canvas for planes */
+#planeCanvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100dvh;
+  pointer-events: none;
+  /* Highest layer so planes appear above the aiming arrow */
+  z-index: 30;
+
 }
 
 /* Меню выбора режима */
