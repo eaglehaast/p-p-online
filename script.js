@@ -54,13 +54,13 @@ arrowSprite.src = "sprite_ copy.png";
 const ARROW_Y = 358;   // vertical offset of arrow graphic
 const PART_H  = 254;   // height of arrow graphic
 
-// Horizontal slices for tail, shaft, and head within the sprite
-const TAIL_X  = 35;
-const TAIL_W  = 364;
+// Horizontal slices for head, shaft, and tail within the sprite
+const HEAD_X  = 35;
+const HEAD_W  = 364;
 const SHAFT_X = 422;
 const SHAFT_W = 576;
-const HEAD_X  = 1034;
-const HEAD_W  = 336;
+const TAIL_X  = 1034;
+const TAIL_W  = 336;
 
 
 // Scale factor so the arrow is about half the plane's size
