@@ -123,6 +123,7 @@ const BOUNCE_FRAMES        = 68;
 // Duration of a full-speed flight in seconds (previously measured in frames)
 const FLIGHT_DURATION_SEC  = BOUNCE_FRAMES / 60;
 const MAX_DRAG_DISTANCE    = 100;    // px
+const DRAG_ROTATION_THRESHOLD = 5;   // px slack before the plane starts to turn
 const ATTACK_RANGE_PX      = 300;    // px
 let FIELD_BORDER_OFFSET = FIELD_BORDER_THICKNESS; // внутренняя граница для отражения
 // Используем бесконечное количество сегментов,
@@ -1486,8 +1487,13 @@ function handleAAForPlane(p, fp){
       vdist = MAX_DRAG_DISTANCE;
     }
 
-    // вращаем самолёт по направлению предполагаемого полёта
-    plane.angle = Math.atan2(-vdy, -vdx) + Math.PI/2;
+    // вращаем самолёт по направлению полёта только после небольшого смещения
+    // чтобы избежать резких рывков при лёгком касании
+    if(vdist > DRAG_ROTATION_THRESHOLD){
+      plane.angle = Math.atan2(-vdy, -vdx) + Math.PI/2;
+    } else {
+      plane.angle = handleCircle.origAngle;
+    }
 
     // Offset arrow so the drag point grabs the middle of the tail
     const halfTail = TAIL_DEST_W / 2;
