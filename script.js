@@ -20,6 +20,12 @@ const aimCtx      = aimCanvas.getContext("2d");
 const planeCanvas = document.getElementById("planeCanvas");
 const planeCtx    = planeCanvas.getContext("2d");
 
+// Enable smoothing so rotated images (planes, arrows) don't appear jagged
+[gameCtx, aimCtx, planeCtx].forEach(ctx => {
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+});
+
 const modeMenuDiv = document.getElementById("modeMenu");
 const hotSeatBtn  = document.getElementById("hotSeatBtn");
 const computerBtn = document.getElementById("computerBtn");
@@ -1778,6 +1784,7 @@ function drawThinPlane(ctx2d, plane){
   ctx2d.save();
   ctx2d.translate(cx, cy);
   ctx2d.rotate(angle);
+  ctx2d.filter = "blur(0.2px)"; // slight blur to soften rotated edges
   const showEngine = !(plane.burning && isExplosionFinished(plane));
   if(color === "blue"){
     if(showEngine){
@@ -2100,6 +2107,7 @@ function drawArrow(ctx, cx, cy, dx, dy) {
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(ang);
+  ctx.filter = "blur(0.2px)"; // soften jagged arrow when rotated
 
   // Tail (fixed size, anchored at the drag point, rotated 180°)
   const tailCenterX = -shaftLen / 2 - TAIL_DEST_W / 2;
