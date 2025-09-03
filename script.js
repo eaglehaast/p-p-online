@@ -249,6 +249,7 @@ let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_STA
 let currentPlacer = null; // 'green' | 'blue'
 
 let settings = { addAA: false, sharpEdges: false };
+let randomMapEachRound = false;
 
 function loadSettings(){
   const fr = parseInt(localStorage.getItem('settings.flightRangeCells'));
@@ -459,7 +460,8 @@ if(classicRulesBtn){
   classicRulesBtn.addEventListener('click', () => {
     flightRangeCells = 15;
     aimingAmplitude = 10 / 4; // 10°
-    mapIndex = 1;
+    randomMapEachRound = true;
+    mapIndex = Math.floor(Math.random() * MAPS.length);
     settings.addAA = false;
     settings.sharpEdges = false;
     applyCurrentMap();
@@ -472,6 +474,7 @@ if(advancedSettingsBtn){
     if(advancedSettingsBtn.classList.contains('selected')){
       window.location.href = 'settings.html';
     } else {
+      randomMapEachRound = false;
       loadSettings();
       classicRulesBtn?.classList.remove('selected');
       advancedSettingsBtn.classList.add('selected');
@@ -2535,8 +2538,10 @@ function startNewRound(){
   aaUnits = [];
 
   aiMoveScheduled = false;
-
-  // оставляем текущую карту
+  if (randomMapEachRound) {
+    mapIndex = Math.floor(Math.random() * MAPS.length);
+    applyCurrentMap();
+  }
 
   scoreCanvas.style.display = "block";
   gameCanvas.style.display = "block";
