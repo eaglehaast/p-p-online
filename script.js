@@ -99,7 +99,8 @@ function colorWithAlpha(color, alpha){
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
-let brickFrameBorderPx = FIELD_BORDER_THICKNESS;
+let brickFrameBorderPxX = FIELD_BORDER_THICKNESS;
+let brickFrameBorderPxY = FIELD_BORDER_THICKNESS;
 brickFrameImg.onload = () => {
   const tempCanvas = document.createElement("canvas");
   tempCanvas.width = brickFrameImg.naturalWidth;
@@ -107,15 +108,29 @@ brickFrameImg.onload = () => {
   const tempCtx = tempCanvas.getContext("2d");
   tempCtx.drawImage(brickFrameImg, 0, 0);
   const data = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height).data;
+
   let top = 0;
-  outer: for (; top < tempCanvas.height; top++) {
+  topLoop: for (; top < tempCanvas.height; top++) {
     for (let x = 0; x < tempCanvas.width; x++) {
       if (data[(top * tempCanvas.width + x) * 4 + 3] === 0) {
-        break outer;
+        break topLoop;
       }
     }
   }
-  brickFrameBorderPx = top;
+
+  brickFrameBorderPxY = top;
+
+  let left = 0;
+  leftLoop: for (; left < tempCanvas.width; left++) {
+    for (let y = 0; y < tempCanvas.height; y++) {
+      if (data[(y * tempCanvas.width + left) * 4 + 3] === 0) {
+        break leftLoop;
+      }
+    }
+  }
+  brickFrameBorderPxX = left;
+
+
   updateFieldDimensions();
   if(points.length) initPoints();
 };
@@ -156,7 +171,8 @@ const FLIGHT_DURATION_SEC  = BOUNCE_FRAMES / 60;
 const MAX_DRAG_DISTANCE    = 100;    // px
 const DRAG_ROTATION_THRESHOLD = 5;   // px slack before the plane starts to turn
 const ATTACK_RANGE_PX      = 300;    // px
-let FIELD_BORDER_OFFSET = FIELD_BORDER_THICKNESS; // внутренняя граница для отражения
+let FIELD_BORDER_OFFSET_X = FIELD_BORDER_THICKNESS; // внутренняя граница для отражения по горизонтали
+let FIELD_BORDER_OFFSET_Y = FIELD_BORDER_THICKNESS; // и по вертикали
 // Используем бесконечное количество сегментов,
 // чтобы следы самолётов сохранялись до конца раунда.
 const MAX_TRAIL_SEGMENTS   = Infinity;
@@ -174,12 +190,31 @@ const EXPLOSION_SIZE        = 96;    // px, larger for better visibility
 
 function updateFieldBorderOffset(){
   if(settings.sharpEdges){
-    FIELD_BORDER_OFFSET = 0;
+    FIELD_BORDER_OFFSET_X = 0;
+    FIELD_BORDER_OFFSET_Y = 0;
   } else if(brickFrameImg.naturalWidth){
-    FIELD_BORDER_OFFSET = brickFrameBorderPx * (FIELD_WIDTH / brickFrameImg.naturalWidth);
+
+    const scaleX = FIELD_WIDTH / brickFrameImg.naturalWidth;
+    const scaleY = gameCanvas.height / brickFrameImg.naturalHeight;
+    FIELD_BORDER_OFFSET_X = brickFrameBorderPxX * scaleX;
+    FIELD_BORDER_OFFSET_Y = brickFrameBorderPxY * scaleY;
   } else {
-    FIELD_BORDER_OFFSET = FIELD_BORDER_THICKNESS;
+    FIELD_BORDER_OFFSET_X = FIELD_BORDER_THICKNESS;
+    FIELD_BORDER_OFFSET_Y = FIELD_BORDER_THICKNESS;
   }
+}
+
+function updateFieldDimensions(){
+  if(brickFrameImg.naturalWidth && brickFrameImg.naturalHeight){
+    const aspect = brickFrameImg.naturalWidth / brickFrameImg.naturalHeight;
+    FIELD_WIDTH = gameCanvas.height * aspect;
+    FIELD_LEFT = (gameCanvas.width - FIELD_WIDTH) / 2;
+
+  } else {
+    FIELD_LEFT = 0;
+    FIELD_WIDTH = gameCanvas.width;
+  }
+  updateFieldBorderOffset();
 }
 
 function updateFieldDimensions(){
@@ -666,8 +701,10 @@ function isValidAAPlacement(x,y){
     return false;
   }
 
-  if (x < FIELD_LEFT + FIELD_BORDER_OFFSET ||
-      x > FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET) {
+
+  if (x < FIELD_LEFT + FIELD_BORDER_OFFSET_X ||
+      x > FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X) {
+
     return false;
   }
 
@@ -1394,32 +1431,36 @@ function handleAAForPlane(p, fp){
       p.y += fp.vy * deltaSec;
 
         // field borders
-        if (p.x < FIELD_LEFT + FIELD_BORDER_OFFSET) {
-          p.x = FIELD_LEFT + FIELD_BORDER_OFFSET;
+
+        if (p.x < FIELD_LEFT + FIELD_BORDER_OFFSET_X) {
+          p.x = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
+
           if (settings.sharpEdges) {
             destroyPlane(fp);
             continue;
           }
           fp.vx = -fp.vx;
         }
-        else if (p.x > FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET) {
-          p.x = FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET;
+
+        else if (p.x > FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X) {
+          p.x = FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X;
+
           if (settings.sharpEdges) {
             destroyPlane(fp);
             continue;
           }
           fp.vx = -fp.vx;
         }
-        if (p.y < FIELD_BORDER_OFFSET) {
-          p.y = FIELD_BORDER_OFFSET;
+        if (p.y < FIELD_BORDER_OFFSET_Y) {
+          p.y = FIELD_BORDER_OFFSET_Y;
           if (settings.sharpEdges) {
             destroyPlane(fp);
             continue;
           }
           fp.vy = -fp.vy;
         }
-        else if (p.y > gameCanvas.height - FIELD_BORDER_OFFSET) {
-          p.y = gameCanvas.height - FIELD_BORDER_OFFSET;
+        else if (p.y > gameCanvas.height - FIELD_BORDER_OFFSET_Y) {
+          p.y = gameCanvas.height - FIELD_BORDER_OFFSET_Y;
           if (settings.sharpEdges) {
             destroyPlane(fp);
             continue;
