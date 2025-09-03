@@ -107,28 +107,35 @@ brickFrameImg.onload = () => {
   tempCanvas.height = brickFrameImg.naturalHeight;
   const tempCtx = tempCanvas.getContext("2d");
   tempCtx.drawImage(brickFrameImg, 0, 0);
-  const data = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height).data;
 
-  let top = 0;
-  topLoop: for (; top < tempCanvas.height; top++) {
-    for (let x = 0; x < tempCanvas.width; x++) {
-      if (data[(top * tempCanvas.width + x) * 4 + 3] === 0) {
-        break topLoop;
-      }
-    }
+  const { data, width, height } = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+
+  const alphaAt = (x, y) => data[(y * width + x) * 4 + 3];
+
+  // locate outer bounds of the brick frame
+  let topBound = 0;
+  while (topBound < height && !Array.from({ length: width }, (_, x) => alphaAt(x, topBound)).some(a => a > 0)) {
+    topBound++;
   }
 
-  brickFrameBorderPxY = top;
-
-  let left = 0;
-  leftLoop: for (; left < tempCanvas.width; left++) {
-    for (let y = 0; y < tempCanvas.height; y++) {
-      if (data[(y * tempCanvas.width + left) * 4 + 3] === 0) {
-        break leftLoop;
-      }
-    }
+  let leftBound = 0;
+  while (leftBound < width && !Array.from({ length: height }, (_, y) => alphaAt(leftBound, y)).some(a => a > 0)) {
+    leftBound++;
   }
-  brickFrameBorderPxX = left;
+
+  const centerX = Math.floor(width / 2);
+  let top = topBound;
+  while (top < height && alphaAt(centerX, top) > 0) {
+    top++;
+  }
+  brickFrameBorderPxY = top - topBound;
+
+  const centerY = Math.floor(height / 2);
+  let left = leftBound;
+  while (left < width && alphaAt(left, centerY) > 0) {
+    left++;
+  }
+  brickFrameBorderPxX = left - leftBound;
 
 
   updateFieldDimensions();
@@ -205,27 +212,10 @@ function updateFieldBorderOffset(){
 }
 
 function updateFieldDimensions(){
-  if(brickFrameImg.naturalWidth && brickFrameImg.naturalHeight){
-    const aspect = brickFrameImg.naturalWidth / brickFrameImg.naturalHeight;
-    FIELD_WIDTH = gameCanvas.height * aspect;
-    FIELD_LEFT = (gameCanvas.width - FIELD_WIDTH) / 2;
 
-  } else {
-    FIELD_LEFT = 0;
-    FIELD_WIDTH = gameCanvas.width;
-  }
-  updateFieldBorderOffset();
-}
+  FIELD_LEFT = 0;
+  FIELD_WIDTH = gameCanvas.width;
 
-function updateFieldDimensions(){
-  if(brickFrameImg.naturalWidth && brickFrameImg.naturalHeight){
-    const aspect = brickFrameImg.naturalWidth / brickFrameImg.naturalHeight;
-    FIELD_WIDTH = gameCanvas.height * aspect;
-    FIELD_LEFT = (gameCanvas.width - FIELD_WIDTH) / 2;
-  } else {
-    FIELD_LEFT = 0;
-    FIELD_WIDTH = gameCanvas.width;
-  }
   updateFieldBorderOffset();
 }
 
@@ -2670,20 +2660,20 @@ function applyCurrentMap(){
 function resizeCanvas() {
   const canvas = gameCanvas;
   const container = document.body;
-  
+
   // Максимальный размер с учётом табло
-  const maxWidth = Math.min(window.innerWidth * 0.95, 350);
+  const maxWidth = Math.min(window.innerWidth * 0.95, 383);
   const maxHeight = Math.min(window.innerHeight - 120, window.innerHeight * 0.7);
-  
+
   canvas.style.width = maxWidth + 'px';
   canvas.style.height = maxHeight + 'px';
 
   // Масштабируем canvas пропорционально
-  const scale = Math.min(maxWidth / 300, maxHeight / 400);
-  canvas.width = 300 * scale;
+  const scale = Math.min(maxWidth / 383, maxHeight / 400);
+  canvas.width = 383 * scale;
   canvas.height = 400 * scale;
 
-  updateFieldBorderOffset();
+  updateFieldDimensions();
 
   aimCanvas.style.width = window.innerWidth + 'px';
   aimCanvas.style.height = window.innerHeight + 'px';
