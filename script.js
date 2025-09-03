@@ -107,6 +107,7 @@ brickFrameImg.onload = () => {
   tempCanvas.height = brickFrameImg.naturalHeight;
   const tempCtx = tempCanvas.getContext("2d");
   tempCtx.drawImage(brickFrameImg, 0, 0);
+
   const { data, width, height } = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
 
   const alphaAt = (x, y) => data[(y * width + x) * 4 + 3];
@@ -135,6 +136,7 @@ brickFrameImg.onload = () => {
     left++;
   }
   brickFrameBorderPxX = left - leftBound;
+
 
   updateFieldDimensions();
   if(points.length) initPoints();
@@ -198,6 +200,7 @@ function updateFieldBorderOffset(){
     FIELD_BORDER_OFFSET_X = 0;
     FIELD_BORDER_OFFSET_Y = 0;
   } else if(brickFrameImg.naturalWidth){
+
     const scaleX = FIELD_WIDTH / brickFrameImg.naturalWidth;
     const scaleY = gameCanvas.height / brickFrameImg.naturalHeight;
     FIELD_BORDER_OFFSET_X = brickFrameBorderPxX * scaleX;
@@ -209,8 +212,10 @@ function updateFieldBorderOffset(){
 }
 
 function updateFieldDimensions(){
+
   FIELD_LEFT = 0;
   FIELD_WIDTH = gameCanvas.width;
+
   updateFieldBorderOffset();
 }
 
@@ -686,8 +691,10 @@ function isValidAAPlacement(x,y){
     return false;
   }
 
+
   if (x < FIELD_LEFT + FIELD_BORDER_OFFSET_X ||
       x > FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X) {
+
     return false;
   }
 
@@ -1414,16 +1421,20 @@ function handleAAForPlane(p, fp){
       p.y += fp.vy * deltaSec;
 
         // field borders
+
         if (p.x < FIELD_LEFT + FIELD_BORDER_OFFSET_X) {
           p.x = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
+
           if (settings.sharpEdges) {
             destroyPlane(fp);
             continue;
           }
           fp.vx = -fp.vx;
         }
+
         else if (p.x > FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X) {
           p.x = FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X;
+
           if (settings.sharpEdges) {
             destroyPlane(fp);
             continue;
