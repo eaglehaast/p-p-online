@@ -224,10 +224,14 @@ function isBrickPixel(x, y){
 }
 
 function updateFieldDimensions(){
-
-  FIELD_LEFT = 0;
-  FIELD_WIDTH = gameCanvas.width;
-
+  if(brickFrameImg.naturalWidth && brickFrameImg.naturalHeight){
+    const aspect = brickFrameImg.naturalWidth / brickFrameImg.naturalHeight;
+    FIELD_WIDTH = gameCanvas.height * aspect;
+    FIELD_LEFT = (gameCanvas.width - FIELD_WIDTH) / 2;
+  } else {
+    FIELD_LEFT = 0;
+    FIELD_WIDTH = gameCanvas.width;
+  }
   updateFieldBorderOffset();
 }
 
@@ -2694,8 +2698,8 @@ function resizeCanvas() {
   canvas.style.height = maxHeight + 'px';
 
   // Масштабируем canvas пропорционально
-  const scale = Math.min(maxWidth / 383, maxHeight / 400);
-  canvas.width = 383 * scale;
+  const scale = Math.min(maxWidth / 300, maxHeight / 400);
+  canvas.width = 300 * scale;
   canvas.height = 400 * scale;
 
   updateFieldDimensions();
