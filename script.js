@@ -52,7 +52,10 @@ fieldImg.src = "field 5.png";
 const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
 
 const brickFrameImg = new Image();
-brickFrameImg.src = "brick frame 2.png";
+brickFrameImg.src = "brick frame 3.png";
+
+let FIELD_LEFT = 0;
+let FIELD_WIDTH = 0;
 
 // Sprite used for the aiming arrow
 const arrowSprite = new Image();
@@ -96,7 +99,8 @@ function colorWithAlpha(color, alpha){
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
-let brickFrameBorderPx = FIELD_BORDER_THICKNESS;
+let brickFrameBorderPxX = FIELD_BORDER_THICKNESS;
+let brickFrameBorderPxY = FIELD_BORDER_THICKNESS;
 brickFrameImg.onload = () => {
   const tempCanvas = document.createElement("canvas");
   tempCanvas.width = brickFrameImg.naturalWidth;
@@ -104,16 +108,29 @@ brickFrameImg.onload = () => {
   const tempCtx = tempCanvas.getContext("2d");
   tempCtx.drawImage(brickFrameImg, 0, 0);
   const data = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height).data;
+
   let top = 0;
-  outer: for (; top < tempCanvas.height; top++) {
+  topLoop: for (; top < tempCanvas.height; top++) {
     for (let x = 0; x < tempCanvas.width; x++) {
       if (data[(top * tempCanvas.width + x) * 4 + 3] === 0) {
-        break outer;
+        break topLoop;
       }
     }
   }
-  brickFrameBorderPx = top;
-  updateFieldBorderOffset();
+  brickFrameBorderPxY = top;
+
+  let left = 0;
+  leftLoop: for (; left < tempCanvas.width; left++) {
+    for (let y = 0; y < tempCanvas.height; y++) {
+      if (data[(y * tempCanvas.width + left) * 4 + 3] === 0) {
+        break leftLoop;
+      }
+    }
+  }
+  brickFrameBorderPxX = left;
+
+  updateFieldDimensions();
+  if(points.length) initPoints();
 };
 
 
@@ -152,7 +169,8 @@ const FLIGHT_DURATION_SEC  = BOUNCE_FRAMES / 60;
 const MAX_DRAG_DISTANCE    = 100;    // px
 const DRAG_ROTATION_THRESHOLD = 5;   // px slack before the plane starts to turn
 const ATTACK_RANGE_PX      = 300;    // px
-let FIELD_BORDER_OFFSET = FIELD_BORDER_THICKNESS; // внутренняя граница для отражения
+let FIELD_BORDER_OFFSET_X = FIELD_BORDER_THICKNESS; // внутренняя граница для отражения по горизонтали
+let FIELD_BORDER_OFFSET_Y = FIELD_BORDER_THICKNESS; // и по вертикали
 // Используем бесконечное количество сегментов,
 // чтобы следы самолётов сохранялись до конца раунда.
 const MAX_TRAIL_SEGMENTS   = Infinity;
@@ -170,12 +188,29 @@ const EXPLOSION_SIZE        = 96;    // px, larger for better visibility
 
 function updateFieldBorderOffset(){
   if(settings.sharpEdges){
-    FIELD_BORDER_OFFSET = 0;
+    FIELD_BORDER_OFFSET_X = 0;
+    FIELD_BORDER_OFFSET_Y = 0;
   } else if(brickFrameImg.naturalWidth){
-    FIELD_BORDER_OFFSET = brickFrameBorderPx * (gameCanvas.width / brickFrameImg.naturalWidth);
+    const scaleX = FIELD_WIDTH / brickFrameImg.naturalWidth;
+    const scaleY = gameCanvas.height / brickFrameImg.naturalHeight;
+    FIELD_BORDER_OFFSET_X = brickFrameBorderPxX * scaleX;
+    FIELD_BORDER_OFFSET_Y = brickFrameBorderPxY * scaleY;
   } else {
-    FIELD_BORDER_OFFSET = FIELD_BORDER_THICKNESS;
+    FIELD_BORDER_OFFSET_X = FIELD_BORDER_THICKNESS;
+    FIELD_BORDER_OFFSET_Y = FIELD_BORDER_THICKNESS;
   }
+}
+
+function updateFieldDimensions(){
+  if(brickFrameImg.naturalWidth && brickFrameImg.naturalHeight){
+    const aspect = brickFrameImg.naturalWidth / brickFrameImg.naturalHeight;
+    FIELD_WIDTH = gameCanvas.height * aspect;
+    FIELD_LEFT = (gameCanvas.width - FIELD_WIDTH) / 2;
+  } else {
+    FIELD_LEFT = 0;
+    FIELD_WIDTH = gameCanvas.width;
+  }
+  updateFieldBorderOffset();
 }
 
 
@@ -326,12 +361,12 @@ let aiMoveScheduled = false;
 /* ======= INIT ======= */
 function initPoints(){
   points = [];
-  const spacing = gameCanvas.width / (PLANES_PER_SIDE + 1);
+  const spacing = FIELD_WIDTH / (PLANES_PER_SIDE + 1);
   const middleOffset = MIDDLE_GAP_EXTRA_PX / 2;
 
   // Green (низ поля) — смотрят ВВЕРХ (к сопернику)
   for(let i = 1; i <= PLANES_PER_SIDE; i++){
-    let x = spacing * i;
+    let x = FIELD_LEFT + spacing * i;
     if(i === Math.ceil(PLANES_PER_SIDE / 2)) x -= middleOffset;
     if(i === Math.ceil(PLANES_PER_SIDE / 2) + 1) x += middleOffset;
     points.push(makePlane(x, gameCanvas.height - 40, "green", 0)); // 0 рад — нос вверх
@@ -339,7 +374,7 @@ function initPoints(){
 
   // Blue (верх поля) — смотрят ВНИЗ
   for(let i = 1; i <= PLANES_PER_SIDE; i++){
-    let x = spacing * i;
+    let x = FIELD_LEFT + spacing * i;
     if(i === Math.ceil(PLANES_PER_SIDE / 2)) x -= middleOffset;
     if(i === Math.ceil(PLANES_PER_SIDE / 2) + 1) x += middleOffset;
     points.push(makePlane(x, 40, "blue", Math.PI)); // π рад — нос вниз
@@ -650,6 +685,11 @@ function isValidAAPlacement(x,y){
     return false;
   }
 
+  if (x < FIELD_LEFT + FIELD_BORDER_OFFSET_X ||
+      x > FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X) {
+    return false;
+  }
+
   // Prevent placing the AA center inside any building
   for(const b of buildings){
     const left = b.x - b.width/2;
@@ -689,9 +729,9 @@ function drawAAPlacementZone(){
   gameCtx.save();
   gameCtx.fillStyle = colorWithAlpha(currentPlacer, 0.05);
   if(currentPlacer === 'green'){
-    gameCtx.fillRect(0, half, gameCanvas.width, half);
+    gameCtx.fillRect(FIELD_LEFT, half, FIELD_WIDTH, half);
   } else {
-    gameCtx.fillRect(0, 0, gameCanvas.width, half);
+    gameCtx.fillRect(FIELD_LEFT, 0, FIELD_WIDTH, half);
   }
   gameCtx.restore();
 }
@@ -868,7 +908,7 @@ function doComputerMove(){
   const enemies  = points.filter(p=> p.color==="green" && p.isAlive && !p.burning);
   if(!aiPlanes.length || !enemies.length) return;
 
-  const centerX = gameCanvas.width/2;
+  const centerX = FIELD_LEFT + FIELD_WIDTH/2;
   const topY    = 40;
   const bottomY = gameCanvas.height - 40;
 
@@ -1373,32 +1413,32 @@ function handleAAForPlane(p, fp){
       p.y += fp.vy * deltaSec;
 
         // field borders
-        if (p.x < FIELD_BORDER_OFFSET) {
-          p.x = FIELD_BORDER_OFFSET;
+        if (p.x < FIELD_LEFT + FIELD_BORDER_OFFSET_X) {
+          p.x = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
           if (settings.sharpEdges) {
             destroyPlane(fp);
             continue;
           }
           fp.vx = -fp.vx;
         }
-        else if (p.x > gameCanvas.width - FIELD_BORDER_OFFSET) {
-          p.x = gameCanvas.width - FIELD_BORDER_OFFSET;
+        else if (p.x > FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X) {
+          p.x = FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X;
           if (settings.sharpEdges) {
             destroyPlane(fp);
             continue;
           }
           fp.vx = -fp.vx;
         }
-        if (p.y < FIELD_BORDER_OFFSET) {
-          p.y = FIELD_BORDER_OFFSET;
+        if (p.y < FIELD_BORDER_OFFSET_Y) {
+          p.y = FIELD_BORDER_OFFSET_Y;
           if (settings.sharpEdges) {
             destroyPlane(fp);
             continue;
           }
           fp.vy = -fp.vy;
         }
-        else if (p.y > gameCanvas.height - FIELD_BORDER_OFFSET) {
-          p.y = gameCanvas.height - FIELD_BORDER_OFFSET;
+        else if (p.y > gameCanvas.height - FIELD_BORDER_OFFSET_Y) {
+          p.y = gameCanvas.height - FIELD_BORDER_OFFSET_Y;
           if (settings.sharpEdges) {
             destroyPlane(fp);
             continue;
@@ -1586,11 +1626,12 @@ function handleAAForPlane(p, fp){
 
 /* ======= RENDER ======= */
 function drawFieldBackground(ctx2d, w, h){
+  ctx2d.fillStyle = "#fffbea";
+  ctx2d.fillRect(0,0,w,h);
   if(fieldImg.complete){
-    ctx2d.drawImage(fieldImg, 0, 0, w, h);
+    ctx2d.drawImage(fieldImg, FIELD_LEFT, 0, FIELD_WIDTH, h);
   } else {
-    ctx2d.fillStyle = "#fffbea";
-    ctx2d.fillRect(0,0,w,h);
+    ctx2d.fillRect(FIELD_LEFT, 0, FIELD_WIDTH, h);
   }
 }
 
@@ -1656,35 +1697,34 @@ function drawNailEdges(ctx2d, w, h){
 
 function drawBrickEdges(ctx2d, w, h){
   if(brickFrameImg.complete){
-    ctx2d.drawImage(brickFrameImg, 0, 0, w, h);
+    ctx2d.drawImage(brickFrameImg, FIELD_LEFT, 0, FIELD_WIDTH, h);
   } else {
     const brickHeight = FIELD_BORDER_THICKNESS;
-    // draw all walls fully inside the canvas
-
-    // top border
     ctx2d.save();
-    ctx2d.translate(w / 2, brickHeight / 2);
-    drawBrickWall(ctx2d, w, brickHeight);
+    ctx2d.translate(FIELD_LEFT, 0);
+
+    ctx2d.save();
+    ctx2d.translate(FIELD_WIDTH / 2, brickHeight / 2);
+    drawBrickWall(ctx2d, FIELD_WIDTH, brickHeight);
     ctx2d.restore();
 
-    // bottom border
     ctx2d.save();
-    ctx2d.translate(w / 2, h - brickHeight / 2);
-    drawBrickWall(ctx2d, w, brickHeight);
+    ctx2d.translate(FIELD_WIDTH / 2, h - brickHeight / 2);
+    drawBrickWall(ctx2d, FIELD_WIDTH, brickHeight);
     ctx2d.restore();
 
-    // left border
     ctx2d.save();
     ctx2d.translate(brickHeight / 2, h / 2);
     ctx2d.rotate(Math.PI / 2);
     drawBrickWall(ctx2d, h, brickHeight);
     ctx2d.restore();
 
-    // right border
     ctx2d.save();
-    ctx2d.translate(w - brickHeight / 2, h / 2);
+    ctx2d.translate(FIELD_WIDTH - brickHeight / 2, h / 2);
     ctx2d.rotate(Math.PI / 2);
     drawBrickWall(ctx2d, h, brickHeight);
+    ctx2d.restore();
+
     ctx2d.restore();
   }
 }
@@ -2016,7 +2056,7 @@ function drawFlag(ctx2d, x, y, color){
 }
 
 function drawFlags(){
-  const centerX = gameCanvas.width / 2;
+  const centerX = FIELD_LEFT + FIELD_WIDTH / 2;
   if(!blueFlagCarrier){
     drawFlag(gameCtx, centerX, 40, "blue");
   }
@@ -2306,7 +2346,7 @@ function distanceToFlag(px, py, baseX, baseY){
 }
 
 function handleFlagInteractions(plane){
-  const centerX = gameCanvas.width / 2;
+  const centerX = FIELD_LEFT + FIELD_WIDTH / 2;
   const topY = 40;
   const bottomY = gameCanvas.height - 40;
   const flagRadius = POINT_RADIUS;
@@ -2462,10 +2502,10 @@ function generateRandomBuildingAligned(){
     const width = buildingSize[type].width;
     const height= buildingSize[type].height;
 
-    const x = getRandomGridAlignedCoordinate(gameCanvas.width,  width/2);
+    const x = FIELD_LEFT + getRandomGridAlignedCoordinate(FIELD_WIDTH,  width/2);
     const minY = 80; // избегаем зон самолётов
-  const maxY = gameCanvas.height - 80;
-  const y = minY + Math.random() * (maxY - minY - height);
+    const maxY = gameCanvas.height - 80;
+    const y = minY + Math.random() * (maxY - minY - height);
     if(x===null || y===null){ attempt++; continue; }
 
     const b = { type, x, y, color, width, height };
@@ -2566,7 +2606,7 @@ function startNewRound(){
 /* ======= Map helpers ======= */
 function applyCurrentMap(){
   buildings = [];
-  updateFieldBorderOffset();
+  updateFieldDimensions();
   if(MAPS[mapIndex] === "clear sky"){
     // no buildings to add
   } else if (MAPS[mapIndex] === "wall") {
@@ -2574,19 +2614,19 @@ function applyCurrentMap(){
     const wallHeight = CELL_SIZE;
     buildings.push({
       type: "wall",
-      x: gameCanvas.width / 2,
+      x: FIELD_LEFT + FIELD_WIDTH / 2,
       y: gameCanvas.height / 2,
       width: wallWidth,
       height: wallHeight,
       color: "darkred"
     });
   } else if (MAPS[mapIndex] === "two walls") {
-    const wallWidth = gameCanvas.width / 2;
+    const wallWidth = FIELD_WIDTH / 2;
     const wallHeight = CELL_SIZE;
     const offset = CELL_SIZE * 2;
     buildings.push({
       type: "wall",
-      x: wallWidth / 2,
+      x: FIELD_LEFT + wallWidth / 2,
       y: gameCanvas.height / 2 + offset,
       width: wallWidth,
       height: wallHeight,
@@ -2594,7 +2634,7 @@ function applyCurrentMap(){
     });
     buildings.push({
       type: "wall",
-      x: gameCanvas.width - wallWidth / 2,
+      x: FIELD_LEFT + FIELD_WIDTH - wallWidth / 2,
       y: gameCanvas.height / 2 - offset,
       width: wallWidth,
       height: wallHeight,
