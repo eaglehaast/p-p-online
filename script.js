@@ -53,6 +53,7 @@ const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
 
 const brickFrameImg = new Image();
 brickFrameImg.src = "brick frame 3.png";
+let brickFrameData = null;
 
 let FIELD_LEFT = 0;
 let FIELD_WIDTH = 0;
@@ -108,7 +109,8 @@ brickFrameImg.onload = () => {
   const tempCtx = tempCanvas.getContext("2d");
   tempCtx.drawImage(brickFrameImg, 0, 0);
 
-  const { data, width, height } = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+  brickFrameData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+  const { data, width, height } = brickFrameData;
 
   const alphaAt = (x, y) => data[(y * width + x) * 4 + 3];
 
@@ -169,8 +171,9 @@ document.addEventListener('dblclick', (e) => {
 });
 
 /* ======= CONFIG ======= */
+const PLANE_SCALE          = 0.9;    // 10% smaller planes
 const CELL_SIZE            = 20;     // px
-const POINT_RADIUS         = 15;     // px (увеличено для мобильных)
+const POINT_RADIUS         = 15 * PLANE_SCALE;     // px (увеличено для мобильных)
 const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit Anti-Aircraft center
 const BOUNCE_FRAMES        = 68;
 // Duration of a full-speed flight in seconds (previously measured in frames)
@@ -209,6 +212,15 @@ function updateFieldBorderOffset(){
     FIELD_BORDER_OFFSET_X = FIELD_BORDER_THICKNESS;
     FIELD_BORDER_OFFSET_Y = FIELD_BORDER_THICKNESS;
   }
+}
+
+function isBrickPixel(x, y){
+  if(!brickFrameData) return false;
+  const imgX = Math.floor((x - FIELD_LEFT) / FIELD_WIDTH * brickFrameData.width);
+  const imgY = Math.floor(y / gameCanvas.height * brickFrameData.height);
+  if(imgX < 0 || imgX >= brickFrameData.width || imgY < 0 || imgY >= brickFrameData.height) return false;
+  const alpha = brickFrameData.data[(imgY * brickFrameData.width + imgX) * 4 + 3];
+  return alpha > 0;
 }
 
 function updateFieldDimensions(){
@@ -1416,9 +1428,21 @@ function handleAAForPlane(p, fp){
     const current = [...flyingPoints];
     for(const fp of current){
       const p = fp.plane;
+      const prevX = p.x;
+      const prevY = p.y;
 
       p.x += fp.vx * deltaSec;
       p.y += fp.vy * deltaSec;
+
+        if(isBrickPixel(p.x, p.y)){
+          if(Math.abs(p.x - prevX) > Math.abs(p.y - prevY)){
+            p.x = prevX;
+            fp.vx = -fp.vx;
+          } else {
+            p.y = prevY;
+            fp.vy = -fp.vy;
+          }
+        }
 
         // field borders
 
@@ -1852,6 +1876,7 @@ function drawThinPlane(ctx2d, plane){
   ctx2d.save();
   ctx2d.translate(cx, cy);
   ctx2d.rotate(angle);
+  ctx2d.scale(PLANE_SCALE, PLANE_SCALE);
   ctx2d.filter = "blur(0.2px)"; // slight blur to soften rotated edges
   const showEngine = !(plane.burning && isExplosionFinished(plane));
   if(color === "blue"){
@@ -1904,7 +1929,7 @@ function drawRedCross(ctx2d, cx, cy, size=20){
   ctx2d.save();
   ctx2d.translate(cx, cy);
   ctx2d.strokeStyle = "red";
-  ctx2d.lineWidth = 2;
+  ctx2d.lineWidth = 2 * PLANE_SCALE;
   ctx2d.beginPath();
   ctx2d.moveTo(-size/2, -size/2);
   ctx2d.lineTo( size/2,  size/2);
@@ -1923,7 +1948,7 @@ function drawMiniPlaneWithCross(ctx2d, x, y, color, isAlive, isBurning, scale = 
   ctx2d.translate(x, y);
 
   // Base size of the icon so it fits within the scoreboard cell
-  const size = 16 * scale;
+  const size = 16 * PLANE_SCALE * scale;
 
   let img = null;
   if (color === "blue") {
@@ -2015,7 +2040,7 @@ function drawPlanesAndTrajectories(){
       planeCtx.drawImage(p.explosionImg, cx - EXPLOSION_SIZE/2, cy - EXPLOSION_SIZE/2, EXPLOSION_SIZE, EXPLOSION_SIZE);
       planeCtx.restore();
     } else {
-      drawRedCross(planeCtx, cx, cy, 16);
+    drawRedCross(planeCtx, cx, cy, 16 * PLANE_SCALE);
     }
   }
 
