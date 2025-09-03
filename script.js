@@ -53,6 +53,7 @@ const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
 
 const brickFrameImg = new Image();
 brickFrameImg.src = "brick frame 3.png";
+let brickFrameData = null;
 
 let FIELD_LEFT = 0;
 let FIELD_WIDTH = 0;
@@ -108,7 +109,8 @@ brickFrameImg.onload = () => {
   const tempCtx = tempCanvas.getContext("2d");
   tempCtx.drawImage(brickFrameImg, 0, 0);
 
-  const { data, width, height } = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+  brickFrameData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+  const { data, width, height } = brickFrameData;
 
   const alphaAt = (x, y) => data[(y * width + x) * 4 + 3];
 
@@ -209,6 +211,15 @@ function updateFieldBorderOffset(){
     FIELD_BORDER_OFFSET_X = FIELD_BORDER_THICKNESS;
     FIELD_BORDER_OFFSET_Y = FIELD_BORDER_THICKNESS;
   }
+}
+
+function isBrickPixel(x, y){
+  if(!brickFrameData) return false;
+  const imgX = Math.floor((x - FIELD_LEFT) / FIELD_WIDTH * brickFrameData.width);
+  const imgY = Math.floor(y / gameCanvas.height * brickFrameData.height);
+  if(imgX < 0 || imgX >= brickFrameData.width || imgY < 0 || imgY >= brickFrameData.height) return false;
+  const alpha = brickFrameData.data[(imgY * brickFrameData.width + imgX) * 4 + 3];
+  return alpha > 0;
 }
 
 function updateFieldDimensions(){
@@ -1416,9 +1427,21 @@ function handleAAForPlane(p, fp){
     const current = [...flyingPoints];
     for(const fp of current){
       const p = fp.plane;
+      const prevX = p.x;
+      const prevY = p.y;
 
       p.x += fp.vx * deltaSec;
       p.y += fp.vy * deltaSec;
+
+        if(isBrickPixel(p.x, p.y)){
+          if(Math.abs(p.x - prevX) > Math.abs(p.y - prevY)){
+            p.x = prevX;
+            fp.vx = -fp.vx;
+          } else {
+            p.y = prevY;
+            fp.vy = -fp.vy;
+          }
+        }
 
         // field borders
 
