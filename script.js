@@ -117,6 +117,7 @@ brickFrameImg.onload = () => {
       }
     }
   }
+
   brickFrameBorderPxY = top;
 
   let left = 0;
@@ -128,6 +129,7 @@ brickFrameImg.onload = () => {
     }
   }
   brickFrameBorderPxX = left;
+
 
   updateFieldDimensions();
   if(points.length) initPoints();
@@ -191,6 +193,7 @@ function updateFieldBorderOffset(){
     FIELD_BORDER_OFFSET_X = 0;
     FIELD_BORDER_OFFSET_Y = 0;
   } else if(brickFrameImg.naturalWidth){
+
     const scaleX = FIELD_WIDTH / brickFrameImg.naturalWidth;
     const scaleY = gameCanvas.height / brickFrameImg.naturalHeight;
     FIELD_BORDER_OFFSET_X = brickFrameBorderPxX * scaleX;
@@ -199,6 +202,19 @@ function updateFieldBorderOffset(){
     FIELD_BORDER_OFFSET_X = FIELD_BORDER_THICKNESS;
     FIELD_BORDER_OFFSET_Y = FIELD_BORDER_THICKNESS;
   }
+}
+
+function updateFieldDimensions(){
+  if(brickFrameImg.naturalWidth && brickFrameImg.naturalHeight){
+    const aspect = brickFrameImg.naturalWidth / brickFrameImg.naturalHeight;
+    FIELD_WIDTH = gameCanvas.height * aspect;
+    FIELD_LEFT = (gameCanvas.width - FIELD_WIDTH) / 2;
+
+  } else {
+    FIELD_LEFT = 0;
+    FIELD_WIDTH = gameCanvas.width;
+  }
+  updateFieldBorderOffset();
 }
 
 function updateFieldDimensions(){
@@ -685,8 +701,10 @@ function isValidAAPlacement(x,y){
     return false;
   }
 
+
   if (x < FIELD_LEFT + FIELD_BORDER_OFFSET_X ||
       x > FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X) {
+
     return false;
   }
 
@@ -1413,16 +1431,20 @@ function handleAAForPlane(p, fp){
       p.y += fp.vy * deltaSec;
 
         // field borders
+
         if (p.x < FIELD_LEFT + FIELD_BORDER_OFFSET_X) {
           p.x = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
+
           if (settings.sharpEdges) {
             destroyPlane(fp);
             continue;
           }
           fp.vx = -fp.vx;
         }
+
         else if (p.x > FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X) {
           p.x = FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X;
+
           if (settings.sharpEdges) {
             destroyPlane(fp);
             continue;
