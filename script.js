@@ -265,7 +265,7 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 
 
-const MAPS = ["clear sky", "wall", "two walls"];
+const MAPS = ["clear sky", "wall", "two walls", "6 bricks"];
 
 let mapIndex;
 let flightRangeCells; // cells for menu and physics
@@ -2654,6 +2654,12 @@ function startNewRound(){
 /* ======= Map helpers ======= */
 function applyCurrentMap(){
   buildings = [];
+  // load appropriate brick layout for current map
+  if(MAPS[mapIndex] === "6 bricks"){
+    brickFrameImg.src = "6 bricks.png";
+  } else {
+    brickFrameImg.src = "brick frame 3.png";
+  }
   updateFieldDimensions();
   if(MAPS[mapIndex] === "clear sky"){
     // no buildings to add
