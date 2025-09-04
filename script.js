@@ -265,7 +265,7 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 
 
-const MAPS = ["clear sky", "wall", "two walls"];
+const MAPS = ["clear sky", "wall", "two walls", "6 bricks"];
 
 let mapIndex;
 let flightRangeCells; // cells for menu and physics
@@ -1439,11 +1439,18 @@ function handleAAForPlane(p, fp){
       p.y += fp.vy * deltaSec;
 
         if(isBrickPixel(p.x, p.y)){
-          if(Math.abs(p.x - prevX) > Math.abs(p.y - prevY)){
+          const hitX = isBrickPixel(prevX, p.y);
+          const hitY = isBrickPixel(p.x, prevY);
+          if(!hitX && hitY){
             p.x = prevX;
             fp.vx = -fp.vx;
-          } else {
+          } else if(hitX && !hitY){
             p.y = prevY;
+            fp.vy = -fp.vy;
+          } else {
+            p.x = prevX;
+            p.y = prevY;
+            fp.vx = -fp.vx;
             fp.vy = -fp.vy;
           }
         }
@@ -2647,6 +2654,12 @@ function startNewRound(){
 /* ======= Map helpers ======= */
 function applyCurrentMap(){
   buildings = [];
+  // load appropriate brick layout for current map
+  if(MAPS[mapIndex] === "6 bricks"){
+    brickFrameImg.src = "6 bricks.png";
+  } else {
+    brickFrameImg.src = "brick frame 3.png";
+  }
   updateFieldDimensions();
   if(MAPS[mapIndex] === "clear sky"){
     // no buildings to add
