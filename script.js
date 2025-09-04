@@ -1439,11 +1439,18 @@ function handleAAForPlane(p, fp){
       p.y += fp.vy * deltaSec;
 
         if(isBrickPixel(p.x, p.y)){
-          if(Math.abs(p.x - prevX) > Math.abs(p.y - prevY)){
+          const hitX = isBrickPixel(prevX, p.y);
+          const hitY = isBrickPixel(p.x, prevY);
+          if(!hitX && hitY){
             p.x = prevX;
             fp.vx = -fp.vx;
-          } else {
+          } else if(hitX && !hitY){
             p.y = prevY;
+            fp.vy = -fp.vy;
+          } else {
+            p.x = prevX;
+            p.y = prevY;
+            fp.vx = -fp.vx;
             fp.vy = -fp.vy;
           }
         }
