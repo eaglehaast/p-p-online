@@ -264,8 +264,6 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 
 
-
-
 const MAPS = [
   "clear sky",
   "wall",
@@ -1450,17 +1448,22 @@ function handleAAForPlane(p, fp){
 
         if(isBrickPixel(p.x, p.y)){
           const sample = (sx, sy) => isBrickPixel(sx, sy) ? 1 : 0;
-          // Estimate surface normal using a Sobel-like 3×3 kernel so
-          // reflections work correctly for diagonal walls as well.
+
+          // Estimate surface normal at the current position using a
+          // Sobel-like 3×3 kernel so reflections also work for
+          // diagonal walls.
+          const curX = p.x;
+          const curY = p.y;
           let nx = (
-            sample(prevX - 1, prevY - 1) + 2*sample(prevX - 1, prevY) + sample(prevX - 1, prevY + 1)
+            sample(curX - 1, curY - 1) + 2*sample(curX - 1, curY) + sample(curX - 1, curY + 1)
           ) - (
-            sample(prevX + 1, prevY - 1) + 2*sample(prevX + 1, prevY) + sample(prevX + 1, prevY + 1)
+            sample(curX + 1, curY - 1) + 2*sample(curX + 1, curY) + sample(curX + 1, curY + 1)
           );
           let ny = (
-            sample(prevX - 1, prevY - 1) + 2*sample(prevX, prevY - 1) + sample(prevX + 1, prevY - 1)
+            sample(curX - 1, curY - 1) + 2*sample(curX, curY - 1) + sample(curX + 1, curY - 1)
           ) - (
-            sample(prevX - 1, prevY + 1) + 2*sample(prevX, prevY + 1) + sample(prevX + 1, prevY + 1)
+            sample(curX - 1, curY + 1) + 2*sample(curX, curY + 1) + sample(curX + 1, curY + 1)
+
           );
           const len = Math.hypot(nx, ny);
           if(len > 0){
