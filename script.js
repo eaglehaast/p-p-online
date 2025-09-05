@@ -265,7 +265,7 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 
 
-const MAPS = ["clear sky", "wall", "two walls", "7 bricks"];
+const MAPS = ["clear sky", "wall", "two walls", "7 bricks", "15 diagonals"];
 
 let mapIndex;
 let flightRangeCells; // cells for menu and physics
@@ -1439,19 +1439,36 @@ function handleAAForPlane(p, fp){
       p.y += fp.vy * deltaSec;
 
         if(isBrickPixel(p.x, p.y)){
-          const hitX = isBrickPixel(prevX, p.y);
-          const hitY = isBrickPixel(p.x, prevY);
-          if(!hitX && hitY){
+          const sample = (sx, sy) => isBrickPixel(sx, sy) ? 1 : 0;
+          let nx = sample(p.x - 1, p.y) - sample(p.x + 1, p.y);
+          let ny = sample(p.x, p.y - 1) - sample(p.x, p.y + 1);
+          const len = Math.hypot(nx, ny);
+          if(len > 0){
+            nx /= len;
+            ny /= len;
             p.x = prevX;
-            fp.vx = -fp.vx;
-          } else if(hitX && !hitY){
             p.y = prevY;
-            fp.vy = -fp.vy;
+            const dot = fp.vx * nx + fp.vy * ny;
+            fp.vx -= 2 * dot * nx;
+            fp.vy -= 2 * dot * ny;
+            const EPS = 0.5;
+            p.x += nx * EPS;
+            p.y += ny * EPS;
           } else {
-            p.x = prevX;
-            p.y = prevY;
-            fp.vx = -fp.vx;
-            fp.vy = -fp.vy;
+            const hitX = isBrickPixel(prevX, p.y);
+            const hitY = isBrickPixel(p.x, prevY);
+            if(!hitX && hitY){
+              p.x = prevX;
+              fp.vx = -fp.vx;
+            } else if(hitX && !hitY){
+              p.y = prevY;
+              fp.vy = -fp.vy;
+            } else {
+              p.x = prevX;
+              p.y = prevY;
+              fp.vx = -fp.vx;
+              fp.vy = -fp.vy;
+            }
           }
         }
 
@@ -2655,8 +2672,10 @@ function startNewRound(){
 function applyCurrentMap(){
   buildings = [];
   // load appropriate brick layout for current map
-  if(MAPS[mapIndex] === "7 bricks"){
+  if (MAPS[mapIndex] === "7 bricks") {
     brickFrameImg.src = "7 bricks.png";
+  } else if (MAPS[mapIndex] === "15 diagonals") {
+    brickFrameImg.src = "15 diagonals.png";
   } else {
     brickFrameImg.src = "brick frame 3.png";
   }
