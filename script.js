@@ -1440,8 +1440,18 @@ function handleAAForPlane(p, fp){
 
         if(isBrickPixel(p.x, p.y)){
           const sample = (sx, sy) => isBrickPixel(sx, sy) ? 1 : 0;
-          let nx = sample(p.x - 1, p.y) - sample(p.x + 1, p.y);
-          let ny = sample(p.x, p.y - 1) - sample(p.x, p.y + 1);
+          // Estimate surface normal using a Sobel-like 3×3 kernel so
+          // reflections work correctly for diagonal walls as well.
+          let nx = (
+            sample(prevX - 1, prevY - 1) + 2*sample(prevX - 1, prevY) + sample(prevX - 1, prevY + 1)
+          ) - (
+            sample(prevX + 1, prevY - 1) + 2*sample(prevX + 1, prevY) + sample(prevX + 1, prevY + 1)
+          );
+          let ny = (
+            sample(prevX - 1, prevY - 1) + 2*sample(prevX, prevY - 1) + sample(prevX + 1, prevY - 1)
+          ) - (
+            sample(prevX - 1, prevY + 1) + 2*sample(prevX, prevY + 1) + sample(prevX + 1, prevY + 1)
+          );
           const len = Math.hypot(nx, ny);
           if(len > 0){
             nx /= len;
