@@ -265,7 +265,15 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 
 
-const MAPS = ["clear sky", "wall", "two walls", "7 bricks", "15 diagonals"];
+const MAPS = [
+  "clear sky",
+  "wall",
+  "two walls",
+  "7 bricks",
+  "15 diagonals",
+  "deadly center line",
+  "experiment 1"
+];
 
 let mapIndex;
 let flightRangeCells; // cells for menu and physics
@@ -1440,8 +1448,18 @@ function handleAAForPlane(p, fp){
 
         if(isBrickPixel(p.x, p.y)){
           const sample = (sx, sy) => isBrickPixel(sx, sy) ? 1 : 0;
-          let nx = sample(p.x - 1, p.y) - sample(p.x + 1, p.y);
-          let ny = sample(p.x, p.y - 1) - sample(p.x, p.y + 1);
+          // Estimate surface normal using a Sobel-like 3×3 kernel so
+          // reflections work correctly for diagonal walls as well.
+          let nx = (
+            sample(prevX - 1, prevY - 1) + 2*sample(prevX - 1, prevY) + sample(prevX - 1, prevY + 1)
+          ) - (
+            sample(prevX + 1, prevY - 1) + 2*sample(prevX + 1, prevY) + sample(prevX + 1, prevY + 1)
+          );
+          let ny = (
+            sample(prevX - 1, prevY - 1) + 2*sample(prevX, prevY - 1) + sample(prevX + 1, prevY - 1)
+          ) - (
+            sample(prevX - 1, prevY + 1) + 2*sample(prevX, prevY + 1) + sample(prevX + 1, prevY + 1)
+          );
           const len = Math.hypot(nx, ny);
           if(len > 0){
             nx /= len;
@@ -2676,6 +2694,10 @@ function applyCurrentMap(){
     brickFrameImg.src = "7 bricks.png";
   } else if (MAPS[mapIndex] === "15 diagonals") {
     brickFrameImg.src = "15 diagonals.png";
+  } else if (MAPS[mapIndex] === "deadly center line") {
+    brickFrameImg.src = "map deadly center line.png";
+  } else if (MAPS[mapIndex] === "experiment 1") {
+    brickFrameImg.src = "map experiment 1.png";
   } else {
     brickFrameImg.src = "brick frame 3.png";
   }
