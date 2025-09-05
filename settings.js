@@ -2,6 +2,7 @@ const MIN_FLIGHT_RANGE_CELLS = 5;
 const MAX_FLIGHT_RANGE_CELLS = 30;
 const MIN_AMPLITUDE = 0;
 const MAX_AMPLITUDE = 30;
+
 const MAPS = [
   "clear sky",
   "wall",
@@ -11,6 +12,7 @@ const MAPS = [
   "deadly center line",
   "experiment 1"
 ];
+
 
 function getIntSetting(key, defaultValue){
   const value = parseInt(localStorage.getItem(key));
