@@ -265,7 +265,7 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 
 
-const MAPS = ["clear sky", "wall", "two walls", "7 bricks", "15 diagonals"];
+const MAPS = ["clear sky", "wall", "two walls", "7 bricks", "15 diagonals", "deadly center line"];
 
 let mapIndex;
 let flightRangeCells; // cells for menu and physics
@@ -2676,6 +2676,8 @@ function applyCurrentMap(){
     brickFrameImg.src = "7 bricks.png";
   } else if (MAPS[mapIndex] === "15 diagonals") {
     brickFrameImg.src = "15 diagonals.png";
+  } else if (MAPS[mapIndex] === "deadly center line") {
+    brickFrameImg.src = "map deadly center line.png";
   } else {
     brickFrameImg.src = "brick frame 3.png";
   }
