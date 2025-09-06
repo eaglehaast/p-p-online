@@ -218,9 +218,23 @@ function isBrickPixel(x, y){
   if(!brickFrameData) return false;
   const imgX = Math.floor((x - FIELD_LEFT) / FIELD_WIDTH * brickFrameData.width);
   const imgY = Math.floor(y / gameCanvas.height * brickFrameData.height);
-  if(imgX < 0 || imgX >= brickFrameData.width || imgY < 0 || imgY >= brickFrameData.height) return false;
-  const alpha = brickFrameData.data[(imgY * brickFrameData.width + imgX) * 4 + 3];
-  return alpha > 0;
+  const { data, width, height } = brickFrameData;
+  if(imgX < 0 || imgX >= width || imgY < 0 || imgY >= height) return false;
+
+  // Mortar lines between bricks are transparent in the source image, which
+  // caused reflections to treat the gaps as empty space. Expand the search a
+  // little so these gaps count as solid wall.
+  const RADIUS = 3; // px
+  for(let dy = -RADIUS; dy <= RADIUS; dy++){
+    const ny = imgY + dy;
+    if(ny < 0 || ny >= height) continue;
+    for(let dx = -RADIUS; dx <= RADIUS; dx++){
+      const nx = imgX + dx;
+      if(nx < 0 || nx >= width) continue;
+      if(data[(ny * width + nx) * 4 + 3] > 0) return true;
+    }
+  }
+  return false;
 }
 
 function updateFieldDimensions(){
