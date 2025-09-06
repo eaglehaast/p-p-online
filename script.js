@@ -2749,10 +2749,11 @@ function applyCurrentMap(){
 /* ======= CANVAS RESIZE ======= */
 function resizeCanvas() {
   // Keep the game in portrait mode: if the device rotates to landscape,
-  // attempt to re-lock orientation and skip resizing to avoid layout glitches.
+  // attempt to re-lock orientation.  Do not skip resizing so the canvases
+  // remain correctly sized even if the device starts in landscape.
   if(screen.orientation && screen.orientation.type.startsWith('landscape')){
     lockOrientation();
-    return;
+    // continue resizing instead of early returning
   }
 
   const canvas = gameCanvas;
