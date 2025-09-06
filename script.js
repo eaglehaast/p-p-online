@@ -2748,6 +2748,13 @@ function applyCurrentMap(){
 
 /* ======= CANVAS RESIZE ======= */
 function resizeCanvas() {
+  // Keep the game in portrait mode: if the device rotates to landscape,
+  // attempt to re-lock orientation and skip resizing to avoid layout glitches.
+  if(screen.orientation && screen.orientation.type.startsWith('landscape')){
+    lockOrientation();
+    return;
+  }
+
   const canvas = gameCanvas;
   const container = document.body;
 
@@ -2783,9 +2790,16 @@ function resizeCanvas() {
 }
 
 window.addEventListener('resize', resizeCanvas);
-window.addEventListener('orientationchange', () => {
-  setTimeout(resizeCanvas, 100);
-});
+// Lock orientation to portrait and prevent the canvas from redrawing on rotation
+function lockOrientation(){
+  if(screen.orientation && screen.orientation.lock){
+    // Attempt to lock; ignore errors if the browser refuses
+    screen.orientation.lock('portrait').catch(() => {});
+  }
+}
+
+lockOrientation();
+window.addEventListener('orientationchange', lockOrientation);
 
 /* ======= BOOTSTRAP ======= */
 resizeCanvas();
