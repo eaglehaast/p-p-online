@@ -9,8 +9,7 @@ const MAPS = [
   "two walls",
   "7 bricks",
   "15 diagonals",
-  "deadly center line",
-  "experiment 1"
+  "deadly center line"
 ];
 
 

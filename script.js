@@ -284,8 +284,7 @@ const MAPS = [
   "two walls",
   "7 bricks",
   "15 diagonals",
-  "deadly center line",
-  "experiment 1"
+  "deadly center line"
 ];
 
 
@@ -2715,9 +2714,6 @@ function applyCurrentMap(){
     brickFrameImg.src = "15 diagonals.png";
   } else if (MAPS[mapIndex] === "deadly center line") {
     brickFrameImg.src = "map deadly center line.png";
-
-  } else if (MAPS[mapIndex] === "experiment 1") {
-    brickFrameImg.src = "map experiment 1.png";
 
   } else {
     brickFrameImg.src = "brick frame 3.png";
