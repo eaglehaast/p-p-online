@@ -2767,28 +2767,48 @@ function resizeCanvas() {
     lockOrientation();
     // continue resizing instead of early returning
   }
+  const BASE_WIDTH = 360;
+  const BASE_HEIGHT = 640;
+  const SCORE_HEIGHT = 60;
+  const MARGIN = 5;
 
+  // Determine how much we can scale canvases to fit available space
+  const scale = Math.min(
+    window.innerWidth / BASE_WIDTH,
+    window.innerHeight / (BASE_HEIGHT + 2 * SCORE_HEIGHT + 6 * MARGIN)
+  );
+
+  const scaledWidth = BASE_WIDTH * scale;
+  const scaledHeight = BASE_HEIGHT * scale;
+  const scaledScoreHeight = SCORE_HEIGHT * scale;
+  const scaledMargin = MARGIN * scale;
+
+  // Resize score canvases
+  [scoreCanvas, scoreCanvasBottom].forEach(canvas => {
+    canvas.style.width = scaledWidth + 'px';
+    canvas.style.height = scaledScoreHeight + 'px';
+    canvas.style.margin = scaledMargin + 'px auto';
+    canvas.width = BASE_WIDTH;
+    canvas.height = SCORE_HEIGHT;
+  });
+
+  // Resize main game canvas
   const canvas = gameCanvas;
-  const width = 360;
-  const height = 640;
-
-  canvas.style.width = width + 'px';
-  canvas.style.height = height + 'px';
-  canvas.width = width;
-  canvas.height = height;
+  canvas.style.width = scaledWidth + 'px';
+  canvas.style.height = scaledHeight + 'px';
+  canvas.style.margin = scaledMargin + 'px auto';
+  canvas.width = BASE_WIDTH;
+  canvas.height = BASE_HEIGHT;
 
   updateFieldDimensions();
 
-  aimCanvas.style.width = width + 'px';
-  aimCanvas.style.height = height + 'px';
-  aimCanvas.width = width;
-  aimCanvas.height = height;
-
-  planeCanvas.style.width = width + 'px';
-  planeCanvas.style.height = height + 'px';
-  planeCanvas.width = width;
-  planeCanvas.height = height;
-
+  // Overlay canvases cover full screen for proper alignment
+  [aimCanvas, planeCanvas].forEach(overlay => {
+    overlay.width = window.innerWidth;
+    overlay.height = window.innerHeight;
+    overlay.style.width = window.innerWidth + 'px';
+    overlay.style.height = window.innerHeight + 'px';
+  });
 
   // Переинициализируем самолёты
   if(points.length === 0) {
