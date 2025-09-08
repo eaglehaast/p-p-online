@@ -2767,31 +2767,25 @@ function resizeCanvas() {
   }
 
   const canvas = gameCanvas;
-  const container = document.body;
+  const width = 360;
+  const height = 640;
 
-  // Максимальный размер с учётом табло
-  const maxWidth = Math.min(window.innerWidth * 0.95, 383);
-  const maxHeight = Math.min(window.innerHeight - 120, window.innerHeight * 0.7);
-
-  canvas.style.width = maxWidth + 'px';
-  canvas.style.height = maxHeight + 'px';
-
-  // Масштабируем canvas пропорционально
-  const scale = Math.min(maxWidth / 300, maxHeight / 400);
-  canvas.width = 300 * scale;
-  canvas.height = 400 * scale;
+  canvas.style.width = width + 'px';
+  canvas.style.height = height + 'px';
+  canvas.width = width;
+  canvas.height = height;
 
   updateFieldDimensions();
 
-  aimCanvas.style.width = window.innerWidth + 'px';
-  aimCanvas.style.height = window.innerHeight + 'px';
-  aimCanvas.width = window.innerWidth;
-  aimCanvas.height = window.innerHeight;
+  aimCanvas.style.width = width + 'px';
+  aimCanvas.style.height = height + 'px';
+  aimCanvas.width = width;
+  aimCanvas.height = height;
 
-  planeCanvas.style.width = window.innerWidth + 'px';
-  planeCanvas.style.height = window.innerHeight + 'px';
-  planeCanvas.width = window.innerWidth;
-  planeCanvas.height = window.innerHeight;
+  planeCanvas.style.width = width + 'px';
+  planeCanvas.style.height = height + 'px';
+  planeCanvas.width = width;
+  planeCanvas.height = height;
 
 
   // Переинициализируем самолёты
