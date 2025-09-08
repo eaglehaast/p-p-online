@@ -2708,7 +2708,9 @@ function startNewRound(){
 function applyCurrentMap(){
   buildings = [];
   // load appropriate brick layout for current map
-  if (MAPS[mapIndex] === "7 bricks") {
+  if (MAPS[mapIndex] === "clear sky") {
+    brickFrameImg.src = "map 1_ clear sky.png";
+  } else if (MAPS[mapIndex] === "7 bricks") {
     brickFrameImg.src = "7 bricks.png";
   } else if (MAPS[mapIndex] === "15 diagonals") {
     brickFrameImg.src = "15 diagonals.png";
