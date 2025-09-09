@@ -1920,13 +1920,14 @@ function drawWingTrails(ctx2d){
 }
 
 function addPlaneShading(ctx2d){
-  const grad = ctx2d.createRadialGradient(0, 0, 10, 0, 0, 20);
-  grad.addColorStop(0, "rgba(255,255,255,0.2)");
-  grad.addColorStop(1, "rgba(0,0,0,0)");
+  const grad = ctx2d.createRadialGradient(0, 0, 8, 0, 0, 18);
+  grad.addColorStop(0, "rgba(255,255,255,0.15)");
+  grad.addColorStop(1, "rgba(0,0,0,0.25)");
+  ctx2d.save();
+  ctx2d.globalCompositeOperation = "source-atop";
   ctx2d.fillStyle = grad;
-  ctx2d.beginPath();
-  ctx2d.arc(0, 0, 20, 0, Math.PI * 2);
-  ctx2d.fill();
+  ctx2d.fillRect(-20, -20, 40, 40);
+  ctx2d.restore();
 }
 
 function drawPlaneOutline(ctx2d, color){
