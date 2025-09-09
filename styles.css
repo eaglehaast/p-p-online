@@ -42,7 +42,7 @@ body {
   margin: 5px auto;
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
   border-radius: 12px;
-  background-color: #fffbea;
+  background-color: transparent;
   width: 360px;
   height: 640px;
   display: block;
