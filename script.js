@@ -1917,16 +1917,27 @@ function drawWingTrails(ctx2d){
   ctx2d.stroke();
 }
 
+function addPlaneShading(ctx2d){
+  const grad = ctx2d.createRadialGradient(0, 0, 10, 0, 0, 20);
+  grad.addColorStop(0, "rgba(255,255,255,0.2)");
+  grad.addColorStop(1, "rgba(0,0,0,0)");
+  ctx2d.fillStyle = grad;
+  ctx2d.beginPath();
+  ctx2d.arc(0, 0, 20, 0, Math.PI * 2);
+  ctx2d.fill();
+}
+
 function drawPlaneOutline(ctx2d, color){
   ctx2d.strokeStyle = colorFor(color);
   ctx2d.lineWidth = 2;
+  ctx2d.lineJoin = "round";
+  ctx2d.lineCap = "round";
   ctx2d.beginPath();
   ctx2d.moveTo(0, -20);
-  ctx2d.lineTo(10, 10);
-  ctx2d.lineTo(5, 10);
-  ctx2d.lineTo(0, 18);
-  ctx2d.lineTo(-5, 10);
-  ctx2d.lineTo(-10, 10);
+  ctx2d.quadraticCurveTo(12, -5, 10, 10);
+  ctx2d.quadraticCurveTo(6, 15, 0, 18);
+  ctx2d.quadraticCurveTo(-6, 15, -10, 10);
+  ctx2d.quadraticCurveTo(-12, -5, 0, -20);
   ctx2d.closePath();
   ctx2d.stroke();
 }
@@ -1937,7 +1948,9 @@ function drawThinPlane(ctx2d, plane){
   ctx2d.translate(cx, cy);
   ctx2d.rotate(angle);
   ctx2d.scale(PLANE_SCALE, PLANE_SCALE);
-  ctx2d.filter = "blur(0.2px)"; // slight blur to soften rotated edges
+  ctx2d.filter = "blur(0.3px)"; // slight blur to soften rotated edges
+  ctx2d.shadowColor = "rgba(0,0,0,0.3)";
+  ctx2d.shadowBlur = 1.5;
   const showEngine = !(plane.burning && isExplosionFinished(plane));
   if(color === "blue"){
     if(showEngine){
@@ -1958,6 +1971,7 @@ function drawThinPlane(ctx2d, plane){
     } else {
       drawPlaneOutline(ctx2d, color);
     }
+    addPlaneShading(ctx2d);
   } else if(color === "green"){
     const fp = flyingPoints.find(fp => fp.plane === plane);
     if(showEngine){
@@ -1979,8 +1993,10 @@ function drawThinPlane(ctx2d, plane){
     } else {
       drawPlaneOutline(ctx2d, color);
     }
+    addPlaneShading(ctx2d);
   } else {
     drawPlaneOutline(ctx2d, color);
+    addPlaneShading(ctx2d);
   }
   ctx2d.restore();
 }
