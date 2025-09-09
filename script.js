@@ -42,7 +42,7 @@ const noBtn       = document.getElementById("noButton");
 
 // Images for planes
 const bluePlaneImg = new Image();
-bluePlaneImg.src = "blue plane 23.5.png";
+bluePlaneImg.src = "blue plane 24.png";
 
 const greenPlaneImg = new Image();
 
