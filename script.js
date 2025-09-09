@@ -47,8 +47,8 @@ bluePlaneImg.src = "blue plane 23.5.png";
 const greenPlaneImg = new Image();
 
 greenPlaneImg.src = "green plane 2.png";
-const fieldImg = new Image();
-fieldImg.src = "field 5.png";
+const backgroundImg = new Image();
+backgroundImg.src = "background paper 1.png";
 const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
 
 const brickFrameImg = new Image();
@@ -1726,12 +1726,8 @@ function handleAAForPlane(p, fp){
 
 /* ======= RENDER ======= */
 function drawFieldBackground(ctx2d, w, h){
-  ctx2d.fillStyle = "#fffbea";
-  ctx2d.fillRect(0,0,w,h);
-  if(fieldImg.complete){
-    ctx2d.drawImage(fieldImg, FIELD_LEFT, 0, FIELD_WIDTH, h);
-  } else {
-    ctx2d.fillRect(FIELD_LEFT, 0, FIELD_WIDTH, h);
+  if(backgroundImg.complete){
+    ctx2d.drawImage(backgroundImg, 0, 0, w, h);
   }
 }
 
