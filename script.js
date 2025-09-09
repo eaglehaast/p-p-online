@@ -46,7 +46,7 @@ bluePlaneImg.src = "blue plane 24.png";
 
 const greenPlaneImg = new Image();
 
-greenPlaneImg.src = "green plane 2.png";
+greenPlaneImg.src = "green plane 3.png";
 const backgroundImg = new Image();
 backgroundImg.src = "background paper 1.png";
 const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
