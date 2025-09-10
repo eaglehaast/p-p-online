@@ -54,7 +54,7 @@ const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
 const brickFrameImg = new Image();
 // Load the default map on startup so we don't request a missing image
 // and fail to initialize the playing field before `applyCurrentMap()` runs.
-brickFrameImg.src = "map 1_ clear sky 2.png";
+brickFrameImg.src = "map 1 - clear sky 3.png";
 let brickFrameData = null;
 
 let FIELD_LEFT = 0;
@@ -319,7 +319,7 @@ let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_STA
 
 let currentPlacer = null; // 'green' | 'blue'
 const MAPS = [
-  { name: 'Clear Sky', file: 'map 1_ clear sky 2.png' },
+  { name: 'Clear Sky', file: 'map 1 - clear sky 3.png' },
   { name: '5 Bricks',  file: 'map 2 - 5 bricks.png' }
 ];
 
