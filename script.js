@@ -316,9 +316,12 @@ let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_STA
 
 
 let currentPlacer = null; // 'green' | 'blue'
+const MAPS = [
+  { name: 'Clear Sky', file: 'map 1_ clear sky 2.png' },
+  { name: '5 Bricks',  file: 'map 2 - 5 bricks.png' }
+];
 
-let settings = { addAA: false, sharpEdges: false };
-// Map selection has been reduced to a single "clear sky" layout.
+let settings = { addAA: false, sharpEdges: false, mapIndex: 0 };
 
 function loadSettings(){
   const fr = parseInt(localStorage.getItem('settings.flightRangeCells'));
@@ -327,6 +330,8 @@ function loadSettings(){
   aimingAmplitude = Number.isNaN(amp) ? 10 / 4 : amp;
   settings.addAA = localStorage.getItem('settings.addAA') === 'true';
   settings.sharpEdges = localStorage.getItem('settings.sharpEdges') === 'true';
+  const mapIdx = parseInt(localStorage.getItem('settings.mapIndex'));
+  settings.mapIndex = Number.isNaN(mapIdx) ? 0 : Math.min(MAPS.length - 1, Math.max(0, mapIdx));
 
   // Clamp loaded values so corrupted or out-of-range settings
   // don't break the game on startup
@@ -343,7 +348,8 @@ const hasCustomSettings = [
   'settings.flightRangeCells',
   'settings.aimingAmplitude',
   'settings.addAA',
-  'settings.sharpEdges'
+  'settings.sharpEdges',
+  'settings.mapIndex'
 ].some(key => localStorage.getItem(key) !== null);
 
 if(hasCustomSettings && classicRulesBtn && advancedSettingsBtn){
@@ -454,6 +460,9 @@ function resetGame(){
   globalFrame=0;
   flyingPoints= [];
   buildings = [];
+  if(!advancedSettingsBtn?.classList.contains('selected')){
+    settings.mapIndex = Math.floor(Math.random() * MAPS.length);
+  }
   applyCurrentMap();
 
   aaUnits = [];
@@ -525,6 +534,7 @@ if(classicRulesBtn){
     aimingAmplitude = 10 / 4; // 10°
     settings.addAA = false;
     settings.sharpEdges = false;
+    settings.mapIndex = Math.floor(Math.random() * MAPS.length);
     applyCurrentMap();
     advancedSettingsBtn?.classList.remove('selected');
     classicRulesBtn.classList.add('selected');
@@ -2642,10 +2652,15 @@ function isOverlappingWithBuildings(b){
 
 /* ======= SCORE / ROUND ======= */
 yesBtn.addEventListener("click", () => {
-  if (blueScore >= POINTS_TO_WIN || greenScore >= POINTS_TO_WIN) {
+  const gameOver = blueScore >= POINTS_TO_WIN || greenScore >= POINTS_TO_WIN;
+  if (gameOver) {
     blueScore = 0;
     greenScore = 0;
     roundNumber = 0;
+    if(!advancedSettingsBtn?.classList.contains('selected')){
+      settings.mapIndex = Math.floor(Math.random() * MAPS.length);
+      applyCurrentMap();
+    }
   }
   startNewRound();
 });
@@ -2697,7 +2712,8 @@ function startNewRound(){
 /* ======= Map helpers ======= */
 function applyCurrentMap(){
   buildings = [];
-  brickFrameImg.src = "map 1_ clear sky 2.png";
+  const map = MAPS[settings.mapIndex] || MAPS[0];
+  brickFrameImg.src = map.file;
   updateFieldDimensions();
   renderScoreboard();
 }

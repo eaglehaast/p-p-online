@@ -290,6 +290,14 @@ body {
   margin-top: 8px;
 }
 
+#modeMenu .control-box select {
+  padding: 6px 10px;
+  border: 2px solid #ff0000c8;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 16px;
+}
+
 /* Индикатор дальности — самолёт с огнём */
 #flightRangeIndicator {
   position: relative;

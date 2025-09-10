@@ -3,6 +3,11 @@ const MAX_FLIGHT_RANGE_CELLS = 30;
 const MIN_AMPLITUDE = 0;
 const MAX_AMPLITUDE = 30;
 
+const MAPS = [
+  { name: 'Clear Sky', file: 'map 1_ clear sky 2.png' },
+  { name: '5 Bricks', file: 'map 2 - 5 bricks.png' }
+];
+
 function getIntSetting(key, defaultValue){
   const value = parseInt(localStorage.getItem(key));
   return Number.isNaN(value) ? defaultValue : value;
@@ -13,6 +18,7 @@ let aimingAmplitude  = parseFloat(localStorage.getItem('settings.aimingAmplitude
 if(Number.isNaN(aimingAmplitude)) aimingAmplitude = 10 / 4;
 let addAA = localStorage.getItem('settings.addAA') === 'true';
 let sharpEdges = localStorage.getItem('settings.sharpEdges') === 'true';
+let mapIndex = getIntSetting('settings.mapIndex', 0);
 
 const flightRangeMinusBtn = document.getElementById('flightRangeMinus');
 const flightRangePlusBtn  = document.getElementById('flightRangePlus');
@@ -21,6 +27,7 @@ const amplitudePlusBtn    = document.getElementById('amplitudePlus');
 const addAAToggle = document.getElementById('addAAToggle');
 const sharpEdgesToggle = document.getElementById('sharpEdgesToggle');
 const backBtn = document.getElementById('backBtn');
+const mapSelect = document.getElementById('mapSelect');
 
 function updateFlightRangeDisplay(){
   const el = document.getElementById('flightRangeDisplay');
@@ -72,6 +79,7 @@ function saveSettings(){
   localStorage.setItem('settings.aimingAmplitude', aimingAmplitude);
   localStorage.setItem('settings.addAA', addAA);
   localStorage.setItem('settings.sharpEdges', sharpEdges);
+  localStorage.setItem('settings.mapIndex', mapIndex);
 }
 
 function setupRepeatButton(btn, cb){
@@ -106,6 +114,20 @@ if(sharpEdgesToggle){
   sharpEdgesToggle.checked = sharpEdges;
   sharpEdgesToggle.addEventListener('change', e => {
     sharpEdges = e.target.checked;
+    saveSettings();
+  });
+}
+
+if(mapSelect){
+  MAPS.forEach((m, idx) => {
+    const opt = document.createElement('option');
+    opt.value = idx;
+    opt.textContent = m.name;
+    mapSelect.appendChild(opt);
+  });
+  mapSelect.value = String(mapIndex);
+  mapSelect.addEventListener('change', e => {
+    mapIndex = parseInt(e.target.value);
     saveSettings();
   });
 }
