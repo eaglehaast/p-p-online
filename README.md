@@ -19,7 +19,7 @@
 - Each side controls a group of paper planes (green vs. blue).
 - Use the mouse to drag a plane, aim and release to launch it. Releasing before the first tick mark cancels the move.
 
-- Controls let you tune the flight range, choose the map ("clear sky", "wall", "two walls", "7 bricks", "15 diagonals", "deadly center line"), enable sharp edges, and adjust aiming amplitude. The chosen amplitude is a fixed value in degrees and no longer scales with drag distance.
+- Controls let you tune the flight range, enable sharp edges, and adjust aiming amplitude. The chosen amplitude is a fixed value in degrees and no longer scales with drag distance.
 
 - With **Sharp Edges** enabled, hitting the border destroys the plane instead of bouncing it back.
 - Hitting an enemy plane destroys it. When one colour has no planes left, the other wins the round.

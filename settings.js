@@ -3,16 +3,6 @@ const MAX_FLIGHT_RANGE_CELLS = 30;
 const MIN_AMPLITUDE = 0;
 const MAX_AMPLITUDE = 30;
 
-const MAPS = [
-  "clear sky",
-  "wall",
-  "two walls",
-  "7 bricks",
-  "15 diagonals",
-  "deadly center line"
-];
-
-
 function getIntSetting(key, defaultValue){
   const value = parseInt(localStorage.getItem(key));
   return Number.isNaN(value) ? defaultValue : value;
@@ -21,11 +11,6 @@ function getIntSetting(key, defaultValue){
 let flightRangeCells = getIntSetting('settings.flightRangeCells', 15);
 let aimingAmplitude  = parseFloat(localStorage.getItem('settings.aimingAmplitude'));
 if(Number.isNaN(aimingAmplitude)) aimingAmplitude = 10 / 4;
-let mapIndex = getIntSetting('settings.mapIndex', 1);
-// Ensure stored index points to an existing map
-if(mapIndex < 0 || mapIndex >= MAPS.length){
-  mapIndex = 1;
-}
 let addAA = localStorage.getItem('settings.addAA') === 'true';
 let sharpEdges = localStorage.getItem('settings.sharpEdges') === 'true';
 
@@ -33,8 +18,6 @@ const flightRangeMinusBtn = document.getElementById('flightRangeMinus');
 const flightRangePlusBtn  = document.getElementById('flightRangePlus');
 const amplitudeMinusBtn   = document.getElementById('amplitudeMinus');
 const amplitudePlusBtn    = document.getElementById('amplitudePlus');
-const mapMinusBtn = document.getElementById('mapMinus');
-const mapPlusBtn  = document.getElementById('mapPlus');
 const addAAToggle = document.getElementById('addAAToggle');
 const sharpEdgesToggle = document.getElementById('sharpEdgesToggle');
 const backBtn = document.getElementById('backBtn');
@@ -84,17 +67,9 @@ function updateAmplitudeIndicator(){
   }
 }
 
-function updateMapDisplay(){
-  const el = document.getElementById('mapNameValue');
-  // Normalize index in case map list changed
-  mapIndex = ((mapIndex % MAPS.length) + MAPS.length) % MAPS.length;
-  if(el) el.textContent = MAPS[mapIndex];
-}
-
 function saveSettings(){
   localStorage.setItem('settings.flightRangeCells', flightRangeCells);
   localStorage.setItem('settings.aimingAmplitude', aimingAmplitude);
-  localStorage.setItem('settings.mapIndex', mapIndex);
   localStorage.setItem('settings.addAA', addAA);
   localStorage.setItem('settings.sharpEdges', sharpEdges);
 }
@@ -167,17 +142,6 @@ setupRepeatButton(amplitudePlusBtn, () => {
     saveSettings();
   }
 });
-setupRepeatButton(mapMinusBtn, () => {
-  mapIndex = (mapIndex - 1 + MAPS.length) % MAPS.length;
-  updateMapDisplay();
-  saveSettings();
-});
-setupRepeatButton(mapPlusBtn, () => {
-  mapIndex = (mapIndex + 1) % MAPS.length;
-  updateMapDisplay();
-  saveSettings();
-});
-
 if(backBtn){
   backBtn.addEventListener('click', () => {
     window.location.href = 'index.html';
@@ -187,5 +151,4 @@ if(backBtn){
 updateFlightRangeDisplay();
 updateFlightRangeFlame();
 updateAmplitudeDisplay();
-updateMapDisplay();
 updateAmplitudeIndicator();
