@@ -251,10 +251,6 @@ body {
   box-sizing: border-box;
 }
 
-#modeMenu #mapControl {
-  grid-template-rows: auto auto auto;
-}
-
 #modeMenu #additionalSettings {
   grid-template-rows: auto auto auto;
   margin-top: 10px;
@@ -420,16 +416,6 @@ body {
 }
 #modeMenu .control-buttons button:hover { transform: translateY(-3px); box-shadow: 0 6px 12px rgba(0,0,0,0.3); }
 #modeMenu .control-buttons button:disabled { background:#a1a1a1; cursor:not-allowed; }
-
-#mapNameDisplay {
-  font-size: 24px;
-  color: #ee0000;
-  font-family: 'Patrick Hand', cursive;
-}
-
-#mapNameValue {
-  font-weight: bold;
-}
 
 #amplitudeIndicator {
   position: relative;

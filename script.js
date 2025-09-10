@@ -280,17 +280,6 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 
 
-const MAPS = [
-  "clear sky",
-  "wall",
-  "two walls",
-  "7 bricks",
-  "15 diagonals",
-  "deadly center line"
-];
-
-
-let mapIndex;
 let flightRangeCells; // cells for menu and physics
 let buildingsCount   = 0;
 let aimingAmplitude;     // 0..30 (UI показывает *4)
@@ -329,18 +318,13 @@ let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_STA
 let currentPlacer = null; // 'green' | 'blue'
 
 let settings = { addAA: false, sharpEdges: false };
-let randomMapEachRound = false;
+// Map selection has been reduced to a single "clear sky" layout.
 
 function loadSettings(){
   const fr = parseInt(localStorage.getItem('settings.flightRangeCells'));
   flightRangeCells = Number.isNaN(fr) ? 15 : fr;
   const amp = parseFloat(localStorage.getItem('settings.aimingAmplitude'));
   aimingAmplitude = Number.isNaN(amp) ? 10 / 4 : amp;
-  const mi = parseInt(localStorage.getItem('settings.mapIndex'));
-  mapIndex = Number.isNaN(mi) ? 1 : mi;
-  if(mapIndex < 0 || mapIndex >= MAPS.length){
-    mapIndex = 1;
-  }
   settings.addAA = localStorage.getItem('settings.addAA') === 'true';
   settings.sharpEdges = localStorage.getItem('settings.sharpEdges') === 'true';
 
@@ -358,7 +342,6 @@ loadSettings();
 const hasCustomSettings = [
   'settings.flightRangeCells',
   'settings.aimingAmplitude',
-  'settings.mapIndex',
   'settings.addAA',
   'settings.sharpEdges'
 ].some(key => localStorage.getItem(key) !== null);
@@ -540,8 +523,6 @@ if(classicRulesBtn){
   classicRulesBtn.addEventListener('click', () => {
     flightRangeCells = 15;
     aimingAmplitude = 10 / 4; // 10°
-    randomMapEachRound = true;
-    mapIndex = Math.floor(Math.random() * MAPS.length);
     settings.addAA = false;
     settings.sharpEdges = false;
     applyCurrentMap();
@@ -554,7 +535,6 @@ if(advancedSettingsBtn){
     if(advancedSettingsBtn.classList.contains('selected')){
       window.location.href = 'settings.html';
     } else {
-      randomMapEachRound = false;
       loadSettings();
       classicRulesBtn?.classList.remove('selected');
       advancedSettingsBtn.classList.add('selected');
@@ -2694,11 +2674,6 @@ function startNewRound(){
   aaUnits = [];
 
   aiMoveScheduled = false;
-  if (randomMapEachRound) {
-    mapIndex = Math.floor(Math.random() * MAPS.length);
-    applyCurrentMap();
-  }
-
   scoreCanvas.style.display = "block";
   gameCanvas.style.display = "block";
   scoreCanvasBottom.style.display = "block";
@@ -2722,54 +2697,8 @@ function startNewRound(){
 /* ======= Map helpers ======= */
 function applyCurrentMap(){
   buildings = [];
-  // load appropriate brick layout for current map
-  if (MAPS[mapIndex] === "clear sky") {
-    brickFrameImg.src = "map 1_ clear sky 2.png";
-  } else if (MAPS[mapIndex] === "7 bricks") {
-    brickFrameImg.src = "7 bricks.png";
-  } else if (MAPS[mapIndex] === "15 diagonals") {
-    brickFrameImg.src = "15 diagonals.png";
-  } else if (MAPS[mapIndex] === "deadly center line") {
-    brickFrameImg.src = "map deadly center line.png";
-
-  } else {
-    brickFrameImg.src = "brick frame 3.png";
-  }
+  brickFrameImg.src = "map 1_ clear sky 2.png";
   updateFieldDimensions();
-  if(MAPS[mapIndex] === "clear sky"){
-    // no buildings to add
-  } else if (MAPS[mapIndex] === "wall") {
-    const wallWidth = CELL_SIZE * 8;
-    const wallHeight = CELL_SIZE;
-    buildings.push({
-      type: "wall",
-      x: FIELD_LEFT + FIELD_WIDTH / 2,
-      y: gameCanvas.height / 2,
-      width: wallWidth,
-      height: wallHeight,
-      color: "darkred"
-    });
-  } else if (MAPS[mapIndex] === "two walls") {
-    const wallWidth = FIELD_WIDTH / 2;
-    const wallHeight = CELL_SIZE;
-    const offset = CELL_SIZE * 2;
-    buildings.push({
-      type: "wall",
-      x: FIELD_LEFT + wallWidth / 2,
-      y: gameCanvas.height / 2 + offset,
-      width: wallWidth,
-      height: wallHeight,
-      color: "darkred"
-    });
-    buildings.push({
-      type: "wall",
-      x: FIELD_LEFT + FIELD_WIDTH - wallWidth / 2,
-      y: gameCanvas.height / 2 - offset,
-      width: wallWidth,
-      height: wallHeight,
-      color: "darkred"
-    });
-  }
   renderScoreboard();
 }
 
