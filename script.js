@@ -227,7 +227,8 @@ function isBrickPixel(x, y){
 
   // Mortar lines between bricks are transparent in the source image, which
   // caused reflections to treat the gaps as empty space. Expand the search a
-  // little so these gaps count as solid wall.
+  // little so these gaps count as solid wall. Use a diamond-shaped neighborhood
+  // to avoid triggering collisions too early on diagonal walls.
   const RADIUS = 3; // px
   for(let dy = -RADIUS; dy <= RADIUS; dy++){
     const ny = imgY + dy;
@@ -235,6 +236,7 @@ function isBrickPixel(x, y){
     for(let dx = -RADIUS; dx <= RADIUS; dx++){
       const nx = imgX + dx;
       if(nx < 0 || nx >= width) continue;
+      if(Math.abs(dx) + Math.abs(dy) > RADIUS) continue;
       if(data[(ny * width + nx) * 4 + 3] > 0) return true;
     }
   }
