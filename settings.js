@@ -4,10 +4,10 @@ const MIN_AMPLITUDE = 0;
 const MAX_AMPLITUDE = 30;
 
 const MAPS = [
-  { name: 'Clear Sky', file: 'map 1_ clear sky 2.png' },
-  { name: '5 Bricks', file: 'map 2 - 5 bricks.png' }
+  { name: 'Clear Sky', file: 'map 1 - clear sky 3.png' },
+  { name: '5 Bricks', file: 'map 2 - 5 bricks.png' },
+  { name: 'Diagonals', file: 'map 3 diagonals.png' }
 ];
-
 function getIntSetting(key, defaultValue){
   const value = parseInt(localStorage.getItem(key));
   return Number.isNaN(value) ? defaultValue : value;
