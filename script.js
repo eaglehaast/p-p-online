@@ -335,6 +335,7 @@ const MAPS = [
   { name: 'Clear Sky', file: 'map 1 - clear sky 3.png' },
   { name: '5 Bricks',  file: 'map 2 - 5 bricks.png' },
   { name: 'Diagonals', file: 'map 3 diagonals.png' }
+
 ];
 
 let settings = { addAA: false, sharpEdges: false, mapIndex: 0 };
