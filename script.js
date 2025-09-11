@@ -127,19 +127,31 @@ brickFrameImg.onload = () => {
     leftBound++;
   }
 
-  const centerX = Math.floor(width / 2);
-  let top = topBound;
-  while (top < height && alphaAt(centerX, top) > 0) {
-    top++;
+  // Determine typical thickness of top/bottom walls and left/right walls
+  // by sampling every row/column and using the median run of brick pixels.
+  const verticalRuns = [];
+  for (let x = leftBound; x < width; x++) {
+    let y = topBound;
+    while (y < height && alphaAt(x, y) > 0) y++;
+    const run = y - topBound;
+    if (run > 0) verticalRuns.push(run);
   }
-  brickFrameBorderPxY = top - topBound;
+  verticalRuns.sort((a, b) => a - b);
+  brickFrameBorderPxY = verticalRuns.length
+    ? verticalRuns[Math.floor(verticalRuns.length / 2)]
+    : FIELD_BORDER_THICKNESS;
 
-  const centerY = Math.floor(height / 2);
-  let left = leftBound;
-  while (left < width && alphaAt(left, centerY) > 0) {
-    left++;
+  const horizontalRuns = [];
+  for (let y = topBound; y < height; y++) {
+    let x = leftBound;
+    while (x < width && alphaAt(x, y) > 0) x++;
+    const run = x - leftBound;
+    if (run > 0) horizontalRuns.push(run);
   }
-  brickFrameBorderPxX = left - leftBound;
+  horizontalRuns.sort((a, b) => a - b);
+  brickFrameBorderPxX = horizontalRuns.length
+    ? horizontalRuns[Math.floor(horizontalRuns.length / 2)]
+    : FIELD_BORDER_THICKNESS;
 
 
   updateFieldDimensions();
@@ -321,7 +333,6 @@ let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_STA
 let currentPlacer = null; // 'green' | 'blue'
 const MAPS = [
   { name: 'Clear Sky', file: 'map 1 - clear sky 3.png' },
-
   { name: '5 Bricks',  file: 'map 2 - 5 bricks.png' },
   { name: 'Diagonals', file: 'map 3 diagonals.png' }
 
