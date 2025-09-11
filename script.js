@@ -54,7 +54,7 @@ const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
 const brickFrameImg = new Image();
 // Load the default map on startup so we don't request a missing image
 // and fail to initialize the playing field before `applyCurrentMap()` runs.
-brickFrameImg.src = "map 1_ clear sky 2.png";
+brickFrameImg.src = "map 1 - clear sky 3.png";
 let brickFrameData = null;
 
 let FIELD_LEFT = 0;
@@ -127,19 +127,31 @@ brickFrameImg.onload = () => {
     leftBound++;
   }
 
-  const centerX = Math.floor(width / 2);
-  let top = topBound;
-  while (top < height && alphaAt(centerX, top) > 0) {
-    top++;
+  // Determine typical thickness of top/bottom walls and left/right walls
+  // by sampling every row/column and using the median run of brick pixels.
+  const verticalRuns = [];
+  for (let x = leftBound; x < width; x++) {
+    let y = topBound;
+    while (y < height && alphaAt(x, y) > 0) y++;
+    const run = y - topBound;
+    if (run > 0) verticalRuns.push(run);
   }
-  brickFrameBorderPxY = top - topBound;
+  verticalRuns.sort((a, b) => a - b);
+  brickFrameBorderPxY = verticalRuns.length
+    ? verticalRuns[Math.floor(verticalRuns.length / 2)]
+    : FIELD_BORDER_THICKNESS;
 
-  const centerY = Math.floor(height / 2);
-  let left = leftBound;
-  while (left < width && alphaAt(left, centerY) > 0) {
-    left++;
+  const horizontalRuns = [];
+  for (let y = topBound; y < height; y++) {
+    let x = leftBound;
+    while (x < width && alphaAt(x, y) > 0) x++;
+    const run = x - leftBound;
+    if (run > 0) horizontalRuns.push(run);
   }
-  brickFrameBorderPxX = left - leftBound;
+  horizontalRuns.sort((a, b) => a - b);
+  brickFrameBorderPxX = horizontalRuns.length
+    ? horizontalRuns[Math.floor(horizontalRuns.length / 2)]
+    : FIELD_BORDER_THICKNESS;
 
 
   updateFieldDimensions();
@@ -227,7 +239,8 @@ function isBrickPixel(x, y){
 
   // Mortar lines between bricks are transparent in the source image, which
   // caused reflections to treat the gaps as empty space. Expand the search a
-  // little so these gaps count as solid wall.
+  // little so these gaps count as solid wall. Use a diamond-shaped neighborhood
+  // to avoid triggering collisions too early on diagonal walls.
   const RADIUS = 3; // px
   for(let dy = -RADIUS; dy <= RADIUS; dy++){
     const ny = imgY + dy;
@@ -235,6 +248,7 @@ function isBrickPixel(x, y){
     for(let dx = -RADIUS; dx <= RADIUS; dx++){
       const nx = imgX + dx;
       if(nx < 0 || nx >= width) continue;
+      if(Math.abs(dx) + Math.abs(dy) > RADIUS) continue;
       if(data[(ny * width + nx) * 4 + 3] > 0) return true;
     }
   }
@@ -313,14 +327,14 @@ let aaPreviewTrail = [];
 
 let aaPointerDown = false;
 
-
 let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_START | TURN | ROUND_END
 
 
 let currentPlacer = null; // 'green' | 'blue'
 const MAPS = [
-  { name: 'Clear Sky', file: 'map 1_ clear sky 2.png' },
-  { name: '5 Bricks',  file: 'map 2 - 5 bricks.png' }
+  { name: 'Clear Sky', file: 'map 1 - clear sky 3.png' },
+  { name: '5 Bricks',  file: 'map 2 - 5 bricks.png' },
+  { name: 'Diagonals', file: 'map 3 diagonals.png' }
 ];
 
 let settings = { addAA: false, sharpEdges: false, mapIndex: 0 };
