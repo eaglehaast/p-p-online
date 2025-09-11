@@ -54,7 +54,7 @@ const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
 const brickFrameImg = new Image();
 // Load the default map on startup so we don't request a missing image
 // and fail to initialize the playing field before `applyCurrentMap()` runs.
-brickFrameImg.src = "map 1_ clear sky 2.png";
+brickFrameImg.src = "map 1 - clear sky 3.png";
 let brickFrameData = null;
 
 let FIELD_LEFT = 0;
@@ -227,7 +227,8 @@ function isBrickPixel(x, y){
 
   // Mortar lines between bricks are transparent in the source image, which
   // caused reflections to treat the gaps as empty space. Expand the search a
-  // little so these gaps count as solid wall.
+  // little so these gaps count as solid wall. Use a diamond-shaped neighborhood
+  // to avoid triggering collisions too early on diagonal walls.
   const RADIUS = 3; // px
   for(let dy = -RADIUS; dy <= RADIUS; dy++){
     const ny = imgY + dy;
@@ -235,6 +236,7 @@ function isBrickPixel(x, y){
     for(let dx = -RADIUS; dx <= RADIUS; dx++){
       const nx = imgX + dx;
       if(nx < 0 || nx >= width) continue;
+      if(Math.abs(dx) + Math.abs(dy) > RADIUS) continue;
       if(data[(ny * width + nx) * 4 + 3] > 0) return true;
     }
   }
@@ -313,14 +315,14 @@ let aaPreviewTrail = [];
 
 let aaPointerDown = false;
 
-
 let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_START | TURN | ROUND_END
 
 
 let currentPlacer = null; // 'green' | 'blue'
 const MAPS = [
-  { name: 'Clear Sky', file: 'map 1_ clear sky 2.png' },
-  { name: '5 Bricks',  file: 'map 2 - 5 bricks.png' }
+  { name: 'Clear Sky', file: 'map 1 - clear sky 3.png' },
+  { name: '5 Bricks',  file: 'map 2 - 5 bricks.png' },
+  { name: 'Diagonals', file: 'map 3 diagonals.png' }
 ];
 
 let settings = { addAA: false, sharpEdges: false, mapIndex: 0 };
