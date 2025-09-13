@@ -53,9 +53,9 @@ body, button {
   position: absolute;
   left: 0;
   width: 460px;
-  height: 320px;
+  height: 400px;
   background-image: url("goat and mantis.png");
-  background-size: 460px 640px;
+  background-size: 460px 800px;
   background-repeat: no-repeat;
   pointer-events: none;
   opacity: 0.3;
@@ -64,7 +64,7 @@ body, button {
 }
 
 #mantisIndicator {
-  top: 80px;
+  top: 0;
   background-position: top center;
 }
 
