@@ -65,16 +65,24 @@ body, button {
 
 .turn-indicator .turn-text {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+
   font-family: 'Patrick Hand', cursive;
   font-size: 32px;
   color: rgba(128, 128, 128, 0.6);
   text-align: center;
   pointer-events: none;
 }
+#mantisIndicator .turn-text {
+  top: 50px;
+  left: 262px;
+  transform: translate(-50%, -50%);
+}
 
+#goatIndicator .turn-text {
+  top: 362px;
+  left: 207px;
+  transform: translate(-50%, -50%);
+}
 #mantisIndicator {
   top: 0;
   background-position: top center;
