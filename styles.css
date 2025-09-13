@@ -77,6 +77,41 @@ body, button {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
+/* Turn indicators */
+.turn-indicator {
+  position: absolute;
+  left: 0;
+  width: 460px;
+  height: 400px;
+  background-image: url("goat and mantis.png");
+  background-size: 460px 800px;
+  background-repeat: no-repeat;
+  pointer-events: none;
+  opacity: 0.3;
+  transition: opacity 0.3s, filter 0.3s;
+  z-index: 40;
+}
+
+#mantisIndicator {
+  top: 0;
+  background-position: top center;
+}
+
+#goatIndicator {
+  bottom: 0;
+  background-position: center bottom;
+}
+
+#mantisIndicator.active {
+  opacity: 1;
+  filter: drop-shadow(0 0 10px #013c83);
+}
+
+#goatIndicator.active {
+  opacity: 1;
+  filter: drop-shadow(0 0 10px #7f8e40);
+}
+
 /* Overlay canvas for aiming line */
 #aimCanvas {
   position: fixed;

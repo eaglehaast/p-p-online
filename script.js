@@ -11,6 +11,9 @@ const scoreCtx    = scoreCanvas.getContext("2d");
 const scoreCanvasBottom = document.getElementById("scoreCanvasBottom");
 const scoreCtxBottom    = scoreCanvasBottom.getContext("2d");
 
+const mantisIndicator = document.getElementById("mantisIndicator");
+const goatIndicator   = document.getElementById("goatIndicator");
+
 const gameCanvas  = document.getElementById("gameCanvas");
 const gameCtx     = gameCanvas.getContext("2d");
 
@@ -507,6 +510,8 @@ function resetGame(){
   scoreCanvas.style.display = "none";
   gameCanvas.style.display = "none";
   scoreCanvasBottom.style.display = "none";
+  mantisIndicator.style.display = "none";
+  goatIndicator.style.display = "none";
   aimCanvas.style.display = "none";
   planeCanvas.style.display = "none";
   planeCtx.clearRect(0,0,planeCanvas.width,planeCanvas.height);
@@ -2533,6 +2538,13 @@ function checkVictory(){
 function renderScoreboard(){
   drawPlayerPanel(scoreCtx, "blue", blueScore, turnColors[turnIndex] === "blue");
   drawPlayerPanel(scoreCtxBottom, "green", greenScore, turnColors[turnIndex] === "green");
+  updateTurnIndicators();
+}
+
+function updateTurnIndicators(){
+  const color = turnColors[turnIndex];
+  mantisIndicator.classList.toggle('active', color === 'blue');
+  goatIndicator.classList.toggle('active', color === 'green');
 }
 
 function drawPlayerPanel(ctx, color, score, isTurn){
@@ -2709,6 +2721,8 @@ function startNewRound(){
   scoreCanvas.style.display = "block";
   gameCanvas.style.display = "block";
   scoreCanvasBottom.style.display = "block";
+  mantisIndicator.style.display = "block";
+  goatIndicator.style.display = "block";
   planeCanvas.style.display = "block";
 
   initPoints(); // ориентации на базе
