@@ -5,15 +5,10 @@
  ***************************************************************/
 
 /* ======= DOM ======= */
-const scoreCanvas = document.getElementById("scoreCanvas");
-const scoreCtx    = scoreCanvas.getContext("2d");
-
-const scoreCanvasBottom = document.getElementById("scoreCanvasBottom");
-const scoreCtxBottom    = scoreCanvasBottom.getContext("2d");
-
 const mantisIndicator = document.getElementById("mantisIndicator");
 const goatIndicator   = document.getElementById("goatIndicator");
 
+const gameContainer = document.getElementById("gameContainer");
 const gameCanvas  = document.getElementById("gameCanvas");
 const gameCtx     = gameCanvas.getContext("2d");
 
@@ -52,6 +47,12 @@ const greenPlaneImg = new Image();
 greenPlaneImg.src = "green plane 3.png";
 const backgroundImg = new Image();
 backgroundImg.src = "background paper 1.png";
+const CANVAS_BASE_WIDTH = 360;
+const CANVAS_BASE_HEIGHT = 640;
+const FRAME_PADDING_X = 50;
+const FRAME_PADDING_Y = 80;
+const FRAME_BASE_WIDTH = CANVAS_BASE_WIDTH + FRAME_PADDING_X * 2; // 460
+const FRAME_BASE_HEIGHT = CANVAS_BASE_HEIGHT + FRAME_PADDING_Y * 2; // 800
 const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
 
 const brickFrameImg = new Image();
@@ -507,9 +508,7 @@ function resetGame(){
 
   // Показать меню, скрыть канвасы
   modeMenuDiv.style.display = "block";
-  scoreCanvas.style.display = "none";
   gameCanvas.style.display = "none";
-  scoreCanvasBottom.style.display = "none";
   mantisIndicator.style.display = "none";
   goatIndicator.style.display = "none";
   aimCanvas.style.display = "none";
@@ -2536,9 +2535,16 @@ function checkVictory(){
 /* ======= SCOREBOARD ======= */
 
 function renderScoreboard(){
-  drawPlayerPanel(scoreCtx, "blue", blueScore, turnColors[turnIndex] === "blue");
-  drawPlayerPanel(scoreCtxBottom, "green", greenScore, turnColors[turnIndex] === "green");
   updateTurnIndicators();
+  planeCtx.save();
+  const rect = gameCanvas.getBoundingClientRect();
+  const scale = rect.width / CANVAS_BASE_WIDTH;
+  const containerLeft = rect.left - FRAME_PADDING_X * scale;
+  const containerTop = rect.top - FRAME_PADDING_Y * scale;
+  const containerWidth = FRAME_BASE_WIDTH * scale;
+  drawPlayerHUD(planeCtx, containerLeft + 10, containerTop + 10, "blue", blueScore, turnColors[turnIndex] === "blue", false);
+  drawPlayerHUD(planeCtx, containerLeft + containerWidth - 10, containerTop + 10, "green", greenScore, turnColors[turnIndex] === "green", true);
+  planeCtx.restore();
 }
 
 function updateTurnIndicators(){
@@ -2547,68 +2553,45 @@ function updateTurnIndicators(){
   goatIndicator.classList.toggle('active', color === 'green');
 }
 
-function drawPlayerPanel(ctx, color, score, isTurn){
-  const canvas = ctx.canvas;
-  ctx.clearRect(0,0, canvas.width, canvas.height);
-  ctx.fillStyle = "#fffbea";
-  ctx.fillRect(0,0, canvas.width, canvas.height);
+function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.font = "14px 'Patrick Hand', cursive";
+  ctx.textBaseline = "top";
+  ctx.textAlign = alignRight ? "right" : "left";
 
-  const sectionW = canvas.width/3;
-
-  // separators
-  ctx.strokeStyle = "rgba(0,0,0,0.1)";
-  ctx.beginPath();
-  ctx.moveTo(sectionW,0); ctx.lineTo(sectionW,canvas.height);
-  ctx.moveTo(sectionW*2,0); ctx.lineTo(sectionW*2,canvas.height);
-  ctx.stroke();
-
-  // plane counters
-  const bluePlanes  = points.filter(p => p.color === "blue");
-  const greenPlanes = points.filter(p => p.color === "green");
+  const planes = points.filter(p => p.color === color);
   const maxPerRow = 4;
   const spacingX = 20;
-  const startX = sectionW / 2 - ((maxPerRow - 1) * spacingX) / 2;
-
-  const rowSpacingY = 20;
-  const startY = canvas.height / 2 - rowSpacingY / 2;
-  const blueY = startY;
-  const greenY = startY + rowSpacingY;
-  for (let i = 0; i < Math.min(bluePlanes.length, maxPerRow); i++) {
-    const p = bluePlanes[i];
-    const x = startX + i * spacingX;
-    drawMiniPlaneWithCross(ctx, x, blueY, "blue", p.isAlive, p.burning && isExplosionFinished(p), 0.8);
-  }
-  for (let i = 0; i < Math.min(greenPlanes.length, maxPerRow); i++) {
-    const p = greenPlanes[i];
-    const x = startX + i * spacingX;
-    drawMiniPlaneWithCross(ctx, x, greenY, "green", p.isAlive, p.burning && isExplosionFinished(p), 0.8);
+  for (let i = 0; i < Math.min(planes.length, maxPerRow); i++) {
+    const p = planes[i];
+    const px = alignRight ? -i * spacingX : i * spacingX;
+    drawMiniPlaneWithCross(ctx, px, 0, color, p.isAlive, p.burning && isExplosionFinished(p), 0.8);
   }
 
-  // turn indicator
-  ctx.font = "14px 'Patrick Hand', cursive";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
+  ctx.fillStyle = colorFor(color);
+  const scoreX = 0;
+  ctx.fillText(String(score), scoreX, 20);
+
   let statusText;
   if (phase === 'AA_PLACEMENT') {
     if (currentPlacer === color) {
-      statusText = 'You are placing Anti-Aircraft';
+      statusText = 'Placing AA';
       ctx.fillStyle = colorFor(color);
     } else {
-      statusText = 'Enemy is placing Anti-Aircraft';
+      statusText = 'Enemy placing AA';
       ctx.fillStyle = '#888';
     }
   } else if (isTurn) {
-    statusText = "Your Turn";
+    statusText = 'Your Turn';
     ctx.fillStyle = colorFor(color);
   } else {
-    statusText = "Enemy Pilot's Turn";
-    ctx.fillStyle = "#888";
+    statusText = "Enemy's Turn";
+    ctx.fillStyle = '#888';
   }
-  ctx.fillText(statusText, sectionW*1.5, canvas.height/2);
+  ctx.fillText(statusText, scoreX, 40);
 
-  // score
-  ctx.fillStyle = colorFor(color);
-  ctx.fillText(String(score), sectionW*2.5, canvas.height/2);
+  ctx.restore();
 }
 
 
@@ -2718,9 +2701,7 @@ function startNewRound(){
   aaUnits = [];
 
   aiMoveScheduled = false;
-  scoreCanvas.style.display = "block";
   gameCanvas.style.display = "block";
-  scoreCanvasBottom.style.display = "block";
   mantisIndicator.style.display = "block";
   goatIndicator.style.display = "block";
   planeCanvas.style.display = "block";
@@ -2758,38 +2739,34 @@ function resizeCanvas() {
     lockOrientation();
     // continue resizing instead of early returning
   }
-  const BASE_WIDTH = 360;
-  const BASE_HEIGHT = 640;
-  const SCORE_HEIGHT = 60;
-  const MARGIN = 5;
-
-  // Determine how much we can scale canvases to fit available space
   const scale = Math.min(
-    window.innerWidth / BASE_WIDTH,
-    window.innerHeight / (BASE_HEIGHT + 2 * SCORE_HEIGHT + 6 * MARGIN)
+    window.innerWidth / FRAME_BASE_WIDTH,
+    window.innerHeight / FRAME_BASE_HEIGHT
   );
 
-  const scaledWidth = BASE_WIDTH * scale;
-  const scaledHeight = BASE_HEIGHT * scale;
-  const scaledScoreHeight = SCORE_HEIGHT * scale;
-  const scaledMargin = MARGIN * scale;
+  const containerWidth = FRAME_BASE_WIDTH * scale;
+  const containerHeight = FRAME_BASE_HEIGHT * scale;
+  gameContainer.style.width = containerWidth + 'px';
+  gameContainer.style.height = containerHeight + 'px';
+  gameContainer.style.left = (window.innerWidth - containerWidth) / 2 + 'px';
+  gameContainer.style.top = (window.innerHeight - containerHeight) / 2 + 'px';
+  gameContainer.style.backgroundSize = containerWidth + 'px ' + containerHeight + 'px';
 
-  // Resize score canvases
-  [scoreCanvas, scoreCanvasBottom].forEach(canvas => {
-    canvas.style.width = scaledWidth + 'px';
-    canvas.style.height = scaledScoreHeight + 'px';
-    canvas.style.margin = scaledMargin + 'px auto';
-    canvas.width = BASE_WIDTH;
-    canvas.height = SCORE_HEIGHT;
-  });
-
-  // Resize main game canvas
   const canvas = gameCanvas;
-  canvas.style.width = scaledWidth + 'px';
-  canvas.style.height = scaledHeight + 'px';
-  canvas.style.margin = scaledMargin + 'px auto';
-  canvas.width = BASE_WIDTH;
-  canvas.height = BASE_HEIGHT;
+  canvas.style.width = CANVAS_BASE_WIDTH * scale + 'px';
+  canvas.style.height = CANVAS_BASE_HEIGHT * scale + 'px';
+  canvas.style.left = FRAME_PADDING_X * scale + 'px';
+  canvas.style.top = FRAME_PADDING_Y * scale + 'px';
+  canvas.width = CANVAS_BASE_WIDTH;
+  canvas.height = CANVAS_BASE_HEIGHT;
+
+  [mantisIndicator, goatIndicator].forEach(ind => {
+    ind.style.width = containerWidth + 'px';
+    ind.style.height = CANVAS_BASE_HEIGHT / 2 * scale + 'px';
+    ind.style.backgroundSize = containerWidth + 'px ' + CANVAS_BASE_HEIGHT * scale + 'px';
+  });
+  mantisIndicator.style.top = FRAME_PADDING_Y * scale + 'px';
+  goatIndicator.style.top = (FRAME_PADDING_Y + CANVAS_BASE_HEIGHT / 2) * scale + 'px';
 
   updateFieldDimensions();
 

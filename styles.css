@@ -14,9 +14,6 @@ body, button {
 
   body {
     position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
     font-family: 'Roboto', sans-serif;
     background-color: #ffffff;
     margin: 0;
@@ -27,61 +24,38 @@ body, button {
   }
 
   #gameContainer {
-    position: relative;
+    position: absolute;
     width: 460px;
     height: 800px;
-    padding: 5px 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+    background-image: url("background behind the canvas.png");
+    background-size: 460px 800px;
+    background-repeat: no-repeat;
   }
-
-
-/* Верхнее табло */
-#scoreCanvas {
-  margin: 5px auto;
-  background-color: transparent;
-  border-radius: 8px;
-  width: 360px;
-  max-width: 360px;
-  height: 60px;
-  display: block;
-  box-shadow: none;
-}
 
 /* Игровое поле */
 #gameCanvas {
-  margin: 5px auto;
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
   border-radius: 12px;
   background-color: transparent;
   width: 360px;
   height: 640px;
   display: block;
-  position: relative;
+  position: absolute;
+  left: 50px;
+  top: 80px;
+  margin: 0;
   z-index: 11;
 }
 
-/* Нижнее табло */
-#scoreCanvasBottom {
-  margin: 5px auto;
-  background-color: transparent;
-  border-radius: 8px;
-  width: 360px;
-  max-width: 360px;
-  height: 60px;
-  display: block;
-  box-shadow: none;
-}
 
 /* Turn indicators */
 .turn-indicator {
   position: absolute;
   left: 0;
   width: 460px;
-  height: 400px;
+  height: 320px;
   background-image: url("goat and mantis.png");
-  background-size: 460px 800px;
+  background-size: 460px 640px;
   background-repeat: no-repeat;
   pointer-events: none;
   opacity: 0.3;
@@ -90,12 +64,12 @@ body, button {
 }
 
 #mantisIndicator {
-  top: 0;
+  top: 80px;
   background-position: top center;
 }
 
 #goatIndicator {
-  bottom: 0;
+  top: 400px;
   background-position: center bottom;
 }
 
