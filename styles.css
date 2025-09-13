@@ -58,15 +58,21 @@ body, button {
   background-size: 460px 800px;
   background-repeat: no-repeat;
   pointer-events: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: 'Patrick Hand', cursive;
-  font-size: 32px;
-  color: #000;
   filter: grayscale(1);
   transition: filter 0.3s;
   z-index: 40;
+}
+
+.turn-indicator .turn-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: 'Patrick Hand', cursive;
+  font-size: 32px;
+  color: rgba(128, 128, 128, 0.6);
+  text-align: center;
+  pointer-events: none;
 }
 
 #mantisIndicator {
