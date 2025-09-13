@@ -2537,6 +2537,7 @@ function checkVictory(){
 function renderScoreboard(){
   updateTurnIndicators();
   planeCtx.save();
+
   const rect = gameCanvas.getBoundingClientRect();
   const scale = rect.width / CANVAS_BASE_WIDTH;
   const containerLeft = rect.left - FRAME_PADDING_X * scale;
@@ -2544,6 +2545,7 @@ function renderScoreboard(){
   const containerWidth = FRAME_BASE_WIDTH * scale;
   drawPlayerHUD(planeCtx, containerLeft + 10, containerTop + 10, "blue", blueScore, turnColors[turnIndex] === "blue", false);
   drawPlayerHUD(planeCtx, containerLeft + containerWidth - 10, containerTop + 10, "green", greenScore, turnColors[turnIndex] === "green", true);
+
   planeCtx.restore();
 }
 
@@ -2739,6 +2741,7 @@ function resizeCanvas() {
     lockOrientation();
     // continue resizing instead of early returning
   }
+
   const scale = Math.min(
     window.innerWidth / FRAME_BASE_WIDTH,
     window.innerHeight / FRAME_BASE_HEIGHT
@@ -2751,7 +2754,6 @@ function resizeCanvas() {
   gameContainer.style.left = (window.innerWidth - containerWidth) / 2 + 'px';
   gameContainer.style.top = (window.innerHeight - containerHeight) / 2 + 'px';
   gameContainer.style.backgroundSize = containerWidth + 'px ' + containerHeight + 'px';
-
   const canvas = gameCanvas;
   canvas.style.width = CANVAS_BASE_WIDTH * scale + 'px';
   canvas.style.height = CANVAS_BASE_HEIGHT * scale + 'px';
