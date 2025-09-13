@@ -8,6 +8,7 @@
 const mantisIndicator = document.getElementById("mantisIndicator");
 const goatIndicator   = document.getElementById("goatIndicator");
 
+const gameContainer = document.getElementById("gameContainer");
 const gameCanvas  = document.getElementById("gameCanvas");
 const gameCtx     = gameCanvas.getContext("2d");
 
@@ -46,6 +47,12 @@ const greenPlaneImg = new Image();
 greenPlaneImg.src = "green plane 3.png";
 const backgroundImg = new Image();
 backgroundImg.src = "background paper 1.png";
+const CANVAS_BASE_WIDTH = 360;
+const CANVAS_BASE_HEIGHT = 640;
+const FRAME_PADDING_X = 50;
+const FRAME_PADDING_Y = 80;
+const FRAME_BASE_WIDTH = CANVAS_BASE_WIDTH + FRAME_PADDING_X * 2; // 460
+const FRAME_BASE_HEIGHT = CANVAS_BASE_HEIGHT + FRAME_PADDING_Y * 2; // 800
 const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
 
 const brickFrameImg = new Image();
@@ -2530,8 +2537,15 @@ function checkVictory(){
 function renderScoreboard(){
   updateTurnIndicators();
   planeCtx.save();
-  drawPlayerHUD(planeCtx, 10, 10, "blue", blueScore, turnColors[turnIndex] === "blue", false);
-  drawPlayerHUD(planeCtx, planeCanvas.width - 10, 10, "green", greenScore, turnColors[turnIndex] === "green", true);
+
+  const rect = gameCanvas.getBoundingClientRect();
+  const scale = rect.width / CANVAS_BASE_WIDTH;
+  const containerLeft = rect.left - FRAME_PADDING_X * scale;
+  const containerTop = rect.top - FRAME_PADDING_Y * scale;
+  const containerWidth = FRAME_BASE_WIDTH * scale;
+  drawPlayerHUD(planeCtx, containerLeft + 10, containerTop + 10, "blue", blueScore, turnColors[turnIndex] === "blue", false);
+  drawPlayerHUD(planeCtx, containerLeft + containerWidth - 10, containerTop + 10, "green", greenScore, turnColors[turnIndex] === "green", true);
+
   planeCtx.restore();
 }
 
@@ -2727,27 +2741,34 @@ function resizeCanvas() {
     lockOrientation();
     // continue resizing instead of early returning
   }
-  const BASE_WIDTH = 360;
-  const BASE_HEIGHT = 640;
-  const MARGIN = 5;
 
-  // Determine how much we can scale canvases to fit available space
   const scale = Math.min(
-    window.innerWidth / BASE_WIDTH,
-    window.innerHeight / (BASE_HEIGHT + 2 * MARGIN)
+    window.innerWidth / FRAME_BASE_WIDTH,
+    window.innerHeight / FRAME_BASE_HEIGHT
   );
 
-  const scaledWidth = BASE_WIDTH * scale;
-  const scaledHeight = BASE_HEIGHT * scale;
-  const scaledMargin = MARGIN * scale;
-
-  // Resize main game canvas
+  const containerWidth = FRAME_BASE_WIDTH * scale;
+  const containerHeight = FRAME_BASE_HEIGHT * scale;
+  gameContainer.style.width = containerWidth + 'px';
+  gameContainer.style.height = containerHeight + 'px';
+  gameContainer.style.left = (window.innerWidth - containerWidth) / 2 + 'px';
+  gameContainer.style.top = (window.innerHeight - containerHeight) / 2 + 'px';
+  gameContainer.style.backgroundSize = containerWidth + 'px ' + containerHeight + 'px';
   const canvas = gameCanvas;
-  canvas.style.width = scaledWidth + 'px';
-  canvas.style.height = scaledHeight + 'px';
-  canvas.style.margin = scaledMargin + 'px auto';
-  canvas.width = BASE_WIDTH;
-  canvas.height = BASE_HEIGHT;
+  canvas.style.width = CANVAS_BASE_WIDTH * scale + 'px';
+  canvas.style.height = CANVAS_BASE_HEIGHT * scale + 'px';
+  canvas.style.left = FRAME_PADDING_X * scale + 'px';
+  canvas.style.top = FRAME_PADDING_Y * scale + 'px';
+  canvas.width = CANVAS_BASE_WIDTH;
+  canvas.height = CANVAS_BASE_HEIGHT;
+
+  [mantisIndicator, goatIndicator].forEach(ind => {
+    ind.style.width = containerWidth + 'px';
+    ind.style.height = CANVAS_BASE_HEIGHT / 2 * scale + 'px';
+    ind.style.backgroundSize = containerWidth + 'px ' + CANVAS_BASE_HEIGHT * scale + 'px';
+  });
+  mantisIndicator.style.top = FRAME_PADDING_Y * scale + 'px';
+  goatIndicator.style.top = (FRAME_PADDING_Y + CANVAS_BASE_HEIGHT / 2) * scale + 'px';
 
   updateFieldDimensions();
 
