@@ -7,6 +7,8 @@
 /* ======= DOM ======= */
 const mantisIndicator = document.getElementById("mantisIndicator");
 const goatIndicator   = document.getElementById("goatIndicator");
+const mantisText = mantisIndicator.querySelector('.turn-text');
+const goatText = goatIndicator.querySelector('.turn-text');
 
 const gameContainer = document.getElementById("gameContainer");
 const gameCanvas  = document.getElementById("gameCanvas");
@@ -2554,13 +2556,13 @@ function updateTurnIndicators(){
   mantisIndicator.classList.toggle('active', color === 'blue');
   goatIndicator.classList.toggle('active', color === 'green');
 
-  mantisIndicator.textContent = '';
-  goatIndicator.textContent = '';
+  mantisText.textContent = '';
+  goatText.textContent = '';
   if (phase !== 'AA_PLACEMENT') {
     if (color === 'blue') {
-      goatIndicator.textContent = "Enemy's Turn";
+      goatText.textContent = "Enemy's Turn";
     } else {
-      mantisIndicator.textContent = "Enemy's Turn";
+      mantisText.textContent = "Enemy's Turn";
     }
   }
 }
