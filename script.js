@@ -2764,11 +2764,11 @@ function resizeCanvas() {
 
   [mantisIndicator, goatIndicator].forEach(ind => {
     ind.style.width = containerWidth + 'px';
-    ind.style.height = CANVAS_BASE_HEIGHT / 2 * scale + 'px';
-    ind.style.backgroundSize = containerWidth + 'px ' + CANVAS_BASE_HEIGHT * scale + 'px';
+    ind.style.height = FRAME_BASE_HEIGHT / 2 * scale + 'px';
+    ind.style.backgroundSize = containerWidth + 'px ' + containerHeight + 'px';
   });
-  mantisIndicator.style.top = FRAME_PADDING_Y * scale + 'px';
-  goatIndicator.style.top = (FRAME_PADDING_Y + CANVAS_BASE_HEIGHT / 2) * scale + 'px';
+  mantisIndicator.style.top = '0px';
+  goatIndicator.style.top = containerHeight / 2 + 'px';
 
   updateFieldDimensions();
 
