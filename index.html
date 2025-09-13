@@ -8,14 +8,16 @@
   <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Roboto&display=swap" rel="stylesheet">
 </head>
 <body>
-  <!-- Top Scoreboard (Initially Hidden) -->
-  <canvas id="scoreCanvas" width="360" height="60" style="display:none;"></canvas>
+  <div id="gameContainer">
+    <!-- Top Scoreboard (Initially Hidden) -->
+    <canvas id="scoreCanvas" width="360" height="60" style="display:none;"></canvas>
 
-  <!-- Game Field (Initially Hidden) -->
-  <canvas id="gameCanvas" width="360" height="640" style="display:none;"></canvas>
+    <!-- Game Field (Initially Hidden) -->
+    <canvas id="gameCanvas" width="360" height="640" style="display:none;"></canvas>
 
-  <!-- Bottom Scoreboard (Initially Hidden) -->
-  <canvas id="scoreCanvasBottom" width="360" height="60" style="display:none;"></canvas>
+    <!-- Bottom Scoreboard (Initially Hidden) -->
+    <canvas id="scoreCanvasBottom" width="360" height="60" style="display:none;"></canvas>
+  </div>
 
   <!-- Overlay canvas for aiming line -->
   <canvas id="aimCanvas" style="display:none;"></canvas>
