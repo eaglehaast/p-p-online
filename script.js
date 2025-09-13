@@ -2553,6 +2553,16 @@ function updateTurnIndicators(){
   const color = turnColors[turnIndex];
   mantisIndicator.classList.toggle('active', color === 'blue');
   goatIndicator.classList.toggle('active', color === 'green');
+
+  mantisIndicator.textContent = '';
+  goatIndicator.textContent = '';
+  if (phase !== 'AA_PLACEMENT') {
+    if (color === 'blue') {
+      goatIndicator.textContent = "Enemy's Turn";
+    } else {
+      mantisIndicator.textContent = "Enemy's Turn";
+    }
+  }
 }
 
 function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
@@ -2575,7 +2585,7 @@ function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
   const scoreX = 0;
   ctx.fillText(String(score), scoreX, 20);
 
-  let statusText;
+  let statusText = '';
   if (phase === 'AA_PLACEMENT') {
     if (currentPlacer === color) {
       statusText = 'Placing AA';
@@ -2584,14 +2594,10 @@ function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
       statusText = 'Enemy placing AA';
       ctx.fillStyle = '#888';
     }
-  } else if (isTurn) {
-    statusText = 'Your Turn';
-    ctx.fillStyle = colorFor(color);
-  } else {
-    statusText = "Enemy's Turn";
-    ctx.fillStyle = '#888';
   }
-  ctx.fillText(statusText, scoreX, 40);
+  if (statusText) {
+    ctx.fillText(statusText, scoreX, 40);
+  }
 
   ctx.restore();
 }
