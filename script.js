@@ -5,6 +5,15 @@
  ***************************************************************/
 
 /* ======= DOM ======= */
+const scoreCanvas = document.getElementById("scoreCanvas");
+const scoreCtx    = scoreCanvas.getContext("2d");
+
+const scoreCanvasBottom = document.getElementById("scoreCanvasBottom");
+const scoreCtxBottom    = scoreCanvasBottom.getContext("2d");
+
+const mantisIndicator = document.getElementById("mantisIndicator");
+const goatIndicator   = document.getElementById("goatIndicator");
+
 const gameCanvas  = document.getElementById("gameCanvas");
 const gameCtx     = gameCanvas.getContext("2d");
 
@@ -498,7 +507,11 @@ function resetGame(){
 
   // Показать меню, скрыть канвасы
   modeMenuDiv.style.display = "block";
+  scoreCanvas.style.display = "none";
   gameCanvas.style.display = "none";
+  scoreCanvasBottom.style.display = "none";
+  mantisIndicator.style.display = "none";
+  goatIndicator.style.display = "none";
   aimCanvas.style.display = "none";
   planeCanvas.style.display = "none";
   planeCtx.clearRect(0,0,planeCanvas.width,planeCanvas.height);
@@ -507,6 +520,7 @@ function resetGame(){
   stopGameLoop();
 
   initPoints();
+  renderScoreboard();
 }
 
 
@@ -926,6 +940,7 @@ function onHandleUp(){
 
   if(!hasShotThisRound){
     hasShotThisRound = true;
+    renderScoreboard();
   }
   cleanupHandle();
 }
@@ -1083,6 +1098,7 @@ function issueAIMove(plane, vx, vy){
   flyingPoints.push({ plane, vx, vy, timeLeft: FLIGHT_DURATION_SEC, hit:false, collisionCooldown:0 });
   if(!hasShotThisRound){
     hasShotThisRound = true;
+    renderScoreboard();
   }
   roundTextTimer = 0;
 }
@@ -1695,6 +1711,9 @@ function handleAAForPlane(p, fp){
   drawPlanesAndTrajectories();
 
 
+  // табло
+  renderScoreboard();
+
   if(isGameOver && winnerColor){
     gameCtx.font="48px 'Patrick Hand', cursive";
     gameCtx.fillStyle= colorFor(winnerColor);
@@ -2013,6 +2032,44 @@ function drawRedCross(ctx2d, cx, cy, size=20){
 
 function isExplosionFinished(p){
   return p.explosionStart && (performance.now() - p.explosionStart >= EXPLOSION_DURATION_MS);
+}
+
+function drawMiniPlaneWithCross(ctx2d, x, y, color, isAlive, isBurning, scale = 1) {
+  ctx2d.save();
+  ctx2d.translate(x, y);
+
+  // Base size of the icon so it fits within the scoreboard cell
+  const size = 16 * PLANE_SCALE * scale;
+
+  let img = null;
+  if (color === "blue") {
+    img = bluePlaneImg;
+  } else if (color === "green") {
+    img = greenPlaneImg;
+  }
+
+  if (img && img.complete) {
+    ctx2d.drawImage(img, -size / 2, -size / 2, size, size);
+  } else {
+    // Fallback to simple outline if image isn't ready yet
+    ctx2d.strokeStyle = colorFor(color);
+    ctx2d.lineWidth = 2;
+    ctx2d.beginPath();
+    ctx2d.moveTo(0, -size / 2);
+    ctx2d.lineTo(size / 4, size / 4);
+    ctx2d.lineTo(size / 8, size / 4);
+    ctx2d.lineTo(0, size / 2);
+    ctx2d.lineTo(-size / 8, size / 4);
+    ctx2d.lineTo(-size / 4, size / 4);
+    ctx2d.closePath();
+    ctx2d.stroke();
+  }
+
+  if (isBurning) {
+    drawRedCross(ctx2d, 0, 0, size * 0.8);
+  }
+
+  ctx2d.restore();
 }
 
 function drawPlanesAndTrajectories(){
@@ -2476,6 +2533,83 @@ function checkVictory(){
   }
 }
 
+/* ======= SCOREBOARD ======= */
+
+function renderScoreboard(){
+  drawPlayerPanel(scoreCtx, "blue", blueScore, turnColors[turnIndex] === "blue");
+  drawPlayerPanel(scoreCtxBottom, "green", greenScore, turnColors[turnIndex] === "green");
+  updateTurnIndicators();
+}
+
+function updateTurnIndicators(){
+  const color = turnColors[turnIndex];
+  mantisIndicator.classList.toggle('active', color === 'blue');
+  goatIndicator.classList.toggle('active', color === 'green');
+}
+
+function drawPlayerPanel(ctx, color, score, isTurn){
+  const canvas = ctx.canvas;
+  ctx.clearRect(0,0, canvas.width, canvas.height);
+  ctx.fillStyle = "#fffbea";
+  ctx.fillRect(0,0, canvas.width, canvas.height);
+
+  const sectionW = canvas.width/3;
+
+  // separators
+  ctx.strokeStyle = "rgba(0,0,0,0.1)";
+  ctx.beginPath();
+  ctx.moveTo(sectionW,0); ctx.lineTo(sectionW,canvas.height);
+  ctx.moveTo(sectionW*2,0); ctx.lineTo(sectionW*2,canvas.height);
+  ctx.stroke();
+
+  // plane counters
+  const bluePlanes  = points.filter(p => p.color === "blue");
+  const greenPlanes = points.filter(p => p.color === "green");
+  const maxPerRow = 4;
+  const spacingX = 20;
+  const startX = sectionW / 2 - ((maxPerRow - 1) * spacingX) / 2;
+
+  const rowSpacingY = 20;
+  const startY = canvas.height / 2 - rowSpacingY / 2;
+  const blueY = startY;
+  const greenY = startY + rowSpacingY;
+  for (let i = 0; i < Math.min(bluePlanes.length, maxPerRow); i++) {
+    const p = bluePlanes[i];
+    const x = startX + i * spacingX;
+    drawMiniPlaneWithCross(ctx, x, blueY, "blue", p.isAlive, p.burning && isExplosionFinished(p), 0.8);
+  }
+  for (let i = 0; i < Math.min(greenPlanes.length, maxPerRow); i++) {
+    const p = greenPlanes[i];
+    const x = startX + i * spacingX;
+    drawMiniPlaneWithCross(ctx, x, greenY, "green", p.isAlive, p.burning && isExplosionFinished(p), 0.8);
+  }
+
+  // turn indicator
+  ctx.font = "14px 'Patrick Hand', cursive";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  let statusText;
+  if (phase === 'AA_PLACEMENT') {
+    if (currentPlacer === color) {
+      statusText = 'You are placing Anti-Aircraft';
+      ctx.fillStyle = colorFor(color);
+    } else {
+      statusText = 'Enemy is placing Anti-Aircraft';
+      ctx.fillStyle = '#888';
+    }
+  } else if (isTurn) {
+    statusText = "Your Turn";
+    ctx.fillStyle = colorFor(color);
+  } else {
+    statusText = "Enemy Pilot's Turn";
+    ctx.fillStyle = "#888";
+  }
+  ctx.fillText(statusText, sectionW*1.5, canvas.height/2);
+
+  // score
+  ctx.fillStyle = colorFor(color);
+  ctx.fillText(String(score), sectionW*2.5, canvas.height/2);
+}
 
 
 /* Поля/здания */
@@ -2584,7 +2718,11 @@ function startNewRound(){
   aaUnits = [];
 
   aiMoveScheduled = false;
+  scoreCanvas.style.display = "block";
   gameCanvas.style.display = "block";
+  scoreCanvasBottom.style.display = "block";
+  mantisIndicator.style.display = "block";
+  goatIndicator.style.display = "block";
   planeCanvas.style.display = "block";
 
   initPoints(); // ориентации на базе
@@ -2592,6 +2730,7 @@ function startNewRound(){
   greenFlagCarrier = null;
   blueFlagStolenBy = null;
   greenFlagStolenBy = null;
+  renderScoreboard();
   if (settings.addAA) {
     phase = 'AA_PLACEMENT';
     currentPlacer = 'green';
@@ -2607,6 +2746,7 @@ function applyCurrentMap(){
   const map = MAPS[settings.mapIndex] || MAPS[0];
   brickFrameImg.src = map.file;
   updateFieldDimensions();
+  renderScoreboard();
 }
 
 /* ======= CANVAS RESIZE ======= */
@@ -2620,17 +2760,28 @@ function resizeCanvas() {
   }
   const BASE_WIDTH = 360;
   const BASE_HEIGHT = 640;
+  const SCORE_HEIGHT = 60;
   const MARGIN = 5;
 
-  // Determine how much we can scale the game canvas to fit available space
+  // Determine how much we can scale canvases to fit available space
   const scale = Math.min(
     window.innerWidth / BASE_WIDTH,
-    window.innerHeight / (BASE_HEIGHT + 2 * MARGIN)
+    window.innerHeight / (BASE_HEIGHT + 2 * SCORE_HEIGHT + 6 * MARGIN)
   );
 
   const scaledWidth = BASE_WIDTH * scale;
   const scaledHeight = BASE_HEIGHT * scale;
+  const scaledScoreHeight = SCORE_HEIGHT * scale;
   const scaledMargin = MARGIN * scale;
+
+  // Resize score canvases
+  [scoreCanvas, scoreCanvasBottom].forEach(canvas => {
+    canvas.style.width = scaledWidth + 'px';
+    canvas.style.height = scaledScoreHeight + 'px';
+    canvas.style.margin = scaledMargin + 'px auto';
+    canvas.width = BASE_WIDTH;
+    canvas.height = SCORE_HEIGHT;
+  });
 
   // Resize main game canvas
   const canvas = gameCanvas;
