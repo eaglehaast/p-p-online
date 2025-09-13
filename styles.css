@@ -58,8 +58,14 @@ body, button {
   background-size: 460px 800px;
   background-repeat: no-repeat;
   pointer-events: none;
-  opacity: 0.3;
-  transition: opacity 0.3s, filter 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Patrick Hand', cursive;
+  font-size: 32px;
+  color: #000;
+  filter: grayscale(1);
+  transition: filter 0.3s;
   z-index: 40;
 }
 
@@ -74,13 +80,11 @@ body, button {
 }
 
 #mantisIndicator.active {
-  opacity: 1;
-  filter: drop-shadow(0 0 10px #013c83);
+  filter: grayscale(0) drop-shadow(0 0 10px #013c83);
 }
 
 #goatIndicator.active {
-  opacity: 1;
-  filter: drop-shadow(0 0 10px #7f8e40);
+  filter: grayscale(0) drop-shadow(0 0 10px #7f8e40);
 }
 
 /* Overlay canvas for aiming line */
