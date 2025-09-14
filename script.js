@@ -1729,10 +1729,15 @@ function handleAAForPlane(p, fp){
 
   if(roundTextTimer > 0){
     gameCtx.font="48px 'Patrick Hand', cursive";
-    gameCtx.fillStyle="black";
+    gameCtx.fillStyle = '#B22222';
+    gameCtx.strokeStyle = '#FFD700';
+    gameCtx.lineWidth = 2;
     const text = `Round ${roundNumber}`;
     const w = gameCtx.measureText(text).width;
-    gameCtx.fillText(text, (gameCanvas.width - w)/2, gameCanvas.height/2);
+    const x = (gameCanvas.width - w) / 2;
+    const y = gameCanvas.height / 2;
+    gameCtx.fillText(text, x, y);
+    gameCtx.strokeText(text, x, y);
     roundTextTimer -= delta;
   }
 
@@ -1970,8 +1975,9 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
 
   const blend = Math.max(0, Math.min(1, glow));
   if (blend > 0) {
-    ctx2d.shadowColor = colorWithAlpha(color, blend);
-    ctx2d.shadowBlur = (color === "green" ? 15 : 10) * blend;
+    const glowStrength = blend * 1.25; // boost brightness slightly
+    ctx2d.shadowColor = colorWithAlpha(color, Math.min(1, glowStrength));
+    ctx2d.shadowBlur = (color === "green" ? 15 : 10) * glowStrength;
   } else {
     ctx2d.shadowColor = "rgba(0,0,0,0.3)";
     ctx2d.shadowBlur = 1.5;
