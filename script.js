@@ -81,10 +81,21 @@ blueCounterImg.src = "blue plane counter.png";
 // the fill levels for each star (s11–s55).
 const BLUE_COUNTER_STARS  = 5; // number of star slots
 const BLUE_COUNTER_LEVELS = 5; // points needed to fill one star
-const BLUE_COUNTER_COLS   = BLUE_COUNTER_STARS;
-const BLUE_COUNTER_ROWS   = BLUE_COUNTER_LEVELS + 1; // +1 for contour row
-const BLUE_COUNTER_TILE_W = 460 / BLUE_COUNTER_COLS; // 92px
-const BLUE_COUNTER_TILE_H = 800 / BLUE_COUNTER_ROWS; // 80px
+
+const BLUE_COUNTER_TILE_W = 92; // width of each frame in the sprite sheet
+const BLUE_COUNTER_TILE_H = 80; // height of each frame in the sprite sheet
+
+// Sequence describing which sprite frame appears as the overall score grows.
+// Each entry maps to a star index (0–4) and fill level (1–5).
+// 1→s11, 2→s12, 3→s13, ... 24→s54, 25→s55
+const BLUE_COUNTER_SEQUENCE = [
+  { index: 0, level: 1 }, { index: 0, level: 2 }, { index: 0, level: 3 }, { index: 0, level: 4 }, { index: 0, level: 5 },
+  { index: 1, level: 1 }, { index: 1, level: 2 }, { index: 1, level: 3 }, { index: 1, level: 4 }, { index: 1, level: 5 },
+  { index: 2, level: 1 }, { index: 2, level: 2 }, { index: 2, level: 3 }, { index: 2, level: 4 }, { index: 2, level: 5 },
+  { index: 3, level: 1 }, { index: 3, level: 2 }, { index: 3, level: 3 }, { index: 3, level: 4 }, { index: 3, level: 5 },
+  { index: 4, level: 1 }, { index: 4, level: 2 }, { index: 4, level: 3 }, { index: 4, level: 4 }, { index: 4, level: 5 }
+];
+
 
 // Coordinates of arrow parts inside the sprite sheet
 const ARROW_Y = 358;   // vertical offset of arrow graphic
@@ -2599,7 +2610,7 @@ function renderScoreboard(){
   drawBlueCounter(
     planeCtx,
     containerLeft + containerWidth - BLUE_COUNTER_TILE_W * scale,
-    rect.top,
+    containerTop,
     blueScore,
     scale
   );
@@ -2643,26 +2654,28 @@ function drawBlueCounter(ctx, x, y, score, scale){
   const srcH = BLUE_COUNTER_TILE_H;
   const destW = srcW * scale;
   const destH = srcH * scale;
+
+
+  // Draw contours for all five stars.
   for(let i = 0; i < BLUE_COUNTER_STARS; i++){
-    const dy = i * destH;
-    // Draw contour for each star
+
     ctx.drawImage(
       blueCounterImg,
       i * srcW, 0, srcW, srcH,
-      x, y + dy, destW, destH
+      x, y + i * destH, destW, destH
     );
-    // How filled is the star at this index?
-    const local = Math.min(
-      Math.max(score - i * BLUE_COUNTER_LEVELS, 0),
-      BLUE_COUNTER_LEVELS
+  }
+
+  // Overlay progressive star pieces based on current score.
+  const capped = Math.min(score, BLUE_COUNTER_SEQUENCE.length);
+  for(let s = 0; s < capped; s++){
+    const { index, level } = BLUE_COUNTER_SEQUENCE[s];
+    ctx.drawImage(
+      blueCounterImg,
+      index * srcW, level * srcH, srcW, srcH,
+      x, y + index * destH, destW, destH
     );
-    if(local > 0){
-      ctx.drawImage(
-        blueCounterImg,
-        i * srcW, local * srcH, srcW, srcH,
-        x, y + dy, destW, destH
-      );
-    }
+
   }
 }
 
