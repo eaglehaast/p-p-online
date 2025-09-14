@@ -1966,6 +1966,7 @@ function drawThinPlane(ctx2d, plane, glow=0){
   ctx2d.scale(PLANE_SCALE, PLANE_SCALE);
   ctx2d.filter = "blur(0.3px)"; // slight blur to soften rotated edges
 
+
   // outline path for glow layers
   const planePath = new Path2D();
   planePath.moveTo(0, -20);
@@ -2004,6 +2005,7 @@ function drawThinPlane(ctx2d, plane, glow=0){
   // subtle drop shadow for the plane itself
   ctx2d.shadowColor = "rgba(0,0,0,0.3)";
   ctx2d.shadowBlur = 1.5;
+
 
   const showEngine = !(plane.burning && isExplosionFinished(plane));
   if(color === "blue"){
