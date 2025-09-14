@@ -1968,11 +1968,14 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   ctx2d.scale(PLANE_SCALE, PLANE_SCALE);
   ctx2d.filter = "blur(0.3px)"; // slight blur to soften rotated edges
 
-
-  // subtle drop shadow for the plane itself
-  ctx2d.shadowColor = "rgba(0,0,0,0.3)";
-  ctx2d.shadowBlur = 1.5;
-
+  const blend = Math.max(0, Math.min(1, glow));
+  if (blend > 0) {
+    ctx2d.shadowColor = colorWithAlpha(color, blend);
+    ctx2d.shadowBlur = (color === "green" ? 15 : 10) * blend;
+  } else {
+    ctx2d.shadowColor = "rgba(0,0,0,0.3)";
+    ctx2d.shadowBlur = 1.5;
+  }
 
   const showEngine = !(plane.burning && isExplosionFinished(plane));
   if (color === "blue") {
@@ -2020,18 +2023,6 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   } else {
     drawPlaneOutline(ctx2d, color);
     addPlaneShading(ctx2d);
-  }
-
-  const blend = Math.max(0, Math.min(1, glow));
-  const img = color === "blue" ? bluePlaneImg : color === "green" ? greenPlaneImg : null;
-  if (blend > 0 && img && img.complete) {
-    const innerGlow = colorWithAlpha("#fff", 0.9 * blend);
-    const outerGlow = colorWithAlpha(color, 0.6 * blend);
-    ctx2d.save();
-    ctx2d.globalCompositeOperation = "destination-over";
-    ctx2d.filter = `drop-shadow(0 0 1px ${innerGlow}) drop-shadow(0 0 8px ${outerGlow})`;
-    ctx2d.drawImage(img, -20, -20, 40, 40);
-    ctx2d.restore();
   }
 
   ctx2d.restore();
