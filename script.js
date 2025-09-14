@@ -1970,8 +1970,9 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
 
   const blend = Math.max(0, Math.min(1, glow));
   if (blend > 0) {
-    ctx2d.shadowColor = colorWithAlpha(color, blend);
-    ctx2d.shadowBlur = (color === "green" ? 15 : 10) * blend;
+    const glowStrength = blend * 1.25; // boost brightness slightly
+    ctx2d.shadowColor = colorWithAlpha(color, Math.min(1, glowStrength));
+    ctx2d.shadowBlur = (color === "green" ? 15 : 10) * glowStrength;
   } else {
     ctx2d.shadowColor = "rgba(0,0,0,0.3)";
     ctx2d.shadowBlur = 1.5;
