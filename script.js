@@ -1967,17 +1967,45 @@ function drawThinPlane(ctx2d, plane, glow=0){
   ctx2d.filter = "blur(0.3px)"; // slight blur to soften rotated edges
 
 
-  const baseBlur = 1.5;
-  const glowBlur = color === 'green' ? 15 : 10;
+  // outline path for glow layers
+  const planePath = new Path2D();
+  planePath.moveTo(0, -20);
+  planePath.quadraticCurveTo(12, -5, 10, 10);
+  planePath.quadraticCurveTo(6, 15, 0, 18);
+  planePath.quadraticCurveTo(-6, 15, -10, 10);
+  planePath.quadraticCurveTo(-12, -5, 0, -20);
+  planePath.closePath();
+
   const blend = Math.max(0, Math.min(1, glow));
   if (blend > 0) {
-    const alpha = 0.5 * blend;
-    ctx2d.shadowColor = colorWithAlpha(color, alpha);
-    ctx2d.shadowBlur = baseBlur + (glowBlur - baseBlur) * blend;
-  } else {
-    ctx2d.shadowColor = "rgba(0,0,0,0.3)";
-    ctx2d.shadowBlur = baseBlur;
+    ctx2d.lineJoin = "round";
+    ctx2d.lineCap = "round";
+
+    // outer colored halo
+    ctx2d.save();
+    ctx2d.strokeStyle = colorFor(color);
+    ctx2d.lineWidth = 8;
+    ctx2d.globalAlpha = 0.6 * blend;
+    ctx2d.shadowColor = colorWithAlpha(color, 0.8 * blend);
+    ctx2d.shadowBlur = 12;
+    ctx2d.stroke(planePath);
+    ctx2d.restore();
+
+    // inner white outline
+    ctx2d.save();
+    ctx2d.strokeStyle = "#fff";
+    ctx2d.lineWidth = 4;
+    ctx2d.globalAlpha = 0.9 * blend;
+    ctx2d.shadowColor = `rgba(255,255,255,${0.9 * blend})`;
+    ctx2d.shadowBlur = 4;
+    ctx2d.stroke(planePath);
+    ctx2d.restore();
   }
+
+  // subtle drop shadow for the plane itself
+  ctx2d.shadowColor = "rgba(0,0,0,0.3)";
+  ctx2d.shadowBlur = 1.5;
+
 
   const showEngine = !(plane.burning && isExplosionFinished(plane));
   if(color === "blue"){
