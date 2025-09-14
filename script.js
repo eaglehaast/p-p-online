@@ -1729,10 +1729,15 @@ function handleAAForPlane(p, fp){
 
   if(roundTextTimer > 0){
     gameCtx.font="48px 'Patrick Hand', cursive";
-    gameCtx.fillStyle="black";
+    gameCtx.fillStyle = '#B22222';
+    gameCtx.strokeStyle = '#FFD700';
+    gameCtx.lineWidth = 2;
     const text = `Round ${roundNumber}`;
     const w = gameCtx.measureText(text).width;
-    gameCtx.fillText(text, (gameCanvas.width - w)/2, gameCanvas.height/2);
+    const x = (gameCanvas.width - w) / 2;
+    const y = gameCanvas.height / 2;
+    gameCtx.fillText(text, x, y);
+    gameCtx.strokeText(text, x, y);
     roundTextTimer -= delta;
   }
 
