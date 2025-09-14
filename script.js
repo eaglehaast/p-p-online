@@ -1970,8 +1970,18 @@ function drawThinPlane(ctx2d, plane, glow=0){
   const glowBlur = color === 'green' ? 15 : 10;
   const blend = Math.max(0, Math.min(1, glow));
   if(blend > 0){
-    ctx2d.shadowColor = colorWithAlpha(color, blend);
-    ctx2d.shadowBlur = baseBlur + (glowBlur - baseBlur) * blend;
+
+    // Sawtooth wave that fades from 0.5 down to 0 for a gentle shimmer
+    const flicker = 0.5 * (1 - ((globalFrame * 0.01) % 1));
+    const alpha = blend * flicker;
+    if(alpha > 0){
+      ctx2d.shadowColor = colorWithAlpha(color, alpha);
+      ctx2d.shadowBlur = baseBlur + (glowBlur - baseBlur) * blend;
+    } else {
+      ctx2d.shadowColor = "rgba(0,0,0,0.3)";
+      ctx2d.shadowBlur = baseBlur;
+    }
+
   } else {
     ctx2d.shadowColor = "rgba(0,0,0,0.3)";
     ctx2d.shadowBlur = baseBlur;
