@@ -2587,8 +2587,26 @@ function renderScoreboard(){
   const containerLeft = rect.left - FRAME_PADDING_X * scale;
   const containerTop = rect.top - FRAME_PADDING_Y * scale;
   const containerWidth = FRAME_BASE_WIDTH * scale;
-  drawPlayerHUD(planeCtx, containerLeft + 10, containerTop + 10, "blue", blueScore, turnColors[turnIndex] === "blue", false);
-  drawPlayerHUD(planeCtx, containerLeft + containerWidth - 10, containerTop + 10, "green", greenScore, turnColors[turnIndex] === "green", true);
+
+  // Blue player's star counter on the right side
+  drawBlueCounter(
+    planeCtx,
+    containerLeft + containerWidth - BLUE_COUNTER_TILE_W * scale,
+    rect.top,
+    blueScore,
+    scale
+  );
+
+  // Green player's HUD (numeric score)
+  drawPlayerHUD(
+    planeCtx,
+    containerLeft + 10,
+    containerTop + 10,
+    "green",
+    greenScore,
+    turnColors[turnIndex] === "green",
+    false
+  );
 
   planeCtx.restore();
 }
@@ -2602,26 +2620,25 @@ function updateTurnIndicators(){
 goatText.textContent = '';
 }
 
-function drawBlueScore(ctx, score){
-  const scale = 0.25;
+function drawBlueCounter(ctx, x, y, score, scale){
   const srcW = BLUE_COUNTER_TILE_W;
   const srcH = BLUE_COUNTER_TILE_H;
   const destW = srcW * scale;
   const destH = srcH * scale;
   for(let i = 0; i < 5; i++){
-    const dx = i * destW;
-    // draw contour
+    const dy = i * destH;
+    // draw contour for each star
     ctx.drawImage(
       blueCounterImg,
       i * srcW, 0, srcW, srcH,
-      dx, 20, destW, destH
+      x, y + dy, destW, destH
     );
     const local = Math.min(Math.max(score - i * 5, 0), 5);
     if(local > 0){
       ctx.drawImage(
         blueCounterImg,
         i * srcW, local * srcH, srcW, srcH,
-        dx, 20, destW, destH
+        x, y + dy, destW, destH
       );
     }
   }
@@ -2644,12 +2661,8 @@ function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
   }
 
   const scoreX = 0;
-  if(color === 'blue'){
-    drawBlueScore(ctx, score);
-  } else {
-    ctx.fillStyle = colorFor(color);
-    ctx.fillText(String(score), scoreX, 20);
-  }
+  ctx.fillStyle = colorFor(color);
+  ctx.fillText(String(score), scoreX, 20);
 
   let statusText = '';
   if (phase === 'AA_PLACEMENT') {
