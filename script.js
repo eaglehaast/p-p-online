@@ -81,6 +81,7 @@ blueCounterImg.src = "blue plane counter.png";
 // the fill levels for each star (s11–s55).
 const BLUE_COUNTER_STARS  = 5; // number of star slots
 const BLUE_COUNTER_LEVELS = 5; // points needed to fill one star
+
 const BLUE_COUNTER_TILE_W = 92; // width of each frame in the sprite sheet
 const BLUE_COUNTER_TILE_H = 80; // height of each frame in the sprite sheet
 
@@ -94,6 +95,7 @@ const BLUE_COUNTER_SEQUENCE = [
   { index: 3, level: 1 }, { index: 3, level: 2 }, { index: 3, level: 3 }, { index: 3, level: 4 }, { index: 3, level: 5 },
   { index: 4, level: 1 }, { index: 4, level: 2 }, { index: 4, level: 3 }, { index: 4, level: 4 }, { index: 4, level: 5 }
 ];
+
 
 // Coordinates of arrow parts inside the sprite sheet
 const ARROW_Y = 358;   // vertical offset of arrow graphic
@@ -2653,8 +2655,10 @@ function drawBlueCounter(ctx, x, y, score, scale){
   const destW = srcW * scale;
   const destH = srcH * scale;
 
+
   // Draw contours for all five stars.
   for(let i = 0; i < BLUE_COUNTER_STARS; i++){
+
     ctx.drawImage(
       blueCounterImg,
       i * srcW, 0, srcW, srcH,
@@ -2671,6 +2675,7 @@ function drawBlueCounter(ctx, x, y, score, scale){
       index * srcW, level * srcH, srcW, srcH,
       x, y + index * destH, destW, destH
     );
+
   }
 }
 
