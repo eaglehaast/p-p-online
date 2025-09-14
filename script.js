@@ -1967,7 +1967,9 @@ function drawThinPlane(ctx2d, plane, glow=false){
   ctx2d.filter = "blur(0.3px)"; // slight blur to soften rotated edges
   if(glow){
     ctx2d.shadowColor = colorFor(color);
-    ctx2d.shadowBlur = 10;
+
+    ctx2d.shadowBlur = color === 'green' ? 15 : 10;
+
   } else {
     ctx2d.shadowColor = "rgba(0,0,0,0.3)";
     ctx2d.shadowBlur = 1.5;
