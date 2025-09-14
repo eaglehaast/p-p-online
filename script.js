@@ -2558,13 +2558,6 @@ function updateTurnIndicators(){
 
   mantisText.textContent = '';
   goatText.textContent = '';
-  if (phase !== 'AA_PLACEMENT') {
-    if (color === 'blue') {
-      goatText.textContent = "Enemy's Turn";
-    } else {
-      mantisText.textContent = "Enemy's Turn";
-    }
-  }
 }
 
 function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
