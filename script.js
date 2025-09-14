@@ -150,8 +150,10 @@ const COUNTER_SCALE  = 1;
 
 const counterImg = new Image();
 let counterReady = false;
+counterImg.onload = () => {
+  counterReady = true;
+};
 counterImg.src = COUNTER_SPRITE_URL;
-counterImg.onload = ()=> counterReady = true;
 
 function drawCounterColumn(ctx, n, col){
   if(!counterReady) return;
