@@ -1958,17 +1958,21 @@ function drawPlaneOutline(ctx2d, color){
   ctx2d.stroke();
 }
 
+
 function drawThinPlane(ctx2d, plane, glow = 0) {
   const { x: cx, y: cy, color, angle } = plane;
+
   ctx2d.save();
   ctx2d.translate(cx, cy);
   ctx2d.rotate(angle);
   ctx2d.scale(PLANE_SCALE, PLANE_SCALE);
   ctx2d.filter = "blur(0.3px)"; // slight blur to soften rotated edges
 
+
   // subtle drop shadow for the plane itself
   ctx2d.shadowColor = "rgba(0,0,0,0.3)";
   ctx2d.shadowBlur = 1.5;
+
 
   const showEngine = !(plane.burning && isExplosionFinished(plane));
   if (color === "blue") {
