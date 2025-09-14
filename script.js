@@ -1958,8 +1958,10 @@ function drawPlaneOutline(ctx2d, color){
   ctx2d.stroke();
 }
 
-function drawThinPlane(ctx2d, plane, glow=0){
-  const {x: cx, y: cy, color, angle} = plane;
+
+function drawThinPlane(ctx2d, plane, glow = 0) {
+  const { x: cx, y: cy, color, angle } = plane;
+
   ctx2d.save();
   ctx2d.translate(cx, cy);
   ctx2d.rotate(angle);
@@ -1967,54 +1969,19 @@ function drawThinPlane(ctx2d, plane, glow=0){
   ctx2d.filter = "blur(0.3px)"; // slight blur to soften rotated edges
 
 
-  // outline path for glow layers
-  const planePath = new Path2D();
-  planePath.moveTo(0, -20);
-  planePath.quadraticCurveTo(12, -5, 10, 10);
-  planePath.quadraticCurveTo(6, 15, 0, 18);
-  planePath.quadraticCurveTo(-6, 15, -10, 10);
-  planePath.quadraticCurveTo(-12, -5, 0, -20);
-  planePath.closePath();
-
-  const blend = Math.max(0, Math.min(1, glow));
-  if (blend > 0) {
-    ctx2d.lineJoin = "round";
-    ctx2d.lineCap = "round";
-
-    // outer colored halo
-    ctx2d.save();
-    ctx2d.strokeStyle = colorFor(color);
-    ctx2d.lineWidth = 8;
-    ctx2d.globalAlpha = 0.6 * blend;
-    ctx2d.shadowColor = colorWithAlpha(color, 0.8 * blend);
-    ctx2d.shadowBlur = 12;
-    ctx2d.stroke(planePath);
-    ctx2d.restore();
-
-    // inner white outline
-    ctx2d.save();
-    ctx2d.strokeStyle = "#fff";
-    ctx2d.lineWidth = 4;
-    ctx2d.globalAlpha = 0.9 * blend;
-    ctx2d.shadowColor = `rgba(255,255,255,${0.9 * blend})`;
-    ctx2d.shadowBlur = 4;
-    ctx2d.stroke(planePath);
-    ctx2d.restore();
-  }
-
   // subtle drop shadow for the plane itself
   ctx2d.shadowColor = "rgba(0,0,0,0.3)";
   ctx2d.shadowBlur = 1.5;
 
 
   const showEngine = !(plane.burning && isExplosionFinished(plane));
-  if(color === "blue"){
-    if(showEngine){
+  if (color === "blue") {
+    if (showEngine) {
       const flicker = 1 + 0.05 * Math.sin(globalFrame * 0.1);
       drawJetFlame(ctx2d, flicker);
 
       const fp = flyingPoints.find(fp => fp.plane === plane);
-      if(fp){
+      if (fp) {
         const progress = (FLIGHT_DURATION_SEC - fp.timeLeft) / FLIGHT_DURATION_SEC;
         const scale = progress < 0.75 ? 4 * progress : 12 * (1 - progress);
         drawBlueJetFlame(ctx2d, scale);
@@ -2022,19 +1989,19 @@ function drawThinPlane(ctx2d, plane, glow=0){
         drawWingTrails(ctx2d);
       }
     }
-    if(bluePlaneImg.complete){
+    if (bluePlaneImg.complete) {
       ctx2d.drawImage(bluePlaneImg, -20, -20, 40, 40);
     } else {
       drawPlaneOutline(ctx2d, color);
     }
     addPlaneShading(ctx2d);
-  } else if(color === "green"){
+  } else if (color === "green") {
     const fp = flyingPoints.find(fp => fp.plane === plane);
-    if(showEngine){
-      if(fp){
+    if (showEngine) {
+      if (fp) {
         const progress = (FLIGHT_DURATION_SEC - fp.timeLeft) / FLIGHT_DURATION_SEC;
         let scale;
-        if(progress < 0.5){
+        if (progress < 0.5) {
           scale = 4 - 4 * progress; // 20px -> 10px
         } else {
           scale = 3 - 2 * progress; // 10px -> 5px
@@ -2044,7 +2011,7 @@ function drawThinPlane(ctx2d, plane, glow=0){
         drawDieselSmoke(ctx2d, 1);
       }
     }
-    if(greenPlaneImg.complete){
+    if (greenPlaneImg.complete) {
       ctx2d.drawImage(greenPlaneImg, -20, -20, 40, 40);
     } else {
       drawPlaneOutline(ctx2d, color);
@@ -2054,6 +2021,19 @@ function drawThinPlane(ctx2d, plane, glow=0){
     drawPlaneOutline(ctx2d, color);
     addPlaneShading(ctx2d);
   }
+
+  const blend = Math.max(0, Math.min(1, glow));
+  const img = color === "blue" ? bluePlaneImg : color === "green" ? greenPlaneImg : null;
+  if (blend > 0 && img && img.complete) {
+    const innerGlow = colorWithAlpha("#fff", 0.9 * blend);
+    const outerGlow = colorWithAlpha(color, 0.6 * blend);
+    ctx2d.save();
+    ctx2d.globalCompositeOperation = "destination-over";
+    ctx2d.filter = `drop-shadow(0 0 1px ${innerGlow}) drop-shadow(0 0 8px ${outerGlow})`;
+    ctx2d.drawImage(img, -20, -20, 40, 40);
+    ctx2d.restore();
+  }
+
   ctx2d.restore();
 }
 
