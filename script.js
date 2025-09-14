@@ -1739,6 +1739,7 @@ function handleAAForPlane(p, fp){
     gameCtx.fillText(text, x, y);
     gameCtx.strokeText(text, x, y);
 
+
     const turnColor = turnColors[turnIndex];
     const turnText = `${turnColor.charAt(0).toUpperCase() + turnColor.slice(1)} turn`;
     gameCtx.font="32px 'Patrick Hand', cursive";
@@ -1747,6 +1748,7 @@ function handleAAForPlane(p, fp){
     const x2 = (gameCanvas.width - w2) / 2;
     const y2 = y + 40;
     gameCtx.fillText(turnText, x2, y2);
+
 
     roundTextTimer -= delta;
   }
