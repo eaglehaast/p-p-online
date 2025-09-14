@@ -4,6 +4,51 @@
  * Includes fixes for plane orientation, AI turns, and mini-icon counter.
  ***************************************************************/
 
+/* 
+Codex: implement a score overlay from a pre-laid sprite sheet.
+
+Context:
+- Canvas game; drawing happens in the main loop draw() with 2D context 'gameCtx'.
+- Scores: integers 0..25: 'greenVictories' and 'blueVictories'.
+
+Asset:
+- File: 'counter.png' placed next to the game (path: ./counter.png).
+- Image size: 460x800 px. It contains a fixed layout:
+    - 2 columns (left = GREEN, right = BLUE).
+    - 25 rows vertically (1 frame per score step).
+- IMPORTANT: Each frame is already positioned inside the sprite exactly where it must appear on the game field.
+  We do NOT compute positions per frame — we just draw the first N rows of each column on top of the board.
+
+Requirements:
+1) Load 'counter.png' once (Image()).
+2) Compute frameW = image.width / 2; frameH = image.height / 25. (=> 230x32 for the current file.)
+3) Provide a function drawCounterOverlay(ctx) that:
+   - Has two parameters available from outer scope: 'greenVictories' and 'blueVictories' (0..25).
+   - Draws the first 'greenVictories' rows of LEFT column, and the first 'blueVictories' rows of RIGHT column.
+   - Draws each chosen row at the same place as in the sprite, i.e. destination rect is:
+       dx = ANCHOR.x + sx, dy = ANCHOR.y + sy, dw = frameW, dh = frameH
+     where (sx, sy) is the source top-left of that row; ANCHOR is a constant offset.
+4) Add constants at top:
+   - const COUNTER_SPRITE_URL = "counter.png";
+   - const COUNTER_ROWS = 25, COUNTER_COLS = 2;
+   - const COUNTER_ANCHOR = { x: 0, y: 0 }; // change if needed to align the whole sheet to the board
+   - const FRAMES_FROM_TOP = true; // set false if s1/g1 are at the bottom in the PNG
+   - const COUNTER_SCALE = 1;      // keep 1:1; allow scaling if ever needed
+5) Handle image-not-loaded case gracefully (skip drawing until onload).
+6) Integrate: call drawCounterOverlay(gameCtx) at the end of the main draw() so counters render on top.
+
+Edge cases:
+- If score is 0, draw nothing for that side.
+- Clamp scores to 0..25.
+- If COUNTER_SCALE !== 1, scale destination rect accordingly (dw = frameW*scale etc.)
+- If FRAMES_FROM_TOP === false, rows go from bottom upward.
+
+Acceptance:
+- With greenVictories=3, only the first 3 rows of the LEFT column are visible at their exact sprite positions.
+- With blueVictories=7, only the first 7 rows of the RIGHT column are visible at their exact sprite positions.
+- No gaps or shifts; overlay aligns with the board artwork because we reuse the sprite’s own layout.
+*/
+
 /* ======= DOM ======= */
 const mantisIndicator = document.getElementById("mantisIndicator");
 const goatIndicator   = document.getElementById("goatIndicator");
@@ -95,6 +140,48 @@ const BLUE_COUNTER_SEQUENCE = [
   { index: 3, level: 1 }, { index: 3, level: 2 }, { index: 3, level: 3 }, { index: 3, level: 4 }, { index: 3, level: 5 },
   { index: 4, level: 1 }, { index: 4, level: 2 }, { index: 4, level: 3 }, { index: 4, level: 4 }, { index: 4, level: 5 }
 ];
+
+// --- CONFIG ---
+const COUNTER_SPRITE_URL = "counter.png";
+const COUNTER_ROWS = 25, COUNTER_COLS = 2;
+const FRAMES_FROM_TOP = true;          // если первый кадр вверху
+const COUNTER_ANCHOR = { x: 0, y: 0 }; // сдвиг всей ленты на поле
+const COUNTER_SCALE  = 1;
+
+const counterImg = new Image();
+let counterReady = false;
+counterImg.src = COUNTER_SPRITE_URL;
+counterImg.onload = ()=> counterReady = true;
+
+function drawCounterColumn(ctx, n, col){
+  if(!counterReady) return;
+  const img = counterImg;
+  const fw = Math.floor(img.width  / COUNTER_COLS);
+  const fh = Math.floor(img.height / COUNTER_ROWS);
+
+  const clamp = (v,min,max)=> Math.max(min, Math.min(max, v));
+  n = clamp(n, 0, COUNTER_ROWS);
+
+  for(let i=0;i<n;i++){
+    const row = FRAMES_FROM_TOP ? i : (COUNTER_ROWS-1-i);
+    const sx = col * fw;
+    const sy = row * fh;
+
+    const dx = COUNTER_ANCHOR.x + sx * COUNTER_SCALE;
+    const dy = COUNTER_ANCHOR.y + sy * COUNTER_SCALE;
+    const dw = fw * COUNTER_SCALE;
+    const dh = fh * COUNTER_SCALE;
+
+    ctx.drawImage(img, sx, sy, fw, fh, dx, dy, dw, dh);
+  }
+}
+
+function drawCounterOverlay(ctx){
+  // левая колонка = GREEN (g1..gN)
+  drawCounterColumn(ctx, Math.max(0, Math.min(25, greenVictories)), 0);
+  // правая колонка = BLUE  (s1..sN)
+  drawCounterColumn(ctx, Math.max(0, Math.min(25, blueVictories)),  1);
+}
 
 
 // Coordinates of arrow parts inside the sprite sheet
@@ -410,6 +497,8 @@ if(hasCustomSettings && classicRulesBtn && advancedSettingsBtn){
 const POINTS_TO_WIN = 25;
 let greenScore = 0;
 let blueScore  = 0;
+let greenVictories = 0;
+let blueVictories  = 0;
 let roundNumber = 0;
 let roundTextTimer = 0;
 let roundTransitionTimeout = null;
@@ -420,10 +509,12 @@ let blueFlagStolenBy = null;
 let greenFlagStolenBy = null;
 
 function addScore(color, delta){
-  if(color === "blue"){
+  if(color === "blue"){ 
     blueScore = Math.max(0, blueScore + delta);
-  } else if(color === "green"){
+    blueVictories = blueScore;
+  } else if(color === "green"){ 
     greenScore = Math.max(0, greenScore + delta);
+    greenVictories = greenScore;
   }
   if(!isGameOver){
     if(blueScore >= POINTS_TO_WIN){
@@ -489,6 +580,8 @@ function resetGame(){
 
   greenScore = 0;
   blueScore  = 0;
+  greenVictories = 0;
+  blueVictories  = 0;
   roundNumber = 0;
   roundTextTimer = 0;
   if(roundTransitionTimeout){
@@ -1779,6 +1872,8 @@ function handleAAForPlane(p, fp){
     roundTextTimer -= delta;
   }
 
+  drawCounterOverlay(gameCtx);
+
   animationFrameId = requestAnimationFrame(gameDraw);
 }
 
@@ -2417,12 +2512,14 @@ function awardPoint(color){
   if(isGameOver) return;
   if(color === "blue"){
     greenScore++;
+    greenVictories = greenScore;
     if(greenScore >= POINTS_TO_WIN){
       isGameOver = true;
       winnerColor = "green";
     }
   } else if(color === "green"){
     blueScore++;
+    blueVictories = blueScore;
     if(blueScore >= POINTS_TO_WIN){
       isGameOver = true;
       winnerColor = "blue";
@@ -2790,6 +2887,8 @@ yesBtn.addEventListener("click", () => {
   if (gameOver) {
     blueScore = 0;
     greenScore = 0;
+    blueVictories = 0;
+    greenVictories = 0;
     roundNumber = 0;
     if(!advancedSettingsBtn?.classList.contains('selected')){
       settings.mapIndex = Math.floor(Math.random() * MAPS.length);
