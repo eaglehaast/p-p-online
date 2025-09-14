@@ -1966,6 +1966,7 @@ function drawThinPlane(ctx2d, plane, glow=0){
   ctx2d.scale(PLANE_SCALE, PLANE_SCALE);
   ctx2d.filter = "blur(0.3px)"; // slight blur to soften rotated edges
 
+
   const baseBlur = 1.5;
   const glowBlur = color === 'green' ? 15 : 10;
   const blend = Math.max(0, Math.min(1, glow));
