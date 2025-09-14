@@ -1958,15 +1958,20 @@ function drawPlaneOutline(ctx2d, color){
   ctx2d.stroke();
 }
 
-function drawThinPlane(ctx2d, plane){
+function drawThinPlane(ctx2d, plane, glow=false){
   const {x: cx, y: cy, color, angle} = plane;
   ctx2d.save();
   ctx2d.translate(cx, cy);
   ctx2d.rotate(angle);
   ctx2d.scale(PLANE_SCALE, PLANE_SCALE);
   ctx2d.filter = "blur(0.3px)"; // slight blur to soften rotated edges
-  ctx2d.shadowColor = "rgba(0,0,0,0.3)";
-  ctx2d.shadowBlur = 1.5;
+  if(glow){
+    ctx2d.shadowColor = colorFor(color);
+    ctx2d.shadowBlur = 10;
+  } else {
+    ctx2d.shadowColor = "rgba(0,0,0,0.3)";
+    ctx2d.shadowBlur = 1.5;
+  }
   const showEngine = !(plane.burning && isExplosionFinished(plane));
   if(color === "blue"){
     if(showEngine){
@@ -2084,6 +2089,8 @@ function drawPlanesAndTrajectories(){
 
   const burningPlanes = [];
   let rangeTextInfo = null;
+  const activeColor = turnColors[turnIndex];
+  const showGlow = !handleCircle.active && !flyingPoints.some(fp => fp.plane.color === activeColor);
   for(const p of points){
     if(!p.isAlive && !p.burning) continue;
     for(const seg of p.segments){
@@ -2094,7 +2101,8 @@ function drawPlanesAndTrajectories(){
       gameCtx.lineTo(seg.x2, seg.y2);
       gameCtx.stroke();
     }
-    drawThinPlane(planeCtx, p);
+    const glow = showGlow && p.color === activeColor && p.isAlive && !p.burning;
+    drawThinPlane(planeCtx, p, glow);
 
     if(handleCircle.active && handleCircle.pointRef === p){
       let vdx = handleCircle.shakyX - p.x;
@@ -2558,13 +2566,6 @@ function updateTurnIndicators(){
 
   mantisText.textContent = '';
   goatText.textContent = '';
-  if (phase !== 'AA_PLACEMENT') {
-    if (color === 'blue') {
-      goatText.textContent = "Enemy's Turn";
-    } else {
-      mantisText.textContent = "Enemy's Turn";
-    }
-  }
 }
 
 function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
