@@ -1958,30 +1958,26 @@ function drawPlaneOutline(ctx2d, color){
   ctx2d.stroke();
 }
 
-function drawThinPlane(ctx2d, plane, glow=false){
-  const {x: cx, y: cy, color, angle} = plane;
+function drawThinPlane(ctx2d, plane, glow = 0) {
+  const { x: cx, y: cy, color, angle } = plane;
   ctx2d.save();
   ctx2d.translate(cx, cy);
   ctx2d.rotate(angle);
   ctx2d.scale(PLANE_SCALE, PLANE_SCALE);
   ctx2d.filter = "blur(0.3px)"; // slight blur to soften rotated edges
-  if(glow){
-    ctx2d.shadowColor = colorFor(color);
 
-    ctx2d.shadowBlur = color === 'green' ? 15 : 10;
+  // subtle drop shadow for the plane itself
+  ctx2d.shadowColor = "rgba(0,0,0,0.3)";
+  ctx2d.shadowBlur = 1.5;
 
-  } else {
-    ctx2d.shadowColor = "rgba(0,0,0,0.3)";
-    ctx2d.shadowBlur = 1.5;
-  }
   const showEngine = !(plane.burning && isExplosionFinished(plane));
-  if(color === "blue"){
-    if(showEngine){
+  if (color === "blue") {
+    if (showEngine) {
       const flicker = 1 + 0.05 * Math.sin(globalFrame * 0.1);
       drawJetFlame(ctx2d, flicker);
 
       const fp = flyingPoints.find(fp => fp.plane === plane);
-      if(fp){
+      if (fp) {
         const progress = (FLIGHT_DURATION_SEC - fp.timeLeft) / FLIGHT_DURATION_SEC;
         const scale = progress < 0.75 ? 4 * progress : 12 * (1 - progress);
         drawBlueJetFlame(ctx2d, scale);
@@ -1989,19 +1985,19 @@ function drawThinPlane(ctx2d, plane, glow=false){
         drawWingTrails(ctx2d);
       }
     }
-    if(bluePlaneImg.complete){
+    if (bluePlaneImg.complete) {
       ctx2d.drawImage(bluePlaneImg, -20, -20, 40, 40);
     } else {
       drawPlaneOutline(ctx2d, color);
     }
     addPlaneShading(ctx2d);
-  } else if(color === "green"){
+  } else if (color === "green") {
     const fp = flyingPoints.find(fp => fp.plane === plane);
-    if(showEngine){
-      if(fp){
+    if (showEngine) {
+      if (fp) {
         const progress = (FLIGHT_DURATION_SEC - fp.timeLeft) / FLIGHT_DURATION_SEC;
         let scale;
-        if(progress < 0.5){
+        if (progress < 0.5) {
           scale = 4 - 4 * progress; // 20px -> 10px
         } else {
           scale = 3 - 2 * progress; // 10px -> 5px
@@ -2011,7 +2007,7 @@ function drawThinPlane(ctx2d, plane, glow=false){
         drawDieselSmoke(ctx2d, 1);
       }
     }
-    if(greenPlaneImg.complete){
+    if (greenPlaneImg.complete) {
       ctx2d.drawImage(greenPlaneImg, -20, -20, 40, 40);
     } else {
       drawPlaneOutline(ctx2d, color);
@@ -2021,6 +2017,19 @@ function drawThinPlane(ctx2d, plane, glow=false){
     drawPlaneOutline(ctx2d, color);
     addPlaneShading(ctx2d);
   }
+
+  const blend = Math.max(0, Math.min(1, glow));
+  const img = color === "blue" ? bluePlaneImg : color === "green" ? greenPlaneImg : null;
+  if (blend > 0 && img && img.complete) {
+    const innerGlow = colorWithAlpha("#fff", 0.9 * blend);
+    const outerGlow = colorWithAlpha(color, 0.6 * blend);
+    ctx2d.save();
+    ctx2d.globalCompositeOperation = "destination-over";
+    ctx2d.filter = `drop-shadow(0 0 1px ${innerGlow}) drop-shadow(0 0 8px ${outerGlow})`;
+    ctx2d.drawImage(img, -20, -20, 40, 40);
+    ctx2d.restore();
+  }
+
   ctx2d.restore();
 }
 
@@ -2103,8 +2112,10 @@ function drawPlanesAndTrajectories(){
       gameCtx.lineTo(seg.x2, seg.y2);
       gameCtx.stroke();
     }
-    const glow = showGlow && p.color === activeColor && p.isAlive && !p.burning;
-    drawThinPlane(planeCtx, p, glow);
+    const glowTarget = showGlow && p.color === activeColor && p.isAlive && !p.burning ? 1 : 0;
+    if(p.glow === undefined) p.glow = glowTarget;
+    p.glow += (glowTarget - p.glow) * 0.1;
+    drawThinPlane(planeCtx, p, p.glow);
 
     if(handleCircle.active && handleCircle.pointRef === p){
       let vdx = handleCircle.shakyX - p.x;
