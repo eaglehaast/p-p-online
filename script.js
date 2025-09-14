@@ -2597,6 +2597,17 @@ function renderScoreboard(){
     scale
   );
 
+  // Blue player's HUD (mini planes and numeric score)
+  drawPlayerHUD(
+    planeCtx,
+    containerLeft + containerWidth - BLUE_COUNTER_TILE_W * scale - 10,
+    containerTop + 10,
+    "blue",
+    blueScore,
+    turnColors[turnIndex] === "blue",
+    true
+  );
+
   // Green player's HUD (numeric score)
   drawPlayerHUD(
     planeCtx,
