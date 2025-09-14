@@ -71,6 +71,14 @@ const arrowSprite = new Image();
 // Use the PNG sprite that contains the arrow graphics
 arrowSprite.src = "sprite_ copy.png";
 
+// Sprite for blue player score counter (star meter)
+const blueCounterImg = new Image();
+blueCounterImg.src = "blue plane counter.png";
+const BLUE_COUNTER_COLS = 5;
+const BLUE_COUNTER_ROWS = 10;
+const BLUE_COUNTER_TILE_W = 460 / BLUE_COUNTER_COLS; // 92px
+const BLUE_COUNTER_TILE_H = 800 / BLUE_COUNTER_ROWS; // 80px
+
 // Coordinates of arrow parts inside the sprite sheet
 const ARROW_Y = 358;   // vertical offset of arrow graphic
 const PART_H  = 254;   // height of arrow graphic
@@ -2591,7 +2599,32 @@ function updateTurnIndicators(){
   goatIndicator.classList.toggle('active', color === 'green');
 
   mantisText.textContent = '';
-  goatText.textContent = '';
+goatText.textContent = '';
+}
+
+function drawBlueScore(ctx, score){
+  const scale = 0.25;
+  const srcW = BLUE_COUNTER_TILE_W;
+  const srcH = BLUE_COUNTER_TILE_H;
+  const destW = srcW * scale;
+  const destH = srcH * scale;
+  for(let i = 0; i < 5; i++){
+    const dx = i * destW;
+    // draw contour
+    ctx.drawImage(
+      blueCounterImg,
+      i * srcW, 0, srcW, srcH,
+      dx, 20, destW, destH
+    );
+    const local = Math.min(Math.max(score - i * 5, 0), 5);
+    if(local > 0){
+      ctx.drawImage(
+        blueCounterImg,
+        i * srcW, local * srcH, srcW, srcH,
+        dx, 20, destW, destH
+      );
+    }
+  }
 }
 
 function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
@@ -2610,9 +2643,13 @@ function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
     drawMiniPlaneWithCross(ctx, px, 0, color, p.isAlive, p.burning && isExplosionFinished(p), 0.8);
   }
 
-  ctx.fillStyle = colorFor(color);
   const scoreX = 0;
-  ctx.fillText(String(score), scoreX, 20);
+  if(color === 'blue'){
+    drawBlueScore(ctx, score);
+  } else {
+    ctx.fillStyle = colorFor(color);
+    ctx.fillText(String(score), scoreX, 20);
+  }
 
   let statusText = '';
   if (phase === 'AA_PLACEMENT') {
