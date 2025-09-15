@@ -101,6 +101,14 @@ body, button {
   filter: grayscale(0) drop-shadow(0 0 10px #7f8e40);
 }
 
+#mantisIndicator.active .turn-text {
+  color: #013c83;
+}
+
+#goatIndicator.active .turn-text {
+  color: #7f8e40;
+}
+
 /* Overlay canvas for aiming line */
 #aimCanvas {
   position: fixed;
