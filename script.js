@@ -4,6 +4,20 @@
  * Includes fixes for plane orientation, AI turns, and mini-icon counter.
  ***************************************************************/
 
+/*
+Star counter overlay built from sprite fragments.
+
+- Sprite: 'sprite star.png' (240x109) has two rows of five pieces:
+  top = green fragments, bottom = blue fragments.
+- Each side owns five star slots on the field background
+  ('background behind the canvas 2.png').
+- STAR_CONFIG lists source rectangles, offsets from the star center,
+  and the slot centers. Each piece is drawn with its anchor at the
+  center of the cropped tile.
+- drawCounterOverlay(ctx) renders all collected fragments stored in
+  STAR_STATE.
+*/
+
 /* ======= DOM ======= */
 const mantisIndicator = document.getElementById("mantisIndicator");
 const goatIndicator   = document.getElementById("goatIndicator");
@@ -69,120 +83,130 @@ const arrowSprite = new Image();
 // Use the PNG sprite that contains the arrow graphics
 arrowSprite.src = "sprite_ copy.png";
 
-/* ================= STAR SCORE UI (10 тайлов из sprite star.png) ================ */
-// путь к твоему PNG с обломками
+// Configuration for star fragment overlay used as a score indicator
+let COUNTER_ANCHOR = { x: 0, y: 0 };
+let COUNTER_SCALE  = 1;
+
 const STAR_SPRITE_URL = "sprite star.png";
-
-// размеры макета, под который сняты координаты (фон 460x800)
-const STAR_DESIGN = { w: 460, h: 800 };
-
-// центры «гнёзд» на поле (куда собирать звёзды)
-const STAR_CENTERS = {
-  blue:  [ {x:426,y:117}, {x:426,y:177}, {x:426,y:239}, {x:426,y:297}, {x:426,y:357} ],
-  green: [ {x: 34,y:436}, {x: 34,y:496}, {x: 34,y:556}, {x: 34,y:615}, {x: 34,y:675} ],
+const STAR_CONFIG = {
+  scale: 0.255,
+  green: {
+    sourceRects: [
+      { x: 22,  y: 20, w: 11, h: 23 },
+      { x: 76,  y: 17, w: 23, h: 13 },
+      { x: 101, y: 17, w: 22, h: 12 },
+      { x: 156, y: 2,  w: 14, h: 18 },
+      { x: 215, y: 2,  w: 15, h: 18 }
+    ],
+    offsets: [
+      [ -95.0, 11.5 ],
+      [ -35.0,  3.5 ],
+      [ -10.5,  3.0 ],
+      [  40.5, -9.0 ],
+      [ 100.0, -9.0 ]
+    ],
+    centers: [
+      [ 34, 436 ],
+      [ 34, 496 ],
+      [ 34, 556 ],
+      [ 34, 615 ],
+      [ 34, 675 ]
+    ]
+  },
+  blue: {
+    sourceRects: [
+      { x: 15,  y: 59, w: 14, h: 19 },
+      { x: 76,  y: 74, w: 21, h: 14 },
+      { x: 99,  y: 74, w: 23, h: 13 },
+      { x: 168, y: 59, w: 15, h: 19 },
+      { x: 212, y: 77, w: 12, h: 24 }
+    ],
+    offsets: [
+      [ -100.5, -9.0 ],
+      [ -36.0,   3.5 ],
+      [ -12.0,   3.0 ],
+      [  53.0,  -9.0 ],
+      [  95.5,  11.5 ]
+    ],
+    centers: [
+      [ 426, 117 ],
+      [ 426, 177 ],
+      [ 426, 239 ],
+      [ 426, 297 ],
+      [ 426, 357 ]
+    ]
+  }
 };
 
-// прямоугольники вырезки из спрайта (sx, sy, sw, sh)
-const STAR_SOURCE_RECTS = {
-  green: [ [22,20,11,23], [76,17,23,13], [101,17,22,12], [156,2,14,18], [215,2,15,18] ],
-  blue:  [ [15,59,14,19], [76,74,21,14], [99,74,23,13], [168,59,15,19], [212,77,12,24] ],
-};
+const starImg = new Image();
+let starReady = false;
+starImg.onload = () => { starReady = true; };
+starImg.src = STAR_SPRITE_URL;
 
-// смещения каждого фрагмента относительно композиционного центра ряда (в px спрайта)
-const STAR_OFFSETS = {
-  green: [ [-95.0,11.5], [-35.0,3.5], [-10.5,3.0], [ 40.5,-9.0], [100.0,-9.0] ],
-  blue:  [[-100.5,-9.0], [-36.0,3.5], [-12.0,3.0], [ 53.0,-9.0], [ 95.5,11.5] ],
-};
-// приведи blue к массиву массивов (потому что в одну строку выше)
-STAR_OFFSETS.blue = STAR_OFFSETS.blue.map((v,i)=> Array.isArray(v)?v:STAR_OFFSETS.blue.slice(i,i+2)).slice(0,5);
-
-// масштаб фрагментов и смещений (под контуры на фоне). при необходимости подстрой ±0.02
-let STAR_SCALE = 0.255;
-
-// если твой gameCanvas рисуется не в 460x800, можно домасштабировать в макетные координаты:
-const STAR_LAYOUT = {
-  anchorX: 0,  // смещение всей панели (если нужно сдвинуть общий «слой звёзд»)
-  anchorY: 0,
-  scaleToCanvasX: 1, // если canvas.width == 460, оставь 1; иначе поставь gameCanvas.width / 460
-  scaleToCanvasY: 1, // если canvas.height == 800, оставь 1; иначе поставь gameCanvas.height / 800
-};
-
-// загрузка спрайта
-const STAR_IMG = new Image();
-let STAR_READY = false;
-STAR_IMG.src = STAR_SPRITE_URL;
-STAR_IMG.onload = ()=> { STAR_READY = true; };
-
-// состояние: по 5 слотов на сторону, в каждом — набор уже поставленных фрагментов 1..5
 const STAR_STATE = {
-  blue:  { score: 0, slots: Array.from({length:5}, ()=> new Set()) },
-  green: { score: 0, slots: Array.from({length:5}, ()=> new Set()) },
+  green: Array.from({ length: 5 }, () => []),
+  blue:  Array.from({ length: 5 }, () => [])
 };
 
-// сброс (зови при начале матча/раунда)
-function resetStarsUI(){
-  STAR_STATE.blue  = { score: 0, slots: Array.from({length:5}, ()=> new Set()) };
-  STAR_STATE.green = { score: 0, slots: Array.from({length:5}, ()=> new Set()) };
+function addStarPiece(color){
+  const slots = STAR_STATE[color];
+  if (!slots) return;
+
+  // Gather indices of star slots that still need pieces
+  const availableSlots = [];
+  slots.forEach((pieces, idx) => {
+    if (pieces.length < 5) availableSlots.push(idx);
+  });
+  if (!availableSlots.length) return; // all stars complete
+
+  // Pick a slot randomly (or use the first if determinism is desired)
+  const slotIndex = availableSlots[Math.floor(Math.random() * availableSlots.length)];
+  const pieces = slots[slotIndex];
+
+  // Pick a missing fragment for this slot
+  const remaining = [0, 1, 2, 3, 4].filter(i => !pieces.includes(i));
+  const fragIndex = remaining[Math.floor(Math.random() * remaining.length)];
+
+  pieces.push(fragIndex);
 }
 
-// начислить очко стороне: положить случайный недостающий фрагмент в случайный незаполненный слот
-function addPointToSide(color){
-  const side = STAR_STATE[color];
-  if(!side) return;
-  if(side.score >= 25) return;
-  side.score++;
-
-  // слоты, где собрано <5
-  const freeSlots = side.slots.map((s,idx)=> s.size<5 ? idx : -1).filter(i=> i>=0);
-  if(freeSlots.length === 0) return;
-  const slotIdx = freeSlots[Math.floor(Math.random()*freeSlots.length)];
-  const slot = side.slots[slotIdx];
-
-  // недостающие фрагменты 1..5
-  const pool = [1,2,3,4,5].filter(n=> !slot.has(n));
-  const pick = pool[Math.floor(Math.random()*pool.length)];
-  slot.add(pick);
+function resetStarState(){
+  STAR_STATE.green.forEach(p => p.length = 0);
+  STAR_STATE.blue.forEach(p => p.length = 0);
 }
 
-// отрисовка всех собранных фрагментов (зови в конце твоего draw())
-function drawStarsUI(ctx){
-  if(!STAR_READY) return;
-
-  const sx = STAR_LAYOUT.scaleToCanvasX;
-  const sy = STAR_LAYOUT.scaleToCanvasY;
-  const sc = STAR_SCALE; // локально читается короче
-
-  ["blue","green"].forEach(color=>{
-    const centers = STAR_CENTERS[color];
-    const rects   = STAR_SOURCE_RECTS[color];
-    const offs    = STAR_OFFSETS[color];
-    const slots   = STAR_STATE[color].slots;
-
-    centers.forEach((c, slotIdx)=>{
-      const baseX = STAR_LAYOUT.anchorX + c.x * sx;
-      const baseY = STAR_LAYOUT.anchorY + c.y * sy;
-
-      // стабильный порядок, чтобы слои всегда одинаково перекрывались:
-      for(let frag=1; frag<=5; frag++){
-        if(!slots[slotIdx].has(frag)) continue;
-
-        const [srcX,srcY,srcW,srcH] = rects[frag-1];
-        const [ox,oy]               = offs[frag-1];
-
-        const targetX = baseX + (ox * sc * sx);
-        const targetY = baseY + (oy * sc * sy);
-
-        const dstW = Math.round(srcW * sc * sx);
-        const dstH = Math.round(srcH * sc * sy);
-        const dx   = Math.round(targetX - dstW/2);
-        const dy   = Math.round(targetY - dstH/2);
-
-        ctx.drawImage(STAR_IMG, srcX,srcY,srcW,srcH, dx,dy, dstW,dstH);
-      }
+function drawCounterOverlay(ctx){
+  if(!starReady) return;
+  const baseScale = STAR_CONFIG.scale * COUNTER_SCALE;
+  ["green","blue"].forEach(color => {
+    const conf = STAR_CONFIG[color];
+    const slots = STAR_STATE[color];
+    slots.forEach((pieces, slotIndex) => {
+      const center = conf.centers[slotIndex];
+      const centerX = COUNTER_ANCHOR.x + center[0] * COUNTER_SCALE;
+      const centerY = COUNTER_ANCHOR.y + center[1] * COUNTER_SCALE;
+      pieces.forEach(fragIndex => {
+        const rect = conf.sourceRects[fragIndex];
+        const offset = conf.offsets[fragIndex];
+        // Offsets are defined in source sprite coordinates; scale them using
+        // the global STAR_CONFIG.scale. The previous implementation attempted
+        // to read a non-existent `conf.scale` per color, resulting in `NaN`
+        // positions and invisible star fragments.
+        const targetX = centerX + offset[0] * STAR_CONFIG.scale * COUNTER_SCALE;
+        const targetY = centerY + offset[1] * STAR_CONFIG.scale * COUNTER_SCALE;
+        const dw = rect.w * baseScale;
+        const dh = rect.h * baseScale;
+        ctx.drawImage(
+          starImg,
+          rect.x, rect.y, rect.w, rect.h,
+          targetX - dw / 2, targetY - dh / 2,
+          dw, dh
+        );
+      });
     });
   });
 }
-/* =========================== END STAR SCORE UI ================================ */
+
 
 // Coordinates of arrow parts inside the sprite sheet
 const ARROW_Y = 358;   // vertical offset of arrow graphic
@@ -386,10 +410,9 @@ function updateFieldDimensions(){
   updateFieldBorderOffset();
 
   // Подгоняем позицию и масштаб спрайта счётчиков под размер игрового поля
-  STAR_LAYOUT.scaleToCanvasX = FIELD_WIDTH / STAR_DESIGN.w;
-  STAR_LAYOUT.scaleToCanvasY = FIELD_WIDTH / STAR_DESIGN.w;
-  STAR_LAYOUT.anchorX = FIELD_LEFT;
-  STAR_LAYOUT.anchorY = 0;
+  COUNTER_SCALE = FIELD_WIDTH / FRAME_BASE_WIDTH;
+  COUNTER_ANCHOR.x = FIELD_LEFT;
+  COUNTER_ANCHOR.y = 0;
 }
 
 
@@ -582,7 +605,7 @@ function resetGame(){
 
   greenScore = 0;
   blueScore  = 0;
-  resetStarsUI();
+  resetStarState();
   roundNumber = 0;
   roundTextTimer = 0;
   if(roundTransitionTimeout){
@@ -1873,7 +1896,7 @@ function handleAAForPlane(p, fp){
     roundTextTimer -= delta;
   }
 
-  drawStarsUI(gameCtx);
+  drawCounterOverlay(gameCtx);
 
   animationFrameId = requestAnimationFrame(gameDraw);
 }
@@ -2513,14 +2536,14 @@ function awardPoint(color){
   if(isGameOver) return;
   if(color === "blue"){
     greenScore++;
-    addPointToSide("green");
+    addStarPiece("green");
     if(greenScore >= POINTS_TO_WIN){
       isGameOver = true;
       winnerColor = "green";
     }
   } else if(color === "green"){
     blueScore++;
-    addPointToSide("blue");
+    addStarPiece("blue");
     if(blueScore >= POINTS_TO_WIN){
       isGameOver = true;
       winnerColor = "blue";
@@ -2853,7 +2876,7 @@ yesBtn.addEventListener("click", () => {
   if (gameOver) {
     blueScore = 0;
     greenScore = 0;
-    resetStarsUI();
+    resetStarState();
     roundNumber = 0;
     if(!advancedSettingsBtn?.classList.contains('selected')){
       settings.mapIndex = Math.floor(Math.random() * MAPS.length);
