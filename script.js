@@ -1870,9 +1870,10 @@ function handleAAForPlane(p, fp){
   // самолёты + их трейлы
   drawPlanesAndTrajectories();
 
+  // Рисуем звёзды на том же оверлей-слое, что и табло, чтобы они были поверх самолётов
   drawStarsUI(planeCtx);
 
-  // табло
+  // Табло должно оставаться поверх звёзд, поэтому рисуем его после drawStarsUI
   renderScoreboard();
 
   if(isGameOver && winnerColor){
