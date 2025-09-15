@@ -12,8 +12,20 @@ const STAR_SPRITE_URL = new URL('./sprite star.png', location.href).href;
 // 2) Центры «гнёзд» на поле под макет 460×800 (файл есть в репо). См. root: 'background behind the canvas 2.png'.
 const STAR_DESIGN = { w: 460, h: 800 };
 const STAR_CENTERS = {
-  blue:  [ {x:426,y:117}, {x:426,y:177}, {x:426,y:239}, {x:426,y:297}, {x:426,y:357} ],
-  green: [ {x: 34,y:436}, {x: 34,y:496}, {x: 34,y:556}, {x: 34,y:615}, {x: 34,y:675} ],
+  blue:  [
+    { x: 434.4, y: 121 },
+    { x: 434.4, y: 181 },
+    { x: 434.4, y: 243 },
+    { x: 434.4, y: 301 },
+    { x: 434.4, y: 361 },
+  ],
+  green: [
+    { x: 24.2, y: 432 },
+    { x: 24.2, y: 492 },
+    { x: 24.2, y: 552 },
+    { x: 24.2, y: 611 },
+    { x: 24.2, y: 671 },
+  ],
 };
 
 // 3) Прямоугольники вырезки из 'sprite star.png' (файл есть в репо).
@@ -28,8 +40,8 @@ const STAR_OFFSETS = {
   blue:  [ [-100.5,-9], [-36,3.5], [-12,3], [ 53,-9], [ 95.5,11.5] ],
 };
 
-// 5) Масштаб под контуры (подстрой при необходимости +-0.02)
-const STAR_SCALE_FALLBACK = 0.255;
+// 5) Масштаб под контуры (подстроен под фон 460×800)
+const STAR_SCALE_FALLBACK = 0.235;
 let STAR_SCALE = STAR_SCALE_FALLBACK;
 
 // 6) Грузим спрайт с логами
@@ -52,51 +64,7 @@ function resetStarsUI(){
 }
 
 function computeStarScale(){
-  const baseScaleX = CANVAS_BASE_WIDTH / STAR_DESIGN.w;
-  const baseScaleY = CANVAS_BASE_HEIGHT / STAR_DESIGN.h;
-  let limit = Infinity;
-
-  ["blue", "green"].forEach(color => {
-    const centers = STAR_CENTERS[color];
-    const rects = STAR_SOURCE_RECTS[color];
-    const offsets = STAR_OFFSETS[color];
-
-    centers.forEach(center => {
-      offsets.forEach((offset, idx) => {
-        const rect = rects[idx];
-        if (!rect) return;
-
-        const [ , , srcW, srcH ] = rect;
-        const [ ox, oy ] = offset;
-
-        const rightReach = (ox + srcW / 2) * baseScaleX;
-        if (rightReach > 0) {
-          limit = Math.min(limit, (FRAME_BASE_WIDTH - center.x) / rightReach);
-        }
-
-        const leftReach = (ox - srcW / 2) * baseScaleX;
-        if (leftReach < 0) {
-          limit = Math.min(limit, center.x / (-leftReach));
-        }
-
-        const bottomReach = (oy + srcH / 2) * baseScaleY;
-        if (bottomReach > 0) {
-          limit = Math.min(limit, (FRAME_BASE_HEIGHT - center.y) / bottomReach);
-        }
-
-        const topReach = (oy - srcH / 2) * baseScaleY;
-        if (topReach < 0) {
-          limit = Math.min(limit, center.y / (-topReach));
-        }
-      });
-    });
-  });
-
-  if (!Number.isFinite(limit) || limit <= 0) {
-    return STAR_SCALE_FALLBACK;
-  }
-
-  return limit * 0.99; // небольшая «подушка», чтобы избежать выхода за рамку из-за округления
+  return STAR_SCALE_FALLBACK;
 }
 
 // Начислить очко стороне (класть случайный недостающий фрагмент в случайный незаполненный слот)
