@@ -81,12 +81,20 @@ function addPointToSide(color){
 function drawStarsUI(ctx){
   if (!STAR_READY) return;
   try {
+    const needsOverlayTransform = (ctx === planeCtx);
     const sx = STAR_LAYOUT.sx();
     const sy = STAR_LAYOUT.sy();
     const sc = STAR_SCALE;
 
     // Рисуем поверх вашего игрового слоя
     ctx.save();
+    if (needsOverlayTransform){
+      const rect = gameCanvas.getBoundingClientRect();
+      const scaleX = rect.width / gameCanvas.width;
+      const scaleY = rect.height / gameCanvas.height;
+      ctx.translate(rect.left, rect.top);
+      ctx.scale(scaleX, scaleY);
+    }
 
     ["blue","green"].forEach(color=>{
       const centers = STAR_CENTERS[color];
@@ -1862,7 +1870,7 @@ function handleAAForPlane(p, fp){
   // самолёты + их трейлы
   drawPlanesAndTrajectories();
 
-  drawStarsUI(gameCtx);
+  drawStarsUI(planeCtx);
 
   // табло
   renderScoreboard();
