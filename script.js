@@ -197,8 +197,12 @@ function drawCounterOverlay(ctx){
       pieces.forEach(fragIndex => {
         const rect = conf.sourceRects[fragIndex];
         const offset = conf.offsets[fragIndex];
-        const targetX = centerX + offset[0] * conf.scale * COUNTER_SCALE;
-        const targetY = centerY + offset[1] * conf.scale * COUNTER_SCALE;
+        // Offsets are defined in source sprite coordinates; scale them using
+        // the global STAR_CONFIG.scale. The previous implementation attempted
+        // to read a non-existent `conf.scale` per color, resulting in `NaN`
+        // positions and invisible star fragments.
+        const targetX = centerX + offset[0] * STAR_CONFIG.scale * COUNTER_SCALE;
+        const targetY = centerY + offset[1] * STAR_CONFIG.scale * COUNTER_SCALE;
         const dw = rect.w * baseScale;
         const dh = rect.h * baseScale;
         ctx.drawImage(
