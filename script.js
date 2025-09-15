@@ -89,28 +89,17 @@ arrowSprite.src = "sprite_ copy.png";
 const blueCounterImg = new Image();
 blueCounterImg.src = "blue plane counter.png";
 
-// There are five star outlines stacked vertically on the HUD. Each star
-// fills in five steps, giving a maximum of 25 points. The first row in the
-// sprite sheet contains the static contours (s1–s5). Subsequent rows contain
-// the fill levels for each star (s11–s55).
+// There are five star outlines stacked vertically on the HUD. Each star can
+// accumulate up to five points. The sprite sheet is organised in a grid where
+// rows correspond to star slots (top to bottom) and columns represent the fill
+// level for that slot. Column 0 contains the empty outline; subsequent columns
+// gradually fill the star. The sheet only provides four fill images, so the
+// fifth point reuses the fully filled column.
 const BLUE_COUNTER_STARS  = 5; // number of star slots
 const BLUE_COUNTER_LEVELS = 5; // points needed to fill one star
 
-const BLUE_COUNTER_TILE_W = 92; // width of each frame in the sprite sheet
-// Each star occupies a 92×160 slot in the sprite sheet (5 stars stacked vertically = 800px).
-// Using the correct tile height ensures we sample the proper frame for star fills.
+const BLUE_COUNTER_TILE_W = 92;  // width of each frame in the sprite sheet
 const BLUE_COUNTER_TILE_H = 160; // height of each frame in the sprite sheet
-
-// Sequence describing which sprite frame appears as the overall score grows.
-// Each entry maps to a star index (0–4) and fill level (1–5).
-// 1→s11, 2→s12, 3→s13, ... 24→s54, 25→s55
-const BLUE_COUNTER_SEQUENCE = [
-  { index: 0, level: 1 }, { index: 0, level: 2 }, { index: 0, level: 3 }, { index: 0, level: 4 }, { index: 0, level: 5 },
-  { index: 1, level: 1 }, { index: 1, level: 2 }, { index: 1, level: 3 }, { index: 1, level: 4 }, { index: 1, level: 5 },
-  { index: 2, level: 1 }, { index: 2, level: 2 }, { index: 2, level: 3 }, { index: 2, level: 4 }, { index: 2, level: 5 },
-  { index: 3, level: 1 }, { index: 3, level: 2 }, { index: 3, level: 3 }, { index: 3, level: 4 }, { index: 3, level: 5 },
-  { index: 4, level: 1 }, { index: 4, level: 2 }, { index: 4, level: 3 }, { index: 4, level: 4 }, { index: 4, level: 5 }
-];
 // --- STAR COUNTER CONFIG ---
 let   COUNTER_ANCHOR = { x: 0, y: 0 }; // позиция спрайта на поле
 let   COUNTER_SCALE  = 1;              // масштаб относительно исходного фрейма
@@ -2792,27 +2781,26 @@ function drawBlueCounter(ctx, x, y, score, scale){
   const destW = srcW * scale;
   const destH = srcH * scale;
 
-
-  // Draw contours for all five stars.
+  // Draw empty star outlines from the first column.
   for(let i = 0; i < BLUE_COUNTER_STARS; i++){
-
     ctx.drawImage(
       blueCounterImg,
-      i * srcW, 0, srcW, srcH,
+      0, i * srcH, srcW, srcH,
       x, y + i * destH, destW, destH
     );
   }
 
-  // Overlay progressive star pieces based on current score.
-  const capped = Math.min(score, BLUE_COUNTER_SEQUENCE.length);
+  // Overlay progressive fills based on current score.
+  const capped = Math.min(score, BLUE_COUNTER_STARS * BLUE_COUNTER_LEVELS);
   for(let s = 0; s < capped; s++){
-    const { index, level } = BLUE_COUNTER_SEQUENCE[s];
+    const starIndex = Math.floor(s / BLUE_COUNTER_LEVELS);
+    const level = (s % BLUE_COUNTER_LEVELS) + 1;
+    const column = Math.min(level, BLUE_COUNTER_LEVELS - 1); // sprite has 4 fill columns
     ctx.drawImage(
       blueCounterImg,
-      index * srcW, level * srcH, srcW, srcH,
-      x, y + index * destH, destW, destH
+      column * srcW, starIndex * srcH, srcW, srcH,
+      x, y + starIndex * destH, destW, destH
     );
-
   }
 }
 
