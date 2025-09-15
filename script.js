@@ -152,16 +152,18 @@ const STAR_STATE = {
 
 function addStarPiece(color){
   const slots = STAR_STATE[color];
-  if(!slots) return;
-  const availableSlots = slots.map((p,i)=> p.length < 5 ? i : -1).filter(i=> i >= 0);
-  if(!availableSlots.length) return;
-  const slot = availableSlots[Math.floor(Math.random() * availableSlots.length)];
-  const pieces = slots[slot];
-  const availableFrags = [];
-  for(let i=0;i<5;i++) if(!pieces.includes(i)) availableFrags.push(i);
-  if(!availableFrags.length) return;
-  const frag = availableFrags[Math.floor(Math.random() * availableFrags.length)];
-  pieces.push(frag);
+  if (!slots) return;
+
+  // Determine the next star fragment to reveal based on how many pieces
+  // this side has already collected. Pieces fill each star from left to
+  // right, top to bottom so that every scored point corresponds to a
+  // unique fragment.
+  const total = slots.reduce((sum, arr) => sum + arr.length, 0);
+  if (total >= 25) return; // all fragments already shown
+
+  const slotIndex = Math.floor(total / 5);   // which star (0..4)
+  const fragIndex = total % 5;               // which fragment within that star
+  slots[slotIndex].push(fragIndex);
 }
 
 function resetStarState(){
