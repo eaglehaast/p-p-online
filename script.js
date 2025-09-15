@@ -526,6 +526,11 @@ function addScore(color, delta){
   } else if(color === "green"){
     greenScore = Math.max(0, greenScore + delta);
   }
+  if(delta > 0){
+    for(let i = 0; i < delta; i++){
+      addPointToSide(color);
+    }
+  }
   if(!isGameOver){
     if(blueScore >= POINTS_TO_WIN){
       isGameOver = true;
@@ -1839,6 +1844,7 @@ function handleAAForPlane(p, fp){
   // самолёты + их трейлы
   drawPlanesAndTrajectories();
 
+  drawStarsUI(gameCtx);
 
   // табло
   renderScoreboard();
@@ -1880,8 +1886,6 @@ function handleAAForPlane(p, fp){
 
     roundTextTimer -= delta;
   }
-
-  drawStarsUI(gameCtx);
 
   animationFrameId = requestAnimationFrame(gameDraw);
 }
