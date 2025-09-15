@@ -2713,6 +2713,11 @@ function checkVictory(){
 
 function renderScoreboard(){
   updateTurnIndicators();
+
+  // Clear previous HUD drawings so the overlay canvas stays transparent and
+  // doesn't obscure the game field or planes.
+  planeCtx.clearRect(0, 0, planeCanvas.width, planeCanvas.height);
+
   planeCtx.save();
 
   const rect = gameCanvas.getBoundingClientRect();
