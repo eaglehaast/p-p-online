@@ -31,22 +31,14 @@ const STAR_OFFSETS = {
 // 5) Масштаб под контуры (подстрой при необходимости +-0.02)
 let STAR_SCALE = 0.255;
 
-// 6) Если твой gameCanvas не 460×800 — домасштабируем координаты
-const STAR_LAYOUT = {
-  anchorX: 0,
-  anchorY: 0,
-  sx: () => gameCanvas.width  / STAR_DESIGN.w,
-  sy: () => gameCanvas.height / STAR_DESIGN.h,
-};
-
-// 7) Грузим спрайт с логами
+// 6) Грузим спрайт с логами
 const STAR_IMG = new Image();
 let STAR_READY = false;
 STAR_IMG.onload  = () => { STAR_READY = true; console.log('[STAR] sprite loaded:', STAR_IMG.width, 'x', STAR_IMG.height); };
 STAR_IMG.onerror = (e)  => { console.error('[STAR] sprite load error', e, STAR_SPRITE_URL); };
 STAR_IMG.src = STAR_SPRITE_URL;
 
-// 8) Состояние (5 слотов на сторону, в каждом — Set фрагментов 1..5)
+// 7) Состояние (5 слотов на сторону, в каждом — Set фрагментов 1..5)
 const STAR_STATE = {
   blue:  { score: 0, slots: Array.from({length:5}, () => new Set()) },
   green: { score: 0, slots: Array.from({length:5}, () => new Set()) },
@@ -81,20 +73,34 @@ function addPointToSide(color){
 function drawStarsUI(ctx){
   if (!STAR_READY) return;
   try {
-    const needsOverlayTransform = (ctx === planeCtx);
-    const sx = STAR_LAYOUT.sx();
-    const sy = STAR_LAYOUT.sy();
-    const sc = STAR_SCALE;
+    const isOverlay = (ctx === planeCtx);
+    let originX;
+    let originY;
+    let unitX;
+    let unitY;
 
-    // Рисуем поверх вашего игрового слоя
-    ctx.save();
-    if (needsOverlayTransform){
+    if (isOverlay){
       const rect = gameCanvas.getBoundingClientRect();
-      const scaleX = rect.width / gameCanvas.width;
-      const scaleY = rect.height / gameCanvas.height;
-      ctx.translate(rect.left, rect.top);
-      ctx.scale(scaleX, scaleY);
+      if (rect.width > 0 && rect.height > 0){
+        unitX = rect.width  / CANVAS_BASE_WIDTH;
+        unitY = rect.height / CANVAS_BASE_HEIGHT;
+        originX = rect.left - FRAME_PADDING_X * unitX;
+        originY = rect.top  - FRAME_PADDING_Y * unitY;
+      }
     }
+
+    if (unitX === undefined || unitY === undefined){
+      unitX = gameCanvas.width  / CANVAS_BASE_WIDTH;
+      unitY = gameCanvas.height / CANVAS_BASE_HEIGHT;
+      originX = -FRAME_PADDING_X * unitX;
+      originY = -FRAME_PADDING_Y * unitY;
+    }
+
+    const fragScaleX = STAR_SCALE * (CANVAS_BASE_WIDTH  / STAR_DESIGN.w) * unitX;
+    const fragScaleY = STAR_SCALE * (CANVAS_BASE_HEIGHT / STAR_DESIGN.h) * unitY;
+
+    // Рисуем поверх игрового слоя в координатах фонового макета 460×800
+    ctx.save();
 
     ["blue","green"].forEach(color=>{
       const centers = STAR_CENTERS[color];
@@ -103,8 +109,8 @@ function drawStarsUI(ctx){
       const slots   = STAR_STATE[color].slots;
 
       centers.forEach((c, slotIdx)=>{
-        const baseX = STAR_LAYOUT.anchorX + c.x * sx;
-        const baseY = STAR_LAYOUT.anchorY + c.y * sy;
+        const baseX = originX + c.x * unitX;
+        const baseY = originY + c.y * unitY;
 
         for (let frag=1; frag<=5; frag++){
           if (!slots[slotIdx].has(frag)) continue;
@@ -114,12 +120,10 @@ function drawStarsUI(ctx){
 
           const [srcX,srcY,srcW,srcH] = rect;
           const [ox,oy] = off;
-          const targetX = baseX + (ox * sc * sx);
-          const targetY = baseY + (oy * sc * sy);
-          const dstW = Math.round(srcW * sc * sx);
-          const dstH = Math.round(srcH * sc * sy);
-          const dx   = Math.round(targetX - dstW/2);
-          const dy   = Math.round(targetY - dstH/2);
+          const dstW = Math.round(srcW * fragScaleX);
+          const dstH = Math.round(srcH * fragScaleY);
+          const dx   = Math.round(baseX + ox * fragScaleX - dstW / 2);
+          const dy   = Math.round(baseY + oy * fragScaleY - dstH / 2);
 
           ctx.drawImage(STAR_IMG, srcX,srcY,srcW,srcH, dx,dy, dstW,dstH);
         }
@@ -408,13 +412,6 @@ function updateFieldDimensions(){
     FIELD_WIDTH = gameCanvas.width;
   }
   updateFieldBorderOffset();
-
-  // Подгоняем позицию и масштаб панели звёзд под размер игрового поля
-  const starLayoutScale = FIELD_WIDTH / STAR_DESIGN.w;
-  STAR_LAYOUT.scaleToCanvasX = starLayoutScale;
-  STAR_LAYOUT.scaleToCanvasY = starLayoutScale;
-  STAR_LAYOUT.anchorX = FIELD_LEFT;
-  STAR_LAYOUT.anchorY = 0;
 }
 
 
