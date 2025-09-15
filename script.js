@@ -10,6 +10,7 @@
 const STAR_SPRITE_URL = new URL('./sprite%20star.png', location.href).href;
 
 // 2) Центры «гнёзд» на поле под макет 460×800 (файл есть в репо). См. root: 'background behind the canvas 2.png'.
+const STAR_DESIGN = { w: 460, h: 800 };
 const STAR_CENTERS = {
   blue:  [ {x:426,y:117}, {x:426,y:177}, {x:426,y:239}, {x:426,y:297}, {x:426,y:357} ],
   green: [ {x: 34,y:436}, {x: 34,y:496}, {x: 34,y:556}, {x: 34,y:615}, {x: 34,y:675} ],
@@ -32,9 +33,10 @@ let STAR_SCALE = 0.255;
 
 // 6) Если твой gameCanvas не 460×800 — домасштабируем координаты
 const STAR_LAYOUT = {
-  anchorX: 0, anchorY: 0,
-  sx: () => gameCanvas.width  / 460,
-  sy: () => gameCanvas.height / 800,
+  anchorX: 0,
+  anchorY: 0,
+  sx: () => gameCanvas.width  / STAR_DESIGN.w,
+  sy: () => gameCanvas.height / STAR_DESIGN.h,
 };
 
 // 7) Грузим спрайт с логами
