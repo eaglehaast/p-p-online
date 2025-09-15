@@ -7,7 +7,7 @@
 /* ========================= STAR SCORE UI (hardened) ========================= */
 
 // 1) Путь к спрайту (имя с пробелом безопасно кодируем)
-const STAR_SPRITE_URL = new URL('./sprite%20star.png', location.href).href;
+const STAR_SPRITE_URL = new URL('./sprite star.png', location.href).href;
 
 // 2) Центры «гнёзд» на поле под макет 460×800 (файл есть в репо). См. root: 'background behind the canvas 2.png'.
 const STAR_DESIGN = { w: 460, h: 800 };
