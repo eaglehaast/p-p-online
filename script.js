@@ -4,49 +4,18 @@
  * Includes fixes for plane orientation, AI turns, and mini-icon counter.
  ***************************************************************/
 
-/* 
-Codex: implement a score overlay from a pre-laid sprite sheet.
+/*
+Star counter overlay built from sprite fragments.
 
-Context:
-- Canvas game; drawing happens in the main loop draw() with 2D context 'gameCtx'.
-- Scores: integers 0..25: 'greenVictories' and 'blueVictories'.
-
-Asset:
-- File: 'counter.png' placed next to the game (path: ./counter.png).
-- Image size: 460x800 px. It contains a fixed layout:
-    - 2 columns (left = GREEN, right = BLUE).
-    - 25 rows vertically (1 frame per score step).
-- IMPORTANT: Each frame is already positioned inside the sprite exactly where it must appear on the game field.
-  We do NOT compute positions per frame — we just draw the first N rows of each column on top of the board.
-
-Requirements:
-1) Load 'counter.png' once (Image()).
-2) Compute frameW = image.width / 2; frameH = image.height / 25. (=> 230x32 for the current file.)
-3) Provide a function drawCounterOverlay(ctx) that:
-   - Has two parameters available from outer scope: 'greenVictories' and 'blueVictories' (0..25).
-   - Draws the first 'greenVictories' rows of LEFT column, and the first 'blueVictories' rows of RIGHT column.
-   - Draws each chosen row at the same place as in the sprite, i.e. destination rect is:
-       dx = ANCHOR.x + sx, dy = ANCHOR.y + sy, dw = frameW, dh = frameH
-     where (sx, sy) is the source top-left of that row; ANCHOR is a constant offset.
-4) Add constants at top:
-   - const COUNTER_SPRITE_URL = "counter.png";
-   - const COUNTER_ROWS = 25, COUNTER_COLS = 2;
-   - const COUNTER_ANCHOR = { x: 0, y: 0 }; // change if needed to align the whole sheet to the board
-   - const FRAMES_FROM_TOP = true; // set false if s1/g1 are at the bottom in the PNG
-   - const COUNTER_SCALE = 1;      // keep 1:1; allow scaling if ever needed
-5) Handle image-not-loaded case gracefully (skip drawing until onload).
-6) Integrate: call drawCounterOverlay(gameCtx) at the end of the main draw() so counters render on top.
-
-Edge cases:
-- If score is 0, draw nothing for that side.
-- Clamp scores to 0..25.
-- If COUNTER_SCALE !== 1, scale destination rect accordingly (dw = frameW*scale etc.)
-- If FRAMES_FROM_TOP === false, rows go from bottom upward.
-
-Acceptance:
-- With greenVictories=3, only the first 3 rows of the LEFT column are visible at their exact sprite positions.
-- With blueVictories=7, only the first 7 rows of the RIGHT column are visible at their exact sprite positions.
-- No gaps or shifts; overlay aligns with the board artwork because we reuse the sprite’s own layout.
+- Sprite: 'sprite star.png' (240x109) has two rows of five pieces:
+  top = green fragments, bottom = blue fragments.
+- Each side owns five star slots on the field background
+  ('background behind the canvas 2.png').
+- STAR_CONFIG lists source rectangles, offsets from the star center,
+  and the slot centers. Each piece is drawn with its anchor at the
+  center of the cropped tile.
+- drawCounterOverlay(ctx) renders all collected fragments stored in
+  STAR_STATE.
 */
 
 /* ======= DOM ======= */
@@ -140,49 +109,116 @@ const BLUE_COUNTER_SEQUENCE = [
   { index: 3, level: 1 }, { index: 3, level: 2 }, { index: 3, level: 3 }, { index: 3, level: 4 }, { index: 3, level: 5 },
   { index: 4, level: 1 }, { index: 4, level: 2 }, { index: 4, level: 3 }, { index: 4, level: 4 }, { index: 4, level: 5 }
 ];
+// --- STAR COUNTER CONFIG ---
+let   COUNTER_ANCHOR = { x: 0, y: 0 }; // позиция спрайта на поле
+let   COUNTER_SCALE  = 1;              // масштаб относительно исходного фрейма
 
-// --- CONFIG ---
-const COUNTER_SPRITE_URL = "counter.png";
-const COUNTER_ROWS = 25, COUNTER_COLS = 2;
-const FRAMES_FROM_TOP = true;          // если первый кадр вверху
-let   COUNTER_ANCHOR = { x: 0, y: 0 }; // позиция ленты на поле
-let   COUNTER_SCALE  = 1;              // масштаб относительно исходного спрайта
-
-const counterImg = new Image();
-let counterReady = false;
-counterImg.onload = () => {
-  counterReady = true;
-};
-counterImg.src = COUNTER_SPRITE_URL;
-
-function drawCounterColumn(ctx, n, col){
-  if(!counterReady) return;
-  const img = counterImg;
-  const fw = Math.floor(img.width  / COUNTER_COLS);
-  const fh = Math.floor(img.height / COUNTER_ROWS);
-
-  const clamp = (v,min,max)=> Math.max(min, Math.min(max, v));
-  n = clamp(n, 0, COUNTER_ROWS);
-
-  for(let i=0;i<n;i++){
-    const row = FRAMES_FROM_TOP ? i : (COUNTER_ROWS-1-i);
-    const sx = col * fw;
-    const sy = row * fh;
-
-    const dx = COUNTER_ANCHOR.x + sx * COUNTER_SCALE;
-    const dy = COUNTER_ANCHOR.y + sy * COUNTER_SCALE;
-    const dw = fw * COUNTER_SCALE;
-    const dh = fh * COUNTER_SCALE;
-
-    ctx.drawImage(img, sx, sy, fw, fh, dx, dy, dw, dh);
+const STAR_SPRITE_URL = "sprite star.png";
+const STAR_CONFIG = {
+  scale: 0.255,
+  green: {
+    sourceRects: [
+      { x: 22,  y: 20, w: 11, h: 23 },
+      { x: 76,  y: 17, w: 23, h: 13 },
+      { x: 101, y: 17, w: 22, h: 12 },
+      { x: 156, y: 2,  w: 14, h: 18 },
+      { x: 215, y: 2,  w: 15, h: 18 }
+    ],
+    offsets: [
+      [ -95.0, 11.5 ],
+      [ -35.0,  3.5 ],
+      [ -10.5,  3.0 ],
+      [  40.5, -9.0 ],
+      [ 100.0, -9.0 ]
+    ],
+    centers: [
+      [ 34, 436 ],
+      [ 34, 496 ],
+      [ 34, 556 ],
+      [ 34, 615 ],
+      [ 34, 675 ]
+    ]
+  },
+  blue: {
+    sourceRects: [
+      { x: 15,  y: 59, w: 14, h: 19 },
+      { x: 76,  y: 74, w: 21, h: 14 },
+      { x: 99,  y: 74, w: 23, h: 13 },
+      { x: 168, y: 59, w: 15, h: 19 },
+      { x: 212, y: 77, w: 12, h: 24 }
+    ],
+    offsets: [
+      [ -100.5, -9.0 ],
+      [ -36.0,   3.5 ],
+      [ -12.0,   3.0 ],
+      [  53.0,  -9.0 ],
+      [  95.5,  11.5 ]
+    ],
+    centers: [
+      [ 426, 117 ],
+      [ 426, 177 ],
+      [ 426, 239 ],
+      [ 426, 297 ],
+      [ 426, 357 ]
+    ]
   }
+};
+
+const starImg = new Image();
+let starReady = false;
+starImg.onload = () => { starReady = true; };
+starImg.src = STAR_SPRITE_URL;
+
+const STAR_STATE = {
+  green: Array.from({ length: 5 }, () => []),
+  blue:  Array.from({ length: 5 }, () => [])
+};
+
+function addStarPiece(color){
+  const slots = STAR_STATE[color];
+  if(!slots) return;
+  const availableSlots = slots.map((p,i)=> p.length < 5 ? i : -1).filter(i=> i >= 0);
+  if(!availableSlots.length) return;
+  const slot = availableSlots[Math.floor(Math.random() * availableSlots.length)];
+  const pieces = slots[slot];
+  const availableFrags = [];
+  for(let i=0;i<5;i++) if(!pieces.includes(i)) availableFrags.push(i);
+  if(!availableFrags.length) return;
+  const frag = availableFrags[Math.floor(Math.random() * availableFrags.length)];
+  pieces.push(frag);
+}
+
+function resetStarState(){
+  STAR_STATE.green.forEach(p => p.length = 0);
+  STAR_STATE.blue.forEach(p => p.length = 0);
 }
 
 function drawCounterOverlay(ctx){
-  // левая колонка = GREEN (g1..gN)
-  drawCounterColumn(ctx, Math.max(0, Math.min(25, greenVictories)), 0);
-  // правая колонка = BLUE  (s1..sN)
-  drawCounterColumn(ctx, Math.max(0, Math.min(25, blueVictories)),  1);
+  if(!starReady) return;
+  const baseScale = STAR_CONFIG.scale * COUNTER_SCALE;
+  ["green","blue"].forEach(color => {
+    const conf = STAR_CONFIG[color];
+    const slots = STAR_STATE[color];
+    slots.forEach((pieces, slotIndex) => {
+      const center = conf.centers[slotIndex];
+      const centerX = COUNTER_ANCHOR.x + center[0] * COUNTER_SCALE;
+      const centerY = COUNTER_ANCHOR.y + center[1] * COUNTER_SCALE;
+      pieces.forEach(fragIndex => {
+        const rect = conf.sourceRects[fragIndex];
+        const offset = conf.offsets[fragIndex];
+        const targetX = centerX + offset[0] * conf.scale * COUNTER_SCALE;
+        const targetY = centerY + offset[1] * conf.scale * COUNTER_SCALE;
+        const dw = rect.w * baseScale;
+        const dh = rect.h * baseScale;
+        ctx.drawImage(
+          starImg,
+          rect.x, rect.y, rect.w, rect.h,
+          targetX - dw / 2, targetY - dh / 2,
+          dw, dh
+        );
+      });
+    });
+  });
 }
 
 
@@ -504,8 +540,6 @@ if(hasCustomSettings && classicRulesBtn && advancedSettingsBtn){
 const POINTS_TO_WIN = 25;
 let greenScore = 0;
 let blueScore  = 0;
-let greenVictories = 0;
-let blueVictories  = 0;
 let roundNumber = 0;
 let roundTextTimer = 0;
 let roundTransitionTimeout = null;
@@ -516,12 +550,10 @@ let blueFlagStolenBy = null;
 let greenFlagStolenBy = null;
 
 function addScore(color, delta){
-  if(color === "blue"){ 
+  if(color === "blue"){
     blueScore = Math.max(0, blueScore + delta);
-    blueVictories = blueScore;
-  } else if(color === "green"){ 
+  } else if(color === "green"){
     greenScore = Math.max(0, greenScore + delta);
-    greenVictories = greenScore;
   }
   if(!isGameOver){
     if(blueScore >= POINTS_TO_WIN){
@@ -587,8 +619,7 @@ function resetGame(){
 
   greenScore = 0;
   blueScore  = 0;
-  greenVictories = 0;
-  blueVictories  = 0;
+  resetStarState();
   roundNumber = 0;
   roundTextTimer = 0;
   if(roundTransitionTimeout){
@@ -2519,14 +2550,14 @@ function awardPoint(color){
   if(isGameOver) return;
   if(color === "blue"){
     greenScore++;
-    greenVictories = greenScore;
+    addStarPiece("green");
     if(greenScore >= POINTS_TO_WIN){
       isGameOver = true;
       winnerColor = "green";
     }
   } else if(color === "green"){
     blueScore++;
-    blueVictories = blueScore;
+    addStarPiece("blue");
     if(blueScore >= POINTS_TO_WIN){
       isGameOver = true;
       winnerColor = "blue";
@@ -2894,8 +2925,7 @@ yesBtn.addEventListener("click", () => {
   if (gameOver) {
     blueScore = 0;
     greenScore = 0;
-    blueVictories = 0;
-    greenVictories = 0;
+    resetStarState();
     roundNumber = 0;
     if(!advancedSettingsBtn?.classList.contains('selected')){
       settings.mapIndex = Math.floor(Math.random() * MAPS.length);
