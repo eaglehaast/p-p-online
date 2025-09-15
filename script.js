@@ -2715,11 +2715,10 @@ function checkVictory(){
 
 function renderScoreboard(){
   updateTurnIndicators();
-
-  // Clear previous HUD drawings so the overlay canvas stays transparent and
-  // doesn't obscure the game field or planes.
-  planeCtx.clearRect(0, 0, planeCanvas.width, planeCanvas.height);
-
+  // `drawPlanesAndTrajectories()` already clears the plane canvas every frame
+  // before rendering the planes. Clearing it again here would erase the planes
+  // that were just drawn, making them disappear. Draw the HUD on top of the
+  // existing planes without clearing the canvas again.
   planeCtx.save();
 
   const rect = gameCanvas.getBoundingClientRect();
