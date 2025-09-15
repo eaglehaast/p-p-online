@@ -85,24 +85,9 @@ const arrowSprite = new Image();
 // Use the PNG sprite that contains the arrow graphics
 arrowSprite.src = "sprite_ copy.png";
 
-// Sprite for blue player score counter (star meter)
-const blueCounterImg = new Image();
-blueCounterImg.src = "blue plane counter.png";
-
-// There are five star outlines stacked vertically on the HUD. Each star can
-// accumulate up to five points. The sprite sheet is organised in a grid where
-// rows correspond to star slots (top to bottom) and columns represent the fill
-// level for that slot. Column 0 contains the empty outline; subsequent columns
-// gradually fill the star. The sheet only provides four fill images, so the
-// fifth point reuses the fully filled column.
-const BLUE_COUNTER_STARS  = 5; // number of star slots
-const BLUE_COUNTER_LEVELS = 5; // points needed to fill one star
-
-const BLUE_COUNTER_TILE_W = 92;  // width of each frame in the sprite sheet
-const BLUE_COUNTER_TILE_H = 160; // height of each frame in the sprite sheet
-// --- STAR COUNTER CONFIG ---
-let   COUNTER_ANCHOR = { x: 0, y: 0 }; // позиция спрайта на поле
-let   COUNTER_SCALE  = 1;              // масштаб относительно исходного фрейма
+// Configuration for star fragment overlay used as a score indicator
+let COUNTER_ANCHOR = { x: 0, y: 0 };
+let COUNTER_SCALE  = 1;
 
 const STAR_SPRITE_URL = "sprite star.png";
 const STAR_CONFIG = {
@@ -2736,20 +2721,13 @@ function renderScoreboard(){
   const containerTop = rect.top - FRAME_PADDING_Y * scale;
   const containerWidth = FRAME_BASE_WIDTH * scale;
 
-  // Blue player's star counter on the right side
-  drawBlueCounter(
-    planeCtx,
-    containerLeft + containerWidth - BLUE_COUNTER_TILE_W * scale,
-    containerTop,
-    blueScore,
-    scale
-  );
+  const margin = 10 * scale;
 
   // Blue player's HUD (mini planes and numeric score)
   drawPlayerHUD(
     planeCtx,
-    containerLeft + containerWidth - BLUE_COUNTER_TILE_W * scale - 10,
-    containerTop + 10,
+    containerLeft + containerWidth - margin,
+    containerTop + margin,
     "blue",
     blueScore,
     turnColors[turnIndex] === "blue",
@@ -2759,8 +2737,8 @@ function renderScoreboard(){
   // Green player's HUD (numeric score)
   drawPlayerHUD(
     planeCtx,
-    containerLeft + 10,
-    containerTop + 10,
+    containerLeft + margin,
+    containerTop + margin,
     "green",
     greenScore,
     turnColors[turnIndex] === "green",
@@ -2777,35 +2755,6 @@ function updateTurnIndicators(){
 
   mantisText.textContent = '';
 goatText.textContent = '';
-}
-
-function drawBlueCounter(ctx, x, y, score, scale){
-  const srcW = BLUE_COUNTER_TILE_W;
-  const srcH = BLUE_COUNTER_TILE_H;
-  const destW = srcW * scale;
-  const destH = srcH * scale;
-
-  // Draw empty star outlines from the first column.
-  for(let i = 0; i < BLUE_COUNTER_STARS; i++){
-    ctx.drawImage(
-      blueCounterImg,
-      0, i * srcH, srcW, srcH,
-      x, y + i * destH, destW, destH
-    );
-  }
-
-  // Overlay progressive fills based on current score.
-  const capped = Math.min(score, BLUE_COUNTER_STARS * BLUE_COUNTER_LEVELS);
-  for(let s = 0; s < capped; s++){
-    const starIndex = Math.floor(s / BLUE_COUNTER_LEVELS);
-    const level = (s % BLUE_COUNTER_LEVELS) + 1;
-    const column = Math.min(level, BLUE_COUNTER_LEVELS - 1); // sprite has 4 fill columns
-    ctx.drawImage(
-      blueCounterImg,
-      column * srcW, starIndex * srcH, srcW, srcH,
-      x, y + starIndex * destH, destW, destH
-    );
-  }
 }
 
 function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
