@@ -21,8 +21,6 @@ Star counter overlay built from sprite fragments.
 /* ======= DOM ======= */
 const mantisIndicator = document.getElementById("mantisIndicator");
 const goatIndicator   = document.getElementById("goatIndicator");
-const mantisText = mantisIndicator.querySelector('.turn-text');
-const goatText = goatIndicator.querySelector('.turn-text');
 
 const gameContainer = document.getElementById("gameContainer");
 const gameCanvas  = document.getElementById("gameCanvas");
@@ -2759,12 +2757,6 @@ function updateTurnIndicators(){
   const isBlueTurn = color === 'blue';
   mantisIndicator.classList.toggle('active', isBlueTurn);
   goatIndicator.classList.toggle('active', !isBlueTurn);
-
-  // Show an explicit text cue for the player whose turn it is.
-  // Previously both text fields were cleared every frame, leaving
-  // the indicators blank and confusing players.
-  mantisText.textContent = isBlueTurn ? 'Your Turn' : '';
-  goatText.textContent   = !isBlueTurn ? 'Your Turn' : '';
 }
 
 function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
