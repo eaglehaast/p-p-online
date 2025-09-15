@@ -29,7 +29,8 @@ const STAR_OFFSETS = {
 };
 
 // 5) Масштаб под контуры (подстрой при необходимости +-0.02)
-let STAR_SCALE = 0.255;
+const STAR_SCALE_FALLBACK = 0.255;
+let STAR_SCALE = STAR_SCALE_FALLBACK;
 
 // 6) Грузим спрайт с логами
 const STAR_IMG = new Image();
@@ -48,6 +49,54 @@ function resetStarsUI(){
   STAR_STATE.blue  = { score: 0, slots: Array.from({length:5}, () => new Set()) };
   STAR_STATE.green = { score: 0, slots: Array.from({length:5}, () => new Set()) };
   console.log('[STAR] reset');
+}
+
+function computeStarScale(){
+  const baseScaleX = CANVAS_BASE_WIDTH / STAR_DESIGN.w;
+  const baseScaleY = CANVAS_BASE_HEIGHT / STAR_DESIGN.h;
+  let limit = Infinity;
+
+  ["blue", "green"].forEach(color => {
+    const centers = STAR_CENTERS[color];
+    const rects = STAR_SOURCE_RECTS[color];
+    const offsets = STAR_OFFSETS[color];
+
+    centers.forEach(center => {
+      offsets.forEach((offset, idx) => {
+        const rect = rects[idx];
+        if (!rect) return;
+
+        const [ , , srcW, srcH ] = rect;
+        const [ ox, oy ] = offset;
+
+        const rightReach = (ox + srcW / 2) * baseScaleX;
+        if (rightReach > 0) {
+          limit = Math.min(limit, (FRAME_BASE_WIDTH - center.x) / rightReach);
+        }
+
+        const leftReach = (ox - srcW / 2) * baseScaleX;
+        if (leftReach < 0) {
+          limit = Math.min(limit, center.x / (-leftReach));
+        }
+
+        const bottomReach = (oy + srcH / 2) * baseScaleY;
+        if (bottomReach > 0) {
+          limit = Math.min(limit, (FRAME_BASE_HEIGHT - center.y) / bottomReach);
+        }
+
+        const topReach = (oy - srcH / 2) * baseScaleY;
+        if (topReach < 0) {
+          limit = Math.min(limit, center.y / (-topReach));
+        }
+      });
+    });
+  });
+
+  if (!Number.isFinite(limit) || limit <= 0) {
+    return STAR_SCALE_FALLBACK;
+  }
+
+  return limit * 0.99; // небольшая «подушка», чтобы избежать выхода за рамку из-за округления
 }
 
 // Начислить очко стороне (класть случайный недостающий фрагмент в случайный незаполненный слот)
@@ -195,6 +244,9 @@ const FRAME_PADDING_Y = 80;
 const FRAME_BASE_WIDTH = CANVAS_BASE_WIDTH + FRAME_PADDING_X * 2; // 460
 const FRAME_BASE_HEIGHT = CANVAS_BASE_HEIGHT + FRAME_PADDING_Y * 2; // 800
 const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
+
+STAR_SCALE = computeStarScale();
+console.log('[STAR] auto-scale set to', STAR_SCALE.toFixed(3));
 
 const brickFrameImg = new Image();
 // Load the default map on startup so we don't request a missing image
