@@ -145,8 +145,8 @@ const BLUE_COUNTER_SEQUENCE = [
 const COUNTER_SPRITE_URL = "counter.png";
 const COUNTER_ROWS = 25, COUNTER_COLS = 2;
 const FRAMES_FROM_TOP = true;          // если первый кадр вверху
-const COUNTER_ANCHOR = { x: 0, y: 0 }; // сдвиг всей ленты на поле
-const COUNTER_SCALE  = 1;
+let   COUNTER_ANCHOR = { x: 0, y: 0 }; // позиция ленты на поле
+let   COUNTER_SCALE  = 1;              // масштаб относительно исходного спрайта
 
 const counterImg = new Image();
 let counterReady = false;
@@ -386,6 +386,11 @@ function updateFieldDimensions(){
     FIELD_WIDTH = gameCanvas.width;
   }
   updateFieldBorderOffset();
+
+  // Подгоняем позицию и масштаб спрайта счётчиков под размер игрового поля
+  COUNTER_SCALE = FIELD_WIDTH / FRAME_BASE_WIDTH;
+  COUNTER_ANCHOR.x = FIELD_LEFT;
+  COUNTER_ANCHOR.y = 0;
 }
 
 
