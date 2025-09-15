@@ -521,11 +521,23 @@ let blueFlagStolenBy = null;
 let greenFlagStolenBy = null;
 
 function addScore(color, delta){
+  let prevScore = null;
   if(color === "blue"){
+    prevScore = blueScore;
     blueScore = Math.max(0, blueScore + delta);
   } else if(color === "green"){
+    prevScore = greenScore;
     greenScore = Math.max(0, greenScore + delta);
   }
+
+  if(prevScore !== null){
+    const newScore = color === "blue" ? blueScore : greenScore;
+    const gained = Math.max(0, Math.floor(newScore - prevScore));
+    for(let i = 0; i < gained; i++){
+      addPointToSide(color);
+    }
+  }
+
   if(!isGameOver){
     if(blueScore >= POINTS_TO_WIN){
       isGameOver = true;
