@@ -526,11 +526,10 @@ function addScore(color, delta){
   } else if(color === "green"){
     greenScore = Math.max(0, greenScore + delta);
   }
-
-  const starFragments = Math.max(0, Math.floor(delta));
-  for(let i = 0; i < starFragments; i++){
-    addPointToSide(color);
-
+  if(delta > 0){
+    for(let i = 0; i < delta; i++){
+      addPointToSide(color);
+    }
   }
   if(!isGameOver){
     if(blueScore >= POINTS_TO_WIN){
