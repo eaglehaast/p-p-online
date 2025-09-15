@@ -97,7 +97,9 @@ const BLUE_COUNTER_STARS  = 5; // number of star slots
 const BLUE_COUNTER_LEVELS = 5; // points needed to fill one star
 
 const BLUE_COUNTER_TILE_W = 92; // width of each frame in the sprite sheet
-const BLUE_COUNTER_TILE_H = 80; // height of each frame in the sprite sheet
+// Each star occupies a 92×160 slot in the sprite sheet (5 stars stacked vertically = 800px).
+// Using the correct tile height ensures we sample the proper frame for star fills.
+const BLUE_COUNTER_TILE_H = 160; // height of each frame in the sprite sheet
 
 // Sequence describing which sprite frame appears as the overall score grows.
 // Each entry maps to a star index (0–4) and fill level (1–5).
