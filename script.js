@@ -127,6 +127,7 @@ function drawStarsUI(ctx){
 
     // Рисуем поверх игрового слоя в координатах фонового макета 460×800
     ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.imageSmoothingEnabled = false;
 
     ["blue","green"].forEach(color=>{
@@ -147,8 +148,10 @@ function drawStarsUI(ctx){
 
           const [srcX,srcY,srcW,srcH] = rect;
           const [ox,oy] = off;
-          const dstW = Math.round(srcW * pieceScaleX);
-          const dstH = Math.round(srcH * pieceScaleY);
+          let dstW = Math.round(srcW * pieceScaleX);
+          let dstH = Math.round(srcH * pieceScaleY);
+          if (dstW < 2) dstW = 2;
+          if (dstH < 2) dstH = 2;
           const targetX = baseX + ox * offsetScaleX;
           const targetY = baseY + oy * offsetScaleY;
           const drawX = Math.round(targetX - dstW / 2);
