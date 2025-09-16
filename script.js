@@ -13,18 +13,18 @@ const STAR_SPRITE_URL = new URL('./sprite star.png', location.href).href;
 const STAR_DESIGN = { w: 460, h: 800 };
 const STAR_CENTERS = {
   blue:  [
-    { x: 434.4, y: 121 },
-    { x: 434.4, y: 181 },
-    { x: 434.4, y: 243 },
-    { x: 434.4, y: 301 },
-    { x: 434.4, y: 361 },
+    { x: 434.5, y: 120.5 },
+    { x: 434.5, y: 180.5 },
+    { x: 434.5, y: 240.5 },
+    { x: 434.5, y: 300.5 },
+    { x: 434.5, y: 360.5 },
   ],
   green: [
-    { x: 24.2, y: 432 },
-    { x: 24.2, y: 492 },
-    { x: 24.2, y: 552 },
-    { x: 24.2, y: 611 },
-    { x: 24.2, y: 671 },
+    { x: 25.0, y: 431.5 },
+    { x: 25.5, y: 491.0 },
+    { x: 25.5, y: 559.0 },
+    { x: 25.0, y: 609.0 },
+    { x: 25.5, y: 669.5 },
   ],
 };
 
@@ -36,13 +36,25 @@ const STAR_SOURCE_RECTS = {
 
 // 4) Смещения частей в пределах «звезды» (от композиционного центра строки спрайта)
 const STAR_OFFSETS = {
-  green: [ [-95,11.5], [-35,3.5], [-10.5,3], [ 40.5,-9], [100,-9] ],
-  blue:  [ [-100.5,-9], [-36,3.5], [-12,3], [ 53,-9], [ 95.5,11.5] ],
+  green: [
+    [-94.482,  9.706],
+    [-36.094,  3.344],
+    [ -9.067,  3.289],
+    [ 41.645, -8.626],
+    [100.595, -8.354],
+  ],
+  blue:  [
+    [-99.355, -9.260],
+    [-35.917,  3.487],
+    [-10.344,  3.466],
+    [ 53.265, -8.971],
+    [ 96.932, 10.755],
+  ],
 };
 
 // 5) Масштабы под контуры (подстроены под фон 460×800)
-const STAR_OFFSET_SCALE_FALLBACK = 0.255;
-const STAR_PIECE_SCALE_FALLBACK = 1.1;
+const STAR_OFFSET_SCALE_FALLBACK = 0.234;
+const STAR_PIECE_SCALE_FALLBACK = 0.68;
 let STAR_OFFSET_SCALE = STAR_OFFSET_SCALE_FALLBACK;
 let STAR_PIECE_SCALE = STAR_PIECE_SCALE_FALLBACK;
 
