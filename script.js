@@ -2827,6 +2827,41 @@ function updateTurnIndicators(){
   goatIndicator.classList.toggle('active', !isBlueTurn);
 }
 
+function drawHudHighlight(ctx, minX, minY, maxX, maxY, color){
+  const paddingX = 12;
+  const paddingY = 8;
+  const rectX = minX - paddingX;
+  const rectY = minY - paddingY;
+  const rectW = (maxX - minX) + paddingX * 2;
+  const rectH = (maxY - minY) + paddingY * 2;
+  if(rectW <= 0 || rectH <= 0) return;
+
+  const radius = Math.min(12, rectW / 2, rectH / 2);
+
+  ctx.save();
+  ctx.shadowColor = colorWithAlpha(color, 0.35);
+  ctx.shadowBlur = 18;
+  ctx.beginPath();
+  ctx.moveTo(rectX + radius, rectY);
+  ctx.lineTo(rectX + rectW - radius, rectY);
+  ctx.quadraticCurveTo(rectX + rectW, rectY, rectX + rectW, rectY + radius);
+  ctx.lineTo(rectX + rectW, rectY + rectH - radius);
+  ctx.quadraticCurveTo(rectX + rectW, rectY + rectH, rectX + rectW - radius, rectY + rectH);
+  ctx.lineTo(rectX + radius, rectY + rectH);
+  ctx.quadraticCurveTo(rectX, rectY + rectH, rectX, rectY + rectH - radius);
+  ctx.lineTo(rectX, rectY + radius);
+  ctx.quadraticCurveTo(rectX, rectY, rectX + radius, rectY);
+  ctx.closePath();
+
+  ctx.fillStyle = colorWithAlpha(color, 0.18);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = colorWithAlpha(color, 0.8);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
   ctx.save();
   ctx.translate(x, y);
@@ -2837,28 +2872,73 @@ function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
   const planes = points.filter(p => p.color === color);
   const maxPerRow = 4;
   const spacingX = 20;
-  for (let i = 0; i < Math.min(planes.length, maxPerRow); i++) {
-    const p = planes[i];
-    const px = alignRight ? -i * spacingX : i * spacingX;
-    drawMiniPlaneWithCross(ctx, px, 0, color, p.isAlive, p.burning && isExplosionFinished(p), 0.8);
-  }
+  const iconScale = 0.8;
+  const iconSize = 16 * PLANE_SCALE * iconScale;
+  const iconHalf = iconSize / 2;
 
-  const scoreX = 0;
-  ctx.fillStyle = colorFor(color);
-  ctx.fillText(String(score), scoreX, 20);
+  const scoreText = String(score);
+  const scoreWidth = ctx.measureText(scoreText).width;
 
   let statusText = '';
   if (phase === 'AA_PLACEMENT') {
     if (currentPlacer === color) {
       statusText = 'Placing AA';
-      ctx.fillStyle = colorFor(color);
     } else {
       statusText = 'Enemy placing AA';
-      ctx.fillStyle = '#888';
     }
   }
+  const statusWidth = statusText ? ctx.measureText(statusText).width : 0;
+
+  const iconCount = Math.min(planes.length, maxPerRow);
+  let minX = 0;
+  let maxX = 0;
+  for (let i = 0; i < iconCount; i++) {
+    const centerX = alignRight ? -i * spacingX : i * spacingX;
+    minX = Math.min(minX, centerX - iconHalf);
+    maxX = Math.max(maxX, centerX + iconHalf);
+  }
+
+  if (alignRight) {
+    minX = Math.min(minX, -scoreWidth);
+    if (statusText) minX = Math.min(minX, -statusWidth);
+    maxX = Math.max(maxX, iconCount ? iconHalf : 0);
+    maxX = Math.max(maxX, 0);
+  } else {
+    minX = Math.min(minX, iconCount ? -iconHalf : 0);
+    const textMax = Math.max(scoreWidth, statusWidth);
+    maxX = Math.max(maxX, textMax);
+  }
+
+  let minY = iconCount ? -iconHalf : 0;
+  let maxY = iconCount ? iconHalf : 0;
+  const lineHeight = 18;
+  maxY = Math.max(maxY, 20 + lineHeight);
   if (statusText) {
-    ctx.fillText(statusText, scoreX, 40);
+    maxY = Math.max(maxY, 40 + lineHeight);
+  }
+
+  if (isTurn) {
+    drawHudHighlight(ctx, minX, minY, maxX, maxY, color);
+  } else {
+    ctx.globalAlpha = 0.65;
+  }
+
+  for (let i = 0; i < iconCount; i++) {
+    const p = planes[i];
+    const px = alignRight ? -i * spacingX : i * spacingX;
+    drawMiniPlaneWithCross(ctx, px, 0, color, p.isAlive, p.burning && isExplosionFinished(p), iconScale);
+  }
+
+  ctx.fillStyle = colorFor(color);
+  ctx.fillText(scoreText, 0, 20);
+
+  if (statusText) {
+    if (phase === 'AA_PLACEMENT' && currentPlacer !== color) {
+      ctx.fillStyle = '#888';
+    } else {
+      ctx.fillStyle = colorFor(color);
+    }
+    ctx.fillText(statusText, 0, 40);
   }
 
   ctx.restore();
