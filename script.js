@@ -40,9 +40,11 @@ const STAR_OFFSETS = {
   blue:  [ [-100.5,-9], [-36,3.5], [-12,3], [ 53,-9], [ 95.5,11.5] ],
 };
 
-// 5) Масштаб под контуры (подстроен под фон 460×800)
-const STAR_SCALE_FALLBACK = 0.235;
-let STAR_SCALE = STAR_SCALE_FALLBACK;
+// 5) Масштабы под контуры (подстроены под фон 460×800)
+const STAR_OFFSET_SCALE_FALLBACK = 0.255;
+const STAR_PIECE_SCALE_FALLBACK = 1.1;
+let STAR_OFFSET_SCALE = STAR_OFFSET_SCALE_FALLBACK;
+let STAR_PIECE_SCALE = STAR_PIECE_SCALE_FALLBACK;
 
 // 6) Грузим спрайт с логами
 const STAR_IMG = new Image();
@@ -63,8 +65,11 @@ function resetStarsUI(){
   console.log('[STAR] reset');
 }
 
-function computeStarScale(){
-  return STAR_SCALE_FALLBACK;
+function computeStarScales(){
+  return {
+    offset: STAR_OFFSET_SCALE_FALLBACK,
+    piece: STAR_PIECE_SCALE_FALLBACK,
+  };
 }
 
 // Начислить очко стороне (класть случайный недостающий фрагмент в случайный незаполненный слот)
@@ -113,11 +118,16 @@ function drawStarsUI(ctx){
       originY = -FRAME_PADDING_Y * unitY;
     }
 
-    const fragScaleX = STAR_SCALE * (CANVAS_BASE_WIDTH  / STAR_DESIGN.w) * unitX;
-    const fragScaleY = STAR_SCALE * (CANVAS_BASE_HEIGHT / STAR_DESIGN.h) * unitY;
+    const baseScaleX = (CANVAS_BASE_WIDTH  / STAR_DESIGN.w) * unitX;
+    const baseScaleY = (CANVAS_BASE_HEIGHT / STAR_DESIGN.h) * unitY;
+    const offsetScaleX = STAR_OFFSET_SCALE * baseScaleX;
+    const offsetScaleY = STAR_OFFSET_SCALE * baseScaleY;
+    const pieceScaleX = STAR_PIECE_SCALE * baseScaleX;
+    const pieceScaleY = STAR_PIECE_SCALE * baseScaleY;
 
     // Рисуем поверх игрового слоя в координатах фонового макета 460×800
     ctx.save();
+    ctx.imageSmoothingEnabled = false;
 
     ["blue","green"].forEach(color=>{
       const centers = STAR_CENTERS[color];
@@ -137,12 +147,14 @@ function drawStarsUI(ctx){
 
           const [srcX,srcY,srcW,srcH] = rect;
           const [ox,oy] = off;
-          const dstW = Math.round(srcW * fragScaleX);
-          const dstH = Math.round(srcH * fragScaleY);
-          const dx   = Math.round(baseX + ox * fragScaleX - dstW / 2);
-          const dy   = Math.round(baseY + oy * fragScaleY - dstH / 2);
+          const dstW = Math.round(srcW * pieceScaleX);
+          const dstH = Math.round(srcH * pieceScaleY);
+          const targetX = baseX + ox * offsetScaleX;
+          const targetY = baseY + oy * offsetScaleY;
+          const drawX = Math.round(targetX - dstW / 2);
+          const drawY = Math.round(targetY - dstH / 2);
 
-          ctx.drawImage(STAR_IMG, srcX,srcY,srcW,srcH, dx,dy, dstW,dstH);
+          ctx.drawImage(STAR_IMG, srcX,srcY,srcW,srcH, drawX,drawY, dstW,dstH);
         }
       });
     });
@@ -213,8 +225,10 @@ const FRAME_BASE_WIDTH = CANVAS_BASE_WIDTH + FRAME_PADDING_X * 2; // 460
 const FRAME_BASE_HEIGHT = CANVAS_BASE_HEIGHT + FRAME_PADDING_Y * 2; // 800
 const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
 
-STAR_SCALE = computeStarScale();
-console.log('[STAR] auto-scale set to', STAR_SCALE.toFixed(3));
+const starScaleDefaults = computeStarScales();
+STAR_OFFSET_SCALE = starScaleDefaults.offset;
+STAR_PIECE_SCALE = starScaleDefaults.piece;
+console.log('[STAR] auto-scale set to offsets', STAR_OFFSET_SCALE.toFixed(3), 'pieces', STAR_PIECE_SCALE.toFixed(3));
 
 const brickFrameImg = new Image();
 // Load the default map on startup so we don't request a missing image
