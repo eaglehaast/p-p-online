@@ -4,125 +4,190 @@
  * Includes fixes for plane orientation, AI turns, and mini-icon counter.
  ***************************************************************/
 
-/* ================= STAR SCORE UI (10 тайлов из sprite star.png) ================ */
-// путь к твоему PNG с обломками
-const STAR_SPRITE_URL = "sprite star.png";
+/* ========================= STAR SCORE UI (hardened) ========================= */
 
-// размеры макета, под который сняты координаты (фон 460x800)
+// 1) Путь к спрайту (имя с пробелом безопасно кодируем)
+const STAR_SPRITE_URL = new URL('./sprite star.png', location.href).href;
+
+// 2) Центры «гнёзд» на поле под макет 460×800 (файл есть в репо). См. root: 'background behind the canvas 2.png'.
 const STAR_DESIGN = { w: 460, h: 800 };
-
-// центры «гнёзд» на поле (куда собирать звёзды)
 const STAR_CENTERS = {
-  blue:  [ {x:426,y:117}, {x:426,y:177}, {x:426,y:239}, {x:426,y:297}, {x:426,y:357} ],
-  green: [ {x: 34,y:436}, {x: 34,y:496}, {x: 34,y:556}, {x: 34,y:615}, {x: 34,y:675} ],
+  blue:  [
+    { x: 433.42, y: 121.21 },
+    { x: 434.08, y: 175.93 },
+    { x: 433.79, y: 236.35 },
+    { x: 433.67, y: 296.26 },
+    { x: 433.14, y: 355.16 },
+  ],
+  green: [
+    { x: 29.75, y: 444.73 },
+    { x: 29.80, y: 503.94 },
+    { x: 30.15, y: 563.54 },
+    { x: 30.43, y: 626.02 },
+    { x: 30.07, y: 684.91 },
+  ],
 };
 
-// прямоугольники вырезки из спрайта (sx, sy, sw, sh)
+// 3) Прямоугольники вырезки из 'sprite star.png' (файл есть в репо).
 const STAR_SOURCE_RECTS = {
   green: [ [22,20,11,23], [76,17,23,13], [101,17,22,12], [156,2,14,18], [215,2,15,18] ],
   blue:  [ [15,59,14,19], [76,74,21,14], [99,74,23,13], [168,59,15,19], [212,77,12,24] ],
 };
 
-// смещения каждого фрагмента относительно композиционного центра ряда (в px спрайта)
+// 4) Смещения частей в пределах «звезды» (от композиционного центра строки спрайта)
 const STAR_OFFSETS = {
-  green: [ [-95.0,11.5], [-35.0,3.5], [-10.5,3.0], [ 40.5,-9.0], [100.0,-9.0] ],
-  blue:  [-100.5,-9.0, -36.0,3.5, -12.0,3.0, 53.0,-9.0, 95.5,11.5],
-};
-// приведи blue к массиву массивов (потому что в одну строку выше)
-STAR_OFFSETS.blue = STAR_OFFSETS.blue.reduce((pairs, value, index, array) => {
-  if(index % 2 === 0){
-    pairs.push([value, array[index + 1]]);
-  }
-  return pairs;
-}, []);
-
-// масштаб фрагментов и смещений (под контуры на фоне). при необходимости подстрой ±0.02
-let STAR_SCALE = 0.255;
-
-// если твой gameCanvas рисуется не в 460x800, можно домасштабировать в макетные координаты:
-const STAR_LAYOUT = {
-  anchorX: 0,  // смещение всей панели (если нужно сдвинуть общий «слой звёзд»)
-  anchorY: 0,
-  scaleToCanvasX: 1, // если canvas.width == 460, оставь 1; иначе поставь gameCanvas.width / 460
-  scaleToCanvasY: 1, // если canvas.height == 800, оставь 1; иначе поставь gameCanvas.height / 800
+  green: [
+    [-94.482,  9.706],
+    [-36.094,  3.344],
+    [ -9.067,  3.289],
+    [ 41.645, -8.626],
+    [100.595, -8.354],
+  ],
+  blue:  [
+    [-99.355, -9.260],
+    [-35.917,  3.487],
+    [-10.344,  3.466],
+    [ 53.265, -8.971],
+    [ 96.932, 10.755],
+  ],
 };
 
-// загрузка спрайта
+// 5) Масштабы под контуры (подстроены под фон 460×800)
+const STAR_OFFSET_SCALE_FALLBACK = 0.234;
+const STAR_PIECE_SCALE_FALLBACK = 0.68;
+let STAR_OFFSET_SCALE = STAR_OFFSET_SCALE_FALLBACK;
+let STAR_PIECE_SCALE = STAR_PIECE_SCALE_FALLBACK;
+
+// 6) Грузим спрайт с логами
 const STAR_IMG = new Image();
 let STAR_READY = false;
+STAR_IMG.onload  = () => { STAR_READY = true; console.log('[STAR] sprite loaded:', STAR_IMG.width, 'x', STAR_IMG.height); };
+STAR_IMG.onerror = (e)  => { console.error('[STAR] sprite load error', e, STAR_SPRITE_URL); };
 STAR_IMG.src = STAR_SPRITE_URL;
-STAR_IMG.onload = ()=> { STAR_READY = true; };
 
-// состояние: по 5 слотов на сторону, в каждом — набор уже поставленных фрагментов 1..5
+// 7) Состояние (5 слотов на сторону, в каждом — Set фрагментов 1..5)
 const STAR_STATE = {
-  blue:  { score: 0, slots: Array.from({length:5}, ()=> new Set()) },
-  green: { score: 0, slots: Array.from({length:5}, ()=> new Set()) },
+  blue:  { score: 0, slots: Array.from({length:5}, () => new Set()) },
+  green: { score: 0, slots: Array.from({length:5}, () => new Set()) },
 };
 
-// сброс (зови при начале матча/раунда)
 function resetStarsUI(){
-  STAR_STATE.blue  = { score: 0, slots: Array.from({length:5}, ()=> new Set()) };
-  STAR_STATE.green = { score: 0, slots: Array.from({length:5}, ()=> new Set()) };
+  STAR_STATE.blue  = { score: 0, slots: Array.from({length:5}, () => new Set()) };
+  STAR_STATE.green = { score: 0, slots: Array.from({length:5}, () => new Set()) };
+  console.log('[STAR] reset');
 }
 
-// начислить очко стороне: положить случайный недостающий фрагмент в случайный незаполненный слот
+function computeStarScales(){
+  return {
+    offset: STAR_OFFSET_SCALE_FALLBACK,
+    piece: STAR_PIECE_SCALE_FALLBACK,
+  };
+}
+
+// Начислить очко стороне (класть случайный недостающий фрагмент в случайный незаполненный слот)
 function addPointToSide(color){
   const side = STAR_STATE[color];
-  if(!side) return;
-  if(side.score >= 25) return;
+  if (!side) return;
+  if (side.score >= 25) return;
   side.score++;
 
-  // слоты, где собрано <5
-  const freeSlots = side.slots.map((s,idx)=> s.size<5 ? idx : -1).filter(i=> i>=0);
-  if(freeSlots.length === 0) return;
-  const slotIdx = freeSlots[Math.floor(Math.random()*freeSlots.length)];
-  const slot = side.slots[slotIdx];
+  const free = side.slots.map((s,i)=> s.size<5? i : -1).filter(i=> i>=0);
+  if (!free.length) return;
 
-  // недостающие фрагменты 1..5
-  const pool = [1,2,3,4,5].filter(n=> !slot.has(n));
+  const slotIdx = free[Math.floor(Math.random() * free.length)];
+  const slot = side.slots[slotIdx];
+  const pool = [1,2,3,4,5].filter(n => !slot.has(n));
   const pick = pool[Math.floor(Math.random()*pool.length)];
   slot.add(pick);
+
+  console.log(`[STAR] ${color}+1 → slot ${slotIdx}, frag ${pick} (size=${slot.size})`);
 }
 
-// отрисовка всех собранных фрагментов (зови в конце твоего draw())
+// Основная отрисовка звёзд — БЕЗ аварий: ловим исключения, чтобы не уронить draw()
 function drawStarsUI(ctx){
-  if(!STAR_READY) return;
+  if (!STAR_READY) return;
+  try {
+    const isOverlay = (ctx === planeCtx);
+    let originX;
+    let originY;
+    let unitX;
+    let unitY;
 
-  const sx = STAR_LAYOUT.scaleToCanvasX;
-  const sy = STAR_LAYOUT.scaleToCanvasY;
-  const sc = STAR_SCALE; // локально читается короче
-
-  ["blue","green"].forEach(color=>{
-    const centers = STAR_CENTERS[color];
-    const rects   = STAR_SOURCE_RECTS[color];
-    const offs    = STAR_OFFSETS[color];
-    const slots   = STAR_STATE[color].slots;
-
-    centers.forEach((c, slotIdx)=>{
-      const baseX = STAR_LAYOUT.anchorX + c.x * sx;
-      const baseY = STAR_LAYOUT.anchorY + c.y * sy;
-
-      // стабильный порядок, чтобы слои всегда одинаково перекрывались:
-      for(let frag=1; frag<=5; frag++){
-        if(!slots[slotIdx].has(frag)) continue;
-
-        const [srcX,srcY,srcW,srcH] = rects[frag-1];
-        const [ox,oy]               = offs[frag-1];
-
-        const targetX = baseX + (ox * sc * sx);
-        const targetY = baseY + (oy * sc * sy);
-
-        const dstW = Math.round(srcW * sc * sx);
-        const dstH = Math.round(srcH * sc * sy);
-        const dx   = Math.round(targetX - dstW/2);
-        const dy   = Math.round(targetY - dstH/2);
-
-        ctx.drawImage(STAR_IMG, srcX,srcY,srcW,srcH, dx,dy, dstW,dstH);
+    if (isOverlay){
+      const rect = gameCanvas.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0){
+        unitX = rect.width  / CANVAS_BASE_WIDTH;
+        unitY = rect.height / CANVAS_BASE_HEIGHT;
+        originX = rect.left - FRAME_PADDING_X * unitX;
+        originY = rect.top  - FRAME_PADDING_Y * unitY;
       }
+    }
+
+    if (unitX === undefined || unitY === undefined){
+      unitX = gameCanvas.width  / CANVAS_BASE_WIDTH;
+      unitY = gameCanvas.height / CANVAS_BASE_HEIGHT;
+      originX = -FRAME_PADDING_X * unitX;
+      originY = -FRAME_PADDING_Y * unitY;
+    }
+
+    const baseScaleX = (CANVAS_BASE_WIDTH  / STAR_DESIGN.w) * unitX;
+    const baseScaleY = (CANVAS_BASE_HEIGHT / STAR_DESIGN.h) * unitY;
+    const offsetScaleX = STAR_OFFSET_SCALE * baseScaleX;
+    const offsetScaleY = STAR_OFFSET_SCALE * baseScaleY;
+    const pieceScaleX = STAR_PIECE_SCALE * baseScaleX;
+    const pieceScaleY = STAR_PIECE_SCALE * baseScaleY;
+
+    // Рисуем поверх игрового слоя в координатах фонового макета 460×800
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+
+    ["blue","green"].forEach(color=>{
+      const centers = STAR_CENTERS[color];
+      const rects   = STAR_SOURCE_RECTS[color];
+      const offs    = STAR_OFFSETS[color];
+      const slots   = STAR_STATE[color].slots;
+
+      centers.forEach((c, slotIdx)=>{
+        const baseX = originX + c.x * unitX;
+        const baseY = originY + c.y * unitY;
+
+        for (let frag=1; frag<=5; frag++){
+          if (!slots[slotIdx].has(frag)) continue;
+
+          const rect = rects[frag-1], off = offs[frag-1];
+          if (!rect || !off) { console.warn('[STAR] bad rect/offset', color, frag); continue; }
+
+          const [srcX,srcY,srcW,srcH] = rect;
+          const [ox,oy] = off;
+          let dstW = Math.round(srcW * pieceScaleX);
+          let dstH = Math.round(srcH * pieceScaleY);
+          if (dstW < 2) dstW = 2;
+          if (dstH < 2) dstH = 2;
+          const targetX = baseX + ox * offsetScaleX;
+          const targetY = baseY + oy * offsetScaleY;
+          const drawX = Math.round(targetX - dstW / 2);
+          const drawY = Math.round(targetY - dstH / 2);
+
+          ctx.drawImage(STAR_IMG, srcX,srcY,srcW,srcH, drawX,drawY, dstW,dstH);
+        }
+      });
     });
-  });
+
+    ctx.restore();
+  } catch (err){
+    console.warn('[STAR] draw error:', err);
+  }
 }
-/* =========================== END STAR SCORE UI ================================ */
+
+// Временные хоткеи для ручной проверки (можно убрать)
+window.addEventListener('keydown', (e)=>{
+  if (e.key === '1') addPointToSide('green');
+  if (e.key === '2') addPointToSide('blue');
+});
+
+/* ======================= END STAR SCORE UI (hardened) ======================== */
+
 
 /* ======= DOM ======= */
 const mantisIndicator = document.getElementById("mantisIndicator");
@@ -174,6 +239,11 @@ const FRAME_PADDING_Y = 80;
 const FRAME_BASE_WIDTH = CANVAS_BASE_WIDTH + FRAME_PADDING_X * 2; // 460
 const FRAME_BASE_HEIGHT = CANVAS_BASE_HEIGHT + FRAME_PADDING_Y * 2; // 800
 const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
+
+const starScaleDefaults = computeStarScales();
+STAR_OFFSET_SCALE = starScaleDefaults.offset;
+STAR_PIECE_SCALE = starScaleDefaults.piece;
+console.log('[STAR] auto-scale set to offsets', STAR_OFFSET_SCALE.toFixed(3), 'pieces', STAR_PIECE_SCALE.toFixed(3));
 
 const brickFrameImg = new Image();
 // Load the default map on startup so we don't request a missing image
@@ -391,13 +461,6 @@ function updateFieldDimensions(){
     FIELD_WIDTH = gameCanvas.width;
   }
   updateFieldBorderOffset();
-
-  // Подгоняем позицию и масштаб панели звёзд под размер игрового поля
-  const starLayoutScale = FIELD_WIDTH / STAR_DESIGN.w;
-  STAR_LAYOUT.scaleToCanvasX = starLayoutScale;
-  STAR_LAYOUT.scaleToCanvasY = starLayoutScale;
-  STAR_LAYOUT.anchorX = FIELD_LEFT;
-  STAR_LAYOUT.anchorY = 0;
 }
 
 
@@ -521,11 +584,15 @@ let blueFlagStolenBy = null;
 let greenFlagStolenBy = null;
 
 function addScore(color, delta){
+  let prevScore = null;
   if(color === "blue"){
+    prevScore = blueScore;
     blueScore = Math.max(0, blueScore + delta);
   } else if(color === "green"){
+    prevScore = greenScore;
     greenScore = Math.max(0, greenScore + delta);
   }
+
   if(!isGameOver){
     if(blueScore >= POINTS_TO_WIN){
       isGameOver = true;
@@ -1840,7 +1907,8 @@ function handleAAForPlane(p, fp){
   drawPlanesAndTrajectories();
 
 
-  // табло
+
+  // Табло должно оставаться поверх звёзд, поэтому рисуем его после drawStarsUI
   renderScoreboard();
 
   if(isGameOver && winnerColor){
@@ -2750,6 +2818,41 @@ function updateTurnIndicators(){
   goatIndicator.classList.toggle('active', !isBlueTurn);
 }
 
+function drawHudHighlight(ctx, minX, minY, maxX, maxY, color){
+  const paddingX = 12;
+  const paddingY = 8;
+  const rectX = minX - paddingX;
+  const rectY = minY - paddingY;
+  const rectW = (maxX - minX) + paddingX * 2;
+  const rectH = (maxY - minY) + paddingY * 2;
+  if(rectW <= 0 || rectH <= 0) return;
+
+  const radius = Math.min(12, rectW / 2, rectH / 2);
+
+  ctx.save();
+  ctx.shadowColor = colorWithAlpha(color, 0.35);
+  ctx.shadowBlur = 18;
+  ctx.beginPath();
+  ctx.moveTo(rectX + radius, rectY);
+  ctx.lineTo(rectX + rectW - radius, rectY);
+  ctx.quadraticCurveTo(rectX + rectW, rectY, rectX + rectW, rectY + radius);
+  ctx.lineTo(rectX + rectW, rectY + rectH - radius);
+  ctx.quadraticCurveTo(rectX + rectW, rectY + rectH, rectX + rectW - radius, rectY + rectH);
+  ctx.lineTo(rectX + radius, rectY + rectH);
+  ctx.quadraticCurveTo(rectX, rectY + rectH, rectX, rectY + rectH - radius);
+  ctx.lineTo(rectX, rectY + radius);
+  ctx.quadraticCurveTo(rectX, rectY, rectX + radius, rectY);
+  ctx.closePath();
+
+  ctx.fillStyle = colorWithAlpha(color, 0.18);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = colorWithAlpha(color, 0.8);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
   ctx.save();
   ctx.translate(x, y);
@@ -2760,28 +2863,73 @@ function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
   const planes = points.filter(p => p.color === color);
   const maxPerRow = 4;
   const spacingX = 20;
-  for (let i = 0; i < Math.min(planes.length, maxPerRow); i++) {
-    const p = planes[i];
-    const px = alignRight ? -i * spacingX : i * spacingX;
-    drawMiniPlaneWithCross(ctx, px, 0, color, p.isAlive, p.burning && isExplosionFinished(p), 0.8);
-  }
+  const iconScale = 0.8;
+  const iconSize = 16 * PLANE_SCALE * iconScale;
+  const iconHalf = iconSize / 2;
 
-  const scoreX = 0;
-  ctx.fillStyle = colorFor(color);
-  ctx.fillText(String(score), scoreX, 20);
+  const scoreText = String(score);
+  const scoreWidth = ctx.measureText(scoreText).width;
 
   let statusText = '';
   if (phase === 'AA_PLACEMENT') {
     if (currentPlacer === color) {
       statusText = 'Placing AA';
-      ctx.fillStyle = colorFor(color);
     } else {
       statusText = 'Enemy placing AA';
-      ctx.fillStyle = '#888';
     }
   }
+  const statusWidth = statusText ? ctx.measureText(statusText).width : 0;
+
+  const iconCount = Math.min(planes.length, maxPerRow);
+  let minX = 0;
+  let maxX = 0;
+  for (let i = 0; i < iconCount; i++) {
+    const centerX = alignRight ? -i * spacingX : i * spacingX;
+    minX = Math.min(minX, centerX - iconHalf);
+    maxX = Math.max(maxX, centerX + iconHalf);
+  }
+
+  if (alignRight) {
+    minX = Math.min(minX, -scoreWidth);
+    if (statusText) minX = Math.min(minX, -statusWidth);
+    maxX = Math.max(maxX, iconCount ? iconHalf : 0);
+    maxX = Math.max(maxX, 0);
+  } else {
+    minX = Math.min(minX, iconCount ? -iconHalf : 0);
+    const textMax = Math.max(scoreWidth, statusWidth);
+    maxX = Math.max(maxX, textMax);
+  }
+
+  let minY = iconCount ? -iconHalf : 0;
+  let maxY = iconCount ? iconHalf : 0;
+  const lineHeight = 18;
+  maxY = Math.max(maxY, 20 + lineHeight);
   if (statusText) {
-    ctx.fillText(statusText, scoreX, 40);
+    maxY = Math.max(maxY, 40 + lineHeight);
+  }
+
+  if (isTurn) {
+    drawHudHighlight(ctx, minX, minY, maxX, maxY, color);
+  } else {
+    ctx.globalAlpha = 0.65;
+  }
+
+  for (let i = 0; i < iconCount; i++) {
+    const p = planes[i];
+    const px = alignRight ? -i * spacingX : i * spacingX;
+    drawMiniPlaneWithCross(ctx, px, 0, color, p.isAlive, p.burning && isExplosionFinished(p), iconScale);
+  }
+
+  ctx.fillStyle = colorFor(color);
+  ctx.fillText(scoreText, 0, 20);
+
+  if (statusText) {
+    if (phase === 'AA_PLACEMENT' && currentPlacer !== color) {
+      ctx.fillStyle = '#888';
+    } else {
+      ctx.fillStyle = colorFor(color);
+    }
+    ctx.fillText(statusText, 0, 40);
   }
 
   ctx.restore();
