@@ -593,16 +593,6 @@ function addScore(color, delta){
     greenScore = Math.max(0, greenScore + delta);
   }
 
-
-  if(prevScore !== null){
-    const newScore = color === "blue" ? blueScore : greenScore;
-    const gained = Math.max(0, Math.floor(newScore - prevScore));
-    for(let i = 0; i < gained; i++){
-      addPointToSide(color);
-    }
-  }
-
-
   if(!isGameOver){
     if(blueScore >= POINTS_TO_WIN){
       isGameOver = true;
@@ -1916,8 +1906,7 @@ function handleAAForPlane(p, fp){
   // самолёты + их трейлы
   drawPlanesAndTrajectories();
 
-  // Рисуем звёзды на том же оверлей-слое, что и табло, чтобы они были поверх самолётов
-  drawStarsUI(planeCtx);
+
 
   // Табло должно оставаться поверх звёзд, поэтому рисуем его после drawStarsUI
   renderScoreboard();
@@ -1959,6 +1948,8 @@ function handleAAForPlane(p, fp){
 
     roundTextTimer -= delta;
   }
+
+  drawStarsUI(gameCtx);
 
   animationFrameId = requestAnimationFrame(gameDraw);
 }
