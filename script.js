@@ -110,36 +110,36 @@ function drawStarsUI(ctx){
     const isOverlay = (ctx === planeCtx);
     let originX;
     let originY;
-    let unitX;
-    let unitY;
+    let scaleX;
+    let scaleY;
 
     if (isOverlay){
       const rect = gameCanvas.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0){
-        unitX = rect.width  / CANVAS_BASE_WIDTH;
-        unitY = rect.height / CANVAS_BASE_HEIGHT;
-        originX = rect.left - FRAME_PADDING_X * unitX;
-        originY = rect.top  - FRAME_PADDING_Y * unitY;
+        scaleX = rect.width  / CANVAS_BASE_WIDTH;
+        scaleY = rect.height / CANVAS_BASE_HEIGHT;
+        originX = rect.left - FRAME_PADDING_X * scaleX;
+        originY = rect.top  - FRAME_PADDING_Y * scaleY;
       }
     }
 
-    if (unitX === undefined || unitY === undefined){
-      unitX = gameCanvas.width  / CANVAS_BASE_WIDTH;
-      unitY = gameCanvas.height / CANVAS_BASE_HEIGHT;
-      originX = -FRAME_PADDING_X * unitX;
-      originY = -FRAME_PADDING_Y * unitY;
+    if (scaleX === undefined || scaleY === undefined){
+      scaleX = gameCanvas.width  / CANVAS_BASE_WIDTH;
+      scaleY = gameCanvas.height / CANVAS_BASE_HEIGHT;
+      originX = -FRAME_PADDING_X * scaleX;
+      originY = -FRAME_PADDING_Y * scaleY;
     }
 
-    const baseScaleX = (CANVAS_BASE_WIDTH  / STAR_DESIGN.w) * unitX;
-    const baseScaleY = (CANVAS_BASE_HEIGHT / STAR_DESIGN.h) * unitY;
-    const offsetScaleX = STAR_OFFSET_SCALE * baseScaleX;
-    const offsetScaleY = STAR_OFFSET_SCALE * baseScaleY;
-    const pieceScaleX = STAR_PIECE_SCALE * baseScaleX;
-    const pieceScaleY = STAR_PIECE_SCALE * baseScaleY;
+    const baseUnitX = CANVAS_BASE_WIDTH  / STAR_DESIGN.w;
+    const baseUnitY = CANVAS_BASE_HEIGHT / STAR_DESIGN.h;
+    const offsetUnitX = STAR_OFFSET_SCALE * baseUnitX;
+    const offsetUnitY = STAR_OFFSET_SCALE * baseUnitY;
+    const pieceUnitX  = STAR_PIECE_SCALE  * baseUnitX;
+    const pieceUnitY  = STAR_PIECE_SCALE  * baseUnitY;
 
     // Рисуем поверх игрового слоя в координатах фонового макета 460×800
     ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.setTransform(scaleX, 0, 0, scaleY, originX, originY);
     ctx.imageSmoothingEnabled = false;
 
     ["blue","green"].forEach(color=>{
@@ -149,8 +149,8 @@ function drawStarsUI(ctx){
       const slots   = STAR_STATE[color].slots;
 
       centers.forEach((c, slotIdx)=>{
-        const baseX = originX + c.x * unitX;
-        const baseY = originY + c.y * unitY;
+        const baseX = c.x;
+        const baseY = c.y;
 
         for (let frag=1; frag<=5; frag++){
           if (!slots[slotIdx].has(frag)) continue;
@@ -160,12 +160,12 @@ function drawStarsUI(ctx){
 
           const [srcX,srcY,srcW,srcH] = rect;
           const [ox,oy] = off;
-          let dstW = Math.round(srcW * pieceScaleX);
-          let dstH = Math.round(srcH * pieceScaleY);
+          let dstW = Math.round(srcW * pieceUnitX);
+          let dstH = Math.round(srcH * pieceUnitY);
           if (dstW < 2) dstW = 2;
           if (dstH < 2) dstH = 2;
-          const targetX = baseX + ox * offsetScaleX;
-          const targetY = baseY + oy * offsetScaleY;
+          const targetX = baseX + ox * offsetUnitX;
+          const targetY = baseY + oy * offsetUnitY;
           const drawX = Math.round(targetX - dstW / 2);
           const drawY = Math.round(targetY - dstH / 2);
 
@@ -2909,16 +2909,37 @@ function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
     maxX = Math.max(maxX, textMax);
   }
 
-  let minY = iconCount ? -iconHalf : 0;
-  let maxY = iconCount ? iconHalf : 0;
-  const lineHeight = 18;
-  maxY = Math.max(maxY, 20 + lineHeight);
-  if (statusText) {
-    maxY = Math.max(maxY, 40 + lineHeight);
+  let highlightMinX;
+  let highlightMaxX;
+  let highlightMinY;
+  let highlightMaxY;
+
+  if (iconCount > 0) {
+    if (alignRight) {
+      highlightMinX = -(iconCount - 1) * spacingX - iconHalf;
+      highlightMaxX = iconHalf;
+    } else {
+      highlightMinX = -iconHalf;
+      highlightMaxX = (iconCount - 1) * spacingX + iconHalf;
+    }
+    highlightMinY = -iconHalf;
+    highlightMaxY = iconHalf;
+  } else {
+    const textSpan = Math.max(scoreWidth, statusWidth, iconHalf * 2);
+    if (alignRight) {
+      highlightMinX = -textSpan;
+      highlightMaxX = 0;
+    } else {
+      highlightMinX = 0;
+      highlightMaxX = textSpan;
+    }
+    const fallbackHalf = Math.max(iconHalf, 8);
+    highlightMinY = -fallbackHalf;
+    highlightMaxY = fallbackHalf;
   }
 
   if (isTurn) {
-    drawHudHighlight(ctx, minX, minY, maxX, maxY, color);
+    drawHudHighlight(ctx, highlightMinX, highlightMinY, highlightMaxX, highlightMaxY, color);
   } else {
     ctx.globalAlpha = 0.65;
   }
