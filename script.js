@@ -2827,41 +2827,6 @@ function updateTurnIndicators(){
   goatIndicator.classList.toggle('active', !isBlueTurn);
 }
 
-function drawHudHighlight(ctx, minX, minY, maxX, maxY, color){
-  const paddingX = 12;
-  const paddingY = 8;
-  const rectX = minX - paddingX;
-  const rectY = minY - paddingY;
-  const rectW = (maxX - minX) + paddingX * 2;
-  const rectH = (maxY - minY) + paddingY * 2;
-  if(rectW <= 0 || rectH <= 0) return;
-
-  const radius = Math.min(12, rectW / 2, rectH / 2);
-
-  ctx.save();
-  ctx.shadowColor = colorWithAlpha(color, 0.35);
-  ctx.shadowBlur = 18;
-  ctx.beginPath();
-  ctx.moveTo(rectX + radius, rectY);
-  ctx.lineTo(rectX + rectW - radius, rectY);
-  ctx.quadraticCurveTo(rectX + rectW, rectY, rectX + rectW, rectY + radius);
-  ctx.lineTo(rectX + rectW, rectY + rectH - radius);
-  ctx.quadraticCurveTo(rectX + rectW, rectY + rectH, rectX + rectW - radius, rectY + rectH);
-  ctx.lineTo(rectX + radius, rectY + rectH);
-  ctx.quadraticCurveTo(rectX, rectY + rectH, rectX, rectY + rectH - radius);
-  ctx.lineTo(rectX, rectY + radius);
-  ctx.quadraticCurveTo(rectX, rectY, rectX + radius, rectY);
-  ctx.closePath();
-
-  ctx.fillStyle = colorWithAlpha(color, 0.18);
-  ctx.fill();
-  ctx.shadowBlur = 0;
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = colorWithAlpha(color, 0.8);
-  ctx.stroke();
-  ctx.restore();
-}
-
 function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
   ctx.save();
   ctx.translate(x, y);
@@ -2890,57 +2855,8 @@ function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
   const statusWidth = statusText ? ctx.measureText(statusText).width : 0;
 
   const iconCount = Math.min(planes.length, maxPerRow);
-  let minX = 0;
-  let maxX = 0;
-  for (let i = 0; i < iconCount; i++) {
-    const centerX = alignRight ? -i * spacingX : i * spacingX;
-    minX = Math.min(minX, centerX - iconHalf);
-    maxX = Math.max(maxX, centerX + iconHalf);
-  }
 
-  if (alignRight) {
-    minX = Math.min(minX, -scoreWidth);
-    if (statusText) minX = Math.min(minX, -statusWidth);
-    maxX = Math.max(maxX, iconCount ? iconHalf : 0);
-    maxX = Math.max(maxX, 0);
-  } else {
-    minX = Math.min(minX, iconCount ? -iconHalf : 0);
-    const textMax = Math.max(scoreWidth, statusWidth);
-    maxX = Math.max(maxX, textMax);
-  }
-
-  let highlightMinX;
-  let highlightMaxX;
-  let highlightMinY;
-  let highlightMaxY;
-
-  if (iconCount > 0) {
-    if (alignRight) {
-      highlightMinX = -(iconCount - 1) * spacingX - iconHalf;
-      highlightMaxX = iconHalf;
-    } else {
-      highlightMinX = -iconHalf;
-      highlightMaxX = (iconCount - 1) * spacingX + iconHalf;
-    }
-    highlightMinY = -iconHalf;
-    highlightMaxY = iconHalf;
-  } else {
-    const textSpan = Math.max(scoreWidth, statusWidth, iconHalf * 2);
-    if (alignRight) {
-      highlightMinX = -textSpan;
-      highlightMaxX = 0;
-    } else {
-      highlightMinX = 0;
-      highlightMaxX = textSpan;
-    }
-    const fallbackHalf = Math.max(iconHalf, 8);
-    highlightMinY = -fallbackHalf;
-    highlightMaxY = fallbackHalf;
-  }
-
-  if (isTurn) {
-    drawHudHighlight(ctx, highlightMinX, highlightMinY, highlightMaxX, highlightMaxY, color);
-  } else {
+  if (!isTurn) {
     ctx.globalAlpha = 0.65;
   }
 
