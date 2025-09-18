@@ -34,7 +34,86 @@ const STAR_SOURCE_RECTS = {
   blue:  [ [15,59,14,19], [76,74,21,14], [99,74,23,13], [168,59,15,19], [212,77,12,24] ],
 };
 
-// 4) Смещения частей в пределах «звезды» (от композиционного центра строки спрайта)
+// 4) Предвычисленные центры каждой части в каждом гнезде.
+//    Координаты получены из фонового макета 460×800 и совпадают с контурами на поле.
+const STAR_FRAGMENT_TARGETS = {
+  blue: [
+    [
+      { x: 418.79, y: 119.26 },
+      { x: 424.74, y: 119.60 },
+      { x: 433.62, y: 131.44 },
+      { x: 443.18, y: 114.50 },
+      { x: 449.33, y: 126.42 },
+    ],
+    [
+      { x: 418.67, y: 179.58 },
+      { x: 424.75, y: 179.21 },
+      { x: 434.88, y: 189.94 },
+      { x: 444.50, y: 168.83 },
+      { x: 448.75, y: 186.12 },
+    ],
+    [
+      { x: 418.50, y: 239.67 },
+      { x: 424.29, y: 239.46 },
+      { x: 434.44, y: 250.11 },
+      { x: 444.90, y: 229.23 },
+      { x: 448.97, y: 245.91 },
+    ],
+    [
+      { x: 418.50, y: 299.50 },
+      { x: 424.50, y: 299.78 },
+      { x: 434.44, y: 310.00 },
+      { x: 444.38, y: 291.44 },
+      { x: 448.75, y: 306.12 },
+    ],
+    [
+      { x: 417.90, y: 359.20 },
+      { x: 423.98, y: 359.86 },
+      { x: 434.57, y: 368.93 },
+      { x: 444.60, y: 346.70 },
+      { x: 447.44, y: 366.50 },
+    ],
+  ],
+  green: [
+    [
+      { x: 13.76, y: 433.53 },
+      { x: 20.45, y: 438.14 },
+      { x: 28.36, y: 448.64 },
+      { x: 36.50, y: 432.43 },
+      { x: 45.17, y: 444.17 },
+    ],
+    [
+      { x: 13.91, y: 493.34 },
+      { x: 20.82, y: 498.52 },
+      { x: 28.28, y: 507.93 },
+      { x: 36.54, y: 492.31 },
+      { x: 45.20, y: 504.00 },
+    ],
+    [
+      { x: 14.22, y: 553.17 },
+      { x: 21.35, y: 559.18 },
+      { x: 28.67, y: 566.62 },
+      { x: 37.03, y: 552.41 },
+      { x: 45.00, y: 564.00 },
+    ],
+    [
+      { x: 14.02, y: 613.69 },
+      { x: 21.42, y: 620.18 },
+      { x: 28.66, y: 626.13 },
+      { x: 36.68, y: 612.80 },
+      { x: 45.17, y: 624.17 },
+    ],
+    [
+      { x: 14.04, y: 673.04 },
+      { x: 21.12, y: 679.36 },
+      { x: 28.50, y: 687.92 },
+      { x: 36.63, y: 672.26 },
+      { x: 45.00, y: 684.00 },
+    ],
+  ],
+};
+
+// 5) Смещения частей в пределах «звезды» (от композиционного центра строки спрайта)
 const STAR_OFFSETS = {
   green: [
     [-95.000, 11.500],
@@ -52,20 +131,20 @@ const STAR_OFFSETS = {
   ],
 };
 
-// 5) Масштабы под контуры (подстроены под фон 460×800)
+// 6) Масштабы под контуры (подстроены под фон 460×800)
 const STAR_OFFSET_SCALE_FALLBACK = 0.234;
 const STAR_PIECE_SCALE_FALLBACK = 0.68;
 let STAR_OFFSET_SCALE = STAR_OFFSET_SCALE_FALLBACK;
 let STAR_PIECE_SCALE = STAR_PIECE_SCALE_FALLBACK;
 
-// 6) Грузим спрайт с логами
+// 7) Грузим спрайт с логами
 const STAR_IMG = new Image();
 let STAR_READY = false;
 STAR_IMG.onload  = () => { STAR_READY = true; console.log('[STAR] sprite loaded:', STAR_IMG.width, 'x', STAR_IMG.height); };
 STAR_IMG.onerror = (e)  => { console.error('[STAR] sprite load error', e, STAR_SPRITE_URL); };
 STAR_IMG.src = STAR_SPRITE_URL;
 
-// 7) Состояние (5 слотов на сторону, в каждом — Set фрагментов 1..5)
+// 8) Состояние (5 слотов на сторону, в каждом — Set фрагментов 1..5)
 const STAR_STATE = {
   blue:  { score: 0, slots: Array.from({length:5}, () => new Set()) },
   green: { score: 0, slots: Array.from({length:5}, () => new Set()) },
@@ -146,17 +225,19 @@ function drawStarsUI(ctx){
       const centers = STAR_CENTERS[color];
       const rects   = STAR_SOURCE_RECTS[color];
       const offs    = STAR_OFFSETS[color];
+      const targets = STAR_FRAGMENT_TARGETS[color];
       const slots   = STAR_STATE[color].slots;
 
       centers.forEach((c, slotIdx)=>{
         const baseX = c.x;
         const baseY = c.y;
+        const slotTargets = targets && targets[slotIdx];
 
         for (let frag=1; frag<=5; frag++){
           if (!slots[slotIdx].has(frag)) continue;
 
           const rect = rects[frag-1], off = offs[frag-1];
-          if (!rect || !off) { console.warn('[STAR] bad rect/offset', color, frag); continue; }
+          if (!rect || (!off && !slotTargets)) { console.warn('[STAR] bad rect/offset', color, frag); continue; }
 
           const [srcX,srcY,srcW,srcH] = rect;
           const [ox,oy] = off;
@@ -164,8 +245,16 @@ function drawStarsUI(ctx){
           let dstH = Math.round(srcH * pieceUnitY);
           if (dstW < 2) dstW = 2;
           if (dstH < 2) dstH = 2;
-          const targetX = baseX + ox * offsetUnitX;
-          const targetY = baseY + oy * offsetUnitY;
+          let targetX;
+          let targetY;
+          const customTarget = slotTargets && slotTargets[frag-1];
+          if (customTarget){
+            targetX = customTarget.x;
+            targetY = customTarget.y;
+          } else {
+            targetX = baseX + ox * offsetUnitX;
+            targetY = baseY + oy * offsetUnitY;
+          }
           const drawX = Math.round(targetX - dstW / 2);
           const drawY = Math.round(targetY - dstH / 2);
 
