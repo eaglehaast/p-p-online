@@ -277,6 +277,106 @@ window.addEventListener('keydown', (e)=>{
 
 /* ======================= END STAR SCORE UI (hardened) ======================== */
 
+/* ---------------- STAR DEBUG TOOLS ---------------- */
+
+let STAR_DEBUG = true;                  // включено по умолчанию (переключаем клавишей D)
+let STAR_PIECE_SCALE = 1.10;            // только РАЗМЕР кусочка (без влияния на позиции)
+let STAR_OFFSET_SCALE = 0.255;          // только ПОЗИЦИИ (оффсеты) — как у тебя в коде
+
+// горячая клавиша D — вкл/выкл отрисовку отладочного слоя
+window.addEventListener('keydown', (e)=>{
+  if (e.key.toLowerCase() === 'd') {
+    STAR_DEBUG = !STAR_DEBUG;
+    console.log('[STAR DEBUG] ' + (STAR_DEBUG ? 'ON' : 'OFF'));
+  }
+});
+
+// клик по полю — печатаем координаты курсора (в тех же единицах, что и STAR_CENTERS)
+gameCanvas.addEventListener('click', (e)=>{
+  const rect = gameCanvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  // если у тебя уже есть масштабирование контекста под DPR/размер — расстояния ниже В ЭКРАННЫХ px
+  // нам нужны "макетные" 460x800. Поэтому учитываем твои sx/sy:
+  const sx = (typeof STAR_LAYOUT?.sx === 'function') ? STAR_LAYOUT.sx() : 1;
+  const sy = (typeof STAR_LAYOUT?.sy === 'function') ? STAR_LAYOUT.sy() : 1;
+  const mx = Math.round(x / sx);
+  const my = Math.round(y / sy);
+  console.log(`[STAR DEBUG] click center ~ (${mx}, ${my})  (raw: ${Math.round(x)}, ${Math.round(y)})`);
+});
+
+// рисуем точки центров и прямоугольники ожидаемых кусочков
+function drawStarsDebug(ctx){
+  if (!STAR_DEBUG) return;
+
+  const sx = (typeof STAR_LAYOUT?.sx === 'function') ? STAR_LAYOUT.sx() : 1;
+  const sy = (typeof STAR_LAYOUT?.sy === 'function') ? STAR_LAYOUT.sy() : 1;
+
+  ctx.save();
+  // Очень важно: рисуем без унаследованных трансформаций
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.imageSmoothingEnabled = false;
+
+  // 1) точки центров
+  const dot = (x,y,color)=>{
+    ctx.fillStyle = color;
+    ctx.fillRect(Math.round(x*sx)-2, Math.round(y*sy)-2, 4, 4);
+  };
+  STAR_CENTERS.blue .forEach(c => dot(c.x, c.y, 'rgba(80,160,255,0.9)'));
+  STAR_CENTERS.green.forEach(c => dot(c.x, c.y, 'rgba(120,200,80,0.9)'));
+
+  // 2) рамки ожидаемых кусочков (для визуальной проверки офсетов и размеров)
+  const drawRect = (x,y,w,h,color)=>{
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(Math.round(x*sx), Math.round(y*sy), Math.round(w*sx), Math.round(h*sy));
+  };
+
+  const previewSlot = 0; // показываем рамки для первого слота каждой стороны (хватает для сверки)
+
+  // GREEN preview
+  {
+    const center = STAR_CENTERS.green[previewSlot];
+    STAR_SOURCE_RECTS.green.forEach((r, i)=>{
+      const [sw, sh] = [r[2], r[3]];
+      const [ox, oy] = STAR_OFFSETS.green[i];
+
+      const dstW = sw * STAR_PIECE_SCALE;
+      const dstH = sh * STAR_PIECE_SCALE;
+      const tx   = center.x + ox * STAR_OFFSET_SCALE - dstW/2;
+      const ty   = center.y + oy * STAR_OFFSET_SCALE - dstH/2;
+
+      drawRect(tx, ty, dstW, dstH, 'rgba(60,180,60,0.5)');
+      // номер кусочка
+      ctx.fillStyle = 'rgba(60,180,60,0.9)';
+      ctx.font = '10px monospace';
+      ctx.fillText(String(i+1), Math.round((tx+2)*sx), Math.round((ty+10)*sy));
+    });
+  }
+
+  // BLUE preview
+  {
+    const center = STAR_CENTERS.blue[previewSlot];
+    STAR_SOURCE_RECTS.blue.forEach((r, i)=>{
+      const [sw, sh] = [r[2], r[3]];
+      const [ox, oy] = STAR_OFFSETS.blue[i];
+
+      const dstW = sw * STAR_PIECE_SCALE;
+      const dstH = sh * STAR_PIECE_SCALE;
+      const tx   = center.x + ox * STAR_OFFSET_SCALE - dstW/2;
+      const ty   = center.y + oy * STAR_OFFSET_SCALE - dstH/2;
+
+      drawRect(tx, ty, dstW, dstH, 'rgba(80,140,255,0.5)');
+      ctx.fillStyle = 'rgba(80,140,255,0.9)';
+      ctx.font = '10px monospace';
+      ctx.fillText(String(i+1), Math.round((tx+2)*sx), Math.round((ty+10)*sy));
+    });
+  }
+
+  ctx.restore();
+}
+/* -------------- END STAR DEBUG TOOLS -------------- */
 
 /* ======= DOM ======= */
 const mantisIndicator = document.getElementById("mantisIndicator");
