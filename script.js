@@ -61,6 +61,7 @@ function computeStarPieceCenters(rectsByColor){
 }
 
 const STAR_PIECE_CENTERS = computeStarPieceCenters(STAR_SOURCE_RECTS);
+
 // Смещения восстановлены из прежней таблицы STAR_FRAGMENT_TARGETS,
 // чтобы динамический расчёт воспроизводил исходную вёрстку макета 460×800.
 const STAR_FRAGMENT_BASE_OFFSETS = {
@@ -77,12 +78,14 @@ const STAR_FRAGMENT_BASE_OFFSETS = {
     { dx:  -1.75, dy:   3.77 },
     { dx:   9.25, dy: -14.23 },
     { dx:  14.75, dy:   0.77 },
+
   ],
 };
 const STAR_FRAGMENT_SLOT_CORRECTIONS = {
   blue: {
     dx: [
       [0, 0, 0, 0, 0],
+
       [-0.66, -0.66, 0.34, 0.34, -0.66],
       [-0.37, -0.37, -0.37, 1.63, -0.37],
       [-0.25, -0.25, -0.25, 0.75, -0.25],
@@ -94,11 +97,13 @@ const STAR_FRAGMENT_SLOT_CORRECTIONS = {
       [5.86, 3.86, 3.86, -1.14, 3.86],
       [4.95, 4.95, 2.95, 0.95, 4.95],
       [6.05, 6.05, 3.05, -1.95, 6.05],
+
     ],
   },
   green: {
     dx: [
       [0, 0, 0, 0, 0],
+
       [-0.05, 0.95, -0.05, -0.05, -0.05],
       [-0.4, 0.6, 0.6, 0.6, -0.4],
       [-0.68, 0.32, 0.32, -0.68, -0.68],
@@ -110,30 +115,35 @@ const STAR_FRAGMENT_SLOT_CORRECTIONS = {
       [1.19, 2.19, -0.81, 1.19, 1.19],
       [-1.29, 0.71, -3.29, -0.29, -1.29],
       [-0.18, 0.82, -1.18, -0.18, -0.18],
+
     ],
   },
 };
 
-// 5) Смещения частей в пределах «звезды» (от композиционного центра строки спрайта)
-const STAR_OFFSETS = {
-  green: [
-    [-95.000, 11.500],
-    [-35.000,  3.500],
-    [-10.500,  3.000],
-    [ 40.500, -9.000],
-    [100.000, -9.000],
-  ],
-  blue:  [
-    [-100.500,  -9.000],
-    [-36.000,   3.500],
-    [-12.000,   3.000],
-    [ 53.000,  -9.000],
-    [ 95.500,  11.500],
-  ],
-};
+// 5) Смещения частей в пределах «звезды»: реальные dx/dy в макетных пикселях
+//    Структура: STAR_OFFSETS[color][slot][fragment] = [dx, dy]
+const STAR_OFFSETS = (() => {
+  const result = { blue: [], green: [] };
+  ["blue", "green"].forEach(color => {
+    const centers = STAR_CENTERS[color] || [];
+    const targetSlots = STAR_FRAGMENT_TARGETS?.[color];
+    const rects = STAR_SOURCE_RECTS[color] || [];
+    result[color] = centers.map((center, slotIdx) => {
+      const slotTargets = targetSlots?.[slotIdx] || [];
+      return rects.map((_, fragIdx) => {
+        const target = slotTargets[fragIdx];
+        if (center && target) {
+          return [target.x - center.x, target.y - center.y];
+        }
+        return [0, 0];
+      });
+    });
+  });
+  return result;
+})();
 
 // 6) Масштабы под контуры (подстроены под фон 460×800)
-const STAR_OFFSET_SCALE_FALLBACK = 0.234;
+const STAR_OFFSET_SCALE_FALLBACK = 1;
 const STAR_PIECE_SCALE_FALLBACK = 0.68;
 let STAR_OFFSET_SCALE = STAR_OFFSET_SCALE_FALLBACK;
 let STAR_PIECE_SCALE = STAR_PIECE_SCALE_FALLBACK;
@@ -229,8 +239,7 @@ function drawStarsUI(ctx){
 
     const baseUnitX = CANVAS_BASE_WIDTH  / STAR_DESIGN.w;
     const baseUnitY = CANVAS_BASE_HEIGHT / STAR_DESIGN.h;
-    const offsetUnitX = STAR_OFFSET_SCALE * baseUnitX;
-    const offsetUnitY = STAR_OFFSET_SCALE * baseUnitY;
+    const offsetScale = STAR_OFFSET_SCALE;
     const pieceUnitX  = STAR_PIECE_SCALE  * baseUnitX;
     const pieceUnitY  = STAR_PIECE_SCALE  * baseUnitY;
 
@@ -242,34 +251,44 @@ function drawStarsUI(ctx){
     ["blue","green"].forEach(color=>{
       const centers = STAR_CENTERS[color];
       const rects   = STAR_SOURCE_RECTS[color];
+
       const offs    = STAR_OFFSETS[color];
+
       const slots   = STAR_STATE[color].slots;
 
       centers.forEach((c, slotIdx)=>{
         const baseX = c.x;
         const baseY = c.y;
 
+
         for (let frag=1; frag<=5; frag++){
           if (!slots[slotIdx].has(frag)) continue;
+
 
           const rect = rects[frag-1], off = offs[frag-1];
           if (!rect || (!off && !STAR_FRAGMENT_BASE_OFFSETS[color])) { console.warn('[STAR] bad rect/offset', color, frag); continue; }
 
+
           const [srcX,srcY,srcW,srcH] = rect;
-          const [ox,oy] = off;
           let dstW = Math.round(srcW * pieceUnitX);
           let dstH = Math.round(srcH * pieceUnitY);
           if (dstW < 2) dstW = 2;
           if (dstH < 2) dstH = 2;
           let targetX;
           let targetY;
+
           const customTarget = resolveStarFragmentTarget(color, slotIdx, frag-1, baseX, baseY);
+
           if (customTarget){
             targetX = customTarget.x;
             targetY = customTarget.y;
+          } else if (hasOffset) {
+            const [dx, dy] = off;
+            targetX = baseX + dx * offsetScale;
+            targetY = baseY + dy * offsetScale;
           } else {
-            targetX = baseX + ox * offsetUnitX;
-            targetY = baseY + oy * offsetUnitY;
+            targetX = baseX;
+            targetY = baseY;
           }
           const drawX = Math.round(targetX - dstW / 2);
           const drawY = Math.round(targetY - dstH / 2);
@@ -298,7 +317,7 @@ window.addEventListener('keydown', (e)=>{
 let STAR_DEBUG = true;                  // включено по умолчанию (переключаем клавишей D)
 // используем уже объявленные глобальные коэффициенты, поэтому просто переопределяем значения
 STAR_PIECE_SCALE = 1.10;                // только РАЗМЕР кусочка (без влияния на позиции)
-STAR_OFFSET_SCALE = 0.255;              // только ПОЗИЦИИ (оффсеты) — как у тебя в коде
+STAR_OFFSET_SCALE = 1;                  // смещения уже в макетных пикселях
 
 // горячая клавиша D — вкл/выкл отрисовку отладочного слоя
 window.addEventListener('keydown', (e)=>{
@@ -358,14 +377,17 @@ function drawStarsDebug(ctx){
   // GREEN preview
   {
     const center = STAR_CENTERS.green[previewSlot];
+    const slotOffsets = STAR_OFFSETS.green?.[previewSlot] || [];
     STAR_SOURCE_RECTS.green.forEach((r, i)=>{
       const [sw, sh] = [r[2], r[3]];
-      const [ox, oy] = STAR_OFFSETS.green[i];
+      const offset = slotOffsets[i];
+      const dx = Array.isArray(offset) ? offset[0] : 0;
+      const dy = Array.isArray(offset) ? offset[1] : 0;
 
       const dstW = sw * STAR_PIECE_SCALE;
       const dstH = sh * STAR_PIECE_SCALE;
-      const tx   = center.x + ox * STAR_OFFSET_SCALE - dstW/2;
-      const ty   = center.y + oy * STAR_OFFSET_SCALE - dstH/2;
+      const tx   = center.x + dx * STAR_OFFSET_SCALE - dstW/2;
+      const ty   = center.y + dy * STAR_OFFSET_SCALE - dstH/2;
 
       drawRect(tx, ty, dstW, dstH, 'rgba(60,180,60,0.5)');
       // номер кусочка
@@ -378,14 +400,17 @@ function drawStarsDebug(ctx){
   // BLUE preview
   {
     const center = STAR_CENTERS.blue[previewSlot];
+    const slotOffsets = STAR_OFFSETS.blue?.[previewSlot] || [];
     STAR_SOURCE_RECTS.blue.forEach((r, i)=>{
       const [sw, sh] = [r[2], r[3]];
-      const [ox, oy] = STAR_OFFSETS.blue[i];
+      const offset = slotOffsets[i];
+      const dx = Array.isArray(offset) ? offset[0] : 0;
+      const dy = Array.isArray(offset) ? offset[1] : 0;
 
       const dstW = sw * STAR_PIECE_SCALE;
       const dstH = sh * STAR_PIECE_SCALE;
-      const tx   = center.x + ox * STAR_OFFSET_SCALE - dstW/2;
-      const ty   = center.y + oy * STAR_OFFSET_SCALE - dstH/2;
+      const tx   = center.x + dx * STAR_OFFSET_SCALE - dstW/2;
+      const ty   = center.y + dy * STAR_OFFSET_SCALE - dstH/2;
 
       drawRect(tx, ty, dstW, dstH, 'rgba(80,140,255,0.5)');
       ctx.fillStyle = 'rgba(80,140,255,0.9)';
