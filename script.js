@@ -293,8 +293,11 @@ window.addEventListener('keydown', (e)=>{
 });
 
 // клик по полю — печатаем координаты курсора (в тех же единицах, что и STAR_CENTERS)
-gameCanvas.addEventListener('click', (e)=>{
-  const rect = gameCanvas.getBoundingClientRect();
+function handleStarDebugClick(e){
+  const canvas = e.currentTarget;
+  if (!(canvas instanceof HTMLCanvasElement)) return;
+
+  const rect = canvas.getBoundingClientRect();
   const x = e.clientX - rect.left;
   const y = e.clientY - rect.top;
 
@@ -305,7 +308,7 @@ gameCanvas.addEventListener('click', (e)=>{
   const mx = Math.round(x / sx);
   const my = Math.round(y / sy);
   console.log(`[STAR DEBUG] click center ~ (${mx}, ${my})  (raw: ${Math.round(x)}, ${Math.round(y)})`);
-});
+}
 
 // рисуем точки центров и прямоугольники ожидаемых кусочков
 function drawStarsDebug(ctx){
@@ -392,6 +395,10 @@ const aimCtx      = aimCanvas.getContext("2d");
 
 const planeCanvas = document.getElementById("planeCanvas");
 const planeCtx    = planeCanvas.getContext("2d");
+
+if (gameCanvas) {
+  gameCanvas.addEventListener('click', handleStarDebugClick);
+}
 
 // Enable smoothing so rotated images (planes, arrows) don't appear jagged
 [gameCtx, aimCtx, planeCtx].forEach(ctx => {
