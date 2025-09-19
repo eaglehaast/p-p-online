@@ -48,6 +48,13 @@ const STAR_SOURCE_RECTS = {
   ],
 };
 
+// Ожидаемая структура смещений может быть загружена отдельно. Если она не
+// определена (например, на стартовом экране), используем безопасный null.
+const STAR_FRAGMENT_TARGETS =
+  typeof globalThis !== "undefined" && globalThis.STAR_FRAGMENT_TARGETS
+    ? globalThis.STAR_FRAGMENT_TARGETS
+    : null;
+
 // 4) Локальные центры кусочков и привязанные к макету смещения.
 function computeStarPieceCenters(rectsByColor){
   const result = {};
@@ -266,7 +273,11 @@ function drawStarsUI(ctx){
 
 
           const rect = rects[frag-1], off = offs[frag-1];
-          if (!rect || (!off && !STAR_FRAGMENT_BASE_OFFSETS[color])) { console.warn('[STAR] bad rect/offset', color, frag); continue; }
+          const hasOffset = Array.isArray(off) && off.length >= 2;
+          if (!rect || (!hasOffset && !STAR_FRAGMENT_BASE_OFFSETS[color])) {
+            console.warn('[STAR] bad rect/offset', color, frag);
+            continue;
+          }
 
 
           const [srcX,srcY,srcW,srcH] = rect;
