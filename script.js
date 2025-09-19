@@ -48,83 +48,69 @@ const STAR_SOURCE_RECTS = {
   ],
 };
 
-// 4) Предвычисленные центры каждой части в каждом гнезде.
-//    Координаты получены из фонового макета 460×800 и совпадают с контурами на поле.
-const STAR_FRAGMENT_TARGETS = {
+// 4) Локальные центры кусочков и привязанные к макету смещения.
+function computeStarPieceCenters(rectsByColor){
+  const result = {};
+  for (const [color, rects] of Object.entries(rectsByColor)){
+    result[color] = rects.map(([srcX, srcY, srcW, srcH]) => ({
+      cx: srcX + srcW / 2,
+      cy: srcY + srcH / 2,
+    }));
+  }
+  return result;
+}
+
+const STAR_PIECE_CENTERS = computeStarPieceCenters(STAR_SOURCE_RECTS);
+const STAR_FRAGMENT_REFERENCE_SLOT = 0;
+const STAR_FRAGMENT_BASE_OFFSETS = {
   blue: [
-    [
-      { x: 419, y: 119 },
-      { x: 423, y: 121 },
-      { x: 434, y: 132 },
-      { x: 445, y: 114 },
-      { x: 449.5, y: 127 },
-    ],
-    [
-      { x: 419, y: 180 },
-      { x: 423, y: 180 },
-      { x: 435, y: 190 },
-      { x: 446, y: 168 },
-      { x: 449.5, y: 187 },
-    ],
-    [
-      { x: 419, y: 240 },
-      { x: 423, y: 240 },
-      { x: 434, y: 251 },
-      { x: 447, y: 228 },
-      { x: 449.5, y: 246 },
-    ],
-    [
-      { x: 419, y: 299 },
-      { x: 423, y: 301 },
-      { x: 434, y: 310 },
-      { x: 446, y: 290 },
-      { x: 449.5, y: 307 },
-    ],
-    [
-      { x: 418, y: 359 },
-      { x: 422, y: 361 },
-      { x: 435, y: 369 },
-      { x: 447, y: 346 },
-      { x: 447.5, y: 367 },
-    ],
+    { dx: -14.42, dy: -2.21 },
+    { dx: -10.42, dy: -0.21 },
+    { dx:   0.58, dy: 10.79 },
+    { dx:  11.58, dy: -7.21 },
+    { dx:  16.08, dy:  5.79 },
   ],
   green: [
-    [
-      { x: 14.5, y: 432 },
-      { x: 17.5, y: 440 },
-      { x: 28, y: 448.5 },
-      { x: 39, y: 430.5 },
-      { x: 44.5, y: 445.5 },
-    ],
-    [
-      { x: 14.5, y: 492 },
-      { x: 18.5, y: 500 },
-      { x: 28, y: 507.5 },
-      { x: 39, y: 490.5 },
-      { x: 44.5, y: 505.5 },
-    ],
-    [
-      { x: 14.5, y: 552 },
-      { x: 18.5, y: 561 },
-      { x: 29, y: 566.5 },
-      { x: 40, y: 550.5 },
-      { x: 44.5, y: 565.5 },
-    ],
-    [
-      { x: 14.5, y: 612 },
-      { x: 18.5, y: 622 },
-      { x: 29, y: 626.5 },
-      { x: 39, y: 611.5 },
-      { x: 44.5, y: 625.5 },
-    ],
-    [
-      { x: 14.5, y: 672 },
-      { x: 18.5, y: 681 },
-      { x: 28, y: 687.5 },
-      { x: 39, y: 670.5 },
-      { x: 44.5, y: 685.5 },
-    ],
+    { dx: -15.25, dy: -12.73 },
+    { dx: -12.25, dy:  -4.73 },
+    { dx:  -1.75, dy:   3.77 },
+    { dx:   9.25, dy: -14.23 },
+    { dx:  14.75, dy:   0.77 },
   ],
+};
+const STAR_FRAGMENT_SLOT_CORRECTIONS = {
+  blue: {
+    dx: [
+      [0, 0, 0, 0, 0],
+      [-0.66, -0.66, 0.34, 0.34, -0.66],
+      [-0.37, -0.37, -0.37, 1.63, -0.37],
+      [-0.25, -0.25, -0.25, 0.75, -0.25],
+      [-0.72, -0.72, 1.28, 2.28, -1.72],
+    ],
+    dy: [
+      [0, 0, 0, 0, 0],
+      [6.28, 4.28, 3.28, -0.72, 5.28],
+      [5.86, 3.86, 3.86, -1.14, 3.86],
+      [4.95, 4.95, 2.95, 0.95, 4.95],
+      [6.05, 6.05, 3.05, -1.95, 6.05],
+    ],
+  },
+  green: {
+    dx: [
+      [0, 0, 0, 0, 0],
+      [-0.05, 0.95, -0.05, -0.05, -0.05],
+      [-0.4, 0.6, 0.6, 0.6, -0.4],
+      [-0.68, 0.32, 0.32, -0.68, -0.68],
+      [-0.32, 0.68, -0.32, -0.32, -0.32],
+    ],
+    dy: [
+      [0, 0, 0, 0, 0],
+      [0.79, 0.79, -0.21, 0.79, 0.79],
+      [1.19, 2.19, -0.81, 1.19, 1.19],
+      [-1.29, 0.71, -3.29, -0.29, -1.29],
+      [-0.18, 0.82, -1.18, -0.18, -0.18],
+    ],
+  },
 };
 
 // 5) Смещения частей в пределах «звезды» (от композиционного центра строки спрайта)
@@ -150,6 +136,23 @@ const STAR_OFFSET_SCALE_FALLBACK = 0.234;
 const STAR_PIECE_SCALE_FALLBACK = 0.68;
 let STAR_OFFSET_SCALE = STAR_OFFSET_SCALE_FALLBACK;
 let STAR_PIECE_SCALE = STAR_PIECE_SCALE_FALLBACK;
+
+function resolveStarFragmentTarget(color, slotIdx, fragIdx, baseX, baseY){
+  const baseOffsets = STAR_FRAGMENT_BASE_OFFSETS[color];
+  if (!baseOffsets) return null;
+  const base = baseOffsets[fragIdx];
+  if (!base) return null;
+  let targetX = baseX + base.dx;
+  let targetY = baseY + base.dy;
+  const slotFix = STAR_FRAGMENT_SLOT_CORRECTIONS[color];
+  if (slotFix){
+    const dxRow = slotFix.dx?.[slotIdx];
+    const dyRow = slotFix.dy?.[slotIdx];
+    if (dxRow && dxRow[fragIdx] !== undefined) targetX += dxRow[fragIdx];
+    if (dyRow && dyRow[fragIdx] !== undefined) targetY += dyRow[fragIdx];
+  }
+  return { x: targetX, y: targetY };
+}
 
 // 7) Грузим спрайт с логами
 const STAR_IMG = new Image();
@@ -239,19 +242,17 @@ function drawStarsUI(ctx){
       const centers = STAR_CENTERS[color];
       const rects   = STAR_SOURCE_RECTS[color];
       const offs    = STAR_OFFSETS[color];
-      const targets = STAR_FRAGMENT_TARGETS[color];
       const slots   = STAR_STATE[color].slots;
 
       centers.forEach((c, slotIdx)=>{
         const baseX = c.x;
         const baseY = c.y;
-        const slotTargets = targets && targets[slotIdx];
 
         for (let frag=1; frag<=5; frag++){
           if (!slots[slotIdx].has(frag)) continue;
 
           const rect = rects[frag-1], off = offs[frag-1];
-          if (!rect || (!off && !slotTargets)) { console.warn('[STAR] bad rect/offset', color, frag); continue; }
+          if (!rect || (!off && !STAR_FRAGMENT_BASE_OFFSETS[color])) { console.warn('[STAR] bad rect/offset', color, frag); continue; }
 
           const [srcX,srcY,srcW,srcH] = rect;
           const [ox,oy] = off;
@@ -261,7 +262,7 @@ function drawStarsUI(ctx){
           if (dstH < 2) dstH = 2;
           let targetX;
           let targetY;
-          const customTarget = slotTargets && slotTargets[frag-1];
+          const customTarget = resolveStarFragmentTarget(color, slotIdx, frag-1, baseX, baseY);
           if (customTarget){
             targetX = customTarget.x;
             targetY = customTarget.y;
