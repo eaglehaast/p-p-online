@@ -127,27 +127,81 @@ const STAR_FRAGMENT_ANCHOR_POINTS_DEFAULT = {
 
 function buildStarAnchorTargets(raw){
   if (!raw) return null;
-  const result = {};
-  for (const [color, fragmentRows] of Object.entries(raw)){
-    if (!Array.isArray(fragmentRows) || !fragmentRows.length){
-      result[color] = [];
-      continue;
-    }
-    const slotCount = fragmentRows.reduce(
+
+  const sanitizePoint = (point) => {
+    if (!point) return null;
+    const x = Number(point.x);
+    const y = Number(point.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x, y };
+  };
+
+  const buildMatrix = (rows) => {
+    const columnCount = rows.reduce(
       (max, row) => Math.max(max, Array.isArray(row) ? row.length : 0),
       0,
     );
-    result[color] = Array.from({ length: slotCount }, (_, slotIdx) =>
-      fragmentRows.map(row => {
-        if (!Array.isArray(row)) return null;
-        const point = row[slotIdx];
-        if (!point) return null;
-        const x = Number(point.x);
-        const y = Number(point.y);
-        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-        return { x, y };
-      }),
+    const sanitizedRows = rows.map(row =>
+      Array.from({ length: columnCount }, (_, idx) =>
+        Array.isArray(row) ? sanitizePoint(row[idx]) : null,
+      ),
     );
+    return { sanitizedRows, columnCount };
+  };
+
+  const calcSpreadScore = (slots) => {
+    let maxSpread = 0;
+    for (const slot of slots){
+      if (!Array.isArray(slot) || slot.length <= 1) continue;
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minY = Infinity;
+      let maxY = -Infinity;
+      let validCount = 0;
+      for (const point of slot){
+        if (!point) continue;
+        const { x, y } = point;
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+        validCount++;
+      }
+      if (validCount > 1){
+        const spread = Math.max(maxX - minX, maxY - minY);
+        if (spread > maxSpread) maxSpread = spread;
+      }
+    }
+    return maxSpread;
+  };
+
+  const result = {};
+  for (const [color, rows] of Object.entries(raw)){
+    if (!Array.isArray(rows) || !rows.length){
+      result[color] = [];
+      continue;
+    }
+
+    const { sanitizedRows, columnCount } = buildMatrix(rows);
+    if (!columnCount){
+      result[color] = [];
+      continue;
+    }
+
+    const slotsAsProvided = sanitizedRows.map(row => row.slice());
+    // Источники могут описывать таблицу якорей как [звезда][фрагмент] или
+    // как [фрагмент][звезда]; выбираем вариант с минимальным «разбросом»
+    // координат внутри одного слота.
+    const slotsTransposed = Array.from({ length: columnCount }, (_, slotIdx) =>
+      sanitizedRows.map(row => row[slotIdx] ?? null),
+    );
+
+    const asProvidedScore = calcSpreadScore(slotsAsProvided);
+    const transposedScore = calcSpreadScore(slotsTransposed);
+
+    result[color] =
+      asProvidedScore <= transposedScore ? slotsAsProvided : slotsTransposed;
   }
   return result;
 }
