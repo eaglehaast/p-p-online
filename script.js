@@ -272,9 +272,11 @@ function drawStarsUI(ctx){
           if (!slots[slotIdx].has(frag)) continue;
 
 
+
           const rect = rects[frag-1];
           const slotOffsets = Array.isArray(colorOffsets[slotIdx]) ? colorOffsets[slotIdx] : null;
           const off = slotOffsets?.[frag-1];
+
           const hasOffset = Array.isArray(off) && off.length >= 2;
           if (!rect || (!hasOffset && !STAR_FRAGMENT_BASE_OFFSETS[color])) {
             console.warn('[STAR] bad rect/offset', color, frag);
