@@ -7,7 +7,7 @@
 /* ========================= STAR SCORE UI (hardened) ========================= */
 
 // 1) Путь к спрайту (имя с пробелом безопасно кодируем)
-const STAR_SPRITE_URL = new URL('./sprite star 2.png', location.href).href;
+const STAR_SPRITE_URL = new URL('./sprite star 3.png', location.href).href;
 
 // 2) Центры «гнёзд» на поле под макет 460×800 (файл есть в репо). См. root: 'background behind the canvas 2.png'.
 const STAR_DESIGN = { w: 460, h: 800 };
@@ -48,6 +48,128 @@ const STAR_SOURCE_RECTS = {
   ],
 };
 
+const STAR_FRAGMENT_ANCHOR_POINTS_DEFAULT = {
+  green: [
+    [
+      { x: 10, y: 417 },
+      { x: 10, y: 477 },
+      { x: 10, y: 537 },
+      { x: 10, y: 597 },
+      { x: 10, y: 657 },
+    ],
+    [
+      { x: 25, y: 418 },
+      { x: 25, y: 478 },
+      { x: 25, y: 538 },
+      { x: 25, y: 598 },
+      { x: 25, y: 658 },
+    ],
+    [
+      { x: 28, y: 428 },
+      { x: 28, y: 488 },
+      { x: 28, y: 548 },
+      { x: 28, y: 608 },
+      { x: 28, y: 668 },
+    ],
+    [
+      { x: 4, y: 428 },
+      { x: 4, y: 488 },
+      { x: 4, y: 548 },
+      { x: 4, y: 608 },
+      { x: 4, y: 668 },
+    ],
+    [
+      { x: 18, y: 439 },
+      { x: 18, y: 499 },
+      { x: 18, y: 559 },
+      { x: 18, y: 619 },
+      { x: 18, y: 679 },
+    ],
+  ],
+  blue: [
+    [
+      { x: 421, y: 100 },
+      { x: 421, y: 160 },
+      { x: 421, y: 220 },
+      { x: 421, y: 280 },
+      { x: 421, y: 340 },
+    ],
+    [
+      { x: 435, y: 97 },
+      { x: 435, y: 157 },
+      { x: 435, y: 217 },
+      { x: 435, y: 277 },
+      { x: 435, y: 337 },
+    ],
+    [
+      { x: 437, y: 108 },
+      { x: 437, y: 168 },
+      { x: 437, y: 228 },
+      { x: 437, y: 288 },
+      { x: 437, y: 348 },
+    ],
+    [
+      { x: 413, y: 108 },
+      { x: 413, y: 168 },
+      { x: 413, y: 228 },
+      { x: 413, y: 288 },
+      { x: 413, y: 348 },
+    ],
+    [
+      { x: 428, y: 122 },
+      { x: 428, y: 182 },
+      { x: 428, y: 242 },
+      { x: 428, y: 302 },
+      { x: 428, y: 368 },
+    ],
+  ],
+};
+
+function buildStarAnchorTargets(raw){
+  if (!raw) return null;
+  const result = {};
+  for (const [color, fragmentRows] of Object.entries(raw)){
+    if (!Array.isArray(fragmentRows) || !fragmentRows.length){
+      result[color] = [];
+      continue;
+    }
+    const slotCount = fragmentRows.reduce(
+      (max, row) => Math.max(max, Array.isArray(row) ? row.length : 0),
+      0,
+    );
+    result[color] = Array.from({ length: slotCount }, (_, slotIdx) =>
+      fragmentRows.map(row => {
+        if (!Array.isArray(row)) return null;
+        const point = row[slotIdx];
+        if (!point) return null;
+        const x = Number(point.x);
+        const y = Number(point.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+        return { x, y };
+      }),
+    );
+  }
+  return result;
+}
+
+const STAR_FRAGMENT_ANCHOR_TARGETS =
+  typeof globalThis !== "undefined" && globalThis.STAR_FRAGMENT_ANCHOR_TARGETS
+    ? globalThis.STAR_FRAGMENT_ANCHOR_TARGETS
+    : buildStarAnchorTargets(STAR_FRAGMENT_ANCHOR_POINTS_DEFAULT);
+
+function getStarFragmentAnchor(color, slotIdx, fragIdx){
+  const slots = STAR_FRAGMENT_ANCHOR_TARGETS?.[color];
+  if (!Array.isArray(slots)) return null;
+  const slot = slots[slotIdx];
+  if (!Array.isArray(slot)) return null;
+  const anchor = slot[fragIdx];
+  if (!anchor) return null;
+  const x = Number(anchor.x);
+  const y = Number(anchor.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x, y };
+}
+
 // Ожидаемая структура смещений может быть загружена отдельно. Если она не
 // определена (например, на стартовом экране), используем безопасный null.
 const STAR_FRAGMENT_TARGETS =
@@ -68,6 +190,23 @@ function computeStarPieceCenters(rectsByColor){
 }
 
 const STAR_PIECE_CENTERS = computeStarPieceCenters(STAR_SOURCE_RECTS);
+
+function resolveLegacyStarTarget(color, slotIdx, fragIdx, baseX, baseY){
+  const baseOffsets = STAR_FRAGMENT_BASE_OFFSETS[color];
+  if (!baseOffsets) return null;
+  const base = baseOffsets[fragIdx];
+  if (!base) return null;
+  let targetX = baseX + base.dx;
+  let targetY = baseY + base.dy;
+  const slotFix = STAR_FRAGMENT_SLOT_CORRECTIONS[color];
+  if (slotFix){
+    const dxRow = slotFix.dx?.[slotIdx];
+    const dyRow = slotFix.dy?.[slotIdx];
+    if (dxRow && dxRow[fragIdx] !== undefined) targetX += dxRow[fragIdx];
+    if (dyRow && dyRow[fragIdx] !== undefined) targetY += dyRow[fragIdx];
+  }
+  return { x: targetX, y: targetY };
+}
 
 // Смещения восстановлены из прежней таблицы STAR_FRAGMENT_TARGETS,
 // чтобы динамический расчёт воспроизводил исходную вёрстку макета 460×800.
@@ -155,21 +294,15 @@ const STAR_PIECE_SCALE_FALLBACK = 0.68;
 let STAR_OFFSET_SCALE = STAR_OFFSET_SCALE_FALLBACK;
 let STAR_PIECE_SCALE = STAR_PIECE_SCALE_FALLBACK;
 
-function resolveStarFragmentTarget(color, slotIdx, fragIdx, baseX, baseY){
-  const baseOffsets = STAR_FRAGMENT_BASE_OFFSETS[color];
-  if (!baseOffsets) return null;
-  const base = baseOffsets[fragIdx];
-  if (!base) return null;
-  let targetX = baseX + base.dx;
-  let targetY = baseY + base.dy;
-  const slotFix = STAR_FRAGMENT_SLOT_CORRECTIONS[color];
-  if (slotFix){
-    const dxRow = slotFix.dx?.[slotIdx];
-    const dyRow = slotFix.dy?.[slotIdx];
-    if (dxRow && dxRow[fragIdx] !== undefined) targetX += dxRow[fragIdx];
-    if (dyRow && dyRow[fragIdx] !== undefined) targetY += dyRow[fragIdx];
+function resolveStarFragmentTarget(color, slotIdx, fragIdx, baseX, baseY, dstW, dstH){
+  const anchor = getStarFragmentAnchor(color, slotIdx, fragIdx);
+  if (anchor && Number.isFinite(dstW) && Number.isFinite(dstH)){
+    return {
+      x: anchor.x + dstW / 2,
+      y: anchor.y + dstH / 2,
+    };
   }
-  return { x: targetX, y: targetY };
+  return resolveLegacyStarTarget(color, slotIdx, fragIdx, baseX, baseY);
 }
 
 // 7) Грузим спрайт с логами
@@ -292,7 +425,7 @@ function drawStarsUI(ctx){
           let targetX;
           let targetY;
 
-          const customTarget = resolveStarFragmentTarget(color, slotIdx, frag-1, baseX, baseY);
+          const customTarget = resolveStarFragmentTarget(color, slotIdx, frag-1, baseX, baseY, dstW, dstH);
 
           if (customTarget){
             targetX = customTarget.x;
@@ -369,6 +502,11 @@ function drawStarsDebug(ctx){
   const sx = (typeof STAR_LAYOUT?.sx === 'function') ? STAR_LAYOUT.sx() : 1;
   const sy = (typeof STAR_LAYOUT?.sy === 'function') ? STAR_LAYOUT.sy() : 1;
 
+  const baseUnitX = CANVAS_BASE_WIDTH  / STAR_DESIGN.w;
+  const baseUnitY = CANVAS_BASE_HEIGHT / STAR_DESIGN.h;
+  const pieceUnitX  = STAR_PIECE_SCALE * baseUnitX;
+  const pieceUnitY  = STAR_PIECE_SCALE * baseUnitY;
+
   ctx.save();
   // Очень важно: рисуем без унаследованных трансформаций
   ctx.setTransform(1,0,0,1,0,0);
@@ -394,17 +532,16 @@ function drawStarsDebug(ctx){
   // GREEN preview
   {
     const center = STAR_CENTERS.green[previewSlot];
-    const slotOffsets = STAR_OFFSETS.green?.[previewSlot] || [];
     STAR_SOURCE_RECTS.green.forEach((r, i)=>{
-      const [sw, sh] = [r[2], r[3]];
-      const offset = slotOffsets[i];
-      const dx = Array.isArray(offset) ? offset[0] : 0;
-      const dy = Array.isArray(offset) ? offset[1] : 0;
-
-      const dstW = sw * STAR_PIECE_SCALE;
-      const dstH = sh * STAR_PIECE_SCALE;
-      const tx   = center.x + dx * STAR_OFFSET_SCALE - dstW/2;
-      const ty   = center.y + dy * STAR_OFFSET_SCALE - dstH/2;
+      if (!center || !r) return;
+      let dstW = Math.round(r[2] * pieceUnitX);
+      let dstH = Math.round(r[3] * pieceUnitY);
+      if (dstW < 2) dstW = 2;
+      if (dstH < 2) dstH = 2;
+      const target = resolveStarFragmentTarget('green', previewSlot, i, center.x, center.y, dstW, dstH);
+      if (!target) return;
+      const tx = target.x - dstW / 2;
+      const ty = target.y - dstH / 2;
 
       drawRect(tx, ty, dstW, dstH, 'rgba(60,180,60,0.5)');
       // номер кусочка
@@ -417,17 +554,16 @@ function drawStarsDebug(ctx){
   // BLUE preview
   {
     const center = STAR_CENTERS.blue[previewSlot];
-    const slotOffsets = STAR_OFFSETS.blue?.[previewSlot] || [];
     STAR_SOURCE_RECTS.blue.forEach((r, i)=>{
-      const [sw, sh] = [r[2], r[3]];
-      const offset = slotOffsets[i];
-      const dx = Array.isArray(offset) ? offset[0] : 0;
-      const dy = Array.isArray(offset) ? offset[1] : 0;
-
-      const dstW = sw * STAR_PIECE_SCALE;
-      const dstH = sh * STAR_PIECE_SCALE;
-      const tx   = center.x + dx * STAR_OFFSET_SCALE - dstW/2;
-      const ty   = center.y + dy * STAR_OFFSET_SCALE - dstH/2;
+      if (!center || !r) return;
+      let dstW = Math.round(r[2] * pieceUnitX);
+      let dstH = Math.round(r[3] * pieceUnitY);
+      if (dstW < 2) dstW = 2;
+      if (dstH < 2) dstH = 2;
+      const target = resolveStarFragmentTarget('blue', previewSlot, i, center.x, center.y, dstW, dstH);
+      if (!target) return;
+      const tx = target.x - dstW / 2;
+      const ty = target.y - dstH / 2;
 
       drawRect(tx, ty, dstW, dstH, 'rgba(80,140,255,0.5)');
       ctx.fillStyle = 'rgba(80,140,255,0.9)';
