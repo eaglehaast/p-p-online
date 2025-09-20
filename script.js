@@ -48,6 +48,13 @@ const STAR_SOURCE_RECTS = {
   ],
 };
 
+// Ожидаемая структура смещений может быть загружена отдельно. Если она не
+// определена (например, на стартовом экране), используем безопасный null.
+const STAR_FRAGMENT_TARGETS =
+  typeof globalThis !== "undefined" && globalThis.STAR_FRAGMENT_TARGETS
+    ? globalThis.STAR_FRAGMENT_TARGETS
+    : null;
+
 // 4) Локальные центры кусочков и привязанные к макету смещения.
 function computeStarPieceCenters(rectsByColor){
   const result = {};
@@ -252,7 +259,7 @@ function drawStarsUI(ctx){
       const centers = STAR_CENTERS[color];
       const rects   = STAR_SOURCE_RECTS[color];
 
-      const offs    = STAR_OFFSETS[color];
+      const colorOffsets = Array.isArray(STAR_OFFSETS[color]) ? STAR_OFFSETS[color] : [];
 
       const slots   = STAR_STATE[color].slots;
 
@@ -265,8 +272,14 @@ function drawStarsUI(ctx){
           if (!slots[slotIdx].has(frag)) continue;
 
 
-          const rect = rects[frag-1], off = offs[frag-1];
-          if (!rect || (!off && !STAR_FRAGMENT_BASE_OFFSETS[color])) { console.warn('[STAR] bad rect/offset', color, frag); continue; }
+          const rect = rects[frag-1];
+          const slotOffsets = Array.isArray(colorOffsets[slotIdx]) ? colorOffsets[slotIdx] : null;
+          const off = slotOffsets?.[frag-1];
+          const hasOffset = Array.isArray(off) && off.length >= 2;
+          if (!rect || (!hasOffset && !STAR_FRAGMENT_BASE_OFFSETS[color])) {
+            console.warn('[STAR] bad rect/offset', color, frag);
+            continue;
+          }
 
 
           const [srcX,srcY,srcW,srcH] = rect;
@@ -284,8 +297,10 @@ function drawStarsUI(ctx){
             targetY = customTarget.y;
           } else if (hasOffset) {
             const [dx, dy] = off;
-            targetX = baseX + dx * offsetScale;
-            targetY = baseY + dy * offsetScale;
+            const validDx = Number.isFinite(dx) ? dx : 0;
+            const validDy = Number.isFinite(dy) ? dy : 0;
+            targetX = baseX + validDx * offsetScale;
+            targetY = baseY + validDy * offsetScale;
           } else {
             targetX = baseX;
             targetY = baseY;
