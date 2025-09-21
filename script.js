@@ -618,7 +618,7 @@ function addPointToSide(color){
   let slot = STAR_NEXT_SLOT[color] % pool.length;
 
   // вычисляем тип фрагмента по формуле «диагонали»
-  let frag = ((slot + STAR_LAP[color]) % 5) + 1;
+  let frag = (STAR_LAP[color] % 5) + 1;
 
   // если в слоте такой фрагмент уже есть (например, вручную что-то добивали) —
   // сдвигаем до ближайшего отсутствующего
@@ -633,7 +633,7 @@ function addPointToSide(color){
     while (hops < pool.length && pool[alt].size >= 5){ alt = (alt + 1) % pool.length; hops++; }
     if (hops >= pool.length) { console.log(`[STAR] ${color}: все 5 звёзд полные`); return; }
     slot = alt;
-    frag = ((slot + STAR_LAP[color]) % 5) + 1;
+    frag = (STAR_LAP[color] % 5) + 1;
     tries = 0;
     while (tries < 5 && pool[slot].has(frag)){ frag = (frag % 5) + 1; tries++; }
     if (tries >= 5) return; // на всякий случай
