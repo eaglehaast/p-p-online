@@ -4,556 +4,7 @@
  * Includes fixes for plane orientation, AI turns, and mini-icon counter.
  ***************************************************************/
 
-/* ========================= STAR SCORE UI (hardened) ========================= */
 
-// 1) Путь к спрайту (имя с пробелом безопасно кодируем)
-const STAR_SPRITE_URL = new URL('./sprite star 3.png', location.href).href;
-
-// 2) Центры «гнёзд» на поле под макет 460×800 (файл есть в репо). См. root: 'background behind the canvas 2.png'.
-const STAR_DESIGN = { w: 460, h: 800 };
-const STAR_CENTERS = {
-  blue:  [
-    { x: 433.42, y: 121.21 },
-    { x: 434.08, y: 175.93 },
-    { x: 433.79, y: 236.35 },
-    { x: 433.67, y: 296.26 },
-    { x: 433.14, y: 355.16 },
-  ],
-  green: [
-    { x: 29.75, y: 444.73 },
-    { x: 29.80, y: 503.94 },
-    { x: 30.15, y: 563.54 },
-    { x: 30.43, y: 626.02 },
-    { x: 30.07, y: 684.91 },
-  ],
-};
-
-// 3) Прямоугольники вырезки из 'sprite star 2.png' (файл есть в репо).
-const STAR_SOURCE_RECTS = {
-  green: [
-
-    [8, 11, 14, 19],
-    [24, 11, 14, 19],
-    [36, 18, 23, 13],
-    [61, 18, 23, 13],
-    [85, 10, 13, 23],
-  ],
-  blue:  [
-    [8, 32, 15, 19],
-    [24, 32, 15, 19],
-    [35, 38, 23, 14],
-    [62, 38, 23, 14],
-    [90, 28, 14, 25],
-
-  ],
-};
-
-const STAR_FRAGMENT_ANCHOR_POINTS_DEFAULT = {
-  green: [
-    [
-      { x: 10, y: 417 },
-      { x: 10, y: 477 },
-      { x: 10, y: 537 },
-      { x: 10, y: 597 },
-      { x: 10, y: 657 },
-    ],
-    [
-      { x: 25, y: 418 },
-      { x: 25, y: 478 },
-      { x: 25, y: 538 },
-      { x: 25, y: 598 },
-      { x: 25, y: 658 },
-    ],
-    [
-      { x: 28, y: 428 },
-      { x: 28, y: 488 },
-      { x: 28, y: 548 },
-      { x: 28, y: 608 },
-      { x: 28, y: 668 },
-    ],
-    [
-      { x: 4, y: 428 },
-      { x: 4, y: 488 },
-      { x: 4, y: 548 },
-      { x: 4, y: 608 },
-      { x: 4, y: 668 },
-    ],
-    [
-      { x: 18, y: 439 },
-      { x: 18, y: 499 },
-      { x: 18, y: 559 },
-      { x: 18, y: 619 },
-      { x: 18, y: 679 },
-    ],
-  ],
-  blue: [
-    [
-      { x: 421, y: 100 },
-      { x: 421, y: 160 },
-      { x: 421, y: 220 },
-      { x: 421, y: 280 },
-      { x: 421, y: 340 },
-    ],
-    [
-      { x: 435, y: 97 },
-      { x: 435, y: 157 },
-      { x: 435, y: 217 },
-      { x: 435, y: 277 },
-      { x: 435, y: 337 },
-    ],
-    [
-      { x: 437, y: 108 },
-      { x: 437, y: 168 },
-      { x: 437, y: 228 },
-      { x: 437, y: 288 },
-      { x: 437, y: 348 },
-    ],
-    [
-      { x: 413, y: 108 },
-      { x: 413, y: 168 },
-      { x: 413, y: 228 },
-      { x: 413, y: 288 },
-      { x: 413, y: 348 },
-    ],
-    [
-      { x: 428, y: 122 },
-      { x: 428, y: 182 },
-      { x: 428, y: 242 },
-      { x: 428, y: 302 },
-      { x: 428, y: 368 },
-    ],
-  ],
-};
-
-function buildStarAnchorTargets(raw){
-  if (!raw) return null;
-  const result = {};
-  for (const [color, fragmentRows] of Object.entries(raw)){
-    if (!Array.isArray(fragmentRows) || !fragmentRows.length){
-      result[color] = [];
-      continue;
-    }
-    const slotCount = fragmentRows.reduce(
-      (max, row) => Math.max(max, Array.isArray(row) ? row.length : 0),
-      0,
-    );
-    result[color] = Array.from({ length: slotCount }, (_, slotIdx) =>
-      fragmentRows.map(row => {
-        if (!Array.isArray(row)) return null;
-        const point = row[slotIdx];
-        if (!point) return null;
-        const x = Number(point.x);
-        const y = Number(point.y);
-        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-        return { x, y };
-      }),
-    );
-  }
-  return result;
-}
-
-const STAR_FRAGMENT_ANCHOR_TARGETS =
-  typeof globalThis !== "undefined" && globalThis.STAR_FRAGMENT_ANCHOR_TARGETS
-    ? globalThis.STAR_FRAGMENT_ANCHOR_TARGETS
-    : buildStarAnchorTargets(STAR_FRAGMENT_ANCHOR_POINTS_DEFAULT);
-
-function getStarFragmentAnchor(color, slotIdx, fragIdx){
-  const slots = STAR_FRAGMENT_ANCHOR_TARGETS?.[color];
-  if (!Array.isArray(slots)) return null;
-  const slot = slots[slotIdx];
-  if (!Array.isArray(slot)) return null;
-  const anchor = slot[fragIdx];
-  if (!anchor) return null;
-  const x = Number(anchor.x);
-  const y = Number(anchor.y);
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-  return { x, y };
-}
-
-// Ожидаемая структура смещений может быть загружена отдельно. Если она не
-// определена (например, на стартовом экране), используем безопасный null.
-const STAR_FRAGMENT_TARGETS =
-  typeof globalThis !== "undefined" && globalThis.STAR_FRAGMENT_TARGETS
-    ? globalThis.STAR_FRAGMENT_TARGETS
-    : null;
-
-// 4) Локальные центры кусочков и привязанные к макету смещения.
-function computeStarPieceCenters(rectsByColor){
-  const result = {};
-  for (const [color, rects] of Object.entries(rectsByColor)){
-    result[color] = rects.map(([srcX, srcY, srcW, srcH]) => ({
-      cx: srcX + srcW / 2,
-      cy: srcY + srcH / 2,
-    }));
-  }
-  return result;
-}
-
-const STAR_PIECE_CENTERS = computeStarPieceCenters(STAR_SOURCE_RECTS);
-
-function resolveLegacyStarTarget(color, slotIdx, fragIdx, baseX, baseY){
-  const baseOffsets = STAR_FRAGMENT_BASE_OFFSETS[color];
-  if (!baseOffsets) return null;
-  const base = baseOffsets[fragIdx];
-  if (!base) return null;
-  let targetX = baseX + base.dx;
-  let targetY = baseY + base.dy;
-  const slotFix = STAR_FRAGMENT_SLOT_CORRECTIONS[color];
-  if (slotFix){
-    const dxRow = slotFix.dx?.[slotIdx];
-    const dyRow = slotFix.dy?.[slotIdx];
-    if (dxRow && dxRow[fragIdx] !== undefined) targetX += dxRow[fragIdx];
-    if (dyRow && dyRow[fragIdx] !== undefined) targetY += dyRow[fragIdx];
-  }
-  return { x: targetX, y: targetY };
-}
-
-// Смещения восстановлены из прежней таблицы STAR_FRAGMENT_TARGETS,
-// чтобы динамический расчёт воспроизводил исходную вёрстку макета 460×800.
-const STAR_FRAGMENT_BASE_OFFSETS = {
-  blue: [
-    { dx: -14.42, dy: -2.21 },
-    { dx: -10.42, dy: -0.21 },
-    { dx:   0.58, dy: 10.79 },
-    { dx:  11.58, dy: -7.21 },
-    { dx:  16.08, dy:  5.79 },
-  ],
-  green: [
-    { dx: -15.25, dy: -12.73 },
-    { dx: -12.25, dy:  -4.73 },
-    { dx:  -1.75, dy:   3.77 },
-    { dx:   9.25, dy: -14.23 },
-    { dx:  14.75, dy:   0.77 },
-
-  ],
-};
-const STAR_FRAGMENT_SLOT_CORRECTIONS = {
-  blue: {
-    dx: [
-      [0, 0, 0, 0, 0],
-
-      [-0.66, -0.66, 0.34, 0.34, -0.66],
-      [-0.37, -0.37, -0.37, 1.63, -0.37],
-      [-0.25, -0.25, -0.25, 0.75, -0.25],
-      [-0.72, -0.72, 1.28, 2.28, -1.72],
-    ],
-    dy: [
-      [0, 0, 0, 0, 0],
-      [6.28, 4.28, 3.28, -0.72, 5.28],
-      [5.86, 3.86, 3.86, -1.14, 3.86],
-      [4.95, 4.95, 2.95, 0.95, 4.95],
-      [6.05, 6.05, 3.05, -1.95, 6.05],
-
-    ],
-  },
-  green: {
-    dx: [
-      [0, 0, 0, 0, 0],
-
-      [-0.05, 0.95, -0.05, -0.05, -0.05],
-      [-0.4, 0.6, 0.6, 0.6, -0.4],
-      [-0.68, 0.32, 0.32, -0.68, -0.68],
-      [-0.32, 0.68, -0.32, -0.32, -0.32],
-    ],
-    dy: [
-      [0, 0, 0, 0, 0],
-      [0.79, 0.79, -0.21, 0.79, 0.79],
-      [1.19, 2.19, -0.81, 1.19, 1.19],
-      [-1.29, 0.71, -3.29, -0.29, -1.29],
-      [-0.18, 0.82, -1.18, -0.18, -0.18],
-
-    ],
-  },
-};
-
-// 5) Смещения частей в пределах «звезды»: реальные dx/dy в макетных пикселях
-//    Структура: STAR_OFFSETS[color][slot][fragment] = [dx, dy]
-const STAR_OFFSETS = (() => {
-  const result = { blue: [], green: [] };
-  ["blue", "green"].forEach(color => {
-    const centers = STAR_CENTERS[color] || [];
-    const targetSlots = STAR_FRAGMENT_TARGETS?.[color];
-    const rects = STAR_SOURCE_RECTS[color] || [];
-    result[color] = centers.map((center, slotIdx) => {
-      const slotTargets = targetSlots?.[slotIdx] || [];
-      return rects.map((_, fragIdx) => {
-        const target = slotTargets[fragIdx];
-        if (center && target) {
-          return [target.x - center.x, target.y - center.y];
-        }
-        return [0, 0];
-      });
-    });
-  });
-  return result;
-})();
-
-// 6) Масштабы под контуры (подстроены под фон 460×800)
-const STAR_OFFSET_SCALE_FALLBACK = 1;
-const STAR_PIECE_SCALE_FALLBACK = 0.68;
-let STAR_OFFSET_SCALE = STAR_OFFSET_SCALE_FALLBACK;
-let STAR_PIECE_SCALE = STAR_PIECE_SCALE_FALLBACK;
-
-function resolveStarFragmentTarget(color, slotIdx, fragIdx, baseX, baseY, dstW, dstH){
-  const anchor = getStarFragmentAnchor(color, slotIdx, fragIdx);
-  if (anchor && Number.isFinite(dstW) && Number.isFinite(dstH)){
-    return {
-      x: anchor.x + dstW / 2,
-      y: anchor.y + dstH / 2,
-    };
-  }
-  return resolveLegacyStarTarget(color, slotIdx, fragIdx, baseX, baseY);
-}
-
-// 7) Грузим спрайт с логами
-const STAR_IMG = new Image();
-let STAR_READY = false;
-STAR_IMG.onload  = () => { STAR_READY = true; console.log('[STAR] sprite loaded:', STAR_IMG.width, 'x', STAR_IMG.height); };
-STAR_IMG.onerror = (e)  => { console.error('[STAR] sprite load error', e, STAR_SPRITE_URL); };
-STAR_IMG.src = STAR_SPRITE_URL;
-
-// 8) Состояние (5 слотов на сторону, в каждом — Set фрагментов 1..5)
-const STAR_STATE = {
-  blue:  { score: 0, slots: Array.from({length:5}, () => new Set()) },
-  green: { score: 0, slots: Array.from({length:5}, () => new Set()) },
-};
-
-function resetStarsUI(){
-  STAR_STATE.blue  = { score: 0, slots: Array.from({length:5}, () => new Set()) };
-  STAR_STATE.green = { score: 0, slots: Array.from({length:5}, () => new Set()) };
-  console.log('[STAR] reset');
-}
-
-function computeStarScales(){
-  return {
-    offset: STAR_OFFSET_SCALE_FALLBACK,
-    piece: STAR_PIECE_SCALE_FALLBACK,
-  };
-}
-
-// Начислить очко стороне (класть случайный недостающий фрагмент в случайный незаполненный слот)
-function addPointToSide(color){
-  const side = STAR_STATE[color];
-  if (!side) return;
-  if (side.score >= 25) return;
-  side.score++;
-
-  const free = side.slots.map((s,i)=> s.size<5? i : -1).filter(i=> i>=0);
-  if (!free.length) return;
-
-  const slotIdx = free[Math.floor(Math.random() * free.length)];
-  const slot = side.slots[slotIdx];
-  const pool = [1,2,3,4,5].filter(n => !slot.has(n));
-  const pick = pool[Math.floor(Math.random()*pool.length)];
-  slot.add(pick);
-
-  console.log(`[STAR] ${color}+1 → slot ${slotIdx}, frag ${pick} (size=${slot.size})`);
-}
-
-// Основная отрисовка звёзд — работаем в макетных координатах, масштабируем один раз
-function drawStarsUI(ctx){
-  if (!STAR_READY) return;
-
-  // 1) коэффициенты перевода МАКЕТ→ЭКРАН (используем только в самом конце)
-  const sx = (typeof STAR_LAYOUT?.sx === 'function') ? STAR_LAYOUT.sx() : 1;
-  const sy = (typeof STAR_LAYOUT?.sy === 'function') ? STAR_LAYOUT.sy() : 1;
-
-
-  // 2) рисуем без унаследованных трансформаций
-  ctx.save();
-  ctx.setTransform(1,0,0,1,0,0);
-  ctx.imageSmoothingEnabled = false;
-
-  try {
-
-    // 3) утилита перевода макетных координат в экранные
-    const toScreenX = (mx) => Math.round(mx * sx);
-    const toScreenY = (my) => Math.round(my * sy);
-
-    // 4) обходим две стороны
-    ["blue","green"].forEach(color => {
-      const centers = STAR_CENTERS[color];           // [{x,y} ...] в МАКЕТЕ 460×800
-      const rects   = STAR_SOURCE_RECTS[color];      // [sx,sy,sw,sh] в ПИКСЕЛЯХ СПРАЙТА
-      const offs    = STAR_OFFSETS[color];           // [ox,oy]       в ПИКСЕЛЯХ СПРАЙТА (для «веера»)
-      const slots   = STAR_STATE[color].slots;       // Set фрагментов 1..5
-
-      centers.forEach((c, slotIdx) => {
-        // ВАЖНО: baseX/baseY — в МАКЕТЕ (без *sx/sy!)
-        const anchorX = (typeof STAR_LAYOUT?.anchorX === 'number') ? STAR_LAYOUT.anchorX : 0;
-        const anchorY = (typeof STAR_LAYOUT?.anchorY === 'number') ? STAR_LAYOUT.anchorY : 0;
-        const baseX = anchorX + c.x;  // макетные координаты 460x800
-        const baseY = anchorY + c.y;
-
-        for (let frag = 1; frag <= 5; frag++){
-          if (!slots[slotIdx].has(frag)) continue;
-
-          const [srcX,srcY,srcW,srcH] = rects[frag-1];
-
-          // Размер фрагмента в ЭКРАННЫХ пикселях (масштаб размера отдельно)
-          const dstW = Math.round(srcW * (typeof STAR_PIECE_SCALE !== 'undefined' ? STAR_PIECE_SCALE : 1) * sx);
-          const dstH = Math.round(srcH * (typeof STAR_PIECE_SCALE !== 'undefined' ? STAR_PIECE_SCALE : 1) * sy);
-
-          let screenX, screenY; // координаты ТОП-ЛЕВОГО угла в ЭКРАННЫХ пикселях
-
-          if (typeof STAR_USE_MANUAL !== 'undefined' && STAR_USE_MANUAL) {
-            // РУЧНОЙ режим: смещение ТОП-ЛЕВО от центра слота в МАКЕТЕ
-            const m = (STAR_DEST_OFFSETS?.[color]?.[frag-1]) || {x:0, y:0};
-            screenX = toScreenX(baseX + m.x);
-            screenY = toScreenY(baseY + m.y);
-          } else {
-            // «Веер»: смещение от центра слота в ПИКСЕЛЯХ СПРАЙТА, масштабирующееся ОТДЕЛЬНО
-            const slotOffsets = Array.isArray(offs?.[slotIdx]) ? offs[slotIdx] : offs;
-            const offset = Array.isArray(slotOffsets) ? slotOffsets[frag-1] : null;
-            const ox = Number.isFinite(offset?.[0]) ? offset[0] : 0;
-            const oy = Number.isFinite(offset?.[1]) ? offset[1] : 0;
-            const offScale = (typeof STAR_OFFSET_SCALE !== 'undefined' ? STAR_OFFSET_SCALE : 1);
-            // target в МАКЕТЕ:
-            const targetX = baseX + ox * offScale;
-            const targetY = baseY + oy * offScale;
-            // центр → топ-лево, потом в экран:
-            screenX = toScreenX(targetX) - Math.round(dstW/2);
-            screenY = toScreenY(targetY) - Math.round(dstH/2);
-          }
-
-          ctx.drawImage(STAR_IMG, srcX,srcY,srcW,srcH, screenX, screenY, dstW, dstH);
-
-        }
-
-        ctx.drawImage(STAR_IMG, srcX,srcY,srcW,srcH, screenX, screenY, dstW, dstH);
-      }
-    });
-  });
-
-
-  } catch (err) {
-    console.warn('[STAR] drawStarsUI error:', err);
-  } finally {
-    ctx.restore();
-  }
-
-}
-
-// Временные хоткеи для ручной проверки (можно убрать)
-window.addEventListener('keydown', (e)=>{
-  if (e.key === '1') addPointToSide('green');
-  if (e.key === '2') addPointToSide('blue');
-});
-
-/* ======================= END STAR SCORE UI (hardened) ======================== */
-
-/* ---------------- STAR DEBUG TOOLS ---------------- */
-
-let STAR_DEBUG = true;                  // включено по умолчанию (переключаем клавишей D)
-// используем уже объявленные глобальные коэффициенты, поэтому просто переопределяем значения
-STAR_PIECE_SCALE = 1.10;                // только РАЗМЕР кусочка (без влияния на позиции)
-STAR_OFFSET_SCALE = 1;                  // смещения уже в макетных пикселях
-
-// горячая клавиша D — вкл/выкл отрисовку отладочного слоя
-window.addEventListener('keydown', (e)=>{
-  if (e.key.toLowerCase() === 'd') {
-    STAR_DEBUG = !STAR_DEBUG;
-    console.log('[STAR DEBUG] ' + (STAR_DEBUG ? 'ON' : 'OFF'));
-  }
-});
-
-// клик по полю — печатаем координаты курсора (в тех же единицах, что и STAR_CENTERS)
-function handleStarDebugClick(e){
-  const canvas = e.currentTarget;
-  if (!(canvas instanceof HTMLCanvasElement)) return;
-
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-
-  // если у тебя уже есть масштабирование контекста под DPR/размер — расстояния ниже В ЭКРАННЫХ px
-  // нам нужны "макетные" 460x800. Поэтому учитываем твои sx/sy:
-  const sx = (typeof STAR_LAYOUT?.sx === 'function') ? STAR_LAYOUT.sx() : 1;
-  const sy = (typeof STAR_LAYOUT?.sy === 'function') ? STAR_LAYOUT.sy() : 1;
-  const mx = Math.round(x / sx);
-  const my = Math.round(y / sy);
-  console.log(`[STAR DEBUG] click center ~ (${mx}, ${my})  (raw: ${Math.round(x)}, ${Math.round(y)})`);
-}
-
-// рисуем точки центров и прямоугольники ожидаемых кусочков
-function drawStarsDebug(ctx){
-  if (!STAR_DEBUG) return;
-
-  const sx = (typeof STAR_LAYOUT?.sx === 'function') ? STAR_LAYOUT.sx() : 1;
-  const sy = (typeof STAR_LAYOUT?.sy === 'function') ? STAR_LAYOUT.sy() : 1;
-
-  const baseUnitX = CANVAS_BASE_WIDTH  / STAR_DESIGN.w;
-  const baseUnitY = CANVAS_BASE_HEIGHT / STAR_DESIGN.h;
-  const pieceUnitX  = STAR_PIECE_SCALE * baseUnitX;
-  const pieceUnitY  = STAR_PIECE_SCALE * baseUnitY;
-
-  ctx.save();
-  // Очень важно: рисуем без унаследованных трансформаций
-  ctx.setTransform(1,0,0,1,0,0);
-  ctx.imageSmoothingEnabled = false;
-
-  // 1) точки центров
-  const dot = (x,y,color)=>{
-    ctx.fillStyle = color;
-    ctx.fillRect(Math.round(x*sx)-2, Math.round(y*sy)-2, 4, 4);
-  };
-  STAR_CENTERS.blue .forEach(c => dot(c.x, c.y, 'rgba(80,160,255,0.9)'));
-  STAR_CENTERS.green.forEach(c => dot(c.x, c.y, 'rgba(120,200,80,0.9)'));
-
-  // 2) рамки ожидаемых кусочков (для визуальной проверки офсетов и размеров)
-  const drawRect = (x,y,w,h,color)=>{
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(Math.round(x*sx), Math.round(y*sy), Math.round(w*sx), Math.round(h*sy));
-  };
-
-  const previewSlot = 0; // показываем рамки для первого слота каждой стороны (хватает для сверки)
-
-  // GREEN preview
-  {
-    const center = STAR_CENTERS.green[previewSlot];
-    STAR_SOURCE_RECTS.green.forEach((r, i)=>{
-      if (!center || !r) return;
-      let dstW = Math.round(r[2] * pieceUnitX);
-      let dstH = Math.round(r[3] * pieceUnitY);
-      if (dstW < 2) dstW = 2;
-      if (dstH < 2) dstH = 2;
-      const target = resolveStarFragmentTarget('green', previewSlot, i, center.x, center.y, dstW, dstH);
-      if (!target) return;
-      const tx = target.x - dstW / 2;
-      const ty = target.y - dstH / 2;
-
-      drawRect(tx, ty, dstW, dstH, 'rgba(60,180,60,0.5)');
-      // номер кусочка
-      ctx.fillStyle = 'rgba(60,180,60,0.9)';
-      ctx.font = '10px monospace';
-      ctx.fillText(String(i+1), Math.round((tx+2)*sx), Math.round((ty+10)*sy));
-    });
-  }
-
-  // BLUE preview
-  {
-    const center = STAR_CENTERS.blue[previewSlot];
-    STAR_SOURCE_RECTS.blue.forEach((r, i)=>{
-      if (!center || !r) return;
-      let dstW = Math.round(r[2] * pieceUnitX);
-      let dstH = Math.round(r[3] * pieceUnitY);
-      if (dstW < 2) dstW = 2;
-      if (dstH < 2) dstH = 2;
-      const target = resolveStarFragmentTarget('blue', previewSlot, i, center.x, center.y, dstW, dstH);
-      if (!target) return;
-      const tx = target.x - dstW / 2;
-      const ty = target.y - dstH / 2;
-
-      drawRect(tx, ty, dstW, dstH, 'rgba(80,140,255,0.5)');
-      ctx.fillStyle = 'rgba(80,140,255,0.9)';
-      ctx.font = '10px monospace';
-      ctx.fillText(String(i+1), Math.round((tx+2)*sx), Math.round((ty+10)*sy));
-    });
-  }
-
-  ctx.restore();
-}
-/* -------------- END STAR DEBUG TOOLS -------------- */
 
 /* ======= DOM ======= */
 const mantisIndicator = document.getElementById("mantisIndicator");
@@ -563,22 +14,11 @@ const gameContainer = document.getElementById("gameContainer");
 const gameCanvas  = document.getElementById("gameCanvas");
 const gameCtx     = gameCanvas.getContext("2d");
 
-// ---- STAR_LAYOUT safe shim (защита от ReferenceError) ----
-window.STAR_LAYOUT = window.STAR_LAYOUT || {};
-if (typeof STAR_LAYOUT.sx !== 'function') STAR_LAYOUT.sx = () => gameCanvas.width  / 460;
-if (typeof STAR_LAYOUT.sy !== 'function') STAR_LAYOUT.sy = () => gameCanvas.height / 800;
-if (typeof STAR_LAYOUT.anchorX !== 'number') STAR_LAYOUT.anchorX = 0;
-if (typeof STAR_LAYOUT.anchorY !== 'number') STAR_LAYOUT.anchorY = 0;
-
 const aimCanvas   = document.getElementById("aimCanvas");
 const aimCtx      = aimCanvas.getContext("2d");
 
 const planeCanvas = document.getElementById("planeCanvas");
 const planeCtx    = planeCanvas.getContext("2d");
-
-if (gameCanvas) {
-  gameCanvas.addEventListener('click', handleStarDebugClick);
-}
 
 // Enable smoothing so rotated images (planes, arrows) don't appear jagged
 [gameCtx, aimCtx, planeCtx].forEach(ctx => {
@@ -616,11 +56,6 @@ const FRAME_PADDING_Y = 80;
 const FRAME_BASE_WIDTH = CANVAS_BASE_WIDTH + FRAME_PADDING_X * 2; // 460
 const FRAME_BASE_HEIGHT = CANVAS_BASE_HEIGHT + FRAME_PADDING_Y * 2; // 800
 const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
-
-const starScaleDefaults = computeStarScales();
-STAR_OFFSET_SCALE = starScaleDefaults.offset;
-STAR_PIECE_SCALE = starScaleDefaults.piece;
-console.log('[STAR] auto-scale set to offsets', STAR_OFFSET_SCALE.toFixed(3), 'pieces', STAR_PIECE_SCALE.toFixed(3));
 
 const brickFrameImg = new Image();
 // Load the default map on startup so we don't request a missing image
@@ -913,14 +348,29 @@ const MAPS = [
 
 let settings = { addAA: false, sharpEdges: false, mapIndex: 0 };
 
+let storageAvailable = true;
+function getStoredSetting(key){
+  if(!storageAvailable){
+    return null;
+  }
+  try {
+    const storage = window.localStorage;
+    return storage ? storage.getItem(key) : null;
+  } catch(err){
+    storageAvailable = false;
+    console.warn('localStorage unavailable, falling back to defaults.', err);
+    return null;
+  }
+}
+
 function loadSettings(){
-  const fr = parseInt(localStorage.getItem('settings.flightRangeCells'));
+  const fr = parseInt(getStoredSetting('settings.flightRangeCells'), 10);
   flightRangeCells = Number.isNaN(fr) ? 15 : fr;
-  const amp = parseFloat(localStorage.getItem('settings.aimingAmplitude'));
+  const amp = parseFloat(getStoredSetting('settings.aimingAmplitude'));
   aimingAmplitude = Number.isNaN(amp) ? 10 / 4 : amp;
-  settings.addAA = localStorage.getItem('settings.addAA') === 'true';
-  settings.sharpEdges = localStorage.getItem('settings.sharpEdges') === 'true';
-  const mapIdx = parseInt(localStorage.getItem('settings.mapIndex'));
+  settings.addAA = getStoredSetting('settings.addAA') === 'true';
+  settings.sharpEdges = getStoredSetting('settings.sharpEdges') === 'true';
+  const mapIdx = parseInt(getStoredSetting('settings.mapIndex'), 10);
   settings.mapIndex = Number.isNaN(mapIdx) ? 0 : Math.min(MAPS.length - 1, Math.max(0, mapIdx));
 
   // Clamp loaded values so corrupted or out-of-range settings
@@ -934,13 +384,13 @@ function loadSettings(){
 loadSettings();
 
 // Highlight advanced settings button if custom settings are stored
-const hasCustomSettings = [
+const hasCustomSettings = storageAvailable && [
   'settings.flightRangeCells',
   'settings.aimingAmplitude',
   'settings.addAA',
   'settings.sharpEdges',
   'settings.mapIndex'
-].some(key => localStorage.getItem(key) !== null);
+].some(key => getStoredSetting(key) !== null);
 
 if(hasCustomSettings && classicRulesBtn && advancedSettingsBtn){
   classicRulesBtn.classList.remove('selected');
@@ -961,24 +411,11 @@ let blueFlagStolenBy = null;
 let greenFlagStolenBy = null;
 
 function addScore(color, delta){
-  let prevScore = null;
   if(color === "blue"){
-    prevScore = blueScore;
     blueScore = Math.max(0, blueScore + delta);
   } else if(color === "green"){
-    prevScore = greenScore;
     greenScore = Math.max(0, greenScore + delta);
   }
-
-
-  if(prevScore !== null){
-    const newScore = color === "blue" ? blueScore : greenScore;
-    const gained = Math.max(0, Math.floor(newScore - prevScore));
-    for(let i = 0; i < gained; i++){
-      addPointToSide(color);
-    }
-  }
-
 
   if(!isGameOver){
     if(blueScore >= POINTS_TO_WIN){
@@ -1044,7 +481,6 @@ function resetGame(){
 
   greenScore = 0;
   blueScore  = 0;
-  resetStarsUI();
   roundNumber = 0;
   roundTextTimer = 0;
   if(roundTransitionTimeout){
@@ -2293,10 +1729,7 @@ function handleAAForPlane(p, fp){
   // самолёты + их трейлы
   drawPlanesAndTrajectories();
 
-  // Рисуем звёзды на том же оверлей-слое, что и табло, чтобы они были поверх самолётов
-  drawStarsUI(planeCtx);
-
-  // Табло должно оставаться поверх звёзд, поэтому рисуем его после drawStarsUI
+  // Табло рисуем поверх самолётов, поэтому оно выводится после drawPlanesAndTrajectories
   renderScoreboard();
 
   if(isGameOver && winnerColor){
@@ -3332,7 +2765,6 @@ yesBtn.addEventListener("click", () => {
   if (gameOver) {
     blueScore = 0;
     greenScore = 0;
-    resetStarsUI();
     roundNumber = 0;
     if(!advancedSettingsBtn?.classList.contains('selected')){
       settings.mapIndex = Math.floor(Math.random() * MAPS.length);

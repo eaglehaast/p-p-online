@@ -8,16 +8,44 @@ const MAPS = [
   { name: '5 Bricks', file: 'map 2 - 5 bricks.png' },
   { name: 'Diagonals', file: 'map 3 diagonals.png' }
 ];
+
+let storageAvailable = true;
+function getStoredItem(key){
+  if(!storageAvailable){
+    return null;
+  }
+  try {
+    const storage = window.localStorage;
+    return storage ? storage.getItem(key) : null;
+  } catch(err){
+    storageAvailable = false;
+    console.warn('localStorage unavailable, using default settings.', err);
+    return null;
+  }
+}
+
+function setStoredItem(key, value){
+  if(!storageAvailable){
+    return;
+  }
+  try {
+    window.localStorage.setItem(key, value);
+  } catch(err){
+    storageAvailable = false;
+    console.warn('localStorage unavailable, settings changes will not persist.', err);
+  }
+}
+
 function getIntSetting(key, defaultValue){
-  const value = parseInt(localStorage.getItem(key));
+  const value = parseInt(getStoredItem(key), 10);
   return Number.isNaN(value) ? defaultValue : value;
 }
 
 let flightRangeCells = getIntSetting('settings.flightRangeCells', 15);
-let aimingAmplitude  = parseFloat(localStorage.getItem('settings.aimingAmplitude'));
+let aimingAmplitude  = parseFloat(getStoredItem('settings.aimingAmplitude'));
 if(Number.isNaN(aimingAmplitude)) aimingAmplitude = 10 / 4;
-let addAA = localStorage.getItem('settings.addAA') === 'true';
-let sharpEdges = localStorage.getItem('settings.sharpEdges') === 'true';
+let addAA = getStoredItem('settings.addAA') === 'true';
+let sharpEdges = getStoredItem('settings.sharpEdges') === 'true';
 let mapIndex = getIntSetting('settings.mapIndex', 0);
 
 const flightRangeMinusBtn = document.getElementById('flightRangeMinus');
@@ -75,11 +103,11 @@ function updateAmplitudeIndicator(){
 }
 
 function saveSettings(){
-  localStorage.setItem('settings.flightRangeCells', flightRangeCells);
-  localStorage.setItem('settings.aimingAmplitude', aimingAmplitude);
-  localStorage.setItem('settings.addAA', addAA);
-  localStorage.setItem('settings.sharpEdges', sharpEdges);
-  localStorage.setItem('settings.mapIndex', mapIndex);
+  setStoredItem('settings.flightRangeCells', flightRangeCells);
+  setStoredItem('settings.aimingAmplitude', aimingAmplitude);
+  setStoredItem('settings.addAA', addAA);
+  setStoredItem('settings.sharpEdges', sharpEdges);
+  setStoredItem('settings.mapIndex', mapIndex);
 }
 
 function setupRepeatButton(btn, cb){
