@@ -434,6 +434,8 @@ function addScore(color, delta){
       winnerColor = "green";
     }
   }
+
+  renderScoreboard();
 }
 
 let animationFrameId = null;
@@ -2416,19 +2418,19 @@ function awardPoint(color){
   if(isGameOver) return;
   if(color === "blue"){
     greenScore++;
-    try { addPointToSide("green"); } catch(e){ console.warn('[STAR] addPointToSide:', e); }
     if(greenScore >= POINTS_TO_WIN){
       isGameOver = true;
       winnerColor = "green";
     }
   } else if(color === "green"){
     blueScore++;
-    try { addPointToSide("blue"); } catch(e){ console.warn('[STAR] addPointToSide:', e); }
     if(blueScore >= POINTS_TO_WIN){
       isGameOver = true;
       winnerColor = "blue";
     }
   }
+
+  renderScoreboard();
 }
 function checkPlaneHits(plane, fp){
   if(isGameOver) return;
@@ -2442,7 +2444,6 @@ function checkPlaneHits(plane, fp){
     if(d < POINT_RADIUS*2){
       p.isAlive = false;
       p.burning = true;
-      try { addPointToSide(plane.color); } catch(e){ console.warn('[STAR] addPointToSide:', e); }
       p.explosionImg = createExplosionImage();
       const img = p.explosionImg;
       img.onload = () => {
