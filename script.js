@@ -14,6 +14,14 @@ const gameContainer = document.getElementById("gameContainer");
 const gameCanvas  = document.getElementById("gameCanvas");
 const gameCtx     = gameCanvas.getContext("2d");
 
+// ---- STAR_LAYOUT safe shim (не даём получить ReferenceError) ----
+window.STAR_LAYOUT = window.STAR_LAYOUT || {};
+if (typeof STAR_LAYOUT.sx !== 'function') STAR_LAYOUT.sx = () => gameCanvas.width  / 460;
+if (typeof STAR_LAYOUT.sy !== 'function') STAR_LAYOUT.sy = () => gameCanvas.height / 800;
+if (typeof STAR_LAYOUT.anchorX !== 'number') STAR_LAYOUT.anchorX = 0;
+if (typeof STAR_LAYOUT.anchorY !== 'number') STAR_LAYOUT.anchorY = 0;
+if (typeof window.STAR_READY === 'undefined') window.STAR_READY = false;
+
 const aimCanvas   = document.getElementById("aimCanvas");
 const aimCtx      = aimCanvas.getContext("2d");
 
@@ -2408,14 +2416,14 @@ function awardPoint(color){
   if(isGameOver) return;
   if(color === "blue"){
     greenScore++;
-    addPointToSide("green");
+    try { addPointToSide("green"); } catch(e){ console.warn('[STAR] addPointToSide:', e); }
     if(greenScore >= POINTS_TO_WIN){
       isGameOver = true;
       winnerColor = "green";
     }
   } else if(color === "green"){
     blueScore++;
-    addPointToSide("blue");
+    try { addPointToSide("blue"); } catch(e){ console.warn('[STAR] addPointToSide:', e); }
     if(blueScore >= POINTS_TO_WIN){
       isGameOver = true;
       winnerColor = "blue";
@@ -2434,6 +2442,7 @@ function checkPlaneHits(plane, fp){
     if(d < POINT_RADIUS*2){
       p.isAlive = false;
       p.burning = true;
+      try { addPointToSide(plane.color); } catch(e){ console.warn('[STAR] addPointToSide:', e); }
       p.explosionImg = createExplosionImage();
       const img = p.explosionImg;
       img.onload = () => {
@@ -2588,6 +2597,69 @@ function checkVictory(){
 }
 
 /* ======= SCOREBOARD ======= */
+
+function drawStarsUI(ctx){
+  if (!STAR_READY) return;
+
+  // коэффициенты перевода макет→экран
+  const sx = (typeof STAR_LAYOUT?.sx === 'function') ? STAR_LAYOUT.sx() : 1;
+  const sy = (typeof STAR_LAYOUT?.sy === 'function') ? STAR_LAYOUT.sy() : 1;
+
+  ctx.save();
+  // рисуем из «чистого» состояния, чтобы чужие трансформации не протекали
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.imageSmoothingEnabled = false;
+
+  try {
+    const toScreenX = (mx) => Math.round(mx * sx);
+    const toScreenY = (my) => Math.round(my * sy);
+
+    ["blue","green"].forEach(color => {
+      const centers = STAR_CENTERS[color];
+      const rects   = STAR_SOURCE_RECTS[color];
+      const slots   = STAR_STATE[color]?.slots || [];
+
+      const anchorX = (typeof STAR_LAYOUT?.anchorX === 'number') ? STAR_LAYOUT.anchorX : 0;
+      const anchorY = (typeof STAR_LAYOUT?.anchorY === 'number') ? STAR_LAYOUT.anchorY : 0;
+
+      centers.forEach((c, slotIdx) => {
+        const baseX = anchorX + c.x; // макетные 460×800
+        const baseY = anchorY + c.y;
+
+        for (let frag = 1; frag <= 5; frag++){
+          if (!slots[slotIdx] || !slots[slotIdx].has(frag)) continue;
+
+          const [srcX,srcY,srcW,srcH] = rects[frag-1];
+          const pieceScale = (typeof STAR_PIECE_SCALE !== 'undefined') ? STAR_PIECE_SCALE : 1;
+
+          const dstW = Math.round(srcW * pieceScale * sx);
+          const dstH = Math.round(srcH * pieceScale * sy);
+
+          let screenX, screenY;
+
+          if (typeof STAR_USE_MANUAL !== 'undefined' && STAR_USE_MANUAL) {
+            const m = (STAR_DEST_OFFSETS?.[color]?.[frag-1]) || {x:0, y:0}; // смещение топ-лево в МАКЕТЕ
+            screenX = toScreenX(baseX + m.x);
+            screenY = toScreenY(baseY + m.y);
+          } else {
+            const [ox, oy] = STAR_OFFSETS[color][frag-1];
+            const offScale = (typeof STAR_OFFSET_SCALE !== 'undefined') ? STAR_OFFSET_SCALE : 1;
+            const targetX = baseX + ox * offScale; // центр в МАКЕТЕ
+            const targetY = baseY + oy * offScale;
+            screenX = toScreenX(targetX) - Math.round(dstW/2);
+            screenY = toScreenY(targetY) - Math.round(dstH/2);
+          }
+
+          ctx.drawImage(STAR_IMG, srcX,srcY,srcW,srcH, screenX, screenY, dstW, dstH);
+        }
+      });
+    });
+  } catch (err){
+    console.warn('[STAR] drawStarsUI error:', err);
+  } finally {
+    ctx.restore();
+  }
+}
 
 function renderScoreboard(){
   updateTurnIndicators();
