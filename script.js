@@ -466,42 +466,51 @@ const STAR_CENTERS = {
   ]
 };
 
-const STAR_DEST_OFFSETS = {
+const STAR_FRAGMENTS_PER_SLOT = 5;
+
+// Состояние слотов: теперь 5 звёзд на сторону (каждая звезда = до 5 фрагментов)
+const STAR_STATE = {
+  blue:  Array.from({length:5}, ()=> new Set()),
+  green: Array.from({length:5}, ()=> new Set())
+};
+
+// Режим ручного позиционирования (рисуем строго по заданным top-left координатам)
+const STAR_USE_MANUAL_GRID = true;
+
+// Точные top-left координаты КАЖДОГО фрагмента (макет 460x800)
+// Порядок: [звезда 1..5][фрагмент 1..5] = {x, y}
+const STAR_GRID_TOPLEFT = {
   green: [
-    { x: 6, y: 1 },
-    { x: 7, y: 0 },
-    { x: 4, y: 6 },
-    { x: 0, y: 6 },
-    { x: 6, y: 3 }
+    // 1-я зелёная звезда
+    [ {x:10,y:417}, {x:10,y:477}, {x:10,y:537}, {x:10,y:597}, {x:10,y:657} ],
+    // 2-я зелёная звезда
+    [ {x:25,y:418}, {x:25,y:478}, {x:25,y:538}, {x:25,y:598}, {x:25,y:658} ],
+    // 3-я зелёная звезда
+    [ {x:28,y:428}, {x:28,y:488}, {x:28,y:548}, {x:28,y:608}, {x:28,y:668} ],
+    // 4-я зелёная звезда
+    [ {x:4,y:428},  {x:4,y:488},  {x:4,y:548},  {x:4,y:608},  {x:4,y:668}  ],
+    // 5-я зелёная звезда
+    [ {x:18,y:439}, {x:18,y:499}, {x:18,y:559}, {x:18,y:619}, {x:18,y:679} ],
   ],
   blue: [
-    { x: 5, y: 1 },
-    { x: 6, y: 0 },
-    { x: 3, y: 4 },
-    { x: 0, y: 4 },
-    { x: 4, y: 0 }
+    // 1-я синяя звезда
+    [ {x:421,y:100}, {x:421,y:160}, {x:421,y:220}, {x:421,y:280}, {x:421,y:340} ],
+    // 2-я синяя звезда  (исправил опечатку в исходном тексте: было "435 97 4 / 35 157")
+    [ {x:435,y:97},  {x:435,y:157}, {x:435,y:217}, {x:435,y:277}, {x:435,y:337} ],
+    // 3-я синяя звезда
+    [ {x:437,y:108}, {x:437,y:168}, {x:437,y:228}, {x:437,y:288}, {x:437,y:348} ],
+    // 4-я синяя звезда
+    [ {x:413,y:108}, {x:413,y:168}, {x:413,y:228}, {x:413,y:288}, {x:413,y:348} ],
+    // 5-я синяя звезда
+    [ {x:428,y:122}, {x:428,y:182}, {x:428,y:242}, {x:428,y:302}, {x:428,y:368} ],
   ]
 };
 
-const STAR_USE_MANUAL = true;
-const STAR_SLOTS_PER_SIDE = 5;
-const STAR_FRAGMENTS_PER_SLOT = 5;
-
-function makeStarSlots(){
-  return Array.from({ length: STAR_SLOTS_PER_SIDE }, () => new Set());
-}
-
-const STAR_STATE = {
-  green: { slots: makeStarSlots() },
-  blue:  { slots: makeStarSlots() }
-};
-
 function syncStarState(color, score){
-  const entry = STAR_STATE[color];
-  if (!entry) return;
+  const slots = STAR_STATE[color];
+  if (!Array.isArray(slots)) return;
 
   const clamped = Math.max(0, Math.min(score, POINTS_TO_WIN));
-  const slots = entry.slots;
 
   slots.forEach(set => set.clear());
 
@@ -2743,20 +2752,15 @@ function drawStarsUI(ctx){
   ctx.imageSmoothingEnabled = false;
 
   try {
-    const toScreenX = (mx) => Math.round(frameLeft + mx * sx);
-    const toScreenY = (my) => Math.round(frameTop + my * sy);
-
     ["blue","green"].forEach(color => {
       const centers = STAR_CENTERS[color];
       const rects   = STAR_SOURCE_RECTS[color];
-      const slots   = STAR_STATE[color]?.slots || [];
+      const slots   = STAR_STATE[color] || [];
 
       const anchorX = (typeof STAR_LAYOUT?.anchorX === 'number') ? STAR_LAYOUT.anchorX : 0;
       const anchorY = (typeof STAR_LAYOUT?.anchorY === 'number') ? STAR_LAYOUT.anchorY : 0;
 
-      centers.forEach((c, slotIdx) => {
-        const baseX = anchorX + c.x; // макетные 460×800
-        const baseY = anchorY + c.y;
+      centers.forEach((_, slotIdx) => {
 
         for (let frag = 1; frag <= 5; frag++){
           if (!slots[slotIdx] || !slots[slotIdx].has(frag)) continue;
@@ -2769,17 +2773,22 @@ function drawStarsUI(ctx){
 
           let screenX, screenY;
 
-          if (typeof STAR_USE_MANUAL !== 'undefined' && STAR_USE_MANUAL) {
-            const m = (STAR_DEST_OFFSETS?.[color]?.[frag-1]) || {x:0, y:0}; // смещение топ-лево в МАКЕТЕ
-            screenX = toScreenX(baseX + m.x);
-            screenY = toScreenY(baseY + m.y);
+          // dstW/dstH уже посчитаны выше
+          if (STAR_USE_MANUAL_GRID) {
+            // Рисуем строго по заранее заданным top-left координатам
+            const pos = STAR_GRID_TOPLEFT[color]?.[slotIdx]?.[frag-1];
+            if (!pos) continue;
+            screenX = Math.round(frameLeft + pos.x * sx);
+            screenY = Math.round(frameTop + pos.y * sy);
           } else {
-            const [ox, oy] = STAR_OFFSETS[color][frag-1];
-            const offScale = (typeof STAR_OFFSET_SCALE !== 'undefined') ? STAR_OFFSET_SCALE : 1;
-            const targetX = baseX + ox * offScale; // центр в МАКЕТЕ
-            const targetY = baseY + oy * offScale;
-            screenX = toScreenX(targetX) - Math.round(dstW/2);
-            screenY = toScreenY(targetY) - Math.round(dstH/2);
+            // Старый вариант «от центра + смещение»
+            const [ox, oy] = STAR_OFFSETS[color][frag-1] || [0,0];
+            const baseX = (typeof STAR_LAYOUT?.anchorX === 'number' ? STAR_LAYOUT.anchorX : 0) + (STAR_CENTERS[color]?.[slotIdx]?.x || 0);
+            const baseY = (typeof STAR_LAYOUT?.anchorY === 'number' ? STAR_LAYOUT.anchorY : 0) + (STAR_CENTERS[color]?.[slotIdx]?.y || 0);
+            const targetX = baseX + ox; // макет
+            const targetY = baseY + oy;
+            screenX = Math.round(frameLeft + targetX * sx) - Math.round(dstW/2);
+            screenY = Math.round(frameTop + targetY * sy) - Math.round(dstH/2);
           }
 
           ctx.drawImage(STAR_IMG, srcX,srcY,srcW,srcH, screenX, screenY, dstW, dstH);
