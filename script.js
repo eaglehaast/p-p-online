@@ -348,14 +348,29 @@ const MAPS = [
 
 let settings = { addAA: false, sharpEdges: false, mapIndex: 0 };
 
+let storageAvailable = true;
+function getStoredSetting(key){
+  if(!storageAvailable){
+    return null;
+  }
+  try {
+    const storage = window.localStorage;
+    return storage ? storage.getItem(key) : null;
+  } catch(err){
+    storageAvailable = false;
+    console.warn('localStorage unavailable, falling back to defaults.', err);
+    return null;
+  }
+}
+
 function loadSettings(){
-  const fr = parseInt(localStorage.getItem('settings.flightRangeCells'));
+  const fr = parseInt(getStoredSetting('settings.flightRangeCells'), 10);
   flightRangeCells = Number.isNaN(fr) ? 15 : fr;
-  const amp = parseFloat(localStorage.getItem('settings.aimingAmplitude'));
+  const amp = parseFloat(getStoredSetting('settings.aimingAmplitude'));
   aimingAmplitude = Number.isNaN(amp) ? 10 / 4 : amp;
-  settings.addAA = localStorage.getItem('settings.addAA') === 'true';
-  settings.sharpEdges = localStorage.getItem('settings.sharpEdges') === 'true';
-  const mapIdx = parseInt(localStorage.getItem('settings.mapIndex'));
+  settings.addAA = getStoredSetting('settings.addAA') === 'true';
+  settings.sharpEdges = getStoredSetting('settings.sharpEdges') === 'true';
+  const mapIdx = parseInt(getStoredSetting('settings.mapIndex'), 10);
   settings.mapIndex = Number.isNaN(mapIdx) ? 0 : Math.min(MAPS.length - 1, Math.max(0, mapIdx));
 
   // Clamp loaded values so corrupted or out-of-range settings
@@ -369,13 +384,13 @@ function loadSettings(){
 loadSettings();
 
 // Highlight advanced settings button if custom settings are stored
-const hasCustomSettings = [
+const hasCustomSettings = storageAvailable && [
   'settings.flightRangeCells',
   'settings.aimingAmplitude',
   'settings.addAA',
   'settings.sharpEdges',
   'settings.mapIndex'
-].some(key => localStorage.getItem(key) !== null);
+].some(key => getStoredSetting(key) !== null);
 
 if(hasCustomSettings && classicRulesBtn && advancedSettingsBtn){
   classicRulesBtn.classList.remove('selected');
