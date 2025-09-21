@@ -496,35 +496,52 @@ function computeFallbackOffsets(color){
   const grid = STAR_GRID_TOPLEFT?.[color];
   const centers = STAR_CENTERS?.[color];
 
-  if (!Array.isArray(grid) || grid.length === 0 || !Array.isArray(centers) || centers.length === 0) {
-    return symmetric;
-  }
+  const slotCount = Math.max(
+    Array.isArray(grid) ? grid.length : 0,
+    Array.isArray(centers) ? centers.length : 0
+  );
 
-  const baseY = centers[0]?.y || 0;
+  if (slotCount === 0) {
+    return rects.map((_, fragIdx) => symmetric?.[fragIdx] || [0, 0]);
+  }
 
   let hasManualData = false;
 
   const offsets = rects.map((rect, fragIdx) => {
-    const height = rect?.[3] || 0;
-    const manualCenters = [];
+    const [symX, symY] = symmetric?.[fragIdx] ?? [0, 0];
+    const perSlot = Array.from({ length: slotCount }, () => [symX, symY]);
 
-    grid.forEach(slot => {
-      const cell = slot?.[fragIdx];
-      if (cell && typeof cell.y === 'number') {
-        manualCenters.push(cell.y + height / 2);
+    for (let slotIdx = 0; slotIdx < slotCount; slotIdx++) {
+      const cell = grid?.[slotIdx]?.[fragIdx];
+      if (!cell || typeof cell.x !== 'number' || typeof cell.y !== 'number') {
+        continue;
       }
-    });
 
-    if (!manualCenters.length) {
-      return symmetric[fragIdx];
+      const center = centers?.[slotIdx] || {};
+      const baseCx = typeof center.x === 'number' ? center.x : 0;
+      const baseCy = typeof center.y === 'number' ? center.y : 0;
+
+      const width = rect?.[2] || 0;
+      const height = rect?.[3] || 0;
+
+      const manualCx = cell.x + width / 2;
+      const manualCy = cell.y + height / 2;
+
+      perSlot[slotIdx] = [manualCx - baseCx, manualCy - baseCy];
+      hasManualData = true;
     }
 
-    hasManualData = true;
-    const avgY = manualCenters.reduce((acc, value) => acc + value, 0) / manualCenters.length;
-    return [0, avgY - baseY];
+    return perSlot;
   });
 
-  return hasManualData ? offsets : symmetric;
+  if (!hasManualData) {
+    return offsets.map((perSlot, fragIdx) => {
+      const [symX, symY] = symmetric?.[fragIdx] ?? [0, 0];
+      return perSlot.map(() => [symX, symY]);
+    });
+  }
+
+  return offsets;
 }
 
 const STAR_OFFSETS = {
@@ -2898,8 +2915,16 @@ function drawStarsUI(ctx){
             screenY = Math.round(frameTop + pos.y * sy);
           } else {
             // Старый вариант «от центра + смещение»
-            const offset = STAR_OFFSETS?.[color]?.[frag-1];
-            const [ox, oy] = Array.isArray(offset) ? offset : [0, 0];
+            const perFragOffsets = STAR_OFFSETS?.[color]?.[frag-1];
+            let ox = 0;
+            let oy = 0;
+
+            if (Array.isArray(perFragOffsets?.[slotIdx])) {
+              [ox, oy] = perFragOffsets[slotIdx];
+            } else if (Array.isArray(perFragOffsets)) {
+              [ox, oy] = perFragOffsets;
+            }
+
             const center = centers?.[slotIdx];
             const baseX = anchorX + (center?.x || 0);
             const baseY = anchorY + (center?.y || 0);
