@@ -515,13 +515,11 @@ function syncStarState(color, score){
   slots.forEach(set => set.clear());
 
   let remaining = clamped;
-  for (const set of slots){
-    const fill = Math.min(remaining, STAR_FRAGMENTS_PER_SLOT);
-    for (let frag = 1; frag <= fill; frag++){
-      set.add(frag);
+  for (let frag = 1; frag <= STAR_FRAGMENTS_PER_SLOT && remaining > 0; frag++){
+    for (let slotIdx = 0; slotIdx < slots.length && remaining > 0; slotIdx++){
+      slots[slotIdx].add(frag);
+      remaining--;
     }
-    remaining -= fill;
-    if (remaining <= 0) break;
   }
 }
 
