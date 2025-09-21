@@ -449,6 +449,31 @@ const STAR_SOURCE_RECTS = {
   ]
 };
 
+const STAR_FALLBACK_FRAGMENT_GAP = 6;
+
+function buildStarOffsets(rects){
+  if (!Array.isArray(rects) || rects.length === 0) {
+    return [];
+  }
+
+  const totalHeight = rects.reduce((acc, rect) => acc + (rect?.[3] || 0), 0) +
+    STAR_FALLBACK_FRAGMENT_GAP * (rects.length - 1);
+
+  let cursor = -totalHeight / 2;
+
+  return rects.map((rect) => {
+    const height = rect?.[3] || 0;
+    const centerY = cursor + height / 2;
+    cursor += height + STAR_FALLBACK_FRAGMENT_GAP;
+    return [0, centerY];
+  });
+}
+
+const STAR_OFFSETS = {
+  green: buildStarOffsets(STAR_SOURCE_RECTS.green),
+  blue: buildStarOffsets(STAR_SOURCE_RECTS.blue)
+};
+
 const STAR_CENTERS = {
   green: [
     { x: 0, y: 0 },
@@ -2758,6 +2783,8 @@ function drawStarsUI(ctx){
       const anchorX = (typeof STAR_LAYOUT?.anchorX === 'number') ? STAR_LAYOUT.anchorX : 0;
       const anchorY = (typeof STAR_LAYOUT?.anchorY === 'number') ? STAR_LAYOUT.anchorY : 0;
 
+      if (!Array.isArray(centers) || !Array.isArray(rects)) return;
+
       centers.forEach((_, slotIdx) => {
 
         for (let frag = 1; frag <= 5; frag++){
@@ -2780,9 +2807,11 @@ function drawStarsUI(ctx){
             screenY = Math.round(frameTop + pos.y * sy);
           } else {
             // Старый вариант «от центра + смещение»
-            const [ox, oy] = STAR_OFFSETS[color][frag-1] || [0,0];
-            const baseX = (typeof STAR_LAYOUT?.anchorX === 'number' ? STAR_LAYOUT.anchorX : 0) + (STAR_CENTERS[color]?.[slotIdx]?.x || 0);
-            const baseY = (typeof STAR_LAYOUT?.anchorY === 'number' ? STAR_LAYOUT.anchorY : 0) + (STAR_CENTERS[color]?.[slotIdx]?.y || 0);
+            const offset = STAR_OFFSETS?.[color]?.[frag-1];
+            const [ox, oy] = Array.isArray(offset) ? offset : [0, 0];
+            const center = centers?.[slotIdx];
+            const baseX = anchorX + (center?.x || 0);
+            const baseY = anchorY + (center?.y || 0);
             const targetX = baseX + ox; // макет
             const targetY = baseY + oy;
             screenX = Math.round(frameLeft + targetX * sx) - Math.round(dstW/2);
