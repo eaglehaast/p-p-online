@@ -14,14 +14,6 @@ const gameContainer = document.getElementById("gameContainer");
 const gameCanvas  = document.getElementById("gameCanvas");
 const gameCtx     = gameCanvas.getContext("2d");
 
-// ---- STAR_LAYOUT safe shim (не даём получить ReferenceError) ----
-window.STAR_LAYOUT = window.STAR_LAYOUT || {};
-if (typeof STAR_LAYOUT.sx !== 'function') STAR_LAYOUT.sx = () => gameCanvas.width  / 460;
-if (typeof STAR_LAYOUT.sy !== 'function') STAR_LAYOUT.sy = () => gameCanvas.height / 800;
-if (typeof STAR_LAYOUT.anchorX !== 'number') STAR_LAYOUT.anchorX = 0;
-if (typeof STAR_LAYOUT.anchorY !== 'number') STAR_LAYOUT.anchorY = 0;
-if (typeof window.STAR_READY === 'undefined') window.STAR_READY = false;
-
 const aimCanvas   = document.getElementById("aimCanvas");
 const aimCtx      = aimCanvas.getContext("2d");
 
@@ -64,6 +56,27 @@ const FRAME_PADDING_Y = 80;
 const FRAME_BASE_WIDTH = CANVAS_BASE_WIDTH + FRAME_PADDING_X * 2; // 460
 const FRAME_BASE_HEIGHT = CANVAS_BASE_HEIGHT + FRAME_PADDING_Y * 2; // 800
 const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
+
+// ---- STAR_LAYOUT safe shim (не даём получить ReferenceError) ----
+window.STAR_LAYOUT = window.STAR_LAYOUT || {};
+
+function getDefaultStarScaleX(){
+  const rect = gameCanvas.getBoundingClientRect();
+  const width = rect.width || CANVAS_BASE_WIDTH;
+  return width / CANVAS_BASE_WIDTH;
+}
+
+function getDefaultStarScaleY(){
+  const rect = gameCanvas.getBoundingClientRect();
+  const height = rect.height || CANVAS_BASE_HEIGHT;
+  return height / CANVAS_BASE_HEIGHT;
+}
+
+if (typeof STAR_LAYOUT.sx !== 'function') STAR_LAYOUT.sx = () => getDefaultStarScaleX();
+if (typeof STAR_LAYOUT.sy !== 'function') STAR_LAYOUT.sy = () => getDefaultStarScaleY();
+if (typeof STAR_LAYOUT.anchorX !== 'number') STAR_LAYOUT.anchorX = 0;
+if (typeof STAR_LAYOUT.anchorY !== 'number') STAR_LAYOUT.anchorY = 0;
+if (typeof window.STAR_READY === 'undefined') window.STAR_READY = false;
 
 const brickFrameImg = new Image();
 // Load the default map on startup so we don't request a missing image
@@ -2709,9 +2722,20 @@ function checkVictory(){
 function drawStarsUI(ctx){
   if (!STAR_READY) return;
 
+  const rect = gameCanvas.getBoundingClientRect();
+  const scaleXRaw = rect.width / CANVAS_BASE_WIDTH;
+  const scaleYRaw = rect.height / CANVAS_BASE_HEIGHT;
+  const layoutScaleX = Number.isFinite(scaleXRaw) && scaleXRaw > 0 ? scaleXRaw : 1;
+  const layoutScaleY = Number.isFinite(scaleYRaw) && scaleYRaw > 0 ? scaleYRaw : 1;
+
+  const frameLeft = (Number.isFinite(rect.left) ? rect.left : 0) - FRAME_PADDING_X * layoutScaleX;
+  const frameTop  = (Number.isFinite(rect.top)  ? rect.top  : 0) - FRAME_PADDING_Y * layoutScaleY;
+
   // коэффициенты перевода макет→экран
-  const sx = (typeof STAR_LAYOUT?.sx === 'function') ? STAR_LAYOUT.sx() : 1;
-  const sy = (typeof STAR_LAYOUT?.sy === 'function') ? STAR_LAYOUT.sy() : 1;
+  const sxCandidate = (typeof STAR_LAYOUT?.sx === 'function') ? STAR_LAYOUT.sx() : layoutScaleX;
+  const syCandidate = (typeof STAR_LAYOUT?.sy === 'function') ? STAR_LAYOUT.sy() : layoutScaleY;
+  const sx = Number.isFinite(sxCandidate) && sxCandidate !== 0 ? sxCandidate : layoutScaleX;
+  const sy = Number.isFinite(syCandidate) && syCandidate !== 0 ? syCandidate : layoutScaleY;
 
   ctx.save();
   // рисуем из «чистого» состояния, чтобы чужие трансформации не протекали
@@ -2719,8 +2743,8 @@ function drawStarsUI(ctx){
   ctx.imageSmoothingEnabled = false;
 
   try {
-    const toScreenX = (mx) => Math.round(mx * sx);
-    const toScreenY = (my) => Math.round(my * sy);
+    const toScreenX = (mx) => Math.round(frameLeft + mx * sx);
+    const toScreenY = (my) => Math.round(frameTop + my * sy);
 
     ["blue","green"].forEach(color => {
       const centers = STAR_CENTERS[color];
