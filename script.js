@@ -418,11 +418,113 @@ let greenFlagCarrier = null;
 let blueFlagStolenBy = null;
 let greenFlagStolenBy = null;
 
+const STAR_IMG = new Image();
+const STAR_SOURCE_RECTS = {
+  green: [
+    [2, 1, 14, 19],
+    [40, 0, 14, 20],
+    [77, 6, 23, 13],
+    [119, 6, 23, 13],
+    [161, 0, 13, 22]
+  ],
+  blue: [
+    [0, 40, 15, 19],
+    [40, 43, 15, 17],
+    [78, 47, 23, 14],
+    [120, 47, 23, 14],
+    [160, 36, 14, 25]
+  ]
+};
+
+const STAR_CENTERS = {
+  green: [
+    { x: 0, y: 0 },
+    { x: 40, y: 0 },
+    { x: 80, y: 0 },
+    { x: 120, y: 0 },
+    { x: 160, y: 0 }
+  ],
+  blue: [
+    { x: 0, y: 40 },
+    { x: 40, y: 40 },
+    { x: 80, y: 40 },
+    { x: 120, y: 40 },
+    { x: 160, y: 40 }
+  ]
+};
+
+const STAR_DEST_OFFSETS = {
+  green: [
+    { x: 6, y: 1 },
+    { x: 7, y: 0 },
+    { x: 4, y: 6 },
+    { x: 0, y: 6 },
+    { x: 6, y: 3 }
+  ],
+  blue: [
+    { x: 5, y: 1 },
+    { x: 6, y: 0 },
+    { x: 3, y: 4 },
+    { x: 0, y: 4 },
+    { x: 4, y: 0 }
+  ]
+};
+
+const STAR_USE_MANUAL = true;
+const STAR_SLOTS_PER_SIDE = 5;
+const STAR_FRAGMENTS_PER_SLOT = 5;
+
+function makeStarSlots(){
+  return Array.from({ length: STAR_SLOTS_PER_SIDE }, () => new Set());
+}
+
+const STAR_STATE = {
+  green: { slots: makeStarSlots() },
+  blue:  { slots: makeStarSlots() }
+};
+
+function syncStarState(color, score){
+  const entry = STAR_STATE[color];
+  if (!entry) return;
+
+  const clamped = Math.max(0, Math.min(score, POINTS_TO_WIN));
+  const slots = entry.slots;
+
+  slots.forEach(set => set.clear());
+
+  let remaining = clamped;
+  for (const set of slots){
+    const fill = Math.min(remaining, STAR_FRAGMENTS_PER_SLOT);
+    for (let frag = 1; frag <= fill; frag++){
+      set.add(frag);
+    }
+    remaining -= fill;
+    if (remaining <= 0) break;
+  }
+}
+
+function syncAllStarStates(){
+  syncStarState("green", greenScore);
+  syncStarState("blue",  blueScore);
+}
+
+STAR_IMG.onload = () => {
+  window.STAR_READY = true;
+  syncAllStarStates();
+  if (typeof renderScoreboard === "function"){
+    renderScoreboard();
+  }
+};
+STAR_IMG.src = "sprite star 3.png";
+syncAllStarStates();
+
 function addScore(color, delta){
   if(color === "blue"){
     blueScore = Math.max(0, blueScore + delta);
+    syncStarState("blue", blueScore);
   } else if(color === "green"){
     greenScore = Math.max(0, greenScore + delta);
+    syncStarState("green", greenScore);
   }
 
   if(!isGameOver){
@@ -491,6 +593,7 @@ function resetGame(){
 
   greenScore = 0;
   blueScore  = 0;
+  syncAllStarStates();
   roundNumber = 0;
   roundTextTimer = 0;
   if(roundTransitionTimeout){
@@ -2418,12 +2521,14 @@ function awardPoint(color){
   if(isGameOver) return;
   if(color === "blue"){
     greenScore++;
+    syncStarState("green", greenScore);
     if(greenScore >= POINTS_TO_WIN){
       isGameOver = true;
       winnerColor = "green";
     }
   } else if(color === "green"){
     blueScore++;
+    syncStarState("blue", blueScore);
     if(blueScore >= POINTS_TO_WIN){
       isGameOver = true;
       winnerColor = "blue";
@@ -2840,6 +2945,7 @@ yesBtn.addEventListener("click", () => {
   if (gameOver) {
     blueScore = 0;
     greenScore = 0;
+    syncAllStarStates();
     roundNumber = 0;
     if(!advancedSettingsBtn?.classList.contains('selected')){
       settings.mapIndex = Math.floor(Math.random() * MAPS.length);
