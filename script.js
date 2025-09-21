@@ -499,6 +499,11 @@ const STAR_STATE = {
   green: Array.from({length:5}, ()=> new Set())
 };
 
+// Куда класть следующий кусок (крутится 0..4)
+let STAR_NEXT_SLOT = { blue: 0, green: 0 };
+// Какой по типу кусок класть следующим (крутится 1..5)
+let STAR_NEXT_FRAG = { blue: 1, green: 1 };
+
 // Режим ручного позиционирования (рисуем строго по заданным top-left координатам)
 const STAR_USE_MANUAL_GRID = true;
 
@@ -538,14 +543,52 @@ function syncStarState(color, score){
   const clamped = Math.max(0, Math.min(score, POINTS_TO_WIN));
 
   slots.forEach(set => set.clear());
+  STAR_NEXT_SLOT[color] = 0;
+  STAR_NEXT_FRAG[color] = 1;
 
-  let remaining = clamped;
-  for (let frag = 1; frag <= STAR_FRAGMENTS_PER_SLOT && remaining > 0; frag++){
-    for (let slotIdx = 0; slotIdx < slots.length && remaining > 0; slotIdx++){
-      slots[slotIdx].add(frag);
-      remaining--;
-    }
+  for (let count = 0; count < clamped; count++){
+    addPointToSide(color);
   }
+}
+
+// Новый распределитель: крутим и слот, и тип фрагмента (крутится по кругу)
+function addPointToSide(color){
+  const pool = STAR_STATE[color];
+  if (!pool) return;
+
+  // 1) найдём ближайший незаполненный слот, начиная с STAR_NEXT_SLOT[color]
+  let slot = STAR_NEXT_SLOT[color] % pool.length;
+  let attempts = 0;
+  while (attempts < pool.length && pool[slot].size >= STAR_FRAGMENTS_PER_SLOT){
+    slot = (slot + 1) % pool.length;
+    attempts++;
+  }
+  if (attempts >= pool.length){
+    console.log(`[STAR] все 5 звёзд ${color} уже полные`);
+    return; // 25 фрагментов уже стоят
+  }
+
+  // 2) возьмём следующий тип фрагмента и найдём тот, которого ещё нет в этом слоте
+  let frag = STAR_NEXT_FRAG[color]; // 1..5
+  let tries = 0;
+  while (tries < STAR_FRAGMENTS_PER_SLOT && pool[slot].has(frag)){
+    frag = (frag % STAR_FRAGMENTS_PER_SLOT) + 1;
+    tries++;
+  }
+  if (tries >= STAR_FRAGMENTS_PER_SLOT){
+    // на всякий случай: если слот «странный», просто выходим
+    console.warn(`[STAR] слот ${slot+1} у ${color} уже содержит все типы`);
+    return;
+  }
+
+  // 3) ставим фрагмент
+  pool[slot].add(frag);
+  // 4) проворачиваем указатели на следующий раз
+  STAR_NEXT_SLOT[color] = (slot + 1) % pool.length;
+  STAR_NEXT_FRAG[color] = (frag % STAR_FRAGMENTS_PER_SLOT) + 1;
+
+  // Лог для контроля
+  // console.log(`[STAR] +1 ${color}: слот ${slot+1}, фрагмент ${frag}`);
 }
 
 function syncAllStarStates(){
@@ -640,6 +683,10 @@ function resetGame(){
 
   greenScore = 0;
   blueScore  = 0;
+  STAR_NEXT_SLOT = { blue: 0, green: 0 };
+  STAR_NEXT_FRAG = { blue: 1, green: 1 };
+  STAR_STATE.blue  = Array.from({length:5}, ()=> new Set());
+  STAR_STATE.green = Array.from({length:5}, ()=> new Set());
   syncAllStarStates();
   roundNumber = 0;
   roundTextTimer = 0;
@@ -3028,6 +3075,12 @@ function startNewRound(){
   }
   endGameDiv.style.display = "none";
   isGameOver=false; winnerColor=null;
+
+  STAR_NEXT_SLOT = { blue: 0, green: 0 };
+  STAR_NEXT_FRAG = { blue: 1, green: 1 };
+  STAR_STATE.blue  = Array.from({length:5}, ()=> new Set());
+  STAR_STATE.green = Array.from({length:5}, ()=> new Set());
+  syncAllStarStates();
 
   lastFirstTurn = 1 - lastFirstTurn;
   turnIndex = lastFirstTurn;
