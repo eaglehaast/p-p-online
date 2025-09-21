@@ -449,9 +449,26 @@ const STAR_SOURCE_RECTS = {
   ]
 };
 
+const STAR_CENTERS = {
+  green: [
+    { x: 0, y: 0 },
+    { x: 40, y: 0 },
+    { x: 80, y: 0 },
+    { x: 120, y: 0 },
+    { x: 160, y: 0 }
+  ],
+  blue: [
+    { x: 0, y: 40 },
+    { x: 40, y: 40 },
+    { x: 80, y: 40 },
+    { x: 120, y: 40 },
+    { x: 160, y: 40 }
+  ]
+};
+
 const STAR_FALLBACK_FRAGMENT_GAP = 6;
 
-function buildStarOffsets(rects){
+function buildSymmetricOffsets(rects){
   if (!Array.isArray(rects) || rects.length === 0) {
     return [];
   }
@@ -469,26 +486,50 @@ function buildStarOffsets(rects){
   });
 }
 
-const STAR_OFFSETS = {
-  green: buildStarOffsets(STAR_SOURCE_RECTS.green),
-  blue: buildStarOffsets(STAR_SOURCE_RECTS.blue)
-};
+function computeFallbackOffsets(color){
+  const rects = STAR_SOURCE_RECTS?.[color];
+  if (!Array.isArray(rects) || rects.length === 0) {
+    return [];
+  }
 
-const STAR_CENTERS = {
-  green: [
-    { x: 0, y: 0 },
-    { x: 40, y: 0 },
-    { x: 80, y: 0 },
-    { x: 120, y: 0 },
-    { x: 160, y: 0 }
-  ],
-  blue: [
-    { x: 0, y: 40 },
-    { x: 40, y: 40 },
-    { x: 80, y: 40 },
-    { x: 120, y: 40 },
-    { x: 160, y: 40 }
-  ]
+  const symmetric = buildSymmetricOffsets(rects);
+  const grid = STAR_GRID_TOPLEFT?.[color];
+  const centers = STAR_CENTERS?.[color];
+
+  if (!Array.isArray(grid) || grid.length === 0 || !Array.isArray(centers) || centers.length === 0) {
+    return symmetric;
+  }
+
+  const baseY = centers[0]?.y || 0;
+
+  let hasManualData = false;
+
+  const offsets = rects.map((rect, fragIdx) => {
+    const height = rect?.[3] || 0;
+    const manualCenters = [];
+
+    grid.forEach(slot => {
+      const cell = slot?.[fragIdx];
+      if (cell && typeof cell.y === 'number') {
+        manualCenters.push(cell.y + height / 2);
+      }
+    });
+
+    if (!manualCenters.length) {
+      return symmetric[fragIdx];
+    }
+
+    hasManualData = true;
+    const avgY = manualCenters.reduce((acc, value) => acc + value, 0) / manualCenters.length;
+    return [0, avgY - baseY];
+  });
+
+  return hasManualData ? offsets : symmetric;
+}
+
+const STAR_OFFSETS = {
+  green: [],
+  blue: []
 };
 
 const STAR_FRAGMENTS_PER_SLOT = 5;
@@ -535,6 +576,9 @@ const STAR_GRID_TOPLEFT = {
     [ {x:428,y:122}, {x:428,y:182}, {x:428,y:242}, {x:428,y:302}, {x:428,y:368} ],
   ]
 };
+
+STAR_OFFSETS.green = computeFallbackOffsets('green');
+STAR_OFFSETS.blue  = computeFallbackOffsets('blue');
 
 function syncStarState(color, score){
   const slots = STAR_STATE[color];
