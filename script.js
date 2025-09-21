@@ -2700,6 +2700,8 @@ function renderScoreboard(){
     false
   );
 
+  drawStarsUI(planeCtx);
+
   planeCtx.restore();
 }
 
