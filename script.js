@@ -358,6 +358,7 @@ function drawStarsUI(ctx){
   const sx = (typeof STAR_LAYOUT?.sx === 'function') ? STAR_LAYOUT.sx() : 1;
   const sy = (typeof STAR_LAYOUT?.sy === 'function') ? STAR_LAYOUT.sy() : 1;
 
+
   // 2) рисуем без унаследованных трансформаций
   ctx.save();
   ctx.setTransform(1,0,0,1,0,0);
@@ -415,15 +416,21 @@ function drawStarsUI(ctx){
           }
 
           ctx.drawImage(STAR_IMG, srcX,srcY,srcW,srcH, screenX, screenY, dstW, dstH);
+
         }
-      });
+
+        ctx.drawImage(STAR_IMG, srcX,srcY,srcW,srcH, screenX, screenY, dstW, dstH);
+      }
     });
+  });
+
 
   } catch (err) {
     console.warn('[STAR] drawStarsUI error:', err);
   } finally {
     ctx.restore();
   }
+
 }
 
 // Временные хоткеи для ручной проверки (можно убрать)
