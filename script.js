@@ -358,56 +358,65 @@ function drawStarsUI(ctx){
   const sx = (typeof STAR_LAYOUT?.sx === 'function') ? STAR_LAYOUT.sx() : 1;
   const sy = (typeof STAR_LAYOUT?.sy === 'function') ? STAR_LAYOUT.sy() : 1;
 
+
   // 2) рисуем без унаследованных трансформаций
   ctx.save();
   ctx.setTransform(1,0,0,1,0,0);
   ctx.imageSmoothingEnabled = false;
 
-  // 3) утилита перевода макетных координат в экранные
-  const toScreenX = (mx) => Math.round(mx * sx);
-  const toScreenY = (my) => Math.round(my * sy);
+  try {
 
-  // 4) обходим две стороны
-  ["blue","green"].forEach(color => {
-    const centers = STAR_CENTERS[color];           // [{x,y} ...] в МАКЕТЕ 460×800
-    const rects   = STAR_SOURCE_RECTS[color];      // [sx,sy,sw,sh] в ПИКСЕЛЯХ СПРАЙТА
-    const offs    = STAR_OFFSETS[color];           // [ox,oy]       в ПИКСЕЛЯХ СПРАЙТА (для «веера»)
-    const slots   = STAR_STATE[color].slots;       // Set фрагментов 1..5
+    // 3) утилита перевода макетных координат в экранные
+    const toScreenX = (mx) => Math.round(mx * sx);
+    const toScreenY = (my) => Math.round(my * sy);
 
-    centers.forEach((c, slotIdx) => {
-      // ВАЖНО: baseX/baseY — в МАКЕТЕ (без *sx/sy!)
-      const baseX = (STAR_LAYOUT.anchorX || 0) + c.x;
-      const baseY = (STAR_LAYOUT.anchorY || 0) + c.y;
+    // 4) обходим две стороны
+    ["blue","green"].forEach(color => {
+      const centers = STAR_CENTERS[color];           // [{x,y} ...] в МАКЕТЕ 460×800
+      const rects   = STAR_SOURCE_RECTS[color];      // [sx,sy,sw,sh] в ПИКСЕЛЯХ СПРАЙТА
+      const offs    = STAR_OFFSETS[color];           // [ox,oy]       в ПИКСЕЛЯХ СПРАЙТА (для «веера»)
+      const slots   = STAR_STATE[color].slots;       // Set фрагментов 1..5
 
-      for (let frag = 1; frag <= 5; frag++){
-        if (!slots[slotIdx].has(frag)) continue;
+      centers.forEach((c, slotIdx) => {
+        // ВАЖНО: baseX/baseY — в МАКЕТЕ (без *sx/sy!)
+        const anchorX = (typeof STAR_LAYOUT?.anchorX === 'number') ? STAR_LAYOUT.anchorX : 0;
+        const anchorY = (typeof STAR_LAYOUT?.anchorY === 'number') ? STAR_LAYOUT.anchorY : 0;
+        const baseX = anchorX + c.x;  // макетные координаты 460x800
+        const baseY = anchorY + c.y;
 
-        const [srcX,srcY,srcW,srcH] = rects[frag-1];
+        for (let frag = 1; frag <= 5; frag++){
+          if (!slots[slotIdx].has(frag)) continue;
 
-        // Размер фрагмента в ЭКРАННЫХ пикселях (масштаб размера отдельно)
-        const dstW = Math.round(srcW * (typeof STAR_PIECE_SCALE !== 'undefined' ? STAR_PIECE_SCALE : 1) * sx);
-        const dstH = Math.round(srcH * (typeof STAR_PIECE_SCALE !== 'undefined' ? STAR_PIECE_SCALE : 1) * sy);
+          const [srcX,srcY,srcW,srcH] = rects[frag-1];
 
-        let screenX, screenY; // координаты ТОП-ЛЕВОГО угла в ЭКРАННЫХ пикселях
+          // Размер фрагмента в ЭКРАННЫХ пикселях (масштаб размера отдельно)
+          const dstW = Math.round(srcW * (typeof STAR_PIECE_SCALE !== 'undefined' ? STAR_PIECE_SCALE : 1) * sx);
+          const dstH = Math.round(srcH * (typeof STAR_PIECE_SCALE !== 'undefined' ? STAR_PIECE_SCALE : 1) * sy);
 
-        if (typeof STAR_USE_MANUAL !== 'undefined' && STAR_USE_MANUAL) {
-          // РУЧНОЙ режим: смещение ТОП-ЛЕВО от центра слота в МАКЕТЕ
-          const m = (STAR_DEST_OFFSETS?.[color]?.[frag-1]) || {x:0, y:0};
-          screenX = toScreenX(baseX + m.x);
-          screenY = toScreenY(baseY + m.y);
-        } else {
-          // «Веер»: смещение от центра слота в ПИКСЕЛЯХ СПРАЙТА, масштабирующееся ОТДЕЛЬНО
-          const slotOffsets = Array.isArray(offs?.[slotIdx]) ? offs[slotIdx] : offs;
-          const offset = Array.isArray(slotOffsets) ? slotOffsets[frag-1] : null;
-          const ox = Number.isFinite(offset?.[0]) ? offset[0] : 0;
-          const oy = Number.isFinite(offset?.[1]) ? offset[1] : 0;
-          const offScale = (typeof STAR_OFFSET_SCALE !== 'undefined' ? STAR_OFFSET_SCALE : 1);
-          // target в МАКЕТЕ:
-          const targetX = baseX + ox * offScale;
-          const targetY = baseY + oy * offScale;
-          // центр → топ-лево, потом в экран:
-          screenX = toScreenX(targetX) - Math.round(dstW/2);
-          screenY = toScreenY(targetY) - Math.round(dstH/2);
+          let screenX, screenY; // координаты ТОП-ЛЕВОГО угла в ЭКРАННЫХ пикселях
+
+          if (typeof STAR_USE_MANUAL !== 'undefined' && STAR_USE_MANUAL) {
+            // РУЧНОЙ режим: смещение ТОП-ЛЕВО от центра слота в МАКЕТЕ
+            const m = (STAR_DEST_OFFSETS?.[color]?.[frag-1]) || {x:0, y:0};
+            screenX = toScreenX(baseX + m.x);
+            screenY = toScreenY(baseY + m.y);
+          } else {
+            // «Веер»: смещение от центра слота в ПИКСЕЛЯХ СПРАЙТА, масштабирующееся ОТДЕЛЬНО
+            const slotOffsets = Array.isArray(offs?.[slotIdx]) ? offs[slotIdx] : offs;
+            const offset = Array.isArray(slotOffsets) ? slotOffsets[frag-1] : null;
+            const ox = Number.isFinite(offset?.[0]) ? offset[0] : 0;
+            const oy = Number.isFinite(offset?.[1]) ? offset[1] : 0;
+            const offScale = (typeof STAR_OFFSET_SCALE !== 'undefined' ? STAR_OFFSET_SCALE : 1);
+            // target в МАКЕТЕ:
+            const targetX = baseX + ox * offScale;
+            const targetY = baseY + oy * offScale;
+            // центр → топ-лево, потом в экран:
+            screenX = toScreenX(targetX) - Math.round(dstW/2);
+            screenY = toScreenY(targetY) - Math.round(dstH/2);
+          }
+
+          ctx.drawImage(STAR_IMG, srcX,srcY,srcW,srcH, screenX, screenY, dstW, dstH);
+
         }
 
         ctx.drawImage(STAR_IMG, srcX,srcY,srcW,srcH, screenX, screenY, dstW, dstH);
@@ -415,7 +424,13 @@ function drawStarsUI(ctx){
     });
   });
 
-  ctx.restore();
+
+  } catch (err) {
+    console.warn('[STAR] drawStarsUI error:', err);
+  } finally {
+    ctx.restore();
+  }
+
 }
 
 // Временные хоткеи для ручной проверки (можно убрать)
@@ -547,6 +562,13 @@ const goatIndicator   = document.getElementById("goatIndicator");
 const gameContainer = document.getElementById("gameContainer");
 const gameCanvas  = document.getElementById("gameCanvas");
 const gameCtx     = gameCanvas.getContext("2d");
+
+// ---- STAR_LAYOUT safe shim (защита от ReferenceError) ----
+window.STAR_LAYOUT = window.STAR_LAYOUT || {};
+if (typeof STAR_LAYOUT.sx !== 'function') STAR_LAYOUT.sx = () => gameCanvas.width  / 460;
+if (typeof STAR_LAYOUT.sy !== 'function') STAR_LAYOUT.sy = () => gameCanvas.height / 800;
+if (typeof STAR_LAYOUT.anchorX !== 'number') STAR_LAYOUT.anchorX = 0;
+if (typeof STAR_LAYOUT.anchorY !== 'number') STAR_LAYOUT.anchorY = 0;
 
 const aimCanvas   = document.getElementById("aimCanvas");
 const aimCtx      = aimCanvas.getContext("2d");
