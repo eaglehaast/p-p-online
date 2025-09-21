@@ -509,12 +509,14 @@ function syncAllStarStates(){
 }
 
 STAR_IMG.onload = () => {
+  console.log("[STAR] sprite loaded", STAR_IMG.width, STAR_IMG.height);
   window.STAR_READY = true;
   syncAllStarStates();
   if (typeof renderScoreboard === "function"){
     renderScoreboard();
   }
 };
+STAR_IMG.onerror = (e) => console.warn("[STAR] sprite load ERROR", e);
 STAR_IMG.src = "sprite star 3.png";
 syncAllStarStates();
 
