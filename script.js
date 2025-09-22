@@ -424,18 +424,18 @@ let greenFlagStolenBy = null;
 
 const DEFAULT_STAR_FRAGMENT_SOURCES = {
   green: [
-    "shards/green-1.png",
-    "shards/green-2.png",
-    "shards/green-3.png",
-    "shards/green-4.png",
-    "shards/green-5.png"
+    "shards/shard green 1.png",
+    "shards/shard green 2.png",
+    "shards/shard green 3.png",
+    "shards/shard green 4.png",
+    "shards/shard green 5.png"
   ],
   blue: [
-    "shards/blue-1.png",
-    "shards/blue-2.png",
-    "shards/blue-3.png",
-    "shards/blue-4.png",
-    "shards/blue-5.png"
+    "shards/shard blue 1.png",
+    "shards/shard blue 2.png",
+    "shards/shard blue 3.png",
+    "shards/shard blue 4.png",
+    "shards/shard blue 5.png"
   ]
 };
 
@@ -449,96 +449,76 @@ const STAR_FRAGMENT_SOURCES = (typeof window !== "undefined" && window.STAR_FRAG
 const STAR_PLACEMENT = {
   green: [
     [
-
       { x: 10, y: 417 },
-      { x: 10, y: 477 },
-      { x: 10, y: 537 },
-      { x: 10, y: 597 },
-      { x: 10, y: 657 }
-
-    ],
-    [
-
       { x: 25, y: 418 },
-      { x: 25, y: 478 },
-      { x: 25, y: 538 },
-      { x: 25, y: 598 },
-      { x: 25, y: 658 }
-
-    ],
-    [
-
       { x: 28, y: 428 },
-      { x: 28, y: 488 },
-      { x: 28, y: 548 },
-      { x: 28, y: 608 },
-      { x: 28, y: 668 }
-
-    ],
-    [
-
       { x: 4, y: 428 },
-      { x: 4, y: 488 },
-      { x: 4, y: 548 },
-      { x: 4, y: 608 },
-      { x: 4, y: 668 }
-
+      { x: 18, y: 439 }
     ],
     [
-
-      { x: 18, y: 439 },
-      { x: 18, y: 499 },
-      { x: 18, y: 559 },
-      { x: 18, y: 619 },
+      { x: 10, y: 477 },
+      { x: 25, y: 478 },
+      { x: 28, y: 488 },
+      { x: 4, y: 488 },
+      { x: 18, y: 499 }
+    ],
+    [
+      { x: 10, y: 537 },
+      { x: 25, y: 538 },
+      { x: 28, y: 548 },
+      { x: 4, y: 548 },
+      { x: 18, y: 559 }
+    ],
+    [
+      { x: 10, y: 597 },
+      { x: 25, y: 598 },
+      { x: 28, y: 608 },
+      { x: 4, y: 608 },
+      { x: 18, y: 619 }
+    ],
+    [
+      { x: 10, y: 657 },
+      { x: 25, y: 658 },
+      { x: 28, y: 668 },
+      { x: 4, y: 668 },
       { x: 18, y: 679 }
-
     ]
   ],
   blue: [
     [
-
       { x: 421, y: 100 },
-      { x: 421, y: 160 },
-      { x: 421, y: 220 },
-      { x: 421, y: 280 },
-      { x: 421, y: 340 }
-
-    ],
-    [
-
       { x: 435, y: 97 },
-      { x: 435, y: 157 },
-      { x: 435, y: 217 },
-      { x: 435, y: 277 },
-      { x: 435, y: 337 }
-
-    ],
-    [
-
       { x: 437, y: 108 },
-      { x: 437, y: 168 },
-      { x: 437, y: 228 },
-      { x: 437, y: 288 },
-      { x: 437, y: 348 }
-
-    ],
-    [
-
       { x: 413, y: 108 },
-      { x: 413, y: 168 },
-      { x: 413, y: 228 },
-      { x: 413, y: 288 },
-      { x: 413, y: 348 }
-
+      { x: 428, y: 122 }
     ],
     [
-
-      { x: 428, y: 122 },
-      { x: 428, y: 182 },
-      { x: 428, y: 242 },
-      { x: 428, y: 302 },
+      { x: 421, y: 160 },
+      { x: 435, y: 157 },
+      { x: 437, y: 168 },
+      { x: 413, y: 168 },
+      { x: 428, y: 182 }
+    ],
+    [
+      { x: 421, y: 220 },
+      { x: 435, y: 217 },
+      { x: 437, y: 228 },
+      { x: 413, y: 228 },
+      { x: 428, y: 242 }
+    ],
+    [
+      { x: 421, y: 280 },
+      { x: 435, y: 277 },
+      { x: 437, y: 288 },
+      { x: 413, y: 288 },
+      { x: 428, y: 302 }
+    ],
+    [
+      { x: 421, y: 340 },
+      { x: 435, y: 337 },
+      { x: 437, y: 348 },
+      { x: 413, y: 348 },
       { x: 428, y: 368 }
-
     ]
   ]
 };
