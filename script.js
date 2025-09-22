@@ -432,7 +432,7 @@ let blueFlagStolenBy = null;
 let greenFlagStolenBy = null;
 
 const STAR_IMG = new Image();
-const STAR_SOURCE_RECTS = {
+const STAR_SPRITE_RECTS = {
   green: [
     [2, 1, 14, 19],
     [40, 0, 14, 20],
@@ -2807,14 +2807,12 @@ function drawStarsUI(ctx){
   const layoutScaleX = Number.isFinite(scaleXRaw) && scaleXRaw > 0 ? scaleXRaw : 1;
   const layoutScaleY = Number.isFinite(scaleYRaw) && scaleYRaw > 0 ? scaleYRaw : 1;
 
-  const frameLeft = (Number.isFinite(rect.left) ? rect.left : 0) - FRAME_PADDING_X * layoutScaleX;
-  const frameTop  = (Number.isFinite(rect.top)  ? rect.top  : 0) - FRAME_PADDING_Y * layoutScaleY;
-
   // коэффициенты перевода макет→экран
   const sxCandidate = (typeof STAR_LAYOUT?.sx === 'function') ? STAR_LAYOUT.sx() : layoutScaleX;
   const syCandidate = (typeof STAR_LAYOUT?.sy === 'function') ? STAR_LAYOUT.sy() : layoutScaleY;
   const sx = Number.isFinite(sxCandidate) && sxCandidate !== 0 ? sxCandidate : layoutScaleX;
   const sy = Number.isFinite(syCandidate) && syCandidate !== 0 ? syCandidate : layoutScaleY;
+  const pieceScale = (typeof STAR_PIECE_SCALE !== 'undefined') ? STAR_PIECE_SCALE : 1;
 
   ctx.save();
   // рисуем из «чистого» состояния, чтобы чужие трансформации не протекали
@@ -2822,38 +2820,44 @@ function drawStarsUI(ctx){
   ctx.imageSmoothingEnabled = false;
 
   try {
-    ["blue","green"].forEach(color => {
+    const colors = ["blue", "green"];
+    for (const color of colors){
+      const slots = STAR_STATE[color] || [];
       const placements = STAR_PLACEMENT[color];
-      const rects   = STAR_SOURCE_RECTS[color];
-      const slots   = STAR_STATE[color] || [];
+      const rects = STAR_SPRITE_RECTS[color];
 
-      if (!Array.isArray(placements) || !Array.isArray(rects)) return;
+      if (!Array.isArray(placements) || !Array.isArray(rects)) continue;
 
-      placements.forEach((slotPlacements, slotIdx) => {
+      for (let slotIdx = 0; slotIdx < placements.length; slotIdx++){
         const slot = slots[slotIdx];
-        if (!slot || slot.size === 0) return;
+        if (!slot || slot.size === 0) continue;
 
         for (let frag = 1; frag <= STAR_FRAGMENTS_PER_SLOT; frag++){
           if (!slot.has(frag)) continue;
 
-          const [srcX,srcY,srcW,srcH] = rects[frag-1];
-          const pieceScale = (typeof STAR_PIECE_SCALE !== 'undefined') ? STAR_PIECE_SCALE : 1;
+          const rectDef = Array.isArray(rects) ? rects[frag-1] : null;
+          if (!Array.isArray(rectDef) || rectDef.length < 4){
+            console.warn(`[STAR] no rect for ${color} frag ${frag}`);
+            continue;
+          }
 
-          const dstW = Math.round(srcW * pieceScale * sx);
-          const dstH = Math.round(srcH * pieceScale * sy);
+          const [sxImg, syImg, sw, sh] = rectDef;
+          const dstW = Math.round(sw * pieceScale * sx);
+          const dstH = Math.round(sh * pieceScale * sy);
 
-          const placement = slotPlacements?.[frag-1];
-          if (!placement || typeof placement.x !== 'number' || typeof placement.y !== 'number') continue;
+          const pos = STAR_PLACEMENT[color]?.[slotIdx]?.[frag-1];
+          if (!pos || typeof pos.x !== 'number' || typeof pos.y !== 'number'){
+            console.warn(`[STAR] no pos for ${color} slot ${slotIdx} frag ${frag}`);
+            continue;
+          }
 
-          const scaledX = placement.x * sx;
-          const scaledY = placement.y * sy;
-          const screenX = Math.round(frameLeft + scaledX);
-          const screenY = Math.round(frameTop + scaledY);
+          const screenX = Math.round(pos.x * sx);
+          const screenY = Math.round(pos.y * sy);
 
-          ctx.drawImage(STAR_IMG, srcX,srcY,srcW,srcH, screenX, screenY, dstW, dstH);
+          ctx.drawImage(STAR_IMG, sxImg, syImg, sw, sh, screenX, screenY, dstW, dstH);
         }
-      });
-    });
+      }
+    }
   } catch (err){
     console.warn('[STAR] drawStarsUI error:', err);
   } finally {
