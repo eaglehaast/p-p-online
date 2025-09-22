@@ -422,102 +422,105 @@ let greenFlagCarrier = null;
 let blueFlagStolenBy = null;
 let greenFlagStolenBy = null;
 
-const STAR_IMG = new Image();
-const STAR_SPRITE_RECTS = {
+const DEFAULT_STAR_FRAGMENT_SOURCES = {
   green: [
-    [2, 1, 14, 19],
-    [40, 0, 14, 20],
-    [77, 6, 23, 13],
-    [119, 6, 23, 13],
-    [161, 0, 13, 22]
+    "shards/green-1.png",
+    "shards/green-2.png",
+    "shards/green-3.png",
+    "shards/green-4.png",
+    "shards/green-5.png"
   ],
   blue: [
-    [0, 40, 15, 19],
-    [40, 43, 15, 17],
-    [78, 47, 23, 14],
-    [120, 47, 23, 14],
-    [160, 36, 14, 25]
+    "shards/blue-1.png",
+    "shards/blue-2.png",
+    "shards/blue-3.png",
+    "shards/blue-4.png",
+    "shards/blue-5.png"
   ]
 };
 
+const STAR_FRAGMENT_SOURCES = (typeof window !== "undefined" && window.STAR_FRAGMENT_SOURCES)
+  ? window.STAR_FRAGMENT_SOURCES
+  : DEFAULT_STAR_FRAGMENT_SOURCES;
 
-// Для каждого шарда фиксируем смещение от его текущего top-left
-// (границы вырезанного прямоугольника) до настоящего якоря — точки,
-// которая должна совпасть с координатой из STAR_PLACEMENT. Значения
-// указаны в пикселях спрайта до масштабирования.
-const STAR_ANCHOR_OFF = {
+// Точные top-left координаты КАЖДОГО фрагмента (макет 460x800)
+// Порядок: [звезда 1..5][фрагмент 1..5] = {x, y}
+const STAR_PLACEMENT = {
   green: [
-    { ax: 1,  ay: 0  },
-    { ax: 0,  ay: 19 },
-    { ax: 10, ay: 0  },
-    { ax: 17, ay: 12 },
-    { ax: 6,  ay: 21 }
+    [
+      { x: 10, y: 417 },
+      { x: 10, y: 477 },
+      { x: 10, y: 537 },
+      { x: 10, y: 597 },
+      { x: 10, y: 657 }
+    ],
+    [
+      { x: 25, y: 418 },
+      { x: 25, y: 478 },
+      { x: 25, y: 538 },
+      { x: 25, y: 598 },
+      { x: 25, y: 658 }
+    ],
+    [
+      { x: 28, y: 428 },
+      { x: 28, y: 488 },
+      { x: 28, y: 548 },
+      { x: 28, y: 608 },
+      { x: 28, y: 668 }
+    ],
+    [
+      { x: 4, y: 428 },
+      { x: 4, y: 488 },
+      { x: 4, y: 548 },
+      { x: 4, y: 608 },
+      { x: 4, y: 668 }
+    ],
+    [
+      { x: 18, y: 439 },
+      { x: 18, y: 499 },
+      { x: 18, y: 559 },
+      { x: 18, y: 619 },
+      { x: 18, y: 679 }
+    ]
   ],
   blue: [
-    { ax: 0,  ay: 0  },
-    { ax: 0,  ay: 16 },
-    { ax: 9,  ay: 0  },
-    { ax: 17, ay: 13 },
-    { ax: 6,  ay: 24 }
+    [
+      { x: 421, y: 100 },
+      { x: 421, y: 160 },
+      { x: 421, y: 220 },
+      { x: 421, y: 280 },
+      { x: 421, y: 340 }
+    ],
+    [
+      { x: 435, y: 97 },
+      { x: 435, y: 157 },
+      { x: 435, y: 217 },
+      { x: 435, y: 277 },
+      { x: 435, y: 337 }
+    ],
+    [
+      { x: 437, y: 108 },
+      { x: 437, y: 168 },
+      { x: 437, y: 228 },
+      { x: 437, y: 288 },
+      { x: 437, y: 348 }
+    ],
+    [
+      { x: 413, y: 108 },
+      { x: 413, y: 168 },
+      { x: 413, y: 228 },
+      { x: 413, y: 288 },
+      { x: 413, y: 348 }
+    ],
+    [
+      { x: 428, y: 122 },
+      { x: 428, y: 182 },
+      { x: 428, y: 242 },
+      { x: 428, y: 302 },
+      { x: 428, y: 368 }
+    ]
   ]
 };
-
-
-// Офсеты (в пикселях макета 460x800) от центра звезды до точки размещения
-// конкретного фрагмента. Эти значения получены по данным спрайта, чтобы
-// каждый новый осколок корректно достраивал луч звезды.
-const STAR_FRAGMENT_BASE_OFFSETS = {
-  green: [
-    { x: 1,  y: 1   }, // нижний правый луч
-    { x: 13, y: 1.5 }, // правый верхний луч
-    { x: 8,  y: 1   }, // нижний левый луч
-    { x: 1,  y: 10  }, // левый верхний луч
-    { x: 6,  y: 19  }  // верхний луч
-  ],
-  blue: [
-    { x: 0,  y: 0   },
-    { x: 13, y: 2   },
-    { x: 6,  y: 2   },
-    { x: 1,  y: 10.5 },
-    { x: 7,  y: 23  }
-  ]
-};
-
-// Центры звёзд на макете (по 5 на сторону). Координаты подобраны так, чтобы
-// звёзды оставались в привычных областях интерфейса.
-const STAR_CENTERS = {
-  green: [
-    { x: 30, y: 430 },
-    { x: 30, y: 490 },
-    { x: 30, y: 550 },
-    { x: 30, y: 610 },
-    { x: 30, y: 670 }
-  ],
-  blue: [
-    { x: 430, y: 110 },
-    { x: 430, y: 170 },
-    { x: 430, y: 230 },
-    { x: 430, y: 290 },
-    { x: 430, y: 350 }
-  ]
-};
-
-function buildStarPlacement(){
-  const placement = { green: [], blue: [] };
-  for (const color of Object.keys(placement)){
-    const centers = STAR_CENTERS[color];
-    const baseOffsets = STAR_FRAGMENT_BASE_OFFSETS[color];
-    if (!Array.isArray(centers) || !Array.isArray(baseOffsets)) continue;
-
-    placement[color] = centers.map(center => {
-      return baseOffsets.map(base => ({
-        x: center.x - base.x,
-        y: center.y - base.y
-      }));
-    });
-  }
-  return placement;
-}
 
 // Состояние слотов: теперь 5 звёзд на сторону (каждая звезда = до 5 фрагментов)
 const STAR_STATE = {
@@ -531,9 +534,96 @@ let STAR_LAP = { blue: 0, green: 0 };
 let STAR_POS = { blue: 0, green: 0 };
 let STAR_PLACED_IN_LAP = { blue: 0, green: 0 };
 
-// Точные top-left координаты КАЖДОГО фрагмента (макет 460x800)
-// Порядок: [звезда 1..5][фрагмент 1..5] = {x, y}
-const STAR_PLACEMENT = buildStarPlacement();
+const STAR_IMAGES = {
+  blue: [],
+  green: []
+};
+
+let pendingStarImages = 0;
+let starAssetsInitialized = false;
+
+function finalizeStarLoading(){
+  if (starAssetsInitialized) return;
+  starAssetsInitialized = true;
+  window.STAR_READY = true;
+  console.log("[STAR] shards loaded");
+  syncAllStarStates();
+  if (typeof renderScoreboard === "function"){
+    renderScoreboard();
+  }
+}
+
+function handleStarAssetLoaded(){
+  pendingStarImages = Math.max(0, pendingStarImages - 1);
+  if (pendingStarImages === 0){
+    finalizeStarLoading();
+  }
+}
+
+function registerShardImage(src){
+  if (src instanceof String) src = src.valueOf();
+  if (typeof src !== "string"){
+    return null;
+  }
+  const trimmed = src.trim();
+  if (!trimmed){
+    return null;
+  }
+  const img = new Image();
+  pendingStarImages += 1;
+  img.onload = handleStarAssetLoaded;
+  img.onerror = (event) => {
+    console.warn(`[STAR] shard load ERROR ${trimmed}`, event);
+    handleStarAssetLoaded();
+  };
+  img.src = trimmed;
+  return img;
+}
+
+function loadStarImages(){
+  const colorSet = new Set([
+    ...Object.keys(STAR_PLACEMENT || {}),
+    ...Object.keys(STAR_FRAGMENT_SOURCES || {})
+  ]);
+  const colors = Array.from(colorSet);
+  pendingStarImages = 0;
+
+  colors.forEach(color => {
+    const slots = Array.isArray(STAR_PLACEMENT[color]) ? STAR_PLACEMENT[color].length : 0;
+    const sources = STAR_FRAGMENT_SOURCES[color];
+
+    if (!Array.isArray(sources)){
+      STAR_IMAGES[color] = Array.from({ length: slots }, () => []);
+      return;
+    }
+
+    const first = sources[0];
+
+    if (typeof first === "string" || first instanceof String){
+      const sharedImages = sources.map(src => registerShardImage(src));
+      STAR_IMAGES[color] = Array.from({ length: slots }, () => sharedImages);
+      return;
+    }
+
+    if (Array.isArray(first)){
+      const mapped = sources.map(slotSources => {
+        if (!Array.isArray(slotSources)) return [];
+        return slotSources.map(src => registerShardImage(src));
+      });
+      while (mapped.length < slots){
+        mapped.push(mapped[mapped.length - 1] || []);
+      }
+      STAR_IMAGES[color] = mapped;
+      return;
+    }
+
+    STAR_IMAGES[color] = Array.from({ length: slots }, () => []);
+  });
+
+  if (pendingStarImages === 0){
+    finalizeStarLoading();
+  }
+}
 
 function syncStarState(color, score){
   const slots = STAR_STATE[color];
@@ -606,16 +696,7 @@ function syncAllStarStates(){
   syncStarState("blue",  blueScore);
 }
 
-STAR_IMG.onload = () => {
-  console.log("[STAR] sprite loaded", STAR_IMG.width, STAR_IMG.height);
-  window.STAR_READY = true;
-  syncAllStarStates();
-  if (typeof renderScoreboard === "function"){
-    renderScoreboard();
-  }
-};
-STAR_IMG.onerror = (e) => console.warn("[STAR] sprite load ERROR", e);
-STAR_IMG.src = "sprite star 3.png";
+loadStarImages();
 syncAllStarStates();
 
 function addScore(color, delta){
@@ -2830,9 +2911,9 @@ function drawStarsUI(ctx){
     for (const color of colors){
       const slots = STAR_STATE[color] || [];
       const placements = STAR_PLACEMENT[color];
-      const rects = STAR_SPRITE_RECTS[color];
+      const images = STAR_IMAGES[color];
 
-      if (!Array.isArray(placements) || !Array.isArray(rects)) continue;
+      if (!Array.isArray(placements) || !Array.isArray(images)) continue;
 
       for (let slotIdx = 0; slotIdx < placements.length; slotIdx++){
         const slot = slots[slotIdx];
@@ -2850,25 +2931,19 @@ function drawStarsUI(ctx){
             continue;
           }
 
-          const rectDef = rects[frag - 1];
-          if (!Array.isArray(rectDef) || rectDef.length < 4){
-            console.warn(`[STAR] no rect for ${color} frag ${frag}`);
+          const slotImages = Array.isArray(images[slotIdx]) ? images[slotIdx] : [];
+          const img = slotImages[frag - 1];
+          if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight){
             continue;
           }
 
-          const [sxImg, syImg, sw, sh] = rectDef;
+          const dstW = Math.round(img.naturalWidth * scale * sx);
+          const dstH = Math.round(img.naturalHeight * scale * sy);
 
-          const dstW = Math.round(sw * scale * sx);
-          const dstH = Math.round(sh * scale * sy);
+          const screenX = Math.round(pos.x * sx) + (BOARD_ORIGIN?.x || 0);
+          const screenY = Math.round(pos.y * sy) + (BOARD_ORIGIN?.y || 0);
 
-          const anchor = STAR_ANCHOR_OFF[color]?.[frag - 1] || { ax: 0, ay: 0 };
-          const axScreen = Math.round(anchor.ax * scale * sx);
-          const ayScreen = Math.round(anchor.ay * scale * sy);
-
-          let screenX = Math.round(pos.x * sx) - axScreen + (BOARD_ORIGIN?.x || 0);
-          let screenY = Math.round(pos.y * sy) - ayScreen + (BOARD_ORIGIN?.y || 0);
-
-          ctx.drawImage(STAR_IMG, sxImg, syImg, sw, sh, screenX, screenY, dstW, dstH);
+          ctx.drawImage(img, screenX, screenY, dstW, dstH);
         }
       }
     }
