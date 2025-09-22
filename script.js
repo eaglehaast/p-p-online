@@ -440,6 +440,29 @@ const STAR_SPRITE_RECTS = {
   ]
 };
 
+
+// Для каждого шарда фиксируем смещение от его текущего top-left
+// (границы вырезанного прямоугольника) до настоящего якоря — точки,
+// которая должна совпасть с координатой из STAR_PLACEMENT. Значения
+// указаны в пикселях спрайта до масштабирования.
+const STAR_ANCHOR_OFF = {
+  green: [
+    { ax: 1,  ay: 0  },
+    { ax: 0,  ay: 19 },
+    { ax: 10, ay: 0  },
+    { ax: 17, ay: 12 },
+    { ax: 6,  ay: 21 }
+  ],
+  blue: [
+    { ax: 0,  ay: 0  },
+    { ax: 0,  ay: 16 },
+    { ax: 9,  ay: 0  },
+    { ax: 17, ay: 13 },
+    { ax: 6,  ay: 24 }
+  ]
+};
+
+
 // Офсеты (в пикселях макета 460x800) от центра звезды до точки размещения
 // конкретного фрагмента. Эти значения получены по данным спрайта, чтобы
 // каждый новый осколок корректно достраивал луч звезды.
@@ -2789,34 +2812,11 @@ function checkVictory(){
 function drawStarsUI(ctx){
   if (!STAR_READY) return;
 
-  let sx = gameCanvas.width / MOCKUP_W;
-  let sy = gameCanvas.height / MOCKUP_H;
-
-  if (gameCanvas.width > 0){
-    const frameScaleX = FRAME_BASE_WIDTH / gameCanvas.width;
-    if (Number.isFinite(frameScaleX) && frameScaleX > 0){
-      sx *= frameScaleX;
-    }
-  }
-
-  if (gameCanvas.height > 0){
-    const frameScaleY = FRAME_BASE_HEIGHT / gameCanvas.height;
-    if (Number.isFinite(frameScaleY) && frameScaleY > 0){
-      sy *= frameScaleY;
-    }
-  }
-
   const rect = gameCanvas.getBoundingClientRect();
-  const cssScaleX = rect.width / CANVAS_BASE_WIDTH;
-  const cssScaleY = rect.height / CANVAS_BASE_HEIGHT;
-
-  if (Number.isFinite(cssScaleX) && cssScaleX > 0){
-    sx *= cssScaleX;
-  }
-
-  if (Number.isFinite(cssScaleY) && cssScaleY > 0){
-    sy *= cssScaleY;
-  }
+  const rawScaleX = rect.width / CANVAS_BASE_WIDTH;
+  const rawScaleY = rect.height / CANVAS_BASE_HEIGHT;
+  const sx = Number.isFinite(rawScaleX) && rawScaleX > 0 ? rawScaleX : 1;
+  const sy = Number.isFinite(rawScaleY) && rawScaleY > 0 ? rawScaleY : sx;
 
   const scale = (typeof STAR_PIECE_SCALE !== 'undefined') ? STAR_PIECE_SCALE : 1;
 
@@ -2857,11 +2857,16 @@ function drawStarsUI(ctx){
           }
 
           const [sxImg, syImg, sw, sh] = rectDef;
+
           const dstW = Math.round(sw * scale * sx);
           const dstH = Math.round(sh * scale * sy);
 
-          let screenX = Math.round(pos.x * sx) + BOARD_ORIGIN.x;
-          let screenY = Math.round(pos.y * sy) + BOARD_ORIGIN.y;
+          const anchor = STAR_ANCHOR_OFF[color]?.[frag - 1] || { ax: 0, ay: 0 };
+          const axScreen = Math.round(anchor.ax * scale * sx);
+          const ayScreen = Math.round(anchor.ay * scale * sy);
+
+          let screenX = Math.round(pos.x * sx) - axScreen + (BOARD_ORIGIN?.x || 0);
+          let screenY = Math.round(pos.y * sy) - ayScreen + (BOARD_ORIGIN?.y || 0);
 
           ctx.drawImage(STAR_IMG, sxImg, syImg, sw, sh, screenX, screenY, dstW, dstH);
         }
