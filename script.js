@@ -511,8 +511,8 @@ function buildStarPlacement(){
 
     placement[color] = centers.map(center => {
       return baseOffsets.map(base => ({
-        x: center.x - base.x,
-        y: center.y - base.y
+        x: center.x + base.x,
+        y: center.y + base.y
       }));
     });
   }
