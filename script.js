@@ -457,9 +457,9 @@ const STAR_STATE = {
 
 const STAR_FRAGMENTS_PER_SLOT = 5;
 
-// Куда класть следующий кусок (индекс звезды 0..4 или >=5, если все собраны)
-let STAR_NEXT_SLOT = { blue: 0, green: 0 };
 let STAR_LAP = { blue: 0, green: 0 };
+let STAR_POS = { blue: 0, green: 0 };
+let STAR_PLACED_IN_LAP = { blue: 0, green: 0 };
 
 // Точные top-left координаты КАЖДОГО фрагмента (макет 460x800)
 // Порядок: [звезда 1..5][фрагмент 1..5] = {x, y}
@@ -497,103 +497,68 @@ function syncStarState(color, score){
   const clamped = Math.max(0, Math.min(score, POINTS_TO_WIN));
 
   slots.forEach(set => set.clear());
-  STAR_NEXT_SLOT[color] = 0;
   STAR_LAP[color] = 0;
+  STAR_POS[color] = 0;
+  STAR_PLACED_IN_LAP[color] = 0;
 
   for (let count = 0; count < clamped; count++){
     if (!addPointToSide(color)) break;
   }
 }
 
-function findNextIncompleteSlot(pool, startIndex = 0){
-  if (!Array.isArray(pool) || pool.length === 0) return -1;
-
-  const length = pool.length;
-  let normalized = Number.isInteger(startIndex) ? startIndex : 0;
-  if (normalized < 0) normalized = 0;
-  if (normalized >= length) normalized = normalized % length;
-
-  for (let offset = 0; offset < length; offset++){
-    const idx = (normalized + offset) % length;
-    const slot = pool[idx];
-    if (slot && slot.size < STAR_FRAGMENTS_PER_SLOT){
-      return idx;
-    }
-  }
-
-  return -1;
-}
-
 // Диагональный распределитель: выдаём фрагменты диагоналями по звёздам
 function addPointToSide(color){
   const pool = STAR_STATE[color];                   // массив из 5 Set'ов (по звездам)
-  if (!Array.isArray(pool) || !pool.length) return false;
+  if (!Array.isArray(pool) || pool.length === 0) return false;
 
   const totalSlots = pool.length;
   const fragmentsPerSlot = STAR_FRAGMENTS_PER_SLOT;
-  const normalizedNext = Number.isInteger(STAR_NEXT_SLOT[color]) ? STAR_NEXT_SLOT[color] : 0;
-  const lap = Number.isInteger(STAR_LAP[color]) ? STAR_LAP[color] : 0;
+  if (totalSlots <= 0 || fragmentsPerSlot <= 0) return false;
 
-  const slot = findNextIncompleteSlot(pool, normalizedNext);
-  if (slot === -1){
-    STAR_NEXT_SLOT[color] = totalSlots;
-    return false;
-  }
+  let lap = Number.isInteger(STAR_LAP[color]) ? STAR_LAP[color] : 0;
+  let pos = Number.isInteger(STAR_POS[color]) ? STAR_POS[color] : 0;
+  let placedInLap = Number.isInteger(STAR_PLACED_IN_LAP[color]) ? STAR_PLACED_IN_LAP[color] : 0;
 
-  const pieces = pool[slot];
-  let fragment = ((slot + lap) % fragmentsPerSlot) + 1;
+  if (lap < 0) lap = 0;
+  if (!Number.isInteger(placedInLap) || placedInLap < 0) placedInLap = 0;
+  if (totalSlots && placedInLap >= totalSlots) placedInLap = placedInLap % totalSlots;
+
+  let nextPos = ((pos % totalSlots) + totalSlots) % totalSlots;
   let attempts = 0;
-  while (attempts < fragmentsPerSlot && pieces.has(fragment)){
-    fragment = (fragment % fragmentsPerSlot) + 1;
-    attempts++;
-  }
+  let placed = false;
 
-  if (attempts >= fragmentsPerSlot){
-    const nextSlot = findNextIncompleteSlot(pool, slot + 1);
-    if (nextSlot === -1){
-      STAR_NEXT_SLOT[color] = totalSlots;
-    } else {
-      STAR_NEXT_SLOT[color] = nextSlot;
-      if (nextSlot <= slot){
-        STAR_LAP[color] = ((lap + 1) % fragmentsPerSlot);
+  while (attempts < totalSlots && !placed){
+    const slotIndex = nextPos;
+    const pieces = pool[slotIndex];
+
+    if (pieces && pieces.size < fragmentsPerSlot){
+      const fragment = ((lap % fragmentsPerSlot) + 1);
+      if (!pieces.has(fragment)){
+        pieces.add(fragment);
+        placed = true;
+        placedInLap += 1;
+
+        if (placedInLap >= totalSlots){
+          placedInLap = 0;
+          lap += 1;
+        }
       }
     }
-    return false;
+
+    nextPos = (nextPos + 1) % totalSlots;
+    attempts += 1;
   }
 
-  pieces.add(fragment);
+  STAR_POS[color] = nextPos;
+  STAR_LAP[color] = lap;
+  STAR_PLACED_IN_LAP[color] = placedInLap;
 
-  const nextSlot = findNextIncompleteSlot(pool, slot + 1);
-  if (nextSlot === -1){
-    STAR_NEXT_SLOT[color] = totalSlots;
-  } else {
-    STAR_NEXT_SLOT[color] = nextSlot;
-    if (nextSlot <= slot){
-      STAR_LAP[color] = ((lap + 1) % fragmentsPerSlot);
-    }
-  }
-
-  return true;
+  return placed;
 }
 
 function syncAllStarStates(){
-  STAR_LAP.green = 0;
-  STAR_LAP.blue  = 0;
   syncStarState("green", greenScore);
   syncStarState("blue",  blueScore);
-
-  ["green", "blue"].forEach(color => {
-    const pool = STAR_STATE[color];
-    const next = findNextIncompleteSlot(pool, STAR_NEXT_SLOT[color]);
-
-    if (next === -1){
-      if (Array.isArray(pool)) {
-        STAR_NEXT_SLOT[color] = pool.length;
-      }
-    } else {
-      STAR_NEXT_SLOT[color] = next;
-    }
-  });
 }
 
 STAR_IMG.onload = () => {
@@ -683,8 +648,9 @@ function resetGame(){
 
   greenScore = 0;
   blueScore  = 0;
-  STAR_NEXT_SLOT = { blue: 0, green: 0 };
   STAR_LAP = { blue: 0, green: 0 };
+  STAR_POS = { blue: 0, green: 0 };
+  STAR_PLACED_IN_LAP = { blue: 0, green: 0 };
   STAR_STATE.blue  = Array.from({length:5}, ()=> new Set());
   STAR_STATE.green = Array.from({length:5}, ()=> new Set());
   syncAllStarStates();
@@ -3065,8 +3031,9 @@ function startNewRound(){
   endGameDiv.style.display = "none";
   isGameOver=false; winnerColor=null;
 
-  STAR_NEXT_SLOT = { blue: 0, green: 0 };
   STAR_LAP = { blue: 0, green: 0 };
+  STAR_POS = { blue: 0, green: 0 };
+  STAR_PLACED_IN_LAP = { blue: 0, green: 0 };
   STAR_STATE.blue  = Array.from({length:5}, ()=> new Set());
   STAR_STATE.green = Array.from({length:5}, ()=> new Set());
   syncAllStarStates();
