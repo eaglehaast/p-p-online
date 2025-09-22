@@ -20,6 +20,16 @@ const aimCtx      = aimCanvas.getContext("2d");
 const planeCanvas = document.getElementById("planeCanvas");
 const planeCtx    = planeCanvas.getContext("2d");
 
+// ---- ЕДИНЫЕ размеры макета ----
+const MOCKUP_W = 460;
+const MOCKUP_H = 800;
+
+// Координаты STAR_PLACEMENT даны в пикселях макета 460x800
+const STAR_PLACEMENT_IS_MOCKUP = true;
+
+// Если фон/рамка рисуются со сдвигом, используем тот же сдвиг здесь
+const BOARD_ORIGIN = { x: 0, y: 0 };
+
 // Enable smoothing so rotated images (planes, arrows) don't appear jagged
 [gameCtx, aimCtx, planeCtx].forEach(ctx => {
   ctx.imageSmoothingEnabled = true;
@@ -57,25 +67,6 @@ const FRAME_BASE_WIDTH = CANVAS_BASE_WIDTH + FRAME_PADDING_X * 2; // 460
 const FRAME_BASE_HEIGHT = CANVAS_BASE_HEIGHT + FRAME_PADDING_Y * 2; // 800
 const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
 
-// ---- STAR_LAYOUT safe shim (не даём получить ReferenceError) ----
-window.STAR_LAYOUT = window.STAR_LAYOUT || {};
-
-function getDefaultStarScaleX(){
-  const rect = gameCanvas.getBoundingClientRect();
-  const width = rect.width || CANVAS_BASE_WIDTH;
-  return width / CANVAS_BASE_WIDTH;
-}
-
-function getDefaultStarScaleY(){
-  const rect = gameCanvas.getBoundingClientRect();
-  const height = rect.height || CANVAS_BASE_HEIGHT;
-  return height / CANVAS_BASE_HEIGHT;
-}
-
-if (typeof STAR_LAYOUT.sx !== 'function') STAR_LAYOUT.sx = () => getDefaultStarScaleX();
-if (typeof STAR_LAYOUT.sy !== 'function') STAR_LAYOUT.sy = () => getDefaultStarScaleY();
-if (typeof STAR_LAYOUT.anchorX !== 'number') STAR_LAYOUT.anchorX = 0;
-if (typeof STAR_LAYOUT.anchorY !== 'number') STAR_LAYOUT.anchorY = 0;
 if (typeof window.STAR_READY === 'undefined') window.STAR_READY = false;
 
 const brickFrameImg = new Image();
@@ -2767,22 +2758,40 @@ function checkVictory(){
 function drawStarsUI(ctx){
   if (!STAR_READY) return;
 
-  const rect = gameCanvas.getBoundingClientRect();
-  const scaleXRaw = rect.width / CANVAS_BASE_WIDTH;
-  const scaleYRaw = rect.height / CANVAS_BASE_HEIGHT;
-  const layoutScaleX = Number.isFinite(scaleXRaw) && scaleXRaw > 0 ? scaleXRaw : 1;
-  const layoutScaleY = Number.isFinite(scaleYRaw) && scaleYRaw > 0 ? scaleYRaw : 1;
+  let sx = gameCanvas.width / MOCKUP_W;
+  let sy = gameCanvas.height / MOCKUP_H;
 
-  // коэффициенты перевода макет→экран
-  const sxCandidate = (typeof STAR_LAYOUT?.sx === 'function') ? STAR_LAYOUT.sx() : layoutScaleX;
-  const syCandidate = (typeof STAR_LAYOUT?.sy === 'function') ? STAR_LAYOUT.sy() : layoutScaleY;
-  const sx = Number.isFinite(sxCandidate) && sxCandidate !== 0 ? sxCandidate : layoutScaleX;
-  const sy = Number.isFinite(syCandidate) && syCandidate !== 0 ? syCandidate : layoutScaleY;
-  const pieceScale = (typeof STAR_PIECE_SCALE !== 'undefined') ? STAR_PIECE_SCALE : 1;
+  if (gameCanvas.width > 0){
+    const frameScaleX = FRAME_BASE_WIDTH / gameCanvas.width;
+    if (Number.isFinite(frameScaleX) && frameScaleX > 0){
+      sx *= frameScaleX;
+    }
+  }
+
+  if (gameCanvas.height > 0){
+    const frameScaleY = FRAME_BASE_HEIGHT / gameCanvas.height;
+    if (Number.isFinite(frameScaleY) && frameScaleY > 0){
+      sy *= frameScaleY;
+    }
+  }
+
+  const rect = gameCanvas.getBoundingClientRect();
+  const cssScaleX = rect.width / CANVAS_BASE_WIDTH;
+  const cssScaleY = rect.height / CANVAS_BASE_HEIGHT;
+
+  if (Number.isFinite(cssScaleX) && cssScaleX > 0){
+    sx *= cssScaleX;
+  }
+
+  if (Number.isFinite(cssScaleY) && cssScaleY > 0){
+    sy *= cssScaleY;
+  }
+
+  const scale = (typeof STAR_PIECE_SCALE !== 'undefined') ? STAR_PIECE_SCALE : 1;
 
   ctx.save();
-  // рисуем из «чистого» состояния, чтобы чужие трансформации не протекали
-  ctx.setTransform(1,0,0,1,0,0);
+  // На всякий случай сбрасываем висящие трансформации
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.imageSmoothingEnabled = false;
 
   try {
@@ -2801,24 +2810,24 @@ function drawStarsUI(ctx){
         for (let frag = 1; frag <= STAR_FRAGMENTS_PER_SLOT; frag++){
           if (!slot.has(frag)) continue;
 
-          const rectDef = Array.isArray(rects) ? rects[frag-1] : null;
-          if (!Array.isArray(rectDef) || rectDef.length < 4){
-            console.warn(`[STAR] no rect for ${color} frag ${frag}`);
-            continue;
-          }
-
-          const [sxImg, syImg, sw, sh] = rectDef;
-          const dstW = Math.round(sw * pieceScale * sx);
-          const dstH = Math.round(sh * pieceScale * sy);
-
           const pos = STAR_PLACEMENT[color]?.[slotIdx]?.[frag-1];
           if (!pos || typeof pos.x !== 'number' || typeof pos.y !== 'number'){
             console.warn(`[STAR] no pos for ${color} slot ${slotIdx} frag ${frag}`);
             continue;
           }
 
-          const screenX = Math.round(pos.x * sx);
-          const screenY = Math.round(pos.y * sy);
+          const rectDef = rects[frag-1];
+          if (!Array.isArray(rectDef) || rectDef.length < 4){
+            console.warn(`[STAR] no rect for ${color} frag ${frag}`);
+            continue;
+          }
+
+          const [sxImg, syImg, sw, sh] = rectDef;
+          const dstW = Math.round(sw * scale * sx);
+          const dstH = Math.round(sh * scale * sy);
+
+          let screenX = Math.round(pos.x * sx) + BOARD_ORIGIN.x;
+          let screenY = Math.round(pos.y * sy) + BOARD_ORIGIN.y;
 
           ctx.drawImage(STAR_IMG, sxImg, syImg, sw, sh, screenX, screenY, dstW, dstH);
         }
@@ -2840,12 +2849,23 @@ function renderScoreboard(){
   planeCtx.save();
 
   const rect = gameCanvas.getBoundingClientRect();
-  const scale = rect.width / CANVAS_BASE_WIDTH;
-  const containerLeft = rect.left - FRAME_PADDING_X * scale;
-  const containerTop = rect.top - FRAME_PADDING_Y * scale;
-  const containerWidth = FRAME_BASE_WIDTH * scale;
+  const rawScaleX = rect.width / CANVAS_BASE_WIDTH;
+  const scaleX = Number.isFinite(rawScaleX) && rawScaleX > 0 ? rawScaleX : 1;
+  const rawScaleY = rect.height / CANVAS_BASE_HEIGHT;
+  const scaleY = Number.isFinite(rawScaleY) && rawScaleY > 0 ? rawScaleY : scaleX;
+  const containerLeft = rect.left - FRAME_PADDING_X * scaleX;
+  const containerTop = rect.top - FRAME_PADDING_Y * scaleY;
+  const containerWidth = FRAME_BASE_WIDTH * scaleX;
 
-  const margin = 10 * scale;
+  if (Number.isFinite(containerLeft) && Number.isFinite(containerTop)){
+    BOARD_ORIGIN.x = Math.round(containerLeft);
+    BOARD_ORIGIN.y = Math.round(containerTop);
+  } else {
+    BOARD_ORIGIN.x = 0;
+    BOARD_ORIGIN.y = 0;
+  }
+
+  const margin = 10 * scaleX;
 
   // Blue player's HUD (mini planes and numeric score)
   drawPlayerHUD(
