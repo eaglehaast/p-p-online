@@ -181,7 +181,7 @@ brickFrameImg.onload = () => {
 
 function createExplosionImage(){
   const img = document.createElement("img");
-  img.src = `explosion 4.gif?${Date.now()}`;
+  img.src = `explosion 5.gif?${Date.now()}`;
   img.style.position = "absolute";
   img.style.left = "-1000px";
   img.style.top = "-1000px";
