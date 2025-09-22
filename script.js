@@ -2808,7 +2808,10 @@ function drawStarsUI(ctx){
         if (!slot || slot.size === 0) continue;
 
         for (let frag = 1; frag <= STAR_FRAGMENTS_PER_SLOT; frag++){
-          if (!slot.has(frag)) continue;
+          // Проверяем наличие именно текущего фрагмента в Set,
+          // чтобы не рисовать все пять позиций звезды при наличии только одного.
+          const hasFragment = slot.has(frag);
+          if (!hasFragment) continue;
 
           const pos = STAR_PLACEMENT[color]?.[slotIdx]?.[frag-1];
           if (!pos || typeof pos.x !== 'number' || typeof pos.y !== 'number'){
@@ -2816,7 +2819,7 @@ function drawStarsUI(ctx){
             continue;
           }
 
-          const rectDef = rects[frag-1];
+          const rectDef = rects[frag - 1];
           if (!Array.isArray(rectDef) || rectDef.length < 4){
             console.warn(`[STAR] no rect for ${color} frag ${frag}`);
             continue;
