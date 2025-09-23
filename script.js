@@ -179,13 +179,58 @@ brickFrameImg.onload = () => {
 };
 
 
-function createExplosionImage(){
+function createExplosionImage(plane){
   const img = document.createElement("img");
-  img.src = `explosion 5.gif?${Date.now()}`;
   img.style.position = "absolute";
   img.style.left = "-1000px";
   img.style.top = "-1000px";
+
+  plane.explosionStart = null;
+
+  const cleanup = () => {
+    img.remove();
+    if (plane.explosionImg === img) {
+      plane.explosionImg = null;
+    }
+  };
+
+  const handleLoad = () => {
+    img.removeEventListener("load", handleLoad);
+    img.removeEventListener("error", handleError);
+    plane.explosionStart = performance.now();
+    setTimeout(() => {
+      if (plane.explosionImg === img) {
+        cleanup();
+      }
+    }, EXPLOSION_DURATION_MS);
+  };
+
+  const handleError = () => {
+    img.removeEventListener("load", handleLoad);
+    img.removeEventListener("error", handleError);
+    plane.explosionStart = performance.now() - EXPLOSION_DURATION_MS;
+    cleanup();
+  };
+
+  img.addEventListener("load", handleLoad);
+  img.addEventListener("error", handleError);
   document.body.appendChild(img);
+
+  const needsCacheBust = typeof window !== "undefined"
+    && window.location
+    && window.location.protocol !== "file:";
+  const separator = EXPLOSION_GIF_PATH.includes("?") ? "&" : "?";
+  const cacheBuster = needsCacheBust ? `${separator}t=${Date.now()}` : "";
+  img.src = `${EXPLOSION_GIF_PATH}${cacheBuster}`;
+
+  if (img.complete) {
+    if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+      handleLoad();
+    } else {
+      handleError();
+    }
+  }
+
   return img;
 }
 
@@ -232,6 +277,7 @@ const FLAG_HEIGHT          = 8;      // высота полотна флага
 
 // Explosion effect
 const EXPLOSION_DURATION_MS = 500;   // time before showing cross
+const EXPLOSION_GIF_PATH    = "explosion 5.gif";
 const EXPLOSION_SIZE        = 96;    // px, larger for better visibility
 
 function updateFieldBorderOffset(){
@@ -1655,17 +1701,7 @@ function destroyPlane(fp){
   }
   p.isAlive = false;
   p.burning = true;
-  p.explosionImg = createExplosionImage();
-  const img = p.explosionImg;
-  img.onload = () => {
-    p.explosionStart = performance.now();
-    setTimeout(() => {
-      if (p.explosionImg === img) {
-        img.remove();
-        p.explosionImg = null;
-      }
-    }, EXPLOSION_DURATION_MS);
-  };
+  p.explosionImg = createExplosionImage(p);
   p.collisionX = p.x;
   p.collisionY = p.y;
   flyingPoints = flyingPoints.filter(x=>x!==fp);
@@ -1715,19 +1751,9 @@ function handleAAForPlane(p, fp){
           } else if(now - p._aaTimes[aa.id] > aa.dwellTimeMs){
             if(!aa.lastTriggerAt || now - aa.lastTriggerAt > aa.cooldownMs){
               aa.lastTriggerAt = now;
-              p.isAlive=false; 
+              p.isAlive=false;
               p.burning=true;
-              p.explosionImg = createExplosionImage();
-              const img = p.explosionImg;
-              img.onload = () => {
-                p.explosionStart = performance.now();
-                setTimeout(() => {
-                  if (p.explosionImg === img) {
-                    img.remove();
-                    p.explosionImg = null;
-                  }
-                }, EXPLOSION_DURATION_MS);
-              };
+              p.explosionImg = createExplosionImage(p);
               p.collisionX=p.x; p.collisionY=p.y;
               if(fp) {
                 flyingPoints = flyingPoints.filter(x=>x!==fp);
@@ -2740,17 +2766,7 @@ function checkPlaneHits(plane, fp){
     if(d < POINT_RADIUS*2){
       p.isAlive = false;
       p.burning = true;
-      p.explosionImg = createExplosionImage();
-      const img = p.explosionImg;
-      img.onload = () => {
-        p.explosionStart = performance.now();
-        setTimeout(() => {
-          if (p.explosionImg === img) {
-            img.remove();
-            p.explosionImg = null;
-          }
-        }, EXPLOSION_DURATION_MS);
-      };
+      p.explosionImg = createExplosionImage(p);
       const cx = d === 0 ? plane.x : plane.x + dx / d * POINT_RADIUS;
       const cy = d === 0 ? plane.y : plane.y + dy / d * POINT_RADIUS;
       p.collisionX = cx;
