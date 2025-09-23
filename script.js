@@ -30,6 +30,36 @@ const STAR_PLACEMENT_IS_MOCKUP = true;
 // Если фон/рамка рисуются со сдвигом, используем тот же сдвиг здесь
 const BOARD_ORIGIN = { x: 0, y: 0 };
 
+// ---- Explosion FX (GIF over canvas) ----
+function spawnExplosion(x, y) {
+  const layer = document.getElementById('fxLayer');
+  if (!layer) { console.warn('[FX] no fxLayer'); return; }
+
+  const img = new Image();
+  img.src = 'explosion5.gif';   // <- имя файла без пробелов
+  img.className = 'fx-explosion';
+
+  const layerRect = layer.getBoundingClientRect();
+  const canvasRect = gameCanvas.getBoundingClientRect();
+  const scaleX = canvasRect.width / gameCanvas.width;
+  const scaleY = canvasRect.height / gameCanvas.height;
+
+  const originX = (typeof (BOARD_ORIGIN?.x) === 'number') ? BOARD_ORIGIN.x : 0;
+  const originY = (typeof (BOARD_ORIGIN?.y) === 'number') ? BOARD_ORIGIN.y : 0;
+
+  const offsetX = canvasRect.left - layerRect.left;
+  const offsetY = canvasRect.top - layerRect.top;
+
+  img.style.left = Math.round(offsetX + (originX + x) * scaleX) + 'px';
+  img.style.top  = Math.round(offsetY + (originY + y) * scaleY) + 'px';
+
+  img.onerror = (e)=> { console.warn('[FX] explosion load error', e); img.remove(); };
+  img.onload  = ()=> setTimeout(()=> img.remove(), 700); // убрать через ~длину гифки
+
+  layer.appendChild(img);
+}
+// ----------------------------------------
+
 // Enable smoothing so rotated images (planes, arrows) don't appear jagged
 [gameCtx, aimCtx, planeCtx].forEach(ctx => {
   ctx.imageSmoothingEnabled = true;
@@ -179,64 +209,6 @@ brickFrameImg.onload = () => {
 };
 
 
-function createExplosionImage(plane){
-  const img = document.createElement("img");
-  img.style.position = "absolute";
-  img.style.left = "-1000px";
-  img.style.top = "-1000px";
-
-  plane.explosionStart = null;
-
-  const cleanup = () => {
-    img.remove();
-    if (plane.explosionImg === img) {
-      plane.explosionImg = null;
-    }
-  };
-
-  const handleLoad = () => {
-    img.removeEventListener("load", handleLoad);
-    img.removeEventListener("error", handleError);
-    plane.explosionStart = performance.now();
-    setTimeout(() => {
-      if (plane.explosionImg === img) {
-        cleanup();
-      }
-    }, EXPLOSION_DURATION_MS);
-  };
-
-  const handleError = () => {
-    img.removeEventListener("load", handleLoad);
-    img.removeEventListener("error", handleError);
-    plane.explosionStart = performance.now() - EXPLOSION_DURATION_MS;
-    cleanup();
-  };
-
-  img.addEventListener("load", handleLoad);
-  img.addEventListener("error", handleError);
-  document.body.appendChild(img);
-
-  const needsCacheBust = typeof window !== "undefined"
-    && window.location
-    && window.location.protocol !== "file:";
-  const separator = EXPLOSION_GIF_PATH.includes("?") ? "&" : "?";
-  const cacheBuster = needsCacheBust ? `${separator}t=${Date.now()}` : "";
-  img.src = `${EXPLOSION_GIF_PATH}${cacheBuster}`;
-
-  if (img.complete) {
-    if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-      handleLoad();
-    } else {
-      handleError();
-    }
-  }
-
-  return img;
-}
-
-
-
-
 
 /* Disable pinch and double-tap zoom on mobile */
 document.addEventListener('touchmove', (event) => {
@@ -277,8 +249,6 @@ const FLAG_HEIGHT          = 8;      // высота полотна флага
 
 // Explosion effect
 const EXPLOSION_DURATION_MS = 500;   // time before showing cross
-const EXPLOSION_GIF_PATH    = "explosion 5.gif";
-const EXPLOSION_SIZE        = 96;    // px, larger for better visibility
 
 function updateFieldBorderOffset(){
   if(settings.sharpEdges){
@@ -804,7 +774,6 @@ function makePlane(x,y,color,angle){
     isAlive:true,
     burning:false,
     explosionStart:null,
-    explosionImg:null,
     angle,
     segments:[],
     collisionX:null,
@@ -820,6 +789,11 @@ function resetGame(){
   isGameOver= false;
   winnerColor= null;
   endGameDiv.style.display = "none";
+
+  const fxLayer = document.getElementById('fxLayer');
+  if(fxLayer){
+    fxLayer.innerHTML = "";
+  }
 
   greenScore = 0;
   blueScore  = 0;
@@ -1701,9 +1675,13 @@ function destroyPlane(fp){
   }
   p.isAlive = false;
   p.burning = true;
-  p.explosionImg = createExplosionImage(p);
   p.collisionX = p.x;
   p.collisionY = p.y;
+  p.explosionStart = performance.now();
+
+  try { spawnExplosion(p.collisionX, p.collisionY); }
+  catch(e) { console.warn('[FX] spawnExplosion error', e); }
+
   flyingPoints = flyingPoints.filter(x=>x!==fp);
   awardPoint(p.color);
   checkVictory();
@@ -1753,8 +1731,12 @@ function handleAAForPlane(p, fp){
               aa.lastTriggerAt = now;
               p.isAlive=false;
               p.burning=true;
-              p.explosionImg = createExplosionImage(p);
               p.collisionX=p.x; p.collisionY=p.y;
+              p.explosionStart = performance.now();
+
+              try { spawnExplosion(p.collisionX, p.collisionY); }
+              catch(e) { console.warn('[FX] spawnExplosion error', e); }
+
               if(fp) {
                 flyingPoints = flyingPoints.filter(x=>x!==fp);
               }
@@ -2506,15 +2488,10 @@ function drawPlanesAndTrajectories(){
   }
 
   for(const {plane: p, cx, cy} of burningPlanes){
-    if(p.explosionImg && !isExplosionFinished(p)){
-      planeCtx.save();
-      planeCtx.globalAlpha = 1;
-      planeCtx.globalCompositeOperation = "source-over";
-      planeCtx.drawImage(p.explosionImg, cx - EXPLOSION_SIZE/2, cy - EXPLOSION_SIZE/2, EXPLOSION_SIZE, EXPLOSION_SIZE);
-      planeCtx.restore();
-    } else {
-    drawRedCross(planeCtx, cx, cy, 16 * PLANE_SCALE);
+    if(!isExplosionFinished(p)){
+      continue;
     }
+    drawRedCross(planeCtx, cx, cy, 16 * PLANE_SCALE);
   }
 
   if(rangeTextInfo){
@@ -2766,11 +2743,15 @@ function checkPlaneHits(plane, fp){
     if(d < POINT_RADIUS*2){
       p.isAlive = false;
       p.burning = true;
-      p.explosionImg = createExplosionImage(p);
       const cx = d === 0 ? plane.x : plane.x + dx / d * POINT_RADIUS;
       const cy = d === 0 ? plane.y : plane.y + dy / d * POINT_RADIUS;
       p.collisionX = cx;
       p.collisionY = cy;
+      p.explosionStart = performance.now();
+
+      try { spawnExplosion(p.collisionX, p.collisionY); }
+      catch(e) { console.warn('[FX] spawnExplosion error', e); }
+
       fp.hit = true;
       if(p.flagColor){
         const flagColor = p.flagColor;
