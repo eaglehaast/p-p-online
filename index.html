@@ -10,7 +10,11 @@
 <body>
   <div id="gameContainer">
     <!-- Game Field (Initially Hidden) -->
-    <canvas id="gameCanvas" width="360" height="640" style="display:none;"></canvas>
+    <div class="game-wrap">
+      <canvas id="gameCanvas" width="360" height="640" style="display:none;"></canvas>
+      <!-- FX layer for GIF explosions -->
+      <div id="fxLayer"></div>
+    </div>
 
     <!-- Turn indicators -->
     <div id="mantisIndicator" class="turn-indicator" style="display:none;"></div>
