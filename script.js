@@ -31,6 +31,7 @@ const STAR_PLACEMENT_IS_MOCKUP = true;
 const BOARD_ORIGIN = { x: 0, y: 0 };
 
 // ---- Explosion FX (GIF over canvas) ----
+
 function spawnExplosion(x, y, color = null) {
   // 1) размер канваса на экране (после CSS-скейла!)
   const rect = gameCanvas.getBoundingClientRect();
@@ -64,6 +65,7 @@ function spawnExplosion(x, y, color = null) {
 
   // убрать через длительность гифки
   setTimeout(() => { img.remove(); }, 700);
+
 }
 // ----------------------------------------
 
