@@ -1807,6 +1807,10 @@ function handleAAForPlane(p, fp){
     const current = [...flyingPoints];
     for(const fp of current){
       const p = fp.plane;
+      if(!p.isAlive || p.burning){
+        flyingPoints = flyingPoints.filter(other => other !== fp);
+        continue;
+      }
       const prevX = p.x;
       const prevY = p.y;
 
@@ -2752,6 +2756,7 @@ function checkPlaneHits(plane, fp){
     if(d < POINT_RADIUS*2){
       p.isAlive = false;
       p.burning = true;
+      flyingPoints = flyingPoints.filter(other => other.plane !== p);
       const cx = d === 0 ? plane.x : plane.x + dx / d * POINT_RADIUS;
       const cy = d === 0 ? plane.y : plane.y + dy / d * POINT_RADIUS;
       p.collisionX = cx;
