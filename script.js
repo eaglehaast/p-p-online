@@ -31,32 +31,41 @@ const STAR_PLACEMENT_IS_MOCKUP = true;
 const BOARD_ORIGIN = { x: 0, y: 0 };
 
 // ---- Explosion FX (GIF over canvas) ----
-function spawnExplosion(x, y) {
-  const layer = document.getElementById('fxLayer');
-  if (!layer) { console.warn('[FX] no fxLayer'); return; }
 
+function spawnExplosion(x, y, color = null) {
+  // 1) размер канваса на экране (после CSS-скейла!)
+  const rect = gameCanvas.getBoundingClientRect();
+  // 2) пересчёт из макета 460x800 в экранные пиксели
+  const sx = rect.width  / 460;
+  const sy = rect.height / 800;
+
+  // 3) создаём IMG и позиционируем относительно страницы
   const img = new Image();
-  img.src = 'explosion5.gif';   // <- имя файла без пробелов
+  img.src = 'explosion5.gif';            // ← без пробелов в имени файла
   img.className = 'fx-explosion';
+  img.style.position = 'absolute';
+  img.style.zIndex = '9999';
+  img.style.pointerEvents = 'none';
+  img.style.transform = 'translate(-50%, -50%)';
 
-  const layerRect = layer.getBoundingClientRect();
-  const canvasRect = gameCanvas.getBoundingClientRect();
-  const scaleX = canvasRect.width / gameCanvas.width;
-  const scaleY = canvasRect.height / gameCanvas.height;
+  // смещение страницы (если прокручено)
+  const pageX = window.scrollX || 0;
+  const pageY = window.scrollY || 0;
 
-  const originX = (typeof (BOARD_ORIGIN?.x) === 'number') ? BOARD_ORIGIN.x : 0;
-  const originY = (typeof (BOARD_ORIGIN?.y) === 'number') ? BOARD_ORIGIN.y : 0;
+  // 4) абсолютные координаты взрыва на странице:
+  //    левый верх канваса + локальная игровая точка * масштаб
+  const absLeft = Math.round(rect.left + pageX + x * sx);
+  const absTop  = Math.round(rect.top  + pageY + y * sy);
 
-  const offsetX = canvasRect.left - layerRect.left;
-  const offsetY = canvasRect.top - layerRect.top;
+  img.style.left = absLeft + 'px';
+  img.style.top  = absTop  + 'px';
 
-  img.style.left = Math.round(offsetX + (originX + x) * scaleX) + 'px';
-  img.style.top  = Math.round(offsetY + (originY + y) * scaleY) + 'px';
+  // 5) рендерим прямо в body (чтобы не зависеть от контейнеров)
+  document.body.appendChild(img);
 
-  img.onerror = (e)=> { console.warn('[FX] explosion load error', e); img.remove(); };
-  img.onload  = ()=> setTimeout(()=> img.remove(), 700); // убрать через ~длину гифки
+  // убрать через длительность гифки
+  setTimeout(() => { img.remove(); }, 700);
 
-  layer.appendChild(img);
 }
 // ----------------------------------------
 
