@@ -35,9 +35,9 @@ const BOARD_ORIGIN = { x: 0, y: 0 };
 function spawnExplosion(x, y, color = null) {
   // 1) размер канваса на экране (после CSS-скейла!)
   const rect = gameCanvas.getBoundingClientRect();
-  // 2) пересчёт из макета 460x800 в экранные пиксели
-  const sx = rect.width  / 460;
-  const sy = rect.height / 800;
+  // 2) пересчёт из внутренних координат канваса в экранные пиксели
+  const sx = rect.width  / gameCanvas.width;
+  const sy = rect.height / gameCanvas.height;
 
   // 3) создаём IMG и позиционируем относительно страницы
   const img = new Image();
