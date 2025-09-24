@@ -2746,6 +2746,7 @@ function awardPoint(color){
 }
 function checkPlaneHits(plane, fp){
   if(isGameOver) return;
+  if(fp?.hit) return;
   const enemyColor = (plane.color==="green") ? "blue" : "green";
   for(const p of points){
     if(!p.isAlive || p.burning) continue;
