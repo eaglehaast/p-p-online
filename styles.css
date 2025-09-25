@@ -15,7 +15,7 @@ body, button {
   body {
     position: relative;
     font-family: 'Roboto', sans-serif;
-    background-image: url("background behind the canvas.png");
+    background-image: url("background behind the canvas 2.png");
     background-size: 460px 800px;
     background-repeat: no-repeat;
     background-position: center top;
@@ -30,13 +30,13 @@ body, button {
     position: absolute;
     width: 460px;
     height: 800px;
-    background-image: url("background behind the canvas.png");
+    background-image: url("background behind the canvas 2.png");
     background-size: 460px 800px;
     background-repeat: no-repeat;
   }
 
   body.settings-page {
-    background-image: url("background behind the canvas.png");
+    background-image: url("background behind the canvas 2.png");
     background-size: 460px 800px;
     background-repeat: no-repeat;
     background-position: center top;
@@ -151,7 +151,10 @@ body, button {
     text-align: center;
     padding: 10px;
     background: none;
-    box-shadow: none;
+    background-color: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    border: none !important;
     z-index: 1000;
     width: min(90vw, 300px);
     height: auto;
