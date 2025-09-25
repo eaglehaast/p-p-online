@@ -150,6 +150,8 @@ body, button {
     transform: translate(-50%, -50%);
     text-align: center;
     padding: 10px;
+    background: none;
+    box-shadow: none;
     z-index: 1000;
     width: min(90vw, 300px);
     height: auto;
