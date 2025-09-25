@@ -846,7 +846,9 @@ function resetGame(){
   phase = 'MENU';
   currentPlacer = null;
 
-  gameContainer.style.backgroundImage = "url('background behind the canvas.png')";
+  const menuBackground = "url('background behind the canvas.png')";
+  gameContainer.style.backgroundImage = menuBackground;
+  document.body.style.backgroundImage = menuBackground;
 
   // UI reset
   hotSeatBtn.classList.remove("selected");
@@ -3206,7 +3208,9 @@ function startNewRound(){
   goatIndicator.style.display = "block";
   planeCanvas.style.display = "block";
 
-  gameContainer.style.backgroundImage = "url('background behind the canvas 2.png')";
+  const inGameBackground = "url('background behind the canvas 2.png')";
+  gameContainer.style.backgroundImage = inGameBackground;
+  document.body.style.backgroundImage = inGameBackground;
 
   initPoints(); // ориентации на базе
   blueFlagCarrier = null;
