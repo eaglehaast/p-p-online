@@ -15,7 +15,10 @@ body, button {
   body {
     position: relative;
     font-family: 'Roboto', sans-serif;
-    background-color: #ffffff;
+    background-image: url("background behind the canvas.png");
+    background-size: 460px 800px;
+    background-repeat: no-repeat;
+    background-position: center top;
     margin: 0;
     padding: 0;
     height: 100dvh;
@@ -140,27 +143,23 @@ body, button {
 }
 
 /* Меню выбора режима */
-#modeMenu {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: linear-gradient(135deg, #fffbe6, #ffe0b3);
-  border: 2px solid #ffd699;
-  border-radius: 15px;
-  text-align: center;
-  padding: 10px;
-  z-index: 1000;
-  box-shadow: 0 8px 16px rgba(0,0,0,0.2);
-  width: min(90vw, 300px);
-  height: auto;
-  max-height: 90vh;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-}
+  #modeMenu {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    padding: 10px;
+    z-index: 1000;
+    width: min(90vw, 300px);
+    height: auto;
+    max-height: 90vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+  }
 
 /* Заголовок */
 #modeMenu .game-title {
@@ -177,9 +176,7 @@ body, button {
   flex-direction: column;
   gap: 10px;
   margin-bottom: 15px;
-  border: 2px solid #ffd699;
-  border-radius: 12px;
-  padding: 10px;
+  padding: 10px 0;
   width: 100%;
 }
 
@@ -204,9 +201,7 @@ body, button {
   flex-direction: column;
   gap: 10px;
   margin-top: 15px;
-  border: 2px solid #ffd699;
-  border-radius: 12px;
-  padding: 10px;
+  padding: 10px 0;
   width: 100%;
 }
 
@@ -234,7 +229,7 @@ body, button {
   margin-bottom: 15px;
   font-size: 18px;
   background: linear-gradient(145deg, #5bc0de, #31b0d5);
-  border: 2px solid #ffd699;
+  border: none;
   border-radius: 12px;
 }
 
