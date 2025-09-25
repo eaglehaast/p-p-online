@@ -98,6 +98,27 @@ const greenPlaneImg = new Image();
 greenPlaneImg.src = "green plane 3.png";
 const backgroundImg = new Image();
 backgroundImg.src = "background paper 1.png";
+
+function syncBackgroundLayout(containerWidth, containerHeight) {
+  if (!Number.isFinite(containerWidth) || !Number.isFinite(containerHeight) ||
+      containerWidth <= 0 || containerHeight <= 0) {
+    return;
+  }
+  const backgroundSize = `${containerWidth}px ${containerHeight}px`;
+  gameContainer.style.backgroundSize = backgroundSize;
+  document.body.style.backgroundSize = backgroundSize;
+  if (gameContainer.style.left && gameContainer.style.top) {
+    document.body.style.backgroundPosition = `${gameContainer.style.left} ${gameContainer.style.top}`;
+  }
+}
+
+function setBackgroundImage(imageUrl) {
+  const background = imageUrl.startsWith("url(") ? imageUrl : `url('${imageUrl}')`;
+  gameContainer.style.backgroundImage = background;
+  document.body.style.backgroundImage = background;
+  const rect = gameContainer.getBoundingClientRect();
+  syncBackgroundLayout(rect.width, rect.height);
+}
 const CANVAS_BASE_WIDTH = 360;
 const CANVAS_BASE_HEIGHT = 640;
 const FRAME_PADDING_X = 50;
@@ -846,9 +867,7 @@ function resetGame(){
   phase = 'MENU';
   currentPlacer = null;
 
-  const menuBackground = "url('background behind the canvas.png')";
-  gameContainer.style.backgroundImage = menuBackground;
-  document.body.style.backgroundImage = menuBackground;
+  setBackgroundImage('background behind the canvas.png');
 
   // UI reset
   hotSeatBtn.classList.remove("selected");
@@ -3208,9 +3227,7 @@ function startNewRound(){
   goatIndicator.style.display = "block";
   planeCanvas.style.display = "block";
 
-  const inGameBackground = "url('background behind the canvas 2.png')";
-  gameContainer.style.backgroundImage = inGameBackground;
-  document.body.style.backgroundImage = inGameBackground;
+  setBackgroundImage('background behind the canvas 2.png');
 
   initPoints(); // ориентации на базе
   blueFlagCarrier = null;
@@ -3257,7 +3274,7 @@ function resizeCanvas() {
   gameContainer.style.height = containerHeight + 'px';
   gameContainer.style.left = (window.innerWidth - containerWidth) / 2 + 'px';
   gameContainer.style.top = (window.innerHeight - containerHeight) / 2 + 'px';
-  gameContainer.style.backgroundSize = containerWidth + 'px ' + containerHeight + 'px';
+  syncBackgroundLayout(containerWidth, containerHeight);
   const canvas = gameCanvas;
   canvas.style.width = CANVAS_BASE_WIDTH * scale + 'px';
   canvas.style.height = CANVAS_BASE_HEIGHT * scale + 'px';
