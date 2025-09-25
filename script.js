@@ -867,7 +867,7 @@ function resetGame(){
   phase = 'MENU';
   currentPlacer = null;
 
-  setBackgroundImage('background behind the canvas.png');
+  setBackgroundImage('background behind the canvas 2.png');
 
   // UI reset
   hotSeatBtn.classList.remove("selected");
