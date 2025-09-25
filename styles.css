@@ -151,7 +151,10 @@ body, button {
     text-align: center;
     padding: 10px;
     background: none;
-    box-shadow: none;
+    background-color: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    border: none !important;
     z-index: 1000;
     width: min(90vw, 300px);
     height: auto;
