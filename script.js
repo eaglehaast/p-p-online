@@ -34,6 +34,11 @@ const BOARD_ORIGIN = { x: 0, y: 0 };
 
 const activeGreenCrashImages = new Set();
 
+// FX timings (ms) for coordinating explosion and crash animations
+const EXPLOSION_DURATION_MS = 700;
+const GREEN_FALL_OVERLAP_MS = 500;          // start fall 0.5 s before explosion ends
+const GREEN_PLANE_FALL_DURATION_MS = 1200;  // approximate duration of fall GIF before looping
+
 // Время (в секундах), в течение которого самолёт-атакующий
 // игнорирует повторный контакт с только что сбитой целью.
 const PLANE_HIT_COOLDOWN_SEC = 0.2;
@@ -84,7 +89,7 @@ function spawnExplosion(x, y, color = null) {
   document.body.appendChild(img);
 
   // убрать через длительность гифки
-  setTimeout(() => { img.remove(); }, 700);
+  setTimeout(() => { img.remove(); }, EXPLOSION_DURATION_MS);
 
 }
 // ----------------------------------------
@@ -95,12 +100,13 @@ function spawnGreenPlaneCrash(x, y) {
   const sy = rect.height / gameCanvas.height;
 
   const img = new Image();
-  img.src = 'green plane/green down loop.gif';
+  img.src = 'green plane/green plane fall.gif';
   img.className = 'fx-green-crash';
   img.style.position = 'absolute';
   img.style.zIndex = '9998';
   img.style.pointerEvents = 'none';
   img.style.transform = 'translate(-50%, -50%)';
+  img.style.visibility = 'hidden';
   img.draggable = false;
   img.dataset.fx = 'green-crash';
 
@@ -119,6 +125,26 @@ function spawnGreenPlaneCrash(x, y) {
 
   document.body.appendChild(img);
   activeGreenCrashImages.add(img);
+
+  const startDelay = Math.max(0, EXPLOSION_DURATION_MS - GREEN_FALL_OVERLAP_MS);
+  const startFall = () => {
+    if (!img.isConnected) return;
+    img.style.visibility = 'visible';
+    img.dataset.phase = 'fall';
+    setTimeout(() => {
+      if (!img.isConnected) return;
+      img.src = 'green plane/green down loop.gif';
+      img.dataset.phase = 'loop';
+    }, GREEN_PLANE_FALL_DURATION_MS);
+  };
+
+  if (img.complete) {
+    setTimeout(startFall, startDelay);
+  } else {
+    img.addEventListener('load', () => {
+      setTimeout(startFall, startDelay);
+    }, { once: true });
+  }
 }
 
 
