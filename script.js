@@ -126,6 +126,7 @@ function spawnGreenPlaneCrash(x, y) {
   activeGreenCrashImages.add(img);
 
   const startDelay = Math.max(0, EXPLOSION_DURATION_MS - GREEN_FALL_OVERLAP_MS);
+
   const planeDisplayWidth = 40 * PLANE_SCALE * sx;
   const planeDisplayHeight = 40 * PLANE_SCALE * sy;
 
@@ -135,23 +136,24 @@ function spawnGreenPlaneCrash(x, y) {
     img.style.height = planeDisplayHeight + 'px';
   };
 
+
   const startFall = () => {
     if (!img.isConnected) return;
     img.style.visibility = 'visible';
     img.dataset.phase = 'fall';
     setTimeout(() => {
       if (!img.isConnected) return;
+
       img.src = GREEN_PLANE_LOOP_SRC;
       img.dataset.phase = 'loop';
     }, GREEN_PLANE_FALL_DURATION_MS);
   };
-
   const scheduleFall = () => setTimeout(startFall, startDelay);
 
   img.addEventListener('load', applyImageSize);
-
   applyImageSize();
   scheduleFall();
+
 
   img.addEventListener('error', (event) => {
     console.warn('[FX] Failed to load green plane fall animation', event);
