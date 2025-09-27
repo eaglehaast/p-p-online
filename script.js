@@ -32,6 +32,22 @@ const BOARD_ORIGIN = { x: 0, y: 0 };
 
 // ---- Explosion FX (GIF over canvas) ----
 
+const activeGreenCrashImages = new Set();
+
+function cleanupGreenCrashFx() {
+  if (!activeGreenCrashImages.size) return;
+  for (const img of activeGreenCrashImages) {
+    if (img && typeof img.remove === "function") {
+      try {
+        img.remove();
+      } catch (err) {
+        // ignore removal errors; the element might already be gone
+      }
+    }
+  }
+  activeGreenCrashImages.clear();
+}
+
 function spawnExplosion(x, y, color = null) {
   // 1) размер канваса на экране (после CSS-скейла!)
   const rect = gameCanvas.getBoundingClientRect();
@@ -81,6 +97,8 @@ function spawnGreenPlaneCrash(x, y) {
   img.style.zIndex = '9998';
   img.style.pointerEvents = 'none';
   img.style.transform = 'translate(-50%, -50%)';
+  img.draggable = false;
+  img.dataset.fx = 'green-crash';
 
   const pageX = window.scrollX || 0;
   const pageY = window.scrollY || 0;
@@ -96,8 +114,7 @@ function spawnGreenPlaneCrash(x, y) {
   img.style.height = planeSize * sy + 'px';
 
   document.body.appendChild(img);
-
-  setTimeout(() => { img.remove(); }, 3000);
+  activeGreenCrashImages.add(img);
 }
 
 
@@ -851,6 +868,8 @@ function resetGame(){
   isGameOver= false;
   winnerColor= null;
   endGameDiv.style.display = "none";
+
+  cleanupGreenCrashFx();
 
   const fxLayer = document.getElementById('fxLayer');
   if(fxLayer){
@@ -3267,6 +3286,7 @@ function startNewRound(){
     clearTimeout(roundTransitionTimeout);
     roundTransitionTimeout = null;
   }
+  cleanupGreenCrashFx();
   endGameDiv.style.display = "none";
   isGameOver=false; winnerColor=null;
 
