@@ -39,8 +39,10 @@ const EXPLOSION_DURATION_MS = 700;
 const GREEN_FALL_OVERLAP_MS = 500;          // start fall 0.5 s before explosion ends
 const GREEN_PLANE_FALL_DURATION_MS = 1200;  // approximate duration of fall GIF before looping
 
+
 const GREEN_PLANE_FALL_SRC = encodeURI("green plane/green plane fall.gif");
 const GREEN_PLANE_LOOP_SRC = encodeURI("green plane/green down loop.gif");
+
 
 // Время (в секундах), в течение которого самолёт-атакующий
 // игнорирует повторный контакт с только что сбитой целью.
@@ -103,7 +105,9 @@ function spawnGreenPlaneCrash(x, y) {
   const sy = rect.height / gameCanvas.height;
 
   const img = new Image();
+
   img.src = GREEN_PLANE_FALL_SRC;
+
   img.className = 'fx-green-crash';
   img.style.position = 'absolute';
   img.style.zIndex = '9998';
@@ -126,6 +130,7 @@ function spawnGreenPlaneCrash(x, y) {
   activeGreenCrashImages.add(img);
 
   const startDelay = Math.max(0, EXPLOSION_DURATION_MS - GREEN_FALL_OVERLAP_MS);
+
   const applyImageSize = () => {
     if (!img.isConnected) return;
     const { naturalWidth, naturalHeight } = img;
@@ -138,16 +143,20 @@ function spawnGreenPlaneCrash(x, y) {
     }
   };
 
+
   const startFall = () => {
     if (!img.isConnected) return;
     img.style.visibility = 'visible';
     img.dataset.phase = 'fall';
     setTimeout(() => {
       if (!img.isConnected) return;
+
       img.src = GREEN_PLANE_LOOP_SRC;
+
       img.dataset.phase = 'loop';
     }, GREEN_PLANE_FALL_DURATION_MS);
   };
+
 
   const scheduleFall = () => setTimeout(startFall, startDelay);
 
@@ -165,6 +174,7 @@ function spawnGreenPlaneCrash(x, y) {
   img.addEventListener('error', (event) => {
     console.warn('[FX] Failed to load green plane fall animation', event);
   }, { once: true });
+
 }
 
 
