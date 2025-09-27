@@ -35,14 +35,12 @@ const BOARD_ORIGIN = { x: 0, y: 0 };
 const activeGreenCrashImages = new Set();
 
 // FX timings (ms) for coordinating explosion and crash animations
-
 const EXPLOSION_DURATION_MS = 700;   // also used before drawing the wreck cross
 const GREEN_FALL_OVERLAP_MS = 500;          // start fall 0.5 s before explosion ends
 const GREEN_PLANE_FALL_DURATION_MS = 1200;  // approximate duration of fall GIF before looping
 
 const GREEN_PLANE_FALL_SRC = encodeURI("green plane/green plane fall.gif");
 const GREEN_PLANE_LOOP_SRC = encodeURI("green plane/green down loop.gif");
-
 
 // Время (в секундах), в течение которого самолёт-атакующий
 // игнорирует повторный контакт с только что сбитой целью.
@@ -128,17 +126,17 @@ function spawnGreenPlaneCrash(x, y) {
   activeGreenCrashImages.add(img);
 
   const startDelay = Math.max(0, EXPLOSION_DURATION_MS - GREEN_FALL_OVERLAP_MS);
+
+  const planeDisplayWidth = 40 * PLANE_SCALE * sx;
+  const planeDisplayHeight = 40 * PLANE_SCALE * sy;
+
   const applyImageSize = () => {
     if (!img.isConnected) return;
-    const { naturalWidth, naturalHeight } = img;
-    if (naturalWidth > 0 && naturalHeight > 0) {
-      img.style.width = naturalWidth * sx + 'px';
-      img.style.height = naturalHeight * sy + 'px';
-    } else {
-      img.style.removeProperty('width');
-      img.style.removeProperty('height');
-    }
+    img.style.width = planeDisplayWidth + 'px';
+    img.style.height = planeDisplayHeight + 'px';
   };
+
+
   const startFall = () => {
     if (!img.isConnected) return;
     img.style.visibility = 'visible';
@@ -147,22 +145,15 @@ function spawnGreenPlaneCrash(x, y) {
       if (!img.isConnected) return;
 
       img.src = GREEN_PLANE_LOOP_SRC;
-
       img.dataset.phase = 'loop';
     }, GREEN_PLANE_FALL_DURATION_MS);
   };
   const scheduleFall = () => setTimeout(startFall, startDelay);
 
   img.addEventListener('load', applyImageSize);
+  applyImageSize();
+  scheduleFall();
 
-  if (img.complete && img.naturalWidth > 0) {
-    applyImageSize();
-    scheduleFall();
-  } else {
-    img.addEventListener('load', () => {
-      scheduleFall();
-    }, { once: true });
-  }
 
   img.addEventListener('error', (event) => {
     console.warn('[FX] Failed to load green plane fall animation', event);
