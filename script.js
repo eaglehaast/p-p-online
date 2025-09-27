@@ -35,10 +35,10 @@ const BOARD_ORIGIN = { x: 0, y: 0 };
 const activeGreenCrashImages = new Set();
 
 // FX timings (ms) for coordinating explosion and crash animations
-const EXPLOSION_DURATION_MS = 700;
+
+const EXPLOSION_DURATION_MS = 700;   // also used before drawing the wreck cross
 const GREEN_FALL_OVERLAP_MS = 500;          // start fall 0.5 s before explosion ends
 const GREEN_PLANE_FALL_DURATION_MS = 1200;  // approximate duration of fall GIF before looping
-
 
 const GREEN_PLANE_FALL_SRC = encodeURI("green plane/green plane fall.gif");
 const GREEN_PLANE_LOOP_SRC = encodeURI("green plane/green down loop.gif");
@@ -105,9 +105,7 @@ function spawnGreenPlaneCrash(x, y) {
   const sy = rect.height / gameCanvas.height;
 
   const img = new Image();
-
   img.src = GREEN_PLANE_FALL_SRC;
-
   img.className = 'fx-green-crash';
   img.style.position = 'absolute';
   img.style.zIndex = '9998';
@@ -130,7 +128,6 @@ function spawnGreenPlaneCrash(x, y) {
   activeGreenCrashImages.add(img);
 
   const startDelay = Math.max(0, EXPLOSION_DURATION_MS - GREEN_FALL_OVERLAP_MS);
-
   const applyImageSize = () => {
     if (!img.isConnected) return;
     const { naturalWidth, naturalHeight } = img;
@@ -142,8 +139,6 @@ function spawnGreenPlaneCrash(x, y) {
       img.style.removeProperty('height');
     }
   };
-
-
   const startFall = () => {
     if (!img.isConnected) return;
     img.style.visibility = 'visible';
@@ -156,8 +151,6 @@ function spawnGreenPlaneCrash(x, y) {
       img.dataset.phase = 'loop';
     }, GREEN_PLANE_FALL_DURATION_MS);
   };
-
-
   const scheduleFall = () => setTimeout(startFall, startDelay);
 
   img.addEventListener('load', applyImageSize);
@@ -174,7 +167,6 @@ function spawnGreenPlaneCrash(x, y) {
   img.addEventListener('error', (event) => {
     console.warn('[FX] Failed to load green plane fall animation', event);
   }, { once: true });
-
 }
 
 
@@ -386,8 +378,7 @@ const FLAG_POLE_HEIGHT     = 20;     // высота флагштока
 const FLAG_WIDTH           = 12;     // ширина полотна флага
 const FLAG_HEIGHT          = 8;      // высота полотна флага
 
-// Explosion effect
-const EXPLOSION_DURATION_MS = 500;   // time before showing cross
+// Explosion effect duration before showing cross (see EXPLOSION_DURATION_MS)
 
 function updateFieldBorderOffset(){
   if(settings.sharpEdges){
