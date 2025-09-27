@@ -34,6 +34,10 @@ const BOARD_ORIGIN = { x: 0, y: 0 };
 
 const activeGreenCrashImages = new Set();
 
+// Время (в секундах), в течение которого самолёт-атакующий
+// игнорирует повторный контакт с только что сбитой целью.
+const PLANE_HIT_COOLDOWN_SEC = 0.2;
+
 function cleanupGreenCrashFx() {
   if (!activeGreenCrashImages.size) return;
   for (const img of activeGreenCrashImages) {
@@ -1358,8 +1362,9 @@ function onHandleUp(){
   flyingPoints.push({
     plane, vx, vy,
     timeLeft: FLIGHT_DURATION_SEC,
-    hit:false,
-    collisionCooldown:0
+    collisionCooldown:0,
+    lastHitPlane:null,
+    lastHitCooldown:0
   });
 
   if(!hasShotThisRound){
@@ -1519,7 +1524,13 @@ function planPathToPoint(plane, tx, ty){
 
 function issueAIMove(plane, vx, vy){
   plane.angle = Math.atan2(vy, vx) + Math.PI/2;
-  flyingPoints.push({ plane, vx, vy, timeLeft: FLIGHT_DURATION_SEC, hit:false, collisionCooldown:0 });
+  flyingPoints.push({
+    plane, vx, vy,
+    timeLeft: FLIGHT_DURATION_SEC,
+    collisionCooldown:0,
+    lastHitPlane:null,
+    lastHitCooldown:0
+  });
   if(!hasShotThisRound){
     hasShotThisRound = true;
     renderScoreboard();
@@ -1900,6 +1911,13 @@ function handleAAForPlane(p, fp){
       if(!p.isAlive || p.burning){
         flyingPoints = flyingPoints.filter(other => other !== fp);
         continue;
+      }
+      if(fp.lastHitCooldown > 0){
+        fp.lastHitCooldown = Math.max(0, fp.lastHitCooldown - deltaSec);
+        if(fp.lastHitCooldown <= 0){
+          fp.lastHitPlane = null;
+          fp.lastHitCooldown = 0;
+        }
       }
       const prevX = p.x;
       const prevY = p.y;
@@ -2844,11 +2862,11 @@ function awardPoint(color){
 }
 function checkPlaneHits(plane, fp){
   if(isGameOver) return;
-  if(fp?.hit) return;
   const enemyColor = (plane.color==="green") ? "blue" : "green";
   for(const p of points){
     if(!p.isAlive || p.burning) continue;
     if(p.color !== enemyColor) continue;
+    if(fp && fp.lastHitPlane === p && fp.lastHitCooldown > 0) continue;
     const dx = p.x - plane.x;
     const dy = p.y - plane.y;
     const d  = Math.hypot(dx, dy);
@@ -2874,7 +2892,10 @@ function checkPlaneHits(plane, fp){
         }, EXPLOSION_DURATION_MS);
       }
 
-      fp.hit = true;
+      if(fp){
+        fp.lastHitPlane = p;
+        fp.lastHitCooldown = PLANE_HIT_COOLDOWN_SEC;
+      }
       if(p.flagColor){
         const flagColor = p.flagColor;
         const stolenBy = flagColor === "blue" ? blueFlagStolenBy : greenFlagStolenBy;
