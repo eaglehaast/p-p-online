@@ -69,6 +69,38 @@ function spawnExplosion(x, y, color = null) {
 }
 // ----------------------------------------
 
+function spawnGreenPlaneCrash(x, y) {
+  const rect = gameCanvas.getBoundingClientRect();
+  const sx = rect.width  / gameCanvas.width;
+  const sy = rect.height / gameCanvas.height;
+
+  const img = new Image();
+  img.src = 'green plane/green down loop.gif';
+  img.className = 'fx-green-crash';
+  img.style.position = 'absolute';
+  img.style.zIndex = '9998';
+  img.style.pointerEvents = 'none';
+  img.style.transform = 'translate(-50%, -50%)';
+
+  const pageX = window.scrollX || 0;
+  const pageY = window.scrollY || 0;
+
+  const absLeft = Math.round(rect.left + pageX + x * sx);
+  const absTop  = Math.round(rect.top  + pageY + y * sy);
+
+  img.style.left = absLeft + 'px';
+  img.style.top  = absTop  + 'px';
+
+  const planeSize = 40;
+  img.style.width = planeSize * sx + 'px';
+  img.style.height = planeSize * sy + 'px';
+
+  document.body.appendChild(img);
+
+  setTimeout(() => { img.remove(); }, 3000);
+}
+
+
 // Enable smoothing so rotated images (planes, arrows) don't appear jagged
 [gameCtx, aimCtx, planeCtx].forEach(ctx => {
   ctx.imageSmoothingEnabled = true;
@@ -1712,6 +1744,15 @@ function destroyPlane(fp){
   try { spawnExplosion(p.collisionX, p.collisionY); }
   catch(e) { console.warn('[FX] spawnExplosion error', e); }
 
+  if (p.color === "green") {
+    const crashX = p.collisionX;
+    const crashY = p.collisionY;
+    setTimeout(() => {
+      try { spawnGreenPlaneCrash(crashX, crashY); }
+      catch(e) { console.warn('[FX] spawnGreenPlaneCrash error', e); }
+    }, EXPLOSION_DURATION_MS);
+  }
+
   flyingPoints = flyingPoints.filter(x=>x!==fp);
   awardPoint(p.color);
   checkVictory();
@@ -1766,6 +1807,15 @@ function handleAAForPlane(p, fp){
 
               try { spawnExplosion(p.collisionX, p.collisionY); }
               catch(e) { console.warn('[FX] spawnExplosion error', e); }
+
+              if (p.color === "green") {
+                const crashX = p.collisionX;
+                const crashY = p.collisionY;
+                setTimeout(() => {
+                  try { spawnGreenPlaneCrash(crashX, crashY); }
+                  catch(e) { console.warn('[FX] spawnGreenPlaneCrash error', e); }
+                }, EXPLOSION_DURATION_MS);
+              }
 
               if(fp) {
                 flyingPoints = flyingPoints.filter(x=>x!==fp);
@@ -2341,12 +2391,18 @@ function drawPlaneOutline(ctx2d, color){
 
 function drawThinPlane(ctx2d, plane, glow = 0) {
   const { x: cx, y: cy, color, angle } = plane;
+  const explosionFinished = plane.burning && isExplosionFinished(plane);
 
   ctx2d.save();
   ctx2d.translate(cx, cy);
   ctx2d.rotate(angle);
   ctx2d.scale(PLANE_SCALE, PLANE_SCALE);
   ctx2d.filter = "blur(0.3px)"; // slight blur to soften rotated edges
+
+  if (color === "green" && explosionFinished) {
+    ctx2d.restore();
+    return;
+  }
 
   const blend = Math.max(0, Math.min(1, glow));
   if (blend > 0) {
@@ -2358,7 +2414,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
     ctx2d.shadowBlur = 1.5;
   }
 
-  const showEngine = !(plane.burning && isExplosionFinished(plane));
+  const showEngine = !(plane.burning && explosionFinished);
   if (color === "blue") {
     if (showEngine) {
       const flicker = 1 + 0.05 * Math.sin(globalFrame * 0.1);
@@ -2458,7 +2514,7 @@ function drawMiniPlaneWithCross(ctx2d, x, y, color, isAlive, isBurning, scale = 
     ctx2d.stroke();
   }
 
-  if (isBurning) {
+  if (isBurning && color !== "green") {
     drawRedCross(ctx2d, 0, 0, size * 0.8);
   }
 
@@ -2525,7 +2581,9 @@ function drawPlanesAndTrajectories(){
     if(!isExplosionFinished(p)){
       continue;
     }
-    drawRedCross(planeCtx, cx, cy, 16 * PLANE_SCALE);
+    if(p.color !== "green"){
+      drawRedCross(planeCtx, cx, cy, 16 * PLANE_SCALE);
+    }
   }
 
   if(rangeTextInfo){
@@ -2787,6 +2845,15 @@ function checkPlaneHits(plane, fp){
 
       try { spawnExplosion(p.collisionX, p.collisionY); }
       catch(e) { console.warn('[FX] spawnExplosion error', e); }
+
+      if (p.color === "green") {
+        const crashX = p.collisionX;
+        const crashY = p.collisionY;
+        setTimeout(() => {
+          try { spawnGreenPlaneCrash(crashX, crashY); }
+          catch(e) { console.warn('[FX] spawnGreenPlaneCrash error', e); }
+        }, EXPLOSION_DURATION_MS);
+      }
 
       fp.hit = true;
       if(p.flagColor){
