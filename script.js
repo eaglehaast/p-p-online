@@ -35,12 +35,14 @@ const BOARD_ORIGIN = { x: 0, y: 0 };
 const activeGreenCrashImages = new Set();
 
 // FX timings (ms) for coordinating explosion and crash animations
+
 const EXPLOSION_DURATION_MS = 700;   // also used before drawing the wreck cross
 const GREEN_FALL_OVERLAP_MS = 500;          // start fall 0.5 s before explosion ends
 const GREEN_PLANE_FALL_DURATION_MS = 1200;  // approximate duration of fall GIF before looping
 
 const GREEN_PLANE_FALL_SRC = encodeURI("green plane/green plane fall.gif");
 const GREEN_PLANE_LOOP_SRC = encodeURI("green plane/green down loop.gif");
+
 
 // Время (в секундах), в течение которого самолёт-атакующий
 // игнорирует повторный контакт с только что сбитой целью.
@@ -137,18 +139,18 @@ function spawnGreenPlaneCrash(x, y) {
       img.style.removeProperty('height');
     }
   };
-
   const startFall = () => {
     if (!img.isConnected) return;
     img.style.visibility = 'visible';
     img.dataset.phase = 'fall';
     setTimeout(() => {
       if (!img.isConnected) return;
+
       img.src = GREEN_PLANE_LOOP_SRC;
+
       img.dataset.phase = 'loop';
     }, GREEN_PLANE_FALL_DURATION_MS);
   };
-
   const scheduleFall = () => setTimeout(startFall, startDelay);
 
   img.addEventListener('load', applyImageSize);
