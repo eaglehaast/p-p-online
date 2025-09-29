@@ -32,14 +32,148 @@ const BOARD_ORIGIN = { x: 0, y: 0 };
 
 // ---- Explosion FX (GIF over canvas) ----
 
-const EXPLOSION_DURATION_MS = 700;   // also used before drawing the wreck cross
+const EXPLOSION_DURATION_MS = 700;   // delay before showing wreck FX
+const BURNING_FLAME_SRC = "flames/flame 1.gif";
+
 
 // Время (в секундах), в течение которого самолёт-атакующий
 // игнорирует повторный контакт с только что сбитой целью.
 const PLANE_HIT_COOLDOWN_SEC = 0.2;
 
+const planeFlameFx = new Map();
+const planeFlameTimers = new Map();
+
 function cleanupGreenCrashFx() {
-  // noop – crash FX disabled
+
+  cleanupBurningFx();
+}
+
+function cleanupBurningFx() {
+  for (const timer of planeFlameTimers.values()) {
+    clearTimeout(timer);
+  }
+  planeFlameTimers.clear();
+
+  for (const img of planeFlameFx.values()) {
+    img.remove();
+  }
+  planeFlameFx.clear();
+}
+
+function schedulePlaneFlameFx(plane) {
+  if (!plane) return;
+  const existingTimer = planeFlameTimers.get(plane);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+  }
+  const timer = setTimeout(() => {
+    planeFlameTimers.delete(plane);
+    if (plane.burning && isExplosionFinished(plane) && !planeFlameFx.has(plane)) {
+      spawnBurningFlameFx(plane);
+    }
+  }, EXPLOSION_DURATION_MS);
+  planeFlameTimers.set(plane, timer);
+}
+
+function spawnBurningFlameFx(plane) {
+  const fxLayer = document.getElementById('fxLayer');
+  const host = fxLayer || document.body;
+  if (!host) return;
+
+  const img = new Image();
+  img.src = BURNING_FLAME_SRC;
+  img.className = 'fx-flame';
+  img.style.position = 'absolute';
+  img.style.pointerEvents = 'none';
+  img.style.transform = 'translate(-50%, -50%)';
+  img.style.zIndex = '9999';
+
+  host.appendChild(img);
+  planeFlameFx.set(plane, img);
+  updatePlaneFlameFxPosition(plane);
+}
+
+function updatePlaneFlameFxPosition(plane, metrics) {
+  const img = planeFlameFx.get(plane);
+  if (!img) return;
+
+  let data = metrics;
+  if (!data) {
+    const rect = gameCanvas.getBoundingClientRect();
+    const fxLayer = document.getElementById('fxLayer');
+    const hostRect = fxLayer ? fxLayer.getBoundingClientRect() : document.body.getBoundingClientRect();
+    const scaleX = rect.width / gameCanvas.width;
+    const scaleY = rect.height / gameCanvas.height;
+    data = { rect, fxLayer, hostRect, scaleX, scaleY };
+  }
+
+  const { rect, fxLayer, hostRect, scaleX, scaleY } = data;
+
+  if (!Number.isFinite(scaleX) || !Number.isFinite(scaleY) || scaleX <= 0 || scaleY <= 0) {
+    return;
+  }
+
+  const x = plane.collisionX ?? plane.x;
+  const y = plane.collisionY ?? plane.y;
+
+  let left = rect.left - hostRect.left + x * scaleX;
+  let top = rect.top - hostRect.top + y * scaleY;
+
+  if (!fxLayer) {
+    const pageX = window.scrollX || 0;
+    const pageY = window.scrollY || 0;
+    left = rect.left + pageX + x * scaleX;
+    top = rect.top + pageY + y * scaleY;
+  }
+
+  img.style.left = Math.round(left) + 'px';
+  img.style.top = Math.round(top) + 'px';
+}
+
+function updateAllPlaneFlameFxPositions() {
+  if (planeFlameFx.size === 0) return;
+
+  const rect = gameCanvas.getBoundingClientRect();
+  const fxLayer = document.getElementById('fxLayer');
+  const hostRect = fxLayer ? fxLayer.getBoundingClientRect() : document.body.getBoundingClientRect();
+  const scaleX = rect.width / gameCanvas.width;
+  const scaleY = rect.height / gameCanvas.height;
+
+  if (!Number.isFinite(scaleX) || !Number.isFinite(scaleY) || scaleX <= 0 || scaleY <= 0) {
+    return;
+  }
+
+  const metrics = { rect, fxLayer, hostRect, scaleX, scaleY };
+
+  for (const plane of planeFlameFx.keys()) {
+    updatePlaneFlameFxPosition(plane, metrics);
+  }
+}
+
+function ensurePlaneFlameFx(plane) {
+  if (!plane.burning) {
+    const img = planeFlameFx.get(plane);
+    if (img) {
+      img.remove();
+      planeFlameFx.delete(plane);
+    }
+    const timer = planeFlameTimers.get(plane);
+    if (timer) {
+      clearTimeout(timer);
+      planeFlameTimers.delete(plane);
+    }
+    return;
+  }
+
+  if (isExplosionFinished(plane) && !planeFlameFx.has(plane)) {
+    const timer = planeFlameTimers.get(plane);
+    if (timer) {
+      clearTimeout(timer);
+      planeFlameTimers.delete(plane);
+    }
+    spawnBurningFlameFx(plane);
+  }
+
 }
 
 function spawnExplosion(x, y, color = null) {
@@ -106,6 +240,8 @@ bluePlaneImg.src = "blue plane 24.png";
 const greenPlaneImg = new Image();
 
 greenPlaneImg.src = "green plane 3.png";
+const flameGifImg = new Image();
+flameGifImg.src = BURNING_FLAME_SRC;
 const backgroundImg = new Image();
 backgroundImg.src = "background paper 1.png";
 
@@ -1730,6 +1866,10 @@ function destroyPlane(fp){
   try { spawnExplosion(p.collisionX, p.collisionY); }
   catch(e) { console.warn('[FX] spawnExplosion error', e); }
 
+
+  schedulePlaneFlameFx(p);
+
+
   flyingPoints = flyingPoints.filter(x=>x!==fp);
   awardPoint(p.color);
   checkVictory();
@@ -1784,7 +1924,7 @@ function handleAAForPlane(p, fp){
 
               try { spawnExplosion(p.collisionX, p.collisionY); }
               catch(e) { console.warn('[FX] spawnExplosion error', e); }
-
+              schedulePlaneFlameFx(p);
               if(fp) {
                 flyingPoints = flyingPoints.filter(x=>x!==fp);
               }
@@ -2374,7 +2514,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   ctx2d.scale(PLANE_SCALE, PLANE_SCALE);
   ctx2d.filter = "blur(0.3px)"; // slight blur to soften rotated edges
 
-  if (color === "green" && explosionFinished) {
+  if (plane.burning && explosionFinished) {
     ctx2d.restore();
     return;
   }
@@ -2489,8 +2629,12 @@ function drawMiniPlaneWithCross(ctx2d, x, y, color, isAlive, isBurning, scale = 
     ctx2d.stroke();
   }
 
-  if (isBurning && color !== "green") {
-    drawRedCross(ctx2d, 0, 0, size * 0.8);
+  if (isBurning) {
+    if (flameGifImg.complete) {
+      ctx2d.drawImage(flameGifImg, -size / 2, -size / 2, size, size);
+    } else {
+      drawRedCross(ctx2d, 0, 0, size * 0.8);
+    }
   }
 
   ctx2d.restore();
@@ -2505,7 +2649,6 @@ function drawPlanesAndTrajectories(){
   planeCtx.translate(rect.left, rect.top);
   planeCtx.scale(scaleX, scaleY);
 
-  const burningPlanes = [];
   let rangeTextInfo = null;
   const activeColor = turnColors[turnIndex];
   const showGlow = !handleCircle.active && !flyingPoints.some(fp => fp.plane.color === activeColor);
@@ -2545,21 +2688,10 @@ function drawPlanesAndTrajectories(){
       planeCtx.stroke();
       planeCtx.restore();
     }
-    if(p.burning){
-      const cx = p.collisionX ?? p.x;
-      const cy = p.collisionY ?? p.y;
-      burningPlanes.push({plane: p, cx, cy});
-    }
+    ensurePlaneFlameFx(p);
   }
 
-  for(const {plane: p, cx, cy} of burningPlanes){
-    if(!isExplosionFinished(p)){
-      continue;
-    }
-    if(p.color !== "green"){
-      drawRedCross(planeCtx, cx, cy, 16 * PLANE_SCALE);
-    }
-  }
+  updateAllPlaneFlameFxPositions();
 
   if(rangeTextInfo){
     planeCtx.save();
@@ -2820,7 +2952,7 @@ function checkPlaneHits(plane, fp){
 
       try { spawnExplosion(p.collisionX, p.collisionY); }
       catch(e) { console.warn('[FX] spawnExplosion error', e); }
-
+      schedulePlaneFlameFx(p);
       if(fp){
         fp.lastHitPlane = p;
         fp.lastHitCooldown = PLANE_HIT_COOLDOWN_SEC;
@@ -3337,6 +3469,8 @@ function resizeCanvas() {
     overlay.style.width = window.innerWidth + 'px';
     overlay.style.height = window.innerHeight + 'px';
   });
+
+  updateAllPlaneFlameFxPositions();
 
   // Переинициализируем самолёты
   if(points.length === 0) {

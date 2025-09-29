@@ -142,6 +142,16 @@ body, button {
   pointer-events: none;
 }
 
+.fx-flame {
+  position: absolute;
+  width: 80px;
+  height: 80px;
+  transform: translate(-50%, -50%);
+  image-rendering: auto;
+  pointer-events: none;
+}
+
+
 /* Меню выбора режима */
   #modeMenu {
     position: fixed;
