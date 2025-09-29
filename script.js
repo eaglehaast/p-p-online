@@ -35,6 +35,7 @@ const BOARD_ORIGIN = { x: 0, y: 0 };
 const EXPLOSION_DURATION_MS = 700;   // delay before showing wreck FX
 const BURNING_FLAME_SRC = "flames/flame 1.gif";
 
+
 // Время (в секундах), в течение которого самолёт-атакующий
 // игнорирует повторный контакт с только что сбитой целью.
 const PLANE_HIT_COOLDOWN_SEC = 0.2;
@@ -43,6 +44,7 @@ const planeFlameFx = new Map();
 const planeFlameTimers = new Map();
 
 function cleanupGreenCrashFx() {
+
   cleanupBurningFx();
 }
 
@@ -171,6 +173,7 @@ function ensurePlaneFlameFx(plane) {
     }
     spawnBurningFlameFx(plane);
   }
+
 }
 
 function spawnExplosion(x, y, color = null) {
@@ -1863,7 +1866,9 @@ function destroyPlane(fp){
   try { spawnExplosion(p.collisionX, p.collisionY); }
   catch(e) { console.warn('[FX] spawnExplosion error', e); }
 
+
   schedulePlaneFlameFx(p);
+
 
   flyingPoints = flyingPoints.filter(x=>x!==fp);
   awardPoint(p.color);
@@ -1919,9 +1924,7 @@ function handleAAForPlane(p, fp){
 
               try { spawnExplosion(p.collisionX, p.collisionY); }
               catch(e) { console.warn('[FX] spawnExplosion error', e); }
-
               schedulePlaneFlameFx(p);
-
               if(fp) {
                 flyingPoints = flyingPoints.filter(x=>x!==fp);
               }
@@ -2949,9 +2952,7 @@ function checkPlaneHits(plane, fp){
 
       try { spawnExplosion(p.collisionX, p.collisionY); }
       catch(e) { console.warn('[FX] spawnExplosion error', e); }
-
       schedulePlaneFlameFx(p);
-
       if(fp){
         fp.lastHitPlane = p;
         fp.lastHitCooldown = PLANE_HIT_COOLDOWN_SEC;
