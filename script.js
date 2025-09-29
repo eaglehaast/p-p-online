@@ -32,32 +32,145 @@ const BOARD_ORIGIN = { x: 0, y: 0 };
 
 // ---- Explosion FX (GIF over canvas) ----
 
-const activeGreenCrashImages = new Set();
-
-// FX timings (ms) for coordinating explosion and crash animations
-const EXPLOSION_DURATION_MS = 700;   // also used before drawing the wreck cross
-const GREEN_FALL_OVERLAP_MS = 500;          // start fall 0.5 s before explosion ends
-const GREEN_PLANE_FALL_DURATION_MS = 1200;  // approximate duration of fall GIF before looping
-
-const GREEN_PLANE_FALL_SRC = encodeURI("green plane/green plane fall.gif");
-const GREEN_PLANE_LOOP_SRC = encodeURI("green plane/green down loop.gif");
+const EXPLOSION_DURATION_MS = 700;   // delay before showing wreck FX
+const BURNING_FLAME_SRC = "flames/flame 1.gif";
 
 // Время (в секундах), в течение которого самолёт-атакующий
 // игнорирует повторный контакт с только что сбитой целью.
 const PLANE_HIT_COOLDOWN_SEC = 0.2;
 
+const planeFlameFx = new Map();
+const planeFlameTimers = new Map();
+
 function cleanupGreenCrashFx() {
-  if (!activeGreenCrashImages.size) return;
-  for (const img of activeGreenCrashImages) {
-    if (img && typeof img.remove === "function") {
-      try {
-        img.remove();
-      } catch (err) {
-        // ignore removal errors; the element might already be gone
-      }
-    }
+  cleanupBurningFx();
+}
+
+function cleanupBurningFx() {
+  for (const timer of planeFlameTimers.values()) {
+    clearTimeout(timer);
   }
-  activeGreenCrashImages.clear();
+  planeFlameTimers.clear();
+
+  for (const img of planeFlameFx.values()) {
+    img.remove();
+  }
+  planeFlameFx.clear();
+}
+
+function schedulePlaneFlameFx(plane) {
+  if (!plane) return;
+  const existingTimer = planeFlameTimers.get(plane);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+  }
+  const timer = setTimeout(() => {
+    planeFlameTimers.delete(plane);
+    if (plane.burning && isExplosionFinished(plane) && !planeFlameFx.has(plane)) {
+      spawnBurningFlameFx(plane);
+    }
+  }, EXPLOSION_DURATION_MS);
+  planeFlameTimers.set(plane, timer);
+}
+
+function spawnBurningFlameFx(plane) {
+  const fxLayer = document.getElementById('fxLayer');
+  const host = fxLayer || document.body;
+  if (!host) return;
+
+  const img = new Image();
+  img.src = BURNING_FLAME_SRC;
+  img.className = 'fx-flame';
+  img.style.position = 'absolute';
+  img.style.pointerEvents = 'none';
+  img.style.transform = 'translate(-50%, -50%)';
+  img.style.zIndex = '9999';
+
+  host.appendChild(img);
+  planeFlameFx.set(plane, img);
+  updatePlaneFlameFxPosition(plane);
+}
+
+function updatePlaneFlameFxPosition(plane, metrics) {
+  const img = planeFlameFx.get(plane);
+  if (!img) return;
+
+  let data = metrics;
+  if (!data) {
+    const rect = gameCanvas.getBoundingClientRect();
+    const fxLayer = document.getElementById('fxLayer');
+    const hostRect = fxLayer ? fxLayer.getBoundingClientRect() : document.body.getBoundingClientRect();
+    const scaleX = rect.width / gameCanvas.width;
+    const scaleY = rect.height / gameCanvas.height;
+    data = { rect, fxLayer, hostRect, scaleX, scaleY };
+  }
+
+  const { rect, fxLayer, hostRect, scaleX, scaleY } = data;
+
+  if (!Number.isFinite(scaleX) || !Number.isFinite(scaleY) || scaleX <= 0 || scaleY <= 0) {
+    return;
+  }
+
+  const x = plane.collisionX ?? plane.x;
+  const y = plane.collisionY ?? plane.y;
+
+  let left = rect.left - hostRect.left + x * scaleX;
+  let top = rect.top - hostRect.top + y * scaleY;
+
+  if (!fxLayer) {
+    const pageX = window.scrollX || 0;
+    const pageY = window.scrollY || 0;
+    left = rect.left + pageX + x * scaleX;
+    top = rect.top + pageY + y * scaleY;
+  }
+
+  img.style.left = Math.round(left) + 'px';
+  img.style.top = Math.round(top) + 'px';
+}
+
+function updateAllPlaneFlameFxPositions() {
+  if (planeFlameFx.size === 0) return;
+
+  const rect = gameCanvas.getBoundingClientRect();
+  const fxLayer = document.getElementById('fxLayer');
+  const hostRect = fxLayer ? fxLayer.getBoundingClientRect() : document.body.getBoundingClientRect();
+  const scaleX = rect.width / gameCanvas.width;
+  const scaleY = rect.height / gameCanvas.height;
+
+  if (!Number.isFinite(scaleX) || !Number.isFinite(scaleY) || scaleX <= 0 || scaleY <= 0) {
+    return;
+  }
+
+  const metrics = { rect, fxLayer, hostRect, scaleX, scaleY };
+
+  for (const plane of planeFlameFx.keys()) {
+    updatePlaneFlameFxPosition(plane, metrics);
+  }
+}
+
+function ensurePlaneFlameFx(plane) {
+  if (!plane.burning) {
+    const img = planeFlameFx.get(plane);
+    if (img) {
+      img.remove();
+      planeFlameFx.delete(plane);
+    }
+    const timer = planeFlameTimers.get(plane);
+    if (timer) {
+      clearTimeout(timer);
+      planeFlameTimers.delete(plane);
+    }
+    return;
+  }
+
+  if (isExplosionFinished(plane) && !planeFlameFx.has(plane)) {
+    const timer = planeFlameTimers.get(plane);
+    if (timer) {
+      clearTimeout(timer);
+      planeFlameTimers.delete(plane);
+    }
+    spawnBurningFlameFx(plane);
+  }
 }
 
 function spawnExplosion(x, y, color = null) {
@@ -95,70 +208,6 @@ function spawnExplosion(x, y, color = null) {
   setTimeout(() => { img.remove(); }, EXPLOSION_DURATION_MS);
 
 }
-// ----------------------------------------
-
-function spawnGreenPlaneCrash(x, y) {
-  const rect = gameCanvas.getBoundingClientRect();
-  const sx = rect.width  / gameCanvas.width;
-  const sy = rect.height / gameCanvas.height;
-
-  const img = new Image();
-  img.src = GREEN_PLANE_FALL_SRC;
-  img.className = 'fx-green-crash';
-  img.style.position = 'absolute';
-  img.style.zIndex = '9998';
-  img.style.pointerEvents = 'none';
-  img.style.transform = 'translate(-50%, -50%)';
-  img.style.visibility = 'hidden';
-  img.draggable = false;
-  img.dataset.fx = 'green-crash';
-
-  const pageX = window.scrollX || 0;
-  const pageY = window.scrollY || 0;
-
-  const absLeft = Math.round(rect.left + pageX + x * sx);
-  const absTop  = Math.round(rect.top  + pageY + y * sy);
-
-  img.style.left = absLeft + 'px';
-  img.style.top  = absTop  + 'px';
-
-  document.body.appendChild(img);
-  activeGreenCrashImages.add(img);
-
-  const startDelay = Math.max(0, EXPLOSION_DURATION_MS - GREEN_FALL_OVERLAP_MS);
-
-  const planeDisplayWidth = 40 * PLANE_SCALE * sx;
-  const planeDisplayHeight = 40 * PLANE_SCALE * sy;
-
-  const applyImageSize = () => {
-    if (!img.isConnected) return;
-    img.style.width = planeDisplayWidth + 'px';
-    img.style.height = planeDisplayHeight + 'px';
-  };
-
-
-  const startFall = () => {
-    if (!img.isConnected) return;
-    img.style.visibility = 'visible';
-    img.dataset.phase = 'fall';
-    setTimeout(() => {
-      if (!img.isConnected) return;
-
-      img.src = GREEN_PLANE_LOOP_SRC;
-      img.dataset.phase = 'loop';
-    }, GREEN_PLANE_FALL_DURATION_MS);
-  };
-  const scheduleFall = () => setTimeout(startFall, startDelay);
-
-  img.addEventListener('load', applyImageSize);
-  applyImageSize();
-  scheduleFall();
-
-
-  img.addEventListener('error', (event) => {
-    console.warn('[FX] Failed to load green plane fall animation', event);
-  }, { once: true });
-}
 
 
 // Enable smoothing so rotated images (planes, arrows) don't appear jagged
@@ -188,6 +237,8 @@ bluePlaneImg.src = "blue plane 24.png";
 const greenPlaneImg = new Image();
 
 greenPlaneImg.src = "green plane 3.png";
+const flameGifImg = new Image();
+flameGifImg.src = BURNING_FLAME_SRC;
 const backgroundImg = new Image();
 backgroundImg.src = "background paper 1.png";
 
@@ -1812,14 +1863,7 @@ function destroyPlane(fp){
   try { spawnExplosion(p.collisionX, p.collisionY); }
   catch(e) { console.warn('[FX] spawnExplosion error', e); }
 
-  if (p.color === "green") {
-    const crashX = p.collisionX;
-    const crashY = p.collisionY;
-    setTimeout(() => {
-      try { spawnGreenPlaneCrash(crashX, crashY); }
-      catch(e) { console.warn('[FX] spawnGreenPlaneCrash error', e); }
-    }, EXPLOSION_DURATION_MS);
-  }
+  schedulePlaneFlameFx(p);
 
   flyingPoints = flyingPoints.filter(x=>x!==fp);
   awardPoint(p.color);
@@ -1876,14 +1920,7 @@ function handleAAForPlane(p, fp){
               try { spawnExplosion(p.collisionX, p.collisionY); }
               catch(e) { console.warn('[FX] spawnExplosion error', e); }
 
-              if (p.color === "green") {
-                const crashX = p.collisionX;
-                const crashY = p.collisionY;
-                setTimeout(() => {
-                  try { spawnGreenPlaneCrash(crashX, crashY); }
-                  catch(e) { console.warn('[FX] spawnGreenPlaneCrash error', e); }
-                }, EXPLOSION_DURATION_MS);
-              }
+              schedulePlaneFlameFx(p);
 
               if(fp) {
                 flyingPoints = flyingPoints.filter(x=>x!==fp);
@@ -2474,7 +2511,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   ctx2d.scale(PLANE_SCALE, PLANE_SCALE);
   ctx2d.filter = "blur(0.3px)"; // slight blur to soften rotated edges
 
-  if (color === "green" && explosionFinished) {
+  if (plane.burning && explosionFinished) {
     ctx2d.restore();
     return;
   }
@@ -2589,8 +2626,12 @@ function drawMiniPlaneWithCross(ctx2d, x, y, color, isAlive, isBurning, scale = 
     ctx2d.stroke();
   }
 
-  if (isBurning && color !== "green") {
-    drawRedCross(ctx2d, 0, 0, size * 0.8);
+  if (isBurning) {
+    if (flameGifImg.complete) {
+      ctx2d.drawImage(flameGifImg, -size / 2, -size / 2, size, size);
+    } else {
+      drawRedCross(ctx2d, 0, 0, size * 0.8);
+    }
   }
 
   ctx2d.restore();
@@ -2605,7 +2646,6 @@ function drawPlanesAndTrajectories(){
   planeCtx.translate(rect.left, rect.top);
   planeCtx.scale(scaleX, scaleY);
 
-  const burningPlanes = [];
   let rangeTextInfo = null;
   const activeColor = turnColors[turnIndex];
   const showGlow = !handleCircle.active && !flyingPoints.some(fp => fp.plane.color === activeColor);
@@ -2645,21 +2685,10 @@ function drawPlanesAndTrajectories(){
       planeCtx.stroke();
       planeCtx.restore();
     }
-    if(p.burning){
-      const cx = p.collisionX ?? p.x;
-      const cy = p.collisionY ?? p.y;
-      burningPlanes.push({plane: p, cx, cy});
-    }
+    ensurePlaneFlameFx(p);
   }
 
-  for(const {plane: p, cx, cy} of burningPlanes){
-    if(!isExplosionFinished(p)){
-      continue;
-    }
-    if(p.color !== "green"){
-      drawRedCross(planeCtx, cx, cy, 16 * PLANE_SCALE);
-    }
-  }
+  updateAllPlaneFlameFxPositions();
 
   if(rangeTextInfo){
     planeCtx.save();
@@ -2921,14 +2950,7 @@ function checkPlaneHits(plane, fp){
       try { spawnExplosion(p.collisionX, p.collisionY); }
       catch(e) { console.warn('[FX] spawnExplosion error', e); }
 
-      if (p.color === "green") {
-        const crashX = p.collisionX;
-        const crashY = p.collisionY;
-        setTimeout(() => {
-          try { spawnGreenPlaneCrash(crashX, crashY); }
-          catch(e) { console.warn('[FX] spawnGreenPlaneCrash error', e); }
-        }, EXPLOSION_DURATION_MS);
-      }
+      schedulePlaneFlameFx(p);
 
       if(fp){
         fp.lastHitPlane = p;
@@ -3446,6 +3468,8 @@ function resizeCanvas() {
     overlay.style.width = window.innerWidth + 'px';
     overlay.style.height = window.innerHeight + 'px';
   });
+
+  updateAllPlaneFlameFxPositions();
 
   // Переинициализируем самолёты
   if(points.length === 0) {
