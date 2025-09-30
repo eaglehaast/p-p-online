@@ -2512,14 +2512,16 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   ctx2d.translate(cx, cy);
   ctx2d.rotate(angle);
   ctx2d.scale(PLANE_SCALE, PLANE_SCALE);
-  ctx2d.filter = "blur(0.3px)"; // slight blur to soften rotated edges
 
+  const filterParts = ["blur(0.3px)"]; // slight blur to soften rotated edges
   if (plane.burning && explosionFinished) {
-    ctx2d.restore();
-    return;
+    filterParts.push("saturate(0) brightness(0.6)");
   }
+  ctx2d.filter = filterParts.join(" ");
 
-  const blend = Math.max(0, Math.min(1, glow));
+  const blend = (plane.burning && explosionFinished)
+    ? 0
+    : Math.max(0, Math.min(1, glow));
   if (blend > 0) {
     const glowStrength = blend * 1.25; // boost brightness slightly
     ctx2d.shadowColor = colorWithAlpha(color, Math.min(1, glowStrength));
@@ -2530,6 +2532,9 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   }
 
   const showEngine = !(plane.burning && explosionFinished);
+  if (plane.burning && explosionFinished) {
+    ctx2d.globalAlpha = 0.85;
+  }
   if (color === "blue") {
     if (showEngine) {
       const flicker = 1 + 0.05 * Math.sin(globalFrame * 0.1);
