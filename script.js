@@ -85,7 +85,7 @@ function spawnBurningFlameFx(plane) {
   img.className = 'fx-flame';
   img.style.position = 'absolute';
   img.style.pointerEvents = 'none';
-  img.style.transform = 'translate(-50%, -50%)';
+  img.style.transform = 'translate(-50%, -100%)';
   img.style.zIndex = '9999';
 
   host.appendChild(img);
