@@ -124,6 +124,7 @@ function spawnBurningFlameFx(plane) {
   if (!flameSrc) return;
 
   const img = new Image();
+  let attemptedSrc = flameSrc;
   img.src = flameSrc;
   img.dataset.flameSrc = flameSrc;
   img.className = 'fx-flame';
@@ -143,10 +144,9 @@ function spawnBurningFlameFx(plane) {
       }
       return;
     }
-    plane.burningFlameSrc = fallback;
     attemptedSrc = fallback;
+    plane.burningFlameSrc = fallback;
     img.dataset.flameSrc = fallback;
-    img.onerror = null;
     img.src = fallback;
   };
 
@@ -2704,15 +2704,6 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   const blend = (plane.burning && explosionFinished)
     ? 0
     : Math.max(0, Math.min(1, glow));
-
-  // Base shadow for all planes (subtle and untinted)
-  ctx2d.save();
-  ctx2d.filter = "none";
-  ctx2d.fillStyle = "rgba(0,0,0,0.18)";
-  ctx2d.beginPath();
-  ctx2d.arc(0, 1, 14, 0, Math.PI * 2);
-  ctx2d.fill();
-  ctx2d.restore();
 
   if (blend > 0) {
     const glowStrength = blend * 1.25; // boost brightness slightly
