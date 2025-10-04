@@ -121,6 +121,39 @@ async function decodeGifFrames(src) {
     track.selected = true;
   }
 
+  const parseDisposal = (value) => {
+    if (typeof value === 'string') {
+      const normalized = value.toLowerCase();
+      if (normalized === 'restorebackground' || normalized === 'restore-background' || normalized === 'background') {
+        return 'restoreBackground';
+      }
+      if (normalized === 'restoreprevious' || normalized === 'restore-previous' || normalized === 'previous') {
+        return 'restorePrevious';
+      }
+      if (normalized === 'none' || normalized === 'keep' || normalized === 'donotdispose') {
+        return 'none';
+      }
+    } else if (Number.isFinite(value)) {
+      if (value === 2) return 'restoreBackground';
+      if (value === 3) return 'restorePrevious';
+      return 'none';
+    }
+    return 'none';
+  };
+
+  const parseBlend = (value) => {
+    if (typeof value === 'string') {
+      const normalized = value.toLowerCase();
+      if (normalized === 'source' || normalized === 'copy') {
+        return 'source';
+      }
+      if (normalized === 'over' || normalized === 'source-over' || normalized === 'normal') {
+        return 'over';
+      }
+    }
+    return 'over';
+  };
+
   const frames = [];
   let frameIndex = 0;
   const maxFrames = track?.frameCount && Number.isFinite(track.frameCount)
@@ -138,7 +171,11 @@ async function decodeGifFrames(src) {
         ? Math.max(16, durationValue / 1000)
         : 1000 / 24;
 
-      frames.push({ image, duration: durationMs });
+      const disposal = parseDisposal(metadata?.disposal);
+      const blend = parseBlend(metadata?.blend);
+      const frameRect = metadata?.frameRect || null;
+
+      frames.push({ image, duration: durationMs, disposal, blend, frameRect });
       frameIndex += 1;
       if (complete) {
         break;
@@ -161,7 +198,144 @@ async function decodeGifFrames(src) {
   const width = firstFrame?.width || 1;
   const height = firstFrame?.height || 1;
 
-  return { frames, width, height };
+  if (typeof createImageBitmap !== 'function') {
+    // Unable to flatten frames, fall back to <img> rendering.
+    for (const frame of frames) {
+      if (frame?.image && typeof frame.image.close === 'function') {
+        try {
+          frame.image.close();
+        } catch (error) {
+          // ignore close errors
+        }
+      }
+    }
+    throw new Error('createImageBitmap is not supported in this environment.');
+  }
+
+  const offscreenCanvas = typeof OffscreenCanvas === 'function'
+    ? new OffscreenCanvas(width, height)
+    : (() => {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        return canvas;
+      })();
+
+  const offscreenCtx = offscreenCanvas.getContext('2d');
+  if (!offscreenCtx) {
+    for (const frame of frames) {
+      if (frame?.image && typeof frame.image.close === 'function') {
+        try {
+          frame.image.close();
+        } catch (error) {
+          // ignore close errors
+        }
+      }
+    }
+    throw new Error('Failed to acquire offscreen canvas context.');
+  }
+
+  offscreenCtx.clearRect(0, 0, width, height);
+
+  const flattenedFrames = [];
+
+  const normalizeFrameRect = (frameRect, image) => {
+    if (!frameRect || typeof frameRect !== 'object') {
+      return {
+        x: 0,
+        y: 0,
+        width: image?.width || width,
+        height: image?.height || height,
+      };
+    }
+    const rect = {
+      x: Number.isFinite(frameRect.x) ? frameRect.x : 0,
+      y: Number.isFinite(frameRect.y) ? frameRect.y : 0,
+      width: Number.isFinite(frameRect.width) ? frameRect.width : (image?.width || width),
+      height: Number.isFinite(frameRect.height) ? frameRect.height : (image?.height || height),
+    };
+    rect.x = Math.max(0, Math.min(width, rect.x));
+    rect.y = Math.max(0, Math.min(height, rect.y));
+    rect.width = Math.max(0, Math.min(width - rect.x, rect.width));
+    rect.height = Math.max(0, Math.min(height - rect.y, rect.height));
+    return rect;
+  };
+
+  try {
+    for (const frame of frames) {
+      if (!frame?.image) {
+        continue;
+      }
+
+      const rect = normalizeFrameRect(frame.frameRect, frame.image);
+
+      let restoreImageData = null;
+      if (frame.disposal === 'restorePrevious') {
+        try {
+          restoreImageData = offscreenCtx.getImageData(0, 0, width, height);
+        } catch (error) {
+          restoreImageData = null;
+        }
+      }
+
+      if (frame.blend === 'source' && rect.width > 0 && rect.height > 0) {
+        offscreenCtx.clearRect(rect.x, rect.y, rect.width, rect.height);
+      }
+
+      if (rect.width > 0 && rect.height > 0) {
+        offscreenCtx.drawImage(frame.image, rect.x, rect.y);
+      } else {
+        offscreenCtx.drawImage(frame.image, 0, 0);
+      }
+
+      const flattenedImage = await createImageBitmap(offscreenCanvas);
+      flattenedFrames.push({ image: flattenedImage, duration: frame.duration });
+
+      if (typeof frame.image.close === 'function') {
+        try {
+          frame.image.close();
+        } catch (error) {
+          // ignore close errors
+        }
+      }
+
+      if (frame.disposal === 'restoreBackground' && rect.width > 0 && rect.height > 0) {
+        offscreenCtx.clearRect(rect.x, rect.y, rect.width, rect.height);
+      } else if (frame.disposal === 'restorePrevious' && restoreImageData) {
+        try {
+          offscreenCtx.putImageData(restoreImageData, 0, 0);
+        } catch (error) {
+          // ignore restoration errors
+        }
+      }
+    }
+  } catch (error) {
+    for (const frame of frames) {
+      if (frame?.image && typeof frame.image.close === 'function') {
+        try {
+          frame.image.close();
+        } catch (closeError) {
+          // ignore close errors
+        }
+      }
+    }
+    for (const frame of flattenedFrames) {
+      if (frame?.image && typeof frame.image.close === 'function') {
+        try {
+          frame.image.close();
+        } catch (closeError) {
+          // ignore close errors
+        }
+      }
+    }
+    throw error;
+  }
+
+  if (!flattenedFrames.length) {
+    return null;
+  }
+
+  return { frames: flattenedFrames, width, height };
 }
 
 function stopFlameAnimation(element) {
