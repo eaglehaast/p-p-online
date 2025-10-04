@@ -47,12 +47,19 @@ const BURNING_FLAME_SRCS = [
 ];
 const DEFAULT_BURNING_FLAME_SRC = BURNING_FLAME_SRCS[0];
 
+const BURNING_FLAME_SRC_SET = new Set(BURNING_FLAME_SRCS);
+
 function pickRandomBurningFlame() {
-  if (!Array.isArray(BURNING_FLAME_SRCS) || BURNING_FLAME_SRCS.length === 0) {
+  const pool = BURNING_FLAME_SRC_SET.size > 0
+    ? Array.from(BURNING_FLAME_SRC_SET)
+    : (Array.isArray(BURNING_FLAME_SRCS) ? BURNING_FLAME_SRCS : []);
+
+  if (!pool.length) {
     return DEFAULT_BURNING_FLAME_SRC || "";
   }
-  const index = Math.floor(Math.random() * BURNING_FLAME_SRCS.length);
-  return BURNING_FLAME_SRCS[index];
+  const index = Math.floor(Math.random() * pool.length);
+  return pool[index];
+
 }
 
 function ensurePlaneBurningFlame(plane) {
@@ -124,6 +131,24 @@ function spawnBurningFlameFx(plane) {
   img.style.pointerEvents = 'none';
   img.style.transform = 'translate(-50%, -100%)';
   img.style.zIndex = '9999';
+
+  img.onerror = () => {
+    const fallback = DEFAULT_BURNING_FLAME_SRC;
+    if (!fallback || attemptedSrc === fallback) {
+      img.onerror = null;
+      img.remove();
+      planeFlameFx.delete(plane);
+      if (plane && plane.burningFlameSrc) {
+        delete plane.burningFlameSrc;
+      }
+      return;
+    }
+    plane.burningFlameSrc = fallback;
+    attemptedSrc = fallback;
+    img.dataset.flameSrc = fallback;
+    img.onerror = null;
+    img.src = fallback;
+  };
 
   host.appendChild(img);
   planeFlameFx.set(plane, img);
