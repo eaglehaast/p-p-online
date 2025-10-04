@@ -284,6 +284,64 @@ async function createAnimatedFlameEntry(src) {
   return { element: canvas, stop };
 }
 
+function createImageFlameEntry(plane, flameSrc, glowColor) {
+  const img = new Image();
+  img.decoding = 'async';
+  applyFlameElementStyles(img);
+
+  if (glowColor) {
+    img.style.setProperty('--fx-glow-color', glowColor);
+  } else {
+    img.style.removeProperty('--fx-glow-color');
+  }
+
+  let attemptedSrc = flameSrc || '';
+
+  const entry = {
+    element: img,
+    stop() {
+      img.onerror = null;
+      img.onload = null;
+    },
+  };
+
+  const setImageSource = (nextSrc) => {
+    attemptedSrc = nextSrc || '';
+    if (plane) {
+      plane.burningFlameSrc = attemptedSrc || plane.burningFlameSrc;
+    }
+    if (nextSrc) {
+      img.dataset.flameSrc = nextSrc;
+      img.src = nextSrc;
+    } else {
+      delete img.dataset.flameSrc;
+      img.removeAttribute('src');
+    }
+  };
+
+  img.onerror = () => {
+    const fallback = DEFAULT_BURNING_FLAME_SRC;
+    if (!fallback || attemptedSrc === fallback) {
+      img.onerror = null;
+      img.style.removeProperty('--fx-glow-color');
+      entry.stop();
+      img.remove();
+      planeFlameFx.delete(plane);
+      planeFlameFxPending.delete(plane);
+      if (plane && plane.burningFlameSrc) {
+        delete plane.burningFlameSrc;
+      }
+      disablePlaneFlameFx(plane);
+      return;
+    }
+    setImageSource(fallback);
+  };
+
+  setImageSource(flameSrc);
+
+  return entry;
+}
+
 function disablePlaneFlameFx(plane) {
   if (plane) {
     plane.flameFxDisabled = true;
@@ -335,8 +393,10 @@ function schedulePlaneFlameFx(plane) {
   planeFlameTimers.set(plane, timer);
 }
 
-function attachFlameEntryToPlane(plane, entry, host, glowColor, flameSrc) {
-  planeFlameFxPending.delete(plane);
+function attachFlameEntryToPlane(plane, entry, host, glowColor, flameSrc, options = {}) {
+  if (!options.keepPending) {
+    planeFlameFxPending.delete(plane);
+  }
 
   if (!plane || !entry?.element) {
     entry?.stop?.();
@@ -388,51 +448,18 @@ function spawnBurningFlameFx(plane) {
 
   const glowColor = computeGlowColor(plane?.color, 0.95);
 
-  const fallbackToImage = () => {
-    planeFlameFxPending.delete(plane);
-    const img = new Image();
-    let attemptedSrc = flameSrc;
-    img.src = flameSrc;
-    img.dataset.flameSrc = flameSrc;
-    applyFlameElementStyles(img);
+  const willAttemptDecoder = supportsImageDecoder();
+  const fallbackEntry = createImageFlameEntry(plane, flameSrc, glowColor);
+  attachFlameEntryToPlane(
+    plane,
+    fallbackEntry,
+    host,
+    glowColor,
+    fallbackEntry?.element?.dataset?.flameSrc || flameSrc,
+    willAttemptDecoder ? { keepPending: true } : undefined,
+  );
 
-    if (glowColor) {
-      img.style.setProperty('--fx-glow-color', glowColor);
-    }
-
-    const entry = {
-      element: img,
-      stop() {
-        img.onerror = null;
-        img.onload = null;
-      },
-    };
-
-    img.onerror = () => {
-      const fallback = DEFAULT_BURNING_FLAME_SRC;
-      if (!fallback || attemptedSrc === fallback) {
-        img.onerror = null;
-        img.style.removeProperty('--fx-glow-color');
-        entry.stop();
-        img.remove();
-        planeFlameFx.delete(plane);
-        if (plane && plane.burningFlameSrc) {
-          delete plane.burningFlameSrc;
-        }
-        disablePlaneFlameFx(plane);
-        return;
-      }
-      attemptedSrc = fallback;
-      plane.burningFlameSrc = fallback;
-      img.dataset.flameSrc = fallback;
-      img.src = fallback;
-    };
-
-    attachFlameEntryToPlane(plane, entry, host, glowColor, attemptedSrc);
-  };
-
-  if (!supportsImageDecoder()) {
-    fallbackToImage();
+  if (!willAttemptDecoder) {
     return;
   }
 
@@ -442,14 +469,13 @@ function spawnBurningFlameFx(plane) {
     .then((entry) => {
       planeFlameFxPending.delete(plane);
       if (!entry) {
-        fallbackToImage();
         return;
       }
       attachFlameEntryToPlane(plane, entry, host, glowColor, flameSrc);
     })
     .catch(() => {
       planeFlameFxPending.delete(plane);
-      fallbackToImage();
+      // Fallback entry is already visible
     });
 }
 
