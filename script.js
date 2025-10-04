@@ -175,8 +175,12 @@ function updatePlaneFlameFxPosition(plane, metrics) {
     return;
   }
 
-  const x = plane.collisionX ?? plane.x;
-  const y = plane.collisionY ?? plane.y;
+  const x = plane?.x;
+  const y = plane?.y;
+
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return;
+  }
 
   let left = rect.left - hostRect.left + x * scaleX;
   let top = rect.top - hostRect.top + y * scaleY;
