@@ -46,6 +46,7 @@ const BURNING_FLAME_SRCS = [
   "flames green/flame 10.gif"
 ];
 const DEFAULT_BURNING_FLAME_SRC = BURNING_FLAME_SRCS[0];
+
 const BURNING_FLAME_SRC_SET = new Set(BURNING_FLAME_SRCS);
 
 function pickRandomBurningFlame() {
@@ -58,13 +59,14 @@ function pickRandomBurningFlame() {
   }
   const index = Math.floor(Math.random() * pool.length);
   return pool[index];
+
 }
 
 function ensurePlaneBurningFlame(plane) {
   if (!plane) {
     return DEFAULT_BURNING_FLAME_SRC || "";
   }
-  if (!plane.burningFlameSrc || !BURNING_FLAME_SRC_SET.has(plane.burningFlameSrc)) {
+  if (!plane.burningFlameSrc) {
     plane.burningFlameSrc = pickRandomBurningFlame();
   }
   return plane.burningFlameSrc;
@@ -122,8 +124,7 @@ function spawnBurningFlameFx(plane) {
   if (!flameSrc) return;
 
   const img = new Image();
-  let attemptedSrc = flameSrc;
-  img.src = attemptedSrc;
+  img.src = flameSrc;
   img.dataset.flameSrc = flameSrc;
   img.className = 'fx-flame';
   img.style.position = 'absolute';
@@ -308,13 +309,6 @@ const flameGifImages = new Map();
 for (const src of BURNING_FLAME_SRCS) {
   const img = new Image();
   img.src = src;
-  img.onerror = () => {
-    console.warn('[FX] Failed to load flame GIF', src);
-    flameGifImages.delete(src);
-    if (BURNING_FLAME_SRC_SET.has(src) && src !== DEFAULT_BURNING_FLAME_SRC) {
-      BURNING_FLAME_SRC_SET.delete(src);
-    }
-  };
   flameGifImages.set(src, img);
 }
 const defaultFlameGifImg = flameGifImages.get(DEFAULT_BURNING_FLAME_SRC) || null;
@@ -2721,7 +2715,7 @@ function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1) {
       const flameSrc = ensurePlaneBurningFlame(plane);
       flameImg = flameGifImages.get(flameSrc) || flameImg;
     }
-    if (flameImg && flameImg.complete && flameImg.naturalWidth > 0 && flameImg.naturalHeight > 0) {
+    if (flameImg && flameImg.complete) {
       ctx2d.drawImage(flameImg, -size / 2, -size / 2, size, size);
     } else {
       drawRedCross(ctx2d, 0, 0, size * 0.8);
