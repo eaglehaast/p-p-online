@@ -80,6 +80,209 @@ const PLANE_HIT_COOLDOWN_SEC = 0.2;
 
 const planeFlameFx = new Map();
 const planeFlameTimers = new Map();
+const planeFlameFxPending = new WeakSet();
+
+const flameAnimatorStates = new WeakMap();
+
+function supportsImageDecoder() {
+  return typeof window !== 'undefined' && typeof window.ImageDecoder === 'function';
+}
+
+function applyFlameElementStyles(element) {
+  if (!element) return;
+  element.classList.add('fx-flame');
+  element.style.position = 'absolute';
+  element.style.pointerEvents = 'none';
+  element.style.transform = 'translate(-50%, -100%)';
+  element.style.zIndex = '9999';
+}
+
+async function decodeGifFrames(src) {
+  if (!supportsImageDecoder()) {
+    return null;
+  }
+
+  const response = await fetch(src);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch GIF: ${response.status}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  let type = response.headers.get('Content-Type');
+  if (!type || type === 'application/octet-stream') {
+    if (src.toLowerCase().endsWith('.gif')) {
+      type = 'image/gif';
+    }
+  }
+
+  const decoder = new ImageDecoder({ data: arrayBuffer, type: type || 'image/gif' });
+  const track = decoder.tracks?.selectedTrack || decoder.tracks?.[0];
+  if (track) {
+    track.selected = true;
+  }
+
+  const frames = [];
+  let frameIndex = 0;
+  const maxFrames = track?.frameCount && Number.isFinite(track.frameCount)
+    ? track.frameCount
+    : 600;
+
+  try {
+    while (true) {
+      if (Number.isFinite(maxFrames) && maxFrames > 0 && frameIndex >= maxFrames) {
+        break;
+      }
+      const { image, complete, metadata } = await decoder.decode({ frameIndex });
+      const durationValue = Number(metadata?.duration);
+      const durationMs = Number.isFinite(durationValue) && durationValue > 0
+        ? Math.max(16, durationValue / 1000)
+        : 1000 / 24;
+
+      frames.push({ image, duration: durationMs });
+      frameIndex += 1;
+      if (complete) {
+        break;
+      }
+    }
+  } catch (error) {
+    if (frames.length === 0) {
+      decoder.close();
+      throw error;
+    }
+  }
+
+  decoder.close();
+
+  if (!frames.length) {
+    return null;
+  }
+
+  const firstFrame = frames[0]?.image;
+  const width = firstFrame?.width || 1;
+  const height = firstFrame?.height || 1;
+
+  return { frames, width, height };
+}
+
+function stopFlameAnimation(element) {
+  const state = flameAnimatorStates.get(element);
+  if (!state) return;
+
+  if (state.rafId) {
+    cancelAnimationFrame(state.rafId);
+  }
+  flameAnimatorStates.delete(element);
+
+  for (const frame of state.frames) {
+    if (frame?.image && typeof frame.image.close === 'function') {
+      try {
+        frame.image.close();
+      } catch (error) {
+        // ignore close errors
+      }
+    }
+  }
+}
+
+function startFlameAnimation(canvas, frames) {
+  if (!canvas || !frames?.length) {
+    return () => {};
+  }
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    return () => {};
+  }
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  const state = {
+    frames,
+    frameIndex: 0,
+    direction: 1,
+    lastTimestamp: 0,
+    rafId: null,
+    ctx,
+  };
+
+  const frameCount = frames.length;
+
+  const drawFrame = (index) => {
+    const frame = frames[index];
+    if (!frame) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(frame.image, 0, 0, canvas.width, canvas.height);
+  };
+
+  const step = (timestamp) => {
+    const framesLocal = state.frames;
+    if (!framesLocal.length) {
+      state.rafId = requestAnimationFrame(step);
+      return;
+    }
+
+    if (!state.lastTimestamp) {
+      state.lastTimestamp = timestamp;
+      drawFrame(state.frameIndex);
+    } else {
+      const elapsed = timestamp - state.lastTimestamp;
+      const currentFrame = framesLocal[state.frameIndex];
+      const duration = currentFrame?.duration || 16;
+      if (elapsed >= duration) {
+        state.lastTimestamp = timestamp;
+
+        if (frameCount > 1) {
+          let nextIndex = state.frameIndex + state.direction;
+
+          if (nextIndex >= frameCount) {
+            state.direction = -1;
+            nextIndex = frameCount > 1 ? frameCount - 2 : 0;
+          } else if (nextIndex < 0) {
+            state.direction = 1;
+            nextIndex = frameCount > 1 ? 1 : 0;
+          }
+
+          if (nextIndex < 0 || nextIndex >= frameCount) {
+            nextIndex = 0;
+          }
+
+          state.frameIndex = nextIndex;
+        }
+
+        drawFrame(state.frameIndex);
+      }
+    }
+
+    state.rafId = requestAnimationFrame(step);
+  };
+
+  state.rafId = requestAnimationFrame(step);
+  flameAnimatorStates.set(canvas, state);
+
+  return () => stopFlameAnimation(canvas);
+}
+
+async function createAnimatedFlameEntry(src) {
+  const decoded = await decodeGifFrames(src);
+  if (!decoded) {
+    return null;
+  }
+
+  const { frames, width, height } = decoded;
+  if (!frames.length) {
+    return null;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  applyFlameElementStyles(canvas);
+
+  const stop = startFlameAnimation(canvas, frames);
+
+  return { element: canvas, stop };
+}
 
 function disablePlaneFlameFx(plane) {
   if (plane) {
@@ -104,12 +307,14 @@ function cleanupBurningFx() {
   }
   planeFlameTimers.clear();
 
-  for (const [plane, img] of planeFlameFx.entries()) {
-    img.style.removeProperty('--fx-glow-color');
-    img.remove();
+  for (const [plane, entry] of planeFlameFx.entries()) {
+    entry?.stop?.();
+    entry?.element?.style?.removeProperty?.('--fx-glow-color');
+    entry?.element?.remove?.();
     if (plane && plane.burningFlameSrc) {
       delete plane.burningFlameSrc;
     }
+    planeFlameFxPending.delete(plane);
     resetPlaneFlameFxDisabled(plane);
   }
   planeFlameFx.clear();
@@ -130,10 +335,50 @@ function schedulePlaneFlameFx(plane) {
   planeFlameTimers.set(plane, timer);
 }
 
+function attachFlameEntryToPlane(plane, entry, host, glowColor, flameSrc) {
+  planeFlameFxPending.delete(plane);
+
+  if (!plane || !entry?.element) {
+    entry?.stop?.();
+    return;
+  }
+
+  if (!plane.burning || plane.flameFxDisabled) {
+    entry.stop?.();
+    entry.element.remove();
+    return;
+  }
+
+  const existing = planeFlameFx.get(plane);
+  if (existing) {
+    existing.stop?.();
+    existing.element?.style?.removeProperty?.('--fx-glow-color');
+    existing.element?.remove();
+  }
+
+  const element = entry.element;
+  applyFlameElementStyles(element);
+  if (glowColor) {
+    element.style.setProperty('--fx-glow-color', glowColor);
+  } else {
+    element.style.removeProperty('--fx-glow-color');
+  }
+  element.dataset.flameSrc = flameSrc || '';
+
+  host.appendChild(element);
+  planeFlameFx.set(plane, entry);
+  updatePlaneFlameFxPosition(plane);
+}
+
 function spawnBurningFlameFx(plane) {
   if (plane?.flameFxDisabled) {
     return;
   }
+
+  if (planeFlameFxPending.has(plane) || planeFlameFx.has(plane)) {
+    return;
+  }
+
   const fxLayer = document.getElementById('fxLayer');
   const host = fxLayer || document.body;
   if (!host) return;
@@ -141,48 +386,77 @@ function spawnBurningFlameFx(plane) {
   const flameSrc = ensurePlaneBurningFlame(plane);
   if (!flameSrc) return;
 
-  const img = new Image();
-  let attemptedSrc = flameSrc;
-  img.src = flameSrc;
-  img.dataset.flameSrc = flameSrc;
-  img.className = 'fx-flame';
-  img.style.position = 'absolute';
-  img.style.pointerEvents = 'none';
-  img.style.transform = 'translate(-50%, -100%)';
-  img.style.zIndex = '9999';
-
   const glowColor = computeGlowColor(plane?.color, 0.95);
-  if (glowColor) {
-    img.style.setProperty('--fx-glow-color', glowColor);
-  }
 
-  img.onerror = () => {
-    const fallback = DEFAULT_BURNING_FLAME_SRC;
-    if (!fallback || attemptedSrc === fallback) {
-      img.onerror = null;
-      img.style.removeProperty('--fx-glow-color');
-      img.remove();
-      planeFlameFx.delete(plane);
-      if (plane && plane.burningFlameSrc) {
-        delete plane.burningFlameSrc;
-      }
-      disablePlaneFlameFx(plane);
-      return;
+  const fallbackToImage = () => {
+    planeFlameFxPending.delete(plane);
+    const img = new Image();
+    let attemptedSrc = flameSrc;
+    img.src = flameSrc;
+    img.dataset.flameSrc = flameSrc;
+    applyFlameElementStyles(img);
+
+    if (glowColor) {
+      img.style.setProperty('--fx-glow-color', glowColor);
     }
-    attemptedSrc = fallback;
-    plane.burningFlameSrc = fallback;
-    img.dataset.flameSrc = fallback;
-    img.src = fallback;
+
+    const entry = {
+      element: img,
+      stop() {
+        img.onerror = null;
+        img.onload = null;
+      },
+    };
+
+    img.onerror = () => {
+      const fallback = DEFAULT_BURNING_FLAME_SRC;
+      if (!fallback || attemptedSrc === fallback) {
+        img.onerror = null;
+        img.style.removeProperty('--fx-glow-color');
+        entry.stop();
+        img.remove();
+        planeFlameFx.delete(plane);
+        if (plane && plane.burningFlameSrc) {
+          delete plane.burningFlameSrc;
+        }
+        disablePlaneFlameFx(plane);
+        return;
+      }
+      attemptedSrc = fallback;
+      plane.burningFlameSrc = fallback;
+      img.dataset.flameSrc = fallback;
+      img.src = fallback;
+    };
+
+    attachFlameEntryToPlane(plane, entry, host, glowColor, attemptedSrc);
   };
 
-  host.appendChild(img);
-  planeFlameFx.set(plane, img);
-  updatePlaneFlameFxPosition(plane);
+  if (!supportsImageDecoder()) {
+    fallbackToImage();
+    return;
+  }
+
+  planeFlameFxPending.add(plane);
+
+  createAnimatedFlameEntry(flameSrc)
+    .then((entry) => {
+      planeFlameFxPending.delete(plane);
+      if (!entry) {
+        fallbackToImage();
+        return;
+      }
+      attachFlameEntryToPlane(plane, entry, host, glowColor, flameSrc);
+    })
+    .catch(() => {
+      planeFlameFxPending.delete(plane);
+      fallbackToImage();
+    });
 }
 
 function updatePlaneFlameFxPosition(plane, metrics) {
-  const img = planeFlameFx.get(plane);
-  if (!img) return;
+  const entry = planeFlameFx.get(plane);
+  const element = entry?.element;
+  if (!element) return;
 
   let data = metrics;
   if (!data) {
@@ -217,8 +491,8 @@ function updatePlaneFlameFxPosition(plane, metrics) {
     top = rect.top + pageY + y * scaleY;
   }
 
-  img.style.left = Math.round(left) + 'px';
-  img.style.top = Math.round(top) + 'px';
+  element.style.left = Math.round(left) + 'px';
+  element.style.top = Math.round(top) + 'px';
 }
 
 function updateAllPlaneFlameFxPositions() {
@@ -243,12 +517,14 @@ function updateAllPlaneFlameFxPositions() {
 
 function ensurePlaneFlameFx(plane) {
   if (!plane.burning) {
-    const img = planeFlameFx.get(plane);
-    if (img) {
-      img.style.removeProperty('--fx-glow-color');
-      img.remove();
+    const entry = planeFlameFx.get(plane);
+    if (entry) {
+      entry.stop?.();
+      entry.element?.style?.removeProperty?.('--fx-glow-color');
+      entry.element?.remove();
       planeFlameFx.delete(plane);
     }
+    planeFlameFxPending.delete(plane);
     const timer = planeFlameTimers.get(plane);
     if (timer) {
       clearTimeout(timer);
