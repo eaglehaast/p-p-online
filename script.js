@@ -98,6 +98,9 @@ function cleanupBurningFx() {
     if (plane && plane.burningFlameSrc) {
       delete plane.burningFlameSrc;
     }
+    if (plane) {
+      plane.flameFxDisabled = false;
+    }
   }
   planeFlameFx.clear();
 }
@@ -110,7 +113,7 @@ function schedulePlaneFlameFx(plane) {
   }
   const timer = setTimeout(() => {
     planeFlameTimers.delete(plane);
-    if (plane.burning && isExplosionFinished(plane) && !planeFlameFx.has(plane)) {
+    if (plane.burning && !plane?.flameFxDisabled && isExplosionFinished(plane) && !planeFlameFx.has(plane)) {
       spawnBurningFlameFx(plane);
     }
   }, EXPLOSION_DURATION_MS);
@@ -118,6 +121,9 @@ function schedulePlaneFlameFx(plane) {
 }
 
 function spawnBurningFlameFx(plane) {
+  if (plane?.flameFxDisabled) {
+    return;
+  }
   const fxLayer = document.getElementById('fxLayer');
   const host = fxLayer || document.body;
   if (!host) return;
@@ -126,7 +132,6 @@ function spawnBurningFlameFx(plane) {
   if (!flameSrc) return;
 
   const img = new Image();
-  let attemptedSrc = flameSrc;
   img.src = flameSrc;
   img.dataset.flameSrc = flameSrc;
   img.className = 'fx-flame';
@@ -150,6 +155,9 @@ function spawnBurningFlameFx(plane) {
       planeFlameFx.delete(plane);
       if (plane && plane.burningFlameSrc) {
         delete plane.burningFlameSrc;
+      }
+      if (plane) {
+        plane.flameFxDisabled = true;
       }
       return;
     }
@@ -241,6 +249,13 @@ function ensurePlaneFlameFx(plane) {
     if (plane.burningFlameSrc) {
       delete plane.burningFlameSrc;
     }
+    if (plane) {
+      plane.flameFxDisabled = false;
+    }
+    return;
+  }
+
+  if (plane.flameFxDisabled) {
     return;
   }
 
@@ -1061,7 +1076,8 @@ function makePlane(x,y,color,angle){
     collisionY:null,
     prevX: x,
     prevY: y,
-    flagColor:null
+    flagColor:null,
+    flameFxDisabled: false
   };
 }
 
