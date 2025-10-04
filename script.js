@@ -33,7 +33,6 @@ const BOARD_ORIGIN = { x: 0, y: 0 };
 // ---- Explosion FX (GIF over canvas) ----
 
 const EXPLOSION_DURATION_MS = 700;   // delay before showing wreck FX
-const DEFAULT_GLOW_RGB = [255, 214, 153];
 const BURNING_FLAME_SRCS = [
   "flames green/flame 1.gif",
   "flames green/flame 2.gif",
@@ -90,7 +89,7 @@ function applyFlameElementStyles(element) {
   element.style.zIndex = '9999';
 }
 
-function createGifFlameEntry(plane, flameSrc, glowColor) {
+function createGifFlameEntry(plane, flameSrc) {
   if (!flameSrc) {
     return null;
   }
@@ -98,12 +97,6 @@ function createGifFlameEntry(plane, flameSrc, glowColor) {
   const img = new Image();
   img.decoding = 'async';
   applyFlameElementStyles(img);
-
-  if (glowColor) {
-    img.style.setProperty('--fx-glow-color', glowColor);
-  } else {
-    img.style.removeProperty('--fx-glow-color');
-  }
 
   let attemptedSrc = flameSrc;
 
@@ -116,7 +109,6 @@ function createGifFlameEntry(plane, flameSrc, glowColor) {
     const fallback = DEFAULT_BURNING_FLAME_SRC;
     if (!fallback || attemptedSrc === fallback) {
       stop();
-      img.style.removeProperty('--fx-glow-color');
       img.remove();
       planeFlameFx.delete(plane);
       if (plane && plane.burningFlameSrc) {
@@ -169,7 +161,6 @@ function cleanupBurningFx() {
   for (const [plane, entry] of planeFlameFx.entries()) {
     entry?.stop?.();
     const element = entry?.element || entry;
-    element?.style?.removeProperty?.('--fx-glow-color');
     element?.remove?.();
     if (plane && plane.burningFlameSrc) {
       delete plane.burningFlameSrc;
@@ -205,8 +196,7 @@ function spawnBurningFlameFx(plane) {
   const flameSrc = ensurePlaneBurningFlame(plane);
   if (!flameSrc) return;
 
-  const glowColor = computeGlowColor(plane?.color, 0.95);
-  const entry = createGifFlameEntry(plane, flameSrc, glowColor);
+  const entry = createGifFlameEntry(plane, flameSrc);
   if (!entry?.element) {
     return;
   }
@@ -215,7 +205,6 @@ function spawnBurningFlameFx(plane) {
   if (existing) {
     existing.stop?.();
     const existingElement = existing.element || existing;
-    existingElement?.style?.removeProperty?.('--fx-glow-color');
     existingElement?.remove?.();
   }
 
@@ -292,7 +281,6 @@ function ensurePlaneFlameFx(plane) {
     if (entry) {
       entry.stop?.();
       const element = entry.element || entry;
-      element?.style?.removeProperty?.('--fx-glow-color');
       element?.remove?.();
       planeFlameFx.delete(plane);
     }
@@ -338,10 +326,6 @@ function spawnExplosion(x, y, color = null) {
   img.style.zIndex = '9999';
   img.style.pointerEvents = 'none';
   img.style.transform = 'translate(-50%, -50%)';
-  const explosionGlow = computeGlowColor(color, 0.85);
-  if (explosionGlow) {
-    img.style.setProperty('--fx-glow-color', explosionGlow);
-  }
 
   // смещение страницы (если прокручено)
   const pageX = window.scrollX || 0;
@@ -360,7 +344,6 @@ function spawnExplosion(x, y, color = null) {
 
   // убрать через длительность гифки
   setTimeout(() => {
-    img.style.removeProperty('--fx-glow-color');
     img.remove();
   }, EXPLOSION_DURATION_MS);
 
@@ -484,21 +467,6 @@ function colorWithAlpha(color, alpha){
   const r = parseInt(hex.slice(0,2),16);
   const g = parseInt(hex.slice(2,4),16);
   const b = parseInt(hex.slice(4,6),16);
-  return `rgba(${r},${g},${b},${alpha})`;
-}
-
-function computeGlowColor(color, alpha = 0.85) {
-  const candidate = color ? colorFor(color) : null;
-  if (candidate && /^#([0-9a-fA-F]{6})$/.test(candidate)) {
-    const hex = candidate.slice(1);
-    const r = parseInt(hex.slice(0, 2), 16);
-    const g = parseInt(hex.slice(2, 4), 16);
-    const b = parseInt(hex.slice(4, 6), 16);
-    if ([r, g, b].every(Number.isFinite)) {
-      return `rgba(${r},${g},${b},${alpha})`;
-    }
-  }
-  const [r, g, b] = DEFAULT_GLOW_RGB;
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
