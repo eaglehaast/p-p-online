@@ -2589,22 +2589,45 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   ctx2d.rotate(angle);
   ctx2d.scale(PLANE_SCALE, PLANE_SCALE);
 
-  const filterParts = ["blur(0.3px)"]; // slight blur to soften rotated edges
-  if (plane.burning && explosionFinished) {
-    filterParts.push("saturate(0) brightness(0.6)");
-  }
-  ctx2d.filter = filterParts.join(" ");
-
   const blend = (plane.burning && explosionFinished)
     ? 0
     : Math.max(0, Math.min(1, glow));
+
+  let highlightColor = "";
+  let highlightBlur = 0;
+  let highlightRadius = 16;
+  let highlightFill = "rgba(0,0,0,0.2)";
   if (blend > 0) {
     const glowStrength = blend * 1.25; // boost brightness slightly
-    ctx2d.shadowColor = colorWithAlpha(color, Math.min(1, glowStrength));
-    ctx2d.shadowBlur = (color === "green" ? 15 : 10) * glowStrength;
+    highlightColor = colorWithAlpha(color, Math.min(1, glowStrength));
+    highlightBlur = (color === "green" ? 22 : 18) * glowStrength;
+    highlightRadius = 18 + 4 * glowStrength;
+    highlightFill = colorWithAlpha(color, Math.min(0.35, 0.15 + 0.25 * glowStrength));
   } else {
-    ctx2d.shadowColor = "rgba(0,0,0,0.3)";
-    ctx2d.shadowBlur = 1.5;
+    highlightColor = "rgba(0,0,0,0.35)";
+    highlightBlur = 6;
+    highlightRadius = 16;
+    highlightFill = "rgba(0,0,0,0.25)";
+  }
+
+  if (highlightBlur > 0 && highlightColor) {
+    ctx2d.save();
+    ctx2d.filter = "none";
+    ctx2d.shadowColor = highlightColor;
+    ctx2d.shadowBlur = highlightBlur;
+    ctx2d.fillStyle = highlightFill;
+    ctx2d.beginPath();
+    ctx2d.arc(0, 0, highlightRadius, 0, Math.PI * 2);
+    ctx2d.fill();
+    ctx2d.restore();
+  }
+
+  ctx2d.shadowColor = "transparent";
+  ctx2d.shadowBlur = 0;
+  ctx2d.filter = "none";
+
+  if (plane.burning && explosionFinished) {
+    ctx2d.filter = "saturate(0) brightness(0.6)";
   }
 
   const showEngine = !(plane.burning && explosionFinished);
