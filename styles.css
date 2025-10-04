@@ -150,6 +150,7 @@ body, button {
   position: absolute;
   width: auto;
   height: 40px;
+  display: block;
   transform: translate(-50%, -100%);
   image-rendering: auto;
   pointer-events: none;
