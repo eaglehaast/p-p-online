@@ -2584,6 +2584,68 @@ function drawPlaneOutline(ctx2d, color){
 }
 
 
+function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0) {
+  if (!plane || glowStrength <= 0) {
+    return;
+  }
+
+  const color = plane.color || "blue";
+  let spriteImg = null;
+
+  if (color === "blue") {
+    spriteImg = bluePlaneImg;
+  } else if (color === "green") {
+    spriteImg = greenPlaneImg;
+  }
+
+  const spriteReady = Boolean(
+    spriteImg &&
+    spriteImg.complete &&
+    spriteImg.naturalWidth > 0 &&
+    spriteImg.naturalHeight > 0
+  );
+
+  const blend = Math.max(0, Math.min(1, glowStrength));
+
+  ctx2d.save();
+
+  if (spriteReady) {
+    ctx2d.globalCompositeOperation = "lighter";
+    ctx2d.globalAlpha = 0.3 + 0.45 * blend;
+    ctx2d.filter = `blur(${(2 + 4 * blend).toFixed(2)}px)`;
+
+    const baseSize = 40;
+    const scale = 1 + 0.18 * blend;
+    const drawSize = baseSize * scale;
+    const offset = -drawSize / 2;
+
+    ctx2d.imageSmoothingEnabled = true;
+    ctx2d.drawImage(spriteImg, offset, offset, drawSize, drawSize);
+  } else {
+    const highlightColor = colorWithAlpha(color, Math.min(1, glowStrength));
+    const highlightFill = colorWithAlpha(
+      color,
+      Math.min(0.35, 0.15 + 0.25 * blend)
+    );
+    const baseBlur = color === "green" ? 22 : 18;
+    const highlightBlur = baseBlur * Math.max(0.2, blend);
+
+    ctx2d.globalCompositeOperation = "lighter";
+    ctx2d.filter = "none";
+    ctx2d.shadowColor = highlightColor;
+    ctx2d.shadowBlur = highlightBlur;
+    ctx2d.fillStyle = highlightFill;
+    ctx2d.strokeStyle = highlightColor;
+    ctx2d.lineWidth = 2.5;
+    tracePlaneSilhouettePath(ctx2d);
+    ctx2d.fill();
+    ctx2d.stroke();
+  }
+
+  ctx2d.restore();
+}
+
+
 function drawThinPlane(ctx2d, plane, glow = 0) {
   const { x: cx, y: cy, color, angle } = plane;
   const explosionFinished = plane.burning && isExplosionFinished(plane);
@@ -2606,32 +2668,9 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   ctx2d.fill();
   ctx2d.restore();
 
-  let highlightColor = "";
-  let highlightBlur = 0;
-  let highlightFill = "rgba(0,0,0,0.2)";
   if (blend > 0) {
     const glowStrength = blend * 1.25; // boost brightness slightly
-    highlightColor = colorWithAlpha(color, Math.min(1, glowStrength));
-    highlightBlur = (color === "green" ? 22 : 18) * glowStrength;
-    highlightFill = colorWithAlpha(color, Math.min(0.35, 0.15 + 0.25 * glowStrength));
-  } else {
-    highlightColor = "rgba(0,0,0,0.35)";
-    highlightBlur = 6;
-    highlightFill = "rgba(0,0,0,0.25)";
-  }
-
-  if (blend > 0 && highlightBlur > 0 && highlightColor) {
-    ctx2d.save();
-    ctx2d.filter = "none";
-    ctx2d.shadowColor = highlightColor;
-    ctx2d.shadowBlur = highlightBlur;
-    ctx2d.fillStyle = highlightFill;
-    ctx2d.strokeStyle = highlightColor;
-    ctx2d.lineWidth = blend > 0 ? 2.5 : 2;
-    tracePlaneSilhouettePath(ctx2d);
-    ctx2d.fill();
-    ctx2d.stroke();
-    ctx2d.restore();
+    drawPlaneSpriteGlow(ctx2d, plane, glowStrength);
   }
 
   ctx2d.shadowColor = "transparent";
