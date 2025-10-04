@@ -2593,6 +2593,15 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
     ? 0
     : Math.max(0, Math.min(1, glow));
 
+  // Base shadow for all planes (subtle and untinted)
+  ctx2d.save();
+  ctx2d.filter = "none";
+  ctx2d.fillStyle = "rgba(0,0,0,0.18)";
+  ctx2d.beginPath();
+  ctx2d.arc(0, 1, 14, 0, Math.PI * 2);
+  ctx2d.fill();
+  ctx2d.restore();
+
   let highlightColor = "";
   let highlightBlur = 0;
   let highlightRadius = 16;
@@ -2603,14 +2612,9 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
     highlightBlur = (color === "green" ? 22 : 18) * glowStrength;
     highlightRadius = 18 + 4 * glowStrength;
     highlightFill = colorWithAlpha(color, Math.min(0.35, 0.15 + 0.25 * glowStrength));
-  } else {
-    highlightColor = "rgba(0,0,0,0.35)";
-    highlightBlur = 6;
-    highlightRadius = 16;
-    highlightFill = "rgba(0,0,0,0.25)";
   }
 
-  if (highlightBlur > 0 && highlightColor) {
+  if (blend > 0 && highlightBlur > 0 && highlightColor) {
     ctx2d.save();
     ctx2d.filter = "none";
     ctx2d.shadowColor = highlightColor;
