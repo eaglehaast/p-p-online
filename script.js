@@ -124,6 +124,7 @@ function spawnBurningFlameFx(plane) {
   if (!flameSrc) return;
 
   const img = new Image();
+  let attemptedSrc = flameSrc;
   img.src = flameSrc;
   img.dataset.flameSrc = flameSrc;
   img.className = 'fx-flame';
@@ -143,10 +144,9 @@ function spawnBurningFlameFx(plane) {
       }
       return;
     }
-    plane.burningFlameSrc = fallback;
     attemptedSrc = fallback;
+    plane.burningFlameSrc = fallback;
     img.dataset.flameSrc = fallback;
-    img.onerror = null;
     img.src = fallback;
   };
 
