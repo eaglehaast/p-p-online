@@ -2564,7 +2564,7 @@ function addPlaneShading(ctx2d){
   ctx2d.restore();
 }
 
-function tracePlaneSilhouette(ctx2d){
+function tracePlaneSilhouettePath(ctx2d){
   ctx2d.beginPath();
   ctx2d.moveTo(0, -20);
   ctx2d.quadraticCurveTo(12, -5, 10, 10);
@@ -2579,7 +2579,7 @@ function drawPlaneOutline(ctx2d, color){
   ctx2d.lineWidth = 2;
   ctx2d.lineJoin = "round";
   ctx2d.lineCap = "round";
-  tracePlaneSilhouette(ctx2d);
+  tracePlaneSilhouettePath(ctx2d);
   ctx2d.stroke();
 }
 
@@ -2630,6 +2630,68 @@ function drawPlaneSpriteGlow(ctx2d, plane, blend){
 }
 
 
+function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0) {
+  if (!plane || glowStrength <= 0) {
+    return;
+  }
+
+  const color = plane.color || "blue";
+  let spriteImg = null;
+
+  if (color === "blue") {
+    spriteImg = bluePlaneImg;
+  } else if (color === "green") {
+    spriteImg = greenPlaneImg;
+  }
+
+  const spriteReady = Boolean(
+    spriteImg &&
+    spriteImg.complete &&
+    spriteImg.naturalWidth > 0 &&
+    spriteImg.naturalHeight > 0
+  );
+
+  const blend = Math.max(0, Math.min(1, glowStrength));
+
+  ctx2d.save();
+
+  if (spriteReady) {
+    ctx2d.globalCompositeOperation = "lighter";
+    ctx2d.globalAlpha = 0.3 + 0.45 * blend;
+    ctx2d.filter = `blur(${(2 + 4 * blend).toFixed(2)}px)`;
+
+    const baseSize = 40;
+    const scale = 1 + 0.18 * blend;
+    const drawSize = baseSize * scale;
+    const offset = -drawSize / 2;
+
+    ctx2d.imageSmoothingEnabled = true;
+    ctx2d.drawImage(spriteImg, offset, offset, drawSize, drawSize);
+  } else {
+    const highlightColor = colorWithAlpha(color, Math.min(1, glowStrength));
+    const highlightFill = colorWithAlpha(
+      color,
+      Math.min(0.35, 0.15 + 0.25 * blend)
+    );
+    const baseBlur = color === "green" ? 22 : 18;
+    const highlightBlur = baseBlur * Math.max(0.2, blend);
+
+    ctx2d.globalCompositeOperation = "lighter";
+    ctx2d.filter = "none";
+    ctx2d.shadowColor = highlightColor;
+    ctx2d.shadowBlur = highlightBlur;
+    ctx2d.fillStyle = highlightFill;
+    ctx2d.strokeStyle = highlightColor;
+    ctx2d.lineWidth = 2.5;
+    tracePlaneSilhouettePath(ctx2d);
+    ctx2d.fill();
+    ctx2d.stroke();
+  }
+
+  ctx2d.restore();
+}
+
+
 function drawThinPlane(ctx2d, plane, glow = 0) {
   const { x: cx, y: cy, color, angle } = plane;
   const explosionFinished = plane.burning && isExplosionFinished(plane);
@@ -2643,8 +2705,18 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
     ? 0
     : Math.max(0, Math.min(1, glow));
 
+  // Base shadow for all planes (subtle and untinted)
+  ctx2d.save();
+  ctx2d.filter = "none";
+  ctx2d.fillStyle = "rgba(0,0,0,0.18)";
+  ctx2d.beginPath();
+  ctx2d.arc(0, 1, 14, 0, Math.PI * 2);
+  ctx2d.fill();
+  ctx2d.restore();
+
   if (blend > 0) {
-    drawPlaneSpriteGlow(ctx2d, plane, blend);
+    const glowStrength = blend * 1.25; // boost brightness slightly
+    drawPlaneSpriteGlow(ctx2d, plane, glowStrength);
   }
 
   ctx2d.shadowColor = "transparent";
