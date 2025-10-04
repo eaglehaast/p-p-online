@@ -140,6 +140,10 @@ body, button {
   transform: translate(-50%, -50%);
   image-rendering: auto;
   pointer-events: none;
+  --fx-glow-color: rgba(255, 214, 153, 0.75);
+  filter:
+    drop-shadow(0 0 8px var(--fx-glow-color))
+    drop-shadow(0 0 18px var(--fx-glow-color));
 }
 
 .fx-flame {
@@ -149,6 +153,10 @@ body, button {
   transform: translate(-50%, -100%);
   image-rendering: auto;
   pointer-events: none;
+  --fx-glow-color: rgba(255, 214, 153, 0.85);
+  filter:
+    drop-shadow(0 0 6px var(--fx-glow-color))
+    drop-shadow(0 0 14px var(--fx-glow-color));
 }
 
 

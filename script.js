@@ -33,6 +33,7 @@ const BOARD_ORIGIN = { x: 0, y: 0 };
 // ---- Explosion FX (GIF over canvas) ----
 
 const EXPLOSION_DURATION_MS = 700;   // delay before showing wreck FX
+const DEFAULT_GLOW_RGB = [255, 214, 153];
 const BURNING_FLAME_SRCS = [
   "flames green/flame 1.gif",
   "flames green/flame 2.gif",
@@ -92,6 +93,7 @@ function cleanupBurningFx() {
   planeFlameTimers.clear();
 
   for (const [plane, img] of planeFlameFx.entries()) {
+    img.style.removeProperty('--fx-glow-color');
     img.remove();
     if (plane && plane.burningFlameSrc) {
       delete plane.burningFlameSrc;
@@ -131,11 +133,18 @@ function spawnBurningFlameFx(plane) {
   img.style.pointerEvents = 'none';
   img.style.transform = 'translate(-50%, -100%)';
   img.style.zIndex = '9999';
+  let attemptedSrc = flameSrc;
+
+  const glowColor = computeGlowColor(plane?.color, 0.95);
+  if (glowColor) {
+    img.style.setProperty('--fx-glow-color', glowColor);
+  }
 
   img.onerror = () => {
     const fallback = DEFAULT_BURNING_FLAME_SRC;
     if (!fallback || attemptedSrc === fallback) {
       img.onerror = null;
+      img.style.removeProperty('--fx-glow-color');
       img.remove();
       planeFlameFx.delete(plane);
       if (plane && plane.burningFlameSrc) {
@@ -220,6 +229,7 @@ function ensurePlaneFlameFx(plane) {
   if (!plane.burning) {
     const img = planeFlameFx.get(plane);
     if (img) {
+      img.style.removeProperty('--fx-glow-color');
       img.remove();
       planeFlameFx.delete(plane);
     }
@@ -260,6 +270,10 @@ function spawnExplosion(x, y, color = null) {
   img.style.zIndex = '9999';
   img.style.pointerEvents = 'none';
   img.style.transform = 'translate(-50%, -50%)';
+  const explosionGlow = computeGlowColor(color, 0.85);
+  if (explosionGlow) {
+    img.style.setProperty('--fx-glow-color', explosionGlow);
+  }
 
   // смещение страницы (если прокручено)
   const pageX = window.scrollX || 0;
@@ -277,7 +291,10 @@ function spawnExplosion(x, y, color = null) {
   document.body.appendChild(img);
 
   // убрать через длительность гифки
-  setTimeout(() => { img.remove(); }, EXPLOSION_DURATION_MS);
+  setTimeout(() => {
+    img.style.removeProperty('--fx-glow-color');
+    img.remove();
+  }, EXPLOSION_DURATION_MS);
 
 }
 
@@ -399,6 +416,21 @@ function colorWithAlpha(color, alpha){
   const r = parseInt(hex.slice(0,2),16);
   const g = parseInt(hex.slice(2,4),16);
   const b = parseInt(hex.slice(4,6),16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function computeGlowColor(color, alpha = 0.85) {
+  const candidate = color ? colorFor(color) : null;
+  if (candidate && /^#([0-9a-fA-F]{6})$/.test(candidate)) {
+    const hex = candidate.slice(1);
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    if ([r, g, b].every(Number.isFinite)) {
+      return `rgba(${r},${g},${b},${alpha})`;
+    }
+  }
+  const [r, g, b] = DEFAULT_GLOW_RGB;
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
@@ -1938,7 +1970,7 @@ function destroyPlane(fp){
   p.collisionY = p.y;
   p.explosionStart = performance.now();
 
-  try { spawnExplosion(p.collisionX, p.collisionY); }
+  try { spawnExplosion(p.collisionX, p.collisionY, p.color); }
   catch(e) { console.warn('[FX] spawnExplosion error', e); }
 
 
@@ -1998,7 +2030,7 @@ function handleAAForPlane(p, fp){
               p.collisionX=p.x; p.collisionY=p.y;
               p.explosionStart = performance.now();
 
-              try { spawnExplosion(p.collisionX, p.collisionY); }
+              try { spawnExplosion(p.collisionX, p.collisionY, p.color); }
               catch(e) { console.warn('[FX] spawnExplosion error', e); }
               schedulePlaneFlameFx(p);
               if(fp) {
@@ -3160,7 +3192,7 @@ function checkPlaneHits(plane, fp){
       p.collisionY = cy;
       p.explosionStart = performance.now();
 
-      try { spawnExplosion(p.collisionX, p.collisionY); }
+      try { spawnExplosion(p.collisionX, p.collisionY, p.color); }
       catch(e) { console.warn('[FX] spawnExplosion error', e); }
       schedulePlaneFlameFx(p);
       if(fp){
