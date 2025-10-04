@@ -80,13 +80,6 @@ const PLANE_HIT_COOLDOWN_SEC = 0.2;
 
 const planeFlameFx = new Map();
 const planeFlameTimers = new Map();
-const planeFlameFxPending = new WeakSet();
-
-const flameAnimatorStates = new WeakMap();
-
-function supportsImageDecoder() {
-  return typeof window !== 'undefined' && typeof window.ImageDecoder === 'function';
-}
 
 function applyFlameElementStyles(element) {
   if (!element) return;
@@ -97,368 +90,11 @@ function applyFlameElementStyles(element) {
   element.style.zIndex = '9999';
 }
 
-async function decodeGifFrames(src) {
-  if (!supportsImageDecoder()) {
+function createGifFlameEntry(plane, flameSrc, glowColor) {
+  if (!flameSrc) {
     return null;
   }
 
-  const response = await fetch(src);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch GIF: ${response.status}`);
-  }
-
-  const arrayBuffer = await response.arrayBuffer();
-  let type = response.headers.get('Content-Type');
-  if (!type || type === 'application/octet-stream') {
-    if (src.toLowerCase().endsWith('.gif')) {
-      type = 'image/gif';
-    }
-  }
-
-  const decoder = new ImageDecoder({ data: arrayBuffer, type: type || 'image/gif' });
-  const track = decoder.tracks?.selectedTrack || decoder.tracks?.[0];
-  if (track) {
-    track.selected = true;
-  }
-
-  const parseDisposal = (value) => {
-    if (typeof value === 'string') {
-      const normalized = value.toLowerCase();
-      if (normalized === 'restorebackground' || normalized === 'restore-background' || normalized === 'background') {
-        return 'restoreBackground';
-      }
-      if (normalized === 'restoreprevious' || normalized === 'restore-previous' || normalized === 'previous') {
-        return 'restorePrevious';
-      }
-      if (normalized === 'none' || normalized === 'keep' || normalized === 'donotdispose') {
-        return 'none';
-      }
-    } else if (Number.isFinite(value)) {
-      if (value === 2) return 'restoreBackground';
-      if (value === 3) return 'restorePrevious';
-      return 'none';
-    }
-    return 'none';
-  };
-
-  const parseBlend = (value) => {
-    if (typeof value === 'string') {
-      const normalized = value.toLowerCase();
-      if (normalized === 'source' || normalized === 'copy') {
-        return 'source';
-      }
-      if (normalized === 'over' || normalized === 'source-over' || normalized === 'normal') {
-        return 'over';
-      }
-    }
-    return 'over';
-  };
-
-  const frames = [];
-  let frameIndex = 0;
-  const maxFrames = track?.frameCount && Number.isFinite(track.frameCount)
-    ? track.frameCount
-    : 600;
-
-  try {
-    while (true) {
-      if (Number.isFinite(maxFrames) && maxFrames > 0 && frameIndex >= maxFrames) {
-        break;
-      }
-      const { image, complete, metadata } = await decoder.decode({ frameIndex });
-      const durationValue = Number(metadata?.duration);
-      const durationMs = Number.isFinite(durationValue) && durationValue > 0
-        ? Math.max(16, durationValue / 1000)
-        : 1000 / 24;
-
-      const disposal = parseDisposal(metadata?.disposal);
-      const blend = parseBlend(metadata?.blend);
-      const frameRect = metadata?.frameRect || null;
-
-      frames.push({ image, duration: durationMs, disposal, blend, frameRect });
-      frameIndex += 1;
-      if (complete) {
-        break;
-      }
-    }
-  } catch (error) {
-    if (frames.length === 0) {
-      decoder.close();
-      throw error;
-    }
-  }
-
-  decoder.close();
-
-  if (!frames.length) {
-    return null;
-  }
-
-  const firstFrame = frames[0]?.image;
-  const width = firstFrame?.width || 1;
-  const height = firstFrame?.height || 1;
-
-  if (typeof createImageBitmap !== 'function') {
-    // Unable to flatten frames, fall back to <img> rendering.
-    for (const frame of frames) {
-      if (frame?.image && typeof frame.image.close === 'function') {
-        try {
-          frame.image.close();
-        } catch (error) {
-          // ignore close errors
-        }
-      }
-    }
-    throw new Error('createImageBitmap is not supported in this environment.');
-  }
-
-  const offscreenCanvas = typeof OffscreenCanvas === 'function'
-    ? new OffscreenCanvas(width, height)
-    : (() => {
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        return canvas;
-      })();
-
-  const offscreenCtx = offscreenCanvas.getContext('2d');
-  if (!offscreenCtx) {
-    for (const frame of frames) {
-      if (frame?.image && typeof frame.image.close === 'function') {
-        try {
-          frame.image.close();
-        } catch (error) {
-          // ignore close errors
-        }
-      }
-    }
-    throw new Error('Failed to acquire offscreen canvas context.');
-  }
-
-  offscreenCtx.clearRect(0, 0, width, height);
-
-  const flattenedFrames = [];
-
-  const normalizeFrameRect = (frameRect, image) => {
-    if (!frameRect || typeof frameRect !== 'object') {
-      return {
-        x: 0,
-        y: 0,
-        width: image?.width || width,
-        height: image?.height || height,
-      };
-    }
-    const rect = {
-      x: Number.isFinite(frameRect.x) ? frameRect.x : 0,
-      y: Number.isFinite(frameRect.y) ? frameRect.y : 0,
-      width: Number.isFinite(frameRect.width) ? frameRect.width : (image?.width || width),
-      height: Number.isFinite(frameRect.height) ? frameRect.height : (image?.height || height),
-    };
-    rect.x = Math.max(0, Math.min(width, rect.x));
-    rect.y = Math.max(0, Math.min(height, rect.y));
-    rect.width = Math.max(0, Math.min(width - rect.x, rect.width));
-    rect.height = Math.max(0, Math.min(height - rect.y, rect.height));
-    return rect;
-  };
-
-  try {
-    for (const frame of frames) {
-      if (!frame?.image) {
-        continue;
-      }
-
-      const rect = normalizeFrameRect(frame.frameRect, frame.image);
-
-      let restoreImageData = null;
-      if (frame.disposal === 'restorePrevious') {
-        try {
-          restoreImageData = offscreenCtx.getImageData(0, 0, width, height);
-        } catch (error) {
-          restoreImageData = null;
-        }
-      }
-
-      if (frame.blend === 'source' && rect.width > 0 && rect.height > 0) {
-        offscreenCtx.clearRect(rect.x, rect.y, rect.width, rect.height);
-      }
-
-      if (rect.width > 0 && rect.height > 0) {
-        offscreenCtx.drawImage(frame.image, rect.x, rect.y);
-      } else {
-        offscreenCtx.drawImage(frame.image, 0, 0);
-      }
-
-      const flattenedImage = await createImageBitmap(offscreenCanvas);
-      flattenedFrames.push({ image: flattenedImage, duration: frame.duration });
-
-      if (typeof frame.image.close === 'function') {
-        try {
-          frame.image.close();
-        } catch (error) {
-          // ignore close errors
-        }
-      }
-
-      if (frame.disposal === 'restoreBackground' && rect.width > 0 && rect.height > 0) {
-        offscreenCtx.clearRect(rect.x, rect.y, rect.width, rect.height);
-      } else if (frame.disposal === 'restorePrevious' && restoreImageData) {
-        try {
-          offscreenCtx.putImageData(restoreImageData, 0, 0);
-        } catch (error) {
-          // ignore restoration errors
-        }
-      }
-    }
-  } catch (error) {
-    for (const frame of frames) {
-      if (frame?.image && typeof frame.image.close === 'function') {
-        try {
-          frame.image.close();
-        } catch (closeError) {
-          // ignore close errors
-        }
-      }
-    }
-    for (const frame of flattenedFrames) {
-      if (frame?.image && typeof frame.image.close === 'function') {
-        try {
-          frame.image.close();
-        } catch (closeError) {
-          // ignore close errors
-        }
-      }
-    }
-    throw error;
-  }
-
-  if (!flattenedFrames.length) {
-    return null;
-  }
-
-  return { frames: flattenedFrames, width, height };
-}
-
-function stopFlameAnimation(element) {
-  const state = flameAnimatorStates.get(element);
-  if (!state) return;
-
-  if (state.rafId) {
-    cancelAnimationFrame(state.rafId);
-  }
-  flameAnimatorStates.delete(element);
-
-  for (const frame of state.frames) {
-    if (frame?.image && typeof frame.image.close === 'function') {
-      try {
-        frame.image.close();
-      } catch (error) {
-        // ignore close errors
-      }
-    }
-  }
-}
-
-function startFlameAnimation(canvas, frames) {
-  if (!canvas || !frames?.length) {
-    return () => {};
-  }
-
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    return () => {};
-  }
-
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-
-  const state = {
-    frames,
-    frameIndex: 0,
-    direction: 1,
-    lastTimestamp: 0,
-    rafId: null,
-    ctx,
-  };
-
-  const frameCount = frames.length;
-
-  const drawFrame = (index) => {
-    const frame = frames[index];
-    if (!frame) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(frame.image, 0, 0, canvas.width, canvas.height);
-  };
-
-  const step = (timestamp) => {
-    const framesLocal = state.frames;
-    if (!framesLocal.length) {
-      state.rafId = requestAnimationFrame(step);
-      return;
-    }
-
-    if (!state.lastTimestamp) {
-      state.lastTimestamp = timestamp;
-      drawFrame(state.frameIndex);
-    } else {
-      const elapsed = timestamp - state.lastTimestamp;
-      const currentFrame = framesLocal[state.frameIndex];
-      const duration = currentFrame?.duration || 16;
-      if (elapsed >= duration) {
-        state.lastTimestamp = timestamp;
-
-        if (frameCount > 1) {
-          let nextIndex = state.frameIndex + state.direction;
-
-          if (nextIndex >= frameCount) {
-            state.direction = -1;
-            nextIndex = frameCount > 1 ? frameCount - 2 : 0;
-          } else if (nextIndex < 0) {
-            state.direction = 1;
-            nextIndex = frameCount > 1 ? 1 : 0;
-          }
-
-          if (nextIndex < 0 || nextIndex >= frameCount) {
-            nextIndex = 0;
-          }
-
-          state.frameIndex = nextIndex;
-        }
-
-        drawFrame(state.frameIndex);
-      }
-    }
-
-    state.rafId = requestAnimationFrame(step);
-  };
-
-  state.rafId = requestAnimationFrame(step);
-  flameAnimatorStates.set(canvas, state);
-
-  return () => stopFlameAnimation(canvas);
-}
-
-async function createAnimatedFlameEntry(src) {
-  const decoded = await decodeGifFrames(src);
-  if (!decoded) {
-    return null;
-  }
-
-  const { frames, width, height } = decoded;
-  if (!frames.length) {
-    return null;
-  }
-
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  applyFlameElementStyles(canvas);
-
-  const stop = startFlameAnimation(canvas, frames);
-
-  return { element: canvas, stop };
-}
-
-function createImageFlameEntry(plane, flameSrc, glowColor) {
   const img = new Image();
   img.decoding = 'async';
   applyFlameElementStyles(img);
@@ -469,51 +105,42 @@ function createImageFlameEntry(plane, flameSrc, glowColor) {
     img.style.removeProperty('--fx-glow-color');
   }
 
-  let attemptedSrc = flameSrc || '';
+  let attemptedSrc = flameSrc;
 
-  const entry = {
-    element: img,
-    stop() {
-      img.onerror = null;
-      img.onload = null;
-    },
-  };
-
-  const setImageSource = (nextSrc) => {
-    attemptedSrc = nextSrc || '';
-    if (plane) {
-      plane.burningFlameSrc = attemptedSrc || plane.burningFlameSrc;
-    }
-    if (nextSrc) {
-      img.dataset.flameSrc = nextSrc;
-      img.src = nextSrc;
-    } else {
-      delete img.dataset.flameSrc;
-      img.removeAttribute('src');
-    }
+  const stop = () => {
+    img.onerror = null;
+    img.onload = null;
   };
 
   img.onerror = () => {
     const fallback = DEFAULT_BURNING_FLAME_SRC;
     if (!fallback || attemptedSrc === fallback) {
-      img.onerror = null;
+      stop();
       img.style.removeProperty('--fx-glow-color');
-      entry.stop();
       img.remove();
       planeFlameFx.delete(plane);
-      planeFlameFxPending.delete(plane);
       if (plane && plane.burningFlameSrc) {
         delete plane.burningFlameSrc;
       }
       disablePlaneFlameFx(plane);
       return;
     }
-    setImageSource(fallback);
+    attemptedSrc = fallback;
+    if (plane) {
+      plane.burningFlameSrc = fallback;
+    }
+    img.dataset.flameSrc = fallback;
+    img.src = fallback;
   };
 
-  setImageSource(flameSrc);
+  img.onload = () => {
+    img.dataset.flameSrc = attemptedSrc || '';
+  };
 
-  return entry;
+  img.dataset.flameSrc = flameSrc;
+  img.src = flameSrc;
+
+  return { element: img, stop };
 }
 
 function disablePlaneFlameFx(plane) {
@@ -541,12 +168,12 @@ function cleanupBurningFx() {
 
   for (const [plane, entry] of planeFlameFx.entries()) {
     entry?.stop?.();
-    entry?.element?.style?.removeProperty?.('--fx-glow-color');
-    entry?.element?.remove?.();
+    const element = entry?.element || entry;
+    element?.style?.removeProperty?.('--fx-glow-color');
+    element?.remove?.();
     if (plane && plane.burningFlameSrc) {
       delete plane.burningFlameSrc;
     }
-    planeFlameFxPending.delete(plane);
     resetPlaneFlameFxDisabled(plane);
   }
   planeFlameFx.clear();
@@ -567,52 +194,10 @@ function schedulePlaneFlameFx(plane) {
   planeFlameTimers.set(plane, timer);
 }
 
-function attachFlameEntryToPlane(plane, entry, host, glowColor, flameSrc, options = {}) {
-  if (!options.keepPending) {
-    planeFlameFxPending.delete(plane);
-  }
-
-  if (!plane || !entry?.element) {
-    entry?.stop?.();
-    return;
-  }
-
-  if (!plane.burning || plane.flameFxDisabled) {
-    entry.stop?.();
-    entry.element.remove();
-    return;
-  }
-
-  const existing = planeFlameFx.get(plane);
-  if (existing) {
-    existing.stop?.();
-    existing.element?.style?.removeProperty?.('--fx-glow-color');
-    existing.element?.remove();
-  }
-
-  const element = entry.element;
-  applyFlameElementStyles(element);
-  if (glowColor) {
-    element.style.setProperty('--fx-glow-color', glowColor);
-  } else {
-    element.style.removeProperty('--fx-glow-color');
-  }
-  element.dataset.flameSrc = flameSrc || '';
-
-  host.appendChild(element);
-  planeFlameFx.set(plane, entry);
-  updatePlaneFlameFxPosition(plane);
-}
-
 function spawnBurningFlameFx(plane) {
   if (plane?.flameFxDisabled) {
     return;
   }
-
-  if (planeFlameFxPending.has(plane) || planeFlameFx.has(plane)) {
-    return;
-  }
-
   const fxLayer = document.getElementById('fxLayer');
   const host = fxLayer || document.body;
   if (!host) return;
@@ -621,41 +206,27 @@ function spawnBurningFlameFx(plane) {
   if (!flameSrc) return;
 
   const glowColor = computeGlowColor(plane?.color, 0.95);
-
-  const willAttemptDecoder = supportsImageDecoder();
-  const fallbackEntry = createImageFlameEntry(plane, flameSrc, glowColor);
-  attachFlameEntryToPlane(
-    plane,
-    fallbackEntry,
-    host,
-    glowColor,
-    fallbackEntry?.element?.dataset?.flameSrc || flameSrc,
-    willAttemptDecoder ? { keepPending: true } : undefined,
-  );
-
-  if (!willAttemptDecoder) {
+  const entry = createGifFlameEntry(plane, flameSrc, glowColor);
+  if (!entry?.element) {
     return;
   }
 
-  planeFlameFxPending.add(plane);
+  const existing = planeFlameFx.get(plane);
+  if (existing) {
+    existing.stop?.();
+    const existingElement = existing.element || existing;
+    existingElement?.style?.removeProperty?.('--fx-glow-color');
+    existingElement?.remove?.();
+  }
 
-  createAnimatedFlameEntry(flameSrc)
-    .then((entry) => {
-      planeFlameFxPending.delete(plane);
-      if (!entry) {
-        return;
-      }
-      attachFlameEntryToPlane(plane, entry, host, glowColor, flameSrc);
-    })
-    .catch(() => {
-      planeFlameFxPending.delete(plane);
-      // Fallback entry is already visible
-    });
+  host.appendChild(entry.element);
+  planeFlameFx.set(plane, entry);
+  updatePlaneFlameFxPosition(plane);
 }
 
 function updatePlaneFlameFxPosition(plane, metrics) {
   const entry = planeFlameFx.get(plane);
-  const element = entry?.element;
+  const element = entry?.element || entry;
   if (!element) return;
 
   let data = metrics;
@@ -720,11 +291,11 @@ function ensurePlaneFlameFx(plane) {
     const entry = planeFlameFx.get(plane);
     if (entry) {
       entry.stop?.();
-      entry.element?.style?.removeProperty?.('--fx-glow-color');
-      entry.element?.remove();
+      const element = entry.element || entry;
+      element?.style?.removeProperty?.('--fx-glow-color');
+      element?.remove?.();
       planeFlameFx.delete(plane);
     }
-    planeFlameFxPending.delete(plane);
     const timer = planeFlameTimers.get(plane);
     if (timer) {
       clearTimeout(timer);
