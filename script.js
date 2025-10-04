@@ -2583,6 +2583,52 @@ function drawPlaneOutline(ctx2d, color){
   ctx2d.stroke();
 }
 
+function drawPlaneSpriteGlow(ctx2d, plane, blend){
+  if (blend <= 0) return;
+
+  const intensity = Math.max(0, Math.min(1, blend));
+  let img = null;
+  if (plane.color === "blue") {
+    img = bluePlaneImg;
+  } else if (plane.color === "green") {
+    img = greenPlaneImg;
+  }
+
+  const scaleBoost = 1 + 0.22 * intensity;
+  const size = 40 * scaleBoost;
+  const blur = 6 + 10 * intensity;
+  const tintAlpha = Math.min(0.75, 0.35 + 0.35 * intensity);
+
+  if (img && img.complete) {
+    ctx2d.save();
+    ctx2d.globalCompositeOperation = "lighter";
+    ctx2d.globalAlpha = 0.85 * intensity;
+    ctx2d.filter = `blur(${blur}px)`;
+    ctx2d.drawImage(img, -size / 2, -size / 2, size, size);
+
+    ctx2d.globalCompositeOperation = "source-atop";
+    ctx2d.filter = "none";
+    ctx2d.globalAlpha = 1;
+    ctx2d.fillStyle = colorWithAlpha(plane.color, tintAlpha);
+    ctx2d.fillRect(-size / 2, -size / 2, size, size);
+    ctx2d.restore();
+    return;
+  }
+
+  ctx2d.save();
+  ctx2d.scale(scaleBoost, scaleBoost);
+  ctx2d.globalAlpha = 0.9 * intensity;
+  ctx2d.shadowColor = colorWithAlpha(plane.color, Math.min(1, 0.6 + 0.4 * intensity));
+  ctx2d.shadowBlur = 12 + 8 * intensity;
+  ctx2d.lineWidth = 3;
+  ctx2d.lineJoin = "round";
+  ctx2d.lineCap = "round";
+  ctx2d.strokeStyle = colorWithAlpha(plane.color, tintAlpha);
+  tracePlaneSilhouette(ctx2d);
+  ctx2d.stroke();
+  ctx2d.restore();
+}
+
 
 function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0) {
   if (!plane || glowStrength <= 0) {
