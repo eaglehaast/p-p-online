@@ -2564,11 +2564,7 @@ function addPlaneShading(ctx2d){
   ctx2d.restore();
 }
 
-function drawPlaneOutline(ctx2d, color){
-  ctx2d.strokeStyle = colorFor(color);
-  ctx2d.lineWidth = 2;
-  ctx2d.lineJoin = "round";
-  ctx2d.lineCap = "round";
+function tracePlaneSilhouettePath(ctx2d){
   ctx2d.beginPath();
   ctx2d.moveTo(0, -20);
   ctx2d.quadraticCurveTo(12, -5, 10, 10);
@@ -2576,6 +2572,14 @@ function drawPlaneOutline(ctx2d, color){
   ctx2d.quadraticCurveTo(-6, 15, -10, 10);
   ctx2d.quadraticCurveTo(-12, -5, 0, -20);
   ctx2d.closePath();
+}
+
+function drawPlaneOutline(ctx2d, color){
+  ctx2d.strokeStyle = colorFor(color);
+  ctx2d.lineWidth = 2;
+  ctx2d.lineJoin = "round";
+  ctx2d.lineCap = "round";
+  tracePlaneSilhouettePath(ctx2d);
   ctx2d.stroke();
 }
 
@@ -2595,18 +2599,15 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
 
   let highlightColor = "";
   let highlightBlur = 0;
-  let highlightRadius = 16;
   let highlightFill = "rgba(0,0,0,0.2)";
   if (blend > 0) {
     const glowStrength = blend * 1.25; // boost brightness slightly
     highlightColor = colorWithAlpha(color, Math.min(1, glowStrength));
     highlightBlur = (color === "green" ? 22 : 18) * glowStrength;
-    highlightRadius = 18 + 4 * glowStrength;
     highlightFill = colorWithAlpha(color, Math.min(0.35, 0.15 + 0.25 * glowStrength));
   } else {
     highlightColor = "rgba(0,0,0,0.35)";
     highlightBlur = 6;
-    highlightRadius = 16;
     highlightFill = "rgba(0,0,0,0.25)";
   }
 
@@ -2616,9 +2617,11 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
     ctx2d.shadowColor = highlightColor;
     ctx2d.shadowBlur = highlightBlur;
     ctx2d.fillStyle = highlightFill;
-    ctx2d.beginPath();
-    ctx2d.arc(0, 0, highlightRadius, 0, Math.PI * 2);
+    ctx2d.strokeStyle = highlightColor;
+    ctx2d.lineWidth = blend > 0 ? 2.5 : 2;
+    tracePlaneSilhouettePath(ctx2d);
     ctx2d.fill();
+    ctx2d.stroke();
     ctx2d.restore();
   }
 
