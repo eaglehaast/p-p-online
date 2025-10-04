@@ -81,6 +81,18 @@ const PLANE_HIT_COOLDOWN_SEC = 0.2;
 const planeFlameFx = new Map();
 const planeFlameTimers = new Map();
 
+function disablePlaneFlameFx(plane) {
+  if (plane) {
+    plane.flameFxDisabled = true;
+  }
+}
+
+function resetPlaneFlameFxDisabled(plane) {
+  if (plane) {
+    plane.flameFxDisabled = false;
+  }
+}
+
 function cleanupGreenCrashFx() {
 
   cleanupBurningFx();
@@ -98,9 +110,7 @@ function cleanupBurningFx() {
     if (plane && plane.burningFlameSrc) {
       delete plane.burningFlameSrc;
     }
-    if (plane) {
-      plane.flameFxDisabled = false;
-    }
+    resetPlaneFlameFxDisabled(plane);
   }
   planeFlameFx.clear();
 }
@@ -140,7 +150,6 @@ function spawnBurningFlameFx(plane) {
   img.style.pointerEvents = 'none';
   img.style.transform = 'translate(-50%, -100%)';
   img.style.zIndex = '9999';
-  let attemptedSrc = flameSrc;
 
   const glowColor = computeGlowColor(plane?.color, 0.95);
   if (glowColor) {
@@ -157,9 +166,7 @@ function spawnBurningFlameFx(plane) {
       if (plane && plane.burningFlameSrc) {
         delete plane.burningFlameSrc;
       }
-      if (plane) {
-        plane.flameFxDisabled = true;
-      }
+      disablePlaneFlameFx(plane);
       return;
     }
     attemptedSrc = fallback;
@@ -250,9 +257,7 @@ function ensurePlaneFlameFx(plane) {
     if (plane.burningFlameSrc) {
       delete plane.burningFlameSrc;
     }
-    if (plane) {
-      plane.flameFxDisabled = false;
-    }
+    resetPlaneFlameFxDisabled(plane);
     return;
   }
 
