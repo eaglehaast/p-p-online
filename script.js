@@ -2737,7 +2737,9 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   ctx2d.filter = "none";
 
   if (plane.burning && explosionFinished) {
-    ctx2d.filter = "saturate(0) brightness(0.6)";
+    // Desaturated crash debris looked too dark (#494744). Brighten it slightly so it
+    // reads closer to #827f7c against the playfield background.
+    ctx2d.filter = "saturate(0) brightness(0.85)";
   }
 
   const showEngine = !(plane.burning && explosionFinished);
