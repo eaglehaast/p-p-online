@@ -661,6 +661,10 @@ let aimingAmplitude;     // 0..30 (UI показывает *4)
 
 let isGameOver   = false;
 let winnerColor  = null;
+let awaitingFlightResolution = false;
+let pendingRoundTransitionDelay = null;
+let pendingRoundTransitionStart = 0;
+let shouldShowEndScreen = false;
 let gameMode     = null;
 let selectedMode = null;
 
@@ -1041,7 +1045,57 @@ function syncAllStarStates(){
 loadStarImages();
 syncAllStarStates();
 
+function lockInWinner(color, options = {}){
+  if(isGameOver) return;
+
+  isGameOver = true;
+  winnerColor = color;
+
+  if(roundTransitionTimeout){
+    clearTimeout(roundTransitionTimeout);
+    roundTransitionTimeout = null;
+  }
+
+  shouldShowEndScreen = Boolean(options.showEndScreen);
+  if(endGameDiv){
+    endGameDiv.style.display = "none";
+  }
+
+  if(typeof options.roundTransitionDelay === "number" && Number.isFinite(options.roundTransitionDelay)){
+    pendingRoundTransitionDelay = options.roundTransitionDelay;
+    pendingRoundTransitionStart = performance.now();
+  } else {
+    pendingRoundTransitionDelay = null;
+    pendingRoundTransitionStart = 0;
+  }
+
+  awaitingFlightResolution = flyingPoints.length > 0;
+
+  if(!awaitingFlightResolution){
+    finalizePostFlightState();
+  }
+}
+
+function finalizePostFlightState(){
+  if(pendingRoundTransitionDelay !== null){
+    const elapsed = performance.now() - pendingRoundTransitionStart;
+    const remaining = Math.max(0, pendingRoundTransitionDelay - elapsed);
+    if(roundTransitionTimeout){
+      clearTimeout(roundTransitionTimeout);
+    }
+    roundTransitionTimeout = setTimeout(startNewRound, remaining);
+    pendingRoundTransitionDelay = null;
+    pendingRoundTransitionStart = 0;
+  }
+
+  if(shouldShowEndScreen && endGameDiv){
+    endGameDiv.style.display = "block";
+  }
+}
+
 function addScore(color, delta){
+  if(isGameOver) return;
+
   if(color === "blue"){
     blueScore = Math.max(0, blueScore + delta);
     syncStarState("blue", blueScore);
@@ -1052,11 +1106,9 @@ function addScore(color, delta){
 
   if(!isGameOver){
     if(blueScore >= POINTS_TO_WIN){
-      isGameOver = true;
-      winnerColor = "blue";
+      lockInWinner("blue", { showEndScreen: true });
     } else if(greenScore >= POINTS_TO_WIN){
-      isGameOver = true;
-      winnerColor = "green";
+      lockInWinner("green", { showEndScreen: true });
     }
   }
 
@@ -1113,6 +1165,10 @@ function resetGame(){
   isGameOver= false;
   winnerColor= null;
   endGameDiv.style.display = "none";
+  awaitingFlightResolution = false;
+  pendingRoundTransitionDelay = null;
+  pendingRoundTransitionStart = 0;
+  shouldShowEndScreen = false;
 
   cleanupGreenCrashFx();
 
@@ -2133,7 +2189,7 @@ function handleAAForPlane(p, fp){
 
 
   // полёты
-  if(!isGameOver && flyingPoints.length){
+  if(flyingPoints.length){
     const current = [...flyingPoints];
     for(const fp of current){
       const p = fp.plane;
@@ -2281,6 +2337,11 @@ function handleAAForPlane(p, fp){
     }
   }
 
+  if(isGameOver && awaitingFlightResolution && flyingPoints.length === 0){
+    awaitingFlightResolution = false;
+    finalizePostFlightState();
+  }
+
   // Anti-Aircraft against stationary planes
   if(!isGameOver){
     for(const p of points){
@@ -2400,10 +2461,6 @@ function handleAAForPlane(p, fp){
     const text= `${winnerColor.charAt(0).toUpperCase() + winnerColor.slice(1)} wins!`;
     const w= gameCtx.measureText(text).width;
     gameCtx.fillText(text, (gameCanvas.width - w)/2, gameCanvas.height/2 - 80);
-
-    if(blueScore >= POINTS_TO_WIN || greenScore >= POINTS_TO_WIN){
-      endGameDiv.style.display="block";
-    }
   }
 
   if(roundTextTimer > 0){
@@ -3187,15 +3244,13 @@ function awardPoint(color){
     greenScore++;
     syncStarState("green", greenScore);
     if(greenScore >= POINTS_TO_WIN){
-      isGameOver = true;
-      winnerColor = "green";
+      lockInWinner("green", { showEndScreen: true });
     }
   } else if(color === "green"){
     blueScore++;
     syncStarState("blue", blueScore);
     if(blueScore >= POINTS_TO_WIN){
-      isGameOver = true;
-      winnerColor = "blue";
+      lockInWinner("blue", { showEndScreen: true });
     }
   }
 
@@ -3307,6 +3362,8 @@ function distanceToFlag(px, py, baseX, baseY){
 }
 
 function handleFlagInteractions(plane){
+  if(isGameOver) return;
+
   const centerX = FIELD_LEFT + FIELD_WIDTH / 2;
   const topY = 40;
   const bottomY = gameCanvas.height - 40;
@@ -3353,16 +3410,16 @@ function handleFlagInteractions(plane){
 function checkVictory(){
   const greenAlive = points.filter(p=>p.isAlive && p.color==="green").length;
   const blueAlive  = points.filter(p=>p.isAlive && p.color==="blue").length;
-  if(greenAlive===0 && !isGameOver){
-    isGameOver = true; winnerColor="blue";
-    if(blueScore < POINTS_TO_WIN && greenScore < POINTS_TO_WIN){
-      roundTransitionTimeout = setTimeout(startNewRound, 1500);
-    }
-  } else if(blueAlive===0 && !isGameOver){
-    isGameOver = true; winnerColor="green";
-    if(blueScore < POINTS_TO_WIN && greenScore < POINTS_TO_WIN){
-      roundTransitionTimeout = setTimeout(startNewRound, 1500);
-    }
+  if(isGameOver) return;
+
+  const canContinueSeries = blueScore < POINTS_TO_WIN && greenScore < POINTS_TO_WIN;
+
+  if(greenAlive === 0){
+    const options = canContinueSeries ? { roundTransitionDelay: 1500 } : { showEndScreen: true };
+    lockInWinner("blue", options);
+  } else if(blueAlive === 0){
+    const options = canContinueSeries ? { roundTransitionDelay: 1500 } : { showEndScreen: true };
+    lockInWinner("green", options);
   }
 }
 
@@ -3643,6 +3700,10 @@ function startNewRound(){
   cleanupGreenCrashFx();
   endGameDiv.style.display = "none";
   isGameOver=false; winnerColor=null;
+  awaitingFlightResolution = false;
+  pendingRoundTransitionDelay = null;
+  pendingRoundTransitionStart = 0;
+  shouldShowEndScreen = false;
 
   STAR_LAP = { blue: 0, green: 0 };
   STAR_POS = { blue: 0, green: 0 };
