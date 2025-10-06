@@ -377,6 +377,12 @@ bluePlaneImg.src = "blue plane 24.png";
 const greenPlaneImg = new Image();
 
 greenPlaneImg.src = "green plane 3.png";
+
+const bluePlaneWreckImg = new Image();
+bluePlaneWreckImg.src = "planes/blue fall.png";
+
+const greenPlaneWreckImg = new Image();
+greenPlaneWreckImg.src = "planes/green fall.png";
 const flameGifImages = new Map();
 for (const src of BURNING_FLAME_SRCS) {
   const img = new Image();
@@ -2716,14 +2722,14 @@ function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0) {
 
 function drawThinPlane(ctx2d, plane, glow = 0) {
   const { x: cx, y: cy, color, angle } = plane;
-  const explosionFinished = plane.burning && isExplosionFinished(plane);
+  const isCrashedState = plane.burning && isExplosionFinished(plane);
 
   ctx2d.save();
   ctx2d.translate(cx, cy);
   ctx2d.rotate(angle);
   ctx2d.scale(PLANE_SCALE, PLANE_SCALE);
 
-  const blend = (plane.burning && explosionFinished)
+  const blend = (isCrashedState)
     ? 0
     : Math.max(0, Math.min(1, glow));
 
@@ -2736,14 +2742,8 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   ctx2d.shadowBlur = 0;
   ctx2d.filter = "none";
 
-  if (plane.burning && explosionFinished) {
-    // Desaturated crash debris looked too dark (#494744). Brighten it slightly so it
-    // reads closer to #827f7c against the playfield background.
-    ctx2d.filter = "saturate(0) brightness(0.85)";
-  }
-
-  const showEngine = !(plane.burning && explosionFinished);
-  if (plane.burning && explosionFinished) {
+  const showEngine = !isCrashedState;
+  if (isCrashedState) {
     ctx2d.globalAlpha = 0.85;
   }
   if (color === "blue") {
@@ -2760,12 +2760,27 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
         drawWingTrails(ctx2d);
       }
     }
-    if (bluePlaneImg.complete) {
+    const crashImgReady = bluePlaneWreckImg.complete && bluePlaneWreckImg.naturalWidth > 0;
+    const baseImgReady  = bluePlaneImg.complete && bluePlaneImg.naturalWidth > 0;
+    if (isCrashedState) {
+      if (crashImgReady) {
+        ctx2d.drawImage(bluePlaneWreckImg, -20, -20, 40, 40);
+      } else if (baseImgReady) {
+        ctx2d.filter = "saturate(0) brightness(0.85)";
+        ctx2d.drawImage(bluePlaneImg, -20, -20, 40, 40);
+        ctx2d.filter = "none";
+      } else {
+        ctx2d.filter = "saturate(0) brightness(0.85)";
+        drawPlaneOutline(ctx2d, color);
+        ctx2d.filter = "none";
+      }
+    } else if (baseImgReady) {
       ctx2d.drawImage(bluePlaneImg, -20, -20, 40, 40);
+      addPlaneShading(ctx2d);
     } else {
       drawPlaneOutline(ctx2d, color);
+      addPlaneShading(ctx2d);
     }
-    addPlaneShading(ctx2d);
   } else if (color === "green") {
     const fp = flyingPoints.find(fp => fp.plane === plane);
     if (showEngine) {
@@ -2782,15 +2797,32 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
         drawDieselSmoke(ctx2d, 1);
       }
     }
-    if (greenPlaneImg.complete) {
+    const crashImgReady = greenPlaneWreckImg.complete && greenPlaneWreckImg.naturalWidth > 0;
+    const baseImgReady  = greenPlaneImg.complete && greenPlaneImg.naturalWidth > 0;
+    if (isCrashedState) {
+      if (crashImgReady) {
+        ctx2d.drawImage(greenPlaneWreckImg, -20, -20, 40, 40);
+      } else if (baseImgReady) {
+        ctx2d.filter = "saturate(0) brightness(0.85)";
+        ctx2d.drawImage(greenPlaneImg, -20, -20, 40, 40);
+        ctx2d.filter = "none";
+      } else {
+        ctx2d.filter = "saturate(0) brightness(0.85)";
+        drawPlaneOutline(ctx2d, color);
+        ctx2d.filter = "none";
+      }
+    } else if (baseImgReady) {
       ctx2d.drawImage(greenPlaneImg, -20, -20, 40, 40);
+      addPlaneShading(ctx2d);
     } else {
       drawPlaneOutline(ctx2d, color);
+      addPlaneShading(ctx2d);
     }
-    addPlaneShading(ctx2d);
   } else {
     drawPlaneOutline(ctx2d, color);
-    addPlaneShading(ctx2d);
+    if (!isCrashedState) {
+      addPlaneShading(ctx2d);
+    }
   }
 
   ctx2d.restore();
@@ -2826,12 +2858,27 @@ function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1) {
 
   let img = null;
   if (color === "blue") {
-    img = bluePlaneImg;
+    img = isBurning ? bluePlaneWreckImg : bluePlaneImg;
   } else if (color === "green") {
-    img = greenPlaneImg;
+    img = isBurning ? greenPlaneWreckImg : greenPlaneImg;
   }
 
-  if (img && img.complete) {
+  let spriteReady = Boolean(
+    img &&
+    img.complete &&
+    img.naturalWidth > 0 &&
+    img.naturalHeight > 0
+  );
+
+  if (isBurning && !spriteReady) {
+    const fallbackImg = color === "blue" ? bluePlaneImg : greenPlaneImg;
+    if (fallbackImg && fallbackImg.complete && fallbackImg.naturalWidth > 0 && fallbackImg.naturalHeight > 0) {
+      img = fallbackImg;
+      spriteReady = true;
+    }
+  }
+
+  if (spriteReady) {
     ctx2d.drawImage(img, -size / 2, -size / 2, size, size);
   } else {
     // Fallback to simple outline if image isn't ready yet
