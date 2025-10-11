@@ -867,6 +867,38 @@ const STAR_PLACEMENT = {
 };
 
 
+function getStarBounds(color){
+  const placements = STAR_PLACEMENT?.[color];
+  if (!Array.isArray(placements) || placements.length === 0){
+    return { minX: 0, maxX: 0, minY: 0, maxY: 0 };
+  }
+
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+
+  for (const placement of placements){
+    if (!Array.isArray(placement)) continue;
+    for (const point of placement){
+      if (!point || typeof point.x !== 'number' || typeof point.y !== 'number'){
+        continue;
+      }
+      minX = Math.min(minX, point.x);
+      maxX = Math.max(maxX, point.x);
+      minY = Math.min(minY, point.y);
+      maxY = Math.max(maxY, point.y);
+    }
+  }
+
+  if (minX === Infinity){
+    return { minX: 0, maxX: 0, minY: 0, maxY: 0 };
+  }
+
+  return { minX, maxX, minY, maxY };
+}
+
+
 // Состояние слотов: теперь 5 звёзд на сторону (каждая звезда = до 5 фрагментов)
 const STAR_STATE = {
   blue:  Array.from({length:5}, ()=> new Set()),
@@ -3515,26 +3547,42 @@ function renderScoreboard(){
   }
 
   const margin = 10 * scaleX;
+  const hudGap = 24 * scaleY;
 
-  // Blue player's HUD (mini planes and numeric score)
+  const greenStars = getStarBounds('green');
+  const blueStars = getStarBounds('blue');
+
+  const greenStarsMaxY = greenStars.maxY * scaleY;
+  const blueStarsMinY = blueStars.minY * scaleY;
+
+  const greenHudX = containerLeft + containerWidth - margin;
+  const unclampedGreenHudY = containerTop + blueStarsMinY - hudGap;
+  const greenHudY = Math.max(containerTop + margin, unclampedGreenHudY);
+
+  const blueHudX = containerLeft + margin;
+  const unclampedBlueHudY = containerTop + greenStarsMaxY + hudGap;
+  const maxBlueHudY = containerTop + FRAME_BASE_HEIGHT * scaleY - margin;
+  const blueHudY = Math.min(maxBlueHudY, Math.max(containerTop + margin, unclampedBlueHudY));
+
+  // Green player's HUD (mini planes and numeric score)
   drawPlayerHUD(
     planeCtx,
-    containerLeft + containerWidth - margin,
-    containerTop + margin,
-    "blue",
-    blueScore,
-    turnColors[turnIndex] === "blue",
-    true
-  );
-
-  // Green player's HUD (numeric score)
-  drawPlayerHUD(
-    planeCtx,
-    containerLeft + margin,
-    containerTop + margin,
+    greenHudX,
+    greenHudY,
     "green",
     greenScore,
     turnColors[turnIndex] === "green",
+    true
+  );
+
+  // Blue player's HUD (numeric score)
+  drawPlayerHUD(
+    planeCtx,
+    blueHudX,
+    blueHudY,
+    "blue",
+    blueScore,
+    turnColors[turnIndex] === "blue",
     false
   );
 
