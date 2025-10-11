@@ -3546,20 +3546,27 @@ function renderScoreboard(){
     BOARD_ORIGIN.y = 0;
   }
 
-  const margin = 10 * scaleX;
-  const hudGap = 24 * scaleY;
-
   const greenStars = getStarBounds('green');
   const blueStars = getStarBounds('blue');
+
+  const margin = 10 * scaleX;
+  const hudGap = 24 * scaleY;
 
   const greenStarsMaxY = greenStars.maxY * scaleY;
   const blueStarsMinY = blueStars.minY * scaleY;
 
-  const greenHudX = containerLeft + containerWidth - margin;
+  const columnCenter = (bounds) => {
+    const minX = Number.isFinite(bounds.minX) ? bounds.minX : 0;
+    const maxX = Number.isFinite(bounds.maxX) ? bounds.maxX : minX;
+    const center = (minX + maxX) / 2;
+    return containerLeft + center * scaleX;
+  };
+
+  const greenHudX = columnCenter(greenStars);
   const unclampedGreenHudY = containerTop + blueStarsMinY - hudGap;
   const greenHudY = Math.max(containerTop + margin, unclampedGreenHudY);
 
-  const blueHudX = containerLeft + margin;
+  const blueHudX = columnCenter(blueStars);
   const unclampedBlueHudY = containerTop + greenStarsMaxY + hudGap;
   const maxBlueHudY = containerTop + FRAME_BASE_HEIGHT * scaleY - margin;
   const blueHudY = Math.min(maxBlueHudY, Math.max(containerTop + margin, unclampedBlueHudY));
@@ -3607,13 +3614,29 @@ function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
 
   const planes = points.filter(p => p.color === color);
   const maxPerRow = 4;
-  const spacingX = 20;
-  const iconScale = 0.8;
-  const iconSize = 16 * PLANE_SCALE * iconScale;
-  const iconHalf = iconSize / 2;
+
+  const rect = gameCanvas.getBoundingClientRect();
+  const rawScaleY = rect.height / CANVAS_BASE_HEIGHT;
+  const scaleY = Number.isFinite(rawScaleY) && rawScaleY > 0 ? rawScaleY : 1;
+
+  const placements = STAR_PLACEMENT?.[color];
+  const starBounds = getStarBounds(color);
+
+  const rawSpacing = (Array.isArray(placements) && placements.length > 1)
+    ? (starBounds.maxY - starBounds.minY) / (placements.length - 1)
+    : 0;
+
+  const spacingY = (Number.isFinite(rawSpacing) && rawSpacing > 0)
+    ? rawSpacing * scaleY
+    : 24 * scaleY;
+
+  const baseIconSize = 16 * PLANE_SCALE;
+  const iconScale = (spacingY > 0)
+    ? Math.max(0.5, spacingY / baseIconSize)
+    : 1;
+  const iconSize = baseIconSize * iconScale;
 
   const scoreText = String(score);
-  const scoreWidth = ctx.measureText(scoreText).width;
 
   let statusText = '';
   if (phase === 'AA_PLACEMENT') {
@@ -3623,7 +3646,6 @@ function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
       statusText = 'Enemy placing AA';
     }
   }
-  const statusWidth = statusText ? ctx.measureText(statusText).width : 0;
 
   const iconCount = Math.min(planes.length, maxPerRow);
 
@@ -3633,12 +3655,17 @@ function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
 
   for (let i = 0; i < iconCount; i++) {
     const p = planes[i];
-    const px = alignRight ? -i * spacingX : i * spacingX;
-    drawMiniPlaneWithCross(ctx, px, 0, p, iconScale);
+    const py = i * spacingY;
+    drawMiniPlaneWithCross(ctx, 0, py, p, iconScale);
   }
 
+  const columnHeight = iconCount > 0
+    ? (iconCount - 1) * spacingY + iconSize
+    : 0;
+  const textOffsetY = columnHeight > 0 ? columnHeight + 8 : 20;
+
   ctx.fillStyle = colorFor(color);
-  ctx.fillText(scoreText, 0, 20);
+  ctx.fillText(scoreText, 0, textOffsetY);
 
   if (statusText) {
     if (phase === 'AA_PLACEMENT' && currentPlacer !== color) {
@@ -3646,7 +3673,7 @@ function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
     } else {
       ctx.fillStyle = colorFor(color);
     }
-    ctx.fillText(statusText, 0, 40);
+    ctx.fillText(statusText, 0, textOffsetY + 20);
   }
 
   ctx.restore();
