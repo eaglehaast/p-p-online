@@ -1251,7 +1251,7 @@ function resetGame(){
   phase = 'MENU';
   currentPlacer = null;
 
-  setBackgroundImage('background behind the canvas 2.png');
+  setBackgroundImage('background behind the canvas.png');
 
   // UI reset
   hotSeatBtn.classList.remove("selected");
@@ -3804,7 +3804,7 @@ function startNewRound(){
   goatIndicator.style.display = "block";
   planeCanvas.style.display = "block";
 
-  setBackgroundImage('background behind the canvas 2.png');
+  setBackgroundImage('background behind the canvas 3.png');
 
   initPoints(); // ориентации на базе
   blueFlagCarrier = null;
