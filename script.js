@@ -3571,25 +3571,25 @@ function renderScoreboard(){
   const maxBlueHudY = containerTop + FRAME_BASE_HEIGHT * scaleY - margin;
   const blueHudY = Math.min(maxBlueHudY, Math.max(containerTop + margin, unclampedBlueHudY));
 
-  // Green player's HUD (mini planes and numeric score)
+  // Blue player's HUD (mini planes and numeric score)
   drawPlayerHUD(
     planeCtx,
     greenHudX,
     greenHudY,
-    "green",
-    greenScore,
-    turnColors[turnIndex] === "green",
+    "blue",
+    blueScore,
+    turnColors[turnIndex] === "blue",
     true
   );
 
-  // Blue player's HUD (numeric score)
+  // Green player's HUD (numeric score)
   drawPlayerHUD(
     planeCtx,
     blueHudX,
     blueHudY,
-    "blue",
-    blueScore,
-    turnColors[turnIndex] === "blue",
+    "green",
+    greenScore,
+    turnColors[turnIndex] === "green",
     false
   );
 
@@ -3600,9 +3600,9 @@ function renderScoreboard(){
 
 function updateTurnIndicators(){
   const color = turnColors[turnIndex];
-  const isBlueTurn = color === 'blue';
-  mantisIndicator.classList.toggle('active', isBlueTurn);
-  goatIndicator.classList.toggle('active', !isBlueTurn);
+  const isGreenTurn = color === 'green';
+  mantisIndicator.classList.toggle('active', isGreenTurn);
+  goatIndicator.classList.toggle('active', !isGreenTurn);
 }
 
 function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
