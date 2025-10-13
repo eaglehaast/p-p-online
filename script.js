@@ -2935,9 +2935,12 @@ function isExplosionFinished(p){
   return p.explosionStart && (performance.now() - p.explosionStart >= EXPLOSION_DURATION_MS);
 }
 
-function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1) {
+function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians = 0) {
   ctx2d.save();
   ctx2d.translate(x, y);
+  if (rotationRadians) {
+    ctx2d.rotate(rotationRadians);
+  }
 
   // Base size of the icon so it fits within the scoreboard cell
   const size = 16 * PLANE_SCALE * scale;
@@ -3521,6 +3524,9 @@ function drawStarsUI(ctx){
   }
 }
 
+const PLANE_COUNTER_TILT_DEGREES = 35;
+const PLANE_COUNTER_EDGE_OFFSET = 120;
+
 function renderScoreboard(){
   updateTurnIndicators();
   // `drawPlanesAndTrajectories()` already clears the plane canvas every frame
@@ -3549,12 +3555,6 @@ function renderScoreboard(){
   const greenStars = getStarBounds('green');
   const blueStars = getStarBounds('blue');
 
-  const margin = 10 * scaleX;
-  const hudGap = 24 * scaleY;
-
-  const greenStarsMaxY = greenStars.maxY * scaleY;
-  const blueStarsMinY = blueStars.minY * scaleY;
-
   const columnCenter = (bounds) => {
     const minX = Number.isFinite(bounds.minX) ? bounds.minX : 0;
     const maxX = Number.isFinite(bounds.maxX) ? bounds.maxX : minX;
@@ -3563,13 +3563,10 @@ function renderScoreboard(){
   };
 
   const greenHudX = columnCenter(greenStars);
-  const unclampedGreenHudY = containerTop + blueStarsMinY - hudGap;
-  const greenHudY = Math.max(containerTop + margin, unclampedGreenHudY);
+  const greenHudY = containerTop + FRAME_BASE_HEIGHT * scaleY - PLANE_COUNTER_EDGE_OFFSET * scaleY;
 
   const blueHudX = columnCenter(blueStars);
-  const unclampedBlueHudY = containerTop + greenStarsMaxY + hudGap;
-  const maxBlueHudY = containerTop + FRAME_BASE_HEIGHT * scaleY - margin;
-  const blueHudY = Math.min(maxBlueHudY, Math.max(containerTop + margin, unclampedBlueHudY));
+  const blueHudY = containerTop + PLANE_COUNTER_EDGE_OFFSET * scaleY;
 
   // Blue player's HUD (mini planes and numeric score)
   drawPlayerHUD(
@@ -3649,20 +3646,50 @@ function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
 
   const iconCount = Math.min(planes.length, maxPerRow);
 
+  const tiltRadians = (PLANE_COUNTER_TILT_DEGREES * Math.PI) / 180;
+  const rotation = color === 'blue' ? -tiltRadians : tiltRadians;
+  const stackDirection = color === 'green' ? -1 : 1;
+
+  const centers = [];
+  const sinTilt = Math.sin(rotation);
+  const cosTilt = Math.cos(rotation);
+
+  for (let i = 0; i < iconCount; i++) {
+    const step = stackDirection * i * spacingY;
+    const cx = step * sinTilt;
+    const cy = step * cosTilt;
+    centers.push({ x: cx, y: cy, plane: planes[i] });
+  }
+
   if (!isTurn) {
     ctx.globalAlpha = 0.65;
   }
 
-  for (let i = 0; i < iconCount; i++) {
-    const p = planes[i];
-    const py = i * spacingY;
-    drawMiniPlaneWithCross(ctx, 0, py, p, iconScale);
+  for (const center of centers) {
+    drawMiniPlaneWithCross(ctx, center.x, center.y, center.plane, iconScale, rotation);
   }
 
-  const columnHeight = iconCount > 0
-    ? (iconCount - 1) * spacingY + iconSize
-    : 0;
-  const textOffsetY = columnHeight > 0 ? columnHeight + 8 : 20;
+  let minY = Infinity;
+  let maxY = -Infinity;
+
+  if (centers.length === 0) {
+    minY = -iconSize / 2;
+    maxY = iconSize / 2;
+  } else {
+    for (const center of centers) {
+      const lower = center.y - iconSize / 2;
+      const upper = center.y + iconSize / 2;
+      if (lower < minY) {
+        minY = lower;
+      }
+      if (upper > maxY) {
+        maxY = upper;
+      }
+    }
+  }
+
+  const columnHeight = Math.max(0, maxY - minY);
+  const textOffsetY = columnHeight > 0 ? maxY + 8 : 20;
 
   ctx.fillStyle = colorFor(color);
   ctx.fillText(scoreText, 0, textOffsetY);
