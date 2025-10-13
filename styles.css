@@ -69,9 +69,11 @@ body, button {
     white-space: nowrap;
     opacity: 0;
     letter-spacing: calc(0.5px * var(--score-scale, 1));
-    animation: score-ink-write 2.4s ease-in-out forwards;
-    -webkit-clip-path: inset(0 100% 0 0);
-    clip-path: inset(0 100% 0 0);
+    animation-duration: 2.4s;
+    animation-timing-function: ease-in-out;
+    animation-fill-mode: forwards;
+    -webkit-clip-path: inset(0 0 100% 0);
+    clip-path: inset(0 0 100% 0);
   }
 
   .score-counter--green .score-ink {
@@ -80,6 +82,9 @@ body, button {
     text-shadow:
       0 0 6px rgba(236, 222, 190, 0.55),
       0 0 2px rgba(236, 222, 190, 0.9);
+    animation-name: score-ink-write-green;
+    -webkit-clip-path: inset(0 0 100% 0);
+    clip-path: inset(0 0 100% 0);
   }
 
   .score-counter--blue .score-ink {
@@ -88,13 +93,16 @@ body, button {
     text-shadow:
       0 0 6px rgba(129, 96, 48, 0.45),
       0 0 2px rgba(129, 96, 48, 0.8);
+    animation-name: score-ink-write-blue;
+    -webkit-clip-path: inset(100% 0 0 0);
+    clip-path: inset(100% 0 0 0);
   }
 
-  @keyframes score-ink-write {
+  @keyframes score-ink-write-green {
     0% {
       opacity: 0;
-      -webkit-clip-path: inset(0 100% 0 0);
-      clip-path: inset(0 100% 0 0);
+      -webkit-clip-path: inset(0 0 100% 0);
+      clip-path: inset(0 0 100% 0);
     }
     20% {
       opacity: 1;
@@ -111,8 +119,34 @@ body, button {
     }
     100% {
       opacity: 0;
-      -webkit-clip-path: inset(0 0 0 100%);
-      clip-path: inset(0 0 0 100%);
+      -webkit-clip-path: inset(100% 0 0 0);
+      clip-path: inset(100% 0 0 0);
+    }
+  }
+
+  @keyframes score-ink-write-blue {
+    0% {
+      opacity: 0;
+      -webkit-clip-path: inset(100% 0 0 0);
+      clip-path: inset(100% 0 0 0);
+    }
+    20% {
+      opacity: 1;
+    }
+    55% {
+      -webkit-clip-path: inset(0 0 0 0);
+      clip-path: inset(0 0 0 0);
+      opacity: 1;
+    }
+    80% {
+      opacity: 1;
+      -webkit-clip-path: inset(0 0 0 0);
+      clip-path: inset(0 0 0 0);
+    }
+    100% {
+      opacity: 0;
+      -webkit-clip-path: inset(0 0 100% 0);
+      clip-path: inset(0 0 100% 0);
     }
   }
 
