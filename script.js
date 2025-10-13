@@ -3572,7 +3572,7 @@ function renderScoreboard(){
   drawPlayerHUD(
     planeCtx,
     greenHudX,
-    greenHudY,
+    blueHudY,
     "blue",
     blueScore,
     turnColors[turnIndex] === "blue",
@@ -3583,7 +3583,7 @@ function renderScoreboard(){
   drawPlayerHUD(
     planeCtx,
     blueHudX,
-    blueHudY,
+    greenHudY,
     "green",
     greenScore,
     turnColors[turnIndex] === "green",
