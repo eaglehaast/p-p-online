@@ -106,11 +106,13 @@ body, button {
     }
     80% {
       opacity: 1;
+      -webkit-clip-path: inset(0 0 0 0);
+      clip-path: inset(0 0 0 0);
     }
     100% {
       opacity: 0;
-      -webkit-clip-path: inset(0 0 0 0);
-      clip-path: inset(0 0 0 0);
+      -webkit-clip-path: inset(0 100% 0 0);
+      clip-path: inset(0 100% 0 0);
     }
   }
 
