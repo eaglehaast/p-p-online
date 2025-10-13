@@ -547,6 +547,7 @@ document.addEventListener('dblclick', (e) => {
 
 /* ======= CONFIG ======= */
 const PLANE_SCALE          = 0.9;    // 10% smaller planes
+const MINI_PLANE_ICON_SCALE = 0.9;    // 10% smaller HUD plane icons
 const CELL_SIZE            = 20;     // px
 const POINT_RADIUS         = 15 * PLANE_SCALE;     // px (увеличено для мобильных)
 // Larger hit area for selecting planes with touch/mouse
@@ -2943,7 +2944,7 @@ function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians =
   }
 
   // Base size of the icon so it fits within the scoreboard cell
-  const size = 16 * PLANE_SCALE * scale;
+  const size = 16 * PLANE_SCALE * scale * MINI_PLANE_ICON_SCALE;
 
   const color = plane?.color || "blue";
   const isBurning = plane?.burning && isExplosionFinished(plane);
@@ -3627,7 +3628,7 @@ function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
     ? rawSpacing * scaleY
     : 24 * scaleY;
 
-  const baseIconSize = 16 * PLANE_SCALE;
+  const baseIconSize = 16 * PLANE_SCALE * MINI_PLANE_ICON_SCALE;
   const iconScale = (spacingY > 0)
     ? Math.max(0.5, spacingY / baseIconSize)
     : 1;
