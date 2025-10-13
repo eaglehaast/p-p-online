@@ -3651,14 +3651,10 @@ function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
   const stackDirection = color === 'green' ? -1 : 1;
 
   const centers = [];
-  const sinTilt = Math.sin(rotation);
-  const cosTilt = Math.cos(rotation);
 
   for (let i = 0; i < iconCount; i++) {
     const step = stackDirection * i * spacingY;
-    const cx = step * sinTilt;
-    const cy = step * cosTilt;
-    centers.push({ x: cx, y: cy, plane: planes[i] });
+    centers.push({ x: 0, y: step, plane: planes[i] });
   }
 
   if (!isTurn) {
