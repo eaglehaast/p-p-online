@@ -33,6 +33,115 @@ body, button {
     background-image: url("background behind the canvas 3.png");
     background-size: 460px 800px;
     background-repeat: no-repeat;
+    --score-scale: 1;
+  }
+
+  .score-counter {
+    position: absolute;
+    width: calc(44px * var(--score-scale, 1));
+    height: calc(26px * var(--score-scale, 1));
+    pointer-events: none;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: visible;
+  }
+
+  .score-counter--green {
+    left: calc(3px * var(--score-scale, 1));
+    top: calc(387px * var(--score-scale, 1));
+  }
+
+  .score-counter--blue {
+    left: calc(413px * var(--score-scale, 1));
+    top: calc(387px * var(--score-scale, 1));
+  }
+
+  .score-counter .score-ink {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    font-family: 'Patrick Hand', cursive;
+    font-size: calc(22px * var(--score-scale, 1));
+    line-height: 1;
+    white-space: nowrap;
+    opacity: 0;
+    letter-spacing: calc(0.5px * var(--score-scale, 1));
+    animation: score-ink-write 2.4s ease-in-out forwards;
+    -webkit-clip-path: inset(0 100% 0 0);
+    clip-path: inset(0 100% 0 0);
+  }
+
+  .score-counter--green .score-ink {
+    color: #7f8e40;
+    -webkit-text-stroke: calc(2px * var(--score-scale, 1)) #ecdebe;
+    text-shadow:
+      0 0 6px rgba(236, 222, 190, 0.55),
+      0 0 2px rgba(236, 222, 190, 0.9);
+  }
+
+  .score-counter--blue .score-ink {
+    color: #013c83;
+    -webkit-text-stroke: calc(2px * var(--score-scale, 1)) #816030;
+    text-shadow:
+      0 0 6px rgba(129, 96, 48, 0.45),
+      0 0 2px rgba(129, 96, 48, 0.8);
+  }
+
+  @keyframes score-ink-write {
+    0% {
+      opacity: 0;
+      -webkit-clip-path: inset(0 100% 0 0);
+      clip-path: inset(0 100% 0 0);
+    }
+    20% {
+      opacity: 1;
+    }
+    55% {
+      -webkit-clip-path: inset(0 0 0 0);
+      clip-path: inset(0 0 0 0);
+      opacity: 1;
+    }
+    80% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      -webkit-clip-path: inset(0 0 0 0);
+      clip-path: inset(0 0 0 0);
+    }
+  }
+
+  @keyframes score-ink-fade {
+    0% {
+      opacity: 0;
+    }
+    20% {
+      opacity: 1;
+    }
+    80% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @supports not ((-webkit-clip-path: inset(0 100% 0 0)) or (clip-path: inset(0 100% 0 0))) {
+    .score-counter .score-ink {
+      animation-name: score-ink-fade;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .score-counter .score-ink {
+      animation-name: score-ink-fade;
+      animation-duration: 1s;
+      -webkit-clip-path: none;
+      clip-path: none;
+    }
   }
 
   body.settings-page {
