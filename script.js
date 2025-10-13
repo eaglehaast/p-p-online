@@ -3533,10 +3533,42 @@ function drawStarsUI(ctx){
 const PLANE_COUNTER_TILT_DEGREES = 35;
 const PLANE_COUNTER_EDGE_OFFSET = 120;
 
+const SCORE_INK_DURATION_MS = 2600;
+const scoreInkQueues = {
+  blue: [],
+  green: []
+};
+const scoreInkActive = {
+  blue: false,
+  green: false
+};
+
 function spawnScorePopup(color, delta){
   if(delta <= 0) return;
   if(color !== "blue" && color !== "green") return;
 
+  enqueueScoreInk(color, delta);
+}
+
+function enqueueScoreInk(color, delta){
+  const queue = scoreInkQueues[color];
+  if(!queue) return;
+
+  queue.push(delta);
+  if(!scoreInkActive[color]){
+    processNextScoreInk(color);
+  }
+}
+
+function processNextScoreInk(color){
+  const queue = scoreInkQueues[color];
+  if(!queue || queue.length === 0){
+    scoreInkActive[color] = false;
+    return;
+  }
+
+  scoreInkActive[color] = true;
+  const delta = queue.shift();
   showScoreInk(color, delta);
 }
 
@@ -3544,20 +3576,27 @@ function showScoreInk(color, delta){
   if(delta <= 0) return;
 
   const host = SCORE_COUNTER_ELEMENTS[color];
-  if(!host) return;
+  if(!host){
+    scoreInkActive[color] = false;
+    return;
+  }
 
   const ink = document.createElement("span");
   ink.className = "score-ink";
   ink.textContent = `+${delta}`;
 
-  const removeInk = () => {
+  let cleared = false;
+  const finalize = () => {
+    if(cleared) return;
+    cleared = true;
     if(ink.parentNode === host){
       host.removeChild(ink);
     }
+    processNextScoreInk(color);
   };
 
-  ink.addEventListener("animationend", removeInk, { once: true });
-  setTimeout(removeInk, 2600);
+  ink.addEventListener("animationend", finalize, { once: true });
+  setTimeout(finalize, SCORE_INK_DURATION_MS);
 
   host.appendChild(ink);
 }
