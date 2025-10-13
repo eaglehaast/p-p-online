@@ -3635,8 +3635,6 @@ function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
     : 1;
   const iconSize = baseIconSize * iconScale;
 
-  const scoreText = String(score);
-
   let statusText = '';
   if (phase === 'AA_PLACEMENT') {
     if (currentPlacer === color) {
@@ -3687,10 +3685,7 @@ function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
   }
 
   const columnHeight = Math.max(0, maxY - minY);
-  const textOffsetY = columnHeight > 0 ? maxY + 8 : 20;
-
-  ctx.fillStyle = colorFor(color);
-  ctx.fillText(scoreText, 0, textOffsetY);
+  const labelOffsetY = columnHeight > 0 ? maxY + 8 : 20;
 
   if (statusText) {
     if (phase === 'AA_PLACEMENT' && currentPlacer !== color) {
@@ -3698,7 +3693,7 @@ function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
     } else {
       ctx.fillStyle = colorFor(color);
     }
-    ctx.fillText(statusText, 0, textOffsetY + 20);
+    ctx.fillText(statusText, 0, labelOffsetY);
   }
 
   ctx.restore();
