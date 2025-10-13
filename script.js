@@ -20,6 +20,14 @@ const aimCtx      = aimCanvas.getContext("2d");
 const planeCanvas = document.getElementById("planeCanvas");
 const planeCtx    = planeCanvas.getContext("2d");
 
+const greenScoreCounter = document.getElementById("greenScoreCounter");
+const blueScoreCounter  = document.getElementById("blueScoreCounter");
+
+const SCORE_COUNTER_ELEMENTS = {
+  green: greenScoreCounter,
+  blue: blueScoreCounter
+};
+
 // ---- ЕДИНЫЕ размеры макета ----
 const MOCKUP_W = 460;
 const MOCKUP_H = 800;
@@ -1217,6 +1225,8 @@ function resetGame(){
   if(fxLayer){
     fxLayer.innerHTML = "";
   }
+
+  clearScoreCounters();
 
   greenScore = 0;
   blueScore  = 0;
@@ -3523,139 +3533,42 @@ function drawStarsUI(ctx){
 const PLANE_COUNTER_TILT_DEGREES = 35;
 const PLANE_COUNTER_EDGE_OFFSET = 120;
 
-const SCORE_POPUP_DURATION_MS = 1600;
-const SCORE_POPUP_FADE_IN_MS = 250;
-const SCORE_POPUP_FADE_OUT_MS = 350;
-const SCORE_POPUP_FLOAT_PX = 30;
-const SCORE_POPUP_OFFSET_PX = 28;
-const SCORE_POPUP_STACK_GAP_PX = 34;
-const SCORE_POPUPS_MAX = 3;
-
-const scorePopups = {
-  blue: [],
-  green: []
-};
-
 function spawnScorePopup(color, delta){
   if(delta <= 0) return;
   if(color !== "blue" && color !== "green") return;
 
-  const list = scorePopups[color];
-  if(!Array.isArray(list)) return;
-
-  const now = performance.now();
-  list.push({ value: delta, startedAt: now });
-  while(list.length > SCORE_POPUPS_MAX){
-    list.shift();
-  }
+  showScoreInk(color, delta);
 }
 
-function drawScorePopups(ctx, layout){
-  const {
-    containerLeft = 0,
-    containerTop = 0,
-    scaleX = 1,
-    scaleY = 1,
-    greenBounds = {},
-    blueBounds = {}
-  } = layout || {};
+function showScoreInk(color, delta){
+  if(delta <= 0) return;
 
-  if(!ctx || !Number.isFinite(scaleX) || !Number.isFinite(scaleY)){
-    return;
-  }
+  const host = SCORE_COUNTER_ELEMENTS[color];
+  if(!host) return;
 
-  const anchors = {
-    green: {
-      x: containerLeft + (Number.isFinite(greenBounds.maxX) ? greenBounds.maxX : 0) * scaleX + SCORE_POPUP_OFFSET_PX * scaleX,
-      y: containerTop + (FRAME_BASE_HEIGHT / 2) * scaleY,
-      align: "left"
-    },
-    blue: {
-      x: containerLeft + (Number.isFinite(blueBounds.minX) ? blueBounds.minX : 0) * scaleX - SCORE_POPUP_OFFSET_PX * scaleX,
-      y: containerTop + (FRAME_BASE_HEIGHT / 2) * scaleY,
-      align: "right"
+  const ink = document.createElement("span");
+  ink.className = "score-ink";
+  ink.textContent = `+${delta}`;
+
+  const removeInk = () => {
+    if(ink.parentNode === host){
+      host.removeChild(ink);
     }
   };
 
-  const now = performance.now();
-  const fontScale = Math.max(scaleX, scaleY);
-  const fontSize = Math.max(18, Math.round(30 * fontScale));
-  const stackGap = SCORE_POPUP_STACK_GAP_PX * scaleY;
+  ink.addEventListener("animationend", removeInk, { once: true });
+  setTimeout(removeInk, 2600);
 
-  ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.textBaseline = "middle";
-  ctx.lineJoin = "round";
-  ctx.miterLimit = 2;
+  host.appendChild(ink);
+}
 
-  for(const color of ["green", "blue"]){
-    const entries = Array.isArray(scorePopups[color]) ? scorePopups[color] : [];
-    if(entries.length === 0) continue;
-
-    const anchor = anchors[color];
-    if(!anchor || !Number.isFinite(anchor.x) || !Number.isFinite(anchor.y)){
-      continue;
+function clearScoreCounters(){
+  for(const key of Object.keys(SCORE_COUNTER_ELEMENTS)){
+    const host = SCORE_COUNTER_ELEMENTS[key];
+    if(host){
+      host.textContent = "";
     }
-
-    const active = [];
-    const drawable = [];
-    for(const popup of entries){
-      if(!popup || typeof popup.startedAt !== "number"){
-        continue;
-      }
-      const elapsed = now - popup.startedAt;
-      if(elapsed >= SCORE_POPUP_DURATION_MS){
-        continue;
-      }
-      drawable.push({ popup, elapsed });
-      active.push(popup);
-    }
-
-    scorePopups[color] = active;
-    if(drawable.length === 0) continue;
-
-    const baseOffset = -(drawable.length - 1) * stackGap / 2;
-
-    ctx.save();
-    ctx.font = `${fontSize}px 'Patrick Hand', cursive`;
-    ctx.textAlign = anchor.align;
-    ctx.fillStyle = colorFor(color);
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.45)";
-    ctx.shadowColor = "rgba(0, 0, 0, 0.35)";
-    ctx.shadowBlur = 8 * fontScale;
-    ctx.lineWidth = Math.max(1, 3 * fontScale);
-
-    let index = 0;
-    for(const { popup, elapsed } of drawable){
-      const remaining = SCORE_POPUP_DURATION_MS - elapsed;
-      let alpha = 1;
-      if(elapsed < SCORE_POPUP_FADE_IN_MS){
-        alpha = elapsed / SCORE_POPUP_FADE_IN_MS;
-      } else if(remaining < SCORE_POPUP_FADE_OUT_MS){
-        alpha = remaining / SCORE_POPUP_FADE_OUT_MS;
-      }
-
-      alpha = Math.max(0, Math.min(alpha, 1));
-      const progress = Math.min(1, elapsed / SCORE_POPUP_DURATION_MS);
-      const floatOffset = SCORE_POPUP_FLOAT_PX * scaleY * progress;
-      const stackOffset = baseOffset + index * stackGap;
-      const drawY = anchor.y + stackOffset - floatOffset;
-      const drawX = anchor.x;
-      const text = `+${popup.value}`;
-
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.strokeText(text, drawX, drawY);
-      ctx.fillText(text, drawX, drawY);
-      ctx.restore();
-
-      index++;
-    }
-
-    ctx.restore();
   }
-
-  ctx.restore();
 }
 
 function renderScoreboard(){
@@ -3722,15 +3635,6 @@ function renderScoreboard(){
   );
 
   drawStarsUI(planeCtx);
-
-  drawScorePopups(planeCtx, {
-    containerLeft,
-    containerTop,
-    scaleX,
-    scaleY,
-    greenBounds: greenStars,
-    blueBounds: blueStars
-  });
 
   planeCtx.restore();
 }
@@ -3932,6 +3836,7 @@ function startNewRound(){
     roundTransitionTimeout = null;
   }
   cleanupGreenCrashFx();
+  clearScoreCounters();
   endGameDiv.style.display = "none";
   isGameOver=false; winnerColor=null;
   awaitingFlightResolution = false;
@@ -4008,6 +3913,7 @@ function resizeCanvas() {
   const containerHeight = FRAME_BASE_HEIGHT * scale;
   gameContainer.style.width = containerWidth + 'px';
   gameContainer.style.height = containerHeight + 'px';
+  gameContainer.style.setProperty('--score-scale', scale);
   gameContainer.style.left = (window.innerWidth - containerWidth) / 2 + 'px';
   gameContainer.style.top = (window.innerHeight - containerHeight) / 2 + 'px';
   syncBackgroundLayout(containerWidth, containerHeight);
