@@ -3598,9 +3598,10 @@ function renderScoreboard(){
 
 function updateTurnIndicators(){
   const color = turnColors[turnIndex];
-  const isGreenTurn = color === 'green';
-  mantisIndicator.classList.toggle('active', isGreenTurn);
-  goatIndicator.classList.toggle('active', !isGreenTurn);
+  const isBlueTurn = color === 'blue';
+  // Top (mantis) mascot belongs to the blue player, bottom (goat) to green.
+  mantisIndicator.classList.toggle('active', isBlueTurn);
+  goatIndicator.classList.toggle('active', !isBlueTurn);
 }
 
 function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
