@@ -920,6 +920,104 @@ let STAR_LAP = { blue: 0, green: 0 };
 let STAR_POS = { blue: 0, green: 0 };
 let STAR_PLACED_IN_LAP = { blue: 0, green: 0 };
 
+const STAR_FRAGMENT_FADE_DURATION_MS = 620;
+const STAR_FRAGMENT_ROW_DELAY_MS = 70;
+
+const STAR_FRAGMENT_ANIMATIONS = {
+  blue: [],
+  green: []
+};
+
+function ensureStarAnimationState(color){
+  const slots = Array.isArray(STAR_PLACEMENT?.[color]) ? STAR_PLACEMENT[color].length : 0;
+  if (!Array.isArray(STAR_FRAGMENT_ANIMATIONS[color])){
+    STAR_FRAGMENT_ANIMATIONS[color] = [];
+  }
+
+  const storage = STAR_FRAGMENT_ANIMATIONS[color];
+
+  while (storage.length < slots){
+    storage.push(Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => null));
+  }
+
+  if (storage.length > slots){
+    storage.length = slots;
+  }
+
+  for (let i = 0; i < storage.length; i += 1){
+    const row = storage[i];
+    if (!Array.isArray(row)){
+      storage[i] = Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => null);
+      continue;
+    }
+
+    if (row.length < STAR_FRAGMENTS_PER_SLOT){
+      row.length = STAR_FRAGMENTS_PER_SLOT;
+    }
+
+    for (let j = 0; j < row.length; j += 1){
+      if (typeof row[j] === "undefined"){
+        row[j] = null;
+      }
+    }
+  }
+
+  return storage;
+}
+
+function starFragmentDelay(color, slotIdx){
+  const slots = Array.isArray(STAR_PLACEMENT?.[color]) ? STAR_PLACEMENT[color].length : 0;
+  if (slots <= 1){
+    return 0;
+  }
+  const step = STAR_FRAGMENT_ROW_DELAY_MS;
+  if (color === "blue"){
+    return (slots - 1 - slotIdx) * step;
+  }
+  return slotIdx * step;
+}
+
+function applyStarFragmentAnimations(color, previousState){
+  const slots = STAR_STATE[color];
+  if (!Array.isArray(slots)) return;
+
+  const animStorage = ensureStarAnimationState(color);
+  const now = performance.now();
+
+  for (let slotIdx = 0; slotIdx < slots.length; slotIdx += 1){
+    const newPieces = slots[slotIdx] || new Set();
+    const prevPieces = Array.isArray(previousState) ? previousState[slotIdx] || new Set() : new Set();
+    const animRow = animStorage[slotIdx];
+
+    for (let frag = 1; frag <= STAR_FRAGMENTS_PER_SLOT; frag += 1){
+      const fragIdx = frag - 1;
+      const hasNow = newPieces.has(frag);
+      const hadBefore = prevPieces instanceof Set ? prevPieces.has(frag) : false;
+
+      if (hasNow){
+        if (!hadBefore){
+          animRow[fragIdx] = {
+            start: now,
+            delay: starFragmentDelay(color, slotIdx),
+            duration: STAR_FRAGMENT_FADE_DURATION_MS
+          };
+        } else if (!animRow[fragIdx]){
+          animRow[fragIdx] = {
+            start: now - STAR_FRAGMENT_FADE_DURATION_MS,
+            delay: 0,
+            duration: STAR_FRAGMENT_FADE_DURATION_MS
+          };
+        }
+      } else {
+        animRow[fragIdx] = null;
+      }
+    }
+  }
+}
+
+ensureStarAnimationState("blue");
+ensureStarAnimationState("green");
+
 const STAR_IMAGES = {
   blue: [],
   green: []
@@ -1016,6 +1114,13 @@ function syncStarState(color, score){
   const slots = STAR_STATE[color];
   if (!Array.isArray(slots)) return;
 
+  const previousState = slots.map(set => {
+    if (set instanceof Set){
+      return new Set(set);
+    }
+    return new Set();
+  });
+
   const clamped = Math.max(0, Math.min(score, POINTS_TO_WIN));
 
   slots.forEach(set => set.clear());
@@ -1026,6 +1131,8 @@ function syncStarState(color, score){
   for (let count = 0; count < clamped; count++){
     if (!addPointToSide(color)) break;
   }
+
+  applyStarFragmentAnimations(color, previousState);
 }
 
 // Диагональный распределитель: выдаём фрагменты диагоналями по звёздам
@@ -3482,12 +3589,15 @@ function drawStarsUI(ctx){
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.imageSmoothingEnabled = false;
 
+  const now = performance.now();
+
   try {
     const colors = ["blue", "green"];
     for (const color of colors){
       const slots = STAR_STATE[color] || [];
       const placements = STAR_PLACEMENT[color];
       const images = STAR_IMAGES[color];
+      const animRows = STAR_FRAGMENT_ANIMATIONS[color];
 
       if (!Array.isArray(placements) || !Array.isArray(images)) continue;
 
@@ -3513,13 +3623,42 @@ function drawStarsUI(ctx){
             continue;
           }
 
+          const animRow = Array.isArray(animRows) ? animRows[slotIdx] : null;
+          const anim = Array.isArray(animRow) ? animRow[frag - 1] : null;
+          let alpha = 1;
+
+          if (anim){
+            const delay = Number.isFinite(anim.delay) ? anim.delay : 0;
+            const duration = Number.isFinite(anim.duration) && anim.duration > 0
+              ? anim.duration
+              : STAR_FRAGMENT_FADE_DURATION_MS;
+            const start = Number.isFinite(anim.start) ? anim.start : now;
+            const elapsed = now - start - delay;
+            if (elapsed < 0){
+              continue;
+            }
+            alpha = Math.max(0, Math.min(1, elapsed / duration));
+            if (alpha <= 0){
+              continue;
+            }
+          }
+
           const dstW = Math.round(img.naturalWidth * scale * sx);
           const dstH = Math.round(img.naturalHeight * scale * sy);
 
           const screenX = Math.round(pos.x * sx) + (BOARD_ORIGIN?.x || 0);
           const screenY = Math.round(pos.y * sy) + (BOARD_ORIGIN?.y || 0);
 
-          ctx.drawImage(img, screenX, screenY, dstW, dstH);
+          const previousAlpha = ctx.globalAlpha;
+          if (anim){
+            ctx.globalAlpha = previousAlpha * alpha;
+          }
+
+          if (ctx.globalAlpha > 0){
+            ctx.drawImage(img, screenX, screenY, dstW, dstH);
+          }
+
+          ctx.globalAlpha = previousAlpha;
         }
       }
     }
