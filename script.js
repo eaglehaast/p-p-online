@@ -556,6 +556,10 @@ document.addEventListener('dblclick', (e) => {
 /* ======= CONFIG ======= */
 const PLANE_SCALE          = 0.9;    // 10% smaller planes
 const MINI_PLANE_ICON_SCALE = 0.9;    // 10% smaller HUD plane icons
+const HUD_PLANE_DIM_ALPHA = 0.75;     // muted HUD planes regardless of turn
+const HUD_PLANE_DIM_FILTER = "saturate(0.45) brightness(0.78)";
+const HUD_KILL_MARKER_COLOR = "#7d2020";
+const HUD_KILL_MARKER_ALPHA = 0.85;
 const CELL_SIZE            = 20;     // px
 const POINT_RADIUS         = 15 * PLANE_SCALE;     // px (увеличено для мобильных)
 // Larger hit area for selecting planes with touch/mouse
@@ -3050,7 +3054,10 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
 function drawRedCross(ctx2d, cx, cy, size=20){
   ctx2d.save();
   ctx2d.translate(cx, cy);
-  ctx2d.strokeStyle = "red";
+  const previousFilter = ctx2d.filter;
+  ctx2d.filter = "none";
+  ctx2d.strokeStyle = HUD_KILL_MARKER_COLOR;
+  ctx2d.globalAlpha *= HUD_KILL_MARKER_ALPHA;
   ctx2d.lineWidth = 2 * PLANE_SCALE;
   ctx2d.beginPath();
   ctx2d.moveTo(-size/2, -size/2);
@@ -3058,6 +3065,7 @@ function drawRedCross(ctx2d, cx, cy, size=20){
   ctx2d.moveTo( size/2, -size/2);
   ctx2d.lineTo(-size/2,  size/2);
   ctx2d.stroke();
+  ctx2d.filter = previousFilter;
   ctx2d.restore();
 }
 
@@ -3077,6 +3085,10 @@ function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians =
 
   const color = plane?.color || "blue";
   const isDestroyed = Boolean(plane && (!plane.isAlive || plane.burning));
+
+  ctx2d.globalAlpha *= HUD_PLANE_DIM_ALPHA;
+  const previousFilter = ctx2d.filter;
+  ctx2d.filter = HUD_PLANE_DIM_FILTER;
 
   let img = null;
   if (color === "blue") {
@@ -3108,6 +3120,8 @@ function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians =
     ctx2d.closePath();
     ctx2d.stroke();
   }
+
+  ctx2d.filter = previousFilter;
 
   if (isDestroyed) {
     drawRedCross(ctx2d, 0, 0, size * 0.8);
