@@ -3076,13 +3076,13 @@ function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians =
   const size = 16 * PLANE_SCALE * scale * MINI_PLANE_ICON_SCALE;
 
   const color = plane?.color || "blue";
-  const isBurning = plane?.burning && isExplosionFinished(plane);
+  const isDestroyed = Boolean(plane && (!plane.isAlive || plane.burning));
 
   let img = null;
   if (color === "blue") {
-    img = isBurning ? bluePlaneWreckImg : bluePlaneImg;
+    img = bluePlaneImg;
   } else if (color === "green") {
-    img = isBurning ? greenPlaneWreckImg : greenPlaneImg;
+    img = greenPlaneImg;
   }
 
   let spriteReady = Boolean(
@@ -3091,14 +3091,6 @@ function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians =
     img.naturalWidth > 0 &&
     img.naturalHeight > 0
   );
-
-  if (isBurning && !spriteReady) {
-    const fallbackImg = color === "blue" ? bluePlaneImg : greenPlaneImg;
-    if (fallbackImg && fallbackImg.complete && fallbackImg.naturalWidth > 0 && fallbackImg.naturalHeight > 0) {
-      img = fallbackImg;
-      spriteReady = true;
-    }
-  }
 
   if (spriteReady) {
     ctx2d.drawImage(img, -size / 2, -size / 2, size, size);
@@ -3117,17 +3109,8 @@ function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians =
     ctx2d.stroke();
   }
 
-  if (isBurning) {
-    let flameImg = defaultFlameGifImg;
-    if (plane) {
-      const flameSrc = ensurePlaneBurningFlame(plane);
-      flameImg = flameGifImages.get(flameSrc) || flameImg;
-    }
-    if (flameImg && flameImg.complete) {
-      ctx2d.drawImage(flameImg, -size / 2, -size / 2, size, size);
-    } else {
-      drawRedCross(ctx2d, 0, 0, size * 0.8);
-    }
+  if (isDestroyed) {
+    drawRedCross(ctx2d, 0, 0, size * 0.8);
   }
 
   ctx2d.restore();
@@ -3674,7 +3657,11 @@ function drawStarsUI(ctx){
 }
 
 const PLANE_COUNTER_TILT_DEGREES = 35;
-const PLANE_COUNTER_EDGE_OFFSET = 120;
+const PLANE_COUNTER_PADDING      = 2;
+const PLANE_COUNTER_CONTAINERS   = {
+  blue:  { left: 4,   top: 97,  right: 50,  bottom: 337 },
+  green: { left: 410, top: 463, right: 456, bottom: 703 }
+};
 
 const SCORE_INK_DURATION_MS = 2600;
 const scoreInkQueues = {
@@ -3833,47 +3820,49 @@ function renderScoreboard(){
     BOARD_ORIGIN.y = 0;
   }
 
-  const greenStars = getStarBounds('green');
-  const blueStars = getStarBounds('blue');
+  const blueHudFrame = buildPlaneCounterFrame('blue', containerLeft, containerTop, scaleX, scaleY);
+  const greenHudFrame = buildPlaneCounterFrame('green', containerLeft, containerTop, scaleX, scaleY);
 
-  const columnCenter = (bounds) => {
-    const minX = Number.isFinite(bounds.minX) ? bounds.minX : 0;
-    const maxX = Number.isFinite(bounds.maxX) ? bounds.maxX : minX;
-    const center = (minX + maxX) / 2;
-    return containerLeft + center * scaleX;
-  };
+  if (blueHudFrame) {
+    drawPlayerHUD(
+      planeCtx,
+      blueHudFrame,
+      "blue",
+      turnColors[turnIndex] === "blue"
+    );
+  }
 
-  const greenHudX = columnCenter(greenStars);
-  const greenHudY = containerTop + FRAME_BASE_HEIGHT * scaleY - PLANE_COUNTER_EDGE_OFFSET * scaleY;
-
-  const blueHudX = columnCenter(blueStars);
-  const blueHudY = containerTop + PLANE_COUNTER_EDGE_OFFSET * scaleY;
-
-  // Blue player's HUD (mini planes and numeric score)
-  drawPlayerHUD(
-    planeCtx,
-    greenHudX,
-    blueHudY,
-    "blue",
-    blueScore,
-    turnColors[turnIndex] === "blue",
-    true
-  );
-
-  // Green player's HUD (numeric score)
-  drawPlayerHUD(
-    planeCtx,
-    blueHudX,
-    greenHudY,
-    "green",
-    greenScore,
-    turnColors[turnIndex] === "green",
-    false
-  );
+  if (greenHudFrame) {
+    drawPlayerHUD(
+      planeCtx,
+      greenHudFrame,
+      "green",
+      turnColors[turnIndex] === "green"
+    );
+  }
 
   drawStarsUI(planeCtx);
 
   planeCtx.restore();
+}
+
+function buildPlaneCounterFrame(color, containerLeft, containerTop, scaleX, scaleY) {
+  const spec = PLANE_COUNTER_CONTAINERS?.[color];
+  if (!spec) return null;
+
+  const width = (spec.right - spec.left) * scaleX;
+  const height = (spec.bottom - spec.top) * scaleY;
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return null;
+  }
+
+  const left = containerLeft + spec.left * scaleX;
+  const top = containerTop + spec.top * scaleY;
+  if (!Number.isFinite(left) || !Number.isFinite(top)) {
+    return null;
+  }
+
+  return { left, top, width, height, scaleX, scaleY };
 }
 
 function updateTurnIndicators(){
@@ -3884,36 +3873,46 @@ function updateTurnIndicators(){
   goatIndicator.classList.toggle('active', !isBlueTurn);
 }
 
-function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
+function drawPlayerHUD(ctx, frame, color, isTurn){
+  if (!frame) return;
+
+  const { left, top, width, height, scaleX, scaleY } = frame;
+  if (!Number.isFinite(left) || !Number.isFinite(top) || width <= 0 || height <= 0) {
+    return;
+  }
+
   ctx.save();
-  ctx.translate(x, y);
+  ctx.translate(left, top);
   ctx.font = "14px 'Patrick Hand', cursive";
   ctx.textBaseline = "top";
-  ctx.textAlign = alignRight ? "right" : "left";
+  ctx.textAlign = "center";
 
   const planes = points.filter(p => p.color === color);
   const maxPerRow = 4;
 
-  const rect = gameCanvas.getBoundingClientRect();
-  const rawScaleY = rect.height / CANVAS_BASE_HEIGHT;
-  const scaleY = Number.isFinite(rawScaleY) && rawScaleY > 0 ? rawScaleY : 1;
-
-  const placements = STAR_PLACEMENT?.[color];
-  const starBounds = getStarBounds(color);
-
-  const rawSpacing = (Array.isArray(placements) && placements.length > 1)
-    ? (starBounds.maxY - starBounds.minY) / (placements.length - 1)
-    : 0;
-
-  const spacingY = (Number.isFinite(rawSpacing) && rawSpacing > 0)
-    ? rawSpacing * scaleY
-    : 24 * scaleY;
+  const paddingX = PLANE_COUNTER_PADDING * scaleX;
+  const paddingY = PLANE_COUNTER_PADDING * scaleY;
+  const availableWidth = Math.max(0, width - paddingX * 2);
+  const availableHeight = Math.max(0, height - paddingY * 2);
 
   const baseIconSize = 16 * PLANE_SCALE * MINI_PLANE_ICON_SCALE;
-  const iconScale = (spacingY > 0)
-    ? Math.max(0.5, spacingY / baseIconSize)
-    : 1;
-  const iconSize = baseIconSize * iconScale;
+  const tiltRadians = (PLANE_COUNTER_TILT_DEGREES * Math.PI) / 180;
+  const rotation = color === "blue" ? -tiltRadians : tiltRadians;
+  const rotationFitFactor = Math.abs(Math.cos(rotation)) + Math.abs(Math.sin(rotation));
+
+  const slots = Math.max(1, maxPerRow);
+  const slotHeight = availableHeight / slots;
+
+  let iconScale = 0;
+  if (baseIconSize > 0 && rotationFitFactor > 0) {
+    const widthLimit = availableWidth / (baseIconSize * rotationFitFactor);
+    const heightLimit = slotHeight / (baseIconSize * rotationFitFactor);
+    iconScale = Math.min(widthLimit, heightLimit);
+  }
+
+  if (!Number.isFinite(iconScale) || iconScale <= 0) {
+    iconScale = 0;
+  }
 
   let statusText = '';
   if (phase === 'AA_PLACEMENT') {
@@ -3925,48 +3924,24 @@ function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
   }
 
   const iconCount = Math.min(planes.length, maxPerRow);
-
-  const tiltRadians = (PLANE_COUNTER_TILT_DEGREES * Math.PI) / 180;
-  const rotation = color === 'blue' ? -tiltRadians : tiltRadians;
   const stackDirection = color === 'green' ? -1 : 1;
 
-  const centers = [];
+  if (!isTurn) {
+    ctx.globalAlpha = 0.65;
+  }
+
+  const centerX = paddingX + availableWidth / 2;
 
   for (let i = 0; i < iconCount; i++) {
-    const step = stackDirection * i * spacingY;
-    centers.push({ x: 0, y: step, plane: planes[i] });
-  }
-
-  const previousAlpha = ctx.globalAlpha;
-  ctx.globalAlpha = 0.65;
-
-  for (const center of centers) {
-    drawMiniPlaneWithCross(ctx, center.x, center.y, center.plane, iconScale, rotation);
-  }
-
-  ctx.globalAlpha = previousAlpha;
-
-  let minY = Infinity;
-  let maxY = -Infinity;
-
-  if (centers.length === 0) {
-    minY = -iconSize / 2;
-    maxY = iconSize / 2;
-  } else {
-    for (const center of centers) {
-      const lower = center.y - iconSize / 2;
-      const upper = center.y + iconSize / 2;
-      if (lower < minY) {
-        minY = lower;
-      }
-      if (upper > maxY) {
-        maxY = upper;
-      }
+    const plane = planes[i];
+    const slotIndex = stackDirection === -1 ? (slots - 1 - i) : i;
+    const centerY = paddingY + slotHeight * (slotIndex + 0.5);
+    if (iconScale > 0) {
+      drawMiniPlaneWithCross(ctx, centerX, centerY, plane, iconScale, rotation);
     }
   }
 
-  const columnHeight = Math.max(0, maxY - minY);
-  const labelOffsetY = columnHeight > 0 ? maxY + 8 : 20;
+  ctx.globalAlpha = 1;
 
   if (statusText) {
     if (phase === 'AA_PLACEMENT' && currentPlacer !== color) {
@@ -3974,7 +3949,8 @@ function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
     } else {
       ctx.fillStyle = colorFor(color);
     }
-    ctx.fillText(statusText, 0, labelOffsetY);
+    const labelY = height + paddingY;
+    ctx.fillText(statusText, width / 2, labelY);
   }
 
   ctx.restore();
