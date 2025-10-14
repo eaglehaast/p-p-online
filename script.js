@@ -556,8 +556,8 @@ document.addEventListener('dblclick', (e) => {
 /* ======= CONFIG ======= */
 const PLANE_SCALE          = 0.9;    // 10% smaller planes
 const MINI_PLANE_ICON_SCALE = 0.9;    // 10% smaller HUD plane icons
-const HUD_PLANE_DIM_ALPHA = 0.75;     // muted HUD planes regardless of turn
-const HUD_PLANE_DIM_FILTER = "saturate(0.45) brightness(0.78)";
+const HUD_PLANE_DIM_ALPHA = 1;        // full brightness for HUD planes
+const HUD_PLANE_DIM_FILTER = "none";  // no color dimming on HUD planes
 const HUD_KILL_MARKER_COLOR = "#7d2020";
 const HUD_KILL_MARKER_ALPHA = 0.85;
 const CELL_SIZE            = 20;     // px
