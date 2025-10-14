@@ -3076,13 +3076,13 @@ function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians =
   const size = 16 * PLANE_SCALE * scale * MINI_PLANE_ICON_SCALE;
 
   const color = plane?.color || "blue";
-  const isBurning = plane?.burning && isExplosionFinished(plane);
+  const isDestroyed = Boolean(plane && (!plane.isAlive || plane.burning));
 
   let img = null;
   if (color === "blue") {
-    img = isBurning ? bluePlaneWreckImg : bluePlaneImg;
+    img = bluePlaneImg;
   } else if (color === "green") {
-    img = isBurning ? greenPlaneWreckImg : greenPlaneImg;
+    img = greenPlaneImg;
   }
 
   let spriteReady = Boolean(
@@ -3091,14 +3091,6 @@ function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians =
     img.naturalWidth > 0 &&
     img.naturalHeight > 0
   );
-
-  if (isBurning && !spriteReady) {
-    const fallbackImg = color === "blue" ? bluePlaneImg : greenPlaneImg;
-    if (fallbackImg && fallbackImg.complete && fallbackImg.naturalWidth > 0 && fallbackImg.naturalHeight > 0) {
-      img = fallbackImg;
-      spriteReady = true;
-    }
-  }
 
   if (spriteReady) {
     ctx2d.drawImage(img, -size / 2, -size / 2, size, size);
@@ -3117,17 +3109,8 @@ function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians =
     ctx2d.stroke();
   }
 
-  if (isBurning) {
-    let flameImg = defaultFlameGifImg;
-    if (plane) {
-      const flameSrc = ensurePlaneBurningFlame(plane);
-      flameImg = flameGifImages.get(flameSrc) || flameImg;
-    }
-    if (flameImg && flameImg.complete) {
-      ctx2d.drawImage(flameImg, -size / 2, -size / 2, size, size);
-    } else {
-      drawRedCross(ctx2d, 0, 0, size * 0.8);
-    }
+  if (isDestroyed) {
+    drawRedCross(ctx2d, 0, 0, size * 0.8);
   }
 
   ctx2d.restore();
