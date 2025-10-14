@@ -1248,16 +1248,20 @@ function addScore(color, delta){
     const previous = blueScore;
     blueScore = Math.max(0, blueScore + delta);
     if(blueScore > previous){
-      spawnScorePopup("blue", blueScore - previous);
+      spawnScorePopup("blue", blueScore - previous, blueScore);
+    } else {
+      syncStarState("blue", blueScore);
+      updatePendingStarTargets("blue", blueScore);
     }
-    syncStarState("blue", blueScore);
   } else if(color === "green"){
     const previous = greenScore;
     greenScore = Math.max(0, greenScore + delta);
     if(greenScore > previous){
-      spawnScorePopup("green", greenScore - previous);
+      spawnScorePopup("green", greenScore - previous, greenScore);
+    } else {
+      syncStarState("green", greenScore);
+      updatePendingStarTargets("green", greenScore);
     }
-    syncStarState("green", greenScore);
   }
 
   if(!isGameOver){
@@ -3681,19 +3685,23 @@ const scoreInkActive = {
   blue: false,
   green: false
 };
+const activeScoreInkEntries = {
+  blue: null,
+  green: null
+};
 
-function spawnScorePopup(color, delta){
+function spawnScorePopup(color, delta, targetScore){
   if(delta <= 0) return;
   if(color !== "blue" && color !== "green") return;
 
-  enqueueScoreInk(color, delta);
+  enqueueScoreInk(color, delta, targetScore);
 }
 
-function enqueueScoreInk(color, delta){
+function enqueueScoreInk(color, delta, targetScore){
   const queue = scoreInkQueues[color];
   if(!queue) return;
 
-  queue.push(delta);
+  queue.push({ delta, targetScore });
   if(!scoreInkActive[color]){
     processNextScoreInk(color);
   }
@@ -3703,20 +3711,63 @@ function processNextScoreInk(color){
   const queue = scoreInkQueues[color];
   if(!queue || queue.length === 0){
     scoreInkActive[color] = false;
+    activeScoreInkEntries[color] = null;
     return;
   }
 
   scoreInkActive[color] = true;
-  const delta = queue.shift();
-  showScoreInk(color, delta);
+  const entry = queue.shift();
+  activeScoreInkEntries[color] = entry;
+  showScoreInk(color, entry);
 }
 
-function showScoreInk(color, delta){
-  if(delta <= 0) return;
+function getScoreForColor(color){
+  return color === "blue" ? blueScore : greenScore;
+}
+
+function updatePendingStarTargets(color, targetScore){
+  if(!Number.isFinite(targetScore)){
+    return;
+  }
+
+  const queue = scoreInkQueues[color];
+  if(Array.isArray(queue)){
+    for(const entry of queue){
+      if(entry && typeof entry === "object"){
+        entry.targetScore = targetScore;
+      }
+    }
+  }
+
+  const activeEntry = activeScoreInkEntries[color];
+  if(activeEntry && typeof activeEntry === "object"){
+    activeEntry.targetScore = targetScore;
+  }
+}
+
+function showScoreInk(color, entry){
+  const delta = Number.isFinite(entry?.delta) ? entry.delta : 0;
+  const resolveTargetScore = () => {
+    if(entry && Number.isFinite(entry.targetScore)){
+      return entry.targetScore;
+    }
+    return getScoreForColor(color);
+  };
+
+  if(delta <= 0){
+    syncStarState(color, resolveTargetScore());
+    scoreInkActive[color] = false;
+    activeScoreInkEntries[color] = null;
+    processNextScoreInk(color);
+    return;
+  }
 
   const host = SCORE_COUNTER_ELEMENTS[color];
   if(!host){
     scoreInkActive[color] = false;
+    syncStarState(color, resolveTargetScore());
+    activeScoreInkEntries[color] = null;
+    processNextScoreInk(color);
     return;
   }
 
@@ -3728,9 +3779,12 @@ function showScoreInk(color, delta){
   const finalize = () => {
     if(cleared) return;
     cleared = true;
+    syncStarState(color, resolveTargetScore());
     if(ink.parentNode === host){
       host.removeChild(ink);
     }
+    scoreInkActive[color] = false;
+    activeScoreInkEntries[color] = null;
     processNextScoreInk(color);
   };
 
@@ -3746,6 +3800,11 @@ function clearScoreCounters(){
     if(host){
       host.textContent = "";
     }
+    if(Array.isArray(scoreInkQueues[key])){
+      scoreInkQueues[key].length = 0;
+    }
+    scoreInkActive[key] = false;
+    activeScoreInkEntries[key] = null;
   }
 }
 
@@ -3878,13 +3937,14 @@ function drawPlayerHUD(ctx, x, y, color, score, isTurn, alignRight){
     centers.push({ x: 0, y: step, plane: planes[i] });
   }
 
-  if (!isTurn) {
-    ctx.globalAlpha = 0.65;
-  }
+  const previousAlpha = ctx.globalAlpha;
+  ctx.globalAlpha = 0.65;
 
   for (const center of centers) {
     drawMiniPlaneWithCross(ctx, center.x, center.y, center.plane, iconScale, rotation);
   }
+
+  ctx.globalAlpha = previousAlpha;
 
   let minY = Infinity;
   let maxY = -Infinity;
