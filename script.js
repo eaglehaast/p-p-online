@@ -3086,7 +3086,6 @@ function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians =
   const color = plane?.color || "blue";
   const isDestroyed = Boolean(plane && (!plane.isAlive || plane.burning));
 
-  ctx2d.globalAlpha *= HUD_PLANE_DIM_ALPHA;
   const previousFilter = ctx2d.filter;
   ctx2d.filter = HUD_PLANE_DIM_FILTER;
 
@@ -3940,9 +3939,8 @@ function drawPlayerHUD(ctx, frame, color, isTurn){
   const iconCount = Math.min(planes.length, maxPerRow);
   const stackDirection = color === 'green' ? -1 : 1;
 
-  if (!isTurn) {
-    ctx.globalAlpha = 0.65;
-  }
+  const previousAlpha = ctx.globalAlpha;
+  ctx.globalAlpha *= HUD_PLANE_DIM_ALPHA;
 
   const centerX = paddingX + availableWidth / 2;
 
@@ -3955,7 +3953,7 @@ function drawPlayerHUD(ctx, frame, color, isTurn){
     }
   }
 
-  ctx.globalAlpha = 1;
+  ctx.globalAlpha = previousAlpha;
 
   if (statusText) {
     if (phase === 'AA_PLACEMENT' && currentPlacer !== color) {
