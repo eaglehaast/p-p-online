@@ -3910,7 +3910,9 @@ function drawPlayerHUD(ctx, frame, color, isTurn){
 
   const baseIconSize = 16 * PLANE_SCALE * MINI_PLANE_ICON_SCALE;
   const tiltRadians = (PLANE_COUNTER_TILT_DEGREES * Math.PI) / 180;
-  const rotation = color === "blue" ? -tiltRadians : tiltRadians;
+  const rotation = color === "blue"
+    ? tiltRadians
+    : tiltRadians + Math.PI;
   const rotationFitFactor = Math.abs(Math.cos(rotation)) + Math.abs(Math.sin(rotation));
 
   const slots = Math.max(1, maxPerRow);
