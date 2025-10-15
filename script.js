@@ -28,6 +28,90 @@ const SCORE_COUNTER_ELEMENTS = {
   blue: blueScoreCounter
 };
 
+const hudPlaneStyleProbeElements = Array.from(
+  document.querySelectorAll("#hudPlaneStyleProbes .hud-plane")
+);
+const HUD_PLANE_STYLE_CACHE = new Map();
+
+function extractScaleFromTransform(transformValue) {
+  if (!transformValue || transformValue === "none") {
+    return 1;
+  }
+
+  const value = transformValue.trim();
+  if (value.startsWith("matrix3d(")) {
+    const parts = value
+      .slice(9, -1)
+      .split(",")
+      .map(part => parseFloat(part.trim()));
+    if (parts.length >= 16) {
+      const scaleX = parts[0];
+      const scaleY = parts[5];
+      if (Number.isFinite(scaleX) && Number.isFinite(scaleY)) {
+        return Math.sqrt(Math.abs(scaleX * scaleY));
+      }
+    }
+    return 1;
+  }
+
+  if (value.startsWith("matrix(")) {
+    const parts = value
+      .slice(7, -1)
+      .split(",")
+      .map(part => parseFloat(part.trim()));
+    if (parts.length >= 6) {
+      const scaleX = parts[0];
+      const scaleY = parts[3];
+      if (Number.isFinite(scaleX) && Number.isFinite(scaleY)) {
+        return Math.sqrt(Math.abs(scaleX * scaleY));
+      }
+    }
+  }
+
+  return 1;
+}
+
+function rebuildHudPlaneStyleCache() {
+  HUD_PLANE_STYLE_CACHE.clear();
+  for (const element of hudPlaneStyleProbeElements) {
+    if (!(element instanceof HTMLElement)) continue;
+    let color = null;
+    if (element.classList.contains("green")) {
+      color = "green";
+    } else if (element.classList.contains("blue")) {
+      color = "blue";
+    }
+    if (!color) continue;
+
+    const computed = window.getComputedStyle(element);
+    const filter = (computed.filter && computed.filter !== "none")
+      ? computed.filter
+      : "";
+    const scale = extractScaleFromTransform(computed.transform);
+    HUD_PLANE_STYLE_CACHE.set(color, {
+      filter,
+      scale: Number.isFinite(scale) && scale > 0 ? scale : 1
+    });
+  }
+}
+
+function getHudPlaneStyle(color) {
+  if (!color) return null;
+  if (!HUD_PLANE_STYLE_CACHE.size) {
+    rebuildHudPlaneStyleCache();
+  }
+  return HUD_PLANE_STYLE_CACHE.get(color) || null;
+}
+
+function combineFilters(...filters) {
+  return filters
+    .map(f => (typeof f === "string" ? f.trim() : ""))
+    .filter(f => f && f.toLowerCase() !== "none")
+    .join(" ");
+}
+
+rebuildHudPlaneStyleCache();
+
 // ---- ЕДИНЫЕ размеры макета ----
 const MOCKUP_W = 460;
 const MOCKUP_H = 800;
@@ -558,7 +642,7 @@ const PLANE_SCALE          = 0.9;    // 10% smaller planes
 const MINI_PLANE_ICON_SCALE = 0.9;    // 10% smaller HUD plane icons
 const HUD_PLANE_DIM_ALPHA = 1;        // full brightness for HUD planes
 const HUD_PLANE_DIM_FILTER = "none";  // no color dimming on HUD planes
-const HUD_KILL_MARKER_COLOR = "#7d2020";
+const HUD_KILL_MARKER_COLOR = "#91200f";
 const HUD_KILL_MARKER_ALPHA = 0.85;
 const CELL_SIZE            = 20;     // px
 const POINT_RADIUS         = 15 * PLANE_SCALE;     // px (увеличено для мобильных)
@@ -3104,17 +3188,21 @@ function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians =
     ctx2d.rotate(rotationRadians);
   }
 
-  // Base size of the icon so it fits within the scoreboard cell
-  const size = 16 * PLANE_SCALE * scale * MINI_PLANE_ICON_SCALE;
-
   const color = plane?.color || "blue";
   const isDestroyed = Boolean(plane && (!plane.isAlive || plane.burning));
   if (!isDestroyed && plane && plane.killMarkerStart) {
     delete plane.killMarkerStart;
   }
 
+  const style = getHudPlaneStyle(color);
+  const styleScale = Number.isFinite(style?.scale) && style.scale > 0 ? style.scale : 1;
+
+  // Base size of the icon so it fits within the scoreboard cell
+  const size = 16 * PLANE_SCALE * scale * MINI_PLANE_ICON_SCALE * styleScale;
+
   const previousFilter = ctx2d.filter;
-  ctx2d.filter = HUD_PLANE_DIM_FILTER;
+  const combinedFilter = combineFilters(HUD_PLANE_DIM_FILTER, style?.filter);
+  ctx2d.filter = combinedFilter || "none";
 
   let img = null;
   if (color === "blue") {
