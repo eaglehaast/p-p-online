@@ -2233,7 +2233,9 @@ function destroyPlane(fp){
   ensurePlaneBurningFlame(p);
   p.collisionX = p.x;
   p.collisionY = p.y;
-  p.explosionStart = performance.now();
+  const explosionTimestamp = performance.now();
+  p.explosionStart = explosionTimestamp;
+  p.killMarkerStart = explosionTimestamp;
 
   try { spawnExplosion(p.collisionX, p.collisionY, p.color); }
   catch(e) { console.warn('[FX] spawnExplosion error', e); }
@@ -2293,7 +2295,9 @@ function handleAAForPlane(p, fp){
               p.burning=true;
               ensurePlaneBurningFlame(p);
               p.collisionX=p.x; p.collisionY=p.y;
-              p.explosionStart = performance.now();
+              const aaExplosionTimestamp = performance.now();
+              p.explosionStart = aaExplosionTimestamp;
+              p.killMarkerStart = aaExplosionTimestamp;
 
               try { spawnExplosion(p.collisionX, p.collisionY, p.color); }
               catch(e) { console.warn('[FX] spawnExplosion error', e); }
@@ -3051,7 +3055,12 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   ctx2d.restore();
 }
 
-function drawRedCross(ctx2d, cx, cy, size=20){
+function drawRedCross(ctx2d, cx, cy, size = 20, progress = 1){
+  const clampedProgress = Math.max(0, Math.min(1, progress));
+  if (clampedProgress <= 0) {
+    return;
+  }
+
   ctx2d.save();
   ctx2d.translate(cx, cy);
   const previousFilter = ctx2d.filter;
@@ -3059,12 +3068,27 @@ function drawRedCross(ctx2d, cx, cy, size=20){
   ctx2d.strokeStyle = HUD_KILL_MARKER_COLOR;
   ctx2d.globalAlpha *= HUD_KILL_MARKER_ALPHA;
   ctx2d.lineWidth = 2 * PLANE_SCALE;
+  ctx2d.lineCap = "round";
+
+  const halfSize = size / 2;
+  const line1Progress = Math.min(1, clampedProgress * 2);
+  const line2Progress = Math.max(0, clampedProgress * 2 - 1);
+
   ctx2d.beginPath();
-  ctx2d.moveTo(-size/2, -size/2);
-  ctx2d.lineTo( size/2,  size/2);
-  ctx2d.moveTo( size/2, -size/2);
-  ctx2d.lineTo(-size/2,  size/2);
+  if (line1Progress > 0) {
+    const endX = -halfSize + size * line1Progress;
+    const endY = -halfSize + size * line1Progress;
+    ctx2d.moveTo(-halfSize, -halfSize);
+    ctx2d.lineTo(endX, endY);
+  }
+  if (line2Progress > 0) {
+    const endX = halfSize - size * line2Progress;
+    const endY = -halfSize + size * line2Progress;
+    ctx2d.moveTo(halfSize, -halfSize);
+    ctx2d.lineTo(endX, endY);
+  }
   ctx2d.stroke();
+
   ctx2d.filter = previousFilter;
   ctx2d.restore();
 }
@@ -3085,6 +3109,9 @@ function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians =
 
   const color = plane?.color || "blue";
   const isDestroyed = Boolean(plane && (!plane.isAlive || plane.burning));
+  if (!isDestroyed && plane && plane.killMarkerStart) {
+    delete plane.killMarkerStart;
+  }
 
   const previousFilter = ctx2d.filter;
   ctx2d.filter = HUD_PLANE_DIM_FILTER;
@@ -3123,7 +3150,10 @@ function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians =
   ctx2d.filter = previousFilter;
 
   if (isDestroyed) {
-    drawRedCross(ctx2d, 0, 0, size * 0.8);
+    const crossProgress = getKillMarkerProgress(plane);
+    if (crossProgress > 0) {
+      drawRedCross(ctx2d, 0, 0, size * 0.8, crossProgress);
+    }
   }
 
   ctx2d.restore();
@@ -3423,7 +3453,9 @@ function checkPlaneHits(plane, fp){
       const cy = d === 0 ? plane.y : plane.y + dy / d * POINT_RADIUS;
       p.collisionX = cx;
       p.collisionY = cy;
-      p.explosionStart = performance.now();
+      const collisionExplosionTimestamp = performance.now();
+      p.explosionStart = collisionExplosionTimestamp;
+      p.killMarkerStart = collisionExplosionTimestamp;
 
       try { spawnExplosion(p.collisionX, p.collisionY, p.color); }
       catch(e) { console.warn('[FX] spawnExplosion error', e); }
@@ -3677,6 +3709,44 @@ const PLANE_COUNTER_CONTAINERS   = {
 };
 
 const SCORE_INK_DURATION_MS = 2600;
+const HUD_KILL_MARKER_DRAW_DURATION_MS = Math.max(400, SCORE_INK_DURATION_MS * 0.55);
+function getKillMarkerProgress(plane, now = performance.now()){
+  if (!plane) {
+    return 0;
+  }
+
+  if (plane.isAlive && !plane.burning) {
+    if (plane.killMarkerStart) {
+      delete plane.killMarkerStart;
+    }
+    return 0;
+  }
+
+  const duration = HUD_KILL_MARKER_DRAW_DURATION_MS > 0
+    ? HUD_KILL_MARKER_DRAW_DURATION_MS
+    : 800;
+
+  let start = plane.killMarkerStart;
+  if (!Number.isFinite(start)) {
+    if (Number.isFinite(plane.explosionStart)) {
+      start = plane.explosionStart;
+    } else {
+      start = now;
+    }
+    plane.killMarkerStart = start;
+  }
+
+  const elapsed = now - start;
+  if (!Number.isFinite(elapsed)) {
+    return 1;
+  }
+
+  if (duration <= 0) {
+    return 1;
+  }
+
+  return Math.max(0, Math.min(1, elapsed / duration));
+}
 const scoreInkQueues = {
   blue: [],
   green: []
