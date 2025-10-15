@@ -229,11 +229,11 @@ body, button {
 }
 
 #mantisIndicator.active {
-  filter: grayscale(0) drop-shadow(0 0 10px #013c83);
+  filter: grayscale(0) drop-shadow(0 0 6px rgba(1, 60, 131, 0.6));
 }
 
 #goatIndicator.active {
-  filter: grayscale(0) drop-shadow(0 0 10px #7f8e40);
+  filter: grayscale(0) drop-shadow(0 0 6px rgba(127, 142, 64, 0.6));
 }
 
 
