@@ -735,3 +735,46 @@ body, button {
 
 /* Плавные переходы */
 button, .control-box, #modeMenu, #endGameButtons { transition: all 0.3s ease; }
+
+/* === HUD planes: усиление видимости (обводка + свечение + масштаб) === */
+.hud-plane{
+  /* делаем их поверх всего на колонке */
+  position: relative;
+  z-index: 3;
+
+  /* +20% размер, центр остаётся на месте */
+  transform: scale(1.2);
+  transform-origin: center;
+
+  /* белая «псевдообводка» + мягкая тень */
+  /* первый drop-shadow = тонкая белая кромка,
+     второй = чуть шире, третий = мягкая тень */
+  filter:
+    drop-shadow(0 0 0 #fff)
+    drop-shadow(0 0 2px #fff)
+    drop-shadow(0 2px 4px rgba(0,0,0,.25));
+
+  /* чтобы гифка не мыльнилась при масштабировании */
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+}
+
+/* добавляем лёгкое цветное свечение в тон колонки */
+.hud-plane.green{
+  filter:
+    drop-shadow(0 0 0 #fff)
+    drop-shadow(0 0 2px #fff)
+    drop-shadow(0 0 6px rgba(90,140,50,.8))   /* зелёное свечение */
+    drop-shadow(0 2px 4px rgba(0,0,0,.25));
+}
+
+.hud-plane.blue{
+  filter:
+    drop-shadow(0 0 0 #fff)
+    drop-shadow(0 0 2px #fff)
+    drop-shadow(0 0 6px rgba(60,110,190,.85)) /* синее свечение */
+    drop-shadow(0 2px 4px rgba(0,0,0,.25));
+}
+
+/* если вдруг кому-то будет слишком крупно — можно быстро откатить масштаб
+   .hud-plane{ transform: scale(1.15); }  // или 1.1 */
