@@ -3157,7 +3157,7 @@ function drawRedCross(ctx2d, cx, cy, size = 20, progress = 1){
   ctx2d.filter = "none";
   ctx2d.strokeStyle = HUD_KILL_MARKER_COLOR;
   ctx2d.globalAlpha *= HUD_KILL_MARKER_ALPHA;
-  ctx2d.lineWidth = 2 * PLANE_SCALE;
+  ctx2d.lineWidth = 4 * PLANE_SCALE;
   ctx2d.lineCap = "round";
 
   const halfSize = size / 2;
@@ -3308,12 +3308,12 @@ function drawPlanesAndTrajectories(){
 
   if(rangeTextInfo){
     planeCtx.save();
-    planeCtx.globalAlpha = 0.5;
+    planeCtx.globalAlpha = 1;
     planeCtx.font = "14px sans-serif";
     planeCtx.textAlign = "left";
     planeCtx.textBaseline = "middle";
-    planeCtx.lineWidth = 1;
-    planeCtx.strokeStyle = "white";
+    planeCtx.lineWidth = 2;
+    planeCtx.strokeStyle = "rgba(255, 255, 255, 0.75)";
     planeCtx.fillStyle = rangeTextInfo.color;
     const numText = rangeTextInfo.cells.toFixed(1);
     planeCtx.strokeText(numText, rangeTextInfo.x, rangeTextInfo.y - 8);
