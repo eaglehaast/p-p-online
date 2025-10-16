@@ -742,8 +742,8 @@ button, .control-box, #modeMenu, #endGameButtons { transition: all 0.3s ease; }
   position: relative;
   z-index: 3;
 
-  /* +20% размер, центр остаётся на месте */
-  transform: scale(1.2);
+  /* +8% размер, центр остаётся на месте */
+  transform: scale(1.08);
   transform-origin: center;
 
   /* чтобы гифка не мыльнилась при масштабировании */
