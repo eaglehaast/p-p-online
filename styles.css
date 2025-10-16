@@ -736,7 +736,7 @@ body, button {
 /* Плавные переходы */
 button, .control-box, #modeMenu, #endGameButtons { transition: all 0.3s ease; }
 
-/* === HUD planes: усиление видимости (обводка + свечение + масштаб) === */
+/* === HUD planes: мягкая тень вместо подсветки === */
 .hud-plane{
   /* делаем их поверх всего на колонке */
   position: relative;
@@ -746,34 +746,29 @@ button, .control-box, #modeMenu, #endGameButtons { transition: all 0.3s ease; }
   transform: scale(1.2);
   transform-origin: center;
 
-  /* белая «псевдообводка» + мягкая тень */
-  /* первый drop-shadow = тонкая белая кромка,
-     второй = чуть шире, третий = мягкая тень */
+  /* мягкая тень без яркой подсветки */
   filter:
-    drop-shadow(0 0 0 #fff)
-    drop-shadow(0 0 2px #fff)
-    drop-shadow(0 2px 4px rgba(0,0,0,.25));
+    drop-shadow(0 1px 1px rgba(0,0,0,.35))
+    drop-shadow(0 5px 12px rgba(0,0,0,.35));
 
   /* чтобы гифка не мыльнилась при масштабировании */
   image-rendering: -webkit-optimize-contrast;
   image-rendering: crisp-edges;
 }
 
-/* добавляем лёгкое цветное свечение в тон колонки */
+/* приглушённая тень с оттенком в цвет команды */
 .hud-plane.green{
   filter:
-    drop-shadow(0 0 0 #fff)
-    drop-shadow(0 0 2px #fff)
-    drop-shadow(0 0 6px rgba(90,140,50,.8))   /* зелёное свечение */
-    drop-shadow(0 2px 4px rgba(0,0,0,.25));
+    drop-shadow(0 1px 1px rgba(0,0,0,.35))
+    drop-shadow(0 6px 14px rgba(32,60,32,.45))
+    drop-shadow(0 10px 22px rgba(0,0,0,.35));
 }
 
 .hud-plane.blue{
   filter:
-    drop-shadow(0 0 0 #fff)
-    drop-shadow(0 0 2px #fff)
-    drop-shadow(0 0 6px rgba(60,110,190,.85)) /* синее свечение */
-    drop-shadow(0 2px 4px rgba(0,0,0,.25));
+    drop-shadow(0 1px 1px rgba(0,0,0,.35))
+    drop-shadow(0 6px 14px rgba(24,44,78,.45))
+    drop-shadow(0 10px 22px rgba(0,0,0,.35));
 }
 
 /* если вдруг кому-то будет слишком крупно — можно быстро откатить масштаб
