@@ -3795,7 +3795,6 @@ function drawStarsUI(ctx){
   }
 }
 
-const PLANE_COUNTER_TILT_DEGREES = 35;
 const PLANE_COUNTER_PADDING      = 2;
 const PLANE_COUNTER_CONTAINERS   = {
   blue:  { left: 4,   top: 97,  right: 50,  bottom: 337 },
@@ -4073,11 +4072,7 @@ function drawPlayerHUD(ctx, frame, color, isTurn){
   const availableHeight = Math.max(0, height - paddingY * 2);
 
   const baseIconSize = 16 * PLANE_SCALE * MINI_PLANE_ICON_SCALE;
-  const tiltRadians = (PLANE_COUNTER_TILT_DEGREES * Math.PI) / 180;
-  const rotation = color === "blue"
-    ? tiltRadians
-    : tiltRadians + Math.PI;
-  const rotationFitFactor = Math.abs(Math.cos(rotation)) + Math.abs(Math.sin(rotation));
+  const rotationFitFactor = 1;
 
   const slots = Math.max(1, maxPerRow);
   const slotHeight = availableHeight / slots;
@@ -4115,7 +4110,7 @@ function drawPlayerHUD(ctx, frame, color, isTurn){
     const slotIndex = stackDirection === -1 ? (slots - 1 - i) : i;
     const centerY = paddingY + slotHeight * (slotIndex + 0.5);
     if (iconScale > 0) {
-      drawMiniPlaneWithCross(ctx, centerX, centerY, plane, iconScale, rotation);
+      drawMiniPlaneWithCross(ctx, centerX, centerY, plane, iconScale, 0);
     }
   }
 
