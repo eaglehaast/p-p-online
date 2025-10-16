@@ -471,10 +471,10 @@ const greenPlaneImg = new Image();
 greenPlaneImg.src = "green plane 3.png";
 
 const blueCounterPlaneImg = new Image();
-blueCounterPlaneImg.src = "planes/blue counter 2.png";
+blueCounterPlaneImg.src = "planes/blue counter 3.png";
 
 const greenCounterPlaneImg = new Image();
-greenCounterPlaneImg.src = "planes/green  counter 2.png";
+greenCounterPlaneImg.src = "planes/green counter 3.png";
 
 const bluePlaneWreckImg = new Image();
 bluePlaneWreckImg.src = "planes/blue fall.png";
