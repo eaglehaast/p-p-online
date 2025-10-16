@@ -15,7 +15,7 @@ body, button {
   body {
     position: relative;
     font-family: 'Roboto', sans-serif;
-    background-image: url("background behind the canvas 3.png");
+    background-image: url("pics/background behind the canvas 5.png");
     background-size: 460px 800px;
     background-repeat: no-repeat;
     background-position: center top;
@@ -30,7 +30,7 @@ body, button {
     position: absolute;
     width: 460px;
     height: 800px;
-    background-image: url("background behind the canvas 3.png");
+    background-image: url("pics/background behind the canvas 5.png");
     background-size: 460px 800px;
     background-repeat: no-repeat;
     --score-scale: 1;
@@ -181,7 +181,7 @@ body, button {
   }
 
   body.settings-page {
-    background-image: url("background behind the canvas 3.png");
+    background-image: url("pics/background behind the canvas 5.png");
     background-size: 460px 800px;
     background-repeat: no-repeat;
     background-position: center top;
