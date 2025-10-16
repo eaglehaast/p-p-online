@@ -471,10 +471,10 @@ const greenPlaneImg = new Image();
 greenPlaneImg.src = "green plane 3.png";
 
 const blueCounterPlaneImg = new Image();
-blueCounterPlaneImg.src = "planes/blue counter 4.png";
+blueCounterPlaneImg.src = "planes/blue counter.png";
 
 const greenCounterPlaneImg = new Image();
-greenCounterPlaneImg.src = "planes/green counter 4.png";
+greenCounterPlaneImg.src = "planes/green counter.png";
 
 const bluePlaneWreckImg = new Image();
 bluePlaneWreckImg.src = "planes/blue fall.png";
@@ -4255,7 +4255,7 @@ function startNewRound(){
   goatIndicator.style.display = "block";
   planeCanvas.style.display = "block";
 
-  setBackgroundImage('background behind the canvas 3.png');
+  setBackgroundImage('pics/background behind the canvas 5.png');
 
   initPoints(); // ориентации на базе
   blueFlagCarrier = null;
