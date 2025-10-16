@@ -470,6 +470,12 @@ const greenPlaneImg = new Image();
 
 greenPlaneImg.src = "green plane 3.png";
 
+const blueCounterPlaneImg = new Image();
+blueCounterPlaneImg.src = "planes/blue counter.png";
+
+const greenCounterPlaneImg = new Image();
+greenCounterPlaneImg.src = "planes/green counter.png";
+
 const bluePlaneWreckImg = new Image();
 bluePlaneWreckImg.src = "planes/blue fall.png";
 
@@ -3206,12 +3212,12 @@ function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians =
 
   let img = null;
   if (color === "blue") {
-    img = bluePlaneImg;
+    img = blueCounterPlaneImg;
   } else if (color === "green") {
-    img = greenPlaneImg;
+    img = greenCounterPlaneImg;
   }
 
-  let spriteReady = Boolean(
+  const spriteReady = Boolean(
     img &&
     img.complete &&
     img.naturalWidth > 0 &&
@@ -3221,7 +3227,7 @@ function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians =
   if (spriteReady) {
     ctx2d.drawImage(img, -size / 2, -size / 2, size, size);
   } else {
-    // Fallback to simple outline if image isn't ready yet
+    // Fallback to simple outline if the counter icon isn't ready yet
     ctx2d.strokeStyle = colorFor(color);
     ctx2d.lineWidth = 2;
     ctx2d.beginPath();
