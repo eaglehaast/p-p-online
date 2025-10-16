@@ -639,9 +639,9 @@ document.addEventListener('dblclick', (e) => {
 
 /* ======= CONFIG ======= */
 const PLANE_SCALE          = 0.9;    // 10% smaller planes
-const MINI_PLANE_ICON_SCALE = 0.9;    // 10% smaller HUD plane icons
-const HUD_PLANE_DIM_ALPHA = 1;        // full brightness for HUD planes
-const HUD_PLANE_DIM_FILTER = "none";  // no color dimming on HUD planes
+const MINI_PLANE_ICON_SCALE = 0.7;    // make HUD plane icons smaller on the counter
+const HUD_PLANE_DIM_ALPHA = 0.75;     // dim HUD planes slightly for a softer look
+const HUD_PLANE_DIM_FILTER = "brightness(0.7) saturate(0.8)";  // soften HUD plane colors
 const HUD_KILL_MARKER_COLOR = "#91200f";
 const HUD_KILL_MARKER_ALPHA = 0.85;
 const CELL_SIZE            = 20;     // px
