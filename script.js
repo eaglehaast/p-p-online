@@ -3308,12 +3308,12 @@ function drawPlanesAndTrajectories(){
 
   if(rangeTextInfo){
     planeCtx.save();
-    planeCtx.globalAlpha = 0.5;
+    planeCtx.globalAlpha = 1;
     planeCtx.font = "14px sans-serif";
     planeCtx.textAlign = "left";
     planeCtx.textBaseline = "middle";
-    planeCtx.lineWidth = 1;
-    planeCtx.strokeStyle = "white";
+    planeCtx.lineWidth = 2;
+    planeCtx.strokeStyle = "rgba(255, 255, 255, 0.75)";
     planeCtx.fillStyle = rangeTextInfo.color;
     const numText = rangeTextInfo.cells.toFixed(1);
     planeCtx.strokeText(numText, rangeTextInfo.x, rangeTextInfo.y - 8);
