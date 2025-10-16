@@ -746,11 +746,6 @@ button, .control-box, #modeMenu, #endGameButtons { transition: all 0.3s ease; }
   transform: scale(1.2);
   transform-origin: center;
 
-  /* мягкая тень без яркой подсветки */
-  filter:
-    drop-shadow(0 1px 1px rgba(0,0,0,.35))
-    drop-shadow(0 5px 12px rgba(0,0,0,.35));
-
   /* чтобы гифка не мыльнилась при масштабировании */
   image-rendering: -webkit-optimize-contrast;
   image-rendering: crisp-edges;
@@ -758,17 +753,9 @@ button, .control-box, #modeMenu, #endGameButtons { transition: all 0.3s ease; }
 
 /* приглушённая тень с оттенком в цвет команды */
 .hud-plane.green{
-  filter:
-    drop-shadow(0 1px 1px rgba(0,0,0,.35))
-    drop-shadow(0 6px 14px rgba(32,60,32,.45))
-    drop-shadow(0 10px 22px rgba(0,0,0,.35));
 }
 
 .hud-plane.blue{
-  filter:
-    drop-shadow(0 1px 1px rgba(0,0,0,.35))
-    drop-shadow(0 6px 14px rgba(24,44,78,.45))
-    drop-shadow(0 10px 22px rgba(0,0,0,.35));
 }
 
 /* если вдруг кому-то будет слишком крупно — можно быстро откатить масштаб
