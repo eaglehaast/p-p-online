@@ -28,6 +28,11 @@ const SCORE_COUNTER_ELEMENTS = {
   blue: blueScoreCounter
 };
 
+const SCORE_COUNTER_BASE_OFFSETS = {
+  green: { x: 0,   y: 332 },
+  blue:  { x: 410, y: 92 }
+};
+
 const hudPlaneStyleProbeElements = Array.from(
   document.querySelectorAll("#hudPlaneStyleProbes .hud-plane")
 );
@@ -3852,6 +3857,82 @@ function updatePendingStarTargets(color, targetScore){
   }
 }
 
+function setScoreInkAnchor(host, color, targetScore){
+  if(!(host instanceof HTMLElement)){
+    return false;
+  }
+
+  const base = SCORE_COUNTER_BASE_OFFSETS?.[color];
+  const placements = STAR_PLACEMENT?.[color];
+  const fragmentsPerSlot = STAR_FRAGMENTS_PER_SLOT;
+
+  const cleanup = () => {
+    host.style.removeProperty('--score-ink-left');
+    host.style.removeProperty('--score-ink-top');
+  };
+
+  if(!base || !Array.isArray(placements) || placements.length === 0 || !Number.isFinite(fragmentsPerSlot) || fragmentsPerSlot <= 0){
+    cleanup();
+    return false;
+  }
+
+  if(!Number.isFinite(targetScore) || targetScore <= 0){
+    cleanup();
+    return false;
+  }
+
+  const totalSlots = placements.length;
+  const totalFragments = totalSlots * fragmentsPerSlot;
+  if(totalFragments <= 0){
+    cleanup();
+    return false;
+  }
+
+  const normalizedScore = Math.min(totalFragments, Math.max(1, Math.floor(targetScore)));
+  const zeroBased = normalizedScore - 1;
+  const slotIdx = Math.min(totalSlots - 1, Math.max(0, Math.floor(zeroBased / fragmentsPerSlot)));
+  const fragmentIdx = zeroBased - slotIdx * fragmentsPerSlot;
+
+  const slotPlacements = Array.isArray(placements[slotIdx]) ? placements[slotIdx] : null;
+  const anchor = slotPlacements ? slotPlacements[fragmentIdx] : null;
+
+  if(!anchor || !Number.isFinite(anchor.x) || !Number.isFinite(anchor.y)){
+    cleanup();
+    return false;
+  }
+
+  const localX = anchor.x - base.x;
+  const localY = anchor.y - base.y;
+
+  if(!Number.isFinite(localX) || !Number.isFinite(localY)){
+    cleanup();
+    return false;
+  }
+
+  const computed = window.getComputedStyle(host);
+  let scale = Number.parseFloat(computed.getPropertyValue('--score-scale'));
+  if(!Number.isFinite(scale) || scale <= 0){
+    scale = 1;
+  }
+
+  const pxLeft = localX * scale;
+  const pxTop = localY * scale;
+
+  if(Number.isFinite(pxLeft)){
+    host.style.setProperty('--score-ink-left', `${pxLeft}px`);
+  } else {
+    host.style.removeProperty('--score-ink-left');
+  }
+
+  if(Number.isFinite(pxTop)){
+    host.style.setProperty('--score-ink-top', `${pxTop}px`);
+  } else {
+    host.style.removeProperty('--score-ink-top');
+  }
+
+  return Number.isFinite(pxLeft) && Number.isFinite(pxTop);
+}
+
 function showScoreInk(color, entry){
   const delta = Number.isFinite(entry?.delta) ? entry.delta : 0;
   const resolveTargetScore = () => {
@@ -3877,6 +3958,9 @@ function showScoreInk(color, entry){
     processNextScoreInk(color);
     return;
   }
+
+  const anchorTargetScore = resolveTargetScore();
+  setScoreInkAnchor(host, color, anchorTargetScore);
 
   const ink = document.createElement("span");
   ink.className = "score-ink";

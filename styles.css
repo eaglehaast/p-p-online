@@ -44,6 +44,8 @@ body, button {
     align-items: center;
     justify-content: center;
     overflow: visible;
+    --score-ink-left: 50%;
+    --score-ink-top: 50%;
   }
 
   .score-counter--green {
@@ -62,8 +64,8 @@ body, button {
 
   .score-counter .score-ink {
     position: absolute;
-    left: 50%;
-    top: 50%;
+    left: var(--score-ink-left, 50%);
+    top: var(--score-ink-top, 50%);
     transform: translate(-50%, -50%);
     font-family: 'Patrick Hand', cursive;
     font-size: calc(22px * var(--score-scale, 1));
