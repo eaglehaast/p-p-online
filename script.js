@@ -870,18 +870,18 @@ let greenFlagStolenBy = null;
 
 const DEFAULT_STAR_FRAGMENT_SOURCES = {
   green: [
-    "shards/shard green 1.png",
-    "shards/shard green 2.png",
-    "shards/shard green 3.png",
-    "shards/shard green 4.png",
-    "shards/shard green 5.png"
+    "shards with yellow/shard green 1.png",
+    "shards with yellow/shard green 2.png",
+    "shards with yellow/shard green 3.png",
+    "shards with yellow/shard green 4.png",
+    "shards with yellow/shard green 5.png"
   ],
   blue: [
-    "shards/shard blue 1.png",
-    "shards/shard blue 2.png",
-    "shards/shard blue 3.png",
-    "shards/shard blue 4.png",
-    "shards/shard blue 5.png"
+    "shards with yellow/shard blue 1.png",
+    "shards with yellow/shard blue 2.png",
+    "shards with yellow/shard blue 3.png",
+    "shards with yellow/shard blue 4.png",
+    "shards with yellow/shard blue 5.png"
   ]
 };
 
@@ -890,82 +890,24 @@ const STAR_FRAGMENT_SOURCES = (typeof window !== "undefined" && window.STAR_FRAG
   : DEFAULT_STAR_FRAGMENT_SOURCES;
 
 
+const STAR_FRAGMENTS_PER_SLOT = 5;
+
 // Точные top-left координаты КАЖДОГО фрагмента (макет 460x800)
 // Порядок: [звезда 1..5][фрагмент 1..5] = {x, y}
 const STAR_PLACEMENT = {
   green: [
-    [
-      { x: 10, y: 417 },
-      { x: 25, y: 418 },
-      { x: 28, y: 428 },
-      { x: 4, y: 428 },
-      { x: 18, y: 439 }
-    ],
-    [
-      { x: 10, y: 477 },
-      { x: 25, y: 478 },
-      { x: 28, y: 488 },
-      { x: 4, y: 488 },
-      { x: 18, y: 499 }
-    ],
-    [
-      { x: 10, y: 537 },
-      { x: 25, y: 538 },
-      { x: 28, y: 548 },
-      { x: 4, y: 548 },
-      { x: 18, y: 559 }
-    ],
-    [
-      { x: 10, y: 597 },
-      { x: 25, y: 598 },
-      { x: 28, y: 608 },
-      { x: 4, y: 608 },
-      { x: 18, y: 619 }
-    ],
-    [
-      { x: 10, y: 657 },
-      { x: 25, y: 658 },
-      { x: 28, y: 668 },
-      { x: 4, y: 668 },
-      { x: 18, y: 679 }
-    ]
+    Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => ({ x: 0, y: 413 })),
+    Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => ({ x: 0, y: 473 })),
+    Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => ({ x: 0, y: 530 })),
+    Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => ({ x: 0, y: 590 })),
+    Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => ({ x: 0, y: 650 }))
   ],
   blue: [
-    [
-      { x: 421, y: 100 },
-      { x: 435, y: 97 },
-      { x: 437, y: 108 },
-      { x: 413, y: 108 },
-      { x: 428, y: 122 }
-    ],
-    [
-      { x: 421, y: 160 },
-      { x: 435, y: 157 },
-      { x: 437, y: 168 },
-      { x: 413, y: 168 },
-      { x: 428, y: 182 }
-    ],
-    [
-      { x: 421, y: 220 },
-      { x: 435, y: 217 },
-      { x: 437, y: 228 },
-      { x: 413, y: 228 },
-      { x: 428, y: 242 }
-    ],
-    [
-      { x: 421, y: 280 },
-      { x: 435, y: 277 },
-      { x: 437, y: 288 },
-      { x: 413, y: 288 },
-      { x: 428, y: 302 }
-    ],
-    [
-      { x: 421, y: 340 },
-      { x: 435, y: 337 },
-      { x: 437, y: 348 },
-      { x: 413, y: 348 },
-      { x: 428, y: 362 }
-    ]
+    Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => ({ x: 410, y: 92 })),
+    Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => ({ x: 410, y: 152 })),
+    Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => ({ x: 410, y: 212 })),
+    Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => ({ x: 410, y: 272 })),
+    Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => ({ x: 410, y: 330 }))
   ]
 };
 
@@ -1007,8 +949,6 @@ const STAR_STATE = {
   blue:  Array.from({length:5}, ()=> new Set()),
   green: Array.from({length:5}, ()=> new Set())
 };
-
-const STAR_FRAGMENTS_PER_SLOT = 5;
 
 let STAR_LAP = { blue: 0, green: 0 };
 let STAR_POS = { blue: 0, green: 0 };
@@ -1229,7 +1169,6 @@ function syncStarState(color, score){
   applyStarFragmentAnimations(color, previousState);
 }
 
-// Диагональный распределитель: выдаём фрагменты диагоналями по звёздам
 function addPointToSide(color){
   const pool = STAR_STATE[color];                   // массив из 5 Set'ов (по звездам)
   if (!Array.isArray(pool) || pool.length === 0) return false;
@@ -1238,45 +1177,50 @@ function addPointToSide(color){
   const fragmentsPerSlot = STAR_FRAGMENTS_PER_SLOT;
   if (totalSlots <= 0 || fragmentsPerSlot <= 0) return false;
 
-  let lap = Number.isInteger(STAR_LAP[color]) ? STAR_LAP[color] : 0;
-  let pos = Number.isInteger(STAR_POS[color]) ? STAR_POS[color] : 0;
-  let placedInLap = Number.isInteger(STAR_PLACED_IN_LAP[color]) ? STAR_PLACED_IN_LAP[color] : 0;
+  let targetSlot = -1;
 
-  if (lap < 0) lap = 0;
-  if (!Number.isInteger(placedInLap) || placedInLap < 0) placedInLap = 0;
-  if (totalSlots && placedInLap >= totalSlots) placedInLap = placedInLap % totalSlots;
-
-  let nextPos = ((pos % totalSlots) + totalSlots) % totalSlots;
-  let attempts = 0;
-  let placed = false;
-
-  while (attempts < totalSlots && !placed){
-    const slotIndex = nextPos;
-    const pieces = pool[slotIndex];
-
-    if (pieces && pieces.size < fragmentsPerSlot){
-      const fragment = ((lap % fragmentsPerSlot) + 1);
-      if (!pieces.has(fragment)){
-        pieces.add(fragment);
-        placed = true;
-        placedInLap += 1;
-
-        if (placedInLap >= totalSlots){
-          placedInLap = 0;
-          lap += 1;
-        }
-      }
+  for (let slotIndex = 0; slotIndex < totalSlots; slotIndex += 1){
+    let pieces = pool[slotIndex];
+    if (!(pieces instanceof Set)){
+      pieces = new Set();
+      pool[slotIndex] = pieces;
     }
 
-    nextPos = (nextPos + 1) % totalSlots;
-    attempts += 1;
+    if (pieces.size < fragmentsPerSlot){
+      targetSlot = slotIndex;
+      break;
+    }
   }
 
-  STAR_POS[color] = nextPos;
-  STAR_LAP[color] = lap;
-  STAR_PLACED_IN_LAP[color] = placedInLap;
+  if (targetSlot === -1){
+    STAR_POS[color] = totalSlots > 0 ? totalSlots - 1 : 0;
+    STAR_LAP[color] = totalSlots;
+    STAR_PLACED_IN_LAP[color] = fragmentsPerSlot;
+    return false;
+  }
 
-  return placed;
+  const slotPieces = pool[targetSlot];
+  let fragment = 1;
+  while (fragment <= fragmentsPerSlot && slotPieces.has(fragment)){
+    fragment += 1;
+  }
+
+  if (fragment > fragmentsPerSlot){
+    // На случай непредвиденного рассинхрона: слот считался незаполненным,
+    // но в нём присутствуют все фрагменты. Попробуем перейти к следующему слоту.
+    STAR_POS[color] = targetSlot + 1;
+    STAR_PLACED_IN_LAP[color] = fragmentsPerSlot;
+    STAR_LAP[color] = targetSlot + 1;
+    return addPointToSide(color);
+  }
+
+  slotPieces.add(fragment);
+
+  STAR_POS[color] = targetSlot;
+  STAR_PLACED_IN_LAP[color] = slotPieces.size;
+  STAR_LAP[color] = targetSlot;
+
+  return true;
 }
 
 function syncAllStarStates(){

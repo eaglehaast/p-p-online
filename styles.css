@@ -38,8 +38,6 @@ body, button {
 
   .score-counter {
     position: absolute;
-    width: calc(44px * var(--score-scale, 1));
-    height: calc(26px * var(--score-scale, 1));
     pointer-events: none;
     z-index: 50;
     display: flex;
@@ -49,13 +47,17 @@ body, button {
   }
 
   .score-counter--green {
-    left: calc(3px * var(--score-scale, 1));
-    top: calc(387px * var(--score-scale, 1));
+    left: calc(0px * var(--score-scale, 1));
+    top: calc(332px * var(--score-scale, 1));
+    width: calc(410px * var(--score-scale, 1));
+    height: calc(81px * var(--score-scale, 1));
   }
 
   .score-counter--blue {
-    left: calc(413px * var(--score-scale, 1));
-    top: calc(387px * var(--score-scale, 1));
+    left: calc(410px * var(--score-scale, 1));
+    top: calc(92px * var(--score-scale, 1));
+    width: calc(49px * var(--score-scale, 1));
+    height: calc(295px * var(--score-scale, 1));
   }
 
   .score-counter .score-ink {
