@@ -49,17 +49,17 @@ body, button {
   }
 
   .score-counter--green {
-    left: calc(0px * var(--score-scale, 1));
-    top: calc(332px * var(--score-scale, 1));
-    width: calc(410px * var(--score-scale, 1));
-    height: calc(81px * var(--score-scale, 1));
+    left: calc(4px * var(--score-scale, 1));
+    top: calc(288px * var(--score-scale, 1));
+    width: calc(43px * var(--score-scale, 1));
+    height: calc(124px * var(--score-scale, 1));
   }
 
   .score-counter--blue {
-    left: calc(410px * var(--score-scale, 1));
-    top: calc(92px * var(--score-scale, 1));
-    width: calc(49px * var(--score-scale, 1));
-    height: calc(295px * var(--score-scale, 1));
+    left: calc(414px * var(--score-scale, 1));
+    top: calc(288px * var(--score-scale, 1));
+    width: calc(43px * var(--score-scale, 1));
+    height: calc(124px * var(--score-scale, 1));
   }
 
   .score-counter .score-ink {
