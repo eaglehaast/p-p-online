@@ -33,11 +33,6 @@ const SCORE_COUNTER_BASE_OFFSETS = {
   blue:  { x: 410, y: 92 }
 };
 
-const SCORE_COUNTER_BASE_DIMENSIONS = {
-  green: { width: 410, height: 81 },
-  blue:  { width: 49,  height: 295 }
-};
-
 const hudPlaneStyleProbeElements = Array.from(
   document.querySelectorAll("#hudPlaneStyleProbes .hud-plane")
 );
@@ -3862,44 +3857,6 @@ function updatePendingStarTargets(color, targetScore){
   }
 }
 
-function resolveScoreScale(host, color){
-  if (!(host instanceof HTMLElement)){
-    return 1;
-  }
-
-  const fallbackDimensions = SCORE_COUNTER_BASE_DIMENSIONS?.[color];
-  const hostComputed = window.getComputedStyle(host);
-
-  let scale = Number.parseFloat(hostComputed.getPropertyValue('--score-scale'));
-
-  if(!Number.isFinite(scale) || scale <= 0){
-    const root = host.closest('#gameContainer') || gameContainer;
-    if(root instanceof HTMLElement){
-      const rootComputed = window.getComputedStyle(root);
-      scale = Number.parseFloat(rootComputed.getPropertyValue('--score-scale'));
-    }
-  }
-
-  if(!Number.isFinite(scale) || scale <= 0){
-    const rect = host.getBoundingClientRect();
-    if(rect){
-      if (fallbackDimensions && Number.isFinite(fallbackDimensions.width) && fallbackDimensions.width > 0 && Number.isFinite(rect.width) && rect.width > 0){
-        scale = rect.width / fallbackDimensions.width;
-      }
-
-      if((!Number.isFinite(scale) || scale <= 0) && fallbackDimensions && Number.isFinite(fallbackDimensions.height) && fallbackDimensions.height > 0 && Number.isFinite(rect.height) && rect.height > 0){
-        scale = rect.height / fallbackDimensions.height;
-      }
-    }
-  }
-
-  if(!Number.isFinite(scale) || scale <= 0){
-    scale = 1;
-  }
-
-  return scale;
-}
-
 function setScoreInkAnchor(host, color, targetScore){
   if(!(host instanceof HTMLElement)){
     return false;
@@ -3952,7 +3909,11 @@ function setScoreInkAnchor(host, color, targetScore){
     return false;
   }
 
-  const scale = resolveScoreScale(host, color);
+  const computed = window.getComputedStyle(host);
+  let scale = Number.parseFloat(computed.getPropertyValue('--score-scale'));
+  if(!Number.isFinite(scale) || scale <= 0){
+    scale = 1;
+  }
 
   const pxLeft = localX * scale;
   const pxTop = localY * scale;
