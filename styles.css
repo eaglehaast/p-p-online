@@ -56,7 +56,7 @@ body, button {
   }
 
   .score-counter--blue {
-    left: calc(414px * var(--score-scale, 1));
+    left: calc(367px * var(--score-scale, 1));
     top: calc(288px * var(--score-scale, 1));
     width: calc(43px * var(--score-scale, 1));
     height: calc(124px * var(--score-scale, 1));
