@@ -33,6 +33,33 @@ const SCORE_COUNTER_BASE_OFFSETS = {
   blue:  { x: 414, y: 288 }
 };
 
+const SCORE_COUNTER_BASE_SIZE = { width: 43, height: 124 };
+const SCORE_COUNTER_ANCHOR_ROWS = [0.1, 0.32, 0.54, 0.76, 0.9];
+const SCORE_COUNTER_INK_ANCHORS = {
+  green: SCORE_COUNTER_ANCHOR_ROWS.map(y => ({ x: 0.5, y })),
+  blue: SCORE_COUNTER_ANCHOR_ROWS.map(y => ({ x: 0.5, y }))
+};
+
+function clampScoreInkOffset(value, limit) {
+  if (!Number.isFinite(value)) {
+    return value;
+  }
+
+  if (!Number.isFinite(limit) || limit <= 0) {
+    return Math.max(0, value);
+  }
+
+  if (value < 0) {
+    return 0;
+  }
+
+  if (value > limit) {
+    return limit;
+  }
+
+  return value;
+}
+
 const hudPlaneStyleProbeElements = Array.from(
   document.querySelectorAll("#hudPlaneStyleProbes .hud-plane")
 );
@@ -3862,8 +3889,7 @@ function setScoreInkAnchor(host, color, targetScore){
     return false;
   }
 
-  const base = SCORE_COUNTER_BASE_OFFSETS?.[color];
-  const placements = STAR_PLACEMENT?.[color];
+  const anchors = SCORE_COUNTER_INK_ANCHORS?.[color];
   const fragmentsPerSlot = STAR_FRAGMENTS_PER_SLOT;
 
   const cleanup = () => {
@@ -3871,7 +3897,7 @@ function setScoreInkAnchor(host, color, targetScore){
     host.style.removeProperty('--score-ink-top');
   };
 
-  if(!base || !Array.isArray(placements) || placements.length === 0 || !Number.isFinite(fragmentsPerSlot) || fragmentsPerSlot <= 0){
+  if(!Array.isArray(anchors) || anchors.length === 0 || !Number.isFinite(fragmentsPerSlot) || fragmentsPerSlot <= 0){
     cleanup();
     return false;
   }
@@ -3881,7 +3907,7 @@ function setScoreInkAnchor(host, color, targetScore){
     return false;
   }
 
-  const totalSlots = placements.length;
+  const totalSlots = anchors.length;
   const totalFragments = totalSlots * fragmentsPerSlot;
   if(totalFragments <= 0){
     cleanup();
@@ -3891,20 +3917,9 @@ function setScoreInkAnchor(host, color, targetScore){
   const normalizedScore = Math.min(totalFragments, Math.max(1, Math.floor(targetScore)));
   const zeroBased = normalizedScore - 1;
   const slotIdx = Math.min(totalSlots - 1, Math.max(0, Math.floor(zeroBased / fragmentsPerSlot)));
-  const fragmentIdx = zeroBased - slotIdx * fragmentsPerSlot;
-
-  const slotPlacements = Array.isArray(placements[slotIdx]) ? placements[slotIdx] : null;
-  const anchor = slotPlacements ? slotPlacements[fragmentIdx] : null;
+  const anchor = anchors[slotIdx] || null;
 
   if(!anchor || !Number.isFinite(anchor.x) || !Number.isFinite(anchor.y)){
-    cleanup();
-    return false;
-  }
-
-  const localX = anchor.x - base.x;
-  const localY = anchor.y - base.y;
-
-  if(!Number.isFinite(localX) || !Number.isFinite(localY)){
     cleanup();
     return false;
   }
@@ -3915,8 +3930,42 @@ function setScoreInkAnchor(host, color, targetScore){
     scale = 1;
   }
 
-  const pxLeft = localX * scale;
-  const pxTop = localY * scale;
+  let hostWidth = host.clientWidth;
+  if(!Number.isFinite(hostWidth) || hostWidth <= 0){
+    const computedWidth = Number.parseFloat(computed.width);
+    if(Number.isFinite(computedWidth) && computedWidth > 0){
+      hostWidth = computedWidth;
+    } else {
+      hostWidth = SCORE_COUNTER_BASE_SIZE.width * scale;
+    }
+  }
+
+  let hostHeight = host.clientHeight;
+  if(!Number.isFinite(hostHeight) || hostHeight <= 0){
+    const computedHeight = Number.parseFloat(computed.height);
+    if(Number.isFinite(computedHeight) && computedHeight > 0){
+      hostHeight = computedHeight;
+    } else {
+      hostHeight = SCORE_COUNTER_BASE_SIZE.height * scale;
+    }
+  }
+
+  let pxLeft = anchor.x;
+  if(Number.isFinite(pxLeft) && pxLeft >= 0 && pxLeft <= 1){
+    pxLeft = pxLeft * hostWidth;
+  } else {
+    pxLeft = pxLeft * scale;
+  }
+
+  let pxTop = anchor.y;
+  if(Number.isFinite(pxTop) && pxTop >= 0 && pxTop <= 1){
+    pxTop = pxTop * hostHeight;
+  } else {
+    pxTop = pxTop * scale;
+  }
+
+  pxLeft = clampScoreInkOffset(pxLeft, hostWidth);
+  pxTop = clampScoreInkOffset(pxTop, hostHeight);
 
   if(Number.isFinite(pxLeft)){
     host.style.setProperty('--score-ink-left', `${pxLeft}px`);
