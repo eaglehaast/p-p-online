@@ -30,7 +30,7 @@ const SCORE_COUNTER_ELEMENTS = {
 
 const SCORE_COUNTER_BASE_OFFSETS = {
   green: { x: 4,   y: 288 },
-  blue:  { x: 414, y: 288 }
+  blue:  { x: 367, y: 288 }
 };
 
 const SCORE_COUNTER_BASE_SIZE = { width: 43, height: 124 };
