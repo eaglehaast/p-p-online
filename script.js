@@ -20,6 +20,9 @@ const aimCtx      = aimCanvas.getContext("2d");
 const planeCanvas = document.getElementById("planeCanvas");
 const planeCtx    = planeCanvas.getContext("2d");
 
+const overlayContainer = document.getElementById("overlayContainer");
+const fxLayerElement = document.getElementById("fxLayer");
+
 const greenScoreCounter = document.getElementById("greenScoreCounter");
 const blueScoreCounter  = document.getElementById("blueScoreCounter");
 
@@ -168,6 +171,85 @@ function getViewportAdjustedBoundingClientRect(element) {
     width: rect.width * scale,
     height: rect.height * scale
   };
+}
+
+function VV() {
+  const viewport = window.visualViewport;
+  if (!viewport) {
+    const fallbackWidth = window.innerWidth || document.documentElement?.clientWidth || 0;
+    const fallbackHeight = window.innerHeight || document.documentElement?.clientHeight || 0;
+    return {
+      width: fallbackWidth,
+      height: fallbackHeight,
+      offsetLeft: 0,
+      offsetTop: 0,
+      scale: 1
+    };
+  }
+
+  const scale = Number.isFinite(viewport.scale) && viewport.scale > 0 ? viewport.scale : 1;
+  return {
+    width: viewport.width * scale,
+    height: viewport.height * scale,
+    offsetLeft: (viewport.offsetLeft || 0) * scale,
+    offsetTop: (viewport.offsetTop || 0) * scale,
+    scale
+  };
+}
+
+function sizeAndAlignOverlays() {
+  if (!overlayContainer) {
+    return;
+  }
+
+  const { width, height, offsetLeft, offsetTop } = VV();
+  const cssWidth = Math.max(0, width || 0);
+  const cssHeight = Math.max(0, height || 0);
+  const left = Number.isFinite(offsetLeft) ? offsetLeft : 0;
+  const top = Number.isFinite(offsetTop) ? offsetTop : 0;
+
+  overlayContainer.style.width = cssWidth + "px";
+  overlayContainer.style.height = cssHeight + "px";
+  overlayContainer.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+
+  const ratio = Number.isFinite(window.devicePixelRatio) && window.devicePixelRatio > 0
+    ? window.devicePixelRatio
+    : 1;
+
+  const overlays = [
+    [aimCanvas, aimCtx],
+    [planeCanvas, planeCtx]
+  ];
+
+  for (const [canvas, ctx] of overlays) {
+    if (!canvas || !ctx) continue;
+
+    canvas.style.position = "absolute";
+    canvas.style.left = "0px";
+    canvas.style.top = "0px";
+    canvas.style.width = cssWidth + "px";
+    canvas.style.height = cssHeight + "px";
+
+    const pixelWidth = Math.max(1, Math.round(cssWidth * ratio));
+    const pixelHeight = Math.max(1, Math.round(cssHeight * ratio));
+    if (canvas.width !== pixelWidth) {
+      canvas.width = pixelWidth;
+    }
+    if (canvas.height !== pixelHeight) {
+      canvas.height = pixelHeight;
+    }
+
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+  }
+
+  if (fxLayerElement) {
+    fxLayerElement.style.width = cssWidth + "px";
+    fxLayerElement.style.height = cssHeight + "px";
+    fxLayerElement.style.left = "0px";
+    fxLayerElement.style.top = "0px";
+  }
 }
 
 // ---- ЕДИНЫЕ размеры макета ----
@@ -339,8 +421,7 @@ function spawnBurningFlameFx(plane) {
   if (plane?.flameFxDisabled) {
     return;
   }
-  const fxLayer = document.getElementById('fxLayer');
-  const host = fxLayer || document.body;
+  const host = fxLayerElement || document.body;
   if (!host) return;
 
   const flameSrc = ensurePlaneBurningFlame(plane);
@@ -371,16 +452,15 @@ function updatePlaneFlameFxPosition(plane, metrics) {
   let data = metrics;
   if (!data) {
     const rect = getViewportAdjustedBoundingClientRect(gameCanvas);
-    const fxLayer = document.getElementById('fxLayer');
-    const hostRect = fxLayer
-      ? getViewportAdjustedBoundingClientRect(fxLayer)
+    const hostRect = fxLayerElement
+      ? getViewportAdjustedBoundingClientRect(fxLayerElement)
       : getViewportAdjustedBoundingClientRect(document.body);
     const scaleX = rect.width / gameCanvas.width;
     const scaleY = rect.height / gameCanvas.height;
-    data = { rect, fxLayer, hostRect, scaleX, scaleY };
+    data = { rect, hostRect, scaleX, scaleY };
   }
 
-  const { rect, fxLayer, hostRect, scaleX, scaleY } = data;
+  const { rect, hostRect, scaleX, scaleY } = data;
 
   if (!Number.isFinite(scaleX) || !Number.isFinite(scaleY) || scaleX <= 0 || scaleY <= 0) {
     return;
@@ -404,9 +484,8 @@ function updateAllPlaneFlameFxPositions() {
   if (planeFlameFx.size === 0) return;
 
   const rect = getViewportAdjustedBoundingClientRect(gameCanvas);
-  const fxLayer = document.getElementById('fxLayer');
-  const hostRect = fxLayer
-    ? getViewportAdjustedBoundingClientRect(fxLayer)
+  const hostRect = fxLayerElement
+    ? getViewportAdjustedBoundingClientRect(fxLayerElement)
     : getViewportAdjustedBoundingClientRect(document.body);
   const scaleX = rect.width / gameCanvas.width;
   const scaleY = rect.height / gameCanvas.height;
@@ -415,7 +494,7 @@ function updateAllPlaneFlameFxPositions() {
     return;
   }
 
-  const metrics = { rect, fxLayer, hostRect, scaleX, scaleY };
+  const metrics = { rect, hostRect, scaleX, scaleY };
 
   for (const plane of planeFlameFx.keys()) {
     updatePlaneFlameFxPosition(plane, metrics);
@@ -1422,9 +1501,8 @@ function resetGame(){
 
   cleanupGreenCrashFx();
 
-  const fxLayer = document.getElementById('fxLayer');
-  if(fxLayer){
-    fxLayer.innerHTML = "";
+  if(fxLayerElement){
+    fxLayerElement.innerHTML = "";
   }
 
   clearScoreCounters();
@@ -4415,9 +4493,15 @@ function resizeCanvas() {
     // continue resizing instead of early returning
   }
 
+  const viewportMetrics = VV();
+  const viewportWidth = Math.max(1, viewportMetrics.width || window.innerWidth || 1);
+  const viewportHeight = Math.max(1, viewportMetrics.height || window.innerHeight || 1);
+  const offsetLeft = Number.isFinite(viewportMetrics.offsetLeft) ? viewportMetrics.offsetLeft : 0;
+  const offsetTop = Number.isFinite(viewportMetrics.offsetTop) ? viewportMetrics.offsetTop : 0;
+
   const scale = Math.min(
-    window.innerWidth / FRAME_BASE_WIDTH,
-    window.innerHeight / FRAME_BASE_HEIGHT
+    viewportWidth / FRAME_BASE_WIDTH,
+    viewportHeight / FRAME_BASE_HEIGHT
   );
 
   const containerWidth = FRAME_BASE_WIDTH * scale;
@@ -4425,8 +4509,10 @@ function resizeCanvas() {
   gameContainer.style.width = containerWidth + 'px';
   gameContainer.style.height = containerHeight + 'px';
   gameContainer.style.setProperty('--score-scale', scale);
-  gameContainer.style.left = (window.innerWidth - containerWidth) / 2 + 'px';
-  gameContainer.style.top = (window.innerHeight - containerHeight) / 2 + 'px';
+  const centeredLeft = offsetLeft + (viewportWidth - containerWidth) / 2;
+  const centeredTop = offsetTop + (viewportHeight - containerHeight) / 2;
+  gameContainer.style.left = centeredLeft + 'px';
+  gameContainer.style.top = centeredTop + 'px';
   syncBackgroundLayout(containerWidth, containerHeight);
   const canvas = gameCanvas;
   canvas.style.width = CANVAS_BASE_WIDTH * scale + 'px';
@@ -4435,6 +4521,8 @@ function resizeCanvas() {
   canvas.style.top = FRAME_PADDING_Y * scale + 'px';
   canvas.width = CANVAS_BASE_WIDTH;
   canvas.height = CANVAS_BASE_HEIGHT;
+
+  sizeAndAlignOverlays();
 
   [mantisIndicator, goatIndicator].forEach(ind => {
     ind.style.width = containerWidth + 'px';
@@ -4447,25 +4535,6 @@ function resizeCanvas() {
   updateFieldDimensions();
 
   // Overlay canvases cover full screen for proper alignment
-  const viewport = window.visualViewport || null;
-  const viewportWidth = viewport ? viewport.width : window.innerWidth;
-  const viewportHeight = viewport ? viewport.height : window.innerHeight;
-  const { scale: viewportScale } = getVisualViewportState();
-  const overlayWidthPx = viewportWidth * viewportScale;
-  const overlayHeightPx = viewportHeight * viewportScale;
-  const overlayWidth = Math.max(1, Math.round(overlayWidthPx));
-  const overlayHeight = Math.max(1, Math.round(overlayHeightPx));
-
-  [aimCanvas, planeCanvas].forEach(overlay => {
-    if (!overlay) return;
-    overlay.width = overlayWidth;
-    overlay.height = overlayHeight;
-    overlay.style.width = overlayWidth + 'px';
-    overlay.style.height = overlayHeight + 'px';
-    overlay.style.left = '0px';
-    overlay.style.top = '0px';
-  });
-
   updateAllPlaneFlameFxPositions();
 
   // Переинициализируем самолёты
@@ -4478,8 +4547,19 @@ function resizeCanvas() {
 
 window.addEventListener('resize', resizeCanvas);
 if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', resizeCanvas);
-  window.visualViewport.addEventListener('scroll', resizeCanvas);
+  let pendingViewportResize = null;
+  const scheduleViewportResize = () => {
+    if (pendingViewportResize !== null) {
+      return;
+    }
+    pendingViewportResize = requestAnimationFrame(() => {
+      pendingViewportResize = null;
+      resizeCanvas();
+    });
+  };
+
+  window.visualViewport.addEventListener('resize', scheduleViewportResize);
+  window.visualViewport.addEventListener('scroll', scheduleViewportResize);
 }
 // Lock orientation to portrait and prevent the canvas from redrawing on rotation
 function lockOrientation(){
@@ -4493,5 +4573,6 @@ lockOrientation();
 window.addEventListener('orientationchange', lockOrientation);
 
 /* ======= BOOTSTRAP ======= */
+sizeAndAlignOverlays();
 resizeCanvas();
 resetGame();

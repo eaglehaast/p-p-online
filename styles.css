@@ -239,27 +239,28 @@ body, button {
 }
 
 
+/* Overlay container */
+#overlayContainer {
+  position: fixed;
+  pointer-events: none;
+  z-index: 200;
+  transform-origin: 0 0;
+}
+
+#overlayContainer canvas {
+  position: absolute;
+  pointer-events: none;
+  display: block;
+}
+
 /* Overlay canvas for aiming line */
 #aimCanvas {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 360px;
-  height: 640px;
-  pointer-events: none;
   /* Ensure the arrow renders above the game field */
   z-index: 20;
-
 }
 
 /* Overlay canvas for planes */
 #planeCanvas {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 360px;
-  height: 640px;
-  pointer-events: none;
   /* Highest layer so planes appear above the aiming arrow */
   z-index: 30;
 }
