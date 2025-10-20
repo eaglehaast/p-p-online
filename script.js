@@ -4450,17 +4450,11 @@ function resizeCanvas() {
   const viewport = window.visualViewport || null;
   const viewportWidth = viewport ? viewport.width : window.innerWidth;
   const viewportHeight = viewport ? viewport.height : window.innerHeight;
-  const viewportLeft = viewport ? viewport.offsetLeft : 0;
-  const viewportTop = viewport ? viewport.offsetTop : 0;
   const { scale: viewportScale } = getVisualViewportState();
   const overlayWidthPx = viewportWidth * viewportScale;
   const overlayHeightPx = viewportHeight * viewportScale;
-  const overlayLeftPx = viewportLeft * viewportScale;
-  const overlayTopPx = viewportTop * viewportScale;
   const overlayWidth = Math.max(1, Math.round(overlayWidthPx));
   const overlayHeight = Math.max(1, Math.round(overlayHeightPx));
-  const overlayLeft = Math.round(overlayLeftPx);
-  const overlayTop = Math.round(overlayTopPx);
 
   [aimCanvas, planeCanvas].forEach(overlay => {
     if (!overlay) return;
@@ -4468,8 +4462,8 @@ function resizeCanvas() {
     overlay.height = overlayHeight;
     overlay.style.width = overlayWidth + 'px';
     overlay.style.height = overlayHeight + 'px';
-    overlay.style.left = overlayLeft + 'px';
-    overlay.style.top = overlayTop + 'px';
+    overlay.style.left = '0px';
+    overlay.style.top = '0px';
   });
 
   updateAllPlaneFlameFxPositions();
