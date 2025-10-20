@@ -902,18 +902,18 @@ let greenFlagStolenBy = null;
 
 const DEFAULT_STAR_FRAGMENT_SOURCES = {
   green: [
-    "shards with yellow/shard green 1.png",
-    "shards with yellow/shard green 2.png",
-    "shards with yellow/shard green 3.png",
-    "shards with yellow/shard green 4.png",
-    "shards with yellow/shard green 5.png"
+    "shards 3/green shard 1.png",
+    "shards 3/green shard 2.png",
+    "shards 3/green shard 3.png",
+    "shards 3/green shard 4.png",
+    "shards 3/green shard 5.png"
   ],
   blue: [
-    "shards with yellow/shard blue 1.png",
-    "shards with yellow/shard blue 2.png",
-    "shards with yellow/shard blue 3.png",
-    "shards with yellow/shard blue 4.png",
-    "shards with yellow/shard blue 5.png"
+    "shards 3/blue shard 1.png",
+    "shards 3/blue shard 2.png",
+    "shards 3/blue shard 3.png",
+    "shards 3/blue shard 4.png",
+    "shards 3/blue shard 5.png"
   ]
 };
 
