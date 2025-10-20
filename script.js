@@ -29,8 +29,8 @@ const SCORE_COUNTER_ELEMENTS = {
 };
 
 const SCORE_COUNTER_BASE_OFFSETS = {
-  green: { x: 0,   y: 332 },
-  blue:  { x: 410, y: 92 }
+  green: { x: 4,   y: 288 },
+  blue:  { x: 414, y: 288 }
 };
 
 const hudPlaneStyleProbeElements = Array.from(
