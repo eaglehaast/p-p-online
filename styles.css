@@ -50,14 +50,14 @@ body, button {
 
   .score-counter--green {
     left: calc(4px * var(--score-scale, 1));
-    top: calc(288px * var(--score-scale, 1));
+    top: calc(388px * var(--score-scale, 1));
     width: calc(43px * var(--score-scale, 1));
     height: calc(124px * var(--score-scale, 1));
   }
 
   .score-counter--blue {
     left: calc(367px * var(--score-scale, 1));
-    top: calc(288px * var(--score-scale, 1));
+    top: calc(388px * var(--score-scale, 1));
     width: calc(43px * var(--score-scale, 1));
     height: calc(124px * var(--score-scale, 1));
   }
