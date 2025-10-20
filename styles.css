@@ -50,16 +50,16 @@ body, button {
 
   .score-counter--green {
     left: calc(4px * var(--score-scale, 1));
-    top: calc(332px * var(--score-scale, 1));
+    top: calc(288px * var(--score-scale, 1));
     width: calc(43px * var(--score-scale, 1));
-    height: calc(360px * var(--score-scale, 1));
+    height: calc(124px * var(--score-scale, 1));
   }
 
   .score-counter--blue {
     left: calc(414px * var(--score-scale, 1));
-    top: calc(92px * var(--score-scale, 1));
+    top: calc(288px * var(--score-scale, 1));
     width: calc(43px * var(--score-scale, 1));
-    height: calc(280px * var(--score-scale, 1));
+    height: calc(124px * var(--score-scale, 1));
   }
 
   .score-counter .score-ink {
