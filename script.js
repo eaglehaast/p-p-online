@@ -3665,10 +3665,10 @@ function checkVictory(){
   const canContinueSeries = blueScore < POINTS_TO_WIN && greenScore < POINTS_TO_WIN;
 
   if(greenAlive === 0){
-    const options = canContinueSeries ? { roundTransitionDelay: 1500 } : { showEndScreen: true };
+    const options = canContinueSeries ? { roundTransitionDelay: MIN_ROUND_TRANSITION_DELAY_MS } : { showEndScreen: true };
     lockInWinner("blue", options);
   } else if(blueAlive === 0){
-    const options = canContinueSeries ? { roundTransitionDelay: 1500 } : { showEndScreen: true };
+    const options = canContinueSeries ? { roundTransitionDelay: MIN_ROUND_TRANSITION_DELAY_MS } : { showEndScreen: true };
     lockInWinner("green", options);
   }
 }
@@ -3778,6 +3778,13 @@ const PLANE_COUNTER_CONTAINERS   = {
 };
 
 const SCORE_INK_DURATION_MS = 2600;
+const MIN_ROUND_TRANSITION_DELAY_MS = (() => {
+  const greenSlots = Array.isArray(STAR_PLACEMENT?.green) ? STAR_PLACEMENT.green.length : 0;
+  const blueSlots = Array.isArray(STAR_PLACEMENT?.blue) ? STAR_PLACEMENT.blue.length : 0;
+  const maxSlotCount = Math.max(greenSlots, blueSlots, 0);
+  const rowCascadeDelay = Math.max(0, maxSlotCount - 1) * STAR_FRAGMENT_ROW_DELAY_MS;
+  return SCORE_INK_DURATION_MS + STAR_FRAGMENT_FADE_DURATION_MS + rowCascadeDelay;
+})();
 const HUD_KILL_MARKER_DRAW_DURATION_MS = Math.max(400, SCORE_INK_DURATION_MS * 0.55);
 function getKillMarkerProgress(plane, now = performance.now()){
   if (!plane) {
