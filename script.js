@@ -3829,6 +3829,17 @@ const activeScoreInkEntries = {
   green: null
 };
 
+function refreshScoreInkAnchors(){
+  for(const [color, host] of Object.entries(SCORE_COUNTER_ELEMENTS)){
+    if(!(host instanceof HTMLElement)){
+      continue;
+    }
+
+    const targetScore = activeScoreInkEntries[color]?.targetScore ?? getScoreForColor(color);
+    setScoreInkAnchor(host, color, targetScore);
+  }
+}
+
 function spawnScorePopup(color, delta, targetScore){
   if(delta <= 0) return;
   if(color !== "blue" && color !== "green") return;
@@ -4413,6 +4424,8 @@ function resizeCanvas() {
   if(points.length === 0) {
     initPoints();
   }
+
+  refreshScoreInkAnchors();
 }
 
 window.addEventListener('resize', resizeCanvas);
