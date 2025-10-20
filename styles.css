@@ -81,22 +81,22 @@ body, button {
   }
 
   .score-counter--green .score-ink {
-    color: #7f8e40;
-    -webkit-text-stroke: calc(2px * var(--score-scale, 1)) #ecdebe;
+    color: #cbb021;
+    -webkit-text-stroke: calc(2px * var(--score-scale, 1)) #23761f;
     text-shadow:
-      0 0 6px rgba(236, 222, 190, 0.55),
-      0 0 2px rgba(236, 222, 190, 0.9);
+      0 0 6px rgba(35, 118, 31, 0.55),
+      0 0 2px rgba(64, 168, 58, 0.9);
     animation-name: score-ink-write-green;
     -webkit-clip-path: inset(0 0 100% 0);
     clip-path: inset(0 0 100% 0);
   }
 
   .score-counter--blue .score-ink {
-    color: #013c83;
-    -webkit-text-stroke: calc(2px * var(--score-scale, 1)) #816030;
+    color: #cbb021;
+    -webkit-text-stroke: calc(2px * var(--score-scale, 1)) #344e6d;
     text-shadow:
-      0 0 6px rgba(129, 96, 48, 0.45),
-      0 0 2px rgba(129, 96, 48, 0.8);
+      0 0 6px rgba(52, 78, 109, 0.45),
+      0 0 2px rgba(90, 122, 158, 0.8);
     animation-name: score-ink-write-blue;
     -webkit-clip-path: inset(100% 0 0 0);
     clip-path: inset(100% 0 0 0);
