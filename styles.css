@@ -82,7 +82,6 @@ body, button {
 
   .score-counter--green .score-ink {
     color: #cbb021;
-    -webkit-text-stroke: calc(2px * var(--score-scale, 1)) #23761f;
     text-shadow:
       0 0 6px rgba(35, 118, 31, 0.55),
       0 0 2px rgba(64, 168, 58, 0.9);
@@ -93,7 +92,6 @@ body, button {
 
   .score-counter--blue .score-ink {
     color: #cbb021;
-    -webkit-text-stroke: calc(2px * var(--score-scale, 1)) #344e6d;
     text-shadow:
       0 0 6px rgba(52, 78, 109, 0.45),
       0 0 2px rgba(90, 122, 158, 0.8);
