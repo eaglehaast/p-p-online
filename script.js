@@ -1054,6 +1054,7 @@ let lastFirstTurn= Math.floor(Math.random()*2);
 let turnIndex    = lastFirstTurn;
 
 let points       = [];
+Object.defineProperty(window, 'points', { get: () => points });
 let flyingPoints = [];
 let buildings    = [];
 
