@@ -4576,11 +4576,11 @@ function resizeCanvas() {
 
   // Overlay canvases cover full screen for proper alignment
   const viewport = VV();
-  const viewportWidth = viewport.width;
-  const viewportHeight = viewport.height;
+  const overlayViewportWidth = viewport.width;
+  const overlayViewportHeight = viewport.height;
   const viewportScale = viewport.scale || 1;
-  const overlayWidth = Math.max(1, Math.round(viewportWidth * viewportScale));
-  const overlayHeight = Math.max(1, Math.round(viewportHeight * viewportScale));
+  const overlayWidth = Math.max(1, Math.round(overlayViewportWidth * viewportScale));
+  const overlayHeight = Math.max(1, Math.round(overlayViewportHeight * viewportScale));
 
   [aimCanvas, planeCanvas].forEach(overlay => {
     if (!overlay) return;
