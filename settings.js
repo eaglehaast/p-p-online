@@ -9,14 +9,6 @@ const MAPS = [
   { name: 'Diagonals', file: 'map 3 diagonals.png' }
 ];
 
-const FLAME_STYLE_OPTIONS = [
-  { value: 'random', label: 'Random Mix' },
-  { value: 'cycle', label: 'Cycle (Deterministic)' },
-  { value: 'icy', label: 'Icy Blue' },
-  { value: 'inferno', label: 'Inferno' },
-  { value: 'off', label: 'Flames Disabled' }
-];
-
 let storageAvailable = true;
 function getStoredItem(key){
   if(!storageAvailable){
@@ -54,11 +46,6 @@ let aimingAmplitude  = parseFloat(getStoredItem('settings.aimingAmplitude'));
 if(Number.isNaN(aimingAmplitude)) aimingAmplitude = 10 / 4;
 let addAA = getStoredItem('settings.addAA') === 'true';
 let sharpEdges = getStoredItem('settings.sharpEdges') === 'true';
-let randomizeMap = getStoredItem('settings.randomizeMapEachRound') === 'true';
-let flameStyle = getStoredItem('settings.flameStyle');
-if(!flameStyle || !FLAME_STYLE_OPTIONS.some(option => option.value === flameStyle)){
-  flameStyle = 'random';
-}
 let mapIndex = getIntSetting('settings.mapIndex', 0);
 
 const flightRangeMinusBtn = document.getElementById('flightRangeMinus');
@@ -67,10 +54,8 @@ const amplitudeMinusBtn   = document.getElementById('amplitudeMinus');
 const amplitudePlusBtn    = document.getElementById('amplitudePlus');
 const addAAToggle = document.getElementById('addAAToggle');
 const sharpEdgesToggle = document.getElementById('sharpEdgesToggle');
-const randomizeMapToggle = document.getElementById('randomizeMapToggle');
 const backBtn = document.getElementById('backBtn');
 const mapSelect = document.getElementById('mapSelect');
-const flameStyleSelect = document.getElementById('flameStyleSelect');
 
 function updateFlightRangeDisplay(){
   const el = document.getElementById('flightRangeDisplay');
@@ -123,8 +108,6 @@ function saveSettings(){
   setStoredItem('settings.addAA', addAA);
   setStoredItem('settings.sharpEdges', sharpEdges);
   setStoredItem('settings.mapIndex', mapIndex);
-  setStoredItem('settings.randomizeMapEachRound', randomizeMap);
-  setStoredItem('settings.flameStyle', flameStyle);
 }
 
 function setupRepeatButton(btn, cb){
@@ -163,14 +146,6 @@ if(sharpEdgesToggle){
   });
 }
 
-if(randomizeMapToggle){
-  randomizeMapToggle.checked = randomizeMap;
-  randomizeMapToggle.addEventListener('change', e => {
-    randomizeMap = e.target.checked;
-    saveSettings();
-  });
-}
-
 if(mapSelect){
   MAPS.forEach((m, idx) => {
     const opt = document.createElement('option');
@@ -181,23 +156,6 @@ if(mapSelect){
   mapSelect.value = String(mapIndex);
   mapSelect.addEventListener('change', e => {
     mapIndex = parseInt(e.target.value);
-    saveSettings();
-  });
-}
-
-if(flameStyleSelect){
-  FLAME_STYLE_OPTIONS.forEach(option => {
-    const opt = document.createElement('option');
-    opt.value = option.value;
-    opt.textContent = option.label;
-    flameStyleSelect.appendChild(opt);
-  });
-  flameStyleSelect.value = flameStyle;
-  flameStyleSelect.addEventListener('change', e => {
-    const selected = e.target.value;
-    flameStyle = FLAME_STYLE_OPTIONS.some(option => option.value === selected)
-      ? selected
-      : 'random';
     saveSettings();
   });
 }
