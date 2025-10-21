@@ -144,29 +144,86 @@ function combineFilters(...filters) {
 
 rebuildHudPlaneStyleCache();
 
-function getVisualViewportState() {
+function VV() {
   const viewport = window.visualViewport;
   const scale = Number.isFinite(viewport?.scale) && viewport.scale > 0 ? viewport.scale : 1;
   return {
+    raw: viewport || null,
     scale,
-    offsetLeft: viewport ? viewport.offsetLeft || 0 : 0,
-    offsetTop: viewport ? viewport.offsetTop || 0 : 0
+    left: viewport ? viewport.offsetLeft || 0 : 0,
+    top: viewport ? viewport.offsetTop || 0 : 0,
+    width: viewport ? viewport.width || window.innerWidth : window.innerWidth,
+    height: viewport ? viewport.height || window.innerHeight : window.innerHeight
   };
 }
 
-function getViewportAdjustedBoundingClientRect(element) {
-  if (!element?.getBoundingClientRect) {
-    return { left: 0, top: 0, width: 0, height: 0 };
+function visualRect(element) {
+  const rect = element?.getBoundingClientRect?.();
+  const v = VV();
+  if (!rect) {
+    return { left: 0, top: 0, width: 0, height: 0, raw: null, v };
   }
 
-  const rect = element.getBoundingClientRect();
-  const { scale, offsetLeft, offsetTop } = getVisualViewportState();
+  const scale = v.scale || 1;
+  const left = (rect.left - v.left) * scale;
+  const top = (rect.top - v.top) * scale;
+  const width = rect.width * scale;
+  const height = rect.height * scale;
+
+  return { left, top, width, height, raw: rect, v };
+}
+
+function clientPointFromEvent(e) {
+  const v = VV();
+  const touch = e?.touches?.[0] || e?.changedTouches?.[0] || null;
+  const source = touch || e;
+  const clientX = Number.isFinite(source?.clientX) ? source.clientX : 0;
+  const clientY = Number.isFinite(source?.clientY) ? source.clientY : 0;
+  const scale = v.scale || 1;
 
   return {
-    left: (rect.left - offsetLeft) * scale,
-    top: (rect.top - offsetTop) * scale,
-    width: rect.width * scale,
-    height: rect.height * scale
+    x: (clientX - v.left) * scale,
+    y: (clientY - v.top) * scale,
+    rawX: clientX,
+    rawY: clientY,
+    v
+  };
+}
+
+function clientToWorld(point, rect = visualRect(gameCanvas)) {
+  const scaleX = rect.width !== 0 ? gameCanvas.width / rect.width : 1;
+  const scaleY = rect.height !== 0 ? gameCanvas.height / rect.height : 1;
+  return {
+    x: (point.x - rect.left) * scaleX,
+    y: (point.y - rect.top) * scaleY,
+    rect,
+    v: rect.v
+  };
+}
+
+function worldToOverlay(x, y, rect = visualRect(gameCanvas)) {
+  const scaleX = rect.width !== 0 ? rect.width / gameCanvas.width : 1;
+  const scaleY = rect.height !== 0 ? rect.height / gameCanvas.height : 1;
+  const cssX = rect.left + x * scaleX;
+  const cssY = rect.top + y * scaleY;
+  const overlayScale = rect.v?.scale || 1;
+  return {
+    x: cssX / overlayScale,
+    y: cssY / overlayScale,
+    cssX,
+    cssY,
+    scaleX,
+    scaleY,
+    rect
+  };
+}
+
+function clientToOverlay(point, rect = visualRect(gameCanvas)) {
+  const overlayScale = rect.v?.scale || 1;
+  return {
+    x: point.x / overlayScale,
+    y: point.y / overlayScale,
+    rect
   };
 }
 
@@ -370,11 +427,11 @@ function updatePlaneFlameFxPosition(plane, metrics) {
 
   let data = metrics;
   if (!data) {
-    const rect = getViewportAdjustedBoundingClientRect(gameCanvas);
+    const rect = visualRect(gameCanvas);
     const fxLayer = document.getElementById('fxLayer');
     const hostRect = fxLayer
-      ? getViewportAdjustedBoundingClientRect(fxLayer)
-      : getViewportAdjustedBoundingClientRect(document.body);
+      ? visualRect(fxLayer)
+      : visualRect(document.body);
     const scaleX = rect.width / gameCanvas.width;
     const scaleY = rect.height / gameCanvas.height;
     data = { rect, fxLayer, hostRect, scaleX, scaleY };
@@ -403,11 +460,11 @@ function updatePlaneFlameFxPosition(plane, metrics) {
 function updateAllPlaneFlameFxPositions() {
   if (planeFlameFx.size === 0) return;
 
-  const rect = getViewportAdjustedBoundingClientRect(gameCanvas);
+  const rect = visualRect(gameCanvas);
   const fxLayer = document.getElementById('fxLayer');
   const hostRect = fxLayer
-    ? getViewportAdjustedBoundingClientRect(fxLayer)
-    : getViewportAdjustedBoundingClientRect(document.body);
+    ? visualRect(fxLayer)
+    : visualRect(document.body);
   const scaleX = rect.width / gameCanvas.width;
   const scaleY = rect.height / gameCanvas.height;
 
@@ -460,7 +517,7 @@ function ensurePlaneFlameFx(plane) {
 
 function spawnExplosion(x, y, color = null) {
   // 1) размер канваса на экране (после CSS-скейла!)
-  const rect = getViewportAdjustedBoundingClientRect(gameCanvas);
+  const rect = visualRect(gameCanvas);
   // 2) пересчёт из внутренних координат канваса в экранные пиксели
   const sx = rect.width  / gameCanvas.width;
   const sy = rect.height / gameCanvas.height;
@@ -476,7 +533,7 @@ function spawnExplosion(x, y, color = null) {
 
   // 4) абсолютные координаты взрыва на странице:
   //    левый верх канваса + локальная игровая точка * масштаб
-  const hostRect = getViewportAdjustedBoundingClientRect(document.body);
+  const hostRect = visualRect(document.body);
   const absLeft = Math.round(rect.left - hostRect.left + x * sx);
   const absTop  = Math.round(rect.top  - hostRect.top  + y * sy);
 
@@ -1584,19 +1641,7 @@ const handleCircle={
 
 // Поддержка мобильных устройств
 function getEventCoords(e) {
-  if (e.touches && e.touches.length > 0) {
-    const touch = e.touches[0];
-    const { scale, offsetLeft, offsetTop } = getVisualViewportState();
-    return {
-      clientX: (touch.clientX - offsetLeft) * scale,
-      clientY: (touch.clientY - offsetTop) * scale
-    };
-  }
-  const { scale, offsetLeft, offsetTop } = getVisualViewportState();
-  return {
-    clientX: (e.clientX - offsetLeft) * scale,
-    clientY: (e.clientY - offsetTop) * scale
-  };
+  return clientPointFromEvent(e);
 }
 
 function handleStart(e) {
@@ -1609,14 +1654,11 @@ function handleStart(e) {
   if(flyingPoints.some(fp=>fp.plane.color===currentColor)) return;
 
   const coords = getEventCoords(e);
-  const rect = getViewportAdjustedBoundingClientRect(gameCanvas);
+  const rect = visualRect(gameCanvas);
+  const worldPoint = clientToWorld(coords, rect);
 
-  // Правильное масштабирование координат
-  const scaleX = gameCanvas.width / rect.width;
-  const scaleY = gameCanvas.height / rect.height;
-  
-  let mx= (coords.clientX - rect.left) * scaleX;
-  let my= (coords.clientY - rect.top) * scaleY;
+  let mx = worldPoint.x;
+  let my = worldPoint.y;
 
   let found= points.find(pt=>
     pt.color=== currentColor &&
@@ -1671,11 +1713,10 @@ function handleAAPlacement(x, y){
 
 function updateAAPreviewFromEvent(e){
   const coords = getEventCoords(e);
-  const rect = getViewportAdjustedBoundingClientRect(gameCanvas);
-  const scaleX = gameCanvas.width / rect.width;
-  const scaleY = gameCanvas.height / rect.height;
-  const x = (coords.clientX - rect.left) * scaleX;
-  const y = (coords.clientY - rect.top) * scaleY;
+  const rect = visualRect(gameCanvas);
+  const worldPoint = clientToWorld(coords, rect);
+  const x = worldPoint.x;
+  const y = worldPoint.y;
   aaPlacementPreview = {x, y};
   aaPreviewTrail = [];
 }
@@ -1869,14 +1910,11 @@ function onHandleMove(e){
   if(!handleCircle.active)return;
   e.preventDefault();
   const coords = getEventCoords(e);
-  const rect = getViewportAdjustedBoundingClientRect(gameCanvas);
+  const rect = visualRect(gameCanvas);
+  const worldPoint = clientToWorld(coords, rect);
 
-  // Правильное масштабирование координат
-  const scaleX = gameCanvas.width / rect.width;
-  const scaleY = gameCanvas.height / rect.height;
-  
-  handleCircle.baseX= (coords.clientX - rect.left) * scaleX;
-  handleCircle.baseY= (coords.clientY - rect.top) * scaleY;
+  handleCircle.baseX = worldPoint.x;
+  handleCircle.baseY = worldPoint.y;
 }
 
 function onHandleUp(){
@@ -2700,7 +2738,7 @@ function handleAAForPlane(p, fp){
     const arrowAlpha = 0.5 * (vdist / MAX_DRAG_DISTANCE);
     aimCtx.clearRect(0, 0, aimCanvas.width, aimCanvas.height);
     aimCtx.save();
-    const rect = getViewportAdjustedBoundingClientRect(gameCanvas);
+    const rect = visualRect(gameCanvas);
     const scaleX = rect.width / gameCanvas.width;
     const scaleY = rect.height / gameCanvas.height;
     aimCtx.translate(rect.left, rect.top);
@@ -3260,7 +3298,7 @@ function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians =
 
 function drawPlanesAndTrajectories(){
   planeCtx.clearRect(0, 0, planeCanvas.width, planeCanvas.height);
-  const rect = getViewportAdjustedBoundingClientRect(gameCanvas);
+  const rect = visualRect(gameCanvas);
   const scaleX = rect.width / gameCanvas.width;
   const scaleY = rect.height / gameCanvas.height;
   planeCtx.save();
@@ -3707,7 +3745,7 @@ function checkVictory(){
 function drawStarsUI(ctx){
   if (!STAR_READY) return;
 
-  const rect = getViewportAdjustedBoundingClientRect(gameCanvas);
+  const rect = visualRect(gameCanvas);
   const rawScaleX = rect.width / CANVAS_BASE_WIDTH;
   const rawScaleY = rect.height / CANVAS_BASE_HEIGHT;
   const sx = Number.isFinite(rawScaleX) && rawScaleX > 0 ? rawScaleX : 1;
@@ -4103,7 +4141,7 @@ function renderScoreboard(){
   // existing planes without clearing the canvas again.
   planeCtx.save();
 
-  const rect = getViewportAdjustedBoundingClientRect(gameCanvas);
+  const rect = visualRect(gameCanvas);
   const rawScaleX = rect.width / CANVAS_BASE_WIDTH;
   const scaleX = Number.isFinite(rawScaleX) && rawScaleX > 0 ? rawScaleX : 1;
   const rawScaleY = rect.height / CANVAS_BASE_HEIGHT;
@@ -4447,14 +4485,12 @@ function resizeCanvas() {
   updateFieldDimensions();
 
   // Overlay canvases cover full screen for proper alignment
-  const viewport = window.visualViewport || null;
-  const viewportWidth = viewport ? viewport.width : window.innerWidth;
-  const viewportHeight = viewport ? viewport.height : window.innerHeight;
-  const { scale: viewportScale } = getVisualViewportState();
-  const overlayWidthPx = viewportWidth * viewportScale;
-  const overlayHeightPx = viewportHeight * viewportScale;
-  const overlayWidth = Math.max(1, Math.round(overlayWidthPx));
-  const overlayHeight = Math.max(1, Math.round(overlayHeightPx));
+  const viewport = VV();
+  const viewportWidth = viewport.width;
+  const viewportHeight = viewport.height;
+  const viewportScale = viewport.scale || 1;
+  const overlayWidth = Math.max(1, Math.round(viewportWidth * viewportScale));
+  const overlayHeight = Math.max(1, Math.round(viewportHeight * viewportScale));
 
   [aimCanvas, planeCanvas].forEach(overlay => {
     if (!overlay) return;
