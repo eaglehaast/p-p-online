@@ -20,6 +20,9 @@ const aimCtx      = aimCanvas.getContext("2d");
 const planeCanvas = document.getElementById("planeCanvas");
 const planeCtx    = planeCanvas.getContext("2d");
 
+const overlayContainer = document.getElementById("overlayContainer");
+const fxLayerElement = document.getElementById("fxLayer");
+
 const greenScoreCounter = document.getElementById("greenScoreCounter");
 const blueScoreCounter  = document.getElementById("blueScoreCounter");
 
@@ -504,8 +507,7 @@ function spawnBurningFlameFx(plane) {
   if (plane?.flameFxDisabled) {
     return;
   }
-  const fxLayer = document.getElementById('fxLayer');
-  const host = fxLayer || document.body;
+  const host = fxLayerElement || document.body;
   if (!host) return;
 
   const flameSrc = ensurePlaneBurningFlame(plane);
@@ -1573,9 +1575,8 @@ function resetGame(){
 
   cleanupGreenCrashFx();
 
-  const fxLayer = document.getElementById('fxLayer');
-  if(fxLayer){
-    fxLayer.innerHTML = "";
+  if(fxLayerElement){
+    fxLayerElement.innerHTML = "";
   }
 
   clearScoreCounters();
@@ -4532,9 +4533,15 @@ function resizeCanvas() {
     // continue resizing instead of early returning
   }
 
+  const viewportMetrics = VV();
+  const viewportWidth = Math.max(1, viewportMetrics.width || window.innerWidth || 1);
+  const viewportHeight = Math.max(1, viewportMetrics.height || window.innerHeight || 1);
+  const offsetLeft = Number.isFinite(viewportMetrics.offsetLeft) ? viewportMetrics.offsetLeft : 0;
+  const offsetTop = Number.isFinite(viewportMetrics.offsetTop) ? viewportMetrics.offsetTop : 0;
+
   const scale = Math.min(
-    window.innerWidth / FRAME_BASE_WIDTH,
-    window.innerHeight / FRAME_BASE_HEIGHT
+    viewportWidth / FRAME_BASE_WIDTH,
+    viewportHeight / FRAME_BASE_HEIGHT
   );
 
   const containerWidth = FRAME_BASE_WIDTH * scale;
@@ -4542,8 +4549,10 @@ function resizeCanvas() {
   gameContainer.style.width = containerWidth + 'px';
   gameContainer.style.height = containerHeight + 'px';
   gameContainer.style.setProperty('--score-scale', scale);
-  gameContainer.style.left = (window.innerWidth - containerWidth) / 2 + 'px';
-  gameContainer.style.top = (window.innerHeight - containerHeight) / 2 + 'px';
+  const centeredLeft = offsetLeft + (viewportWidth - containerWidth) / 2;
+  const centeredTop = offsetTop + (viewportHeight - containerHeight) / 2;
+  gameContainer.style.left = centeredLeft + 'px';
+  gameContainer.style.top = centeredTop + 'px';
   syncBackgroundLayout(containerWidth, containerHeight);
   const canvas = gameCanvas;
   canvas.style.width = CANVAS_BASE_WIDTH * scale + 'px';
@@ -4552,6 +4561,8 @@ function resizeCanvas() {
   canvas.style.top = FRAME_PADDING_Y * scale + 'px';
   canvas.width = CANVAS_BASE_WIDTH;
   canvas.height = CANVAS_BASE_HEIGHT;
+
+  sizeAndAlignOverlays();
 
   [mantisIndicator, goatIndicator].forEach(ind => {
     ind.style.width = containerWidth + 'px';
@@ -4593,8 +4604,19 @@ function resizeCanvas() {
 
 window.addEventListener('resize', resizeCanvas);
 if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', resizeCanvas);
-  window.visualViewport.addEventListener('scroll', resizeCanvas);
+  let pendingViewportResize = null;
+  const scheduleViewportResize = () => {
+    if (pendingViewportResize !== null) {
+      return;
+    }
+    pendingViewportResize = requestAnimationFrame(() => {
+      pendingViewportResize = null;
+      resizeCanvas();
+    });
+  };
+
+  window.visualViewport.addEventListener('resize', scheduleViewportResize);
+  window.visualViewport.addEventListener('scroll', scheduleViewportResize);
 }
 // Lock orientation to portrait and prevent the canvas from redrawing on rotation
 function lockOrientation(){
@@ -4608,5 +4630,6 @@ lockOrientation();
 window.addEventListener('orientationchange', lockOrientation);
 
 /* ======= BOOTSTRAP ======= */
+sizeAndAlignOverlays();
 resizeCanvas();
 resetGame();

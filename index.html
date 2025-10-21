@@ -12,8 +12,6 @@
     <!-- Game Field (Initially Hidden) -->
     <div class="game-wrap">
       <canvas id="gameCanvas" width="360" height="640" style="display:none;"></canvas>
-      <!-- FX layer for GIF explosions -->
-      <div id="fxLayer"></div>
     </div>
 
     <!-- Score counters -->
@@ -31,11 +29,16 @@
     <div id="goatIndicator" class="turn-indicator" style="display:none;"></div>
   </div>
 
-  <!-- Overlay canvas for aiming line -->
-  <canvas id="aimCanvas" style="display:none;"></canvas>
+  <div id="overlayContainer" aria-hidden="true">
+    <!-- Overlay canvas for aiming line -->
+    <canvas id="aimCanvas" style="display:none;"></canvas>
 
-  <!-- Overlay canvas for planes -->
-  <canvas id="planeCanvas" style="display:none;"></canvas>
+    <!-- Overlay canvas for planes -->
+    <canvas id="planeCanvas" style="display:none;"></canvas>
+
+    <!-- FX layer for GIF explosions -->
+    <div id="fxLayer"></div>
+  </div>
 
     <!-- Game Mode Selection Menu -->
   <div id="modeMenu">
