@@ -739,6 +739,125 @@ body, button {
 /* Плавные переходы */
 button, .control-box, #modeMenu, #endGameButtons { transition: all 0.3s ease; }
 
+/* ===== Test controls overlay ===== */
+.test-controls {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 1200;
+  width: min(280px, 90vw);
+  background: rgba(20, 24, 32, 0.88);
+  color: #f5f5f5;
+  border-radius: 14px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  font-size: 14px;
+  backdrop-filter: blur(6px);
+}
+
+.test-controls.collapsed .test-controls__body {
+  display: none;
+}
+
+.test-controls__toggle {
+  width: 100%;
+  padding: 10px 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: linear-gradient(135deg, #2d7dd2, #1e5ea8);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+}
+
+.test-controls__toggle:focus-visible {
+  outline: 2px solid #ffde59;
+  outline-offset: 2px;
+}
+
+.test-controls__body {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.test-controls__field {
+  display: grid;
+  gap: 4px;
+}
+
+.test-controls__label {
+  font-weight: 600;
+  font-size: 13px;
+  text-align: left;
+}
+
+.test-controls__select {
+  width: 100%;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.25);
+  background: rgba(255, 255, 255, 0.12);
+  color: inherit;
+}
+
+.test-controls__select:focus-visible {
+  outline: 2px solid #ffde59;
+  outline-offset: 2px;
+}
+
+.test-controls__checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  user-select: none;
+}
+
+.test-controls__checkbox input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #ffde59;
+}
+
+.test-controls__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.test-controls__actions button {
+  flex: 1 1 0;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.15);
+  color: inherit;
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.test-controls__actions button:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.test-controls__actions button:focus-visible {
+  outline: 2px solid #ffde59;
+  outline-offset: 2px;
+}
+
+@media (max-width: 520px) {
+  .test-controls {
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    width: min(320px, 94vw);
+  }
+}
+
 /* === HUD planes: мягкая тень вместо подсветки === */
 .hud-plane{
   /* делаем их поверх всего на колонке */

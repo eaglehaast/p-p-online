@@ -26,6 +26,14 @@ const fxLayerElement = document.getElementById("fxLayer");
 const greenScoreCounter = document.getElementById("greenScoreCounter");
 const blueScoreCounter  = document.getElementById("blueScoreCounter");
 
+const testControlPanel = document.getElementById("testControlPanel");
+const testControlsToggle = document.getElementById("testControlsToggle");
+const inGameMapSelect = document.getElementById("inGameMapSelect");
+const inGameFlameStyleSelect = document.getElementById("inGameFlameStyle");
+const testRandomizeToggle = document.getElementById("testRandomizeToggle");
+const testApplyBtn = document.getElementById("testApplyBtn");
+const testRestartBtn = document.getElementById("testRestartBtn");
+
 const SCORE_COUNTER_ELEMENTS = {
   green: greenScoreCounter,
   blue: blueScoreCounter
@@ -432,6 +440,9 @@ const DEFAULT_BURNING_FLAME_SRC = BURNING_FLAME_SRCS[0];
 
 const BURNING_FLAME_SRC_SET = new Set(BURNING_FLAME_SRCS);
 
+let flameCycleIndex = 0;
+let flameStyleRevision = 0;
+
 function pickRandomBurningFlame() {
   const pool = BURNING_FLAME_SRC_SET.size > 0
     ? Array.from(BURNING_FLAME_SRC_SET)
@@ -445,14 +456,94 @@ function pickRandomBurningFlame() {
 
 }
 
+function getCurrentFlameStyleKey() {
+  return normalizeFlameStyleKey(settings.flameStyle);
+}
+
+function getFlameStyleConfig(styleKey) {
+  return FLAME_STYLE_MAP.get(normalizeFlameStyleKey(styleKey)) || null;
+}
+
+function pickFlameSrcForStyle(styleKey) {
+  const normalized = normalizeFlameStyleKey(styleKey);
+  if (normalized === 'off') {
+    return '';
+  }
+
+  if (!Array.isArray(BURNING_FLAME_SRCS) || BURNING_FLAME_SRCS.length === 0) {
+    return DEFAULT_BURNING_FLAME_SRC || '';
+  }
+
+  if (normalized === 'cycle') {
+    const index = flameCycleIndex % BURNING_FLAME_SRCS.length;
+    flameCycleIndex = (flameCycleIndex + 1) % BURNING_FLAME_SRCS.length;
+    return BURNING_FLAME_SRCS[index];
+  }
+
+  return pickRandomBurningFlame();
+}
+
+function onFlameStyleChanged() {
+  const normalized = getCurrentFlameStyleKey();
+  if (settings.flameStyle !== normalized) {
+    settings.flameStyle = normalized;
+  }
+  flameCycleIndex = 0;
+  flameStyleRevision++;
+
+  for (const timer of planeFlameTimers.values()) {
+    clearTimeout(timer);
+  }
+  planeFlameTimers.clear();
+
+  for (const [plane, entry] of planeFlameFx.entries()) {
+    entry?.stop?.();
+    const element = entry?.element || entry;
+    element?.remove?.();
+    planeFlameFx.delete(plane);
+    if (plane) {
+      delete plane.burningFlameSrc;
+      delete plane.burningFlameStyleKey;
+      delete plane.burningFlameStyleRevision;
+    }
+  }
+
+  if (Array.isArray(points)) {
+    for (const plane of points) {
+      if (!plane) continue;
+      delete plane.burningFlameSrc;
+      delete plane.burningFlameStyleKey;
+      delete plane.burningFlameStyleRevision;
+      if (plane.burning && !plane.flameFxDisabled && isExplosionFinished(plane)) {
+        spawnBurningFlameFx(plane);
+      }
+    }
+  }
+
+  syncTestControls();
+}
+
 function ensurePlaneBurningFlame(plane) {
   if (!plane) {
     return DEFAULT_BURNING_FLAME_SRC || "";
   }
-  if (!plane.burningFlameSrc) {
-    plane.burningFlameSrc = pickRandomBurningFlame();
+  const styleKey = getCurrentFlameStyleKey();
+  if (styleKey === 'off') {
+    plane.burningFlameStyleKey = styleKey;
+    plane.burningFlameSrc = '';
+    return '';
   }
-  return plane.burningFlameSrc;
+
+  if (plane.burningFlameStyleRevision !== flameStyleRevision || plane.burningFlameStyleKey !== styleKey) {
+    plane.burningFlameSrc = null;
+    plane.burningFlameStyleKey = styleKey;
+    plane.burningFlameStyleRevision = flameStyleRevision;
+  }
+
+  if (!plane.burningFlameSrc) {
+    plane.burningFlameSrc = pickFlameSrcForStyle(styleKey);
+  }
+  return plane.burningFlameSrc || '';
 }
 
 
@@ -470,6 +561,14 @@ function applyFlameElementStyles(element) {
   element.style.pointerEvents = 'none';
   element.style.transform = 'translate(-50%, -100%)';
   element.style.zIndex = '9999';
+}
+
+function applyFlameVisualStyle(element, styleKey) {
+  if (!element) return;
+  const config = getFlameStyleConfig(styleKey);
+  const filter = config?.filter || '';
+  element.dataset.flameStyle = normalizeFlameStyleKey(styleKey);
+  element.style.filter = filter || '';
 }
 
 function createGifFlameEntry(plane, flameSrc) {
@@ -548,6 +647,12 @@ function cleanupBurningFx() {
     if (plane && plane.burningFlameSrc) {
       delete plane.burningFlameSrc;
     }
+    if (plane && plane.burningFlameStyleKey) {
+      delete plane.burningFlameStyleKey;
+    }
+    if (plane && Object.prototype.hasOwnProperty.call(plane, 'burningFlameStyleRevision')) {
+      delete plane.burningFlameStyleRevision;
+    }
     resetPlaneFlameFxDisabled(plane);
   }
   planeFlameFx.clear();
@@ -591,6 +696,7 @@ function spawnBurningFlameFx(plane) {
   }
 
   host.appendChild(entry.element);
+  applyFlameVisualStyle(entry.element, plane?.burningFlameStyleKey || getCurrentFlameStyleKey());
   planeFlameFx.set(plane, entry);
   updatePlaneFlameFxPosition(plane);
 }
@@ -1038,6 +1144,7 @@ let awaitingFlightResolution = false;
 let pendingRoundTransitionDelay = null;
 let pendingRoundTransitionStart = 0;
 let shouldShowEndScreen = false;
+let suppressAutoRandomMapForNextRound = false;
 let gameMode     = null;
 let selectedMode = null;
 
@@ -1072,10 +1179,29 @@ const MAPS = [
   { name: 'Clear Sky', file: 'map 1 - clear sky 3.png' },
   { name: '5 Bricks',  file: 'map 2 - 5 bricks.png' },
   { name: 'Diagonals', file: 'map 3 diagonals.png' }
-
 ];
 
-let settings = { addAA: false, sharpEdges: false, mapIndex: 0 };
+const FLAME_STYLE_OPTIONS = [
+  { value: 'random', label: 'Random Mix', filter: '' },
+  { value: 'cycle', label: 'Cycle (Deterministic)', filter: '' },
+  { value: 'icy', label: 'Icy Blue', filter: 'hue-rotate(200deg) saturate(1.6)' },
+  { value: 'inferno', label: 'Inferno', filter: 'hue-rotate(-30deg) saturate(1.8) brightness(1.05)' },
+  { value: 'off', label: 'Flames Disabled', filter: '' }
+];
+
+const FLAME_STYLE_MAP = new Map(FLAME_STYLE_OPTIONS.map(option => [option.value, option]));
+
+function normalizeFlameStyleKey(key) {
+  return FLAME_STYLE_MAP.has(key) ? key : 'random';
+}
+
+let settings = {
+  addAA: false,
+  sharpEdges: false,
+  mapIndex: 0,
+  flameStyle: 'random',
+  randomizeMapEachRound: false
+};
 
 let storageAvailable = true;
 function getStoredSetting(key){
@@ -1092,7 +1218,22 @@ function getStoredSetting(key){
   }
 }
 
+function setStoredSetting(key, value){
+  if(!storageAvailable){
+    return;
+  }
+  try {
+    const storage = window.localStorage;
+    if(!storage) return;
+    storage.setItem(key, value);
+  } catch(err){
+    storageAvailable = false;
+    console.warn('localStorage unavailable, settings changes will not persist.', err);
+  }
+}
+
 function loadSettings(){
+  const previousFlameStyle = settings.flameStyle;
   const fr = parseInt(getStoredSetting('settings.flightRangeCells'), 10);
   flightRangeCells = Number.isNaN(fr) ? 15 : fr;
   const amp = parseFloat(getStoredSetting('settings.aimingAmplitude'));
@@ -1101,6 +1242,9 @@ function loadSettings(){
   settings.sharpEdges = getStoredSetting('settings.sharpEdges') === 'true';
   const mapIdx = parseInt(getStoredSetting('settings.mapIndex'), 10);
   settings.mapIndex = Number.isNaN(mapIdx) ? 0 : Math.min(MAPS.length - 1, Math.max(0, mapIdx));
+  const storedFlameStyle = normalizeFlameStyleKey(getStoredSetting('settings.flameStyle'));
+  settings.flameStyle = storedFlameStyle;
+  settings.randomizeMapEachRound = getStoredSetting('settings.randomizeMapEachRound') === 'true';
 
   // Clamp loaded values so corrupted or out-of-range settings
   // don't break the game on startup
@@ -1108,6 +1252,10 @@ function loadSettings(){
                              Math.max(MIN_FLIGHT_RANGE_CELLS, flightRangeCells));
   aimingAmplitude  = Math.min(MAX_AMPLITUDE,
                              Math.max(MIN_AMPLITUDE, aimingAmplitude));
+
+  if(previousFlameStyle !== settings.flameStyle){
+    onFlameStyleChanged();
+  }
 }
 
 loadSettings();
@@ -1118,7 +1266,9 @@ const hasCustomSettings = storageAvailable && [
   'settings.aimingAmplitude',
   'settings.addAA',
   'settings.sharpEdges',
-  'settings.mapIndex'
+  'settings.mapIndex',
+  'settings.randomizeMapEachRound',
+  'settings.flameStyle'
 ].some(key => getStoredSetting(key) !== null);
 
 if(hasCustomSettings && classicRulesBtn && advancedSettingsBtn){
@@ -1675,8 +1825,9 @@ function resetGame(){
   globalFrame=0;
   flyingPoints= [];
   buildings = [];
-  if(!advancedSettingsBtn?.classList.contains('selected')){
+  if(shouldAutoRandomizeMap()){
     settings.mapIndex = Math.floor(Math.random() * MAPS.length);
+    setStoredSetting('settings.mapIndex', String(settings.mapIndex));
   }
   applyCurrentMap();
 
@@ -1716,6 +1867,7 @@ function resetGame(){
 
   initPoints();
   renderScoreboard();
+  syncTestControls();
 }
 
 
@@ -1752,7 +1904,11 @@ if(classicRulesBtn){
     settings.addAA = false;
     settings.sharpEdges = false;
     settings.mapIndex = Math.floor(Math.random() * MAPS.length);
+    settings.randomizeMapEachRound = true;
+    settings.flameStyle = 'random';
+    onFlameStyleChanged();
     applyCurrentMap();
+    syncTestControls();
     advancedSettingsBtn?.classList.remove('selected');
     classicRulesBtn.classList.add('selected');
   });
@@ -1789,6 +1945,130 @@ playBtn.addEventListener("click",()=>{
   modeMenuDiv.style.display = "none";
   startNewRound();
 });
+
+/* ======= Test Controls ======= */
+function populateTestControls(){
+  if(inGameMapSelect && !inGameMapSelect.options.length){
+    MAPS.forEach((map, index) => {
+      const option = document.createElement('option');
+      option.value = String(index);
+      option.textContent = map.name;
+      inGameMapSelect.appendChild(option);
+    });
+  }
+
+  if(inGameFlameStyleSelect && !inGameFlameStyleSelect.options.length){
+    FLAME_STYLE_OPTIONS.forEach(option => {
+      const opt = document.createElement('option');
+      opt.value = option.value;
+      opt.textContent = option.label;
+      inGameFlameStyleSelect.appendChild(opt);
+    });
+  }
+}
+
+function syncTestControls(){
+  if(inGameMapSelect){
+    const desired = String(Math.min(MAPS.length - 1, Math.max(0, settings.mapIndex)));
+    if(inGameMapSelect.value !== desired){
+      inGameMapSelect.value = desired;
+    }
+  }
+  if(inGameFlameStyleSelect){
+    const key = getCurrentFlameStyleKey();
+    if(!Array.from(inGameFlameStyleSelect.options).some(opt => opt.value === key)){
+      populateTestControls();
+    }
+    inGameFlameStyleSelect.value = key;
+  }
+  if(testRandomizeToggle){
+    testRandomizeToggle.checked = !!settings.randomizeMapEachRound;
+  }
+  if(testControlsToggle){
+    testControlsToggle.setAttribute('aria-expanded', String(!testControlPanel?.classList?.contains('collapsed')));
+  }
+}
+
+function applyTestControlSelections(){
+  let mapChanged = false;
+  let flameChanged = false;
+  let randomizeChanged = false;
+
+  if(inGameMapSelect){
+    const nextIndex = parseInt(inGameMapSelect.value, 10);
+    if(Number.isInteger(nextIndex)){
+      const clamped = Math.min(MAPS.length - 1, Math.max(0, nextIndex));
+      if(clamped !== settings.mapIndex){
+        settings.mapIndex = clamped;
+        setStoredSetting('settings.mapIndex', String(settings.mapIndex));
+        mapChanged = true;
+      }
+    }
+  }
+
+  if(inGameFlameStyleSelect){
+    const nextStyle = normalizeFlameStyleKey(inGameFlameStyleSelect.value);
+    if(nextStyle !== settings.flameStyle){
+      settings.flameStyle = nextStyle;
+      setStoredSetting('settings.flameStyle', settings.flameStyle);
+      flameChanged = true;
+    }
+  }
+
+  if(testRandomizeToggle){
+    const nextRandomize = !!testRandomizeToggle.checked;
+    if(nextRandomize !== settings.randomizeMapEachRound){
+      settings.randomizeMapEachRound = nextRandomize;
+      setStoredSetting('settings.randomizeMapEachRound', nextRandomize ? 'true' : 'false');
+      randomizeChanged = true;
+    }
+  }
+
+  if(flameChanged){
+    onFlameStyleChanged();
+  } else {
+    syncTestControls();
+  }
+
+  return { mapChanged, flameChanged, randomizeChanged };
+}
+
+populateTestControls();
+syncTestControls();
+
+if(testControlsToggle && testControlPanel){
+  testControlsToggle.addEventListener('click', () => {
+    testControlPanel.classList.toggle('collapsed');
+    const expanded = !testControlPanel.classList.contains('collapsed');
+    testControlsToggle.setAttribute('aria-expanded', String(expanded));
+    if(expanded){
+      populateTestControls();
+      syncTestControls();
+    }
+  });
+}
+
+if(testApplyBtn){
+  testApplyBtn.addEventListener('click', () => {
+    const result = applyTestControlSelections();
+    if(result.mapChanged){
+      applyCurrentMap();
+      suppressAutoRandomMapForNextRound = true;
+    }
+  });
+}
+
+if(testRestartBtn){
+  testRestartBtn.addEventListener('click', () => {
+    const result = applyTestControlSelections();
+    if(!gameMode){
+      applyCurrentMap();
+      return;
+    }
+    const randomizeNow = shouldAutoRandomizeMap() && !result.mapChanged && !!settings.randomizeMapEachRound;
+    restartMatchWithCurrentSettings({ randomizeMap: randomizeNow });
+  });
+}
 
 /* ======= INPUT (slingshot) ======= */
 const handleCircle={
@@ -4513,10 +4793,11 @@ yesBtn.addEventListener("click", () => {
     greenScore = 0;
     syncAllStarStates();
     roundNumber = 0;
-    if(!advancedSettingsBtn?.classList.contains('selected')){
+    if(shouldAutoRandomizeMap()){
       settings.mapIndex = Math.floor(Math.random() * MAPS.length);
-      applyCurrentMap();
+      setStoredSetting('settings.mapIndex', String(settings.mapIndex));
     }
+    applyCurrentMap();
   }
   startNewRound();
 });
@@ -4530,6 +4811,13 @@ function startNewRound(){
     clearTimeout(roundTransitionTimeout);
     roundTransitionTimeout = null;
   }
+  const shouldRandomize = !suppressAutoRandomMapForNextRound && shouldAutoRandomizeMap() && roundNumber > 0;
+  if(shouldRandomize){
+    settings.mapIndex = Math.floor(Math.random() * MAPS.length);
+    setStoredSetting('settings.mapIndex', String(settings.mapIndex));
+    applyCurrentMap();
+  }
+  suppressAutoRandomMapForNextRound = false;
   cleanupGreenCrashFx();
   clearScoreCounters();
   endGameDiv.style.display = "none";
@@ -4578,9 +4866,31 @@ function startNewRound(){
     phase = 'TURN';
   }
   if(animationFrameId===null) startGameLoop();
+  syncTestControls();
 }
 
 /* ======= Map helpers ======= */
+function shouldAutoRandomizeMap(){
+  if(!advancedSettingsBtn?.classList.contains('selected')){
+    return true;
+  }
+  return !!settings.randomizeMapEachRound;
+}
+
+function restartMatchWithCurrentSettings(options = {}){
+  const { randomizeMap = false } = options;
+  if(randomizeMap){
+    settings.mapIndex = Math.floor(Math.random() * MAPS.length);
+    setStoredSetting('settings.mapIndex', String(settings.mapIndex));
+  }
+  applyCurrentMap();
+  blueScore = 0;
+  greenScore = 0;
+  roundNumber = 0;
+  suppressAutoRandomMapForNextRound = true;
+  startNewRound();
+}
+
 function applyCurrentMap(){
   buildings = [];
   const map = MAPS[settings.mapIndex] || MAPS[0];
