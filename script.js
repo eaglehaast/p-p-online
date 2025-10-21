@@ -371,6 +371,38 @@ function worldToOverlay(x, y, options = {}) {
   return { clientX, clientY, overlayX, overlayY, nx, ny, boardRect, overlayRect };
 }
 
+function sizeAndAlignOverlays() {
+  if (!(overlayContainer instanceof HTMLElement)) {
+    return;
+  }
+
+  const viewport = getVisualViewportState();
+  const safeScale = Number.isFinite(viewport.scale) && viewport.scale > 0 ? viewport.scale : 1;
+  const offsetLeft = Number.isFinite(viewport.offsetLeft) ? viewport.offsetLeft : 0;
+  const offsetTop = Number.isFinite(viewport.offsetTop) ? viewport.offsetTop : 0;
+
+  const baseWidth = Number.isFinite(viewport.width) && viewport.width > 0
+    ? viewport.width * safeScale
+    : (typeof window !== "undefined" && Number.isFinite(window.innerWidth) ? window.innerWidth : 0);
+  const baseHeight = Number.isFinite(viewport.height) && viewport.height > 0
+    ? viewport.height * safeScale
+    : (typeof window !== "undefined" && Number.isFinite(window.innerHeight) ? window.innerHeight : 0);
+
+  const width = Math.max(1, Math.round(baseWidth));
+  const height = Math.max(1, Math.round(baseHeight));
+
+  overlayContainer.style.left = `${offsetLeft}px`;
+  overlayContainer.style.top = `${offsetTop}px`;
+  overlayContainer.style.width = `${width}px`;
+  overlayContainer.style.height = `${height}px`;
+  overlayContainer.style.transform = "none";
+
+  if (fxLayerElement instanceof HTMLElement) {
+    fxLayerElement.style.width = `${width}px`;
+    fxLayerElement.style.height = `${height}px`;
+  }
+}
+
 // ---- ЕДИНЫЕ размеры макета ----
 const MOCKUP_W = 460;
 const MOCKUP_H = 800;
@@ -2854,10 +2886,10 @@ function handleAAForPlane(p, fp){
     const overlayRect = getViewportAdjustedBoundingClientRect(aimCanvas);
     const start = worldToOverlay(plane.x, plane.y, { overlay: aimCanvas, boardRect, overlayRect });
     const tail = worldToOverlay(plane.x + baseDx, plane.y + baseDy, { overlay: aimCanvas, boardRect, overlayRect });
-    const dx = tail.overlayX - start.overlayX;
-    const dy = tail.overlayY - start.overlayY;
+    const arrowDx = tail.overlayX - start.overlayX;
+    const arrowDy = tail.overlayY - start.overlayY;
     aimCtx.globalAlpha = arrowAlpha;
-    drawArrow(aimCtx, start.overlayX, start.overlayY, dx, dy);
+    drawArrow(aimCtx, start.overlayX, start.overlayY, arrowDx, arrowDy);
     aimCtx.restore();
 
   } else {
