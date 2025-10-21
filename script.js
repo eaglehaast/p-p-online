@@ -147,33 +147,92 @@ function combineFilters(...filters) {
 
 rebuildHudPlaneStyleCache();
 
-function VV() {
-  const viewport = window.visualViewport;
+function getVisualViewportState() {
+  const viewport = typeof window !== "undefined" ? window.visualViewport : null;
+
+  const fallbackWidth = (typeof window !== "undefined" && Number.isFinite(window.innerWidth))
+    ? window.innerWidth
+    : (typeof document !== "undefined" && Number.isFinite(document.documentElement?.clientWidth))
+      ? document.documentElement.clientWidth
+      : (typeof document !== "undefined" && Number.isFinite(document.body?.clientWidth))
+        ? document.body.clientWidth
+        : 0;
+
+  const fallbackHeight = (typeof window !== "undefined" && Number.isFinite(window.innerHeight))
+    ? window.innerHeight
+    : (typeof document !== "undefined" && Number.isFinite(document.documentElement?.clientHeight))
+      ? document.documentElement.clientHeight
+      : (typeof document !== "undefined" && Number.isFinite(document.body?.clientHeight))
+        ? document.body.clientHeight
+        : 0;
+
   const scale = Number.isFinite(viewport?.scale) && viewport.scale > 0 ? viewport.scale : 1;
+  const offsetLeft = Number.isFinite(viewport?.offsetLeft) ? viewport.offsetLeft : 0;
+  const offsetTop = Number.isFinite(viewport?.offsetTop) ? viewport.offsetTop : 0;
+  const width = Number.isFinite(viewport?.width) && viewport.width > 0 ? viewport.width : Math.max(1, fallbackWidth);
+  const height = Number.isFinite(viewport?.height) && viewport.height > 0 ? viewport.height : Math.max(1, fallbackHeight);
+
   return {
     raw: viewport || null,
     scale,
-    left: viewport ? viewport.offsetLeft || 0 : 0,
-    top: viewport ? viewport.offsetTop || 0 : 0,
-    width: viewport ? viewport.width || window.innerWidth : window.innerWidth,
-    height: viewport ? viewport.height || window.innerHeight : window.innerHeight
+    offsetLeft,
+    offsetTop,
+    width,
+    height
+  };
+}
+
+function getViewportAdjustedBoundingClientRect(element) {
+  const rect = element?.getBoundingClientRect?.();
+  const { scale, offsetLeft, offsetTop } = getVisualViewportState();
+  const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+
+  if (!rect) {
+    return { left: 0, top: 0, width: 0, height: 0 };
+  }
+
+  const left = Number.isFinite(rect.left) ? rect.left : 0;
+  const top = Number.isFinite(rect.top) ? rect.top : 0;
+  const width = Number.isFinite(rect.width) ? rect.width : 0;
+  const height = Number.isFinite(rect.height) ? rect.height : 0;
+
+  return {
+    left: (left - offsetLeft) * safeScale,
+    top: (top - offsetTop) * safeScale,
+    width: width * safeScale,
+    height: height * safeScale
+  };
+}
+
+function VV() {
+  const viewport = getVisualViewportState();
+  return {
+    raw: viewport.raw,
+    scale: viewport.scale,
+    offsetLeft: viewport.offsetLeft,
+    offsetTop: viewport.offsetTop,
+    left: viewport.offsetLeft,
+    top: viewport.offsetTop,
+    width: viewport.width,
+    height: viewport.height
   };
 }
 
 function visualRect(element) {
-  const rect = element?.getBoundingClientRect?.();
+  const rawRect = element?.getBoundingClientRect?.();
   const v = VV();
-  if (!rect) {
+  if (!rawRect) {
     return { left: 0, top: 0, width: 0, height: 0, raw: null, v };
   }
 
-  const scale = v.scale || 1;
-  const left = (rect.left - v.left) * scale;
-  const top = (rect.top - v.top) * scale;
-  const width = rect.width * scale;
-  const height = rect.height * scale;
+  const adjusted = getViewportAdjustedBoundingClientRect(element);
 
-  return { left, top, width, height, raw: rect, v };
+  return { left: adjusted.left, top: adjusted.top, width: adjusted.width, height: adjusted.height, raw: rawRect, v };
+}
+
+if (typeof window !== "undefined") {
+  window.getVisualViewportState = getVisualViewportState;
+  window.getViewportAdjustedBoundingClientRect = getViewportAdjustedBoundingClientRect;
 }
 
 function clientPointFromEvent(e) {
@@ -201,32 +260,6 @@ function clientToWorld(point, rect = visualRect(gameCanvas)) {
     y: (point.y - rect.top) * scaleY,
     rect,
     v: rect.v
-  };
-}
-
-function worldToOverlay(x, y, rect = visualRect(gameCanvas)) {
-  const scaleX = rect.width !== 0 ? rect.width / gameCanvas.width : 1;
-  const scaleY = rect.height !== 0 ? rect.height / gameCanvas.height : 1;
-  const cssX = rect.left + x * scaleX;
-  const cssY = rect.top + y * scaleY;
-  const overlayScale = rect.v?.scale || 1;
-  return {
-    x: cssX / overlayScale,
-    y: cssY / overlayScale,
-    cssX,
-    cssY,
-    scaleX,
-    scaleY,
-    rect
-  };
-}
-
-function clientToOverlay(point, rect = visualRect(gameCanvas)) {
-  const overlayScale = rect.v?.scale || 1;
-  return {
-    x: point.x / overlayScale,
-    y: point.y / overlayScale,
-    rect
   };
 }
 
