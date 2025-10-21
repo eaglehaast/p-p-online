@@ -227,6 +227,114 @@ function clientToOverlay(point, rect = visualRect(gameCanvas)) {
   };
 }
 
+function resolveClientPoint(input) {
+  if (!input) {
+    return { clientX: 0, clientY: 0 };
+  }
+
+  let source = null;
+  if (input.touches?.length) {
+    source = input.touches[0];
+  } else if (input.changedTouches?.length) {
+    source = input.changedTouches[0];
+  } else if (input.targetTouches?.length) {
+    source = input.targetTouches[0];
+  } else if (typeof input.clientX === "number" && typeof input.clientY === "number") {
+    source = input;
+  }
+
+  const rawX = Number.isFinite(source?.clientX) ? source.clientX : 0;
+  const rawY = Number.isFinite(source?.clientY) ? source.clientY : 0;
+  const { scale, offsetLeft, offsetTop } = getVisualViewportState();
+
+  return {
+    clientX: (rawX - offsetLeft) * scale,
+    clientY: (rawY - offsetTop) * scale
+  };
+}
+
+function clientToOverlay(event, overlay = aimCanvas) {
+  const target = overlay || aimCanvas;
+  const { clientX, clientY } = resolveClientPoint(event);
+  const rect = target ? getViewportAdjustedBoundingClientRect(target) : { left: 0, top: 0, width: 0, height: 0 };
+  const rectWidth = Number.isFinite(rect.width) && rect.width !== 0 ? rect.width : 1;
+  const rectHeight = Number.isFinite(rect.height) && rect.height !== 0 ? rect.height : 1;
+  const nx = (clientX - rect.left) / rectWidth;
+  const ny = (clientY - rect.top) / rectHeight;
+  const logicalWidth = target?.width ?? rectWidth;
+  const logicalHeight = target?.height ?? rectHeight;
+
+  return {
+    clientX,
+    clientY,
+    rect,
+    nx,
+    ny,
+    x: nx * logicalWidth,
+    y: ny * logicalHeight
+  };
+}
+
+function clientToBoard(event) {
+  const { clientX, clientY } = resolveClientPoint(event);
+  const rect = getViewportAdjustedBoundingClientRect(gameCanvas);
+  const rectWidth = Number.isFinite(rect.width) && rect.width !== 0 ? rect.width : 1;
+  const rectHeight = Number.isFinite(rect.height) && rect.height !== 0 ? rect.height : 1;
+  const nx = (clientX - rect.left) / rectWidth;
+  const ny = (clientY - rect.top) / rectHeight;
+
+  return {
+    clientX,
+    clientY,
+    rect,
+    nx,
+    ny,
+    x: nx * gameCanvas.width,
+    y: ny * gameCanvas.height
+  };
+}
+
+function worldToOverlay(x, y, options = {}) {
+  const { overlay = null, boardRect: providedBoardRect = null, overlayRect: providedOverlayRect = null } = options || {};
+  const boardRect = providedBoardRect || getViewportAdjustedBoundingClientRect(gameCanvas);
+  const boardWidth = Number.isFinite(boardRect.width) && boardRect.width !== 0 ? boardRect.width : 1;
+  const boardHeight = Number.isFinite(boardRect.height) && boardRect.height !== 0 ? boardRect.height : 1;
+  const boardLeft = Number.isFinite(boardRect.left) ? boardRect.left : 0;
+  const boardTop = Number.isFinite(boardRect.top) ? boardRect.top : 0;
+  const canvasWidth = Number.isFinite(gameCanvas.width) && gameCanvas.width !== 0 ? gameCanvas.width : 1;
+  const canvasHeight = Number.isFinite(gameCanvas.height) && gameCanvas.height !== 0 ? gameCanvas.height : 1;
+  const safeX = Number.isFinite(x) ? x : 0;
+  const safeY = Number.isFinite(y) ? y : 0;
+  const nx = safeX / canvasWidth;
+  const ny = safeY / canvasHeight;
+  const clientX = boardLeft + nx * boardWidth;
+  const clientY = boardTop + ny * boardHeight;
+
+  let overlayRect = null;
+  let overlayX = clientX;
+  let overlayY = clientY;
+
+  if (overlay || providedOverlayRect) {
+    overlayRect = providedOverlayRect || (overlay ? getViewportAdjustedBoundingClientRect(overlay) : null);
+    if (overlayRect) {
+      const overlayWidthPxRaw = Number.isFinite(overlayRect.width) && overlayRect.width !== 0 ? overlayRect.width : null;
+      const overlayHeightPxRaw = Number.isFinite(overlayRect.height) && overlayRect.height !== 0 ? overlayRect.height : null;
+      const overlayWidthPx = overlayWidthPxRaw ?? (overlay?.width ?? 1);
+      const overlayHeightPx = overlayHeightPxRaw ?? (overlay?.height ?? 1);
+      const overlayWidth = overlay?.width ?? overlayWidthPx;
+      const overlayHeight = overlay?.height ?? overlayHeightPx;
+      const overlayLeft = Number.isFinite(overlayRect.left) ? overlayRect.left : 0;
+      const overlayTop = Number.isFinite(overlayRect.top) ? overlayRect.top : 0;
+      const onx = (clientX - overlayLeft) / overlayWidthPx;
+      const ony = (clientY - overlayTop) / overlayHeightPx;
+      overlayX = onx * overlayWidth;
+      overlayY = ony * overlayHeight;
+    }
+  }
+
+  return { clientX, clientY, overlayX, overlayY, nx, ny, boardRect, overlayRect };
+}
+
 // ---- ЕДИНЫЕ размеры макета ----
 const MOCKUP_W = 460;
 const MOCKUP_H = 800;
@@ -427,19 +535,16 @@ function updatePlaneFlameFxPosition(plane, metrics) {
 
   let data = metrics;
   if (!data) {
-    const rect = visualRect(gameCanvas);
+    const boardRect = getViewportAdjustedBoundingClientRect(gameCanvas);
     const fxLayer = document.getElementById('fxLayer');
-    const hostRect = fxLayer
-      ? visualRect(fxLayer)
-      : visualRect(document.body);
-    const scaleX = rect.width / gameCanvas.width;
-    const scaleY = rect.height / gameCanvas.height;
-    data = { rect, fxLayer, hostRect, scaleX, scaleY };
+    const host = fxLayer || document.body;
+    const hostRect = getViewportAdjustedBoundingClientRect(host);
+    data = { boardRect, hostRect };
   }
 
-  const { rect, fxLayer, hostRect, scaleX, scaleY } = data;
+  const { boardRect, hostRect } = data;
 
-  if (!Number.isFinite(scaleX) || !Number.isFinite(scaleY) || scaleX <= 0 || scaleY <= 0) {
+  if (!boardRect || !hostRect) {
     return;
   }
 
@@ -450,8 +555,9 @@ function updatePlaneFlameFxPosition(plane, metrics) {
     return;
   }
 
-  const left = rect.left - hostRect.left + x * scaleX;
-  const top = rect.top - hostRect.top + y * scaleY;
+  const { clientX, clientY } = worldToOverlay(x, y, { boardRect });
+  const left = clientX - hostRect.left;
+  const top = clientY - hostRect.top;
 
   element.style.left = Math.round(left) + 'px';
   element.style.top = Math.round(top) + 'px';
@@ -460,19 +566,12 @@ function updatePlaneFlameFxPosition(plane, metrics) {
 function updateAllPlaneFlameFxPositions() {
   if (planeFlameFx.size === 0) return;
 
-  const rect = visualRect(gameCanvas);
+  const boardRect = getViewportAdjustedBoundingClientRect(gameCanvas);
   const fxLayer = document.getElementById('fxLayer');
-  const hostRect = fxLayer
-    ? visualRect(fxLayer)
-    : visualRect(document.body);
-  const scaleX = rect.width / gameCanvas.width;
-  const scaleY = rect.height / gameCanvas.height;
+  const host = fxLayer || document.body;
+  const hostRect = getViewportAdjustedBoundingClientRect(host);
 
-  if (!Number.isFinite(scaleX) || !Number.isFinite(scaleY) || scaleX <= 0 || scaleY <= 0) {
-    return;
-  }
-
-  const metrics = { rect, fxLayer, hostRect, scaleX, scaleY };
+  const metrics = { boardRect, hostRect };
 
   for (const plane of planeFlameFx.keys()) {
     updatePlaneFlameFxPosition(plane, metrics);
@@ -516,13 +615,7 @@ function ensurePlaneFlameFx(plane) {
 }
 
 function spawnExplosion(x, y, color = null) {
-  // 1) размер канваса на экране (после CSS-скейла!)
-  const rect = visualRect(gameCanvas);
-  // 2) пересчёт из внутренних координат канваса в экранные пиксели
-  const sx = rect.width  / gameCanvas.width;
-  const sy = rect.height / gameCanvas.height;
-
-  // 3) создаём IMG и позиционируем относительно страницы
+  // создаём IMG и позиционируем относительно страницы
   const img = new Image();
   img.src = 'explosion5.gif';            // ← без пробелов в имени файла
   img.className = 'fx-explosion';
@@ -531,16 +624,17 @@ function spawnExplosion(x, y, color = null) {
   img.style.pointerEvents = 'none';
   img.style.transform = 'translate(-50%, -50%)';
 
-  // 4) абсолютные координаты взрыва на странице:
-  //    левый верх канваса + локальная игровая точка * масштаб
-  const hostRect = visualRect(document.body);
-  const absLeft = Math.round(rect.left - hostRect.left + x * sx);
-  const absTop  = Math.round(rect.top  - hostRect.top  + y * sy);
+  // абсолютные координаты взрыва на странице:
+  const boardRect = getViewportAdjustedBoundingClientRect(gameCanvas);
+  const { clientX, clientY } = worldToOverlay(x, y, { boardRect });
+  const hostRect = getViewportAdjustedBoundingClientRect(document.body);
+  const absLeft = Math.round(clientX - hostRect.left);
+  const absTop  = Math.round(clientY - hostRect.top);
 
   img.style.left = absLeft + 'px';
   img.style.top  = absTop  + 'px';
 
-  // 5) рендерим прямо в body (чтобы не зависеть от контейнеров)
+  // рендерим прямо в body (чтобы не зависеть от контейнеров)
   document.body.appendChild(img);
 
   // убрать через длительность гифки
@@ -1639,11 +1733,6 @@ const handleCircle={
   origAngle:null
 };
 
-// Поддержка мобильных устройств
-function getEventCoords(e) {
-  return clientPointFromEvent(e);
-}
-
 function handleStart(e) {
   e.preventDefault();
   if(isGameOver || !gameMode) return;
@@ -1653,12 +1742,7 @@ function handleStart(e) {
 
   if(flyingPoints.some(fp=>fp.plane.color===currentColor)) return;
 
-  const coords = getEventCoords(e);
-  const rect = visualRect(gameCanvas);
-  const worldPoint = clientToWorld(coords, rect);
-
-  let mx = worldPoint.x;
-  let my = worldPoint.y;
+  const { x: mx, y: my } = clientToBoard(e);
 
   let found= points.find(pt=>
     pt.color=== currentColor &&
@@ -1712,11 +1796,7 @@ function handleAAPlacement(x, y){
 }
 
 function updateAAPreviewFromEvent(e){
-  const coords = getEventCoords(e);
-  const rect = visualRect(gameCanvas);
-  const worldPoint = clientToWorld(coords, rect);
-  const x = worldPoint.x;
-  const y = worldPoint.y;
+  const { x, y } = clientToBoard(e);
   aaPlacementPreview = {x, y};
   aaPreviewTrail = [];
 }
@@ -1909,12 +1989,10 @@ function drawAAPreview(){
 function onHandleMove(e){
   if(!handleCircle.active)return;
   e.preventDefault();
-  const coords = getEventCoords(e);
-  const rect = visualRect(gameCanvas);
-  const worldPoint = clientToWorld(coords, rect);
+  const { x, y } = clientToBoard(e);
 
-  handleCircle.baseX = worldPoint.x;
-  handleCircle.baseY = worldPoint.y;
+  handleCircle.baseX = x;
+  handleCircle.baseY = y;
 }
 
 function onHandleUp(){
@@ -2738,13 +2816,14 @@ function handleAAForPlane(p, fp){
     const arrowAlpha = 0.5 * (vdist / MAX_DRAG_DISTANCE);
     aimCtx.clearRect(0, 0, aimCanvas.width, aimCanvas.height);
     aimCtx.save();
-    const rect = visualRect(gameCanvas);
-    const scaleX = rect.width / gameCanvas.width;
-    const scaleY = rect.height / gameCanvas.height;
-    aimCtx.translate(rect.left, rect.top);
-    aimCtx.scale(scaleX, scaleY);
+    const boardRect = getViewportAdjustedBoundingClientRect(gameCanvas);
+    const overlayRect = getViewportAdjustedBoundingClientRect(aimCanvas);
+    const start = worldToOverlay(plane.x, plane.y, { overlay: aimCanvas, boardRect, overlayRect });
+    const tail = worldToOverlay(plane.x + baseDx, plane.y + baseDy, { overlay: aimCanvas, boardRect, overlayRect });
+    const dx = tail.overlayX - start.overlayX;
+    const dy = tail.overlayY - start.overlayY;
     aimCtx.globalAlpha = arrowAlpha;
-    drawArrow(aimCtx, plane.x, plane.y, baseDx, baseDy);
+    drawArrow(aimCtx, start.overlayX, start.overlayY, dx, dy);
     aimCtx.restore();
 
   } else {
