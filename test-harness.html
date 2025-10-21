@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Paper Wings! – Тестовый стенд</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Roboto&display=swap" rel="stylesheet">
+  <style>
+    body.test-harness {
+      position: relative;
+      background: radial-gradient(circle at top, #1a2338 0%, #0c1220 60%, #070b15 100%);
+      color: #f5f7ff;
+      overflow: auto;
+      touch-action: auto;
+      min-height: 100vh;
+      padding: 0;
+    }
+
+    .harness-stage {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+
+    .harness-stage > * {
+      pointer-events: auto;
+    }
+
+    .harness-panel {
+      position: fixed;
+      top: 16px;
+      bottom: 16px;
+      width: 280px;
+      padding: 16px 18px 20px;
+      overflow-y: auto;
+      background: rgba(12, 18, 32, 0.92);
+      border: 1px solid rgba(94, 154, 255, 0.25);
+      border-radius: 16px;
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+      color: #f5f7ff;
+      z-index: 1500;
+      backdrop-filter: blur(4px);
+    }
+
+    .harness-panel h1 {
+      margin: 0 0 18px;
+      font-size: 1.4rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #9ab4ff;
+    }
+
+    .harness-panel h2,
+    .harness-panel h3 {
+      margin: 12px 0 8px;
+      font-size: 0.95rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #b6c6ff;
+    }
+
+    .harness-panel p,
+    .harness-panel label,
+    .harness-panel dt,
+    .harness-panel dd {
+      font-size: 0.88rem;
+      line-height: 1.4;
+    }
+
+    .harness-panel small {
+      color: #8ea0d8;
+      font-size: 0.78rem;
+    }
+
+    .harness-panel--left {
+      left: 16px;
+    }
+
+    .harness-panel--right {
+      right: 16px;
+    }
+
+    .harness-section {
+      margin-bottom: 20px;
+      border-top: 1px solid rgba(94, 154, 255, 0.18);
+      padding-top: 14px;
+    }
+
+    .harness-section:first-of-type {
+      border-top: none;
+      padding-top: 0;
+    }
+
+    .harness-button-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .harness-button-group button,
+    .harness-panel button {
+      flex: 1 1 calc(50% - 4px);
+      padding: 8px 10px;
+      font-size: 0.85rem;
+      border-radius: 10px;
+      border: 1px solid rgba(129, 170, 255, 0.4);
+      background: linear-gradient(135deg, rgba(32, 54, 96, 0.75), rgba(21, 33, 61, 0.75));
+      color: #f5f7ff;
+      cursor: pointer;
+      transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .harness-panel button:hover {
+      background: linear-gradient(135deg, rgba(51, 80, 138, 0.9), rgba(27, 44, 81, 0.9));
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+    }
+
+    .harness-panel button:active {
+      transform: translateY(1px);
+    }
+
+    .harness-panel button.full-width {
+      flex: 1 1 100%;
+    }
+
+    .harness-panel input,
+    .harness-panel select {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 10px;
+      border: 1px solid rgba(129, 170, 255, 0.35);
+      background: rgba(9, 14, 27, 0.9);
+      color: #f5f7ff;
+      font-size: 0.85rem;
+      margin-bottom: 8px;
+    }
+
+    .harness-panel select:disabled,
+    .harness-panel button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px 12px;
+      margin: 0;
+      padding: 0;
+    }
+
+    .status-grid dt {
+      margin: 0;
+      color: #8ea0d8;
+      font-weight: 600;
+    }
+
+    .status-grid dd {
+      margin: 0;
+    }
+
+    .plane-details {
+      background: rgba(7, 11, 22, 0.8);
+      border: 1px solid rgba(129, 170, 255, 0.25);
+      border-radius: 12px;
+      padding: 10px 12px;
+      margin-top: 8px;
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+
+    .plane-details strong {
+      color: #d6e0ff;
+    }
+
+    .harness-note {
+      margin: 0;
+      font-size: 0.78rem;
+      color: #8095d5;
+    }
+
+    @media (max-width: 1280px) {
+      .harness-panel {
+        width: 240px;
+      }
+    }
+
+    @media (max-width: 1100px) {
+      .harness-panel--left,
+      .harness-panel--right {
+        position: static;
+        width: auto;
+        margin: 12px 16px;
+      }
+
+      .harness-stage {
+        flex-direction: column;
+        padding-top: 12px;
+      }
+    }
+  </style>
+</head>
+<body class="test-harness">
+  <aside class="harness-panel harness-panel--left" aria-label="Панель управления режимами">
+    <h1>Test Harness</h1>
+
+    <div class="harness-section" aria-labelledby="flowTitle">
+      <h2 id="flowTitle">Управление раундами</h2>
+      <div class="harness-button-group">
+        <button id="resetGameBtn" class="full-width">Полный сброс</button>
+        <button id="startRoundBtn" class="full-width">Старт нового раунда</button>
+        <button id="startLoopBtn">Запуск цикла</button>
+        <button id="stopLoopBtn">Стоп цикла</button>
+        <button id="showMenuBtn">Показать меню</button>
+        <button id="hideMenuBtn">Спрятать меню</button>
+      </div>
+      <div class="harness-button-group">
+        <button id="forceGreenWinBtn">Победа зелёных</button>
+        <button id="forceBlueWinBtn">Победа синих</button>
+        <button id="showEndScreenBtn">Показать энд-скрин</button>
+        <button id="hideEndScreenBtn">Скрыть энд-скрин</button>
+      </div>
+      <small>Используйте кнопки для отладки смены фаз, меню и конца игры.</small>
+    </div>
+
+    <div class="harness-section" aria-labelledby="settingsTitle">
+      <h2 id="settingsTitle">Настройки карты</h2>
+      <div class="harness-button-group">
+        <button id="toggleAAButton">ПВО: выкл.</button>
+        <button id="toggleEdgesButton">Контуры: выкл.</button>
+        <button id="nextMapButton" class="full-width">Следующая карта</button>
+      </div>
+      <small>Переключение настроек сразу пересоздаёт раунд для применения.</small>
+    </div>
+  </aside>
+
+  <div class="harness-stage">
+    <div id="gameContainer">
+      <div class="game-wrap">
+        <canvas id="gameCanvas" width="360" height="640" style="display:none;"></canvas>
+      </div>
+
+      <div id="greenScoreCounter" class="score-counter score-counter--green" aria-hidden="true"></div>
+      <div id="blueScoreCounter" class="score-counter score-counter--blue" aria-hidden="true"></div>
+
+      <div id="hudPlaneStyleProbes" aria-hidden="true"
+           style="position:absolute;width:0;height:0;overflow:hidden;clip-path:inset(50%);">
+        <img src="planes/green counter 6.png" class="hud-plane green" alt="" draggable="false">
+        <img src="planes/blue counter 6.png" class="hud-plane blue" alt="" draggable="false">
+      </div>
+
+      <div id="mantisIndicator" class="turn-indicator" style="display:none;"></div>
+      <div id="goatIndicator" class="turn-indicator" style="display:none;"></div>
+    </div>
+
+    <div id="overlayContainer" aria-hidden="true">
+      <canvas id="aimCanvas" style="display:none;"></canvas>
+      <canvas id="planeCanvas" style="display:none;"></canvas>
+      <div id="fxLayer"></div>
+    </div>
+
+    <div id="modeMenu">
+      <h1 class="game-title">Paper Wings!</h1>
+
+      <div class="mode-options">
+        <button id="hotSeatBtn" class="mode-btn">Hot Seat</button>
+        <button id="computerBtn" class="mode-btn">Computer</button>
+        <button id="onlineBtn" class="mode-btn" disabled>Online</button>
+      </div>
+
+      <button id="playBtn" class="disabled" disabled>Play</button>
+
+      <div class="rules-options">
+        <button id="classicRulesBtn" class="rules-btn selected">Classic Rules</button>
+        <button id="advancedSettingsBtn" class="rules-btn">Advanced Settings</button>
+      </div>
+    </div>
+
+    <div id="endGameButtons" style="display:none;">
+      <p>Play Again?</p>
+      <button id="yesButton" class="end-btn">Yes</button>
+      <button id="noButton" class="end-btn">No</button>
+    </div>
+  </div>
+
+  <aside class="harness-panel harness-panel--right" aria-label="Сценарии и эффекты">
+    <h1>Сценарии</h1>
+
+    <div class="harness-section" aria-labelledby="stateTitle">
+      <h2 id="stateTitle">Состояние</h2>
+      <dl class="status-grid">
+        <div><dt>Раунд</dt><dd id="statusRound">–</dd></div>
+        <div><dt>Фаза</dt><dd id="statusPhase">–</dd></div>
+        <div><dt>Ход</dt><dd id="statusTurn">–</dd></div>
+        <div><dt>Стрелять?</dt><dd id="statusAwaiting">–</dd></div>
+        <div><dt>ПВО</dt><dd id="statusAA">–</dd></div>
+        <div><dt>Здания</dt><dd id="statusBuildings">–</dd></div>
+      </dl>
+      <p class="harness-note">Значения обновляются автоматически каждые 0.5 секунды.</p>
+    </div>
+
+    <div class="harness-section" aria-labelledby="scoreTitle">
+      <h2 id="scoreTitle">Очки и звёзды</h2>
+      <p>Текущие очки: <strong id="scoreGreen">0</strong> — <strong id="scoreBlue">0</strong></p>
+      <div class="harness-button-group">
+        <button data-score="green:+1">Зелёные +1</button>
+        <button data-score="blue:+1">Синие +1</button>
+        <button data-score="green:-1">Зелёные −1</button>
+        <button data-score="blue:-1">Синие −1</button>
+        <button data-score="green:+5">Зелёные +5</button>
+        <button data-score="blue:+5">Синие +5</button>
+      </div>
+      <label for="popupDelta">Дельта поп-апа</label>
+      <input id="popupDelta" type="number" value="3" step="1" />
+      <label for="popupTarget">Цель счётчика (опция)</label>
+      <input id="popupTarget" type="number" placeholder="Авто" />
+      <div class="harness-button-group">
+        <button id="popupGreenBtn">Поп-ап зелёных</button>
+        <button id="popupBlueBtn">Поп-ап синих</button>
+      </div>
+      <button id="syncStarsBtn" class="full-width">Пересчитать звёзды</button>
+    </div>
+
+    <div class="harness-section" aria-labelledby="planesTitle">
+      <h2 id="planesTitle">Самолёты</h2>
+      <label for="planeSelect">Целевой самолёт</label>
+      <select id="planeSelect" aria-describedby="planeInfoNote"></select>
+      <p id="planeInfoNote" class="harness-note">Список обновляется после сброса/старта раунда.</p>
+      <div class="plane-details" id="planeDetails">
+        <p>Нет выбранного самолёта.</p>
+      </div>
+      <div class="harness-button-group">
+        <button id="toggleAliveBtn">Переключить статус</button>
+        <button id="ignitePlaneBtn">Поджечь</button>
+        <button id="extinguishPlaneBtn">Потушить</button>
+        <button id="explodePlaneBtn">Взрыв по позиции</button>
+      </div>
+      <div class="harness-button-group">
+        <button id="scheduleFlameBtn">Пламя после взрыва</button>
+        <button id="refreshPlanesBtn">Обновить список</button>
+      </div>
+    </div>
+
+    <div class="harness-section" aria-labelledby="fxTitle">
+      <h2 id="fxTitle">Эффекты</h2>
+      <label for="explosionX">X (0..360)</label>
+      <input id="explosionX" type="number" value="180" step="10" />
+      <label for="explosionY">Y (0..640)</label>
+      <input id="explosionY" type="number" value="320" step="10" />
+      <div class="harness-button-group">
+        <button id="spawnExplosionBtn">Взрыв по координатам</button>
+        <button id="randomExplosionBtn">Случайный взрыв</button>
+        <button id="clearFxBtn" class="full-width">Очистить эффекты</button>
+      </div>
+    </div>
+  </aside>
+
+  <script src="script.js"></script>
+  <script>
+    (function(){
+      const planeSelect = document.getElementById('planeSelect');
+      const planeDetails = document.getElementById('planeDetails');
+      const explosionXInput = document.getElementById('explosionX');
+      const explosionYInput = document.getElementById('explosionY');
+      const statusElements = {
+        round: document.getElementById('statusRound'),
+        phase: document.getElementById('statusPhase'),
+        turn: document.getElementById('statusTurn'),
+        awaiting: document.getElementById('statusAwaiting'),
+        aa: document.getElementById('statusAA'),
+        buildings: document.getElementById('statusBuildings'),
+        scoreGreen: document.getElementById('scoreGreen'),
+        scoreBlue: document.getElementById('scoreBlue')
+      };
+
+      function adjustHarnessLayout(){
+        const game = document.getElementById('gameContainer');
+        if(!game) return;
+        const leftPanel = document.querySelector('.harness-panel--left');
+        const rightPanel = document.querySelector('.harness-panel--right');
+        const leftWidth = leftPanel ? leftPanel.getBoundingClientRect().width + 24 : 24;
+        const rightWidth = rightPanel ? rightPanel.getBoundingClientRect().width + 24 : 24;
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+        const gameRect = game.getBoundingClientRect();
+        const gameWidth = gameRect.width || game.offsetWidth || 0;
+        const available = viewportWidth - leftWidth - rightWidth;
+        if(available > 0 && gameWidth > 0){
+          const newLeft = leftWidth + Math.max((available - gameWidth) / 2, 0);
+          game.style.left = Math.round(newLeft) + 'px';
+        }
+      }
+
+      function queueLayout(){
+        requestAnimationFrame(adjustHarnessLayout);
+      }
+
+      function patchFunction(name, after){
+        const original = window[name];
+        if(typeof original !== 'function') return;
+        window[name] = function patchedFunction(){
+          const result = original.apply(this, arguments);
+          try {
+            after?.();
+          } catch(err) {
+            console.error('[Harness] Ошибка пост-обработки', err);
+          }
+          return result;
+        };
+      }
+
+      function refreshPlaneOptions(){
+        if(!planeSelect) return;
+        const planes = Array.isArray(window.points) ? window.points : [];
+        const previousValue = planeSelect.value;
+        planeSelect.innerHTML = '';
+        planes.forEach((plane, index) => {
+          const option = document.createElement('option');
+          const status = plane.isAlive ? 'жив' : 'сбит';
+          option.value = String(index);
+          option.textContent = `${index + 1}. ${plane.color || '—'} · ${status}`;
+          planeSelect.append(option);
+        });
+        if(planes.length === 0){
+          const option = document.createElement('option');
+          option.value = '';
+          option.textContent = 'Нет самолётов';
+          planeSelect.append(option);
+          planeSelect.disabled = true;
+        } else {
+          planeSelect.disabled = false;
+          if(previousValue && planeSelect.querySelector(`option[value="${previousValue}"]`)){
+            planeSelect.value = previousValue;
+          } else {
+            planeSelect.selectedIndex = 0;
+          }
+        }
+        updatePlaneDetails();
+      }
+
+      function formatNumber(value){
+        return Number.isFinite(value) ? Math.round(value) : '—';
+      }
+
+      function getSelectedPlane(){
+        if(!planeSelect || planeSelect.disabled) return null;
+        const index = parseInt(planeSelect.value, 10);
+        const planes = Array.isArray(window.points) ? window.points : [];
+        if(Number.isInteger(index) && index >= 0 && index < planes.length){
+          return planes[index];
+        }
+        return null;
+      }
+
+      function updatePlaneDetails(){
+        const plane = getSelectedPlane();
+        if(!plane){
+          planeDetails.innerHTML = '<p>Нет выбранного самолёта.</p>';
+          return;
+        }
+        const lines = [
+          `<p><strong>Цвет:</strong> ${plane.color || 'неизвестно'}</p>`,
+          `<p><strong>Координаты:</strong> ${formatNumber(plane.x)}, ${formatNumber(plane.y)}</p>`,
+          `<p><strong>Статус:</strong> ${plane.isAlive ? 'в строю' : 'сбит'}</p>`,
+          `<p><strong>Горит:</strong> ${plane.burning ? 'да' : 'нет'}</p>`
+        ];
+        if(plane.flagColor){
+          lines.push(`<p><strong>Флаг:</strong> ${plane.flagColor}</p>`);
+        }
+        planeDetails.innerHTML = lines.join('');
+      }
+
+      function parseCoord(input, fallback){
+        if(!input) return fallback;
+        const value = parseFloat(input.value);
+        return Number.isFinite(value) ? value : fallback;
+      }
+
+      function clamp(value, min, max){
+        if(!Number.isFinite(value)) return value;
+        return Math.min(Math.max(value, min), max);
+      }
+
+      function spawnExplosionAt(x, y){
+        if(typeof window.spawnExplosion !== 'function') return;
+        const canvas = document.getElementById('gameCanvas');
+        const width = canvas?.width || 360;
+        const height = canvas?.height || 640;
+        const clampedX = clamp(x, 0, width);
+        const clampedY = clamp(y, 0, height);
+        window.spawnExplosion(clampedX, clampedY);
+      }
+
+      function ignitePlane(plane){
+        if(!plane) return;
+        plane.burning = true;
+        plane.flameFxDisabled = false;
+        if(typeof window.spawnBurningFlameFx === 'function'){
+          window.spawnBurningFlameFx(plane);
+        }
+      }
+
+      function extinguishPlane(plane){
+        if(!plane) return;
+        plane.burning = false;
+        if(typeof window.ensurePlaneFlameFx === 'function'){
+          window.ensurePlaneFlameFx(plane);
+        }
+      }
+
+      function updateScores(){
+        if(statusElements.scoreGreen){
+          statusElements.scoreGreen.textContent = Number.isFinite(window.greenScore) ? window.greenScore : '—';
+        }
+        if(statusElements.scoreBlue){
+          statusElements.scoreBlue.textContent = Number.isFinite(window.blueScore) ? window.blueScore : '—';
+        }
+      }
+
+      function updateStatus(){
+        if(statusElements.round){
+          statusElements.round.textContent = Number.isFinite(window.roundNumber) ? window.roundNumber : '—';
+        }
+        if(statusElements.phase){
+          statusElements.phase.textContent = window.phase || '—';
+        }
+        if(statusElements.turn){
+          const colors = Array.isArray(window.turnColors) ? window.turnColors : [];
+          const idx = Number.isInteger(window.turnIndex) ? window.turnIndex : 0;
+          statusElements.turn.textContent = colors.length ? colors[idx % colors.length] : '—';
+        }
+        if(statusElements.awaiting){
+          statusElements.awaiting.textContent = window.awaitingFlightResolution ? 'да' : 'нет';
+        }
+        if(statusElements.aa){
+          statusElements.aa.textContent = window.settings?.addAA ? 'включено' : 'выключено';
+        }
+        if(statusElements.buildings){
+          const count = Array.isArray(window.buildings) ? window.buildings.length : 0;
+          statusElements.buildings.textContent = count;
+        }
+        const aaBtn = document.getElementById('toggleAAButton');
+        if(aaBtn){
+          aaBtn.textContent = window.settings?.addAA ? 'ПВО: вкл.' : 'ПВО: выкл.';
+        }
+        const edgesBtn = document.getElementById('toggleEdgesButton');
+        if(edgesBtn){
+          edgesBtn.textContent = window.settings?.sharpEdges ? 'Контуры: вкл.' : 'Контуры: выкл.';
+        }
+        updateScores();
+      }
+
+      function queueStatusUpdate(){
+        requestAnimationFrame(updateStatus);
+      }
+
+      function defaultExplosionInputs(){
+        const canvas = document.getElementById('gameCanvas');
+        const width = canvas?.width || 360;
+        const height = canvas?.height || 640;
+        if(explosionXInput && !explosionXInput.dataset.locked){
+          explosionXInput.value = String(Math.round(width / 2));
+        }
+        if(explosionYInput && !explosionYInput.dataset.locked){
+          explosionYInput.value = String(Math.round(height / 2));
+        }
+      }
+
+      patchFunction('resetGame', () => {
+        refreshPlaneOptions();
+        queueStatusUpdate();
+        queueLayout();
+      });
+
+      patchFunction('startNewRound', () => {
+        refreshPlaneOptions();
+        queueStatusUpdate();
+        queueLayout();
+      });
+
+      patchFunction('resizeCanvas', () => {
+        queueLayout();
+        defaultExplosionInputs();
+      });
+
+      document.getElementById('resetGameBtn')?.addEventListener('click', () => {
+        window.resetGame?.();
+      });
+
+      document.getElementById('startRoundBtn')?.addEventListener('click', () => {
+        window.startNewRound?.();
+      });
+
+      document.getElementById('startLoopBtn')?.addEventListener('click', () => {
+        window.startGameLoop?.();
+      });
+
+      document.getElementById('stopLoopBtn')?.addEventListener('click', () => {
+        window.stopGameLoop?.();
+      });
+
+      document.getElementById('showMenuBtn')?.addEventListener('click', () => {
+        const menu = document.getElementById('modeMenu');
+        if(menu) menu.style.display = 'block';
+      });
+
+      document.getElementById('hideMenuBtn')?.addEventListener('click', () => {
+        const menu = document.getElementById('modeMenu');
+        if(menu) menu.style.display = 'none';
+      });
+
+      document.getElementById('forceGreenWinBtn')?.addEventListener('click', () => {
+        window.lockInWinner?.('green', { showEndScreen: true });
+        queueStatusUpdate();
+      });
+
+      document.getElementById('forceBlueWinBtn')?.addEventListener('click', () => {
+        window.lockInWinner?.('blue', { showEndScreen: true });
+        queueStatusUpdate();
+      });
+
+      document.getElementById('showEndScreenBtn')?.addEventListener('click', () => {
+        const panel = document.getElementById('endGameButtons');
+        if(panel) panel.style.display = 'block';
+      });
+
+      document.getElementById('hideEndScreenBtn')?.addEventListener('click', () => {
+        const panel = document.getElementById('endGameButtons');
+        if(panel) panel.style.display = 'none';
+      });
+
+      document.getElementById('toggleAAButton')?.addEventListener('click', (event) => {
+        if(window.settings){
+          window.settings.addAA = !window.settings.addAA;
+        }
+        queueStatusUpdate();
+        window.startNewRound?.();
+        if(event?.currentTarget){
+          event.currentTarget.textContent = window.settings?.addAA ? 'ПВО: вкл.' : 'ПВО: выкл.';
+        }
+      });
+
+      document.getElementById('toggleEdgesButton')?.addEventListener('click', (event) => {
+        if(window.settings){
+          window.settings.sharpEdges = !window.settings.sharpEdges;
+        }
+        queueStatusUpdate();
+        window.startNewRound?.();
+        if(event?.currentTarget){
+          event.currentTarget.textContent = window.settings?.sharpEdges ? 'Контуры: вкл.' : 'Контуры: выкл.';
+        }
+      });
+
+      document.getElementById('nextMapButton')?.addEventListener('click', () => {
+        if(window.settings){
+          const mapCount = 3; // обновите при добавлении новых карт
+          const current = Number.isInteger(window.settings.mapIndex) ? window.settings.mapIndex : 0;
+          window.settings.mapIndex = (current + 1) % mapCount;
+        }
+        window.startNewRound?.();
+        queueStatusUpdate();
+      });
+
+      document.querySelectorAll('[data-score]')?.forEach(button => {
+        button.addEventListener('click', () => {
+          const value = button.dataset.score || '';
+          const [color, delta] = value.split(':');
+          const amount = parseInt(delta, 10);
+          if(color && Number.isFinite(amount)){
+            window.addScore?.(color, amount);
+            queueStatusUpdate();
+          }
+        });
+      });
+
+      document.getElementById('popupGreenBtn')?.addEventListener('click', () => {
+        const delta = parseInt(document.getElementById('popupDelta')?.value, 10) || 0;
+        const targetInput = document.getElementById('popupTarget');
+        const target = targetInput && targetInput.value !== '' ? parseInt(targetInput.value, 10) : (Number.isFinite(window.greenScore) ? window.greenScore + delta : delta);
+        window.spawnScorePopup?.('green', delta, target);
+      });
+
+      document.getElementById('popupBlueBtn')?.addEventListener('click', () => {
+        const delta = parseInt(document.getElementById('popupDelta')?.value, 10) || 0;
+        const targetInput = document.getElementById('popupTarget');
+        const target = targetInput && targetInput.value !== '' ? parseInt(targetInput.value, 10) : (Number.isFinite(window.blueScore) ? window.blueScore + delta : delta);
+        window.spawnScorePopup?.('blue', delta, target);
+      });
+
+      document.getElementById('syncStarsBtn')?.addEventListener('click', () => {
+        window.syncAllStarStates?.();
+        window.renderScoreboard?.();
+      });
+
+      document.getElementById('toggleAliveBtn')?.addEventListener('click', () => {
+        const plane = getSelectedPlane();
+        if(!plane) return;
+        plane.isAlive = !plane.isAlive;
+        updatePlaneDetails();
+      });
+
+      document.getElementById('ignitePlaneBtn')?.addEventListener('click', () => {
+        const plane = getSelectedPlane();
+        ignitePlane(plane);
+        updatePlaneDetails();
+      });
+
+      document.getElementById('extinguishPlaneBtn')?.addEventListener('click', () => {
+        const plane = getSelectedPlane();
+        extinguishPlane(plane);
+        updatePlaneDetails();
+      });
+
+      document.getElementById('explodePlaneBtn')?.addEventListener('click', () => {
+        const plane = getSelectedPlane();
+        if(!plane) return;
+        window.spawnExplosion?.(plane.x, plane.y, plane.color || null);
+        updatePlaneDetails();
+      });
+
+      document.getElementById('scheduleFlameBtn')?.addEventListener('click', () => {
+        const plane = getSelectedPlane();
+        if(!plane) return;
+        plane.burning = true;
+        if(typeof window.schedulePlaneFlameFx === 'function'){
+          window.schedulePlaneFlameFx(plane);
+        }
+        updatePlaneDetails();
+      });
+
+      document.getElementById('refreshPlanesBtn')?.addEventListener('click', () => {
+        refreshPlaneOptions();
+      });
+
+      document.getElementById('spawnExplosionBtn')?.addEventListener('click', () => {
+        const x = parseCoord(explosionXInput, 180);
+        const y = parseCoord(explosionYInput, 320);
+        spawnExplosionAt(x, y);
+      });
+
+      document.getElementById('randomExplosionBtn')?.addEventListener('click', () => {
+        const canvas = document.getElementById('gameCanvas');
+        const width = canvas?.width || 360;
+        const height = canvas?.height || 640;
+        const x = Math.random() * width;
+        const y = Math.random() * height;
+        spawnExplosionAt(x, y);
+      });
+
+      document.getElementById('clearFxBtn')?.addEventListener('click', () => {
+        if(typeof window.cleanupBurningFx === 'function'){
+          window.cleanupBurningFx();
+        }
+        const fxLayer = document.getElementById('fxLayer');
+        if(fxLayer){
+          fxLayer.innerHTML = '';
+        }
+      });
+
+      explosionXInput?.addEventListener('input', () => {
+        explosionXInput.dataset.locked = 'true';
+      });
+
+      explosionYInput?.addEventListener('input', () => {
+        explosionYInput.dataset.locked = 'true';
+      });
+
+      planeSelect?.addEventListener('change', updatePlaneDetails);
+
+      window.addEventListener('resize', queueLayout);
+
+      setInterval(updateStatus, 500);
+
+      refreshPlaneOptions();
+      updateStatus();
+      defaultExplosionInputs();
+      queueLayout();
+    })();
+  </script>
+</body>
+</html>
