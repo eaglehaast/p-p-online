@@ -2886,10 +2886,10 @@ function handleAAForPlane(p, fp){
     const overlayRect = getViewportAdjustedBoundingClientRect(aimCanvas);
     const start = worldToOverlay(plane.x, plane.y, { overlay: aimCanvas, boardRect, overlayRect });
     const tail = worldToOverlay(plane.x + baseDx, plane.y + baseDy, { overlay: aimCanvas, boardRect, overlayRect });
-    const dx = tail.overlayX - start.overlayX;
-    const dy = tail.overlayY - start.overlayY;
+    const arrowDx = tail.overlayX - start.overlayX;
+    const arrowDy = tail.overlayY - start.overlayY;
     aimCtx.globalAlpha = arrowAlpha;
-    drawArrow(aimCtx, start.overlayX, start.overlayY, dx, dy);
+    drawArrow(aimCtx, start.overlayX, start.overlayY, arrowDx, arrowDy);
     aimCtx.restore();
 
   } else {
