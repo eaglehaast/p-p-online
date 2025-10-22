@@ -3288,8 +3288,47 @@ function handleAAForPlane(p, fp){
     const text= shouldShowEndScreen
       ? `${winnerName} wins the game!`
       : `${winnerName} wins the round!`;
-    const w= gameCtx.measureText(text).width;
-    gameCtx.fillText(text, (gameCanvas.width - w)/2, gameCanvas.height/2 - 80);
+    const metrics = gameCtx.measureText(text);
+    const w = metrics.width;
+    const textX = (gameCanvas.width - w) / 2;
+    const textBaselineY = gameCanvas.height / 2 - 80;
+    gameCtx.fillText(text, textX, textBaselineY);
+
+    if(shouldShowEndScreen && endGameDiv){
+      const descent = Number.isFinite(metrics.actualBoundingBoxDescent) ? metrics.actualBoundingBoxDescent : 0;
+      const anchorCanvasX = gameCanvas.width / 2;
+      const anchorCanvasY = textBaselineY + descent + 24;
+      const boardRect = getViewportAdjustedBoundingClientRect(gameCanvas);
+      const boardWidth = Number.isFinite(boardRect.width) ? boardRect.width : 0;
+      const boardHeight = Number.isFinite(boardRect.height) ? boardRect.height : 0;
+      const scaleX = gameCanvas.width !== 0 ? boardWidth / gameCanvas.width : 1;
+      const scaleY = gameCanvas.height !== 0 ? boardHeight / gameCanvas.height : 1;
+      const anchorClientX = (Number.isFinite(boardRect.left) ? boardRect.left : 0) + anchorCanvasX * scaleX;
+      const anchorClientY = (Number.isFinite(boardRect.top) ? boardRect.top : 0) + anchorCanvasY * scaleY;
+
+      if(endGameDiv.style.display !== "block"){
+        endGameDiv.style.display = "block";
+      }
+
+      const panelWidth = endGameDiv.offsetWidth || 0;
+      const targetLeft = Math.round(anchorClientX - panelWidth / 2);
+      const targetTop = Math.round(anchorClientY);
+
+      if(Number.isFinite(targetLeft)){
+        endGameDiv.style.left = `${targetLeft}px`;
+      }
+      if(Number.isFinite(targetTop)){
+        endGameDiv.style.top = `${targetTop}px`;
+      }
+    }
+  }
+
+  if(endGameDiv && (!shouldShowEndScreen || !isGameOver || !winnerColor)){
+    if(endGameDiv.style.display !== "none"){
+      endGameDiv.style.display = "none";
+    }
+    endGameDiv.style.left = "";
+    endGameDiv.style.top = "";
   }
 
   if(roundTextTimer > 0){
