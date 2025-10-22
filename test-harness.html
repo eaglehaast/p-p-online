@@ -252,7 +252,11 @@
         <button id="showEndScreenBtn">Показать энд-скрин</button>
         <button id="hideEndScreenBtn">Скрыть энд-скрин</button>
       </div>
-      <small>Используйте кнопки для отладки смены фаз, меню и конца игры.</small>
+      <div class="harness-button-group">
+        <button id="lockRoundWinBtn" class="full-width" title="Завершить раунд без показа финального экрана">Завершить раунд (без энд-скрина)</button>
+        <button id="lockGameWinBtn" class="full-width" title="Завершить игру с показом финального экрана">Завершить игру (с энд-скрином)</button>
+      </div>
+      <small>Используйте кнопки для отладки смены фаз, меню и сценариев конца раунда или всей игры.</small>
     </div>
 
     <div class="harness-section" aria-labelledby="settingsTitle">
@@ -628,6 +632,27 @@
         requestAnimationFrame(updateStatus);
       }
 
+      function resolveSimulatedWinnerColor(){
+        const greenScoreValue = Number.isFinite(window.greenScore) ? window.greenScore : 0;
+        const blueScoreValue = Number.isFinite(window.blueScore) ? window.blueScore : 0;
+        if(greenScoreValue > blueScoreValue){
+          return 'green';
+        }
+        if(blueScoreValue > greenScoreValue){
+          return 'blue';
+        }
+        const colors = Array.isArray(window.turnColors) ? window.turnColors : [];
+        const index = Number.isInteger(window.turnIndex) ? window.turnIndex : 0;
+        const fallback = colors.length ? colors[index % colors.length] : null;
+        return fallback === 'blue' ? 'blue' : 'green';
+      }
+
+      function lockInSimulatedWinner(options){
+        const winnerColor = resolveSimulatedWinnerColor();
+        window.lockInWinner?.(winnerColor, options);
+        queueStatusUpdate();
+      }
+
       function defaultExplosionInputs(){
         const canvas = document.getElementById('gameCanvas');
         const width = canvas?.width || 360;
@@ -691,6 +716,14 @@
       document.getElementById('forceBlueWinBtn')?.addEventListener('click', () => {
         window.lockInWinner?.('blue', { showEndScreen: true });
         queueStatusUpdate();
+      });
+
+      document.getElementById('lockRoundWinBtn')?.addEventListener('click', () => {
+        lockInSimulatedWinner({ showEndScreen: false });
+      });
+
+      document.getElementById('lockGameWinBtn')?.addEventListener('click', () => {
+        lockInSimulatedWinner({ showEndScreen: true });
       });
 
       document.getElementById('showEndScreenBtn')?.addEventListener('click', () => {
