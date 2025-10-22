@@ -15,10 +15,10 @@ body, button {
   body {
     position: relative;
     font-family: 'Roboto', sans-serif;
-    background-image: url("pics/background behind the canvas 5.png");
-    background-size: 460px 800px;
+    background-image: url("background behind the canvas.png"), url("background paper 1.png");
+    background-size: 460px 800px, 460px 800px;
     background-repeat: no-repeat;
-    background-position: center top;
+    background-position: center top, center top;
     margin: 0;
     padding: 0;
     height: 100dvh;
@@ -30,9 +30,10 @@ body, button {
     position: absolute;
     width: 460px;
     height: 800px;
-    background-image: url("pics/background behind the canvas 5.png");
-    background-size: 460px 800px;
+    background-image: url("background behind the canvas.png"), url("background paper 1.png");
+    background-size: 460px 800px, 460px 800px;
     background-repeat: no-repeat;
+    background-position: center top, center top;
     --score-scale: 1;
   }
 
@@ -183,10 +184,10 @@ body, button {
   }
 
   body.settings-page {
-    background-image: url("pics/background behind the canvas 5.png");
-    background-size: 460px 800px;
+    background-image: url("background behind the canvas.png"), url("background paper 1.png");
+    background-size: 460px 800px, 460px 800px;
     background-repeat: no-repeat;
-    background-position: center top;
+    background-position: center top, center top;
   }
 
 /* Игровое поле */

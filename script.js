@@ -885,23 +885,76 @@ const defaultFlameGifImg = flameGifImages.get(DEFAULT_BURNING_FLAME_SRC) || null
 const backgroundImg = new Image();
 backgroundImg.src = "background paper 1.png";
 
-function syncBackgroundLayout(containerWidth, containerHeight) {
+let currentBackgroundLayerCount = 2;
+
+function duplicateBackgroundValue(value) {
+  const layerCount = Math.max(1, currentBackgroundLayerCount);
+  return Array.from({ length: layerCount }, () => value).join(', ');
+}
+
+function syncBackgroundLayout(containerWidth, containerHeight, containerLeft = null, containerTop = null) {
   if (!Number.isFinite(containerWidth) || !Number.isFinite(containerHeight) ||
       containerWidth <= 0 || containerHeight <= 0) {
     return;
   }
-  const backgroundSize = `${containerWidth}px ${containerHeight}px`;
-  gameContainer.style.backgroundSize = backgroundSize;
-  document.body.style.backgroundSize = backgroundSize;
-  if (gameContainer.style.left && gameContainer.style.top) {
-    document.body.style.backgroundPosition = `${gameContainer.style.left} ${gameContainer.style.top}`;
-  }
+
+  const sizeValue = `${containerWidth}px ${containerHeight}px`;
+  const repeatedSize = duplicateBackgroundValue(sizeValue);
+  gameContainer.style.backgroundSize = repeatedSize;
+  document.body.style.backgroundSize = repeatedSize;
+
+  const resolvedLeft = typeof containerLeft === 'number'
+    ? `${containerLeft}px`
+    : (typeof containerLeft === 'string' ? containerLeft : gameContainer.style.left);
+  const resolvedTop = typeof containerTop === 'number'
+    ? `${containerTop}px`
+    : (typeof containerTop === 'string' ? containerTop : gameContainer.style.top);
+
+  const containerPosition = duplicateBackgroundValue('center top');
+  gameContainer.style.backgroundPosition = containerPosition;
+
+  const hasOffsets = resolvedLeft && resolvedTop;
+  const bodyPositionValue = hasOffsets ? `${resolvedLeft} ${resolvedTop}` : 'center top';
+  const repeatedBodyPosition = duplicateBackgroundValue(bodyPositionValue);
+  document.body.style.backgroundPosition = repeatedBodyPosition;
 }
 
-function setBackgroundImage(imageUrl) {
-  const background = imageUrl.startsWith("url(") ? imageUrl : `url('${imageUrl}')`;
-  gameContainer.style.backgroundImage = background;
-  document.body.style.backgroundImage = background;
+function normalizeBackgroundLayer(layer) {
+  if (typeof layer !== 'string') {
+    return null;
+  }
+  const trimmed = layer.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.startsWith('url(')) {
+    return trimmed;
+  }
+  const escaped = trimmed.replace(/"/g, '\"');
+  return 'url("' + escaped + '")';
+}
+
+function setBackgroundImage(...imageLayers) {
+  const layers = Array.isArray(imageLayers[0]) && imageLayers.length === 1
+    ? imageLayers[0]
+    : imageLayers;
+
+  const normalizedLayers = layers
+    .map(normalizeBackgroundLayer)
+    .filter(layer => typeof layer === 'string' && layer.length > 0);
+
+  if (!normalizedLayers.length) {
+    currentBackgroundLayerCount = 0;
+    gameContainer.style.backgroundImage = 'none';
+    document.body.style.backgroundImage = 'none';
+    return;
+  }
+
+  currentBackgroundLayerCount = normalizedLayers.length;
+  const backgroundValue = normalizedLayers.join(', ');
+  gameContainer.style.backgroundImage = backgroundValue;
+  document.body.style.backgroundImage = backgroundValue;
+
   const rect = gameContainer.getBoundingClientRect();
   syncBackgroundLayout(rect.width, rect.height);
 }
@@ -1858,7 +1911,7 @@ function resetGame(){
   phase = 'MENU';
   currentPlacer = null;
 
-  setBackgroundImage('background behind the canvas.png');
+  setBackgroundImage('background behind the canvas.png', 'background paper 1.png');
 
   // UI reset
   hotSeatBtn.classList.remove("selected");
@@ -5068,7 +5121,7 @@ function resizeCanvas() {
   const centeredTop = offsetTop + (viewportHeight - containerHeight) / 2;
   gameContainer.style.left = centeredLeft + 'px';
   gameContainer.style.top = centeredTop + 'px';
-  syncBackgroundLayout(containerWidth, containerHeight);
+  syncBackgroundLayout(containerWidth, containerHeight, centeredLeft, centeredTop);
   const canvas = gameCanvas;
   canvas.style.width = CANVAS_BASE_WIDTH * scale + 'px';
   canvas.style.height = CANVAS_BASE_HEIGHT * scale + 'px';
