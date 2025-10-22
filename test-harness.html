@@ -94,6 +94,33 @@
       padding-top: 0;
     }
 
+    .test-harness .test-controls {
+      position: static;
+      top: auto;
+      right: auto;
+      left: auto;
+      width: 100%;
+      max-width: none;
+      z-index: auto;
+      background: rgba(20, 27, 46, 0.82);
+      box-shadow: inset 0 0 0 1px rgba(94, 154, 255, 0.25);
+      backdrop-filter: none;
+    }
+
+    .test-harness .test-controls__toggle {
+      border-radius: 12px 12px 0 0;
+      background: linear-gradient(135deg, rgba(54, 98, 180, 0.9), rgba(35, 64, 120, 0.9));
+    }
+
+    .test-harness .test-controls__body {
+      padding: 14px;
+      background: transparent;
+    }
+
+    .test-harness .test-controls__actions button {
+      background: rgba(255, 255, 255, 0.18);
+    }
+
     .harness-button-group {
       display: flex;
       flex-wrap: wrap;
@@ -236,6 +263,49 @@
         <button id="nextMapButton" class="full-width">Следующая карта</button>
       </div>
       <small>Переключение настроек сразу пересоздаёт раунд для применения.</small>
+    </div>
+
+    <div class="harness-section harness-section--test-controls" aria-labelledby="testControlsHeading">
+      <h2 id="testControlsHeading">Расширенные настройки</h2>
+      <div id="testControlPanel" class="test-controls collapsed" aria-live="polite">
+        <button id="testControlsToggle" class="test-controls__toggle" aria-expanded="false" type="button">
+          Test Controls
+        </button>
+        <div class="test-controls__body" id="testControlsBody">
+          <div class="test-controls__field">
+            <label for="inGameMapSelect" class="test-controls__label">Map</label>
+            <select id="inGameMapSelect" class="test-controls__select"></select>
+          </div>
+          <div class="test-controls__field">
+            <label for="inGameFlameStyle" class="test-controls__label">Flame Style</label>
+            <select id="inGameFlameStyle" class="test-controls__select"></select>
+          </div>
+          <div class="test-controls__field">
+            <label for="testFlightRange" class="test-controls__label">Flight Range (cells)</label>
+            <input id="testFlightRange" class="test-controls__input" type="number" min="5" max="30" step="1" inputmode="numeric" />
+          </div>
+          <div class="test-controls__field">
+            <label for="testAmplitude" class="test-controls__label">Aiming Amplitude (°)</label>
+            <input id="testAmplitude" class="test-controls__input" type="number" min="0" max="120" step="1" inputmode="decimal" />
+          </div>
+          <label class="test-controls__checkbox">
+            <input type="checkbox" id="testAddAAToggle" />
+            <span>Include AA placement phase</span>
+          </label>
+          <label class="test-controls__checkbox">
+            <input type="checkbox" id="testSharpEdgesToggle" />
+            <span>Enable sharp arena edges</span>
+          </label>
+          <label class="test-controls__checkbox">
+            <input type="checkbox" id="testRandomizeToggle" />
+            <span>Randomize map each round</span>
+          </label>
+          <div class="test-controls__actions">
+            <button id="testApplyBtn" type="button">Apply</button>
+            <button id="testRestartBtn" type="button">Apply &amp; Restart</button>
+          </div>
+        </div>
+      </div>
     </div>
   </aside>
 
