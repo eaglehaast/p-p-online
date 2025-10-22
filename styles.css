@@ -720,7 +720,10 @@ body, button {
 
 /* Окно конца игры */
 #endGameButtons {
-  position: fixed; top:50%; left:50%; transform: translate(-50%, -50%);
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 250;
   background: linear-gradient(135deg, #ffffff, #eaeaea);
   padding: 40px; border: 2px solid #c1c1c1; border-radius: 20px;
   box-shadow: 0 12px 24px rgba(0,0,0,0.2);
