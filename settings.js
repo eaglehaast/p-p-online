@@ -58,6 +58,7 @@ const sharpEdgesToggle = document.getElementById('sharpEdgesToggle');
 const backBtn = document.getElementById('backBtn');
 const mapSelect = document.getElementById('mapSelect');
 const mapPreview = document.getElementById('mapPreview');
+const isTestHarnessPage = document.body.classList.contains('test-harness');
 
 function updateFlightRangeDisplay(){
   const el = document.getElementById('flightRangeDisplay');
@@ -208,8 +209,9 @@ setupRepeatButton(amplitudePlusBtn, () => {
   }
 });
 if(backBtn){
+  const destination = isTestHarnessPage ? 'test-harness.html' : 'index.html';
   backBtn.addEventListener('click', () => {
-    window.location.href = 'index.html';
+    window.location.href = destination;
   });
 }
 

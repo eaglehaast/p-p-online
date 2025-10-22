@@ -38,6 +38,9 @@ const testRandomizeToggle = document.getElementById("testRandomizeToggle");
 const testApplyBtn = document.getElementById("testApplyBtn");
 const testRestartBtn = document.getElementById("testRestartBtn");
 
+const IS_TEST_HARNESS = document.body.classList.contains('test-harness');
+const ADVANCED_SETTINGS_URL = IS_TEST_HARNESS ? 'settings-test.html' : 'settings.html';
+
 const SCORE_COUNTER_ELEMENTS = {
   green: greenScoreCounter,
   blue: blueScoreCounter
@@ -1987,7 +1990,7 @@ if(classicRulesBtn){
 if(advancedSettingsBtn){
   advancedSettingsBtn.addEventListener('click', () => {
     if(advancedSettingsBtn.classList.contains('selected')){
-      window.location.href = 'settings.html';
+      window.location.href = ADVANCED_SETTINGS_URL;
     } else {
       loadSettings();
       classicRulesBtn?.classList.remove('selected');
