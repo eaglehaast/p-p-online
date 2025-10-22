@@ -65,48 +65,6 @@
     <button id="yesButton" class="end-btn">Yes</button>
     <button id="noButton" class="end-btn">No</button>
   </div>
-
-  <!-- In-game testing controls -->
-  <div id="testControlPanel" class="test-controls collapsed" aria-live="polite">
-    <button id="testControlsToggle" class="test-controls__toggle" aria-expanded="false" type="button">
-      Test Controls
-    </button>
-    <div class="test-controls__body" id="testControlsBody">
-      <div class="test-controls__field">
-        <label for="inGameMapSelect" class="test-controls__label">Map</label>
-        <select id="inGameMapSelect" class="test-controls__select"></select>
-      </div>
-      <div class="test-controls__field">
-        <label for="inGameFlameStyle" class="test-controls__label">Flame Style</label>
-        <select id="inGameFlameStyle" class="test-controls__select"></select>
-      </div>
-      <div class="test-controls__field">
-        <label for="testFlightRange" class="test-controls__label">Flight Range (cells)</label>
-        <input id="testFlightRange" class="test-controls__input" type="number" min="5" max="30" step="1" inputmode="numeric" />
-      </div>
-      <div class="test-controls__field">
-        <label for="testAmplitude" class="test-controls__label">Aiming Amplitude (°)</label>
-        <input id="testAmplitude" class="test-controls__input" type="number" min="0" max="120" step="1" inputmode="decimal" />
-      </div>
-      <label class="test-controls__checkbox">
-        <input type="checkbox" id="testAddAAToggle" />
-        <span>Include AA placement phase</span>
-      </label>
-      <label class="test-controls__checkbox">
-        <input type="checkbox" id="testSharpEdgesToggle" />
-        <span>Enable sharp arena edges</span>
-      </label>
-      <label class="test-controls__checkbox">
-        <input type="checkbox" id="testRandomizeToggle" />
-        <span>Randomize map each round</span>
-      </label>
-      <div class="test-controls__actions">
-        <button id="testApplyBtn" type="button">Apply</button>
-        <button id="testRestartBtn" type="button">Apply &amp; Restart</button>
-      </div>
-    </div>
-  </div>
-
     <script src="script.js"></script>
   </body>
 </html>
