@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Advanced Settings – Test Harness</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Roboto&display=swap" rel="stylesheet" />
+  <style>
+    body.test-harness {
+      background: radial-gradient(circle at top, #1a2338 0%, #0c1220 60%, #070b15 100%);
+      color: #f5f7ff;
+      min-height: 100vh;
+      margin: 0;
+    }
+
+    .settings-test__layout {
+      display: grid;
+      grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+      gap: clamp(24px, 4vw, 48px);
+      align-items: start;
+      padding: clamp(24px, 5vw, 48px);
+      max-width: 1200px;
+      margin: 0 auto;
+      box-sizing: border-box;
+    }
+
+    @media (max-width: 960px) {
+      .settings-test__layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .harness-panel {
+      position: relative;
+      width: 100%;
+      padding: 16px 18px 20px;
+      background: rgba(12, 18, 32, 0.92);
+      border: 1px solid rgba(94, 154, 255, 0.25);
+      border-radius: 16px;
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+      color: #f5f7ff;
+      backdrop-filter: blur(4px);
+      box-sizing: border-box;
+    }
+
+    .harness-panel h1 {
+      margin: 0 0 18px;
+      font-size: 1.4rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #9ab4ff;
+    }
+
+    .harness-panel h2,
+    .harness-panel h3 {
+      margin: 12px 0 8px;
+      font-size: 0.95rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #b6c6ff;
+    }
+
+    .harness-panel p,
+    .harness-panel label,
+    .harness-panel dt,
+    .harness-panel dd {
+      font-size: 0.88rem;
+      line-height: 1.4;
+    }
+
+    .harness-panel small,
+    .harness-panel .harness-note {
+      color: #8ea0d8;
+      font-size: 0.78rem;
+    }
+
+    .harness-section {
+      margin-bottom: 20px;
+      border-top: 1px solid rgba(94, 154, 255, 0.18);
+      padding-top: 14px;
+    }
+
+    .harness-section:first-of-type {
+      border-top: none;
+      padding-top: 0;
+    }
+
+    .harness-button-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .harness-button-group button,
+    .harness-panel button {
+      flex: 1 1 calc(50% - 4px);
+      padding: 8px 10px;
+      font-size: 0.85rem;
+      border-radius: 10px;
+      border: 1px solid rgba(129, 170, 255, 0.4);
+      background: linear-gradient(135deg, rgba(32, 54, 96, 0.75), rgba(21, 33, 61, 0.75));
+      color: #f5f7ff;
+      cursor: pointer;
+      transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .harness-panel button.full-width {
+      flex: 1 1 100%;
+    }
+
+    .harness-panel button:hover {
+      background: linear-gradient(135deg, rgba(51, 80, 138, 0.9), rgba(27, 44, 81, 0.9));
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+    }
+
+    .harness-panel button:active {
+      transform: translateY(1px);
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px 12px;
+      margin: 0;
+      padding: 0;
+    }
+
+    .status-grid dt {
+      margin: 0;
+      color: #8ea0d8;
+      font-weight: 600;
+    }
+
+    .status-grid dd {
+      margin: 0;
+    }
+
+    .settings-test__stage {
+      position: relative;
+      width: min(90vw, 520px);
+      max-width: 520px;
+      margin: 0 auto;
+    }
+
+    .settings-test #modeMenu {
+      position: relative;
+      top: auto;
+      left: auto;
+      transform: none;
+      margin: 0;
+      width: 100%;
+      max-width: none;
+    }
+
+    .settings-test #modeMenu .control-group-row {
+      margin-top: 20px;
+    }
+
+    #settingsInspectorOverlay {
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body class="test-harness settings-test">
+  <div class="settings-test__layout">
+    <aside class="harness-panel" aria-label="Тестовые инструменты" data-inspector-ignore="true">
+      <h1>Тестовые инструменты</h1>
+      <div class="harness-section" aria-labelledby="inspectorTitle">
+        <h2 id="inspectorTitle">Инспектор</h2>
+        <div class="harness-button-group">
+          <button id="toggleInspectorBtn" class="full-width">Курсор: выкл.</button>
+          <button id="toggleRulerBtn" class="full-width" disabled>Линейка: выкл.</button>
+        </div>
+        <dl class="status-grid inspector-status">
+          <div><dt>Курсор</dt><dd id="inspectorCursorPanel">—</dd></div>
+          <div><dt>Объект</dt><dd id="inspectorTargetPanel">—</dd></div>
+          <div><dt>Точка A</dt><dd id="inspectorPointAPanel">—</dd></div>
+          <div><dt>Точка B</dt><dd id="inspectorPointBPanel">—</dd></div>
+          <div><dt>Расстояние</dt><dd id="inspectorDistancePanel">—</dd></div>
+        </dl>
+        <p class="harness-note">Курсор и линейка помогают измерять элементы экрана настроек.</p>
+      </div>
+    </aside>
+
+    <main class="settings-test__stage">
+      <div id="modeMenu">
+        <h1 class="game-title">Advanced Settings</h1>
+        <div class="control-group-row">
+          <div class="control-pair-row">
+            <!-- Flight Range Control -->
+            <div class="control-box">
+              <div class="control-label">Flight Range</div>
+              <div id="flightRangeIndicator" class="control-visual">
+                <div class="jet">
+                  <div class="wing-trail top"></div>
+                  <div class="wing-trail bottom"></div>
+                  <svg class="jet-plane" viewBox="0 0 38 20">
+                    <polygon points="38,10 8,20 8,15 0,10 8,5 8,0"></polygon>
+                  </svg>
+                  <svg id="menuFlame" class="jet-flame" viewBox="0 0 40 20" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+                    <defs>
+                      <radialGradient id="menuFlameGradient" cx="100%" cy="50%" r="60%">
+                        <stop offset="0%" stop-color="#ff8c00"></stop>
+                        <stop offset="100%" stop-color="#ff0000"></stop>
+                      </radialGradient>
+                    </defs>
+                    <path d="M40 10 C38 2 30 0 22 0 C14 0 6 8 8 14 C10 18 18 20 26 18 C34 16 38 14 40 10 Z" fill="url(#menuFlameGradient)"></path>
+                  </svg>
+                </div>
+                <div id="flightRangeDisplay" class="range-display">15</div>
+              </div>
+              <div class="control-buttons">
+                <button
+                  id="flightRangeMinus"
+                  class="control-btn control-btn--minus"
+                  type="button"
+                  aria-label="Decrease flight range"
+                >
+                  <span class="visually-hidden">Decrease flight range</span>
+                </button>
+                <button
+                  id="flightRangePlus"
+                  class="control-btn control-btn--plus"
+                  type="button"
+                  aria-label="Increase flight range"
+                >
+                  <span class="visually-hidden">Increase flight range</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Aiming Amplitude Control -->
+            <div class="control-box">
+              <div class="control-label">Aiming Amplitude</div>
+              <div id="amplitudeIndicator" class="control-visual">
+                <div class="crosshair">
+                  <div class="inner-circle"></div>
+                  <div class="center-dot"></div>
+                  <div class="horizontal"></div>
+                  <div class="vertical"></div>
+                </div>
+              </div>
+              <div class="control-value"><span id="amplitudeAngleDisplay">40°</span></div>
+              <div class="control-buttons">
+                <button
+                  id="amplitudeMinus"
+                  class="control-btn control-btn--minus"
+                  type="button"
+                  aria-label="Decrease aiming amplitude"
+                >
+                  <span class="visually-hidden">Decrease aiming amplitude</span>
+                </button>
+                <button
+                  id="amplitudePlus"
+                  class="control-btn control-btn--plus"
+                  type="button"
+                  aria-label="Increase aiming amplitude"
+                >
+                  <span class="visually-hidden">Increase aiming amplitude</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Map Selection -->
+          <div class="control-box">
+            <div class="control-label">Map</div>
+            <div class="control-visual map-preview">
+              <div class="map-preview-layer map-preview-paper"></div>
+              <div class="map-preview-layer map-preview-image" id="mapPreview"></div>
+            </div>
+            <div class="control-value"></div>
+            <div class="control-buttons">
+              <select id="mapSelect"></select>
+            </div>
+          </div>
+
+          <!-- Additional Settings -->
+          <div class="control-box" id="additionalSettings">
+            <div class="control-label">Additional Settings</div>
+            <div class="aa-toggle">
+              <input type="checkbox" id="addAAToggle" class="toggle-input visually-hidden" />
+              <label for="addAAToggle" class="toggle-label">
+                <span class="toggle-visual" aria-hidden="true"></span>
+                <span class="toggle-text">Add Anti-Aircraft</span>
+              </label>
+            </div>
+            <div class="aa-toggle">
+              <input type="checkbox" id="sharpEdgesToggle" class="toggle-input visually-hidden" />
+              <label for="sharpEdgesToggle" class="toggle-label">
+                <span class="toggle-visual" aria-hidden="true"></span>
+                <span class="toggle-text">Sharp Edges</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <button id="backBtn" class="mode-btn">Back</button>
+      </div>
+    </main>
+  </div>
+
+  <div id="settingsInspectorRoot" data-inspector-ignore="true">
+    <div id="settingsInspectorOverlay" class="inspector-overlay" aria-hidden="true" data-inspector-ignore="true">
+      <svg id="settingsInspectorSvg" class="inspector-overlay__svg" viewBox="0 0 460 800" preserveAspectRatio="none">
+        <line id="settingsInspectorCrosshairH" class="inspector-overlay__crosshair" x1="0" y1="0" x2="460" y2="0"></line>
+        <line id="settingsInspectorCrosshairV" class="inspector-overlay__crosshair" x1="0" y1="0" x2="0" y2="800"></line>
+        <line id="settingsInspectorRulerLine" class="inspector-overlay__ruler-line" x1="0" y1="0" x2="0" y2="0"></line>
+        <circle id="settingsInspectorPointA" class="inspector-overlay__point" cx="0" cy="0" r="5"></circle>
+        <circle id="settingsInspectorPointB" class="inspector-overlay__point" cx="0" cy="0" r="5"></circle>
+      </svg>
+      <div id="settingsInspectorTooltip" class="inspector-overlay__tooltip" role="status" aria-live="polite">
+        <div id="settingsInspectorTooltipContent" class="inspector-overlay__tooltip-content">
+          <div class="inspector-overlay__row">
+            <strong>Курсор</strong>
+            <span id="settingsInspectorCursorText" class="inspector-overlay__value">—</span>
+          </div>
+          <div class="inspector-overlay__row">
+            <strong>Объект</strong>
+            <span id="settingsInspectorTargetText" class="inspector-overlay__value">—</span>
+          </div>
+          <div class="inspector-overlay__row">
+            <strong>Линейка</strong>
+            <span id="settingsInspectorRulerText" class="inspector-overlay__value">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="settings.js"></script>
+  <script src="test-inspector.js"></script>
+  <script>
+    (function(){
+      const ignoreElements = Array.from(document.querySelectorAll('[data-inspector-ignore="true"]'));
+      window.paperWingsTestInspector?.init({
+        container: document.getElementById('settingsInspectorRoot'),
+        overlay: document.getElementById('settingsInspectorOverlay'),
+        svg: document.getElementById('settingsInspectorSvg'),
+        tooltip: document.getElementById('settingsInspectorTooltip'),
+        tooltipContent: document.getElementById('settingsInspectorTooltipContent'),
+        cursorValue: document.getElementById('settingsInspectorCursorText'),
+        targetValue: document.getElementById('settingsInspectorTargetText'),
+        rulerValue: document.getElementById('settingsInspectorRulerText'),
+        crosshairH: document.getElementById('settingsInspectorCrosshairH'),
+        crosshairV: document.getElementById('settingsInspectorCrosshairV'),
+        rulerLine: document.getElementById('settingsInspectorRulerLine'),
+        pointA: document.getElementById('settingsInspectorPointA'),
+        pointB: document.getElementById('settingsInspectorPointB'),
+        buttons: {
+          cursor: document.getElementById('toggleInspectorBtn'),
+          ruler: document.getElementById('toggleRulerBtn')
+        },
+        panel: {
+          cursor: document.getElementById('inspectorCursorPanel'),
+          target: document.getElementById('inspectorTargetPanel'),
+          pointA: document.getElementById('inspectorPointAPanel'),
+          pointB: document.getElementById('inspectorPointBPanel'),
+          distance: document.getElementById('inspectorDistancePanel')
+        },
+        containerMode: 'pixel',
+        containerLabel: 'Страница',
+        extraRoots: [
+          { element: document.getElementById('modeMenu'), mode: 'pixel', label: 'Меню' }
+        ],
+        ignoreElements,
+        storageKey: 'paperWingsInspectorState'
+      });
+    })();
+  </script>
+</body>
+</html>
