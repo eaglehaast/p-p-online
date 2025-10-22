@@ -866,6 +866,144 @@ body, button {
 /* Плавные переходы */
 button, .control-box, #modeMenu, #endGameButtons { transition: all 0.3s ease; }
 
+/* ===== Inspector overlay (shared) ===== */
+.inspector-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 500;
+  pointer-events: none;
+  font-family: 'Roboto', sans-serif;
+  display: none;
+}
+
+.inspector-overlay__svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.inspector-overlay__crosshair {
+  stroke: rgba(94, 154, 255, 0.65);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  display: none;
+}
+
+.inspector-overlay__ruler-line {
+  stroke: rgba(255, 204, 102, 0.9);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+  vector-effect: non-scaling-stroke;
+  display: none;
+}
+
+.inspector-overlay__point {
+  fill: rgba(255, 204, 102, 0.95);
+  stroke: rgba(12, 18, 32, 0.85);
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+  display: none;
+}
+
+.inspector-overlay__tooltip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-9999px, -9999px);
+  pointer-events: none;
+  display: none;
+}
+
+.inspector-overlay__tooltip-content {
+  background: rgba(9, 15, 28, 0.88);
+  border: 1px solid rgba(129, 170, 255, 0.4);
+  border-radius: 10px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+  padding: 8px 10px;
+  color: #f5f7ff;
+  min-width: 180px;
+  max-width: 240px;
+}
+
+.inspector-overlay__row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.inspector-overlay__row + .inspector-overlay__row {
+  margin-top: 6px;
+}
+
+.inspector-overlay__row strong {
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #9ab4ff;
+}
+
+.inspector-overlay__value {
+  white-space: pre-line;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: #f5f7ff;
+}
+
+.inspector-status {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.inspector-status dd {
+  white-space: normal;
+  word-break: break-word;
+}
+
+#settingsInspectorRoot {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1200;
+}
+
+.inspector-mini-panel {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  gap: 8px;
+  z-index: 1250;
+  pointer-events: auto;
+}
+
+.inspector-mini-panel button {
+  background: rgba(9, 15, 28, 0.85);
+  border: 1px solid rgba(129, 170, 255, 0.4);
+  border-radius: 10px;
+  color: #f5f7ff;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.inspector-mini-panel button:hover {
+  background: rgba(28, 44, 82, 0.9);
+  transform: translateY(-1px);
+}
+
+.inspector-mini-panel button:active {
+  transform: translateY(1px);
+}
+
+.inspector-mini-panel button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ===== Test controls overlay ===== */
 .test-controls {
   position: fixed;
