@@ -488,6 +488,30 @@ body, button {
   margin: 6px 0;
 }
 
+#modeMenu .control-box > .control-visual.map-preview {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.map-preview-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(90deg);
+  opacity: 0.5;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.map-preview-paper {
+  background-image: url("background paper 1.png");
+}
+
 #modeMenu .control-box > .control-value {
   font-size: 20px;
   color: #ee0000;

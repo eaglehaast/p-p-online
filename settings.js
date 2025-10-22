@@ -47,6 +47,7 @@ if(Number.isNaN(aimingAmplitude)) aimingAmplitude = 10 / 4;
 let addAA = getStoredItem('settings.addAA') === 'true';
 let sharpEdges = getStoredItem('settings.sharpEdges') === 'true';
 let mapIndex = getIntSetting('settings.mapIndex', 0);
+if(mapIndex < 0 || mapIndex >= MAPS.length) mapIndex = 0;
 
 const flightRangeMinusBtn = document.getElementById('flightRangeMinus');
 const flightRangePlusBtn  = document.getElementById('flightRangePlus');
@@ -56,6 +57,7 @@ const addAAToggle = document.getElementById('addAAToggle');
 const sharpEdgesToggle = document.getElementById('sharpEdgesToggle');
 const backBtn = document.getElementById('backBtn');
 const mapSelect = document.getElementById('mapSelect');
+const mapPreview = document.getElementById('mapPreview');
 
 function updateFlightRangeDisplay(){
   const el = document.getElementById('flightRangeDisplay');
@@ -110,6 +112,12 @@ function saveSettings(){
   setStoredItem('settings.mapIndex', mapIndex);
 }
 
+function updateMapPreview(){
+  if(!mapPreview) return;
+  const map = MAPS[mapIndex];
+  mapPreview.style.backgroundImage = map ? `url('${map.file}')` : '';
+}
+
 function setupRepeatButton(btn, cb){
   if(!btn) return;
   let timeoutId = null;
@@ -154,10 +162,17 @@ if(mapSelect){
     mapSelect.appendChild(opt);
   });
   mapSelect.value = String(mapIndex);
+  updateMapPreview();
   mapSelect.addEventListener('change', e => {
-    mapIndex = parseInt(e.target.value);
+    const newIndex = parseInt(e.target.value, 10);
+    mapIndex = Number.isNaN(newIndex) ? 0 : newIndex;
+    updateMapPreview();
     saveSettings();
   });
+}
+
+if(!mapSelect){
+  updateMapPreview();
 }
 
 setupRepeatButton(flightRangeMinusBtn, () => {
