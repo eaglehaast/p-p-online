@@ -3284,7 +3284,10 @@ function handleAAForPlane(p, fp){
   if(isGameOver && winnerColor){
     gameCtx.font="48px 'Patrick Hand', cursive";
     gameCtx.fillStyle= colorFor(winnerColor);
-    const text= `${winnerColor.charAt(0).toUpperCase() + winnerColor.slice(1)} wins!`;
+    const winnerName= `${winnerColor.charAt(0).toUpperCase() + winnerColor.slice(1)}`;
+    const text= shouldShowEndScreen
+      ? `${winnerName} wins the game!`
+      : `${winnerName} wins the round!`;
     const w= gameCtx.measureText(text).width;
     gameCtx.fillText(text, (gameCanvas.width - w)/2, gameCanvas.height/2 - 80);
   }
