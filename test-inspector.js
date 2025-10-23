@@ -629,20 +629,24 @@
       }
     }
 
+    const handleCursorToggle = () => {
+      setInspectorActive(!state.active);
+    };
+
+    const handleRulerToggle = () => {
+      const enable = !state.rulerActive;
+      if(enable && !state.active){
+        setInspectorActive(true);
+      }
+      setRulerActive(enable);
+    };
+
     if(buttons.cursor){
-      buttons.cursor.addEventListener('click', () => {
-        setInspectorActive(!state.active);
-      });
+      buttons.cursor.addEventListener('click', handleCursorToggle);
     }
 
     if(buttons.ruler){
-      buttons.ruler.addEventListener('click', () => {
-        const enable = !state.rulerActive;
-        if(enable && !state.active){
-          setInspectorActive(true);
-        }
-        setRulerActive(enable);
-      });
+      buttons.ruler.addEventListener('click', handleRulerToggle);
     }
 
     updateSvgViewBox();
@@ -678,6 +682,12 @@
     return {
       destroy(){
         detachEvents();
+        if(buttons.cursor){
+          buttons.cursor.removeEventListener('click', handleCursorToggle);
+        }
+        if(buttons.ruler){
+          buttons.ruler.removeEventListener('click', handleRulerToggle);
+        }
       },
       setActive: setInspectorActive,
       setRuler: setRulerActive

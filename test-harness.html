@@ -155,6 +155,110 @@
       flex: 1 1 100%;
     }
 
+    #modeMenuMain[hidden],
+    #modeMenuAdvanced[hidden] {
+      display: none !important;
+    }
+
+    body.harness-advanced-open {
+      overflow: auto;
+    }
+
+    body.harness-advanced-open #gameContainer {
+      position: relative;
+      width: min(90vw, 560px);
+      max-width: 560px;
+      height: auto;
+      background-image: none;
+      background-color: transparent;
+    }
+
+    body.harness-advanced-open .harness-stage {
+      align-items: flex-start;
+      justify-content: flex-start;
+      padding-top: clamp(24px, 6vh, 48px);
+    }
+
+    body.harness-advanced-open #modeMenu {
+      position: relative;
+      top: auto;
+      left: auto;
+      transform: none;
+      width: 100%;
+      max-width: 560px;
+      margin: clamp(20px, 5vw, 40px) auto;
+      padding: clamp(18px, 3vw, 24px);
+      border-radius: 18px;
+      border: 1px solid rgba(94, 154, 255, 0.35);
+      background: rgba(12, 18, 32, 0.92);
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+      justify-content: flex-start;
+      align-items: stretch;
+      overflow: visible;
+    }
+
+    body.harness-advanced-open #modeMenu .game-title {
+      color: #9ab4ff;
+      text-shadow: none;
+      margin-bottom: 22px;
+    }
+
+    #modeMenuAdvanced {
+      display: flex;
+      flex-direction: column;
+      gap: clamp(18px, 3vw, 28px);
+      width: 100%;
+    }
+
+    #modeMenuAdvanced .control-group-row {
+      gap: clamp(14px, 2.5vw, 20px);
+    }
+
+    #modeMenuAdvanced .control-box {
+      background: linear-gradient(145deg, rgba(234, 239, 241, 0.92), rgba(214, 217, 218, 0.92));
+      border-color: rgba(248, 1, 1, 0.65);
+    }
+
+    body.harness-advanced-open #modeMenu .mode-btn {
+      width: 100%;
+    }
+
+    body.harness-advanced-open #modeMenu .control-buttons {
+      width: 100%;
+    }
+
+    body.harness-advanced-open #modeMenu .control-box select {
+      width: 100%;
+    }
+
+    body.harness-advanced-open #modeMenu .aa-toggle {
+      width: 100%;
+    }
+
+    body.harness-advanced-open #modeMenu .aa-toggle .toggle-label {
+      width: 100%;
+      justify-content: space-between;
+      color: #1b243d;
+      background: rgba(255, 255, 255, 0.7);
+    }
+
+    body.harness-advanced-open .score-counter,
+    body.harness-advanced-open #mantisIndicator,
+    body.harness-advanced-open #goatIndicator,
+    body.harness-advanced-open .game-wrap,
+    body.harness-advanced-open #overlayContainer,
+    body.harness-advanced-open #endGameButtons {
+      display: none !important;
+    }
+
+    body.harness-advanced-open #modeMenu {
+      pointer-events: auto;
+    }
+
+    body.harness-advanced-open #modeMenuAdvanced {
+      position: relative;
+    }
+
     .harness-panel input,
     .harness-panel select {
       width: 100%;
@@ -363,20 +467,134 @@
       <div id="fxLayer"></div>
     </div>
 
-    <div id="modeMenu">
-      <h1 class="game-title">Paper Wings!</h1>
+    <div id="modeMenu" data-inspector-name="Меню">
+      <div id="modeMenuMain">
+        <h1 class="game-title">Paper Wings!</h1>
 
-      <div class="mode-options">
-        <button id="hotSeatBtn" class="mode-btn">Hot Seat</button>
-        <button id="computerBtn" class="mode-btn">Computer</button>
-        <button id="onlineBtn" class="mode-btn" disabled>Online</button>
+        <div class="mode-options">
+          <button id="hotSeatBtn" class="mode-btn">Hot Seat</button>
+          <button id="computerBtn" class="mode-btn">Computer</button>
+          <button id="onlineBtn" class="mode-btn" disabled>Online</button>
+        </div>
+
+        <button id="playBtn" class="disabled" disabled>Play</button>
+
+        <div class="rules-options">
+          <button id="classicRulesBtn" class="rules-btn selected">Classic Rules</button>
+          <button id="advancedSettingsBtn" class="rules-btn">Advanced Settings</button>
+        </div>
       </div>
 
-      <button id="playBtn" class="disabled" disabled>Play</button>
+      <div id="modeMenuAdvanced" hidden aria-hidden="true" data-inspector-name="Расширенные настройки">
+        <h1 class="game-title">Advanced Settings</h1>
 
-      <div class="rules-options">
-        <button id="classicRulesBtn" class="rules-btn selected">Classic Rules</button>
-        <button id="advancedSettingsBtn" class="rules-btn">Advanced Settings</button>
+        <div class="control-group-row">
+          <div class="control-pair-row">
+            <div class="control-box">
+              <div class="control-label">Flight Range</div>
+              <div id="flightRangeIndicator" class="control-visual">
+                <div class="jet">
+                  <div class="wing-trail top"></div>
+                  <div class="wing-trail bottom"></div>
+                  <svg class="jet-plane" viewBox="0 0 38 20">
+                    <polygon points="38,10 8,20 8,15 0,10 8,5 8,0"></polygon>
+                  </svg>
+                  <svg id="menuFlame" class="jet-flame" viewBox="0 0 40 20" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+                    <defs>
+                      <radialGradient id="menuFlameGradient" cx="100%" cy="50%" r="60%">
+                        <stop offset="0%" stop-color="#ff8c00"></stop>
+                        <stop offset="100%" stop-color="#ff0000"></stop>
+                      </radialGradient>
+                    </defs>
+                    <path d="M40 10 C38 2 30 0 22 0 C14 0 6 8 8 14 C10 18 18 20 26 18 C34 16 38 14 40 10 Z" fill="url(#menuFlameGradient)"></path>
+                  </svg>
+                </div>
+                <div id="flightRangeDisplay" class="range-display">15</div>
+              </div>
+              <div class="control-buttons">
+                <button
+                  id="flightRangeMinus"
+                  class="control-btn control-btn--minus"
+                  type="button"
+                  aria-label="Decrease flight range"
+                >
+                  <span class="visually-hidden">Decrease flight range</span>
+                </button>
+                <button
+                  id="flightRangePlus"
+                  class="control-btn control-btn--plus"
+                  type="button"
+                  aria-label="Increase flight range"
+                >
+                  <span class="visually-hidden">Increase flight range</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="control-box">
+              <div class="control-label">Aiming Amplitude</div>
+              <div id="amplitudeIndicator" class="control-visual">
+                <div class="crosshair">
+                  <div class="inner-circle"></div>
+                  <div class="center-dot"></div>
+                  <div class="horizontal"></div>
+                  <div class="vertical"></div>
+                </div>
+              </div>
+              <div class="control-value"><span id="amplitudeAngleDisplay">40°</span></div>
+              <div class="control-buttons">
+                <button
+                  id="amplitudeMinus"
+                  class="control-btn control-btn--minus"
+                  type="button"
+                  aria-label="Decrease aiming amplitude"
+                >
+                  <span class="visually-hidden">Decrease aiming amplitude</span>
+                </button>
+                <button
+                  id="amplitudePlus"
+                  class="control-btn control-btn--plus"
+                  type="button"
+                  aria-label="Increase aiming amplitude"
+                >
+                  <span class="visually-hidden">Increase aiming amplitude</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="control-box">
+            <div class="control-label">Map</div>
+            <div class="control-visual map-preview">
+              <div class="map-preview-layer map-preview-paper"></div>
+              <div class="map-preview-layer map-preview-image" id="mapPreview"></div>
+            </div>
+            <div class="control-value"></div>
+            <div class="control-buttons">
+              <select id="mapSelect"></select>
+            </div>
+          </div>
+
+          <div class="control-box" id="additionalSettings">
+            <div class="control-label">Additional Settings</div>
+            <div class="aa-toggle">
+              <input type="checkbox" id="addAAToggle" class="toggle-input visually-hidden" />
+              <label for="addAAToggle" class="toggle-label">
+                <span class="toggle-visual" aria-hidden="true"></span>
+                <span class="toggle-text">Add Anti-Aircraft</span>
+              </label>
+            </div>
+            <div class="aa-toggle">
+              <input type="checkbox" id="sharpEdgesToggle" class="toggle-input visually-hidden" />
+              <label for="sharpEdgesToggle" class="toggle-label">
+                <span class="toggle-visual" aria-hidden="true"></span>
+                <span class="toggle-text">Sharp Edges</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <button id="backBtn" class="mode-btn">Back</button>
       </div>
     </div>
 
@@ -476,6 +694,7 @@
   </aside>
 
   <script src="script.js"></script>
+  <script src="settings.js"></script>
   <script src="test-inspector.js"></script>
   <script>
     (function(){
@@ -498,44 +717,96 @@
       const HARNESS_FIELD_WIDTH = 460;
       const HARNESS_FIELD_HEIGHT = 800;
 
-      window.paperWingsTestInspector?.init({
-        container: gameContainerEl,
-        overlay: document.getElementById('harnessInspectorOverlay'),
-        svg: document.getElementById('inspectorSvg'),
-        tooltip: document.getElementById('inspectorTooltip'),
-        tooltipContent: document.getElementById('inspectorTooltipContent'),
-        cursorValue: document.getElementById('inspectorCursorText'),
-        targetValue: document.getElementById('inspectorTargetText'),
-        rulerValue: document.getElementById('inspectorRulerText'),
-        crosshairH: document.getElementById('inspectorCrosshairH'),
-        crosshairV: document.getElementById('inspectorCrosshairV'),
-        rulerLine: document.getElementById('inspectorRulerLine'),
-        pointA: document.getElementById('inspectorPointA'),
-        pointB: document.getElementById('inspectorPointB'),
-        buttons: {
-          cursor: document.getElementById('toggleInspectorBtn'),
-          ruler: document.getElementById('toggleRulerBtn')
-        },
-        panel: {
-          cursor: document.getElementById('inspectorCursorPanel'),
-          target: document.getElementById('inspectorTargetPanel'),
-          pointA: document.getElementById('inspectorPointAPanel'),
-          pointB: document.getElementById('inspectorPointBPanel'),
-          distance: document.getElementById('inspectorDistancePanel')
-        },
-        fieldWidth: HARNESS_FIELD_WIDTH,
-        fieldHeight: HARNESS_FIELD_HEIGHT,
-        containerMode: 'field',
-        containerLabel: 'Поле',
-        extraRoots: [
-          { element: document.getElementById('modeMenu'), mode: 'pixel', label: 'Меню' }
-        ],
-        storageKey: 'paperWingsInspectorState'
+      const overlayElement = document.getElementById('harnessInspectorOverlay');
+      const overlaySvg = document.getElementById('inspectorSvg');
+      const overlayTooltip = document.getElementById('inspectorTooltip');
+      const overlayTooltipContent = document.getElementById('inspectorTooltipContent');
+      const inspectorButtons = {
+        cursor: document.getElementById('toggleInspectorBtn'),
+        ruler: document.getElementById('toggleRulerBtn')
+      };
+      const inspectorPanel = {
+        cursor: document.getElementById('inspectorCursorPanel'),
+        target: document.getElementById('inspectorTargetPanel'),
+        pointA: document.getElementById('inspectorPointAPanel'),
+        pointB: document.getElementById('inspectorPointBPanel'),
+        distance: document.getElementById('inspectorDistancePanel')
+      };
+      let inspectorInstance = null;
+
+      function attachHarnessInspector(isAdvanced){
+        const init = window.paperWingsTestInspector?.init;
+        if(typeof init !== 'function'){
+          return;
+        }
+        inspectorInstance?.destroy?.();
+        const modeMenuEl = document.getElementById('modeMenu');
+        const advancedRoot = document.getElementById('modeMenuAdvanced');
+        const baseOptions = {
+          overlay: overlayElement,
+          svg: overlaySvg,
+          tooltip: overlayTooltip,
+          tooltipContent: overlayTooltipContent,
+          cursorValue: document.getElementById('inspectorCursorText'),
+          targetValue: document.getElementById('inspectorTargetText'),
+          rulerValue: document.getElementById('inspectorRulerText'),
+          crosshairH: document.getElementById('inspectorCrosshairH'),
+          crosshairV: document.getElementById('inspectorCrosshairV'),
+          rulerLine: document.getElementById('inspectorRulerLine'),
+          pointA: document.getElementById('inspectorPointA'),
+          pointB: document.getElementById('inspectorPointB'),
+          buttons: inspectorButtons,
+          panel: inspectorPanel,
+          storageKey: 'paperWingsInspectorState'
+        };
+
+        if(isAdvanced && advancedRoot){
+          inspectorInstance = init({
+            ...baseOptions,
+            container: advancedRoot,
+            containerMode: 'pixel',
+            containerLabel: 'Расширенные настройки',
+            extraRoots: [
+              {
+                element: gameContainerEl,
+                mode: 'field',
+                label: 'Поле',
+                fieldWidth: HARNESS_FIELD_WIDTH,
+                fieldHeight: HARNESS_FIELD_HEIGHT
+              }
+            ]
+          });
+        } else if(gameContainerEl){
+          inspectorInstance = init({
+            ...baseOptions,
+            container: gameContainerEl,
+            fieldWidth: HARNESS_FIELD_WIDTH,
+            fieldHeight: HARNESS_FIELD_HEIGHT,
+            containerMode: 'field',
+            containerLabel: 'Поле',
+            extraRoots: [
+              { element: modeMenuEl, mode: 'pixel', label: 'Меню' }
+            ]
+          });
+        }
+      }
+
+      const initialInspectorMode = window.paperWingsHarness?.isAdvancedVisible?.() || false;
+      attachHarnessInspector(initialInspectorMode);
+
+      window.addEventListener('paperWingsHarnessViewChange', event => {
+        const advanced = !!event?.detail?.advanced;
+        attachHarnessInspector(advanced);
+        queueLayout();
       });
 
       function adjustHarnessLayout(){
         const game = gameContainerEl;
         if(!game) return;
+        if(document.body.classList.contains('harness-advanced-open')){
+          game.style.left = '';
+          return;
+        }
         const leftPanel = document.querySelector('.harness-panel--left');
         const rightPanel = document.querySelector('.harness-panel--right');
         const leftWidth = leftPanel ? leftPanel.getBoundingClientRect().width + 24 : 24;

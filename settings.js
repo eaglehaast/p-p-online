@@ -209,9 +209,13 @@ setupRepeatButton(amplitudePlusBtn, () => {
   }
 });
 if(backBtn){
-  const destination = isTestHarnessPage ? 'test-harness.html' : 'index.html';
-  backBtn.addEventListener('click', () => {
-    window.location.href = destination;
+  backBtn.addEventListener('click', event => {
+    if(isTestHarnessPage && window.paperWingsHarness?.showMainView){
+      event.preventDefault();
+      window.paperWingsHarness.showMainView({ updateHash: true, focus: 'advancedButton' });
+      return;
+    }
+    window.location.href = 'index.html';
   });
 }
 
