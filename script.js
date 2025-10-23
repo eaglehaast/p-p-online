@@ -39,7 +39,6 @@ const testApplyBtn = document.getElementById("testApplyBtn");
 const testRestartBtn = document.getElementById("testRestartBtn");
 
 const IS_TEST_HARNESS = document.body.classList.contains('test-harness');
-const ADVANCED_SETTINGS_URL = IS_TEST_HARNESS ? 'settings-test.html' : 'settings.html';
 
 const SCORE_COUNTER_ELEMENTS = {
   green: greenScoreCounter,
@@ -854,6 +853,110 @@ const playBtn     = document.getElementById("playBtn");
 
 const classicRulesBtn     = document.getElementById("classicRulesBtn");
 const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
+
+if(typeof window !== 'undefined'){
+  window.paperWingsHarness = window.paperWingsHarness || {};
+}
+
+if(IS_TEST_HARNESS){
+  const HARNESS_ADVANCED_HASH = '#advanced-settings';
+  const harnessModeMenu = document.getElementById('modeMenu');
+  const harnessModeMenuMain = document.getElementById('modeMenuMain');
+  const harnessModeMenuAdvanced = document.getElementById('modeMenuAdvanced');
+  const harnessGameContainer = document.getElementById('gameContainer');
+  const harnessOverlay = document.getElementById('harnessInspectorOverlay');
+
+  const harnessState = {
+    advancedVisible: !harnessModeMenuAdvanced?.hidden,
+    overlayDefaultParent: harnessOverlay?.parentElement || harnessGameContainer || null
+  };
+
+  function setHarnessSectionVisibility(section, visible){
+    if(!section) return;
+    section.hidden = !visible;
+    section.setAttribute('aria-hidden', visible ? 'false' : 'true');
+  }
+
+  function moveHarnessOverlay(target){
+    if(!harnessOverlay || !target) return;
+    if(harnessOverlay.parentElement !== target){
+      target.appendChild(harnessOverlay);
+    }
+  }
+
+  function updateHarnessAdvancedVisibility(visible, options = {}){
+    const { updateHash = true, fromHashChange = false } = options;
+    const nextVisible = !!visible;
+    harnessState.advancedVisible = nextVisible;
+
+    setHarnessSectionVisibility(harnessModeMenuMain, !nextVisible);
+    setHarnessSectionVisibility(harnessModeMenuAdvanced, nextVisible);
+
+    document.body.classList.toggle('harness-advanced-open', nextVisible);
+
+    if(nextVisible){
+      try {
+        loadSettings();
+      } catch(err){
+        console.warn('[Harness] Unable to sync advanced settings.', err);
+      }
+      classicRulesBtn?.classList.remove('selected');
+      advancedSettingsBtn?.classList.add('selected');
+    }
+
+    const overlayTarget = nextVisible
+      ? (harnessModeMenuAdvanced || harnessModeMenu || harnessGameContainer)
+      : (harnessState.overlayDefaultParent || harnessGameContainer || harnessModeMenu);
+    if(overlayTarget){
+      moveHarnessOverlay(overlayTarget);
+    }
+
+    if(updateHash && !fromHashChange && typeof window.history?.pushState === 'function'){
+      const base = `${window.location.pathname}${window.location.search}`;
+      const targetHash = nextVisible ? HARNESS_ADVANCED_HASH : '';
+      const currentHash = window.location.hash || '';
+      if(currentHash !== targetHash){
+        const newUrl = targetHash ? `${base}${targetHash}` : base;
+        window.history.pushState(null, '', newUrl);
+      }
+    }
+
+    window.dispatchEvent(new CustomEvent('paperWingsHarnessViewChange', {
+      detail: { advanced: nextVisible }
+    }));
+  }
+
+  function applyHarnessHashState(){
+    const shouldShow = window.location.hash === HARNESS_ADVANCED_HASH;
+    updateHarnessAdvancedVisibility(shouldShow, { updateHash: false, fromHashChange: true });
+  }
+
+  window.addEventListener('hashchange', applyHarnessHashState);
+
+  window.paperWingsHarness.showAdvancedSettings = function(options = {}){
+    const { updateHash = true, focus = null } = options;
+    updateHarnessAdvancedVisibility(true, { updateHash });
+    if(focus === 'firstControl'){
+      harnessModeMenuAdvanced?.querySelector?.('button, select, input')?.focus?.();
+    }
+  };
+
+  window.paperWingsHarness.showMainView = function(options = {}){
+    const { updateHash = true, focus = null } = options;
+    updateHarnessAdvancedVisibility(false, { updateHash });
+    if(focus === 'advancedButton'){
+      advancedSettingsBtn?.focus?.();
+    } else if(focus === 'classicButton'){
+      classicRulesBtn?.focus?.();
+    }
+  };
+
+  window.paperWingsHarness.isAdvancedVisible = function(){
+    return !!harnessState.advancedVisible;
+  };
+
+  applyHarnessHashState();
+}
 
 const endGameDiv  = document.getElementById("endGameButtons");
 const yesBtn      = document.getElementById("yesButton");
@@ -1985,17 +2088,23 @@ if(classicRulesBtn){
     syncTestControls();
     advancedSettingsBtn?.classList.remove('selected');
     classicRulesBtn.classList.add('selected');
+    if(IS_TEST_HARNESS){
+      window.paperWingsHarness?.showMainView?.({ updateHash: true, focus: 'classicButton' });
+    }
   });
 }
 if(advancedSettingsBtn){
   advancedSettingsBtn.addEventListener('click', () => {
-    if(advancedSettingsBtn.classList.contains('selected')){
-      window.location.href = ADVANCED_SETTINGS_URL;
-    } else {
+    if(IS_TEST_HARNESS){
       loadSettings();
-      classicRulesBtn?.classList.remove('selected');
-      advancedSettingsBtn.classList.add('selected');
-      applyCurrentMap();
+      if(!advancedSettingsBtn.classList.contains('selected')){
+        classicRulesBtn?.classList.remove('selected');
+        advancedSettingsBtn.classList.add('selected');
+        applyCurrentMap();
+      }
+      window.paperWingsHarness?.showAdvancedSettings?.({ updateHash: true, focus: 'firstControl' });
+    } else {
+      window.location.href = 'settings.html';
     }
   });
 }
