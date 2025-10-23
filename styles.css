@@ -344,7 +344,7 @@ body, button {
   font-family: 'Patrick Hand', cursive;
   font-size: 28px;
   color: #e40e0e;
-  margin-bottom: 15px;
+  margin: 0 0 15px;
   text-shadow: 1px 1px #ffe4b5;
 }
 
@@ -449,74 +449,81 @@ body, button {
 #modeMenu .control-group-row {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-top: 10px;
+  gap: 14px;
+  margin-top: 12px;
 }
 
 #modeMenu .control-pair-row {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
+  flex-wrap: wrap;
 }
 
 #modeMenu .control-pair-row .control-box {
-  flex: 1 1 0;
+  flex: 1 1 calc(50% - 6px);
+  min-width: 0;
 }
 
 #modeMenu .control-box {
   background: linear-gradient(145deg, #eaeff1, #d6d9da);
   border: 2px solid #ff0000c8;
   border-radius: 12px;
-  padding: 10px;
+  padding: 10px 12px;
   width: 100%;
-  display: grid;
-  grid-template-rows: auto 60px auto auto;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  min-height: 0;
   box-shadow: 0 4px 8px rgba(0,0,0,0.1);
   box-sizing: border-box;
 }
 
 #modeMenu #additionalSettings {
-  grid-template-rows: auto auto auto;
-  margin-top: 10px;
+  align-items: stretch;
 }
 
 #modeMenu #additionalSettings .aa-toggle {
-  margin: 8px 0;
+  margin: 0;
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 #modeMenu #additionalSettings .toggle-label {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
-  font-size: 16px;
+  gap: 10px;
+  font-size: 14px;
   color: #333;
   cursor: pointer;
   font-weight: 500;
-  padding: 6px 10px;
-  border-radius: 12px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  width: 100%;
   transition: transform 0.2s, box-shadow 0.2s;
+  text-align: left;
 }
 
 #modeMenu #additionalSettings .toggle-visual {
-  width: 118px;
-  height: 86px;
+  width: 88px;
+  height: 62px;
   background-image: url("interface/tumbler off.png");
   background-repeat: no-repeat;
   background-position: center;
   background-size: contain;
   display: inline-block;
   transition: transform 0.2s;
+  flex-shrink: 0;
 }
 
 #modeMenu #additionalSettings .toggle-text {
   text-transform: none;
+  font-size: 14px;
 }
 
 #modeMenu #additionalSettings .toggle-label:hover .toggle-visual {
-  transform: translateY(-3px);
+  transform: translateY(-2px);
 }
 
 #modeMenu #additionalSettings .toggle-input:checked + .toggle-label .toggle-visual {
@@ -528,27 +535,29 @@ body, button {
 }
 
 #modeMenu .control-box > .control-label {
-  font-size: 16px;
-  font-weight: bold;
-  margin-bottom: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
   color: #555;
+  text-align: center;
 }
 
 #modeMenu .control-box > .control-visual {
-  height: 60px;
+  min-height: 56px;
   width: 100%;
   display: flex;
   justify-content: center;
   align-items: center;
-  margin: 6px 0;
+  margin: 0;
 }
 
 #modeMenu .control-box > .control-visual.map-preview {
   position: relative;
   overflow: hidden;
   width: 100%;
-  height: 100%;
+  height: 132px;
   display: block;
+  border-radius: 10px;
 }
 
 .map-preview-layer {
@@ -568,26 +577,30 @@ body, button {
 }
 
 #modeMenu .control-box > .control-value {
-  font-size: 20px;
+  font-size: 18px;
   color: #ee0000;
   font-family: 'Patrick Hand', cursive;
-  margin-bottom: 8px;
+  margin: 0;
   text-align: center;
 }
 
 #modeMenu .control-box > .control-buttons {
   display: flex;
-  gap: 10px;
-  margin-top: 8px;
+  gap: 8px;
+  margin: 0;
   justify-content: center;
+  width: 100%;
+  flex-wrap: wrap;
 }
 
 #modeMenu .control-box select {
-  padding: 6px 10px;
+  padding: 6px 8px;
   border: 2px solid #ff0000c8;
   border-radius: 8px;
   background: #fff;
-  font-size: 16px;
+  font-size: 14px;
+  width: 100%;
+  flex: 1 1 100%;
 }
 
 /* Индикатор дальности — самолёт с огнём */
@@ -709,14 +722,14 @@ body, button {
 
 /* Control buttons */
 #modeMenu .control-btn {
-  width: 72px;
-  height: 66px;
+  width: 56px;
+  height: 48px;
   border: none;
   padding: 0;
   background-color: transparent;
   background-position: center;
   background-repeat: no-repeat;
-  background-size: contain;
+  background-size: 85% 85%;
   cursor: pointer;
   transition: transform 0.2s;
   display: inline-flex;
@@ -745,13 +758,13 @@ body, button {
 }
 
 #modeMenu .control-btn:hover {
-  transform: translateY(-3px);
+  transform: translateY(-2px);
 }
 
 #modeMenu .control-btn:focus-visible {
   outline: 2px solid #ff0000c8;
-  outline-offset: 4px;
-  transform: translateY(-2px);
+  outline-offset: 3px;
+  transform: translateY(-1px);
 }
 
 #modeMenu .control-btn:disabled {
