@@ -15,23 +15,27 @@
       <div class="control-box">
         <div class="control-label visually-hidden">Flight Range</div>
         <div id="flightRangeIndicator" class="control-visual">
-          <div class="jet">
-            <div class="wing-trail top"></div>
-            <div class="wing-trail bottom"></div>
-            <svg class="jet-plane" viewBox="0 0 38 20">
-              <polygon points="38,10 8,20 8,15 0,10 8,5 8,0" />
-            </svg>
-            <svg id="menuFlame" class="jet-flame" viewBox="0 0 40 20" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
-              <defs>
-                <radialGradient id="menuFlameGradient" cx="100%" cy="50%" r="60%">
-                  <stop offset="0%" stop-color="#ff8c00" />
-                  <stop offset="100%" stop-color="#ff0000" />
-                </radialGradient>
-              </defs>
-              <path d="M40 10 C38 2 30 0 22 0 C14 0 6 8 8 14 C10 18 18 20 26 18 C34 16 38 14 40 10 Z" fill="url(#menuFlameGradient)" />
-            </svg>
+          <div id="frame_range_1_visual" aria-hidden="true">
+            <div class="jet">
+              <div class="wing-trail top"></div>
+              <div class="wing-trail bottom"></div>
+              <svg class="jet-plane" viewBox="0 0 38 20">
+                <polygon points="38,10 8,20 8,15 0,10 8,5 8,0" />
+              </svg>
+              <svg id="menuFlame" class="jet-flame" viewBox="0 0 40 20" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+                <defs>
+                  <radialGradient id="menuFlameGradient" cx="100%" cy="50%" r="60%">
+                    <stop offset="0%" stop-color="#ff8c00" />
+                    <stop offset="100%" stop-color="#ff0000" />
+                  </radialGradient>
+                </defs>
+                <path d="M40 10 C38 2 30 0 22 0 C14 0 6 8 8 14 C10 18 18 20 26 18 C34 16 38 14 40 10 Z" fill="url(#menuFlameGradient)" />
+              </svg>
+            </div>
           </div>
-          <div id="flightRangeDisplay" class="range-display">15</div>
+          <div id="frame_range_2_counter" class="range-display" role="status" aria-live="polite">
+            <span id="flightRangeDisplay">15</span>
+          </div>
         </div>
         <div class="control-buttons control-buttons--range">
           <button
@@ -58,14 +62,14 @@
       <div class="control-box">
         <div class="control-label visually-hidden">Aiming Amplitude</div>
         <div id="amplitudeIndicator" class="control-visual">
-          <div class="crosshair">
-            <div class="inner-circle"></div>
-            <div class="center-dot"></div>
-            <div class="horizontal"></div>
-            <div class="vertical"></div>
+          <div id="frame_accuracy_1_visual" aria-hidden="true">
+            <div class="pendulum">
+              <div class="pendulum-rod"></div>
+              <div class="pendulum-bob"></div>
+            </div>
           </div>
         </div>
-        <div class="control-value"><span id="amplitudeAngleDisplay">40°</span></div>
+        <div id="frame_accuracy_2_counter" class="control-value"><span id="amplitudeAngleDisplay">40°</span></div>
         <div class="control-buttons control-buttons--accuracy">
           <button
             id="amplitudeMinus"
@@ -90,7 +94,7 @@
     <div class="control-frame control-frame--field">
       <div class="control-box">
         <div class="control-label visually-hidden">Map</div>
-        <div class="control-visual map-preview">
+        <div class="control-visual map-preview" id="frame_field_1_visual">
           <div class="map-preview-layer map-preview-paper"></div>
           <div class="map-preview-layer map-preview-image" id="mapPreview"></div>
         </div>
