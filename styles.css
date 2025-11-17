@@ -329,7 +329,7 @@ body, button {
     box-shadow: none !important;
     border: none !important;
     z-index: 1000;
-    width: min(90vw, 300px);
+    width: clamp(340px, 90vw, 820px);
     height: auto;
     max-height: 90vh;
     overflow-y: auto;
@@ -453,19 +453,19 @@ body, button {
   margin-top: 12px;
 }
 
-#modeMenu .control-pair-row {
-  display: flex;
-  gap: 12px;
-  width: 100%;
-  flex-wrap: wrap;
-}
+  #modeMenu .control-pair-row {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+    flex-wrap: wrap;
+  }
 
-#modeMenu .control-pair-row .control-box {
-  flex: 1 1 calc(50% - 6px);
-  min-width: 0;
-}
+  #modeMenu .control-pair-row .control-box {
+    flex: 1 1 calc(50% - 6px);
+    min-width: 0;
+  }
 
-#modeMenu .control-box {
+  #modeMenu .control-box {
   background: linear-gradient(145deg, #eaeff1, #d6d9da);
   border: 2px solid #ff0000c8;
   border-radius: 12px;
@@ -476,9 +476,23 @@ body, button {
   align-items: stretch;
   gap: 8px;
   min-height: 0;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-  box-sizing: border-box;
-}
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    box-sizing: border-box;
+  }
+
+  @media (max-width: 700px) {
+    #modeMenu {
+      width: min(94vw, 560px);
+    }
+
+    #modeMenu .control-pair-row {
+      flex-direction: column;
+    }
+
+    #modeMenu .control-pair-row .control-box {
+      flex: 1 1 100%;
+    }
+  }
 
 #modeMenu #additionalSettings {
   align-items: stretch;
