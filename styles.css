@@ -308,8 +308,7 @@ body, button {
   }
 
   body.settings-page #modeMenu .control-buttons--range,
-  body.settings-page #modeMenu .control-buttons--accuracy,
-  body.settings-page #modeMenu .control-buttons--field {
+  body.settings-page #modeMenu .control-buttons--accuracy {
     position: absolute;
     inset: 0;
   }
