@@ -187,12 +187,12 @@
 
     <main class="settings-test__stage">
       <div id="modeMenu">
-        <h1 class="game-title">Advanced Settings</h1>
+    <h1 class="game-title"><span class="visually-hidden">Advanced Settings</span></h1>
         <div class="control-group-row">
           <div class="control-pair-row">
             <!-- Flight Range Control -->
             <div class="control-box">
-              <div class="control-label">Flight Range</div>
+              <div class="control-label visually-hidden">Flight Range</div>
               <div id="flightRangeIndicator" class="control-visual">
                 <div class="jet">
                   <div class="wing-trail top"></div>
@@ -234,7 +234,7 @@
 
             <!-- Aiming Amplitude Control -->
             <div class="control-box">
-              <div class="control-label">Aiming Amplitude</div>
+              <div class="control-label visually-hidden">Aiming Amplitude</div>
               <div id="amplitudeIndicator" class="control-visual">
                 <div class="crosshair">
                   <div class="inner-circle"></div>
@@ -267,7 +267,7 @@
 
           <!-- Map Selection -->
           <div class="control-box">
-            <div class="control-label">Map</div>
+            <div class="control-label visually-hidden">Map</div>
             <div class="control-visual map-preview">
               <div class="map-preview-layer map-preview-paper"></div>
               <div class="map-preview-layer map-preview-image" id="mapPreview"></div>
@@ -280,19 +280,19 @@
 
           <!-- Additional Settings -->
           <div class="control-box" id="additionalSettings">
-            <div class="control-label">Additional Settings</div>
+            <div class="control-label visually-hidden">Additional Settings</div>
             <div class="aa-toggle">
               <input type="checkbox" id="addAAToggle" class="toggle-input visually-hidden" />
               <label for="addAAToggle" class="toggle-label">
                 <span class="toggle-visual" aria-hidden="true"></span>
-                <span class="toggle-text">Add Anti-Aircraft</span>
+                <span class="toggle-text visually-hidden">Add Anti-Aircraft</span>
               </label>
             </div>
             <div class="aa-toggle">
               <input type="checkbox" id="sharpEdgesToggle" class="toggle-input visually-hidden" />
               <label for="sharpEdgesToggle" class="toggle-label">
                 <span class="toggle-visual" aria-hidden="true"></span>
-                <span class="toggle-text">Sharp Edges</span>
+                <span class="toggle-text visually-hidden">Sharp Edges</span>
               </label>
             </div>
           </div>

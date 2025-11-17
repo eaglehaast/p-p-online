@@ -381,7 +381,7 @@
         </button>
         <div class="test-controls__body" id="testControlsBody">
           <div class="test-controls__field">
-            <label for="inGameMapSelect" class="test-controls__label">Map</label>
+            <label for="inGameMapSelect" class="test-controls__label visually-hidden">Map</label>
             <select id="inGameMapSelect" class="test-controls__select"></select>
           </div>
           <div class="test-controls__field">
@@ -389,11 +389,11 @@
             <select id="inGameFlameStyle" class="test-controls__select"></select>
           </div>
           <div class="test-controls__field">
-            <label for="testFlightRange" class="test-controls__label">Flight Range (cells)</label>
+            <label for="testFlightRange" class="test-controls__label visually-hidden">Flight Range (cells)</label>
             <input id="testFlightRange" class="test-controls__input" type="number" min="5" max="30" step="1" inputmode="numeric" />
           </div>
           <div class="test-controls__field">
-            <label for="testAmplitude" class="test-controls__label">Aiming Amplitude (°)</label>
+            <label for="testAmplitude" class="test-controls__label visually-hidden">Aiming Amplitude (°)</label>
             <input id="testAmplitude" class="test-controls__input" type="number" min="0" max="120" step="1" inputmode="decimal" />
           </div>
           <label class="test-controls__checkbox">
@@ -486,12 +486,12 @@
       </div>
 
       <div id="modeMenuAdvanced" hidden aria-hidden="true" data-inspector-name="Расширенные настройки">
-        <h1 class="game-title">Advanced Settings</h1>
+        <h1 class="game-title"><span class="visually-hidden">Advanced Settings</span></h1>
 
         <div class="control-group-row">
           <div class="control-pair-row">
             <div class="control-box">
-              <div class="control-label">Flight Range</div>
+              <div class="control-label visually-hidden">Flight Range</div>
               <div id="flightRangeIndicator" class="control-visual">
                 <div class="jet">
                   <div class="wing-trail top"></div>
@@ -532,7 +532,7 @@
             </div>
 
             <div class="control-box">
-              <div class="control-label">Aiming Amplitude</div>
+              <div class="control-label visually-hidden">Aiming Amplitude</div>
               <div id="amplitudeIndicator" class="control-visual">
                 <div class="crosshair">
                   <div class="inner-circle"></div>
@@ -564,7 +564,7 @@
           </div>
 
           <div class="control-box">
-            <div class="control-label">Map</div>
+            <div class="control-label visually-hidden">Map</div>
             <div class="control-visual map-preview">
               <div class="map-preview-layer map-preview-paper"></div>
               <div class="map-preview-layer map-preview-image" id="mapPreview"></div>
@@ -576,19 +576,19 @@
           </div>
 
           <div class="control-box" id="additionalSettings">
-            <div class="control-label">Additional Settings</div>
+            <div class="control-label visually-hidden">Additional Settings</div>
             <div class="aa-toggle">
               <input type="checkbox" id="addAAToggle" class="toggle-input visually-hidden" />
               <label for="addAAToggle" class="toggle-label">
                 <span class="toggle-visual" aria-hidden="true"></span>
-                <span class="toggle-text">Add Anti-Aircraft</span>
+                <span class="toggle-text visually-hidden">Add Anti-Aircraft</span>
               </label>
             </div>
             <div class="aa-toggle">
               <input type="checkbox" id="sharpEdgesToggle" class="toggle-input visually-hidden" />
               <label for="sharpEdgesToggle" class="toggle-label">
                 <span class="toggle-visual" aria-hidden="true"></span>
-                <span class="toggle-text">Sharp Edges</span>
+                <span class="toggle-text visually-hidden">Sharp Edges</span>
               </label>
             </div>
           </div>
