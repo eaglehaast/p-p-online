@@ -197,10 +197,10 @@ body, button {
   }
 
   body.settings-page {
-    background-image: url("background behind the canvas.png"), url("background paper 1.png");
-    background-size: 460px 800px, 460px 800px;
+    background-image: url("ui_controlpanel/cp_background.png");
+    background-size: 460px 800px;
     background-repeat: no-repeat;
-    background-position: center top, center top;
+    background-position: center top;
   }
 
 /* Игровое поле */
