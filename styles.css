@@ -307,12 +307,20 @@ body, button {
     width: 100%;
   }
 
+  body.settings-page #modeMenu .control-buttons--range,
+  body.settings-page #modeMenu .control-buttons--accuracy,
+  body.settings-page #modeMenu .control-buttons--field {
+    position: absolute;
+    inset: 0;
+  }
+
   #modeMenu .map-selector {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 10px;
     width: 100%;
+    height: 100%;
   }
 
   #modeMenu .map-selector__display {
@@ -329,20 +337,13 @@ body, button {
   }
 
   #modeMenu .control-btn--map {
-    width: 44px;
-    height: 44px;
-    background-image: none;
-    background-color: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.35);
-    border-radius: 10px;
-    color: #fefefe;
-    font-size: 20px;
-    font-weight: 700;
-    line-height: 1;
+    background-color: transparent;
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    background-position: center;
   }
 
-  #modeMenu .control-btn--map-prev::after { content: '‹'; }
-  #modeMenu .control-btn--map-next::after { content: '›'; }
+  #modeMenu .control-btn--map::after { content: none; }
 
   body.settings-page #modeMenu #instance_field_left,
   body.settings-page #modeMenu #frame_field_2_counter,
@@ -942,24 +943,57 @@ body, button {
   justify-content: center;
 }
 
+body.settings-page #modeMenu .control-btn--cp {
+  position: absolute;
+  width: 30px;
+  height: 35px;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  background-position: center;
+  transition: transform 0.15s, filter 0.15s;
+}
+
+body.settings-page #modeMenu #flightRangeMinus,
+body.settings-page #modeMenu #amplitudeMinus {
+  left: 22px;
+  top: 167px;
+}
+
+body.settings-page #modeMenu #flightRangePlus,
+body.settings-page #modeMenu #amplitudePlus {
+  left: 126px;
+  top: 167px;
+}
+
 #modeMenu .control-btn--minus {
-  background-image: url("interface/button -.png");
+  background-image: url("ui_controlpanel/cp_button_left.png");
 }
 
 #modeMenu .control-btn--plus {
-  background-image: url("interface/button +.png");
+  background-image: url("ui_controlpanel/cp_button_right.png");
 }
 
 #modeMenu .control-btn--minus:hover,
 #modeMenu .control-btn--minus:focus-visible,
 #modeMenu .control-btn--minus:active {
-  background-image: url("interface/button - active.png");
+  background-image: url("ui_controlpanel/cp_button_left.png");
 }
 
 #modeMenu .control-btn--plus:hover,
 #modeMenu .control-btn--plus:focus-visible,
 #modeMenu .control-btn--plus:active {
-  background-image: url("interface/button + active.png");
+  background-image: url("ui_controlpanel/cp_button_right.png");
+}
+
+body.settings-page #modeMenu .control-btn--cp:hover,
+body.settings-page #modeMenu .control-btn--cp:focus-visible {
+  transform: translateY(-2px);
+  filter: brightness(1.08);
+}
+
+body.settings-page #modeMenu .control-btn--cp:active {
+  transform: translateY(0);
+  filter: brightness(0.92);
 }
 
 #modeMenu .control-btn:hover {
