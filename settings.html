@@ -96,7 +96,30 @@
         </div>
         <div class="control-value"></div>
         <div class="control-buttons">
-          <select id="mapSelect"></select>
+          <div class="map-selector" role="group" aria-label="Select map">
+            <button
+              id="instance_field_left"
+              class="control-btn control-btn--map control-btn--map-prev"
+              type="button"
+              aria-label="Previous map"
+            >
+              <span class="visually-hidden">Previous map</span>
+            </button>
+            <div
+              id="frame_field_2_counter"
+              class="map-selector__display"
+              role="status"
+              aria-live="polite"
+            ></div>
+            <button
+              id="instance_field_right"
+              class="control-btn control-btn--map control-btn--map-next"
+              type="button"
+              aria-label="Next map"
+            >
+              <span class="visually-hidden">Next map</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

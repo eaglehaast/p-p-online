@@ -56,7 +56,9 @@ const amplitudePlusBtn    = document.getElementById('amplitudePlus');
 const addAAToggle = document.getElementById('addAAToggle');
 const sharpEdgesToggle = document.getElementById('sharpEdgesToggle');
 const backBtn = document.getElementById('backBtn');
-const mapSelect = document.getElementById('mapSelect');
+const mapPrevBtn = document.getElementById('instance_field_left');
+const mapNextBtn = document.getElementById('instance_field_right');
+const mapNameDisplay = document.getElementById('frame_field_2_counter');
 const mapPreview = document.getElementById('mapPreview');
 const isTestHarnessPage = document.body.classList.contains('test-harness');
 
@@ -119,6 +121,15 @@ function updateMapPreview(){
   mapPreview.style.backgroundImage = map ? `url('${map.file}')` : '';
 }
 
+function updateMapNameDisplay(){
+  if(!mapNameDisplay) return;
+  const map = MAPS[mapIndex];
+  mapNameDisplay.textContent = map ? map.name : '';
+  if(map){
+    mapNameDisplay.setAttribute('aria-label', `Selected map: ${map.name}`);
+  }
+}
+
 function setupRepeatButton(btn, cb){
   if(!btn) return;
   let timeoutId = null;
@@ -155,24 +166,21 @@ if(sharpEdgesToggle){
   });
 }
 
-if(mapSelect){
-  MAPS.forEach((m, idx) => {
-    const opt = document.createElement('option');
-    opt.value = idx;
-    opt.textContent = m.name;
-    mapSelect.appendChild(opt);
-  });
-  mapSelect.value = String(mapIndex);
+const hasMapButtons = mapPrevBtn && mapNextBtn;
+if(hasMapButtons){
   updateMapPreview();
-  mapSelect.addEventListener('change', e => {
-    const newIndex = parseInt(e.target.value, 10);
-    mapIndex = Number.isNaN(newIndex) ? 0 : newIndex;
-    updateMapPreview();
-    saveSettings();
-  });
-}
+  updateMapNameDisplay();
 
-if(!mapSelect){
+  const changeMap = delta => {
+    mapIndex = (mapIndex + delta + MAPS.length) % MAPS.length;
+    updateMapPreview();
+    updateMapNameDisplay();
+    saveSettings();
+  };
+
+  mapPrevBtn.addEventListener('click', () => changeMap(-1));
+  mapNextBtn.addEventListener('click', () => changeMap(1));
+} else {
   updateMapPreview();
 }
 
