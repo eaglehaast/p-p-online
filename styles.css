@@ -197,10 +197,8 @@ body, button {
   }
 
   body.settings-page {
-    background-image: url("ui_controlpanel/cp_background.png");
+    background: #000 url("ui_controlpanel/cp_background.png") center top no-repeat;
     background-size: 460px 800px;
-    background-repeat: no-repeat;
-    background-position: center top;
   }
 
 /* Игровое поле */
