@@ -357,15 +357,15 @@ body, button {
   }
 
   body.settings-page #modeMenu #instance_field_left {
-    left: 22px;
-    top: 257px;
+    left: 74px;
+    top: 658px;
     width: 30px;
     height: 35px;
   }
 
   body.settings-page #modeMenu #frame_field_2_counter {
-    left: 60px;
-    top: 257px;
+    left: 112px;
+    top: 658px;
     width: 58px;
     height: 35px;
     display: flex;
@@ -376,8 +376,8 @@ body, button {
   }
 
   body.settings-page #modeMenu #instance_field_right {
-    left: 126px;
-    top: 257px;
+    left: 178px;
+    top: 658px;
     width: 30px;
     height: 35px;
   }
