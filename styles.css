@@ -357,17 +357,17 @@ body, button {
   }
 
   body.settings-page #modeMenu #instance_field_left {
-    left: 74px;
-    top: 658px;
-    width: 30px;
-    height: 35px;
+    left: 66px;
+    top: 628px;
+    width: 32px;
+    height: 32px;
   }
 
   body.settings-page #modeMenu #frame_field_2_counter {
-    left: 112px;
-    top: 658px;
-    width: 58px;
-    height: 35px;
+    left: 108px;
+    top: 628px;
+    width: 66px;
+    height: 32px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -376,10 +376,10 @@ body, button {
   }
 
   body.settings-page #modeMenu #instance_field_right {
-    left: 178px;
-    top: 658px;
-    width: 30px;
-    height: 35px;
+    left: 186px;
+    top: 628px;
+    width: 32px;
+    height: 32px;
   }
 
   body.settings-page #modeMenu .control-buttons select {
@@ -886,10 +886,10 @@ body.settings-page #modeMenu .control-frame--field #frame_field_1_visual {
 }
 
 body.settings-page #modeMenu .control-frame--field #frame_field_2_counter {
-  left: 112px;
-  top: 658px;
-  width: 58px;
-  height: 35px;
+  left: 108px;
+  top: 628px;
+  width: 66px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
