@@ -1048,6 +1048,8 @@ body.settings-page #modeMenu #flightRangePlus {
 body.settings-page #modeMenu #amplitudePlus {
   left: 126px;
   top: 167px;
+  width: 30px;
+  height: 35px;
 }
 
 #modeMenu .control-btn--minus {
