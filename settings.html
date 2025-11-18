@@ -8,148 +8,150 @@
   <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Roboto&display=swap" rel="stylesheet">
 </head>
 <body class="settings-page">
-  <div id="modeMenu">
-    <h1 class="game-title"><span class="visually-hidden">Advanced Settings</span></h1>
+  <div class="settings-container">
+    <div id="modeMenu">
+      <h1 class="game-title"><span class="visually-hidden">Advanced Settings</span></h1>
 
-    <div class="control-frame control-frame--range">
-      <div class="control-box">
-        <div class="control-label visually-hidden">Flight Range</div>
-        <div id="flightRangeIndicator" class="control-visual">
-          <div id="frame_range_1_visual" aria-hidden="true">
-            <div class="jet">
-              <div class="wing-trail top"></div>
-              <div class="wing-trail bottom"></div>
-              <svg class="jet-plane" viewBox="0 0 38 20">
-                <polygon points="38,10 8,20 8,15 0,10 8,5 8,0" />
-              </svg>
-              <svg id="menuFlame" class="jet-flame" viewBox="0 0 40 20" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
-                <defs>
-                  <radialGradient id="menuFlameGradient" cx="100%" cy="50%" r="60%">
-                    <stop offset="0%" stop-color="#ff8c00" />
-                    <stop offset="100%" stop-color="#ff0000" />
-                  </radialGradient>
-                </defs>
-                <path d="M40 10 C38 2 30 0 22 0 C14 0 6 8 8 14 C10 18 18 20 26 18 C34 16 38 14 40 10 Z" fill="url(#menuFlameGradient)" />
-              </svg>
+      <div class="control-frame control-frame--range">
+        <div class="control-box">
+          <div class="control-label visually-hidden">Flight Range</div>
+          <div id="flightRangeIndicator" class="control-visual">
+            <div id="frame_range_1_visual" aria-hidden="true">
+              <div class="jet">
+                <div class="wing-trail top"></div>
+                <div class="wing-trail bottom"></div>
+                <svg class="jet-plane" viewBox="0 0 38 20">
+                  <polygon points="38,10 8,20 8,15 0,10 8,5 8,0" />
+                </svg>
+                <svg id="menuFlame" class="jet-flame" viewBox="0 0 40 20" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+                  <defs>
+                    <radialGradient id="menuFlameGradient" cx="100%" cy="50%" r="60%">
+                      <stop offset="0%" stop-color="#ff8c00" />
+                      <stop offset="100%" stop-color="#ff0000" />
+                    </radialGradient>
+                  </defs>
+                  <path d="M40 10 C38 2 30 0 22 0 C14 0 6 8 8 14 C10 18 18 20 26 18 C34 16 38 14 40 10 Z" fill="url(#menuFlameGradient)" />
+                </svg>
+              </div>
+            </div>
+            <div id="frame_range_2_counter" class="range-display" role="status" aria-live="polite">
+              <span id="flightRangeDisplay">15</span>
             </div>
           </div>
-          <div id="frame_range_2_counter" class="range-display" role="status" aria-live="polite">
-            <span id="flightRangeDisplay">15</span>
-          </div>
-        </div>
-        <div class="control-buttons control-buttons--range">
-          <button
-            id="flightRangeMinus"
-            class="control-btn control-btn--cp control-btn--minus"
-            type="button"
-            aria-label="Decrease flight range"
-          >
-            <span class="visually-hidden">Decrease flight range</span>
-          </button>
-          <button
-            id="flightRangePlus"
-            class="control-btn control-btn--cp control-btn--plus"
-            type="button"
-            aria-label="Increase flight range"
-          >
-            <span class="visually-hidden">Increase flight range</span>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <div class="control-frame control-frame--accuracy">
-      <div class="control-box">
-        <div class="control-label visually-hidden">Aiming Amplitude</div>
-        <div id="amplitudeIndicator" class="control-visual">
-          <div id="frame_accuracy_1_visual" aria-hidden="true">
-            <div class="pendulum">
-              <div class="pendulum-rod"></div>
-              <div class="pendulum-bob"></div>
-            </div>
-          </div>
-        </div>
-        <div id="frame_accuracy_2_counter" class="control-value"><span id="amplitudeAngleDisplay">40°</span></div>
-        <div class="control-buttons control-buttons--accuracy">
-          <button
-            id="amplitudeMinus"
-            class="control-btn control-btn--cp control-btn--minus"
-            type="button"
-            aria-label="Decrease aiming amplitude"
-          >
-            <span class="visually-hidden">Decrease aiming amplitude</span>
-          </button>
-          <button
-            id="amplitudePlus"
-            class="control-btn control-btn--cp control-btn--plus"
-            type="button"
-            aria-label="Increase aiming amplitude"
-          >
-            <span class="visually-hidden">Increase aiming amplitude</span>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <div class="control-frame control-frame--field">
-      <div class="control-box">
-        <div class="control-label visually-hidden">Map</div>
-        <div class="control-visual map-preview" id="frame_field_1_visual">
-          <div class="map-preview-layer map-preview-paper"></div>
-          <div class="map-preview-layer map-preview-image" id="mapPreview"></div>
-        </div>
-        <div class="control-value"></div>
-        <div class="control-buttons control-buttons--field">
-          <div class="map-selector" role="group" aria-label="Select map">
+          <div class="control-buttons control-buttons--range">
             <button
-              id="instance_field_left"
-              class="control-btn control-btn--cp control-btn--minus control-btn--map"
+              id="flightRangeMinus"
+              class="control-btn control-btn--cp control-btn--minus"
               type="button"
-              aria-label="Previous map"
+              aria-label="Decrease flight range"
             >
-              <span class="visually-hidden">Previous map</span>
+              <span class="visually-hidden">Decrease flight range</span>
             </button>
-            <div
-              id="frame_field_2_counter"
-              class="map-selector__display"
-              role="status"
-              aria-live="polite"
-            ></div>
             <button
-              id="instance_field_right"
-              class="control-btn control-btn--cp control-btn--plus control-btn--map"
+              id="flightRangePlus"
+              class="control-btn control-btn--cp control-btn--plus"
               type="button"
-              aria-label="Next map"
+              aria-label="Increase flight range"
             >
-              <span class="visually-hidden">Next map</span>
+              <span class="visually-hidden">Increase flight range</span>
             </button>
           </div>
         </div>
       </div>
-    </div>
 
-    <div class="control-frame control-frame--add">
-      <div class="control-box" id="additionalSettings">
-        <div class="control-label visually-hidden">Additional Settings</div>
-        <div class="aa-toggle">
-          <input type="checkbox" id="addAAToggle" class="toggle-input visually-hidden" />
-          <label for="addAAToggle" class="toggle-label">
-            <span class="toggle-visual" aria-hidden="true"></span>
-            <span class="toggle-text visually-hidden">Add Anti-Aircraft</span>
-          </label>
-        </div>
-        <div class="aa-toggle">
-          <input type="checkbox" id="sharpEdgesToggle" class="toggle-input visually-hidden" />
-          <label for="sharpEdgesToggle" class="toggle-label">
-            <span class="toggle-visual" aria-hidden="true"></span>
-            <span class="toggle-text visually-hidden">Sharp Edges</span>
-          </label>
+      <div class="control-frame control-frame--accuracy">
+        <div class="control-box">
+          <div class="control-label visually-hidden">Aiming Amplitude</div>
+          <div id="amplitudeIndicator" class="control-visual">
+            <div id="frame_accuracy_1_visual" aria-hidden="true">
+              <div class="pendulum">
+                <div class="pendulum-rod"></div>
+                <div class="pendulum-bob"></div>
+              </div>
+            </div>
+          </div>
+          <div id="frame_accuracy_2_counter" class="control-value"><span id="amplitudeAngleDisplay">40°</span></div>
+          <div class="control-buttons control-buttons--accuracy">
+            <button
+              id="amplitudeMinus"
+              class="control-btn control-btn--cp control-btn--minus"
+              type="button"
+              aria-label="Decrease aiming amplitude"
+            >
+              <span class="visually-hidden">Decrease aiming amplitude</span>
+            </button>
+            <button
+              id="amplitudePlus"
+              class="control-btn control-btn--cp control-btn--plus"
+              type="button"
+              aria-label="Increase aiming amplitude"
+            >
+              <span class="visually-hidden">Increase aiming amplitude</span>
+            </button>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="control-frame control-frame--reset">
-      <button id="backBtn" class="mode-btn">Back</button>
+      <div class="control-frame control-frame--field">
+        <div class="control-box">
+          <div class="control-label visually-hidden">Map</div>
+          <div class="control-visual map-preview" id="frame_field_1_visual">
+            <div class="map-preview-layer map-preview-paper"></div>
+            <div class="map-preview-layer map-preview-image" id="mapPreview"></div>
+          </div>
+          <div class="control-value"></div>
+          <div class="control-buttons control-buttons--field">
+            <div class="map-selector" role="group" aria-label="Select map">
+              <button
+                id="instance_field_left"
+                class="control-btn control-btn--cp control-btn--minus control-btn--map"
+                type="button"
+                aria-label="Previous map"
+              >
+                <span class="visually-hidden">Previous map</span>
+              </button>
+              <div
+                id="frame_field_2_counter"
+                class="map-selector__display"
+                role="status"
+                aria-live="polite"
+              ></div>
+              <button
+                id="instance_field_right"
+                class="control-btn control-btn--cp control-btn--plus control-btn--map"
+                type="button"
+                aria-label="Next map"
+              >
+                <span class="visually-hidden">Next map</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="control-frame control-frame--add">
+        <div class="control-box" id="additionalSettings">
+          <div class="control-label visually-hidden">Additional Settings</div>
+          <div class="aa-toggle">
+            <input type="checkbox" id="addAAToggle" class="toggle-input visually-hidden" />
+            <label for="addAAToggle" class="toggle-label">
+              <span class="toggle-visual" aria-hidden="true"></span>
+              <span class="toggle-text visually-hidden">Add Anti-Aircraft</span>
+            </label>
+          </div>
+          <div class="aa-toggle">
+            <input type="checkbox" id="sharpEdgesToggle" class="toggle-input visually-hidden" />
+            <label for="sharpEdgesToggle" class="toggle-label">
+              <span class="toggle-visual" aria-hidden="true"></span>
+              <span class="toggle-text visually-hidden">Sharp Edges</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="control-frame control-frame--reset">
+        <button id="backBtn" class="mode-btn">Back</button>
+      </div>
     </div>
   </div>
 

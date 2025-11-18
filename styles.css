@@ -196,22 +196,42 @@ body, button {
     }
   }
 
+  :root {
+    --control-panel-base-width: 460px;
+    --control-panel-base-height: 800px;
+  }
+
   body.settings-page {
-    background: #000 url("ui_controlpanel/cp_background.png") center top no-repeat;
-    background-size: 460px 800px;
+    background: #000;
     display: flex;
     justify-content: center;
     align-items: flex-start;
     padding: 10px 0;
+    min-height: 100vh;
+  }
+
+  body.settings-page .settings-container {
+    --panel-scale-x: calc(100vw / var(--control-panel-base-width));
+    --panel-scale-y: calc(100vh / var(--control-panel-base-height));
+    --panel-scale: min(1, var(--panel-scale-x), var(--panel-scale-y));
+    position: relative;
+    width: calc(var(--control-panel-base-width) * var(--panel-scale));
+    height: calc(var(--control-panel-base-height) * var(--panel-scale));
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    background: #000 url("ui_controlpanel/cp_background.png") center top no-repeat;
+    background-size: 100% 100%;
   }
 
   body.settings-page #modeMenu {
     position: relative;
     top: auto;
     left: auto;
-    transform: none;
-    width: 460px;
-    height: 800px;
+    transform: scale(var(--panel-scale));
+    transform-origin: top left;
+    width: var(--control-panel-base-width);
+    height: var(--control-panel-base-height);
     padding: 0;
     margin: 0;
     display: block;
@@ -240,42 +260,42 @@ body, button {
   }
 
   body.settings-page #modeMenu .control-frame--range {
-    left: 52px;
-    top: 126px;
-    width: 178px;
-    height: 250px;
+    left: 11.304%;
+    top: 15.75%;
+    width: 38.696%;
+    height: 31.25%;
     background-image: url("ui_controlpanel/cp_frame_range.png");
   }
 
   body.settings-page #modeMenu .control-frame--accuracy {
-    left: 242px;
-    top: 126px;
-    width: 178px;
-    height: 250px;
+    left: 52.609%;
+    top: 15.75%;
+    width: 38.696%;
+    height: 31.25%;
     background-image: url("ui_controlpanel/cp_frame_accuracy.png");
   }
 
   body.settings-page #modeMenu .control-frame--field {
-    left: 52px;
-    top: 401px;
-    width: 178px;
-    height: 340px;
+    left: 11.304%;
+    top: 50.125%;
+    width: 38.696%;
+    height: 42.5%;
     background-image: url("ui_controlpanel/cp_frame_field.png");
   }
 
   body.settings-page #modeMenu .control-frame--add {
-    left: 242px;
-    top: 401px;
-    width: 178px;
-    height: 236px;
+    left: 52.609%;
+    top: 50.125%;
+    width: 38.696%;
+    height: 29.5%;
     background-image: url("ui_controlpanel/cp_frame_add.png");
   }
 
   body.settings-page #modeMenu .control-frame--reset {
-    left: 245px;
-    top: 660px;
-    width: 178px;
-    height: 82px;
+    left: 53.261%;
+    top: 82.5%;
+    width: 38.696%;
+    height: 10.25%;
     background-image: url("ui_controlpanel/cp_frame_resetand exit.png");
     padding: 18px 20px 18px 28px;
   }
@@ -837,20 +857,20 @@ body, button {
 }
 
 body.settings-page #modeMenu .control-frame--range #frame_range_1_visual {
-  left: 95px;
-  top: 191px;
-  width: 90px;
-  height: 65px;
+  left: 53.37%;
+  top: 76.4%;
+  width: 50.56%;
+  height: 26%;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 body.settings-page #modeMenu .control-frame--range #frame_range_2_counter {
-  left: 112px;
-  top: 293px;
-  width: 58px;
-  height: 35px;
+  left: 62.92%;
+  top: 117.2%;
+  width: 32.58%;
+  height: 14%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -858,20 +878,20 @@ body.settings-page #modeMenu .control-frame--range #frame_range_2_counter {
 }
 
 body.settings-page #modeMenu .control-frame--accuracy #frame_accuracy_1_visual {
-  left: 285px;
-  top: 191px;
-  width: 90px;
-  height: 65px;
+  left: 160.11%;
+  top: 76.4%;
+  width: 50.56%;
+  height: 26%;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 body.settings-page #modeMenu .control-frame--accuracy #frame_accuracy_2_counter {
-  left: 302px;
-  top: 293px;
-  width: 58px;
-  height: 35px;
+  left: 169.66%;
+  top: 117.2%;
+  width: 32.58%;
+  height: 14%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -879,17 +899,17 @@ body.settings-page #modeMenu .control-frame--accuracy #frame_accuracy_2_counter 
 }
 
 body.settings-page #modeMenu .control-frame--field #frame_field_1_visual {
-  left: 97px;
-  top: 463px;
-  width: 90px;
-  height: 157px;
+  left: 54.49%;
+  top: 136.18%;
+  width: 50.56%;
+  height: 46.18%;
 }
 
 body.settings-page #modeMenu .control-frame--field #frame_field_2_counter {
-  left: 112px;
-  top: 658px;
-  width: 58px;
-  height: 35px;
+  left: 62.92%;
+  top: 193.53%;
+  width: 32.58%;
+  height: 10.29%;
   display: flex;
   align-items: center;
   justify-content: center;
