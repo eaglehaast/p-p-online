@@ -1032,8 +1032,7 @@ body.settings-page #modeMenu .control-buttons--accuracy .control-btn--cp {
   pointer-events: auto;
 }
 
-body.settings-page #modeMenu #flightRangeMinus,
-body.settings-page #modeMenu #amplitudeMinus {
+body.settings-page #modeMenu #flightRangeMinus {
   left: 22px;
   top: 167px;
 }
@@ -1045,9 +1044,16 @@ body.settings-page #modeMenu #flightRangePlus {
   height: 35px;
 }
 
+body.settings-page #modeMenu #amplitudeMinus {
+  left: 264px;
+  top: 293px;
+  width: 30px;
+  height: 35px;
+}
+
 body.settings-page #modeMenu #amplitudePlus {
-  left: 126px;
-  top: 167px;
+  left: 368px;
+  top: 293px;
   width: 30px;
   height: 35px;
 }
