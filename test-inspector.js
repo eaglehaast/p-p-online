@@ -539,10 +539,10 @@
       };
     }
 
-    function buildCursorData(event, rect){
+    function buildCursorData(clientX, clientY, rect){
       if(!rect || rect.width <= 0 || rect.height <= 0) return null;
-      const cssXRaw = event.clientX - rect.left;
-      const cssYRaw = event.clientY - rect.top;
+      const cssXRaw = clientX - rect.left;
+      const cssYRaw = clientY - rect.top;
       const inside = cssXRaw >= 0 && cssYRaw >= 0 && cssXRaw <= rect.width && cssYRaw <= rect.height;
       const clampedCssX = clamp(cssXRaw, 0, rect.width);
       const clampedCssY = clamp(cssYRaw, 0, rect.height);
@@ -558,12 +558,19 @@
 
     function handlePointerMove(event){
       if(!state.active || !containerRoot || !containerRoot.element) return;
-      const rect = containerRoot.element.getBoundingClientRect();
-      const cursorData = buildCursorData(event, rect);
+      const resolvedPoint = typeof global.resolveClientPoint === 'function'
+        ? global.resolveClientPoint(event)
+        : { clientX: event?.clientX ?? 0, clientY: event?.clientY ?? 0 };
+      const adjustedClientX = Number.isFinite(resolvedPoint?.clientX) ? resolvedPoint.clientX : 0;
+      const adjustedClientY = Number.isFinite(resolvedPoint?.clientY) ? resolvedPoint.clientY : 0;
+      const rect = typeof global.getViewportAdjustedBoundingClientRect === 'function'
+        ? global.getViewportAdjustedBoundingClientRect(containerRoot.element)
+        : containerRoot.element.getBoundingClientRect();
+      const cursorData = buildCursorData(adjustedClientX, adjustedClientY, rect);
       state.pointerInside = !!(cursorData && cursorData.inside);
       setCrosshairVisible(state.pointerInside);
 
-      const targets = describeTargetsAt(event.clientX, event.clientY, roots, shouldIgnore);
+      const targets = describeTargetsAt(adjustedClientX, adjustedClientY, roots, shouldIgnore);
       state.lastTargets = targets;
       state.lastCursor = cursorData;
 
