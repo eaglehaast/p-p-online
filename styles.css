@@ -311,8 +311,12 @@ body, button {
   body.settings-page #modeMenu .control-buttons--range,
   body.settings-page #modeMenu .control-buttons--accuracy {
     position: absolute;
-    inset: 0;
+    top: 0;
+    left: 0;
+    width: 200px;
+    height: 220px;
     z-index: 2;
+    pointer-events: none;
   }
 
   #modeMenu .map-selector {
@@ -1018,6 +1022,11 @@ body.settings-page #modeMenu .control-btn--cp {
   background-repeat: no-repeat;
   background-position: center;
   transition: transform 0.15s, filter 0.15s;
+}
+
+body.settings-page #modeMenu .control-buttons--range .control-btn--cp,
+body.settings-page #modeMenu .control-buttons--accuracy .control-btn--cp {
+  pointer-events: auto;
 }
 
 body.settings-page #modeMenu #flightRangeMinus,
