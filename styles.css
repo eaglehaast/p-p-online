@@ -1038,7 +1038,13 @@ body.settings-page #modeMenu #amplitudeMinus {
   top: 167px;
 }
 
-body.settings-page #modeMenu #flightRangePlus,
+body.settings-page #modeMenu #flightRangePlus {
+  left: 168px;
+  top: 167px;
+  width: 30px;
+  height: 35px;
+}
+
 body.settings-page #modeMenu #amplitudePlus {
   left: 126px;
   top: 167px;
