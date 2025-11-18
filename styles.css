@@ -837,8 +837,8 @@ body, button {
 }
 
 body.settings-page #modeMenu .control-frame--range #frame_range_1_visual {
-  left: 43px;
-  top: 65px;
+  left: 95px;
+  top: 191px;
   width: 90px;
   height: 65px;
   display: flex;
@@ -847,8 +847,8 @@ body.settings-page #modeMenu .control-frame--range #frame_range_1_visual {
 }
 
 body.settings-page #modeMenu .control-frame--range #frame_range_2_counter {
-  left: 60px;
-  top: 167px;
+  left: 112px;
+  top: 293px;
   width: 58px;
   height: 35px;
   display: flex;
@@ -858,8 +858,8 @@ body.settings-page #modeMenu .control-frame--range #frame_range_2_counter {
 }
 
 body.settings-page #modeMenu .control-frame--accuracy #frame_accuracy_1_visual {
-  left: 43px;
-  top: 65px;
+  left: 285px;
+  top: 191px;
   width: 90px;
   height: 65px;
   display: flex;
@@ -868,8 +868,8 @@ body.settings-page #modeMenu .control-frame--accuracy #frame_accuracy_1_visual {
 }
 
 body.settings-page #modeMenu .control-frame--accuracy #frame_accuracy_2_counter {
-  left: 60px;
-  top: 167px;
+  left: 302px;
+  top: 293px;
   width: 58px;
   height: 35px;
   display: flex;
@@ -879,15 +879,15 @@ body.settings-page #modeMenu .control-frame--accuracy #frame_accuracy_2_counter 
 }
 
 body.settings-page #modeMenu .control-frame--field #frame_field_1_visual {
-  left: 45px;
-  top: 62px;
+  left: 97px;
+  top: 463px;
   width: 90px;
   height: 157px;
 }
 
 body.settings-page #modeMenu .control-frame--field #frame_field_2_counter {
-  left: 60px;
-  top: 257px;
+  left: 112px;
+  top: 658px;
   width: 58px;
   height: 35px;
   display: flex;
