@@ -268,6 +268,141 @@ body, button {
     display: none !important;
   }
 
+  body.settings-page .cp-flight-range {
+    position: absolute;
+    inset: 0;
+  }
+
+  body.settings-page #flightRangeIndicator {
+    position: absolute;
+    left: 52px;
+    top: 126px;
+    width: 178px;
+    height: 250px;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  body.settings-page #frame_range_1_visual {
+    position: absolute;
+    left: 43px;
+    top: 65px;
+    width: 90px;
+    height: 65px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  body.settings-page #frame_range_1_visual .jet {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  body.settings-page #frame_range_1_visual .wing-trail {
+    position: absolute;
+    width: 35px;
+    height: 2px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0));
+  }
+
+  body.settings-page #frame_range_1_visual .wing-trail.top {
+    top: 22px;
+    left: -10px;
+  }
+
+  body.settings-page #frame_range_1_visual .wing-trail.bottom {
+    bottom: 20px;
+    left: -8px;
+  }
+
+  body.settings-page #frame_range_1_visual .jet-plane {
+    width: 70px;
+    height: auto;
+    fill: #1f3e63;
+    stroke: #ffffff;
+    stroke-width: 1;
+    filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.35));
+  }
+
+  body.settings-page #frame_range_1_visual .jet-flame {
+    position: absolute;
+    right: -12px;
+    top: 40%;
+    transform: translateY(-50%);
+  }
+
+  body.settings-page #frame_range_2_counter {
+    position: absolute;
+    left: 60px;
+    top: 167px;
+    width: 58px;
+    height: 35px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Patrick Hand', cursive;
+    font-size: 20px;
+    color: #1b1205;
+    text-shadow: 0 1px 1px rgba(255, 255, 255, 0.5);
+  }
+
+  body.settings-page #frame_range_2_counter span {
+    display: block;
+    min-width: 32px;
+    text-align: center;
+  }
+
+  body.settings-page .cp-flight-range__frame {
+    position: absolute;
+    left: 52px;
+    top: 126px;
+    width: 178px;
+    height: 250px;
+    background-image: url('ui_controlpanel/cp_frame_range.png');
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+    pointer-events: none;
+    z-index: 20;
+  }
+
+  body.settings-page .cp-flight-range__btn {
+    position: absolute;
+    top: 167px;
+    width: 30px;
+    height: 35px;
+    border: none;
+    background-color: transparent;
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+    cursor: pointer;
+    z-index: 30;
+  }
+
+  body.settings-page .cp-flight-range__btn--left {
+    left: 22px;
+    background-image: url('ui_controlpanel/cp_button_left.png');
+  }
+
+  body.settings-page .cp-flight-range__btn--right {
+    left: 168px;
+    background-image: url('ui_controlpanel/cp_button_right.png');
+  }
+
+  body.settings-page .cp-flight-range__btn:focus-visible {
+    outline: 2px solid #f6d265;
+    outline-offset: 2px;
+  }
+
+  body.settings-page .cp-flight-range__btn:active {
+    transform: translateY(1px);
+  }
+
 /* Игровое поле */
 #gameCanvas {
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
