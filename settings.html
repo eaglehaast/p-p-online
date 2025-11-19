@@ -12,53 +12,6 @@
     <div id="modeMenu">
       <h1 class="game-title"><span class="visually-hidden">Advanced Settings</span></h1>
 
-      <div class="control-frame control-frame--range">
-        <div class="control-box">
-          <div class="control-label visually-hidden">Flight Range</div>
-          <div id="flightRangeIndicator" class="control-visual">
-            <div id="frame_range_1_visual" aria-hidden="true">
-              <div class="jet">
-                <div class="wing-trail top"></div>
-                <div class="wing-trail bottom"></div>
-                <svg class="jet-plane" viewBox="0 0 38 20">
-                  <polygon points="38,10 8,20 8,15 0,10 8,5 8,0" />
-                </svg>
-                <svg id="menuFlame" class="jet-flame" viewBox="0 0 40 20" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
-                  <defs>
-                    <radialGradient id="menuFlameGradient" cx="100%" cy="50%" r="60%">
-                      <stop offset="0%" stop-color="#ff8c00" />
-                      <stop offset="100%" stop-color="#ff0000" />
-                    </radialGradient>
-                  </defs>
-                  <path d="M40 10 C38 2 30 0 22 0 C14 0 6 8 8 14 C10 18 18 20 26 18 C34 16 38 14 40 10 Z" fill="url(#menuFlameGradient)" />
-                </svg>
-              </div>
-            </div>
-            <div id="frame_range_2_counter" class="range-display" role="status" aria-live="polite">
-              <span id="flightRangeDisplay">15</span>
-            </div>
-          </div>
-          <div class="control-buttons control-buttons--range">
-            <button
-              id="flightRangeMinus"
-              class="control-btn control-btn--cp control-btn--minus"
-              type="button"
-              aria-label="Decrease flight range"
-            >
-              <span class="visually-hidden">Decrease flight range</span>
-            </button>
-            <button
-              id="flightRangePlus"
-              class="control-btn control-btn--cp control-btn--plus"
-              type="button"
-              aria-label="Increase flight range"
-            >
-              <span class="visually-hidden">Increase flight range</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
       <div class="control-frame control-frame--accuracy">
         <div class="control-box">
           <div class="control-label visually-hidden">Aiming Amplitude</div>
@@ -152,6 +105,60 @@
       <div class="control-frame control-frame--reset">
         <button id="backBtn" class="mode-btn">Back</button>
       </div>
+    </div>
+
+    <div class="cp-flight-range" role="group" aria-label="Настройка дальности полёта">
+      <div id="flightRangeIndicator" class="cp-flight-range__indicator">
+        <div id="frame_range_1_visual" aria-hidden="true">
+          <div class="jet">
+            <div class="wing-trail top"></div>
+            <div class="wing-trail bottom"></div>
+            <svg class="jet-plane" viewBox="0 0 38 20">
+              <polygon points="38,10 8,20 8,15 0,10 8,5 8,0" />
+            </svg>
+            <svg
+              id="menuFlame"
+              class="jet-flame"
+              viewBox="0 0 40 20"
+              xmlns="http://www.w3.org/2000/svg"
+              preserveAspectRatio="none"
+            >
+              <defs>
+                <radialGradient id="menuFlameGradient" cx="100%" cy="50%" r="60%">
+                  <stop offset="0%" stop-color="#ff8c00" />
+                  <stop offset="100%" stop-color="#ff0000" />
+                </radialGradient>
+              </defs>
+              <path
+                d="M40 10 C38 2 30 0 22 0 C14 0 6 8 8 14 C10 18 18 20 26 18 C34 16 38 14 40 10 Z"
+                fill="url(#menuFlameGradient)"
+              />
+            </svg>
+          </div>
+        </div>
+        <div id="frame_range_2_counter" class="range-display" role="status" aria-live="polite">
+          <span id="flightRangeDisplay">15</span>
+        </div>
+      </div>
+
+      <div class="cp-flight-range__frame" aria-hidden="true"></div>
+
+      <button
+        id="instance_range_left"
+        class="cp-flight-range__btn cp-flight-range__btn--left"
+        type="button"
+        aria-label="Уменьшить дальность полёта"
+      >
+        <span class="visually-hidden">Уменьшить дальность полёта</span>
+      </button>
+      <button
+        id="instance_range_right"
+        class="cp-flight-range__btn cp-flight-range__btn--right"
+        type="button"
+        aria-label="Увеличить дальность полёта"
+      >
+        <span class="visually-hidden">Увеличить дальность полёта</span>
+      </button>
     </div>
   </div>
 

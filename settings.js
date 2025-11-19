@@ -49,8 +49,12 @@ let sharpEdges = getStoredItem('settings.sharpEdges') === 'true';
 let mapIndex = getIntSetting('settings.mapIndex', 0);
 if(mapIndex < 0 || mapIndex >= MAPS.length) mapIndex = 0;
 
-const flightRangeMinusBtn = document.getElementById('flightRangeMinus');
-const flightRangePlusBtn  = document.getElementById('flightRangePlus');
+const flightRangeMinusBtn =
+  document.getElementById('instance_range_left') ??
+  document.getElementById('flightRangeMinus');
+const flightRangePlusBtn =
+  document.getElementById('instance_range_right') ??
+  document.getElementById('flightRangePlus');
 const amplitudeMinusBtn   = document.getElementById('amplitudeMinus');
 const amplitudePlusBtn    = document.getElementById('amplitudePlus');
 const addAAToggle = document.getElementById('addAAToggle');
