@@ -55,8 +55,12 @@ const flightRangeMinusBtn =
 const flightRangePlusBtn =
   document.getElementById('instance_range_right') ??
   document.getElementById('flightRangePlus');
-const amplitudeMinusBtn   = document.getElementById('amplitudeMinus');
-const amplitudePlusBtn    = document.getElementById('amplitudePlus');
+const amplitudeMinusBtn =
+  document.getElementById('instance_accuracy_left') ??
+  document.getElementById('amplitudeMinus');
+const amplitudePlusBtn =
+  document.getElementById('instance_accuracy_right') ??
+  document.getElementById('amplitudePlus');
 const addAAToggle = document.getElementById('addAAToggle');
 const sharpEdgesToggle = document.getElementById('sharpEdgesToggle');
 const backBtn = document.getElementById('backBtn');

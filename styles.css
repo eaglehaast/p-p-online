@@ -268,6 +268,107 @@ body, button {
     display: none !important;
   }
 
+  body.settings-page .cp-aiming-accuracy {
+    position: absolute;
+    inset: 0;
+  }
+
+  body.settings-page #amplitudeIndicator {
+    position: absolute;
+    left: 242px;
+    top: 126px;
+    width: 178px;
+    height: 250px;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  body.settings-page #frame_accuracy_1_visual {
+    position: absolute;
+    left: 43px;
+    top: 65px;
+    width: 90px;
+    height: 65px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  body.settings-page #frame_accuracy_2_counter {
+    position: absolute;
+    left: 60px;
+    top: 167px;
+    width: 58px;
+    height: 35px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Patrick Hand', cursive;
+    font-size: 20px;
+    color: #1b1205;
+    text-shadow: 0 1px 1px rgba(255, 255, 255, 0.5);
+  }
+
+  body.settings-page #frame_accuracy_2_counter span {
+    display: block;
+    min-width: 32px;
+    text-align: center;
+  }
+
+  body.settings-page .cp-aiming-accuracy__frame {
+    position: absolute;
+    left: 242px;
+    top: 126px;
+    width: 178px;
+    height: 250px;
+    background-image: url('ui_controlpanel/cp_frame_accuracy.png');
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+    pointer-events: none;
+    z-index: 20;
+  }
+
+  body.settings-page .cp-aiming-accuracy__btn {
+    position: absolute;
+    border: none;
+    background-color: transparent;
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+    cursor: pointer;
+    z-index: 30;
+  }
+
+  body.settings-page #instance_accuracy_left {
+    top: 293px;
+    left: 264px;
+    width: 30px;
+    height: 35px;
+  }
+
+  body.settings-page #instance_accuracy_right {
+    top: 293px;
+    left: 368px;
+    width: 30px;
+    height: 35px;
+  }
+
+  body.settings-page .cp-aiming-accuracy__btn--left {
+    background-image: url('ui_controlpanel/cp_button_left.png');
+  }
+
+  body.settings-page .cp-aiming-accuracy__btn--right {
+    background-image: url('ui_controlpanel/cp_button_right.png');
+  }
+
+  body.settings-page .cp-aiming-accuracy__btn:focus-visible {
+    outline: 2px solid #f6d265;
+    outline-offset: 2px;
+  }
+
+  body.settings-page .cp-aiming-accuracy__btn:active {
+    transform: translateY(1px);
+  }
+
   body.settings-page .cp-flight-range {
     position: absolute;
     inset: 0;
