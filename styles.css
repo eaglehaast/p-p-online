@@ -382,15 +382,15 @@ body, button {
   }
 
   body.settings-page #instance_range_left {
-    top: 167px;
-    left: 22px;
+    top: 293px;
+    left: 74px;
     width: 30px;
     height: 35px;
   }
 
   body.settings-page #instance_range_right {
-    top: 167px;
-    left: 168px;
+    top: 293px;
+    left: 178px;
     width: 30px;
     height: 35px;
   }
