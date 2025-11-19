@@ -420,6 +420,41 @@ body, button {
     margin: 0;
   }
 
+  /* ===== Temporary background-only layout for the settings control panel ===== */
+  body.settings-page {
+    min-height: 100vh;
+    margin: 0;
+    padding: 0;
+    background: #000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  body.settings-page .settings-container {
+    width: var(--control-panel-base-width);
+    height: var(--control-panel-base-height);
+    position: relative;
+    display: block;
+    background-image: url("ui_controlpanel/cp_background.png");
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+  }
+
+  body.settings-page #modeMenu {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    margin: 0;
+    padding: 0;
+    transform: none !important;
+    overflow: hidden;
+  }
+
+  body.settings-page #modeMenu > * {
+    display: none !important;
+  }
+
 /* Игровое поле */
 #gameCanvas {
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
