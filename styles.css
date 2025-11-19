@@ -373,9 +373,6 @@ body, button {
 
   body.settings-page .cp-flight-range__btn {
     position: absolute;
-    top: 167px;
-    width: 30px;
-    height: 35px;
     border: none;
     background-color: transparent;
     background-repeat: no-repeat;
@@ -384,13 +381,25 @@ body, button {
     z-index: 30;
   }
 
-  body.settings-page .cp-flight-range__btn--left {
+  body.settings-page #instance_range_left {
+    top: 167px;
     left: 22px;
+    width: 30px;
+    height: 35px;
+  }
+
+  body.settings-page #instance_range_right {
+    top: 167px;
+    left: 168px;
+    width: 30px;
+    height: 35px;
+  }
+
+  body.settings-page .cp-flight-range__btn--left {
     background-image: url('ui_controlpanel/cp_button_left.png');
   }
 
   body.settings-page .cp-flight-range__btn--right {
-    left: 168px;
     background-image: url('ui_controlpanel/cp_button_right.png');
   }
 
