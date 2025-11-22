@@ -275,7 +275,7 @@ body, button {
 
   body.settings-page #amplitudeIndicator {
     position: absolute;
-    left: 242px;
+    left: 237px;
     top: 126px;
     width: 178px;
     height: 250px;
@@ -317,7 +317,7 @@ body, button {
 
   body.settings-page .cp-aiming-accuracy__frame {
     position: absolute;
-    left: 242px;
+    left: 237px;
     top: 126px;
     width: 178px;
     height: 250px;
@@ -340,14 +340,14 @@ body, button {
 
   body.settings-page #instance_accuracy_left {
     top: 293px;
-    left: 264px;
+    left: 259px;
     width: 30px;
     height: 35px;
   }
 
   body.settings-page #instance_accuracy_right {
     top: 293px;
-    left: 368px;
+    left: 363px;
     width: 30px;
     height: 35px;
   }
