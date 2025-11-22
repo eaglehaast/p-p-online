@@ -675,6 +675,56 @@ body, button {
     transform: translateY(1px);
   }
 
+  body.settings-page .cp-actions {
+    position: absolute;
+    inset: 0;
+  }
+
+  body.settings-page .cp-actions__frame {
+    position: absolute;
+    left: 237px;
+    top: 660px;
+    width: 178px;
+    height: 82px;
+    background-image: url('ui_controlpanel/cp_frame_resetand exit.png');
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+    pointer-events: none;
+    z-index: 20;
+  }
+
+  body.settings-page .cp-actions__btn {
+    position: absolute;
+    top: 666px;
+    width: 73px;
+    height: 69px;
+    border: none;
+    background-color: transparent;
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+    cursor: pointer;
+    z-index: 30;
+  }
+
+  body.settings-page .cp-actions__btn--reset {
+    left: 244px;
+    background-image: url('ui_controlpanel/cp_button_reset.png');
+  }
+
+  body.settings-page .cp-actions__btn--exit {
+    left: 336px;
+    background-image: url('ui_controlpanel/cp_button_exit.png');
+  }
+
+  body.settings-page .cp-actions__btn:focus-visible {
+    outline: 2px solid #f6d265;
+    outline-offset: 2px;
+  }
+
+  body.settings-page .cp-actions__btn:active {
+    transform: translateY(1px);
+  }
+
 /* Игровое поле */
 #gameCanvas {
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
