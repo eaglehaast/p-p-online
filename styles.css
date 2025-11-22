@@ -440,7 +440,7 @@ body, button {
     width: 178px;
     height: 250px;
     pointer-events: none;
-    z-index: 10;
+    z-index: 25;
   }
 
   body.settings-page #frame_range_1_visual {
@@ -449,7 +449,7 @@ body, button {
     top: 191px;
     width: 90px;
     height: 65px;
-    z-index: 15;
+    z-index: 30;
     pointer-events: none;
   }
 
@@ -507,6 +507,70 @@ body, button {
   body.settings-page #frame_range_1_visual .jet-contrail.contrail-4 {
     left: 20px;
     top: 45px;
+  }
+
+  /* Визуализация индикатора дальности на тестовых страницах */
+  body.test-harness #flightRangeIndicator.control-visual {
+    position: relative;
+    width: 178px;
+    height: 96px;
+    padding: 12px 16px;
+    border-radius: 14px;
+    box-sizing: border-box;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0))
+        padding-box,
+      radial-gradient(circle at 20% 30%, rgba(54, 196, 255, 0.4), rgba(38, 79, 140, 0.1) 45%, rgba(17, 32, 66, 0.1)) border-box;
+  }
+
+  body.test-harness #flightRangeIndicator.control-visual .jet {
+    position: relative;
+    width: 124px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+  }
+
+  body.test-harness #flightRangeIndicator.control-visual .wing-trail {
+    position: absolute;
+    left: 8px;
+    width: 54px;
+    height: 6px;
+    border-radius: 6px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0));
+  }
+
+  body.test-harness #flightRangeIndicator.control-visual .wing-trail.top {
+    top: 12px;
+  }
+
+  body.test-harness #flightRangeIndicator.control-visual .wing-trail.bottom {
+    bottom: 12px;
+  }
+
+  body.test-harness #flightRangeIndicator.control-visual .jet-flame {
+    position: absolute;
+    left: 0;
+    top: 16px;
+    width: 54px;
+    height: 20px;
+    filter: drop-shadow(0 0 6px rgba(255, 147, 41, 0.6));
+  }
+
+  body.test-harness #flightRangeIndicator.control-visual .jet-flame path {
+    fill: url(#menuFlameGradient);
+  }
+
+  body.test-harness #flightRangeIndicator.control-visual .jet-plane {
+    position: relative;
+    left: 20px;
+    width: 76px;
+    height: 40px;
+    filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.35));
+  }
+
+  body.test-harness #flightRangeIndicator.control-visual .jet-plane polygon {
+    fill: #d7e9ff;
   }
 
   body.settings-page #frame_range_2_counter {
