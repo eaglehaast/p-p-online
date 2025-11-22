@@ -376,7 +376,7 @@ body, button {
 
   body.settings-page #flightRangeIndicator {
     position: absolute;
-    left: 52px;
+    left: 45px;
     top: 126px;
     width: 178px;
     height: 250px;
@@ -386,7 +386,7 @@ body, button {
 
   body.settings-page #frame_range_1_visual {
     position: absolute;
-    left: 43px;
+    left: 36px;
     top: 65px;
     width: 90px;
     height: 65px;
@@ -461,7 +461,7 @@ body, button {
 
   body.settings-page .cp-flight-range__frame {
     position: absolute;
-    left: 52px;
+    left: 45px;
     top: 126px;
     width: 178px;
     height: 250px;
@@ -484,14 +484,14 @@ body, button {
 
   body.settings-page #instance_range_left {
     top: 293px;
-    left: 74px;
+    left: 67px;
     width: 30px;
     height: 35px;
   }
 
   body.settings-page #instance_range_right {
     top: 293px;
-    left: 178px;
+    left: 171px;
     width: 30px;
     height: 35px;
   }
