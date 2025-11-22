@@ -440,7 +440,7 @@ body, button {
     width: 178px;
     height: 250px;
     pointer-events: none;
-    z-index: 10;
+    z-index: 25;
   }
 
   body.settings-page #frame_range_1_visual {
@@ -449,7 +449,7 @@ body, button {
     top: 191px;
     width: 90px;
     height: 65px;
-    z-index: 15;
+    z-index: 30;
     pointer-events: none;
   }
 

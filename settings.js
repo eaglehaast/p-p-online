@@ -91,23 +91,26 @@ function updateFlightRangeDisplay(){
 }
 
 function updateFlightRangeFlame(){
-  const trails = document.querySelectorAll('#flightRangeIndicator .wing-trail');
-  const menuFlame = document.getElementById('menuFlame');
+  const contrails = document.querySelectorAll('#flightRangeIndicator .jet-contrail');
+  const flame = document.querySelector('#flightRangeIndicator .jet-flame-trail') ??
+                document.getElementById('menuFlame');
   const minScale = 0.8;
   const maxScale = 1.6;
   const t = (flightRangeCells - MIN_FLIGHT_RANGE_CELLS) /
             (MAX_FLIGHT_RANGE_CELLS - MIN_FLIGHT_RANGE_CELLS);
   const ratio = minScale + t * (maxScale - minScale);
-  if(menuFlame){
-    const baseWidth = 32;
-    const baseHeight = 10;
-    menuFlame.style.width = `${baseWidth * ratio}px`;
-    menuFlame.style.height = `${baseHeight * (0.9 + 0.1 * ratio)}px`;
+
+  if(flame){
+    const baseWidth = 46;
+    const baseHeight = 14;
+    flame.style.width = `${baseWidth * ratio}px`;
+    flame.style.height = `${baseHeight * (0.8 + 0.2 * ratio)}px`;
   }
-  if(trails.length){
-    const baseTrailWidth = 35;
-    const baseTrailHeight = 2;
-    trails.forEach(trail => {
+
+  if(contrails.length){
+    const baseTrailWidth = 40;
+    const baseTrailHeight = 4;
+    contrails.forEach(trail => {
       trail.style.width = `${baseTrailWidth * ratio}px`;
       trail.style.height = `${baseTrailHeight}px`;
     });
