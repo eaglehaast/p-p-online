@@ -434,13 +434,7 @@ body, button {
   }
 
   .settings-container #flightRangeIndicator {
-    position: absolute;
-    left: 45px;
-    top: 126px;
-    width: 178px;
-    height: 250px;
     pointer-events: none;
-    z-index: 25;
   }
 
   .settings-container #frame_range_1_visual {
@@ -454,9 +448,8 @@ body, button {
   }
 
   .settings-container #frame_range_1_visual .range-visual {
-    position: relative;
-    width: 100%;
-    height: 100%;
+    position: absolute;
+    inset: 0;
   }
 
   .settings-container #frame_range_1_visual .jet-plane {
@@ -490,23 +483,23 @@ body, button {
   }
 
   .settings-container #frame_range_1_visual .jet-contrail.contrail-1 {
-    left: 20px;
-    top: 16px;
+    left: 108px;
+    top: 207px;
   }
 
   .settings-container #frame_range_1_visual .jet-contrail.contrail-2 {
-    left: 0;
-    top: 23px;
+    left: 88px;
+    top: 214px;
   }
 
   .settings-container #frame_range_1_visual .jet-contrail.contrail-3 {
-    left: 0;
+    left: 88px;
     top: 218px;
   }
 
   .settings-container #frame_range_1_visual .jet-contrail.contrail-4 {
-    left: 20px;
-    top: 45px;
+    left: 108px;
+    top: 236px;
   }
 
   /* Визуализация индикатора дальности на тестовых страницах */
