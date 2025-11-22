@@ -1270,7 +1270,7 @@ body, button {
 
 #frame_accuracy_1_visual .pendulum-bob {
   position: absolute;
-  bottom: -8px;
+  bottom: -3px;
   width: 24px;
   height: 24px;
   background: url('ui_controlpanel/pendulum.png') center / contain no-repeat;
