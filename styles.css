@@ -445,10 +445,10 @@ body, button {
 
   .settings-container #frame_range_1_visual {
     position: absolute;
-    left: 88px;
-    top: 191px;
-    width: 90px;
-    height: 65px;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
     z-index: 30;
     pointer-events: none;
   }
@@ -461,8 +461,8 @@ body, button {
 
   .settings-container #frame_range_1_visual .jet-plane {
     position: absolute;
-    left: 45px;
-    top: 16px;
+    left: 133px;
+    top: 207px;
     width: 43px;
     height: 33px;
     object-fit: contain;
@@ -471,8 +471,8 @@ body, button {
 
   .settings-container #frame_range_1_visual .jet-flame-trail {
     position: absolute;
-    left: 0;
-    top: 25px;
+    left: 88px;
+    top: 216px;
     width: 46px;
     height: 14px;
     border-radius: 10px;
@@ -501,7 +501,7 @@ body, button {
 
   .settings-container #frame_range_1_visual .jet-contrail.contrail-3 {
     left: 0;
-    top: 27px;
+    top: 218px;
   }
 
   .settings-container #frame_range_1_visual .jet-contrail.contrail-4 {
