@@ -490,13 +490,13 @@ body, button {
   }
 
   .settings-container #frame_range_1_visual .jet-contrail.contrail-1 {
-    left: 108px;
-    top: 207px;
+    left: 20px;
+    top: 16px;
   }
 
   .settings-container #frame_range_1_visual .jet-contrail.contrail-2 {
-    left: 88px;
-    top: 214px;
+    left: 0;
+    top: 23px;
   }
 
   .settings-container #frame_range_1_visual .jet-contrail.contrail-3 {
@@ -505,8 +505,8 @@ body, button {
   }
 
   .settings-container #frame_range_1_visual .jet-contrail.contrail-4 {
-    left: 108px;
-    top: 236px;
+    left: 20px;
+    top: 45px;
   }
 
   /* Визуализация индикатора дальности на тестовых страницах */
