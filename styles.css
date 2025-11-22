@@ -445,56 +445,66 @@ body, button {
 
   body.settings-page #frame_range_1_visual {
     position: absolute;
-    left: 36px;
-    top: 65px;
+    left: 88px;
+    top: 191px;
     width: 90px;
     height: 65px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
   }
 
-  body.settings-page #frame_range_1_visual .jet {
+  body.settings-page #frame_range_1_visual .range-visual {
     position: relative;
     width: 100%;
     height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  body.settings-page #frame_range_1_visual .wing-trail {
-    position: absolute;
-    width: 35px;
-    height: 2px;
-    border-radius: 2px;
-    background: linear-gradient(90deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0));
-  }
-
-  body.settings-page #frame_range_1_visual .wing-trail.top {
-    top: 22px;
-    left: -10px;
-  }
-
-  body.settings-page #frame_range_1_visual .wing-trail.bottom {
-    bottom: 20px;
-    left: -8px;
   }
 
   body.settings-page #frame_range_1_visual .jet-plane {
-    width: 70px;
-    height: auto;
-    fill: #1f3e63;
-    stroke: #ffffff;
-    stroke-width: 1;
+    position: absolute;
+    left: 45px;
+    top: 16px;
+    width: 43px;
+    height: 33px;
+    object-fit: contain;
     filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.35));
   }
 
-  body.settings-page #frame_range_1_visual .jet-flame {
+  body.settings-page #frame_range_1_visual .jet-flame-trail {
     position: absolute;
-    right: -12px;
-    top: 40%;
-    transform: translateY(-50%);
+    left: 0;
+    top: 25px;
+    width: 46px;
+    height: 14px;
+    border-radius: 10px;
+    background: radial-gradient(circle at 100% 50%, rgba(255, 234, 170, 0.95), rgba(255, 120, 0, 0.75) 55%, rgba(255, 70, 0, 0) 100%);
+    filter: drop-shadow(0 0 6px rgba(255, 150, 0, 0.8));
+  }
+
+  body.settings-page #frame_range_1_visual .jet-contrail {
+    position: absolute;
+    width: 40px;
+    height: 4px;
+    border-radius: 4px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0));
+    filter: blur(0.3px);
+  }
+
+  body.settings-page #frame_range_1_visual .jet-contrail.contrail-1 {
+    left: 20px;
+    top: 16px;
+  }
+
+  body.settings-page #frame_range_1_visual .jet-contrail.contrail-2 {
+    left: 0;
+    top: 23px;
+  }
+
+  body.settings-page #frame_range_1_visual .jet-contrail.contrail-3 {
+    left: 0;
+    top: 27px;
+  }
+
+  body.settings-page #frame_range_1_visual .jet-contrail.contrail-4 {
+    left: 20px;
+    top: 45px;
   }
 
   body.settings-page #frame_range_2_counter {
