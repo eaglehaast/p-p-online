@@ -1268,13 +1268,10 @@ body, button {
 
 #frame_accuracy_1_visual .pendulum-bob {
   position: absolute;
-  bottom: -6px;
-  width: 18px;
-  height: 18px;
-  background: radial-gradient(circle at 30% 30%, #ffffff, #8c9aa5);
-  border: 2px solid #4c5a64;
-  border-radius: 50%;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+  bottom: -8px;
+  width: 24px;
+  height: 24px;
+  background: url('ui_controlpanel/pendulum.png') center / contain no-repeat;
 }
 
 #frame_accuracy_1_visual .pendulum::after {
