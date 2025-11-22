@@ -449,6 +449,8 @@ body, button {
     top: 191px;
     width: 90px;
     height: 65px;
+    z-index: 15;
+    pointer-events: none;
   }
 
   body.settings-page #frame_range_1_visual .range-visual {
