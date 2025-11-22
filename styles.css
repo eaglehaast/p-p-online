@@ -351,6 +351,7 @@ body, button {
     display: flex;
     align-items: center;
     justify-content: center;
+    overflow: hidden;
   }
 
   body.settings-page #frame_accuracy_2_counter {
@@ -1254,6 +1255,7 @@ body, button {
   display: flex;
   justify-content: center;
   align-items: flex-start;
+  margin-top: -5px;
   transform-origin: 50% 0;
   animation: swing 2s ease-in-out infinite alternate;
 }
