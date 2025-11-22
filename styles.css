@@ -428,12 +428,12 @@ body, button {
     transform: translateY(1px);
   }
 
-  body.settings-page .cp-flight-range {
+  .settings-container .cp-flight-range {
     position: absolute;
     inset: 0;
   }
 
-  body.settings-page #flightRangeIndicator {
+  .settings-container #flightRangeIndicator {
     position: absolute;
     left: 45px;
     top: 126px;
@@ -443,36 +443,36 @@ body, button {
     z-index: 25;
   }
 
-  body.settings-page #frame_range_1_visual {
+  .settings-container #frame_range_1_visual {
     position: absolute;
-    left: 88px;
-    top: 191px;
-    width: 90px;
-    height: 65px;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
     z-index: 30;
     pointer-events: none;
   }
 
-  body.settings-page #frame_range_1_visual .range-visual {
+  .settings-container #frame_range_1_visual .range-visual {
     position: relative;
     width: 100%;
     height: 100%;
   }
 
-  body.settings-page #frame_range_1_visual .jet-plane {
+  .settings-container #frame_range_1_visual .jet-plane {
     position: absolute;
-    left: 45px;
-    top: 16px;
+    left: 133px;
+    top: 207px;
     width: 43px;
     height: 33px;
     object-fit: contain;
     filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.35));
   }
 
-  body.settings-page #frame_range_1_visual .jet-flame-trail {
+  .settings-container #frame_range_1_visual .jet-flame-trail {
     position: absolute;
-    left: 0;
-    top: 25px;
+    left: 88px;
+    top: 216px;
     width: 46px;
     height: 14px;
     border-radius: 10px;
@@ -480,7 +480,7 @@ body, button {
     filter: drop-shadow(0 0 6px rgba(255, 150, 0, 0.8));
   }
 
-  body.settings-page #frame_range_1_visual .jet-contrail {
+  .settings-container #frame_range_1_visual .jet-contrail {
     position: absolute;
     width: 40px;
     height: 4px;
@@ -489,24 +489,24 @@ body, button {
     filter: blur(0.3px);
   }
 
-  body.settings-page #frame_range_1_visual .jet-contrail.contrail-1 {
-    left: 20px;
-    top: 16px;
+  .settings-container #frame_range_1_visual .jet-contrail.contrail-1 {
+    left: 108px;
+    top: 207px;
   }
 
-  body.settings-page #frame_range_1_visual .jet-contrail.contrail-2 {
+  .settings-container #frame_range_1_visual .jet-contrail.contrail-2 {
+    left: 88px;
+    top: 214px;
+  }
+
+  .settings-container #frame_range_1_visual .jet-contrail.contrail-3 {
     left: 0;
-    top: 23px;
+    top: 218px;
   }
 
-  body.settings-page #frame_range_1_visual .jet-contrail.contrail-3 {
-    left: 0;
-    top: 27px;
-  }
-
-  body.settings-page #frame_range_1_visual .jet-contrail.contrail-4 {
-    left: 20px;
-    top: 45px;
+  .settings-container #frame_range_1_visual .jet-contrail.contrail-4 {
+    left: 108px;
+    top: 236px;
   }
 
   /* Визуализация индикатора дальности на тестовых страницах */
@@ -573,7 +573,7 @@ body, button {
     fill: #d7e9ff;
   }
 
-  body.settings-page #frame_range_2_counter {
+  .settings-container #frame_range_2_counter {
     position: absolute;
     left: 60px;
     top: 167px;
@@ -588,13 +588,13 @@ body, button {
     text-shadow: 0 1px 1px rgba(255, 255, 255, 0.5);
   }
 
-  body.settings-page #frame_range_2_counter span {
+  .settings-container #frame_range_2_counter span {
     display: block;
     min-width: 32px;
     text-align: center;
   }
 
-  body.settings-page .cp-flight-range__frame {
+  .settings-container .cp-flight-range__frame {
     position: absolute;
     left: 45px;
     top: 126px;
@@ -607,7 +607,7 @@ body, button {
     z-index: 20;
   }
 
-  body.settings-page .cp-flight-range__btn {
+  .settings-container .cp-flight-range__btn {
     position: absolute;
     border: none;
     background-color: transparent;
@@ -617,34 +617,34 @@ body, button {
     z-index: 30;
   }
 
-  body.settings-page #instance_range_left {
+  .settings-container #instance_range_left {
     top: 293px;
     left: 67px;
     width: 30px;
     height: 35px;
   }
 
-  body.settings-page #instance_range_right {
+  .settings-container #instance_range_right {
     top: 293px;
     left: 171px;
     width: 30px;
     height: 35px;
   }
 
-  body.settings-page .cp-flight-range__btn--left {
+  .settings-container .cp-flight-range__btn--left {
     background-image: url('ui_controlpanel/cp_button_left.png');
   }
 
-  body.settings-page .cp-flight-range__btn--right {
+  .settings-container .cp-flight-range__btn--right {
     background-image: url('ui_controlpanel/cp_button_right.png');
   }
 
-  body.settings-page .cp-flight-range__btn:focus-visible {
+  .settings-container .cp-flight-range__btn:focus-visible {
     outline: 2px solid #f6d265;
     outline-offset: 2px;
   }
 
-  body.settings-page .cp-flight-range__btn:active {
+  .settings-container .cp-flight-range__btn:active {
     transform: translateY(1px);
   }
 
