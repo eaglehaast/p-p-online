@@ -462,15 +462,14 @@ body, button {
     filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.35));
   }
 
-  .settings-container #frame_range_1_visual .jet-flame-trail {
+  .settings-container #frame_range_1_visual .jet-flame-canvas {
     position: absolute;
     left: 88px;
-    top: 216px;
-    width: 46px;
-    height: 14px;
-    border-radius: 10px;
-    background: radial-gradient(circle at 100% 50%, rgba(255, 234, 170, 0.95), rgba(255, 120, 0, 0.75) 55%, rgba(255, 70, 0, 0) 100%);
-    filter: drop-shadow(0 0 6px rgba(255, 150, 0, 0.8));
+    top: 210px;
+    width: 54px;
+    height: 24px;
+    filter: drop-shadow(0 0 8px rgba(255, 147, 41, 0.65));
+    pointer-events: none;
   }
 
   .settings-container #frame_range_1_visual .jet-contrail {
@@ -546,12 +545,9 @@ body, button {
     left: 0;
     top: 16px;
     width: 54px;
-    height: 20px;
+    height: 22px;
     filter: drop-shadow(0 0 6px rgba(255, 147, 41, 0.6));
-  }
-
-  body.test-harness #flightRangeIndicator.control-visual .jet-flame path {
-    fill: url(#menuFlameGradient);
+    pointer-events: none;
   }
 
   body.test-harness #flightRangeIndicator.control-visual .jet-plane {
