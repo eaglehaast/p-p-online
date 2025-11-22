@@ -46,6 +46,7 @@ let aimingAmplitude  = parseFloat(getStoredItem('settings.aimingAmplitude'));
 if(Number.isNaN(aimingAmplitude)) aimingAmplitude = 10 / 4;
 let addAA = getStoredItem('settings.addAA') === 'true';
 let sharpEdges = getStoredItem('settings.sharpEdges') === 'true';
+let addCargo = getStoredItem('settings.addCargo') === 'true';
 let mapIndex = getIntSetting('settings.mapIndex', 0);
 if(mapIndex < 0 || mapIndex >= MAPS.length) mapIndex = 0;
 
@@ -63,6 +64,9 @@ const amplitudePlusBtn =
   document.getElementById('amplitudePlus');
 const addAAToggle = document.getElementById('addAAToggle');
 const sharpEdgesToggle = document.getElementById('sharpEdgesToggle');
+const addsNailsBtn = document.getElementById('instance_adds_tumbler1_nails');
+const addsAABtn = document.getElementById('instance_adds_tumbler2_aa');
+const addsCargoBtn = document.getElementById('instance_adds_tumbler3_cargo');
 const backBtn = document.getElementById('backBtn');
 const mapPrevBtn = document.getElementById('instance_field_left');
 const mapNextBtn = document.getElementById('instance_field_right');
@@ -120,6 +124,7 @@ function saveSettings(){
   setStoredItem('settings.aimingAmplitude', aimingAmplitude);
   setStoredItem('settings.addAA', addAA);
   setStoredItem('settings.sharpEdges', sharpEdges);
+  setStoredItem('settings.addCargo', addCargo);
   setStoredItem('settings.mapIndex', mapIndex);
 }
 
@@ -158,10 +163,24 @@ function setupRepeatButton(btn, cb){
   btn.addEventListener('pointercancel', stop);
 }
 
+function setTumblerState(btn, isOn){
+  if(!btn) return;
+  const state = isOn ? 'cp_button_on' : 'cp_button_off';
+  btn.style.backgroundImage = `url('ui_controlpanel/${state}.png')`;
+  btn.setAttribute('aria-pressed', String(isOn));
+}
+
+function syncToggleInput(input, value){
+  if(input){
+    input.checked = value;
+  }
+}
+
 if(addAAToggle){
   addAAToggle.checked = addAA;
   addAAToggle.addEventListener('change', e => {
     addAA = e.target.checked;
+    setTumblerState(addsAABtn, addAA);
     saveSettings();
   });
 }
@@ -170,6 +189,36 @@ if(sharpEdgesToggle){
   sharpEdgesToggle.checked = sharpEdges;
   sharpEdgesToggle.addEventListener('change', e => {
     sharpEdges = e.target.checked;
+    setTumblerState(addsNailsBtn, sharpEdges);
+    saveSettings();
+  });
+}
+
+if(addsNailsBtn){
+  setTumblerState(addsNailsBtn, sharpEdges);
+  addsNailsBtn.addEventListener('click', () => {
+    sharpEdges = !sharpEdges;
+    setTumblerState(addsNailsBtn, sharpEdges);
+    syncToggleInput(sharpEdgesToggle, sharpEdges);
+    saveSettings();
+  });
+}
+
+if(addsAABtn){
+  setTumblerState(addsAABtn, addAA);
+  addsAABtn.addEventListener('click', () => {
+    addAA = !addAA;
+    setTumblerState(addsAABtn, addAA);
+    syncToggleInput(addAAToggle, addAA);
+    saveSettings();
+  });
+}
+
+if(addsCargoBtn){
+  setTumblerState(addsCargoBtn, addCargo);
+  addsCargoBtn.addEventListener('click', () => {
+    addCargo = !addCargo;
+    setTumblerState(addsCargoBtn, addCargo);
     saveSettings();
   });
 }

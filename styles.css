@@ -268,6 +268,65 @@ body, button {
     display: none !important;
   }
 
+  body.settings-page .cp-adds {
+    position: absolute;
+    inset: 0;
+  }
+
+  body.settings-page #frame_adds_1_nails,
+  body.settings-page #frame_adds_2_aa,
+  body.settings-page #frame_adds_3_cargo {
+    position: absolute;
+    width: 49px;
+    height: 49px;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  body.settings-page #frame_adds_1_nails { left: 271px; top: 418px; }
+  body.settings-page #frame_adds_2_aa { left: 271px; top: 492px; }
+  body.settings-page #frame_adds_3_cargo { left: 271px; top: 567px; }
+
+  body.settings-page .cp-adds__frame {
+    position: absolute;
+    left: 237px;
+    top: 401px;
+    width: 178px;
+    height: 236px;
+    background-image: url('ui_controlpanel/cp_frame_add.png');
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+    pointer-events: none;
+    z-index: 20;
+  }
+
+  body.settings-page .cp-adds__btn {
+    position: absolute;
+    left: 336px;
+    width: 50px;
+    height: 37px;
+    border: none;
+    background-color: transparent;
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+    cursor: pointer;
+    z-index: 30;
+    background-image: url('ui_controlpanel/cp_button_off.png');
+  }
+
+  body.settings-page #instance_adds_tumbler1_nails { top: 438px; }
+  body.settings-page #instance_adds_tumbler2_aa { top: 512px; }
+  body.settings-page #instance_adds_tumbler3_cargo { top: 587px; }
+
+  body.settings-page .cp-adds__btn:focus-visible {
+    outline: 2px solid #f6d265;
+    outline-offset: 2px;
+  }
+
+  body.settings-page .cp-adds__btn:active {
+    transform: translateY(1px);
+  }
+
   body.settings-page .cp-aiming-accuracy {
     position: absolute;
     inset: 0;
