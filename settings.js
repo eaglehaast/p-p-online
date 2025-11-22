@@ -18,6 +18,167 @@ const DEFAULT_SETTINGS = {
   mapIndex: 0
 };
 
+class JetFlameRenderer {
+  constructor(canvas, options = {}) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.baseWidth = options.baseWidth ?? 54;
+    this.baseHeight = options.baseHeight ?? 24;
+    this.scale = 1;
+    this.displayWidth = this.baseWidth;
+    this.displayHeight = this.baseHeight;
+    this.dpr = window.devicePixelRatio || 1;
+    this.elapsed = 0;
+    this.particles = [];
+    this.spawnAccumulator = 0;
+    this._tick = this.tick.bind(this);
+    this.running = false;
+
+    this.resizeCanvas();
+    this.start();
+  }
+
+  setScale(scale) {
+    this.scale = scale;
+    this.resizeCanvas();
+  }
+
+  resizeCanvas() {
+    this.displayWidth = this.baseWidth * this.scale;
+    this.displayHeight = this.baseHeight * (0.8 + 0.2 * this.scale);
+    this.dpr = window.devicePixelRatio || 1;
+
+    this.canvas.style.width = `${this.displayWidth}px`;
+    this.canvas.style.height = `${this.displayHeight}px`;
+    this.canvas.width = Math.max(1, Math.round(this.displayWidth * this.dpr));
+    this.canvas.height = Math.max(1, Math.round(this.displayHeight * this.dpr));
+  }
+
+  start() {
+    if (!this.running) {
+      this.running = true;
+      requestAnimationFrame(this._tick);
+    }
+  }
+
+  stop() {
+    this.running = false;
+  }
+
+  tick(timestamp) {
+    if (!this.running) return;
+
+    const dt = this.lastTimestamp ? (timestamp - this.lastTimestamp) / 1000 : 0;
+    this.lastTimestamp = timestamp;
+    this.elapsed += dt;
+
+    this.update(dt);
+    this.draw();
+
+    requestAnimationFrame(this._tick);
+  }
+
+  update(dt) {
+    const emissionRate = 30 * this.scale;
+    this.spawnAccumulator += dt * emissionRate;
+
+    while (this.spawnAccumulator > 1) {
+      this.spawnParticle();
+      this.spawnAccumulator -= 1;
+    }
+
+    this.particles = this.particles.filter(particle => {
+      particle.life -= dt;
+      particle.x += particle.vx * dt;
+      particle.y += particle.vy * dt;
+      particle.size += particle.growth * dt;
+      return particle.life > 0 && particle.x + particle.size > 0;
+    });
+  }
+
+  spawnParticle() {
+    const baseSpeed = 70 + Math.random() * 50;
+    const wobble = (Math.random() - 0.5) * 0.15;
+    const vx = -(baseSpeed + Math.random() * 15) * (1 + wobble) * this.scale;
+    const vy = (Math.random() - 0.5) * 18 * this.scale;
+    const size = (6 + Math.random() * 4) * this.scale;
+    const life = 0.48 + Math.random() * 0.32;
+    const originX = this.displayWidth * 0.92;
+    const originY = this.displayHeight * 0.55 + (Math.random() - 0.5) * 3;
+
+    this.particles.push({
+      x: originX,
+      y: originY,
+      vx,
+      vy,
+      size,
+      life,
+      maxLife: life,
+      growth: (6 + Math.random() * 7) * this.scale
+    });
+  }
+
+  drawFlameBody(ctx) {
+    const w = this.displayWidth;
+    const h = this.displayHeight;
+    const mid = h / 2;
+    const length = w * (0.88 + Math.sin(this.elapsed * 1.6) * 0.03);
+    const topWave = Math.sin(this.elapsed * 2.2) * 1.3 * this.scale;
+    const bottomWave = Math.cos(this.elapsed * 1.8) * 1.3 * this.scale;
+
+    const gradient = ctx.createLinearGradient(w, mid, w - length, mid);
+    gradient.addColorStop(0, 'rgba(255, 227, 161, 0.95)');
+    gradient.addColorStop(0.45, 'rgba(255, 150, 64, 0.85)');
+    gradient.addColorStop(1, 'rgba(255, 70, 0, 0)');
+
+    ctx.beginPath();
+    ctx.moveTo(w, mid);
+    ctx.bezierCurveTo(w - length * 0.15, mid - 4 + topWave, w - length * 0.55, mid - h * 0.45, w - length, mid);
+    ctx.bezierCurveTo(w - length * 0.55, mid + h * 0.45 + bottomWave, w - length * 0.15, mid + 4, w, mid);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    const innerLength = length * 0.65;
+    const innerGradient = ctx.createLinearGradient(w, mid, w - innerLength, mid);
+    innerGradient.addColorStop(0, 'rgba(255, 244, 214, 0.95)');
+    innerGradient.addColorStop(1, 'rgba(255, 170, 50, 0.1)');
+
+    ctx.beginPath();
+    ctx.moveTo(w, mid);
+    ctx.bezierCurveTo(w - innerLength * 0.2, mid - 2 + topWave * 0.5, w - innerLength * 0.55, mid - h * 0.25, w - innerLength, mid);
+    ctx.bezierCurveTo(w - innerLength * 0.55, mid + h * 0.25 + bottomWave * 0.5, w - innerLength * 0.2, mid + 2, w, mid);
+    ctx.fillStyle = innerGradient;
+    ctx.fill();
+  }
+
+  drawParticles(ctx) {
+    this.particles.forEach(particle => {
+      const t = particle.life / particle.maxLife;
+      const radius = particle.size * (0.5 + (1 - t));
+      const alpha = Math.max(0, t);
+
+      const gradient = ctx.createRadialGradient(particle.x, particle.y, 0, particle.x, particle.y, radius);
+      gradient.addColorStop(0, `rgba(255, 240, 200, ${0.7 * alpha})`);
+      gradient.addColorStop(0.5, `rgba(255, 180, 80, ${0.5 * alpha})`);
+      gradient.addColorStop(1, 'rgba(255, 70, 0, 0)');
+
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.ellipse(particle.x, particle.y, radius * 1.1, radius * 0.8, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  draw() {
+    const ctx = this.ctx;
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    ctx.clearRect(0, 0, this.displayWidth, this.displayHeight);
+
+    this.drawFlameBody(ctx);
+    this.drawParticles(ctx);
+  }
+}
+
 let storageAvailable = true;
 function getStoredItem(key){
   if(!storageAvailable){
@@ -83,6 +244,11 @@ const mapPrevBtn = document.getElementById('instance_field_left');
 const mapNextBtn = document.getElementById('instance_field_right');
 const mapNameDisplay = document.getElementById('frame_field_2_counter');
 const mapPreview = document.getElementById('mapPreview');
+const rangeFlameCanvas = document.getElementById('rangeFlameCanvas');
+const menuFlameCanvas = document.getElementById('menuFlame');
+const flameOptions = { baseWidth: 54, baseHeight: 24 };
+const rangeFlameRenderer = rangeFlameCanvas ? new JetFlameRenderer(rangeFlameCanvas, flameOptions) : null;
+const menuFlameRenderer = menuFlameCanvas instanceof HTMLCanvasElement ? new JetFlameRenderer(menuFlameCanvas, flameOptions) : null;
 const isTestHarnessPage = document.body.classList.contains('test-harness');
 
 function updateFlightRangeDisplay(){
@@ -92,19 +258,18 @@ function updateFlightRangeDisplay(){
 
 function updateFlightRangeFlame(){
   const contrails = document.querySelectorAll('#flightRangeIndicator .jet-contrail');
-  const flame = document.querySelector('#flightRangeIndicator .jet-flame-trail') ??
-                document.getElementById('menuFlame');
   const minScale = 0.8;
   const maxScale = 1.6;
   const t = (flightRangeCells - MIN_FLIGHT_RANGE_CELLS) /
             (MAX_FLIGHT_RANGE_CELLS - MIN_FLIGHT_RANGE_CELLS);
   const ratio = minScale + t * (maxScale - minScale);
 
-  if(flame){
-    const baseWidth = 46;
-    const baseHeight = 14;
-    flame.style.width = `${baseWidth * ratio}px`;
-    flame.style.height = `${baseHeight * (0.8 + 0.2 * ratio)}px`;
+  if(rangeFlameRenderer){
+    rangeFlameRenderer.setScale(ratio);
+  }
+
+  if(menuFlameRenderer){
+    menuFlameRenderer.setScale(ratio);
   }
 
   if(contrails.length){
