@@ -79,7 +79,7 @@ class JetFlameRenderer {
   }
 
   update(dt) {
-    const emissionRate = 30 * this.scale;
+    const emissionRate = 45 * this.scale;
     this.spawnAccumulator += dt * emissionRate;
 
     while (this.spawnAccumulator > 1) {
@@ -97,14 +97,14 @@ class JetFlameRenderer {
   }
 
   spawnParticle() {
-    const baseSpeed = 70 + Math.random() * 50;
-    const wobble = (Math.random() - 0.5) * 0.15;
-    const vx = -(baseSpeed + Math.random() * 15) * (1 + wobble) * this.scale;
-    const vy = (Math.random() - 0.5) * 18 * this.scale;
-    const size = (6 + Math.random() * 4) * this.scale;
-    const life = 0.48 + Math.random() * 0.32;
-    const originX = this.displayWidth * 0.92;
-    const originY = this.displayHeight * 0.55 + (Math.random() - 0.5) * 3;
+    const baseSpeed = 90 + Math.random() * 70;
+    const wobble = (Math.random() - 0.5) * 0.3;
+    const vx = -(baseSpeed + Math.random() * 20) * (1 + wobble) * this.scale;
+    const vy = (Math.random() - 0.5) * 28 * this.scale;
+    const size = (6 + Math.random() * 5) * this.scale;
+    const life = 0.4 + Math.random() * 0.35;
+    const originX = this.displayWidth * 0.9;
+    const originY = this.displayHeight * 0.55 + (Math.random() - 0.5) * 4;
 
     this.particles.push({
       x: originX,
@@ -114,7 +114,7 @@ class JetFlameRenderer {
       size,
       life,
       maxLife: life,
-      growth: (6 + Math.random() * 7) * this.scale
+      growth: (8 + Math.random() * 10) * this.scale
     });
   }
 
@@ -122,9 +122,9 @@ class JetFlameRenderer {
     const w = this.displayWidth;
     const h = this.displayHeight;
     const mid = h / 2;
-    const length = w * (0.88 + Math.sin(this.elapsed * 1.6) * 0.03);
-    const topWave = Math.sin(this.elapsed * 2.2) * 1.3 * this.scale;
-    const bottomWave = Math.cos(this.elapsed * 1.8) * 1.3 * this.scale;
+    const length = w * (0.85 + Math.sin(this.elapsed * 3) * 0.05);
+    const topWave = Math.sin(this.elapsed * 4) * 2 * this.scale;
+    const bottomWave = Math.cos(this.elapsed * 3.3) * 2 * this.scale;
 
     const gradient = ctx.createLinearGradient(w, mid, w - length, mid);
     gradient.addColorStop(0, 'rgba(255, 227, 161, 0.95)');
