@@ -12,29 +12,47 @@
     <div id="modeMenu">
       <h1 class="game-title"><span class="visually-hidden">Advanced Settings</span></h1>
 
-      <div class="control-frame control-frame--add">
-        <div class="control-box" id="additionalSettings">
-          <div class="control-label visually-hidden">Additional Settings</div>
-          <div class="aa-toggle">
-            <input type="checkbox" id="addAAToggle" class="toggle-input visually-hidden" />
-            <label for="addAAToggle" class="toggle-label">
-              <span class="toggle-visual" aria-hidden="true"></span>
-              <span class="toggle-text visually-hidden">Add Anti-Aircraft</span>
-            </label>
-          </div>
-          <div class="aa-toggle">
-            <input type="checkbox" id="sharpEdgesToggle" class="toggle-input visually-hidden" />
-            <label for="sharpEdgesToggle" class="toggle-label">
-              <span class="toggle-visual" aria-hidden="true"></span>
-              <span class="toggle-text visually-hidden">Sharp Edges</span>
-            </label>
-          </div>
-        </div>
-      </div>
-
       <div class="control-frame control-frame--reset">
         <button id="backBtn" class="mode-btn">Back</button>
       </div>
+    </div>
+
+    <div class="cp-adds" role="group" aria-label="Дополнительные настройки">
+      <div id="frame_adds_1_nails" aria-hidden="true"></div>
+      <div id="frame_adds_2_aa" aria-hidden="true"></div>
+      <div id="frame_adds_3_cargo" aria-hidden="true"></div>
+
+      <div class="cp-adds__frame" aria-hidden="true"></div>
+
+      <button
+        id="instance_adds_tumbler1_nails"
+        class="cp-adds__btn"
+        type="button"
+        aria-pressed="false"
+        aria-label="Переключить острые края"
+      >
+        <span class="visually-hidden">Переключить острые края</span>
+      </button>
+
+      <button
+        id="instance_adds_tumbler2_aa"
+        class="cp-adds__btn"
+        type="button"
+        aria-pressed="false"
+        aria-label="Переключить ПВО"
+      >
+        <span class="visually-hidden">Переключить ПВО</span>
+      </button>
+
+      <button
+        id="instance_adds_tumbler3_cargo"
+        class="cp-adds__btn"
+        type="button"
+        aria-pressed="false"
+        aria-label="Переключить груз"
+      >
+        <span class="visually-hidden">Переключить груз</span>
+      </button>
     </div>
 
     <div class="cp-aiming-accuracy" role="group" aria-label="Настройка амплитуды прицеливания">
