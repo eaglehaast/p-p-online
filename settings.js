@@ -9,6 +9,15 @@ const MAPS = [
   { name: 'Diagonals', file: 'map 3 diagonals.png' }
 ];
 
+const DEFAULT_SETTINGS = {
+  flightRangeCells: 15,
+  aimingAmplitude: 10 / 4,
+  addAA: false,
+  sharpEdges: false,
+  addCargo: false,
+  mapIndex: 0
+};
+
 let storageAvailable = true;
 function getStoredItem(key){
   if(!storageAvailable){
@@ -68,6 +77,8 @@ const addsNailsBtn = document.getElementById('instance_adds_tumbler1_nails');
 const addsAABtn = document.getElementById('instance_adds_tumbler2_aa');
 const addsCargoBtn = document.getElementById('instance_adds_tumbler3_cargo');
 const backBtn = document.getElementById('backBtn');
+const resetBtn = document.getElementById('instance_reset');
+const exitBtn = document.getElementById('instance_exit');
 const mapPrevBtn = document.getElementById('instance_field_left');
 const mapNextBtn = document.getElementById('instance_field_right');
 const mapNameDisplay = document.getElementById('frame_field_2_counter');
@@ -141,6 +152,28 @@ function updateMapNameDisplay(){
   if(map){
     mapNameDisplay.setAttribute('aria-label', `Selected map: ${map.name}`);
   }
+}
+
+function resetSettingsToDefaults(){
+  flightRangeCells = DEFAULT_SETTINGS.flightRangeCells;
+  aimingAmplitude = DEFAULT_SETTINGS.aimingAmplitude;
+  addAA = DEFAULT_SETTINGS.addAA;
+  sharpEdges = DEFAULT_SETTINGS.sharpEdges;
+  addCargo = DEFAULT_SETTINGS.addCargo;
+  mapIndex = DEFAULT_SETTINGS.mapIndex;
+
+  updateFlightRangeFlame();
+  updateFlightRangeDisplay();
+  updateAmplitudeDisplay();
+  updateAmplitudeIndicator();
+  updateMapPreview();
+  updateMapNameDisplay();
+  setTumblerState(addsAABtn, addAA);
+  setTumblerState(addsNailsBtn, sharpEdges);
+  setTumblerState(addsCargoBtn, addCargo);
+  syncToggleInput(addAAToggle, addAA);
+  syncToggleInput(sharpEdgesToggle, sharpEdges);
+  saveSettings();
 }
 
 function setupRepeatButton(btn, cb){
@@ -273,15 +306,26 @@ setupRepeatButton(amplitudePlusBtn, () => {
     saveSettings();
   }
 });
+
+function goToMainMenu(event){
+  if(isTestHarnessPage && window.paperWingsHarness?.showMainView){
+    event.preventDefault();
+    window.paperWingsHarness.showMainView({ updateHash: true, focus: 'advancedButton' });
+    return;
+  }
+  window.location.href = 'index.html';
+}
+
 if(backBtn){
-  backBtn.addEventListener('click', event => {
-    if(isTestHarnessPage && window.paperWingsHarness?.showMainView){
-      event.preventDefault();
-      window.paperWingsHarness.showMainView({ updateHash: true, focus: 'advancedButton' });
-      return;
-    }
-    window.location.href = 'index.html';
-  });
+  backBtn.addEventListener('click', goToMainMenu);
+}
+
+if(resetBtn){
+  resetBtn.addEventListener('click', resetSettingsToDefaults);
+}
+
+if(exitBtn){
+  exitBtn.addEventListener('click', goToMainMenu);
 }
 
 updateFlightRangeDisplay();
