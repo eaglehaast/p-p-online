@@ -12,43 +12,6 @@
     <div id="modeMenu">
       <h1 class="game-title"><span class="visually-hidden">Advanced Settings</span></h1>
 
-      <div class="control-frame control-frame--field">
-        <div class="control-box">
-          <div class="control-label visually-hidden">Map</div>
-          <div class="control-visual map-preview" id="frame_field_1_visual">
-            <div class="map-preview-layer map-preview-paper"></div>
-            <div class="map-preview-layer map-preview-image" id="mapPreview"></div>
-          </div>
-          <div class="control-value"></div>
-          <div class="control-buttons control-buttons--field">
-            <div class="map-selector" role="group" aria-label="Select map">
-              <button
-                id="instance_field_left"
-                class="control-btn control-btn--cp control-btn--minus control-btn--map"
-                type="button"
-                aria-label="Previous map"
-              >
-                <span class="visually-hidden">Previous map</span>
-              </button>
-              <div
-                id="frame_field_2_counter"
-                class="map-selector__display"
-                role="status"
-                aria-live="polite"
-              ></div>
-              <button
-                id="instance_field_right"
-                class="control-btn control-btn--cp control-btn--plus control-btn--map"
-                type="button"
-                aria-label="Next map"
-              >
-                <span class="visually-hidden">Next map</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <div class="control-frame control-frame--add">
         <div class="control-box" id="additionalSettings">
           <div class="control-label visually-hidden">Additional Settings</div>
@@ -158,6 +121,40 @@
         aria-label="Увеличить дальность полёта"
       >
         <span class="visually-hidden">Увеличить дальность полёта</span>
+      </button>
+    </div>
+
+    <div class="cp-field-selector" role="group" aria-label="Выбор карты">
+      <div class="cp-field-selector__indicator" aria-hidden="true">
+        <div id="frame_field_1_visual">
+          <div id="mapPreview" class="cp-field-selector__preview"></div>
+        </div>
+        <div
+          id="frame_field_2_counter"
+          class="cp-field-selector__display"
+          role="status"
+          aria-live="polite"
+          aria-label="Selected map"
+        ></div>
+      </div>
+
+      <div class="cp-field-selector__frame" aria-hidden="true"></div>
+
+      <button
+        id="instance_field_left"
+        class="cp-field-selector__btn cp-field-selector__btn--left"
+        type="button"
+        aria-label="Предыдущая карта"
+      >
+        <span class="visually-hidden">Предыдущая карта</span>
+      </button>
+      <button
+        id="instance_field_right"
+        class="cp-field-selector__btn cp-field-selector__btn--right"
+        type="button"
+        aria-label="Следующая карта"
+      >
+        <span class="visually-hidden">Следующая карта</span>
       </button>
     </div>
   </div>
