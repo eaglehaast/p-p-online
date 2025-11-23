@@ -360,8 +360,11 @@ body, button {
     left: 87px;
     top: 80px;
     width: 90px;
-    height: 120px;
-    pointer-events: none;
+    height: 65px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
   }
 
   body.settings-page #frame_accuracy_2_counter {
@@ -383,6 +386,19 @@ body, button {
     display: block;
     min-width: 32px;
     text-align: center;
+  }
+
+  body.settings-page .cp-aiming-accuracy__frame {
+    position: absolute;
+    left: 237px;
+    top: 126px;
+    width: 178px;
+    height: 250px;
+    background-image: url('ui_controlpanel/cp_frame_accuracy.png');
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+    pointer-events: none;
+    z-index: 20;
   }
 
   body.settings-page .cp-aiming-accuracy__btn {
@@ -1228,26 +1244,15 @@ body, button {
   --amp: 10deg;
 }
 
-  #frame_accuracy_1_visual .pendulum-hook {
-    position: absolute;
-    left: 7px;
-    top: -39px;
-    width: 30px;
-    height: 22px;
-    background: url('ui_controlpanel/hook.png') center / contain no-repeat;
-    pointer-events: none;
-  }
-
   #frame_accuracy_1_visual .pendulum {
-    position: absolute;
-    left: 0;
-    top: 0;
+    position: relative;
     width: 60px;
-    height: 90px;
+    height: 48px;
     display: flex;
     justify-content: center;
     align-items: flex-start;
-    transform-origin: 7px -39px;
+    margin-top: -5px;
+    transform-origin: 50% 0;
     animation: swing 2s ease-in-out infinite alternate;
   }
 
@@ -1268,6 +1273,18 @@ body, button {
   background: url('ui_controlpanel/pendulum.png') center / contain no-repeat;
   transform: translateX(-50%);
 }
+
+  #frame_accuracy_1_visual .pendulum::after {
+    content: '';
+    position: absolute;
+    top: -4px;
+    left: 50%;
+    width: 30px;
+    height: 22px;
+    background: url('ui_controlpanel/hook.png') center / contain no-repeat;
+    transform: translate(-50%, -100%);
+    pointer-events: none;
+  }
 
 @keyframes swing {
   from { transform: rotate(calc(var(--amp) * -1)); }
