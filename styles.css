@@ -342,6 +342,19 @@ body, button {
     z-index: 10;
   }
 
+  body.settings-page .cp-aiming-accuracy__frame {
+    position: absolute;
+    left: 237px;
+    top: 126px;
+    width: 178px;
+    height: 250px;
+    background-image: url('ui_controlpanel/cp_frame_accuracy.png');
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+    pointer-events: none;
+    z-index: 20;
+  }
+
   body.settings-page #frame_accuracy_1_visual {
     position: absolute;
     left: 87px;
