@@ -1254,9 +1254,11 @@ body, button {
 #frame_accuracy_1_visual .pendulum-bob {
   position: absolute;
   bottom: -3px;
+  left: 50%;
   width: 24px;
   height: 24px;
   background: url('ui_controlpanel/pendulum.png') center / contain no-repeat;
+  transform: translateX(-50%);
 }
 
 #frame_accuracy_1_visual .pendulum::after {
