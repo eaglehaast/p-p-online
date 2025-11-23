@@ -479,12 +479,34 @@ body, button {
     width: 64px;
     height: 18px;
     border-radius: 9px;
-    background-image: url("ui_controlpanel/cp_range_trail_air.svg");
+    background-image:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.1)),
+      url("ui_controlpanel/cp_range_trail_air.svg");
     background-repeat: repeat-x;
     background-size: contain;
     background-position: center;
     transform: scale(var(--trail-scale));
     transform-origin: left center;
+    animation: contrail-drift 7s ease-in-out infinite;
+  }
+
+  @keyframes contrail-drift {
+    0% {
+      background-position: 0 50%;
+      opacity: 0.82;
+    }
+    35% {
+      background-position: -32px 52%;
+      opacity: 0.92;
+    }
+    70% {
+      background-position: -64px 48%;
+      opacity: 0.78;
+    }
+    100% {
+      background-position: 0 50%;
+      opacity: 0.85;
+    }
   }
 
   .settings-container #frame_range_1_visual .jet-contrail.contrail-1 {
