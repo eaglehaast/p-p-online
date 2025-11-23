@@ -197,6 +197,136 @@ class JetFlameRenderer {
   }
 }
 
+class ContrailRenderer {
+  constructor(canvas, options = {}) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.baseWidth = options.baseWidth ?? 98;
+    this.baseHeight = options.baseHeight ?? 68;
+    this.scale = 1;
+    this.displayWidth = this.baseWidth;
+    this.displayHeight = this.baseHeight;
+    this.dpr = window.devicePixelRatio || 1;
+    this.elapsed = 0;
+    this.offset = 0;
+    this.streaks = this.createStreaks();
+    this._tick = this.tick.bind(this);
+    this.running = false;
+
+    this.resizeCanvas();
+    this.start();
+  }
+
+  setScale(scale) {
+    this.scale = scale;
+    this.resizeCanvas();
+  }
+
+  resizeCanvas() {
+    this.displayWidth = this.baseWidth * this.scale;
+    this.displayHeight = this.baseHeight * (0.7 + 0.3 * this.scale);
+    this.dpr = window.devicePixelRatio || 1;
+
+    this.canvas.style.width = `${this.baseWidth}px`;
+    this.canvas.style.height = `${this.baseHeight}px`;
+    this.canvas.width = Math.max(1, Math.round(this.displayWidth * this.dpr));
+    this.canvas.height = Math.max(1, Math.round(this.displayHeight * this.dpr));
+    this.canvas.style.setProperty('--trail-scale', this.scale.toFixed(3));
+  }
+
+  start() {
+    if (!this.running) {
+      this.running = true;
+      requestAnimationFrame(this._tick);
+    }
+  }
+
+  stop() {
+    this.running = false;
+  }
+
+  destroy() {
+    this.stop();
+    this.ctx && this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+  }
+
+  createStreaks() {
+    return [
+      { y: 0.16, thickness: 7, alpha: 0.45, wobble: 0.05, phase: 0 },
+      { y: 0.38, thickness: 8, alpha: 0.52, wobble: 0.07, phase: 0.4 },
+      { y: 0.58, thickness: 7, alpha: 0.48, wobble: 0.06, phase: 0.7 },
+      { y: 0.8, thickness: 6, alpha: 0.42, wobble: 0.04, phase: 0.2 }
+    ];
+  }
+
+  tick(timestamp) {
+    if (!this.running) return;
+
+    const dt = this.lastTimestamp ? (timestamp - this.lastTimestamp) / 1000 : 0;
+    this.lastTimestamp = timestamp;
+    this.elapsed += dt;
+
+    this.update(dt);
+    this.draw();
+
+    requestAnimationFrame(this._tick);
+  }
+
+  update(dt) {
+    const baseSpeed = 26 + this.scale * 10;
+    const spacing = Math.max(28, this.displayWidth * 0.32);
+    this.offset = (this.offset - dt * baseSpeed * this.scale) % spacing;
+    if (this.offset < 0) {
+      this.offset += spacing;
+    }
+  }
+
+  drawStreak(ctx, x, y, length, thickness, alpha) {
+    const gradient = ctx.createLinearGradient(x + length, y, x, y);
+    gradient.addColorStop(0, `rgba(255, 255, 255, ${0.65 * alpha})`);
+    gradient.addColorStop(0.32, `rgba(192, 230, 255, ${0.5 * alpha})`);
+    gradient.addColorStop(0.74, `rgba(160, 200, 255, ${0.32 * alpha})`);
+    gradient.addColorStop(1, 'rgba(140, 190, 255, 0)');
+
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    const radius = thickness / 2;
+    ctx.moveTo(x + radius, y - radius);
+    ctx.lineTo(x + length - radius, y - radius);
+    ctx.quadraticCurveTo(x + length, y - radius, x + length, y);
+    ctx.quadraticCurveTo(x + length, y + radius, x + length - radius, y + radius);
+    ctx.lineTo(x + radius, y + radius);
+    ctx.quadraticCurveTo(x, y + radius, x, y);
+    ctx.quadraticCurveTo(x, y - radius, x + radius, y - radius);
+    ctx.fill();
+  }
+
+  draw() {
+    const ctx = this.ctx;
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    ctx.clearRect(0, 0, this.displayWidth, this.displayHeight);
+
+    const length = this.displayWidth * 0.9;
+    const spacing = Math.max(28, this.displayWidth * 0.32);
+
+    ctx.save();
+    ctx.filter = 'blur(1.2px)';
+
+    for (const streak of this.streaks) {
+      const yBase = this.displayHeight * streak.y;
+      const wobble = Math.sin(this.elapsed * 2.4 + streak.phase * Math.PI * 2) * streak.wobble * this.displayHeight;
+      const thickness = streak.thickness * (0.7 + 0.3 * this.scale);
+      const start = -spacing + this.offset + streak.phase * spacing;
+
+      for (let x = start; x < this.displayWidth + spacing; x += spacing) {
+        this.drawStreak(ctx, x, yBase + wobble, length, thickness, streak.alpha);
+      }
+    }
+
+    ctx.restore();
+  }
+}
+
 let storageAvailable = true;
 function getStoredItem(key){
   if(!storageAvailable){
@@ -263,9 +393,11 @@ const mapNextBtn = document.getElementById('instance_field_right');
 const mapNameDisplay = document.getElementById('frame_field_2_counter');
 const mapPreview = document.getElementById('mapPreview');
 const rangeFlameCanvas = document.getElementById('rangeFlameCanvas');
+const rangeContrailCanvas = document.getElementById('rangeContrailCanvas');
 const menuFlameCanvas = document.getElementById('menuFlame');
 const flameOptions = { baseWidth: 54, baseHeight: 24 };
 const rangeFlameRenderer = rangeFlameCanvas ? new JetFlameRenderer(rangeFlameCanvas, flameOptions) : null;
+const contrailRenderer = rangeContrailCanvas instanceof HTMLCanvasElement ? new ContrailRenderer(rangeContrailCanvas) : null;
 const menuFlameRenderer = menuFlameCanvas instanceof HTMLCanvasElement ? new JetFlameRenderer(menuFlameCanvas, flameOptions) : null;
 const isTestHarnessPage = document.body.classList.contains('test-harness');
 
@@ -275,7 +407,6 @@ function updateFlightRangeDisplay(){
 }
 
 function updateFlightRangeFlame(){
-  const contrails = document.querySelectorAll('#flightRangeIndicator .jet-contrail');
   const minScale = 0.8;
   const maxScale = 1.6;
   const t = (flightRangeCells - MIN_FLIGHT_RANGE_CELLS) /
@@ -290,10 +421,8 @@ function updateFlightRangeFlame(){
     menuFlameRenderer.setScale(ratio);
   }
 
-  if(contrails.length){
-    contrails.forEach(trail => {
-      trail.style.setProperty('--trail-scale', ratio);
-    });
+  if(contrailRenderer){
+    contrailRenderer.setScale(ratio);
   }
 }
 
@@ -510,6 +639,15 @@ if(resetBtn){
 if(exitBtn){
   exitBtn.addEventListener('click', goToMainMenu);
 }
+
+function cleanupRenderers(){
+  if(rangeFlameRenderer) rangeFlameRenderer.stop();
+  if(menuFlameRenderer) menuFlameRenderer.stop();
+  if(contrailRenderer) contrailRenderer.stop();
+}
+
+window.addEventListener('pagehide', cleanupRenderers);
+window.addEventListener('beforeunload', cleanupRenderers);
 
 updateFlightRangeDisplay();
 updateFlightRangeFlame();
