@@ -1272,8 +1272,8 @@ body, button {
 }
 
 @keyframes swing {
-  from { transform: rotate(calc(var(--amp) * -1)); }
-  to   { transform: rotate(var(--amp)); }
+  from { transform: translateX(-50%) rotate(calc(var(--amp) * -1)); }
+  to   { transform: translateX(-50%) rotate(var(--amp)); }
 }
 
 #frame_accuracy_2_counter {
