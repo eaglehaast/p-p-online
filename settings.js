@@ -273,11 +273,8 @@ function updateFlightRangeFlame(){
   }
 
   if(contrails.length){
-    const baseTrailWidth = 40;
-    const baseTrailHeight = 4;
     contrails.forEach(trail => {
-      trail.style.width = `${baseTrailWidth * ratio}px`;
-      trail.style.height = `${baseTrailHeight}px`;
+      trail.style.setProperty('--trail-scale', ratio);
     });
   }
 }

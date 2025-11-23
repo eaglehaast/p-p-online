@@ -475,31 +475,36 @@ body, button {
 
   .settings-container #frame_range_1_visual .jet-contrail {
     position: absolute;
-    width: 40px;
-    height: 4px;
-    border-radius: 4px;
-    background: linear-gradient(90deg, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0));
-    filter: blur(0.3px);
+    --trail-scale: 1;
+    width: 48px;
+    height: 14px;
+    border-radius: 7px;
+    background-image: url("ui_controlpanel/cp_range_trail.svg");
+    background-repeat: repeat-x;
+    background-size: contain;
+    background-position: center;
+    transform: scale(var(--trail-scale));
+    transform-origin: left center;
   }
 
   .settings-container #frame_range_1_visual .jet-contrail.contrail-1 {
-    left: 108px;
-    top: 207px;
+    left: 110px;
+    top: 204px;
   }
 
   .settings-container #frame_range_1_visual .jet-contrail.contrail-2 {
     left: 94px;
-    top: 214px;
+    top: 213px;
   }
 
   .settings-container #frame_range_1_visual .jet-contrail.contrail-3 {
     left: 94px;
-    top: 228px;
+    top: 229px;
   }
 
   .settings-container #frame_range_1_visual .jet-contrail.contrail-4 {
-    left: 108px;
-    top: 236px;
+    left: 110px;
+    top: 238px;
   }
 
   /* Визуализация индикатора дальности на тестовых страницах */
