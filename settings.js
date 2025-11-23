@@ -122,49 +122,67 @@ class JetFlameRenderer {
     const w = this.displayWidth;
     const h = this.displayHeight;
     const mid = h / 2;
-    const length = w * (0.85 + Math.sin(this.elapsed * 3) * 0.05);
-    const topWave = Math.sin(this.elapsed * 4) * 2 * this.scale;
-    const bottomWave = Math.cos(this.elapsed * 3.3) * 2 * this.scale;
+
+    const baseLength = w * 0.9;
+    const length = baseLength + Math.sin(this.elapsed * 2.8) * w * 0.05;
+    const topWave = Math.sin(this.elapsed * 5.2) * h * 0.08;
+    const bottomWave = Math.cos(this.elapsed * 4.1) * h * 0.07;
 
     const gradient = ctx.createLinearGradient(w, mid, w - length, mid);
-    gradient.addColorStop(0, 'rgba(255, 227, 161, 0.95)');
-    gradient.addColorStop(0.45, 'rgba(255, 150, 64, 0.85)');
-    gradient.addColorStop(1, 'rgba(255, 70, 0, 0)');
+    gradient.addColorStop(0, 'rgba(255, 233, 186, 0.95)');
+    gradient.addColorStop(0.28, 'rgba(255, 194, 116, 0.9)');
+    gradient.addColorStop(0.55, 'rgba(255, 141, 64, 0.78)');
+    gradient.addColorStop(0.82, 'rgba(255, 78, 34, 0.45)');
+    gradient.addColorStop(1, 'rgba(160, 28, 18, 0)');
 
     ctx.beginPath();
     ctx.moveTo(w, mid);
-    ctx.bezierCurveTo(w - length * 0.15, mid - 4 + topWave, w - length * 0.55, mid - h * 0.45, w - length, mid);
-    ctx.bezierCurveTo(w - length * 0.55, mid + h * 0.45 + bottomWave, w - length * 0.15, mid + 4, w, mid);
+    ctx.bezierCurveTo(w - length * 0.16, mid - h * 0.08 + topWave, w - length * 0.52, mid - h * 0.46, w - length, mid);
+    ctx.bezierCurveTo(w - length * 0.52, mid + h * 0.46 + bottomWave, w - length * 0.16, mid + h * 0.08, w, mid);
     ctx.fillStyle = gradient;
     ctx.fill();
 
-    const innerLength = length * 0.65;
+    const innerLength = length * 0.68;
     const innerGradient = ctx.createLinearGradient(w, mid, w - innerLength, mid);
-    innerGradient.addColorStop(0, 'rgba(255, 244, 214, 0.95)');
-    innerGradient.addColorStop(1, 'rgba(255, 170, 50, 0.1)');
+    innerGradient.addColorStop(0, 'rgba(255, 247, 224, 0.96)');
+    innerGradient.addColorStop(0.42, 'rgba(255, 205, 132, 0.75)');
+    innerGradient.addColorStop(1, 'rgba(255, 160, 60, 0.15)');
 
     ctx.beginPath();
     ctx.moveTo(w, mid);
-    ctx.bezierCurveTo(w - innerLength * 0.2, mid - 2 + topWave * 0.5, w - innerLength * 0.55, mid - h * 0.25, w - innerLength, mid);
-    ctx.bezierCurveTo(w - innerLength * 0.55, mid + h * 0.25 + bottomWave * 0.5, w - innerLength * 0.2, mid + 2, w, mid);
+    ctx.bezierCurveTo(w - innerLength * 0.22, mid - h * 0.05 + topWave * 0.55, w - innerLength * 0.5, mid - h * 0.28, w - innerLength, mid);
+    ctx.bezierCurveTo(w - innerLength * 0.5, mid + h * 0.28 + bottomWave * 0.55, w - innerLength * 0.22, mid + h * 0.05, w, mid);
     ctx.fillStyle = innerGradient;
+    ctx.fill();
+
+    const coreLength = innerLength * 0.7;
+    const coreGradient = ctx.createLinearGradient(w, mid, w - coreLength, mid);
+    coreGradient.addColorStop(0, 'rgba(255, 255, 245, 0.9)');
+    coreGradient.addColorStop(1, 'rgba(255, 210, 140, 0.25)');
+
+    ctx.beginPath();
+    ctx.moveTo(w, mid);
+    ctx.bezierCurveTo(w - coreLength * 0.24, mid - h * 0.03 + topWave * 0.35, w - coreLength * 0.46, mid - h * 0.15, w - coreLength, mid);
+    ctx.bezierCurveTo(w - coreLength * 0.46, mid + h * 0.15 + bottomWave * 0.35, w - coreLength * 0.24, mid + h * 0.03, w, mid);
+    ctx.fillStyle = coreGradient;
     ctx.fill();
   }
 
   drawParticles(ctx) {
     this.particles.forEach(particle => {
       const t = particle.life / particle.maxLife;
-      const radius = particle.size * (0.5 + (1 - t));
-      const alpha = Math.max(0, t);
+      const radius = particle.size * (0.6 + (1 - t) * 0.9);
+      const alpha = Math.max(0, t * 0.9);
 
       const gradient = ctx.createRadialGradient(particle.x, particle.y, 0, particle.x, particle.y, radius);
-      gradient.addColorStop(0, `rgba(255, 240, 200, ${0.7 * alpha})`);
-      gradient.addColorStop(0.5, `rgba(255, 180, 80, ${0.5 * alpha})`);
-      gradient.addColorStop(1, 'rgba(255, 70, 0, 0)');
+      gradient.addColorStop(0, `rgba(255, 250, 230, ${0.8 * alpha})`);
+      gradient.addColorStop(0.35, `rgba(255, 205, 125, ${0.65 * alpha})`);
+      gradient.addColorStop(0.7, `rgba(255, 120, 60, ${0.45 * alpha})`);
+      gradient.addColorStop(1, 'rgba(160, 40, 20, 0)');
 
       ctx.fillStyle = gradient;
       ctx.beginPath();
-      ctx.ellipse(particle.x, particle.y, radius * 1.1, radius * 0.8, 0, 0, Math.PI * 2);
+      ctx.ellipse(particle.x, particle.y, radius * 1.35, radius * 0.7, 0, 0, Math.PI * 2);
       ctx.fill();
     });
   }
