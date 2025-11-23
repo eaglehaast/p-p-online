@@ -344,8 +344,8 @@ body, button {
 
   body.settings-page #frame_accuracy_1_visual {
     position: absolute;
-    left: 43px;
-    top: 65px;
+    left: 87px;
+    top: 80px;
     width: 90px;
     height: 65px;
     display: flex;
@@ -1231,25 +1231,25 @@ body, button {
   --amp: 10deg;
 }
 
-#frame_accuracy_1_visual .pendulum {
-  position: relative;
-  width: 60px;
-  height: 60px;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  margin-top: -5px;
-  transform-origin: 50% 0;
-  animation: swing 2s ease-in-out infinite alternate;
-}
+  #frame_accuracy_1_visual .pendulum {
+    position: relative;
+    width: 60px;
+    height: 48px;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    margin-top: -5px;
+    transform-origin: 50% 0;
+    animation: swing 2s ease-in-out infinite alternate;
+  }
 
-#frame_accuracy_1_visual .pendulum-rod {
-  width: 3px;
-  height: 39px;
-  background: #6c757d;
-  border-radius: 2px;
-  box-shadow: 0 0 4px rgba(0, 0, 0, 0.25);
-}
+  #frame_accuracy_1_visual .pendulum-rod {
+    width: 2px;
+    height: 24px;
+    background: linear-gradient(90deg, #a7885f 0%, #a7885f 50%, #413c32 50%, #413c32 100%);
+    border-radius: 2px;
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.25);
+  }
 
 #frame_accuracy_1_visual .pendulum-bob {
   position: absolute;
