@@ -747,6 +747,12 @@ body, button {
     background-image: url('ui_controlpanel/blue_flag_mini.png');
   }
 
+  body.settings-page #frame_field_1_visual .cp-field-selector__object--blue-plane,
+  body.settings-page #frame_field_1_visual .cp-field-selector__object--blue-flag {
+    transform: scaleY(-1);
+    transform-origin: center;
+  }
+
   body.settings-page #f_b_flag {
     left: 42px;
     top: 13px;
