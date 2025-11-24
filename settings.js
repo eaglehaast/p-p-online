@@ -1,7 +1,7 @@
 const MIN_FLIGHT_RANGE_CELLS = 5;
 const MAX_FLIGHT_RANGE_CELLS = 30;
 const MIN_AMPLITUDE = 0;
-const MAX_AMPLITUDE = 30;
+const MAX_AMPLITUDE = 20;
 
 const MAPS = [
   { name: 'Clear Sky', file: 'map 1 - clear sky 3.png' },
@@ -11,7 +11,7 @@ const MAPS = [
 
 const DEFAULT_SETTINGS = {
   flightRangeCells: 15,
-  aimingAmplitude: 10 / 4,
+  aimingAmplitude: 10 / 5,
   addAA: false,
   sharpEdges: false,
   addCargo: false,
@@ -361,7 +361,7 @@ function getIntSetting(key, defaultValue){
 
 let flightRangeCells = getIntSetting('settings.flightRangeCells', 15);
 let aimingAmplitude  = parseFloat(getStoredItem('settings.aimingAmplitude'));
-if(Number.isNaN(aimingAmplitude)) aimingAmplitude = 10 / 4;
+if(Number.isNaN(aimingAmplitude)) aimingAmplitude = 10 / 5;
 let addAA = getStoredItem('settings.addAA') === 'true';
 let sharpEdges = getStoredItem('settings.sharpEdges') === 'true';
 let addCargo = getStoredItem('settings.addCargo') === 'true';
@@ -429,7 +429,7 @@ function updateFlightRangeFlame(){
 function updateAmplitudeDisplay(){
   const disp = document.getElementById('amplitudeAngleDisplay');
   if(disp){
-    const maxAngle = aimingAmplitude * 4;
+    const maxAngle = aimingAmplitude * 5;
     disp.textContent = `${maxAngle.toFixed(0)}°`;
   }
 }
@@ -441,7 +441,7 @@ function updateAmplitudeIndicator(){
     document.getElementById('amplitudeIndicator');
 
   if(amplitudeHost){
-    const maxAngle = aimingAmplitude * 4;
+    const maxAngle = aimingAmplitude * 5;
     amplitudeHost.style.setProperty('--amp', `${maxAngle}deg`);
   }
 }

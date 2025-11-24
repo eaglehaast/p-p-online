@@ -1287,7 +1287,7 @@ const MIN_FLIGHT_RANGE_CELLS = 5;
 const MAX_FLIGHT_RANGE_CELLS = 30;
 
 const MIN_AMPLITUDE        = 0;
-const MAX_AMPLITUDE        = 30;     // UI показывает как *4°
+const MAX_AMPLITUDE        = 20;     // UI показывает как *5°
 const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 
 
@@ -1313,7 +1313,7 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 let flightRangeCells; // cells for menu and physics
 let buildingsCount   = 0;
-let aimingAmplitude;     // 0..30 (UI показывает *4)
+let aimingAmplitude;     // 0..20 (UI показывает *5)
 
 let isGameOver   = false;
 let winnerColor  = null;
@@ -1414,7 +1414,7 @@ function loadSettings(){
   const fr = parseInt(getStoredSetting('settings.flightRangeCells'), 10);
   flightRangeCells = Number.isNaN(fr) ? 15 : fr;
   const amp = parseFloat(getStoredSetting('settings.aimingAmplitude'));
-  aimingAmplitude = Number.isNaN(amp) ? 10 / 4 : amp;
+  aimingAmplitude = Number.isNaN(amp) ? 10 / 5 : amp;
   settings.addAA = getStoredSetting('settings.addAA') === 'true';
   settings.sharpEdges = getStoredSetting('settings.sharpEdges') === 'true';
   const mapIdx = parseInt(getStoredSetting('settings.mapIndex'), 10);
@@ -2077,7 +2077,7 @@ onlineBtn.addEventListener("click",()=>{
 if(classicRulesBtn){
   classicRulesBtn.addEventListener('click', () => {
     flightRangeCells = 15;
-    aimingAmplitude = 10 / 4; // 10°
+    aimingAmplitude = 10 / 5; // 10°
     settings.addAA = false;
     settings.sharpEdges = false;
     settings.mapIndex = Math.floor(Math.random() * MAPS.length);
@@ -2173,9 +2173,9 @@ function syncTestControls(){
     }
   }
   if(testAmplitudeInput){
-    const fallbackAmplitude = Number.isFinite(aimingAmplitude) ? aimingAmplitude : (10 / 4);
+    const fallbackAmplitude = Number.isFinite(aimingAmplitude) ? aimingAmplitude : (10 / 5);
     const clampedAmplitude = Math.min(MAX_AMPLITUDE, Math.max(MIN_AMPLITUDE, fallbackAmplitude));
-    const amplitudeDegrees = clampedAmplitude * 4;
+    const amplitudeDegrees = clampedAmplitude * 5;
     const formattedAmplitude = formatNumericInputValue(amplitudeDegrees);
     if(testAmplitudeInput.value !== formattedAmplitude){
       testAmplitudeInput.value = formattedAmplitude;
@@ -2241,8 +2241,8 @@ function applyTestControlSelections(){
   if(testAmplitudeInput){
     const rawDegrees = parseFloat(testAmplitudeInput.value);
     if(Number.isFinite(rawDegrees)){
-      const clampedDegrees = Math.min(MAX_AMPLITUDE * 4, Math.max(MIN_AMPLITUDE * 4, rawDegrees));
-      const nextAmplitude = clampedDegrees / 4;
+      const clampedDegrees = Math.min(MAX_AMPLITUDE * 5, Math.max(MIN_AMPLITUDE * 5, rawDegrees));
+      const nextAmplitude = clampedDegrees / 5;
       if(!Number.isFinite(aimingAmplitude) || Math.abs(nextAmplitude - aimingAmplitude) > 1e-6){
         aimingAmplitude = nextAmplitude;
         setStoredSetting('settings.aimingAmplitude', String(aimingAmplitude));
@@ -3367,7 +3367,7 @@ function handleAAForPlane(p, fp){
     const clampedDist = Math.min(distPx, MAX_DRAG_DISTANCE);
 
     // use a constant aiming amplitude (in degrees) independent of drag distance
-    const maxAngleDeg = aimingAmplitude * 4;
+    const maxAngleDeg = aimingAmplitude * 5;
     const maxAngleRad = maxAngleDeg * Math.PI / 180;
 
     // обновляем текущий угол раскачивания
