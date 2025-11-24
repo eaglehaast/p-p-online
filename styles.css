@@ -1269,6 +1269,7 @@ body, button {
   width: 24px;
   height: 24px;
   background: url('ui_controlpanel/pendulum.png') center / contain no-repeat;
+  margin-top: -1px;
 }
 
 @keyframes swing {
