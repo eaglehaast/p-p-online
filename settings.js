@@ -450,6 +450,109 @@ function updateAmplitudeIndicator(){
   }
 }
 
+const LEFT_CRACK_STEPS = [
+  'ui_controlpanel/steps/left_step 1.png',
+  'ui_controlpanel/steps/left_step 2.png',
+  'ui_controlpanel/steps/left_step 3.png',
+  'ui_controlpanel/steps/left_step 4.png',
+  'ui_controlpanel/steps/left_step 5.png',
+  'ui_controlpanel/steps/left_step 6.png',
+  'ui_controlpanel/steps/left_step 7.png',
+  'ui_controlpanel/steps/left_step 8.png',
+  'ui_controlpanel/steps/left_step 9.png',
+  'ui_controlpanel/steps/left_step 10.png'
+];
+
+const RIGHT_CRACK_STEPS = [
+  'ui_controlpanel/steps/right_step 1.png',
+  'ui_controlpanel/steps/right_step 2.png',
+  'ui_controlpanel/steps/right_step 3.png',
+  'ui_controlpanel/steps/right_step 4.png',
+  'ui_controlpanel/steps/right_step 5.png',
+  'ui_controlpanel/steps/right_step 6.png',
+  'ui_controlpanel/steps/right_step 7.png',
+  'ui_controlpanel/steps/right_step 8 .png',
+  'ui_controlpanel/steps/right_step 9.png',
+  'ui_controlpanel/steps/right_step 10 .png'
+];
+
+function createCrackImage(src){
+  const img = document.createElement('img');
+  img.src = src;
+  img.alt = '';
+  img.decoding = 'async';
+  img.className = 'accuracy-crack-step';
+  return img;
+}
+
+function getPendulumAngle(pendulumEl){
+  const transform = getComputedStyle(pendulumEl).transform;
+  if(!transform || transform === 'none') return 0;
+
+  const matrixMatch = transform.match(/matrix\(([^)]+)\)/);
+  if(!matrixMatch) return 0;
+
+  const values = matrixMatch[1].split(',').map(v => parseFloat(v.trim()));
+  if(values.length < 2 || Number.isNaN(values[0]) || Number.isNaN(values[1])){
+    return 0;
+  }
+
+  const angleRad = Math.atan2(values[1], values[0]);
+  return angleRad * (180 / Math.PI);
+}
+
+function setupAccuracyCrackWatcher(){
+  const pendulumEl = document.querySelector('#frame_accuracy_1_visual .pendulum');
+  const overlay = document.getElementById('accuracyCrackOverlay');
+  if(!pendulumEl || !overlay){
+    return;
+  }
+
+  const TARGET_AMPLITUDE = 20;
+  const EXTREME_THRESHOLD = 99.5;
+  const RESET_THRESHOLD = 90;
+  const EPSILON = 0.001;
+
+  let leftIndex = 0;
+  let rightIndex = 0;
+  let lockedSide = null;
+
+  const appendCrack = (side) => {
+    if(side === 'left' && leftIndex < LEFT_CRACK_STEPS.length){
+      overlay.appendChild(createCrackImage(LEFT_CRACK_STEPS[leftIndex++]));
+    } else if(side === 'right' && rightIndex < RIGHT_CRACK_STEPS.length){
+      overlay.appendChild(createCrackImage(RIGHT_CRACK_STEPS[rightIndex++]));
+    }
+  };
+
+  const tick = () => {
+    if(aimingAmplitude < TARGET_AMPLITUDE - EPSILON){
+      lockedSide = null;
+      requestAnimationFrame(tick);
+      return;
+    }
+
+    const angle = getPendulumAngle(pendulumEl);
+    const absAngle = Math.abs(angle);
+
+    if(absAngle < RESET_THRESHOLD){
+      lockedSide = null;
+    }
+
+    if(angle <= -EXTREME_THRESHOLD && lockedSide !== 'left'){
+      appendCrack('left');
+      lockedSide = 'left';
+    } else if(angle >= EXTREME_THRESHOLD && lockedSide !== 'right'){
+      appendCrack('right');
+      lockedSide = 'right';
+    }
+
+    requestAnimationFrame(tick);
+  };
+
+  requestAnimationFrame(tick);
+}
+
 function saveSettings(){
   setStoredItem('settings.flightRangeCells', flightRangeCells);
   setStoredItem('settings.aimingAmplitude', aimingAmplitude);
@@ -661,3 +764,4 @@ updateFlightRangeDisplay();
 updateFlightRangeFlame();
 updateAmplitudeDisplay();
 updateAmplitudeIndicator();
+setupAccuracyCrackWatcher();
