@@ -539,12 +539,12 @@ function setupAccuracyCrackWatcher(){
       lockedSide = null;
     }
 
-    if(angle <= -EXTREME_THRESHOLD && lockedSide !== 'left'){
-      appendCrack('left');
-      lockedSide = 'left';
-    } else if(angle >= EXTREME_THRESHOLD && lockedSide !== 'right'){
+    if(angle <= -EXTREME_THRESHOLD && lockedSide !== 'right'){
       appendCrack('right');
       lockedSide = 'right';
+    } else if(angle >= EXTREME_THRESHOLD && lockedSide !== 'left'){
+      appendCrack('left');
+      lockedSide = 'left';
     }
 
     requestAnimationFrame(tick);
