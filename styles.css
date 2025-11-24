@@ -1238,6 +1238,7 @@ body, button {
     width: 32px;
     height: 24px;
     background: url('ui_controlpanel/hook.png') center / contain no-repeat;
+    background-position: calc(50% + 1px) center;
     pointer-events: none;
     transform: translateX(-50%);
   }
