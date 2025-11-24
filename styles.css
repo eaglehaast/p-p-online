@@ -1259,7 +1259,7 @@ body, button {
 
   #frame_accuracy_1_visual .pendulum-rod {
     width: 2px;
-    height: 24px;
+    height: 24px; /* shortened from 56px */
     background: linear-gradient(90deg, #a7885f 0%, #a7885f 50%, #413c32 50%, #413c32 100%);
     border-radius: 2px;
     box-shadow: 0 0 4px rgba(0, 0, 0, 0.25);
