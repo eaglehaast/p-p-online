@@ -1233,8 +1233,8 @@ body, button {
 
   #frame_accuracy_1_visual .pendulum-hook {
     position: absolute;
-    top: 14px;
-    left: 44px;
+    top: 0;
+    left: 50%;
     width: 32px;
     height: 24px;
     background: url('ui_controlpanel/hook.png') center / contain no-repeat;
