@@ -1244,25 +1244,24 @@ body, button {
 
   #frame_accuracy_1_visual .pendulum {
     position: absolute;
-    top: 20px;
+    top: 24px;
     left: 44px;
     width: 60px;
-    height: 72px;
+    height: 64px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 4px;
+    gap: 0;
     transform: translateX(-50%);
-    transform-origin: 50% 4px;
+    transform-origin: 50% 0;
     animation: swing 2s ease-in-out infinite alternate;
   }
 
-  #frame_accuracy_1_visual .pendulum-rod {
+  #frame_accuracy_1_visual .pendulum-rope {
     width: 2px;
-    height: 24px; /* shortened from 56px */
-    background: linear-gradient(90deg, #a7885f 0%, #a7885f 50%, #413c32 50%, #413c32 100%);
-    border-radius: 2px;
-    box-shadow: 0 0 4px rgba(0, 0, 0, 0.25);
+    height: 24px;
+    background: url('ui_controlpanel/rope_pendulum.png') center / contain no-repeat;
+    margin-top: -1px;
   }
 
 #frame_accuracy_1_visual .pendulum-bob {
