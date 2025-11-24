@@ -1244,7 +1244,7 @@ body, button {
 
   #frame_accuracy_1_visual .pendulum {
     position: absolute;
-    top: 38px;
+    top: 20px;
     left: 44px;
     width: 60px;
     height: 72px;
@@ -1253,7 +1253,7 @@ body, button {
     align-items: center;
     gap: 4px;
     transform: translateX(-50%);
-    transform-origin: 50% -12px;
+    transform-origin: 50% 4px;
     animation: swing 2s ease-in-out infinite alternate;
   }
 
