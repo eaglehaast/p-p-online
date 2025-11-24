@@ -435,10 +435,14 @@ function updateAmplitudeDisplay(){
 }
 
 function updateAmplitudeIndicator(){
-  const indicator = document.getElementById('amplitudeIndicator');
-  if(indicator){
+  const amplitudeHost =
+    document.getElementById('frame_accuracy_1_visual') ??
+    document.querySelector('.cp-aiming-accuracy') ??
+    document.getElementById('amplitudeIndicator');
+
+  if(amplitudeHost){
     const maxAngle = aimingAmplitude * 4;
-    indicator.style.setProperty('--amp', `${maxAngle}deg`);
+    amplitudeHost.style.setProperty('--amp', `${maxAngle}deg`);
   }
 }
 
