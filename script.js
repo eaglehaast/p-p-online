@@ -1287,7 +1287,7 @@ const MIN_FLIGHT_RANGE_CELLS = 5;
 const MAX_FLIGHT_RANGE_CELLS = 30;
 
 const MIN_AMPLITUDE        = 0;
-const MAX_AMPLITUDE        = 30;     // UI показывает как *4°
+const MAX_AMPLITUDE        = 20;     // UI показывает как *5°
 const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 
 
@@ -1313,7 +1313,7 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 let flightRangeCells; // cells for menu and physics
 let buildingsCount   = 0;
-let aimingAmplitude;     // 0..30 (UI показывает *5)
+let aimingAmplitude;     // 0..20 (UI показывает *5)
 
 let isGameOver   = false;
 let winnerColor  = null;
@@ -2241,8 +2241,8 @@ function applyTestControlSelections(){
   if(testAmplitudeInput){
     const rawDegrees = parseFloat(testAmplitudeInput.value);
     if(Number.isFinite(rawDegrees)){
-      const clampedDegrees = Math.min(MAX_AMPLITUDE * 4, Math.max(MIN_AMPLITUDE * 4, rawDegrees));
-      const nextAmplitude = clampedDegrees / 4;
+      const clampedDegrees = Math.min(MAX_AMPLITUDE * 5, Math.max(MIN_AMPLITUDE * 5, rawDegrees));
+      const nextAmplitude = clampedDegrees / 5;
       if(!Number.isFinite(aimingAmplitude) || Math.abs(nextAmplitude - aimingAmplitude) > 1e-6){
         aimingAmplitude = nextAmplitude;
         setStoredSetting('settings.aimingAmplitude', String(aimingAmplitude));

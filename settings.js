@@ -1,7 +1,7 @@
 const MIN_FLIGHT_RANGE_CELLS = 5;
 const MAX_FLIGHT_RANGE_CELLS = 30;
 const MIN_AMPLITUDE = 0;
-const MAX_AMPLITUDE = 30;
+const MAX_AMPLITUDE = 20;
 
 const MAPS = [
   { name: 'Clear Sky', file: 'map 1 - clear sky 3.png' },
