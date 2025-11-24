@@ -1235,8 +1235,8 @@ body, button {
     position: absolute;
     top: 0;
     left: 50%;
-    width: 32px;
-    height: 24px;
+    width: 12px;
+    height: 16px;
     background: url('ui_controlpanel/hook.png') center / contain no-repeat;
     background-position: calc(50% + 1px) center;
     pointer-events: none;
@@ -1245,10 +1245,10 @@ body, button {
 
   #frame_accuracy_1_visual .pendulum {
     position: absolute;
-    top: 24px;
-    left: 44px;
-    width: 60px;
-    height: 64px;
+    top: 16px;
+    left: 50%;
+    width: 24px;
+    height: 48px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -1266,8 +1266,8 @@ body, button {
   }
 
 #frame_accuracy_1_visual .pendulum-bob {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   background: url('ui_controlpanel/pendulum.png') center / contain no-repeat;
 }
 
