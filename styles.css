@@ -1227,7 +1227,7 @@ body, button {
   transform: none;
 }
 
-#amplitudeIndicator {
+#frame_accuracy_1_visual {
   --amp: 10deg;
 }
 
