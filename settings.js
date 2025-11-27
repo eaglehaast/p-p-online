@@ -467,6 +467,7 @@ let previewOscillationAngle = 0;
 let previewOscillationDir = 1;
 let previewArrow = null;
 let previewAnimationId = null;
+const previewPlaneBaselines = new WeakMap();
 const previewHandle = {
   active: false,
   baseX: 0,
@@ -679,10 +680,9 @@ function resizePreviewCanvas(){
 
 function createPreviewPlaneFromElement(el){
   if(!(el instanceof HTMLElement)) return null;
-  const width = el.offsetWidth || parseFloat(getComputedStyle(el).width) || 0;
-  const height = el.offsetHeight || parseFloat(getComputedStyle(el).height) || 0;
-  const x = (el.offsetLeft ?? 0) + width / 2;
-  const y = (el.offsetTop ?? 0) + height / 2;
+  const { width, height } = measurePreviewElement(el);
+  const baseline = capturePreviewPlaneBaseline(el, width, height);
+  resetPreviewPlaneElement(el, baseline, width, height);
   const flipY = el.classList.contains('cp-field-selector__object--blue-plane');
 
   el.style.transformOrigin = '50% 50%';
@@ -690,15 +690,15 @@ function createPreviewPlaneFromElement(el){
 
   return {
     el,
-    x,
-    y,
+    x: baseline.x,
+    y: baseline.y,
     width,
     height,
     vx: 0,
     vy: 0,
     flightTime: 0,
     flipY,
-    angle: 0
+    angle: baseline.angle ?? 0
   };
 }
 
@@ -712,6 +712,43 @@ function rebuildPreviewPlanes(){
     .map(createPreviewPlaneFromElement)
     .filter(Boolean);
   previewPlanes.forEach(syncPreviewPlaneVisual);
+}
+
+function measurePreviewElement(el){
+  return {
+    width: el.offsetWidth || parseFloat(getComputedStyle(el).width) || 0,
+    height: el.offsetHeight || parseFloat(getComputedStyle(el).height) || 0
+  };
+}
+
+function capturePreviewPlaneBaseline(el, width, height){
+  if(previewPlaneBaselines.has(el)){
+    return previewPlaneBaselines.get(el);
+  }
+
+  const baseline = {
+    x: (el.offsetLeft ?? 0) + (width ?? 0) / 2,
+    y: (el.offsetTop ?? 0) + (height ?? 0) / 2,
+    angle: 0
+  };
+  previewPlaneBaselines.set(el, baseline);
+  return baseline;
+}
+
+function resetPreviewPlaneElement(el, baseline = null, width, height){
+  const { width: measuredWidth, height: measuredHeight } = measurePreviewElement(el);
+  const size = { width: width ?? measuredWidth, height: height ?? measuredHeight };
+  const resolvedBaseline = baseline ?? capturePreviewPlaneBaseline(el, size.width, size.height);
+
+  const left = resolvedBaseline.x - size.width / 2;
+  const top = resolvedBaseline.y - size.height / 2;
+  el.style.left = `${left}px`;
+  el.style.top = `${top}px`;
+
+  const flipY = el.classList.contains('cp-field-selector__object--blue-plane');
+  const flipPart = flipY ? 'scaleY(-1) ' : '';
+  const rotation = resolvedBaseline.angle ?? 0;
+  el.style.transform = `${flipPart}rotate(${rotation}rad)`;
 }
 
 function getPreviewPointerPosition(e){
