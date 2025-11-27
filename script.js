@@ -5038,10 +5038,40 @@ function buildPlaneCounterFrame(color, containerLeft, containerTop, scaleX, scal
   const host = SCORE_COUNTER_ELEMENTS?.[color];
   if (host instanceof HTMLElement) {
     const rect = visualRect(host);
-    const width = rect.width;
-    const height = rect.height;
-    const left = rect.left;
-    const top = rect.top;
+    const containerRect = visualRect(gameContainer);
+
+    const containerScaleX = Number.isFinite(containerRect.width) && containerRect.width > 0
+      ? containerRect.width / FRAME_BASE_WIDTH
+      : scaleX;
+    const containerScaleY = Number.isFinite(containerRect.height) && containerRect.height > 0
+      ? containerRect.height / FRAME_BASE_HEIGHT
+      : scaleY;
+
+    const offsetLeft = Number.isFinite(rect.left) && Number.isFinite(containerRect.left)
+      ? rect.left - containerRect.left
+      : rect.left;
+    const offsetTop = Number.isFinite(rect.top) && Number.isFinite(containerRect.top)
+      ? rect.top - containerRect.top
+      : rect.top;
+
+    const baseLeft = Number.isFinite(containerScaleX) && containerScaleX > 0
+      ? offsetLeft / containerScaleX
+      : offsetLeft;
+    const baseTop = Number.isFinite(containerScaleY) && containerScaleY > 0
+      ? offsetTop / containerScaleY
+      : offsetTop;
+
+    const baseWidth = Number.isFinite(containerScaleX) && containerScaleX > 0
+      ? rect.width / containerScaleX
+      : rect.width;
+    const baseHeight = Number.isFinite(containerScaleY) && containerScaleY > 0
+      ? rect.height / containerScaleY
+      : rect.height;
+
+    const width = baseWidth * scaleX;
+    const height = baseHeight * scaleY;
+    const left = containerLeft + baseLeft * scaleX;
+    const top = containerTop + baseTop * scaleY;
 
     const scaleFromCssX = width / SCORE_COUNTER_BASE_SIZE.width;
     const scaleFromCssY = height / SCORE_COUNTER_BASE_SIZE.height;
