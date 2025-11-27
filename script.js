@@ -4077,16 +4077,11 @@ function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians =
   ctx2d.save();
   ctx2d.translate(x, y);
 
-  let effectiveRotation = rotationRadians;
-  const isStartingBlueIcon = plane?.color === "blue"
-    && Array.isArray(plane?.segments)
-    && plane.segments.length === 0
-    && plane.isAlive
-    && !plane.burning;
-
-  if (isStartingBlueIcon) {
-    effectiveRotation += Math.PI;
-  }
+  let effectiveRotation = Number.isFinite(rotationRadians)
+    ? rotationRadians
+    : Number.isFinite(plane?.angle)
+      ? plane.angle
+      : 0;
 
   if (effectiveRotation) {
     ctx2d.rotate(effectiveRotation);
