@@ -118,6 +118,8 @@ const PREVIEW_DRAG_ROTATION_THRESHOLD = 5;
 const PREVIEW_FLIGHT_DURATION_SEC = 68 / 60;
 const PREVIEW_PLANE_TOUCH_RADIUS = 12;
 const PREVIEW_OSCILLATION_SPEED = 0.01;
+const PREVIEW_FLIGHT_DISTANCE_SCALE = 1 / 1.5;
+const PREVIEW_FLIGHT_DURATION_SCALE = 1;
 
 class JetFlameRenderer {
   constructor(canvas, options = {}) {
@@ -925,13 +927,14 @@ function onPreviewPointerUp(e){
   }
 
   const dragAngle = Math.atan2(dy, dx);
-  const flightDistancePx = flightRangeCells * PREVIEW_CELL_SIZE;
-  const speedPxPerSec = flightDistancePx / PREVIEW_FLIGHT_DURATION_SEC;
+  const previewFlightDistancePx = flightRangeCells * PREVIEW_CELL_SIZE * PREVIEW_FLIGHT_DISTANCE_SCALE;
+  const previewFlightDurationSec = PREVIEW_FLIGHT_DURATION_SEC * PREVIEW_FLIGHT_DURATION_SCALE;
+  const speedPxPerSec = previewFlightDistancePx / previewFlightDurationSec;
   const scale = dragDistance / PREVIEW_MAX_DRAG_DISTANCE;
 
   plane.vx = -Math.cos(dragAngle) * scale * speedPxPerSec;
   plane.vy = -Math.sin(dragAngle) * scale * speedPxPerSec;
-  plane.flightTime = PREVIEW_FLIGHT_DURATION_SEC;
+  plane.flightTime = previewFlightDurationSec;
   plane.angle = Math.atan2(plane.vy, plane.vx) + Math.PI / 2;
 
   cleanupPreviewHandle();
