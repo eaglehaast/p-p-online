@@ -83,15 +83,15 @@ body, button {
   }
 
   .plane-counter--green {
-    left: calc(0px * var(--score-scale, 1));
-    top: calc(89px * var(--score-scale, 1));
+    left: calc(409px * var(--score-scale, 1));
+    top: calc(406px * var(--score-scale, 1));
     width: calc(51px * var(--score-scale, 1));
     height: calc(290px * var(--score-scale, 1));
   }
 
   .plane-counter--blue {
-    left: calc(409px * var(--score-scale, 1));
-    top: calc(406px * var(--score-scale, 1));
+    left: calc(0px * var(--score-scale, 1));
+    top: calc(89px * var(--score-scale, 1));
     width: calc(51px * var(--score-scale, 1));
     height: calc(290px * var(--score-scale, 1));
   }
