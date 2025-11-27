@@ -22,8 +22,8 @@ class JetFlameRenderer {
   constructor(canvas, options = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
-    this.baseWidth = options.baseWidth ?? 54;
-    this.baseHeight = options.baseHeight ?? 24;
+    this.baseWidth = options.baseWidth ?? 46;
+    this.baseHeight = options.baseHeight ?? 14;
     this.scale = 1;
     this.displayWidth = this.baseWidth;
     this.displayHeight = this.baseHeight;
@@ -90,13 +90,13 @@ class JetFlameRenderer {
     this.particles = this.particles.filter(particle => {
       particle.age += dt;
       particle.life -= dt;
-      const horizontalNoise = Math.sin(particle.age * particle.noiseSpeed + particle.phase) * particle.noiseAmount;
-      particle.x += (particle.vx + horizontalNoise) * dt;
-      particle.y += particle.vy * dt;
+      const verticalNoise = Math.sin(particle.age * particle.noiseSpeed + particle.phase) * particle.noiseAmount;
+      particle.x += particle.vx * dt;
+      particle.y += (particle.vy + verticalNoise) * dt;
 
-      const rise = particle.startY - particle.y;
-      if (rise > particle.maxRise) {
-        particle.y = particle.startY - particle.maxRise;
+      const drift = particle.startX - particle.x;
+      if (drift > particle.maxDrift) {
+        particle.x = particle.startX - particle.maxDrift;
         particle.life = Math.min(particle.life, 0.12);
       }
 
@@ -105,26 +105,25 @@ class JetFlameRenderer {
   }
 
   spawnParticle() {
-    const upwardSpeed = (18 + Math.random() * 12) * this.scale;
-    const vx = (Math.random() - 0.5) * 8 * this.scale;
-    const size = (1.8 + Math.random() * 1.6) * this.scale;
+    const lateralSpeed = (20 + Math.random() * 12) * this.scale;
+    const size = (1.6 + Math.random() * 1.4) * this.scale;
     const life = 0.9 + Math.random() * 0.5;
-    const originX = this.displayWidth * 0.86 + (Math.random() - 0.5) * 2.5 * this.scale;
-    const originY = this.displayHeight * 0.58 + (Math.random() - 0.5) * 0.1 * this.displayHeight;
+    const originX = this.displayWidth * 0.88 + (Math.random() - 0.5) * 2.2 * this.scale;
+    const originY = this.displayHeight * 0.5 + (Math.random() - 0.5) * 0.28 * this.displayHeight;
 
     this.particles.push({
       x: originX,
       y: originY,
-      vx,
-      vy: -upwardSpeed,
+      vx: -lateralSpeed,
+      vy: (Math.random() - 0.5) * 2.2 * this.scale,
       size,
       life,
       age: 0,
       maxLife: life,
-      startY: originY,
-      maxRise: this.displayHeight * (0.32 + Math.random() * 0.12),
-      noiseAmount: 7 * this.scale,
-      noiseSpeed: 5 + Math.random() * 2,
+      startX: originX,
+      maxDrift: this.displayWidth * (0.74 + Math.random() * 0.12),
+      noiseAmount: 3.6 * this.scale,
+      noiseSpeed: 4 + Math.random() * 1.8,
       phase: Math.random() * Math.PI * 2
     });
   }
@@ -132,12 +131,12 @@ class JetFlameRenderer {
   drawFlameBody(ctx) {
     const w = this.displayWidth;
     const h = this.displayHeight;
-    const baseX = w * 0.9;
-    const sway = Math.sin(this.elapsed * 0.9) * h * 0.04;
-    const mid = h * 0.52 + sway;
+    const baseX = w * 0.92;
+    const verticalSway = Math.sin(this.elapsed * 0.9) * h * 0.12;
+    const mid = h * 0.48 + verticalSway;
     const flicker = 1 + Math.sin(this.elapsed * 1.1) * 0.06;
-    const baseLength = w * 0.78 * flicker;
-    const baseHeight = h * 0.55;
+    const baseLength = w * 0.9 * flicker;
+    const baseHeight = h * 0.65;
 
     const drawLayer = (lengthScale, thicknessScale, blurPx, colors, alpha = 1) => {
       const length = baseLength * lengthScale;
@@ -152,7 +151,7 @@ class JetFlameRenderer {
       ctx.moveTo(baseX, mid);
       ctx.bezierCurveTo(
         baseX - length * 0.3,
-        mid - thickness * 0.6 + sway * 0.2,
+        mid - thickness * 0.6 + verticalSway * 0.2,
         baseX - length * 0.72,
         mid - thickness,
         baseX - length,
@@ -162,7 +161,7 @@ class JetFlameRenderer {
         baseX - length * 0.72,
         mid + thickness,
         baseX - length * 0.3,
-        mid + thickness * 0.6 + sway * 0.2,
+        mid + thickness * 0.6 + verticalSway * 0.2,
         baseX,
         mid
       );
@@ -421,7 +420,7 @@ const mapPreview = document.getElementById('mapPreview');
 const rangeFlameCanvas = document.getElementById('rangeFlameCanvas');
 const rangeContrailCanvas = document.getElementById('rangeContrailCanvas');
 const menuFlameCanvas = document.getElementById('menuFlame');
-const flameOptions = { baseWidth: 54, baseHeight: 24 };
+const flameOptions = { baseWidth: 46, baseHeight: 14 };
 const rangeFlameRenderer = rangeFlameCanvas ? new JetFlameRenderer(rangeFlameCanvas, flameOptions) : null;
 const contrailRenderer = rangeContrailCanvas instanceof HTMLCanvasElement ? new ContrailRenderer(rangeContrailCanvas) : null;
 const menuFlameRenderer = menuFlameCanvas instanceof HTMLCanvasElement ? new JetFlameRenderer(menuFlameCanvas, flameOptions) : null;
