@@ -25,6 +25,8 @@ const fxLayerElement = document.getElementById("fxLayer");
 
 const greenScoreCounter = document.getElementById("greenScoreCounter");
 const blueScoreCounter  = document.getElementById("blueScoreCounter");
+const greenPlaneCounter = document.getElementById("gs_planecounter_green");
+const bluePlaneCounter  = document.getElementById("gs_planecounter_blue");
 
 const testControlPanel = document.getElementById("testControlPanel");
 const testControlsToggle = document.getElementById("testControlsToggle");
@@ -43,6 +45,11 @@ const IS_TEST_HARNESS = document.body.classList.contains('test-harness');
 const SCORE_COUNTER_ELEMENTS = {
   green: greenScoreCounter,
   blue: blueScoreCounter
+};
+
+const PLANE_COUNTER_HOSTS = {
+  green: greenPlaneCounter,
+  blue: bluePlaneCounter
 };
 
 const SCORE_COUNTER_BASE_OFFSETS = {
@@ -4690,8 +4697,8 @@ function drawStarsUI(ctx){
 
 const PLANE_COUNTER_PADDING      = 2;
 const PLANE_COUNTER_CONTAINERS   = {
-  blue:  { left: 4,   top: 97,  right: 50,  bottom: 337 },
-  green: { left: 410, top: 463, right: 456, bottom: 703 }
+  blue:  { left: 409, top: 406, right: 460, bottom: 696 },
+  green: { left: 0,   top: 89,  right: 51,  bottom: 379 }
 };
 
 const SCORE_INK_DURATION_MS = 2600;
@@ -5035,7 +5042,7 @@ function renderScoreboard(){
 }
 
 function buildPlaneCounterFrame(color, containerLeft, containerTop, scaleX, scaleY) {
-  const host = SCORE_COUNTER_ELEMENTS?.[color];
+  const host = PLANE_COUNTER_HOSTS?.[color] || SCORE_COUNTER_ELEMENTS?.[color];
   if (host instanceof HTMLElement) {
     const rect = visualRect(host);
     const containerRect = visualRect(gameContainer);
