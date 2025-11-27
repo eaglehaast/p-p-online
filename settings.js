@@ -418,6 +418,13 @@ const mapPrevBtn = document.getElementById('instance_field_left');
 const mapNextBtn = document.getElementById('instance_field_right');
 const mapNameDisplay = document.getElementById('frame_field_2_counter');
 const mapPreview = document.getElementById('mapPreview');
+const mapPreviewPlanes = Array.from(document.querySelectorAll('[data-preview-plane]')).map(el => ({
+  el,
+  startX: parseFloat(el.dataset.startX ?? el.style.left) || 0,
+  startY: parseFloat(el.dataset.startY ?? el.style.top) || 0,
+  startAngle: parseFloat(el.dataset.startAngle ?? el.dataset.angle) || 0
+}));
+const activePreviewFlights = new Set();
 const rangeFlameCanvas = document.getElementById('rangeFlameCanvas');
 const rangeContrailCanvas = document.getElementById('rangeContrailCanvas');
 const menuFlameCanvas = document.getElementById('menuFlame');
@@ -599,6 +606,22 @@ function updateMapNameDisplay(){
   }
 }
 
+function resetMapPreviewPlanes(){
+  activePreviewFlights.forEach(handle => {
+    cancelAnimationFrame(handle);
+    clearTimeout(handle);
+  });
+  activePreviewFlights.clear();
+
+  mapPreviewPlanes.forEach(({el, startX, startY, startAngle}) => {
+    el.style.transform = `translate(${startX}px, ${startY}px) rotate(${startAngle}deg)`;
+    el.dataset.vx = '0';
+    el.dataset.vy = '0';
+    el.dataset.angle = startAngle.toString();
+    el.dataset.angularVelocity = '0';
+  });
+}
+
 function resetSettingsToDefaults(){
   flightRangeCells = DEFAULT_SETTINGS.flightRangeCells;
   aimingAmplitude = DEFAULT_SETTINGS.aimingAmplitude;
@@ -613,6 +636,7 @@ function resetSettingsToDefaults(){
   updateAmplitudeIndicator();
   updateMapPreview();
   updateMapNameDisplay();
+  resetMapPreviewPlanes();
   setTumblerState(addsAABtn, addAA);
   setTumblerState(addsNailsBtn, sharpEdges);
   setTumblerState(addsCargoBtn, addCargo);
@@ -710,6 +734,7 @@ if(hasMapButtons){
     mapIndex = (mapIndex + delta + MAPS.length) % MAPS.length;
     updateMapPreview();
     updateMapNameDisplay();
+    resetMapPreviewPlanes();
     saveSettings();
   };
 
