@@ -1209,8 +1209,8 @@ const POINT_RADIUS         = 15 * PLANE_SCALE;     // px (увеличено д�
 const PLANE_TOUCH_RADIUS   = 20;                   // px
 const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit Anti-Aircraft center
 const BOUNCE_FRAMES        = 68;
-// Duration of a full-speed flight in seconds (previously measured in frames)
-const FLIGHT_DURATION_SEC  = (BOUNCE_FRAMES / 60) * 2;
+// Duration of a full-speed flight on the field (measured in frames)
+const FIELD_FLIGHT_DURATION_SEC = BOUNCE_FRAMES / 60;
 const MAX_DRAG_DISTANCE    = 100;    // px
 const DRAG_ROTATION_THRESHOLD = 5;   // px slack before the plane starts to turn
 const ATTACK_RANGE_PX      = 300;    // px
@@ -2741,7 +2741,7 @@ function onHandleUp(){
 
   // дальность в пикселях
   const flightDistancePx = flightRangeCells * CELL_SIZE;
-  const speedPxPerSec = flightDistancePx / FLIGHT_DURATION_SEC;
+  const speedPxPerSec = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
   const scale = dragDistance / MAX_DRAG_DISTANCE;
 
   // скорость — ПРОТИВ направления натяжки (px/sec)
@@ -2753,7 +2753,7 @@ function onHandleUp(){
 
   flyingPoints.push({
     plane, vx, vy,
-    timeLeft: FLIGHT_DURATION_SEC,
+    timeLeft: FIELD_FLIGHT_DURATION_SEC,
     collisionCooldown:0,
     lastHitPlane:null,
     lastHitCooldown:0
@@ -2824,7 +2824,7 @@ function doComputerMove(){
 
   // 4. Attack logic (direct or with bounce)
   const flightDistancePx = flightRangeCells * CELL_SIZE;
-  const speedPxPerSec    = flightDistancePx / FLIGHT_DURATION_SEC;
+  const speedPxPerSec    = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
   let best = null; // {plane, enemy, vx, vy, totalDist}
 
   for(const plane of aiPlanes){
@@ -2892,7 +2892,7 @@ function doComputerMove(){
 
 function planPathToPoint(plane, tx, ty){
   const flightDistancePx = flightRangeCells * CELL_SIZE;
-  const speedPxPerSec    = flightDistancePx / FLIGHT_DURATION_SEC;
+  const speedPxPerSec    = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
 
   if(isPathClear(plane.x, plane.y, tx, ty)){
     const dx = tx - plane.x;
@@ -2918,7 +2918,7 @@ function issueAIMove(plane, vx, vy){
   plane.angle = Math.atan2(vy, vx) + Math.PI/2;
   flyingPoints.push({
     plane, vx, vy,
-    timeLeft: FLIGHT_DURATION_SEC,
+    timeLeft: FIELD_FLIGHT_DURATION_SEC,
     collisionCooldown:0,
     lastHitPlane:null,
     lastHitCooldown:0
@@ -3954,7 +3954,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
 
       const fp = flyingPoints.find(fp => fp.plane === plane);
       if (fp) {
-        const progress = (FLIGHT_DURATION_SEC - fp.timeLeft) / FLIGHT_DURATION_SEC;
+        const progress = (FIELD_FLIGHT_DURATION_SEC - fp.timeLeft) / FIELD_FLIGHT_DURATION_SEC;
         const scale = progress < 0.75 ? 4 * progress : 12 * (1 - progress);
         drawBlueJetFlame(ctx2d, scale);
 
@@ -3986,7 +3986,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
     const fp = flyingPoints.find(fp => fp.plane === plane);
     if (showEngine) {
       if (fp) {
-        const progress = (FLIGHT_DURATION_SEC - fp.timeLeft) / FLIGHT_DURATION_SEC;
+        const progress = (FIELD_FLIGHT_DURATION_SEC - fp.timeLeft) / FIELD_FLIGHT_DURATION_SEC;
         let scale;
         if (progress < 0.5) {
           scale = 4 - 4 * progress; // 20px -> 10px
