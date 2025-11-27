@@ -1135,7 +1135,7 @@
 
       document.getElementById('nextMapButton')?.addEventListener('click', () => {
         if(window.settings){
-          const mapCount = 3; // обновите при добавлении новых карт
+          const mapCount = 4; // обновите при добавлении новых карт
           const current = Number.isInteger(window.settings.mapIndex) ? window.settings.mapIndex : 0;
           window.settings.mapIndex = (current + 1) % mapCount;
         }
