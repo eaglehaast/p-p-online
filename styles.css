@@ -670,6 +670,11 @@ body, button {
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
   }
 
+  body.settings-page #mapPreview.map-preview--random {
+    background-size: 50% 50%;
+    background-position: center;
+  }
+
   body.settings-page .cp-field-selector__objects {
     position: absolute;
     inset: 0;
