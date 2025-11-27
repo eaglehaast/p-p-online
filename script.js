@@ -1210,7 +1210,8 @@ const PLANE_TOUCH_RADIUS   = 20;                   // px
 const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit Anti-Aircraft center
 const BOUNCE_FRAMES        = 68;
 // Duration of a full-speed flight on the field (measured in frames)
-const FIELD_FLIGHT_DURATION_SEC = BOUNCE_FRAMES / 60;
+// (Restored to the original pre-change speed used for gameplay physics)
+const FIELD_FLIGHT_DURATION_SEC = (BOUNCE_FRAMES / 60) * 2;
 const MAX_DRAG_DISTANCE    = 100;    // px
 const DRAG_ROTATION_THRESHOLD = 5;   // px slack before the plane starts to turn
 const ATTACK_RANGE_PX      = 300;    // px
