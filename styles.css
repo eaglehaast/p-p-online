@@ -483,13 +483,9 @@ body, button {
   }
 
   .settings-container #frame_range_1_visual .jet-flame-canvas {
-    position: absolute;
-    left: 88px;
-    top: 216px;
-    width: 46px;
-    height: 14px;
-    filter: drop-shadow(0 0 8px rgba(255, 147, 41, 0.65));
-    pointer-events: none;
+    display: none;
+    width: 0;
+    height: 0;
   }
 
   .settings-container #frame_range_1_visual .jet-contrail-canvas {
