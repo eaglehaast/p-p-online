@@ -688,8 +688,8 @@ function createPreviewPlaneFromElement(el){
   if(!(el instanceof HTMLElement)) return null;
   const { width, height } = measurePreviewElement(el);
   const baseline = capturePreviewPlaneBaseline(el, width, height);
+  const baseRotation = getPreviewPlaneBaseRotation(el);
   resetPreviewPlaneElement(el, baseline, width, height);
-  const flipY = el.classList.contains('cp-field-selector__object--blue-plane');
 
   el.style.transformOrigin = '50% 50%';
   el.style.willChange = 'left, top, transform';
@@ -703,7 +703,7 @@ function createPreviewPlaneFromElement(el){
     vx: 0,
     vy: 0,
     flightTime: 0,
-    flipY,
+    baseRotation,
     angle: baseline.angle ?? 0
   };
 }
@@ -752,6 +752,11 @@ function measurePreviewElement(el){
   };
 }
 
+function getPreviewPlaneBaseRotation(el){
+  if(!(el instanceof HTMLElement)) return 0;
+  return 0;
+}
+
 function capturePreviewPlaneBaseline(el, width, height){
   if(previewPlaneBaselines.has(el)){
     return previewPlaneBaselines.get(el);
@@ -776,10 +781,9 @@ function resetPreviewPlaneElement(el, baseline = null, width, height){
   el.style.left = `${left}px`;
   el.style.top = `${top}px`;
 
-  const flipY = el.classList.contains('cp-field-selector__object--blue-plane');
-  const flipPart = flipY ? 'scaleY(-1) ' : '';
-  const rotation = resolvedBaseline.angle ?? 0;
-  el.style.transform = `${flipPart}rotate(${rotation}rad)`;
+  const baseRotation = getPreviewPlaneBaseRotation(el);
+  const rotation = (resolvedBaseline.angle ?? 0) + baseRotation;
+  el.style.transform = `rotate(${rotation}rad)`;
 }
 
 function getPreviewPointerPosition(e){
@@ -877,9 +881,8 @@ function syncPreviewPlaneVisual(plane){
   const top = plane.y - plane.height / 2;
   plane.el.style.left = `${left}px`;
   plane.el.style.top = `${top}px`;
-  const rotation = Number.isFinite(plane.angle) ? plane.angle : 0;
-  const flipPart = plane.flipY ? 'scaleY(-1) ' : '';
-  plane.el.style.transform = `${flipPart}rotate(${rotation}rad)`;
+  const rotation = (Number.isFinite(plane.angle) ? plane.angle : 0) + (plane.baseRotation ?? 0);
+  plane.el.style.transform = `rotate(${rotation}rad)`;
 }
 
 function updatePreviewHandle(delta){
@@ -935,23 +938,24 @@ function updatePreviewHandle(delta){
 
 function updatePreviewBounds(plane){
   if(!mapPreviewContainer) return;
-  const containerWidth = mapPreviewContainer.clientWidth;
-  const containerHeight = mapPreviewContainer.clientHeight;
+  const dpr = previewDpr || window.devicePixelRatio || 1;
+  const boundsWidth = previewCanvas ? previewCanvas.width / dpr : mapPreviewContainer.clientWidth;
+  const boundsHeight = previewCanvas ? previewCanvas.height / dpr : mapPreviewContainer.clientHeight;
   const radius = Math.max(plane.width, plane.height) / 2;
 
   if(plane.x - radius < 0){
     plane.x = radius;
     plane.vx = Math.abs(plane.vx);
-  } else if(plane.x + radius > containerWidth){
-    plane.x = containerWidth - radius;
+  } else if(plane.x + radius > boundsWidth){
+    plane.x = boundsWidth - radius;
     plane.vx = -Math.abs(plane.vx);
   }
 
   if(plane.y - radius < 0){
     plane.y = radius;
     plane.vy = Math.abs(plane.vy);
-  } else if(plane.y + radius > containerHeight){
-    plane.y = containerHeight - radius;
+  } else if(plane.y + radius > boundsHeight){
+    plane.y = boundsHeight - radius;
     plane.vy = -Math.abs(plane.vy);
   }
 }
