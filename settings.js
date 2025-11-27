@@ -451,11 +451,9 @@ const mapNextBtn = document.getElementById('instance_field_right');
 const mapNameDisplay = document.getElementById('frame_field_2_counter');
 const mapPreviewContainer = document.getElementById('frame_field_1_visual');
 const mapPreview = document.getElementById('mapPreview');
-const rangeFlameCanvas = document.getElementById('rangeFlameCanvas');
 const rangeContrailCanvas = document.getElementById('rangeContrailCanvas');
 const menuFlameCanvas = document.getElementById('menuFlame');
 const flameOptions = { baseWidth: 46, baseHeight: 14 };
-const rangeFlameRenderer = rangeFlameCanvas ? new JetFlameRenderer(rangeFlameCanvas, flameOptions) : null;
 const contrailRenderer = rangeContrailCanvas instanceof HTMLCanvasElement ? new ContrailRenderer(rangeContrailCanvas) : null;
 const menuFlameRenderer = menuFlameCanvas instanceof HTMLCanvasElement ? new JetFlameRenderer(menuFlameCanvas, flameOptions) : null;
 const isTestHarnessPage = document.body.classList.contains('test-harness');
@@ -492,10 +490,6 @@ function updateFlightRangeFlame(){
   const t = (flightRangeCells - MIN_FLIGHT_RANGE_CELLS) /
             (MAX_FLIGHT_RANGE_CELLS - MIN_FLIGHT_RANGE_CELLS);
   const ratio = minScale + t * (maxScale - minScale);
-
-  if(rangeFlameRenderer){
-    rangeFlameRenderer.setScale(ratio);
-  }
 
   if(menuFlameRenderer){
     menuFlameRenderer.setScale(ratio);
@@ -1199,7 +1193,6 @@ if(exitBtn){
 }
 
 function cleanupRenderers(){
-  if(rangeFlameRenderer) rangeFlameRenderer.stop();
   if(menuFlameRenderer) menuFlameRenderer.stop();
   if(contrailRenderer) contrailRenderer.stop();
 }
