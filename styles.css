@@ -76,6 +76,26 @@ body, button {
     height: calc(124px * var(--score-scale, 1));
   }
 
+  .plane-counter {
+    position: absolute;
+    pointer-events: none;
+    z-index: 45;
+  }
+
+  .plane-counter--green {
+    left: calc(0px * var(--score-scale, 1));
+    top: calc(89px * var(--score-scale, 1));
+    width: calc(51px * var(--score-scale, 1));
+    height: calc(290px * var(--score-scale, 1));
+  }
+
+  .plane-counter--blue {
+    left: calc(409px * var(--score-scale, 1));
+    top: calc(406px * var(--score-scale, 1));
+    width: calc(51px * var(--score-scale, 1));
+    height: calc(290px * var(--score-scale, 1));
+  }
+
   .score-counter .score-ink {
     position: absolute;
     left: var(--score-ink-left, 50%);
