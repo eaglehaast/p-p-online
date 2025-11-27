@@ -18,6 +18,13 @@ const DEFAULT_SETTINGS = {
   mapIndex: 0
 };
 
+const PREVIEW_CELL_SIZE = 20;
+const PREVIEW_MAX_DRAG_DISTANCE = 100;
+const PREVIEW_DRAG_ROTATION_THRESHOLD = 5;
+const PREVIEW_FLIGHT_DURATION_SEC = 68 / 60;
+const PREVIEW_PLANE_TOUCH_RADIUS = 12;
+const PREVIEW_OSCILLATION_SPEED = 0.01;
+
 class JetFlameRenderer {
   constructor(canvas, options = {}) {
     this.canvas = canvas;
@@ -416,6 +423,7 @@ const exitBtn = document.getElementById('instance_exit');
 const mapPrevBtn = document.getElementById('instance_field_left');
 const mapNextBtn = document.getElementById('instance_field_right');
 const mapNameDisplay = document.getElementById('frame_field_2_counter');
+const mapPreviewContainer = document.getElementById('frame_field_1_visual');
 const mapPreview = document.getElementById('mapPreview');
 const rangeFlameCanvas = document.getElementById('rangeFlameCanvas');
 const rangeContrailCanvas = document.getElementById('rangeContrailCanvas');
@@ -425,6 +433,27 @@ const rangeFlameRenderer = rangeFlameCanvas ? new JetFlameRenderer(rangeFlameCan
 const contrailRenderer = rangeContrailCanvas instanceof HTMLCanvasElement ? new ContrailRenderer(rangeContrailCanvas) : null;
 const menuFlameRenderer = menuFlameCanvas instanceof HTMLCanvasElement ? new JetFlameRenderer(menuFlameCanvas, flameOptions) : null;
 const isTestHarnessPage = document.body.classList.contains('test-harness');
+
+let previewCanvas = null;
+let previewCtx = null;
+let previewDpr = window.devicePixelRatio || 1;
+let previewPlanes = [];
+let previewLastTimestamp = 0;
+let previewOscillationAngle = 0;
+let previewOscillationDir = 1;
+let previewArrow = null;
+let previewAnimationId = null;
+const previewHandle = {
+  active: false,
+  baseX: 0,
+  baseY: 0,
+  shakyX: 0,
+  shakyY: 0,
+  offsetX: 0,
+  offsetY: 0,
+  plane: null,
+  origAngle: 0
+};
 
 function updateFlightRangeDisplay(){
   const el = document.getElementById('flightRangeDisplay');
@@ -587,6 +616,7 @@ function updateMapPreview(){
   if(!mapPreview) return;
   const map = MAPS[mapIndex];
   mapPreview.style.backgroundImage = map ? `url('${map.file}')` : '';
+  setupPreviewSimulation();
 }
 
 function updateMapNameDisplay(){
@@ -595,6 +625,376 @@ function updateMapNameDisplay(){
   mapNameDisplay.textContent = map ? map.name : '';
   if(map){
     mapNameDisplay.setAttribute('aria-label', `Selected map: ${map.name}`);
+  }
+}
+
+function createPreviewCanvas(){
+  if(!mapPreviewContainer || previewCanvas) return;
+  previewCanvas = document.createElement('canvas');
+  previewCanvas.id = 'mapPreviewSimulation';
+  previewCanvas.className = 'map-preview-simulation';
+  mapPreviewContainer.appendChild(previewCanvas);
+  previewCtx = previewCanvas.getContext('2d');
+  previewCanvas.addEventListener('pointerdown', onPreviewPointerDown);
+  window.addEventListener('pointermove', onPreviewPointerMove);
+  window.addEventListener('pointerup', onPreviewPointerUp);
+  window.addEventListener('resize', resizePreviewCanvas);
+  resizePreviewCanvas();
+}
+
+function resizePreviewCanvas(){
+  if(!previewCanvas || !mapPreviewContainer) return;
+  const rect = mapPreviewContainer.getBoundingClientRect();
+  const width = rect.width;
+  const height = rect.height;
+  previewDpr = window.devicePixelRatio || 1;
+  previewCanvas.style.width = `${width}px`;
+  previewCanvas.style.height = `${height}px`;
+  previewCanvas.width = Math.max(1, Math.round(width * previewDpr));
+  previewCanvas.height = Math.max(1, Math.round(height * previewDpr));
+  if(previewCtx){
+    previewCtx.setTransform(previewDpr, 0, 0, previewDpr, 0, 0);
+  }
+}
+
+function createPreviewPlaneFromElement(el){
+  if(!(el instanceof HTMLElement)) return null;
+  const width = el.offsetWidth || parseFloat(getComputedStyle(el).width) || 0;
+  const height = el.offsetHeight || parseFloat(getComputedStyle(el).height) || 0;
+  const x = (el.offsetLeft ?? 0) + width / 2;
+  const y = (el.offsetTop ?? 0) + height / 2;
+  const flipY = el.classList.contains('cp-field-selector__object--blue-plane');
+
+  el.style.transformOrigin = '50% 50%';
+  el.style.willChange = 'left, top, transform';
+
+  return {
+    el,
+    x,
+    y,
+    width,
+    height,
+    vx: 0,
+    vy: 0,
+    flightTime: 0,
+    flipY,
+    angle: 0
+  };
+}
+
+function rebuildPreviewPlanes(){
+  if(!mapPreviewContainer) return;
+  createPreviewCanvas();
+  const planeElements = mapPreviewContainer.querySelectorAll(
+    '.cp-field-selector__object--green-plane, .cp-field-selector__object--blue-plane'
+  );
+  previewPlanes = Array.from(planeElements)
+    .map(createPreviewPlaneFromElement)
+    .filter(Boolean);
+  previewPlanes.forEach(syncPreviewPlaneVisual);
+}
+
+function getPreviewPointerPosition(e){
+  if(!mapPreviewContainer) return { x: 0, y: 0 };
+  const rect = mapPreviewContainer.getBoundingClientRect();
+  const touch = e.touches?.[0] ?? e.changedTouches?.[0];
+  const clientX = touch?.clientX ?? e.clientX;
+  const clientY = touch?.clientY ?? e.clientY;
+  return {
+    x: clientX - rect.left,
+    y: clientY - rect.top
+  };
+}
+
+function findPreviewPlaneAt(x, y){
+  let closest = null;
+  let minDist = Infinity;
+  for(const plane of previewPlanes){
+    const radius = Math.max(plane.width, plane.height) / 2 + PREVIEW_PLANE_TOUCH_RADIUS;
+    const dist = Math.hypot(plane.x - x, plane.y - y);
+    if(dist <= radius && dist < minDist){
+      closest = plane;
+      minDist = dist;
+    }
+  }
+  return closest;
+}
+
+function onPreviewPointerDown(e){
+  if(!mapPreviewContainer) return;
+  const { x, y } = getPreviewPointerPosition(e);
+  const plane = findPreviewPlaneAt(x, y);
+  if(!plane) return;
+  e.preventDefault();
+  previewHandle.active = true;
+  previewHandle.baseX = x;
+  previewHandle.baseY = y;
+  previewHandle.shakyX = x;
+  previewHandle.shakyY = y;
+  previewHandle.offsetX = 0;
+  previewHandle.offsetY = 0;
+  previewHandle.plane = plane;
+  previewHandle.origAngle = plane.angle;
+  previewOscillationAngle = 0;
+  previewOscillationDir = 1;
+}
+
+function onPreviewPointerMove(e){
+  if(!previewHandle.active) return;
+  const { x, y } = getPreviewPointerPosition(e);
+  previewHandle.baseX = x;
+  previewHandle.baseY = y;
+}
+
+function onPreviewPointerUp(e){
+  if(!previewHandle.active || !previewHandle.plane) return;
+  const plane = previewHandle.plane;
+  let dx = previewHandle.shakyX - plane.x;
+  let dy = previewHandle.shakyY - plane.y;
+  let dragDistance = Math.hypot(dx, dy);
+
+  if(dragDistance < PREVIEW_CELL_SIZE){
+    plane.angle = previewHandle.origAngle;
+    cleanupPreviewHandle();
+    return;
+  }
+
+  if(dragDistance > PREVIEW_MAX_DRAG_DISTANCE){
+    dx *= PREVIEW_MAX_DRAG_DISTANCE / dragDistance;
+    dy *= PREVIEW_MAX_DRAG_DISTANCE / dragDistance;
+    dragDistance = PREVIEW_MAX_DRAG_DISTANCE;
+  }
+
+  const dragAngle = Math.atan2(dy, dx);
+  const flightDistancePx = flightRangeCells * PREVIEW_CELL_SIZE;
+  const speedPxPerSec = flightDistancePx / PREVIEW_FLIGHT_DURATION_SEC;
+  const scale = dragDistance / PREVIEW_MAX_DRAG_DISTANCE;
+
+  plane.vx = -Math.cos(dragAngle) * scale * speedPxPerSec;
+  plane.vy = -Math.sin(dragAngle) * scale * speedPxPerSec;
+  plane.flightTime = PREVIEW_FLIGHT_DURATION_SEC;
+  plane.angle = Math.atan2(plane.vy, plane.vx) + Math.PI / 2;
+
+  cleanupPreviewHandle();
+}
+
+function cleanupPreviewHandle(){
+  previewHandle.active = false;
+  previewHandle.plane = null;
+  previewArrow = null;
+}
+
+function syncPreviewPlaneVisual(plane){
+  const left = plane.x - plane.width / 2;
+  const top = plane.y - plane.height / 2;
+  plane.el.style.left = `${left}px`;
+  plane.el.style.top = `${top}px`;
+  const rotation = Number.isFinite(plane.angle) ? plane.angle : 0;
+  const flipPart = plane.flipY ? 'scaleY(-1) ' : '';
+  plane.el.style.transform = `${flipPart}rotate(${rotation}rad)`;
+}
+
+function updatePreviewHandle(delta){
+  if(!previewHandle.active || !previewHandle.plane) return;
+  const plane = previewHandle.plane;
+  const dx = previewHandle.baseX - plane.x;
+  const dy = previewHandle.baseY - plane.y;
+  const dist = Math.hypot(dx, dy);
+  const clampedDist = Math.min(dist, PREVIEW_MAX_DRAG_DISTANCE);
+  const maxAngleDeg = aimingAmplitude * 5;
+  const maxAngleRad = maxAngleDeg * Math.PI / 180;
+
+  previewOscillationAngle += PREVIEW_OSCILLATION_SPEED * delta * previewOscillationDir;
+  if(previewOscillationDir > 0 && previewOscillationAngle > maxAngleRad){
+    previewOscillationAngle = maxAngleRad;
+    previewOscillationDir = -1;
+  } else if(previewOscillationDir < 0 && previewOscillationAngle < -maxAngleRad){
+    previewOscillationAngle = -maxAngleRad;
+    previewOscillationDir = 1;
+  }
+
+  const baseAngle = Math.atan2(dy, dx);
+  const angle = baseAngle + previewOscillationAngle;
+
+  previewHandle.shakyX = plane.x + clampedDist * Math.cos(angle);
+  previewHandle.shakyY = plane.y + clampedDist * Math.sin(angle);
+  previewHandle.offsetX = previewHandle.shakyX - previewHandle.baseX;
+  previewHandle.offsetY = previewHandle.shakyY - previewHandle.baseY;
+
+  let vdx = previewHandle.shakyX - plane.x;
+  let vdy = previewHandle.shakyY - plane.y;
+  let vdist = Math.hypot(vdx, vdy);
+  if(vdist > PREVIEW_MAX_DRAG_DISTANCE){
+    vdx *= PREVIEW_MAX_DRAG_DISTANCE / vdist;
+    vdy *= PREVIEW_MAX_DRAG_DISTANCE / vdist;
+    vdist = PREVIEW_MAX_DRAG_DISTANCE;
+  }
+
+  if(vdist > PREVIEW_DRAG_ROTATION_THRESHOLD){
+    plane.angle = Math.atan2(-vdy, -vdx) + Math.PI / 2;
+  } else {
+    plane.angle = previewHandle.origAngle;
+  }
+
+  previewArrow = {
+    startX: plane.x,
+    startY: plane.y,
+    endX: plane.x + vdx,
+    endY: plane.y + vdy,
+    alpha: Math.min(vdist / PREVIEW_MAX_DRAG_DISTANCE, 1) * 0.6
+  };
+}
+
+function updatePreviewBounds(plane){
+  if(!mapPreviewContainer) return;
+  const containerWidth = mapPreviewContainer.clientWidth;
+  const containerHeight = mapPreviewContainer.clientHeight;
+  const radius = Math.max(plane.width, plane.height) / 2;
+
+  if(plane.x - radius < 0){
+    plane.x = radius;
+    plane.vx = Math.abs(plane.vx);
+  } else if(plane.x + radius > containerWidth){
+    plane.x = containerWidth - radius;
+    plane.vx = -Math.abs(plane.vx);
+  }
+
+  if(plane.y - radius < 0){
+    plane.y = radius;
+    plane.vy = Math.abs(plane.vy);
+  } else if(plane.y + radius > containerHeight){
+    plane.y = containerHeight - radius;
+    plane.vy = -Math.abs(plane.vy);
+  }
+}
+
+function resolvePreviewCollisions(){
+  for(let i = 0; i < previewPlanes.length; i++){
+    for(let j = i + 1; j < previewPlanes.length; j++){
+      const a = previewPlanes[i];
+      const b = previewPlanes[j];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dist = Math.hypot(dx, dy) || 0.0001;
+      const minDist = (Math.max(a.width, a.height) + Math.max(b.width, b.height)) / 2;
+
+      if(dist < minDist){
+        const overlap = minDist - dist;
+        const nx = dx / dist;
+        const ny = dy / dist;
+
+        a.x -= nx * (overlap / 2);
+        a.y -= ny * (overlap / 2);
+        b.x += nx * (overlap / 2);
+        b.y += ny * (overlap / 2);
+
+        const rvx = a.vx - b.vx;
+        const rvy = a.vy - b.vy;
+        const relVelAlongNormal = rvx * nx + rvy * ny;
+        if(relVelAlongNormal < 0){
+          const impulse = -(1 + 1) * relVelAlongNormal / 2;
+          const impulseX = impulse * nx;
+          const impulseY = impulse * ny;
+          a.vx += impulseX;
+          a.vy += impulseY;
+          b.vx -= impulseX;
+          b.vy -= impulseY;
+        }
+      }
+    }
+  }
+}
+
+function updatePreviewPhysics(delta){
+  if(!Number.isFinite(delta)) return;
+  for(const plane of previewPlanes){
+    if(plane.flightTime > 0){
+      plane.flightTime = Math.max(0, plane.flightTime - delta);
+      if(plane.flightTime === 0){
+        plane.vx = 0;
+        plane.vy = 0;
+      }
+    }
+
+    plane.x += plane.vx * delta;
+    plane.y += plane.vy * delta;
+    updatePreviewBounds(plane);
+
+    if(Math.hypot(plane.vx, plane.vy) > 0.01){
+      plane.angle = Math.atan2(plane.vy, plane.vx) + Math.PI / 2;
+    }
+  }
+
+  resolvePreviewCollisions();
+  previewPlanes.forEach(syncPreviewPlaneVisual);
+}
+
+function drawPreviewArrow(){
+  if(!previewCtx || !previewCanvas){
+    return;
+  }
+
+  previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+
+  if(!previewArrow){
+    return;
+  }
+
+  const { startX, startY, endX, endY, alpha } = previewArrow;
+  const dx = endX - startX;
+  const dy = endY - startY;
+  const length = Math.hypot(dx, dy);
+  if(length < 1){
+    return;
+  }
+
+  const ux = dx / length;
+  const uy = dy / length;
+  const head = Math.min(10, length * 0.3);
+
+  previewCtx.save();
+  previewCtx.globalAlpha = alpha;
+  previewCtx.lineWidth = 2;
+  previewCtx.lineCap = 'round';
+  previewCtx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+  previewCtx.beginPath();
+  previewCtx.moveTo(startX, startY);
+  previewCtx.lineTo(endX, endY);
+  previewCtx.stroke();
+
+  previewCtx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+  previewCtx.beginPath();
+  previewCtx.moveTo(endX, endY);
+  previewCtx.lineTo(endX - ux * head + uy * head * 0.6, endY - uy * head - ux * head * 0.6);
+  previewCtx.lineTo(endX - ux * head - uy * head * 0.6, endY - uy * head + ux * head * 0.6);
+  previewCtx.closePath();
+  previewCtx.fill();
+  previewCtx.restore();
+}
+
+function tickPreview(timestamp){
+  if(!previewCtx){
+    return;
+  }
+
+  const delta = previewLastTimestamp ? (timestamp - previewLastTimestamp) / 1000 : 0;
+  previewLastTimestamp = timestamp;
+
+  updatePreviewHandle(delta);
+  updatePreviewPhysics(delta);
+  drawPreviewArrow();
+
+  previewAnimationId = requestAnimationFrame(tickPreview);
+}
+
+function setupPreviewSimulation(){
+  if(!mapPreviewContainer) return;
+  if(!previewCanvas){
+    createPreviewCanvas();
+  }
+  rebuildPreviewPlanes();
+  if(!previewAnimationId){
+    previewAnimationId = requestAnimationFrame(tickPreview);
   }
 }
 
