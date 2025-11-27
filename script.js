@@ -1385,7 +1385,8 @@ const MAPS = [
   {
     name: 'Random map',
     file: 'ui_controlpanel/cp_de_maprandom.png',
-    buildings: [
+    buildings: [],
+    previewBuildings: [
       { x: 108, y: 6, width: 126, height: 6 },
       { x: 84, y: 11, width: 174, height: 6 },
       { x: 66, y: 17, width: 204, height: 6 },

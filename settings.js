@@ -39,7 +39,8 @@ const MAPS = [
   {
     name: 'Random map',
     file: 'ui_controlpanel/cp_de_maprandom.png',
-    buildings: [
+    buildings: [],
+    previewBuildings: [
       { x: 108, y: 6, width: 126, height: 6 },
       { x: 84, y: 11, width: 174, height: 6 },
       { x: 66, y: 17, width: 204, height: 6 },
@@ -794,7 +795,10 @@ function rebuildPreviewBuildings(){
   previewBuildings = [];
   if(!mapPreviewContainer) return;
   const map = MAPS[mapIndex];
-  if(!map || !Array.isArray(map.buildings)) return;
+  const sourceBuildings = Array.isArray(map?.previewBuildings)
+    ? map.previewBuildings
+    : map?.buildings;
+  if(!map || !Array.isArray(sourceBuildings)) return;
 
   const rect = mapPreviewContainer.getBoundingClientRect();
   const scaleX = rect.width / MAP_PREVIEW_BASE_WIDTH;
@@ -804,7 +808,7 @@ function rebuildPreviewBuildings(){
     return;
   }
 
-  previewBuildings = map.buildings
+  previewBuildings = sourceBuildings
     .map(b => ({
       x: b.x * scaleX,
       y: b.y * scaleY,
