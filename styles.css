@@ -671,6 +671,9 @@ body, button {
   }
 
   body.settings-page #mapPreview.map-preview--random {
+    background-size: 29px 54px;
+    background-position: 32px 51px;
+    background-repeat: no-repeat;
   }
 
   body.settings-page .cp-field-selector__objects {
