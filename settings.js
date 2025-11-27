@@ -705,6 +705,8 @@ function saveSettings(){
 function updateMapPreview(){
   if(!mapPreview) return;
   const map = MAPS[mapIndex];
+  const isRandomMap = map?.file === 'ui_controlpanel/cp_de_maprandom.png';
+  mapPreview.classList.toggle('map-preview--random', Boolean(isRandomMap));
   mapPreview.style.backgroundImage = map ? `url('${map.file}')` : '';
   setupPreviewSimulation();
 }
