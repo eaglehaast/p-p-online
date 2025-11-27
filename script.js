@@ -1448,6 +1448,10 @@ const MAPS = [
     ]
   }
 ];
+const RANDOM_MAP_SENTINEL_INDEX = MAPS.findIndex(map => map?.name?.toLowerCase?.() === 'random map');
+const PLAYABLE_MAP_INDICES = MAPS
+  .map((_, index) => index)
+  .filter(index => index !== RANDOM_MAP_SENTINEL_INDEX);
 
 const FLAME_STYLE_OPTIONS = [
   { value: 'random', label: 'Random Mix', filter: '' },
@@ -1486,6 +1490,14 @@ function getStoredSetting(key){
   }
 }
 
+function clampMapIndex(index){
+  const numericIndex = Number.isInteger(index) ? index : parseInt(index, 10);
+  if(!Number.isInteger(numericIndex) || !MAPS.length){
+    return 0;
+  }
+  return Math.min(MAPS.length - 1, Math.max(0, numericIndex));
+}
+
 function setStoredSetting(key, value){
   if(!storageAvailable){
     return;
@@ -1509,7 +1521,7 @@ function loadSettings(){
   settings.addAA = getStoredSetting('settings.addAA') === 'true';
   settings.sharpEdges = getStoredSetting('settings.sharpEdges') === 'true';
   const mapIdx = parseInt(getStoredSetting('settings.mapIndex'), 10);
-  settings.mapIndex = Number.isNaN(mapIdx) ? 0 : Math.min(MAPS.length - 1, Math.max(0, mapIdx));
+  settings.mapIndex = clampMapIndex(mapIdx);
   const storedFlameStyle = normalizeFlameStyleKey(getStoredSetting('settings.flameStyle'));
   settings.flameStyle = storedFlameStyle;
   settings.randomizeMapEachRound = getStoredSetting('settings.randomizeMapEachRound') === 'true';
@@ -2098,8 +2110,9 @@ function resetGame(){
   flyingPoints= [];
   buildings = [];
   if(shouldAutoRandomizeMap()){
-    settings.mapIndex = Math.floor(Math.random() * MAPS.length);
-    setStoredSetting('settings.mapIndex', String(settings.mapIndex));
+    if(settings.mapIndex !== RANDOM_MAP_SENTINEL_INDEX){
+      setMapIndexAndPersist(getRandomPlayableMapIndex());
+    }
   }
   applyCurrentMap();
 
@@ -2175,7 +2188,7 @@ if(classicRulesBtn){
     aimingAmplitude = 10 / 5; // 10°
     settings.addAA = false;
     settings.sharpEdges = false;
-    settings.mapIndex = Math.floor(Math.random() * MAPS.length);
+    settings.mapIndex = getRandomPlayableMapIndex();
     settings.randomizeMapEachRound = true;
     settings.flameStyle = 'random';
     onFlameStyleChanged();
@@ -2247,7 +2260,7 @@ function populateTestControls(){
 
 function syncTestControls(){
   if(inGameMapSelect){
-    const desired = String(Math.min(MAPS.length - 1, Math.max(0, settings.mapIndex)));
+    const desired = String(clampMapIndex(settings.mapIndex));
     if(inGameMapSelect.value !== desired){
       inGameMapSelect.value = desired;
     }
@@ -2302,7 +2315,7 @@ function applyTestControlSelections(){
   if(inGameMapSelect){
     const nextIndex = parseInt(inGameMapSelect.value, 10);
     if(Number.isInteger(nextIndex)){
-      const clamped = Math.min(MAPS.length - 1, Math.max(0, nextIndex));
+      const clamped = clampMapIndex(nextIndex);
       if(clamped !== settings.mapIndex){
         settings.mapIndex = clamped;
         setStoredSetting('settings.mapIndex', String(settings.mapIndex));
@@ -5195,8 +5208,9 @@ yesBtn.addEventListener("click", () => {
     syncAllStarStates();
     roundNumber = 0;
     if(shouldAutoRandomizeMap()){
-      settings.mapIndex = Math.floor(Math.random() * MAPS.length);
-      setStoredSetting('settings.mapIndex', String(settings.mapIndex));
+      if(settings.mapIndex !== RANDOM_MAP_SENTINEL_INDEX){
+        setMapIndexAndPersist(getRandomPlayableMapIndex());
+      }
     }
     applyCurrentMap();
   }
@@ -5214,8 +5228,9 @@ function startNewRound(){
   }
   const shouldRandomize = !suppressAutoRandomMapForNextRound && shouldAutoRandomizeMap() && roundNumber > 0;
   if(shouldRandomize){
-    settings.mapIndex = Math.floor(Math.random() * MAPS.length);
-    setStoredSetting('settings.mapIndex', String(settings.mapIndex));
+    if(settings.mapIndex !== RANDOM_MAP_SENTINEL_INDEX){
+      setMapIndexAndPersist(getRandomPlayableMapIndex());
+    }
     applyCurrentMap();
   }
   suppressAutoRandomMapForNextRound = false;
@@ -5278,11 +5293,33 @@ function shouldAutoRandomizeMap(){
   return !!settings.randomizeMapEachRound;
 }
 
+function getRandomPlayableMapIndex(){
+  if(PLAYABLE_MAP_INDICES.length === 0){
+    return 0;
+  }
+  const randomIndex = Math.floor(Math.random() * PLAYABLE_MAP_INDICES.length);
+  return PLAYABLE_MAP_INDICES[randomIndex] ?? 0;
+}
+
+function resolveMapIndexForPlay(index){
+  const clamped = clampMapIndex(index);
+  if(clamped === RANDOM_MAP_SENTINEL_INDEX){
+    return getRandomPlayableMapIndex();
+  }
+  return clamped;
+}
+
+function setMapIndexAndPersist(nextIndex){
+  settings.mapIndex = clampMapIndex(nextIndex);
+  setStoredSetting('settings.mapIndex', String(settings.mapIndex));
+}
+
 function restartMatchWithCurrentSettings(options = {}){
   const { randomizeMap = false } = options;
   if(randomizeMap){
-    settings.mapIndex = Math.floor(Math.random() * MAPS.length);
-    setStoredSetting('settings.mapIndex', String(settings.mapIndex));
+    if(settings.mapIndex !== RANDOM_MAP_SENTINEL_INDEX){
+      setMapIndexAndPersist(getRandomPlayableMapIndex());
+    }
   }
   applyCurrentMap();
   blueScore = 0;
@@ -5308,7 +5345,8 @@ function resetPlanePositionsForCurrentMap(){
 }
 
 function applyCurrentMap(){
-  const map = MAPS[settings.mapIndex] || MAPS[0];
+  const mapIndexForPlay = resolveMapIndexForPlay(settings.mapIndex);
+  const map = MAPS[mapIndexForPlay] || MAPS[0];
   brickFrameImg.src = map.file;
   rebuildBuildingsFromMap(map);
   updateFieldDimensions();
