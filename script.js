@@ -1211,7 +1211,8 @@ const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit An
 const BOUNCE_FRAMES        = 68;
 // Duration of a full-speed flight on the field (measured in frames)
 // (Restored to the original pre-change speed used for gameplay physics)
-const FIELD_FLIGHT_DURATION_SEC = (BOUNCE_FRAMES / 60) * 2;
+// Shortened by 1.5x to speed up on-field flight animation
+const FIELD_FLIGHT_DURATION_SEC = (BOUNCE_FRAMES / 60) * 2 / 1.5;
 const MAX_DRAG_DISTANCE    = 100;    // px
 const DRAG_ROTATION_THRESHOLD = 5;   // px slack before the plane starts to turn
 const ATTACK_RANGE_PX      = 300;    // px
