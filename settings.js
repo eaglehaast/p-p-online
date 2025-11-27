@@ -3,6 +3,9 @@ const MAX_FLIGHT_RANGE_CELLS = 30;
 const MIN_AMPLITUDE = 0;
 const MAX_AMPLITUDE = 20;
 
+const MAP_PREVIEW_BASE_WIDTH = 360;
+const MAP_PREVIEW_BASE_HEIGHT = 640;
+
 const MAPS = [
   { name: 'Clear Sky', file: 'map 1 - clear sky 3.png', buildings: [] },
   {
@@ -462,6 +465,7 @@ let previewCanvas = null;
 let previewCtx = null;
 let previewDpr = window.devicePixelRatio || 1;
 let previewPlanes = [];
+let previewBuildings = [];
 let previewLastTimestamp = 0;
 let previewOscillationAngle = 0;
 let previewOscillationDir = 1;
@@ -675,6 +679,8 @@ function resizePreviewCanvas(){
   if(previewCtx){
     previewCtx.setTransform(previewDpr, 0, 0, previewDpr, 0, 0);
   }
+
+  rebuildPreviewBuildings();
 }
 
 function createPreviewPlaneFromElement(el){
@@ -712,6 +718,31 @@ function rebuildPreviewPlanes(){
     .map(createPreviewPlaneFromElement)
     .filter(Boolean);
   previewPlanes.forEach(syncPreviewPlaneVisual);
+  rebuildPreviewBuildings();
+}
+
+function rebuildPreviewBuildings(){
+  previewBuildings = [];
+  if(!mapPreviewContainer) return;
+  const map = MAPS[mapIndex];
+  if(!map || !Array.isArray(map.buildings)) return;
+
+  const rect = mapPreviewContainer.getBoundingClientRect();
+  const scaleX = rect.width / MAP_PREVIEW_BASE_WIDTH;
+  const scaleY = rect.height / MAP_PREVIEW_BASE_HEIGHT;
+
+  if(!Number.isFinite(scaleX) || !Number.isFinite(scaleY) || scaleX <= 0 || scaleY <= 0){
+    return;
+  }
+
+  previewBuildings = map.buildings
+    .map(b => ({
+      x: b.x * scaleX,
+      y: b.y * scaleY,
+      width: b.width * scaleX,
+      height: b.height * scaleY
+    }))
+    .filter(b => Number.isFinite(b.x) && Number.isFinite(b.y) && Number.isFinite(b.width) && Number.isFinite(b.height));
 }
 
 function getPreviewPointerPosition(e){
@@ -888,6 +919,57 @@ function updatePreviewBounds(plane){
   }
 }
 
+function clamp(value, min, max){
+  return Math.max(min, Math.min(max, value));
+}
+
+function planePreviewBuildingCollision(plane, building){
+  const radius = Math.max(plane.width, plane.height) / 2;
+  let collided = false;
+
+  for(let i = 0; i < 2; i++){
+    const closestX = clamp(plane.x, building.x - building.width / 2, building.x + building.width / 2);
+    const closestY = clamp(plane.y, building.y - building.height / 2, building.y + building.height / 2);
+    const dx = plane.x - closestX;
+    const dy = plane.y - closestY;
+    const dist2 = dx * dx + dy * dy;
+
+    if(dist2 >= radius * radius) break;
+
+    collided = true;
+
+    let nx = 0;
+    let ny = 0;
+
+    if(dx !== 0 || dy !== 0){
+      const dist = Math.sqrt(dist2);
+      nx = dx / dist;
+      ny = dy / dist;
+    } else {
+      const penLeft = Math.abs(plane.x - (building.x - building.width / 2));
+      const penRight = Math.abs((building.x + building.width / 2) - plane.x);
+      const penTop = Math.abs(plane.y - (building.y - building.height / 2));
+      const penBottom = Math.abs((building.y + building.height / 2) - plane.y);
+
+      const minPen = Math.min(penLeft, penRight, penTop, penBottom);
+      if(minPen === penLeft){ nx = -1; ny = 0; }
+      else if(minPen === penRight){ nx = 1; ny = 0; }
+      else if(minPen === penTop){ nx = 0; ny = -1; }
+      else { nx = 0; ny = 1; }
+    }
+
+    const dot = plane.vx * nx + plane.vy * ny;
+    plane.vx = plane.vx - 2 * dot * nx;
+    plane.vy = plane.vy - 2 * dot * ny;
+
+    const EPS = 0.5;
+    plane.x = closestX + nx * (radius + EPS);
+    plane.y = closestY + ny * (radius + EPS);
+  }
+
+  return collided;
+}
+
 function resolvePreviewCollisions(){
   for(let i = 0; i < previewPlanes.length; i++){
     for(let j = i + 1; j < previewPlanes.length; j++){
@@ -939,6 +1021,10 @@ function updatePreviewPhysics(delta){
     plane.x += plane.vx * delta;
     plane.y += plane.vy * delta;
     updatePreviewBounds(plane);
+
+    for(const building of previewBuildings){
+      planePreviewBuildingCollision(plane, building);
+    }
 
     if(Math.hypot(plane.vx, plane.vy) > 0.01){
       plane.angle = Math.atan2(plane.vy, plane.vx) + Math.PI / 2;
