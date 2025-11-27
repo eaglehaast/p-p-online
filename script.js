@@ -4073,8 +4073,20 @@ function isExplosionFinished(p){
 function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians = 0) {
   ctx2d.save();
   ctx2d.translate(x, y);
-  if (rotationRadians) {
-    ctx2d.rotate(rotationRadians);
+
+  let effectiveRotation = rotationRadians;
+  const isStartingBlueIcon = plane?.color === "blue"
+    && Array.isArray(plane?.segments)
+    && plane.segments.length === 0
+    && plane.isAlive
+    && !plane.burning;
+
+  if (isStartingBlueIcon) {
+    effectiveRotation += Math.PI;
+  }
+
+  if (effectiveRotation) {
+    ctx2d.rotate(effectiveRotation);
   }
 
   const color = plane?.color || "blue";
