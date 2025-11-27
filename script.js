@@ -5039,6 +5039,36 @@ function renderScoreboard(){
 }
 
 function buildPlaneCounterFrame(color, containerLeft, containerTop, scaleX, scaleY) {
+  const host = SCORE_COUNTER_ELEMENTS?.[color];
+  if (host instanceof HTMLElement) {
+    const rect = visualRect(host);
+    const width = rect.width;
+    const height = rect.height;
+    const left = rect.left;
+    const top = rect.top;
+
+    const scaleFromCssX = width / SCORE_COUNTER_BASE_SIZE.width;
+    const scaleFromCssY = height / SCORE_COUNTER_BASE_SIZE.height;
+
+    if (
+      Number.isFinite(left) &&
+      Number.isFinite(top) &&
+      Number.isFinite(width) &&
+      Number.isFinite(height) &&
+      width > 0 &&
+      height > 0
+    ) {
+      return {
+        left,
+        top,
+        width,
+        height,
+        scaleX: Number.isFinite(scaleFromCssX) && scaleFromCssX > 0 ? scaleFromCssX : scaleX,
+        scaleY: Number.isFinite(scaleFromCssY) && scaleFromCssY > 0 ? scaleFromCssY : scaleY
+      };
+    }
+  }
+
   const spec = PLANE_COUNTER_CONTAINERS?.[color];
   if (!spec) return null;
 
