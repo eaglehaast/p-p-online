@@ -1210,7 +1210,7 @@ const PLANE_TOUCH_RADIUS   = 20;                   // px
 const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit Anti-Aircraft center
 const BOUNCE_FRAMES        = 68;
 // Duration of a full-speed flight in seconds (previously measured in frames)
-const FLIGHT_DURATION_SEC  = (BOUNCE_FRAMES / 60) * 2;
+const FLIGHT_DURATION_SEC  = (BOUNCE_FRAMES / 60) * 4;
 const MAX_DRAG_DISTANCE    = 100;    // px
 const DRAG_ROTATION_THRESHOLD = 5;   // px slack before the plane starts to turn
 const ATTACK_RANGE_PX      = 300;    // px
@@ -1285,6 +1285,7 @@ function updateFieldDimensions(){
 
 const MIN_FLIGHT_RANGE_CELLS = 5;
 const MAX_FLIGHT_RANGE_CELLS = 30;
+const DEFAULT_FLIGHT_RANGE_CELLS = 10;
 
 const MIN_AMPLITUDE        = 0;
 const MAX_AMPLITUDE        = 20;     // UI показывает как *5°
@@ -1515,7 +1516,7 @@ function setStoredSetting(key, value){
 function loadSettings(){
   const previousFlameStyle = settings.flameStyle;
   const fr = parseInt(getStoredSetting('settings.flightRangeCells'), 10);
-  flightRangeCells = Number.isNaN(fr) ? 10 : fr;
+  flightRangeCells = Number.isNaN(fr) ? DEFAULT_FLIGHT_RANGE_CELLS : fr;
   const amp = parseFloat(getStoredSetting('settings.aimingAmplitude'));
   aimingAmplitude = Number.isNaN(amp) ? 10 / 5 : amp;
   settings.addAA = getStoredSetting('settings.addAA') === 'true';
@@ -2184,7 +2185,7 @@ onlineBtn.addEventListener("click",()=>{
 });
 if(classicRulesBtn){
   classicRulesBtn.addEventListener('click', () => {
-    flightRangeCells = 10;
+    flightRangeCells = DEFAULT_FLIGHT_RANGE_CELLS;
     aimingAmplitude = 10 / 5; // 10°
     settings.addAA = false;
     settings.sharpEdges = false;
@@ -2273,7 +2274,7 @@ function syncTestControls(){
     inGameFlameStyleSelect.value = key;
   }
   if(testFlightRangeInput){
-    const fallbackRange = Number.isFinite(flightRangeCells) ? flightRangeCells : 10;
+    const fallbackRange = Number.isFinite(flightRangeCells) ? flightRangeCells : DEFAULT_FLIGHT_RANGE_CELLS;
     const clampedRange = Math.min(MAX_FLIGHT_RANGE_CELLS, Math.max(MIN_FLIGHT_RANGE_CELLS, fallbackRange));
     const rangeValue = String(Math.round(clampedRange));
     if(testFlightRangeInput.value !== rangeValue){

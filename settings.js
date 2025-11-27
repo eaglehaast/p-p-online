@@ -1,5 +1,6 @@
 const MIN_FLIGHT_RANGE_CELLS = 5;
 const MAX_FLIGHT_RANGE_CELLS = 30;
+const DEFAULT_FLIGHT_RANGE_CELLS = 10;
 const MIN_AMPLITUDE = 0;
 const MAX_AMPLITUDE = 20;
 
@@ -104,7 +105,7 @@ const MAPS = [
 ];
 
 const DEFAULT_SETTINGS = {
-  flightRangeCells: 10,
+  flightRangeCells: DEFAULT_FLIGHT_RANGE_CELLS,
   aimingAmplitude: 10 / 5,
   addAA: false,
   sharpEdges: false,
@@ -487,7 +488,7 @@ function getIntSetting(key, defaultValue){
   return Number.isNaN(value) ? defaultValue : value;
 }
 
-let flightRangeCells = getIntSetting('settings.flightRangeCells', 10);
+let flightRangeCells = getIntSetting('settings.flightRangeCells', DEFAULT_FLIGHT_RANGE_CELLS);
 let aimingAmplitude  = parseFloat(getStoredItem('settings.aimingAmplitude'));
 if(Number.isNaN(aimingAmplitude)) aimingAmplitude = 10 / 5;
 let addAA = getStoredItem('settings.addAA') === 'true';
