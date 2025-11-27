@@ -5227,11 +5227,27 @@ function restartMatchWithCurrentSettings(options = {}){
   startNewRound();
 }
 
+function resetPlanePositionsForCurrentMap(){
+  flyingPoints = [];
+  hasShotThisRound = false;
+  awaitingFlightResolution = false;
+  aaUnits = [];
+
+  blueFlagCarrier = null;
+  greenFlagCarrier = null;
+  blueFlagStolenBy = null;
+  greenFlagStolenBy = null;
+
+  points = [];
+  initPoints();
+}
+
 function applyCurrentMap(){
   const map = MAPS[settings.mapIndex] || MAPS[0];
   brickFrameImg.src = map.file;
   rebuildBuildingsFromMap(map);
   updateFieldDimensions();
+  resetPlanePositionsForCurrentMap();
   renderScoreboard();
 }
 
