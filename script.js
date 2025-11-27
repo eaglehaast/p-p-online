@@ -1944,7 +1944,7 @@ let aiMoveScheduled = false;
 
 /* ======= INIT ======= */
 function colorAngleOffset(color){
-  return (color === "blue") ? -Math.PI : 0;
+  return 0;
 }
 
 function initPoints(){
@@ -1965,7 +1965,7 @@ function initPoints(){
     let x = FIELD_LEFT + spacing * i;
     if(i === Math.ceil(PLANES_PER_SIDE / 2)) x -= middleOffset;
     if(i === Math.ceil(PLANES_PER_SIDE / 2) + 1) x += middleOffset;
-    points.push(makePlane(x, 40, "blue", colorAngleOffset("blue") + Math.PI)); // π рад — базовый разворот вниз
+    points.push(makePlane(x, 40, "blue", Math.PI)); // π рад — базовый разворот вниз
   }
 }
 function makePlane(x,y,color,angle){
