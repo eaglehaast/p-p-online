@@ -1917,6 +1917,10 @@ let animationFrameId = null;
 let aiMoveScheduled = false;
 
 /* ======= INIT ======= */
+function colorAngleOffset(color){
+  return (color === "blue") ? -Math.PI : 0;
+}
+
 function initPoints(){
   points = [];
   const spacing = FIELD_WIDTH / (PLANES_PER_SIDE + 1);
@@ -1927,7 +1931,7 @@ function initPoints(){
     let x = FIELD_LEFT + spacing * i;
     if(i === Math.ceil(PLANES_PER_SIDE / 2)) x -= middleOffset;
     if(i === Math.ceil(PLANES_PER_SIDE / 2) + 1) x += middleOffset;
-    points.push(makePlane(x, gameCanvas.height - 40, "green", 0)); // 0 рад — нос вверх
+    points.push(makePlane(x, gameCanvas.height - 40, "green", colorAngleOffset("green"))); // 0 рад — нос вверх
   }
 
   // Blue (верх поля) — смотрят ВНИЗ
@@ -1935,7 +1939,7 @@ function initPoints(){
     let x = FIELD_LEFT + spacing * i;
     if(i === Math.ceil(PLANES_PER_SIDE / 2)) x -= middleOffset;
     if(i === Math.ceil(PLANES_PER_SIDE / 2) + 1) x += middleOffset;
-    points.push(makePlane(x, 40, "blue", Math.PI)); // π рад — нос вниз
+    points.push(makePlane(x, 40, "blue", colorAngleOffset("blue") + Math.PI)); // π рад — базовый разворот вниз
   }
 }
 function makePlane(x,y,color,angle){
@@ -3296,7 +3300,9 @@ function handleAAForPlane(p, fp){
       }
 
       // нос по текущей скорости
-      p.angle = Math.atan2(fp.vy, fp.vx) + Math.PI / 2;
+      const colorShift = colorAngleOffset(p.color);
+      const baseAngle = Math.atan2(fp.vy, fp.vx) + Math.PI / 2;
+      p.angle = baseAngle + colorShift;
 
       // трейл
       const seg = {
