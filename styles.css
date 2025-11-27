@@ -693,28 +693,28 @@ body, button {
 
   body.settings-page #f_g_plane1 {
     left: 9px;
-    top: 146px;
+    top: 145px;
     width: 11px;
     height: 6px;
   }
 
   body.settings-page #f_g_plane2 {
     left: 26px;
-    top: 146px;
+    top: 145px;
     width: 11px;
     height: 6px;
   }
 
   body.settings-page #f_g_plane3 {
     left: 52px;
-    top: 146px;
+    top: 145px;
     width: 11px;
     height: 6px;
   }
 
   body.settings-page #f_g_plane4 {
     left: 69px;
-    top: 146px;
+    top: 145px;
     width: 11px;
     height: 6px;
   }
@@ -725,7 +725,7 @@ body, button {
 
   body.settings-page #f_g_flag {
     left: 43px;
-    top: 146px;
+    top: 145px;
     width: 3px;
     height: 6px;
   }
@@ -736,28 +736,28 @@ body, button {
 
   body.settings-page #f_b_plane1 {
     left: 9px;
-    top: 15px;
+    top: 6px;
     width: 7px;
     height: 7px;
   }
 
   body.settings-page #f_b_plane2 {
     left: 26px;
-    top: 15px;
+    top: 6px;
     width: 7px;
     height: 7px;
   }
 
   body.settings-page #f_b_plane3 {
     left: 56px;
-    top: 15px;
+    top: 6px;
     width: 7px;
     height: 7px;
   }
 
   body.settings-page #f_b_plane4 {
     left: 73px;
-    top: 15px;
+    top: 6px;
     width: 7px;
     height: 7px;
   }
@@ -774,7 +774,7 @@ body, button {
 
   body.settings-page #f_b_flag {
     left: 43px;
-    top: 15px;
+    top: 6px;
     width: 3px;
     height: 5px;
   }
