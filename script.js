@@ -1353,9 +1353,35 @@ let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_STA
 
 let currentPlacer = null; // 'green' | 'blue'
 const MAPS = [
-  { name: 'Clear Sky', file: 'map 1 - clear sky 3.png' },
-  { name: '5 Bricks',  file: 'map 2 - 5 bricks.png' },
-  { name: 'Diagonals', file: 'map 3 diagonals.png' }
+  { name: 'Clear Sky', file: 'map 1 - clear sky 3.png', buildings: [] },
+  {
+    name: '5 Bricks',
+    file: 'map 2 - 5 bricks.png',
+    buildings: [
+      { x: 110, y: 180, width: 100, height: 40 },
+      { x: 250, y: 180, width: 100, height: 40 },
+      { x: 180, y: 320, width: 100, height: 40 },
+      { x: 110, y: 460, width: 100, height: 40 },
+      { x: 250, y: 460, width: 100, height: 40 }
+    ]
+  },
+  {
+    name: 'Diagonals',
+    file: 'map 3 diagonals.png',
+    buildings: [
+      { x: 100, y: 130, width: 80, height: 20 },
+      { x: 260, y: 130, width: 80, height: 20 },
+      { x: 180, y: 190, width: 80, height: 20 },
+      { x: 120, y: 250, width: 80, height: 20 },
+      { x: 240, y: 250, width: 80, height: 20 },
+      { x: 180, y: 320, width: 40, height: 40 },
+      { x: 120, y: 390, width: 80, height: 20 },
+      { x: 240, y: 390, width: 80, height: 20 },
+      { x: 180, y: 450, width: 80, height: 20 },
+      { x: 100, y: 510, width: 80, height: 20 },
+      { x: 260, y: 510, width: 80, height: 20 }
+    ]
+  }
 ];
 
 const FLAME_STYLE_OPTIONS = [
@@ -5202,11 +5228,25 @@ function restartMatchWithCurrentSettings(options = {}){
 }
 
 function applyCurrentMap(){
-  buildings = [];
   const map = MAPS[settings.mapIndex] || MAPS[0];
   brickFrameImg.src = map.file;
+  rebuildBuildingsFromMap(map);
   updateFieldDimensions();
   renderScoreboard();
+}
+
+function rebuildBuildingsFromMap(map){
+  const mapBuildings = Array.isArray(map?.buildings) ? map.buildings : [];
+  buildings = mapBuildings
+    .map(b => ({
+      type: b.type || 'rectangle',
+      color: b.color || 'darkred',
+      x: b.x,
+      y: b.y,
+      width: b.width,
+      height: b.height
+    }))
+    .filter(b => Number.isFinite(b.x) && Number.isFinite(b.y) && Number.isFinite(b.width) && Number.isFinite(b.height));
 }
 
 /* ======= CANVAS RESIZE ======= */
