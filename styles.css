@@ -726,76 +726,76 @@ body, button {
     background-image: url('ui_controlpanel/field_planes/green_plane_mini.png');
   }
 
-  body.settings-page #f_g_plane1 {
-    left: 9px;
-    top: 145px;
-    width: 11px;
-    height: 6px;
-  }
+    body.settings-page #f_g_plane1 {
+      left: 3px;
+      top: 145px;
+      width: 15px;
+      height: 10px;
+    }
 
-  body.settings-page #f_g_plane2 {
-    left: 26px;
-    top: 145px;
-    width: 11px;
-    height: 6px;
-  }
+    body.settings-page #f_g_plane2 {
+      left: 23px;
+      top: 145px;
+      width: 15px;
+      height: 10px;
+    }
 
-  body.settings-page #f_g_plane3 {
-    left: 52px;
-    top: 145px;
-    width: 11px;
-    height: 6px;
-  }
+    body.settings-page #f_g_plane3 {
+      left: 52px;
+      top: 145px;
+      width: 15px;
+      height: 10px;
+    }
 
-  body.settings-page #f_g_plane4 {
-    left: 69px;
-    top: 145px;
-    width: 11px;
-    height: 6px;
-  }
+    body.settings-page #f_g_plane4 {
+      left: 72px;
+      top: 145px;
+      width: 15px;
+      height: 10px;
+    }
 
   body.settings-page .cp-field-selector__object--green-flag {
     background-image: url('ui_controlpanel/field_planes/green_flag_mini.png');
   }
 
-  body.settings-page #f_g_flag {
-    left: 43px;
-    top: 145px;
-    width: 3px;
-    height: 6px;
-  }
+    body.settings-page #f_g_flag {
+      left: 43px;
+      top: 148px;
+      width: 4px;
+      height: 7px;
+    }
 
   body.settings-page .cp-field-selector__object--blue-plane {
     background-image: url('ui_controlpanel/field_planes/blue_plane_mini.png');
   }
 
-  body.settings-page #f_b_plane1 {
-    left: 9px;
-    top: 6px;
-    width: 7px;
-    height: 7px;
-  }
+    body.settings-page #f_b_plane1 {
+      left: 6px;
+      top: 6px;
+      width: 9px;
+      height: 11px;
+    }
 
-  body.settings-page #f_b_plane2 {
-    left: 26px;
-    top: 6px;
-    width: 7px;
-    height: 7px;
-  }
+    body.settings-page #f_b_plane2 {
+      left: 25px;
+      top: 6px;
+      width: 9px;
+      height: 11px;
+    }
 
-  body.settings-page #f_b_plane3 {
-    left: 56px;
-    top: 6px;
-    width: 7px;
-    height: 7px;
-  }
+    body.settings-page #f_b_plane3 {
+      left: 56px;
+      top: 6px;
+      width: 9px;
+      height: 11px;
+    }
 
-  body.settings-page #f_b_plane4 {
-    left: 73px;
-    top: 6px;
-    width: 7px;
-    height: 7px;
-  }
+    body.settings-page #f_b_plane4 {
+      left: 75px;
+      top: 6px;
+      width: 9px;
+      height: 11px;
+    }
 
   body.settings-page .cp-field-selector__object--blue-flag {
     background-image: url('ui_controlpanel/field_planes/blue_flag_mini.png');
@@ -807,12 +807,12 @@ body, button {
     transform-origin: center;
   }
 
-  body.settings-page #f_b_flag {
-    left: 43px;
-    top: 6px;
-    width: 3px;
-    height: 5px;
-  }
+    body.settings-page #f_b_flag {
+      left: 43px;
+      top: 6px;
+      width: 4px;
+      height: 7px;
+    }
 
   body.settings-page #frame_field_2_counter {
     position: absolute;
