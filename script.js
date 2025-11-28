@@ -1258,6 +1258,7 @@ const BUILDING_BUFFER      = CELL_SIZE / 2;
 const MAX_BUILDINGS_GLOBAL = 100;
 const PLANES_PER_SIDE      = 4;      // количество самолётов у каждой команды
 const MIDDLE_GAP_EXTRA_PX  = 10;     // доп. расстояние между средними самолётами
+const EDGE_PLANE_PADDING_PX = 8;     // смещение крайних самолётов наружу
 const FLAG_POLE_HEIGHT     = 20;     // высота флагштока
 const FLAG_WIDTH           = 12;     // ширина полотна флага
 const FLAG_HEIGHT          = 8;      // высота полотна флага
@@ -2167,6 +2168,7 @@ function initPoints(){
   points = [];
   const spacing = FIELD_WIDTH / (PLANES_PER_SIDE + 1);
   const middleOffset = MIDDLE_GAP_EXTRA_PX / 2;
+  const edgePadding = EDGE_PLANE_PADDING_PX;
 
   const blueHomeY = 40;
   const greenHomeY = gameCanvas.height - 40;
@@ -2175,6 +2177,8 @@ function initPoints(){
   // Green (низ поля) — смотрят ВВЕРХ (к сопернику)
   for(let i = 1; i <= PLANES_PER_SIDE; i++){
     let x = FIELD_LEFT + spacing * i;
+    if(i === 1) x -= edgePadding;
+    if(i === PLANES_PER_SIDE) x += edgePadding;
     if(i === Math.ceil(PLANES_PER_SIDE / 2)) x -= middleOffset;
     if(i === Math.ceil(PLANES_PER_SIDE / 2) + 1) x += middleOffset;
     points.push(makePlane(x, greenHomeY, "green", colorAngleOffset("green"))); // 0 рад — нос вверх
@@ -2183,6 +2187,8 @@ function initPoints(){
   // Blue (верх поля) — смотрят ВНИЗ
   for(let i = 1; i <= PLANES_PER_SIDE; i++){
     let x = FIELD_LEFT + spacing * i;
+    if(i === 1) x -= edgePadding;
+    if(i === PLANES_PER_SIDE) x += edgePadding;
     if(i === Math.ceil(PLANES_PER_SIDE / 2)) x -= middleOffset;
     if(i === Math.ceil(PLANES_PER_SIDE / 2) + 1) x += middleOffset;
     points.push(makePlane(x, blueHomeY, "blue", Math.PI + colorAngleOffset("blue"))); // π рад — базовый разворот вниз
