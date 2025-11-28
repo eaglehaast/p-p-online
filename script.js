@@ -2034,17 +2034,29 @@ function colorAngleOffset(color){
   return 0;
 }
 
+let HOME_ROW_Y = { blue: 40, green: 0 };
+
+function getHomeRowY(color){
+  const fallback = color === "blue" ? 40 : gameCanvas.height - 40;
+  const rowY = HOME_ROW_Y[color];
+  return Number.isFinite(rowY) ? rowY : fallback;
+}
+
 function initPoints(){
   points = [];
   const spacing = FIELD_WIDTH / (PLANES_PER_SIDE + 1);
   const middleOffset = MIDDLE_GAP_EXTRA_PX / 2;
+
+  const blueHomeY = 40;
+  const greenHomeY = gameCanvas.height - 40;
+  HOME_ROW_Y = { blue: blueHomeY, green: greenHomeY };
 
   // Green (низ поля) — смотрят ВВЕРХ (к сопернику)
   for(let i = 1; i <= PLANES_PER_SIDE; i++){
     let x = FIELD_LEFT + spacing * i;
     if(i === Math.ceil(PLANES_PER_SIDE / 2)) x -= middleOffset;
     if(i === Math.ceil(PLANES_PER_SIDE / 2) + 1) x += middleOffset;
-    points.push(makePlane(x, gameCanvas.height - 40, "green", colorAngleOffset("green"))); // 0 рад — нос вверх
+    points.push(makePlane(x, greenHomeY, "green", colorAngleOffset("green"))); // 0 рад — нос вверх
   }
 
   // Blue (верх поля) — смотрят ВНИЗ
@@ -2052,7 +2064,7 @@ function initPoints(){
     let x = FIELD_LEFT + spacing * i;
     if(i === Math.ceil(PLANES_PER_SIDE / 2)) x -= middleOffset;
     if(i === Math.ceil(PLANES_PER_SIDE / 2) + 1) x += middleOffset;
-    points.push(makePlane(x, 40, "blue", Math.PI + colorAngleOffset("blue"))); // π рад — базовый разворот вниз
+    points.push(makePlane(x, blueHomeY, "blue", Math.PI + colorAngleOffset("blue"))); // π рад — базовый разворот вниз
   }
 }
 function makePlane(x,y,color,angle){
@@ -2798,8 +2810,8 @@ function doComputerMove(){
   if(!aiPlanes.length || !enemies.length) return;
 
   const centerX = FIELD_LEFT + FIELD_WIDTH/2;
-  const topY    = 40;
-  const bottomY = gameCanvas.height - 40;
+  const topY    = getHomeRowY("blue");
+  const bottomY = getHomeRowY("green");
 
   // 1. If we are carrying the enemy flag, prioritize returning home
   const carrier = aiPlanes.find(p=>p.flagColor === "green" && !flyingPoints.some(fp=>fp.plane===p));
@@ -4256,11 +4268,13 @@ function drawFlag(ctx2d, x, y, color){
 
 function drawFlags(){
   const centerX = FIELD_LEFT + FIELD_WIDTH / 2;
+  const blueFlagY = getHomeRowY("blue");
+  const greenFlagY = getHomeRowY("green");
   if(!blueFlagCarrier){
-    drawFlag(gameCtx, centerX, 40, "blue");
+    drawFlag(gameCtx, centerX, blueFlagY, "blue");
   }
   if(!greenFlagCarrier){
-    drawFlag(gameCtx, centerX, gameCanvas.height - 40, "green");
+    drawFlag(gameCtx, centerX, greenFlagY, "green");
   }
 }
 
@@ -4539,8 +4553,8 @@ function handleFlagInteractions(plane){
   if(isGameOver) return;
 
   const centerX = FIELD_LEFT + FIELD_WIDTH / 2;
-  const topY = 40;
-  const bottomY = gameCanvas.height - 40;
+  const topY = getHomeRowY("blue");
+  const bottomY = getHomeRowY("green");
   const flagRadius = POINT_RADIUS;
   if(!plane.flagColor){
     const enemyColor = plane.color === "green" ? "blue" : "green";
