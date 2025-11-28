@@ -761,6 +761,7 @@ function createPreviewPlaneFromElement(el){
   const { width, height } = measurePreviewElement(el);
   const baseline = capturePreviewPlaneBaseline(el, width, height);
   const baseRotation = getPreviewPlaneBaseRotation(el);
+  const headingDir = el.classList.contains('cp-field-selector__object--blue-plane') ? -1 : 1;
   resetPreviewPlaneElement(el, baseline, width, height);
 
   el.style.transformOrigin = '50% 50%';
@@ -776,8 +777,15 @@ function createPreviewPlaneFromElement(el){
     vy: 0,
     flightTime: 0,
     baseRotation,
-    angle: baseline.angle ?? 0
+    angle: baseline.angle ?? 0,
+    headingDir
   };
+}
+
+function updatePreviewPlaneHeading(plane, vx = plane?.vx, vy = plane?.vy){
+  if(!plane) return;
+  const headingDir = plane.headingDir ?? 1;
+  plane.angle = Math.atan2(vy * headingDir, vx * headingDir) + Math.PI / 2;
 }
 
 function rebuildPreviewPlanes(){
@@ -941,7 +949,7 @@ function onPreviewPointerUp(e){
   plane.vx = -Math.cos(dragAngle) * scale * speedPxPerSec;
   plane.vy = -Math.sin(dragAngle) * scale * speedPxPerSec;
   plane.flightTime = previewFlightDurationSec;
-  plane.angle = Math.atan2(plane.vy, plane.vx) + Math.PI / 2;
+  updatePreviewPlaneHeading(plane);
 
   cleanupPreviewHandle();
 }
@@ -998,7 +1006,7 @@ function updatePreviewHandle(delta){
   }
 
   if(vdist > PREVIEW_DRAG_ROTATION_THRESHOLD){
-    plane.angle = Math.atan2(-vdy, -vdx) + Math.PI / 2;
+    updatePreviewPlaneHeading(plane, -vdx, -vdy);
   } else {
     plane.angle = previewHandle.origAngle;
   }
@@ -1144,7 +1152,7 @@ function updatePreviewPhysics(delta){
     }
 
     if(Math.hypot(plane.vx, plane.vy) > 0.01){
-      plane.angle = Math.atan2(plane.vy, plane.vx) + Math.PI / 2;
+      updatePreviewPlaneHeading(plane);
     }
   }
 
