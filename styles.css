@@ -799,28 +799,28 @@ body, button {
   }
 
       body.settings-page #f_b_plane1 {
-        left: 14.5px;
+        left: 66.5px;
         top: 8px;
         width: 9px;
         height: 11px;
       }
 
       body.settings-page #f_b_plane2 {
-        left: 29.5px;
-        top: 8px;
-        width: 9px;
-        height: 11px;
-      }
-
-      body.settings-page #f_b_plane3 {
         left: 51.5px;
         top: 8px;
         width: 9px;
         height: 11px;
       }
 
+      body.settings-page #f_b_plane3 {
+        left: 29.5px;
+        top: 8px;
+        width: 9px;
+        height: 11px;
+      }
+
       body.settings-page #f_b_plane4 {
-        left: 66.5px;
+        left: 14.5px;
         top: 8px;
         width: 9px;
         height: 11px;
