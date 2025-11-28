@@ -597,8 +597,6 @@ function updateAmplitudeIndicator(){
 
 const LEFT_CRACK_STEPS = [
   'ui_controlpanel/steps/left_step 1.png',
-  'ui_controlpanel/steps/left_step 2.png',
-  'ui_controlpanel/steps/left_step 3.png',
   'ui_controlpanel/steps/left_step 4.png',
   'ui_controlpanel/steps/left_step 5.png',
   'ui_controlpanel/steps/left_step 6.png',
@@ -610,8 +608,6 @@ const LEFT_CRACK_STEPS = [
 
 const RIGHT_CRACK_STEPS = [
   'ui_controlpanel/steps/right_step 1.png',
-  'ui_controlpanel/steps/right_step 2.png',
-  'ui_controlpanel/steps/right_step 3.png',
   'ui_controlpanel/steps/right_step 4.png',
   'ui_controlpanel/steps/right_step 5.png',
   'ui_controlpanel/steps/right_step 6.png',
