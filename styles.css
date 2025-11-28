@@ -727,28 +727,28 @@ body, button {
   }
 
     body.settings-page #f_g_plane1 {
-      left: 8px;
+      left: 7.5px;
       top: 142px;
       width: 15px;
       height: 10px;
     }
 
     body.settings-page #f_g_plane2 {
-      left: 24px;
+      left: 22.5px;
       top: 142px;
       width: 15px;
       height: 10px;
     }
 
     body.settings-page #f_g_plane3 {
-      left: 51px;
+      left: 52.5px;
       top: 142px;
       width: 15px;
       height: 10px;
     }
 
     body.settings-page #f_g_plane4 {
-      left: 70px;
+      left: 67.5px;
       top: 142px;
       width: 15px;
       height: 10px;
@@ -770,28 +770,28 @@ body, button {
   }
 
     body.settings-page #f_b_plane1 {
-      left: 12px;
+      left: 10.5px;
       top: 8px;
       width: 9px;
       height: 11px;
     }
 
     body.settings-page #f_b_plane2 {
-      left: 28px;
+      left: 25.5px;
       top: 8px;
       width: 9px;
       height: 11px;
     }
 
     body.settings-page #f_b_plane3 {
-      left: 50px;
+      left: 55.5px;
       top: 8px;
       width: 9px;
       height: 11px;
     }
 
     body.settings-page #f_b_plane4 {
-      left: 66px;
+      left: 70.5px;
       top: 8px;
       width: 9px;
       height: 11px;
