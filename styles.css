@@ -512,18 +512,6 @@ body, button {
     pointer-events: none;
   }
 
-  .settings-container #frame_range_1_visual .jet-contrail-canvas {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 92px;
-    height: 60px;
-    pointer-events: none;
-    transform: scale(var(--trail-scale));
-    transform-origin: left center;
-    filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.35));
-  }
-
   /* Визуализация индикатора дальности на тестовых страницах */
   body.test-harness #flightRangeIndicator.control-visual {
     position: relative;

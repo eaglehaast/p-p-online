@@ -524,10 +524,8 @@ const mapNextBtn = document.getElementById('instance_field_right');
 const mapNameDisplay = document.getElementById('frame_field_2_counter');
 const mapPreviewContainer = document.getElementById('frame_field_1_visual');
 const mapPreview = document.getElementById('mapPreview');
-const rangeContrailCanvas = document.getElementById('rangeContrailCanvas');
 const menuFlameCanvas = document.getElementById('menuFlame');
 const flameOptions = { baseWidth: 46, baseHeight: 14 };
-const contrailRenderer = rangeContrailCanvas instanceof HTMLCanvasElement ? new ContrailRenderer(rangeContrailCanvas) : null;
 const menuFlameRenderer = menuFlameCanvas instanceof HTMLCanvasElement ? new JetFlameRenderer(menuFlameCanvas, flameOptions) : null;
 const isTestHarnessPage = document.body.classList.contains('test-harness');
 
@@ -568,10 +566,6 @@ function updateFlightRangeFlame(){
 
   if(menuFlameRenderer){
     menuFlameRenderer.setScale(ratio);
-  }
-
-  if(contrailRenderer){
-    contrailRenderer.setScale(ratio);
   }
 }
 
@@ -1402,7 +1396,6 @@ if(exitBtn){
 
 function cleanupRenderers(){
   if(menuFlameRenderer) menuFlameRenderer.stop();
-  if(contrailRenderer) contrailRenderer.stop();
 }
 
 window.addEventListener('pagehide', cleanupRenderers);
