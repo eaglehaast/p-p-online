@@ -769,33 +769,33 @@ body, button {
     background-image: url('ui_controlpanel/field_planes/blue_plane_mini.png');
   }
 
-    body.settings-page #f_b_plane1 {
-      left: 12.5px;
-      top: 8px;
-      width: 9px;
-      height: 11px;
-    }
+      body.settings-page #f_b_plane1 {
+        left: 14.5px;
+        top: 8px;
+        width: 9px;
+        height: 11px;
+      }
 
-    body.settings-page #f_b_plane2 {
-      left: 27.5px;
-      top: 8px;
-      width: 9px;
-      height: 11px;
-    }
+      body.settings-page #f_b_plane2 {
+        left: 29.5px;
+        top: 8px;
+        width: 9px;
+        height: 11px;
+      }
 
-    body.settings-page #f_b_plane3 {
-      left: 53.5px;
-      top: 8px;
-      width: 9px;
-      height: 11px;
-    }
+      body.settings-page #f_b_plane3 {
+        left: 51.5px;
+        top: 8px;
+        width: 9px;
+        height: 11px;
+      }
 
-    body.settings-page #f_b_plane4 {
-      left: 68.5px;
-      top: 8px;
-      width: 9px;
-      height: 11px;
-    }
+      body.settings-page #f_b_plane4 {
+        left: 66.5px;
+        top: 8px;
+        width: 9px;
+        height: 11px;
+      }
 
   body.settings-page .cp-field-selector__object--blue-flag {
     background-image: url('ui_controlpanel/field_planes/blue_flag_mini.png');
