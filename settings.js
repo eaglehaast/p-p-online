@@ -332,8 +332,8 @@ class ContrailRenderer {
   constructor(canvas, options = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
-    this.baseWidth = options.baseWidth ?? 98;
-    this.baseHeight = options.baseHeight ?? 68;
+    this.baseWidth = options.baseWidth ?? 92;
+    this.baseHeight = options.baseHeight ?? 60;
     this.scale = 1;
     this.displayWidth = this.baseWidth;
     this.displayHeight = this.baseHeight;
