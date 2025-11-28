@@ -801,10 +801,13 @@ body, button {
     background-image: url('ui_controlpanel/field_planes/blue_flag_mini.png');
   }
 
-  body.settings-page #frame_field_1_visual .cp-field-selector__object--blue-plane,
-  body.settings-page #frame_field_1_visual .cp-field-selector__object--blue-flag {
+  body.settings-page #frame_field_1_visual .cp-field-selector__object--blue-plane {
     transform: scaleY(-1);
     transform-origin: center;
+  }
+
+  body.settings-page #frame_field_1_visual .cp-field-selector__object--blue-flag {
+    transform: none;
   }
 
     body.settings-page #f_b_flag {
