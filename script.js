@@ -10,6 +10,8 @@
 const mantisIndicator = document.getElementById("mantisIndicator");
 const goatIndicator   = document.getElementById("goatIndicator");
 
+const loadingOverlay = document.getElementById("loadingOverlay");
+
 const gameContainer = document.getElementById("gameContainer");
 const gameCanvas  = document.getElementById("gameCanvas");
 const gameCtx     = gameCanvas.getContext("2d");
@@ -164,6 +166,21 @@ function combineFilters(...filters) {
     .map(f => (typeof f === "string" ? f.trim() : ""))
     .filter(f => f && f.toLowerCase() !== "none")
     .join(" ");
+}
+
+function setLoadingOverlayVisible(isVisible) {
+  if (!(loadingOverlay instanceof HTMLElement)) {
+    return;
+  }
+  loadingOverlay.classList.toggle("loading-overlay--hidden", !isVisible);
+}
+
+function showLoadingOverlay() {
+  setLoadingOverlayVisible(true);
+}
+
+function hideLoadingOverlay() {
+  setLoadingOverlayVisible(false);
 }
 
 rebuildHudPlaneStyleCache();
@@ -970,24 +987,33 @@ const yesBtn      = document.getElementById("yesButton");
 const noBtn       = document.getElementById("noButton");
 
 // Images for planes
+const PLANE_ASSET_PATHS = {
+  blue: "blue plane 24.png",
+  green: "green plane 3.png",
+  blueCounter: "planes/blue counter 6.png",
+  greenCounter: "planes/green counter 6.png",
+  blueWreck: "planes/blue fall.png",
+  greenWreck: "planes/green fall.png"
+};
+
 const bluePlaneImg = new Image();
-bluePlaneImg.src = "blue plane 24.png";
+bluePlaneImg.src = PLANE_ASSET_PATHS.blue;
 
 const greenPlaneImg = new Image();
 
-greenPlaneImg.src = "green plane 3.png";
+greenPlaneImg.src = PLANE_ASSET_PATHS.green;
 
 const blueCounterPlaneImg = new Image();
-blueCounterPlaneImg.src = "planes/blue counter 6.png";
+blueCounterPlaneImg.src = PLANE_ASSET_PATHS.blueCounter;
 
 const greenCounterPlaneImg = new Image();
-greenCounterPlaneImg.src = "planes/green counter 6.png";
+greenCounterPlaneImg.src = PLANE_ASSET_PATHS.greenCounter;
 
 const bluePlaneWreckImg = new Image();
-bluePlaneWreckImg.src = "planes/blue fall.png";
+bluePlaneWreckImg.src = PLANE_ASSET_PATHS.blueWreck;
 
 const greenPlaneWreckImg = new Image();
-greenPlaneWreckImg.src = "planes/green fall.png";
+greenPlaneWreckImg.src = PLANE_ASSET_PATHS.greenWreck;
 const flameGifImages = new Map();
 for (const src of BURNING_FLAME_SRCS) {
   const img = new Image();
@@ -1599,6 +1625,101 @@ const DEFAULT_STAR_FRAGMENT_SOURCES = {
 const STAR_FRAGMENT_SOURCES = (typeof window !== "undefined" && window.STAR_FRAGMENT_SOURCES)
   ? window.STAR_FRAGMENT_SOURCES
   : DEFAULT_STAR_FRAGMENT_SOURCES;
+
+
+function collectStarFragmentSources(sources) {
+  const collected = [];
+  const visit = (value) => {
+    if (!value) return;
+    if (typeof value === "string" || value instanceof String) {
+      const trimmed = value.trim();
+      if (trimmed) {
+        collected.push(trimmed);
+      }
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+
+    if (typeof value === "object") {
+      Object.values(value).forEach(visit);
+    }
+  };
+
+  visit(sources);
+  return collected;
+}
+
+const ASSET_MANIFEST = (() => {
+  const mapFiles = MAPS.map(map => map?.file).filter(src => typeof src === "string");
+  const planeAssets = Object.values(PLANE_ASSET_PATHS || {});
+  const flameAssets = Array.isArray(BURNING_FLAME_SRCS) ? BURNING_FLAME_SRCS : [];
+  const starAssets = collectStarFragmentSources(STAR_FRAGMENT_SOURCES);
+  const allAssets = new Set([
+    ...mapFiles,
+    ...planeAssets,
+    ...flameAssets,
+    ...starAssets
+  ]);
+  return {
+    images: Array.from(allAssets).filter(Boolean)
+  };
+})();
+
+const TRANSPARENT_PIXEL_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+
+function preloadImage(src) {
+  return new Promise(resolve => {
+    if (!src) {
+      resolve({ src, status: "skipped" });
+      return;
+    }
+
+    const img = new Image();
+
+    const finalize = (status) => {
+      img.onload = null;
+      img.onerror = null;
+      resolve({ src, status });
+    };
+
+    img.onload = () => finalize("loaded");
+    img.onerror = (event) => {
+      console.error(`[ASSETS] Failed to load ${src}`, event);
+      img.src = TRANSPARENT_PIXEL_SRC;
+      finalize("error");
+    };
+
+    img.src = src;
+  });
+}
+
+function preloadAssets() {
+  const imageList = Array.isArray(ASSET_MANIFEST.images) ? ASSET_MANIFEST.images : [];
+  if (!imageList.length) {
+    return Promise.resolve([]);
+  }
+
+  const tasks = imageList.map(preloadImage);
+  return Promise.allSettled(tasks).then(results => {
+    const failed = results.filter(result => {
+      if (result.status !== "fulfilled") return true;
+      return result.value?.status === "error";
+    }).length;
+
+    if (failed > 0) {
+      console.warn(`[ASSETS] ${failed} assets failed to preload; continuing with fallbacks.`);
+    }
+
+    return results;
+  }).catch(error => {
+    console.error("[ASSETS] Unexpected preload error", error);
+    return [];
+  });
+}
 
 
 const STAR_FRAGMENTS_PER_SLOT = 5;
@@ -5566,6 +5687,19 @@ lockOrientation();
 window.addEventListener('orientationchange', lockOrientation);
 
 /* ======= BOOTSTRAP ======= */
-sizeAndAlignOverlays();
-resizeCanvas();
-resetGame();
+async function bootstrapGame(){
+  showLoadingOverlay();
+  sizeAndAlignOverlays();
+  resizeCanvas();
+
+  try {
+    await preloadAssets();
+  } catch (error) {
+    console.error('[BOOT] preloadAssets() failed unexpectedly', error);
+  }
+
+  hideLoadingOverlay();
+  resetGame();
+}
+
+bootstrapGame();
