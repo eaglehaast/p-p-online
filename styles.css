@@ -677,7 +677,7 @@ body, button {
     left: 90px;
     top: 464px;
     width: 90px;
-    height: 157px;
+    height: 160px;
     display: block;
     overflow: hidden;
   }
@@ -727,29 +727,29 @@ body, button {
   }
 
     body.settings-page #f_g_plane1 {
-      left: 3px;
-      top: 145px;
+      left: 8px;
+      top: 142px;
       width: 15px;
       height: 10px;
     }
 
     body.settings-page #f_g_plane2 {
-      left: 23px;
-      top: 145px;
+      left: 24px;
+      top: 142px;
       width: 15px;
       height: 10px;
     }
 
     body.settings-page #f_g_plane3 {
-      left: 52px;
-      top: 145px;
+      left: 46px;
+      top: 142px;
       width: 15px;
       height: 10px;
     }
 
     body.settings-page #f_g_plane4 {
-      left: 72px;
-      top: 145px;
+      left: 62px;
+      top: 142px;
       width: 15px;
       height: 10px;
     }
@@ -760,7 +760,7 @@ body, button {
 
     body.settings-page #f_g_flag {
       left: 43px;
-      top: 148px;
+      top: 143px;
       width: 4px;
       height: 7px;
     }
@@ -770,29 +770,29 @@ body, button {
   }
 
     body.settings-page #f_b_plane1 {
-      left: 6px;
-      top: 6px;
+      left: 12px;
+      top: 8px;
       width: 9px;
       height: 11px;
     }
 
     body.settings-page #f_b_plane2 {
-      left: 25px;
-      top: 6px;
+      left: 28px;
+      top: 8px;
       width: 9px;
       height: 11px;
     }
 
     body.settings-page #f_b_plane3 {
-      left: 56px;
-      top: 6px;
+      left: 50px;
+      top: 8px;
       width: 9px;
       height: 11px;
     }
 
     body.settings-page #f_b_plane4 {
-      left: 75px;
-      top: 6px;
+      left: 66px;
+      top: 8px;
       width: 9px;
       height: 11px;
     }
@@ -812,7 +812,7 @@ body, button {
 
     body.settings-page #f_b_flag {
       left: 43px;
-      top: 6px;
+      top: 10px;
       width: 4px;
       height: 7px;
     }
