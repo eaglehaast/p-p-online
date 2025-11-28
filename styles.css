@@ -807,7 +807,8 @@ body, button {
   }
 
   body.settings-page #frame_field_1_visual .cp-field-selector__object--blue-flag {
-    transform: none;
+    transform: scaleY(-1);
+    transform-origin: center;
   }
 
     body.settings-page #f_b_flag {
