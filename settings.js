@@ -525,8 +525,10 @@ const mapNameDisplay = document.getElementById('frame_field_2_counter');
 const mapPreviewContainer = document.getElementById('frame_field_1_visual');
 const mapPreview = document.getElementById('mapPreview');
 const menuFlameCanvas = document.getElementById('menuFlame');
+const flameTrailCanvas = document.getElementById('flameTrail');
 const flameOptions = { baseWidth: 46, baseHeight: 14 };
 const menuFlameRenderer = menuFlameCanvas instanceof HTMLCanvasElement ? new JetFlameRenderer(menuFlameCanvas, flameOptions) : null;
+const flameTrailRenderer = flameTrailCanvas instanceof HTMLCanvasElement ? new JetFlameRenderer(flameTrailCanvas, flameOptions) : null;
 const isTestHarnessPage = document.body.classList.contains('test-harness');
 
 let previewCanvas = null;
@@ -566,6 +568,10 @@ function updateFlightRangeFlame(){
 
   if(menuFlameRenderer){
     menuFlameRenderer.setScale(ratio);
+  }
+
+  if(flameTrailRenderer){
+    flameTrailRenderer.setScale(ratio);
   }
 }
 

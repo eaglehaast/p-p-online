@@ -549,7 +549,7 @@ body, button {
     top: 25px;
     width: 46px;
     height: 14px;
-    display: none;
+    display: block;
     pointer-events: none;
   }
 
