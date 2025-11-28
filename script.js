@@ -1525,7 +1525,7 @@ function setStoredSetting(key, value){
 function loadSettings(){
   const previousFlameStyle = settings.flameStyle;
   const fr = parseInt(getStoredSetting('settings.flightRangeCells'), 10);
-  flightRangeCells = Number.isNaN(fr) ? 10 : fr;
+  flightRangeCells = Number.isNaN(fr) ? 15 : fr;
   const amp = parseFloat(getStoredSetting('settings.aimingAmplitude'));
   aimingAmplitude = Number.isNaN(amp) ? 10 / 5 : amp;
   settings.addAA = getStoredSetting('settings.addAA') === 'true';
@@ -2194,7 +2194,7 @@ onlineBtn.addEventListener("click",()=>{
 });
 if(classicRulesBtn){
   classicRulesBtn.addEventListener('click', () => {
-    flightRangeCells = 10;
+    flightRangeCells = 15;
     aimingAmplitude = 10 / 5; // 10°
     settings.addAA = false;
     settings.sharpEdges = false;
@@ -2283,7 +2283,7 @@ function syncTestControls(){
     inGameFlameStyleSelect.value = key;
   }
   if(testFlightRangeInput){
-    const fallbackRange = Number.isFinite(flightRangeCells) ? flightRangeCells : 10;
+    const fallbackRange = Number.isFinite(flightRangeCells) ? flightRangeCells : 15;
     const clampedRange = Math.min(MAX_FLIGHT_RANGE_CELLS, Math.max(MIN_FLIGHT_RANGE_CELLS, fallbackRange));
     const rangeValue = String(Math.round(clampedRange));
     if(testFlightRangeInput.value !== rangeValue){
