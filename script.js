@@ -5692,20 +5692,11 @@ function lockOrientation(){
 lockOrientation();
 window.addEventListener('orientationchange', lockOrientation);
 
-/* ======= BOOTSTRAP ======= */
-async function bootstrapGame(){
-  showLoadingOverlay();
-  sizeAndAlignOverlays();
-  resizeCanvas();
-
-  try {
-    await preloadAssets();
-  } catch (error) {
-    console.error('[BOOT] preloadAssets() failed unexpectedly', error);
+  /* ======= BOOTSTRAP ======= */
+  async function bootstrapGame(){
+    sizeAndAlignOverlays();
+    resizeCanvas();
+    resetGame();
   }
-
-  hideLoadingOverlay();
-  resetGame();
-}
 
 bootstrapGame();
