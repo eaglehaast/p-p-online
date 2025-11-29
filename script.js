@@ -468,29 +468,9 @@ const BOARD_ORIGIN = { x: 0, y: 0 };
 // ---- Explosion FX (GIF over canvas) ----
 
 const EXPLOSION_DURATION_MS = 700;   // delay before showing wreck FX
-const BURNING_FLAME_SRCS = [
-  "flames green/flat-flame.svg"
-];
-const DEFAULT_BURNING_FLAME_SRC = BURNING_FLAME_SRCS[0];
-
-const BURNING_FLAME_SRC_SET = new Set(BURNING_FLAME_SRCS);
 const FLAME_DISPLAY_SIZE = { width: 46, height: 14 };
 
-let flameCycleIndex = 0;
 let flameStyleRevision = 0;
-
-function pickRandomBurningFlame() {
-  const pool = BURNING_FLAME_SRC_SET.size > 0
-    ? Array.from(BURNING_FLAME_SRC_SET)
-    : (Array.isArray(BURNING_FLAME_SRCS) ? BURNING_FLAME_SRCS : []);
-
-  if (!pool.length) {
-    return DEFAULT_BURNING_FLAME_SRC || "";
-  }
-  const index = Math.floor(Math.random() * pool.length);
-  return pool[index];
-
-}
 
 function getCurrentFlameStyleKey() {
   return normalizeFlameStyleKey(settings.flameStyle);
@@ -500,31 +480,11 @@ function getFlameStyleConfig(styleKey) {
   return FLAME_STYLE_MAP.get(normalizeFlameStyleKey(styleKey)) || null;
 }
 
-function pickFlameSrcForStyle(styleKey) {
-  const normalized = normalizeFlameStyleKey(styleKey);
-  if (normalized === 'off') {
-    return '';
-  }
-
-  if (!Array.isArray(BURNING_FLAME_SRCS) || BURNING_FLAME_SRCS.length === 0) {
-    return DEFAULT_BURNING_FLAME_SRC || '';
-  }
-
-  if (normalized === 'cycle') {
-    const index = flameCycleIndex % BURNING_FLAME_SRCS.length;
-    flameCycleIndex = (flameCycleIndex + 1) % BURNING_FLAME_SRCS.length;
-    return BURNING_FLAME_SRCS[index];
-  }
-
-  return pickRandomBurningFlame();
-}
-
 function onFlameStyleChanged() {
   const normalized = getCurrentFlameStyleKey();
   if (settings.flameStyle !== normalized) {
     settings.flameStyle = normalized;
   }
-  flameCycleIndex = 0;
   flameStyleRevision++;
 
   for (const timer of planeFlameTimers.values()) {
@@ -538,7 +498,6 @@ function onFlameStyleChanged() {
     element?.remove?.();
     planeFlameFx.delete(plane);
     if (plane) {
-      delete plane.burningFlameSrc;
       delete plane.burningFlameStyleKey;
       delete plane.burningFlameStyleRevision;
     }
@@ -547,7 +506,6 @@ function onFlameStyleChanged() {
   if (Array.isArray(points)) {
     for (const plane of points) {
       if (!plane) continue;
-      delete plane.burningFlameSrc;
       delete plane.burningFlameStyleKey;
       delete plane.burningFlameStyleRevision;
       if (plane.burning && !plane.flameFxDisabled && isExplosionFinished(plane)) {
@@ -561,25 +519,21 @@ function onFlameStyleChanged() {
 
 function ensurePlaneBurningFlame(plane) {
   if (!plane) {
-    return DEFAULT_BURNING_FLAME_SRC || "";
+    return getCurrentFlameStyleKey() !== 'off';
   }
   const styleKey = getCurrentFlameStyleKey();
   if (styleKey === 'off') {
     plane.burningFlameStyleKey = styleKey;
-    plane.burningFlameSrc = '';
-    return '';
+    plane.burningFlameStyleRevision = flameStyleRevision;
+    return false;
   }
 
   if (plane.burningFlameStyleRevision !== flameStyleRevision || plane.burningFlameStyleKey !== styleKey) {
-    plane.burningFlameSrc = null;
     plane.burningFlameStyleKey = styleKey;
     plane.burningFlameStyleRevision = flameStyleRevision;
   }
 
-  if (!plane.burningFlameSrc) {
-    plane.burningFlameSrc = pickFlameSrcForStyle(styleKey);
-  }
-  return plane.burningFlameSrc || '';
+  return true;
 }
 
 
@@ -609,52 +563,48 @@ function applyFlameVisualStyle(element, styleKey) {
   element.style.filter = filter || '';
 }
 
-function createFlameImageEntry(plane, flameSrc) {
-  if (!flameSrc) {
-    return null;
+function createCanvasFlameEntry() {
+  const canvas = document.createElement('canvas');
+  canvas.width = FLAME_DISPLAY_SIZE.width;
+  canvas.height = FLAME_DISPLAY_SIZE.height;
+  applyFlameElementStyles(canvas);
+
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    const { width, height } = canvas;
+    ctx.clearRect(0, 0, width, height);
+
+    const centerY = height / 2;
+
+    const outerGradient = ctx.createLinearGradient(0, 0, width, 0);
+    outerGradient.addColorStop(0, '#f77f2f');
+    outerGradient.addColorStop(1, '#f6c25b');
+
+    ctx.fillStyle = outerGradient;
+    ctx.beginPath();
+    ctx.moveTo(2, centerY);
+    ctx.quadraticCurveTo(width * 0.28, 0, width * 0.65, centerY - 1);
+    ctx.quadraticCurveTo(width * 0.28, height, 2, centerY);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#ffd470';
+    ctx.beginPath();
+    ctx.moveTo(width * 0.2, centerY);
+    ctx.quadraticCurveTo(width * 0.42, height * 0.15, width * 0.72, centerY);
+    ctx.quadraticCurveTo(width * 0.42, height * 0.85, width * 0.2, centerY);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#fff6df';
+    ctx.beginPath();
+    ctx.ellipse(width * 0.66, centerY, width * 0.12, height * 0.22, 0, 0, Math.PI * 2);
+    ctx.fill();
   }
 
-  const img = new Image();
-  img.decoding = 'async';
-  img.width = FLAME_DISPLAY_SIZE.width;
-  img.height = FLAME_DISPLAY_SIZE.height;
-  applyFlameElementStyles(img);
+  const stop = () => {};
 
-  let attemptedSrc = flameSrc;
-
-  const stop = () => {
-    img.onerror = null;
-    img.onload = null;
-  };
-
-  img.onerror = () => {
-    const fallback = DEFAULT_BURNING_FLAME_SRC;
-    if (!fallback || attemptedSrc === fallback) {
-      stop();
-      img.remove();
-      planeFlameFx.delete(plane);
-      if (plane && plane.burningFlameSrc) {
-        delete plane.burningFlameSrc;
-      }
-      disablePlaneFlameFx(plane);
-      return;
-    }
-    attemptedSrc = fallback;
-    if (plane) {
-      plane.burningFlameSrc = fallback;
-    }
-    img.dataset.flameSrc = fallback;
-    img.src = fallback;
-  };
-
-  img.onload = () => {
-    img.dataset.flameSrc = attemptedSrc || '';
-  };
-
-  img.dataset.flameSrc = flameSrc;
-  img.src = flameSrc;
-
-  return { element: img, stop };
+  return { element: canvas, stop };
 }
 
 function disablePlaneFlameFx(plane) {
@@ -684,9 +634,6 @@ function cleanupBurningFx() {
     entry?.stop?.();
     const element = entry?.element || entry;
     element?.remove?.();
-    if (plane && plane.burningFlameSrc) {
-      delete plane.burningFlameSrc;
-    }
     if (plane && plane.burningFlameStyleKey) {
       delete plane.burningFlameStyleKey;
     }
@@ -720,10 +667,10 @@ function spawnBurningFlameFx(plane) {
   const host = fxLayerElement || document.body;
   if (!host) return;
 
-  const flameSrc = ensurePlaneBurningFlame(plane);
-  if (!flameSrc) return;
+  const shouldRender = ensurePlaneBurningFlame(plane);
+  if (!shouldRender) return;
 
-  const entry = createFlameImageEntry(plane, flameSrc);
+  const entry = createCanvasFlameEntry();
   if (!entry?.element) {
     return;
   }
@@ -804,9 +751,6 @@ function ensurePlaneFlameFx(plane) {
     if (timer) {
       clearTimeout(timer);
       planeFlameTimers.delete(plane);
-    }
-    if (plane.burningFlameSrc) {
-      delete plane.burningFlameSrc;
     }
     resetPlaneFlameFxDisabled(plane);
     return;
@@ -1010,13 +954,6 @@ bluePlaneWreckImg.src = PLANE_ASSET_PATHS.blueWreck;
 
 const greenPlaneWreckImg = new Image();
 greenPlaneWreckImg.src = PLANE_ASSET_PATHS.greenWreck;
-const flameImages = new Map();
-for (const src of BURNING_FLAME_SRCS) {
-  const img = new Image();
-  img.src = src;
-  flameImages.set(src, img);
-}
-const defaultFlameImg = flameImages.get(DEFAULT_BURNING_FLAME_SRC) || null;
 const backgroundImg = new Image();
 backgroundImg.src = "background paper 1.png";
 
@@ -1653,12 +1590,10 @@ function collectStarFragmentSources(sources) {
 const ASSET_MANIFEST = (() => {
   const mapFiles = MAPS.map(map => map?.file).filter(src => typeof src === "string");
   const planeAssets = Object.values(PLANE_ASSET_PATHS || {});
-  const flameAssets = Array.isArray(BURNING_FLAME_SRCS) ? BURNING_FLAME_SRCS : [];
   const starAssets = collectStarFragmentSources(STAR_FRAGMENT_SOURCES);
   const allAssets = new Set([
     ...mapFiles,
     ...planeAssets,
-    ...flameAssets,
     ...starAssets
   ]);
   return {
