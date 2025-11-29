@@ -1486,6 +1486,14 @@ const PLAYABLE_MAP_INDICES = MAPS
   .map((_, index) => index)
   .filter(index => index !== RANDOM_MAP_SENTINEL_INDEX);
 
+function resolveMapIndexForGameplay(){
+  const clamped = clampMapIndex(settings.mapIndex);
+  if(clamped === RANDOM_MAP_SENTINEL_INDEX){
+    return getRandomPlayableMapIndex();
+  }
+  return clamped;
+}
+
 const FLAME_STYLE_OPTIONS = [
   { value: 'random', label: 'Random Mix', filter: '' },
   { value: 'cycle', label: 'Cycle (Deterministic)', filter: '' },
@@ -5551,11 +5559,11 @@ function resetPlanePositionsForCurrentMap(){
 }
 
 function applyCurrentMap(){
-  const mapIndex = clampMapIndex(settings.mapIndex);
-  const selectedMap = MAPS[mapIndex] || MAPS[0];
+  const mapIndex = resolveMapIndexForGameplay();
+  const gameplayMap = MAPS[mapIndex] || MAPS[0];
 
-  brickFrameImg.src = selectedMap.file;
-  rebuildBuildingsFromMap(selectedMap);
+  brickFrameImg.src = gameplayMap.file;
+  rebuildBuildingsFromMap(gameplayMap);
   updateFieldDimensions();
   resetPlanePositionsForCurrentMap();
   renderScoreboard();
