@@ -659,6 +659,8 @@ function updateMapPreview(){
   const map = MAPS[mapIndex];
   const isRandomMap = map?.file === 'ui_controlpanel/cp_de_maprandom.png';
   mapPreview.classList.toggle('map-preview--random', Boolean(isRandomMap));
+  restorePreviewPlaneVisibility();
+  ensurePreviewCanvasLayering();
   mapPreview.style.backgroundImage = map ? `url('${map.file}')` : '';
   setupPreviewSimulation();
 }
@@ -678,6 +680,7 @@ function createPreviewCanvas(){
   previewCanvas.id = 'mapPreviewSimulation';
   previewCanvas.className = 'map-preview-simulation';
   mapPreviewContainer.appendChild(previewCanvas);
+  ensurePreviewCanvasLayering();
   previewCtx = previewCanvas.getContext('2d');
   previewCanvas.addEventListener('pointerdown', onPreviewPointerDown);
   window.addEventListener('pointermove', onPreviewPointerMove);
@@ -701,6 +704,25 @@ function resizePreviewCanvas(){
   }
 
   rebuildPreviewBuildings();
+}
+
+function ensurePreviewCanvasLayering(){
+  if(!mapPreviewContainer || !previewCanvas) return;
+  const objectsLayer = mapPreviewContainer.querySelector('.cp-field-selector__objects');
+  if(objectsLayer && previewCanvas.nextSibling !== objectsLayer){
+    mapPreviewContainer.insertBefore(previewCanvas, objectsLayer);
+  }
+}
+
+function restorePreviewPlaneVisibility(){
+  if(!mapPreviewContainer) return;
+  const planeObjects = mapPreviewContainer.querySelectorAll(
+    '.cp-field-selector__object--green-plane, .cp-field-selector__object--blue-plane'
+  );
+  planeObjects.forEach(el => {
+    el.style.visibility = 'visible';
+    el.style.zIndex = '3';
+  });
 }
 
 function createPreviewPlaneFromElement(el){
