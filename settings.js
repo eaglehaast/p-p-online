@@ -135,8 +135,6 @@ class JetFlameRenderer {
     this.displayHeight = this.baseHeight;
     this.dpr = window.devicePixelRatio || 1;
     this.elapsed = 0;
-    this.particles = [];
-    this.spawnAccumulator = 0;
     this._tick = this.tick.bind(this);
     this.running = false;
 
@@ -177,145 +175,56 @@ class JetFlameRenderer {
     const dt = this.lastTimestamp ? (timestamp - this.lastTimestamp) / 1000 : 0;
     this.lastTimestamp = timestamp;
     this.elapsed += dt;
-
-    this.update(dt);
     this.draw();
 
     requestAnimationFrame(this._tick);
-  }
-
-  update(dt) {
-    const emissionRate = 9 * this.scale;
-    this.spawnAccumulator += dt * emissionRate;
-
-    while (this.spawnAccumulator > 1) {
-      this.spawnParticle();
-      this.spawnAccumulator -= 1;
-    }
-
-    this.particles = this.particles.filter(particle => {
-      particle.age += dt;
-      particle.life -= dt;
-      const verticalNoise = Math.sin(particle.age * particle.noiseSpeed + particle.phase) * particle.noiseAmount;
-      particle.x += particle.vx * dt;
-      particle.y += (particle.vy + verticalNoise) * dt;
-
-      const drift = particle.startX - particle.x;
-      if (drift > particle.maxDrift) {
-        particle.x = particle.startX - particle.maxDrift;
-        particle.life = Math.min(particle.life, 0.12);
-      }
-
-      return particle.life > 0;
-    });
-  }
-
-  spawnParticle() {
-    const lateralSpeed = (20 + Math.random() * 12) * this.scale;
-    const size = (1.6 + Math.random() * 1.4) * this.scale;
-    const life = 0.9 + Math.random() * 0.5;
-    const originX = this.displayWidth * 0.88 + (Math.random() - 0.5) * 2.2 * this.scale;
-    const originY = this.displayHeight * 0.5 + (Math.random() - 0.5) * 0.28 * this.displayHeight;
-
-    this.particles.push({
-      x: originX,
-      y: originY,
-      vx: -lateralSpeed,
-      vy: (Math.random() - 0.5) * 2.2 * this.scale,
-      size,
-      life,
-      age: 0,
-      maxLife: life,
-      startX: originX,
-      maxDrift: this.displayWidth * (0.74 + Math.random() * 0.12),
-      noiseAmount: 3.6 * this.scale,
-      noiseSpeed: 4 + Math.random() * 1.8,
-      phase: Math.random() * Math.PI * 2
-    });
   }
 
   drawFlameBody(ctx) {
     const w = this.displayWidth;
     const h = this.displayHeight;
     const baseX = w * 0.92;
-    const verticalSway = Math.sin(this.elapsed * 0.9) * h * 0.12;
-    const mid = h * 0.48 + verticalSway;
-    const flicker = 1 + Math.sin(this.elapsed * 1.1) * 0.06;
-    const baseLength = w * 0.9 * flicker;
-    const baseHeight = h * 0.65;
+    const verticalSway = Math.sin(this.elapsed * 1.4) * h * 0.08;
+    const lean = Math.sin(this.elapsed * 0.8) * w * 0.04;
+    const mid = h * 0.5 + verticalSway;
+    const pulse = 1 + Math.sin(this.elapsed * 2.2) * 0.06;
+    const baseLength = w * 0.9;
+    const baseHeight = h * 0.65 * pulse;
 
-    const drawLayer = (lengthScale, thicknessScale, blurPx, colors, alpha = 1) => {
+    const drawLayer = (lengthScale, thicknessScale, color, alpha = 1) => {
       const length = baseLength * lengthScale;
       const thickness = baseHeight * thicknessScale;
-      const gradient = ctx.createLinearGradient(baseX - length, mid, baseX, mid);
-      colors.forEach(([stop, color]) => gradient.addColorStop(stop, color));
 
       ctx.save();
-      ctx.filter = `blur(${blurPx * this.scale}px)`;
       ctx.globalAlpha = alpha;
       ctx.beginPath();
-      ctx.moveTo(baseX, mid);
+      ctx.moveTo(baseX + lean, mid);
       ctx.bezierCurveTo(
-        baseX - length * 0.3,
-        mid - thickness * 0.6 + verticalSway * 0.2,
-        baseX - length * 0.72,
+        baseX - length * 0.3 + lean,
+        mid - thickness * 0.55 + verticalSway * 0.35,
+        baseX - length * 0.75,
         mid - thickness,
         baseX - length,
         mid
       );
       ctx.bezierCurveTo(
-        baseX - length * 0.72,
+        baseX - length * 0.75,
         mid + thickness,
-        baseX - length * 0.3,
-        mid + thickness * 0.6 + verticalSway * 0.2,
-        baseX,
+        baseX - length * 0.3 + lean,
+        mid + thickness * 0.55 + verticalSway * 0.35,
+        baseX + lean,
         mid
       );
-      ctx.fillStyle = gradient;
+      ctx.fillStyle = color;
       ctx.fill();
       ctx.restore();
     };
 
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-
-    drawLayer(1.08, 0.68, 6, [
-      [0, 'rgba(255, 176, 105, 0.32)'],
-      [0.45, 'rgba(255, 140, 75, 0.28)'],
-      [1, 'rgba(220, 96, 50, 0.2)']
-    ]);
-
-    drawLayer(0.9, 0.56, 3.5, [
-      [0, '#ffb347'],
-      [0.42, '#ff8f3f'],
-      [1, '#ff5f3f']
-    ], 0.9);
-
-    drawLayer(0.7, 0.42, 1.8, [
-      [0, '#ffe8a6'],
-      [0.5, '#ffd166'],
-      [1, '#ffb347']
-    ], 0.9);
-
+    drawLayer(1.05, 0.78, '#ffa64d', 0.8);
+    drawLayer(0.86, 0.62, '#ff7d3e', 0.95);
+    drawLayer(0.64, 0.48, '#ffe066', 1);
     ctx.restore();
-  }
-
-  drawParticles(ctx) {
-    this.particles.forEach(particle => {
-      const t = Math.max(0, particle.life / particle.maxLife);
-      const radius = particle.size * (0.6 + (1 - t) * 0.3);
-      const alpha = Math.max(0, t * 0.7);
-
-      ctx.beginPath();
-      ctx.ellipse(particle.x, particle.y, radius, radius * 0.8, 0, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(255, 226, 160, ${alpha})`;
-      ctx.shadowColor = 'rgba(255, 200, 120, 0.4)';
-      ctx.shadowBlur = radius * 1.2;
-      ctx.fill();
-    });
-
-    ctx.shadowBlur = 0;
-    ctx.shadowColor = 'transparent';
   }
 
   draw() {
@@ -324,7 +233,6 @@ class JetFlameRenderer {
     ctx.clearRect(0, 0, this.displayWidth, this.displayHeight);
 
     this.drawFlameBody(ctx);
-    this.drawParticles(ctx);
   }
 }
 
