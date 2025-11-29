@@ -725,8 +725,8 @@ body, button {
   }
 
   body.settings-page #mapPreview.map-preview--random {
-    background-size: 29px 54px;
-    background-position: 32px 51px;
+    background-size: cover;
+    background-position: center;
     background-repeat: no-repeat;
   }
 
