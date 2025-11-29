@@ -545,7 +545,7 @@ body, button {
 
   .settings-container #frame_range_1_visual .jet-flame-canvas {
     position: absolute;
-    right: 0;
+    left: 0;
     top: 25px;
     width: 46px;
     height: 14px;
