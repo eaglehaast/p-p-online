@@ -722,6 +722,7 @@ body, button {
     background-position: center;
     background-repeat: no-repeat;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+    z-index: 0;
   }
 
   body.settings-page #mapPreview.map-preview--random {
@@ -734,7 +735,7 @@ body, button {
     position: absolute;
     inset: 0;
     pointer-events: none;
-    z-index: 1;
+    z-index: 3;
   }
 
   body.settings-page .map-preview-simulation {
@@ -750,6 +751,7 @@ body, button {
     position: absolute;
     background-repeat: no-repeat;
     background-size: 100% 100%;
+    z-index: 3;
   }
 
   body.settings-page .cp-field-selector__object--green-plane {
