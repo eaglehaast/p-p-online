@@ -188,6 +188,7 @@ class JetFlameRenderer {
     const clampX = (value) => Math.max(0, Math.min(w, value));
 
     const lean = Math.sin(this.elapsed * 0.8) * w * 0.04;
+    const verticalSway = Math.sin(this.elapsed * 1.2) * h * 0.05;
     const mid = h * 0.5 + verticalSway;
     const pulse = 1 + Math.sin(this.elapsed * 2.2) * 0.06;
     const baseLength = w * 0.9;
