@@ -5515,14 +5515,6 @@ function getRandomPlayableMapIndex(){
   return PLAYABLE_MAP_INDICES[randomIndex] ?? 0;
 }
 
-function resolveMapIndexForPlay(index){
-  const clamped = clampMapIndex(index);
-  if(clamped === RANDOM_MAP_SENTINEL_INDEX){
-    return getRandomPlayableMapIndex();
-  }
-  return clamped;
-}
-
 function setMapIndexAndPersist(nextIndex){
   settings.mapIndex = clampMapIndex(nextIndex);
   setStoredSetting('settings.mapIndex', String(settings.mapIndex));
@@ -5559,21 +5551,31 @@ function resetPlanePositionsForCurrentMap(){
 }
 
 function applyCurrentMap(){
-  const mapIndexForFrame = clampMapIndex(settings.mapIndex);
-  const mapIndexForPlay = resolveMapIndexForPlay(settings.mapIndex);
+  const mapIndex = clampMapIndex(settings.mapIndex);
+  const selectedMap = MAPS[mapIndex] || MAPS[0];
 
-  const frameMap = MAPS[mapIndexForFrame] || MAPS[0];
-  const playableMap = MAPS[mapIndexForPlay] || MAPS[0];
-
-  brickFrameImg.src = frameMap.file;
-  rebuildBuildingsFromMap(playableMap);
+  brickFrameImg.src = selectedMap.file;
+  rebuildBuildingsFromMap(selectedMap);
   updateFieldDimensions();
   resetPlanePositionsForCurrentMap();
   renderScoreboard();
 }
 
-function rebuildBuildingsFromMap(map){
+function getCollisionBuildings(map){
   const mapBuildings = Array.isArray(map?.buildings) ? map.buildings : [];
+  if(mapBuildings.length){
+    return mapBuildings;
+  }
+
+  if(Array.isArray(map?.previewBuildings)){
+    return map.previewBuildings;
+  }
+
+  return [];
+}
+
+function rebuildBuildingsFromMap(map){
+  const mapBuildings = getCollisionBuildings(map);
   buildings = mapBuildings
     .map(b => ({
       type: b.type || 'rectangle',
