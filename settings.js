@@ -183,9 +183,10 @@ class JetFlameRenderer {
   drawFlameBody(ctx) {
     const w = this.displayWidth;
     const h = this.displayHeight;
-    const baseX = w;
+
+    const baseX = w * 0.92;
     const clampX = (value) => Math.max(0, Math.min(w, value));
-    const verticalSway = Math.sin(this.elapsed * 1.4) * h * 0.08;
+
     const lean = Math.sin(this.elapsed * 0.8) * w * 0.04;
     const mid = h * 0.5 + verticalSway;
     const pulse = 1 + Math.sin(this.elapsed * 2.2) * 0.06;
