@@ -801,11 +801,16 @@ function rebuildPreviewBuildings(){
   previewBuildings = [];
   if(!mapPreviewContainer) return;
   const map = MAPS[mapIndex];
-  const hasPhysicalBuildings = Array.isArray(map?.buildings) && map.buildings.length > 0;
-  if(!map || !hasPhysicalBuildings) return;
-  const sourceBuildings = Array.isArray(map.previewBuildings)
-    ? map.previewBuildings
-    : map.buildings;
+  const isRandomMap = map?.file === 'ui_controlpanel/cp_de_maprandom.png';
+  const previewSource = Array.isArray(map?.previewBuildings) ? map.previewBuildings : [];
+  const physicalBuildings = Array.isArray(map?.buildings) ? map.buildings : [];
+  const hasSource = previewSource.length > 0 || physicalBuildings.length > 0 || isRandomMap;
+
+  if(!map || !hasSource) return;
+
+  const sourceBuildings = previewSource.length > 0
+    ? previewSource
+    : physicalBuildings;
 
   const rect = mapPreviewContainer.getBoundingClientRect();
   const scaleX = rect.width / MAP_PREVIEW_BASE_WIDTH;
