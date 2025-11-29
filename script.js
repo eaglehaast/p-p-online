@@ -1417,70 +1417,109 @@ const MAPS = [
   {
     name: 'Random map',
     file: 'ui_controlpanel/cp_de_maprandom.png',
-    buildings: [],
-    previewBuildings: [
-      { x: 108, y: 6, width: 126, height: 6 },
-      { x: 84, y: 11, width: 174, height: 6 },
-      { x: 66, y: 17, width: 204, height: 6 },
-      { x: 48, y: 23, width: 234, height: 6 },
-      { x: 36, y: 29, width: 258, height: 6 },
-      { x: 24, y: 34, width: 276, height: 6 },
-      { x: 18, y: 40, width: 288, height: 6 },
-      { x: 0, y: 46, width: 312, height: 6 },
-      { x: 0, y: 51, width: 318, height: 6 },
-      { x: 0, y: 57, width: 324, height: 6 },
-      { x: 0, y: 63, width: 330, height: 6 },
-      { x: 0, y: 69, width: 336, height: 11 },
-      { x: 0, y: 80, width: 114, height: 6 },
-      { x: 216, y: 80, width: 126, height: 6 },
-      { x: 0, y: 86, width: 90, height: 6 },
-      { x: 222, y: 86, width: 120, height: 6 },
-      { x: 0, y: 91, width: 78, height: 6 },
-      { x: 228, y: 91, width: 120, height: 6 },
-      { x: 0, y: 97, width: 66, height: 6 },
-      { x: 234, y: 97, width: 114, height: 6 },
-      { x: 0, y: 103, width: 54, height: 6 },
-      { x: 240, y: 103, width: 108, height: 6 },
-      { x: 0, y: 109, width: 42, height: 6 },
-      { x: 246, y: 109, width: 108, height: 6 },
-      { x: 0, y: 114, width: 36, height: 6 },
-      { x: 0, y: 120, width: 24, height: 6 },
-      { x: 252, y: 114, width: 102, height: 11 },
-      { x: 0, y: 126, width: 12, height: 6 },
-      { x: 258, y: 126, width: 96, height: 74 },
-      { x: 252, y: 200, width: 102, height: 6 },
-      { x: 246, y: 206, width: 102, height: 6 },
-      { x: 240, y: 211, width: 108, height: 6 },
-      { x: 234, y: 217, width: 108, height: 6 },
-      { x: 228, y: 223, width: 114, height: 6 },
-      { x: 222, y: 229, width: 114, height: 6 },
-      { x: 216, y: 234, width: 114, height: 6 },
-      { x: 210, y: 240, width: 114, height: 6 },
-      { x: 204, y: 246, width: 114, height: 6 },
-      { x: 198, y: 251, width: 114, height: 6 },
-      { x: 192, y: 257, width: 114, height: 6 },
-      { x: 186, y: 263, width: 114, height: 6 },
-      { x: 180, y: 269, width: 114, height: 6 },
-      { x: 174, y: 274, width: 114, height: 6 },
-      { x: 168, y: 280, width: 114, height: 6 },
-      { x: 162, y: 286, width: 114, height: 6 },
-      { x: 156, y: 291, width: 114, height: 6 },
-      { x: 150, y: 297, width: 114, height: 6 },
-      { x: 144, y: 303, width: 114, height: 6 },
-      { x: 138, y: 309, width: 114, height: 6 },
-      { x: 138, y: 314, width: 108, height: 6 },
-      { x: 132, y: 320, width: 108, height: 6 },
-      { x: 126, y: 326, width: 108, height: 6 },
-      { x: 126, y: 331, width: 102, height: 6 },
-      { x: 126, y: 337, width: 96, height: 6 },
-      { x: 120, y: 343, width: 96, height: 11 },
-      { x: 120, y: 354, width: 90, height: 6 },
-      { x: 114, y: 360, width: 96, height: 6 },
-      { x: 114, y: 366, width: 90, height: 109 },
-      { x: 114, y: 531, width: 90, height: 86 }
-    ]
+    buildings: []
   }
 ];
+
+const CONTROL_PANEL_PREVIEW_CACHE = new Map();
+
+function mergeRunsIntoRects(runs, tolerance = 1){
+  const merged = [];
+  for(const run of runs){
+    const last = merged[merged.length - 1];
+    const isAdjacentRow = last && run.y === last.endY + 1;
+    const isSimilarSpan = last
+      && Math.abs(run.minX - last.left) <= tolerance
+      && Math.abs(run.maxX - last.right) <= tolerance;
+
+    if(isAdjacentRow && isSimilarSpan){
+      last.endY = run.y;
+      last.left = Math.min(last.left, run.minX);
+      last.right = Math.max(last.right, run.maxX);
+    } else {
+      merged.push({ startY: run.y, endY: run.y, left: run.minX, right: run.maxX });
+    }
+  }
+
+  return merged.map(rect => ({
+    x: (rect.left + rect.right) / 2,
+    y: (rect.startY + rect.endY) / 2,
+    width: rect.right - rect.left + 1,
+    height: rect.endY - rect.startY + 1
+  }));
+}
+
+function extractOpaqueRunsFromImageData(imageData){
+  const runs = [];
+  const { data, width, height } = imageData;
+
+  const alphaAt = (x, y) => data[(y * width + x) * 4 + 3];
+
+  for(let y = 0; y < height; y++){
+    let minX = width;
+    let maxX = -1;
+
+    for(let x = 0; x < width; x++){
+      if(alphaAt(x, y) > 0){
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+      }
+    }
+
+    if(maxX >= minX){
+      runs.push({ y, minX, maxX });
+    }
+  }
+
+  return runs;
+}
+
+function generatePreviewBuildingsFromPng(src){
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = img.naturalWidth;
+      tempCanvas.height = img.naturalHeight;
+      const ctx = tempCanvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+      const runs = extractOpaqueRunsFromImageData(imageData);
+      resolve(mergeRunsIntoRects(runs));
+    };
+    img.onerror = () => resolve([]);
+    img.src = src;
+  });
+}
+
+function primeControlPanelPreviewBuildings(map){
+  if(!map?.file?.startsWith('ui_controlpanel/') || !map.file.endsWith('.png')){
+    return;
+  }
+
+  const cached = CONTROL_PANEL_PREVIEW_CACHE.get(map.file);
+  if(cached){
+    return;
+  }
+
+  const pending = generatePreviewBuildingsFromPng(map.file)
+    .then(buildings => {
+      CONTROL_PANEL_PREVIEW_CACHE.set(map.file, buildings);
+      if(Array.isArray(buildings) && buildings.length){
+        map.previewBuildings = buildings;
+      }
+      return buildings;
+    })
+    .catch(() => {
+      CONTROL_PANEL_PREVIEW_CACHE.set(map.file, []);
+      return [];
+    });
+
+  CONTROL_PANEL_PREVIEW_CACHE.set(map.file, pending);
+}
+
+const RANDOM_CONTROL_PANEL_MAP = MAPS.find(m => m.file === 'ui_controlpanel/cp_de_maprandom.png');
+primeControlPanelPreviewBuildings(RANDOM_CONTROL_PANEL_MAP);
 const RANDOM_MAP_SENTINEL_INDEX = MAPS.findIndex(map => map?.name?.toLowerCase?.() === 'random map');
 const PLAYABLE_MAP_INDICES = MAPS
   .map((_, index) => index)
@@ -5565,6 +5604,10 @@ function getCollisionBuildings(map){
   const mapBuildings = Array.isArray(map?.buildings) ? map.buildings : [];
   if(mapBuildings.length){
     return mapBuildings;
+  }
+
+  if(map?.file?.startsWith('ui_controlpanel/')){
+    return [];
   }
 
   if(Array.isArray(map?.previewBuildings)){
