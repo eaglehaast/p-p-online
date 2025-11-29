@@ -5559,10 +5559,14 @@ function resetPlanePositionsForCurrentMap(){
 }
 
 function applyCurrentMap(){
+  const mapIndexForFrame = clampMapIndex(settings.mapIndex);
   const mapIndexForPlay = resolveMapIndexForPlay(settings.mapIndex);
-  const map = MAPS[mapIndexForPlay] || MAPS[0];
-  brickFrameImg.src = map.file;
-  rebuildBuildingsFromMap(map);
+
+  const frameMap = MAPS[mapIndexForFrame] || MAPS[0];
+  const playableMap = MAPS[mapIndexForPlay] || MAPS[0];
+
+  brickFrameImg.src = frameMap.file;
+  rebuildBuildingsFromMap(playableMap);
   updateFieldDimensions();
   resetPlanePositionsForCurrentMap();
   renderScoreboard();
