@@ -545,12 +545,13 @@ body, button {
 
   .settings-container #frame_range_1_visual .jet-flame-canvas {
     position: absolute;
-    left: 0;
+    right: 0;
     top: 25px;
     width: 46px;
     height: 14px;
     display: block;
     pointer-events: none;
+    transform-origin: right center;
   }
 
   /* Визуализация индикатора дальности на тестовых страницах */

@@ -152,8 +152,13 @@ class JetFlameRenderer {
     this.displayHeight = this.baseHeight * (0.8 + 0.2 * this.scale);
     this.dpr = window.devicePixelRatio || 1;
 
-    this.canvas.style.width = `${this.displayWidth}px`;
-    this.canvas.style.height = `${this.displayHeight}px`;
+    const widthScale = this.displayWidth / this.baseWidth;
+    const heightScale = this.displayHeight / this.baseHeight;
+
+    this.canvas.style.width = `${this.baseWidth}px`;
+    this.canvas.style.height = `${this.baseHeight}px`;
+    this.canvas.style.transform = `scale(${widthScale}, ${heightScale})`;
+    this.canvas.style.transformOrigin = 'right center';
     this.canvas.width = Math.max(1, Math.round(this.displayWidth * this.dpr));
     this.canvas.height = Math.max(1, Math.round(this.displayHeight * this.dpr));
   }
