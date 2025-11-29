@@ -469,20 +469,12 @@ const BOARD_ORIGIN = { x: 0, y: 0 };
 
 const EXPLOSION_DURATION_MS = 700;   // delay before showing wreck FX
 const BURNING_FLAME_SRCS = [
-  "flames green/flame 1.gif",
-  "flames green/flame 2.gif",
-  "flames green/flame 3.gif",
-  "flames green/flame 4.gif",
-  "flames green/flame 5.gif",
-  "flames green/flame 6.gif",
-  "flames green/flame 7.gif",
-  "flames green/flame 8.gif",
-  "flames green/flame 9.gif",
-  "flames green/flame 10.gif"
+  "flames green/flat-flame.svg"
 ];
 const DEFAULT_BURNING_FLAME_SRC = BURNING_FLAME_SRCS[0];
 
 const BURNING_FLAME_SRC_SET = new Set(BURNING_FLAME_SRCS);
+const FLAME_DISPLAY_SIZE = { width: 46, height: 14 };
 
 let flameCycleIndex = 0;
 let flameStyleRevision = 0;
@@ -605,6 +597,8 @@ function applyFlameElementStyles(element) {
   element.style.pointerEvents = 'none';
   element.style.transform = 'translate(-50%, -100%)';
   element.style.zIndex = '9999';
+  element.style.width = `${FLAME_DISPLAY_SIZE.width}px`;
+  element.style.height = `${FLAME_DISPLAY_SIZE.height}px`;
 }
 
 function applyFlameVisualStyle(element, styleKey) {
@@ -615,13 +609,15 @@ function applyFlameVisualStyle(element, styleKey) {
   element.style.filter = filter || '';
 }
 
-function createGifFlameEntry(plane, flameSrc) {
+function createFlameImageEntry(plane, flameSrc) {
   if (!flameSrc) {
     return null;
   }
 
   const img = new Image();
   img.decoding = 'async';
+  img.width = FLAME_DISPLAY_SIZE.width;
+  img.height = FLAME_DISPLAY_SIZE.height;
   applyFlameElementStyles(img);
 
   let attemptedSrc = flameSrc;
@@ -727,7 +723,7 @@ function spawnBurningFlameFx(plane) {
   const flameSrc = ensurePlaneBurningFlame(plane);
   if (!flameSrc) return;
 
-  const entry = createGifFlameEntry(plane, flameSrc);
+  const entry = createFlameImageEntry(plane, flameSrc);
   if (!entry?.element) {
     return;
   }
@@ -1014,13 +1010,13 @@ bluePlaneWreckImg.src = PLANE_ASSET_PATHS.blueWreck;
 
 const greenPlaneWreckImg = new Image();
 greenPlaneWreckImg.src = PLANE_ASSET_PATHS.greenWreck;
-const flameGifImages = new Map();
+const flameImages = new Map();
 for (const src of BURNING_FLAME_SRCS) {
   const img = new Image();
   img.src = src;
-  flameGifImages.set(src, img);
+  flameImages.set(src, img);
 }
-const defaultFlameGifImg = flameGifImages.get(DEFAULT_BURNING_FLAME_SRC) || null;
+const defaultFlameImg = flameImages.get(DEFAULT_BURNING_FLAME_SRC) || null;
 const backgroundImg = new Image();
 backgroundImg.src = "background paper 1.png";
 
