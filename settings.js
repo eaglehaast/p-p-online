@@ -183,8 +183,10 @@ class JetFlameRenderer {
   drawFlameBody(ctx) {
     const w = this.displayWidth;
     const h = this.displayHeight;
+
     const baseX = w * 0.92;
-    const verticalSway = 0;
+    const clampX = (value) => Math.max(0, Math.min(w, value));
+
     const lean = Math.sin(this.elapsed * 0.8) * w * 0.04;
     const mid = h * 0.5 + verticalSway;
     const pulse = 1 + Math.sin(this.elapsed * 2.2) * 0.06;
@@ -198,21 +200,21 @@ class JetFlameRenderer {
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.beginPath();
-      ctx.moveTo(baseX + lean, mid);
+      ctx.moveTo(baseX, mid);
       ctx.bezierCurveTo(
-        baseX - length * 0.3 + lean,
+        clampX(baseX - length * 0.3 + lean),
         mid - thickness * 0.55 + verticalSway * 0.35,
-        baseX - length * 0.75,
+        clampX(baseX - length * 0.75),
         mid - thickness,
-        baseX - length,
+        clampX(baseX - length),
         mid
       );
       ctx.bezierCurveTo(
-        baseX - length * 0.75,
+        clampX(baseX - length * 0.75),
         mid + thickness,
-        baseX - length * 0.3 + lean,
+        clampX(baseX - length * 0.3 + lean),
         mid + thickness * 0.55 + verticalSway * 0.35,
-        baseX + lean,
+        clampX(baseX + lean),
         mid
       );
       ctx.fillStyle = color;
