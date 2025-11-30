@@ -567,7 +567,7 @@ body, button {
     filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.35));
   }
 
-  .settings-container #frame_range_1_visual .jet-flame-canvas {
+  .settings-container #frame_range_1_visual .jet-flame--trail {
     position: absolute;
     left: 0;
     top: 25px;
