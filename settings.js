@@ -102,6 +102,8 @@ function getPreviewBuildingsForControlPanelMap(map){
   return pending;
 }
 
+const RANDOM_MAP_FILE = 'ui_controlpanel/cp_de_maprandom.png';
+
 const MAPS = [
   { name: 'Clear Sky', file: 'map 1 - clear sky 3.png', buildings: [] },
   {
@@ -134,56 +136,38 @@ const MAPS = [
   },
   {
     name: 'Random map',
-    file: 'ui_controlpanel/cp_de_maprandom.png',
+    file: RANDOM_MAP_FILE,
     buildings: []
   }
 ];
-
-const RANDOM_MAP_FILE = 'ui_controlpanel/cp_de_maprandom.png';
 
 function isRandomMap(map){
   return map?.file === RANDOM_MAP_FILE;
 }
 
-function getPlayableMapIndexes(){
-  return MAPS.reduce((indexes, map, idx) => {
-    if(!isRandomMap(map)){
-      indexes.push(idx);
-    }
-    return indexes;
-  }, []);
+function getSelectableMapIndices(excludeIndex){
+  return MAPS
+    .map((map, index) => ({ map, index }))
+    .filter(({ map, index }) => !isRandomMap(map) && index !== excludeIndex)
+    .map(({ index }) => index);
 }
 
-function clampMapIndex(index){
-  const maxIndex = MAPS.length - 1;
-  if(maxIndex < 0){
-    return 0;
+function sanitizeMapIndex(index, { excludeIndex } = {}){
+  if(index < 0 || index >= MAPS.length){
+    index = DEFAULT_SETTINGS.mapIndex;
   }
 
-  const normalized = Number.isInteger(index) ? index : 0;
-  return Math.min(Math.max(normalized, 0), maxIndex);
-}
-
-function resolveRandomMapIndex(index, previousIndex = 0){
-  const map = MAPS[index];
-  if(!isRandomMap(map)){
+  if(!isRandomMap(MAPS[index])){
     return index;
   }
 
-  const playableIndexes = getPlayableMapIndexes();
-  const pool = playableIndexes.filter(i => i !== previousIndex);
-  const candidates = pool.length > 0 ? pool : playableIndexes;
-  if(candidates.length === 0){
-    return clampMapIndex(0);
+  const selectable = getSelectableMapIndices(excludeIndex);
+  if(!selectable.length){
+    return index;
   }
 
-  const randomIdx = Math.floor(Math.random() * candidates.length);
-  return candidates[randomIdx];
-}
-
-function normalizeMapIndex(index, previousIndex = 0){
-  const boundedIndex = clampMapIndex(index);
-  return resolveRandomMapIndex(boundedIndex, previousIndex);
+  const randomIndex = Math.floor(Math.random() * selectable.length);
+  return selectable[randomIndex];
 }
 
 const DEFAULT_SETTINGS = {
@@ -647,11 +631,7 @@ if(Number.isNaN(aimingAmplitude)) aimingAmplitude = 10 / 5;
 let addAA = getStoredItem('settings.addAA') === 'true';
 let sharpEdges = getStoredItem('settings.sharpEdges') === 'true';
 let addCargo = getStoredItem('settings.addCargo') === 'true';
-const storedMapIndex = getIntSetting('settings.mapIndex', 0);
-let mapIndex = normalizeMapIndex(storedMapIndex);
-if(mapIndex !== storedMapIndex){
-  saveSettings();
-}
+let mapIndex = sanitizeMapIndex(getIntSetting('settings.mapIndex', DEFAULT_SETTINGS.mapIndex));
 
 const flightRangeMinusBtn =
   document.getElementById('instance_range_left') ??
@@ -858,14 +838,15 @@ function saveSettings(){
   setStoredItem('settings.addAA', addAA);
   setStoredItem('settings.sharpEdges', sharpEdges);
   setStoredItem('settings.addCargo', addCargo);
+  mapIndex = sanitizeMapIndex(mapIndex);
   setStoredItem('settings.mapIndex', mapIndex);
 }
 
 function updateMapPreview(){
   if(!mapPreview) return;
   const map = MAPS[mapIndex];
-  const isRandomSelection = isRandomMap(map);
-  mapPreview.classList.toggle('map-preview--random', Boolean(isRandomSelection));
+  const randomSelection = isRandomMap(map);
+  mapPreview.classList.toggle('map-preview--random', Boolean(randomSelection));
   restorePreviewPlaneVisibility();
   ensurePreviewCanvasLayering();
   mapPreview.style.backgroundImage = map ? `url('${map.file}')` : '';
@@ -1555,8 +1536,8 @@ if(hasMapButtons){
   updateMapNameDisplay();
 
   const changeMap = delta => {
-    const nextIndex = (mapIndex + delta + MAPS.length) % MAPS.length;
-    mapIndex = normalizeMapIndex(nextIndex, mapIndex);
+    const targetIndex = (mapIndex + delta + MAPS.length) % MAPS.length;
+    mapIndex = sanitizeMapIndex(targetIndex, { excludeIndex: mapIndex });
     updateMapPreview();
     updateMapNameDisplay();
     saveSettings();
