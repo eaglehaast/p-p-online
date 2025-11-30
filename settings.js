@@ -178,8 +178,42 @@ class JetFlameRenderer {
   }
 
   setScale(scale) {
-    this.scale = scale;
+    const normalizedScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+    this.scale = this.clampScaleToParent(normalizedScale);
     this.resizeCanvas();
+  }
+
+  getParentClientBox() {
+    const parent = this.canvas?.parentElement;
+    if (!(parent instanceof HTMLElement)) {
+      return null;
+    }
+
+    const { clientWidth, clientHeight } = parent;
+    if (clientWidth <= 0 || clientHeight <= 0) {
+      return null;
+    }
+
+    return { width: clientWidth, height: clientHeight };
+  }
+
+  clampScaleToParent(desiredScale) {
+    const parentBox = this.getParentClientBox();
+    if (!parentBox) {
+      return desiredScale;
+    }
+
+    const widthLimit = parentBox.width / this.baseWidth;
+    const heightLimit = (parentBox.height / this.baseHeight - 0.8) / 0.2;
+    const limits = [widthLimit, heightLimit]
+      .filter(value => Number.isFinite(value) && value > 0);
+
+    if (!limits.length) {
+      return desiredScale;
+    }
+
+    const maxScale = Math.min(...limits);
+    return Math.min(desiredScale, maxScale);
   }
 
   resizeCanvas() {
