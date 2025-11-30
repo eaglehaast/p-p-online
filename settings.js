@@ -661,10 +661,9 @@ const mapNameDisplay = document.getElementById('frame_field_2_counter');
 const mapPreviewContainer = document.getElementById('frame_field_1_visual');
 const mapPreview = document.getElementById('mapPreview');
 const menuFlameCanvas = document.getElementById('menuFlame');
-const flameTrailCanvas = document.getElementById('flameTrail');
+const flameTrailImage = document.getElementById('flameTrail');
 const flameOptions = { baseWidth: 46, baseHeight: 14 };
 const menuFlameRenderer = menuFlameCanvas instanceof HTMLCanvasElement ? new JetFlameRenderer(menuFlameCanvas, flameOptions) : null;
-const flameTrailRenderer = flameTrailCanvas instanceof HTMLCanvasElement ? new JetFlameRenderer(flameTrailCanvas, flameOptions) : null;
 const isTestHarnessPage = document.body.classList.contains('test-harness');
 
 let previewCanvas = null;
@@ -706,12 +705,15 @@ function updateFlightRangeFlame(){
     menuFlameRenderer.setScale(ratio);
   }
 
-  if(flameTrailRenderer){
+  if(flameTrailImage instanceof HTMLElement){
     const trailScaleFactor = 0.5;
     const trailMinScale = minScale * trailScaleFactor;
     const trailMaxScale = maxScale * trailScaleFactor;
     const trailRatio = trailMinScale + t * (trailMaxScale - trailMinScale);
-    flameTrailRenderer.setScale(trailRatio);
+
+    const widthScale = trailRatio;
+    const heightScale = 0.8 + 0.2 * trailRatio;
+    flameTrailImage.style.transform = `scale(${widthScale}, ${heightScale})`;
   }
 }
 
