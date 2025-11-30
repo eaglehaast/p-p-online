@@ -139,6 +139,53 @@ const MAPS = [
   }
 ];
 
+const RANDOM_MAP_FILE = 'ui_controlpanel/cp_de_maprandom.png';
+
+function isRandomMap(map){
+  return map?.file === RANDOM_MAP_FILE;
+}
+
+function getPlayableMapIndexes(){
+  return MAPS.reduce((indexes, map, idx) => {
+    if(!isRandomMap(map)){
+      indexes.push(idx);
+    }
+    return indexes;
+  }, []);
+}
+
+function clampMapIndex(index){
+  const maxIndex = MAPS.length - 1;
+  if(maxIndex < 0){
+    return 0;
+  }
+
+  const normalized = Number.isInteger(index) ? index : 0;
+  return Math.min(Math.max(normalized, 0), maxIndex);
+}
+
+function resolveRandomMapIndex(index, previousIndex = 0){
+  const map = MAPS[index];
+  if(!isRandomMap(map)){
+    return index;
+  }
+
+  const playableIndexes = getPlayableMapIndexes();
+  const pool = playableIndexes.filter(i => i !== previousIndex);
+  const candidates = pool.length > 0 ? pool : playableIndexes;
+  if(candidates.length === 0){
+    return clampMapIndex(0);
+  }
+
+  const randomIdx = Math.floor(Math.random() * candidates.length);
+  return candidates[randomIdx];
+}
+
+function normalizeMapIndex(index, previousIndex = 0){
+  const boundedIndex = clampMapIndex(index);
+  return resolveRandomMapIndex(boundedIndex, previousIndex);
+}
+
 const DEFAULT_SETTINGS = {
   flightRangeCells: 15,
   aimingAmplitude: 10 / 5,
@@ -600,8 +647,11 @@ if(Number.isNaN(aimingAmplitude)) aimingAmplitude = 10 / 5;
 let addAA = getStoredItem('settings.addAA') === 'true';
 let sharpEdges = getStoredItem('settings.sharpEdges') === 'true';
 let addCargo = getStoredItem('settings.addCargo') === 'true';
-let mapIndex = getIntSetting('settings.mapIndex', 0);
-if(mapIndex < 0 || mapIndex >= MAPS.length) mapIndex = 0;
+const storedMapIndex = getIntSetting('settings.mapIndex', 0);
+let mapIndex = normalizeMapIndex(storedMapIndex);
+if(mapIndex !== storedMapIndex){
+  saveSettings();
+}
 
 const flightRangeMinusBtn =
   document.getElementById('instance_range_left') ??
@@ -814,8 +864,8 @@ function saveSettings(){
 function updateMapPreview(){
   if(!mapPreview) return;
   const map = MAPS[mapIndex];
-  const isRandomMap = map?.file === 'ui_controlpanel/cp_de_maprandom.png';
-  mapPreview.classList.toggle('map-preview--random', Boolean(isRandomMap));
+  const isRandomSelection = isRandomMap(map);
+  mapPreview.classList.toggle('map-preview--random', Boolean(isRandomSelection));
   restorePreviewPlaneVisibility();
   ensurePreviewCanvasLayering();
   mapPreview.style.backgroundImage = map ? `url('${map.file}')` : '';
@@ -860,7 +910,7 @@ function resizePreviewCanvas(){
   const width = rect.width;
   const height = rect.height;
   const map = MAPS[mapIndex];
-  if(map?.file === 'ui_controlpanel/cp_de_maprandom.png'){
+  if(isRandomMap(map)){
     console.assert(width > 0 && height > 0, 'resizePreviewCanvas dimensions', {
       width,
       height
@@ -946,14 +996,14 @@ function rebuildPreviewBuildings(){
   previewBuildings = [];
   if(!mapPreviewContainer) return;
   const map = MAPS[mapIndex];
-  const isRandomMap = map?.file === 'ui_controlpanel/cp_de_maprandom.png';
+  const randomSelection = isRandomMap(map);
   const previewSource = Array.isArray(map?.previewBuildings) ? map.previewBuildings : [];
   const physicalBuildings = Array.isArray(map?.buildings) ? map.buildings : [];
   const hasSource = previewSource.length > 0 || physicalBuildings.length > 0;
 
   if(!map) return;
 
-  if(!hasSource && isRandomMap){
+  if(!hasSource && randomSelection){
     getPreviewBuildingsForControlPanelMap(map)
       .then(buildings => {
         if(map !== MAPS[mapIndex]) return;
@@ -1187,7 +1237,7 @@ function updatePreviewBounds(plane){
   const boundsWidth = previewCanvas ? previewCanvas.width / dpr : mapPreviewContainer.clientWidth;
   const boundsHeight = previewCanvas ? previewCanvas.height / dpr : mapPreviewContainer.clientHeight;
   const map = MAPS[mapIndex];
-  if(map?.file === 'ui_controlpanel/cp_de_maprandom.png'){
+  if(isRandomMap(map)){
     console.assert(boundsWidth > 0 && boundsHeight > 0, 'updatePreviewBounds dimensions', {
       boundsWidth,
       boundsHeight
@@ -1505,7 +1555,8 @@ if(hasMapButtons){
   updateMapNameDisplay();
 
   const changeMap = delta => {
-    mapIndex = (mapIndex + delta + MAPS.length) % MAPS.length;
+    const nextIndex = (mapIndex + delta + MAPS.length) % MAPS.length;
+    mapIndex = normalizeMapIndex(nextIndex, mapIndex);
     updateMapPreview();
     updateMapNameDisplay();
     saveSettings();
