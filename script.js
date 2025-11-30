@@ -4410,7 +4410,20 @@ function drawPlanesAndTrajectories(){
   let rangeTextInfo = null;
   const activeColor = turnColors[turnIndex];
   const showGlow = !handleCircle.active && !flyingPoints.some(fp => fp.plane.color === activeColor);
-  for(const p of points){
+  const destroyedOrBurning = [];
+  const activePlanes = [];
+
+  for (const point of points) {
+    if (!point.isAlive || point.burning) {
+      destroyedOrBurning.push(point);
+    } else {
+      activePlanes.push(point);
+    }
+  }
+
+  const drawOrder = [...destroyedOrBurning, ...activePlanes];
+
+  for(const p of drawOrder){
     if(!p.isAlive && !p.burning) continue;
     for(const seg of p.segments){
       gameCtx.beginPath();
