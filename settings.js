@@ -522,7 +522,11 @@ function updateFlightRangeFlame(){
   }
 
   if(flameTrailRenderer){
-    flameTrailRenderer.setScale(ratio);
+    const trailScaleFactor = 0.5;
+    const trailMinScale = minScale * trailScaleFactor;
+    const trailMaxScale = maxScale * trailScaleFactor;
+    const trailRatio = trailMinScale + t * (trailMaxScale - trailMinScale);
+    flameTrailRenderer.setScale(trailRatio);
   }
 }
 
