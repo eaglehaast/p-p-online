@@ -547,16 +547,6 @@ body, button {
     top: 16px;
   }
 
-  .settings-container #frame_range_1_visual #contrail2 {
-    left: 6px;
-    top: 23px;
-  }
-
-  .settings-container #frame_range_1_visual #contrail3 {
-    left: 6px;
-    top: 37px;
-  }
-
   .settings-container #frame_range_1_visual .jet-plane {
     position: absolute;
     left: 45px;
@@ -576,6 +566,7 @@ body, button {
     display: block;
     pointer-events: none;
     transform-origin: right center;
+    transform: rotate(-90deg);
   }
 
   /* Визуализация индикатора дальности на тестовых страницах */
