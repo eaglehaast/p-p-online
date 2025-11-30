@@ -1105,6 +1105,42 @@ body, button {
   pointer-events: none;
 }
 
+.fx-flame-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.fx-flame-sparks {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.fx-flame-spark {
+  position: absolute;
+  left: calc(100% - var(--spark-start-offset, 0px));
+  top: 50%;
+  width: var(--spark-size, 3px);
+  height: var(--spark-size, 3px);
+  background: url('flames green/spark.svg') center / contain no-repeat;
+  opacity: 0.9;
+  transform: translate(-100%, -50%);
+  animation: spark-move var(--spark-duration, 500ms) ease-out forwards;
+}
+
+@keyframes spark-move {
+  0% {
+    opacity: 0.9;
+    transform: translate(-100%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-100% + var(--spark-translate-x, -12px)), calc(-50% + var(--spark-translate-y, 0px))) scale(0.6);
+  }
+}
+
 
 /* Меню выбора режима */
   #modeMenu {
