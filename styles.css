@@ -565,8 +565,6 @@ body, button {
     height: 14px;
     display: block;
     pointer-events: none;
-    transform-origin: right center;
-    transform: rotate(-90deg);
   }
 
   /* Визуализация индикатора дальности на тестовых страницах */
