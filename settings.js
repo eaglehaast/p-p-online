@@ -662,6 +662,14 @@ function updateMapPreview(){
   restorePreviewPlaneVisibility();
   ensurePreviewCanvasLayering();
   mapPreview.style.backgroundImage = map ? `url('${map.file}')` : '';
+  if(map?.file){
+    const img = new Image();
+    img.onload = () => {
+      if(map !== MAPS[mapIndex]) return;
+      resizePreviewCanvas();
+    };
+    img.src = map.file;
+  }
   setupPreviewSimulation();
 }
 
@@ -694,6 +702,13 @@ function resizePreviewCanvas(){
   const rect = mapPreviewContainer.getBoundingClientRect();
   const width = rect.width;
   const height = rect.height;
+  const map = MAPS[mapIndex];
+  if(map?.file === 'ui_controlpanel/cp_de_maprandom.png'){
+    console.assert(width > 0 && height > 0, 'resizePreviewCanvas dimensions', {
+      width,
+      height
+    });
+  }
   previewDpr = window.devicePixelRatio || 1;
   previewCanvas.style.width = `${width}px`;
   previewCanvas.style.height = `${height}px`;
@@ -1014,6 +1029,13 @@ function updatePreviewBounds(plane){
   const dpr = previewDpr || window.devicePixelRatio || 1;
   const boundsWidth = previewCanvas ? previewCanvas.width / dpr : mapPreviewContainer.clientWidth;
   const boundsHeight = previewCanvas ? previewCanvas.height / dpr : mapPreviewContainer.clientHeight;
+  const map = MAPS[mapIndex];
+  if(map?.file === 'ui_controlpanel/cp_de_maprandom.png'){
+    console.assert(boundsWidth > 0 && boundsHeight > 0, 'updatePreviewBounds dimensions', {
+      boundsWidth,
+      boundsHeight
+    });
+  }
   const radius = Math.max(plane.width, plane.height) / 2;
 
   if(plane.x - radius < 0){
