@@ -483,7 +483,7 @@ const BURNING_FLAME_SRCS = [
 const DEFAULT_BURNING_FLAME_SRC = BURNING_FLAME_SRCS[0];
 
 const BURNING_FLAME_SRC_SET = new Set(BURNING_FLAME_SRCS);
-const FLAME_DISPLAY_SIZE = { width: 46, height: 14 };
+const FLAME_DISPLAY_SIZE = { width: 138, height: 42 };
 
 let flameCycleIndex = 0;
 let flameStyleRevision = 0;
@@ -623,7 +623,9 @@ function createSparkElement(containerFilter = '') {
   const spark = document.createElement('div');
   spark.className = 'fx-flame-spark';
 
-  const size = 2 + Math.random() * 2;
+  const baseSparkSize = 2 + Math.random() * 2;
+  const sparkScale = FLAME_DISPLAY_SIZE.width / 46;
+  const size = baseSparkSize * sparkScale;
   spark.style.setProperty('--spark-size', `${size}px`);
 
   const horizontalOffset = Math.random() * (FLAME_DISPLAY_SIZE.width * 0.4);

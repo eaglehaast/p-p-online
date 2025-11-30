@@ -1097,8 +1097,8 @@ body, button {
 
 .fx-flame {
   position: absolute;
-  width: 46px;
-  height: 46px;
+  width: 138px;
+  height: 42px;
   display: block;
   transform: translate(-50%, -100%);
   image-rendering: auto;
