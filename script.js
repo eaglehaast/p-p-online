@@ -469,7 +469,16 @@ const BOARD_ORIGIN = { x: 0, y: 0 };
 
 const EXPLOSION_DURATION_MS = 700;   // delay before showing wreck FX
 const BURNING_FLAME_SRCS = [
-  "flames green/flat-flame.svg"
+  "flames green/flame 1.gif",
+  "flames green/flame 2.gif",
+  "flames green/flame 3.gif",
+  "flames green/flame 4.gif",
+  "flames green/flame 5.2.gif",
+  "flames green/flame 6.gif",
+  "flames green/flame 7.gif",
+  "flames green/flame 8.2.gif",
+  "flames green/flame 9.gif",
+  "flames green/flame 10.gif"
 ];
 const DEFAULT_BURNING_FLAME_SRC = BURNING_FLAME_SRCS[0];
 
