@@ -172,6 +172,8 @@ class JetFlameRenderer {
     this.elapsed = 0;
     this._tick = this.tick.bind(this);
     this.running = false;
+    this.sparks = [];
+    this.sparkAccumulator = 0;
 
     this.resizeCanvas();
     this.start();
@@ -230,6 +232,8 @@ class JetFlameRenderer {
     this.canvas.style.transformOrigin = 'right center';
     this.canvas.width = Math.max(1, Math.round(this.displayWidth * this.dpr));
     this.canvas.height = Math.max(1, Math.round(this.displayHeight * this.dpr));
+
+    this.resetSparks();
   }
 
   start() {
@@ -249,12 +253,15 @@ class JetFlameRenderer {
     const dt = this.lastTimestamp ? (timestamp - this.lastTimestamp) / 1000 : 0;
     this.lastTimestamp = timestamp;
     this.elapsed += dt;
-    this.draw();
+
+    const flameState = this.computeFlameState();
+    this.updateSparks(dt, flameState);
+    this.draw(flameState);
 
     requestAnimationFrame(this._tick);
   }
 
-  drawFlameBody(ctx) {
+  computeFlameState() {
     const w = this.displayWidth;
     const h = this.displayHeight;
 
@@ -267,6 +274,26 @@ class JetFlameRenderer {
     const pulse = 1 + Math.sin(this.elapsed * 2.2) * 0.06;
     const baseLength = w * 0.9;
     const baseHeight = h * 0.65 * pulse;
+
+    return {
+      w,
+      h,
+      baseX,
+      clampX,
+      lean,
+      verticalSway,
+      mid,
+      pulse,
+      baseLength,
+      baseHeight,
+      tipX: clampX(baseX - baseLength),
+      tipY: mid
+    };
+  }
+
+  drawFlameBody(ctx, state) {
+    if (!state) return;
+    const { w, h, baseX, clampX, lean, verticalSway, mid, baseLength, baseHeight } = state;
 
     const drawLayer = (lengthScale, thicknessScale, color, alpha = 1) => {
       const length = baseLength * lengthScale;
@@ -304,12 +331,104 @@ class JetFlameRenderer {
     ctx.restore();
   }
 
-  draw() {
+  resetSparks() {
+    this.sparks = [];
+    this.sparkAccumulator = 0;
+  }
+
+  updateSparks(dt, state) {
+    if (!state || !Number.isFinite(dt)) return;
+
+    const spawnRate = (6 + this.scale * 5) * (dt > 0 ? 1 : 0);
+    if (dt > 0) {
+      this.sparkAccumulator += dt * spawnRate;
+    }
+
+    const spawnCount = Math.floor(this.sparkAccumulator);
+    if (spawnCount > 0) {
+      this.sparkAccumulator -= spawnCount;
+      for (let i = 0; i < spawnCount; i++) {
+        this.spawnSpark(state);
+      }
+    }
+
+    const friction = 0.96;
+    const gravity = this.displayHeight * -0.08;
+
+    this.sparks = this.sparks.filter(spark => {
+      spark.life += dt;
+      if (spark.life >= spark.ttl) {
+        return false;
+      }
+
+      spark.x += spark.vx * dt;
+      spark.y += spark.vy * dt;
+      spark.vx *= friction;
+      spark.vy = spark.vy * friction + gravity * dt;
+      return true;
+    });
+  }
+
+  spawnSpark(state) {
+    const { tipX, tipY, h, baseLength } = state;
+    const scatterX = this.displayWidth * 0.015;
+    const scatterY = h * 0.18;
+    const sizeBase = h * 0.08;
+    const sizeJitter = h * 0.06;
+    const speed = baseLength * (0.35 + Math.random() * 0.35);
+
+    this.sparks.push({
+      x: tipX + (Math.random() - 0.5) * scatterX,
+      y: tipY + (Math.random() - 0.5) * scatterY,
+      vx: -speed * (0.6 + Math.random() * 0.7),
+      vy: (Math.random() - 0.5) * (h * 0.3),
+      life: 0,
+      ttl: 0.45 + Math.random() * 0.35,
+      size: sizeBase + Math.random() * sizeJitter
+    });
+  }
+
+  drawSparks(ctx) {
+    if (!this.sparks.length) return;
+    for (const spark of this.sparks) {
+      const t = spark.life / spark.ttl;
+      const alpha = Math.max(0, 0.9 * (1 - t));
+      if (alpha <= 0) continue;
+
+      const radius = spark.size * (1 - t * 0.6);
+
+      const gradient = ctx.createRadialGradient(
+        spark.x,
+        spark.y,
+        0,
+        spark.x,
+        spark.y,
+        radius * 1.6
+      );
+
+      gradient.addColorStop(0, `rgba(255, 231, 170, ${alpha})`);
+      gradient.addColorStop(0.35, `rgba(255, 183, 94, ${alpha * 0.85})`);
+      gradient.addColorStop(1, 'rgba(255, 146, 62, 0)');
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.fillStyle = gradient;
+      ctx.shadowColor = 'rgba(255, 163, 70, 0.45)';
+      ctx.shadowBlur = radius * 1.2;
+      ctx.arc(spark.x, spark.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  draw(state) {
+    if (!state) return;
     const ctx = this.ctx;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, this.displayWidth, this.displayHeight);
 
-    this.drawFlameBody(ctx);
+    this.drawFlameBody(ctx, state);
+    this.drawSparks(ctx);
   }
 }
 
