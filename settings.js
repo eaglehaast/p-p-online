@@ -125,8 +125,6 @@ const DIAGONALS_BUILDINGS = [
   { x: 100, y: 510, width: 80, height: 20 },
   { x: 260, y: 510, width: 80, height: 20 }
 ];
-const RANDOM_MAP_PREVIEW_BUILDINGS = FIVE_BRICKS_BUILDINGS;
-
 const MAPS = [
   { name: 'Clear Sky', file: 'map 1 - clear sky 3.png', buildings: CLEAR_SKY_BUILDINGS },
   { name: '5 Bricks', file: 'map 2 - 5 bricks.png', buildings: FIVE_BRICKS_BUILDINGS },
@@ -134,8 +132,7 @@ const MAPS = [
   {
     name: 'Random map',
     file: RANDOM_MAP_FILE,
-    buildings: CLEAR_SKY_BUILDINGS,
-    previewBuildings: RANDOM_MAP_PREVIEW_BUILDINGS
+    buildings: CLEAR_SKY_BUILDINGS
   }
 ];
 
