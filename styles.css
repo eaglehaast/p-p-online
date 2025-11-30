@@ -533,6 +533,35 @@ body, button {
     inset: 0;
   }
 
+  .settings-container #frame_range_1_visual .contrail {
+    position: absolute;
+    height: 4px;
+    width: 40px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.35));
+    border-radius: 4px;
+    pointer-events: inherit;
+  }
+
+  .settings-container #frame_range_1_visual #contrail1 {
+    left: 20px;
+    top: 16px;
+  }
+
+  .settings-container #frame_range_1_visual #contrail2 {
+    left: 6px;
+    top: 23px;
+  }
+
+  .settings-container #frame_range_1_visual #contrail3 {
+    left: 6px;
+    top: 37px;
+  }
+
+  .settings-container #frame_range_1_visual #contrail4 {
+    left: 20px;
+    top: 45px;
+  }
+
   .settings-container #frame_range_1_visual .jet-plane {
     position: absolute;
     left: 45px;

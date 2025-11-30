@@ -94,10 +94,14 @@
     <div class="cp-flight-range" role="group" aria-label="Настройка дальности полёта">
       <div id="flightRangeIndicator" class="cp-flight-range__indicator">
         <div id="frame_range_1_visual" aria-hidden="true">
-        <div class="range-visual">
-          <canvas id="flameTrail" class="jet-flame-canvas" aria-hidden="true"></canvas>
-          <img class="jet-plane" src="ui_controlpanel/cp_range_plane.png" alt="" />
-        </div>
+          <div class="range-visual">
+            <div id="contrail1" class="contrail" aria-hidden="true"></div>
+            <div id="contrail2" class="contrail" aria-hidden="true"></div>
+            <div id="contrail3" class="contrail" aria-hidden="true"></div>
+            <div id="contrail4" class="contrail" aria-hidden="true"></div>
+            <canvas id="flameTrail" class="jet-flame-canvas" aria-hidden="true"></canvas>
+            <img class="jet-plane" src="ui_controlpanel/cp_range_plane.png" alt="" />
+          </div>
         </div>
         <div id="frame_range_2_counter" class="range-display" role="status" aria-live="polite">
           <span id="flightRangeDisplay">15</span>
