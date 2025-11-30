@@ -607,6 +607,34 @@ function applyFlameVisualStyle(element, styleKey) {
   const filter = config?.filter || '';
   element.dataset.flameStyle = normalizeFlameStyleKey(styleKey);
   element.style.filter = filter || '';
+  element.dataset.flameFilter = filter || '';
+}
+
+function createSparkElement(containerFilter = '') {
+  const spark = document.createElement('div');
+  spark.className = 'fx-flame-spark';
+
+  const size = 2 + Math.random() * 2;
+  spark.style.setProperty('--spark-size', `${size}px`);
+
+  const horizontalOffset = Math.random() * (FLAME_DISPLAY_SIZE.width * 0.4);
+  spark.style.setProperty('--spark-start-offset', `${horizontalOffset}px`);
+
+  const translateX = -10 - Math.random() * 10;
+  const translateY = (Math.random() * 14) - 7;
+  spark.style.setProperty('--spark-translate-x', `${translateX}px`);
+  spark.style.setProperty('--spark-translate-y', `${translateY}px`);
+
+  const duration = 400 + Math.random() * 350;
+  spark.style.setProperty('--spark-duration', `${duration}ms`);
+
+  spark.style.top = `${Math.random() * 100}%`;
+  if (containerFilter) {
+    spark.style.filter = containerFilter;
+  }
+
+  spark.addEventListener('animationend', () => spark.remove());
+  return spark;
 }
 
 function createFlameImageEntry(plane, flameSrc) {
@@ -614,17 +642,31 @@ function createFlameImageEntry(plane, flameSrc) {
     return null;
   }
 
+  const container = document.createElement('div');
+  applyFlameElementStyles(container);
+
+  const sparkHost = document.createElement('div');
+  sparkHost.className = 'fx-flame-sparks';
+  container.appendChild(sparkHost);
+
   const img = new Image();
   img.decoding = 'async';
   img.width = FLAME_DISPLAY_SIZE.width;
   img.height = FLAME_DISPLAY_SIZE.height;
-  applyFlameElementStyles(img);
+  img.className = 'fx-flame-img';
+  container.appendChild(img);
 
   let attemptedSrc = flameSrc;
+  let sparkTimerId = null;
 
   const stop = () => {
     img.onerror = null;
     img.onload = null;
+    if (sparkTimerId) {
+      clearTimeout(sparkTimerId);
+      sparkTimerId = null;
+    }
+    sparkHost.innerHTML = '';
   };
 
   img.onerror = () => {
@@ -654,7 +696,17 @@ function createFlameImageEntry(plane, flameSrc) {
   img.dataset.flameSrc = flameSrc;
   img.src = flameSrc;
 
-  return { element: img, stop };
+  const scheduleSpark = () => {
+    if (!container.isConnected) return;
+    const spark = createSparkElement(container.dataset.flameFilter);
+    sparkHost.appendChild(spark);
+    const delay = 70 + Math.random() * 110;
+    sparkTimerId = setTimeout(scheduleSpark, delay);
+  };
+
+  scheduleSpark();
+
+  return { element: container, stop };
 }
 
 function disablePlaneFlameFx(plane) {

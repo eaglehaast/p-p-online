@@ -152,12 +152,16 @@ function getSelectableMapIndices(excludeIndex){
     .map(({ index }) => index);
 }
 
-function sanitizeMapIndex(index, { excludeIndex } = {}){
+function sanitizeMapIndex(index, { excludeIndex, allowRandom } = {}){
   if(index < 0 || index >= MAPS.length){
     index = DEFAULT_SETTINGS.mapIndex;
   }
 
   if(!isRandomMap(MAPS[index])){
+    return index;
+  }
+
+  if(allowRandom){
     return index;
   }
 
@@ -631,7 +635,10 @@ if(Number.isNaN(aimingAmplitude)) aimingAmplitude = 10 / 5;
 let addAA = getStoredItem('settings.addAA') === 'true';
 let sharpEdges = getStoredItem('settings.sharpEdges') === 'true';
 let addCargo = getStoredItem('settings.addCargo') === 'true';
-let mapIndex = sanitizeMapIndex(getIntSetting('settings.mapIndex', DEFAULT_SETTINGS.mapIndex));
+let mapIndex = sanitizeMapIndex(
+  getIntSetting('settings.mapIndex', DEFAULT_SETTINGS.mapIndex),
+  { allowRandom: true }
+);
 
 const flightRangeMinusBtn =
   document.getElementById('instance_range_left') ??
@@ -838,7 +845,7 @@ function saveSettings(){
   setStoredItem('settings.addAA', addAA);
   setStoredItem('settings.sharpEdges', sharpEdges);
   setStoredItem('settings.addCargo', addCargo);
-  mapIndex = sanitizeMapIndex(mapIndex);
+  mapIndex = sanitizeMapIndex(mapIndex, { allowRandom: true });
   setStoredItem('settings.mapIndex', mapIndex);
 }
 
@@ -1537,7 +1544,7 @@ if(hasMapButtons){
 
   const changeMap = delta => {
     const targetIndex = (mapIndex + delta + MAPS.length) % MAPS.length;
-    mapIndex = sanitizeMapIndex(targetIndex, { excludeIndex: mapIndex });
+    mapIndex = sanitizeMapIndex(targetIndex, { excludeIndex: mapIndex, allowRandom: true });
     updateMapPreview();
     updateMapNameDisplay();
     saveSettings();
