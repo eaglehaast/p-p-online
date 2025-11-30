@@ -102,6 +102,8 @@ function getPreviewBuildingsForControlPanelMap(map){
   return pending;
 }
 
+const RANDOM_MAP_FILE = 'ui_controlpanel/cp_de_maprandom.png';
+
 const MAPS = [
   { name: 'Clear Sky', file: 'map 1 - clear sky 3.png', buildings: [] },
   {
@@ -134,10 +136,39 @@ const MAPS = [
   },
   {
     name: 'Random map',
-    file: 'ui_controlpanel/cp_de_maprandom.png',
+    file: RANDOM_MAP_FILE,
     buildings: []
   }
 ];
+
+function isRandomMap(map){
+  return map?.file === RANDOM_MAP_FILE;
+}
+
+function getSelectableMapIndices(excludeIndex){
+  return MAPS
+    .map((map, index) => ({ map, index }))
+    .filter(({ map, index }) => !isRandomMap(map) && index !== excludeIndex)
+    .map(({ index }) => index);
+}
+
+function sanitizeMapIndex(index, { excludeIndex } = {}){
+  if(index < 0 || index >= MAPS.length){
+    index = DEFAULT_SETTINGS.mapIndex;
+  }
+
+  if(!isRandomMap(MAPS[index])){
+    return index;
+  }
+
+  const selectable = getSelectableMapIndices(excludeIndex);
+  if(!selectable.length){
+    return index;
+  }
+
+  const randomIndex = Math.floor(Math.random() * selectable.length);
+  return selectable[randomIndex];
+}
 
 const DEFAULT_SETTINGS = {
   flightRangeCells: 15,
@@ -600,8 +631,7 @@ if(Number.isNaN(aimingAmplitude)) aimingAmplitude = 10 / 5;
 let addAA = getStoredItem('settings.addAA') === 'true';
 let sharpEdges = getStoredItem('settings.sharpEdges') === 'true';
 let addCargo = getStoredItem('settings.addCargo') === 'true';
-let mapIndex = getIntSetting('settings.mapIndex', 0);
-if(mapIndex < 0 || mapIndex >= MAPS.length) mapIndex = 0;
+let mapIndex = sanitizeMapIndex(getIntSetting('settings.mapIndex', DEFAULT_SETTINGS.mapIndex));
 
 const flightRangeMinusBtn =
   document.getElementById('instance_range_left') ??
@@ -808,14 +838,15 @@ function saveSettings(){
   setStoredItem('settings.addAA', addAA);
   setStoredItem('settings.sharpEdges', sharpEdges);
   setStoredItem('settings.addCargo', addCargo);
+  mapIndex = sanitizeMapIndex(mapIndex);
   setStoredItem('settings.mapIndex', mapIndex);
 }
 
 function updateMapPreview(){
   if(!mapPreview) return;
   const map = MAPS[mapIndex];
-  const isRandomMap = map?.file === 'ui_controlpanel/cp_de_maprandom.png';
-  mapPreview.classList.toggle('map-preview--random', Boolean(isRandomMap));
+  const randomSelection = isRandomMap(map);
+  mapPreview.classList.toggle('map-preview--random', Boolean(randomSelection));
   restorePreviewPlaneVisibility();
   ensurePreviewCanvasLayering();
   mapPreview.style.backgroundImage = map ? `url('${map.file}')` : '';
@@ -860,7 +891,7 @@ function resizePreviewCanvas(){
   const width = rect.width;
   const height = rect.height;
   const map = MAPS[mapIndex];
-  if(map?.file === 'ui_controlpanel/cp_de_maprandom.png'){
+  if(isRandomMap(map)){
     console.assert(width > 0 && height > 0, 'resizePreviewCanvas dimensions', {
       width,
       height
@@ -946,14 +977,14 @@ function rebuildPreviewBuildings(){
   previewBuildings = [];
   if(!mapPreviewContainer) return;
   const map = MAPS[mapIndex];
-  const isRandomMap = map?.file === 'ui_controlpanel/cp_de_maprandom.png';
+  const randomSelection = isRandomMap(map);
   const previewSource = Array.isArray(map?.previewBuildings) ? map.previewBuildings : [];
   const physicalBuildings = Array.isArray(map?.buildings) ? map.buildings : [];
   const hasSource = previewSource.length > 0 || physicalBuildings.length > 0;
 
   if(!map) return;
 
-  if(!hasSource && isRandomMap){
+  if(!hasSource && randomSelection){
     getPreviewBuildingsForControlPanelMap(map)
       .then(buildings => {
         if(map !== MAPS[mapIndex]) return;
@@ -1187,7 +1218,7 @@ function updatePreviewBounds(plane){
   const boundsWidth = previewCanvas ? previewCanvas.width / dpr : mapPreviewContainer.clientWidth;
   const boundsHeight = previewCanvas ? previewCanvas.height / dpr : mapPreviewContainer.clientHeight;
   const map = MAPS[mapIndex];
-  if(map?.file === 'ui_controlpanel/cp_de_maprandom.png'){
+  if(isRandomMap(map)){
     console.assert(boundsWidth > 0 && boundsHeight > 0, 'updatePreviewBounds dimensions', {
       boundsWidth,
       boundsHeight
@@ -1505,7 +1536,8 @@ if(hasMapButtons){
   updateMapNameDisplay();
 
   const changeMap = delta => {
-    mapIndex = (mapIndex + delta + MAPS.length) % MAPS.length;
+    const targetIndex = (mapIndex + delta + MAPS.length) % MAPS.length;
+    mapIndex = sanitizeMapIndex(targetIndex, { excludeIndex: mapIndex });
     updateMapPreview();
     updateMapNameDisplay();
     saveSettings();
