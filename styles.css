@@ -1124,7 +1124,7 @@ body, button {
   top: 50%;
   width: var(--spark-size, 3px);
   height: var(--spark-size, 3px);
-  background: url('flames green/spark.svg') center / contain no-repeat;
+  background: url('flames green/flame 1.gif') center / contain no-repeat;
   opacity: 0.9;
   transform: translate(-100%, -50%);
   animation: spark-move var(--spark-duration, 500ms) ease-out forwards;
