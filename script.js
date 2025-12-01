@@ -1048,7 +1048,7 @@ const noBtn       = document.getElementById("noButton");
 // Images for planes
 const PLANE_ASSET_PATHS = {
   blue: "planes/blue plane 25-optima.png",
-  green: "green plane 3.png",
+  green: "planes/green plane 4 optima.png",
   blueCounter: "planes/blue counter 6.png",
   greenCounter: "planes/green counter 6.png",
   blueWreck: "planes/blue fall.png",
