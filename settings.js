@@ -695,8 +695,8 @@ function updateFlightRangeDisplay(){
 }
 
 function updateFlightRangeFlame(){
-  const minScale = 0.8;
-  const maxScale = 1.6;
+  const minScale = 0.78;
+  const maxScale = 1.82;
   const t = (flightRangeCells - MIN_FLIGHT_RANGE_CELLS) /
             (MAX_FLIGHT_RANGE_CELLS - MIN_FLIGHT_RANGE_CELLS);
   const ratio = minScale + t * (maxScale - minScale);
@@ -706,7 +706,7 @@ function updateFlightRangeFlame(){
   }
 
   if(flameTrailImage instanceof HTMLElement){
-    const trailScaleFactor = 0.5;
+    const trailScaleFactor = 0.55;
     const trailMinScale = minScale * trailScaleFactor;
     const trailMaxScale = maxScale * trailScaleFactor;
     const trailRatio = trailMinScale + t * (trailMaxScale - trailMinScale);
