@@ -557,16 +557,16 @@ body, button {
     filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.35));
   }
 
-  .settings-container #frame_range_1_visual .jet-flame--trail {
-    position: absolute;
-    left: -2px;
-    top: 25px;
-    width: 46px;
-    height: 14px;
-    display: block;
-    pointer-events: none;
-    transform-origin: right center;
-  }
+    .settings-container #frame_range_1_visual .jet-flame--trail {
+      position: absolute;
+      left: 0;
+      top: 26px;
+      width: 46px;
+      height: 14px;
+      display: block;
+      pointer-events: none;
+      transform-origin: right center;
+    }
 
   /* Визуализация индикатора дальности на тестовых страницах */
   body.test-harness #flightRangeIndicator.control-visual {
