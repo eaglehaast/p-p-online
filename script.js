@@ -1051,8 +1051,8 @@ const PLANE_ASSET_PATHS = {
   green: "planes/green plane 4 optima.png",
   blueCounter: "planes/blue counter 6.png",
   greenCounter: "planes/green counter 6.png",
-  blueWreck: "planes/blue fall.png",
-  greenWreck: "planes/green fall.png"
+  blueWreck: "planes/blue plane fall.png",
+  greenWreck: "planes/green plane fall.png"
 };
 
 const bluePlaneImg = new Image();
