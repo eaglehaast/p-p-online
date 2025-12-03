@@ -535,13 +535,13 @@ body, button {
 
   .settings-container #frame_range_1_visual .contrail {
     position: absolute;
-    left: -1px;
+    right: 0;
     width: 61px;
     height: 9px;
     display: block;
     pointer-events: none;
     object-fit: contain;
-    transform-origin: left center;
+    transform-origin: right center;
   }
 
   .settings-container #frame_range_1_visual #contrail1 {
