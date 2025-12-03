@@ -535,16 +535,21 @@ body, button {
 
   .settings-container #frame_range_1_visual .contrail {
     position: absolute;
-    height: 4px;
-    width: 40px;
-    background: linear-gradient(90deg, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.35));
-    border-radius: 4px;
-    pointer-events: inherit;
+    left: -1px;
+    width: 61px;
+    height: 9px;
+    display: block;
+    pointer-events: none;
+    object-fit: contain;
+    transform-origin: left center;
   }
 
   .settings-container #frame_range_1_visual #contrail1 {
-    left: 20px;
-    top: 16px;
+    top: 14px;
+  }
+
+  .settings-container #frame_range_1_visual #contrail2 {
+    top: 43px;
   }
 
   .settings-container #frame_range_1_visual .jet-plane {
