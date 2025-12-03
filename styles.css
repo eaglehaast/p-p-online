@@ -533,24 +533,31 @@ body, button {
     inset: 0;
   }
 
-  .settings-container #frame_range_1_visual .contrail {
+  .settings-container #frame_range_1_visual .contrail-container {
     position: absolute;
-    right: 0;
+    left: -1px;
     width: 61px;
     height: 9px;
+    display: block;
+    pointer-events: none;
+  }
+
+  .settings-container #frame_range_1_visual .contrail-container--top {
+    top: 14px;
+  }
+
+  .settings-container #frame_range_1_visual .contrail-container--bottom {
+    top: 43px;
+  }
+
+  .settings-container #frame_range_1_visual .contrail {
+    width: 100%;
+    height: 100%;
     display: block;
     pointer-events: none;
     object-fit: contain;
     transform-origin: right center;
     opacity: 0.5;
-  }
-
-  .settings-container #frame_range_1_visual #contrail1 {
-    top: 14px;
-  }
-
-  .settings-container #frame_range_1_visual #contrail2 {
-    top: 43px;
   }
 
   .settings-container #frame_range_1_visual .jet-plane {
