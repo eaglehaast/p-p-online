@@ -535,7 +535,7 @@ body, button {
 
   .settings-container #frame_range_1_visual .contrail-container {
     position: absolute;
-    left: 30px;
+    left: 25px;
     width: 41px;
     height: 6px;
     display: block;
@@ -547,7 +547,7 @@ body, button {
   }
 
   .settings-container #frame_range_1_visual .contrail-container--bottom {
-    top: 43px;
+    top: 46px;
   }
 
   .settings-container #frame_range_1_visual .contrail {
