@@ -725,7 +725,7 @@ function updateFlightRangeFlame(){
       image.style.right = '-15px';
       image.style.removeProperty('left');
       image.style.transformOrigin = 'right center';
-      image.style.transform = `scale(${ratio})`;
+      image.style.transform = `scale(${ratio * 0.9})`;
     }
   });
 }
