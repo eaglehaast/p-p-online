@@ -92,10 +92,25 @@
     </div>
 
     <div class="cp-flight-range" role="group" aria-label="Настройка дальности полёта">
-      <div id="flightRangeIndicator" class="cp-flight-range__indicator">
-        <div id="frame_range_1_visual" aria-hidden="true">
-          <div class="range-visual">
-            <div id="contrail1" class="contrail" aria-hidden="true"></div>
+        <div id="flightRangeIndicator" class="cp-flight-range__indicator">
+          <div id="frame_range_1_visual" aria-hidden="true">
+            <div class="range-visual">
+              <img
+                id="contrail1"
+                class="contrail"
+                src="ui_controlpanel/cp_range_contrail1.gif"
+                onerror="console.warn('Не удалось загрузить cp_range_contrail1.gif'); this.onerror=null;"
+                alt=""
+                aria-hidden="true"
+              />
+              <img
+                id="contrail2"
+                class="contrail"
+                src="ui_controlpanel/cp_range_contrail2.gif"
+                onerror="console.warn('Не удалось загрузить cp_range_contrail2.gif'); this.onerror=null;"
+                alt=""
+                aria-hidden="true"
+              />
               <img
                 id="flameTrail"
                 class="jet-flame jet-flame--trail"
