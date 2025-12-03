@@ -722,10 +722,10 @@ function updateFlightRangeFlame(){
 
   contrailImages.forEach((image) => {
     if(image instanceof HTMLElement){
-      const contrailWidthScale = ratio;
-      const contrailHeightScale = 0.85 + 0.15 * ratio;
+      image.style.right = '0px';
+      image.style.removeProperty('left');
       image.style.transformOrigin = 'right center';
-      image.style.transform = `scale(${contrailWidthScale}, ${contrailHeightScale})`;
+      image.style.transform = `scale(${ratio})`;
     }
   });
 }
