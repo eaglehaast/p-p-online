@@ -542,6 +542,7 @@ body, button {
     pointer-events: none;
     object-fit: contain;
     transform-origin: right center;
+    opacity: 0.5;
   }
 
   .settings-container #frame_range_1_visual #contrail1 {
