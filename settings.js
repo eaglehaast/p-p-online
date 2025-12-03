@@ -722,7 +722,7 @@ function updateFlightRangeFlame(){
 
   contrailImages.forEach((image) => {
     if(image instanceof HTMLElement){
-      image.style.right = '5px';
+      image.style.right = '-15px';
       image.style.removeProperty('left');
       image.style.transformOrigin = 'right center';
       image.style.transform = `scale(${ratio})`;
