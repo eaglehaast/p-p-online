@@ -629,7 +629,8 @@ function getIntSetting(key, defaultValue){
 }
 
 let flightRangeCells = getIntSetting('settings.flightRangeCells', 15);
-let flightRangeStep = 0;
+let flightRangeStep = getStepForValue(flightRangeCells);
+flightRangeCells = getRangeValueForStep(flightRangeStep);
 let aimingAmplitude  = parseFloat(getStoredItem('settings.aimingAmplitude'));
 if(Number.isNaN(aimingAmplitude)) aimingAmplitude = 10 / 5;
 let addAA = getStoredItem('settings.addAA') === 'true';
