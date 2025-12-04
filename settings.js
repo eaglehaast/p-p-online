@@ -1,5 +1,9 @@
 const MIN_FLIGHT_RANGE_CELLS = 5;
 const MAX_FLIGHT_RANGE_CELLS = 30;
+const RANGE_DISPLAY_VALUES = [5, 10, 15, 20, 25, 30];
+const RANGE_CELL_WIDTH = 58;
+const RANGE_HALF_STEP_PX = RANGE_CELL_WIDTH / 2;
+const RANGE_MAX_STEP = (RANGE_DISPLAY_VALUES.length - 1) * 2;
 const MIN_AMPLITUDE = 0;
 const MAX_AMPLITUDE = 20;
 
@@ -625,6 +629,7 @@ function getIntSetting(key, defaultValue){
 }
 
 let flightRangeCells = getIntSetting('settings.flightRangeCells', 15);
+let flightRangeStep = 0;
 let aimingAmplitude  = parseFloat(getStoredItem('settings.aimingAmplitude'));
 if(Number.isNaN(aimingAmplitude)) aimingAmplitude = 10 / 5;
 let addAA = getStoredItem('settings.addAA') === 'true';
@@ -634,6 +639,39 @@ let mapIndex = sanitizeMapIndex(
   getIntSetting('settings.mapIndex', DEFAULT_SETTINGS.mapIndex),
   { allowRandom: true }
 );
+
+function clampRangeStep(step){
+  return Math.min(RANGE_MAX_STEP, Math.max(0, step));
+}
+
+function getStepForValue(value){
+  const clamped = Math.min(MAX_FLIGHT_RANGE_CELLS, Math.max(MIN_FLIGHT_RANGE_CELLS, value));
+  let closestIndex = 0;
+  RANGE_DISPLAY_VALUES.forEach((displayValue, index) => {
+    const closestDistance = Math.abs(RANGE_DISPLAY_VALUES[closestIndex] - clamped);
+    const currentDistance = Math.abs(displayValue - clamped);
+    if(currentDistance < closestDistance){
+      closestIndex = index;
+    }
+  });
+  return clampRangeStep(closestIndex * 2);
+}
+
+function getRangeValueForStep(step){
+  const index = Math.floor(clampRangeStep(step) / 2);
+  return RANGE_DISPLAY_VALUES[index] ?? RANGE_DISPLAY_VALUES[RANGE_DISPLAY_VALUES.length - 1];
+}
+
+function syncFlightRangeWithStep(step){
+  flightRangeStep = clampRangeStep(step);
+  flightRangeCells = getRangeValueForStep(flightRangeStep);
+}
+
+function syncFlightRangeStepFromValue(value){
+  syncFlightRangeWithStep(getStepForValue(value));
+}
+
+syncFlightRangeStepFromValue(flightRangeCells);
 
 const flightRangeMinusBtn =
   document.getElementById('instance_range_left') ??
@@ -696,6 +734,11 @@ const previewHandle = {
 function updateFlightRangeDisplay(){
   const el = document.getElementById('flightRangeDisplay');
   if(el) el.textContent = `${flightRangeCells}`;
+
+  const strip = document.getElementById('flightRangeStrip');
+  if(strip){
+    strip.style.transform = `translateX(${-flightRangeStep * RANGE_HALF_STEP_PX}px)`;
+  }
 }
 
 function updateFlightRangeFlame(){
@@ -728,6 +771,18 @@ function updateFlightRangeFlame(){
       image.style.transform = `scale(${ratio * 0.9})`;
     }
   });
+}
+
+function changeFlightRangeStep(delta){
+  const nextStep = clampRangeStep(flightRangeStep + delta);
+  if(nextStep === flightRangeStep){
+    return;
+  }
+
+  syncFlightRangeWithStep(nextStep);
+  updateFlightRangeFlame();
+  updateFlightRangeDisplay();
+  saveSettings();
 }
 
 function updateAmplitudeDisplay(){
@@ -1446,6 +1501,7 @@ function setupPreviewSimulation(){
 
 function resetSettingsToDefaults(){
   flightRangeCells = DEFAULT_SETTINGS.flightRangeCells;
+  syncFlightRangeStepFromValue(flightRangeCells);
   aimingAmplitude = DEFAULT_SETTINGS.aimingAmplitude;
   addAA = DEFAULT_SETTINGS.addAA;
   sharpEdges = DEFAULT_SETTINGS.sharpEdges;
@@ -1565,22 +1621,8 @@ if(hasMapButtons){
   updateMapPreview();
 }
 
-setupRepeatButton(flightRangeMinusBtn, () => {
-  if(flightRangeCells > MIN_FLIGHT_RANGE_CELLS){
-    flightRangeCells--;
-    updateFlightRangeFlame();
-    updateFlightRangeDisplay();
-    saveSettings();
-  }
-});
-setupRepeatButton(flightRangePlusBtn, () => {
-  if(flightRangeCells < MAX_FLIGHT_RANGE_CELLS){
-    flightRangeCells++;
-    updateFlightRangeFlame();
-    updateFlightRangeDisplay();
-    saveSettings();
-  }
-});
+setupRepeatButton(flightRangeMinusBtn, () => changeFlightRangeStep(-1));
+setupRepeatButton(flightRangePlusBtn, () => changeFlightRangeStep(1));
 setupRepeatButton(amplitudeMinusBtn, () => {
   if(aimingAmplitude > MIN_AMPLITUDE){
     aimingAmplitude--;

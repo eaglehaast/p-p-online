@@ -655,12 +655,31 @@ body, button {
     font-size: 20px;
     color: #1b1205;
     text-shadow: 0 1px 1px rgba(255, 255, 255, 0.5);
+    overflow: hidden;
   }
 
-  .settings-container #frame_range_2_counter span {
-    display: block;
-    min-width: 32px;
-    text-align: center;
+  .range-strip-viewport {
+    width: 58px;
+    height: 35px;
+    overflow: hidden;
+  }
+
+  .range-strip {
+    display: flex;
+    align-items: center;
+    transition: transform 180ms ease;
+    will-change: transform;
+  }
+
+  .range-strip__value {
+    width: 58px;
+    height: 35px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font: inherit;
+    color: inherit;
+    text-shadow: inherit;
   }
 
   .settings-container .cp-flight-range__frame {

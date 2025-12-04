@@ -509,7 +509,19 @@
                     <path d="M40 10 C38 2 30 0 22 0 C14 0 6 8 8 14 C10 18 18 20 26 18 C34 16 38 14 40 10 Z" fill="url(#menuFlameGradient)"></path>
                   </svg>
                 </div>
-                <div id="flightRangeDisplay" class="range-display">10</div>
+                <div class="range-display">
+                  <div class="range-strip-viewport" aria-hidden="true">
+                    <div id="flightRangeStrip" class="range-strip">
+                      <div class="range-strip__value">5</div>
+                      <div class="range-strip__value">10</div>
+                      <div class="range-strip__value">15</div>
+                      <div class="range-strip__value">20</div>
+                      <div class="range-strip__value">25</div>
+                      <div class="range-strip__value">30</div>
+                    </div>
+                  </div>
+                  <span id="flightRangeDisplay" class="visually-hidden">10</span>
+                </div>
               </div>
               <div class="control-buttons">
                 <button
