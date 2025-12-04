@@ -731,13 +731,14 @@ const previewHandle = {
   origAngle: 0
 };
 
-function updateFlightRangeDisplay(){
+function updateFlightRangeDisplay(stepOverride){
   const el = document.getElementById('flightRangeDisplay');
   if(el) el.textContent = `${flightRangeCells}`;
 
   const strip = document.getElementById('flightRangeStrip');
   if(strip){
-    strip.style.transform = `translateX(${-flightRangeStep * RANGE_HALF_STEP_PX}px)`;
+    const transformStep = Number.isFinite(stepOverride) ? stepOverride : flightRangeStep;
+    strip.style.transform = `translateX(${-transformStep * RANGE_HALF_STEP_PX}px)`;
   }
 }
 
@@ -775,13 +776,32 @@ function updateFlightRangeFlame(){
 
 function changeFlightRangeStep(delta){
   const nextStep = clampRangeStep(flightRangeStep + delta);
-  if(nextStep === flightRangeStep){
+  const snappedStep = Math.round(nextStep / 2) * 2;
+
+  if(nextStep === flightRangeStep && snappedStep === flightRangeStep){
     return;
   }
 
-  syncFlightRangeWithStep(nextStep);
+  const shouldSnapAfterHalfStep = nextStep !== snappedStep;
+
+  // Animate toward the requested half-step first.
+  updateFlightRangeDisplay(nextStep);
+
+  // Then lock the value and center position to the nearest full cell.
+  syncFlightRangeWithStep(snappedStep);
   updateFlightRangeFlame();
-  updateFlightRangeDisplay();
+
+  // Keep the visual strip at the half-step during the animation, but
+  // ensure the displayed value matches the snapped step immediately.
+  updateFlightRangeDisplay(nextStep);
+
+  if(shouldSnapAfterHalfStep){
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => updateFlightRangeDisplay(snappedStep));
+    });
+  } else {
+    updateFlightRangeDisplay();
+  }
   saveSettings();
 }
 
