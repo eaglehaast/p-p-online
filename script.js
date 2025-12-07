@@ -1005,6 +1005,29 @@ const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
 let selectedMode = null;
 let selectedRuleset = "classic";
 
+let menuBackgroundSnapshot = null;
+
+function hideGameBackgroundForMenu() {
+  if (!menuBackgroundSnapshot) {
+    menuBackgroundSnapshot = {
+      body: document.body.style.backgroundImage,
+      container: gameContainer.style.backgroundImage
+    };
+  }
+
+  document.body.style.backgroundImage = 'none';
+  gameContainer.style.backgroundImage = 'none';
+}
+
+function restoreGameBackgroundAfterMenu() {
+  if (!menuBackgroundSnapshot) return;
+
+  document.body.style.backgroundImage = menuBackgroundSnapshot.body;
+  gameContainer.style.backgroundImage = menuBackgroundSnapshot.container;
+
+  menuBackgroundSnapshot = null;
+}
+
 if(typeof window !== 'undefined'){
   window.paperWingsHarness = window.paperWingsHarness || {};
 }
@@ -2451,6 +2474,7 @@ function resetGame(){
   currentPlacer = null;
 
   setBackgroundImage('background behind the canvas.png', 'background paper 1.png');
+  hideGameBackgroundForMenu();
 
   // UI reset
   syncModeButtonSkins(null);
@@ -2537,6 +2561,7 @@ playBtn.addEventListener("click",()=>{
     return;
   }
   gameMode = selectedMode;
+  restoreGameBackgroundAfterMenu();
   modeMenuDiv.style.display = "none";
   startNewRound();
 });
@@ -5608,6 +5633,7 @@ noBtn.addEventListener("click", () => {
 });
 
 function startNewRound(){
+  restoreGameBackgroundAfterMenu();
   if(roundTransitionTimeout){
     clearTimeout(roundTransitionTimeout);
     roundTransitionTimeout = null;
