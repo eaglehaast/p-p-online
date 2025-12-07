@@ -707,7 +707,6 @@ const contrailImages = [
 ];
 const flameOptions = { baseWidth: 46, baseHeight: 14 };
 const menuFlameRenderer = menuFlameCanvas instanceof HTMLCanvasElement ? new JetFlameRenderer(menuFlameCanvas, flameOptions) : null;
-const isTestHarnessPage = document.body.classList.contains('test-harness');
 
 let previewCanvas = null;
 let previewCtx = null;
@@ -1661,12 +1660,7 @@ setupRepeatButton(amplitudePlusBtn, () => {
   }
 });
 
-function goToMainMenu(event){
-  if(isTestHarnessPage && window.paperWingsHarness?.showMainView){
-    event.preventDefault();
-    window.paperWingsHarness.showMainView({ updateHash: true, focus: 'advancedButton' });
-    return;
-  }
+function goToMainMenu(){
   window.location.href = 'index.html';
 }
 
