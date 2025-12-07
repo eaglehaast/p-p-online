@@ -42,6 +42,71 @@ const testRandomizeToggle = document.getElementById("testRandomizeToggle");
 const testApplyBtn = document.getElementById("testApplyBtn");
 const testRestartBtn = document.getElementById("testRestartBtn");
 
+const MENU_BUTTON_SKINS = {
+  hotSeat: {
+    default: "ui_mainmenu/mm_hotseat_Default.png",
+    active: "ui_mainmenu/mm_hotseat_Active.png"
+  },
+  computer: {
+    default: "ui_mainmenu/mm_computer_default.png",
+    active: "ui_mainmenu/mm_computer_active.png"
+  },
+  online: {
+    default: "ui_mainmenu/mm_online_default.png",
+    active: "ui_mainmenu/mm_online_active.png"
+  },
+  play: {
+    default: "ui_mainmenu/mm_play_default.png",
+    active: "ui_mainmenu/mm_play_active.png"
+  },
+  classicRules: {
+    default: "ui_mainmenu/mm_classicrules_default.png",
+    active: "ui_mainmenu/mm_classicrules_active.png"
+  },
+  advancedSettings: {
+    default: "ui_mainmenu/mm_advancedsettings_default.png",
+    active: "ui_mainmenu/mm_advancedsettings_active.png"
+  }
+};
+
+function applyMenuButtonSkin(button, skinKey, isActive){
+  if(!(button instanceof HTMLElement)) return;
+
+  const skin = MENU_BUTTON_SKINS[skinKey];
+  const target = skin ? (isActive ? skin.active : skin.default) : null;
+
+  if(target){
+    button.style.backgroundImage = `url('${target}')`;
+    button.style.backgroundRepeat = "no-repeat";
+    button.style.backgroundSize = "contain";
+    button.style.backgroundPosition = "center";
+  } else {
+    button.style.backgroundImage = "";
+  }
+
+  button.classList.toggle("menu-btn--active", !!isActive);
+  button.dataset.state = isActive ? "active" : "default";
+}
+
+function syncModeButtonSkins(mode){
+  applyMenuButtonSkin(hotSeatBtn, "hotSeat", mode === "hotSeat");
+  applyMenuButtonSkin(computerBtn, "computer", mode === "computer");
+  applyMenuButtonSkin(onlineBtn, "online", mode === "online");
+}
+
+function syncPlayButtonSkin(isReady){
+  if(!(playBtn instanceof HTMLElement)) return;
+  const ready = !!isReady;
+  playBtn.disabled = !ready;
+  playBtn.setAttribute("aria-pressed", ready ? "true" : "false");
+  applyMenuButtonSkin(playBtn, "play", ready);
+}
+
+function syncRulesButtonSkins(selection){
+  applyMenuButtonSkin(classicRulesBtn, "classicRules", selection === "classic");
+  applyMenuButtonSkin(advancedSettingsBtn, "advancedSettings", selection === "advanced");
+}
+
 const IS_TEST_HARNESS = document.body.classList.contains('test-harness');
 
 const SCORE_COUNTER_ELEMENTS = {
@@ -937,6 +1002,9 @@ const playBtn     = document.getElementById("playBtn");
 const classicRulesBtn     = document.getElementById("classicRulesBtn");
 const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
 
+let selectedMode = null;
+let selectedRuleset = "classic";
+
 if(typeof window !== 'undefined'){
   window.paperWingsHarness = window.paperWingsHarness || {};
 }
@@ -983,8 +1051,8 @@ if(IS_TEST_HARNESS){
       } catch(err){
         console.warn('[Harness] Unable to sync advanced settings.', err);
       }
-      classicRulesBtn?.classList.remove('selected');
-      advancedSettingsBtn?.classList.add('selected');
+      selectedRuleset = "advanced";
+      syncRulesButtonSkins(selectedRuleset);
     }
 
     const overlayTarget = nextVisible
@@ -1418,7 +1486,6 @@ let pendingRoundTransitionStart = 0;
 let shouldShowEndScreen = false;
 let suppressAutoRandomMapForNextRound = false;
 let gameMode     = null;
-let selectedMode = null;
 
 let hasShotThisRound = false;
 
@@ -1695,9 +1762,12 @@ const hasCustomSettings = storageAvailable && [
 ].some(key => getStoredSetting(key) !== null);
 
 if(hasCustomSettings && classicRulesBtn && advancedSettingsBtn){
-  classicRulesBtn.classList.remove('selected');
-  advancedSettingsBtn.classList.add('selected');
+  selectedRuleset = "advanced";
 }
+
+syncRulesButtonSkins(selectedRuleset);
+syncModeButtonSkins(selectedMode);
+syncPlayButtonSkin(false);
 
 
 const POINTS_TO_WIN = 25;
@@ -2383,15 +2453,8 @@ function resetGame(){
   setBackgroundImage('background behind the canvas.png', 'background paper 1.png');
 
   // UI reset
-  hotSeatBtn.classList.remove("selected");
-  computerBtn.classList.remove("selected");
-  onlineBtn.classList.remove("selected");
-
-
-  // Play disabled
-  playBtn.disabled = true;
-  playBtn.classList.remove("active");
-  playBtn.classList.add("disabled");
+  syncModeButtonSkins(null);
+  syncPlayButtonSkin(false);
 
   // Показать меню, скрыть канвасы
   modeMenuDiv.style.display = "block";
@@ -2449,37 +2512,23 @@ if(classicRulesBtn){
     onFlameStyleChanged();
     applyCurrentMap();
     syncTestControls();
-    advancedSettingsBtn?.classList.remove('selected');
-    classicRulesBtn.classList.add('selected');
-    if(IS_TEST_HARNESS){
-      window.paperWingsHarness?.showMainView?.({ updateHash: true, focus: 'classicButton' });
-    }
+    selectedRuleset = "classic";
+    syncRulesButtonSkins(selectedRuleset);
   });
 }
 if(advancedSettingsBtn){
   advancedSettingsBtn.addEventListener('click', () => {
-    if(IS_TEST_HARNESS){
-      loadSettings();
-      if(!advancedSettingsBtn.classList.contains('selected')){
-        classicRulesBtn?.classList.remove('selected');
-        advancedSettingsBtn.classList.add('selected');
-        applyCurrentMap();
-      }
-      window.paperWingsHarness?.showAdvancedSettings?.({ updateHash: true, focus: 'firstControl' });
-    } else {
-      window.location.href = 'settings.html';
-    }
+    loadSettings();
+    applyCurrentMap();
+    selectedRuleset = "advanced";
+    syncRulesButtonSkins(selectedRuleset);
   });
 }
 function updateModeSelection(){
-  hotSeatBtn.classList.toggle("selected", selectedMode==="hotSeat");
-  computerBtn.classList.toggle("selected", selectedMode==="computer");
-  onlineBtn.classList.toggle("selected", selectedMode==="online");
+  syncModeButtonSkins(selectedMode);
 
   const ready = Boolean(selectedMode);
-  playBtn.disabled = !ready;
-  playBtn.classList.toggle("disabled", !ready);
-  playBtn.classList.toggle("active", ready);
+  syncPlayButtonSkin(ready);
 }
 
 playBtn.addEventListener("click",()=>{
@@ -5624,7 +5673,7 @@ function startNewRound(){
 
 /* ======= Map helpers ======= */
 function shouldAutoRandomizeMap(){
-  if(!advancedSettingsBtn?.classList.contains('selected')){
+  if(selectedRuleset !== "advanced"){
     return true;
   }
   return !!settings.randomizeMapEachRound;
