@@ -2542,10 +2542,7 @@ if(classicRulesBtn){
 }
 if(advancedSettingsBtn){
   advancedSettingsBtn.addEventListener('click', () => {
-    loadSettings();
-    applyCurrentMap();
-    selectedRuleset = "advanced";
-    syncRulesButtonSkins(selectedRuleset);
+    window.location.href = 'settings.html';
   });
 }
 function updateModeSelection(){
