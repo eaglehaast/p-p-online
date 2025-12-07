@@ -108,8 +108,6 @@ function syncRulesButtonSkins(selection){
   applyMenuButtonSkin(advancedSettingsBtn, "advancedSettings", selection === "advanced");
 }
 
-const IS_TEST_HARNESS = document.body.classList.contains('test-harness');
-
 const SCORE_COUNTER_ELEMENTS = {
   green: greenScoreCounter,
   blue: blueScoreCounter
@@ -1029,110 +1027,6 @@ function restoreGameBackgroundAfterMenu() {
   gameContainer.style.backgroundImage = menuBackgroundSnapshot.container;
 
   menuBackgroundSnapshot = null;
-}
-
-if(typeof window !== 'undefined'){
-  window.paperWingsHarness = window.paperWingsHarness || {};
-}
-
-if(IS_TEST_HARNESS || HAS_INLINE_ADVANCED_PANEL){
-  const HARNESS_ADVANCED_HASH = '#advanced-settings';
-  const harnessModeMenu = document.getElementById('modeMenu');
-  const harnessModeMenuMain = document.getElementById('modeMenuMain');
-  const harnessModeMenuAdvanced = document.getElementById('modeMenuAdvanced');
-  const harnessGameContainer = document.getElementById('gameContainer');
-  const harnessOverlay = document.getElementById('harnessInspectorOverlay');
-
-  const harnessState = {
-    advancedVisible: !harnessModeMenuAdvanced?.hidden,
-    overlayDefaultParent: harnessOverlay?.parentElement || harnessGameContainer || null
-  };
-
-  function setHarnessSectionVisibility(section, visible){
-    if(!section) return;
-    section.hidden = !visible;
-    section.setAttribute('aria-hidden', visible ? 'false' : 'true');
-  }
-
-  function moveHarnessOverlay(target){
-    if(!harnessOverlay || !target) return;
-    if(harnessOverlay.parentElement !== target){
-      target.appendChild(harnessOverlay);
-    }
-  }
-
-  function updateHarnessAdvancedVisibility(visible, options = {}){
-    const { updateHash = true, fromHashChange = false } = options;
-    const nextVisible = !!visible;
-    harnessState.advancedVisible = nextVisible;
-
-    setHarnessSectionVisibility(harnessModeMenuMain, !nextVisible);
-    setHarnessSectionVisibility(harnessModeMenuAdvanced, nextVisible);
-
-    document.body.classList.toggle('harness-advanced-open', nextVisible);
-
-    if(nextVisible){
-      try {
-        loadSettings();
-      } catch(err){
-        console.warn('[Harness] Unable to sync advanced settings.', err);
-      }
-      selectedRuleset = "advanced";
-      syncRulesButtonSkins(selectedRuleset);
-    }
-
-    const overlayTarget = nextVisible
-      ? (harnessModeMenuAdvanced || harnessModeMenu || harnessGameContainer)
-      : (harnessState.overlayDefaultParent || harnessGameContainer || harnessModeMenu);
-    if(overlayTarget){
-      moveHarnessOverlay(overlayTarget);
-    }
-
-    if(updateHash && !fromHashChange && typeof window.history?.pushState === 'function'){
-      const base = `${window.location.pathname}${window.location.search}`;
-      const targetHash = nextVisible ? HARNESS_ADVANCED_HASH : '';
-      const currentHash = window.location.hash || '';
-      if(currentHash !== targetHash){
-        const newUrl = targetHash ? `${base}${targetHash}` : base;
-        window.history.pushState(null, '', newUrl);
-      }
-    }
-
-    window.dispatchEvent(new CustomEvent('paperWingsHarnessViewChange', {
-      detail: { advanced: nextVisible }
-    }));
-  }
-
-  function applyHarnessHashState(){
-    const shouldShow = window.location.hash === HARNESS_ADVANCED_HASH;
-    updateHarnessAdvancedVisibility(shouldShow, { updateHash: false, fromHashChange: true });
-  }
-
-  window.addEventListener('hashchange', applyHarnessHashState);
-
-  window.paperWingsHarness.showAdvancedSettings = function(options = {}){
-    const { updateHash = true, focus = null } = options;
-    updateHarnessAdvancedVisibility(true, { updateHash });
-    if(focus === 'firstControl'){
-      harnessModeMenuAdvanced?.querySelector?.('button, select, input')?.focus?.();
-    }
-  };
-
-  window.paperWingsHarness.showMainView = function(options = {}){
-    const { updateHash = true, focus = null } = options;
-    updateHarnessAdvancedVisibility(false, { updateHash });
-    if(focus === 'advancedButton'){
-      advancedSettingsBtn?.focus?.();
-    } else if(focus === 'classicButton'){
-      classicRulesBtn?.focus?.();
-    }
-  };
-
-  window.paperWingsHarness.isAdvancedVisible = function(){
-    return !!harnessState.advancedVisible;
-  };
-
-  applyHarnessHashState();
 }
 
 const endGameDiv  = document.getElementById("endGameButtons");
@@ -2543,17 +2437,7 @@ if(classicRulesBtn){
 }
 if(advancedSettingsBtn){
   advancedSettingsBtn.addEventListener('click', (event) => {
-    const showHarnessAdvanced = window.paperWingsHarness?.showAdvancedSettings;
-    const hasHarnessPanel = HAS_INLINE_ADVANCED_PANEL;
-    const hasHarnessHandler = typeof showHarnessAdvanced === 'function';
-
-    if(hasHarnessHandler){
-      event.preventDefault();
-      showHarnessAdvanced({ updateHash: true, focus: 'firstControl' });
-      return;
-    }
-
-    if(hasHarnessPanel){
+    if(HAS_INLINE_ADVANCED_PANEL){
       event.preventDefault();
       const mainSection = document.getElementById('modeMenuMain');
       const advancedSection = document.getElementById('modeMenuAdvanced');
@@ -2569,7 +2453,6 @@ if(advancedSettingsBtn){
         advancedSection.querySelector?.('button, select, input')?.focus?.();
       }
 
-      document.body.classList.add('harness-advanced-open');
       selectedRuleset = "advanced";
       syncRulesButtonSkins(selectedRuleset);
       return;
