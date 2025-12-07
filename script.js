@@ -2513,15 +2513,15 @@ function startGameLoop(){
 
 /* ======= MENU ======= */
 hotSeatBtn.addEventListener("click",()=>{
-  selectedMode = (selectedMode==="hotSeat" ? null : "hotSeat");
+  selectedMode = "hotSeat";
   updateModeSelection();
 });
 computerBtn.addEventListener("click",()=>{
-  selectedMode = (selectedMode==="computer" ? null : "computer");
+  selectedMode = "computer";
   updateModeSelection();
 });
 onlineBtn.addEventListener("click",()=>{
-  selectedMode = (selectedMode==="online" ? null : "online");
+  selectedMode = "online";
   updateModeSelection();
 });
 if(classicRulesBtn){
@@ -2550,6 +2550,7 @@ if(advancedSettingsBtn){
 }
 function updateModeSelection(){
   syncModeButtonSkins(selectedMode);
+  syncRulesButtonSkins(selectedRuleset);
 
   const ready = Boolean(selectedMode);
   syncPlayButtonSkin(ready);
