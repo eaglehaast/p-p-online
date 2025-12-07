@@ -1002,6 +1002,7 @@ const playBtn     = document.getElementById("playBtn");
 
 const classicRulesBtn     = document.getElementById("classicRulesBtn");
 const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
+const HAS_INLINE_ADVANCED_PANEL = !!document.getElementById("modeMenuAdvanced");
 
 let selectedMode = null;
 let selectedRuleset = "classic";
@@ -1034,7 +1035,7 @@ if(typeof window !== 'undefined'){
   window.paperWingsHarness = window.paperWingsHarness || {};
 }
 
-if(IS_TEST_HARNESS){
+if(IS_TEST_HARNESS || HAS_INLINE_ADVANCED_PANEL){
   const HARNESS_ADVANCED_HASH = '#advanced-settings';
   const harnessModeMenu = document.getElementById('modeMenu');
   const harnessModeMenuMain = document.getElementById('modeMenuMain');
@@ -2541,7 +2542,38 @@ if(classicRulesBtn){
   });
 }
 if(advancedSettingsBtn){
-  advancedSettingsBtn.addEventListener('click', () => {
+  advancedSettingsBtn.addEventListener('click', (event) => {
+    const hasHarnessView = IS_TEST_HARNESS || HAS_INLINE_ADVANCED_PANEL;
+    const showHarnessAdvanced = window.paperWingsHarness?.showAdvancedSettings;
+
+    if(hasHarnessView && typeof showHarnessAdvanced === 'function'){
+      event.preventDefault();
+      showHarnessAdvanced({ updateHash: true, focus: 'firstControl' });
+      return;
+    }
+
+    if(hasHarnessView){
+      event.preventDefault();
+      const mainSection = document.getElementById('modeMenuMain');
+      const advancedSection = document.getElementById('modeMenuAdvanced');
+
+      if(mainSection){
+        mainSection.hidden = true;
+        mainSection.setAttribute('aria-hidden', 'true');
+      }
+
+      if(advancedSection){
+        advancedSection.hidden = false;
+        advancedSection.setAttribute('aria-hidden', 'false');
+        advancedSection.querySelector?.('button, select, input')?.focus?.();
+      }
+
+      document.body.classList.add('harness-advanced-open');
+      selectedRuleset = "advanced";
+      syncRulesButtonSkins(selectedRuleset);
+      return;
+    }
+
     window.location.href = 'settings.html';
   });
 }

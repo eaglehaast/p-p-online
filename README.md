@@ -14,6 +14,11 @@
 - **Computer** – fight against a simple AI.
 - **Online** – currently disabled in this build.
 
+## Advanced settings navigation
+
+- In the standard build, the **Advanced Settings** button in the menu opens `settings.html`.
+- When you load the test harness (`test-harness.html`) with the inline advanced panel, the same button toggles that panel in place (the same effect as using the `#advanced-settings` hash) so you stay on the current page.
+
 ## Basic rules
 
 - Each side controls a group of paper planes (green vs. blue).
