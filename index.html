@@ -50,31 +50,135 @@
 
     <!-- Game Mode Selection Menu -->
   <div id="modeMenu" aria-label="Главное меню">
-    <div class="mode-menu__layer" aria-hidden="false">
-      <button id="hotSeatBtn" class="mode-menu__btn mode-menu__btn--hotseat" type="button" aria-label="Hot Seat">
-        <span class="visually-hidden">Hot Seat</span>
-      </button>
+    <section id="modeMenuMain" aria-label="Выбор режима" aria-hidden="false">
+      <div class="mode-menu__layer" aria-hidden="false">
+        <button id="hotSeatBtn" class="mode-menu__btn mode-menu__btn--hotseat" type="button" aria-label="Hot Seat">
+          <span class="visually-hidden">Hot Seat</span>
+        </button>
 
-      <button id="computerBtn" class="mode-menu__btn mode-menu__btn--computer" type="button" aria-label="Computer">
-        <span class="visually-hidden">Computer</span>
-      </button>
+        <button id="computerBtn" class="mode-menu__btn mode-menu__btn--computer" type="button" aria-label="Computer">
+          <span class="visually-hidden">Computer</span>
+        </button>
 
-      <button id="onlineBtn" class="mode-menu__btn mode-menu__btn--online" type="button" aria-label="Online" disabled>
-        <span class="visually-hidden">Online</span>
-      </button>
+        <button id="onlineBtn" class="mode-menu__btn mode-menu__btn--online" type="button" aria-label="Online" disabled>
+          <span class="visually-hidden">Online</span>
+        </button>
 
-      <button id="playBtn" class="mode-menu__btn mode-menu__btn--play disabled" type="button" aria-label="Play" disabled>
-        <span class="visually-hidden">Play</span>
-      </button>
+        <button id="playBtn" class="mode-menu__btn mode-menu__btn--play disabled" type="button" aria-label="Play" disabled>
+          <span class="visually-hidden">Play</span>
+        </button>
 
-      <button id="classicRulesBtn" class="mode-menu__btn mode-menu__btn--classic selected" type="button" aria-label="Classic Rules">
-        <span class="visually-hidden">Classic Rules</span>
-      </button>
+        <button id="classicRulesBtn" class="mode-menu__btn mode-menu__btn--classic selected" type="button" aria-label="Classic Rules">
+          <span class="visually-hidden">Classic Rules</span>
+        </button>
 
-      <button id="advancedSettingsBtn" class="mode-menu__btn mode-menu__btn--advanced" type="button" aria-label="Advanced Settings">
-        <span class="visually-hidden">Advanced Settings</span>
-      </button>
-    </div>
+        <button id="advancedSettingsBtn" class="mode-menu__btn mode-menu__btn--advanced" type="button" aria-label="Advanced Settings">
+          <span class="visually-hidden">Advanced Settings</span>
+        </button>
+      </div>
+    </section>
+
+    <section
+      id="modeMenuAdvanced"
+      class="mode-menu__panel"
+      aria-label="Расширенные настройки"
+      hidden
+      aria-hidden="true"
+    >
+      <div class="mode-menu__panel-header">
+        <div class="mode-menu__panel-text">
+          <p class="mode-menu__panel-kicker">Настройте опыт под себя</p>
+          <h2 class="mode-menu__panel-title">Расширенные настройки</h2>
+          <p class="mode-menu__panel-subtitle">
+            Меняйте параметры поля, дальность полёта, амплитуду прицеливания и дополнительные правила перед стартом.
+          </p>
+        </div>
+        <div class="mode-menu__panel-actions">
+          <button id="advancedBackBtn" class="control-btn control-btn--secondary" type="button">
+            Назад к режимам
+          </button>
+        </div>
+      </div>
+
+      <div class="control-group-row">
+        <div class="control-pair-row">
+          <div class="control-box" id="mapControlBox">
+            <p class="control-label">Выбор карты</p>
+            <p class="control-value">Подберите подходящую карту</p>
+            <select id="inGameMapSelect" aria-label="Карта для игры"></select>
+          </div>
+
+          <div class="control-box" id="flameControlBox">
+            <p class="control-label">Стиль пламени</p>
+            <p class="control-value">Выберите визуальный эффект</p>
+            <select id="inGameFlameStyle" aria-label="Стиль пламени"></select>
+          </div>
+        </div>
+
+        <div class="control-pair-row">
+          <div class="control-box">
+            <p class="control-label">Дальность полёта</p>
+            <div class="control-visual">
+              <label class="visually-hidden" for="testFlightRange">Дальность полёта (клетки)</label>
+              <input
+                id="testFlightRange"
+                class="control-input"
+                type="number"
+                inputmode="numeric"
+                min="5"
+                max="30"
+                step="1"
+                aria-label="Дальность полёта в клетках"
+              />
+            </div>
+            <p class="control-value">Значение от 5 до 30 клеток</p>
+          </div>
+
+          <div class="control-box">
+            <p class="control-label">Амплитуда прицеливания</p>
+            <div class="control-visual">
+              <label class="visually-hidden" for="testAmplitude">Амплитуда прицеливания (в градусах)</label>
+              <input
+                id="testAmplitude"
+                class="control-input"
+                type="number"
+                inputmode="decimal"
+                min="0"
+                max="100"
+                step="5"
+                aria-label="Амплитуда прицеливания в градусах"
+              />
+            </div>
+            <p class="control-value">Настройте угол прицеливания</p>
+          </div>
+        </div>
+
+        <div class="control-box">
+          <p class="control-label">Дополнительные правила</p>
+          <div class="control-visual control-visual--stacked" id="additionalSettings">
+            <label class="test-controls__checkbox" for="testAddAAToggle">
+              <input id="testAddAAToggle" type="checkbox" aria-label="Добавить ПВО" />
+              <span>Добавить ПВО перед первым ходом</span>
+            </label>
+
+            <label class="test-controls__checkbox" for="testSharpEdgesToggle">
+              <input id="testSharpEdgesToggle" type="checkbox" aria-label="Острые края" />
+              <span>Включить острые края</span>
+            </label>
+
+            <label class="test-controls__checkbox" for="testRandomizeToggle">
+              <input id="testRandomizeToggle" type="checkbox" aria-label="Случайная карта в каждом раунде" />
+              <span>Случайная карта в каждом раунде</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="mode-menu__panel-actions mode-menu__panel-actions--buttons">
+        <button id="testApplyBtn" class="control-btn" type="button">Применить</button>
+        <button id="testRestartBtn" class="control-btn" type="button">Применить и начать заново</button>
+      </div>
+    </section>
   </div> <!-- /modeMenu -->
 
 
