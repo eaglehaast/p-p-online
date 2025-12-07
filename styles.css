@@ -1211,99 +1211,84 @@ body, button {
   background-color: transparent;
   background-repeat: no-repeat;
   background-size: contain;
-  box-shadow: none;
-  border-radius: 0;
+  background-position: center;
   cursor: pointer;
-  color: transparent;
-  font-size: 0;
-  transition: none;
-  transform: none !important;
 }
 
-#modeMenu button:hover,
-#modeMenu button:focus,
-#modeMenu button:active {
-  box-shadow: none;
-  transform: none;
-}
-
-#hotSeatBtn {
-  left: 128px;
-  top: 151px;
-  width: 205px;
-  height: 48px;
-  background-image: url("ui_mainmenu/mm_hotseat_Default.png");
-}
-
-#hotSeatBtn.selected {
-  background-image: url("ui_mainmenu/mm_hotseat_Active.png");
-}
-
-#computerBtn {
-  left: 118px;
-  top: 209px;
-  width: 224px;
-  height: 48px;
-  background-image: url("ui_mainmenu/mm_computer_default.png");
-}
-
-#computerBtn.selected {
-  background-image: url("ui_mainmenu/mm_computer_active.png");
-}
-
-#onlineBtn {
-  left: 152px;
-  top: 267px;
-  width: 156px;
-  height: 48px;
-  background-image: url("ui_mainmenu/mm_online_default.png");
-}
-
-#onlineBtn.selected {
-  background-image: url("ui_mainmenu/mm_online_active.png");
-}
-
-#classicRulesBtn {
-  left: 78px;
-  top: 336px;
-  width: 304px;
-  height: 48px;
-  background-image: url("ui_mainmenu/mm_classicrules_default.png");
-}
-
-#classicRulesBtn.selected {
-  background-image: url("ui_mainmenu/mm_classicrules_active.png");
-}
-
-#advancedSettingsBtn {
-  left: 96px;
-  top: 413px;
-  width: 269px;
-  height: 86px;
-  background-image: url("ui_mainmenu/mm_advancedsettings_default.png");
-}
-
-#advancedSettingsBtn.selected {
-  background-image: url("ui_mainmenu/mm_advancedsettings_active.png");
-}
-
-#playBtn {
-  left: 170px;
-  top: 525px;
-  width: 120px;
-  height: 48px;
-  background-image: url("ui_mainmenu/mm_play_default.png");
-}
-
-#playBtn.active,
-#playBtn.selected {
-  background-image: url("ui_mainmenu/mm_play_active.png");
-}
-
-#playBtn.disabled,
-#modeMenu button:disabled {
+body:not(.settings-page) #modeMenu .mode-menu__btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+body:not(.settings-page) #modeMenu .mode-menu__btn.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+body:not(.settings-page) #modeMenu .mode-menu__btn--hotseat {
+  width: calc(205 / var(--mm-base-width) * 100%);
+  height: calc(48 / var(--mm-base-height) * 100%);
+  top: calc(220 / var(--mm-base-height) * 100%);
+  background-image: url('ui_mainmenu/mm_hotseat_Default.png');
+}
+
+body:not(.settings-page) #modeMenu .mode-menu__btn--hotseat.selected {
+  background-image: url('ui_mainmenu/mm_hotseat_Active.png');
+}
+
+body:not(.settings-page) #modeMenu .mode-menu__btn--computer {
+  width: calc(224 / var(--mm-base-width) * 100%);
+  height: calc(48 / var(--mm-base-height) * 100%);
+  top: calc(282 / var(--mm-base-height) * 100%);
+  background-image: url('ui_mainmenu/mm_computer_default.png');
+}
+
+body:not(.settings-page) #modeMenu .mode-menu__btn--computer.selected {
+  background-image: url('ui_mainmenu/mm_computer_active.png');
+}
+
+body:not(.settings-page) #modeMenu .mode-menu__btn--online {
+  width: calc(156 / var(--mm-base-width) * 100%);
+  height: calc(48 / var(--mm-base-height) * 100%);
+  top: calc(344 / var(--mm-base-height) * 100%);
+  background-image: url('ui_mainmenu/mm_online_default.png');
+}
+
+body:not(.settings-page) #modeMenu .mode-menu__btn--online.selected {
+  background-image: url('ui_mainmenu/mm_online_active.png');
+}
+
+body:not(.settings-page) #modeMenu .mode-menu__btn--play {
+  width: calc(120 / var(--mm-base-width) * 100%);
+  height: calc(48 / var(--mm-base-height) * 100%);
+  top: calc(418 / var(--mm-base-height) * 100%);
+  background-image: url('ui_mainmenu/mm_play_default.png');
+}
+
+body:not(.settings-page) #modeMenu .mode-menu__btn--play.active {
+  background-image: url('ui_mainmenu/mm_play_active.png');
+}
+
+body:not(.settings-page) #modeMenu .mode-menu__btn--classic {
+  width: calc(304 / var(--mm-base-width) * 100%);
+  height: calc(48 / var(--mm-base-height) * 100%);
+  top: calc(520 / var(--mm-base-height) * 100%);
+  background-image: url('ui_mainmenu/mm_classicrules_default.png');
+}
+
+body:not(.settings-page) #modeMenu .mode-menu__btn--classic.selected {
+  background-image: url('ui_mainmenu/mm_classicrules_active.png');
+}
+
+body:not(.settings-page) #modeMenu .mode-menu__btn--advanced {
+  width: calc(269 / var(--mm-base-width) * 100%);
+  height: calc(86 / var(--mm-base-height) * 100%);
+  top: calc(590 / var(--mm-base-height) * 100%);
+  background-image: url('ui_mainmenu/mm_advancedsettings_default.png');
+}
+
+body:not(.settings-page) #modeMenu .mode-menu__btn--advanced.selected {
+  background-image: url('ui_mainmenu/mm_advancedsettings_active.png');
 }
 
 /* Контролы */
@@ -1342,11 +1327,11 @@ body, button {
   }
 
   @media (max-width: 700px) {
-    #modeMenu {
+    body.settings-page #modeMenu {
       width: min(94vw, 560px);
     }
 
-    #modeMenu .control-pair-row {
+    body.settings-page #modeMenu .control-pair-row {
       flex-direction: column;
     }
 
