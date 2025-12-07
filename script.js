@@ -1005,6 +1005,7 @@ const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
 
 let selectedMode = null;
 let selectedRuleset = "classic";
+let mapPrepared = false;
 
 let menuBackgroundSnapshot = null;
 
@@ -2458,12 +2459,13 @@ function resetGame(){
   globalFrame=0;
   flyingPoints= [];
   buildings = [];
+  points = [];
+  mapPrepared = false;
   if(shouldAutoRandomizeMap()){
     if(settings.mapIndex !== RANDOM_MAP_SENTINEL_INDEX){
       setMapIndexAndPersist(getRandomPlayableMapIndex());
     }
   }
-  applyCurrentMap();
 
   aaUnits = [];
 
@@ -2493,8 +2495,6 @@ function resetGame(){
   // Остановить основной цикл
   stopGameLoop();
 
-  initPoints();
-  renderScoreboard();
   syncTestControls();
 }
 
@@ -2531,11 +2531,10 @@ if(classicRulesBtn){
     aimingAmplitude = 10 / 5; // 10°
     settings.addAA = false;
     settings.sharpEdges = false;
-    settings.mapIndex = getRandomPlayableMapIndex();
+    setMapIndexAndPersist(getRandomPlayableMapIndex());
     settings.randomizeMapEachRound = true;
     settings.flameStyle = 'random';
     onFlameStyleChanged();
-    applyCurrentMap();
     syncTestControls();
     selectedRuleset = "classic";
     syncRulesButtonSkins(selectedRuleset);
@@ -5637,12 +5636,18 @@ function startNewRound(){
     clearTimeout(roundTransitionTimeout);
     roundTransitionTimeout = null;
   }
+  let mapChangedThisRound = false;
   const shouldRandomize = !suppressAutoRandomMapForNextRound && shouldAutoRandomizeMap() && roundNumber > 0;
   if(shouldRandomize){
     if(settings.mapIndex !== RANDOM_MAP_SENTINEL_INDEX){
       setMapIndexAndPersist(getRandomPlayableMapIndex());
     }
     applyCurrentMap();
+    mapChangedThisRound = true;
+  }
+  if(!mapPrepared){
+    applyCurrentMap();
+    mapChangedThisRound = true;
   }
   suppressAutoRandomMapForNextRound = false;
   cleanupGreenCrashFx();
@@ -5668,10 +5673,9 @@ function startNewRound(){
   roundTextTimer = 120;
 
   globalFrame=0;
-  flyingPoints=[];
-  hasShotThisRound=false;
-  aaUnits = [];
-
+  if(!mapChangedThisRound){
+    resetPlanePositionsForCurrentMap();
+  }
   aiMoveScheduled = false;
   gameCanvas.style.display = "block";
   mantisIndicator.style.display = "block";
@@ -5680,11 +5684,6 @@ function startNewRound(){
 
   setBackgroundImage('pics/background behind the canvas 5.png');
 
-  initPoints(); // ориентации на базе
-  blueFlagCarrier = null;
-  greenFlagCarrier = null;
-  blueFlagStolenBy = null;
-  greenFlagStolenBy = null;
   renderScoreboard();
   if (settings.addAA) {
     phase = 'AA_PLACEMENT';
@@ -5715,6 +5714,7 @@ function getRandomPlayableMapIndex(){
 function setMapIndexAndPersist(nextIndex){
   settings.mapIndex = clampMapIndex(nextIndex);
   setStoredSetting('settings.mapIndex', String(settings.mapIndex));
+  mapPrepared = false;
 }
 
 function restartMatchWithCurrentSettings(options = {}){
@@ -5756,6 +5756,7 @@ function applyCurrentMap(){
   updateFieldDimensions();
   resetPlanePositionsForCurrentMap();
   renderScoreboard();
+  mapPrepared = true;
 }
 
 function getCollisionBuildings(map){
