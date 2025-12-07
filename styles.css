@@ -1167,132 +1167,143 @@ body, button {
 
 /* Меню выбора режима */
   #modeMenu {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    text-align: center;
-    padding: 10px;
-    background: none;
-    background-color: transparent !important;
-    background-image: none !important;
-    box-shadow: none !important;
-    border: none !important;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 460px;
+    height: 800px;
+    background: url("ui_mainmenu/mm_background.png") center / cover no-repeat;
+    padding: 0;
+    margin: 0;
     z-index: 1000;
-    width: clamp(340px, 90vw, 820px);
-    height: auto;
-    max-height: 90vh;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
+    overflow: hidden;
+    display: block;
+    transform: none;
+    box-shadow: none;
+    border: none;
   }
 
 /* Заголовок */
 #modeMenu .game-title {
-  font-family: 'Patrick Hand', cursive;
-  font-size: 28px;
-  color: #e40e0e;
-  margin: 0 0 15px;
-  text-shadow: 1px 1px #ffe4b5;
-}
-
-/* Кнопки режимов */
-#modeMenu .mode-options {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-bottom: 15px;
-  padding: 10px 0;
+  position: absolute;
+  left: 0;
+  top: 0;
   width: 100%;
-}
-
-#modeMenu .mode-btn {
-  padding: 12px 8px;
+  height: 120px;
   margin: 0;
-  font-size: 16px;
-  font-weight: bold;
-  color: #fff;
-  border: none;
-  border-radius: 12px;
-  background: linear-gradient(145deg, #6c757d, #5a6268);
-  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-  cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
-  width: 100%;
+  padding: 0;
+  font-size: 0;
+  opacity: 0;
 }
 
-/* Rules buttons */
+#modeMenu .mode-options,
 #modeMenu .rules-options {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 15px;
-  padding: 10px 0;
-  width: 100%;
+  position: static;
+  padding: 0;
+  margin: 0;
 }
 
-#modeMenu .rules-options .rules-btn {
-  padding: 10px 15px;
-  font-size: 16px;
-  font-weight: bold;
-  color: #fff;
+#modeMenu button {
+  position: absolute;
+  padding: 0;
+  margin: 0;
   border: none;
-  border-radius: 12px;
-  background: linear-gradient(145deg, #6c757d, #5a6268);
-  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  background-color: transparent;
+  background-repeat: no-repeat;
+  background-size: contain;
+  box-shadow: none;
+  border-radius: 0;
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
-  width: 100%;
+  color: transparent;
+  font-size: 0;
+  transition: none;
+  transform: none !important;
 }
 
-#modeMenu .rules-options .rules-btn.selected {
-  background: linear-gradient(145deg, #28a745, #218838);
+#modeMenu button:hover,
+#modeMenu button:focus,
+#modeMenu button:active {
+  box-shadow: none;
+  transform: none;
 }
 
-#modeMenu #playBtn {
-  width: 100%;
-  padding: 12px;
-  margin-bottom: 15px;
-  font-size: 18px;
-  background: linear-gradient(145deg, #5bc0de, #31b0d5);
-  border: none;
-  border-radius: 12px;
+#hotSeatBtn {
+  left: 128px;
+  top: 151px;
+  width: 205px;
+  height: 48px;
+  background-image: url("ui_mainmenu/mm_hotseat_Default.png");
 }
 
-#modeMenu #backBtn {
-  width: 100%;
-  padding: 12px;
-  margin-top: 15px;
+#hotSeatBtn.selected {
+  background-image: url("ui_mainmenu/mm_hotseat_Active.png");
 }
 
-#modeMenu .mode-btn:hover:not(.selected) {
-  transform: translateY(-5px);
-  box-shadow: 0 8px 16px rgba(0,0,0,0.35);
+#computerBtn {
+  left: 118px;
+  top: 209px;
+  width: 224px;
+  height: 48px;
+  background-image: url("ui_mainmenu/mm_computer_default.png");
 }
 
-#modeMenu #playBtn.active {
-  background: linear-gradient(145deg, #5cb85c, #449d44);
+#computerBtn.selected {
+  background-image: url("ui_mainmenu/mm_computer_active.png");
 }
 
-#modeMenu #playBtn.disabled {
-  background: #d6d6d6;
-  cursor: not-allowed;
+#onlineBtn {
+  left: 152px;
+  top: 267px;
+  width: 156px;
+  height: 48px;
+  background-image: url("ui_mainmenu/mm_online_default.png");
 }
 
-/* Disabled */
-#modeMenu .mode-btn:disabled,
-#modeMenu #playBtn.disabled {
+#onlineBtn.selected {
+  background-image: url("ui_mainmenu/mm_online_active.png");
+}
+
+#classicRulesBtn {
+  left: 78px;
+  top: 336px;
+  width: 304px;
+  height: 48px;
+  background-image: url("ui_mainmenu/mm_classicrules_default.png");
+}
+
+#classicRulesBtn.selected {
+  background-image: url("ui_mainmenu/mm_classicrules_active.png");
+}
+
+#advancedSettingsBtn {
+  left: 96px;
+  top: 413px;
+  width: 269px;
+  height: 86px;
+  background-image: url("ui_mainmenu/mm_advancedsettings_default.png");
+}
+
+#advancedSettingsBtn.selected {
+  background-image: url("ui_mainmenu/mm_advancedsettings_active.png");
+}
+
+#playBtn {
+  left: 170px;
+  top: 525px;
+  width: 120px;
+  height: 48px;
+  background-image: url("ui_mainmenu/mm_play_default.png");
+}
+
+#playBtn.active,
+#playBtn.selected {
+  background-image: url("ui_mainmenu/mm_play_active.png");
+}
+
+#playBtn.disabled,
+#modeMenu button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
-  box-shadow: none;
-}
-
-/* Selected */
-#modeMenu .mode-btn.selected {
-  background: linear-gradient(145deg, #f80101, #d53131);
-  box-shadow: 0 8px 16px rgba(0,0,0,0.35);
 }
 
 /* Контролы */
