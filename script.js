@@ -98,6 +98,7 @@ function syncPlayButtonSkin(isReady){
   if(!(playBtn instanceof HTMLElement)) return;
   const ready = !!isReady;
   playBtn.disabled = !ready;
+  playBtn.classList.toggle("disabled", !ready);
   playBtn.setAttribute("aria-pressed", ready ? "true" : "false");
   applyMenuButtonSkin(playBtn, "play", ready);
 }
@@ -106,8 +107,6 @@ function syncRulesButtonSkins(selection){
   applyMenuButtonSkin(classicRulesBtn, "classicRules", selection === "classic");
   applyMenuButtonSkin(advancedSettingsBtn, "advancedSettings", selection === "advanced");
 }
-
-const IS_TEST_HARNESS = document.body.classList.contains('test-harness');
 
 const SCORE_COUNTER_ELEMENTS = {
   green: greenScoreCounter,
@@ -993,6 +992,8 @@ function spawnExplosion(x, y, color = null) {
 });
 
 const modeMenuDiv = document.getElementById("modeMenu");
+const modeMenuMainSection = document.getElementById("modeMenuMain");
+const modeMenuAdvancedSection = document.getElementById("modeMenuAdvanced");
 const hotSeatBtn  = document.getElementById("hotSeatBtn");
 const computerBtn = document.getElementById("computerBtn");
 const onlineBtn   = document.getElementById("onlineBtn");
@@ -1001,112 +1002,63 @@ const playBtn     = document.getElementById("playBtn");
 
 const classicRulesBtn     = document.getElementById("classicRulesBtn");
 const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
+const advancedBackBtn = document.getElementById("advancedBackBtn");
+const HAS_INLINE_ADVANCED_PANEL = !!modeMenuAdvancedSection;
 
 let selectedMode = null;
 let selectedRuleset = "classic";
+let mapPrepared = false;
 
-if(typeof window !== 'undefined'){
-  window.paperWingsHarness = window.paperWingsHarness || {};
+let menuBackgroundSnapshot = null;
+
+function swapMenuSections(sectionToShow, sectionToHide, focusTarget = null) {
+  if (sectionToHide instanceof HTMLElement) {
+    sectionToHide.hidden = true;
+    sectionToHide.setAttribute("aria-hidden", "true");
+  }
+
+  if (sectionToShow instanceof HTMLElement) {
+    sectionToShow.hidden = false;
+    sectionToShow.setAttribute("aria-hidden", "false");
+  }
+
+  const nextFocus = focusTarget
+    || sectionToShow?.querySelector?.("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])");
+
+  if (nextFocus instanceof HTMLElement) {
+    nextFocus.focus();
+  }
 }
 
-if(IS_TEST_HARNESS){
-  const HARNESS_ADVANCED_HASH = '#advanced-settings';
-  const harnessModeMenu = document.getElementById('modeMenu');
-  const harnessModeMenuMain = document.getElementById('modeMenuMain');
-  const harnessModeMenuAdvanced = document.getElementById('modeMenuAdvanced');
-  const harnessGameContainer = document.getElementById('gameContainer');
-  const harnessOverlay = document.getElementById('harnessInspectorOverlay');
+if (modeMenuMainSection instanceof HTMLElement) {
+  modeMenuMainSection.hidden = false;
+  modeMenuMainSection.setAttribute("aria-hidden", "false");
+}
 
-  const harnessState = {
-    advancedVisible: !harnessModeMenuAdvanced?.hidden,
-    overlayDefaultParent: harnessOverlay?.parentElement || harnessGameContainer || null
-  };
+if (modeMenuAdvancedSection instanceof HTMLElement) {
+  modeMenuAdvancedSection.hidden = true;
+  modeMenuAdvancedSection.setAttribute("aria-hidden", "true");
+}
 
-  function setHarnessSectionVisibility(section, visible){
-    if(!section) return;
-    section.hidden = !visible;
-    section.setAttribute('aria-hidden', visible ? 'false' : 'true');
+function hideGameBackgroundForMenu() {
+  if (!menuBackgroundSnapshot) {
+    menuBackgroundSnapshot = {
+      body: document.body.style.backgroundImage,
+      container: gameContainer.style.backgroundImage
+    };
   }
 
-  function moveHarnessOverlay(target){
-    if(!harnessOverlay || !target) return;
-    if(harnessOverlay.parentElement !== target){
-      target.appendChild(harnessOverlay);
-    }
-  }
+  document.body.style.backgroundImage = 'none';
+  gameContainer.style.backgroundImage = 'none';
+}
 
-  function updateHarnessAdvancedVisibility(visible, options = {}){
-    const { updateHash = true, fromHashChange = false } = options;
-    const nextVisible = !!visible;
-    harnessState.advancedVisible = nextVisible;
+function restoreGameBackgroundAfterMenu() {
+  if (!menuBackgroundSnapshot) return;
 
-    setHarnessSectionVisibility(harnessModeMenuMain, !nextVisible);
-    setHarnessSectionVisibility(harnessModeMenuAdvanced, nextVisible);
+  document.body.style.backgroundImage = menuBackgroundSnapshot.body;
+  gameContainer.style.backgroundImage = menuBackgroundSnapshot.container;
 
-    document.body.classList.toggle('harness-advanced-open', nextVisible);
-
-    if(nextVisible){
-      try {
-        loadSettings();
-      } catch(err){
-        console.warn('[Harness] Unable to sync advanced settings.', err);
-      }
-      selectedRuleset = "advanced";
-      syncRulesButtonSkins(selectedRuleset);
-    }
-
-    const overlayTarget = nextVisible
-      ? (harnessModeMenuAdvanced || harnessModeMenu || harnessGameContainer)
-      : (harnessState.overlayDefaultParent || harnessGameContainer || harnessModeMenu);
-    if(overlayTarget){
-      moveHarnessOverlay(overlayTarget);
-    }
-
-    if(updateHash && !fromHashChange && typeof window.history?.pushState === 'function'){
-      const base = `${window.location.pathname}${window.location.search}`;
-      const targetHash = nextVisible ? HARNESS_ADVANCED_HASH : '';
-      const currentHash = window.location.hash || '';
-      if(currentHash !== targetHash){
-        const newUrl = targetHash ? `${base}${targetHash}` : base;
-        window.history.pushState(null, '', newUrl);
-      }
-    }
-
-    window.dispatchEvent(new CustomEvent('paperWingsHarnessViewChange', {
-      detail: { advanced: nextVisible }
-    }));
-  }
-
-  function applyHarnessHashState(){
-    const shouldShow = window.location.hash === HARNESS_ADVANCED_HASH;
-    updateHarnessAdvancedVisibility(shouldShow, { updateHash: false, fromHashChange: true });
-  }
-
-  window.addEventListener('hashchange', applyHarnessHashState);
-
-  window.paperWingsHarness.showAdvancedSettings = function(options = {}){
-    const { updateHash = true, focus = null } = options;
-    updateHarnessAdvancedVisibility(true, { updateHash });
-    if(focus === 'firstControl'){
-      harnessModeMenuAdvanced?.querySelector?.('button, select, input')?.focus?.();
-    }
-  };
-
-  window.paperWingsHarness.showMainView = function(options = {}){
-    const { updateHash = true, focus = null } = options;
-    updateHarnessAdvancedVisibility(false, { updateHash });
-    if(focus === 'advancedButton'){
-      advancedSettingsBtn?.focus?.();
-    } else if(focus === 'classicButton'){
-      classicRulesBtn?.focus?.();
-    }
-  };
-
-  window.paperWingsHarness.isAdvancedVisible = function(){
-    return !!harnessState.advancedVisible;
-  };
-
-  applyHarnessHashState();
+  menuBackgroundSnapshot = null;
 }
 
 const endGameDiv  = document.getElementById("endGameButtons");
@@ -2434,12 +2386,13 @@ function resetGame(){
   globalFrame=0;
   flyingPoints= [];
   buildings = [];
+  points = [];
+  mapPrepared = false;
   if(shouldAutoRandomizeMap()){
     if(settings.mapIndex !== RANDOM_MAP_SENTINEL_INDEX){
       setMapIndexAndPersist(getRandomPlayableMapIndex());
     }
   }
-  applyCurrentMap();
 
   aaUnits = [];
 
@@ -2451,6 +2404,7 @@ function resetGame(){
   currentPlacer = null;
 
   setBackgroundImage('background behind the canvas.png', 'background paper 1.png');
+  hideGameBackgroundForMenu();
 
   // UI reset
   syncModeButtonSkins(null);
@@ -2468,8 +2422,6 @@ function resetGame(){
   // Остановить основной цикл
   stopGameLoop();
 
-  initPoints();
-  renderScoreboard();
   syncTestControls();
 }
 
@@ -2489,15 +2441,15 @@ function startGameLoop(){
 
 /* ======= MENU ======= */
 hotSeatBtn.addEventListener("click",()=>{
-  selectedMode = (selectedMode==="hotSeat" ? null : "hotSeat");
+  selectedMode = "hotSeat";
   updateModeSelection();
 });
 computerBtn.addEventListener("click",()=>{
-  selectedMode = (selectedMode==="computer" ? null : "computer");
+  selectedMode = "computer";
   updateModeSelection();
 });
 onlineBtn.addEventListener("click",()=>{
-  selectedMode = (selectedMode==="online" ? null : "online");
+  selectedMode = "online";
   updateModeSelection();
 });
 if(classicRulesBtn){
@@ -2506,26 +2458,38 @@ if(classicRulesBtn){
     aimingAmplitude = 10 / 5; // 10°
     settings.addAA = false;
     settings.sharpEdges = false;
-    settings.mapIndex = getRandomPlayableMapIndex();
+    setMapIndexAndPersist(getRandomPlayableMapIndex());
     settings.randomizeMapEachRound = true;
     settings.flameStyle = 'random';
     onFlameStyleChanged();
-    applyCurrentMap();
     syncTestControls();
     selectedRuleset = "classic";
     syncRulesButtonSkins(selectedRuleset);
   });
 }
 if(advancedSettingsBtn){
-  advancedSettingsBtn.addEventListener('click', () => {
-    loadSettings();
-    applyCurrentMap();
-    selectedRuleset = "advanced";
+  advancedSettingsBtn.addEventListener('click', (event) => {
+    if(HAS_INLINE_ADVANCED_PANEL){
+      event.preventDefault();
+      swapMenuSections(modeMenuAdvancedSection, modeMenuMainSection);
+      selectedRuleset = "advanced";
+      syncRulesButtonSkins(selectedRuleset);
+      return;
+    }
+
+    window.location.href = 'settings.html';
+  });
+}
+
+if(advancedBackBtn){
+  advancedBackBtn.addEventListener('click', () => {
+    swapMenuSections(modeMenuMainSection, modeMenuAdvancedSection, advancedSettingsBtn);
     syncRulesButtonSkins(selectedRuleset);
   });
 }
 function updateModeSelection(){
   syncModeButtonSkins(selectedMode);
+  syncRulesButtonSkins(selectedRuleset);
 
   const ready = Boolean(selectedMode);
   syncPlayButtonSkin(ready);
@@ -2537,6 +2501,7 @@ playBtn.addEventListener("click",()=>{
     return;
   }
   gameMode = selectedMode;
+  restoreGameBackgroundAfterMenu();
   modeMenuDiv.style.display = "none";
   startNewRound();
 });
@@ -5608,16 +5573,23 @@ noBtn.addEventListener("click", () => {
 });
 
 function startNewRound(){
+  restoreGameBackgroundAfterMenu();
   if(roundTransitionTimeout){
     clearTimeout(roundTransitionTimeout);
     roundTransitionTimeout = null;
   }
+  let mapChangedThisRound = false;
   const shouldRandomize = !suppressAutoRandomMapForNextRound && shouldAutoRandomizeMap() && roundNumber > 0;
   if(shouldRandomize){
     if(settings.mapIndex !== RANDOM_MAP_SENTINEL_INDEX){
       setMapIndexAndPersist(getRandomPlayableMapIndex());
     }
     applyCurrentMap();
+    mapChangedThisRound = true;
+  }
+  if(!mapPrepared){
+    applyCurrentMap();
+    mapChangedThisRound = true;
   }
   suppressAutoRandomMapForNextRound = false;
   cleanupGreenCrashFx();
@@ -5643,10 +5615,9 @@ function startNewRound(){
   roundTextTimer = 120;
 
   globalFrame=0;
-  flyingPoints=[];
-  hasShotThisRound=false;
-  aaUnits = [];
-
+  if(!mapChangedThisRound){
+    resetPlanePositionsForCurrentMap();
+  }
   aiMoveScheduled = false;
   gameCanvas.style.display = "block";
   mantisIndicator.style.display = "block";
@@ -5655,11 +5626,6 @@ function startNewRound(){
 
   setBackgroundImage('pics/background behind the canvas 5.png');
 
-  initPoints(); // ориентации на базе
-  blueFlagCarrier = null;
-  greenFlagCarrier = null;
-  blueFlagStolenBy = null;
-  greenFlagStolenBy = null;
   renderScoreboard();
   if (settings.addAA) {
     phase = 'AA_PLACEMENT';
@@ -5690,6 +5656,7 @@ function getRandomPlayableMapIndex(){
 function setMapIndexAndPersist(nextIndex){
   settings.mapIndex = clampMapIndex(nextIndex);
   setStoredSetting('settings.mapIndex', String(settings.mapIndex));
+  mapPrepared = false;
 }
 
 function restartMatchWithCurrentSettings(options = {}){
@@ -5731,6 +5698,7 @@ function applyCurrentMap(){
   updateFieldDimensions();
   resetPlanePositionsForCurrentMap();
   renderScoreboard();
+  mapPrepared = true;
 }
 
 function getCollisionBuildings(map){

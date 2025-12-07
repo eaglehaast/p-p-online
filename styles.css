@@ -28,15 +28,18 @@ body, button {
   body {
     position: relative;
     font-family: 'Roboto', sans-serif;
+    background-color: #0f0d0a;
     background-image: url("background behind the canvas.png"), url("background paper 1.png");
     background-size: 460px 800px, 460px 800px;
     background-repeat: no-repeat;
     background-position: center top, center top;
     margin: 0;
-    padding: 0;
+    padding: 24px 0 0;
     height: 100dvh;
     overflow: hidden;
     touch-action: none;
+    display: flex;
+    justify-content: center;
   }
 
   .loading-overlay {
@@ -80,10 +83,13 @@ body, button {
     to { transform: rotate(360deg); }
   }
 
-  #gameContainer {
+  body:not(.settings-page) #gameContainer {
     position: absolute;
     width: 460px;
     height: 800px;
+    left: 50%;
+    top: 0;
+    transform: translateX(-50%);
     background-image: url("background behind the canvas.png"), url("background paper 1.png");
     background-size: 460px 800px, 460px 800px;
     background-repeat: no-repeat;
@@ -262,47 +268,19 @@ body, button {
     --control-panel-base-height: 800px;
   }
 
-  /* ===== Temporary background-only layout for the settings control panel ===== */
+  /* ===== Layout for the settings control panel ===== */
   body.settings-page {
     min-height: 100vh;
     margin: 0;
-    padding: 0;
-    background: #000;
+    padding: 24px 0;
+    background-color: #0f0d0a;
+    background-image: url("background behind the canvas.png"), url("background paper 1.png");
+    background-size: 460px 800px, 460px 800px;
+    background-repeat: repeat;
+    background-position: center top, center top;
     display: flex;
     justify-content: center;
-    align-items: center;
-  }
-
-  .settings-container {
-    width: var(--control-panel-base-width);
-    height: var(--control-panel-base-height);
-    position: relative;
-    display: block;
-    background-image: url("ui_controlpanel/cp_background.png");
-    background-repeat: no-repeat;
-    background-size: 100% 100%;
-  }
-
-  .settings-container #modeMenu {
-    width: 100%;
-    height: 100%;
-    position: relative;
-    margin: 0;
-    padding: 0;
-    transform: none !important;
-    overflow: hidden;
-    display: none !important;
-  }
-
-  /* ===== Temporary background-only layout for the settings control panel ===== */
-  body.settings-page {
-    min-height: 100vh;
-    margin: 0;
-    padding: 0;
-    background: #000;
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    align-items: flex-start;
   }
 
   body.settings-page .settings-container {
@@ -313,12 +291,14 @@ body, button {
     background-image: url("ui_controlpanel/cp_background.png");
     background-repeat: no-repeat;
     background-size: 100% 100%;
+    box-shadow: 0 18px 36px rgba(0, 0, 0, 0.35);
   }
 
   body.settings-page #modeMenu {
     width: 100%;
     height: 100%;
     position: relative;
+    left: 0;
     margin: 0;
     padding: 0;
     transform: none !important;
@@ -580,67 +560,6 @@ body, button {
       pointer-events: none;
       transform-origin: right center;
     }
-
-  /* Визуализация индикатора дальности на тестовых страницах */
-  body.test-harness #flightRangeIndicator.control-visual {
-    position: relative;
-    width: 178px;
-    height: 96px;
-    padding: 12px 16px;
-    border-radius: 14px;
-    box-sizing: border-box;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0))
-        padding-box,
-      radial-gradient(circle at 20% 30%, rgba(54, 196, 255, 0.4), rgba(38, 79, 140, 0.1) 45%, rgba(17, 32, 66, 0.1)) border-box;
-  }
-
-  body.test-harness #flightRangeIndicator.control-visual .jet {
-    position: relative;
-    width: 124px;
-    height: 52px;
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-  }
-
-  body.test-harness #flightRangeIndicator.control-visual .wing-trail {
-    position: absolute;
-    left: 8px;
-    width: 54px;
-    height: 6px;
-    border-radius: 6px;
-    background: linear-gradient(90deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0));
-  }
-
-  body.test-harness #flightRangeIndicator.control-visual .wing-trail.top {
-    top: 12px;
-  }
-
-  body.test-harness #flightRangeIndicator.control-visual .wing-trail.bottom {
-    bottom: 12px;
-  }
-
-  body.test-harness #flightRangeIndicator.control-visual .jet-flame {
-    position: absolute;
-    left: 0;
-    top: 18px;
-    width: 46px;
-    height: 14px;
-    filter: drop-shadow(0 0 6px rgba(255, 147, 41, 0.6));
-    pointer-events: none;
-  }
-
-  body.test-harness #flightRangeIndicator.control-visual .jet-plane {
-    position: relative;
-    left: 20px;
-    width: 76px;
-    height: 40px;
-    filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.35));
-  }
-
-  body.test-harness #flightRangeIndicator.control-visual .jet-plane polygon {
-    fill: #d7e9ff;
-  }
 
   .settings-container #frame_range_2_counter {
     position: absolute;
@@ -1169,19 +1088,84 @@ body, button {
   #modeMenu {
     position: absolute;
     top: 0;
-    left: 0;
+    left: 50%;
+    transform: translateX(-50%);
     width: 460px;
     height: 800px;
+    --mm-base-width: 460;
+    --mm-base-height: 800;
     background: url("ui_mainmenu/mm_background.png") center / cover no-repeat;
     padding: 0;
     margin: 0;
     z-index: 1000;
     overflow: hidden;
     display: block;
-    transform: none;
     box-shadow: none;
     border: none;
   }
+
+#modeMenuMain {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+#modeMenuAdvanced {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 20px;
+  background: rgba(255, 255, 255, 0.9);
+  overflow-y: auto;
+}
+
+.mode-menu__panel-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mode-menu__panel-text {
+  display: grid;
+  gap: 6px;
+  max-width: 520px;
+}
+
+.mode-menu__panel-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 12px;
+  margin: 0;
+  color: #8a8a8a;
+}
+
+.mode-menu__panel-title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.2;
+  color: #1c1c1c;
+}
+
+.mode-menu__panel-subtitle {
+  margin: 0;
+  color: #3b3b3b;
+  line-height: 1.45;
+}
+
+.mode-menu__panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.mode-menu__panel-actions--buttons {
+  justify-content: flex-start;
+}
 
 /* Заголовок */
 #modeMenu .game-title {
@@ -1194,6 +1178,22 @@ body, button {
   padding: 0;
   font-size: 0;
   opacity: 0;
+}
+
+#modeMenu .control-visual--stacked {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+#modeMenu .control-input {
+  padding: 10px 12px;
+  border: 2px solid #ff0000c8;
+  border-radius: 10px;
+  font-size: 16px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 #modeMenu .mode-options,
@@ -1228,7 +1228,8 @@ body:not(.settings-page) #modeMenu .mode-menu__btn.disabled {
 body:not(.settings-page) #modeMenu .mode-menu__btn--hotseat {
   width: calc(205 / var(--mm-base-width) * 100%);
   height: calc(48 / var(--mm-base-height) * 100%);
-  top: calc(220 / var(--mm-base-height) * 100%);
+  top: calc(151 / var(--mm-base-height) * 100%);
+  left: calc(128 / var(--mm-base-width) * 100%);
   background-image: url('ui_mainmenu/mm_hotseat_Default.png');
 }
 
@@ -1239,7 +1240,8 @@ body:not(.settings-page) #modeMenu .mode-menu__btn--hotseat.selected {
 body:not(.settings-page) #modeMenu .mode-menu__btn--computer {
   width: calc(224 / var(--mm-base-width) * 100%);
   height: calc(48 / var(--mm-base-height) * 100%);
-  top: calc(282 / var(--mm-base-height) * 100%);
+  top: calc(213 / var(--mm-base-height) * 100%);
+  left: calc(118 / var(--mm-base-width) * 100%);
   background-image: url('ui_mainmenu/mm_computer_default.png');
 }
 
@@ -1250,7 +1252,8 @@ body:not(.settings-page) #modeMenu .mode-menu__btn--computer.selected {
 body:not(.settings-page) #modeMenu .mode-menu__btn--online {
   width: calc(156 / var(--mm-base-width) * 100%);
   height: calc(48 / var(--mm-base-height) * 100%);
-  top: calc(344 / var(--mm-base-height) * 100%);
+  top: calc(275 / var(--mm-base-height) * 100%);
+  left: calc(152 / var(--mm-base-width) * 100%);
   background-image: url('ui_mainmenu/mm_online_default.png');
 }
 
@@ -1261,7 +1264,8 @@ body:not(.settings-page) #modeMenu .mode-menu__btn--online.selected {
 body:not(.settings-page) #modeMenu .mode-menu__btn--play {
   width: calc(120 / var(--mm-base-width) * 100%);
   height: calc(48 / var(--mm-base-height) * 100%);
-  top: calc(418 / var(--mm-base-height) * 100%);
+  top: calc(383 / var(--mm-base-height) * 100%);
+  left: calc(170 / var(--mm-base-width) * 100%);
   background-image: url('ui_mainmenu/mm_play_default.png');
 }
 
@@ -1272,7 +1276,8 @@ body:not(.settings-page) #modeMenu .mode-menu__btn--play.active {
 body:not(.settings-page) #modeMenu .mode-menu__btn--classic {
   width: calc(304 / var(--mm-base-width) * 100%);
   height: calc(48 / var(--mm-base-height) * 100%);
-  top: calc(520 / var(--mm-base-height) * 100%);
+  top: calc(491 / var(--mm-base-height) * 100%);
+  left: calc(94 / var(--mm-base-width) * 100%);
   background-image: url('ui_mainmenu/mm_classicrules_default.png');
 }
 
@@ -1283,7 +1288,8 @@ body:not(.settings-page) #modeMenu .mode-menu__btn--classic.selected {
 body:not(.settings-page) #modeMenu .mode-menu__btn--advanced {
   width: calc(269 / var(--mm-base-width) * 100%);
   height: calc(86 / var(--mm-base-height) * 100%);
-  top: calc(590 / var(--mm-base-height) * 100%);
+  top: calc(553 / var(--mm-base-height) * 100%);
+  left: calc(111 / var(--mm-base-width) * 100%);
   background-image: url('ui_mainmenu/mm_advancedsettings_default.png');
 }
 
@@ -1461,6 +1467,25 @@ body:not(.settings-page) #modeMenu .mode-menu__btn--advanced.selected {
   font-size: 14px;
   width: 100%;
   flex: 1 1 100%;
+}
+
+#modeMenu .control-btn {
+  background: linear-gradient(135deg, #f56666, #e02c2c);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  min-width: 160px;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.15);
+}
+
+#modeMenu .control-btn--secondary {
+  background: linear-gradient(135deg, #f7f7f7, #e1e1e1);
+  color: #2c2c2c;
+  border: 2px solid rgba(0, 0, 0, 0.08);
 }
 
 /* Индикатор дальности — самолёт с огнём */
