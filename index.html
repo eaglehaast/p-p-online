@@ -49,20 +49,31 @@
   </div>
 
     <!-- Game Mode Selection Menu -->
-  <div id="modeMenu">
-    <h1 class="game-title">Paper Wings!</h1>
+  <div id="modeMenu" aria-label="Главное меню">
+    <div class="mode-menu__layer" aria-hidden="false">
+      <button id="hotSeatBtn" class="mode-menu__btn mode-menu__btn--hotseat" type="button" aria-label="Hot Seat">
+        <span class="visually-hidden">Hot Seat</span>
+      </button>
 
-    <div class="mode-options">
-      <button id="hotSeatBtn" class="mode-btn">Hot Seat</button>
-      <button id="computerBtn" class="mode-btn">Computer</button>
-      <button id="onlineBtn" class="mode-btn" disabled>Online</button>
-    </div>
+      <button id="computerBtn" class="mode-menu__btn mode-menu__btn--computer" type="button" aria-label="Computer">
+        <span class="visually-hidden">Computer</span>
+      </button>
 
-    <button id="playBtn" class="disabled" disabled>Play</button>
+      <button id="onlineBtn" class="mode-menu__btn mode-menu__btn--online" type="button" aria-label="Online" disabled>
+        <span class="visually-hidden">Online</span>
+      </button>
 
-    <div class="rules-options">
-      <button id="classicRulesBtn" class="rules-btn selected">Classic Rules</button>
-      <button id="advancedSettingsBtn" class="rules-btn">Advanced Settings</button>
+      <button id="playBtn" class="mode-menu__btn mode-menu__btn--play disabled" type="button" aria-label="Play" disabled>
+        <span class="visually-hidden">Play</span>
+      </button>
+
+      <button id="classicRulesBtn" class="mode-menu__btn mode-menu__btn--classic selected" type="button" aria-label="Classic Rules">
+        <span class="visually-hidden">Classic Rules</span>
+      </button>
+
+      <button id="advancedSettingsBtn" class="mode-menu__btn mode-menu__btn--advanced" type="button" aria-label="Advanced Settings">
+        <span class="visually-hidden">Advanced Settings</span>
+      </button>
     </div>
   </div> <!-- /modeMenu -->
 
