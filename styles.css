@@ -1230,7 +1230,8 @@ body:not(.settings-page) #modeMenu .mode-menu__btn.disabled {
 body:not(.settings-page) #modeMenu .mode-menu__btn--hotseat {
   width: calc(205 / var(--mm-base-width) * 100%);
   height: calc(48 / var(--mm-base-height) * 100%);
-  top: calc(220 / var(--mm-base-height) * 100%);
+  top: calc(151 / var(--mm-base-height) * 100%);
+  left: calc(128 / var(--mm-base-width) * 100%);
   background-image: url('ui_mainmenu/mm_hotseat_Default.png');
 }
 
@@ -1241,7 +1242,8 @@ body:not(.settings-page) #modeMenu .mode-menu__btn--hotseat.selected {
 body:not(.settings-page) #modeMenu .mode-menu__btn--computer {
   width: calc(224 / var(--mm-base-width) * 100%);
   height: calc(48 / var(--mm-base-height) * 100%);
-  top: calc(282 / var(--mm-base-height) * 100%);
+  top: calc(213 / var(--mm-base-height) * 100%);
+  left: calc(118 / var(--mm-base-width) * 100%);
   background-image: url('ui_mainmenu/mm_computer_default.png');
 }
 
@@ -1252,7 +1254,8 @@ body:not(.settings-page) #modeMenu .mode-menu__btn--computer.selected {
 body:not(.settings-page) #modeMenu .mode-menu__btn--online {
   width: calc(156 / var(--mm-base-width) * 100%);
   height: calc(48 / var(--mm-base-height) * 100%);
-  top: calc(344 / var(--mm-base-height) * 100%);
+  top: calc(275 / var(--mm-base-height) * 100%);
+  left: calc(152 / var(--mm-base-width) * 100%);
   background-image: url('ui_mainmenu/mm_online_default.png');
 }
 
@@ -1263,7 +1266,8 @@ body:not(.settings-page) #modeMenu .mode-menu__btn--online.selected {
 body:not(.settings-page) #modeMenu .mode-menu__btn--play {
   width: calc(120 / var(--mm-base-width) * 100%);
   height: calc(48 / var(--mm-base-height) * 100%);
-  top: calc(418 / var(--mm-base-height) * 100%);
+  top: calc(383 / var(--mm-base-height) * 100%);
+  left: calc(170 / var(--mm-base-width) * 100%);
   background-image: url('ui_mainmenu/mm_play_default.png');
 }
 
@@ -1274,7 +1278,8 @@ body:not(.settings-page) #modeMenu .mode-menu__btn--play.active {
 body:not(.settings-page) #modeMenu .mode-menu__btn--classic {
   width: calc(304 / var(--mm-base-width) * 100%);
   height: calc(48 / var(--mm-base-height) * 100%);
-  top: calc(520 / var(--mm-base-height) * 100%);
+  top: calc(491 / var(--mm-base-height) * 100%);
+  left: calc(94 / var(--mm-base-width) * 100%);
   background-image: url('ui_mainmenu/mm_classicrules_default.png');
 }
 
@@ -1285,7 +1290,8 @@ body:not(.settings-page) #modeMenu .mode-menu__btn--classic.selected {
 body:not(.settings-page) #modeMenu .mode-menu__btn--advanced {
   width: calc(269 / var(--mm-base-width) * 100%);
   height: calc(86 / var(--mm-base-height) * 100%);
-  top: calc(590 / var(--mm-base-height) * 100%);
+  top: calc(553 / var(--mm-base-height) * 100%);
+  left: calc(111 / var(--mm-base-width) * 100%);
   background-image: url('ui_mainmenu/mm_advancedsettings_default.png');
 }
 
