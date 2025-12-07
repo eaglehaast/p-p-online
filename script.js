@@ -992,6 +992,8 @@ function spawnExplosion(x, y, color = null) {
 });
 
 const modeMenuDiv = document.getElementById("modeMenu");
+const modeMenuMainSection = document.getElementById("modeMenuMain");
+const modeMenuAdvancedSection = document.getElementById("modeMenuAdvanced");
 const hotSeatBtn  = document.getElementById("hotSeatBtn");
 const computerBtn = document.getElementById("computerBtn");
 const onlineBtn   = document.getElementById("onlineBtn");
@@ -1000,13 +1002,43 @@ const playBtn     = document.getElementById("playBtn");
 
 const classicRulesBtn     = document.getElementById("classicRulesBtn");
 const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
-const HAS_INLINE_ADVANCED_PANEL = !!document.getElementById("modeMenuAdvanced");
+const advancedBackBtn = document.getElementById("advancedBackBtn");
+const HAS_INLINE_ADVANCED_PANEL = !!modeMenuAdvancedSection;
 
 let selectedMode = null;
 let selectedRuleset = "classic";
 let mapPrepared = false;
 
 let menuBackgroundSnapshot = null;
+
+function swapMenuSections(sectionToShow, sectionToHide, focusTarget = null) {
+  if (sectionToHide instanceof HTMLElement) {
+    sectionToHide.hidden = true;
+    sectionToHide.setAttribute("aria-hidden", "true");
+  }
+
+  if (sectionToShow instanceof HTMLElement) {
+    sectionToShow.hidden = false;
+    sectionToShow.setAttribute("aria-hidden", "false");
+  }
+
+  const nextFocus = focusTarget
+    || sectionToShow?.querySelector?.("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])");
+
+  if (nextFocus instanceof HTMLElement) {
+    nextFocus.focus();
+  }
+}
+
+if (modeMenuMainSection instanceof HTMLElement) {
+  modeMenuMainSection.hidden = false;
+  modeMenuMainSection.setAttribute("aria-hidden", "false");
+}
+
+if (modeMenuAdvancedSection instanceof HTMLElement) {
+  modeMenuAdvancedSection.hidden = true;
+  modeMenuAdvancedSection.setAttribute("aria-hidden", "true");
+}
 
 function hideGameBackgroundForMenu() {
   if (!menuBackgroundSnapshot) {
@@ -2439,26 +2471,20 @@ if(advancedSettingsBtn){
   advancedSettingsBtn.addEventListener('click', (event) => {
     if(HAS_INLINE_ADVANCED_PANEL){
       event.preventDefault();
-      const mainSection = document.getElementById('modeMenuMain');
-      const advancedSection = document.getElementById('modeMenuAdvanced');
-
-      if(mainSection){
-        mainSection.hidden = true;
-        mainSection.setAttribute('aria-hidden', 'true');
-      }
-
-      if(advancedSection){
-        advancedSection.hidden = false;
-        advancedSection.setAttribute('aria-hidden', 'false');
-        advancedSection.querySelector?.('button, select, input')?.focus?.();
-      }
-
+      swapMenuSections(modeMenuAdvancedSection, modeMenuMainSection);
       selectedRuleset = "advanced";
       syncRulesButtonSkins(selectedRuleset);
       return;
     }
 
     window.location.href = 'settings.html';
+  });
+}
+
+if(advancedBackBtn){
+  advancedBackBtn.addEventListener('click', () => {
+    swapMenuSections(modeMenuMainSection, modeMenuAdvancedSection, advancedSettingsBtn);
+    syncRulesButtonSkins(selectedRuleset);
   });
 }
 function updateModeSelection(){

@@ -1104,6 +1104,69 @@ body, button {
     border: none;
   }
 
+#modeMenuMain {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+#modeMenuAdvanced {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 20px;
+  background: rgba(255, 255, 255, 0.9);
+  overflow-y: auto;
+}
+
+.mode-menu__panel-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mode-menu__panel-text {
+  display: grid;
+  gap: 6px;
+  max-width: 520px;
+}
+
+.mode-menu__panel-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 12px;
+  margin: 0;
+  color: #8a8a8a;
+}
+
+.mode-menu__panel-title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.2;
+  color: #1c1c1c;
+}
+
+.mode-menu__panel-subtitle {
+  margin: 0;
+  color: #3b3b3b;
+  line-height: 1.45;
+}
+
+.mode-menu__panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.mode-menu__panel-actions--buttons {
+  justify-content: flex-start;
+}
+
 /* Заголовок */
 #modeMenu .game-title {
   position: absolute;
@@ -1115,6 +1178,22 @@ body, button {
   padding: 0;
   font-size: 0;
   opacity: 0;
+}
+
+#modeMenu .control-visual--stacked {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+#modeMenu .control-input {
+  padding: 10px 12px;
+  border: 2px solid #ff0000c8;
+  border-radius: 10px;
+  font-size: 16px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 #modeMenu .mode-options,
@@ -1388,6 +1467,25 @@ body:not(.settings-page) #modeMenu .mode-menu__btn--advanced.selected {
   font-size: 14px;
   width: 100%;
   flex: 1 1 100%;
+}
+
+#modeMenu .control-btn {
+  background: linear-gradient(135deg, #f56666, #e02c2c);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  min-width: 160px;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.15);
+}
+
+#modeMenu .control-btn--secondary {
+  background: linear-gradient(135deg, #f7f7f7, #e1e1e1);
+  color: #2c2c2c;
+  border: 2px solid rgba(0, 0, 0, 0.08);
 }
 
 /* Индикатор дальности — самолёт с огнём */
