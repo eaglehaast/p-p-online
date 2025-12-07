@@ -2543,16 +2543,17 @@ if(classicRulesBtn){
 }
 if(advancedSettingsBtn){
   advancedSettingsBtn.addEventListener('click', (event) => {
-    const hasHarnessView = IS_TEST_HARNESS || HAS_INLINE_ADVANCED_PANEL;
     const showHarnessAdvanced = window.paperWingsHarness?.showAdvancedSettings;
+    const hasHarnessPanel = HAS_INLINE_ADVANCED_PANEL;
+    const hasHarnessHandler = typeof showHarnessAdvanced === 'function';
 
-    if(hasHarnessView && typeof showHarnessAdvanced === 'function'){
+    if(hasHarnessHandler){
       event.preventDefault();
       showHarnessAdvanced({ updateHash: true, focus: 'firstControl' });
       return;
     }
 
-    if(hasHarnessView){
+    if(hasHarnessPanel){
       event.preventDefault();
       const mainSection = document.getElementById('modeMenuMain');
       const advancedSection = document.getElementById('modeMenuAdvanced');
