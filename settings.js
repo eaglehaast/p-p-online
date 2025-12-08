@@ -732,31 +732,12 @@ const previewHandle = {
   origAngle: 0
 };
 
-function formatFlightRangeValue(cells){
-  const roundedCells = Math.round(cells);
-  const absCells = Math.abs(roundedCells);
-  const mod10 = absCells % 10;
-  const mod100 = absCells % 100;
-
-  let unit = 'клеток';
-  if(mod10 === 1 && mod100 !== 11){
-    unit = 'клетка';
-  } else if(mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)){
-    unit = 'клетки';
-  }
-
-  return `${roundedCells} ${unit}`;
-}
-
 function updateFlightRangeDisplay(stepOverride){
   const el = document.getElementById('flightRangeDisplay');
   const transformStep = Number.isFinite(stepOverride) ? stepOverride : flightRangeStep;
   const displayedCells = getRangeValueForStep(transformStep);
 
-  if(el) el.textContent = formatFlightRangeValue(displayedCells);
-
-  const strip = document.getElementById('flightRangeStrip');
-  if(strip) strip.style.transform = `translateX(${-transformStep * RANGE_HALF_STEP_PX}px)`;
+  if(el) el.textContent = `${displayedCells}`;
 }
 
 function updateFlightRangeFlame(){
