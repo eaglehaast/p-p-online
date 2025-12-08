@@ -642,10 +642,7 @@ body, button {
     fill: #d7e9ff;
   }
 
-  .settings-container #frame_range_2_counter {
-    position: absolute;
-    left: 105px;
-    top: 293px;
+  .range-display {
     width: 58px;
     height: 35px;
     display: flex;
@@ -655,7 +652,14 @@ body, button {
     font-size: 20px;
     color: #1b1205;
     text-shadow: 0 1px 1px rgba(255, 255, 255, 0.5);
+  }
+
+  .settings-container #frame_range_2_counter {
+    position: absolute;
+    left: 105px;
+    top: 293px;
     overflow: hidden;
+    z-index: 30;
   }
 
   .range-strip-viewport {
