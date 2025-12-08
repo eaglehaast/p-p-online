@@ -1010,15 +1010,13 @@ function shouldUseInlineAdvancedPanel(){
   }
 
   const fileName = (window.location.pathname.split("/").pop() || "").toLowerCase();
-  const hash = (window.location.hash || "").toLowerCase();
   const params = new URLSearchParams(window.location.search || "");
 
   const hasTestHarnessFlag = Boolean(window.ENABLE_INLINE_ADVANCED_MENU)
     || params.get("inline-advanced") === "1";
   const isTestHarnessFile = fileName === "test-harness.html" || fileName === "settings-test.html";
-  const hasAdvancedHash = hash === "#advanced-settings";
 
-  return hasTestHarnessFlag || isTestHarnessFile || hasAdvancedHash;
+  return hasTestHarnessFlag || isTestHarnessFile;
 }
 
 const HAS_INLINE_ADVANCED_PANEL = !!modeMenuAdvancedSection && shouldUseInlineAdvancedPanel();
