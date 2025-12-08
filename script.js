@@ -1003,7 +1003,25 @@ const playBtn     = document.getElementById("playBtn");
 const classicRulesBtn     = document.getElementById("classicRulesBtn");
 const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
 const advancedBackBtn = document.getElementById("advancedBackBtn");
-const HAS_INLINE_ADVANCED_PANEL = !!modeMenuAdvancedSection;
+
+function shouldUseInlineAdvancedPanel(){
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const fileName = (window.location.pathname.split("/").pop() || "").toLowerCase();
+  const hash = (window.location.hash || "").toLowerCase();
+  const params = new URLSearchParams(window.location.search || "");
+
+  const hasTestHarnessFlag = Boolean(window.ENABLE_INLINE_ADVANCED_MENU)
+    || params.get("inline-advanced") === "1";
+  const isTestHarnessFile = fileName === "test-harness.html" || fileName === "settings-test.html";
+  const hasAdvancedHash = hash === "#advanced-settings";
+
+  return hasTestHarnessFlag || isTestHarnessFile || hasAdvancedHash;
+}
+
+const HAS_INLINE_ADVANCED_PANEL = !!modeMenuAdvancedSection && shouldUseInlineAdvancedPanel();
 
 let selectedMode = null;
 let selectedRuleset = "classic";
@@ -1038,6 +1056,12 @@ if (modeMenuMainSection instanceof HTMLElement) {
 if (modeMenuAdvancedSection instanceof HTMLElement) {
   modeMenuAdvancedSection.hidden = true;
   modeMenuAdvancedSection.setAttribute("aria-hidden", "true");
+}
+
+if (HAS_INLINE_ADVANCED_PANEL && typeof window !== "undefined" && window.location.hash === "#advanced-settings") {
+  swapMenuSections(modeMenuAdvancedSection, modeMenuMainSection);
+  selectedRuleset = "advanced";
+  syncRulesButtonSkins(selectedRuleset);
 }
 
 function hideGameBackgroundForMenu() {
