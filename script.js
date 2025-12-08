@@ -1263,9 +1263,6 @@ const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
 if (typeof window.STAR_READY === 'undefined') window.STAR_READY = false;
 
 const brickFrameImg = new Image();
-// Load the default map on startup so we don't request a missing image
-// and fail to initialize the playing field before `applyCurrentMap()` runs.
-brickFrameImg.src = "map 1 - clear sky 3.png";
 let brickFrameData = null;
 
 let FIELD_LEFT = 0;
