@@ -5556,12 +5556,6 @@ const buildingSize = {
   rectangle_triple: { width: 120, height: 40 }
 };
 
-function addBuildingsRandomly(count){
-  for(let i=0;i<count;i++){
-    const b = generateRandomBuildingAligned();
-    if(b) buildings.push(b);
-  }
-}
 function generateRandomBuildingAligned(){
   const maxAttempts=20;
   let attempt=0;
