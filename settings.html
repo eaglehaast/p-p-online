@@ -92,57 +92,54 @@
     </div>
 
     <div class="cp-flight-range" role="group" aria-label="Настройка дальности полёта">
-        <div id="flightRangeIndicator" class="cp-flight-range__indicator">
-          <div id="frame_range_1_visual" aria-hidden="true">
-            <div class="range-visual">
-              <div class="contrail-container contrail-container--top">
-                <img
-                  id="contrail1"
-                  class="contrail"
-                  src="ui_controlpanel/cp_range_contrail1.gif"
-                  onerror="console.warn('Не удалось загрузить cp_range_contrail1.gif'); this.onerror=null;"
-                  alt=""
-                  aria-hidden="true"
-                />
-              </div>
-              <div class="contrail-container contrail-container--bottom">
-                <img
-                  id="contrail2"
-                  class="contrail"
-                  src="ui_controlpanel/cp_range_contrail2.gif"
-                  onerror="console.warn('Не удалось загрузить cp_range_contrail2.gif'); this.onerror=null;"
-                  alt=""
-                  aria-hidden="true"
-                />
-              </div>
+      <div id="flightRangeIndicator" class="cp-flight-range__indicator">
+        <div id="frame_range_1_visual" aria-hidden="true">
+          <div class="range-visual">
+            <div class="contrail-container contrail-container--top">
               <img
-                id="flameTrail"
-                class="jet-flame jet-flame--trail"
-                src="ui_controlpanel/cp_range_flame_trail4.gif"
-                onerror="console.warn('Не удалось загрузить cp_range_flame_trail4.gif'); this.onerror=null;"
+                id="contrail1"
+                class="contrail"
+                src="ui_controlpanel/cp_range_contrail1.gif"
+                onerror="console.warn('Не удалось загрузить cp_range_contrail1.gif'); this.onerror=null;"
                 alt=""
                 aria-hidden="true"
               />
+            </div>
+            <div class="contrail-container contrail-container--bottom">
+              <img
+                id="contrail2"
+                class="contrail"
+                src="ui_controlpanel/cp_range_contrail2.gif"
+                onerror="console.warn('Не удалось загрузить cp_range_contrail2.gif'); this.onerror=null;"
+                alt=""
+                aria-hidden="true"
+              />
+            </div>
+            <img
+              id="flameTrail"
+              class="jet-flame jet-flame--trail"
+              src="ui_controlpanel/cp_range_flame_trail4.gif"
+              onerror="console.warn('Не удалось загрузить cp_range_flame_trail4.gif'); this.onerror=null;"
+              alt=""
+              aria-hidden="true"
+            />
             <img class="jet-plane" src="ui_controlpanel/cp_range_plane 2.png" alt="" />
           </div>
         </div>
-        <div id="frame_range_2_counter" class="range-display" role="status" aria-live="polite">
-            <div class="range-strip-viewport" aria-hidden="true">
-            <div
-              id="flightRangeStrip"
-              class="range-strip"
-              style="transform: translateX(-116px);"
-            >
-              <div class="range-strip__value">5</div>
-              <div class="range-strip__value">10</div>
-              <div class="range-strip__value">15</div>
-              <div class="range-strip__value">20</div>
-              <div class="range-strip__value">25</div>
-              <div class="range-strip__value">30</div>
-            </div>
+      </div>
+
+      <div id="frame_range_2_counter" class="range-display" role="status" aria-live="polite">
+        <div class="range-strip-viewport" aria-hidden="true">
+          <div id="flightRangeStrip" class="range-strip">
+            <div class="range-strip__value">5</div>
+            <div class="range-strip__value">10</div>
+            <div class="range-strip__value">15</div>
+            <div class="range-strip__value">20</div>
+            <div class="range-strip__value">25</div>
+            <div class="range-strip__value">30</div>
           </div>
-          <span id="flightRangeDisplay" class="visually-hidden">15</span>
         </div>
+        <span id="flightRangeDisplay" class="visually-hidden">15</span>
       </div>
 
       <div class="cp-flight-range__frame" aria-hidden="true"></div>
