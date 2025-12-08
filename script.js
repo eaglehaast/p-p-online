@@ -1137,24 +1137,38 @@ const PLANE_ASSET_PATHS = {
   greenWreck: "planes/green plane fall.png"
 };
 
-const bluePlaneImg = new Image();
-bluePlaneImg.src = PLANE_ASSET_PATHS.blue;
+let bluePlaneImg = null;
+let greenPlaneImg = null;
+let blueCounterPlaneImg = null;
+let greenCounterPlaneImg = null;
+let bluePlaneWreckImg = null;
+let greenPlaneWreckImg = null;
 
-const greenPlaneImg = new Image();
+let planeSpritesPreloaded = false;
+function preloadPlaneSprites() {
+  if (planeSpritesPreloaded) {
+    return;
+  }
+  bluePlaneImg = new Image();
+  bluePlaneImg.src = PLANE_ASSET_PATHS.blue;
 
-greenPlaneImg.src = PLANE_ASSET_PATHS.green;
+  greenPlaneImg = new Image();
+  greenPlaneImg.src = PLANE_ASSET_PATHS.green;
 
-const blueCounterPlaneImg = new Image();
-blueCounterPlaneImg.src = PLANE_ASSET_PATHS.blueCounter;
+  blueCounterPlaneImg = new Image();
+  blueCounterPlaneImg.src = PLANE_ASSET_PATHS.blueCounter;
 
-const greenCounterPlaneImg = new Image();
-greenCounterPlaneImg.src = PLANE_ASSET_PATHS.greenCounter;
+  greenCounterPlaneImg = new Image();
+  greenCounterPlaneImg.src = PLANE_ASSET_PATHS.greenCounter;
 
-const bluePlaneWreckImg = new Image();
-bluePlaneWreckImg.src = PLANE_ASSET_PATHS.blueWreck;
+  bluePlaneWreckImg = new Image();
+  bluePlaneWreckImg.src = PLANE_ASSET_PATHS.blueWreck;
 
-const greenPlaneWreckImg = new Image();
-greenPlaneWreckImg.src = PLANE_ASSET_PATHS.greenWreck;
+  greenPlaneWreckImg = new Image();
+  greenPlaneWreckImg.src = PLANE_ASSET_PATHS.greenWreck;
+
+  planeSpritesPreloaded = true;
+}
 const flameImages = new Map();
 for (const src of BURNING_FLAME_SRCS) {
   const img = new Image();
@@ -5417,6 +5431,7 @@ noBtn.addEventListener("click", () => {
 });
 
 function startNewRound(){
+  preloadPlaneSprites();
   restoreGameBackgroundAfterMenu();
   if(roundTransitionTimeout){
     clearTimeout(roundTransitionTimeout);
