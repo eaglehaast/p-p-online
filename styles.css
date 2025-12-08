@@ -642,7 +642,9 @@ body, button {
     fill: #d7e9ff;
   }
 
+
   .range-display {
+    position: relative;
     width: 58px;
     height: 35px;
     display: flex;
@@ -684,6 +686,15 @@ body, button {
     font: inherit;
     color: inherit;
     text-shadow: inherit;
+  }
+
+  .range-display__value {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
   }
 
   .settings-container .cp-flight-range__frame {
