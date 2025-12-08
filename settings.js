@@ -776,33 +776,21 @@ function updateFlightRangeFlame(){
 }
 
 function changeFlightRangeStep(delta){
-  const nextStep = clampRangeStep(flightRangeStep + delta);
-  const snappedStep = Math.round(nextStep / 2) * 2;
+  const currentIndex = Math.floor(flightRangeStep / 2);
+  const nextIndex = Math.min(
+    RANGE_DISPLAY_VALUES.length - 1,
+    Math.max(0, currentIndex + delta)
+  );
 
-  if(nextStep === flightRangeStep && snappedStep === flightRangeStep){
+  if(nextIndex === currentIndex){
     return;
   }
 
-  const shouldSnapAfterHalfStep = nextStep !== snappedStep;
+  flightRangeStep = nextIndex * 2;
+  flightRangeCells = RANGE_DISPLAY_VALUES[nextIndex];
 
-  // Animate toward the requested half-step first.
-  updateFlightRangeDisplay(nextStep);
-
-  // Then lock the value and center position to the nearest full cell.
-  syncFlightRangeWithStep(snappedStep);
+  updateFlightRangeDisplay();
   updateFlightRangeFlame();
-
-  // Keep the visual strip at the half-step during the animation, but
-  // ensure the displayed value matches the snapped step immediately.
-  updateFlightRangeDisplay(nextStep);
-
-  if(shouldSnapAfterHalfStep){
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => updateFlightRangeDisplay(snappedStep));
-    });
-  } else {
-    updateFlightRangeDisplay();
-  }
   saveSettings();
 }
 
