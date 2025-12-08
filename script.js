@@ -240,14 +240,6 @@ function setLoadingOverlayVisible(isVisible) {
   loadingOverlay.classList.toggle("loading-overlay--hidden", !isVisible);
 }
 
-function showLoadingOverlay() {
-  setLoadingOverlayVisible(true);
-}
-
-function hideLoadingOverlay() {
-  setLoadingOverlayVisible(false);
-}
-
 rebuildHudPlaneStyleCache();
 
 function formatNumericInputValue(value, fractionDigits = 2) {
