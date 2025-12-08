@@ -660,41 +660,13 @@ body, button {
     position: absolute;
     left: 105px;
     top: 293px;
-    overflow: hidden;
     z-index: 30;
   }
 
-  .range-strip-viewport {
-    width: 58px;
-    height: 35px;
-    overflow: hidden;
-  }
-
-  .range-strip {
-    display: flex;
-    align-items: center;
-    transition: transform 180ms ease;
-    will-change: transform;
-  }
-
-  .range-strip__value {
-    width: 58px;
-    height: 35px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font: inherit;
-    color: inherit;
-    text-shadow: inherit;
-  }
-
   .range-display__value {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    pointer-events: none;
+    display: block;
+    width: 100%;
+    text-align: center;
   }
 
   .settings-container .cp-flight-range__frame {
