@@ -2093,6 +2093,7 @@ const STAR_IMAGES = {
 
 let pendingStarImages = 0;
 let starAssetsInitialized = false;
+let starImagesRequested = false;
 
 function finalizeStarLoading(){
   if (starAssetsInitialized) return;
@@ -2175,6 +2176,12 @@ function loadStarImages(){
   if (pendingStarImages === 0){
     finalizeStarLoading();
   }
+}
+
+function loadStarImagesIfNeeded(){
+  if (starImagesRequested) return;
+  starImagesRequested = true;
+  loadStarImages();
 }
 
 
@@ -2262,7 +2269,6 @@ function syncAllStarStates(){
   syncStarState("blue",  blueScore);
 }
 
-loadStarImages();
 syncAllStarStates();
 
 function lockInWinner(color, options = {}){
@@ -5428,6 +5434,7 @@ noBtn.addEventListener("click", () => {
 });
 
 function startNewRound(){
+  loadStarImagesIfNeeded();
   preloadPlaneSprites();
   restoreGameBackgroundAfterMenu();
   if(roundTransitionTimeout){
