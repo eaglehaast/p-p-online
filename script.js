@@ -2546,6 +2546,10 @@ if(advancedSettingsBtn){
     applyCurrentMap();
     selectedRuleset = "advanced";
     syncRulesButtonSkins(selectedRuleset);
+
+    if(!IS_TEST_HARNESS){
+      window.location.href = 'settings.html';
+    }
   });
 }
 function updateModeSelection(){
