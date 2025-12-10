@@ -30,6 +30,79 @@ const blueScoreCounter  = document.getElementById("blueScoreCounter");
 const greenPlaneCounter = document.getElementById("gs_planecounter_green");
 const bluePlaneCounter  = document.getElementById("gs_planecounter_blue");
 
+const PRELOAD_IMAGE_URLS = [
+  // Main menu
+  "ui_mainmenu/mm_background.png",
+  "ui_mainmenu/mm_hotseat_Default.png",
+  "ui_mainmenu/mm_hotseat_Active.png",
+  "ui_mainmenu/mm_computer_default.png",
+  "ui_mainmenu/mm_computer_active.png",
+  "ui_mainmenu/mm_online_default.png",
+  "ui_mainmenu/mm_online_active.png",
+  "ui_mainmenu/mm_play_default.png",
+  "ui_mainmenu/mm_play_active.png",
+  "ui_mainmenu/mm_classicrules_default.png",
+  "ui_mainmenu/mm_classicrules_active.png",
+  "ui_mainmenu/mm_advancedsettings_default.png",
+  "ui_mainmenu/mm_advancedsettings_active.png",
+
+  // Control panel
+  "ui_controlpanel/cp_background.png",
+  "ui_controlpanel/cp_frame_add.png",
+  "ui_controlpanel/cp_button_off.png",
+  "ui_controlpanel/cp_button_on.png",
+  "ui_controlpanel/cp_frame_accuracy.png",
+  "ui_controlpanel/cp_button_left.png",
+  "ui_controlpanel/cp_button_right.png",
+  "ui_controlpanel/cp_frame_range.png",
+  "ui_controlpanel/cp_frame_field.png",
+  "ui_controlpanel/cp_frame_resetand exit.png",
+  "ui_controlpanel/cp_button_reset.png",
+  "ui_controlpanel/cp_button_exit.png",
+  "map 1 - clear sky 3.png"
+];
+
+function hideLoadingOverlay() {
+  if (loadingOverlay) {
+    loadingOverlay.classList.add("loading-overlay--hidden");
+  }
+}
+
+function preloadCriticalImages() {
+  if (!loadingOverlay) {
+    return Promise.resolve();
+  }
+
+  const MAX_OVERLAY_TIME_MS = 1000;
+  const MIN_OVERLAY_TIME_MS = 200;
+  const startTime = performance.now();
+
+  loadingOverlay.classList.remove("loading-overlay--hidden");
+
+  const preloadTasks = PRELOAD_IMAGE_URLS.map(src => new Promise(resolve => {
+    if (!src) {
+      resolve();
+      return;
+    }
+    const img = new Image();
+    const done = () => resolve();
+    img.onload = done;
+    img.onerror = done;
+    img.src = src;
+  }));
+
+  const preloadPromise = Promise.allSettled(preloadTasks);
+  const maxWaitPromise = new Promise(resolve => setTimeout(resolve, MAX_OVERLAY_TIME_MS));
+
+  return Promise.race([preloadPromise, maxWaitPromise]).finally(() => {
+    const elapsed = performance.now() - startTime;
+    const delay = Math.max(0, MIN_OVERLAY_TIME_MS - elapsed);
+    setTimeout(hideLoadingOverlay, delay);
+  });
+}
+
+preloadCriticalImages();
+
 const testControlPanel = document.getElementById("testControlPanel");
 const testControlsToggle = document.getElementById("testControlsToggle");
 const inGameMapSelect = document.getElementById("inGameMapSelect");
@@ -1847,75 +1920,6 @@ function collectStarFragmentSources(sources) {
   visit(sources);
   return collected;
 }
-
-const ASSET_MANIFEST = (() => {
-  const mapFiles = MAPS.map(map => map?.file).filter(src => typeof src === "string");
-  const planeAssets = Object.values(PLANE_ASSET_PATHS || {});
-  const flameAssets = Array.isArray(BURNING_FLAME_SRCS) ? BURNING_FLAME_SRCS : [];
-  const starAssets = collectStarFragmentSources(STAR_FRAGMENT_SOURCES);
-  const allAssets = new Set([
-    ...mapFiles,
-    ...planeAssets,
-    ...flameAssets,
-    ...starAssets
-  ]);
-  return {
-    images: Array.from(allAssets).filter(Boolean)
-  };
-})();
-
-const TRANSPARENT_PIXEL_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
-
-function preloadImage(src) {
-  return new Promise(resolve => {
-    if (!src) {
-      resolve({ src, status: "skipped" });
-      return;
-    }
-
-    const img = new Image();
-
-    const finalize = (status) => {
-      img.onload = null;
-      img.onerror = null;
-      resolve({ src, status });
-    };
-
-    img.onload = () => finalize("loaded");
-    img.onerror = (event) => {
-      console.error(`[ASSETS] Failed to load ${src}`, event);
-      img.src = TRANSPARENT_PIXEL_SRC;
-      finalize("error");
-    };
-
-    img.src = src;
-  });
-}
-
-function preloadAssets() {
-  const imageList = Array.isArray(ASSET_MANIFEST.images) ? ASSET_MANIFEST.images : [];
-  if (!imageList.length) {
-    return Promise.resolve([]);
-  }
-
-  const tasks = imageList.map(preloadImage);
-  return Promise.allSettled(tasks).then(results => {
-    const failed = results.filter(result => {
-      if (result.status !== "fulfilled") return true;
-      return result.value?.status === "error";
-    }).length;
-
-    if (failed > 0) {
-      console.warn(`[ASSETS] ${failed} assets failed to preload; continuing with fallbacks.`);
-    }
-
-    return results;
-  }).catch(error => {
-    console.error("[ASSETS] Unexpected preload error", error);
-    return [];
-  });
-}
-
 
 const STAR_FRAGMENTS_PER_SLOT = 5;
 
