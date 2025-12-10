@@ -263,52 +263,30 @@ body, button {
   }
 
   /* ===== Temporary background-only layout for the settings control panel ===== */
-  body.settings-page {
+  .screen {
     min-height: 100vh;
     margin: 0;
     padding: 0;
-    background: #000;
     display: flex;
     justify-content: center;
     align-items: center;
+  }
+
+  .screen--settings {
+    background: #000;
+  }
+
+  .stage-460x800 {
+    position: relative;
+    width: var(--control-panel-base-width);
+    height: var(--control-panel-base-height);
   }
 
   .settings-container {
-    width: var(--control-panel-base-width);
-    height: var(--control-panel-base-height);
-    position: relative;
-    display: block;
-    background-image: url("ui_controlpanel/cp_background.png");
-    background-repeat: no-repeat;
-    background-size: 100% 100%;
-  }
-
-  .settings-container #modeMenu {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
-    position: relative;
-    margin: 0;
-    padding: 0;
-    transform: none !important;
-    overflow: hidden;
-    display: none !important;
-  }
-
-  /* ===== Temporary background-only layout for the settings control panel ===== */
-  body.settings-page {
-    min-height: 100vh;
-    margin: 0;
-    padding: 0;
-    background: #000;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-  }
-
-  body.settings-page .settings-container {
-    width: var(--control-panel-base-width);
-    height: var(--control-panel-base-height);
-    position: relative;
     display: block;
     background-image: url("ui_controlpanel/cp_background.png");
     background-repeat: no-repeat;
