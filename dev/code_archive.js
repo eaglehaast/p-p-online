@@ -21,7 +21,7 @@ function populateTestControls(){
   }
 }
 
-function syncTestControls(){
+  function syncTestControls(){
   if(inGameMapSelect){
     const desired = String(clampMapIndex(settings.mapIndex));
     if(inGameMapSelect.value !== desired){
@@ -35,14 +35,14 @@ function syncTestControls(){
     }
     inGameFlameStyleSelect.value = key;
   }
-  if(testFlightRangeInput){
-    const fallbackRange = Number.isFinite(flightRangeCells) ? flightRangeCells : 15;
-    const clampedRange = Math.min(MAX_FLIGHT_RANGE_CELLS, Math.max(MIN_FLIGHT_RANGE_CELLS, fallbackRange));
-    const rangeValue = String(Math.round(clampedRange));
-    if(testFlightRangeInput.value !== rangeValue){
-      testFlightRangeInput.value = rangeValue;
+    if(testRangeInput){
+      const fallbackRange = Number.isFinite(rangeCells) ? rangeCells : 15;
+      const clampedRange = Math.min(MAX_FLIGHT_RANGE_CELLS, Math.max(MIN_FLIGHT_RANGE_CELLS, fallbackRange));
+      const rangeValue = String(Math.round(clampedRange));
+      if(testRangeInput.value !== rangeValue){
+        testRangeInput.value = rangeValue;
+      }
     }
-  }
   if(testAmplitudeInput){
     const fallbackAmplitude = Number.isFinite(aimingAmplitude) ? aimingAmplitude : (10 / 5);
     const clampedAmplitude = Math.min(MAX_AMPLITUDE, Math.max(MIN_AMPLITUDE, fallbackAmplitude));
@@ -96,17 +96,17 @@ function applyTestControlSelections(){
     }
   }
 
-  if(testFlightRangeInput){
-    const rawValue = parseFloat(testFlightRangeInput.value);
-    if(Number.isFinite(rawValue)){
-      const clamped = Math.min(MAX_FLIGHT_RANGE_CELLS, Math.max(MIN_FLIGHT_RANGE_CELLS, rawValue));
-      const normalized = Math.round(clamped);
-      if(normalized !== flightRangeCells){
-        flightRangeCells = normalized;
-        setStoredSetting('settings.flightRangeCells', String(flightRangeCells));
-        rangeChanged = true;
+    if(testRangeInput){
+      const rawValue = parseFloat(testRangeInput.value);
+      if(Number.isFinite(rawValue)){
+        const clamped = Math.min(MAX_FLIGHT_RANGE_CELLS, Math.max(MIN_FLIGHT_RANGE_CELLS, rawValue));
+        const normalized = Math.round(clamped);
+        if(normalized !== rangeCells){
+          rangeCells = normalized;
+          setStoredSetting('settings.flightRangeCells', String(rangeCells));
+          rangeChanged = true;
+        }
       }
-    }
   }
 
   if(testAmplitudeInput){

@@ -190,10 +190,10 @@
     <h1 class="game-title"><span class="visually-hidden">Advanced Settings</span></h1>
         <div class="control-group-row">
           <div class="control-pair-row">
-            <!-- Flight Range Control -->
-            <div class="control-box">
-              <div class="control-label visually-hidden">Flight Range</div>
-              <div id="flightRangeIndicator" class="control-visual">
+              <!-- Range Control -->
+              <div class="control-box">
+                <div class="control-label visually-hidden">Range</div>
+                <div id="rangeIndicator" class="control-visual">
                 <div class="jet">
                   <div class="wing-trail top"></div>
                   <div class="wing-trail bottom"></div>
@@ -205,7 +205,7 @@
                   <div class="range-display">
                   <div class="range-strip-viewport" aria-hidden="true">
                     <div
-                      id="flightRangeStrip"
+                        id="rangeStrip"
                       class="range-strip"
                       style="transform: translateX(-116px);"
                     >
@@ -217,23 +217,23 @@
                       <div class="range-strip__value">30</div>
                     </div>
                   </div>
-                  <span id="flightRangeDisplay" class="range-display__value">15 клеток</span>
+                    <span id="rangeDisplay" class="range-display__value">15 клеток</span>
+                  </div>
                 </div>
-              </div>
-              <div class="control-buttons">
-                <button
-                  id="flightRangeMinus"
-                  class="control-btn control-btn--minus"
-                  type="button"
-                  aria-label="Decrease flight range"
-                >
-                  <span class="visually-hidden">Decrease flight range</span>
-                </button>
-                <button
-                  id="flightRangePlus"
-                  class="control-btn control-btn--plus"
-                  type="button"
-                  aria-label="Increase flight range"
+                <div class="control-buttons">
+                  <button
+                    id="rangeMinus"
+                    class="control-btn control-btn--minus"
+                    type="button"
+                    aria-label="Decrease flight range"
+                  >
+                    <span class="visually-hidden">Decrease flight range</span>
+                  </button>
+                  <button
+                    id="rangePlus"
+                    class="control-btn control-btn--plus"
+                    type="button"
+                    aria-label="Increase flight range"
                 >
                   <span class="visually-hidden">Increase flight range</span>
                 </button>

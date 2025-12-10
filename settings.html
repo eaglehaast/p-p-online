@@ -91,9 +91,9 @@
       </button>
     </div>
 
-    <div class="cp-flight-range" role="group" aria-label="Настройка дальности полёта">
-      <div id="flightRangeIndicator" class="cp-flight-range__indicator">
-        <div id="frame_range_1_visual" aria-hidden="true">
+      <div class="cp-range" role="group" aria-label="Настройка дальности полёта">
+        <div id="rangeIndicator" class="cp-range__indicator">
+          <div id="range_frame_visual" aria-hidden="true">
           <div class="range-visual">
             <div class="contrail-container contrail-container--top">
               <img
@@ -128,26 +128,26 @@
         </div>
       </div>
 
-      <div id="frame_range_2_counter" class="range-display" role="status" aria-live="polite">
-        <span id="flightRangeDisplay" class="range-display__value">15</span>
-      </div>
+        <div id="range_frame_counter" class="range-display" role="status" aria-live="polite">
+          <span id="rangeDisplay" class="range-display__value">15</span>
+        </div>
 
-      <div class="cp-flight-range__frame" aria-hidden="true"></div>
+        <div class="cp-range__frame" aria-hidden="true"></div>
 
-      <button
-        id="instance_range_left"
-        class="cp-flight-range__btn cp-flight-range__btn--left"
-        type="button"
-        aria-label="Уменьшить дальность полёта"
-      >
-        <span class="visually-hidden">Уменьшить дальность полёта</span>
-      </button>
-      <button
-        id="instance_range_right"
-        class="cp-flight-range__btn cp-flight-range__btn--right"
-        type="button"
-        aria-label="Увеличить дальность полёта"
-      >
+        <button
+          id="rangeBtnLeft"
+          class="cp-range__btn cp-range__btn--left"
+          type="button"
+          aria-label="Уменьшить дальность полёта"
+        >
+          <span class="visually-hidden">Уменьшить дальность полёта</span>
+        </button>
+        <button
+          id="rangeBtnRight"
+          class="cp-range__btn cp-range__btn--right"
+          type="button"
+          aria-label="Увеличить дальность полёта"
+        >
         <span class="visually-hidden">Увеличить дальность полёта</span>
       </button>
     </div>
