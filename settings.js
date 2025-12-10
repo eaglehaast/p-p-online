@@ -173,14 +173,14 @@ function sanitizeMapIndex(index, { excludeIndex, allowRandom } = {}){
   return selectable[randomIndex];
 }
 
-const DEFAULT_SETTINGS = {
-  flightRangeCells: 15,
-  aimingAmplitude: 10 / 5,
-  addAA: false,
-  sharpEdges: false,
-  addCargo: false,
-  mapIndex: 0
-};
+  const DEFAULT_SETTINGS = {
+    rangeCells: 15,
+    aimingAmplitude: 10 / 5,
+    addAA: false,
+    sharpEdges: false,
+    addCargo: false,
+    mapIndex: 0
+  };
 
 const PREVIEW_CELL_SIZE = 20;
 const PREVIEW_MAX_DRAG_DISTANCE = 100;
@@ -628,9 +628,9 @@ function getIntSetting(key, defaultValue){
   return Number.isNaN(value) ? defaultValue : value;
 }
 
-let flightRangeCells = getIntSetting('settings.flightRangeCells', 15);
-let flightRangeStep = getStepForValue(flightRangeCells);
-flightRangeCells = getRangeValueForStep(flightRangeStep);
+let rangeCells = getIntSetting('settings.flightRangeCells', 15);
+let rangeStep = getRangeStepForValue(rangeCells);
+rangeCells = getRangeValue(rangeStep);
 let aimingAmplitude  = parseFloat(getStoredItem('settings.aimingAmplitude'));
 if(Number.isNaN(aimingAmplitude)) aimingAmplitude = 10 / 5;
 let addAA = getStoredItem('settings.addAA') === 'true';
@@ -645,7 +645,7 @@ function clampRangeStep(step){
   return Math.min(RANGE_MAX_STEP, Math.max(0, step));
 }
 
-function getStepForValue(value){
+function getRangeStepForValue(value){
   const clamped = Math.min(MAX_FLIGHT_RANGE_CELLS, Math.max(MIN_FLIGHT_RANGE_CELLS, value));
   let closestIndex = 0;
   RANGE_DISPLAY_VALUES.forEach((displayValue, index) => {
@@ -658,27 +658,29 @@ function getStepForValue(value){
   return clampRangeStep(closestIndex * 2);
 }
 
-function getRangeValueForStep(step){
+function getRangeValue(step){
   const index = Math.floor(clampRangeStep(step) / 2);
   return RANGE_DISPLAY_VALUES[index] ?? RANGE_DISPLAY_VALUES[RANGE_DISPLAY_VALUES.length - 1];
 }
 
-function syncFlightRangeWithStep(step){
-  flightRangeStep = clampRangeStep(step);
-  flightRangeCells = getRangeValueForStep(flightRangeStep);
+function syncRangeWithStep(step){
+  rangeStep = clampRangeStep(step);
+  rangeCells = getRangeValue(rangeStep);
 }
 
-function syncFlightRangeStepFromValue(value){
-  syncFlightRangeWithStep(getStepForValue(value));
+function syncRangeStepFromValue(value){
+  syncRangeWithStep(getRangeStepForValue(value));
 }
 
-syncFlightRangeStepFromValue(flightRangeCells);
+syncRangeStepFromValue(rangeCells);
 
-const flightRangeMinusBtn =
-  document.getElementById('instance_range_left') ??
+const rangeMinusBtn =
+  document.getElementById('rangeBtnLeft') ??
+  document.getElementById('rangeMinus') ??
   document.getElementById('flightRangeMinus');
-const flightRangePlusBtn =
-  document.getElementById('instance_range_right') ??
+const rangePlusBtn =
+  document.getElementById('rangeBtnRight') ??
+  document.getElementById('rangePlus') ??
   document.getElementById('flightRangePlus');
 const amplitudeMinusBtn =
   document.getElementById('instance_accuracy_left') ??
@@ -732,18 +734,18 @@ const previewHandle = {
   origAngle: 0
 };
 
-function updateFlightRangeDisplay(stepOverride){
-  const el = document.getElementById('flightRangeDisplay');
-  const transformStep = Number.isFinite(stepOverride) ? stepOverride : flightRangeStep;
-  const displayedCells = getRangeValueForStep(transformStep);
+function updateRangeDisplay(stepOverride){
+  const el = document.getElementById('rangeDisplay');
+  const transformStep = Number.isFinite(stepOverride) ? stepOverride : rangeStep;
+  const displayedCells = getRangeValue(transformStep);
 
   if(el) el.textContent = `${displayedCells}`;
 }
 
-function updateFlightRangeFlame(){
+function updateRangeFlame(){
   const minScale = 0.78;
   const maxScale = 1.82;
-  const t = (flightRangeCells - MIN_FLIGHT_RANGE_CELLS) /
+  const t = (rangeCells - MIN_FLIGHT_RANGE_CELLS) /
             (MAX_FLIGHT_RANGE_CELLS - MIN_FLIGHT_RANGE_CELLS);
   const ratio = minScale + t * (maxScale - minScale);
 
@@ -772,8 +774,8 @@ function updateFlightRangeFlame(){
   });
 }
 
-function changeFlightRangeStep(delta){
-  const currentIndex = Math.floor(flightRangeStep / 2);
+function changeRangeStep(delta){
+  const currentIndex = Math.floor(rangeStep / 2);
   const nextIndex = Math.min(
     RANGE_DISPLAY_VALUES.length - 1,
     Math.max(0, currentIndex + delta)
@@ -783,11 +785,11 @@ function changeFlightRangeStep(delta){
     return;
   }
 
-  flightRangeStep = nextIndex * 2;
-  flightRangeCells = RANGE_DISPLAY_VALUES[nextIndex];
+  rangeStep = nextIndex * 2;
+  rangeCells = RANGE_DISPLAY_VALUES[nextIndex];
 
-  updateFlightRangeDisplay();
-  updateFlightRangeFlame();
+  updateRangeDisplay();
+  updateRangeFlame();
   saveSettings();
 }
 
@@ -911,7 +913,7 @@ function setupAccuracyCrackWatcher(){
 }
 
 function saveSettings(){
-  setStoredItem('settings.flightRangeCells', flightRangeCells);
+    setStoredItem('settings.flightRangeCells', rangeCells);
   setStoredItem('settings.aimingAmplitude', aimingAmplitude);
   setStoredItem('settings.addAA', addAA);
   setStoredItem('settings.sharpEdges', sharpEdges);
@@ -1210,7 +1212,7 @@ function onPreviewPointerUp(e){
   }
 
   const dragAngle = Math.atan2(dy, dx);
-  const previewFlightDistancePx = flightRangeCells * PREVIEW_CELL_SIZE * PREVIEW_FLIGHT_DISTANCE_SCALE;
+  const previewFlightDistancePx = rangeCells * PREVIEW_CELL_SIZE * PREVIEW_FLIGHT_DISTANCE_SCALE;
   const previewFlightDurationSec = PREVIEW_FLIGHT_DURATION_SEC * PREVIEW_FLIGHT_DURATION_SCALE;
   const speedPxPerSec = previewFlightDistancePx / previewFlightDurationSec;
   const scale = dragDistance / PREVIEW_MAX_DRAG_DISTANCE;
@@ -1505,17 +1507,17 @@ function setupPreviewSimulation(){
   }
 }
 
-function resetSettingsToDefaults(){
-  flightRangeCells = DEFAULT_SETTINGS.flightRangeCells;
-  syncFlightRangeStepFromValue(flightRangeCells);
-  aimingAmplitude = DEFAULT_SETTINGS.aimingAmplitude;
-  addAA = DEFAULT_SETTINGS.addAA;
-  sharpEdges = DEFAULT_SETTINGS.sharpEdges;
-  addCargo = DEFAULT_SETTINGS.addCargo;
-  mapIndex = DEFAULT_SETTINGS.mapIndex;
+  function resetSettingsToDefaults(){
+    rangeCells = DEFAULT_SETTINGS.rangeCells;
+    syncRangeStepFromValue(rangeCells);
+    aimingAmplitude = DEFAULT_SETTINGS.aimingAmplitude;
+    addAA = DEFAULT_SETTINGS.addAA;
+    sharpEdges = DEFAULT_SETTINGS.sharpEdges;
+    addCargo = DEFAULT_SETTINGS.addCargo;
+    mapIndex = DEFAULT_SETTINGS.mapIndex;
 
-  updateFlightRangeFlame();
-  updateFlightRangeDisplay();
+    updateRangeFlame();
+    updateRangeDisplay();
   updateAmplitudeDisplay();
   updateAmplitudeIndicator();
   updateMapPreview();
@@ -1627,8 +1629,8 @@ if(hasMapButtons){
   updateMapPreview();
 }
 
-setupRepeatButton(flightRangeMinusBtn, () => changeFlightRangeStep(-1));
-setupRepeatButton(flightRangePlusBtn, () => changeFlightRangeStep(1));
+  setupRepeatButton(rangeMinusBtn, () => changeRangeStep(-1));
+  setupRepeatButton(rangePlusBtn, () => changeRangeStep(1));
 setupRepeatButton(amplitudeMinusBtn, () => {
   if(aimingAmplitude > MIN_AMPLITUDE){
     aimingAmplitude--;
@@ -1674,8 +1676,8 @@ function cleanupRenderers(){
 window.addEventListener('pagehide', cleanupRenderers);
 window.addEventListener('beforeunload', cleanupRenderers);
 
-updateFlightRangeDisplay();
-updateFlightRangeFlame();
+  updateRangeDisplay();
+  updateRangeFlame();
 updateAmplitudeDisplay();
 updateAmplitudeIndicator();
 setupAccuracyCrackWatcher();

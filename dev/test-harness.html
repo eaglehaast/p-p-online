@@ -389,8 +389,8 @@
             <select id="inGameFlameStyle" class="test-controls__select"></select>
           </div>
           <div class="test-controls__field">
-            <label for="testFlightRange" class="test-controls__label visually-hidden">Flight Range (cells)</label>
-            <input id="testFlightRange" class="test-controls__input" type="number" min="5" max="30" step="1" inputmode="numeric" />
+            <label for="testRange" class="test-controls__label visually-hidden">Range (cells)</label>
+            <input id="testRange" class="test-controls__input" type="number" min="5" max="30" step="1" inputmode="numeric" />
           </div>
           <div class="test-controls__field">
             <label for="testAmplitude" class="test-controls__label visually-hidden">Aiming Amplitude (°)</label>
@@ -491,8 +491,8 @@
         <div class="control-group-row">
           <div class="control-pair-row">
             <div class="control-box">
-              <div class="control-label visually-hidden">Flight Range</div>
-              <div id="flightRangeIndicator" class="control-visual">
+                <div class="control-label visually-hidden">Range</div>
+                <div id="rangeIndicator" class="control-visual">
                 <div class="jet">
                   <div class="wing-trail top"></div>
                   <div class="wing-trail bottom"></div>
@@ -511,7 +511,7 @@
                 </div>
                 <div class="range-display">
                   <div class="range-strip-viewport" aria-hidden="true">
-                    <div id="flightRangeStrip" class="range-strip">
+                      <div id="rangeStrip" class="range-strip">
                       <div class="range-strip__value">5</div>
                       <div class="range-strip__value">10</div>
                       <div class="range-strip__value">15</div>
@@ -520,23 +520,23 @@
                       <div class="range-strip__value">30</div>
                     </div>
                   </div>
-                  <span id="flightRangeDisplay" class="range-display__value">10 клеток</span>
+                    <span id="rangeDisplay" class="range-display__value">10 клеток</span>
+                  </div>
                 </div>
-              </div>
-              <div class="control-buttons">
-                <button
-                  id="flightRangeMinus"
-                  class="control-btn control-btn--minus"
-                  type="button"
-                  aria-label="Decrease flight range"
-                >
-                  <span class="visually-hidden">Decrease flight range</span>
-                </button>
-                <button
-                  id="flightRangePlus"
-                  class="control-btn control-btn--plus"
-                  type="button"
-                  aria-label="Increase flight range"
+                <div class="control-buttons">
+                  <button
+                    id="rangeMinus"
+                    class="control-btn control-btn--minus"
+                    type="button"
+                    aria-label="Decrease flight range"
+                  >
+                    <span class="visually-hidden">Decrease flight range</span>
+                  </button>
+                  <button
+                    id="rangePlus"
+                    class="control-btn control-btn--plus"
+                    type="button"
+                    aria-label="Increase flight range"
                 >
                   <span class="visually-hidden">Increase flight range</span>
                 </button>
