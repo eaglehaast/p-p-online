@@ -5520,21 +5520,6 @@ function setMapIndexAndPersist(nextIndex){
   setStoredSetting('settings.mapIndex', String(settings.mapIndex));
 }
 
-function restartMatchWithCurrentSettings(options = {}){
-  const { randomizeMap = false } = options;
-  if(randomizeMap){
-    if(settings.mapIndex !== RANDOM_MAP_SENTINEL_INDEX){
-      setMapIndexAndPersist(getRandomPlayableMapIndex());
-    }
-  }
-  applyCurrentMap();
-  blueScore = 0;
-  greenScore = 0;
-  roundNumber = 0;
-  suppressAutoRandomMapForNextRound = true;
-  startNewRound();
-}
-
 function resetPlanePositionsForCurrentMap(){
   flyingPoints = [];
   hasShotThisRound = false;
