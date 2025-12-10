@@ -233,13 +233,6 @@ function combineFilters(...filters) {
     .join(" ");
 }
 
-function setLoadingOverlayVisible(isVisible) {
-  if (!(loadingOverlay instanceof HTMLElement)) {
-    return;
-  }
-  loadingOverlay.classList.toggle("loading-overlay--hidden", !isVisible);
-}
-
 rebuildHudPlaneStyleCache();
 
 function formatNumericInputValue(value, fractionDigits = 2) {
