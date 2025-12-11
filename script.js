@@ -615,10 +615,21 @@ const BURNING_FLAME_SRCS = [...GREEN_FLAME_SPRITES, ...BLUE_FLAME_SPRITES];
 const DEFAULT_BURNING_FLAME_SRC = BURNING_FLAME_SRCS[0];
 
 const BURNING_FLAME_SRC_SET = new Set(BURNING_FLAME_SRCS);
-const FLAME_DISPLAY_SIZE = { width: 138, height: 42 };
+const BASE_FLAME_DISPLAY_SIZE = { width: 138, height: 42 };
+const BLUE_FLAME_DISPLAY_SIZE = {
+  width: BASE_FLAME_DISPLAY_SIZE.width / 2,
+  height: BASE_FLAME_DISPLAY_SIZE.height / 2,
+};
 
 let flameCycleIndex = 0;
 let flameStyleRevision = 0;
+
+function getFlameDisplaySize(plane) {
+  if (plane?.color === 'blue') {
+    return BLUE_FLAME_DISPLAY_SIZE;
+  }
+  return BASE_FLAME_DISPLAY_SIZE;
+}
 
 function getPlaneFlameSprites(plane) {
   const pool = plane?.color === 'green' ? GREEN_FLAME_SPRITES : BLUE_FLAME_SPRITES;
@@ -735,15 +746,15 @@ const PLANE_HIT_COOLDOWN_SEC = 0.2;
 const planeFlameFx = new Map();
 const planeFlameTimers = new Map();
 
-function applyFlameElementStyles(element) {
+function applyFlameElementStyles(element, size = BASE_FLAME_DISPLAY_SIZE) {
   if (!element) return;
   element.classList.add('fx-flame');
   element.style.position = 'absolute';
   element.style.pointerEvents = 'none';
   element.style.transform = 'translate(-50%, -100%)';
   element.style.zIndex = '9999';
-  element.style.width = `${FLAME_DISPLAY_SIZE.width}px`;
-  element.style.height = `${FLAME_DISPLAY_SIZE.height}px`;
+  element.style.width = `${size.width}px`;
+  element.style.height = `${size.height}px`;
 }
 
 function applyFlameVisualStyle(element, styleKey) {
@@ -755,16 +766,16 @@ function applyFlameVisualStyle(element, styleKey) {
   element.dataset.flameFilter = filter || '';
 }
 
-function createSparkElement(containerFilter = '') {
+function createSparkElement(containerFilter = '', displaySize = BASE_FLAME_DISPLAY_SIZE) {
   const spark = document.createElement('div');
   spark.className = 'fx-flame-spark';
 
   const baseSparkSize = 2 + Math.random() * 2;
-  const sparkScale = FLAME_DISPLAY_SIZE.width / 46;
-  const size = baseSparkSize * sparkScale;
-  spark.style.setProperty('--spark-size', `${size}px`);
+  const sparkScale = displaySize.width / 46;
+  const sparkSize = baseSparkSize * sparkScale;
+  spark.style.setProperty('--spark-size', `${sparkSize}px`);
 
-  const horizontalOffset = Math.random() * (FLAME_DISPLAY_SIZE.width * 0.4);
+  const horizontalOffset = Math.random() * (displaySize.width * 0.4);
   spark.style.setProperty('--spark-start-offset', `${horizontalOffset}px`);
 
   const translateX = -10 - Math.random() * 10;
@@ -789,8 +800,9 @@ function createFlameImageEntry(plane, flameSrc) {
     return null;
   }
 
+  const displaySize = getFlameDisplaySize(plane);
   const container = document.createElement('div');
-  applyFlameElementStyles(container);
+  applyFlameElementStyles(container, displaySize);
 
   const sparkHost = document.createElement('div');
   sparkHost.className = 'fx-flame-sparks';
@@ -798,8 +810,8 @@ function createFlameImageEntry(plane, flameSrc) {
 
   const img = new Image();
   img.decoding = 'async';
-  img.width = FLAME_DISPLAY_SIZE.width;
-  img.height = FLAME_DISPLAY_SIZE.height;
+  img.width = displaySize.width;
+  img.height = displaySize.height;
   img.className = 'fx-flame-img';
   container.appendChild(img);
 
@@ -845,7 +857,7 @@ function createFlameImageEntry(plane, flameSrc) {
 
   const scheduleSpark = () => {
     if (!container.isConnected) return;
-    const spark = createSparkElement(container.dataset.flameFilter);
+    const spark = createSparkElement(container.dataset.flameFilter, displaySize);
     sparkHost.appendChild(spark);
     const delay = 70 + Math.random() * 110;
     sparkTimerId = setTimeout(scheduleSpark, delay);
