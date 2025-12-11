@@ -591,18 +591,27 @@ const BOARD_ORIGIN = { x: 0, y: 0 };
 // ---- Explosion FX (GIF over canvas) ----
 
 const EXPLOSION_DURATION_MS = 700;   // delay before showing wreck FX
-const BURNING_FLAME_SRCS = [
-  "flames green/flame 1.gif",
-  "flames green/flame 2.gif",
-  "flames green/flame 3.gif",
-  "flames green/flame 4.gif",
-  "flames green/flame 5.2.gif",
-  "flames green/flame 6.gif",
-  "flames green/flame 7.gif",
-  "flames green/flame 8.2.gif",
-  "flames green/flame 9.gif",
-  "flames green/flame 10.gif"
+const GREEN_FLAME_SPRITES = [
+  "ui_gamescreen/flames green/flame_green_1.gif",
+  "ui_gamescreen/flames green/flame_green_2.gif",
+  "ui_gamescreen/flames green/flame_green_3.gif",
+  "ui_gamescreen/flames green/flame_green_4.gif",
+  "ui_gamescreen/flames green/flame_green_5.gif",
+  "ui_gamescreen/flames green/flame_green_6.gif",
+  "ui_gamescreen/flames green/flame_green_7.gif",
+  "ui_gamescreen/flames green/flame_green_8.gif",
+  "ui_gamescreen/flames green/flame_green_9.gif",
+  "ui_gamescreen/flames green/flame_green_10.gif",
 ];
+const BLUE_FLAME_SPRITES = [
+  "ui_gamescreen/flames blue/flame_blue_1.gif",
+  "ui_gamescreen/flames blue/flame_blue_2.gif",
+  "ui_gamescreen/flames blue/flame_blue_3.gif",
+  "ui_gamescreen/flames blue/flame_blue_4.gif",
+  "ui_gamescreen/flames blue/flame_blue_5.gif",
+  "ui_gamescreen/flames blue/flame_blue_6.gif",
+];
+const BURNING_FLAME_SRCS = [...GREEN_FLAME_SPRITES, ...BLUE_FLAME_SPRITES];
 const DEFAULT_BURNING_FLAME_SRC = BURNING_FLAME_SRCS[0];
 
 const BURNING_FLAME_SRC_SET = new Set(BURNING_FLAME_SRCS);
@@ -611,10 +620,16 @@ const FLAME_DISPLAY_SIZE = { width: 138, height: 42 };
 let flameCycleIndex = 0;
 let flameStyleRevision = 0;
 
-function pickRandomBurningFlame() {
-  const pool = BURNING_FLAME_SRC_SET.size > 0
-    ? Array.from(BURNING_FLAME_SRC_SET)
-    : (Array.isArray(BURNING_FLAME_SRCS) ? BURNING_FLAME_SRCS : []);
+function getPlaneFlameSprites(plane) {
+  const pool = plane?.color === 'green' ? GREEN_FLAME_SPRITES : BLUE_FLAME_SPRITES;
+  if (Array.isArray(pool) && pool.length > 0) {
+    return pool;
+  }
+  return BURNING_FLAME_SRCS;
+}
+
+function pickRandomBurningFlame(plane) {
+  const pool = getPlaneFlameSprites(plane);
 
   if (!pool.length) {
     return DEFAULT_BURNING_FLAME_SRC || "";
@@ -632,23 +647,24 @@ function getFlameStyleConfig(styleKey) {
   return FLAME_STYLE_MAP.get(normalizeFlameStyleKey(styleKey)) || null;
 }
 
-function pickFlameSrcForStyle(styleKey) {
+function pickFlameSrcForStyle(styleKey, plane) {
   const normalized = normalizeFlameStyleKey(styleKey);
   if (normalized === 'off') {
     return '';
   }
 
-  if (!Array.isArray(BURNING_FLAME_SRCS) || BURNING_FLAME_SRCS.length === 0) {
+  const pool = getPlaneFlameSprites(plane);
+  if (!Array.isArray(pool) || pool.length === 0) {
     return DEFAULT_BURNING_FLAME_SRC || '';
   }
 
   if (normalized === 'cycle') {
-    const index = flameCycleIndex % BURNING_FLAME_SRCS.length;
-    flameCycleIndex = (flameCycleIndex + 1) % BURNING_FLAME_SRCS.length;
-    return BURNING_FLAME_SRCS[index];
+    const index = flameCycleIndex % pool.length;
+    flameCycleIndex = (flameCycleIndex + 1) % pool.length;
+    return pool[index];
   }
 
-  return pickRandomBurningFlame();
+  return pickRandomBurningFlame(plane);
 }
 
 function onFlameStyleChanged() {
@@ -701,15 +717,13 @@ function ensurePlaneBurningFlame(plane) {
     return '';
   }
 
-  if (plane.burningFlameStyleRevision !== flameStyleRevision || plane.burningFlameStyleKey !== styleKey) {
-    plane.burningFlameSrc = null;
-    plane.burningFlameStyleKey = styleKey;
-    plane.burningFlameStyleRevision = flameStyleRevision;
+  if (!plane.crashFlameSrc) {
+    plane.crashFlameSrc = pickFlameSrcForStyle(styleKey, plane);
   }
 
-  if (!plane.burningFlameSrc) {
-    plane.burningFlameSrc = pickFlameSrcForStyle(styleKey);
-  }
+  plane.burningFlameStyleKey = styleKey;
+  plane.burningFlameStyleRevision = flameStyleRevision;
+  plane.burningFlameSrc = plane.crashFlameSrc || '';
   return plane.burningFlameSrc || '';
 }
 
@@ -992,6 +1006,9 @@ function ensurePlaneFlameFx(plane) {
     }
     if (plane.burningFlameSrc) {
       delete plane.burningFlameSrc;
+    }
+    if (plane.crashFlameSrc) {
+      delete plane.crashFlameSrc;
     }
     resetPlaneFlameFxDisabled(plane);
     return;
