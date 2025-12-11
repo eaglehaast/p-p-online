@@ -616,18 +616,11 @@ const DEFAULT_BURNING_FLAME_SRC = BURNING_FLAME_SRCS[0];
 
 const BURNING_FLAME_SRC_SET = new Set(BURNING_FLAME_SRCS);
 const BASE_FLAME_DISPLAY_SIZE = { width: 138, height: 42 };
-const BLUE_FLAME_DISPLAY_SIZE = {
-  width: BASE_FLAME_DISPLAY_SIZE.width / 2,
-  height: BASE_FLAME_DISPLAY_SIZE.height / 2,
-};
 
 let flameCycleIndex = 0;
 let flameStyleRevision = 0;
 
 function getFlameDisplaySize(plane) {
-  if (plane?.color === 'blue') {
-    return BLUE_FLAME_DISPLAY_SIZE;
-  }
   return BASE_FLAME_DISPLAY_SIZE;
 }
 
