@@ -308,6 +308,9 @@ body, button {
     padding: 0;
     transform: none !important;
     overflow: hidden;
+    /* Prevent the hidden main-menu container from intercepting clicks on settings controls */
+    pointer-events: none;
+    z-index: 0 !important;
   }
 
   body.settings-page #modeMenu > * {
