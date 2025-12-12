@@ -1141,6 +1141,20 @@ function spawnExplosion(x, y, color = null) {
   img.style.top  = absTop  + 'px';
 
   const appendExplosion = () => {
+    const hasValidSize = img.complete && img.naturalWidth > 0 && img.naturalHeight > 0;
+    const spriteReady = explosionSprite ? explosionSprite.complete && explosionSprite.naturalWidth > 0 && explosionSprite.naturalHeight > 0 : false;
+    if (!hasValidSize && !spriteReady) {
+      console.warn('[FX] Explosion sprite is not ready, skipping append', {
+        imgComplete: img.complete,
+        imgNaturalWidth: img.naturalWidth,
+        imgNaturalHeight: img.naturalHeight,
+        spriteComplete: explosionSprite?.complete,
+        spriteNaturalWidth: explosionSprite?.naturalWidth,
+        spriteNaturalHeight: explosionSprite?.naturalHeight
+      });
+      return;
+    }
+
     host.appendChild(img);
     img.style.visibility = '';
     setTimeout(() => {
@@ -1374,10 +1388,18 @@ function preloadPlaneSprites() {
   greenCounterPlaneImg.src = PLANE_ASSET_PATHS.greenCounter;
 
   bluePlaneWreckImg = new Image();
+  bluePlaneWreckImg.decoding = 'async';
   bluePlaneWreckImg.src = PLANE_ASSET_PATHS.blueWreck;
+  if (typeof bluePlaneWreckImg.decode === 'function') {
+    bluePlaneWreckImg.decode().catch(() => {});
+  }
 
   greenPlaneWreckImg = new Image();
+  greenPlaneWreckImg.decoding = 'async';
   greenPlaneWreckImg.src = PLANE_ASSET_PATHS.greenWreck;
+  if (typeof greenPlaneWreckImg.decode === 'function') {
+    greenPlaneWreckImg.decode().catch(() => {});
+  }
 
   planeSpritesPreloaded = true;
 }
@@ -4290,14 +4312,9 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
     if (isCrashedState) {
       if (crashImgReady) {
         ctx2d.drawImage(bluePlaneWreckImg, -20, -20, 40, 40);
-      } else if (baseImgReady) {
-        ctx2d.filter = "saturate(0) brightness(0.85)";
-        ctx2d.drawImage(bluePlaneImg, -20, -20, 40, 40);
-        ctx2d.filter = "none";
-      } else {
-        ctx2d.filter = "saturate(0) brightness(0.85)";
-        drawPlaneOutline(ctx2d, color);
-        ctx2d.filter = "none";
+      } else if (!plane._loggedMissingCrashSprite) {
+        plane._loggedMissingCrashSprite = true;
+        console.warn('[FX] Blue crash sprite is not ready, skipping render');
       }
     } else if (baseImgReady) {
       ctx2d.drawImage(bluePlaneImg, -20, -20, 40, 40);
@@ -4327,14 +4344,9 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
     if (isCrashedState) {
       if (crashImgReady) {
         ctx2d.drawImage(greenPlaneWreckImg, -20, -20, 40, 40);
-      } else if (baseImgReady) {
-        ctx2d.filter = "saturate(0) brightness(0.85)";
-        ctx2d.drawImage(greenPlaneImg, -20, -20, 40, 40);
-        ctx2d.filter = "none";
-      } else {
-        ctx2d.filter = "saturate(0) brightness(0.85)";
-        drawPlaneOutline(ctx2d, color);
-        ctx2d.filter = "none";
+      } else if (!plane._loggedMissingCrashSprite) {
+        plane._loggedMissingCrashSprite = true;
+        console.warn('[FX] Green crash sprite is not ready, skipping render');
       }
     } else if (baseImgReady) {
       ctx2d.drawImage(greenPlaneImg, -20, -20, 40, 40);
