@@ -30,7 +30,7 @@ const blueScoreCounter  = document.getElementById("blueScoreCounter");
 const greenPlaneCounter = document.getElementById("gs_planecounter_green");
 const bluePlaneCounter  = document.getElementById("gs_planecounter_blue");
 
-const EXPLOSION_SPRITE_SRC = 'explosion5.gif';
+const EXPLOSION_SPRITE_SRC = 'explosion6.gif';
 
 let explosionSprite = null;
 
