@@ -148,7 +148,8 @@ const MAPS = [
   {
     name: 'Random map',
     file: RANDOM_MAP_FILE,
-    buildings: CLEAR_SKY_BUILDINGS
+    buildings: CLEAR_SKY_BUILDINGS,
+    tier: 'random'
   }
 ];
 
