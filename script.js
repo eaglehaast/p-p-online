@@ -4179,7 +4179,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   ctx2d.rotate(angle);
   ctx2d.scale(PLANE_SCALE, PLANE_SCALE);
 
-  const blend = (isCrashedState)
+  const blend = (isCrashedState || plane.burning || !plane.isAlive)
     ? 0
     : Math.max(0, Math.min(1, glow));
 
