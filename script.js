@@ -4321,10 +4321,8 @@ function drawPlanesAndTrajectories(){
     }
   }
 
-  const drawOrder = [...destroyedOrBurning, ...activePlanes];
-
-  for(const p of drawOrder){
-    if(!p.isAlive && !p.burning) continue;
+  const renderPlane = (p) => {
+    if(!p.isAlive && !p.burning) return;
     for(const seg of p.segments){
       gameCtx.beginPath();
       gameCtx.strokeStyle = colorFor(p.color);
@@ -4359,7 +4357,15 @@ function drawPlanesAndTrajectories(){
       planeCtx.stroke();
       planeCtx.restore();
     }
+  };
+
+  for(const p of destroyedOrBurning){
+    renderPlane(p);
     ensurePlaneFlameFx(p);
+  }
+
+  for(const p of activePlanes){
+    renderPlane(p);
   }
 
   updateAllPlaneFlameFxPositions();
