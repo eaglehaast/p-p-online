@@ -1765,11 +1765,13 @@ const MAPS = [
   {
     name: 'Clear Sky',
     file: 'ui_gamescreen/maps/easy 1-2 round/map 1 - clear sky 3.png',
+    tier: 'easy',
     buildings: []
   },
   {
     name: '5 Bricks',
     file: 'ui_gamescreen/maps/middle 3-4 round/map 2 - 5 bricks.png',
+    tier: 'middle',
     buildings: [
       { x: 110, y: 180, width: 100, height: 40 },
       { x: 250, y: 180, width: 100, height: 40 },
@@ -1781,6 +1783,7 @@ const MAPS = [
   {
     name: 'Diagonals',
     file: 'ui_gamescreen/maps/hard 5 round and more/map 3 diagonals.png',
+    tier: 'hard',
     buildings: [
       { x: 100, y: 130, width: 80, height: 20 },
       { x: 260, y: 130, width: 80, height: 20 },
