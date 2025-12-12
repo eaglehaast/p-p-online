@@ -63,6 +63,15 @@ const PRELOAD_IMAGE_URLS = [
   "ui_controlpanel/cp_frame_resetand exit.png",
   "ui_controlpanel/cp_button_reset.png",
   "ui_controlpanel/cp_button_exit.png",
+
+  // Plane sprites
+  "planes/blue plane 25-optima.png",
+  "planes/green plane 4 optima.png",
+  "planes/blue counter 6.png",
+  "planes/green counter 6.png",
+  "planes/blue plane fall.png",
+  "planes/green plane fall.png",
+
   "map 1 - clear sky 3.png"
 ];
 
