@@ -72,7 +72,7 @@ const PRELOAD_IMAGE_URLS = [
   "planes/blue plane fall.png",
   "planes/green plane fall.png",
 
-  "map 1 - clear sky 3.png"
+  "ui_gamescreen/maps/easy 1-2 round/map 1 - clear sky 3.png"
 ];
 
 function hideLoadingOverlay() {
