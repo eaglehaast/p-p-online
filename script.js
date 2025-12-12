@@ -19,6 +19,9 @@ const gameCtx     = gameCanvas.getContext("2d");
 const aimCanvas   = document.getElementById("aimCanvas");
 const aimCtx      = aimCanvas.getContext("2d");
 
+const wreckCanvas = document.getElementById("wreckCanvas");
+const wreckCtx    = wreckCanvas.getContext("2d");
+
 const planeCanvas = document.getElementById("planeCanvas");
 const planeCtx    = planeCanvas.getContext("2d");
 
@@ -1066,7 +1069,7 @@ function spawnExplosion(x, y, color = null) {
 
 
 // Enable smoothing so rotated images (planes, arrows) don't appear jagged
-[gameCtx, aimCtx, planeCtx].forEach(ctx => {
+[gameCtx, aimCtx, wreckCtx, planeCtx].forEach(ctx => {
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
 });
@@ -2513,7 +2516,9 @@ function resetGame(){
   mantisIndicator.style.display = "none";
   goatIndicator.style.display = "none";
   aimCanvas.style.display = "none";
+  wreckCanvas.style.display = "none";
   planeCanvas.style.display = "none";
+  wreckCtx.clearRect(0,0,wreckCanvas.width,wreckCanvas.height);
   planeCtx.clearRect(0,0,planeCanvas.width,planeCanvas.height);
 
   // Остановить основной цикл
@@ -4300,12 +4305,15 @@ function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians =
 
 function drawPlanesAndTrajectories(){
   planeCtx.clearRect(0, 0, planeCanvas.width, planeCanvas.height);
+  wreckCtx.clearRect(0, 0, wreckCanvas.width, wreckCanvas.height);
   const rect = visualRect(gameCanvas);
   const scaleX = rect.width / gameCanvas.width;
   const scaleY = rect.height / gameCanvas.height;
-  planeCtx.save();
-  planeCtx.translate(rect.left, rect.top);
-  planeCtx.scale(scaleX, scaleY);
+  [planeCtx, wreckCtx].forEach(ctx => {
+    ctx.save();
+    ctx.translate(rect.left, rect.top);
+    ctx.scale(scaleX, scaleY);
+  });
 
   let rangeTextInfo = null;
   const activeColor = turnColors[turnIndex];
@@ -4336,7 +4344,8 @@ function drawPlanesAndTrajectories(){
     const glowTarget = showGlow && p.color === activeColor && p.isAlive && !p.burning ? 1 : 0;
     if(p.glow === undefined) p.glow = glowTarget;
     p.glow += (glowTarget - p.glow) * 0.1;
-    drawThinPlane(planeCtx, p, p.glow);
+    const targetCtx = (!p.isAlive || p.burning) ? wreckCtx : planeCtx;
+    drawThinPlane(targetCtx, p, p.glow);
 
     if(handleCircle.active && handleCircle.pointRef === p){
       let vdx = handleCircle.shakyX - p.x;
@@ -4345,19 +4354,19 @@ function drawPlanesAndTrajectories(){
       if(vdist > MAX_DRAG_DISTANCE){
         vdist = MAX_DRAG_DISTANCE;
       }
-        const cells = (vdist / MAX_DRAG_DISTANCE) * rangeCells;
+      const cells = (vdist / MAX_DRAG_DISTANCE) * rangeCells;
       const textX = p.x + POINT_RADIUS + 8;
       rangeTextInfo = { color: colorFor(p.color), cells, x: textX, y: p.y };
     }
 
     if(p.flagColor){
-      planeCtx.save();
-      planeCtx.strokeStyle = colorFor(p.flagColor);
-      planeCtx.lineWidth = 3;
-      planeCtx.beginPath();
-      planeCtx.arc(p.x, p.y, POINT_RADIUS + 5, 0, Math.PI*2);
-      planeCtx.stroke();
-      planeCtx.restore();
+      targetCtx.save();
+      targetCtx.strokeStyle = colorFor(p.flagColor);
+      targetCtx.lineWidth = 3;
+      targetCtx.beginPath();
+      targetCtx.arc(p.x, p.y, POINT_RADIUS + 5, 0, Math.PI*2);
+      targetCtx.stroke();
+      targetCtx.restore();
     }
     ensurePlaneFlameFx(p);
   }
@@ -4381,7 +4390,7 @@ function drawPlanesAndTrajectories(){
     planeCtx.restore();
   }
 
-  planeCtx.restore();
+  [planeCtx, wreckCtx].forEach(ctx => ctx.restore());
 }
 
 function drawBuildings(){
@@ -5499,6 +5508,7 @@ function startNewRound(){
   gameCanvas.style.display = "block";
   mantisIndicator.style.display = "block";
   goatIndicator.style.display = "block";
+  wreckCanvas.style.display = "block";
   planeCanvas.style.display = "block";
 
   setBackgroundImage('pics/background behind the canvas 5.png');
@@ -5655,7 +5665,7 @@ function resizeCanvas() {
   const overlayWidth = Math.max(1, Math.round(overlayViewportWidth * viewportScale));
   const overlayHeight = Math.max(1, Math.round(overlayViewportHeight * viewportScale));
 
-  [aimCanvas, planeCanvas].forEach(overlay => {
+  [aimCanvas, wreckCanvas, planeCanvas].forEach(overlay => {
     if (!overlay) return;
     overlay.width = overlayWidth;
     overlay.height = overlayHeight;
