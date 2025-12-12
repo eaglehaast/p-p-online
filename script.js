@@ -1203,6 +1203,14 @@ function spawnExplosion(x, y, color = null) {
 }
 
 
+function resetCanvasState(ctx, canvas){
+  if (!ctx || !canvas) return;
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+}
+
 // Enable smoothing so rotated images (planes, arrows) don't appear jagged
 [gameCtx, aimCtx, planeCtx].forEach(ctx => {
   ctx.imageSmoothingEnabled = true;
@@ -2697,7 +2705,7 @@ function resetGame(){
   goatIndicator.style.display = "none";
   aimCanvas.style.display = "none";
   planeCanvas.style.display = "none";
-  planeCtx.clearRect(0,0,planeCanvas.width,planeCanvas.height);
+  resetCanvasState(planeCtx, planeCanvas);
 
   // Остановить основной цикл
   stopGameLoop();
@@ -3605,7 +3613,7 @@ function handleAAForPlane(p, fp){
   globalFrame += delta;
 
   // фон
-  gameCtx.clearRect(0,0, gameCanvas.width, gameCanvas.height);
+  resetCanvasState(gameCtx, gameCanvas);
   drawFieldBackground(gameCtx, gameCanvas.width, gameCanvas.height);
 
   // Планирование хода ИИ
@@ -4481,7 +4489,7 @@ function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians =
 }
 
 function drawPlanesAndTrajectories(){
-  planeCtx.clearRect(0, 0, planeCanvas.width, planeCanvas.height);
+  resetCanvasState(planeCtx, planeCanvas);
   const rect = visualRect(gameCanvas);
   const scaleX = rect.width / gameCanvas.width;
   const scaleY = rect.height / gameCanvas.height;
