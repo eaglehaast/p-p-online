@@ -11,8 +11,6 @@ const mantisIndicator = document.getElementById("mantisIndicator");
 const goatIndicator   = document.getElementById("goatIndicator");
 
 const loadingOverlay = document.getElementById("loadingOverlay");
-const screenElement = document.getElementById("screen");
-const stageElement = document.getElementById("stage");
 
 const gameContainer = document.getElementById("gameContainer");
 const gameCanvas  = document.getElementById("gameCanvas");
@@ -126,23 +124,6 @@ function preloadCriticalImages() {
 }
 
 preloadCriticalImages();
-
-function preventBrowserZoomGesture(event) {
-  const isPinch = event.touches && event.touches.length > 1;
-  const isCtrlWheel = event.type === 'wheel' && event.ctrlKey;
-  const isTouchPointer = event.pointerType === 'touch';
-
-  if (isPinch || isCtrlWheel || isTouchPointer) {
-    event.preventDefault();
-  }
-}
-
-if (screenElement instanceof HTMLElement) {
-  ['touchstart', 'touchmove', 'pointerdown', 'pointermove', 'gesturestart', 'gesturechange', 'wheel']
-    .forEach(evt => {
-      screenElement.addEventListener(evt, preventBrowserZoomGesture, { passive: false });
-    });
-}
 
 const testControlPanel = document.getElementById("testControlPanel");
 const testControlsToggle = document.getElementById("testControlsToggle");
@@ -592,11 +573,23 @@ function sizeAndAlignOverlays() {
     return;
   }
 
-  const width = FRAME_BASE_WIDTH;
-  const height = FRAME_BASE_HEIGHT;
+  const viewport = getVisualViewportState();
+  const safeScale = Number.isFinite(viewport.scale) && viewport.scale > 0 ? viewport.scale : 1;
+  const offsetLeft = Number.isFinite(viewport.offsetLeft) ? viewport.offsetLeft : 0;
+  const offsetTop = Number.isFinite(viewport.offsetTop) ? viewport.offsetTop : 0;
 
-  overlayContainer.style.left = "0px";
-  overlayContainer.style.top = "0px";
+  const baseWidth = Number.isFinite(viewport.width) && viewport.width > 0
+    ? viewport.width * safeScale
+    : (typeof window !== "undefined" && Number.isFinite(window.innerWidth) ? window.innerWidth : 0);
+  const baseHeight = Number.isFinite(viewport.height) && viewport.height > 0
+    ? viewport.height * safeScale
+    : (typeof window !== "undefined" && Number.isFinite(window.innerHeight) ? window.innerHeight : 0);
+
+  const width = Math.max(1, Math.round(baseWidth));
+  const height = Math.max(1, Math.round(baseHeight));
+
+  overlayContainer.style.left = `${offsetLeft}px`;
+  overlayContainer.style.top = `${offsetTop}px`;
   overlayContainer.style.width = `${width}px`;
   overlayContainer.style.height = `${height}px`;
   overlayContainer.style.transform = "none";
@@ -5824,31 +5817,29 @@ function resizeCanvas() {
   const viewportMetrics = VV();
   const viewportWidth = Math.max(1, viewportMetrics.width || window.innerWidth || 1);
   const viewportHeight = Math.max(1, viewportMetrics.height || window.innerHeight || 1);
+  const offsetLeft = Number.isFinite(viewportMetrics.offsetLeft) ? viewportMetrics.offsetLeft : 0;
+  const offsetTop = Number.isFinite(viewportMetrics.offsetTop) ? viewportMetrics.offsetTop : 0;
 
   const scale = Math.min(
     viewportWidth / FRAME_BASE_WIDTH,
     viewportHeight / FRAME_BASE_HEIGHT
   );
 
-  const appliedScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
-
-  if (stageElement instanceof HTMLElement) {
-    stageElement.style.transform = `scale(${appliedScale})`;
-  }
-
-  const containerWidth = FRAME_BASE_WIDTH;
-  const containerHeight = FRAME_BASE_HEIGHT;
+  const containerWidth = FRAME_BASE_WIDTH * scale;
+  const containerHeight = FRAME_BASE_HEIGHT * scale;
   gameContainer.style.width = containerWidth + 'px';
   gameContainer.style.height = containerHeight + 'px';
-  gameContainer.style.setProperty('--score-scale', 1);
-  gameContainer.style.left = '0px';
-  gameContainer.style.top = '0px';
-  syncBackgroundLayout(containerWidth, containerHeight, 0, 0);
+  gameContainer.style.setProperty('--score-scale', scale);
+  const centeredLeft = offsetLeft + (viewportWidth - containerWidth) / 2;
+  const centeredTop = offsetTop + (viewportHeight - containerHeight) / 2;
+  gameContainer.style.left = centeredLeft + 'px';
+  gameContainer.style.top = centeredTop + 'px';
+  syncBackgroundLayout(containerWidth, containerHeight, centeredLeft, centeredTop);
   const canvas = gameCanvas;
-  canvas.style.width = CANVAS_BASE_WIDTH + 'px';
-  canvas.style.height = CANVAS_BASE_HEIGHT + 'px';
-  canvas.style.left = FRAME_PADDING_X + 'px';
-  canvas.style.top = FRAME_PADDING_Y + 'px';
+  canvas.style.width = CANVAS_BASE_WIDTH * scale + 'px';
+  canvas.style.height = CANVAS_BASE_HEIGHT * scale + 'px';
+  canvas.style.left = FRAME_PADDING_X * scale + 'px';
+  canvas.style.top = FRAME_PADDING_Y * scale + 'px';
   canvas.width = CANVAS_BASE_WIDTH;
   canvas.height = CANVAS_BASE_HEIGHT;
 
@@ -5856,7 +5847,7 @@ function resizeCanvas() {
 
   [mantisIndicator, goatIndicator].forEach(ind => {
     ind.style.width = containerWidth + 'px';
-    ind.style.height = FRAME_BASE_HEIGHT / 2 + 'px';
+    ind.style.height = FRAME_BASE_HEIGHT / 2 * scale + 'px';
     ind.style.backgroundSize = containerWidth + 'px ' + containerHeight + 'px';
   });
   mantisIndicator.style.top = '0px';
@@ -5864,9 +5855,13 @@ function resizeCanvas() {
 
   updateFieldDimensions();
 
-  // Overlay canvases cover the stage and scale together with it
-  const overlayWidth = FRAME_BASE_WIDTH;
-  const overlayHeight = FRAME_BASE_HEIGHT;
+  // Overlay canvases cover full screen for proper alignment
+  const viewport = VV();
+  const overlayViewportWidth = viewport.width;
+  const overlayViewportHeight = viewport.height;
+  const viewportScale = viewport.scale || 1;
+  const overlayWidth = Math.max(1, Math.round(overlayViewportWidth * viewportScale));
+  const overlayHeight = Math.max(1, Math.round(overlayViewportHeight * viewportScale));
 
   [aimCanvas, planeCanvas].forEach(overlay => {
     if (!overlay) return;
