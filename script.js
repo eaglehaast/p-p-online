@@ -615,13 +615,18 @@ const BURNING_FLAME_SRCS = [...GREEN_FLAME_SPRITES, ...BLUE_FLAME_SPRITES];
 const DEFAULT_BURNING_FLAME_SRC = BURNING_FLAME_SRCS[0];
 
 const BURNING_FLAME_SRC_SET = new Set(BURNING_FLAME_SRCS);
-const BASE_FLAME_DISPLAY_SIZE = { width: 138, height: 42 };
+const BLUE_FLAME_DISPLAY_SIZE = { width: 25, height: 55 };
+const GREEN_FLAME_DISPLAY_SIZE = { width: 20, height: 110 };
+const BASE_FLAME_DISPLAY_SIZE = BLUE_FLAME_DISPLAY_SIZE;
 
 let flameCycleIndex = 0;
 let flameStyleRevision = 0;
 
 function getFlameDisplaySize(plane) {
-  return BASE_FLAME_DISPLAY_SIZE;
+  if (plane?.color === 'green') {
+    return GREEN_FLAME_DISPLAY_SIZE;
+  }
+  return BLUE_FLAME_DISPLAY_SIZE;
 }
 
 function getPlaneFlameSprites(plane) {
@@ -762,9 +767,14 @@ const PLANE_HIT_COOLDOWN_SEC = 0.2;
 const planeFlameFx = new Map();
 const planeFlameTimers = new Map();
 
-function applyFlameElementStyles(element, size = BASE_FLAME_DISPLAY_SIZE) {
+function applyFlameElementStyles(element, size = BASE_FLAME_DISPLAY_SIZE, planeColor = '') {
   if (!element) return;
   element.classList.add('fx-flame');
+  if (planeColor === 'green') {
+    element.classList.add('fx-flame--green');
+  } else {
+    element.classList.add('fx-flame--blue');
+  }
   element.style.position = 'absolute';
   element.style.pointerEvents = 'none';
   element.style.transform = 'translate(-50%, -100%)';
@@ -823,7 +833,7 @@ function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') 
 
   const displaySize = getFlameDisplaySize(plane);
   const container = document.createElement('div');
-  applyFlameElementStyles(container, displaySize);
+  applyFlameElementStyles(container, displaySize, plane?.color || '');
 
   const sparkHost = document.createElement('div');
   sparkHost.className = 'fx-flame-sparks';

@@ -1095,12 +1095,20 @@ body, button {
 
 .fx-flame {
   position: absolute;
-  width: 138px;
-  height: 42px;
   display: block;
   transform: translate(-50%, -100%);
   image-rendering: auto;
   pointer-events: none;
+}
+
+.fx-flame--blue {
+  width: 25px;
+  height: 55px;
+}
+
+.fx-flame--green {
+  width: 20px;
+  height: 110px;
 }
 
 .fx-flame-img {
@@ -1108,6 +1116,7 @@ body, button {
   height: 100%;
   display: block;
   object-fit: contain;
+  object-position: center bottom;
 }
 
 .fx-flame-sparks {
