@@ -4439,6 +4439,9 @@ function drawPlanesAndTrajectories(){
 
   const renderPlane = (p, targetCtx, { allowRangeLabel = false } = {}) => {
     if(!p.isAlive && !p.burning) return;
+
+    // Skip any lingering overlay rendering once the plane is fully dead.
+    if (!p.isAlive && isExplosionFinished(p)) return;
     drawPlaneSegments(targetCtx, p);
     const glowTarget = showGlow && p.color === activeColor && p.isAlive && !p.burning ? 1 : 0;
     if(p.glow === undefined) p.glow = glowTarget;
