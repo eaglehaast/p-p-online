@@ -4212,6 +4212,10 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
     }
     const crashImgReady = isSpriteReady(bluePlaneWreckImg);
     const baseImgReady  = isSpriteReady(bluePlaneImg);
+    if (isCrashedState && !crashImgReady) {
+      ctx2d.restore();
+      return;
+    }
     if (isCrashedState) {
       if (crashImgReady) {
         ctx2d.drawImage(bluePlaneWreckImg, -20, -20, 40, 40);
@@ -4249,6 +4253,10 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
     }
     const crashImgReady = isSpriteReady(greenPlaneWreckImg);
     const baseImgReady  = isSpriteReady(greenPlaneImg);
+    if (isCrashedState && !crashImgReady) {
+      ctx2d.restore();
+      return;
+    }
     if (isCrashedState) {
       if (crashImgReady) {
         ctx2d.drawImage(greenPlaneWreckImg, -20, -20, 40, 40);
