@@ -4321,51 +4321,57 @@ function drawPlanesAndTrajectories(){
     }
   }
 
-  const renderPlane = (p) => {
-    if(!p.isAlive && !p.burning) return;
-    for(const seg of p.segments){
-      gameCtx.beginPath();
-      gameCtx.strokeStyle = colorFor(p.color);
-      gameCtx.lineWidth = seg.lineWidth || 3;
-      gameCtx.moveTo(seg.x1, seg.y1);
-      gameCtx.lineTo(seg.x2, seg.y2);
-      gameCtx.stroke();
+  const drawPlaneSegments = (ctx, plane) => {
+    ctx.save();
+    for (const seg of plane.segments) {
+      ctx.beginPath();
+      ctx.strokeStyle = colorFor(plane.color);
+      ctx.lineWidth = seg.lineWidth || 3;
+      ctx.moveTo(seg.x1, seg.y1);
+      ctx.lineTo(seg.x2, seg.y2);
+      ctx.stroke();
     }
+    ctx.restore();
+  };
+
+  const renderPlane = (p, targetCtx, { allowRangeLabel = false } = {}) => {
+    if(!p.isAlive && !p.burning) return;
+    drawPlaneSegments(targetCtx, p);
     const glowTarget = showGlow && p.color === activeColor && p.isAlive && !p.burning ? 1 : 0;
     if(p.glow === undefined) p.glow = glowTarget;
     p.glow += (glowTarget - p.glow) * 0.1;
-    drawThinPlane(planeCtx, p, p.glow);
+    drawThinPlane(targetCtx, p, p.glow);
 
-    if(handleCircle.active && handleCircle.pointRef === p){
+    if(allowRangeLabel && handleCircle.active && handleCircle.pointRef === p){
       let vdx = handleCircle.shakyX - p.x;
       let vdy = handleCircle.shakyY - p.y;
       let vdist = Math.hypot(vdx, vdy);
       if(vdist > MAX_DRAG_DISTANCE){
         vdist = MAX_DRAG_DISTANCE;
       }
-        const cells = (vdist / MAX_DRAG_DISTANCE) * rangeCells;
+      const cells = (vdist / MAX_DRAG_DISTANCE) * rangeCells;
       const textX = p.x + POINT_RADIUS + 8;
       rangeTextInfo = { color: colorFor(p.color), cells, x: textX, y: p.y };
     }
 
     if(p.flagColor){
-      planeCtx.save();
-      planeCtx.strokeStyle = colorFor(p.flagColor);
-      planeCtx.lineWidth = 3;
-      planeCtx.beginPath();
-      planeCtx.arc(p.x, p.y, POINT_RADIUS + 5, 0, Math.PI*2);
-      planeCtx.stroke();
-      planeCtx.restore();
+      targetCtx.save();
+      targetCtx.strokeStyle = colorFor(p.flagColor);
+      targetCtx.lineWidth = 3;
+      targetCtx.beginPath();
+      targetCtx.arc(p.x, p.y, POINT_RADIUS + 5, 0, Math.PI*2);
+      targetCtx.stroke();
+      targetCtx.restore();
     }
   };
 
   for(const p of destroyedOrBurning){
-    renderPlane(p);
+    renderPlane(p, gameCtx);
     ensurePlaneFlameFx(p);
   }
 
   for(const p of activePlanes){
-    renderPlane(p);
+    renderPlane(p, planeCtx, { allowRangeLabel: true });
   }
 
   updateAllPlaneFlameFxPositions();
