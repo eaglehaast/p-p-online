@@ -130,13 +130,14 @@ const DIAGONALS_BUILDINGS = [
   { x: 260, y: 510, width: 80, height: 20 }
 ];
 const MAPS = [
-  { name: 'Clear Sky', file: 'map 1 - clear sky 3.png', buildings: CLEAR_SKY_BUILDINGS },
-  { name: '5 Bricks', file: 'map 2 - 5 bricks.png', buildings: FIVE_BRICKS_BUILDINGS },
-  { name: 'Diagonals', file: 'map 3 diagonals.png', buildings: DIAGONALS_BUILDINGS },
+  { name: 'Clear Sky', file: 'map 1 - clear sky 3.png', buildings: CLEAR_SKY_BUILDINGS, tier: 'easy' },
+  { name: '5 Bricks', file: 'map 2 - 5 bricks.png', buildings: FIVE_BRICKS_BUILDINGS, tier: 'middle' },
+  { name: 'Diagonals', file: 'map 3 diagonals.png', buildings: DIAGONALS_BUILDINGS, tier: 'hard' },
   {
     name: 'Random map',
     file: RANDOM_MAP_FILE,
-    buildings: CLEAR_SKY_BUILDINGS
+    buildings: CLEAR_SKY_BUILDINGS,
+    tier: 'random'
   }
 ];
 

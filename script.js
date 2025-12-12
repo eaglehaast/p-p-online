@@ -1737,10 +1737,11 @@ let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_STA
 
 let currentPlacer = null; // 'green' | 'blue'
 const MAPS = [
-  { name: 'Clear Sky', file: 'map 1 - clear sky 3.png', buildings: [] },
+  { name: 'Clear Sky', file: 'map 1 - clear sky 3.png', buildings: [], tier: 'easy' },
   {
     name: '5 Bricks',
     file: 'map 2 - 5 bricks.png',
+    tier: 'middle',
     buildings: [
       { x: 110, y: 180, width: 100, height: 40 },
       { x: 250, y: 180, width: 100, height: 40 },
@@ -1752,6 +1753,7 @@ const MAPS = [
   {
     name: 'Diagonals',
     file: 'map 3 diagonals.png',
+    tier: 'hard',
     buildings: [
       { x: 100, y: 130, width: 80, height: 20 },
       { x: 260, y: 130, width: 80, height: 20 },
@@ -1769,7 +1771,8 @@ const MAPS = [
   {
     name: 'Random map',
     file: 'ui_controlpanel/cp_de_maprandom.png',
-    buildings: []
+    buildings: [],
+    tier: 'random'
   }
 ];
 
@@ -1877,10 +1880,29 @@ const PLAYABLE_MAP_INDICES = MAPS
   .map((_, index) => index)
   .filter(index => index !== RANDOM_MAP_SENTINEL_INDEX);
 
-function resolveMapIndexForGameplay(){
+function getMapTierForRound(roundNumber){
+  if(roundNumber <= 2){
+    return 'easy';
+  }
+  if(roundNumber <= 4){
+    return 'middle';
+  }
+  return 'hard';
+}
+
+function getPlayableMapIndicesForRound(roundNumber = 1){
+  const targetTier = getMapTierForRound(roundNumber);
+  const tierMatches = PLAYABLE_MAP_INDICES.filter(index => MAPS[index]?.tier === targetTier);
+  if(tierMatches.length){
+    return tierMatches;
+  }
+  return PLAYABLE_MAP_INDICES;
+}
+
+function resolveMapIndexForGameplay(upcomingRoundNumber = roundNumber + 1){
   const clamped = clampMapIndex(settings.mapIndex);
   if(clamped === RANDOM_MAP_SENTINEL_INDEX){
-    return getRandomPlayableMapIndex();
+    return getRandomPlayableMapIndex(upcomingRoundNumber);
   }
   return clamped;
 }
@@ -2665,11 +2687,12 @@ if(classicRulesBtn){
     aimingAmplitude = 10 / 5; // 10°
     settings.addAA = false;
     settings.sharpEdges = false;
-    settings.mapIndex = getRandomPlayableMapIndex();
+    const upcomingRoundNumber = roundNumber + 1;
+    settings.mapIndex = getRandomPlayableMapIndex(upcomingRoundNumber);
     settings.randomizeMapEachRound = true;
     settings.flameStyle = 'random';
     onFlameStyleChanged();
-    applyCurrentMap();
+    applyCurrentMap(upcomingRoundNumber);
     selectedRuleset = "classic";
     syncRulesButtonSkins(selectedRuleset);
   });
@@ -5666,12 +5689,13 @@ function shouldAutoRandomizeMap(){
   return !!settings.randomizeMapEachRound;
 }
 
-function getRandomPlayableMapIndex(){
-  if(PLAYABLE_MAP_INDICES.length === 0){
+function getRandomPlayableMapIndex(upcomingRoundNumber = roundNumber + 1){
+  const playableForRound = getPlayableMapIndicesForRound(upcomingRoundNumber);
+  if(playableForRound.length === 0){
     return 0;
   }
-  const randomIndex = Math.floor(Math.random() * PLAYABLE_MAP_INDICES.length);
-  return PLAYABLE_MAP_INDICES[randomIndex] ?? 0;
+  const randomIndex = Math.floor(Math.random() * playableForRound.length);
+  return playableForRound[randomIndex] ?? 0;
 }
 
 function setMapIndexAndPersist(nextIndex){
@@ -5694,8 +5718,11 @@ function resetPlanePositionsForCurrentMap(){
   initPoints();
 }
 
-function applyCurrentMap(){
-  const mapIndex = resolveMapIndexForGameplay();
+function applyCurrentMap(upcomingRoundNumber){
+  const targetRoundNumber = Number.isInteger(upcomingRoundNumber)
+    ? upcomingRoundNumber
+    : roundNumber + 1;
+  const mapIndex = resolveMapIndexForGameplay(targetRoundNumber);
   const gameplayMap = MAPS[mapIndex] || MAPS[0];
 
   brickFrameImg.src = gameplayMap.file;
