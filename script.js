@@ -1737,10 +1737,14 @@ let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_STA
 
 let currentPlacer = null; // 'green' | 'blue'
 const MAPS = [
-  { name: 'Clear Sky', file: 'map 1 - clear sky 3.png', buildings: [] },
+  {
+    name: 'Clear Sky',
+    file: 'ui_gamescreen/maps/easy 1-2 round/map 1 - clear sky 3.png',
+    buildings: []
+  },
   {
     name: '5 Bricks',
-    file: 'map 2 - 5 bricks.png',
+    file: 'ui_gamescreen/maps/middle 3-4 round/map 2 - 5 bricks.png',
     buildings: [
       { x: 110, y: 180, width: 100, height: 40 },
       { x: 250, y: 180, width: 100, height: 40 },
@@ -1751,7 +1755,7 @@ const MAPS = [
   },
   {
     name: 'Diagonals',
-    file: 'map 3 diagonals.png',
+    file: 'ui_gamescreen/maps/hard 5 round and more/map 3 diagonals.png',
     buildings: [
       { x: 100, y: 130, width: 80, height: 20 },
       { x: 260, y: 130, width: 80, height: 20 },
