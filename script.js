@@ -1235,19 +1235,16 @@ let menuBackgroundSnapshot = null;
 function hideGameBackgroundForMenu() {
   if (!menuBackgroundSnapshot) {
     menuBackgroundSnapshot = {
-      body: document.body.style.backgroundImage,
       container: gameContainer.style.backgroundImage
     };
   }
 
-  document.body.style.backgroundImage = 'none';
   gameContainer.style.backgroundImage = 'none';
 }
 
 function restoreGameBackgroundAfterMenu() {
   if (!menuBackgroundSnapshot) return;
 
-  document.body.style.backgroundImage = menuBackgroundSnapshot.body;
   gameContainer.style.backgroundImage = menuBackgroundSnapshot.container;
 
   menuBackgroundSnapshot = null;
@@ -1447,22 +1444,9 @@ function syncBackgroundLayout(containerWidth, containerHeight, containerLeft = n
   const sizeValue = `${containerWidth}px ${containerHeight}px`;
   const repeatedSize = duplicateBackgroundValue(sizeValue);
   gameContainer.style.backgroundSize = repeatedSize;
-  document.body.style.backgroundSize = repeatedSize;
-
-  const resolvedLeft = typeof containerLeft === 'number'
-    ? `${containerLeft}px`
-    : (typeof containerLeft === 'string' ? containerLeft : gameContainer.style.left);
-  const resolvedTop = typeof containerTop === 'number'
-    ? `${containerTop}px`
-    : (typeof containerTop === 'string' ? containerTop : gameContainer.style.top);
 
   const containerPosition = duplicateBackgroundValue('center top');
   gameContainer.style.backgroundPosition = containerPosition;
-
-  const hasOffsets = resolvedLeft && resolvedTop;
-  const bodyPositionValue = hasOffsets ? `${resolvedLeft} ${resolvedTop}` : 'center top';
-  const repeatedBodyPosition = duplicateBackgroundValue(bodyPositionValue);
-  document.body.style.backgroundPosition = repeatedBodyPosition;
 }
 
 function normalizeBackgroundLayer(layer) {
@@ -1492,14 +1476,12 @@ function setBackgroundImage(...imageLayers) {
   if (!normalizedLayers.length) {
     currentBackgroundLayerCount = 0;
     gameContainer.style.backgroundImage = 'none';
-    document.body.style.backgroundImage = 'none';
     return;
   }
 
   currentBackgroundLayerCount = normalizedLayers.length;
   const backgroundValue = normalizedLayers.join(', ');
   gameContainer.style.backgroundImage = backgroundValue;
-  document.body.style.backgroundImage = backgroundValue;
 
   const rect = gameContainer.getBoundingClientRect();
   syncBackgroundLayout(rect.width, rect.height);
@@ -5881,6 +5863,31 @@ function resizeCanvas() {
   }
 
   refreshScoreInkAnchors();
+
+  // TEMP: layout diagnostics
+  const rectSummary = (el) => {
+    if (!el?.getBoundingClientRect) return null;
+    const rect = el.getBoundingClientRect();
+    return {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height
+    };
+  };
+
+  console.log('Layout rects after resize', {
+    gameContainer: rectSummary(gameContainer),
+    stage: rectSummary(gameContainer),
+    gameCanvas: rectSummary(gameCanvas),
+    aimCanvas: rectSummary(aimCanvas),
+    planeCanvas: rectSummary(planeCanvas),
+    overlayContainer: rectSummary(overlayContainer),
+    greenPlaneCounter: rectSummary(greenPlaneCounter),
+    bluePlaneCounter: rectSummary(bluePlaneCounter),
+    greenScoreCounter: rectSummary(greenScoreCounter),
+    blueScoreCounter: rectSummary(blueScoreCounter)
+  });
 }
 
 window.addEventListener('resize', resizeCanvas);
