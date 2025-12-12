@@ -708,7 +708,10 @@ const contrailImages = [
   document.getElementById('contrail2')
 ];
 const flameOptions = { baseWidth: 46, baseHeight: 14 };
-const menuFlameRenderer = menuFlameCanvas instanceof HTMLCanvasElement ? new JetFlameRenderer(menuFlameCanvas, flameOptions) : null;
+const menuFlameRenderer =
+  menuFlameCanvas instanceof HTMLCanvasElement && menuFlameCanvas.isConnected
+    ? new JetFlameRenderer(menuFlameCanvas, flameOptions)
+    : null;
 const isTestHarnessPage = document.body.classList.contains('test-harness');
 
 let previewCanvas = null;
@@ -721,6 +724,7 @@ let previewOscillationAngle = 0;
 let previewOscillationDir = 1;
 let previewArrow = null;
 let previewAnimationId = null;
+let previewSimulationInitialized = false;
 const previewPlaneBaselines = new WeakMap();
 const previewHandle = {
   active: false,
@@ -733,6 +737,21 @@ const previewHandle = {
   plane: null,
   origAngle: 0
 };
+
+function startPreviewSimulation(){
+  if(previewSimulationInitialized){
+    return;
+  }
+
+  previewSimulationInitialized = true;
+  setupPreviewSimulation();
+}
+
+function refreshPreviewSimulationIfInitialized(){
+  if(previewSimulationInitialized){
+    setupPreviewSimulation();
+  }
+}
 
 function updateRangeDisplay(stepOverride){
   const el = document.getElementById('rangeDisplay');
@@ -811,6 +830,8 @@ function updateAmplitudeIndicator(){
     const maxAngle = aimingAmplitude * 5;
     amplitudeHost.style.setProperty('--amp', `${maxAngle}deg`);
   }
+
+  syncAccuracyCrackWatcher();
 }
 
 const LEFT_CRACK_STEPS = [
@@ -864,7 +885,7 @@ function setupAccuracyCrackWatcher(){
   const pendulumEl = document.querySelector('#frame_accuracy_1_visual .pendulum');
   const overlay = document.getElementById('accuracyCrackOverlay');
   if(!pendulumEl || !overlay){
-    return;
+    return null;
   }
 
   const TARGET_AMPLITUDE = 20;
@@ -875,6 +896,10 @@ function setupAccuracyCrackWatcher(){
   let leftIndex = 0;
   let rightIndex = 0;
   let lockedSide = null;
+  let running = false;
+  let rafId = null;
+
+  const shouldRunForAmplitude = (amplitude) => amplitude >= TARGET_AMPLITUDE - EPSILON;
 
   const appendCrack = (side) => {
     if(side === 'left' && leftIndex < LEFT_CRACK_STEPS.length){
@@ -885,9 +910,14 @@ function setupAccuracyCrackWatcher(){
   };
 
   const tick = () => {
-    if(aimingAmplitude < TARGET_AMPLITUDE - EPSILON){
+    if(!running){
+      return;
+    }
+
+    if(!shouldRunForAmplitude(aimingAmplitude)){
+      running = false;
+      rafId = null;
       lockedSide = null;
-      requestAnimationFrame(tick);
       return;
     }
 
@@ -906,10 +936,43 @@ function setupAccuracyCrackWatcher(){
       lockedSide = 'left';
     }
 
-    requestAnimationFrame(tick);
+    rafId = requestAnimationFrame(tick);
   };
 
-  requestAnimationFrame(tick);
+  const start = () => {
+    if(running || !shouldRunForAmplitude(aimingAmplitude)){
+      return;
+    }
+
+    running = true;
+    rafId = requestAnimationFrame(tick);
+  };
+
+  const stop = () => {
+    if(rafId){
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+
+    running = false;
+    lockedSide = null;
+  };
+
+  return { start, stop, shouldRunForAmplitude };
+}
+
+const accuracyCrackWatcher = setupAccuracyCrackWatcher();
+
+function syncAccuracyCrackWatcher(){
+  if(!accuracyCrackWatcher){
+    return;
+  }
+
+  if(accuracyCrackWatcher.shouldRunForAmplitude(aimingAmplitude)){
+    accuracyCrackWatcher.start();
+  } else {
+    accuracyCrackWatcher.stop();
+  }
 }
 
 function saveSettings(){
@@ -938,7 +1001,7 @@ function updateMapPreview(){
     };
     img.src = map.file;
   }
-  setupPreviewSimulation();
+  refreshPreviewSimulationIfInitialized();
 }
 
 function updateMapNameDisplay(){
@@ -1618,6 +1681,7 @@ if(hasMapButtons){
   const changeMap = delta => {
     const targetIndex = (mapIndex + delta + MAPS.length) % MAPS.length;
     mapIndex = sanitizeMapIndex(targetIndex, { excludeIndex: mapIndex, allowRandom: true });
+    startPreviewSimulation();
     updateMapPreview();
     updateMapNameDisplay();
     saveSettings();
@@ -1680,4 +1744,3 @@ window.addEventListener('beforeunload', cleanupRenderers);
   updateRangeFlame();
 updateAmplitudeDisplay();
 updateAmplitudeIndicator();
-setupAccuracyCrackWatcher();
