@@ -39,6 +39,23 @@ body, button {
     touch-action: none;
   }
 
+  #screen {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    touch-action: none;
+  }
+
+  #stage {
+    position: relative;
+    width: 460px;
+    height: 800px;
+    transform-origin: top left;
+  }
+
   .loading-overlay {
     position: fixed;
     inset: 0;
@@ -89,6 +106,8 @@ body, button {
     background-repeat: no-repeat;
     background-position: center top, center top;
     --score-scale: 1;
+    left: 0;
+    top: 0;
   }
 
   .score-counter {
@@ -1043,10 +1062,11 @@ body, button {
 
 /* Overlay container */
 #overlayContainer {
-  position: fixed;
+  position: absolute;
   pointer-events: none;
   z-index: 200;
   transform-origin: 0 0;
+  inset: 0;
 }
 
 #overlayContainer canvas {
