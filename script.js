@@ -1125,33 +1125,58 @@ function spawnExplosion(x, y, color = null) {
   img.src = explosionSprite?.src || EXPLOSION_SPRITE_SRC;            // ← без пробелов в имени файла
   img.className = 'fx-explosion';
   img.style.position = 'absolute';
-  img.style.zIndex = '9999';
   img.style.pointerEvents = 'none';
   img.style.transform = 'translate(-50%, -50%)';
+  img.style.visibility = 'hidden';
 
   // абсолютные координаты взрыва на странице:
   const boardRect = getViewportAdjustedBoundingClientRect(gameCanvas);
   const { clientX, clientY } = worldToOverlay(x, y, { boardRect });
-  const hostRect = getViewportAdjustedBoundingClientRect(document.body);
+  const host = fxLayerElement || document.body;
+  const hostRect = getViewportAdjustedBoundingClientRect(host);
   const absLeft = Math.round(clientX - hostRect.left);
   const absTop  = Math.round(clientY - hostRect.top);
 
   img.style.left = absLeft + 'px';
   img.style.top  = absTop  + 'px';
 
-  // рендерим прямо в body (чтобы не зависеть от контейнеров)
   const appendExplosion = () => {
-    document.body.appendChild(img);
+    host.appendChild(img);
+    img.style.visibility = '';
     setTimeout(() => {
       img.remove();
     }, EXPLOSION_DURATION_MS);
+  };
+
+  const waitForImageReady = () => {
+    if (img.complete && img.naturalWidth > 0) {
+      return Promise.resolve();
+    }
+
+    if (typeof img.decode === 'function') {
+      return img.decode().catch(() => {
+        if (img.complete && img.naturalWidth > 0) {
+          return;
+        }
+
+        return new Promise(resolve => {
+          img.addEventListener('load', resolve, { once: true });
+          img.addEventListener('error', resolve, { once: true });
+        });
+      });
+    }
+
+    return new Promise(resolve => {
+      img.addEventListener('load', resolve, { once: true });
+      img.addEventListener('error', resolve, { once: true });
+    });
   };
 
   if (explosionSprite && !explosionSprite.complete) {
     const onExplosionReady = () => {
       explosionSprite.removeEventListener('load', onExplosionReady);
       explosionSprite.removeEventListener('error', onExplosionReady);
-      appendExplosion();
+      waitForImageReady().then(appendExplosion);
     };
 
     explosionSprite.addEventListener('load', onExplosionReady);
@@ -1159,7 +1184,7 @@ function spawnExplosion(x, y, color = null) {
     return;
   }
 
-  appendExplosion();
+  waitForImageReady().then(appendExplosion);
 
 }
 
