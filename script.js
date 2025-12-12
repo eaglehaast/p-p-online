@@ -632,14 +632,28 @@ function getPlaneFlameSprites(plane) {
   return BURNING_FLAME_SRCS;
 }
 
+function resolveFlameImage(flameSrc) {
+  if (!flameSrc) {
+    return { src: '', img: null };
+  }
+  const cached = flameImages.get(flameSrc) || null;
+  if (cached) {
+    return { src: flameSrc, img: cached };
+  }
+  if (defaultFlameImg) {
+    return { src: defaultFlameImg.src || flameSrc, img: defaultFlameImg };
+  }
+  return { src: flameSrc, img: null };
+}
+
 function pickRandomBurningFlame(plane) {
   const pool = getPlaneFlameSprites(plane);
 
   if (!pool.length) {
-    return DEFAULT_BURNING_FLAME_SRC || "";
+    return resolveFlameImage(DEFAULT_BURNING_FLAME_SRC || "");
   }
   const index = Math.floor(Math.random() * pool.length);
-  return pool[index];
+  return resolveFlameImage(pool[index]);
 
 }
 
@@ -654,18 +668,18 @@ function getFlameStyleConfig(styleKey) {
 function pickFlameSrcForStyle(styleKey, plane) {
   const normalized = normalizeFlameStyleKey(styleKey);
   if (normalized === 'off') {
-    return '';
+    return { src: '', img: null };
   }
 
   const pool = getPlaneFlameSprites(plane);
   if (!Array.isArray(pool) || pool.length === 0) {
-    return DEFAULT_BURNING_FLAME_SRC || '';
+    return resolveFlameImage(DEFAULT_BURNING_FLAME_SRC || '');
   }
 
   if (normalized === 'cycle') {
     const index = flameCycleIndex % pool.length;
     flameCycleIndex = (flameCycleIndex + 1) % pool.length;
-    return pool[index];
+    return resolveFlameImage(pool[index]);
   }
 
   return pickRandomBurningFlame(plane);
@@ -691,8 +705,11 @@ function onFlameStyleChanged() {
     planeFlameFx.delete(plane);
     if (plane) {
       delete plane.burningFlameSrc;
+      delete plane.burningFlameImg;
       delete plane.burningFlameStyleKey;
       delete plane.burningFlameStyleRevision;
+      delete plane.crashFlameImg;
+      delete plane.crashFlameSrc;
     }
   }
 
@@ -712,23 +729,29 @@ function onFlameStyleChanged() {
 
 function ensurePlaneBurningFlame(plane) {
   if (!plane) {
-    return DEFAULT_BURNING_FLAME_SRC || "";
+    return { src: DEFAULT_BURNING_FLAME_SRC || "", img: defaultFlameImg || null };
   }
   const styleKey = getCurrentFlameStyleKey();
   if (styleKey === 'off') {
     plane.burningFlameStyleKey = styleKey;
     plane.burningFlameSrc = '';
-    return '';
+    plane.burningFlameImg = null;
+    return { src: '', img: null };
   }
 
   if (!plane.crashFlameSrc) {
-    plane.crashFlameSrc = pickFlameSrcForStyle(styleKey, plane);
+    const selection = pickFlameSrcForStyle(styleKey, plane);
+    plane.crashFlameSrc = selection?.src || '';
+    plane.crashFlameImg = selection?.img || null;
   }
 
   plane.burningFlameStyleKey = styleKey;
   plane.burningFlameStyleRevision = flameStyleRevision;
   plane.burningFlameSrc = plane.crashFlameSrc || '';
-  return plane.burningFlameSrc || '';
+  plane.burningFlameImg = plane.crashFlameImg || null;
+  const resolvedImg = plane.burningFlameImg || defaultFlameImg || null;
+  const resolvedSrc = resolvedImg?.src || plane.burningFlameSrc || '';
+  return { src: resolvedSrc, img: resolvedImg };
 }
 
 
@@ -788,8 +811,13 @@ function createSparkElement(containerFilter = '', displaySize = BASE_FLAME_DISPL
   return spark;
 }
 
-function createFlameImageEntry(plane, flameSrc) {
-  if (!flameSrc) {
+function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') {
+  const readyFlameImg = isSpriteReady(flameImg)
+    ? flameImg
+    : (isSpriteReady(defaultFlameImg) ? defaultFlameImg : null);
+  const resolvedSrc = readyFlameImg?.src || flameSrc || '';
+
+  if (!readyFlameImg || !resolvedSrc) {
     return null;
   }
 
@@ -808,7 +836,7 @@ function createFlameImageEntry(plane, flameSrc) {
   img.className = 'fx-flame-img';
   container.appendChild(img);
 
-  let attemptedSrc = flameSrc;
+  let attemptedSrc = resolvedSrc;
   let sparkTimerId = null;
 
   const stop = () => {
@@ -822,31 +850,36 @@ function createFlameImageEntry(plane, flameSrc) {
   };
 
   img.onerror = () => {
-    const fallback = DEFAULT_BURNING_FLAME_SRC;
-    if (!fallback || attemptedSrc === fallback) {
+    const fallbackImg = isSpriteReady(defaultFlameImg) ? defaultFlameImg : null;
+    const fallbackSrc = fallbackImg?.src || DEFAULT_BURNING_FLAME_SRC || '';
+    if (!fallbackSrc || attemptedSrc === fallbackSrc) {
       stop();
       img.remove();
       planeFlameFx.delete(plane);
       if (plane && plane.burningFlameSrc) {
         delete plane.burningFlameSrc;
       }
+      if (plane && plane.burningFlameImg) {
+        delete plane.burningFlameImg;
+      }
       disablePlaneFlameFx(plane);
       return;
     }
-    attemptedSrc = fallback;
+    attemptedSrc = fallbackSrc;
     if (plane) {
-      plane.burningFlameSrc = fallback;
+      plane.burningFlameSrc = fallbackSrc;
+      plane.burningFlameImg = fallbackImg;
     }
-    img.dataset.flameSrc = fallback;
-    img.src = fallback;
+    img.dataset.flameSrc = fallbackSrc;
+    img.src = fallbackSrc;
   };
 
   img.onload = () => {
     img.dataset.flameSrc = attemptedSrc || '';
   };
 
-  img.dataset.flameSrc = flameSrc;
-  img.src = flameSrc;
+  img.dataset.flameSrc = resolvedSrc;
+  img.src = resolvedSrc;
 
   const scheduleSpark = () => {
     if (!container.isConnected) return;
@@ -891,6 +924,15 @@ function cleanupBurningFx() {
     if (plane && plane.burningFlameSrc) {
       delete plane.burningFlameSrc;
     }
+    if (plane && plane.burningFlameImg) {
+      delete plane.burningFlameImg;
+    }
+    if (plane && plane.crashFlameImg) {
+      delete plane.crashFlameImg;
+    }
+    if (plane && plane.crashFlameSrc) {
+      delete plane.crashFlameSrc;
+    }
     if (plane && plane.burningFlameStyleKey) {
       delete plane.burningFlameStyleKey;
     }
@@ -924,10 +966,12 @@ function spawnBurningFlameFx(plane) {
   const host = fxLayerElement || document.body;
   if (!host) return;
 
-  const flameSrc = ensurePlaneBurningFlame(plane);
-  if (!flameSrc) return;
+  const flameSelection = ensurePlaneBurningFlame(plane);
+  const flameImg = flameSelection?.img || null;
+  const flameSrc = flameSelection?.src || '';
+  if (!flameImg && !flameSrc) return;
 
-  const entry = createFlameImageEntry(plane, flameSrc);
+  const entry = createFlameImageEntry(plane, flameImg, flameSrc);
   if (!entry?.element) {
     return;
   }
@@ -1012,8 +1056,14 @@ function ensurePlaneFlameFx(plane) {
     if (plane.burningFlameSrc) {
       delete plane.burningFlameSrc;
     }
+    if (plane.burningFlameImg) {
+      delete plane.burningFlameImg;
+    }
     if (plane.crashFlameSrc) {
       delete plane.crashFlameSrc;
+    }
+    if (plane.crashFlameImg) {
+      delete plane.crashFlameImg;
     }
     resetPlaneFlameFxDisabled(plane);
     return;
@@ -1260,10 +1310,20 @@ function preloadPlaneSprites() {
 const flameImages = new Map();
 for (const src of BURNING_FLAME_SRCS) {
   const img = new Image();
+  img.decoding = 'async';
   img.src = src;
   flameImages.set(src, img);
 }
 const defaultFlameImg = flameImages.get(DEFAULT_BURNING_FLAME_SRC) || null;
+
+function isSpriteReady(img) {
+  return Boolean(
+    img &&
+    img.complete &&
+    img.naturalWidth > 0 &&
+    img.naturalHeight > 0
+  );
+}
 const backgroundImg = new Image();
 backgroundImg.src = "background paper 1.png";
 
@@ -3792,7 +3852,7 @@ function handleAAForPlane(p, fp){
 
 /* ======= RENDER ======= */
 function drawFieldBackground(ctx2d, w, h){
-  if(backgroundImg.complete){
+  if(isSpriteReady(backgroundImg)){
     ctx2d.drawImage(backgroundImg, 0, 0, w, h);
   }
 }
@@ -3858,7 +3918,7 @@ function drawNailEdges(ctx2d, w, h){
 }
 
 function drawBrickEdges(ctx2d, w, h){
-  if(brickFrameImg.complete){
+  if(isSpriteReady(brickFrameImg)){
     ctx2d.drawImage(brickFrameImg, FIELD_LEFT, 0, FIELD_WIDTH, h);
   } else {
     const brickHeight = FIELD_BORDER_THICKNESS;
@@ -4027,12 +4087,7 @@ function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0) {
     spriteImg = greenPlaneImg;
   }
 
-  const spriteReady = Boolean(
-    spriteImg &&
-    spriteImg.complete &&
-    spriteImg.naturalWidth > 0 &&
-    spriteImg.naturalHeight > 0
-  );
+  const spriteReady = isSpriteReady(spriteImg);
 
   const blend = Math.max(0, Math.min(1, glowStrength));
 
@@ -4115,8 +4170,8 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
         drawWingTrails(ctx2d);
       }
     }
-    const crashImgReady = bluePlaneWreckImg.complete && bluePlaneWreckImg.naturalWidth > 0;
-    const baseImgReady  = bluePlaneImg.complete && bluePlaneImg.naturalWidth > 0;
+    const crashImgReady = isSpriteReady(bluePlaneWreckImg);
+    const baseImgReady  = isSpriteReady(bluePlaneImg);
     if (isCrashedState) {
       if (crashImgReady) {
         ctx2d.drawImage(bluePlaneWreckImg, -20, -20, 40, 40);
@@ -4152,8 +4207,8 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
         drawDieselSmoke(ctx2d, 1);
       }
     }
-    const crashImgReady = greenPlaneWreckImg.complete && greenPlaneWreckImg.naturalWidth > 0;
-    const baseImgReady  = greenPlaneImg.complete && greenPlaneImg.naturalWidth > 0;
+    const crashImgReady = isSpriteReady(greenPlaneWreckImg);
+    const baseImgReady  = isSpriteReady(greenPlaneImg);
     if (isCrashedState) {
       if (crashImgReady) {
         ctx2d.drawImage(greenPlaneWreckImg, -20, -20, 40, 40);
@@ -4543,7 +4598,7 @@ function drawBrickWall(ctx, width, height){
 
 
 function drawArrow(ctx, cx, cy, dx, dy) {
-  if (!arrowSprite.complete) return;
+  if (!isSpriteReady(arrowSprite)) return;
 
   // Shaft length doubles the pull distance so the plane sits in the middle
   const shaftLen = 2 * Math.hypot(dx, dy);
