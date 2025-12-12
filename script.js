@@ -30,6 +30,10 @@ const blueScoreCounter  = document.getElementById("blueScoreCounter");
 const greenPlaneCounter = document.getElementById("gs_planecounter_green");
 const bluePlaneCounter  = document.getElementById("gs_planecounter_blue");
 
+const EXPLOSION_SPRITE_SRC = 'explosion5.gif';
+
+let explosionSprite = null;
+
 const PRELOAD_IMAGE_URLS = [
   // Main menu
   "ui_mainmenu/mm_background.png",
@@ -89,6 +93,15 @@ function preloadCriticalImages() {
     img.onload = done;
     img.onerror = done;
     img.src = src;
+  }));
+
+  preloadTasks.push(new Promise(resolve => {
+    const img = new Image();
+    explosionSprite = img;
+    const done = () => resolve();
+    img.onload = done;
+    img.onerror = done;
+    img.src = EXPLOSION_SPRITE_SRC;
   }));
 
   const preloadPromise = Promise.allSettled(preloadTasks);
@@ -1097,7 +1110,7 @@ function ensurePlaneFlameFx(plane) {
 function spawnExplosion(x, y, color = null) {
   // создаём IMG и позиционируем относительно страницы
   const img = new Image();
-  img.src = 'explosion5.gif';            // ← без пробелов в имени файла
+  img.src = explosionSprite?.src || EXPLOSION_SPRITE_SRC;            // ← без пробелов в имени файла
   img.className = 'fx-explosion';
   img.style.position = 'absolute';
   img.style.zIndex = '9999';
@@ -1115,12 +1128,26 @@ function spawnExplosion(x, y, color = null) {
   img.style.top  = absTop  + 'px';
 
   // рендерим прямо в body (чтобы не зависеть от контейнеров)
-  document.body.appendChild(img);
+  const appendExplosion = () => {
+    document.body.appendChild(img);
+    setTimeout(() => {
+      img.remove();
+    }, EXPLOSION_DURATION_MS);
+  };
 
-  // убрать через длительность гифки
-  setTimeout(() => {
-    img.remove();
-  }, EXPLOSION_DURATION_MS);
+  if (explosionSprite && !explosionSprite.complete) {
+    const onExplosionReady = () => {
+      explosionSprite.removeEventListener('load', onExplosionReady);
+      explosionSprite.removeEventListener('error', onExplosionReady);
+      appendExplosion();
+    };
+
+    explosionSprite.addEventListener('load', onExplosionReady);
+    explosionSprite.addEventListener('error', onExplosionReady);
+    return;
+  }
+
+  appendExplosion();
 
 }
 
