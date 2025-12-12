@@ -4094,6 +4094,19 @@ function addPlaneShading(ctx2d){
   ctx2d.restore();
 }
 
+function addPlaneSilhouetteShading(ctx2d){
+  const grad = ctx2d.createRadialGradient(0, 0, 8, 0, 0, 18);
+  grad.addColorStop(0, "rgba(255,255,255,0.15)");
+  grad.addColorStop(1, "rgba(0,0,0,0.25)");
+
+  ctx2d.save();
+  tracePlaneSilhouettePath(ctx2d);
+  ctx2d.clip();
+  ctx2d.fillStyle = grad;
+  ctx2d.fillRect(-20, -20, 40, 40);
+  ctx2d.restore();
+}
+
 function tracePlaneSilhouettePath(ctx2d){
   ctx2d.beginPath();
   ctx2d.moveTo(0, -20);
@@ -4233,7 +4246,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
       addPlaneShading(ctx2d);
     } else {
       drawPlaneOutline(ctx2d, color);
-      addPlaneShading(ctx2d);
+      addPlaneSilhouetteShading(ctx2d);
     }
   } else if (color === "green") {
     const fp = flyingPoints.find(fp => fp.plane === plane);
@@ -4274,12 +4287,12 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
       addPlaneShading(ctx2d);
     } else {
       drawPlaneOutline(ctx2d, color);
-      addPlaneShading(ctx2d);
+      addPlaneSilhouetteShading(ctx2d);
     }
   } else {
     drawPlaneOutline(ctx2d, color);
     if (!isCrashedState) {
-      addPlaneShading(ctx2d);
+      addPlaneSilhouetteShading(ctx2d);
     }
   }
 
