@@ -869,6 +869,9 @@ function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') 
       clearTimeout(sparkTimerId);
       sparkTimerId = null;
     }
+    if (container?.isConnected) {
+      container.remove();
+    }
     sparkHost.innerHTML = '';
   };
 
