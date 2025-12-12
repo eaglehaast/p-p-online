@@ -28,10 +28,7 @@ body, button {
   body {
     position: relative;
     font-family: 'Roboto', sans-serif;
-    background-image: url("background behind the canvas.png"), url("background paper 1.png");
-    background-size: 460px 800px, 460px 800px;
-    background-repeat: no-repeat;
-    background-position: center top, center top;
+    background-color: #000;
     margin: 0;
     padding: 0;
     height: 100dvh;
@@ -90,6 +87,15 @@ body, button {
     background-position: center top, center top;
     --score-scale: 1;
   }
+
+  /* TEMP: layout debug outlines */
+  #gameContainer { outline: 2px solid red; }
+  #overlayContainer { outline: 2px solid blue; }
+  #gameCanvas { outline: 2px solid green; }
+  #aimCanvas { outline: 2px dashed orange; }
+  #planeCanvas { outline: 2px dashed cyan; }
+  .score-counter { outline: 2px solid magenta; }
+  .plane-counter { outline: 2px solid yellow; }
 
   .score-counter {
     position: absolute;
