@@ -5801,17 +5801,8 @@ function alignMenuStage(viewportWidth, viewportHeight, offsetLeft, offsetTop, sc
   if (!modeMenuDiv || !menuScreen) return;
 
   const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
-  const scaledWidth = FRAME_BASE_WIDTH * safeScale;
-  const scaledHeight = FRAME_BASE_HEIGHT * safeScale;
 
-  const centeredLeft = offsetLeft + (viewportWidth - scaledWidth) / 2;
-  const centeredTop = offsetTop + (viewportHeight - scaledHeight) / 2;
-
-  modeMenuDiv.style.width = FRAME_BASE_WIDTH + 'px';
-  modeMenuDiv.style.height = FRAME_BASE_HEIGHT + 'px';
-  modeMenuDiv.style.transform = `scale(${safeScale})`;
-  modeMenuDiv.style.left = (centeredLeft / safeScale) + 'px';
-  modeMenuDiv.style.top = (centeredTop / safeScale) + 'px';
+  menuScreen.style.setProperty('--menu-scale', safeScale);
 }
 
 /* ======= CANVAS RESIZE ======= */
