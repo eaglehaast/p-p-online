@@ -4748,6 +4748,7 @@ function drawPlanesAndTrajectories(){
 
   for (const point of points) {
     if (!point.isAlive || point.burning) {
+      point.glow = 0;
       destroyedOrBurning.push(point);
     } else {
       activePlanes.push(point);
@@ -4774,8 +4775,13 @@ function drawPlanesAndTrajectories(){
     drawPlaneSegments(targetCtx, p);
     const glowTarget = showGlow && p.color === activeColor && p.isAlive && !p.burning ? 1 : 0;
     if(p.glow === undefined) p.glow = glowTarget;
-    p.glow += (glowTarget - p.glow) * 0.1;
-    drawThinPlane(targetCtx, p, p.glow);
+    if(!p.isAlive || p.burning){
+      p.glow = 0;
+    } else {
+      p.glow += (glowTarget - p.glow) * 0.1;
+    }
+    const renderGlow = (!p.isAlive || p.burning) ? 0 : p.glow;
+    drawThinPlane(targetCtx, p, renderGlow);
 
     if(allowRangeLabel && handleCircle.active && handleCircle.pointRef === p){
       let vdx = handleCircle.shakyX - p.x;
