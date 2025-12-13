@@ -668,23 +668,19 @@ function sizeAndAlignOverlays() {
     return;
   }
 
-  const viewport = getVisualViewportState();
-  const safeScale = Number.isFinite(viewport.scale) && viewport.scale > 0 ? viewport.scale : 1;
-  const offsetLeft = Number.isFinite(viewport.offsetLeft) ? viewport.offsetLeft : 0;
-  const offsetTop = Number.isFinite(viewport.offsetTop) ? viewport.offsetTop : 0;
+  const adjustedRect = getViewportAdjustedBoundingClientRect(gameCanvas);
+  const rawRect = gameCanvas?.getBoundingClientRect?.();
+  const rect = (Number.isFinite(adjustedRect?.width) && adjustedRect.width > 0 && Number.isFinite(adjustedRect?.height) && adjustedRect.height > 0)
+    ? adjustedRect
+    : rawRect;
 
-  const baseWidth = Number.isFinite(viewport.width) && viewport.width > 0
-    ? viewport.width * safeScale
-    : (typeof window !== "undefined" && Number.isFinite(window.innerWidth) ? window.innerWidth : 0);
-  const baseHeight = Number.isFinite(viewport.height) && viewport.height > 0
-    ? viewport.height * safeScale
-    : (typeof window !== "undefined" && Number.isFinite(window.innerHeight) ? window.innerHeight : 0);
+  const left = Number.isFinite(rect?.left) ? rect.left : 0;
+  const top = Number.isFinite(rect?.top) ? rect.top : 0;
+  const width = Math.max(1, Math.round(Number.isFinite(rect?.width) ? rect.width : 0));
+  const height = Math.max(1, Math.round(Number.isFinite(rect?.height) ? rect.height : 0));
 
-  const width = Math.max(1, Math.round(baseWidth));
-  const height = Math.max(1, Math.round(baseHeight));
-
-  overlayContainer.style.left = `${offsetLeft}px`;
-  overlayContainer.style.top = `${offsetTop}px`;
+  overlayContainer.style.left = `${left}px`;
+  overlayContainer.style.top = `${top}px`;
   overlayContainer.style.width = `${width}px`;
   overlayContainer.style.height = `${height}px`;
   overlayContainer.style.transform = "none";
@@ -693,6 +689,53 @@ function sizeAndAlignOverlays() {
     fxLayerElement.style.width = `${width}px`;
     fxLayerElement.style.height = `${height}px`;
   }
+}
+
+const FX_RECT_MISMATCH_KEYS = new Set();
+const FX_RECT_MISMATCH_TOLERANCE = 4;
+
+function warnIfFxHostMismatch(boardRect, hostRect, context = 'fx') {
+  if (!boardRect || !hostRect) {
+    return;
+  }
+
+  const bWidth = Number.isFinite(boardRect.width) ? boardRect.width : 0;
+  const bHeight = Number.isFinite(boardRect.height) ? boardRect.height : 0;
+  const hWidth = Number.isFinite(hostRect.width) ? hostRect.width : 0;
+  const hHeight = Number.isFinite(hostRect.height) ? hostRect.height : 0;
+  const bLeft = Number.isFinite(boardRect.left) ? boardRect.left : 0;
+  const bTop = Number.isFinite(boardRect.top) ? boardRect.top : 0;
+  const hLeft = Number.isFinite(hostRect.left) ? hostRect.left : 0;
+  const hTop = Number.isFinite(hostRect.top) ? hostRect.top : 0;
+
+  const widthDiff = Math.abs(bWidth - hWidth);
+  const heightDiff = Math.abs(bHeight - hHeight);
+  const leftDiff = Math.abs(bLeft - hLeft);
+  const topDiff = Math.abs(bTop - hTop);
+
+  if (
+    widthDiff <= FX_RECT_MISMATCH_TOLERANCE &&
+    heightDiff <= FX_RECT_MISMATCH_TOLERANCE &&
+    leftDiff <= FX_RECT_MISMATCH_TOLERANCE &&
+    topDiff <= FX_RECT_MISMATCH_TOLERANCE
+  ) {
+    return;
+  }
+
+  const key = `${context}:${Math.round(bWidth)}x${Math.round(bHeight)}@${Math.round(bLeft)},${Math.round(bTop)}->${Math.round(hWidth)}x${Math.round(hHeight)}@${Math.round(hLeft)},${Math.round(hTop)}`;
+  if (FX_RECT_MISMATCH_KEYS.has(key)) {
+    return;
+  }
+
+  FX_RECT_MISMATCH_KEYS.add(key);
+  console.warn(`[FX] Host rect mismatch detected (${context})`, {
+    boardRect,
+    hostRect,
+    widthDiff,
+    heightDiff,
+    leftDiff,
+    topDiff
+  });
 }
 
 // ---- ЕДИНЫЕ размеры макета ----
@@ -1181,9 +1224,10 @@ function updatePlaneFlameFxPosition(plane, metrics) {
   if (!data) {
     const boardRect = getViewportAdjustedBoundingClientRect(gameCanvas);
     const fxLayer = document.getElementById('fxLayer');
-    const host = fxLayer || document.body;
+    const host = fxLayer || overlayContainer || document.body;
     const hostRect = getViewportAdjustedBoundingClientRect(host);
     data = { boardRect, hostRect };
+    warnIfFxHostMismatch(boardRect, hostRect, 'plane flame');
   }
 
   const { boardRect, hostRect } = data;
@@ -1212,10 +1256,11 @@ function updateAllPlaneFlameFxPositions() {
 
   const boardRect = getViewportAdjustedBoundingClientRect(gameCanvas);
   const fxLayer = document.getElementById('fxLayer');
-  const host = fxLayer || document.body;
+  const host = fxLayer || overlayContainer || document.body;
   const hostRect = getViewportAdjustedBoundingClientRect(host);
 
   const metrics = { boardRect, hostRect };
+  warnIfFxHostMismatch(boardRect, hostRect, 'plane flame batch');
 
   for (const plane of planeFlameFx.keys()) {
     updatePlaneFlameFxPosition(plane, metrics);
