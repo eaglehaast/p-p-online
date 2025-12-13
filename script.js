@@ -1235,7 +1235,6 @@ function addExplosionInstance(x, y, animation) {
 function spawnExplosionGifFallback(x, y, explosionSrc) {
   // создаём IMG и позиционируем относительно страницы
   const img = new Image();
-  img.src = explosionSrc;            // ← без пробелов в имени файла
   img.className = 'fx-explosion';
   img.style.position = 'absolute';
   img.style.pointerEvents = 'none';
@@ -1253,54 +1252,44 @@ function spawnExplosionGifFallback(x, y, explosionSrc) {
   img.style.left = absLeft + 'px';
   img.style.top  = absTop  + 'px';
 
-  const appendExplosion = () => {
-    const hasValidSize = img.complete && img.naturalWidth > 0 && img.naturalHeight > 0;
-    const cachedSprite = preloadedExplosionSprites.get(explosionSrc);
-    const spriteReady = cachedSprite ? cachedSprite.complete && cachedSprite.naturalWidth > 0 && cachedSprite.naturalHeight > 0 : false;
-    if (!hasValidSize && !spriteReady) {
-      console.warn('[FX] Explosion sprite is not ready, skipping append', {
-        imgComplete: img.complete,
-        imgNaturalWidth: img.naturalWidth,
-        imgNaturalHeight: img.naturalHeight,
-        spriteComplete: cachedSprite?.complete,
-        spriteNaturalWidth: cachedSprite?.naturalWidth,
-        spriteNaturalHeight: cachedSprite?.naturalHeight
-      });
-      return;
-    }
+  const cleanup = () => {
+    img.remove();
+  };
 
-    host.appendChild(img);
+  const showAndScheduleRemoval = () => {
     img.style.visibility = '';
-    setTimeout(() => {
-      img.remove();
-    }, EXPLOSION_DURATION_MS);
+
+    // Не обрезаем начало/конец: ждём полноценного проигрыша и ставим щедрый лимит.
+    const MAX_GIF_LIFETIME_MS = 8000;
+    const cleanupTimer = setTimeout(cleanup, MAX_GIF_LIFETIME_MS);
+    img.addEventListener('error', () => {
+      clearTimeout(cleanupTimer);
+      cleanup();
+    }, { once: true });
   };
 
-  const waitForImageReady = () => {
-    if (img.complete && img.naturalWidth > 0) {
-      return Promise.resolve();
-    }
+  const appendAndStart = () => {
+    host.appendChild(img);
 
-    if (typeof img.decode === 'function') {
-      return img.decode().catch(() => {
-        if (img.complete && img.naturalWidth > 0) {
-          return;
-        }
+    const onReady = (evt) => {
+      img.removeEventListener('load', onReady);
+      img.removeEventListener('error', onReady);
+      if (evt?.type === 'error') {
+        cleanup();
+        return;
+      }
+      showAndScheduleRemoval();
+    };
 
-        return new Promise(resolve => {
-          img.addEventListener('load', resolve, { once: true });
-          img.addEventListener('error', resolve, { once: true });
-        });
-      });
-    }
+    img.addEventListener('load', onReady);
+    img.addEventListener('error', onReady);
 
-    return new Promise(resolve => {
-      img.addEventListener('load', resolve, { once: true });
-      img.addEventListener('error', resolve, { once: true });
-    });
+    // Сбрасываем возможный кэшированный прогресс и запускаем анимацию после вставки в DOM.
+    img.src = '';
+    requestAnimationFrame(() => { img.src = explosionSrc; });
   };
 
-  waitForImageReady().then(appendExplosion);
+  appendAndStart();
 }
 
 function spawnExplosion(x, y, spriteSrc = null) {
