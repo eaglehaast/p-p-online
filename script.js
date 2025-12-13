@@ -691,6 +691,43 @@ function sizeAndAlignOverlays() {
   }
 }
 
+function syncFxHostToCanvas(host = null) {
+  if (!(overlayContainer instanceof HTMLElement)) {
+    return null;
+  }
+
+  const adjustedRect = getViewportAdjustedBoundingClientRect(gameCanvas);
+  const rawRect = gameCanvas?.getBoundingClientRect?.();
+  const rect = (Number.isFinite(adjustedRect?.width) && adjustedRect.width > 0 && Number.isFinite(adjustedRect?.height) && adjustedRect.height > 0)
+    ? adjustedRect
+    : rawRect;
+
+  const left = Number.isFinite(rect?.left) ? rect.left : 0;
+  const top = Number.isFinite(rect?.top) ? rect.top : 0;
+  const width = Math.max(1, Math.round(Number.isFinite(rect?.width) ? rect.width : 0));
+  const height = Math.max(1, Math.round(Number.isFinite(rect?.height) ? rect.height : 0));
+
+  overlayContainer.style.left = `${left}px`;
+  overlayContainer.style.top = `${top}px`;
+  overlayContainer.style.width = `${width}px`;
+  overlayContainer.style.height = `${height}px`;
+
+  if (host instanceof HTMLElement) {
+    const hostStyle = window.getComputedStyle(host);
+    if (hostStyle.position === 'static') {
+      host.style.position = 'absolute';
+    }
+    Object.assign(host.style, {
+      left: '0px',
+      top: '0px',
+      width: `${width}px`,
+      height: `${height}px`
+    });
+  }
+
+  return rect;
+}
+
 const FX_RECT_MISMATCH_KEYS = new Set();
 const FX_RECT_MISMATCH_TOLERANCE = 4;
 const FX_HOST_MIN_SIZE = 2;
@@ -839,6 +876,7 @@ const PLANE_FLAME_HOST_ID = 'planeFlameHost';
 
 let flameCycleIndex = 0;
 let flameStyleRevision = 0;
+let planeFlameOffsetWarningLogged = false;
 
 function ensurePlaneFlameHost() {
   const parent = overlayContainer instanceof HTMLElement
@@ -857,12 +895,12 @@ function forceLayoutRead(el) {
 }
 
 function remeasurePlaneFlameHost(host) {
-  sizeAndAlignOverlays();
+  syncFxHostToCanvas(host);
   forceLayoutRead(host);
   return getViewportAdjustedBoundingClientRect(host);
 }
 
-function schedulePlaneFlameHostRemeasure(host) {
+function schedulePlaneFlameHostRemeasure(host, context = 'plane flame') {
   if (pendingPlaneFlameHostRemeasure || !(host instanceof HTMLElement)) {
     return;
   }
@@ -873,6 +911,8 @@ function schedulePlaneFlameHostRemeasure(host) {
       const rect = remeasurePlaneFlameHost(host);
       if (isValidFxHostRect(rect)) {
         schedulePlaneFlameSync();
+      } else {
+        console.warn(`[FX] Skipping ${context}: host rect invalid`, { hostRect: rect });
       }
     });
   });
@@ -903,10 +943,10 @@ function resolvePlaneFlameMetrics(context = 'plane flame') {
 
   let hostRect = getViewportAdjustedBoundingClientRect(host);
   if (!isValidFxHostRect(hostRect)) {
-    hostRect = remeasurePlaneFlameHost(host);
+    syncFxHostToCanvas(host);
+    hostRect = getViewportAdjustedBoundingClientRect(host);
     if (!isValidFxHostRect(hostRect)) {
-      schedulePlaneFlameHostRemeasure(host);
-      console.warn(`[FX] Skipping ${context}: host rect invalid`, { hostRect });
+      schedulePlaneFlameHostRemeasure(host, context);
       return null;
     }
   }
@@ -1381,12 +1421,37 @@ function updatePlaneFlameFxPosition(plane, metrics) {
     return;
   }
 
-  const { clientX, clientY } = worldToOverlay(x, y, { boardRect });
-  const left = clientX - hostRect.left;
-  const top = clientY - hostRect.top;
+  const hostWidth = Number.isFinite(hostRect.width) ? hostRect.width : 0;
+  const hostHeight = Number.isFinite(hostRect.height) ? hostRect.height : 0;
+  const boardWidth = Number.isFinite(boardRect.width) ? boardRect.width : 0;
+  const boardHeight = Number.isFinite(boardRect.height) ? boardRect.height : 0;
+  const canvasWidth = Number.isFinite(gameCanvas?.width) && gameCanvas.width !== 0 ? gameCanvas.width : 1;
+  const canvasHeight = Number.isFinite(gameCanvas?.height) && gameCanvas.height !== 0 ? gameCanvas.height : 1;
 
-  element.style.left = Math.round(left) + 'px';
-  element.style.top = Math.round(top) + 'px';
+  const scaleX = hostWidth > 0 ? hostWidth / canvasWidth : 1;
+  const scaleY = hostHeight > 0 ? hostHeight / canvasHeight : 1;
+
+  const leftDiff = (Number.isFinite(boardRect.left) ? boardRect.left : 0) - (Number.isFinite(hostRect.left) ? hostRect.left : 0);
+  const topDiff = (Number.isFinite(boardRect.top) ? boardRect.top : 0) - (Number.isFinite(hostRect.top) ? hostRect.top : 0);
+
+  const alignedLeft = Math.abs(leftDiff) <= 1;
+  const alignedTop = Math.abs(topDiff) <= 1;
+
+  if (alignedLeft && alignedTop) {
+    planeFlameOffsetWarningLogged = false;
+  } else if (!planeFlameOffsetWarningLogged) {
+    planeFlameOffsetWarningLogged = true;
+    console.warn('[FX] Plane flame host offset detected', { leftDiff, topDiff });
+  }
+
+  const translateX = alignedLeft ? 0 : leftDiff * (boardWidth > 0 ? (hostWidth / boardWidth) : 1);
+  const translateY = alignedTop ? 0 : topDiff * (boardHeight > 0 ? (hostHeight / boardHeight) : 1);
+
+  const fxX = x * scaleX + translateX;
+  const fxY = y * scaleY + translateY;
+
+  element.style.left = Math.round(fxX) + 'px';
+  element.style.top = Math.round(fxY) + 'px';
 }
 
 function updateAllPlaneFlameFxPositions() {
