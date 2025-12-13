@@ -884,6 +884,33 @@ const PLANE_HIT_COOLDOWN_SEC = 0.2;
 const planeFlameFx = new Map();
 const planeFlameTimers = new Map();
 
+function stopPlaneFlameEffects(plane) {
+  if (!plane) return;
+
+  const timer = planeFlameTimers.get(plane);
+  if (timer) {
+    clearTimeout(timer);
+    planeFlameTimers.delete(plane);
+  }
+
+  const fx = planeFlameFx.get(plane);
+  if (fx) {
+    fx?.stop?.();
+    const element = fx?.element || fx;
+    element?.remove?.();
+    planeFlameFx.delete(plane);
+  }
+
+  delete plane.burningFlameSrc;
+  delete plane.burningFlameImg;
+  delete plane.burningFlameStyleKey;
+  if (Object.prototype.hasOwnProperty.call(plane, 'burningFlameStyleRevision')) {
+    delete plane.burningFlameStyleRevision;
+  }
+  delete plane.crashFlameImg;
+  delete plane.crashFlameSrc;
+}
+
 function applyFlameElementStyles(element, size = BASE_FLAME_DISPLAY_SIZE, planeColor = '') {
   if (!element) return;
   element.classList.add('fx-flame');
@@ -3743,20 +3770,10 @@ function destroyPlane(fp){
     p.flagColor = null;
   }
   p.isAlive = false;
-  p.burning = true;
-  ensurePlaneBurningFlame(p);
-  p.collisionX = p.x;
-  p.collisionY = p.y;
-  const explosionTimestamp = performance.now();
-  p.explosionStart = explosionTimestamp;
-  p.killMarkerStart = explosionTimestamp;
-
-  try { spawnExplosion(p.collisionX, p.collisionY, p); }
-  catch(e) { console.warn('[FX] spawnExplosion error', e); }
-
-
-  schedulePlaneFlameFx(p);
-
+  p.burning = false;
+  stopPlaneFlameEffects(p);
+  const removalTimestamp = performance.now();
+  p.killMarkerStart = removalTimestamp;
 
   flyingPoints = flyingPoints.filter(x=>x!==fp);
   awardPoint(p.color);
@@ -3806,16 +3823,10 @@ function handleAAForPlane(p, fp){
             if(!aa.lastTriggerAt || now - aa.lastTriggerAt > aa.cooldownMs){
               aa.lastTriggerAt = now;
               p.isAlive=false;
-              p.burning=true;
-              ensurePlaneBurningFlame(p);
-              p.collisionX=p.x; p.collisionY=p.y;
+              p.burning=false;
+              stopPlaneFlameEffects(p);
               const aaExplosionTimestamp = performance.now();
-              p.explosionStart = aaExplosionTimestamp;
               p.killMarkerStart = aaExplosionTimestamp;
-
-              try { spawnExplosion(p.collisionX, p.collisionY, p); }
-              catch(e) { console.warn('[FX] spawnExplosion error', e); }
-              schedulePlaneFlameFx(p);
               if(fp) {
                 flyingPoints = flyingPoints.filter(x=>x!==fp);
               }
@@ -4742,8 +4753,8 @@ function drawPlanesAndTrajectories(){
 
   let rangeTextInfo = null;
   const activeColor = turnColors[turnIndex];
-  const showGlow = !handleCircle.active && !flyingPoints.some(fp => fp.plane.color === activeColor);
-  const destroyedOrBurning = [];
+  // Temporarily disable all plane glow/highlight effects for debugging.
+  const showGlow = false;
   const activePlanes = [];
 
   for (const point of points) {
@@ -4753,6 +4764,7 @@ function drawPlanesAndTrajectories(){
     } else {
       activePlanes.push(point);
     }
+    activePlanes.push(point);
   }
 
   const drawPlaneSegments = (ctx, plane) => {
@@ -4769,9 +4781,8 @@ function drawPlanesAndTrajectories(){
   };
 
   const renderPlane = (p, targetCtx, { allowRangeLabel = false } = {}) => {
-    if(!p.isAlive && !p.burning) return;
+    if(!p.isAlive || p.burning) return;
 
-    // Allow wreck sprites to render after explosions finish instead of exiting early.
     drawPlaneSegments(targetCtx, p);
     const glowTarget = showGlow && p.color === activeColor && p.isAlive && !p.burning ? 1 : 0;
     if(p.glow === undefined) p.glow = glowTarget;
@@ -4806,16 +4817,9 @@ function drawPlanesAndTrajectories(){
     }
   };
 
-  for(const p of destroyedOrBurning){
-    renderPlane(p, gameCtx);
-    ensurePlaneFlameFx(p);
-  }
-
   for(const p of activePlanes){
     renderPlane(p, planeCtx, { allowRangeLabel: true });
   }
-
-  updateAllPlaneFlameFxPositions();
 
   if(rangeTextInfo){
     planeCtx.save();
@@ -5053,20 +5057,11 @@ function checkPlaneHits(plane, fp){
     const d  = Math.hypot(dx, dy);
     if(d < POINT_RADIUS*2){
       p.isAlive = false;
-      p.burning = true;
-      ensurePlaneBurningFlame(p);
+      p.burning = false;
+      stopPlaneFlameEffects(p);
       flyingPoints = flyingPoints.filter(other => other.plane !== p);
-      const cx = d === 0 ? plane.x : plane.x + dx / d * POINT_RADIUS;
-      const cy = d === 0 ? plane.y : plane.y + dy / d * POINT_RADIUS;
-      p.collisionX = cx;
-      p.collisionY = cy;
-      const collisionExplosionTimestamp = performance.now();
-      p.explosionStart = collisionExplosionTimestamp;
-      p.killMarkerStart = collisionExplosionTimestamp;
-
-      try { spawnExplosion(p.collisionX, p.collisionY, p); }
-      catch(e) { console.warn('[FX] spawnExplosion error', e); }
-      schedulePlaneFlameFx(p);
+      const removalTimestamp = performance.now();
+      p.killMarkerStart = removalTimestamp;
       if(fp){
         fp.lastHitPlane = p;
         fp.lastHitCooldown = PLANE_HIT_COOLDOWN_SEC;
