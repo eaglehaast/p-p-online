@@ -12,6 +12,20 @@ const MAP_PREVIEW_BASE_HEIGHT = 640;
 
 const CONTROL_PANEL_PREVIEW_CACHE = new Map();
 
+function logCanvasCreation(canvas, label = "") {
+  if (!(canvas instanceof HTMLCanvasElement)) {
+    return;
+  }
+  const tag = label ? ` ${label}` : "";
+  console.log(`CANVAS CREATED${tag}`.trim(), {
+    id: canvas.id,
+    className: canvas.className,
+    width: canvas.width,
+    height: canvas.height,
+    stack: new Error().stack,
+  });
+}
+
 function mergeRunsIntoRects(runs, tolerance = 1){
   const merged = [];
   for(const run of runs){
@@ -70,6 +84,7 @@ function generatePreviewBuildingsFromPng(src){
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = img.naturalWidth;
       tempCanvas.height = img.naturalHeight;
+      logCanvasCreation(tempCanvas, 'mapPreviewExtraction');
       const ctx = tempCanvas.getContext('2d');
       ctx.drawImage(img, 0, 0);
       const imageData = ctx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
@@ -1034,6 +1049,7 @@ function createPreviewCanvas(){
   previewCanvas = document.createElement('canvas');
   previewCanvas.id = 'mapPreviewSimulation';
   previewCanvas.className = 'map-preview-simulation';
+  logCanvasCreation(previewCanvas, 'mapPreviewSimulation');
   mapPreviewContainer.appendChild(previewCanvas);
   ensurePreviewCanvasLayering();
   previewCtx = previewCanvas.getContext('2d');
