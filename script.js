@@ -32,7 +32,25 @@ const bluePlaneCounter  = document.getElementById("gs_planecounter_blue");
 
 const EXPLOSION_SPRITE_SRC = 'explosion6.gif';
 
-let explosionSprite = null;
+const BLUE_EXPLOSIONS = [
+  'ui_gamescreen/explosions_blue/explosion_blue_1.gif',
+  'ui_gamescreen/explosions_blue/explosion_blue_2.gif',
+  'ui_gamescreen/explosions_blue/explosion_blue_3.gif',
+  'ui_gamescreen/explosions_blue/explosion_blue_4.gif',
+  'ui_gamescreen/explosions_blue/explosion_blue_5.gif'
+];
+
+const GREEN_EXPLOSIONS = [
+  'ui_gamescreen/explosions_green/explosion_green_1.gif',
+  'ui_gamescreen/explosions_green/explosion_green_2.gif',
+  'ui_gamescreen/explosions_green/explosion_green_3.gif',
+  'ui_gamescreen/explosions_green/explosion_green_4.gif',
+  'ui_gamescreen/explosions_green/explosion_green_5.gif'
+];
+
+const ALL_EXPLOSION_SPRITES = [...BLUE_EXPLOSIONS, ...GREEN_EXPLOSIONS];
+
+const preloadedExplosionSprites = new Map();
 
 const PRELOAD_IMAGE_URLS = [
   // Main menu
@@ -72,7 +90,10 @@ const PRELOAD_IMAGE_URLS = [
   "planes/blue plane fall.png",
   "planes/green plane fall.png",
 
-  "ui_gamescreen/maps/easy 1-2 round/map 1 - clear sky 3.png"
+  "ui_gamescreen/maps/easy 1-2 round/map 1 - clear sky 3.png",
+
+  // Explosion sprites
+  ...ALL_EXPLOSION_SPRITES
 ];
 
 function hideLoadingOverlay() {
@@ -98,19 +119,13 @@ function preloadCriticalImages() {
       return;
     }
     const img = new Image();
+    if (ALL_EXPLOSION_SPRITES.includes(src)) {
+      preloadedExplosionSprites.set(src, img);
+    }
     const done = () => resolve();
     img.onload = done;
     img.onerror = done;
     img.src = src;
-  }));
-
-  preloadTasks.push(new Promise(resolve => {
-    const img = new Image();
-    explosionSprite = img;
-    const done = () => resolve();
-    img.onload = done;
-    img.onerror = done;
-    img.src = EXPLOSION_SPRITE_SRC;
   }));
 
   const preloadPromise = Promise.allSettled(preloadTasks);
@@ -1119,10 +1134,41 @@ function ensurePlaneFlameFx(plane) {
 
 }
 
-function spawnExplosion(x, y, color = null) {
+function getExplosionSpritesForPlane(plane) {
+  if (!plane) {
+    return ALL_EXPLOSION_SPRITES;
+  }
+
+  return plane.color === 'blue'
+    ? BLUE_EXPLOSIONS
+    : GREEN_EXPLOSIONS;
+}
+
+function ensurePlaneExplosionSprite(plane) {
+  if (!plane) {
+    return null;
+  }
+
+  if (plane.explosionSpriteSrc) {
+    return plane.explosionSpriteSrc;
+  }
+
+  const pool = getExplosionSpritesForPlane(plane);
+  if (!Array.isArray(pool) || pool.length === 0) {
+    plane.explosionSpriteSrc = null;
+    return plane.explosionSpriteSrc;
+  }
+
+  const randomIndex = Math.floor(Math.random() * pool.length);
+  plane.explosionSpriteSrc = pool[randomIndex];
+  return plane.explosionSpriteSrc;
+}
+
+function spawnExplosion(x, y, spriteSrc = null) {
   // создаём IMG и позиционируем относительно страницы
   const img = new Image();
-  img.src = explosionSprite?.src || EXPLOSION_SPRITE_SRC;            // ← без пробелов в имени файла
+  const explosionSrc = spriteSrc || EXPLOSION_SPRITE_SRC;            // ← без пробелов в имени файла
+  img.src = explosionSrc;
   img.className = 'fx-explosion';
   img.style.position = 'absolute';
   img.style.pointerEvents = 'none';
@@ -1142,15 +1188,16 @@ function spawnExplosion(x, y, color = null) {
 
   const appendExplosion = () => {
     const hasValidSize = img.complete && img.naturalWidth > 0 && img.naturalHeight > 0;
-    const spriteReady = explosionSprite ? explosionSprite.complete && explosionSprite.naturalWidth > 0 && explosionSprite.naturalHeight > 0 : false;
+    const cachedSprite = preloadedExplosionSprites.get(explosionSrc);
+    const spriteReady = cachedSprite ? cachedSprite.complete && cachedSprite.naturalWidth > 0 && cachedSprite.naturalHeight > 0 : false;
     if (!hasValidSize && !spriteReady) {
       console.warn('[FX] Explosion sprite is not ready, skipping append', {
         imgComplete: img.complete,
         imgNaturalWidth: img.naturalWidth,
         imgNaturalHeight: img.naturalHeight,
-        spriteComplete: explosionSprite?.complete,
-        spriteNaturalWidth: explosionSprite?.naturalWidth,
-        spriteNaturalHeight: explosionSprite?.naturalHeight
+        spriteComplete: cachedSprite?.complete,
+        spriteNaturalWidth: cachedSprite?.naturalWidth,
+        spriteNaturalHeight: cachedSprite?.naturalHeight
       });
       return;
     }
@@ -1185,18 +1232,6 @@ function spawnExplosion(x, y, color = null) {
       img.addEventListener('error', resolve, { once: true });
     });
   };
-
-  if (explosionSprite && !explosionSprite.complete) {
-    const onExplosionReady = () => {
-      explosionSprite.removeEventListener('load', onExplosionReady);
-      explosionSprite.removeEventListener('error', onExplosionReady);
-      waitForImageReady().then(appendExplosion);
-    };
-
-    explosionSprite.addEventListener('load', onExplosionReady);
-    explosionSprite.addEventListener('error', onExplosionReady);
-    return;
-  }
 
   waitForImageReady().then(appendExplosion);
 
@@ -2611,6 +2646,7 @@ function makePlane(x,y,color,angle){
     isAlive:true,
     burning:false,
     explosionStart:null,
+    explosionSpriteSrc:null,
     angle,
     segments:[],
     collisionX:null,
@@ -3505,7 +3541,9 @@ function destroyPlane(fp){
   p.explosionStart = explosionTimestamp;
   p.killMarkerStart = explosionTimestamp;
 
-  try { spawnExplosion(p.collisionX, p.collisionY, p.color); }
+  const explosionSpriteSrc = ensurePlaneExplosionSprite(p);
+
+  try { spawnExplosion(p.collisionX, p.collisionY, explosionSpriteSrc); }
   catch(e) { console.warn('[FX] spawnExplosion error', e); }
 
 
@@ -3567,7 +3605,9 @@ function handleAAForPlane(p, fp){
               p.explosionStart = aaExplosionTimestamp;
               p.killMarkerStart = aaExplosionTimestamp;
 
-              try { spawnExplosion(p.collisionX, p.collisionY, p.color); }
+              const explosionSpriteSrc = ensurePlaneExplosionSprite(p);
+
+              try { spawnExplosion(p.collisionX, p.collisionY, explosionSpriteSrc); }
               catch(e) { console.warn('[FX] spawnExplosion error', e); }
               schedulePlaneFlameFx(p);
               if(fp) {
@@ -4808,7 +4848,9 @@ function checkPlaneHits(plane, fp){
       p.explosionStart = collisionExplosionTimestamp;
       p.killMarkerStart = collisionExplosionTimestamp;
 
-      try { spawnExplosion(p.collisionX, p.collisionY, p.color); }
+      const explosionSpriteSrc = ensurePlaneExplosionSprite(p);
+
+      try { spawnExplosion(p.collisionX, p.collisionY, explosionSpriteSrc); }
       catch(e) { console.warn('[FX] spawnExplosion error', e); }
       schedulePlaneFlameFx(p);
       if(fp){
