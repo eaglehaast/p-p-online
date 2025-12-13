@@ -22,6 +22,20 @@ const aimCtx      = aimCanvas.getContext("2d");
 const planeCanvas = document.getElementById("planeCanvas");
 const planeCtx    = planeCanvas.getContext("2d");
 
+function logCanvasCreation(canvas, label = "") {
+  if (!(canvas instanceof HTMLCanvasElement)) {
+    return;
+  }
+  const tag = label ? ` ${label}` : "";
+  console.log(`CANVAS CREATED${tag}`.trim(), {
+    id: canvas.id,
+    className: canvas.className,
+    width: canvas.width,
+    height: canvas.height,
+    stack: new Error().stack,
+  });
+}
+
 const overlayContainer = document.getElementById("overlayContainer");
 const fxLayerElement = document.getElementById("fxLayer");
 
@@ -1198,6 +1212,40 @@ function pickExplosionSprite(color) {
   return pool[randomIndex] || null;
 }
 
+function getExplosionDrawContext(preferredCtx) {
+  const targetCtx = preferredCtx || gameCtx;
+  if (!targetCtx) {
+    return null;
+  }
+
+  const canvas = targetCtx.canvas;
+  const canvasMismatch = canvas && canvas !== gameCanvas;
+  if (canvasMismatch) {
+    console.warn('[FX] Redirecting explosion draw to main game canvas', {
+      requestedCanvasId: canvas.id,
+      requestedCanvasClass: canvas.className,
+      requestedSize: { width: canvas.width, height: canvas.height },
+      mainCanvasSize: { width: gameCanvas?.width, height: gameCanvas?.height },
+    });
+  }
+
+  return gameCtx || targetCtx;
+}
+
+function logExplosionDraw(ctx, explosion) {
+  if (!ctx) return;
+  const canvas = ctx.canvas;
+  console.log('[FX] Drawing explosion', {
+    canvasId: canvas?.id,
+    canvasClass: canvas?.className,
+    canvasWidth: canvas?.width,
+    canvasHeight: canvas?.height,
+    x: explosion?.x,
+    y: explosion?.y,
+    size: explosion?.size,
+  });
+}
+
 function spawnExplosion(x, y, plane) {
   const color = plane?.color === 'green' ? 'green' : 'blue';
   const sprite = pickExplosionSprite(color) || pickExplosionSprite();
@@ -1219,7 +1267,8 @@ function spawnExplosion(x, y, plane) {
 }
 
 function updateAndDrawExplosions(ctx) {
-  if (!ctx || activeExplosions.length === 0) {
+  const targetCtx = getExplosionDrawContext(ctx);
+  if (!targetCtx || activeExplosions.length === 0) {
     return;
   }
 
@@ -1242,11 +1291,13 @@ function updateAndDrawExplosions(ctx) {
     const drawX = explosion.x - drawHalfSize;
     const drawY = explosion.y - drawHalfSize;
 
-    ctx.save();
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.drawImage(explosion.img, drawX, drawY, drawSize, drawSize);
-    ctx.restore();
+    logExplosionDraw(targetCtx, explosion);
+
+    targetCtx.save();
+    targetCtx.globalAlpha = 1;
+    targetCtx.globalCompositeOperation = 'source-over';
+    targetCtx.drawImage(explosion.img, drawX, drawY, drawSize, drawSize);
+    targetCtx.restore();
   }
 }
 
@@ -1606,11 +1657,12 @@ function colorWithAlpha(color, alpha){
 }
 
 let brickFrameBorderPxX = FIELD_BORDER_THICKNESS;
-let brickFrameBorderPxY = FIELD_BORDER_THICKNESS;
+  let brickFrameBorderPxY = FIELD_BORDER_THICKNESS;
 brickFrameImg.onload = () => {
   const tempCanvas = document.createElement("canvas");
   tempCanvas.width = brickFrameImg.naturalWidth;
   tempCanvas.height = brickFrameImg.naturalHeight;
+  logCanvasCreation(tempCanvas, 'brickFrame');
   const tempCtx = tempCanvas.getContext("2d");
   tempCtx.drawImage(brickFrameImg, 0, 0);
 
@@ -1937,6 +1989,7 @@ function generatePreviewBuildingsFromPng(src){
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = img.naturalWidth;
       tempCanvas.height = img.naturalHeight;
+      logCanvasCreation(tempCanvas, 'mapPreviewExtraction');
       const ctx = tempCanvas.getContext('2d');
       ctx.drawImage(img, 0, 0);
       const imageData = ctx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
