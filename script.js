@@ -1217,6 +1217,7 @@ function resetCanvasState(ctx, canvas){
   ctx.imageSmoothingQuality = "high";
 });
 
+const menuScreen = document.getElementById("menuScreen");
 const modeMenuDiv = document.getElementById("modeMenu");
 const hotSeatBtn  = document.getElementById("hotSeatBtn");
 const computerBtn = document.getElementById("computerBtn");
@@ -1231,6 +1232,16 @@ let selectedMode = null;
 let selectedRuleset = "classic";
 
 let menuBackgroundSnapshot = null;
+
+function setMenuVisibility(visible) {
+  const displayValue = visible ? "block" : "none";
+  if(menuScreen){
+    menuScreen.style.display = displayValue;
+  }
+  if(modeMenuDiv){
+    modeMenuDiv.style.display = displayValue;
+  }
+}
 
 function hideGameBackgroundForMenu() {
   if (!menuBackgroundSnapshot) {
@@ -2681,7 +2692,7 @@ function resetGame(){
   syncPlayButtonSkin(false);
 
   // Показать меню, скрыть канвасы
-  modeMenuDiv.style.display = "block";
+  setMenuVisibility(true);
   gameCanvas.style.display = "none";
   mantisIndicator.style.display = "none";
   goatIndicator.style.display = "none";
@@ -2765,7 +2776,7 @@ playBtn.addEventListener("click",()=>{
   }
   gameMode = selectedMode;
   restoreGameBackgroundAfterMenu();
-  modeMenuDiv.style.display = "none";
+  setMenuVisibility(false);
   startNewRound();
 });
 
@@ -5634,7 +5645,7 @@ yesBtn.addEventListener("click", () => {
   startNewRound();
 });
 noBtn.addEventListener("click", () => {
-  modeMenuDiv.style.display="block";
+  setMenuVisibility(true);
   resetGame();
 });
 
@@ -5786,6 +5797,23 @@ function rebuildBuildingsFromMap(map){
     .filter(b => Number.isFinite(b.x) && Number.isFinite(b.y) && Number.isFinite(b.width) && Number.isFinite(b.height));
 }
 
+function alignMenuStage(viewportWidth, viewportHeight, offsetLeft, offsetTop, scale) {
+  if (!modeMenuDiv || !menuScreen) return;
+
+  const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  const scaledWidth = FRAME_BASE_WIDTH * safeScale;
+  const scaledHeight = FRAME_BASE_HEIGHT * safeScale;
+
+  const centeredLeft = offsetLeft + (viewportWidth - scaledWidth) / 2;
+  const centeredTop = offsetTop + (viewportHeight - scaledHeight) / 2;
+
+  modeMenuDiv.style.width = FRAME_BASE_WIDTH + 'px';
+  modeMenuDiv.style.height = FRAME_BASE_HEIGHT + 'px';
+  modeMenuDiv.style.transform = `scale(${safeScale})`;
+  modeMenuDiv.style.left = (centeredLeft / safeScale) + 'px';
+  modeMenuDiv.style.top = (centeredTop / safeScale) + 'px';
+}
+
 /* ======= CANVAS RESIZE ======= */
 function resizeCanvas() {
   // Keep the game in portrait mode: if the device rotates to landscape,
@@ -5806,6 +5834,8 @@ function resizeCanvas() {
     viewportWidth / FRAME_BASE_WIDTH,
     viewportHeight / FRAME_BASE_HEIGHT
   );
+
+  alignMenuStage(viewportWidth, viewportHeight, offsetLeft, offsetTop, scale);
 
   const containerWidth = FRAME_BASE_WIDTH * scale;
   const containerHeight = FRAME_BASE_HEIGHT * scale;
