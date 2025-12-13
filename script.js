@@ -7,6 +7,97 @@
 
 
 /* ======= DOM ======= */
+const CANVAS_ALLOWLIST = new Set(["gameCanvas", "aimCanvas", "planeCanvas"]);
+const loggedCanvasWarnings = new Set();
+
+function describeCanvas(canvas) {
+  if (!(canvas instanceof HTMLCanvasElement)) return null;
+  const rect = canvas.getBoundingClientRect();
+  const computed = typeof getComputedStyle === 'function' ? getComputedStyle(canvas) : null;
+  const parent = canvas.parentNode;
+  return {
+    id: canvas.id,
+    className: canvas.className,
+    width: canvas.width,
+    height: canvas.height,
+    styleWidth: canvas.style?.width,
+    styleHeight: canvas.style?.height,
+    zIndex: computed?.zIndex || canvas.style?.zIndex || null,
+    display: computed?.display || canvas.style?.display || null,
+    parentTag: parent?.nodeName,
+    parentId: parent?.id,
+    parentClass: parent?.className,
+    rect: {
+      width: rect.width,
+      height: rect.height,
+      top: rect.top,
+      left: rect.left,
+    },
+  };
+}
+
+function logCanvasCreation(canvas, label = "") {
+  if (!(canvas instanceof HTMLCanvasElement)) {
+    return;
+  }
+  const tag = label ? ` ${label}` : "";
+  console.log(`CANVAS CREATED${tag}`.trim(), {
+    ...describeCanvas(canvas),
+    stack: new Error().stack,
+  });
+}
+
+function logCanvasAttachment(canvas, reason = "attach") {
+  if (!(canvas instanceof HTMLCanvasElement)) return;
+  console.log(`CANVAS ${reason.toUpperCase()}`, {
+    ...describeCanvas(canvas),
+  });
+}
+
+function quarantineUnknownCanvas(canvas, reason = "untracked") {
+  if (!(canvas instanceof HTMLCanvasElement)) return;
+  if (CANVAS_ALLOWLIST.has(canvas.id)) return;
+  if (canvas.dataset.canvasQuarantined === "true") return;
+  canvas.dataset.canvasQuarantined = "true";
+  canvas.style.display = "none";
+  console.warn('[CanvasGuard] Hiding unexpected canvas', { reason, ...describeCanvas(canvas) });
+}
+
+function observeCanvasLifecycle(canvas, label = "") {
+  if (!(canvas instanceof HTMLCanvasElement)) return;
+  logCanvasCreation(canvas, label);
+  if (canvas.isConnected) {
+    logCanvasAttachment(canvas, 'connected');
+  }
+  const observer = new MutationObserver(() => {
+    logCanvasAttachment(canvas, 'mutation');
+  });
+  observer.observe(canvas, { attributes: true, attributeFilter: ['style', 'width', 'height', 'class'] });
+  return observer;
+}
+
+function assertGameCanvasContext(ctx, label = "") {
+  if (!ctx || ctx.canvas === gameCanvas) return;
+  if (loggedCanvasWarnings.has(label || ctx.canvas)) return;
+  loggedCanvasWarnings.add(label || ctx.canvas);
+  console.error('[CanvasGuard] Unexpected drawing context, expected gameCanvas', {
+    label,
+    requestedCanvas: describeCanvas(ctx.canvas),
+    expectedCanvas: describeCanvas(gameCanvas),
+    stack: new Error().stack,
+  });
+}
+
+const originalCreateElement = document.createElement.bind(document);
+document.createElement = function patchedCreateElement(tagName, ...args) {
+  const element = originalCreateElement(tagName, ...args);
+  if (String(tagName).toLowerCase() === 'canvas') {
+    observeCanvasLifecycle(element, 'createElement');
+    quarantineUnknownCanvas(element, 'created');
+  }
+  return element;
+};
+
 const mantisIndicator = document.getElementById("mantisIndicator");
 const goatIndicator   = document.getElementById("goatIndicator");
 
@@ -15,29 +106,34 @@ const loadingOverlay = document.getElementById("loadingOverlay");
 const gameContainer = document.getElementById("gameContainer");
 const gameCanvas  = document.getElementById("gameCanvas");
 const gameCtx     = gameCanvas.getContext("2d");
-
 const aimCanvas   = document.getElementById("aimCanvas");
 const aimCtx      = aimCanvas.getContext("2d");
-
 const planeCanvas = document.getElementById("planeCanvas");
 const planeCtx    = planeCanvas.getContext("2d");
-
-function logCanvasCreation(canvas, label = "") {
-  if (!(canvas instanceof HTMLCanvasElement)) {
-    return;
-  }
-  const tag = label ? ` ${label}` : "";
-  console.log(`CANVAS CREATED${tag}`.trim(), {
-    id: canvas.id,
-    className: canvas.className,
-    width: canvas.width,
-    height: canvas.height,
-    stack: new Error().stack,
-  });
-}
+[
+  [gameCanvas, 'inline:game'],
+  [aimCanvas, 'inline:aim'],
+  [planeCanvas, 'inline:plane'],
+].forEach(([canvas, label]) => {
+  observeCanvasLifecycle(canvas, label);
+  quarantineUnknownCanvas(canvas, 'inline');
+});
 
 const overlayContainer = document.getElementById("overlayContainer");
 const fxLayerElement = document.getElementById("fxLayer");
+
+const canvasDomObserver = new MutationObserver((mutations) => {
+  for (const mutation of mutations) {
+    mutation.addedNodes?.forEach(node => {
+      if (node instanceof HTMLCanvasElement) {
+        observeCanvasLifecycle(node, 'dom-added');
+        quarantineUnknownCanvas(node, 'dom-added');
+      }
+    });
+  }
+});
+
+canvasDomObserver.observe(document.documentElement, { childList: true, subtree: true });
 
 const greenScoreCounter = document.getElementById("greenScoreCounter");
 const blueScoreCounter  = document.getElementById("blueScoreCounter");
@@ -1323,6 +1419,8 @@ function spawnExplosion(x, y, plane) {
 
 function updateAndDrawExplosions(ctx) {
   const targetCtx = getExplosionDrawContext(ctx);
+  assertGameCanvasContext(ctx, 'explosion-input');
+  assertGameCanvasContext(targetCtx, 'explosion-target');
   if (!targetCtx || activeExplosions.length === 0) {
     return;
   }
@@ -4680,6 +4778,7 @@ function drawPlanesAndTrajectories(){
   }
 
   const drawPlaneSegments = (ctx, plane) => {
+    assertGameCanvasContext(ctx, 'plane-segments');
     ctx.save();
     for (const seg of plane.segments) {
       ctx.beginPath();
@@ -4693,6 +4792,7 @@ function drawPlanesAndTrajectories(){
   };
 
   const renderPlane = (p, targetCtx, { allowRangeLabel = false } = {}) => {
+    assertGameCanvasContext(targetCtx, 'plane-render');
     if(!p.isAlive && !p.burning) return;
 
     // Allow wreck sprites to render after explosions finish instead of exiting early.
