@@ -4742,12 +4742,14 @@ function drawPlanesAndTrajectories(){
 
   let rangeTextInfo = null;
   const activeColor = turnColors[turnIndex];
-  const showGlow = !handleCircle.active && !flyingPoints.some(fp => fp.plane.color === activeColor);
+  // Temporarily disable all plane glow/highlight effects for debugging.
+  const showGlow = false;
   const destroyedOrBurning = [];
   const activePlanes = [];
 
   for (const point of points) {
     if (!point.isAlive || point.burning) {
+      point.glow = 0;
       destroyedOrBurning.push(point);
     } else {
       activePlanes.push(point);
@@ -4772,10 +4774,9 @@ function drawPlanesAndTrajectories(){
 
     // Allow wreck sprites to render after explosions finish instead of exiting early.
     drawPlaneSegments(targetCtx, p);
-    const glowTarget = showGlow && p.color === activeColor && p.isAlive && !p.burning ? 1 : 0;
-    if(p.glow === undefined) p.glow = glowTarget;
-    p.glow += (glowTarget - p.glow) * 0.1;
-    drawThinPlane(targetCtx, p, p.glow);
+    const glowTarget = 0;
+    p.glow = 0;
+    drawThinPlane(targetCtx, p, glowTarget);
 
     if(allowRangeLabel && handleCircle.active && handleCircle.pointRef === p){
       let vdx = handleCircle.shakyX - p.x;
