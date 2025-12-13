@@ -1313,12 +1313,34 @@ function spawnExplosion(x, y, plane) {
     sourceY: y,
     sourceIsLayout: mappedCoords.fromLayout,
     img,
-    spawnTime: performance.now(),
+    spawnTime: null,
     duration: EXPLOSION_DURATION_MS,
     size: EXPLOSION_DRAW_SIZE,
+    ready: false,
   };
 
-  activeExplosions.push(explosion);
+  const finalizeSpawn = () => {
+    if (explosion.ready) return;
+    explosion.ready = true;
+    explosion.spawnTime = performance.now();
+    activeExplosions.push(explosion);
+  };
+
+  const handleError = (event) => {
+    console.warn('[FX] Explosion sprite failed to load', { sprite, event });
+  };
+
+  if (img.complete && img.naturalWidth > 0) {
+    finalizeSpawn();
+    return;
+  }
+
+  img.decode?.()
+    .then(finalizeSpawn)
+    .catch(handleError);
+
+  img.addEventListener('load', finalizeSpawn, { once: true });
+  img.addEventListener('error', handleError, { once: true });
 }
 
 function updateAndDrawExplosions(ctx) {
@@ -1337,7 +1359,7 @@ function updateAndDrawExplosions(ctx) {
       continue;
     }
 
-    if (!explosion.img) {
+    if (!explosion.img || !explosion.ready || !explosion.img.complete || explosion.img.naturalWidth === 0) {
       continue;
     }
 
