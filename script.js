@@ -961,10 +961,21 @@ function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') 
   img.width = displaySize.width;
   img.height = displaySize.height;
   img.className = 'fx-flame-img';
-  container.appendChild(img);
 
   let attemptedSrc = resolvedSrc;
   let sparkTimerId = null;
+
+  let readyResolved = false;
+  let resolveReady;
+  const ready = new Promise((resolve) => {
+    resolveReady = resolve;
+  });
+
+  const resolveReadySafely = () => {
+    if (readyResolved) return;
+    readyResolved = true;
+    resolveReady();
+  };
 
   const stop = () => {
     img.onerror = null;
@@ -977,6 +988,24 @@ function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') 
       container.remove();
     }
     sparkHost.innerHTML = '';
+    resolveReadySafely();
+  };
+
+  const ensureReady = () => {
+    if (readyResolved) return;
+    if (img.complete && img.naturalWidth > 0) {
+      resolveReadySafely();
+      return;
+    }
+    if (typeof img.decode === 'function') {
+      img.decode()
+        .then(resolveReadySafely)
+        .catch(() => {
+          if (img.complete && img.naturalWidth > 0) {
+            resolveReadySafely();
+          }
+        });
+    }
   };
 
   img.onerror = () => {
@@ -1002,10 +1031,12 @@ function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') 
     }
     img.dataset.flameSrc = fallbackSrc;
     img.src = fallbackSrc;
+    ensureReady();
   };
 
   img.onload = () => {
     img.dataset.flameSrc = attemptedSrc || '';
+    resolveReadySafely();
   };
 
   img.dataset.flameSrc = resolvedSrc;
@@ -1019,9 +1050,16 @@ function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') 
     sparkTimerId = setTimeout(scheduleSpark, delay);
   };
 
-  scheduleSpark();
+  const startSparks = () => {
+    if (sparkTimerId) return;
+    scheduleSpark();
+  };
 
-  return { element: container, stop };
+  ensureReady();
+
+  container.appendChild(img);
+
+  return { element: container, stop, ready, startSparks };
 }
 
 function disablePlaneFlameFx(plane) {
@@ -1113,10 +1151,25 @@ function spawnBurningFlameFx(plane) {
     existingElement?.remove?.();
   }
 
-  host.appendChild(entry.element);
-  applyFlameVisualStyle(entry.element, plane?.burningFlameStyleKey || getCurrentFlameStyleKey());
-  planeFlameFx.set(plane, entry);
-  updatePlaneFlameFxPosition(plane);
+  let mounted = false;
+  const mountEntry = () => {
+    if (mounted || plane?.flameFxDisabled) {
+      entry.stop?.();
+      return;
+    }
+    host.appendChild(entry.element);
+    applyFlameVisualStyle(entry.element, plane?.burningFlameStyleKey || getCurrentFlameStyleKey());
+    planeFlameFx.set(plane, entry);
+    mounted = true;
+    entry.startSparks?.();
+    updatePlaneFlameFxPosition(plane);
+  };
+
+  if (entry.ready && typeof entry.ready.then === 'function') {
+    entry.ready.then(mountEntry);
+  } else {
+    mountEntry();
+  }
 }
 
 function updatePlaneFlameFxPosition(plane, metrics) {
