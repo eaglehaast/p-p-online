@@ -61,6 +61,7 @@ const GREEN_EXPLOSIONS = [
 ];
 
 const ALL_EXPLOSION_SPRITES = [...BLUE_EXPLOSIONS, ...GREEN_EXPLOSIONS];
+const DEBUG_EXPLOSION_ANCHOR = false;
 const EXPLOSION_DRAW_SIZE = 50;
 const activeExplosions = [];
 
@@ -631,6 +632,35 @@ function worldToOverlay(x, y, options = {}) {
   }
 
   return { clientX, clientY, overlayX, overlayY, nx, ny, boardRect, overlayRect };
+}
+
+function worldToGameCanvas(x, y, rect = visualRect(gameCanvas)) {
+  const safeX = Number.isFinite(x) ? x : 0;
+  const safeY = Number.isFinite(y) ? y : 0;
+  const canvasWidth = Number.isFinite(gameCanvas?.width) && gameCanvas.width !== 0 ? gameCanvas.width : 1;
+  const canvasHeight = Number.isFinite(gameCanvas?.height) && gameCanvas.height !== 0 ? gameCanvas.height : 1;
+  const rectWidth = Number.isFinite(rect?.width) && rect.width !== 0 ? rect.width : null;
+  const rectHeight = Number.isFinite(rect?.height) && rect.height !== 0 ? rect.height : null;
+  const rectLeft = Number.isFinite(rect?.left) ? rect.left : 0;
+  const rectTop = Number.isFinite(rect?.top) ? rect.top : 0;
+
+  const inCanvasSpace = safeX >= 0 && safeX <= canvasWidth && safeY >= 0 && safeY <= canvasHeight;
+
+  if (!rectWidth || !rectHeight || inCanvasSpace) {
+    return { x: safeX, y: safeY, scaleX: 1, scaleY: 1, fromLayout: false };
+  }
+
+  const scaleX = canvasWidth / rectWidth;
+  const scaleY = canvasHeight / rectHeight;
+
+  return {
+    x: (safeX - rectLeft) * scaleX,
+    y: (safeY - rectTop) * scaleY,
+    scaleX,
+    scaleY,
+    fromLayout: true,
+    rect
+  };
 }
 
 function sizeAndAlignOverlays() {
@@ -1242,8 +1272,28 @@ function logExplosionDraw(ctx, explosion) {
     canvasHeight: canvas?.height,
     x: explosion?.x,
     y: explosion?.y,
+    sourceX: explosion?.sourceX,
+    sourceY: explosion?.sourceY,
+    mappedFromLayout: explosion?.sourceIsLayout,
     size: explosion?.size,
   });
+}
+
+function resolveExplosionCanvasPosition(explosion) {
+  if (!explosion) {
+    return { x: 0, y: 0 };
+  }
+
+  if (!explosion.sourceIsLayout) {
+    return { x: explosion.x, y: explosion.y };
+  }
+
+  const mapped = worldToGameCanvas(explosion.sourceX, explosion.sourceY);
+  explosion.x = mapped.x;
+  explosion.y = mapped.y;
+  explosion.sourceIsLayout = mapped.fromLayout;
+
+  return { x: explosion.x, y: explosion.y };
 }
 
 function spawnExplosion(x, y, plane) {
@@ -1254,9 +1304,14 @@ function spawnExplosion(x, y, plane) {
     img.src = sprite;
   }
 
+  const mappedCoords = worldToGameCanvas(x, y);
+
   const explosion = {
-    x,
-    y,
+    x: mappedCoords.x,
+    y: mappedCoords.y,
+    sourceX: x,
+    sourceY: y,
+    sourceIsLayout: mappedCoords.fromLayout,
     img,
     spawnTime: performance.now(),
     duration: EXPLOSION_DURATION_MS,
@@ -1286,10 +1341,12 @@ function updateAndDrawExplosions(ctx) {
       continue;
     }
 
+    const { x: canvasX, y: canvasY } = resolveExplosionCanvasPosition(explosion);
+
     const drawSize = explosion.size || EXPLOSION_DRAW_SIZE;
     const drawHalfSize = drawSize / 2;
-    const drawX = explosion.x - drawHalfSize;
-    const drawY = explosion.y - drawHalfSize;
+    const drawX = canvasX - drawHalfSize;
+    const drawY = canvasY - drawHalfSize;
 
     logExplosionDraw(targetCtx, explosion);
 
@@ -1297,6 +1354,18 @@ function updateAndDrawExplosions(ctx) {
     targetCtx.globalAlpha = 1;
     targetCtx.globalCompositeOperation = 'source-over';
     targetCtx.drawImage(explosion.img, drawX, drawY, drawSize, drawSize);
+
+    if (DEBUG_EXPLOSION_ANCHOR) {
+      targetCtx.strokeStyle = 'magenta';
+      targetCtx.lineWidth = 1;
+      targetCtx.beginPath();
+      targetCtx.moveTo(canvasX - 6, canvasY);
+      targetCtx.lineTo(canvasX + 6, canvasY);
+      targetCtx.moveTo(canvasX, canvasY - 6);
+      targetCtx.lineTo(canvasX, canvasY + 6);
+      targetCtx.stroke();
+    }
+
     targetCtx.restore();
   }
 }
