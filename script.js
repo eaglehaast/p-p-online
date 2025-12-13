@@ -265,6 +265,45 @@ function clampScoreInkOffset(value, limit) {
   return value;
 }
 
+function getVirtualRectFromDom(element, root = gameContainer) {
+  if (!(element?.getBoundingClientRect) || !(root?.getBoundingClientRect)) {
+    return null;
+  }
+
+  const rect = element.getBoundingClientRect();
+  const rootRect = root.getBoundingClientRect();
+
+  if (!rect || !rootRect || rootRect.width <= 0 || rootRect.height <= 0) {
+    return null;
+  }
+
+  const scaleX = FRAME_BASE_WIDTH / rootRect.width;
+  const scaleY = FRAME_BASE_HEIGHT / rootRect.height;
+
+  const x = (rect.left - rootRect.left) * scaleX;
+  const y = (rect.top - rootRect.top) * scaleY;
+  const width = rect.width * scaleX;
+  const height = rect.height * scaleY;
+
+  if (
+    !Number.isFinite(x) ||
+    !Number.isFinite(y) ||
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width <= 0 ||
+    height <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    x,
+    y,
+    width,
+    height
+  };
+}
+
 const hudPlaneStyleProbeElements = Array.from(
   document.querySelectorAll("#hudPlaneStyleProbes .hud-plane")
 );
@@ -5574,6 +5613,45 @@ function renderScoreboard(){
   }
 
   drawStarsUI(planeCtx);
+
+  const counterVirtualRects = {
+    green: getVirtualRectFromDom(greenScoreCounter),
+    blue: getVirtualRectFromDom(blueScoreCounter)
+  };
+
+  const shouldDrawDebugCounters = true;
+  const drawRect = (color, virtualRect) => {
+    if (!virtualRect) return;
+
+    const { x, y, width, height } = virtualRect;
+    console.debug(`[HUD] ${color} counter virtual rect`, {
+      x: Math.round(x),
+      y: Math.round(y),
+      w: Math.round(width),
+      h: Math.round(height)
+    });
+
+    if (!shouldDrawDebugCounters) return;
+
+    const drawLeft = containerLeft + x * scaleX;
+    const drawTop = containerTop + y * scaleY;
+    const drawWidth = width * scaleX;
+    const drawHeight = height * scaleY;
+
+    if (!Number.isFinite(drawLeft) || !Number.isFinite(drawTop) || drawWidth <= 0 || drawHeight <= 0) {
+      return;
+    }
+
+    planeCtx.save();
+    planeCtx.setTransform(1, 0, 0, 1, 0, 0);
+    planeCtx.strokeStyle = 'magenta';
+    planeCtx.lineWidth = 2;
+    planeCtx.strokeRect(drawLeft, drawTop, drawWidth, drawHeight);
+    planeCtx.restore();
+  };
+
+  drawRect('green', counterVirtualRects.green);
+  drawRect('blue', counterVirtualRects.blue);
 
   planeCtx.restore();
 }
