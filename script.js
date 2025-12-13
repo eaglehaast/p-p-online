@@ -1228,7 +1228,9 @@ function addExplosionInstance(x, y, animation) {
     y,
     animation,
     frameIndex: 0,
-    timerMs: 0
+    timerMs: 0,
+    started: false,
+    playStartedAt: null
   });
 }
 
@@ -1316,6 +1318,13 @@ function updateAndDrawExplosions(ctx, deltaMs) {
     if (!frames || frames.length === 0) {
       activeExplosionAnimations.splice(i, 1);
       continue;
+    }
+
+    if (!fx.started) {
+      // Ensure timing starts only after the decoded frames are ready.
+      fx.started = true;
+      fx.playStartedAt = performance.now();
+      fx.timerMs = 0;
     }
 
     fx.timerMs += deltaMs;
