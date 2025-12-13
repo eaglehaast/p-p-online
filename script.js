@@ -214,6 +214,8 @@ function syncRulesButtonSkins(selection){
 
 const IS_TEST_HARNESS = document.body.classList.contains('test-harness');
 
+const DEBUG_UI = false;
+
 const SCORE_COUNTER_ELEMENTS = {
   green: greenScoreCounter,
   blue: blueScoreCounter
@@ -5451,9 +5453,8 @@ function renderScoreboard(){
     blue: getVirtualRectFromDom(blueScoreCounter)
   };
 
-  const shouldDrawDebugCounters = true;
   const drawRect = (color, virtualRect) => {
-    if (!virtualRect) return;
+    if (!DEBUG_UI || !virtualRect) return;
 
     const { x, y, width, height } = virtualRect;
     console.debug(`[HUD] ${color} counter virtual rect`, {
@@ -5462,8 +5463,6 @@ function renderScoreboard(){
       w: Math.round(width),
       h: Math.round(height)
     });
-
-    if (!shouldDrawDebugCounters) return;
 
     const drawLeft = containerLeft + x * scaleX;
     const drawTop = containerTop + y * scaleY;
