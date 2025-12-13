@@ -88,15 +88,6 @@ body, button {
     --score-scale: 1;
   }
 
-  /* TEMP: layout debug outlines */
-  #gameContainer { outline: 2px solid red; }
-  #overlayContainer { outline: 2px solid blue; }
-  #gameCanvas { outline: 2px solid green; }
-  #aimCanvas { outline: 2px dashed orange; }
-  #planeCanvas { outline: 2px dashed cyan; }
-  .score-counter { outline: 2px solid magenta; }
-  .plane-counter { outline: 2px solid yellow; }
-
   .score-counter {
     position: absolute;
     pointer-events: none;
