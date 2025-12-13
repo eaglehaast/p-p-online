@@ -693,6 +693,55 @@ function sizeAndAlignOverlays() {
 
 const FX_RECT_MISMATCH_KEYS = new Set();
 const FX_RECT_MISMATCH_TOLERANCE = 4;
+const FX_HOST_MIN_SIZE = 2;
+
+function ensureFxHost(parentEl, idOrClass) {
+  const parent = parentEl instanceof HTMLElement ? parentEl : null;
+  if (!parent) {
+    return null;
+  }
+
+  const isId = typeof idOrClass === 'string' && idOrClass.startsWith('#');
+  const isClass = typeof idOrClass === 'string' && idOrClass.startsWith('.');
+  const hostId = isId ? idOrClass.slice(1) : (typeof idOrClass === 'string' ? idOrClass : '');
+  const hostClass = isClass ? idOrClass.slice(1) : '';
+
+  let host = hostId ? document.getElementById(hostId) : null;
+  if (!host && hostClass) {
+    host = parent.querySelector(`.${hostClass}`);
+  }
+
+  if (!(host instanceof HTMLElement)) {
+    host = document.createElement('div');
+    if (hostId) {
+      host.id = hostId;
+    }
+    if (hostClass) {
+      host.classList.add(hostClass);
+    }
+    parent.appendChild(host);
+  } else if (!host.isConnected || host.parentElement !== parent) {
+    parent.appendChild(host);
+  }
+
+  host.classList.add('fx-host');
+
+  const parentStyle = window.getComputedStyle(parent);
+  if (parentStyle.position === 'static') {
+    parent.style.position = 'relative';
+  }
+
+  Object.assign(host.style, {
+    position: 'absolute',
+    inset: '0',
+    width: '100%',
+    height: '100%',
+    pointerEvents: 'none',
+    display: 'block'
+  });
+
+  return host;
+}
 
 function warnIfFxHostMismatch(boardRect, hostRect, context = 'fx') {
   if (!boardRect || !hostRect) {
@@ -778,9 +827,56 @@ const BURNING_FLAME_SRC_SET = new Set(BURNING_FLAME_SRCS);
 const BLUE_FLAME_DISPLAY_SIZE = { width: 12.5, height: 27.5 };
 const GREEN_FLAME_DISPLAY_SIZE = { width: 10, height: 55 };
 const BASE_FLAME_DISPLAY_SIZE = BLUE_FLAME_DISPLAY_SIZE;
+const PLANE_FLAME_HOST_ID = 'planeFlameHost';
 
 let flameCycleIndex = 0;
 let flameStyleRevision = 0;
+
+function ensurePlaneFlameHost() {
+  const parent = overlayContainer instanceof HTMLElement
+    ? overlayContainer
+    : (fxLayerElement instanceof HTMLElement ? fxLayerElement : document.body);
+  return ensureFxHost(parent, PLANE_FLAME_HOST_ID);
+}
+
+function resolvePlaneFlameMetrics(context = 'plane flame') {
+  const boardRect = getViewportAdjustedBoundingClientRect(gameCanvas);
+  const host = ensurePlaneFlameHost();
+
+  if (!(host instanceof HTMLElement)) {
+    console.warn(`[FX] Skipping ${context}: host missing`);
+    return null;
+  }
+
+  if (!host.isConnected) {
+    console.warn(`[FX] Skipping ${context}: host not connected`);
+    return null;
+  }
+
+  const hostStyle = window.getComputedStyle(host);
+  if (hostStyle.display === 'none' || hostStyle.visibility === 'hidden') {
+    console.warn(`[FX] Skipping ${context}: host hidden`, {
+      display: hostStyle.display,
+      visibility: hostStyle.visibility
+    });
+    return null;
+  }
+
+  const hostRect = getViewportAdjustedBoundingClientRect(host);
+  if (!hostRect || hostRect.width <= FX_HOST_MIN_SIZE || hostRect.height <= FX_HOST_MIN_SIZE) {
+    console.warn(`[FX] Skipping ${context}: host rect invalid`, { hostRect });
+    return null;
+  }
+
+  if (!boardRect || boardRect.width <= FX_HOST_MIN_SIZE || boardRect.height <= FX_HOST_MIN_SIZE) {
+    console.warn(`[FX] Skipping ${context}: board rect invalid`, { boardRect });
+    return null;
+  }
+
+  warnIfFxHostMismatch(boardRect, hostRect, context);
+
+  return { boardRect, hostRect };
+}
 
 function getFlameDisplaySize(plane) {
   if (plane?.color === 'green') {
@@ -1174,7 +1270,7 @@ function spawnBurningFlameFx(plane) {
   if (plane?.flameFxDisabled) {
     return;
   }
-  const host = fxLayerElement || document.body;
+  const host = ensurePlaneFlameHost();
   if (!host) return;
 
   const flameSelection = ensurePlaneBurningFlame(plane);
@@ -1222,12 +1318,11 @@ function updatePlaneFlameFxPosition(plane, metrics) {
 
   let data = metrics;
   if (!data) {
-    const boardRect = getViewportAdjustedBoundingClientRect(gameCanvas);
-    const fxLayer = document.getElementById('fxLayer');
-    const host = fxLayer || overlayContainer || document.body;
-    const hostRect = getViewportAdjustedBoundingClientRect(host);
-    data = { boardRect, hostRect };
-    warnIfFxHostMismatch(boardRect, hostRect, 'plane flame');
+    data = resolvePlaneFlameMetrics('plane flame');
+  }
+
+  if (!data) {
+    return;
   }
 
   const { boardRect, hostRect } = data;
@@ -1253,18 +1348,33 @@ function updatePlaneFlameFxPosition(plane, metrics) {
 
 function updateAllPlaneFlameFxPositions() {
   if (planeFlameFx.size === 0) return;
-
-  const boardRect = getViewportAdjustedBoundingClientRect(gameCanvas);
-  const fxLayer = document.getElementById('fxLayer');
-  const host = fxLayer || overlayContainer || document.body;
-  const hostRect = getViewportAdjustedBoundingClientRect(host);
-
-  const metrics = { boardRect, hostRect };
-  warnIfFxHostMismatch(boardRect, hostRect, 'plane flame batch');
+  const metrics = resolvePlaneFlameMetrics('plane flame batch');
+  if (!metrics) {
+    return;
+  }
 
   for (const plane of planeFlameFx.keys()) {
     updatePlaneFlameFxPosition(plane, metrics);
   }
+}
+
+let pendingPlaneFlameSync = false;
+
+function syncPlaneFlameToHost() {
+  pendingPlaneFlameSync = false;
+  updateAllPlaneFlameFxPositions();
+}
+
+function schedulePlaneFlameSync() {
+  if (pendingPlaneFlameSync) {
+    return;
+  }
+  pendingPlaneFlameSync = true;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      syncPlaneFlameToHost();
+    });
+  });
 }
 
 function ensurePlaneFlameFx(plane) {
@@ -6212,7 +6322,7 @@ function resizeCanvas() {
     overlay.style.top = '0px';
   });
 
-  updateAllPlaneFlameFxPositions();
+  schedulePlaneFlameSync();
 
   // Переинициализируем самолёты
   if(points.length === 0) {
