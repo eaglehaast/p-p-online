@@ -1235,7 +1235,6 @@ function addExplosionInstance(x, y, animation) {
 function spawnExplosionGifFallback(x, y, explosionSrc) {
   // создаём IMG и позиционируем относительно страницы
   const img = new Image();
-  img.src = explosionSrc;            // ← без пробелов в имени файла
   img.className = 'fx-explosion';
   img.style.position = 'absolute';
   img.style.pointerEvents = 'none';
@@ -1253,54 +1252,60 @@ function spawnExplosionGifFallback(x, y, explosionSrc) {
   img.style.left = absLeft + 'px';
   img.style.top  = absTop  + 'px';
 
-  const appendExplosion = () => {
-    const hasValidSize = img.complete && img.naturalWidth > 0 && img.naturalHeight > 0;
-    const cachedSprite = preloadedExplosionSprites.get(explosionSrc);
-    const spriteReady = cachedSprite ? cachedSprite.complete && cachedSprite.naturalWidth > 0 && cachedSprite.naturalHeight > 0 : false;
-    if (!hasValidSize && !spriteReady) {
-      console.warn('[FX] Explosion sprite is not ready, skipping append', {
-        imgComplete: img.complete,
-        imgNaturalWidth: img.naturalWidth,
-        imgNaturalHeight: img.naturalHeight,
-        spriteComplete: cachedSprite?.complete,
-        spriteNaturalWidth: cachedSprite?.naturalWidth,
-        spriteNaturalHeight: cachedSprite?.naturalHeight
-      });
+  host.appendChild(img);
+
+  const MAX_GIF_LIFETIME_MS = 8000;
+  let cleaned = false;
+  let cleanupTimer = null;
+
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    if (cleanupTimer) {
+      clearTimeout(cleanupTimer);
+      cleanupTimer = null;
+    }
+    img.remove();
+  };
+
+  const show = () => {
+    if (cleaned) return;
+    img.style.visibility = '';
+    cleanupTimer = setTimeout(cleanup, MAX_GIF_LIFETIME_MS);
+  };
+
+  // Если загрузка провалится, просто убираем DOM-узел.
+  img.addEventListener('error', cleanup, { once: true });
+
+  const tryShowWhenReady = () => {
+    if (cleaned) return;
+    if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
+      show();
+      return true;
+    }
+    return false;
+  };
+
+  const onLoad = () => {
+    if (tryShowWhenReady()) {
       return;
     }
-
-    host.appendChild(img);
-    img.style.visibility = '';
-    setTimeout(() => {
-      img.remove();
-    }, EXPLOSION_DURATION_MS);
+    show();
   };
 
-  const waitForImageReady = () => {
-    if (img.complete && img.naturalWidth > 0) {
-      return Promise.resolve();
-    }
+  img.addEventListener('load', onLoad, { once: true });
 
-    if (typeof img.decode === 'function') {
-      return img.decode().catch(() => {
-        if (img.complete && img.naturalWidth > 0) {
-          return;
-        }
+  // Стартуем после навешивания событий, чтобы поймать load даже из кэша.
+  img.src = explosionSrc;
 
-        return new Promise(resolve => {
-          img.addEventListener('load', resolve, { once: true });
-          img.addEventListener('error', resolve, { once: true });
-        });
-      });
-    }
-
-    return new Promise(resolve => {
-      img.addEventListener('load', resolve, { once: true });
-      img.addEventListener('error', resolve, { once: true });
-    });
-  };
-
-  waitForImageReady().then(appendExplosion);
+  // decode() может завершиться синхронно: делаем проверку и fallback.
+  if (typeof img.decode === 'function') {
+    img.decode()
+      .then(() => { tryShowWhenReady() || show(); })
+      .catch(() => { tryShowWhenReady() || show(); });
+  } else {
+    tryShowWhenReady();
+  }
 }
 
 function spawnExplosion(x, y, spriteSrc = null) {
