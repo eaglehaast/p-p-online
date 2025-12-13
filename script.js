@@ -695,6 +695,14 @@ const FX_RECT_MISMATCH_KEYS = new Set();
 const FX_RECT_MISMATCH_TOLERANCE = 4;
 const FX_HOST_MIN_SIZE = 2;
 
+function isValidFxHostRect(rect) {
+  return !!rect
+    && Number.isFinite(rect.width)
+    && Number.isFinite(rect.height)
+    && rect.width >= FX_HOST_MIN_SIZE
+    && rect.height >= FX_HOST_MIN_SIZE;
+}
+
 function ensureFxHost(parentEl, idOrClass) {
   const parent = parentEl instanceof HTMLElement ? parentEl : null;
   if (!parent) {
@@ -839,6 +847,37 @@ function ensurePlaneFlameHost() {
   return ensureFxHost(parent, PLANE_FLAME_HOST_ID);
 }
 
+let pendingPlaneFlameHostRemeasure = false;
+
+function forceLayoutRead(el) {
+  if (el instanceof HTMLElement) {
+    void el.offsetWidth;
+    void el.offsetHeight;
+  }
+}
+
+function remeasurePlaneFlameHost(host) {
+  sizeAndAlignOverlays();
+  forceLayoutRead(host);
+  return getViewportAdjustedBoundingClientRect(host);
+}
+
+function schedulePlaneFlameHostRemeasure(host) {
+  if (pendingPlaneFlameHostRemeasure || !(host instanceof HTMLElement)) {
+    return;
+  }
+  pendingPlaneFlameHostRemeasure = true;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      pendingPlaneFlameHostRemeasure = false;
+      const rect = remeasurePlaneFlameHost(host);
+      if (isValidFxHostRect(rect)) {
+        schedulePlaneFlameSync();
+      }
+    });
+  });
+}
+
 function resolvePlaneFlameMetrics(context = 'plane flame') {
   const boardRect = getViewportAdjustedBoundingClientRect(gameCanvas);
   const host = ensurePlaneFlameHost();
@@ -862,13 +901,17 @@ function resolvePlaneFlameMetrics(context = 'plane flame') {
     return null;
   }
 
-  const hostRect = getViewportAdjustedBoundingClientRect(host);
-  if (!hostRect || hostRect.width <= FX_HOST_MIN_SIZE || hostRect.height <= FX_HOST_MIN_SIZE) {
-    console.warn(`[FX] Skipping ${context}: host rect invalid`, { hostRect });
-    return null;
+  let hostRect = getViewportAdjustedBoundingClientRect(host);
+  if (!isValidFxHostRect(hostRect)) {
+    hostRect = remeasurePlaneFlameHost(host);
+    if (!isValidFxHostRect(hostRect)) {
+      schedulePlaneFlameHostRemeasure(host);
+      console.warn(`[FX] Skipping ${context}: host rect invalid`, { hostRect });
+      return null;
+    }
   }
 
-  if (!boardRect || boardRect.width <= FX_HOST_MIN_SIZE || boardRect.height <= FX_HOST_MIN_SIZE) {
+  if (!isValidFxHostRect(boardRect)) {
     console.warn(`[FX] Skipping ${context}: board rect invalid`, { boardRect });
     return null;
   }
