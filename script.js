@@ -1252,60 +1252,44 @@ function spawnExplosionGifFallback(x, y, explosionSrc) {
   img.style.left = absLeft + 'px';
   img.style.top  = absTop  + 'px';
 
-  host.appendChild(img);
-
-  const MAX_GIF_LIFETIME_MS = 8000;
-  let cleaned = false;
-  let cleanupTimer = null;
-
   const cleanup = () => {
-    if (cleaned) return;
-    cleaned = true;
-    if (cleanupTimer) {
-      clearTimeout(cleanupTimer);
-      cleanupTimer = null;
-    }
     img.remove();
   };
 
-  const show = () => {
-    if (cleaned) return;
+  const showAndScheduleRemoval = () => {
     img.style.visibility = '';
-    cleanupTimer = setTimeout(cleanup, MAX_GIF_LIFETIME_MS);
+
+    // Не обрезаем начало/конец: ждём полноценного проигрыша и ставим щедрый лимит.
+    const MAX_GIF_LIFETIME_MS = 8000;
+    const cleanupTimer = setTimeout(cleanup, MAX_GIF_LIFETIME_MS);
+    img.addEventListener('error', () => {
+      clearTimeout(cleanupTimer);
+      cleanup();
+    }, { once: true });
   };
 
-  // Если загрузка провалится, просто убираем DOM-узел.
-  img.addEventListener('error', cleanup, { once: true });
+  const appendAndStart = () => {
+    host.appendChild(img);
 
-  const tryShowWhenReady = () => {
-    if (cleaned) return;
-    if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
-      show();
-      return true;
-    }
-    return false;
+    const onReady = (evt) => {
+      img.removeEventListener('load', onReady);
+      img.removeEventListener('error', onReady);
+      if (evt?.type === 'error') {
+        cleanup();
+        return;
+      }
+      showAndScheduleRemoval();
+    };
+
+    img.addEventListener('load', onReady);
+    img.addEventListener('error', onReady);
+
+    // Сбрасываем возможный кэшированный прогресс и запускаем анимацию после вставки в DOM.
+    img.src = '';
+    requestAnimationFrame(() => { img.src = explosionSrc; });
   };
 
-  const onLoad = () => {
-    if (tryShowWhenReady()) {
-      return;
-    }
-    show();
-  };
-
-  img.addEventListener('load', onLoad, { once: true });
-
-  // Стартуем после навешивания событий, чтобы поймать load даже из кэша.
-  img.src = explosionSrc;
-
-  // decode() может завершиться синхронно: делаем проверку и fallback.
-  if (typeof img.decode === 'function') {
-    img.decode()
-      .then(() => { tryShowWhenReady() || show(); })
-      .catch(() => { tryShowWhenReady() || show(); });
-  } else {
-    tryShowWhenReady();
-  }
+  appendAndStart();
 }
 
 function spawnExplosion(x, y, spriteSrc = null) {
