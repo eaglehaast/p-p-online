@@ -1072,6 +1072,7 @@ body, button {
   position: absolute;
   pointer-events: none;
   display: block;
+  background: transparent;
 }
 
 /* Overlay canvas for aiming line */
