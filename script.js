@@ -30,8 +30,6 @@ const blueScoreCounter  = document.getElementById("blueScoreCounter");
 const greenPlaneCounter = document.getElementById("gs_planecounter_green");
 const bluePlaneCounter  = document.getElementById("gs_planecounter_blue");
 
-const EXPLOSION_SPRITE_SRC = 'explosion6.gif';
-
 const BLUE_EXPLOSIONS = [
   'ui_gamescreen/explosions_blue/explosion_blue_1.gif',
   'ui_gamescreen/explosions_blue/explosion_blue_2.gif',
@@ -49,12 +47,8 @@ const GREEN_EXPLOSIONS = [
 ];
 
 const ALL_EXPLOSION_SPRITES = [...BLUE_EXPLOSIONS, ...GREEN_EXPLOSIONS];
-
-const preloadedExplosionSprites = new Map();
-const decodedExplosionAnimations = new Map();
-const activeExplosionAnimations = [];
-const EXPLOSION_FRAME_FALLBACK_MS = 20;
-const EXPLOSION_DEBUG = false;
+const EXPLOSION_DRAW_SIZE = 50;
+const activeExplosions = [];
 
 const PRELOAD_IMAGE_URLS = [
   // Main menu
@@ -123,9 +117,6 @@ function preloadCriticalImages() {
       return;
     }
     const img = new Image();
-    if (ALL_EXPLOSION_SPRITES.includes(src)) {
-      preloadedExplosionSprites.set(src, img);
-    }
     const done = () => resolve();
     img.onload = done;
     img.onerror = done;
@@ -1138,236 +1129,84 @@ function ensurePlaneFlameFx(plane) {
 
 }
 
+function getExplosionSpritesForColor(color) {
+  if (color === 'blue') {
+    return BLUE_EXPLOSIONS;
+  }
+  if (color === 'green') {
+    return GREEN_EXPLOSIONS;
+  }
+  return ALL_EXPLOSION_SPRITES;
+}
+
 function getExplosionSpritesForPlane(plane) {
   if (!plane) {
     return ALL_EXPLOSION_SPRITES;
   }
 
-  return plane.color === 'blue'
-    ? BLUE_EXPLOSIONS
-    : GREEN_EXPLOSIONS;
+  return getExplosionSpritesForColor(plane.color);
 }
 
-function ensurePlaneExplosionSprite(plane) {
-  if (!plane) {
+function pickExplosionSprite(color) {
+  const pool = getExplosionSpritesForColor(color);
+  if (!Array.isArray(pool) || pool.length === 0) {
     return null;
   }
 
-  if (plane.explosionSpriteSrc) {
-    return plane.explosionSpriteSrc;
-  }
-
-  const pool = getExplosionSpritesForPlane(plane);
-  if (!Array.isArray(pool) || pool.length === 0) {
-    plane.explosionSpriteSrc = null;
-    return plane.explosionSpriteSrc;
-  }
-
   const randomIndex = Math.floor(Math.random() * pool.length);
-  plane.explosionSpriteSrc = pool[randomIndex];
-  return plane.explosionSpriteSrc;
+  return pool[randomIndex] || null;
 }
 
-async function decodeExplosionAnimation(src) {
-  if (decodedExplosionAnimations.has(src)) {
-    return decodedExplosionAnimations.get(src);
+function spawnExplosion(x, y, plane) {
+  const color = plane?.color === 'green' ? 'green' : 'blue';
+  const sprite = pickExplosionSprite(color) || pickExplosionSprite();
+  const img = new Image();
+  if (sprite) {
+    img.src = sprite;
   }
 
-  const pending = (async () => {
-    if (typeof ImageDecoder !== 'function') {
-      throw new Error('ImageDecoder is unavailable');
-    }
-
-    const response = await fetch(src);
-    const buffer = await response.arrayBuffer();
-    const decoder = new ImageDecoder({ data: buffer, type: 'image/gif' });
-    const track = decoder.tracks?.[0] || decoder;
-    const frameCount = track?.frameCount || 0;
-    const frames = [];
-
-    for (let i = 0; i < frameCount; i++) {
-      const { image, duration, imageWidth, imageHeight } = await decoder.decode({ frameIndex: i });
-      const frameDurationMs = Number.isFinite(duration) ? duration : 0;
-      frames.push({
-        bitmap: image,
-        durationMs: frameDurationMs,
-        width: imageWidth || image?.width || 0,
-        height: imageHeight || image?.height || 0
-      });
-    }
-
-    if (!frames.length) {
-      throw new Error('No frames decoded');
-    }
-
-    const width = frames[0].width || 96;
-    const height = frames[0].height || 96;
-    const summary = {
-      frames,
-      width,
-      height,
-      frameCount,
-      averageFrameMs: frames.reduce((sum, f) => sum + (f.durationMs || 0), 0) / frames.length
-    };
-
-    console.info('[FX] Explosion animation decoded', { src, ...summary });
-    return summary;
-  })();
-
-  decodedExplosionAnimations.set(src, pending);
-  return pending;
-}
-
-function addExplosionInstance(x, y, animation) {
-  if (!animation?.frames?.length) {
-    return;
-  }
-
-  activeExplosionAnimations.push({
+  const explosion = {
     x,
     y,
-    animation,
-    frameIndex: 0,
-    timerMs: 0,
-    started: false,
-    playStartedAt: null
-  });
-}
-
-function spawnExplosionGifFallback(x, y, explosionSrc) {
-  // создаём IMG и позиционируем относительно страницы
-  const img = new Image();
-  img.className = 'fx-explosion';
-  img.style.position = 'absolute';
-  img.style.pointerEvents = 'none';
-  img.style.transform = 'translate(-50%, -50%)';
-  img.style.visibility = 'hidden';
-
-  // абсолютные координаты взрыва на странице:
-  const boardRect = getViewportAdjustedBoundingClientRect(gameCanvas);
-  const { clientX, clientY } = worldToOverlay(x, y, { boardRect });
-  const host = fxLayerElement || document.body;
-  const hostRect = getViewportAdjustedBoundingClientRect(host);
-  const absLeft = Math.round(clientX - hostRect.left);
-  const absTop  = Math.round(clientY - hostRect.top);
-
-  img.style.left = absLeft + 'px';
-  img.style.top  = absTop  + 'px';
-
-  const cleanup = () => {
-    img.remove();
+    img,
+    spawnTime: performance.now(),
+    duration: EXPLOSION_DURATION_MS,
+    size: EXPLOSION_DRAW_SIZE,
   };
 
-  const showAndScheduleRemoval = () => {
-    img.style.visibility = '';
-
-    // Не обрезаем начало/конец: ждём полноценного проигрыша и ставим щедрый лимит.
-    const MAX_GIF_LIFETIME_MS = 8000;
-    const cleanupTimer = setTimeout(cleanup, MAX_GIF_LIFETIME_MS);
-    img.addEventListener('error', () => {
-      clearTimeout(cleanupTimer);
-      cleanup();
-    }, { once: true });
-  };
-
-  const appendAndStart = () => {
-    host.appendChild(img);
-
-    const onReady = (evt) => {
-      img.removeEventListener('load', onReady);
-      img.removeEventListener('error', onReady);
-      if (evt?.type === 'error') {
-        cleanup();
-        return;
-      }
-      showAndScheduleRemoval();
-    };
-
-    img.addEventListener('load', onReady);
-    img.addEventListener('error', onReady);
-
-    // Сбрасываем возможный кэшированный прогресс и запускаем анимацию после вставки в DOM.
-    img.src = '';
-    requestAnimationFrame(() => { img.src = explosionSrc; });
-  };
-
-  appendAndStart();
+  activeExplosions.push(explosion);
 }
 
-function spawnExplosion(x, y, spriteSrc = null) {
-  const explosionSrc = spriteSrc || EXPLOSION_SPRITE_SRC;
-  decodeExplosionAnimation(explosionSrc)
-    .then(animation => {
-      addExplosionInstance(x, y, animation);
-    })
-    .catch(err => {
-      console.warn('[FX] Falling back to GIF explosion', { src: explosionSrc, error: err });
-      spawnExplosionGifFallback(x, y, explosionSrc);
-    });
-}
-
-function updateAndDrawExplosions(ctx, deltaMs) {
-  if (!ctx || activeExplosionAnimations.length === 0) {
+function updateAndDrawExplosions(ctx) {
+  if (!ctx || activeExplosions.length === 0) {
     return;
   }
 
-  ctx.save();
-  for (let i = activeExplosionAnimations.length - 1; i >= 0; i--) {
-    const fx = activeExplosionAnimations[i];
-    const frames = fx.animation?.frames;
-    if (!frames || frames.length === 0) {
-      activeExplosionAnimations.splice(i, 1);
+  const now = performance.now();
+
+  for (let i = activeExplosions.length - 1; i >= 0; i--) {
+    const explosion = activeExplosions[i];
+
+    if (!explosion || now - explosion.spawnTime > (explosion.duration || EXPLOSION_DURATION_MS)) {
+      activeExplosions.splice(i, 1);
       continue;
     }
 
-    if (!fx.started) {
-      // Ensure timing starts only after the decoded frames are ready.
-      fx.started = true;
-      fx.playStartedAt = performance.now();
-      fx.timerMs = 0;
-    }
-
-    fx.timerMs += deltaMs;
-    let frameDuration = frames[fx.frameIndex]?.durationMs || EXPLOSION_FRAME_FALLBACK_MS;
-    while (fx.timerMs >= frameDuration && frameDuration > 0) {
-      fx.timerMs -= frameDuration;
-      fx.frameIndex += 1;
-      if (fx.frameIndex >= frames.length) {
-        break;
-      }
-      frameDuration = frames[fx.frameIndex]?.durationMs || EXPLOSION_FRAME_FALLBACK_MS;
-    }
-
-    if (fx.frameIndex >= frames.length) {
-      activeExplosionAnimations.splice(i, 1);
+    if (!explosion.img) {
       continue;
     }
 
-    const frame = frames[fx.frameIndex];
-    if (!frame?.bitmap) {
-      continue;
-    }
+    const drawSize = explosion.size || EXPLOSION_DRAW_SIZE;
+    const drawHalfSize = drawSize / 2;
+    const drawX = explosion.x - drawHalfSize;
+    const drawY = explosion.y - drawHalfSize;
 
-    const drawW = frame.width || fx.animation.width || 96;
-    const drawH = frame.height || fx.animation.height || 96;
-    const drawX = Math.round(fx.x - drawW / 2);
-    const drawY = Math.round(fx.y - drawH / 2);
-
-    ctx.drawImage(frame.bitmap, drawX, drawY, drawW, drawH);
-
-    if (EXPLOSION_DEBUG) {
-      ctx.save();
-      ctx.strokeStyle = 'red';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(drawX, drawY, drawW, drawH);
-      ctx.fillStyle = 'red';
-      ctx.font = '10px sans-serif';
-      ctx.fillText(`f${fx.frameIndex + 1}/${frames.length}`, drawX, drawY - 4);
-      ctx.fillText(`${Math.round(drawW)}x${Math.round(drawH)}`, drawX, drawY + drawH + 10);
-      ctx.restore();
-    }
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(explosion.img, drawX, drawY, drawSize, drawSize);
+    ctx.restore();
   }
-  ctx.restore();
 }
 
 
@@ -2779,7 +2618,6 @@ function makePlane(x,y,color,angle){
     isAlive:true,
     burning:false,
     explosionStart:null,
-    explosionSpriteSrc:null,
     angle,
     segments:[],
     collisionX:null,
@@ -2806,7 +2644,7 @@ function resetGame(){
   if(fxLayerElement){
     fxLayerElement.innerHTML = "";
   }
-  activeExplosionAnimations.length = 0;
+  activeExplosions.length = 0;
 
   clearScoreCounters();
 
@@ -3675,9 +3513,7 @@ function destroyPlane(fp){
   p.explosionStart = explosionTimestamp;
   p.killMarkerStart = explosionTimestamp;
 
-  const explosionSpriteSrc = ensurePlaneExplosionSprite(p);
-
-  try { spawnExplosion(p.collisionX, p.collisionY, explosionSpriteSrc); }
+  try { spawnExplosion(p.collisionX, p.collisionY, p); }
   catch(e) { console.warn('[FX] spawnExplosion error', e); }
 
 
@@ -3739,9 +3575,7 @@ function handleAAForPlane(p, fp){
               p.explosionStart = aaExplosionTimestamp;
               p.killMarkerStart = aaExplosionTimestamp;
 
-              const explosionSpriteSrc = ensurePlaneExplosionSprite(p);
-
-              try { spawnExplosion(p.collisionX, p.collisionY, explosionSpriteSrc); }
+              try { spawnExplosion(p.collisionX, p.collisionY, p); }
               catch(e) { console.warn('[FX] spawnExplosion error', e); }
               schedulePlaneFlameFx(p);
               if(fp) {
@@ -4986,9 +4820,7 @@ function checkPlaneHits(plane, fp){
       p.explosionStart = collisionExplosionTimestamp;
       p.killMarkerStart = collisionExplosionTimestamp;
 
-      const explosionSpriteSrc = ensurePlaneExplosionSprite(p);
-
-      try { spawnExplosion(p.collisionX, p.collisionY, explosionSpriteSrc); }
+      try { spawnExplosion(p.collisionX, p.collisionY, p); }
       catch(e) { console.warn('[FX] spawnExplosion error', e); }
       schedulePlaneFlameFx(p);
       if(fp){

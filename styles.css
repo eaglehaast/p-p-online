@@ -1112,15 +1112,6 @@ body, button {
   z-index: 25;
 }
 
-.fx-explosion {
-  position: absolute;
-  width: 96px;
-  height: 96px;
-  transform: translate(-50%, -50%);
-  image-rendering: auto;
-  pointer-events: none;
-}
-
 .fx-flame {
   position: absolute;
   display: block;
