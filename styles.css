@@ -266,10 +266,6 @@ body, button {
   :root {
     --control-panel-base-width: 460px;
     --control-panel-base-height: 800px;
-    --menu-scale: min(
-      calc(100vw / var(--control-panel-base-width)),
-      calc(100vh / var(--control-panel-base-height))
-    );
   }
 
   /* ===== Temporary background-only layout for the settings control panel ===== */
@@ -301,15 +297,13 @@ body, button {
 
   .screen-wrapper--menu {
     z-index: 1000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
   }
 
   .screen-wrapper--menu .stage-460x800 {
-    position: relative;
-    transform-origin: center center;
-    transform: scale(var(--menu-scale, 1));
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform-origin: top left;
   }
 
   .settings-container {
