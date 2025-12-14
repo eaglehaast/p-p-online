@@ -676,7 +676,6 @@ function sizeAndAlignOverlays() {
   const rect = (Number.isFinite(adjustedRect?.width) && adjustedRect.width > 0 && Number.isFinite(adjustedRect?.height) && adjustedRect.height > 0)
     ? adjustedRect
     : rawRect;
-  const containerRect = gameContainer?.getBoundingClientRect?.();
 
   const left = Number.isFinite(rect?.left) && Number.isFinite(containerRect?.left)
     ? rect.left - containerRect.left
