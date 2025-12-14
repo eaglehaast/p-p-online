@@ -670,6 +670,9 @@ function sizeAndAlignOverlays() {
 
   const adjustedRect = getViewportAdjustedBoundingClientRect(gameCanvas);
   const rawRect = gameCanvas?.getBoundingClientRect?.();
+  const containerRect = gameContainer?.getBoundingClientRect?.();
+  const canvasStyle = gameCanvas instanceof HTMLElement ? window.getComputedStyle(gameCanvas) : null;
+
   const rect = (Number.isFinite(adjustedRect?.width) && adjustedRect.width > 0 && Number.isFinite(adjustedRect?.height) && adjustedRect.height > 0)
     ? adjustedRect
     : rawRect;
@@ -846,6 +849,7 @@ function ensurePlaneFlameHost() {
 
 function resolvePlaneFlameMetrics(context = 'plane flame') {
   const boardRect = getViewportAdjustedBoundingClientRect(gameCanvas);
+  const overlayRect = getViewportAdjustedBoundingClientRect(overlayContainer);
   const host = ensurePlaneFlameHost();
 
   if (!(host instanceof HTMLElement)) {
@@ -873,14 +877,18 @@ function resolvePlaneFlameMetrics(context = 'plane flame') {
     return null;
   }
 
-  if (!boardRect || boardRect.width <= FX_HOST_MIN_SIZE || boardRect.height <= FX_HOST_MIN_SIZE) {
+  const usableBoardRect = (boardRect && boardRect.width > FX_HOST_MIN_SIZE && boardRect.height > FX_HOST_MIN_SIZE)
+    ? boardRect
+    : (overlayRect && overlayRect.width > FX_HOST_MIN_SIZE && overlayRect.height > FX_HOST_MIN_SIZE ? overlayRect : null);
+
+  if (!usableBoardRect) {
     console.warn(`[FX] Skipping ${context}: board rect invalid`, { boardRect });
     return null;
   }
 
-  warnIfFxHostMismatch(boardRect, hostRect, context);
+  warnIfFxHostMismatch(usableBoardRect, hostRect, context);
 
-  return { boardRect, hostRect };
+  return { boardRect: usableBoardRect, hostRect };
 }
 
 function getFlameDisplaySize(plane) {
