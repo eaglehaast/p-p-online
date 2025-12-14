@@ -39,6 +39,9 @@ function logCanvasCreation(canvas, label = "") {
 const overlayContainer = document.getElementById("overlayContainer");
 const fxLayerElement = document.getElementById("fxLayer");
 
+let LAST_GOOD_OVERLAY_RECT = null;
+let OVERLAY_RESYNC_SCHEDULED = false;
+
 const greenScoreCounter = document.getElementById("greenScoreCounter");
 const blueScoreCounter  = document.getElementById("blueScoreCounter");
 const greenPlaneCounter = document.getElementById("gs_planecounter_green");
@@ -677,19 +680,52 @@ function sizeAndAlignOverlays() {
     ? adjustedRect
     : rawRect;
 
-  const left = Number.isFinite(rect?.left) && Number.isFinite(containerRect?.left)
+  let left = Number.isFinite(rect?.left) && Number.isFinite(containerRect?.left)
     ? rect.left - containerRect.left
     : 0;
-  const top = Number.isFinite(rect?.top) && Number.isFinite(containerRect?.top)
+  let top = Number.isFinite(rect?.top) && Number.isFinite(containerRect?.top)
     ? rect.top - containerRect.top
     : 0;
-  const width = Math.max(1, Math.round(Number.isFinite(rect?.width) ? rect.width : 0));
-  const height = Math.max(1, Math.round(Number.isFinite(rect?.height) ? rect.height : 0));
+  let width = Math.max(1, Math.round(Number.isFinite(rect?.width) ? rect.width : 0));
+  let height = Math.max(1, Math.round(Number.isFinite(rect?.height) ? rect.height : 0));
 
-  if (width <= FX_HOST_MIN_SIZE || height <= FX_HOST_MIN_SIZE) {
-    // Guard: do not collapse overlayContainer to 1×1
-    return;
+  const MIN = (typeof FX_HOST_MIN_SIZE === 'number') ? FX_HOST_MIN_SIZE : 2;
+
+  const isValidRect = (w, h) =>
+    Number.isFinite(w) && Number.isFinite(h) && w > MIN && h > MIN;
+
+  // если текущий расчёт дал 1×1 или NaN — используем fallback
+  if (!isValidRect(width, height)) {
+    // fallback #1: last known good overlay rect
+    if (LAST_GOOD_OVERLAY_RECT && isValidRect(LAST_GOOD_OVERLAY_RECT.width, LAST_GOOD_OVERLAY_RECT.height)) {
+      ({ left, top, width, height } = LAST_GOOD_OVERLAY_RECT);
+    } else {
+      // fallback #2: canvas rect
+      const canvasRect = getViewportAdjustedBoundingClientRect(gameCanvas) || gameCanvas?.getBoundingClientRect?.();
+      if (canvasRect && isValidRect(canvasRect.width, canvasRect.height)) {
+        left = canvasRect.left;
+        top = canvasRect.top;
+        width = canvasRect.width;
+        height = canvasRect.height;
+      } else {
+        // fallback #3: retry once next frame, do not overwrite with garbage
+        if (!OVERLAY_RESYNC_SCHEDULED) {
+          OVERLAY_RESYNC_SCHEDULED = true;
+          requestAnimationFrame(() => {
+            OVERLAY_RESYNC_SCHEDULED = false;
+            // вызвать ту же функцию, в которой находится этот блок,
+            // чтобы пересчитать left/top/width/height ещё раз
+            // (если функция называется sizeAndAlignOverlays / syncOverlayToCanvas / layoutUI — использовать её)
+            if (typeof sizeAndAlignOverlays === 'function') sizeAndAlignOverlays();
+          });
+        }
+        return;
+      }
+    }
   }
+
+  // теперь rect валидный, сохраняем как “последний хороший”
+  LAST_GOOD_OVERLAY_RECT = { left, top, width, height };
 
   overlayContainer.style.left = `${left}px`;
   overlayContainer.style.top = `${top}px`;
