@@ -669,6 +669,11 @@ function worldToGameCanvas(x, y, rect = visualRect(gameCanvas)) {
 function syncOverlayCanvasToGameCanvas(targetCanvas, gameCanvas) {
   if (!targetCanvas || !gameCanvas) return;
 
+  const style = window.getComputedStyle(targetCanvas);
+  if (style.display === 'none' || style.visibility === 'hidden') {
+    return;
+  }
+
   const dpr = window.devicePixelRatio || 1;
   const r = gameCanvas.getBoundingClientRect();
 
@@ -6356,6 +6361,12 @@ function startNewRound(){
   mantisIndicator.style.display = "block";
   goatIndicator.style.display = "block";
   planeCanvas.style.display = "block";
+  aimCanvas.style.display = "block";
+
+  requestAnimationFrame(() => {
+    syncOverlayCanvasToGameCanvas(aimCanvas, gameCanvas);
+    syncOverlayCanvasToGameCanvas(planeCanvas, gameCanvas);
+  });
 
   setBackgroundImage('pics/background behind the canvas 5.png');
 
