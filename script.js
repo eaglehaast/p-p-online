@@ -13,6 +13,7 @@ const goatIndicator   = document.getElementById("goatIndicator");
 const loadingOverlay = document.getElementById("loadingOverlay");
 
 const gameContainer = document.getElementById("gameContainer");
+const gameScreen = document.getElementById("gameScreen") || gameContainer;
 const gameCanvas  = document.getElementById("gameCanvas");
 const gameCtx     = gameCanvas.getContext("2d");
 
@@ -21,6 +22,68 @@ const aimCtx      = aimCanvas.getContext("2d");
 
 const planeCanvas = document.getElementById("planeCanvas");
 const planeCtx    = planeCanvas.getContext("2d");
+
+const WORLD = { width: 360, height: 640 };
+const VIEW = {
+  dpr: 1,
+  cssW: 0,
+  cssH: 0,
+  pxW: 0,
+  pxH: 0,
+  scaleX: 1,
+  scaleY: 1
+};
+
+function computeViewFromCanvas(canvas) {
+  if (!(canvas instanceof HTMLCanvasElement)) {
+    return;
+  }
+
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+
+  const cssW = Math.max(1, rect.width);
+  const cssH = Math.max(1, rect.height);
+
+  const pxW = Math.round(cssW * dpr);
+  const pxH = Math.round(cssH * dpr);
+
+  VIEW.dpr = dpr;
+  VIEW.cssW = cssW;
+  VIEW.cssH = cssH;
+  VIEW.pxW = pxW;
+  VIEW.pxH = pxH;
+  VIEW.scaleX = pxW / WORLD.width;
+  VIEW.scaleY = pxH / WORLD.height;
+}
+
+function worldToPx(x, y) {
+  return { x: x * VIEW.scaleX, y: y * VIEW.scaleY };
+}
+
+function pxToWorld(x, y) {
+  return { x: x / VIEW.scaleX, y: y / VIEW.scaleY };
+}
+
+function resizeCanvasToMatchCss(canvas) {
+  if (!(canvas instanceof HTMLCanvasElement)) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, rect.width);
+  const h = Math.max(1, rect.height);
+
+  const pxW = Math.round(w * dpr);
+  const pxH = Math.round(h * dpr);
+
+  if (canvas.width !== pxW) canvas.width = pxW;
+  if (canvas.height !== pxH) canvas.height = pxH;
+}
+
+function applyViewTransform(ctx) {
+  if (!ctx) return;
+  ctx.setTransform(VIEW.scaleX, 0, 0, VIEW.scaleY, 0, 0);
+}
 
 function syncCanvasBackingStore(canvas) {
   if (!canvas) return;
@@ -32,9 +95,6 @@ function syncCanvasBackingStore(canvas) {
 
   if (canvas.width !== w) canvas.width = w;
   if (canvas.height !== h) canvas.height = h;
-
-  const ctx = canvas.getContext('2d');
-  if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
 function logCanvasCreation(canvas, label = "") {
@@ -534,11 +594,11 @@ function clientPointFromEvent(e) {
 }
 
 function clientToWorld(point, rect = visualRect(gameCanvas)) {
-  const scaleX = rect.width !== 0 ? gameCanvas.width / rect.width : 1;
-  const scaleY = rect.height !== 0 ? gameCanvas.height / rect.height : 1;
+  const scaleX = rect.width !== 0 ? VIEW.pxW / rect.width : 1;
+  const scaleY = rect.height !== 0 ? VIEW.pxH / rect.height : 1;
   return {
-    x: (point.x - rect.left) * scaleX,
-    y: (point.y - rect.top) * scaleY,
+    x: (point.x - rect.left) * scaleX / VIEW.scaleX,
+    y: (point.y - rect.top) * scaleY / VIEW.scaleY,
     rect,
     v: rect.v
   };
@@ -578,8 +638,8 @@ function clientToOverlay(event, overlay = aimCanvas) {
   const rectHeight = Number.isFinite(rect.height) && rect.height !== 0 ? rect.height : 1;
   const nx = (clientX - rect.left) / rectWidth;
   const ny = (clientY - rect.top) / rectHeight;
-  const logicalWidth = target?.width ?? rectWidth;
-  const logicalHeight = target?.height ?? rectHeight;
+  const logicalWidth = target?.width ?? rectWidth * VIEW.dpr;
+  const logicalHeight = target?.height ?? rectHeight * VIEW.dpr;
 
   return {
     clientX,
@@ -606,8 +666,8 @@ function clientToBoard(event) {
     rect,
     nx,
     ny,
-    x: nx * gameCanvas.width,
-    y: ny * gameCanvas.height
+    x: nx * WORLD.width,
+    y: ny * WORLD.height
   };
 }
 
@@ -618,12 +678,10 @@ function worldToOverlay(x, y, options = {}) {
   const boardHeight = Number.isFinite(boardRect.height) && boardRect.height !== 0 ? boardRect.height : 1;
   const boardLeft = Number.isFinite(boardRect.left) ? boardRect.left : 0;
   const boardTop = Number.isFinite(boardRect.top) ? boardRect.top : 0;
-  const canvasWidth = Number.isFinite(gameCanvas.width) && gameCanvas.width !== 0 ? gameCanvas.width : 1;
-  const canvasHeight = Number.isFinite(gameCanvas.height) && gameCanvas.height !== 0 ? gameCanvas.height : 1;
   const safeX = Number.isFinite(x) ? x : 0;
   const safeY = Number.isFinite(y) ? y : 0;
-  const nx = safeX / canvasWidth;
-  const ny = safeY / canvasHeight;
+  const nx = safeX / WORLD.width;
+  const ny = safeY / WORLD.height;
   const clientX = boardLeft + nx * boardWidth;
   const clientY = boardTop + ny * boardHeight;
 
@@ -655,8 +713,8 @@ function worldToOverlay(x, y, options = {}) {
 function worldToGameCanvas(x, y, rect = visualRect(gameCanvas)) {
   const safeX = Number.isFinite(x) ? x : 0;
   const safeY = Number.isFinite(y) ? y : 0;
-  const canvasWidth = Number.isFinite(gameCanvas?.width) && gameCanvas.width !== 0 ? gameCanvas.width : 1;
-  const canvasHeight = Number.isFinite(gameCanvas?.height) && gameCanvas.height !== 0 ? gameCanvas.height : 1;
+  const canvasWidth = WORLD.width;
+  const canvasHeight = WORLD.height;
   const rectWidth = Number.isFinite(rect?.width) && rect.width !== 0 ? rect.width : null;
   const rectHeight = Number.isFinite(rect?.height) && rect.height !== 0 ? rect.height : null;
   const rectLeft = Number.isFinite(rect?.left) ? rect.left : 0;
@@ -704,9 +762,6 @@ function syncOverlayCanvasToGameCanvas(targetCanvas, cssWidth, cssHeight) {
 
   if (targetCanvas.width !== backingWidth) targetCanvas.width = backingWidth;
   if (targetCanvas.height !== backingHeight) targetCanvas.height = backingHeight;
-
-  const ctx = targetCanvas.getContext('2d');
-  if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
 function getGameLayoutScale() {
@@ -729,6 +784,17 @@ function sizeAndAlignOverlays() {
   const height = Math.max(1, Math.round(CANVAS_BASE_HEIGHT * scale));
   const left = FRAME_PADDING_X * scale;
   const top = FRAME_PADDING_Y * scale;
+
+  const minSize = FX_HOST_MIN_SIZE;
+  if (width < minSize || height < minSize) {
+    if (LAST_GOOD_OVERLAY_RECT) {
+      overlayContainer.style.left = `${LAST_GOOD_OVERLAY_RECT.left}px`;
+      overlayContainer.style.top = `${LAST_GOOD_OVERLAY_RECT.top}px`;
+      overlayContainer.style.width = `${LAST_GOOD_OVERLAY_RECT.width}px`;
+      overlayContainer.style.height = `${LAST_GOOD_OVERLAY_RECT.height}px`;
+    }
+    return;
+  }
 
   overlayContainer.style.left = `${left}px`;
   overlayContainer.style.top = `${top}px`;
@@ -1633,11 +1699,8 @@ function resolveExplosionCanvasPosition(explosion) {
 
 function resolveExplosionHostPosition(explosion) {
   const overlayRect = getViewportAdjustedBoundingClientRect(overlayContainer);
-  const canvasW = Number.isFinite(gameCanvas?.width) ? gameCanvas.width : overlayRect?.width;
-  const canvasH = Number.isFinite(gameCanvas?.height) ? gameCanvas.height : overlayRect?.height;
-
-  const scaleX = canvasW && overlayRect?.width ? overlayRect.width / canvasW : 1;
-  const scaleY = canvasH && overlayRect?.height ? overlayRect.height / canvasH : 1;
+  const scaleX = overlayRect?.width ? overlayRect.width / WORLD.width : 1;
+  const scaleY = overlayRect?.height ? overlayRect.height / WORLD.height : 1;
 
   const hostLeft = (explosion?.x || 0) * scaleX - (EXPLOSION_HOST_SIZE / 2);
   const hostTop = (explosion?.y || 0) * scaleY - (EXPLOSION_HOST_SIZE / 2);
@@ -1803,6 +1866,7 @@ function resetCanvasState(ctx, canvas){
   ctx.globalCompositeOperation = 'source-over';
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  applyViewTransform(ctx);
 }
 
 // Enable smoothing so rotated images (planes, arrows) don't appear jagged
@@ -1826,11 +1890,46 @@ let selectedMode = null;
 let selectedRuleset = "classic";
 
 let menuBackgroundSnapshot = null;
+let hasActivatedGameScreen = false;
+
+function activateGameScreen() {
+  const body = document.body;
+  const wasMenu = body.classList.contains('screen--menu');
+  if (wasMenu) {
+    console.warn('[screen] Gameplay started while menu was active; forcing game screen.');
+  }
+
+  body.classList.remove('screen--menu', 'menu-ready');
+  body.classList.add('screen--game');
+
+  if (menuScreen) {
+    menuScreen.style.display = 'none';
+    menuScreen.setAttribute('aria-hidden', 'true');
+  }
+
+  if (modeMenuDiv) {
+    modeMenuDiv.style.display = 'none';
+  }
+
+  if (gameScreen instanceof HTMLElement) {
+    gameScreen.style.display = 'block';
+    gameScreen.removeAttribute('aria-hidden');
+  }
+
+  if (!hasActivatedGameScreen || wasMenu) {
+    sizeAndAlignOverlays();
+    hasActivatedGameScreen = true;
+  }
+}
 
 function setMenuVisibility(visible) {
   const displayValue = visible ? "block" : "none";
   if(menuScreen){
     menuScreen.style.display = displayValue;
+    if (visible) {
+      document.body.classList.add('screen--menu');
+      document.body.classList.remove('screen--game');
+    }
   }
   if(modeMenuDiv){
     modeMenuDiv.style.display = displayValue;
@@ -2264,7 +2363,7 @@ function updateFieldBorderOffset(){
   } else if(brickFrameImg.naturalWidth){
 
     const scaleX = FIELD_WIDTH / brickFrameImg.naturalWidth;
-    const scaleY = gameCanvas.height / brickFrameImg.naturalHeight;
+    const scaleY = WORLD.height / brickFrameImg.naturalHeight;
     FIELD_BORDER_OFFSET_X = brickFrameBorderPxX * scaleX;
     FIELD_BORDER_OFFSET_Y = brickFrameBorderPxY * scaleY;
   } else {
@@ -2276,7 +2375,7 @@ function updateFieldBorderOffset(){
 function isBrickPixel(x, y){
   if(!brickFrameData) return false;
   const imgX = Math.floor((x - FIELD_LEFT) / FIELD_WIDTH * brickFrameData.width);
-  const imgY = Math.floor(y / gameCanvas.height * brickFrameData.height);
+  const imgY = Math.floor(y / WORLD.height * brickFrameData.height);
   const { data, width, height } = brickFrameData;
   if(imgX < 0 || imgX >= width || imgY < 0 || imgY >= height) return false;
 
@@ -2301,11 +2400,11 @@ function isBrickPixel(x, y){
 function updateFieldDimensions(){
   if(brickFrameImg.naturalWidth && brickFrameImg.naturalHeight){
     const aspect = brickFrameImg.naturalWidth / brickFrameImg.naturalHeight;
-    FIELD_WIDTH = gameCanvas.height * aspect;
-    FIELD_LEFT = (gameCanvas.width - FIELD_WIDTH) / 2;
+    FIELD_WIDTH = WORLD.height * aspect;
+    FIELD_LEFT = (WORLD.width - FIELD_WIDTH) / 2;
   } else {
     FIELD_LEFT = 0;
-    FIELD_WIDTH = gameCanvas.width;
+    FIELD_WIDTH = WORLD.width;
   }
   updateFieldBorderOffset();
 }
@@ -3165,7 +3264,7 @@ function colorAngleOffset(color){
 let HOME_ROW_Y = { blue: 40, green: 0 };
 
 function getHomeRowY(color){
-  const fallback = color === "blue" ? 40 : gameCanvas.height - 40;
+  const fallback = color === "blue" ? 40 : WORLD.height - 40;
   const rowY = HOME_ROW_Y[color];
   return Number.isFinite(rowY) ? rowY : fallback;
 }
@@ -3177,7 +3276,7 @@ function initPoints(){
   const edgePadding = EDGE_PLANE_PADDING_PX;
 
   const blueHomeY = 40;
-  const greenHomeY = gameCanvas.height - 40;
+  const greenHomeY = WORLD.height - 40;
   HOME_ROW_Y = { blue: blueHomeY, green: greenHomeY };
 
   // Green (низ поля) — смотрят ВВЕРХ (к сопернику)
@@ -3374,6 +3473,7 @@ playBtn.addEventListener("click",()=>{
   gameMode = selectedMode;
   restoreGameBackgroundAfterMenu();
   setMenuVisibility(false);
+  activateGameScreen();
   startNewRound();
 });
 
@@ -3493,10 +3593,10 @@ function isValidAAPlacement(x,y){
   // The center may touch field edges or overlap planes, but must not be inside
   // any building so that AA can be destroyed by planes.
 
-  const half = gameCanvas.height / 2;
+  const half = WORLD.height / 2;
 
   if (currentPlacer === 'green') {
-    if (y < half || y > gameCanvas.height) return false;
+    if (y < half || y > WORLD.height) return false;
   } else if (currentPlacer === 'blue') {
     if (y < 0 || y > half) return false;
   } else {
@@ -3545,7 +3645,7 @@ function placeAA({owner,x,y}){
 function drawAAPlacementZone(){
   if(phase !== 'AA_PLACEMENT') return;
 
-  const half = gameCanvas.height / 2;
+  const half = WORLD.height / 2;
   gameCtx.save();
   gameCtx.fillStyle = colorWithAlpha(currentPlacer, 0.05);
   if(currentPlacer === 'green'){
@@ -4205,7 +4305,7 @@ function handleAAForPlane(p, fp){
 
   // фон
   resetCanvasState(gameCtx, gameCanvas);
-  drawFieldBackground(gameCtx, gameCanvas.width, gameCanvas.height);
+  drawFieldBackground(gameCtx, WORLD.width, WORLD.height);
 
   // Планирование хода ИИ
   if (!isGameOver
@@ -4324,8 +4424,8 @@ function handleAAForPlane(p, fp){
           }
           fp.vy = -fp.vy;
         }
-        else if (p.y > gameCanvas.height - FIELD_BORDER_OFFSET_Y) {
-          p.y = gameCanvas.height - FIELD_BORDER_OFFSET_Y;
+        else if (p.y > WORLD.height - FIELD_BORDER_OFFSET_Y) {
+          p.y = WORLD.height - FIELD_BORDER_OFFSET_Y;
           if (settings.sharpEdges) {
             destroyPlane(fp);
             continue;
@@ -4394,7 +4494,7 @@ function handleAAForPlane(p, fp){
   drawAAPlacementZone();
   drawBuildings();
 
-  drawFieldEdges(gameCtx, gameCanvas.width, gameCanvas.height);
+  drawFieldEdges(gameCtx, WORLD.width, WORLD.height);
 
   drawFlags();
 
@@ -4506,19 +4606,19 @@ function handleAAForPlane(p, fp){
       : `${winnerName} wins the round!`;
     const metrics = gameCtx.measureText(text);
     const w = metrics.width;
-    const textX = (gameCanvas.width - w) / 2;
-    const textBaselineY = gameCanvas.height / 2 - 80;
+    const textX = (WORLD.width - w) / 2;
+    const textBaselineY = WORLD.height / 2 - 80;
     gameCtx.fillText(text, textX, textBaselineY);
 
     if(shouldShowEndScreen && endGameDiv){
       const descent = Number.isFinite(metrics.actualBoundingBoxDescent) ? metrics.actualBoundingBoxDescent : 0;
-      const anchorCanvasX = gameCanvas.width / 2;
+      const anchorCanvasX = WORLD.width / 2;
       const anchorCanvasY = textBaselineY + descent + 24;
       const boardRect = getViewportAdjustedBoundingClientRect(gameCanvas);
       const boardWidth = Number.isFinite(boardRect.width) ? boardRect.width : 0;
       const boardHeight = Number.isFinite(boardRect.height) ? boardRect.height : 0;
-      const scaleX = gameCanvas.width !== 0 ? boardWidth / gameCanvas.width : 1;
-      const scaleY = gameCanvas.height !== 0 ? boardHeight / gameCanvas.height : 1;
+      const scaleX = WORLD.width !== 0 ? boardWidth / WORLD.width : 1;
+      const scaleY = WORLD.height !== 0 ? boardHeight / WORLD.height : 1;
       const anchorClientX = (Number.isFinite(boardRect.left) ? boardRect.left : 0) + anchorCanvasX * scaleX;
       const anchorClientY = (Number.isFinite(boardRect.top) ? boardRect.top : 0) + anchorCanvasY * scaleY;
 
@@ -4554,8 +4654,8 @@ function handleAAForPlane(p, fp){
     gameCtx.lineWidth = 2;
     const text = `Round ${roundNumber}`;
     const w = gameCtx.measureText(text).width;
-    const x = (gameCanvas.width - w) / 2;
-    const y = gameCanvas.height / 2;
+    const x = (WORLD.width - w) / 2;
+    const y = WORLD.height / 2;
     gameCtx.fillText(text, x, y);
     gameCtx.strokeText(text, x, y);
 
@@ -4565,7 +4665,7 @@ function handleAAForPlane(p, fp){
     gameCtx.font="32px 'Patrick Hand', cursive";
     gameCtx.fillStyle = colorFor(turnColor);
     const w2 = gameCtx.measureText(turnText).width;
-    const x2 = (gameCanvas.width - w2) / 2;
+    const x2 = (WORLD.width - w2) / 2;
     const y2 = y + 40;
     gameCtx.fillText(turnText, x2, y2);
 
@@ -5084,12 +5184,10 @@ function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians =
 
 function drawPlanesAndTrajectories(){
   resetCanvasState(planeCtx, planeCanvas);
-  const rect = visualRect(gameCanvas);
-  const scaleX = rect.width / gameCanvas.width;
-  const scaleY = rect.height / gameCanvas.height;
+  const scaleX = VIEW.scaleX;
+  const scaleY = VIEW.scaleY;
   planeCtx.save();
-  planeCtx.translate(rect.left, rect.top);
-  planeCtx.scale(scaleX, scaleY);
+  planeCtx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
 
   let rangeTextInfo = null;
   const activeColor = turnColors[turnIndex];
@@ -6230,7 +6328,7 @@ function generateRandomBuildingAligned(){
 
     const x = FIELD_LEFT + getRandomGridAlignedCoordinate(FIELD_WIDTH,  width/2);
     const minY = 80; // избегаем зон самолётов
-    const maxY = gameCanvas.height - 80;
+    const maxY = WORLD.height - 80;
     const y = minY + Math.random() * (maxY - minY - height);
     if(x===null || y===null){ attempt++; continue; }
 
@@ -6296,6 +6394,7 @@ function startNewRound(){
   loadStarImagesIfNeeded();
   preloadPlaneSprites();
   restoreGameBackgroundAfterMenu();
+  activateGameScreen();
   if(roundTransitionTimeout){
     clearTimeout(roundTransitionTimeout);
     roundTransitionTimeout = null;
@@ -6501,12 +6600,15 @@ function resizeCanvas() {
   canvas.style.height = CANVAS_BASE_HEIGHT * scale + 'px';
   canvas.style.left = FRAME_PADDING_X * scale + 'px';
   canvas.style.top = FRAME_PADDING_Y * scale + 'px';
-  canvas.width = CANVAS_BASE_WIDTH;
-  canvas.height = CANVAS_BASE_HEIGHT;
-
-  syncCanvasBackingStore(canvas);
+  resizeCanvasToMatchCss(canvas);
+  computeViewFromCanvas(canvas);
 
   sizeAndAlignOverlays();
+  resizeCanvasToMatchCss(aimCanvas);
+  resizeCanvasToMatchCss(planeCanvas);
+  applyViewTransform(gameCtx);
+  applyViewTransform(aimCtx);
+  applyViewTransform(planeCtx);
 
   [mantisIndicator, goatIndicator].forEach(ind => {
     ind.style.width = containerWidth + 'px';
@@ -6529,7 +6631,9 @@ function resizeCanvas() {
 
   refreshScoreInkAnchors();
 
-  document.body.classList.add('menu-ready');
+  if (document.body.classList.contains('screen--menu')) {
+    document.body.classList.add('menu-ready');
+  }
 
   // TEMP: layout diagnostics
   const rectSummary = (el) => {

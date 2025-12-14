@@ -109,7 +109,7 @@ body, button {
 
   .score-counter--green {
     left: calc(409px * var(--score-scale, 1));
-    top: calc(95px * var(--score-scale, 1));
+    top: calc(419px * var(--score-scale, 1));
     width: calc(51px * var(--score-scale, 1));
     height: calc(290px * var(--score-scale, 1));
   }
@@ -129,7 +129,7 @@ body, button {
 
   .plane-counter--green {
     left: calc(409px * var(--score-scale, 1));
-    top: calc(95px * var(--score-scale, 1));
+    top: calc(419px * var(--score-scale, 1));
     width: calc(51px * var(--score-scale, 1));
     height: calc(290px * var(--score-scale, 1));
   }
@@ -302,6 +302,10 @@ body, button {
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+
+  body.screen--game #menuScreen {
+    display: none !important;
   }
 
   .screen-wrapper--menu .stage-460x800 {
