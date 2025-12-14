@@ -670,14 +670,51 @@ function sizeAndAlignOverlays() {
 
   const adjustedRect = getViewportAdjustedBoundingClientRect(gameCanvas);
   const rawRect = gameCanvas?.getBoundingClientRect?.();
+  const containerRect = gameContainer?.getBoundingClientRect?.();
+  const canvasStyle = gameCanvas instanceof HTMLElement ? window.getComputedStyle(gameCanvas) : null;
+
   const rect = (Number.isFinite(adjustedRect?.width) && adjustedRect.width > 0 && Number.isFinite(adjustedRect?.height) && adjustedRect.height > 0)
     ? adjustedRect
     : rawRect;
 
-  const left = Number.isFinite(rect?.left) ? rect.left : 0;
-  const top = Number.isFinite(rect?.top) ? rect.top : 0;
-  const width = Math.max(1, Math.round(Number.isFinite(rect?.width) ? rect.width : 0));
-  const height = Math.max(1, Math.round(Number.isFinite(rect?.height) ? rect.height : 0));
+  const styleWidth = parseFloat(canvasStyle?.width);
+  const styleHeight = parseFloat(canvasStyle?.height);
+  const styleLeft = parseFloat(canvasStyle?.left);
+  const styleTop = parseFloat(canvasStyle?.top);
+
+  const width = Math.max(1, Math.round(
+    Number.isFinite(rect?.width) && rect.width > 0
+      ? rect.width
+      : (Number.isFinite(rawRect?.width) && rawRect.width > 0
+        ? rawRect.width
+        : (Number.isFinite(styleWidth) && styleWidth > 0
+          ? styleWidth
+          : (Number.isFinite(gameCanvas?.width) && gameCanvas.width > 0
+            ? gameCanvas.width
+            : (Number.isFinite(containerRect?.width) && containerRect.width > 0 ? containerRect.width : 1))))
+  ));
+
+  const height = Math.max(1, Math.round(
+    Number.isFinite(rect?.height) && rect.height > 0
+      ? rect.height
+      : (Number.isFinite(rawRect?.height) && rawRect.height > 0
+        ? rawRect.height
+        : (Number.isFinite(styleHeight) && styleHeight > 0
+          ? styleHeight
+          : (Number.isFinite(gameCanvas?.height) && gameCanvas.height > 0
+            ? gameCanvas.height
+            : (Number.isFinite(containerRect?.height) && containerRect.height > 0 ? containerRect.height : 1))))
+  ));
+
+  const useViewportOffsets = Number.isFinite(rect?.left) && Number.isFinite(containerRect?.left);
+
+  const left = useViewportOffsets
+    ? rect.left - containerRect.left
+    : (Number.isFinite(styleLeft) ? styleLeft : 0);
+
+  const top = useViewportOffsets
+    ? rect.top - containerRect.top
+    : (Number.isFinite(styleTop) ? styleTop : 0);
 
   overlayContainer.style.left = `${left}px`;
   overlayContainer.style.top = `${top}px`;
@@ -841,6 +878,7 @@ function ensurePlaneFlameHost() {
 
 function resolvePlaneFlameMetrics(context = 'plane flame') {
   const boardRect = getViewportAdjustedBoundingClientRect(gameCanvas);
+  const overlayRect = getViewportAdjustedBoundingClientRect(overlayContainer);
   const host = ensurePlaneFlameHost();
 
   if (!(host instanceof HTMLElement)) {
@@ -868,14 +906,18 @@ function resolvePlaneFlameMetrics(context = 'plane flame') {
     return null;
   }
 
-  if (!boardRect || boardRect.width <= FX_HOST_MIN_SIZE || boardRect.height <= FX_HOST_MIN_SIZE) {
+  const usableBoardRect = (boardRect && boardRect.width > FX_HOST_MIN_SIZE && boardRect.height > FX_HOST_MIN_SIZE)
+    ? boardRect
+    : (overlayRect && overlayRect.width > FX_HOST_MIN_SIZE && overlayRect.height > FX_HOST_MIN_SIZE ? overlayRect : null);
+
+  if (!usableBoardRect) {
     console.warn(`[FX] Skipping ${context}: board rect invalid`, { boardRect });
     return null;
   }
 
-  warnIfFxHostMismatch(boardRect, hostRect, context);
+  warnIfFxHostMismatch(usableBoardRect, hostRect, context);
 
-  return { boardRect, hostRect };
+  return { boardRect: usableBoardRect, hostRect };
 }
 
 function getFlameDisplaySize(plane) {
