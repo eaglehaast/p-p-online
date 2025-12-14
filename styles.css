@@ -86,13 +86,19 @@ body, button {
     background-repeat: no-repeat;
     background-position: center top, center top;
     --score-scale: 1;
+    --game-scale: var(--score-scale);
+    --field-left: calc(50px * var(--game-scale, 1));
+    --field-top: calc(80px * var(--game-scale, 1));
+    --field-width: calc(360px * var(--game-scale, 1));
+    --field-height: calc(640px * var(--game-scale, 1));
+    overflow: hidden;
     z-index: 0;
   }
 
   .score-counter {
     position: absolute;
     pointer-events: none;
-    z-index: 40;
+    z-index: 30;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -102,35 +108,35 @@ body, button {
   }
 
   .score-counter--green {
-    left: calc(4px * var(--score-scale, 1));
-    top: calc(388px * var(--score-scale, 1));
-    width: calc(43px * var(--score-scale, 1));
-    height: calc(124px * var(--score-scale, 1));
+    left: calc(409px * var(--score-scale, 1));
+    top: calc(95px * var(--score-scale, 1));
+    width: calc(51px * var(--score-scale, 1));
+    height: calc(290px * var(--score-scale, 1));
   }
 
   .score-counter--blue {
-    right: calc(3px * var(--score-scale, 1));
-    top: calc(388px * var(--score-scale, 1));
-    width: calc(43px * var(--score-scale, 1));
-    height: calc(124px * var(--score-scale, 1));
+    left: calc(0px * var(--score-scale, 1));
+    top: calc(95px * var(--score-scale, 1));
+    width: calc(51px * var(--score-scale, 1));
+    height: calc(290px * var(--score-scale, 1));
   }
 
   .plane-counter {
     position: absolute;
     pointer-events: none;
-    z-index: 40;
+    z-index: 30;
   }
 
   .plane-counter--green {
     left: calc(409px * var(--score-scale, 1));
-    top: calc(406px * var(--score-scale, 1));
+    top: calc(95px * var(--score-scale, 1));
     width: calc(51px * var(--score-scale, 1));
     height: calc(290px * var(--score-scale, 1));
   }
 
   .plane-counter--blue {
     left: calc(0px * var(--score-scale, 1));
-    top: calc(89px * var(--score-scale, 1));
+    top: calc(95px * var(--score-scale, 1));
     width: calc(51px * var(--score-scale, 1));
     height: calc(290px * var(--score-scale, 1));
   }
@@ -1016,14 +1022,14 @@ body, button {
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
   border-radius: 0;
   background-color: transparent;
-  width: 360px;
-  height: 640px;
+  width: var(--field-width);
+  height: var(--field-height);
   display: block;
   position: absolute;
-  left: 50px;
-  top: 80px;
+  left: var(--field-left);
+  top: var(--field-top);
   margin: 0;
-  z-index: 0;
+  z-index: 10;
 }
 
 
@@ -1066,11 +1072,18 @@ body, button {
   position: absolute;
   pointer-events: none;
   transform-origin: 0 0;
-  inset: 0;
+  left: var(--field-left);
+  top: var(--field-top);
+  width: var(--field-width);
+  height: var(--field-height);
+  z-index: 20;
 }
 
 #overlayContainer canvas {
   position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
   display: block;
   background: transparent;
@@ -1079,30 +1092,23 @@ body, button {
 /* Overlay canvas for aiming line */
 #aimCanvas {
   /* Ensure the arrow renders above the game field */
-  z-index: 15;
+  z-index: 20;
 }
 
 /* Overlay canvas for planes */
 #planeCanvas {
   /* Highest layer so planes appear above the aiming arrow */
-  z-index: 50;
-}
-
-.game-wrap {
-  position: relative;
-  width: 100%;
-  height: 100%;
+  z-index: 22;
 }
 
 #fxLayer {
   position: absolute;
-  left: 0;
-  top: 0;
+  inset: 0;
   width: 100%;
   height: 100%;
   pointer-events: none;
   /* Sits below the plane canvas but above the game field */
-  z-index: 25;
+  z-index: 40;
 }
 
 .fx-explosion-host {

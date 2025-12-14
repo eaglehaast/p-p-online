@@ -681,24 +681,42 @@ function worldToGameCanvas(x, y, rect = visualRect(gameCanvas)) {
   };
 }
 
-function syncOverlayCanvasToGameCanvas(targetCanvas, gameCanvas) {
-  if (!targetCanvas || !gameCanvas) return;
+function syncOverlayCanvasToGameCanvas(targetCanvas, cssWidth, cssHeight) {
+  if (!targetCanvas) return;
 
   const style = window.getComputedStyle(targetCanvas);
   if (style.display === 'none' || style.visibility === 'hidden') {
     return;
   }
 
-  const r = gameCanvas.getBoundingClientRect();
+  const width = Math.max(1, Math.round(cssWidth || 0));
+  const height = Math.max(1, Math.round(cssHeight || 0));
+  const dpr = window.devicePixelRatio || 1;
 
-  // CSS size (layout size)
   targetCanvas.style.position = 'absolute';
   targetCanvas.style.left = '0px';
   targetCanvas.style.top = '0px';
-  targetCanvas.style.width = `${r.width}px`;
-  targetCanvas.style.height = `${r.height}px`;
+  targetCanvas.style.width = `${width}px`;
+  targetCanvas.style.height = `${height}px`;
 
-  syncCanvasBackingStore(targetCanvas);
+  const backingWidth = Math.max(1, Math.round(width * dpr));
+  const backingHeight = Math.max(1, Math.round(height * dpr));
+
+  if (targetCanvas.width !== backingWidth) targetCanvas.width = backingWidth;
+  if (targetCanvas.height !== backingHeight) targetCanvas.height = backingHeight;
+
+  const ctx = targetCanvas.getContext('2d');
+  if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function getGameLayoutScale() {
+  const containerWidth = gameContainer?.offsetWidth;
+  if (Number.isFinite(containerWidth) && containerWidth > 0) {
+    return containerWidth / FRAME_BASE_WIDTH;
+  }
+
+  const cssScale = parseFloat(gameContainer?.style?.getPropertyValue?.('--score-scale'));
+  return Number.isFinite(cssScale) && cssScale > 0 ? cssScale : 1;
 }
 
 function sizeAndAlignOverlays() {
@@ -706,61 +724,11 @@ function sizeAndAlignOverlays() {
     return;
   }
 
-  const adjustedRect = getViewportAdjustedBoundingClientRect(gameCanvas);
-  const rawRect = gameCanvas?.getBoundingClientRect?.();
-  const containerRect = gameContainer?.getBoundingClientRect?.();
-  const canvasStyle = gameCanvas instanceof HTMLElement ? window.getComputedStyle(gameCanvas) : null;
-
-  const rect = (Number.isFinite(adjustedRect?.width) && adjustedRect.width > 0 && Number.isFinite(adjustedRect?.height) && adjustedRect.height > 0)
-    ? adjustedRect
-    : rawRect;
-
-  let left = Number.isFinite(rect?.left) && Number.isFinite(containerRect?.left)
-    ? rect.left - containerRect.left
-    : 0;
-  let top = Number.isFinite(rect?.top) && Number.isFinite(containerRect?.top)
-    ? rect.top - containerRect.top
-    : 0;
-  let width = Math.max(1, Math.round(Number.isFinite(rect?.width) ? rect.width : 0));
-  let height = Math.max(1, Math.round(Number.isFinite(rect?.height) ? rect.height : 0));
-
-  const MIN = (typeof FX_HOST_MIN_SIZE === 'number') ? FX_HOST_MIN_SIZE : 2;
-
-  const isValidRect = (w, h) =>
-    Number.isFinite(w) && Number.isFinite(h) && w > MIN && h > MIN;
-
-  // если текущий расчёт дал 1×1 или NaN — используем fallback
-  if (!isValidRect(width, height)) {
-    // fallback #1: last known good overlay rect
-    if (LAST_GOOD_OVERLAY_RECT && isValidRect(LAST_GOOD_OVERLAY_RECT.width, LAST_GOOD_OVERLAY_RECT.height)) {
-      ({ left, top, width, height } = LAST_GOOD_OVERLAY_RECT);
-    } else {
-      // fallback #2: canvas rect
-      const canvasRect = getViewportAdjustedBoundingClientRect(gameCanvas) || gameCanvas?.getBoundingClientRect?.();
-      if (canvasRect && isValidRect(canvasRect.width, canvasRect.height)) {
-        left = canvasRect.left;
-        top = canvasRect.top;
-        width = canvasRect.width;
-        height = canvasRect.height;
-      } else {
-        // fallback #3: retry once next frame, do not overwrite with garbage
-        if (!OVERLAY_RESYNC_SCHEDULED) {
-          OVERLAY_RESYNC_SCHEDULED = true;
-          requestAnimationFrame(() => {
-            OVERLAY_RESYNC_SCHEDULED = false;
-            // вызвать ту же функцию, в которой находится этот блок,
-            // чтобы пересчитать left/top/width/height ещё раз
-            // (если функция называется sizeAndAlignOverlays / syncOverlayToCanvas / layoutUI — использовать её)
-            if (typeof sizeAndAlignOverlays === 'function') sizeAndAlignOverlays();
-          });
-        }
-        return;
-      }
-    }
-  }
-
-  // теперь rect валидный, сохраняем как “последний хороший”
-  LAST_GOOD_OVERLAY_RECT = { left, top, width, height };
+  const scale = getGameLayoutScale();
+  const width = Math.max(1, Math.round(CANVAS_BASE_WIDTH * scale));
+  const height = Math.max(1, Math.round(CANVAS_BASE_HEIGHT * scale));
+  const left = FRAME_PADDING_X * scale;
+  const top = FRAME_PADDING_Y * scale;
 
   overlayContainer.style.left = `${left}px`;
   overlayContainer.style.top = `${top}px`;
@@ -768,8 +736,10 @@ function sizeAndAlignOverlays() {
   overlayContainer.style.height = `${height}px`;
   overlayContainer.style.transform = "none";
 
-  syncOverlayCanvasToGameCanvas(aimCanvas, gameCanvas);
-  syncOverlayCanvasToGameCanvas(planeCanvas, gameCanvas);
+  LAST_GOOD_OVERLAY_RECT = { left, top, width, height };
+
+  syncOverlayCanvasToGameCanvas(aimCanvas, width, height);
+  syncOverlayCanvasToGameCanvas(planeCanvas, width, height);
 
   if (fxLayerElement instanceof HTMLElement) {
     fxLayerElement.style.width = `${width}px`;
@@ -6373,8 +6343,11 @@ function startNewRound(){
   aimCanvas.style.display = "block";
 
   requestAnimationFrame(() => {
-    syncOverlayCanvasToGameCanvas(aimCanvas, gameCanvas);
-    syncOverlayCanvasToGameCanvas(planeCanvas, gameCanvas);
+    const scale = getGameLayoutScale();
+    const cssWidth = CANVAS_BASE_WIDTH * scale;
+    const cssHeight = CANVAS_BASE_HEIGHT * scale;
+    syncOverlayCanvasToGameCanvas(aimCanvas, cssWidth, cssHeight);
+    syncOverlayCanvasToGameCanvas(planeCanvas, cssWidth, cssHeight);
   });
 
   setBackgroundImage('pics/background behind the canvas 5.png');
@@ -6517,6 +6490,7 @@ function resizeCanvas() {
   gameContainer.style.width = containerWidth + 'px';
   gameContainer.style.height = containerHeight + 'px';
   gameContainer.style.setProperty('--score-scale', scale);
+  gameContainer.style.setProperty('--game-scale', scale);
   const centeredLeft = offsetLeft + (viewportWidth - containerWidth) / 2;
   const centeredTop = offsetTop + (viewportHeight - containerHeight) / 2;
   gameContainer.style.left = centeredLeft + 'px';
@@ -6543,26 +6517,6 @@ function resizeCanvas() {
   goatIndicator.style.top = containerHeight / 2 + 'px';
 
   updateFieldDimensions();
-
-  // Overlay canvases cover full screen for proper alignment
-  const viewport = VV();
-  const overlayViewportWidth = viewport.width;
-  const overlayViewportHeight = viewport.height;
-  const viewportScale = viewport.scale || 1;
-  const overlayWidth = Math.max(1, Math.round(overlayViewportWidth * viewportScale));
-  const overlayHeight = Math.max(1, Math.round(overlayViewportHeight * viewportScale));
-
-  [aimCanvas, planeCanvas].forEach(overlay => {
-    if (!overlay) return;
-    overlay.width = overlayWidth;
-    overlay.height = overlayHeight;
-    overlay.style.width = overlayWidth + 'px';
-    overlay.style.height = overlayHeight + 'px';
-    overlay.style.left = '0px';
-    overlay.style.top = '0px';
-
-    syncCanvasBackingStore(overlay);
-  });
 
   requestAnimationFrame(syncAllCanvasBackingStores);
 

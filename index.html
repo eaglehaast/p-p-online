@@ -13,9 +13,18 @@
     <div class="loading-overlay__text">Загрузка…</div>
   </div>
   <div id="gameContainer">
-    <!-- Game Field (Initially Hidden) -->
-    <div class="game-wrap">
-      <canvas id="gameCanvas" width="360" height="640" style="display:none;"></canvas>
+    <!-- Base field and overlays -->
+    <canvas id="gameCanvas" width="360" height="640" style="display:none;"></canvas>
+
+    <div id="overlayContainer" aria-hidden="true">
+      <!-- Overlay canvas for aiming line -->
+      <canvas id="aimCanvas" width="360" height="640" style="display:none;"></canvas>
+
+      <!-- Overlay canvas for planes -->
+      <canvas id="planeCanvas" width="360" height="640" style="display:none;"></canvas>
+
+      <!-- FX layer for GIF explosions -->
+      <div id="fxLayer"></div>
     </div>
 
     <!-- Score counters -->
@@ -35,17 +44,6 @@
     <!-- Turn indicators -->
     <div id="mantisIndicator" class="turn-indicator" style="display:none;"></div>
     <div id="goatIndicator" class="turn-indicator" style="display:none;"></div>
-
-    <div id="overlayContainer" aria-hidden="true">
-      <!-- Overlay canvas for aiming line -->
-      <canvas id="aimCanvas" width="0" height="0" style="display:none;"></canvas>
-
-      <!-- Overlay canvas for planes -->
-      <canvas id="planeCanvas" width="0" height="0" style="display:none;"></canvas>
-
-      <!-- FX layer for GIF explosions -->
-      <div id="fxLayer"></div>
-    </div>
   </div>
 
     <!-- Game Mode Selection Menu -->
