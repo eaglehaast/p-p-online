@@ -22,6 +22,21 @@ const aimCtx      = aimCanvas.getContext("2d");
 const planeCanvas = document.getElementById("planeCanvas");
 const planeCtx    = planeCanvas.getContext("2d");
 
+function syncCanvasBackingStore(canvas) {
+  if (!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const r = canvas.getBoundingClientRect();
+
+  const w = Math.max(1, Math.round(r.width * dpr));
+  const h = Math.max(1, Math.round(r.height * dpr));
+
+  if (canvas.width !== w) canvas.width = w;
+  if (canvas.height !== h) canvas.height = h;
+
+  const ctx = canvas.getContext('2d');
+  if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
 function logCanvasCreation(canvas, label = "") {
   if (!(canvas instanceof HTMLCanvasElement)) {
     return;
@@ -674,7 +689,6 @@ function syncOverlayCanvasToGameCanvas(targetCanvas, gameCanvas) {
     return;
   }
 
-  const dpr = window.devicePixelRatio || 1;
   const r = gameCanvas.getBoundingClientRect();
 
   // CSS size (layout size)
@@ -684,12 +698,7 @@ function syncOverlayCanvasToGameCanvas(targetCanvas, gameCanvas) {
   targetCanvas.style.width = `${r.width}px`;
   targetCanvas.style.height = `${r.height}px`;
 
-  // Backing store size (rendering resolution)
-  const w = Math.max(1, Math.round(r.width * dpr));
-  const h = Math.max(1, Math.round(r.height * dpr));
-
-  if (targetCanvas.width !== w) targetCanvas.width = w;
-  if (targetCanvas.height !== h) targetCanvas.height = h;
+  syncCanvasBackingStore(targetCanvas);
 }
 
 function sizeAndAlignOverlays() {
@@ -6475,6 +6484,12 @@ function alignMenuStage(viewportWidth, viewportHeight, offsetLeft, offsetTop, sc
 }
 
 /* ======= CANVAS RESIZE ======= */
+function syncAllCanvasBackingStores() {
+  syncCanvasBackingStore(gameCanvas);
+  syncCanvasBackingStore(planeCanvas);
+  syncCanvasBackingStore(aimCanvas);
+}
+
 function resizeCanvas() {
   // Keep the game in portrait mode: if the device rotates to landscape,
   // attempt to re-lock orientation.  Do not skip resizing so the canvases
@@ -6515,6 +6530,8 @@ function resizeCanvas() {
   canvas.width = CANVAS_BASE_WIDTH;
   canvas.height = CANVAS_BASE_HEIGHT;
 
+  syncCanvasBackingStore(canvas);
+
   sizeAndAlignOverlays();
 
   [mantisIndicator, goatIndicator].forEach(ind => {
@@ -6543,7 +6560,11 @@ function resizeCanvas() {
     overlay.style.height = overlayHeight + 'px';
     overlay.style.left = '0px';
     overlay.style.top = '0px';
+
+    syncCanvasBackingStore(overlay);
   });
+
+  requestAnimationFrame(syncAllCanvasBackingStores);
 
   schedulePlaneFlameSync();
 
