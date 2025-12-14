@@ -847,7 +847,42 @@ function ensurePlaneFlameHost() {
   return ensureFxHost(parent, PLANE_FLAME_HOST_ID);
 }
 
+function isGameScreenActive() {
+  if (phase === 'MENU') {
+    return false;
+  }
+
+  if (document.body?.classList?.contains('settings-page')) {
+    return false;
+  }
+
+  if (menuScreen instanceof HTMLElement && menuScreen.style.display !== 'none') {
+    return false;
+  }
+
+  return true;
+}
+
 function resolvePlaneFlameMetrics(context = 'plane flame') {
+  if (!isGameScreenActive()) {
+    return null;
+  }
+
+  const canvasWidth = gameCanvas?.offsetWidth || 0;
+  const canvasHeight = gameCanvas?.offsetHeight || 0;
+  const overlayWidth = overlayContainer?.offsetWidth || 0;
+  const overlayHeight = overlayContainer?.offsetHeight || 0;
+
+  const hasUsableSurface = (
+    canvasWidth > FX_HOST_MIN_SIZE && canvasHeight > FX_HOST_MIN_SIZE
+  ) || (
+    overlayWidth > FX_HOST_MIN_SIZE && overlayHeight > FX_HOST_MIN_SIZE
+  );
+
+  if (!hasUsableSurface) {
+    return null;
+  }
+
   const boardRect = getViewportAdjustedBoundingClientRect(gameCanvas);
   const overlayRect = getViewportAdjustedBoundingClientRect(overlayContainer);
   const host = ensurePlaneFlameHost();
@@ -1360,6 +1395,7 @@ function updatePlaneFlameFxPosition(plane, metrics) {
 }
 
 function updateAllPlaneFlameFxPositions() {
+  if (!isGameScreenActive()) return;
   if (planeFlameFx.size === 0) return;
   const metrics = resolvePlaneFlameMetrics('plane flame batch');
   if (!metrics) {
