@@ -686,6 +686,11 @@ function sizeAndAlignOverlays() {
   const width = Math.max(1, Math.round(Number.isFinite(rect?.width) ? rect.width : 0));
   const height = Math.max(1, Math.round(Number.isFinite(rect?.height) ? rect.height : 0));
 
+  if (width <= FX_HOST_MIN_SIZE || height <= FX_HOST_MIN_SIZE) {
+    // Guard: do not collapse overlayContainer to 1×1
+    return;
+  }
+
   overlayContainer.style.left = `${left}px`;
   overlayContainer.style.top = `${top}px`;
   overlayContainer.style.width = `${width}px`;
