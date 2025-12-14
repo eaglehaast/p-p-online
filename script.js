@@ -833,7 +833,7 @@ const BOARD_ORIGIN = { x: 0, y: 0 };
 
 // ---- Explosion FX (GIF over canvas) ----
 
-const EXPLOSION_DURATION_MS = 700;   // delay before showing wreck FX
+const EXPLOSION_DURATION_MS = 3000;   // delay before showing wreck FX
 const EXPLOSION_HOST_CLASS = 'fx-explosion-host';
 const EXPLOSION_HOST_SIZE = 50;
 const EXPLOSION_HOST_MIN_SIZE = Math.max(FX_HOST_MIN_SIZE, 4);
