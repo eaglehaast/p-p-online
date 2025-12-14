@@ -666,6 +666,27 @@ function worldToGameCanvas(x, y, rect = visualRect(gameCanvas)) {
   };
 }
 
+function syncOverlayCanvasToGameCanvas(targetCanvas, gameCanvas) {
+  if (!targetCanvas || !gameCanvas) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const r = gameCanvas.getBoundingClientRect();
+
+  // CSS size (layout size)
+  targetCanvas.style.position = 'absolute';
+  targetCanvas.style.left = '0px';
+  targetCanvas.style.top = '0px';
+  targetCanvas.style.width = `${r.width}px`;
+  targetCanvas.style.height = `${r.height}px`;
+
+  // Backing store size (rendering resolution)
+  const w = Math.max(1, Math.round(r.width * dpr));
+  const h = Math.max(1, Math.round(r.height * dpr));
+
+  if (targetCanvas.width !== w) targetCanvas.width = w;
+  if (targetCanvas.height !== h) targetCanvas.height = h;
+}
+
 function sizeAndAlignOverlays() {
   if (!(overlayContainer instanceof HTMLElement)) {
     return;
@@ -732,6 +753,9 @@ function sizeAndAlignOverlays() {
   overlayContainer.style.width = `${width}px`;
   overlayContainer.style.height = `${height}px`;
   overlayContainer.style.transform = "none";
+
+  syncOverlayCanvasToGameCanvas(aimCanvas, gameCanvas);
+  syncOverlayCanvasToGameCanvas(planeCanvas, gameCanvas);
 
   if (fxLayerElement instanceof HTMLElement) {
     fxLayerElement.style.width = `${width}px`;
