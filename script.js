@@ -13,6 +13,7 @@ const goatIndicator   = document.getElementById("goatIndicator");
 const loadingOverlay = document.getElementById("loadingOverlay");
 
 const gameContainer = document.getElementById("gameContainer");
+const gameScreen = document.getElementById("gameScreen") || gameContainer;
 const gameCanvas  = document.getElementById("gameCanvas");
 const gameCtx     = gameCanvas.getContext("2d");
 
@@ -1889,11 +1890,46 @@ let selectedMode = null;
 let selectedRuleset = "classic";
 
 let menuBackgroundSnapshot = null;
+let hasActivatedGameScreen = false;
+
+function activateGameScreen() {
+  const body = document.body;
+  const wasMenu = body.classList.contains('screen--menu');
+  if (wasMenu) {
+    console.warn('[screen] Gameplay started while menu was active; forcing game screen.');
+  }
+
+  body.classList.remove('screen--menu', 'menu-ready');
+  body.classList.add('screen--game');
+
+  if (menuScreen) {
+    menuScreen.style.display = 'none';
+    menuScreen.setAttribute('aria-hidden', 'true');
+  }
+
+  if (modeMenuDiv) {
+    modeMenuDiv.style.display = 'none';
+  }
+
+  if (gameScreen instanceof HTMLElement) {
+    gameScreen.style.display = 'block';
+    gameScreen.removeAttribute('aria-hidden');
+  }
+
+  if (!hasActivatedGameScreen || wasMenu) {
+    sizeAndAlignOverlays();
+    hasActivatedGameScreen = true;
+  }
+}
 
 function setMenuVisibility(visible) {
   const displayValue = visible ? "block" : "none";
   if(menuScreen){
     menuScreen.style.display = displayValue;
+    if (visible) {
+      document.body.classList.add('screen--menu');
+      document.body.classList.remove('screen--game');
+    }
   }
   if(modeMenuDiv){
     modeMenuDiv.style.display = displayValue;
@@ -3437,6 +3473,7 @@ playBtn.addEventListener("click",()=>{
   gameMode = selectedMode;
   restoreGameBackgroundAfterMenu();
   setMenuVisibility(false);
+  activateGameScreen();
   startNewRound();
 });
 
@@ -6357,6 +6394,7 @@ function startNewRound(){
   loadStarImagesIfNeeded();
   preloadPlaneSprites();
   restoreGameBackgroundAfterMenu();
+  activateGameScreen();
   if(roundTransitionTimeout){
     clearTimeout(roundTransitionTimeout);
     roundTransitionTimeout = null;
@@ -6593,7 +6631,9 @@ function resizeCanvas() {
 
   refreshScoreInkAnchors();
 
-  document.body.classList.add('menu-ready');
+  if (document.body.classList.contains('screen--menu')) {
+    document.body.classList.add('menu-ready');
+  }
 
   // TEMP: layout diagnostics
   const rectSummary = (el) => {

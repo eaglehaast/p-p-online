@@ -304,6 +304,10 @@ body, button {
     justify-content: center;
   }
 
+  body.screen--game #menuScreen {
+    display: none !important;
+  }
+
   .screen-wrapper--menu .stage-460x800 {
     position: relative;
     transform-origin: center center;
