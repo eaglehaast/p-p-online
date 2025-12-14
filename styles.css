@@ -86,12 +86,13 @@ body, button {
     background-repeat: no-repeat;
     background-position: center top, center top;
     --score-scale: 1;
+    z-index: 0;
   }
 
   .score-counter {
     position: absolute;
     pointer-events: none;
-    z-index: 50;
+    z-index: 40;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -117,7 +118,7 @@ body, button {
   .plane-counter {
     position: absolute;
     pointer-events: none;
-    z-index: 45;
+    z-index: 40;
   }
 
   .plane-counter--green {
@@ -1022,7 +1023,7 @@ body, button {
   left: 50px;
   top: 80px;
   margin: 0;
-  z-index: 11;
+  z-index: 0;
 }
 
 
@@ -1038,7 +1039,7 @@ body, button {
   pointer-events: none;
   filter: grayscale(1);
   transition: filter 0.3s;
-  z-index: 40;
+  z-index: 35;
 }
 
 #mantisIndicator {
@@ -1062,10 +1063,10 @@ body, button {
 
 /* Overlay container */
 #overlayContainer {
-  position: fixed;
+  position: absolute;
   pointer-events: none;
-  z-index: 200;
   transform-origin: 0 0;
+  inset: 0;
 }
 
 #overlayContainer canvas {
@@ -1078,13 +1079,13 @@ body, button {
 /* Overlay canvas for aiming line */
 #aimCanvas {
   /* Ensure the arrow renders above the game field */
-  z-index: 20;
+  z-index: 15;
 }
 
 /* Overlay canvas for planes */
 #planeCanvas {
   /* Highest layer so planes appear above the aiming arrow */
-  z-index: 30;
+  z-index: 50;
 }
 
 .game-wrap {
@@ -1110,6 +1111,7 @@ body, button {
   transform: translate(-50%, -100%);
   image-rendering: auto;
   pointer-events: none;
+  z-index: 30;
 }
 
 .fx-flame--blue {
