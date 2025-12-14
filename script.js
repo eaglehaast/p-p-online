@@ -702,11 +702,19 @@ const FX_RECT_MISMATCH_KEYS = new Set();
 const FX_RECT_MISMATCH_TOLERANCE = 4;
 const FX_HOST_MIN_SIZE = 2;
 
-function ensureFxHost(parentEl, idOrClass) {
+function ensureFxHost(parentEl, idOrClass, options = {}) {
   const parent = parentEl instanceof HTMLElement ? parentEl : null;
   if (!parent) {
     return null;
   }
+
+  const opts = options || {};
+  const fillParent = opts.fillParent !== false;
+  const widthPx = Number.isFinite(opts.width) ? opts.width : null;
+  const heightPx = Number.isFinite(opts.height) ? opts.height : null;
+  const leftPx = Number.isFinite(opts.left) ? opts.left : null;
+  const topPx = Number.isFinite(opts.top) ? opts.top : null;
+  const display = typeof opts.display === 'string' ? opts.display : 'block';
 
   const isId = typeof idOrClass === 'string' && idOrClass.startsWith('#');
   const isClass = typeof idOrClass === 'string' && idOrClass.startsWith('.');
@@ -740,12 +748,31 @@ function ensureFxHost(parentEl, idOrClass) {
 
   Object.assign(host.style, {
     position: 'absolute',
-    inset: '0',
-    width: '100%',
-    height: '100%',
     pointerEvents: 'none',
-    display: 'block'
+    display
   });
+
+  if (fillParent) {
+    Object.assign(host.style, {
+      inset: '0',
+      width: '100%',
+      height: '100%'
+    });
+  } else {
+    Object.assign(host.style, {
+      inset: 'auto',
+      width: widthPx ? `${widthPx}px` : host.style.width,
+      height: heightPx ? `${heightPx}px` : host.style.height
+    });
+
+    if (leftPx !== null) {
+      host.style.left = `${leftPx}px`;
+    }
+
+    if (topPx !== null) {
+      host.style.top = `${topPx}px`;
+    }
+  }
 
   return host;
 }
@@ -807,6 +834,9 @@ const BOARD_ORIGIN = { x: 0, y: 0 };
 // ---- Explosion FX (GIF over canvas) ----
 
 const EXPLOSION_DURATION_MS = 700;   // delay before showing wreck FX
+const EXPLOSION_HOST_CLASS = 'fx-explosion-host';
+const EXPLOSION_HOST_SIZE = 50;
+const EXPLOSION_HOST_MIN_SIZE = Math.max(FX_HOST_MIN_SIZE, 4);
 const GREEN_FLAME_SPRITES = [
   "ui_gamescreen/flames green/flame_green_1.gif",
   "ui_gamescreen/flames green/flame_green_2.gif",
@@ -1552,6 +1582,70 @@ function resolveExplosionCanvasPosition(explosion) {
   return { x: explosion.x, y: explosion.y };
 }
 
+function resolveExplosionHostPosition(explosion) {
+  const overlayRect = getViewportAdjustedBoundingClientRect(overlayContainer);
+  const canvasW = Number.isFinite(gameCanvas?.width) ? gameCanvas.width : overlayRect?.width;
+  const canvasH = Number.isFinite(gameCanvas?.height) ? gameCanvas.height : overlayRect?.height;
+
+  const scaleX = canvasW && overlayRect?.width ? overlayRect.width / canvasW : 1;
+  const scaleY = canvasH && overlayRect?.height ? overlayRect.height / canvasH : 1;
+
+  const hostLeft = (explosion?.x || 0) * scaleX - (EXPLOSION_HOST_SIZE / 2);
+  const hostTop = (explosion?.y || 0) * scaleY - (EXPLOSION_HOST_SIZE / 2);
+
+  return { left: hostLeft, top: hostTop };
+}
+
+function ensureExplosionHost(explosion) {
+  const parent = fxLayerElement instanceof HTMLElement ? fxLayerElement : overlayContainer;
+  if (!(parent instanceof HTMLElement)) {
+    return null;
+  }
+
+  const position = resolveExplosionHostPosition(explosion);
+  const hostId = `explosion-${Math.random().toString(16).slice(2)}`;
+  const host = ensureFxHost(parent, hostId, {
+    width: EXPLOSION_HOST_SIZE,
+    height: EXPLOSION_HOST_SIZE,
+    fillParent: false,
+    left: position.left,
+    top: position.top,
+    display: 'block'
+  });
+
+  if (!(host instanceof HTMLElement)) {
+    return null;
+  }
+
+  host.classList.add(EXPLOSION_HOST_CLASS);
+
+  const hostRect = host.getBoundingClientRect?.();
+  if (!hostRect || hostRect.width < EXPLOSION_HOST_MIN_SIZE || hostRect.height < EXPLOSION_HOST_MIN_SIZE) {
+    host.remove();
+    return null;
+  }
+
+  return host;
+}
+
+function disposeExplosionHost(explosion) {
+  const host = explosion?.host;
+  if (!(host instanceof HTMLElement)) {
+    return;
+  }
+
+  host.style.display = 'none';
+  host.remove();
+  explosion.host = null;
+}
+
+function clearExplosionFx() {
+  for (const explosion of activeExplosions) {
+    disposeExplosionHost(explosion);
+  }
+  activeExplosions.length = 0;
+}
+
 function spawnExplosion(x, y, plane) {
   const color = plane?.color === 'green' ? 'green' : 'blue';
   const sprite = pickExplosionSprite(color) || pickExplosionSprite();
@@ -1573,7 +1667,10 @@ function spawnExplosion(x, y, plane) {
     duration: EXPLOSION_DURATION_MS,
     size: EXPLOSION_DRAW_SIZE,
     ready: false,
+    host: null,
   };
+
+  explosion.host = ensureExplosionHost(explosion);
 
   const finalizeSpawn = () => {
     if (explosion.ready) return;
@@ -1584,6 +1681,7 @@ function spawnExplosion(x, y, plane) {
 
   const handleError = (event) => {
     console.warn('[FX] Explosion sprite failed to load', { sprite, event });
+    disposeExplosionHost(explosion);
   };
 
   if (img.complete && img.naturalWidth > 0) {
@@ -1611,6 +1709,7 @@ function updateAndDrawExplosions(ctx) {
     const explosion = activeExplosions[i];
 
     if (!explosion || now - explosion.spawnTime > (explosion.duration || EXPLOSION_DURATION_MS)) {
+      disposeExplosionHost(explosion);
       activeExplosions.splice(i, 1);
       continue;
     }
@@ -3085,7 +3184,7 @@ function resetGame(){
   if(fxLayerElement){
     fxLayerElement.innerHTML = "";
   }
-  activeExplosions.length = 0;
+  clearExplosionFx();
 
   clearScoreCounters();
 
