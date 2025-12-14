@@ -78,7 +78,7 @@ body, button {
   }
 
   #gameContainer {
-    position: absolute;
+    position: relative;
     width: 460px;
     height: 800px;
     background-image: url("background behind the canvas.png"), url("background paper 1.png");
@@ -95,6 +95,13 @@ body, button {
     z-index: 0;
   }
 
+  #uiOverlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 25;
+  }
+
   .score-counter {
     position: absolute;
     pointer-events: none;
@@ -107,18 +114,18 @@ body, button {
     --score-ink-top: 50%;
   }
 
-  .score-counter--green {
-    left: calc(409px * var(--score-scale, 1));
-    top: calc(419px * var(--score-scale, 1));
-    width: calc(51px * var(--score-scale, 1));
-    height: calc(290px * var(--score-scale, 1));
+  #greenScoreCounter {
+    left: 409px;
+    top: 419px;
+    width: 51px;
+    height: 290px;
   }
 
-  .score-counter--blue {
-    left: calc(0px * var(--score-scale, 1));
-    top: calc(95px * var(--score-scale, 1));
-    width: calc(51px * var(--score-scale, 1));
-    height: calc(290px * var(--score-scale, 1));
+  #blueScoreCounter {
+    left: 0px;
+    top: 95px;
+    width: 51px;
+    height: 290px;
   }
 
   .plane-counter {
@@ -127,18 +134,18 @@ body, button {
     z-index: 30;
   }
 
-  .plane-counter--green {
-    left: calc(409px * var(--score-scale, 1));
-    top: calc(419px * var(--score-scale, 1));
-    width: calc(51px * var(--score-scale, 1));
-    height: calc(290px * var(--score-scale, 1));
+  #gs_planecounter_green {
+    left: 409px;
+    top: 419px;
+    width: 51px;
+    height: 290px;
   }
 
-  .plane-counter--blue {
-    left: calc(0px * var(--score-scale, 1));
-    top: calc(95px * var(--score-scale, 1));
-    width: calc(51px * var(--score-scale, 1));
-    height: calc(290px * var(--score-scale, 1));
+  #gs_planecounter_blue {
+    left: 0px;
+    top: 95px;
+    width: 51px;
+    height: 290px;
   }
 
   .score-counter .score-ink {
