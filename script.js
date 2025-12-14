@@ -935,11 +935,22 @@ function resolvePlaneFlameMetrics(context = 'plane flame') {
     return null;
   }
 
-  const hostRect = getViewportAdjustedBoundingClientRect(host);
-  if (!hostRect || hostRect.width <= FX_HOST_MIN_SIZE || hostRect.height <= FX_HOST_MIN_SIZE) {
-    console.warn(`[FX] Skipping ${context}: host rect invalid`, { hostRect });
-    return null;
+let hostRect = getViewportAdjustedBoundingClientRect(host);
+
+if (!hostRect || hostRect.width <= FX_HOST_MIN_SIZE || hostRect.height <= FX_HOST_MIN_SIZE) {
+  // попытка восстановить размеры FX-хоста
+  if (typeof sizeAndAlignOverlays === 'function') {
+    sizeAndAlignOverlays();
   }
+
+  hostRect = getViewportAdjustedBoundingClientRect(host);
+}
+
+if (!hostRect || hostRect.width <= FX_HOST_MIN_SIZE || hostRect.height <= FX_HOST_MIN_SIZE) {
+  console.warn(`[FX] Skipping ${context}: host rect invalid`, { hostRect });
+  return null;
+}
+
 
   const usableBoardRect = (boardRect && boardRect.width > FX_HOST_MIN_SIZE && boardRect.height > FX_HOST_MIN_SIZE)
     ? boardRect
