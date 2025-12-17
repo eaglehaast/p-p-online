@@ -117,8 +117,8 @@ const fxLayerElement = document.getElementById("fxLayer");
 let LAST_GOOD_OVERLAY_RECT = null;
 let OVERLAY_RESYNC_SCHEDULED = false;
 
-const greenScoreCounter = document.getElementById("greenScoreCounter");
-const blueScoreCounter  = document.getElementById("blueScoreCounter");
+const greenPointsPopup = document.getElementById("greenPointsPopup");
+const bluePointsPopup  = document.getElementById("bluePointsPopup");
 const greenPlaneCounter = document.getElementById("gs_planecounter_green");
 const bluePlaneCounter  = document.getElementById("gs_planecounter_blue");
 
@@ -309,9 +309,9 @@ const IS_TEST_HARNESS = document.body.classList.contains('test-harness');
 
 const DEBUG_UI = false;
 
-const SCORE_COUNTER_ELEMENTS = {
-  green: greenScoreCounter,
-  blue: blueScoreCounter
+const POINTS_POPUP_ELEMENTS = {
+  green: greenPointsPopup,
+  blue: bluePointsPopup
 };
 
 const PLANE_COUNTER_HOSTS = {
@@ -319,19 +319,19 @@ const PLANE_COUNTER_HOSTS = {
   blue: bluePlaneCounter
 };
 
-const SCORE_COUNTER_BASE_OFFSETS = {
+const POINTS_POPUP_BASE_OFFSETS = {
   green: { x: 4,   y: 388 },
   blue:  { x: 414, y: 388 }
 };
 
-const SCORE_COUNTER_BASE_SIZE = { width: 43, height: 124 };
-const SCORE_COUNTER_ANCHOR_ROWS = [0.1, 0.32, 0.54, 0.76, 0.9];
-const SCORE_COUNTER_INK_ANCHORS = {
-  green: SCORE_COUNTER_ANCHOR_ROWS.map(y => ({ x: 0.5, y })),
-  blue: SCORE_COUNTER_ANCHOR_ROWS.map(y => ({ x: 0.5, y }))
+const POINTS_POPUP_BASE_SIZE = { width: 43, height: 124 };
+const POINTS_POPUP_ANCHOR_ROWS = [0.1, 0.32, 0.54, 0.76, 0.9];
+const POINTS_POPUP_INK_ANCHORS = {
+  green: POINTS_POPUP_ANCHOR_ROWS.map(y => ({ x: 0.5, y })),
+  blue: POINTS_POPUP_ANCHOR_ROWS.map(y => ({ x: 0.5, y }))
 };
 
-function clampScoreInkOffset(value, limit) {
+function clampPointsPopupInkOffset(value, limit) {
   if (!Number.isFinite(value)) {
     return value;
   }
@@ -770,7 +770,7 @@ function getGameLayoutScale() {
     return containerWidth / FRAME_BASE_WIDTH;
   }
 
-  const cssScale = parseFloat(gameContainer?.style?.getPropertyValue?.('--score-scale'));
+  const cssScale = parseFloat(gameContainer?.style?.getPropertyValue?.('--points-popup-scale'));
   return Number.isFinite(cssScale) && cssScale > 0 ? cssScale : 1;
 }
 
@@ -940,8 +940,8 @@ function warnIfFxHostMismatch(boardRect, hostRect, context = 'fx') {
 const MOCKUP_W = 460;
 const MOCKUP_H = 800;
 
-// Координаты STAR_PLACEMENT даны в пикселях макета 460x800
-const STAR_PLACEMENT_IS_MOCKUP = true;
+// Координаты MATCH_PROGRESS_PLACEMENT даны в пикселях макета 460x800
+const MATCH_PROGRESS_IS_MOCKUP = true;
 
 // Если фон/рамка рисуются со сдвигом, используем тот же сдвиг здесь
 const BOARD_ORIGIN = { x: 0, y: 0 };
@@ -2198,7 +2198,7 @@ const FRAME_BASE_WIDTH = CANVAS_BASE_WIDTH + FRAME_PADDING_X * 2; // 460
 const FRAME_BASE_HEIGHT = CANVAS_BASE_HEIGHT + FRAME_PADDING_Y * 2; // 800
 const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
 
-if (typeof window.STAR_READY === 'undefined') window.STAR_READY = false;
+if (typeof window.MATCH_PROGRESS_READY === 'undefined') window.MATCH_PROGRESS_READY = false;
 
 const brickFrameImg = new Image();
 let brickFrameData = null;
@@ -2774,7 +2774,7 @@ let greenFlagCarrier = null;
 let blueFlagStolenBy = null;
 let greenFlagStolenBy = null;
 
-const DEFAULT_STAR_FRAGMENT_SOURCES = {
+const DEFAULT_MATCH_PROGRESS_FRAGMENT_SOURCES = {
   green: [
     "shards 3/green shard 1.png",
     "shards 3/green shard 2.png",
@@ -2791,12 +2791,12 @@ const DEFAULT_STAR_FRAGMENT_SOURCES = {
   ]
 };
 
-const STAR_FRAGMENT_SOURCES = (typeof window !== "undefined" && window.STAR_FRAGMENT_SOURCES)
-  ? window.STAR_FRAGMENT_SOURCES
-  : DEFAULT_STAR_FRAGMENT_SOURCES;
+const MATCH_PROGRESS_FRAGMENT_SOURCES = (typeof window !== "undefined" && window.MATCH_PROGRESS_FRAGMENT_SOURCES)
+  ? window.MATCH_PROGRESS_FRAGMENT_SOURCES
+  : DEFAULT_MATCH_PROGRESS_FRAGMENT_SOURCES;
 
 
-function collectStarFragmentSources(sources) {
+function collectMatchProgressFragmentSources(sources) {
   const collected = [];
   const visit = (value) => {
     if (!value) return;
@@ -2822,30 +2822,30 @@ function collectStarFragmentSources(sources) {
   return collected;
 }
 
-const STAR_FRAGMENTS_PER_SLOT = 5;
+const MATCH_PROGRESS_FRAGMENTS_PER_SLOT = 5;
 
 // Точные top-left координаты КАЖДОГО фрагмента (макет 460x800)
 // Порядок: [звезда 1..5][фрагмент 1..5] = {x, y}
-const STAR_PLACEMENT = {
+const MATCH_PROGRESS_PLACEMENT = {
   green: [
-    Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => ({ x: 0, y: 413 })),
-    Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => ({ x: 0, y: 473 })),
-    Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => ({ x: 0, y: 530 })),
-    Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => ({ x: 0, y: 590 })),
-    Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => ({ x: 0, y: 650 }))
+    Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => ({ x: 0, y: 413 })),
+    Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => ({ x: 0, y: 473 })),
+    Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => ({ x: 0, y: 530 })),
+    Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => ({ x: 0, y: 590 })),
+    Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => ({ x: 0, y: 650 }))
   ],
   blue: [
-    Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => ({ x: 410, y: 92 })),
-    Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => ({ x: 410, y: 152 })),
-    Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => ({ x: 410, y: 212 })),
-    Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => ({ x: 410, y: 272 })),
-    Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => ({ x: 410, y: 330 }))
+    Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => ({ x: 410, y: 92 })),
+    Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => ({ x: 410, y: 152 })),
+    Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => ({ x: 410, y: 212 })),
+    Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => ({ x: 410, y: 272 })),
+    Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => ({ x: 410, y: 330 }))
   ]
 };
 
 
-function getStarBounds(color){
-  const placements = STAR_PLACEMENT?.[color];
+function getMatchProgressBounds(color){
+  const placements = MATCH_PROGRESS_PLACEMENT?.[color];
   if (!Array.isArray(placements) || placements.length === 0){
     return { minX: 0, maxX: 0, minY: 0, maxY: 0 };
   }
@@ -2876,34 +2876,35 @@ function getStarBounds(color){
 }
 
 
-// Состояние слотов: теперь 5 звёзд на сторону (каждая звезда = до 5 фрагментов)
-const STAR_STATE = {
+// Состояние слотов: прогресс матча по пять слотов на сторону
+// (визуализируются звёздами, каждая звезда = до 5 фрагментов)
+const MATCH_PROGRESS_STATE = {
   blue:  Array.from({length:5}, ()=> new Set()),
   green: Array.from({length:5}, ()=> new Set())
 };
 
-let STAR_LAP = { blue: 0, green: 0 };
-let STAR_POS = { blue: 0, green: 0 };
-let STAR_PLACED_IN_LAP = { blue: 0, green: 0 };
+let MATCH_PROGRESS_LAP = { blue: 0, green: 0 };
+let MATCH_PROGRESS_POS = { blue: 0, green: 0 };
+let MATCH_PROGRESS_PLACED_IN_LAP = { blue: 0, green: 0 };
 
-const STAR_FRAGMENT_FADE_DURATION_MS = 620;
-const STAR_FRAGMENT_ROW_DELAY_MS = 70;
+const MATCH_PROGRESS_FRAGMENT_FADE_DURATION_MS = 620;
+const MATCH_PROGRESS_FRAGMENT_ROW_DELAY_MS = 70;
 
-const STAR_FRAGMENT_ANIMATIONS = {
+const MATCH_PROGRESS_FRAGMENT_ANIMATIONS = {
   blue: [],
   green: []
 };
 
-function ensureStarAnimationState(color){
-  const slots = Array.isArray(STAR_PLACEMENT?.[color]) ? STAR_PLACEMENT[color].length : 0;
-  if (!Array.isArray(STAR_FRAGMENT_ANIMATIONS[color])){
-    STAR_FRAGMENT_ANIMATIONS[color] = [];
+function ensureMatchProgressAnimationState(color){
+  const slots = Array.isArray(MATCH_PROGRESS_PLACEMENT?.[color]) ? MATCH_PROGRESS_PLACEMENT[color].length : 0;
+  if (!Array.isArray(MATCH_PROGRESS_FRAGMENT_ANIMATIONS[color])){
+    MATCH_PROGRESS_FRAGMENT_ANIMATIONS[color] = [];
   }
 
-  const storage = STAR_FRAGMENT_ANIMATIONS[color];
+  const storage = MATCH_PROGRESS_FRAGMENT_ANIMATIONS[color];
 
   while (storage.length < slots){
-    storage.push(Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => null));
+    storage.push(Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => null));
   }
 
   if (storage.length > slots){
@@ -2913,12 +2914,12 @@ function ensureStarAnimationState(color){
   for (let i = 0; i < storage.length; i += 1){
     const row = storage[i];
     if (!Array.isArray(row)){
-      storage[i] = Array.from({ length: STAR_FRAGMENTS_PER_SLOT }, () => null);
+      storage[i] = Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => null);
       continue;
     }
 
-    if (row.length < STAR_FRAGMENTS_PER_SLOT){
-      row.length = STAR_FRAGMENTS_PER_SLOT;
+    if (row.length < MATCH_PROGRESS_FRAGMENTS_PER_SLOT){
+      row.length = MATCH_PROGRESS_FRAGMENTS_PER_SLOT;
     }
 
     for (let j = 0; j < row.length; j += 1){
@@ -2931,23 +2932,23 @@ function ensureStarAnimationState(color){
   return storage;
 }
 
-function starFragmentDelay(color, slotIdx){
-  const slots = Array.isArray(STAR_PLACEMENT?.[color]) ? STAR_PLACEMENT[color].length : 0;
+function matchProgressFragmentDelay(color, slotIdx){
+  const slots = Array.isArray(MATCH_PROGRESS_PLACEMENT?.[color]) ? MATCH_PROGRESS_PLACEMENT[color].length : 0;
   if (slots <= 1){
     return 0;
   }
-  const step = STAR_FRAGMENT_ROW_DELAY_MS;
+  const step = MATCH_PROGRESS_FRAGMENT_ROW_DELAY_MS;
   if (color === "blue"){
     return (slots - 1 - slotIdx) * step;
   }
   return slotIdx * step;
 }
 
-function applyStarFragmentAnimations(color, previousState){
-  const slots = STAR_STATE[color];
+function applyMatchProgressFragmentAnimations(color, previousState){
+  const slots = MATCH_PROGRESS_STATE[color];
   if (!Array.isArray(slots)) return;
 
-  const animStorage = ensureStarAnimationState(color);
+  const animStorage = ensureMatchProgressAnimationState(color);
   const now = performance.now();
 
   for (let slotIdx = 0; slotIdx < slots.length; slotIdx += 1){
@@ -2955,7 +2956,7 @@ function applyStarFragmentAnimations(color, previousState){
     const prevPieces = Array.isArray(previousState) ? previousState[slotIdx] || new Set() : new Set();
     const animRow = animStorage[slotIdx];
 
-    for (let frag = 1; frag <= STAR_FRAGMENTS_PER_SLOT; frag += 1){
+    for (let frag = 1; frag <= MATCH_PROGRESS_FRAGMENTS_PER_SLOT; frag += 1){
       const fragIdx = frag - 1;
       const hasNow = newPieces.has(frag);
       const hadBefore = prevPieces instanceof Set ? prevPieces.has(frag) : false;
@@ -2964,14 +2965,14 @@ function applyStarFragmentAnimations(color, previousState){
         if (!hadBefore){
           animRow[fragIdx] = {
             start: now,
-            delay: starFragmentDelay(color, slotIdx),
-            duration: STAR_FRAGMENT_FADE_DURATION_MS
+            delay: matchProgressFragmentDelay(color, slotIdx),
+            duration: MATCH_PROGRESS_FRAGMENT_FADE_DURATION_MS
           };
         } else if (!animRow[fragIdx]){
           animRow[fragIdx] = {
-            start: now - STAR_FRAGMENT_FADE_DURATION_MS,
+            start: now - MATCH_PROGRESS_FRAGMENT_FADE_DURATION_MS,
             delay: 0,
-            duration: STAR_FRAGMENT_FADE_DURATION_MS
+            duration: MATCH_PROGRESS_FRAGMENT_FADE_DURATION_MS
           };
         }
       } else {
@@ -2981,37 +2982,37 @@ function applyStarFragmentAnimations(color, previousState){
   }
 }
 
-ensureStarAnimationState("blue");
-ensureStarAnimationState("green");
+ensureMatchProgressAnimationState("blue");
+ensureMatchProgressAnimationState("green");
 
-const STAR_IMAGES = {
+const MATCH_PROGRESS_IMAGES = {
   blue: [],
   green: []
 };
 
-let pendingStarImages = 0;
-let starAssetsInitialized = false;
-let starImagesRequested = false;
+let pendingMatchProgressImages = 0;
+let matchProgressAssetsInitialized = false;
+let matchProgressImagesRequested = false;
 
-function finalizeStarLoading(){
-  if (starAssetsInitialized) return;
-  starAssetsInitialized = true;
-  window.STAR_READY = true;
-  console.log("[STAR] shards loaded");
-  syncAllStarStates();
+function finalizeMatchProgressLoading(){
+  if (matchProgressAssetsInitialized) return;
+  matchProgressAssetsInitialized = true;
+  window.MATCH_PROGRESS_READY = true;
+  console.log("[MATCH_PROGRESS] shards loaded");
+  syncAllMatchProgressStates();
   if (typeof renderScoreboard === "function"){
     renderScoreboard();
   }
 }
 
-function handleStarAssetLoaded(){
-  pendingStarImages = Math.max(0, pendingStarImages - 1);
-  if (pendingStarImages === 0){
-    finalizeStarLoading();
+function handleMatchProgressAssetLoaded(){
+  pendingMatchProgressImages = Math.max(0, pendingMatchProgressImages - 1);
+  if (pendingMatchProgressImages === 0){
+    finalizeMatchProgressLoading();
   }
 }
 
-function registerShardImage(src){
+function registerMatchProgressShardImage(src){
   if (src instanceof String) src = src.valueOf();
   if (typeof src !== "string"){
     return null;
@@ -3021,70 +3022,70 @@ function registerShardImage(src){
     return null;
   }
   const img = new Image();
-  pendingStarImages += 1;
-  img.onload = handleStarAssetLoaded;
+  pendingMatchProgressImages += 1;
+  img.onload = handleMatchProgressAssetLoaded;
   img.onerror = (event) => {
-    console.warn(`[STAR] shard load ERROR ${trimmed}`, event);
-    handleStarAssetLoaded();
+    console.warn(`[MATCH_PROGRESS] shard load ERROR ${trimmed}`, event);
+    handleMatchProgressAssetLoaded();
   };
   img.src = trimmed;
   return img;
 }
 
-function loadStarImages(){
+function loadMatchProgressImages(){
   const colorSet = new Set([
-    ...Object.keys(STAR_PLACEMENT || {}),
-    ...Object.keys(STAR_FRAGMENT_SOURCES || {})
+    ...Object.keys(MATCH_PROGRESS_PLACEMENT || {}),
+    ...Object.keys(MATCH_PROGRESS_FRAGMENT_SOURCES || {})
   ]);
   const colors = Array.from(colorSet);
-  pendingStarImages = 0;
+  pendingMatchProgressImages = 0;
 
   colors.forEach(color => {
-    const slots = Array.isArray(STAR_PLACEMENT[color]) ? STAR_PLACEMENT[color].length : 0;
-    const sources = STAR_FRAGMENT_SOURCES[color];
+    const slots = Array.isArray(MATCH_PROGRESS_PLACEMENT[color]) ? MATCH_PROGRESS_PLACEMENT[color].length : 0;
+    const sources = MATCH_PROGRESS_FRAGMENT_SOURCES[color];
 
     if (!Array.isArray(sources)){
-      STAR_IMAGES[color] = Array.from({ length: slots }, () => []);
+      MATCH_PROGRESS_IMAGES[color] = Array.from({ length: slots }, () => []);
       return;
     }
 
     const first = sources[0];
 
     if (typeof first === "string" || first instanceof String){
-      const sharedImages = sources.map(src => registerShardImage(src));
-      STAR_IMAGES[color] = Array.from({ length: slots }, () => sharedImages);
+      const sharedImages = sources.map(src => registerMatchProgressShardImage(src));
+      MATCH_PROGRESS_IMAGES[color] = Array.from({ length: slots }, () => sharedImages);
       return;
     }
 
     if (Array.isArray(first)){
       const mapped = sources.map(slotSources => {
         if (!Array.isArray(slotSources)) return [];
-        return slotSources.map(src => registerShardImage(src));
+        return slotSources.map(src => registerMatchProgressShardImage(src));
       });
       while (mapped.length < slots){
         mapped.push(mapped[mapped.length - 1] || []);
       }
-      STAR_IMAGES[color] = mapped;
+      MATCH_PROGRESS_IMAGES[color] = mapped;
       return;
     }
 
-    STAR_IMAGES[color] = Array.from({ length: slots }, () => []);
+    MATCH_PROGRESS_IMAGES[color] = Array.from({ length: slots }, () => []);
   });
 
-  if (pendingStarImages === 0){
-    finalizeStarLoading();
+  if (pendingMatchProgressImages === 0){
+    finalizeMatchProgressLoading();
   }
 }
 
-function loadStarImagesIfNeeded(){
-  if (starImagesRequested) return;
-  starImagesRequested = true;
-  loadStarImages();
+function loadMatchProgressImagesIfNeeded(){
+  if (matchProgressImagesRequested) return;
+  matchProgressImagesRequested = true;
+  loadMatchProgressImages();
 }
 
 
-function syncStarState(color, score){
-  const slots = STAR_STATE[color];
+function syncMatchProgressState(color, score){
+  const slots = MATCH_PROGRESS_STATE[color];
   if (!Array.isArray(slots)) return;
 
   const previousState = slots.map(set => {
@@ -3097,23 +3098,23 @@ function syncStarState(color, score){
   const clamped = Math.max(0, Math.min(score, POINTS_TO_WIN));
 
   slots.forEach(set => set.clear());
-  STAR_LAP[color] = 0;
-  STAR_POS[color] = 0;
-  STAR_PLACED_IN_LAP[color] = 0;
+  MATCH_PROGRESS_LAP[color] = 0;
+  MATCH_PROGRESS_POS[color] = 0;
+  MATCH_PROGRESS_PLACED_IN_LAP[color] = 0;
 
   for (let count = 0; count < clamped; count++){
-    if (!addPointToSide(color)) break;
+    if (!addMatchProgressPointToSide(color)) break;
   }
 
-  applyStarFragmentAnimations(color, previousState);
+  applyMatchProgressFragmentAnimations(color, previousState);
 }
 
-function addPointToSide(color){
-  const pool = STAR_STATE[color];                   // массив из 5 Set'ов (по звездам)
+function addMatchProgressPointToSide(color){
+  const pool = MATCH_PROGRESS_STATE[color];                   // массив из 5 Set'ов (по звездам)
   if (!Array.isArray(pool) || pool.length === 0) return false;
 
   const totalSlots = pool.length;
-  const fragmentsPerSlot = STAR_FRAGMENTS_PER_SLOT;
+  const fragmentsPerSlot = MATCH_PROGRESS_FRAGMENTS_PER_SLOT;
   if (totalSlots <= 0 || fragmentsPerSlot <= 0) return false;
 
   let targetSlot = -1;
@@ -3132,9 +3133,9 @@ function addPointToSide(color){
   }
 
   if (targetSlot === -1){
-    STAR_POS[color] = totalSlots > 0 ? totalSlots - 1 : 0;
-    STAR_LAP[color] = totalSlots;
-    STAR_PLACED_IN_LAP[color] = fragmentsPerSlot;
+    MATCH_PROGRESS_POS[color] = totalSlots > 0 ? totalSlots - 1 : 0;
+    MATCH_PROGRESS_LAP[color] = totalSlots;
+    MATCH_PROGRESS_PLACED_IN_LAP[color] = fragmentsPerSlot;
     return false;
   }
 
@@ -3147,27 +3148,27 @@ function addPointToSide(color){
   if (fragment > fragmentsPerSlot){
     // На случай непредвиденного рассинхрона: слот считался незаполненным,
     // но в нём присутствуют все фрагменты. Попробуем перейти к следующему слоту.
-    STAR_POS[color] = targetSlot + 1;
-    STAR_PLACED_IN_LAP[color] = fragmentsPerSlot;
-    STAR_LAP[color] = targetSlot + 1;
-    return addPointToSide(color);
+    MATCH_PROGRESS_POS[color] = targetSlot + 1;
+    MATCH_PROGRESS_PLACED_IN_LAP[color] = fragmentsPerSlot;
+    MATCH_PROGRESS_LAP[color] = targetSlot + 1;
+    return addMatchProgressPointToSide(color);
   }
 
   slotPieces.add(fragment);
 
-  STAR_POS[color] = targetSlot;
-  STAR_PLACED_IN_LAP[color] = slotPieces.size;
-  STAR_LAP[color] = targetSlot;
+  MATCH_PROGRESS_POS[color] = targetSlot;
+  MATCH_PROGRESS_PLACED_IN_LAP[color] = slotPieces.size;
+  MATCH_PROGRESS_LAP[color] = targetSlot;
 
   return true;
 }
 
-function syncAllStarStates(){
-  syncStarState("green", greenScore);
-  syncStarState("blue",  blueScore);
+function syncAllMatchProgressStates(){
+  syncMatchProgressState("green", greenScore);
+  syncMatchProgressState("blue",  blueScore);
 }
 
-syncAllStarStates();
+syncAllMatchProgressStates();
 
 function lockInWinner(color, options = {}){
   if(isGameOver) return;
@@ -3224,19 +3225,19 @@ function addScore(color, delta){
     const previous = blueScore;
     blueScore = Math.max(0, blueScore + delta);
     if(blueScore > previous){
-      spawnScorePopup("blue", blueScore - previous, blueScore);
+      spawnPointsPopup("blue", blueScore - previous, blueScore);
     } else {
-      syncStarState("blue", blueScore);
-      updatePendingStarTargets("blue", blueScore);
+      syncMatchProgressState("blue", blueScore);
+      updatePendingMatchProgressTargets("blue", blueScore);
     }
   } else if(color === "green"){
     const previous = greenScore;
     greenScore = Math.max(0, greenScore + delta);
     if(greenScore > previous){
-      spawnScorePopup("green", greenScore - previous, greenScore);
+      spawnPointsPopup("green", greenScore - previous, greenScore);
     } else {
-      syncStarState("green", greenScore);
-      updatePendingStarTargets("green", greenScore);
+      syncMatchProgressState("green", greenScore);
+      updatePendingMatchProgressTargets("green", greenScore);
     }
   }
 
@@ -3334,16 +3335,16 @@ function resetGame(){
   }
   clearExplosionFx();
 
-  clearScoreCounters();
+  clearPointsPopups();
 
   greenScore = 0;
   blueScore  = 0;
-  STAR_LAP = { blue: 0, green: 0 };
-  STAR_POS = { blue: 0, green: 0 };
-  STAR_PLACED_IN_LAP = { blue: 0, green: 0 };
-  STAR_STATE.blue  = Array.from({length:5}, ()=> new Set());
-  STAR_STATE.green = Array.from({length:5}, ()=> new Set());
-  syncAllStarStates();
+  MATCH_PROGRESS_LAP = { blue: 0, green: 0 };
+  MATCH_PROGRESS_POS = { blue: 0, green: 0 };
+  MATCH_PROGRESS_PLACED_IN_LAP = { blue: 0, green: 0 };
+  MATCH_PROGRESS_STATE.blue  = Array.from({length:5}, ()=> new Set());
+  MATCH_PROGRESS_STATE.green = Array.from({length:5}, ()=> new Set());
+  syncAllMatchProgressStates();
   roundNumber = 0;
   roundTextTimer = 0;
   if(roundTransitionTimeout){
@@ -5661,8 +5662,8 @@ function checkVictory(){
 
 /* ======= SCOREBOARD ======= */
 
-function drawStarsUI(ctx){
-  if (!STAR_READY) return;
+function drawMatchProgressUI(ctx){
+  if (!MATCH_PROGRESS_READY) return;
 
   const rect = visualRect(gameCanvas);
   const rawScaleX = rect.width / CANVAS_BASE_WIDTH;
@@ -5670,7 +5671,7 @@ function drawStarsUI(ctx){
   const sx = Number.isFinite(rawScaleX) && rawScaleX > 0 ? rawScaleX : 1;
   const sy = Number.isFinite(rawScaleY) && rawScaleY > 0 ? rawScaleY : sx;
 
-  const scale = (typeof STAR_PIECE_SCALE !== 'undefined') ? STAR_PIECE_SCALE : 1;
+  const scale = (typeof MATCH_PROGRESS_PIECE_SCALE !== 'undefined') ? MATCH_PROGRESS_PIECE_SCALE : 1;
 
   ctx.save();
   // На всякий случай сбрасываем висящие трансформации
@@ -5682,10 +5683,10 @@ function drawStarsUI(ctx){
   try {
     const colors = ["blue", "green"];
     for (const color of colors){
-      const slots = STAR_STATE[color] || [];
-      const placements = STAR_PLACEMENT[color];
-      const images = STAR_IMAGES[color];
-      const animRows = STAR_FRAGMENT_ANIMATIONS[color];
+      const slots = MATCH_PROGRESS_STATE[color] || [];
+      const placements = MATCH_PROGRESS_PLACEMENT[color];
+      const images = MATCH_PROGRESS_IMAGES[color];
+      const animRows = MATCH_PROGRESS_FRAGMENT_ANIMATIONS[color];
 
       if (!Array.isArray(placements) || !Array.isArray(images)) continue;
 
@@ -5693,15 +5694,15 @@ function drawStarsUI(ctx){
         const slot = slots[slotIdx];
         if (!slot || slot.size === 0) continue;
 
-        for (let frag = 1; frag <= STAR_FRAGMENTS_PER_SLOT; frag++){
+        for (let frag = 1; frag <= MATCH_PROGRESS_FRAGMENTS_PER_SLOT; frag++){
           // Проверяем наличие именно текущего фрагмента в Set,
           // чтобы не рисовать все пять позиций звезды при наличии только одного.
           const hasFragment = slot.has(frag);
           if (!hasFragment) continue;
 
-          const pos = STAR_PLACEMENT[color]?.[slotIdx]?.[frag-1];
+          const pos = MATCH_PROGRESS_PLACEMENT[color]?.[slotIdx]?.[frag-1];
           if (!pos || typeof pos.x !== 'number' || typeof pos.y !== 'number'){
-            console.warn(`[STAR] no pos for ${color} slot ${slotIdx} frag ${frag}`);
+            console.warn(`[MATCH_PROGRESS] no pos for ${color} slot ${slotIdx} frag ${frag}`);
             continue;
           }
 
@@ -5719,7 +5720,7 @@ function drawStarsUI(ctx){
             const delay = Number.isFinite(anim.delay) ? anim.delay : 0;
             const duration = Number.isFinite(anim.duration) && anim.duration > 0
               ? anim.duration
-              : STAR_FRAGMENT_FADE_DURATION_MS;
+              : MATCH_PROGRESS_FRAGMENT_FADE_DURATION_MS;
             const start = Number.isFinite(anim.start) ? anim.start : now;
             const elapsed = now - start - delay;
             if (elapsed < 0){
@@ -5751,7 +5752,7 @@ function drawStarsUI(ctx){
       }
     }
   } catch (err){
-    console.warn('[STAR] drawStarsUI error:', err);
+    console.warn('[MATCH_PROGRESS] drawMatchProgressUI error:', err);
   } finally {
     ctx.restore();
   }
@@ -5763,15 +5764,15 @@ const PLANE_COUNTER_CONTAINERS   = {
   green: { left: 0,   top: 89,  right: 51,  bottom: 379 }
 };
 
-const SCORE_INK_DURATION_MS = 2600;
+const POINTS_POPUP_INK_DURATION_MS = 2600;
 const MIN_ROUND_TRANSITION_DELAY_MS = (() => {
-  const greenSlots = Array.isArray(STAR_PLACEMENT?.green) ? STAR_PLACEMENT.green.length : 0;
-  const blueSlots = Array.isArray(STAR_PLACEMENT?.blue) ? STAR_PLACEMENT.blue.length : 0;
+  const greenSlots = Array.isArray(MATCH_PROGRESS_PLACEMENT?.green) ? MATCH_PROGRESS_PLACEMENT.green.length : 0;
+  const blueSlots = Array.isArray(MATCH_PROGRESS_PLACEMENT?.blue) ? MATCH_PROGRESS_PLACEMENT.blue.length : 0;
   const maxSlotCount = Math.max(greenSlots, blueSlots, 0);
-  const rowCascadeDelay = Math.max(0, maxSlotCount - 1) * STAR_FRAGMENT_ROW_DELAY_MS;
-  return SCORE_INK_DURATION_MS + STAR_FRAGMENT_FADE_DURATION_MS + rowCascadeDelay;
+  const rowCascadeDelay = Math.max(0, maxSlotCount - 1) * MATCH_PROGRESS_FRAGMENT_ROW_DELAY_MS;
+  return POINTS_POPUP_INK_DURATION_MS + MATCH_PROGRESS_FRAGMENT_FADE_DURATION_MS + rowCascadeDelay;
 })();
-const HUD_KILL_MARKER_DRAW_DURATION_MS = Math.max(400, SCORE_INK_DURATION_MS * 0.55);
+const HUD_KILL_MARKER_DRAW_DURATION_MS = Math.max(400, POINTS_POPUP_INK_DURATION_MS * 0.55);
 function getKillMarkerProgress(plane, now = performance.now()){
   if (!plane) {
     return 0;
@@ -5809,71 +5810,71 @@ function getKillMarkerProgress(plane, now = performance.now()){
 
   return Math.max(0, Math.min(1, elapsed / duration));
 }
-const scoreInkQueues = {
+const pointsPopupInkQueues = {
   blue: [],
   green: []
 };
-const scoreInkActive = {
+const pointsPopupInkActive = {
   blue: false,
   green: false
 };
-const activeScoreInkEntries = {
+const activePointsPopupEntries = {
   blue: null,
   green: null
 };
 
-function refreshScoreInkAnchors(){
-  for(const [color, host] of Object.entries(SCORE_COUNTER_ELEMENTS)){
+function refreshPointsPopupAnchors(){
+  for(const [color, host] of Object.entries(POINTS_POPUP_ELEMENTS)){
     if(!(host instanceof HTMLElement)){
       continue;
     }
 
-    const targetScore = activeScoreInkEntries[color]?.targetScore ?? getScoreForColor(color);
-    setScoreInkAnchor(host, color, targetScore);
+    const targetScore = activePointsPopupEntries[color]?.targetScore ?? getScoreForColor(color);
+    setPointsPopupAnchor(host, color, targetScore);
   }
 }
 
-function spawnScorePopup(color, delta, targetScore){
+function spawnPointsPopup(color, delta, targetScore){
   if(delta <= 0) return;
   if(color !== "blue" && color !== "green") return;
 
-  enqueueScoreInk(color, delta, targetScore);
+  enqueuePointsPopupInk(color, delta, targetScore);
 }
 
-function enqueueScoreInk(color, delta, targetScore){
-  const queue = scoreInkQueues[color];
+function enqueuePointsPopupInk(color, delta, targetScore){
+  const queue = pointsPopupInkQueues[color];
   if(!queue) return;
 
   queue.push({ delta, targetScore });
-  if(!scoreInkActive[color]){
-    processNextScoreInk(color);
+  if(!pointsPopupInkActive[color]){
+    processNextPointsPopupInk(color);
   }
 }
 
-function processNextScoreInk(color){
-  const queue = scoreInkQueues[color];
+function processNextPointsPopupInk(color){
+  const queue = pointsPopupInkQueues[color];
   if(!queue || queue.length === 0){
-    scoreInkActive[color] = false;
-    activeScoreInkEntries[color] = null;
+    pointsPopupInkActive[color] = false;
+    activePointsPopupEntries[color] = null;
     return;
   }
 
-  scoreInkActive[color] = true;
+  pointsPopupInkActive[color] = true;
   const entry = queue.shift();
-  activeScoreInkEntries[color] = entry;
-  showScoreInk(color, entry);
+  activePointsPopupEntries[color] = entry;
+  showPointsPopupInk(color, entry);
 }
 
 function getScoreForColor(color){
   return color === "blue" ? blueScore : greenScore;
 }
 
-function updatePendingStarTargets(color, targetScore){
+function updatePendingMatchProgressTargets(color, targetScore){
   if(!Number.isFinite(targetScore)){
     return;
   }
 
-  const queue = scoreInkQueues[color];
+  const queue = pointsPopupInkQueues[color];
   if(Array.isArray(queue)){
     for(const entry of queue){
       if(entry && typeof entry === "object"){
@@ -5882,23 +5883,23 @@ function updatePendingStarTargets(color, targetScore){
     }
   }
 
-  const activeEntry = activeScoreInkEntries[color];
+  const activeEntry = activePointsPopupEntries[color];
   if(activeEntry && typeof activeEntry === "object"){
     activeEntry.targetScore = targetScore;
   }
 }
 
-function setScoreInkAnchor(host, color, targetScore){
+function setPointsPopupAnchor(host, color, targetScore){
   if(!(host instanceof HTMLElement)){
     return false;
   }
 
-  const anchors = SCORE_COUNTER_INK_ANCHORS?.[color];
-  const fragmentsPerSlot = STAR_FRAGMENTS_PER_SLOT;
+  const anchors = POINTS_POPUP_INK_ANCHORS?.[color];
+  const fragmentsPerSlot = MATCH_PROGRESS_FRAGMENTS_PER_SLOT;
 
   const cleanup = () => {
-    host.style.removeProperty('--score-ink-left');
-    host.style.removeProperty('--score-ink-top');
+    host.style.removeProperty('--points-popup-ink-left');
+    host.style.removeProperty('--points-popup-ink-top');
   };
 
   if(!Array.isArray(anchors) || anchors.length === 0 || !Number.isFinite(fragmentsPerSlot) || fragmentsPerSlot <= 0){
@@ -5929,7 +5930,7 @@ function setScoreInkAnchor(host, color, targetScore){
   }
 
   const computed = window.getComputedStyle(host);
-  let scale = Number.parseFloat(computed.getPropertyValue('--score-scale'));
+  let scale = Number.parseFloat(computed.getPropertyValue('--points-popup-scale'));
   if(!Number.isFinite(scale) || scale <= 0){
     scale = 1;
   }
@@ -5940,7 +5941,7 @@ function setScoreInkAnchor(host, color, targetScore){
     if(Number.isFinite(computedWidth) && computedWidth > 0){
       hostWidth = computedWidth;
     } else {
-      hostWidth = SCORE_COUNTER_BASE_SIZE.width * scale;
+      hostWidth = POINTS_POPUP_BASE_SIZE.width * scale;
     }
   }
 
@@ -5950,7 +5951,7 @@ function setScoreInkAnchor(host, color, targetScore){
     if(Number.isFinite(computedHeight) && computedHeight > 0){
       hostHeight = computedHeight;
     } else {
-      hostHeight = SCORE_COUNTER_BASE_SIZE.height * scale;
+      hostHeight = POINTS_POPUP_BASE_SIZE.height * scale;
     }
   }
 
@@ -5968,25 +5969,25 @@ function setScoreInkAnchor(host, color, targetScore){
     pxTop = pxTop * scale;
   }
 
-  pxLeft = clampScoreInkOffset(pxLeft, hostWidth);
-  pxTop = clampScoreInkOffset(pxTop, hostHeight);
+  pxLeft = clampPointsPopupInkOffset(pxLeft, hostWidth);
+  pxTop = clampPointsPopupInkOffset(pxTop, hostHeight);
 
   if(Number.isFinite(pxLeft)){
-    host.style.setProperty('--score-ink-left', `${pxLeft}px`);
+    host.style.setProperty('--points-popup-ink-left', `${pxLeft}px`);
   } else {
-    host.style.removeProperty('--score-ink-left');
+    host.style.removeProperty('--points-popup-ink-left');
   }
 
   if(Number.isFinite(pxTop)){
-    host.style.setProperty('--score-ink-top', `${pxTop}px`);
+    host.style.setProperty('--points-popup-ink-top', `${pxTop}px`);
   } else {
-    host.style.removeProperty('--score-ink-top');
+    host.style.removeProperty('--points-popup-ink-top');
   }
 
   return Number.isFinite(pxLeft) && Number.isFinite(pxTop);
 }
 
-function showScoreInk(color, entry){
+function showPointsPopupInk(color, entry){
   const delta = Number.isFinite(entry?.delta) ? entry.delta : 0;
   const resolveTargetScore = () => {
     if(entry && Number.isFinite(entry.targetScore)){
@@ -5996,59 +5997,59 @@ function showScoreInk(color, entry){
   };
 
   if(delta <= 0){
-    syncStarState(color, resolveTargetScore());
-    scoreInkActive[color] = false;
-    activeScoreInkEntries[color] = null;
-    processNextScoreInk(color);
+    syncMatchProgressState(color, resolveTargetScore());
+    pointsPopupInkActive[color] = false;
+    activePointsPopupEntries[color] = null;
+    processNextPointsPopupInk(color);
     return;
   }
 
-  const host = SCORE_COUNTER_ELEMENTS[color];
+  const host = POINTS_POPUP_ELEMENTS[color];
   if(!host){
-    scoreInkActive[color] = false;
-    syncStarState(color, resolveTargetScore());
-    activeScoreInkEntries[color] = null;
-    processNextScoreInk(color);
+    pointsPopupInkActive[color] = false;
+    syncMatchProgressState(color, resolveTargetScore());
+    activePointsPopupEntries[color] = null;
+    processNextPointsPopupInk(color);
     return;
   }
 
   const anchorTargetScore = resolveTargetScore();
-  setScoreInkAnchor(host, color, anchorTargetScore);
+  setPointsPopupAnchor(host, color, anchorTargetScore);
 
   const ink = document.createElement("span");
-  ink.className = "score-ink";
+  ink.className = "points-popup-ink";
   ink.textContent = `+${delta}`;
 
   let cleared = false;
   const finalize = () => {
     if(cleared) return;
     cleared = true;
-    syncStarState(color, resolveTargetScore());
+    syncMatchProgressState(color, resolveTargetScore());
     if(ink.parentNode === host){
       host.removeChild(ink);
     }
-    scoreInkActive[color] = false;
-    activeScoreInkEntries[color] = null;
-    processNextScoreInk(color);
+    pointsPopupInkActive[color] = false;
+    activePointsPopupEntries[color] = null;
+    processNextPointsPopupInk(color);
   };
 
   ink.addEventListener("animationend", finalize, { once: true });
-  setTimeout(finalize, SCORE_INK_DURATION_MS);
+  setTimeout(finalize, POINTS_POPUP_INK_DURATION_MS);
 
   host.appendChild(ink);
 }
 
-function clearScoreCounters(){
-  for(const key of Object.keys(SCORE_COUNTER_ELEMENTS)){
-    const host = SCORE_COUNTER_ELEMENTS[key];
+function clearPointsPopups(){
+  for(const key of Object.keys(POINTS_POPUP_ELEMENTS)){
+    const host = POINTS_POPUP_ELEMENTS[key];
     if(host){
       host.textContent = "";
     }
-    if(Array.isArray(scoreInkQueues[key])){
-      scoreInkQueues[key].length = 0;
+    if(Array.isArray(pointsPopupInkQueues[key])){
+      pointsPopupInkQueues[key].length = 0;
     }
-    scoreInkActive[key] = false;
-    activeScoreInkEntries[key] = null;
+    pointsPopupInkActive[key] = false;
+    activePointsPopupEntries[key] = null;
   }
 }
 
@@ -6098,11 +6099,11 @@ function renderScoreboard(){
     );
   }
 
-  drawStarsUI(planeCtx);
+  drawMatchProgressUI(planeCtx);
 
   const counterVirtualRects = {
-    green: getVirtualRectFromDom(greenScoreCounter),
-    blue: getVirtualRectFromDom(blueScoreCounter)
+    green: getVirtualRectFromDom(greenPointsPopup),
+    blue: getVirtualRectFromDom(bluePointsPopup)
   };
 
   const drawRect = (color, virtualRect) => {
@@ -6140,7 +6141,7 @@ function renderScoreboard(){
 }
 
 function buildPlaneCounterFrame(color, containerLeft, containerTop, scaleX, scaleY) {
-  const host = PLANE_COUNTER_HOSTS?.[color] || SCORE_COUNTER_ELEMENTS?.[color];
+  const host = PLANE_COUNTER_HOSTS?.[color] || POINTS_POPUP_ELEMENTS?.[color];
   if (host instanceof HTMLElement) {
     const rect = visualRect(host);
     const containerRect = visualRect(gameContainer);
@@ -6178,8 +6179,8 @@ function buildPlaneCounterFrame(color, containerLeft, containerTop, scaleX, scal
     const left = containerLeft + baseLeft * scaleX;
     const top = containerTop + baseTop * scaleY;
 
-    const scaleFromCssX = width / SCORE_COUNTER_BASE_SIZE.width;
-    const scaleFromCssY = height / SCORE_COUNTER_BASE_SIZE.height;
+    const scaleFromCssX = width / POINTS_POPUP_BASE_SIZE.width;
+    const scaleFromCssY = height / POINTS_POPUP_BASE_SIZE.height;
 
     if (
       Number.isFinite(left) &&
@@ -6374,7 +6375,7 @@ yesBtn.addEventListener("click", () => {
   if (gameOver) {
     blueScore = 0;
     greenScore = 0;
-    syncAllStarStates();
+    syncAllMatchProgressStates();
     roundNumber = 0;
     if(shouldAutoRandomizeMap()){
       if(settings.mapIndex !== RANDOM_MAP_SENTINEL_INDEX){
@@ -6391,7 +6392,7 @@ noBtn.addEventListener("click", () => {
 });
 
 function startNewRound(){
-  loadStarImagesIfNeeded();
+  loadMatchProgressImagesIfNeeded();
   preloadPlaneSprites();
   restoreGameBackgroundAfterMenu();
   activateGameScreen();
@@ -6408,7 +6409,7 @@ function startNewRound(){
   }
   suppressAutoRandomMapForNextRound = false;
   cleanupGreenCrashFx();
-  clearScoreCounters();
+  clearPointsPopups();
   endGameDiv.style.display = "none";
   isGameOver=false; winnerColor=null;
   awaitingFlightResolution = false;
@@ -6416,12 +6417,12 @@ function startNewRound(){
   pendingRoundTransitionStart = 0;
   shouldShowEndScreen = false;
 
-  STAR_LAP = { blue: 0, green: 0 };
-  STAR_POS = { blue: 0, green: 0 };
-  STAR_PLACED_IN_LAP = { blue: 0, green: 0 };
-  STAR_STATE.blue  = Array.from({length:5}, ()=> new Set());
-  STAR_STATE.green = Array.from({length:5}, ()=> new Set());
-  syncAllStarStates();
+  MATCH_PROGRESS_LAP = { blue: 0, green: 0 };
+  MATCH_PROGRESS_POS = { blue: 0, green: 0 };
+  MATCH_PROGRESS_PLACED_IN_LAP = { blue: 0, green: 0 };
+  MATCH_PROGRESS_STATE.blue  = Array.from({length:5}, ()=> new Set());
+  MATCH_PROGRESS_STATE.green = Array.from({length:5}, ()=> new Set());
+  syncAllMatchProgressStates();
 
   lastFirstTurn = 1 - lastFirstTurn;
   turnIndex = lastFirstTurn;
@@ -6588,7 +6589,7 @@ function resizeCanvas() {
   const containerHeight = FRAME_BASE_HEIGHT * scale;
   gameContainer.style.width = containerWidth + 'px';
   gameContainer.style.height = containerHeight + 'px';
-  gameContainer.style.setProperty('--score-scale', scale);
+  gameContainer.style.setProperty('--points-popup-scale', scale);
   gameContainer.style.setProperty('--game-scale', scale);
   const centeredLeft = offsetLeft + (viewportWidth - containerWidth) / 2;
   const centeredTop = offsetTop + (viewportHeight - containerHeight) / 2;
@@ -6629,7 +6630,7 @@ function resizeCanvas() {
     initPoints();
   }
 
-  refreshScoreInkAnchors();
+  refreshPointsPopupAnchors();
 
   if (document.body.classList.contains('screen--menu')) {
     document.body.classList.add('menu-ready');
@@ -6656,8 +6657,8 @@ function resizeCanvas() {
     overlayContainer: rectSummary(overlayContainer),
     greenPlaneCounter: rectSummary(greenPlaneCounter),
     bluePlaneCounter: rectSummary(bluePlaneCounter),
-    greenScoreCounter: rectSummary(greenScoreCounter),
-    blueScoreCounter: rectSummary(blueScoreCounter)
+    greenPointsPopup: rectSummary(greenPointsPopup),
+    bluePointsPopup: rectSummary(bluePointsPopup)
   });
 }
 

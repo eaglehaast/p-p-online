@@ -85,8 +85,8 @@ body, button {
     background-size: 460px 800px, 460px 800px;
     background-repeat: no-repeat;
     background-position: center top, center top;
-    --score-scale: 1;
-    --game-scale: var(--score-scale);
+    --points-popup-scale: 1;
+    --game-scale: var(--points-popup-scale);
     --field-left: calc(50px * var(--game-scale, 1));
     --field-top: calc(80px * var(--game-scale, 1));
     --field-width: calc(360px * var(--game-scale, 1));
@@ -102,7 +102,7 @@ body, button {
     z-index: 25;
   }
 
-  .score-counter {
+  .points-popup {
     position: absolute;
     pointer-events: none;
     z-index: 30;
@@ -110,18 +110,18 @@ body, button {
     align-items: center;
     justify-content: center;
     overflow: visible;
-    --score-ink-left: 50%;
-    --score-ink-top: 50%;
+    --points-popup-ink-left: 50%;
+    --points-popup-ink-top: 50%;
   }
 
-  #greenScoreCounter {
+  #greenPointsPopup {
     left: 409px;
     top: 419px;
     width: 51px;
     height: 290px;
   }
 
-  #blueScoreCounter {
+  #bluePointsPopup {
     left: 0px;
     top: 95px;
     width: 51px;
@@ -148,17 +148,17 @@ body, button {
     height: 290px;
   }
 
-  .score-counter .score-ink {
+  .points-popup .points-popup-ink {
     position: absolute;
-    left: var(--score-ink-left, 50%);
-    top: var(--score-ink-top, 50%);
+    left: var(--points-popup-ink-left, 50%);
+    top: var(--points-popup-ink-top, 50%);
     transform: translate(-50%, -50%);
     font-family: 'Patrick Hand', cursive;
-    font-size: calc(22px * var(--score-scale, 1));
+    font-size: calc(22px * var(--points-popup-scale, 1));
     line-height: 1;
     white-space: nowrap;
     opacity: 0;
-    letter-spacing: calc(0.5px * var(--score-scale, 1));
+    letter-spacing: calc(0.5px * var(--points-popup-scale, 1));
     animation-duration: 2.4s;
     animation-timing-function: ease-in-out;
     animation-fill-mode: forwards;
@@ -166,27 +166,27 @@ body, button {
     clip-path: inset(0 0 100% 0);
   }
 
-  .score-counter--green .score-ink {
+  .points-popup--green .points-popup-ink {
     color: #cbb021;
     text-shadow:
       0 0 6px rgba(35, 118, 31, 0.55),
       0 0 2px rgba(64, 168, 58, 0.9);
-    animation-name: score-ink-write-green;
+    animation-name: points-popup-ink-write-green;
     -webkit-clip-path: inset(0 0 100% 0);
     clip-path: inset(0 0 100% 0);
   }
 
-  .score-counter--blue .score-ink {
+  .points-popup--blue .points-popup-ink {
     color: #cbb021;
     text-shadow:
       0 0 6px rgba(52, 78, 109, 0.45),
       0 0 2px rgba(90, 122, 158, 0.8);
-    animation-name: score-ink-write-blue;
+    animation-name: points-popup-ink-write-blue;
     -webkit-clip-path: inset(100% 0 0 0);
     clip-path: inset(100% 0 0 0);
   }
 
-  @keyframes score-ink-write-green {
+  @keyframes points-popup-ink-write-green {
     0% {
       opacity: 0;
       -webkit-clip-path: inset(0 0 100% 0);
@@ -212,7 +212,7 @@ body, button {
     }
   }
 
-  @keyframes score-ink-write-blue {
+  @keyframes points-popup-ink-write-blue {
     0% {
       opacity: 0;
       -webkit-clip-path: inset(100% 0 0 0);
@@ -238,7 +238,7 @@ body, button {
     }
   }
 
-  @keyframes score-ink-fade {
+  @keyframes points-popup-ink-fade {
     0% {
       opacity: 0;
     }
@@ -254,14 +254,14 @@ body, button {
   }
 
   @supports not ((-webkit-clip-path: inset(0 100% 0 0)) or (clip-path: inset(0 100% 0 0))) {
-    .score-counter .score-ink {
-      animation-name: score-ink-fade;
+    .points-popup .points-popup-ink {
+      animation-name: points-popup-ink-fade;
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .score-counter .score-ink {
-      animation-name: score-ink-fade;
+    .points-popup .points-popup-ink {
+      animation-name: points-popup-ink-fade;
       animation-duration: 1s;
       -webkit-clip-path: none;
       clip-path: none;
