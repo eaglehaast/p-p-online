@@ -242,7 +242,7 @@
       background: rgba(255, 255, 255, 0.7);
     }
 
-    body.harness-advanced-open .score-counter,
+    body.harness-advanced-open .points-popup,
     body.harness-advanced-open #mantisIndicator,
     body.harness-advanced-open #goatIndicator,
     body.harness-advanced-open .game-wrap,
@@ -423,8 +423,8 @@
         <canvas id="gameCanvas" width="360" height="640" style="display:none;"></canvas>
       </div>
 
-      <div id="greenScoreCounter" class="score-counter score-counter--green" aria-hidden="true"></div>
-      <div id="blueScoreCounter" class="score-counter score-counter--blue" aria-hidden="true"></div>
+      <div id="greenPointsPopup" class="points-popup points-popup--green" aria-hidden="true"></div>
+      <div id="bluePointsPopup" class="points-popup points-popup--blue" aria-hidden="true"></div>
 
       <div id="hudPlaneStyleProbes" aria-hidden="true"
            style="position:absolute;width:0;height:0;overflow:hidden;clip-path:inset(50%);">
@@ -673,7 +673,7 @@
     </div>
 
     <div class="harness-section" aria-labelledby="scoreTitle">
-      <h2 id="scoreTitle">Очки и звёзды</h2>
+      <h2 id="scoreTitle">Очки и прогресс матча</h2>
       <p>Текущие очки: <strong id="scoreGreen">0</strong> — <strong id="scoreBlue">0</strong></p>
       <div class="harness-button-group">
         <button data-score="green:+1">Зелёные +1</button>
@@ -691,7 +691,7 @@
         <button id="popupGreenBtn">Поп-ап зелёных</button>
         <button id="popupBlueBtn">Поп-ап синих</button>
       </div>
-      <button id="syncStarsBtn" class="full-width">Пересчитать звёзды</button>
+      <button id="syncMatchProgressBtn" class="full-width">Пересчитать прогресс</button>
     </div>
 
     <div class="harness-section" aria-labelledby="planesTitle">
@@ -1171,18 +1171,18 @@
         const delta = parseInt(document.getElementById('popupDelta')?.value, 10) || 0;
         const targetInput = document.getElementById('popupTarget');
         const target = targetInput && targetInput.value !== '' ? parseInt(targetInput.value, 10) : (Number.isFinite(window.greenScore) ? window.greenScore + delta : delta);
-        window.spawnScorePopup?.('green', delta, target);
+        window.spawnPointsPopup?.('green', delta, target);
       });
 
       document.getElementById('popupBlueBtn')?.addEventListener('click', () => {
         const delta = parseInt(document.getElementById('popupDelta')?.value, 10) || 0;
         const targetInput = document.getElementById('popupTarget');
         const target = targetInput && targetInput.value !== '' ? parseInt(targetInput.value, 10) : (Number.isFinite(window.blueScore) ? window.blueScore + delta : delta);
-        window.spawnScorePopup?.('blue', delta, target);
+        window.spawnPointsPopup?.('blue', delta, target);
       });
 
-      document.getElementById('syncStarsBtn')?.addEventListener('click', () => {
-        window.syncAllStarStates?.();
+      document.getElementById('syncMatchProgressBtn')?.addEventListener('click', () => {
+        window.syncAllMatchProgressStates?.();
         window.renderScoreboard?.();
       });
 
