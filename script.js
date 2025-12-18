@@ -23,6 +23,13 @@ const aimCtx      = aimCanvas.getContext("2d");
 const planeCanvas = document.getElementById("planeCanvas");
 const planeCtx    = planeCanvas.getContext("2d");
 
+function setScreenMode(mode) {
+  document.body.classList.toggle('screen--menu', mode === 'MENU');
+  document.body.classList.toggle('screen--game', mode === 'GAME');
+}
+
+setScreenMode('MENU');
+
 const WORLD = { width: 360, height: 640 };
 const VIEW = {
   dpr: 1,
@@ -1899,8 +1906,8 @@ function activateGameScreen() {
     console.warn('[screen] Gameplay started while menu was active; forcing game screen.');
   }
 
-  body.classList.remove('screen--menu', 'menu-ready');
-  body.classList.add('screen--game');
+  body.classList.remove('menu-ready');
+  setScreenMode('GAME');
   menuScreenLocked = true;
 
   if (menuScreen) {
@@ -1932,13 +1939,7 @@ function setMenuVisibility(visible) {
   const displayValue = visible ? "block" : "none";
   if(menuScreen){
     menuScreen.style.display = displayValue;
-    if (visible) {
-      document.body.classList.add('screen--menu');
-      document.body.classList.remove('screen--game');
-    } else {
-      document.body.classList.remove('screen--menu');
-      document.body.classList.add('screen--game');
-    }
+    setScreenMode(visible ? 'MENU' : 'GAME');
   }
   if(modeMenuDiv){
     modeMenuDiv.style.display = displayValue;
@@ -3394,7 +3395,7 @@ function resetGame(options = {}){
   currentPlacer = null;
 
   if (shouldShowMenu) {
-    setBackgroundImage('background behind the canvas.png', 'background paper 1.png');
+    setBackgroundImage('background paper 1.png');
     hideGameBackgroundForMenu();
   } else {
     restoreGameBackgroundAfterMenu();
