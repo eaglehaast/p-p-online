@@ -12,8 +12,8 @@ const goatIndicator   = document.getElementById("goatIndicator");
 
 const loadingOverlay = document.getElementById("loadingOverlay");
 
-const gameContainer = document.getElementById("gameContainer");
-const gameScreen = document.getElementById("gameScreen") || gameContainer;
+const gsFrameEl = document.getElementById("gameContainer");
+const gameScreen = document.getElementById("gameScreen") || gsFrameEl;
 const gameCanvas  = document.getElementById("gameCanvas");
 const gameCtx     = gameCanvas.getContext("2d");
 
@@ -351,7 +351,7 @@ function clampPointsPopupInkOffset(value, limit) {
   return value;
 }
 
-function getVirtualRectFromDom(element, root = gameContainer) {
+function getVirtualRectFromDom(element, root = gsFrameEl) {
   if (!(element?.getBoundingClientRect) || !(root?.getBoundingClientRect)) {
     return null;
   }
@@ -765,12 +765,12 @@ function syncOverlayCanvasToGameCanvas(targetCanvas, cssWidth, cssHeight) {
 }
 
 function getGameLayoutScale() {
-  const containerWidth = gameContainer?.offsetWidth;
+  const containerWidth = gsFrameEl?.offsetWidth;
   if (Number.isFinite(containerWidth) && containerWidth > 0) {
     return containerWidth / FRAME_BASE_WIDTH;
   }
 
-  const cssScale = parseFloat(gameContainer?.style?.getPropertyValue?.('--points-popup-scale'));
+  const cssScale = parseFloat(gsFrameEl?.style?.getPropertyValue?.('--points-popup-scale'));
   return Number.isFinite(cssScale) && cssScale > 0 ? cssScale : 1;
 }
 
@@ -1939,17 +1939,17 @@ function setMenuVisibility(visible) {
 function hideGameBackgroundForMenu() {
   if (!menuBackgroundSnapshot) {
     menuBackgroundSnapshot = {
-      container: gameContainer.style.backgroundImage
+      container: gsFrameEl.style.backgroundImage
     };
   }
 
-  gameContainer.style.backgroundImage = 'none';
+  gsFrameEl.style.backgroundImage = 'none';
 }
 
 function restoreGameBackgroundAfterMenu() {
   if (!menuBackgroundSnapshot) return;
 
-  gameContainer.style.backgroundImage = menuBackgroundSnapshot.container;
+  gsFrameEl.style.backgroundImage = menuBackgroundSnapshot.container;
 
   menuBackgroundSnapshot = null;
 }
@@ -2147,10 +2147,10 @@ function syncBackgroundLayout(containerWidth, containerHeight, containerLeft = n
 
   const sizeValue = `${containerWidth}px ${containerHeight}px`;
   const repeatedSize = duplicateBackgroundValue(sizeValue);
-  gameContainer.style.backgroundSize = repeatedSize;
+  gsFrameEl.style.backgroundSize = repeatedSize;
 
   const containerPosition = duplicateBackgroundValue('center top');
-  gameContainer.style.backgroundPosition = containerPosition;
+  gsFrameEl.style.backgroundPosition = containerPosition;
 }
 
 function normalizeBackgroundLayer(layer) {
@@ -2179,15 +2179,15 @@ function setBackgroundImage(...imageLayers) {
 
   if (!normalizedLayers.length) {
     currentBackgroundLayerCount = 0;
-    gameContainer.style.backgroundImage = 'none';
+    gsFrameEl.style.backgroundImage = 'none';
     return;
   }
 
   currentBackgroundLayerCount = normalizedLayers.length;
   const backgroundValue = normalizedLayers.join(', ');
-  gameContainer.style.backgroundImage = backgroundValue;
+  gsFrameEl.style.backgroundImage = backgroundValue;
 
-  const rect = gameContainer.getBoundingClientRect();
+  const rect = gsFrameEl.getBoundingClientRect();
   syncBackgroundLayout(rect.width, rect.height);
 }
 const CANVAS_BASE_WIDTH = 360;
@@ -6144,7 +6144,7 @@ function buildPlaneCounterFrame(color, containerLeft, containerTop, scaleX, scal
   const host = PLANE_COUNTER_HOSTS?.[color] || POINTS_POPUP_ELEMENTS?.[color];
   if (host instanceof HTMLElement) {
     const rect = visualRect(host);
-    const containerRect = visualRect(gameContainer);
+    const containerRect = visualRect(gsFrameEl);
 
     const containerScaleX = Number.isFinite(containerRect.width) && containerRect.width > 0
       ? containerRect.width / FRAME_BASE_WIDTH
@@ -6587,14 +6587,14 @@ function resizeCanvas() {
 
   const containerWidth = FRAME_BASE_WIDTH * scale;
   const containerHeight = FRAME_BASE_HEIGHT * scale;
-  gameContainer.style.width = containerWidth + 'px';
-  gameContainer.style.height = containerHeight + 'px';
-  gameContainer.style.setProperty('--points-popup-scale', scale);
-  gameContainer.style.setProperty('--game-scale', scale);
+  gsFrameEl.style.width = containerWidth + 'px';
+  gsFrameEl.style.height = containerHeight + 'px';
+  gsFrameEl.style.setProperty('--points-popup-scale', scale);
+  gsFrameEl.style.setProperty('--game-scale', scale);
   const centeredLeft = offsetLeft + (viewportWidth - containerWidth) / 2;
   const centeredTop = offsetTop + (viewportHeight - containerHeight) / 2;
-  gameContainer.style.left = centeredLeft + 'px';
-  gameContainer.style.top = centeredTop + 'px';
+  gsFrameEl.style.left = centeredLeft + 'px';
+  gsFrameEl.style.top = centeredTop + 'px';
   syncBackgroundLayout(containerWidth, containerHeight, centeredLeft, centeredTop);
   const canvas = gameCanvas;
   canvas.style.width = CANVAS_BASE_WIDTH * scale + 'px';
@@ -6649,8 +6649,8 @@ function resizeCanvas() {
   };
 
   console.log('Layout rects after resize', {
-    gameContainer: rectSummary(gameContainer),
-    stage: rectSummary(gameContainer),
+    gsFrameEl: rectSummary(gsFrameEl),
+    stage: rectSummary(gsFrameEl),
     gameCanvas: rectSummary(gameCanvas),
     aimCanvas: rectSummary(aimCanvas),
     planeCanvas: rectSummary(planeCanvas),
