@@ -14,8 +14,8 @@ const loadingOverlay = document.getElementById("loadingOverlay");
 
 const gsFrameEl = document.getElementById("gameContainer");
 const gameScreen = document.getElementById("gameScreen") || gsFrameEl;
-const gameCanvas  = document.getElementById("gameCanvas");
-const gameCtx     = gameCanvas.getContext("2d");
+const gsBoardCanvas  = document.getElementById("gameCanvas");
+const gsBoardCtx     = gsBoardCanvas.getContext("2d");
 
 const aimCanvas   = document.getElementById("aimCanvas");
 const aimCtx      = aimCanvas.getContext("2d");
@@ -6681,7 +6681,7 @@ function resizeCanvas() {
   console.log('Layout rects after resize', {
     gsFrameEl: rectSummary(gsFrameEl),
     stage: rectSummary(gsFrameEl),
-    gameCanvas: rectSummary(gameCanvas),
+    gameCanvas: rectSummary(gsBoardCanvas),
     aimCanvas: rectSummary(aimCanvas),
     planeCanvas: rectSummary(planeCanvas),
     overlayContainer: rectSummary(overlayContainer),
