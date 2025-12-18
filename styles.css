@@ -313,6 +313,7 @@ body, button {
 
   body.screen--game #menuScreen {
     display: none !important;
+    pointer-events: none !important;
   }
 
   .screen-wrapper--menu .stage-460x800 {
@@ -329,8 +330,9 @@ body, button {
     display: block;
   }
 
+  /* legacy menu background removed — menu must never overlap game screen */
   .screen--menu .stage-460x800 {
-    background: url("ui_mainmenu/mm_background.png") center / cover no-repeat;
+    background: none;
   }
 
   .screen--settings .stage-460x800 {
