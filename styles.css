@@ -94,6 +94,9 @@ body, button {
     background-size: 460px 800px;
     background-repeat: no-repeat;
     background-position: center top;
+    transform: scale(var(--ui-scale, 1));
+    transform-origin: center;
+    flex: 0 0 auto;
     --points-popup-scale: 1;
     --game-scale: var(--points-popup-scale);
     --field-left: calc(50px * var(--game-scale, 1));
@@ -280,10 +283,7 @@ body, button {
   :root {
     --control-panel-base-width: 460px;
     --control-panel-base-height: 800px;
-    --menu-scale: min(
-      calc(100vw / var(--control-panel-base-width)),
-      calc(100vh / var(--control-panel-base-height))
-    );
+    --ui-scale: 1;
   }
 
   /* ===== Temporary background-only layout for the settings control panel ===== */
@@ -309,15 +309,26 @@ body, button {
   }
 
   .screen-wrapper {
-    position: fixed;
-    inset: 0;
+    position: relative;
+    width: var(--control-panel-base-width);
+    height: var(--control-panel-base-height);
+    flex: 0 0 auto;
   }
 
   #menuScreen {
+    position: relative;
+    width: var(--control-panel-base-width);
+    height: var(--control-panel-base-height);
     background-image: url("ui_mainmenu/mm_background.png");
     background-repeat: no-repeat;
     background-position: center;
-    background-size: cover;
+    background-size: var(--control-panel-base-width) var(--control-panel-base-height);
+    transform: scale(var(--ui-scale, 1));
+    transform-origin: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
   }
 
   .screen-wrapper--menu {
@@ -334,8 +345,9 @@ body, button {
 
   .screen-wrapper--menu .stage-460x800 {
     position: relative;
-    transform-origin: center center;
-    transform: scale(var(--menu-scale, 1));
+    width: 100%;
+    height: 100%;
+    transform: none;
   }
 
   .settings-container {

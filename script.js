@@ -121,7 +121,6 @@ function logCanvasCreation(canvas, label = "") {
 const overlayContainer = document.getElementById("overlayContainer");
 const fxLayerElement = document.getElementById("fxLayer");
 
-let LAST_GOOD_OVERLAY_RECT = null;
 let OVERLAY_RESYNC_SCHEDULED = false;
 
 const greenPointsPopup = document.getElementById("greenPointsPopup");
@@ -770,37 +769,15 @@ function syncOverlayCanvasToGameCanvas(targetCanvas, cssWidth, cssHeight) {
   if (targetCanvas.height !== backingHeight) targetCanvas.height = backingHeight;
 }
 
-function getGameLayoutScale() {
-  const containerWidth = gsFrameEl?.offsetWidth;
-  if (Number.isFinite(containerWidth) && containerWidth > 0) {
-    return containerWidth / FRAME_BASE_WIDTH;
-  }
-
-  const cssScale = parseFloat(gsFrameEl?.style?.getPropertyValue?.('--points-popup-scale'));
-  return Number.isFinite(cssScale) && cssScale > 0 ? cssScale : 1;
-}
-
 function sizeAndAlignOverlays() {
   if (!(overlayContainer instanceof HTMLElement)) {
     return;
   }
 
-  const scale = getGameLayoutScale();
-  const width = Math.max(1, Math.round(CANVAS_BASE_WIDTH * scale));
-  const height = Math.max(1, Math.round(CANVAS_BASE_HEIGHT * scale));
-  const left = FRAME_PADDING_X * scale;
-  const top = FRAME_PADDING_Y * scale;
-
-  const minSize = FX_HOST_MIN_SIZE;
-  if (width < minSize || height < minSize) {
-    if (LAST_GOOD_OVERLAY_RECT) {
-      overlayContainer.style.left = `${LAST_GOOD_OVERLAY_RECT.left}px`;
-      overlayContainer.style.top = `${LAST_GOOD_OVERLAY_RECT.top}px`;
-      overlayContainer.style.width = `${LAST_GOOD_OVERLAY_RECT.width}px`;
-      overlayContainer.style.height = `${LAST_GOOD_OVERLAY_RECT.height}px`;
-    }
-    return;
-  }
+  const width = Math.max(1, Math.round(CANVAS_BASE_WIDTH));
+  const height = Math.max(1, Math.round(CANVAS_BASE_HEIGHT));
+  const left = FRAME_PADDING_X;
+  const top = FRAME_PADDING_Y;
 
   overlayContainer.style.left = `${left}px`;
   overlayContainer.style.top = `${top}px`;
@@ -808,10 +785,12 @@ function sizeAndAlignOverlays() {
   overlayContainer.style.height = `${height}px`;
   overlayContainer.style.transform = "none";
 
-  LAST_GOOD_OVERLAY_RECT = { left, top, width, height };
+  const rect = overlayContainer.getBoundingClientRect();
+  const cssWidth = Math.max(1, rect.width);
+  const cssHeight = Math.max(1, rect.height);
 
-  syncOverlayCanvasToGameCanvas(aimCanvas, width, height);
-  syncOverlayCanvasToGameCanvas(planeCanvas, width, height);
+  syncOverlayCanvasToGameCanvas(aimCanvas, cssWidth, cssHeight);
+  syncOverlayCanvasToGameCanvas(planeCanvas, cssWidth, cssHeight);
 
   if (fxLayerElement instanceof HTMLElement) {
     fxLayerElement.style.width = `${width}px`;
@@ -6473,9 +6452,9 @@ function startNewRound(){
   aimCanvas.style.display = "block";
 
   requestAnimationFrame(() => {
-    const scale = getGameLayoutScale();
-    const cssWidth = CANVAS_BASE_WIDTH * scale;
-    const cssHeight = CANVAS_BASE_HEIGHT * scale;
+    const rect = overlayContainer?.getBoundingClientRect?.();
+    const cssWidth = Math.max(1, rect?.width || CANVAS_BASE_WIDTH);
+    const cssHeight = Math.max(1, rect?.height || CANVAS_BASE_HEIGHT);
     syncOverlayCanvasToGameCanvas(aimCanvas, cssWidth, cssHeight);
     syncOverlayCanvasToGameCanvas(planeCanvas, cssWidth, cssHeight);
   });
@@ -6579,11 +6558,35 @@ function rebuildBuildingsFromMap(map){
     .filter(b => Number.isFinite(b.x) && Number.isFinite(b.y) && Number.isFinite(b.width) && Number.isFinite(b.height));
 }
 
-function alignMenuStage(viewportWidth, viewportHeight, offsetLeft, offsetTop, scale) {
-  if (!modeMenuDiv || !menuScreen) return;
+function updateUiScale() {
+  const viewportMetrics = VV();
+  const viewportWidth = Math.max(1, viewportMetrics.width || window.innerWidth || 1);
+  const viewportHeight = Math.max(1, viewportMetrics.height || window.innerHeight || 1);
+
+  const scale = Math.min(
+    viewportWidth / FRAME_BASE_WIDTH,
+    viewportHeight / FRAME_BASE_HEIGHT
+  );
 
   const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
-  menuScreen.style.setProperty('--menu-scale', safeScale);
+
+  document.documentElement.style.setProperty('--ui-scale', safeScale);
+
+  if (gsFrameEl instanceof HTMLElement) {
+    gsFrameEl.style.setProperty('--ui-scale', safeScale);
+    gsFrameEl.style.removeProperty('--points-popup-scale');
+    gsFrameEl.style.removeProperty('--game-scale');
+    gsFrameEl.style.removeProperty('left');
+    gsFrameEl.style.removeProperty('top');
+    gsFrameEl.style.width = `${FRAME_BASE_WIDTH}px`;
+    gsFrameEl.style.height = `${FRAME_BASE_HEIGHT}px`;
+  }
+
+  if (menuScreen instanceof HTMLElement) {
+    menuScreen.style.setProperty('--ui-scale', safeScale);
+  }
+
+  return safeScale;
 }
 
 /* ======= CANVAS RESIZE ======= */
@@ -6602,35 +6605,13 @@ function resizeCanvas() {
     // continue resizing instead of early returning
   }
 
-  const viewportMetrics = VV();
-  const viewportWidth = Math.max(1, viewportMetrics.width || window.innerWidth || 1);
-  const viewportHeight = Math.max(1, viewportMetrics.height || window.innerHeight || 1);
-  const offsetLeft = Number.isFinite(viewportMetrics.offsetLeft) ? viewportMetrics.offsetLeft : 0;
-  const offsetTop = Number.isFinite(viewportMetrics.offsetTop) ? viewportMetrics.offsetTop : 0;
-
-  const scale = Math.min(
-    viewportWidth / FRAME_BASE_WIDTH,
-    viewportHeight / FRAME_BASE_HEIGHT
-  );
-
-  alignMenuStage(viewportWidth, viewportHeight, offsetLeft, offsetTop, scale);
-
-  const containerWidth = FRAME_BASE_WIDTH * scale;
-  const containerHeight = FRAME_BASE_HEIGHT * scale;
-  gsFrameEl.style.width = containerWidth + 'px';
-  gsFrameEl.style.height = containerHeight + 'px';
-  gsFrameEl.style.setProperty('--points-popup-scale', scale);
-  gsFrameEl.style.setProperty('--game-scale', scale);
-  const centeredLeft = offsetLeft + (viewportWidth - containerWidth) / 2;
-  const centeredTop = offsetTop + (viewportHeight - containerHeight) / 2;
-  gsFrameEl.style.left = centeredLeft + 'px';
-  gsFrameEl.style.top = centeredTop + 'px';
-  syncBackgroundLayout(containerWidth, containerHeight, centeredLeft, centeredTop);
+  updateUiScale();
+  syncBackgroundLayout(FRAME_BASE_WIDTH, FRAME_BASE_HEIGHT);
   const canvas = gsBoardCanvas;
-  canvas.style.width = CANVAS_BASE_WIDTH * scale + 'px';
-  canvas.style.height = CANVAS_BASE_HEIGHT * scale + 'px';
-  canvas.style.left = FRAME_PADDING_X * scale + 'px';
-  canvas.style.top = FRAME_PADDING_Y * scale + 'px';
+  canvas.style.width = CANVAS_BASE_WIDTH + 'px';
+  canvas.style.height = CANVAS_BASE_HEIGHT + 'px';
+  canvas.style.left = FRAME_PADDING_X + 'px';
+  canvas.style.top = FRAME_PADDING_Y + 'px';
   resizeCanvasToMatchCss(canvas);
   computeViewFromCanvas(canvas);
 
@@ -6642,12 +6623,12 @@ function resizeCanvas() {
   applyViewTransform(planeCtx);
 
   [mantisIndicator, goatIndicator].forEach(ind => {
-    ind.style.width = containerWidth + 'px';
-    ind.style.height = FRAME_BASE_HEIGHT / 2 * scale + 'px';
-    ind.style.backgroundSize = containerWidth + 'px ' + containerHeight + 'px';
+    ind.style.width = FRAME_BASE_WIDTH + 'px';
+    ind.style.height = FRAME_BASE_HEIGHT / 2 + 'px';
+    ind.style.backgroundSize = FRAME_BASE_WIDTH + 'px ' + FRAME_BASE_HEIGHT + 'px';
   });
   mantisIndicator.style.top = '0px';
-  goatIndicator.style.top = containerHeight / 2 + 'px';
+  goatIndicator.style.top = FRAME_BASE_HEIGHT / 2 + 'px';
 
   updateFieldDimensions();
 
@@ -6693,6 +6674,7 @@ function resizeCanvas() {
 }
 
 window.addEventListener('resize', resizeCanvas);
+window.addEventListener('load', updateUiScale);
 if (window.visualViewport) {
   let pendingViewportResize = null;
   const scheduleViewportResize = () => {
@@ -6721,6 +6703,7 @@ window.addEventListener('orientationchange', lockOrientation);
 
   /* ======= BOOTSTRAP ======= */
   async function bootstrapGame(){
+    updateUiScale();
     sizeAndAlignOverlays();
     resizeCanvas();
     resetGame();
