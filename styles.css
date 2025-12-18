@@ -313,6 +313,13 @@ body, button {
     inset: 0;
   }
 
+  #menuScreen {
+    background-image: url("ui_mainmenu/mm_background.png");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: cover;
+  }
+
   .screen-wrapper--menu {
     z-index: 1000;
     display: flex;
