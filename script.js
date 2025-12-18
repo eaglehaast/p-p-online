@@ -145,7 +145,6 @@ const activeExplosions = [];
 
 const PRELOAD_IMAGE_URLS = [
   // Main menu
-  "ui_mainmenu/mm_background.png",
   "ui_mainmenu/mm_hotseat_Default.png",
   "ui_mainmenu/mm_hotseat_Active.png",
   "ui_mainmenu/mm_computer_default.png",
@@ -1891,6 +1890,7 @@ let selectedRuleset = "classic";
 
 let menuBackgroundSnapshot = null;
 let hasActivatedGameScreen = false;
+let menuScreenLocked = false;
 
 function activateGameScreen() {
   const body = document.body;
@@ -1901,6 +1901,7 @@ function activateGameScreen() {
 
   body.classList.remove('screen--menu', 'menu-ready');
   body.classList.add('screen--game');
+  menuScreenLocked = true;
 
   if (menuScreen) {
     menuScreen.style.display = 'none';
@@ -1923,12 +1924,20 @@ function activateGameScreen() {
 }
 
 function setMenuVisibility(visible) {
+  if (visible && menuScreenLocked) {
+    console.warn('[screen] Menu visibility request ignored because gameplay is active.');
+    return;
+  }
+
   const displayValue = visible ? "block" : "none";
   if(menuScreen){
     menuScreen.style.display = displayValue;
     if (visible) {
       document.body.classList.add('screen--menu');
       document.body.classList.remove('screen--game');
+    } else {
+      document.body.classList.remove('screen--menu');
+      document.body.classList.add('screen--game');
     }
   }
   if(modeMenuDiv){
@@ -3319,7 +3328,10 @@ function makePlane(x,y,color,angle){
 }
 
 
-function resetGame(){
+function resetGame(options = {}){
+  const { forceGameScreen = false } = options;
+  const shouldShowMenu = !forceGameScreen && !menuScreenLocked;
+
   isGameOver= false;
   winnerColor= null;
   endGameDiv.style.display = "none";
@@ -3376,25 +3388,39 @@ function resetGame(){
 
   hasShotThisRound = false;
 
-  selectedMode = null;
-  gameMode = null;
-  phase = 'MENU';
+  selectedMode = shouldShowMenu ? null : selectedMode;
+  gameMode = shouldShowMenu ? null : gameMode;
+  phase = shouldShowMenu ? 'MENU' : 'TURN';
   currentPlacer = null;
 
-  setBackgroundImage('background behind the canvas.png', 'background paper 1.png');
-  hideGameBackgroundForMenu();
+  if (shouldShowMenu) {
+    setBackgroundImage('background behind the canvas.png', 'background paper 1.png');
+    hideGameBackgroundForMenu();
+  } else {
+    restoreGameBackgroundAfterMenu();
+  }
 
   // UI reset
   syncModeButtonSkins(null);
   syncPlayButtonSkin(false);
 
-  // Показать меню, скрыть канвасы
-  setMenuVisibility(true);
-  gsBoardCanvas.style.display = "none";
-  mantisIndicator.style.display = "none";
-  goatIndicator.style.display = "none";
-  aimCanvas.style.display = "none";
-  planeCanvas.style.display = "none";
+  if (shouldShowMenu) {
+    // Показать меню, скрыть канвасы
+    setMenuVisibility(true);
+    gsBoardCanvas.style.display = "none";
+    mantisIndicator.style.display = "none";
+    goatIndicator.style.display = "none";
+    aimCanvas.style.display = "none";
+    planeCanvas.style.display = "none";
+  } else {
+    setMenuVisibility(false);
+    activateGameScreen();
+    gsBoardCanvas.style.display = "block";
+    mantisIndicator.style.display = "block";
+    goatIndicator.style.display = "block";
+    aimCanvas.style.display = "block";
+    planeCanvas.style.display = "block";
+  }
   resetCanvasState(planeCtx, planeCanvas);
 
   // Остановить основной цикл
@@ -3402,6 +3428,10 @@ function resetGame(){
 
   initPoints();
   renderScoreboard();
+
+  if (!shouldShowMenu) {
+    startNewRound();
+  }
 }
 
 
@@ -6387,8 +6417,7 @@ yesBtn.addEventListener("click", () => {
   startNewRound();
 });
 noBtn.addEventListener("click", () => {
-  setMenuVisibility(true);
-  resetGame();
+  resetGame({ forceGameScreen: true });
 });
 
 function startNewRound(){
