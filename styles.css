@@ -36,6 +36,15 @@ body, button {
     touch-action: none;
   }
 
+  body.screen--menu #gameContainer { display: none !important; }
+  body.screen--menu #overlayContainer { display: none !important; }
+  body.screen--menu #gameCanvas,
+  body.screen--menu #aimCanvas,
+  body.screen--menu #planeCanvas { display: none !important; }
+
+  body.screen--game #menuScreen { display: none !important; }
+  body.screen--game #gameContainer { display: block; }
+
   .loading-overlay {
     position: fixed;
     inset: 0;
@@ -81,10 +90,10 @@ body, button {
     position: relative;
     width: 460px;
     height: 800px;
-    background-image: url("background behind the canvas.png"), url("background paper 1.png");
-    background-size: 460px 800px, 460px 800px;
+    background-image: url("background paper 1.png");
+    background-size: 460px 800px;
     background-repeat: no-repeat;
-    background-position: center top, center top;
+    background-position: center top;
     --points-popup-scale: 1;
     --game-scale: var(--points-popup-scale);
     --field-left: calc(50px * var(--game-scale, 1));
