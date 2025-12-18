@@ -12,10 +12,10 @@ const goatIndicator   = document.getElementById("goatIndicator");
 
 const loadingOverlay = document.getElementById("loadingOverlay");
 
-const gameContainer = document.getElementById("gameContainer");
-const gameScreen = document.getElementById("gameScreen") || gameContainer;
-const gameCanvas  = document.getElementById("gameCanvas");
-const gameCtx     = gameCanvas.getContext("2d");
+const gsFrameEl = document.getElementById("gameContainer");
+const gameScreen = document.getElementById("gameScreen") || gsFrameEl;
+const gsBoardCanvas  = document.getElementById("gameCanvas");
+const gsBoardCtx     = gsBoardCanvas.getContext("2d");
 
 const aimCanvas   = document.getElementById("aimCanvas");
 const aimCtx      = aimCanvas.getContext("2d");
@@ -351,7 +351,7 @@ function clampPointsPopupInkOffset(value, limit) {
   return value;
 }
 
-function getVirtualRectFromDom(element, root = gameContainer) {
+function getVirtualRectFromDom(element, root = gsFrameEl) {
   if (!(element?.getBoundingClientRect) || !(root?.getBoundingClientRect)) {
     return null;
   }
@@ -593,7 +593,7 @@ function clientPointFromEvent(e) {
   };
 }
 
-function clientToWorld(point, rect = visualRect(gameCanvas)) {
+function clientToWorld(point, rect = visualRect(gsBoardCanvas)) {
   const scaleX = rect.width !== 0 ? VIEW.pxW / rect.width : 1;
   const scaleY = rect.height !== 0 ? VIEW.pxH / rect.height : 1;
   return {
@@ -654,7 +654,7 @@ function clientToOverlay(event, overlay = aimCanvas) {
 
 function clientToBoard(event) {
   const { clientX, clientY } = resolveClientPoint(event);
-  const rect = getViewportAdjustedBoundingClientRect(gameCanvas);
+  const rect = getViewportAdjustedBoundingClientRect(gsBoardCanvas);
   const rectWidth = Number.isFinite(rect.width) && rect.width !== 0 ? rect.width : 1;
   const rectHeight = Number.isFinite(rect.height) && rect.height !== 0 ? rect.height : 1;
   const nx = (clientX - rect.left) / rectWidth;
@@ -673,7 +673,7 @@ function clientToBoard(event) {
 
 function worldToOverlay(x, y, options = {}) {
   const { overlay = null, boardRect: providedBoardRect = null, overlayRect: providedOverlayRect = null } = options || {};
-  const boardRect = providedBoardRect || getViewportAdjustedBoundingClientRect(gameCanvas);
+  const boardRect = providedBoardRect || getViewportAdjustedBoundingClientRect(gsBoardCanvas);
   const boardWidth = Number.isFinite(boardRect.width) && boardRect.width !== 0 ? boardRect.width : 1;
   const boardHeight = Number.isFinite(boardRect.height) && boardRect.height !== 0 ? boardRect.height : 1;
   const boardLeft = Number.isFinite(boardRect.left) ? boardRect.left : 0;
@@ -710,7 +710,7 @@ function worldToOverlay(x, y, options = {}) {
   return { clientX, clientY, overlayX, overlayY, nx, ny, boardRect, overlayRect };
 }
 
-function worldToGameCanvas(x, y, rect = visualRect(gameCanvas)) {
+function worldToGameCanvas(x, y, rect = visualRect(gsBoardCanvas)) {
   const safeX = Number.isFinite(x) ? x : 0;
   const safeY = Number.isFinite(y) ? y : 0;
   const canvasWidth = WORLD.width;
@@ -765,12 +765,12 @@ function syncOverlayCanvasToGameCanvas(targetCanvas, cssWidth, cssHeight) {
 }
 
 function getGameLayoutScale() {
-  const containerWidth = gameContainer?.offsetWidth;
+  const containerWidth = gsFrameEl?.offsetWidth;
   if (Number.isFinite(containerWidth) && containerWidth > 0) {
     return containerWidth / FRAME_BASE_WIDTH;
   }
 
-  const cssScale = parseFloat(gameContainer?.style?.getPropertyValue?.('--points-popup-scale'));
+  const cssScale = parseFloat(gsFrameEl?.style?.getPropertyValue?.('--points-popup-scale'));
   return Number.isFinite(cssScale) && cssScale > 0 ? cssScale : 1;
 }
 
@@ -1012,8 +1012,8 @@ function resolvePlaneFlameMetrics(context = 'plane flame') {
     return null;
   }
 
-  const canvasWidth = gameCanvas?.offsetWidth || 0;
-  const canvasHeight = gameCanvas?.offsetHeight || 0;
+  const canvasWidth = gsBoardCanvas?.offsetWidth || 0;
+  const canvasHeight = gsBoardCanvas?.offsetHeight || 0;
   const overlayWidth = overlayContainer?.offsetWidth || 0;
   const overlayHeight = overlayContainer?.offsetHeight || 0;
 
@@ -1027,7 +1027,7 @@ function resolvePlaneFlameMetrics(context = 'plane flame') {
     return null;
   }
 
-  const boardRect = getViewportAdjustedBoundingClientRect(gameCanvas);
+  const boardRect = getViewportAdjustedBoundingClientRect(gsBoardCanvas);
   const overlayRect = getViewportAdjustedBoundingClientRect(overlayContainer);
   const host = ensurePlaneFlameHost();
 
@@ -1644,23 +1644,23 @@ function pickExplosionSprite(color) {
 }
 
 function getExplosionDrawContext(preferredCtx) {
-  const targetCtx = preferredCtx || gameCtx;
+  const targetCtx = preferredCtx || gsBoardCtx;
   if (!targetCtx) {
     return null;
   }
 
   const canvas = targetCtx.canvas;
-  const canvasMismatch = canvas && canvas !== gameCanvas;
+  const canvasMismatch = canvas && canvas !== gsBoardCanvas;
   if (canvasMismatch) {
     console.warn('[FX] Redirecting explosion draw to main game canvas', {
       requestedCanvasId: canvas.id,
       requestedCanvasClass: canvas.className,
       requestedSize: { width: canvas.width, height: canvas.height },
-      mainCanvasSize: { width: gameCanvas?.width, height: gameCanvas?.height },
+      mainCanvasSize: { width: gsBoardCanvas?.width, height: gsBoardCanvas?.height },
     });
   }
 
-  return gameCtx || targetCtx;
+  return gsBoardCtx || targetCtx;
 }
 
 function logExplosionDraw(ctx, explosion) {
@@ -1870,7 +1870,7 @@ function resetCanvasState(ctx, canvas){
 }
 
 // Enable smoothing so rotated images (planes, arrows) don't appear jagged
-[gameCtx, aimCtx, planeCtx].forEach(ctx => {
+[gsBoardCtx, aimCtx, planeCtx].forEach(ctx => {
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
 });
@@ -1939,17 +1939,17 @@ function setMenuVisibility(visible) {
 function hideGameBackgroundForMenu() {
   if (!menuBackgroundSnapshot) {
     menuBackgroundSnapshot = {
-      container: gameContainer.style.backgroundImage
+      container: gsFrameEl.style.backgroundImage
     };
   }
 
-  gameContainer.style.backgroundImage = 'none';
+  gsFrameEl.style.backgroundImage = 'none';
 }
 
 function restoreGameBackgroundAfterMenu() {
   if (!menuBackgroundSnapshot) return;
 
-  gameContainer.style.backgroundImage = menuBackgroundSnapshot.container;
+  gsFrameEl.style.backgroundImage = menuBackgroundSnapshot.container;
 
   menuBackgroundSnapshot = null;
 }
@@ -2147,10 +2147,10 @@ function syncBackgroundLayout(containerWidth, containerHeight, containerLeft = n
 
   const sizeValue = `${containerWidth}px ${containerHeight}px`;
   const repeatedSize = duplicateBackgroundValue(sizeValue);
-  gameContainer.style.backgroundSize = repeatedSize;
+  gsFrameEl.style.backgroundSize = repeatedSize;
 
   const containerPosition = duplicateBackgroundValue('center top');
-  gameContainer.style.backgroundPosition = containerPosition;
+  gsFrameEl.style.backgroundPosition = containerPosition;
 }
 
 function normalizeBackgroundLayer(layer) {
@@ -2179,15 +2179,15 @@ function setBackgroundImage(...imageLayers) {
 
   if (!normalizedLayers.length) {
     currentBackgroundLayerCount = 0;
-    gameContainer.style.backgroundImage = 'none';
+    gsFrameEl.style.backgroundImage = 'none';
     return;
   }
 
   currentBackgroundLayerCount = normalizedLayers.length;
   const backgroundValue = normalizedLayers.join(', ');
-  gameContainer.style.backgroundImage = backgroundValue;
+  gsFrameEl.style.backgroundImage = backgroundValue;
 
-  const rect = gameContainer.getBoundingClientRect();
+  const rect = gsFrameEl.getBoundingClientRect();
   syncBackgroundLayout(rect.width, rect.height);
 }
 const CANVAS_BASE_WIDTH = 360;
@@ -3390,7 +3390,7 @@ function resetGame(){
 
   // Показать меню, скрыть канвасы
   setMenuVisibility(true);
-  gameCanvas.style.display = "none";
+  gsBoardCanvas.style.display = "none";
   mantisIndicator.style.display = "none";
   goatIndicator.style.display = "none";
   aimCanvas.style.display = "none";
@@ -3583,10 +3583,10 @@ function onCanvasPointerUp(){
   aaPreviewTrail = [];
 }
 
-gameCanvas.addEventListener("pointerdown", onCanvasPointerDown);
-gameCanvas.addEventListener("pointermove", onCanvasPointerMove);
-gameCanvas.addEventListener("pointerup", onCanvasPointerUp);
-gameCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; aaPointerDown = false; aaPreviewTrail = []; });
+gsBoardCanvas.addEventListener("pointerdown", onCanvasPointerDown);
+gsBoardCanvas.addEventListener("pointermove", onCanvasPointerMove);
+gsBoardCanvas.addEventListener("pointerup", onCanvasPointerUp);
+gsBoardCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; aaPointerDown = false; aaPreviewTrail = []; });
 
 
 function isValidAAPlacement(x,y){
@@ -3647,14 +3647,14 @@ function drawAAPlacementZone(){
   if(phase !== 'AA_PLACEMENT') return;
 
   const half = WORLD.height / 2;
-  gameCtx.save();
-  gameCtx.fillStyle = colorWithAlpha(currentPlacer, 0.05);
+  gsBoardCtx.save();
+  gsBoardCtx.fillStyle = colorWithAlpha(currentPlacer, 0.05);
   if(currentPlacer === 'green'){
-    gameCtx.fillRect(FIELD_LEFT, half, FIELD_WIDTH, half);
+    gsBoardCtx.fillRect(FIELD_LEFT, half, FIELD_WIDTH, half);
   } else {
-    gameCtx.fillRect(FIELD_LEFT, 0, FIELD_WIDTH, half);
+    gsBoardCtx.fillRect(FIELD_LEFT, 0, FIELD_WIDTH, half);
   }
-  gameCtx.restore();
+  gsBoardCtx.restore();
 }
 
 function drawAAPreview(){
@@ -3662,12 +3662,12 @@ function drawAAPreview(){
   const {x, y} = aaPlacementPreview;
   if(!isValidAAPlacement(x, y)) return;
 
-  gameCtx.save();
-  gameCtx.globalAlpha = 0.3;
-  gameCtx.strokeStyle = colorFor(currentPlacer);
-  gameCtx.beginPath();
-  gameCtx.arc(x, y, AA_DEFAULTS.radius, 0, Math.PI*2);
-  gameCtx.stroke();
+  gsBoardCtx.save();
+  gsBoardCtx.globalAlpha = 0.3;
+  gsBoardCtx.strokeStyle = colorFor(currentPlacer);
+  gsBoardCtx.beginPath();
+  gsBoardCtx.arc(x, y, AA_DEFAULTS.radius, 0, Math.PI*2);
+  gsBoardCtx.stroke();
 
   // track preview sweep trail
   const now = performance.now();
@@ -3680,17 +3680,17 @@ function drawAAPreview(){
 
     const alpha = (1 - age/AA_TRAIL_MS) * 0.3;
 
-    gameCtx.globalAlpha = alpha;
-    gameCtx.strokeStyle = colorFor(currentPlacer);
-    gameCtx.lineWidth = 2;
-    gameCtx.lineCap = "round";
+    gsBoardCtx.globalAlpha = alpha;
+    gsBoardCtx.strokeStyle = colorFor(currentPlacer);
+    gsBoardCtx.lineWidth = 2;
+    gsBoardCtx.lineCap = "round";
     const trailAng = seg.angleDeg * Math.PI/180;
     const trailEndX = x + Math.cos(trailAng) * AA_DEFAULTS.radius;
     const trailEndY = y + Math.sin(trailAng) * AA_DEFAULTS.radius;
-    gameCtx.beginPath();
-    gameCtx.moveTo(x, y);
-    gameCtx.lineTo(trailEndX, trailEndY);
-    gameCtx.stroke();
+    gsBoardCtx.beginPath();
+    gsBoardCtx.moveTo(x, y);
+    gsBoardCtx.lineTo(trailEndX, trailEndY);
+    gsBoardCtx.stroke();
   }
 
   // rotating sweep line preview
@@ -3699,45 +3699,45 @@ function drawAAPreview(){
   const endX = x + Math.cos(ang) * AA_DEFAULTS.radius;
   const endY = y + Math.sin(ang) * AA_DEFAULTS.radius;
 
-  gameCtx.globalAlpha = 0.6;
-  gameCtx.strokeStyle = colorFor(currentPlacer);
-  gameCtx.lineWidth = 2;
-  gameCtx.lineCap = "round";
-  gameCtx.beginPath();
-  gameCtx.moveTo(x, y);
-  gameCtx.lineTo(endX, endY);
-  gameCtx.stroke();
+  gsBoardCtx.globalAlpha = 0.6;
+  gsBoardCtx.strokeStyle = colorFor(currentPlacer);
+  gsBoardCtx.lineWidth = 2;
+  gsBoardCtx.lineCap = "round";
+  gsBoardCtx.beginPath();
+  gsBoardCtx.moveTo(x, y);
+  gsBoardCtx.lineTo(endX, endY);
+  gsBoardCtx.stroke();
 
   // translucent white highlight on sweep line
-  gameCtx.globalAlpha = 0.5;
-  gameCtx.strokeStyle = "white";
-  gameCtx.lineWidth = 1;
-  gameCtx.lineCap = "round";
-  gameCtx.beginPath();
-  gameCtx.moveTo(x, y);
-  gameCtx.lineTo(endX, endY);
-  gameCtx.stroke();
+  gsBoardCtx.globalAlpha = 0.5;
+  gsBoardCtx.strokeStyle = "white";
+  gsBoardCtx.lineWidth = 1;
+  gsBoardCtx.lineCap = "round";
+  gsBoardCtx.beginPath();
+  gsBoardCtx.moveTo(x, y);
+  gsBoardCtx.lineTo(endX, endY);
+  gsBoardCtx.stroke();
 
-  gameCtx.globalAlpha = 0.4;
-  gameCtx.fillStyle = colorFor(currentPlacer);
-  gameCtx.beginPath();
-  gameCtx.arc(x, y, 6, 0, Math.PI*2);
-  gameCtx.fill();
+  gsBoardCtx.globalAlpha = 0.4;
+  gsBoardCtx.fillStyle = colorFor(currentPlacer);
+  gsBoardCtx.beginPath();
+  gsBoardCtx.arc(x, y, 6, 0, Math.PI*2);
+  gsBoardCtx.fill();
 
   // inner white circle for volume
-  gameCtx.globalAlpha = 0.6;
-  gameCtx.fillStyle = "white";
-  gameCtx.beginPath();
-  gameCtx.arc(x, y, 4, 0, Math.PI*2);
-  gameCtx.fill();
+  gsBoardCtx.globalAlpha = 0.6;
+  gsBoardCtx.fillStyle = "white";
+  gsBoardCtx.beginPath();
+  gsBoardCtx.arc(x, y, 4, 0, Math.PI*2);
+  gsBoardCtx.fill();
 
   // colored center dot matching player color
-  gameCtx.globalAlpha = 1;
-  gameCtx.fillStyle = colorFor(currentPlacer);
-  gameCtx.beginPath();
-  gameCtx.arc(x, y, 1.5, 0, Math.PI*2);
-  gameCtx.fill();
-  gameCtx.restore();
+  gsBoardCtx.globalAlpha = 1;
+  gsBoardCtx.fillStyle = colorFor(currentPlacer);
+  gsBoardCtx.beginPath();
+  gsBoardCtx.arc(x, y, 1.5, 0, Math.PI*2);
+  gsBoardCtx.fill();
+  gsBoardCtx.restore();
 }
 
 
@@ -4305,8 +4305,8 @@ function handleAAForPlane(p, fp){
   globalFrame += delta;
 
   // фон
-  resetCanvasState(gameCtx, gameCanvas);
-  drawFieldBackground(gameCtx, WORLD.width, WORLD.height);
+  resetCanvasState(gsBoardCtx, gsBoardCanvas);
+  drawFieldBackground(gsBoardCtx, WORLD.width, WORLD.height);
 
   // Планирование хода ИИ
   if (!isGameOver
@@ -4495,7 +4495,7 @@ function handleAAForPlane(p, fp){
   drawAAPlacementZone();
   drawBuildings();
 
-  drawFieldEdges(gameCtx, WORLD.width, WORLD.height);
+  drawFieldEdges(gsBoardCtx, WORLD.width, WORLD.height);
 
   drawFlags();
 
@@ -4574,7 +4574,7 @@ function handleAAForPlane(p, fp){
     const arrowAlpha = 0.5 * (vdist / MAX_DRAG_DISTANCE);
     aimCtx.clearRect(0, 0, aimCanvas.width, aimCanvas.height);
     aimCtx.save();
-    const boardRect = getViewportAdjustedBoundingClientRect(gameCanvas);
+    const boardRect = getViewportAdjustedBoundingClientRect(gsBoardCanvas);
     const overlayRect = getViewportAdjustedBoundingClientRect(aimCanvas);
     const start = worldToOverlay(plane.x, plane.y, { overlay: aimCanvas, boardRect, overlayRect });
     const tail = worldToOverlay(plane.x + baseDx, plane.y + baseDy, { overlay: aimCanvas, boardRect, overlayRect });
@@ -4593,29 +4593,29 @@ function handleAAForPlane(p, fp){
   drawPlanesAndTrajectories();
 
   // Взрывы поверх поля и под HUD
-  updateAndDrawExplosions(gameCtx, deltaMs);
+  updateAndDrawExplosions(gsBoardCtx, deltaMs);
 
   // Табло рисуем поверх самолётов, поэтому оно выводится после drawPlanesAndTrajectories
   renderScoreboard();
 
   if(isGameOver && winnerColor){
-    gameCtx.font="48px 'Patrick Hand', cursive";
-    gameCtx.fillStyle= colorFor(winnerColor);
+    gsBoardCtx.font="48px 'Patrick Hand', cursive";
+    gsBoardCtx.fillStyle= colorFor(winnerColor);
     const winnerName= `${winnerColor.charAt(0).toUpperCase() + winnerColor.slice(1)}`;
     const text= shouldShowEndScreen
       ? `${winnerName} wins the game!`
       : `${winnerName} wins the round!`;
-    const metrics = gameCtx.measureText(text);
+    const metrics = gsBoardCtx.measureText(text);
     const w = metrics.width;
     const textX = (WORLD.width - w) / 2;
     const textBaselineY = WORLD.height / 2 - 80;
-    gameCtx.fillText(text, textX, textBaselineY);
+    gsBoardCtx.fillText(text, textX, textBaselineY);
 
     if(shouldShowEndScreen && endGameDiv){
       const descent = Number.isFinite(metrics.actualBoundingBoxDescent) ? metrics.actualBoundingBoxDescent : 0;
       const anchorCanvasX = WORLD.width / 2;
       const anchorCanvasY = textBaselineY + descent + 24;
-      const boardRect = getViewportAdjustedBoundingClientRect(gameCanvas);
+      const boardRect = getViewportAdjustedBoundingClientRect(gsBoardCanvas);
       const boardWidth = Number.isFinite(boardRect.width) ? boardRect.width : 0;
       const boardHeight = Number.isFinite(boardRect.height) ? boardRect.height : 0;
       const scaleX = WORLD.width !== 0 ? boardWidth / WORLD.width : 1;
@@ -4649,26 +4649,26 @@ function handleAAForPlane(p, fp){
   }
 
   if(roundTextTimer > 0){
-    gameCtx.font="48px 'Patrick Hand', cursive";
-    gameCtx.fillStyle = '#B22222';
-    gameCtx.strokeStyle = '#FFD700';
-    gameCtx.lineWidth = 2;
+    gsBoardCtx.font="48px 'Patrick Hand', cursive";
+    gsBoardCtx.fillStyle = '#B22222';
+    gsBoardCtx.strokeStyle = '#FFD700';
+    gsBoardCtx.lineWidth = 2;
     const text = `Round ${roundNumber}`;
-    const w = gameCtx.measureText(text).width;
+    const w = gsBoardCtx.measureText(text).width;
     const x = (WORLD.width - w) / 2;
     const y = WORLD.height / 2;
-    gameCtx.fillText(text, x, y);
-    gameCtx.strokeText(text, x, y);
+    gsBoardCtx.fillText(text, x, y);
+    gsBoardCtx.strokeText(text, x, y);
 
 
     const turnColor = turnColors[turnIndex];
     const turnText = `${turnColor.charAt(0).toUpperCase() + turnColor.slice(1)} turn`;
-    gameCtx.font="32px 'Patrick Hand', cursive";
-    gameCtx.fillStyle = colorFor(turnColor);
-    const w2 = gameCtx.measureText(turnText).width;
+    gsBoardCtx.font="32px 'Patrick Hand', cursive";
+    gsBoardCtx.fillStyle = colorFor(turnColor);
+    const w2 = gsBoardCtx.measureText(turnText).width;
     const x2 = (WORLD.width - w2) / 2;
     const y2 = y + 40;
-    gameCtx.fillText(turnText, x2, y2);
+    gsBoardCtx.fillText(turnText, x2, y2);
 
 
     roundTextTimer -= delta;
@@ -5257,7 +5257,7 @@ function drawPlanesAndTrajectories(){
   };
 
   for(const p of destroyedOrBurning){
-    renderPlane(p, gameCtx);
+    renderPlane(p, gsBoardCtx);
     ensurePlaneFlameFx(p);
   }
 
@@ -5289,10 +5289,10 @@ function drawPlanesAndTrajectories(){
 
 function drawBuildings(){
   for(const b of buildings){
-    gameCtx.save();
-    gameCtx.translate(b.x, b.y);
-    drawBrickWall(gameCtx, b.width, b.height);
-    gameCtx.restore();
+    gsBoardCtx.save();
+    gsBoardCtx.translate(b.x, b.y);
+    drawBrickWall(gsBoardCtx, b.width, b.height);
+    gsBoardCtx.restore();
   }
 }
 
@@ -5320,10 +5320,10 @@ function drawFlags(){
   const blueFlagY = getHomeRowY("blue");
   const greenFlagY = getHomeRowY("green");
   if(!blueFlagCarrier){
-    drawFlag(gameCtx, centerX, blueFlagY, "blue");
+    drawFlag(gsBoardCtx, centerX, blueFlagY, "blue");
   }
   if(!greenFlagCarrier){
-    drawFlag(gameCtx, centerX, greenFlagY, "green");
+    drawFlag(gsBoardCtx, centerX, greenFlagY, "green");
   }
 }
 
@@ -5331,7 +5331,7 @@ function drawFlags(){
 function drawAAUnits(){
   const now = performance.now();
   for(const aa of aaUnits){
-    gameCtx.save();
+    gsBoardCtx.save();
     // draw fading trail
     for(const seg of aa.trail){
       const age = now - seg.time;
@@ -5340,66 +5340,66 @@ function drawAAUnits(){
 
       const trailAng = seg.angleDeg * Math.PI/180;
 
-      gameCtx.save();
-      gameCtx.translate(aa.x, aa.y);
-      gameCtx.rotate(trailAng);
+      gsBoardCtx.save();
+      gsBoardCtx.translate(aa.x, aa.y);
+      gsBoardCtx.rotate(trailAng);
 
       // wider beam with fade across its width
       const width = 8;
-      const grad = gameCtx.createLinearGradient(0, -width/2, 0, width/2);
+      const grad = gsBoardCtx.createLinearGradient(0, -width/2, 0, width/2);
       grad.addColorStop(0, "rgba(0,0,0,0)");
       grad.addColorStop(0.5, colorFor(aa.owner));
       grad.addColorStop(1, "rgba(0,0,0,0)");
 
-      gameCtx.globalAlpha = alpha;
-      gameCtx.strokeStyle = grad;
-      gameCtx.lineWidth = width;
-      gameCtx.lineCap = "round";
-      gameCtx.beginPath();
-      gameCtx.moveTo(0, 0);
-      gameCtx.lineTo(aa.radius, 0);
-      gameCtx.stroke();
-      gameCtx.restore();
+      gsBoardCtx.globalAlpha = alpha;
+      gsBoardCtx.strokeStyle = grad;
+      gsBoardCtx.lineWidth = width;
+      gsBoardCtx.lineCap = "round";
+      gsBoardCtx.beginPath();
+      gsBoardCtx.moveTo(0, 0);
+      gsBoardCtx.lineTo(aa.radius, 0);
+      gsBoardCtx.stroke();
+      gsBoardCtx.restore();
     }
 
-    gameCtx.globalAlpha = 1;
+    gsBoardCtx.globalAlpha = 1;
     // radar sweep line with highlight
     const ang = aa.sweepAngleDeg * Math.PI/180;
     const endX = aa.x + Math.cos(ang) * aa.radius;
     const endY = aa.y + Math.sin(ang) * aa.radius;
-    gameCtx.strokeStyle = colorFor(aa.owner);
-    gameCtx.lineWidth = 2;
-    gameCtx.lineCap = "round";
-    gameCtx.beginPath();
-    gameCtx.moveTo(aa.x, aa.y);
-    gameCtx.lineTo(endX, endY);
-    gameCtx.stroke();
+    gsBoardCtx.strokeStyle = colorFor(aa.owner);
+    gsBoardCtx.lineWidth = 2;
+    gsBoardCtx.lineCap = "round";
+    gsBoardCtx.beginPath();
+    gsBoardCtx.moveTo(aa.x, aa.y);
+    gsBoardCtx.lineTo(endX, endY);
+    gsBoardCtx.stroke();
 
     // inner translucent white highlight on sweep line
-    gameCtx.globalAlpha = 0.5;
-    gameCtx.strokeStyle = "white";
-    gameCtx.lineWidth = 1;
-    gameCtx.lineCap = "round";
-    gameCtx.beginPath();
-    gameCtx.moveTo(aa.x, aa.y);
-    gameCtx.lineTo(endX, endY);
-    gameCtx.stroke();
+    gsBoardCtx.globalAlpha = 0.5;
+    gsBoardCtx.strokeStyle = "white";
+    gsBoardCtx.lineWidth = 1;
+    gsBoardCtx.lineCap = "round";
+    gsBoardCtx.beginPath();
+    gsBoardCtx.moveTo(aa.x, aa.y);
+    gsBoardCtx.lineTo(endX, endY);
+    gsBoardCtx.stroke();
 
-    gameCtx.globalAlpha = 1;
+    gsBoardCtx.globalAlpha = 1;
 
     // Anti-Aircraft center ring
-    gameCtx.beginPath();
-    gameCtx.fillStyle = colorFor(aa.owner);
-    gameCtx.arc(aa.x, aa.y, 6, 0, Math.PI*2);
-    gameCtx.fill();
+    gsBoardCtx.beginPath();
+    gsBoardCtx.fillStyle = colorFor(aa.owner);
+    gsBoardCtx.arc(aa.x, aa.y, 6, 0, Math.PI*2);
+    gsBoardCtx.fill();
 
     // inner white circle to add volume
-    gameCtx.beginPath();
-    gameCtx.fillStyle = "white";
-    gameCtx.arc(aa.x, aa.y, 4, 0, Math.PI*2);
-    gameCtx.fill();
+    gsBoardCtx.beginPath();
+    gsBoardCtx.fillStyle = "white";
+    gsBoardCtx.arc(aa.x, aa.y, 4, 0, Math.PI*2);
+    gsBoardCtx.fill();
 
-    gameCtx.restore();
+    gsBoardCtx.restore();
   }
 }
 
@@ -5665,7 +5665,7 @@ function checkVictory(){
 function drawMatchProgressUI(ctx){
   if (!MATCH_PROGRESS_READY) return;
 
-  const rect = visualRect(gameCanvas);
+  const rect = visualRect(gsBoardCanvas);
   const rawScaleX = rect.width / CANVAS_BASE_WIDTH;
   const rawScaleY = rect.height / CANVAS_BASE_HEIGHT;
   const sx = Number.isFinite(rawScaleX) && rawScaleX > 0 ? rawScaleX : 1;
@@ -6061,7 +6061,7 @@ function renderScoreboard(){
   // existing planes without clearing the canvas again.
   planeCtx.save();
 
-  const rect = visualRect(gameCanvas);
+  const rect = visualRect(gsBoardCanvas);
   const rawScaleX = rect.width / CANVAS_BASE_WIDTH;
   const scaleX = Number.isFinite(rawScaleX) && rawScaleX > 0 ? rawScaleX : 1;
   const rawScaleY = rect.height / CANVAS_BASE_HEIGHT;
@@ -6144,7 +6144,7 @@ function buildPlaneCounterFrame(color, containerLeft, containerTop, scaleX, scal
   const host = PLANE_COUNTER_HOSTS?.[color] || POINTS_POPUP_ELEMENTS?.[color];
   if (host instanceof HTMLElement) {
     const rect = visualRect(host);
-    const containerRect = visualRect(gameContainer);
+    const containerRect = visualRect(gsFrameEl);
 
     const containerScaleX = Number.isFinite(containerRect.width) && containerRect.width > 0
       ? containerRect.width / FRAME_BASE_WIDTH
@@ -6436,7 +6436,7 @@ function startNewRound(){
   aaUnits = [];
 
   aiMoveScheduled = false;
-  gameCanvas.style.display = "block";
+  gsBoardCanvas.style.display = "block";
   mantisIndicator.style.display = "block";
   goatIndicator.style.display = "block";
   planeCanvas.style.display = "block";
@@ -6558,7 +6558,7 @@ function alignMenuStage(viewportWidth, viewportHeight, offsetLeft, offsetTop, sc
 
 /* ======= CANVAS RESIZE ======= */
 function syncAllCanvasBackingStores() {
-  syncCanvasBackingStore(gameCanvas);
+  syncCanvasBackingStore(gsBoardCanvas);
   syncCanvasBackingStore(planeCanvas);
   syncCanvasBackingStore(aimCanvas);
 }
@@ -6587,16 +6587,16 @@ function resizeCanvas() {
 
   const containerWidth = FRAME_BASE_WIDTH * scale;
   const containerHeight = FRAME_BASE_HEIGHT * scale;
-  gameContainer.style.width = containerWidth + 'px';
-  gameContainer.style.height = containerHeight + 'px';
-  gameContainer.style.setProperty('--points-popup-scale', scale);
-  gameContainer.style.setProperty('--game-scale', scale);
+  gsFrameEl.style.width = containerWidth + 'px';
+  gsFrameEl.style.height = containerHeight + 'px';
+  gsFrameEl.style.setProperty('--points-popup-scale', scale);
+  gsFrameEl.style.setProperty('--game-scale', scale);
   const centeredLeft = offsetLeft + (viewportWidth - containerWidth) / 2;
   const centeredTop = offsetTop + (viewportHeight - containerHeight) / 2;
-  gameContainer.style.left = centeredLeft + 'px';
-  gameContainer.style.top = centeredTop + 'px';
+  gsFrameEl.style.left = centeredLeft + 'px';
+  gsFrameEl.style.top = centeredTop + 'px';
   syncBackgroundLayout(containerWidth, containerHeight, centeredLeft, centeredTop);
-  const canvas = gameCanvas;
+  const canvas = gsBoardCanvas;
   canvas.style.width = CANVAS_BASE_WIDTH * scale + 'px';
   canvas.style.height = CANVAS_BASE_HEIGHT * scale + 'px';
   canvas.style.left = FRAME_PADDING_X * scale + 'px';
@@ -6607,7 +6607,7 @@ function resizeCanvas() {
   sizeAndAlignOverlays();
   resizeCanvasToMatchCss(aimCanvas);
   resizeCanvasToMatchCss(planeCanvas);
-  applyViewTransform(gameCtx);
+  applyViewTransform(gsBoardCtx);
   applyViewTransform(aimCtx);
   applyViewTransform(planeCtx);
 
@@ -6649,9 +6649,9 @@ function resizeCanvas() {
   };
 
   console.log('Layout rects after resize', {
-    gameContainer: rectSummary(gameContainer),
-    stage: rectSummary(gameContainer),
-    gameCanvas: rectSummary(gameCanvas),
+    gsFrameEl: rectSummary(gsFrameEl),
+    stage: rectSummary(gsFrameEl),
+    gsBoardCanvas: rectSummary(gsBoardCanvas),
     aimCanvas: rectSummary(aimCanvas),
     planeCanvas: rectSummary(planeCanvas),
     overlayContainer: rectSummary(overlayContainer),
