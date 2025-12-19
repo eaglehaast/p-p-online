@@ -12,8 +12,12 @@ const goatIndicator   = document.getElementById("goatIndicator");
 
 const loadingOverlay = document.getElementById("loadingOverlay");
 
+const uiFrameEl = document.getElementById("uiFrame");
+const menuLayer = document.getElementById("menuLayer");
+const settingsLayer = document.getElementById("settingsLayer");
+const gsFrameLayer = document.getElementById("gsFrame");
 const gsFrameEl = document.getElementById("gameContainer");
-const gameScreen = document.getElementById("gameScreen") || gsFrameEl;
+const gameScreen = gsFrameLayer || document.getElementById("gameScreen") || gsFrameEl;
 const gsBoardCanvas  = document.getElementById("gameCanvas");
 const gsBoardCtx     = gsBoardCanvas.getContext("2d");
 
@@ -26,6 +30,7 @@ const planeCtx    = planeCanvas.getContext("2d");
 function setScreenMode(mode) {
   document.body.classList.toggle('screen--menu', mode === 'MENU');
   document.body.classList.toggle('screen--game', mode === 'GAME');
+  document.body.classList.toggle('screen--settings', mode === 'SETTINGS');
 }
 
 setScreenMode('MENU');
@@ -986,11 +991,11 @@ function isGameScreenActive() {
     return false;
   }
 
-  if (document.body?.classList?.contains('settings-page')) {
+  if (settingsLayer instanceof HTMLElement && !settingsLayer.hidden) {
     return false;
   }
 
-  if (menuScreen instanceof HTMLElement && menuScreen.style.display !== 'none') {
+  if (menuScreen instanceof HTMLElement && !menuScreen.hidden) {
     return false;
   }
 
@@ -1819,7 +1824,7 @@ function resetCanvasState(ctx, canvas){
   ctx.imageSmoothingQuality = "high";
 });
 
-const menuScreen = document.getElementById("menuScreen");
+const menuScreen = menuLayer;
 const modeMenuDiv = document.getElementById("modeMenu");
 const hotSeatBtn  = document.getElementById("hotSeatBtn");
 const computerBtn = document.getElementById("computerBtn");
@@ -1837,6 +1842,38 @@ let menuBackgroundSnapshot = null;
 let hasActivatedGameScreen = false;
 let menuScreenLocked = false;
 
+function setLayerVisibility(layer, visible) {
+  if (!layer) return;
+  layer.hidden = !visible;
+  layer.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+function showSettingsLayer() {
+  if (menuScreenLocked) {
+    console.warn('[screen] Settings visibility request ignored because gameplay is active.');
+    return;
+  }
+
+  setLayerVisibility(menuScreen, false);
+  setLayerVisibility(gsFrameLayer, false);
+  setLayerVisibility(settingsLayer, true);
+  setScreenMode('SETTINGS');
+  window.paperWingsSettings?.onShow?.();
+}
+
+function showMenuLayer() {
+  if (menuScreenLocked) {
+    console.warn('[screen] Menu visibility request ignored because gameplay is active.');
+    return;
+  }
+
+  setLayerVisibility(settingsLayer, false);
+  window.paperWingsSettings?.onHide?.();
+  setLayerVisibility(gsFrameLayer, false);
+  setLayerVisibility(menuScreen, true);
+  setScreenMode('MENU');
+}
+
 function activateGameScreen() {
   const body = document.body;
   const wasMenu = body.classList.contains('screen--menu');
@@ -1848,17 +1885,11 @@ function activateGameScreen() {
   setScreenMode('GAME');
   menuScreenLocked = true;
 
-  if (menuScreen) {
-    menuScreen.style.display = 'none';
-    menuScreen.setAttribute('aria-hidden', 'true');
-  }
-
-  if (modeMenuDiv) {
-    modeMenuDiv.style.display = 'none';
-  }
-
+  setLayerVisibility(menuScreen, false);
+  setLayerVisibility(settingsLayer, false);
+  window.paperWingsSettings?.onHide?.();
+  setLayerVisibility(gsFrameLayer, true);
   if (gameScreen instanceof HTMLElement) {
-    gameScreen.style.display = 'block';
     gameScreen.removeAttribute('aria-hidden');
   }
 
@@ -1874,13 +1905,13 @@ function setMenuVisibility(visible) {
     return;
   }
 
-  const displayValue = visible ? "block" : "none";
-  if(menuScreen){
-    menuScreen.style.display = displayValue;
-    setScreenMode(visible ? 'MENU' : 'GAME');
-  }
-  if(modeMenuDiv){
-    modeMenuDiv.style.display = displayValue;
+  if (visible) {
+    showMenuLayer();
+  } else {
+    setLayerVisibility(menuScreen, false);
+    setLayerVisibility(settingsLayer, false);
+    window.paperWingsSettings?.onHide?.();
+    setScreenMode('GAME');
   }
 }
 
@@ -1904,6 +1935,9 @@ function restoreGameBackgroundAfterMenu() {
 
 if(typeof window !== 'undefined'){
   window.paperWingsHarness = window.paperWingsHarness || {};
+  window.paperWingsApp = window.paperWingsApp || {};
+  window.paperWingsApp.showMenuLayer = showMenuLayer;
+  window.paperWingsApp.showSettingsLayer = showSettingsLayer;
 }
 
 if(IS_TEST_HARNESS){
@@ -3425,7 +3459,7 @@ if(advancedSettingsBtn){
     syncRulesButtonSkins(selectedRuleset);
 
     if(!IS_TEST_HARNESS){
-      window.location.href = 'settings.html';
+      showSettingsLayer();
     }
   });
 }
@@ -6532,18 +6566,17 @@ function updateUiScale() {
 
   document.documentElement.style.setProperty('--ui-scale', safeScale);
 
+  if (uiFrameEl instanceof HTMLElement) {
+    uiFrameEl.style.setProperty('--ui-scale', safeScale);
+  }
+
   if (gsFrameEl instanceof HTMLElement) {
-    gsFrameEl.style.setProperty('--ui-scale', safeScale);
     gsFrameEl.style.removeProperty('--points-popup-scale');
     gsFrameEl.style.removeProperty('--game-scale');
     gsFrameEl.style.removeProperty('left');
     gsFrameEl.style.removeProperty('top');
     gsFrameEl.style.width = `${FRAME_BASE_WIDTH}px`;
     gsFrameEl.style.height = `${FRAME_BASE_HEIGHT}px`;
-  }
-
-  if (menuScreen instanceof HTMLElement) {
-    menuScreen.style.setProperty('--ui-scale', safeScale);
   }
 
   return safeScale;

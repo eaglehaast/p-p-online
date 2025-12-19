@@ -8,84 +8,309 @@
   <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Roboto&display=swap" rel="stylesheet">
 </head>
 <body class="screen screen--menu">
-  <div id="loadingOverlay" class="loading-overlay loading-overlay--hidden" aria-live="polite">
-    <div class="loading-overlay__ring" aria-hidden="true"></div>
-    <div class="loading-overlay__text">Загрузка…</div>
-  </div>
-  <div id="gameContainer">
-    <!-- Base field and overlays -->
-    <canvas id="gameCanvas" width="360" height="640" style="display:none;"></canvas>
-
-    <div id="overlayContainer" aria-hidden="true">
-      <!-- Overlay canvas for aiming line -->
-      <canvas id="aimCanvas" width="360" height="640" style="display:none;"></canvas>
-
-      <!-- Overlay canvas for planes -->
-      <canvas id="planeCanvas" width="360" height="640" style="display:none;"></canvas>
-
-      <!-- FX layer for GIF explosions -->
-      <div id="fxLayer"></div>
+  <div id="screenWrapper">
+    <div id="loadingOverlay" class="loading-overlay loading-overlay--hidden" aria-live="polite">
+      <div class="loading-overlay__ring" aria-hidden="true"></div>
+      <div class="loading-overlay__text">Загрузка…</div>
     </div>
 
-    <div id="uiOverlay" aria-hidden="true">
-      <!-- Points popup containers -->
-      <div id="greenPointsPopup" class="points-popup points-popup--green" aria-hidden="true"></div>
-      <div id="bluePointsPopup" class="points-popup points-popup--blue" aria-hidden="true"></div>
+    <div id="uiFrame">
+      <div id="menuLayer" class="layer layer--menu" aria-hidden="false">
+        <div id="modeMenu" class="stage-460x800" aria-label="Главное меню">
+          <div class="mode-menu__layer" aria-hidden="false">
+            <button id="hotSeatBtn" class="mode-menu__btn mode-menu__btn--hotseat" type="button" aria-label="Hot Seat">
+              <span class="visually-hidden">Hot Seat</span>
+            </button>
 
-      <!-- Plane counter containers -->
-      <div id="gs_planecounter_green" class="plane-counter plane-counter--green" aria-hidden="true"></div>
-      <div id="gs_planecounter_blue" class="plane-counter plane-counter--blue" aria-hidden="true"></div>
-    </div>
+            <button id="computerBtn" class="mode-menu__btn mode-menu__btn--computer" type="button" aria-label="Computer">
+              <span class="visually-hidden">Computer</span>
+            </button>
 
-    <div id="hudPlaneStyleProbes" aria-hidden="true"
-         style="position:absolute;width:0;height:0;overflow:hidden;clip-path:inset(50%);">
-      <img src="planes/green counter 6.png" class="hud-plane green" alt="" draggable="false">
-      <img src="planes/blue counter 6.png" class="hud-plane blue" alt="" draggable="false">
-    </div>
+            <button id="onlineBtn" class="mode-menu__btn mode-menu__btn--online" type="button" aria-label="Online" disabled>
+              <span class="visually-hidden">Online</span>
+            </button>
 
-    <!-- Turn indicators -->
-    <div id="mantisIndicator" class="turn-indicator" style="display:none;"></div>
-    <div id="goatIndicator" class="turn-indicator" style="display:none;"></div>
-  </div>
+            <button id="playBtn" class="mode-menu__btn mode-menu__btn--play disabled" type="button" aria-label="Play" disabled>
+              <span class="visually-hidden">Play</span>
+            </button>
 
-    <!-- Game Mode Selection Menu -->
-  <div id="menuScreen" class="screen-wrapper screen-wrapper--menu" aria-hidden="false">
-    <div id="modeMenu" class="stage-460x800" aria-label="Главное меню">
-      <div class="mode-menu__layer" aria-hidden="false">
-        <button id="hotSeatBtn" class="mode-menu__btn mode-menu__btn--hotseat" type="button" aria-label="Hot Seat">
-          <span class="visually-hidden">Hot Seat</span>
-        </button>
+            <button id="classicRulesBtn" class="mode-menu__btn mode-menu__btn--classic selected" type="button" aria-label="Classic Rules">
+              <span class="visually-hidden">Classic Rules</span>
+            </button>
 
-        <button id="computerBtn" class="mode-menu__btn mode-menu__btn--computer" type="button" aria-label="Computer">
-          <span class="visually-hidden">Computer</span>
-        </button>
+            <button id="advancedSettingsBtn" class="mode-menu__btn mode-menu__btn--advanced" type="button" aria-label="Advanced Settings">
+              <span class="visually-hidden">Advanced Settings</span>
+            </button>
+          </div>
+        </div>
+      </div>
 
-        <button id="onlineBtn" class="mode-menu__btn mode-menu__btn--online" type="button" aria-label="Online" disabled>
-          <span class="visually-hidden">Online</span>
-        </button>
+      <div id="gsFrame" class="layer layer--game" hidden aria-hidden="true">
+        <div id="gameContainer">
+          <!-- Base field and overlays -->
+          <canvas id="gameCanvas" width="360" height="640" style="display:none;"></canvas>
 
-        <button id="playBtn" class="mode-menu__btn mode-menu__btn--play disabled" type="button" aria-label="Play" disabled>
-          <span class="visually-hidden">Play</span>
-        </button>
+          <div id="overlayContainer" aria-hidden="true">
+            <!-- Overlay canvas for aiming line -->
+            <canvas id="aimCanvas" width="360" height="640" style="display:none;"></canvas>
 
-        <button id="classicRulesBtn" class="mode-menu__btn mode-menu__btn--classic selected" type="button" aria-label="Classic Rules">
-          <span class="visually-hidden">Classic Rules</span>
-        </button>
+            <!-- Overlay canvas for planes -->
+            <canvas id="planeCanvas" width="360" height="640" style="display:none;"></canvas>
 
-        <button id="advancedSettingsBtn" class="mode-menu__btn mode-menu__btn--advanced" type="button" aria-label="Advanced Settings">
-          <span class="visually-hidden">Advanced Settings</span>
-        </button>
+            <!-- FX layer for GIF explosions -->
+            <div id="fxLayer"></div>
+          </div>
+
+          <div id="uiOverlay" aria-hidden="true">
+            <!-- Points popup containers -->
+            <div id="greenPointsPopup" class="points-popup points-popup--green" aria-hidden="true"></div>
+            <div id="bluePointsPopup" class="points-popup points-popup--blue" aria-hidden="true"></div>
+
+            <!-- Plane counter containers -->
+            <div id="gs_planecounter_green" class="plane-counter plane-counter--green" aria-hidden="true"></div>
+            <div id="gs_planecounter_blue" class="plane-counter plane-counter--blue" aria-hidden="true"></div>
+          </div>
+
+          <div id="hudPlaneStyleProbes" aria-hidden="true"
+               style="position:absolute;width:0;height:0;overflow:hidden;clip-path:inset(50%);">
+            <img src="planes/green counter 6.png" class="hud-plane green" alt="" draggable="false">
+            <img src="planes/blue counter 6.png" class="hud-plane blue" alt="" draggable="false">
+          </div>
+
+          <!-- Turn indicators -->
+          <div id="mantisIndicator" class="turn-indicator" style="display:none;"></div>
+          <div id="goatIndicator" class="turn-indicator" style="display:none;"></div>
+        </div>
+
+        <!-- End Game Window -->
+        <div id="endGameButtons" style="display:none;">
+          <p>Play Again?</p>
+          <button id="yesButton" class="end-btn">Yes</button>
+          <button id="noButton" class="end-btn">No</button>
+        </div>
+      </div>
+
+      <div id="settingsLayer" class="layer layer--settings" hidden aria-hidden="true">
+        <div class="stage-460x800">
+          <div class="settings-container">
+            <div id="settingsMenu">
+              <h1 class="game-title"><span class="visually-hidden">Advanced Settings</span></h1>
+
+              <div class="control-frame control-frame--reset">
+                <button id="backBtn" class="mode-btn">Back</button>
+              </div>
+            </div>
+
+            <div class="cp-adds" role="group" aria-label="Дополнительные настройки">
+              <div id="frame_adds_1_nails" aria-hidden="true"></div>
+              <div id="frame_adds_2_aa" aria-hidden="true"></div>
+              <div id="frame_adds_3_cargo" aria-hidden="true"></div>
+
+              <div class="cp-adds__frame" aria-hidden="true"></div>
+
+              <button
+                id="instance_adds_tumbler1_nails"
+                class="cp-adds__btn"
+                type="button"
+                aria-pressed="false"
+                aria-label="Переключить острые края"
+              >
+                <span class="visually-hidden">Переключить острые края</span>
+              </button>
+
+              <button
+                id="instance_adds_tumbler2_aa"
+                class="cp-adds__btn"
+                type="button"
+                aria-pressed="false"
+                aria-label="Переключить ПВО"
+              >
+                <span class="visually-hidden">Переключить ПВО</span>
+              </button>
+
+              <button
+                id="instance_adds_tumbler3_cargo"
+                class="cp-adds__btn"
+                type="button"
+                aria-pressed="false"
+                aria-label="Переключить груз"
+              >
+                <span class="visually-hidden">Переключить груз</span>
+              </button>
+            </div>
+
+            <div class="cp-aiming-accuracy" role="group" aria-label="Настройка амплитуды прицеливания">
+              <div id="frame_accuracy_1_visual" aria-hidden="true">
+                <div class="pendulum-hook"></div>
+                <div class="pendulum">
+                  <div class="pendulum-rope"></div>
+                  <div class="pendulum-bob"></div>
+                </div>
+                <div id="accuracyCrackOverlay" aria-hidden="true"></div>
+              </div>
+
+              <div id="amplitudeIndicator" class="cp-aiming-accuracy__indicator">
+                <div id="frame_accuracy_2_counter" class="accuracy-display" role="status" aria-live="polite">
+                  <span id="amplitudeAngleDisplay">40°</span>
+                </div>
+              </div>
+
+              <div class="cp-aiming-accuracy__frame" aria-hidden="true"></div>
+
+              <button
+                id="instance_accuracy_left"
+                class="cp-aiming-accuracy__btn cp-aiming-accuracy__btn--left"
+                type="button"
+                aria-label="Уменьшить амплитуду прицеливания"
+              >
+                <span class="visually-hidden">Уменьшить амплитуду прицеливания</span>
+              </button>
+              <button
+                id="instance_accuracy_right"
+                class="cp-aiming-accuracy__btn cp-aiming-accuracy__btn--right"
+                type="button"
+                aria-label="Увеличить амплитуду прицеливания"
+              >
+                <span class="visually-hidden">Увеличить амплитуду прицеливания</span>
+              </button>
+            </div>
+
+            <div class="cp-range" role="group" aria-label="Настройка дальности полёта">
+              <div id="rangeIndicator" class="cp-range__indicator">
+                <div id="range_frame_visual" aria-hidden="true">
+                  <div class="range-visual">
+                    <div class="contrail-container contrail-container--top">
+                      <img
+                        id="contrail1"
+                        class="contrail"
+                        src="ui_controlpanel/cp_range_contrail1.gif"
+                        onerror="console.warn('Не удалось загрузить cp_range_contrail1.gif'); this.onerror=null;"
+                        alt=""
+                        aria-hidden="true"
+                      />
+                    </div>
+                    <div class="contrail-container contrail-container--bottom">
+                      <img
+                        id="contrail2"
+                        class="contrail"
+                        src="ui_controlpanel/cp_range_contrail2.gif"
+                        onerror="console.warn('Не удалось загрузить cp_range_contrail2.gif'); this.onerror=null;"
+                        alt=""
+                        aria-hidden="true"
+                      />
+                    </div>
+                    <img
+                      id="flameTrail"
+                      class="jet-flame jet-flame--trail"
+                      src="ui_controlpanel/cp_range_flame_trail4.gif"
+                      onerror="console.warn('Не удалось загрузить cp_range_flame_trail4.gif'); this.onerror=null;"
+                      alt=""
+                      aria-hidden="true"
+                    />
+                    <img class="jet-plane" src="ui_controlpanel/cp_range_plane 2.png" alt="" />
+                  </div>
+                </div>
+              </div>
+
+              <div id="range_frame_counter" class="range-display" role="status" aria-live="polite">
+                <span id="rangeDisplay" class="range-display__value">15</span>
+              </div>
+
+              <div class="cp-range__frame" aria-hidden="true"></div>
+
+              <button
+                id="rangeBtnLeft"
+                class="cp-range__btn cp-range__btn--left"
+                type="button"
+                aria-label="Уменьшить дальность полёта"
+              >
+                <span class="visually-hidden">Уменьшить дальность полёта</span>
+              </button>
+              <button
+                id="rangeBtnRight"
+                class="cp-range__btn cp-range__btn--right"
+                type="button"
+                aria-label="Увеличить дальность полёта"
+              >
+                <span class="visually-hidden">Увеличить дальность полёта</span>
+              </button>
+            </div>
+
+            <div class="cp-field-selector" role="group" aria-label="Выбор карты">
+              <div class="cp-field-selector__indicator" aria-hidden="true">
+                <div id="frame_field_1_visual">
+                  <div id="mapPreview" class="cp-field-selector__preview"></div>
+                  <div class="cp-field-selector__objects" aria-hidden="true">
+                    <div id="f_g_plane1" class="cp-field-selector__object cp-field-selector__object--green-plane"></div>
+                    <div id="f_g_plane2" class="cp-field-selector__object cp-field-selector__object--green-plane"></div>
+                    <div id="f_g_plane3" class="cp-field-selector__object cp-field-selector__object--green-plane"></div>
+                    <div id="f_g_plane4" class="cp-field-selector__object cp-field-selector__object--green-plane"></div>
+                    <div id="f_g_flag" class="cp-field-selector__object cp-field-selector__object--green-flag"></div>
+
+                    <div id="f_b_plane1" class="cp-field-selector__object cp-field-selector__object--blue-plane"></div>
+                    <div id="f_b_plane2" class="cp-field-selector__object cp-field-selector__object--blue-plane"></div>
+                    <div id="f_b_plane3" class="cp-field-selector__object cp-field-selector__object--blue-plane"></div>
+                    <div id="f_b_plane4" class="cp-field-selector__object cp-field-selector__object--blue-plane"></div>
+                    <div id="f_b_flag" class="cp-field-selector__object cp-field-selector__object--blue-flag"></div>
+                  </div>
+                </div>
+                <div
+                  id="frame_field_2_counter"
+                  class="cp-field-selector__display"
+                  role="status"
+                  aria-live="polite"
+                  aria-label="Selected map"
+                ></div>
+              </div>
+
+              <div class="cp-field-selector__frame" aria-hidden="true"></div>
+
+              <button
+                id="instance_field_left"
+                class="cp-field-selector__btn cp-field-selector__btn--left"
+                type="button"
+                aria-label="Предыдущая карта"
+              >
+                <span class="visually-hidden">Предыдущая карта</span>
+              </button>
+              <button
+                id="instance_field_right"
+                class="cp-field-selector__btn cp-field-selector__btn--right"
+                type="button"
+                aria-label="Следующая карта"
+              >
+                <span class="visually-hidden">Следующая карта</span>
+              </button>
+            </div>
+
+            <div class="cp-actions" role="group" aria-label="Управление настройками">
+              <div class="cp-actions__frame" aria-hidden="true"></div>
+
+              <button
+                id="instance_reset"
+                class="cp-actions__btn cp-actions__btn--reset"
+                type="button"
+                aria-label="Сбросить настройки"
+              >
+                <span class="visually-hidden">Сбросить настройки</span>
+              </button>
+
+              <button
+                id="instance_exit"
+                class="cp-actions__btn cp-actions__btn--exit"
+                type="button"
+                aria-label="Вернуться в главное меню"
+              >
+                <span class="visually-hidden">Вернуться в главное меню</span>
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
-  </div> <!-- /menuScreen -->
-
-
-  <!-- End Game Window -->
-  <div id="endGameButtons" style="display:none;">
-    <p>Play Again?</p>
-    <button id="yesButton" class="end-btn">Yes</button>
-    <button id="noButton" class="end-btn">No</button>
   </div>
-    <script src="script.js"></script>
-  </body>
+
+  <script src="settings.js"></script>
+  <script src="script.js"></script>
+</body>
 </html>

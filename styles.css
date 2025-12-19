@@ -36,14 +36,45 @@ body, button {
     touch-action: none;
   }
 
-  body.screen--menu #gameContainer { display: none !important; }
-  body.screen--menu #overlayContainer { display: none !important; }
-  body.screen--menu #gameCanvas,
-  body.screen--menu #aimCanvas,
-  body.screen--menu #planeCanvas { display: none !important; }
+  #screenWrapper {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 
-  body.screen--game #menuScreen { display: none !important; }
-  body.screen--game #gameContainer { display: block; }
+  #uiFrame {
+    position: relative;
+    width: var(--control-panel-base-width);
+    height: var(--control-panel-base-height);
+    transform: scale(var(--ui-scale, 1));
+    transform-origin: center;
+  }
+
+  .layer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .layer[hidden] {
+    display: none;
+  }
+
+  #gsFrame {
+    z-index: 1;
+  }
+
+  #menuLayer {
+    z-index: 2;
+  }
+
+  #settingsLayer {
+    z-index: 3;
+  }
 
   .loading-overlay {
     position: fixed;
@@ -87,15 +118,14 @@ body, button {
   }
 
   #gameContainer {
-    position: relative;
-    width: 460px;
-    height: 800px;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
     background-image: url("background paper 1.png");
     background-size: 460px 800px;
     background-repeat: no-repeat;
     background-position: center top;
-    transform: scale(var(--ui-scale, 1));
-    transform-origin: center;
     flex: 0 0 auto;
     --points-popup-scale: 1;
     --game-scale: var(--points-popup-scale);
@@ -308,42 +338,17 @@ body, button {
     background-size: 100% 100%;
   }
 
-  .screen-wrapper {
-    position: relative;
-    width: var(--control-panel-base-width);
-    height: var(--control-panel-base-height);
-    flex: 0 0 auto;
-  }
-
-  #menuScreen {
-    position: relative;
-    width: var(--control-panel-base-width);
-    height: var(--control-panel-base-height);
+  #menuLayer {
     background-image: url("ui_mainmenu/mm_background.png");
     background-repeat: no-repeat;
     background-position: center;
     background-size: var(--control-panel-base-width) var(--control-panel-base-height);
-    transform: scale(var(--ui-scale, 1));
-    transform-origin: center;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-  }
-
-  .screen-wrapper--menu {
-    z-index: 1000;
     display: flex;
     align-items: center;
     justify-content: center;
   }
 
-  body.screen--game #menuScreen {
-    display: none !important;
-    pointer-events: none !important;
-  }
-
-  .screen-wrapper--menu .stage-460x800 {
+  #menuLayer .stage-460x800 {
     position: relative;
     width: 100%;
     height: 100%;
@@ -359,15 +364,15 @@ body, button {
   }
 
   /* legacy menu background removed — menu must never overlap game screen */
-  .screen--menu .stage-460x800 {
+  #menuLayer .stage-460x800 {
     background: none;
   }
 
-  .screen--settings .stage-460x800 {
+  #settingsLayer .stage-460x800 {
     background-image: url("ui_controlpanel/cp_background.png");
   }
 
-  body.settings-page #modeMenu {
+  #settingsLayer #settingsMenu {
     width: 100%;
     height: 100%;
     position: relative;
@@ -375,23 +380,16 @@ body, button {
     padding: 0;
     transform: none !important;
     overflow: hidden;
-    /* Prevent the hidden main-menu container from intercepting clicks on settings controls */
-    pointer-events: none;
-    z-index: 0 !important;
   }
 
-  body.settings-page #modeMenu > * {
-    display: none !important;
-  }
-
-  body.settings-page .cp-adds {
+  #settingsLayer .cp-adds {
     position: absolute;
     inset: 0;
   }
 
-  body.settings-page #frame_adds_1_nails,
-  body.settings-page #frame_adds_2_aa,
-  body.settings-page #frame_adds_3_cargo {
+  #settingsLayer #frame_adds_1_nails,
+  #settingsLayer #frame_adds_2_aa,
+  #settingsLayer #frame_adds_3_cargo {
     position: absolute;
     width: 49px;
     height: 49px;
@@ -399,11 +397,11 @@ body, button {
     z-index: 10;
   }
 
-  body.settings-page #frame_adds_1_nails { left: 271px; top: 418px; }
-  body.settings-page #frame_adds_2_aa { left: 271px; top: 492px; }
-  body.settings-page #frame_adds_3_cargo { left: 271px; top: 567px; }
+  #settingsLayer #frame_adds_1_nails { left: 271px; top: 418px; }
+  #settingsLayer #frame_adds_2_aa { left: 271px; top: 492px; }
+  #settingsLayer #frame_adds_3_cargo { left: 271px; top: 567px; }
 
-  body.settings-page .cp-adds__frame {
+  #settingsLayer .cp-adds__frame {
     position: absolute;
     left: 237px;
     top: 401px;
@@ -416,7 +414,7 @@ body, button {
     z-index: 20;
   }
 
-  body.settings-page .cp-adds__btn {
+  #settingsLayer .cp-adds__btn {
     position: absolute;
     left: 336px;
     width: 50px;
@@ -430,25 +428,25 @@ body, button {
     background-image: url('ui_controlpanel/cp_button_off.png');
   }
 
-  body.settings-page #instance_adds_tumbler1_nails { top: 438px; }
-  body.settings-page #instance_adds_tumbler2_aa { top: 512px; }
-  body.settings-page #instance_adds_tumbler3_cargo { top: 587px; }
+  #settingsLayer #instance_adds_tumbler1_nails { top: 438px; }
+  #settingsLayer #instance_adds_tumbler2_aa { top: 512px; }
+  #settingsLayer #instance_adds_tumbler3_cargo { top: 587px; }
 
-  body.settings-page .cp-adds__btn:focus-visible {
+  #settingsLayer .cp-adds__btn:focus-visible {
     outline: 2px solid #f6d265;
     outline-offset: 2px;
   }
 
-  body.settings-page .cp-adds__btn:active {
+  #settingsLayer .cp-adds__btn:active {
     transform: translateY(1px);
   }
 
-  body.settings-page .cp-aiming-accuracy {
+  #settingsLayer .cp-aiming-accuracy {
     position: absolute;
     inset: 0;
   }
 
-  body.settings-page #amplitudeIndicator {
+  #settingsLayer #amplitudeIndicator {
     position: relative;
     left: 237px;
     top: 126px;
@@ -458,7 +456,7 @@ body, button {
     z-index: 10;
   }
 
-  body.settings-page .cp-aiming-accuracy__frame {
+  #settingsLayer .cp-aiming-accuracy__frame {
     position: absolute;
     left: 237px;
     top: 126px;
@@ -471,7 +469,7 @@ body, button {
     z-index: 20;
   }
 
-  body.settings-page #frame_accuracy_1_visual {
+  #settingsLayer #frame_accuracy_1_visual {
     position: absolute;
     left: 280px;
     top: 190px;
@@ -483,7 +481,7 @@ body, button {
     justify-content: center;
   }
 
-  body.settings-page #accuracyCrackOverlay {
+  #settingsLayer #accuracyCrackOverlay {
     position: absolute;
     left: -10px;
     top: -1px;
@@ -493,7 +491,7 @@ body, button {
     z-index: 15;
   }
 
-  body.settings-page #accuracyCrackOverlay .accuracy-crack-step {
+  #settingsLayer #accuracyCrackOverlay .accuracy-crack-step {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -502,7 +500,7 @@ body, button {
     pointer-events: none;
   }
 
-  body.settings-page #frame_accuracy_2_counter {
+  #settingsLayer #frame_accuracy_2_counter {
     position: absolute;
     left: 60px;
     top: 167px;
@@ -517,13 +515,13 @@ body, button {
     text-shadow: 0 1px 1px rgba(255, 255, 255, 0.5);
   }
 
-  body.settings-page #frame_accuracy_2_counter span {
+  #settingsLayer #frame_accuracy_2_counter span {
     display: block;
     min-width: 32px;
     text-align: center;
   }
 
-  body.settings-page .cp-aiming-accuracy__btn {
+  #settingsLayer .cp-aiming-accuracy__btn {
     position: absolute;
     border: none;
     background-color: transparent;
@@ -533,34 +531,34 @@ body, button {
     z-index: 30;
   }
 
-  body.settings-page #instance_accuracy_left {
+  #settingsLayer #instance_accuracy_left {
     top: 293px;
     left: 259px;
     width: 30px;
     height: 35px;
   }
 
-  body.settings-page #instance_accuracy_right {
+  #settingsLayer #instance_accuracy_right {
     top: 293px;
     left: 363px;
     width: 30px;
     height: 35px;
   }
 
-  body.settings-page .cp-aiming-accuracy__btn--left {
+  #settingsLayer .cp-aiming-accuracy__btn--left {
     background-image: url('ui_controlpanel/cp_button_left.png');
   }
 
-  body.settings-page .cp-aiming-accuracy__btn--right {
+  #settingsLayer .cp-aiming-accuracy__btn--right {
     background-image: url('ui_controlpanel/cp_button_right.png');
   }
 
-  body.settings-page .cp-aiming-accuracy__btn:focus-visible {
+  #settingsLayer .cp-aiming-accuracy__btn:focus-visible {
     outline: 2px solid #f6d265;
     outline-offset: 2px;
   }
 
-  body.settings-page .cp-aiming-accuracy__btn:active {
+  #settingsLayer .cp-aiming-accuracy__btn:active {
     transform: translateY(1px);
   }
 
@@ -778,19 +776,19 @@ body, button {
     transform: translateY(1px);
   }
 
-  body.settings-page .cp-field-selector {
+  #settingsLayer .cp-field-selector {
     position: absolute;
     inset: 0;
   }
 
-  body.settings-page .cp-field-selector__indicator {
+  #settingsLayer .cp-field-selector__indicator {
     position: absolute;
     inset: 0;
     pointer-events: none;
     z-index: 10;
   }
 
-  body.settings-page #frame_field_1_visual {
+  #settingsLayer #frame_field_1_visual {
     position: absolute;
     left: 90px;
     top: 464px;
@@ -800,7 +798,7 @@ body, button {
     overflow: hidden;
   }
 
-  body.settings-page #mapPreview {
+  #settingsLayer #mapPreview {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -813,20 +811,20 @@ body, button {
     z-index: 0;
   }
 
-  body.settings-page #mapPreview.map-preview--random {
+  #settingsLayer #mapPreview.map-preview--random {
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
   }
 
-  body.settings-page .cp-field-selector__objects {
+  #settingsLayer .cp-field-selector__objects {
     position: absolute;
     inset: 0;
     pointer-events: none;
     z-index: 3;
   }
 
-  body.settings-page .map-preview-simulation {
+  #settingsLayer .map-preview-simulation {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -835,110 +833,110 @@ body, button {
     pointer-events: auto;
   }
 
-  body.settings-page .cp-field-selector__object {
+  #settingsLayer .cp-field-selector__object {
     position: absolute;
     background-repeat: no-repeat;
     background-size: 100% 100%;
     z-index: 3;
   }
 
-  body.settings-page .cp-field-selector__object--green-plane {
+  #settingsLayer .cp-field-selector__object--green-plane {
     background-image: url('ui_controlpanel/field_planes/green_plane_mini.png');
   }
 
-    body.settings-page #f_g_plane1 {
+    #settingsLayer #f_g_plane1 {
       left: 8px;
       top: 142px;
       width: 15px;
       height: 10px;
     }
 
-    body.settings-page #f_g_plane2 {
+    #settingsLayer #f_g_plane2 {
       left: 26px;
       top: 142px;
       width: 15px;
       height: 10px;
     }
 
-    body.settings-page #f_g_plane3 {
+    #settingsLayer #f_g_plane3 {
       left: 49px;
       top: 142px;
       width: 15px;
       height: 10px;
     }
 
-    body.settings-page #f_g_plane4 {
+    #settingsLayer #f_g_plane4 {
       left: 67px;
       top: 142px;
       width: 15px;
       height: 10px;
     }
 
-  body.settings-page .cp-field-selector__object--green-flag {
+  #settingsLayer .cp-field-selector__object--green-flag {
     background-image: url('ui_controlpanel/field_planes/green_flag_mini.png');
   }
 
-    body.settings-page #f_g_flag {
+    #settingsLayer #f_g_flag {
       left: 43px;
       top: 143px;
       width: 4px;
       height: 7px;
     }
 
-  body.settings-page .cp-field-selector__object--blue-plane {
+  #settingsLayer .cp-field-selector__object--blue-plane {
     background-image: url('ui_controlpanel/field_planes/blue_plane_mini.png');
   }
 
-      body.settings-page #f_b_plane1 {
+      #settingsLayer #f_b_plane1 {
         left: 72px;
         top: 8px;
         width: 9px;
         height: 11px;
       }
 
-      body.settings-page #f_b_plane2 {
+      #settingsLayer #f_b_plane2 {
         left: 56px;
         top: 8px;
         width: 9px;
         height: 11px;
       }
 
-      body.settings-page #f_b_plane3 {
+      #settingsLayer #f_b_plane3 {
         left: 25px;
         top: 8px;
         width: 9px;
         height: 11px;
       }
 
-      body.settings-page #f_b_plane4 {
+      #settingsLayer #f_b_plane4 {
         left: 9px;
         top: 8px;
         width: 9px;
         height: 11px;
       }
 
-  body.settings-page .cp-field-selector__object--blue-flag {
+  #settingsLayer .cp-field-selector__object--blue-flag {
     background-image: url('ui_controlpanel/field_planes/blue_flag_mini.png');
   }
 
-  body.settings-page #frame_field_1_visual .cp-field-selector__object--blue-plane {
+  #settingsLayer #frame_field_1_visual .cp-field-selector__object--blue-plane {
     transform: scaleY(-1);
     transform-origin: center;
   }
 
-  body.settings-page #frame_field_1_visual .cp-field-selector__object--blue-flag {
+  #settingsLayer #frame_field_1_visual .cp-field-selector__object--blue-flag {
     transform: scaleY(-1);
     transform-origin: center;
   }
 
-    body.settings-page #f_b_flag {
+    #settingsLayer #f_b_flag {
       left: 43px;
       top: 10px;
       width: 4px;
       height: 7px;
     }
 
-  body.settings-page #frame_field_2_counter {
+  #settingsLayer #frame_field_2_counter {
     position: absolute;
     left: 105px;
     top: 658px;
@@ -954,7 +952,7 @@ body, button {
     text-align: center;
   }
 
-  body.settings-page .cp-field-selector__frame {
+  #settingsLayer .cp-field-selector__frame {
     position: absolute;
     left: 45px;
     top: 401px;
@@ -967,7 +965,7 @@ body, button {
     z-index: 20;
   }
 
-  body.settings-page .cp-field-selector__btn {
+  #settingsLayer .cp-field-selector__btn {
     position: absolute;
     border: none;
     background-color: transparent;
@@ -977,43 +975,43 @@ body, button {
     z-index: 30;
   }
 
-  body.settings-page #instance_field_left {
+  #settingsLayer #instance_field_left {
     top: 658px;
     left: 67px;
     width: 30px;
     height: 35px;
   }
 
-  body.settings-page #instance_field_right {
+  #settingsLayer #instance_field_right {
     top: 658px;
     left: 171px;
     width: 30px;
     height: 35px;
   }
 
-  body.settings-page .cp-field-selector__btn--left {
+  #settingsLayer .cp-field-selector__btn--left {
     background-image: url('ui_controlpanel/cp_button_left.png');
   }
 
-  body.settings-page .cp-field-selector__btn--right {
+  #settingsLayer .cp-field-selector__btn--right {
     background-image: url('ui_controlpanel/cp_button_right.png');
   }
 
-  body.settings-page .cp-field-selector__btn:focus-visible {
+  #settingsLayer .cp-field-selector__btn:focus-visible {
     outline: 2px solid #f6d265;
     outline-offset: 2px;
   }
 
-  body.settings-page .cp-field-selector__btn:active {
+  #settingsLayer .cp-field-selector__btn:active {
     transform: translateY(1px);
   }
 
-  body.settings-page .cp-actions {
+  #settingsLayer .cp-actions {
     position: absolute;
     inset: 0;
   }
 
-  body.settings-page .cp-actions__frame {
+  #settingsLayer .cp-actions__frame {
     position: absolute;
     left: 237px;
     top: 660px;
@@ -1026,7 +1024,7 @@ body, button {
     z-index: 20;
   }
 
-  body.settings-page .cp-actions__btn {
+  #settingsLayer .cp-actions__btn {
     position: absolute;
     top: 666px;
     width: 73px;
@@ -1039,22 +1037,22 @@ body, button {
     z-index: 30;
   }
 
-  body.settings-page .cp-actions__btn--reset {
+  #settingsLayer .cp-actions__btn--reset {
     left: 244px;
     background-image: url('ui_controlpanel/cp_button_reset.png');
   }
 
-  body.settings-page .cp-actions__btn--exit {
+  #settingsLayer .cp-actions__btn--exit {
     left: 336px;
     background-image: url('ui_controlpanel/cp_button_exit.png');
   }
 
-  body.settings-page .cp-actions__btn:focus-visible {
+  #settingsLayer .cp-actions__btn:focus-visible {
     outline: 2px solid #f6d265;
     outline-offset: 2px;
   }
 
-  body.settings-page .cp-actions__btn:active {
+  #settingsLayer .cp-actions__btn:active {
     transform: translateY(1px);
   }
 
@@ -1204,12 +1202,12 @@ body, button {
     border: none;
   }
 
-  body:not(.settings-page) #modeMenu {
+  #menuLayer #modeMenu {
     opacity: 0;
     transition: none;
   }
 
-  body.menu-ready:not(.settings-page) #modeMenu {
+  body.menu-ready #menuLayer #modeMenu {
     opacity: 1;
   }
 
@@ -1245,17 +1243,17 @@ body, button {
   cursor: pointer;
 }
 
-body:not(.settings-page) #modeMenu .mode-menu__btn:disabled {
+#menuLayer #modeMenu .mode-menu__btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-body:not(.settings-page) #modeMenu .mode-menu__btn.disabled {
+#menuLayer #modeMenu .mode-menu__btn.disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-body:not(.settings-page) #modeMenu .mode-menu__btn--hotseat {
+#menuLayer #modeMenu .mode-menu__btn--hotseat {
   width: calc(205 / var(--mm-base-width) * 100%);
   height: calc(48 / var(--mm-base-height) * 100%);
   top: calc(151 / var(--mm-base-height) * 100%);
@@ -1263,11 +1261,11 @@ body:not(.settings-page) #modeMenu .mode-menu__btn--hotseat {
   background-image: url('ui_mainmenu/mm_hotseat_Default.png');
 }
 
-body:not(.settings-page) #modeMenu .mode-menu__btn--hotseat.selected {
+#menuLayer #modeMenu .mode-menu__btn--hotseat.selected {
   background-image: url('ui_mainmenu/mm_hotseat_Active.png');
 }
 
-body:not(.settings-page) #modeMenu .mode-menu__btn--computer {
+#menuLayer #modeMenu .mode-menu__btn--computer {
   width: calc(224 / var(--mm-base-width) * 100%);
   height: calc(48 / var(--mm-base-height) * 100%);
   top: calc(213 / var(--mm-base-height) * 100%);
@@ -1275,11 +1273,11 @@ body:not(.settings-page) #modeMenu .mode-menu__btn--computer {
   background-image: url('ui_mainmenu/mm_computer_default.png');
 }
 
-body:not(.settings-page) #modeMenu .mode-menu__btn--computer.selected {
+#menuLayer #modeMenu .mode-menu__btn--computer.selected {
   background-image: url('ui_mainmenu/mm_computer_active.png');
 }
 
-body:not(.settings-page) #modeMenu .mode-menu__btn--online {
+#menuLayer #modeMenu .mode-menu__btn--online {
   width: calc(156 / var(--mm-base-width) * 100%);
   height: calc(48 / var(--mm-base-height) * 100%);
   top: calc(275 / var(--mm-base-height) * 100%);
@@ -1287,11 +1285,11 @@ body:not(.settings-page) #modeMenu .mode-menu__btn--online {
   background-image: url('ui_mainmenu/mm_online_default.png');
 }
 
-body:not(.settings-page) #modeMenu .mode-menu__btn--online.selected {
+#menuLayer #modeMenu .mode-menu__btn--online.selected {
   background-image: url('ui_mainmenu/mm_online_active.png');
 }
 
-body:not(.settings-page) #modeMenu .mode-menu__btn--play {
+#menuLayer #modeMenu .mode-menu__btn--play {
   width: calc(120 / var(--mm-base-width) * 100%);
   height: calc(48 / var(--mm-base-height) * 100%);
   top: calc(383 / var(--mm-base-height) * 100%);
@@ -1299,11 +1297,11 @@ body:not(.settings-page) #modeMenu .mode-menu__btn--play {
   background-image: url('ui_mainmenu/mm_play_default.png');
 }
 
-body:not(.settings-page) #modeMenu .mode-menu__btn--play.active {
+#menuLayer #modeMenu .mode-menu__btn--play.active {
   background-image: url('ui_mainmenu/mm_play_active.png');
 }
 
-body:not(.settings-page) #modeMenu .mode-menu__btn--classic {
+#menuLayer #modeMenu .mode-menu__btn--classic {
   width: calc(304 / var(--mm-base-width) * 100%);
   height: calc(48 / var(--mm-base-height) * 100%);
   top: calc(491 / var(--mm-base-height) * 100%);
@@ -1311,11 +1309,11 @@ body:not(.settings-page) #modeMenu .mode-menu__btn--classic {
   background-image: url('ui_mainmenu/mm_classicrules_default.png');
 }
 
-body:not(.settings-page) #modeMenu .mode-menu__btn--classic.selected {
+#menuLayer #modeMenu .mode-menu__btn--classic.selected {
   background-image: url('ui_mainmenu/mm_classicrules_active.png');
 }
 
-body:not(.settings-page) #modeMenu .mode-menu__btn--advanced {
+#menuLayer #modeMenu .mode-menu__btn--advanced {
   width: calc(269 / var(--mm-base-width) * 100%);
   height: calc(86 / var(--mm-base-height) * 100%);
   top: calc(553 / var(--mm-base-height) * 100%);
@@ -1323,7 +1321,7 @@ body:not(.settings-page) #modeMenu .mode-menu__btn--advanced {
   background-image: url('ui_mainmenu/mm_advancedsettings_default.png');
 }
 
-body:not(.settings-page) #modeMenu .mode-menu__btn--advanced.selected {
+#menuLayer #modeMenu .mode-menu__btn--advanced.selected {
   background-image: url('ui_mainmenu/mm_advancedsettings_active.png');
 }
 
@@ -1363,11 +1361,11 @@ body:not(.settings-page) #modeMenu .mode-menu__btn--advanced.selected {
   }
 
   @media (max-width: 700px) {
-    body.settings-page #modeMenu {
+    #menuLayer #modeMenu {
       width: min(94vw, 560px);
     }
 
-    body.settings-page #modeMenu .control-pair-row {
+    #menuLayer #modeMenu .control-pair-row {
       flex-direction: column;
     }
 

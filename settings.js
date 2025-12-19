@@ -12,6 +12,10 @@ const MAP_PREVIEW_BASE_HEIGHT = 640;
 
 const CONTROL_PANEL_PREVIEW_CACHE = new Map();
 
+const settingsLayer = document.getElementById('settingsLayer');
+const settingsRoot = settingsLayer ?? document;
+const selectInSettings = (selector) => settingsRoot.querySelector(selector);
+
 function logCanvasCreation(canvas, label = "") {
   if (!(canvas instanceof HTMLCanvasElement)) {
     return;
@@ -706,37 +710,37 @@ function syncRangeStepFromValue(value){
 syncRangeStepFromValue(rangeCells);
 
 const rangeMinusBtn =
-  document.getElementById('rangeBtnLeft') ??
-  document.getElementById('rangeMinus') ??
-  document.getElementById('flightRangeMinus');
+  selectInSettings('#rangeBtnLeft') ??
+  selectInSettings('#rangeMinus') ??
+  selectInSettings('#flightRangeMinus');
 const rangePlusBtn =
-  document.getElementById('rangeBtnRight') ??
-  document.getElementById('rangePlus') ??
-  document.getElementById('flightRangePlus');
+  selectInSettings('#rangeBtnRight') ??
+  selectInSettings('#rangePlus') ??
+  selectInSettings('#flightRangePlus');
 const amplitudeMinusBtn =
-  document.getElementById('instance_accuracy_left') ??
-  document.getElementById('amplitudeMinus');
+  selectInSettings('#instance_accuracy_left') ??
+  selectInSettings('#amplitudeMinus');
 const amplitudePlusBtn =
-  document.getElementById('instance_accuracy_right') ??
-  document.getElementById('amplitudePlus');
-const addAAToggle = document.getElementById('addAAToggle');
-const sharpEdgesToggle = document.getElementById('sharpEdgesToggle');
-const addsNailsBtn = document.getElementById('instance_adds_tumbler1_nails');
-const addsAABtn = document.getElementById('instance_adds_tumbler2_aa');
-const addsCargoBtn = document.getElementById('instance_adds_tumbler3_cargo');
-const backBtn = document.getElementById('backBtn');
-const resetBtn = document.getElementById('instance_reset');
-const exitBtn = document.getElementById('instance_exit');
-const mapPrevBtn = document.getElementById('instance_field_left');
-const mapNextBtn = document.getElementById('instance_field_right');
-const mapNameDisplay = document.getElementById('frame_field_2_counter');
-const mapPreviewContainer = document.getElementById('frame_field_1_visual');
-const mapPreview = document.getElementById('mapPreview');
-const menuFlameCanvas = document.getElementById('menuFlame');
-const flameTrailImage = document.getElementById('flameTrail');
+  selectInSettings('#instance_accuracy_right') ??
+  selectInSettings('#amplitudePlus');
+const addAAToggle = selectInSettings('#addAAToggle');
+const sharpEdgesToggle = selectInSettings('#sharpEdgesToggle');
+const addsNailsBtn = selectInSettings('#instance_adds_tumbler1_nails');
+const addsAABtn = selectInSettings('#instance_adds_tumbler2_aa');
+const addsCargoBtn = selectInSettings('#instance_adds_tumbler3_cargo');
+const backBtn = selectInSettings('#backBtn');
+const resetBtn = selectInSettings('#instance_reset');
+const exitBtn = selectInSettings('#instance_exit');
+const mapPrevBtn = selectInSettings('#instance_field_left');
+const mapNextBtn = selectInSettings('#instance_field_right');
+const mapNameDisplay = selectInSettings('#frame_field_2_counter');
+const mapPreviewContainer = selectInSettings('#frame_field_1_visual');
+const mapPreview = selectInSettings('#mapPreview');
+const menuFlameCanvas = selectInSettings('#menuFlame');
+const flameTrailImage = selectInSettings('#flameTrail');
 const contrailImages = [
-  document.getElementById('contrail1'),
-  document.getElementById('contrail2')
+  selectInSettings('#contrail1'),
+  selectInSettings('#contrail2')
 ];
 const flameOptions = { baseWidth: 46, baseHeight: 14 };
 const menuFlameRenderer =
@@ -769,6 +773,23 @@ const previewHandle = {
   origAngle: 0
 };
 
+const isSettingsLayerVisible = () => (settingsLayer ? !settingsLayer.hidden : true);
+
+function stopPreviewAnimation(){
+  if(previewAnimationId){
+    cancelAnimationFrame(previewAnimationId);
+    previewAnimationId = null;
+  }
+  previewLastTimestamp = 0;
+}
+
+function startPreviewAnimationIfNeeded(){
+  if(previewSimulationInitialized && !previewAnimationId){
+    previewLastTimestamp = 0;
+    previewAnimationId = requestAnimationFrame(tickPreview);
+  }
+}
+
 function startPreviewSimulation(){
   if(previewSimulationInitialized){
     return;
@@ -785,7 +806,7 @@ function refreshPreviewSimulationIfInitialized(){
 }
 
 function updateRangeDisplay(stepOverride){
-  const el = document.getElementById('rangeDisplay');
+  const el = selectInSettings('#rangeDisplay');
   const transformStep = Number.isFinite(stepOverride) ? stepOverride : rangeStep;
   const displayedCells = getRangeValue(transformStep);
 
@@ -844,7 +865,7 @@ function changeRangeStep(delta){
 }
 
 function updateAmplitudeDisplay(){
-  const disp = document.getElementById('amplitudeAngleDisplay');
+  const disp = selectInSettings('#amplitudeAngleDisplay');
   if(disp){
     const maxAngle = aimingAmplitude * 5;
     disp.textContent = `${maxAngle.toFixed(0)}°`;
@@ -853,9 +874,9 @@ function updateAmplitudeDisplay(){
 
 function updateAmplitudeIndicator(){
   const amplitudeHost =
-    document.getElementById('frame_accuracy_1_visual') ??
-    document.querySelector('.cp-aiming-accuracy') ??
-    document.getElementById('amplitudeIndicator');
+    selectInSettings('#frame_accuracy_1_visual') ??
+    settingsRoot.querySelector('.cp-aiming-accuracy') ??
+    selectInSettings('#amplitudeIndicator');
 
   if(amplitudeHost){
     const maxAngle = aimingAmplitude * 5;
@@ -913,8 +934,8 @@ function getPendulumAngle(pendulumEl){
 }
 
 function setupAccuracyCrackWatcher(){
-  const pendulumEl = document.querySelector('#frame_accuracy_1_visual .pendulum');
-  const overlay = document.getElementById('accuracyCrackOverlay');
+  const pendulumEl = settingsRoot.querySelector('#frame_accuracy_1_visual .pendulum');
+  const overlay = selectInSettings('#accuracyCrackOverlay');
   if(!pendulumEl || !overlay){
     return null;
   }
@@ -996,6 +1017,11 @@ const accuracyCrackWatcher = setupAccuracyCrackWatcher();
 
 function syncAccuracyCrackWatcher(){
   if(!accuracyCrackWatcher){
+    return;
+  }
+
+  if(!isSettingsLayerVisible()){
+    accuracyCrackWatcher.stop();
     return;
   }
 
@@ -1577,7 +1603,9 @@ function drawPreviewArrow(){
 }
 
 function tickPreview(timestamp){
-  if(!previewCtx){
+  if(!previewCtx || !isSettingsLayerVisible()){
+    previewAnimationId = null;
+    previewLastTimestamp = 0;
     return;
   }
 
@@ -1597,7 +1625,7 @@ function setupPreviewSimulation(){
     createPreviewCanvas();
   }
   rebuildPreviewPlanes();
-  if(!previewAnimationId){
+  if(!previewAnimationId && isSettingsLayerVisible()){
     previewAnimationId = requestAnimationFrame(tickPreview);
   }
 }
@@ -1750,6 +1778,11 @@ function goToMainMenu(event){
     window.paperWingsHarness.showMainView({ updateHash: true, focus: 'advancedButton' });
     return;
   }
+  if(window.paperWingsApp?.showMenuLayer){
+    event.preventDefault();
+    window.paperWingsApp.showMenuLayer();
+    return;
+  }
   window.location.href = 'index.html';
 }
 
@@ -1765,8 +1798,21 @@ if(exitBtn){
   exitBtn.addEventListener('click', goToMainMenu);
 }
 
+function handleSettingsLayerShow(){
+  syncAccuracyCrackWatcher();
+  startPreviewAnimationIfNeeded();
+}
+
+function handleSettingsLayerHide(){
+  if(accuracyCrackWatcher){
+    accuracyCrackWatcher.stop();
+  }
+  stopPreviewAnimation();
+}
+
 function cleanupRenderers(){
   if(menuFlameRenderer) menuFlameRenderer.stop();
+  handleSettingsLayerHide();
 }
 
 window.addEventListener('pagehide', cleanupRenderers);
@@ -1776,3 +1822,8 @@ window.addEventListener('beforeunload', cleanupRenderers);
   updateRangeFlame();
 updateAmplitudeDisplay();
 updateAmplitudeIndicator();
+
+window.paperWingsSettings = {
+  onShow: handleSettingsLayerShow,
+  onHide: handleSettingsLayerHide
+};
