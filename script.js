@@ -925,8 +925,8 @@ function warnIfFxHostMismatch(boardRect, hostRect, context = 'fx') {
 const MOCKUP_W = 460;
 const MOCKUP_H = 800;
 
-// Координаты MATCH_PROGRESS_PLACEMENT даны в пикселях макета 460x800
-const MATCH_PROGRESS_IS_MOCKUP = true;
+// Координаты matchProgressLayout даны в пикселях макета 460x800
+const matchProgressIsMockup = true;
 
 // Если фон/рамка рисуются со сдвигом, используем тот же сдвиг здесь
 const BOARD_ORIGIN = { x: 0, y: 0 };
@@ -2187,7 +2187,7 @@ const FRAME_BASE_WIDTH = CANVAS_BASE_WIDTH + FRAME_PADDING_X * 2; // 460
 const FRAME_BASE_HEIGHT = CANVAS_BASE_HEIGHT + FRAME_PADDING_Y * 2; // 800
 const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
 
-if (typeof window.MATCH_PROGRESS_READY === 'undefined') window.MATCH_PROGRESS_READY = false;
+if (typeof window.matchProgressReady === 'undefined') window.matchProgressReady = false;
 
 const brickFrameImg = new Image();
 let brickFrameData = null;
@@ -2763,7 +2763,7 @@ let greenFlagCarrier = null;
 let blueFlagStolenBy = null;
 let greenFlagStolenBy = null;
 
-const DEFAULT_MATCH_PROGRESS_FRAGMENT_SOURCES = {
+const defaultMatchProgressFragmentSources = {
   green: [
     "shards 3/green shard 1.png",
     "shards 3/green shard 2.png",
@@ -2780,9 +2780,9 @@ const DEFAULT_MATCH_PROGRESS_FRAGMENT_SOURCES = {
   ]
 };
 
-const MATCH_PROGRESS_FRAGMENT_SOURCES = (typeof window !== "undefined" && window.MATCH_PROGRESS_FRAGMENT_SOURCES)
-  ? window.MATCH_PROGRESS_FRAGMENT_SOURCES
-  : DEFAULT_MATCH_PROGRESS_FRAGMENT_SOURCES;
+const matchProgressFragmentSources = (typeof window !== "undefined" && window.matchProgressFragmentSources)
+  ? window.matchProgressFragmentSources
+  : defaultMatchProgressFragmentSources;
 
 
 function collectMatchProgressFragmentSources(sources) {
@@ -2811,30 +2811,30 @@ function collectMatchProgressFragmentSources(sources) {
   return collected;
 }
 
-const MATCH_PROGRESS_FRAGMENTS_PER_SLOT = 5;
+const matchProgressFragmentsPerSlot = 5;
 
 // Точные top-left координаты КАЖДОГО фрагмента (макет 460x800)
 // Порядок: [звезда 1..5][фрагмент 1..5] = {x, y}
-const MATCH_PROGRESS_PLACEMENT = {
+const matchProgressLayout = {
   green: [
-    Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => ({ x: 0, y: 413 })),
-    Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => ({ x: 0, y: 473 })),
-    Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => ({ x: 0, y: 530 })),
-    Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => ({ x: 0, y: 590 })),
-    Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => ({ x: 0, y: 650 }))
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 0, y: 413 })),
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 0, y: 473 })),
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 0, y: 530 })),
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 0, y: 590 })),
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 0, y: 650 }))
   ],
   blue: [
-    Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => ({ x: 410, y: 92 })),
-    Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => ({ x: 410, y: 152 })),
-    Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => ({ x: 410, y: 212 })),
-    Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => ({ x: 410, y: 272 })),
-    Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => ({ x: 410, y: 330 }))
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 410, y: 92 })),
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 410, y: 152 })),
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 410, y: 212 })),
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 410, y: 272 })),
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 410, y: 330 }))
   ]
 };
 
 
 function getMatchProgressBounds(color){
-  const placements = MATCH_PROGRESS_PLACEMENT?.[color];
+  const placements = matchProgressLayout?.[color];
   if (!Array.isArray(placements) || placements.length === 0){
     return { minX: 0, maxX: 0, minY: 0, maxY: 0 };
   }
@@ -2867,33 +2867,34 @@ function getMatchProgressBounds(color){
 
 // Состояние слотов: прогресс матча по пять слотов на сторону
 // (визуализируются звёздами, каждая звезда = до 5 фрагментов)
-const MATCH_PROGRESS_STATE = {
+// Match Progress = visual progress of the round (stars), not score and not points
+const matchProgressState = {
   blue:  Array.from({length:5}, ()=> new Set()),
   green: Array.from({length:5}, ()=> new Set())
 };
 
-let MATCH_PROGRESS_LAP = { blue: 0, green: 0 };
-let MATCH_PROGRESS_POS = { blue: 0, green: 0 };
-let MATCH_PROGRESS_PLACED_IN_LAP = { blue: 0, green: 0 };
+let matchProgressLap = { blue: 0, green: 0 };
+let matchProgressPos = { blue: 0, green: 0 };
+let matchProgressPlacedInLap = { blue: 0, green: 0 };
 
-const MATCH_PROGRESS_FRAGMENT_FADE_DURATION_MS = 620;
-const MATCH_PROGRESS_FRAGMENT_ROW_DELAY_MS = 70;
+const matchProgressFragmentFadeDurationMs = 620;
+const matchProgressFragmentRowDelayMs = 70;
 
-const MATCH_PROGRESS_FRAGMENT_ANIMATIONS = {
+const matchProgressFragmentAnimations = {
   blue: [],
   green: []
 };
 
 function ensureMatchProgressAnimationState(color){
-  const slots = Array.isArray(MATCH_PROGRESS_PLACEMENT?.[color]) ? MATCH_PROGRESS_PLACEMENT[color].length : 0;
-  if (!Array.isArray(MATCH_PROGRESS_FRAGMENT_ANIMATIONS[color])){
-    MATCH_PROGRESS_FRAGMENT_ANIMATIONS[color] = [];
+  const slots = Array.isArray(matchProgressLayout?.[color]) ? matchProgressLayout[color].length : 0;
+  if (!Array.isArray(matchProgressFragmentAnimations[color])){
+    matchProgressFragmentAnimations[color] = [];
   }
 
-  const storage = MATCH_PROGRESS_FRAGMENT_ANIMATIONS[color];
+  const storage = matchProgressFragmentAnimations[color];
 
   while (storage.length < slots){
-    storage.push(Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => null));
+    storage.push(Array.from({ length: matchProgressFragmentsPerSlot }, () => null));
   }
 
   if (storage.length > slots){
@@ -2903,12 +2904,12 @@ function ensureMatchProgressAnimationState(color){
   for (let i = 0; i < storage.length; i += 1){
     const row = storage[i];
     if (!Array.isArray(row)){
-      storage[i] = Array.from({ length: MATCH_PROGRESS_FRAGMENTS_PER_SLOT }, () => null);
+      storage[i] = Array.from({ length: matchProgressFragmentsPerSlot }, () => null);
       continue;
     }
 
-    if (row.length < MATCH_PROGRESS_FRAGMENTS_PER_SLOT){
-      row.length = MATCH_PROGRESS_FRAGMENTS_PER_SLOT;
+    if (row.length < matchProgressFragmentsPerSlot){
+      row.length = matchProgressFragmentsPerSlot;
     }
 
     for (let j = 0; j < row.length; j += 1){
@@ -2922,11 +2923,11 @@ function ensureMatchProgressAnimationState(color){
 }
 
 function matchProgressFragmentDelay(color, slotIdx){
-  const slots = Array.isArray(MATCH_PROGRESS_PLACEMENT?.[color]) ? MATCH_PROGRESS_PLACEMENT[color].length : 0;
+  const slots = Array.isArray(matchProgressLayout?.[color]) ? matchProgressLayout[color].length : 0;
   if (slots <= 1){
     return 0;
   }
-  const step = MATCH_PROGRESS_FRAGMENT_ROW_DELAY_MS;
+  const step = matchProgressFragmentRowDelayMs;
   if (color === "blue"){
     return (slots - 1 - slotIdx) * step;
   }
@@ -2934,7 +2935,7 @@ function matchProgressFragmentDelay(color, slotIdx){
 }
 
 function applyMatchProgressFragmentAnimations(color, previousState){
-  const slots = MATCH_PROGRESS_STATE[color];
+  const slots = matchProgressState[color];
   if (!Array.isArray(slots)) return;
 
   const animStorage = ensureMatchProgressAnimationState(color);
@@ -2945,7 +2946,7 @@ function applyMatchProgressFragmentAnimations(color, previousState){
     const prevPieces = Array.isArray(previousState) ? previousState[slotIdx] || new Set() : new Set();
     const animRow = animStorage[slotIdx];
 
-    for (let frag = 1; frag <= MATCH_PROGRESS_FRAGMENTS_PER_SLOT; frag += 1){
+    for (let frag = 1; frag <= matchProgressFragmentsPerSlot; frag += 1){
       const fragIdx = frag - 1;
       const hasNow = newPieces.has(frag);
       const hadBefore = prevPieces instanceof Set ? prevPieces.has(frag) : false;
@@ -2955,13 +2956,13 @@ function applyMatchProgressFragmentAnimations(color, previousState){
           animRow[fragIdx] = {
             start: now,
             delay: matchProgressFragmentDelay(color, slotIdx),
-            duration: MATCH_PROGRESS_FRAGMENT_FADE_DURATION_MS
+            duration: matchProgressFragmentFadeDurationMs
           };
         } else if (!animRow[fragIdx]){
           animRow[fragIdx] = {
-            start: now - MATCH_PROGRESS_FRAGMENT_FADE_DURATION_MS,
+            start: now - matchProgressFragmentFadeDurationMs,
             delay: 0,
-            duration: MATCH_PROGRESS_FRAGMENT_FADE_DURATION_MS
+            duration: matchProgressFragmentFadeDurationMs
           };
         }
       } else {
@@ -2974,7 +2975,7 @@ function applyMatchProgressFragmentAnimations(color, previousState){
 ensureMatchProgressAnimationState("blue");
 ensureMatchProgressAnimationState("green");
 
-const MATCH_PROGRESS_IMAGES = {
+const matchProgressImages = {
   blue: [],
   green: []
 };
@@ -2986,7 +2987,7 @@ let matchProgressImagesRequested = false;
 function finalizeMatchProgressLoading(){
   if (matchProgressAssetsInitialized) return;
   matchProgressAssetsInitialized = true;
-  window.MATCH_PROGRESS_READY = true;
+  window.matchProgressReady = true;
   console.log("[MATCH_PROGRESS] shards loaded");
   syncAllMatchProgressStates();
   if (typeof renderScoreboard === "function"){
@@ -3023,18 +3024,18 @@ function registerMatchProgressShardImage(src){
 
 function loadMatchProgressImages(){
   const colorSet = new Set([
-    ...Object.keys(MATCH_PROGRESS_PLACEMENT || {}),
-    ...Object.keys(MATCH_PROGRESS_FRAGMENT_SOURCES || {})
+    ...Object.keys(matchProgressLayout || {}),
+    ...Object.keys(matchProgressFragmentSources || {})
   ]);
   const colors = Array.from(colorSet);
   pendingMatchProgressImages = 0;
 
   colors.forEach(color => {
-    const slots = Array.isArray(MATCH_PROGRESS_PLACEMENT[color]) ? MATCH_PROGRESS_PLACEMENT[color].length : 0;
-    const sources = MATCH_PROGRESS_FRAGMENT_SOURCES[color];
+    const slots = Array.isArray(matchProgressLayout[color]) ? matchProgressLayout[color].length : 0;
+    const sources = matchProgressFragmentSources[color];
 
     if (!Array.isArray(sources)){
-      MATCH_PROGRESS_IMAGES[color] = Array.from({ length: slots }, () => []);
+      matchProgressImages[color] = Array.from({ length: slots }, () => []);
       return;
     }
 
@@ -3042,7 +3043,7 @@ function loadMatchProgressImages(){
 
     if (typeof first === "string" || first instanceof String){
       const sharedImages = sources.map(src => registerMatchProgressShardImage(src));
-      MATCH_PROGRESS_IMAGES[color] = Array.from({ length: slots }, () => sharedImages);
+      matchProgressImages[color] = Array.from({ length: slots }, () => sharedImages);
       return;
     }
 
@@ -3054,11 +3055,11 @@ function loadMatchProgressImages(){
       while (mapped.length < slots){
         mapped.push(mapped[mapped.length - 1] || []);
       }
-      MATCH_PROGRESS_IMAGES[color] = mapped;
+      matchProgressImages[color] = mapped;
       return;
     }
 
-    MATCH_PROGRESS_IMAGES[color] = Array.from({ length: slots }, () => []);
+    matchProgressImages[color] = Array.from({ length: slots }, () => []);
   });
 
   if (pendingMatchProgressImages === 0){
@@ -3074,7 +3075,7 @@ function loadMatchProgressImagesIfNeeded(){
 
 
 function syncMatchProgressState(color, score){
-  const slots = MATCH_PROGRESS_STATE[color];
+  const slots = matchProgressState[color];
   if (!Array.isArray(slots)) return;
 
   const previousState = slots.map(set => {
@@ -3087,9 +3088,9 @@ function syncMatchProgressState(color, score){
   const clamped = Math.max(0, Math.min(score, POINTS_TO_WIN));
 
   slots.forEach(set => set.clear());
-  MATCH_PROGRESS_LAP[color] = 0;
-  MATCH_PROGRESS_POS[color] = 0;
-  MATCH_PROGRESS_PLACED_IN_LAP[color] = 0;
+  matchProgressLap[color] = 0;
+  matchProgressPos[color] = 0;
+  matchProgressPlacedInLap[color] = 0;
 
   for (let count = 0; count < clamped; count++){
     if (!addMatchProgressPointToSide(color)) break;
@@ -3099,11 +3100,11 @@ function syncMatchProgressState(color, score){
 }
 
 function addMatchProgressPointToSide(color){
-  const pool = MATCH_PROGRESS_STATE[color];                   // массив из 5 Set'ов (по звездам)
+  const pool = matchProgressState[color];                   // массив из 5 Set'ов (по звездам)
   if (!Array.isArray(pool) || pool.length === 0) return false;
 
   const totalSlots = pool.length;
-  const fragmentsPerSlot = MATCH_PROGRESS_FRAGMENTS_PER_SLOT;
+  const fragmentsPerSlot = matchProgressFragmentsPerSlot;
   if (totalSlots <= 0 || fragmentsPerSlot <= 0) return false;
 
   let targetSlot = -1;
@@ -3122,9 +3123,9 @@ function addMatchProgressPointToSide(color){
   }
 
   if (targetSlot === -1){
-    MATCH_PROGRESS_POS[color] = totalSlots > 0 ? totalSlots - 1 : 0;
-    MATCH_PROGRESS_LAP[color] = totalSlots;
-    MATCH_PROGRESS_PLACED_IN_LAP[color] = fragmentsPerSlot;
+    matchProgressPos[color] = totalSlots > 0 ? totalSlots - 1 : 0;
+    matchProgressLap[color] = totalSlots;
+    matchProgressPlacedInLap[color] = fragmentsPerSlot;
     return false;
   }
 
@@ -3137,17 +3138,17 @@ function addMatchProgressPointToSide(color){
   if (fragment > fragmentsPerSlot){
     // На случай непредвиденного рассинхрона: слот считался незаполненным,
     // но в нём присутствуют все фрагменты. Попробуем перейти к следующему слоту.
-    MATCH_PROGRESS_POS[color] = targetSlot + 1;
-    MATCH_PROGRESS_PLACED_IN_LAP[color] = fragmentsPerSlot;
-    MATCH_PROGRESS_LAP[color] = targetSlot + 1;
+    matchProgressPos[color] = targetSlot + 1;
+    matchProgressPlacedInLap[color] = fragmentsPerSlot;
+    matchProgressLap[color] = targetSlot + 1;
     return addMatchProgressPointToSide(color);
   }
 
   slotPieces.add(fragment);
 
-  MATCH_PROGRESS_POS[color] = targetSlot;
-  MATCH_PROGRESS_PLACED_IN_LAP[color] = slotPieces.size;
-  MATCH_PROGRESS_LAP[color] = targetSlot;
+  matchProgressPos[color] = targetSlot;
+  matchProgressPlacedInLap[color] = slotPieces.size;
+  matchProgressLap[color] = targetSlot;
 
   return true;
 }
@@ -3331,11 +3332,11 @@ function resetGame(options = {}){
 
   greenScore = 0;
   blueScore  = 0;
-  MATCH_PROGRESS_LAP = { blue: 0, green: 0 };
-  MATCH_PROGRESS_POS = { blue: 0, green: 0 };
-  MATCH_PROGRESS_PLACED_IN_LAP = { blue: 0, green: 0 };
-  MATCH_PROGRESS_STATE.blue  = Array.from({length:5}, ()=> new Set());
-  MATCH_PROGRESS_STATE.green = Array.from({length:5}, ()=> new Set());
+  matchProgressLap = { blue: 0, green: 0 };
+  matchProgressPos = { blue: 0, green: 0 };
+  matchProgressPlacedInLap = { blue: 0, green: 0 };
+  matchProgressState.blue  = Array.from({length:5}, ()=> new Set());
+  matchProgressState.green = Array.from({length:5}, ()=> new Set());
   syncAllMatchProgressStates();
   roundNumber = 0;
   roundTextTimer = 0;
@@ -5672,8 +5673,8 @@ function checkVictory(){
 
 /* ======= SCOREBOARD ======= */
 
-function drawMatchProgressUI(ctx){
-  if (!MATCH_PROGRESS_READY) return;
+function drawMatchProgress(ctx){
+  if (!matchProgressReady) return;
 
   const rect = visualRect(gsBoardCanvas);
   const rawScaleX = rect.width / CANVAS_BASE_WIDTH;
@@ -5681,7 +5682,7 @@ function drawMatchProgressUI(ctx){
   const sx = Number.isFinite(rawScaleX) && rawScaleX > 0 ? rawScaleX : 1;
   const sy = Number.isFinite(rawScaleY) && rawScaleY > 0 ? rawScaleY : sx;
 
-  const scale = (typeof MATCH_PROGRESS_PIECE_SCALE !== 'undefined') ? MATCH_PROGRESS_PIECE_SCALE : 1;
+  const scale = (typeof matchProgressPieceScale !== 'undefined') ? matchProgressPieceScale : 1;
 
   ctx.save();
   // На всякий случай сбрасываем висящие трансформации
@@ -5693,10 +5694,10 @@ function drawMatchProgressUI(ctx){
   try {
     const colors = ["blue", "green"];
     for (const color of colors){
-      const slots = MATCH_PROGRESS_STATE[color] || [];
-      const placements = MATCH_PROGRESS_PLACEMENT[color];
-      const images = MATCH_PROGRESS_IMAGES[color];
-      const animRows = MATCH_PROGRESS_FRAGMENT_ANIMATIONS[color];
+      const slots = matchProgressState[color] || [];
+      const placements = matchProgressLayout[color];
+      const images = matchProgressImages[color];
+      const animRows = matchProgressFragmentAnimations[color];
 
       if (!Array.isArray(placements) || !Array.isArray(images)) continue;
 
@@ -5704,13 +5705,13 @@ function drawMatchProgressUI(ctx){
         const slot = slots[slotIdx];
         if (!slot || slot.size === 0) continue;
 
-        for (let frag = 1; frag <= MATCH_PROGRESS_FRAGMENTS_PER_SLOT; frag++){
+        for (let frag = 1; frag <= matchProgressFragmentsPerSlot; frag++){
           // Проверяем наличие именно текущего фрагмента в Set,
           // чтобы не рисовать все пять позиций звезды при наличии только одного.
           const hasFragment = slot.has(frag);
           if (!hasFragment) continue;
 
-          const pos = MATCH_PROGRESS_PLACEMENT[color]?.[slotIdx]?.[frag-1];
+          const pos = matchProgressLayout[color]?.[slotIdx]?.[frag-1];
           if (!pos || typeof pos.x !== 'number' || typeof pos.y !== 'number'){
             console.warn(`[MATCH_PROGRESS] no pos for ${color} slot ${slotIdx} frag ${frag}`);
             continue;
@@ -5730,7 +5731,7 @@ function drawMatchProgressUI(ctx){
             const delay = Number.isFinite(anim.delay) ? anim.delay : 0;
             const duration = Number.isFinite(anim.duration) && anim.duration > 0
               ? anim.duration
-              : MATCH_PROGRESS_FRAGMENT_FADE_DURATION_MS;
+              : matchProgressFragmentFadeDurationMs;
             const start = Number.isFinite(anim.start) ? anim.start : now;
             const elapsed = now - start - delay;
             if (elapsed < 0){
@@ -5762,7 +5763,7 @@ function drawMatchProgressUI(ctx){
       }
     }
   } catch (err){
-    console.warn('[MATCH_PROGRESS] drawMatchProgressUI error:', err);
+    console.warn('[MATCH_PROGRESS] drawMatchProgress error:', err);
   } finally {
     ctx.restore();
   }
@@ -5776,11 +5777,11 @@ const PLANE_COUNTER_CONTAINERS   = {
 
 const POINTS_POPUP_INK_DURATION_MS = 2600;
 const MIN_ROUND_TRANSITION_DELAY_MS = (() => {
-  const greenSlots = Array.isArray(MATCH_PROGRESS_PLACEMENT?.green) ? MATCH_PROGRESS_PLACEMENT.green.length : 0;
-  const blueSlots = Array.isArray(MATCH_PROGRESS_PLACEMENT?.blue) ? MATCH_PROGRESS_PLACEMENT.blue.length : 0;
+  const greenSlots = Array.isArray(matchProgressLayout?.green) ? matchProgressLayout.green.length : 0;
+  const blueSlots = Array.isArray(matchProgressLayout?.blue) ? matchProgressLayout.blue.length : 0;
   const maxSlotCount = Math.max(greenSlots, blueSlots, 0);
-  const rowCascadeDelay = Math.max(0, maxSlotCount - 1) * MATCH_PROGRESS_FRAGMENT_ROW_DELAY_MS;
-  return POINTS_POPUP_INK_DURATION_MS + MATCH_PROGRESS_FRAGMENT_FADE_DURATION_MS + rowCascadeDelay;
+  const rowCascadeDelay = Math.max(0, maxSlotCount - 1) * matchProgressFragmentRowDelayMs;
+  return POINTS_POPUP_INK_DURATION_MS + matchProgressFragmentFadeDurationMs + rowCascadeDelay;
 })();
 const HUD_KILL_MARKER_DRAW_DURATION_MS = Math.max(400, POINTS_POPUP_INK_DURATION_MS * 0.55);
 function getKillMarkerProgress(plane, now = performance.now()){
@@ -5905,7 +5906,7 @@ function setPointsPopupAnchor(host, color, targetScore){
   }
 
   const anchors = POINTS_POPUP_INK_ANCHORS?.[color];
-  const fragmentsPerSlot = MATCH_PROGRESS_FRAGMENTS_PER_SLOT;
+  const fragmentsPerSlot = matchProgressFragmentsPerSlot;
 
   const cleanup = () => {
     host.style.removeProperty('--points-popup-ink-left');
@@ -6109,7 +6110,7 @@ function renderScoreboard(){
     );
   }
 
-  drawMatchProgressUI(planeCtx);
+  drawMatchProgress(planeCtx);
 
   const counterVirtualRects = {
     green: getVirtualRectFromDom(greenPointsPopup),
@@ -6426,11 +6427,11 @@ function startNewRound(){
   pendingRoundTransitionStart = 0;
   shouldShowEndScreen = false;
 
-  MATCH_PROGRESS_LAP = { blue: 0, green: 0 };
-  MATCH_PROGRESS_POS = { blue: 0, green: 0 };
-  MATCH_PROGRESS_PLACED_IN_LAP = { blue: 0, green: 0 };
-  MATCH_PROGRESS_STATE.blue  = Array.from({length:5}, ()=> new Set());
-  MATCH_PROGRESS_STATE.green = Array.from({length:5}, ()=> new Set());
+  matchProgressLap = { blue: 0, green: 0 };
+  matchProgressPos = { blue: 0, green: 0 };
+  matchProgressPlacedInLap = { blue: 0, green: 0 };
+  matchProgressState.blue  = Array.from({length:5}, ()=> new Set());
+  matchProgressState.green = Array.from({length:5}, ()=> new Set());
   syncAllMatchProgressStates();
 
   lastFirstTurn = 1 - lastFirstTurn;
