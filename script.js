@@ -319,7 +319,8 @@ const POINTS_POPUP_ELEMENTS = {
   blue: bluePointsPopup
 };
 
-const PLANE_COUNTER_HOSTS = {
+// Plane Counters = HUD columns of destroyed planes (not score, not points)
+const planeCounterHosts = {
   green: greenPlaneCounter,
   blue: bluePlaneCounter
 };
@@ -6152,7 +6153,7 @@ function renderScoreboard(){
 }
 
 function buildPlaneCounterFrame(color, containerLeft, containerTop, scaleX, scaleY) {
-  const host = PLANE_COUNTER_HOSTS?.[color] || POINTS_POPUP_ELEMENTS?.[color];
+  const host = planeCounterHosts?.[color] || POINTS_POPUP_ELEMENTS?.[color];
   if (host instanceof HTMLElement) {
     const rect = visualRect(host);
     const containerRect = visualRect(gsFrameEl);
