@@ -806,7 +806,7 @@ const FX_HOST_MIN_SIZE = 2;
 
 function ensureFxHost(parentEl, idOrClass, options = {}) {
   const parent = parentEl instanceof HTMLElement ? parentEl : null;
-  if (!parent) {
+  if (!parent || parent === document.body) {
     return null;
   }
 
@@ -974,7 +974,10 @@ let flameStyleRevision = 0;
 function ensurePlaneFlameHost() {
   const parent = overlayContainer instanceof HTMLElement
     ? overlayContainer
-    : (fxLayerElement instanceof HTMLElement ? fxLayerElement : document.body);
+    : (fxLayerElement instanceof HTMLElement ? fxLayerElement : null);
+  if (!(parent instanceof HTMLElement)) {
+    return null;
+  }
   return ensureFxHost(parent, PLANE_FLAME_HOST_ID);
 }
 
@@ -1201,6 +1204,7 @@ const PLANE_HIT_COOLDOWN_SEC = 0.2;
 
 const planeFlameFx = new Map();
 const planeFlameTimers = new Map();
+let warnedMissingPlaneFlameHost = false;
 
 function applyFlameElementStyles(element, size = BASE_FLAME_DISPLAY_SIZE, planeColor = '') {
   if (!element) return;
@@ -1227,35 +1231,6 @@ function applyFlameVisualStyle(element, styleKey) {
   element.dataset.flameFilter = filter || '';
 }
 
-function createSparkElement(containerFilter = '', displaySize = BASE_FLAME_DISPLAY_SIZE) {
-  const spark = document.createElement('div');
-  spark.className = 'fx-flame-spark';
-
-  const baseSparkSize = 2 + Math.random() * 2;
-  const sparkScale = displaySize.width / 46;
-  const sparkSize = baseSparkSize * sparkScale;
-  spark.style.setProperty('--spark-size', `${sparkSize}px`);
-
-  const horizontalOffset = Math.random() * (displaySize.width * 0.4);
-  spark.style.setProperty('--spark-start-offset', `${horizontalOffset}px`);
-
-  const translateX = -10 - Math.random() * 10;
-  const translateY = (Math.random() * 14) - 7;
-  spark.style.setProperty('--spark-translate-x', `${translateX}px`);
-  spark.style.setProperty('--spark-translate-y', `${translateY}px`);
-
-  const duration = 400 + Math.random() * 350;
-  spark.style.setProperty('--spark-duration', `${duration}ms`);
-
-  spark.style.top = `${Math.random() * 100}%`;
-  if (containerFilter) {
-    spark.style.filter = containerFilter;
-  }
-
-  spark.addEventListener('animationend', () => spark.remove());
-  return spark;
-}
-
 function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') {
   const readyFlameImg = isSpriteReady(flameImg)
     ? flameImg
@@ -1270,10 +1245,6 @@ function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') 
   const container = document.createElement('div');
   applyFlameElementStyles(container, displaySize, plane?.color || '');
 
-  const sparkHost = document.createElement('div');
-  sparkHost.className = 'fx-flame-sparks';
-  container.appendChild(sparkHost);
-
   const img = new Image();
   img.decoding = 'async';
   img.width = displaySize.width;
@@ -1281,7 +1252,6 @@ function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') 
   img.className = 'fx-flame-img';
 
   let attemptedSrc = resolvedSrc;
-  let sparkTimerId = null;
 
   let readyResolved = false;
   let resolveReady;
@@ -1298,14 +1268,9 @@ function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') 
   const stop = () => {
     img.onerror = null;
     img.onload = null;
-    if (sparkTimerId) {
-      clearTimeout(sparkTimerId);
-      sparkTimerId = null;
-    }
     if (container?.isConnected) {
       container.remove();
     }
-    sparkHost.innerHTML = '';
     resolveReadySafely();
   };
 
@@ -1360,24 +1325,11 @@ function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') 
   img.dataset.flameSrc = resolvedSrc;
   img.src = resolvedSrc;
 
-  const scheduleSpark = () => {
-    if (!container.isConnected) return;
-    const spark = createSparkElement(container.dataset.flameFilter, displaySize);
-    sparkHost.appendChild(spark);
-    const delay = 70 + Math.random() * 110;
-    sparkTimerId = setTimeout(scheduleSpark, delay);
-  };
-
-  const startSparks = () => {
-    if (sparkTimerId) return;
-    scheduleSpark();
-  };
-
   ensureReady();
 
   container.appendChild(img);
 
-  return { element: container, stop, ready, startSparks };
+  return { element: container, stop, ready };
 }
 
 function disablePlaneFlameFx(plane) {
@@ -1450,7 +1402,13 @@ function spawnBurningFlameFx(plane) {
     return;
   }
   const host = ensurePlaneFlameHost();
-  if (!host) return;
+  if (!host) {
+    if (!warnedMissingPlaneFlameHost) {
+      console.warn('[FX] Skipping plane flame: host unavailable');
+      warnedMissingPlaneFlameHost = true;
+    }
+    return;
+  }
 
   const flameSelection = ensurePlaneBurningFlame(plane);
   const flameImg = flameSelection?.img || null;
@@ -1479,7 +1437,6 @@ function spawnBurningFlameFx(plane) {
     applyFlameVisualStyle(entry.element, plane?.burningFlameStyleKey || getCurrentFlameStyleKey());
     planeFlameFx.set(plane, entry);
     mounted = true;
-    entry.startSparks?.();
     updatePlaneFlameFxPosition(plane);
   };
 
