@@ -663,11 +663,11 @@ function getIntSetting(key, defaultValue){
   return Number.isNaN(value) ? defaultValue : value;
 }
 
-let rangeCells = getIntSetting('settings.flightRangeCells', 15);
-let rangeStep = getRangeStepForValue(rangeCells);
-rangeCells = getRangeValue(rangeStep);
-let aimingAmplitude  = parseFloat(getStoredItem('settings.aimingAmplitude'));
-if(Number.isNaN(aimingAmplitude)) aimingAmplitude = 10 / 5;
+let settingsFlightRangeCells = getIntSetting('settings.flightRangeCells', 15);
+let rangeStep = getRangeStepForValue(settingsFlightRangeCells);
+settingsFlightRangeCells = getRangeValue(rangeStep);
+let settingsAimingAmplitude  = parseFloat(getStoredItem('settings.aimingAmplitude'));
+if(Number.isNaN(settingsAimingAmplitude)) settingsAimingAmplitude = 10 / 5;
 let addAA = getStoredItem('settings.addAA') === 'true';
 let sharpEdges = getStoredItem('settings.sharpEdges') === 'true';
 let addCargo = getStoredItem('settings.addCargo') === 'true';
@@ -700,14 +700,14 @@ function getRangeValue(step){
 
 function syncRangeWithStep(step){
   rangeStep = clampRangeStep(step);
-  rangeCells = getRangeValue(rangeStep);
+  settingsFlightRangeCells = getRangeValue(rangeStep);
 }
 
 function syncRangeStepFromValue(value){
   syncRangeWithStep(getRangeStepForValue(value));
 }
 
-syncRangeStepFromValue(rangeCells);
+syncRangeStepFromValue(settingsFlightRangeCells);
 
 const rangeMinusBtn =
   selectInSettings('#rangeBtnLeft') ??
@@ -816,7 +816,7 @@ function updateRangeDisplay(stepOverride){
 function updateRangeFlame(){
   const minScale = 0.78;
   const maxScale = 1.82;
-  const t = (rangeCells - MIN_FLIGHT_RANGE_CELLS) /
+  const t = (settingsFlightRangeCells - MIN_FLIGHT_RANGE_CELLS) /
             (MAX_FLIGHT_RANGE_CELLS - MIN_FLIGHT_RANGE_CELLS);
   const ratio = minScale + t * (maxScale - minScale);
 
@@ -857,7 +857,7 @@ function changeRangeStep(delta){
   }
 
   rangeStep = nextIndex * 2;
-  rangeCells = RANGE_DISPLAY_VALUES[nextIndex];
+  settingsFlightRangeCells = RANGE_DISPLAY_VALUES[nextIndex];
 
   updateRangeDisplay();
   updateRangeFlame();
@@ -867,7 +867,7 @@ function changeRangeStep(delta){
 function updateAmplitudeDisplay(){
   const disp = selectInSettings('#amplitudeAngleDisplay');
   if(disp){
-    const maxAngle = aimingAmplitude * 5;
+    const maxAngle = settingsAimingAmplitude * 5;
     disp.textContent = `${maxAngle.toFixed(0)}°`;
   }
 }
@@ -879,7 +879,7 @@ function updateAmplitudeIndicator(){
     selectInSettings('#amplitudeIndicator');
 
   if(amplitudeHost){
-    const maxAngle = aimingAmplitude * 5;
+    const maxAngle = settingsAimingAmplitude * 5;
     amplitudeHost.style.setProperty('--amp', `${maxAngle}deg`);
   }
 
@@ -966,7 +966,7 @@ function setupAccuracyCrackWatcher(){
       return;
     }
 
-    if(!shouldRunForAmplitude(aimingAmplitude)){
+    if(!shouldRunForAmplitude(settingsAimingAmplitude)){
       running = false;
       rafId = null;
       lockedSide = null;
@@ -992,7 +992,7 @@ function setupAccuracyCrackWatcher(){
   };
 
   const start = () => {
-    if(running || !shouldRunForAmplitude(aimingAmplitude)){
+    if(running || !shouldRunForAmplitude(settingsAimingAmplitude)){
       return;
     }
 
@@ -1025,7 +1025,7 @@ function syncAccuracyCrackWatcher(){
     return;
   }
 
-  if(accuracyCrackWatcher.shouldRunForAmplitude(aimingAmplitude)){
+  if(accuracyCrackWatcher.shouldRunForAmplitude(settingsAimingAmplitude)){
     accuracyCrackWatcher.start();
   } else {
     accuracyCrackWatcher.stop();
@@ -1033,8 +1033,8 @@ function syncAccuracyCrackWatcher(){
 }
 
 function saveSettings(){
-    setStoredItem('settings.flightRangeCells', rangeCells);
-  setStoredItem('settings.aimingAmplitude', aimingAmplitude);
+    setStoredItem('settings.flightRangeCells', settingsFlightRangeCells);
+  setStoredItem('settings.aimingAmplitude', settingsAimingAmplitude);
   setStoredItem('settings.addAA', addAA);
   setStoredItem('settings.sharpEdges', sharpEdges);
   setStoredItem('settings.addCargo', addCargo);
@@ -1333,7 +1333,7 @@ function onPreviewPointerUp(e){
   }
 
   const dragAngle = Math.atan2(dy, dx);
-  const previewFlightDistancePx = rangeCells * PREVIEW_CELL_SIZE * PREVIEW_FLIGHT_DISTANCE_SCALE;
+  const previewFlightDistancePx = settingsFlightRangeCells * PREVIEW_CELL_SIZE * PREVIEW_FLIGHT_DISTANCE_SCALE;
   const previewFlightDurationSec = PREVIEW_FLIGHT_DURATION_SEC * PREVIEW_FLIGHT_DURATION_SCALE;
   const speedPxPerSec = previewFlightDistancePx / previewFlightDurationSec;
   const scale = dragDistance / PREVIEW_MAX_DRAG_DISTANCE;
@@ -1368,7 +1368,7 @@ function updatePreviewHandle(delta){
   const dy = previewHandle.baseY - plane.y;
   const dist = Math.hypot(dx, dy);
   const clampedDist = Math.min(dist, PREVIEW_MAX_DRAG_DISTANCE);
-  const maxAngleDeg = aimingAmplitude * 5;
+  const maxAngleDeg = settingsAimingAmplitude * 5;
   const maxAngleRad = maxAngleDeg * Math.PI / 180;
 
   previewOscillationAngle += PREVIEW_OSCILLATION_SPEED * delta * previewOscillationDir;
@@ -1631,9 +1631,9 @@ function setupPreviewSimulation(){
 }
 
   function resetSettingsToDefaults(){
-    rangeCells = DEFAULT_SETTINGS.rangeCells;
-    syncRangeStepFromValue(rangeCells);
-    aimingAmplitude = DEFAULT_SETTINGS.aimingAmplitude;
+    settingsFlightRangeCells = DEFAULT_SETTINGS.rangeCells;
+    syncRangeStepFromValue(settingsFlightRangeCells);
+    settingsAimingAmplitude = DEFAULT_SETTINGS.aimingAmplitude;
     addAA = DEFAULT_SETTINGS.addAA;
     sharpEdges = DEFAULT_SETTINGS.sharpEdges;
     addCargo = DEFAULT_SETTINGS.addCargo;
@@ -1756,16 +1756,16 @@ if(hasMapButtons){
   setupRepeatButton(rangeMinusBtn, () => changeRangeStep(-1));
   setupRepeatButton(rangePlusBtn, () => changeRangeStep(1));
 setupRepeatButton(amplitudeMinusBtn, () => {
-  if(aimingAmplitude > MIN_AMPLITUDE){
-    aimingAmplitude--;
+  if(settingsAimingAmplitude > MIN_AMPLITUDE){
+    settingsAimingAmplitude--;
     updateAmplitudeDisplay();
     updateAmplitudeIndicator();
     saveSettings();
   }
 });
 setupRepeatButton(amplitudePlusBtn, () => {
-  if(aimingAmplitude < MAX_AMPLITUDE){
-    aimingAmplitude++;
+  if(settingsAimingAmplitude < MAX_AMPLITUDE){
+    settingsAimingAmplitude++;
     updateAmplitudeDisplay();
     updateAmplitudeIndicator();
     saveSettings();
