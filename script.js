@@ -314,7 +314,8 @@ const IS_TEST_HARNESS = document.body.classList.contains('test-harness');
 
 const DEBUG_UI = false;
 
-const POINTS_POPUP_ELEMENTS = {
+// Points Popup = transient floating points (+X), not match progress and not plane counters
+const pointsPopupElements = {
   green: greenPointsPopup,
   blue: bluePointsPopup
 };
@@ -325,19 +326,19 @@ const planeCounterHosts = {
   blue: bluePlaneCounter
 };
 
-const POINTS_POPUP_BASE_OFFSETS = {
+const pointsPopupOffsets = {
   green: { x: 4,   y: 388 },
   blue:  { x: 414, y: 388 }
 };
 
-const POINTS_POPUP_BASE_SIZE = { width: 43, height: 124 };
-const POINTS_POPUP_ANCHOR_ROWS = [0.1, 0.32, 0.54, 0.76, 0.9];
-const POINTS_POPUP_INK_ANCHORS = {
-  green: POINTS_POPUP_ANCHOR_ROWS.map(y => ({ x: 0.5, y })),
-  blue: POINTS_POPUP_ANCHOR_ROWS.map(y => ({ x: 0.5, y }))
+const pointsPopupBaseSize = { width: 43, height: 124 };
+const pointsPopupAnchorRows = [0.1, 0.32, 0.54, 0.76, 0.9];
+const pointsPopupAnchors = {
+  green: pointsPopupAnchorRows.map(y => ({ x: 0.5, y })),
+  blue: pointsPopupAnchorRows.map(y => ({ x: 0.5, y }))
 };
 
-function clampPointsPopupInkOffset(value, limit) {
+function clampPointsPopupOffset(value, limit) {
   if (!Number.isFinite(value)) {
     return value;
   }
@@ -5776,15 +5777,15 @@ const PLANE_COUNTER_CONTAINERS   = {
   green: { left: 0,   top: 89,  right: 51,  bottom: 379 }
 };
 
-const POINTS_POPUP_INK_DURATION_MS = 2600;
+const pointsPopupDurationMs = 2600;
 const MIN_ROUND_TRANSITION_DELAY_MS = (() => {
   const greenSlots = Array.isArray(matchProgressLayout?.green) ? matchProgressLayout.green.length : 0;
   const blueSlots = Array.isArray(matchProgressLayout?.blue) ? matchProgressLayout.blue.length : 0;
   const maxSlotCount = Math.max(greenSlots, blueSlots, 0);
   const rowCascadeDelay = Math.max(0, maxSlotCount - 1) * matchProgressFragmentRowDelayMs;
-  return POINTS_POPUP_INK_DURATION_MS + matchProgressFragmentFadeDurationMs + rowCascadeDelay;
+  return pointsPopupDurationMs + matchProgressFragmentFadeDurationMs + rowCascadeDelay;
 })();
-const HUD_KILL_MARKER_DRAW_DURATION_MS = Math.max(400, POINTS_POPUP_INK_DURATION_MS * 0.55);
+const HUD_KILL_MARKER_DRAW_DURATION_MS = Math.max(400, pointsPopupDurationMs * 0.55);
 function getKillMarkerProgress(plane, now = performance.now()){
   if (!plane) {
     return 0;
@@ -5822,11 +5823,11 @@ function getKillMarkerProgress(plane, now = performance.now()){
 
   return Math.max(0, Math.min(1, elapsed / duration));
 }
-const pointsPopupInkQueues = {
+const pointsPopupQueue = {
   blue: [],
   green: []
 };
-const pointsPopupInkActive = {
+const pointsPopupActive = {
   blue: false,
   green: false
 };
@@ -5836,7 +5837,7 @@ const activePointsPopupEntries = {
 };
 
 function refreshPointsPopupAnchors(){
-  for(const [color, host] of Object.entries(POINTS_POPUP_ELEMENTS)){
+  for(const [color, host] of Object.entries(pointsPopupElements)){
     if(!(host instanceof HTMLElement)){
       continue;
     }
@@ -5850,31 +5851,31 @@ function spawnPointsPopup(color, delta, targetScore){
   if(delta <= 0) return;
   if(color !== "blue" && color !== "green") return;
 
-  enqueuePointsPopupInk(color, delta, targetScore);
+  enqueuePointsPopup(color, delta, targetScore);
 }
 
-function enqueuePointsPopupInk(color, delta, targetScore){
-  const queue = pointsPopupInkQueues[color];
+function enqueuePointsPopup(color, delta, targetScore){
+  const queue = pointsPopupQueue[color];
   if(!queue) return;
 
   queue.push({ delta, targetScore });
-  if(!pointsPopupInkActive[color]){
-    processNextPointsPopupInk(color);
+  if(!pointsPopupActive[color]){
+    processNextPointsPopup(color);
   }
 }
 
-function processNextPointsPopupInk(color){
-  const queue = pointsPopupInkQueues[color];
+function processNextPointsPopup(color){
+  const queue = pointsPopupQueue[color];
   if(!queue || queue.length === 0){
-    pointsPopupInkActive[color] = false;
+    pointsPopupActive[color] = false;
     activePointsPopupEntries[color] = null;
     return;
   }
 
-  pointsPopupInkActive[color] = true;
+  pointsPopupActive[color] = true;
   const entry = queue.shift();
   activePointsPopupEntries[color] = entry;
-  showPointsPopupInk(color, entry);
+  showPointsPopup(color, entry);
 }
 
 function getScoreForColor(color){
@@ -5886,7 +5887,7 @@ function updatePendingMatchProgressTargets(color, targetScore){
     return;
   }
 
-  const queue = pointsPopupInkQueues[color];
+  const queue = pointsPopupQueue[color];
   if(Array.isArray(queue)){
     for(const entry of queue){
       if(entry && typeof entry === "object"){
@@ -5906,7 +5907,7 @@ function setPointsPopupAnchor(host, color, targetScore){
     return false;
   }
 
-  const anchors = POINTS_POPUP_INK_ANCHORS?.[color];
+  const anchors = pointsPopupAnchors?.[color];
   const fragmentsPerSlot = matchProgressFragmentsPerSlot;
 
   const cleanup = () => {
@@ -5953,7 +5954,7 @@ function setPointsPopupAnchor(host, color, targetScore){
     if(Number.isFinite(computedWidth) && computedWidth > 0){
       hostWidth = computedWidth;
     } else {
-      hostWidth = POINTS_POPUP_BASE_SIZE.width * scale;
+      hostWidth = pointsPopupBaseSize.width * scale;
     }
   }
 
@@ -5963,7 +5964,7 @@ function setPointsPopupAnchor(host, color, targetScore){
     if(Number.isFinite(computedHeight) && computedHeight > 0){
       hostHeight = computedHeight;
     } else {
-      hostHeight = POINTS_POPUP_BASE_SIZE.height * scale;
+      hostHeight = pointsPopupBaseSize.height * scale;
     }
   }
 
@@ -5981,8 +5982,8 @@ function setPointsPopupAnchor(host, color, targetScore){
     pxTop = pxTop * scale;
   }
 
-  pxLeft = clampPointsPopupInkOffset(pxLeft, hostWidth);
-  pxTop = clampPointsPopupInkOffset(pxTop, hostHeight);
+  pxLeft = clampPointsPopupOffset(pxLeft, hostWidth);
+  pxTop = clampPointsPopupOffset(pxTop, hostHeight);
 
   if(Number.isFinite(pxLeft)){
     host.style.setProperty('--points-popup-ink-left', `${pxLeft}px`);
@@ -5999,7 +6000,7 @@ function setPointsPopupAnchor(host, color, targetScore){
   return Number.isFinite(pxLeft) && Number.isFinite(pxTop);
 }
 
-function showPointsPopupInk(color, entry){
+function showPointsPopup(color, entry){
   const delta = Number.isFinite(entry?.delta) ? entry.delta : 0;
   const resolveTargetScore = () => {
     if(entry && Number.isFinite(entry.targetScore)){
@@ -6010,57 +6011,57 @@ function showPointsPopupInk(color, entry){
 
   if(delta <= 0){
     syncMatchProgressState(color, resolveTargetScore());
-    pointsPopupInkActive[color] = false;
+    pointsPopupActive[color] = false;
     activePointsPopupEntries[color] = null;
-    processNextPointsPopupInk(color);
+    processNextPointsPopup(color);
     return;
   }
 
-  const host = POINTS_POPUP_ELEMENTS[color];
+  const host = pointsPopupElements[color];
   if(!host){
-    pointsPopupInkActive[color] = false;
+    pointsPopupActive[color] = false;
     syncMatchProgressState(color, resolveTargetScore());
     activePointsPopupEntries[color] = null;
-    processNextPointsPopupInk(color);
+    processNextPointsPopup(color);
     return;
   }
 
   const anchorTargetScore = resolveTargetScore();
   setPointsPopupAnchor(host, color, anchorTargetScore);
 
-  const ink = document.createElement("span");
-  ink.className = "points-popup-ink";
-  ink.textContent = `+${delta}`;
+  const popup = document.createElement("span");
+  popup.className = "points-popup-ink";
+  popup.textContent = `+${delta}`;
 
   let cleared = false;
   const finalize = () => {
     if(cleared) return;
     cleared = true;
     syncMatchProgressState(color, resolveTargetScore());
-    if(ink.parentNode === host){
-      host.removeChild(ink);
+    if(popup.parentNode === host){
+      host.removeChild(popup);
     }
-    pointsPopupInkActive[color] = false;
+    pointsPopupActive[color] = false;
     activePointsPopupEntries[color] = null;
-    processNextPointsPopupInk(color);
+    processNextPointsPopup(color);
   };
 
-  ink.addEventListener("animationend", finalize, { once: true });
-  setTimeout(finalize, POINTS_POPUP_INK_DURATION_MS);
+  popup.addEventListener("animationend", finalize, { once: true });
+  setTimeout(finalize, pointsPopupDurationMs);
 
-  host.appendChild(ink);
+  host.appendChild(popup);
 }
 
 function clearPointsPopups(){
-  for(const key of Object.keys(POINTS_POPUP_ELEMENTS)){
-    const host = POINTS_POPUP_ELEMENTS[key];
+  for(const key of Object.keys(pointsPopupElements)){
+    const host = pointsPopupElements[key];
     if(host){
       host.textContent = "";
     }
-    if(Array.isArray(pointsPopupInkQueues[key])){
-      pointsPopupInkQueues[key].length = 0;
+    if(Array.isArray(pointsPopupQueue[key])){
+      pointsPopupQueue[key].length = 0;
     }
-    pointsPopupInkActive[key] = false;
+    pointsPopupActive[key] = false;
     activePointsPopupEntries[key] = null;
   }
 }
@@ -6153,7 +6154,7 @@ function renderScoreboard(){
 }
 
 function buildPlaneCounterFrame(color, containerLeft, containerTop, scaleX, scaleY) {
-  const host = planeCounterHosts?.[color] || POINTS_POPUP_ELEMENTS?.[color];
+  const host = planeCounterHosts?.[color] || pointsPopupElements?.[color];
   if (host instanceof HTMLElement) {
     const rect = visualRect(host);
     const containerRect = visualRect(gsFrameEl);
@@ -6191,8 +6192,8 @@ function buildPlaneCounterFrame(color, containerLeft, containerTop, scaleX, scal
     const left = containerLeft + baseLeft * scaleX;
     const top = containerTop + baseTop * scaleY;
 
-    const scaleFromCssX = width / POINTS_POPUP_BASE_SIZE.width;
-    const scaleFromCssY = height / POINTS_POPUP_BASE_SIZE.height;
+    const scaleFromCssX = width / pointsPopupBaseSize.width;
+    const scaleFromCssY = height / pointsPopupBaseSize.height;
 
     if (
       Number.isFinite(left) &&
