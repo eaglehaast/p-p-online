@@ -2420,7 +2420,9 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 
 
-  let rangeCells; // cells for menu and physics
+  if (typeof window.rangeCells === 'undefined') {
+    window.rangeCells = undefined;
+  }
 let buildingsCount   = 0;
 let aimingAmplitude;     // 0..20 (UI показывает *5)
 
@@ -2699,7 +2701,7 @@ function setStoredSetting(key, value){
 function loadSettings(){
   const previousFlameStyle = settings.flameStyle;
     const fr = parseInt(getStoredSetting('settings.flightRangeCells'), 10);
-    rangeCells = Number.isNaN(fr) ? 15 : fr;
+    window.rangeCells = Number.isNaN(fr) ? 15 : fr;
   const amp = parseFloat(getStoredSetting('settings.aimingAmplitude'));
   aimingAmplitude = Number.isNaN(amp) ? 10 / 5 : amp;
   settings.addAA = getStoredSetting('settings.addAA') === 'true';
@@ -2712,8 +2714,8 @@ function loadSettings(){
 
   // Clamp loaded values so corrupted or out-of-range settings
   // don't break the game on startup
-    rangeCells = Math.min(MAX_FLIGHT_RANGE_CELLS,
-                               Math.max(MIN_FLIGHT_RANGE_CELLS, rangeCells));
+    window.rangeCells = Math.min(MAX_FLIGHT_RANGE_CELLS,
+                               Math.max(MIN_FLIGHT_RANGE_CELLS, window.rangeCells));
   aimingAmplitude  = Math.min(MAX_AMPLITUDE,
                              Math.max(MIN_AMPLITUDE, aimingAmplitude));
 
@@ -3437,7 +3439,7 @@ onlineBtn.addEventListener("click",()=>{
 });
 if(classicRulesBtn){
   classicRulesBtn.addEventListener('click', () => {
-      rangeCells = 15;
+      window.rangeCells = 15;
     aimingAmplitude = 10 / 5; // 10°
     settings.addAA = false;
     settings.sharpEdges = false;
@@ -3781,7 +3783,7 @@ function onHandleUp(){
   const dragAngle = Math.atan2(dy, dx);
 
   // дальность в пикселях
-    const flightDistancePx = rangeCells * CELL_SIZE;
+    const flightDistancePx = window.rangeCells * CELL_SIZE;
   const speedPxPerSec = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
   const scale = dragDistance / MAX_DRAG_DISTANCE;
 
@@ -3864,7 +3866,7 @@ function doComputerMove(){
   }
 
   // 4. Attack logic (direct or with bounce)
-    const flightDistancePx = rangeCells * CELL_SIZE;
+    const flightDistancePx = window.rangeCells * CELL_SIZE;
   const speedPxPerSec    = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
   let best = null; // {plane, enemy, vx, vy, totalDist}
 
@@ -3932,7 +3934,7 @@ function doComputerMove(){
 }
 
 function planPathToPoint(plane, tx, ty){
-    const flightDistancePx = rangeCells * CELL_SIZE;
+    const flightDistancePx = window.rangeCells * CELL_SIZE;
   const speedPxPerSec    = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
 
   if(isPathClear(plane.x, plane.y, tx, ty)){
@@ -5244,7 +5246,7 @@ function drawPlanesAndTrajectories(){
       if(vdist > MAX_DRAG_DISTANCE){
         vdist = MAX_DRAG_DISTANCE;
       }
-      const cells = (vdist / MAX_DRAG_DISTANCE) * rangeCells;
+      const cells = (vdist / MAX_DRAG_DISTANCE) * window.rangeCells;
       const textX = p.x + POINT_RADIUS + 8;
       rangeTextInfo = { color: colorFor(p.color), cells, x: textX, y: p.y };
     }
