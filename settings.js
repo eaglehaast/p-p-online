@@ -1,3 +1,4 @@
+(() => {
 const MIN_FLIGHT_RANGE_CELLS = 5;
 const MAX_FLIGHT_RANGE_CELLS = 30;
 const RANGE_DISPLAY_VALUES = [5, 10, 15, 20, 25, 30];
@@ -1827,3 +1828,4 @@ window.paperWingsSettings = {
   onShow: handleSettingsLayerShow,
   onHide: handleSettingsLayerHide
 };
+})();
