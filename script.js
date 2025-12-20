@@ -58,6 +58,12 @@ const resizeDebugState = {
   }
 };
 
+function getCanvasDpr() {
+  const RAW_DPR = window.devicePixelRatio || 1;
+  const CANVAS_DPR = Math.min(RAW_DPR, 2);
+  return { RAW_DPR, CANVAS_DPR };
+}
+
 function logResizeDebug(eventKey) {
   if (!DEBUG_RESIZE) return;
   const now = performance.now();
@@ -78,7 +84,17 @@ function logResizeDebug(eventKey) {
       Math.round((count / elapsedSec) * 10) / 10
     ])
   );
-  console.log('[resize-debug] calls per second', perSecond);
+  const { RAW_DPR, CANVAS_DPR } = getCanvasDpr();
+  const backingStoreSizes = {
+    gsBoardCanvas: gsBoardCanvas ? `${gsBoardCanvas.width}x${gsBoardCanvas.height}` : null,
+    aimCanvas: aimCanvas ? `${aimCanvas.width}x${aimCanvas.height}` : null,
+    planeCanvas: planeCanvas ? `${planeCanvas.width}x${planeCanvas.height}` : null
+  };
+  console.log('[resize-debug] calls per second', perSecond, {
+    RAW_DPR,
+    CANVAS_DPR,
+    backingStoreSizes
+  });
   resizeDebugState.counts.resizeCanvas = 0;
   resizeDebugState.counts.scheduleViewportResize = 0;
   resizeDebugState.counts.syncAllCanvasBackingStores = 0;
@@ -92,15 +108,15 @@ function computeViewFromCanvas(canvas) {
   }
 
   const rect = canvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
+  const { CANVAS_DPR } = getCanvasDpr();
 
   const cssW = Math.max(1, rect.width);
   const cssH = Math.max(1, rect.height);
 
-  const pxW = Math.round(cssW * dpr);
-  const pxH = Math.round(cssH * dpr);
+  const pxW = Math.round(cssW * CANVAS_DPR);
+  const pxH = Math.round(cssH * CANVAS_DPR);
 
-  VIEW.dpr = dpr;
+  VIEW.dpr = CANVAS_DPR;
   VIEW.cssW = cssW;
   VIEW.cssH = cssH;
   VIEW.pxW = pxW;
@@ -122,12 +138,12 @@ function resizeCanvasToMatchCss(canvas) {
   if (!(canvas instanceof HTMLCanvasElement)) return;
 
   const rect = canvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
+  const { CANVAS_DPR } = getCanvasDpr();
   const w = Math.max(1, rect.width);
   const h = Math.max(1, rect.height);
 
-  const pxW = Math.round(w * dpr);
-  const pxH = Math.round(h * dpr);
+  const pxW = Math.round(w * CANVAS_DPR);
+  const pxH = Math.round(h * CANVAS_DPR);
 
   if (canvas.width !== pxW) canvas.width = pxW;
   if (canvas.height !== pxH) canvas.height = pxH;
@@ -140,11 +156,11 @@ function applyViewTransform(ctx) {
 
 function syncCanvasBackingStore(canvas) {
   if (!canvas) return;
-  const dpr = window.devicePixelRatio || 1;
+  const { CANVAS_DPR } = getCanvasDpr();
   const r = canvas.getBoundingClientRect();
 
-  const w = Math.max(1, Math.round(r.width * dpr));
-  const h = Math.max(1, Math.round(r.height * dpr));
+  const w = Math.max(1, Math.round(r.width * CANVAS_DPR));
+  const h = Math.max(1, Math.round(r.height * CANVAS_DPR));
 
   if (canvas.width !== w) canvas.width = w;
   if (canvas.height !== h) canvas.height = h;
@@ -802,7 +818,7 @@ function syncOverlayCanvasToGameCanvas(targetCanvas, cssWidth, cssHeight) {
 
   const width = Math.max(1, Math.round(cssWidth || 0));
   const height = Math.max(1, Math.round(cssHeight || 0));
-  const dpr = window.devicePixelRatio || 1;
+  const { CANVAS_DPR } = getCanvasDpr();
 
   targetCanvas.style.position = 'absolute';
   targetCanvas.style.left = '0px';
@@ -810,8 +826,8 @@ function syncOverlayCanvasToGameCanvas(targetCanvas, cssWidth, cssHeight) {
   targetCanvas.style.width = `${width}px`;
   targetCanvas.style.height = `${height}px`;
 
-  const backingWidth = Math.max(1, Math.round(width * dpr));
-  const backingHeight = Math.max(1, Math.round(height * dpr));
+  const backingWidth = Math.max(1, Math.round(width * CANVAS_DPR));
+  const backingHeight = Math.max(1, Math.round(height * CANVAS_DPR));
 
   if (targetCanvas.width !== backingWidth) targetCanvas.width = backingWidth;
   if (targetCanvas.height !== backingHeight) targetCanvas.height = backingHeight;
@@ -6663,12 +6679,12 @@ function resizeCanvas() {
   const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
   const cssW = CANVAS_BASE_WIDTH * safeScale;
   const cssH = CANVAS_BASE_HEIGHT * safeScale;
-  const dpr = window.devicePixelRatio || 1;
+  const { CANVAS_DPR } = getCanvasDpr();
   const unchanged =
     Math.abs(cssW - lastResizeMetrics.cssW) < 0.1 &&
     Math.abs(cssH - lastResizeMetrics.cssH) < 0.1 &&
     Math.abs(safeScale - lastResizeMetrics.scale) < 0.0001 &&
-    Math.abs(dpr - lastResizeMetrics.dpr) < 0.001;
+    Math.abs(CANVAS_DPR - lastResizeMetrics.dpr) < 0.001;
 
   if (unchanged) {
     logResizeDebug();
@@ -6679,7 +6695,7 @@ function resizeCanvas() {
     cssW,
     cssH,
     scale: safeScale,
-    dpr
+    dpr: CANVAS_DPR
   };
 
   updateUiScale();
