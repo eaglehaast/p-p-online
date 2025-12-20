@@ -10,6 +10,8 @@
 const mantisIndicator = document.getElementById("mantisIndicator");
 const goatIndicator   = document.getElementById("goatIndicator");
 
+const DEBUG_RESIZE = false;
+
 const loadingOverlay = document.getElementById("loadingOverlay");
 
 const uiFrameEl = document.getElementById("uiFrame");
@@ -46,6 +48,44 @@ const VIEW = {
   scaleY: 1
 };
 
+const resizeDebugState = {
+  lastLogTime: 0,
+  counts: {
+    resizeCanvas: 0,
+    scheduleViewportResize: 0,
+    syncAllCanvasBackingStores: 0,
+    resizeCanvasToMatchCss: 0
+  }
+};
+
+function logResizeDebug(eventKey) {
+  if (!DEBUG_RESIZE) return;
+  const now = performance.now();
+  if (eventKey && resizeDebugState.counts[eventKey] !== undefined) {
+    resizeDebugState.counts[eventKey] += 1;
+  }
+  if (resizeDebugState.lastLogTime === 0) {
+    resizeDebugState.lastLogTime = now;
+    return;
+  }
+  const elapsedMs = now - resizeDebugState.lastLogTime;
+  if (elapsedMs < 1000) return;
+
+  const elapsedSec = elapsedMs / 1000;
+  const perSecond = Object.fromEntries(
+    Object.entries(resizeDebugState.counts).map(([key, count]) => [
+      key,
+      Math.round((count / elapsedSec) * 10) / 10
+    ])
+  );
+  console.log('[resize-debug] calls per second', perSecond);
+  resizeDebugState.counts.resizeCanvas = 0;
+  resizeDebugState.counts.scheduleViewportResize = 0;
+  resizeDebugState.counts.syncAllCanvasBackingStores = 0;
+  resizeDebugState.counts.resizeCanvasToMatchCss = 0;
+  resizeDebugState.lastLogTime = now;
+}
+
 function computeViewFromCanvas(canvas) {
   if (!(canvas instanceof HTMLCanvasElement)) {
     return;
@@ -78,6 +118,7 @@ function pxToWorld(x, y) {
 }
 
 function resizeCanvasToMatchCss(canvas) {
+  logResizeDebug('resizeCanvasToMatchCss');
   if (!(canvas instanceof HTMLCanvasElement)) return;
 
   const rect = canvas.getBoundingClientRect();
@@ -6589,12 +6630,21 @@ function updateUiScale() {
 
 /* ======= CANVAS RESIZE ======= */
 function syncAllCanvasBackingStores() {
+  logResizeDebug('syncAllCanvasBackingStores');
   syncCanvasBackingStore(gsBoardCanvas);
   syncCanvasBackingStore(planeCanvas);
   syncCanvasBackingStore(aimCanvas);
 }
 
+let lastResizeMetrics = {
+  cssW: 0,
+  cssH: 0,
+  scale: 0,
+  dpr: 0
+};
+
 function resizeCanvas() {
+  logResizeDebug('resizeCanvas');
   // Keep the game in portrait mode: if the device rotates to landscape,
   // attempt to re-lock orientation.  Do not skip resizing so the canvases
   // remain correctly sized even if the device starts in landscape.
@@ -6602,6 +6652,35 @@ function resizeCanvas() {
     lockOrientation();
     // continue resizing instead of early returning
   }
+
+  const viewportMetrics = VV();
+  const viewportWidth = Math.max(1, viewportMetrics.width || window.innerWidth || 1);
+  const viewportHeight = Math.max(1, viewportMetrics.height || window.innerHeight || 1);
+  const scale = Math.min(
+    viewportWidth / FRAME_BASE_WIDTH,
+    viewportHeight / FRAME_BASE_HEIGHT
+  );
+  const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  const cssW = CANVAS_BASE_WIDTH * safeScale;
+  const cssH = CANVAS_BASE_HEIGHT * safeScale;
+  const dpr = window.devicePixelRatio || 1;
+  const unchanged =
+    Math.abs(cssW - lastResizeMetrics.cssW) < 0.1 &&
+    Math.abs(cssH - lastResizeMetrics.cssH) < 0.1 &&
+    Math.abs(safeScale - lastResizeMetrics.scale) < 0.0001 &&
+    Math.abs(dpr - lastResizeMetrics.dpr) < 0.001;
+
+  if (unchanged) {
+    logResizeDebug();
+    return;
+  }
+
+  lastResizeMetrics = {
+    cssW,
+    cssH,
+    scale: safeScale,
+    dpr
+  };
 
   updateUiScale();
   syncBackgroundLayout(FRAME_BASE_WIDTH, FRAME_BASE_HEIGHT);
@@ -6657,25 +6736,43 @@ function resizeCanvas() {
     };
   };
 
-  console.log('Layout rects after resize', {
-    gsFrameEl: rectSummary(gsFrameEl),
-    stage: rectSummary(gsFrameEl),
-    gameCanvas: rectSummary(gsBoardCanvas),
-    aimCanvas: rectSummary(aimCanvas),
-    planeCanvas: rectSummary(planeCanvas),
-    overlayContainer: rectSummary(overlayContainer),
-    greenPlaneCounter: rectSummary(greenPlaneCounter),
-    bluePlaneCounter: rectSummary(bluePlaneCounter),
-    greenPointsPopup: rectSummary(greenPointsPopup),
-    bluePointsPopup: rectSummary(bluePointsPopup)
-  });
+  if (DEBUG_RESIZE) {
+    console.log('Layout rects after resize', {
+      gsFrameEl: rectSummary(gsFrameEl),
+      stage: rectSummary(gsFrameEl),
+      gameCanvas: rectSummary(gsBoardCanvas),
+      aimCanvas: rectSummary(aimCanvas),
+      planeCanvas: rectSummary(planeCanvas),
+      overlayContainer: rectSummary(overlayContainer),
+      greenPlaneCounter: rectSummary(greenPlaneCounter),
+      bluePlaneCounter: rectSummary(bluePlaneCounter),
+      greenPointsPopup: rectSummary(greenPointsPopup),
+      bluePointsPopup: rectSummary(bluePointsPopup)
+    });
+  }
 }
 
 window.addEventListener('resize', resizeCanvas);
 window.addEventListener('load', updateUiScale);
 if (window.visualViewport) {
   let pendingViewportResize = null;
+  let lastViewportSnapshot = {
+    scale: window.visualViewport.scale || 1,
+    width: window.visualViewport.width || 0,
+    height: window.visualViewport.height || 0
+  };
+  const updateViewportSnapshot = () => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    lastViewportSnapshot = {
+      scale: Number.isFinite(viewport.scale) && viewport.scale > 0 ? viewport.scale : 1,
+      width: Number.isFinite(viewport.width) ? viewport.width : 0,
+      height: Number.isFinite(viewport.height) ? viewport.height : 0
+    };
+  };
   const scheduleViewportResize = () => {
+    logResizeDebug('scheduleViewportResize');
+    updateViewportSnapshot();
     if (pendingViewportResize !== null) {
       return;
     }
@@ -6685,8 +6782,31 @@ if (window.visualViewport) {
     });
   };
 
+  const handleViewportScroll = () => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const nextScale = Number.isFinite(viewport.scale) && viewport.scale > 0 ? viewport.scale : 1;
+    const nextWidth = Number.isFinite(viewport.width) ? viewport.width : 0;
+    const nextHeight = Number.isFinite(viewport.height) ? viewport.height : 0;
+    const sizeChanged =
+      Math.abs(nextScale - lastViewportSnapshot.scale) > 0.0001 ||
+      Math.abs(nextWidth - lastViewportSnapshot.width) > 0.1 ||
+      Math.abs(nextHeight - lastViewportSnapshot.height) > 0.1;
+
+    if (!sizeChanged) {
+      return;
+    }
+
+    lastViewportSnapshot = {
+      scale: nextScale,
+      width: nextWidth,
+      height: nextHeight
+    };
+    scheduleViewportResize();
+  };
+
   window.visualViewport.addEventListener('resize', scheduleViewportResize);
-  window.visualViewport.addEventListener('scroll', scheduleViewportResize);
+  window.visualViewport.addEventListener('scroll', handleViewportScroll);
 }
 // Lock orientation to portrait and prevent the canvas from redrawing on rotation
 function lockOrientation(){
