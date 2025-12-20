@@ -64,6 +64,12 @@ body, button {
     display: none;
   }
 
+  #menuLayer[hidden],
+  #settingsLayer[hidden],
+  #gsFrame[hidden] {
+    display: none;
+  }
+
   #gsFrame {
     z-index: 1;
   }
