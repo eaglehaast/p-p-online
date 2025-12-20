@@ -242,11 +242,11 @@ class JetFlameRenderer {
     this.elapsed = 0;
     this._tick = this.tick.bind(this);
     this.running = false;
+    this._frameId = null;
     this.sparks = [];
     this.sparkAccumulator = 0;
 
     this.resizeCanvas();
-    this.start();
   }
 
   setScale(scale) {
@@ -307,14 +307,19 @@ class JetFlameRenderer {
   }
 
   start() {
-    if (!this.running) {
-      this.running = true;
-      requestAnimationFrame(this._tick);
-    }
+    if (this._frameId) return;
+    this.running = true;
+    this.lastTimestamp = 0;
+    this._frameId = requestAnimationFrame(this._tick);
   }
 
   stop() {
+    if (this._frameId) {
+      cancelAnimationFrame(this._frameId);
+      this._frameId = null;
+    }
     this.running = false;
+    this.lastTimestamp = 0;
   }
 
   tick(timestamp) {
@@ -328,7 +333,7 @@ class JetFlameRenderer {
     this.updateSparks(dt, flameState);
     this.draw(flameState);
 
-    requestAnimationFrame(this._tick);
+    this._frameId = requestAnimationFrame(this._tick);
   }
 
   computeFlameState() {
@@ -750,6 +755,8 @@ const menuFlameRenderer =
     : null;
 const isTestHarnessPage = document.body.classList.contains('test-harness');
 
+const isSettingsLayerVisible = () => (settingsLayer ? !settingsLayer.hidden : true);
+let isSettingsActive = isSettingsLayerVisible();
 let previewCanvas = null;
 let previewCtx = null;
 let previewDpr = window.devicePixelRatio || 1;
@@ -774,7 +781,17 @@ const previewHandle = {
   origAngle: 0
 };
 
-const isSettingsLayerVisible = () => (settingsLayer ? !settingsLayer.hidden : true);
+function startMenuFlameRenderer(){
+  if(menuFlameRenderer){
+    menuFlameRenderer.start();
+  }
+}
+
+function stopMenuFlameRenderer(){
+  if(menuFlameRenderer){
+    menuFlameRenderer.stop();
+  }
+}
 
 function stopPreviewAnimation(){
   if(previewAnimationId){
@@ -785,6 +802,7 @@ function stopPreviewAnimation(){
 }
 
 function startPreviewAnimationIfNeeded(){
+  if(!isSettingsActive) return;
   if(previewSimulationInitialized && !previewAnimationId){
     previewLastTimestamp = 0;
     previewAnimationId = requestAnimationFrame(tickPreview);
@@ -792,6 +810,7 @@ function startPreviewAnimationIfNeeded(){
 }
 
 function startPreviewSimulation(){
+  if(!isSettingsActive) return;
   if(previewSimulationInitialized){
     return;
   }
@@ -801,6 +820,7 @@ function startPreviewSimulation(){
 }
 
 function refreshPreviewSimulationIfInitialized(){
+  if(!isSettingsActive) return;
   if(previewSimulationInitialized){
     setupPreviewSimulation();
   }
@@ -1072,6 +1092,7 @@ function updateMapNameDisplay(){
 }
 
 function createPreviewCanvas(){
+  if(!isSettingsActive) return;
   if(!mapPreviewContainer || previewCanvas) return;
   previewCanvas = document.createElement('canvas');
   previewCanvas.id = 'mapPreviewSimulation';
@@ -1088,6 +1109,7 @@ function createPreviewCanvas(){
 }
 
 function resizePreviewCanvas(){
+  if(!isSettingsActive) return;
   if(!previewCanvas || !mapPreviewContainer) return;
   const rect = mapPreviewContainer.getBoundingClientRect();
   const width = rect.width;
@@ -1163,6 +1185,7 @@ function updatePreviewPlaneHeading(plane, vx = plane?.vx, vy = plane?.vy){
 }
 
 function rebuildPreviewPlanes(){
+  if(!isSettingsActive) return;
   if(!mapPreviewContainer) return;
   createPreviewCanvas();
   const planeElements = mapPreviewContainer.querySelectorAll(
@@ -1176,6 +1199,7 @@ function rebuildPreviewPlanes(){
 }
 
 function rebuildPreviewBuildings(){
+  if(!isSettingsActive) return;
   previewBuildings = [];
   if(!mapPreviewContainer) return;
   const map = MAPS[mapIndex];
@@ -1604,7 +1628,7 @@ function drawPreviewArrow(){
 }
 
 function tickPreview(timestamp){
-  if(!previewCtx || !isSettingsLayerVisible()){
+  if(!previewCtx || !isSettingsActive){
     previewAnimationId = null;
     previewLastTimestamp = 0;
     return;
@@ -1621,12 +1645,13 @@ function tickPreview(timestamp){
 }
 
 function setupPreviewSimulation(){
+  if(!isSettingsActive) return;
   if(!mapPreviewContainer) return;
   if(!previewCanvas){
     createPreviewCanvas();
   }
   rebuildPreviewPlanes();
-  if(!previewAnimationId && isSettingsLayerVisible()){
+  if(!previewAnimationId && isSettingsActive){
     previewAnimationId = requestAnimationFrame(tickPreview);
   }
 }
@@ -1800,11 +1825,15 @@ if(exitBtn){
 }
 
 function handleSettingsLayerShow(){
+  isSettingsActive = true;
+  stopMenuFlameRenderer();
   syncAccuracyCrackWatcher();
+  startPreviewSimulation();
   startPreviewAnimationIfNeeded();
 }
 
 function handleSettingsLayerHide(){
+  isSettingsActive = false;
   if(accuracyCrackWatcher){
     accuracyCrackWatcher.stop();
   }
@@ -1812,7 +1841,7 @@ function handleSettingsLayerHide(){
 }
 
 function cleanupRenderers(){
-  if(menuFlameRenderer) menuFlameRenderer.stop();
+  stopMenuFlameRenderer();
   handleSettingsLayerHide();
 }
 
@@ -1826,6 +1855,8 @@ updateAmplitudeIndicator();
 
 window.paperWingsSettings = {
   onShow: handleSettingsLayerShow,
-  onHide: handleSettingsLayerHide
+  onHide: handleSettingsLayerHide,
+  onMenuShow: startMenuFlameRenderer,
+  onMenuHide: stopMenuFlameRenderer
 };
 })();

@@ -1855,6 +1855,7 @@ function showSettingsLayer() {
   }
 
   setLayerVisibility(menuScreen, false);
+  window.paperWingsSettings?.onMenuHide?.();
   setLayerVisibility(gsFrameLayer, false);
   setLayerVisibility(settingsLayer, true);
   setScreenMode('SETTINGS');
@@ -1872,6 +1873,7 @@ function showMenuLayer() {
   setLayerVisibility(gsFrameLayer, false);
   setLayerVisibility(menuScreen, true);
   setScreenMode('MENU');
+  window.paperWingsSettings?.onMenuShow?.();
 }
 
 function activateGameScreen() {
@@ -1886,6 +1888,7 @@ function activateGameScreen() {
   menuScreenLocked = true;
 
   setLayerVisibility(menuScreen, false);
+  window.paperWingsSettings?.onMenuHide?.();
   setLayerVisibility(settingsLayer, false);
   window.paperWingsSettings?.onHide?.();
   setLayerVisibility(gsFrameLayer, true);
