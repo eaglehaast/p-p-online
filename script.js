@@ -109,6 +109,16 @@ function logResizeDebug(eventKey) {
   resizeDebugState.lastLogTime = now;
 }
 
+function trackBootResizeCount(counterKey) {
+  if (!DEBUG_BOOT && !DEBUG_RESIZE) return;
+  const activeWindow = bootTrace.resizeWindow;
+  if (!activeWindow) return;
+  const now = performance.now();
+  if (now - activeWindow.start < 2000 && counterKey in activeWindow) {
+    activeWindow[counterKey] += 1;
+  }
+}
+
 function logBootStep(label) {
   if (!DEBUG_BOOT || bootTrace.startTs === null) return;
   const entry = { label, t: performance.now() - bootTrace.startTs };
