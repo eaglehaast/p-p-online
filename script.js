@@ -6685,7 +6685,7 @@ function startNewRound(){
     syncOverlayCanvasToGameCanvas(planeCanvas, cssWidth, cssHeight);
   });
 
-  setBackgroundImage('pics/background behind the canvas 5.png');
+  setBackgroundImage('ui_gamescreen/background behind the canvas 5.png');
 
   initPoints(); // ориентации на базе
   blueFlagCarrier = null;
