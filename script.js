@@ -11,6 +11,12 @@ const mantisIndicator = document.getElementById("mantisIndicator");
 const goatIndicator   = document.getElementById("goatIndicator");
 
 const DEBUG_RESIZE = false;
+const DEBUG_BOOT = false;
+
+const bootTrace = {
+  startTs: null,
+  markers: []
+};
 
 const loadingOverlay = document.getElementById("loadingOverlay");
 
@@ -100,6 +106,13 @@ function logResizeDebug(eventKey) {
   resizeDebugState.counts.syncAllCanvasBackingStores = 0;
   resizeDebugState.counts.resizeCanvasToMatchCss = 0;
   resizeDebugState.lastLogTime = now;
+}
+
+function logBootStep(label) {
+  if (!DEBUG_BOOT || bootTrace.startTs === null) return;
+  const entry = { label, t: performance.now() - bootTrace.startTs };
+  bootTrace.markers.push(entry);
+  console.log('[boot]', entry);
 }
 
 function computeViewFromCanvas(canvas) {
@@ -255,6 +268,9 @@ const PRELOAD_IMAGE_URLS = [
 ];
 
 function hideLoadingOverlay() {
+  if (bootTrace.startTs !== null) {
+    logBootStep("hideLoadingOverlay");
+  }
   if (loadingOverlay) {
     loadingOverlay.classList.add("loading-overlay--hidden");
   }
@@ -1934,6 +1950,7 @@ function showMenuLayer() {
 }
 
 function activateGameScreen() {
+  logBootStep("activateGameScreen");
   const body = document.body;
   const wasMenu = body.classList.contains('screen--menu');
   if (wasMenu) {
@@ -3298,6 +3315,7 @@ function addScore(color, delta){
 }
 
 let animationFrameId = null;
+let gameDrawFirstLogged = false;
 
 /* Планирование хода ИИ */
 let aiMoveScheduled = false;
@@ -3478,6 +3496,7 @@ function stopGameLoop(){
   }
 }
 function startGameLoop(){
+  logBootStep("startGameLoop");
   if(animationFrameId === null){
     lastFrameTime = performance.now();
     animationFrameId = requestAnimationFrame(gameDraw);
@@ -3537,6 +3556,10 @@ playBtn.addEventListener("click",()=>{
     alert("Please select a game mode before starting.");
     return;
   }
+  bootTrace.startTs = performance.now();
+  bootTrace.markers = [];
+  gameDrawFirstLogged = false;
+  console.log("[boot] play click", { t: 0 });
   gameMode = selectedMode;
   restoreGameBackgroundAfterMenu();
   setMenuVisibility(false);
@@ -4362,6 +4385,10 @@ function handleAAForPlane(p, fp){
 }
   /* ======= GAME LOOP ======= */
   function gameDraw(){
+  if (!gameDrawFirstLogged) {
+    logBootStep("gameDraw");
+    gameDrawFirstLogged = true;
+  }
   const now = performance.now();
   let deltaSec = (now - lastFrameTime) / 1000;
   deltaSec = Math.min(deltaSec, 0.05);
@@ -6457,6 +6484,7 @@ noBtn.addEventListener("click", () => {
 });
 
 function startNewRound(){
+  logBootStep("startNewRound");
   loadMatchProgressImagesIfNeeded();
   preloadPlaneSprites();
   restoreGameBackgroundAfterMenu();
