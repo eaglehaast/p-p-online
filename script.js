@@ -1997,6 +1997,7 @@ let selectedRuleset = "classic";
 
 let menuBackgroundSnapshot = null;
 let hasActivatedGameScreen = false;
+let needsGameScreenSync = false;
 let menuScreenLocked = false;
 
 function setLayerVisibility(layer, visible) {
@@ -2055,8 +2056,7 @@ function activateGameScreen() {
   }
 
   if (!hasActivatedGameScreen || wasMenu) {
-    sizeAndAlignOverlays();
-    hasActivatedGameScreen = true;
+    needsGameScreenSync = true;
   }
 }
 
@@ -6665,6 +6665,17 @@ function startNewRound(){
   goatIndicator.style.display = "block";
   planeCanvas.style.display = "block";
   aimCanvas.style.display = "block";
+
+  if (needsGameScreenSync) {
+    resizeCanvas();
+    sizeAndAlignOverlays();
+    requestAnimationFrame(() => {
+      resizeCanvas();
+      sizeAndAlignOverlays();
+    });
+    needsGameScreenSync = false;
+    hasActivatedGameScreen = true;
+  }
 
   requestAnimationFrame(() => {
     const rect = overlayContainer?.getBoundingClientRect?.();
