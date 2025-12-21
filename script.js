@@ -13,6 +13,11 @@ const goatIndicator   = document.getElementById("goatIndicator");
 const DEBUG_RESIZE = false;
 const DEBUG_BOOT = false;
 
+const bootTrace = {
+  startTs: null,
+  markers: []
+};
+
 const loadingOverlay = document.getElementById("loadingOverlay");
 
 const uiFrameEl = document.getElementById("uiFrame");
@@ -107,14 +112,11 @@ function logResizeDebug(eventKey) {
   resizeDebugState.lastLogTime = now;
 }
 
-function trackBootResizeCount(counterKey) {
-  if (!DEBUG_BOOT) return;
-  const activeWindow = bootTrace.resizeWindow;
-  if (!activeWindow) return;
-  const now = performance.now();
-  if (now - activeWindow.start < 2000 && counterKey in activeWindow) {
-    activeWindow[counterKey] += 1;
-  }
+function logBootStep(label) {
+  if (!DEBUG_BOOT || bootTrace.startTs === null) return;
+  const entry = { label, t: performance.now() - bootTrace.startTs };
+  bootTrace.markers.push(entry);
+  console.log('[boot]', entry);
 }
 
 function computeViewFromCanvas(canvas) {
@@ -269,10 +271,70 @@ const PRELOAD_IMAGE_URLS = [
   ...ALL_EXPLOSION_SPRITES
 ];
 
+function installImageWatch(img, url, label) {
+  if (!img) return;
+  setTimeout(() => {
+    if (!img.complete || !img.naturalWidth) {
+      console.warn("[asset][stuck]", { label, url });
+    }
+  }, 10000);
+
+  const existingOnError = img.onerror;
+  img.onerror = (e) => {
+    console.warn("[asset][error]", { label, url, e });
+    if (typeof existingOnError === "function") {
+      existingOnError.call(img, e);
+    }
+  };
+}
+
 function hideLoadingOverlay() {
+  if (bootTrace.startTs !== null) {
+    logBootStep("hideLoadingOverlay");
+  }
   if (loadingOverlay) {
     loadingOverlay.classList.add("loading-overlay--hidden");
   }
+}
+
+const IMAGE_LOAD_TIMEOUT_MS = 8000;
+const pendingImageLoads = new Set();
+
+function trackImageLoad(label, url, img, timeoutMs = IMAGE_LOAD_TIMEOUT_MS) {
+  if (!img) {
+    return;
+  }
+  const normalizedUrl = typeof url === "string" ? url : "";
+  const pendingEntry = { label, url: normalizedUrl };
+  pendingImageLoads.add(pendingEntry);
+  console.log("[IMG] pending", { label, url: normalizedUrl, pending: pendingImageLoads.size });
+
+  let timeoutId = null;
+  if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+    timeoutId = setTimeout(() => {
+      if (pendingImageLoads.has(pendingEntry)) {
+        console.warn("[IMG] timeout", { label, url: normalizedUrl, pending: pendingImageLoads.size });
+      }
+    }, timeoutMs);
+  }
+
+  const finalize = (status, event) => {
+    if (!pendingImageLoads.has(pendingEntry)) {
+      return;
+    }
+    pendingImageLoads.delete(pendingEntry);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    if (status === "error") {
+      console.warn("[IMG] error", { label, url: normalizedUrl, pending: pendingImageLoads.size, event });
+      return;
+    }
+    console.log("[IMG] load", { label, url: normalizedUrl, pending: pendingImageLoads.size });
+  };
+
+  img.addEventListener("load", event => finalize("load", event), { once: true });
+  img.addEventListener("error", event => finalize("error", event), { once: true });
 }
 
 function preloadCriticalImages() {
@@ -286,15 +348,29 @@ function preloadCriticalImages() {
 
   loadingOverlay.classList.remove("loading-overlay--hidden");
 
+  console.log("[PRELOAD] critical image list", PRELOAD_IMAGE_URLS);
+  let pending = 0;
+  let loaded = 0;
+  let lastCompleted = null;
+
   const preloadTasks = PRELOAD_IMAGE_URLS.map(src => new Promise(resolve => {
     if (!src) {
       resolve();
       return;
     }
     const img = new Image();
-    const done = () => resolve();
+    pending += 1;
+    console.log("[PRELOAD] pending++", { pending, loaded, lastCompleted, url: src });
+    trackImageLoad("criticalPreload", src, img);
+    const done = () => {
+      loaded += 1;
+      lastCompleted = src;
+      console.log("[PRELOAD] loaded++", { pending, loaded, lastCompleted });
+      resolve();
+    };
     img.onload = done;
     img.onerror = done;
+    installImageWatch(img, src, "preloadCriticalImages");
     img.src = src;
   }));
 
@@ -1399,6 +1475,7 @@ function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') 
     resolveReadySafely();
   };
 
+  installImageWatch(img, resolvedSrc, "flameFx");
   img.dataset.flameSrc = resolvedSrc;
   img.src = resolvedSrc;
 
@@ -1786,6 +1863,7 @@ function spawnExplosion(x, y, plane) {
   if (sprite) {
     img.src = sprite;
   }
+  installImageWatch(img, sprite, "spawnExplosion");
 
   const mappedCoords = worldToGameCanvas(x, y);
 
@@ -1949,6 +2027,7 @@ function showMenuLayer() {
 }
 
 function activateGameScreen() {
+  logBootStep("activateGameScreen");
   const body = document.body;
   const wasMenu = body.classList.contains('screen--menu');
   if (wasMenu) {
@@ -2142,27 +2221,39 @@ function preloadPlaneSprites() {
     return;
   }
   bluePlaneImg = new Image();
+  trackImageLoad("planeSprites", PLANE_ASSET_PATHS.blue, bluePlaneImg);
   bluePlaneImg.src = PLANE_ASSET_PATHS.blue;
+  installImageWatch(bluePlaneImg, PLANE_ASSET_PATHS.blue, "preloadPlaneSprites.blue");
 
   greenPlaneImg = new Image();
+  trackImageLoad("planeSprites", PLANE_ASSET_PATHS.green, greenPlaneImg);
   greenPlaneImg.src = PLANE_ASSET_PATHS.green;
+  installImageWatch(greenPlaneImg, PLANE_ASSET_PATHS.green, "preloadPlaneSprites.green");
 
   blueCounterPlaneImg = new Image();
+  trackImageLoad("planeSprites", PLANE_ASSET_PATHS.blueCounter, blueCounterPlaneImg);
   blueCounterPlaneImg.src = PLANE_ASSET_PATHS.blueCounter;
+  installImageWatch(blueCounterPlaneImg, PLANE_ASSET_PATHS.blueCounter, "preloadPlaneSprites.blueCounter");
 
   greenCounterPlaneImg = new Image();
+  trackImageLoad("planeSprites", PLANE_ASSET_PATHS.greenCounter, greenCounterPlaneImg);
   greenCounterPlaneImg.src = PLANE_ASSET_PATHS.greenCounter;
+  installImageWatch(greenCounterPlaneImg, PLANE_ASSET_PATHS.greenCounter, "preloadPlaneSprites.greenCounter");
 
   bluePlaneWreckImg = new Image();
   bluePlaneWreckImg.decoding = 'async';
+  trackImageLoad("planeSprites", PLANE_ASSET_PATHS.blueWreck, bluePlaneWreckImg);
   bluePlaneWreckImg.src = PLANE_ASSET_PATHS.blueWreck;
+  installImageWatch(bluePlaneWreckImg, PLANE_ASSET_PATHS.blueWreck, "preloadPlaneSprites.blueWreck");
   if (typeof bluePlaneWreckImg.decode === 'function') {
     bluePlaneWreckImg.decode().catch(() => {});
   }
 
   greenPlaneWreckImg = new Image();
   greenPlaneWreckImg.decoding = 'async';
+  trackImageLoad("planeSprites", PLANE_ASSET_PATHS.greenWreck, greenPlaneWreckImg);
   greenPlaneWreckImg.src = PLANE_ASSET_PATHS.greenWreck;
+  installImageWatch(greenPlaneWreckImg, PLANE_ASSET_PATHS.greenWreck, "preloadPlaneSprites.greenWreck");
   if (typeof greenPlaneWreckImg.decode === 'function') {
     greenPlaneWreckImg.decode().catch(() => {});
   }
@@ -2173,7 +2264,9 @@ const flameImages = new Map();
 for (const src of BURNING_FLAME_SRCS) {
   const img = new Image();
   img.decoding = 'async';
+  trackImageLoad("flameImages", src, img);
   img.src = src;
+  installImageWatch(img, src, "flameImages");
   flameImages.set(src, img);
 }
 const defaultFlameImg = flameImages.get(DEFAULT_BURNING_FLAME_SRC) || null;
@@ -2187,7 +2280,14 @@ function isSpriteReady(img) {
   );
 }
 const backgroundImg = new Image();
+backgroundImg.addEventListener("load", () => {
+  console.log("[IMG] load", { label: "backgroundImg", url: backgroundImg.src });
+});
+backgroundImg.addEventListener("error", (event) => {
+  console.warn("[IMG] error", { label: "backgroundImg", url: backgroundImg.src, event });
+});
 backgroundImg.src = "background paper 1.png";
+installImageWatch(backgroundImg, "background paper 1.png", "backgroundImg");
 
 let currentBackgroundLayerCount = 2;
 
@@ -2259,14 +2359,27 @@ if (typeof window.matchProgressReady === 'undefined') window.matchProgressReady 
 
 const brickFrameImg = new Image();
 let brickFrameData = null;
+brickFrameImg.addEventListener("load", () => {
+  console.log("[IMG] load", { label: "brickFrameImg", url: brickFrameImg.src });
+});
+brickFrameImg.addEventListener("error", (event) => {
+  console.warn("[IMG] error", { label: "brickFrameImg", url: brickFrameImg.src, event });
+});
 
 let FIELD_LEFT = 0;
 let FIELD_WIDTH = 0;
 
 // Sprite used for the aiming arrow
 const arrowSprite = new Image();
+arrowSprite.addEventListener("load", () => {
+  console.log("[IMG] load", { label: "arrowSprite", url: arrowSprite.src });
+});
+arrowSprite.addEventListener("error", (event) => {
+  console.warn("[IMG] error", { label: "arrowSprite", url: arrowSprite.src, event });
+});
 // Use the PNG sprite that contains the arrow graphics
 arrowSprite.src = "sprite_ copy.png";
+installImageWatch(arrowSprite, "sprite_ copy.png", "arrowSprite");
 
 
 
@@ -2650,6 +2763,7 @@ function generatePreviewBuildingsFromPng(src){
       resolve(mergeRunsIntoRects(runs));
     };
     img.onerror = () => resolve([]);
+    installImageWatch(img, src, "previewBuildings");
     img.src = src;
   });
 }
@@ -3053,6 +3167,7 @@ const matchProgressImages = {
 let pendingMatchProgressImages = 0;
 let matchProgressAssetsInitialized = false;
 let matchProgressImagesRequested = false;
+let lastMatchProgressCompleted = null;
 
 function finalizeMatchProgressLoading(){
   if (matchProgressAssetsInitialized) return;
@@ -3083,11 +3198,22 @@ function registerMatchProgressShardImage(src){
   }
   const img = new Image();
   pendingMatchProgressImages += 1;
-  img.onload = handleMatchProgressAssetLoaded;
-  img.onerror = (event) => {
-    console.warn(`[MATCH_PROGRESS] shard load ERROR ${trimmed}`, event);
+  console.log("[MATCH_PROGRESS] shard pending", { pendingMatchProgressImages, lastCompleted: lastMatchProgressCompleted, src: trimmed });
+  img.onload = () => {
+    lastMatchProgressCompleted = trimmed;
     handleMatchProgressAssetLoaded();
+    console.log("[MATCH_PROGRESS] shard load", { pendingMatchProgressImages, lastCompleted: lastMatchProgressCompleted });
   };
+  img.onerror = (event) => {
+    lastMatchProgressCompleted = trimmed;
+    handleMatchProgressAssetLoaded();
+    console.warn(`[MATCH_PROGRESS] shard load ERROR ${trimmed}`, {
+      event,
+      pendingMatchProgressImages,
+      lastCompleted: lastMatchProgressCompleted
+    });
+  };
+  installImageWatch(img, trimmed, "matchProgressShard");
   img.src = trimmed;
   return img;
 }
@@ -3313,6 +3439,7 @@ function addScore(color, delta){
 }
 
 let animationFrameId = null;
+let gameDrawFirstLogged = false;
 
 /* Планирование хода ИИ */
 let aiMoveScheduled = false;
@@ -3493,6 +3620,7 @@ function stopGameLoop(){
   }
 }
 function startGameLoop(){
+  logBootStep("startGameLoop");
   if(animationFrameId === null){
     lastFrameTime = performance.now();
     animationFrameId = requestAnimationFrame(gameDraw);
@@ -3552,24 +3680,10 @@ playBtn.addEventListener("click",()=>{
     alert("Please select a game mode before starting.");
     return;
   }
-  const now = performance.now();
-  bootTrace.resizeWindow = {
-    start: now,
-    resizeCanvas: 0,
-    syncAllCanvasBackingStores: 0
-  };
-  setTimeout(() => {
-    const resizeWindow = bootTrace.resizeWindow;
-    if (!resizeWindow) return;
-    const { resizeCanvas, syncAllCanvasBackingStores } = resizeWindow;
-    console.log('[boot][resize]', { resizeCanvas, syncAllCanvasBackingStores });
-    if (resizeCanvas > 10 || syncAllCanvasBackingStores > 10) {
-      console.warn('[boot][resize] resize storm suspected', {
-        resizeCanvas,
-        syncAllCanvasBackingStores
-      });
-    }
-  }, 2000);
+  bootTrace.startTs = performance.now();
+  bootTrace.markers = [];
+  gameDrawFirstLogged = false;
+  console.log("[boot] play click", { t: 0 });
   gameMode = selectedMode;
   restoreGameBackgroundAfterMenu();
   setMenuVisibility(false);
@@ -4395,6 +4509,10 @@ function handleAAForPlane(p, fp){
 }
   /* ======= GAME LOOP ======= */
   function gameDraw(){
+  if (!gameDrawFirstLogged) {
+    logBootStep("gameDraw");
+    gameDrawFirstLogged = true;
+  }
   const now = performance.now();
   let deltaSec = (now - lastFrameTime) / 1000;
   deltaSec = Math.min(deltaSec, 0.05);
@@ -6490,6 +6608,7 @@ noBtn.addEventListener("click", () => {
 });
 
 function startNewRound(){
+  logBootStep("startNewRound");
   loadMatchProgressImagesIfNeeded();
   preloadPlaneSprites();
   restoreGameBackgroundAfterMenu();
@@ -6610,6 +6729,7 @@ function applyCurrentMap(upcomingRoundNumber){
   const gameplayMap = MAPS[mapIndex] || MAPS[0];
 
   brickFrameImg.src = gameplayMap.file;
+  installImageWatch(brickFrameImg, gameplayMap.file, "brickFrameImg");
   rebuildBuildingsFromMap(gameplayMap);
   updateFieldDimensions();
   resetPlanePositionsForCurrentMap();
