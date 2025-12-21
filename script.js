@@ -11,6 +11,7 @@ const mantisIndicator = document.getElementById("mantisIndicator");
 const goatIndicator   = document.getElementById("goatIndicator");
 
 const DEBUG_RESIZE = false;
+const DEBUG_BOOT = false;
 
 const loadingOverlay = document.getElementById("loadingOverlay");
 
@@ -58,6 +59,10 @@ const resizeDebugState = {
   }
 };
 
+const bootTrace = {
+  resizeWindow: null
+};
+
 function getCanvasDpr() {
   const RAW_DPR = window.devicePixelRatio || 1;
   const CANVAS_DPR = Math.min(RAW_DPR, 2);
@@ -100,6 +105,16 @@ function logResizeDebug(eventKey) {
   resizeDebugState.counts.syncAllCanvasBackingStores = 0;
   resizeDebugState.counts.resizeCanvasToMatchCss = 0;
   resizeDebugState.lastLogTime = now;
+}
+
+function trackBootResizeCount(counterKey) {
+  if (!DEBUG_BOOT) return;
+  const activeWindow = bootTrace.resizeWindow;
+  if (!activeWindow) return;
+  const now = performance.now();
+  if (now - activeWindow.start < 2000 && counterKey in activeWindow) {
+    activeWindow[counterKey] += 1;
+  }
 }
 
 function computeViewFromCanvas(canvas) {
@@ -3537,6 +3552,24 @@ playBtn.addEventListener("click",()=>{
     alert("Please select a game mode before starting.");
     return;
   }
+  const now = performance.now();
+  bootTrace.resizeWindow = {
+    start: now,
+    resizeCanvas: 0,
+    syncAllCanvasBackingStores: 0
+  };
+  setTimeout(() => {
+    const resizeWindow = bootTrace.resizeWindow;
+    if (!resizeWindow) return;
+    const { resizeCanvas, syncAllCanvasBackingStores } = resizeWindow;
+    console.log('[boot][resize]', { resizeCanvas, syncAllCanvasBackingStores });
+    if (resizeCanvas > 10 || syncAllCanvasBackingStores > 10) {
+      console.warn('[boot][resize] resize storm suspected', {
+        resizeCanvas,
+        syncAllCanvasBackingStores
+      });
+    }
+  }, 2000);
   gameMode = selectedMode;
   restoreGameBackgroundAfterMenu();
   setMenuVisibility(false);
@@ -6647,6 +6680,7 @@ function updateUiScale() {
 /* ======= CANVAS RESIZE ======= */
 function syncAllCanvasBackingStores() {
   logResizeDebug('syncAllCanvasBackingStores');
+  trackBootResizeCount('syncAllCanvasBackingStores');
   syncCanvasBackingStore(gsBoardCanvas);
   syncCanvasBackingStore(planeCanvas);
   syncCanvasBackingStore(aimCanvas);
@@ -6661,6 +6695,7 @@ let lastResizeMetrics = {
 
 function resizeCanvas() {
   logResizeDebug('resizeCanvas');
+  trackBootResizeCount('resizeCanvas');
   // Keep the game in portrait mode: if the device rotates to landscape,
   // attempt to re-lock orientation.  Do not skip resizing so the canvases
   // remain correctly sized even if the device starts in landscape.
