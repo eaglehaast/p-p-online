@@ -15,7 +15,8 @@ const DEBUG_BOOT = false;
 
 const bootTrace = {
   startTs: null,
-  markers: []
+  markers: [],
+  resizeWindow: null
 };
 
 const loadingOverlay = document.getElementById("loadingOverlay");
@@ -62,10 +63,6 @@ const resizeDebugState = {
     syncAllCanvasBackingStores: 0,
     resizeCanvasToMatchCss: 0
   }
-};
-
-const bootTrace = {
-  resizeWindow: null
 };
 
 function getCanvasDpr() {
