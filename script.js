@@ -260,6 +260,46 @@ function hideLoadingOverlay() {
   }
 }
 
+const IMAGE_LOAD_TIMEOUT_MS = 8000;
+const pendingImageLoads = new Set();
+
+function trackImageLoad(label, url, img, timeoutMs = IMAGE_LOAD_TIMEOUT_MS) {
+  if (!img) {
+    return;
+  }
+  const normalizedUrl = typeof url === "string" ? url : "";
+  const pendingEntry = { label, url: normalizedUrl };
+  pendingImageLoads.add(pendingEntry);
+  console.log("[IMG] pending", { label, url: normalizedUrl, pending: pendingImageLoads.size });
+
+  let timeoutId = null;
+  if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+    timeoutId = setTimeout(() => {
+      if (pendingImageLoads.has(pendingEntry)) {
+        console.warn("[IMG] timeout", { label, url: normalizedUrl, pending: pendingImageLoads.size });
+      }
+    }, timeoutMs);
+  }
+
+  const finalize = (status, event) => {
+    if (!pendingImageLoads.has(pendingEntry)) {
+      return;
+    }
+    pendingImageLoads.delete(pendingEntry);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    if (status === "error") {
+      console.warn("[IMG] error", { label, url: normalizedUrl, pending: pendingImageLoads.size, event });
+      return;
+    }
+    console.log("[IMG] load", { label, url: normalizedUrl, pending: pendingImageLoads.size });
+  };
+
+  img.addEventListener("load", event => finalize("load", event), { once: true });
+  img.addEventListener("error", event => finalize("error", event), { once: true });
+}
+
 function preloadCriticalImages() {
   if (!loadingOverlay) {
     return Promise.resolve();
@@ -271,13 +311,26 @@ function preloadCriticalImages() {
 
   loadingOverlay.classList.remove("loading-overlay--hidden");
 
+  console.log("[PRELOAD] critical image list", PRELOAD_IMAGE_URLS);
+  let pending = 0;
+  let loaded = 0;
+  let lastCompleted = null;
+
   const preloadTasks = PRELOAD_IMAGE_URLS.map(src => new Promise(resolve => {
     if (!src) {
       resolve();
       return;
     }
     const img = new Image();
-    const done = () => resolve();
+    pending += 1;
+    console.log("[PRELOAD] pending++", { pending, loaded, lastCompleted, url: src });
+    trackImageLoad("criticalPreload", src, img);
+    const done = () => {
+      loaded += 1;
+      lastCompleted = src;
+      console.log("[PRELOAD] loaded++", { pending, loaded, lastCompleted });
+      resolve();
+    };
     img.onload = done;
     img.onerror = done;
     img.src = src;
@@ -2127,19 +2180,24 @@ function preloadPlaneSprites() {
     return;
   }
   bluePlaneImg = new Image();
+  trackImageLoad("planeSprites", PLANE_ASSET_PATHS.blue, bluePlaneImg);
   bluePlaneImg.src = PLANE_ASSET_PATHS.blue;
 
   greenPlaneImg = new Image();
+  trackImageLoad("planeSprites", PLANE_ASSET_PATHS.green, greenPlaneImg);
   greenPlaneImg.src = PLANE_ASSET_PATHS.green;
 
   blueCounterPlaneImg = new Image();
+  trackImageLoad("planeSprites", PLANE_ASSET_PATHS.blueCounter, blueCounterPlaneImg);
   blueCounterPlaneImg.src = PLANE_ASSET_PATHS.blueCounter;
 
   greenCounterPlaneImg = new Image();
+  trackImageLoad("planeSprites", PLANE_ASSET_PATHS.greenCounter, greenCounterPlaneImg);
   greenCounterPlaneImg.src = PLANE_ASSET_PATHS.greenCounter;
 
   bluePlaneWreckImg = new Image();
   bluePlaneWreckImg.decoding = 'async';
+  trackImageLoad("planeSprites", PLANE_ASSET_PATHS.blueWreck, bluePlaneWreckImg);
   bluePlaneWreckImg.src = PLANE_ASSET_PATHS.blueWreck;
   if (typeof bluePlaneWreckImg.decode === 'function') {
     bluePlaneWreckImg.decode().catch(() => {});
@@ -2147,6 +2205,7 @@ function preloadPlaneSprites() {
 
   greenPlaneWreckImg = new Image();
   greenPlaneWreckImg.decoding = 'async';
+  trackImageLoad("planeSprites", PLANE_ASSET_PATHS.greenWreck, greenPlaneWreckImg);
   greenPlaneWreckImg.src = PLANE_ASSET_PATHS.greenWreck;
   if (typeof greenPlaneWreckImg.decode === 'function') {
     greenPlaneWreckImg.decode().catch(() => {});
@@ -2158,6 +2217,7 @@ const flameImages = new Map();
 for (const src of BURNING_FLAME_SRCS) {
   const img = new Image();
   img.decoding = 'async';
+  trackImageLoad("flameImages", src, img);
   img.src = src;
   flameImages.set(src, img);
 }
@@ -2172,6 +2232,12 @@ function isSpriteReady(img) {
   );
 }
 const backgroundImg = new Image();
+backgroundImg.addEventListener("load", () => {
+  console.log("[IMG] load", { label: "backgroundImg", url: backgroundImg.src });
+});
+backgroundImg.addEventListener("error", (event) => {
+  console.warn("[IMG] error", { label: "backgroundImg", url: backgroundImg.src, event });
+});
 backgroundImg.src = "background paper 1.png";
 
 let currentBackgroundLayerCount = 2;
@@ -2244,12 +2310,24 @@ if (typeof window.matchProgressReady === 'undefined') window.matchProgressReady 
 
 const brickFrameImg = new Image();
 let brickFrameData = null;
+brickFrameImg.addEventListener("load", () => {
+  console.log("[IMG] load", { label: "brickFrameImg", url: brickFrameImg.src });
+});
+brickFrameImg.addEventListener("error", (event) => {
+  console.warn("[IMG] error", { label: "brickFrameImg", url: brickFrameImg.src, event });
+});
 
 let FIELD_LEFT = 0;
 let FIELD_WIDTH = 0;
 
 // Sprite used for the aiming arrow
 const arrowSprite = new Image();
+arrowSprite.addEventListener("load", () => {
+  console.log("[IMG] load", { label: "arrowSprite", url: arrowSprite.src });
+});
+arrowSprite.addEventListener("error", (event) => {
+  console.warn("[IMG] error", { label: "arrowSprite", url: arrowSprite.src, event });
+});
 // Use the PNG sprite that contains the arrow graphics
 arrowSprite.src = "sprite_ copy.png";
 
@@ -3038,6 +3116,7 @@ const matchProgressImages = {
 let pendingMatchProgressImages = 0;
 let matchProgressAssetsInitialized = false;
 let matchProgressImagesRequested = false;
+let lastMatchProgressCompleted = null;
 
 function finalizeMatchProgressLoading(){
   if (matchProgressAssetsInitialized) return;
@@ -3068,10 +3147,20 @@ function registerMatchProgressShardImage(src){
   }
   const img = new Image();
   pendingMatchProgressImages += 1;
-  img.onload = handleMatchProgressAssetLoaded;
-  img.onerror = (event) => {
-    console.warn(`[MATCH_PROGRESS] shard load ERROR ${trimmed}`, event);
+  console.log("[MATCH_PROGRESS] shard pending", { pendingMatchProgressImages, lastCompleted: lastMatchProgressCompleted, src: trimmed });
+  img.onload = () => {
+    lastMatchProgressCompleted = trimmed;
     handleMatchProgressAssetLoaded();
+    console.log("[MATCH_PROGRESS] shard load", { pendingMatchProgressImages, lastCompleted: lastMatchProgressCompleted });
+  };
+  img.onerror = (event) => {
+    lastMatchProgressCompleted = trimmed;
+    handleMatchProgressAssetLoaded();
+    console.warn(`[MATCH_PROGRESS] shard load ERROR ${trimmed}`, {
+      event,
+      pendingMatchProgressImages,
+      lastCompleted: lastMatchProgressCompleted
+    });
   };
   img.src = trimmed;
   return img;
