@@ -64,6 +64,10 @@ const resizeDebugState = {
   }
 };
 
+const bootTrace = {
+  resizeWindow: null
+};
+
 function getCanvasDpr() {
   const RAW_DPR = window.devicePixelRatio || 1;
   const CANVAS_DPR = Math.min(RAW_DPR, 2);
@@ -6796,6 +6800,7 @@ function updateUiScale() {
 /* ======= CANVAS RESIZE ======= */
 function syncAllCanvasBackingStores() {
   logResizeDebug('syncAllCanvasBackingStores');
+  trackBootResizeCount('syncAllCanvasBackingStores');
   syncCanvasBackingStore(gsBoardCanvas);
   syncCanvasBackingStore(planeCanvas);
   syncCanvasBackingStore(aimCanvas);
@@ -6810,6 +6815,7 @@ let lastResizeMetrics = {
 
 function resizeCanvas() {
   logResizeDebug('resizeCanvas');
+  trackBootResizeCount('resizeCanvas');
   // Keep the game in portrait mode: if the device rotates to landscape,
   // attempt to re-lock orientation.  Do not skip resizing so the canvases
   // remain correctly sized even if the device starts in landscape.
