@@ -254,6 +254,23 @@ const PRELOAD_IMAGE_URLS = [
   ...ALL_EXPLOSION_SPRITES
 ];
 
+function installImageWatch(img, url, label) {
+  if (!img) return;
+  setTimeout(() => {
+    if (!img.complete || !img.naturalWidth) {
+      console.warn("[asset][stuck]", { label, url });
+    }
+  }, 10000);
+
+  const existingOnError = img.onerror;
+  img.onerror = (e) => {
+    console.warn("[asset][error]", { label, url, e });
+    if (typeof existingOnError === "function") {
+      existingOnError.call(img, e);
+    }
+  };
+}
+
 function hideLoadingOverlay() {
   if (loadingOverlay) {
     loadingOverlay.classList.add("loading-overlay--hidden");
@@ -280,6 +297,7 @@ function preloadCriticalImages() {
     const done = () => resolve();
     img.onload = done;
     img.onerror = done;
+    installImageWatch(img, src, "preloadCriticalImages");
     img.src = src;
   }));
 
@@ -1384,6 +1402,7 @@ function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') 
     resolveReadySafely();
   };
 
+  installImageWatch(img, resolvedSrc, "flameFx");
   img.dataset.flameSrc = resolvedSrc;
   img.src = resolvedSrc;
 
@@ -1771,6 +1790,7 @@ function spawnExplosion(x, y, plane) {
   if (sprite) {
     img.src = sprite;
   }
+  installImageWatch(img, sprite, "spawnExplosion");
 
   const mappedCoords = worldToGameCanvas(x, y);
 
@@ -2128,19 +2148,24 @@ function preloadPlaneSprites() {
   }
   bluePlaneImg = new Image();
   bluePlaneImg.src = PLANE_ASSET_PATHS.blue;
+  installImageWatch(bluePlaneImg, PLANE_ASSET_PATHS.blue, "preloadPlaneSprites.blue");
 
   greenPlaneImg = new Image();
   greenPlaneImg.src = PLANE_ASSET_PATHS.green;
+  installImageWatch(greenPlaneImg, PLANE_ASSET_PATHS.green, "preloadPlaneSprites.green");
 
   blueCounterPlaneImg = new Image();
   blueCounterPlaneImg.src = PLANE_ASSET_PATHS.blueCounter;
+  installImageWatch(blueCounterPlaneImg, PLANE_ASSET_PATHS.blueCounter, "preloadPlaneSprites.blueCounter");
 
   greenCounterPlaneImg = new Image();
   greenCounterPlaneImg.src = PLANE_ASSET_PATHS.greenCounter;
+  installImageWatch(greenCounterPlaneImg, PLANE_ASSET_PATHS.greenCounter, "preloadPlaneSprites.greenCounter");
 
   bluePlaneWreckImg = new Image();
   bluePlaneWreckImg.decoding = 'async';
   bluePlaneWreckImg.src = PLANE_ASSET_PATHS.blueWreck;
+  installImageWatch(bluePlaneWreckImg, PLANE_ASSET_PATHS.blueWreck, "preloadPlaneSprites.blueWreck");
   if (typeof bluePlaneWreckImg.decode === 'function') {
     bluePlaneWreckImg.decode().catch(() => {});
   }
@@ -2148,6 +2173,7 @@ function preloadPlaneSprites() {
   greenPlaneWreckImg = new Image();
   greenPlaneWreckImg.decoding = 'async';
   greenPlaneWreckImg.src = PLANE_ASSET_PATHS.greenWreck;
+  installImageWatch(greenPlaneWreckImg, PLANE_ASSET_PATHS.greenWreck, "preloadPlaneSprites.greenWreck");
   if (typeof greenPlaneWreckImg.decode === 'function') {
     greenPlaneWreckImg.decode().catch(() => {});
   }
@@ -2159,6 +2185,7 @@ for (const src of BURNING_FLAME_SRCS) {
   const img = new Image();
   img.decoding = 'async';
   img.src = src;
+  installImageWatch(img, src, "flameImages");
   flameImages.set(src, img);
 }
 const defaultFlameImg = flameImages.get(DEFAULT_BURNING_FLAME_SRC) || null;
@@ -2173,6 +2200,7 @@ function isSpriteReady(img) {
 }
 const backgroundImg = new Image();
 backgroundImg.src = "background paper 1.png";
+installImageWatch(backgroundImg, "background paper 1.png", "backgroundImg");
 
 let currentBackgroundLayerCount = 2;
 
@@ -2252,6 +2280,7 @@ let FIELD_WIDTH = 0;
 const arrowSprite = new Image();
 // Use the PNG sprite that contains the arrow graphics
 arrowSprite.src = "sprite_ copy.png";
+installImageWatch(arrowSprite, "sprite_ copy.png", "arrowSprite");
 
 
 
@@ -2635,6 +2664,7 @@ function generatePreviewBuildingsFromPng(src){
       resolve(mergeRunsIntoRects(runs));
     };
     img.onerror = () => resolve([]);
+    installImageWatch(img, src, "previewBuildings");
     img.src = src;
   });
 }
@@ -3073,6 +3103,7 @@ function registerMatchProgressShardImage(src){
     console.warn(`[MATCH_PROGRESS] shard load ERROR ${trimmed}`, event);
     handleMatchProgressAssetLoaded();
   };
+  installImageWatch(img, trimmed, "matchProgressShard");
   img.src = trimmed;
   return img;
 }
@@ -6577,6 +6608,7 @@ function applyCurrentMap(upcomingRoundNumber){
   const gameplayMap = MAPS[mapIndex] || MAPS[0];
 
   brickFrameImg.src = gameplayMap.file;
+  installImageWatch(brickFrameImg, gameplayMap.file, "brickFrameImg");
   rebuildBuildingsFromMap(gameplayMap);
   updateFieldDimensions();
   resetPlanePositionsForCurrentMap();

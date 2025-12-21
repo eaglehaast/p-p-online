@@ -31,6 +31,23 @@ function logCanvasCreation(canvas, label = "") {
   });
 }
 
+function installImageWatch(img, url, label) {
+  if (!img) return;
+  setTimeout(() => {
+    if (!img.complete || !img.naturalWidth) {
+      console.warn("[asset][stuck]", { label, url });
+    }
+  }, 10000);
+
+  const existingOnError = img.onerror;
+  img.onerror = (e) => {
+    console.warn("[asset][error]", { label, url, e });
+    if (typeof existingOnError === "function") {
+      existingOnError.call(img, e);
+    }
+  };
+}
+
 function mergeRunsIntoRects(runs, tolerance = 1){
   const merged = [];
   for(const run of runs){
@@ -97,6 +114,7 @@ function generatePreviewBuildingsFromPng(src){
       resolve(mergeRunsIntoRects(runs));
     };
     img.onerror = () => resolve([]);
+    installImageWatch(img, src, "previewBuildings");
     img.src = src;
   });
 }
@@ -1077,6 +1095,7 @@ function updateMapPreview(){
       if(map !== MAPS[mapIndex]) return;
       resizePreviewCanvas();
     };
+    installImageWatch(img, map.file, "mapPreview");
     img.src = map.file;
   }
   refreshPreviewSimulationIfInitialized();
