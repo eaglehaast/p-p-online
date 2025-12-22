@@ -487,11 +487,11 @@ const planeCounterHosts = {
 };
 
 const pointsPopupOffsets = {
-  green: { x: 4,   y: 388 },
-  blue:  { x: 414, y: 388 }
+  green: { x: 3,   y: 388 },
+  blue:  { x: 413, y: 388 }
 };
 
-const pointsPopupBaseSize = { width: 43, height: 124 };
+const pointsPopupBaseSize = { width: 45, height: 25 };
 const pointsPopupAnchorRows = [0.1, 0.32, 0.54, 0.76, 0.9];
 const pointsPopupAnchors = {
   green: pointsPopupAnchorRows.map(y => ({ x: 0.5, y })),
@@ -3008,18 +3008,18 @@ const matchProgressFragmentsPerSlot = 5;
 // Порядок: [звезда 1..5][фрагмент 1..5] = {x, y}
 const matchProgressLayout = {
   green: [
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 0, y: 413 })),
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 0, y: 473 })),
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 0, y: 530 })),
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 0, y: 590 })),
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 0, y: 650 }))
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 3, y: 416 })),
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 3, y: 476 })),
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 3, y: 533 })),
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 3, y: 593 })),
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 3, y: 653 }))
   ],
   blue: [
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 410, y: 92 })),
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 410, y: 152 })),
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 410, y: 212 })),
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 410, y: 272 })),
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 410, y: 330 }))
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 411, y: 97 })),
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 411, y: 157 })),
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 411, y: 217 })),
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 411, y: 277 })),
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 411, y: 335 }))
   ]
 };
 
