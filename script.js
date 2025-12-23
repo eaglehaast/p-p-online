@@ -13,6 +13,7 @@ const goatIndicator   = document.getElementById("goatIndicator");
 const DEBUG_RESIZE = false;
 const DEBUG_BOOT = false;
 const DEBUG_LAYOUT = false;
+const DEBUG_RENDER_INIT = false;
 
 const bootTrace = {
   startTs: null,
@@ -68,6 +69,11 @@ const resizeDebugState = {
   }
 };
 
+const renderInitState = {
+  firstFrameDrawn: false,
+  lastDrawLogTime: 0
+};
+
 function getCanvasDpr() {
   const RAW_DPR = window.devicePixelRatio || 1;
   const CANVAS_DPR = Math.min(RAW_DPR, 2);
@@ -110,6 +116,11 @@ function logResizeDebug(eventKey) {
   resizeDebugState.counts.syncAllCanvasBackingStores = 0;
   resizeDebugState.counts.resizeCanvasToMatchCss = 0;
   resizeDebugState.lastLogTime = now;
+}
+
+function logRenderInit(label, details = {}) {
+  if (!DEBUG_RENDER_INIT) return;
+  console.log("[render-init]", label, details);
 }
 
 function trackBootResizeCount(counterKey) {
@@ -173,14 +184,20 @@ function computeViewFromCanvas(canvas) {
 
   const cssW = Math.max(1, rect.width);
   const cssH = Math.max(1, rect.height);
+  const backingW = Math.max(1, canvas.width || 0);
+  const backingH = Math.max(1, canvas.height || 0);
 
   const isBaseSize =
     Math.abs(cssW - CANVAS_BASE_WIDTH) < 0.01 &&
     Math.abs(cssH - CANVAS_BASE_HEIGHT) < 0.01;
-  const pxW = isBaseSize ? CANVAS_BASE_WIDTH : Math.round(cssW * CANVAS_DPR);
-  const pxH = isBaseSize ? CANVAS_BASE_HEIGHT : Math.round(cssH * CANVAS_DPR);
+  const backingMatchesCss =
+    Math.abs(backingW - cssW) < 0.5 &&
+    Math.abs(backingH - cssH) < 0.5;
+  const useBackingStore = !backingMatchesCss && backingW > 0 && backingH > 0;
+  const pxW = useBackingStore ? backingW : (isBaseSize ? CANVAS_BASE_WIDTH : Math.round(cssW * CANVAS_DPR));
+  const pxH = useBackingStore ? backingH : (isBaseSize ? CANVAS_BASE_HEIGHT : Math.round(cssH * CANVAS_DPR));
 
-  VIEW.dpr = isBaseSize ? 1 : CANVAS_DPR;
+  VIEW.dpr = useBackingStore ? pxW / cssW : (isBaseSize ? 1 : CANVAS_DPR);
   VIEW.cssW = cssW;
   VIEW.cssH = cssH;
   VIEW.pxW = pxW;
@@ -204,9 +221,12 @@ function resizeCanvasToMatchCss(canvas) {
   const rect = canvas.getBoundingClientRect();
   const w = Math.max(1, rect.width);
   const h = Math.max(1, rect.height);
+  const { CANVAS_DPR } = getCanvasDpr();
+  const backingW = Math.max(1, Math.round(w * CANVAS_DPR));
+  const backingH = Math.max(1, Math.round(h * CANVAS_DPR));
 
-  if (canvas.width !== w) canvas.width = w;
-  if (canvas.height !== h) canvas.height = h;
+  if (canvas.width !== backingW) canvas.width = backingW;
+  if (canvas.height !== backingH) canvas.height = backingH;
 }
 
 function applyViewTransform(ctx) {
@@ -217,9 +237,10 @@ function applyViewTransform(ctx) {
 function syncCanvasBackingStore(canvas) {
   if (!canvas) return;
   const r = canvas.getBoundingClientRect();
+  const { CANVAS_DPR } = getCanvasDpr();
 
-  const w = Math.max(1, Math.round(r.width));
-  const h = Math.max(1, Math.round(r.height));
+  const w = Math.max(1, Math.round(r.width * CANVAS_DPR));
+  const h = Math.max(1, Math.round(r.height * CANVAS_DPR));
 
   if (canvas.width !== w) canvas.width = w;
   if (canvas.height !== h) canvas.height = h;
@@ -951,14 +972,15 @@ function syncOverlayCanvasToGameCanvas(targetCanvas, cssWidth, cssHeight) {
 
   const width = Math.max(1, Math.round(cssWidth || 0));
   const height = Math.max(1, Math.round(cssHeight || 0));
+  const { CANVAS_DPR } = getCanvasDpr();
   targetCanvas.style.position = 'absolute';
   targetCanvas.style.left = '0px';
   targetCanvas.style.top = '0px';
   targetCanvas.style.width = `${width}px`;
   targetCanvas.style.height = `${height}px`;
 
-  const backingWidth = Math.max(1, Math.round(width));
-  const backingHeight = Math.max(1, Math.round(height));
+  const backingWidth = Math.max(1, Math.round(width * CANVAS_DPR));
+  const backingHeight = Math.max(1, Math.round(height * CANVAS_DPR));
 
   if (targetCanvas.width !== backingWidth) targetCanvas.width = backingWidth;
   if (targetCanvas.height !== backingHeight) targetCanvas.height = backingHeight;
@@ -2033,6 +2055,34 @@ let hasActivatedGameScreen = false;
 let needsGameScreenSync = false;
 let menuScreenLocked = false;
 
+function getGameCanvasMetrics() {
+  const rect = gsBoardCanvas?.getBoundingClientRect?.();
+  const { RAW_DPR, CANVAS_DPR } = getCanvasDpr();
+  return {
+    css: rect ? `${Math.round(rect.width)}x${Math.round(rect.height)}` : "unknown",
+    backing: gsBoardCanvas ? `${gsBoardCanvas.width}x${gsBoardCanvas.height}` : "unknown",
+    RAW_DPR,
+    CANVAS_DPR,
+    loopRunning: animationFrameId !== null
+  };
+}
+
+function initGameRenderPipeline(reason = "activate") {
+  renderInitState.firstFrameDrawn = false;
+  renderInitState.lastDrawLogTime = 0;
+  resizeCanvasFixedForGameBoard();
+  sizeAndAlignOverlays();
+  applyViewTransform(aimCtx);
+  applyViewTransform(planeCtx);
+  const metrics = getGameCanvasMetrics();
+  logRenderInit("GAME enter", { reason, ...metrics });
+  logRenderInit("resize ok", metrics);
+  requestAnimationFrame(() => {
+    drawInitialFrame(reason);
+    startMainLoopIfNotRunning(reason);
+  });
+}
+
 function setLayerVisibility(layer, visible) {
   if (!layer) return;
   layer.hidden = !visible;
@@ -2091,6 +2141,8 @@ function activateGameScreen() {
   if (!hasActivatedGameScreen || wasMenu) {
     needsGameScreenSync = true;
   }
+
+  initGameRenderPipeline("activateGameScreen");
 }
 
 function setMenuVisibility(visible) {
@@ -3668,6 +3720,16 @@ function startGameLoop(){
   }
 }
 
+function startMainLoopIfNotRunning(reason = "startMainLoopIfNotRunning") {
+  if (animationFrameId !== null) {
+    logRenderInit("loop already running", { reason, animationFrameId });
+    return;
+  }
+  logRenderInit("starting loop", { reason });
+  startGameLoop();
+  logRenderInit("loop running", { reason });
+}
+
 /* ======= MENU ======= */
 hotSeatBtn.addEventListener("click",()=>{
   selectedMode = (selectedMode==="hotSeat" ? null : "hotSeat");
@@ -4549,12 +4611,35 @@ function handleAAForPlane(p, fp){
   return false;
 }
   /* ======= GAME LOOP ======= */
-  function gameDraw(){
+function drawInitialFrame(reason = "initial") {
+  resetCanvasState(gsBoardCtx, gsBoardCanvas);
+  if (isSpriteReady(backgroundImg)) {
+    drawFieldBackground(gsBoardCtx, WORLD.width, WORLD.height);
+  } else {
+    gsBoardCtx.fillStyle = "#f2efe6";
+    gsBoardCtx.fillRect(0, 0, WORLD.width, WORLD.height);
+  }
+  drawFieldEdges(gsBoardCtx, WORLD.width, WORLD.height);
+  renderInitState.firstFrameDrawn = true;
+  logRenderInit("first frame draw", { reason });
+}
+
+function gameDraw(){
   if (!gameDrawFirstLogged) {
     logBootStep("gameDraw");
     gameDrawFirstLogged = true;
   }
   const now = performance.now();
+  if (DEBUG_RENDER_INIT) {
+    if (!renderInitState.firstFrameDrawn) {
+      renderInitState.firstFrameDrawn = true;
+      logRenderInit("first frame draw", { reason: "gameDraw" });
+    }
+    if (now - renderInitState.lastDrawLogTime > 1000) {
+      renderInitState.lastDrawLogTime = now;
+      logRenderInit("draw tick", { t: Math.round(now) });
+    }
+  }
   let deltaSec = (now - lastFrameTime) / 1000;
   deltaSec = Math.min(deltaSec, 0.05);
   const delta = deltaSec * 60;
@@ -6701,10 +6786,10 @@ function startNewRound(){
   aimCanvas.style.display = "block";
 
   if (needsGameScreenSync) {
-    resizeCanvas();
+    resizeCanvasFixedForGameBoard();
     sizeAndAlignOverlays();
     requestAnimationFrame(() => {
-      resizeCanvas();
+      resizeCanvasFixedForGameBoard();
       sizeAndAlignOverlays();
     });
     needsGameScreenSync = false;
@@ -6733,7 +6818,7 @@ function startNewRound(){
   } else {
     phase = 'TURN';
   }
-  if(animationFrameId===null) startGameLoop();
+  startMainLoopIfNotRunning("startNewRound");
 }
 
 /* ======= Map helpers ======= */
@@ -6844,6 +6929,26 @@ function syncAllCanvasBackingStores() {
   syncCanvasBackingStore(aimCanvas);
 }
 
+function resizeCanvasFixedForGameBoard() {
+  const { CANVAS_DPR } = getCanvasDpr();
+  updateUiScale();
+  syncBackgroundLayout(FRAME_BASE_WIDTH, FRAME_BASE_HEIGHT);
+
+  const cssW = CANVAS_BASE_WIDTH;
+  const cssH = CANVAS_BASE_HEIGHT;
+  const backingW = Math.max(1, Math.round(cssW * CANVAS_DPR));
+  const backingH = Math.max(1, Math.round(cssH * CANVAS_DPR));
+
+  gsBoardCanvas.style.width = `${cssW}px`;
+  gsBoardCanvas.style.height = `${cssH}px`;
+  gsBoardCanvas.style.left = `${CANVAS_OFFSET_X}px`;
+  gsBoardCanvas.style.top = `${FRAME_PADDING_Y}px`;
+  if (gsBoardCanvas.width !== backingW) gsBoardCanvas.width = backingW;
+  if (gsBoardCanvas.height !== backingH) gsBoardCanvas.height = backingH;
+  computeViewFromCanvas(gsBoardCanvas);
+  applyViewTransform(gsBoardCtx);
+}
+
 let lastResizeMetrics = {
   cssW: 0,
   cssH: 0,
@@ -6891,22 +6996,28 @@ function resizeCanvas() {
   canvas.style.height = CANVAS_BASE_HEIGHT + 'px';
   canvas.style.left = CANVAS_OFFSET_X + 'px';
   canvas.style.top = FRAME_PADDING_Y + 'px';
-  if (canvas.width !== CANVAS_BASE_WIDTH) canvas.width = CANVAS_BASE_WIDTH;
-  if (canvas.height !== CANVAS_BASE_HEIGHT) canvas.height = CANVAS_BASE_HEIGHT;
+  const gsBackingW = Math.max(1, Math.round(CANVAS_BASE_WIDTH * CANVAS_DPR));
+  const gsBackingH = Math.max(1, Math.round(CANVAS_BASE_HEIGHT * CANVAS_DPR));
+  if (canvas.width !== gsBackingW) canvas.width = gsBackingW;
+  if (canvas.height !== gsBackingH) canvas.height = gsBackingH;
   computeViewFromCanvas(canvas);
 
   sizeAndAlignOverlays();
   if (aimCanvas) {
     aimCanvas.style.width = CANVAS_BASE_WIDTH + 'px';
     aimCanvas.style.height = CANVAS_BASE_HEIGHT + 'px';
-    if (aimCanvas.width !== CANVAS_BASE_WIDTH) aimCanvas.width = CANVAS_BASE_WIDTH;
-    if (aimCanvas.height !== CANVAS_BASE_HEIGHT) aimCanvas.height = CANVAS_BASE_HEIGHT;
+    const aimBackingW = Math.max(1, Math.round(CANVAS_BASE_WIDTH * CANVAS_DPR));
+    const aimBackingH = Math.max(1, Math.round(CANVAS_BASE_HEIGHT * CANVAS_DPR));
+    if (aimCanvas.width !== aimBackingW) aimCanvas.width = aimBackingW;
+    if (aimCanvas.height !== aimBackingH) aimCanvas.height = aimBackingH;
   }
   if (planeCanvas) {
     planeCanvas.style.width = CANVAS_BASE_WIDTH + 'px';
     planeCanvas.style.height = CANVAS_BASE_HEIGHT + 'px';
-    if (planeCanvas.width !== CANVAS_BASE_WIDTH) planeCanvas.width = CANVAS_BASE_WIDTH;
-    if (planeCanvas.height !== CANVAS_BASE_HEIGHT) planeCanvas.height = CANVAS_BASE_HEIGHT;
+    const planeBackingW = Math.max(1, Math.round(CANVAS_BASE_WIDTH * CANVAS_DPR));
+    const planeBackingH = Math.max(1, Math.round(CANVAS_BASE_HEIGHT * CANVAS_DPR));
+    if (planeCanvas.width !== planeBackingW) planeCanvas.width = planeBackingW;
+    if (planeCanvas.height !== planeBackingH) planeCanvas.height = planeBackingH;
   }
   applyViewTransform(gsBoardCtx);
   applyViewTransform(aimCtx);
