@@ -12,6 +12,7 @@ const goatIndicator   = document.getElementById("goatIndicator");
 
 const DEBUG_RESIZE = false;
 const DEBUG_BOOT = false;
+const DEBUG_LAYOUT = false;
 
 const bootTrace = {
   startTs: null,
@@ -20,6 +21,8 @@ const bootTrace = {
 };
 
 const loadingOverlay = document.getElementById("loadingOverlay");
+
+document.documentElement.classList.toggle('debug-layout', DEBUG_LAYOUT);
 
 const uiFrameEl = document.getElementById("uiFrame");
 const menuLayer = document.getElementById("menuLayer");
@@ -124,6 +127,40 @@ function logBootStep(label) {
   const entry = { label, t: performance.now() - bootTrace.startTs };
   bootTrace.markers.push(entry);
   console.log('[boot]', entry);
+}
+
+function logLayoutDebug() {
+  if (!DEBUG_LAYOUT) return;
+  const rectSummary = (el) => {
+    if (!el?.getBoundingClientRect) return null;
+    const rect = el.getBoundingClientRect();
+    return {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height
+    };
+  };
+  const rects = {
+    gsFrame: rectSummary(gsFrameLayer),
+    gameCanvas: rectSummary(gsBoardCanvas),
+    overlayContainer: rectSummary(overlayContainer),
+    aimCanvas: rectSummary(aimCanvas),
+    planeCanvas: rectSummary(planeCanvas)
+  };
+  const transformStack = [];
+  let current = gsFrameLayer;
+  while (current) {
+    const styles = getComputedStyle(current);
+    transformStack.push({
+      element: current.id || current.className || current.tagName,
+      transform: styles.transform,
+      zoom: styles.zoom
+    });
+    current = current.parentElement;
+  }
+  console.log('[layout-debug] rects', rects);
+  console.log('[layout-debug] transforms', transformStack);
 }
 
 function computeViewFromCanvas(canvas) {
@@ -6783,12 +6820,9 @@ function rebuildBuildingsFromMap(map){
 }
 
 function updateUiScale() {
-  const safeScale = 1;
-
-  document.documentElement.style.setProperty('--ui-scale', safeScale);
-
   if (uiFrameEl instanceof HTMLElement) {
-    uiFrameEl.style.setProperty('--ui-scale', safeScale);
+    uiFrameEl.style.width = `${FRAME_BASE_WIDTH}px`;
+    uiFrameEl.style.height = `${FRAME_BASE_HEIGHT}px`;
   }
 
   if (gsFrameEl instanceof HTMLElement) {
@@ -6799,8 +6833,6 @@ function updateUiScale() {
     gsFrameEl.style.width = `${FRAME_BASE_WIDTH}px`;
     gsFrameEl.style.height = `${FRAME_BASE_HEIGHT}px`;
   }
-
-  return safeScale;
 }
 
 /* ======= CANVAS RESIZE ======= */
@@ -6900,6 +6932,7 @@ function resizeCanvas() {
   }
 
   refreshPointsPopupAnchors();
+  logLayoutDebug();
 
   if (document.body.classList.contains('screen--menu')) {
     document.body.classList.add('menu-ready');
