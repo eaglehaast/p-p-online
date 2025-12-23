@@ -40,6 +40,9 @@ const aimCtx      = aimCanvas.getContext("2d");
 const planeCanvas = document.getElementById("planeCanvas");
 const planeCtx    = planeCanvas.getContext("2d");
 
+const hudCanvas = document.getElementById("hudCanvas");
+const hudCtx = hudCanvas instanceof HTMLCanvasElement ? hudCanvas.getContext("2d") : null;
+
 function setScreenMode(mode) {
   document.body.classList.toggle('screen--menu', mode === 'MENU');
   document.body.classList.toggle('screen--game', mode === 'GAME');
@@ -304,6 +307,15 @@ function syncCanvasBackingStore(canvas) {
 
   if (canvas.width !== w) canvas.width = w;
   if (canvas.height !== h) canvas.height = h;
+}
+
+function syncHudCanvasLayout() {
+  if (!(hudCanvas instanceof HTMLCanvasElement)) return;
+  hudCanvas.style.left = '0px';
+  hudCanvas.style.top = '0px';
+  hudCanvas.style.width = `${FRAME_BASE_WIDTH}px`;
+  hudCanvas.style.height = `${FRAME_BASE_HEIGHT}px`;
+  syncCanvasBackingStore(hudCanvas);
 }
 
 function logCanvasCreation(canvas, label = "") {
@@ -612,6 +624,21 @@ const pointsPopupAnchorRows = [0.1, 0.32, 0.54, 0.76, 0.9];
 const pointsPopupAnchors = {
   green: pointsPopupAnchorRows.map(y => ({ x: 0.5, y })),
   blue: pointsPopupAnchorRows.map(y => ({ x: 0.5, y }))
+};
+
+const HUD_LAYOUT = {
+  planeCounters: {
+    blue: { x: 3, y: 97, width: 48, height: 287 },
+    green: { x: 411, y: 416, width: 48, height: 287 }
+  },
+  matchProgress: {
+    blue: { x: 411, y: 97, width: 48, height: 287 },
+    green: { x: 3, y: 416, width: 48, height: 287 }
+  },
+  pointsPopups: {
+    green: { x: 3, y: 388, width: 45, height: 25 },
+    blue: { x: 413, y: 388, width: 45, height: 25 }
+  }
 };
 
 function clampPointsPopupOffset(value, limit) {
@@ -2101,7 +2128,8 @@ function resetCanvasState(ctx, canvas){
 }
 
 // Enable smoothing so rotated images (planes, arrows) don't appear jagged
-[gsBoardCtx, aimCtx, planeCtx].forEach(ctx => {
+[gsBoardCtx, aimCtx, planeCtx, hudCtx].forEach(ctx => {
+  if (!ctx) return;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
 });
@@ -6081,15 +6109,11 @@ function checkVictory(){
 
 /* ======= SCOREBOARD ======= */
 
-function drawMatchProgress(ctx){
-  if (!matchProgressReady) return;
+function drawMatchProgress(ctx, scaleX = 1, scaleY = 1){
+  if (!matchProgressReady || !ctx) return;
 
-  const rect = visualRect(gsBoardCanvas);
-  const rawScaleX = rect.width / CANVAS_BASE_WIDTH;
-  const rawScaleY = rect.height / CANVAS_BASE_HEIGHT;
-  const sx = Number.isFinite(rawScaleX) && rawScaleX > 0 ? rawScaleX : 1;
-  const sy = Number.isFinite(rawScaleY) && rawScaleY > 0 ? rawScaleY : sx;
-
+  const sx = Number.isFinite(scaleX) && scaleX > 0 ? scaleX : 1;
+  const sy = Number.isFinite(scaleY) && scaleY > 0 ? scaleY : sx;
   const scale = (typeof matchProgressPieceScale !== 'undefined') ? matchProgressPieceScale : 1;
 
   ctx.save();
@@ -6154,8 +6178,8 @@ function drawMatchProgress(ctx){
           const dstW = Math.round(img.naturalWidth * scale * sx);
           const dstH = Math.round(img.naturalHeight * scale * sy);
 
-          const screenX = Math.round(pos.x * sx) + (BOARD_ORIGIN?.x || 0);
-          const screenY = Math.round(pos.y * sy) + (BOARD_ORIGIN?.y || 0);
+          const screenX = Math.round(pos.x * sx);
+          const screenY = Math.round(pos.y * sy);
 
           const previousAlpha = ctx.globalAlpha;
           if (anim){
@@ -6177,10 +6201,10 @@ function drawMatchProgress(ctx){
   }
 }
 
-const PLANE_COUNTER_PADDING      = 2;
-const PLANE_COUNTER_CONTAINERS   = {
-  blue:  { left: 409, top: 406, right: 460, bottom: 696 },
-  green: { left: 0,   top: 89,  right: 51,  bottom: 379 }
+const PLANE_COUNTER_PADDING = 2;
+const PLANE_COUNTER_CONTAINERS = {
+  blue: HUD_LAYOUT.planeCounters.blue,
+  green: HUD_LAYOUT.planeCounters.green
 };
 
 const pointsPopupDurationMs = 2600;
@@ -6474,35 +6498,22 @@ function clearPointsPopups(){
 
 function renderScoreboard(){
   updateTurnIndicators();
-  // `drawPlanesAndTrajectories()` already clears the plane canvas every frame
-  // before rendering the planes. Clearing it again here would erase the planes
-  // that were just drawn, making them disappear. Draw the HUD on top of the
-  // existing planes without clearing the canvas again.
-  planeCtx.save();
-
-  const rect = visualRect(gsBoardCanvas);
-  const rawScaleX = rect.width / CANVAS_BASE_WIDTH;
-  const scaleX = Number.isFinite(rawScaleX) && rawScaleX > 0 ? rawScaleX : 1;
-  const rawScaleY = rect.height / CANVAS_BASE_HEIGHT;
-  const scaleY = Number.isFinite(rawScaleY) && rawScaleY > 0 ? rawScaleY : scaleX;
-  const containerLeft = rect.left - FRAME_PADDING_X * scaleX;
-  const containerTop = rect.top - FRAME_PADDING_Y * scaleY;
-  const containerWidth = FRAME_BASE_WIDTH * scaleX;
-
-  if (Number.isFinite(containerLeft) && Number.isFinite(containerTop)){
-    BOARD_ORIGIN.x = Math.round(containerLeft);
-    BOARD_ORIGIN.y = Math.round(containerTop);
-  } else {
-    BOARD_ORIGIN.x = 0;
-    BOARD_ORIGIN.y = 0;
+  if (!hudCtx || !(hudCanvas instanceof HTMLCanvasElement)) {
+    return;
   }
 
-  const blueHudFrame = buildPlaneCounterFrame('blue', containerLeft, containerTop, scaleX, scaleY);
-  const greenHudFrame = buildPlaneCounterFrame('green', containerLeft, containerTop, scaleX, scaleY);
+  hudCtx.setTransform(1, 0, 0, 1, 0, 0);
+  hudCtx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
+
+  const scaleX = hudCanvas.width / FRAME_BASE_WIDTH;
+  const scaleY = hudCanvas.height / FRAME_BASE_HEIGHT;
+
+  const blueHudFrame = buildPlaneCounterFrame('blue', scaleX, scaleY);
+  const greenHudFrame = buildPlaneCounterFrame('green', scaleX, scaleY);
 
   if (blueHudFrame) {
     drawPlayerHUD(
-      planeCtx,
+      hudCtx,
       blueHudFrame,
       "blue",
       turnColors[turnIndex] === "blue"
@@ -6511,131 +6522,68 @@ function renderScoreboard(){
 
   if (greenHudFrame) {
     drawPlayerHUD(
-      planeCtx,
+      hudCtx,
       greenHudFrame,
       "green",
       turnColors[turnIndex] === "green"
     );
   }
 
-  drawMatchProgress(planeCtx);
+  drawMatchProgress(hudCtx, scaleX, scaleY);
 
-  const counterVirtualRects = {
-    green: getVirtualRectFromDom(greenPointsPopup),
-    blue: getVirtualRectFromDom(bluePointsPopup)
-  };
-
-  const drawRect = (color, virtualRect) => {
-    if (!DEBUG_UI || !virtualRect) return;
-
-    const { x, y, width, height } = virtualRect;
-    console.debug(`[HUD] ${color} counter virtual rect`, {
-      x: Math.round(x),
-      y: Math.round(y),
-      w: Math.round(width),
-      h: Math.round(height)
-    });
-
-    const drawLeft = containerLeft + x * scaleX;
-    const drawTop = containerTop + y * scaleY;
-    const drawWidth = width * scaleX;
-    const drawHeight = height * scaleY;
-
-    if (!Number.isFinite(drawLeft) || !Number.isFinite(drawTop) || drawWidth <= 0 || drawHeight <= 0) {
-      return;
-    }
-
-    planeCtx.save();
-    planeCtx.setTransform(1, 0, 0, 1, 0, 0);
-    planeCtx.strokeStyle = 'magenta';
-    planeCtx.lineWidth = 2;
-    planeCtx.strokeRect(drawLeft, drawTop, drawWidth, drawHeight);
-    planeCtx.restore();
-  };
-
-  drawRect('green', counterVirtualRects.green);
-  drawRect('blue', counterVirtualRects.blue);
-
-  planeCtx.restore();
+  if (DEBUG_LAYOUT) {
+    drawHudDebugLayout(hudCtx, scaleX, scaleY);
+  }
 }
 
-function buildPlaneCounterFrame(color, containerLeft, containerTop, scaleX, scaleY) {
-  const host = planeCounterHosts?.[color] || pointsPopupElements?.[color];
-  if (host instanceof HTMLElement) {
-    const rect = visualRect(host);
-    const containerRect = visualRect(gsFrameEl);
-
-    const containerScaleX = Number.isFinite(containerRect.width) && containerRect.width > 0
-      ? containerRect.width / FRAME_BASE_WIDTH
-      : scaleX;
-    const containerScaleY = Number.isFinite(containerRect.height) && containerRect.height > 0
-      ? containerRect.height / FRAME_BASE_HEIGHT
-      : scaleY;
-
-    const offsetLeft = Number.isFinite(rect.left) && Number.isFinite(containerRect.left)
-      ? rect.left - containerRect.left
-      : rect.left;
-    const offsetTop = Number.isFinite(rect.top) && Number.isFinite(containerRect.top)
-      ? rect.top - containerRect.top
-      : rect.top;
-
-    const baseLeft = Number.isFinite(containerScaleX) && containerScaleX > 0
-      ? offsetLeft / containerScaleX
-      : offsetLeft;
-    const baseTop = Number.isFinite(containerScaleY) && containerScaleY > 0
-      ? offsetTop / containerScaleY
-      : offsetTop;
-
-    const baseWidth = Number.isFinite(containerScaleX) && containerScaleX > 0
-      ? rect.width / containerScaleX
-      : rect.width;
-    const baseHeight = Number.isFinite(containerScaleY) && containerScaleY > 0
-      ? rect.height / containerScaleY
-      : rect.height;
-
-    const width = baseWidth * scaleX;
-    const height = baseHeight * scaleY;
-    const left = containerLeft + baseLeft * scaleX;
-    const top = containerTop + baseTop * scaleY;
-
-    const scaleFromCssX = width / pointsPopupBaseSize.width;
-    const scaleFromCssY = height / pointsPopupBaseSize.height;
-
-    if (
-      Number.isFinite(left) &&
-      Number.isFinite(top) &&
-      Number.isFinite(width) &&
-      Number.isFinite(height) &&
-      width > 0 &&
-      height > 0
-    ) {
-      return {
-        left,
-        top,
-        width,
-        height,
-        scaleX: Number.isFinite(scaleFromCssX) && scaleFromCssX > 0 ? scaleFromCssX : scaleX,
-        scaleY: Number.isFinite(scaleFromCssY) && scaleFromCssY > 0 ? scaleFromCssY : scaleY
-      };
-    }
-  }
-
+function buildPlaneCounterFrame(color, scaleX, scaleY) {
   const spec = PLANE_COUNTER_CONTAINERS?.[color];
   if (!spec) return null;
 
-  const width = (spec.right - spec.left) * scaleX;
-  const height = (spec.bottom - spec.top) * scaleY;
-  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-    return null;
-  }
+  const width = spec.width * scaleX;
+  const height = spec.height * scaleY;
+  const left = spec.x * scaleX;
+  const top = spec.y * scaleY;
 
-  const left = containerLeft + spec.left * scaleX;
-  const top = containerTop + spec.top * scaleY;
-  if (!Number.isFinite(left) || !Number.isFinite(top)) {
+  if (!Number.isFinite(left) || !Number.isFinite(top) || width <= 0 || height <= 0) {
     return null;
   }
 
   return { left, top, width, height, scaleX, scaleY };
+}
+
+function drawHudDebugLayout(ctx, scaleX, scaleY) {
+  const slots = [
+    { id: 'BluePlaneCounter', ...HUD_LAYOUT.planeCounters.blue },
+    { id: 'GreenPlaneCounter', ...HUD_LAYOUT.planeCounters.green },
+    { id: 'BlueMatchProgress', ...HUD_LAYOUT.matchProgress.blue },
+    { id: 'GreenMatchProgress', ...HUD_LAYOUT.matchProgress.green },
+    { id: 'BluePointsPopup', ...HUD_LAYOUT.pointsPopups.blue },
+    { id: 'GreenPointsPopup', ...HUD_LAYOUT.pointsPopups.green }
+  ];
+
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.font = `${Math.max(10, 12 * scaleX)}px 'Roboto', sans-serif`;
+  ctx.textBaseline = 'top';
+
+  for (const slot of slots) {
+    if (!slot) continue;
+    const left = slot.x * scaleX;
+    const top = slot.y * scaleY;
+    const width = slot.width * scaleX;
+    const height = slot.height * scaleY;
+
+    ctx.fillStyle = 'rgba(255, 0, 255, 0.08)';
+    ctx.strokeStyle = 'rgba(255, 0, 255, 0.6)';
+    ctx.lineWidth = Math.max(1, scaleX);
+    ctx.fillRect(left, top, width, height);
+    ctx.strokeRect(left, top, width, height);
+    ctx.fillStyle = 'rgba(255, 0, 255, 0.9)';
+    ctx.fillText(slot.id, left + 4 * scaleX, top + 4 * scaleY);
+  }
+
+  ctx.restore();
 }
 
 function updateTurnIndicators(){
@@ -6994,6 +6942,8 @@ function updateUiScale() {
     gsFrameEl.style.width = `${FRAME_BASE_WIDTH}px`;
     gsFrameEl.style.height = `${FRAME_BASE_HEIGHT}px`;
   }
+
+  syncHudCanvasLayout();
 }
 
 /* ======= CANVAS RESIZE ======= */
@@ -7003,6 +6953,7 @@ function syncAllCanvasBackingStores() {
   syncCanvasBackingStore(gsBoardCanvas);
   syncCanvasBackingStore(planeCanvas);
   syncCanvasBackingStore(aimCanvas);
+  syncCanvasBackingStore(hudCanvas);
 }
 
 function resizeCanvasFixedForGameBoard() {
