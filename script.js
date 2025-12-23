@@ -262,8 +262,8 @@ function computeViewFromCanvas(canvas) {
   VIEW.cssH = cssH;
   VIEW.pxW = pxW;
   VIEW.pxH = pxH;
-  VIEW.scaleX = isBaseSize ? 1 : pxW / WORLD.width;
-  VIEW.scaleY = isBaseSize ? 1 : pxH / WORLD.height;
+  VIEW.scaleX = pxW / WORLD.width;
+  VIEW.scaleY = pxH / WORLD.height;
 }
 
 function worldToPx(x, y) {
