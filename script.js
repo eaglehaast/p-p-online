@@ -174,16 +174,19 @@ function computeViewFromCanvas(canvas) {
   const cssW = Math.max(1, rect.width);
   const cssH = Math.max(1, rect.height);
 
-  const pxW = Math.round(cssW * CANVAS_DPR);
-  const pxH = Math.round(cssH * CANVAS_DPR);
+  const isBaseSize =
+    Math.abs(cssW - CANVAS_BASE_WIDTH) < 0.01 &&
+    Math.abs(cssH - CANVAS_BASE_HEIGHT) < 0.01;
+  const pxW = isBaseSize ? CANVAS_BASE_WIDTH : Math.round(cssW * CANVAS_DPR);
+  const pxH = isBaseSize ? CANVAS_BASE_HEIGHT : Math.round(cssH * CANVAS_DPR);
 
-  VIEW.dpr = CANVAS_DPR;
+  VIEW.dpr = isBaseSize ? 1 : CANVAS_DPR;
   VIEW.cssW = cssW;
   VIEW.cssH = cssH;
   VIEW.pxW = pxW;
   VIEW.pxH = pxH;
-  VIEW.scaleX = pxW / WORLD.width;
-  VIEW.scaleY = pxH / WORLD.height;
+  VIEW.scaleX = isBaseSize ? 1 : pxW / WORLD.width;
+  VIEW.scaleY = isBaseSize ? 1 : pxH / WORLD.height;
 }
 
 function worldToPx(x, y) {
@@ -199,15 +202,11 @@ function resizeCanvasToMatchCss(canvas) {
   if (!(canvas instanceof HTMLCanvasElement)) return;
 
   const rect = canvas.getBoundingClientRect();
-  const { CANVAS_DPR } = getCanvasDpr();
   const w = Math.max(1, rect.width);
   const h = Math.max(1, rect.height);
 
-  const pxW = Math.round(w * CANVAS_DPR);
-  const pxH = Math.round(h * CANVAS_DPR);
-
-  if (canvas.width !== pxW) canvas.width = pxW;
-  if (canvas.height !== pxH) canvas.height = pxH;
+  if (canvas.width !== w) canvas.width = w;
+  if (canvas.height !== h) canvas.height = h;
 }
 
 function applyViewTransform(ctx) {
@@ -217,11 +216,10 @@ function applyViewTransform(ctx) {
 
 function syncCanvasBackingStore(canvas) {
   if (!canvas) return;
-  const { CANVAS_DPR } = getCanvasDpr();
   const r = canvas.getBoundingClientRect();
 
-  const w = Math.max(1, Math.round(r.width * CANVAS_DPR));
-  const h = Math.max(1, Math.round(r.height * CANVAS_DPR));
+  const w = Math.max(1, Math.round(r.width));
+  const h = Math.max(1, Math.round(r.height));
 
   if (canvas.width !== w) canvas.width = w;
   if (canvas.height !== h) canvas.height = h;
@@ -953,16 +951,14 @@ function syncOverlayCanvasToGameCanvas(targetCanvas, cssWidth, cssHeight) {
 
   const width = Math.max(1, Math.round(cssWidth || 0));
   const height = Math.max(1, Math.round(cssHeight || 0));
-  const { CANVAS_DPR } = getCanvasDpr();
-
   targetCanvas.style.position = 'absolute';
   targetCanvas.style.left = '0px';
   targetCanvas.style.top = '0px';
   targetCanvas.style.width = `${width}px`;
   targetCanvas.style.height = `${height}px`;
 
-  const backingWidth = Math.max(1, Math.round(width * CANVAS_DPR));
-  const backingHeight = Math.max(1, Math.round(height * CANVAS_DPR));
+  const backingWidth = Math.max(1, Math.round(width));
+  const backingHeight = Math.max(1, Math.round(height));
 
   if (targetCanvas.width !== backingWidth) targetCanvas.width = backingWidth;
   if (targetCanvas.height !== backingHeight) targetCanvas.height = backingHeight;
@@ -975,7 +971,7 @@ function sizeAndAlignOverlays() {
 
   const width = Math.max(1, Math.round(CANVAS_BASE_WIDTH));
   const height = Math.max(1, Math.round(CANVAS_BASE_HEIGHT));
-  const left = FRAME_PADDING_X;
+  const left = CANVAS_OFFSET_X;
   const top = FRAME_PADDING_Y;
 
   overlayContainer.style.left = `${left}px`;
@@ -2395,6 +2391,7 @@ const CANVAS_BASE_WIDTH = 360;
 const CANVAS_BASE_HEIGHT = 640;
 const FRAME_PADDING_X = 50;
 const FRAME_PADDING_Y = 80;
+const CANVAS_OFFSET_X = 51;
 const FRAME_BASE_WIDTH = CANVAS_BASE_WIDTH + FRAME_PADDING_X * 2; // 460
 const FRAME_BASE_HEIGHT = CANVAS_BASE_HEIGHT + FRAME_PADDING_Y * 2; // 800
 const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
@@ -6865,16 +6862,9 @@ function resizeCanvas() {
     // continue resizing instead of early returning
   }
 
-  const viewportMetrics = VV();
-  const viewportWidth = Math.max(1, viewportMetrics.width || window.innerWidth || 1);
-  const viewportHeight = Math.max(1, viewportMetrics.height || window.innerHeight || 1);
-  const scale = Math.min(
-    viewportWidth / FRAME_BASE_WIDTH,
-    viewportHeight / FRAME_BASE_HEIGHT
-  );
-  const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
-  const cssW = CANVAS_BASE_WIDTH * safeScale;
-  const cssH = CANVAS_BASE_HEIGHT * safeScale;
+  const safeScale = 1;
+  const cssW = CANVAS_BASE_WIDTH;
+  const cssH = CANVAS_BASE_HEIGHT;
   const { CANVAS_DPR } = getCanvasDpr();
   const unchanged =
     Math.abs(cssW - lastResizeMetrics.cssW) < 0.1 &&
@@ -6899,14 +6889,25 @@ function resizeCanvas() {
   const canvas = gsBoardCanvas;
   canvas.style.width = CANVAS_BASE_WIDTH + 'px';
   canvas.style.height = CANVAS_BASE_HEIGHT + 'px';
-  canvas.style.left = FRAME_PADDING_X + 'px';
+  canvas.style.left = CANVAS_OFFSET_X + 'px';
   canvas.style.top = FRAME_PADDING_Y + 'px';
-  resizeCanvasToMatchCss(canvas);
+  if (canvas.width !== CANVAS_BASE_WIDTH) canvas.width = CANVAS_BASE_WIDTH;
+  if (canvas.height !== CANVAS_BASE_HEIGHT) canvas.height = CANVAS_BASE_HEIGHT;
   computeViewFromCanvas(canvas);
 
   sizeAndAlignOverlays();
-  resizeCanvasToMatchCss(aimCanvas);
-  resizeCanvasToMatchCss(planeCanvas);
+  if (aimCanvas) {
+    aimCanvas.style.width = CANVAS_BASE_WIDTH + 'px';
+    aimCanvas.style.height = CANVAS_BASE_HEIGHT + 'px';
+    if (aimCanvas.width !== CANVAS_BASE_WIDTH) aimCanvas.width = CANVAS_BASE_WIDTH;
+    if (aimCanvas.height !== CANVAS_BASE_HEIGHT) aimCanvas.height = CANVAS_BASE_HEIGHT;
+  }
+  if (planeCanvas) {
+    planeCanvas.style.width = CANVAS_BASE_WIDTH + 'px';
+    planeCanvas.style.height = CANVAS_BASE_HEIGHT + 'px';
+    if (planeCanvas.width !== CANVAS_BASE_WIDTH) planeCanvas.width = CANVAS_BASE_WIDTH;
+    if (planeCanvas.height !== CANVAS_BASE_HEIGHT) planeCanvas.height = CANVAS_BASE_HEIGHT;
+  }
   applyViewTransform(gsBoardCtx);
   applyViewTransform(aimCtx);
   applyViewTransform(planeCtx);
@@ -6967,60 +6968,6 @@ function resizeCanvas() {
 
 window.addEventListener('resize', resizeCanvas);
 window.addEventListener('load', updateUiScale);
-if (window.visualViewport) {
-  let pendingViewportResize = null;
-  let lastViewportSnapshot = {
-    scale: window.visualViewport.scale || 1,
-    width: window.visualViewport.width || 0,
-    height: window.visualViewport.height || 0
-  };
-  const updateViewportSnapshot = () => {
-    const viewport = window.visualViewport;
-    if (!viewport) return;
-    lastViewportSnapshot = {
-      scale: Number.isFinite(viewport.scale) && viewport.scale > 0 ? viewport.scale : 1,
-      width: Number.isFinite(viewport.width) ? viewport.width : 0,
-      height: Number.isFinite(viewport.height) ? viewport.height : 0
-    };
-  };
-  const scheduleViewportResize = () => {
-    logResizeDebug('scheduleViewportResize');
-    updateViewportSnapshot();
-    if (pendingViewportResize !== null) {
-      return;
-    }
-    pendingViewportResize = requestAnimationFrame(() => {
-      pendingViewportResize = null;
-      resizeCanvas();
-    });
-  };
-
-  const handleViewportScroll = () => {
-    const viewport = window.visualViewport;
-    if (!viewport) return;
-    const nextScale = Number.isFinite(viewport.scale) && viewport.scale > 0 ? viewport.scale : 1;
-    const nextWidth = Number.isFinite(viewport.width) ? viewport.width : 0;
-    const nextHeight = Number.isFinite(viewport.height) ? viewport.height : 0;
-    const sizeChanged =
-      Math.abs(nextScale - lastViewportSnapshot.scale) > 0.0001 ||
-      Math.abs(nextWidth - lastViewportSnapshot.width) > 0.1 ||
-      Math.abs(nextHeight - lastViewportSnapshot.height) > 0.1;
-
-    if (!sizeChanged) {
-      return;
-    }
-
-    lastViewportSnapshot = {
-      scale: nextScale,
-      width: nextWidth,
-      height: nextHeight
-    };
-    scheduleViewportResize();
-  };
-
-  window.visualViewport.addEventListener('resize', scheduleViewportResize);
-  window.visualViewport.addEventListener('scroll', handleViewportScroll);
-}
 // Lock orientation to portrait and prevent the canvas from redrawing on rotation
 function lockOrientation(){
   if(screen.orientation && screen.orientation.lock){
