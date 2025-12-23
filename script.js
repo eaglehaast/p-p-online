@@ -74,6 +74,11 @@ const renderInitState = {
   lastDrawLogTime: 0
 };
 
+const pointerDebugState = {
+  logged: 0,
+  lastPoint: null
+};
+
 function getCanvasDpr() {
   const RAW_DPR = window.devicePixelRatio || 1;
   const CANVAS_DPR = Math.min(RAW_DPR, 2);
@@ -120,7 +125,9 @@ function logResizeDebug(eventKey) {
 
 function logRenderInit(label, details = {}) {
   if (!DEBUG_RENDER_INIT) return;
-  console.log("[render-init]", label, details);
+  const gsBoardDetails = getGsBoardCanvasDebugInfo();
+  const payload = gsBoardDetails ? { ...details, gsBoardCanvas: gsBoardDetails } : details;
+  console.log("[render-init]", label, payload);
 }
 
 function trackBootResizeCount(counterKey) {
@@ -142,6 +149,7 @@ function logBootStep(label) {
 
 function logLayoutDebug() {
   if (!DEBUG_LAYOUT) return;
+  const gsBoardDetails = getGsBoardCanvasDebugInfo();
   const rectSummary = (el) => {
     if (!el?.getBoundingClientRect) return null;
     const rect = el.getBoundingClientRect();
@@ -157,7 +165,8 @@ function logLayoutDebug() {
     gameCanvas: rectSummary(gsBoardCanvas),
     overlayContainer: rectSummary(overlayContainer),
     aimCanvas: rectSummary(aimCanvas),
-    planeCanvas: rectSummary(planeCanvas)
+    planeCanvas: rectSummary(planeCanvas),
+    gsBoardDebug: gsBoardDetails
   };
   const transformStack = [];
   let current = gsFrameLayer;
@@ -172,6 +181,57 @@ function logLayoutDebug() {
   }
   console.log('[layout-debug] rects', rects);
   console.log('[layout-debug] transforms', transformStack);
+}
+
+function getGsBoardCanvasDebugInfo() {
+  if (!gsBoardCanvas?.getBoundingClientRect) return null;
+  const rect = gsBoardCanvas.getBoundingClientRect();
+  return {
+    rect: {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height
+    },
+    backing: {
+      width: gsBoardCanvas.width,
+      height: gsBoardCanvas.height
+    },
+    devicePixelRatio: window.devicePixelRatio || 1,
+    viewDpr: VIEW.dpr
+  };
+}
+
+function drawDebugLayoutOverlay(ctx) {
+  if (!(DEBUG_LAYOUT || DEBUG_RENDER_INIT)) return;
+  if (!ctx) return;
+  const scale = Math.max(1, VIEW.scaleX, VIEW.scaleY);
+  ctx.save();
+  ctx.strokeStyle = "rgba(255, 0, 255, 0.8)";
+  ctx.lineWidth = 1 / scale;
+  ctx.strokeRect(0, 0, WORLD.width, WORLD.height);
+  if (pointerDebugState.lastPoint) {
+    ctx.fillStyle = "rgba(255, 0, 255, 0.9)";
+    ctx.beginPath();
+    ctx.arc(pointerDebugState.lastPoint.x, pointerDebugState.lastPoint.y, 3 / scale, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function logPointerDebugEvent(event) {
+  if (!(DEBUG_LAYOUT || DEBUG_RENDER_INIT)) return;
+  const { clientX, clientY, x, y } = clientToBoard(event);
+  pointerDebugState.lastPoint = { x, y };
+  if (pointerDebugState.logged >= 3) return;
+  pointerDebugState.logged += 1;
+  console.log("[pointer-debug]", {
+    index: pointerDebugState.logged,
+    clientX,
+    clientY,
+    x,
+    y
+  });
 }
 
 function computeViewFromCanvas(canvas) {
@@ -3873,6 +3933,7 @@ function updateAAPreviewFromEvent(e){
 }
 
 function onCanvasPointerDown(e){
+  logPointerDebugEvent(e);
   if(phase === 'AA_PLACEMENT'){
     e.preventDefault();
     aaPointerDown = true;
@@ -3883,13 +3944,15 @@ function onCanvasPointerDown(e){
 }
 
 function onCanvasPointerMove(e){
+  logPointerDebugEvent(e);
   if(phase !== 'AA_PLACEMENT') return;
   if(e.pointerType === 'mouse' || aaPointerDown){
     updateAAPreviewFromEvent(e);
   }
 }
 
-function onCanvasPointerUp(){
+function onCanvasPointerUp(e){
+  logPointerDebugEvent(e);
   if(phase !== 'AA_PLACEMENT') return;
   aaPointerDown = false;
   if(!aaPlacementPreview) return;
@@ -4620,6 +4683,7 @@ function drawInitialFrame(reason = "initial") {
     gsBoardCtx.fillRect(0, 0, WORLD.width, WORLD.height);
   }
   drawFieldEdges(gsBoardCtx, WORLD.width, WORLD.height);
+  drawDebugLayoutOverlay(gsBoardCtx);
   renderInitState.firstFrameDrawn = true;
   logRenderInit("first frame draw", { reason });
 }
@@ -5016,6 +5080,8 @@ function gameDraw(){
 
     roundTextTimer -= delta;
   }
+
+  drawDebugLayoutOverlay(gsBoardCtx);
 
   animationFrameId = requestAnimationFrame(gameDraw);
 }
