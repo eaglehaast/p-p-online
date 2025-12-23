@@ -78,6 +78,10 @@ body, button {
     z-index: 1;
   }
 
+  .debug-layout #gsFrame {
+    outline: 1px solid red;
+  }
+
   #menuLayer {
     z-index: 2;
   }
@@ -1079,6 +1083,10 @@ body, button {
   top: var(--field-top);
   margin: 0;
   z-index: 10;
+}
+
+.debug-layout #gameCanvas {
+  outline: 1px solid blue;
 }
 
 
