@@ -916,7 +916,7 @@ function resolveClientPoint(input) {
 function clientToOverlay(event, overlay = aimCanvas) {
   const target = overlay || aimCanvas;
   const { clientX, clientY } = resolveClientPoint(event);
-  const rect = target ? getViewportAdjustedBoundingClientRect(target) : { left: 0, top: 0, width: 0, height: 0 };
+  const rect = target?.getBoundingClientRect?.() || { left: 0, top: 0, width: 0, height: 0 };
   const rectWidth = Number.isFinite(rect.width) && rect.width !== 0 ? rect.width : 1;
   const rectHeight = Number.isFinite(rect.height) && rect.height !== 0 ? rect.height : 1;
   const nx = (clientX - rect.left) / rectWidth;
@@ -937,11 +937,19 @@ function clientToOverlay(event, overlay = aimCanvas) {
 
 function clientToBoard(event) {
   const { clientX, clientY } = resolveClientPoint(event);
-  const rect = getViewportAdjustedBoundingClientRect(gsBoardCanvas);
+  const rect = gsBoardCanvas?.getBoundingClientRect?.() || { left: 0, top: 0, width: 0, height: 0 };
   const rectWidth = Number.isFinite(rect.width) && rect.width !== 0 ? rect.width : 1;
   const rectHeight = Number.isFinite(rect.height) && rect.height !== 0 ? rect.height : 1;
-  const nx = (clientX - rect.left) / rectWidth;
-  const ny = (clientY - rect.top) / rectHeight;
+  const x_css = clientX - rect.left;
+  const y_css = clientY - rect.top;
+  const canvasScaleX = gsBoardCanvas?.width ? gsBoardCanvas.width / rectWidth : 1;
+  const canvasScaleY = gsBoardCanvas?.height ? gsBoardCanvas.height / rectHeight : 1;
+  const x_canvas = x_css * canvasScaleX;
+  const y_canvas = y_css * canvasScaleY;
+  const scaleX = Number.isFinite(VIEW.scaleX) && VIEW.scaleX !== 0 ? VIEW.scaleX : 1;
+  const scaleY = Number.isFinite(VIEW.scaleY) && VIEW.scaleY !== 0 ? VIEW.scaleY : 1;
+  const nx = x_css / rectWidth;
+  const ny = y_css / rectHeight;
 
   return {
     clientX,
@@ -949,8 +957,10 @@ function clientToBoard(event) {
     rect,
     nx,
     ny,
-    x: nx * WORLD.width,
-    y: ny * WORLD.height
+    x_css,
+    y_css,
+    x: x_canvas / scaleX,
+    y: y_canvas / scaleY
   };
 }
 
