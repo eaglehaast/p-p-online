@@ -47,10 +47,8 @@ body, button {
 
   #uiFrame {
     position: relative;
-    width: var(--control-panel-base-width);
-    height: var(--control-panel-base-height);
-    transform: scale(var(--ui-scale, 1));
-    transform-origin: center;
+    width: 460px;
+    height: 800px;
   }
 
   .layer {

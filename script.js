@@ -6823,21 +6823,9 @@ function rebuildBuildingsFromMap(map){
 }
 
 function updateUiScale() {
-  const viewportMetrics = VV();
-  const viewportWidth = Math.max(1, viewportMetrics.width || window.innerWidth || 1);
-  const viewportHeight = Math.max(1, viewportMetrics.height || window.innerHeight || 1);
-
-  const scale = Math.min(
-    viewportWidth / FRAME_BASE_WIDTH,
-    viewportHeight / FRAME_BASE_HEIGHT
-  );
-
-  const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
-
-  document.documentElement.style.setProperty('--ui-scale', safeScale);
-
   if (uiFrameEl instanceof HTMLElement) {
-    uiFrameEl.style.setProperty('--ui-scale', safeScale);
+    uiFrameEl.style.width = `${FRAME_BASE_WIDTH}px`;
+    uiFrameEl.style.height = `${FRAME_BASE_HEIGHT}px`;
   }
 
   if (gsFrameEl instanceof HTMLElement) {
@@ -6848,8 +6836,6 @@ function updateUiScale() {
     gsFrameEl.style.width = `${FRAME_BASE_WIDTH}px`;
     gsFrameEl.style.height = `${FRAME_BASE_HEIGHT}px`;
   }
-
-  return safeScale;
 }
 
 /* ======= CANVAS RESIZE ======= */
