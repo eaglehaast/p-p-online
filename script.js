@@ -15,6 +15,7 @@ const DEBUG_BOOT = false;
 const DEBUG_LAYOUT = false;
 const DEBUG_RENDER_INIT = false;
 const DEBUG_AIM = false;
+const DEBUG_PLANE_SHADING = false;
 
 const bootTrace = {
   startTs: null,
@@ -5384,10 +5385,37 @@ function addPlaneShading(ctx2d){
   const grad = ctx2d.createRadialGradient(0, 0, 8, 0, 0, 18);
   grad.addColorStop(0, "rgba(255,255,255,0.15)");
   grad.addColorStop(1, "rgba(0,0,0,0.25)");
+
+  const previousState = {
+    alpha: ctx2d.globalAlpha,
+    gco: ctx2d.globalCompositeOperation,
+    filter: ctx2d.filter
+  };
+
   ctx2d.save();
+  ctx2d.globalAlpha = 1;
   ctx2d.globalCompositeOperation = "source-atop";
+  ctx2d.filter = "none";
+
+  tracePlaneSilhouettePath(ctx2d);
+  ctx2d.clip();
   ctx2d.fillStyle = grad;
-  ctx2d.fillRect(-20, -20, 40, 40);
+
+  const bbox = { x: -20, y: -20, w: 40, h: 40 };
+
+  if (DEBUG_PLANE_SHADING) {
+    console.log("[DEBUG] addPlaneShading", {
+      before: previousState,
+      bbox,
+      after: {
+        alpha: ctx2d.globalAlpha,
+        gco: ctx2d.globalCompositeOperation,
+        filter: ctx2d.filter
+      }
+    });
+  }
+
+  ctx2d.fillRect(bbox.x, bbox.y, bbox.w, bbox.h);
   ctx2d.restore();
 }
 
