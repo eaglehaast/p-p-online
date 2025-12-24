@@ -402,6 +402,7 @@ const GREEN_EXPLOSIONS = [
 
 const ALL_EXPLOSION_SPRITES = [...BLUE_EXPLOSIONS, ...GREEN_EXPLOSIONS];
 const DEBUG_EXPLOSION_ANCHOR = false;
+const DEBUG_FX_EXPLOSION = false;
 const EXPLOSION_DRAW_SIZE = 50;
 const activeExplosions = [];
 
@@ -2056,6 +2057,14 @@ function clearExplosionFx() {
   activeExplosions.length = 0;
 }
 
+function logExplosionDebug(event, payload = {}) {
+  if (!DEBUG_FX_EXPLOSION) return;
+  console.log(`[FX][EXPLOSION] ${event}`, {
+    activeCount: activeExplosions.length,
+    ...payload,
+  });
+}
+
 function spawnExplosion(x, y, plane) {
   const color = plane?.color === 'green' ? 'green' : 'blue';
   const sprite = pickExplosionSprite(color) || pickExplosionSprite();
@@ -2073,10 +2082,12 @@ function spawnExplosion(x, y, plane) {
     sourceX: x,
     sourceY: y,
     sourceIsLayout: mappedCoords.fromLayout,
-    img,
-    spawnTime: null,
+    imgEl: img,
+    startedAt: null,
     duration: EXPLOSION_DURATION_MS,
     size: EXPLOSION_DRAW_SIZE,
+    w: EXPLOSION_DRAW_SIZE,
+    h: EXPLOSION_DRAW_SIZE,
     ready: false,
     host: null,
   };
@@ -2086,8 +2097,11 @@ function spawnExplosion(x, y, plane) {
   const finalizeSpawn = () => {
     if (explosion.ready) return;
     explosion.ready = true;
-    explosion.spawnTime = performance.now();
+    explosion.startedAt = performance.now();
+    explosion.w = img.naturalWidth || EXPLOSION_DRAW_SIZE;
+    explosion.h = img.naturalHeight || EXPLOSION_DRAW_SIZE;
     activeExplosions.push(explosion);
+    logExplosionDebug('created', { sprite, startedAt: explosion.startedAt });
   };
 
   const handleError = (event) => {
@@ -2119,13 +2133,14 @@ function updateAndDrawExplosions(ctx) {
   for (let i = activeExplosions.length - 1; i >= 0; i--) {
     const explosion = activeExplosions[i];
 
-    if (!explosion || now - explosion.spawnTime > (explosion.duration || EXPLOSION_DURATION_MS)) {
+    if (!explosion || now - explosion.startedAt > (explosion.duration || EXPLOSION_DURATION_MS)) {
       disposeExplosionHost(explosion);
       activeExplosions.splice(i, 1);
+      logExplosionDebug('removed', { elapsed: explosion ? now - explosion.startedAt : null });
       continue;
     }
 
-    if (!explosion.img || !explosion.ready || !explosion.img.complete || explosion.img.naturalWidth === 0) {
+    if (!explosion.imgEl || !explosion.ready || !explosion.imgEl.complete || explosion.imgEl.naturalWidth === 0) {
       continue;
     }
 
@@ -2141,7 +2156,7 @@ function updateAndDrawExplosions(ctx) {
     targetCtx.save();
     targetCtx.globalAlpha = 1;
     targetCtx.globalCompositeOperation = 'source-over';
-    targetCtx.drawImage(explosion.img, drawX, drawY, drawSize, drawSize);
+    targetCtx.drawImage(explosion.imgEl, drawX, drawY, drawSize, drawSize);
 
     if (DEBUG_EXPLOSION_ANCHOR) {
       targetCtx.strokeStyle = 'magenta';
