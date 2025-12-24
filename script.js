@@ -2142,73 +2142,83 @@ function logExplosionDebug(event, payload = {}) {
   });
 }
 
-function spawnExplosion(x, y, plane) {
-  const color = plane?.color === 'green' ? 'green' : 'blue';
-  const sprite = pickExplosionSprite(color) || pickExplosionSprite();
-  if (!sprite) {
-    return;
-  }
-  const mappedCoords = worldToGameCanvas(x, y);
+  function spawnExplosion(x, y, plane) {
+    const color = plane?.color === 'green' ? 'green' : 'blue';
+    const sprite = pickExplosionSprite(color) || pickExplosionSprite();
+    if (!sprite) {
+      return;
+    }
+    const mappedCoords = worldToGameCanvas(x, y);
 
-  const explosion = {
-    x: mappedCoords.x,
-    y: mappedCoords.y,
-    sourceX: x,
-    sourceY: y,
-    sourceIsLayout: mappedCoords.fromLayout,
-    imgEl: img,
+    const img = new Image();
+
+    const explosion = {
+      x: mappedCoords.x,
+      y: mappedCoords.y,
+      sourceX: x,
+      sourceY: y,
+      sourceIsLayout: mappedCoords.fromLayout,
+      imgEl: img,
     startedAt: null,
-    duration: EXPLOSION_DURATION_MS,
-    size: EXPLOSION_DRAW_SIZE,
-    w: EXPLOSION_DRAW_SIZE,
-    h: EXPLOSION_DRAW_SIZE,
-    ready: false,
+      duration: EXPLOSION_DURATION_MS,
+      size: EXPLOSION_DRAW_SIZE,
+      w: EXPLOSION_DRAW_SIZE,
+      h: EXPLOSION_DRAW_SIZE,
+      ready: false,
     host: null,
-    lastDrawLog: 0,
-  };
+      lastDrawLog: 0,
+    };
 
-  explosion.host = ensureExplosionHost(explosion);
+    explosion.host = ensureExplosionHost(explosion);
 
-  const finalizeSpawn = () => {
-    if (explosion.ready) return;
-    explosion.ready = true;
-    explosion.startedAt = performance.now();
-    explosion.w = img.naturalWidth || EXPLOSION_DRAW_SIZE;
-    explosion.h = img.naturalHeight || EXPLOSION_DRAW_SIZE;
-    activeExplosions.push(explosion);
-    logExplosionDebug('created', { sprite, startedAt: explosion.startedAt });
-  };
-
-  const handleError = (event) => {
-    console.warn('[FX] Explosion sprite failed to load', { sprite, event });
-    disposeExplosionHost(explosion);
-  };
-
-  if (img.complete && img.naturalWidth > 0) {
-    finalizeSpawn();
-    return;
-  }
-
-      if (!frameData.frameCount || !Array.isArray(frameData.frames) || frameData.frames.length === 0) {
-        disposeExplosionHost(explosion);
-        return;
-      }
-
-      explosion.frames = frameData.frames;
-      explosion.frameCount = frameData.frameCount;
-      explosion.frameW = frameData.frameW || EXPLOSION_DRAW_SIZE;
-      explosion.frameH = frameData.frameH || EXPLOSION_DRAW_SIZE;
-      explosion.frameDurationMs = frameData.frameDurationMs || explosion.frameDurationMs;
-      explosion.fps = frameData.fps || explosion.fps;
-      explosion.startMs = performance.now();
+    const finalizeSpawn = () => {
+      if (explosion.ready) return;
       explosion.ready = true;
+      explosion.startedAt = performance.now();
+      explosion.w = img.naturalWidth || EXPLOSION_DRAW_SIZE;
+      explosion.h = img.naturalHeight || EXPLOSION_DRAW_SIZE;
       activeExplosions.push(explosion);
-      logExplosionDebug('spawn', { assetId: sprite, frameCount: explosion.frameCount, fps: explosion.fps });
-    })
-    .catch((error) => {
-      console.warn('[FX] Explosion sprite failed to load', { sprite, error });
+      logExplosionDebug('created', { sprite, startedAt: explosion.startedAt });
+    };
+
+    const handleError = (event) => {
+      console.warn('[FX] Explosion sprite failed to load', { sprite, event });
       disposeExplosionHost(explosion);
-    });
+    };
+
+    img.onload = finalizeSpawn;
+    img.onerror = handleError;
+    img.src = sprite;
+
+    if (img.complete && img.naturalWidth > 0) {
+      finalizeSpawn();
+      return;
+    }
+
+    decodeExplosionFrames(sprite)
+      .then((frameData) => {
+        if (explosion.ready) return;
+
+        if (!frameData.frameCount || !Array.isArray(frameData.frames) || frameData.frames.length === 0) {
+          disposeExplosionHost(explosion);
+          return;
+        }
+
+        explosion.frames = frameData.frames;
+        explosion.frameCount = frameData.frameCount;
+        explosion.frameW = frameData.frameW || EXPLOSION_DRAW_SIZE;
+        explosion.frameH = frameData.frameH || EXPLOSION_DRAW_SIZE;
+        explosion.frameDurationMs = frameData.frameDurationMs || explosion.frameDurationMs;
+        explosion.fps = frameData.fps || explosion.fps;
+        explosion.startMs = performance.now();
+        explosion.ready = true;
+        activeExplosions.push(explosion);
+        logExplosionDebug('spawn', { assetId: sprite, frameCount: explosion.frameCount, fps: explosion.fps });
+      })
+      .catch((error) => {
+        console.warn('[FX] Explosion sprite failed to load', { sprite, error });
+        disposeExplosionHost(explosion);
+      });
 }
 
 function updateAndDrawExplosions(ctx) {
