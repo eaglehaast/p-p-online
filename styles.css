@@ -1136,6 +1136,19 @@ body, button {
 }
 
 
+/* Aiming overlay (full 460x800 frame) */
+#aimCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  display: block;
+  background: transparent;
+  /* Ensure the arrow renders above the game field but below the planes */
+  z-index: 18;
+}
+
 /* Overlay container */
 #overlayContainer {
   position: absolute;
@@ -1156,12 +1169,6 @@ body, button {
   pointer-events: none;
   display: block;
   background: transparent;
-}
-
-/* Overlay canvas for aiming line */
-#aimCanvas {
-  /* Ensure the arrow renders above the game field */
-  z-index: 20;
 }
 
 /* Overlay canvas for planes */
