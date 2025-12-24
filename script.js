@@ -402,7 +402,11 @@ const GREEN_EXPLOSIONS = [
 
 const ALL_EXPLOSION_SPRITES = [...BLUE_EXPLOSIONS, ...GREEN_EXPLOSIONS];
 const DEBUG_EXPLOSION_ANCHOR = false;
+const DEBUG_FX_EXPLOSION = false;
 const EXPLOSION_DRAW_SIZE = 50;
+const DEFAULT_EXPLOSION_FPS = 20;
+const EXPLOSION_DRAW_LOG_THROTTLE_MS = 150;
+const explosionFrameCache = new Map();
 const activeExplosions = [];
 
 const PRELOAD_IMAGE_URLS = [
@@ -1941,6 +1945,78 @@ function pickExplosionSprite(color) {
   return pool[randomIndex] || null;
 }
 
+async function decodeExplosionFrames(sprite) {
+  if (!sprite) return null;
+
+  const cached = explosionFrameCache.get(sprite);
+  if (cached) {
+    return cached;
+  }
+
+  const loadPromise = (async () => {
+    const response = await fetch(sprite);
+    const blob = await response.blob();
+    const frameData = {
+      assetId: sprite,
+      frames: [],
+      frameCount: 0,
+      frameW: EXPLOSION_DRAW_SIZE,
+      frameH: EXPLOSION_DRAW_SIZE,
+      frameDurationMs: Math.round(1000 / DEFAULT_EXPLOSION_FPS),
+      fps: DEFAULT_EXPLOSION_FPS,
+      totalDurationMs: 0,
+      durations: [],
+    };
+
+    if (typeof ImageDecoder === 'undefined') {
+      const fallbackImg = new Image();
+      fallbackImg.src = sprite;
+      if (fallbackImg.decode) {
+        await fallbackImg.decode();
+      } else {
+        await new Promise((resolve, reject) => {
+          fallbackImg.onload = resolve;
+          fallbackImg.onerror = reject;
+        });
+      }
+      frameData.frames.push(fallbackImg);
+      frameData.frameCount = 1;
+      frameData.frameW = fallbackImg.naturalWidth || EXPLOSION_DRAW_SIZE;
+      frameData.frameH = fallbackImg.naturalHeight || EXPLOSION_DRAW_SIZE;
+      frameData.totalDurationMs = frameData.frameDurationMs;
+      return frameData;
+    }
+
+    const decoder = new ImageDecoder({ data: blob, type: blob.type || 'image/gif' });
+    const track = decoder.tracks.selectedTrack ?? decoder.tracks.get(0);
+    const frameCount = track?.frameCount ?? 1;
+    let totalDuration = 0;
+
+    for (let i = 0; i < frameCount; i++) {
+      const { image, duration } = await decoder.decode({ frameIndex: i });
+      const frameDurationMs = duration || Math.round(1000 / DEFAULT_EXPLOSION_FPS);
+      const bitmapSource = typeof createImageBitmap === 'function' ? await createImageBitmap(image) : image;
+      frameData.frames.push(bitmapSource);
+      frameData.durations.push(frameDurationMs);
+      totalDuration += frameDurationMs;
+      frameData.frameW = image.displayWidth || image.codedWidth || frameData.frameW;
+      frameData.frameH = image.displayHeight || image.codedHeight || frameData.frameH;
+      if (bitmapSource !== image) {
+        image.close?.();
+      }
+    }
+
+    frameData.frameCount = frameData.frames.length;
+    frameData.totalDurationMs = totalDuration;
+    frameData.frameDurationMs = frameData.frameCount > 0 ? totalDuration / frameData.frameCount : frameData.frameDurationMs;
+    frameData.fps = frameData.frameDurationMs > 0 ? 1000 / frameData.frameDurationMs : DEFAULT_EXPLOSION_FPS;
+    return frameData;
+  })();
+
+  explosionFrameCache.set(sprite, loadPromise);
+  return loadPromise;
+}
+
 function getExplosionDrawContext(preferredCtx) {
   const targetCtx = preferredCtx || gsBoardCtx;
   if (!targetCtx) {
@@ -1962,7 +2038,7 @@ function getExplosionDrawContext(preferredCtx) {
 }
 
 function logExplosionDraw(ctx, explosion) {
-  if (!ctx) return;
+  if (!ctx || !DEBUG_FX_EXPLOSION) return;
   const canvas = ctx.canvas;
   console.log('[FX] Drawing explosion', {
     canvasId: canvas?.id,
@@ -1974,7 +2050,9 @@ function logExplosionDraw(ctx, explosion) {
     sourceX: explosion?.sourceX,
     sourceY: explosion?.sourceY,
     mappedFromLayout: explosion?.sourceIsLayout,
-    size: explosion?.size,
+    frameCount: explosion?.frameCount,
+    frameW: explosion?.frameW,
+    frameH: explosion?.frameH,
   });
 }
 
@@ -2056,15 +2134,20 @@ function clearExplosionFx() {
   activeExplosions.length = 0;
 }
 
+function logExplosionDebug(event, payload = {}) {
+  if (!DEBUG_FX_EXPLOSION) return;
+  console.log(`[FX][EXPLOSION] ${event}`, {
+    activeCount: activeExplosions.length,
+    ...payload,
+  });
+}
+
 function spawnExplosion(x, y, plane) {
   const color = plane?.color === 'green' ? 'green' : 'blue';
   const sprite = pickExplosionSprite(color) || pickExplosionSprite();
-  const img = new Image();
-  if (sprite) {
-    img.src = sprite;
+  if (!sprite) {
+    return;
   }
-  installImageWatch(img, sprite, "spawnExplosion");
-
   const mappedCoords = worldToGameCanvas(x, y);
 
   const explosion = {
@@ -2073,39 +2156,47 @@ function spawnExplosion(x, y, plane) {
     sourceX: x,
     sourceY: y,
     sourceIsLayout: mappedCoords.fromLayout,
-    img,
-    spawnTime: null,
-    duration: EXPLOSION_DURATION_MS,
-    size: EXPLOSION_DRAW_SIZE,
+    color,
+    assetId: sprite,
+    frames: null,
+    frameCount: 0,
+    frameW: EXPLOSION_DRAW_SIZE,
+    frameH: EXPLOSION_DRAW_SIZE,
+    frameDurationMs: Math.round(1000 / DEFAULT_EXPLOSION_FPS),
+    fps: DEFAULT_EXPLOSION_FPS,
+    startMs: null,
+    scale: 1,
     ready: false,
     host: null,
+    lastDrawLog: 0,
   };
 
   explosion.host = ensureExplosionHost(explosion);
 
-  const finalizeSpawn = () => {
-    if (explosion.ready) return;
-    explosion.ready = true;
-    explosion.spawnTime = performance.now();
-    activeExplosions.push(explosion);
-  };
+  decodeExplosionFrames(sprite)
+    .then((frameData) => {
+      if (!frameData || explosion.ready) return;
 
-  const handleError = (event) => {
-    console.warn('[FX] Explosion sprite failed to load', { sprite, event });
-    disposeExplosionHost(explosion);
-  };
+      if (!frameData.frameCount || !Array.isArray(frameData.frames) || frameData.frames.length === 0) {
+        disposeExplosionHost(explosion);
+        return;
+      }
 
-  if (img.complete && img.naturalWidth > 0) {
-    finalizeSpawn();
-    return;
-  }
-
-  img.decode?.()
-    .then(finalizeSpawn)
-    .catch(handleError);
-
-  img.addEventListener('load', finalizeSpawn, { once: true });
-  img.addEventListener('error', handleError, { once: true });
+      explosion.frames = frameData.frames;
+      explosion.frameCount = frameData.frameCount;
+      explosion.frameW = frameData.frameW || EXPLOSION_DRAW_SIZE;
+      explosion.frameH = frameData.frameH || EXPLOSION_DRAW_SIZE;
+      explosion.frameDurationMs = frameData.frameDurationMs || explosion.frameDurationMs;
+      explosion.fps = frameData.fps || explosion.fps;
+      explosion.startMs = performance.now();
+      explosion.ready = true;
+      activeExplosions.push(explosion);
+      logExplosionDebug('spawn', { assetId: sprite, frameCount: explosion.frameCount, fps: explosion.fps });
+    })
+    .catch((error) => {
+      console.warn('[FX] Explosion sprite failed to load', { sprite, error });
+      disposeExplosionHost(explosion);
+    });
 }
 
 function updateAndDrawExplosions(ctx) {
@@ -2119,29 +2210,52 @@ function updateAndDrawExplosions(ctx) {
   for (let i = activeExplosions.length - 1; i >= 0; i--) {
     const explosion = activeExplosions[i];
 
-    if (!explosion || now - explosion.spawnTime > (explosion.duration || EXPLOSION_DURATION_MS)) {
-      disposeExplosionHost(explosion);
+    if (!explosion) {
       activeExplosions.splice(i, 1);
       continue;
     }
 
-    if (!explosion.img || !explosion.ready || !explosion.img.complete || explosion.img.naturalWidth === 0) {
+    if (!explosion.ready) {
+      continue;
+    }
+
+    const frameDuration = Math.max(1, explosion?.frameDurationMs || Math.round(1000 / (explosion?.fps || DEFAULT_EXPLOSION_FPS)));
+    const frameIndex = Math.floor((now - (explosion?.startMs || 0)) / frameDuration);
+
+    if (!explosion || frameIndex >= (explosion.frameCount || 0)) {
+      disposeExplosionHost(explosion);
+      activeExplosions.splice(i, 1);
+      logExplosionDebug('remove', { elapsed: explosion ? now - (explosion.startMs || 0) : null, frameIndex });
+      continue;
+    }
+
+    if (!explosion.ready || !Array.isArray(explosion.frames) || explosion.frames.length === 0) {
       continue;
     }
 
     const { x: canvasX, y: canvasY } = resolveExplosionCanvasPosition(explosion);
 
-    const drawSize = explosion.size || EXPLOSION_DRAW_SIZE;
-    const drawHalfSize = drawSize / 2;
-    const drawX = canvasX - drawHalfSize;
-    const drawY = canvasY - drawHalfSize;
+    const drawScale = explosion.scale || 1;
+    const drawW = (explosion.frameW || EXPLOSION_DRAW_SIZE) * drawScale;
+    const drawH = (explosion.frameH || EXPLOSION_DRAW_SIZE) * drawScale;
+    const drawX = canvasX - drawW / 2;
+    const drawY = canvasY - drawH / 2;
 
-    logExplosionDraw(targetCtx, explosion);
+    const frameToDraw = explosion.frames[frameIndex];
+    if (!frameToDraw) {
+      continue;
+    }
+
+    if (DEBUG_FX_EXPLOSION && now - (explosion.lastDrawLog || 0) >= EXPLOSION_DRAW_LOG_THROTTLE_MS) {
+      logExplosionDraw(targetCtx, explosion);
+      logExplosionDebug('draw', { frameIndex, assetId: explosion.assetId });
+      explosion.lastDrawLog = now;
+    }
 
     targetCtx.save();
     targetCtx.globalAlpha = 1;
     targetCtx.globalCompositeOperation = 'source-over';
-    targetCtx.drawImage(explosion.img, drawX, drawY, drawSize, drawSize);
+    targetCtx.drawImage(frameToDraw, drawX, drawY, drawW, drawH);
 
     if (DEBUG_EXPLOSION_ANCHOR) {
       targetCtx.strokeStyle = 'magenta';
