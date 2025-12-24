@@ -350,6 +350,15 @@ function syncHudCanvasLayout() {
   syncCanvasBackingStore(hudCanvas);
 }
 
+function syncAimCanvasLayout() {
+  if (!(aimCanvas instanceof HTMLCanvasElement)) return;
+  aimCanvas.style.left = '0px';
+  aimCanvas.style.top = '0px';
+  aimCanvas.style.width = `${FRAME_BASE_WIDTH}px`;
+  aimCanvas.style.height = `${FRAME_BASE_HEIGHT}px`;
+  syncCanvasBackingStore(aimCanvas);
+}
+
 function logCanvasCreation(canvas, label = "") {
   if (!(canvas instanceof HTMLCanvasElement)) {
     return;
@@ -1135,7 +1144,6 @@ function sizeAndAlignOverlays() {
   const cssWidth = Math.max(1, rect.width);
   const cssHeight = Math.max(1, rect.height);
 
-  syncOverlayCanvasToGameCanvas(aimCanvas, cssWidth, cssHeight);
   syncOverlayCanvasToGameCanvas(planeCanvas, cssWidth, cssHeight);
 
   if (fxLayerElement instanceof HTMLElement) {
@@ -5054,10 +5062,18 @@ function gameDraw(){
     const tailX = plane.x + baseDx;
     const tailY = plane.y + baseDy;
 
+    const { CANVAS_DPR } = getCanvasDpr();
     aimCtx.setTransform(1, 0, 0, 1, 0, 0);
     aimCtx.clearRect(0, 0, aimCanvas.width, aimCanvas.height);
     aimCtx.save();
-    aimCtx.setTransform(VIEW.scaleX, 0, 0, VIEW.scaleY, 0, 0);
+    aimCtx.setTransform(
+      VIEW.scaleX,
+      0,
+      0,
+      VIEW.scaleY,
+      CANVAS_OFFSET_X * CANVAS_DPR,
+      FRAME_PADDING_Y * CANVAS_DPR
+    );
     aimCtx.globalAlpha = arrowAlpha;
     drawArrow(aimCtx, startX, startY, baseDx, baseDy);
     if (DEBUG_AIM) {
@@ -6871,8 +6887,8 @@ function startNewRound(){
     const rect = overlayContainer?.getBoundingClientRect?.();
     const cssWidth = Math.max(1, rect?.width || CANVAS_BASE_WIDTH);
     const cssHeight = Math.max(1, rect?.height || CANVAS_BASE_HEIGHT);
-    syncOverlayCanvasToGameCanvas(aimCanvas, cssWidth, cssHeight);
     syncOverlayCanvasToGameCanvas(planeCanvas, cssWidth, cssHeight);
+    syncAimCanvasLayout();
   });
 
   setBackgroundImage('ui_gamescreen/background behind the canvas 5.png');
@@ -6991,6 +7007,7 @@ function updateUiScale() {
   }
 
   syncHudCanvasLayout();
+  syncAimCanvasLayout();
 }
 
 /* ======= CANVAS RESIZE ======= */
@@ -7021,6 +7038,7 @@ function resizeCanvasFixedForGameBoard() {
   if (gsBoardCanvas.height !== backingH) gsBoardCanvas.height = backingH;
   computeViewFromCanvas(gsBoardCanvas);
   applyViewTransform(gsBoardCtx);
+  syncAimCanvasLayout();
 }
 
 let lastResizeMetrics = {
@@ -7077,14 +7095,7 @@ function resizeCanvas() {
   computeViewFromCanvas(canvas);
 
   sizeAndAlignOverlays();
-  if (aimCanvas) {
-    aimCanvas.style.width = CANVAS_BASE_WIDTH + 'px';
-    aimCanvas.style.height = CANVAS_BASE_HEIGHT + 'px';
-    const aimBackingW = Math.max(1, Math.round(CANVAS_BASE_WIDTH * CANVAS_DPR));
-    const aimBackingH = Math.max(1, Math.round(CANVAS_BASE_HEIGHT * CANVAS_DPR));
-    if (aimCanvas.width !== aimBackingW) aimCanvas.width = aimBackingW;
-    if (aimCanvas.height !== aimBackingH) aimCanvas.height = aimBackingH;
-  }
+  syncAimCanvasLayout();
   if (planeCanvas) {
     planeCanvas.style.width = CANVAS_BASE_WIDTH + 'px';
     planeCanvas.style.height = CANVAS_BASE_HEIGHT + 'px';
