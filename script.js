@@ -14,6 +14,7 @@ const DEBUG_RESIZE = false;
 const DEBUG_BOOT = false;
 const DEBUG_LAYOUT = false;
 const DEBUG_RENDER_INIT = false;
+const DEBUG_AIM = false;
 
 const bootTrace = {
   startTs: null,
@@ -80,6 +81,10 @@ const renderInitState = {
 const pointerDebugState = {
   logged: 0,
   lastPoint: null
+};
+
+const aimDebugState = {
+  lastLogTime: 0
 };
 
 function getCanvasDpr() {
@@ -184,6 +189,33 @@ function logLayoutDebug() {
   }
   console.log('[layout-debug] rects', rects);
   console.log('[layout-debug] transforms', transformStack);
+}
+
+function logAimDebug(details = {}) {
+  if (!DEBUG_AIM) return;
+  const now = performance.now();
+  if (aimDebugState.lastLogTime === 0) {
+    aimDebugState.lastLogTime = now;
+    return;
+  }
+  if (now - aimDebugState.lastLogTime < 1000) return;
+  aimDebugState.lastLogTime = now;
+  const rectSummary = (el) => {
+    if (!el?.getBoundingClientRect) return null;
+    const rect = el.getBoundingClientRect();
+    return {
+      left: Math.round(rect.left),
+      top: Math.round(rect.top),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height)
+    };
+  };
+  console.log('[aim-debug]', {
+    ...details,
+    aimCanvas: rectSummary(aimCanvas),
+    gsBoardCanvas: rectSummary(gsBoardCanvas),
+    aimVisible: aimCanvas?.style?.display !== 'none'
+  });
 }
 
 function getGsBoardCanvasDebugInfo() {
@@ -5015,22 +5047,37 @@ function gameDraw(){
     }
 
 
-    // Draw arrow on overlay canvas so it doesn't get clipped by game bounds
+    // Draw arrow in board coordinates so it stays aligned with the game field
     const arrowAlpha = 0.5 * (vdist / MAX_DRAG_DISTANCE);
+    const startX = plane.x;
+    const startY = plane.y;
+    const tailX = plane.x + baseDx;
+    const tailY = plane.y + baseDy;
+
+    aimCtx.setTransform(1, 0, 0, 1, 0, 0);
     aimCtx.clearRect(0, 0, aimCanvas.width, aimCanvas.height);
     aimCtx.save();
-    const boardRect = getViewportAdjustedBoundingClientRect(gsBoardCanvas);
-    const overlayRect = getViewportAdjustedBoundingClientRect(aimCanvas);
-    const start = worldToOverlay(plane.x, plane.y, { overlay: aimCanvas, boardRect, overlayRect });
-    const tail = worldToOverlay(plane.x + baseDx, plane.y + baseDy, { overlay: aimCanvas, boardRect, overlayRect });
-    const arrowDx = tail.overlayX - start.overlayX;
-    const arrowDy = tail.overlayY - start.overlayY;
+    aimCtx.setTransform(VIEW.scaleX, 0, 0, VIEW.scaleY, 0, 0);
     aimCtx.globalAlpha = arrowAlpha;
-    drawArrow(aimCtx, start.overlayX, start.overlayY, arrowDx, arrowDy);
+    drawArrow(aimCtx, startX, startY, baseDx, baseDy);
+    if (DEBUG_AIM) {
+      const debugSize = 3 / Math.max(1, VIEW.scaleX, VIEW.scaleY);
+      aimCtx.globalAlpha = 1;
+      aimCtx.fillStyle = 'magenta';
+      aimCtx.beginPath();
+      aimCtx.arc(tailX, tailY, debugSize, 0, Math.PI * 2);
+      aimCtx.fill();
+    }
     aimCtx.restore();
+    logAimDebug({
+      start: { x: Math.round(startX), y: Math.round(startY) },
+      tail: { x: Math.round(tailX), y: Math.round(tailY) },
+      inBounds: tailX >= 0 && tailX <= WORLD.width && tailY >= 0 && tailY <= WORLD.height
+    });
 
   } else {
     // Clear overlay if not aiming
+    aimCtx.setTransform(1, 0, 0, 1, 0, 0);
     aimCtx.clearRect(0, 0, aimCanvas.width, aimCanvas.height);
   }
 
