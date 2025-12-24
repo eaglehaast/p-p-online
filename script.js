@@ -2156,16 +2156,12 @@ function spawnExplosion(x, y, plane) {
     sourceX: x,
     sourceY: y,
     sourceIsLayout: mappedCoords.fromLayout,
-    color,
-    assetId: sprite,
-    frames: null,
-    frameCount: 0,
-    frameW: EXPLOSION_DRAW_SIZE,
-    frameH: EXPLOSION_DRAW_SIZE,
-    frameDurationMs: Math.round(1000 / DEFAULT_EXPLOSION_FPS),
-    fps: DEFAULT_EXPLOSION_FPS,
-    startMs: null,
-    scale: 1,
+    imgEl: img,
+    startedAt: null,
+    duration: EXPLOSION_DURATION_MS,
+    size: EXPLOSION_DRAW_SIZE,
+    w: EXPLOSION_DRAW_SIZE,
+    h: EXPLOSION_DRAW_SIZE,
     ready: false,
     host: null,
     lastDrawLog: 0,
@@ -2173,9 +2169,25 @@ function spawnExplosion(x, y, plane) {
 
   explosion.host = ensureExplosionHost(explosion);
 
-  decodeExplosionFrames(sprite)
-    .then((frameData) => {
-      if (!frameData || explosion.ready) return;
+  const finalizeSpawn = () => {
+    if (explosion.ready) return;
+    explosion.ready = true;
+    explosion.startedAt = performance.now();
+    explosion.w = img.naturalWidth || EXPLOSION_DRAW_SIZE;
+    explosion.h = img.naturalHeight || EXPLOSION_DRAW_SIZE;
+    activeExplosions.push(explosion);
+    logExplosionDebug('created', { sprite, startedAt: explosion.startedAt });
+  };
+
+  const handleError = (event) => {
+    console.warn('[FX] Explosion sprite failed to load', { sprite, event });
+    disposeExplosionHost(explosion);
+  };
+
+  if (img.complete && img.naturalWidth > 0) {
+    finalizeSpawn();
+    return;
+  }
 
       if (!frameData.frameCount || !Array.isArray(frameData.frames) || frameData.frames.length === 0) {
         disposeExplosionHost(explosion);
@@ -2210,26 +2222,14 @@ function updateAndDrawExplosions(ctx) {
   for (let i = activeExplosions.length - 1; i >= 0; i--) {
     const explosion = activeExplosions[i];
 
-    if (!explosion) {
-      activeExplosions.splice(i, 1);
-      continue;
-    }
-
-    if (!explosion.ready) {
-      continue;
-    }
-
-    const frameDuration = Math.max(1, explosion?.frameDurationMs || Math.round(1000 / (explosion?.fps || DEFAULT_EXPLOSION_FPS)));
-    const frameIndex = Math.floor((now - (explosion?.startMs || 0)) / frameDuration);
-
-    if (!explosion || frameIndex >= (explosion.frameCount || 0)) {
+    if (!explosion || now - explosion.startedAt > (explosion.duration || EXPLOSION_DURATION_MS)) {
       disposeExplosionHost(explosion);
       activeExplosions.splice(i, 1);
-      logExplosionDebug('remove', { elapsed: explosion ? now - (explosion.startMs || 0) : null, frameIndex });
+      logExplosionDebug('removed', { elapsed: explosion ? now - explosion.startedAt : null });
       continue;
     }
 
-    if (!explosion.ready || !Array.isArray(explosion.frames) || explosion.frames.length === 0) {
+    if (!explosion.imgEl || !explosion.ready || !explosion.imgEl.complete || explosion.imgEl.naturalWidth === 0) {
       continue;
     }
 
@@ -2255,7 +2255,7 @@ function updateAndDrawExplosions(ctx) {
     targetCtx.save();
     targetCtx.globalAlpha = 1;
     targetCtx.globalCompositeOperation = 'source-over';
-    targetCtx.drawImage(frameToDraw, drawX, drawY, drawW, drawH);
+    targetCtx.drawImage(explosion.imgEl, drawX, drawY, drawSize, drawSize);
 
     if (DEBUG_EXPLOSION_ANCHOR) {
       targetCtx.strokeStyle = 'magenta';
