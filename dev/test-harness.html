@@ -465,7 +465,6 @@
 
     <div id="overlayContainer" aria-hidden="true">
       <canvas id="planeCanvas" style="display:none;"></canvas>
-      <div id="fxLayer"></div>
     </div>
 
     <div id="modeMenu" data-inspector-name="Меню">
@@ -698,7 +697,6 @@
         <button id="toggleAliveBtn">Переключить статус</button>
         <button id="ignitePlaneBtn">Поджечь</button>
         <button id="extinguishPlaneBtn">Потушить</button>
-        <button id="explodePlaneBtn">Взрыв по позиции</button>
       </div>
       <div class="harness-button-group">
         <button id="scheduleFlameBtn">Пламя после взрыва</button>
@@ -706,18 +704,6 @@
       </div>
     </div>
 
-    <div class="harness-section" aria-labelledby="fxTitle">
-      <h2 id="fxTitle">Эффекты</h2>
-      <label for="explosionX">X (0..360)</label>
-      <input id="explosionX" type="number" value="180" step="10" />
-      <label for="explosionY">Y (0..640)</label>
-      <input id="explosionY" type="number" value="320" step="10" />
-      <div class="harness-button-group">
-        <button id="spawnExplosionBtn">Взрыв по координатам</button>
-        <button id="randomExplosionBtn">Случайный взрыв</button>
-        <button id="clearFxBtn" class="full-width">Очистить эффекты</button>
-      </div>
-    </div>
   </aside>
 
   <script src="script.js"></script>
@@ -727,8 +713,6 @@
     (function(){
       const planeSelect = document.getElementById('planeSelect');
       const planeDetails = document.getElementById('planeDetails');
-      const explosionXInput = document.getElementById('explosionX');
-      const explosionYInput = document.getElementById('explosionY');
       const gameContainerEl = document.getElementById('gameContainer');
       const statusElements = {
         round: document.getElementById('statusRound'),
@@ -927,27 +911,6 @@
         planeDetails.innerHTML = lines.join('');
       }
 
-      function parseCoord(input, fallback){
-        if(!input) return fallback;
-        const value = parseFloat(input.value);
-        return Number.isFinite(value) ? value : fallback;
-      }
-
-      function clamp(value, min, max){
-        if(!Number.isFinite(value)) return value;
-        return Math.min(Math.max(value, min), max);
-      }
-
-      function spawnExplosionAt(x, y){
-        if(typeof window.spawnExplosion !== 'function') return;
-        const canvas = document.getElementById('gameCanvas');
-        const width = canvas?.width || 360;
-        const height = canvas?.height || 640;
-        const clampedX = clamp(x, 0, width);
-        const clampedY = clamp(y, 0, height);
-        window.spawnExplosion(clampedX, clampedY);
-      }
-
       function ignitePlane(plane){
         if(!plane) return;
         plane.burning = true;
@@ -1032,18 +995,6 @@
         queueStatusUpdate();
       }
 
-      function defaultExplosionInputs(){
-        const canvas = document.getElementById('gameCanvas');
-        const width = canvas?.width || 360;
-        const height = canvas?.height || 640;
-        if(explosionXInput && !explosionXInput.dataset.locked){
-          explosionXInput.value = String(Math.round(width / 2));
-        }
-        if(explosionYInput && !explosionYInput.dataset.locked){
-          explosionYInput.value = String(Math.round(height / 2));
-        }
-      }
-
       patchFunction('resetGame', () => {
         refreshPlaneOptions();
         queueStatusUpdate();
@@ -1058,7 +1009,6 @@
 
       patchFunction('resizeCanvas', () => {
         queueLayout();
-        defaultExplosionInputs();
       });
 
       document.getElementById('resetGameBtn')?.addEventListener('click', () => {
@@ -1197,13 +1147,6 @@
         updatePlaneDetails();
       });
 
-      document.getElementById('explodePlaneBtn')?.addEventListener('click', () => {
-        const plane = getSelectedPlane();
-        if(!plane) return;
-        window.spawnExplosion?.(plane.x, plane.y, plane.color || null);
-        updatePlaneDetails();
-      });
-
       document.getElementById('scheduleFlameBtn')?.addEventListener('click', () => {
         const plane = getSelectedPlane();
         if(!plane) return;
@@ -1218,42 +1161,6 @@
         refreshPlaneOptions();
       });
 
-      document.getElementById('spawnExplosionBtn')?.addEventListener('click', () => {
-        const x = parseCoord(explosionXInput, 180);
-        const y = parseCoord(explosionYInput, 320);
-        spawnExplosionAt(x, y);
-      });
-
-      document.getElementById('randomExplosionBtn')?.addEventListener('click', () => {
-        const canvas = document.getElementById('gameCanvas');
-        const width = canvas?.width || 360;
-        const height = canvas?.height || 640;
-        const x = Math.random() * width;
-        const y = Math.random() * height;
-        spawnExplosionAt(x, y);
-      });
-
-      document.getElementById('clearFxBtn')?.addEventListener('click', () => {
-        if(typeof window.cleanupBurningFx === 'function'){
-          window.cleanupBurningFx();
-        }
-        if(typeof window.clearExplosionFx === 'function'){
-          window.clearExplosionFx();
-        }
-        const fxLayer = document.getElementById('fxLayer');
-        if(fxLayer){
-          fxLayer.innerHTML = '';
-        }
-      });
-
-      explosionXInput?.addEventListener('input', () => {
-        explosionXInput.dataset.locked = 'true';
-      });
-
-      explosionYInput?.addEventListener('input', () => {
-        explosionYInput.dataset.locked = 'true';
-      });
-
       planeSelect?.addEventListener('change', updatePlaneDetails);
 
       window.addEventListener('resize', queueLayout);
@@ -1262,7 +1169,6 @@
 
       refreshPlaneOptions();
       updateStatus();
-      defaultExplosionInputs();
       queueLayout();
     })();
   </script>

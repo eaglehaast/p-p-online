@@ -1151,16 +1151,6 @@ body, button {
   z-index: 22;
 }
 
-#fxLayer {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  /* Sits below the plane canvas but above the game field */
-  z-index: 40;
-}
-
 .fx-flame {
   position: absolute;
   display: block;
