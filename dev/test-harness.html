@@ -1246,6 +1246,9 @@
         if(typeof window.cleanupBurningFx === 'function'){
           window.cleanupBurningFx();
         }
+        if(typeof window.clearExplosionFx === 'function'){
+          window.clearExplosionFx();
+        }
         const fxLayer = document.getElementById('fxLayer');
         if(fxLayer){
           fxLayer.innerHTML = '';
