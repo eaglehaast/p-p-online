@@ -446,7 +446,13 @@ const PRELOAD_IMAGE_URLS = [
   "planes/blue plane fall.png",
   "planes/green plane fall.png",
 
+  // Game field background
+  "background paper 1.png",
+
+  // Game maps
   "ui_gamescreen/maps/easy 1-2 round/map 1 - clear sky 3.png",
+  "ui_gamescreen/maps/middle 3-4 round/map 2 - 5 bricks.png",
+  "ui_gamescreen/maps/hard 5 round and more/map 3 diagonals.png",
 
   // Explosion sprites
   ...ALL_EXPLOSION_SPRITES
@@ -523,9 +529,9 @@ function preloadCriticalImages() {
     return Promise.resolve();
   }
 
-  const MAX_OVERLAY_TIME_MS = 1000;
-  const MIN_OVERLAY_TIME_MS = 200;
-  const startTime = performance.now();
+  const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  const MAX_OVERLAY_TIME_MS = 5000;
+  const MIN_OVERLAY_TIME_MS = 300;
 
   loadingOverlay.classList.remove("loading-overlay--hidden");
 
@@ -556,13 +562,14 @@ function preloadCriticalImages() {
   }));
 
   const preloadPromise = Promise.allSettled(preloadTasks);
-  const maxWaitPromise = new Promise(resolve => setTimeout(resolve, MAX_OVERLAY_TIME_MS));
+  const minDurationPromise = wait(MIN_OVERLAY_TIME_MS);
+  const preloadOrTimeoutPromise = Promise.race([
+    preloadPromise,
+    wait(MAX_OVERLAY_TIME_MS)
+  ]);
 
-  return Promise.race([preloadPromise, maxWaitPromise]).finally(() => {
-    const elapsed = performance.now() - startTime;
-    const delay = Math.max(0, MIN_OVERLAY_TIME_MS - elapsed);
-    setTimeout(hideLoadingOverlay, delay);
-  });
+  return Promise.all([preloadOrTimeoutPromise, minDurationPromise])
+    .finally(hideLoadingOverlay);
 }
 
 preloadCriticalImages();
