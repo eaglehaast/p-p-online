@@ -5818,21 +5818,8 @@ function getExplosionImageForColor(color) {
   if (!pool.length) {
     return null;
   }
-
-  // Always return a fresh Image so animated GIFs restart for each explosion.
-  const template = pool[Math.floor(Math.random() * pool.length)];
-  const src = template?.src;
-  if (!src) {
-    return null;
-  }
-
-  const img = new Image();
-  img.decoding = 'async';
-  img.src = src;
-  if (typeof img.decode === 'function') {
-    img.decode().catch(() => {});
-  }
-  return img;
+  const idx = Math.floor(Math.random() * pool.length);
+  return pool[idx] || null;
 }
 
 function spawnExplosionForPlane(plane, x = null, y = null) {
