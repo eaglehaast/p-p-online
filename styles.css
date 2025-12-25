@@ -92,10 +92,8 @@ body, button {
     position: fixed;
     inset: 0;
     display: flex;
-    flex-direction: column;
     justify-content: center;
     align-items: center;
-    gap: 16px;
     background: rgba(0, 0, 0, 0.6);
     color: #fff;
     z-index: 500;
@@ -108,25 +106,11 @@ body, button {
     pointer-events: none;
   }
 
-  .loading-overlay__ring {
-    width: 96px;
-    height: 96px;
-    border-radius: 50%;
-    border: 6px solid rgba(255, 255, 255, 0.24);
-    border-top-color: #ffd166;
-    box-shadow: 0 0 12px rgba(255, 209, 102, 0.4);
-    animation: loading-overlay-spin 1.1s linear infinite;
-  }
-
-  .loading-overlay__text {
-    font-family: 'Patrick Hand', cursive;
-    font-size: 22px;
-    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
-  }
-
-  @keyframes loading-overlay-spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+  .loading-overlay__image {
+    width: min(60vw, 320px);
+    max-width: 320px;
+    height: auto;
+    filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.35));
   }
 
   #gameContainer {

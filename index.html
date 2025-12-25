@@ -9,13 +9,18 @@
   <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Roboto&display=swap" rel="stylesheet">
 </head>
 <body class="screen screen--menu">
-  <div id="screenWrapper">
-    <div id="loadingOverlay" class="loading-overlay loading-overlay--hidden" aria-live="polite">
-      <div class="loading-overlay__ring" aria-hidden="true"></div>
-      <div class="loading-overlay__text">Загрузка…</div>
-    </div>
+    <div id="screenWrapper">
+      <div id="loadingOverlay" class="loading-overlay loading-overlay--hidden" aria-live="polite">
+      <img
+        src="preload_animation.gif"
+        class="loading-overlay__image"
+        alt="Загрузка"
+        width="240"
+        height="240"
+      />
+      </div>
 
-    <div id="uiFrame">
+      <div id="uiFrame">
       <div id="menuLayer" class="layer layer--menu" aria-hidden="false">
         <div id="modeMenu" class="stage-460x800" aria-label="Главное меню">
           <div class="mode-menu__layer" aria-hidden="false">
