@@ -2232,10 +2232,17 @@ function updateAndDrawExplosions(ctx) {
   for (let i = activeExplosions.length - 1; i >= 0; i--) {
     const explosion = activeExplosions[i];
 
-    if (!explosion || now - explosion.startedAt > (explosion.duration || EXPLOSION_DURATION_MS)) {
+    if (!explosion) {
+      continue;
+    }
+
+    explosion.startMs ??= explosion.startedAt ?? now;
+    const elapsed = now - explosion.startMs;
+
+    if (elapsed > (explosion.duration || EXPLOSION_DURATION_MS)) {
       disposeExplosionHost(explosion);
       activeExplosions.splice(i, 1);
-      logExplosionDebug('removed', { elapsed: explosion ? now - explosion.startedAt : null });
+      logExplosionDebug('removed', { elapsed });
       continue;
     }
 
@@ -2251,21 +2258,40 @@ function updateAndDrawExplosions(ctx) {
     const drawX = canvasX - drawW / 2;
     const drawY = canvasY - drawH / 2;
 
-    const frameToDraw = explosion.frames[frameIndex];
+    const frameCount = explosion.frameCount || (Array.isArray(explosion.frames) ? explosion.frames.length : 0);
+
+    if (frameCount === 0 && !explosion.imgEl) {
+      logExplosionDebug('skip', { reason: 'no-frames' });
+      continue;
+    }
+
+    const frameDuration = explosion.frameDurationMs || (frameCount ? (explosion.duration || EXPLOSION_DURATION_MS) / frameCount : EXPLOSION_DURATION_MS);
+    const frameIndex = frameDuration > 0 ? Math.floor(elapsed / frameDuration) : 0;
+
+    if (frameCount && frameIndex >= frameCount) {
+      disposeExplosionHost(explosion);
+      activeExplosions.splice(i, 1);
+      logExplosionDebug('finished', { elapsed, frameIndex });
+      continue;
+    }
+
+    const clampedFrameIndex = frameCount ? Math.min(frameIndex, frameCount - 1) : 0;
+    const frameToDraw = (explosion.frames && explosion.frames[clampedFrameIndex]) || explosion.imgEl;
+
     if (!frameToDraw) {
       continue;
     }
 
     if (DEBUG_FX_EXPLOSION && now - (explosion.lastDrawLog || 0) >= EXPLOSION_DRAW_LOG_THROTTLE_MS) {
       logExplosionDraw(targetCtx, explosion);
-      logExplosionDebug('draw', { frameIndex, assetId: explosion.assetId });
+      logExplosionDebug('draw', { frameIndex: clampedFrameIndex, assetId: explosion.assetId });
       explosion.lastDrawLog = now;
     }
 
     targetCtx.save();
     targetCtx.globalAlpha = 1;
     targetCtx.globalCompositeOperation = 'source-over';
-    targetCtx.drawImage(explosion.imgEl, drawX, drawY, drawSize, drawSize);
+    targetCtx.drawImage(frameToDraw, drawX, drawY, drawW, drawH);
 
     if (DEBUG_EXPLOSION_ANCHOR) {
       targetCtx.strokeStyle = 'magenta';
