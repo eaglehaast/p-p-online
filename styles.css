@@ -683,16 +683,6 @@ body, button {
     bottom: 12px;
   }
 
-  body.test-harness #rangeIndicator.control-visual .jet-flame {
-    position: absolute;
-    left: 0;
-    top: 18px;
-    width: 46px;
-    height: 14px;
-    filter: drop-shadow(0 0 6px rgba(255, 147, 41, 0.6));
-    pointer-events: none;
-  }
-
   body.test-harness #rangeIndicator.control-visual .jet-plane {
     position: relative;
     left: 20px;

@@ -247,284 +247,6 @@ const PREVIEW_OSCILLATION_SPEED = 0.01;
 const PREVIEW_FLIGHT_DISTANCE_SCALE = 1 / 1.5;
 const PREVIEW_FLIGHT_DURATION_SCALE = 1;
 
-class JetFlameRenderer {
-  constructor(canvas, options = {}) {
-    this.canvas = canvas;
-    this.ctx = canvas.getContext('2d');
-    this.baseWidth = options.baseWidth ?? 46;
-    this.baseHeight = options.baseHeight ?? 14;
-    this.scale = 1;
-    this.displayWidth = this.baseWidth;
-    this.displayHeight = this.baseHeight;
-    this.dpr = window.devicePixelRatio || 1;
-    this.elapsed = 0;
-    this._tick = this.tick.bind(this);
-    this.running = false;
-    this._frameId = null;
-    this.sparks = [];
-    this.sparkAccumulator = 0;
-
-    this.resizeCanvas();
-  }
-
-  setScale(scale) {
-    const normalizedScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
-    this.scale = this.clampScaleToParent(normalizedScale);
-    this.resizeCanvas();
-  }
-
-  getParentClientBox() {
-    const parent = this.canvas?.parentElement;
-    if (!(parent instanceof HTMLElement)) {
-      return null;
-    }
-
-    const { clientWidth, clientHeight } = parent;
-    if (clientWidth <= 0 || clientHeight <= 0) {
-      return null;
-    }
-
-    return { width: clientWidth, height: clientHeight };
-  }
-
-  clampScaleToParent(desiredScale) {
-    const parentBox = this.getParentClientBox();
-    if (!parentBox) {
-      return desiredScale;
-    }
-
-    const widthLimit = parentBox.width / this.baseWidth;
-    const heightLimit = (parentBox.height / this.baseHeight - 0.8) / 0.2;
-    const limits = [widthLimit, heightLimit]
-      .filter(value => Number.isFinite(value) && value > 0);
-
-    if (!limits.length) {
-      return desiredScale;
-    }
-
-    const maxScale = Math.min(...limits);
-    return Math.min(desiredScale, maxScale);
-  }
-
-  resizeCanvas() {
-    this.displayWidth = this.baseWidth * this.scale;
-    this.displayHeight = this.baseHeight * (0.8 + 0.2 * this.scale);
-    this.dpr = window.devicePixelRatio || 1;
-
-    const widthScale = this.displayWidth / this.baseWidth;
-    const heightScale = this.displayHeight / this.baseHeight;
-
-    this.canvas.style.width = `${this.baseWidth}px`;
-    this.canvas.style.height = `${this.baseHeight}px`;
-    this.canvas.style.transform = `scale(${widthScale}, ${heightScale})`;
-    this.canvas.style.transformOrigin = 'right center';
-    this.canvas.width = Math.max(1, Math.round(this.displayWidth * this.dpr));
-    this.canvas.height = Math.max(1, Math.round(this.displayHeight * this.dpr));
-
-    this.resetSparks();
-  }
-
-  start() {
-    if (this._frameId) return;
-    this.running = true;
-    this.lastTimestamp = 0;
-    this._frameId = requestAnimationFrame(this._tick);
-  }
-
-  stop() {
-    if (this._frameId) {
-      cancelAnimationFrame(this._frameId);
-      this._frameId = null;
-    }
-    this.running = false;
-    this.lastTimestamp = 0;
-  }
-
-  tick(timestamp) {
-    if (!this.running) return;
-
-    const dt = this.lastTimestamp ? (timestamp - this.lastTimestamp) / 1000 : 0;
-    this.lastTimestamp = timestamp;
-    this.elapsed += dt;
-
-    const flameState = this.computeFlameState();
-    this.updateSparks(dt, flameState);
-    this.draw(flameState);
-
-    this._frameId = requestAnimationFrame(this._tick);
-  }
-
-  computeFlameState() {
-    const w = this.displayWidth;
-    const h = this.displayHeight;
-
-    const baseX = w * 0.92;
-    const clampX = (value) => Math.max(0, Math.min(w, value));
-
-    const lean = Math.sin(this.elapsed * 0.8) * w * 0.04;
-    const verticalSway = Math.sin(this.elapsed * 1.2) * h * 0.05;
-    const mid = h * 0.5 + verticalSway;
-    const pulse = 1 + Math.sin(this.elapsed * 2.2) * 0.06;
-    const baseLength = w * 0.9;
-    const baseHeight = h * 0.65 * pulse;
-
-    return {
-      w,
-      h,
-      baseX,
-      clampX,
-      lean,
-      verticalSway,
-      mid,
-      pulse,
-      baseLength,
-      baseHeight,
-      tipX: clampX(baseX - baseLength),
-      tipY: mid
-    };
-  }
-
-  drawFlameBody(ctx, state) {
-    if (!state) return;
-    const { w, h, baseX, clampX, lean, verticalSway, mid, baseLength, baseHeight } = state;
-
-    const drawLayer = (lengthScale, thicknessScale, color, alpha = 1) => {
-      const length = baseLength * lengthScale;
-      const thickness = baseHeight * thicknessScale;
-
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.beginPath();
-      ctx.moveTo(baseX, mid);
-      ctx.bezierCurveTo(
-        clampX(baseX - length * 0.3 + lean),
-        mid - thickness * 0.55 + verticalSway * 0.35,
-        clampX(baseX - length * 0.75),
-        mid - thickness,
-        clampX(baseX - length),
-        mid
-      );
-      ctx.bezierCurveTo(
-        clampX(baseX - length * 0.75),
-        mid + thickness,
-        clampX(baseX - length * 0.3 + lean),
-        mid + thickness * 0.55 + verticalSway * 0.35,
-        clampX(baseX + lean),
-        mid
-      );
-      ctx.fillStyle = color;
-      ctx.fill();
-      ctx.restore();
-    };
-
-    ctx.save();
-    drawLayer(1.05, 0.78, '#ffa64d', 0.8);
-    drawLayer(0.86, 0.62, '#ff7d3e', 0.95);
-    drawLayer(0.64, 0.48, '#ffe066', 1);
-    ctx.restore();
-  }
-
-  resetSparks() {
-    this.sparks = [];
-    this.sparkAccumulator = 0;
-  }
-
-  updateSparks(dt, state) {
-    if (!state || !Number.isFinite(dt)) return;
-
-    const spawnRate = (6 + this.scale * 5) * (dt > 0 ? 1 : 0);
-    if (dt > 0) {
-      this.sparkAccumulator += dt * spawnRate;
-    }
-
-    const spawnCount = Math.floor(this.sparkAccumulator);
-    if (spawnCount > 0) {
-      this.sparkAccumulator -= spawnCount;
-      for (let i = 0; i < spawnCount; i++) {
-        this.spawnSpark(state);
-      }
-    }
-
-    const friction = 0.96;
-    const gravity = this.displayHeight * -0.08;
-
-    this.sparks = this.sparks.filter(spark => {
-      spark.life += dt;
-      if (spark.life >= spark.ttl) {
-        return false;
-      }
-
-      spark.x += spark.vx * dt;
-      spark.y += spark.vy * dt;
-      spark.vx *= friction;
-      spark.vy = spark.vy * friction + gravity * dt;
-      return true;
-    });
-  }
-
-  spawnSpark(state) {
-    const { tipX, tipY, h, baseLength } = state;
-    const scatterX = this.displayWidth * 0.015;
-    const scatterY = h * 0.18;
-    const sizeBase = h * 0.08;
-    const sizeJitter = h * 0.06;
-    const speed = baseLength * (0.35 + Math.random() * 0.35);
-
-    this.sparks.push({
-      x: tipX + (Math.random() - 0.5) * scatterX,
-      y: tipY + (Math.random() - 0.5) * scatterY,
-      vx: -speed * (0.6 + Math.random() * 0.7),
-      vy: (Math.random() - 0.5) * (h * 0.3),
-      life: 0,
-      ttl: 0.45 + Math.random() * 0.35,
-      size: sizeBase + Math.random() * sizeJitter
-    });
-  }
-
-  drawSparks(ctx) {
-    if (!this.sparks.length) return;
-    for (const spark of this.sparks) {
-      const t = spark.life / spark.ttl;
-      const alpha = Math.max(0, 0.9 * (1 - t));
-      if (alpha <= 0) continue;
-
-      const radius = spark.size * (1 - t * 0.6);
-
-      const gradient = ctx.createRadialGradient(
-        spark.x,
-        spark.y,
-        0,
-        spark.x,
-        spark.y,
-        radius * 1.6
-      );
-
-      gradient.addColorStop(0, `rgba(255, 231, 170, ${alpha})`);
-      gradient.addColorStop(0.35, `rgba(255, 183, 94, ${alpha * 0.85})`);
-      gradient.addColorStop(1, 'rgba(255, 146, 62, 0)');
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.fillStyle = gradient;
-      ctx.shadowColor = 'rgba(255, 163, 70, 0.45)';
-      ctx.shadowBlur = radius * 1.2;
-      ctx.arc(spark.x, spark.y, radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
-  }
-
-  draw(state) {
-    if (!state) return;
-    const ctx = this.ctx;
-    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    ctx.clearRect(0, 0, this.displayWidth, this.displayHeight);
-
-    this.drawFlameBody(ctx, state);
-    this.drawSparks(ctx);
-  }
-}
-
 class ContrailRenderer {
   constructor(canvas, options = {}) {
     this.canvas = canvas;
@@ -760,17 +482,11 @@ const mapNextBtn = selectInSettings('#instance_field_right');
 const mapNameDisplay = selectInSettings('#frame_field_2_counter');
 const mapPreviewContainer = selectInSettings('#frame_field_1_visual');
 const mapPreview = selectInSettings('#mapPreview');
-const menuFlameCanvas = selectInSettings('#menuFlame');
 const flameTrailImage = selectInSettings('#flameTrail');
 const contrailImages = [
   selectInSettings('#contrail1'),
   selectInSettings('#contrail2')
 ];
-const flameOptions = { baseWidth: 46, baseHeight: 14 };
-const menuFlameRenderer =
-  menuFlameCanvas instanceof HTMLCanvasElement && menuFlameCanvas.isConnected
-    ? new JetFlameRenderer(menuFlameCanvas, flameOptions)
-    : null;
 const isTestHarnessPage = document.body.classList.contains('test-harness');
 
 const isSettingsLayerVisible = () => (settingsLayer ? !settingsLayer.hidden : true);
@@ -798,18 +514,6 @@ const previewHandle = {
   plane: null,
   origAngle: 0
 };
-
-function startMenuFlameRenderer(){
-  if(menuFlameRenderer){
-    menuFlameRenderer.start();
-  }
-}
-
-function stopMenuFlameRenderer(){
-  if(menuFlameRenderer){
-    menuFlameRenderer.stop();
-  }
-}
 
 function stopPreviewAnimation(){
   if(previewAnimationId){
@@ -858,11 +562,6 @@ function updateRangeFlame(){
   const t = (settingsFlightRangeCells - MIN_FLIGHT_RANGE_CELLS) /
             (MAX_FLIGHT_RANGE_CELLS - MIN_FLIGHT_RANGE_CELLS);
   const ratio = minScale + t * (maxScale - minScale);
-
-  if(menuFlameRenderer){
-    menuFlameRenderer.setScale(ratio);
-  }
-
   if(flameTrailImage instanceof HTMLElement){
     const trailScaleFactor = 0.55;
     const trailMinScale = minScale * trailScaleFactor;
@@ -1845,7 +1544,6 @@ if(exitBtn){
 
 function handleSettingsLayerShow(){
   isSettingsActive = true;
-  stopMenuFlameRenderer();
   syncAccuracyCrackWatcher();
   startPreviewSimulation();
   startPreviewAnimationIfNeeded();
@@ -1860,7 +1558,6 @@ function handleSettingsLayerHide(){
 }
 
 function cleanupRenderers(){
-  stopMenuFlameRenderer();
   handleSettingsLayerHide();
 }
 
@@ -1874,8 +1571,6 @@ updateAmplitudeIndicator();
 
 window.paperWingsSettings = {
   onShow: handleSettingsLayerShow,
-  onHide: handleSettingsLayerHide,
-  onMenuShow: startMenuFlameRenderer,
-  onMenuHide: stopMenuFlameRenderer
+  onHide: handleSettingsLayerHide
 };
 })();
