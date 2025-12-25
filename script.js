@@ -16,6 +16,7 @@ const DEBUG_LAYOUT = false;
 const DEBUG_RENDER_INIT = false;
 const DEBUG_AIM = false;
 const DEBUG_PLANE_SHADING = false;
+const DEBUG_FX = false;
 
 const bootTrace = {
   startTs: null,
@@ -3453,9 +3454,9 @@ let animationFrameId = null;
 let gameDrawFirstLogged = false;
 
 const activeExplosions = [];
-const EXPLOSION_CONTAINER_SIZE = 50;
-const EXPLOSION_DURATION_MS = 1200;
-const EXPLOSION_FADE_MS = 200;
+const EXPLOSION_DRAW_SIZE = 110;
+const EXPLOSION_FRAME_DURATION_MS = 1000 / 30; // ~30fps
+const EXPLOSION_MIN_DURATION_MS = 1200;
 
 /* Планирование хода ИИ */
 let aiMoveScheduled = false;
@@ -5822,6 +5823,107 @@ function getExplosionImageForColor(color) {
   return pool[idx] || null;
 }
 
+const explosionSpriteMetaBySrc = new Map();
+
+function getExplosionSpriteMeta(img) {
+  if (!img) return null;
+  const src = img.currentSrc || img.src;
+  if (!src) return null;
+
+  let meta = explosionSpriteMetaBySrc.get(src);
+  if (!meta) {
+    meta = {
+      imgEl: img,
+      src,
+      frameW: img.naturalWidth || 0,
+      frameH: img.naturalHeight || 0,
+      frameCount: 1,
+      frameDurationMs: EXPLOSION_MIN_DURATION_MS,
+      drawSize: EXPLOSION_DRAW_SIZE,
+      frames: null,
+      decodingPromise: null,
+      debugLogged: false,
+      durationMs: EXPLOSION_MIN_DURATION_MS
+    };
+    explosionSpriteMetaBySrc.set(src, meta);
+  }
+
+  if (!meta.decodingPromise && typeof ImageDecoder === "function") {
+    meta.decodingPromise = decodeExplosionSprite(meta).catch(() => {});
+  }
+
+  return meta;
+}
+
+async function decodeExplosionSprite(meta) {
+  try {
+    const response = await fetch(meta.src);
+    const contentType = response.headers.get("Content-Type") || "image/gif";
+    const buffer = await response.arrayBuffer();
+    const decoder = new ImageDecoder({ data: buffer, type: contentType });
+    const frameCount = Math.max(1, decoder.tracks?.[0]?.frameCount || 1);
+    const frames = [];
+    let frameDuration = EXPLOSION_FRAME_DURATION_MS;
+
+    for (let i = 0; i < frameCount; i++) {
+      const { image, duration } = await decoder.decode({ frameIndex: i });
+      frames.push(image);
+      if (duration) {
+        frameDuration = duration;
+      }
+    }
+
+    meta.frameCount = frameCount;
+    meta.frameDurationMs = frameCount > 1 ? frameDuration : EXPLOSION_MIN_DURATION_MS;
+    meta.frames = frames;
+    const firstFrame = frames[0];
+    meta.frameW = firstFrame?.displayWidth || meta.frameW;
+    meta.frameH = firstFrame?.displayHeight || meta.frameH;
+  } catch (error) {
+    console.warn("[fx] failed to decode explosion sprite", { src: meta.src, error });
+  } finally {
+    const totalDuration = (meta.frameCount || 1) * (meta.frameDurationMs || EXPLOSION_FRAME_DURATION_MS);
+    meta.durationMs = Number.isFinite(totalDuration) ? totalDuration : EXPLOSION_MIN_DURATION_MS;
+
+    if (DEBUG_FX && !meta.debugLogged) {
+      console.debug("[fx] explosion sprite meta", {
+        src: meta.src,
+        naturalW: meta.imgEl?.naturalWidth,
+        naturalH: meta.imgEl?.naturalHeight,
+        frameW: meta.frameW,
+        frameH: meta.frameH,
+        frameCount: meta.frameCount,
+        frameDurationMs: meta.frameDurationMs,
+      });
+      meta.debugLogged = true;
+    }
+  }
+}
+
+function createExplosionState(plane, x, y) {
+  const img = getExplosionImageForColor(plane.color);
+  const meta = getExplosionSpriteMeta(img);
+  const frameCount = meta?.frameCount || 1;
+  const baseFrameDuration = meta?.frameDurationMs || (frameCount > 1 ? EXPLOSION_FRAME_DURATION_MS : EXPLOSION_MIN_DURATION_MS);
+  const drawSize = meta?.drawSize || EXPLOSION_DRAW_SIZE;
+
+  return {
+    x,
+    y,
+    imgEl: img,
+    frameW: meta?.frameW || img?.naturalWidth || drawSize,
+    frameH: meta?.frameH || img?.naturalHeight || drawSize,
+    frameCount,
+    frameDurationMs: baseFrameDuration,
+    durationMs: frameCount > 1 ? frameCount * baseFrameDuration : Math.max(EXPLOSION_MIN_DURATION_MS, baseFrameDuration),
+    drawSize,
+    frames: meta?.frames || null,
+    meta,
+    startedAtMs: null,
+    debugFramesLogged: 0,
+  };
+}
+
 function spawnExplosionForPlane(plane, x = null, y = null) {
   if (!plane || plane.explosionSpawned) {
     return;
@@ -5829,10 +5931,9 @@ function spawnExplosionForPlane(plane, x = null, y = null) {
 
   const cx = Number.isFinite(x) ? x : (Number.isFinite(plane.collisionX) ? plane.collisionX : plane.x);
   const cy = Number.isFinite(y) ? y : (Number.isFinite(plane.collisionY) ? plane.collisionY : plane.y);
-  const img = getExplosionImageForColor(plane.color);
-  const start = performance.now();
+  const state = createExplosionState(plane, cx, cy);
 
-  activeExplosions.push({ x: cx, y: cy, img, start });
+  activeExplosions.push(state);
   plane.explosionSpawned = true;
 }
 
@@ -5840,34 +5941,70 @@ function updateAndDrawExplosions(ctx, now) {
   if (!ctx) return;
 
   for (let i = activeExplosions.length - 1; i >= 0; i--) {
-    const entry = activeExplosions[i];
-    const elapsed = now - entry.start;
-    if (elapsed > EXPLOSION_DURATION_MS) {
-      activeExplosions.splice(i, 1);
-    }
-  }
+    const explosion = activeExplosions[i];
+    explosion.startedAtMs = explosion.startedAtMs ?? now;
 
-  for (const entry of activeExplosions) {
-    const elapsed = now - entry.start;
-    const fadeRemaining = Math.max(0, EXPLOSION_DURATION_MS - elapsed);
-    const alpha = fadeRemaining < EXPLOSION_FADE_MS
-      ? Math.max(0, fadeRemaining / EXPLOSION_FADE_MS)
-      : 1;
-    const img = entry.img;
-    const size = EXPLOSION_CONTAINER_SIZE;
+    const meta = explosion.meta;
+    if (meta) {
+      if (meta.frames?.length) {
+        explosion.frames = meta.frames;
+      }
+      if (meta.frameCount) {
+        explosion.frameCount = meta.frameCount;
+      }
+      if (meta.frameDurationMs) {
+        explosion.frameDurationMs = meta.frameDurationMs;
+      }
+      if (meta.frameW) {
+        explosion.frameW = meta.frameW;
+      }
+      if (meta.frameH) {
+        explosion.frameH = meta.frameH;
+      }
+    }
+
+    const frameDuration = explosion.frameDurationMs || EXPLOSION_FRAME_DURATION_MS;
+    const totalDuration = explosion.frameCount > 1
+      ? explosion.frameCount * frameDuration
+      : Math.max(EXPLOSION_MIN_DURATION_MS, frameDuration);
+    const elapsed = now - explosion.startedAtMs;
+    const frameIndex = explosion.frameCount > 1
+      ? Math.floor(elapsed / frameDuration)
+      : 0;
+
+    if (elapsed >= totalDuration || frameIndex >= explosion.frameCount) {
+      activeExplosions.splice(i, 1);
+      continue;
+    }
+
+    const img = explosion.frames?.[frameIndex] || explosion.imgEl;
+    const size = explosion.drawSize || EXPLOSION_DRAW_SIZE;
     const half = size / 2;
 
     ctx.save();
-    ctx.globalAlpha = alpha;
-    if (isSpriteReady(img)) {
-      ctx.drawImage(img, entry.x - half, entry.y - half, size, size);
+    if (img && ((img instanceof ImageBitmap) || isSpriteReady(img))) {
+      ctx.drawImage(img, explosion.x - half, explosion.y - half, size, size);
     } else {
       ctx.fillStyle = "rgba(255, 200, 40, 0.9)";
       ctx.beginPath();
-      ctx.arc(entry.x, entry.y, half, 0, Math.PI * 2);
+      ctx.arc(explosion.x, explosion.y, half, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
+
+    if (DEBUG_FX && explosion.debugFramesLogged < 3) {
+      console.debug("[fx] explosion frame", {
+        src: meta?.src || explosion.imgEl?.src,
+        naturalW: explosion.imgEl?.naturalWidth,
+        naturalH: explosion.imgEl?.naturalHeight,
+        frameW: explosion.frameW,
+        frameH: explosion.frameH,
+        frameCount: explosion.frameCount,
+        frameDurationMs: frameDuration,
+        frameIndex,
+      });
+      explosion.debugFramesLogged++;
+    }
   }
 }
 
