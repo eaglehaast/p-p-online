@@ -383,6 +383,27 @@ const bluePointsPopup  = document.getElementById("bluePointsPopup");
 const greenPlaneCounter = document.getElementById("gs_planecounter_green");
 const bluePlaneCounter  = document.getElementById("gs_planecounter_blue");
 
+const EXPLOSION_BLUE_SPRITES = [
+  "ui_gamescreen/explosions_blue/explosion_blue_1.gif",
+  "ui_gamescreen/explosions_blue/explosion_blue_2.gif",
+  "ui_gamescreen/explosions_blue/explosion_blue_3.gif",
+  "ui_gamescreen/explosions_blue/explosion_blue_4.gif",
+  "ui_gamescreen/explosions_blue/explosion_blue_5.gif"
+];
+
+const EXPLOSION_GREEN_SPRITES = [
+  "ui_gamescreen/explosions_green/explosion_green_1.gif",
+  "ui_gamescreen/explosions_green/explosion_green_2.gif",
+  "ui_gamescreen/explosions_green/explosion_green_3.gif",
+  "ui_gamescreen/explosions_green/explosion_green_4.gif",
+  "ui_gamescreen/explosions_green/explosion_green_5.gif"
+];
+
+const ALL_EXPLOSION_SPRITES = [
+  ...EXPLOSION_BLUE_SPRITES,
+  ...EXPLOSION_GREEN_SPRITES
+];
+
 const PRELOAD_IMAGE_URLS = [
   // Main menu
   "ui_mainmenu/mm_hotseat_Default.png",
@@ -2173,6 +2194,13 @@ let greenCounterPlaneImg = null;
 let bluePlaneWreckImg = null;
 let greenPlaneWreckImg = null;
 
+const explosionImagesByColor = {
+  blue: [],
+  green: []
+};
+
+let explosionSpritesPreloaded = false;
+
 let planeSpritesPreloaded = false;
 function preloadPlaneSprites() {
   if (planeSpritesPreloaded) {
@@ -2217,6 +2245,30 @@ function preloadPlaneSprites() {
   }
 
   planeSpritesPreloaded = true;
+}
+
+function preloadExplosionSprites() {
+  if (explosionSpritesPreloaded) {
+    return;
+  }
+
+  const registerExplosionSprite = (src, color) => {
+    if (typeof src !== "string") return;
+    const trimmed = src.trim();
+    if (!trimmed) return;
+
+    const img = new Image();
+    img.decoding = 'async';
+    trackImageLoad("explosionSprites", trimmed, img);
+    img.src = trimmed;
+    installImageWatch(img, trimmed, `explosionSprites.${color}`);
+    explosionImagesByColor[color]?.push(img);
+  };
+
+  EXPLOSION_BLUE_SPRITES.forEach(src => registerExplosionSprite(src, "blue"));
+  EXPLOSION_GREEN_SPRITES.forEach(src => registerExplosionSprite(src, "green"));
+
+  explosionSpritesPreloaded = true;
 }
 const flameImages = new Map();
 for (const src of BURNING_FLAME_SRCS) {
@@ -3400,6 +3452,11 @@ function addScore(color, delta){
 let animationFrameId = null;
 let gameDrawFirstLogged = false;
 
+const activeExplosions = [];
+const EXPLOSION_CONTAINER_SIZE = 50;
+const EXPLOSION_DURATION_MS = 1200;
+const EXPLOSION_FADE_MS = 200;
+
 /* Планирование хода ИИ */
 let aiMoveScheduled = false;
 
@@ -3480,6 +3537,7 @@ function resetGame(options = {}){
   cleanupGreenCrashFx();
 
   clearPointsPopups();
+  activeExplosions.length = 0;
 
   greenScore = 0;
   blueScore  = 0;
@@ -4383,6 +4441,8 @@ function destroyPlane(fp){
   p.crashStart = crashTimestamp;
   p.killMarkerStart = crashTimestamp;
 
+  spawnExplosionForPlane(p, p.collisionX, p.collisionY);
+
 
   schedulePlaneFlameFx(p);
 
@@ -4435,16 +4495,17 @@ function handleAAForPlane(p, fp){
             if(!aa.lastTriggerAt || now - aa.lastTriggerAt > aa.cooldownMs){
               aa.lastTriggerAt = now;
               p.isAlive=false;
-              p.burning=true;
-              ensurePlaneBurningFlame(p);
-              p.collisionX=p.x; p.collisionY=p.y;
-              const aaCrashTimestamp = performance.now();
-              p.crashStart = aaCrashTimestamp;
-              p.killMarkerStart = aaCrashTimestamp;
-              schedulePlaneFlameFx(p);
-              if(fp) {
-                flyingPoints = flyingPoints.filter(x=>x!==fp);
-              }
+                p.burning=true;
+                ensurePlaneBurningFlame(p);
+                p.collisionX=p.x; p.collisionY=p.y;
+                const aaCrashTimestamp = performance.now();
+                p.crashStart = aaCrashTimestamp;
+                p.killMarkerStart = aaCrashTimestamp;
+                spawnExplosionForPlane(p, contactX, contactY);
+                schedulePlaneFlameFx(p);
+                if(fp) {
+                  flyingPoints = flyingPoints.filter(x=>x!==fp);
+                }
               awardPoint(p.color);
               checkVictory();
               if(fp && !isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
@@ -5748,6 +5809,81 @@ function drawArrow(ctx, cx, cy, dx, dy) {
   ctx.restore();
 }
 
+function getExplosionImageForColor(color) {
+  preloadExplosionSprites();
+  const normalized = color === "green" ? "green" : "blue";
+  const sprites = explosionImagesByColor[normalized] || [];
+  const ready = sprites.filter(isSpriteReady);
+  const pool = ready.length ? ready : sprites;
+  if (!pool.length) {
+    return null;
+  }
+
+  // Always return a fresh Image so animated GIFs restart for each explosion.
+  const template = pool[Math.floor(Math.random() * pool.length)];
+  const src = template?.src;
+  if (!src) {
+    return null;
+  }
+
+  const img = new Image();
+  img.decoding = 'async';
+  img.src = src;
+  if (typeof img.decode === 'function') {
+    img.decode().catch(() => {});
+  }
+  return img;
+}
+
+function spawnExplosionForPlane(plane, x = null, y = null) {
+  if (!plane || plane.explosionSpawned) {
+    return;
+  }
+
+  const cx = Number.isFinite(x) ? x : (Number.isFinite(plane.collisionX) ? plane.collisionX : plane.x);
+  const cy = Number.isFinite(y) ? y : (Number.isFinite(plane.collisionY) ? plane.collisionY : plane.y);
+  const img = getExplosionImageForColor(plane.color);
+  const start = performance.now();
+
+  activeExplosions.push({ x: cx, y: cy, img, start });
+  plane.explosionSpawned = true;
+}
+
+function updateAndDrawExplosions(ctx, now) {
+  if (!ctx) return;
+
+  for (let i = activeExplosions.length - 1; i >= 0; i--) {
+    const entry = activeExplosions[i];
+    const elapsed = now - entry.start;
+    if (elapsed > EXPLOSION_DURATION_MS) {
+      activeExplosions.splice(i, 1);
+    }
+  }
+
+  for (const entry of activeExplosions) {
+    const elapsed = now - entry.start;
+    const fadeRemaining = Math.max(0, EXPLOSION_DURATION_MS - elapsed);
+    const alpha = fadeRemaining < EXPLOSION_FADE_MS
+      ? Math.max(0, fadeRemaining / EXPLOSION_FADE_MS)
+      : 1;
+    const img = entry.img;
+    const size = EXPLOSION_CONTAINER_SIZE;
+    const half = size / 2;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    if (isSpriteReady(img)) {
+      ctx.drawImage(img, entry.x - half, entry.y - half, size, size);
+    } else {
+      ctx.fillStyle = "rgba(255, 200, 40, 0.9)";
+      ctx.beginPath();
+      ctx.arc(entry.x, entry.y, half, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
 /* ======= HITS / VICTORY ======= */
 function awardPoint(color){
   if(isGameOver) return;
@@ -5770,17 +5906,18 @@ function checkPlaneHits(plane, fp){
       ensurePlaneBurningFlame(p);
       flyingPoints = flyingPoints.filter(other => other.plane !== p);
       const cx = d === 0 ? plane.x : plane.x + dx / d * POINT_RADIUS;
-      const cy = d === 0 ? plane.y : plane.y + dy / d * POINT_RADIUS;
-      p.collisionX = cx;
-      p.collisionY = cy;
-      const collisionCrashTimestamp = performance.now();
-      p.crashStart = collisionCrashTimestamp;
-      p.killMarkerStart = collisionCrashTimestamp;
-      schedulePlaneFlameFx(p);
-      if(fp){
-        fp.lastHitPlane = p;
-        fp.lastHitCooldown = PLANE_HIT_COOLDOWN_SEC;
-      }
+        const cy = d === 0 ? plane.y : plane.y + dy / d * POINT_RADIUS;
+        p.collisionX = cx;
+        p.collisionY = cy;
+        const collisionCrashTimestamp = performance.now();
+        p.crashStart = collisionCrashTimestamp;
+        p.killMarkerStart = collisionCrashTimestamp;
+        spawnExplosionForPlane(p, cx, cy);
+        schedulePlaneFlameFx(p);
+        if(fp){
+          fp.lastHitPlane = p;
+          fp.lastHitCooldown = PLANE_HIT_COOLDOWN_SEC;
+        }
       if(p.flagColor){
         const flagColor = p.flagColor;
         const stolenBy = flagColor === "blue" ? blueFlagStolenBy : greenFlagStolenBy;
@@ -6570,6 +6707,7 @@ function startNewRound(){
   logBootStep("startNewRound");
   loadMatchProgressImagesIfNeeded();
   preloadPlaneSprites();
+  preloadExplosionSprites();
   restoreGameBackgroundAfterMenu();
   activateGameScreen();
   if(roundTransitionTimeout){
