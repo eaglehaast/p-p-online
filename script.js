@@ -1959,8 +1959,6 @@ async function loadExplosionFrames(sprite) {
   }
 
   const loadPromise = (async () => {
-    const response = await fetch(sprite);
-    const blob = await response.blob();
     const frameData = {
       assetId: sprite,
       frames: [],
@@ -1974,6 +1972,8 @@ async function loadExplosionFrames(sprite) {
     };
 
     if (typeof ImageDecoder === 'undefined') {
+      // Skip fetch + blob decoding when the browser lacks ImageDecoder support.
+      // Loading the GIF directly avoids fetch failures in file:// or restricted contexts.
       const fallbackImg = new Image();
       fallbackImg.src = sprite;
       if (fallbackImg.decode) {
@@ -1992,6 +1992,9 @@ async function loadExplosionFrames(sprite) {
       frameData.fps = frameData.frameDurationMs > 0 ? 1000 / frameData.frameDurationMs : DEFAULT_EXPLOSION_FPS;
       return frameData;
     }
+
+    const response = await fetch(sprite);
+    const blob = await response.blob();
 
     const decoder = new ImageDecoder({ data: blob, type: blob.type || 'image/gif' });
     const track = decoder.tracks.selectedTrack ?? decoder.tracks.get(0);
