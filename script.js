@@ -3454,7 +3454,7 @@ let animationFrameId = null;
 let gameDrawFirstLogged = false;
 
 const activeExplosions = [];
-const EXPLOSION_DRAW_SIZE = 110;
+const EXPLOSION_DRAW_SIZE = 165;
 const EXPLOSION_FPS = 12;
 const EXPLOSION_FRAME_DURATION_MS = 1000 / EXPLOSION_FPS; // ~12fps
 const EXPLOSION_MIN_DURATION_MS = 600;
@@ -5857,8 +5857,12 @@ function spawnExplosionForPlane(plane, x = null, y = null) {
     return;
   }
 
-  const cx = Number.isFinite(x) ? x : (Number.isFinite(plane.collisionX) ? plane.collisionX : plane.x);
-  const cy = Number.isFinite(y) ? y : (Number.isFinite(plane.collisionY) ? plane.collisionY : plane.y);
+  const cx = Number.isFinite(plane.x)
+    ? plane.x
+    : (Number.isFinite(x) ? x : plane.collisionX);
+  const cy = Number.isFinite(plane.y)
+    ? plane.y
+    : (Number.isFinite(y) ? y : plane.collisionY);
   const state = createExplosionState(plane, cx, cy);
 
   activeExplosions.push(state);
