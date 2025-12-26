@@ -3455,8 +3455,9 @@ let gameDrawFirstLogged = false;
 
 const activeExplosions = [];
 const EXPLOSION_DRAW_SIZE = 110;
-const EXPLOSION_FRAME_DURATION_MS = 1000 / 30; // ~30fps
-const EXPLOSION_MIN_DURATION_MS = 1200;
+const EXPLOSION_FPS = 12;
+const EXPLOSION_FRAME_DURATION_MS = 1000 / EXPLOSION_FPS; // ~12fps
+const EXPLOSION_MIN_DURATION_MS = 600;
 
 /* Планирование хода ИИ */
 let aiMoveScheduled = false;
@@ -5822,10 +5823,15 @@ function getExplosionFramesForColor(color) {
 function createExplosionState(plane, x, y) {
   const frames = getExplosionFramesForColor(plane.color);
   const baseFrameDuration = EXPLOSION_FRAME_DURATION_MS;
-  const fallbackFrameCount = Math.max(
-    frames.length,
+  const desiredFrameCount = frames.length;
+  const minFrameCount = Math.max(
+    1,
     Math.round(EXPLOSION_MIN_DURATION_MS / baseFrameDuration)
   );
+  const frameCount = desiredFrameCount > 0 ? desiredFrameCount : minFrameCount;
+  const frameDurationMs = desiredFrameCount > 0
+    ? Math.max(baseFrameDuration, Math.round(EXPLOSION_MIN_DURATION_MS / frameCount))
+    : baseFrameDuration;
   const firstFrame = frames.find(isSpriteReady) || frames[0] || null;
   const frameW = firstFrame?.naturalWidth || EXPLOSION_DRAW_SIZE;
   const frameH = firstFrame?.naturalHeight || EXPLOSION_DRAW_SIZE;
@@ -5836,8 +5842,8 @@ function createExplosionState(plane, x, y) {
     y,
     frameW,
     frameH,
-    frameCount: fallbackFrameCount,
-    frameDurationMs: baseFrameDuration,
+    frameCount,
+    frameDurationMs,
     drawSize,
     frames,
     sheet: null,
