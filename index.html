@@ -87,10 +87,14 @@
         </div>
 
         <!-- End Game Window -->
-        <div id="endGameButtons" style="display:none;">
-          <p>Play Again?</p>
-          <button id="yesButton" class="end-btn">Yes</button>
-          <button id="noButton" class="end-btn">No</button>
+        <div id="endGameButtons" style="display:none;" role="dialog" aria-labelledby="endGamePrompt">
+          <p id="endGamePrompt" class="visually-hidden">Play Again?</p>
+          <button id="yesButton" class="playagain-btn playagain-btn--yes" type="button" aria-label="Play again">
+            <span class="visually-hidden">Yes</span>
+          </button>
+          <button id="noButton" class="playagain-btn playagain-btn--no" type="button" aria-label="Return to menu">
+            <span class="visually-hidden">No</span>
+          </button>
         </div>
       </div>
 

@@ -5816,8 +5816,13 @@ function getExplosionFramesForColor(color) {
   const normalized = color === "green" ? "green" : "blue";
   const sprites = explosionImagesByColor[normalized] || [];
   const ready = sprites.filter(isSpriteReady);
-  const frames = ready.length ? ready : sprites;
-  return frames.filter(Boolean);
+  const pool = ready.length ? ready : sprites;
+  if (!pool.length) {
+    return [];
+  }
+
+  const selected = pool[Math.floor(Math.random() * pool.length)];
+  return selected ? [selected] : [];
 }
 
 function createExplosionState(plane, x, y) {
