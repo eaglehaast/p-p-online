@@ -5810,115 +5810,37 @@ function drawArrow(ctx, cx, cy, dx, dy) {
   ctx.restore();
 }
 
-function getExplosionImageForColor(color) {
+function getExplosionFramesForColor(color) {
   preloadExplosionSprites();
   const normalized = color === "green" ? "green" : "blue";
   const sprites = explosionImagesByColor[normalized] || [];
   const ready = sprites.filter(isSpriteReady);
-  const pool = ready.length ? ready : sprites;
-  if (!pool.length) {
-    return null;
-  }
-  const idx = Math.floor(Math.random() * pool.length);
-  return pool[idx] || null;
-}
-
-const explosionSpriteMetaBySrc = new Map();
-
-function getExplosionSpriteMeta(img) {
-  if (!img) return null;
-  const src = img.currentSrc || img.src;
-  if (!src) return null;
-
-  let meta = explosionSpriteMetaBySrc.get(src);
-  if (!meta) {
-    meta = {
-      imgEl: img,
-      src,
-      frameW: img.naturalWidth || 0,
-      frameH: img.naturalHeight || 0,
-      frameCount: 1,
-      frameDurationMs: EXPLOSION_MIN_DURATION_MS,
-      drawSize: EXPLOSION_DRAW_SIZE,
-      frames: null,
-      decodingPromise: null,
-      debugLogged: false,
-      durationMs: EXPLOSION_MIN_DURATION_MS
-    };
-    explosionSpriteMetaBySrc.set(src, meta);
-  }
-
-  if (!meta.decodingPromise && typeof ImageDecoder === "function") {
-    meta.decodingPromise = decodeExplosionSprite(meta).catch(() => {});
-  }
-
-  return meta;
-}
-
-async function decodeExplosionSprite(meta) {
-  try {
-    const response = await fetch(meta.src);
-    const contentType = response.headers.get("Content-Type") || "image/gif";
-    const buffer = await response.arrayBuffer();
-    const decoder = new ImageDecoder({ data: buffer, type: contentType });
-    const frameCount = Math.max(1, decoder.tracks?.[0]?.frameCount || 1);
-    const frames = [];
-    let frameDuration = EXPLOSION_FRAME_DURATION_MS;
-
-    for (let i = 0; i < frameCount; i++) {
-      const { image, duration } = await decoder.decode({ frameIndex: i });
-      frames.push(image);
-      if (duration) {
-        frameDuration = duration;
-      }
-    }
-
-    meta.frameCount = frameCount;
-    meta.frameDurationMs = frameCount > 1 ? frameDuration : EXPLOSION_MIN_DURATION_MS;
-    meta.frames = frames;
-    const firstFrame = frames[0];
-    meta.frameW = firstFrame?.displayWidth || meta.frameW;
-    meta.frameH = firstFrame?.displayHeight || meta.frameH;
-  } catch (error) {
-    console.warn("[fx] failed to decode explosion sprite", { src: meta.src, error });
-  } finally {
-    const totalDuration = (meta.frameCount || 1) * (meta.frameDurationMs || EXPLOSION_FRAME_DURATION_MS);
-    meta.durationMs = Number.isFinite(totalDuration) ? totalDuration : EXPLOSION_MIN_DURATION_MS;
-
-    if (DEBUG_FX && !meta.debugLogged) {
-      console.debug("[fx] explosion sprite meta", {
-        src: meta.src,
-        naturalW: meta.imgEl?.naturalWidth,
-        naturalH: meta.imgEl?.naturalHeight,
-        frameW: meta.frameW,
-        frameH: meta.frameH,
-        frameCount: meta.frameCount,
-        frameDurationMs: meta.frameDurationMs,
-      });
-      meta.debugLogged = true;
-    }
-  }
+  const frames = ready.length ? ready : sprites;
+  return frames.filter(Boolean);
 }
 
 function createExplosionState(plane, x, y) {
-  const img = getExplosionImageForColor(plane.color);
-  const meta = getExplosionSpriteMeta(img);
-  const frameCount = meta?.frameCount || 1;
-  const baseFrameDuration = meta?.frameDurationMs || (frameCount > 1 ? EXPLOSION_FRAME_DURATION_MS : EXPLOSION_MIN_DURATION_MS);
-  const drawSize = meta?.drawSize || EXPLOSION_DRAW_SIZE;
+  const frames = getExplosionFramesForColor(plane.color);
+  const baseFrameDuration = EXPLOSION_FRAME_DURATION_MS;
+  const fallbackFrameCount = Math.max(
+    frames.length,
+    Math.round(EXPLOSION_MIN_DURATION_MS / baseFrameDuration)
+  );
+  const firstFrame = frames.find(isSpriteReady) || frames[0] || null;
+  const frameW = firstFrame?.naturalWidth || EXPLOSION_DRAW_SIZE;
+  const frameH = firstFrame?.naturalHeight || EXPLOSION_DRAW_SIZE;
+  const drawSize = EXPLOSION_DRAW_SIZE;
 
   return {
     x,
     y,
-    imgEl: img,
-    frameW: meta?.frameW || img?.naturalWidth || drawSize,
-    frameH: meta?.frameH || img?.naturalHeight || drawSize,
-    frameCount,
+    frameW,
+    frameH,
+    frameCount: fallbackFrameCount,
     frameDurationMs: baseFrameDuration,
-    durationMs: frameCount > 1 ? frameCount * baseFrameDuration : Math.max(EXPLOSION_MIN_DURATION_MS, baseFrameDuration),
     drawSize,
-    frames: meta?.frames || null,
-    meta,
+    frames,
+    sheet: null,
     startedAtMs: null,
     debugFramesLogged: 0,
   };
@@ -5944,46 +5866,34 @@ function updateAndDrawExplosions(ctx, now) {
     const explosion = activeExplosions[i];
     explosion.startedAtMs = explosion.startedAtMs ?? now;
 
-    const meta = explosion.meta;
-    if (meta) {
-      if (meta.frames?.length) {
-        explosion.frames = meta.frames;
-      }
-      if (meta.frameCount) {
-        explosion.frameCount = meta.frameCount;
-      }
-      if (meta.frameDurationMs) {
-        explosion.frameDurationMs = meta.frameDurationMs;
-      }
-      if (meta.frameW) {
-        explosion.frameW = meta.frameW;
-      }
-      if (meta.frameH) {
-        explosion.frameH = meta.frameH;
-      }
-    }
-
     const frameDuration = explosion.frameDurationMs || EXPLOSION_FRAME_DURATION_MS;
-    const totalDuration = explosion.frameCount > 1
-      ? explosion.frameCount * frameDuration
-      : Math.max(EXPLOSION_MIN_DURATION_MS, frameDuration);
     const elapsed = now - explosion.startedAtMs;
-    const frameIndex = explosion.frameCount > 1
-      ? Math.floor(elapsed / frameDuration)
-      : 0;
+    const frameIndex = Math.floor(elapsed / frameDuration);
 
-    if (elapsed >= totalDuration || frameIndex >= explosion.frameCount) {
+    if (frameIndex >= explosion.frameCount) {
       activeExplosions.splice(i, 1);
       continue;
     }
 
-    const img = explosion.frames?.[frameIndex] || explosion.imgEl;
+    const img = explosion.frames?.[frameIndex] || null;
     const size = explosion.drawSize || EXPLOSION_DRAW_SIZE;
     const half = size / 2;
 
     ctx.save();
     if (img && ((img instanceof ImageBitmap) || isSpriteReady(img))) {
       ctx.drawImage(img, explosion.x - half, explosion.y - half, size, size);
+    } else if (explosion.sheet && isSpriteReady(explosion.sheet)) {
+      ctx.drawImage(
+        explosion.sheet,
+        frameIndex * explosion.frameW,
+        0,
+        explosion.frameW,
+        explosion.frameH,
+        explosion.x - half,
+        explosion.y - half,
+        size,
+        size
+      );
     } else {
       ctx.fillStyle = "rgba(255, 200, 40, 0.9)";
       ctx.beginPath();
@@ -5994,9 +5904,8 @@ function updateAndDrawExplosions(ctx, now) {
 
     if (DEBUG_FX && explosion.debugFramesLogged < 3) {
       console.debug("[fx] explosion frame", {
-        src: meta?.src || explosion.imgEl?.src,
-        naturalW: explosion.imgEl?.naturalWidth,
-        naturalH: explosion.imgEl?.naturalHeight,
+        naturalW: img?.naturalWidth,
+        naturalH: img?.naturalHeight,
         frameW: explosion.frameW,
         frameH: explosion.frameH,
         frameCount: explosion.frameCount,
