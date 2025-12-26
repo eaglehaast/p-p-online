@@ -1590,20 +1590,44 @@ body, button {
   left: 0;
   top: 0;
   z-index: 250;
-  background: linear-gradient(135deg, #ffffff, #eaeaea);
-  padding: 40px; border: 2px solid #c1c1c1; border-radius: 20px;
-  box-shadow: 0 12px 24px rgba(0,0,0,0.2);
-  text-align: center;
+  width: 368px;
+  height: 240px;
+  background: url('ui_gamescreen/playagain/playagain_container.png') center / contain no-repeat;
+  display: none;
 }
-#endGameButtons p {
-  font-size: 24px; margin-bottom: 20px; font-family: 'Patrick Hand', cursive; color: #333;
+
+#endGameButtons .playagain-btn {
+  position: absolute;
+  width: 104px;
+  height: 97px;
+  border: none;
+  background: center / contain no-repeat;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.12s ease;
 }
-#endGameButtons button {
-  padding: 15px 30px; margin: 10px; font-size: 18px; color:#fff; border:none; border-radius:15px;
-  background: linear-gradient(145deg, #6c757d, #5a6268);
-  cursor:pointer; transition: transform 0.2s, box-shadow 0.2s;
+
+#endGameButtons .playagain-btn:focus-visible {
+  outline: 2px solid #1a73e8;
+  outline-offset: 3px;
 }
-#endGameButtons button:hover { transform: translateY(-3px); box-shadow: 0 6px 12px rgba(0,0,0,0.3); }
+
+#endGameButtons .playagain-btn:active {
+  transform: translateY(3px) scale(0.97);
+  filter: brightness(0.95);
+}
+
+#endGameButtons .playagain-btn--yes {
+  left: 64px;
+  top: 77px;
+  background-image: url('ui_gamescreen/playagain/playagain_yes.png');
+}
+
+#endGameButtons .playagain-btn--no {
+  left: 223px;
+  top: 77px;
+  background-image: url('ui_gamescreen/playagain/playagain_no.png');
+}
 
 /* Плавные переходы */
 button, .control-box, #endGameButtons { transition: all 0.3s ease; }
