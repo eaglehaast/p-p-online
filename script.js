@@ -406,6 +406,16 @@ const ALL_EXPLOSION_SPRITES = [
   ...EXPLOSION_GREEN_SPRITES
 ];
 
+const FLAG_SPRITE_PATHS = {
+  blue: "ui_gamescreen/flags_and_bases/flag_blue_nest.png",
+  green: "ui_gamescreen/flags_and_bases/flag_green_corn.png",
+};
+
+const BASE_SPRITE_PATHS = {
+  blue: "ui_gamescreen/flags_and_bases/blue_base.png",
+  green: "ui_gamescreen/flags_and_bases/green_base.png",
+};
+
 const PRELOAD_IMAGE_URLS = [
   // Main menu
   "ui_mainmenu/mm_hotseat_Default.png",
@@ -450,6 +460,12 @@ const PRELOAD_IMAGE_URLS = [
   "ui_gamescreen/maps/easy 1-2 round/map 1 - clear sky 3.png",
   "ui_gamescreen/maps/middle 3-4 round/map 2 - 5 bricks.png",
   "ui_gamescreen/maps/hard 5 round and more/map 3 diagonals.png",
+
+  // Flags & bases
+  BASE_SPRITE_PATHS.blue,
+  BASE_SPRITE_PATHS.green,
+  FLAG_SPRITE_PATHS.blue,
+  FLAG_SPRITE_PATHS.green,
 
   // Explosion sprites
   ...ALL_EXPLOSION_SPRITES
@@ -2365,6 +2381,16 @@ for (const src of BURNING_FLAME_SRCS) {
 }
 const defaultFlameImg = flameImages.get(DEFAULT_BURNING_FLAME_SRC) || null;
 
+const flagSprites = {
+  blue: loadImageAsset(FLAG_SPRITE_PATHS.blue, "flagSprite.blue", { decoding: 'async' }).img,
+  green: loadImageAsset(FLAG_SPRITE_PATHS.green, "flagSprite.green", { decoding: 'async' }).img,
+};
+
+const baseSprites = {
+  blue: loadImageAsset(BASE_SPRITE_PATHS.blue, "baseSprite.blue", { decoding: 'async' }).img,
+  green: loadImageAsset(BASE_SPRITE_PATHS.green, "baseSprite.green", { decoding: 'async' }).img,
+};
+
 function isSpriteReady(img) {
   return Boolean(
     img &&
@@ -2633,6 +2659,14 @@ const EDGE_PLANE_PADDING_PX = 8;     // смещение крайних само
 const FLAG_POLE_HEIGHT     = 20;     // высота флагштока
 const FLAG_WIDTH           = 12;     // ширина полотна флага
 const FLAG_HEIGHT          = 8;      // высота полотна флага
+const FLAG_LAYOUTS = {
+  blue: { x: 170, y: 41, width: 20, height: 20 },
+  green: { x: 170, y: 568, width: 20, height: 20 },
+};
+const BASE_LAYOUTS = {
+  blue: { x: 165, y: 21, width: 30, height: 20 },
+  green: { x: 165, y: 599, width: 30, height: 20 },
+};
 
 // Crash effect duration before showing cross (see CRASH_FX_DELAY_MS)
 
@@ -3643,6 +3677,57 @@ function makePlane(x,y,color,angle){
   };
 }
 
+function getFlagLayout(color){
+  return FLAG_LAYOUTS[color] || null;
+}
+
+function getBaseLayout(color){
+  return BASE_LAYOUTS[color] || null;
+}
+
+function getFlagAnchor(color){
+  const layout = getFlagLayout(color);
+  if(layout){
+    return { x: layout.x + layout.width / 2, y: layout.y + layout.height / 2 };
+  }
+  const centerX = FIELD_LEFT + FIELD_WIDTH / 2;
+  const fallbackY = color === "blue" ? getHomeRowY("blue") : getHomeRowY("green");
+  return { x: centerX, y: fallbackY };
+}
+
+function getBaseAnchor(color){
+  const layout = getBaseLayout(color);
+  if(layout){
+    return { x: layout.x + layout.width / 2, y: layout.y + layout.height / 2 };
+  }
+  const centerX = FIELD_LEFT + FIELD_WIDTH / 2;
+  const fallbackY = color === "blue" ? 20 : WORLD.height - 20;
+  return { x: centerX, y: fallbackY };
+}
+
+function getInteractionRadius(layout){
+  if(layout && Number.isFinite(layout.width) && Number.isFinite(layout.height)){
+    return Math.max(layout.width, layout.height) / 2;
+  }
+  return POINT_RADIUS;
+}
+
+function getFlagInteractionTarget(color){
+  const layout = getFlagLayout(color);
+  return {
+    anchor: getFlagAnchor(color),
+    radius: Math.max(POINT_RADIUS, getInteractionRadius(layout)),
+  };
+}
+
+function getBaseInteractionTarget(color){
+  const layout = getBaseLayout(color);
+  return {
+    anchor: getBaseAnchor(color),
+    radius: Math.max(POINT_RADIUS, getInteractionRadius(layout)),
+  };
+}
+
 
 function resetGame(options = {}){
   const { forceGameScreen = false } = options;
@@ -4185,14 +4270,13 @@ function doComputerMove(){
   const enemies  = points.filter(p=> p.color==="green" && p.isAlive && !p.burning);
   if(!aiPlanes.length || !enemies.length) return;
 
-  const centerX = FIELD_LEFT + FIELD_WIDTH/2;
-  const topY    = getHomeRowY("blue");
-  const bottomY = getHomeRowY("green");
+  const homeBase = getBaseAnchor("blue");
+  const enemyFlagTarget = getFlagAnchor("green");
 
   // 1. If we are carrying the enemy flag, prioritize returning home
   const carrier = aiPlanes.find(p=>p.flagColor === "green" && !flyingPoints.some(fp=>fp.plane===p));
   if(carrier){
-    const move = planPathToPoint(carrier, centerX, topY);
+    const move = planPathToPoint(carrier, homeBase.x, homeBase.y);
     if(move){
       issueAIMove(carrier, move.vx, move.vy);
     }
@@ -4208,7 +4292,7 @@ function doComputerMove(){
     let bestCap = null;
     for(const plane of aiPlanes){
       if(flyingPoints.some(fp=>fp.plane===plane)) continue;
-      const move = planPathToPoint(plane, centerX, bottomY);
+      const move = planPathToPoint(plane, enemyFlagTarget.x, enemyFlagTarget.y);
       if(move && (!bestCap || move.totalDist < bestCap.totalDist)){
         bestCap = {plane, ...move};
       }
@@ -5742,6 +5826,16 @@ function drawBuildings(){
   }
 }
 
+function drawBaseSprite(ctx2d, color){
+  const layout = getBaseLayout(color);
+  const sprite = baseSprites[color];
+  if(layout && isSpriteReady(sprite)){
+    ctx2d.drawImage(sprite, layout.x, layout.y, layout.width, layout.height);
+    return true;
+  }
+  return false;
+}
+
 function drawFlag(ctx2d, x, y, color){
   ctx2d.save();
   ctx2d.strokeStyle = "#333";
@@ -5761,15 +5855,55 @@ function drawFlag(ctx2d, x, y, color){
   ctx2d.restore();
 }
 
+function drawFlagSprite(ctx2d, color){
+  const layout = getFlagLayout(color);
+  const sprite = flagSprites[color];
+  if(layout && isSpriteReady(sprite)){
+    ctx2d.drawImage(sprite, layout.x, layout.y, layout.width, layout.height);
+    return true;
+  }
+  return false;
+}
+
 function drawFlags(){
-  const centerX = FIELD_LEFT + FIELD_WIDTH / 2;
-  const blueFlagY = getHomeRowY("blue");
-  const greenFlagY = getHomeRowY("green");
+  const baseColors = ["blue", "green"];
+
+  for(const color of baseColors){
+    const hasBaseSprite = drawBaseSprite(gsBoardCtx, color);
+    if(!hasBaseSprite){
+      const baseAnchor = getBaseAnchor(color);
+      const baseLayout = getBaseLayout(color);
+      const fallbackWidth = baseLayout?.width ?? 26;
+      const fallbackHeight = baseLayout?.height ?? 14;
+      gsBoardCtx.save();
+      gsBoardCtx.fillStyle = "rgba(0, 0, 0, 0.25)";
+      gsBoardCtx.fillRect(
+        baseAnchor.x - fallbackWidth / 2,
+        baseAnchor.y - fallbackHeight / 2,
+        fallbackWidth,
+        fallbackHeight
+      );
+      gsBoardCtx.restore();
+    }
+  }
+
   if(!blueFlagCarrier){
-    drawFlag(gsBoardCtx, centerX, blueFlagY, "blue");
+    const hasSprite = drawFlagSprite(gsBoardCtx, "blue");
+    if(!hasSprite){
+      const layout = getFlagLayout("blue");
+      const anchor = getFlagAnchor("blue");
+      const poleBaseY = layout ? layout.y + layout.height : anchor.y;
+      drawFlag(gsBoardCtx, anchor.x, poleBaseY, "blue");
+    }
   }
   if(!greenFlagCarrier){
-    drawFlag(gsBoardCtx, centerX, greenFlagY, "green");
+    const hasSprite = drawFlagSprite(gsBoardCtx, "green");
+    if(!hasSprite){
+      const layout = getFlagLayout("green");
+      const anchor = getFlagAnchor("green");
+      const poleBaseY = layout ? layout.y + layout.height : anchor.y;
+      drawFlag(gsBoardCtx, anchor.x, poleBaseY, "green");
+    }
   }
 }
 
@@ -6108,68 +6242,16 @@ function checkPlaneHits(plane, fp){
   }
 }
 
-function pointToSegmentDistance(px, py, x1, y1, x2, y2){
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const l2 = dx * dx + dy * dy;
-  if(l2 === 0) return Math.hypot(px - x1, py - y1);
-  let t = ((px - x1) * dx + (py - y1) * dy) / l2;
-  t = Math.max(0, Math.min(1, t));
-  const projX = x1 + t * dx;
-  const projY = y1 + t * dy;
-  return Math.hypot(px - projX, py - projY);
-}
-
-function pointInTriangle(px, py, ax, ay, bx, by, cx, cy){
-  const v0x = cx - ax, v0y = cy - ay;
-  const v1x = bx - ax, v1y = by - ay;
-  const v2x = px - ax, v2y = py - ay;
-  const dot00 = v0x * v0x + v0y * v0y;
-  const dot01 = v0x * v1x + v0y * v1y;
-  const dot02 = v0x * v2x + v0y * v2y;
-  const dot11 = v1x * v1x + v1y * v1y;
-  const dot12 = v1x * v2x + v1y * v2y;
-  const invDenom = 1 / (dot00 * dot11 - dot01 * dot01);
-  const u = (dot11 * dot02 - dot01 * dot12) * invDenom;
-  const v = (dot00 * dot12 - dot01 * dot02) * invDenom;
-  return u >= 0 && v >= 0 && (u + v) <= 1;
-}
-
-function distanceToFlag(px, py, baseX, baseY){
-  const topX = baseX;
-  const topY = baseY - FLAG_POLE_HEIGHT;
-  const tipX = baseX + FLAG_WIDTH;
-  const tipY = topY + FLAG_HEIGHT / 2;
-  const bottomFlagX = baseX;
-  const bottomFlagY = topY + FLAG_HEIGHT;
-
-  const poleDist = pointToSegmentDistance(px, py, baseX, baseY, topX, topY);
-  if(poleDist === 0) return 0;
-
-  const inTriangle = pointInTriangle(px, py, topX, topY, tipX, tipY, bottomFlagX, bottomFlagY);
-  if(inTriangle) return 0;
-
-  const triEdgeDist = Math.min(
-    pointToSegmentDistance(px, py, topX, topY, tipX, tipY),
-    pointToSegmentDistance(px, py, tipX, tipY, bottomFlagX, bottomFlagY),
-    pointToSegmentDistance(px, py, bottomFlagX, bottomFlagY, topX, topY)
-  );
-
-  return Math.min(poleDist, triEdgeDist);
-}
-
 function handleFlagInteractions(plane){
   if(isGameOver) return;
 
-  const centerX = FIELD_LEFT + FIELD_WIDTH / 2;
-  const topY = getHomeRowY("blue");
-  const bottomY = getHomeRowY("green");
-  const flagRadius = POINT_RADIUS;
+  const enemyColor = plane.color === "green" ? "blue" : "green";
+  const enemyFlag = getFlagInteractionTarget(enemyColor);
+  const ownBase = getBaseInteractionTarget(plane.color);
+
   if(!plane.flagColor){
-    const enemyColor = plane.color === "green" ? "blue" : "green";
-    const flagY = enemyColor === "blue" ? topY : bottomY;
-    const dist = distanceToFlag(plane.x, plane.y, centerX, flagY);
-    if(dist < flagRadius){
+    const dist = Math.hypot(plane.x - enemyFlag.anchor.x, plane.y - enemyFlag.anchor.y);
+    if(dist < enemyFlag.radius){
       plane.flagColor = enemyColor;
       if(enemyColor === "blue"){
         blueFlagCarrier = plane;
@@ -6181,9 +6263,8 @@ function handleFlagInteractions(plane){
       addScore(plane.color, 2);
     }
   } else {
-    const ownFlagY = plane.color === "blue" ? topY : bottomY;
-    const distOwn = distanceToFlag(plane.x, plane.y, centerX, ownFlagY);
-    if(distOwn < flagRadius){
+    const distOwn = Math.hypot(plane.x - ownBase.anchor.x, plane.y - ownBase.anchor.y);
+    if(distOwn < ownBase.radius){
       if(plane.flagColor !== plane.color){
         addScore(plane.color, 3);
       } else {
