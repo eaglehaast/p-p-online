@@ -2636,21 +2636,24 @@ const FLAG_HEIGHT          = 8;      // высота полотна флага
 
 // Crash effect duration before showing cross (see CRASH_FX_DELAY_MS)
 
-function updateFieldBorderOffset(){
-  if(settings.sharpEdges){
-    FIELD_BORDER_OFFSET_X = 0;
-    FIELD_BORDER_OFFSET_Y = 0;
-  } else if(brickFrameImg.naturalWidth){
+  function updateFieldBorderOffset(){
+    if(settings.sharpEdges){
+      FIELD_BORDER_OFFSET_X = 0;
+      FIELD_BORDER_OFFSET_Y = 0;
+      return;
+    }
+
+    if(!brickFrameImg || !brickFrameImg.naturalWidth){
+      FIELD_BORDER_OFFSET_X = FIELD_BORDER_THICKNESS;
+      FIELD_BORDER_OFFSET_Y = FIELD_BORDER_THICKNESS;
+      return;
+    }
 
     const scaleX = FIELD_WIDTH / brickFrameImg.naturalWidth;
     const scaleY = WORLD.height / brickFrameImg.naturalHeight;
     FIELD_BORDER_OFFSET_X = brickFrameBorderPxX * scaleX;
     FIELD_BORDER_OFFSET_Y = brickFrameBorderPxY * scaleY;
-  } else {
-    FIELD_BORDER_OFFSET_X = FIELD_BORDER_THICKNESS;
-    FIELD_BORDER_OFFSET_Y = FIELD_BORDER_THICKNESS;
   }
-}
 
 function isBrickPixel(x, y){
   if(!brickFrameData) return false;
@@ -2677,17 +2680,17 @@ function isBrickPixel(x, y){
   return false;
 }
 
-function updateFieldDimensions(){
-  if(brickFrameImg.naturalWidth && brickFrameImg.naturalHeight){
-    const aspect = brickFrameImg.naturalWidth / brickFrameImg.naturalHeight;
-    FIELD_WIDTH = WORLD.height * aspect;
-    FIELD_LEFT = (WORLD.width - FIELD_WIDTH) / 2;
-  } else {
-    FIELD_LEFT = 0;
-    FIELD_WIDTH = WORLD.width;
+  function updateFieldDimensions(){
+    if(brickFrameImg && brickFrameImg.naturalWidth && brickFrameImg.naturalHeight){
+      const aspect = brickFrameImg.naturalWidth / brickFrameImg.naturalHeight;
+      FIELD_WIDTH = WORLD.height * aspect;
+      FIELD_LEFT = (WORLD.width - FIELD_WIDTH) / 2;
+    } else {
+      FIELD_LEFT = 0;
+      FIELD_WIDTH = WORLD.width;
+    }
+    updateFieldBorderOffset();
   }
-  updateFieldBorderOffset();
-}
 
 
 const MIN_FLIGHT_RANGE_CELLS = 5;
