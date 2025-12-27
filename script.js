@@ -384,6 +384,7 @@ const bluePointsPopup  = document.getElementById("bluePointsPopup");
 const greenPlaneCounter = document.getElementById("gs_planecounter_green");
 const bluePlaneCounter  = document.getElementById("gs_planecounter_blue");
 
+// Animated GIF frames for explosion sprites
 const EXPLOSION_BLUE_SPRITES = [
   "ui_gamescreen/explosions_blue/explosion_blue_1.gif",
   "ui_gamescreen/explosions_blue/explosion_blue_2.gif",
@@ -483,6 +484,107 @@ function hideLoadingOverlay() {
 const IMAGE_LOAD_TIMEOUT_MS = 8000;
 const pendingImageLoads = new Set();
 
+const DEBUG_ASSETS = true;
+const imageCache = new Map();
+const imageCreationStacks = new Map();
+const startedImageLoads = new Set();
+let createdImagesCount = 0;
+let duplicateAttemptsCount = 0;
+
+function normalizeAssetUrl(url) {
+  if (typeof url !== "string") return "";
+  return url.trim();
+}
+
+function applyImageOptions(img, options = {}) {
+  if (!img || typeof options !== "object") return;
+  if (options.decoding && !img.decoding) {
+    img.decoding = options.decoding;
+  }
+}
+
+function logImageCreation(label, url, stack) {
+  if (!DEBUG_ASSETS) return;
+  console.log("[asset][create]", { label, url, stack });
+}
+
+function logDuplicateRequest(label, url, stack) {
+  if (!DEBUG_ASSETS) return;
+  duplicateAttemptsCount += 1;
+  const first = imageCreationStacks.get(url) || null;
+  console.warn("[asset][duplicate]", { label, url, first, stack });
+}
+
+function getImage(url, label = "", options = {}) {
+  const normalizedUrl = normalizeAssetUrl(url);
+  if (!normalizedUrl) {
+    return { img: null, isNew: false, url: normalizedUrl };
+  }
+
+  const existing = imageCache.get(normalizedUrl);
+  const stack = new Error().stack;
+
+  if (existing) {
+    logDuplicateRequest(label, normalizedUrl, stack);
+    applyImageOptions(existing, options);
+    return { img: existing, isNew: false, url: normalizedUrl };
+  }
+
+  const img = new Image();
+  createdImagesCount += 1;
+  applyImageOptions(img, options);
+  imageCache.set(normalizedUrl, img);
+  imageCreationStacks.set(normalizedUrl, { label, stack });
+  logImageCreation(label, normalizedUrl, stack);
+  return { img, isNew: true, url: normalizedUrl };
+}
+
+function primeImageLoad(img, url, label = "", options = {}) {
+  const normalizedUrl = normalizeAssetUrl(url);
+  if (!img || !normalizedUrl || startedImageLoads.has(normalizedUrl)) {
+    return;
+  }
+
+  const { track = true, watch = true, timeoutMs } = options;
+
+  if (track) {
+    trackImageLoad(label, normalizedUrl, img, timeoutMs);
+  }
+  if (watch) {
+    installImageWatch(img, normalizedUrl, label);
+  }
+
+  startedImageLoads.add(normalizedUrl);
+  img.src = normalizedUrl;
+}
+
+function loadImageAsset(url, label = "", options = {}) {
+  const { img, isNew, url: normalizedUrl } = getImage(url, label, options);
+  if (!img || !normalizedUrl) {
+    return { img: null, isNew: false };
+  }
+  primeImageLoad(img, normalizedUrl, label, options);
+  return { img, isNew };
+}
+
+if (typeof window !== "undefined") {
+  window.paperWingsAssets = window.paperWingsAssets || {};
+  Object.assign(window.paperWingsAssets, {
+    getImage,
+    loadImageAsset,
+    primeImageLoad,
+    imageCache
+  });
+
+  window.addEventListener("load", () => {
+    console.log("[asset][summary]", {
+      cacheSize: imageCache.size,
+      createdImagesCount,
+      duplicateAttemptsCount
+    });
+  });
+}
+
 function trackImageLoad(label, url, img, timeoutMs = IMAGE_LOAD_TIMEOUT_MS) {
   if (!img) {
     return;
@@ -541,20 +643,32 @@ function preloadCriticalImages() {
       resolve();
       return;
     }
-    const img = new Image();
+
+    const { img, isNew, url } = getImage(src, "criticalPreload");
+    if (!img || !url) {
+      resolve();
+      return;
+    }
+
     pending += 1;
-    console.log("[PRELOAD] pending++", { pending, loaded, lastCompleted, url: src });
-    trackImageLoad("criticalPreload", src, img);
+    console.log("[PRELOAD] pending++", { pending, loaded, lastCompleted, url });
+
     const done = () => {
       loaded += 1;
-      lastCompleted = src;
+      lastCompleted = url;
       console.log("[PRELOAD] loaded++", { pending, loaded, lastCompleted });
       resolve();
     };
-    img.onload = done;
-    img.onerror = done;
-    installImageWatch(img, src, "preloadCriticalImages");
-    img.src = src;
+
+    img.addEventListener("load", done, { once: true });
+    img.addEventListener("error", done, { once: true });
+
+    if (isSpriteReady(img)) {
+      done();
+      return;
+    }
+
+    primeImageLoad(img, url, "criticalPreload");
   }));
 
   const preloadPromise = Promise.allSettled(preloadTasks);
@@ -2178,7 +2292,7 @@ const endGameDiv  = document.getElementById("endGameButtons");
 const yesBtn      = document.getElementById("yesButton");
 const noBtn       = document.getElementById("noButton");
 
-// Images for planes
+// Images for planes (static PNG sprites)
 const PLANE_ASSET_PATHS = {
   blue: "planes/blue plane 25-optima.png",
   green: "planes/green plane 4 optima.png",
@@ -2207,41 +2321,18 @@ function preloadPlaneSprites() {
   if (planeSpritesPreloaded) {
     return;
   }
-  bluePlaneImg = new Image();
-  trackImageLoad("planeSprites", PLANE_ASSET_PATHS.blue, bluePlaneImg);
-  bluePlaneImg.src = PLANE_ASSET_PATHS.blue;
-  installImageWatch(bluePlaneImg, PLANE_ASSET_PATHS.blue, "preloadPlaneSprites.blue");
+  bluePlaneImg = loadImageAsset(PLANE_ASSET_PATHS.blue, "planeSprites.blue").img;
+  greenPlaneImg = loadImageAsset(PLANE_ASSET_PATHS.green, "planeSprites.green").img;
+  blueCounterPlaneImg = loadImageAsset(PLANE_ASSET_PATHS.blueCounter, "planeSprites.blueCounter").img;
+  greenCounterPlaneImg = loadImageAsset(PLANE_ASSET_PATHS.greenCounter, "planeSprites.greenCounter").img;
 
-  greenPlaneImg = new Image();
-  trackImageLoad("planeSprites", PLANE_ASSET_PATHS.green, greenPlaneImg);
-  greenPlaneImg.src = PLANE_ASSET_PATHS.green;
-  installImageWatch(greenPlaneImg, PLANE_ASSET_PATHS.green, "preloadPlaneSprites.green");
-
-  blueCounterPlaneImg = new Image();
-  trackImageLoad("planeSprites", PLANE_ASSET_PATHS.blueCounter, blueCounterPlaneImg);
-  blueCounterPlaneImg.src = PLANE_ASSET_PATHS.blueCounter;
-  installImageWatch(blueCounterPlaneImg, PLANE_ASSET_PATHS.blueCounter, "preloadPlaneSprites.blueCounter");
-
-  greenCounterPlaneImg = new Image();
-  trackImageLoad("planeSprites", PLANE_ASSET_PATHS.greenCounter, greenCounterPlaneImg);
-  greenCounterPlaneImg.src = PLANE_ASSET_PATHS.greenCounter;
-  installImageWatch(greenCounterPlaneImg, PLANE_ASSET_PATHS.greenCounter, "preloadPlaneSprites.greenCounter");
-
-  bluePlaneWreckImg = new Image();
-  bluePlaneWreckImg.decoding = 'async';
-  trackImageLoad("planeSprites", PLANE_ASSET_PATHS.blueWreck, bluePlaneWreckImg);
-  bluePlaneWreckImg.src = PLANE_ASSET_PATHS.blueWreck;
-  installImageWatch(bluePlaneWreckImg, PLANE_ASSET_PATHS.blueWreck, "preloadPlaneSprites.blueWreck");
-  if (typeof bluePlaneWreckImg.decode === 'function') {
+  bluePlaneWreckImg = loadImageAsset(PLANE_ASSET_PATHS.blueWreck, "planeSprites.blueWreck", { decoding: 'async' }).img;
+  if (typeof bluePlaneWreckImg?.decode === 'function') {
     bluePlaneWreckImg.decode().catch(() => {});
   }
 
-  greenPlaneWreckImg = new Image();
-  greenPlaneWreckImg.decoding = 'async';
-  trackImageLoad("planeSprites", PLANE_ASSET_PATHS.greenWreck, greenPlaneWreckImg);
-  greenPlaneWreckImg.src = PLANE_ASSET_PATHS.greenWreck;
-  installImageWatch(greenPlaneWreckImg, PLANE_ASSET_PATHS.greenWreck, "preloadPlaneSprites.greenWreck");
-  if (typeof greenPlaneWreckImg.decode === 'function') {
+  greenPlaneWreckImg = loadImageAsset(PLANE_ASSET_PATHS.greenWreck, "planeSprites.greenWreck", { decoding: 'async' }).img;
+  if (typeof greenPlaneWreckImg?.decode === 'function') {
     greenPlaneWreckImg.decode().catch(() => {});
   }
 
@@ -2258,11 +2349,7 @@ function preloadExplosionSprites() {
     const trimmed = src.trim();
     if (!trimmed) return;
 
-    const img = new Image();
-    img.decoding = 'async';
-    trackImageLoad("explosionSprites", trimmed, img);
-    img.src = trimmed;
-    installImageWatch(img, trimmed, `explosionSprites.${color}`);
+    const img = loadImageAsset(trimmed, `explosionSprites.${color}`, { decoding: 'async' }).img;
     explosionImagesByColor[color]?.push(img);
   };
 
@@ -2273,11 +2360,7 @@ function preloadExplosionSprites() {
 }
 const flameImages = new Map();
 for (const src of BURNING_FLAME_SRCS) {
-  const img = new Image();
-  img.decoding = 'async';
-  trackImageLoad("flameImages", src, img);
-  img.src = src;
-  installImageWatch(img, src, "flameImages");
+  const img = loadImageAsset(src, "flameImages", { decoding: 'async' }).img;
   flameImages.set(src, img);
 }
 const defaultFlameImg = flameImages.get(DEFAULT_BURNING_FLAME_SRC) || null;
@@ -2290,15 +2373,16 @@ function isSpriteReady(img) {
     img.naturalHeight > 0
   );
 }
-const backgroundImg = new Image();
-backgroundImg.addEventListener("load", () => {
+const { img: backgroundImg } = loadImageAsset("background paper 1.png", "backgroundImg");
+backgroundImg?.addEventListener("load", () => {
   console.log("[IMG] load", { label: "backgroundImg", url: backgroundImg.src });
 });
-backgroundImg.addEventListener("error", (event) => {
+backgroundImg?.addEventListener("error", (event) => {
   console.warn("[IMG] error", { label: "backgroundImg", url: backgroundImg.src, event });
 });
-backgroundImg.src = "background paper 1.png";
-installImageWatch(backgroundImg, "background paper 1.png", "backgroundImg");
+if (isSpriteReady(backgroundImg)) {
+  console.log("[IMG] load", { label: "backgroundImg", url: backgroundImg?.src });
+}
 
 let currentBackgroundLayerCount = 2;
 
@@ -2369,29 +2453,42 @@ const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
 
 if (typeof window.matchProgressReady === 'undefined') window.matchProgressReady = false;
 
-const brickFrameImg = new Image();
+let brickFrameImg = null;
 let brickFrameData = null;
-brickFrameImg.addEventListener("load", () => {
+
+function handleBrickFrameLoad() {
+  if (!brickFrameImg) return;
   console.log("[IMG] load", { label: "brickFrameImg", url: brickFrameImg.src });
-});
-brickFrameImg.addEventListener("error", (event) => {
+}
+
+function handleBrickFrameError(event) {
+  if (!brickFrameImg) return;
   console.warn("[IMG] error", { label: "brickFrameImg", url: brickFrameImg.src, event });
-});
+}
+
+function setBrickFrameImage(img) {
+  if (!img || brickFrameImg === img) return;
+  brickFrameImg = img;
+  brickFrameImg.addEventListener("load", handleBrickFrameLoad);
+  brickFrameImg.addEventListener("error", handleBrickFrameError);
+  brickFrameImg.addEventListener("load", processBrickFrameImage);
+  if (isSpriteReady(brickFrameImg)) {
+    handleBrickFrameLoad();
+    processBrickFrameImage();
+  }
+}
 
 let FIELD_LEFT = 0;
 let FIELD_WIDTH = 0;
 
 // Sprite used for the aiming arrow
-const arrowSprite = new Image();
-arrowSprite.addEventListener("load", () => {
+const { img: arrowSprite } = loadImageAsset("sprite_ copy.png", "arrowSprite");
+arrowSprite?.addEventListener("load", () => {
   console.log("[IMG] load", { label: "arrowSprite", url: arrowSprite.src });
 });
-arrowSprite.addEventListener("error", (event) => {
+arrowSprite?.addEventListener("error", (event) => {
   console.warn("[IMG] error", { label: "arrowSprite", url: arrowSprite.src, event });
 });
-// Use the PNG sprite that contains the arrow graphics
-arrowSprite.src = "sprite_ copy.png";
-installImageWatch(arrowSprite, "sprite_ copy.png", "arrowSprite");
 
 
 
@@ -2434,7 +2531,8 @@ function colorWithAlpha(color, alpha){
 
 let brickFrameBorderPxX = FIELD_BORDER_THICKNESS;
   let brickFrameBorderPxY = FIELD_BORDER_THICKNESS;
-brickFrameImg.onload = () => {
+function processBrickFrameImage() {
+  if (!brickFrameImg) return;
   const tempCanvas = document.createElement("canvas");
   tempCanvas.width = brickFrameImg.naturalWidth;
   tempCanvas.height = brickFrameImg.naturalHeight;
@@ -2487,7 +2585,7 @@ brickFrameImg.onload = () => {
 
   updateFieldDimensions();
   if(points.length) initPoints();
-};
+}
 
 
 
@@ -2762,8 +2860,13 @@ function extractOpaqueRunsFromImageData(imageData){
 
 function generatePreviewBuildingsFromPng(src){
   return new Promise(resolve => {
-    const img = new Image();
-    img.onload = () => {
+    const { img, url } = getImage(src, "previewBuildings");
+    if (!img || !url) {
+      resolve([]);
+      return;
+    }
+
+    const handleLoad = () => {
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = img.naturalWidth;
       tempCanvas.height = img.naturalHeight;
@@ -2774,9 +2877,18 @@ function generatePreviewBuildingsFromPng(src){
       const runs = extractOpaqueRunsFromImageData(imageData);
       resolve(mergeRunsIntoRects(runs));
     };
-    img.onerror = () => resolve([]);
-    installImageWatch(img, src, "previewBuildings");
-    img.src = src;
+
+    const handleError = () => resolve([]);
+
+    if (isSpriteReady(img)) {
+      handleLoad();
+      return;
+    }
+
+    img.addEventListener('load', handleLoad, { once: true });
+    img.addEventListener('error', handleError, { once: true });
+
+    primeImageLoad(img, url, "previewBuildings");
   });
 }
 
@@ -3208,15 +3320,16 @@ function registerMatchProgressShardImage(src){
   if (!trimmed){
     return null;
   }
-  const img = new Image();
+  const { img, url } = getImage(trimmed, "matchProgressShard");
+  if (!img || !url) return null;
   pendingMatchProgressImages += 1;
   console.log("[MATCH_PROGRESS] shard pending", { pendingMatchProgressImages, lastCompleted: lastMatchProgressCompleted, src: trimmed });
-  img.onload = () => {
+  const handleLoad = () => {
     lastMatchProgressCompleted = trimmed;
     handleMatchProgressAssetLoaded();
     console.log("[MATCH_PROGRESS] shard load", { pendingMatchProgressImages, lastCompleted: lastMatchProgressCompleted });
   };
-  img.onerror = (event) => {
+  const handleError = (event) => {
     lastMatchProgressCompleted = trimmed;
     handleMatchProgressAssetLoaded();
     console.warn(`[MATCH_PROGRESS] shard load ERROR ${trimmed}`, {
@@ -3225,8 +3338,15 @@ function registerMatchProgressShardImage(src){
       lastCompleted: lastMatchProgressCompleted
     });
   };
-  installImageWatch(img, trimmed, "matchProgressShard");
-  img.src = trimmed;
+  if (isSpriteReady(img)) {
+    handleLoad();
+    return img;
+  }
+
+  img.addEventListener("load", handleLoad, { once: true });
+  img.addEventListener("error", handleError, { once: true });
+
+  primeImageLoad(img, url, "matchProgressShard");
   return img;
 }
 
@@ -6879,8 +6999,8 @@ function applyCurrentMap(upcomingRoundNumber){
   const mapIndex = resolveMapIndexForGameplay(targetRoundNumber);
   const gameplayMap = MAPS[mapIndex] || MAPS[0];
 
-  brickFrameImg.src = gameplayMap.file;
-  installImageWatch(brickFrameImg, gameplayMap.file, "brickFrameImg");
+  const { img } = loadImageAsset(gameplayMap.file, "brickFrameImg");
+  setBrickFrameImage(img);
   rebuildBuildingsFromMap(gameplayMap);
   updateFieldDimensions();
   resetPlanePositionsForCurrentMap();

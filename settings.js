@@ -48,6 +48,10 @@ function installImageWatch(img, url, label) {
   };
 }
 
+function isSpriteReady(img){
+  return Boolean(img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0);
+}
+
 function mergeRunsIntoRects(runs, tolerance = 1){
   const merged = [];
   for(const run of runs){
@@ -101,8 +105,23 @@ function extractOpaqueRunsFromImageData(imageData){
 
 function generatePreviewBuildingsFromPng(src){
   return new Promise(resolve => {
-    const img = new Image();
-    img.onload = () => {
+    const registry = window.paperWingsAssets || null;
+    const useRegistry = !!registry?.getImage;
+    const normalize = (value) => (typeof value === 'string' ? value.trim() : '');
+    const { img, url } = useRegistry
+      ? registry.getImage(src, "previewBuildings")
+      : (() => {
+          const normalized = normalize(src);
+          if (!normalized) return { img: null, url: '' };
+          return { img: new Image(), url: normalized };
+        })();
+
+    if (!img || !url) {
+      resolve([]);
+      return;
+    }
+
+    const handleLoad = () => {
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = img.naturalWidth;
       tempCanvas.height = img.naturalHeight;
@@ -113,9 +132,23 @@ function generatePreviewBuildingsFromPng(src){
       const runs = extractOpaqueRunsFromImageData(imageData);
       resolve(mergeRunsIntoRects(runs));
     };
-    img.onerror = () => resolve([]);
-    installImageWatch(img, src, "previewBuildings");
-    img.src = src;
+
+    const handleError = () => resolve([]);
+
+    if (isSpriteReady(img)) {
+      handleLoad();
+      return;
+    }
+
+    img.addEventListener('load', handleLoad, { once: true });
+    img.addEventListener('error', handleError, { once: true });
+
+    if (useRegistry && typeof registry.primeImageLoad === 'function') {
+      registry.primeImageLoad(img, url, "previewBuildings");
+    } else {
+      installImageWatch(img, url, "previewBuildings");
+      img.src = url;
+    }
   });
 }
 
@@ -789,13 +822,38 @@ function updateMapPreview(){
   ensurePreviewCanvasLayering();
   mapPreview.style.backgroundImage = map ? `url('${map.file}')` : '';
   if(map?.file){
-    const img = new Image();
-    img.onload = () => {
+    const registry = window.paperWingsAssets || null;
+    const useRegistry = !!registry?.getImage;
+    const { img, url } = useRegistry
+      ? registry.getImage(map.file, "mapPreview")
+      : (() => {
+          const normalized = typeof map.file === 'string' ? map.file.trim() : '';
+          if (!normalized) return { img: null, url: '' };
+          return { img: new Image(), url: normalized };
+        })();
+
+    if (!img || !url) {
+      return;
+    }
+
+    const handleLoad = () => {
       if(map !== MAPS[mapIndex]) return;
       resizePreviewCanvas();
     };
-    installImageWatch(img, map.file, "mapPreview");
-    img.src = map.file;
+
+    if (isSpriteReady(img)) {
+      handleLoad();
+      return;
+    }
+
+    img.addEventListener('load', handleLoad, { once: true });
+
+    if (useRegistry && typeof registry.primeImageLoad === 'function') {
+      registry.primeImageLoad(img, url, "mapPreview");
+    } else {
+      installImageWatch(img, url, "mapPreview");
+      img.src = url;
+    }
   }
   refreshPreviewSimulationIfInitialized();
 }
