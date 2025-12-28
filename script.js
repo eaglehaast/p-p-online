@@ -14,6 +14,7 @@ const DEBUG_RESIZE = false;
 const DEBUG_BOOT = false;
 const DEBUG_LAYOUT = false;
 const DEBUG_RENDER_INIT = false;
+const DEBUG_ENDGAME = false;
 const DEBUG_AIM = false;
 const DEBUG_PLANE_SHADING = false;
 const DEBUG_FX = false;
@@ -46,6 +47,23 @@ const planeCtx    = planeCanvas.getContext("2d");
 
 const hudCanvas = document.getElementById("hudCanvas");
 const hudCtx = hudCanvas instanceof HTMLCanvasElement ? hudCanvas.getContext("2d") : null;
+
+function logEndGameAction(action){
+  if (!DEBUG_ENDGAME) return;
+
+  const body = document.body;
+  console.log('[endgame]', {
+    action,
+    screen: {
+      menu: body.classList.contains('screen--menu'),
+      game: body.classList.contains('screen--game'),
+      settings: body.classList.contains('screen--settings'),
+    },
+    menuLocked: menuScreenLocked,
+    endGameVisible: endGameDiv?.style?.display,
+    loopRunning: animationFrameId !== null,
+  });
+}
 
 function setScreenMode(mode) {
   document.body.classList.toggle('screen--menu', mode === 'MENU');
@@ -3868,8 +3886,8 @@ function getBaseInteractionTarget(color){
 
 
 function resetGame(options = {}){
-  const { forceGameScreen = false } = options;
-  const shouldShowMenu = !forceGameScreen && !menuScreenLocked;
+  const { forceGameScreen = false, forceMenu = false } = options;
+  const shouldShowMenu = forceMenu || (!forceGameScreen && !menuScreenLocked);
 
   isGameOver= false;
   winnerColor= null;
@@ -3931,6 +3949,7 @@ function resetGame(options = {}){
   currentPlacer = null;
 
   if (shouldShowMenu) {
+    menuScreenLocked = false;
     setBackgroundImage('background paper 1.png');
     hideGameBackgroundForMenu();
   } else {
@@ -3950,6 +3969,7 @@ function resetGame(options = {}){
     aimCanvas.style.display = "none";
     planeCanvas.style.display = "none";
   } else {
+    menuScreenLocked = true;
     setMenuVisibility(false);
     activateGameScreen();
     gsBoardCanvas.style.display = "block";
@@ -7088,6 +7108,7 @@ function isOverlappingWithBuildings(b){
 
 /* ======= SCORE / ROUND ======= */
 yesBtn.addEventListener("click", () => {
+  logEndGameAction('click-yes');
   const gameOver = blueScore >= POINTS_TO_WIN || greenScore >= POINTS_TO_WIN;
   if (gameOver) {
     blueScore = 0;
@@ -7104,7 +7125,8 @@ yesBtn.addEventListener("click", () => {
   startNewRound();
 });
 noBtn.addEventListener("click", () => {
-  resetGame({ forceGameScreen: true });
+  logEndGameAction('click-no');
+  resetGame({ forceMenu: true });
 });
 
 function startNewRound(){
