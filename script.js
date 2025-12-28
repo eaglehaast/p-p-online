@@ -4642,7 +4642,7 @@ function planeBuildingCollision(fp, b){
   return collided;
 }
 
-function destroyPlane(fp){
+function destroyPlane(fp, scoringColor = null){
   const p = fp.plane;
   if(p.flagColor){
     const droppedAt = { x: p.x, y: p.y };
@@ -4671,7 +4671,7 @@ function destroyPlane(fp){
 
 
   flyingPoints = flyingPoints.filter(x=>x!==fp);
-  awardPoint(p.color);
+  awardPoint(scoringColor);
   checkVictory();
   if(!isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
     turnIndex = (turnIndex + 1) % turnColors.length;
@@ -4728,7 +4728,7 @@ function handleAAForPlane(p, fp){
                 if(fp) {
                   flyingPoints = flyingPoints.filter(x=>x!==fp);
                 }
-              awardPoint(p.color);
+              awardPoint(aa.owner);
               checkVictory();
               if(fp && !isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
                 turnIndex = (turnIndex + 1) % turnColors.length;
@@ -6207,7 +6207,8 @@ function updateAndDrawExplosions(ctx, now) {
 
 /* ======= HITS / VICTORY ======= */
 function awardPoint(color){
-  return; // No points for plane or AA kills; scoring is tied to flag captures only.
+  if(!color) return;
+  addScore(color, 1);
 }
 function checkPlaneHits(plane, fp){
   if(isGameOver) return;
@@ -6248,7 +6249,7 @@ function checkPlaneHits(plane, fp){
         }
         p.flagColor = null;
       }
-      awardPoint(p.color);
+      awardPoint(plane.color);
       checkVictory();
       if(isGameOver) return;
     }
