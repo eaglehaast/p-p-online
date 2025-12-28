@@ -17,6 +17,7 @@ const DEBUG_RENDER_INIT = false;
 const DEBUG_AIM = false;
 const DEBUG_PLANE_SHADING = false;
 const DEBUG_FX = false;
+const DEBUG_FLAME_POS = false;
 
 const bootTrace = {
   startTs: null,
@@ -1453,6 +1454,70 @@ const PLANE_FLAME_HOST_ID = 'planeFlameHost';
 let flameCycleIndex = 0;
 let flameStyleRevision = 0;
 
+let lastPlaneFlamePosLogTs = 0;
+
+function logPlaneFlamePosition(plane, metrics, clientPoint, flameOffset) {
+  if (!DEBUG_FLAME_POS) {
+    return;
+  }
+
+  const now = Date.now();
+  if (now - lastPlaneFlamePosLogTs < 1000) {
+    return;
+  }
+  lastPlaneFlamePosLogTs = now;
+
+  const { boardRect, hostRect, host } = metrics || {};
+  const planeCanvasRect = planeCanvas?.getBoundingClientRect?.() || null;
+  const expectedPlaneCanvas = planeCanvasRect
+    ? {
+        left: clientPoint.clientX - planeCanvasRect.left,
+        top: clientPoint.clientY - planeCanvasRect.top
+      }
+    : null;
+  const deltaFromPlaneCanvas = expectedPlaneCanvas
+    ? {
+        dx: flameOffset.left - expectedPlaneCanvas.left,
+        dy: flameOffset.top - expectedPlaneCanvas.top
+      }
+    : null;
+  const visualViewportState = window.visualViewport
+    ? {
+        scale: window.visualViewport.scale,
+        offsetLeft: window.visualViewport.offsetLeft,
+        offsetTop: window.visualViewport.offsetTop,
+        pageLeft: window.visualViewport.pageLeft,
+        pageTop: window.visualViewport.pageTop,
+        width: window.visualViewport.width,
+        height: window.visualViewport.height
+      }
+    : null;
+
+  const rootStyle = window.getComputedStyle(document.documentElement);
+  const uiScaleRaw = rootStyle.getPropertyValue('--ui-scale');
+  const uiScale = uiScaleRaw ? parseFloat(uiScaleRaw) : null;
+
+  console.debug('[FX][DEBUG_FLAME_POS]', {
+    plane: {
+      id: plane?.id ?? plane?.uid ?? plane?.name ?? null,
+      color: plane?.color ?? null,
+      x: plane?.x,
+      y: plane?.y
+    },
+    client: { x: clientPoint.clientX, y: clientPoint.clientY },
+    flameOffset: { ...flameOffset },
+    boardRect,
+    hostRect,
+    rawOverlayRect: overlayContainer?.getBoundingClientRect?.() || null,
+    rawHostRect: host?.getBoundingClientRect?.() || null,
+    planeCanvasRect,
+    expectedPlaneCanvas,
+    deltaFromPlaneCanvas,
+    visualViewport: visualViewportState,
+    uiScale
+  });
+}
+
 function ensurePlaneFlameHost() {
   const parent = overlayContainer instanceof HTMLElement ? overlayContainer : null;
   if (!(parent instanceof HTMLElement)) {
@@ -1537,7 +1602,7 @@ function resolvePlaneFlameMetrics(context = 'plane flame') {
 
   warnIfFxHostMismatch(usableBoardRect, hostRect, context);
 
-  return { boardRect: usableBoardRect, hostRect };
+  return { boardRect: usableBoardRect, hostRect, host };
 }
 
 function getFlameDisplaySize(plane) {
@@ -1961,6 +2026,8 @@ function updatePlaneFlameFxPosition(plane, metrics) {
 
   element.style.left = Math.round(left) + 'px';
   element.style.top = Math.round(top) + 'px';
+
+  logPlaneFlamePosition(plane, data, { clientX, clientY }, { left, top });
 }
 
 function updateAllPlaneFlameFxPositions() {
