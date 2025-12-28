@@ -6261,10 +6261,8 @@ function handleFlagInteractions(plane){
 
   const enemyColor = plane.color === "green" ? "blue" : "green";
   const enemyFlag = getFlagInteractionTarget(enemyColor);
-  const ownFlag = getFlagInteractionTarget(plane.color);
   const ownBase = getBaseInteractionTarget(plane.color);
   const enemyFlagCarrier = getFlagCarrier(enemyColor);
-  const ownFlagCarrier = getFlagCarrier(plane.color);
 
   if(!plane.flagColor){
     if(!enemyFlagCarrier){
@@ -6279,25 +6277,6 @@ function handleFlagInteractions(plane){
           greenFlagCarrier = plane;
           greenFlagStolenBy = plane.color;
           greenFlagDroppedAt = null;
-        }
-      }
-    }
-
-    if(!plane.flagColor && !ownFlagCarrier){
-      const droppedAt = plane.color === "blue" ? blueFlagDroppedAt : greenFlagDroppedAt;
-      if(droppedAt){
-        const distOwnFlag = Math.hypot(plane.x - ownFlag.anchor.x, plane.y - ownFlag.anchor.y);
-        if(distOwnFlag < ownFlag.radius){
-          plane.flagColor = plane.color;
-          if(plane.color === "blue"){
-            blueFlagCarrier = plane;
-            blueFlagDroppedAt = null;
-            blueFlagStolenBy = null;
-          } else {
-            greenFlagCarrier = plane;
-            greenFlagDroppedAt = null;
-            greenFlagStolenBy = null;
-          }
         }
       }
     }
