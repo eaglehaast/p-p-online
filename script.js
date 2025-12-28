@@ -7490,7 +7490,16 @@ lockOrientation();
 window.addEventListener('orientationchange', lockOrientation);
 
   /* ======= BOOTSTRAP ======= */
+  function waitForStylesReady() {
+    if (document.readyState === 'complete') return Promise.resolve();
+
+    return new Promise((resolve) => {
+      window.addEventListener('load', resolve, { once: true });
+    });
+  }
+
   async function bootstrapGame(){
+    await waitForStylesReady();
     updateUiScale();
     sizeAndAlignOverlays();
     resizeCanvas();
