@@ -507,7 +507,6 @@ const sharpEdgesToggle = selectInSettings('#sharpEdgesToggle');
 const addsNailsBtn = selectInSettings('#instance_adds_tumbler1_nails');
 const addsAABtn = selectInSettings('#instance_adds_tumbler2_aa');
 const addsCargoBtn = selectInSettings('#instance_adds_tumbler3_cargo');
-const backBtn = selectInSettings('#backBtn');
 const resetBtn = selectInSettings('#instance_reset');
 const exitBtn = selectInSettings('#instance_exit');
 const mapPrevBtn = selectInSettings('#instance_field_left');
@@ -1586,10 +1585,6 @@ function goToMainMenu(event){
     return;
   }
   window.location.href = 'index.html';
-}
-
-if(backBtn){
-  backBtn.addEventListener('click', goToMainMenu);
 }
 
 if(resetBtn){
