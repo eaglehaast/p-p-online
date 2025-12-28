@@ -3107,6 +3107,8 @@ let blueFlagCarrier = null;
 let greenFlagCarrier = null;
 let blueFlagStolenBy = null;
 let greenFlagStolenBy = null;
+let blueFlagDroppedAt = null;
+let greenFlagDroppedAt = null;
 
 const defaultMatchProgressFragmentSources = {
   green: [
@@ -3689,6 +3691,10 @@ function getBaseLayout(color){
 }
 
 function getFlagAnchor(color){
+  const dropped = color === "blue" ? blueFlagDroppedAt : greenFlagDroppedAt;
+  if(dropped){
+    return dropped;
+  }
   const layout = getFlagLayout(color);
   if(layout){
     return { x: layout.x + layout.width / 2, y: layout.y + layout.height / 2 };
@@ -3716,11 +3722,16 @@ function getInteractionRadius(layout){
 }
 
 function getFlagInteractionTarget(color){
-  const layout = getFlagLayout(color);
+  const dropped = color === "blue" ? blueFlagDroppedAt : greenFlagDroppedAt;
+  const layout = dropped ? null : getFlagLayout(color);
   return {
     anchor: getFlagAnchor(color),
-    radius: Math.max(POINT_RADIUS, getInteractionRadius(layout)),
+    radius: dropped ? POINT_RADIUS : Math.max(POINT_RADIUS, getInteractionRadius(layout)),
   };
+}
+
+function getFlagCarrier(color){
+  return color === "blue" ? blueFlagCarrier : greenFlagCarrier;
 }
 
 function getBaseInteractionTarget(color){
@@ -3768,6 +3779,8 @@ function resetGame(options = {}){
   greenFlagCarrier = null;
   blueFlagStolenBy = null;
   greenFlagStolenBy = null;
+  blueFlagDroppedAt = null;
+  greenFlagDroppedAt = null;
 
 
   lastFirstTurn= 1 - lastFirstTurn;
@@ -4632,12 +4645,13 @@ function planeBuildingCollision(fp, b){
 function destroyPlane(fp){
   const p = fp.plane;
   if(p.flagColor){
+    const droppedAt = { x: p.x, y: p.y };
     if(p.flagColor === "blue"){
       blueFlagCarrier = null;
-      blueFlagStolenBy = null;
+      blueFlagDroppedAt = droppedAt;
     } else {
       greenFlagCarrier = null;
-      greenFlagStolenBy = null;
+      greenFlagDroppedAt = droppedAt;
     }
     p.flagColor = null;
   }
@@ -5890,21 +5904,29 @@ function drawFlags(){
   }
 
   if(!blueFlagCarrier){
-    const hasSprite = drawFlagSprite(gsBoardCtx, "blue");
-    if(!hasSprite){
-      const layout = getFlagLayout("blue");
-      const anchor = getFlagAnchor("blue");
-      const poleBaseY = layout ? layout.y + layout.height : anchor.y;
-      drawFlag(gsBoardCtx, anchor.x, poleBaseY, "blue");
+    if(blueFlagDroppedAt){
+      drawFlag(gsBoardCtx, blueFlagDroppedAt.x, blueFlagDroppedAt.y, "blue");
+    } else {
+      const hasSprite = drawFlagSprite(gsBoardCtx, "blue");
+      if(!hasSprite){
+        const layout = getFlagLayout("blue");
+        const anchor = getFlagAnchor("blue");
+        const poleBaseY = layout ? layout.y + layout.height : anchor.y;
+        drawFlag(gsBoardCtx, anchor.x, poleBaseY, "blue");
+      }
     }
   }
   if(!greenFlagCarrier){
-    const hasSprite = drawFlagSprite(gsBoardCtx, "green");
-    if(!hasSprite){
-      const layout = getFlagLayout("green");
-      const anchor = getFlagAnchor("green");
-      const poleBaseY = layout ? layout.y + layout.height : anchor.y;
-      drawFlag(gsBoardCtx, anchor.x, poleBaseY, "green");
+    if(greenFlagDroppedAt){
+      drawFlag(gsBoardCtx, greenFlagDroppedAt.x, greenFlagDroppedAt.y, "green");
+    } else {
+      const hasSprite = drawFlagSprite(gsBoardCtx, "green");
+      if(!hasSprite){
+        const layout = getFlagLayout("green");
+        const anchor = getFlagAnchor("green");
+        const poleBaseY = layout ? layout.y + layout.height : anchor.y;
+        drawFlag(gsBoardCtx, anchor.x, poleBaseY, "green");
+      }
     }
   }
 }
@@ -6217,12 +6239,12 @@ function checkPlaneHits(plane, fp){
         }
       if(p.flagColor){
         const flagColor = p.flagColor;
-        const stolenBy = flagColor === "blue" ? blueFlagStolenBy : greenFlagStolenBy;
-        plane.flagColor = flagColor;
         if(flagColor === "blue"){
-          blueFlagCarrier = plane;
+          blueFlagCarrier = null;
+          blueFlagDroppedAt = { x: cx, y: cy };
         } else {
-          greenFlagCarrier = plane;
+          greenFlagCarrier = null;
+          greenFlagDroppedAt = { x: cx, y: cy };
         }
         p.flagColor = null;
       }
@@ -6238,18 +6260,44 @@ function handleFlagInteractions(plane){
 
   const enemyColor = plane.color === "green" ? "blue" : "green";
   const enemyFlag = getFlagInteractionTarget(enemyColor);
+  const ownFlag = getFlagInteractionTarget(plane.color);
   const ownBase = getBaseInteractionTarget(plane.color);
+  const enemyFlagCarrier = getFlagCarrier(enemyColor);
+  const ownFlagCarrier = getFlagCarrier(plane.color);
 
   if(!plane.flagColor){
-    const dist = Math.hypot(plane.x - enemyFlag.anchor.x, plane.y - enemyFlag.anchor.y);
-    if(dist < enemyFlag.radius){
-      plane.flagColor = enemyColor;
-      if(enemyColor === "blue"){
-        blueFlagCarrier = plane;
-        blueFlagStolenBy = plane.color;
-      } else {
-        greenFlagCarrier = plane;
-        greenFlagStolenBy = plane.color;
+    if(!enemyFlagCarrier){
+      const dist = Math.hypot(plane.x - enemyFlag.anchor.x, plane.y - enemyFlag.anchor.y);
+      if(dist < enemyFlag.radius){
+        plane.flagColor = enemyColor;
+        if(enemyColor === "blue"){
+          blueFlagCarrier = plane;
+          blueFlagStolenBy = plane.color;
+          blueFlagDroppedAt = null;
+        } else {
+          greenFlagCarrier = plane;
+          greenFlagStolenBy = plane.color;
+          greenFlagDroppedAt = null;
+        }
+      }
+    }
+
+    if(!plane.flagColor && !ownFlagCarrier){
+      const droppedAt = plane.color === "blue" ? blueFlagDroppedAt : greenFlagDroppedAt;
+      if(droppedAt){
+        const distOwnFlag = Math.hypot(plane.x - ownFlag.anchor.x, plane.y - ownFlag.anchor.y);
+        if(distOwnFlag < ownFlag.radius){
+          plane.flagColor = plane.color;
+          if(plane.color === "blue"){
+            blueFlagCarrier = plane;
+            blueFlagDroppedAt = null;
+            blueFlagStolenBy = null;
+          } else {
+            greenFlagCarrier = plane;
+            greenFlagDroppedAt = null;
+            greenFlagStolenBy = null;
+          }
+        }
       }
     }
   } else {
@@ -6261,9 +6309,11 @@ function handleFlagInteractions(plane){
       if(plane.flagColor === "blue"){
         blueFlagCarrier = null;
         blueFlagStolenBy = null;
+        blueFlagDroppedAt = null;
       } else {
         greenFlagCarrier = null;
         greenFlagStolenBy = null;
+        greenFlagDroppedAt = null;
       }
       plane.flagColor = null;
     }
@@ -7010,6 +7060,8 @@ function startNewRound(){
   greenFlagCarrier = null;
   blueFlagStolenBy = null;
   greenFlagStolenBy = null;
+  blueFlagDroppedAt = null;
+  greenFlagDroppedAt = null;
   renderScoreboard();
   if (settings.addAA) {
     phase = 'AA_PLACEMENT';
@@ -7052,6 +7104,8 @@ function resetPlanePositionsForCurrentMap(){
   greenFlagCarrier = null;
   blueFlagStolenBy = null;
   greenFlagStolenBy = null;
+  blueFlagDroppedAt = null;
+  greenFlagDroppedAt = null;
 
   points = [];
   initPoints();
