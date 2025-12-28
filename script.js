@@ -90,6 +90,10 @@ const aimDebugState = {
   lastLogTime: 0
 };
 
+const planeFlameDebugState = {
+  logged: 0
+};
+
 function getCanvasDpr() {
   const RAW_DPR = window.devicePixelRatio || 1;
   const CANVAS_DPR = Math.min(RAW_DPR, 2);
@@ -1061,6 +1065,19 @@ function visualRect(element) {
   return { left: adjusted.left, top: adjusted.top, width: adjusted.width, height: adjusted.height, raw: rawRect, v };
 }
 
+function normalizeRect(rect) {
+  return {
+    left: Number.isFinite(rect?.left) ? rect.left : 0,
+    top: Number.isFinite(rect?.top) ? rect.top : 0,
+    width: Number.isFinite(rect?.width) ? rect.width : 0,
+    height: Number.isFinite(rect?.height) ? rect.height : 0
+  };
+}
+
+function getRawBoundingClientRect(element) {
+  return normalizeRect(element?.getBoundingClientRect?.());
+}
+
 if (typeof window !== "undefined") {
   window.getVisualViewportState = getVisualViewportState;
   window.getViewportAdjustedBoundingClientRect = getViewportAdjustedBoundingClientRect;
@@ -1169,6 +1186,28 @@ function clientToBoard(event) {
     x: x_canvas / scaleX,
     y: y_canvas / scaleY
   };
+}
+
+function worldToOverlayLocal(x, y, options = {}) {
+  const { overlayRect: providedOverlayRect = null, boardRect: providedBoardRect = null } = options || {};
+  const boardRect = providedBoardRect ? normalizeRect(providedBoardRect) : getRawBoundingClientRect(gsBoardCanvas);
+  const overlayRect = providedOverlayRect ? normalizeRect(providedOverlayRect) : getRawBoundingClientRect(overlayContainer);
+
+  const boardWidth = boardRect.width || 1;
+  const boardHeight = boardRect.height || 1;
+  const boardLeft = boardRect.left;
+  const boardTop = boardRect.top;
+  const safeX = Number.isFinite(x) ? x : 0;
+  const safeY = Number.isFinite(y) ? y : 0;
+  const nx = safeX / WORLD.width;
+  const ny = safeY / WORLD.height;
+  const clientX = boardLeft + nx * boardWidth;
+  const clientY = boardTop + ny * boardHeight;
+
+  const overlayX = clientX - overlayRect.left;
+  const overlayY = clientY - overlayRect.top;
+
+  return { clientX, clientY, overlayX, overlayY, nx, ny, boardRect, overlayRect };
 }
 
 function worldToOverlay(x, y, options = {}) {
@@ -1562,8 +1601,8 @@ function resolvePlaneFlameMetrics(context = 'plane flame') {
     return null;
   }
 
-  const boardRect = getViewportAdjustedBoundingClientRect(gsBoardCanvas);
-  const overlayRect = getViewportAdjustedBoundingClientRect(overlayContainer);
+  const boardRect = getRawBoundingClientRect(gsBoardCanvas);
+  const overlayRect = getRawBoundingClientRect(overlayContainer);
   const host = ensurePlaneFlameHost();
 
   if (!(host instanceof HTMLElement)) {
@@ -1585,7 +1624,7 @@ function resolvePlaneFlameMetrics(context = 'plane flame') {
     return null;
   }
 
-  const hostRect = getViewportAdjustedBoundingClientRect(host);
+  const hostRect = getRawBoundingClientRect(host);
   if (!hostRect || hostRect.width <= FX_HOST_MIN_SIZE || hostRect.height <= FX_HOST_MIN_SIZE) {
     console.warn(`[FX] Skipping ${context}: host rect invalid`, { hostRect });
     return null;
@@ -1602,7 +1641,7 @@ function resolvePlaneFlameMetrics(context = 'plane flame') {
 
   warnIfFxHostMismatch(usableBoardRect, hostRect, context);
 
-  return { boardRect: usableBoardRect, hostRect, host };
+  return { boardRect: usableBoardRect, overlayRect, hostRect };
 }
 
 function getFlameDisplaySize(plane) {
@@ -1993,6 +2032,13 @@ function spawnBurningFlameFx(plane) {
   }
 }
 
+function logPlaneFlameDebug(payload = {}) {
+  if (!(DEBUG_LAYOUT || DEBUG_FX)) return;
+  if (planeFlameDebugState.logged >= 5) return;
+  planeFlameDebugState.logged += 1;
+  console.log('[fx:flame]', payload);
+}
+
 function updatePlaneFlameFxPosition(plane, metrics) {
   const entry = planeFlameFx.get(plane);
   const element = entry?.element || entry;
@@ -2007,9 +2053,13 @@ function updatePlaneFlameFxPosition(plane, metrics) {
     return;
   }
 
-  const { boardRect, hostRect } = data;
+  const { boardRect, hostRect, overlayRect } = data;
 
-  if (!boardRect || !hostRect) {
+  if (!boardRect || !hostRect || !overlayRect) {
+    return;
+  }
+
+  if (overlayRect.width <= 0 || overlayRect.height <= 0) {
     return;
   }
 
@@ -2020,14 +2070,21 @@ function updatePlaneFlameFxPosition(plane, metrics) {
     return;
   }
 
-  const { clientX, clientY } = worldToOverlay(x, y, { boardRect });
-  const left = clientX - hostRect.left;
-  const top = clientY - hostRect.top;
+  const { clientX, clientY, overlayX, overlayY } = worldToOverlayLocal(x, y, { boardRect, overlayRect });
 
-  element.style.left = Math.round(left) + 'px';
-  element.style.top = Math.round(top) + 'px';
+  element.style.left = Math.round(overlayX) + 'px';
+  element.style.top = Math.round(overlayY) + 'px';
 
-  logPlaneFlamePosition(plane, data, { clientX, clientY }, { left, top });
+  logPlaneFlameDebug({
+    plane: plane?.color || plane?.id || 'unknown',
+    planePos: { x: Math.round(x), y: Math.round(y) },
+    overlayPoint: { x: Math.round(overlayX), y: Math.round(overlayY) },
+    clientPoint: { x: Math.round(clientX), y: Math.round(clientY) },
+    boardRect: normalizeRect(boardRect),
+    overlayRect: normalizeRect(overlayRect),
+    hostRect: normalizeRect(hostRect),
+    planeCanvasRect: normalizeRect(planeCanvas?.getBoundingClientRect?.())
+  });
 }
 
 function updateAllPlaneFlameFxPositions() {
