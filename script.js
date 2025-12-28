@@ -4982,7 +4982,7 @@ function gameDraw(){
 
   drawFieldEdges(gsBoardCtx, WORLD.width, WORLD.height);
 
-  drawFlags();
+  drawBaseVisuals();
 
 
   // установки ПВО
@@ -5099,6 +5099,9 @@ function gameDraw(){
 
   // самолёты + их трейлы
   drawPlanesAndTrajectories();
+
+  // Флаги рисуются после обломков самолётов, чтобы не прятаться под ними
+  drawFlagMarkers();
 
   // Взрывы поверх поля и под HUD
   updateAndDrawExplosions(gsBoardCtx, now);
@@ -5898,7 +5901,7 @@ function drawFlagSprite(ctx2d, color, { anchor = null } = {}){
   return false;
 }
 
-function drawFlags(){
+function drawBaseVisuals(){
   const baseColors = ["blue", "green"];
 
   for(const color of baseColors){
@@ -5919,7 +5922,9 @@ function drawFlags(){
       gsBoardCtx.restore();
     }
   }
+}
 
+function drawFlagMarkers(){
   if(!blueFlagCarrier){
     if(blueFlagDroppedAt){
       drawFlagSprite(gsBoardCtx, "blue", { anchor: blueFlagDroppedAt });
