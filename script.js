@@ -407,13 +407,13 @@ const ALL_EXPLOSION_SPRITES = [
 ];
 
 const FLAG_SPRITE_PATHS = {
-  blue: "ui_gamescreen/flags_and_bases/flag_blue_nest.png",
-  green: "ui_gamescreen/flags_and_bases/flag_green_corn.png",
+  blue: "ui_gamescreen/flags and bases colored/flag_blue_nest.png.png",
+  green: "ui_gamescreen/flags and bases colored/flag_green_corn.png.png",
 };
 
 const BASE_SPRITE_PATHS = {
-  blue: "ui_gamescreen/flags_and_bases/blue_base.png",
-  green: "ui_gamescreen/flags_and_bases/green_base.png",
+  blue: "ui_gamescreen/flags and bases colored/blue_base.png.png",
+  green: "ui_gamescreen/flags and bases colored/green_base.png.png",
 };
 
 const PRELOAD_IMAGE_URLS = [
