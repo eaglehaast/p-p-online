@@ -4686,7 +4686,6 @@ function handleAAForPlane(p, fp){
       aa.hp--;
       if(aa.hp<=0){
         aaUnits = aaUnits.filter(a=>a!==aa);
-        addScore(p.color, 1);
       }
       continue;
     }
@@ -6186,9 +6185,7 @@ function updateAndDrawExplosions(ctx, now) {
 
 /* ======= HITS / VICTORY ======= */
 function awardPoint(color){
-  if(isGameOver) return;
-  const scoringColor = color === "blue" ? "green" : "blue";
-  addScore(scoringColor, 1);
+  return; // No points for plane or AA kills; scoring is tied to flag captures only.
 }
 function checkPlaneHits(plane, fp){
   if(isGameOver) return;
@@ -6221,15 +6218,6 @@ function checkPlaneHits(plane, fp){
       if(p.flagColor){
         const flagColor = p.flagColor;
         const stolenBy = flagColor === "blue" ? blueFlagStolenBy : greenFlagStolenBy;
-        if(stolenBy){
-          if(plane.color === flagColor){
-            addScore(stolenBy, -1);
-            addScore(flagColor, 1);
-          } else {
-            addScore(stolenBy, 1);
-            addScore(flagColor, -1);
-          }
-        }
         plane.flagColor = flagColor;
         if(flagColor === "blue"){
           blueFlagCarrier = plane;
@@ -6263,19 +6251,12 @@ function handleFlagInteractions(plane){
         greenFlagCarrier = plane;
         greenFlagStolenBy = plane.color;
       }
-      addScore(plane.color, 2);
     }
   } else {
     const distOwn = Math.hypot(plane.x - ownBase.anchor.x, plane.y - ownBase.anchor.y);
     if(distOwn < ownBase.radius){
       if(plane.flagColor !== plane.color){
-        addScore(plane.color, 3);
-      } else {
-        const stolenBy = plane.flagColor === "blue" ? blueFlagStolenBy : greenFlagStolenBy;
-        if(stolenBy){
-          addScore(stolenBy, -1);
-          addScore(plane.color, 1);
-        }
+        addScore(plane.color, 5);
       }
       if(plane.flagColor === "blue"){
         blueFlagCarrier = null;
