@@ -5871,9 +5871,26 @@ function drawFlag(ctx2d, x, y, color){
   ctx2d.restore();
 }
 
-function drawFlagSprite(ctx2d, color){
-  const layout = getFlagLayout(color);
+function getFlagSpriteLayoutForPlacement(color, anchor = null){
+  const baseLayout = getFlagLayout(color);
   const sprite = flagSprites[color];
+  const width = baseLayout?.width ?? sprite?.naturalWidth ?? FLAG_WIDTH;
+  const height = baseLayout?.height ?? sprite?.naturalHeight ?? (FLAG_POLE_HEIGHT + FLAG_HEIGHT);
+
+  if(anchor && Number.isFinite(anchor.x) && Number.isFinite(anchor.y)){
+    return { x: anchor.x - width / 2, y: anchor.y - height, width, height };
+  }
+
+  if(baseLayout){
+    return baseLayout;
+  }
+
+  return null;
+}
+
+function drawFlagSprite(ctx2d, color, { anchor = null } = {}){
+  const sprite = flagSprites[color];
+  const layout = getFlagSpriteLayoutForPlacement(color, anchor);
   if(layout && isSpriteReady(sprite)){
     ctx2d.drawImage(sprite, layout.x, layout.y, layout.width, layout.height);
     return true;
@@ -5905,7 +5922,7 @@ function drawFlags(){
 
   if(!blueFlagCarrier){
     if(blueFlagDroppedAt){
-      drawFlag(gsBoardCtx, blueFlagDroppedAt.x, blueFlagDroppedAt.y, "blue");
+      drawFlagSprite(gsBoardCtx, "blue", { anchor: blueFlagDroppedAt });
     } else {
       const hasSprite = drawFlagSprite(gsBoardCtx, "blue");
       if(!hasSprite){
@@ -5918,7 +5935,7 @@ function drawFlags(){
   }
   if(!greenFlagCarrier){
     if(greenFlagDroppedAt){
-      drawFlag(gsBoardCtx, greenFlagDroppedAt.x, greenFlagDroppedAt.y, "green");
+      drawFlagSprite(gsBoardCtx, "green", { anchor: greenFlagDroppedAt });
     } else {
       const hasSprite = drawFlagSprite(gsBoardCtx, "green");
       if(!hasSprite){
