@@ -430,13 +430,13 @@ const ALL_EXPLOSION_SPRITES = [
 ];
 
 const FLAG_SPRITE_PATHS = {
-  blue: "ui_gamescreen/flags and bases colored/flag_blue_nest.png.png",
-  green: "ui_gamescreen/flags and bases colored/flag_green_corn.png.png",
+  blue: "ui_gamescreen/flags and bases colored/flag_blue_nest.png",
+  green: "ui_gamescreen/flags and bases colored/flag_green_corn.png",
 };
 
 const BASE_SPRITE_PATHS = {
-  blue: "ui_gamescreen/flags and bases colored/blue_base.png.png",
-  green: "ui_gamescreen/flags and bases colored/green_base.png.png",
+  blue: "ui_gamescreen/flags and bases colored/blue_base.png",
+  green: "ui_gamescreen/flags and bases colored/green_base.png",
 };
 
 const PRELOAD_IMAGE_URLS = [
@@ -496,9 +496,11 @@ const PRELOAD_IMAGE_URLS = [
 
 function installImageWatch(img, url, label) {
   if (!img) return;
+  const normalizedUrl = normalizeAssetUrl(url);
   setTimeout(() => {
-    if (!img.complete || !img.naturalWidth) {
-      console.warn("[asset][stuck]", { label, url });
+    const stillPending = pendingImageLoads.has(normalizedUrl);
+    if (stillPending) {
+      console.warn("[asset][stuck]", { label, url: normalizedUrl });
     }
   }, 10000);
 
@@ -521,7 +523,8 @@ function hideLoadingOverlay() {
 }
 
 const IMAGE_LOAD_TIMEOUT_MS = 8000;
-const pendingImageLoads = new Set();
+const pendingImageLoads = new Map();
+const imageLoadPromises = new Map();
 
 const DEBUG_ASSETS = true;
 const imageCache = new Map();
@@ -532,7 +535,9 @@ let duplicateAttemptsCount = 0;
 
 function normalizeAssetUrl(url) {
   if (typeof url !== "string") return "";
-  return url.trim();
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  return trimmed.replace(/(\.png|\.gif)(?:\1)+$/i, "$1");
 }
 
 function applyImageOptions(img, options = {}) {
@@ -564,7 +569,6 @@ function getImage(url, label = "", options = {}) {
   const stack = new Error().stack;
 
   if (existing) {
-    logDuplicateRequest(label, normalizedUrl, stack);
     applyImageOptions(existing, options);
     return { img: existing, isNew: false, url: normalizedUrl };
   }
@@ -580,30 +584,33 @@ function getImage(url, label = "", options = {}) {
 
 function primeImageLoad(img, url, label = "", options = {}) {
   const normalizedUrl = normalizeAssetUrl(url);
-  if (!img || !normalizedUrl || startedImageLoads.has(normalizedUrl)) {
-    return;
+  if (!img || !normalizedUrl) {
+    return null;
   }
 
-  const { track = true, watch = true, timeoutMs } = options;
+  const { watch = true, timeoutMs } = options;
+  const loadPromise = ensureImageLoadPromise(normalizedUrl, label, img, timeoutMs);
 
-  if (track) {
-    trackImageLoad(label, normalizedUrl, img, timeoutMs);
-  }
   if (watch) {
     installImageWatch(img, normalizedUrl, label);
   }
 
-  startedImageLoads.add(normalizedUrl);
-  img.src = normalizedUrl;
+  if (!startedImageLoads.has(normalizedUrl)) {
+    startedImageLoads.add(normalizedUrl);
+    img.src = normalizedUrl;
+  }
+
+  return loadPromise;
 }
 
 function loadImageAsset(url, label = "", options = {}) {
   const { img, isNew, url: normalizedUrl } = getImage(url, label, options);
   if (!img || !normalizedUrl) {
-    return { img: null, isNew: false };
+    return { img: null, isNew: false, promise: Promise.resolve(null) };
   }
+  const promise = ensureImageLoadPromise(normalizedUrl, label, img, options.timeoutMs);
   primeImageLoad(img, normalizedUrl, label, options);
-  return { img, isNew };
+  return { img, isNew, promise };
 }
 
 if (typeof window !== "undefined") {
@@ -626,39 +633,119 @@ if (typeof window !== "undefined") {
 
 function trackImageLoad(label, url, img, timeoutMs = IMAGE_LOAD_TIMEOUT_MS) {
   if (!img) {
-    return;
+    return Promise.resolve({ status: "skipped", url });
   }
+
   const normalizedUrl = typeof url === "string" ? url : "";
-  const pendingEntry = { label, url: normalizedUrl };
-  pendingImageLoads.add(pendingEntry);
-  console.log("[IMG] pending", { label, url: normalizedUrl, pending: pendingImageLoads.size });
-
-  let timeoutId = null;
-  if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
-    timeoutId = setTimeout(() => {
-      if (pendingImageLoads.has(pendingEntry)) {
-        console.warn("[IMG] timeout", { label, url: normalizedUrl, pending: pendingImageLoads.size });
-      }
-    }, timeoutMs);
+  const existingPending = pendingImageLoads.get(normalizedUrl);
+  if (existingPending) {
+    if (label) {
+      existingPending.labels.add(label);
+    }
+    return existingPending.promise;
   }
 
-  const finalize = (status, event) => {
-    if (!pendingImageLoads.has(pendingEntry)) {
-      return;
-    }
-    pendingImageLoads.delete(pendingEntry);
+  const labels = new Set(label ? [label] : []);
+  const pendingEntry = {
+    labels,
+    url: normalizedUrl,
+    promise: null,
+    onLoad: null,
+    onError: null
+  };
+  let settled = false;
+  let timeoutId = null;
+
+  const cleanup = (entry) => {
     if (timeoutId) {
       clearTimeout(timeoutId);
     }
-    if (status === "error") {
-      console.warn("[IMG] error", { label, url: normalizedUrl, pending: pendingImageLoads.size, event });
-      return;
-    }
-    console.log("[IMG] load", { label, url: normalizedUrl, pending: pendingImageLoads.size });
+    img.removeEventListener("load", entry.onLoad);
+    img.removeEventListener("error", entry.onError);
+    pendingImageLoads.delete(normalizedUrl);
   };
 
-  img.addEventListener("load", event => finalize("load", event), { once: true });
-  img.addEventListener("error", event => finalize("error", event), { once: true });
+  const promise = new Promise((resolve, reject) => {
+    const finalize = (status, event) => {
+      if (settled) return;
+      settled = true;
+      cleanup(pendingEntry);
+      const payload = { labels: Array.from(labels), url: normalizedUrl, pending: pendingImageLoads.size };
+      if (status === "load") {
+        console.log("[IMG] load", payload);
+        resolve({ status: "loaded", url: normalizedUrl, event });
+        return;
+      }
+
+      const reason = status === "timeout"
+        ? new Error(`Image load timeout for ${normalizedUrl}`)
+        : new Error(`Image load error for ${normalizedUrl}`);
+      reason.status = status;
+      console.warn(`[IMG] ${status}`, { ...payload, event });
+      reject(reason);
+    };
+
+    pendingEntry.onLoad = event => finalize("load", event);
+    pendingEntry.onError = event => finalize("error", event);
+
+    pendingImageLoads.set(normalizedUrl, pendingEntry);
+    console.log("[IMG] pending", { labels: Array.from(labels), url: normalizedUrl, pending: pendingImageLoads.size });
+
+    img.addEventListener("load", pendingEntry.onLoad, { once: true });
+    img.addEventListener("error", pendingEntry.onError, { once: true });
+
+    if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+      timeoutId = setTimeout(() => finalize("timeout"), timeoutMs);
+    }
+  });
+  imageLoadPromises.set(normalizedUrl, promise);
+  pendingEntry.promise = promise;
+  return promise;
+}
+
+function ensureImageLoadPromise(url, label, img, timeoutMs) {
+  if (!url) return Promise.resolve({ status: "skipped", url });
+  if (pendingImageLoads.has(url)) {
+    const pending = pendingImageLoads.get(url);
+    if (label) {
+      pending.labels.add(label);
+    }
+    return pending.promise;
+  }
+  if (imageLoadPromises.has(url)) {
+    return imageLoadPromises.get(url);
+  }
+  const promise = trackImageLoad(label, url, img, timeoutMs);
+  imageLoadPromises.set(url, promise);
+  return promise;
+}
+
+async function awaitCriticalPreload(timeoutMs = IMAGE_LOAD_TIMEOUT_MS) {
+  console.log("[PRELOAD] critical image list", PRELOAD_IMAGE_URLS);
+
+  const results = await Promise.all(PRELOAD_IMAGE_URLS.map(src => {
+    if (!src) {
+      return Promise.resolve({ url: src, status: "skipped" });
+    }
+
+    const { img, url, promise } = loadImageAsset(src, "criticalPreload", { timeoutMs });
+    if (!img || !url) {
+      return Promise.resolve({ url: src, status: "skipped" });
+    }
+
+    return promise
+      .then(() => ({ url, status: "loaded" }))
+      .catch(error => ({ url, status: "failed", error }));
+  }));
+
+  const summary = {
+    loaded: results.filter(r => r.status === "loaded").map(r => r.url),
+    failed: results.filter(r => r.status === "failed").map(r => r.url),
+    skipped: results.filter(r => r.status === "skipped").map(r => r.url)
+  };
+
+  console.log("[PRELOAD] summary", summary);
+  return summary;
 }
 
 function preloadCriticalImages() {
@@ -667,57 +754,15 @@ function preloadCriticalImages() {
   }
 
   const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-  const MAX_OVERLAY_TIME_MS = 5000;
   const MIN_OVERLAY_TIME_MS = 300;
 
   loadingOverlay.classList.remove("loading-overlay--hidden");
 
-  console.log("[PRELOAD] critical image list", PRELOAD_IMAGE_URLS);
-  let pending = 0;
-  let loaded = 0;
-  let lastCompleted = null;
-
-  const preloadTasks = PRELOAD_IMAGE_URLS.map(src => new Promise(resolve => {
-    if (!src) {
-      resolve();
-      return;
-    }
-
-    const { img, isNew, url } = getImage(src, "criticalPreload");
-    if (!img || !url) {
-      resolve();
-      return;
-    }
-
-    pending += 1;
-    console.log("[PRELOAD] pending++", { pending, loaded, lastCompleted, url });
-
-    const done = () => {
-      loaded += 1;
-      lastCompleted = url;
-      console.log("[PRELOAD] loaded++", { pending, loaded, lastCompleted });
-      resolve();
-    };
-
-    img.addEventListener("load", done, { once: true });
-    img.addEventListener("error", done, { once: true });
-
-    if (isSpriteReady(img)) {
-      done();
-      return;
-    }
-
-    primeImageLoad(img, url, "criticalPreload");
-  }));
-
-  const preloadPromise = Promise.allSettled(preloadTasks);
+  const preloadPromise = awaitCriticalPreload();
   const minDurationPromise = wait(MIN_OVERLAY_TIME_MS);
-  const preloadOrTimeoutPromise = Promise.race([
-    preloadPromise,
-    wait(MAX_OVERLAY_TIME_MS)
-  ]);
 
-  return Promise.all([preloadOrTimeoutPromise, minDurationPromise])
+  return Promise.all([preloadPromise, minDurationPromise])
+    .then(([summary]) => summary)
     .finally(hideLoadingOverlay);
 }
 
@@ -7489,12 +7534,28 @@ function lockOrientation(){
 lockOrientation();
 window.addEventListener('orientationchange', lockOrientation);
 
-  /* ======= BOOTSTRAP ======= */
-  async function bootstrapGame(){
-    updateUiScale();
-    sizeAndAlignOverlays();
-    resizeCanvas();
-    resetGame();
-  }
+/* ======= BOOTSTRAP ======= */
+const stylesReadyPromise = (async () => {
+  const cssReady = new Promise(resolve => {
+    if (document.readyState === 'complete') {
+      resolve();
+      return;
+    }
+    window.addEventListener('load', resolve, { once: true });
+  });
+  const fontsReady = typeof document !== 'undefined' && document.fonts
+    ? document.fonts.ready.catch(() => {})
+    : Promise.resolve();
+  await Promise.all([cssReady, fontsReady]);
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+})();
 
-bootstrapGame();
+async function bootstrapGame(){
+  await stylesReadyPromise;
+  updateUiScale();
+  sizeAndAlignOverlays();
+  resizeCanvas();
+  resetGame();
+}
+
+stylesReadyPromise.then(bootstrapGame);
