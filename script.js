@@ -7589,27 +7589,11 @@ window.addEventListener('orientationchange', lockOrientation);
 
   /* ======= BOOTSTRAP ======= */
   function waitForStylesReady() {
-    const stylesheetLinks = Array.from(document.querySelectorAll('link[rel="stylesheet"][href]'));
+    if (document.readyState === 'complete') return Promise.resolve();
 
-    if (stylesheetLinks.length === 0) return Promise.resolve();
-
-    const isSheetReady = (sheet) => {
-      if (!sheet) return false;
-      try {
-        return !!sheet.cssRules;
-      } catch (err) {
-        return false;
-      }
-    };
-
-    return Promise.all(
-      stylesheetLinks.map((link) => new Promise((resolve) => {
-        if (isSheetReady(link.sheet)) return resolve();
-        const onReady = () => resolve();
-        link.addEventListener('load', onReady, { once: true });
-        link.addEventListener('error', onReady, { once: true });
-      }))
-    );
+    return new Promise((resolve) => {
+      window.addEventListener('load', resolve, { once: true });
+    });
   }
 
   async function bootstrapGame(){
