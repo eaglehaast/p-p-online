@@ -439,8 +439,8 @@ const BASE_SPRITE_PATHS = {
   green: "ui_gamescreen/flags and bases colored/green_base.png.png",
 };
 
-const PRELOAD_IMAGE_URLS = [
-  // Main menu
+const MENU_CRITICAL = [
+  "ui_mainmenu/mm_background.png",
   "ui_mainmenu/mm_hotseat_Default.png",
   "ui_mainmenu/mm_hotseat_Active.png",
   "ui_mainmenu/mm_computer_default.png",
@@ -452,8 +452,10 @@ const PRELOAD_IMAGE_URLS = [
   "ui_mainmenu/mm_classicrules_default.png",
   "ui_mainmenu/mm_classicrules_active.png",
   "ui_mainmenu/mm_advancedsettings_default.png",
-  "ui_mainmenu/mm_advancedsettings_active.png",
+  "ui_mainmenu/mm_advancedsettings_active.png"
+];
 
+const GAME_ASSETS = [
   // Control panel
   "ui_controlpanel/cp_background.png",
   "ui_controlpanel/cp_frame_add.png",
@@ -494,6 +496,14 @@ const PRELOAD_IMAGE_URLS = [
   ...ALL_EXPLOSION_SPRITES
 ];
 
+let menuAssetsReady = false;
+let gameAssetsReady = false;
+let isPreloadVisible = false;
+let gameAssetsPromise = null;
+let gameAssetsResults = [];
+
+const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 function installImageWatch(img, url, label) {
   if (!img) return;
   setTimeout(() => {
@@ -511,6 +521,13 @@ function installImageWatch(img, url, label) {
   };
 }
 
+function showLoadingOverlay() {
+  if (loadingOverlay) {
+    loadingOverlay.classList.remove("loading-overlay--hidden");
+    isPreloadVisible = true;
+  }
+}
+
 function hideLoadingOverlay() {
   if (bootTrace.startTs !== null) {
     logBootStep("hideLoadingOverlay");
@@ -518,6 +535,7 @@ function hideLoadingOverlay() {
   if (loadingOverlay) {
     loadingOverlay.classList.add("loading-overlay--hidden");
   }
+  isPreloadVisible = false;
 }
 
 const IMAGE_LOAD_TIMEOUT_MS = 8000;
@@ -661,67 +679,115 @@ function trackImageLoad(label, url, img, timeoutMs = IMAGE_LOAD_TIMEOUT_MS) {
   img.addEventListener("error", event => finalize("error", event), { once: true });
 }
 
-function preloadCriticalImages() {
-  if (!loadingOverlay) {
-    return Promise.resolve();
+function preloadImages(assetList = [], { timeoutMs = IMAGE_LOAD_TIMEOUT_MS } = {}) {
+  if (!Array.isArray(assetList) || assetList.length === 0) {
+    return Promise.resolve([]);
   }
 
-  const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-  const MAX_OVERLAY_TIME_MS = 5000;
-  const MIN_OVERLAY_TIME_MS = 300;
-
-  loadingOverlay.classList.remove("loading-overlay--hidden");
-
-  console.log("[PRELOAD] critical image list", PRELOAD_IMAGE_URLS);
-  let pending = 0;
-  let loaded = 0;
-  let lastCompleted = null;
-
-  const preloadTasks = PRELOAD_IMAGE_URLS.map(src => new Promise(resolve => {
-    if (!src) {
-      resolve();
+  return Promise.all(assetList.map(src => new Promise(resolve => {
+    const normalizedSrc = normalizeAssetUrl(src);
+    if (!normalizedSrc) {
+      resolve({ url: normalizedSrc, status: "skipped" });
       return;
     }
 
-    const { img, isNew, url } = getImage(src, "criticalPreload");
+    const { img, url } = getImage(normalizedSrc, "criticalPreload");
     if (!img || !url) {
-      resolve();
+      resolve({ url: normalizedSrc, status: "skipped" });
       return;
     }
 
-    pending += 1;
-    console.log("[PRELOAD] pending++", { pending, loaded, lastCompleted, url });
-
-    const done = () => {
-      loaded += 1;
-      lastCompleted = url;
-      console.log("[PRELOAD] loaded++", { pending, loaded, lastCompleted });
-      resolve();
+    let settled = false;
+    const finalize = (status) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      resolve({ url, status });
     };
 
-    img.addEventListener("load", done, { once: true });
-    img.addEventListener("error", done, { once: true });
+    const timeoutId = Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? setTimeout(() => finalize("timeout"), timeoutMs)
+      : null;
+
+    img.addEventListener("load", () => finalize("fulfilled"), { once: true });
+    img.addEventListener("error", () => finalize("rejected"), { once: true });
 
     if (isSpriteReady(img)) {
-      done();
+      finalize("fulfilled");
       return;
     }
 
     primeImageLoad(img, url, "criticalPreload");
-  }));
-
-  const preloadPromise = Promise.allSettled(preloadTasks);
-  const minDurationPromise = wait(MIN_OVERLAY_TIME_MS);
-  const preloadOrTimeoutPromise = Promise.race([
-    preloadPromise,
-    wait(MAX_OVERLAY_TIME_MS)
-  ]);
-
-  return Promise.all([preloadOrTimeoutPromise, minDurationPromise])
-    .finally(hideLoadingOverlay);
+  })));
 }
 
-preloadCriticalImages();
+function preloadGameAssetsInBackground() {
+  if (gameAssetsPromise) {
+    return gameAssetsPromise;
+  }
+
+  const start = performance.now();
+  console.log("[BOOT] game preload start", { ms: 0 });
+
+  gameAssetsPromise = preloadImages(GAME_ASSETS)
+    .then((results) => {
+      gameAssetsReady = true;
+      gameAssetsResults = Array.isArray(results) ? results : [];
+      console.log("[BOOT] game preload end", { ms: Math.round(performance.now() - start) });
+      return results;
+    })
+    .catch((err) => {
+      console.warn("[BOOT] game preload error", err);
+      gameAssetsReady = true;
+      gameAssetsResults = [];
+      console.log("[BOOT] game preload end", { ms: Math.round(performance.now() - start) });
+      return [];
+    });
+
+  return gameAssetsPromise;
+}
+
+function startMenuPreload() {
+  const MAX_OVERLAY_TIME_MS = 5000;
+  const MIN_OVERLAY_TIME_MS = 300;
+  const start = performance.now();
+
+  console.log("[BOOT] menu preload start", { ms: 0 });
+  if (loadingOverlay) {
+    showLoadingOverlay();
+  }
+
+  const preloadPromise = preloadImages(MENU_CRITICAL);
+
+  if (loadingOverlay) {
+    Promise.all([
+      Promise.race([preloadPromise, wait(MAX_OVERLAY_TIME_MS)]),
+      wait(MIN_OVERLAY_TIME_MS)
+    ]).finally(() => {
+      if (isPreloadVisible) {
+        hideLoadingOverlay();
+      }
+    });
+  }
+
+  preloadPromise.then((results) => {
+    menuAssetsReady = true;
+    console.log("[BOOT] menu preload end", { ms: Math.round(performance.now() - start) });
+    preloadGameAssetsInBackground();
+    return results;
+  }).catch((err) => {
+    console.warn("[BOOT] menu preload error", err);
+    menuAssetsReady = true;
+    console.log("[BOOT] menu preload end", { ms: Math.round(performance.now() - start) });
+    preloadGameAssetsInBackground();
+  });
+
+  return preloadPromise;
+}
+
+startMenuPreload();
 
 const testControlPanel = document.getElementById("testControlPanel");
 const testControlsToggle = document.getElementById("testControlsToggle");
@@ -4064,7 +4130,7 @@ function updateModeSelection(){
   syncPlayButtonSkin(ready);
 }
 
-playBtn.addEventListener("click",()=>{
+playBtn.addEventListener("click",async ()=>{
   if(!selectedMode){
     alert("Please select a game mode before starting.");
     return;
@@ -4072,8 +4138,40 @@ playBtn.addEventListener("click",()=>{
   bootTrace.startTs = performance.now();
   bootTrace.markers = [];
   gameDrawFirstLogged = false;
-  console.log("[boot] play click", { t: 0 });
+  const readyAtClick = gameAssetsReady;
+  console.log("[BOOT] play pressed", { gameReady: readyAtClick });
   gameMode = selectedMode;
+
+  if (readyAtClick && Array.isArray(gameAssetsResults)) {
+    const failedReady = gameAssetsResults.filter(entry => entry && entry.status && entry.status !== "fulfilled");
+    if (failedReady.length) {
+      console.warn("[BOOT] game preload missing", { assets: failedReady.map(entry => entry.url).filter(Boolean) });
+    }
+  }
+
+  if (!gameAssetsReady) {
+    const pending = preloadGameAssetsInBackground();
+    if (!isPreloadVisible && loadingOverlay) {
+      showLoadingOverlay();
+    }
+
+    const results = await pending.catch((err) => {
+      console.warn("[BOOT] game preload wait error", err);
+      return [];
+    });
+
+    const failedAssets = Array.isArray(results)
+      ? results.filter(entry => entry && entry.status && entry.status !== "fulfilled")
+      : [];
+    if (failedAssets.length) {
+      console.warn("[BOOT] game preload missing", { assets: failedAssets.map(entry => entry.url).filter(Boolean) });
+    }
+
+    if (loadingOverlay && isPreloadVisible) {
+      hideLoadingOverlay();
+    }
+  }
+
   restoreGameBackgroundAfterMenu();
   setMenuVisibility(false);
   activateGameScreen();
@@ -7490,7 +7588,32 @@ lockOrientation();
 window.addEventListener('orientationchange', lockOrientation);
 
   /* ======= BOOTSTRAP ======= */
+  function waitForStylesReady() {
+    const stylesheetLinks = Array.from(document.querySelectorAll('link[rel="stylesheet"][href]'));
+
+    if (stylesheetLinks.length === 0) return Promise.resolve();
+
+    const isSheetReady = (sheet) => {
+      if (!sheet) return false;
+      try {
+        return !!sheet.cssRules;
+      } catch (err) {
+        return false;
+      }
+    };
+
+    return Promise.all(
+      stylesheetLinks.map((link) => new Promise((resolve) => {
+        if (isSheetReady(link.sheet)) return resolve();
+        const onReady = () => resolve();
+        link.addEventListener('load', onReady, { once: true });
+        link.addEventListener('error', onReady, { once: true });
+      }))
+    );
+  }
+
   async function bootstrapGame(){
+    await waitForStylesReady();
     updateUiScale();
     sizeAndAlignOverlays();
     resizeCanvas();
