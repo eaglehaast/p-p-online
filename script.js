@@ -471,12 +471,12 @@ const GAME_ASSETS = [
   "ui_controlpanel/cp_button_exit.png",
 
   // Plane sprites
-  "planes/blue plane 25-optima.png",
-  "planes/green plane 4 optima.png",
-  "planes/blue counter 6.png",
-  "planes/green counter 6.png",
-  "planes/blue plane fall.png",
-  "planes/green plane fall.png",
+  "ui_gamescreen/PLANES/plane_blue.png",
+  "ui_gamescreen/PLANES/plane_green.png",
+  "ui_gamescreen/PLANES/counter_plane_blue.png",
+  "ui_gamescreen/PLANES/counter_plane_green.png",
+  "ui_gamescreen/PLANES/plane_blue_fall.png",
+  "ui_gamescreen/PLANES/plane_green_fall.png",
 
   // Game field background
   "background paper 1.png",
@@ -2518,12 +2518,12 @@ const noBtn       = document.getElementById("noButton");
 
 // Images for planes (static PNG sprites)
 const PLANE_ASSET_PATHS = {
-  blue: "planes/blue plane 25-optima.png",
-  green: "planes/green plane 4 optima.png",
-  blueCounter: "planes/blue counter 6.png",
-  greenCounter: "planes/green counter 6.png",
-  blueWreck: "planes/blue plane fall.png",
-  greenWreck: "planes/green plane fall.png"
+  blue: "ui_gamescreen/PLANES/plane_blue.png",
+  green: "ui_gamescreen/PLANES/plane_green.png",
+  blueCounter: "ui_gamescreen/PLANES/counter_plane_blue.png",
+  greenCounter: "ui_gamescreen/PLANES/counter_plane_green.png",
+  blueWreck: "ui_gamescreen/PLANES/plane_blue_fall.png",
+  greenWreck: "ui_gamescreen/PLANES/plane_green_fall.png"
 };
 
 let bluePlaneImg = null;
