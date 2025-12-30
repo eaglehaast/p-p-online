@@ -7406,7 +7406,7 @@ function startNewRound(){
     syncAimCanvasLayout();
   });
 
-  setBackgroundImage('ui_gamescreen/background behind the canvas 5.png');
+  setBackgroundImage('ui_gamescreen/gamescreen_outside/gs_background.png');
 
   initPoints(); // ориентации на базе
   blueFlagCarrier = null;
