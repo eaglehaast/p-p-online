@@ -188,6 +188,24 @@ body, button {
     z-index: 30;
   }
 
+  .score-container {
+    position: absolute;
+    pointer-events: none;
+    z-index: 35;
+    width: 70px;
+    height: 40px;
+  }
+
+  #blueScoreContainer {
+    left: 16px;
+    top: 16px;
+  }
+
+  #greenScoreContainer {
+    right: 16px;
+    top: 16px;
+  }
+
   #gs_planecounter_green {
     left: 411px;
     top: 416px;
