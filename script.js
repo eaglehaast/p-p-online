@@ -684,8 +684,23 @@ function preloadImages(assetList = [], { timeoutMs = IMAGE_LOAD_TIMEOUT_MS } = {
     return Promise.resolve([]);
   }
 
-  return Promise.all(assetList.map(src => new Promise(resolve => {
+  const uniqueAssets = [];
+  const seenAssets = new Set();
+
+  for (const src of assetList) {
     const normalizedSrc = normalizeAssetUrl(src);
+    if (!normalizedSrc || seenAssets.has(normalizedSrc)) {
+      continue;
+    }
+    seenAssets.add(normalizedSrc);
+    uniqueAssets.push(normalizedSrc);
+  }
+
+  if (uniqueAssets.length === 0) {
+    return Promise.resolve([]);
+  }
+
+  return Promise.all(uniqueAssets.map(normalizedSrc => new Promise(resolve => {
     if (!normalizedSrc) {
       resolve({ url: normalizedSrc, status: "skipped" });
       return;
