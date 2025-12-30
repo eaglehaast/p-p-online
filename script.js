@@ -473,8 +473,8 @@ const GAME_ASSETS = [
   // Plane sprites
   "ui_gamescreen/PLANES/plane_blue.png",
   "ui_gamescreen/PLANES/plane_green.png",
-  "ui_gamescreen/PLANES/counter_plane_blue.png",
-  "ui_gamescreen/PLANES/counter_plane_green.png",
+  "ui_gamescreen/gamescreen_outside/planecounter_blue.png",
+  "ui_gamescreen/gamescreen_outside/planecounter_ green.png",
   "ui_gamescreen/PLANES/plane_blue_fall.png",
   "ui_gamescreen/PLANES/plane_green_fall.png",
 
@@ -2535,8 +2535,8 @@ const noBtn       = document.getElementById("noButton");
 const PLANE_ASSET_PATHS = {
   blue: "ui_gamescreen/PLANES/plane_blue.png",
   green: "ui_gamescreen/PLANES/plane_green.png",
-  blueCounter: "ui_gamescreen/PLANES/counter_plane_blue.png",
-  greenCounter: "ui_gamescreen/PLANES/counter_plane_green.png",
+  blueCounter: "ui_gamescreen/gamescreen_outside/planecounter_blue.png",
+  greenCounter: "ui_gamescreen/gamescreen_outside/planecounter_ green.png",
   blueWreck: "ui_gamescreen/PLANES/plane_blue_fall.png",
   greenWreck: "ui_gamescreen/PLANES/plane_green_fall.png"
 };
