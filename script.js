@@ -35,6 +35,7 @@ const menuLayer = document.getElementById("menuLayer");
 const settingsLayer = document.getElementById("settingsLayer");
 const gsFrameLayer = document.getElementById("gsFrame");
 const gsFrameEl = document.getElementById("gameContainer");
+const gameBackgroundEl = document.getElementById("gameBackground") || gsFrameEl;
 const gameScreen = gsFrameLayer || document.getElementById("gameScreen") || gsFrameEl;
 const gsBoardCanvas  = document.getElementById("gameCanvas");
 const gsBoardCtx     = gsBoardCanvas.getContext("2d");
@@ -2405,17 +2406,21 @@ function setMenuVisibility(visible) {
 function hideGameBackgroundForMenu() {
   if (!menuBackgroundSnapshot) {
     menuBackgroundSnapshot = {
-      container: gsFrameEl.style.backgroundImage
+      container: gameBackgroundEl?.style?.backgroundImage
     };
   }
 
-  gsFrameEl.style.backgroundImage = 'none';
+  if (gameBackgroundEl) {
+    gameBackgroundEl.style.backgroundImage = 'none';
+  }
 }
 
 function restoreGameBackgroundAfterMenu() {
   if (!menuBackgroundSnapshot) return;
 
-  gsFrameEl.style.backgroundImage = menuBackgroundSnapshot.container;
+  if (gameBackgroundEl) {
+    gameBackgroundEl.style.backgroundImage = menuBackgroundSnapshot.container;
+  }
 
   menuBackgroundSnapshot = null;
 }
@@ -2648,10 +2653,14 @@ function syncBackgroundLayout(containerWidth, containerHeight, containerLeft = n
 
   const sizeValue = `${containerWidth}px ${containerHeight}px`;
   const repeatedSize = duplicateBackgroundValue(sizeValue);
-  gsFrameEl.style.backgroundSize = repeatedSize;
+  if (gameBackgroundEl) {
+    gameBackgroundEl.style.backgroundSize = repeatedSize;
+  }
 
   const containerPosition = duplicateBackgroundValue('center top');
-  gsFrameEl.style.backgroundPosition = containerPosition;
+  if (gameBackgroundEl) {
+    gameBackgroundEl.style.backgroundPosition = containerPosition;
+  }
 }
 
 function normalizeBackgroundLayer(layer) {
@@ -2680,13 +2689,17 @@ function setBackgroundImage(...imageLayers) {
 
   if (!normalizedLayers.length) {
     currentBackgroundLayerCount = 0;
-    gsFrameEl.style.backgroundImage = 'none';
+    if (gameBackgroundEl) {
+      gameBackgroundEl.style.backgroundImage = 'none';
+    }
     return;
   }
 
   currentBackgroundLayerCount = normalizedLayers.length;
   const backgroundValue = normalizedLayers.join(', ');
-  gsFrameEl.style.backgroundImage = backgroundValue;
+  if (gameBackgroundEl) {
+    gameBackgroundEl.style.backgroundImage = backgroundValue;
+  }
 
   const rect = gsFrameEl.getBoundingClientRect();
   syncBackgroundLayout(rect.width, rect.height);
