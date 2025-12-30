@@ -19,6 +19,7 @@ const DEBUG_AIM = false;
 const DEBUG_PLANE_SHADING = false;
 const DEBUG_FX = false;
 const DEBUG_FLAME_POS = false;
+const DEBUG_LAYERS = false;
 
 const bootTrace = {
   startTs: null,
@@ -216,6 +217,79 @@ function logLayoutDebug() {
   console.log('[layout-debug] transforms', transformStack);
 }
 
+function debugLogLayerStack() {
+  if (!DEBUG_LAYERS) return;
+
+  const summarizeBounds = (el) => {
+    if (!(el instanceof HTMLElement) || typeof el.getBoundingClientRect !== 'function') {
+      return null;
+    }
+    const rect = el.getBoundingClientRect();
+    return {
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height,
+      top: rect.top,
+      left: rect.left,
+      right: rect.right,
+      bottom: rect.bottom
+    };
+  };
+
+  const collectLayerInfo = (el) => {
+    if (!(el instanceof HTMLElement)) return null;
+    const styles = window.getComputedStyle(el);
+    const zIndexStr = styles?.zIndex ?? '';
+    const zIndexNumber = Number.isFinite(Number(zIndexStr)) ? Number(zIndexStr) : null;
+    return {
+      tag: el.tagName?.toLowerCase?.() || '',
+      id: el.id || '',
+      className: el.className || '',
+      styleZIndex: el.style?.zIndex || '',
+      computedZIndex: zIndexStr,
+      zIndexNumber,
+      backgroundImage: styles?.backgroundImage,
+      opacity: styles?.opacity,
+      bounds: summarizeBounds(el)
+    };
+  };
+
+  const candidates = [
+    gsFrameLayer,
+    gsFrameEl,
+    gsBoardCanvas,
+    aimCanvas,
+    overlayContainer,
+    planeCanvas,
+    uiOverlay,
+    hudCanvas,
+    greenPointsPopup,
+    bluePointsPopup,
+    greenPlaneCounter,
+    bluePlaneCounter,
+    hudPlaneStyleProbes,
+    mantisIndicator,
+    goatIndicator,
+    endGameDiv
+  ];
+
+  const layers = candidates
+    .map(collectLayerInfo)
+    .filter(Boolean)
+    .map((layer, index) => ({ order: index, ...layer }));
+
+  const orderedByZ = [...layers].sort((a, b) => {
+    const aZ = a.zIndexNumber ?? -Infinity;
+    const bZ = b.zIndexNumber ?? -Infinity;
+    if (aZ === bZ) return a.order - b.order;
+    return bZ - aZ;
+  });
+
+  console.log('[layers][DOM order]', layers);
+  console.log('[layers][z-index order]', orderedByZ);
+}
+
 function logAimDebug(details = {}) {
   if (!DEBUG_AIM) return;
   const now = performance.now();
@@ -399,6 +473,7 @@ function logCanvasCreation(canvas, label = "") {
 }
 
 const overlayContainer = document.getElementById("overlayContainer");
+const uiOverlay = document.getElementById("uiOverlay");
 
 let OVERLAY_RESYNC_SCHEDULED = false;
 
@@ -1422,6 +1497,8 @@ function sizeAndAlignOverlays() {
   const cssHeight = Math.max(1, rect.height);
 
   syncOverlayCanvasToGameCanvas(planeCanvas, cssWidth, cssHeight);
+
+  debugLogLayerStack();
 }
 
 const FX_RECT_MISMATCH_KEYS = new Set();
@@ -2690,6 +2767,8 @@ function setBackgroundImage(...imageLayers) {
 
   const rect = gsFrameEl.getBoundingClientRect();
   syncBackgroundLayout(rect.width, rect.height);
+
+  debugLogLayerStack();
 }
 const CANVAS_BASE_WIDTH = 360;
 const CANVAS_BASE_HEIGHT = 640;
