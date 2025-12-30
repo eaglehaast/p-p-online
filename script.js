@@ -912,11 +912,11 @@ const pointsPopupAnchors = {
 const HUD_LAYOUT = {
   planeCounters: {
     blue: { x: 3, y: 97, width: 48, height: 287 },
-    green: { x: 411, y: 416, width: 48, height: 287 }
+    green: { x: 3, y: 416, width: 48, height: 287 }
   },
   matchProgress: {
     blue: { x: 411, y: 97, width: 48, height: 287 },
-    green: { x: 3, y: 416, width: 48, height: 287 }
+    green: { x: 411, y: 416, width: 48, height: 287 }
   },
   pointsPopups: {
     green: { x: 3, y: 388, width: 45, height: 25 },
@@ -3387,11 +3387,11 @@ const matchProgressFragmentsPerSlot = 5;
 // Порядок: [звезда 1..5][фрагмент 1..5] = {x, y}
 const matchProgressLayout = {
   green: [
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 3, y: 416 })),
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 3, y: 476 })),
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 3, y: 533 })),
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 3, y: 593 })),
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 3, y: 653 }))
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 411, y: 416 })),
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 411, y: 476 })),
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 411, y: 533 })),
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 411, y: 593 })),
+    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 411, y: 653 }))
   ],
   blue: [
     Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 411, y: 97 })),
