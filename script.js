@@ -3504,6 +3504,9 @@ const MATCH_SCORE_ASSETS = {
   green: "ui_gamescreen/gamescreen_outside/matchscore_green_egg.png"
 };
 
+const MATCH_SCORE_ICON_RENDER_SIZE = 20;
+const MATCH_SCORE_ICON_SOURCE_INSET = 1;
+
 const matchScoreImages = {
   blue: null,
   green: null
@@ -6746,20 +6749,33 @@ function drawMatchScore(ctx, scaleX = 1, scaleY = 1){
   const colors = ["blue", "green"];
   for (const color of colors){
     const frame = buildMatchScoreFrame(color, scaleX, scaleY);
+    const spec = MATCH_SCORE_CONTAINERS?.[color];
     const icon = matchScoreImages[color];
-    if (!frame || !isSpriteReady(icon)) continue;
+    if (!frame || !spec || !isSpriteReady(icon)) continue;
 
     const count = Math.max(0, Math.min(POINTS_TO_WIN, getScoreForColor(color)));
 
+    const cellSize = MATCH_SCORE_ICON_RENDER_SIZE;
+    const totalRows = Math.ceil(POINTS_TO_WIN / 2);
+
+    const paddingX = Math.max(0, (spec.width - cellSize * 2) / 2);
+    const paddingY = Math.max(0, (spec.height - cellSize * totalRows) / 2);
+
+    const srcInset = Math.max(0, Math.min(MATCH_SCORE_ICON_SOURCE_INSET, Math.floor(Math.min(icon.naturalWidth, icon.naturalHeight) / 2)));
+    const srcX = srcInset;
+    const srcY = srcInset;
+    const srcW = icon.naturalWidth - srcInset * 2;
+    const srcH = icon.naturalHeight - srcInset * 2;
+
     for (let i = 0; i < count; i += 1){
-      const localX = 5 + (i % 2) * 20;
-      const localY = 40 + Math.floor(i / 2) * 20;
+      const localX = paddingX + (i % 2) * cellSize;
+      const localY = paddingY + Math.floor(i / 2) * cellSize;
       const screenX = Math.round(frame.left + localX * scaleX);
       const screenY = Math.round(frame.top + localY * scaleY);
-      const dstW = Math.round(icon.naturalWidth * scaleX);
-      const dstH = Math.round(icon.naturalHeight * scaleY);
+      const dstW = Math.round(cellSize * scaleX);
+      const dstH = Math.round(cellSize * scaleY);
 
-      ctx.drawImage(icon, screenX, screenY, dstW, dstH);
+      ctx.drawImage(icon, srcX, srcY, srcW, srcH, screenX, screenY, dstW, dstH);
     }
   }
 }
