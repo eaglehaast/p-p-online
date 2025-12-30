@@ -6759,7 +6759,8 @@ function drawMatchScore(ctx, scaleX = 1, scaleY = 1){
     const totalRows = Math.ceil(POINTS_TO_WIN / 2);
 
     const paddingX = Math.max(0, (spec.width - cellSize * 2) / 2);
-    const paddingY = Math.max(0, (spec.height - cellSize * totalRows) / 2);
+    const maxTop = Math.max(0, spec.height - cellSize);
+    const rowStride = totalRows > 1 ? maxTop / (totalRows - 1) : 0;
 
     const srcInset = Math.max(0, Math.min(MATCH_SCORE_ICON_SOURCE_INSET, Math.floor(Math.min(icon.naturalWidth, icon.naturalHeight) / 2)));
     const srcX = srcInset;
@@ -6769,7 +6770,7 @@ function drawMatchScore(ctx, scaleX = 1, scaleY = 1){
 
     for (let i = 0; i < count; i += 1){
       const localX = paddingX + (i % 2) * cellSize;
-      const localY = paddingY + Math.floor(i / 2) * cellSize;
+      const localY = Math.min(maxTop, Math.floor(i / 2) * rowStride);
       const screenX = Math.round(frame.left + localX * scaleX);
       const screenY = Math.round(frame.top + localY * scaleY);
       const dstW = Math.round(cellSize * scaleX);
