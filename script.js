@@ -3411,7 +3411,7 @@ syncModeButtonSkins(selectedMode);
 syncPlayButtonSkin(false);
 
 
-const POINTS_TO_WIN = 25;
+const POINTS_TO_WIN = 24;
 let greenScore = 0;
 let blueScore  = 0;
 let roundNumber = 0;
