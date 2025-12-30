@@ -3494,6 +3494,24 @@ const matchProgressLayout = {
   ]
 };
 
+const MATCH_SCORE_CONTAINERS = {
+  blue: HUD_LAYOUT.matchProgress.blue,
+  green: HUD_LAYOUT.matchProgress.green
+};
+
+const MATCH_SCORE_ASSETS = {
+  blue: "ui_gamescreen/gamescreen_outside/matchscore_blue_corn.png",
+  green: "ui_gamescreen/gamescreen_outside/matchscore_green_egg.png"
+};
+
+const matchScoreImages = {
+  blue: null,
+  green: null
+};
+
+let matchScoreImagesRequested = false;
+const ENABLE_MATCH_PROGRESS_SHARDS = false;
+
 
 function getMatchProgressBounds(color){
   const placements = matchProgressLayout?.[color];
@@ -3647,7 +3665,18 @@ let matchProgressAssetsInitialized = false;
 let matchProgressImagesRequested = false;
 let lastMatchProgressCompleted = null;
 
+function loadMatchScoreImagesIfNeeded(){
+  if (matchScoreImagesRequested) return;
+  matchScoreImagesRequested = true;
+
+  Object.entries(MATCH_SCORE_ASSETS).forEach(([color, src]) => {
+    const { img } = loadImageAsset(src, "matchScoreIcon");
+    matchScoreImages[color] = img || null;
+  });
+}
+
 function finalizeMatchProgressLoading(){
+  if (!ENABLE_MATCH_PROGRESS_SHARDS) return;
   if (matchProgressAssetsInitialized) return;
   matchProgressAssetsInitialized = true;
   window.matchProgressReady = true;
@@ -3705,6 +3734,7 @@ function registerMatchProgressShardImage(src){
 }
 
 function loadMatchProgressImages(){
+  if (!ENABLE_MATCH_PROGRESS_SHARDS) return;
   const colorSet = new Set([
     ...Object.keys(matchProgressLayout || {}),
     ...Object.keys(matchProgressFragmentSources || {})
@@ -3750,6 +3780,7 @@ function loadMatchProgressImages(){
 }
 
 function loadMatchProgressImagesIfNeeded(){
+  if (!ENABLE_MATCH_PROGRESS_SHARDS) return;
   if (matchProgressImagesRequested) return;
   matchProgressImagesRequested = true;
   loadMatchProgressImages();
@@ -3757,6 +3788,7 @@ function loadMatchProgressImagesIfNeeded(){
 
 
 function syncMatchProgressState(color, score){
+  if (!ENABLE_MATCH_PROGRESS_SHARDS) return;
   const slots = matchProgressState[color];
   if (!Array.isArray(slots)) return;
 
@@ -3782,6 +3814,7 @@ function syncMatchProgressState(color, score){
 }
 
 function addMatchProgressPointToSide(color){
+  if (!ENABLE_MATCH_PROGRESS_SHARDS) return false;
   const pool = matchProgressState[color];                   // массив из 5 Set'ов (по звездам)
   if (!Array.isArray(pool) || pool.length === 0) return false;
 
@@ -3836,6 +3869,7 @@ function addMatchProgressPointToSide(color){
 }
 
 function syncAllMatchProgressStates(){
+  if (!ENABLE_MATCH_PROGRESS_SHARDS) return;
   syncMatchProgressState("green", greenScore);
   syncMatchProgressState("blue",  blueScore);
 }
@@ -6688,7 +6722,50 @@ function checkVictory(){
 
 /* ======= SCOREBOARD ======= */
 
+function buildMatchScoreFrame(color, scaleX, scaleY) {
+  const spec = MATCH_SCORE_CONTAINERS?.[color];
+  if (!spec) return null;
+
+  const width = spec.width * scaleX;
+  const height = spec.height * scaleY;
+  const left = spec.x * scaleX;
+  const top = spec.y * scaleY;
+
+  if (!Number.isFinite(left) || !Number.isFinite(top) || width <= 0 || height <= 0) {
+    return null;
+  }
+
+  return { left, top, width, height, scaleX, scaleY };
+}
+
+function drawMatchScore(ctx, scaleX = 1, scaleY = 1){
+  if (!ctx) return;
+
+  loadMatchScoreImagesIfNeeded();
+
+  const colors = ["blue", "green"];
+  for (const color of colors){
+    const frame = buildMatchScoreFrame(color, scaleX, scaleY);
+    const icon = matchScoreImages[color];
+    if (!frame || !isSpriteReady(icon)) continue;
+
+    const count = Math.max(0, Math.min(POINTS_TO_WIN, getScoreForColor(color)));
+
+    for (let i = 0; i < count; i += 1){
+      const localX = 5 + (i % 2) * 20;
+      const localY = 40 + Math.floor(i / 2) * 20;
+      const screenX = Math.round(frame.left + localX * scaleX);
+      const screenY = Math.round(frame.top + localY * scaleY);
+      const dstW = Math.round(icon.naturalWidth * scaleX);
+      const dstH = Math.round(icon.naturalHeight * scaleY);
+
+      ctx.drawImage(icon, screenX, screenY, dstW, dstH);
+    }
+  }
+}
+
 function drawMatchProgress(ctx, scaleX = 1, scaleY = 1){
+  if (!ENABLE_MATCH_PROGRESS_SHARDS) return;
   if (!matchProgressReady || !ctx) return;
 
   const sx = Number.isFinite(scaleX) && scaleX > 0 ? scaleX : 1;
@@ -7104,6 +7181,7 @@ function renderScoreboard(){
     );
   }
 
+  drawMatchScore(hudCtx, scaleX, scaleY);
   drawMatchProgress(hudCtx, scaleX, scaleY);
 
   if (DEBUG_LAYOUT) {
@@ -7336,6 +7414,7 @@ noBtn.addEventListener("click", () => {
 
 function startNewRound(){
   logBootStep("startNewRound");
+  loadMatchScoreImagesIfNeeded();
   loadMatchProgressImagesIfNeeded();
   preloadPlaneSprites();
   preloadExplosionSprites();
