@@ -1127,7 +1127,8 @@ body, button {
 #overlayContainer {
   position: absolute;
   pointer-events: none;
-  transform-origin: 0 0;
+  transform: scaleX(-1) !important;
+  transform-origin: center;
   left: var(--field-left);
   top: var(--field-top);
   width: var(--field-width);
