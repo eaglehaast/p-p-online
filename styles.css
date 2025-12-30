@@ -186,6 +186,7 @@ body, button {
     top: 416px;
     width: 48px;
     height: 287px;
+    transform: scaleX(-1);
   }
 
   #gs_planecounter_blue {
