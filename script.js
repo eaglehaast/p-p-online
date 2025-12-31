@@ -3508,6 +3508,7 @@ const MATCH_SCORE_ASSETS = {
 
 const MATCH_SCORE_ICON_RENDER_SIZE = 20;
 const MATCH_SCORE_ICON_SOURCE_INSET = 1;
+const MATCH_SCORE_GHOST_ALPHA = 0.22;
 
 const matchScoreImages = {
   blue: null,
@@ -6844,6 +6845,8 @@ function drawMatchScore(ctx, scaleX = 1, scaleY = 1, now = performance.now()){
 
     const count = Math.max(0, Math.min(POINTS_TO_WIN, getScoreForColor(color)));
 
+    const positions = [];
+
     const cellSize = MATCH_SCORE_ICON_RENDER_SIZE;
     const totalRows = Math.ceil(POINTS_TO_WIN / 2);
 
@@ -6857,21 +6860,41 @@ function drawMatchScore(ctx, scaleX = 1, scaleY = 1, now = performance.now()){
     const srcW = icon.naturalWidth - srcInset * 2;
     const srcH = icon.naturalHeight - srcInset * 2;
 
-    for (let i = 0; i < count; i += 1){
+    for (let i = 0; i < POINTS_TO_WIN; i += 1){
       const localX = paddingX + (i % 2) * cellSize;
       const localY = Math.min(maxTop, Math.floor(i / 2) * rowStride);
-
-      const scale = getMatchScoreScale(color, i, now);
 
       const centerX = Math.round(frame.left + (localX + cellSize / 2) * scaleX);
       const centerY = Math.round(frame.top + (localY + cellSize / 2) * scaleY);
 
       const baseW = Math.round(cellSize * scaleX);
       const baseH = Math.round(cellSize * scaleY);
-      const dstW = Math.round(baseW * scale);
-      const dstH = Math.round(baseH * scale);
-      const screenX = Math.round(centerX - dstW / 2);
-      const screenY = Math.round(centerY - dstH / 2);
+
+      positions.push({ centerX, centerY, baseW, baseH });
+    }
+
+    for (const slot of positions){
+      const dstW = slot.baseW;
+      const dstH = slot.baseH;
+      const screenX = Math.round(slot.centerX - dstW / 2);
+      const screenY = Math.round(slot.centerY - dstH / 2);
+
+      ctx.save();
+      ctx.globalAlpha = MATCH_SCORE_GHOST_ALPHA;
+      ctx.drawImage(icon, srcX, srcY, srcW, srcH, screenX, screenY, dstW, dstH);
+      ctx.restore();
+    }
+
+    for (let i = 0; i < count; i += 1){
+      const slot = positions[i];
+      if (!slot) continue;
+
+      const scale = getMatchScoreScale(color, i, now);
+
+      const dstW = Math.round(slot.baseW * scale);
+      const dstH = Math.round(slot.baseH * scale);
+      const screenX = Math.round(slot.centerX - dstW / 2);
+      const screenY = Math.round(slot.centerY - dstH / 2);
 
       ctx.drawImage(icon, srcX, srcY, srcW, srcH, screenX, screenY, dstW, dstH);
     }
