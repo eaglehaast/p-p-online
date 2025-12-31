@@ -3514,6 +3514,24 @@ const matchScoreImages = {
   green: null
 };
 
+const MATCH_SCORE_ANIMATION_DURATION_MS = 220;
+const MATCH_SCORE_ANIMATION_PEAK_TIME_MS = MATCH_SCORE_ANIMATION_DURATION_MS * 0.6;
+const MATCH_SCORE_ANIMATION_START_SCALE = 0.2;
+const MATCH_SCORE_ANIMATION_PEAK_SCALE = 1.25;
+const MATCH_SCORE_ANIMATION_STAGGER_MS = MATCH_SCORE_ANIMATION_DURATION_MS;
+
+const matchScoreSpawnTimes = {
+  blue: Array.from({ length: POINTS_TO_WIN }, () => 0),
+  green: Array.from({ length: POINTS_TO_WIN }, () => 0)
+};
+
+let matchScoreAnimationActiveUntil = 0;
+function resetMatchScoreAnimations(){
+  matchScoreSpawnTimes.blue.fill(0);
+  matchScoreSpawnTimes.green.fill(0);
+  matchScoreAnimationActiveUntil = 0;
+}
+
 let matchScoreImagesRequested = false;
 const ENABLE_MATCH_PROGRESS_SHARDS = false;
 
@@ -3936,19 +3954,27 @@ function addScore(color, delta){
     const previous = blueScore;
     blueScore = Math.max(0, blueScore + delta);
     if(blueScore > previous){
+      trackMatchScoreSpawn("blue", previous, blueScore);
       spawnPointsPopup("blue", blueScore - previous, blueScore);
     } else {
       syncMatchProgressState("blue", blueScore);
       updatePendingMatchProgressTargets("blue", blueScore);
+      for (let i = blueScore; i < previous && i < matchScoreSpawnTimes.blue.length; i += 1){
+        matchScoreSpawnTimes.blue[i] = 0;
+      }
     }
   } else if(color === "green"){
     const previous = greenScore;
     greenScore = Math.max(0, greenScore + delta);
     if(greenScore > previous){
+      trackMatchScoreSpawn("green", previous, greenScore);
       spawnPointsPopup("green", greenScore - previous, greenScore);
     } else {
       syncMatchProgressState("green", greenScore);
       updatePendingMatchProgressTargets("green", greenScore);
+      for (let i = greenScore; i < previous && i < matchScoreSpawnTimes.green.length; i += 1){
+        matchScoreSpawnTimes.green[i] = 0;
+      }
     }
   }
 
@@ -4116,6 +4142,7 @@ function resetGame(options = {}){
 
   greenScore = 0;
   blueScore  = 0;
+  resetMatchScoreAnimations();
   matchProgressLap = { blue: 0, green: 0 };
   matchProgressPos = { blue: 0, green: 0 };
   matchProgressPlacedInLap = { blue: 0, green: 0 };
@@ -5573,6 +5600,10 @@ function gameDraw(){
     roundTextTimer -= delta;
   }
 
+  if (hasActiveMatchScoreAnimations(now)){
+    renderScoreboard(now);
+  }
+
   drawDebugLayoutOverlay(gsBoardCtx);
 
   animationFrameId = requestAnimationFrame(gameDraw);
@@ -6727,6 +6758,64 @@ function checkVictory(){
 
 /* ======= SCOREBOARD ======= */
 
+function lerp(a, b, t){
+  return a + (b - a) * t;
+}
+
+function easeOutCubic(p){
+  const clamped = clamp(p, 0, 1);
+  return 1 - Math.pow(1 - clamped, 3);
+}
+
+function smoothstep01(p){
+  const clamped = clamp(p, 0, 1);
+  return clamped * clamped * (3 - 2 * clamped);
+}
+
+function trackMatchScoreSpawn(color, startIndex, endIndex){
+  const slots = matchScoreSpawnTimes[color];
+  if (!Array.isArray(slots)) return;
+
+  const from = Math.max(0, Math.min(POINTS_TO_WIN, startIndex));
+  const to = Math.max(from, Math.min(POINTS_TO_WIN, endIndex));
+  const now = performance.now();
+  const stagger = Math.max(0, Number.isFinite(MATCH_SCORE_ANIMATION_STAGGER_MS) ? MATCH_SCORE_ANIMATION_STAGGER_MS : 0);
+
+  for (let i = from; i < to; i += 1){
+    slots[i] = now + (i - from) * stagger;
+  }
+
+  matchScoreAnimationActiveUntil = Math.max(
+    matchScoreAnimationActiveUntil,
+    now + (to - from - 1) * stagger + MATCH_SCORE_ANIMATION_DURATION_MS
+  );
+}
+
+function hasActiveMatchScoreAnimations(now = performance.now()){
+  return Number.isFinite(matchScoreAnimationActiveUntil)
+    && now < matchScoreAnimationActiveUntil;
+}
+
+function getMatchScoreScale(color, index, now){
+  const slots = matchScoreSpawnTimes[color];
+  if (!Array.isArray(slots)) return 1;
+
+  const start = slots[index];
+  if (!Number.isFinite(start) || start <= 0) return 1;
+
+  const age = now - start;
+  if (age >= MATCH_SCORE_ANIMATION_DURATION_MS) return 1;
+
+  if (age <= MATCH_SCORE_ANIMATION_PEAK_TIME_MS){
+    const p = easeOutCubic(age / MATCH_SCORE_ANIMATION_PEAK_TIME_MS);
+    return lerp(MATCH_SCORE_ANIMATION_START_SCALE, MATCH_SCORE_ANIMATION_PEAK_SCALE, p);
+  }
+
+  const tailDuration = MATCH_SCORE_ANIMATION_DURATION_MS - MATCH_SCORE_ANIMATION_PEAK_TIME_MS;
+  const p = smoothstep01((age - MATCH_SCORE_ANIMATION_PEAK_TIME_MS) / tailDuration);
+  return lerp(MATCH_SCORE_ANIMATION_PEAK_SCALE, 1, p);
+}
+
 function buildMatchScoreFrame(color, scaleX, scaleY) {
   const spec = MATCH_SCORE_CONTAINERS?.[color];
   if (!spec) return null;
@@ -6743,7 +6832,7 @@ function buildMatchScoreFrame(color, scaleX, scaleY) {
   return { left, top, width, height, scaleX, scaleY };
 }
 
-function drawMatchScore(ctx, scaleX = 1, scaleY = 1){
+function drawMatchScore(ctx, scaleX = 1, scaleY = 1, now = performance.now()){
   if (!ctx) return;
 
   loadMatchScoreImagesIfNeeded();
@@ -6773,10 +6862,18 @@ function drawMatchScore(ctx, scaleX = 1, scaleY = 1){
     for (let i = 0; i < count; i += 1){
       const localX = paddingX + (i % 2) * cellSize;
       const localY = Math.min(maxTop, Math.floor(i / 2) * rowStride);
-      const screenX = Math.round(frame.left + localX * scaleX);
-      const screenY = Math.round(frame.top + localY * scaleY);
-      const dstW = Math.round(cellSize * scaleX);
-      const dstH = Math.round(cellSize * scaleY);
+
+      const scale = getMatchScoreScale(color, i, now);
+
+      const centerX = Math.round(frame.left + (localX + cellSize / 2) * scaleX);
+      const centerY = Math.round(frame.top + (localY + cellSize / 2) * scaleY);
+
+      const baseW = Math.round(cellSize * scaleX);
+      const baseH = Math.round(cellSize * scaleY);
+      const dstW = Math.round(baseW * scale);
+      const dstH = Math.round(baseH * scale);
+      const screenX = Math.round(centerX - dstW / 2);
+      const screenY = Math.round(centerY - dstH / 2);
 
       ctx.drawImage(icon, srcX, srcY, srcW, srcH, screenX, screenY, dstW, dstH);
     }
@@ -7167,7 +7264,7 @@ function clearPointsPopups(){
   }
 }
 
-function renderScoreboard(){
+function renderScoreboard(now = performance.now()){
   updateTurnIndicators();
   if (!hudCtx || !(hudCanvas instanceof HTMLCanvasElement)) {
     return;
@@ -7200,7 +7297,7 @@ function renderScoreboard(){
     );
   }
 
-  drawMatchScore(hudCtx, scaleX, scaleY);
+  drawMatchScore(hudCtx, scaleX, scaleY, now);
   drawMatchProgress(hudCtx, scaleX, scaleY);
 
   if (DEBUG_LAYOUT) {
@@ -7415,6 +7512,7 @@ yesBtn.addEventListener("click", () => {
   if (gameOver) {
     blueScore = 0;
     greenScore = 0;
+    resetMatchScoreAnimations();
     syncAllMatchProgressStates();
     roundNumber = 0;
     if(shouldAutoRandomizeMap()){
