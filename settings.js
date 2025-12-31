@@ -1,7 +1,7 @@
 (() => {
-const MIN_FLIGHT_RANGE_CELLS = 5;
-const MAX_FLIGHT_RANGE_CELLS = 30;
-const RANGE_DISPLAY_VALUES = [5, 10, 15, 20, 25, 30];
+const MIN_FLIGHT_RANGE_CELLS = 10;
+const MAX_FLIGHT_RANGE_CELLS = 50;
+const RANGE_DISPLAY_VALUES = [10, 15, 20, 25, 30, 35, 40, 45, 50];
 const RANGE_CELL_WIDTH = 58;
 const RANGE_HALF_STEP_PX = RANGE_CELL_WIDTH / 2;
 const RANGE_MAX_STEP = (RANGE_DISPLAY_VALUES.length - 1) * 2;
@@ -261,7 +261,7 @@ function sanitizeMapIndex(index, { excludeIndex, allowRandom } = {}){
 }
 
   const DEFAULT_SETTINGS = {
-    rangeCells: 15,
+    rangeCells: 30,
     aimingAmplitude: 10 / 5,
     addAA: false,
     sharpEdges: false,
@@ -442,7 +442,7 @@ function getIntSetting(key, defaultValue){
   return Number.isNaN(value) ? defaultValue : value;
 }
 
-let settingsFlightRangeCells = getIntSetting('settings.flightRangeCells', 15);
+let settingsFlightRangeCells = getIntSetting('settings.flightRangeCells', 30);
 let rangeStep = getRangeStepForValue(settingsFlightRangeCells);
 settingsFlightRangeCells = getRangeValue(rangeStep);
 let settingsAimingAmplitude  = parseFloat(getStoredItem('settings.aimingAmplitude'));
