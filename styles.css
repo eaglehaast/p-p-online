@@ -1130,7 +1130,7 @@ body, button {
   left: 0;
   width: 460px;
   height: 400px;
-  background-image: url("goat and mantis.png");
+  background-image: url("ui_gamescreen/gamescreen_outside/goat and sparrow.png");
   background-size: 460px 800px;
   background-repeat: no-repeat;
   pointer-events: none;
@@ -1141,12 +1141,12 @@ body, button {
 
 #mantisIndicator {
   top: 0;
-  background-position: top center;
+  background-position: left top;
 }
 
 #goatIndicator {
   top: 400px;
-  background-position: center bottom;
+  background-position: left bottom;
 }
 
 #mantisIndicator.active {

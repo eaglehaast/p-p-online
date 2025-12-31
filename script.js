@@ -7259,7 +7259,7 @@ function drawHudDebugLayout(ctx, scaleX, scaleY) {
 function updateTurnIndicators(){
   const color = turnColors[turnIndex];
   const isBlueTurn = color === 'blue';
-  // Top (mantis) mascot belongs to the blue player, bottom (goat) to green.
+  // Top (sparrow) mascot belongs to the blue player, bottom (goat) to green.
   mantisIndicator.classList.toggle('active', isBlueTurn);
   goatIndicator.classList.toggle('active', !isBlueTurn);
 }
