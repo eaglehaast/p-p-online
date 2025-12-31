@@ -3501,7 +3501,7 @@ const MATCH_SCORE_CONTAINERS = {
 
 const MATCH_SCORE_ASSETS = {
   blue: "ui_gamescreen/gamescreen_outside/matchscore_blue_corn.png",
-  green: "ui_gamescreen/gamescreen_outside/matchscore_green_egg.png"
+  green: "ui_gamescreen/gamescreen_outside/matchscore_green_egg2.png"
 };
 
 const MATCH_SCORE_ICON_RENDER_SIZE = 20;
