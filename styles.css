@@ -1141,12 +1141,12 @@ body, button {
 
 #mantisIndicator {
   top: 0;
-  background-position: 205px top;
+  background-position: 0 top;
 }
 
 #goatIndicator {
   top: 400px;
-  background-position: 205px bottom;
+  background-position: 0 bottom;
 }
 
 #mantisIndicator.active {
