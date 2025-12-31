@@ -2950,6 +2950,8 @@ const HUD_KILL_MARKER_COLOR = "#e42727";
 const HUD_KILL_MARKER_ALPHA = 0.85;
 const CELL_SIZE            = 20;     // px
 const POINT_RADIUS         = 15 * PLANE_SCALE;     // px (увеличено для мобильных)
+const FLAG_INTERACTION_RADIUS = 25;  // px
+const BASE_INTERACTION_RADIUS = 40;  // px
 // Larger hit area for selecting planes with touch/mouse
 const PLANE_TOUCH_RADIUS   = 20;                   // px
 const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit Anti-Aircraft center
@@ -4078,7 +4080,7 @@ function getFlagInteractionTarget(color){
   const layout = dropped ? null : getFlagLayout(color);
   return {
     anchor: getFlagAnchor(color),
-    radius: dropped ? POINT_RADIUS : Math.max(POINT_RADIUS, getInteractionRadius(layout)),
+    radius: dropped ? FLAG_INTERACTION_RADIUS : Math.max(FLAG_INTERACTION_RADIUS, getInteractionRadius(layout)),
   };
 }
 
@@ -4090,7 +4092,7 @@ function getBaseInteractionTarget(color){
   const layout = getBaseLayout(color);
   return {
     anchor: getBaseAnchor(color),
-    radius: Math.max(POINT_RADIUS, getInteractionRadius(layout)),
+    radius: Math.max(BASE_INTERACTION_RADIUS, getInteractionRadius(layout)),
   };
 }
 
