@@ -7047,7 +7047,25 @@ function spawnPointsPopup(color, delta, targetScore){
   if(delta <= 0) return;
   if(color !== "blue" && color !== "green") return;
 
-  enqueuePointsPopup(color, delta, targetScore);
+  const total = Math.max(1, Math.floor(delta));
+  const normalizedTarget = Number.isFinite(targetScore)
+    ? targetScore
+    : getScoreForColor(color);
+  const firstTarget = Number.isFinite(normalizedTarget)
+    ? normalizedTarget - total + 1
+    : null;
+
+  for(let i = 0; i < total; i += 1){
+    const entryTarget = Number.isFinite(firstTarget)
+      ? firstTarget + i
+      : normalizedTarget;
+    enqueuePointsPopup(color, 1, entryTarget);
+  }
+
+  const remainder = delta - total;
+  if(remainder > 0){
+    enqueuePointsPopup(color, remainder, normalizedTarget);
+  }
 }
 
 function enqueuePointsPopup(color, delta, targetScore){
