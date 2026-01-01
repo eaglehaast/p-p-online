@@ -4034,6 +4034,7 @@ function getHomeRowY(color){
 
 function initPoints(){
   points = [];
+  resetPlaneCounterAnimations();
   const spacing = FIELD_WIDTH / (PLANES_PER_SIDE + 1);
   const middleOffset = MIDDLE_GAP_EXTRA_PX / 2;
   const edgePadding = EDGE_PLANE_PADDING_PX;
@@ -6996,6 +6997,14 @@ const PLANE_COUNTER_CONTAINERS = {
   green: HUD_LAYOUT.planeCounters.green
 };
 
+const PLANE_COUNTER_FADE_MS = 160;
+const PLANE_COUNTER_SCALE_DROP = 0.15;
+const planeCounterAnimState = {
+  blue: createPlaneCounterSlotState(),
+  green: createPlaneCounterSlotState()
+};
+const planeCounterPrevAliveCount = { blue: null, green: null };
+
 const pointsPopupDurationMs = 2600;
 const MIN_ROUND_TRANSITION_DELAY_MS = (() => {
   const greenSlots = Array.isArray(matchProgressLayout?.green) ? matchProgressLayout.green.length : 0;
@@ -7037,6 +7046,64 @@ function getKillMarkerProgress(plane, now = performance.now()){
   }
 
   return Math.max(0, Math.min(1, elapsed / duration));
+}
+
+function createPlaneCounterSlotState(){
+  return Array.from({ length: PLANES_PER_SIDE }, () => ({
+    deathStartMs: null,
+    isDead: false
+  }));
+}
+
+function resetPlaneCounterAnimations(){
+  for (const color of ["blue", "green"]) {
+    const slots = planeCounterAnimState[color];
+    if (Array.isArray(slots)) {
+      for (const slot of slots) {
+        slot.deathStartMs = null;
+        slot.isDead = false;
+      }
+    }
+    planeCounterPrevAliveCount[color] = null;
+  }
+}
+
+function syncPlaneCounterAnimations(color, aliveCount, slotOrderFromCenter, now = performance.now()){
+  const slots = planeCounterAnimState[color];
+  if (!Array.isArray(slots) || !Array.isArray(slotOrderFromCenter)) {
+    return;
+  }
+
+  const maxSlots = slotOrderFromCenter.length;
+  const clampedAlive = clamp(aliveCount, 0, maxSlots);
+  const previousAlive = Number.isFinite(planeCounterPrevAliveCount[color])
+    ? clamp(planeCounterPrevAliveCount[color], 0, maxSlots)
+    : clampedAlive;
+
+  const hiddenCount = Math.max(0, maxSlots - clampedAlive);
+  const previouslyHiddenCount = Math.max(0, maxSlots - previousAlive);
+
+  if (hiddenCount > previouslyHiddenCount) {
+    const newlyHidden = slotOrderFromCenter.slice(previouslyHiddenCount, hiddenCount);
+    for (const slotIndex of newlyHidden) {
+      const slotState = slots[slotIndex];
+      if (slotState && slotState.deathStartMs === null) {
+        slotState.deathStartMs = now;
+        slotState.isDead = false;
+      }
+    }
+  } else if (hiddenCount < previouslyHiddenCount) {
+    const visibleSlots = slotOrderFromCenter.slice(hiddenCount);
+    for (const slotIndex of visibleSlots) {
+      const slotState = slots[slotIndex];
+      if (slotState) {
+        slotState.deathStartMs = null;
+        slotState.isDead = false;
+      }
+    }
+  }
+
+  planeCounterPrevAliveCount[color] = clampedAlive;
 }
 const pointsPopupQueue = {
   blue: [],
@@ -7327,7 +7394,8 @@ function renderScoreboard(now = performance.now()){
       hudCtx,
       blueHudFrame,
       "blue",
-      turnColors[turnIndex] === "blue"
+      turnColors[turnIndex] === "blue",
+      now
     );
   }
 
@@ -7336,7 +7404,8 @@ function renderScoreboard(now = performance.now()){
       hudCtx,
       greenHudFrame,
       "green",
-      turnColors[turnIndex] === "green"
+      turnColors[turnIndex] === "green",
+      now
     );
   }
 
@@ -7406,7 +7475,7 @@ function updateTurnIndicators(){
   goatIndicator.classList.toggle('active', !isBlueTurn);
 }
 
-function drawPlayerHUD(ctx, frame, color, isTurn){
+function drawPlayerHUD(ctx, frame, color, isTurn, now = performance.now()){
   if (!frame) return;
 
   const { left, top, width, height, scaleX, scaleY } = frame;
@@ -7466,18 +7535,57 @@ function drawPlayerHUD(ctx, frame, color, isTurn){
     ? [0, 1, 2, 3]
     : [3, 2, 1, 0];
   const slotsToHide = Math.max(0, slotOrderFromCenter.length - iconCount);
-  const visibleSlots = slotOrderFromCenter.slice(slotsToHide);
+  const visibleSlots = new Set(slotOrderFromCenter.slice(slotsToHide));
+
+  syncPlaneCounterAnimations(color, iconCount, slotOrderFromCenter, now);
 
   const previousAlpha = ctx.globalAlpha;
-  ctx.globalAlpha *= HUD_PLANE_DIM_ALPHA;
+  const baseAlpha = previousAlpha * HUD_PLANE_DIM_ALPHA;
 
   const centerX = paddingX + availableWidth / 2;
 
-  for (const slotIndex of visibleSlots) {
-    const centerY = paddingY + slotHeight * (slotIndex + 0.5);
-    if (iconScale > 0) {
-      drawPlaneCounterIcon(ctx, centerX, centerY, color, iconScale);
+  for (let slotIndex = 0; slotIndex < slotOrderFromCenter.length; slotIndex += 1) {
+    const slotState = planeCounterAnimState[color]?.[slotIndex];
+    const deathStartMs = slotState?.deathStartMs ?? null;
+    const isAliveSlot = visibleSlots.has(slotIndex);
+
+    if (!isAliveSlot && deathStartMs === null) {
+      continue;
     }
+
+    let iconAlpha = 1;
+    let scaleMultiplier = 1;
+
+    if (deathStartMs !== null) {
+      const elapsed = now - deathStartMs;
+      const progress = clamp(elapsed / PLANE_COUNTER_FADE_MS, 0, 1);
+      const eased = easeOutCubic(progress);
+      iconAlpha = 1 - eased;
+      scaleMultiplier = 1 - PLANE_COUNTER_SCALE_DROP * eased;
+
+      if (slotState) {
+        slotState.isDead = progress >= 1;
+      }
+
+      if (slotState?.isDead && !isAliveSlot) {
+        continue;
+      }
+    } else if (slotState) {
+      slotState.isDead = false;
+    }
+
+    if (iconScale <= 0 || iconAlpha <= 0) {
+      continue;
+    }
+
+    const centerY = paddingY + slotHeight * (slotIndex + 0.5);
+
+    ctx.save();
+    ctx.globalAlpha = baseAlpha * iconAlpha;
+    ctx.translate(centerX, centerY);
+    ctx.scale(scaleMultiplier, scaleMultiplier);
+    drawPlaneCounterIcon(ctx, 0, 0, color, iconScale);
+    ctx.restore();
   }
 
   ctx.globalAlpha = previousAlpha;
