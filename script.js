@@ -3519,6 +3519,7 @@ const MATCH_SCORE_ANIMATION_DURATION_MS = 220;
 const MATCH_SCORE_ANIMATION_PEAK_TIME_MS = MATCH_SCORE_ANIMATION_DURATION_MS * 0.6;
 const MATCH_SCORE_ANIMATION_START_SCALE = 0.2;
 const MATCH_SCORE_ANIMATION_PEAK_SCALE = 1.25;
+const MATCH_SCORE_STAGGER_DELAY_MS = 70;
 
 const matchScoreSpawnTimes = {
   blue: Array.from({ length: POINTS_TO_WIN }, () => 0),
@@ -6778,15 +6779,16 @@ function trackMatchScoreSpawn(color, startIndex, endIndex){
 
   const from = Math.max(0, Math.min(POINTS_TO_WIN, startIndex));
   const to = Math.max(from, Math.min(POINTS_TO_WIN, endIndex));
-  const now = performance.now();
+  const baseTime = performance.now();
 
   for (let i = from; i < to; i += 1){
-    slots[i] = now;
+    const delayIndex = i - from;
+    slots[i] = baseTime + delayIndex * MATCH_SCORE_STAGGER_DELAY_MS;
   }
 
   matchScoreAnimationActiveUntil = Math.max(
     matchScoreAnimationActiveUntil,
-    now + MATCH_SCORE_ANIMATION_DURATION_MS
+    baseTime + (to - from - 1) * MATCH_SCORE_STAGGER_DELAY_MS + MATCH_SCORE_ANIMATION_DURATION_MS
   );
 }
 
