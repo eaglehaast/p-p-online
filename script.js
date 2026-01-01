@@ -6364,9 +6364,9 @@ function drawMatchScore(ctx, scaleX = 1, scaleY = 1, now = performance.now()){
 
     const srcInset = Math.max(0, Math.min(MATCH_SCORE_ICON_SOURCE_INSET, Math.floor(Math.min(icon.naturalWidth, icon.naturalHeight) / 2)));
     const srcX = srcInset;
-    const srcY = srcInset;
-    const srcW = icon.naturalWidth - srcInset * 2;
-    const srcH = icon.naturalHeight - srcInset * 2;
+    const srcY = 0;
+    const srcW = Math.max(1, icon.naturalWidth - srcInset * 2);
+    const srcH = Math.max(1, icon.naturalHeight - srcInset);
 
     for (let i = 0; i < POINTS_TO_WIN; i += 1){
       const localX = paddingX + (i % 2) * cellSize;
