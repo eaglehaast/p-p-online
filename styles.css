@@ -119,7 +119,6 @@ body, button {
     width: 100%;
     height: 100%;
     flex: 0 0 auto;
-    --points-popup-scale: 1;
     --game-scale: 1;
     --field-left: 51px;
     --field-top: 80px;
@@ -178,32 +177,6 @@ body, button {
     z-index: 20;
   }
 
-  .points-popup {
-    position: absolute;
-    pointer-events: none;
-    z-index: 30;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: visible;
-    --points-popup-ink-left: 50%;
-    --points-popup-ink-top: 50%;
-  }
-
-  #greenPointsPopup {
-    left: 3px;
-    top: 388px;
-    width: 45px;
-    height: 25px;
-  }
-
-  #bluePointsPopup {
-    left: 413px;
-    top: 388px;
-    width: 45px;
-    height: 25px;
-  }
-
   .plane-counter {
     position: absolute;
     pointer-events: none;
@@ -243,22 +216,17 @@ body, button {
     height: 287px;
   }
 
-  .points-popup .points-popup-ink {
     position: absolute;
-    left: var(--points-popup-ink-left, 50%);
-    top: var(--points-popup-ink-top, 50%);
     transform: translate(-50%, -50%);
     display: flex;
     align-items: center;
     justify-content: center;
     font-family: 'Patrick Hand', cursive;
-    font-size: calc(22px * var(--points-popup-scale, 1));
     line-height: 1;
     margin: 0;
     padding: 0;
     white-space: nowrap;
     opacity: 0;
-    letter-spacing: calc(0.5px * var(--points-popup-scale, 1));
     animation-duration: 2.4s;
     animation-timing-function: ease-in-out;
     animation-fill-mode: forwards;
@@ -266,27 +234,22 @@ body, button {
     clip-path: inset(0 0 100% 0);
   }
 
-  .points-popup--green .points-popup-ink {
     color: #cbb021;
     text-shadow:
       0 0 6px rgba(35, 118, 31, 0.55),
       0 0 2px rgba(64, 168, 58, 0.9);
-    animation-name: points-popup-ink-write-green;
     -webkit-clip-path: inset(0 0 100% 0);
     clip-path: inset(0 0 100% 0);
   }
 
-  .points-popup--blue .points-popup-ink {
     color: #cbb021;
     text-shadow:
       0 0 6px rgba(52, 78, 109, 0.45),
       0 0 2px rgba(90, 122, 158, 0.8);
-    animation-name: points-popup-ink-write-blue;
     -webkit-clip-path: inset(100% 0 0 0);
     clip-path: inset(100% 0 0 0);
   }
 
-  @keyframes points-popup-ink-write-green {
     0% {
       opacity: 0;
       -webkit-clip-path: inset(0 0 100% 0);
@@ -312,7 +275,6 @@ body, button {
     }
   }
 
-  @keyframes points-popup-ink-write-blue {
     0% {
       opacity: 0;
       -webkit-clip-path: inset(100% 0 0 0);
@@ -338,7 +300,6 @@ body, button {
     }
   }
 
-  @keyframes points-popup-ink-fade {
     0% {
       opacity: 0;
     }
@@ -354,14 +315,10 @@ body, button {
   }
 
   @supports not ((-webkit-clip-path: inset(0 100% 0 0)) or (clip-path: inset(0 100% 0 0))) {
-    .points-popup .points-popup-ink {
-      animation-name: points-popup-ink-fade;
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .points-popup .points-popup-ink {
-      animation-name: points-popup-ink-fade;
       animation-duration: 1s;
       -webkit-clip-path: none;
       clip-path: none;

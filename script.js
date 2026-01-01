@@ -265,8 +265,6 @@ function debugLogLayerStack() {
     planeCanvas,
     uiOverlay,
     hudCanvas,
-    greenPointsPopup,
-    bluePointsPopup,
     greenPlaneCounter,
     bluePlaneCounter,
     hudPlaneStyleProbes,
@@ -478,8 +476,6 @@ const uiOverlay = document.getElementById("uiOverlay");
 
 let OVERLAY_RESYNC_SCHEDULED = false;
 
-const greenPointsPopup = document.getElementById("greenPointsPopup");
-const bluePointsPopup  = document.getElementById("bluePointsPopup");
 const greenPlaneCounter = document.getElementById("gs_planecounter_green");
 const bluePlaneCounter  = document.getElementById("gs_planecounter_blue");
 
@@ -961,48 +957,19 @@ const IS_TEST_HARNESS = document.body.classList.contains('test-harness');
 
 const DEBUG_UI = false;
 
-// Points Popup = transient floating points (+X), not match progress and not plane counters
-const pointsPopupElements = {
-  green: greenPointsPopup,
-  blue: bluePointsPopup
-};
-
-const SHOW_POINTS_POPUP = false;
-
 // Plane Counters = HUD columns of destroyed planes (not score, not points)
 const planeCounterHosts = {
   green: greenPlaneCounter,
   blue: bluePlaneCounter
 };
 
-const pointsPopupOffsets = {
-  green: { x: 3,   y: 388 },
-  blue:  { x: 413, y: 388 }
-};
-
-const pointsPopupBaseSize = { width: 45, height: 25 };
-const pointsPopupAnchorRows = [0.1, 0.32, 0.54, 0.76, 0.9];
-const pointsPopupAnchors = {
-  green: pointsPopupAnchorRows.map(y => ({ x: 0.5, y })),
-  blue: pointsPopupAnchorRows.map(y => ({ x: 0.5, y }))
-};
-
 const HUD_LAYOUT = {
   planeCounters: {
     blue: { x: 3, y: 97, width: 48, height: 287 },
     green: { x: 3, y: 416, width: 48, height: 287 }
-  },
-  matchProgress: {
-    blue: { x: 411, y: 97, width: 48, height: 287 },
-    green: { x: 411, y: 416, width: 48, height: 287 }
-  },
-  pointsPopups: {
-    green: { x: 3, y: 388, width: 45, height: 25 },
-    blue: { x: 413, y: 388, width: 45, height: 25 }
   }
 };
 
-function clampPointsPopupOffset(value, limit) {
   if (!Number.isFinite(value)) {
     return value;
   }
@@ -1631,8 +1598,6 @@ function warnIfFxHostMismatch(boardRect, hostRect, context = 'fx') {
 const MOCKUP_W = 460;
 const MOCKUP_H = 800;
 
-// Координаты matchProgressLayout даны в пикселях макета 460x800
-const matchProgressIsMockup = true;
 
 // Если фон/рамка рисуются со сдвигом, используем тот же сдвиг здесь
 const BOARD_ORIGIN = { x: 0, y: 0 };
@@ -2794,7 +2759,6 @@ const FRAME_BASE_WIDTH = CANVAS_BASE_WIDTH + FRAME_PADDING_X * 2; // 460
 const FRAME_BASE_HEIGHT = CANVAS_BASE_HEIGHT + FRAME_PADDING_Y * 2; // 800
 const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
 
-if (typeof window.matchProgressReady === 'undefined') window.matchProgressReady = false;
 
 let brickFrameImg = null;
 let brickFrameData = null;
@@ -3429,78 +3393,9 @@ let greenFlagStolenBy = null;
 let blueFlagDroppedAt = null;
 let greenFlagDroppedAt = null;
 
-const defaultMatchProgressFragmentSources = {
-  green: [
-    "shards 3/green shard 1.png",
-    "shards 3/green shard 2.png",
-    "shards 3/green shard 3.png",
-    "shards 3/green shard 4.png",
-    "shards 3/green shard 5.png"
-  ],
-  blue: [
-    "shards 3/blue shard 1.png",
-    "shards 3/blue shard 2.png",
-    "shards 3/blue shard 3.png",
-    "shards 3/blue shard 4.png",
-    "shards 3/blue shard 5.png"
-  ]
-};
-
-const matchProgressFragmentSources = (typeof window !== "undefined" && window.matchProgressFragmentSources)
-  ? window.matchProgressFragmentSources
-  : defaultMatchProgressFragmentSources;
-
-
-function collectMatchProgressFragmentSources(sources) {
-  const collected = [];
-  const visit = (value) => {
-    if (!value) return;
-    if (typeof value === "string" || value instanceof String) {
-      const trimmed = value.trim();
-      if (trimmed) {
-        collected.push(trimmed);
-      }
-      return;
-    }
-
-    if (Array.isArray(value)) {
-      value.forEach(visit);
-      return;
-    }
-
-    if (typeof value === "object") {
-      Object.values(value).forEach(visit);
-    }
-  };
-
-  visit(sources);
-  return collected;
-}
-
-const matchProgressFragmentsPerSlot = 5;
-
-// Точные top-left координаты КАЖДОГО фрагмента (макет 460x800)
-// Порядок: [звезда 1..5][фрагмент 1..5] = {x, y}
-const matchProgressLayout = {
-  green: [
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 411, y: 416 })),
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 411, y: 476 })),
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 411, y: 533 })),
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 411, y: 593 })),
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 411, y: 653 }))
-  ],
-  blue: [
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 411, y: 97 })),
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 411, y: 157 })),
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 411, y: 217 })),
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 411, y: 277 })),
-    Array.from({ length: matchProgressFragmentsPerSlot }, () => ({ x: 411, y: 335 }))
-  ]
-};
-
 const MATCH_SCORE_CONTAINERS = {
-  blue: HUD_LAYOUT.matchProgress.blue,
-  green: HUD_LAYOUT.matchProgress.green
+  blue: { x: 411, y: 97, width: 48, height: 287 },
+  green: { x: 411, y: 416, width: 48, height: 287 }
 };
 
 const MATCH_SCORE_ASSETS = {
@@ -3546,161 +3441,6 @@ function resetMatchScoreAnimations(){
 }
 
 let matchScoreImagesRequested = false;
-const ENABLE_MATCH_PROGRESS_SHARDS = false;
-
-
-function getMatchProgressBounds(color){
-  const placements = matchProgressLayout?.[color];
-  if (!Array.isArray(placements) || placements.length === 0){
-    return { minX: 0, maxX: 0, minY: 0, maxY: 0 };
-  }
-
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-
-  for (const placement of placements){
-    if (!Array.isArray(placement)) continue;
-    for (const point of placement){
-      if (!point || typeof point.x !== 'number' || typeof point.y !== 'number'){
-        continue;
-      }
-      minX = Math.min(minX, point.x);
-      maxX = Math.max(maxX, point.x);
-      minY = Math.min(minY, point.y);
-      maxY = Math.max(maxY, point.y);
-    }
-  }
-
-  if (minX === Infinity){
-    return { minX: 0, maxX: 0, minY: 0, maxY: 0 };
-  }
-
-  return { minX, maxX, minY, maxY };
-}
-
-
-// Состояние слотов: прогресс матча по пять слотов на сторону
-// (визуализируются звёздами, каждая звезда = до 5 фрагментов)
-// Match Progress = visual progress of the round (stars), not score and not points
-const matchProgressState = {
-  blue:  Array.from({length:5}, ()=> new Set()),
-  green: Array.from({length:5}, ()=> new Set())
-};
-
-let matchProgressLap = { blue: 0, green: 0 };
-let matchProgressPos = { blue: 0, green: 0 };
-let matchProgressPlacedInLap = { blue: 0, green: 0 };
-
-const matchProgressFragmentFadeDurationMs = 620;
-const matchProgressFragmentRowDelayMs = 70;
-
-const matchProgressFragmentAnimations = {
-  blue: [],
-  green: []
-};
-
-function ensureMatchProgressAnimationState(color){
-  const slots = Array.isArray(matchProgressLayout?.[color]) ? matchProgressLayout[color].length : 0;
-  if (!Array.isArray(matchProgressFragmentAnimations[color])){
-    matchProgressFragmentAnimations[color] = [];
-  }
-
-  const storage = matchProgressFragmentAnimations[color];
-
-  while (storage.length < slots){
-    storage.push(Array.from({ length: matchProgressFragmentsPerSlot }, () => null));
-  }
-
-  if (storage.length > slots){
-    storage.length = slots;
-  }
-
-  for (let i = 0; i < storage.length; i += 1){
-    const row = storage[i];
-    if (!Array.isArray(row)){
-      storage[i] = Array.from({ length: matchProgressFragmentsPerSlot }, () => null);
-      continue;
-    }
-
-    if (row.length < matchProgressFragmentsPerSlot){
-      row.length = matchProgressFragmentsPerSlot;
-    }
-
-    for (let j = 0; j < row.length; j += 1){
-      if (typeof row[j] === "undefined"){
-        row[j] = null;
-      }
-    }
-  }
-
-  return storage;
-}
-
-function matchProgressFragmentDelay(color, slotIdx){
-  const slots = Array.isArray(matchProgressLayout?.[color]) ? matchProgressLayout[color].length : 0;
-  if (slots <= 1){
-    return 0;
-  }
-  const step = matchProgressFragmentRowDelayMs;
-  if (color === "blue"){
-    return (slots - 1 - slotIdx) * step;
-  }
-  return slotIdx * step;
-}
-
-function applyMatchProgressFragmentAnimations(color, previousState){
-  const slots = matchProgressState[color];
-  if (!Array.isArray(slots)) return;
-
-  const animStorage = ensureMatchProgressAnimationState(color);
-  const now = performance.now();
-
-  for (let slotIdx = 0; slotIdx < slots.length; slotIdx += 1){
-    const newPieces = slots[slotIdx] || new Set();
-    const prevPieces = Array.isArray(previousState) ? previousState[slotIdx] || new Set() : new Set();
-    const animRow = animStorage[slotIdx];
-
-    for (let frag = 1; frag <= matchProgressFragmentsPerSlot; frag += 1){
-      const fragIdx = frag - 1;
-      const hasNow = newPieces.has(frag);
-      const hadBefore = prevPieces instanceof Set ? prevPieces.has(frag) : false;
-
-      if (hasNow){
-        if (!hadBefore){
-          animRow[fragIdx] = {
-            start: now,
-            delay: matchProgressFragmentDelay(color, slotIdx),
-            duration: matchProgressFragmentFadeDurationMs
-          };
-        } else if (!animRow[fragIdx]){
-          animRow[fragIdx] = {
-            start: now - matchProgressFragmentFadeDurationMs,
-            delay: 0,
-            duration: matchProgressFragmentFadeDurationMs
-          };
-        }
-      } else {
-        animRow[fragIdx] = null;
-      }
-    }
-  }
-}
-
-ensureMatchProgressAnimationState("blue");
-ensureMatchProgressAnimationState("green");
-
-const matchProgressImages = {
-  blue: [],
-  green: []
-};
-
-let pendingMatchProgressImages = 0;
-let matchProgressAssetsInitialized = false;
-let matchProgressImagesRequested = false;
-let lastMatchProgressCompleted = null;
-
 function loadMatchScoreImagesIfNeeded(){
   if (matchScoreImagesRequested) return;
   matchScoreImagesRequested = true;
@@ -3716,206 +3456,6 @@ function loadMatchScoreImagesIfNeeded(){
   });
 }
 
-function finalizeMatchProgressLoading(){
-  if (!ENABLE_MATCH_PROGRESS_SHARDS) return;
-  if (matchProgressAssetsInitialized) return;
-  matchProgressAssetsInitialized = true;
-  window.matchProgressReady = true;
-  console.log("[MATCH_PROGRESS] shards loaded");
-  syncAllMatchProgressStates();
-  if (typeof renderScoreboard === "function"){
-    renderScoreboard();
-  }
-}
-
-function handleMatchProgressAssetLoaded(){
-  pendingMatchProgressImages = Math.max(0, pendingMatchProgressImages - 1);
-  if (pendingMatchProgressImages === 0){
-    finalizeMatchProgressLoading();
-  }
-}
-
-function registerMatchProgressShardImage(src){
-  if (src instanceof String) src = src.valueOf();
-  if (typeof src !== "string"){
-    return null;
-  }
-  const trimmed = src.trim();
-  if (!trimmed){
-    return null;
-  }
-  const { img, url } = getImage(trimmed, "matchProgressShard");
-  if (!img || !url) return null;
-  pendingMatchProgressImages += 1;
-  console.log("[MATCH_PROGRESS] shard pending", { pendingMatchProgressImages, lastCompleted: lastMatchProgressCompleted, src: trimmed });
-  const handleLoad = () => {
-    lastMatchProgressCompleted = trimmed;
-    handleMatchProgressAssetLoaded();
-    console.log("[MATCH_PROGRESS] shard load", { pendingMatchProgressImages, lastCompleted: lastMatchProgressCompleted });
-  };
-  const handleError = (event) => {
-    lastMatchProgressCompleted = trimmed;
-    handleMatchProgressAssetLoaded();
-    console.warn(`[MATCH_PROGRESS] shard load ERROR ${trimmed}`, {
-      event,
-      pendingMatchProgressImages,
-      lastCompleted: lastMatchProgressCompleted
-    });
-  };
-  if (isSpriteReady(img)) {
-    handleLoad();
-    return img;
-  }
-
-  img.addEventListener("load", handleLoad, { once: true });
-  img.addEventListener("error", handleError, { once: true });
-
-  primeImageLoad(img, url, "matchProgressShard");
-  return img;
-}
-
-function loadMatchProgressImages(){
-  if (!ENABLE_MATCH_PROGRESS_SHARDS) return;
-  const colorSet = new Set([
-    ...Object.keys(matchProgressLayout || {}),
-    ...Object.keys(matchProgressFragmentSources || {})
-  ]);
-  const colors = Array.from(colorSet);
-  pendingMatchProgressImages = 0;
-
-  colors.forEach(color => {
-    const slots = Array.isArray(matchProgressLayout[color]) ? matchProgressLayout[color].length : 0;
-    const sources = matchProgressFragmentSources[color];
-
-    if (!Array.isArray(sources)){
-      matchProgressImages[color] = Array.from({ length: slots }, () => []);
-      return;
-    }
-
-    const first = sources[0];
-
-    if (typeof first === "string" || first instanceof String){
-      const sharedImages = sources.map(src => registerMatchProgressShardImage(src));
-      matchProgressImages[color] = Array.from({ length: slots }, () => sharedImages);
-      return;
-    }
-
-    if (Array.isArray(first)){
-      const mapped = sources.map(slotSources => {
-        if (!Array.isArray(slotSources)) return [];
-        return slotSources.map(src => registerMatchProgressShardImage(src));
-      });
-      while (mapped.length < slots){
-        mapped.push(mapped[mapped.length - 1] || []);
-      }
-      matchProgressImages[color] = mapped;
-      return;
-    }
-
-    matchProgressImages[color] = Array.from({ length: slots }, () => []);
-  });
-
-  if (pendingMatchProgressImages === 0){
-    finalizeMatchProgressLoading();
-  }
-}
-
-function loadMatchProgressImagesIfNeeded(){
-  if (!ENABLE_MATCH_PROGRESS_SHARDS) return;
-  if (matchProgressImagesRequested) return;
-  matchProgressImagesRequested = true;
-  loadMatchProgressImages();
-}
-
-
-function syncMatchProgressState(color, score){
-  if (!ENABLE_MATCH_PROGRESS_SHARDS) return;
-  const slots = matchProgressState[color];
-  if (!Array.isArray(slots)) return;
-
-  const previousState = slots.map(set => {
-    if (set instanceof Set){
-      return new Set(set);
-    }
-    return new Set();
-  });
-
-  const clamped = Math.max(0, Math.min(score, POINTS_TO_WIN));
-
-  slots.forEach(set => set.clear());
-  matchProgressLap[color] = 0;
-  matchProgressPos[color] = 0;
-  matchProgressPlacedInLap[color] = 0;
-
-  for (let count = 0; count < clamped; count++){
-    if (!addMatchProgressPointToSide(color)) break;
-  }
-
-  applyMatchProgressFragmentAnimations(color, previousState);
-}
-
-function addMatchProgressPointToSide(color){
-  if (!ENABLE_MATCH_PROGRESS_SHARDS) return false;
-  const pool = matchProgressState[color];                   // массив из 5 Set'ов (по звездам)
-  if (!Array.isArray(pool) || pool.length === 0) return false;
-
-  const totalSlots = pool.length;
-  const fragmentsPerSlot = matchProgressFragmentsPerSlot;
-  if (totalSlots <= 0 || fragmentsPerSlot <= 0) return false;
-
-  let targetSlot = -1;
-
-  for (let slotIndex = 0; slotIndex < totalSlots; slotIndex += 1){
-    let pieces = pool[slotIndex];
-    if (!(pieces instanceof Set)){
-      pieces = new Set();
-      pool[slotIndex] = pieces;
-    }
-
-    if (pieces.size < fragmentsPerSlot){
-      targetSlot = slotIndex;
-      break;
-    }
-  }
-
-  if (targetSlot === -1){
-    matchProgressPos[color] = totalSlots > 0 ? totalSlots - 1 : 0;
-    matchProgressLap[color] = totalSlots;
-    matchProgressPlacedInLap[color] = fragmentsPerSlot;
-    return false;
-  }
-
-  const slotPieces = pool[targetSlot];
-  let fragment = 1;
-  while (fragment <= fragmentsPerSlot && slotPieces.has(fragment)){
-    fragment += 1;
-  }
-
-  if (fragment > fragmentsPerSlot){
-    // На случай непредвиденного рассинхрона: слот считался незаполненным,
-    // но в нём присутствуют все фрагменты. Попробуем перейти к следующему слоту.
-    matchProgressPos[color] = targetSlot + 1;
-    matchProgressPlacedInLap[color] = fragmentsPerSlot;
-    matchProgressLap[color] = targetSlot + 1;
-    return addMatchProgressPointToSide(color);
-  }
-
-  slotPieces.add(fragment);
-
-  matchProgressPos[color] = targetSlot;
-  matchProgressPlacedInLap[color] = slotPieces.size;
-  matchProgressLap[color] = targetSlot;
-
-  return true;
-}
-
-function syncAllMatchProgressStates(){
-  if (!ENABLE_MATCH_PROGRESS_SHARDS) return;
-  syncMatchProgressState("green", greenScore);
-  syncMatchProgressState("blue",  blueScore);
-}
-
-syncAllMatchProgressStates();
 
 function lockInWinner(color, options = {}){
   if(isGameOver) return;
@@ -3973,10 +3513,7 @@ function addScore(color, delta){
     blueScore = Math.max(0, blueScore + delta);
     if(blueScore > previous){
       trackMatchScoreSpawn("blue", previous, blueScore);
-      spawnPointsPopup("blue", blueScore - previous, blueScore);
     } else {
-      syncMatchProgressState("blue", blueScore);
-      updatePendingMatchProgressTargets("blue", blueScore);
       for (let i = blueScore; i < previous && i < matchScoreSpawnTimes.blue.length; i += 1){
         matchScoreSpawnTimes.blue[i] = 0;
       }
@@ -3986,10 +3523,7 @@ function addScore(color, delta){
     greenScore = Math.max(0, greenScore + delta);
     if(greenScore > previous){
       trackMatchScoreSpawn("green", previous, greenScore);
-      spawnPointsPopup("green", greenScore - previous, greenScore);
     } else {
-      syncMatchProgressState("green", greenScore);
-      updatePendingMatchProgressTargets("green", greenScore);
       for (let i = greenScore; i < previous && i < matchScoreSpawnTimes.green.length; i += 1){
         matchScoreSpawnTimes.green[i] = 0;
       }
@@ -4155,18 +3689,11 @@ function resetGame(options = {}){
 
   cleanupGreenCrashFx();
 
-  clearPointsPopups();
   activeExplosions.length = 0;
 
   greenScore = 0;
   blueScore  = 0;
   resetMatchScoreAnimations();
-  matchProgressLap = { blue: 0, green: 0 };
-  matchProgressPos = { blue: 0, green: 0 };
-  matchProgressPlacedInLap = { blue: 0, green: 0 };
-  matchProgressState.blue  = Array.from({length:5}, ()=> new Set());
-  matchProgressState.green = Array.from({length:5}, ()=> new Set());
-  syncAllMatchProgressStates();
   roundNumber = 0;
   roundTextTimer = 0;
   if(roundTransitionTimeout){
@@ -6897,114 +6424,13 @@ function drawMatchScore(ctx, scaleX = 1, scaleY = 1, now = performance.now()){
   }
 }
 
-function drawMatchProgress(ctx, scaleX = 1, scaleY = 1){
-  if (!ENABLE_MATCH_PROGRESS_SHARDS) return;
-  if (!matchProgressReady || !ctx) return;
-
-  const sx = Number.isFinite(scaleX) && scaleX > 0 ? scaleX : 1;
-  const sy = Number.isFinite(scaleY) && scaleY > 0 ? scaleY : sx;
-  const scale = (typeof matchProgressPieceScale !== 'undefined') ? matchProgressPieceScale : 1;
-
-  ctx.save();
-  // На всякий случай сбрасываем висящие трансформации
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.imageSmoothingEnabled = false;
-
-  const now = performance.now();
-
-  try {
-    const colors = ["blue", "green"];
-    for (const color of colors){
-      const slots = matchProgressState[color] || [];
-      const placements = matchProgressLayout[color];
-      const images = matchProgressImages[color];
-      const animRows = matchProgressFragmentAnimations[color];
-
-      if (!Array.isArray(placements) || !Array.isArray(images)) continue;
-
-      for (let slotIdx = 0; slotIdx < placements.length; slotIdx++){
-        const slot = slots[slotIdx];
-        if (!slot || slot.size === 0) continue;
-
-        for (let frag = 1; frag <= matchProgressFragmentsPerSlot; frag++){
-          // Проверяем наличие именно текущего фрагмента в Set,
-          // чтобы не рисовать все пять позиций звезды при наличии только одного.
-          const hasFragment = slot.has(frag);
-          if (!hasFragment) continue;
-
-          const pos = matchProgressLayout[color]?.[slotIdx]?.[frag-1];
-          if (!pos || typeof pos.x !== 'number' || typeof pos.y !== 'number'){
-            console.warn(`[MATCH_PROGRESS] no pos for ${color} slot ${slotIdx} frag ${frag}`);
-            continue;
-          }
-
-          const slotImages = Array.isArray(images[slotIdx]) ? images[slotIdx] : [];
-          const img = slotImages[frag - 1];
-          if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight){
-            continue;
-          }
-
-          const animRow = Array.isArray(animRows) ? animRows[slotIdx] : null;
-          const anim = Array.isArray(animRow) ? animRow[frag - 1] : null;
-          let alpha = 1;
-
-          if (anim){
-            const delay = Number.isFinite(anim.delay) ? anim.delay : 0;
-            const duration = Number.isFinite(anim.duration) && anim.duration > 0
-              ? anim.duration
-              : matchProgressFragmentFadeDurationMs;
-            const start = Number.isFinite(anim.start) ? anim.start : now;
-            const elapsed = now - start - delay;
-            if (elapsed < 0){
-              continue;
-            }
-            alpha = Math.max(0, Math.min(1, elapsed / duration));
-            if (alpha <= 0){
-              continue;
-            }
-          }
-
-          const dstW = Math.round(img.naturalWidth * scale * sx);
-          const dstH = Math.round(img.naturalHeight * scale * sy);
-
-          const screenX = Math.round(pos.x * sx);
-          const screenY = Math.round(pos.y * sy);
-
-          const previousAlpha = ctx.globalAlpha;
-          if (anim){
-            ctx.globalAlpha = previousAlpha * alpha;
-          }
-
-          if (ctx.globalAlpha > 0){
-            ctx.drawImage(img, screenX, screenY, dstW, dstH);
-          }
-
-          ctx.globalAlpha = previousAlpha;
-        }
-      }
-    }
-  } catch (err){
-    console.warn('[MATCH_PROGRESS] drawMatchProgress error:', err);
-  } finally {
-    ctx.restore();
-  }
-}
-
 const PLANE_COUNTER_PADDING = 2;
 const PLANE_COUNTER_CONTAINERS = {
   blue: HUD_LAYOUT.planeCounters.blue,
   green: HUD_LAYOUT.planeCounters.green
 };
 
-const pointsPopupDurationMs = 2600;
-const MIN_ROUND_TRANSITION_DELAY_MS = (() => {
-  const greenSlots = Array.isArray(matchProgressLayout?.green) ? matchProgressLayout.green.length : 0;
-  const blueSlots = Array.isArray(matchProgressLayout?.blue) ? matchProgressLayout.blue.length : 0;
-  const maxSlotCount = Math.max(greenSlots, blueSlots, 0);
-  const rowCascadeDelay = Math.max(0, maxSlotCount - 1) * matchProgressFragmentRowDelayMs;
-  return pointsPopupDurationMs + matchProgressFragmentFadeDurationMs + rowCascadeDelay;
-})();
-const HUD_KILL_MARKER_DRAW_DURATION_MS = Math.max(400, pointsPopupDurationMs * 0.55);
+const MIN_ROUND_TRANSITION_DELAY_MS = 1200;
 function getKillMarkerProgress(plane, now = performance.now()){
   if (!plane) {
     return 0;
@@ -7038,31 +6464,23 @@ function getKillMarkerProgress(plane, now = performance.now()){
 
   return Math.max(0, Math.min(1, elapsed / duration));
 }
-const pointsPopupQueue = {
   blue: [],
   green: []
 };
-const pointsPopupActive = {
   blue: false,
   green: false
 };
-const activePointsPopupEntries = {
   blue: null,
   green: null
 };
 
-function refreshPointsPopupAnchors(){
-  for(const [color, host] of Object.entries(pointsPopupElements)){
     if(!(host instanceof HTMLElement)){
       continue;
     }
 
-    const targetScore = activePointsPopupEntries[color]?.targetScore ?? getScoreForColor(color);
-    setPointsPopupAnchor(host, color, targetScore);
   }
 }
 
-function spawnPointsPopup(color, delta, targetScore){
   if(delta <= 0) return;
   if(color !== "blue" && color !== "green") return;
 
@@ -7078,233 +6496,24 @@ function spawnPointsPopup(color, delta, targetScore){
     const entryTarget = Number.isFinite(firstTarget)
       ? firstTarget + i
       : normalizedTarget;
-    enqueuePointsPopup(color, 1, entryTarget);
   }
 
   const remainder = delta - total;
   if(remainder > 0){
-    enqueuePointsPopup(color, remainder, normalizedTarget);
   }
 }
 
-function enqueuePointsPopup(color, delta, targetScore){
-  const queue = pointsPopupQueue[color];
   if(!queue) return;
 
   queue.push({ delta, targetScore });
-  if(!pointsPopupActive[color]){
-    processNextPointsPopup(color);
   }
 }
 
-function processNextPointsPopup(color){
-  const queue = pointsPopupQueue[color];
   if(!queue || queue.length === 0){
-    pointsPopupActive[color] = false;
-    activePointsPopupEntries[color] = null;
     return;
   }
 
-  pointsPopupActive[color] = true;
   const entry = queue.shift();
-  activePointsPopupEntries[color] = entry;
-  showPointsPopup(color, entry);
-}
-
-function getScoreForColor(color){
-  return color === "blue" ? blueScore : greenScore;
-}
-
-function updatePendingMatchProgressTargets(color, targetScore){
-  if(!Number.isFinite(targetScore)){
-    return;
-  }
-
-  const queue = pointsPopupQueue[color];
-  if(Array.isArray(queue)){
-    for(const entry of queue){
-      if(entry && typeof entry === "object"){
-        entry.targetScore = targetScore;
-      }
-    }
-  }
-
-  const activeEntry = activePointsPopupEntries[color];
-  if(activeEntry && typeof activeEntry === "object"){
-    activeEntry.targetScore = targetScore;
-  }
-}
-
-function setPointsPopupAnchor(host, color, targetScore){
-  if(!(host instanceof HTMLElement)){
-    return false;
-  }
-
-  const anchors = pointsPopupAnchors?.[color];
-  const fragmentsPerSlot = matchProgressFragmentsPerSlot;
-
-  const cleanup = () => {
-    host.style.removeProperty('--points-popup-ink-left');
-    host.style.removeProperty('--points-popup-ink-top');
-  };
-
-  if(!Array.isArray(anchors) || anchors.length === 0 || !Number.isFinite(fragmentsPerSlot) || fragmentsPerSlot <= 0){
-    cleanup();
-    return false;
-  }
-
-  if(!Number.isFinite(targetScore) || targetScore <= 0){
-    cleanup();
-    return false;
-  }
-
-  const totalSlots = anchors.length;
-  const totalFragments = totalSlots * fragmentsPerSlot;
-  if(totalFragments <= 0){
-    cleanup();
-    return false;
-  }
-
-  const normalizedScore = Math.min(totalFragments, Math.max(1, Math.floor(targetScore)));
-  const zeroBased = normalizedScore - 1;
-  const slotIdx = Math.min(totalSlots - 1, Math.max(0, Math.floor(zeroBased / fragmentsPerSlot)));
-  const anchor = anchors[slotIdx] || null;
-
-  if(!anchor || !Number.isFinite(anchor.x) || !Number.isFinite(anchor.y)){
-    cleanup();
-    return false;
-  }
-
-  const computed = window.getComputedStyle(host);
-  let scale = Number.parseFloat(computed.getPropertyValue('--points-popup-scale'));
-  if(!Number.isFinite(scale) || scale <= 0){
-    scale = 1;
-  }
-
-  let hostWidth = host.clientWidth;
-  if(!Number.isFinite(hostWidth) || hostWidth <= 0){
-    const computedWidth = Number.parseFloat(computed.width);
-    if(Number.isFinite(computedWidth) && computedWidth > 0){
-      hostWidth = computedWidth;
-    } else {
-      hostWidth = pointsPopupBaseSize.width * scale;
-    }
-  }
-
-  let hostHeight = host.clientHeight;
-  if(!Number.isFinite(hostHeight) || hostHeight <= 0){
-    const computedHeight = Number.parseFloat(computed.height);
-    if(Number.isFinite(computedHeight) && computedHeight > 0){
-      hostHeight = computedHeight;
-    } else {
-      hostHeight = pointsPopupBaseSize.height * scale;
-    }
-  }
-
-  let pxLeft = anchor.x;
-  if(Number.isFinite(pxLeft) && pxLeft >= 0 && pxLeft <= 1){
-    pxLeft = pxLeft * hostWidth;
-  } else {
-    pxLeft = pxLeft * scale;
-  }
-
-  let pxTop = anchor.y;
-  if(Number.isFinite(pxTop) && pxTop >= 0 && pxTop <= 1){
-    pxTop = pxTop * hostHeight;
-  } else {
-    pxTop = pxTop * scale;
-  }
-
-  pxLeft = clampPointsPopupOffset(pxLeft, hostWidth);
-  pxTop = clampPointsPopupOffset(pxTop, hostHeight);
-
-  if(Number.isFinite(pxLeft)){
-    host.style.setProperty('--points-popup-ink-left', `${pxLeft}px`);
-  } else {
-    host.style.removeProperty('--points-popup-ink-left');
-  }
-
-  if(Number.isFinite(pxTop)){
-    host.style.setProperty('--points-popup-ink-top', `${pxTop}px`);
-  } else {
-    host.style.removeProperty('--points-popup-ink-top');
-  }
-
-  return Number.isFinite(pxLeft) && Number.isFinite(pxTop);
-}
-
-function showPointsPopup(color, entry){
-  const delta = Number.isFinite(entry?.delta) ? entry.delta : 0;
-  const resolveTargetScore = () => {
-    if(entry && Number.isFinite(entry.targetScore)){
-      return entry.targetScore;
-    }
-    return getScoreForColor(color);
-  };
-
-  if(delta <= 0){
-    syncMatchProgressState(color, resolveTargetScore());
-    pointsPopupActive[color] = false;
-    activePointsPopupEntries[color] = null;
-    processNextPointsPopup(color);
-    return;
-  }
-
-  if(!SHOW_POINTS_POPUP){
-    syncMatchProgressState(color, resolveTargetScore());
-    pointsPopupActive[color] = false;
-    activePointsPopupEntries[color] = null;
-    processNextPointsPopup(color);
-    return;
-  }
-
-  const host = pointsPopupElements[color];
-  if(!host){
-    pointsPopupActive[color] = false;
-    syncMatchProgressState(color, resolveTargetScore());
-    activePointsPopupEntries[color] = null;
-    processNextPointsPopup(color);
-    return;
-  }
-
-  const anchorTargetScore = resolveTargetScore();
-  setPointsPopupAnchor(host, color, anchorTargetScore);
-
-  const popup = document.createElement("span");
-  popup.className = "points-popup-ink";
-  popup.textContent = `+${delta}`;
-
-  let cleared = false;
-  const finalize = () => {
-    if(cleared) return;
-    cleared = true;
-    syncMatchProgressState(color, resolveTargetScore());
-    if(popup.parentNode === host){
-      host.removeChild(popup);
-    }
-    pointsPopupActive[color] = false;
-    activePointsPopupEntries[color] = null;
-    processNextPointsPopup(color);
-  };
-
-  popup.addEventListener("animationend", finalize, { once: true });
-  setTimeout(finalize, pointsPopupDurationMs);
-
-  host.appendChild(popup);
-}
-
-function clearPointsPopups(){
-  for(const key of Object.keys(pointsPopupElements)){
-    const host = pointsPopupElements[key];
-    if(host){
-      host.textContent = "";
-    }
-    if(Array.isArray(pointsPopupQueue[key])){
-      pointsPopupQueue[key].length = 0;
-    }
-    pointsPopupActive[key] = false;
-    activePointsPopupEntries[key] = null;
-  }
 }
 
 function renderScoreboard(now = performance.now()){
@@ -7341,7 +6550,6 @@ function renderScoreboard(now = performance.now()){
   }
 
   drawMatchScore(hudCtx, scaleX, scaleY, now);
-  drawMatchProgress(hudCtx, scaleX, scaleY);
 
   if (DEBUG_LAYOUT) {
     drawHudDebugLayout(hudCtx, scaleX, scaleY);
@@ -7368,10 +6576,6 @@ function drawHudDebugLayout(ctx, scaleX, scaleY) {
   const slots = [
     { id: 'BluePlaneCounter', ...HUD_LAYOUT.planeCounters.blue },
     { id: 'GreenPlaneCounter', ...HUD_LAYOUT.planeCounters.green },
-    { id: 'BlueMatchProgress', ...HUD_LAYOUT.matchProgress.blue },
-    { id: 'GreenMatchProgress', ...HUD_LAYOUT.matchProgress.green },
-    { id: 'BluePointsPopup', ...HUD_LAYOUT.pointsPopups.blue },
-    { id: 'GreenPointsPopup', ...HUD_LAYOUT.pointsPopups.green }
   ];
 
   ctx.save();
@@ -7565,7 +6769,6 @@ yesBtn.addEventListener("click", () => {
     blueScore = 0;
     greenScore = 0;
     resetMatchScoreAnimations();
-    syncAllMatchProgressStates();
     roundNumber = 0;
     if(shouldAutoRandomizeMap()){
       if(settings.mapIndex !== RANDOM_MAP_SENTINEL_INDEX){
@@ -7584,7 +6787,6 @@ noBtn.addEventListener("click", () => {
 function startNewRound(){
   logBootStep("startNewRound");
   loadMatchScoreImagesIfNeeded();
-  loadMatchProgressImagesIfNeeded();
   preloadPlaneSprites();
   preloadExplosionSprites();
   restoreGameBackgroundAfterMenu();
@@ -7602,7 +6804,6 @@ function startNewRound(){
   }
   suppressAutoRandomMapForNextRound = false;
   cleanupGreenCrashFx();
-  clearPointsPopups();
   endGameDiv.style.display = "none";
   isGameOver=false; winnerColor=null;
   awaitingFlightResolution = false;
@@ -7610,12 +6811,6 @@ function startNewRound(){
   pendingRoundTransitionStart = 0;
   shouldShowEndScreen = false;
 
-  matchProgressLap = { blue: 0, green: 0 };
-  matchProgressPos = { blue: 0, green: 0 };
-  matchProgressPlacedInLap = { blue: 0, green: 0 };
-  matchProgressState.blue  = Array.from({length:5}, ()=> new Set());
-  matchProgressState.green = Array.from({length:5}, ()=> new Set());
-  syncAllMatchProgressStates();
 
   lastFirstTurn = 1 - lastFirstTurn;
   turnIndex = lastFirstTurn;
@@ -7765,7 +6960,6 @@ function updateUiScale() {
   }
 
   if (gsFrameEl instanceof HTMLElement) {
-    gsFrameEl.style.removeProperty('--points-popup-scale');
     gsFrameEl.style.removeProperty('--game-scale');
     gsFrameEl.style.removeProperty('left');
     gsFrameEl.style.removeProperty('top');
@@ -7894,7 +7088,6 @@ function resizeCanvas() {
     initPoints();
   }
 
-  refreshPointsPopupAnchors();
   logLayoutDebug();
 
   if (document.body.classList.contains('screen--menu')) {
@@ -7923,8 +7116,6 @@ function resizeCanvas() {
       overlayContainer: rectSummary(overlayContainer),
       greenPlaneCounter: rectSummary(greenPlaneCounter),
       bluePlaneCounter: rectSummary(bluePlaneCounter),
-      greenPointsPopup: rectSummary(greenPointsPopup),
-      bluePointsPopup: rectSummary(bluePointsPopup)
     });
   }
 }
