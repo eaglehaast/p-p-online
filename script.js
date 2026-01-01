@@ -3506,11 +3506,21 @@ const MATCH_SCORE_ASSETS = {
   green: "ui_gamescreen/gamescreen_outside/matchscore_green_egg2.png"
 };
 
+const MATCH_SCORE_GHOST_ASSETS = {
+  blue: "ui_gamescreen/gamescreen_outside/matchscore_blue_corn_ghost.png",
+  green: "ui_gamescreen/gamescreen_outside/matchscore_green_egg_ghost.png"
+};
+
 const MATCH_SCORE_ICON_RENDER_SIZE = 20;
 const MATCH_SCORE_ICON_SOURCE_INSET = 1;
 const MATCH_SCORE_GHOST_ALPHA = 0.22;
 
 const matchScoreImages = {
+  blue: null,
+  green: null
+};
+
+const matchScoreGhostImages = {
   blue: null,
   green: null
 };
@@ -3696,6 +3706,11 @@ function loadMatchScoreImagesIfNeeded(){
   Object.entries(MATCH_SCORE_ASSETS).forEach(([color, src]) => {
     const { img } = loadImageAsset(src, "matchScoreIcon");
     matchScoreImages[color] = img || null;
+  });
+
+  Object.entries(MATCH_SCORE_GHOST_ASSETS).forEach(([color, src]) => {
+    const { img } = loadImageAsset(src, "matchScoreGhostIcon");
+    matchScoreGhostImages[color] = img || null;
   });
 }
 
@@ -6843,7 +6858,8 @@ function drawMatchScore(ctx, scaleX = 1, scaleY = 1, now = performance.now()){
     const frame = buildMatchScoreFrame(color, scaleX, scaleY);
     const spec = MATCH_SCORE_CONTAINERS?.[color];
     const icon = matchScoreImages[color];
-    if (!frame || !spec || !isSpriteReady(icon)) continue;
+    const ghostIcon = matchScoreGhostImages[color] || icon;
+    if (!frame || !spec || !isSpriteReady(icon) || !isSpriteReady(ghostIcon)) continue;
 
     const count = Math.max(0, Math.min(POINTS_TO_WIN, getScoreForColor(color)));
 
@@ -6883,7 +6899,7 @@ function drawMatchScore(ctx, scaleX = 1, scaleY = 1, now = performance.now()){
 
       ctx.save();
       ctx.globalAlpha = MATCH_SCORE_GHOST_ALPHA;
-      ctx.drawImage(icon, srcX, srcY, srcW, srcH, screenX, screenY, dstW, dstH);
+      ctx.drawImage(ghostIcon, srcX, srcY, srcW, srcH, screenX, screenY, dstW, dstH);
       ctx.restore();
     }
 
