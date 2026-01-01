@@ -3394,6 +3394,7 @@ const MATCH_SCORE_GHOST_ASSETS = {
 const MATCH_SCORE_ICON_RENDER_SIZE = 20;
 const MATCH_SCORE_ICON_SOURCE_INSET = 1;
 const MATCH_SCORE_GHOST_ALPHA = 0.22;
+const MATCHSCORE_OFFSET_X = -2;
 
 const matchScoreImages = {
   blue: null,
@@ -6383,7 +6384,7 @@ function drawMatchScore(ctx, scaleX = 1, scaleY = 1, now = performance.now()){
     for (const slot of positions){
       const dstW = slot.baseW;
       const dstH = slot.baseH;
-      const screenX = Math.round(slot.centerX - dstW / 2);
+      const screenX = Math.round(slot.centerX - dstW / 2) + MATCHSCORE_OFFSET_X;
       const screenY = Math.round(slot.centerY - dstH / 2);
 
       ctx.save();
@@ -6400,7 +6401,7 @@ function drawMatchScore(ctx, scaleX = 1, scaleY = 1, now = performance.now()){
 
       const dstW = Math.round(slot.baseW * scale);
       const dstH = Math.round(slot.baseH * scale);
-      const screenX = Math.round(slot.centerX - dstW / 2);
+      const screenX = Math.round(slot.centerX - dstW / 2) + MATCHSCORE_OFFSET_X;
       const screenY = Math.round(slot.centerY - dstH / 2);
 
       ctx.drawImage(icon, srcX, srcY, srcW, srcH, screenX, screenY, dstW, dstH);
