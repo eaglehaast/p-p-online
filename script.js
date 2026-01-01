@@ -2914,6 +2914,8 @@ const HUD_PLANE_DIM_ALPHA = 1;        // keep HUD planes at full opacity
 const HUD_PLANE_DIM_FILTER = "";     // no additional dimming filter for HUD planes
 const HUD_KILL_MARKER_COLOR = "#e42727";
 const HUD_KILL_MARKER_ALPHA = 0.85;
+const HUD_PLANE_DEATH_DURATION_MS = 160;
+const HUD_PLANE_DEATH_SCALE_DELTA = 0.15;
 const CELL_SIZE            = 20;     // px
 const POINT_RADIUS         = 15 * PLANE_SCALE;     // px (увеличено для мобильных)
 const FLAG_INTERACTION_RADIUS = 25;  // px
@@ -6430,6 +6432,55 @@ const PLANE_COUNTER_CONTAINERS = {
   green: HUD_LAYOUT.planeCounters.green
 };
 
+const planeCounterDeathStartTimes = {
+  blue: Array(PLANES_PER_SIDE).fill(null),
+  green: Array(PLANES_PER_SIDE).fill(null),
+};
+
+const planeCounterPreviousAliveCounts = {
+  blue: PLANES_PER_SIDE,
+  green: PLANES_PER_SIDE,
+};
+
+function getPlaneCounterSlotOrderFromCenter(color){
+  return color === 'green'
+    ? [0, 1, 2, 3]
+    : [3, 2, 1, 0];
+}
+
+function resetPlaneCounterDeaths(color, aliveCount){
+  planeCounterDeathStartTimes[color] = Array(PLANES_PER_SIDE).fill(null);
+  planeCounterPreviousAliveCounts[color] = clamp(aliveCount, 0, PLANES_PER_SIDE);
+}
+
+function updatePlaneCounterDeaths(color, aliveCount, now){
+  const slotOrderFromCenter = getPlaneCounterSlotOrderFromCenter(color);
+  const slotCount = slotOrderFromCenter.length;
+  const clampedAlive = clamp(aliveCount, 0, slotCount);
+
+  if (clampedAlive > planeCounterPreviousAliveCounts[color]){
+    resetPlaneCounterDeaths(color, clampedAlive);
+  }
+
+  const slotsToHide = Math.max(0, slotCount - clampedAlive);
+  const timers = planeCounterDeathStartTimes[color];
+
+  for (let i = 0; i < slotCount; i += 1){
+    const slotIndex = slotOrderFromCenter[i];
+    if (i < slotsToHide){
+      if (timers[slotIndex] === null){
+        timers[slotIndex] = now;
+      }
+    } else {
+      timers[slotIndex] = null;
+    }
+  }
+
+  planeCounterPreviousAliveCounts[color] = clampedAlive;
+
+  return { slotsToHide, slotOrderFromCenter };
+}
+
 const MIN_ROUND_TRANSITION_DELAY_MS = 1200;
 function getKillMarkerProgress(plane, now = performance.now()){
   if (!plane) {
@@ -6536,7 +6587,8 @@ function renderScoreboard(now = performance.now()){
       hudCtx,
       blueHudFrame,
       "blue",
-      turnColors[turnIndex] === "blue"
+      turnColors[turnIndex] === "blue",
+      now
     );
   }
 
@@ -6545,7 +6597,8 @@ function renderScoreboard(now = performance.now()){
       hudCtx,
       greenHudFrame,
       "green",
-      turnColors[turnIndex] === "green"
+      turnColors[turnIndex] === "green",
+      now
     );
   }
 
@@ -6610,7 +6663,7 @@ function updateTurnIndicators(){
   goatIndicator.classList.toggle('active', !isBlueTurn);
 }
 
-function drawPlayerHUD(ctx, frame, color, isTurn){
+function drawPlayerHUD(ctx, frame, color, isTurn, now = performance.now()){
   if (!frame) return;
 
   const { left, top, width, height, scaleX, scaleY } = frame;
@@ -6665,22 +6718,40 @@ function drawPlayerHUD(ctx, frame, color, isTurn){
     }
   }
 
-  const iconCount = aliveCount;
-  const slotOrderFromCenter = color === 'green'
-    ? [0, 1, 2, 3]
-    : [3, 2, 1, 0];
-  const slotsToHide = Math.max(0, slotOrderFromCenter.length - iconCount);
-  const visibleSlots = slotOrderFromCenter.slice(slotsToHide);
+  const slotOrderFromCenter = getPlaneCounterSlotOrderFromCenter(color);
+  const { slotsToHide } = updatePlaneCounterDeaths(color, aliveCount, now);
 
   const previousAlpha = ctx.globalAlpha;
   ctx.globalAlpha *= HUD_PLANE_DIM_ALPHA;
 
   const centerX = paddingX + availableWidth / 2;
 
-  for (const slotIndex of visibleSlots) {
+  for (let slotIndex = 0; slotIndex < slotOrderFromCenter.length; slotIndex += 1) {
     const centerY = paddingY + slotHeight * (slotIndex + 0.5);
+    const deathStart = planeCounterDeathStartTimes[color][slotIndex];
+    const isSlotScheduledToHide = slotOrderFromCenter.indexOf(slotIndex) < slotsToHide;
+
+    if (deathStart === null && isSlotScheduledToHide) {
+      continue;
+    }
+
     if (iconScale > 0) {
-      drawPlaneCounterIcon(ctx, centerX, centerY, color, iconScale);
+      if (deathStart === null) {
+        drawPlaneCounterIcon(ctx, centerX, centerY, color, iconScale);
+      } else {
+        const progress = clamp((now - deathStart) / HUD_PLANE_DEATH_DURATION_MS, 0, 1);
+        if (progress >= 1) {
+          continue;
+        }
+        const eased = easeOutCubic(progress);
+        const alpha = 1 - eased;
+        const scale = iconScale * (1 - HUD_PLANE_DEATH_SCALE_DELTA * eased);
+
+        ctx.save();
+        ctx.globalAlpha *= alpha;
+        drawPlaneCounterIcon(ctx, centerX, centerY, color, scale);
+        ctx.restore();
+      }
     }
   }
 
