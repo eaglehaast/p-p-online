@@ -970,25 +970,6 @@ const HUD_LAYOUT = {
   }
 };
 
-  if (!Number.isFinite(value)) {
-    return value;
-  }
-
-  if (!Number.isFinite(limit) || limit <= 0) {
-    return Math.max(0, value);
-  }
-
-  if (value < 0) {
-    return 0;
-  }
-
-  if (value > limit) {
-    return limit;
-  }
-
-  return value;
-}
-
 function getVirtualRectFromDom(element, root = gsFrameEl) {
   if (!(element?.getBoundingClientRect) || !(root?.getBoundingClientRect)) {
     return null;
@@ -6464,58 +6445,6 @@ function getKillMarkerProgress(plane, now = performance.now()){
 
   return Math.max(0, Math.min(1, elapsed / duration));
 }
-  blue: [],
-  green: []
-};
-  blue: false,
-  green: false
-};
-  blue: null,
-  green: null
-};
-
-    if(!(host instanceof HTMLElement)){
-      continue;
-    }
-
-  }
-}
-
-  if(delta <= 0) return;
-  if(color !== "blue" && color !== "green") return;
-
-  const total = Math.max(1, Math.floor(delta));
-  const normalizedTarget = Number.isFinite(targetScore)
-    ? targetScore
-    : getScoreForColor(color);
-  const firstTarget = Number.isFinite(normalizedTarget)
-    ? normalizedTarget - total + 1
-    : null;
-
-  for(let i = 0; i < total; i += 1){
-    const entryTarget = Number.isFinite(firstTarget)
-      ? firstTarget + i
-      : normalizedTarget;
-  }
-
-  const remainder = delta - total;
-  if(remainder > 0){
-  }
-}
-
-  if(!queue) return;
-
-  queue.push({ delta, targetScore });
-  }
-}
-
-  if(!queue || queue.length === 0){
-    return;
-  }
-
-  const entry = queue.shift();
-}
-
 function renderScoreboard(now = performance.now()){
   updateTurnIndicators();
   if (!hudCtx || !(hudCanvas instanceof HTMLCanvasElement)) {
