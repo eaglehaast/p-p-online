@@ -6349,7 +6349,8 @@ function drawMatchScore(ctx, scaleX = 1, scaleY = 1, now = performance.now()){
     const ghostIcon = matchScoreGhostImages[color] || icon;
     if (!frame || !spec || !isSpriteReady(icon) || !isSpriteReady(ghostIcon)) continue;
 
-    const count = Math.max(0, Math.min(POINTS_TO_WIN, getScoreForColor(color)));
+    const score = color === "blue" ? blueScore : greenScore;
+    const count = Math.max(0, Math.min(POINTS_TO_WIN, score));
 
     const positions = [];
 
