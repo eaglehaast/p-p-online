@@ -967,6 +967,8 @@ const pointsPopupElements = {
   blue: bluePointsPopup
 };
 
+const SHOW_POINTS_POPUP = false;
+
 // Plane Counters = HUD columns of destroyed planes (not score, not points)
 const planeCounterHosts = {
   green: greenPlaneCounter,
@@ -7265,6 +7267,14 @@ function showPointsPopup(color, entry){
   };
 
   if(delta <= 0){
+    syncMatchProgressState(color, resolveTargetScore());
+    pointsPopupActive[color] = false;
+    activePointsPopupEntries[color] = null;
+    processNextPointsPopup(color);
+    return;
+  }
+
+  if(!SHOW_POINTS_POPUP){
     syncMatchProgressState(color, resolveTargetScore());
     pointsPopupActive[color] = false;
     activePointsPopupEntries[color] = null;
