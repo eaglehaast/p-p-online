@@ -242,7 +242,6 @@
       background: rgba(255, 255, 255, 0.7);
     }
 
-    body.harness-advanced-open .points-popup,
     body.harness-advanced-open #mantisIndicator,
     body.harness-advanced-open #goatIndicator,
     body.harness-advanced-open .game-wrap,
@@ -423,8 +422,6 @@
         <canvas id="gameCanvas" width="360" height="640" style="display:none;"></canvas>
       </div>
 
-      <div id="greenPointsPopup" class="points-popup points-popup--green" aria-hidden="true"></div>
-      <div id="bluePointsPopup" class="points-popup points-popup--blue" aria-hidden="true"></div>
 
       <div id="hudPlaneStyleProbes" aria-hidden="true"
            style="position:absolute;width:0;height:0;overflow:hidden;clip-path:inset(50%);">
@@ -673,15 +670,6 @@
         <button data-score="green:+5">Зелёные +5</button>
         <button data-score="blue:+5">Синие +5</button>
       </div>
-      <label for="popupDelta">Дельта поп-апа</label>
-      <input id="popupDelta" type="number" value="3" step="1" />
-      <label for="popupTarget">Цель счётчика (опция)</label>
-      <input id="popupTarget" type="number" placeholder="Авто" />
-      <div class="harness-button-group">
-        <button id="popupGreenBtn">Поп-ап зелёных</button>
-        <button id="popupBlueBtn">Поп-ап синих</button>
-      </div>
-      <button id="syncMatchProgressBtn" class="full-width">Пересчитать прогресс</button>
     </div>
 
     <div class="harness-section" aria-labelledby="planesTitle">
@@ -1108,22 +1096,12 @@
         });
       });
 
-      document.getElementById('popupGreenBtn')?.addEventListener('click', () => {
-        const delta = parseInt(document.getElementById('popupDelta')?.value, 10) || 0;
-        const targetInput = document.getElementById('popupTarget');
         const target = targetInput && targetInput.value !== '' ? parseInt(targetInput.value, 10) : (Number.isFinite(window.greenScore) ? window.greenScore + delta : delta);
-        window.spawnPointsPopup?.('green', delta, target);
       });
 
-      document.getElementById('popupBlueBtn')?.addEventListener('click', () => {
-        const delta = parseInt(document.getElementById('popupDelta')?.value, 10) || 0;
-        const targetInput = document.getElementById('popupTarget');
         const target = targetInput && targetInput.value !== '' ? parseInt(targetInput.value, 10) : (Number.isFinite(window.blueScore) ? window.blueScore + delta : delta);
-        window.spawnPointsPopup?.('blue', delta, target);
       });
 
-      document.getElementById('syncMatchProgressBtn')?.addEventListener('click', () => {
-        window.syncAllMatchProgressStates?.();
         window.renderScoreboard?.();
       });
 
