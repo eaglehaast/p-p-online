@@ -6096,25 +6096,9 @@ function hasCrashDelayElapsed(p){
   return performance.now() - start >= CRASH_FX_DELAY_MS;
 }
 
-function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians = 0) {
+function drawPlaneCounterIcon(ctx2d, x, y, color, scale = 1) {
   ctx2d.save();
   ctx2d.translate(x, y);
-
-  let effectiveRotation = Number.isFinite(rotationRadians)
-    ? rotationRadians
-    : Number.isFinite(plane?.angle)
-      ? plane.angle
-      : 0;
-
-  if (effectiveRotation) {
-    ctx2d.rotate(effectiveRotation);
-  }
-
-  const color = plane?.color || "blue";
-  const isDestroyed = Boolean(plane && (!plane.isAlive || plane.burning));
-  if (!isDestroyed && plane && plane.killMarkerStart) {
-    delete plane.killMarkerStart;
-  }
 
   const style = getHudPlaneStyle(color);
   const styleScale = Number.isFinite(style?.scale) && style.scale > 0 ? style.scale : 1;
@@ -6158,14 +6142,6 @@ function drawMiniPlaneWithCross(ctx2d, x, y, plane, scale = 1, rotationRadians =
   }
 
   ctx2d.filter = previousFilter;
-
-  if (isDestroyed) {
-    const crossProgress = getKillMarkerProgress(plane);
-    if (crossProgress > 0) {
-      drawRedCross(ctx2d, 0, 0, size * 0.8, crossProgress);
-    }
-  }
-
   ctx2d.restore();
 }
 
@@ -7444,8 +7420,15 @@ function drawPlayerHUD(ctx, frame, color, isTurn){
   ctx.textBaseline = "top";
   ctx.textAlign = "center";
 
-  const planes = points.filter(p => p.color === color);
+  const playerPlanes = points.filter(p => p.color === color);
   const maxPerRow = 4;
+  const aliveCount = Math.max(
+    0,
+    Math.min(
+      maxPerRow,
+      playerPlanes.filter(p => p.isAlive && !p.burning).length
+    )
+  );
 
   const paddingX = PLANE_COUNTER_PADDING * scaleX;
   const paddingY = PLANE_COUNTER_PADDING * scaleY;
@@ -7478,20 +7461,22 @@ function drawPlayerHUD(ctx, frame, color, isTurn){
     }
   }
 
-  const iconCount = Math.min(planes.length, maxPerRow);
-  const stackDirection = color === 'green' ? -1 : 1;
+  const iconCount = aliveCount;
+  const slotOrderFromCenter = color === 'green'
+    ? [0, 1, 2, 3]
+    : [3, 2, 1, 0];
+  const slotsToHide = Math.max(0, slotOrderFromCenter.length - iconCount);
+  const visibleSlots = slotOrderFromCenter.slice(slotsToHide);
 
   const previousAlpha = ctx.globalAlpha;
   ctx.globalAlpha *= HUD_PLANE_DIM_ALPHA;
 
   const centerX = paddingX + availableWidth / 2;
 
-  for (let i = 0; i < iconCount; i++) {
-    const plane = planes[i];
-    const slotIndex = stackDirection === -1 ? (slots - 1 - i) : i;
+  for (const slotIndex of visibleSlots) {
     const centerY = paddingY + slotHeight * (slotIndex + 0.5);
     if (iconScale > 0) {
-      drawMiniPlaneWithCross(ctx, centerX, centerY, plane, iconScale, 0);
+      drawPlaneCounterIcon(ctx, centerX, centerY, color, iconScale);
     }
   }
 
