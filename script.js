@@ -21,6 +21,7 @@ const DEBUG_PLANE_SHADING = false;
 const DEBUG_FX = false;
 const DEBUG_FLAME_POS = false;
 const DEBUG_LAYERS = false;
+const DEBUG_VFX = false;
 
 const bootTrace = {
   startTs: null,
@@ -5390,6 +5391,120 @@ function drawFieldEdges(ctx2d, w, h){
 }
 
 
+function drawVfxDebugOverlay(ctx2d, activePlanes, destroyedPlanes = []) {
+  if (!DEBUG_VFX) return;
+  if (!ctx2d) return;
+
+  const markerSize = planeMetric(2);
+  const labelOffset = planeMetric(3);
+  const directionLength = planeMetric(10);
+  const jetAnchor = getPlaneAnchorOffset("jet");
+  const smokeAnchor = getPlaneAnchorOffset("smoke");
+  const idleSmokeY = Math.max(0, smokeAnchor.y - PLANE_VFX_IDLE_SMOKE_DELTA_Y);
+
+  const drawMarker = (kind, x, y) => {
+    switch (kind) {
+      case "center": {
+        ctx2d.beginPath();
+        ctx2d.moveTo(x - markerSize, y);
+        ctx2d.lineTo(x + markerSize, y);
+        ctx2d.moveTo(x, y - markerSize);
+        ctx2d.lineTo(x, y + markerSize);
+        ctx2d.stroke();
+        break;
+      }
+      case "tail": {
+        ctx2d.strokeRect(x - markerSize, y - markerSize, markerSize * 2, markerSize * 2);
+        break;
+      }
+      case "jet": {
+        ctx2d.beginPath();
+        ctx2d.moveTo(x, y - markerSize);
+        ctx2d.lineTo(x + markerSize, y + markerSize);
+        ctx2d.lineTo(x - markerSize, y + markerSize);
+        ctx2d.closePath();
+        ctx2d.stroke();
+        break;
+      }
+      case "smoke": {
+        ctx2d.beginPath();
+        ctx2d.arc(x, y, markerSize, 0, Math.PI * 2);
+        ctx2d.stroke();
+        break;
+      }
+      default:
+        break;
+    }
+  };
+
+  const rotateOffset = (ox, oy, sinA, cosA) => ({
+    x: ox * cosA - oy * sinA,
+    y: ox * sinA + oy * cosA
+  });
+
+  const renderPlaneMarkers = (plane) => {
+    const { x: cx, y: cy, angle = 0 } = plane || {};
+    if (!Number.isFinite(cx) || !Number.isFinite(cy)) return;
+
+    const sinA = Math.sin(angle);
+    const cosA = Math.cos(angle);
+    const flightState = flyingPoints.find(fp => fp.plane === plane) || null;
+    const smokeY = flightState ? smokeAnchor.y : idleSmokeY;
+
+    const tailWorld = rotateOffset(0, smokeAnchor.y, sinA, cosA);
+    const jetWorld = rotateOffset(0, jetAnchor.y, sinA, cosA);
+    const smokeWorld = rotateOffset(0, smokeY, sinA, cosA);
+    const forwardWorld = rotateOffset(0, -directionLength, sinA, cosA);
+
+    ctx2d.save();
+    ctx2d.translate(cx, cy);
+    ctx2d.strokeStyle = '#000';
+    ctx2d.fillStyle = '#000';
+
+    drawMarker("center", 0, 0);
+    ctx2d.fillText('C', labelOffset, -labelOffset);
+
+    ctx2d.strokeStyle = '#d35400';
+    ctx2d.fillStyle = '#d35400';
+    drawMarker("tail", tailWorld.x, tailWorld.y);
+    ctx2d.fillText('T', tailWorld.x + labelOffset, tailWorld.y - labelOffset);
+
+    ctx2d.strokeStyle = '#0077ff';
+    ctx2d.fillStyle = '#0077ff';
+    drawMarker("jet", jetWorld.x, jetWorld.y);
+    ctx2d.fillText('J', jetWorld.x + labelOffset, jetWorld.y - labelOffset);
+
+    ctx2d.strokeStyle = '#27ae60';
+    ctx2d.fillStyle = '#27ae60';
+    drawMarker("smoke", smokeWorld.x, smokeWorld.y);
+    ctx2d.fillText('S', smokeWorld.x + labelOffset, smokeWorld.y - labelOffset);
+
+    ctx2d.strokeStyle = '#8e44ad';
+    ctx2d.beginPath();
+    ctx2d.moveTo(0, 0);
+    ctx2d.lineTo(forwardWorld.x, forwardWorld.y);
+    ctx2d.stroke();
+
+    ctx2d.restore();
+  };
+
+  ctx2d.save();
+  ctx2d.lineWidth = 1;
+  ctx2d.font = `${Math.max(8, planeMetric(6)).toFixed(0)}px monospace`;
+  ctx2d.textAlign = 'left';
+  ctx2d.textBaseline = 'middle';
+
+  for (const plane of activePlanes || []) {
+    renderPlaneMarkers(plane);
+  }
+  for (const plane of destroyedPlanes || []) {
+    renderPlaneMarkers(plane);
+  }
+
+  ctx2d.restore();
+}
+
+
 function getPlaneAnchorOffset(kind) {
   switch(kind) {
     case "jet":
@@ -5887,6 +6002,8 @@ function drawPlanesAndTrajectories(){
   }
 
   updateAllPlaneFlameFxPositions();
+
+  drawVfxDebugOverlay(planeCtx, activePlanes, destroyedOrBurning);
 
   if(rangeTextInfo){
     planeCtx.save();
