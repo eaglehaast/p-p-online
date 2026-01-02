@@ -2916,6 +2916,20 @@ const EDGE_PLANE_PADDING_PX = 8;     // смещение крайних само
 const FLAG_POLE_HEIGHT     = 20;     // высота флагштока
 const FLAG_WIDTH           = 12;     // ширина полотна флага
 const FLAG_HEIGHT          = 8;      // высота полотна флага
+const START_PLANES = {
+  blue: [
+    { x: 44, y: 30 },
+    { x: 103, y: 30 },
+    { x: 221, y: 30 },
+    { x: 280, y: 30 },
+  ],
+  green: [
+    { x: 44, y: 574 },
+    { x: 103, y: 574 },
+    { x: 221, y: 574 },
+    { x: 280, y: 574 },
+  ],
+};
 const FLAG_LAYOUTS = {
   blue: { x: 170, y: 41, width: 20, height: 20 },
   green: { x: 170, y: 568, width: 20, height: 20 },
@@ -3530,7 +3544,10 @@ function colorAngleOffset(color){
   return 0;
 }
 
-let HOME_ROW_Y = { blue: 40, green: 0 };
+let HOME_ROW_Y = {
+  blue: START_PLANES.blue[0]?.y ?? 40,
+  green: START_PLANES.green[0]?.y ?? 0,
+};
 
 function getHomeRowY(color){
   const fallback = color === "blue" ? 40 : WORLD.height - 40;
@@ -3540,33 +3557,19 @@ function getHomeRowY(color){
 
 function initPoints(){
   points = [];
-  const spacing = FIELD_WIDTH / (PLANES_PER_SIDE + 1);
-  const middleOffset = MIDDLE_GAP_EXTRA_PX / 2;
-  const edgePadding = EDGE_PLANE_PADDING_PX;
-
-  const blueHomeY = 40;
-  const greenHomeY = WORLD.height - 40;
-  HOME_ROW_Y = { blue: blueHomeY, green: greenHomeY };
+  const firstBlueY = START_PLANES.blue[0]?.y ?? 0;
+  const firstGreenY = START_PLANES.green[0]?.y ?? WORLD.height;
+  HOME_ROW_Y = { blue: firstBlueY, green: firstGreenY };
 
   // Green (низ поля) — смотрят ВВЕРХ (к сопернику)
-  for(let i = 1; i <= PLANES_PER_SIDE; i++){
-    let x = FIELD_LEFT + spacing * i;
-    if(i === 1) x -= edgePadding;
-    if(i === PLANES_PER_SIDE) x += edgePadding;
-    if(i === Math.ceil(PLANES_PER_SIDE / 2)) x -= middleOffset;
-    if(i === Math.ceil(PLANES_PER_SIDE / 2) + 1) x += middleOffset;
-    points.push(makePlane(x, greenHomeY, "green", colorAngleOffset("green"))); // 0 рад — нос вверх
-  }
+  START_PLANES.green.forEach(({ x, y }) => {
+    points.push(makePlane(x, y, "green", colorAngleOffset("green"))); // 0 рад — нос вверх
+  });
 
   // Blue (верх поля) — смотрят ВНИЗ
-  for(let i = 1; i <= PLANES_PER_SIDE; i++){
-    let x = FIELD_LEFT + spacing * i;
-    if(i === 1) x -= edgePadding;
-    if(i === PLANES_PER_SIDE) x += edgePadding;
-    if(i === Math.ceil(PLANES_PER_SIDE / 2)) x -= middleOffset;
-    if(i === Math.ceil(PLANES_PER_SIDE / 2) + 1) x += middleOffset;
-    points.push(makePlane(x, blueHomeY, "blue", Math.PI + colorAngleOffset("blue"))); // π рад — базовый разворот вниз
-  }
+  START_PLANES.blue.forEach(({ x, y }) => {
+    points.push(makePlane(x, y, "blue", Math.PI + colorAngleOffset("blue"))); // π рад — базовый разворот вниз
+  });
 }
 function makePlane(x,y,color,angle){
   return {
