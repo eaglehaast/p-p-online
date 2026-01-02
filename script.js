@@ -5414,38 +5414,22 @@ function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0) {
 
   ctx2d.save();
 
-  if (spriteReady) {
-    ctx2d.globalCompositeOperation = "lighter";
-    ctx2d.globalAlpha = 0.3 + 0.45 * blend;
-    ctx2d.filter = `blur(${(2 + 4 * blend).toFixed(2)}px)`;
-
-    const baseSize = PLANE_DRAW_W;
-    const scale = 1 + 0.18 * blend;
-    const drawSize = baseSize * scale;
-    const offset = -drawSize / 2;
-
-    ctx2d.imageSmoothingEnabled = true;
-    ctx2d.drawImage(spriteImg, offset, offset, drawSize, drawSize);
-  } else {
-    const highlightColor = colorWithAlpha(color, Math.min(1, glowStrength));
-    const highlightFill = colorWithAlpha(
-      color,
-      Math.min(0.35, 0.15 + 0.25 * blend)
-    );
-    const baseBlur = color === "green" ? 22 : 18;
-    const highlightBlur = baseBlur * Math.max(0.2, blend);
-
-    ctx2d.globalCompositeOperation = "lighter";
-    ctx2d.filter = "none";
-    ctx2d.shadowColor = highlightColor;
-    ctx2d.shadowBlur = highlightBlur;
-    ctx2d.fillStyle = highlightFill;
-    ctx2d.strokeStyle = highlightColor;
-    ctx2d.lineWidth = 2.5;
-    tracePlaneSilhouettePath(ctx2d);
-    ctx2d.fill();
-    ctx2d.stroke();
+  if (!spriteReady) {
+    ctx2d.restore();
+    return;
   }
+
+  ctx2d.globalCompositeOperation = "lighter";
+  ctx2d.globalAlpha = 0.3 + 0.45 * blend;
+  ctx2d.filter = `blur(${(2 + 4 * blend).toFixed(2)}px)`;
+
+  const baseSize = PLANE_DRAW_W;
+  const scale = 1 + 0.18 * blend;
+  const drawSize = baseSize * scale;
+  const offset = -drawSize / 2;
+
+  ctx2d.imageSmoothingEnabled = true;
+  ctx2d.drawImage(spriteImg, offset, offset, drawSize, drawSize);
 
   ctx2d.restore();
 }
@@ -5492,19 +5476,19 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
       }
     }
     const baseImgReady  = isSpriteReady(bluePlaneImg);
-    if (baseImgReady) {
-      if (isGhostState) {
-        ctx2d.globalAlpha *= baseGhostAlpha;
-        ctx2d.filter = "grayscale(100%) brightness(90%)";
-      }
-
-      ctx2d.drawImage(bluePlaneImg, -halfPlaneWidth, -halfPlaneHeight, PLANE_DRAW_W, PLANE_DRAW_H);
-      ctx2d.filter = previousFilter;
-      addPlaneShading(ctx2d);
-    } else {
-      drawPlaneOutline(ctx2d, color);
-      addPlaneSilhouetteShading(ctx2d);
+    if (!baseImgReady) {
+      ctx2d.restore();
+      return;
     }
+
+    if (isGhostState) {
+      ctx2d.globalAlpha *= baseGhostAlpha;
+      ctx2d.filter = "grayscale(100%) brightness(90%)";
+    }
+
+    ctx2d.drawImage(bluePlaneImg, -halfPlaneWidth, -halfPlaneHeight, PLANE_DRAW_W, PLANE_DRAW_H);
+    ctx2d.filter = previousFilter;
+    addPlaneShading(ctx2d);
   } else if (color === "green") {
     const fp = flyingPoints.find(fp => fp.plane === plane);
     if (showEngine) {
@@ -5522,24 +5506,22 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
       }
     }
     const baseImgReady  = isSpriteReady(greenPlaneImg);
-    if (baseImgReady) {
-      if (isGhostState) {
-        ctx2d.globalAlpha *= baseGhostAlpha;
-        ctx2d.filter = "grayscale(100%) brightness(90%)";
-      }
+    if (!baseImgReady) {
+      ctx2d.restore();
+      return;
+    }
 
-      ctx2d.drawImage(greenPlaneImg, -halfPlaneWidth, -halfPlaneHeight, PLANE_DRAW_W, PLANE_DRAW_H);
-      ctx2d.filter = previousFilter;
-      addPlaneShading(ctx2d);
-    } else {
-      drawPlaneOutline(ctx2d, color);
-      addPlaneSilhouetteShading(ctx2d);
+    if (isGhostState) {
+      ctx2d.globalAlpha *= baseGhostAlpha;
+      ctx2d.filter = "grayscale(100%) brightness(90%)";
     }
+
+    ctx2d.drawImage(greenPlaneImg, -halfPlaneWidth, -halfPlaneHeight, PLANE_DRAW_W, PLANE_DRAW_H);
+    ctx2d.filter = previousFilter;
+    addPlaneShading(ctx2d);
   } else {
-    drawPlaneOutline(ctx2d, color);
-    if (!isGhostState) {
-      addPlaneSilhouetteShading(ctx2d);
-    }
+    ctx2d.restore();
+    return;
   }
 
   ctx2d.restore();
