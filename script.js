@@ -2926,6 +2926,10 @@ const PLANE_METRIC_SCALE   = PLANE_DRAW_W / 40;
 function planeMetric(value) {
   return value * PLANE_METRIC_SCALE;
 }
+const JET_ANCHOR_OFFSET_Y = planeMetric(11);
+const SMOKE_ANCHOR_OFFSET_Y = planeMetric(19);
+const SMOKE_IDLE_DISTANCE_DELTA = planeMetric(5);
+const IDLE_SMOKE_ANCHOR_DISTANCE = Math.max(0, SMOKE_ANCHOR_OFFSET_Y - SMOKE_IDLE_DISTANCE_DELTA);
 const MINI_PLANE_ICON_SCALE = 0.7;    // make HUD plane icons smaller on the counter
 const HUD_PLANE_DIM_ALPHA = 1;        // keep HUD planes at full opacity
 const HUD_PLANE_DIM_FILTER = "";     // no additional dimming filter for HUD planes
@@ -5389,7 +5393,7 @@ function drawFieldEdges(ctx2d, w, h){
 function drawJetFlame(ctx2d, widthScale){
   if(widthScale <= 0) return;
   const BASE_SCALE = 1.5;
-  const flameOffsetY = planeMetric(11);
+  const flameOffsetY = JET_ANCHOR_OFFSET_Y;
   ctx2d.save();
   ctx2d.translate(0, flameOffsetY);
   ctx2d.scale(widthScale * BASE_SCALE, BASE_SCALE);
@@ -5414,7 +5418,7 @@ function drawJetFlame(ctx2d, widthScale){
 
 function drawBlueJetFlame(ctx2d, scale){
   if(scale <= 0) return;
-  const flameOffsetY = planeMetric(11);
+  const flameOffsetY = JET_ANCHOR_OFFSET_Y;
   ctx2d.save();
   ctx2d.translate(0, flameOffsetY);
   ctx2d.scale(1, scale);
@@ -5433,7 +5437,7 @@ function drawBlueJetFlame(ctx2d, scale){
 
 }
 
-function drawDieselSmoke(ctx2d, scale, baseOffsetY = planeMetric(19)){
+function drawDieselSmoke(ctx2d, scale, baseOffsetY = SMOKE_ANCHOR_OFFSET_Y){
   if(scale <= 0) return;
 
   const baseRadius = planeMetric(5) * scale;
@@ -5458,6 +5462,14 @@ function drawDieselSmoke(ctx2d, scale, baseOffsetY = planeMetric(19)){
 
 
   ctx2d.restore();
+}
+
+function getPlaneTailAnchor(plane, distance = SMOKE_ANCHOR_OFFSET_Y) {
+  const tailDir = { x: -Math.sin(plane.angle), y: Math.cos(plane.angle) };
+  return {
+    x: plane.x + tailDir.x * distance,
+    y: plane.y + tailDir.y * distance
+  };
 }
 
 function drawWingTrails(ctx2d){
@@ -5589,14 +5601,13 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   const halfPlaneHeight = PLANE_DRAW_H / 2;
   const flightState = flyingPoints.find(fp => fp.plane === plane) || null;
   const isIdle = !flightState;
-  const smokeBaseDistance = planeMetric(19);
-  const idleSmokeDistance = Math.max(0, smokeBaseDistance - 5);
+  const smokeBaseDistance = SMOKE_ANCHOR_OFFSET_Y;
+  const idleSmokeDistance = IDLE_SMOKE_ANCHOR_DISTANCE;
 
   const drawSmokeWithAnchor = (scale, distance) => {
     if (scale <= 0 || distance < 0) return;
 
-    const tailDir = { x: -Math.sin(angle), y: Math.cos(angle) };
-    const anchor = { x: cx + tailDir.x * distance, y: cy + tailDir.y * distance };
+    const anchor = getPlaneTailAnchor(plane, distance);
 
     ctx2d.save();
     ctx2d.translate(anchor.x, anchor.y);
