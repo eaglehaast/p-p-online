@@ -543,8 +543,8 @@ const GAME_ASSETS = [
   "ui_controlpanel/cp_button_exit.png",
 
   // Plane sprites
-  "ui_gamescreen/PLANES/plane_blue.png",
-  "ui_gamescreen/PLANES/plane_green.png",
+  "ui_gamescreen/PLANES/gs_plane_blue.png",
+  "ui_gamescreen/PLANES/gs_plane_green.png",
   "ui_gamescreen/gamescreen_outside/planecounter_blue.png",
   "ui_gamescreen/gamescreen_outside/planecounter_ green.png",
   "ui_gamescreen/PLANES/plane_blue_fall.png",
@@ -2563,8 +2563,8 @@ const noBtn       = document.getElementById("noButton");
 
 // Images for planes (static PNG sprites)
 const PLANE_ASSET_PATHS = {
-  blue: "ui_gamescreen/PLANES/plane_blue.png",
-  green: "ui_gamescreen/PLANES/plane_green.png",
+  blue: "ui_gamescreen/PLANES/gs_plane_blue.png",
+  green: "ui_gamescreen/PLANES/gs_plane_green.png",
   blueCounter: "ui_gamescreen/gamescreen_outside/planecounter_blue.png",
   greenCounter: "ui_gamescreen/gamescreen_outside/planecounter_ green.png",
   blueWreck: "ui_gamescreen/PLANES/plane_blue_fall.png",
@@ -2889,16 +2889,23 @@ document.addEventListener('dblclick', (e) => {
 });
 
 /* ======= CONFIG ======= */
-const PLANE_SCALE          = 0.9;    // 10% smaller planes
+const PLANE_DRAW_W         = 36;
+const PLANE_DRAW_H         = 36;
+const PLANE_METRIC_SCALE   = PLANE_DRAW_W / 40;
+function planeMetric(value) {
+  return value * PLANE_METRIC_SCALE;
+}
 const MINI_PLANE_ICON_SCALE = 0.7;    // make HUD plane icons smaller on the counter
 const HUD_PLANE_DIM_ALPHA = 1;        // keep HUD planes at full opacity
 const HUD_PLANE_DIM_FILTER = "";     // no additional dimming filter for HUD planes
 const HUD_KILL_MARKER_COLOR = "#e42727";
 const HUD_KILL_MARKER_ALPHA = 0.85;
+const HUD_KILL_MARKER_LINE_WIDTH = planeMetric(4);
 const HUD_PLANE_DEATH_DURATION_MS = 160;
 const HUD_PLANE_DEATH_SCALE_DELTA = 0.15;
+const HUD_BASE_PLANE_ICON_SIZE = planeMetric(16);
 const CELL_SIZE            = 20;     // px
-const POINT_RADIUS         = 15 * PLANE_SCALE;     // px (увеличено для мобильных)
+const POINT_RADIUS         = planeMetric(15);     // px (увеличено для мобильных)
 const FLAG_INTERACTION_RADIUS = 25;  // px
 const BASE_INTERACTION_RADIUS = 40;  // px
 // Larger hit area for selecting planes with touch/mouse
@@ -5251,22 +5258,23 @@ function drawFieldEdges(ctx2d, w, h){
 function drawJetFlame(ctx2d, widthScale){
   if(widthScale <= 0) return;
   const BASE_SCALE = 1.5;
+  const flameOffsetY = planeMetric(15);
   ctx2d.save();
-  ctx2d.translate(0, 15);
+  ctx2d.translate(0, flameOffsetY);
   ctx2d.scale(widthScale * BASE_SCALE, BASE_SCALE);
-  ctx2d.translate(0, -15);
+  ctx2d.translate(0, -flameOffsetY);
 
   const shimmer = (Math.sin(globalFrame * 0.02) + 1) / 2;
   const innerL = 70 + shimmer * 30; // 70%..100%
   const outerL = 45 + shimmer * 15; // 45%..60%
-  const grad = ctx2d.createRadialGradient(0, 15, 0, 0, 15, 3.75);
+  const grad = ctx2d.createRadialGradient(0, flameOffsetY, 0, 0, flameOffsetY, planeMetric(3.75));
   grad.addColorStop(0, `hsl(200, 100%, ${innerL}%)`);
   grad.addColorStop(1, `hsl(210, 100%, ${outerL}%)`);
   ctx2d.fillStyle = grad;
   ctx2d.beginPath();
-  ctx2d.moveTo(0, 15);
-  ctx2d.quadraticCurveTo(3, 18, 0, 21);
-  ctx2d.quadraticCurveTo(-3, 18, 0, 15);
+  ctx2d.moveTo(0, flameOffsetY);
+  ctx2d.quadraticCurveTo(planeMetric(3), planeMetric(18), 0, planeMetric(21));
+  ctx2d.quadraticCurveTo(-planeMetric(3), planeMetric(18), 0, flameOffsetY);
 
   ctx2d.fill();
   ctx2d.restore();
@@ -5275,18 +5283,19 @@ function drawJetFlame(ctx2d, widthScale){
 
 function drawBlueJetFlame(ctx2d, scale){
   if(scale <= 0) return;
+  const flameOffsetY = planeMetric(15);
   ctx2d.save();
-  ctx2d.translate(0, 15);
+  ctx2d.translate(0, flameOffsetY);
   ctx2d.scale(1, scale);
-  ctx2d.translate(0, -15);
-  const grad = ctx2d.createRadialGradient(0, 15, 0, 0, 15, 7.5);
+  ctx2d.translate(0, -flameOffsetY);
+  const grad = ctx2d.createRadialGradient(0, flameOffsetY, 0, 0, flameOffsetY, planeMetric(7.5));
   grad.addColorStop(0, "#a0e9ff");
   grad.addColorStop(1, "#0077ff");
   ctx2d.fillStyle = grad;
   ctx2d.beginPath();
-  ctx2d.moveTo(0, 15);
-  ctx2d.quadraticCurveTo(6, 21, 0, 27);
-  ctx2d.quadraticCurveTo(-6, 21, 0, 15);
+  ctx2d.moveTo(0, flameOffsetY);
+  ctx2d.quadraticCurveTo(planeMetric(6), planeMetric(21), 0, planeMetric(27));
+  ctx2d.quadraticCurveTo(-planeMetric(6), planeMetric(21), 0, flameOffsetY);
   ctx2d.fill();
   ctx2d.restore();
 
@@ -5296,9 +5305,9 @@ function drawBlueJetFlame(ctx2d, scale){
 function drawDieselSmoke(ctx2d, scale){
   if(scale <= 0) return;
 
-  const baseRadius = 5 * scale;
+  const baseRadius = planeMetric(5) * scale;
   ctx2d.save();
-  ctx2d.translate(0, 19);
+  ctx2d.translate(0, planeMetric(19));
   ctx2d.scale(0.5, 1); // make smoke column narrower
 
   const puffs = 3;
@@ -5324,15 +5333,15 @@ function drawWingTrails(ctx2d){
   ctx2d.strokeStyle = "rgba(255,255,255,0.8)";
   ctx2d.lineWidth = 1;
   ctx2d.beginPath();
-  ctx2d.moveTo(12, 10);
-  ctx2d.lineTo(22, 28);
-  ctx2d.moveTo(-12, 10);
-  ctx2d.lineTo(-22, 28);
+  ctx2d.moveTo(planeMetric(12), planeMetric(10));
+  ctx2d.lineTo(planeMetric(22), planeMetric(28));
+  ctx2d.moveTo(-planeMetric(12), planeMetric(10));
+  ctx2d.lineTo(-planeMetric(22), planeMetric(28));
   ctx2d.stroke();
 }
 
 function addPlaneShading(ctx2d){
-  const grad = ctx2d.createRadialGradient(0, 0, 8, 0, 0, 18);
+  const grad = ctx2d.createRadialGradient(0, 0, planeMetric(8), 0, 0, planeMetric(18));
   grad.addColorStop(0, "rgba(255,255,255,0.15)");
   grad.addColorStop(1, "rgba(0,0,0,0.25)");
 
@@ -5351,7 +5360,7 @@ function addPlaneShading(ctx2d){
   ctx2d.clip();
   ctx2d.fillStyle = grad;
 
-  const bbox = { x: -20, y: -20, w: 40, h: 40 };
+  const bbox = { x: -PLANE_DRAW_W / 2, y: -PLANE_DRAW_H / 2, w: PLANE_DRAW_W, h: PLANE_DRAW_H };
 
   if (DEBUG_PLANE_SHADING) {
     console.log("[DEBUG] addPlaneShading", {
@@ -5370,7 +5379,7 @@ function addPlaneShading(ctx2d){
 }
 
 function addPlaneSilhouetteShading(ctx2d){
-  const grad = ctx2d.createRadialGradient(0, 0, 8, 0, 0, 18);
+  const grad = ctx2d.createRadialGradient(0, 0, planeMetric(8), 0, 0, planeMetric(18));
   grad.addColorStop(0, "rgba(255,255,255,0.15)");
   grad.addColorStop(1, "rgba(0,0,0,0.25)");
 
@@ -5378,17 +5387,17 @@ function addPlaneSilhouetteShading(ctx2d){
   tracePlaneSilhouettePath(ctx2d);
   ctx2d.clip();
   ctx2d.fillStyle = grad;
-  ctx2d.fillRect(-20, -20, 40, 40);
+  ctx2d.fillRect(-PLANE_DRAW_W / 2, -PLANE_DRAW_H / 2, PLANE_DRAW_W, PLANE_DRAW_H);
   ctx2d.restore();
 }
 
 function tracePlaneSilhouettePath(ctx2d){
   ctx2d.beginPath();
-  ctx2d.moveTo(0, -20);
-  ctx2d.quadraticCurveTo(12, -5, 10, 10);
-  ctx2d.quadraticCurveTo(6, 15, 0, 18);
-  ctx2d.quadraticCurveTo(-6, 15, -10, 10);
-  ctx2d.quadraticCurveTo(-12, -5, 0, -20);
+  ctx2d.moveTo(0, -planeMetric(20));
+  ctx2d.quadraticCurveTo(planeMetric(12), -planeMetric(5), planeMetric(10), planeMetric(10));
+  ctx2d.quadraticCurveTo(planeMetric(6), planeMetric(15), 0, planeMetric(18));
+  ctx2d.quadraticCurveTo(-planeMetric(6), planeMetric(15), -planeMetric(10), planeMetric(10));
+  ctx2d.quadraticCurveTo(-planeMetric(12), -planeMetric(5), 0, -planeMetric(20));
   ctx2d.closePath();
 }
 
@@ -5426,7 +5435,7 @@ function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0) {
     ctx2d.globalAlpha = 0.3 + 0.45 * blend;
     ctx2d.filter = `blur(${(2 + 4 * blend).toFixed(2)}px)`;
 
-    const baseSize = 40;
+    const baseSize = PLANE_DRAW_W;
     const scale = 1 + 0.18 * blend;
     const drawSize = baseSize * scale;
     const offset = -drawSize / 2;
@@ -5461,11 +5470,12 @@ function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0) {
 function drawThinPlane(ctx2d, plane, glow = 0) {
   const { x: cx, y: cy, color, angle } = plane;
   const isCrashedState = plane.burning && hasCrashDelayElapsed(plane);
+  const halfPlaneWidth = PLANE_DRAW_W / 2;
+  const halfPlaneHeight = PLANE_DRAW_H / 2;
 
   ctx2d.save();
   ctx2d.translate(cx, cy);
   ctx2d.rotate(angle);
-  ctx2d.scale(PLANE_SCALE, PLANE_SCALE);
 
   const blend = (isCrashedState || plane.burning || !plane.isAlive)
     ? 0
@@ -5502,13 +5512,13 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
     const baseImgReady  = isSpriteReady(bluePlaneImg);
     if (isCrashedState) {
       if (crashImgReady) {
-        ctx2d.drawImage(bluePlaneWreckImg, -20, -20, 40, 40);
+        ctx2d.drawImage(bluePlaneWreckImg, -halfPlaneWidth, -halfPlaneHeight, PLANE_DRAW_W, PLANE_DRAW_H);
       } else if (!plane._loggedMissingCrashSprite) {
         plane._loggedMissingCrashSprite = true;
         console.warn('[FX] Blue crash sprite is not ready, skipping render');
       }
     } else if (baseImgReady) {
-      ctx2d.drawImage(bluePlaneImg, -20, -20, 40, 40);
+      ctx2d.drawImage(bluePlaneImg, -halfPlaneWidth, -halfPlaneHeight, PLANE_DRAW_W, PLANE_DRAW_H);
       addPlaneShading(ctx2d);
     } else {
       drawPlaneOutline(ctx2d, color);
@@ -5534,13 +5544,13 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
     const baseImgReady  = isSpriteReady(greenPlaneImg);
     if (isCrashedState) {
       if (crashImgReady) {
-        ctx2d.drawImage(greenPlaneWreckImg, -20, -20, 40, 40);
+        ctx2d.drawImage(greenPlaneWreckImg, -halfPlaneWidth, -halfPlaneHeight, PLANE_DRAW_W, PLANE_DRAW_H);
       } else if (!plane._loggedMissingCrashSprite) {
         plane._loggedMissingCrashSprite = true;
         console.warn('[FX] Green crash sprite is not ready, skipping render');
       }
     } else if (baseImgReady) {
-      ctx2d.drawImage(greenPlaneImg, -20, -20, 40, 40);
+      ctx2d.drawImage(greenPlaneImg, -halfPlaneWidth, -halfPlaneHeight, PLANE_DRAW_W, PLANE_DRAW_H);
       addPlaneShading(ctx2d);
     } else {
       drawPlaneOutline(ctx2d, color);
@@ -5568,7 +5578,7 @@ function drawRedCross(ctx2d, cx, cy, size = 20, progress = 1){
   ctx2d.filter = "none";
   ctx2d.strokeStyle = HUD_KILL_MARKER_COLOR;
   ctx2d.globalAlpha *= HUD_KILL_MARKER_ALPHA;
-  ctx2d.lineWidth = 4 * PLANE_SCALE;
+  ctx2d.lineWidth = HUD_KILL_MARKER_LINE_WIDTH;
   ctx2d.lineCap = "round";
 
   const halfSize = size / 2;
@@ -5615,7 +5625,7 @@ function drawPlaneCounterIcon(ctx2d, x, y, color, scale = 1) {
   const styleScale = Number.isFinite(style?.scale) && style.scale > 0 ? style.scale : 1;
 
   // Base size of the icon so it fits within the scoreboard cell
-  const size = 16 * PLANE_SCALE * scale * MINI_PLANE_ICON_SCALE * styleScale;
+  const size = HUD_BASE_PLANE_ICON_SIZE * scale * MINI_PLANE_ICON_SCALE * styleScale;
 
   const previousFilter = ctx2d.filter;
   const combinedFilter = combineFilters(HUD_PLANE_DIM_FILTER, style?.filter);
@@ -6623,7 +6633,7 @@ function drawPlayerHUD(ctx, frame, color, isTurn, now = performance.now()){
   const availableWidth = Math.max(0, width - paddingX * 2);
   const availableHeight = Math.max(0, height - paddingY * 2);
 
-  const baseIconSize = 16 * PLANE_SCALE * MINI_PLANE_ICON_SCALE;
+  const baseIconSize = HUD_BASE_PLANE_ICON_SIZE * MINI_PLANE_ICON_SCALE;
   const rotationFitFactor = 1;
 
   const slots = Math.max(1, maxPerRow);
