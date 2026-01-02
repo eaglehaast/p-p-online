@@ -5472,6 +5472,16 @@ function getPlaneTailAnchor(plane, distance = SMOKE_ANCHOR_OFFSET_Y) {
   };
 }
 
+function withPlaneTailAnchor(ctx2d, plane, distance, drawFn) {
+  const anchor = getPlaneTailAnchor(plane, distance);
+
+  ctx2d.save();
+  ctx2d.translate(anchor.x, anchor.y);
+  ctx2d.rotate(plane.angle);
+  drawFn();
+  ctx2d.restore();
+}
+
 function drawWingTrails(ctx2d){
   ctx2d.strokeStyle = "rgba(255,255,255,0.8)";
   ctx2d.lineWidth = 1;
@@ -5607,13 +5617,9 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   const drawSmokeWithAnchor = (scale, distance) => {
     if (scale <= 0 || distance < 0) return;
 
-    const anchor = getPlaneTailAnchor(plane, distance);
-
-    ctx2d.save();
-    ctx2d.translate(anchor.x, anchor.y);
-    ctx2d.rotate(angle);
-    drawDieselSmoke(ctx2d, scale, 0);
-    ctx2d.restore();
+    withPlaneTailAnchor(ctx2d, plane, distance, () => {
+      drawDieselSmoke(ctx2d, scale, 0);
+    });
   };
 
   const showEngine = !isGhostState;
