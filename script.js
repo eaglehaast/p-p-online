@@ -547,8 +547,6 @@ const GAME_ASSETS = [
   "ui_gamescreen/PLANES/gs_plane_green.png",
   "ui_gamescreen/gamescreen_outside/planecounter_blue.png",
   "ui_gamescreen/gamescreen_outside/planecounter_ green.png",
-  "ui_gamescreen/PLANES/plane_blue_fall.png",
-  "ui_gamescreen/PLANES/plane_green_fall.png",
 
   // Game field background
   "background paper 1.png",
@@ -2566,17 +2564,13 @@ const PLANE_ASSET_PATHS = {
   blue: "ui_gamescreen/PLANES/gs_plane_blue.png",
   green: "ui_gamescreen/PLANES/gs_plane_green.png",
   blueCounter: "ui_gamescreen/gamescreen_outside/planecounter_blue.png",
-  greenCounter: "ui_gamescreen/gamescreen_outside/planecounter_ green.png",
-  blueWreck: "ui_gamescreen/PLANES/plane_blue_fall.png",
-  greenWreck: "ui_gamescreen/PLANES/plane_green_fall.png"
+  greenCounter: "ui_gamescreen/gamescreen_outside/planecounter_ green.png"
 };
 
 let bluePlaneImg = null;
 let greenPlaneImg = null;
 let blueCounterPlaneImg = null;
 let greenCounterPlaneImg = null;
-let bluePlaneWreckImg = null;
-let greenPlaneWreckImg = null;
 
 const explosionImagesByColor = {
   blue: [],
@@ -2594,16 +2588,6 @@ function preloadPlaneSprites() {
   greenPlaneImg = loadImageAsset(PLANE_ASSET_PATHS.green, "planeSprites.green").img;
   blueCounterPlaneImg = loadImageAsset(PLANE_ASSET_PATHS.blueCounter, "planeSprites.blueCounter").img;
   greenCounterPlaneImg = loadImageAsset(PLANE_ASSET_PATHS.greenCounter, "planeSprites.greenCounter").img;
-
-  bluePlaneWreckImg = loadImageAsset(PLANE_ASSET_PATHS.blueWreck, "planeSprites.blueWreck", { decoding: 'async' }).img;
-  if (typeof bluePlaneWreckImg?.decode === 'function') {
-    bluePlaneWreckImg.decode().catch(() => {});
-  }
-
-  greenPlaneWreckImg = loadImageAsset(PLANE_ASSET_PATHS.greenWreck, "planeSprites.greenWreck", { decoding: 'async' }).img;
-  if (typeof greenPlaneWreckImg?.decode === 'function') {
-    greenPlaneWreckImg.decode().catch(() => {});
-  }
 
   planeSpritesPreloaded = true;
 }
@@ -5469,7 +5453,7 @@ function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0) {
 
 function drawThinPlane(ctx2d, plane, glow = 0) {
   const { x: cx, y: cy, color, angle } = plane;
-  const isCrashedState = plane.burning && hasCrashDelayElapsed(plane);
+  const isGhostState = plane.burning || !plane.isAlive;
   const halfPlaneWidth = PLANE_DRAW_W / 2;
   const halfPlaneHeight = PLANE_DRAW_H / 2;
 
@@ -5477,7 +5461,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   ctx2d.translate(cx, cy);
   ctx2d.rotate(angle);
 
-  const blend = (isCrashedState || plane.burning || !plane.isAlive)
+  const blend = isGhostState
     ? 0
     : Math.max(0, Math.min(1, glow));
 
@@ -5490,10 +5474,9 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   ctx2d.shadowBlur = 0;
   ctx2d.filter = "none";
 
-  const showEngine = !isCrashedState;
-  if (isCrashedState) {
-    ctx2d.globalAlpha = 0.85;
-  }
+  const showEngine = !isGhostState;
+  const previousFilter = ctx2d.filter;
+  const baseGhostAlpha = 0.3;
   if (color === "blue") {
     if (showEngine) {
       const flicker = 1 + 0.05 * Math.sin(globalFrame * 0.1);
@@ -5508,17 +5491,15 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
         drawWingTrails(ctx2d);
       }
     }
-    const crashImgReady = isSpriteReady(bluePlaneWreckImg);
     const baseImgReady  = isSpriteReady(bluePlaneImg);
-    if (isCrashedState) {
-      if (crashImgReady) {
-        ctx2d.drawImage(bluePlaneWreckImg, -halfPlaneWidth, -halfPlaneHeight, PLANE_DRAW_W, PLANE_DRAW_H);
-      } else if (!plane._loggedMissingCrashSprite) {
-        plane._loggedMissingCrashSprite = true;
-        console.warn('[FX] Blue crash sprite is not ready, skipping render');
+    if (baseImgReady) {
+      if (isGhostState) {
+        ctx2d.globalAlpha *= baseGhostAlpha;
+        ctx2d.filter = "grayscale(100%) brightness(90%)";
       }
-    } else if (baseImgReady) {
+
       ctx2d.drawImage(bluePlaneImg, -halfPlaneWidth, -halfPlaneHeight, PLANE_DRAW_W, PLANE_DRAW_H);
+      ctx2d.filter = previousFilter;
       addPlaneShading(ctx2d);
     } else {
       drawPlaneOutline(ctx2d, color);
@@ -5540,17 +5521,15 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
         drawDieselSmoke(ctx2d, 1);
       }
     }
-    const crashImgReady = isSpriteReady(greenPlaneWreckImg);
     const baseImgReady  = isSpriteReady(greenPlaneImg);
-    if (isCrashedState) {
-      if (crashImgReady) {
-        ctx2d.drawImage(greenPlaneWreckImg, -halfPlaneWidth, -halfPlaneHeight, PLANE_DRAW_W, PLANE_DRAW_H);
-      } else if (!plane._loggedMissingCrashSprite) {
-        plane._loggedMissingCrashSprite = true;
-        console.warn('[FX] Green crash sprite is not ready, skipping render');
+    if (baseImgReady) {
+      if (isGhostState) {
+        ctx2d.globalAlpha *= baseGhostAlpha;
+        ctx2d.filter = "grayscale(100%) brightness(90%)";
       }
-    } else if (baseImgReady) {
+
       ctx2d.drawImage(greenPlaneImg, -halfPlaneWidth, -halfPlaneHeight, PLANE_DRAW_W, PLANE_DRAW_H);
+      ctx2d.filter = previousFilter;
       addPlaneShading(ctx2d);
     } else {
       drawPlaneOutline(ctx2d, color);
@@ -5558,7 +5537,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
     }
   } else {
     drawPlaneOutline(ctx2d, color);
-    if (!isCrashedState) {
+    if (!isGhostState) {
       addPlaneSilhouetteShading(ctx2d);
     }
   }
