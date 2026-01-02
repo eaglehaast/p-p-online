@@ -13,6 +13,7 @@ const goatIndicator   = document.getElementById("goatIndicator");
 const DEBUG_RESIZE = false;
 const DEBUG_BOOT = false;
 const DEBUG_LAYOUT = false;
+const DEBUG_START_POSITIONS = true;
 const DEBUG_RENDER_INIT = false;
 const DEBUG_ENDGAME = false;
 const DEBUG_AIM = false;
@@ -336,7 +337,7 @@ function getGsBoardCanvasDebugInfo() {
 }
 
 function drawDebugLayoutOverlay(ctx) {
-  if (!(DEBUG_LAYOUT || DEBUG_RENDER_INIT)) return;
+  if (!(DEBUG_LAYOUT || DEBUG_RENDER_INIT || DEBUG_START_POSITIONS)) return;
   if (!ctx) return;
   const scale = Math.max(1, VIEW.scaleX, VIEW.scaleY);
   ctx.save();
@@ -349,6 +350,52 @@ function drawDebugLayoutOverlay(ctx) {
     ctx.arc(pointerDebugState.lastPoint.x, pointerDebugState.lastPoint.y, 3 / scale, 0, Math.PI * 2);
     ctx.fill();
   }
+
+  if (DEBUG_START_POSITIONS) {
+    drawStartPositionsDebug(ctx, scale);
+  }
+  ctx.restore();
+}
+
+function drawStartPositionsDebug(ctx, scale = 1) {
+  const markerRadius = 3 / scale;
+  const frameLineWidth = 2 / scale;
+  const fieldLineWidth = 1 / scale;
+  ctx.save();
+
+  // Outer field bounds (full frame)
+  ctx.strokeStyle = "rgba(0, 191, 255, 0.75)";
+  ctx.lineWidth = frameLineWidth;
+  ctx.strokeRect(FIELD_LEFT, 0, FIELD_WIDTH, WORLD.height);
+
+  // Playable area without brick thickness
+  const playableLeft = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
+  const playableTop = FIELD_BORDER_OFFSET_Y;
+  const playableWidth = Math.max(0, FIELD_WIDTH - FIELD_BORDER_OFFSET_X * 2);
+  const playableHeight = Math.max(0, WORLD.height - FIELD_BORDER_OFFSET_Y * 2);
+  ctx.strokeStyle = "rgba(255, 165, 0, 0.85)";
+  ctx.lineWidth = fieldLineWidth;
+  ctx.strokeRect(playableLeft, playableTop, playableWidth, playableHeight);
+
+  const startPositions = getStartPlaneWorldPositions();
+  const drawMarker = (p, color) => {
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = fieldLineWidth;
+    ctx.moveTo(p.x - markerRadius, p.y);
+    ctx.lineTo(p.x + markerRadius, p.y);
+    ctx.moveTo(p.x, p.y - markerRadius);
+    ctx.lineTo(p.x, p.y + markerRadius);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, markerRadius / 2, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
+  startPositions.blue.forEach((p) => drawMarker(p, "rgba(1, 60, 131, 0.9)"));
+  startPositions.green.forEach((p) => drawMarker(p, "rgba(127, 142, 64, 0.9)"));
+
   ctx.restore();
 }
 
@@ -2930,6 +2977,17 @@ const START_PLANES = {
     { x: 280, y: 574 },
   ],
 };
+
+function getStartPlaneWorldPositions(){
+  const originX = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
+  const originY = FIELD_BORDER_OFFSET_Y;
+  const toWorld = ({ x, y }) => ({ x: originX + x, y: originY + y });
+
+  return {
+    blue: START_PLANES.blue.map(toWorld),
+    green: START_PLANES.green.map(toWorld),
+  };
+}
 const FLAG_LAYOUTS = {
   blue: { x: 170, y: 41, width: 20, height: 20 },
   green: { x: 170, y: 568, width: 20, height: 20 },
@@ -3545,8 +3603,8 @@ function colorAngleOffset(color){
 }
 
 let HOME_ROW_Y = {
-  blue: START_PLANES.blue[0]?.y ?? 40,
-  green: START_PLANES.green[0]?.y ?? 0,
+  blue: getStartPlaneWorldPositions().blue[0]?.y ?? 40,
+  green: getStartPlaneWorldPositions().green[0]?.y ?? 0,
 };
 
 function getHomeRowY(color){
@@ -3557,17 +3615,18 @@ function getHomeRowY(color){
 
 function initPoints(){
   points = [];
-  const firstBlueY = START_PLANES.blue[0]?.y ?? 0;
-  const firstGreenY = START_PLANES.green[0]?.y ?? WORLD.height;
+  const startPositions = getStartPlaneWorldPositions();
+  const firstBlueY = startPositions.blue[0]?.y ?? 0;
+  const firstGreenY = startPositions.green[0]?.y ?? WORLD.height;
   HOME_ROW_Y = { blue: firstBlueY, green: firstGreenY };
 
   // Green (низ поля) — смотрят ВВЕРХ (к сопернику)
-  START_PLANES.green.forEach(({ x, y }) => {
+  startPositions.green.forEach(({ x, y }) => {
     points.push(makePlane(x, y, "green", colorAngleOffset("green"))); // 0 рад — нос вверх
   });
 
   // Blue (верх поля) — смотрят ВНИЗ
-  START_PLANES.blue.forEach(({ x, y }) => {
+  startPositions.blue.forEach(({ x, y }) => {
     points.push(makePlane(x, y, "blue", Math.PI + colorAngleOffset("blue"))); // π рад — базовый разворот вниз
   });
 }
