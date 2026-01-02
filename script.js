@@ -1961,7 +1961,7 @@ const planeFlameFx = new Map();
 const planeFlameTimers = new Map();
 let warnedMissingPlaneFlameHost = false;
 
-function applyFlameElementStyles(element, size = BASE_FLAME_DISPLAY_SIZE, planeColor = '') {
+function applyFlameElementStyles(element, size = BASE_FLAME_DISPLAY_SIZE, planeColor = '', planeState = '') {
   if (!element) return;
   element.classList.add('fx-flame');
   if (planeColor === 'green') {
@@ -1972,7 +1972,10 @@ function applyFlameElementStyles(element, size = BASE_FLAME_DISPLAY_SIZE, planeC
   element.style.position = 'absolute';
   element.style.pointerEvents = 'none';
   element.style.transform = 'translate(-50%, -100%)';
-  element.style.zIndex = '9999';
+  const stateClass = planeState === 'alive' ? 'fx-flame--alive' : 'fx-flame--crashed';
+  element.classList.add(stateClass);
+  element.dataset.state = planeState || stateClass.replace('fx-flame--', '');
+  element.style.zIndex = planeState === 'crashed' ? '21' : '30';
   element.style.width = `${size.width}px`;
   element.style.height = `${size.height}px`;
 }
@@ -1998,7 +2001,8 @@ function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') 
 
   const displaySize = getFlameDisplaySize(plane);
   const container = document.createElement('div');
-  applyFlameElementStyles(container, displaySize, plane?.color || '');
+  const planeState = plane?.isAlive ? 'alive' : 'crashed';
+  applyFlameElementStyles(container, displaySize, plane?.color || '', planeState);
 
   const img = new Image();
   img.decoding = 'async';
@@ -5939,6 +5943,8 @@ function drawPlanesAndTrajectories(){
   planeCtx.save();
   planeCtx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
 
+  const debugDrawOrder = DEBUG_VFX ? [] : null;
+
   let rangeTextInfo = null;
   const activeColor = turnColors[turnIndex];
   const showGlow = !handleCircle.active && !flyingPoints.some(fp => fp.plane.color === activeColor);
@@ -5969,6 +5975,16 @@ function drawPlanesAndTrajectories(){
 
   const renderPlane = (p, targetCtx, { allowRangeLabel = false } = {}) => {
     if(!p.isAlive && !p.burning) return;
+
+    if (debugDrawOrder) {
+      const stateLabel = p.isAlive ? (p.burning ? 'burning' : 'alive') : 'crashed';
+      debugDrawOrder.push({
+        id: p.id ?? 'unknown',
+        team: p.color,
+        state: stateLabel,
+        frameIndex: globalFrame
+      });
+    }
 
     // Allow wreck sprites to render after crash delay instead of exiting early.
     drawPlaneSegments(targetCtx, p);
@@ -6033,6 +6049,10 @@ function drawPlanesAndTrajectories(){
     planeCtx.strokeText("cells", rangeTextInfo.x, rangeTextInfo.y + 8);
     planeCtx.fillText("cells", rangeTextInfo.x, rangeTextInfo.y + 8);
     planeCtx.restore();
+  }
+
+  if (debugDrawOrder && debugDrawOrder.length > 0) {
+    console.debug('[VFX][draw-order]', debugDrawOrder);
   }
 
   planeCtx.restore();
