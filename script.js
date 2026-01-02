@@ -5488,7 +5488,9 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
 
     ctx2d.drawImage(bluePlaneImg, -halfPlaneWidth, -halfPlaneHeight, PLANE_DRAW_W, PLANE_DRAW_H);
     ctx2d.filter = previousFilter;
-    addPlaneShading(ctx2d);
+    if (!isGhostState) {
+      addPlaneShading(ctx2d);
+    }
   } else if (color === "green") {
     const fp = flyingPoints.find(fp => fp.plane === plane);
     if (showEngine) {
@@ -5518,7 +5520,9 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
 
     ctx2d.drawImage(greenPlaneImg, -halfPlaneWidth, -halfPlaneHeight, PLANE_DRAW_W, PLANE_DRAW_H);
     ctx2d.filter = previousFilter;
-    addPlaneShading(ctx2d);
+    if (!isGhostState) {
+      addPlaneShading(ctx2d);
+    }
   } else {
     ctx2d.restore();
     return;
