@@ -21,6 +21,7 @@ const DEBUG_PLANE_SHADING = false;
 const DEBUG_FX = false;
 const DEBUG_FLAME_POS = false;
 const DEBUG_LAYERS = false;
+const DEBUG_VFX = false;
 
 const bootTrace = {
   startTs: null,
@@ -114,6 +115,20 @@ const aimDebugState = {
 const planeFlameDebugState = {
   logged: 0
 };
+
+function drawAnchorMarker(ctx2d, x, y, color = '#ff00ff', size = 4) {
+  ctx2d.save();
+  ctx2d.translate(x, y);
+  ctx2d.strokeStyle = color;
+  ctx2d.lineWidth = 1;
+  ctx2d.beginPath();
+  ctx2d.moveTo(-size, 0);
+  ctx2d.lineTo(size, 0);
+  ctx2d.moveTo(0, -size);
+  ctx2d.lineTo(0, size);
+  ctx2d.stroke();
+  ctx2d.restore();
+}
 
 function getCanvasDpr() {
   const RAW_DPR = window.devicePixelRatio || 1;
@@ -5592,11 +5607,19 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   const smokeBaseDistance = planeMetric(19);
   const idleSmokeDistance = Math.max(0, smokeBaseDistance - 5);
 
+  const collectVfxAnchors = DEBUG_VFX ? [] : null;
+  const addVfxAnchor = (x, y, label) => {
+    if (!collectVfxAnchors) return;
+    collectVfxAnchors.push({ x, y, label });
+  };
+
   const drawSmokeWithAnchor = (scale, distance) => {
     if (scale <= 0 || distance < 0) return;
 
     const tailDir = { x: -Math.sin(angle), y: Math.cos(angle) };
     const anchor = { x: cx + tailDir.x * distance, y: cy + tailDir.y * distance };
+
+    addVfxAnchor(0, distance, 'smoke');
 
     ctx2d.save();
     ctx2d.translate(anchor.x, anchor.y);
@@ -5646,13 +5669,17 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
       const flicker = 1 + 0.05 * Math.sin(globalFrame * 0.1);
       const idleFlicker = 0.35 + 0.05 * Math.sin(globalFrame * 0.12);
       const jetScale = isIdle ? idleFlicker : flicker;
+      addVfxAnchor(0, planeMetric(11), 'jet');
       drawJetFlame(ctx2d, jetScale);
 
       if (flightState) {
         const progress = (FIELD_FLIGHT_DURATION_SEC - flightState.timeLeft) / FIELD_FLIGHT_DURATION_SEC;
         const scale = progress < 0.75 ? 4 * progress : 12 * (1 - progress);
+        addVfxAnchor(0, planeMetric(11), 'boost');
         drawBlueJetFlame(ctx2d, scale);
 
+        addVfxAnchor(planeMetric(12), planeMetric(10), 'wing-right');
+        addVfxAnchor(-planeMetric(12), planeMetric(10), 'wing-left');
         drawWingTrails(ctx2d);
       }
     }
@@ -5692,6 +5719,31 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   } else {
     ctx2d.restore();
     return;
+  }
+
+  if (collectVfxAnchors) {
+    ctx2d.save();
+    ctx2d.strokeStyle = '#ff00ff';
+    ctx2d.lineWidth = 1;
+    ctx2d.setLineDash([2, 2]);
+    ctx2d.strokeRect(-18, -18, 36, 36);
+    ctx2d.restore();
+
+    drawAnchorMarker(ctx2d, 0, 0, '#00ffff', 6);
+    drawAnchorMarker(ctx2d, 0, isIdle ? idleSmokeDistance : smokeBaseDistance, '#ffa500', 5);
+
+    for (const anchor of collectVfxAnchors) {
+      drawAnchorMarker(ctx2d, anchor.x, anchor.y, '#ff00ff', 4);
+      if (anchor?.label) {
+        ctx2d.save();
+        ctx2d.fillStyle = '#ff00ff';
+        ctx2d.font = '10px sans-serif';
+        ctx2d.textAlign = 'left';
+        ctx2d.textBaseline = 'middle';
+        ctx2d.fillText(anchor.label, anchor.x + 6, anchor.y);
+        ctx2d.restore();
+      }
+    }
   }
 
   ctx2d.restore();
