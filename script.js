@@ -2929,8 +2929,14 @@ function planeMetric(value) {
 }
 // VFX anchor points (scaled with planeMetric)
 const PLANE_VFX_JET_ANCHOR_Y = planeMetric(24);
+const PLANE_VFX_JET_ANCHOR_NUDGE_Y = -planeMetric(5);
+const PLANE_VFX_JET_BASE_SCALE_X = 2.5;
+const PLANE_VFX_JET_BASE_SCALE_Y = 1.6;
+const PLANE_VFX_JET_IDLE_FLICKER_BASE = 0.8;
+const PLANE_VFX_JET_IDLE_FLICKER_AMPLITUDE = 0.1;
 const PLANE_VFX_SMOKE_ANCHOR_Y = planeMetric(26);
 const PLANE_VFX_IDLE_SMOKE_DELTA_Y = planeMetric(5);
+const PLANE_VFX_IDLE_SMOKE_TRIM_Y = planeMetric(5);
 const MINI_PLANE_ICON_SCALE = 0.7;    // make HUD plane icons smaller on the counter
 const HUD_PLANE_DIM_ALPHA = 1;        // keep HUD planes at full opacity
 const HUD_PLANE_DIM_FILTER = "";     // no additional dimming filter for HUD planes
@@ -5400,7 +5406,7 @@ function drawVfxDebugOverlay(ctx2d, activePlanes, destroyedPlanes = []) {
   const directionLength = planeMetric(10);
   const jetAnchor = getPlaneAnchorOffset("jet");
   const smokeAnchor = getPlaneAnchorOffset("smoke");
-  const idleSmokeY = Math.max(0, smokeAnchor.y - PLANE_VFX_IDLE_SMOKE_DELTA_Y);
+  const idleSmokeY = Math.max(0, smokeAnchor.y - PLANE_VFX_IDLE_SMOKE_DELTA_Y - PLANE_VFX_IDLE_SMOKE_TRIM_Y);
 
   const drawMarker = (kind, x, y) => {
     switch (kind) {
@@ -5508,7 +5514,7 @@ function drawVfxDebugOverlay(ctx2d, activePlanes, destroyedPlanes = []) {
 function getPlaneAnchorOffset(kind) {
   switch(kind) {
     case "jet":
-      return { x: 0, y: PLANE_VFX_JET_ANCHOR_Y };
+      return { x: 0, y: PLANE_VFX_JET_ANCHOR_Y + PLANE_VFX_JET_ANCHOR_NUDGE_Y };
     case "smoke":
       return { x: 0, y: PLANE_VFX_SMOKE_ANCHOR_Y };
     default:
@@ -5518,11 +5524,10 @@ function getPlaneAnchorOffset(kind) {
 
 function drawJetFlame(ctx2d, widthScale, baseOffsetY = getPlaneAnchorOffset("jet").y){
   if(widthScale <= 0) return;
-  const BASE_SCALE = 1.5;
   const flameOffsetY = baseOffsetY;
   ctx2d.save();
   ctx2d.translate(0, flameOffsetY);
-  ctx2d.scale(widthScale * BASE_SCALE, BASE_SCALE);
+  ctx2d.scale(widthScale * PLANE_VFX_JET_BASE_SCALE_X, PLANE_VFX_JET_BASE_SCALE_Y);
   ctx2d.translate(0, -flameOffsetY);
 
   const shimmer = (Math.sin(globalFrame * 0.02) + 1) / 2;
@@ -5721,7 +5726,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   const isIdle = !flightState;
   const smokeAnchor = getPlaneAnchorOffset("smoke");
   const jetAnchor = getPlaneAnchorOffset("jet");
-  const idleSmokeDistance = Math.max(0, smokeAnchor.y - PLANE_VFX_IDLE_SMOKE_DELTA_Y);
+  const idleSmokeDistance = Math.max(0, smokeAnchor.y - PLANE_VFX_IDLE_SMOKE_DELTA_Y - PLANE_VFX_IDLE_SMOKE_TRIM_Y);
   const showEngine = !isGhostState;
 
   ctx2d.save();
@@ -5766,7 +5771,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   if (color === "blue") {
     if (showEngine) {
       const flicker = 1 + 0.05 * Math.sin(globalFrame * 0.1);
-      const idleFlicker = 0.35 + 0.05 * Math.sin(globalFrame * 0.12);
+      const idleFlicker = PLANE_VFX_JET_IDLE_FLICKER_BASE + PLANE_VFX_JET_IDLE_FLICKER_AMPLITUDE * Math.sin(globalFrame * 0.12);
       const jetScale = isIdle ? idleFlicker : flicker;
       drawJetFlame(ctx2d, jetScale, jetAnchor.y);
 
