@@ -5386,10 +5386,21 @@ function drawFieldEdges(ctx2d, w, h){
 }
 
 
-function drawJetFlame(ctx2d, widthScale){
+function getPlaneAnchorOffset(kind) {
+  switch(kind) {
+    case "jet":
+      return { x: 0, y: planeMetric(11) };
+    case "smoke":
+      return { x: 0, y: planeMetric(19) };
+    default:
+      return { x: 0, y: 0 };
+  }
+}
+
+function drawJetFlame(ctx2d, widthScale, baseOffsetY = getPlaneAnchorOffset("jet").y){
   if(widthScale <= 0) return;
   const BASE_SCALE = 1.5;
-  const flameOffsetY = planeMetric(11);
+  const flameOffsetY = baseOffsetY;
   ctx2d.save();
   ctx2d.translate(0, flameOffsetY);
   ctx2d.scale(widthScale * BASE_SCALE, BASE_SCALE);
@@ -5412,9 +5423,9 @@ function drawJetFlame(ctx2d, widthScale){
 
 }
 
-function drawBlueJetFlame(ctx2d, scale){
+function drawBlueJetFlame(ctx2d, scale, baseOffsetY = getPlaneAnchorOffset("jet").y){
   if(scale <= 0) return;
-  const flameOffsetY = planeMetric(11);
+  const flameOffsetY = baseOffsetY;
   ctx2d.save();
   ctx2d.translate(0, flameOffsetY);
   ctx2d.scale(1, scale);
@@ -5433,7 +5444,7 @@ function drawBlueJetFlame(ctx2d, scale){
 
 }
 
-function drawDieselSmoke(ctx2d, scale, baseOffsetY = planeMetric(19)){
+function drawDieselSmoke(ctx2d, scale, baseOffsetY = getPlaneAnchorOffset("smoke").y){
   if(scale <= 0) return;
 
   const baseRadius = planeMetric(5) * scale;
@@ -5589,23 +5600,19 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   const halfPlaneHeight = PLANE_DRAW_H / 2;
   const flightState = flyingPoints.find(fp => fp.plane === plane) || null;
   const isIdle = !flightState;
-  const smokeBaseDistance = planeMetric(19);
-  const idleSmokeDistance = Math.max(0, smokeBaseDistance - 5);
-
-  const drawSmokeWithAnchor = (scale, distance) => {
-    if (scale <= 0 || distance < 0) return;
-
-    const tailDir = { x: -Math.sin(angle), y: Math.cos(angle) };
-    const anchor = { x: cx + tailDir.x * distance, y: cy + tailDir.y * distance };
-
-    ctx2d.save();
-    ctx2d.translate(anchor.x, anchor.y);
-    ctx2d.rotate(angle);
-    drawDieselSmoke(ctx2d, scale, 0);
-    ctx2d.restore();
-  };
-
+  const smokeAnchor = getPlaneAnchorOffset("smoke");
+  const jetAnchor = getPlaneAnchorOffset("jet");
+  const idleSmokeDistance = Math.max(0, smokeAnchor.y - 5);
   const showEngine = !isGhostState;
+
+  ctx2d.save();
+  ctx2d.translate(cx, cy);
+  ctx2d.rotate(angle);
+
+  const drawSmokeWithAnchor = (scale, offsetY) => {
+    if (scale <= 0 || offsetY < 0) return;
+    drawDieselSmoke(ctx2d, scale, offsetY);
+  };
 
   if (color === "green" && showEngine) {
     if (flightState) {
@@ -5616,15 +5623,11 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
       } else {
         scale = 3 - 2 * progress; // 10px -> 5px
       }
-      drawSmokeWithAnchor(scale, smokeBaseDistance);
+      drawSmokeWithAnchor(scale, smokeAnchor.y);
     } else {
       drawSmokeWithAnchor(1, idleSmokeDistance);
     }
   }
-
-  ctx2d.save();
-  ctx2d.translate(cx, cy);
-  ctx2d.rotate(angle);
 
   const blend = isGhostState
     ? 0
@@ -5646,12 +5649,12 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
       const flicker = 1 + 0.05 * Math.sin(globalFrame * 0.1);
       const idleFlicker = 0.35 + 0.05 * Math.sin(globalFrame * 0.12);
       const jetScale = isIdle ? idleFlicker : flicker;
-      drawJetFlame(ctx2d, jetScale);
+      drawJetFlame(ctx2d, jetScale, jetAnchor.y);
 
       if (flightState) {
         const progress = (FIELD_FLIGHT_DURATION_SEC - flightState.timeLeft) / FIELD_FLIGHT_DURATION_SEC;
         const scale = progress < 0.75 ? 4 * progress : 12 * (1 - progress);
-        drawBlueJetFlame(ctx2d, scale);
+        drawBlueJetFlame(ctx2d, scale, jetAnchor.y);
 
         drawWingTrails(ctx2d);
       }
