@@ -5862,7 +5862,7 @@ function getFlagSpriteLayoutForPlacement(flag, anchor = null){
   const height = baseLayout?.height ?? sprite?.naturalHeight ?? (FLAG_POLE_HEIGHT + FLAG_HEIGHT);
 
   if(anchor && Number.isFinite(anchor.x) && Number.isFinite(anchor.y)){
-    return { x: anchor.x - width / 2, y: anchor.y - height, width, height };
+    return { x: anchor.x - width / 2, y: anchor.y - height / 2, width, height };
   }
 
   if(baseLayout){
