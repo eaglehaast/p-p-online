@@ -5389,7 +5389,7 @@ function drawFieldEdges(ctx2d, w, h){
 function drawJetFlame(ctx2d, widthScale){
   if(widthScale <= 0) return;
   const BASE_SCALE = 1.5;
-  const flameOffsetY = planeMetric(15);
+  const flameOffsetY = planeMetric(11);
   ctx2d.save();
   ctx2d.translate(0, flameOffsetY);
   ctx2d.scale(widthScale * BASE_SCALE, BASE_SCALE);
@@ -5404,8 +5404,8 @@ function drawJetFlame(ctx2d, widthScale){
   ctx2d.fillStyle = grad;
   ctx2d.beginPath();
   ctx2d.moveTo(0, flameOffsetY);
-  ctx2d.quadraticCurveTo(planeMetric(3), planeMetric(18), 0, planeMetric(21));
-  ctx2d.quadraticCurveTo(-planeMetric(3), planeMetric(18), 0, flameOffsetY);
+  ctx2d.quadraticCurveTo(planeMetric(3), flameOffsetY + planeMetric(3), 0, flameOffsetY + planeMetric(6));
+  ctx2d.quadraticCurveTo(-planeMetric(3), flameOffsetY + planeMetric(3), 0, flameOffsetY);
 
   ctx2d.fill();
   ctx2d.restore();
@@ -5414,7 +5414,7 @@ function drawJetFlame(ctx2d, widthScale){
 
 function drawBlueJetFlame(ctx2d, scale){
   if(scale <= 0) return;
-  const flameOffsetY = planeMetric(15);
+  const flameOffsetY = planeMetric(11);
   ctx2d.save();
   ctx2d.translate(0, flameOffsetY);
   ctx2d.scale(1, scale);
@@ -5425,20 +5425,20 @@ function drawBlueJetFlame(ctx2d, scale){
   ctx2d.fillStyle = grad;
   ctx2d.beginPath();
   ctx2d.moveTo(0, flameOffsetY);
-  ctx2d.quadraticCurveTo(planeMetric(6), planeMetric(21), 0, planeMetric(27));
-  ctx2d.quadraticCurveTo(-planeMetric(6), planeMetric(21), 0, flameOffsetY);
+  ctx2d.quadraticCurveTo(planeMetric(6), flameOffsetY + planeMetric(6), 0, flameOffsetY + planeMetric(12));
+  ctx2d.quadraticCurveTo(-planeMetric(6), flameOffsetY + planeMetric(6), 0, flameOffsetY);
   ctx2d.fill();
   ctx2d.restore();
 
 
 }
 
-function drawDieselSmoke(ctx2d, scale){
+function drawDieselSmoke(ctx2d, scale, baseOffsetY = planeMetric(19)){
   if(scale <= 0) return;
 
   const baseRadius = planeMetric(5) * scale;
   ctx2d.save();
-  ctx2d.translate(0, planeMetric(19));
+  ctx2d.translate(0, baseOffsetY);
   ctx2d.scale(0.5, 1); // make smoke column narrower
 
   const puffs = 3;
@@ -5651,7 +5651,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
         }
         drawDieselSmoke(ctx2d, scale);
       } else {
-        drawDieselSmoke(ctx2d, 1);
+        drawDieselSmoke(ctx2d, 1, planeMetric(13));
       }
     }
     const baseImgReady  = isSpriteReady(greenPlaneImg);
