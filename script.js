@@ -2926,6 +2926,10 @@ const PLANE_METRIC_SCALE   = PLANE_DRAW_W / 40;
 function planeMetric(value) {
   return value * PLANE_METRIC_SCALE;
 }
+// VFX anchor points (scaled with planeMetric)
+const PLANE_VFX_JET_ANCHOR_Y = planeMetric(11);
+const PLANE_VFX_SMOKE_ANCHOR_Y = planeMetric(19);
+const PLANE_VFX_IDLE_SMOKE_DELTA_Y = planeMetric(5);
 const MINI_PLANE_ICON_SCALE = 0.7;    // make HUD plane icons smaller on the counter
 const HUD_PLANE_DIM_ALPHA = 1;        // keep HUD planes at full opacity
 const HUD_PLANE_DIM_FILTER = "";     // no additional dimming filter for HUD planes
@@ -5389,9 +5393,9 @@ function drawFieldEdges(ctx2d, w, h){
 function getPlaneAnchorOffset(kind) {
   switch(kind) {
     case "jet":
-      return { x: 0, y: planeMetric(11) };
+      return { x: 0, y: PLANE_VFX_JET_ANCHOR_Y };
     case "smoke":
-      return { x: 0, y: planeMetric(19) };
+      return { x: 0, y: PLANE_VFX_SMOKE_ANCHOR_Y };
     default:
       return { x: 0, y: 0 };
   }
@@ -5602,7 +5606,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   const isIdle = !flightState;
   const smokeAnchor = getPlaneAnchorOffset("smoke");
   const jetAnchor = getPlaneAnchorOffset("jet");
-  const idleSmokeDistance = Math.max(0, smokeAnchor.y - 5);
+  const idleSmokeDistance = Math.max(0, smokeAnchor.y - PLANE_VFX_IDLE_SMOKE_DELTA_Y);
   const showEngine = !isGhostState;
 
   ctx2d.save();
