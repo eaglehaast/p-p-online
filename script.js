@@ -2936,7 +2936,7 @@ const PLANE_VFX_JET_IDLE_FLICKER_BASE = 0.8;
 const PLANE_VFX_JET_IDLE_FLICKER_AMPLITUDE = 0.1;
 const PLANE_VFX_SMOKE_ANCHOR_Y = planeMetric(26);
 const PLANE_VFX_IDLE_SMOKE_DELTA_Y = planeMetric(5);
-const PLANE_VFX_IDLE_SMOKE_TRIM_Y = planeMetric(5);
+const PLANE_VFX_IDLE_SMOKE_TAIL_TRIM_Y = planeMetric(5);
 const MINI_PLANE_ICON_SCALE = 0.7;    // make HUD plane icons smaller on the counter
 const HUD_PLANE_DIM_ALPHA = 1;        // keep HUD planes at full opacity
 const HUD_PLANE_DIM_FILTER = "";     // no additional dimming filter for HUD planes
@@ -5406,7 +5406,7 @@ function drawVfxDebugOverlay(ctx2d, activePlanes, destroyedPlanes = []) {
   const directionLength = planeMetric(10);
   const jetAnchor = getPlaneAnchorOffset("jet");
   const smokeAnchor = getPlaneAnchorOffset("smoke");
-  const idleSmokeY = Math.max(0, smokeAnchor.y - PLANE_VFX_IDLE_SMOKE_DELTA_Y - PLANE_VFX_IDLE_SMOKE_TRIM_Y);
+  const idleSmokeY = Math.max(0, smokeAnchor.y - PLANE_VFX_IDLE_SMOKE_DELTA_Y);
 
   const drawMarker = (kind, x, y) => {
     switch (kind) {
@@ -5568,21 +5568,25 @@ function drawBlueJetFlame(ctx2d, scale, baseOffsetY = getPlaneAnchorOffset("jet"
 
 }
 
-function drawDieselSmoke(ctx2d, scale, baseOffsetY = getPlaneAnchorOffset("smoke").y){
+function drawDieselSmoke(ctx2d, scale, baseOffsetY = getPlaneAnchorOffset("smoke").y, tailTrim = 0){
   if(scale <= 0) return;
 
   const baseRadius = planeMetric(5) * scale;
+  const puffs = 3;
+  const baseSpacing = baseRadius * 0.9;
+  const totalSpan = baseSpacing * (puffs - 1);
+  const trimmedSpan = Math.max(0, totalSpan - Math.max(0, tailTrim));
+  const puffSpacing = puffs > 1 ? trimmedSpan / (puffs - 1) : 0;
   ctx2d.save();
   ctx2d.translate(0, baseOffsetY);
   ctx2d.scale(0.5, 1); // make smoke column narrower
 
-  const puffs = 3;
   for(let i = 0; i < puffs; i++){
     const phase   = globalFrame * 0.2 - i; // wave moves away from the plane
     const flicker = 0.8 + 0.2 * Math.sin(phase);
     const radius  = baseRadius * (0.7 + 0.3 * Math.sin(phase * 0.7)) * flicker;
     const offsetX = Math.sin(phase) * baseRadius * 0.3;
-    const offsetY =  i * baseRadius * 0.9;
+    const offsetY =  i * puffSpacing;
     const alpha   = 1 - (i / (puffs - 1)) * 0.5; // fade to 50% transparency
     ctx2d.beginPath();
     ctx2d.globalAlpha = alpha;
@@ -5726,16 +5730,16 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   const isIdle = !flightState;
   const smokeAnchor = getPlaneAnchorOffset("smoke");
   const jetAnchor = getPlaneAnchorOffset("jet");
-  const idleSmokeDistance = Math.max(0, smokeAnchor.y - PLANE_VFX_IDLE_SMOKE_DELTA_Y - PLANE_VFX_IDLE_SMOKE_TRIM_Y);
+  const idleSmokeDistance = Math.max(0, smokeAnchor.y - PLANE_VFX_IDLE_SMOKE_DELTA_Y);
   const showEngine = !isGhostState;
 
   ctx2d.save();
   ctx2d.translate(cx, cy);
   ctx2d.rotate(angle);
 
-  const drawSmokeWithAnchor = (scale, offsetY) => {
+  const drawSmokeWithAnchor = (scale, offsetY, tailTrim = 0) => {
     if (scale <= 0 || offsetY < 0) return;
-    drawDieselSmoke(ctx2d, scale, offsetY);
+    drawDieselSmoke(ctx2d, scale, offsetY, tailTrim);
   };
 
   if (color === "green" && showEngine) {
@@ -5749,7 +5753,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
       }
       drawSmokeWithAnchor(scale, smokeAnchor.y);
     } else {
-      drawSmokeWithAnchor(1, idleSmokeDistance);
+      drawSmokeWithAnchor(1, idleSmokeDistance, PLANE_VFX_IDLE_SMOKE_TAIL_TRIM_Y);
     }
   }
 
