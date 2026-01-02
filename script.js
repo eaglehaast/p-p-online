@@ -2928,8 +2928,8 @@ function planeMetric(value) {
   return value * PLANE_METRIC_SCALE;
 }
 // VFX anchor points (scaled with planeMetric)
-const PLANE_VFX_JET_ANCHOR_Y = planeMetric(11);
-const PLANE_VFX_SMOKE_ANCHOR_Y = planeMetric(19);
+const PLANE_VFX_JET_ANCHOR_Y = planeMetric(24);
+const PLANE_VFX_SMOKE_ANCHOR_Y = planeMetric(26);
 const PLANE_VFX_IDLE_SMOKE_DELTA_Y = planeMetric(5);
 const MINI_PLANE_ICON_SCALE = 0.7;    // make HUD plane icons smaller on the counter
 const HUD_PLANE_DIM_ALPHA = 1;        // keep HUD planes at full opacity
