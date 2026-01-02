@@ -5587,6 +5587,40 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   const isGhostState = plane.burning || !plane.isAlive;
   const halfPlaneWidth = PLANE_DRAW_W / 2;
   const halfPlaneHeight = PLANE_DRAW_H / 2;
+  const flightState = flyingPoints.find(fp => fp.plane === plane) || null;
+  const isIdle = !flightState;
+  const smokeBaseDistance = planeMetric(19);
+  const idleSmokeDistance = Math.max(0, smokeBaseDistance - 5);
+
+  const drawSmokeWithAnchor = (scale, distance) => {
+    if (scale <= 0 || distance < 0) return;
+
+    const tailDir = { x: -Math.sin(angle), y: Math.cos(angle) };
+    const anchor = { x: cx + tailDir.x * distance, y: cy + tailDir.y * distance };
+
+    ctx2d.save();
+    ctx2d.translate(anchor.x, anchor.y);
+    ctx2d.rotate(angle);
+    drawDieselSmoke(ctx2d, scale, 0);
+    ctx2d.restore();
+  };
+
+  const showEngine = !isGhostState;
+
+  if (color === "green" && showEngine) {
+    if (flightState) {
+      const progress = (FIELD_FLIGHT_DURATION_SEC - flightState.timeLeft) / FIELD_FLIGHT_DURATION_SEC;
+      let scale;
+      if (progress < 0.5) {
+        scale = 4 - 4 * progress; // 20px -> 10px
+      } else {
+        scale = 3 - 2 * progress; // 10px -> 5px
+      }
+      drawSmokeWithAnchor(scale, smokeBaseDistance);
+    } else {
+      drawSmokeWithAnchor(1, idleSmokeDistance);
+    }
+  }
 
   ctx2d.save();
   ctx2d.translate(cx, cy);
@@ -5605,17 +5639,17 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   ctx2d.shadowBlur = 0;
   ctx2d.filter = "none";
 
-  const showEngine = !isGhostState;
   const previousFilter = ctx2d.filter;
   const baseGhostAlpha = 0.3;
   if (color === "blue") {
     if (showEngine) {
       const flicker = 1 + 0.05 * Math.sin(globalFrame * 0.1);
-      drawJetFlame(ctx2d, flicker);
+      const idleFlicker = 0.35 + 0.05 * Math.sin(globalFrame * 0.12);
+      const jetScale = isIdle ? idleFlicker : flicker;
+      drawJetFlame(ctx2d, jetScale);
 
-      const fp = flyingPoints.find(fp => fp.plane === plane);
-      if (fp) {
-        const progress = (FIELD_FLIGHT_DURATION_SEC - fp.timeLeft) / FIELD_FLIGHT_DURATION_SEC;
+      if (flightState) {
+        const progress = (FIELD_FLIGHT_DURATION_SEC - flightState.timeLeft) / FIELD_FLIGHT_DURATION_SEC;
         const scale = progress < 0.75 ? 4 * progress : 12 * (1 - progress);
         drawBlueJetFlame(ctx2d, scale);
 
@@ -5639,21 +5673,6 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
       addPlaneShading(ctx2d);
     }
   } else if (color === "green") {
-    const fp = flyingPoints.find(fp => fp.plane === plane);
-    if (showEngine) {
-      if (fp) {
-        const progress = (FIELD_FLIGHT_DURATION_SEC - fp.timeLeft) / FIELD_FLIGHT_DURATION_SEC;
-        let scale;
-        if (progress < 0.5) {
-          scale = 4 - 4 * progress; // 20px -> 10px
-        } else {
-          scale = 3 - 2 * progress; // 10px -> 5px
-        }
-        drawDieselSmoke(ctx2d, scale);
-      } else {
-        drawDieselSmoke(ctx2d, 1, planeMetric(13));
-      }
-    }
     const baseImgReady  = isSpriteReady(greenPlaneImg);
     if (!baseImgReady) {
       ctx2d.restore();
