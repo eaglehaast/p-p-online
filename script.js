@@ -5197,7 +5197,7 @@ function gameDraw(){
   }
 
   // самолёты + их трейлы
-  drawPlanesAndTrajectories();
+  const rangeTextInfo = drawPlanesAndTrajectories();
 
   // Флаги рисуются после обломков самолётов, чтобы не прятаться под ними
   drawFlagMarkers();
@@ -5207,6 +5207,8 @@ function gameDraw(){
 
   // Табло рисуем поверх самолётов, поэтому оно выводится после drawPlanesAndTrajectories
   renderScoreboard();
+
+  drawAimOverlay(rangeTextInfo);
 
   if(isGameOver && winnerColor){
     gsBoardCtx.font="48px 'Patrick Hand', cursive";
@@ -6034,28 +6036,47 @@ function drawPlanesAndTrajectories(){
 
   drawVfxDebugOverlay(planeCtx, activePlanes, destroyedOrBurning);
 
-  if(rangeTextInfo){
-    planeCtx.save();
-    planeCtx.globalAlpha = 1;
-    planeCtx.font = "14px sans-serif";
-    planeCtx.textAlign = "left";
-    planeCtx.textBaseline = "middle";
-    planeCtx.lineWidth = 2;
-    planeCtx.strokeStyle = "rgba(255, 255, 255, 0.75)";
-    planeCtx.fillStyle = rangeTextInfo.color;
-    const numText = rangeTextInfo.cells.toFixed(1);
-    planeCtx.strokeText(numText, rangeTextInfo.x, rangeTextInfo.y - 8);
-    planeCtx.fillText(numText, rangeTextInfo.x, rangeTextInfo.y - 8);
-    planeCtx.strokeText("cells", rangeTextInfo.x, rangeTextInfo.y + 8);
-    planeCtx.fillText("cells", rangeTextInfo.x, rangeTextInfo.y + 8);
-    planeCtx.restore();
-  }
-
   if (debugDrawOrder && debugDrawOrder.length > 0) {
     console.debug('[VFX][draw-order]', debugDrawOrder);
   }
 
   planeCtx.restore();
+
+  return rangeTextInfo;
+}
+
+function drawAimOverlay(rangeTextInfo) {
+  if (!rangeTextInfo) return;
+  if (!hudCtx || !(hudCanvas instanceof HTMLCanvasElement)) return;
+
+  const hudScaleX = hudCanvas.width / FRAME_BASE_WIDTH;
+  const hudScaleY = hudCanvas.height / FRAME_BASE_HEIGHT;
+
+  hudCtx.save();
+  hudCtx.setTransform(
+    hudScaleX,
+    0,
+    0,
+    hudScaleY,
+    CANVAS_OFFSET_X * hudScaleX,
+    FRAME_PADDING_Y * hudScaleY
+  );
+
+  hudCtx.globalAlpha = 1;
+  hudCtx.font = "14px sans-serif";
+  hudCtx.textAlign = "left";
+  hudCtx.textBaseline = "middle";
+  hudCtx.lineWidth = 2;
+  hudCtx.strokeStyle = "rgba(255, 255, 255, 0.75)";
+  hudCtx.fillStyle = rangeTextInfo.color;
+
+  const numText = rangeTextInfo.cells.toFixed(1);
+  hudCtx.strokeText(numText, rangeTextInfo.x, rangeTextInfo.y - 8);
+  hudCtx.fillText(numText, rangeTextInfo.x, rangeTextInfo.y - 8);
+  hudCtx.strokeText("cells", rangeTextInfo.x, rangeTextInfo.y + 8);
+  hudCtx.fillText("cells", rangeTextInfo.x, rangeTextInfo.y + 8);
+
+  hudCtx.restore();
 }
 
 function drawBuildings(){
