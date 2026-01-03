@@ -600,7 +600,7 @@ const GAME_ASSETS = [
   "background paper 1.png",
 
   // Game maps
-  "ui_gamescreen/maps/easy 1-2 round/map 1 - clear sky 3.png",
+  "ui_gamescreen/bricks/brick_1_default.png",
   "ui_gamescreen/maps/middle 3-4 round/map 2 - 5 bricks.png",
   "ui_gamescreen/maps/hard 5 round and more/map 3 diagonals.png",
 
@@ -2802,6 +2802,13 @@ function setBrickFrameImage(img) {
   }
 }
 
+function clearBrickFrameImage(){
+  brickFrameImg = null;
+  brickFrameData = null;
+  brickFrameBorderPxX = FIELD_BORDER_THICKNESS;
+  brickFrameBorderPxY = FIELD_BORDER_THICKNESS;
+}
+
 let FIELD_LEFT = 0;
 let FIELD_WIDTH = 0;
 
@@ -3143,10 +3150,22 @@ let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_STA
 
 
 let currentPlacer = null; // 'green' | 'blue'
+
+const MAP_BRICK_SPRITE_PATH = "ui_gamescreen/bricks/brick_1_default.png";
+const CLEAR_SKY_VERTICAL_Y = [20,60,100,140,180,220,260,300,340,380,420,460,500,540,580];
+const CLEAR_SKY_HORIZONTAL_X = [0,40,80,120,160,200,240,280,320];
+const CLEAR_SKY_BORDER_SPRITES = [
+  ...CLEAR_SKY_VERTICAL_Y.map(y => ({ spriteName: "brick_1_default", x: 0, y, rotate: 0, scale: 1 })),
+  ...CLEAR_SKY_VERTICAL_Y.map(y => ({ spriteName: "brick_1_default", x: 340, y, rotate: 0, scale: 1 })),
+  ...CLEAR_SKY_HORIZONTAL_X.map(x => ({ spriteName: "brick_1_default", x, y: 0, rotate: -90, scale: -1 })),
+  ...CLEAR_SKY_HORIZONTAL_X.map(x => ({ spriteName: "brick_1_default", x, y: 620, rotate: -90, scale: -1 })),
+];
+
 const MAPS = [
   {
     name: 'Clear Sky',
-    file: 'ui_gamescreen/maps/easy 1-2 round/map 1 - clear sky 3.png',
+    renderer: 'sprites',
+    sprites: CLEAR_SKY_BORDER_SPRITES,
     tier: 'easy',
     buildings: []
   },
@@ -3187,6 +3206,13 @@ const MAPS = [
     tier: 'random'
   }
 ];
+
+const MAP_RENDERERS = {
+  IMAGE: 'image',
+  SPRITES: 'sprites'
+};
+let currentMapRenderer = MAP_RENDERERS.IMAGE;
+let currentMapSprites = [];
 
 const CONTROL_PANEL_PREVIEW_CACHE = new Map();
 
@@ -4859,7 +4885,7 @@ function drawInitialFrame(reason = "initial") {
     gsBoardCtx.fillStyle = "#f2efe6";
     gsBoardCtx.fillRect(0, 0, WORLD.width, WORLD.height);
   }
-  drawFieldEdges(gsBoardCtx, WORLD.width, WORLD.height);
+  drawMapLayer(gsBoardCtx);
   drawDebugLayoutOverlay(gsBoardCtx);
   renderInitState.firstFrameDrawn = true;
   logRenderInit("first frame draw", { reason });
@@ -4891,6 +4917,7 @@ function gameDraw(){
   // фон
   resetCanvasState(gsBoardCtx, gsBoardCanvas);
   drawFieldBackground(gsBoardCtx, WORLD.width, WORLD.height);
+  drawMapLayer(gsBoardCtx);
 
   // Планирование хода ИИ
   if (!isGameOver
@@ -5078,8 +5105,6 @@ function gameDraw(){
   // здания
   drawAAPlacementZone();
   drawBuildings();
-
-  drawFieldEdges(gsBoardCtx, WORLD.width, WORLD.height);
 
   drawBaseVisuals();
 
@@ -5401,6 +5426,41 @@ function drawFieldEdges(ctx2d, w, h){
     drawNailEdges(ctx2d, w, h);
   } else {
     drawBrickEdges(ctx2d, w, h);
+  }
+}
+
+function drawMapSprites(ctx2d, sprites){
+  const spriteEntries = Array.isArray(sprites) ? sprites : [];
+  if(spriteEntries.length === 0){
+    return;
+  }
+
+  const { img: brickSprite } = loadImageAsset(MAP_BRICK_SPRITE_PATH, "mapBrickSprite");
+  if(!brickSprite || !isSpriteReady(brickSprite)){
+    return;
+  }
+
+  for(const sprite of spriteEntries){
+    const { x = 0, y = 0 } = sprite;
+    const rotationDeg = Number.isFinite(sprite?.rotate) ? sprite.rotate : 0;
+    const uniformScale = Number.isFinite(sprite?.scale) ? sprite.scale : 1;
+    const scaleX = Number.isFinite(sprite?.scaleX) ? sprite.scaleX : uniformScale;
+    const scaleY = Number.isFinite(sprite?.scaleY) ? sprite.scaleY : uniformScale;
+
+    ctx2d.save();
+    ctx2d.translate(x, y);
+    ctx2d.rotate(rotationDeg * Math.PI / 180);
+    ctx2d.scale(scaleX, scaleY);
+    ctx2d.drawImage(brickSprite, 0, 0);
+    ctx2d.restore();
+  }
+}
+
+function drawMapLayer(ctx2d){
+  if(currentMapRenderer === MAP_RENDERERS.SPRITES){
+    drawMapSprites(ctx2d, currentMapSprites);
+  } else {
+    drawFieldEdges(ctx2d, WORLD.width, WORLD.height);
   }
 }
 
@@ -7198,8 +7258,19 @@ function applyCurrentMap(upcomingRoundNumber){
   const mapIndex = resolveMapIndexForGameplay(targetRoundNumber);
   const gameplayMap = MAPS[mapIndex] || MAPS[0];
 
-  const { img } = loadImageAsset(gameplayMap.file, "brickFrameImg");
-  setBrickFrameImage(img);
+  currentMapRenderer = gameplayMap.renderer === MAP_RENDERERS.SPRITES
+    ? MAP_RENDERERS.SPRITES
+    : MAP_RENDERERS.IMAGE;
+  currentMapSprites = currentMapRenderer === MAP_RENDERERS.SPRITES && Array.isArray(gameplayMap.sprites)
+    ? gameplayMap.sprites
+    : [];
+
+  if(currentMapRenderer === MAP_RENDERERS.SPRITES){
+    clearBrickFrameImage();
+  } else {
+    const { img } = loadImageAsset(gameplayMap.file, "brickFrameImg");
+    setBrickFrameImage(img);
+  }
   setFlagConfigsForMap(gameplayMap);
   rebuildBuildingsFromMap(gameplayMap);
   updateFieldDimensions();
