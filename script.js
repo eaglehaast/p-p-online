@@ -13,7 +13,7 @@ const goatIndicator   = document.getElementById("goatIndicator");
 const DEBUG_RESIZE = false;
 const DEBUG_BOOT = false;
 const DEBUG_LAYOUT = false;
-const DEBUG_START_POSITIONS = true;
+const DEBUG_START_POSITIONS = false;
 const DEBUG_RENDER_INIT = false;
 const DEBUG_ENDGAME = false;
 const DEBUG_AIM = false;
@@ -2774,7 +2774,8 @@ const FRAME_PADDING_Y = 80;
 const CANVAS_OFFSET_X = 51;
 const FRAME_BASE_WIDTH = CANVAS_BASE_WIDTH + FRAME_PADDING_X * 2; // 460
 const FRAME_BASE_HEIGHT = CANVAS_BASE_HEIGHT + FRAME_PADDING_Y * 2; // 800
-const FIELD_BORDER_THICKNESS = 10; // px, width of brick frame edges
+const MAP_BRICK_THICKNESS = 20; // px, matches brick_1_default short side
+const FIELD_BORDER_THICKNESS = MAP_BRICK_THICKNESS; // px, width of brick frame edges
 
 
 let brickFrameImg = null;
@@ -3023,24 +3024,32 @@ const BASE_LAYOUTS = {
 
 // Crash effect duration before showing cross (see CRASH_FX_DELAY_MS)
 
-  function updateFieldBorderOffset(){
-    if(settings.sharpEdges){
-      FIELD_BORDER_OFFSET_X = 0;
-      FIELD_BORDER_OFFSET_Y = 0;
-      return;
-    }
-
-    if(!brickFrameImg || !brickFrameImg.naturalWidth){
-      FIELD_BORDER_OFFSET_X = FIELD_BORDER_THICKNESS;
-      FIELD_BORDER_OFFSET_Y = FIELD_BORDER_THICKNESS;
-      return;
-    }
-
-    const scaleX = FIELD_WIDTH / brickFrameImg.naturalWidth;
-    const scaleY = WORLD.height / brickFrameImg.naturalHeight;
-    FIELD_BORDER_OFFSET_X = brickFrameBorderPxX * scaleX;
-    FIELD_BORDER_OFFSET_Y = brickFrameBorderPxY * scaleY;
+function updateFieldBorderOffset(){
+  if(settings.sharpEdges){
+    FIELD_BORDER_OFFSET_X = 0;
+    FIELD_BORDER_OFFSET_Y = 0;
+    return;
   }
+
+  if (typeof MAP_RENDERERS !== 'undefined'
+    && typeof currentMapRenderer !== 'undefined'
+    && currentMapRenderer === MAP_RENDERERS.SPRITES) {
+    FIELD_BORDER_OFFSET_X = MAP_BRICK_THICKNESS;
+    FIELD_BORDER_OFFSET_Y = MAP_BRICK_THICKNESS;
+    return;
+  }
+
+  if(!brickFrameImg || !brickFrameImg.naturalWidth){
+    FIELD_BORDER_OFFSET_X = FIELD_BORDER_THICKNESS;
+    FIELD_BORDER_OFFSET_Y = FIELD_BORDER_THICKNESS;
+    return;
+  }
+
+  const scaleX = FIELD_WIDTH / brickFrameImg.naturalWidth;
+  const scaleY = WORLD.height / brickFrameImg.naturalHeight;
+  FIELD_BORDER_OFFSET_X = brickFrameBorderPxX * scaleX;
+  FIELD_BORDER_OFFSET_Y = brickFrameBorderPxY * scaleY;
+}
 
 function isBrickPixel(x, y){
   if(!brickFrameData) return false;
@@ -4886,7 +4895,9 @@ function drawInitialFrame(reason = "initial") {
     gsBoardCtx.fillRect(0, 0, WORLD.width, WORLD.height);
   }
   drawMapLayer(gsBoardCtx);
-  drawDebugLayoutOverlay(gsBoardCtx);
+  if (DEBUG_LAYOUT || DEBUG_RENDER_INIT || DEBUG_START_POSITIONS) {
+    drawDebugLayoutOverlay(gsBoardCtx);
+  }
   renderInitState.firstFrameDrawn = true;
   logRenderInit("first frame draw", { reason });
 }
@@ -5315,7 +5326,9 @@ function gameDraw(){
     renderScoreboard(now);
   }
 
-  drawDebugLayoutOverlay(gsBoardCtx);
+  if (DEBUG_LAYOUT || DEBUG_RENDER_INIT || DEBUG_START_POSITIONS) {
+    drawDebugLayoutOverlay(gsBoardCtx);
+  }
 
   animationFrameId = requestAnimationFrame(gameDraw);
 }
@@ -5447,11 +5460,18 @@ function drawMapSprites(ctx2d, sprites){
     const scaleX = Number.isFinite(sprite?.scaleX) ? sprite.scaleX : uniformScale;
     const scaleY = Number.isFinite(sprite?.scaleY) ? sprite.scaleY : uniformScale;
 
+    const baseWidth = brickSprite.naturalWidth || MAP_BRICK_THICKNESS;
+    const baseHeight = brickSprite.naturalHeight || MAP_BRICK_THICKNESS;
+    const normalizedRotation = ((rotationDeg % 360) + 360) % 360;
+    const swapsDimensions = normalizedRotation % 180 !== 0;
+    const drawnWidth = (swapsDimensions ? baseHeight : baseWidth) * Math.abs(scaleX);
+    const drawnHeight = (swapsDimensions ? baseWidth : baseHeight) * Math.abs(scaleY);
+
     ctx2d.save();
-    ctx2d.translate(x, y);
+    ctx2d.translate(x + drawnWidth / 2, y + drawnHeight / 2);
     ctx2d.rotate(rotationDeg * Math.PI / 180);
     ctx2d.scale(scaleX, scaleY);
-    ctx2d.drawImage(brickSprite, 0, 0);
+    ctx2d.drawImage(brickSprite, -baseWidth / 2, -baseHeight / 2, baseWidth, baseHeight);
     ctx2d.restore();
   }
 }
