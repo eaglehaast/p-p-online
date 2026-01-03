@@ -10,6 +10,7 @@ const MAX_AMPLITUDE = 20;
 
 const MAP_PREVIEW_BASE_WIDTH = 360;
 const MAP_PREVIEW_BASE_HEIGHT = 640;
+const MAP_PREVIEW_BRICK_SPRITE_PATH = 'ui_gamescreen/bricks/brick_1_default.png';
 
 const CONTROL_PANEL_PREVIEW_CACHE = new Map();
 
@@ -535,6 +536,10 @@ let previewArrow = null;
 let previewAnimationId = null;
 let previewSimulationInitialized = false;
 const previewPlaneBaselines = new WeakMap();
+let mapPreviewBricksCanvas = null;
+let mapPreviewBricksCtx = null;
+let mapPreviewBrickDpr = window.devicePixelRatio || 1;
+let previewBrickSprite = null;
 const previewHandle = {
   active: false,
   baseX: 0,
@@ -812,6 +817,164 @@ function saveSettings(){
   setStoredItem('settings.mapIndex', mapIndex);
 }
 
+function hasCurrentMapBricks(){
+  const bricks = MAPS[mapIndex]?.bricks;
+  return Array.isArray(bricks) && bricks.length > 0;
+}
+
+function ensureMapPreviewBricksCanvas(){
+  if(!mapPreview) return null;
+  if(mapPreviewBricksCanvas) return mapPreviewBricksCanvas;
+
+  mapPreviewBricksCanvas = document.createElement('canvas');
+  mapPreviewBricksCanvas.className = 'map-preview-bricks';
+  mapPreviewBricksCanvas.setAttribute('aria-hidden', 'true');
+  mapPreview.appendChild(mapPreviewBricksCanvas);
+  mapPreviewBricksCtx = mapPreviewBricksCanvas.getContext('2d');
+  mapPreviewBrickDpr = window.devicePixelRatio || 1;
+
+  return mapPreviewBricksCanvas;
+}
+
+function clearMapPreviewBricksCanvas(){
+  if(mapPreviewBricksCtx && mapPreviewBricksCanvas){
+    mapPreviewBricksCtx.setTransform(1, 0, 0, 1, 0, 0);
+    mapPreviewBricksCtx.clearRect(0, 0, mapPreviewBricksCanvas.width, mapPreviewBricksCanvas.height);
+  }
+
+  if(mapPreviewBricksCanvas){
+    mapPreviewBricksCanvas.style.display = 'none';
+  }
+}
+
+function getPreviewBrickSprite(onLoad){
+  if(previewBrickSprite){
+    if(onLoad){
+      if(isSpriteReady(previewBrickSprite)){
+        onLoad();
+      } else {
+        previewBrickSprite.addEventListener('load', onLoad, { once: true });
+      }
+    }
+    return previewBrickSprite;
+  }
+
+  const registry = window.paperWingsAssets || null;
+  const useRegistry = !!registry?.getImage;
+  const { img, url } = useRegistry
+    ? registry.getImage(MAP_PREVIEW_BRICK_SPRITE_PATH, 'mapPreviewBrick')
+    : (() => {
+        const normalized = typeof MAP_PREVIEW_BRICK_SPRITE_PATH === 'string'
+          ? MAP_PREVIEW_BRICK_SPRITE_PATH.trim()
+          : '';
+        if (!normalized) return { img: null, url: '' };
+        return { img: new Image(), url: normalized };
+      })();
+
+  if(!img || !url){
+    return null;
+  }
+
+  if(onLoad && !isSpriteReady(img)){
+    img.addEventListener('load', onLoad, { once: true });
+  }
+
+  if(useRegistry && typeof registry.primeImageLoad === 'function'){
+    registry.primeImageLoad(img, url, 'mapPreviewBrick');
+  } else if(!img.src){
+    installImageWatch(img, url, 'mapPreviewBrick');
+    img.src = url;
+  }
+
+  previewBrickSprite = img;
+  return previewBrickSprite;
+}
+
+function drawMapPreviewBricks(boundsWidth, boundsHeight){
+  if(!hasCurrentMapBricks()){
+    clearMapPreviewBricksCanvas();
+    return;
+  }
+
+  if(!mapPreview || !mapPreviewBricksCtx){
+    return;
+  }
+
+  const rectWidth = boundsWidth ?? mapPreview.getBoundingClientRect().width;
+  const rectHeight = boundsHeight ?? mapPreview.getBoundingClientRect().height;
+  mapPreviewBricksCtx.clearRect(0, 0, rectWidth, rectHeight);
+
+  const sprite = getPreviewBrickSprite(() => drawMapPreviewBricks(rectWidth, rectHeight));
+  if(!sprite || !isSpriteReady(sprite)){
+    return;
+  }
+
+  const bricks = Array.isArray(MAPS[mapIndex]?.bricks) ? MAPS[mapIndex].bricks : [];
+  const scaleX = rectWidth / MAP_PREVIEW_BASE_WIDTH;
+  const scaleY = rectHeight / MAP_PREVIEW_BASE_HEIGHT;
+  const previewScale = Math.min(scaleX, scaleY);
+  const offsetX = (rectWidth - MAP_PREVIEW_BASE_WIDTH * previewScale) / 2;
+  const offsetY = (rectHeight - MAP_PREVIEW_BASE_HEIGHT * previewScale) / 2;
+
+  for(const brick of bricks){
+    const brickX = Number.isFinite(brick?.x) ? brick.x : 0;
+    const brickY = Number.isFinite(brick?.y) ? brick.y : 0;
+    const rotationDeg = Number.isFinite(brick?.rotate) ? brick.rotate : 0;
+    const uniformScale = Number.isFinite(brick?.scale) ? brick.scale : 1;
+    const scaleXLocal = Number.isFinite(brick?.scaleX) ? brick.scaleX : uniformScale;
+    const scaleYLocal = Number.isFinite(brick?.scaleY) ? brick.scaleY : uniformScale;
+
+    const baseWidth = sprite.naturalWidth || 0;
+    const baseHeight = sprite.naturalHeight || 0;
+    if(baseWidth <= 0 || baseHeight <= 0) continue;
+
+    const normalizedRotation = ((rotationDeg % 360) + 360) % 360;
+    const swapsDimensions = normalizedRotation % 180 !== 0;
+    const drawnWidth = (swapsDimensions ? baseHeight : baseWidth) * Math.abs(scaleXLocal) * previewScale;
+    const drawnHeight = (swapsDimensions ? baseWidth : baseHeight) * Math.abs(scaleYLocal) * previewScale;
+
+    mapPreviewBricksCtx.save();
+    mapPreviewBricksCtx.translate(
+      offsetX + brickX * previewScale + drawnWidth / 2,
+      offsetY + brickY * previewScale + drawnHeight / 2
+    );
+    mapPreviewBricksCtx.rotate(rotationDeg * Math.PI / 180);
+    mapPreviewBricksCtx.scale(scaleXLocal * previewScale, scaleYLocal * previewScale);
+    mapPreviewBricksCtx.drawImage(sprite, -baseWidth / 2, -baseHeight / 2, baseWidth, baseHeight);
+    mapPreviewBricksCtx.restore();
+  }
+}
+
+function resizeMapPreviewBricksCanvas(){
+  if(!mapPreview) return;
+  if(!hasCurrentMapBricks()){
+    clearMapPreviewBricksCanvas();
+    return;
+  }
+
+  const rect = mapPreview.getBoundingClientRect();
+  const width = rect.width;
+  const height = rect.height;
+  if(width <= 0 || height <= 0){
+    return;
+  }
+
+  const canvas = ensureMapPreviewBricksCanvas();
+  if(!canvas) return;
+
+  mapPreviewBrickDpr = window.devicePixelRatio || 1;
+  canvas.style.display = 'block';
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+  canvas.width = Math.max(1, Math.round(width * mapPreviewBrickDpr));
+  canvas.height = Math.max(1, Math.round(height * mapPreviewBrickDpr));
+  if(mapPreviewBricksCtx){
+    mapPreviewBricksCtx.setTransform(mapPreviewBrickDpr, 0, 0, mapPreviewBrickDpr, 0, 0);
+  }
+
+  drawMapPreviewBricks(width, height);
+}
+
 function updateMapPreview(){
   if(!mapPreview) return;
   const map = MAPS[mapIndex];
@@ -819,8 +982,9 @@ function updateMapPreview(){
   mapPreview.classList.toggle('map-preview--random', Boolean(randomSelection));
   restorePreviewPlaneVisibility();
   ensurePreviewCanvasLayering();
-  mapPreview.style.backgroundImage = map ? `url('${map.file}')` : '';
-  if(map?.file){
+  const hasBricks = hasCurrentMapBricks();
+  mapPreview.style.backgroundImage = !hasBricks && map ? `url('${map.file}')` : '';
+  if(map?.file && !hasBricks){
     const registry = window.paperWingsAssets || null;
     const useRegistry = !!registry?.getImage;
     const { img, url } = useRegistry
@@ -854,6 +1018,7 @@ function updateMapPreview(){
       img.src = url;
     }
   }
+  resizeMapPreviewBricksCanvas();
   refreshPreviewSimulationIfInitialized();
 }
 
@@ -905,6 +1070,7 @@ function resizePreviewCanvas(){
     previewCtx.setTransform(previewDpr, 0, 0, previewDpr, 0, 0);
   }
 
+  resizeMapPreviewBricksCanvas();
   rebuildPreviewBuildings();
 }
 
