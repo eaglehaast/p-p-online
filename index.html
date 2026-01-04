@@ -218,7 +218,11 @@
               </div>
 
               <div id="range_frame_counter" class="range-display" role="status" aria-live="polite">
-                <span id="rangeDisplay" class="range-display__value">30</span>
+                <div class="range-display__viewport" id="rangeDisplayViewport">
+                  <div class="range-display__layer" id="rangeDisplayLayer">
+                    <span id="rangeDisplay" class="range-display__value range-display__value--current">30</span>
+                  </div>
+                </div>
               </div>
 
               <div class="cp-range__frame" aria-hidden="true"></div>
