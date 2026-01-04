@@ -2432,6 +2432,7 @@ function showMenuLayer() {
     return;
   }
 
+  document.body.classList.add('menu-ready');
   setLayerVisibility(settingsLayer, false);
   window.paperWingsSettings?.onHide?.();
   setLayerVisibility(gsFrameLayer, false);
