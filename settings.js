@@ -9,6 +9,7 @@ const RANGE_DRAG_STEP_PX = 26;
 const RANGE_DRAG_VELOCITY_START = 0.7;
 const RANGE_DRAG_VELOCITY_MULT = 8;
 const RANGE_DRAG_MAX_STEPS = 10;
+const RANGE_PEEK_PX = 8;
 const MIN_AMPLITUDE = 0;
 const MAX_AMPLITUDE = 20;
 
@@ -631,11 +632,16 @@ function animateRangeDisplay(displayedCells, direction, options = {}){
   incoming.className = 'range-display__value range-display__value--incoming';
   incoming.textContent = `${displayedCells}`;
 
-  const offset = (rangeDisplayViewport.clientWidth || 0) + 10;
-  const outgoingOffset = direction === 'next' ? -offset : offset;
-  const incomingOffset = -outgoingOffset;
+  removeIncomingRangeValue();
+
+  const incomingStartOffset = Math.abs(getRangePeekOffset(direction));
+  const outgoingOffsetAbs = (rangeDisplayViewport.clientWidth || 0) + RANGE_PEEK_PX;
+
+  const outgoingOffset = direction === 'next' ? -outgoingOffsetAbs : outgoingOffsetAbs;
+  const incomingOffset = direction === 'next' ? incomingStartOffset : -incomingStartOffset;
 
   incoming.style.transform = `translateX(${incomingOffset}px)`;
+  incoming.style.removeProperty('transition');
   rangeDisplayLayer.appendChild(incoming);
   currentValue.classList.add('range-display__value--outgoing');
   currentValue.style.transform = 'translateX(0)';
@@ -677,6 +683,45 @@ function updateRangeDisplay(stepOverride, options = {}){
   setRangeDisplayValue(displayedCells);
 }
 
+function getRangePeekOffset(direction){
+  const viewportWidth = rangeDisplayViewport?.clientWidth || 0;
+  const peekOffset = Math.max(0, viewportWidth - RANGE_PEEK_PX);
+  return direction === 'next' ? peekOffset : -peekOffset;
+}
+
+function removeIncomingRangeValue(){
+  if(!rangeDisplayLayer) return;
+  const incoming = rangeDisplayLayer.querySelector('.range-display__value--incoming');
+  if(incoming){
+    incoming.remove();
+  }
+}
+
+function prepareIncomingRangeValue(direction){
+  if(!rangeDisplayLayer) return null;
+
+  const currentIndex = Math.floor(rangeStep / 2);
+  const targetIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
+
+  if(targetIndex < 0 || targetIndex >= RANGE_DISPLAY_VALUES.length){
+    removeIncomingRangeValue();
+    return null;
+  }
+
+  let incoming = rangeDisplayLayer.querySelector('.range-display__value--incoming');
+  if(!incoming){
+    incoming = document.createElement('span');
+    incoming.className = 'range-display__value range-display__value--incoming';
+    rangeDisplayLayer.appendChild(incoming);
+  }
+
+  incoming.textContent = `${RANGE_DISPLAY_VALUES[targetIndex]}`;
+  incoming.dataset.direction = direction;
+  incoming.style.transition = 'none';
+
+  return incoming;
+}
+
 function resetRangeDragVisual(animateReset){
   const currentValue = selectInSettings('#rangeDisplay');
   if(!currentValue) return;
@@ -686,6 +731,8 @@ function resetRangeDragVisual(animateReset){
   } else {
     currentValue.style.removeProperty('transform');
   }
+
+  removeIncomingRangeValue();
 }
 
 function clearRangeStepQueue(){
@@ -741,6 +788,8 @@ function handleRangePointerDown(event){
     currentValue.style.transform = 'translateX(0)';
   }
 
+  removeIncomingRangeValue();
+
   isRangeDragging = true;
   rangeDragPointerId = event.pointerId;
   rangeDragStartX = event.clientX;
@@ -762,6 +811,16 @@ function handleRangePointerMove(event){
   const maxOffset = (rangeDisplayViewport.clientWidth || 0) * 0.55;
   const clampedDx = Math.max(-maxOffset, Math.min(maxOffset, rangeDragLastDx));
   currentValue.style.transform = `translateX(${clampedDx}px)`;
+
+  const direction = clampedDx < 0 ? 'next' : (clampedDx > 0 ? 'prev' : null);
+  const incoming = direction ? prepareIncomingRangeValue(direction) : null;
+
+  if(incoming){
+    const peekOffset = getRangePeekOffset(direction);
+    incoming.style.transform = `translateX(${peekOffset + clampedDx}px)`;
+  } else {
+    removeIncomingRangeValue();
+  }
 }
 
 function handleRangePointerEnd(event){
