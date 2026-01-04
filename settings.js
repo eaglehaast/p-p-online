@@ -17,7 +17,6 @@ const RANGE_FAST_MAX_STEP_MS = 190;
 const RANGE_FAST_VELOCITY_THRESHOLD = 4;
 const RANGE_MIN_BATCH_MS = 170;
 const RANGE_SCROLL_STEP_PX = RANGE_CELL_WIDTH;
-const RANGE_SCROLL_OVERSHOOT_MS = 140;
 const RANGE_DIR_NEXT = 1;
 const RANGE_DIR_PREV = -1;
 const RANGE_VISUAL_SIGN = -1;
@@ -632,6 +631,10 @@ function setRangeDisplayValue(displayedCells){
 }
 
 const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+const easeOutBack = (t, s = 1.1) => {
+  const invT = t - 1;
+  return 1 + (s + 1) * Math.pow(invT, 3) + s * invT * invT;
+};
 
 function clearRangeScrollAnimation(){
   if(rangeScrollRafId !== null){
@@ -689,28 +692,6 @@ function finishRangeScroll(targetIndex, dir, onFinish){
     valueEl.style.transition = 'none';
     valueEl.style.transform = 'translateX(0)';
   }
-
-  const overshootPx = Math.max(3, Math.min(10, Math.round(RANGE_SCROLL_STEP_PX * 0.08)));
-  const signedOvershoot = overshootPx * dir * RANGE_VISUAL_SIGN;
-
-  if(valueEl && signedOvershoot !== 0){
-    valueEl.style.transform = `translateX(${signedOvershoot}px)`;
-    valueEl.offsetWidth; // force layout
-    valueEl.style.transition = `transform ${RANGE_SCROLL_OVERSHOOT_MS}ms ease-out`;
-    valueEl.style.transform = 'translateX(0)';
-
-    rangeOvershootTimer = setTimeout(() => {
-      valueEl.style.removeProperty('transition');
-      isRangeAnimating = false;
-      rangeOvershootTimer = null;
-      if(typeof onFinish === 'function'){
-        onFinish();
-      }
-    }, RANGE_SCROLL_OVERSHOOT_MS + 20);
-
-    return;
-  }
-
   isRangeAnimating = false;
   if(typeof onFinish === 'function'){
     onFinish();
@@ -759,7 +740,8 @@ function animateRangeDisplay(displayedCells, direction, options = {}){
   const runAnimation = (startTime, timestamp) => {
     const elapsed = timestamp - startTime;
     const t = Math.min(1, elapsed / computedDuration);
-    const eased = easeOutCubic(t);
+    const overshootStrength = 0.9 * Math.min(1, 1 / totalSteps);
+    const eased = easeOutBack(t, overshootStrength);
     const nextPos = startPos + (endPos - startPos) * eased;
     applyRangeScrollVisual(nextPos);
 
