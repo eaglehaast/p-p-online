@@ -685,8 +685,12 @@ function logImageCreation(label, url, stack) {
 
 function logDuplicateRequest(label, url, stack) {
   if (!DEBUG_ASSETS) return;
-  duplicateAttemptsCount += 1;
   const first = imageCreationStacks.get(url) || null;
+  const isSameLabel = first?.label === label;
+  if (isSameLabel) {
+    return;
+  }
+  duplicateAttemptsCount += 1;
   console.warn("[asset][duplicate]", { label, url, first, stack });
 }
 
@@ -2780,6 +2784,9 @@ const FIELD_BORDER_THICKNESS = MAP_BRICK_THICKNESS; // px, width of brick frame 
 
 let brickFrameImg = null;
 let brickFrameData = null;
+const MAP_SPRITE_ASSETS = {
+  brickDefault: null
+};
 
 function handleBrickFrameLoad() {
   if (!brickFrameImg) return;
@@ -5448,7 +5455,7 @@ function drawMapSprites(ctx2d, sprites){
     return;
   }
 
-  const { img: brickSprite } = loadImageAsset(MAP_BRICK_SPRITE_PATH, "mapBrickSprite");
+  const brickSprite = MAP_SPRITE_ASSETS.brickDefault;
   if(!brickSprite || !isSpriteReady(brickSprite)){
     return;
   }
@@ -7271,6 +7278,14 @@ function resetPlanePositionsForCurrentMap(){
   resetFlagsForNewRound();
 }
 
+function ensureMapSpriteAssets(){
+  if(!MAP_SPRITE_ASSETS.brickDefault){
+    const { img } = loadImageAsset(MAP_BRICK_SPRITE_PATH, "mapBrickSprite");
+    MAP_SPRITE_ASSETS.brickDefault = img;
+  }
+  return MAP_SPRITE_ASSETS.brickDefault;
+}
+
 function applyCurrentMap(upcomingRoundNumber){
   const targetRoundNumber = Number.isInteger(upcomingRoundNumber)
     ? upcomingRoundNumber
@@ -7286,6 +7301,7 @@ function applyCurrentMap(upcomingRoundNumber){
     : [];
 
   if(currentMapRenderer === MAP_RENDERERS.SPRITES){
+    ensureMapSpriteAssets();
     clearBrickFrameImage();
   } else {
     const { img } = loadImageAsset(gameplayMap.file, "brickFrameImg");
