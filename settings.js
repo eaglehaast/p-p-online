@@ -11,12 +11,16 @@ const MAX_AMPLITUDE = 20;
 const MAP_PREVIEW_BASE_WIDTH = 360;
 const MAP_PREVIEW_BASE_HEIGHT = 640;
 const MAP_PREVIEW_BRICK_SPRITE_PATH = 'ui_gamescreen/bricks/brick_1_default.png';
+const CONTROL_PANEL_BACKGROUND_SRC = 'ui_controlpanel/cp_background.png';
 
 const CONTROL_PANEL_PREVIEW_CACHE = new Map();
+let controlPanelBackgroundImage = null;
 
 const settingsLayer = document.getElementById('settingsLayer');
 const settingsRoot = settingsLayer ?? document;
 const selectInSettings = (selector) => settingsRoot.querySelector(selector);
+
+loadControlPanelBackground();
 
 function logCanvasCreation(canvas, label = "") {
   if (!(canvas instanceof HTMLCanvasElement)) {
@@ -47,6 +51,58 @@ function installImageWatch(img, url, label) {
       existingOnError.call(img, e);
     }
   };
+}
+
+function loadControlPanelBackground(){
+  if(controlPanelBackgroundImage){
+    return controlPanelBackgroundImage;
+  }
+
+  const registry = window.paperWingsAssets || null;
+  const label = 'settingsBackground';
+  const useRegistry = !!registry?.getImage;
+  const { img, url } = useRegistry
+    ? registry.getImage(CONTROL_PANEL_BACKGROUND_SRC, label)
+    : (() => {
+        const normalized = CONTROL_PANEL_BACKGROUND_SRC.trim();
+        if (!normalized) return { img: null, url: '' };
+        return { img: new Image(), url: normalized };
+      })();
+
+  if (!img || !url) {
+    console.log('cp_background loaded: false', { url });
+    return null;
+  }
+
+  controlPanelBackgroundImage = img;
+
+  let logged = false;
+  const logOnce = (success, errorEvent) => {
+    if (logged) return;
+    logged = true;
+    if (success) {
+      console.log('cp_background loaded: true');
+    } else {
+      console.error('cp_background loaded: false', { url, error: errorEvent });
+    }
+  };
+
+  if (isSpriteReady(img)) {
+    logOnce(true);
+    return img;
+  }
+
+  img.addEventListener('load', () => logOnce(true), { once: true });
+  img.addEventListener('error', (e) => logOnce(false, e), { once: true });
+
+  if (useRegistry && typeof registry.primeImageLoad === 'function') {
+    registry.primeImageLoad(img, url, label);
+  } else {
+    installImageWatch(img, url, label);
+    img.src = url;
+  }
+
+  return img;
 }
 
 function isSpriteReady(img){
