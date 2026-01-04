@@ -642,6 +642,10 @@ body, button {
     transform: translateX(0);
   }
 
+  .range-display__value--limit {
+    color: #c62828;
+  }
+
   .settings-container .cp-range__frame {
     position: absolute;
     left: 45px;

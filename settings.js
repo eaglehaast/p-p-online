@@ -587,6 +587,14 @@ let pendingRangeSteps = 0;
 let pendingRangeDir = 0;
 let rangeGestureVelocity = 0;
 
+const isRangeLimitValue = (value) =>
+  value === MIN_FLIGHT_RANGE_CELLS || value === MAX_FLIGHT_RANGE_CELLS;
+
+function applyRangeLimitClass(el, value){
+  if(!el) return;
+  el.classList.toggle('range-display__value--limit', isRangeLimitValue(value));
+}
+
 function stopPreviewAnimation(){
   if(previewAnimationId){
     cancelAnimationFrame(previewAnimationId);
@@ -624,6 +632,7 @@ function setRangeDisplayValue(displayedCells){
   const el = selectInSettings('#rangeDisplay');
   if(el){
     el.textContent = `${displayedCells}`;
+    applyRangeLimitClass(el, displayedCells);
     el.classList.add('range-display__value--current');
     el.classList.remove('range-display__value--incoming', 'range-display__value--outgoing');
     el.style.removeProperty('transform');
@@ -806,6 +815,7 @@ function prepareIncomingRangeValue(direction){
   }
 
   incoming.textContent = `${RANGE_DISPLAY_VALUES[targetIndex]}`;
+  applyRangeLimitClass(incoming, RANGE_DISPLAY_VALUES[targetIndex]);
   incoming.dataset.direction = direction;
   incoming.style.transition = 'none';
 
