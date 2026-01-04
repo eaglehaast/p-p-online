@@ -497,6 +497,8 @@ const rangePlusBtn =
   selectInSettings('#rangeBtnRight') ??
   selectInSettings('#rangePlus') ??
   selectInSettings('#flightRangePlus');
+const rangeDisplayViewport = selectInSettings('#rangeDisplayViewport');
+const rangeDisplayLayer = selectInSettings('#rangeDisplayLayer');
 const amplitudeMinusBtn =
   selectInSettings('#instance_accuracy_left') ??
   selectInSettings('#amplitudeMinus');
@@ -551,6 +553,7 @@ const previewHandle = {
   plane: null,
   origAngle: 0
 };
+let isRangeAnimating = false;
 
 function stopPreviewAnimation(){
   if(previewAnimationId){
@@ -585,12 +588,75 @@ function refreshPreviewSimulationIfInitialized(){
   }
 }
 
-function updateRangeDisplay(stepOverride){
+function setRangeDisplayValue(displayedCells){
   const el = selectInSettings('#rangeDisplay');
+  if(el){
+    el.textContent = `${displayedCells}`;
+    el.classList.add('range-display__value--current');
+    el.classList.remove('range-display__value--incoming', 'range-display__value--outgoing');
+    el.style.removeProperty('transform');
+  }
+}
+
+function animateRangeDisplay(displayedCells, direction){
+  if(!rangeDisplayLayer || !rangeDisplayViewport || isRangeAnimating){
+    setRangeDisplayValue(displayedCells);
+    return;
+  }
+
+  const currentValue = selectInSettings('#rangeDisplay');
+  if(!currentValue){
+    setRangeDisplayValue(displayedCells);
+    return;
+  }
+
+  isRangeAnimating = true;
+
+  const incoming = document.createElement('span');
+  incoming.className = 'range-display__value range-display__value--incoming';
+  incoming.textContent = `${displayedCells}`;
+
+  const offset = (rangeDisplayViewport.clientWidth || 0) + 10;
+  const outgoingOffset = direction === 'next' ? -offset : offset;
+  const incomingOffset = -outgoingOffset;
+
+  incoming.style.transform = `translateX(${incomingOffset}px)`;
+  rangeDisplayLayer.appendChild(incoming);
+  currentValue.classList.add('range-display__value--outgoing');
+  currentValue.style.transform = 'translateX(0)';
+
+  // Trigger layout before starting the animation
+  incoming.getBoundingClientRect();
+
+  currentValue.style.transform = `translateX(${outgoingOffset}px)`;
+  incoming.style.transform = 'translateX(0)';
+
+  let cleanedUp = false;
+  const finishAnimation = () => {
+    if(cleanedUp) return;
+    cleanedUp = true;
+    isRangeAnimating = false;
+    currentValue.removeAttribute('id');
+    currentValue.remove();
+    incoming.id = 'rangeDisplay';
+    incoming.classList.remove('range-display__value--incoming');
+    incoming.classList.add('range-display__value--current');
+  };
+
+  incoming.addEventListener('transitionend', finishAnimation, { once: true });
+  setTimeout(finishAnimation, 250);
+}
+
+function updateRangeDisplay(stepOverride, options = {}){
   const transformStep = Number.isFinite(stepOverride) ? stepOverride : rangeStep;
   const displayedCells = getRangeValue(transformStep);
 
-  if(el) el.textContent = `${displayedCells}`;
+  if(options.animateDirection){
+    animateRangeDisplay(displayedCells, options.animateDirection);
+    return;
+  }
+
+  setRangeDisplayValue(displayedCells);
 }
 
 function updateRangeFlame(){
@@ -621,6 +687,8 @@ function updateRangeFlame(){
 }
 
 function changeRangeStep(delta){
+  if(isRangeAnimating) return;
+
   const currentIndex = Math.floor(rangeStep / 2);
   const nextIndex = Math.min(
     RANGE_DISPLAY_VALUES.length - 1,
@@ -634,7 +702,8 @@ function changeRangeStep(delta){
   rangeStep = nextIndex * 2;
   settingsFlightRangeCells = RANGE_DISPLAY_VALUES[nextIndex];
 
-  updateRangeDisplay();
+  const animateDirection = delta > 0 ? 'next' : 'prev';
+  updateRangeDisplay(undefined, { animateDirection });
   updateRangeFlame();
   saveSettings();
 }
