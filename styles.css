@@ -667,7 +667,13 @@ body, button {
 
   .range-display__value.is-limit,
   .range-display__value--limit {
-    color: #c62828;
+    color: inherit;
+    text-shadow:
+      0 1px 1px rgba(255, 255, 255, 0.5),
+      0.5px 0 0 #8b1c1c,
+      -0.5px 0 0 #8b1c1c,
+      0 0.5px 0 #8b1c1c,
+      0 -0.5px 0 #8b1c1c;
   }
 
   .settings-container .cp-range__frame {
