@@ -5,9 +5,10 @@ const RANGE_DISPLAY_VALUES = [10, 15, 20, 25, 30, 35, 40, 45, 50];
 const RANGE_CELL_WIDTH = 58;
 const RANGE_HALF_STEP_PX = RANGE_CELL_WIDTH / 2;
 const RANGE_MAX_STEP = (RANGE_DISPLAY_VALUES.length - 1) * 2;
-const RANGE_DRAG_THRESHOLD = 24;
-const RANGE_DRAG_SMALL_THRESHOLD = 10;
-const RANGE_DRAG_MIN_VELOCITY = 0.6;
+const RANGE_DRAG_STEP_PX = 26;
+const RANGE_DRAG_VELOCITY_START = 0.7;
+const RANGE_DRAG_VELOCITY_MULT = 8;
+const RANGE_DRAG_MAX_STEPS = 10;
 const MIN_AMPLITUDE = 0;
 const MAX_AMPLITUDE = 20;
 
@@ -562,6 +563,8 @@ let rangeDragStartX = 0;
 let rangeDragStartTime = 0;
 let rangeDragPointerId = null;
 let rangeDragLastDx = 0;
+let pendingRangeSteps = 0;
+let pendingRangeDir = 0;
 
 function stopPreviewAnimation(){
   if(previewAnimationId){
@@ -606,9 +609,13 @@ function setRangeDisplayValue(displayedCells){
   }
 }
 
-function animateRangeDisplay(displayedCells, direction){
+function animateRangeDisplay(displayedCells, direction, options = {}){
+  const { onFinish } = options;
   if(!rangeDisplayLayer || !rangeDisplayViewport || isRangeAnimating){
     setRangeDisplayValue(displayedCells);
+    if(typeof onFinish === 'function'){
+      onFinish();
+    }
     return;
   }
 
@@ -649,6 +656,9 @@ function animateRangeDisplay(displayedCells, direction){
     incoming.id = 'rangeDisplay';
     incoming.classList.remove('range-display__value--incoming');
     incoming.classList.add('range-display__value--current');
+    if(typeof onFinish === 'function'){
+      onFinish();
+    }
   };
 
   incoming.addEventListener('transitionend', finishAnimation, { once: true });
@@ -660,7 +670,7 @@ function updateRangeDisplay(stepOverride, options = {}){
   const displayedCells = getRangeValue(transformStep);
 
   if(options.animateDirection){
-    animateRangeDisplay(displayedCells, options.animateDirection);
+    animateRangeDisplay(displayedCells, options.animateDirection, options);
     return;
   }
 
@@ -678,9 +688,52 @@ function resetRangeDragVisual(animateReset){
   }
 }
 
+function clearRangeStepQueue(){
+  pendingRangeSteps = 0;
+  pendingRangeDir = 0;
+}
+
+function runRangeStepQueue(){
+  if(pendingRangeSteps <= 0){
+    clearRangeStepQueue();
+    return;
+  }
+
+  const currentIndex = Math.floor(rangeStep / 2);
+  const nextIndex = currentIndex + pendingRangeDir;
+  if(nextIndex < 0 || nextIndex >= RANGE_DISPLAY_VALUES.length){
+    clearRangeStepQueue();
+    return;
+  }
+
+  if(isRangeAnimating){
+    return;
+  }
+
+  const handleStepFinished = () => {
+    pendingRangeSteps -= 1;
+    runRangeStepQueue();
+  };
+
+  changeRangeStep(pendingRangeDir, { onFinish: handleStepFinished });
+}
+
+function queueRangeSteps(steps, dir){
+  if(steps <= 0 || dir === 0){
+    clearRangeStepQueue();
+    return;
+  }
+
+  pendingRangeSteps = Math.min(RANGE_DRAG_MAX_STEPS, steps);
+  pendingRangeDir = dir;
+  runRangeStepQueue();
+}
+
 function handleRangePointerDown(event){
   if(isRangeAnimating || !rangeDisplayViewport) return;
   event.preventDefault();
+
+  clearRangeStepQueue();
 
   const currentValue = selectInSettings('#rangeDisplay');
   if(currentValue){
@@ -724,7 +777,6 @@ function handleRangePointerEnd(event){
   const absDx = Math.abs(dx);
   const deltaTime = Math.max(event.timeStamp - rangeDragStartTime, 1);
   const velocity = absDx / deltaTime;
-  const fastSwipe = absDx >= RANGE_DRAG_SMALL_THRESHOLD && velocity >= RANGE_DRAG_MIN_VELOCITY;
 
   isRangeDragging = false;
   rangeDragPointerId = null;
@@ -734,18 +786,28 @@ function handleRangePointerEnd(event){
     return;
   }
 
-  if((absDx >= RANGE_DRAG_THRESHOLD) || fastSwipe){
-    if(dx < 0){
-      resetRangeDragVisual(false);
-      changeRangeStep(1);
-      return;
-    }
+  const stepsByDistance = Math.floor(absDx / RANGE_DRAG_STEP_PX);
+  const stepsByVelocity = Math.floor(
+    Math.max(0, velocity - RANGE_DRAG_VELOCITY_START) * RANGE_DRAG_VELOCITY_MULT
+  );
+  const calculatedSteps = Math.max(stepsByDistance, stepsByVelocity);
+  const steps = Math.min(RANGE_DRAG_MAX_STEPS, calculatedSteps);
 
-    if(dx > 0){
-      resetRangeDragVisual(false);
-      changeRangeStep(-1);
-      return;
-    }
+  if(steps === 0){
+    resetRangeDragVisual(absDx > 0);
+    return;
+  }
+
+  resetRangeDragVisual(false);
+
+  if(dx < 0){
+    queueRangeSteps(steps, 1);
+    return;
+  }
+
+  if(dx > 0){
+    queueRangeSteps(steps, -1);
+    return;
   }
 
   resetRangeDragVisual(absDx > 0);
@@ -778,7 +840,7 @@ function updateRangeFlame(){
   });
 }
 
-function changeRangeStep(delta){
+function changeRangeStep(delta, options = {}){
   if(isRangeAnimating) return;
 
   const currentIndex = Math.floor(rangeStep / 2);
@@ -795,7 +857,7 @@ function changeRangeStep(delta){
   settingsFlightRangeCells = RANGE_DISPLAY_VALUES[nextIndex];
 
   const animateDirection = delta > 0 ? 'next' : 'prev';
-  updateRangeDisplay(undefined, { animateDirection });
+  updateRangeDisplay(undefined, { animateDirection, onFinish: options.onFinish });
   updateRangeFlame();
   saveSettings();
 }
