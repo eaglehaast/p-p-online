@@ -5,6 +5,9 @@ const RANGE_DISPLAY_VALUES = [10, 15, 20, 25, 30, 35, 40, 45, 50];
 const RANGE_CELL_WIDTH = 58;
 const RANGE_HALF_STEP_PX = RANGE_CELL_WIDTH / 2;
 const RANGE_MAX_STEP = (RANGE_DISPLAY_VALUES.length - 1) * 2;
+const RANGE_DRAG_THRESHOLD = 24;
+const RANGE_DRAG_SMALL_THRESHOLD = 10;
+const RANGE_DRAG_MIN_VELOCITY = 0.6;
 const MIN_AMPLITUDE = 0;
 const MAX_AMPLITUDE = 20;
 
@@ -554,6 +557,11 @@ const previewHandle = {
   origAngle: 0
 };
 let isRangeAnimating = false;
+let isRangeDragging = false;
+let rangeDragStartX = 0;
+let rangeDragStartTime = 0;
+let rangeDragPointerId = null;
+let rangeDragLastDx = 0;
 
 function stopPreviewAnimation(){
   if(previewAnimationId){
@@ -657,6 +665,90 @@ function updateRangeDisplay(stepOverride, options = {}){
   }
 
   setRangeDisplayValue(displayedCells);
+}
+
+function resetRangeDragVisual(animateReset){
+  const currentValue = selectInSettings('#rangeDisplay');
+  if(!currentValue) return;
+  currentValue.style.removeProperty('transition');
+  if(animateReset){
+    currentValue.style.transform = 'translateX(0)';
+  } else {
+    currentValue.style.removeProperty('transform');
+  }
+}
+
+function handleRangePointerDown(event){
+  if(isRangeAnimating || !rangeDisplayViewport) return;
+  event.preventDefault();
+
+  const currentValue = selectInSettings('#rangeDisplay');
+  if(currentValue){
+    currentValue.style.transition = 'none';
+    currentValue.style.transform = 'translateX(0)';
+  }
+
+  isRangeDragging = true;
+  rangeDragPointerId = event.pointerId;
+  rangeDragStartX = event.clientX;
+  rangeDragStartTime = event.timeStamp;
+  rangeDragLastDx = 0;
+
+  rangeDisplayViewport.setPointerCapture(event.pointerId);
+}
+
+function handleRangePointerMove(event){
+  if(!isRangeDragging || isRangeAnimating || !rangeDisplayViewport) return;
+  event.preventDefault();
+
+  rangeDragLastDx = event.clientX - rangeDragStartX;
+
+  const currentValue = selectInSettings('#rangeDisplay');
+  if(!currentValue) return;
+
+  const maxOffset = (rangeDisplayViewport.clientWidth || 0) * 0.55;
+  const clampedDx = Math.max(-maxOffset, Math.min(maxOffset, rangeDragLastDx));
+  currentValue.style.transform = `translateX(${clampedDx}px)`;
+}
+
+function handleRangePointerEnd(event){
+  if(!isRangeDragging) return;
+
+  if(rangeDisplayViewport && rangeDragPointerId !== null &&
+     rangeDisplayViewport.hasPointerCapture(rangeDragPointerId)){
+    rangeDisplayViewport.releasePointerCapture(rangeDragPointerId);
+  }
+
+  rangeDragLastDx = event.clientX - rangeDragStartX;
+  const dx = rangeDragLastDx;
+  const absDx = Math.abs(dx);
+  const deltaTime = Math.max(event.timeStamp - rangeDragStartTime, 1);
+  const velocity = absDx / deltaTime;
+  const fastSwipe = absDx >= RANGE_DRAG_SMALL_THRESHOLD && velocity >= RANGE_DRAG_MIN_VELOCITY;
+
+  isRangeDragging = false;
+  rangeDragPointerId = null;
+
+  if(isRangeAnimating){
+    resetRangeDragVisual(false);
+    return;
+  }
+
+  if((absDx >= RANGE_DRAG_THRESHOLD) || fastSwipe){
+    if(dx < 0){
+      resetRangeDragVisual(false);
+      changeRangeStep(1);
+      return;
+    }
+
+    if(dx > 0){
+      resetRangeDragVisual(false);
+      changeRangeStep(-1);
+      return;
+    }
+  }
+
+  resetRangeDragVisual(absDx > 0);
 }
 
 function updateRangeFlame(){
@@ -1791,7 +1883,13 @@ if(hasMapButtons){
 
   setupRepeatButton(rangeMinusBtn, () => changeRangeStep(-1));
   setupRepeatButton(rangePlusBtn, () => changeRangeStep(1));
-setupRepeatButton(amplitudeMinusBtn, () => {
+  if(rangeDisplayViewport){
+    rangeDisplayViewport.addEventListener('pointerdown', handleRangePointerDown);
+    rangeDisplayViewport.addEventListener('pointermove', handleRangePointerMove);
+    rangeDisplayViewport.addEventListener('pointerup', handleRangePointerEnd);
+    rangeDisplayViewport.addEventListener('pointercancel', handleRangePointerEnd);
+  }
+  setupRepeatButton(amplitudeMinusBtn, () => {
   if(settingsAimingAmplitude > MIN_AMPLITUDE){
     settingsAimingAmplitude--;
     updateAmplitudeDisplay();
