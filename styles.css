@@ -609,7 +609,7 @@ body, button {
     position: absolute;
     left: 105px;
     top: 293px;
-    z-index: 30;
+    z-index: 10;
   }
 
   .range-display__value {
