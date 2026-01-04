@@ -11,10 +11,11 @@ const RANGE_DRAG_VELOCITY_MULT = 8;
 const RANGE_DRAG_MAX_STEPS = 10;
 const RANGE_PEEK_PX = 8;
 const RANGE_FAST_SCROLL_THRESHOLD = 4;
-const RANGE_FAST_HEAD_STEPS = 2;
-const RANGE_FAST_TAIL_STEPS = 2;
-const RANGE_STEP_DURATION_MIN_MS = 70;
-const RANGE_STEP_DURATION_MAX_MS = 200;
+const RANGE_BASE_STEP_MS = 200;
+const RANGE_FAST_MIN_STEP_MS = 120;
+const RANGE_FAST_MAX_STEP_MS = 190;
+const RANGE_FAST_VELOCITY_THRESHOLD = 4;
+const RANGE_MIN_BATCH_MS = 170;
 const MIN_AMPLITUDE = 0;
 const MAX_AMPLITUDE = 20;
 
@@ -572,6 +573,7 @@ let rangeDragLastDx = 0;
 let pendingRangeSteps = 0;
 let pendingRangeDir = 0;
 let rangeQueueTotalSteps = 0;
+let rangeGestureVelocity = 0;
 
 function stopPreviewAnimation(){
   if(previewAnimationId){
@@ -751,29 +753,38 @@ function resetRangeDragVisual(animateReset){
   removeIncomingRangeValue();
 }
 
-function getRangeStepDuration(pendingSteps, { fastScroll = false } = {}){
-  const maxDuration = fastScroll
-    ? Math.min(RANGE_STEP_DURATION_MAX_MS, 110)
-    : RANGE_STEP_DURATION_MAX_MS;
+function getRangeStepDuration(pendingSteps, { fastScroll = false, gestureVelocity = 0 } = {}){
+  const absVelocity = Math.abs(gestureVelocity);
+  const velocityRatio = RANGE_FAST_VELOCITY_THRESHOLD > 0
+    ? Math.min(1, absVelocity / RANGE_FAST_VELOCITY_THRESHOLD)
+    : 1;
 
-  if(RANGE_DRAG_MAX_STEPS <= 1){
-    return maxDuration;
-  }
+  const fastDuration = RANGE_FAST_MAX_STEP_MS - velocityRatio *
+    (RANGE_FAST_MAX_STEP_MS - RANGE_FAST_MIN_STEP_MS);
+  const baseDuration = RANGE_BASE_STEP_MS - velocityRatio *
+    (RANGE_BASE_STEP_MS - RANGE_FAST_MAX_STEP_MS);
 
-  const t = Math.max(0, Math.min(1,
-    (pendingSteps - 1) / (RANGE_DRAG_MAX_STEPS - 1)
-  ));
-  const duration = maxDuration - t * (maxDuration - RANGE_STEP_DURATION_MIN_MS);
+  const isMultiStep = pendingSteps > 1;
+  const rawDuration = fastScroll || isMultiStep ? fastDuration : baseDuration;
 
-  return Math.max(RANGE_STEP_DURATION_MIN_MS,
-    Math.min(maxDuration, duration)
+  const clampedDuration = Math.max(
+    RANGE_FAST_MIN_STEP_MS,
+    Math.min(RANGE_BASE_STEP_MS, rawDuration)
   );
+
+  const minPerStep = Math.max(
+    RANGE_FAST_MIN_STEP_MS,
+    RANGE_MIN_BATCH_MS / Math.max(1, pendingSteps)
+  );
+
+  return Math.max(minPerStep, Math.min(RANGE_FAST_MAX_STEP_MS, clampedDuration));
 }
 
 function clearRangeStepQueue(){
   pendingRangeSteps = 0;
   pendingRangeDir = 0;
   rangeQueueTotalSteps = 0;
+  rangeGestureVelocity = 0;
 }
 
 function runRangeStepQueue(){
@@ -794,13 +805,10 @@ function runRangeStepQueue(){
   }
 
   const fastScroll = rangeQueueTotalSteps >= RANGE_FAST_SCROLL_THRESHOLD;
-  const stepsCompleted = Math.max(0, rangeQueueTotalSteps - pendingRangeSteps);
-  const inHead = stepsCompleted < RANGE_FAST_HEAD_STEPS;
-  const inTail = pendingRangeSteps <= RANGE_FAST_TAIL_STEPS;
-  const shouldAnimate = !fastScroll || inHead || inTail;
-  const durationMs = shouldAnimate
-    ? getRangeStepDuration(Math.max(pendingRangeSteps, 1), { fastScroll })
-    : undefined;
+  const durationMs = getRangeStepDuration(Math.max(pendingRangeSteps, 1), {
+    fastScroll,
+    gestureVelocity: rangeGestureVelocity
+  });
 
   const handleStepFinished = () => {
     pendingRangeSteps -= 1;
@@ -809,17 +817,18 @@ function runRangeStepQueue(){
 
   changeRangeStep(pendingRangeDir, {
     onFinish: handleStepFinished,
-    animate: shouldAnimate,
+    animate: true,
     durationMs
   });
 }
 
-function queueRangeSteps(steps, dir){
+function queueRangeSteps(steps, dir, gestureVelocity = 0){
   if(steps <= 0 || dir === 0){
     clearRangeStepQueue();
     return;
   }
 
+  rangeGestureVelocity = gestureVelocity;
   pendingRangeSteps = Math.min(RANGE_DRAG_MAX_STEPS, steps);
   pendingRangeDir = dir;
   rangeQueueTotalSteps = pendingRangeSteps;
@@ -910,12 +919,12 @@ function handleRangePointerEnd(event){
   resetRangeDragVisual(false);
 
   if(dx < 0){
-    queueRangeSteps(steps, 1);
+    queueRangeSteps(steps, 1, velocity);
     return;
   }
 
   if(dx > 0){
-    queueRangeSteps(steps, -1);
+    queueRangeSteps(steps, -1, velocity);
     return;
   }
 
