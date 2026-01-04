@@ -615,33 +615,44 @@ body, button {
     -webkit-user-select: none;
   }
 
-  .range-display__tick {
-    position: absolute;
-    left: 50%;
-    width: 8px;
-    height: 2px;
-    background-color: currentColor;
-    transform: translateX(-50%);
-    border-radius: 1px;
-    pointer-events: none;
-  }
-
-  .range-display__tick--top {
-    top: 6px;
-  }
-
-  .range-display__tick--bottom {
-    bottom: 6px;
-  }
-
-  .range-display__tick.is-limit {
-    background-color: #c62828;
-  }
-
   .range-display__layer {
     position: relative;
     width: 100%;
     height: 100%;
+  }
+
+  .range-display__item {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 180ms ease-out;
+    will-change: transform;
+  }
+
+  .range-display__tick {
+    position: absolute;
+    left: 50%;
+    width: 2px;
+    height: 8px;
+    background-color: currentColor;
+    transform: translateX(-50%);
+    border-radius: 2px;
+    pointer-events: none;
+  }
+
+  .range-display__tick--top {
+    top: 4px;
+  }
+
+  .range-display__tick--bottom {
+    bottom: 4px;
+  }
+
+  .range-display__tick.is-limit,
+  .range-display__item.is-limit .range-display__tick {
+    background-color: #c62828;
   }
 
   .settings-container #range_frame_counter {
@@ -652,13 +663,10 @@ body, button {
   }
 
   .range-display__value {
-    position: absolute;
-    inset: 0;
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: transform 180ms ease-out;
-    will-change: transform;
   }
 
   .range-display__value--current {
