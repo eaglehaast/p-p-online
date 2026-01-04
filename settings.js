@@ -18,6 +18,9 @@ const RANGE_FAST_VELOCITY_THRESHOLD = 4;
 const RANGE_MIN_BATCH_MS = 170;
 const RANGE_SCROLL_STEP_PX = RANGE_CELL_WIDTH;
 const RANGE_SCROLL_OVERSHOOT_MS = 140;
+const RANGE_DIR_NEXT = 1;
+const RANGE_DIR_PREV = -1;
+const RANGE_VISUAL_SIGN = -1;
 const MIN_AMPLITUDE = 0;
 const MAX_AMPLITUDE = 20;
 
@@ -474,6 +477,10 @@ let rangeScrollPos = rangeDisplayIdx;
 let rangeScrollRafId = null;
 let rangeOvershootTimer = null;
 
+const getRangeDirFromDx = (dx) => (dx < 0 ? RANGE_DIR_NEXT : (dx > 0 ? RANGE_DIR_PREV : 0));
+const getRangeDirFromDelta = (delta) => (delta > 0 ? RANGE_DIR_NEXT : (delta < 0 ? RANGE_DIR_PREV : 0));
+const getRangeDirectionLabel = (dir) => (dir === RANGE_DIR_NEXT ? 'next' : (dir === RANGE_DIR_PREV ? 'prev' : null));
+
 function clampRangeStep(step){
   return Math.min(RANGE_MAX_STEP, Math.max(0, step));
 }
@@ -663,7 +670,8 @@ function applyRangeScrollVisual(scrollPos){
   if(currentValue){
     currentValue.style.transition = 'none';
     const frac = clampedPos - displayIdx;
-    currentValue.style.transform = `translateX(${frac * RANGE_SCROLL_STEP_PX}px)`;
+    currentValue.style.transform =
+      `translateX(${frac * RANGE_SCROLL_STEP_PX * RANGE_VISUAL_SIGN}px)`;
   }
 
   return displayIdx;
@@ -683,7 +691,7 @@ function finishRangeScroll(targetIndex, dir, onFinish){
   }
 
   const overshootPx = Math.max(3, Math.min(10, Math.round(RANGE_SCROLL_STEP_PX * 0.08)));
-  const signedOvershoot = overshootPx * (dir >= 0 ? 1 : -1);
+  const signedOvershoot = overshootPx * dir * RANGE_VISUAL_SIGN;
 
   if(valueEl && signedOvershoot !== 0){
     valueEl.style.transform = `translateX(${signedOvershoot}px)`;
@@ -743,7 +751,8 @@ function animateRangeDisplay(displayedCells, direction, options = {}){
     : getRangeStepDuration(totalSteps, { fastScroll, gestureVelocity }) * totalSteps;
 
   if(computedDuration === 0){
-    finishRangeScroll(endIndex, direction === 'next' ? 1 : -1, onFinish);
+    const dir = direction === 'next' ? RANGE_DIR_NEXT : RANGE_DIR_PREV;
+    finishRangeScroll(endIndex, dir, onFinish);
     return;
   }
 
@@ -757,7 +766,8 @@ function animateRangeDisplay(displayedCells, direction, options = {}){
     if(t < 1){
       rangeScrollRafId = requestAnimationFrame((now) => runAnimation(startTime, now));
     } else {
-      finishRangeScroll(endIndex, direction === 'next' ? 1 : -1, onFinish);
+      const dir = direction === 'next' ? RANGE_DIR_NEXT : RANGE_DIR_PREV;
+      finishRangeScroll(endIndex, dir, onFinish);
     }
   };
 
@@ -932,7 +942,7 @@ function handleRangePointerMove(event){
   const clampedDx = Math.max(-maxOffset, Math.min(maxOffset, rangeDragLastDx));
   currentValue.style.transform = `translateX(${clampedDx}px)`;
 
-  const direction = clampedDx < 0 ? 'next' : (clampedDx > 0 ? 'prev' : null);
+  const direction = getRangeDirectionLabel(getRangeDirFromDx(clampedDx));
   const incoming = direction ? prepareIncomingRangeValue(direction) : null;
 
   if(incoming){
@@ -971,25 +981,15 @@ function handleRangePointerEnd(event){
   );
   const calculatedSteps = Math.max(stepsByDistance, stepsByVelocity);
   const steps = Math.min(RANGE_DRAG_MAX_STEPS, calculatedSteps);
+  const dir = getRangeDirFromDx(dx);
 
-  if(steps === 0){
+  if(steps === 0 || dir === 0){
     resetRangeDragVisual(absDx > 0);
     return;
   }
 
   resetRangeDragVisual(false);
-
-  if(dx < 0){
-    queueRangeSteps(steps, 1, velocity);
-    return;
-  }
-
-  if(dx > 0){
-    queueRangeSteps(steps, -1, velocity);
-    return;
-  }
-
-  resetRangeDragVisual(absDx > 0);
+  queueRangeSteps(steps, dir, velocity);
 }
 
 function updateRangeFlame(){
@@ -1040,7 +1040,8 @@ function changeRangeStep(delta, options = {}){
   rangeStep = nextIndex * 2;
   settingsFlightRangeCells = RANGE_DISPLAY_VALUES[nextIndex];
 
-  const animateDirection = delta > 0 ? 'next' : 'prev';
+  const dir = getRangeDirFromDelta(delta);
+  const animateDirection = getRangeDirectionLabel(dir);
   updateRangeDisplay(undefined, animate ? {
     animateDirection,
     onFinish,
