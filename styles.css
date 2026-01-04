@@ -615,6 +615,29 @@ body, button {
     -webkit-user-select: none;
   }
 
+  .range-display__tick {
+    position: absolute;
+    left: 50%;
+    width: 8px;
+    height: 2px;
+    background-color: currentColor;
+    transform: translateX(-50%);
+    border-radius: 1px;
+    pointer-events: none;
+  }
+
+  .range-display__tick--top {
+    top: 6px;
+  }
+
+  .range-display__tick--bottom {
+    bottom: 6px;
+  }
+
+  .range-display__tick.is-limit {
+    background-color: #c62828;
+  }
+
   .range-display__layer {
     position: relative;
     width: 100%;
@@ -642,6 +665,7 @@ body, button {
     transform: translateX(0);
   }
 
+  .range-display__value.is-limit,
   .range-display__value--limit {
     color: #c62828;
   }

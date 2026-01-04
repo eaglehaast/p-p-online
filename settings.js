@@ -523,6 +523,8 @@ const rangePlusBtn =
   selectInSettings('#flightRangePlus');
 const rangeDisplayViewport = selectInSettings('#rangeDisplayViewport');
 const rangeDisplayLayer = selectInSettings('#rangeDisplayLayer');
+const rangeTickTop = selectInSettings('#rangeTickTop');
+const rangeTickBottom = selectInSettings('#rangeTickBottom');
 const amplitudeMinusBtn =
   selectInSettings('#instance_accuracy_left') ??
   selectInSettings('#amplitudeMinus');
@@ -592,7 +594,18 @@ const isRangeLimitValue = (value) =>
 
 function applyRangeLimitClass(el, value){
   if(!el) return;
-  el.classList.toggle('range-display__value--limit', isRangeLimitValue(value));
+  const isLimit = isRangeLimitValue(value);
+  el.classList.toggle('range-display__value--limit', isLimit);
+  el.classList.toggle('is-limit', isLimit);
+}
+
+function setRangeTicksLimitState(value){
+  const isLimit = isRangeLimitValue(value);
+  [rangeTickTop, rangeTickBottom].forEach((tick) => {
+    if(tick){
+      tick.classList.toggle('is-limit', isLimit);
+    }
+  });
 }
 
 function stopPreviewAnimation(){
@@ -633,6 +646,7 @@ function setRangeDisplayValue(displayedCells){
   if(el){
     el.textContent = `${displayedCells}`;
     applyRangeLimitClass(el, displayedCells);
+    setRangeTicksLimitState(displayedCells);
     el.classList.add('range-display__value--current');
     el.classList.remove('range-display__value--incoming', 'range-display__value--outgoing');
     el.style.removeProperty('transform');
