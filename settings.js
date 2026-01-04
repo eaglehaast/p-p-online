@@ -16,6 +16,8 @@ const RANGE_FAST_MIN_STEP_MS = 120;
 const RANGE_FAST_MAX_STEP_MS = 190;
 const RANGE_FAST_VELOCITY_THRESHOLD = 4;
 const RANGE_MIN_BATCH_MS = 170;
+const RANGE_SCROLL_STEP_PX = RANGE_CELL_WIDTH;
+const RANGE_SCROLL_OVERSHOOT_MS = 140;
 const MIN_AMPLITUDE = 0;
 const MAX_AMPLITUDE = 20;
 
@@ -467,6 +469,11 @@ let mapIndex = sanitizeMapIndex(
   { allowRandom: true }
 );
 
+let rangeDisplayIdx = Math.floor(rangeStep / 2);
+let rangeScrollPos = rangeDisplayIdx;
+let rangeScrollRafId = null;
+let rangeOvershootTimer = null;
+
 function clampRangeStep(step){
   return Math.min(RANGE_MAX_STEP, Math.max(0, step));
 }
@@ -572,7 +579,6 @@ let rangeDragPointerId = null;
 let rangeDragLastDx = 0;
 let pendingRangeSteps = 0;
 let pendingRangeDir = 0;
-let rangeQueueTotalSteps = 0;
 let rangeGestureVelocity = 0;
 
 function stopPreviewAnimation(){
@@ -618,72 +624,144 @@ function setRangeDisplayValue(displayedCells){
   }
 }
 
-function animateRangeDisplay(displayedCells, direction, options = {}){
-  const { onFinish, durationMs } = options;
-  if(!rangeDisplayLayer || !rangeDisplayViewport || isRangeAnimating){
-    setRangeDisplayValue(displayedCells);
-    if(typeof onFinish === 'function'){
-      onFinish();
-    }
-    return;
+const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+
+function clearRangeScrollAnimation(){
+  if(rangeScrollRafId !== null){
+    cancelAnimationFrame(rangeScrollRafId);
+    rangeScrollRafId = null;
+  }
+}
+
+function clearRangeOvershoot(){
+  if(rangeOvershootTimer !== null){
+    clearTimeout(rangeOvershootTimer);
+    rangeOvershootTimer = null;
   }
 
   const currentValue = selectInSettings('#rangeDisplay');
-  if(!currentValue){
-    setRangeDisplayValue(displayedCells);
+  if(currentValue){
+    currentValue.style.removeProperty('transition');
+  }
+}
+
+function applyRangeScrollVisual(scrollPos){
+  const clampedPos = Math.min(
+    RANGE_DISPLAY_VALUES.length - 1,
+    Math.max(0, scrollPos)
+  );
+  const displayIdx = Math.round(clampedPos);
+  const currentValue = selectInSettings('#rangeDisplay');
+
+  if(displayIdx !== rangeDisplayIdx){
+    setRangeDisplayValue(RANGE_DISPLAY_VALUES[displayIdx]);
+    rangeDisplayIdx = displayIdx;
+  }
+
+  rangeScrollPos = clampedPos;
+
+  if(currentValue){
+    currentValue.style.transition = 'none';
+    const frac = clampedPos - displayIdx;
+    currentValue.style.transform = `translateX(${frac * RANGE_SCROLL_STEP_PX}px)`;
+  }
+
+  return displayIdx;
+}
+
+function finishRangeScroll(targetIndex, dir, onFinish){
+  rangeScrollRafId = null;
+  const currentValue = RANGE_DISPLAY_VALUES[targetIndex];
+  rangeScrollPos = targetIndex;
+  rangeDisplayIdx = targetIndex;
+  setRangeDisplayValue(currentValue);
+
+  const valueEl = selectInSettings('#rangeDisplay');
+  if(valueEl){
+    valueEl.style.transition = 'none';
+    valueEl.style.transform = 'translateX(0)';
+  }
+
+  const overshootPx = Math.max(3, Math.min(10, Math.round(RANGE_SCROLL_STEP_PX * 0.08)));
+  const signedOvershoot = overshootPx * (dir >= 0 ? 1 : -1);
+
+  if(valueEl && signedOvershoot !== 0){
+    valueEl.style.transform = `translateX(${signedOvershoot}px)`;
+    valueEl.offsetWidth; // force layout
+    valueEl.style.transition = `transform ${RANGE_SCROLL_OVERSHOOT_MS}ms ease-out`;
+    valueEl.style.transform = 'translateX(0)';
+
+    rangeOvershootTimer = setTimeout(() => {
+      valueEl.style.removeProperty('transition');
+      isRangeAnimating = false;
+      rangeOvershootTimer = null;
+      if(typeof onFinish === 'function'){
+        onFinish();
+      }
+    }, RANGE_SCROLL_OVERSHOOT_MS + 20);
+
     return;
   }
 
-  isRangeAnimating = true;
+  isRangeAnimating = false;
+  if(typeof onFinish === 'function'){
+    onFinish();
+  }
+}
 
-  const clampedDuration = Number.isFinite(durationMs)
-    ? Math.max(0, durationMs)
-    : undefined;
-  const transitionDuration = clampedDuration ?? 180;
-  const transition = `transform ${transitionDuration}ms ease-out`;
+function animateRangeDisplay(displayedCells, direction, options = {}){
+  const { onFinish, durationMs, targetIndex, gestureVelocity = 0 } = options;
 
-  const incoming = document.createElement('span');
-  incoming.className = 'range-display__value range-display__value--incoming';
-  incoming.textContent = `${displayedCells}`;
-  incoming.style.transition = transition;
+  const currentValue = selectInSettings('#rangeDisplay');
+  const endIndex = Number.isFinite(targetIndex)
+    ? Math.max(0, Math.min(RANGE_DISPLAY_VALUES.length - 1, targetIndex))
+    : rangeDisplayIdx;
 
-  removeIncomingRangeValue();
-
-  const incomingStartOffset = Math.abs(getRangePeekOffset(direction));
-  const outgoingOffsetAbs = (rangeDisplayViewport.clientWidth || 0) + RANGE_PEEK_PX;
-
-  const outgoingOffset = direction === 'next' ? -outgoingOffsetAbs : outgoingOffsetAbs;
-  const incomingOffset = direction === 'next' ? incomingStartOffset : -incomingStartOffset;
-
-  incoming.style.transform = `translateX(${incomingOffset}px)`;
-  rangeDisplayLayer.appendChild(incoming);
-  currentValue.classList.add('range-display__value--outgoing');
-  currentValue.style.transform = 'translateX(0)';
-  currentValue.style.transition = transition;
-
-  // Trigger layout before starting the animation
-  incoming.getBoundingClientRect();
-
-  currentValue.style.transform = `translateX(${outgoingOffset}px)`;
-  incoming.style.transform = 'translateX(0)';
-
-  let cleanedUp = false;
-  const finishAnimation = () => {
-    if(cleanedUp) return;
-    cleanedUp = true;
-    isRangeAnimating = false;
-    currentValue.removeAttribute('id');
-    currentValue.remove();
-    incoming.id = 'rangeDisplay';
-    incoming.classList.remove('range-display__value--incoming');
-    incoming.classList.add('range-display__value--current');
+  if(!currentValue || endIndex === rangeDisplayIdx || !Number.isFinite(endIndex)){
+    if(Number.isFinite(endIndex)){
+      rangeDisplayIdx = endIndex;
+      rangeScrollPos = endIndex;
+    }
+    setRangeDisplayValue(displayedCells);
     if(typeof onFinish === 'function'){
       onFinish();
     }
+    return;
+  }
+
+  clearRangeScrollAnimation();
+  clearRangeOvershoot();
+  isRangeAnimating = true;
+
+  const startPos = rangeDisplayIdx;
+  const endPos = endIndex;
+  rangeScrollPos = startPos;
+  const totalSteps = Math.max(1, Math.abs(endPos - startPos));
+  const fastScroll = totalSteps >= RANGE_FAST_SCROLL_THRESHOLD;
+  const computedDuration = Number.isFinite(durationMs)
+    ? Math.max(0, durationMs)
+    : getRangeStepDuration(totalSteps, { fastScroll, gestureVelocity }) * totalSteps;
+
+  if(computedDuration === 0){
+    finishRangeScroll(endIndex, direction === 'next' ? 1 : -1, onFinish);
+    return;
+  }
+
+  const runAnimation = (startTime, timestamp) => {
+    const elapsed = timestamp - startTime;
+    const t = Math.min(1, elapsed / computedDuration);
+    const eased = easeOutCubic(t);
+    const nextPos = startPos + (endPos - startPos) * eased;
+    applyRangeScrollVisual(nextPos);
+
+    if(t < 1){
+      rangeScrollRafId = requestAnimationFrame((now) => runAnimation(startTime, now));
+    } else {
+      finishRangeScroll(endIndex, direction === 'next' ? 1 : -1, onFinish);
+    }
   };
 
-  incoming.addEventListener('transitionend', finishAnimation, { once: true });
-  setTimeout(finishAnimation, transitionDuration + 80);
+  rangeScrollRafId = requestAnimationFrame((timestamp) => runAnimation(timestamp, timestamp));
 }
 
 function updateRangeDisplay(stepOverride, options = {}){
@@ -695,6 +773,8 @@ function updateRangeDisplay(stepOverride, options = {}){
     return;
   }
 
+  rangeDisplayIdx = Math.floor(clampRangeStep(transformStep) / 2);
+  rangeScrollPos = rangeDisplayIdx;
   setRangeDisplayValue(displayedCells);
   if(typeof options.onFinish === 'function'){
     options.onFinish();
@@ -783,7 +863,6 @@ function getRangeStepDuration(pendingSteps, { fastScroll = false, gestureVelocit
 function clearRangeStepQueue(){
   pendingRangeSteps = 0;
   pendingRangeDir = 0;
-  rangeQueueTotalSteps = 0;
   rangeGestureVelocity = 0;
 }
 
@@ -793,32 +872,15 @@ function runRangeStepQueue(){
     return;
   }
 
-  const currentIndex = Math.floor(rangeStep / 2);
-  const nextIndex = currentIndex + pendingRangeDir;
-  if(nextIndex < 0 || nextIndex >= RANGE_DISPLAY_VALUES.length){
-    clearRangeStepQueue();
-    return;
-  }
-
   if(isRangeAnimating){
     return;
   }
 
-  const fastScroll = rangeQueueTotalSteps >= RANGE_FAST_SCROLL_THRESHOLD;
-  const durationMs = getRangeStepDuration(Math.max(pendingRangeSteps, 1), {
-    fastScroll,
-    gestureVelocity: rangeGestureVelocity
-  });
-
-  const handleStepFinished = () => {
-    pendingRangeSteps -= 1;
-    runRangeStepQueue();
-  };
-
-  changeRangeStep(pendingRangeDir, {
-    onFinish: handleStepFinished,
+  const delta = pendingRangeDir * pendingRangeSteps;
+  changeRangeStep(delta, {
+    onFinish: clearRangeStepQueue,
     animate: true,
-    durationMs
+    gestureVelocity: rangeGestureVelocity
   });
 }
 
@@ -831,7 +893,6 @@ function queueRangeSteps(steps, dir, gestureVelocity = 0){
   rangeGestureVelocity = gestureVelocity;
   pendingRangeSteps = Math.min(RANGE_DRAG_MAX_STEPS, steps);
   pendingRangeDir = dir;
-  rangeQueueTotalSteps = pendingRangeSteps;
   runRangeStepQueue();
 }
 
@@ -961,7 +1022,7 @@ function updateRangeFlame(){
 function changeRangeStep(delta, options = {}){
   if(isRangeAnimating) return;
 
-  const { onFinish, animate = true, durationMs } = options;
+  const { onFinish, animate = true, durationMs, gestureVelocity = 0 } = options;
 
   const currentIndex = Math.floor(rangeStep / 2);
   const nextIndex = Math.min(
@@ -970,6 +1031,9 @@ function changeRangeStep(delta, options = {}){
   );
 
   if(nextIndex === currentIndex){
+    if(typeof onFinish === 'function'){
+      onFinish();
+    }
     return;
   }
 
@@ -980,7 +1044,9 @@ function changeRangeStep(delta, options = {}){
   updateRangeDisplay(undefined, animate ? {
     animateDirection,
     onFinish,
-    durationMs
+    durationMs,
+    targetIndex: nextIndex,
+    gestureVelocity
   } : { onFinish });
   updateRangeFlame();
   saveSettings();
