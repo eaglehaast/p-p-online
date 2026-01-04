@@ -523,6 +523,7 @@ const rangePlusBtn =
   selectInSettings('#flightRangePlus');
 const rangeDisplayViewport = selectInSettings('#rangeDisplayViewport');
 const rangeDisplayLayer = selectInSettings('#rangeDisplayLayer');
+const rangeDisplayItem = selectInSettings('#rangeDisplayItem');
 const rangeTickTop = selectInSettings('#rangeTickTop');
 const rangeTickBottom = selectInSettings('#rangeTickBottom');
 const amplitudeMinusBtn =
@@ -601,6 +602,9 @@ function applyRangeLimitClass(el, value){
 
 function setRangeTicksLimitState(value){
   const isLimit = isRangeLimitValue(value);
+  if(rangeDisplayItem){
+    rangeDisplayItem.classList.toggle('is-limit', isLimit);
+  }
   [rangeTickTop, rangeTickBottom].forEach((tick) => {
     if(tick){
       tick.classList.toggle('is-limit', isLimit);
@@ -643,13 +647,17 @@ function refreshPreviewSimulationIfInitialized(){
 
 function setRangeDisplayValue(displayedCells){
   const el = selectInSettings('#rangeDisplay');
+  const transformTarget = rangeDisplayItem ?? el;
   if(el){
     el.textContent = `${displayedCells}`;
     applyRangeLimitClass(el, displayedCells);
     setRangeTicksLimitState(displayedCells);
     el.classList.add('range-display__value--current');
     el.classList.remove('range-display__value--incoming', 'range-display__value--outgoing');
-    el.style.removeProperty('transform');
+    if(transformTarget){
+      transformTarget.style.removeProperty('transform');
+      transformTarget.style.removeProperty('transition');
+    }
   }
 }
 
@@ -672,9 +680,9 @@ function clearRangeOvershoot(){
     rangeOvershootTimer = null;
   }
 
-  const currentValue = selectInSettings('#rangeDisplay');
-  if(currentValue){
-    currentValue.style.removeProperty('transition');
+  const transformTarget = rangeDisplayItem ?? selectInSettings('#rangeDisplay');
+  if(transformTarget){
+    transformTarget.style.removeProperty('transition');
   }
 }
 
@@ -685,6 +693,7 @@ function applyRangeScrollVisual(scrollPos){
   );
   const displayIdx = Math.round(clampedPos);
   const currentValue = selectInSettings('#rangeDisplay');
+  const transformTarget = rangeDisplayItem ?? currentValue;
 
   if(displayIdx !== rangeDisplayIdx){
     setRangeDisplayValue(RANGE_DISPLAY_VALUES[displayIdx]);
@@ -693,10 +702,10 @@ function applyRangeScrollVisual(scrollPos){
 
   rangeScrollPos = clampedPos;
 
-  if(currentValue){
-    currentValue.style.transition = 'none';
+  if(transformTarget){
+    transformTarget.style.transition = 'none';
     const frac = clampedPos - displayIdx;
-    currentValue.style.transform =
+    transformTarget.style.transform =
       `translateX(${frac * RANGE_SCROLL_STEP_PX * RANGE_VISUAL_SIGN}px)`;
   }
 
@@ -711,9 +720,10 @@ function finishRangeScroll(targetIndex, dir, onFinish){
   setRangeDisplayValue(currentValue);
 
   const valueEl = selectInSettings('#rangeDisplay');
-  if(valueEl){
-    valueEl.style.transition = 'none';
-    valueEl.style.transform = 'translateX(0)';
+  const transformTarget = rangeDisplayItem ?? valueEl;
+  if(transformTarget){
+    transformTarget.style.transition = 'none';
+    transformTarget.style.transform = 'translateX(0)';
   }
   isRangeAnimating = false;
   if(typeof onFinish === 'function'){
@@ -838,12 +848,13 @@ function prepareIncomingRangeValue(direction){
 
 function resetRangeDragVisual(animateReset){
   const currentValue = selectInSettings('#rangeDisplay');
-  if(!currentValue) return;
-  currentValue.style.removeProperty('transition');
+  const transformTarget = rangeDisplayItem ?? currentValue;
+  if(!transformTarget) return;
+  transformTarget.style.removeProperty('transition');
   if(animateReset){
-    currentValue.style.transform = 'translateX(0)';
+    transformTarget.style.transform = 'translateX(0)';
   } else {
-    currentValue.style.removeProperty('transform');
+    transformTarget.style.removeProperty('transform');
   }
 
   removeIncomingRangeValue();
@@ -919,9 +930,10 @@ function handleRangePointerDown(event){
   clearRangeStepQueue();
 
   const currentValue = selectInSettings('#rangeDisplay');
-  if(currentValue){
-    currentValue.style.transition = 'none';
-    currentValue.style.transform = 'translateX(0)';
+  const transformTarget = rangeDisplayItem ?? currentValue;
+  if(transformTarget){
+    transformTarget.style.transition = 'none';
+    transformTarget.style.transform = 'translateX(0)';
   }
 
   removeIncomingRangeValue();
@@ -942,11 +954,12 @@ function handleRangePointerMove(event){
   rangeDragLastDx = event.clientX - rangeDragStartX;
 
   const currentValue = selectInSettings('#rangeDisplay');
-  if(!currentValue) return;
+  const transformTarget = rangeDisplayItem ?? currentValue;
+  if(!transformTarget) return;
 
   const maxOffset = (rangeDisplayViewport.clientWidth || 0) * 0.55;
   const clampedDx = Math.max(-maxOffset, Math.min(maxOffset, rangeDragLastDx));
-  currentValue.style.transform = `translateX(${clampedDx}px)`;
+  transformTarget.style.transform = `translateX(${clampedDx}px)`;
 
   const direction = getRangeDirectionLabel(getRangeDirFromDx(clampedDx));
   const incoming = direction ? prepareIncomingRangeValue(direction) : null;
