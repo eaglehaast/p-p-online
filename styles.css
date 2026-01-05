@@ -623,7 +623,7 @@ body, button {
     z-index: 1;
   }
 
-  .range-display__item {
+  .range-display__track {
     position: absolute;
     inset: 0;
     display: flex;
@@ -631,6 +631,26 @@ body, button {
     justify-content: center;
     transition: transform 180ms ease-out;
     will-change: transform;
+  }
+
+  .range-display__scale {
+    position: absolute;
+    inset: 0;
+    background-image: url('ui_controlpanel/cp_serifscale.png');
+    background-repeat: repeat-x;
+    background-position: center;
+    background-size: auto 100%;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .range-display__item {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
   }
 
   .range-display__tick {
