@@ -460,7 +460,9 @@ function getIntSetting(key, defaultValue){
 
 let settingsFlightRangeCells = getIntSetting('settings.flightRangeCells', 30);
 let rangeStep = getRangeStepForValue(settingsFlightRangeCells);
-settingsFlightRangeCells = getRangeValue(rangeStep);
+let rangeCommittedValue = getRangeValue(rangeStep);
+let rangePreviewValue = rangeCommittedValue;
+settingsFlightRangeCells = rangeCommittedValue;
 let settingsAimingAmplitude  = parseFloat(getStoredItem('settings.aimingAmplitude'));
 if(Number.isNaN(settingsAimingAmplitude)) settingsAimingAmplitude = 10 / 5;
 let addAA = getStoredItem('settings.addAA') === 'true';
@@ -504,7 +506,9 @@ function getRangeValue(step){
 
 function syncRangeWithStep(step){
   rangeStep = clampRangeStep(step);
-  settingsFlightRangeCells = getRangeValue(rangeStep);
+  rangeCommittedValue = getRangeValue(rangeStep);
+  rangePreviewValue = rangeCommittedValue;
+  settingsFlightRangeCells = rangeCommittedValue;
 }
 
 function syncRangeStepFromValue(value){
@@ -1066,7 +1070,7 @@ function handleRangePointerEnd(event){
 function updateRangeFlame(){
   const minScale = 0.78;
   const maxScale = 1.82;
-  const t = (settingsFlightRangeCells - MIN_FLIGHT_RANGE_CELLS) /
+  const t = (rangeCommittedValue - MIN_FLIGHT_RANGE_CELLS) /
             (MAX_FLIGHT_RANGE_CELLS - MIN_FLIGHT_RANGE_CELLS);
   const ratio = minScale + t * (maxScale - minScale);
   if(flameTrailImage instanceof HTMLElement){
@@ -1090,10 +1094,23 @@ function updateRangeFlame(){
   });
 }
 
+function commitRangeValue(value){
+  rangeCommittedValue = value;
+  settingsFlightRangeCells = value;
+  updateRangeFlame();
+  saveSettings();
+}
+
 function changeRangeStep(delta, options = {}){
   if(isRangeAnimating) return;
 
-  const { onFinish, animate = true, durationMs, gestureVelocity = 0 } = options;
+  const {
+    onFinish,
+    animate = true,
+    durationMs,
+    gestureVelocity = 0,
+    commitImmediately = false
+  } = options;
 
   const currentIndex = Math.floor(rangeStep / 2);
   const nextIndex = Math.min(
@@ -1109,19 +1126,31 @@ function changeRangeStep(delta, options = {}){
   }
 
   rangeStep = nextIndex * 2;
-  settingsFlightRangeCells = RANGE_DISPLAY_VALUES[nextIndex];
+  rangePreviewValue = RANGE_DISPLAY_VALUES[nextIndex];
+
+  const finish = () => {
+    if(!commitImmediately){
+      commitRangeValue(rangePreviewValue);
+    }
+    if(typeof onFinish === 'function'){
+      onFinish();
+    }
+  };
 
   const dir = getRangeDirFromDelta(delta);
   const animateDirection = getRangeDirectionLabel(dir);
+
+  if(commitImmediately){
+    commitRangeValue(rangePreviewValue);
+  }
+
   updateRangeDisplay(undefined, animate ? {
     animateDirection,
-    onFinish,
+    onFinish: finish,
     durationMs,
     targetIndex: nextIndex,
     gestureVelocity
-  } : { onFinish });
-  updateRangeFlame();
-  saveSettings();
+  } : { onFinish: finish });
 }
 
 function updateAmplitudeDisplay(){
@@ -2205,8 +2234,8 @@ if(hasMapButtons){
   updateMapPreview();
 }
 
-  setupRepeatButton(rangeMinusBtn, () => changeRangeStep(-1));
-  setupRepeatButton(rangePlusBtn, () => changeRangeStep(1));
+  setupRepeatButton(rangeMinusBtn, () => changeRangeStep(-1, { commitImmediately: true }));
+  setupRepeatButton(rangePlusBtn, () => changeRangeStep(1, { commitImmediately: true }));
   const ensuredRangeTrack = ensureRangeDisplayTrack();
   if(rangeDisplayViewport && ensuredRangeTrack){
     rangeDisplayViewport.addEventListener('pointerdown', handleRangePointerDown);
