@@ -636,6 +636,18 @@ function ensureRangeTape(track){
   return tape;
 }
 
+function updateRangeTapePosition(displayIndex = rangeDisplayIdx, track = null){
+  const targetTrack = track ?? ensureRangeDisplayTrack();
+  const tape = targetTrack?.querySelector('.range-tape');
+  if(!Number.isFinite(displayIndex) || !(tape instanceof HTMLElement)){
+    return;
+  }
+
+  const middleIndex = Math.floor(RANGE_DISPLAY_VALUES.length / 2);
+  const offsetPx = (middleIndex - displayIndex) * RANGE_CELL_WIDTH;
+  tape.style.backgroundPosition = `calc(50% + ${offsetPx}px) center`;
+}
+
 function ensureRangeDisplayTrack(){
   if(!rangeDisplayViewport){
     return null;
@@ -709,6 +721,7 @@ function ensureRangeDisplayTrack(){
 
   rangeDisplayLayer.appendChild(track);
   rangeDisplayTrack = track;
+  updateRangeTapePosition(rangeDisplayIdx, track);
   return rangeDisplayTrack;
 }
 
@@ -765,6 +778,7 @@ function applyRangeScrollVisual(scrollPos){
     setRangeDisplayValue(previewValue);
     setRangePreviewValue(previewValue);
     rangeDisplayIdx = displayIdx;
+    updateRangeTapePosition(rangeDisplayIdx);
   }
 
   rangeScrollPos = clampedPos;
@@ -786,6 +800,7 @@ function finishRangeScroll(targetIndex, dir, onFinish){
   rangeDisplayIdx = targetIndex;
   setRangeDisplayValue(currentValue);
   setRangePreviewValue(currentValue);
+  updateRangeTapePosition(rangeDisplayIdx);
 
   const transformTarget = ensureRangeDisplayTrack();
   if(transformTarget){
@@ -869,6 +884,7 @@ function updateRangeDisplay(stepOverride, options = {}){
   rangeScrollPos = rangeDisplayIdx;
   setRangeDisplayValue(displayedCells);
   setRangePreviewValue(displayedCells);
+  updateRangeTapePosition(rangeDisplayIdx);
   if(typeof options.onFinish === 'function'){
     options.onFinish();
   }
