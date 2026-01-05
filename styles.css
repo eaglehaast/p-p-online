@@ -639,13 +639,17 @@ body, button {
 
   .range-tape {
     position: absolute;
-    inset: 0;
-    width: 100%;
+    top: 0;
+    bottom: 0;
+    width: 580px;
     height: 100%;
     background-image: url('ui_controlpanel/cp_serifscale2.png');
     background-repeat: no-repeat;
     background-position: center center;
     background-size: auto 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    right: auto;
     pointer-events: none;
     z-index: 1;
   }
