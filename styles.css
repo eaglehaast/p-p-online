@@ -661,13 +661,17 @@ body, button {
     align-items: center;
     justify-content: center;
     z-index: 2;
+    pointer-events: none;
   }
 
   .settings-container #range_frame_counter {
     position: absolute;
-    left: 105px;
-    top: 293px;
-    z-index: 10;
+    left: 0;
+    right: 0;
+    bottom: 12px;
+    display: flex;
+    justify-content: center;
+    z-index: 0;
   }
 
   .range-display__value {
@@ -676,6 +680,7 @@ body, button {
     display: flex;
     align-items: center;
     justify-content: center;
+    opacity: 0;
   }
 
   .range-display__value--current {
@@ -717,6 +722,20 @@ body, button {
     left: 171px;
     width: 30px;
     height: 35px;
+  }
+
+  .range-display__fallback {
+    margin-top: 12px;
+    text-align: center;
+    font-family: 'Patrick Hand', cursive;
+    font-size: 16px;
+    color: #1b1205;
+    text-shadow: 0 1px 1px rgba(255, 255, 255, 0.5);
+  }
+
+  .range-display__fallback-value {
+    display: inline-block;
+    min-width: 32px;
   }
 
   .settings-container .cp-range__btn--left {
