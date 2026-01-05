@@ -17,6 +17,7 @@ const RANGE_FAST_MAX_STEP_MS = 190;
 const RANGE_FAST_VELOCITY_THRESHOLD = 4;
 const RANGE_MIN_BATCH_MS = 170;
 const RANGE_SCROLL_STEP_PX = RANGE_CELL_WIDTH;
+const RANGE_TAPE_IMAGE_WIDTH = 580;
 const RANGE_DIR_NEXT = 1;
 const RANGE_DIR_PREV = -1;
 const RANGE_VISUAL_SIGN = -1;
@@ -679,16 +680,18 @@ function setRangeTrackStyles(target, { transform, transition } = {}){
   applyStoredRangeTrackStyles(target);
 }
 
-function updateRangeTapePosition(displayIndex = rangeDisplayIdx, track = null){
+function updateRangeTapePosition(displayPosition = rangeScrollPos, track = null){
   const targetTrack = track ?? ensureRangeDisplayTrack();
   const tape = targetTrack?.querySelector('.range-tape');
-  if(!Number.isFinite(displayIndex) || !(tape instanceof HTMLElement)){
+  if(!Number.isFinite(displayPosition) || !(tape instanceof HTMLElement)){
     return;
   }
 
+  tape.style.width = `${RANGE_TAPE_IMAGE_WIDTH}px`;
+
   const middleIndex = Math.floor(RANGE_DISPLAY_VALUES.length / 2);
-  const offsetPx = (middleIndex - displayIndex) * RANGE_CELL_WIDTH;
-  tape.style.backgroundPosition = `calc(50% + ${offsetPx}px) center`;
+  const offsetPx = (middleIndex - displayPosition) * RANGE_CELL_WIDTH;
+  tape.style.transform = `translateX(calc(-50% + ${offsetPx}px))`;
 }
 
 function ensureRangeDisplayTrack(){
@@ -818,17 +821,14 @@ function applyRangeScrollVisual(scrollPos){
     setRangeDisplayValue(previewValue);
     setRangePreviewValue(previewValue);
     rangeDisplayIdx = displayIdx;
-    updateRangeTapePosition(rangeDisplayIdx);
   }
 
   rangeScrollPos = clampedPos;
 
+  updateRangeTapePosition(clampedPos, transformTarget);
+
   if(transformTarget){
-    const frac = clampedPos - displayIdx;
-    setRangeTrackStyles(transformTarget, {
-      transition: 'none',
-      transform: `translateX(${frac * RANGE_SCROLL_STEP_PX * RANGE_VISUAL_SIGN}px)`
-    });
+    setRangeTrackStyles(transformTarget, { transition: 'none', transform: '' });
   }
 
   return displayIdx;
@@ -844,7 +844,7 @@ function finishRangeScroll(targetIndex, dir, onFinish){
   updateRangeTapePosition(rangeDisplayIdx);
 
   const transformTarget = ensureRangeDisplayTrack();
-  setRangeTrackStyles(transformTarget, { transition: 'none', transform: 'translateX(0)' });
+  setRangeTrackStyles(transformTarget, { transition: 'none', transform: '' });
   isRangeAnimating = false;
   if(typeof onFinish === 'function'){
     onFinish();
