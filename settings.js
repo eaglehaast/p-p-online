@@ -756,7 +756,9 @@ function applyRangeScrollVisual(scrollPos){
   const transformTarget = ensureRangeDisplayTrack();
 
   if(displayIdx !== rangeDisplayIdx){
-    setRangeDisplayValue(RANGE_DISPLAY_VALUES[displayIdx]);
+    const previewValue = RANGE_DISPLAY_VALUES[displayIdx];
+    setRangeDisplayValue(previewValue);
+    setRangePreviewValue(previewValue);
     rangeDisplayIdx = displayIdx;
   }
 
@@ -778,6 +780,7 @@ function finishRangeScroll(targetIndex, dir, onFinish){
   rangeScrollPos = targetIndex;
   rangeDisplayIdx = targetIndex;
   setRangeDisplayValue(currentValue);
+  setRangePreviewValue(currentValue);
 
   const transformTarget = ensureRangeDisplayTrack();
   if(transformTarget){
@@ -860,6 +863,7 @@ function updateRangeDisplay(stepOverride, options = {}){
   rangeDisplayIdx = Math.floor(clampRangeStep(transformStep) / 2);
   rangeScrollPos = rangeDisplayIdx;
   setRangeDisplayValue(displayedCells);
+  setRangePreviewValue(displayedCells);
   if(typeof options.onFinish === 'function'){
     options.onFinish();
   }
@@ -1067,10 +1071,10 @@ function handleRangePointerEnd(event){
   queueRangeSteps(steps, dir, velocity);
 }
 
-function updateRangeFlame(){
+function updateRangeFlame(value = rangeCommittedValue){
   const minScale = 0.78;
   const maxScale = 1.82;
-  const t = (rangeCommittedValue - MIN_FLIGHT_RANGE_CELLS) /
+  const t = (value - MIN_FLIGHT_RANGE_CELLS) /
             (MAX_FLIGHT_RANGE_CELLS - MIN_FLIGHT_RANGE_CELLS);
   const ratio = minScale + t * (maxScale - minScale);
   if(flameTrailImage instanceof HTMLElement){
@@ -1096,9 +1100,24 @@ function updateRangeFlame(){
 
 function commitRangeValue(value){
   rangeCommittedValue = value;
+  rangePreviewValue = value;
   settingsFlightRangeCells = value;
-  updateRangeFlame();
+  updateRangeFlame(value);
   saveSettings();
+}
+
+function setRangePreviewValue(value, { updateVisual = true } = {}){
+  const clamped = Math.min(MAX_FLIGHT_RANGE_CELLS, Math.max(MIN_FLIGHT_RANGE_CELLS, value));
+
+  if(rangePreviewValue === clamped){
+    return;
+  }
+
+  rangePreviewValue = clamped;
+
+  if(updateVisual){
+    updateRangeFlame(clamped);
+  }
 }
 
 function changeRangeStep(delta, options = {}){
@@ -1111,6 +1130,8 @@ function changeRangeStep(delta, options = {}){
     gestureVelocity = 0,
     commitImmediately = false
   } = options;
+
+  const shouldPreviewImmediately = commitImmediately || !animate;
 
   const currentIndex = Math.floor(rangeStep / 2);
   const nextIndex = Math.min(
@@ -1126,7 +1147,7 @@ function changeRangeStep(delta, options = {}){
   }
 
   rangeStep = nextIndex * 2;
-  rangePreviewValue = RANGE_DISPLAY_VALUES[nextIndex];
+  setRangePreviewValue(RANGE_DISPLAY_VALUES[nextIndex], { updateVisual: shouldPreviewImmediately });
 
   const finish = () => {
     if(!commitImmediately){
