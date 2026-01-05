@@ -529,8 +529,6 @@ const rangeDisplayViewport = selectInSettings('#rangeDisplayViewport');
 let rangeDisplayLayer = selectInSettings('#rangeDisplayLayer');
 let rangeDisplayTrack = selectInSettings('#rangeDisplayTrack');
 let rangeDisplayItem = selectInSettings('#rangeDisplayItem');
-const rangeTickTop = selectInSettings('#rangeTickTop');
-const rangeTickBottom = selectInSettings('#rangeTickBottom');
 const amplitudeMinusBtn =
   selectInSettings('#instance_accuracy_left') ??
   selectInSettings('#amplitudeMinus');

@@ -642,20 +642,12 @@ body, button {
     bottom: 0;
     left: 0;
     right: 0;
-    background-image: url('ui_controlpanel/cp_serifscale.png');
+    background-image: url('ui_controlpanel/cp_serifscale2.png');
     background-repeat: repeat-x;
     background-position: calc(50% + 29px) center;
     background-size: auto 100%;
     pointer-events: none;
     z-index: 0;
-  }
-
-  .range-scaleTape {
-    left: 50%;
-    right: auto;
-    width: 290px;
-    min-width: 174px;
-    transform: translateX(-50%);
   }
 
   .range-display__item {
@@ -665,32 +657,6 @@ body, button {
     align-items: center;
     justify-content: center;
     z-index: 1;
-  }
-
-  .range-display__tick {
-    position: absolute;
-    left: 50%;
-    width: 1px;
-    height: 6px;
-    background-color: #222;
-    display: block;
-    transform: translateX(-50%);
-    border-radius: 2px;
-    pointer-events: none;
-    z-index: 2;
-  }
-
-  .range-display__tick--top {
-    top: 2px;
-  }
-
-  .range-display__tick--bottom {
-    bottom: 2px;
-  }
-
-  .range-display__tick.is-limit,
-  .range-display__item.is-limit .range-display__tick {
-    background-color: #7a2c2c;
   }
 
   .settings-container #range_frame_counter {
