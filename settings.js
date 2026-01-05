@@ -638,21 +638,11 @@ function ensureRangeTape(track){
 }
 
 function ensureRangeDisplayTrack(){
-  if(rangeDisplayTrack instanceof HTMLElement){
-    ensureRangeTape(rangeDisplayTrack);
-
-    if(rangeDisplayItem instanceof HTMLElement && rangeDisplayItem.parentElement !== rangeDisplayTrack){
-      rangeDisplayTrack.appendChild(rangeDisplayItem);
-    }
-
-    return rangeDisplayTrack;
-  }
-
   if(!rangeDisplayViewport){
     return null;
   }
 
-  if(!(rangeDisplayLayer instanceof HTMLElement)){
+  if(!(rangeDisplayLayer instanceof HTMLElement) || !rangeDisplayViewport.contains(rangeDisplayLayer)){
     const fallbackLayer =
       rangeDisplayViewport.querySelector('#rangeDisplayLayer') ??
       rangeDisplayViewport.querySelector('.range-display__layer');
@@ -669,6 +659,25 @@ function ensureRangeDisplayTrack(){
     }
   }
 
+  const trackIsConnected =
+    rangeDisplayTrack instanceof HTMLElement &&
+    rangeDisplayLayer instanceof HTMLElement &&
+    rangeDisplayLayer.contains(rangeDisplayTrack);
+
+  if(!trackIsConnected){
+    rangeDisplayTrack = null;
+  }
+
+  if(rangeDisplayTrack instanceof HTMLElement){
+    ensureRangeTape(rangeDisplayTrack);
+
+    if(rangeDisplayItem instanceof HTMLElement && rangeDisplayItem.parentElement !== rangeDisplayTrack){
+      rangeDisplayTrack.appendChild(rangeDisplayItem);
+    }
+
+    return rangeDisplayTrack;
+  }
+
   if(!(rangeDisplayLayer instanceof HTMLElement)){
     return null;
   }
@@ -680,7 +689,7 @@ function ensureRangeDisplayTrack(){
   ensureRangeTape(track);
 
   const existingItem =
-    rangeDisplayItem ??
+    (rangeDisplayItem instanceof HTMLElement && rangeDisplayViewport.contains(rangeDisplayItem) ? rangeDisplayItem : null) ??
     rangeDisplayViewport.querySelector('#rangeDisplayItem') ??
     rangeDisplayViewport.querySelector('.range-display__item');
 
@@ -706,7 +715,7 @@ function ensureRangeDisplayTrack(){
 
 function setRangeDisplayValue(displayedCells){
   const el = selectInSettings('#rangeDisplay');
-  const transformTarget = ensureRangeDisplayTrack() ?? rangeDisplayItem ?? el;
+  const transformTarget = ensureRangeDisplayTrack();
   if(el){
     el.textContent = `${displayedCells}`;
     el.classList.add('range-display__value--current');
