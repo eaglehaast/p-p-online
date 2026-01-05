@@ -477,6 +477,8 @@ let rangeDisplayIdx = Math.floor(rangeStep / 2);
 let rangeScrollPos = rangeDisplayIdx;
 let rangeScrollRafId = null;
 let rangeOvershootTimer = null;
+let rangeTrackTransform = '';
+let rangeTrackTransition = '';
 
 const getRangeDirFromDx = (dx) => (dx < 0 ? RANGE_DIR_NEXT : (dx > 0 ? RANGE_DIR_PREV : 0));
 const getRangeDirFromDelta = (delta) => (delta > 0 ? RANGE_DIR_NEXT : (delta < 0 ? RANGE_DIR_PREV : 0));
@@ -636,6 +638,47 @@ function ensureRangeTape(track){
   return tape;
 }
 
+function syncRangeTrackStylesFrom(target){
+  if(target instanceof HTMLElement){
+    rangeTrackTransform = target.style.transform || '';
+    rangeTrackTransition = target.style.transition || '';
+  }
+}
+
+function applyStoredRangeTrackStyles(target){
+  if(!(target instanceof HTMLElement)) return;
+
+  if(rangeTrackTransition){
+    target.style.transition = rangeTrackTransition;
+  } else {
+    target.style.removeProperty('transition');
+  }
+
+  if(rangeTrackTransform){
+    target.style.transform = rangeTrackTransform;
+  } else {
+    target.style.removeProperty('transform');
+  }
+}
+
+function setRangeTrackStyles(target, { transform, transition } = {}){
+  if(!(target instanceof HTMLElement)) return;
+
+  if(typeof transition === 'string'){
+    rangeTrackTransition = transition;
+  } else if(transition === null){
+    rangeTrackTransition = '';
+  }
+
+  if(typeof transform === 'string'){
+    rangeTrackTransform = transform;
+  } else if(transform === null){
+    rangeTrackTransform = '';
+  }
+
+  applyStoredRangeTrackStyles(target);
+}
+
 function updateRangeTapePosition(displayIndex = rangeDisplayIdx, track = null){
   const targetTrack = track ?? ensureRangeDisplayTrack();
   const tape = targetTrack?.querySelector('.range-tape');
@@ -680,6 +723,7 @@ function ensureRangeDisplayTrack(){
   }
 
   if(rangeDisplayTrack instanceof HTMLElement){
+    syncRangeTrackStylesFrom(rangeDisplayTrack);
     ensureRangeTape(rangeDisplayTrack);
 
     if(rangeDisplayItem instanceof HTMLElement && rangeDisplayItem.parentElement !== rangeDisplayTrack){
@@ -722,6 +766,7 @@ function ensureRangeDisplayTrack(){
   rangeDisplayLayer.appendChild(track);
   rangeDisplayTrack = track;
   updateRangeTapePosition(rangeDisplayIdx, track);
+  applyStoredRangeTrackStyles(track);
   return rangeDisplayTrack;
 }
 
@@ -732,11 +777,8 @@ function setRangeDisplayValue(displayedCells){
     el.textContent = `${displayedCells}`;
     el.classList.add('range-display__value--current');
     el.classList.remove('range-display__value--incoming', 'range-display__value--outgoing');
-    if(transformTarget){
-      transformTarget.style.removeProperty('transform');
-      transformTarget.style.removeProperty('transition');
-    }
   }
+  applyStoredRangeTrackStyles(transformTarget);
 }
 
 const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
@@ -759,9 +801,7 @@ function clearRangeOvershoot(){
   }
 
   const transformTarget = ensureRangeDisplayTrack();
-  if(transformTarget){
-    transformTarget.style.removeProperty('transition');
-  }
+  setRangeTrackStyles(transformTarget, { transition: '' });
 }
 
 function applyRangeScrollVisual(scrollPos){
@@ -784,10 +824,11 @@ function applyRangeScrollVisual(scrollPos){
   rangeScrollPos = clampedPos;
 
   if(transformTarget){
-    transformTarget.style.transition = 'none';
     const frac = clampedPos - displayIdx;
-    transformTarget.style.transform =
-      `translateX(${frac * RANGE_SCROLL_STEP_PX * RANGE_VISUAL_SIGN}px)`;
+    setRangeTrackStyles(transformTarget, {
+      transition: 'none',
+      transform: `translateX(${frac * RANGE_SCROLL_STEP_PX * RANGE_VISUAL_SIGN}px)`
+    });
   }
 
   return displayIdx;
@@ -803,10 +844,7 @@ function finishRangeScroll(targetIndex, dir, onFinish){
   updateRangeTapePosition(rangeDisplayIdx);
 
   const transformTarget = ensureRangeDisplayTrack();
-  if(transformTarget){
-    transformTarget.style.transition = 'none';
-    transformTarget.style.transform = 'translateX(0)';
-  }
+  setRangeTrackStyles(transformTarget, { transition: 'none', transform: 'translateX(0)' });
   isRangeAnimating = false;
   if(typeof onFinish === 'function'){
     onFinish();
@@ -934,12 +972,10 @@ function prepareIncomingRangeValue(direction){
 function resetRangeDragVisual(animateReset){
   const transformTarget = ensureRangeDisplayTrack();
   if(!transformTarget) return;
-  transformTarget.style.removeProperty('transition');
-  if(animateReset){
-    transformTarget.style.transform = 'translateX(0)';
-  } else {
-    transformTarget.style.removeProperty('transform');
-  }
+  setRangeTrackStyles(transformTarget, {
+    transition: '',
+    transform: animateReset ? 'translateX(0)' : ''
+  });
 
   removeIncomingRangeValue();
 }
@@ -1015,8 +1051,7 @@ function handleRangePointerDown(event){
 
   clearRangeStepQueue();
 
-  transformTarget.style.transition = 'none';
-  transformTarget.style.transform = 'translateX(0)';
+  setRangeTrackStyles(transformTarget, { transition: 'none', transform: 'translateX(0)' });
 
   removeIncomingRangeValue();
 
@@ -1040,7 +1075,7 @@ function handleRangePointerMove(event){
 
   const maxOffset = (rangeDisplayViewport.clientWidth || 0) * 0.55;
   const clampedDx = Math.max(-maxOffset, Math.min(maxOffset, rangeDragLastDx));
-  transformTarget.style.transform = `translateX(${clampedDx}px)`;
+  setRangeTrackStyles(transformTarget, { transform: `translateX(${clampedDx}px)` });
 
   const direction = getRangeDirectionLabel(getRangeDirFromDx(clampedDx));
   const incoming = direction ? prepareIncomingRangeValue(direction) : null;
