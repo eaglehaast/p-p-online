@@ -591,28 +591,6 @@ let pendingRangeSteps = 0;
 let pendingRangeDir = 0;
 let rangeGestureVelocity = 0;
 
-const isRangeLimitValue = (value) =>
-  value === MIN_FLIGHT_RANGE_CELLS || value === MAX_FLIGHT_RANGE_CELLS;
-
-function applyRangeLimitClass(el, value){
-  if(!el) return;
-  const isLimit = isRangeLimitValue(value);
-  el.classList.toggle('range-display__value--limit', isLimit);
-  el.classList.toggle('is-limit', isLimit);
-}
-
-function setRangeTicksLimitState(value){
-  const isLimit = isRangeLimitValue(value);
-  if(rangeDisplayItem){
-    rangeDisplayItem.classList.toggle('is-limit', isLimit);
-  }
-  [rangeTickTop, rangeTickBottom].forEach((tick) => {
-    if(tick){
-      tick.classList.toggle('is-limit', isLimit);
-    }
-  });
-}
-
 function stopPreviewAnimation(){
   if(previewAnimationId){
     cancelAnimationFrame(previewAnimationId);
@@ -651,8 +629,6 @@ function setRangeDisplayValue(displayedCells){
   const transformTarget = rangeDisplayTrack ?? rangeDisplayItem ?? el;
   if(el){
     el.textContent = `${displayedCells}`;
-    applyRangeLimitClass(el, displayedCells);
-    setRangeTicksLimitState(displayedCells);
     el.classList.add('range-display__value--current');
     el.classList.remove('range-display__value--incoming', 'range-display__value--outgoing');
     if(transformTarget){
@@ -842,7 +818,6 @@ function prepareIncomingRangeValue(direction){
   }
 
   incoming.textContent = `${RANGE_DISPLAY_VALUES[targetIndex]}`;
-  applyRangeLimitClass(incoming, RANGE_DISPLAY_VALUES[targetIndex]);
   incoming.dataset.direction = direction;
   incoming.style.transition = 'none';
 
