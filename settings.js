@@ -523,6 +523,7 @@ const rangePlusBtn =
   selectInSettings('#flightRangePlus');
 const rangeDisplayViewport = selectInSettings('#rangeDisplayViewport');
 const rangeDisplayLayer = selectInSettings('#rangeDisplayLayer');
+const rangeDisplayTrack = selectInSettings('#rangeDisplayTrack');
 const rangeDisplayItem = selectInSettings('#rangeDisplayItem');
 const rangeTickTop = selectInSettings('#rangeTickTop');
 const rangeTickBottom = selectInSettings('#rangeTickBottom');
@@ -647,7 +648,7 @@ function refreshPreviewSimulationIfInitialized(){
 
 function setRangeDisplayValue(displayedCells){
   const el = selectInSettings('#rangeDisplay');
-  const transformTarget = rangeDisplayItem ?? el;
+  const transformTarget = rangeDisplayTrack ?? rangeDisplayItem ?? el;
   if(el){
     el.textContent = `${displayedCells}`;
     applyRangeLimitClass(el, displayedCells);
@@ -680,7 +681,7 @@ function clearRangeOvershoot(){
     rangeOvershootTimer = null;
   }
 
-  const transformTarget = rangeDisplayItem ?? selectInSettings('#rangeDisplay');
+  const transformTarget = rangeDisplayTrack ?? rangeDisplayItem ?? selectInSettings('#rangeDisplay');
   if(transformTarget){
     transformTarget.style.removeProperty('transition');
   }
@@ -693,7 +694,7 @@ function applyRangeScrollVisual(scrollPos){
   );
   const displayIdx = Math.round(clampedPos);
   const currentValue = selectInSettings('#rangeDisplay');
-  const transformTarget = rangeDisplayItem ?? currentValue;
+  const transformTarget = rangeDisplayTrack ?? rangeDisplayItem ?? currentValue;
 
   if(displayIdx !== rangeDisplayIdx){
     setRangeDisplayValue(RANGE_DISPLAY_VALUES[displayIdx]);
@@ -720,7 +721,7 @@ function finishRangeScroll(targetIndex, dir, onFinish){
   setRangeDisplayValue(currentValue);
 
   const valueEl = selectInSettings('#rangeDisplay');
-  const transformTarget = rangeDisplayItem ?? valueEl;
+  const transformTarget = rangeDisplayTrack ?? rangeDisplayItem ?? valueEl;
   if(transformTarget){
     transformTarget.style.transition = 'none';
     transformTarget.style.transform = 'translateX(0)';
@@ -813,15 +814,17 @@ function getRangePeekOffset(direction){
 }
 
 function removeIncomingRangeValue(){
-  if(!rangeDisplayLayer) return;
-  const incoming = rangeDisplayLayer.querySelector('.range-display__value--incoming');
+  const incomingContainer = rangeDisplayTrack ?? rangeDisplayLayer;
+  if(!incomingContainer) return;
+  const incoming = incomingContainer.querySelector('.range-display__value--incoming');
   if(incoming){
     incoming.remove();
   }
 }
 
 function prepareIncomingRangeValue(direction){
-  if(!rangeDisplayLayer) return null;
+  const incomingContainer = rangeDisplayTrack ?? rangeDisplayLayer;
+  if(!incomingContainer) return null;
 
   const currentIndex = Math.floor(rangeStep / 2);
   const targetIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
@@ -831,11 +834,11 @@ function prepareIncomingRangeValue(direction){
     return null;
   }
 
-  let incoming = rangeDisplayLayer.querySelector('.range-display__value--incoming');
+  let incoming = incomingContainer.querySelector('.range-display__value--incoming');
   if(!incoming){
     incoming = document.createElement('span');
     incoming.className = 'range-display__value range-display__value--incoming';
-    rangeDisplayLayer.appendChild(incoming);
+    incomingContainer.appendChild(incoming);
   }
 
   incoming.textContent = `${RANGE_DISPLAY_VALUES[targetIndex]}`;
@@ -848,7 +851,7 @@ function prepareIncomingRangeValue(direction){
 
 function resetRangeDragVisual(animateReset){
   const currentValue = selectInSettings('#rangeDisplay');
-  const transformTarget = rangeDisplayItem ?? currentValue;
+  const transformTarget = rangeDisplayTrack ?? rangeDisplayItem ?? currentValue;
   if(!transformTarget) return;
   transformTarget.style.removeProperty('transition');
   if(animateReset){
@@ -930,7 +933,7 @@ function handleRangePointerDown(event){
   clearRangeStepQueue();
 
   const currentValue = selectInSettings('#rangeDisplay');
-  const transformTarget = rangeDisplayItem ?? currentValue;
+  const transformTarget = rangeDisplayTrack ?? rangeDisplayItem ?? currentValue;
   if(transformTarget){
     transformTarget.style.transition = 'none';
     transformTarget.style.transform = 'translateX(0)';
@@ -954,7 +957,7 @@ function handleRangePointerMove(event){
   rangeDragLastDx = event.clientX - rangeDragStartX;
 
   const currentValue = selectInSettings('#rangeDisplay');
-  const transformTarget = rangeDisplayItem ?? currentValue;
+  const transformTarget = rangeDisplayTrack ?? rangeDisplayItem ?? currentValue;
   if(!transformTarget) return;
 
   const maxOffset = (rangeDisplayViewport.clientWidth || 0) * 0.55;
