@@ -632,7 +632,6 @@ function ensureRangeTape(track){
     tape = document.createElement('div');
     tape.className = 'range-tape';
     track.insertBefore(tape, track.firstChild);
-    console.log('range tape:', tape, getComputedStyle(tape).backgroundImage);
   }
   return tape;
 }
