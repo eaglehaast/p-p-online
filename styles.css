@@ -616,9 +616,11 @@ body, button {
   }
 
   .range-display__layer {
-    position: relative;
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
+    z-index: 1;
   }
 
   .range-display__item {
@@ -634,25 +636,26 @@ body, button {
   .range-display__tick {
     position: absolute;
     left: 50%;
-    width: 2px;
-    height: 8px;
-    background-color: currentColor;
+    width: 1px;
+    height: 6px;
+    background-color: #222;
     transform: translateX(-50%);
     border-radius: 2px;
     pointer-events: none;
+    z-index: 2;
   }
 
   .range-display__tick--top {
-    top: 4px;
+    top: 2px;
   }
 
   .range-display__tick--bottom {
-    bottom: 4px;
+    bottom: 2px;
   }
 
   .range-display__tick.is-limit,
   .range-display__item.is-limit .range-display__tick {
-    background-color: #c62828;
+    background-color: #7a2c2c;
   }
 
   .settings-container #range_frame_counter {
