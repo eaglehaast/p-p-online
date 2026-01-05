@@ -627,8 +627,9 @@ body, button {
   }
 
   .range-display__track {
-    position: absolute;
-    inset: 0;
+    position: relative;
+    width: 100%;
+    height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -636,16 +637,16 @@ body, button {
     will-change: transform;
   }
 
-  .range-display__scale {
+  .range-tape {
     position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 580px;
-    height: 35px;
-    display: block;
-    transform: translate(-50%, -50%);
+    inset: 0;
+    background-image: url('ui_controlpanel/cp_serifscale2.png');
+    background-repeat: repeat-x;
+    background-position: center center;
+    background-size: auto 100%;
     pointer-events: none;
-    z-index: 0;
+    z-index: 1;
+    outline: 1px solid magenta;
   }
 
   .range-display__item {
@@ -654,7 +655,7 @@ body, button {
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1;
+    z-index: 2;
   }
 
   .settings-container #range_frame_counter {

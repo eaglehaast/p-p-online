@@ -626,12 +626,20 @@ function refreshPreviewSimulationIfInitialized(){
   }
 }
 
+function ensureRangeTape(track){
+  let tape = track.querySelector('.range-tape');
+  if(!(tape instanceof HTMLElement)){
+    tape = document.createElement('div');
+    tape.className = 'range-tape';
+    track.insertBefore(tape, track.firstChild);
+    console.log('range tape:', tape, getComputedStyle(tape).backgroundImage);
+  }
+  return tape;
+}
+
 function ensureRangeDisplayTrack(){
   if(rangeDisplayTrack instanceof HTMLElement){
-    const scale = selectInSettings('.range-display__scale');
-    if(scale && scale.parentElement !== rangeDisplayTrack){
-      rangeDisplayTrack.appendChild(scale);
-    }
+    ensureRangeTape(rangeDisplayTrack);
 
     if(rangeDisplayItem instanceof HTMLElement && rangeDisplayItem.parentElement !== rangeDisplayTrack){
       rangeDisplayTrack.appendChild(rangeDisplayItem);
@@ -655,13 +663,7 @@ function ensureRangeDisplayTrack(){
       const createdLayer = document.createElement('div');
       createdLayer.className = 'range-display__layer';
       createdLayer.id = 'rangeDisplayLayer';
-
-      const bottomTick = rangeDisplayViewport.querySelector('.range-display__tick--bottom');
-      if(bottomTick instanceof HTMLElement){
-        rangeDisplayViewport.insertBefore(createdLayer, bottomTick);
-      } else {
-        rangeDisplayViewport.appendChild(createdLayer);
-      }
+      rangeDisplayViewport.appendChild(createdLayer);
 
       rangeDisplayLayer = createdLayer;
     }
@@ -675,10 +677,7 @@ function ensureRangeDisplayTrack(){
   track.className = 'range-display__track';
   track.id = 'rangeDisplayTrack';
 
-  const scale = selectInSettings('.range-display__scale');
-  if(scale){
-    track.appendChild(scale);
-  }
+  ensureRangeTape(track);
 
   const existingItem =
     rangeDisplayItem ??
