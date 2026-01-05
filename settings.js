@@ -522,9 +522,9 @@ const rangePlusBtn =
   selectInSettings('#rangePlus') ??
   selectInSettings('#flightRangePlus');
 const rangeDisplayViewport = selectInSettings('#rangeDisplayViewport');
-const rangeDisplayLayer = selectInSettings('#rangeDisplayLayer');
-const rangeDisplayTrack = selectInSettings('#rangeDisplayTrack');
-const rangeDisplayItem = selectInSettings('#rangeDisplayItem');
+let rangeDisplayLayer = selectInSettings('#rangeDisplayLayer');
+let rangeDisplayTrack = selectInSettings('#rangeDisplayTrack');
+let rangeDisplayItem = selectInSettings('#rangeDisplayItem');
 const rangeTickTop = selectInSettings('#rangeTickTop');
 const rangeTickBottom = selectInSettings('#rangeTickBottom');
 const amplitudeMinusBtn =
@@ -624,9 +624,88 @@ function refreshPreviewSimulationIfInitialized(){
   }
 }
 
+function ensureRangeDisplayTrack(){
+  if(rangeDisplayTrack instanceof HTMLElement){
+    const scale = selectInSettings('.range-display__scale');
+    if(scale && scale.parentElement !== rangeDisplayTrack){
+      rangeDisplayTrack.appendChild(scale);
+    }
+
+    if(rangeDisplayItem instanceof HTMLElement && rangeDisplayItem.parentElement !== rangeDisplayTrack){
+      rangeDisplayTrack.appendChild(rangeDisplayItem);
+    }
+
+    return rangeDisplayTrack;
+  }
+
+  if(!rangeDisplayViewport){
+    return null;
+  }
+
+  if(!(rangeDisplayLayer instanceof HTMLElement)){
+    const fallbackLayer =
+      rangeDisplayViewport.querySelector('#rangeDisplayLayer') ??
+      rangeDisplayViewport.querySelector('.range-display__layer');
+
+    if(fallbackLayer instanceof HTMLElement){
+      rangeDisplayLayer = fallbackLayer;
+    } else {
+      const createdLayer = document.createElement('div');
+      createdLayer.className = 'range-display__layer';
+      createdLayer.id = 'rangeDisplayLayer';
+
+      const bottomTick = rangeDisplayViewport.querySelector('.range-display__tick--bottom');
+      if(bottomTick instanceof HTMLElement){
+        rangeDisplayViewport.insertBefore(createdLayer, bottomTick);
+      } else {
+        rangeDisplayViewport.appendChild(createdLayer);
+      }
+
+      rangeDisplayLayer = createdLayer;
+    }
+  }
+
+  if(!(rangeDisplayLayer instanceof HTMLElement)){
+    return null;
+  }
+
+  const track = document.createElement('div');
+  track.className = 'range-display__track';
+  track.id = 'rangeDisplayTrack';
+
+  const scale = selectInSettings('.range-display__scale');
+  if(scale){
+    track.appendChild(scale);
+  }
+
+  const existingItem =
+    rangeDisplayItem ??
+    rangeDisplayViewport.querySelector('#rangeDisplayItem') ??
+    rangeDisplayViewport.querySelector('.range-display__item');
+
+  if(existingItem instanceof HTMLElement){
+    track.appendChild(existingItem);
+    rangeDisplayItem = existingItem;
+  } else {
+    const newItem = document.createElement('div');
+    newItem.className = 'range-display__item range-display__item--current';
+    newItem.id = 'rangeDisplayItem';
+    const value = selectInSettings('#rangeDisplay');
+    if(value){
+      newItem.appendChild(value);
+    }
+    track.appendChild(newItem);
+    rangeDisplayItem = newItem;
+  }
+
+  rangeDisplayLayer.appendChild(track);
+  rangeDisplayTrack = track;
+  return rangeDisplayTrack;
+}
+
 function setRangeDisplayValue(displayedCells){
   const el = selectInSettings('#rangeDisplay');
-  const transformTarget = rangeDisplayTrack ?? rangeDisplayItem ?? el;
+  const transformTarget = ensureRangeDisplayTrack() ?? rangeDisplayItem ?? el;
   if(el){
     el.textContent = `${displayedCells}`;
     el.classList.add('range-display__value--current');
@@ -657,7 +736,7 @@ function clearRangeOvershoot(){
     rangeOvershootTimer = null;
   }
 
-  const transformTarget = rangeDisplayTrack ?? rangeDisplayItem ?? selectInSettings('#rangeDisplay');
+  const transformTarget = ensureRangeDisplayTrack();
   if(transformTarget){
     transformTarget.style.removeProperty('transition');
   }
@@ -670,7 +749,7 @@ function applyRangeScrollVisual(scrollPos){
   );
   const displayIdx = Math.round(clampedPos);
   const currentValue = selectInSettings('#rangeDisplay');
-  const transformTarget = rangeDisplayTrack ?? rangeDisplayItem ?? currentValue;
+  const transformTarget = ensureRangeDisplayTrack();
 
   if(displayIdx !== rangeDisplayIdx){
     setRangeDisplayValue(RANGE_DISPLAY_VALUES[displayIdx]);
@@ -696,8 +775,7 @@ function finishRangeScroll(targetIndex, dir, onFinish){
   rangeDisplayIdx = targetIndex;
   setRangeDisplayValue(currentValue);
 
-  const valueEl = selectInSettings('#rangeDisplay');
-  const transformTarget = rangeDisplayTrack ?? rangeDisplayItem ?? valueEl;
+  const transformTarget = ensureRangeDisplayTrack();
   if(transformTarget){
     transformTarget.style.transition = 'none';
     transformTarget.style.transform = 'translateX(0)';
@@ -790,7 +868,7 @@ function getRangePeekOffset(direction){
 }
 
 function removeIncomingRangeValue(){
-  const incomingContainer = rangeDisplayTrack ?? rangeDisplayLayer;
+  const incomingContainer = ensureRangeDisplayTrack() ?? rangeDisplayLayer;
   if(!incomingContainer) return;
   const incoming = incomingContainer.querySelector('.range-display__value--incoming');
   if(incoming){
@@ -799,7 +877,7 @@ function removeIncomingRangeValue(){
 }
 
 function prepareIncomingRangeValue(direction){
-  const incomingContainer = rangeDisplayTrack ?? rangeDisplayLayer;
+  const incomingContainer = ensureRangeDisplayTrack() ?? rangeDisplayLayer;
   if(!incomingContainer) return null;
 
   const currentIndex = Math.floor(rangeStep / 2);
@@ -825,8 +903,7 @@ function prepareIncomingRangeValue(direction){
 }
 
 function resetRangeDragVisual(animateReset){
-  const currentValue = selectInSettings('#rangeDisplay');
-  const transformTarget = rangeDisplayTrack ?? rangeDisplayItem ?? currentValue;
+  const transformTarget = ensureRangeDisplayTrack();
   if(!transformTarget) return;
   transformTarget.style.removeProperty('transition');
   if(animateReset){
@@ -903,16 +980,14 @@ function queueRangeSteps(steps, dir, gestureVelocity = 0){
 
 function handleRangePointerDown(event){
   if(isRangeAnimating || !rangeDisplayViewport) return;
+  const transformTarget = ensureRangeDisplayTrack();
+  if(!transformTarget) return;
   event.preventDefault();
 
   clearRangeStepQueue();
 
-  const currentValue = selectInSettings('#rangeDisplay');
-  const transformTarget = rangeDisplayTrack ?? rangeDisplayItem ?? currentValue;
-  if(transformTarget){
-    transformTarget.style.transition = 'none';
-    transformTarget.style.transform = 'translateX(0)';
-  }
+  transformTarget.style.transition = 'none';
+  transformTarget.style.transform = 'translateX(0)';
 
   removeIncomingRangeValue();
 
@@ -931,8 +1006,7 @@ function handleRangePointerMove(event){
 
   rangeDragLastDx = event.clientX - rangeDragStartX;
 
-  const currentValue = selectInSettings('#rangeDisplay');
-  const transformTarget = rangeDisplayTrack ?? rangeDisplayItem ?? currentValue;
+  const transformTarget = ensureRangeDisplayTrack();
   if(!transformTarget) return;
 
   const maxOffset = (rangeDisplayViewport.clientWidth || 0) * 0.55;
@@ -2133,7 +2207,8 @@ if(hasMapButtons){
 
   setupRepeatButton(rangeMinusBtn, () => changeRangeStep(-1));
   setupRepeatButton(rangePlusBtn, () => changeRangeStep(1));
-  if(rangeDisplayViewport){
+  const ensuredRangeTrack = ensureRangeDisplayTrack();
+  if(rangeDisplayViewport && ensuredRangeTrack){
     rangeDisplayViewport.addEventListener('pointerdown', handleRangePointerDown);
     rangeDisplayViewport.addEventListener('pointermove', handleRangePointerMove);
     rangeDisplayViewport.addEventListener('pointerup', handleRangePointerEnd);
