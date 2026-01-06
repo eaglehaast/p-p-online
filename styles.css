@@ -663,6 +663,13 @@ body, button {
     z-index: 2;
   }
 
+  .range-legacy-digits--hidden .range-display__item,
+  .range-legacy-digits--hidden .range-display__value {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+
   .settings-container #range_frame_counter {
     position: absolute;
     left: 105px;
