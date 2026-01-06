@@ -155,8 +155,22 @@
               </div>
 
               <div id="amplitudeIndicator" class="cp-aiming-accuracy__indicator">
-                <div id="frame_accuracy_2_counter" class="accuracy-display" role="status" aria-live="polite">
-                  <span id="amplitudeAngleDisplay">10°</span>
+                <div
+                  id="frame_accuracy_2_counter"
+                  class="accuracy-display accuracy-legacy-digits--hidden"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <div class="accuracy-display__viewport" id="accuracyDisplayViewport">
+                    <div class="accuracy-display__layer" id="accuracyDisplayLayer">
+                      <div class="accuracy-display__track" id="accuracyDisplayTrack">
+                        <div class="accuracy-tape" aria-hidden="true"></div>
+                        <div class="accuracy-display__item accuracy-display__item--current" id="accuracyDisplayItem">
+                          <span id="amplitudeAngleDisplay" class="accuracy-display__value accuracy-display__value--current">10°</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 

@@ -23,6 +23,12 @@ const RANGE_DIR_PREV = -1;
 const RANGE_VISUAL_SIGN = -1;
 const MIN_AMPLITUDE = 0;
 const MAX_AMPLITUDE = 20;
+const ACCURACY_DISPLAY_VALUES = Array.from(
+  { length: MAX_AMPLITUDE - MIN_AMPLITUDE + 1 },
+  (_, index) => (index + MIN_AMPLITUDE) * 5
+);
+const ACCURACY_CELL_WIDTH = 58;
+const ACCURACY_TAPE_IMAGE_WIDTH = 1276;
 
 const MAP_PREVIEW_BASE_WIDTH = 360;
 const MAP_PREVIEW_BASE_HEIGHT = 640;
@@ -480,6 +486,7 @@ let rangeScrollRafId = null;
 let rangeOvershootTimer = null;
 let rangeTrackTransform = '';
 let rangeTrackTransition = '';
+let accuracyDisplayIdx = getAccuracyDisplayIndex(settingsAimingAmplitude);
 
 const getRangeDirFromDx = (dx) => (dx < 0 ? RANGE_DIR_NEXT : (dx > 0 ? RANGE_DIR_PREV : 0));
 const getRangeDirFromDelta = (delta) => (delta > 0 ? RANGE_DIR_NEXT : (delta < 0 ? RANGE_DIR_PREV : 0));
@@ -487,6 +494,15 @@ const getRangeDirectionLabel = (dir) => (dir === RANGE_DIR_NEXT ? 'next' : (dir 
 
 function clampRangeStep(step){
   return Math.min(RANGE_MAX_STEP, Math.max(0, step));
+}
+
+function clampAccuracyIndex(index){
+  return Math.max(0, Math.min(ACCURACY_DISPLAY_VALUES.length - 1, index));
+}
+
+function getAccuracyDisplayIndex(amplitude){
+  const clampedAmplitude = Math.min(MAX_AMPLITUDE, Math.max(MIN_AMPLITUDE, amplitude));
+  return clampAccuracyIndex(Math.round(clampedAmplitude - MIN_AMPLITUDE));
 }
 
 function getRangeStepForValue(value){
@@ -532,6 +548,10 @@ const rangeDisplayViewport = selectInSettings('#rangeDisplayViewport');
 let rangeDisplayLayer = selectInSettings('#rangeDisplayLayer');
 let rangeDisplayTrack = selectInSettings('#rangeDisplayTrack');
 let rangeDisplayItem = selectInSettings('#rangeDisplayItem');
+const accuracyDisplayViewport = selectInSettings('#accuracyDisplayViewport');
+let accuracyDisplayLayer = selectInSettings('#accuracyDisplayLayer');
+let accuracyDisplayTrack = selectInSettings('#accuracyDisplayTrack');
+let accuracyDisplayItem = selectInSettings('#accuracyDisplayItem');
 const amplitudeMinusBtn =
   selectInSettings('#instance_accuracy_left') ??
   selectInSettings('#amplitudeMinus');
@@ -639,6 +659,16 @@ function ensureRangeTape(track){
   return tape;
 }
 
+function ensureAccuracyTape(track){
+  let tape = track.querySelector('.accuracy-tape');
+  if(!(tape instanceof HTMLElement)){
+    tape = document.createElement('div');
+    tape.className = 'accuracy-tape';
+    track.insertBefore(tape, track.firstChild);
+  }
+  return tape;
+}
+
 function syncRangeTrackStylesFrom(target){
   if(target instanceof HTMLElement){
     rangeTrackTransform = target.style.transform || '';
@@ -691,6 +721,20 @@ function updateRangeTapePosition(displayPosition = rangeScrollPos, track = null)
 
   const middleIndex = Math.floor(RANGE_DISPLAY_VALUES.length / 2);
   const offsetPx = (middleIndex - displayPosition) * RANGE_CELL_WIDTH;
+  tape.style.transform = `translateX(calc(-50% + ${offsetPx}px))`;
+}
+
+function updateAccuracyTapePosition(displayPosition = accuracyDisplayIdx, track = null){
+  const targetTrack = track ?? ensureAccuracyDisplayTrack();
+  const tape = targetTrack?.querySelector('.accuracy-tape');
+  if(!Number.isFinite(displayPosition) || !(tape instanceof HTMLElement)){
+    return;
+  }
+
+  tape.style.width = `${ACCURACY_TAPE_IMAGE_WIDTH}px`;
+
+  const middleIndex = Math.floor(ACCURACY_DISPLAY_VALUES.length / 2);
+  const offsetPx = (middleIndex - displayPosition) * ACCURACY_CELL_WIDTH;
   tape.style.transform = `translateX(calc(-50% + ${offsetPx}px))`;
 }
 
@@ -773,6 +817,83 @@ function ensureRangeDisplayTrack(){
   return rangeDisplayTrack;
 }
 
+function ensureAccuracyDisplayTrack(){
+  if(!accuracyDisplayViewport){
+    return null;
+  }
+
+  if(!(accuracyDisplayLayer instanceof HTMLElement) || !accuracyDisplayViewport.contains(accuracyDisplayLayer)){
+    const fallbackLayer =
+      accuracyDisplayViewport.querySelector('#accuracyDisplayLayer') ??
+      accuracyDisplayViewport.querySelector('.accuracy-display__layer');
+
+    if(fallbackLayer instanceof HTMLElement){
+      accuracyDisplayLayer = fallbackLayer;
+    } else {
+      const createdLayer = document.createElement('div');
+      createdLayer.className = 'accuracy-display__layer';
+      createdLayer.id = 'accuracyDisplayLayer';
+      accuracyDisplayViewport.appendChild(createdLayer);
+
+      accuracyDisplayLayer = createdLayer;
+    }
+  }
+
+  const trackIsConnected =
+    accuracyDisplayTrack instanceof HTMLElement &&
+    accuracyDisplayLayer instanceof HTMLElement &&
+    accuracyDisplayLayer.contains(accuracyDisplayTrack);
+
+  if(!trackIsConnected){
+    accuracyDisplayTrack = null;
+  }
+
+  if(accuracyDisplayTrack instanceof HTMLElement){
+    ensureAccuracyTape(accuracyDisplayTrack);
+
+    if(accuracyDisplayItem instanceof HTMLElement && accuracyDisplayItem.parentElement !== accuracyDisplayTrack){
+      accuracyDisplayTrack.appendChild(accuracyDisplayItem);
+    }
+
+    return accuracyDisplayTrack;
+  }
+
+  if(!(accuracyDisplayLayer instanceof HTMLElement)){
+    return null;
+  }
+
+  const track = document.createElement('div');
+  track.className = 'accuracy-display__track';
+  track.id = 'accuracyDisplayTrack';
+
+  ensureAccuracyTape(track);
+
+  const existingItem =
+    (accuracyDisplayItem instanceof HTMLElement && accuracyDisplayViewport.contains(accuracyDisplayItem) ? accuracyDisplayItem : null) ??
+    accuracyDisplayViewport.querySelector('#accuracyDisplayItem') ??
+    accuracyDisplayViewport.querySelector('.accuracy-display__item');
+
+  if(existingItem instanceof HTMLElement){
+    track.appendChild(existingItem);
+    accuracyDisplayItem = existingItem;
+  } else {
+    const newItem = document.createElement('div');
+    newItem.className = 'accuracy-display__item accuracy-display__item--current';
+    newItem.id = 'accuracyDisplayItem';
+    const value = selectInSettings('#amplitudeAngleDisplay');
+    if(value){
+      newItem.appendChild(value);
+    }
+    track.appendChild(newItem);
+    accuracyDisplayItem = newItem;
+  }
+
+  accuracyDisplayLayer.appendChild(track);
+  accuracyDisplayTrack = track;
+  updateAccuracyTapePosition(accuracyDisplayIdx, track);
+  return accuracyDisplayTrack;
+}
+
 function setRangeDisplayValue(displayedCells){
   const el = selectInSettings('#rangeDisplay');
   const transformTarget = ensureRangeDisplayTrack();
@@ -782,6 +903,16 @@ function setRangeDisplayValue(displayedCells){
     el.classList.remove('range-display__value--incoming', 'range-display__value--outgoing');
   }
   applyStoredRangeTrackStyles(transformTarget);
+}
+
+function setAccuracyDisplayValue(displayedAngle){
+  const el = selectInSettings('#amplitudeAngleDisplay');
+  const transformTarget = ensureAccuracyDisplayTrack();
+  if(el){
+    el.textContent = `${displayedAngle.toFixed(0)}°`;
+    el.classList.add('accuracy-display__value--current');
+    el.classList.remove('accuracy-display__value--incoming', 'accuracy-display__value--outgoing');
+  }
 }
 
 const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
@@ -1231,11 +1362,11 @@ function changeRangeStep(delta, options = {}){
 }
 
 function updateAmplitudeDisplay(){
-  const disp = selectInSettings('#amplitudeAngleDisplay');
-  if(disp){
-    const maxAngle = settingsAimingAmplitude * 5;
-    disp.textContent = `${maxAngle.toFixed(0)}°`;
-  }
+  const displayIdx = getAccuracyDisplayIndex(settingsAimingAmplitude);
+  const displayedAngle = ACCURACY_DISPLAY_VALUES[displayIdx];
+  accuracyDisplayIdx = displayIdx;
+  setAccuracyDisplayValue(displayedAngle);
+  updateAccuracyTapePosition(displayIdx);
 }
 
 function updateAmplitudeIndicator(){

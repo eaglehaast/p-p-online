@@ -595,7 +595,8 @@ body, button {
   }
 
 
-  .range-display {
+  .range-display,
+  .accuracy-display {
     position: relative;
     width: 58px;
     height: 35px;
@@ -608,7 +609,8 @@ body, button {
     text-shadow: 0 1px 1px rgba(255, 255, 255, 0.5);
   }
 
-  .range-display__viewport {
+  .range-display__viewport,
+  .accuracy-display__viewport {
     position: relative;
     width: 100%;
     height: 100%;
@@ -618,7 +620,8 @@ body, button {
     -webkit-user-select: none;
   }
 
-  .range-display__layer {
+  .range-display__layer,
+  .accuracy-display__layer {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -626,7 +629,8 @@ body, button {
     z-index: 1;
   }
 
-  .range-display__track {
+  .range-display__track,
+  .accuracy-display__track {
     position: relative;
     width: 100%;
     height: 100%;
@@ -637,7 +641,8 @@ body, button {
     will-change: transform;
   }
 
-  .range-tape {
+  .range-tape,
+  .accuracy-tape {
     position: absolute;
     top: 0;
     bottom: 0;
@@ -654,7 +659,17 @@ body, button {
     z-index: 1;
   }
 
-  .range-display__item {
+  .range-tape {
+    background-image: url('ui_controlpanel/cp_serifscale2.png');
+  }
+
+  .accuracy-tape {
+    background-image: url('ui_controlpanel/cp_serifscale_accuracy.png');
+    width: 1276px;
+  }
+
+  .range-display__item,
+  .accuracy-display__item {
     position: absolute;
     inset: 0;
     display: flex;
@@ -670,6 +685,13 @@ body, button {
     pointer-events: none;
   }
 
+  .accuracy-legacy-digits--hidden .accuracy-display__item,
+  .accuracy-legacy-digits--hidden .accuracy-display__value {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+
   .settings-container #range_frame_counter {
     position: absolute;
     left: 105px;
@@ -677,7 +699,8 @@ body, button {
     z-index: 10;
   }
 
-  .range-display__value {
+  .range-display__value,
+  .accuracy-display__value {
     position: absolute;
     inset: 0;
     display: flex;
@@ -685,7 +708,8 @@ body, button {
     justify-content: center;
   }
 
-  .range-display__value--current {
+  .range-display__value--current,
+  .accuracy-display__value--current {
     transform: translateX(0);
   }
 
