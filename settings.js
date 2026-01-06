@@ -487,6 +487,22 @@ let rangeOvershootTimer = null;
 let rangeTrackTransform = '';
 let rangeTrackTransition = '';
 let accuracyDisplayIdx = getAccuracyDisplayIndex(settingsAimingAmplitude);
+let accuracyTrackTransform = '';
+let accuracyTrackTransition = '';
+const rangeTrackState = {
+  get transform(){ return rangeTrackTransform; },
+  set transform(value){ rangeTrackTransform = value; },
+  get transition(){ return rangeTrackTransition; },
+  set transition(value){ rangeTrackTransition = value; },
+  apply: applyStoredRangeTrackStyles
+};
+const accuracyTrackState = {
+  get transform(){ return accuracyTrackTransform; },
+  set transform(value){ accuracyTrackTransform = value; },
+  get transition(){ return accuracyTrackTransition; },
+  set transition(value){ accuracyTrackTransition = value; },
+  apply: applyStoredAccuracyTrackStyles
+};
 
 const getRangeDirFromDx = (dx) => (dx < 0 ? RANGE_DIR_NEXT : (dx > 0 ? RANGE_DIR_PREV : 0));
 const getRangeDirFromDelta = (delta) => (delta > 0 ? RANGE_DIR_NEXT : (delta < 0 ? RANGE_DIR_PREV : 0));
@@ -615,6 +631,15 @@ let rangeDragLastDx = 0;
 let pendingRangeSteps = 0;
 let pendingRangeDir = 0;
 let rangeGestureVelocity = 0;
+let isAccuracyAnimating = false;
+let isAccuracyDragging = false;
+let accuracyDragStartX = 0;
+let accuracyDragStartTime = 0;
+let accuracyDragPointerId = null;
+let accuracyDragLastDx = 0;
+let pendingAccuracySteps = 0;
+let pendingAccuracyDir = 0;
+let accuracyGestureVelocity = 0;
 
 function stopPreviewAnimation(){
   if(previewAnimationId){
@@ -692,22 +717,46 @@ function applyStoredRangeTrackStyles(target){
   }
 }
 
-function setRangeTrackStyles(target, { transform, transition } = {}){
+function setRangeTrackStyles(target, styles){
+  setSliderTrackStyles(target, rangeTrackState, styles);
+}
+
+function setAccuracyTrackStyles(target, styles){
+  setSliderTrackStyles(target, accuracyTrackState, styles);
+}
+
+function applyStoredAccuracyTrackStyles(target){
+  if(!(target instanceof HTMLElement)) return;
+
+  if(accuracyTrackTransition){
+    target.style.transition = accuracyTrackTransition;
+  } else {
+    target.style.removeProperty('transition');
+  }
+
+  if(accuracyTrackTransform){
+    target.style.transform = accuracyTrackTransform;
+  } else {
+    target.style.removeProperty('transform');
+  }
+}
+
+function setSliderTrackStyles(target, state, { transform, transition } = {}){
   if(!(target instanceof HTMLElement)) return;
 
   if(typeof transition === 'string'){
-    rangeTrackTransition = transition;
+    state.transition = transition;
   } else if(transition === null){
-    rangeTrackTransition = '';
+    state.transition = '';
   }
 
   if(typeof transform === 'string'){
-    rangeTrackTransform = transform;
+    state.transform = transform;
   } else if(transform === null){
-    rangeTrackTransform = '';
+    state.transform = '';
   }
 
-  applyStoredRangeTrackStyles(target);
+  state.apply(target);
 }
 
 function updateRangeTapePosition(displayPosition = rangeScrollPos, track = null){
@@ -855,6 +904,7 @@ function ensureAccuracyDisplayTrack(){
       accuracyDisplayTrack.appendChild(accuracyDisplayItem);
     }
 
+    applyStoredAccuracyTrackStyles(accuracyDisplayTrack);
     return accuracyDisplayTrack;
   }
 
@@ -891,6 +941,7 @@ function ensureAccuracyDisplayTrack(){
   accuracyDisplayLayer.appendChild(track);
   accuracyDisplayTrack = track;
   updateAccuracyTapePosition(accuracyDisplayIdx, track);
+  applyStoredAccuracyTrackStyles(track);
   return accuracyDisplayTrack;
 }
 
@@ -913,6 +964,7 @@ function setAccuracyDisplayValue(displayedAngle){
     el.classList.add('accuracy-display__value--current');
     el.classList.remove('accuracy-display__value--incoming', 'accuracy-display__value--outgoing');
   }
+  applyStoredAccuracyTrackStyles(transformTarget);
 }
 
 const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
@@ -1059,16 +1111,29 @@ function updateRangeDisplay(stepOverride, options = {}){
   }
 }
 
-function getRangePeekOffset(direction){
-  const viewportWidth = rangeDisplayViewport?.clientWidth || 0;
+function getSliderPeekOffset(viewport, direction){
+  const viewportWidth = viewport?.clientWidth || 0;
   const peekOffset = Math.max(0, viewportWidth - RANGE_PEEK_PX);
   return direction === 'next' ? peekOffset : -peekOffset;
+}
+
+function getRangePeekOffset(direction){
+  return getSliderPeekOffset(rangeDisplayViewport, direction);
 }
 
 function removeIncomingRangeValue(){
   const incomingContainer = ensureRangeDisplayTrack() ?? rangeDisplayLayer;
   if(!incomingContainer) return;
   const incoming = incomingContainer.querySelector('.range-display__value--incoming');
+  if(incoming){
+    incoming.remove();
+  }
+}
+
+function removeIncomingAccuracyValue(){
+  const incomingContainer = ensureAccuracyDisplayTrack() ?? accuracyDisplayLayer;
+  if(!incomingContainer) return;
+  const incoming = incomingContainer.querySelector('.accuracy-display__value--incoming');
   if(incoming){
     incoming.remove();
   }
@@ -1100,6 +1165,31 @@ function prepareIncomingRangeValue(direction){
   return incoming;
 }
 
+function prepareIncomingAccuracyValue(direction){
+  const incomingContainer = ensureAccuracyDisplayTrack() ?? accuracyDisplayLayer;
+  if(!incomingContainer) return null;
+
+  const targetIndex = direction === 'next' ? accuracyDisplayIdx + 1 : accuracyDisplayIdx - 1;
+
+  if(targetIndex < 0 || targetIndex >= ACCURACY_DISPLAY_VALUES.length){
+    removeIncomingAccuracyValue();
+    return null;
+  }
+
+  let incoming = incomingContainer.querySelector('.accuracy-display__value--incoming');
+  if(!incoming){
+    incoming = document.createElement('span');
+    incoming.className = 'accuracy-display__value accuracy-display__value--incoming';
+    incomingContainer.appendChild(incoming);
+  }
+
+  incoming.textContent = `${ACCURACY_DISPLAY_VALUES[targetIndex]}`;
+  incoming.dataset.direction = direction;
+  incoming.style.transition = 'none';
+
+  return incoming;
+}
+
 function resetRangeDragVisual(animateReset){
   const transformTarget = ensureRangeDisplayTrack();
   if(!transformTarget) return;
@@ -1109,6 +1199,17 @@ function resetRangeDragVisual(animateReset){
   });
 
   removeIncomingRangeValue();
+}
+
+function resetAccuracyDragVisual(animateReset){
+  const transformTarget = ensureAccuracyDisplayTrack();
+  if(!transformTarget) return;
+  setAccuracyTrackStyles(transformTarget, {
+    transition: '',
+    transform: animateReset ? 'translateX(0)' : ''
+  });
+
+  removeIncomingAccuracyValue();
 }
 
 function getRangeStepDuration(pendingSteps, { fastScroll = false, gestureVelocity = 0 } = {}){
@@ -1174,72 +1275,47 @@ function queueRangeSteps(steps, dir, gestureVelocity = 0){
   runRangeStepQueue();
 }
 
-function handleRangePointerDown(event){
-  if(isRangeAnimating || !rangeDisplayViewport) return;
-  const transformTarget = ensureRangeDisplayTrack();
-  if(!transformTarget) return;
-  event.preventDefault();
-
-  clearRangeStepQueue();
-
-  setRangeTrackStyles(transformTarget, { transition: 'none', transform: 'translateX(0)' });
-
-  removeIncomingRangeValue();
-
-  isRangeDragging = true;
-  rangeDragPointerId = event.pointerId;
-  rangeDragStartX = event.clientX;
-  rangeDragStartTime = event.timeStamp;
-  rangeDragLastDx = 0;
-
-  rangeDisplayViewport.setPointerCapture(event.pointerId);
+function clearAccuracyStepQueue(){
+  pendingAccuracySteps = 0;
+  pendingAccuracyDir = 0;
+  accuracyGestureVelocity = 0;
 }
 
-function handleRangePointerMove(event){
-  if(!isRangeDragging || isRangeAnimating || !rangeDisplayViewport) return;
-  event.preventDefault();
-
-  rangeDragLastDx = event.clientX - rangeDragStartX;
-
-  const transformTarget = ensureRangeDisplayTrack();
-  if(!transformTarget) return;
-
-  const maxOffset = (rangeDisplayViewport.clientWidth || 0) * 0.55;
-  const clampedDx = Math.max(-maxOffset, Math.min(maxOffset, rangeDragLastDx));
-  setRangeTrackStyles(transformTarget, { transform: `translateX(${clampedDx}px)` });
-
-  const direction = getRangeDirectionLabel(getRangeDirFromDx(clampedDx));
-  const incoming = direction ? prepareIncomingRangeValue(direction) : null;
-
-  if(incoming){
-    const peekOffset = getRangePeekOffset(direction);
-    incoming.style.transform = `translateX(${peekOffset + clampedDx}px)`;
-  } else {
-    removeIncomingRangeValue();
-  }
-}
-
-function handleRangePointerEnd(event){
-  if(!isRangeDragging) return;
-
-  if(rangeDisplayViewport && rangeDragPointerId !== null &&
-     rangeDisplayViewport.hasPointerCapture(rangeDragPointerId)){
-    rangeDisplayViewport.releasePointerCapture(rangeDragPointerId);
-  }
-
-  rangeDragLastDx = event.clientX - rangeDragStartX;
-  const dx = rangeDragLastDx;
-  const absDx = Math.abs(dx);
-  const deltaTime = Math.max(event.timeStamp - rangeDragStartTime, 1);
-  const velocity = absDx / deltaTime;
-
-  isRangeDragging = false;
-  rangeDragPointerId = null;
-
-  if(isRangeAnimating){
-    resetRangeDragVisual(false);
+function runAccuracyStepQueue(){
+  if(pendingAccuracySteps <= 0){
+    clearAccuracyStepQueue();
     return;
   }
+
+  if(isAccuracyAnimating){
+    return;
+  }
+
+  const delta = pendingAccuracyDir * pendingAccuracySteps;
+  changeAccuracyStep(delta, {
+    onFinish: clearAccuracyStepQueue,
+    animate: true,
+    gestureVelocity: accuracyGestureVelocity
+  });
+}
+
+function queueAccuracySteps(steps, dir, gestureVelocity = 0){
+  if(steps <= 0 || dir === 0){
+    clearAccuracyStepQueue();
+    return;
+  }
+
+  accuracyGestureVelocity = gestureVelocity;
+  pendingAccuracySteps = Math.min(RANGE_DRAG_MAX_STEPS, steps);
+  pendingAccuracyDir = dir;
+  runAccuracyStepQueue();
+}
+
+function getDragMetrics(startX, currentX, startTime, eventTime){
+  const dx = currentX - startX;
+  const absDx = Math.abs(dx);
+  const deltaTime = Math.max(eventTime - startTime, 1);
+  const velocity = absDx / deltaTime;
 
   const stepsByDistance = Math.floor(absDx / RANGE_DRAG_STEP_PX);
   const stepsByVelocity = Math.floor(
@@ -1249,13 +1325,163 @@ function handleRangePointerEnd(event){
   const steps = Math.min(RANGE_DRAG_MAX_STEPS, calculatedSteps);
   const dir = getRangeDirFromDx(dx);
 
-  if(steps === 0 || dir === 0){
-    resetRangeDragVisual(absDx > 0);
-    return;
-  }
+  return { dx, absDx, velocity, steps, dir };
+}
 
-  resetRangeDragVisual(false);
-  queueRangeSteps(steps, dir, velocity);
+function createSliderDragHandlers(slider){
+  const handlePointerDown = (event) => {
+    if(slider.isAnimating() || !slider.viewport()) return;
+    const transformTarget = slider.ensureTrack();
+    if(!transformTarget) return;
+    event.preventDefault();
+
+    slider.clearStepQueue();
+
+    slider.setTrackStyles(transformTarget, { transition: 'none', transform: 'translateX(0)' });
+
+    slider.removeIncomingValue();
+
+    slider.state.setDragging(true);
+    slider.state.setPointerId(event.pointerId);
+    slider.state.setStartX(event.clientX);
+    slider.state.setStartTime(event.timeStamp);
+    slider.state.setLastDx(0);
+
+    slider.viewport().setPointerCapture(event.pointerId);
+  };
+
+  const handlePointerMove = (event) => {
+    if(!slider.state.isDragging() || slider.isAnimating() || !slider.viewport()) return;
+    event.preventDefault();
+
+    const dx = event.clientX - slider.state.startX();
+    slider.state.setLastDx(dx);
+
+    const transformTarget = slider.ensureTrack();
+    if(!transformTarget) return;
+
+    const maxOffset = (slider.viewport().clientWidth || 0) * 0.55;
+    const clampedDx = Math.max(-maxOffset, Math.min(maxOffset, dx));
+    slider.setTrackStyles(transformTarget, { transform: `translateX(${clampedDx}px)` });
+
+    const direction = getRangeDirectionLabel(getRangeDirFromDx(clampedDx));
+    const incoming = direction ? slider.prepareIncomingValue(direction) : null;
+
+    if(incoming){
+      const peekOffset = slider.getPeekOffset(direction);
+      incoming.style.transform = `translateX(${peekOffset + clampedDx}px)`;
+    } else {
+      slider.removeIncomingValue();
+    }
+  };
+
+  const handlePointerEnd = (event) => {
+    if(!slider.state.isDragging()) return;
+
+    if(slider.viewport() && slider.state.pointerId() !== null &&
+       slider.viewport().hasPointerCapture(slider.state.pointerId())){
+      slider.viewport().releasePointerCapture(slider.state.pointerId());
+    }
+
+    const { dx, absDx, velocity, steps, dir } = getDragMetrics(
+      slider.state.startX(),
+      event.clientX,
+      slider.state.startTime(),
+      event.timeStamp
+    );
+
+    slider.state.setDragging(false);
+    slider.state.setPointerId(null);
+
+    if(slider.isAnimating()){
+      slider.resetDragVisual(false);
+      return;
+    }
+
+    if(steps === 0 || dir === 0){
+      slider.resetDragVisual(absDx > 0);
+      return;
+    }
+
+    slider.resetDragVisual(false);
+    slider.queueSteps(steps, dir, velocity);
+  };
+
+  return { handlePointerDown, handlePointerMove, handlePointerEnd };
+}
+
+const rangeDragHandlers = createSliderDragHandlers({
+  viewport: () => rangeDisplayViewport,
+  ensureTrack: ensureRangeDisplayTrack,
+  setTrackStyles: setRangeTrackStyles,
+  removeIncomingValue: removeIncomingRangeValue,
+  prepareIncomingValue: prepareIncomingRangeValue,
+  resetDragVisual: resetRangeDragVisual,
+  queueSteps: queueRangeSteps,
+  isAnimating: () => isRangeAnimating,
+  clearStepQueue: clearRangeStepQueue,
+  getPeekOffset: (direction) => getSliderPeekOffset(rangeDisplayViewport, direction),
+  state: {
+    isDragging: () => isRangeDragging,
+    setDragging: (value) => { isRangeDragging = value; },
+    startX: () => rangeDragStartX,
+    setStartX: (value) => { rangeDragStartX = value; },
+    startTime: () => rangeDragStartTime,
+    setStartTime: (value) => { rangeDragStartTime = value; },
+    pointerId: () => rangeDragPointerId,
+    setPointerId: (value) => { rangeDragPointerId = value; },
+    lastDx: () => rangeDragLastDx,
+    setLastDx: (value) => { rangeDragLastDx = value; }
+  }
+});
+
+const accuracyDragHandlers = createSliderDragHandlers({
+  viewport: () => accuracyDisplayViewport,
+  ensureTrack: ensureAccuracyDisplayTrack,
+  setTrackStyles: setAccuracyTrackStyles,
+  removeIncomingValue: removeIncomingAccuracyValue,
+  prepareIncomingValue: prepareIncomingAccuracyValue,
+  resetDragVisual: resetAccuracyDragVisual,
+  queueSteps: queueAccuracySteps,
+  isAnimating: () => isAccuracyAnimating,
+  clearStepQueue: clearAccuracyStepQueue,
+  getPeekOffset: (direction) => getSliderPeekOffset(accuracyDisplayViewport, direction),
+  state: {
+    isDragging: () => isAccuracyDragging,
+    setDragging: (value) => { isAccuracyDragging = value; },
+    startX: () => accuracyDragStartX,
+    setStartX: (value) => { accuracyDragStartX = value; },
+    startTime: () => accuracyDragStartTime,
+    setStartTime: (value) => { accuracyDragStartTime = value; },
+    pointerId: () => accuracyDragPointerId,
+    setPointerId: (value) => { accuracyDragPointerId = value; },
+    lastDx: () => accuracyDragLastDx,
+    setLastDx: (value) => { accuracyDragLastDx = value; }
+  }
+});
+
+function handleRangePointerDown(event){
+  rangeDragHandlers.handlePointerDown(event);
+}
+
+function handleRangePointerMove(event){
+  rangeDragHandlers.handlePointerMove(event);
+}
+
+function handleRangePointerEnd(event){
+  rangeDragHandlers.handlePointerEnd(event);
+}
+
+function handleAccuracyPointerDown(event){
+  accuracyDragHandlers.handlePointerDown(event);
+}
+
+function handleAccuracyPointerMove(event){
+  accuracyDragHandlers.handlePointerMove(event);
+}
+
+function handleAccuracyPointerEnd(event){
+  accuracyDragHandlers.handlePointerEnd(event);
 }
 
 function updateRangeFlame(value = rangeCommittedValue){
@@ -1359,6 +1585,47 @@ function changeRangeStep(delta, options = {}){
     targetIndex: nextIndex,
     gestureVelocity
   } : { onFinish: finish });
+}
+
+function changeAccuracyStep(delta, options = {}){
+  if(isAccuracyAnimating) return;
+
+  const {
+    onFinish,
+    animate = true,
+    commitImmediately = false
+  } = options;
+
+  const currentIndex = accuracyDisplayIdx;
+  const nextIndex = clampAccuracyIndex(currentIndex + delta);
+
+  if(nextIndex === currentIndex){
+    if(typeof onFinish === 'function'){
+      onFinish();
+    }
+    return;
+  }
+
+  isAccuracyAnimating = animate;
+
+  accuracyDisplayIdx = nextIndex;
+  const displayedAngle = ACCURACY_DISPLAY_VALUES[nextIndex];
+  settingsAimingAmplitude = MIN_AMPLITUDE + nextIndex;
+  setAccuracyDisplayValue(displayedAngle);
+  updateAccuracyTapePosition(nextIndex);
+  updateAmplitudeIndicator();
+
+  if(commitImmediately){
+    saveSettings();
+  } else {
+    saveSettings();
+  }
+
+  isAccuracyAnimating = false;
+
+  if(typeof onFinish === 'function'){
+    onFinish();
+  }
 }
 
 function updateAmplitudeDisplay(){
@@ -2451,21 +2718,18 @@ if(hasMapButtons){
     rangeDisplayViewport.addEventListener('pointerup', handleRangePointerEnd);
     rangeDisplayViewport.addEventListener('pointercancel', handleRangePointerEnd);
   }
+  const ensuredAccuracyTrack = ensureAccuracyDisplayTrack();
+  if(accuracyDisplayViewport && ensuredAccuracyTrack){
+    accuracyDisplayViewport.addEventListener('pointerdown', handleAccuracyPointerDown);
+    accuracyDisplayViewport.addEventListener('pointermove', handleAccuracyPointerMove);
+    accuracyDisplayViewport.addEventListener('pointerup', handleAccuracyPointerEnd);
+    accuracyDisplayViewport.addEventListener('pointercancel', handleAccuracyPointerEnd);
+  }
   setupRepeatButton(amplitudeMinusBtn, () => {
-  if(settingsAimingAmplitude > MIN_AMPLITUDE){
-    settingsAimingAmplitude--;
-    updateAmplitudeDisplay();
-    updateAmplitudeIndicator();
-    saveSettings();
-  }
-});
+    changeAccuracyStep(-1, { commitImmediately: true });
+  });
 setupRepeatButton(amplitudePlusBtn, () => {
-  if(settingsAimingAmplitude < MAX_AMPLITUDE){
-    settingsAimingAmplitude++;
-    updateAmplitudeDisplay();
-    updateAmplitudeIndicator();
-    saveSettings();
-  }
+  changeAccuracyStep(1, { commitImmediately: true });
 });
 
 function goToMainMenu(event){
