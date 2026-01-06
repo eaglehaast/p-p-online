@@ -532,7 +532,6 @@ const rangeDisplayViewport = selectInSettings('#rangeDisplayViewport');
 let rangeDisplayLayer = selectInSettings('#rangeDisplayLayer');
 let rangeDisplayTrack = selectInSettings('#rangeDisplayTrack');
 let rangeDisplayItem = selectInSettings('#rangeDisplayItem');
-const rangeDisplayFallback = selectInSettings('#rangeDisplayFallback');
 const amplitudeMinusBtn =
   selectInSettings('#instance_accuracy_left') ??
   selectInSettings('#amplitudeMinus');
@@ -776,17 +775,11 @@ function ensureRangeDisplayTrack(){
 
 function setRangeDisplayValue(displayedCells){
   const el = selectInSettings('#rangeDisplay');
-  const fallback = rangeDisplayFallback instanceof HTMLElement
-    ? rangeDisplayFallback
-    : selectInSettings('#rangeDisplayFallback');
   const transformTarget = ensureRangeDisplayTrack();
   if(el){
     el.textContent = `${displayedCells}`;
     el.classList.add('range-display__value--current');
     el.classList.remove('range-display__value--incoming', 'range-display__value--outgoing');
-  }
-  if(fallback){
-    fallback.textContent = `${displayedCells}`;
   }
   applyStoredRangeTrackStyles(transformTarget);
 }
