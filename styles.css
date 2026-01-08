@@ -647,7 +647,7 @@ body, button {
     top: 0;
     bottom: 0;
     height: 100%;
-    background-image: url('ui_controlpanel/cp_serifscale2.png');
+    background-image: url('ui_controlpanel/cp_tape_range.png');
     background-repeat: no-repeat;
     background-position: center center;
     background-size: auto 100%;
@@ -660,12 +660,12 @@ body, button {
 
   .range-tape {
     width: 580px;
-    background-image: url('ui_controlpanel/cp_serifscale2.png');
+    background-image: url('ui_controlpanel/cp_tape_range.png');
   }
 
   .accuracy-tape {
     width: 1276px;
-    background-image: url('ui_controlpanel/cp_serifscale_accuracy.png');
+    background-image: url('ui_controlpanel/cp_tape_accuracy.png');
   }
 
   .range-display__item,
