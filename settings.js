@@ -250,6 +250,15 @@ const MAPS = [
   }
 ];
 
+const fieldOptions = MAPS.map((map, index) => ({
+  id: index,
+  label: map?.name ?? ''
+}));
+
+function getFieldLabel(fieldId){
+  return fieldOptions.find(option => option.id === fieldId)?.label ?? '';
+}
+
 function isRandomMap(map){
   return map?.file === RANDOM_MAP_FILE;
 }
@@ -2305,6 +2314,31 @@ function getFieldLabelOffset(){
   return width + FIELD_LABEL_EXTRA_PX;
 }
 
+function normalizeFieldLabels({ cancelAnimation = false } = {}){
+  const labelLayer = getFieldLabelLayer();
+  if(!labelLayer) return null;
+
+  const labels = Array.from(labelLayer.querySelectorAll('.cp-field-selector__label'));
+  if(!labels.length) return null;
+
+  const activeLabel = labels.includes(mapNameLabel) ? mapNameLabel : labels[labels.length - 1];
+  labels.forEach(label => {
+    if(label !== activeLabel){
+      label.remove();
+    }
+  });
+
+  if(activeLabel instanceof HTMLElement && cancelAnimation){
+    activeLabel.classList.remove('cp-field-selector__label--incoming');
+    activeLabel.style.transition = '';
+    activeLabel.style.transform = '';
+    isAnimatingFieldLabel = false;
+  }
+
+  mapNameLabel = activeLabel;
+  return activeLabel;
+}
+
 function finalizeFieldLabelAnimation(incoming, outgoing){
   if(outgoing){
     outgoing.remove();
@@ -2318,6 +2352,7 @@ function finalizeFieldLabelAnimation(incoming, outgoing){
 
 function animateFieldLabelChange(nextText, direction){
   const labelLayer = getFieldLabelLayer();
+  normalizeFieldLabels({ cancelAnimation: true });
   if(!labelLayer || !mapNameLabel){
     if(mapNameLabel){
       mapNameLabel.textContent = nextText;
@@ -2364,12 +2399,11 @@ function animateFieldLabelChange(nextText, direction){
 }
 
 function updateMapNameDisplay(options = {}){
-  if(!mapNameDisplay || !mapNameLabel) return;
-  const map = MAPS[mapIndex];
-  const nextText = map ? map.name : '';
-  if(map){
-    mapNameDisplay.setAttribute('aria-label', `Selected map: ${map.name}`);
-  }
+  if(!mapNameDisplay) return;
+  const nextText = getFieldLabel(mapIndex);
+  normalizeFieldLabels({ cancelAnimation: true });
+  if(!mapNameLabel) return;
+  mapNameDisplay.setAttribute('aria-label', `Selected map: ${nextText}`);
   if(!options.animateDirection || mapNameLabel.textContent === nextText || isAnimatingFieldLabel){
     mapNameLabel.textContent = nextText;
     return;
