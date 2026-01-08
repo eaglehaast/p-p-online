@@ -361,7 +361,7 @@ body, button {
     top: 126px;
     width: 178px;
     height: 250px;
-    pointer-events: none;
+    pointer-events: auto;
     z-index: 10;
   }
 
