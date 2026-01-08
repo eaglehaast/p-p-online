@@ -665,7 +665,7 @@ body, button {
 
   .accuracy-tape {
     width: 1276px;
-    background-image: url('ui_controlpanel/cp_tape_accuracy.png');
+  background-image: url('ui_controlpanel/cp_acuracy_tape2.png');
   }
 
   .range-display__item,
