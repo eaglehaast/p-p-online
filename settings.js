@@ -486,11 +486,13 @@ let rangeScrollRafId = null;
 let rangeOvershootTimer = null;
 let rangeTrackTransform = '';
 let rangeTrackTransition = '';
+let isRangeBumping = false;
 let accuracyDisplayIdx = getAccuracyDisplayIndex(settingsAimingAmplitude);
 let accuracyScrollPos = accuracyDisplayIdx;
 let accuracyScrollRafId = null;
 let accuracyTrackTransform = '';
 let accuracyTrackTransition = '';
+let isAccuracyBumping = false;
 let pendulumHost = null;
 let pendulumCurrent = null;
 let pendulumTarget = null;
@@ -514,6 +516,9 @@ const accuracyTrackState = {
 const getRangeDirFromDx = (dx) => (dx < 0 ? RANGE_DIR_NEXT : (dx > 0 ? RANGE_DIR_PREV : 0));
 const getRangeDirFromDelta = (delta) => (delta > 0 ? RANGE_DIR_NEXT : (delta < 0 ? RANGE_DIR_PREV : 0));
 const getRangeDirectionLabel = (dir) => (dir === RANGE_DIR_NEXT ? 'next' : (dir === RANGE_DIR_PREV ? 'prev' : null));
+const EDGE_BUMP_PX = 12;
+const EDGE_BUMP_OUT_MS = 110;
+const EDGE_BUMP_BACK_MS = 150;
 
 function clampRangeStep(step){
   return Math.min(RANGE_MAX_STEP, Math.max(0, step));
@@ -1356,6 +1361,60 @@ function resetAccuracyDragVisual(animateReset){
   });
 
   removeIncomingAccuracyValue();
+}
+
+function playEdgeBump(direction, { ensureTrack, setTrackStyles, getIsBumping, setIsBumping }){
+  if(direction !== 'next' && direction !== 'prev') return;
+  if(getIsBumping()) return;
+  const transformTarget = ensureTrack();
+  if(!transformTarget) return;
+
+  setIsBumping(true);
+
+  const baseTransform = transformTarget.style.transform || '';
+  const baseTransition = transformTarget.style.transition || '';
+  const bumpOffset = direction === 'next' ? -EDGE_BUMP_PX : EDGE_BUMP_PX;
+  const bumpTransform = baseTransform
+    ? `${baseTransform} translateX(${bumpOffset}px)`
+    : `translateX(${bumpOffset}px)`;
+
+  setTrackStyles(transformTarget, {
+    transition: `transform ${EDGE_BUMP_OUT_MS}ms ease-out`,
+    transform: bumpTransform
+  });
+
+  window.setTimeout(() => {
+    setTrackStyles(transformTarget, {
+      transition: `transform ${EDGE_BUMP_BACK_MS}ms ease-out`,
+      transform: baseTransform
+    });
+
+    window.setTimeout(() => {
+      setTrackStyles(transformTarget, {
+        transition: baseTransition,
+        transform: baseTransform
+      });
+      setIsBumping(false);
+    }, EDGE_BUMP_BACK_MS);
+  }, EDGE_BUMP_OUT_MS);
+}
+
+function playRangeEdgeBump(direction){
+  playEdgeBump(direction, {
+    ensureTrack: ensureRangeDisplayTrack,
+    setTrackStyles: setRangeTrackStyles,
+    getIsBumping: () => isRangeBumping,
+    setIsBumping: (value) => { isRangeBumping = value; }
+  });
+}
+
+function playAccuracyEdgeBump(direction){
+  playEdgeBump(direction, {
+    ensureTrack: ensureAccuracyDisplayTrack,
+    setTrackStyles: setAccuracyTrackStyles,
+    getIsBumping: () => isAccuracyBumping,
+    setIsBumping: (value) => { isAccuracyBumping = value; }
+  });
 }
 
 function getRangeStepDuration(pendingSteps, { fastScroll = false, gestureVelocity = 0 } = {}){
@@ -2928,8 +2987,33 @@ if(hasMapButtons){
   updateMapPreview();
 }
 
-  setupRepeatButton(rangeMinusBtn, () => changeRangeStep(-1, { commitImmediately: true }));
-  setupRepeatButton(rangePlusBtn, () => changeRangeStep(1, { commitImmediately: true }));
+  const handleRangeArrow = (delta) => {
+    if(isRangeAnimating || isRangeBumping) return;
+    const currentIndex = Math.floor(rangeStep / 2);
+    const nextIndex = Math.min(
+      RANGE_DISPLAY_VALUES.length - 1,
+      Math.max(0, currentIndex + delta)
+    );
+    if(nextIndex === currentIndex){
+      playRangeEdgeBump(getRangeDirectionLabel(getRangeDirFromDelta(delta)));
+      return;
+    }
+    changeRangeStep(delta, { commitImmediately: true });
+  };
+
+  const handleAccuracyArrow = (delta) => {
+    if(isAccuracyAnimating || isAccuracyBumping) return;
+    const currentIndex = accuracyDisplayIdx;
+    const nextIndex = clampAccuracyIndex(currentIndex + delta);
+    if(nextIndex === currentIndex){
+      playAccuracyEdgeBump(getRangeDirectionLabel(getRangeDirFromDelta(delta)));
+      return;
+    }
+    changeAccuracyStep(delta, { commitImmediately: true });
+  };
+
+  setupRepeatButton(rangeMinusBtn, () => handleRangeArrow(-1));
+  setupRepeatButton(rangePlusBtn, () => handleRangeArrow(1));
   const ensuredRangeTrack = ensureRangeDisplayTrack();
   if(rangeDisplayViewport && ensuredRangeTrack){
     rangeDisplayViewport.addEventListener('pointerdown', handleRangePointerDown);
@@ -2944,12 +3028,8 @@ if(hasMapButtons){
     accuracyDisplayViewport.addEventListener('pointerup', handleAccuracyPointerEnd);
     accuracyDisplayViewport.addEventListener('pointercancel', handleAccuracyPointerEnd);
   }
-  setupRepeatButton(amplitudeMinusBtn, () => {
-    changeAccuracyStep(-1, { commitImmediately: true });
-  });
-setupRepeatButton(amplitudePlusBtn, () => {
-  changeAccuracyStep(1, { commitImmediately: true });
-});
+  setupRepeatButton(amplitudeMinusBtn, () => handleAccuracyArrow(-1));
+  setupRepeatButton(amplitudePlusBtn, () => handleAccuracyArrow(1));
 
 function goToMainMenu(event){
   if(isTestHarnessPage && window.paperWingsHarness?.showMainView){
