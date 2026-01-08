@@ -491,6 +491,11 @@ let accuracyScrollPos = accuracyDisplayIdx;
 let accuracyScrollRafId = null;
 let accuracyTrackTransform = '';
 let accuracyTrackTransition = '';
+let pendulumHost = null;
+let pendulumCurrent = null;
+let pendulumTarget = null;
+let pendulumRafId = null;
+let pendulumLastTimestamp = 0;
 const rangeTrackState = {
   get transform(){ return rangeTrackTransform; },
   set transform(value){ rangeTrackTransform = value; },
@@ -1787,15 +1792,78 @@ function updateAmplitudeDisplay(){
   updateAccuracyTapePosition(displayIdx);
 }
 
+function startPendulumAnimation(){
+  if(pendulumRafId !== null){
+    return;
+  }
+
+  pendulumLastTimestamp = 0;
+  pendulumRafId = requestAnimationFrame(stepPendulumAnimation);
+}
+
+function stopPendulumAnimation(){
+  if(pendulumRafId !== null){
+    cancelAnimationFrame(pendulumRafId);
+    pendulumRafId = null;
+  }
+  pendulumLastTimestamp = 0;
+}
+
+function stepPendulumAnimation(timestamp){
+  if(!isSettingsActive){
+    stopPendulumAnimation();
+    return;
+  }
+
+  if(!pendulumHost){
+    pendulumRafId = requestAnimationFrame(stepPendulumAnimation);
+    return;
+  }
+
+  const target = pendulumTarget ?? 0;
+  if(pendulumCurrent === null){
+    pendulumCurrent = target;
+    pendulumHost.style.setProperty('--amp', `${target}deg`);
+    pendulumRafId = requestAnimationFrame(stepPendulumAnimation);
+    return;
+  }
+
+  const deltaMs = pendulumLastTimestamp ? (timestamp - pendulumLastTimestamp) : 0;
+  pendulumLastTimestamp = timestamp;
+
+  const diff = target - pendulumCurrent;
+  if(Math.abs(diff) < 0.001){
+    pendulumCurrent = target;
+    pendulumHost.style.setProperty('--amp', `${pendulumCurrent}deg`);
+    pendulumRafId = requestAnimationFrame(stepPendulumAnimation);
+    return;
+  }
+
+  const baseTau = 170;
+  const fastTau = 110;
+  const tau = Math.abs(diff) > 40 ? fastTau : baseTau;
+  const alpha = deltaMs > 0 ? (1 - Math.exp(-deltaMs / tau)) : 0.16;
+
+  pendulumCurrent += diff * alpha;
+  pendulumHost.style.setProperty('--amp', `${pendulumCurrent}deg`);
+
+  pendulumRafId = requestAnimationFrame(stepPendulumAnimation);
+}
+
 function updateAmplitudeIndicator(){
-  const amplitudeHost =
+  pendulumHost =
     selectInSettings('#frame_accuracy_1_visual') ??
     settingsRoot.querySelector('.cp-aiming-accuracy') ??
     selectInSettings('#amplitudeIndicator');
 
-  if(amplitudeHost){
+  if(pendulumHost){
     const maxAngle = settingsAimingAmplitude * 5;
-    amplitudeHost.style.setProperty('--amp', `${maxAngle}deg`);
+    pendulumTarget = maxAngle;
+    if(pendulumCurrent === null){
+      pendulumCurrent = maxAngle;
+      pendulumHost.style.setProperty('--amp', `${maxAngle}deg`);
+    }
+    startPendulumAnimation();
   }
 
   syncAccuracyCrackWatcher();
@@ -2910,6 +2978,9 @@ function handleSettingsLayerShow(){
   syncAccuracyCrackWatcher();
   startPreviewSimulation();
   startPreviewAnimationIfNeeded();
+  if(pendulumHost){
+    startPendulumAnimation();
+  }
 }
 
 function handleSettingsLayerHide(){
@@ -2917,6 +2988,7 @@ function handleSettingsLayerHide(){
   if(accuracyCrackWatcher){
     accuracyCrackWatcher.stop();
   }
+  stopPendulumAnimation();
   stopPreviewAnimation();
 }
 
