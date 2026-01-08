@@ -965,8 +965,22 @@ body, button {
   }
 
   #settingsLayer #frame_field_2_counter .cp-field-selector__label {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #settingsLayer #frame_field_2_counter .cp-field-selector__label-layer {
     position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
     z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   #settingsLayer .cp-field-selector__frame {

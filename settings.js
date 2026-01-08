@@ -596,7 +596,7 @@ const exitBtn = selectInSettings('#instance_exit');
 const mapPrevBtn = selectInSettings('#instance_field_left');
 const mapNextBtn = selectInSettings('#instance_field_right');
 const mapNameDisplay = selectInSettings('#frame_field_2_counter');
-const mapNameLabel = mapNameDisplay?.querySelector('.cp-field-selector__label');
+let mapNameLabel = mapNameDisplay?.querySelector('.cp-field-selector__label');
 const mapPreviewContainer = selectInSettings('#frame_field_1_visual');
 const mapPreview = selectInSettings('#mapPreview');
 const flameTrailImage = selectInSettings('#flameTrail');
@@ -653,6 +653,11 @@ let accuracyDragLastDx = 0;
 let pendingAccuracySteps = 0;
 let pendingAccuracyDir = 0;
 let accuracyGestureVelocity = 0;
+let isAnimatingFieldLabel = false;
+
+const FIELD_LABEL_EXTRA_PX = 10;
+const FIELD_LABEL_EASING = 'cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+const FIELD_LABEL_DURATION_MS = RANGE_BASE_STEP_MS;
 
 function stopPreviewAnimation(){
   if(previewAnimationId){
@@ -2290,13 +2295,87 @@ function updateMapPreview(){
   refreshPreviewSimulationIfInitialized();
 }
 
-function updateMapNameDisplay(){
+function getFieldLabelLayer(){
+  if(!mapNameDisplay) return null;
+  return mapNameDisplay.querySelector('.cp-field-selector__label-layer') ?? mapNameDisplay;
+}
+
+function getFieldLabelOffset(){
+  const width = mapNameDisplay?.clientWidth ?? RANGE_CELL_WIDTH;
+  return width + FIELD_LABEL_EXTRA_PX;
+}
+
+function finalizeFieldLabelAnimation(incoming, outgoing){
+  if(outgoing){
+    outgoing.remove();
+  }
+  incoming.classList.remove('cp-field-selector__label--incoming');
+  incoming.style.transition = '';
+  incoming.style.transform = '';
+  mapNameLabel = incoming;
+  isAnimatingFieldLabel = false;
+}
+
+function animateFieldLabelChange(nextText, direction){
+  const labelLayer = getFieldLabelLayer();
+  if(!labelLayer || !mapNameLabel){
+    if(mapNameLabel){
+      mapNameLabel.textContent = nextText;
+    }
+    return;
+  }
+
+  const outgoing = mapNameLabel;
+  const incoming = document.createElement('span');
+  incoming.className = 'cp-field-selector__label cp-field-selector__label--incoming';
+  incoming.textContent = nextText;
+
+  const offset = getFieldLabelOffset();
+  const outgoingTarget = direction === 'next' ? -offset : offset;
+  const incomingStart = direction === 'next' ? offset : -offset;
+
+  outgoing.style.transition = 'none';
+  outgoing.style.transform = 'translateX(0)';
+  incoming.style.transition = 'none';
+  incoming.style.transform = `translateX(${incomingStart}px)`;
+
+  labelLayer.appendChild(incoming);
+  isAnimatingFieldLabel = true;
+
+  requestAnimationFrame(() => {
+    const transition = `transform ${FIELD_LABEL_DURATION_MS}ms ${FIELD_LABEL_EASING}`;
+    outgoing.style.transition = transition;
+    incoming.style.transition = transition;
+    outgoing.style.transform = `translateX(${outgoingTarget}px)`;
+    incoming.style.transform = 'translateX(0)';
+  });
+
+  const handleEnd = (event) => {
+    if(event && event.propertyName !== 'transform') return;
+    finalizeFieldLabelAnimation(incoming, outgoing);
+  };
+
+  incoming.addEventListener('transitionend', handleEnd, { once: true });
+  window.setTimeout(() => {
+    if(isAnimatingFieldLabel && incoming.isConnected){
+      finalizeFieldLabelAnimation(incoming, outgoing);
+    }
+  }, FIELD_LABEL_DURATION_MS + 60);
+}
+
+function updateMapNameDisplay(options = {}){
   if(!mapNameDisplay || !mapNameLabel) return;
   const map = MAPS[mapIndex];
-  mapNameLabel.textContent = map ? map.name : '';
+  const nextText = map ? map.name : '';
   if(map){
     mapNameDisplay.setAttribute('aria-label', `Selected map: ${map.name}`);
   }
+  if(!options.animateDirection || mapNameLabel.textContent === nextText || isAnimatingFieldLabel){
+    mapNameLabel.textContent = nextText;
+    return;
+  }
+
+  animateFieldLabelChange(nextText, options.animateDirection);
 }
 
 function createPreviewCanvas(){
@@ -2974,11 +3053,18 @@ if(hasMapButtons){
   updateMapNameDisplay();
 
   const changeMap = delta => {
+    if(isAnimatingFieldLabel) return;
+    const previousIndex = mapIndex;
     const targetIndex = (mapIndex + delta + MAPS.length) % MAPS.length;
     mapIndex = sanitizeMapIndex(targetIndex, { excludeIndex: mapIndex, allowRandom: true });
     startPreviewSimulation();
     updateMapPreview();
-    updateMapNameDisplay();
+    const direction = delta > 0 ? 'next' : 'prev';
+    if(mapIndex !== previousIndex){
+      updateMapNameDisplay({ animateDirection: direction });
+    } else {
+      updateMapNameDisplay();
+    }
     saveSettings();
   };
 
