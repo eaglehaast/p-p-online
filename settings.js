@@ -2309,9 +2309,11 @@ function getFieldLabelLayer(){
   return mapNameDisplay.querySelector('.cp-field-selector__label-layer') ?? mapNameDisplay;
 }
 
-function getFieldLabelOffset(){
-  const width = mapNameDisplay?.clientWidth ?? RANGE_CELL_WIDTH;
-  return width + FIELD_LABEL_EXTRA_PX;
+function getFieldLabelOffset(outgoing, incoming){
+  const containerWidth = mapNameDisplay?.clientWidth ?? RANGE_CELL_WIDTH;
+  const outgoingWidth = outgoing?.getBoundingClientRect?.().width ?? 0;
+  const incomingWidth = incoming?.getBoundingClientRect?.().width ?? 0;
+  return Math.max(containerWidth, outgoingWidth, incomingWidth) + FIELD_LABEL_EXTRA_PX;
 }
 
 function normalizeFieldLabels({ cancelAnimation = false } = {}){
@@ -2365,16 +2367,19 @@ function animateFieldLabelChange(nextText, direction){
   incoming.className = 'cp-field-selector__label cp-field-selector__label--incoming';
   incoming.textContent = nextText;
 
-  const offset = getFieldLabelOffset();
+  incoming.style.transition = 'none';
+  incoming.style.transform = 'translateX(0)';
+  incoming.style.visibility = 'hidden';
+  labelLayer.appendChild(incoming);
+
+  const offset = getFieldLabelOffset(outgoing, incoming);
   const outgoingTarget = direction === 'next' ? -offset : offset;
   const incomingStart = direction === 'next' ? offset : -offset;
 
   outgoing.style.transition = 'none';
   outgoing.style.transform = 'translateX(0)';
-  incoming.style.transition = 'none';
   incoming.style.transform = `translateX(${incomingStart}px)`;
-
-  labelLayer.appendChild(incoming);
+  incoming.style.visibility = '';
   isAnimatingFieldLabel = true;
 
   requestAnimationFrame(() => {
