@@ -596,6 +596,7 @@ const exitBtn = selectInSettings('#instance_exit');
 const mapPrevBtn = selectInSettings('#instance_field_left');
 const mapNextBtn = selectInSettings('#instance_field_right');
 const mapNameDisplay = selectInSettings('#frame_field_2_counter');
+const mapNameLabel = mapNameDisplay?.querySelector('.cp-field-selector__label');
 const mapPreviewContainer = selectInSettings('#frame_field_1_visual');
 const mapPreview = selectInSettings('#mapPreview');
 const flameTrailImage = selectInSettings('#flameTrail');
@@ -2290,9 +2291,9 @@ function updateMapPreview(){
 }
 
 function updateMapNameDisplay(){
-  if(!mapNameDisplay) return;
+  if(!mapNameDisplay || !mapNameLabel) return;
   const map = MAPS[mapIndex];
-  mapNameDisplay.textContent = map ? map.name : '';
+  mapNameLabel.textContent = map ? map.name : '';
   if(map){
     mapNameDisplay.setAttribute('aria-label', `Selected map: ${map.name}`);
   }
