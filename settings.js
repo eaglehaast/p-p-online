@@ -487,6 +487,8 @@ let rangeOvershootTimer = null;
 let rangeTrackTransform = '';
 let rangeTrackTransition = '';
 let accuracyDisplayIdx = getAccuracyDisplayIndex(settingsAimingAmplitude);
+let accuracyScrollPos = accuracyDisplayIdx;
+let accuracyScrollRafId = null;
 let accuracyTrackTransform = '';
 let accuracyTrackTransition = '';
 const rangeTrackState = {
@@ -701,6 +703,13 @@ function syncRangeTrackStylesFrom(target){
   }
 }
 
+function syncAccuracyTrackStylesFrom(target){
+  if(target instanceof HTMLElement){
+    accuracyTrackTransform = target.style.transform || '';
+    accuracyTrackTransition = target.style.transition || '';
+  }
+}
+
 function applyStoredRangeTrackStyles(target){
   if(!(target instanceof HTMLElement)) return;
 
@@ -898,6 +907,7 @@ function ensureAccuracyDisplayTrack(){
   }
 
   if(accuracyDisplayTrack instanceof HTMLElement){
+    syncAccuracyTrackStylesFrom(accuracyDisplayTrack);
     ensureAccuracyTape(accuracyDisplayTrack);
 
     if(accuracyDisplayItem instanceof HTMLElement && accuracyDisplayItem.parentElement !== accuracyDisplayTrack){
@@ -980,6 +990,13 @@ function clearRangeScrollAnimation(){
   }
 }
 
+function clearAccuracyScrollAnimation(){
+  if(accuracyScrollRafId !== null){
+    cancelAnimationFrame(accuracyScrollRafId);
+    accuracyScrollRafId = null;
+  }
+}
+
 function clearRangeOvershoot(){
   if(rangeOvershootTimer !== null){
     clearTimeout(rangeOvershootTimer);
@@ -1017,6 +1034,33 @@ function applyRangeScrollVisual(scrollPos){
   return displayIdx;
 }
 
+function applyAccuracyScrollVisual(scrollPos){
+  const clampedPos = Math.min(
+    ACCURACY_DISPLAY_VALUES.length - 1,
+    Math.max(0, scrollPos)
+  );
+  const displayIdx = Math.round(clampedPos);
+  const transformTarget = ensureAccuracyDisplayTrack();
+
+  if(displayIdx !== accuracyDisplayIdx){
+    const previewValue = ACCURACY_DISPLAY_VALUES[displayIdx];
+    setAccuracyDisplayValue(previewValue);
+    settingsAimingAmplitude = MIN_AMPLITUDE + displayIdx;
+    updateAmplitudeIndicator();
+    accuracyDisplayIdx = displayIdx;
+  }
+
+  accuracyScrollPos = clampedPos;
+
+  updateAccuracyTapePosition(clampedPos, transformTarget);
+
+  if(transformTarget){
+    setAccuracyTrackStyles(transformTarget, { transition: 'none', transform: '' });
+  }
+
+  return displayIdx;
+}
+
 function finishRangeScroll(targetIndex, dir, onFinish){
   rangeScrollRafId = null;
   const currentValue = RANGE_DISPLAY_VALUES[targetIndex];
@@ -1029,6 +1073,24 @@ function finishRangeScroll(targetIndex, dir, onFinish){
   const transformTarget = ensureRangeDisplayTrack();
   setRangeTrackStyles(transformTarget, { transition: 'none', transform: '' });
   isRangeAnimating = false;
+  if(typeof onFinish === 'function'){
+    onFinish();
+  }
+}
+
+function finishAccuracyScroll(targetIndex, dir, onFinish){
+  accuracyScrollRafId = null;
+  const currentValue = ACCURACY_DISPLAY_VALUES[targetIndex];
+  accuracyScrollPos = targetIndex;
+  accuracyDisplayIdx = targetIndex;
+  settingsAimingAmplitude = MIN_AMPLITUDE + targetIndex;
+  setAccuracyDisplayValue(currentValue);
+  updateAccuracyTapePosition(accuracyDisplayIdx);
+  updateAmplitudeIndicator();
+
+  const transformTarget = ensureAccuracyDisplayTrack();
+  setAccuracyTrackStyles(transformTarget, { transition: 'none', transform: '' });
+  isAccuracyAnimating = false;
   if(typeof onFinish === 'function'){
     onFinish();
   }
@@ -1092,6 +1154,63 @@ function animateRangeDisplay(displayedCells, direction, options = {}){
   rangeScrollRafId = requestAnimationFrame((timestamp) => runAnimation(timestamp, timestamp));
 }
 
+function animateAccuracyDisplay(displayedAngle, direction, options = {}){
+  const { onFinish, durationMs, targetIndex, gestureVelocity = 0 } = options;
+
+  const currentValue = selectInSettings('#amplitudeAngleDisplay');
+  const endIndex = Number.isFinite(targetIndex)
+    ? Math.max(0, Math.min(ACCURACY_DISPLAY_VALUES.length - 1, targetIndex))
+    : accuracyDisplayIdx;
+
+  if(!currentValue || endIndex === accuracyDisplayIdx || !Number.isFinite(endIndex)){
+    if(Number.isFinite(endIndex)){
+      accuracyDisplayIdx = endIndex;
+      accuracyScrollPos = endIndex;
+    }
+    setAccuracyDisplayValue(displayedAngle);
+    if(typeof onFinish === 'function'){
+      onFinish();
+    }
+    return;
+  }
+
+  clearAccuracyScrollAnimation();
+  isAccuracyAnimating = true;
+
+  const startPos = accuracyDisplayIdx;
+  const endPos = endIndex;
+  accuracyScrollPos = startPos;
+  const totalSteps = Math.max(1, Math.abs(endPos - startPos));
+  const fastScroll = totalSteps >= RANGE_FAST_SCROLL_THRESHOLD;
+  const computedDuration = Number.isFinite(durationMs)
+    ? Math.max(0, durationMs)
+    : getRangeStepDuration(totalSteps, { fastScroll, gestureVelocity }) * totalSteps;
+
+  if(computedDuration === 0){
+    const dir = direction === 'next' ? RANGE_DIR_NEXT : RANGE_DIR_PREV;
+    finishAccuracyScroll(endIndex, dir, onFinish);
+    return;
+  }
+
+  const runAnimation = (startTime, timestamp) => {
+    const elapsed = timestamp - startTime;
+    const t = Math.min(1, elapsed / computedDuration);
+    const overshootStrength = 0.9 * Math.min(1, 1 / totalSteps);
+    const eased = easeOutBack(t, overshootStrength);
+    const nextPos = startPos + (endPos - startPos) * eased;
+    applyAccuracyScrollVisual(nextPos);
+
+    if(t < 1){
+      accuracyScrollRafId = requestAnimationFrame((now) => runAnimation(startTime, now));
+    } else {
+      const dir = direction === 'next' ? RANGE_DIR_NEXT : RANGE_DIR_PREV;
+      finishAccuracyScroll(endIndex, dir, onFinish);
+    }
+  };
+
+  accuracyScrollRafId = requestAnimationFrame((timestamp) => runAnimation(timestamp, timestamp));
+}
+
 function updateRangeDisplay(stepOverride, options = {}){
   const transformStep = Number.isFinite(stepOverride) ? stepOverride : rangeStep;
   const displayedCells = getRangeValue(transformStep);
@@ -1106,6 +1225,28 @@ function updateRangeDisplay(stepOverride, options = {}){
   setRangeDisplayValue(displayedCells);
   setRangePreviewValue(displayedCells);
   updateRangeTapePosition(rangeDisplayIdx);
+  if(typeof options.onFinish === 'function'){
+    options.onFinish();
+  }
+}
+
+function updateAccuracyDisplay(stepOverride, options = {}){
+  const displayIdx = Number.isFinite(stepOverride)
+    ? clampAccuracyIndex(stepOverride)
+    : accuracyDisplayIdx;
+  const displayedAngle = ACCURACY_DISPLAY_VALUES[displayIdx];
+
+  if(options.animateDirection){
+    animateAccuracyDisplay(displayedAngle, options.animateDirection, options);
+    return;
+  }
+
+  accuracyDisplayIdx = displayIdx;
+  accuracyScrollPos = displayIdx;
+  settingsAimingAmplitude = MIN_AMPLITUDE + displayIdx;
+  setAccuracyDisplayValue(displayedAngle);
+  updateAccuracyTapePosition(displayIdx);
+  updateAmplitudeIndicator();
   if(typeof options.onFinish === 'function'){
     options.onFinish();
   }
@@ -1183,7 +1324,7 @@ function prepareIncomingAccuracyValue(direction){
     incomingContainer.appendChild(incoming);
   }
 
-  incoming.textContent = `${ACCURACY_DISPLAY_VALUES[targetIndex]}`;
+  incoming.textContent = `${ACCURACY_DISPLAY_VALUES[targetIndex]}°`;
   incoming.dataset.direction = direction;
   incoming.style.transition = 'none';
 
@@ -1593,6 +1734,8 @@ function changeAccuracyStep(delta, options = {}){
   const {
     onFinish,
     animate = true,
+    durationMs,
+    gestureVelocity = 0,
     commitImmediately = false
   } = options;
 
@@ -1606,32 +1749,40 @@ function changeAccuracyStep(delta, options = {}){
     return;
   }
 
-  isAccuracyAnimating = animate;
-
-  accuracyDisplayIdx = nextIndex;
   const displayedAngle = ACCURACY_DISPLAY_VALUES[nextIndex];
+  const finish = () => {
+    if(!commitImmediately){
+      saveSettings();
+    }
+    if(typeof onFinish === 'function'){
+      onFinish();
+    }
+  };
+
+  const dir = getRangeDirFromDelta(delta);
+  const animateDirection = getRangeDirectionLabel(dir);
+
   settingsAimingAmplitude = MIN_AMPLITUDE + nextIndex;
-  setAccuracyDisplayValue(displayedAngle);
-  updateAccuracyTapePosition(nextIndex);
   updateAmplitudeIndicator();
 
   if(commitImmediately){
     saveSettings();
-  } else {
-    saveSettings();
   }
 
-  isAccuracyAnimating = false;
-
-  if(typeof onFinish === 'function'){
-    onFinish();
-  }
+  updateAccuracyDisplay(nextIndex, animate ? {
+    animateDirection,
+    onFinish: finish,
+    durationMs,
+    targetIndex: nextIndex,
+    gestureVelocity
+  } : { onFinish: finish });
 }
 
 function updateAmplitudeDisplay(){
   const displayIdx = getAccuracyDisplayIndex(settingsAimingAmplitude);
   const displayedAngle = ACCURACY_DISPLAY_VALUES[displayIdx];
   accuracyDisplayIdx = displayIdx;
+  accuracyScrollPos = displayIdx;
   setAccuracyDisplayValue(displayedAngle);
   updateAccuracyTapePosition(displayIdx);
 }
