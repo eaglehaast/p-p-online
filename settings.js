@@ -1373,7 +1373,7 @@ function playEdgeBump(direction, { ensureTrack, setTrackStyles, getIsBumping, se
 
   const baseTransform = transformTarget.style.transform || '';
   const baseTransition = transformTarget.style.transition || '';
-  const bumpOffset = direction === 'next' ? -EDGE_BUMP_PX : EDGE_BUMP_PX;
+  const bumpOffset = direction === 'next' ? -EDGE_BUMP_PX * 3 : EDGE_BUMP_PX * 3;
   const bumpTransform = baseTransform
     ? `${baseTransform} translateX(${bumpOffset}px)`
     : `translateX(${bumpOffset}px)`;
