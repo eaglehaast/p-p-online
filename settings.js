@@ -3087,7 +3087,7 @@ if(hasMapButtons){
   updateMapNameDisplay();
 
   const changeMap = delta => {
-    if(isAnimatingFieldLabel) return;
+    normalizeFieldLabels({ cancelAnimation: true });
     const previousIndex = mapIndex;
     const targetIndex = (mapIndex + delta + MAPS.length) % MAPS.length;
     mapIndex = sanitizeMapIndex(targetIndex, { excludeIndex: mapIndex, allowRandom: true });
