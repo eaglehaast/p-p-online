@@ -942,6 +942,7 @@ body, button {
     top: 658px;
     width: 58px;
     height: 35px;
+    overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -950,6 +951,22 @@ body, button {
     color: #1b1205;
     text-shadow: 0 1px 1px rgba(255, 255, 255, 0.5);
     text-align: center;
+  }
+
+  #settingsLayer #frame_field_2_counter .cp-field-selector__tape {
+    position: absolute;
+    inset: 0;
+    background-image: url('ui_controlpanel/cp_tape_field.png');
+    background-repeat: repeat-x;
+    background-size: auto 100%;
+    background-position: center center;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  #settingsLayer #frame_field_2_counter .cp-field-selector__label {
+    position: relative;
+    z-index: 1;
   }
 
   #settingsLayer .cp-field-selector__frame {
