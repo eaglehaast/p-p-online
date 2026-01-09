@@ -42,8 +42,6 @@ const MAP_RENDER_MODES = {
   LEGACY: 'legacy'
 };
 
-const CONTROL_PANEL_PREVIEW_CACHE = new Map();
-
 const settingsLayer = document.getElementById('settingsLayer');
 const settingsRoot = settingsLayer ?? document;
 const selectInSettings = (selector) => settingsRoot.querySelector(selector);
@@ -83,133 +81,8 @@ function isSpriteReady(img){
   return Boolean(img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0);
 }
 
-function mergeRunsIntoRects(runs, tolerance = 1){
-  const merged = [];
-  for(const run of runs){
-    const last = merged[merged.length - 1];
-    const isAdjacentRow = last && run.y === last.endY + 1;
-    const isSimilarSpan = last
-      && Math.abs(run.minX - last.left) <= tolerance
-      && Math.abs(run.maxX - last.right) <= tolerance;
-
-    if(isAdjacentRow && isSimilarSpan){
-      last.endY = run.y;
-      last.left = Math.min(last.left, run.minX);
-      last.right = Math.max(last.right, run.maxX);
-    } else {
-      merged.push({ startY: run.y, endY: run.y, left: run.minX, right: run.maxX });
-    }
-  }
-
-  return merged.map(rect => ({
-    x: (rect.left + rect.right) / 2,
-    y: (rect.startY + rect.endY) / 2,
-    width: rect.right - rect.left + 1,
-    height: rect.endY - rect.startY + 1
-  }));
-}
-
-function extractOpaqueRunsFromImageData(imageData){
-  const runs = [];
-  const { data, width, height } = imageData;
-
-  const alphaAt = (x, y) => data[(y * width + x) * 4 + 3];
-
-  for(let y = 0; y < height; y++){
-    let minX = width;
-    let maxX = -1;
-
-    for(let x = 0; x < width; x++){
-      if(alphaAt(x, y) > 0){
-        minX = Math.min(minX, x);
-        maxX = Math.max(maxX, x);
-      }
-    }
-
-    if(maxX >= minX){
-      runs.push({ y, minX, maxX });
-    }
-  }
-
-  return runs;
-}
-
-function generatePreviewBuildingsFromPng(src){
-  return new Promise(resolve => {
-    const registry = window.paperWingsAssets || null;
-    const useRegistry = !!registry?.getImage;
-    const normalize = (value) => (typeof value === 'string' ? value.trim() : '');
-    const { img, url } = useRegistry
-      ? registry.getImage(src, "previewBuildings")
-      : (() => {
-          const normalized = normalize(src);
-          if (!normalized) return { img: null, url: '' };
-          return { img: new Image(), url: normalized };
-        })();
-
-    if (!img || !url) {
-      resolve([]);
-      return;
-    }
-
-    const handleLoad = () => {
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = img.naturalWidth;
-      tempCanvas.height = img.naturalHeight;
-      logCanvasCreation(tempCanvas, 'mapPreviewExtraction');
-      const ctx = tempCanvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-      const imageData = ctx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-      const runs = extractOpaqueRunsFromImageData(imageData);
-      resolve(mergeRunsIntoRects(runs));
-    };
-
-    const handleError = () => resolve([]);
-
-    if (isSpriteReady(img)) {
-      handleLoad();
-    }
-
-    img.addEventListener('load', handleLoad, { once: true });
-    img.addEventListener('error', handleError, { once: true });
-
-    if (useRegistry && typeof registry.primeImageLoad === 'function') {
-      registry.primeImageLoad(img, url, "previewBuildings");
-    } else {
-      installImageWatch(img, url, "previewBuildings");
-      img.src = url;
-    }
-  });
-}
-
-function getPreviewBuildingsForControlPanelMap(map){
-  if(!map?.file?.startsWith('ui_controlpanel/') || !map.file.endsWith('.png')){
-    return Promise.resolve([]);
-  }
-
-  const cached = CONTROL_PANEL_PREVIEW_CACHE.get(map.file);
-  if(cached){
-    return cached;
-  }
-
-  const pending = generatePreviewBuildingsFromPng(map.file)
-    .then(buildings => {
-      CONTROL_PANEL_PREVIEW_CACHE.set(map.file, buildings);
-      map.previewBuildings = buildings;
-      return buildings;
-    })
-    .catch(() => {
-      CONTROL_PANEL_PREVIEW_CACHE.set(map.file, []);
-      return [];
-    });
-
-  CONTROL_PANEL_PREVIEW_CACHE.set(map.file, pending);
-  return pending;
-}
-
 const RANDOM_MAP_FILE = 'ui_controlpanel/cp_de_maprandom.png';
 
-const CLEAR_SKY_BUILDINGS = [];
 const CLEAR_SKY_VERTICAL_Y = [20,60,100,140,180,220,260,300,340,380,420,460,500,540,580];
 const CLEAR_SKY_HORIZONTAL_X = [0,40,80,120,160,200,240,280,320];
 const CLEAR_SKY_BRICKS = [
@@ -217,18 +90,6 @@ const CLEAR_SKY_BRICKS = [
   ...CLEAR_SKY_VERTICAL_Y.map(y => ({ spriteName: "brick_1_default", x: 340, y, rotate: 0, scale: 1 })),
   ...CLEAR_SKY_HORIZONTAL_X.map(x => ({ spriteName: "brick_1_default", x, y: 0, rotate: -90, scale: -1 })),
   ...CLEAR_SKY_HORIZONTAL_X.map(x => ({ spriteName: "brick_1_default", x, y: 620, rotate: -90, scale: -1 }))
-];
-const FIVE_BRICKS_BUILDINGS = [
-  { x: 100, y: 230, width: 40, height: 20 },
-  { x: 140, y: 230, width: 40, height: 20 },
-  { x: 220, y: 230, width: 40, height: 20 },
-  { x: 260, y: 230, width: 40, height: 20 },
-  { x: 160, y: 320, width: 40, height: 20 },
-  { x: 200, y: 320, width: 40, height: 20 },
-  { x: 100, y: 410, width: 40, height: 20 },
-  { x: 140, y: 410, width: 40, height: 20 },
-  { x: 220, y: 410, width: 40, height: 20 },
-  { x: 260, y: 410, width: 40, height: 20 }
 ];
 const DIAGONALS_BUILDINGS = [
   { x: 100, y: 130, width: 80, height: 20 },
@@ -366,39 +227,12 @@ const FIVE_BRICKS_BRICKS = [
   { id: "brick1", spriteName: "brick_1_default", x: 240, y: 400, rotate: -90, scale: -1 }
 ];
 
-const BROKEN_X_BUILDINGS = [
-  { x: 180, y: 130, width: 40, height: 20 },
-  { x: 80, y: 230, width: 40, height: 20 },
-  { x: 280, y: 230, width: 40, height: 20 },
-  { x: 80, y: 410, width: 40, height: 20 },
-  { x: 280, y: 410, width: 40, height: 20 },
-  { x: 180, y: 510, width: 40, height: 20 },
-  { x: 150, y: 300, width: 20, height: 40 },
-  { x: 210, y: 340, width: 20, height: 40 },
-  { x: 130, y: 250, width: 60, height: 60 },
-  { x: 230, y: 390, width: 60, height: 60 },
-  { x: 230, y: 250, width: 60, height: 60 },
-  { x: 130, y: 390, width: 60, height: 60 }
-];
-
-const LEGACY_MAPS = [
-  {
-    id: 'clearSky_legacy',
-    name: 'Clear Sky',
-    mode: MAP_RENDER_MODES.LEGACY,
-    file: 'ui_gamescreen/maps/easy 1-2 round/map 1 - clear sky 3.png',
-    tier: 'easy',
-    buildings: CLEAR_SKY_BUILDINGS
-  }
-];
-
 const MAPS = [
   {
     id: 'clearSky',
     name: 'Clear Sky',
     mode: MAP_RENDER_MODES.DATA,
     tier: 'easy',
-    buildings: CLEAR_SKY_BUILDINGS,
     bricks: CLEAR_SKY_BRICKS
   },
   {
@@ -406,7 +240,6 @@ const MAPS = [
     name: 'fiveBricks',
     mode: MAP_RENDER_MODES.DATA,
     tier: 'easy',
-    buildings: FIVE_BRICKS_BUILDINGS,
     bricks: FIVE_BRICKS_BRICKS
   },
   {
@@ -414,7 +247,6 @@ const MAPS = [
     name: 'brokenX',
     mode: MAP_RENDER_MODES.DATA,
     tier: 'easy',
-    buildings: BROKEN_X_BUILDINGS,
     bricks: BROKEN_X_BRICKS
   }
 ];
@@ -802,7 +634,6 @@ let previewCanvas = null;
 let previewCtx = null;
 let previewDpr = window.devicePixelRatio || 1;
 let previewPlanes = [];
-let previewBuildings = [];
 let previewLastTimestamp = 0;
 let previewOscillationAngle = 0;
 let previewOscillationDir = 1;
@@ -2704,7 +2535,6 @@ function resizePreviewCanvas(){
   }
 
   resizeMapPreviewBricksCanvas();
-  rebuildPreviewBuildings();
 }
 
 function ensurePreviewCanvasLayering(){
@@ -2769,54 +2599,6 @@ function rebuildPreviewPlanes(){
     .map(createPreviewPlaneFromElement)
     .filter(Boolean);
   previewPlanes.forEach(syncPreviewPlaneVisual);
-  rebuildPreviewBuildings();
-}
-
-function rebuildPreviewBuildings(){
-  if(!isSettingsActive) return;
-  previewBuildings = [];
-  if(!mapPreviewContainer) return;
-  const map = MAPS[mapIndex];
-  const previewSource = Array.isArray(map?.previewBuildings) ? map.previewBuildings : [];
-  const physicalBuildings = Array.isArray(map?.buildings) ? map.buildings : [];
-  const hasSource = previewSource.length > 0 || physicalBuildings.length > 0;
-
-  if(!map) return;
-
-  if(!hasSource && map?.file?.startsWith('ui_controlpanel/')){
-    getPreviewBuildingsForControlPanelMap(map)
-      .then(buildings => {
-        if(map !== MAPS[mapIndex]) return;
-        if(Array.isArray(buildings) && buildings.length){
-          rebuildPreviewBuildings();
-        }
-      })
-      .catch(() => {});
-    return;
-  }
-
-  if(!hasSource) return;
-
-  const sourceBuildings = previewSource.length > 0
-    ? previewSource
-    : physicalBuildings;
-
-  const rect = mapPreviewContainer.getBoundingClientRect();
-  const scaleX = rect.width / MAP_PREVIEW_BASE_WIDTH;
-  const scaleY = rect.height / MAP_PREVIEW_BASE_HEIGHT;
-
-  if(!Number.isFinite(scaleX) || !Number.isFinite(scaleY) || scaleX <= 0 || scaleY <= 0){
-    return;
-  }
-
-  previewBuildings = sourceBuildings
-    .map(b => ({
-      x: b.x * scaleX,
-      y: b.y * scaleY,
-      width: b.width * scaleX,
-      height: b.height * scaleY
-    }))
-    .filter(b => Number.isFinite(b.x) && Number.isFinite(b.y) && Number.isFinite(b.width) && Number.isFinite(b.height));
 }
 
 function measurePreviewElement(el){
@@ -3046,53 +2828,6 @@ function clamp(value, min, max){
   return Math.max(min, Math.min(max, value));
 }
 
-function planePreviewBuildingCollision(plane, building){
-  const radius = Math.max(plane.width, plane.height) / 2;
-  let collided = false;
-
-  for(let i = 0; i < 2; i++){
-    const closestX = clamp(plane.x, building.x - building.width / 2, building.x + building.width / 2);
-    const closestY = clamp(plane.y, building.y - building.height / 2, building.y + building.height / 2);
-    const dx = plane.x - closestX;
-    const dy = plane.y - closestY;
-    const dist2 = dx * dx + dy * dy;
-
-    if(dist2 >= radius * radius) break;
-
-    collided = true;
-
-    let nx = 0;
-    let ny = 0;
-
-    if(dx !== 0 || dy !== 0){
-      const dist = Math.sqrt(dist2);
-      nx = dx / dist;
-      ny = dy / dist;
-    } else {
-      const penLeft = Math.abs(plane.x - (building.x - building.width / 2));
-      const penRight = Math.abs((building.x + building.width / 2) - plane.x);
-      const penTop = Math.abs(plane.y - (building.y - building.height / 2));
-      const penBottom = Math.abs((building.y + building.height / 2) - plane.y);
-
-      const minPen = Math.min(penLeft, penRight, penTop, penBottom);
-      if(minPen === penLeft){ nx = -1; ny = 0; }
-      else if(minPen === penRight){ nx = 1; ny = 0; }
-      else if(minPen === penTop){ nx = 0; ny = -1; }
-      else { nx = 0; ny = 1; }
-    }
-
-    const dot = plane.vx * nx + plane.vy * ny;
-    plane.vx = plane.vx - 2 * dot * nx;
-    plane.vy = plane.vy - 2 * dot * ny;
-
-    const EPS = 0.5;
-    plane.x = closestX + nx * (radius + EPS);
-    plane.y = closestY + ny * (radius + EPS);
-  }
-
-  return collided;
-}
-
 function resolvePreviewCollisions(){
   for(let i = 0; i < previewPlanes.length; i++){
     for(let j = i + 1; j < previewPlanes.length; j++){
@@ -3144,10 +2879,6 @@ function updatePreviewPhysics(delta){
     plane.x += plane.vx * delta;
     plane.y += plane.vy * delta;
     updatePreviewBounds(plane);
-
-    for(const building of previewBuildings){
-      planePreviewBuildingCollision(plane, building);
-    }
 
     if(Math.hypot(plane.vx, plane.vy) > 0.01){
       updatePreviewPlaneHeading(plane);

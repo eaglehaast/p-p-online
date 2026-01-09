@@ -3114,7 +3114,6 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
   if (typeof window.rangeCells === 'undefined') {
     window.rangeCells = undefined;
   }
-let buildingsCount   = 0;
 let aimingAmplitude;     // 0..20 (UI показывает *5)
 
 let isGameOver   = false;
@@ -3141,7 +3140,6 @@ let turnIndex    = lastFirstTurn;
 let points       = [];
 Object.defineProperty(window, 'points', { get: () => points });
 let flyingPoints = [];
-let buildings    = [];
 let colliders    = [];
 
 let aaUnits     = [];
@@ -3296,37 +3294,9 @@ const FIVE_BRICKS_SPRITES = [
   { id: "brick1", spriteName: "brick_1_default", x: 240, y: 400, rotate: -90, scale: -1 }
 ];
 
-const FIVE_BRICKS_BUILDINGS = [
-  { x: 100, y: 230, width: 40, height: 20 },
-  { x: 140, y: 230, width: 40, height: 20 },
-  { x: 220, y: 230, width: 40, height: 20 },
-  { x: 260, y: 230, width: 40, height: 20 },
-  { x: 160, y: 320, width: 40, height: 20 },
-  { x: 200, y: 320, width: 40, height: 20 },
-  { x: 100, y: 410, width: 40, height: 20 },
-  { x: 140, y: 410, width: 40, height: 20 },
-  { x: 220, y: 410, width: 40, height: 20 },
-  { x: 260, y: 410, width: 40, height: 20 }
-];
-
 const FIVE_BRICKS_FLAGS = [
   { color: "blue", x: 170, y: 41, width: 20, height: 20 },
   { color: "green", x: 170, y: 568, width: 20, height: 20 }
-];
-
-const BROKEN_X_BUILDINGS = [
-  { x: 180, y: 130, width: 40, height: 20 },
-  { x: 80, y: 230, width: 40, height: 20 },
-  { x: 280, y: 230, width: 40, height: 20 },
-  { x: 80, y: 410, width: 40, height: 20 },
-  { x: 280, y: 410, width: 40, height: 20 },
-  { x: 180, y: 510, width: 40, height: 20 },
-  { x: 150, y: 300, width: 20, height: 40 },
-  { x: 210, y: 340, width: 20, height: 40 },
-  { x: 130, y: 250, width: 60, height: 60 },
-  { x: 230, y: 390, width: 60, height: 60 },
-  { x: 230, y: 250, width: 60, height: 60 },
-  { x: 130, y: 390, width: 60, height: 60 }
 ];
 
 const BROKEN_X_FLAGS = [
@@ -3364,57 +3334,6 @@ const MAP_RENDERERS = {
   SPRITES: 'sprites'
 };
 let currentMapSprites = [];
-
-function mergeRunsIntoRects(runs, tolerance = 1){
-  const merged = [];
-  for(const run of runs){
-    const last = merged[merged.length - 1];
-    const isAdjacentRow = last && run.y === last.endY + 1;
-    const isSimilarSpan = last
-      && Math.abs(run.minX - last.left) <= tolerance
-      && Math.abs(run.maxX - last.right) <= tolerance;
-
-    if(isAdjacentRow && isSimilarSpan){
-      last.endY = run.y;
-      last.left = Math.min(last.left, run.minX);
-      last.right = Math.max(last.right, run.maxX);
-    } else {
-      merged.push({ startY: run.y, endY: run.y, left: run.minX, right: run.maxX });
-    }
-  }
-
-  return merged.map(rect => ({
-    x: (rect.left + rect.right) / 2,
-    y: (rect.startY + rect.endY) / 2,
-    width: rect.right - rect.left + 1,
-    height: rect.endY - rect.startY + 1
-  }));
-}
-
-function extractOpaqueRunsFromImageData(imageData){
-  const runs = [];
-  const { data, width, height } = imageData;
-
-  const alphaAt = (x, y) => data[(y * width + x) * 4 + 3];
-
-  for(let y = 0; y < height; y++){
-    let minX = width;
-    let maxX = -1;
-
-    for(let x = 0; x < width; x++){
-      if(alphaAt(x, y) > 0){
-        minX = Math.min(minX, x);
-        maxX = Math.max(maxX, x);
-      }
-    }
-
-    if(maxX >= minX){
-      runs.push({ y, minX, maxX });
-    }
-  }
-
-  return runs;
-}
 
 const RANDOM_MAP_SENTINEL_INDEX = MAPS.findIndex(map => map?.name?.toLowerCase?.() === 'random map');
 const PLAYABLE_MAP_INDICES = MAPS
@@ -3965,7 +3884,6 @@ function resetGame(options = {}){
 
   globalFrame=0;
   flyingPoints= [];
-  buildings = [];
   if(shouldAutoRandomizeMap()){
     if(settings.mapIndex !== RANDOM_MAP_SENTINEL_INDEX){
       setMapIndexAndPersist(getRandomPlayableMapIndex());
@@ -4174,13 +4092,6 @@ function handleStart(e) {
   );
   if(!found) return;
 
-  // Нельзя выбирать самолёт, который внутри здания
-  for(let b of buildings){
-    if(isPointInsideBuilding(found.x, found.y, b)){
-      return;
-    }
-  }
-
   handleCircle.baseX= mx; handleCircle.baseY= my;
   handleCircle.shakyX= mx; handleCircle.shakyY= my;
   handleCircle.offsetX=0; handleCircle.offsetY=0;
@@ -4280,17 +4191,6 @@ function isValidAAPlacement(x,y){
       x > FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X) {
 
     return false;
-  }
-
-  // Prevent placing the AA center inside any building
-  for(const b of buildings){
-    const left = b.x - b.width/2;
-    const right = b.x + b.width/2;
-    const top = b.y - b.height/2;
-    const bottom = b.y + b.height/2;
-    if(x >= left && x <= right && y >= top && y <= bottom){
-      return false;
-    }
   }
 
   return true;
@@ -4685,13 +4585,6 @@ function findMirrorShot(plane, enemy){
 }
 
 /* ======= PHYSICS / COLLISIONS ======= */
-function isPointInsideBuilding(x, y, b){
-  return x >= (b.x - b.width/2) &&
-         x <= (b.x + b.width/2) &&
-         y >= (b.y - b.height/2) &&
-         y <= (b.y + b.height/2);
-}
-
 function clipPolygon(points, a, b, c){
   if(!points.length) return [];
   const result = [];
@@ -7322,67 +7215,6 @@ function drawPlayerHUD(ctx, frame, color, isTurn, now = performance.now()){
 }
 
 
-/* Поля/здания */
-const buildingTypes = ['rectangle', 'rectangle_double', 'rectangle_triple'];
-const buildingColors = ['darkred'];
-const buildingSize = {
-  rectangle:        { width: 40,  height: 40 },
-  rectangle_double: { width: 80,  height: 40 },
-  rectangle_triple: { width: 120, height: 40 }
-};
-
-function generateRandomBuildingAligned(){
-  const maxAttempts=20;
-  let attempt=0;
-  while(attempt<maxAttempts){
-    const type = buildingTypes[Math.floor(Math.random()*buildingTypes.length)];
-    const color= buildingColors[0];
-
-    const width = buildingSize[type].width;
-    const height= buildingSize[type].height;
-
-    const x = FIELD_LEFT + getRandomGridAlignedCoordinate(FIELD_WIDTH,  width/2);
-    const minY = 80; // избегаем зон самолётов
-    const maxY = WORLD.height - 80;
-    const y = minY + Math.random() * (maxY - minY - height);
-    if(x===null || y===null){ attempt++; continue; }
-
-    const b = { type, x, y, color, width, height };
-    if(!isOverlappingWithPlanes(b) && !isOverlappingWithBuildings(b)){
-      return b;
-    }
-    attempt++;
-  }
-  return null;
-}
-function getRandomGridAlignedCoordinate(max, halfSize){
-  const positions = [];
-  for(let coord=halfSize + CELL_SIZE; coord<=max - halfSize - CELL_SIZE; coord+=CELL_SIZE){
-    positions.push(coord);
-  }
-  if(!positions.length) return null;
-  return positions[Math.floor(Math.random()*positions.length)];
-}
-function isOverlappingWithPlanes(b){
-  for(const p of points){
-    if(!p.isAlive && !p.burning) continue;
-    const closestX = clamp(p.x, b.x - b.width/2 - BUILDING_BUFFER/2, b.x + b.width/2 + BUILDING_BUFFER/2);
-    const closestY = clamp(p.y, b.y - b.height/2- BUILDING_BUFFER/2, b.y + b.height/2 + BUILDING_BUFFER/2);
-    const d = Math.hypot(p.x-closestX, p.y-closestY);
-    if(d < (POINT_RADIUS + Math.min(b.width,b.height)/2 + BUILDING_BUFFER)) return true;
-  }
-  return false;
-}
-function isOverlappingWithBuildings(b){
-  for(const o of buildings){
-    if(Math.abs(b.x - o.x) < ((b.width + o.width)/2 + BUILDING_BUFFER) &&
-       Math.abs(b.y - o.y) < ((b.height + o.height)/2 + BUILDING_BUFFER)){
-      return true;
-    }
-  }
-  return false;
-}
-
 /* ======= SCORE / ROUND ======= */
 yesBtn.addEventListener("click", () => {
   logEndGameAction('click-yes');
@@ -7720,38 +7552,9 @@ function applyCurrentMap(upcomingRoundNumber){
   renderScoreboard();
 }
 
-function getCollisionBuildings(map){
-  return [];
-}
-
 function rebuildBuildingsFromMap(map){
-  const mapBuildings = getCollisionBuildings(map);
-  buildings = mapBuildings
-    .map(b => ({
-      type: b.type || 'rectangle',
-      color: b.color || 'darkred',
-      x: b.x,
-      y: b.y,
-      width: b.width,
-      height: b.height
-    }))
-    .filter(b => Number.isFinite(b.x) && Number.isFinite(b.y) && Number.isFinite(b.width) && Number.isFinite(b.height));
-
-  const spriteColliders = Array.isArray(map?.colliders) ? map.colliders : [];
-  if(spriteColliders.length){
-    colliders = spriteColliders;
-  } else {
-    colliders = buildings.map((b, index) => ({
-      id: b.id ?? `building-${index}`,
-      type: "rect",
-      source: "building",
-      cx: b.x,
-      cy: b.y,
-      halfWidth: b.width / 2,
-      halfHeight: b.height / 2,
-      rotation: 0
-    }));
-  }
+  const spriteColliders = Array.isArray(map?.colliders) ? map.colliders : buildMapSpriteColliders(map);
+  colliders = spriteColliders;
 }
 
 function updateUiScale() {
