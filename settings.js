@@ -160,7 +160,6 @@ function generatePreviewBuildingsFromPng(src){
 
     if (isSpriteReady(img)) {
       handleLoad();
-      return;
     }
 
     img.addEventListener('load', handleLoad, { once: true });
@@ -2288,7 +2287,6 @@ function updateMapPreview(){
 
     if (isSpriteReady(img)) {
       handleLoad();
-      return;
     }
 
     img.addEventListener('load', handleLoad, { once: true });
