@@ -7535,11 +7535,32 @@ function applyCurrentMap(upcomingRoundNumber){
     : roundNumber + 1;
   const mapIndex = resolveMapIndexForGameplay(targetRoundNumber);
   const gameplayMap = MAPS[mapIndex] || MAPS[0];
+  const mapName = gameplayMap?.name || gameplayMap?.id || "unknown map";
+  const spriteSource = Array.isArray(gameplayMap?.sprites)
+    ? gameplayMap.sprites
+    : Array.isArray(gameplayMap?.bricks)
+      ? gameplayMap.bricks
+      : Array.isArray(gameplayMap?.items)
+        ? gameplayMap.items
+        : null;
+
+  if(!Array.isArray(spriteSource)){
+    const error = new Error(`[MAP] Non-sprite map rejected for ${mapName}`);
+    console.error(error.message, { gameplayMap });
+    throw error;
+  }
+
+  console.log("[match] map", {
+    mapName,
+    mapType: "sprite",
+    brickItemCount: spriteSource.length
+  });
   const normalizedMap = normalizeMapForRendering(gameplayMap);
 
   if(normalizedMap.renderer !== MAP_RENDERERS.SPRITES || !Array.isArray(normalizedMap.sprites)){
-    console.error("[MAP] Non-sprite map rejected", { gameplayMap, normalizedMap });
-    return;
+    const error = new Error("[MAP] Non-sprite map rejected");
+    console.error(error.message, { gameplayMap, normalizedMap });
+    throw error;
   }
 
   currentMapSprites = normalizedMap.sprites;
