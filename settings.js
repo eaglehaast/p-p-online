@@ -37,10 +37,6 @@ const MAP_PREVIEW_BRICK_SPRITE_PATHS = {
   brick_1_default: 'ui_gamescreen/bricks/brick_1_default.png',
   brick_4_diagonal: 'ui_gamescreen/bricks/brick4_diagonal copy.png'
 };
-const MAP_RENDER_MODES = {
-  DATA: 'data',
-  LEGACY: 'legacy'
-};
 
 const settingsLayer = document.getElementById('settingsLayer');
 const settingsRoot = settingsLayer ?? document;
@@ -81,7 +77,6 @@ function isSpriteReady(img){
   return Boolean(img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0);
 }
 
-const RANDOM_MAP_FILE = 'ui_controlpanel/cp_de_maprandom.png';
 
 const CLEAR_SKY_VERTICAL_Y = [20,60,100,140,180,220,260,300,340,380,420,460,500,540,580];
 const CLEAR_SKY_HORIZONTAL_X = [0,40,80,120,160,200,240,280,320];
@@ -231,23 +226,20 @@ const MAPS = [
   {
     id: 'clearSky',
     name: 'Clear Sky',
-    mode: MAP_RENDER_MODES.DATA,
     tier: 'easy',
-    bricks: CLEAR_SKY_BRICKS
+    sprites: CLEAR_SKY_BRICKS
   },
   {
     id: 'fiveBricks',
     name: 'fiveBricks',
-    mode: MAP_RENDER_MODES.DATA,
     tier: 'easy',
-    bricks: FIVE_BRICKS_BRICKS
+    sprites: FIVE_BRICKS_BRICKS
   },
   {
     id: 'brokenX',
     name: 'brokenX',
-    mode: MAP_RENDER_MODES.DATA,
     tier: 'easy',
-    bricks: BROKEN_X_BRICKS
+    sprites: BROKEN_X_BRICKS
   }
 ];
 
@@ -264,7 +256,7 @@ function getFieldLabel(fieldId){
 }
 
 function isRandomMap(map){
-  return map?.file === RANDOM_MAP_FILE;
+  return map?.id === 'random';
 }
 
 function getSelectableMapIndices(excludeIndex){
@@ -2173,11 +2165,8 @@ function saveSettings(){
 
 function hasCurrentMapBricks(){
   const map = MAPS[mapIndex];
-  if(map?.mode === MAP_RENDER_MODES.LEGACY){
-    return false;
-  }
-  const bricks = map?.bricks;
-  return Array.isArray(bricks) && bricks.length > 0;
+  const sprites = map?.sprites;
+  return Array.isArray(sprites) && sprites.length > 0;
 }
 
 function ensureMapPreviewBricksCanvas(){
@@ -2259,8 +2248,8 @@ function drawMapPreviewBricks(boundsWidth, boundsHeight){
   const rectHeight = boundsHeight ?? mapPreview.getBoundingClientRect().height;
   mapPreviewBricksCtx.clearRect(0, 0, rectWidth, rectHeight);
 
-  const bricks = Array.isArray(MAPS[mapIndex]?.bricks) ? MAPS[mapIndex].bricks : [];
-  const previewBricks = bricks.filter(isBrickItem);
+  const sprites = Array.isArray(MAPS[mapIndex]?.sprites) ? MAPS[mapIndex].sprites : [];
+  const previewBricks = sprites.filter(isBrickItem);
   const scaleX = rectWidth / MAP_PREVIEW_BASE_WIDTH;
   const scaleY = rectHeight / MAP_PREVIEW_BASE_HEIGHT;
   const previewScale = Math.min(scaleX, scaleY);
@@ -2343,41 +2332,7 @@ function updateMapPreview(){
   mapPreview.classList.toggle('map-preview--random', Boolean(randomSelection));
   restorePreviewPlaneVisibility();
   ensurePreviewCanvasLayering();
-  const hasBricks = hasCurrentMapBricks();
-  mapPreview.style.backgroundImage = !hasBricks && map ? `url('${map.file}')` : '';
-  if(map?.file && !hasBricks){
-    const registry = window.paperWingsAssets || null;
-    const useRegistry = !!registry?.getImage;
-    const { img, url } = useRegistry
-      ? registry.getImage(map.file, "mapPreview")
-      : (() => {
-          const normalized = typeof map.file === 'string' ? map.file.trim() : '';
-          if (!normalized) return { img: null, url: '' };
-          return { img: new Image(), url: normalized };
-        })();
-
-    if (!img || !url) {
-      return;
-    }
-
-    const handleLoad = () => {
-      if(map !== MAPS[mapIndex]) return;
-      resizePreviewCanvas();
-    };
-
-    if (isSpriteReady(img)) {
-      handleLoad();
-    }
-
-    img.addEventListener('load', handleLoad, { once: true });
-
-    if (useRegistry && typeof registry.primeImageLoad === 'function') {
-      registry.primeImageLoad(img, url, "mapPreview");
-    } else {
-      installImageWatch(img, url, "mapPreview");
-      img.src = url;
-    }
-  }
+  mapPreview.style.backgroundImage = '';
   resizeMapPreviewBricksCanvas();
   refreshPreviewSimulationIfInitialized();
 }
