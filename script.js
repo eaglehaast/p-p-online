@@ -22,6 +22,7 @@ const DEBUG_FX = false;
 const DEBUG_FLAME_POS = false;
 const DEBUG_LAYERS = false;
 const DEBUG_VFX = false;
+const DEBUG_BRICK_COLLISIONS = false;
 
 const bootTrace = {
   startTs: null,
@@ -2779,6 +2780,7 @@ const CANVAS_OFFSET_X = 51;
 const FRAME_BASE_WIDTH = CANVAS_BASE_WIDTH + FRAME_PADDING_X * 2; // 460
 const FRAME_BASE_HEIGHT = CANVAS_BASE_HEIGHT + FRAME_PADDING_Y * 2; // 800
 const MAP_BRICK_THICKNESS = 20; // px, matches brick_1_default short side
+const MAP_DIAGONAL_BRICK_SIZE = MAP_BRICK_THICKNESS * 3;
 const FIELD_BORDER_THICKNESS = MAP_BRICK_THICKNESS; // px, width of brick frame edges
 
 
@@ -4788,7 +4790,93 @@ function isPointInsideBuilding(x, y, b){
          y <= (b.y + b.height/2);
 }
 
+function clipPolygon(points, a, b, c){
+  if(!points.length) return [];
+  const result = [];
+  const count = points.length;
+  for(let i = 0; i < count; i++){
+    const current = points[i];
+    const next = points[(i + 1) % count];
+    const currentInside = a * current.x + b * current.y <= c + 1e-6;
+    const nextInside = a * next.x + b * next.y <= c + 1e-6;
+    if(currentInside && nextInside){
+      result.push(next);
+    } else if(currentInside && !nextInside){
+      const dx = next.x - current.x;
+      const dy = next.y - current.y;
+      const denom = a * dx + b * dy;
+      if(denom !== 0){
+        const t = (c - a * current.x - b * current.y) / denom;
+        result.push({ x: current.x + dx * t, y: current.y + dy * t });
+      }
+    } else if(!currentInside && nextInside){
+      const dx = next.x - current.x;
+      const dy = next.y - current.y;
+      const denom = a * dx + b * dy;
+      if(denom !== 0){
+        const t = (c - a * current.x - b * current.y) / denom;
+        result.push({ x: current.x + dx * t, y: current.y + dy * t });
+      }
+      result.push(next);
+    }
+  }
+  return result;
+}
+
+function getDiagonalColliderEdges(collider, margin = 0){
+  const halfWidth = collider.halfWidth;
+  const halfHeight = collider.halfHeight;
+  const width = halfWidth * 2;
+  const height = halfHeight * 2;
+  const bandHalfWidth = Number.isFinite(collider.bandHalfWidth)
+    ? collider.bandHalfWidth
+    : MAP_BRICK_THICKNESS;
+  const offset = margin * Math.SQRT2;
+  let polygon = [
+    { x: -margin, y: -margin },
+    { x: width + margin, y: -margin },
+    { x: width + margin, y: height + margin },
+    { x: -margin, y: height + margin }
+  ];
+
+  if(collider.diagSign < 0){
+    polygon = clipPolygon(polygon, 1, 1, width + bandHalfWidth + offset);
+    polygon = clipPolygon(polygon, -1, -1, bandHalfWidth + offset - width);
+  } else {
+    polygon = clipPolygon(polygon, 1, -1, bandHalfWidth + offset);
+    polygon = clipPolygon(polygon, -1, 1, bandHalfWidth + offset);
+  }
+
+  if(polygon.length < 2) return [];
+
+  const cos = Math.cos(collider.rotation);
+  const sin = Math.sin(collider.rotation);
+  const worldPoints = polygon.map(point => {
+    const localX = point.x - halfWidth;
+    const localY = point.y - halfHeight;
+    return {
+      x: collider.cx + localX * cos - localY * sin,
+      y: collider.cy + localX * sin + localY * cos
+    };
+  });
+
+  return worldPoints.map((point, index) => {
+    const next = worldPoints[(index + 1) % worldPoints.length];
+    return {
+      x1: point.x,
+      y1: point.y,
+      x2: next.x,
+      y2: next.y,
+      colliderId: collider.id,
+      edgeIndex: index
+    };
+  });
+}
+
 function getColliderEdges(collider, margin = 0){
+  if(collider.type === "diag"){
+    return getDiagonalColliderEdges(collider, margin);
+  }
   const hw = collider.halfWidth + margin;
   const hh = collider.halfHeight + margin;
   const cos = Math.cos(collider.rotation);
@@ -4901,8 +4989,147 @@ function firstBuildingIntersection(x1,y1,x2,y2){
   return closest;
 }
 
+function logBrickCollision(details){
+  if(!DEBUG_BRICK_COLLISIONS) return;
+  console.log("[BRICK COLLISION]", details);
+}
+
+function resolveDiagonalBrickCollision(fp, collider){
+  const p = fp.plane;
+  const cos = Math.cos(collider.rotation);
+  const sin = Math.sin(collider.rotation);
+  const prevX = Number.isFinite(p.prevX) ? p.prevX : p.x - fp.vx;
+  const prevY = Number.isFinite(p.prevY) ? p.prevY : p.y - fp.vy;
+  const halfWidth = collider.halfWidth;
+  const halfHeight = collider.halfHeight;
+  const width = halfWidth * 2;
+  const height = halfHeight * 2;
+  const bandHalfWidth = Number.isFinite(collider.bandHalfWidth)
+    ? collider.bandHalfWidth
+    : MAP_BRICK_THICKNESS;
+  const radius = POINT_RADIUS;
+
+  const toLocal = (x, y) => ({
+    x: (x - collider.cx) * cos + (y - collider.cy) * sin,
+    y: -(x - collider.cx) * sin + (y - collider.cy) * cos
+  });
+
+  const prevLocal = toLocal(prevX, prevY);
+  const currLocal = toLocal(p.x, p.y);
+  const prevPoint = { x: prevLocal.x + halfWidth, y: prevLocal.y + halfHeight };
+  const currPoint = { x: currLocal.x + halfWidth, y: currLocal.y + halfHeight };
+  const moveX = currPoint.x - prevPoint.x;
+  const moveY = currPoint.y - prevPoint.y;
+  const moveLen = Math.hypot(moveX, moveY);
+  if(moveLen === 0) return false;
+
+  const inBand = (x, y, extra = 0) => {
+    if(collider.diagSign < 0){
+      return Math.abs(x + y - width) <= bandHalfWidth + extra;
+    }
+    return Math.abs(x - y) <= bandHalfWidth + extra;
+  };
+
+  const insideExpanded = (x, y) => (
+    x >= -radius
+    && x <= width + radius
+    && y >= -radius
+    && y <= height + radius
+    && inBand(x, y, radius)
+  );
+
+  if(!insideExpanded(currPoint.x, currPoint.y)) return false;
+
+  const candidates = [];
+
+  const addCandidate = (t, ix, iy, normal, surface) => {
+    if(t < 0 || t > 1) return;
+    if(normal.x * moveX + normal.y * moveY >= 0) return;
+    candidates.push({ t, ix, iy, normal, surface });
+  };
+
+  const intersectLine = (a, b, c, normal, surface, validator) => {
+    const d0 = a * prevPoint.x + b * prevPoint.y - c;
+    const d1 = a * currPoint.x + b * currPoint.y - c;
+    if(d0 === d1) return;
+    const t = d0 / (d0 - d1);
+    if(t < 0 || t > 1) return;
+    const ix = prevPoint.x + moveX * t;
+    const iy = prevPoint.y + moveY * t;
+    if(!validator(ix, iy)) return;
+    addCandidate(t, ix, iy, normal, surface);
+  };
+
+  const axisValidator = (ix, iy) => (
+    ix >= -radius
+    && ix <= width + radius
+    && iy >= -radius
+    && iy <= height + radius
+    && inBand(ix, iy, radius)
+  );
+
+  intersectLine(1, 0, -radius, { x: -1, y: 0 }, "V", axisValidator);
+  intersectLine(1, 0, width + radius, { x: 1, y: 0 }, "V", axisValidator);
+  intersectLine(0, 1, -radius, { x: 0, y: -1 }, "H", axisValidator);
+  intersectLine(0, 1, height + radius, { x: 0, y: 1 }, "H", axisValidator);
+
+  const diagValidator = (ix, iy) => (
+    ix >= -radius
+    && ix <= width + radius
+    && iy >= -radius
+    && iy <= height + radius
+  );
+
+  const edgeOffset = bandHalfWidth + radius * Math.SQRT2;
+  const invDiag = 1 / Math.SQRT2;
+  if(collider.diagSign < 0){
+    intersectLine(1, 1, width + edgeOffset, { x: invDiag, y: invDiag }, "DIAG", diagValidator);
+    intersectLine(1, 1, width - edgeOffset, { x: -invDiag, y: -invDiag }, "DIAG", diagValidator);
+  } else {
+    intersectLine(1, -1, edgeOffset, { x: invDiag, y: -invDiag }, "DIAG", diagValidator);
+    intersectLine(1, -1, -edgeOffset, { x: -invDiag, y: invDiag }, "DIAG", diagValidator);
+  }
+
+  if(!candidates.length) return false;
+  candidates.sort((a, b) => a.t - b.t);
+  const hit = candidates[0];
+  const localHitX = hit.ix - halfWidth;
+  const localHitY = hit.iy - halfHeight;
+  const hitWorldX = collider.cx + localHitX * cos - localHitY * sin;
+  const hitWorldY = collider.cy + localHitX * sin + localHitY * cos;
+  const worldNormal = {
+    x: hit.normal.x * cos - hit.normal.y * sin,
+    y: hit.normal.x * sin + hit.normal.y * cos
+  };
+  const incoming = { vx: fp.vx, vy: fp.vy };
+  const dot = incoming.vx * worldNormal.x + incoming.vy * worldNormal.y;
+  fp.vx = incoming.vx - 2 * dot * worldNormal.x;
+  fp.vy = incoming.vy - 2 * dot * worldNormal.y;
+
+  const EPS = 0.5;
+  p.x = hitWorldX + worldNormal.x * (POINT_RADIUS + EPS);
+  p.y = hitWorldY + worldNormal.y * (POINT_RADIUS + EPS);
+
+  logBrickCollision({
+    id: collider.id,
+    spriteName: collider.spriteName,
+    surface: hit.surface,
+    hit: { x: hitWorldX, y: hitWorldY },
+    normal: { x: worldNormal.x, y: worldNormal.y },
+    incoming,
+    outgoing: { vx: fp.vx, vy: fp.vy }
+  });
+
+  fp.collisionCooldown = 2;
+  return true;
+}
+
 /* Коллизии самолёт <-> здание */
 function planeBuildingCollision(fp, collider){
+  if(collider.type === "diag"){
+    return resolveDiagonalBrickCollision(fp, collider);
+  }
+
   const p = fp.plane;
   let collided = false;
 
@@ -7509,7 +7736,7 @@ function getMapSpriteBaseSize(spriteName){
   }
 
   if(spriteName === "brick_4_diagonal"){
-    const side = MAP_BRICK_THICKNESS * 2;
+    const side = MAP_DIAGONAL_BRICK_SIZE;
     return { width: side, height: side };
   }
 
@@ -7554,21 +7781,23 @@ function buildSpriteCollider(sprite, spriteIndex){
   const id = typeof baseId === "string" ? baseId : `${spriteName}-${spriteIndex}`;
 
   if(spriteName === "brick_4_diagonal"){
-    const thickness = Math.min(baseWidth, baseHeight) * Math.max(Math.abs(scaleX), Math.abs(scaleY));
-    const side = Math.max(baseWidth, baseHeight) * Math.max(Math.abs(scaleX), Math.abs(scaleY));
-    const diagonalLength = side * Math.SQRT2;
+    const normalizedRotation = ((rotationDeg % 360) + 360) % 360;
+    const swapsDimensions = normalizedRotation % 180 !== 0;
+    const drawnWidth = (swapsDimensions ? baseHeight : baseWidth) * Math.abs(scaleX);
+    const drawnHeight = (swapsDimensions ? baseWidth : baseHeight) * Math.abs(scaleY);
     const mirrorSign = Math.sign(scaleX || 1) * Math.sign(scaleY || 1);
-    const diagonalRotation = (rotationDeg + (mirrorSign < 0 ? -45 : 45)) * Math.PI / 180;
     return {
       id,
-      type: "rect",
+      type: "diag",
       source: "sprite",
       spriteName,
       cx,
       cy,
-      halfWidth: diagonalLength / 2,
-      halfHeight: thickness / 2,
-      rotation: diagonalRotation
+      halfWidth: drawnWidth / 2,
+      halfHeight: drawnHeight / 2,
+      rotation: rotationRad,
+      diagSign: mirrorSign < 0 ? -1 : 1,
+      bandHalfWidth: MAP_BRICK_THICKNESS * Math.max(Math.abs(scaleX), Math.abs(scaleY))
     };
   }
 
