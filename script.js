@@ -3081,6 +3081,7 @@ function isBrickPixel(x, y){
       FIELD_WIDTH = WORLD.width;
     }
     updateFieldBorderOffset();
+    rebuildCollisionSurfaces();
   }
 
 
@@ -4802,6 +4803,56 @@ function buildColliderSurfaces(colliders){
   return colliders.flatMap(collider => getColliderSurfaces(collider));
 }
 
+function buildFieldBorderSurfaces(){
+  const leftX = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
+  const rightX = FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X;
+  const topY = FIELD_BORDER_OFFSET_Y;
+  const bottomY = WORLD.height - FIELD_BORDER_OFFSET_Y;
+
+  if(!Number.isFinite(leftX) || !Number.isFinite(rightX) ||
+     !Number.isFinite(topY) || !Number.isFinite(bottomY)){
+    return [];
+  }
+
+  return [
+    {
+      p1: { x: leftX, y: topY },
+      p2: { x: leftX, y: bottomY },
+      normal: { x: 1, y: 0 },
+      type: "field",
+      id: "field-border-left"
+    },
+    {
+      p1: { x: rightX, y: topY },
+      p2: { x: rightX, y: bottomY },
+      normal: { x: -1, y: 0 },
+      type: "field",
+      id: "field-border-right"
+    },
+    {
+      p1: { x: leftX, y: topY },
+      p2: { x: rightX, y: topY },
+      normal: { x: 0, y: 1 },
+      type: "field",
+      id: "field-border-top"
+    },
+    {
+      p1: { x: leftX, y: bottomY },
+      p2: { x: rightX, y: bottomY },
+      normal: { x: 0, y: -1 },
+      type: "field",
+      id: "field-border-bottom"
+    }
+  ];
+}
+
+function rebuildCollisionSurfaces(){
+  colliderSurfaces = [
+    ...buildColliderSurfaces(colliders),
+    ...buildFieldBorderSurfaces()
+  ];
+}
+
 function isPathClear(x1,y1,x2,y2){
   for(const collider of colliders){
     if(checkLineIntersectionWithCollider(x1,y1,x2,y2,collider)) return false;
@@ -5057,6 +5108,14 @@ function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
     const hitX = currX + moveX * hit.t;
     const hitY = currY + moveY * hit.t;
     const incoming = { vx: fp.vx, vy: fp.vy };
+
+    if(settings.sharpEdges && hit.surface.type === "field"){
+      p.x = hitX;
+      p.y = hitY;
+      destroyPlane(fp);
+      return true;
+    }
+
     const dot = incoming.vx * hit.normal.x + incoming.vy * hit.normal.y;
     fp.vx = incoming.vx - 2 * dot * hit.normal.x;
     fp.vy = incoming.vy - 2 * dot * hit.normal.y;
@@ -5552,43 +5611,9 @@ function gameDraw(){
 
       resolveFlightSurfaceCollision(fp, prevX, prevY, deltaSec);
 
-        // field borders
-
-        if (p.x < FIELD_LEFT + FIELD_BORDER_OFFSET_X) {
-          p.x = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
-
-          if (settings.sharpEdges) {
-            destroyPlane(fp);
-            continue;
-          }
-          fp.vx = -fp.vx;
-        }
-
-        else if (p.x > FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X) {
-          p.x = FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X;
-
-          if (settings.sharpEdges) {
-            destroyPlane(fp);
-            continue;
-          }
-          fp.vx = -fp.vx;
-        }
-        if (p.y < FIELD_BORDER_OFFSET_Y) {
-          p.y = FIELD_BORDER_OFFSET_Y;
-          if (settings.sharpEdges) {
-            destroyPlane(fp);
-            continue;
-          }
-          fp.vy = -fp.vy;
-        }
-        else if (p.y > WORLD.height - FIELD_BORDER_OFFSET_Y) {
-          p.y = WORLD.height - FIELD_BORDER_OFFSET_Y;
-          if (settings.sharpEdges) {
-            destroyPlane(fp);
-            continue;
-          }
-          fp.vy = -fp.vy;
-        }
+      if(!p.isAlive || p.burning){
+        continue;
+      }
 
       // нос по текущей скорости
       const colorShift = colorAngleOffset(p.color);
@@ -7810,7 +7835,6 @@ function applyCurrentMap(upcomingRoundNumber){
   clearBrickFrameImage();
   setFlagConfigsForMap(normalizedMap);
   colliders = buildMapSpriteColliders(normalizedMap);
-  colliderSurfaces = buildColliderSurfaces(colliders);
   updateFieldDimensions();
   resetPlanePositionsForCurrentMap();
   renderScoreboard();
