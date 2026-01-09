@@ -7338,6 +7338,16 @@ noBtn.addEventListener("click", () => {
 
 function startNewRound(){
   logBootStep("startNewRound");
+  loadSettings();
+  console.log('[settings] load at match start', {
+    flightRangeCells: window.rangeCells,
+    aimingAmplitude,
+    addAA: settings.addAA,
+    sharpEdges: settings.sharpEdges,
+    mapIndex: settings.mapIndex,
+    randomizeMapEachRound: settings.randomizeMapEachRound,
+    flameStyle: settings.flameStyle
+  });
   loadMatchScoreImagesIfNeeded();
   preloadPlaneSprites();
   preloadExplosionSprites();
