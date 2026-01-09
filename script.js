@@ -7567,15 +7567,10 @@ function applyCurrentMap(upcomingRoundNumber){
   ensureMapSpriteAssets(currentMapSprites);
   clearBrickFrameImage();
   setFlagConfigsForMap(normalizedMap);
-  rebuildBuildingsFromMap(normalizedMap);
+  colliders = buildMapSpriteColliders(normalizedMap);
   updateFieldDimensions();
   resetPlanePositionsForCurrentMap();
   renderScoreboard();
-}
-
-function rebuildBuildingsFromMap(map){
-  const spriteColliders = Array.isArray(map?.colliders) ? map.colliders : buildMapSpriteColliders(map);
-  colliders = spriteColliders;
 }
 
 function updateUiScale() {
