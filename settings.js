@@ -86,19 +86,6 @@ const CLEAR_SKY_BRICKS = [
   ...CLEAR_SKY_HORIZONTAL_X.map(x => ({ spriteName: "brick_1_default", x, y: 0, rotate: -90, scale: -1 })),
   ...CLEAR_SKY_HORIZONTAL_X.map(x => ({ spriteName: "brick_1_default", x, y: 620, rotate: -90, scale: -1 }))
 ];
-const DIAGONALS_BUILDINGS = [
-  { x: 100, y: 130, width: 80, height: 20 },
-  { x: 260, y: 130, width: 80, height: 20 },
-  { x: 180, y: 190, width: 80, height: 20 },
-  { x: 120, y: 250, width: 80, height: 20 },
-  { x: 240, y: 250, width: 80, height: 20 },
-  { x: 180, y: 320, width: 40, height: 40 },
-  { x: 120, y: 390, width: 80, height: 20 },
-  { x: 240, y: 390, width: 80, height: 20 },
-  { x: 180, y: 450, width: 80, height: 20 },
-  { x: 100, y: 510, width: 80, height: 20 },
-  { x: 260, y: 510, width: 80, height: 20 }
-];
 const BROKEN_X_BRICKS = [
   { id: "brick_v_left_1", spriteName: "brick_1_default", x: 0, y: 20, rotate: 0, scale: 1 },
   { id: "brick_v_left_2", spriteName: "brick_1_default", x: 0, y: 60, rotate: 0, scale: 1 },
