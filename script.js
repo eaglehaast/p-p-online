@@ -5291,7 +5291,9 @@ function gameDraw(){
 
   // здания
   drawAAPlacementZone();
-  drawBuildings();
+  if(currentMapRenderer === MAP_RENDERERS.IMAGE){
+    drawBuildings();
+  }
 
   drawBaseVisuals();
 
