@@ -5731,7 +5731,7 @@ function drawFieldBackground(ctx2d, w, h){
   }
 }
 
-function drawMapSprites(ctx2d, sprites){
+function drawMapSprites(ctx2d, sprites = currentMapSprites){
   const spriteEntries = Array.isArray(sprites) ? sprites : [];
   if(spriteEntries.length === 0){
     return;
@@ -5767,7 +5767,7 @@ function drawMapSprites(ctx2d, sprites){
 }
 
 function drawMapLayer(ctx2d){
-  drawMapSprites(ctx2d, currentMapSprites);
+  drawMapSprites(ctx2d);
 }
 
 
