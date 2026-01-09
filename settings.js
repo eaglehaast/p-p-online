@@ -2262,17 +2262,10 @@ function clearMapPreviewBricksCanvas(){
   }
 }
 
-function getPreviewBrickSprite(spriteName = "brick_1_default", onLoad){
+function getPreviewBrickSprite(spriteName = "brick_1_default"){
   const key = typeof spriteName === 'string' ? spriteName : "brick_1_default";
   const cached = previewBrickSprites.get(key);
   if(cached){
-    if(onLoad){
-      if(isSpriteReady(cached)){
-        onLoad();
-      } else {
-        cached.addEventListener('load', onLoad, { once: true });
-      }
-    }
     return cached;
   }
 
@@ -2291,10 +2284,6 @@ function getPreviewBrickSprite(spriteName = "brick_1_default", onLoad){
     return null;
   }
 
-  if(onLoad && !isSpriteReady(img)){
-    img.addEventListener('load', onLoad, { once: true });
-  }
-
   if(useRegistry && typeof registry.primeImageLoad === 'function'){
     registry.primeImageLoad(img, url, `mapPreviewBrick-${key}`);
   } else if(!img.src){
@@ -2304,6 +2293,13 @@ function getPreviewBrickSprite(spriteName = "brick_1_default", onLoad){
 
   previewBrickSprites.set(key, img);
   return img;
+}
+
+function isBrickItem(item){
+  const id = item?.id;
+  const spriteName = item?.spriteName;
+  return (typeof id === 'string' && id.startsWith('brick'))
+    || (typeof spriteName === 'string' && spriteName.startsWith('brick'));
 }
 
 function drawMapPreviewBricks(boundsWidth, boundsHeight){
@@ -2321,16 +2317,21 @@ function drawMapPreviewBricks(boundsWidth, boundsHeight){
   mapPreviewBricksCtx.clearRect(0, 0, rectWidth, rectHeight);
 
   const bricks = Array.isArray(MAPS[mapIndex]?.bricks) ? MAPS[mapIndex].bricks : [];
+  const previewBricks = bricks.filter(isBrickItem);
   const scaleX = rectWidth / MAP_PREVIEW_BASE_WIDTH;
   const scaleY = rectHeight / MAP_PREVIEW_BASE_HEIGHT;
   const previewScale = Math.min(scaleX, scaleY);
   const offsetX = (rectWidth - MAP_PREVIEW_BASE_WIDTH * previewScale) / 2;
   const offsetY = (rectHeight - MAP_PREVIEW_BASE_HEIGHT * previewScale) / 2;
 
-  for(const brick of bricks){
+  for(const brick of previewBricks){
     const spriteName = typeof brick?.spriteName === 'string' ? brick.spriteName : "brick_1_default";
-    const sprite = getPreviewBrickSprite(spriteName, () => drawMapPreviewBricks(rectWidth, rectHeight));
-    if(!sprite || !isSpriteReady(sprite)){
+    const sprite = getPreviewBrickSprite(spriteName);
+    if(!sprite){
+      continue;
+    }
+    if(!isSpriteReady(sprite)){
+      sprite.addEventListener('load', () => drawMapPreviewBricks(rectWidth, rectHeight), { once: true });
       continue;
     }
 
