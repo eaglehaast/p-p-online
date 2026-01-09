@@ -23,6 +23,7 @@ const DEBUG_FLAME_POS = false;
 const DEBUG_LAYERS = false;
 const DEBUG_VFX = false;
 const DEBUG_BRICK_COLLISIONS = false;
+const DEBUG_COLLISIONS_TOI = false;
 
 const bootTrace = {
   startTs: null,
@@ -3335,6 +3336,7 @@ const MAP_RENDERERS = {
   SPRITES: 'sprites'
 };
 let currentMapSprites = [];
+let currentMapName = "unknown map";
 
 const RANDOM_MAP_SENTINEL_INDEX = MAPS.findIndex(map => map?.name?.toLowerCase?.() === 'random map');
 const PLAYABLE_MAP_INDICES = MAPS
@@ -4995,9 +4997,39 @@ function isPointOnSegment(px, py, p1, p2){
   return Math.hypot(px - closestX, py - closestY) <= 1e-4;
 }
 
-function logBrickCollision(details){
-  if(!DEBUG_BRICK_COLLISIONS) return;
-  console.log("[BRICK COLLISION]", details);
+function getPlaneDebugId(plane){
+  return plane?.id ?? plane?.uid ?? plane?.name ?? null;
+}
+
+function logCollisionTOI({
+  plane,
+  p0,
+  p1,
+  surfaceType,
+  normal,
+  tImpact,
+  vIn,
+  vOut,
+  tieBreakReason
+}){
+  if(!DEBUG_COLLISIONS_TOI) return;
+  const payload = {
+    mapName: currentMapName,
+    planeId: getPlaneDebugId(plane),
+    p0,
+    p1,
+    surface: {
+      type: surfaceType,
+      normal
+    },
+    tImpact,
+    v_in: vIn,
+    v_out: vOut
+  };
+  if(tieBreakReason){
+    payload.tieBreakReason = tieBreakReason;
+  }
+  console.log("[COLLISION][TOI]", payload);
 }
 
 function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
@@ -5032,14 +5064,15 @@ function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
     p.x = hitX + hit.normal.x * EPS_PUSH;
     p.y = hitY + hit.normal.y * EPS_PUSH;
 
-    logBrickCollision({
-      id: hit.surface.colliderId,
-      spriteName: hit.surface.spriteName,
-      surface: hit.surface.type,
-      hit: { x: hit.hitPoint.x, y: hit.hitPoint.y },
+    logCollisionTOI({
+      plane: p,
+      p0: { x: currX, y: currY },
+      p1: { x: endX, y: endY },
+      surfaceType: hit.surface.type,
       normal: { x: hit.normal.x, y: hit.normal.y },
-      incoming,
-      outgoing: { vx: fp.vx, vy: fp.vy }
+      tImpact: hit.t,
+      vIn: { vx: incoming.vx, vy: incoming.vy },
+      vOut: { vx: fp.vx, vy: fp.vy }
     });
 
     collided = true;
@@ -5099,16 +5132,6 @@ function resolveSpriteCollision(fp){
   p.x = closest.hit.x + closest.nx * (POINT_RADIUS + EPS);
   p.y = closest.hit.y + closest.ny * (POINT_RADIUS + EPS);
 
-  logBrickCollision({
-    id: closest.collider.id,
-    spriteName: closest.collider.spriteName,
-    surface: "EDGE",
-    hit: { x: closest.hit.x, y: closest.hit.y },
-    normal: { x: closest.nx, y: closest.ny },
-    incoming,
-    outgoing: { vx: fp.vx, vy: fp.vy }
-  });
-
   return true;
 }
 
@@ -5118,6 +5141,8 @@ function resolveDiagonalBrickCollision(fp, collider){
   const sin = Math.sin(collider.rotation);
   const prevX = Number.isFinite(p.prevX) ? p.prevX : p.x - fp.vx;
   const prevY = Number.isFinite(p.prevY) ? p.prevY : p.y - fp.vy;
+  const endX = p.x;
+  const endY = p.y;
   const halfWidth = collider.halfWidth;
   const halfHeight = collider.halfHeight;
   const width = halfWidth * 2;
@@ -5256,15 +5281,16 @@ function resolveDiagonalBrickCollision(fp, collider){
   p.x = hitWorldX + worldNormal.x * (POINT_RADIUS + EPS);
   p.y = hitWorldY + worldNormal.y * (POINT_RADIUS + EPS);
 
-  logBrickCollision({
-    id: collider.id,
-    spriteName: collider.spriteName,
-    surface: hit.surface,
-    hit: { x: hitWorldX, y: hitWorldY },
+  logCollisionTOI({
+    plane: p,
+    p0: { x: prevX, y: prevY },
+    p1: { x: endX, y: endY },
+    surfaceType: hit.surface,
     normal: { x: worldNormal.x, y: worldNormal.y },
-    tieBreakReason,
-    incoming,
-    outgoing: { vx: fp.vx, vy: fp.vy }
+    tImpact: hit.t,
+    vIn: { vx: incoming.vx, vy: incoming.vy },
+    vOut: { vx: fp.vx, vy: fp.vy },
+    tieBreakReason
   });
 
   return true;
@@ -7770,6 +7796,7 @@ function applyCurrentMap(upcomingRoundNumber){
     mapType: "sprite",
     brickItemCount: spriteSource.length
   });
+  currentMapName = mapName;
   const normalizedMap = normalizeMapForRendering(gameplayMap);
 
   if(normalizedMap.renderer !== MAP_RENDERERS.SPRITES || !Array.isArray(normalizedMap.sprites)){
