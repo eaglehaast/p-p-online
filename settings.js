@@ -249,6 +249,9 @@ const MAPS = [
   }
 ];
 
+const FIELD_TAPE_CELL_WIDTH = RANGE_CELL_WIDTH;
+const FIELD_TAPE_IMAGE_WIDTH = FIELD_TAPE_CELL_WIDTH * MAPS.length;
+
 const fieldOptions = MAPS.map((map, index) => ({
   id: index,
   label: map?.name ?? ''
@@ -501,6 +504,8 @@ let accuracyScrollRafId = null;
 let accuracyTrackTransform = '';
 let accuracyTrackTransition = '';
 let isAccuracyBumping = false;
+let fieldTapeTransform = '';
+let fieldTapeTransition = '';
 let pendulumHost = null;
 let pendulumCurrent = null;
 let pendulumTarget = null;
@@ -519,6 +524,13 @@ const accuracyTrackState = {
   get transition(){ return accuracyTrackTransition; },
   set transition(value){ accuracyTrackTransition = value; },
   apply: applyStoredAccuracyTrackStyles
+};
+const fieldTapeState = {
+  get transform(){ return fieldTapeTransform; },
+  set transform(value){ fieldTapeTransform = value; },
+  get transition(){ return fieldTapeTransition; },
+  set transition(value){ fieldTapeTransition = value; },
+  apply: applyStoredFieldTapeStyles
 };
 
 const getRangeDirFromDx = (dx) => (dx < 0 ? RANGE_DIR_NEXT : (dx > 0 ? RANGE_DIR_PREV : 0));
@@ -734,6 +746,13 @@ function syncAccuracyTrackStylesFrom(target){
   }
 }
 
+function syncFieldTapeStylesFrom(target){
+  if(target instanceof HTMLElement){
+    fieldTapeTransform = target.style.transform || '';
+    fieldTapeTransition = target.style.transition || '';
+  }
+}
+
 function applyStoredRangeTrackStyles(target){
   if(!(target instanceof HTMLElement)) return;
 
@@ -756,6 +775,10 @@ function setRangeTrackStyles(target, styles){
 
 function setAccuracyTrackStyles(target, styles){
   setSliderTrackStyles(target, accuracyTrackState, styles);
+}
+
+function setFieldTapeStyles(target, styles){
+  setSliderTrackStyles(target, fieldTapeState, styles);
 }
 
 function applyStoredAccuracyTrackStyles(target){
@@ -792,6 +815,32 @@ function setSliderTrackStyles(target, state, { transform, transition } = {}){
   state.apply(target);
 }
 
+function applyStoredFieldTapeStyles(target){
+  if(!(target instanceof HTMLElement)) return;
+
+  if(fieldTapeTransition){
+    target.style.transition = fieldTapeTransition;
+  } else {
+    target.style.removeProperty('transition');
+  }
+
+  if(fieldTapeTransform){
+    target.style.transform = fieldTapeTransform;
+  } else {
+    target.style.removeProperty('transform');
+  }
+}
+
+function getFieldTapeElement(){
+  if(!mapNameDisplay) return null;
+  const tape = mapNameDisplay.querySelector('.cp-field-selector__tape');
+  if(tape instanceof HTMLElement){
+    syncFieldTapeStylesFrom(tape);
+    return tape;
+  }
+  return null;
+}
+
 function updateRangeTapePosition(displayPosition = rangeScrollPos, track = null){
   const targetTrack = track ?? ensureRangeDisplayTrack();
   const tape = targetTrack?.querySelector('.range-tape');
@@ -804,6 +853,21 @@ function updateRangeTapePosition(displayPosition = rangeScrollPos, track = null)
   const middleIndex = Math.floor(RANGE_DISPLAY_VALUES.length / 2);
   const offsetPx = (middleIndex - displayPosition) * RANGE_CELL_WIDTH;
   tape.style.transform = `translateX(calc(-50% + ${offsetPx}px))`;
+}
+
+function updateFieldTapePosition(displayPosition = mapIndex, tapeElement = null){
+  const tape = tapeElement ?? getFieldTapeElement();
+  if(!Number.isFinite(displayPosition) || !(tape instanceof HTMLElement)){
+    return;
+  }
+
+  const totalMaps = Math.max(1, MAPS.length);
+  const normalizedIndex = ((displayPosition % totalMaps) + totalMaps) % totalMaps;
+  const middleIndex = Math.floor(totalMaps / 2);
+  const offsetPx = (middleIndex - normalizedIndex) * FIELD_TAPE_CELL_WIDTH;
+
+  tape.style.width = `${FIELD_TAPE_IMAGE_WIDTH}px`;
+  setFieldTapeStyles(tape, { transform: `translateX(calc(-50% + ${offsetPx}px))` });
 }
 
 function updateAccuracyTapePosition(displayPosition = accuracyDisplayIdx, track = null){
@@ -2990,12 +3054,13 @@ function setupPreviewSimulation(){
     addCargo = DEFAULT_SETTINGS.addCargo;
     mapIndex = DEFAULT_SETTINGS.mapIndex;
 
-    updateRangeFlame();
-    updateRangeDisplay();
+  updateRangeFlame();
+  updateRangeDisplay();
   updateAmplitudeDisplay();
   updateAmplitudeIndicator();
   updateMapPreview();
   updateMapNameDisplay();
+  updateFieldTapePosition(mapIndex);
   setTumblerState(addsAABtn, addAA);
   setTumblerState(addsNailsBtn, sharpEdges);
   setTumblerState(addsCargoBtn, addCargo);
@@ -3085,9 +3150,10 @@ if(addsCargoBtn){
 }
 
 const hasMapButtons = mapPrevBtn && mapNextBtn;
-if(hasMapButtons){
+  if(hasMapButtons){
   updateMapPreview();
   updateMapNameDisplay();
+  updateFieldTapePosition(mapIndex);
 
   const changeMap = delta => {
     normalizeFieldLabels({ cancelAnimation: true });
@@ -3102,6 +3168,7 @@ if(hasMapButtons){
     } else {
       updateMapNameDisplay();
     }
+    updateFieldTapePosition(targetIndex);
     saveSettings();
   };
 
@@ -3109,6 +3176,7 @@ if(hasMapButtons){
   mapNextBtn.addEventListener('click', () => changeMap(1));
 } else {
   updateMapPreview();
+  updateFieldTapePosition(mapIndex);
 }
 
   const handleRangeArrow = (delta) => {
@@ -3207,6 +3275,7 @@ window.addEventListener('beforeunload', cleanupRenderers);
   updateRangeFlame();
 updateAmplitudeDisplay();
 updateAmplitudeIndicator();
+updateFieldTapePosition(mapIndex);
 
 window.paperWingsSettings = {
   onShow: handleSettingsLayerShow,
