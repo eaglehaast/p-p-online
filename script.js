@@ -4989,6 +4989,44 @@ function firstBuildingIntersection(x1,y1,x2,y2){
   return closest;
 }
 
+function findFirstColliderHit(prevX, prevY, currX, currY){
+  let closest = null;
+  let minDist = Infinity;
+  const moveX = currX - prevX;
+  const moveY = currY - prevY;
+
+  for(const collider of colliders){
+    const edges = getColliderEdges(collider, POINT_RADIUS);
+    for(const edge of edges){
+      const hit = lineSegmentIntersection(
+        prevX, prevY, currX, currY,
+        edge.x1, edge.y1, edge.x2, edge.y2
+      );
+      if(!hit) continue;
+      const dist = Math.hypot(hit.x - prevX, hit.y - prevY);
+      if(dist >= minDist) continue;
+      let nx = -(edge.y2 - edge.y1);
+      let ny = edge.x2 - edge.x1;
+      const nLen = Math.hypot(nx, ny);
+      if(nLen === 0) continue;
+      nx /= nLen;
+      ny /= nLen;
+      if(nx * moveX + ny * moveY > 0){
+        nx = -nx;
+        ny = -ny;
+      }
+      closest = {
+        collider,
+        hitPoint: { x: hit.x, y: hit.y },
+        edgeNormal: { x: nx, y: ny }
+      };
+      minDist = dist;
+    }
+  }
+
+  return closest;
+}
+
 function logBrickCollision(details){
   if(!DEBUG_BRICK_COLLISIONS) return;
   console.log("[BRICK COLLISION]", details);
@@ -5487,8 +5525,32 @@ function gameDraw(){
       // столкновения со зданиями (cooldown)
       if(fp.collisionCooldown>0){ fp.collisionCooldown -= delta; }
       if(fp.collisionCooldown<=0){
-        for(const collider of colliders){
-          if(planeBuildingCollision(fp, collider)) break;
+        const hit = findFirstColliderHit(prevX, prevY, p.x, p.y);
+        if(hit){
+          const incoming = { vx: fp.vx, vy: fp.vy };
+          const dot = incoming.vx * hit.edgeNormal.x + incoming.vy * hit.edgeNormal.y;
+          fp.vx = incoming.vx - 2 * dot * hit.edgeNormal.x;
+          fp.vy = incoming.vy - 2 * dot * hit.edgeNormal.y;
+
+          const EPS = 0.5;
+          p.x = hit.hitPoint.x + hit.edgeNormal.x * (POINT_RADIUS + EPS);
+          p.y = hit.hitPoint.y + hit.edgeNormal.y * (POINT_RADIUS + EPS);
+
+          logBrickCollision({
+            id: hit.collider.id,
+            spriteName: hit.collider.spriteName,
+            surface: "EDGE",
+            hit: { x: hit.hitPoint.x, y: hit.hitPoint.y },
+            normal: { x: hit.edgeNormal.x, y: hit.edgeNormal.y },
+            incoming,
+            outgoing: { vx: fp.vx, vy: fp.vy }
+          });
+
+          fp.collisionCooldown = 2;
+        } else {
+          for(const collider of colliders){
+            if(planeBuildingCollision(fp, collider)) break;
+          }
         }
       }
 
