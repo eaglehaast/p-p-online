@@ -7359,29 +7359,76 @@ function ensureMapSpriteAssets(sprites = []){
   return MAP_SPRITE_ASSETS.brick_1_default;
 }
 
+const MAP_WARN_ONCE_KEYS = new Set();
+
+function warnOnce(message, data, key = message){
+  if(MAP_WARN_ONCE_KEYS.has(key)){
+    return;
+  }
+  MAP_WARN_ONCE_KEYS.add(key);
+  console.warn(message, data);
+}
+
+function normalizeMapForRendering(map){
+  const normalizedMap = { ...map };
+  const mapName = map?.name || map?.file || "unknown map";
+  const spritesSource = Array.isArray(map?.sprites)
+    ? map.sprites
+    : Array.isArray(map?.bricks)
+      ? map.bricks
+      : null;
+
+  if(!Array.isArray(map?.sprites) && Array.isArray(map?.bricks)){
+    normalizedMap.sprites = map.bricks;
+  }
+
+  if(!map?.renderer && Array.isArray(spritesSource)){
+    normalizedMap.renderer = MAP_RENDERERS.SPRITES;
+  }
+
+  if(Array.isArray(spritesSource)){
+    const validSpriteNames = new Set(Object.keys(MAP_SPRITE_PATHS));
+    normalizedMap.sprites = spritesSource.filter(sprite => {
+      const spriteName = typeof sprite?.spriteName === "string" ? sprite.spriteName : "unknown";
+      if(!validSpriteNames.has(spriteName)){
+        warnOnce(
+          "[MAP] Unknown spriteName; skipping sprite",
+          { mapName, spriteName },
+          `${mapName}:${spriteName}`
+        );
+        return false;
+      }
+      return true;
+    });
+  }
+
+  return normalizedMap;
+}
+
 function applyCurrentMap(upcomingRoundNumber){
   const targetRoundNumber = Number.isInteger(upcomingRoundNumber)
     ? upcomingRoundNumber
     : roundNumber + 1;
   const mapIndex = resolveMapIndexForGameplay(targetRoundNumber);
   const gameplayMap = MAPS[mapIndex] || MAPS[0];
+  const normalizedMap = normalizeMapForRendering(gameplayMap);
 
-  currentMapRenderer = gameplayMap.renderer === MAP_RENDERERS.SPRITES
+  currentMapRenderer = normalizedMap.renderer === MAP_RENDERERS.SPRITES
     ? MAP_RENDERERS.SPRITES
     : MAP_RENDERERS.IMAGE;
-  currentMapSprites = currentMapRenderer === MAP_RENDERERS.SPRITES && Array.isArray(gameplayMap.sprites)
-    ? gameplayMap.sprites
+  currentMapSprites = currentMapRenderer === MAP_RENDERERS.SPRITES && Array.isArray(normalizedMap.sprites)
+    ? normalizedMap.sprites
     : [];
 
   if(currentMapRenderer === MAP_RENDERERS.SPRITES){
     ensureMapSpriteAssets(currentMapSprites);
     clearBrickFrameImage();
   } else {
-    const { img } = loadImageAsset(gameplayMap.file, "brickFrameImg");
+    const { img } = loadImageAsset(normalizedMap.file, "brickFrameImg");
     setBrickFrameImage(img);
   }
-  setFlagConfigsForMap(gameplayMap);
-  rebuildBuildingsFromMap(gameplayMap);
+  setFlagConfigsForMap(normalizedMap);
+  rebuildBuildingsFromMap(normalizedMap);
   updateFieldDimensions();
   resetPlanePositionsForCurrentMap();
   renderScoreboard();
