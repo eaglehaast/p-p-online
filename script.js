@@ -4994,6 +4994,66 @@ function logBrickCollision(details){
   console.log("[BRICK COLLISION]", details);
 }
 
+function resolveSpriteCollision(fp){
+  const p = fp.plane;
+  const prevX = Number.isFinite(p.prevX) ? p.prevX : p.x - fp.vx;
+  const prevY = Number.isFinite(p.prevY) ? p.prevY : p.y - fp.vy;
+  const moveX = p.x - prevX;
+  const moveY = p.y - prevY;
+  const moveLen = Math.hypot(moveX, moveY);
+  if(moveLen === 0) return false;
+
+  let closest = null;
+
+  for(const collider of colliders){
+    const edges = getColliderEdges(collider, POINT_RADIUS);
+    for(const edge of edges){
+      const hit = lineSegmentIntersection(
+        prevX, prevY, p.x, p.y,
+        edge.x1, edge.y1, edge.x2, edge.y2
+      );
+      if(!hit) continue;
+      const dist = Math.hypot(hit.x - prevX, hit.y - prevY);
+      if(closest && dist >= closest.dist) continue;
+      let nx = -(edge.y2 - edge.y1);
+      let ny = edge.x2 - edge.x1;
+      const nLen = Math.hypot(nx, ny);
+      if(nLen === 0) continue;
+      nx /= nLen;
+      ny /= nLen;
+      if(nx * moveX + ny * moveY > 0){
+        nx = -nx;
+        ny = -ny;
+      }
+      closest = { hit, nx, ny, dist, collider, edge };
+    }
+  }
+
+  if(!closest) return false;
+
+  const incoming = { vx: fp.vx, vy: fp.vy };
+  const dot = incoming.vx * closest.nx + incoming.vy * closest.ny;
+  fp.vx = incoming.vx - 2 * dot * closest.nx;
+  fp.vy = incoming.vy - 2 * dot * closest.ny;
+
+  const EPS = 0.5;
+  p.x = closest.hit.x + closest.nx * (POINT_RADIUS + EPS);
+  p.y = closest.hit.y + closest.ny * (POINT_RADIUS + EPS);
+
+  logBrickCollision({
+    id: closest.collider.id,
+    spriteName: closest.collider.spriteName,
+    surface: "EDGE",
+    hit: { x: closest.hit.x, y: closest.hit.y },
+    normal: { x: closest.nx, y: closest.ny },
+    incoming,
+    outgoing: { vx: fp.vx, vy: fp.vy }
+  });
+
+  fp.collisionCooldown = 2;
+  return true;
+}
+
 function resolveDiagonalBrickCollision(fp, collider){
   const p = fp.plane;
   const cos = Math.cos(collider.rotation);
@@ -5384,54 +5444,7 @@ function gameDraw(){
       p.x += fp.vx * deltaSec;
       p.y += fp.vy * deltaSec;
 
-        if(isBrickPixel(p.x, p.y)){
-          const sample = (sx, sy) => isBrickPixel(sx, sy) ? 1 : 0;
-
-          // Estimate surface normal at the current position using a
-          // Sobel-like 3×3 kernel so reflections also work for
-          // diagonal walls.
-          const curX = p.x;
-          const curY = p.y;
-          let nx = (
-            sample(curX - 1, curY - 1) + 2*sample(curX - 1, curY) + sample(curX - 1, curY + 1)
-          ) - (
-            sample(curX + 1, curY - 1) + 2*sample(curX + 1, curY) + sample(curX + 1, curY + 1)
-          );
-          let ny = (
-            sample(curX - 1, curY - 1) + 2*sample(curX, curY - 1) + sample(curX + 1, curY - 1)
-          ) - (
-            sample(curX - 1, curY + 1) + 2*sample(curX, curY + 1) + sample(curX + 1, curY + 1)
-
-          );
-          const len = Math.hypot(nx, ny);
-          if(len > 0){
-            nx /= len;
-            ny /= len;
-            p.x = prevX;
-            p.y = prevY;
-            const dot = fp.vx * nx + fp.vy * ny;
-            fp.vx -= 2 * dot * nx;
-            fp.vy -= 2 * dot * ny;
-            const EPS = 0.5;
-            p.x += nx * EPS;
-            p.y += ny * EPS;
-          } else {
-            const hitX = isBrickPixel(prevX, p.y);
-            const hitY = isBrickPixel(p.x, prevY);
-            if(!hitX && hitY){
-              p.x = prevX;
-              fp.vx = -fp.vx;
-            } else if(hitX && !hitY){
-              p.y = prevY;
-              fp.vy = -fp.vy;
-            } else {
-              p.x = prevX;
-              p.y = prevY;
-              fp.vx = -fp.vx;
-              fp.vy = -fp.vy;
-            }
-          }
-        }
+        resolveSpriteCollision(fp);
 
         // field borders
 
