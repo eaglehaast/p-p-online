@@ -2323,13 +2323,21 @@ function syncAccuracyCrackWatcher(){
 }
 
 function saveSettings(){
-    setStoredItem('settings.flightRangeCells', settingsFlightRangeCells);
+  setStoredItem('settings.flightRangeCells', settingsFlightRangeCells);
   setStoredItem('settings.aimingAmplitude', settingsAimingAmplitude);
   setStoredItem('settings.addAA', addAA);
   setStoredItem('settings.sharpEdges', sharpEdges);
   setStoredItem('settings.addCargo', addCargo);
   mapIndex = sanitizeMapIndex(mapIndex, { allowRandom: true });
   setStoredItem('settings.mapIndex', mapIndex);
+  console.log('[settings] save', {
+    flightRangeCells: settingsFlightRangeCells,
+    aimingAmplitude: settingsAimingAmplitude,
+    addAA,
+    sharpEdges,
+    addCargo,
+    mapIndex
+  });
 }
 
 function hasCurrentMapBricks(){
