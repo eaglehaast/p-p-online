@@ -5161,6 +5161,9 @@ function resolveDiagonalBrickCollision(fp, collider){
   if(!insideExpanded(currPoint.x, currPoint.y)) return false;
 
   const candidates = [];
+  const EPS_T = 1e-4;
+  const EPS_DOT = 1e-6;
+  const surfacePriority = { DIAG: 3, V: 2, H: 1 };
 
   const addCandidate = (t, ix, iy, normal, surface) => {
     if(t < 0 || t > 1) return;
@@ -5211,8 +5214,33 @@ function resolveDiagonalBrickCollision(fp, collider){
   }
 
   if(!candidates.length) return false;
-  candidates.sort((a, b) => a.t - b.t);
-  const hit = candidates[0];
+  let hit = candidates[0];
+  let tieBreakReason = null;
+  const getAbsDot = entry => Math.abs(moveX * entry.normal.x + moveY * entry.normal.y);
+  for(const candidate of candidates.slice(1)){
+    if(candidate.t < hit.t - EPS_T){
+      hit = candidate;
+      tieBreakReason = null;
+      continue;
+    }
+    if(Math.abs(candidate.t - hit.t) <= EPS_T){
+      const candidateDot = getAbsDot(candidate);
+      const hitDot = getAbsDot(hit);
+      if(candidateDot > hitDot + EPS_DOT){
+        hit = candidate;
+        tieBreakReason = "abs_dot";
+        continue;
+      }
+      if(Math.abs(candidateDot - hitDot) <= EPS_DOT){
+        const candidatePriority = surfacePriority[candidate.surface] ?? 0;
+        const hitPriority = surfacePriority[hit.surface] ?? 0;
+        if(candidatePriority > hitPriority){
+          hit = candidate;
+          tieBreakReason = "surface_priority";
+        }
+      }
+    }
+  }
   const localHitX = hit.ix - halfWidth;
   const localHitY = hit.iy - halfHeight;
   const hitWorldX = collider.cx + localHitX * cos - localHitY * sin;
@@ -5236,6 +5264,7 @@ function resolveDiagonalBrickCollision(fp, collider){
     surface: hit.surface,
     hit: { x: hitWorldX, y: hitWorldY },
     normal: { x: worldNormal.x, y: worldNormal.y },
+    tieBreakReason,
     incoming,
     outgoing: { vx: fp.vx, vy: fp.vy }
   });
