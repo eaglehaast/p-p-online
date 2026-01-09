@@ -5003,7 +5003,7 @@ function logBrickCollision(details){
 function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
   const p = fp.plane;
   const radius = POINT_RADIUS;
-  const EPS = 0.5;
+  const EPS_PUSH = 0.5;
   let remainingTime = deltaSec;
   let currX = startX;
   let currY = startY;
@@ -5022,7 +5022,6 @@ function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
 
     const moveX = endX - currX;
     const moveY = endY - currY;
-    const hitTime = remainingTime * hit.t;
     const hitX = currX + moveX * hit.t;
     const hitY = currY + moveY * hit.t;
     const incoming = { vx: fp.vx, vy: fp.vy };
@@ -5030,8 +5029,8 @@ function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
     fp.vx = incoming.vx - 2 * dot * hit.normal.x;
     fp.vy = incoming.vy - 2 * dot * hit.normal.y;
 
-    p.x = hitX + hit.normal.x * (radius + EPS);
-    p.y = hitY + hit.normal.y * (radius + EPS);
+    p.x = hitX + hit.normal.x * EPS_PUSH;
+    p.y = hitY + hit.normal.y * EPS_PUSH;
 
     logBrickCollision({
       id: hit.surface.colliderId,
@@ -5044,8 +5043,8 @@ function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
     });
 
     collided = true;
-    fp.collisionCooldown = 2;
-    remainingTime -= Math.max(hitTime, 1e-4);
+    const timeScale = Math.max(0, 1 - hit.t);
+    remainingTime = remainingTime * timeScale;
     currX = p.x;
     currY = p.y;
     iterations += 1;
@@ -5110,7 +5109,6 @@ function resolveSpriteCollision(fp){
     outgoing: { vx: fp.vx, vy: fp.vy }
   });
 
-  fp.collisionCooldown = 2;
   return true;
 }
 
@@ -5269,7 +5267,6 @@ function resolveDiagonalBrickCollision(fp, collider){
     outgoing: { vx: fp.vx, vy: fp.vy }
   });
 
-  fp.collisionCooldown = 2;
   return true;
 }
 
@@ -5340,9 +5337,6 @@ function planeBuildingCollision(fp, collider){
     p.y = closestWorldY + ny * (POINT_RADIUS + EPS);
   }
 
-  if(collided){
-    fp.collisionCooldown = 2;
-  }
   return collided;
 }
 
@@ -5530,15 +5524,7 @@ function gameDraw(){
       const prevX = p.x;
       const prevY = p.y;
 
-      if(fp.collisionCooldown > 0){
-        fp.collisionCooldown = Math.max(0, fp.collisionCooldown - delta);
-      }
-      if(fp.collisionCooldown <= 0){
-        resolveFlightSurfaceCollision(fp, prevX, prevY, deltaSec);
-      } else {
-        p.x = prevX + fp.vx * deltaSec;
-        p.y = prevY + fp.vy * deltaSec;
-      }
+      resolveFlightSurfaceCollision(fp, prevX, prevY, deltaSec);
 
         // field borders
 
