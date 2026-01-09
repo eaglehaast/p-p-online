@@ -3041,24 +3041,8 @@ function updateFieldBorderOffset(){
     return;
   }
 
-  if (typeof MAP_RENDERERS !== 'undefined'
-    && typeof currentMapRenderer !== 'undefined'
-    && currentMapRenderer === MAP_RENDERERS.SPRITES) {
-    FIELD_BORDER_OFFSET_X = MAP_BRICK_THICKNESS;
-    FIELD_BORDER_OFFSET_Y = MAP_BRICK_THICKNESS;
-    return;
-  }
-
-  if(!brickFrameImg || !brickFrameImg.naturalWidth){
-    FIELD_BORDER_OFFSET_X = FIELD_BORDER_THICKNESS;
-    FIELD_BORDER_OFFSET_Y = FIELD_BORDER_THICKNESS;
-    return;
-  }
-
-  const scaleX = FIELD_WIDTH / brickFrameImg.naturalWidth;
-  const scaleY = WORLD.height / brickFrameImg.naturalHeight;
-  FIELD_BORDER_OFFSET_X = brickFrameBorderPxX * scaleX;
-  FIELD_BORDER_OFFSET_Y = brickFrameBorderPxY * scaleY;
+  FIELD_BORDER_OFFSET_X = MAP_BRICK_THICKNESS;
+  FIELD_BORDER_OFFSET_Y = MAP_BRICK_THICKNESS;
 }
 
 function isBrickPixel(x, y){
@@ -3177,8 +3161,7 @@ const MAP_SPRITE_PATHS = {
   brick_4_diagonal: "ui_gamescreen/bricks/brick4_diagonal copy.png"
 };
 const MAP_RENDER_MODES = {
-  DATA: 'data',
-  LEGACY: 'legacy'
+  DATA: 'data'
 };
 const CLEAR_SKY_VERTICAL_Y = [20,60,100,140,180,220,260,300,340,380,420,460,500,540,580];
 const CLEAR_SKY_HORIZONTAL_X = [0,40,80,120,160,200,240,280,320];
@@ -3351,24 +3334,11 @@ const BROKEN_X_FLAGS = [
   { color: "green", x: 170, y: 568, width: 20, height: 20 }
 ];
 
-const LEGACY_MAPS = [
-  {
-    id: 'clearSky_legacy',
-    name: 'Clear Sky',
-    mode: MAP_RENDER_MODES.LEGACY,
-    renderer: 'image',
-    file: 'ui_gamescreen/maps/easy 1-2 round/map 1 - clear sky 3.png',
-    tier: 'easy',
-    buildings: []
-  }
-];
-
 const MAPS = [
   {
     id: 'clearSky',
     name: 'Clear Sky',
     mode: MAP_RENDER_MODES.DATA,
-    renderer: 'sprites',
     sprites: CLEAR_SKY_BORDER_SPRITES,
     tier: 'easy'
   },
@@ -3376,7 +3346,6 @@ const MAPS = [
     id: 'fiveBricks',
     name: 'fiveBricks',
     mode: MAP_RENDER_MODES.DATA,
-    renderer: 'sprites',
     sprites: FIVE_BRICKS_SPRITES,
     tier: 'easy',
     flags: FIVE_BRICKS_FLAGS
@@ -3385,7 +3354,6 @@ const MAPS = [
     id: 'brokenX',
     name: 'brokenX',
     mode: MAP_RENDER_MODES.DATA,
-    renderer: 'sprites',
     sprites: BROKEN_X_SPRITES,
     tier: 'easy',
     flags: BROKEN_X_FLAGS
@@ -3393,13 +3361,9 @@ const MAPS = [
 ];
 
 const MAP_RENDERERS = {
-  IMAGE: 'image',
   SPRITES: 'sprites'
 };
-let currentMapRenderer = MAP_RENDERERS.IMAGE;
 let currentMapSprites = [];
-
-const CONTROL_PANEL_PREVIEW_CACHE = new Map();
 
 function mergeRunsIntoRects(runs, tolerance = 1){
   const merged = [];
@@ -3452,68 +3416,6 @@ function extractOpaqueRunsFromImageData(imageData){
   return runs;
 }
 
-function generatePreviewBuildingsFromPng(src){
-  return new Promise(resolve => {
-    const { img, url } = getImage(src, "previewBuildings");
-    if (!img || !url) {
-      resolve([]);
-      return;
-    }
-
-    const handleLoad = () => {
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = img.naturalWidth;
-      tempCanvas.height = img.naturalHeight;
-      logCanvasCreation(tempCanvas, 'mapPreviewExtraction');
-      const ctx = tempCanvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-      const imageData = ctx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-      const runs = extractOpaqueRunsFromImageData(imageData);
-      resolve(mergeRunsIntoRects(runs));
-    };
-
-    const handleError = () => resolve([]);
-
-    if (isSpriteReady(img)) {
-      handleLoad();
-      return;
-    }
-
-    img.addEventListener('load', handleLoad, { once: true });
-    img.addEventListener('error', handleError, { once: true });
-
-    primeImageLoad(img, url, "previewBuildings");
-  });
-}
-
-function primeControlPanelPreviewBuildings(map){
-  if(!map?.file?.startsWith('ui_controlpanel/') || !map.file.endsWith('.png')){
-    return;
-  }
-
-  const cached = CONTROL_PANEL_PREVIEW_CACHE.get(map.file);
-  if(cached){
-    return;
-  }
-
-  const pending = generatePreviewBuildingsFromPng(map.file)
-    .then(buildings => {
-      CONTROL_PANEL_PREVIEW_CACHE.set(map.file, buildings);
-      if(Array.isArray(buildings) && buildings.length){
-        map.previewBuildings = buildings;
-      }
-      return buildings;
-    })
-    .catch(() => {
-      CONTROL_PANEL_PREVIEW_CACHE.set(map.file, []);
-      return [];
-    });
-
-  CONTROL_PANEL_PREVIEW_CACHE.set(map.file, pending);
-}
-
-const RANDOM_CONTROL_PANEL_MAP = MAPS.find(m => m.file === 'ui_controlpanel/cp_de_maprandom.png');
-primeControlPanelPreviewBuildings(RANDOM_CONTROL_PANEL_MAP);
 const RANDOM_MAP_SENTINEL_INDEX = MAPS.findIndex(map => map?.name?.toLowerCase?.() === 'random map');
 const PLAYABLE_MAP_INDICES = MAPS
   .map((_, index) => index)
@@ -5605,9 +5507,6 @@ function gameDraw(){
 
   // здания
   drawAAPlacementZone();
-  if(currentMapRenderer === MAP_RENDERERS.IMAGE){
-    drawBuildings();
-  }
 
   drawBaseVisuals();
 
@@ -5832,108 +5731,6 @@ function drawFieldBackground(ctx2d, w, h){
   }
 }
 
-function drawNailEdges(ctx2d, w, h){
-  const spacing = 20;
-  const base = 4;
-  const length = 8;
-
-  ctx2d.fillStyle = "#555";
-  ctx2d.strokeStyle = "#333";
-  ctx2d.lineWidth = 1;
-
-  const halfLine = ctx2d.lineWidth / 2;
-
-  // top border nails
-  for(let x = 0; x < w; x += spacing){
-    const cx = x + spacing / 2;
-    ctx2d.beginPath();
-    ctx2d.moveTo(cx - base/2, halfLine);
-    ctx2d.lineTo(cx + base/2, halfLine);
-    ctx2d.lineTo(cx, length + halfLine);
-    ctx2d.closePath();
-    ctx2d.fill();
-    ctx2d.stroke();
-  }
-
-  // bottom border nails
-  for(let x = 0; x < w; x += spacing){
-    const cx = x + spacing / 2;
-    ctx2d.beginPath();
-    ctx2d.moveTo(cx - base/2, h - halfLine);
-    ctx2d.lineTo(cx + base/2, h - halfLine);
-    ctx2d.lineTo(cx, h - length - halfLine);
-    ctx2d.closePath();
-    ctx2d.fill();
-    ctx2d.stroke();
-  }
-
-  // left border nails
-  for(let y = 0; y < h; y += spacing){
-    const cy = y + spacing / 2;
-    ctx2d.beginPath();
-    ctx2d.moveTo(halfLine, cy - base/2);
-    ctx2d.lineTo(halfLine, cy + base/2);
-    ctx2d.lineTo(length + halfLine, cy);
-    ctx2d.closePath();
-    ctx2d.fill();
-    ctx2d.stroke();
-  }
-
-  // right border nails
-  for(let y = 0; y < h; y += spacing){
-    const cy = y + spacing / 2;
-    ctx2d.beginPath();
-    ctx2d.moveTo(w - halfLine, cy - base/2);
-    ctx2d.lineTo(w - halfLine, cy + base/2);
-    ctx2d.lineTo(w - length - halfLine, cy);
-    ctx2d.closePath();
-    ctx2d.fill();
-    ctx2d.stroke();
-  }
-}
-
-function drawBrickEdges(ctx2d, w, h){
-  if(isSpriteReady(brickFrameImg)){
-    ctx2d.drawImage(brickFrameImg, FIELD_LEFT, 0, FIELD_WIDTH, h);
-  } else {
-    const brickHeight = FIELD_BORDER_THICKNESS;
-    ctx2d.save();
-    ctx2d.translate(FIELD_LEFT, 0);
-
-    ctx2d.save();
-    ctx2d.translate(FIELD_WIDTH / 2, brickHeight / 2);
-    drawBrickWall(ctx2d, FIELD_WIDTH, brickHeight);
-    ctx2d.restore();
-
-    ctx2d.save();
-    ctx2d.translate(FIELD_WIDTH / 2, h - brickHeight / 2);
-    drawBrickWall(ctx2d, FIELD_WIDTH, brickHeight);
-    ctx2d.restore();
-
-    ctx2d.save();
-    ctx2d.translate(brickHeight / 2, h / 2);
-    ctx2d.rotate(Math.PI / 2);
-    drawBrickWall(ctx2d, h, brickHeight);
-    ctx2d.restore();
-
-    ctx2d.save();
-    ctx2d.translate(FIELD_WIDTH - brickHeight / 2, h / 2);
-    ctx2d.rotate(Math.PI / 2);
-    drawBrickWall(ctx2d, h, brickHeight);
-    ctx2d.restore();
-
-    ctx2d.restore();
-  }
-}
-
-function drawFieldEdges(ctx2d, w, h){
-  if(settings.sharpEdges){
-    drawNailEdges(ctx2d, w, h);
-  } else {
-    drawBrickEdges(ctx2d, w, h);
-  }
-}
-
 function drawMapSprites(ctx2d, sprites){
   const spriteEntries = Array.isArray(sprites) ? sprites : [];
   if(spriteEntries.length === 0){
@@ -5970,11 +5767,7 @@ function drawMapSprites(ctx2d, sprites){
 }
 
 function drawMapLayer(ctx2d){
-  if(currentMapRenderer === MAP_RENDERERS.SPRITES){
-    drawMapSprites(ctx2d, currentMapSprites);
-  } else {
-    drawFieldEdges(ctx2d, WORLD.width, WORLD.height);
-  }
+  drawMapSprites(ctx2d, currentMapSprites);
 }
 
 
@@ -6652,15 +6445,6 @@ function drawAimOverlay(rangeTextInfo) {
   hudCtx.restore();
 }
 
-function drawBuildings(){
-  for(const b of buildings){
-    gsBoardCtx.save();
-    gsBoardCtx.translate(b.x, b.y);
-    drawBrickWall(gsBoardCtx, b.width, b.height);
-    gsBoardCtx.restore();
-  }
-}
-
 function drawBaseSprite(ctx2d, color){
   const layout = getBaseLayout(color);
   const sprite = baseSprites[color];
@@ -6834,36 +6618,6 @@ function drawAAUnits(){
     gsBoardCtx.restore();
   }
 }
-
-function drawBrickWall(ctx, width, height){
-  const brickWidth = 20;
-  const brickHeight = 10;
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(-width/2, -height/2, width, height);
-  ctx.clip();
-
-  ctx.fillStyle = '#B22222';
-  ctx.strokeStyle = '#FFFFFF';
-  ctx.lineWidth = 2;
-
-  for(let y = -height/2; y < height/2 + brickHeight; y += brickHeight){
-    const row = Math.floor((y + height/2) / brickHeight);
-    const offset = row % 2 === 0 ? 0 : brickWidth / 2;
-    for(let x = -width/2 - brickWidth; x < width/2 + brickWidth; x += brickWidth){
-      ctx.fillRect(x + offset, y, brickWidth, brickHeight);
-      ctx.strokeRect(x + offset, y, brickWidth, brickHeight);
-    }
-  }
-
-  ctx.restore();
-
-  ctx.strokeStyle = 'black';
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(-width/2, -height/2, width, height);
-}
-
 
 function drawArrow(ctx, cx, cy, dx, dy) {
   if (!isSpriteReady(arrowSprite)) return;
@@ -7902,24 +7656,25 @@ function buildMapSpriteColliders(map){
 
 function normalizeMapForRendering(map){
   const normalizedMap = { ...map };
-  const mapName = map?.name || map?.file || "unknown map";
+  const mapName = map?.name || map?.id || "unknown map";
   const spritesSource = Array.isArray(map?.sprites)
     ? map.sprites
     : Array.isArray(map?.bricks)
       ? map.bricks
-      : null;
+      : Array.isArray(map?.items)
+        ? map.items
+        : null;
 
-  if(!Array.isArray(map?.sprites) && Array.isArray(map?.bricks)){
-    normalizedMap.sprites = map.bricks;
+  if(!Array.isArray(spritesSource)){
+    const error = new Error(`[MAP] Sprite list missing for ${mapName}`);
+    console.error(error.message, { map });
+    throw error;
   }
 
-  if(map?.mode === MAP_RENDER_MODES.DATA){
-    normalizedMap.renderer = MAP_RENDERERS.SPRITES;
-  } else if(map?.mode === MAP_RENDER_MODES.LEGACY){
-    normalizedMap.renderer = MAP_RENDERERS.IMAGE;
-  } else if(!map?.renderer && Array.isArray(spritesSource)){
-    normalizedMap.renderer = MAP_RENDERERS.SPRITES;
+  if(!Array.isArray(map?.sprites)){
+    normalizedMap.sprites = spritesSource;
   }
+  normalizedMap.renderer = MAP_RENDERERS.SPRITES;
 
   if(Array.isArray(spritesSource)){
     const validSpriteNames = new Set(Object.keys(MAP_SPRITE_PATHS));
@@ -7950,20 +7705,14 @@ function applyCurrentMap(upcomingRoundNumber){
   const gameplayMap = MAPS[mapIndex] || MAPS[0];
   const normalizedMap = normalizeMapForRendering(gameplayMap);
 
-  currentMapRenderer = normalizedMap.renderer === MAP_RENDERERS.SPRITES
-    ? MAP_RENDERERS.SPRITES
-    : MAP_RENDERERS.IMAGE;
-  currentMapSprites = currentMapRenderer === MAP_RENDERERS.SPRITES && Array.isArray(normalizedMap.sprites)
-    ? normalizedMap.sprites
-    : [];
-
-  if(currentMapRenderer === MAP_RENDERERS.SPRITES){
-    ensureMapSpriteAssets(currentMapSprites);
-    clearBrickFrameImage();
-  } else {
-    const { img } = loadImageAsset(normalizedMap.file, "brickFrameImg");
-    setBrickFrameImage(img);
+  if(normalizedMap.renderer !== MAP_RENDERERS.SPRITES || !Array.isArray(normalizedMap.sprites)){
+    console.error("[MAP] Non-sprite map rejected", { gameplayMap, normalizedMap });
+    return;
   }
+
+  currentMapSprites = normalizedMap.sprites;
+  ensureMapSpriteAssets(currentMapSprites);
+  clearBrickFrameImage();
   setFlagConfigsForMap(normalizedMap);
   rebuildBuildingsFromMap(normalizedMap);
   updateFieldDimensions();
@@ -7972,23 +7721,6 @@ function applyCurrentMap(upcomingRoundNumber){
 }
 
 function getCollisionBuildings(map){
-  if(map?.renderer === MAP_RENDERERS.SPRITES || map?.mode === MAP_RENDER_MODES.DATA){
-    return [];
-  }
-
-  const mapBuildings = Array.isArray(map?.buildings) ? map.buildings : [];
-  if(mapBuildings.length){
-    return mapBuildings;
-  }
-
-  if(map?.file?.startsWith('ui_controlpanel/')){
-    return [];
-  }
-
-  if(Array.isArray(map?.previewBuildings)){
-    return map.previewBuildings;
-  }
-
   return [];
 }
 
