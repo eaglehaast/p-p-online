@@ -6,6 +6,12 @@ body, button {
   -webkit-tap-highlight-color: transparent;
 }
 
+@font-face {
+  font-family: 'Fantasque Sans Mono';
+  src: local('Fantasque Sans Mono'), local('FantasqueSansMono');
+  font-display: swap;
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
 }
@@ -946,11 +952,10 @@ body, button {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-family: 'Patrick Hand', cursive;
-    font-size: 16px;
-    color: #1b1205;
-    text-shadow: 0 1px 1px rgba(255, 255, 255, 0.5);
     text-align: center;
+    --field-map-name-shadow-x: 0.5px;
+    --field-map-name-shadow-y: 0px;
+    --field-map-name-shadow-opacity: 0.8;
   }
 
   #settingsLayer #frame_field_2_counter .cp-field-selector__tape {
@@ -973,6 +978,14 @@ body, button {
     display: flex;
     align-items: center;
     justify-content: center;
+    font-family: 'Fantasque Sans Mono', system-ui, sans-serif;
+    font-size: 16px;
+    color: #1b1205;
+    text-shadow:
+      var(--field-map-name-shadow-x)
+      var(--field-map-name-shadow-y)
+      0
+      rgba(0, 0, 0, var(--field-map-name-shadow-opacity));
   }
 
   #settingsLayer #frame_field_2_counter .cp-field-selector__label-layer {
