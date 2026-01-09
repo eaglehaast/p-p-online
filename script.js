@@ -7560,6 +7560,10 @@ function applyCurrentMap(upcomingRoundNumber){
 }
 
 function getCollisionBuildings(map){
+  if(map?.renderer === MAP_RENDERERS.SPRITES || map?.mode === MAP_RENDER_MODES.DATA){
+    return [];
+  }
+
   const mapBuildings = Array.isArray(map?.buildings) ? map.buildings : [];
   if(mapBuildings.length){
     return mapBuildings;
