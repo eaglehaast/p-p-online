@@ -37,6 +37,10 @@ const MAP_PREVIEW_BRICK_SPRITE_PATHS = {
   brick_1_default: 'ui_gamescreen/bricks/brick_1_default.png',
   brick_4_diagonal: 'ui_gamescreen/bricks/brick4_diagonal copy.png'
 };
+const MAP_RENDER_MODES = {
+  DATA: 'data',
+  LEGACY: 'legacy'
+};
 
 const CONTROL_PANEL_PREVIEW_CACHE = new Map();
 
@@ -206,6 +210,14 @@ function getPreviewBuildingsForControlPanelMap(map){
 const RANDOM_MAP_FILE = 'ui_controlpanel/cp_de_maprandom.png';
 
 const CLEAR_SKY_BUILDINGS = [];
+const CLEAR_SKY_VERTICAL_Y = [20,60,100,140,180,220,260,300,340,380,420,460,500,540,580];
+const CLEAR_SKY_HORIZONTAL_X = [0,40,80,120,160,200,240,280,320];
+const CLEAR_SKY_BRICKS = [
+  ...CLEAR_SKY_VERTICAL_Y.map(y => ({ spriteName: "brick_1_default", x: 0, y, rotate: 0, scale: 1 })),
+  ...CLEAR_SKY_VERTICAL_Y.map(y => ({ spriteName: "brick_1_default", x: 340, y, rotate: 0, scale: 1 })),
+  ...CLEAR_SKY_HORIZONTAL_X.map(x => ({ spriteName: "brick_1_default", x, y: 0, rotate: -90, scale: -1 })),
+  ...CLEAR_SKY_HORIZONTAL_X.map(x => ({ spriteName: "brick_1_default", x, y: 620, rotate: -90, scale: -1 }))
+];
 const FIVE_BRICKS_BUILDINGS = [
   { x: 100, y: 230, width: 40, height: 20 },
   { x: 140, y: 230, width: 40, height: 20 },
@@ -369,21 +381,38 @@ const BROKEN_X_BUILDINGS = [
   { x: 130, y: 390, width: 60, height: 60 }
 ];
 
-const MAPS = [
+const LEGACY_MAPS = [
   {
+    id: 'clearSky_legacy',
     name: 'Clear Sky',
+    mode: MAP_RENDER_MODES.LEGACY,
     file: 'ui_gamescreen/maps/easy 1-2 round/map 1 - clear sky 3.png',
     tier: 'easy',
     buildings: CLEAR_SKY_BUILDINGS
+  }
+];
+
+const MAPS = [
+  {
+    id: 'clearSky',
+    name: 'Clear Sky',
+    mode: MAP_RENDER_MODES.DATA,
+    tier: 'easy',
+    buildings: CLEAR_SKY_BUILDINGS,
+    bricks: CLEAR_SKY_BRICKS
   },
   {
+    id: 'fiveBricks',
     name: 'fiveBricks',
+    mode: MAP_RENDER_MODES.DATA,
     tier: 'easy',
     buildings: FIVE_BRICKS_BUILDINGS,
     bricks: FIVE_BRICKS_BRICKS
   },
   {
+    id: 'brokenX',
     name: 'brokenX',
+    mode: MAP_RENDER_MODES.DATA,
     tier: 'easy',
     buildings: BROKEN_X_BUILDINGS,
     bricks: BROKEN_X_BRICKS
@@ -2304,7 +2333,11 @@ function saveSettings(){
 }
 
 function hasCurrentMapBricks(){
-  const bricks = MAPS[mapIndex]?.bricks;
+  const map = MAPS[mapIndex];
+  if(map?.mode === MAP_RENDER_MODES.LEGACY){
+    return false;
+  }
+  const bricks = map?.bricks;
   return Array.isArray(bricks) && bricks.length > 0;
 }
 

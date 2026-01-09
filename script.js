@@ -3173,6 +3173,10 @@ const MAP_SPRITE_PATHS = {
   brick_1_default: "ui_gamescreen/bricks/brick_1_default.png",
   brick_4_diagonal: "ui_gamescreen/bricks/brick4_diagonal copy.png"
 };
+const MAP_RENDER_MODES = {
+  DATA: 'data',
+  LEGACY: 'legacy'
+};
 const CLEAR_SKY_VERTICAL_Y = [20,60,100,140,180,220,260,300,340,380,420,460,500,540,580];
 const CLEAR_SKY_HORIZONTAL_X = [0,40,80,120,160,200,240,280,320];
 const CLEAR_SKY_BORDER_SPRITES = [
@@ -3344,16 +3348,32 @@ const BROKEN_X_FLAGS = [
   { color: "green", x: 170, y: 568, width: 20, height: 20 }
 ];
 
+const LEGACY_MAPS = [
+  {
+    id: 'clearSky_legacy',
+    name: 'Clear Sky',
+    mode: MAP_RENDER_MODES.LEGACY,
+    renderer: 'image',
+    file: 'ui_gamescreen/maps/easy 1-2 round/map 1 - clear sky 3.png',
+    tier: 'easy',
+    buildings: []
+  }
+];
+
 const MAPS = [
   {
+    id: 'clearSky',
     name: 'Clear Sky',
+    mode: MAP_RENDER_MODES.DATA,
     renderer: 'sprites',
     sprites: CLEAR_SKY_BORDER_SPRITES,
     tier: 'easy',
     buildings: []
   },
   {
+    id: 'fiveBricks',
     name: 'fiveBricks',
+    mode: MAP_RENDER_MODES.DATA,
     renderer: 'sprites',
     sprites: FIVE_BRICKS_SPRITES,
     tier: 'easy',
@@ -3361,7 +3381,9 @@ const MAPS = [
     flags: FIVE_BRICKS_FLAGS
   },
   {
+    id: 'brokenX',
     name: 'brokenX',
+    mode: MAP_RENDER_MODES.DATA,
     renderer: 'sprites',
     sprites: BROKEN_X_SPRITES,
     tier: 'easy',
@@ -7469,7 +7491,11 @@ function normalizeMapForRendering(map){
     normalizedMap.sprites = map.bricks;
   }
 
-  if(!map?.renderer && Array.isArray(spritesSource)){
+  if(map?.mode === MAP_RENDER_MODES.DATA){
+    normalizedMap.renderer = MAP_RENDERERS.SPRITES;
+  } else if(map?.mode === MAP_RENDER_MODES.LEGACY){
+    normalizedMap.renderer = MAP_RENDERERS.IMAGE;
+  } else if(!map?.renderer && Array.isArray(spritesSource)){
     normalizedMap.renderer = MAP_RENDERERS.SPRITES;
   }
 
