@@ -654,7 +654,6 @@
         <div><dt>Ход</dt><dd id="statusTurn">–</dd></div>
         <div><dt>Стрелять?</dt><dd id="statusAwaiting">–</dd></div>
         <div><dt>ПВО</dt><dd id="statusAA">–</dd></div>
-        <div><dt>Здания</dt><dd id="statusBuildings">–</dd></div>
       </dl>
       <p class="harness-note">Значения обновляются автоматически каждые 0.5 секунды.</p>
     </div>
@@ -707,7 +706,6 @@
         turn: document.getElementById('statusTurn'),
         awaiting: document.getElementById('statusAwaiting'),
         aa: document.getElementById('statusAA'),
-        buildings: document.getElementById('statusBuildings'),
         scoreGreen: document.getElementById('scoreGreen'),
         scoreBlue: document.getElementById('scoreBlue')
       };
@@ -941,10 +939,6 @@
         }
         if(statusElements.aa){
           statusElements.aa.textContent = window.settings?.addAA ? 'включено' : 'выключено';
-        }
-        if(statusElements.buildings){
-          const count = Array.isArray(window.buildings) ? window.buildings.length : 0;
-          statusElements.buildings.textContent = count;
         }
         const aaBtn = document.getElementById('toggleAAButton');
         if(aaBtn){

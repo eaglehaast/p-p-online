@@ -4174,7 +4174,7 @@ gsBoardCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null
 function isValidAAPlacement(x,y){
   // Allow Anti-Aircraft placement anywhere within the player's half of the field.
   // The center may touch field edges or overlap planes, but must not be inside
-  // any building so that AA can be destroyed by planes.
+  // any collider so that AA can be destroyed by planes.
 
   const half = WORLD.height / 2;
 
@@ -4762,26 +4762,6 @@ function lineSegmentIntersection(x1,y1,x2,y2, x3,y3,x4,y4){
     return {x:px, y:py};
   }
   return null;
-}
-
-// Find the closest intersection point of a line segment with any building
-function firstBuildingIntersection(x1,y1,x2,y2){
-  let closest = null;
-  let minDist = Infinity;
-  for(const collider of colliders){
-    const edges = getColliderEdges(collider, 0);
-    for(const e of edges){
-      const hit = lineSegmentIntersection(x1,y1,x2,y2, e.x1,e.y1,e.x2,e.y2);
-      if(hit){
-        const d = Math.hypot(hit.x - x1, hit.y - y1);
-        if(d < minDist){
-          minDist = d;
-          closest = hit;
-        }
-      }
-    }
-  }
-  return closest;
 }
 
 function findFirstColliderHit(prevX, prevY, currX, currY){
