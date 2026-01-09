@@ -3156,6 +3156,7 @@ let points       = [];
 Object.defineProperty(window, 'points', { get: () => points });
 let flyingPoints = [];
 let buildings    = [];
+let colliders    = [];
 
 let aaUnits     = [];
 let aaPlacementPreview = null;
@@ -4752,33 +4753,11 @@ function getRandomDeviation(distance, maxDev){
 function findMirrorShot(plane, enemy){
   let best = null; // {mirrorTarget, totalDist}
 
-  for(const b of buildings){
-    const left = b.x - b.width/2, right = b.x + b.width/2;
-    const top  = b.y - b.height/2, bottom = b.y + b.height/2;
-
-    // учитываем радиус самолёта при планировании
-    const mLeft   = left   - POINT_RADIUS;
-    const mRight  = right  + POINT_RADIUS;
-    const mTop    = top    - POINT_RADIUS;
-    const mBottom = bottom + POINT_RADIUS;
-
-    const edges = [
-      {type:"H", x1:left, y1:top,    x2:right, y2:top,    big:{x1:mLeft,  y1:mTop,    x2:mRight, y2:mTop}},
-      {type:"H", x1:left, y1:bottom, x2:right, y2:bottom, big:{x1:mLeft,  y1:mBottom, x2:mRight, y2:mBottom}},
-      {type:"V", x1:left, y1:top,    x2:left,  y2:bottom, big:{x1:mLeft,  y1:mTop,    x2:mLeft,  y2:mBottom}},
-      {type:"V", x1:right,y1:top,    x2:right, y2:bottom, big:{x1:mRight, y1:mTop,    x2:mRight, y2:mBottom}}
-    ];
+  for(const collider of colliders){
+    const edges = getColliderEdges(collider, 0);
 
     for(const e of edges){
-      // "Отразим" цель
-      let mirrorTarget;
-      if(e.type==="V"){ // x = const
-        const xEdge = e.x1;
-        mirrorTarget = { x: 2*xEdge - enemy.x, y: enemy.y };
-      } else {         // y = const
-        const yEdge = e.y1;
-        mirrorTarget = { x: enemy.x, y: 2*yEdge - enemy.y };
-      }
+      const mirrorTarget = reflectPointAcrossLine(enemy.x, enemy.y, e.x1, e.y1, e.x2, e.y2);
 
       // Пересечение линии (plane -> mirrorTarget) с ребром
       const inter = lineSegmentIntersection(
@@ -4787,9 +4766,11 @@ function findMirrorShot(plane, enemy){
       );
       if(!inter) continue;
 
+      const ignoreEdge = { colliderId: collider.id, edgeIndex: e.edgeIndex };
+
       // Путь чист?
-      if(!isPathClearExceptEdge(plane.x, plane.y, inter.x, inter.y, b, e.big)) continue;
-      if(!isPathClearExceptEdge(inter.x, inter.y, enemy.x, enemy.y, b, e.big)) continue;
+      if(!isPathClearExceptEdge(plane.x, plane.y, inter.x, inter.y, collider, ignoreEdge)) continue;
+      if(!isPathClearExceptEdge(inter.x, inter.y, enemy.x, enemy.y, collider, ignoreEdge)) continue;
 
       const totalDist = Math.hypot(plane.x - inter.x, plane.y - inter.y) +
                         Math.hypot(inter.x  - enemy.x, inter.y  - enemy.y);
@@ -4810,45 +4791,60 @@ function isPointInsideBuilding(x, y, b){
          y <= (b.y + b.height/2);
 }
 
+function getColliderEdges(collider, margin = 0){
+  const hw = collider.halfWidth + margin;
+  const hh = collider.halfHeight + margin;
+  const cos = Math.cos(collider.rotation);
+  const sin = Math.sin(collider.rotation);
+  const corners = [
+    { x: -hw, y: -hh },
+    { x: hw, y: -hh },
+    { x: hw, y: hh },
+    { x: -hw, y: hh }
+  ].map(point => ({
+    x: collider.cx + point.x * cos - point.y * sin,
+    y: collider.cy + point.x * sin + point.y * cos
+  }));
+
+  return corners.map((point, index) => {
+    const next = corners[(index + 1) % corners.length];
+    return {
+      x1: point.x,
+      y1: point.y,
+      x2: next.x,
+      y2: next.y,
+      colliderId: collider.id,
+      edgeIndex: index
+    };
+  });
+}
+
 function isPathClear(x1,y1,x2,y2){
-  for(const b of buildings){
-    if(checkLineIntersectionWithBuilding(x1,y1,x2,y2,b)) return false;
+  for(const collider of colliders){
+    if(checkLineIntersectionWithCollider(x1,y1,x2,y2,collider)) return false;
   }
   return true;
 }
-function isPathClearExceptEdge(x1,y1,x2,y2, building, edge){
-  for(const b of buildings){
-    if(b!==building){
-      if(checkLineIntersectionWithBuilding(x1,y1,x2,y2,b)) return false;
+function isPathClearExceptEdge(x1,y1,x2,y2, collider, edge){
+  for(const entry of colliders){
+    if(entry!==collider){
+      if(checkLineIntersectionWithCollider(x1,y1,x2,y2,entry)) return false;
     } else {
-      if(checkLineIntersectionWithBuilding(x1,y1,x2,y2,b, edge)) return false;
+      if(checkLineIntersectionWithCollider(x1,y1,x2,y2,entry, edge)) return false;
     }
   }
   return true;
 }
 
-function checkLineIntersectionWithBuilding(x1,y1,x2,y2,b, ignoreEdge=null){
+function checkLineIntersectionWithCollider(x1,y1,x2,y2,collider, ignoreEdge=null){
   const margin = POINT_RADIUS;
-  const left   = b.x - b.width/2  - margin,
-        right  = b.x + b.width/2  + margin,
-        top    = b.y - b.height/2 - margin,
-        bottom = b.y + b.height/2 + margin;
-
-  const edges = [
-    {id:"top",    x1:left, y1:top,    x2:right, y2:top   },
-    {id:"right",  x1:right,y1:top,    x2:right, y2:bottom},
-    {id:"bottom", x1:right,y1:bottom, x2:left,  y2:bottom},
-    {id:"left",   x1:left, y1:bottom, x2:left,  y2:top   }
-  ];
+  const edges = getColliderEdges(collider, margin);
 
   for(const e of edges){
-    if(ignoreEdge && sameEdge(e, ignoreEdge)) continue;
+    if(ignoreEdge && e.colliderId === ignoreEdge.colliderId && e.edgeIndex === ignoreEdge.edgeIndex) continue;
     if(doLinesIntersect(x1,y1,x2,y2, e.x1,e.y1,e.x2,e.y2)) return true;
   }
   return false;
-}
-function sameEdge(a,e){
-  return (a.x1===e.x1 && a.y1===e.y1 && a.x2===e.x2 && a.y2===e.y2);
 }
 
 function doLinesIntersect(x1,y1,x2,y2, x3,y3,x4,y4){
@@ -4857,6 +4853,19 @@ function doLinesIntersect(x1,y1,x2,y2, x3,y3,x4,y4){
   }
   return (ccw(x1,y1,x3,y3,x4,y4) !== ccw(x2,y2,x3,y3,x4,y4)) &&
          (ccw(x1,y1,x2,y2,x3,y3) !== ccw(x1,y1,x2,y2,x4,y4));
+}
+
+function reflectPointAcrossLine(px, py, x1, y1, x2, y2){
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const denom = dx * dx + dy * dy;
+  if(denom === 0){
+    return { x: px, y: py };
+  }
+  const t = ((px - x1) * dx + (py - y1) * dy) / denom;
+  const projX = x1 + t * dx;
+  const projY = y1 + t * dy;
+  return { x: 2 * projX - px, y: 2 * projY - py };
 }
 
 /* Пересечение двух отрезков */
@@ -4879,15 +4888,8 @@ function lineSegmentIntersection(x1,y1,x2,y2, x3,y3,x4,y4){
 function firstBuildingIntersection(x1,y1,x2,y2){
   let closest = null;
   let minDist = Infinity;
-  for(const b of buildings){
-    const left = b.x - b.width/2, right = b.x + b.width/2;
-    const top  = b.y - b.height/2, bottom = b.y + b.height/2;
-    const edges = [
-      {x1:left, y1:top,    x2:right, y2:top   },
-      {x1:right,y1:top,    x2:right, y2:bottom},
-      {x1:right,y1:bottom, x2:left,  y2:bottom},
-      {x1:left, y1:bottom, x2:left,  y2:top   }
-    ];
+  for(const collider of colliders){
+    const edges = getColliderEdges(collider, 0);
     for(const e of edges){
       const hit = lineSegmentIntersection(x1,y1,x2,y2, e.x1,e.y1,e.x2,e.y2);
       if(hit){
@@ -4903,7 +4905,7 @@ function firstBuildingIntersection(x1,y1,x2,y2){
 }
 
 /* Коллизии самолёт <-> здание */
-function planeBuildingCollision(fp, b){
+function planeBuildingCollision(fp, collider){
   const p = fp.plane;
   let collided = false;
 
@@ -4911,10 +4913,15 @@ function planeBuildingCollision(fp, b){
   // Разрешаем до двух последовательных отражений за один кадр,
   // чтобы избегать «проскальзывания» по ребру.
   for(let i=0;i<2;i++){
-    const closestX = clamp(p.x, b.x - b.width/2,  b.x + b.width/2);
-    const closestY = clamp(p.y, b.y - b.height/2, b.y + b.height/2);
-    const dx = p.x - closestX;
-    const dy = p.y - closestY;
+    const cos = Math.cos(collider.rotation);
+    const sin = Math.sin(collider.rotation);
+    const localX = (p.x - collider.cx) * cos + (p.y - collider.cy) * sin;
+    const localY = -(p.x - collider.cx) * sin + (p.y - collider.cy) * cos;
+
+    const clampedX = clamp(localX, -collider.halfWidth, collider.halfWidth);
+    const clampedY = clamp(localY, -collider.halfHeight, collider.halfHeight);
+    const dx = localX - clampedX;
+    const dy = localY - clampedY;
     const dist2 = dx*dx + dy*dy;
     if(dist2 >= POINT_RADIUS*POINT_RADIUS) break;
 
@@ -4925,20 +4932,26 @@ function planeBuildingCollision(fp, b){
     // направление нормали из точки соприкосновения
     if(dx !== 0 || dy !== 0){
       const dist = Math.sqrt(dist2);
-      nx = dx / dist;
-      ny = dy / dist;
+      const localNx = dx / dist;
+      const localNy = dy / dist;
+      nx = localNx * cos - localNy * sin;
+      ny = localNx * sin + localNy * cos;
     } else {
       // если центр внутри прямоугольника – fallback по оси минимального проникновения
-      const penLeft   = Math.abs(p.x - (b.x - b.width/2));
-      const penRight  = Math.abs((b.x + b.width/2) - p.x);
-      const penTop    = Math.abs(p.y - (b.y - b.height/2));
-      const penBottom = Math.abs((b.y + b.height/2) - p.y);
+      const penLeft   = collider.halfWidth + localX;
+      const penRight  = collider.halfWidth - localX;
+      const penTop    = collider.halfHeight + localY;
+      const penBottom = collider.halfHeight - localY;
 
       const minPen = Math.min(penLeft, penRight, penTop, penBottom);
-      if(minPen === penLeft)      { nx = -1; ny = 0; }
-      else if(minPen === penRight){ nx =  1; ny = 0; }
-      else if(minPen === penTop)  { nx =  0; ny = -1;}
-      else                        { nx =  0; ny =  1;}
+      let localNx = 0;
+      let localNy = 0;
+      if(minPen === penLeft)      { localNx = -1; localNy = 0; }
+      else if(minPen === penRight){ localNx =  1; localNy = 0; }
+      else if(minPen === penTop)  { localNx =  0; localNy = -1;}
+      else                        { localNx =  0; localNy =  1;}
+      nx = localNx * cos - localNy * sin;
+      ny = localNx * sin + localNy * cos;
     }
 
     // отражаем скорость
@@ -4948,8 +4961,10 @@ function planeBuildingCollision(fp, b){
 
     // выталкивание за пределы
     const EPS = 0.5;
-    p.x = closestX + nx * (POINT_RADIUS + EPS);
-    p.y = closestY + ny * (POINT_RADIUS + EPS);
+    const closestWorldX = collider.cx + clampedX * cos - clampedY * sin;
+    const closestWorldY = collider.cy + clampedX * sin + clampedY * cos;
+    p.x = closestWorldX + nx * (POINT_RADIUS + EPS);
+    p.y = closestWorldY + ny * (POINT_RADIUS + EPS);
   }
 
   if(collided){
@@ -5235,8 +5250,8 @@ function gameDraw(){
       // столкновения со зданиями (cooldown)
       if(fp.collisionCooldown>0){ fp.collisionCooldown -= delta; }
       if(fp.collisionCooldown<=0){
-        for(const b of buildings){
-          if(planeBuildingCollision(fp, b)) break;
+        for(const collider of colliders){
+          if(planeBuildingCollision(fp, collider)) break;
         }
       }
 
@@ -7490,6 +7505,100 @@ function warnOnce(message, data, key = message){
   console.warn(message, data);
 }
 
+function getMapSpriteBaseSize(spriteName){
+  const asset = MAP_SPRITE_ASSETS[spriteName];
+  if(isSpriteReady(asset)){
+    return { width: asset.naturalWidth, height: asset.naturalHeight };
+  }
+
+  if(spriteName === "brick_4_diagonal"){
+    const side = MAP_BRICK_THICKNESS * 2;
+    return { width: side, height: side };
+  }
+
+  return { width: MAP_BRICK_THICKNESS, height: MAP_BRICK_THICKNESS * 2 };
+}
+
+function getSpriteScale(sprite){
+  const uniformScale = Number.isFinite(sprite?.scale) ? sprite.scale : 1;
+  return {
+    scaleX: Number.isFinite(sprite?.scaleX) ? sprite.scaleX : uniformScale,
+    scaleY: Number.isFinite(sprite?.scaleY) ? sprite.scaleY : uniformScale
+  };
+}
+
+function getSpriteColliderCenter(sprite, baseWidth, baseHeight, scaleX, scaleY, rotationDeg){
+  const { x = 0, y = 0 } = sprite || {};
+  const normalizedRotation = ((rotationDeg % 360) + 360) % 360;
+  const swapsDimensions = normalizedRotation % 180 !== 0;
+  const drawnWidth = (swapsDimensions ? baseHeight : baseWidth) * Math.abs(scaleX);
+  const drawnHeight = (swapsDimensions ? baseWidth : baseHeight) * Math.abs(scaleY);
+  return { cx: x + drawnWidth / 2, cy: y + drawnHeight / 2 };
+}
+
+function buildSpriteCollider(sprite, spriteIndex){
+  if(!sprite) return null;
+  const spriteName = typeof sprite?.spriteName === "string" ? sprite.spriteName : null;
+  if(!spriteName || !MAP_SPRITE_PATHS[spriteName]){
+    return null;
+  }
+
+  const { width: baseWidth, height: baseHeight } = getMapSpriteBaseSize(spriteName);
+  const { scaleX, scaleY } = getSpriteScale(sprite);
+  const rotationDeg = Number.isFinite(sprite?.rotate) ? sprite.rotate : 0;
+  const rotationRad = rotationDeg * Math.PI / 180;
+  const { cx, cy } = getSpriteColliderCenter(sprite, baseWidth, baseHeight, scaleX, scaleY, rotationDeg);
+
+  if(!Number.isFinite(cx) || !Number.isFinite(cy)){
+    return null;
+  }
+
+  const baseId = sprite?.id ?? `${spriteName}-${spriteIndex}`;
+  const id = typeof baseId === "string" ? baseId : `${spriteName}-${spriteIndex}`;
+
+  if(spriteName === "brick_4_diagonal"){
+    const thickness = Math.min(baseWidth, baseHeight) * Math.max(Math.abs(scaleX), Math.abs(scaleY));
+    const side = Math.max(baseWidth, baseHeight) * Math.max(Math.abs(scaleX), Math.abs(scaleY));
+    const diagonalLength = side * Math.SQRT2;
+    const mirrorSign = Math.sign(scaleX || 1) * Math.sign(scaleY || 1);
+    const diagonalRotation = (rotationDeg + (mirrorSign < 0 ? -45 : 45)) * Math.PI / 180;
+    return {
+      id,
+      type: "rect",
+      source: "sprite",
+      spriteName,
+      cx,
+      cy,
+      halfWidth: diagonalLength / 2,
+      halfHeight: thickness / 2,
+      rotation: diagonalRotation
+    };
+  }
+
+  return {
+    id,
+    type: "rect",
+    source: "sprite",
+    spriteName,
+    cx,
+    cy,
+    halfWidth: (baseWidth * Math.abs(scaleX)) / 2,
+    halfHeight: (baseHeight * Math.abs(scaleY)) / 2,
+    rotation: rotationRad
+  };
+}
+
+function buildMapSpriteColliders(map){
+  const sources = [];
+  if(Array.isArray(map?.items)) sources.push(...map.items);
+  if(Array.isArray(map?.sprites)) sources.push(...map.sprites);
+  if(Array.isArray(map?.bricks) && map.bricks !== map.sprites) sources.push(...map.bricks);
+
+  return sources
+    .map((sprite, index) => buildSpriteCollider(sprite, index))
+    .filter(Boolean);
+}
+
 function normalizeMapForRendering(map){
   const normalizedMap = { ...map };
   const mapName = map?.name || map?.file || "unknown map";
@@ -7526,6 +7635,8 @@ function normalizeMapForRendering(map){
       return true;
     });
   }
+
+  normalizedMap.colliders = buildMapSpriteColliders(normalizedMap);
 
   return normalizedMap;
 }
@@ -7592,6 +7703,22 @@ function rebuildBuildingsFromMap(map){
       height: b.height
     }))
     .filter(b => Number.isFinite(b.x) && Number.isFinite(b.y) && Number.isFinite(b.width) && Number.isFinite(b.height));
+
+  const spriteColliders = Array.isArray(map?.colliders) ? map.colliders : [];
+  if(spriteColliders.length){
+    colliders = spriteColliders;
+  } else {
+    colliders = buildings.map((b, index) => ({
+      id: b.id ?? `building-${index}`,
+      type: "rect",
+      source: "building",
+      cx: b.x,
+      cy: b.y,
+      halfWidth: b.width / 2,
+      halfHeight: b.height / 2,
+      rotation: 0
+    }));
+  }
 }
 
 function updateUiScale() {
