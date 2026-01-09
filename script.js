@@ -3141,6 +3141,7 @@ let points       = [];
 Object.defineProperty(window, 'points', { get: () => points });
 let flyingPoints = [];
 let colliders    = [];
+let colliderSurfaces = [];
 
 let aaUnits     = [];
 let aaPlacementPreview = null;
@@ -4699,6 +4700,106 @@ function getColliderEdges(collider, margin = 0){
   });
 }
 
+function getColliderSurfaces(collider){
+  if(collider.type === "diag"){
+    return buildDiagonalColliderSurfaces(collider);
+  }
+  return buildRectColliderSurfaces(collider);
+}
+
+function buildRectColliderSurfaces(collider){
+  const hw = collider.halfWidth;
+  const hh = collider.halfHeight;
+  const cos = Math.cos(collider.rotation);
+  const sin = Math.sin(collider.rotation);
+  const corners = [
+    { x: -hw, y: -hh },
+    { x: hw, y: -hh },
+    { x: hw, y: hh },
+    { x: -hw, y: hh }
+  ].map(point => ({
+    x: collider.cx + point.x * cos - point.y * sin,
+    y: collider.cy + point.x * sin + point.y * cos
+  }));
+
+  return corners.map((point, index) => {
+    const next = corners[(index + 1) % corners.length];
+    const normal = getSurfaceNormal(point, next, collider);
+    if(!normal) return null;
+    return {
+      p1: { x: point.x, y: point.y },
+      p2: { x: next.x, y: next.y },
+      normal,
+      type: "axis",
+      id: `${collider.id}-axis-${index}`,
+      colliderId: collider.id,
+      spriteName: collider.spriteName
+    };
+  }).filter(Boolean);
+}
+
+function buildDiagonalColliderSurfaces(collider){
+  const hw = collider.halfWidth;
+  const hh = collider.halfHeight;
+  const cos = Math.cos(collider.rotation);
+  const sin = Math.sin(collider.rotation);
+  const corners = {
+    tl: { x: -hw, y: -hh },
+    tr: { x: hw, y: -hh },
+    br: { x: hw, y: hh },
+    bl: { x: -hw, y: hh }
+  };
+  const localPoints = collider.diagSign >= 0
+    ? [corners.tl, corners.tr, corners.br]
+    : [corners.tr, corners.br, corners.bl];
+  const worldPoints = localPoints.map(point => ({
+    x: collider.cx + point.x * cos - point.y * sin,
+    y: collider.cy + point.x * sin + point.y * cos
+  }));
+
+  return worldPoints.map((point, index) => {
+    const next = worldPoints[(index + 1) % worldPoints.length];
+    const localA = localPoints[index];
+    const localB = localPoints[(index + 1) % localPoints.length];
+    const isAxisAligned = localA.x === localB.x || localA.y === localB.y;
+    const normal = getSurfaceNormal(point, next, collider);
+    if(!normal) return null;
+    return {
+      p1: { x: point.x, y: point.y },
+      p2: { x: next.x, y: next.y },
+      normal,
+      type: isAxisAligned ? "axis" : "diag",
+      id: `${collider.id}-${isAxisAligned ? "axis" : "diag"}-${index}`,
+      colliderId: collider.id,
+      spriteName: collider.spriteName
+    };
+  }).filter(Boolean);
+}
+
+function getSurfaceNormal(p1, p2, collider){
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  let nx = dy;
+  let ny = -dx;
+  const len = Math.hypot(nx, ny);
+  if(len === 0) return null;
+  nx /= len;
+  ny /= len;
+  const midX = (p1.x + p2.x) / 2;
+  const midY = (p1.y + p2.y) / 2;
+  const toCenterX = collider.cx - midX;
+  const toCenterY = collider.cy - midY;
+  if(nx * toCenterX + ny * toCenterY > 0){
+    nx = -nx;
+    ny = -ny;
+  }
+  return { x: nx, y: ny };
+}
+
+function buildColliderSurfaces(colliders){
+  return colliders.flatMap(collider => getColliderSurfaces(collider));
+}
+
 function isPathClear(x1,y1,x2,y2){
   for(const collider of colliders){
     if(checkLineIntersectionWithCollider(x1,y1,x2,y2,collider)) return false;
@@ -4802,9 +4903,155 @@ function findFirstColliderHit(prevX, prevY, currX, currY){
   return closest;
 }
 
+function findFirstSurfaceHit(p0, p1, radius){
+  let best = null;
+  for(const surface of colliderSurfaces){
+    const hit = getSurfaceHit(p0, p1, radius, surface);
+    if(!hit) continue;
+    if(!best || hit.t < best.t){
+      best = hit;
+    }
+  }
+  return best;
+}
+
+function getSurfaceHit(p0, p1, radius, surface){
+  const vx = p1.x - p0.x;
+  const vy = p1.y - p0.y;
+  const speed2 = vx * vx + vy * vy;
+  if(speed2 === 0) return null;
+
+  const candidates = [];
+
+  const denom = surface.normal.x * vx + surface.normal.y * vy;
+  if(denom < 0){
+    const d0 = surface.normal.x * (p0.x - surface.p1.x) + surface.normal.y * (p0.y - surface.p1.y);
+    const t = (radius - d0) / denom;
+    if(t >= 0 && t <= 1){
+      const hitX = p0.x + vx * t - surface.normal.x * radius;
+      const hitY = p0.y + vy * t - surface.normal.y * radius;
+      if(isPointOnSegment(hitX, hitY, surface.p1, surface.p2)){
+        candidates.push({
+          t,
+          normal: surface.normal,
+          hitPoint: { x: hitX, y: hitY },
+          surface
+        });
+      }
+    }
+  }
+
+  for(const endpoint of [surface.p1, surface.p2]){
+    const hit = getEndpointHit(p0, { x: vx, y: vy }, radius, endpoint);
+    if(hit){
+      candidates.push({
+        t: hit.t,
+        normal: hit.normal,
+        hitPoint: { x: endpoint.x, y: endpoint.y },
+        surface
+      });
+    }
+  }
+
+  if(!candidates.length) return null;
+  candidates.sort((a, b) => a.t - b.t);
+  return candidates[0];
+}
+
+function getEndpointHit(p0, v, radius, endpoint){
+  const dx = p0.x - endpoint.x;
+  const dy = p0.y - endpoint.y;
+  const a = v.x * v.x + v.y * v.y;
+  const b = 2 * (dx * v.x + dy * v.y);
+  const c = dx * dx + dy * dy - radius * radius;
+  const disc = b * b - 4 * a * c;
+  if(disc < 0 || a === 0) return null;
+  const sqrt = Math.sqrt(disc);
+  const t1 = (-b - sqrt) / (2 * a);
+  const t2 = (-b + sqrt) / (2 * a);
+  const t = [t1, t2].find(value => value >= 0 && value <= 1);
+  if(t === undefined) return null;
+  const hitX = p0.x + v.x * t;
+  const hitY = p0.y + v.y * t;
+  let nx = hitX - endpoint.x;
+  let ny = hitY - endpoint.y;
+  const len = Math.hypot(nx, ny);
+  if(len === 0) return null;
+  nx /= len;
+  ny /= len;
+  if(nx * v.x + ny * v.y >= 0) return null;
+  return { t, normal: { x: nx, y: ny } };
+}
+
+function isPointOnSegment(px, py, p1, p2){
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const len2 = dx * dx + dy * dy;
+  if(len2 === 0) return false;
+  const t = ((px - p1.x) * dx + (py - p1.y) * dy) / len2;
+  if(t < -1e-4 || t > 1 + 1e-4) return false;
+  const closestX = p1.x + dx * t;
+  const closestY = p1.y + dy * t;
+  return Math.hypot(px - closestX, py - closestY) <= 1e-4;
+}
+
 function logBrickCollision(details){
   if(!DEBUG_BRICK_COLLISIONS) return;
   console.log("[BRICK COLLISION]", details);
+}
+
+function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
+  const p = fp.plane;
+  const radius = POINT_RADIUS;
+  const EPS = 0.5;
+  let remainingTime = deltaSec;
+  let currX = startX;
+  let currY = startY;
+  let collided = false;
+  let iterations = 0;
+
+  while(remainingTime > 1e-4 && iterations < 3){
+    const endX = currX + fp.vx * remainingTime;
+    const endY = currY + fp.vy * remainingTime;
+    const hit = findFirstSurfaceHit({ x: currX, y: currY }, { x: endX, y: endY }, radius);
+    if(!hit){
+      p.x = endX;
+      p.y = endY;
+      return collided;
+    }
+
+    const moveX = endX - currX;
+    const moveY = endY - currY;
+    const hitTime = remainingTime * hit.t;
+    const hitX = currX + moveX * hit.t;
+    const hitY = currY + moveY * hit.t;
+    const incoming = { vx: fp.vx, vy: fp.vy };
+    const dot = incoming.vx * hit.normal.x + incoming.vy * hit.normal.y;
+    fp.vx = incoming.vx - 2 * dot * hit.normal.x;
+    fp.vy = incoming.vy - 2 * dot * hit.normal.y;
+
+    p.x = hitX + hit.normal.x * (radius + EPS);
+    p.y = hitY + hit.normal.y * (radius + EPS);
+
+    logBrickCollision({
+      id: hit.surface.colliderId,
+      spriteName: hit.surface.spriteName,
+      surface: hit.surface.type,
+      hit: { x: hit.hitPoint.x, y: hit.hitPoint.y },
+      normal: { x: hit.normal.x, y: hit.normal.y },
+      incoming,
+      outgoing: { vx: fp.vx, vy: fp.vy }
+    });
+
+    collided = true;
+    fp.collisionCooldown = 2;
+    remainingTime -= Math.max(hitTime, 1e-4);
+    currX = p.x;
+    currY = p.y;
+    iterations += 1;
+  }
+
+  return collided;
 }
 
 function resolveSpriteCollision(fp){
@@ -5254,10 +5501,15 @@ function gameDraw(){
       const prevX = p.x;
       const prevY = p.y;
 
-      p.x += fp.vx * deltaSec;
-      p.y += fp.vy * deltaSec;
-
-        resolveSpriteCollision(fp);
+      if(fp.collisionCooldown > 0){
+        fp.collisionCooldown = Math.max(0, fp.collisionCooldown - delta);
+      }
+      if(fp.collisionCooldown <= 0){
+        resolveFlightSurfaceCollision(fp, prevX, prevY, deltaSec);
+      } else {
+        p.x = prevX + fp.vx * deltaSec;
+        p.y = prevY + fp.vy * deltaSec;
+      }
 
         // field borders
 
@@ -5296,38 +5548,6 @@ function gameDraw(){
           }
           fp.vy = -fp.vy;
         }
-
-      // столкновения со зданиями (cooldown)
-      if(fp.collisionCooldown>0){ fp.collisionCooldown -= delta; }
-      if(fp.collisionCooldown<=0){
-        const hit = findFirstColliderHit(prevX, prevY, p.x, p.y);
-        if(hit){
-          const incoming = { vx: fp.vx, vy: fp.vy };
-          const dot = incoming.vx * hit.edgeNormal.x + incoming.vy * hit.edgeNormal.y;
-          fp.vx = incoming.vx - 2 * dot * hit.edgeNormal.x;
-          fp.vy = incoming.vy - 2 * dot * hit.edgeNormal.y;
-
-          const EPS = 0.5;
-          p.x = hit.hitPoint.x + hit.edgeNormal.x * (POINT_RADIUS + EPS);
-          p.y = hit.hitPoint.y + hit.edgeNormal.y * (POINT_RADIUS + EPS);
-
-          logBrickCollision({
-            id: hit.collider.id,
-            spriteName: hit.collider.spriteName,
-            surface: "EDGE",
-            hit: { x: hit.hitPoint.x, y: hit.hitPoint.y },
-            normal: { x: hit.edgeNormal.x, y: hit.edgeNormal.y },
-            incoming,
-            outgoing: { vx: fp.vx, vy: fp.vy }
-          });
-
-          fp.collisionCooldown = 2;
-        } else {
-          for(const collider of colliders){
-            if(planeBuildingCollision(fp, collider)) break;
-          }
-        }
-      }
 
       // нос по текущей скорости
       const colorShift = colorAngleOffset(p.color);
@@ -7548,6 +7768,7 @@ function applyCurrentMap(upcomingRoundNumber){
   clearBrickFrameImage();
   setFlagConfigsForMap(normalizedMap);
   colliders = buildMapSpriteColliders(normalizedMap);
+  colliderSurfaces = buildColliderSurfaces(colliders);
   updateFieldDimensions();
   resetPlanePositionsForCurrentMap();
   renderScoreboard();
