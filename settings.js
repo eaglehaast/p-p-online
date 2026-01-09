@@ -33,6 +33,10 @@ const ACCURACY_TAPE_IMAGE_WIDTH = 1276;
 const MAP_PREVIEW_BASE_WIDTH = 360;
 const MAP_PREVIEW_BASE_HEIGHT = 640;
 const MAP_PREVIEW_BRICK_SPRITE_PATH = 'ui_gamescreen/bricks/brick_1_default.png';
+const MAP_PREVIEW_BRICK_SPRITE_PATHS = {
+  brick_1_default: 'ui_gamescreen/bricks/brick_1_default.png',
+  brick_4_diagonal: 'ui_gamescreen/bricks/brick4_diagonal copy.png'
+};
 
 const CONTROL_PANEL_PREVIEW_CACHE = new Map();
 
@@ -222,12 +226,96 @@ const DIAGONALS_BUILDINGS = [
   { x: 100, y: 510, width: 80, height: 20 },
   { x: 260, y: 510, width: 80, height: 20 }
 ];
+const BROKEN_X_BRICKS = [
+  { id: "brick_v_left_1", spriteName: "brick_1_default", x: 0, y: 20, rotate: 0, scale: 1 },
+  { id: "brick_v_left_2", spriteName: "brick_1_default", x: 0, y: 60, rotate: 0, scale: 1 },
+  { id: "brick_v_left_3", spriteName: "brick_1_default", x: 0, y: 100, rotate: 0, scale: 1 },
+  { id: "brick_v_left_4", spriteName: "brick_1_default", x: 0, y: 140, rotate: 0, scale: 1 },
+  { id: "brick_v_left_5", spriteName: "brick_1_default", x: 0, y: 180, rotate: 0, scale: 1 },
+  { id: "brick_v_left_6", spriteName: "brick_1_default", x: 0, y: 220, rotate: 0, scale: 1 },
+  { id: "brick_v_left_7", spriteName: "brick_1_default", x: 0, y: 260, rotate: 0, scale: 1 },
+  { id: "brick_v_left_8", spriteName: "brick_1_default", x: 0, y: 300, rotate: 0, scale: 1 },
+  { id: "brick_v_left_9", spriteName: "brick_1_default", x: 0, y: 340, rotate: 0, scale: 1 },
+  { id: "brick_v_left_10", spriteName: "brick_1_default", x: 0, y: 380, rotate: 0, scale: 1 },
+  { id: "brick_v_left_11", spriteName: "brick_1_default", x: 0, y: 420, rotate: 0, scale: 1 },
+  { id: "brick_v_left_12", spriteName: "brick_1_default", x: 0, y: 460, rotate: 0, scale: 1 },
+  { id: "brick_v_left_13", spriteName: "brick_1_default", x: 0, y: 500, rotate: 0, scale: 1 },
+  { id: "brick_v_left_14", spriteName: "brick_1_default", x: 0, y: 540, rotate: 0, scale: 1 },
+  { id: "brick_v_left_15", spriteName: "brick_1_default", x: 0, y: 580, rotate: 0, scale: 1 },
+  { id: "brick_v_right_1", spriteName: "brick_1_default", x: 340, y: 20, rotate: 0, scale: 1 },
+  { id: "brick_v_right_2", spriteName: "brick_1_default", x: 340, y: 60, rotate: 0, scale: 1 },
+  { id: "brick_v_right_3", spriteName: "brick_1_default", x: 340, y: 100, rotate: 0, scale: 1 },
+  { id: "brick_v_right_4", spriteName: "brick_1_default", x: 340, y: 140, rotate: 0, scale: 1 },
+  { id: "brick_v_right_5", spriteName: "brick_1_default", x: 340, y: 180, rotate: 0, scale: 1 },
+  { id: "brick_v_right_6", spriteName: "brick_1_default", x: 340, y: 220, rotate: 0, scale: 1 },
+  { id: "brick_v_right_7", spriteName: "brick_1_default", x: 340, y: 260, rotate: 0, scale: 1 },
+  { id: "brick_v_right_8", spriteName: "brick_1_default", x: 340, y: 300, rotate: 0, scale: 1 },
+  { id: "brick_v_right_9", spriteName: "brick_1_default", x: 340, y: 340, rotate: 0, scale: 1 },
+  { id: "brick_v_right_10", spriteName: "brick_1_default", x: 340, y: 380, rotate: 0, scale: 1 },
+  { id: "brick_v_right_11", spriteName: "brick_1_default", x: 340, y: 420, rotate: 0, scale: 1 },
+  { id: "brick_v_right_12", spriteName: "brick_1_default", x: 340, y: 460, rotate: 0, scale: 1 },
+  { id: "brick_v_right_13", spriteName: "brick_1_default", x: 340, y: 500, rotate: 0, scale: 1 },
+  { id: "brick_v_right_14", spriteName: "brick_1_default", x: 340, y: 540, rotate: 0, scale: 1 },
+  { id: "brick_v_right_15", spriteName: "brick_1_default", x: 340, y: 580, rotate: 0, scale: 1 },
+  { id: "brick_h_top_01", spriteName: "brick_1_default", x: 0, y: 0, rotate: -90, scale: -1 },
+  { id: "brick_h_top_02", spriteName: "brick_1_default", x: 40, y: 0, rotate: -90, scale: -1 },
+  { id: "brick_h_top_03", spriteName: "brick_1_default", x: 80, y: 0, rotate: -90, scale: -1 },
+  { id: "brick_h_top_04", spriteName: "brick_1_default", x: 120, y: 0, rotate: -90, scale: -1 },
+  { id: "brick_h_top_05", spriteName: "brick_1_default", x: 160, y: 0, rotate: -90, scale: -1 },
+  { id: "brick_h_top_06", spriteName: "brick_1_default", x: 200, y: 0, rotate: -90, scale: -1 },
+  { id: "brick_h_top_07", spriteName: "brick_1_default", x: 240, y: 0, rotate: -90, scale: -1 },
+  { id: "brick_h_top_08", spriteName: "brick_1_default", x: 280, y: 0, rotate: -90, scale: -1 },
+  { id: "brick_h_top_09", spriteName: "brick_1_default", x: 320, y: 0, rotate: -90, scale: -1 },
+  { id: "brick_h_bottom_01", spriteName: "brick_1_default", x: 0, y: 620, rotate: -90, scale: -1 },
+  { id: "brick_h_bottom_02", spriteName: "brick_1_default", x: 40, y: 620, rotate: -90, scale: -1 },
+  { id: "brick_h_bottom_03", spriteName: "brick_1_default", x: 80, y: 620, rotate: -90, scale: -1 },
+  { id: "brick_h_bottom_04", spriteName: "brick_1_default", x: 120, y: 620, rotate: -90, scale: -1 },
+  { id: "brick_h_bottom_05", spriteName: "brick_1_default", x: 160, y: 620, rotate: -90, scale: -1 },
+  { id: "brick_h_bottom_06", spriteName: "brick_1_default", x: 200, y: 620, rotate: -90, scale: -1 },
+  { id: "brick_h_bottom_07", spriteName: "brick_1_default", x: 240, y: 620, rotate: -90, scale: -1 },
+  { id: "brick_h_bottom_08", spriteName: "brick_1_default", x: 280, y: 620, rotate: -90, scale: -1 },
+  { id: "brick_h_bottom_09", spriteName: "brick_1_default", x: 320, y: 620, rotate: -90, scale: -1 },
+  { id: "brick1", spriteName: "brick_1_default", x: 160, y: 120, rotate: -90, scale: -1 },
+  { id: "brick1", spriteName: "brick_1_default", x: 60, y: 220, rotate: -90, scale: -1 },
+  { id: "brick1", spriteName: "brick_1_default", x: 260, y: 220, rotate: -90, scale: -1 },
+  { id: "brick1", spriteName: "brick_1_default", x: 60, y: 400, rotate: -90, scale: -1 },
+  { id: "brick1", spriteName: "brick_1_default", x: 260, y: 400, rotate: -90, scale: -1 },
+  { id: "brick1", spriteName: "brick_1_default", x: 160, y: 500, rotate: -90, scale: -1 },
+  { id: "brick1", spriteName: "brick_1_default", x: 140, y: 280, rotate: 0, scale: 1 },
+  { id: "brick1", spriteName: "brick_1_default", x: 200, y: 320, rotate: 0, scale: 1 },
+  { id: "brick_4_diagonal", spriteName: "brick_4_diagonal", x: 100, y: 220, rotate: 0, scale: 1 },
+  { id: "brick_4_diagonal", spriteName: "brick_4_diagonal", x: 200, y: 360, rotate: 0, scale: 1 },
+  { id: "brick_4_diagonal", spriteName: "brick_4_diagonal", x: 200, y: 220, rotate: 0, scale: -1 },
+  { id: "brick_4_diagonal", spriteName: "brick_4_diagonal", x: 100, y: 360, rotate: 0, scale: -1 }
+];
+
+const BROKEN_X_BUILDINGS = [
+  { x: 180, y: 130, width: 40, height: 20 },
+  { x: 80, y: 230, width: 40, height: 20 },
+  { x: 280, y: 230, width: 40, height: 20 },
+  { x: 80, y: 410, width: 40, height: 20 },
+  { x: 280, y: 410, width: 40, height: 20 },
+  { x: 180, y: 510, width: 40, height: 20 },
+  { x: 150, y: 300, width: 20, height: 40 },
+  { x: 210, y: 340, width: 20, height: 40 },
+  { x: 130, y: 250, width: 60, height: 60 },
+  { x: 230, y: 390, width: 60, height: 60 },
+  { x: 230, y: 250, width: 60, height: 60 },
+  { x: 130, y: 390, width: 60, height: 60 }
+];
+
 const MAPS = [
   {
     name: 'Clear Sky',
     file: 'ui_gamescreen/maps/easy 1-2 round/map 1 - clear sky 3.png',
     tier: 'easy',
     buildings: CLEAR_SKY_BUILDINGS
+  },
+  {
+    name: 'brokenX',
+    tier: 'easy',
+    buildings: BROKEN_X_BUILDINGS,
+    bricks: BROKEN_X_BRICKS
   },
   {
     name: '5 Bricks',
@@ -643,7 +731,7 @@ const previewPlaneBaselines = new WeakMap();
 let mapPreviewBricksCanvas = null;
 let mapPreviewBricksCtx = null;
 let mapPreviewBrickDpr = window.devicePixelRatio || 1;
-let previewBrickSprite = null;
+const previewBrickSprites = new Map();
 const previewHandle = {
   active: false,
   baseX: 0,
@@ -2192,26 +2280,27 @@ function clearMapPreviewBricksCanvas(){
   }
 }
 
-function getPreviewBrickSprite(onLoad){
-  if(previewBrickSprite){
+function getPreviewBrickSprite(spriteName = "brick_1_default", onLoad){
+  const key = typeof spriteName === 'string' ? spriteName : "brick_1_default";
+  const cached = previewBrickSprites.get(key);
+  if(cached){
     if(onLoad){
-      if(isSpriteReady(previewBrickSprite)){
+      if(isSpriteReady(cached)){
         onLoad();
       } else {
-        previewBrickSprite.addEventListener('load', onLoad, { once: true });
+        cached.addEventListener('load', onLoad, { once: true });
       }
     }
-    return previewBrickSprite;
+    return cached;
   }
 
+  const path = MAP_PREVIEW_BRICK_SPRITE_PATHS[key] || MAP_PREVIEW_BRICK_SPRITE_PATH;
   const registry = window.paperWingsAssets || null;
   const useRegistry = !!registry?.getImage;
   const { img, url } = useRegistry
-    ? registry.getImage(MAP_PREVIEW_BRICK_SPRITE_PATH, 'mapPreviewBrick')
+    ? registry.getImage(path, `mapPreviewBrick-${key}`)
     : (() => {
-        const normalized = typeof MAP_PREVIEW_BRICK_SPRITE_PATH === 'string'
-          ? MAP_PREVIEW_BRICK_SPRITE_PATH.trim()
-          : '';
+        const normalized = typeof path === 'string' ? path.trim() : '';
         if (!normalized) return { img: null, url: '' };
         return { img: new Image(), url: normalized };
       })();
@@ -2225,14 +2314,14 @@ function getPreviewBrickSprite(onLoad){
   }
 
   if(useRegistry && typeof registry.primeImageLoad === 'function'){
-    registry.primeImageLoad(img, url, 'mapPreviewBrick');
+    registry.primeImageLoad(img, url, `mapPreviewBrick-${key}`);
   } else if(!img.src){
-    installImageWatch(img, url, 'mapPreviewBrick');
+    installImageWatch(img, url, `mapPreviewBrick-${key}`);
     img.src = url;
   }
 
-  previewBrickSprite = img;
-  return previewBrickSprite;
+  previewBrickSprites.set(key, img);
+  return img;
 }
 
 function drawMapPreviewBricks(boundsWidth, boundsHeight){
@@ -2249,11 +2338,6 @@ function drawMapPreviewBricks(boundsWidth, boundsHeight){
   const rectHeight = boundsHeight ?? mapPreview.getBoundingClientRect().height;
   mapPreviewBricksCtx.clearRect(0, 0, rectWidth, rectHeight);
 
-  const sprite = getPreviewBrickSprite(() => drawMapPreviewBricks(rectWidth, rectHeight));
-  if(!sprite || !isSpriteReady(sprite)){
-    return;
-  }
-
   const bricks = Array.isArray(MAPS[mapIndex]?.bricks) ? MAPS[mapIndex].bricks : [];
   const scaleX = rectWidth / MAP_PREVIEW_BASE_WIDTH;
   const scaleY = rectHeight / MAP_PREVIEW_BASE_HEIGHT;
@@ -2262,6 +2346,12 @@ function drawMapPreviewBricks(boundsWidth, boundsHeight){
   const offsetY = (rectHeight - MAP_PREVIEW_BASE_HEIGHT * previewScale) / 2;
 
   for(const brick of bricks){
+    const spriteName = typeof brick?.spriteName === 'string' ? brick.spriteName : "brick_1_default";
+    const sprite = getPreviewBrickSprite(spriteName, () => drawMapPreviewBricks(rectWidth, rectHeight));
+    if(!sprite || !isSpriteReady(sprite)){
+      continue;
+    }
+
     const brickX = Number.isFinite(brick?.x) ? brick.x : 0;
     const brickY = Number.isFinite(brick?.y) ? brick.y : 0;
     const rotationDeg = Number.isFinite(brick?.rotate) ? brick.rotate : 0;
