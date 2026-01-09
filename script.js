@@ -602,8 +602,6 @@ const GAME_ASSETS = [
   // Game maps
   "ui_gamescreen/bricks/brick_1_default.png",
   "ui_gamescreen/bricks/brick4_diagonal copy.png",
-  "ui_gamescreen/maps/middle 3-4 round/map 2 - 5 bricks.png",
-  "ui_gamescreen/maps/hard 5 round and more/map 3 diagonals.png",
 
   // Flags & bases
   BASE_SPRITE_PATHS.blue,
@@ -3282,42 +3280,6 @@ const MAPS = [
     tier: 'easy',
     buildings: BROKEN_X_BUILDINGS,
     flags: BROKEN_X_FLAGS
-  },
-  {
-    name: '5 Bricks',
-    file: 'ui_gamescreen/maps/middle 3-4 round/map 2 - 5 bricks.png',
-    tier: 'middle',
-    buildings: [
-      { x: 110, y: 180, width: 100, height: 40 },
-      { x: 250, y: 180, width: 100, height: 40 },
-      { x: 180, y: 320, width: 100, height: 40 },
-      { x: 110, y: 460, width: 100, height: 40 },
-      { x: 250, y: 460, width: 100, height: 40 }
-    ]
-  },
-  {
-    name: 'Diagonals',
-    file: 'ui_gamescreen/maps/hard 5 round and more/map 3 diagonals.png',
-    tier: 'hard',
-    buildings: [
-      { x: 100, y: 130, width: 80, height: 20 },
-      { x: 260, y: 130, width: 80, height: 20 },
-      { x: 180, y: 190, width: 80, height: 20 },
-      { x: 120, y: 250, width: 80, height: 20 },
-      { x: 240, y: 250, width: 80, height: 20 },
-      { x: 180, y: 320, width: 40, height: 40 },
-      { x: 120, y: 390, width: 80, height: 20 },
-      { x: 240, y: 390, width: 80, height: 20 },
-      { x: 180, y: 450, width: 80, height: 20 },
-      { x: 100, y: 510, width: 80, height: 20 },
-      { x: 260, y: 510, width: 80, height: 20 }
-    ]
-  },
-  {
-    name: 'Random map',
-    file: 'ui_controlpanel/cp_de_maprandom.png',
-    buildings: [],
-    tier: 'random'
   }
 ];
 
