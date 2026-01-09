@@ -3368,8 +3368,7 @@ const MAPS = [
     mode: MAP_RENDER_MODES.DATA,
     renderer: 'sprites',
     sprites: CLEAR_SKY_BORDER_SPRITES,
-    tier: 'easy',
-    buildings: []
+    tier: 'easy'
   },
   {
     id: 'fiveBricks',
@@ -3378,7 +3377,6 @@ const MAPS = [
     renderer: 'sprites',
     sprites: FIVE_BRICKS_SPRITES,
     tier: 'easy',
-    buildings: FIVE_BRICKS_BUILDINGS,
     flags: FIVE_BRICKS_FLAGS
   },
   {
@@ -3388,7 +3386,6 @@ const MAPS = [
     renderer: 'sprites',
     sprites: BROKEN_X_SPRITES,
     tier: 'easy',
-    buildings: BROKEN_X_BUILDINGS,
     flags: BROKEN_X_FLAGS
   }
 ];
