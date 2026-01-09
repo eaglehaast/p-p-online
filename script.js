@@ -7476,12 +7476,15 @@ function buildSpriteCollider(sprite, spriteIndex){
 }
 
 function buildMapSpriteColliders(map){
-  const sources = [];
-  if(Array.isArray(map?.items)) sources.push(...map.items);
-  if(Array.isArray(map?.sprites)) sources.push(...map.sprites);
-  if(Array.isArray(map?.bricks) && map.bricks !== map.sprites) sources.push(...map.bricks);
+  const sprites = map?.sprites;
+  if(!Array.isArray(sprites)){
+    const mapName = map?.name || map?.id || "unknown map";
+    const error = new Error(`[MAP] Sprite list missing for ${mapName}`);
+    console.error(error.message, { map });
+    throw error;
+  }
 
-  return sources
+  return sprites
     .map((sprite, index) => buildSpriteCollider(sprite, index))
     .filter(Boolean);
 }
@@ -7489,23 +7492,20 @@ function buildMapSpriteColliders(map){
 function normalizeMapForRendering(map){
   const normalizedMap = { ...map };
   const mapName = map?.name || map?.id || "unknown map";
-  const spritesSource = Array.isArray(map?.sprites)
-    ? map.sprites
-    : Array.isArray(map?.bricks)
-      ? map.bricks
-      : Array.isArray(map?.items)
-        ? map.items
-        : null;
+  const spritesSource = map?.sprites;
+
+  if(Array.isArray(map?.bricks) || Array.isArray(map?.items)){
+    const error = new Error(`[MAP] Non-sprite data rejected for ${mapName}`);
+    console.error(error.message, { map });
+    throw error;
+  }
 
   if(!Array.isArray(spritesSource)){
     const error = new Error(`[MAP] Sprite list missing for ${mapName}`);
     console.error(error.message, { map });
     throw error;
   }
-
-  if(!Array.isArray(map?.sprites)){
-    normalizedMap.sprites = spritesSource;
-  }
+  normalizedMap.sprites = spritesSource;
   normalizedMap.renderer = MAP_RENDERERS.SPRITES;
 
   if(Array.isArray(spritesSource)){
@@ -7536,16 +7536,16 @@ function applyCurrentMap(upcomingRoundNumber){
   const mapIndex = resolveMapIndexForGameplay(targetRoundNumber);
   const gameplayMap = MAPS[mapIndex] || MAPS[0];
   const mapName = gameplayMap?.name || gameplayMap?.id || "unknown map";
-  const spriteSource = Array.isArray(gameplayMap?.sprites)
-    ? gameplayMap.sprites
-    : Array.isArray(gameplayMap?.bricks)
-      ? gameplayMap.bricks
-      : Array.isArray(gameplayMap?.items)
-        ? gameplayMap.items
-        : null;
+  const spriteSource = gameplayMap?.sprites;
+
+  if(Array.isArray(gameplayMap?.bricks) || Array.isArray(gameplayMap?.items)){
+    const error = new Error(`[MAP] Non-sprite data rejected for ${mapName}`);
+    console.error(error.message, { gameplayMap });
+    throw error;
+  }
 
   if(!Array.isArray(spriteSource)){
-    const error = new Error(`[MAP] Non-sprite map rejected for ${mapName}`);
+    const error = new Error(`[MAP] Sprite list missing for ${mapName}`);
     console.error(error.message, { gameplayMap });
     throw error;
   }
