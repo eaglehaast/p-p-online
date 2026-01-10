@@ -24,6 +24,7 @@ const DEBUG_LAYERS = false;
 const DEBUG_VFX = false;
 const DEBUG_BRICK_COLLISIONS = false;
 const DEBUG_COLLISIONS_TOI = false;
+const DEBUG_COLLISIONS_VERBOSE = false;
 
 const bootTrace = {
   startTs: null,
@@ -5157,6 +5158,11 @@ function logCollisionTOI({
   console.log("[COLLISION][TOI]", payload);
 }
 
+function logCollisionVerbose(payload){
+  if(!DEBUG_COLLISIONS_VERBOSE) return;
+  console.log("[COLLISION][VERBOSE]", payload);
+}
+
 function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
   const p = fp.plane;
   const radius = POINT_RADIUS;
@@ -5197,7 +5203,8 @@ function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
     const dot = incoming.vx * hit.normal.x + incoming.vy * hit.normal.y;
     const speed = Math.hypot(incoming.vx, incoming.vy);
     const a = speed > 0 ? Math.abs(dot / speed) : 1;
-    if(a < SLIDE_THRESHOLD){
+    const collisionResponse = a < SLIDE_THRESHOLD ? "slide" : "reflect";
+    if(collisionResponse === "slide"){
       fp.vx = incoming.vx - dot * hit.normal.x;
       fp.vy = incoming.vy - dot * hit.normal.y;
     } else {
@@ -5216,6 +5223,21 @@ function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
         totalPush += extraPush;
       }
     }
+
+    logCollisionVerbose({
+      mapName: currentMapName,
+      planeId: getPlaneDebugId(p),
+      bounce: bounces + 1,
+      surface: hit.surface.type,
+      normal: { x: hit.normal.x, y: hit.normal.y },
+      tHit: hit.t,
+      remainingTime,
+      response: collisionResponse,
+      a,
+      slideThreshold: SLIDE_THRESHOLD,
+      epsPush: EPS_PUSH,
+      totalPush
+    });
 
     logCollisionTOI({
       plane: p,
