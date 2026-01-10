@@ -5101,6 +5101,26 @@ function isPointOnSegment(px, py, p1, p2){
   return Math.hypot(px - closestX, py - closestY) <= 1e-4;
 }
 
+function distancePointToSegment(px, py, p1, p2){
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const len2 = dx * dx + dy * dy;
+  if(len2 === 0){
+    return Math.hypot(px - p1.x, py - p1.y);
+  }
+  const t = ((px - p1.x) * dx + (py - p1.y) * dy) / len2;
+  const clamped = Math.max(0, Math.min(1, t));
+  const closestX = p1.x + dx * clamped;
+  const closestY = p1.y + dy * clamped;
+  return Math.hypot(px - closestX, py - closestY);
+}
+
+function isPointIntersectingSurface(point, radius, surface){
+  if(!surface?.p1 || !surface?.p2) return false;
+  const distance = distancePointToSegment(point.x, point.y, surface.p1, surface.p2);
+  return distance < radius - 1e-4;
+}
+
 function getPlaneDebugId(plane){
   return plane?.id ?? plane?.uid ?? plane?.name ?? null;
 }
@@ -5140,6 +5160,8 @@ function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
   const p = fp.plane;
   const radius = POINT_RADIUS;
   const EPS_PUSH = 0.5;
+  const EXTRA_PUSH = EPS_PUSH * 0.5;
+  const MAX_PUSH = EPS_PUSH * 2;
   const TINY_EPSILON = 1e-4;
   const MAX_BOUNCES_PER_TICK = 5;
   let remainingTime = deltaSec;
@@ -5175,8 +5197,17 @@ function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
     fp.vx = incoming.vx - 2 * dot * hit.normal.x;
     fp.vy = incoming.vy - 2 * dot * hit.normal.y;
 
-    p.x = hitX + hit.normal.x * EPS_PUSH;
-    p.y = hitY + hit.normal.y * EPS_PUSH;
+    let totalPush = Math.min(EPS_PUSH, MAX_PUSH);
+    p.x = hitX + hit.normal.x * totalPush;
+    p.y = hitY + hit.normal.y * totalPush;
+    if(isPointIntersectingSurface({ x: p.x, y: p.y }, radius, hit.surface)){
+      const extraPush = Math.min(EXTRA_PUSH, MAX_PUSH - totalPush);
+      if(extraPush > 0){
+        p.x += hit.normal.x * extraPush;
+        p.y += hit.normal.y * extraPush;
+        totalPush += extraPush;
+      }
+    }
 
     logCollisionTOI({
       plane: p,
