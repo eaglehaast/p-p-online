@@ -4622,7 +4622,7 @@ function clipPolygon(points, a, b, c){
   return result;
 }
 
-function getDiagonalColliderEdges(collider, margin = 0){
+function getDiagonalColliderLocalPolygon(collider, margin = 0){
   const halfWidth = collider.halfWidth;
   const halfHeight = collider.halfHeight;
   const width = halfWidth * 2;
@@ -4646,6 +4646,13 @@ function getDiagonalColliderEdges(collider, margin = 0){
     polygon = clipPolygon(polygon, -1, 1, bandHalfWidth + offset);
   }
 
+  return polygon;
+}
+
+function getDiagonalColliderEdges(collider, margin = 0){
+  const halfWidth = collider.halfWidth;
+  const halfHeight = collider.halfHeight;
+  const polygon = getDiagonalColliderLocalPolygon(collider, margin);
   if(polygon.length < 2) return [];
 
   const cos = Math.cos(collider.rotation);
@@ -4715,18 +4722,23 @@ function buildRectColliderSurfaces(collider){
   const hh = collider.halfHeight;
   const cos = Math.cos(collider.rotation);
   const sin = Math.sin(collider.rotation);
-  const corners = [
+  const localCorners = [
     { x: -hw, y: -hh },
     { x: hw, y: -hh },
     { x: hw, y: hh },
     { x: -hw, y: hh }
-  ].map(point => ({
+  ];
+  const corners = localCorners.map(point => ({
     x: collider.cx + point.x * cos - point.y * sin,
     y: collider.cy + point.x * sin + point.y * cos
   }));
 
   return corners.map((point, index) => {
     const next = corners[(index + 1) % corners.length];
+    const localA = localCorners[index];
+    const localB = localCorners[(index + 1) % localCorners.length];
+    const isVertical = localA.x === localB.x;
+    const kind = isVertical ? "V" : "H";
     const normal = getSurfaceNormal(point, next, collider);
     if(!normal) return null;
     return {
@@ -4734,6 +4746,7 @@ function buildRectColliderSurfaces(collider){
       p2: { x: next.x, y: next.y },
       normal,
       type: "axis",
+      kind,
       id: `${collider.id}-axis-${index}`,
       colliderId: collider.id,
       spriteName: collider.spriteName
@@ -4746,15 +4759,13 @@ function buildDiagonalColliderSurfaces(collider){
   const hh = collider.halfHeight;
   const cos = Math.cos(collider.rotation);
   const sin = Math.sin(collider.rotation);
-  const corners = {
-    tl: { x: -hw, y: -hh },
-    tr: { x: hw, y: -hh },
-    br: { x: hw, y: hh },
-    bl: { x: -hw, y: hh }
-  };
-  const localPoints = collider.diagSign >= 0
-    ? [corners.tl, corners.tr, corners.br]
-    : [corners.tr, corners.br, corners.bl];
+  const polygon = getDiagonalColliderLocalPolygon(collider, 0);
+  if(polygon.length < 2) return [];
+
+  const localPoints = polygon.map(point => ({
+    x: point.x - hw,
+    y: point.y - hh
+  }));
   const worldPoints = localPoints.map(point => ({
     x: collider.cx + point.x * cos - point.y * sin,
     y: collider.cy + point.x * sin + point.y * cos
@@ -4764,7 +4775,10 @@ function buildDiagonalColliderSurfaces(collider){
     const next = worldPoints[(index + 1) % worldPoints.length];
     const localA = localPoints[index];
     const localB = localPoints[(index + 1) % localPoints.length];
-    const isAxisAligned = localA.x === localB.x || localA.y === localB.y;
+    const isVertical = localA.x === localB.x;
+    const isHorizontal = localA.y === localB.y;
+    const isAxisAligned = isVertical || isHorizontal;
+    const kind = isAxisAligned ? (isVertical ? "V" : "H") : "DIAG";
     const normal = getSurfaceNormal(point, next, collider);
     if(!normal) return null;
     return {
@@ -4772,6 +4786,7 @@ function buildDiagonalColliderSurfaces(collider){
       p2: { x: next.x, y: next.y },
       normal,
       type: isAxisAligned ? "axis" : "diag",
+      kind,
       id: `${collider.id}-${isAxisAligned ? "axis" : "diag"}-${index}`,
       colliderId: collider.id,
       spriteName: collider.spriteName
@@ -4819,6 +4834,7 @@ function buildFieldBorderSurfaces(){
       p1: { x: leftX, y: topY },
       p2: { x: leftX, y: bottomY },
       normal: { x: 1, y: 0 },
+      kind: "V",
       type: "field",
       id: "field-border-left"
     },
@@ -4826,6 +4842,7 @@ function buildFieldBorderSurfaces(){
       p1: { x: rightX, y: topY },
       p2: { x: rightX, y: bottomY },
       normal: { x: -1, y: 0 },
+      kind: "V",
       type: "field",
       id: "field-border-right"
     },
@@ -4833,6 +4850,7 @@ function buildFieldBorderSurfaces(){
       p1: { x: leftX, y: topY },
       p2: { x: rightX, y: topY },
       normal: { x: 0, y: 1 },
+      kind: "H",
       type: "field",
       id: "field-border-top"
     },
@@ -4840,6 +4858,7 @@ function buildFieldBorderSurfaces(){
       p1: { x: leftX, y: bottomY },
       p2: { x: rightX, y: bottomY },
       normal: { x: 0, y: -1 },
+      kind: "H",
       type: "field",
       id: "field-border-bottom"
     }
@@ -4958,11 +4977,45 @@ function findFirstColliderHit(prevX, prevY, currX, currY){
 
 function findFirstSurfaceHit(p0, p1, radius){
   let best = null;
+  const moveX = p1.x - p0.x;
+  const moveY = p1.y - p0.y;
+  const EPS_T = 1e-4;
+  const EPS_DOT = 1e-6;
+  const surfacePriority = { DIAG: 3, V: 2, H: 1 };
+  const getSurfaceKind = surface => {
+    if(surface?.kind) return surface.kind;
+    if(surface?.type === "diag") return "DIAG";
+    const nx = Math.abs(surface?.normal?.x ?? 0);
+    const ny = Math.abs(surface?.normal?.y ?? 0);
+    if(nx > ny) return "V";
+    return "H";
+  };
+  const getAbsDot = entry => Math.abs(moveX * entry.normal.x + moveY * entry.normal.y);
   for(const surface of colliderSurfaces){
     const hit = getSurfaceHit(p0, p1, radius, surface);
     if(!hit) continue;
-    if(!best || hit.t < best.t){
+    if(!best){
       best = hit;
+      continue;
+    }
+    if(hit.t < best.t - EPS_T){
+      best = hit;
+      continue;
+    }
+    if(Math.abs(hit.t - best.t) <= EPS_T){
+      const hitDot = getAbsDot(hit);
+      const bestDot = getAbsDot(best);
+      if(hitDot > bestDot + EPS_DOT){
+        best = hit;
+        continue;
+      }
+      if(Math.abs(hitDot - bestDot) <= EPS_DOT){
+        const hitPriority = surfacePriority[getSurfaceKind(hit.surface)] ?? 0;
+        const bestPriority = surfacePriority[getSurfaceKind(best.surface)] ?? 0;
+        if(hitPriority > bestPriority){
+          best = hit;
+        }
+      }
     }
   }
   return best;
