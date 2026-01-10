@@ -974,16 +974,15 @@ body, button {
 
   #settingsLayer #frame_field_2_counter .cp-field-selector__label {
     position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    left: 50%;
+    top: 50%;
     font-family: 'Fantasque Sans Mono', system-ui, sans-serif;
     font-size: 10px;
     line-height: 1;
     color: #1b1205;
     white-space: nowrap;
     overflow: hidden;
+    transform: translate(-50%, -50%);
     text-shadow:
       var(--field-map-name-shadow-x)
       var(--field-map-name-shadow-y)
