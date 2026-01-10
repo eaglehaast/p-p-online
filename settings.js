@@ -3029,7 +3029,7 @@ const hasMapButtons = mapPrevBtn && mapNextBtn;
     } else {
       updateMapNameDisplay();
     }
-    updateFieldTapePosition(targetIndex);
+    updateFieldTapePosition(mapIndex);
     saveSettings();
   };
 
