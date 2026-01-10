@@ -2975,6 +2975,7 @@ const CELL_SIZE            = 20;     // px
 const POINT_RADIUS         = planeMetric(15);     // px (увеличено для мобильных)
 const FLAG_INTERACTION_RADIUS = 25;  // px
 const BASE_INTERACTION_RADIUS = 40;  // px
+const SLIDE_THRESHOLD      = 0.1;
 // Larger hit area for selecting planes with touch/mouse
 const PLANE_TOUCH_RADIUS   = 20;                   // px
 const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit Anti-Aircraft center
@@ -5194,8 +5195,15 @@ function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
     }
 
     const dot = incoming.vx * hit.normal.x + incoming.vy * hit.normal.y;
-    fp.vx = incoming.vx - 2 * dot * hit.normal.x;
-    fp.vy = incoming.vy - 2 * dot * hit.normal.y;
+    const speed = Math.hypot(incoming.vx, incoming.vy);
+    const a = speed > 0 ? Math.abs(dot / speed) : 1;
+    if(a < SLIDE_THRESHOLD){
+      fp.vx = incoming.vx - dot * hit.normal.x;
+      fp.vy = incoming.vy - dot * hit.normal.y;
+    } else {
+      fp.vx = incoming.vx - 2 * dot * hit.normal.x;
+      fp.vy = incoming.vy - 2 * dot * hit.normal.y;
+    }
 
     let totalPush = Math.min(EPS_PUSH, MAX_PUSH);
     p.x = hitX + hit.normal.x * totalPush;
@@ -5421,8 +5429,15 @@ function resolveDiagonalBrickCollision(fp, collider){
   };
   const incoming = { vx: fp.vx, vy: fp.vy };
   const dot = incoming.vx * worldNormal.x + incoming.vy * worldNormal.y;
-  fp.vx = incoming.vx - 2 * dot * worldNormal.x;
-  fp.vy = incoming.vy - 2 * dot * worldNormal.y;
+  const speed = Math.hypot(incoming.vx, incoming.vy);
+  const a = speed > 0 ? Math.abs(dot / speed) : 1;
+  if(a < SLIDE_THRESHOLD){
+    fp.vx = incoming.vx - dot * worldNormal.x;
+    fp.vy = incoming.vy - dot * worldNormal.y;
+  } else {
+    fp.vx = incoming.vx - 2 * dot * worldNormal.x;
+    fp.vy = incoming.vy - 2 * dot * worldNormal.y;
+  }
 
   const EPS = 0.5;
   p.x = hitWorldX + worldNormal.x * (POINT_RADIUS + EPS);
@@ -5499,8 +5514,15 @@ function planeBuildingCollision(fp, collider){
 
     // отражаем скорость
     const dot = fp.vx*nx + fp.vy*ny;
-    fp.vx = fp.vx - 2*dot*nx;
-    fp.vy = fp.vy - 2*dot*ny;
+    const speed = Math.hypot(fp.vx, fp.vy);
+    const a = speed > 0 ? Math.abs(dot / speed) : 1;
+    if(a < SLIDE_THRESHOLD){
+      fp.vx = fp.vx - dot*nx;
+      fp.vy = fp.vy - dot*ny;
+    } else {
+      fp.vx = fp.vx - 2*dot*nx;
+      fp.vy = fp.vy - 2*dot*ny;
+    }
 
     // выталкивание за пределы
     const EPS = 0.5;
