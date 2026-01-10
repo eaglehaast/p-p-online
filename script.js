@@ -5140,13 +5140,15 @@ function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
   const p = fp.plane;
   const radius = POINT_RADIUS;
   const EPS_PUSH = 0.5;
+  const TINY_EPSILON = 1e-4;
+  const MAX_BOUNCES_PER_TICK = 5;
   let remainingTime = deltaSec;
   let currX = startX;
   let currY = startY;
   let collided = false;
-  let iterations = 0;
+  let bounces = 0;
 
-  while(remainingTime > 1e-4 && iterations < 3){
+  while(remainingTime > TINY_EPSILON && bounces < MAX_BOUNCES_PER_TICK){
     const endX = currX + fp.vx * remainingTime;
     const endY = currY + fp.vy * remainingTime;
     const hit = findFirstSurfaceHit({ x: currX, y: currY }, { x: endX, y: endY }, radius);
@@ -5188,11 +5190,13 @@ function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
     });
 
     collided = true;
-    const timeScale = Math.max(0, 1 - hit.t);
-    remainingTime = remainingTime * timeScale;
+    remainingTime = remainingTime * Math.max(0, 1 - hit.t);
     currX = p.x;
     currY = p.y;
-    iterations += 1;
+    bounces += 1;
+    if(remainingTime <= TINY_EPSILON){
+      break;
+    }
   }
 
   return collided;
