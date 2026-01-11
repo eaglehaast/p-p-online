@@ -906,6 +906,9 @@ function updateRangeTapePosition(displayPosition = rangeScrollPos, track = null)
   tape.style.transform = `translateX(calc(-50% + ${offsetPx}px))`;
 }
 
+/*
+Legacy 2-slot tape implementation (kept for rollback reference).
+
 function updateFieldTapePosition(displayPosition = mapIndex, tapeElement = null, options = {}){
   const targetTrack = tapeElement ?? getFieldTapeTrack();
   const tapeSlices = getFieldTapeSlices();
@@ -981,6 +984,44 @@ function updateFieldTapePosition(displayPosition = mapIndex, tapeElement = null,
 
   setSlicesForIndex(stableIndex);
   setFieldTapeStyles(targetTrack, { transition: null, transform: 'translateX(-100%)' });
+}
+*/
+
+function updateFieldTapePosition(tapeElement = null, options = {}){
+  const targetTrack = tapeElement ?? getFieldTapeTrack();
+  if(!(targetTrack instanceof HTMLElement)){
+    return;
+  }
+
+  const defaultTransform = 'translateX(-100%)';
+  const shouldAnimate = options.animate && isAnimating && options.animationToken && hasInitializedFieldTape;
+
+  hasInitializedFieldTape = true;
+
+  if(shouldAnimate){
+    const transition = getFieldTapeTransition();
+    const direction = options.animateDirection;
+    const endTransform = direction === 'prev' ? 'translateX(0%)' : 'translateX(-200%)';
+
+    if(direction === 'next' || direction === 'prev'){
+      setFieldTapeStyles(targetTrack, { transition: 'none', transform: defaultTransform });
+      markFieldAnimationStart(options.animationToken);
+      requestAnimationFrame(() => {
+        setFieldTapeStyles(targetTrack, { transition, transform: endTransform });
+      });
+
+      const handleEnd = (event) => {
+        if(event && event.propertyName !== 'transform') return;
+        setFieldTapeStyles(targetTrack, { transition: 'none', transform: defaultTransform });
+        requestAnimationFrame(() => setFieldTapeStyles(targetTrack, { transition }));
+        markFieldAnimationEnd(options.animationToken);
+      };
+      targetTrack.addEventListener('transitionend', handleEnd, { once: true });
+      return;
+    }
+  }
+
+  setFieldTapeStyles(targetTrack, { transition: null, transform: defaultTransform });
 }
 
 function updateAccuracyTapePosition(displayPosition = accuracyDisplayIdx, track = null){
@@ -2216,7 +2257,7 @@ function changeFieldStep(delta, options = {}){
   const animationToken = resetFieldAnimationTracking();
   if(animate && direction){
     animateFieldLabelChange(nextIndexLocal, direction, animationToken);
-    updateFieldTapePosition(mapIndex, null, {
+    updateFieldTapePosition(null, {
       animate: true,
       animateDirection: direction,
       currentIndex,
@@ -2225,7 +2266,7 @@ function changeFieldStep(delta, options = {}){
     });
   } else {
     updateMapNameDisplay({ index: nextIndexLocal, animationToken });
-    updateFieldTapePosition(mapIndex);
+    updateFieldTapePosition();
   }
 
   const durationMs = FIELD_LABEL_DURATION_MS * Math.max(1, Math.abs(delta));
@@ -3325,7 +3366,7 @@ function setupPreviewSimulation(){
   updateAmplitudeIndicator();
   updateMapPreview();
   updateMapNameDisplay();
-  updateFieldTapePosition(mapIndex);
+  updateFieldTapePosition();
   setTumblerState(addsAABtn, addAA);
   setTumblerState(addsNailsBtn, sharpEdges);
   setTumblerState(addsCargoBtn, addCargo);
@@ -3418,7 +3459,7 @@ const hasMapButtons = mapPrevBtn && mapNextBtn;
   if(hasMapButtons){
   updateMapPreview();
   updateMapNameDisplay();
-  updateFieldTapePosition(mapIndex);
+  updateFieldTapePosition();
 
   const changeMap = delta => {
     changeFieldStep(delta, { animate: true });
@@ -3428,7 +3469,7 @@ const hasMapButtons = mapPrevBtn && mapNextBtn;
   mapNextBtn.addEventListener('click', () => changeMap(1));
 } else {
   updateMapPreview();
-  updateFieldTapePosition(mapIndex);
+  updateFieldTapePosition();
 }
 
   const handleRangeArrow = (delta) => {
@@ -3535,7 +3576,7 @@ window.addEventListener('beforeunload', cleanupRenderers);
   updateRangeFlame();
 updateAmplitudeDisplay();
 updateAmplitudeIndicator();
-updateFieldTapePosition(mapIndex);
+updateFieldTapePosition();
 
 window.paperWingsSettings = {
   onShow: handleSettingsLayerShow,
