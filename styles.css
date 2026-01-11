@@ -966,9 +966,6 @@ body, button {
     left: 0;
     right: 0;
     pointer-events: none;
-    background-image: url('ui_controlpanel/cp_tape_field_easy.png');
-    background-repeat: repeat-x;
-    background-size: auto 100%;
     background-position: center center;
     z-index: 0;
   }
