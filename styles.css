@@ -964,9 +964,14 @@ body, button {
     bottom: 0;
     left: 0;
     right: 0;
-    overflow: hidden;
     pointer-events: none;
     z-index: 0;
+  }
+
+  #settingsLayer #frame_field_2_counter .fieldTapeViewport {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
   }
 
   #settingsLayer #frame_field_2_counter .fieldTapeTrack {
@@ -974,22 +979,18 @@ body, button {
     top: 0;
     left: 0;
     height: 100%;
-    width: 200%;
+    width: 300%;
     display: flex;
+    transform: translateX(-100%);
   }
 
-  #settingsLayer #frame_field_2_counter .fieldTapeTrack .slotA,
-  #settingsLayer #frame_field_2_counter .fieldTapeTrack .slotB {
-    width: 50%;
+  #settingsLayer #frame_field_2_counter .fieldTapeSlice {
+    width: 100%;
     height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
-  }
-
-  #settingsLayer #frame_field_2_counter .fieldTapeImage {
-    height: 100%;
-    background-image: url('ui_controlpanel/cp_tape_field.png');
+    background-image: url('ui_controlpanel/cp_tape_field_easy.png');
     background-repeat: repeat-x;
     background-size: auto 100%;
     background-position: center center;
