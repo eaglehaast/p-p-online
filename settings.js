@@ -485,9 +485,8 @@ let accuracyScrollRafId = null;
 let accuracyTrackTransform = '';
 let accuracyTrackTransition = '';
 let isAccuracyBumping = false;
-let fieldTapeTransform = '';
-let fieldTapeTransition = '';
-let hasInitializedFieldTape = false;
+let fieldSelectorTransform = '';
+let fieldSelectorTransition = '';
 let pendulumHost = null;
 let pendulumCurrent = null;
 let pendulumTarget = null;
@@ -507,12 +506,12 @@ const accuracyTrackState = {
   set transition(value){ accuracyTrackTransition = value; },
   apply: applyStoredAccuracyTrackStyles
 };
-const fieldTapeState = {
-  get transform(){ return fieldTapeTransform; },
-  set transform(value){ fieldTapeTransform = value; },
-  get transition(){ return fieldTapeTransition; },
-  set transition(value){ fieldTapeTransition = value; },
-  apply: applyStoredFieldTapeStyles
+const fieldSelectorState = {
+  get transform(){ return fieldSelectorTransform; },
+  set transform(value){ fieldSelectorTransform = value; },
+  get transition(){ return fieldSelectorTransition; },
+  set transition(value){ fieldSelectorTransition = value; },
+  apply: applyStoredFieldSelectorStyles
 };
 
 const getRangeDirFromDx = (dx) => (dx < 0 ? RANGE_DIR_NEXT : (dx > 0 ? RANGE_DIR_PREV : 0));
@@ -602,11 +601,10 @@ const mapNameLabelA = mapNameDisplay?.querySelector('.fieldLabelA');
 const mapNameLabelB = mapNameDisplay?.querySelector('.fieldLabelB');
 const mapNameSlotA = mapNameDisplay?.querySelector('.fieldNameTrack .slotA');
 const mapNameSlotB = mapNameDisplay?.querySelector('.fieldNameTrack .slotB');
-let fieldTapeSlicePrev = mapNameDisplay?.querySelector('.fieldTapeTrack .slice0');
-let fieldTapeSliceCurrent = mapNameDisplay?.querySelector('.fieldTapeTrack .slice1');
-let fieldTapeSliceNext = mapNameDisplay?.querySelector('.fieldTapeTrack .slice2');
-let mapNameTrack = mapNameDisplay?.querySelector('.fieldNameTrack');
+let fieldTapeSliceA = mapNameDisplay?.querySelector('.fieldTapeTrack .sliceA');
+let fieldTapeSliceB = mapNameDisplay?.querySelector('.fieldTapeTrack .sliceB');
 let fieldTapeTrack = mapNameDisplay?.querySelector('.fieldTapeTrack');
+let fieldSelectorTrack = mapNameDisplay?.querySelector('.fieldSelectorTrack');
 let mapNameLabel = mapNameLabelA ?? mapNameDisplay?.querySelector('.cp-field-selector__label');
 let mapNameIncomingLabel = mapNameLabelB ?? null;
 let activeSlot = mapNameLabel === mapNameLabelB ? 'B' : 'A';
@@ -682,14 +680,9 @@ let fieldAnimationPending = 0;
 let fieldLabelTransitionTarget = null;
 let fieldLabelTransitionHandler = null;
 let fieldLabelFallbackTimeoutId = null;
-let fieldTapeTransitionTarget = null;
-let fieldTapeTransitionHandler = null;
-let fieldTapeFallbackTimeoutId = null;
 
 const FIELD_LABEL_EASING = 'cubic-bezier(0.175, 0.885, 0.32, 1.275)';
 const FIELD_LABEL_DURATION_MS = RANGE_BASE_STEP_MS;
-const FIELD_TAPE_DURATION_MS = RANGE_BASE_STEP_MS;
-const FIELD_TAPE_EASING = FIELD_LABEL_EASING;
 
 function resetFieldAnimationTracking(){
   fieldAnimationToken += 1;
@@ -710,17 +703,6 @@ function cancelFieldLabelAnimation(){
   fieldLabelTransitionHandler = null;
 }
 
-function cancelFieldTapeAnimation(){
-  if(fieldTapeFallbackTimeoutId){
-    clearTimeout(fieldTapeFallbackTimeoutId);
-    fieldTapeFallbackTimeoutId = null;
-  }
-  if(fieldTapeTransitionTarget && fieldTapeTransitionHandler){
-    fieldTapeTransitionTarget.removeEventListener('transitionend', fieldTapeTransitionHandler);
-  }
-  fieldTapeTransitionTarget = null;
-  fieldTapeTransitionHandler = null;
-}
 
 function markFieldAnimationStart(token){
   if(token !== fieldAnimationToken) return;
@@ -803,10 +785,10 @@ function syncAccuracyTrackStylesFrom(target){
   }
 }
 
-function syncFieldTapeStylesFrom(target){
+function syncFieldSelectorStylesFrom(target){
   if(target instanceof HTMLElement){
-    fieldTapeTransform = target.style.transform || '';
-    fieldTapeTransition = target.style.transition || '';
+    fieldSelectorTransform = target.style.transform || '';
+    fieldSelectorTransition = target.style.transition || '';
   }
 }
 
@@ -834,8 +816,8 @@ function setAccuracyTrackStyles(target, styles){
   setSliderTrackStyles(target, accuracyTrackState, styles);
 }
 
-function setFieldTapeStyles(target, styles){
-  setSliderTrackStyles(target, fieldTapeState, styles);
+function setFieldSelectorStyles(target, styles){
+  setSliderTrackStyles(target, fieldSelectorState, styles);
 }
 
 function applyStoredAccuracyTrackStyles(target){
@@ -872,32 +854,41 @@ function setSliderTrackStyles(target, state, { transform, transition } = {}){
   state.apply(target);
 }
 
-function applyStoredFieldTapeStyles(target){
+function applyStoredFieldSelectorStyles(target){
   if(!(target instanceof HTMLElement)) return;
 
-  if(fieldTapeTransition){
-    target.style.transition = fieldTapeTransition;
+  if(fieldSelectorTransition){
+    target.style.transition = fieldSelectorTransition;
   } else {
     target.style.removeProperty('transition');
   }
 
-  if(fieldTapeTransform){
-    target.style.transform = fieldTapeTransform;
+  if(fieldSelectorTransform){
+    target.style.transform = fieldSelectorTransform;
   } else {
     target.style.removeProperty('transform');
   }
 }
 
-function getFieldTapeTransition(durationMs = FIELD_TAPE_DURATION_MS){
-  return `transform ${durationMs}ms ${FIELD_TAPE_EASING}`;
+function getFieldSelectorTransition(durationMs = FIELD_LABEL_DURATION_MS){
+  return `transform ${durationMs}ms ${FIELD_LABEL_EASING}`;
 }
 
 function getFieldTapeTrack(){
   if(!mapNameDisplay) return null;
   fieldTapeTrack = fieldTapeTrack ?? mapNameDisplay.querySelector('.fieldTapeTrack');
   if(fieldTapeTrack instanceof HTMLElement){
-    syncFieldTapeStylesFrom(fieldTapeTrack);
     return fieldTapeTrack;
+  }
+  return null;
+}
+
+function getFieldSelectorTrack(){
+  if(!mapNameDisplay) return null;
+  fieldSelectorTrack = fieldSelectorTrack ?? mapNameDisplay.querySelector('.fieldSelectorTrack');
+  if(fieldSelectorTrack instanceof HTMLElement){
+    syncFieldSelectorStylesFrom(fieldSelectorTrack);
+    return fieldSelectorTrack;
   }
   return null;
 }
@@ -905,22 +896,29 @@ function getFieldTapeTrack(){
 function getFieldTapeSlices(){
   const track = getFieldTapeTrack();
   if(!track) return null;
-  fieldTapeSlicePrev = fieldTapeSlicePrev ?? track.querySelector('.slice0');
-  fieldTapeSliceCurrent = fieldTapeSliceCurrent ?? track.querySelector('.slice1');
-  fieldTapeSliceNext = fieldTapeSliceNext ?? track.querySelector('.slice2');
-  if(
-    !(fieldTapeSlicePrev instanceof HTMLElement) ||
-    !(fieldTapeSliceCurrent instanceof HTMLElement) ||
-    !(fieldTapeSliceNext instanceof HTMLElement)
-  ){
+  fieldTapeSliceA = fieldTapeSliceA ?? track.querySelector('.sliceA');
+  fieldTapeSliceB = fieldTapeSliceB ?? track.querySelector('.sliceB');
+  if(!(fieldTapeSliceA instanceof HTMLElement) || !(fieldTapeSliceB instanceof HTMLElement)){
     return null;
   }
   return {
     track,
-    prev: fieldTapeSlicePrev,
-    current: fieldTapeSliceCurrent,
-    next: fieldTapeSliceNext
+    slotA: fieldTapeSliceA,
+    slotB: fieldTapeSliceB
   };
+}
+
+function normalizeMapIndex(index){
+  const totalMaps = Math.max(1, MAPS.length);
+  return ((index % totalMaps) + totalMaps) % totalMaps;
+}
+
+function setFieldTapeSliceForIndex(slice, index){
+  if(!(slice instanceof HTMLElement)) return;
+  const totalMaps = Math.max(1, MAPS.length);
+  const middleIndex = Math.floor(totalMaps / 2);
+  const offsetPx = (middleIndex - index) * FIELD_TAPE_CELL_WIDTH;
+  slice.style.backgroundPosition = `${offsetPx}px center`;
 }
 
 function updateRangeTapePosition(displayPosition = rangeScrollPos, track = null){
@@ -1018,100 +1016,15 @@ function updateFieldTapePosition(displayPosition = mapIndex, tapeElement = null,
 }
 */
 
-function updateFieldTapePosition(tapeElement = null, options = {}){
-  const targetTrack = tapeElement ?? getFieldTapeTrack();
-  if(!(targetTrack instanceof HTMLElement)){
-    return;
-  }
-
-  const defaultTransform = 'translateX(-33.333%)';
-  const shouldAnimate = options.animate && isAnimating && options.animationToken && hasInitializedFieldTape;
+function updateFieldTapePosition(displayIndex = mapIndex){
   const tapeSlices = getFieldTapeSlices();
-  if(!tapeSlices){
-    return;
-  }
-  const totalMaps = Math.max(1, MAPS.length);
-  const normalizeIndex = (index) => ((index % totalMaps) + totalMaps) % totalMaps;
-  const stableIndex = normalizeIndex(Number.isFinite(mapIndex) ? mapIndex : 0);
-  const outgoingIndex = Number.isFinite(options.currentIndex)
-    ? normalizeIndex(options.currentIndex)
-    : stableIndex;
-  const incomingIndex = Number.isFinite(options.nextIndex)
-    ? normalizeIndex(options.nextIndex)
-    : normalizeIndex(stableIndex + 1);
-  const middleIndex = Math.floor(totalMaps / 2);
-
-  const setTapeForIndex = (slice, index) => {
-    if(!(slice instanceof HTMLElement)) return;
-    const offsetPx = (middleIndex - index) * FIELD_TAPE_CELL_WIDTH;
-    slice.style.backgroundPosition = `${offsetPx}px center`;
-  };
-
-  const setSlicesForIndex = (index) => {
-    if(!tapeSlices) return;
-    const prevIndex = normalizeIndex(index - 1);
-    const nextIndex = normalizeIndex(index + 1);
-    setTapeForIndex(tapeSlices.prev, prevIndex);
-    setTapeForIndex(tapeSlices.current, index);
-    setTapeForIndex(tapeSlices.next, nextIndex);
-  };
-
-  hasInitializedFieldTape = true;
-
-  if(shouldAnimate){
-    cancelFieldTapeAnimation();
-    const durationMs = Number.isFinite(options.durationMs)
-      ? options.durationMs
-      : FIELD_TAPE_DURATION_MS;
-    const transition = getFieldTapeTransition(durationMs);
-    const direction = options.animateDirection;
-    const endTransform = direction === 'prev' ? 'translateX(0%)' : 'translateX(-66.666%)';
-
-    if(direction === 'next' || direction === 'prev'){
-      if(direction === 'prev'){
-        setTapeForIndex(tapeSlices.prev, incomingIndex);
-        setTapeForIndex(tapeSlices.current, outgoingIndex);
-        setTapeForIndex(tapeSlices.next, normalizeIndex(outgoingIndex + 1));
-      } else {
-        setTapeForIndex(tapeSlices.prev, normalizeIndex(outgoingIndex - 1));
-        setTapeForIndex(tapeSlices.current, outgoingIndex);
-        setTapeForIndex(tapeSlices.next, incomingIndex);
-      }
-      setFieldTapeStyles(targetTrack, { transition: 'none', transform: defaultTransform });
-      markFieldAnimationStart(options.animationToken);
-      requestAnimationFrame(() => {
-        setFieldTapeStyles(targetTrack, { transition, transform: endTransform });
-      });
-
-      let animationCompleted = false;
-      const finalizeAnimation = () => {
-        if(animationCompleted) return;
-        animationCompleted = true;
-        cancelFieldTapeAnimation();
-        setFieldTapeStyles(targetTrack, { transition: 'none', transform: defaultTransform });
-        setSlicesForIndex(incomingIndex);
-        requestAnimationFrame(() => setFieldTapeStyles(targetTrack, { transition }));
-        markFieldAnimationEnd(options.animationToken);
-      };
-
-      const handleEnd = (event) => {
-        if(event && event.propertyName !== 'transform') return;
-        finalizeAnimation();
-      };
-
-      fieldTapeTransitionTarget = targetTrack;
-      fieldTapeTransitionHandler = handleEnd;
-      targetTrack.addEventListener('transitionend', handleEnd, { once: true });
-      fieldTapeFallbackTimeoutId = window.setTimeout(() => {
-        finalizeAnimation();
-      }, durationMs + 50);
-      return;
-    }
-  }
-
-  cancelFieldTapeAnimation();
-  setSlicesForIndex(stableIndex);
-  setFieldTapeStyles(targetTrack, { transition: null, transform: defaultTransform });
+  if(!tapeSlices) return;
+  const stableIndex = normalizeMapIndex(Number.isFinite(displayIndex) ? displayIndex : 0);
+  const nextIndex = normalizeMapIndex(stableIndex + 1);
+  const activeSlice = activeSlot === 'A' ? tapeSlices.slotA : tapeSlices.slotB;
+  const inactiveSlice = activeSlot === 'A' ? tapeSlices.slotB : tapeSlices.slotA;
+  setFieldTapeSliceForIndex(activeSlice, stableIndex);
+  setFieldTapeSliceForIndex(inactiveSlice, nextIndex);
 }
 
 function updateAccuracyTapePosition(displayPosition = accuracyDisplayIdx, track = null){
@@ -1613,35 +1526,16 @@ function removeIncomingAccuracyValue(){
 }
 
 function ensureFieldDragTracks(){
-  const nameTrack = getFieldNameTrack();
-  const tapeTrack = getFieldTapeTrack();
-  if(!(nameTrack instanceof HTMLElement) || !(tapeTrack instanceof HTMLElement)){
+  const selectorTrack = getFieldSelectorTrack();
+  if(!(selectorTrack instanceof HTMLElement)){
     return null;
   }
-  return nameTrack;
+  return selectorTrack;
 }
 
 function setFieldDragTrackStyles(target, styles){
   if(!(target instanceof HTMLElement)) return;
-  setFieldTrackStyles(target, styles);
-  const tapeTrack = getFieldTapeTrack();
-  if(tapeTrack instanceof HTMLElement){
-    const tapeTransform = getFieldTapeTransformForDrag(styles?.transform);
-    if(tapeTransform){
-      setFieldTapeStyles(tapeTrack, { transition: styles?.transition, transform: tapeTransform });
-    } else {
-      setFieldTapeStyles(tapeTrack, styles);
-    }
-  }
-}
-
-function getFieldTapeTransformForDrag(transform){
-  if(typeof transform !== 'string') return null;
-  const match = transform.match(/translateX\(([-\d.]+)(px)?\)/);
-  if(!match) return null;
-  const delta = Number(match[1]);
-  if(!Number.isFinite(delta)) return null;
-  return `translateX(calc(-100% + ${delta}px))`;
+  setFieldSelectorStyles(target, styles);
 }
 
 function ensureFieldLabelsForDrag(){
@@ -1668,6 +1562,7 @@ function removeIncomingFieldValue(){
   mapNameIncomingLabel.style.transition = '';
   mapNameIncomingLabel.removeAttribute('data-direction');
   setFieldTrackOrder(activeSlot);
+  updateFieldTapePosition(currentIndex);
 }
 
 function prepareIncomingFieldValue(direction){
@@ -1677,9 +1572,8 @@ function prepareIncomingFieldValue(direction){
     return null;
   }
 
-  const totalMaps = Math.max(1, MAPS.length);
   const delta = direction === 'next' ? 1 : -1;
-  const targetIndex = ((currentIndex + delta) % totalMaps + totalMaps) % totalMaps;
+  const targetIndex = normalizeMapIndex(currentIndex + delta);
   mapNameIncomingLabel.textContent = getFieldLabel(targetIndex);
   mapNameIncomingLabel.style.transition = 'none';
   mapNameIncomingLabel.dataset.direction = direction;
@@ -1687,6 +1581,13 @@ function prepareIncomingFieldValue(direction){
   const inactiveSlot = activeSlot === 'A' ? 'B' : 'A';
   const orderSlot = direction === 'prev' ? inactiveSlot : activeSlot;
   setFieldTrackOrder(orderSlot);
+  const tapeSlices = getFieldTapeSlices();
+  if(tapeSlices){
+    const activeSlice = activeSlot === 'A' ? tapeSlices.slotA : tapeSlices.slotB;
+    const incomingSlice = activeSlot === 'A' ? tapeSlices.slotB : tapeSlices.slotA;
+    setFieldTapeSliceForIndex(activeSlice, normalizeMapIndex(currentIndex));
+    setFieldTapeSliceForIndex(incomingSlice, targetIndex);
+  }
 
   return mapNameIncomingLabel;
 }
@@ -2114,7 +2015,7 @@ const accuracyDragHandlers = createSliderDragHandlers({
 });
 
 const fieldDragHandlers = createSliderDragHandlers({
-  viewport: () => getFieldLabelLayer(),
+  viewport: () => mapNameDisplay ?? getFieldLabelLayer(),
   ensureTrack: ensureFieldDragTracks,
   setTrackStyles: setFieldDragTrackStyles,
   removeIncomingValue: removeIncomingFieldValue,
@@ -2335,7 +2236,6 @@ function changeFieldStep(delta, options = {}){
     normalizeFieldLabels({ cancelAnimation: true });
     resetFieldAnimationTracking();
     cancelFieldLabelAnimation();
-    cancelFieldTapeAnimation();
   }
 
   const {
@@ -2367,17 +2267,9 @@ function changeFieldStep(delta, options = {}){
   const animationToken = resetFieldAnimationTracking();
   if(animate && direction){
     animateFieldLabelChange(nextIndexLocal, direction, animationToken);
-    updateFieldTapePosition(null, {
-      animate: true,
-      animateDirection: direction,
-      currentIndex,
-      nextIndex: nextIndexLocal,
-      animationToken,
-      durationMs
-    });
   } else {
     updateMapNameDisplay({ index: nextIndexLocal, animationToken });
-    updateFieldTapePosition();
+    updateFieldTapePosition(nextIndexLocal);
   }
 
   if(animate && direction){
@@ -2824,44 +2716,29 @@ function getFieldLabelLayer(){
   return mapNameDisplay.querySelector('.cp-field-selector__label-layer') ?? mapNameDisplay;
 }
 
-function getFieldNameTrack(){
-  const labelLayer = getFieldLabelLayer();
-  if(!labelLayer) return null;
-  mapNameTrack = mapNameTrack ?? labelLayer.querySelector('.fieldNameTrack');
-  return mapNameTrack;
-}
-
 function setFieldTrackTransform(offsetPx){
-  const track = getFieldNameTrack();
+  const track = getFieldSelectorTrack();
   if(!(track instanceof HTMLElement)) return;
   track.style.transform = `translateX(${offsetPx})`;
-}
-
-function setFieldTrackStyles(target, { transform, transition } = {}){
-  if(!(target instanceof HTMLElement)) return;
-  if(typeof transition === 'string'){
-    target.style.transition = transition;
-  } else if(transition === null){
-    target.style.removeProperty('transition');
-  }
-  if(typeof transform === 'string'){
-    target.style.transform = transform;
-  } else if(transform === null){
-    target.style.removeProperty('transform');
-  }
 }
 
 function setFieldTrackOrder(activeSlot){
   if(activeSlot !== 'A' && activeSlot !== 'B') return;
   const slotA = mapNameSlotA ?? mapNameLabelA?.parentElement;
   const slotB = mapNameSlotB ?? mapNameLabelB?.parentElement;
+  const tapeSlotA = fieldTapeSliceA;
+  const tapeSlotB = fieldTapeSliceB;
   if(!(slotA instanceof HTMLElement) || !(slotB instanceof HTMLElement)) return;
   if(activeSlot === 'A'){
     slotA.style.order = '0';
     slotB.style.order = '1';
+    if(tapeSlotA instanceof HTMLElement) tapeSlotA.style.order = '0';
+    if(tapeSlotB instanceof HTMLElement) tapeSlotB.style.order = '1';
   } else {
     slotA.style.order = '1';
     slotB.style.order = '0';
+    if(tapeSlotA instanceof HTMLElement) tapeSlotA.style.order = '1';
+    if(tapeSlotB instanceof HTMLElement) tapeSlotB.style.order = '0';
   }
 }
 
@@ -2879,12 +2756,11 @@ function normalizeFieldLabels({ cancelAnimation = false, resetFieldAnimation = t
 
   if(cancelAnimation){
     isAnimating = false;
-    const track = getFieldNameTrack();
+    const track = getFieldSelectorTrack();
     if(track){
-      track.style.transition = '';
+      setFieldSelectorStyles(track, { transition: '' });
     }
     cancelFieldLabelAnimation();
-    cancelFieldTapeAnimation();
     if(resetFieldAnimation){
       resetFieldAnimationTracking();
     }
@@ -2908,14 +2784,17 @@ function animateFieldLabelChange(targetIndex, direction, animationToken){
   const labelLayer = getFieldLabelLayer();
   normalizeFieldLabels({ cancelAnimation: true, resetFieldAnimation: false });
   cancelFieldLabelAnimation();
-  if(!labelLayer || !mapNameLabel || !mapNameIncomingLabel){
+  const track = getFieldSelectorTrack();
+  const tapeSlices = getFieldTapeSlices();
+  if(!labelLayer || !mapNameLabel || !mapNameIncomingLabel || !tapeSlices){
     updateMapNameDisplay({ index: targetIndex, animationToken });
+    updateFieldTapePosition(targetIndex);
     return;
   }
 
-  const track = getFieldNameTrack();
   if(!mapNameLabelA || !mapNameLabelB || !(track instanceof HTMLElement)){
     updateMapNameDisplay({ index: targetIndex, animationToken });
+    updateFieldTapePosition(targetIndex);
     return;
   }
 
@@ -2932,12 +2811,19 @@ function animateFieldLabelChange(targetIndex, direction, animationToken){
   }
   mapNameLabel = activeLabel ?? mapNameLabel;
   mapNameIncomingLabel = incomingLabel ?? mapNameIncomingLabel;
+
+  const currentMapIndex = normalizeMapIndex(currentIndex);
+  const incomingMapIndex = normalizeMapIndex(targetIndex);
+  const activeSlice = activeSlot === 'A' ? tapeSlices.slotA : tapeSlices.slotB;
+  const incomingSlice = activeSlot === 'A' ? tapeSlices.slotB : tapeSlices.slotA;
+  setFieldTapeSliceForIndex(activeSlice, currentMapIndex);
+  setFieldTapeSliceForIndex(incomingSlice, incomingMapIndex);
+
   const startTransform = direction === 'prev' ? '-50%' : '0%';
   const endTransform = direction === 'prev' ? '0%' : '-50%';
   const orderSlot = direction === 'prev' ? inactiveSlot : activeSlot;
   setFieldTrackOrder(orderSlot);
-  track.style.transition = 'none';
-  setFieldTrackTransform(startTransform);
+  setFieldSelectorStyles(track, { transition: 'none', transform: `translateX(${startTransform})` });
   isAnimating = true;
   markFieldAnimationStart(animationToken);
   console.log(`[map selector] ${currentIndex} -> ${targetIndex}`, {
@@ -2947,9 +2833,8 @@ function animateFieldLabelChange(targetIndex, direction, animationToken){
   });
 
   requestAnimationFrame(() => {
-    const transition = `transform ${FIELD_LABEL_DURATION_MS}ms ${FIELD_LABEL_EASING}`;
-    track.style.transition = transition;
-    setFieldTrackTransform(endTransform);
+    const transition = getFieldSelectorTransition(FIELD_LABEL_DURATION_MS);
+    setFieldSelectorStyles(track, { transition, transform: `translateX(${endTransform})` });
   });
 
   let animationCompleted = false;
@@ -2962,13 +2847,13 @@ function animateFieldLabelChange(targetIndex, direction, animationToken){
     mapNameLabel = activeSlot === 'A' ? mapNameLabelA : mapNameLabelB;
     mapNameIncomingLabel = activeSlot === 'A' ? mapNameLabelB : mapNameLabelA;
     setFieldTrackOrder(activeSlot);
-    track.style.transition = 'none';
-    setFieldTrackTransform('0%');
+    setFieldSelectorStyles(track, { transition: 'none', transform: 'translateX(0%)' });
     if(mapNameIncomingLabel){
       mapNameIncomingLabel.textContent = '';
     }
+    updateFieldTapePosition(currentIndex);
     requestAnimationFrame(() => {
-      track.style.transition = '';
+      setFieldSelectorStyles(track, { transition: '' });
     });
     isAnimating = false;
     markFieldAnimationEnd(animationToken);
