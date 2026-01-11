@@ -230,7 +230,8 @@ const MAPS = [
   }
 ];
 
-const FIELD_TAPE_CELL_WIDTH = RANGE_CELL_WIDTH;
+// cp_tape_field_easy.png is 116px wide, with two 58px steps.
+const FIELD_TAPE_CELL_WIDTH = 58;
 
 const fieldOptions = MAPS.map((map, index) => ({
   id: index,
@@ -996,6 +997,9 @@ function updateFieldTapePosition(tapeElement = null, options = {}){
   const defaultTransform = 'translateX(-100%)';
   const shouldAnimate = options.animate && isAnimating && options.animationToken && hasInitializedFieldTape;
   const tapeSlices = getFieldTapeSlices();
+  if(!tapeSlices){
+    return;
+  }
   const totalMaps = Math.max(1, MAPS.length);
   const normalizeIndex = (index) => ((index % totalMaps) + totalMaps) % totalMaps;
   const stableIndex = normalizeIndex(Number.isFinite(mapIndex) ? mapIndex : 0);
@@ -1031,13 +1035,13 @@ function updateFieldTapePosition(tapeElement = null, options = {}){
 
     if(direction === 'next' || direction === 'prev'){
       if(direction === 'prev'){
-        setTapeForIndex(tapeSlices?.prev, incomingIndex);
-        setTapeForIndex(tapeSlices?.current, outgoingIndex);
-        setTapeForIndex(tapeSlices?.next, normalizeIndex(outgoingIndex + 1));
+        setTapeForIndex(tapeSlices.prev, incomingIndex);
+        setTapeForIndex(tapeSlices.current, outgoingIndex);
+        setTapeForIndex(tapeSlices.next, normalizeIndex(outgoingIndex + 1));
       } else {
-        setTapeForIndex(tapeSlices?.prev, normalizeIndex(outgoingIndex - 1));
-        setTapeForIndex(tapeSlices?.current, outgoingIndex);
-        setTapeForIndex(tapeSlices?.next, incomingIndex);
+        setTapeForIndex(tapeSlices.prev, normalizeIndex(outgoingIndex - 1));
+        setTapeForIndex(tapeSlices.current, outgoingIndex);
+        setTapeForIndex(tapeSlices.next, incomingIndex);
       }
       setFieldTapeStyles(targetTrack, { transition: 'none', transform: defaultTransform });
       markFieldAnimationStart(options.animationToken);
