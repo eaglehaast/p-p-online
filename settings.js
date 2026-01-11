@@ -230,7 +230,7 @@ const MAPS = [
   }
 ];
 
-// cp_tape_field_easy.png is 116px wide, with two 58px steps.
+// cp_tape_field_easy2.png is 58px wide, with one 58px step.
 const FIELD_TAPE_CELL_WIDTH = 58;
 
 const fieldOptions = MAPS.map((map, index) => ({
