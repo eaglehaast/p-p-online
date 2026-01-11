@@ -985,7 +985,6 @@ body, button {
     display: flex;
     align-items: center;
     justify-content: center;
-    overflow: hidden;
   }
 
   #settingsLayer #frame_field_2_counter .fieldTapeImage {
@@ -1002,7 +1001,6 @@ body, button {
     line-height: 1;
     color: #1b1205;
     white-space: nowrap;
-    overflow: hidden;
     text-shadow:
       var(--field-map-name-shadow-x)
       var(--field-map-name-shadow-y)
@@ -1014,7 +1012,7 @@ body, button {
     position: relative;
     width: 45px;
     height: 18px;
-    overflow: hidden;
+    overflow: visible;
     z-index: 1;
   }
 
