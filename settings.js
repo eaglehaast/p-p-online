@@ -995,6 +995,32 @@ function updateFieldTapePosition(tapeElement = null, options = {}){
 
   const defaultTransform = 'translateX(-100%)';
   const shouldAnimate = options.animate && isAnimating && options.animationToken && hasInitializedFieldTape;
+  const tapeSlices = getFieldTapeSlices();
+  const totalMaps = Math.max(1, MAPS.length);
+  const normalizeIndex = (index) => ((index % totalMaps) + totalMaps) % totalMaps;
+  const stableIndex = normalizeIndex(Number.isFinite(mapIndex) ? mapIndex : 0);
+  const outgoingIndex = Number.isFinite(options.currentIndex)
+    ? normalizeIndex(options.currentIndex)
+    : stableIndex;
+  const incomingIndex = Number.isFinite(options.nextIndex)
+    ? normalizeIndex(options.nextIndex)
+    : normalizeIndex(stableIndex + 1);
+  const middleIndex = Math.floor(totalMaps / 2);
+
+  const setTapeForIndex = (slice, index) => {
+    if(!(slice instanceof HTMLElement)) return;
+    const offsetPx = (middleIndex - index) * FIELD_TAPE_CELL_WIDTH;
+    slice.style.backgroundPosition = `${offsetPx}px center`;
+  };
+
+  const setSlicesForIndex = (index) => {
+    if(!tapeSlices) return;
+    const prevIndex = normalizeIndex(index - 1);
+    const nextIndex = normalizeIndex(index + 1);
+    setTapeForIndex(tapeSlices.prev, prevIndex);
+    setTapeForIndex(tapeSlices.current, index);
+    setTapeForIndex(tapeSlices.next, nextIndex);
+  };
 
   hasInitializedFieldTape = true;
 
@@ -1004,6 +1030,15 @@ function updateFieldTapePosition(tapeElement = null, options = {}){
     const endTransform = direction === 'prev' ? 'translateX(0%)' : 'translateX(-200%)';
 
     if(direction === 'next' || direction === 'prev'){
+      if(direction === 'prev'){
+        setTapeForIndex(tapeSlices?.prev, incomingIndex);
+        setTapeForIndex(tapeSlices?.current, outgoingIndex);
+        setTapeForIndex(tapeSlices?.next, normalizeIndex(outgoingIndex + 1));
+      } else {
+        setTapeForIndex(tapeSlices?.prev, normalizeIndex(outgoingIndex - 1));
+        setTapeForIndex(tapeSlices?.current, outgoingIndex);
+        setTapeForIndex(tapeSlices?.next, incomingIndex);
+      }
       setFieldTapeStyles(targetTrack, { transition: 'none', transform: defaultTransform });
       markFieldAnimationStart(options.animationToken);
       requestAnimationFrame(() => {
@@ -1013,6 +1048,7 @@ function updateFieldTapePosition(tapeElement = null, options = {}){
       const handleEnd = (event) => {
         if(event && event.propertyName !== 'transform') return;
         setFieldTapeStyles(targetTrack, { transition: 'none', transform: defaultTransform });
+        setSlicesForIndex(incomingIndex);
         requestAnimationFrame(() => setFieldTapeStyles(targetTrack, { transition }));
         markFieldAnimationEnd(options.animationToken);
       };
@@ -1021,6 +1057,7 @@ function updateFieldTapePosition(tapeElement = null, options = {}){
     }
   }
 
+  setSlicesForIndex(stableIndex);
   setFieldTapeStyles(targetTrack, { transition: null, transform: defaultTransform });
 }
 
