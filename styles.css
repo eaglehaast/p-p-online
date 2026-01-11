@@ -959,7 +959,9 @@ body, button {
     --field-map-name-shadow-opacity: 0.8;
   }
 
-  #settingsLayer #frame_field_2_counter .cp-field-selector__tape {
+  #settingsLayer #frame_field_2_counter .cp-field-selector__tape,
+  #frame_field_2_counter .cp-field-selector__tape,
+  .cp-field-selector__display .cp-field-selector__tape {
     position: absolute;
     top: 0;
     bottom: 0;
