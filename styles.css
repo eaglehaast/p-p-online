@@ -953,6 +953,7 @@ body, button {
     align-items: center;
     justify-content: center;
     text-align: center;
+    z-index: 0;
     --field-map-name-shadow-x: 0.5px;
     --field-map-name-shadow-y: 0px;
     --field-map-name-shadow-opacity: 0.8;
@@ -965,10 +966,15 @@ body, button {
     left: 0;
     right: 0;
     pointer-events: none;
+    background-image: url('ui_controlpanel/cp_tape_field_easy.png');
+    background-repeat: repeat-x;
+    background-size: auto 100%;
+    background-position: center center;
     z-index: 0;
   }
 
   #settingsLayer #frame_field_2_counter .fieldTapeViewport {
+    position: relative;
     width: 100%;
     height: 100%;
     overflow: hidden;
@@ -985,7 +991,8 @@ body, button {
   }
 
   #settingsLayer #frame_field_2_counter .fieldTapeSlice {
-    width: 100%;
+    flex: 0 0 33.333%;
+    width: 33.333%;
     height: 100%;
     display: flex;
     align-items: center;
