@@ -888,8 +888,8 @@ function applyStoredFieldTapeStyles(target){
   }
 }
 
-function getFieldTapeTransition(){
-  return `transform ${FIELD_TAPE_DURATION_MS}ms ${FIELD_TAPE_EASING}`;
+function getFieldTapeTransition(durationMs = FIELD_TAPE_DURATION_MS){
+  return `transform ${durationMs}ms ${FIELD_TAPE_EASING}`;
 }
 
 function getFieldTapeTrack(){
@@ -1060,7 +1060,10 @@ function updateFieldTapePosition(tapeElement = null, options = {}){
 
   if(shouldAnimate){
     cancelFieldTapeAnimation();
-    const transition = getFieldTapeTransition();
+    const durationMs = Number.isFinite(options.durationMs)
+      ? options.durationMs
+      : FIELD_TAPE_DURATION_MS;
+    const transition = getFieldTapeTransition(durationMs);
     const direction = options.animateDirection;
     const endTransform = direction === 'prev' ? 'translateX(0%)' : 'translateX(-200%)';
 
@@ -1101,7 +1104,7 @@ function updateFieldTapePosition(tapeElement = null, options = {}){
       targetTrack.addEventListener('transitionend', handleEnd, { once: true });
       fieldTapeFallbackTimeoutId = window.setTimeout(() => {
         finalizeAnimation();
-      }, FIELD_TAPE_DURATION_MS + 50);
+      }, durationMs + 50);
       return;
     }
   }
@@ -2353,6 +2356,7 @@ function changeFieldStep(delta, options = {}){
   }
 
   const direction = getRangeDirectionLabel(getRangeDirFromDelta(delta));
+  const durationMs = FIELD_LABEL_DURATION_MS * Math.max(1, Math.abs(delta));
 
   mapIndex = nextIndexLocal;
   nextIndex = nextIndexLocal;
@@ -2368,14 +2372,13 @@ function changeFieldStep(delta, options = {}){
       animateDirection: direction,
       currentIndex,
       nextIndex: nextIndexLocal,
-      animationToken
+      animationToken,
+      durationMs
     });
   } else {
     updateMapNameDisplay({ index: nextIndexLocal, animationToken });
     updateFieldTapePosition();
   }
-
-  const durationMs = FIELD_LABEL_DURATION_MS * Math.max(1, Math.abs(delta));
 
   if(animate && direction){
     window.setTimeout(() => {
