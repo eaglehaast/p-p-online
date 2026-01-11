@@ -670,6 +670,14 @@ let pendingAccuracySteps = 0;
 let pendingAccuracyDir = 0;
 let accuracyGestureVelocity = 0;
 let isFieldAnimating = false;
+let isFieldDragging = false;
+let fieldDragStartX = 0;
+let fieldDragStartTime = 0;
+let fieldDragPointerId = null;
+let fieldDragLastDx = 0;
+let pendingFieldSteps = 0;
+let pendingFieldDir = 0;
+let fieldGestureVelocity = 0;
 let fieldAnimationToken = 0;
 let fieldAnimationPending = 0;
 
@@ -1495,6 +1503,71 @@ function removeIncomingAccuracyValue(){
   }
 }
 
+function ensureFieldDragTracks(){
+  const nameTrack = getFieldNameTrack();
+  const tapeTrack = getFieldTapeTrack();
+  if(!(nameTrack instanceof HTMLElement) || !(tapeTrack instanceof HTMLElement)){
+    return null;
+  }
+  return nameTrack;
+}
+
+function setFieldDragTrackStyles(target, styles){
+  if(!(target instanceof HTMLElement)) return;
+  setFieldTrackStyles(target, styles);
+  const tapeTrack = getFieldTapeTrack();
+  if(tapeTrack instanceof HTMLElement){
+    setFieldTapeStyles(tapeTrack, styles);
+  }
+}
+
+function ensureFieldLabelsForDrag(){
+  const labelLayer = getFieldLabelLayer();
+  if(!labelLayer) return false;
+  if(!mapNameLabel || !mapNameIncomingLabel){
+    const labels = Array.from(labelLayer.querySelectorAll('.cp-field-selector__label'));
+    mapNameLabel = mapNameLabel ?? labels[0] ?? null;
+    mapNameIncomingLabel = mapNameIncomingLabel ?? labels[1] ?? labels[0] ?? null;
+  }
+  if(!mapNameLabel || !mapNameIncomingLabel) return false;
+  if(mapNameLabel === mapNameLabelB){
+    activeSlot = 'B';
+  } else if(mapNameLabel === mapNameLabelA){
+    activeSlot = 'A';
+  }
+  return true;
+}
+
+function removeIncomingFieldValue(){
+  if(!ensureFieldLabelsForDrag()) return;
+  mapNameIncomingLabel.textContent = '';
+  mapNameIncomingLabel.style.transform = '';
+  mapNameIncomingLabel.style.transition = '';
+  mapNameIncomingLabel.removeAttribute('data-direction');
+  setFieldTrackOrder(activeSlot);
+}
+
+function prepareIncomingFieldValue(direction){
+  if(!ensureFieldLabelsForDrag()) return null;
+  if(direction !== 'next' && direction !== 'prev'){
+    removeIncomingFieldValue();
+    return null;
+  }
+
+  const totalMaps = Math.max(1, MAPS.length);
+  const delta = direction === 'next' ? 1 : -1;
+  const targetIndex = ((currentIndex + delta) % totalMaps + totalMaps) % totalMaps;
+  mapNameIncomingLabel.textContent = getFieldLabel(targetIndex);
+  mapNameIncomingLabel.style.transition = 'none';
+  mapNameIncomingLabel.dataset.direction = direction;
+
+  const inactiveSlot = activeSlot === 'A' ? 'B' : 'A';
+  const orderSlot = direction === 'prev' ? inactiveSlot : activeSlot;
+  setFieldTrackOrder(orderSlot);
+
+  return mapNameIncomingLabel;
+}
+
 function prepareIncomingRangeValue(direction){
   const incomingContainer = ensureRangeDisplayTrack() ?? rangeDisplayLayer;
   if(!incomingContainer) return null;
@@ -1566,6 +1639,17 @@ function resetAccuracyDragVisual(animateReset){
   });
 
   removeIncomingAccuracyValue();
+}
+
+function resetFieldDragVisual(animateReset){
+  const transformTarget = ensureFieldDragTracks();
+  if(!transformTarget) return;
+  setFieldDragTrackStyles(transformTarget, {
+    transition: '',
+    transform: animateReset ? 'translateX(0)' : ''
+  });
+
+  removeIncomingFieldValue();
 }
 
 function playEdgeBump(direction, { ensureTrack, setTrackStyles, getIsBumping, setIsBumping }){
@@ -1721,6 +1805,42 @@ function queueAccuracySteps(steps, dir, gestureVelocity = 0){
   runAccuracyStepQueue();
 }
 
+function clearFieldStepQueue(){
+  pendingFieldSteps = 0;
+  pendingFieldDir = 0;
+  fieldGestureVelocity = 0;
+}
+
+function runFieldStepQueue(){
+  if(pendingFieldSteps <= 0){
+    clearFieldStepQueue();
+    return;
+  }
+
+  if(isFieldAnimating || isAnimating){
+    return;
+  }
+
+  const delta = pendingFieldDir * pendingFieldSteps;
+  changeFieldStep(delta, {
+    onFinish: clearFieldStepQueue,
+    animate: true,
+    gestureVelocity: fieldGestureVelocity
+  });
+}
+
+function queueFieldSteps(steps, dir, gestureVelocity = 0){
+  if(steps <= 0 || dir === 0){
+    clearFieldStepQueue();
+    return;
+  }
+
+  fieldGestureVelocity = gestureVelocity;
+  pendingFieldSteps = Math.min(RANGE_DRAG_MAX_STEPS, steps);
+  pendingFieldDir = dir;
+  runFieldStepQueue();
+}
+
 function getDragMetrics(startX, currentX, startTime, eventTime){
   const dx = currentX - startX;
   const absDx = Math.abs(dx);
@@ -1870,6 +1990,34 @@ const accuracyDragHandlers = createSliderDragHandlers({
   }
 });
 
+const fieldDragHandlers = createSliderDragHandlers({
+  viewport: () => getFieldLabelLayer(),
+  ensureTrack: ensureFieldDragTracks,
+  setTrackStyles: setFieldDragTrackStyles,
+  removeIncomingValue: removeIncomingFieldValue,
+  prepareIncomingValue: prepareIncomingFieldValue,
+  resetDragVisual: resetFieldDragVisual,
+  queueSteps: queueFieldSteps,
+  isAnimating: () => isFieldAnimating || isAnimating,
+  clearStepQueue: clearFieldStepQueue,
+  getPeekOffset: (direction) => {
+    const viewport = getFieldLabelLayer();
+    return getSliderPeekOffset(viewport, direction);
+  },
+  state: {
+    isDragging: () => isFieldDragging,
+    setDragging: (value) => { isFieldDragging = value; },
+    startX: () => fieldDragStartX,
+    setStartX: (value) => { fieldDragStartX = value; },
+    startTime: () => fieldDragStartTime,
+    setStartTime: (value) => { fieldDragStartTime = value; },
+    pointerId: () => fieldDragPointerId,
+    setPointerId: (value) => { fieldDragPointerId = value; },
+    lastDx: () => fieldDragLastDx,
+    setLastDx: (value) => { fieldDragLastDx = value; }
+  }
+});
+
 function handleRangePointerDown(event){
   rangeDragHandlers.handlePointerDown(event);
 }
@@ -1892,6 +2040,18 @@ function handleAccuracyPointerMove(event){
 
 function handleAccuracyPointerEnd(event){
   accuracyDragHandlers.handlePointerEnd(event);
+}
+
+function handleFieldPointerDown(event){
+  fieldDragHandlers.handlePointerDown(event);
+}
+
+function handleFieldPointerMove(event){
+  fieldDragHandlers.handlePointerMove(event);
+}
+
+function handleFieldPointerEnd(event){
+  fieldDragHandlers.handlePointerEnd(event);
 }
 
 function updateRangeFlame(value = rangeCommittedValue){
@@ -2045,6 +2205,66 @@ function changeAccuracyStep(delta, options = {}){
     targetIndex: nextIndex,
     gestureVelocity
   } : { onFinish: finish });
+}
+
+function changeFieldStep(delta, options = {}){
+  if(isFieldAnimating || isAnimating) return;
+
+  const {
+    onFinish,
+    animate = true,
+    gestureVelocity = 0
+  } = options;
+
+  const totalMaps = Math.max(1, MAPS.length);
+  const normalizedCurrent = ((currentIndex % totalMaps) + totalMaps) % totalMaps;
+  const nextIndexLocal = ((normalizedCurrent + delta) % totalMaps + totalMaps) % totalMaps;
+
+  if(nextIndexLocal === normalizedCurrent){
+    if(typeof onFinish === 'function'){
+      onFinish();
+    }
+    return;
+  }
+
+  const direction = getRangeDirectionLabel(getRangeDirFromDelta(delta));
+
+  mapIndex = nextIndexLocal;
+  nextIndex = nextIndexLocal;
+  startPreviewSimulation();
+  updateMapPreview();
+  mapNameDisplay?.setAttribute('aria-label', `Selected map: ${getFieldLabel(nextIndexLocal)}`);
+
+  const animationToken = resetFieldAnimationTracking();
+  if(animate && direction){
+    animateFieldLabelChange(nextIndexLocal, direction, animationToken);
+    updateFieldTapePosition(mapIndex, null, {
+      animate: true,
+      animateDirection: direction,
+      currentIndex,
+      nextIndex: nextIndexLocal,
+      animationToken
+    });
+  } else {
+    updateMapNameDisplay({ index: nextIndexLocal, animationToken });
+    updateFieldTapePosition(mapIndex);
+  }
+
+  const durationMs = FIELD_LABEL_DURATION_MS * Math.max(1, Math.abs(delta));
+
+  if(animate && direction){
+    window.setTimeout(() => {
+      saveSettings();
+      if(typeof onFinish === 'function'){
+        onFinish();
+      }
+    }, durationMs);
+  } else {
+    saveSettings();
+    if(typeof onFinish === 'function'){
+      onFinish();
+    }
+  }
 }
 
 function updateAmplitudeDisplay(){
@@ -2487,6 +2707,20 @@ function setFieldTrackTransform(offsetPx){
   const track = getFieldNameTrack();
   if(!(track instanceof HTMLElement)) return;
   track.style.transform = `translateX(${offsetPx})`;
+}
+
+function setFieldTrackStyles(target, { transform, transition } = {}){
+  if(!(target instanceof HTMLElement)) return;
+  if(typeof transition === 'string'){
+    target.style.transition = transition;
+  } else if(transition === null){
+    target.style.removeProperty('transition');
+  }
+  if(typeof transform === 'string'){
+    target.style.transform = transform;
+  } else if(transform === null){
+    target.style.removeProperty('transform');
+  }
 }
 
 function setFieldTrackOrder(activeSlot){
@@ -3209,26 +3443,7 @@ const hasMapButtons = mapPrevBtn && mapNextBtn;
   updateFieldTapePosition(mapIndex);
 
   const changeMap = delta => {
-    if(isAnimating) return;
-    const direction = delta > 0 ? 'next' : 'prev';
-    nextIndex = (currentIndex + delta + MAPS.length) % MAPS.length;
-    if(nextIndex === currentIndex){
-      return;
-    }
-    mapIndex = nextIndex;
-    startPreviewSimulation();
-    updateMapPreview();
-    mapNameDisplay?.setAttribute('aria-label', `Selected map: ${getFieldLabel(nextIndex)}`);
-    const animationToken = resetFieldAnimationTracking();
-    animateFieldLabelChange(nextIndex, direction, animationToken);
-    updateFieldTapePosition(mapIndex, null, {
-      animate: true,
-      animateDirection: direction,
-      currentIndex,
-      nextIndex,
-      animationToken
-    });
-    saveSettings();
+    changeFieldStep(delta, { animate: true });
   };
 
   mapPrevBtn.addEventListener('click', () => changeMap(-1));
@@ -3278,6 +3493,14 @@ const hasMapButtons = mapPrevBtn && mapNextBtn;
     accuracyDisplayViewport.addEventListener('pointermove', handleAccuracyPointerMove);
     accuracyDisplayViewport.addEventListener('pointerup', handleAccuracyPointerEnd);
     accuracyDisplayViewport.addEventListener('pointercancel', handleAccuracyPointerEnd);
+  }
+  const fieldLabelViewport = getFieldLabelLayer();
+  const ensuredFieldTrack = ensureFieldDragTracks();
+  if(fieldLabelViewport && ensuredFieldTrack){
+    fieldLabelViewport.addEventListener('pointerdown', handleFieldPointerDown);
+    fieldLabelViewport.addEventListener('pointermove', handleFieldPointerMove);
+    fieldLabelViewport.addEventListener('pointerup', handleFieldPointerEnd);
+    fieldLabelViewport.addEventListener('pointercancel', handleFieldPointerEnd);
   }
   setupRepeatButton(amplitudeMinusBtn, () => handleAccuracyArrow(-1));
   setupRepeatButton(amplitudePlusBtn, () => handleAccuracyArrow(1));
