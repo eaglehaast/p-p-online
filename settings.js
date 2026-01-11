@@ -608,7 +608,10 @@ let mapNameTrack = mapNameDisplay?.querySelector('.fieldNameTrack');
 let fieldTapeTrack = mapNameDisplay?.querySelector('.fieldTapeTrack');
 let mapNameLabel = mapNameLabelA ?? mapNameDisplay?.querySelector('.cp-field-selector__label');
 let mapNameIncomingLabel = mapNameLabelB ?? null;
-let activeFieldLabelSlot = mapNameLabel === mapNameLabelB ? 'B' : 'A';
+let activeSlot = mapNameLabel === mapNameLabelB ? 'B' : 'A';
+let currentIndex = mapIndex;
+let nextIndex = mapIndex;
+let isAnimating = false;
 let fieldTapeImageA = fieldTapeSlotA?.querySelector('.fieldTapeImage');
 let fieldTapeImageB = fieldTapeSlotB?.querySelector('.fieldTapeImage');
 const mapPreviewContainer = selectInSettings('#frame_field_1_visual');
@@ -666,7 +669,6 @@ let accuracyDragLastDx = 0;
 let pendingAccuracySteps = 0;
 let pendingAccuracyDir = 0;
 let accuracyGestureVelocity = 0;
-let isAnimatingFieldLabel = false;
 let isFieldAnimating = false;
 let fieldAnimationToken = 0;
 let fieldAnimationPending = 0;
@@ -2508,7 +2510,7 @@ function normalizeFieldLabels({ cancelAnimation = false, resetFieldAnimation = t
   if(!mapNameLabel || !mapNameIncomingLabel) return null;
 
   if(cancelAnimation){
-    isAnimatingFieldLabel = false;
+    isAnimating = false;
     const track = getFieldNameTrack();
     if(track){
       track.style.transition = '';
@@ -2519,64 +2521,59 @@ function normalizeFieldLabels({ cancelAnimation = false, resetFieldAnimation = t
   }
 
   if(mapNameLabel === mapNameLabelB){
-    activeFieldLabelSlot = 'B';
+    activeSlot = 'B';
+  } else if(mapNameLabel === mapNameLabelA){
+    activeSlot = 'A';
   }
-  const activeLabel = activeFieldLabelSlot === 'B' ? mapNameLabelB : mapNameLabelA;
-  const incomingLabel = activeFieldLabelSlot === 'B' ? mapNameLabelA : mapNameLabelB;
+  const activeLabel = activeSlot === 'B' ? mapNameLabelB : mapNameLabelA;
+  const incomingLabel = activeSlot === 'B' ? mapNameLabelA : mapNameLabelB;
   mapNameLabel = activeLabel ?? mapNameLabel;
   mapNameIncomingLabel = incomingLabel ?? mapNameIncomingLabel;
-  setFieldTrackOrder(activeFieldLabelSlot);
+  setFieldTrackOrder(activeSlot);
   setFieldTrackTransform('0%');
   return mapNameLabel;
 }
 
-function finalizeFieldLabelAnimation(){
-  activeFieldLabelSlot = 'B';
-  mapNameLabel = mapNameLabelB ?? mapNameLabel;
-  mapNameIncomingLabel = mapNameLabelA ?? mapNameIncomingLabel;
-  const track = getFieldNameTrack();
-  if(track){
-    track.style.transition = 'none';
-  }
-  setFieldTrackOrder(activeFieldLabelSlot);
-  setFieldTrackTransform('0%');
-  if(mapNameIncomingLabel){
-    mapNameIncomingLabel.textContent = '';
-  }
-  requestAnimationFrame(() => {
-    if(track){
-      track.style.transition = '';
-    }
-  });
-  isAnimatingFieldLabel = false;
-}
-
-function animateFieldLabelChange(nextText, direction, animationToken){
+function animateFieldLabelChange(targetIndex, direction, animationToken){
   const labelLayer = getFieldLabelLayer();
   normalizeFieldLabels({ cancelAnimation: true, resetFieldAnimation: false });
   if(!labelLayer || !mapNameLabel || !mapNameIncomingLabel){
-    if(mapNameIncomingLabel){
-      mapNameIncomingLabel.textContent = nextText;
-    }
+    updateMapNameDisplay({ index: targetIndex, animationToken });
     return;
   }
 
   const track = getFieldNameTrack();
   if(!mapNameLabelA || !mapNameLabelB || !(track instanceof HTMLElement)){
+    updateMapNameDisplay({ index: targetIndex, animationToken });
     return;
   }
 
-  const currentText = mapNameLabel.textContent;
-  mapNameLabelA.textContent = currentText;
-  mapNameLabelB.textContent = nextText;
+  const inactiveSlot = activeSlot === 'A' ? 'B' : 'A';
+  const activeLabel = activeSlot === 'A' ? mapNameLabelA : mapNameLabelB;
+  const incomingLabel = inactiveSlot === 'A' ? mapNameLabelA : mapNameLabelB;
+  const currentText = getFieldLabel(currentIndex);
+  const nextText = getFieldLabel(targetIndex);
+  if(activeLabel){
+    activeLabel.textContent = currentText;
+  }
+  if(incomingLabel){
+    incomingLabel.textContent = nextText;
+  }
+  mapNameLabel = activeLabel ?? mapNameLabel;
+  mapNameIncomingLabel = incomingLabel ?? mapNameIncomingLabel;
   const startTransform = direction === 'prev' ? '-50%' : '0%';
   const endTransform = direction === 'prev' ? '0%' : '-50%';
-  const orderSlot = direction === 'prev' ? 'B' : 'A';
+  const orderSlot = direction === 'prev' ? inactiveSlot : activeSlot;
   setFieldTrackOrder(orderSlot);
   track.style.transition = 'none';
   setFieldTrackTransform(startTransform);
-  isAnimatingFieldLabel = true;
+  isAnimating = true;
   markFieldAnimationStart(animationToken);
+  console.log(`[map selector] ${currentIndex} -> ${targetIndex}`, {
+    activeSlot,
+    direction,
+    isAnimating
+  });
 
   requestAnimationFrame(() => {
     const transition = `transform ${FIELD_LABEL_DURATION_MS}ms ${FIELD_LABEL_EASING}`;
@@ -2586,8 +2583,25 @@ function animateFieldLabelChange(nextText, direction, animationToken){
 
   const handleEnd = (event) => {
     if(event && event.propertyName !== 'transform') return;
-    finalizeFieldLabelAnimation();
+    currentIndex = targetIndex;
+    activeSlot = activeSlot === 'A' ? 'B' : 'A';
+    mapNameLabel = activeSlot === 'A' ? mapNameLabelA : mapNameLabelB;
+    mapNameIncomingLabel = activeSlot === 'A' ? mapNameLabelB : mapNameLabelA;
+    setFieldTrackOrder(activeSlot);
+    track.style.transition = 'none';
+    setFieldTrackTransform('0%');
+    if(mapNameIncomingLabel){
+      mapNameIncomingLabel.textContent = '';
+    }
+    requestAnimationFrame(() => {
+      track.style.transition = '';
+    });
+    isAnimating = false;
     markFieldAnimationEnd(animationToken);
+    console.log(`[map selector] committed ${currentIndex}`, {
+      activeSlot,
+      trackTransform: track.style.transform
+    });
   };
 
   track.addEventListener('transitionend', handleEnd, { once: true });
@@ -2595,31 +2609,20 @@ function animateFieldLabelChange(nextText, direction, animationToken){
 
 function updateMapNameDisplay(options = {}){
   if(!mapNameDisplay) return;
-  const nextText = getFieldLabel(mapIndex);
+  const resolvedIndex = Number.isFinite(options.index) ? options.index : mapIndex;
+  const nextText = getFieldLabel(resolvedIndex);
   const shouldResetFieldAnimation = !options.animationToken;
   normalizeFieldLabels({ cancelAnimation: true, resetFieldAnimation: shouldResetFieldAnimation });
   if(!mapNameLabel || !mapNameIncomingLabel) return;
+  currentIndex = resolvedIndex;
+  nextIndex = resolvedIndex;
   mapNameDisplay.setAttribute('aria-label', `Selected map: ${nextText}`);
-  if(isAnimatingFieldLabel){
-    mapNameIncomingLabel.textContent = nextText;
-    return;
-  }
-
-  if(options.animateDirection && mapNameLabel.textContent !== nextText){
-    animateFieldLabelChange(nextText, options.animateDirection, options.animationToken);
-    return;
-  }
-
-  if(mapNameLabel.textContent === nextText){
-    return;
-  }
-
   mapNameLabel.textContent = nextText;
   if(mapNameIncomingLabel){
     mapNameIncomingLabel.textContent = '';
   }
-  activeFieldLabelSlot = mapNameLabel === mapNameLabelB ? 'B' : 'A';
-  setFieldTrackOrder(activeFieldLabelSlot);
+  activeSlot = mapNameLabel === mapNameLabelB ? 'B' : 'A';
+  setFieldTrackOrder(activeSlot);
   setFieldTrackTransform('0%');
 }
 
@@ -3200,26 +3203,25 @@ const hasMapButtons = mapPrevBtn && mapNextBtn;
   updateFieldTapePosition(mapIndex);
 
   const changeMap = delta => {
-    if(isFieldAnimating) return;
-    const previousIndex = mapIndex;
-    const targetIndex = (mapIndex + delta + MAPS.length) % MAPS.length;
-    mapIndex = sanitizeMapIndex(targetIndex, { excludeIndex: mapIndex, allowRandom: true });
+    if(isAnimating) return;
+    const previousIndex = currentIndex;
+    const direction = delta > 0 ? 'next' : 'prev';
+    nextIndex = (currentIndex + delta + MAPS.length) % MAPS.length;
+    if(nextIndex === currentIndex){
+      return;
+    }
+    mapIndex = nextIndex;
     startPreviewSimulation();
     updateMapPreview();
-    if(mapIndex !== previousIndex){
-      const direction = delta > 0 ? 'next' : 'prev';
-      const animationToken = resetFieldAnimationTracking();
-      updateMapNameDisplay({ animateDirection: direction, animationToken });
-      updateFieldTapePosition(mapIndex, null, {
-        animate: true,
-        animateDirection: direction,
-        previousIndex,
-        animationToken
-      });
-    } else {
-      updateMapNameDisplay();
-      updateFieldTapePosition(mapIndex);
-    }
+    mapNameDisplay?.setAttribute('aria-label', `Selected map: ${getFieldLabel(nextIndex)}`);
+    const animationToken = resetFieldAnimationTracking();
+    animateFieldLabelChange(nextIndex, direction, animationToken);
+    updateFieldTapePosition(mapIndex, null, {
+      animate: true,
+      animateDirection: direction,
+      previousIndex,
+      animationToken
+    });
     saveSettings();
   };
 
