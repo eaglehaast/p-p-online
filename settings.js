@@ -1024,7 +1024,7 @@ function updateFieldTapePosition(tapeElement = null, options = {}){
     return;
   }
 
-  const defaultTransform = 'translateX(-100%)';
+  const defaultTransform = 'translateX(-33.333%)';
   const shouldAnimate = options.animate && isAnimating && options.animationToken && hasInitializedFieldTape;
   const tapeSlices = getFieldTapeSlices();
   if(!tapeSlices){
@@ -1065,7 +1065,7 @@ function updateFieldTapePosition(tapeElement = null, options = {}){
       : FIELD_TAPE_DURATION_MS;
     const transition = getFieldTapeTransition(durationMs);
     const direction = options.animateDirection;
-    const endTransform = direction === 'prev' ? 'translateX(0%)' : 'translateX(-200%)';
+    const endTransform = direction === 'prev' ? 'translateX(0%)' : 'translateX(-66.666%)';
 
     if(direction === 'next' || direction === 'prev'){
       if(direction === 'prev'){
