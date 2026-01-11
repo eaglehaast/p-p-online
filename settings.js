@@ -1536,8 +1536,22 @@ function setFieldDragTrackStyles(target, styles){
   setFieldTrackStyles(target, styles);
   const tapeTrack = getFieldTapeTrack();
   if(tapeTrack instanceof HTMLElement){
-    setFieldTapeStyles(tapeTrack, styles);
+    const tapeTransform = getFieldTapeTransformForDrag(styles?.transform);
+    if(tapeTransform){
+      setFieldTapeStyles(tapeTrack, { transition: styles?.transition, transform: tapeTransform });
+    } else {
+      setFieldTapeStyles(tapeTrack, styles);
+    }
   }
+}
+
+function getFieldTapeTransformForDrag(transform){
+  if(typeof transform !== 'string') return null;
+  const match = transform.match(/translateX\(([-\d.]+)(px)?\)/);
+  if(!match) return null;
+  const delta = Number(match[1]);
+  if(!Number.isFinite(delta)) return null;
+  return `translateX(calc(-100% + ${delta}px))`;
 }
 
 function ensureFieldLabelsForDrag(){
