@@ -602,10 +602,15 @@ const mapNameLabelA = mapNameDisplay?.querySelector('.fieldLabelA');
 const mapNameLabelB = mapNameDisplay?.querySelector('.fieldLabelB');
 const mapNameSlotA = mapNameDisplay?.querySelector('.fieldNameTrack .slotA');
 const mapNameSlotB = mapNameDisplay?.querySelector('.fieldNameTrack .slotB');
+let fieldTapeSlotA = mapNameDisplay?.querySelector('.fieldTapeTrack .slotA');
+let fieldTapeSlotB = mapNameDisplay?.querySelector('.fieldTapeTrack .slotB');
 let mapNameTrack = mapNameDisplay?.querySelector('.fieldNameTrack');
+let fieldTapeTrack = mapNameDisplay?.querySelector('.fieldTapeTrack');
 let mapNameLabel = mapNameLabelA ?? mapNameDisplay?.querySelector('.cp-field-selector__label');
 let mapNameIncomingLabel = mapNameLabelB ?? null;
 let activeFieldLabelSlot = mapNameLabel === mapNameLabelB ? 'B' : 'A';
+let fieldTapeImageA = fieldTapeSlotA?.querySelector('.fieldTapeImage');
+let fieldTapeImageB = fieldTapeSlotB?.querySelector('.fieldTapeImage');
 const mapPreviewContainer = selectInSettings('#frame_field_1_visual');
 const mapPreview = selectInSettings('#mapPreview');
 const flameTrailImage = selectInSettings('#flameTrail');
@@ -848,14 +853,44 @@ function getFieldTapeTransition(){
   return `transform ${FIELD_TAPE_DURATION_MS}ms ${FIELD_TAPE_EASING}`;
 }
 
-function getFieldTapeElement(){
+function getFieldTapeTrack(){
   if(!mapNameDisplay) return null;
-  const tape = mapNameDisplay.querySelector('.cp-field-selector__tape');
-  if(tape instanceof HTMLElement){
-    syncFieldTapeStylesFrom(tape);
-    return tape;
+  fieldTapeTrack = fieldTapeTrack ?? mapNameDisplay.querySelector('.fieldTapeTrack');
+  if(fieldTapeTrack instanceof HTMLElement){
+    syncFieldTapeStylesFrom(fieldTapeTrack);
+    return fieldTapeTrack;
   }
   return null;
+}
+
+function ensureFieldTapeImage(slot){
+  if(!(slot instanceof HTMLElement)) return null;
+  let tape = slot.querySelector('.fieldTapeImage');
+  if(!(tape instanceof HTMLElement)){
+    tape = document.createElement('div');
+    tape.className = 'fieldTapeImage';
+    slot.appendChild(tape);
+  }
+  return tape;
+}
+
+function getFieldTapeSlots(){
+  const track = getFieldTapeTrack();
+  if(!track) return null;
+  fieldTapeSlotA = fieldTapeSlotA ?? track.querySelector('.slotA');
+  fieldTapeSlotB = fieldTapeSlotB ?? track.querySelector('.slotB');
+  fieldTapeImageA = fieldTapeImageA ?? ensureFieldTapeImage(fieldTapeSlotA);
+  fieldTapeImageB = fieldTapeImageB ?? ensureFieldTapeImage(fieldTapeSlotB);
+  if(!(fieldTapeSlotA instanceof HTMLElement) || !(fieldTapeSlotB instanceof HTMLElement)){
+    return null;
+  }
+  return {
+    track,
+    slotA: fieldTapeSlotA,
+    slotB: fieldTapeSlotB,
+    tapeA: fieldTapeImageA,
+    tapeB: fieldTapeImageB
+  };
 }
 
 function updateRangeTapePosition(displayPosition = rangeScrollPos, track = null){
@@ -872,21 +907,47 @@ function updateRangeTapePosition(displayPosition = rangeScrollPos, track = null)
   tape.style.transform = `translateX(calc(-50% + ${offsetPx}px))`;
 }
 
+function setFieldTapeOrder(activeSlot, slotA, slotB){
+  if(activeSlot !== 'A' && activeSlot !== 'B') return;
+  if(!(slotA instanceof HTMLElement) || !(slotB instanceof HTMLElement)) return;
+  if(activeSlot === 'A'){
+    slotA.style.order = '0';
+    slotB.style.order = '1';
+  } else {
+    slotA.style.order = '1';
+    slotB.style.order = '0';
+  }
+}
+
 function updateFieldTapePosition(displayPosition = mapIndex, tapeElement = null, options = {}){
-  const tape = tapeElement ?? getFieldTapeElement();
-  if(!Number.isFinite(displayPosition) || !(tape instanceof HTMLElement)){
+  const targetTrack = tapeElement ?? getFieldTapeTrack();
+  const tapeSlots = getFieldTapeSlots();
+  if(!Number.isFinite(displayPosition) || !(targetTrack instanceof HTMLElement) || !tapeSlots){
     return;
   }
 
   const totalMaps = Math.max(1, MAPS.length);
   const normalizedIndex = ((displayPosition % totalMaps) + totalMaps) % totalMaps;
-  tape.style.width = `${FIELD_TAPE_IMAGE_WIDTH}px`;
+  const nextIndex = (normalizedIndex + 1) % totalMaps;
+  const prevIndex = (normalizedIndex - 1 + totalMaps) % totalMaps;
+  const { slotA, slotB, tapeA, tapeB } = tapeSlots;
   const middleIndex = Math.floor(totalMaps / 2);
-  const offsetPx = (middleIndex - normalizedIndex) * FIELD_TAPE_CELL_WIDTH;
-  const transform = `translateX(calc(-50% + ${offsetPx}px))`;
   const shouldAnimate = options.animate && options.animationToken && hasInitializedFieldTape;
 
   hasInitializedFieldTape = true;
+
+  const setTapeForIndex = (tape, index) => {
+    if(!(tape instanceof HTMLElement)) return;
+    const offsetPx = (middleIndex - index) * FIELD_TAPE_CELL_WIDTH;
+    tape.style.width = `${FIELD_TAPE_IMAGE_WIDTH}px`;
+    tape.style.transform = `translateX(${offsetPx}px)`;
+  };
+
+  const setStableSlots = () => {
+    setFieldTapeOrder('A', slotA, slotB);
+    setTapeForIndex(tapeA, normalizedIndex);
+    setTapeForIndex(tapeB, nextIndex);
+  };
 
   if(shouldAnimate){
     const transition = getFieldTapeTransition();
@@ -894,35 +955,38 @@ function updateFieldTapePosition(displayPosition = mapIndex, tapeElement = null,
     const previousIndex = Number.isFinite(options.previousIndex)
       ? ((options.previousIndex % totalMaps) + totalMaps) % totalMaps
       : null;
-    let targetTransform = transform;
-    let needsReset = false;
 
     if(direction && Number.isFinite(previousIndex)){
-      const wrapNext = direction === 'next' && previousIndex === totalMaps - 1 && normalizedIndex === 0;
-      const wrapPrev = direction === 'prev' && previousIndex === 0 && normalizedIndex === totalMaps - 1;
-      if(wrapNext || wrapPrev){
-        const virtualIndex = wrapNext ? normalizedIndex + totalMaps : normalizedIndex - totalMaps;
-        const virtualOffsetPx = (middleIndex - virtualIndex) * FIELD_TAPE_CELL_WIDTH;
-        targetTransform = `translateX(calc(-50% + ${virtualOffsetPx}px))`;
-        needsReset = true;
-      }
-    }
-
-    setFieldTapeStyles(tape, { transition, transform: targetTransform });
-    const handleEnd = (event) => {
-      if(event && event.propertyName !== 'transform') return;
-      if(needsReset){
-        setFieldTapeStyles(tape, { transition: 'none', transform });
-        requestAnimationFrame(() => setFieldTapeStyles(tape, { transition: null }));
+      if(direction === 'next'){
+        setFieldTapeOrder('A', slotA, slotB);
+        setTapeForIndex(tapeA, previousIndex);
+        setTapeForIndex(tapeB, normalizedIndex);
       } else {
-        setFieldTapeStyles(tape, { transition: null });
+        setFieldTapeOrder('B', slotA, slotB);
+        setTapeForIndex(tapeB, previousIndex);
+        setTapeForIndex(tapeA, normalizedIndex);
       }
-    };
-    tape.addEventListener('transitionend', handleEnd, { once: true });
-    return;
+
+      setFieldTapeStyles(targetTrack, { transition: 'none', transform: 'translateX(0%)' });
+      markFieldAnimationStart(options.animationToken);
+      requestAnimationFrame(() => {
+        setFieldTapeStyles(targetTrack, { transition, transform: 'translateX(-50%)' });
+      });
+
+      const handleEnd = (event) => {
+        if(event && event.propertyName !== 'transform') return;
+        setFieldTapeStyles(targetTrack, { transition: 'none', transform: 'translateX(0%)' });
+        setStableSlots();
+        requestAnimationFrame(() => setFieldTapeStyles(targetTrack, { transition: null }));
+        markFieldAnimationEnd(options.animationToken);
+      };
+      targetTrack.addEventListener('transitionend', handleEnd, { once: true });
+      return;
+    }
   }
 
-  setFieldTapeStyles(tape, { transition: null, transform });
+  setStableSlots();
+  setFieldTapeStyles(targetTrack, { transition: null, transform: 'translateX(0%)' });
 }
 
 function updateAccuracyTapePosition(displayPosition = accuracyDisplayIdx, track = null){
