@@ -600,8 +600,10 @@ const mapNextBtn = selectInSettings('#instance_field_right');
 const mapNameDisplay = selectInSettings('#frame_field_2_counter');
 const mapNameLabelA = mapNameDisplay?.querySelector('.fieldLabelA');
 const mapNameLabelB = mapNameDisplay?.querySelector('.fieldLabelB');
+let mapNameTrack = mapNameDisplay?.querySelector('.fieldNameTrack');
 let mapNameLabel = mapNameLabelA ?? mapNameDisplay?.querySelector('.cp-field-selector__label');
 let mapNameIncomingLabel = mapNameLabelB ?? null;
+let activeFieldLabelSlot = mapNameLabel === mapNameLabelB ? 'B' : 'A';
 const mapPreviewContainer = selectInSettings('#frame_field_1_visual');
 const mapPreview = selectInSettings('#mapPreview');
 const flameTrailImage = selectInSettings('#flameTrail');
@@ -2403,15 +2405,30 @@ function getFieldLabelLayer(){
   return mapNameDisplay.querySelector('.cp-field-selector__label-layer') ?? mapNameDisplay;
 }
 
-function setFieldLabelTransform(label, offsetPx){
-  if(!(label instanceof HTMLElement)) return;
-  label.style.transform = `translate(-50%, -50%) translateX(${offsetPx}px)`;
+function getFieldNameTrack(){
+  const labelLayer = getFieldLabelLayer();
+  if(!labelLayer) return null;
+  mapNameTrack = mapNameTrack ?? labelLayer.querySelector('.fieldNameTrack');
+  return mapNameTrack;
 }
 
-function resetFieldLabelState(label, offsetPx){
-  if(!(label instanceof HTMLElement)) return;
-  label.style.transition = '';
-  setFieldLabelTransform(label, offsetPx);
+function setFieldTrackTransform(offsetPx){
+  const track = getFieldNameTrack();
+  if(!(track instanceof HTMLElement)) return;
+  track.style.transform = `translateX(${offsetPx}px)`;
+}
+
+function setFieldTrackToSlot(slot){
+  const offset = slot === 'B' ? -FIELD_LABEL_OFFSCREEN_PX : 0;
+  activeFieldLabelSlot = slot;
+  setFieldTrackTransform(offset);
+}
+
+function resetFieldTrackState(slot){
+  const track = getFieldNameTrack();
+  if(!(track instanceof HTMLElement)) return;
+  track.style.transition = '';
+  setFieldTrackToSlot(slot);
 }
 
 function normalizeFieldLabels({ cancelAnimation = false, resetFieldAnimation = true } = {}){
@@ -2428,27 +2445,35 @@ function normalizeFieldLabels({ cancelAnimation = false, resetFieldAnimation = t
 
   if(cancelAnimation){
     isAnimatingFieldLabel = false;
-    mapNameLabel.style.transition = '';
-    mapNameIncomingLabel.style.transition = '';
+    const track = getFieldNameTrack();
+    if(track){
+      track.style.transition = '';
+    }
     if(resetFieldAnimation){
       resetFieldAnimationTracking();
     }
   }
 
-  setFieldLabelTransform(mapNameLabel, 0);
-  setFieldLabelTransform(mapNameIncomingLabel, FIELD_LABEL_OFFSCREEN_PX);
+  if(mapNameLabel === mapNameLabelB){
+    activeFieldLabelSlot = 'B';
+  }
+  const activeLabel = activeFieldLabelSlot === 'B' ? mapNameLabelB : mapNameLabelA;
+  const incomingLabel = activeFieldLabelSlot === 'B' ? mapNameLabelA : mapNameLabelB;
+  mapNameLabel = activeLabel ?? mapNameLabel;
+  mapNameIncomingLabel = incomingLabel ?? mapNameIncomingLabel;
+  setFieldTrackToSlot(activeFieldLabelSlot);
   return mapNameLabel;
 }
 
-function finalizeFieldLabelAnimation(incoming, outgoing){
-  if(!(incoming instanceof HTMLElement) || !(outgoing instanceof HTMLElement)){
+function finalizeFieldLabelAnimation(incomingSlot){
+  if(incomingSlot !== 'A' && incomingSlot !== 'B'){
     return;
   }
 
-  resetFieldLabelState(incoming, 0);
-  resetFieldLabelState(outgoing, FIELD_LABEL_OFFSCREEN_PX);
-  mapNameLabel = incoming;
-  mapNameIncomingLabel = outgoing;
+  resetFieldTrackState(incomingSlot);
+  mapNameLabel = incomingSlot === 'B' ? mapNameLabelB : mapNameLabelA;
+  mapNameIncomingLabel = incomingSlot === 'B' ? mapNameLabelA : mapNameLabelB;
+  activeFieldLabelSlot = incomingSlot;
   isAnimatingFieldLabel = false;
 }
 
@@ -2462,34 +2487,35 @@ function animateFieldLabelChange(nextText, direction, animationToken){
     return;
   }
 
-  const outgoing = mapNameLabel;
-  const incoming = mapNameIncomingLabel;
-  const incomingStart = direction === 'next' ? FIELD_LABEL_OFFSCREEN_PX : -FIELD_LABEL_OFFSCREEN_PX;
-  const outgoingTarget = -incomingStart;
+  const outgoingSlot = direction === 'prev' ? 'B' : 'A';
+  const incomingSlot = direction === 'prev' ? 'A' : 'B';
+  const outgoing = outgoingSlot === 'B' ? mapNameLabelB : mapNameLabelA;
+  const incoming = incomingSlot === 'B' ? mapNameLabelB : mapNameLabelA;
+  const track = getFieldNameTrack();
+  if(!outgoing || !incoming || !(track instanceof HTMLElement)){
+    return;
+  }
 
+  outgoing.textContent = mapNameLabel.textContent;
   incoming.textContent = nextText;
-  outgoing.style.transition = 'none';
-  incoming.style.transition = 'none';
-  setFieldLabelTransform(outgoing, 0);
-  setFieldLabelTransform(incoming, incomingStart);
+  track.style.transition = 'none';
+  setFieldTrackToSlot(outgoingSlot);
   isAnimatingFieldLabel = true;
   markFieldAnimationStart(animationToken);
 
   requestAnimationFrame(() => {
     const transition = `transform ${FIELD_LABEL_DURATION_MS}ms ${FIELD_LABEL_EASING}`;
-    outgoing.style.transition = transition;
-    incoming.style.transition = transition;
-    setFieldLabelTransform(outgoing, outgoingTarget);
-    setFieldLabelTransform(incoming, 0);
+    track.style.transition = transition;
+    setFieldTrackToSlot(incomingSlot);
   });
 
   const handleEnd = (event) => {
     if(event && event.propertyName !== 'transform') return;
-    finalizeFieldLabelAnimation(incoming, outgoing);
+    finalizeFieldLabelAnimation(incomingSlot);
     markFieldAnimationEnd(animationToken);
   };
 
-  incoming.addEventListener('transitionend', handleEnd, { once: true });
+  track.addEventListener('transitionend', handleEnd, { once: true });
 }
 
 function updateMapNameDisplay(options = {}){
@@ -2514,7 +2540,8 @@ function updateMapNameDisplay(options = {}){
   }
 
   mapNameIncomingLabel.textContent = nextText;
-  finalizeFieldLabelAnimation(mapNameIncomingLabel, mapNameLabel);
+  const incomingSlot = activeFieldLabelSlot === 'B' ? 'A' : 'B';
+  finalizeFieldLabelAnimation(incomingSlot);
 }
 
 function createPreviewCanvas(){
