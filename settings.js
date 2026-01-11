@@ -3524,6 +3524,7 @@ const hasMapButtons = mapPrevBtn && mapNextBtn;
   mapNextBtn.addEventListener('click', () => changeMap(1));
 } else {
   updateMapPreview();
+  updateMapNameDisplay();
   updateFieldTapePosition();
 }
 
