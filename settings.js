@@ -2798,31 +2798,32 @@ function animateFieldLabelChange(targetIndex, direction, animationToken){
     return;
   }
 
-  const inactiveSlot = activeSlot === 'A' ? 'B' : 'A';
-  const activeLabel = activeSlot === 'A' ? mapNameLabelA : mapNameLabelB;
-  const incomingLabel = inactiveSlot === 'A' ? mapNameLabelA : mapNameLabelB;
+  const outgoingSlot = activeSlot;
+  const incomingSlot = activeSlot === 'A' ? 'B' : 'A';
+  const outgoingLabel = outgoingSlot === 'A' ? mapNameLabelA : mapNameLabelB;
+  const incomingLabel = incomingSlot === 'A' ? mapNameLabelA : mapNameLabelB;
   const currentText = getFieldLabel(currentIndex);
   const nextText = getFieldLabel(targetIndex);
-  if(activeLabel){
-    activeLabel.textContent = currentText;
+  if(outgoingLabel){
+    outgoingLabel.textContent = currentText;
   }
   if(incomingLabel){
     incomingLabel.textContent = nextText;
   }
-  mapNameLabel = activeLabel ?? mapNameLabel;
+  mapNameLabel = outgoingLabel ?? mapNameLabel;
   mapNameIncomingLabel = incomingLabel ?? mapNameIncomingLabel;
 
   const currentMapIndex = normalizeMapIndex(currentIndex);
   const incomingMapIndex = normalizeMapIndex(targetIndex);
-  const activeSlice = activeSlot === 'A' ? tapeSlices.slotA : tapeSlices.slotB;
-  const incomingSlice = activeSlot === 'A' ? tapeSlices.slotB : tapeSlices.slotA;
+  const activeSlice = outgoingSlot === 'A' ? tapeSlices.slotA : tapeSlices.slotB;
+  const incomingSlice = incomingSlot === 'A' ? tapeSlices.slotA : tapeSlices.slotB;
   setFieldTapeSliceForIndex(activeSlice, currentMapIndex);
   setFieldTapeSliceForIndex(incomingSlice, incomingMapIndex);
 
   const startTransform = direction === 'prev' ? '-50%' : '0%';
   const endTransform = direction === 'prev' ? '0%' : '-50%';
-  const orderSlot = direction === 'prev' ? inactiveSlot : activeSlot;
-  setFieldTrackOrder(orderSlot);
+  const leftSlot = direction === 'prev' ? incomingSlot : outgoingSlot;
+  setFieldTrackOrder(leftSlot);
   setFieldSelectorStyles(track, { transition: 'none', transform: `translateX(${startTransform})` });
   isAnimating = true;
   markFieldAnimationStart(animationToken);
@@ -2843,9 +2844,9 @@ function animateFieldLabelChange(targetIndex, direction, animationToken){
     animationCompleted = true;
     cancelFieldLabelAnimation();
     currentIndex = targetIndex;
-    activeSlot = activeSlot === 'A' ? 'B' : 'A';
-    mapNameLabel = activeSlot === 'A' ? mapNameLabelA : mapNameLabelB;
-    mapNameIncomingLabel = activeSlot === 'A' ? mapNameLabelB : mapNameLabelA;
+    activeSlot = incomingSlot;
+    mapNameLabel = incomingLabel ?? mapNameLabel;
+    mapNameIncomingLabel = outgoingLabel ?? mapNameIncomingLabel;
     setFieldTrackOrder(activeSlot);
     setFieldSelectorStyles(track, { transition: 'none', transform: 'translateX(0%)' });
     if(mapNameIncomingLabel){
