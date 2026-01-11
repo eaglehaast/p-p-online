@@ -929,12 +929,18 @@ function updateFieldTapePosition(displayPosition = mapIndex, tapeElement = null,
   }
 
   const totalMaps = Math.max(1, MAPS.length);
-  const normalizedIndex = ((displayPosition % totalMaps) + totalMaps) % totalMaps;
-  const nextIndex = (normalizedIndex + 1) % totalMaps;
-  const prevIndex = (normalizedIndex - 1 + totalMaps) % totalMaps;
+  const normalizeIndex = (index) => ((index % totalMaps) + totalMaps) % totalMaps;
+  const stableIndex = normalizeIndex(displayPosition);
+  const stableNextIndex = normalizeIndex(stableIndex + 1);
+  const outgoingIndex = Number.isFinite(options.currentIndex)
+    ? normalizeIndex(options.currentIndex)
+    : stableIndex;
+  const incomingIndex = Number.isFinite(options.nextIndex)
+    ? normalizeIndex(options.nextIndex)
+    : stableNextIndex;
   const { slotA, slotB, tapeA, tapeB } = tapeSlots;
   const middleIndex = Math.floor(totalMaps / 2);
-  const shouldAnimate = options.animate && options.animationToken && hasInitializedFieldTape;
+  const shouldAnimate = options.animate && isAnimating && options.animationToken && hasInitializedFieldTape;
 
   hasInitializedFieldTape = true;
 
@@ -945,34 +951,34 @@ function updateFieldTapePosition(displayPosition = mapIndex, tapeElement = null,
     tape.style.transform = `translateX(${offsetPx}px)`;
   };
 
+  const setTapeSlots = (currentSlot, currentIndex, nextIndex) => {
+    if(currentSlot !== 'A' && currentSlot !== 'B') return;
+    const currentTape = currentSlot === 'A' ? tapeA : tapeB;
+    const nextTape = currentSlot === 'A' ? tapeB : tapeA;
+    setFieldTapeOrder(currentSlot, slotA, slotB);
+    setTapeForIndex(currentTape, currentIndex);
+    setTapeForIndex(nextTape, nextIndex);
+  };
+
   const setStableSlots = () => {
-    setFieldTapeOrder('A', slotA, slotB);
-    setTapeForIndex(tapeA, normalizedIndex);
-    setTapeForIndex(tapeB, nextIndex);
+    setTapeSlots(activeSlot, stableIndex, stableNextIndex);
   };
 
   if(shouldAnimate){
     const transition = getFieldTapeTransition();
     const direction = options.animateDirection;
-    const previousIndex = Number.isFinite(options.previousIndex)
-      ? ((options.previousIndex % totalMaps) + totalMaps) % totalMaps
-      : null;
+    const inactiveSlot = activeSlot === 'A' ? 'B' : 'A';
+    const orderSlot = direction === 'prev' ? inactiveSlot : activeSlot;
+    const startTransform = direction === 'prev' ? '-50%' : '0%';
+    const endTransform = direction === 'prev' ? '0%' : '-50%';
 
-    if(direction && Number.isFinite(previousIndex)){
-      if(direction === 'next'){
-        setFieldTapeOrder('A', slotA, slotB);
-        setTapeForIndex(tapeA, previousIndex);
-        setTapeForIndex(tapeB, normalizedIndex);
-      } else {
-        setFieldTapeOrder('B', slotA, slotB);
-        setTapeForIndex(tapeB, previousIndex);
-        setTapeForIndex(tapeA, normalizedIndex);
-      }
-
-      setFieldTapeStyles(targetTrack, { transition: 'none', transform: 'translateX(0%)' });
+    if(direction){
+      setTapeSlots(activeSlot, outgoingIndex, incomingIndex);
+      setFieldTapeOrder(orderSlot, slotA, slotB);
+      setFieldTapeStyles(targetTrack, { transition: 'none', transform: `translateX(${startTransform})` });
       markFieldAnimationStart(options.animationToken);
       requestAnimationFrame(() => {
-        setFieldTapeStyles(targetTrack, { transition, transform: 'translateX(-50%)' });
+        setFieldTapeStyles(targetTrack, { transition, transform: `translateX(${endTransform})` });
       });
 
       const handleEnd = (event) => {
@@ -3204,7 +3210,6 @@ const hasMapButtons = mapPrevBtn && mapNextBtn;
 
   const changeMap = delta => {
     if(isAnimating) return;
-    const previousIndex = currentIndex;
     const direction = delta > 0 ? 'next' : 'prev';
     nextIndex = (currentIndex + delta + MAPS.length) % MAPS.length;
     if(nextIndex === currentIndex){
@@ -3219,7 +3224,8 @@ const hasMapButtons = mapPrevBtn && mapNextBtn;
     updateFieldTapePosition(mapIndex, null, {
       animate: true,
       animateDirection: direction,
-      previousIndex,
+      currentIndex,
+      nextIndex,
       animationToken
     });
     saveSettings();
