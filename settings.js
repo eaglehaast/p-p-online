@@ -909,9 +909,9 @@ function getFieldSelectorTrack(){
 function getFieldTapeSlices(){
   const track = getFieldTapeTrack();
   if(!track) return null;
-  fieldTapeSlicePrev = fieldTapeSlicePrev ?? track.querySelector('.slicePrev');
-  fieldTapeSliceCurrent = fieldTapeSliceCurrent ?? track.querySelector('.sliceCurrent');
-  fieldTapeSliceNext = fieldTapeSliceNext ?? track.querySelector('.sliceNext');
+  fieldTapeSlicePrev = fieldTapeSlicePrev ?? track.querySelector('.slicePrev, .slice0');
+  fieldTapeSliceCurrent = fieldTapeSliceCurrent ?? track.querySelector('.sliceCurrent, .slice1');
+  fieldTapeSliceNext = fieldTapeSliceNext ?? track.querySelector('.sliceNext, .slice2');
   if(!(fieldTapeSlicePrev instanceof HTMLElement) ||
      !(fieldTapeSliceCurrent instanceof HTMLElement) ||
      !(fieldTapeSliceNext instanceof HTMLElement)){
