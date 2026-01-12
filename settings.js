@@ -2841,12 +2841,6 @@ function getFieldLabelLayer(){
   return mapNameDisplay.querySelector('.cp-field-selector__label-layer') ?? mapNameDisplay;
 }
 
-function setFieldTrackTransform(offsetPx){
-  const track = getFieldSelectorTrack();
-  if(!(track instanceof HTMLElement)) return;
-  track.style.transform = `translateX(${offsetPx})`;
-}
-
 function setFieldTrackOrder(activeSlot){
   if(activeSlot !== 'A' && activeSlot !== 'B') return;
   const slotA = mapNameSlotA ?? mapNameLabelA?.parentElement;
@@ -2895,7 +2889,10 @@ function normalizeFieldLabels({ cancelAnimation = false, resetFieldAnimation = t
   mapNameLabel = activeLabel ?? mapNameLabel;
   mapNameIncomingLabel = incomingLabel ?? mapNameIncomingLabel;
   setFieldTrackOrder(activeSlot);
-  setFieldTrackTransform('0%');
+  const track = getFieldSelectorTrack();
+  if(track){
+    setFieldSelectorStyles(track, { transform: 'translateX(0%)' });
+  }
   return mapNameLabel;
 }
 
@@ -3020,7 +3017,10 @@ function updateMapNameDisplay(options = {}){
   }
   activeSlot = mapNameLabel === mapNameLabelB ? 'B' : 'A';
   setFieldTrackOrder(activeSlot);
-  setFieldTrackTransform('0%');
+  const track = getFieldSelectorTrack();
+  if(track){
+    setFieldSelectorStyles(track, { transform: 'translateX(0%)' });
+  }
 }
 
 function createPreviewCanvas(){
