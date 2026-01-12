@@ -899,6 +899,12 @@ function getFieldTapeViewport(){
 function getFieldSelectorTrack(){
   if(!mapNameDisplay) return null;
   fieldSelectorTrack = fieldSelectorTrack ?? mapNameDisplay.querySelector('.fieldSelectorTrack');
+  if(!(fieldSelectorTrack instanceof HTMLElement)){
+    fieldSelectorTrack = mapNameDisplay.querySelector('.cp-field-selector__label-layer');
+  }
+  if(!(fieldSelectorTrack instanceof HTMLElement)){
+    fieldSelectorTrack = mapNameDisplay;
+  }
   if(fieldSelectorTrack instanceof HTMLElement){
     syncFieldSelectorStylesFrom(fieldSelectorTrack);
     return fieldSelectorTrack;
