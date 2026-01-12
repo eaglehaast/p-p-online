@@ -1083,7 +1083,15 @@ function updateFieldTapePosition(displayIndex = mapIndex, options = {}){
     const incomingIndex = direction === 'next'
       ? normalizeMapIndex(outgoingIndex + 1)
       : normalizeMapIndex(outgoingIndex - 1);
-    setFieldTapeSlicesForIndex(outgoingIndex, tapeSlices);
+    if(direction === 'prev'){
+      setFieldTapeSliceForIndex(tapeSlices.prev, incomingIndex);
+      setFieldTapeSliceForIndex(tapeSlices.current, outgoingIndex);
+      setFieldTapeSliceForIndex(tapeSlices.next, normalizeMapIndex(outgoingIndex + 1));
+    } else {
+      setFieldTapeSliceForIndex(tapeSlices.prev, normalizeMapIndex(outgoingIndex - 1));
+      setFieldTapeSliceForIndex(tapeSlices.current, outgoingIndex);
+      setFieldTapeSliceForIndex(tapeSlices.next, incomingIndex);
+    }
     setFieldTapeTrackStyles(track, { transition: 'none', transform: 'translateX(-100%)' });
     requestAnimationFrame(() => {
       const transition = getFieldTapeTransition(FIELD_LABEL_DURATION_MS);
