@@ -2188,6 +2188,13 @@ function handleFieldPointerMove(event){
 
 function handleFieldPointerEnd(event){
   fieldDragHandlers.handlePointerEnd(event);
+  if(pendingFieldSteps !== 0){
+    return;
+  }
+  const track = getFieldTapeTrack();
+  if(track){
+    setFieldTapeTrackStyles(track, { transition: '', transform: 'translateX(-100%)' });
+  }
 }
 
 function updateRangeFlame(value = rangeCommittedValue){
