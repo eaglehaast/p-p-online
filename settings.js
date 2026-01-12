@@ -1628,17 +1628,14 @@ function setFieldDragTrackStyles(target, styles){
   setFieldSelectorStyles(target, styles);
 }
 
-function setFieldTapeDragTransform(dx){
+function setFieldTapeDragTransform(clampedDx){
   const track = getFieldTapeTrack();
   const viewport = getFieldTapeViewport();
   if(!(track instanceof HTMLElement) || !(viewport instanceof HTMLElement)) return;
   const viewportWidth = viewport.clientWidth || 1;
-  const maxOffset = viewportWidth * 0.55;
-  const clampedDx = Math.max(-maxOffset, Math.min(maxOffset, dx));
   const percentOffset = (clampedDx / viewportWidth) * 100;
   const rawPercent = -100 + percentOffset;
-  const clampedPercent = Math.min(0, Math.max(-200, rawPercent));
-  setFieldTapeTrackStyles(track, { transform: `translateX(${clampedPercent}%)` });
+  setFieldTapeTrackStyles(track, { transform: `translateX(${rawPercent}%)` });
 }
 
 function ensureFieldLabelsForDrag(){
@@ -2181,8 +2178,12 @@ function handleFieldPointerDown(event){
 function handleFieldPointerMove(event){
   fieldDragHandlers.handlePointerMove(event);
   if(!isFieldDragging || isFieldAnimating || isAnimating) return;
+  const viewport = mapNameDisplay ?? getFieldLabelLayer();
+  if(!viewport) return;
   const dx = event.clientX - fieldDragStartX;
-  setFieldTapeDragTransform(dx);
+  const maxOffset = (viewport.clientWidth || 0) * 0.55;
+  const clampedDx = Math.max(-maxOffset, Math.min(maxOffset, dx));
+  setFieldTapeDragTransform(clampedDx);
 }
 
 function handleFieldPointerEnd(event){
