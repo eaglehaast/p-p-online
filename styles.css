@@ -774,7 +774,7 @@ body, button {
   }
 
   #settingsLayer .cp-field-selector {
-    position: absolute;
+    position: relative;
     inset: 0;
   }
 
