@@ -3432,6 +3432,16 @@ function setStoredSetting(key, value){
   }
 }
 
+const settingsBridge = window.paperWingsSettings || (window.paperWingsSettings = {});
+settingsBridge.setMapIndex = (nextIndex, options = {}) => {
+  const { persist = true } = options;
+  settings.mapIndex = clampMapIndex(nextIndex);
+  if(persist){
+    setStoredSetting('settings.mapIndex', String(settings.mapIndex));
+  }
+  return settings.mapIndex;
+};
+
 function loadSettings(){
   const previousFlameStyle = settings.flameStyle;
     const fr = parseInt(getStoredSetting('settings.flightRangeCells'), 10);
@@ -7743,8 +7753,8 @@ function getRandomPlayableMapIndex(upcomingRoundNumber = roundNumber + 1){
 }
 
 function setMapIndexAndPersist(nextIndex){
-  settings.mapIndex = clampMapIndex(nextIndex);
-  setStoredSetting('settings.mapIndex', String(settings.mapIndex));
+  const shouldPersist = !settingsBridge?.isActive;
+  settingsBridge.setMapIndex(nextIndex, { persist: shouldPersist });
 }
 
 function resetPlanePositionsForCurrentMap(){

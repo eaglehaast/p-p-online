@@ -2655,7 +2655,11 @@ function saveSettings(){
   setStoredItem('settings.sharpEdges', sharpEdges);
   setStoredItem('settings.addCargo', addCargo);
   mapIndex = sanitizeMapIndex(mapIndex, { allowRandom: true });
-  setStoredItem('settings.mapIndex', mapIndex);
+  if(window.paperWingsSettings?.setMapIndex){
+    window.paperWingsSettings.setMapIndex(mapIndex, { persist: true });
+  } else {
+    setStoredItem('settings.mapIndex', mapIndex);
+  }
   console.log('[settings] save', {
     flightRangeCells: settingsFlightRangeCells,
     aimingAmplitude: settingsAimingAmplitude,
@@ -3693,6 +3697,9 @@ if(exitBtn){
 
 function handleSettingsLayerShow(){
   isSettingsActive = true;
+  if(window.paperWingsSettings){
+    window.paperWingsSettings.isActive = true;
+  }
   syncAccuracyCrackWatcher();
   startPreviewSimulation();
   startPreviewAnimationIfNeeded();
@@ -3703,6 +3710,9 @@ function handleSettingsLayerShow(){
 
 function handleSettingsLayerHide(){
   isSettingsActive = false;
+  if(window.paperWingsSettings){
+    window.paperWingsSettings.isActive = false;
+  }
   if(accuracyCrackWatcher){
     accuracyCrackWatcher.stop();
   }
@@ -3723,8 +3733,9 @@ updateAmplitudeDisplay();
 updateAmplitudeIndicator();
 updateFieldTapePosition();
 
-window.paperWingsSettings = {
-  onShow: handleSettingsLayerShow,
-  onHide: handleSettingsLayerHide
-};
+const settingsBridge = window.paperWingsSettings || {};
+settingsBridge.onShow = handleSettingsLayerShow;
+settingsBridge.onHide = handleSettingsLayerHide;
+settingsBridge.isActive = isSettingsActive;
+window.paperWingsSettings = settingsBridge;
 })();
