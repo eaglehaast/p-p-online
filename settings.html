@@ -202,42 +202,20 @@
           role="status"
           aria-live="polite"
           aria-label="Selected map"
-        >
-          <div class="fieldSelectorTrack">
-            <div class="cp-field-selector__tape field-tape" aria-hidden="true">
-              <div class="fieldTapeViewport">
-                <div class="fieldTapeTrack">
-                  <div class="fieldTapeSlice slicePrev"></div>
-                  <div class="fieldTapeSlice sliceCurrent"></div>
-                  <div class="fieldTapeSlice sliceNext"></div>
-                </div>
-              </div>
-            </div>
-            <div class="cp-field-selector__label-layer">
-              <div class="fieldNameTrack">
-                <div class="slotA">
-                  <span class="cp-field-selector__label fieldLabelA"></span>
-                </div>
-                <div class="slotB">
-                  <span class="cp-field-selector__label fieldLabelB"></span>
-                </div>
-              </div>
+        ></div>
+        <div id="cp_field_selector_root" class="cp-field-selector-root" aria-hidden="true">
+          <div class="fieldLabelViewport">
+            <div class="fieldLabelTrack">
+              <div class="fieldLabelSlotA"></div>
+              <div class="fieldLabelSlotB"></div>
             </div>
           </div>
-        </div>
-      </div>
-      <div id="cp_field_selector_root" aria-hidden="true">
-        <div class="fieldLabelViewport">
-          <div class="fieldLabelTrack">
-            <div class="fieldLabelSlotA"></div>
-            <div class="fieldLabelSlotB"></div>
-          </div>
-        </div>
-        <div class="fieldTapeViewport">
-          <div class="fieldTapeTrack">
-            <div class="fieldTapeSlice"></div>
-            <div class="fieldTapeSlice"></div>
-            <div class="fieldTapeSlice"></div>
+          <div class="fieldTapeViewport">
+            <div class="fieldTapeTrack">
+              <div class="fieldTapeSlice"></div>
+              <div class="fieldTapeSlice"></div>
+              <div class="fieldTapeSlice"></div>
+            </div>
           </div>
         </div>
       </div>
