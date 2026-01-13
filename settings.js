@@ -3264,6 +3264,43 @@ function updateMapNameDisplay(options = {}){
   updateMapNameDisplayControlled(options, null);
 }
 
+function syncFieldSelectorLabels({ token } = {}){
+  if(FIELD_EXCLUSIVE_MODE){
+    assertFieldControlToken(token, 'syncFieldSelectorLabels');
+  }
+  if(!mapNameDisplay) return;
+  const labelLayer = getFieldLabelLayer();
+  if(!labelLayer) return;
+
+  if(!mapNameLabel || !mapNameIncomingLabel){
+    const labels = Array.from(labelLayer.querySelectorAll('.cp-field-selector__label'));
+    mapNameLabel = mapNameLabel ?? labels[0] ?? null;
+    mapNameIncomingLabel = mapNameIncomingLabel ?? labels[1] ?? labels[0] ?? null;
+  }
+  if(!mapNameLabel || !mapNameIncomingLabel) return;
+
+  if(mapNameLabel === mapNameLabelB){
+    activeSlot = 'B';
+  } else if(mapNameLabel === mapNameLabelA){
+    activeSlot = 'A';
+  }
+  const activeLabel = activeSlot === 'B' ? mapNameLabelB : mapNameLabelA;
+  const incomingLabel = activeSlot === 'B' ? mapNameLabelA : mapNameLabelB;
+  mapNameLabel = activeLabel ?? mapNameLabel;
+  mapNameIncomingLabel = incomingLabel ?? mapNameIncomingLabel;
+  setFieldTrackOrder(activeSlot);
+
+  const resolvedIndex = mapIndex;
+  const nextText = getFieldLabel(resolvedIndex);
+  currentIndex = resolvedIndex;
+  nextIndex = resolvedIndex;
+  mapNameDisplay.setAttribute('aria-label', `Selected map: ${nextText}`);
+  setFieldLabelTextAuthorized(token, mapNameLabel, nextText, 'syncFieldSelectorLabels:active');
+  if(mapNameIncomingLabel){
+    setFieldLabelTextAuthorized(token, mapNameIncomingLabel, '', 'syncFieldSelectorLabels:incoming');
+  }
+}
+
 function updateMapNameDisplayControlled(options = {}, token = null){
   if(FIELD_EXCLUSIVE_MODE){
     assertFieldControlToken(token, 'updateMapNameDisplay');
@@ -3769,20 +3806,13 @@ function runFieldSelectorInitChecks(){
 }
 
 function syncFieldSelectorState(){
-  const hasActiveInteraction = isFieldInteractionActive();
   if(FIELD_EXCLUSIVE_MODE){
     const token = startFieldExclusiveSession();
-    updateMapNameDisplayControlled({}, token);
-    if(!hasActiveInteraction){
-      updateFieldTapePosition(mapIndex, { fieldControlToken: token });
-    }
+    syncFieldSelectorLabels({ token });
     finalizeFieldExclusiveSession(token);
     return;
   }
-  updateMapNameDisplay();
-  if(!hasActiveInteraction){
-    updateFieldTapePosition();
-  }
+  syncFieldSelectorLabels();
 }
 
   function resetSettingsToDefaults(){
