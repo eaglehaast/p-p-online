@@ -637,8 +637,39 @@ const resetBtn = selectInSettings('#instance_reset');
 const exitBtn = selectInSettings('#instance_exit');
 const mapPrevBtn = selectInSettings('#instance_field_left');
 const mapNextBtn = selectInSettings('#instance_field_right');
+const fieldRightBtn = document.querySelector('#instance_field_right');
+const fieldModuleRoot = fieldRightBtn?.closest('.cp-field-selector') ||
+  fieldRightBtn?.closest('.cp-controlpanel__module') ||
+  fieldRightBtn?.parentElement;
+if(!(fieldModuleRoot instanceof HTMLElement)){
+  throw new Error('FIELD module root missing for #instance_field_right');
+}
 const mapNameDisplay = selectInSettings('#frame_field_2_counter');
 const fieldSelectorRoot = selectInSettings('#cp_field_selector_root');
+if(!(fieldSelectorRoot instanceof HTMLElement)){
+  throw new Error('FIELD selector missing #cp_field_selector_root');
+}
+if(!fieldModuleRoot.contains(fieldSelectorRoot)){
+  fieldModuleRoot.appendChild(fieldSelectorRoot);
+}
+if(!(fieldModuleRoot.querySelector('#cp_field_selector_root') instanceof HTMLElement)){
+  throw new Error('FIELD selector root not inside FIELD module');
+}
+const controlPanelRoot =
+  settingsRoot.querySelector('.settings-container') ??
+  settingsLayer ??
+  document.body;
+if(!(controlPanelRoot instanceof HTMLElement)){
+  throw new Error('CONTROL PANEL root missing');
+}
+const cpRect = controlPanelRoot.getBoundingClientRect();
+const fieldRect = fieldModuleRoot.getBoundingClientRect();
+const localLeft = 60 - (fieldRect.left - cpRect.left);
+const localTop = 257 - (fieldRect.top - cpRect.top);
+fieldSelectorRoot.style.left = `${localLeft}px`;
+fieldSelectorRoot.style.top = `${localTop}px`;
+fieldSelectorRoot.style.width = '58px';
+fieldSelectorRoot.style.height = '35px';
 const mapNameLabelA = fieldSelectorRoot?.querySelector('.fieldLabelSlotA');
 const mapNameLabelB = fieldSelectorRoot?.querySelector('.fieldLabelSlotB');
 const mapNameSlotA = mapNameLabelA ?? null;
