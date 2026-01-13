@@ -669,6 +669,7 @@ let pendingAccuracyDir = 0;
 let accuracyGestureVelocity = 0;
 let isFieldAnimating = false;
 let isFieldDragging = false;
+const isFieldInteractionActive = () => isFieldDragging || isFieldAnimating || isAnimating;
 let fieldDragStartX = 0;
 let fieldDragStartTime = 0;
 let fieldDragPointerId = null;
@@ -1664,9 +1665,12 @@ function ensureFieldLabelsForDrag(){
 function removeIncomingFieldValue(){
   if(!ensureFieldLabelsForDrag()) return;
   mapNameIncomingLabel.textContent = '';
+  mapNameIncomingLabel.removeAttribute('data-direction');
+  if(isFieldInteractionActive()){
+    return;
+  }
   mapNameIncomingLabel.style.transform = '';
   mapNameIncomingLabel.style.transition = '';
-  mapNameIncomingLabel.removeAttribute('data-direction');
   setFieldTrackOrder(activeSlot);
   updateFieldTapePosition(currentIndex);
 }
@@ -2859,6 +2863,7 @@ function normalizeFieldLabels({ cancelAnimation = false, resetFieldAnimation = t
   const labelLayer = getFieldLabelLayer();
   if(!labelLayer) return null;
 
+  const hasActiveInteraction = isFieldInteractionActive();
   if(!mapNameLabel || !mapNameIncomingLabel){
     const labels = Array.from(labelLayer.querySelectorAll('.cp-field-selector__label'));
     mapNameLabel = mapNameLabel ?? labels[0] ?? null;
@@ -2890,7 +2895,7 @@ function normalizeFieldLabels({ cancelAnimation = false, resetFieldAnimation = t
   mapNameIncomingLabel = incomingLabel ?? mapNameIncomingLabel;
   setFieldTrackOrder(activeSlot);
   const track = getFieldSelectorTrack();
-  if(track){
+  if(track && !hasActiveInteraction){
     setFieldSelectorStyles(track, { transform: 'translateX(0%)' });
   }
   return mapNameLabel;
@@ -3006,6 +3011,7 @@ function updateMapNameDisplay(options = {}){
   const resolvedIndex = Number.isFinite(options.index) ? options.index : mapIndex;
   const nextText = getFieldLabel(resolvedIndex);
   const shouldResetFieldAnimation = !options.animationToken;
+  const hasActiveInteraction = isFieldInteractionActive();
   normalizeFieldLabels({ cancelAnimation: true, resetFieldAnimation: shouldResetFieldAnimation });
   if(!mapNameLabel || !mapNameIncomingLabel) return;
   currentIndex = resolvedIndex;
@@ -3018,7 +3024,7 @@ function updateMapNameDisplay(options = {}){
   activeSlot = mapNameLabel === mapNameLabelB ? 'B' : 'A';
   setFieldTrackOrder(activeSlot);
   const track = getFieldSelectorTrack();
-  if(track){
+  if(track && !hasActiveInteraction){
     setFieldSelectorStyles(track, { transform: 'translateX(0%)' });
   }
 }
