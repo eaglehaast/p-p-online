@@ -18,6 +18,7 @@ const RANGE_FAST_VELOCITY_THRESHOLD = 4;
 const RANGE_MIN_BATCH_MS = 170;
 const RANGE_SCROLL_STEP_PX = RANGE_CELL_WIDTH;
 const RANGE_TAPE_IMAGE_WIDTH = 580;
+const FIELD_DEBUG_BUILD = '2026-01-11-1106';
 const RANGE_DIR_NEXT = 1;
 const RANGE_DIR_PREV = -1;
 const RANGE_VISUAL_SIGN = -1;
@@ -3785,6 +3786,21 @@ function cleanupRenderers(){
 
 window.addEventListener('pagehide', cleanupRenderers);
 window.addEventListener('beforeunload', cleanupRenderers);
+
+if(!window.__fieldDebugBuildLogged){
+  console.warn('FIELD_DEBUG_BUILD', FIELD_DEBUG_BUILD);
+  window.__fieldDebugBuildLogged = true;
+}
+
+const fieldDebugMarkerTarget = settingsRoot.querySelector('#frame_field_2_counter')
+  ?? settingsRoot.querySelector('.cp-field-selector');
+if(fieldDebugMarkerTarget && !settingsRoot.querySelector('[data-field-debug-build]')){
+  const fieldDebugMarker = document.createElement('span');
+  fieldDebugMarker.dataset.fieldDebugBuild = FIELD_DEBUG_BUILD;
+  fieldDebugMarker.textContent = '•';
+  fieldDebugMarker.style.cssText = 'margin-left:4px;font-size:10px;opacity:0.4;';
+  fieldDebugMarkerTarget.appendChild(fieldDebugMarker);
+}
 
   updateRangeDisplay();
   updateRangeFlame();
