@@ -41,6 +41,45 @@ const MAP_PREVIEW_BRICK_SPRITE_PATHS = {
 const settingsLayer = document.getElementById('settingsLayer');
 const settingsRoot = settingsLayer ?? document;
 const selectInSettings = (selector) => settingsRoot.querySelector(selector);
+const DEBUG_FIELD_AUDIT = false;
+
+function isFieldAuditTarget(target){
+  return target instanceof HTMLElement && Boolean(target.closest('.cp-field-selector'));
+}
+
+function getFieldAuditSelector(target){
+  if(!(target instanceof HTMLElement)) return '';
+  const id = target.id ? `#${target.id}` : '';
+  const className = typeof target.className === 'string' && target.className.trim()
+    ? `.${target.className.trim().split(/\s+/).join('.')}`
+    : '';
+  return `${target.tagName.toLowerCase()}${id}${className}`;
+}
+
+function logFieldAudit(action, target, value){
+  if(!DEBUG_FIELD_AUDIT || !isFieldAuditTarget(target)) return;
+  console.log(`[field audit] ${action}`, {
+    target: getFieldAuditSelector(target),
+    value,
+    timestamp: new Date().toISOString(),
+    stack: new Error().stack
+  });
+}
+
+function addFieldAuditListener(target, eventName, handler, options){
+  if(DEBUG_FIELD_AUDIT &&
+    (eventName === 'click' || eventName.startsWith('pointer')) &&
+    isFieldAuditTarget(target)){
+    console.log('[field audit] listener', {
+      event: eventName,
+      handler: handler?.name || 'anonymous',
+      target: getFieldAuditSelector(target),
+      timestamp: new Date().toISOString(),
+      stack: new Error().stack
+    });
+  }
+  target.addEventListener(eventName, handler, options);
+}
 
 function logCanvasCreation(canvas, label = "") {
   if (!(canvas instanceof HTMLCanvasElement)) {
@@ -819,6 +858,7 @@ function setAccuracyTrackStyles(target, styles){
 }
 
 function setFieldSelectorStyles(target, styles){
+  logFieldAudit('setFieldSelectorStyles', target, { ...styles });
   setSliderTrackStyles(target, fieldSelectorState, styles);
 }
 
@@ -943,10 +983,15 @@ function setFieldTapeSliceForIndex(slice, index){
   const middleIndex = Math.floor(totalMaps / 2);
   const offsetPx = (middleIndex - index) * FIELD_TAPE_CELL_WIDTH;
   slice.style.backgroundPosition = `${offsetPx}px center`;
+  logFieldAudit('setFieldTapeSliceForIndex', slice, {
+    index,
+    backgroundPosition: slice.style.backgroundPosition
+  });
 }
 
 function setFieldTapeTrackStyles(track, { transition, transform } = {}){
   if(!(track instanceof HTMLElement)) return;
+  logFieldAudit('setFieldTapeTrackStyles', track, { transition, transform });
   if(typeof transition === 'string'){
     track.style.transition = transition;
   } else if(transition === null){
@@ -1642,7 +1687,9 @@ function setFieldTapeDragTransform(clampedDx){
   const viewportWidth = viewport.clientWidth || 1;
   const percentOffset = (clampedDx / viewportWidth) * 100;
   const rawPercent = -100 + percentOffset;
-  setFieldTapeTrackStyles(track, { transform: `translateX(${rawPercent}%)` });
+  const transform = `translateX(${rawPercent}%)`;
+  logFieldAudit('setFieldTapeDragTransform', track, { transform });
+  setFieldTapeTrackStyles(track, { transform });
 }
 
 function ensureFieldLabelsForDrag(){
@@ -1664,6 +1711,9 @@ function ensureFieldLabelsForDrag(){
 
 function removeIncomingFieldValue(){
   if(!ensureFieldLabelsForDrag()) return;
+  logFieldAudit('removeIncomingFieldValue', mapNameIncomingLabel, {
+    textContent: ''
+  });
   mapNameIncomingLabel.textContent = '';
   mapNameIncomingLabel.removeAttribute('data-direction');
   if(isFieldInteractionActive()){
@@ -1687,6 +1737,11 @@ function prepareIncomingFieldValue(direction){
   mapNameIncomingLabel.textContent = getFieldLabel(targetIndex);
   mapNameIncomingLabel.style.transition = 'none';
   mapNameIncomingLabel.dataset.direction = direction;
+  logFieldAudit('prepareIncomingFieldValue', mapNameIncomingLabel, {
+    direction,
+    index: targetIndex,
+    textContent: mapNameIncomingLabel.textContent
+  });
 
   const inactiveSlot = activeSlot === 'A' ? 'B' : 'A';
   const orderSlot = direction === 'prev' ? inactiveSlot : activeSlot;
@@ -3022,6 +3077,10 @@ function updateMapNameDisplay(options = {}){
   nextIndex = resolvedIndex;
   mapNameDisplay.setAttribute('aria-label', `Selected map: ${nextText}`);
   mapNameLabel.textContent = nextText;
+  logFieldAudit('updateMapNameDisplay', mapNameLabel, {
+    index: resolvedIndex,
+    textContent: nextText
+  });
   if(mapNameIncomingLabel){
     mapNameIncomingLabel.textContent = '';
   }
@@ -3043,9 +3102,9 @@ function createPreviewCanvas(){
   mapPreviewContainer.appendChild(previewCanvas);
   ensurePreviewCanvasLayering();
   previewCtx = previewCanvas.getContext('2d');
-  previewCanvas.addEventListener('pointerdown', onPreviewPointerDown);
-  window.addEventListener('pointermove', onPreviewPointerMove);
-  window.addEventListener('pointerup', onPreviewPointerUp);
+  addFieldAuditListener(previewCanvas, 'pointerdown', onPreviewPointerDown);
+  addFieldAuditListener(window, 'pointermove', onPreviewPointerMove);
+  addFieldAuditListener(window, 'pointerup', onPreviewPointerUp);
   window.addEventListener('resize', resizePreviewCanvas);
   resizePreviewCanvas();
 }
@@ -3537,10 +3596,10 @@ function setupRepeatButton(btn, cb){
     clearTimeout(timeoutId);
     clearInterval(intervalId);
   };
-  btn.addEventListener('pointerdown', start);
-  btn.addEventListener('pointerup', stop);
-  btn.addEventListener('pointerleave', stop);
-  btn.addEventListener('pointercancel', stop);
+  addFieldAuditListener(btn, 'pointerdown', start);
+  addFieldAuditListener(btn, 'pointerup', stop);
+  addFieldAuditListener(btn, 'pointerleave', stop);
+  addFieldAuditListener(btn, 'pointercancel', stop);
 }
 
 function setTumblerState(btn, isOn){
@@ -3576,7 +3635,7 @@ if(sharpEdgesToggle){
 
 if(addsNailsBtn){
   setTumblerState(addsNailsBtn, sharpEdges);
-  addsNailsBtn.addEventListener('click', () => {
+  addFieldAuditListener(addsNailsBtn, 'click', () => {
     sharpEdges = !sharpEdges;
     setTumblerState(addsNailsBtn, sharpEdges);
     syncToggleInput(sharpEdgesToggle, sharpEdges);
@@ -3586,7 +3645,7 @@ if(addsNailsBtn){
 
 if(addsAABtn){
   setTumblerState(addsAABtn, addAA);
-  addsAABtn.addEventListener('click', () => {
+  addFieldAuditListener(addsAABtn, 'click', () => {
     addAA = !addAA;
     setTumblerState(addsAABtn, addAA);
     syncToggleInput(addAAToggle, addAA);
@@ -3596,7 +3655,7 @@ if(addsAABtn){
 
 if(addsCargoBtn){
   setTumblerState(addsCargoBtn, addCargo);
-  addsCargoBtn.addEventListener('click', () => {
+  addFieldAuditListener(addsCargoBtn, 'click', () => {
     addCargo = !addCargo;
     setTumblerState(addsCargoBtn, addCargo);
     saveSettings();
@@ -3613,8 +3672,8 @@ const hasMapButtons = mapPrevBtn && mapNextBtn;
     changeFieldStep(delta, { animate: true });
   };
 
-  mapPrevBtn.addEventListener('click', () => changeMap(-1));
-  mapNextBtn.addEventListener('click', () => changeMap(1));
+  addFieldAuditListener(mapPrevBtn, 'click', () => changeMap(-1));
+  addFieldAuditListener(mapNextBtn, 'click', () => changeMap(1));
 } else {
   updateMapPreview();
   updateMapNameDisplay();
@@ -3650,25 +3709,25 @@ const hasMapButtons = mapPrevBtn && mapNextBtn;
   setupRepeatButton(rangePlusBtn, () => handleRangeArrow(1));
   const ensuredRangeTrack = ensureRangeDisplayTrack();
   if(rangeDisplayViewport && ensuredRangeTrack){
-    rangeDisplayViewport.addEventListener('pointerdown', handleRangePointerDown);
-    rangeDisplayViewport.addEventListener('pointermove', handleRangePointerMove);
-    rangeDisplayViewport.addEventListener('pointerup', handleRangePointerEnd);
-    rangeDisplayViewport.addEventListener('pointercancel', handleRangePointerEnd);
+    addFieldAuditListener(rangeDisplayViewport, 'pointerdown', handleRangePointerDown);
+    addFieldAuditListener(rangeDisplayViewport, 'pointermove', handleRangePointerMove);
+    addFieldAuditListener(rangeDisplayViewport, 'pointerup', handleRangePointerEnd);
+    addFieldAuditListener(rangeDisplayViewport, 'pointercancel', handleRangePointerEnd);
   }
   const ensuredAccuracyTrack = ensureAccuracyDisplayTrack();
   if(accuracyDisplayViewport && ensuredAccuracyTrack){
-    accuracyDisplayViewport.addEventListener('pointerdown', handleAccuracyPointerDown);
-    accuracyDisplayViewport.addEventListener('pointermove', handleAccuracyPointerMove);
-    accuracyDisplayViewport.addEventListener('pointerup', handleAccuracyPointerEnd);
-    accuracyDisplayViewport.addEventListener('pointercancel', handleAccuracyPointerEnd);
+    addFieldAuditListener(accuracyDisplayViewport, 'pointerdown', handleAccuracyPointerDown);
+    addFieldAuditListener(accuracyDisplayViewport, 'pointermove', handleAccuracyPointerMove);
+    addFieldAuditListener(accuracyDisplayViewport, 'pointerup', handleAccuracyPointerEnd);
+    addFieldAuditListener(accuracyDisplayViewport, 'pointercancel', handleAccuracyPointerEnd);
   }
   const fieldLabelViewport = getFieldLabelLayer();
   const ensuredFieldTrack = ensureFieldDragTracks();
   if(fieldLabelViewport && ensuredFieldTrack){
-    fieldLabelViewport.addEventListener('pointerdown', handleFieldPointerDown);
-    fieldLabelViewport.addEventListener('pointermove', handleFieldPointerMove);
-    fieldLabelViewport.addEventListener('pointerup', handleFieldPointerEnd);
-    fieldLabelViewport.addEventListener('pointercancel', handleFieldPointerEnd);
+    addFieldAuditListener(fieldLabelViewport, 'pointerdown', handleFieldPointerDown);
+    addFieldAuditListener(fieldLabelViewport, 'pointermove', handleFieldPointerMove);
+    addFieldAuditListener(fieldLabelViewport, 'pointerup', handleFieldPointerEnd);
+    addFieldAuditListener(fieldLabelViewport, 'pointercancel', handleFieldPointerEnd);
   }
   setupRepeatButton(amplitudeMinusBtn, () => handleAccuracyArrow(-1));
   setupRepeatButton(amplitudePlusBtn, () => handleAccuracyArrow(1));
@@ -3688,11 +3747,11 @@ function goToMainMenu(event){
 }
 
 if(resetBtn){
-  resetBtn.addEventListener('click', resetSettingsToDefaults);
+  addFieldAuditListener(resetBtn, 'click', resetSettingsToDefaults);
 }
 
 if(exitBtn){
-  exitBtn.addEventListener('click', goToMainMenu);
+  addFieldAuditListener(exitBtn, 'click', goToMainMenu);
 }
 
 function handleSettingsLayerShow(){
