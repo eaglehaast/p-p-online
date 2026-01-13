@@ -30,6 +30,7 @@ const ACCURACY_DISPLAY_VALUES = Array.from(
 );
 const ACCURACY_CELL_WIDTH = 58;
 const ACCURACY_TAPE_IMAGE_WIDTH = 1276;
+const FIELD_EXCLUSIVE_MODE = true;
 
 const MAP_PREVIEW_BASE_WIDTH = 360;
 const MAP_PREVIEW_BASE_HEIGHT = 640;
@@ -859,6 +860,7 @@ function setAccuracyTrackStyles(target, styles){
 }
 
 function setFieldSelectorStyles(target, styles){
+  if(FIELD_EXCLUSIVE_MODE) return;
   logFieldAudit('setFieldSelectorStyles', target, { ...styles });
   setSliderTrackStyles(target, fieldSelectorState, styles);
 }
@@ -939,6 +941,7 @@ function getFieldTapeViewport(){
 }
 
 function getFieldSelectorTrack(){
+  assertFieldSelectorSingletons();
   if(!mapNameDisplay) return null;
   fieldSelectorTrack = fieldSelectorTrack ?? mapNameDisplay.querySelector('.fieldSelectorTrack');
   if(!(fieldSelectorTrack instanceof HTMLElement)){
@@ -979,6 +982,24 @@ function normalizeMapIndex(index){
 }
 
 function setFieldTapeSliceForIndex(slice, index){
+  if(FIELD_EXCLUSIVE_MODE) return;
+  if(!(slice instanceof HTMLElement)) return;
+  const totalMaps = Math.max(1, MAPS.length);
+  const middleIndex = Math.floor(totalMaps / 2);
+  const offsetPx = (middleIndex - index) * FIELD_TAPE_CELL_WIDTH;
+  slice.style.backgroundPosition = `${offsetPx}px center`;
+  logFieldAudit('setFieldTapeSliceForIndex', slice, {
+    index,
+    backgroundPosition: slice.style.backgroundPosition
+  });
+}
+
+function setFieldTapeSliceForIndexAuthorized(token, slice, index){
+  if(!FIELD_EXCLUSIVE_MODE){
+    setFieldTapeSliceForIndex(slice, index);
+    return;
+  }
+  assertFieldControlToken(token, 'setFieldTapeSliceForIndex');
   if(!(slice instanceof HTMLElement)) return;
   const totalMaps = Math.max(1, MAPS.length);
   const middleIndex = Math.floor(totalMaps / 2);
@@ -991,6 +1012,7 @@ function setFieldTapeSliceForIndex(slice, index){
 }
 
 function setFieldTapeTrackStyles(track, { transition, transform } = {}){
+  if(FIELD_EXCLUSIVE_MODE) return;
   if(!(track instanceof HTMLElement)) return;
   logFieldAudit('setFieldTapeTrackStyles', track, { transition, transform });
   if(typeof transition === 'string'){
@@ -1005,15 +1027,21 @@ function setFieldTapeTrackStyles(track, { transition, transform } = {}){
   }
 }
 
-function setFieldTapeSlicesForIndex(index, slices = null){
+function setFieldTapeSlicesForIndex(index, slices = null, token = null){
   const tapeSlices = slices ?? getFieldTapeSlices();
   if(!tapeSlices) return;
   const currentIndex = normalizeMapIndex(index);
   const prevIndex = normalizeMapIndex(currentIndex - 1);
   const nextIndex = normalizeMapIndex(currentIndex + 1);
-  setFieldTapeSliceForIndex(tapeSlices.prev, prevIndex);
-  setFieldTapeSliceForIndex(tapeSlices.current, currentIndex);
-  setFieldTapeSliceForIndex(tapeSlices.next, nextIndex);
+  if(FIELD_EXCLUSIVE_MODE){
+    setFieldTapeSliceForIndexAuthorized(token, tapeSlices.prev, prevIndex);
+    setFieldTapeSliceForIndexAuthorized(token, tapeSlices.current, currentIndex);
+    setFieldTapeSliceForIndexAuthorized(token, tapeSlices.next, nextIndex);
+  } else {
+    setFieldTapeSliceForIndex(tapeSlices.prev, prevIndex);
+    setFieldTapeSliceForIndex(tapeSlices.current, currentIndex);
+    setFieldTapeSliceForIndex(tapeSlices.next, nextIndex);
+  }
 }
 
 function updateRangeTapePosition(displayPosition = rangeScrollPos, track = null){
@@ -1116,18 +1144,23 @@ function updateFieldTapePosition(displayIndex = mapIndex, options = {}){
     animate = false,
     direction,
     currentIndex: baseIndex,
-    syncReset = false
+    syncReset = false,
+    fieldControlToken: token = null
   } = options ?? {};
+  if(FIELD_EXCLUSIVE_MODE && !token) return null;
+  if(FIELD_EXCLUSIVE_MODE){
+    assertFieldControlToken(token, 'updateFieldTapePosition');
+  }
   const tapeSlices = getFieldTapeSlices();
   if(!tapeSlices) return null;
   const stableIndex = normalizeMapIndex(Number.isFinite(displayIndex) ? displayIndex : 0);
   const track = tapeSlices.track;
 
   const resetToRestState = (index) => {
-    setFieldTapeSlicesForIndex(index, tapeSlices);
-    setFieldTapeTrackStyles(track, { transition: 'none', transform: 'translateX(-100%)' });
+    setFieldTapeSlicesForIndex(index, tapeSlices, token);
+    setFieldTapeTrackStylesAuthorized(token, track, { transition: 'none', transform: 'translateX(-100%)' });
     requestAnimationFrame(() => {
-      setFieldTapeTrackStyles(track, { transition: '' });
+      setFieldTapeTrackStylesAuthorized(token, track, { transition: '' });
     });
   };
 
@@ -1137,19 +1170,19 @@ function updateFieldTapePosition(displayIndex = mapIndex, options = {}){
       ? normalizeMapIndex(outgoingIndex + 1)
       : normalizeMapIndex(outgoingIndex - 1);
     if(direction === 'prev'){
-      setFieldTapeSliceForIndex(tapeSlices.prev, incomingIndex);
-      setFieldTapeSliceForIndex(tapeSlices.current, outgoingIndex);
-      setFieldTapeSliceForIndex(tapeSlices.next, normalizeMapIndex(outgoingIndex + 1));
+      setFieldTapeSliceForIndexAuthorized(token, tapeSlices.prev, incomingIndex);
+      setFieldTapeSliceForIndexAuthorized(token, tapeSlices.current, outgoingIndex);
+      setFieldTapeSliceForIndexAuthorized(token, tapeSlices.next, normalizeMapIndex(outgoingIndex + 1));
     } else {
-      setFieldTapeSliceForIndex(tapeSlices.prev, normalizeMapIndex(outgoingIndex - 1));
-      setFieldTapeSliceForIndex(tapeSlices.current, outgoingIndex);
-      setFieldTapeSliceForIndex(tapeSlices.next, incomingIndex);
+      setFieldTapeSliceForIndexAuthorized(token, tapeSlices.prev, normalizeMapIndex(outgoingIndex - 1));
+      setFieldTapeSliceForIndexAuthorized(token, tapeSlices.current, outgoingIndex);
+      setFieldTapeSliceForIndexAuthorized(token, tapeSlices.next, incomingIndex);
     }
-    setFieldTapeTrackStyles(track, { transition: 'none', transform: 'translateX(-100%)' });
+    setFieldTapeTrackStylesAuthorized(token, track, { transition: 'none', transform: 'translateX(-100%)' });
     requestAnimationFrame(() => {
       const transition = getFieldTapeTransition(FIELD_LABEL_DURATION_MS);
       const endTransform = direction === 'next' ? 'translateX(-200%)' : 'translateX(0%)';
-      setFieldTapeTrackStyles(track, { transition, transform: endTransform });
+      setFieldTapeTrackStylesAuthorized(token, track, { transition, transform: endTransform });
     });
 
     if(syncReset){
@@ -1682,6 +1715,7 @@ function setFieldDragTrackStyles(target, styles){
 }
 
 function setFieldTapeDragTransform(clampedDx){
+  if(FIELD_EXCLUSIVE_MODE) return;
   const track = getFieldTapeTrack();
   const viewport = getFieldTapeViewport();
   if(!(track instanceof HTMLElement) || !(viewport instanceof HTMLElement)) return;
@@ -1711,6 +1745,7 @@ function ensureFieldLabelsForDrag(){
 }
 
 function removeIncomingFieldValue(){
+  if(FIELD_EXCLUSIVE_MODE) return;
   if(!ensureFieldLabelsForDrag()) return;
   logFieldAudit('removeIncomingFieldValue', mapNameIncomingLabel, {
     textContent: ''
@@ -1727,6 +1762,7 @@ function removeIncomingFieldValue(){
 }
 
 function prepareIncomingFieldValue(direction){
+  if(FIELD_EXCLUSIVE_MODE) return null;
   if(!ensureFieldLabelsForDrag()) return null;
   if(direction !== 'next' && direction !== 'prev'){
     removeIncomingFieldValue();
@@ -1830,6 +1866,7 @@ function resetAccuracyDragVisual(animateReset){
 }
 
 function resetFieldDragVisual(animateReset){
+  if(FIELD_EXCLUSIVE_MODE) return;
   const transformTarget = ensureFieldDragTracks();
   if(!transformTarget) return;
   setFieldDragTrackStyles(transformTarget, {
@@ -2231,6 +2268,7 @@ function handleAccuracyPointerEnd(event){
 }
 
 function handleFieldPointerDown(event){
+  if(FIELD_EXCLUSIVE_MODE) return;
   fieldDragHandlers.handlePointerDown(event);
   if(isFieldDragging){
     const track = getFieldTapeTrack();
@@ -2242,6 +2280,7 @@ function handleFieldPointerDown(event){
 }
 
 function handleFieldPointerMove(event){
+  if(FIELD_EXCLUSIVE_MODE) return;
   fieldDragHandlers.handlePointerMove(event);
   if(!isFieldDragging || isFieldAnimating || isAnimating) return;
   const viewport = mapNameDisplay ?? getFieldLabelLayer();
@@ -2253,6 +2292,7 @@ function handleFieldPointerMove(event){
 }
 
 function handleFieldPointerEnd(event){
+  if(FIELD_EXCLUSIVE_MODE) return;
   fieldDragHandlers.handlePointerEnd(event);
   if(pendingFieldSteps !== 0){
     return;
@@ -2417,8 +2457,13 @@ function changeAccuracyStep(delta, options = {}){
 }
 
 function changeFieldStep(delta, options = {}){
+  const exclusiveToken = FIELD_EXCLUSIVE_MODE ? startFieldExclusiveSession() : null;
   if(isFieldAnimating || isAnimating){
-    normalizeFieldLabels({ cancelAnimation: true });
+    if(FIELD_EXCLUSIVE_MODE){
+      normalizeFieldLabelsControlled({ cancelAnimation: true }, exclusiveToken);
+    } else {
+      normalizeFieldLabels({ cancelAnimation: true });
+    }
     resetFieldAnimationTracking();
     cancelFieldLabelAnimation();
   }
@@ -2437,6 +2482,9 @@ function changeFieldStep(delta, options = {}){
     if(typeof onFinish === 'function'){
       onFinish();
     }
+    if(FIELD_EXCLUSIVE_MODE){
+      finalizeFieldExclusiveSession(exclusiveToken);
+    }
     return;
   }
 
@@ -2451,10 +2499,13 @@ function changeFieldStep(delta, options = {}){
 
   const animationToken = resetFieldAnimationTracking();
   if(animate && direction){
-    animateFieldLabelChange(nextIndexLocal, direction, animationToken);
+    animateFieldLabelChange(nextIndexLocal, direction, animationToken, exclusiveToken);
   } else {
-    updateMapNameDisplay({ index: nextIndexLocal, animationToken });
-    updateFieldTapePosition(nextIndexLocal);
+    updateMapNameDisplayControlled({ index: nextIndexLocal, animationToken }, exclusiveToken);
+    updateFieldTapePosition(nextIndexLocal, { fieldControlToken: exclusiveToken });
+    if(FIELD_EXCLUSIVE_MODE){
+      finalizeFieldExclusiveSession(exclusiveToken);
+    }
   }
 
   if(animate && direction){
@@ -2901,6 +2952,7 @@ function updateMapPreview(){
 }
 
 function getFieldLabelLayer(){
+  assertFieldSelectorSingletons();
   if(!mapNameDisplay) return null;
   return mapNameDisplay.querySelector('.cp-field-selector__label-layer') ?? mapNameDisplay;
 }
@@ -2919,7 +2971,129 @@ function setFieldTrackOrder(activeSlot){
   }
 }
 
+let fieldControlToken = 0;
+let fieldControlActiveToken = null;
+let fieldControlObserver = null;
+
+function startFieldExclusiveSession(){
+  fieldControlToken += 1;
+  fieldControlActiveToken = fieldControlToken;
+  return fieldControlActiveToken;
+}
+
+function endFieldExclusiveSession(token){
+  if(!FIELD_EXCLUSIVE_MODE) return;
+  assertFieldControlToken(token, 'endFieldExclusiveSession');
+  fieldControlActiveToken = null;
+}
+
+function finalizeFieldExclusiveSession(token){
+  if(!FIELD_EXCLUSIVE_MODE) return;
+  requestAnimationFrame(() => endFieldExclusiveSession(token));
+}
+
+function assertFieldControlToken(token, context){
+  if(!FIELD_EXCLUSIVE_MODE) return;
+  if(token !== fieldControlActiveToken){
+    throw new Error(`FIELD exclusive mode violation: ${context}`);
+  }
+}
+
+function setFieldSelectorStylesAuthorized(token, target, styles){
+  if(!FIELD_EXCLUSIVE_MODE){
+    setFieldSelectorStyles(target, styles);
+    return;
+  }
+  assertFieldControlToken(token, 'setFieldSelectorStyles');
+  logFieldAudit('setFieldSelectorStyles', target, { ...styles });
+  setSliderTrackStyles(target, fieldSelectorState, styles);
+}
+
+function setFieldTapeTrackStylesAuthorized(token, track, { transition, transform } = {}){
+  if(!FIELD_EXCLUSIVE_MODE){
+    setFieldTapeTrackStyles(track, { transition, transform });
+    return;
+  }
+  assertFieldControlToken(token, 'setFieldTapeTrackStyles');
+  if(!(track instanceof HTMLElement)) return;
+  logFieldAudit('setFieldTapeTrackStyles', track, { transition, transform });
+  if(typeof transition === 'string'){
+    track.style.transition = transition;
+  } else if(transition === null){
+    track.style.removeProperty('transition');
+  }
+  if(typeof transform === 'string'){
+    track.style.transform = transform;
+  } else if(transform === null){
+    track.style.removeProperty('transform');
+  }
+}
+
+function setFieldLabelTextAuthorized(token, label, text, context){
+  if(!FIELD_EXCLUSIVE_MODE){
+    if(label instanceof HTMLElement){
+      label.textContent = text;
+    }
+    return;
+  }
+  assertFieldControlToken(token, `setFieldLabelText:${context}`);
+  if(label instanceof HTMLElement){
+    label.textContent = text;
+  }
+}
+
+function assertFieldSelectorSingletons(){
+  const checks = [
+    { selector: '.fieldSelectorTrack', label: 'fieldSelectorTrack' },
+    { selector: '#instance_field_left', label: 'instance_field_left' },
+    { selector: '#instance_field_right', label: 'instance_field_right' },
+    { selector: '.cp-field-selector__label-layer', label: 'cp-field-selector__label-layer' }
+  ];
+  for(const { selector, label } of checks){
+    const matches = document.querySelectorAll(selector);
+    if(matches.length !== 1){
+      throw new Error(`FIELD selector duplicate detected: ${label} (${matches.length})`);
+    }
+  }
+}
+
+function setupFieldExclusiveObserver(){
+  if(fieldControlObserver || !FIELD_EXCLUSIVE_MODE) return;
+  const container = settingsRoot.querySelector('.cp-field-selector');
+  if(!(container instanceof HTMLElement)) return;
+  fieldControlObserver = new MutationObserver((mutations) => {
+    if(!FIELD_EXCLUSIVE_MODE) return;
+    for(const mutation of mutations){
+      if(mutation.type !== 'attributes') continue;
+      if(mutation.attributeName !== 'style' && mutation.attributeName !== 'class') continue;
+      const target = mutation.target;
+      if(!(target instanceof HTMLElement)) continue;
+      if(!target.matches(
+        '.fieldSelectorTrack, .fieldTapeTrack, .cp-field-selector__label-layer, .cp-field-selector__label'
+      )){
+        continue;
+      }
+      if(fieldControlActiveToken === null){
+        throw new Error('FIELD exclusive mode: external write detected');
+      }
+    }
+  });
+  fieldControlObserver.observe(container, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['style', 'class']
+  });
+}
+
 function normalizeFieldLabels({ cancelAnimation = false, resetFieldAnimation = true } = {}){
+  if(FIELD_EXCLUSIVE_MODE) return null;
+  return normalizeFieldLabelsControlled({ cancelAnimation, resetFieldAnimation });
+}
+
+function normalizeFieldLabelsControlled({ cancelAnimation = false, resetFieldAnimation = true } = {}, token = null){
+  if(FIELD_EXCLUSIVE_MODE){
+    assertFieldControlToken(token, 'normalizeFieldLabels');
+  }
   const labelLayer = getFieldLabelLayer();
   if(!labelLayer) return null;
 
@@ -2936,7 +3110,7 @@ function normalizeFieldLabels({ cancelAnimation = false, resetFieldAnimation = t
     isAnimating = false;
     const track = getFieldSelectorTrack();
     if(track){
-      setFieldSelectorStyles(track, { transition: '' });
+      setFieldSelectorStylesAuthorized(token, track, { transition: '' });
     }
     cancelFieldLabelAnimation();
     if(resetFieldAnimation){
@@ -2956,26 +3130,36 @@ function normalizeFieldLabels({ cancelAnimation = false, resetFieldAnimation = t
   setFieldTrackOrder(activeSlot);
   const track = getFieldSelectorTrack();
   if(track && !hasActiveInteraction){
-    setFieldSelectorStyles(track, { transform: 'translateX(0%)' });
+    setFieldSelectorStylesAuthorized(token, track, { transform: 'translateX(0%)' });
   }
   return mapNameLabel;
 }
 
-function animateFieldLabelChange(targetIndex, direction, animationToken){
+function animateFieldLabelChange(targetIndex, direction, animationToken, token = null){
+  if(FIELD_EXCLUSIVE_MODE && !token) return;
+  if(FIELD_EXCLUSIVE_MODE){
+    assertFieldControlToken(token, 'animateFieldLabelChange');
+  }
   const labelLayer = getFieldLabelLayer();
-  normalizeFieldLabels({ cancelAnimation: true, resetFieldAnimation: false });
+  normalizeFieldLabelsControlled({ cancelAnimation: true, resetFieldAnimation: false }, token);
   cancelFieldLabelAnimation();
   const track = getFieldSelectorTrack();
   const tapeSlices = getFieldTapeSlices();
   if(!labelLayer || !mapNameLabel || !mapNameIncomingLabel || !tapeSlices){
-    updateMapNameDisplay({ index: targetIndex, animationToken });
-    updateFieldTapePosition(targetIndex);
+    updateMapNameDisplayControlled({ index: targetIndex, animationToken }, token);
+    updateFieldTapePosition(targetIndex, { fieldControlToken: token });
+    if(FIELD_EXCLUSIVE_MODE){
+      finalizeFieldExclusiveSession(token);
+    }
     return;
   }
 
   if(!mapNameLabelA || !mapNameLabelB || !(track instanceof HTMLElement)){
-    updateMapNameDisplay({ index: targetIndex, animationToken });
-    updateFieldTapePosition(targetIndex);
+    updateMapNameDisplayControlled({ index: targetIndex, animationToken }, token);
+    updateFieldTapePosition(targetIndex, { fieldControlToken: token });
+    if(FIELD_EXCLUSIVE_MODE){
+      finalizeFieldExclusiveSession(token);
+    }
     return;
   }
 
@@ -2986,23 +3170,23 @@ function animateFieldLabelChange(targetIndex, direction, animationToken){
   const currentText = getFieldLabel(currentIndex);
   const nextText = getFieldLabel(targetIndex);
   if(outgoingLabel){
-    outgoingLabel.textContent = currentText;
+    setFieldLabelTextAuthorized(token, outgoingLabel, currentText, 'animateFieldLabelChange:outgoing');
   }
   if(incomingLabel){
-    incomingLabel.textContent = nextText;
+    setFieldLabelTextAuthorized(token, incomingLabel, nextText, 'animateFieldLabelChange:incoming');
   }
   mapNameLabel = outgoingLabel ?? mapNameLabel;
   mapNameIncomingLabel = incomingLabel ?? mapNameIncomingLabel;
 
   const currentMapIndex = normalizeMapIndex(currentIndex);
   const incomingMapIndex = normalizeMapIndex(targetIndex);
-  setFieldTapeSlicesForIndex(currentMapIndex, tapeSlices);
+  setFieldTapeSlicesForIndex(currentMapIndex, tapeSlices, token);
 
   const startTransform = direction === 'prev' ? '-50%' : '0%';
   const endTransform = direction === 'prev' ? '0%' : '-50%';
   const leftSlot = direction === 'prev' ? incomingSlot : outgoingSlot;
   setFieldTrackOrder(leftSlot);
-  setFieldSelectorStyles(track, { transition: 'none', transform: `translateX(${startTransform})` });
+  setFieldSelectorStylesAuthorized(token, track, { transition: 'none', transform: `translateX(${startTransform})` });
   isAnimating = true;
   markFieldAnimationStart(animationToken);
   console.log(`[map selector] ${currentIndex} -> ${targetIndex}`, {
@@ -3015,12 +3199,13 @@ function animateFieldLabelChange(targetIndex, direction, animationToken){
     animate: true,
     direction,
     currentIndex: currentMapIndex,
-    syncReset: true
+    syncReset: true,
+    fieldControlToken: token
   });
 
   requestAnimationFrame(() => {
     const transition = getFieldSelectorTransition(FIELD_LABEL_DURATION_MS);
-    setFieldSelectorStyles(track, { transition, transform: `translateX(${endTransform})` });
+    setFieldSelectorStylesAuthorized(token, track, { transition, transform: `translateX(${endTransform})` });
   });
 
   let animationCompleted = false;
@@ -3033,17 +3218,17 @@ function animateFieldLabelChange(targetIndex, direction, animationToken){
     mapNameLabel = incomingLabel ?? mapNameLabel;
     mapNameIncomingLabel = outgoingLabel ?? mapNameIncomingLabel;
     setFieldTrackOrder(activeSlot);
-    setFieldSelectorStyles(track, { transition: 'none', transform: 'translateX(0%)' });
+    setFieldSelectorStylesAuthorized(token, track, { transition: 'none', transform: 'translateX(0%)' });
     if(mapNameIncomingLabel){
-      mapNameIncomingLabel.textContent = '';
+      setFieldLabelTextAuthorized(token, mapNameIncomingLabel, '', 'animateFieldLabelChange:clearIncoming');
     }
     if(typeof tapeReset === 'function'){
       tapeReset();
     } else {
-      updateFieldTapePosition(currentIndex);
+      updateFieldTapePosition(currentIndex, { fieldControlToken: token });
     }
     requestAnimationFrame(() => {
-      setFieldSelectorStyles(track, { transition: '' });
+      setFieldSelectorStylesAuthorized(token, track, { transition: '' });
     });
     isAnimating = false;
     markFieldAnimationEnd(animationToken);
@@ -3051,6 +3236,9 @@ function animateFieldLabelChange(targetIndex, direction, animationToken){
       activeSlot,
       trackTransform: track.style.transform
     });
+    if(FIELD_EXCLUSIVE_MODE){
+      finalizeFieldExclusiveSession(token);
+    }
   };
 
   const handleEnd = (event) => {
@@ -3067,29 +3255,40 @@ function animateFieldLabelChange(targetIndex, direction, animationToken){
 }
 
 function updateMapNameDisplay(options = {}){
+  if(FIELD_EXCLUSIVE_MODE) return;
+  updateMapNameDisplayControlled(options, null);
+}
+
+function updateMapNameDisplayControlled(options = {}, token = null){
+  if(FIELD_EXCLUSIVE_MODE){
+    assertFieldControlToken(token, 'updateMapNameDisplay');
+  }
   if(!mapNameDisplay) return;
   const resolvedIndex = Number.isFinite(options.index) ? options.index : mapIndex;
   const nextText = getFieldLabel(resolvedIndex);
   const shouldResetFieldAnimation = !options.animationToken;
   const hasActiveInteraction = isFieldInteractionActive();
-  normalizeFieldLabels({ cancelAnimation: true, resetFieldAnimation: shouldResetFieldAnimation });
+  normalizeFieldLabelsControlled(
+    { cancelAnimation: true, resetFieldAnimation: shouldResetFieldAnimation },
+    token
+  );
   if(!mapNameLabel || !mapNameIncomingLabel) return;
   currentIndex = resolvedIndex;
   nextIndex = resolvedIndex;
   mapNameDisplay.setAttribute('aria-label', `Selected map: ${nextText}`);
-  mapNameLabel.textContent = nextText;
+  setFieldLabelTextAuthorized(token, mapNameLabel, nextText, 'updateMapNameDisplay:active');
   logFieldAudit('updateMapNameDisplay', mapNameLabel, {
     index: resolvedIndex,
     textContent: nextText
   });
   if(mapNameIncomingLabel){
-    mapNameIncomingLabel.textContent = '';
+    setFieldLabelTextAuthorized(token, mapNameIncomingLabel, '', 'updateMapNameDisplay:incoming');
   }
   activeSlot = mapNameLabel === mapNameLabelB ? 'B' : 'A';
   setFieldTrackOrder(activeSlot);
   const track = getFieldSelectorTrack();
   if(track && !hasActiveInteraction){
-    setFieldSelectorStyles(track, { transform: 'translateX(0%)' });
+    setFieldSelectorStylesAuthorized(token, track, { transform: 'translateX(0%)' });
   }
 }
 
@@ -3559,6 +3758,23 @@ function setupPreviewSimulation(){
   }
 }
 
+function runFieldSelectorInitChecks(){
+  assertFieldSelectorSingletons();
+  setupFieldExclusiveObserver();
+}
+
+function syncFieldSelectorState(){
+  if(FIELD_EXCLUSIVE_MODE){
+    const token = startFieldExclusiveSession();
+    updateMapNameDisplayControlled({}, token);
+    updateFieldTapePosition(mapIndex, { fieldControlToken: token });
+    finalizeFieldExclusiveSession(token);
+    return;
+  }
+  updateMapNameDisplay();
+  updateFieldTapePosition();
+}
+
   function resetSettingsToDefaults(){
     settingsFlightRangeCells = DEFAULT_SETTINGS.rangeCells;
     syncRangeStepFromValue(settingsFlightRangeCells);
@@ -3573,8 +3789,7 @@ function setupPreviewSimulation(){
   updateAmplitudeDisplay();
   updateAmplitudeIndicator();
   updateMapPreview();
-  updateMapNameDisplay();
-  updateFieldTapePosition();
+  syncFieldSelectorState();
   setTumblerState(addsAABtn, addAA);
   setTumblerState(addsNailsBtn, sharpEdges);
   setTumblerState(addsCargoBtn, addCargo);
@@ -3666,8 +3881,8 @@ if(addsCargoBtn){
 const hasMapButtons = mapPrevBtn && mapNextBtn;
   if(hasMapButtons){
   updateMapPreview();
-  updateMapNameDisplay();
-  updateFieldTapePosition();
+  runFieldSelectorInitChecks();
+  syncFieldSelectorState();
 
   const changeMap = delta => {
     changeFieldStep(delta, { animate: true });
@@ -3677,8 +3892,8 @@ const hasMapButtons = mapPrevBtn && mapNextBtn;
   addFieldAuditListener(mapNextBtn, 'click', () => changeMap(1));
 } else {
   updateMapPreview();
-  updateMapNameDisplay();
-  updateFieldTapePosition();
+  runFieldSelectorInitChecks();
+  syncFieldSelectorState();
 }
 
   const handleRangeArrow = (delta) => {
@@ -3806,7 +4021,7 @@ if(fieldDebugMarkerTarget && !settingsRoot.querySelector('[data-field-debug-buil
   updateRangeFlame();
 updateAmplitudeDisplay();
 updateAmplitudeIndicator();
-updateFieldTapePosition();
+syncFieldSelectorState();
 
 const settingsBridge = window.paperWingsSettings || {};
 settingsBridge.onShow = handleSettingsLayerShow;
