@@ -644,6 +644,13 @@ const fieldModuleRoot = fieldRightBtn?.closest('.cp-field-selector') ||
 if(!(fieldModuleRoot instanceof HTMLElement)){
   throw new Error('FIELD module root missing for #instance_field_right');
 }
+const fieldLeftInstance = document.querySelector('#instance_field_left');
+if(!(fieldLeftInstance instanceof HTMLElement) || !fieldModuleRoot.contains(fieldLeftInstance)){
+  throw new Error('FIELD module missing #instance_field_left');
+}
+if(!(fieldRightBtn instanceof HTMLElement) || !fieldModuleRoot.contains(fieldRightBtn)){
+  throw new Error('FIELD module missing #instance_field_right');
+}
 const mapNameDisplay = selectInSettings('#frame_field_2_counter');
 const fieldSelectorRoot = selectInSettings('#cp_field_selector_root');
 if(!(fieldSelectorRoot instanceof HTMLElement)){
@@ -655,21 +662,60 @@ if(!fieldModuleRoot.contains(fieldSelectorRoot)){
 if(!(fieldModuleRoot.querySelector('#cp_field_selector_root') instanceof HTMLElement)){
   throw new Error('FIELD selector root not inside FIELD module');
 }
-const controlPanelRoot =
-  settingsRoot.querySelector('.settings-container') ??
-  settingsLayer ??
-  document.body;
-if(!(controlPanelRoot instanceof HTMLElement)){
-  throw new Error('CONTROL PANEL root missing');
-}
-const cpRect = controlPanelRoot.getBoundingClientRect();
-const fieldRect = fieldModuleRoot.getBoundingClientRect();
-const localLeft = 60 - (fieldRect.left - cpRect.left);
-const localTop = 257 - (fieldRect.top - cpRect.top);
-fieldSelectorRoot.style.left = `${localLeft}px`;
-fieldSelectorRoot.style.top = `${localTop}px`;
+const fieldSelectorLeft = 60;
+const fieldSelectorTop = 257;
+fieldSelectorRoot.style.left = `${fieldSelectorLeft}px`;
+fieldSelectorRoot.style.top = `${fieldSelectorTop}px`;
 fieldSelectorRoot.style.width = '58px';
 fieldSelectorRoot.style.height = '35px';
+let hasLoggedFieldSelectorPlacement = false;
+const logFieldSelectorPlacementOnce = () => {
+  if(hasLoggedFieldSelectorPlacement) return;
+  hasLoggedFieldSelectorPlacement = true;
+
+  const fieldRootRect = fieldModuleRoot.getBoundingClientRect();
+  const leftRect = fieldLeftInstance.getBoundingClientRect();
+  const rightRect = fieldRightBtn.getBoundingClientRect();
+  const selectorRect = fieldSelectorRoot.getBoundingClientRect();
+
+  console.debug('FIELD selector placement debug', {
+    fieldRootRect,
+    leftRect,
+    rightRect,
+    selectorRect
+  });
+
+  const placements = [
+    { label: '#instance_field_left', element: fieldLeftInstance },
+    { label: '#instance_field_right', element: fieldRightBtn },
+    { label: '#cp_field_selector_root', element: fieldSelectorRoot }
+  ];
+
+  placements.forEach(({ label, element }) => {
+    const childRect = element.getBoundingClientRect();
+    const localX = element === fieldSelectorRoot ? fieldSelectorLeft : element.offsetLeft;
+    const localY = element === fieldSelectorRoot ? fieldSelectorTop : element.offsetTop;
+    const expectedLeft = fieldRootRect.left + localX;
+    const expectedTop = fieldRootRect.top + localY;
+    const leftDiff = Math.abs(expectedLeft - childRect.left);
+    const topDiff = Math.abs(expectedTop - childRect.top);
+
+    if(leftDiff > 1 || topDiff > 1){
+      console.warn('FIELD selector placement mismatch', {
+        label,
+        localX,
+        localY,
+        expectedLeft,
+        expectedTop,
+        actualLeft: childRect.left,
+        actualTop: childRect.top,
+        leftDiff,
+        topDiff
+      });
+    }
+  });
+};
+logFieldSelectorPlacementOnce();
 const mapNameLabelA = fieldSelectorRoot?.querySelector('.fieldLabelSlotA');
 const mapNameLabelB = fieldSelectorRoot?.querySelector('.fieldLabelSlotB');
 const mapNameSlotA = mapNameLabelA ?? null;
