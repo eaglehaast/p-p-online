@@ -2986,12 +2986,14 @@ function startFieldExclusiveSession(){
 
 function endFieldExclusiveSession(token){
   if(!FIELD_EXCLUSIVE_MODE) return;
-  assertFieldControlToken(token, 'endFieldExclusiveSession');
+  if(fieldControlActiveToken === null) return;
+  if(token !== fieldControlActiveToken) return;
   fieldControlActiveToken = null;
 }
 
 function finalizeFieldExclusiveSession(token){
   if(!FIELD_EXCLUSIVE_MODE) return;
+  if(fieldControlActiveToken === null) return;
   requestAnimationFrame(() => endFieldExclusiveSession(token));
 }
 
