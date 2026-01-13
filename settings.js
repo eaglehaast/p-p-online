@@ -1157,6 +1157,9 @@ function updateFieldTapePosition(displayIndex = mapIndex, options = {}){
   const track = tapeSlices.track;
 
   const resetToRestState = (index) => {
+    if(isFieldDragging || (isFieldAnimating && !animate)){
+      return;
+    }
     setFieldTapeSlicesForIndex(index, tapeSlices, token);
     setFieldTapeTrackStylesAuthorized(token, track, { transition: 'none', transform: 'translateX(-100%)' });
     requestAnimationFrame(() => {
@@ -3764,15 +3767,20 @@ function runFieldSelectorInitChecks(){
 }
 
 function syncFieldSelectorState(){
+  const hasActiveInteraction = isFieldInteractionActive();
   if(FIELD_EXCLUSIVE_MODE){
     const token = startFieldExclusiveSession();
     updateMapNameDisplayControlled({}, token);
-    updateFieldTapePosition(mapIndex, { fieldControlToken: token });
+    if(!hasActiveInteraction){
+      updateFieldTapePosition(mapIndex, { fieldControlToken: token });
+    }
     finalizeFieldExclusiveSession(token);
     return;
   }
   updateMapNameDisplay();
-  updateFieldTapePosition();
+  if(!hasActiveInteraction){
+    updateFieldTapePosition();
+  }
 }
 
   function resetSettingsToDefaults(){
