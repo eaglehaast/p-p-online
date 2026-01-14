@@ -1804,6 +1804,13 @@ function setFieldDragTrackStyles(target, styles){
   if(!(target instanceof HTMLElement)) return;
   if(FIELD_EXCLUSIVE_MODE){
     if(fieldDragExclusiveToken === null) return;
+    if(fieldDragExclusiveToken !== fieldControlActiveToken){
+      if(fieldControlActiveToken === null){
+        fieldDragExclusiveToken = startFieldExclusiveSession();
+      } else {
+        return;
+      }
+    }
     setFieldSelectorStylesAuthorized(fieldDragExclusiveToken, target, styles);
     return;
   }
@@ -2397,7 +2404,11 @@ function handleAccuracyPointerEnd(event){
 }
 
 function handleFieldPointerDown(event){
-  if(FIELD_EXCLUSIVE_MODE && fieldDragExclusiveToken === null){
+  if(FIELD_EXCLUSIVE_MODE){
+    if(fieldDragExclusiveToken !== null){
+      finalizeFieldExclusiveSession(fieldDragExclusiveToken);
+      fieldDragExclusiveToken = null;
+    }
     fieldDragExclusiveToken = startFieldExclusiveSession();
   }
   fieldDragHandlers.handlePointerDown(event);
@@ -2416,9 +2427,11 @@ function handleFieldPointerDown(event){
       }
     }
     setFieldTapeSlicesForIndex(currentIndex, null, fieldDragExclusiveToken);
-  } else if(FIELD_EXCLUSIVE_MODE && fieldDragExclusiveToken !== null){
-    finalizeFieldExclusiveSession(fieldDragExclusiveToken);
-    fieldDragExclusiveToken = null;
+  } else if(FIELD_EXCLUSIVE_MODE){
+    if(fieldDragExclusiveToken !== null){
+      finalizeFieldExclusiveSession(fieldDragExclusiveToken);
+      fieldDragExclusiveToken = null;
+    }
   }
 }
 
