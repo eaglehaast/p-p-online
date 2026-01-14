@@ -1009,6 +1009,10 @@ function getFieldSelectorRoot(){
   return fieldSelectorRoot;
 }
 
+function getFieldDragViewport(){
+  return getFieldSelectorRoot();
+}
+
 function getFieldTapeTrack(){
   const root = getFieldSelectorRoot();
   fieldTapeTrack = fieldTapeTrack ?? root.querySelector('.fieldTapeTrack');
@@ -2352,7 +2356,7 @@ const accuracyDragHandlers = createSliderDragHandlers({
 });
 
 const fieldDragHandlers = createSliderDragHandlers({
-  viewport: () => getFieldLabelLayer(),
+  viewport: () => getFieldDragViewport(),
   ensureTrack: ensureFieldDragTracks,
   setTrackStyles: setFieldDragTrackStyles,
   removeIncomingValue: removeIncomingFieldValue,
@@ -2362,7 +2366,7 @@ const fieldDragHandlers = createSliderDragHandlers({
   isAnimating: () => isFieldAnimating || isAnimating,
   clearStepQueue: clearFieldStepQueue,
   getPeekOffset: (direction) => {
-    const viewport = getFieldLabelLayer();
+    const viewport = getFieldDragViewport();
     return getSliderPeekOffset(viewport, direction);
   },
   state: {
@@ -2438,7 +2442,7 @@ function handleFieldPointerDown(event){
 function handleFieldPointerMove(event){
   fieldDragHandlers.handlePointerMove(event);
   if(!isFieldDragging || isFieldAnimating || isAnimating) return;
-  const viewport = getFieldLabelLayer();
+  const viewport = getFieldDragViewport();
   if(!viewport) return;
   const dx = event.clientX - fieldDragStartX;
   const maxOffset = (viewport.clientWidth || 0) * 0.55;
