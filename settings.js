@@ -3193,11 +3193,12 @@ function setupFieldExclusiveObserver(){
       }
     }
   });
-  fieldControlObserver.observe(container, {
+  const observerOptions = {
     subtree: true,
     attributes: true,
-    attributeFilter: ['style', 'class']
-  });
+    attributeFilter: ['style', 'class'],
+  };
+  fieldControlObserver.observe(container, observerOptions);
 }
 
 function normalizeFieldLabels({ cancelAnimation = false, resetFieldAnimation = true } = {}){
