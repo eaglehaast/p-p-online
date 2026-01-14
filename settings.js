@@ -1532,15 +1532,7 @@ function applyRangeScrollVisual(scrollPos){
     Math.max(0, scrollPos)
   );
   const displayIdx = Math.round(clampedPos);
-  const currentValue = selectInSettings('#rangeDisplay');
   const transformTarget = ensureRangeDisplayTrack();
-
-  if(displayIdx !== rangeDisplayIdx){
-    const previewValue = RANGE_DISPLAY_VALUES[displayIdx];
-    setRangeDisplayValue(previewValue);
-    setRangePreviewValue(previewValue);
-    rangeDisplayIdx = displayIdx;
-  }
 
   rangeScrollPos = clampedPos;
 
@@ -1560,14 +1552,6 @@ function applyAccuracyScrollVisual(scrollPos){
   );
   const displayIdx = Math.round(clampedPos);
   const transformTarget = ensureAccuracyDisplayTrack();
-
-  if(displayIdx !== accuracyDisplayIdx){
-    const previewValue = ACCURACY_DISPLAY_VALUES[displayIdx];
-    setAccuracyDisplayValue(previewValue);
-    settingsAimingAmplitude = MIN_AMPLITUDE + displayIdx;
-    updateAmplitudeIndicator();
-    accuracyDisplayIdx = displayIdx;
-  }
 
   accuracyScrollPos = clampedPos;
 
