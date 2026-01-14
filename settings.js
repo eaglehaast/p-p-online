@@ -2438,6 +2438,41 @@ function handleFieldPointerMove(event){
 }
 
 function handleFieldPointerEnd(event){
+  const isAnimatingNow = isFieldAnimating || isAnimating;
+  const dragMetrics = isFieldDragging
+    ? getDragMetrics(fieldDragStartX, event.clientX, fieldDragStartTime, event.timeStamp)
+    : null;
+  const willQueueSteps = !isAnimatingNow && dragMetrics &&
+    dragMetrics.steps !== 0 && dragMetrics.dir !== 0;
+  // Update the tape track before handlePointerEnd can trigger a new exclusive session.
+  // This avoids token invalidation during styling by either using the current active token
+  // or starting a new session when the old token is stale.
+  if(!willQueueSteps){
+    const track = getFieldTapeTrack();
+    if(track){
+      if(FIELD_EXCLUSIVE_MODE){
+        const activeToken = fieldControlActiveToken;
+        let styleToken = fieldDragExclusiveToken;
+        if(styleToken !== null && styleToken === activeToken){
+          setFieldTapeTrackStylesAuthorized(styleToken, track, {
+            transition: '',
+            transform: 'translateX(-100%)'
+          });
+        } else if(activeToken === null){
+          styleToken = startFieldExclusiveSession();
+          fieldDragExclusiveToken = styleToken;
+          setFieldTapeTrackStylesAuthorized(styleToken, track, {
+            transition: '',
+            transform: 'translateX(-100%)'
+          });
+        } else {
+          setFieldTapeTrackStyles(track, { transition: '', transform: 'translateX(-100%)' });
+        }
+      } else {
+        setFieldTapeTrackStyles(track, { transition: '', transform: 'translateX(-100%)' });
+      }
+    }
+  }
   fieldDragHandlers.handlePointerEnd(event);
   if(pendingFieldSteps !== 0){
     if(FIELD_EXCLUSIVE_MODE && fieldDragExclusiveToken !== null){
@@ -2445,19 +2480,6 @@ function handleFieldPointerEnd(event){
       fieldDragExclusiveToken = null;
     }
     return;
-  }
-  const track = getFieldTapeTrack();
-  if(track){
-    if(FIELD_EXCLUSIVE_MODE){
-      if(fieldDragExclusiveToken !== null){
-        setFieldTapeTrackStylesAuthorized(fieldDragExclusiveToken, track, {
-          transition: '',
-          transform: 'translateX(-100%)'
-        });
-      }
-    } else {
-      setFieldTapeTrackStyles(track, { transition: '', transform: 'translateX(-100%)' });
-    }
   }
   if(FIELD_EXCLUSIVE_MODE && fieldDragExclusiveToken !== null){
     finalizeFieldExclusiveSession(fieldDragExclusiveToken);
