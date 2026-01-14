@@ -44,6 +44,7 @@ const settingsLayer = document.getElementById('settingsLayer');
 const settingsRoot = settingsLayer ?? document;
 const selectInSettings = (selector) => settingsRoot.querySelector(selector);
 const DEBUG_FIELD_AUDIT = false;
+const DEBUG_FIELD_TAPE_SYNC = false;
 
 function isFieldAuditTarget(target){
   return target instanceof HTMLElement && Boolean(target.closest('.cp-field-selector'));
@@ -65,6 +66,17 @@ function logFieldAudit(action, target, value){
     value,
     timestamp: new Date().toISOString(),
     stack: new Error().stack
+  });
+}
+
+function logFieldTapeSync(action, data = {}){
+  if(!DEBUG_FIELD_TAPE_SYNC) return;
+  const timestamp = typeof performance !== 'undefined' && performance.now
+    ? performance.now()
+    : Date.now();
+  console.log(`[field tape sync] ${action}`, {
+    timestamp,
+    ...data
   });
 }
 
@@ -1247,11 +1259,42 @@ function updateFieldTapePosition(displayIndex = mapIndex, options = {}){
   if(!tapeSlices) return null;
   const stableIndex = normalizeMapIndex(Number.isFinite(displayIndex) ? displayIndex : 0);
   const track = tapeSlices.track;
+  logFieldTapeSync('update:start', {
+    displayIndex,
+    stableIndex,
+    animate,
+    direction,
+    baseIndex,
+    syncReset,
+    currentIndex,
+    mapIndex,
+    isFieldAnimating,
+    isAnimating
+  });
 
   const resetToRestState = (index) => {
     if(isFieldDragging || (isFieldAnimating && !animate)){
+      logFieldTapeSync('reset:skipped', {
+        index,
+        stableIndex,
+        animate,
+        isFieldDragging,
+        isFieldAnimating,
+        isAnimating,
+        currentIndex,
+        mapIndex
+      });
       return;
     }
+    logFieldTapeSync('reset:apply', {
+      index,
+      stableIndex,
+      animate,
+      currentIndex,
+      mapIndex,
+      isFieldAnimating,
+      isAnimating
+    });
     setFieldTapeSlicesForIndex(index, tapeSlices, token);
     setFieldTapeTrackStylesAuthorized(token, track, { transition: 'none', transform: 'translateX(-100%)' });
     requestAnimationFrame(() => {
@@ -1276,6 +1319,13 @@ function updateFieldTapePosition(displayIndex = mapIndex, options = {}){
       setFieldTapeSliceForIndexAuthorized(token, tapeSlices.current, outgoingIndex);
       setFieldTapeSliceForIndexAuthorized(token, tapeSlices.next, incomingIndex);
     }
+    logFieldTapeSync('animate:prepare', {
+      outgoingIndex,
+      incomingIndex,
+      direction,
+      currentIndex,
+      mapIndex
+    });
     setFieldTapeTrackStylesAuthorized(token, track, { transition: 'none', transform: 'translateX(-100%)' });
     requestAnimationFrame(() => {
       const transition = getFieldTapeTransition(FIELD_LABEL_DURATION_MS);
@@ -1285,6 +1335,13 @@ function updateFieldTapePosition(displayIndex = mapIndex, options = {}){
 
     if(syncReset){
       return () => {
+        logFieldTapeSync('reset:sync', {
+          incomingIndex,
+          currentIndex,
+          mapIndex,
+          isFieldAnimating,
+          isAnimating
+        });
         resetToRestState(incomingIndex);
       };
     }
@@ -3378,6 +3435,18 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, token =
   const currentMapIndex = normalizeMapIndex(currentIndex);
   const incomingMapIndex = normalizeMapIndex(targetIndex);
   setFieldTapeSlicesForIndex(currentMapIndex, tapeSlices, token);
+  logFieldTapeSync('label:start', {
+    currentIndex,
+    targetIndex,
+    currentMapIndex,
+    incomingMapIndex,
+    currentText,
+    nextText,
+    direction,
+    activeSlot,
+    outgoingSlot,
+    incomingSlot
+  });
 
   const startTransform = direction === 'prev' ? '-50%' : '0%';
   const endTransform = direction === 'prev' ? '0%' : '-50%';
@@ -3419,16 +3488,25 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, token =
     if(mapNameIncomingLabel){
       setFieldLabelTextAuthorized(token, mapNameIncomingLabel, '', 'animateFieldLabelChange:clearIncoming');
     }
-    if(typeof tapeReset === 'function'){
-      tapeReset();
-    } else {
-      updateFieldTapePosition(currentIndex, { fieldControlToken: token });
-    }
     requestAnimationFrame(() => {
       setFieldSelectorStylesAuthorized(token, track, { transition: '' });
     });
     isAnimating = false;
     markFieldAnimationEnd(animationToken);
+    logFieldTapeSync('label:finalize', {
+      currentIndex,
+      targetIndex,
+      currentMapIndex,
+      incomingMapIndex,
+      activeSlot,
+      isAnimating,
+      isFieldAnimating
+    });
+    if(typeof tapeReset === 'function'){
+      tapeReset();
+    } else {
+      updateFieldTapePosition(currentIndex, { fieldControlToken: token });
+    }
     console.log(`[map selector] committed ${currentIndex}`, {
       activeSlot,
       trackTransform: track.style.transform
