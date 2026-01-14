@@ -793,6 +793,7 @@ let fieldDragStartX = 0;
 let fieldDragStartTime = 0;
 let fieldDragPointerId = null;
 let fieldDragLastDx = 0;
+let fieldDragExclusiveToken = null;
 let pendingFieldSteps = 0;
 let pendingFieldDir = 0;
 let fieldGestureVelocity = 0;
@@ -1801,11 +1802,15 @@ function ensureFieldDragTracks(){
 
 function setFieldDragTrackStyles(target, styles){
   if(!(target instanceof HTMLElement)) return;
+  if(FIELD_EXCLUSIVE_MODE){
+    if(fieldDragExclusiveToken === null) return;
+    setFieldSelectorStylesAuthorized(fieldDragExclusiveToken, target, styles);
+    return;
+  }
   setFieldSelectorStyles(target, styles);
 }
 
-function setFieldTapeDragTransform(clampedDx){
-  if(FIELD_EXCLUSIVE_MODE) return;
+function setFieldTapeDragTransform(clampedDx, token = null){
   const track = getFieldTapeTrack();
   const viewport = getFieldTapeViewport();
   if(!(track instanceof HTMLElement) || !(viewport instanceof HTMLElement)) return;
@@ -1814,6 +1819,12 @@ function setFieldTapeDragTransform(clampedDx){
   const rawPercent = -100 + percentOffset;
   const transform = `translateX(${rawPercent}%)`;
   logFieldAudit('setFieldTapeDragTransform', track, { transform });
+  if(FIELD_EXCLUSIVE_MODE){
+    const activeToken = token ?? fieldDragExclusiveToken;
+    if(activeToken === null) return;
+    setFieldTapeTrackStylesAuthorized(activeToken, track, { transform });
+    return;
+  }
   setFieldTapeTrackStyles(track, { transform });
 }
 
@@ -1839,12 +1850,16 @@ function ensureFieldLabelsForDrag(){
 }
 
 function removeIncomingFieldValue(){
-  if(FIELD_EXCLUSIVE_MODE) return;
   if(!ensureFieldLabelsForDrag()) return;
   logFieldAudit('removeIncomingFieldValue', mapNameIncomingLabel, {
     textContent: ''
   });
-  mapNameIncomingLabel.textContent = '';
+  if(FIELD_EXCLUSIVE_MODE){
+    if(fieldDragExclusiveToken === null) return;
+    setFieldLabelTextAuthorized(fieldDragExclusiveToken, mapNameIncomingLabel, '', 'removeIncomingFieldValue');
+  } else {
+    mapNameIncomingLabel.textContent = '';
+  }
   mapNameIncomingLabel.removeAttribute('data-direction');
   if(isFieldInteractionActive()){
     return;
@@ -1852,11 +1867,14 @@ function removeIncomingFieldValue(){
   mapNameIncomingLabel.style.transform = '';
   mapNameIncomingLabel.style.transition = '';
   setFieldTrackOrder(activeSlot);
-  updateFieldTapePosition(currentIndex);
+  if(FIELD_EXCLUSIVE_MODE){
+    updateFieldTapePosition(currentIndex, { fieldControlToken: fieldDragExclusiveToken });
+  } else {
+    updateFieldTapePosition(currentIndex);
+  }
 }
 
 function prepareIncomingFieldValue(direction){
-  if(FIELD_EXCLUSIVE_MODE) return null;
   if(!ensureFieldLabelsForDrag()) return null;
   if(direction !== 'next' && direction !== 'prev'){
     removeIncomingFieldValue();
@@ -1865,7 +1883,17 @@ function prepareIncomingFieldValue(direction){
 
   const delta = direction === 'next' ? 1 : -1;
   const targetIndex = normalizeMapIndex(currentIndex + delta);
-  mapNameIncomingLabel.textContent = getFieldLabel(targetIndex);
+  if(FIELD_EXCLUSIVE_MODE){
+    if(fieldDragExclusiveToken === null) return null;
+    setFieldLabelTextAuthorized(
+      fieldDragExclusiveToken,
+      mapNameIncomingLabel,
+      getFieldLabel(targetIndex),
+      'prepareIncomingFieldValue'
+    );
+  } else {
+    mapNameIncomingLabel.textContent = getFieldLabel(targetIndex);
+  }
   mapNameIncomingLabel.style.transition = 'none';
   mapNameIncomingLabel.dataset.direction = direction;
   logFieldAudit('prepareIncomingFieldValue', mapNameIncomingLabel, {
@@ -1879,8 +1907,16 @@ function prepareIncomingFieldValue(direction){
   setFieldTrackOrder(orderSlot);
   const tapeSlices = getFieldTapeSlices();
   if(tapeSlices){
-    setFieldTapeSlicesForIndex(currentIndex, tapeSlices);
-    setFieldTapeTrackStyles(tapeSlices.track, { transition: 'none', transform: 'translateX(-100%)' });
+    setFieldTapeSlicesForIndex(currentIndex, tapeSlices, fieldDragExclusiveToken);
+    if(FIELD_EXCLUSIVE_MODE){
+      if(fieldDragExclusiveToken === null) return null;
+      setFieldTapeTrackStylesAuthorized(fieldDragExclusiveToken, tapeSlices.track, {
+        transition: 'none',
+        transform: 'translateX(-100%)'
+      });
+    } else {
+      setFieldTapeTrackStyles(tapeSlices.track, { transition: 'none', transform: 'translateX(-100%)' });
+    }
   }
 
   return mapNameIncomingLabel;
@@ -1960,7 +1996,6 @@ function resetAccuracyDragVisual(animateReset){
 }
 
 function resetFieldDragVisual(animateReset){
-  if(FIELD_EXCLUSIVE_MODE) return;
   const transformTarget = ensureFieldDragTracks();
   if(!transformTarget) return;
   setFieldDragTrackStyles(transformTarget, {
@@ -2362,19 +2397,32 @@ function handleAccuracyPointerEnd(event){
 }
 
 function handleFieldPointerDown(event){
-  if(FIELD_EXCLUSIVE_MODE) return;
+  if(FIELD_EXCLUSIVE_MODE && fieldDragExclusiveToken === null){
+    fieldDragExclusiveToken = startFieldExclusiveSession();
+  }
   fieldDragHandlers.handlePointerDown(event);
   if(isFieldDragging){
     const track = getFieldTapeTrack();
     if(track){
-      setFieldTapeTrackStyles(track, { transition: 'none', transform: 'translateX(-100%)' });
+      if(FIELD_EXCLUSIVE_MODE){
+        if(fieldDragExclusiveToken !== null){
+          setFieldTapeTrackStylesAuthorized(fieldDragExclusiveToken, track, {
+            transition: 'none',
+            transform: 'translateX(-100%)'
+          });
+        }
+      } else {
+        setFieldTapeTrackStyles(track, { transition: 'none', transform: 'translateX(-100%)' });
+      }
     }
-    setFieldTapeSlicesForIndex(currentIndex);
+    setFieldTapeSlicesForIndex(currentIndex, null, fieldDragExclusiveToken);
+  } else if(FIELD_EXCLUSIVE_MODE && fieldDragExclusiveToken !== null){
+    finalizeFieldExclusiveSession(fieldDragExclusiveToken);
+    fieldDragExclusiveToken = null;
   }
 }
 
 function handleFieldPointerMove(event){
-  if(FIELD_EXCLUSIVE_MODE) return;
   fieldDragHandlers.handlePointerMove(event);
   if(!isFieldDragging || isFieldAnimating || isAnimating) return;
   const viewport = getFieldLabelLayer();
@@ -2382,18 +2430,34 @@ function handleFieldPointerMove(event){
   const dx = event.clientX - fieldDragStartX;
   const maxOffset = (viewport.clientWidth || 0) * 0.55;
   const clampedDx = Math.max(-maxOffset, Math.min(maxOffset, dx));
-  setFieldTapeDragTransform(clampedDx);
+  setFieldTapeDragTransform(clampedDx, fieldDragExclusiveToken);
 }
 
 function handleFieldPointerEnd(event){
-  if(FIELD_EXCLUSIVE_MODE) return;
   fieldDragHandlers.handlePointerEnd(event);
   if(pendingFieldSteps !== 0){
+    if(FIELD_EXCLUSIVE_MODE && fieldDragExclusiveToken !== null){
+      finalizeFieldExclusiveSession(fieldDragExclusiveToken);
+      fieldDragExclusiveToken = null;
+    }
     return;
   }
   const track = getFieldTapeTrack();
   if(track){
-    setFieldTapeTrackStyles(track, { transition: '', transform: 'translateX(-100%)' });
+    if(FIELD_EXCLUSIVE_MODE){
+      if(fieldDragExclusiveToken !== null){
+        setFieldTapeTrackStylesAuthorized(fieldDragExclusiveToken, track, {
+          transition: '',
+          transform: 'translateX(-100%)'
+        });
+      }
+    } else {
+      setFieldTapeTrackStyles(track, { transition: '', transform: 'translateX(-100%)' });
+    }
+  }
+  if(FIELD_EXCLUSIVE_MODE && fieldDragExclusiveToken !== null){
+    finalizeFieldExclusiveSession(fieldDragExclusiveToken);
+    fieldDragExclusiveToken = null;
   }
 }
 
