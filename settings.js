@@ -4082,13 +4082,13 @@ const hasMapButtons = mapPrevBtn && mapNextBtn;
     addFieldAuditListener(accuracyDisplayViewport, 'pointerup', handleAccuracyPointerEnd);
     addFieldAuditListener(accuracyDisplayViewport, 'pointercancel', handleAccuracyPointerEnd);
   }
-  const fieldLabelViewport = getFieldLabelLayer();
+  const fieldDragTarget = getFieldSelectorRoot();
   const ensuredFieldTrack = ensureFieldDragTracks();
-  if(fieldLabelViewport && ensuredFieldTrack){
-    addFieldAuditListener(fieldLabelViewport, 'pointerdown', handleFieldPointerDown);
-    addFieldAuditListener(fieldLabelViewport, 'pointermove', handleFieldPointerMove);
-    addFieldAuditListener(fieldLabelViewport, 'pointerup', handleFieldPointerEnd);
-    addFieldAuditListener(fieldLabelViewport, 'pointercancel', handleFieldPointerEnd);
+  if(fieldDragTarget && ensuredFieldTrack){
+    addFieldAuditListener(fieldDragTarget, 'pointerdown', handleFieldPointerDown);
+    addFieldAuditListener(fieldDragTarget, 'pointermove', handleFieldPointerMove);
+    addFieldAuditListener(fieldDragTarget, 'pointerup', handleFieldPointerEnd);
+    addFieldAuditListener(fieldDragTarget, 'pointercancel', handleFieldPointerEnd);
   }
   setupRepeatButton(amplitudeMinusBtn, () => handleAccuracyArrow(-1));
   setupRepeatButton(amplitudePlusBtn, () => handleAccuracyArrow(1));
