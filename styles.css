@@ -963,27 +963,33 @@ body, button {
   }
 
   #settingsLayer #cp_field_selector_root {
-    position: absolute;
+    position: relative;
     left: 60px;
     top: 257px;
     width: 58px;
     height: 35px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+    display: block;
     pointer-events: auto;
     z-index: 2;
   }
 
-  #settingsLayer #cp_field_selector_root .fieldLabelViewport {
-    width: 58px;
-    height: 18px;
-    overflow: hidden;
+  #settingsLayer #cp_field_selector_root .fieldSelectorViewport {
     position: relative;
+    width: 100%;
+    height: 100%;
+  }
+
+  #settingsLayer #cp_field_selector_root .fieldLabelViewport {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
     pointer-events: auto;
     touch-action: none;
     user-select: none;
     -webkit-user-select: none;
+    z-index: 1;
   }
 
   #settingsLayer #cp_field_selector_root .fieldLabelTrack {
@@ -993,6 +999,7 @@ body, button {
     width: 200%;
     height: 100%;
     display: flex;
+    align-items: center;
   }
 
   #settingsLayer #cp_field_selector_root .fieldLabelSlotA,
@@ -1002,13 +1009,16 @@ body, button {
     display: flex;
     align-items: center;
     justify-content: center;
+    text-align: center;
   }
 
   #settingsLayer #cp_field_selector_root .fieldTapeViewport {
-    width: 58px;
-    height: 17px;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
     overflow: hidden;
-    position: relative;
+    z-index: 0;
   }
 
   #settingsLayer #cp_field_selector_root .fieldTapeTrack {
