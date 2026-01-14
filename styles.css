@@ -976,9 +976,9 @@ body, button {
   }
 
   #settingsLayer #cp_field_selector_root .fieldLabelViewport {
-    width: 45px;
+    width: 58px;
     height: 18px;
-    overflow: visible;
+    overflow: hidden;
     position: relative;
     pointer-events: auto;
     touch-action: none;
@@ -1005,7 +1005,7 @@ body, button {
   }
 
   #settingsLayer #cp_field_selector_root .fieldTapeViewport {
-    width: 100%;
+    width: 58px;
     height: 17px;
     overflow: hidden;
     position: relative;
