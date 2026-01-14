@@ -652,15 +652,82 @@ if(!(fieldRightBtn instanceof HTMLElement) || !fieldModuleRoot.contains(fieldRig
   throw new Error('FIELD module missing #instance_field_right');
 }
 const mapNameDisplay = selectInSettings('#frame_field_2_counter');
-const mapNameDisplayValue = selectInSettings('#fieldDisplayValue');
-const fieldSelectorRoot = mapNameDisplay;
+const fieldSelectorRoot = selectInSettings('#cp_field_selector_root');
+if(!(fieldSelectorRoot instanceof HTMLElement)){
+  throw new Error('FIELD selector missing #cp_field_selector_root');
+}
+if(!fieldModuleRoot.contains(fieldSelectorRoot)){
+  fieldModuleRoot.appendChild(fieldSelectorRoot);
+}
+if(!(fieldModuleRoot.querySelector('#cp_field_selector_root') instanceof HTMLElement)){
+  throw new Error('FIELD selector root not inside FIELD module');
+}
+const fieldSelectorLeft = 60;
+const fieldSelectorTop = 257;
+fieldSelectorRoot.style.left = `${fieldSelectorLeft}px`;
+fieldSelectorRoot.style.top = `${fieldSelectorTop}px`;
+fieldSelectorRoot.style.width = '58px';
+fieldSelectorRoot.style.height = '35px';
+let hasLoggedFieldSelectorPlacement = false;
+const logFieldSelectorPlacementOnce = () => {
+  if(hasLoggedFieldSelectorPlacement) return;
+  hasLoggedFieldSelectorPlacement = true;
+
+  const fieldRootRect = fieldModuleRoot.getBoundingClientRect();
+  const leftRect = fieldLeftInstance.getBoundingClientRect();
+  const rightRect = fieldRightBtn.getBoundingClientRect();
+  const selectorRect = fieldSelectorRoot.getBoundingClientRect();
+
+  console.debug('FIELD selector placement debug', {
+    fieldRootRect,
+    leftRect,
+    rightRect,
+    selectorRect
+  });
+
+  const placements = [
+    { label: '#instance_field_left', element: fieldLeftInstance },
+    { label: '#instance_field_right', element: fieldRightBtn },
+    { label: '#cp_field_selector_root', element: fieldSelectorRoot }
+  ];
+
+  placements.forEach(({ label, element }) => {
+    const childRect = element.getBoundingClientRect();
+    const localX = element === fieldSelectorRoot ? fieldSelectorLeft : element.offsetLeft;
+    const localY = element === fieldSelectorRoot ? fieldSelectorTop : element.offsetTop;
+    const expectedLeft = fieldRootRect.left + localX;
+    const expectedTop = fieldRootRect.top + localY;
+    const leftDiff = Math.abs(expectedLeft - childRect.left);
+    const topDiff = Math.abs(expectedTop - childRect.top);
+
+    if(leftDiff > 1 || topDiff > 1){
+      console.warn('FIELD selector placement mismatch', {
+        label,
+        localX,
+        localY,
+        expectedLeft,
+        expectedTop,
+        actualLeft: childRect.left,
+        actualTop: childRect.top,
+        leftDiff,
+        topDiff
+      });
+    }
+  });
+};
+logFieldSelectorPlacementOnce();
+const mapNameLabelA = fieldSelectorRoot?.querySelector('.fieldLabelSlotA');
+const mapNameLabelB = fieldSelectorRoot?.querySelector('.fieldLabelSlotB');
+const mapNameSlotA = mapNameLabelA ?? null;
+const mapNameSlotB = mapNameLabelB ?? null;
 let fieldTapeSlicePrev = null;
 let fieldTapeSliceCurrent = null;
 let fieldTapeSliceNext = null;
-let fieldTapeTrack = null;
-let fieldSelectorTrack = null;
-let mapNameLabel = mapNameDisplayValue ?? null;
-let mapNameIncomingLabel = null;
+let fieldTapeTrack = fieldSelectorRoot?.querySelector('.fieldTapeTrack');
+let fieldSelectorTrack = fieldSelectorRoot?.querySelector('.fieldLabelTrack');
+let mapNameLabel = mapNameLabelA ?? null;
+let mapNameIncomingLabel = mapNameLabelB ?? null;
+let activeSlot = mapNameLabel === mapNameLabelB ? 'B' : 'A';
 let currentIndex = mapIndex;
 let nextIndex = mapIndex;
 let isAnimating = false;
@@ -936,7 +1003,7 @@ function getFieldTapeTransition(durationMs = FIELD_LABEL_DURATION_MS){
 
 function getFieldSelectorRoot(){
   if(!(fieldSelectorRoot instanceof HTMLElement)){
-    throw new Error('FIELD selector missing #frame_field_2_counter');
+    throw new Error('FIELD selector missing #cp_field_selector_root');
   }
   return fieldSelectorRoot;
 }
@@ -945,7 +1012,7 @@ function getFieldTapeTrack(){
   const root = getFieldSelectorRoot();
   fieldTapeTrack = fieldTapeTrack ?? root.querySelector('.fieldTapeTrack');
   if(!(fieldTapeTrack instanceof HTMLElement)){
-    return null;
+    throw new Error('FIELD selector missing .fieldTapeTrack');
   }
   return fieldTapeTrack;
 }
@@ -958,7 +1025,7 @@ function getFieldTapeViewport(){
   }
   const viewport = root.querySelector('.fieldTapeViewport');
   if(!(viewport instanceof HTMLElement)){
-    return null;
+    throw new Error('FIELD selector missing .fieldTapeViewport');
   }
   return viewport;
 }
@@ -968,7 +1035,7 @@ function getFieldSelectorTrack(){
   const root = getFieldSelectorRoot();
   fieldSelectorTrack = fieldSelectorTrack ?? root.querySelector('.fieldLabelTrack');
   if(!(fieldSelectorTrack instanceof HTMLElement)){
-    return null;
+    throw new Error('FIELD selector missing .fieldLabelTrack');
   }
   syncFieldSelectorStylesFrom(fieldSelectorTrack);
   return fieldSelectorTrack;
@@ -976,12 +1043,9 @@ function getFieldSelectorTrack(){
 
 function getFieldTapeSlices(){
   const track = getFieldTapeTrack();
-  if(!(track instanceof HTMLElement)){
-    return null;
-  }
   const slices = Array.from(track.querySelectorAll('.fieldTapeSlice'));
   if(slices.length < 3){
-    return null;
+    throw new Error('FIELD selector missing .fieldTapeSlice elements');
   }
   fieldTapeSlicePrev = fieldTapeSlicePrev ?? slices[0];
   fieldTapeSliceCurrent = fieldTapeSliceCurrent ?? slices[1];
@@ -989,7 +1053,7 @@ function getFieldTapeSlices(){
   if(!(fieldTapeSlicePrev instanceof HTMLElement) ||
      !(fieldTapeSliceCurrent instanceof HTMLElement) ||
      !(fieldTapeSliceNext instanceof HTMLElement)){
-    return null;
+    throw new Error('FIELD selector missing required tape slices');
   }
   return {
     track,
@@ -1754,13 +1818,40 @@ function setFieldTapeDragTransform(clampedDx){
 }
 
 function ensureFieldLabelsForDrag(){
-  mapNameLabel = mapNameDisplayValue ?? mapNameLabel;
-  return Boolean(mapNameLabel);
+  const labelLayer = getFieldLabelLayer();
+  if(!labelLayer){
+    throw new Error('FIELD selector missing label layer');
+  }
+  if(!mapNameLabel || !mapNameIncomingLabel){
+    const labels = Array.from(labelLayer.querySelectorAll('.fieldLabelSlotA, .fieldLabelSlotB'));
+    mapNameLabel = mapNameLabel ?? labels[0] ?? null;
+    mapNameIncomingLabel = mapNameIncomingLabel ?? labels[1] ?? labels[0] ?? null;
+  }
+  if(!mapNameLabel || !mapNameIncomingLabel){
+    throw new Error('FIELD selector missing label slots');
+  }
+  if(mapNameLabel === mapNameLabelB){
+    activeSlot = 'B';
+  } else if(mapNameLabel === mapNameLabelA){
+    activeSlot = 'A';
+  }
+  return true;
 }
 
 function removeIncomingFieldValue(){
   if(FIELD_EXCLUSIVE_MODE) return;
   if(!ensureFieldLabelsForDrag()) return;
+  logFieldAudit('removeIncomingFieldValue', mapNameIncomingLabel, {
+    textContent: ''
+  });
+  mapNameIncomingLabel.textContent = '';
+  mapNameIncomingLabel.removeAttribute('data-direction');
+  if(isFieldInteractionActive()){
+    return;
+  }
+  mapNameIncomingLabel.style.transform = '';
+  mapNameIncomingLabel.style.transition = '';
+  setFieldTrackOrder(activeSlot);
   updateFieldTapePosition(currentIndex);
 }
 
@@ -1768,19 +1859,31 @@ function prepareIncomingFieldValue(direction){
   if(FIELD_EXCLUSIVE_MODE) return null;
   if(!ensureFieldLabelsForDrag()) return null;
   if(direction !== 'next' && direction !== 'prev'){
+    removeIncomingFieldValue();
     return null;
   }
+
   const delta = direction === 'next' ? 1 : -1;
   const targetIndex = normalizeMapIndex(currentIndex + delta);
-  if(mapNameLabel instanceof HTMLElement){
-    mapNameLabel.textContent = getFieldLabel(targetIndex);
-  }
+  mapNameIncomingLabel.textContent = getFieldLabel(targetIndex);
+  mapNameIncomingLabel.style.transition = 'none';
+  mapNameIncomingLabel.dataset.direction = direction;
+  logFieldAudit('prepareIncomingFieldValue', mapNameIncomingLabel, {
+    direction,
+    index: targetIndex,
+    textContent: mapNameIncomingLabel.textContent
+  });
+
+  const inactiveSlot = activeSlot === 'A' ? 'B' : 'A';
+  const orderSlot = direction === 'prev' ? inactiveSlot : activeSlot;
+  setFieldTrackOrder(orderSlot);
   const tapeSlices = getFieldTapeSlices();
   if(tapeSlices){
     setFieldTapeSlicesForIndex(currentIndex, tapeSlices);
     setFieldTapeTrackStyles(tapeSlices.track, { transition: 'none', transform: 'translateX(-100%)' });
   }
-  return mapNameLabel;
+
+  return mapNameIncomingLabel;
 }
 
 function prepareIncomingRangeValue(direction){
@@ -2944,14 +3047,28 @@ function updateMapPreview(){
 
 function getFieldLabelLayer(){
   assertFieldSelectorSingletons();
-  if(mapNameDisplayValue instanceof HTMLElement){
-    return mapNameDisplayValue;
+  const root = getFieldSelectorRoot();
+  const viewport = root.querySelector('.fieldLabelViewport');
+  if(!(viewport instanceof HTMLElement)){
+    throw new Error('FIELD selector missing .fieldLabelViewport');
   }
-  return null;
+  return viewport;
 }
 
 function setFieldTrackOrder(activeSlot){
-  return;
+  if(activeSlot !== 'A' && activeSlot !== 'B') return;
+  const slotA = mapNameSlotA ?? mapNameLabelA?.parentElement;
+  const slotB = mapNameSlotB ?? mapNameLabelB?.parentElement;
+  if(!(slotA instanceof HTMLElement) || !(slotB instanceof HTMLElement)){
+    throw new Error('FIELD selector missing label slots for ordering');
+  }
+  if(activeSlot === 'A'){
+    slotA.style.order = '0';
+    slotB.style.order = '1';
+  } else {
+    slotA.style.order = '1';
+    slotB.style.order = '0';
+  }
 }
 
 let fieldControlToken = 0;
@@ -3028,6 +3145,21 @@ function setFieldLabelTextAuthorized(token, label, text, context){
 }
 
 function assertFieldSelectorSingletons(){
+  const root = getFieldSelectorRoot();
+  const rootChecks = [
+    { selector: '.fieldLabelTrack', label: 'fieldLabelTrack' },
+    { selector: '.fieldTapeTrack', label: 'fieldTapeTrack' },
+    { selector: '.fieldLabelViewport', label: 'fieldLabelViewport' },
+    { selector: '.fieldTapeViewport', label: 'fieldTapeViewport' },
+    { selector: '.fieldLabelSlotA', label: 'fieldLabelSlotA' },
+    { selector: '.fieldLabelSlotB', label: 'fieldLabelSlotB' },
+  ];
+  for(const { selector, label } of rootChecks){
+    const matches = root.querySelectorAll(selector);
+    if(matches.length !== 1){
+      throw new Error(`FIELD selector missing ${label} (${matches.length})`);
+    }
+  }
   const globalChecks = [
     { selector: '#instance_field_left', label: 'instance_field_left' },
     { selector: '#instance_field_right', label: 'instance_field_right' },
@@ -3044,8 +3176,28 @@ function setupFieldExclusiveObserver(){
   if(fieldControlObserver || !FIELD_EXCLUSIVE_MODE) return;
   const container = settingsRoot.querySelector('.cp-field-selector');
   if(!(container instanceof HTMLElement)) return;
-  fieldControlObserver = new MutationObserver(() => {});
-  fieldControlObserver.observe(container, { subtree: false });
+  fieldControlObserver = new MutationObserver((mutations) => {
+    if(!FIELD_EXCLUSIVE_MODE) return;
+    for(const mutation of mutations){
+      if(mutation.type !== 'attributes') continue;
+      if(mutation.attributeName !== 'style' && mutation.attributeName !== 'class') continue;
+      const target = mutation.target;
+      if(!(target instanceof HTMLElement)) continue;
+      if(!target.matches(
+        '.fieldLabelTrack, .fieldTapeTrack, .fieldLabelSlotA, .fieldLabelSlotB'
+      )){
+        continue;
+      }
+      if(fieldControlActiveToken === null){
+        throw new Error('FIELD exclusive mode: external write detected');
+      }
+    }
+  });
+  fieldControlObserver.observe(container, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['style', 'class']
+  });
 }
 
 function normalizeFieldLabels({ cancelAnimation = false, resetFieldAnimation = true } = {}){
@@ -3057,14 +3209,45 @@ function normalizeFieldLabelsControlled({ cancelAnimation = false, resetFieldAni
   if(FIELD_EXCLUSIVE_MODE){
     assertFieldControlToken(token, 'normalizeFieldLabels');
   }
+  const labelLayer = getFieldLabelLayer();
+
+  const hasActiveInteraction = isFieldInteractionActive();
+  if(!mapNameLabel || !mapNameIncomingLabel){
+    const labels = Array.from(labelLayer.querySelectorAll('.fieldLabelSlotA, .fieldLabelSlotB'));
+    mapNameLabel = mapNameLabel ?? labels[0] ?? null;
+    mapNameIncomingLabel = mapNameIncomingLabel ?? labels[1] ?? labels[0] ?? null;
+  }
+
+  if(!mapNameLabel || !mapNameIncomingLabel){
+    throw new Error('FIELD selector missing label slots');
+  }
+
   if(cancelAnimation){
     isAnimating = false;
+    const track = getFieldSelectorTrack();
+    if(track){
+      setFieldSelectorStylesAuthorized(token, track, { transition: '' });
+    }
     cancelFieldLabelAnimation();
     if(resetFieldAnimation){
       resetFieldAnimationTracking();
     }
   }
-  mapNameLabel = mapNameDisplayValue ?? mapNameLabel;
+
+  if(mapNameLabel === mapNameLabelB){
+    activeSlot = 'B';
+  } else if(mapNameLabel === mapNameLabelA){
+    activeSlot = 'A';
+  }
+  const activeLabel = activeSlot === 'B' ? mapNameLabelB : mapNameLabelA;
+  const incomingLabel = activeSlot === 'B' ? mapNameLabelA : mapNameLabelB;
+  mapNameLabel = activeLabel ?? mapNameLabel;
+  mapNameIncomingLabel = incomingLabel ?? mapNameIncomingLabel;
+  setFieldTrackOrder(activeSlot);
+  const track = getFieldSelectorTrack();
+  if(track && !hasActiveInteraction){
+    setFieldSelectorStylesAuthorized(token, track, { transform: 'translateX(0%)' });
+  }
   return mapNameLabel;
 }
 
@@ -3073,23 +3256,108 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, token =
   if(FIELD_EXCLUSIVE_MODE){
     assertFieldControlToken(token, 'animateFieldLabelChange');
   }
+  const labelLayer = getFieldLabelLayer();
   normalizeFieldLabelsControlled({ cancelAnimation: true, resetFieldAnimation: false }, token);
   cancelFieldLabelAnimation();
+  const track = getFieldSelectorTrack();
+  const tapeSlices = getFieldTapeSlices();
+  if(!labelLayer || !mapNameLabel || !mapNameIncomingLabel || !tapeSlices){
+    throw new Error('FIELD selector missing label or tape elements');
+  }
+
+  if(!mapNameLabelA || !mapNameLabelB || !(track instanceof HTMLElement)){
+    throw new Error('FIELD selector missing label track or slots');
+  }
+
+  const outgoingSlot = activeSlot;
+  const incomingSlot = activeSlot === 'A' ? 'B' : 'A';
+  const outgoingLabel = outgoingSlot === 'A' ? mapNameLabelA : mapNameLabelB;
+  const incomingLabel = incomingSlot === 'A' ? mapNameLabelA : mapNameLabelB;
+  const currentText = getFieldLabel(currentIndex);
   const nextText = getFieldLabel(targetIndex);
-  currentIndex = targetIndex;
-  nextIndex = targetIndex;
-  if(mapNameDisplay){
-    mapNameDisplay.setAttribute('aria-label', `Selected map: ${nextText}`);
+  if(outgoingLabel){
+    setFieldLabelTextAuthorized(token, outgoingLabel, currentText, 'animateFieldLabelChange:outgoing');
   }
-  if(mapNameDisplayValue){
-    setFieldLabelTextAuthorized(token, mapNameDisplayValue, nextText, 'animateFieldLabelChange:active');
+  if(incomingLabel){
+    setFieldLabelTextAuthorized(token, incomingLabel, nextText, 'animateFieldLabelChange:incoming');
   }
-  isAnimating = false;
+  mapNameLabel = outgoingLabel ?? mapNameLabel;
+  mapNameIncomingLabel = incomingLabel ?? mapNameIncomingLabel;
+
+  const currentMapIndex = normalizeMapIndex(currentIndex);
+  const incomingMapIndex = normalizeMapIndex(targetIndex);
+  setFieldTapeSlicesForIndex(currentMapIndex, tapeSlices, token);
+
+  const startTransform = direction === 'prev' ? '-50%' : '0%';
+  const endTransform = direction === 'prev' ? '0%' : '-50%';
+  const leftSlot = direction === 'prev' ? incomingSlot : outgoingSlot;
+  setFieldTrackOrder(leftSlot);
+  setFieldSelectorStylesAuthorized(token, track, { transition: 'none', transform: `translateX(${startTransform})` });
+  isAnimating = true;
   markFieldAnimationStart(animationToken);
-  markFieldAnimationEnd(animationToken);
-  if(FIELD_EXCLUSIVE_MODE){
-    finalizeFieldExclusiveSession(token);
-  }
+  console.log(`[map selector] ${currentIndex} -> ${targetIndex}`, {
+    activeSlot,
+    direction,
+    isAnimating
+  });
+
+  const tapeReset = updateFieldTapePosition(incomingMapIndex, {
+    animate: true,
+    direction,
+    currentIndex: currentMapIndex,
+    syncReset: true,
+    fieldControlToken: token
+  });
+
+  requestAnimationFrame(() => {
+    const transition = getFieldSelectorTransition(FIELD_LABEL_DURATION_MS);
+    setFieldSelectorStylesAuthorized(token, track, { transition, transform: `translateX(${endTransform})` });
+  });
+
+  let animationCompleted = false;
+  const finalizeAnimation = () => {
+    if(animationCompleted) return;
+    animationCompleted = true;
+    cancelFieldLabelAnimation();
+    currentIndex = targetIndex;
+    activeSlot = incomingSlot;
+    mapNameLabel = incomingLabel ?? mapNameLabel;
+    mapNameIncomingLabel = outgoingLabel ?? mapNameIncomingLabel;
+    setFieldTrackOrder(activeSlot);
+    setFieldSelectorStylesAuthorized(token, track, { transition: 'none', transform: 'translateX(0%)' });
+    if(mapNameIncomingLabel){
+      setFieldLabelTextAuthorized(token, mapNameIncomingLabel, '', 'animateFieldLabelChange:clearIncoming');
+    }
+    if(typeof tapeReset === 'function'){
+      tapeReset();
+    } else {
+      updateFieldTapePosition(currentIndex, { fieldControlToken: token });
+    }
+    requestAnimationFrame(() => {
+      setFieldSelectorStylesAuthorized(token, track, { transition: '' });
+    });
+    isAnimating = false;
+    markFieldAnimationEnd(animationToken);
+    console.log(`[map selector] committed ${currentIndex}`, {
+      activeSlot,
+      trackTransform: track.style.transform
+    });
+    if(FIELD_EXCLUSIVE_MODE){
+      finalizeFieldExclusiveSession(token);
+    }
+  };
+
+  const handleEnd = (event) => {
+    if(event && event.propertyName !== 'transform') return;
+    finalizeAnimation();
+  };
+
+  fieldLabelTransitionTarget = track;
+  fieldLabelTransitionHandler = handleEnd;
+  track.addEventListener('transitionend', handleEnd, { once: true });
+  fieldLabelFallbackTimeoutId = window.setTimeout(() => {
+    finalizeAnimation();
+  }, FIELD_LABEL_DURATION_MS + 50);
 }
 
 function updateMapNameDisplay(options = {}){
@@ -3102,13 +3370,37 @@ function syncFieldSelectorLabels({ token } = {}){
     assertFieldControlToken(token, 'syncFieldSelectorLabels');
   }
   if(!mapNameDisplay) return;
+  const labelLayer = getFieldLabelLayer();
+
+  if(!mapNameLabel || !mapNameIncomingLabel){
+    const labels = Array.from(labelLayer.querySelectorAll('.fieldLabelSlotA, .fieldLabelSlotB'));
+    mapNameLabel = mapNameLabel ?? labels[0] ?? null;
+    mapNameIncomingLabel = mapNameIncomingLabel ?? labels[1] ?? labels[0] ?? null;
+  }
+  if(!mapNameLabel || !mapNameIncomingLabel){
+    throw new Error('FIELD selector missing label slots');
+  }
+
+  if(mapNameLabel === mapNameLabelB){
+    activeSlot = 'B';
+  } else if(mapNameLabel === mapNameLabelA){
+    activeSlot = 'A';
+  }
+  const activeLabel = activeSlot === 'B' ? mapNameLabelB : mapNameLabelA;
+  const incomingLabel = activeSlot === 'B' ? mapNameLabelA : mapNameLabelB;
+  mapNameLabel = activeLabel ?? mapNameLabel;
+  mapNameIncomingLabel = incomingLabel ?? mapNameIncomingLabel;
+  setFieldTrackOrder(activeSlot);
+
   const resolvedIndex = mapIndex;
   const nextText = getFieldLabel(resolvedIndex);
   currentIndex = resolvedIndex;
   nextIndex = resolvedIndex;
   mapNameDisplay.setAttribute('aria-label', `Selected map: ${nextText}`);
-  mapNameLabel = mapNameDisplayValue ?? mapNameLabel;
   setFieldLabelTextAuthorized(token, mapNameLabel, nextText, 'syncFieldSelectorLabels:active');
+  if(mapNameIncomingLabel){
+    setFieldLabelTextAuthorized(token, mapNameIncomingLabel, '', 'syncFieldSelectorLabels:incoming');
+  }
 }
 
 function updateMapNameDisplayControlled(options = {}, token = null){
@@ -3119,19 +3411,31 @@ function updateMapNameDisplayControlled(options = {}, token = null){
   const resolvedIndex = Number.isFinite(options.index) ? options.index : mapIndex;
   const nextText = getFieldLabel(resolvedIndex);
   const shouldResetFieldAnimation = !options.animationToken;
+  const hasActiveInteraction = isFieldInteractionActive();
   normalizeFieldLabelsControlled(
     { cancelAnimation: true, resetFieldAnimation: shouldResetFieldAnimation },
     token
   );
+  if(!mapNameLabel || !mapNameIncomingLabel){
+    throw new Error('FIELD selector missing label slots');
+  }
   currentIndex = resolvedIndex;
   nextIndex = resolvedIndex;
   mapNameDisplay.setAttribute('aria-label', `Selected map: ${nextText}`);
-  mapNameLabel = mapNameDisplayValue ?? mapNameLabel;
   setFieldLabelTextAuthorized(token, mapNameLabel, nextText, 'updateMapNameDisplay:active');
   logFieldAudit('updateMapNameDisplay', mapNameLabel, {
     index: resolvedIndex,
     textContent: nextText
   });
+  if(mapNameIncomingLabel){
+    setFieldLabelTextAuthorized(token, mapNameIncomingLabel, '', 'updateMapNameDisplay:incoming');
+  }
+  activeSlot = mapNameLabel === mapNameLabelB ? 'B' : 'A';
+  setFieldTrackOrder(activeSlot);
+  const track = getFieldSelectorTrack();
+  if(track && !hasActiveInteraction){
+    setFieldSelectorStylesAuthorized(token, track, { transform: 'translateX(0%)' });
+  }
 }
 
 function createPreviewCanvas(){
