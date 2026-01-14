@@ -1255,6 +1255,9 @@ function updateFieldTapePosition(displayIndex = mapIndex, options = {}){
     setFieldTapeSlicesForIndex(index, tapeSlices, token);
     setFieldTapeTrackStylesAuthorized(token, track, { transition: 'none', transform: 'translateX(-100%)' });
     requestAnimationFrame(() => {
+      if(FIELD_EXCLUSIVE_MODE && token !== fieldControlActiveToken){
+        return;
+      }
       setFieldTapeTrackStylesAuthorized(token, track, { transition: '' });
     });
   };
