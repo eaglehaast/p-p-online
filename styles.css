@@ -971,6 +971,7 @@ body, button {
     display: flex;
     flex-direction: column;
     align-items: center;
+    pointer-events: auto;
     z-index: 2;
   }
 
@@ -979,6 +980,10 @@ body, button {
     height: 18px;
     overflow: visible;
     position: relative;
+    pointer-events: auto;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
   }
 
   #settingsLayer #cp_field_selector_root .fieldLabelTrack {
