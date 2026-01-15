@@ -1069,12 +1069,12 @@ function getFieldSelectorTrack(){
 function getFieldTapeSlices(){
   const track = getFieldTapeTrack();
   const slices = Array.from(track.querySelectorAll('.fieldTapeSlice'));
-  if(slices.length < 3){
+  if(slices.length < 5){
     throw new Error('FIELD selector missing .fieldTapeSlice elements');
   }
   fieldTapeSlicePrev = fieldTapeSlicePrev ?? slices[0];
-  fieldTapeSliceCurrent = fieldTapeSliceCurrent ?? slices[1];
-  fieldTapeSliceNext = fieldTapeSliceNext ?? slices[2];
+  fieldTapeSliceCurrent = fieldTapeSliceCurrent ?? slices[2];
+  fieldTapeSliceNext = fieldTapeSliceNext ?? slices[4];
   if(!(fieldTapeSlicePrev instanceof HTMLElement) ||
      !(fieldTapeSliceCurrent instanceof HTMLElement) ||
      !(fieldTapeSliceNext instanceof HTMLElement)){
@@ -1082,8 +1082,10 @@ function getFieldTapeSlices(){
   }
   return {
     track,
+    emptyBefore: slices[1] ?? null,
     prev: fieldTapeSlicePrev,
     current: fieldTapeSliceCurrent,
+    emptyAfter: slices[3] ?? null,
     next: fieldTapeSliceNext
   };
 }
@@ -1304,7 +1306,7 @@ function updateFieldTapePosition(displayIndex = mapIndex, options = {}){
       isAnimating
     });
     setFieldTapeSlicesForIndex(index, tapeSlices, token);
-    setFieldTapeTrackStylesAuthorized(token, track, { transition: 'none', transform: 'translateX(-100%)' });
+    setFieldTapeTrackStylesAuthorized(token, track, { transition: 'none', transform: 'translateX(-200%)' });
     requestAnimationFrame(() => {
       if(FIELD_EXCLUSIVE_MODE && token !== fieldControlActiveToken){
         return;
@@ -1334,10 +1336,10 @@ function updateFieldTapePosition(displayIndex = mapIndex, options = {}){
       currentIndex,
       mapIndex
     });
-    setFieldTapeTrackStylesAuthorized(token, track, { transition: 'none', transform: 'translateX(-100%)' });
+    setFieldTapeTrackStylesAuthorized(token, track, { transition: 'none', transform: 'translateX(-200%)' });
     requestAnimationFrame(() => {
       const transition = getFieldTapeTransition(FIELD_LABEL_DURATION_MS);
-      const endTransform = direction === 'next' ? 'translateX(-200%)' : 'translateX(0%)';
+      const endTransform = direction === 'next' ? 'translateX(-400%)' : 'translateX(0%)';
       setFieldTapeTrackStylesAuthorized(token, track, { transition, transform: endTransform });
     });
 
@@ -1879,7 +1881,7 @@ function setFieldTapeDragTransform(clampedDx, token = null){
   if(!(track instanceof HTMLElement) || !(viewport instanceof HTMLElement)) return;
   const viewportWidth = viewport.clientWidth || 1;
   const percentOffset = (clampedDx / viewportWidth) * 100;
-  const rawPercent = -100 + percentOffset;
+  const rawPercent = -200 + percentOffset;
   const transform = `translateX(${rawPercent}%)`;
   logFieldAudit('setFieldTapeDragTransform', track, { transform });
   if(FIELD_EXCLUSIVE_MODE){
@@ -1975,10 +1977,10 @@ function prepareIncomingFieldValue(direction){
       if(fieldDragExclusiveToken === null) return null;
       setFieldTapeTrackStylesAuthorized(fieldDragExclusiveToken, tapeSlices.track, {
         transition: 'none',
-        transform: 'translateX(-100%)'
+        transform: 'translateX(-200%)'
       });
     } else {
-      setFieldTapeTrackStyles(tapeSlices.track, { transition: 'none', transform: 'translateX(-100%)' });
+      setFieldTapeTrackStyles(tapeSlices.track, { transition: 'none', transform: 'translateX(-200%)' });
     }
   }
 
@@ -2478,11 +2480,11 @@ function handleFieldPointerDown(event){
         if(fieldDragExclusiveToken !== null){
           setFieldTapeTrackStylesAuthorized(fieldDragExclusiveToken, track, {
             transition: 'none',
-            transform: 'translateX(-100%)'
+            transform: 'translateX(-200%)'
           });
         }
       } else {
-        setFieldTapeTrackStyles(track, { transition: 'none', transform: 'translateX(-100%)' });
+        setFieldTapeTrackStyles(track, { transition: 'none', transform: 'translateX(-200%)' });
       }
     }
     setFieldTapeSlicesForIndex(currentIndex, null, fieldDragExclusiveToken);
@@ -2524,20 +2526,20 @@ function handleFieldPointerEnd(event){
         if(styleToken !== null && styleToken === activeToken){
           setFieldTapeTrackStylesAuthorized(styleToken, track, {
             transition: '',
-            transform: 'translateX(-100%)'
+            transform: 'translateX(-200%)'
           });
         } else if(activeToken === null){
           styleToken = startFieldExclusiveSession();
           fieldDragExclusiveToken = styleToken;
           setFieldTapeTrackStylesAuthorized(styleToken, track, {
             transition: '',
-            transform: 'translateX(-100%)'
+            transform: 'translateX(-200%)'
           });
         } else {
-          setFieldTapeTrackStyles(track, { transition: '', transform: 'translateX(-100%)' });
+          setFieldTapeTrackStyles(track, { transition: '', transform: 'translateX(-200%)' });
         }
       } else {
-        setFieldTapeTrackStyles(track, { transition: '', transform: 'translateX(-100%)' });
+        setFieldTapeTrackStyles(track, { transition: '', transform: 'translateX(-200%)' });
       }
     }
   }
@@ -4229,12 +4231,12 @@ if(hasMapButtons){
       const controlToken = startFieldExclusiveSession();
       setFieldTapeTrackStylesAuthorized(controlToken, track, {
         transition: 'none',
-        transform: 'translateX(-100%)'
+        transform: 'translateX(-200%)'
       });
       return controlToken;
     }
 
-    setFieldTapeTrackStyles(track, { transition: 'none', transform: 'translateX(-100%)' });
+    setFieldTapeTrackStyles(track, { transition: 'none', transform: 'translateX(-200%)' });
     return null;
   };
 
