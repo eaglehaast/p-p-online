@@ -642,14 +642,18 @@ const resetBtn = selectInSettings('#instance_reset');
 const exitBtn = selectInSettings('#instance_exit');
 const mapPrevBtn = selectInSettings('#instance_field_left');
 const mapNextBtn = selectInSettings('#instance_field_right');
-const fieldRightBtn = document.querySelector('#instance_field_right');
+const fieldRightBtn = selectInSettings('#instance_field_right');
 const fieldModuleRoot = fieldRightBtn?.closest('.cp-field-selector') ||
   fieldRightBtn?.closest('.cp-controlpanel__module') ||
   fieldRightBtn?.parentElement;
+if(settingsRoot instanceof HTMLElement && fieldModuleRoot instanceof HTMLElement &&
+  !settingsRoot.contains(fieldModuleRoot)){
+  throw new Error('FIELD module root outside settings container');
+}
 if(!(fieldModuleRoot instanceof HTMLElement)){
   throw new Error('FIELD module root missing for #instance_field_right');
 }
-const fieldLeftInstance = document.querySelector('#instance_field_left');
+const fieldLeftInstance = selectInSettings('#instance_field_left');
 if(!(fieldLeftInstance instanceof HTMLElement) || !fieldModuleRoot.contains(fieldLeftInstance)){
   throw new Error('FIELD module missing #instance_field_left');
 }
