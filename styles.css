@@ -1020,9 +1020,10 @@ body, button {
   #settingsLayer #cp_field_selector_root .fieldTapeTrack {
     position: absolute;
     inset: 0;
-    width: 100%;
+    width: 300%;
     height: 100%;
     display: flex;
+    transform: translateX(-100%);
     z-index: 1;
   }
 
@@ -1037,7 +1038,7 @@ body, button {
   }
 
   #settingsLayer #cp_field_selector_root .fieldTapeSlice--empty {
-    background-image: url('ui_controlpanel/cp_tape_field_easy2.png');
+    background-image: none;
   }
 
   #settingsLayer .cp-field-selector__frame {
