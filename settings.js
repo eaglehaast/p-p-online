@@ -1616,9 +1616,14 @@ function syncFieldLabelSlots(index, token = null){
   setFieldLabelTextAuthorized(token, fieldLabelNext, nextLabel, 'syncFieldLabelSlots:next');
 }
 
-function removeIncomingFieldValue(){
+function removeIncomingFieldValue(tokenOverride = null){
   if(!ensureFieldLabelsForDrag()) return;
-  const token = FIELD_EXCLUSIVE_MODE ? fieldDragExclusiveToken : null;
+  const track = getFieldLabelLayer();
+  const incoming = track.querySelector('.fieldLabelSlot--incoming');
+  if(incoming){
+    incoming.remove();
+  }
+  const token = FIELD_EXCLUSIVE_MODE ? (tokenOverride ?? fieldDragExclusiveToken) : null;
   if(FIELD_EXCLUSIVE_MODE && token === null) return;
   syncFieldLabelSlots(currentIndex, token);
 }
@@ -1629,7 +1634,36 @@ function prepareIncomingFieldValue(direction, steps = 1){
     removeIncomingFieldValue();
     return null;
   }
-  return null;
+  const stepCount = Math.max(1, Math.floor(Math.abs(steps)));
+  const stepDelta = direction === 'next' ? 1 : -1;
+  const targetIndex = normalizeMapIndex(currentIndex + stepDelta * (stepCount + 1));
+  const targetLabel = getFieldLabel(targetIndex);
+  const track = getFieldLabelLayer();
+
+  let incoming = track.querySelector('.fieldLabelSlot--incoming');
+  if(!incoming){
+    incoming = document.createElement('div');
+    incoming.className = 'fieldLabelSlot fieldLabelSlot--incoming';
+  }
+
+  incoming.textContent = targetLabel;
+  incoming.dataset.direction = direction;
+  incoming.dataset.steps = `${stepCount}`;
+  incoming.style.transition = 'none';
+  incoming.style.transform = 'translateX(0px)';
+
+  const gapPx = Math.max(0, stepCount - 1) * FIELD_LABEL_SLOT_WIDTH;
+  if(direction === 'prev'){
+    incoming.style.marginLeft = '';
+    incoming.style.marginRight = `${gapPx}px`;
+    track.insertBefore(incoming, fieldLabelPrev);
+  } else {
+    incoming.style.marginLeft = `${gapPx}px`;
+    incoming.style.marginRight = '';
+    track.insertBefore(incoming, fieldLabelNext?.nextSibling ?? null);
+  }
+
+  return incoming;
 }
 
 function prepareIncomingRangeValue(direction){
@@ -3017,6 +3051,7 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, options
   }
   if(direction !== 'next' && direction !== 'prev'){
     updateMapNameDisplayControlled({ index: targetIndex, animationToken }, token);
+    removeIncomingFieldValue(token);
     if(FIELD_EXCLUSIVE_MODE){
       finalizeFieldExclusiveSession(token);
     }
@@ -3038,6 +3073,7 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, options
   if(!track || stepDurationMs === 0){
     currentIndex = resolvedTarget;
     syncFieldLabelSlots(currentIndex, token);
+    removeIncomingFieldValue(token);
     if(FIELD_EXCLUSIVE_MODE){
       finalizeFieldExclusiveSession(token);
     }
@@ -3074,6 +3110,7 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, options
     syncFieldLabelSlots(currentIndex, token);
     isAnimating = false;
     markFieldAnimationEnd(animationToken);
+    removeIncomingFieldValue(token);
     if(FIELD_EXCLUSIVE_MODE){
       finalizeFieldExclusiveSession(token);
     }
@@ -3756,6 +3793,10 @@ if(hasMapButtons){
   syncFieldSelectorState();
   const changeMap = (delta) => {
     if(delta === 0) return;
+    const direction = getRangeDirectionLabel(getRangeDirFromDelta(delta));
+    if(direction){
+      prepareIncomingFieldValue(direction, 1);
+    }
     queueFieldSteps(1, delta, 0);
   };
 
