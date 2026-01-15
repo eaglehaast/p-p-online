@@ -2419,7 +2419,8 @@ const fieldDragHandlers = createSliderDragHandlers({
   clearStepQueue: clearFieldStepQueue,
   getPeekOffset: (direction) => {
     const viewport = getFieldDragViewport();
-    return getSliderPeekOffset(viewport, direction);
+    const peek = getSliderPeekOffset(viewport, direction);
+    return direction === 'prev' ? Math.abs(peek) : -Math.abs(peek);
   },
   state: {
     isDragging: () => isFieldDragging,
