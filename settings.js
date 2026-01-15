@@ -724,9 +724,13 @@ const logFieldSelectorPlacementOnce = () => {
   });
 };
 logFieldSelectorPlacementOnce();
+const mapNameLabelPrev = fieldSelectorRoot?.querySelector('.fieldLabelSlot--prev');
 const mapNameLabelCurrent = fieldSelectorRoot?.querySelector('.fieldLabelSlot--current');
+const mapNameLabelNext = fieldSelectorRoot?.querySelector('.fieldLabelSlot--next');
 let fieldLabelTrack = fieldSelectorRoot?.querySelector('.fieldLabelTrack');
+let fieldLabelPrev = mapNameLabelPrev ?? null;
 let fieldLabelCurrent = mapNameLabelCurrent ?? null;
+let fieldLabelNext = mapNameLabelNext ?? null;
 let currentIndex = mapIndex;
 let nextIndex = mapIndex;
 let isAnimating = false;
@@ -1575,11 +1579,17 @@ function ensureFieldLabelsForDrag(){
   if(!labelLayer){
     throw new Error('FIELD selector missing label layer');
   }
+  if(!fieldLabelPrev){
+    fieldLabelPrev = fieldLabelPrev ?? labelLayer.querySelector('.fieldLabelSlot--prev');
+  }
   if(!fieldLabelCurrent){
     fieldLabelCurrent = fieldLabelCurrent ?? labelLayer.querySelector('.fieldLabelSlot--current');
   }
-  if(!fieldLabelCurrent){
-    throw new Error('FIELD selector missing label slot');
+  if(!fieldLabelNext){
+    fieldLabelNext = fieldLabelNext ?? labelLayer.querySelector('.fieldLabelSlot--next');
+  }
+  if(!fieldLabelPrev || !fieldLabelCurrent || !fieldLabelNext){
+    throw new Error('FIELD selector missing label slots');
   }
   return true;
 }
@@ -1589,8 +1599,15 @@ function syncFieldLabelSlots(index, token = null){
     assertFieldControlToken(token, 'syncFieldLabelSlots');
   }
   if(!ensureFieldLabelsForDrag()) return;
-  const currentLabel = getFieldLabel(index);
+  const resolvedIndex = normalizeMapIndex(index);
+  const prevIndex = normalizeMapIndex(resolvedIndex - 1);
+  const nextIndex = normalizeMapIndex(resolvedIndex + 1);
+  const prevLabel = getFieldLabel(prevIndex);
+  const currentLabel = getFieldLabel(resolvedIndex);
+  const nextLabel = getFieldLabel(nextIndex);
+  setFieldLabelTextAuthorized(token, fieldLabelPrev, prevLabel, 'syncFieldLabelSlots:prev');
   setFieldLabelTextAuthorized(token, fieldLabelCurrent, currentLabel, 'syncFieldLabelSlots:current');
+  setFieldLabelTextAuthorized(token, fieldLabelNext, nextLabel, 'syncFieldLabelSlots:next');
 }
 
 function removeIncomingFieldValue(){
@@ -1616,12 +1633,7 @@ function prepareIncomingFieldValue(direction, steps = 1){
   const targetIndex = normalizeMapIndex(currentIndex + delta);
   const token = FIELD_EXCLUSIVE_MODE ? fieldDragExclusiveToken : null;
   if(FIELD_EXCLUSIVE_MODE && token === null) return null;
-  setFieldLabelTextAuthorized(
-    token,
-    fieldLabelCurrent,
-    getFieldLabel(targetIndex),
-    'prepareIncomingFieldValue'
-  );
+  syncFieldLabelSlots(targetIndex, token);
   logFieldAudit('prepareIncomingFieldValue', fieldLabelCurrent, {
     direction,
     index: targetIndex,
@@ -2905,7 +2917,9 @@ function assertFieldSelectorSingletons(){
     { selector: '.fieldSelectorTrack', label: 'fieldSelectorTrack' },
     { selector: '.fieldLabelTrack', label: 'fieldLabelTrack' },
     { selector: '.fieldSelectorViewport', label: 'fieldSelectorViewport' },
+    { selector: '.fieldLabelSlot--prev', label: 'fieldLabelSlot--prev' },
     { selector: '.fieldLabelSlot--current', label: 'fieldLabelSlot--current' },
+    { selector: '.fieldLabelSlot--next', label: 'fieldLabelSlot--next' },
   ];
   for(const { selector, label } of rootChecks){
     const matches = root.querySelectorAll(selector);
