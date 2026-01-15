@@ -671,7 +671,10 @@ if(!(fieldLeftInstance instanceof HTMLElement) || !fieldModuleRoot.contains(fiel
 if(!(fieldRightBtn instanceof HTMLElement) || !fieldModuleRoot.contains(fieldRightBtn)){
   throw new Error('FIELD module missing #instance_field_right');
 }
-const mapNameDisplay = selectInSettings('#frame_field_2_counter');
+const mapNameDisplay = selectInSettings('.cp-field-selector');
+const mapNameDisplayBaseLabel =
+  mapNameDisplay?.getAttribute('aria-label') ??
+  'Selected map';
 const fieldSelectorRoot = selectInSettings('#cp_field_selector_root');
 if(!(fieldSelectorRoot instanceof HTMLElement)){
   throw new Error('FIELD selector missing #cp_field_selector_root');
@@ -2600,7 +2603,10 @@ function changeFieldStep(delta, options = {}){
   nextIndex = nextIndexLocal;
   startPreviewSimulation();
   updateMapPreview();
-  mapNameDisplay?.setAttribute('aria-label', `Selected map: ${getFieldLabel(nextIndexLocal)}`);
+  mapNameDisplay?.setAttribute(
+    'aria-label',
+    `${mapNameDisplayBaseLabel}: ${getFieldLabel(nextIndexLocal)}`
+  );
 
   const animationToken = resetFieldAnimationTracking();
   if(animate && direction){
@@ -3323,7 +3329,7 @@ function syncFieldSelectorLabels({ token } = {}){
   const nextText = getFieldLabel(resolvedIndex);
   currentIndex = resolvedIndex;
   nextIndex = resolvedIndex;
-  mapNameDisplay.setAttribute('aria-label', `Selected map: ${nextText}`);
+  mapNameDisplay.setAttribute('aria-label', `${mapNameDisplayBaseLabel}: ${nextText}`);
   syncFieldLabelSlots(resolvedIndex, token);
   const track = getFieldSelectorTrack();
   if(track){
@@ -3346,7 +3352,7 @@ function updateMapNameDisplayControlled(options = {}, token = null){
   );
   currentIndex = resolvedIndex;
   nextIndex = resolvedIndex;
-  mapNameDisplay.setAttribute('aria-label', `Selected map: ${nextText}`);
+  mapNameDisplay.setAttribute('aria-label', `${mapNameDisplayBaseLabel}: ${nextText}`);
   syncFieldLabelSlots(resolvedIndex, token);
   logFieldAudit('updateMapNameDisplay', fieldLabelCurrent, {
     index: resolvedIndex,
@@ -4099,8 +4105,7 @@ if(isFieldDebugMarkerEnabled() && !window.__fieldDebugBuildLogged){
   window.__fieldDebugBuildLogged = true;
 }
 
-const fieldDebugMarkerTarget = settingsRoot.querySelector('#frame_field_2_counter')
-  ?? settingsRoot.querySelector('.cp-field-selector');
+const fieldDebugMarkerTarget = settingsRoot.querySelector('.cp-field-selector');
 if(isFieldDebugMarkerEnabled() &&
   fieldDebugMarkerTarget &&
   !settingsRoot.querySelector('[data-field-debug-build]')){
