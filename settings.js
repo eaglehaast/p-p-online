@@ -2420,7 +2420,7 @@ const fieldDragHandlers = createSliderDragHandlers({
   getPeekOffset: (direction) => {
     const viewport = getFieldDragViewport();
     const peek = getSliderPeekOffset(viewport, direction);
-    if(direction === 'prev') return Math.abs(peek);
+    if(direction === 'prev') return -Math.abs(peek);
     if(direction === 'next') return 0;
     return -Math.abs(peek);
   },
