@@ -808,6 +808,8 @@ let fieldLabelFallbackTimeoutId = null;
 
 const FIELD_LABEL_EASING = 'cubic-bezier(0.175, 0.885, 0.32, 1.275)';
 const FIELD_LABEL_DURATION_MS = RANGE_BASE_STEP_MS;
+const FIELD_LABEL_SLOT_WIDTH = 58;
+const FIELD_LABEL_BASE_TRANSFORM = 'translateX(-50%)';
 
 function resetFieldAnimationTracking(){
   fieldAnimationToken += 1;
@@ -1011,7 +1013,11 @@ function getFieldBaseOffsetPx(){
 }
 
 function getFieldOffsetTransform(offsetPx){
-  return `translateX(${offsetPx}px)`;
+  const resolvedOffset = Number.isFinite(offsetPx) ? offsetPx : 0;
+  if(resolvedOffset === 0){
+    return FIELD_LABEL_BASE_TRANSFORM;
+  }
+  return `translateX(calc(-50% + ${resolvedOffset}px))`;
 }
 
 function getFieldBaseTransform(){
@@ -1623,23 +1629,7 @@ function prepareIncomingFieldValue(direction, steps = 1){
     removeIncomingFieldValue();
     return null;
   }
-
-  const safeSteps = Number.isFinite(steps) ? Math.max(0, Math.floor(steps)) : 0;
-  if(safeSteps === 0){
-    removeIncomingFieldValue();
-    return null;
-  }
-  const delta = direction === 'next' ? safeSteps : -safeSteps;
-  const targetIndex = normalizeMapIndex(currentIndex + delta);
-  const token = FIELD_EXCLUSIVE_MODE ? fieldDragExclusiveToken : null;
-  if(FIELD_EXCLUSIVE_MODE && token === null) return null;
-  syncFieldLabelSlots(targetIndex, token);
-  logFieldAudit('prepareIncomingFieldValue', fieldLabelCurrent, {
-    direction,
-    index: targetIndex,
-    textContent: fieldLabelCurrent.textContent
-  });
-  return fieldLabelCurrent;
+  return null;
 }
 
 function prepareIncomingRangeValue(direction){
@@ -1805,6 +1795,14 @@ function getRangeStepDuration(pendingSteps, { fastScroll = false, gestureVelocit
   );
 
   return Math.max(minPerStep, Math.min(RANGE_FAST_MAX_STEP_MS, clampedDuration));
+}
+
+function getFieldStepDuration(totalSteps, { gestureVelocity = 0 } = {}){
+  if(totalSteps <= 1){
+    return FIELD_LABEL_DURATION_MS;
+  }
+  const fastScroll = totalSteps >= RANGE_FAST_SCROLL_THRESHOLD;
+  return getRangeStepDuration(totalSteps, { fastScroll, gestureVelocity });
 }
 
 function clearRangeStepQueue(){
@@ -2384,7 +2382,9 @@ function changeFieldStep(delta, options = {}){
   }
 
   const direction = getRangeDirectionLabel(getRangeDirFromDelta(delta));
-  const durationMs = FIELD_LABEL_DURATION_MS * Math.max(1, Math.abs(delta));
+  const totalSteps = Math.max(1, Math.abs(delta));
+  const stepDurationMs = getFieldStepDuration(totalSteps, { gestureVelocity });
+  const durationMs = stepDurationMs * totalSteps;
 
   mapIndex = nextIndexLocal;
   nextIndex = nextIndexLocal;
@@ -2397,7 +2397,13 @@ function changeFieldStep(delta, options = {}){
 
   const animationToken = resetFieldAnimationTracking();
   if(animate && direction){
-    animateFieldLabelChange(nextIndexLocal, direction, animationToken, exclusiveToken);
+    animateFieldLabelChange(
+      nextIndexLocal,
+      direction,
+      animationToken,
+      { steps: totalSteps, stepDurationMs },
+      exclusiveToken
+    );
   } else {
     updateMapNameDisplayControlled({ index: nextIndexLocal, animationToken }, exclusiveToken);
     if(FIELD_EXCLUSIVE_MODE){
@@ -3000,31 +3006,110 @@ function normalizeFieldLabelsControlled({ cancelAnimation = false, resetFieldAni
   return fieldLabelCurrent;
 }
 
-function animateFieldLabelChange(targetIndex, direction, animationToken, token = null){
+function animateFieldLabelChange(targetIndex, direction, animationToken, options = {}, token = null){
   if(FIELD_EXCLUSIVE_MODE && !token) return;
   if(FIELD_EXCLUSIVE_MODE){
     assertFieldControlToken(token, 'animateFieldLabelChange');
   }
+  if(direction !== 'next' && direction !== 'prev'){
+    updateMapNameDisplayControlled({ index: targetIndex, animationToken }, token);
+    if(FIELD_EXCLUSIVE_MODE){
+      finalizeFieldExclusiveSession(token);
+    }
+    return;
+  }
+
+  const resolvedTarget = normalizeMapIndex(targetIndex);
+  const stepCount = Math.max(1, Math.floor(Math.abs(options.steps ?? 1)));
+  const stepDurationMs = Math.max(0, options.stepDurationMs ?? FIELD_LABEL_DURATION_MS);
+  const stepDelta = direction === 'next' ? 1 : -1;
+  const stepOffsetPx = direction === 'next' ? -FIELD_LABEL_SLOT_WIDTH : FIELD_LABEL_SLOT_WIDTH;
+  const baseTransform = getFieldBaseTransform();
+
   normalizeFieldLabelsControlled({ cancelAnimation: true, resetFieldAnimation: false }, token);
   cancelFieldLabelAnimation();
   ensureFieldLabelsForDrag();
-  const resolvedIndex = normalizeMapIndex(targetIndex);
-  syncFieldLabelSlots(resolvedIndex, token);
-  currentIndex = resolvedIndex;
+
+  const track = getFieldMotionTrack();
+  if(!track || stepDurationMs === 0){
+    currentIndex = resolvedTarget;
+    syncFieldLabelSlots(currentIndex, token);
+    if(FIELD_EXCLUSIVE_MODE){
+      finalizeFieldExclusiveSession(token);
+    }
+    return;
+  }
+
   isAnimating = true;
   markFieldAnimationStart(animationToken);
-  console.log(`[map selector] ${currentIndex} -> ${resolvedIndex}`, {
+  console.log(`[map selector] ${currentIndex} -> ${resolvedTarget}`, {
     direction,
-    isAnimating
+    isAnimating,
+    steps: stepCount
   });
 
-  requestAnimationFrame(() => {
+  let remainingSteps = stepCount;
+
+  const finalizeStep = () => {
+    if(animationToken !== fieldAnimationToken) return;
+    cancelFieldLabelAnimation();
+    setFieldSelectorStylesAuthorized(token, track, {
+      transition: 'none',
+      transform: baseTransform
+    });
+    currentIndex = normalizeMapIndex(currentIndex + stepDelta);
+    syncFieldLabelSlots(currentIndex, token);
+    remainingSteps -= 1;
+
+    if(remainingSteps > 0){
+      requestAnimationFrame(runStep);
+      return;
+    }
+
+    currentIndex = resolvedTarget;
+    syncFieldLabelSlots(currentIndex, token);
     isAnimating = false;
     markFieldAnimationEnd(animationToken);
     if(FIELD_EXCLUSIVE_MODE){
       finalizeFieldExclusiveSession(token);
     }
-  });
+  };
+
+  const runStep = () => {
+    if(animationToken !== fieldAnimationToken) return;
+    setFieldSelectorStylesAuthorized(token, track, {
+      transition: 'none',
+      transform: baseTransform
+    });
+
+    requestAnimationFrame(() => {
+      if(animationToken !== fieldAnimationToken) return;
+      const transition = getFieldSelectorTransition(stepDurationMs);
+      setFieldSelectorStylesAuthorized(token, track, {
+        transition,
+        transform: getFieldOffsetTransform(stepOffsetPx)
+      });
+    });
+
+    let resolved = false;
+    const handleTransitionEnd = (event) => {
+      if(event.target !== track || event.propertyName !== 'transform') return;
+      if(resolved) return;
+      resolved = true;
+      finalizeStep();
+    };
+
+    fieldLabelTransitionTarget = track;
+    fieldLabelTransitionHandler = handleTransitionEnd;
+    track.addEventListener('transitionend', handleTransitionEnd);
+    fieldLabelFallbackTimeoutId = window.setTimeout(() => {
+      if(resolved) return;
+      resolved = true;
+      finalizeStep();
+    }, stepDurationMs + 80);
+  };
+
+  runStep();
 }
 
 function updateMapNameDisplay(options = {}){
