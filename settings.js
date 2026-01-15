@@ -44,7 +44,6 @@ const settingsLayer = document.getElementById('settingsLayer');
 const settingsRoot = settingsLayer ?? document;
 const selectInSettings = (selector) => settingsRoot.querySelector(selector);
 const DEBUG_FIELD_AUDIT = false;
-const DEBUG_FIELD_TAPE_SYNC = false;
 const DEBUG_FIELD_MARKER = false;
 const FIELD_DEBUG_MARKER_QUERY_FLAG = 'field_debug_marker';
 
@@ -74,17 +73,6 @@ function logFieldAudit(action, target, value){
     value,
     timestamp: new Date().toISOString(),
     stack: new Error().stack
-  });
-}
-
-function logFieldTapeSync(action, data = {}){
-  if(!DEBUG_FIELD_TAPE_SYNC) return;
-  const timestamp = typeof performance !== 'undefined' && performance.now
-    ? performance.now()
-    : Date.now();
-  console.log(`[field tape sync] ${action}`, {
-    timestamp,
-    ...data
   });
 }
 
@@ -290,9 +278,6 @@ const MAPS = [
     sprites: BROKEN_X_BRICKS
   }
 ];
-
-// cp_tape_field_easy2.png is 58px wide, with one 58px step.
-const FIELD_TAPE_CELL_WIDTH = 58;
 
 const fieldOptions = MAPS.map((map, index) => ({
   id: index,
@@ -735,17 +720,9 @@ const logFieldSelectorPlacementOnce = () => {
   });
 };
 logFieldSelectorPlacementOnce();
-const mapNameLabelPrev = fieldSelectorRoot?.querySelector('.fieldLabelSlot--prev');
 const mapNameLabelCurrent = fieldSelectorRoot?.querySelector('.fieldLabelSlot--current');
-const mapNameLabelNext = fieldSelectorRoot?.querySelector('.fieldLabelSlot--next');
-let fieldTapeSlicePrev = null;
-let fieldTapeSliceCurrent = null;
-let fieldTapeSliceNext = null;
-let fieldTapeTrack = fieldSelectorRoot?.querySelector('.fieldTapeTrack');
 let fieldSelectorTrack = fieldSelectorRoot?.querySelector('.fieldSelectorTrack');
-let fieldLabelPrev = mapNameLabelPrev ?? null;
 let fieldLabelCurrent = mapNameLabelCurrent ?? null;
-let fieldLabelNext = mapNameLabelNext ?? null;
 let currentIndex = mapIndex;
 let nextIndex = mapIndex;
 let isAnimating = false;
@@ -1016,17 +993,13 @@ function getFieldSelectorTransition(durationMs = FIELD_LABEL_DURATION_MS){
   return `transform ${durationMs}ms ${FIELD_LABEL_EASING}`;
 }
 
-function getFieldTapeTransition(durationMs = FIELD_LABEL_DURATION_MS){
-  return `transform ${durationMs}ms ${FIELD_LABEL_EASING}`;
-}
-
 function getFieldViewportWidth(){
   const viewport = getFieldDragViewport();
   return viewport?.clientWidth || 0;
 }
 
 function getFieldBaseOffsetPx(){
-  return -getFieldViewportWidth();
+  return 0;
 }
 
 function getFieldOffsetTransform(offsetPx){
@@ -1048,15 +1021,6 @@ function getFieldDragViewport(){
   return getFieldSelectorRoot();
 }
 
-function getFieldTapeTrack(){
-  const root = getFieldSelectorRoot();
-  fieldTapeTrack = fieldTapeTrack ?? root.querySelector('.fieldTapeTrack');
-  if(!(fieldTapeTrack instanceof HTMLElement)){
-    throw new Error('FIELD selector missing .fieldTapeTrack');
-  }
-  return fieldTapeTrack;
-}
-
 function getFieldSelectorTrack(){
   assertFieldSelectorSingletons();
   const root = getFieldSelectorRoot();
@@ -1068,78 +1032,9 @@ function getFieldSelectorTrack(){
   return fieldSelectorTrack;
 }
 
-function getFieldTapeSlices(){
-  const track = getFieldTapeTrack();
-  const slices = Array.from(track.querySelectorAll('.fieldTapeSlice'));
-  if(slices.length !== 3){
-    throw new Error('FIELD selector requires exactly 3 .fieldTapeSlice elements');
-  }
-  fieldTapeSlicePrev = fieldTapeSlicePrev ?? slices[0];
-  fieldTapeSliceCurrent = fieldTapeSliceCurrent ?? slices[1];
-  fieldTapeSliceNext = fieldTapeSliceNext ?? slices[2];
-  if(!(fieldTapeSlicePrev instanceof HTMLElement) ||
-     !(fieldTapeSliceCurrent instanceof HTMLElement) ||
-     !(fieldTapeSliceNext instanceof HTMLElement)){
-    throw new Error('FIELD selector missing required tape slices');
-  }
-  return {
-    track,
-    prev: fieldTapeSlicePrev,
-    current: fieldTapeSliceCurrent,
-    next: fieldTapeSliceNext
-  };
-}
-
 function normalizeMapIndex(index){
   const totalMaps = Math.max(1, MAPS.length);
   return ((index % totalMaps) + totalMaps) % totalMaps;
-}
-
-function setFieldTapeSliceForIndex(slice, index){
-  if(FIELD_EXCLUSIVE_MODE) return;
-  if(!(slice instanceof HTMLElement)) return;
-  const totalMaps = Math.max(1, MAPS.length);
-  const middleIndex = Math.floor(totalMaps / 2);
-  const offsetPx = (middleIndex - index) * FIELD_TAPE_CELL_WIDTH;
-  slice.style.backgroundPosition = `${offsetPx}px center`;
-  logFieldAudit('setFieldTapeSliceForIndex', slice, {
-    index,
-    backgroundPosition: slice.style.backgroundPosition
-  });
-}
-
-function setFieldTapeSliceForIndexAuthorized(token, slice, index){
-  if(!FIELD_EXCLUSIVE_MODE){
-    setFieldTapeSliceForIndex(slice, index);
-    return;
-  }
-  assertFieldControlToken(token, 'setFieldTapeSliceForIndex');
-  if(!(slice instanceof HTMLElement)) return;
-  const totalMaps = Math.max(1, MAPS.length);
-  const middleIndex = Math.floor(totalMaps / 2);
-  const offsetPx = (middleIndex - index) * FIELD_TAPE_CELL_WIDTH;
-  slice.style.backgroundPosition = `${offsetPx}px center`;
-  logFieldAudit('setFieldTapeSliceForIndex', slice, {
-    index,
-    backgroundPosition: slice.style.backgroundPosition
-  });
-}
-
-function setFieldTapeSlicesForIndex(index, slices = null, token = null){
-  const tapeSlices = slices ?? getFieldTapeSlices();
-  if(!tapeSlices) return;
-  const currentIndex = normalizeMapIndex(index);
-  const prevIndex = normalizeMapIndex(currentIndex - 1);
-  const nextIndex = normalizeMapIndex(currentIndex + 1);
-  if(FIELD_EXCLUSIVE_MODE){
-    setFieldTapeSliceForIndexAuthorized(token, tapeSlices.prev, prevIndex);
-    setFieldTapeSliceForIndexAuthorized(token, tapeSlices.current, currentIndex);
-    setFieldTapeSliceForIndexAuthorized(token, tapeSlices.next, nextIndex);
-  } else {
-    setFieldTapeSliceForIndex(tapeSlices.prev, prevIndex);
-    setFieldTapeSliceForIndex(tapeSlices.current, currentIndex);
-    setFieldTapeSliceForIndex(tapeSlices.next, nextIndex);
-  }
 }
 
 function updateRangeTapePosition(displayPosition = rangeScrollPos, track = null){
@@ -1154,100 +1049,6 @@ function updateRangeTapePosition(displayPosition = rangeScrollPos, track = null)
   const middleIndex = Math.floor(RANGE_DISPLAY_VALUES.length / 2);
   const offsetPx = (middleIndex - displayPosition) * RANGE_CELL_WIDTH;
   tape.style.transform = `translateX(calc(-50% + ${offsetPx}px))`;
-}
-
-/*
-Legacy 2-slot tape implementation (kept for rollback reference).
-
-function updateFieldTapePosition(displayPosition = mapIndex, tapeElement = null, options = {}){
-  const targetTrack = tapeElement ?? getFieldTapeTrack();
-  const tapeSlices = getFieldTapeSlices();
-  if(!Number.isFinite(displayPosition) || !(targetTrack instanceof HTMLElement) || !tapeSlices){
-    return;
-  }
-
-  const totalMaps = Math.max(1, MAPS.length);
-  const normalizeIndex = (index) => ((index % totalMaps) + totalMaps) % totalMaps;
-  const stableIndex = normalizeIndex(displayPosition);
-  const outgoingIndex = Number.isFinite(options.currentIndex)
-    ? normalizeIndex(options.currentIndex)
-    : stableIndex;
-  const incomingIndex = Number.isFinite(options.nextIndex)
-    ? normalizeIndex(options.nextIndex)
-    : normalizeIndex(stableIndex + 1);
-  const { prev, current, next } = tapeSlices;
-  const middleIndex = Math.floor(totalMaps / 2);
-  const shouldAnimate = options.animate && isAnimating && options.animationToken && hasInitializedFieldTape;
-
-  hasInitializedFieldTape = true;
-
-  const setTapeForIndex = (slice, index) => {
-    if(!(slice instanceof HTMLElement)) return;
-    const offsetPx = (middleIndex - index) * FIELD_TAPE_CELL_WIDTH;
-    slice.style.backgroundPosition = `${offsetPx}px center`;
-  };
-
-  const setSlicesForIndex = (index) => {
-    const prevIndex = normalizeIndex(index - 1);
-    const nextIndex = normalizeIndex(index + 1);
-    setTapeForIndex(prev, prevIndex);
-    setTapeForIndex(current, index);
-    setTapeForIndex(next, nextIndex);
-  };
-
-  const resetToRestState = (index) => {
-    setFieldTapeStyles(targetTrack, { transition: 'none', transform: 'translateX(-100%)' });
-    setSlicesForIndex(index);
-  };
-
-  if(shouldAnimate){
-    const transition = getFieldTapeTransition();
-    const direction = options.animateDirection;
-    const endTransform = direction === 'prev' ? '0%' : '-200%';
-
-    if(direction === 'next' || direction === 'prev'){
-      if(direction === 'prev'){
-        setTapeForIndex(prev, incomingIndex);
-        setTapeForIndex(current, outgoingIndex);
-        setTapeForIndex(next, normalizeIndex(outgoingIndex + 1));
-      } else {
-        setTapeForIndex(prev, normalizeIndex(outgoingIndex - 1));
-        setTapeForIndex(current, outgoingIndex);
-        setTapeForIndex(next, incomingIndex);
-      }
-      setFieldTapeStyles(targetTrack, { transition: 'none', transform: 'translateX(-100%)' });
-      markFieldAnimationStart(options.animationToken);
-      requestAnimationFrame(() => {
-        setFieldTapeStyles(targetTrack, { transition, transform: `translateX(${endTransform})` });
-      });
-
-      const handleEnd = (event) => {
-        if(event && event.propertyName !== 'transform') return;
-        resetToRestState(incomingIndex);
-        requestAnimationFrame(() => setFieldTapeStyles(targetTrack, { transition: null }));
-        markFieldAnimationEnd(options.animationToken);
-      };
-      targetTrack.addEventListener('transitionend', handleEnd, { once: true });
-      return;
-    }
-  }
-
-  setSlicesForIndex(stableIndex);
-  setFieldTapeStyles(targetTrack, { transition: null, transform: 'translateX(-100%)' });
-}
-*/
-
-function updateFieldTapePosition(displayIndex = mapIndex, options = {}){
-  const { fieldControlToken: token = null } = options ?? {};
-  if(FIELD_EXCLUSIVE_MODE && !token) return null;
-  if(FIELD_EXCLUSIVE_MODE){
-    assertFieldControlToken(token, 'updateFieldTapePosition');
-  }
-  const tapeSlices = getFieldTapeSlices();
-  if(!tapeSlices) return null;
-  const stableIndex = normalizeMapIndex(Number.isFinite(displayIndex) ? displayIndex : 0);
-  setFieldTapeSlicesForIndex(stableIndex, tapeSlices, token);
-  return null;
 }
 
 function updateAccuracyTapePosition(displayPosition = accuracyDisplayIdx, track = null){
@@ -1770,13 +1571,11 @@ function ensureFieldLabelsForDrag(){
   if(!labelLayer){
     throw new Error('FIELD selector missing label layer');
   }
-  if(!fieldLabelPrev || !fieldLabelCurrent || !fieldLabelNext){
-    fieldLabelPrev = fieldLabelPrev ?? labelLayer.querySelector('.fieldLabelSlot--prev');
+  if(!fieldLabelCurrent){
     fieldLabelCurrent = fieldLabelCurrent ?? labelLayer.querySelector('.fieldLabelSlot--current');
-    fieldLabelNext = fieldLabelNext ?? labelLayer.querySelector('.fieldLabelSlot--next');
   }
-  if(!fieldLabelPrev || !fieldLabelCurrent || !fieldLabelNext){
-    throw new Error('FIELD selector missing label slots');
+  if(!fieldLabelCurrent){
+    throw new Error('FIELD selector missing label slot');
   }
   return true;
 }
@@ -1787,11 +1586,7 @@ function syncFieldLabelSlots(index, token = null){
   }
   if(!ensureFieldLabelsForDrag()) return;
   const currentLabel = getFieldLabel(index);
-  const prevLabel = getFieldLabel(normalizeMapIndex(index - 1));
-  const nextLabel = getFieldLabel(normalizeMapIndex(index + 1));
-  setFieldLabelTextAuthorized(token, fieldLabelPrev, prevLabel, 'syncFieldLabelSlots:prev');
   setFieldLabelTextAuthorized(token, fieldLabelCurrent, currentLabel, 'syncFieldLabelSlots:current');
-  setFieldLabelTextAuthorized(token, fieldLabelNext, nextLabel, 'syncFieldLabelSlots:next');
 }
 
 function removeIncomingFieldValue(){
@@ -1799,14 +1594,6 @@ function removeIncomingFieldValue(){
   const token = FIELD_EXCLUSIVE_MODE ? fieldDragExclusiveToken : null;
   if(FIELD_EXCLUSIVE_MODE && token === null) return;
   syncFieldLabelSlots(currentIndex, token);
-  if(isFieldInteractionActive()){
-    return;
-  }
-  if(FIELD_EXCLUSIVE_MODE){
-    updateFieldTapePosition(currentIndex, { fieldControlToken: token });
-  } else {
-    updateFieldTapePosition(currentIndex);
-  }
 }
 
 function prepareIncomingFieldValue(direction, steps = 1){
@@ -1823,27 +1610,20 @@ function prepareIncomingFieldValue(direction, steps = 1){
   }
   const delta = direction === 'next' ? safeSteps : -safeSteps;
   const targetIndex = normalizeMapIndex(currentIndex + delta);
-  const incomingLabel = direction === 'next' ? fieldLabelNext : fieldLabelPrev;
   const token = FIELD_EXCLUSIVE_MODE ? fieldDragExclusiveToken : null;
   if(FIELD_EXCLUSIVE_MODE && token === null) return null;
   setFieldLabelTextAuthorized(
     token,
-    incomingLabel,
+    fieldLabelCurrent,
     getFieldLabel(targetIndex),
     'prepareIncomingFieldValue'
   );
-  logFieldAudit('prepareIncomingFieldValue', incomingLabel, {
+  logFieldAudit('prepareIncomingFieldValue', fieldLabelCurrent, {
     direction,
     index: targetIndex,
-    textContent: incomingLabel.textContent
+    textContent: fieldLabelCurrent.textContent
   });
-
-  const tapeSlices = getFieldTapeSlices();
-  if(tapeSlices){
-    setFieldTapeSlicesForIndex(targetIndex, tapeSlices, token);
-  }
-
-  return incomingLabel;
+  return fieldLabelCurrent;
 }
 
 function prepareIncomingRangeValue(direction){
@@ -2366,9 +2146,7 @@ function handleFieldPointerDown(event){
     fieldDragExclusiveToken = startFieldExclusiveSession();
   }
   fieldDragHandlers.handlePointerDown(event);
-  if(isFieldDragging){
-    setFieldTapeSlicesForIndex(currentIndex, null, fieldDragExclusiveToken);
-  } else if(FIELD_EXCLUSIVE_MODE){
+  if(!isFieldDragging && FIELD_EXCLUSIVE_MODE){
     if(fieldDragExclusiveToken !== null){
       finalizeFieldExclusiveSession(fieldDragExclusiveToken);
       fieldDragExclusiveToken = null;
@@ -2387,9 +2165,6 @@ function handleFieldPointerEnd(event){
     : null;
   const willQueueSteps = !isAnimatingNow && dragMetrics &&
     dragMetrics.steps !== 0 && dragMetrics.dir !== 0;
-  // Update the tape track before handlePointerEnd can trigger a new exclusive session.
-  // This avoids token invalidation during styling by either using the current active token
-  // or starting a new session when the old token is stale.
   fieldDragHandlers.handlePointerEnd(event);
   if(pendingFieldSteps !== 0){
     if(FIELD_EXCLUSIVE_MODE && fieldDragExclusiveToken !== null){
@@ -2609,7 +2384,6 @@ function changeFieldStep(delta, options = {}){
     animateFieldLabelChange(nextIndexLocal, direction, animationToken, exclusiveToken);
   } else {
     updateMapNameDisplayControlled({ index: nextIndexLocal, animationToken }, exclusiveToken);
-    updateFieldTapePosition(nextIndexLocal, { fieldControlToken: exclusiveToken });
     if(FIELD_EXCLUSIVE_MODE){
       finalizeFieldExclusiveSession(exclusiveToken);
     }
@@ -3126,11 +2900,8 @@ function assertFieldSelectorSingletons(){
   const rootChecks = [
     { selector: '.fieldSelectorTrack', label: 'fieldSelectorTrack' },
     { selector: '.fieldLabelTrack', label: 'fieldLabelTrack' },
-    { selector: '.fieldTapeTrack', label: 'fieldTapeTrack' },
     { selector: '.fieldSelectorViewport', label: 'fieldSelectorViewport' },
-    { selector: '.fieldLabelSlot--prev', label: 'fieldLabelSlot--prev' },
     { selector: '.fieldLabelSlot--current', label: 'fieldLabelSlot--current' },
-    { selector: '.fieldLabelSlot--next', label: 'fieldLabelSlot--next' },
   ];
   for(const { selector, label } of rootChecks){
     const matches = root.querySelectorAll(selector);
@@ -3162,7 +2933,7 @@ function setupFieldExclusiveObserver(){
       const target = mutation.target;
       if(!(target instanceof HTMLElement)) continue;
       if(!target.matches(
-        '.fieldSelectorTrack, .fieldLabelTrack, .fieldTapeTrack, .fieldLabelSlot'
+        '.fieldSelectorTrack, .fieldLabelTrack, .fieldLabelSlot'
       )){
         continue;
       }
@@ -3218,97 +2989,24 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, token =
   }
   normalizeFieldLabelsControlled({ cancelAnimation: true, resetFieldAnimation: false }, token);
   cancelFieldLabelAnimation();
-  const track = getFieldSelectorTrack();
-  const tapeSlices = getFieldTapeSlices();
-  if(!track || !tapeSlices){
-    throw new Error('FIELD selector missing label or tape elements');
-  }
-
   ensureFieldLabelsForDrag();
-
-  const currentMapIndex = normalizeMapIndex(currentIndex);
-  const incomingMapIndex = normalizeMapIndex(targetIndex);
-  syncFieldLabelSlots(currentMapIndex, token);
-  if(direction === 'next'){
-    setFieldLabelTextAuthorized(token, fieldLabelNext, getFieldLabel(incomingMapIndex), 'animateFieldLabelChange:incoming');
-  } else if(direction === 'prev'){
-    setFieldLabelTextAuthorized(token, fieldLabelPrev, getFieldLabel(incomingMapIndex), 'animateFieldLabelChange:incoming');
-  }
-
-  setFieldTapeSlicesForIndex(currentMapIndex, tapeSlices, token);
-  if(direction === 'next'){
-    setFieldTapeSliceForIndexAuthorized(token, tapeSlices.next, incomingMapIndex);
-  } else if(direction === 'prev'){
-    setFieldTapeSliceForIndexAuthorized(token, tapeSlices.prev, incomingMapIndex);
-  }
-
-  logFieldTapeSync('label:start', {
-    currentIndex,
-    targetIndex,
-    currentMapIndex,
-    incomingMapIndex,
-    direction
-  });
-
-  const baseOffset = getFieldBaseOffsetPx();
-  const endOffset = direction === 'next' ? baseOffset * 2 : 0;
-  const startTransform = getFieldOffsetTransform(baseOffset);
-  const endTransform = getFieldOffsetTransform(endOffset);
-  setFieldSelectorStylesAuthorized(token, track, { transition: 'none', transform: startTransform });
-  void track.offsetWidth;
+  const resolvedIndex = normalizeMapIndex(targetIndex);
+  syncFieldLabelSlots(resolvedIndex, token);
+  currentIndex = resolvedIndex;
   isAnimating = true;
   markFieldAnimationStart(animationToken);
-  console.log(`[map selector] ${currentIndex} -> ${targetIndex}`, {
+  console.log(`[map selector] ${currentIndex} -> ${resolvedIndex}`, {
     direction,
     isAnimating
   });
 
   requestAnimationFrame(() => {
-    const transition = getFieldSelectorTransition(FIELD_LABEL_DURATION_MS);
-    setFieldSelectorStylesAuthorized(token, track, { transition, transform: endTransform });
-  });
-
-  let animationCompleted = false;
-  const finalizeAnimation = () => {
-    if(animationCompleted) return;
-    animationCompleted = true;
-    cancelFieldLabelAnimation();
-    currentIndex = targetIndex;
-    syncFieldLabelSlots(currentIndex, token);
-    setFieldSelectorStylesAuthorized(token, track, { transition: 'none', transform: getFieldBaseTransform() });
-    requestAnimationFrame(() => {
-      setFieldSelectorStylesAuthorized(token, track, { transition: '' });
-    });
     isAnimating = false;
     markFieldAnimationEnd(animationToken);
-    logFieldTapeSync('label:finalize', {
-      currentIndex,
-      targetIndex,
-      currentMapIndex,
-      incomingMapIndex,
-      isAnimating,
-      isFieldAnimating
-    });
-    updateFieldTapePosition(currentIndex, { fieldControlToken: token });
-    console.log(`[map selector] committed ${currentIndex}`, {
-      trackTransform: track.style.transform
-    });
     if(FIELD_EXCLUSIVE_MODE){
       finalizeFieldExclusiveSession(token);
     }
-  };
-
-  const handleEnd = (event) => {
-    if(event && event.propertyName !== 'transform') return;
-    finalizeAnimation();
-  };
-
-  fieldLabelTransitionTarget = track;
-  fieldLabelTransitionHandler = handleEnd;
-  track.addEventListener('transitionend', handleEnd, { once: true });
-  fieldLabelFallbackTimeoutId = window.setTimeout(() => {
-    finalizeAnimation();
-  }, FIELD_LABEL_DURATION_MS + 50);
+  });
 }
 
 function updateMapNameDisplay(options = {}){
