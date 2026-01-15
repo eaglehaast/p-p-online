@@ -983,6 +983,7 @@ body, button {
     height: 100%;
     display: flex;
     align-items: center;
+    justify-content: center;
     z-index: 2;
   }
 
@@ -998,6 +999,21 @@ body, button {
     letter-spacing: -0.2px;
     line-height: 1;
     font-family: 'Roboto', sans-serif;
+    background-image: url('ui_controlpanel/cp_tape_field_easy2.png');
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+  }
+
+  #settingsLayer #cp_field_selector_root .fieldLabelSlot--current {
+    width: 58px;
+    height: 35px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    padding: 0;
+    line-height: 1;
+    transform: translateY(0);
     background-image: url('ui_controlpanel/cp_tape_field_easy2.png');
     background-size: 100% 100%;
     background-repeat: no-repeat;
