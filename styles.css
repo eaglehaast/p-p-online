@@ -1010,6 +1010,9 @@ body, button {
     align-items: center;
     justify-content: center;
     text-align: center;
+    font-size: 12px;
+    line-height: 1;
+    font-family: 'Roboto', sans-serif;
   }
 
   #settingsLayer #cp_field_selector_root .fieldTapeViewport {
