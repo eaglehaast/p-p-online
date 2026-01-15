@@ -2138,6 +2138,7 @@ function getDragMetrics(startX, currentX, startTime, eventTime){
 }
 
 function createSliderDragHandlers(slider){
+  const minAbsDx = Number.isFinite(slider.minAbsDx) ? Math.max(0, slider.minAbsDx) : 0;
   const handlePointerDown = (event) => {
     if(slider.isAnimating() || !slider.viewport()) return;
     const transformTarget = slider.ensureTrack();
@@ -2148,7 +2149,9 @@ function createSliderDragHandlers(slider){
 
     slider.setTrackStyles(transformTarget, { transition: 'none', transform: 'translateX(0)' });
 
-    slider.removeIncomingValue();
+    if(minAbsDx === 0){
+      slider.removeIncomingValue();
+    }
 
     slider.state.setDragging(true);
     slider.state.setPointerId(event.pointerId);
@@ -2165,6 +2168,7 @@ function createSliderDragHandlers(slider){
 
     const dx = event.clientX - slider.state.startX();
     slider.state.setLastDx(dx);
+    const absDx = Math.abs(dx);
 
     const transformTarget = slider.ensureTrack();
     if(!transformTarget) return;
@@ -2172,6 +2176,10 @@ function createSliderDragHandlers(slider){
     const maxOffset = (slider.viewport().clientWidth || 0) * 0.55;
     const clampedDx = Math.max(-maxOffset, Math.min(maxOffset, dx));
     slider.setTrackStyles(transformTarget, { transform: `translateX(${clampedDx}px)` });
+
+    if(absDx < minAbsDx){
+      return;
+    }
 
     const direction = getRangeDirectionLabel(getRangeDirFromDx(clampedDx));
     const previewSteps = slider.previewUsesSteps
@@ -2217,6 +2225,10 @@ function createSliderDragHandlers(slider){
     }
 
     if(steps === 0 || dir === 0){
+      if(typeof slider.onZeroSteps === 'function'){
+        slider.onZeroSteps({ absDx, steps, dir });
+        return;
+      }
       slider.resetDragVisual(absDx > 0);
       return;
     }
@@ -2289,12 +2301,27 @@ const fieldDragHandlers = createSliderDragHandlers({
   isAnimating: () => isFieldAnimating || isAnimating,
   clearStepQueue: clearFieldStepQueue,
   previewUsesSteps: true,
+  minAbsDx: 3,
   getPeekOffset: (direction) => {
     const viewport = getFieldDragViewport();
     const peek = getSliderPeekOffset(viewport, direction);
     if(direction === 'prev') return -Math.abs(peek);
     if(direction === 'next') return 0;
     return -Math.abs(peek);
+  },
+  onZeroSteps: () => {
+    const track = getFieldSelectorTrack();
+    if(!(track instanceof HTMLElement)) return;
+    let token = FIELD_EXCLUSIVE_MODE ? fieldDragExclusiveToken : null;
+    if(FIELD_EXCLUSIVE_MODE && token === null){
+      token = startFieldExclusiveSession();
+      fieldDragExclusiveToken = token;
+    }
+    syncFieldLabelSlots(currentIndex, token);
+    setFieldSelectorStylesAuthorized(token, track, {
+      transform: getFieldBaseTransform(),
+      transition: ''
+    });
   },
   state: {
     isDragging: () => isFieldDragging,
