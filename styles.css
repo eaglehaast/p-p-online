@@ -417,7 +417,7 @@ body, button {
 
   #settingsLayer #frame_accuracy_2_counter {
     position: absolute;
-    left: 60px;
+    left: 65px;
     top: 167px;
     width: 58px;
     height: 35px;
@@ -947,7 +947,7 @@ body, button {
 
   #settingsLayer #cp_field_selector_root {
     position: relative;
-    left: 60px;
+    left: 65px;
     top: 257px;
     width: 58px;
     height: 35px;
