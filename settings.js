@@ -1710,7 +1710,7 @@ function resetFieldDragVisual(animateReset){
   if(!transformTarget) return;
   setFieldDragTrackStyles(transformTarget, {
     transition: '',
-    transform: 'translateX(0)'
+    transform: getFieldBaseTransform()
   });
 
   removeIncomingFieldValue();
@@ -1945,7 +1945,10 @@ function createSliderDragHandlers(slider){
 
     slider.clearStepQueue();
 
-    slider.setTrackStyles(transformTarget, { transition: 'none', transform: 'translateX(0)' });
+    const baseTransform = typeof slider.baseTransform === 'function'
+      ? slider.baseTransform()
+      : (slider.baseTransform ?? 'translateX(0)');
+    slider.setTrackStyles(transformTarget, { transition: 'none', transform: baseTransform });
 
     slider.removeIncomingValue();
 
@@ -2101,6 +2104,7 @@ const fieldDragHandlers = createSliderDragHandlers({
   removeIncomingValue: removeIncomingFieldValue,
   prepareIncomingValue: prepareIncomingFieldValue,
   resetDragVisual: resetFieldDragVisual,
+  baseTransform: () => getFieldBaseTransform(),
   queueSteps: queueFieldSteps,
   isAnimating: () => isFieldAnimating || isAnimating,
   clearStepQueue: clearFieldStepQueue,
