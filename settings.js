@@ -1072,8 +1072,8 @@ function getFieldSelectorTrack(){
 function getFieldTapeSlices(){
   const track = getFieldTapeTrack();
   const slices = Array.from(track.querySelectorAll('.fieldTapeSlice'));
-  if(slices.length < 3){
-    throw new Error('FIELD selector missing .fieldTapeSlice elements');
+  if(slices.length !== 3){
+    throw new Error('FIELD selector requires exactly 3 .fieldTapeSlice elements');
   }
   fieldTapeSlicePrev = fieldTapeSlicePrev ?? slices[0];
   fieldTapeSliceCurrent = fieldTapeSliceCurrent ?? slices[1];
