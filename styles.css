@@ -945,23 +945,6 @@ body, button {
       height: 7px;
     }
 
-  #settingsLayer #frame_field_2_counter {
-    position: absolute;
-    left: 60px;
-    top: 257px;
-    width: 58px;
-    height: 35px;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    z-index: 0;
-    --field-map-name-shadow-x: 0.5px;
-    --field-map-name-shadow-y: 0px;
-    --field-map-name-shadow-opacity: 0.8;
-  }
-
   #settingsLayer #cp_field_selector_root {
     position: relative;
     left: 60px;
@@ -1422,8 +1405,7 @@ body, button {
 #range_frame_counter,
 #frame_accuracy_1_visual,
 #frame_accuracy_2_counter,
-#frame_field_1_visual,
-#frame_field_2_counter {
+#frame_field_1_visual {
   position: absolute;
   box-sizing: border-box;
 }
