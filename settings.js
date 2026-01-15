@@ -2120,13 +2120,19 @@ function queueFieldSteps(steps, dir, gestureVelocity = 0){
   runFieldStepQueue();
 }
 
+function getDragDistanceSteps(dx){
+  const absDx = Math.abs(dx);
+  const stepsByDistance = Math.floor(absDx / RANGE_DRAG_STEP_PX);
+  return Math.min(RANGE_DRAG_MAX_STEPS, stepsByDistance);
+}
+
 function getDragMetrics(startX, currentX, startTime, eventTime){
   const dx = currentX - startX;
   const absDx = Math.abs(dx);
   const deltaTime = Math.max(eventTime - startTime, 1);
   const velocity = absDx / deltaTime;
 
-  const stepsByDistance = Math.floor(absDx / RANGE_DRAG_STEP_PX);
+  const stepsByDistance = getDragDistanceSteps(dx);
   const stepsByVelocity = Math.floor(
     Math.max(0, velocity - RANGE_DRAG_VELOCITY_START) * RANGE_DRAG_VELOCITY_MULT
   );
@@ -2165,6 +2171,7 @@ function createSliderDragHandlers(slider){
 
     const dx = event.clientX - slider.state.startX();
     slider.state.setLastDx(dx);
+    const absDx = Math.abs(dx);
 
     const transformTarget = slider.ensureTrack();
     if(!transformTarget) return;
@@ -2173,14 +2180,30 @@ function createSliderDragHandlers(slider){
     const clampedDx = Math.max(-maxOffset, Math.min(maxOffset, dx));
     slider.setTrackStyles(transformTarget, { transform: `translateX(${clampedDx}px)` });
 
+    const minPreviewDx = Number.isFinite(slider.previewMinDx)
+      ? Math.max(0, slider.previewMinDx)
+      : 0;
+    if(absDx < minPreviewDx){
+      slider.removeIncomingValue();
+      return;
+    }
+
     const direction = getRangeDirectionLabel(getRangeDirFromDx(clampedDx));
     const previewSteps = slider.previewUsesSteps
-      ? getDragMetrics(
-        slider.state.startX(),
-        event.clientX,
-        slider.state.startTime(),
-        event.timeStamp
-      ).steps
+      ? (typeof slider.getPreviewSteps === 'function'
+        ? slider.getPreviewSteps({
+          dx,
+          startX: slider.state.startX(),
+          currentX: event.clientX,
+          startTime: slider.state.startTime(),
+          eventTime: event.timeStamp
+        })
+        : getDragMetrics(
+          slider.state.startX(),
+          event.clientX,
+          slider.state.startTime(),
+          event.timeStamp
+        ).steps)
       : 1;
     const shouldPreview = direction && previewSteps > 0;
     const incoming = shouldPreview ? slider.prepareIncomingValue(direction, previewSteps) : null;
@@ -2289,6 +2312,7 @@ const fieldDragHandlers = createSliderDragHandlers({
   isAnimating: () => isFieldAnimating || isAnimating,
   clearStepQueue: clearFieldStepQueue,
   previewUsesSteps: true,
+  getPreviewSteps: ({ dx }) => getDragDistanceSteps(dx),
   getPeekOffset: (direction) => {
     const viewport = getFieldDragViewport();
     const peek = getSliderPeekOffset(viewport, direction);
