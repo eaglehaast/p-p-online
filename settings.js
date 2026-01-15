@@ -1939,14 +1939,19 @@ function removeIncomingFieldValue(){
   }
 }
 
-function prepareIncomingFieldValue(direction){
+function prepareIncomingFieldValue(direction, steps = 1){
   if(!ensureFieldLabelsForDrag()) return null;
   if(direction !== 'next' && direction !== 'prev'){
     removeIncomingFieldValue();
     return null;
   }
 
-  const delta = direction === 'next' ? 1 : -1;
+  const safeSteps = Number.isFinite(steps) ? Math.max(0, Math.floor(steps)) : 0;
+  if(safeSteps === 0){
+    removeIncomingFieldValue();
+    return null;
+  }
+  const delta = direction === 'next' ? safeSteps : -safeSteps;
   const targetIndex = normalizeMapIndex(currentIndex + delta);
   if(FIELD_EXCLUSIVE_MODE){
     if(fieldDragExclusiveToken === null) return null;
@@ -1972,7 +1977,7 @@ function prepareIncomingFieldValue(direction){
   setFieldTrackOrder(orderSlot);
   const tapeSlices = getFieldTapeSlices();
   if(tapeSlices){
-    setFieldTapeSlicesForIndex(currentIndex, tapeSlices, fieldDragExclusiveToken);
+    setFieldTapeSlicesForIndex(targetIndex, tapeSlices, fieldDragExclusiveToken);
     if(FIELD_EXCLUSIVE_MODE){
       if(fieldDragExclusiveToken === null) return null;
       setFieldTapeTrackStylesAuthorized(fieldDragExclusiveToken, tapeSlices.track, {
@@ -2314,7 +2319,16 @@ function createSliderDragHandlers(slider){
     slider.setTrackStyles(transformTarget, { transform: `translateX(${clampedDx}px)` });
 
     const direction = getRangeDirectionLabel(getRangeDirFromDx(clampedDx));
-    const incoming = direction ? slider.prepareIncomingValue(direction) : null;
+    const previewSteps = slider.previewUsesSteps
+      ? getDragMetrics(
+        slider.state.startX(),
+        event.clientX,
+        slider.state.startTime(),
+        event.timeStamp
+      ).steps
+      : 1;
+    const shouldPreview = direction && previewSteps > 0;
+    const incoming = shouldPreview ? slider.prepareIncomingValue(direction, previewSteps) : null;
 
     if(incoming){
       const peekOffset = slider.getPeekOffset(direction);
@@ -2419,6 +2433,7 @@ const fieldDragHandlers = createSliderDragHandlers({
   queueSteps: queueFieldSteps,
   isAnimating: () => isFieldAnimating || isAnimating,
   clearStepQueue: clearFieldStepQueue,
+  previewUsesSteps: true,
   getPeekOffset: (direction) => {
     const viewport = getFieldDragViewport();
     const peek = getSliderPeekOffset(viewport, direction);
