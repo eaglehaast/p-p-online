@@ -1029,7 +1029,7 @@ body, button {
     position: absolute;
     top: 0;
     left: 0;
-    width: 300%;
+    width: 500%;
     height: 100%;
     display: flex;
   }
@@ -1042,6 +1042,10 @@ body, button {
     background-repeat: repeat-x;
     background-size: auto 100%;
     background-position: center;
+  }
+
+  #settingsLayer #cp_field_selector_root .fieldTapeSlice--empty {
+    background-image: url('ui_controlpanel/cp_tape_field_easy2.png');
   }
 
   #settingsLayer .cp-field-selector__frame {
