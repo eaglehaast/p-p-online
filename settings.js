@@ -939,8 +939,38 @@ function setRangeTrackStyles(target, styles){
   setSliderTrackStyles(target, rangeTrackState, styles);
 }
 
+const ACCURACY_TRACK_BASE_TRANSFORM = 'translateX(-50%)';
+
+function getAccuracyTrackOffsetTransform(offsetPx){
+  const resolvedOffset = Number.isFinite(offsetPx) ? offsetPx : 0;
+  if(resolvedOffset === 0){
+    return ACCURACY_TRACK_BASE_TRANSFORM;
+  }
+  return `translateX(calc(-50% + ${resolvedOffset}px))`;
+}
+
+function normalizeAccuracyTrackTransform(transform){
+  if(typeof transform !== 'string'){
+    return transform;
+  }
+  const match = transform.match(/^translateX\((-?\d+(?:\.\d+)?)px?\)$/);
+  if(match){
+    return getAccuracyTrackOffsetTransform(Number(match[1]));
+  }
+  return transform;
+}
+
 function setAccuracyTrackStyles(target, styles){
-  setSliderTrackStyles(target, accuracyTrackState, styles);
+  if(!styles){
+    setSliderTrackStyles(target, accuracyTrackState, styles);
+    return;
+  }
+
+  const resolvedStyles = { ...styles };
+  if(typeof resolvedStyles.transform === 'string'){
+    resolvedStyles.transform = normalizeAccuracyTrackTransform(resolvedStyles.transform);
+  }
+  setSliderTrackStyles(target, accuracyTrackState, resolvedStyles);
 }
 
 function setFieldSelectorStyles(target, styles){

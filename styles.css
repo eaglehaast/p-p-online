@@ -647,6 +647,18 @@ body, button {
     will-change: transform;
   }
 
+  #settingsLayer #accuracyDisplayViewport,
+  #settingsLayer #accuracyDisplayLayer {
+    left: 0;
+    padding: 0;
+    transform: none;
+  }
+
+  #settingsLayer #accuracyDisplayTrack {
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
   .range-tape,
   .accuracy-tape {
     position: absolute;
@@ -671,7 +683,8 @@ body, button {
 
   .accuracy-tape {
     width: 1276px;
-  background-image: url('ui_controlpanel/cp_acuracy_tape2.png');
+    background-image: url('ui_controlpanel/cp_acuracy_tape2.png');
+    transform: translateX(calc(-50% + 0px));
   }
 
   .range-display__item,
