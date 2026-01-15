@@ -45,6 +45,14 @@ const settingsRoot = settingsLayer ?? document;
 const selectInSettings = (selector) => settingsRoot.querySelector(selector);
 const DEBUG_FIELD_AUDIT = false;
 const DEBUG_FIELD_TAPE_SYNC = false;
+const DEBUG_FIELD_MARKER = false;
+const FIELD_DEBUG_MARKER_QUERY_FLAG = 'field_debug_marker';
+
+function isFieldDebugMarkerEnabled(){
+  if(DEBUG_FIELD_MARKER) return true;
+  if(typeof window === 'undefined') return false;
+  return new URLSearchParams(window.location.search).has(FIELD_DEBUG_MARKER_QUERY_FLAG);
+}
 
 function isFieldAuditTarget(target){
   return target instanceof HTMLElement && Boolean(target.closest('.cp-field-selector'));
@@ -4315,14 +4323,16 @@ function cleanupRenderers(){
 window.addEventListener('pagehide', cleanupRenderers);
 window.addEventListener('beforeunload', cleanupRenderers);
 
-if(!window.__fieldDebugBuildLogged){
+if(isFieldDebugMarkerEnabled() && !window.__fieldDebugBuildLogged){
   console.warn('FIELD_DEBUG_BUILD', FIELD_DEBUG_BUILD);
   window.__fieldDebugBuildLogged = true;
 }
 
 const fieldDebugMarkerTarget = settingsRoot.querySelector('#frame_field_2_counter')
   ?? settingsRoot.querySelector('.cp-field-selector');
-if(fieldDebugMarkerTarget && !settingsRoot.querySelector('[data-field-debug-build]')){
+if(isFieldDebugMarkerEnabled() &&
+  fieldDebugMarkerTarget &&
+  !settingsRoot.querySelector('[data-field-debug-build]')){
   const fieldDebugMarker = document.createElement('span');
   fieldDebugMarker.dataset.fieldDebugBuild = FIELD_DEBUG_BUILD;
   fieldDebugMarker.textContent = '•';
