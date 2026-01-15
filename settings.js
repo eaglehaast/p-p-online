@@ -3754,37 +3754,9 @@ if(hasMapButtons){
   updateMapPreview();
   runFieldSelectorInitChecks();
   syncFieldSelectorState();
-
-  const prepareFieldArrowChange = () => {
-    if(fieldDragExclusiveToken !== null){
-      finalizeFieldExclusiveSession(fieldDragExclusiveToken);
-      fieldDragExclusiveToken = null;
-    }
-    if(isFieldDragging){
-      isFieldDragging = false;
-    }
-
-    const track = getFieldMotionTrack();
-    if(!track){
-      return null;
-    }
-
-    if(FIELD_EXCLUSIVE_MODE){
-      const controlToken = startFieldExclusiveSession();
-      setFieldSelectorStylesAuthorized(controlToken, track, {
-        transition: 'none',
-        transform: getFieldBaseTransform()
-      });
-      return controlToken;
-    }
-
-    setFieldSelectorStyles(track, { transition: 'none', transform: getFieldBaseTransform() });
-    return null;
-  };
-
-  const changeMap = delta => {
-    const controlToken = prepareFieldArrowChange();
-    changeFieldStep(delta, { animate: true, fieldControlToken: controlToken });
+  const changeMap = (delta) => {
+    if(delta === 0) return;
+    queueFieldSteps(1, delta, 0);
   };
 
   addFieldAuditListener(mapPrevBtn, 'click', () => changeMap(-1));
