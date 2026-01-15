@@ -978,12 +978,15 @@ body, button {
 
   #settingsLayer #cp_field_selector_root .fieldLabelTrack {
     position: absolute;
-    inset: 0;
-    width: 100%;
+    top: 0;
+    left: 50%;
+    width: calc(58px * 3);
     height: 100%;
     display: flex;
+    flex-direction: row;
     align-items: center;
     justify-content: center;
+    transform: translateX(-50%);
     z-index: 2;
   }
 
