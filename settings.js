@@ -2120,16 +2120,18 @@ function queueFieldSteps(steps, dir, gestureVelocity = 0){
   runFieldStepQueue();
 }
 
-function getDragMetrics(startX, currentX, startTime, eventTime){
+function getDragMetrics(startX, currentX, startTime, eventTime, { useVelocity = true } = {}){
   const dx = currentX - startX;
   const absDx = Math.abs(dx);
   const deltaTime = Math.max(eventTime - startTime, 1);
   const velocity = absDx / deltaTime;
 
   const stepsByDistance = Math.floor(absDx / RANGE_DRAG_STEP_PX);
-  const stepsByVelocity = Math.floor(
-    Math.max(0, velocity - RANGE_DRAG_VELOCITY_START) * RANGE_DRAG_VELOCITY_MULT
-  );
+  const stepsByVelocity = useVelocity
+    ? Math.floor(
+      Math.max(0, velocity - RANGE_DRAG_VELOCITY_START) * RANGE_DRAG_VELOCITY_MULT
+    )
+    : 0;
   const calculatedSteps = Math.max(stepsByDistance, stepsByVelocity);
   const steps = Math.min(RANGE_DRAG_MAX_STEPS, calculatedSteps);
   const dir = getRangeDirFromDx(dx);
@@ -2187,7 +2189,8 @@ function createSliderDragHandlers(slider){
         slider.state.startX(),
         event.clientX,
         slider.state.startTime(),
-        event.timeStamp
+        event.timeStamp,
+        { useVelocity: slider.previewUsesVelocity !== false }
       ).steps
       : 1;
     const shouldPreview = direction && previewSteps > 0;
@@ -2301,6 +2304,7 @@ const fieldDragHandlers = createSliderDragHandlers({
   isAnimating: () => isFieldAnimating || isAnimating,
   clearStepQueue: clearFieldStepQueue,
   previewUsesSteps: true,
+  previewUsesVelocity: false,
   minAbsDx: 3,
   getPeekOffset: (direction) => {
     const viewport = getFieldDragViewport();
