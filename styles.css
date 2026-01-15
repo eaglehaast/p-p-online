@@ -1018,9 +1018,6 @@ body, button {
     letter-spacing: -0.2px;
     line-height: 1;
     font-family: 'Roboto', sans-serif;
-    background-image: url('ui_controlpanel/cp_tape_field_easy2.png');
-    background-size: 100% 100%;
-    background-repeat: no-repeat;
     position: relative;
     z-index: 2;
   }
@@ -1035,9 +1032,6 @@ body, button {
     padding: 0;
     line-height: 1;
     transform: translateY(0);
-    background-image: url('ui_controlpanel/cp_tape_field_easy2.png');
-    background-size: 100% 100%;
-    background-repeat: no-repeat;
   }
 
   #settingsLayer .cp-field-selector__frame {
