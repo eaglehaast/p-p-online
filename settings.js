@@ -898,6 +898,16 @@ function ensureAccuracyTape(track){
   return tape;
 }
 
+function ensureFieldLabelTape(track){
+  let tape = track.querySelector('.field-label-tape');
+  if(!(tape instanceof HTMLElement)){
+    tape = document.createElement('div');
+    tape.className = 'field-label-tape';
+    track.insertBefore(tape, track.firstChild);
+  }
+  return tape;
+}
+
 function syncRangeTrackStylesFrom(target){
   if(target instanceof HTMLElement){
     rangeTrackTransform = target.style.transform || '';
@@ -947,6 +957,9 @@ function setFieldSelectorStyles(target, styles){
   if(FIELD_EXCLUSIVE_MODE) return;
   logFieldAudit('setFieldSelectorStyles', target, { ...styles });
   setSliderTrackStyles(target, fieldSelectorState, styles);
+  if(target instanceof HTMLElement && target.classList.contains('fieldLabelTrack')){
+    updateFieldLabelTapePosition(target, styles?.transform ?? null);
+  }
 }
 
 function applyStoredAccuracyTrackStyles(target){
@@ -1043,12 +1056,42 @@ function getFieldMotionTrack(){
     throw new Error('FIELD selector missing .fieldLabelTrack');
   }
   syncFieldSelectorStylesFrom(fieldLabelTrack);
+  ensureFieldLabelTape(fieldLabelTrack);
+  updateFieldLabelTapePosition(fieldLabelTrack);
   return fieldLabelTrack;
 }
 
 function normalizeMapIndex(index){
   const totalMaps = Math.max(1, MAPS.length);
   return ((index % totalMaps) + totalMaps) % totalMaps;
+}
+
+function getFieldTrackOffsetFromTransform(transformValue){
+  if(typeof transformValue !== 'string'){
+    return 0;
+  }
+  const calcMatch = transformValue.match(/calc\(-50% \+ (-?\d+(?:\.\d+)?)px\)/);
+  if(calcMatch){
+    return Number(calcMatch[1]);
+  }
+  const pxMatch = transformValue.match(/translateX\((-?\d+(?:\.\d+)?)px\)/);
+  if(pxMatch){
+    return Number(pxMatch[1]);
+  }
+  return 0;
+}
+
+function updateFieldLabelTapePosition(track = null, transformValue = null){
+  const targetTrack = track ?? getFieldMotionTrack();
+  if(!(targetTrack instanceof HTMLElement)){
+    return;
+  }
+  const tape = ensureFieldLabelTape(targetTrack);
+  if(!(tape instanceof HTMLElement)){
+    return;
+  }
+  const offsetPx = getFieldTrackOffsetFromTransform(transformValue ?? targetTrack.style.transform);
+  tape.style.transform = `translateX(calc(-50% + ${-offsetPx}px))`;
 }
 
 function updateRangeTapePosition(displayPosition = rangeScrollPos, track = null){
@@ -2935,11 +2978,17 @@ function assertFieldControlToken(token, context){
 function setFieldSelectorStylesAuthorized(token, target, styles){
   if(!FIELD_EXCLUSIVE_MODE){
     setFieldSelectorStyles(target, styles);
+    if(target instanceof HTMLElement && target.classList.contains('fieldLabelTrack')){
+      updateFieldLabelTapePosition(target, styles?.transform ?? null);
+    }
     return;
   }
   assertFieldControlToken(token, 'setFieldSelectorStyles');
   logFieldAudit('setFieldSelectorStyles', target, { ...styles });
   setSliderTrackStyles(target, fieldSelectorState, styles);
+  if(target instanceof HTMLElement && target.classList.contains('fieldLabelTrack')){
+    updateFieldLabelTapePosition(target, styles?.transform ?? null);
+  }
 }
 
 function setFieldLabelTextAuthorized(token, label, text, context){
