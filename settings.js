@@ -725,7 +725,7 @@ const logFieldSelectorPlacementOnce = () => {
 };
 logFieldSelectorPlacementOnce();
 const mapNameLabelCurrent = fieldSelectorRoot?.querySelector('.fieldLabelSlot--current');
-let fieldSelectorTrack = fieldSelectorRoot?.querySelector('.fieldSelectorTrack');
+let fieldLabelTrack = fieldSelectorRoot?.querySelector('.fieldLabelTrack');
 let fieldLabelCurrent = mapNameLabelCurrent ?? null;
 let currentIndex = mapIndex;
 let nextIndex = mapIndex;
@@ -1025,15 +1025,15 @@ function getFieldDragViewport(){
   return getFieldSelectorRoot();
 }
 
-function getFieldSelectorTrack(){
+function getFieldMotionTrack(){
   assertFieldSelectorSingletons();
   const root = getFieldSelectorRoot();
-  fieldSelectorTrack = fieldSelectorTrack ?? root.querySelector('.fieldSelectorTrack');
-  if(!(fieldSelectorTrack instanceof HTMLElement)){
-    throw new Error('FIELD selector missing .fieldSelectorTrack');
+  fieldLabelTrack = fieldLabelTrack ?? root.querySelector('.fieldLabelTrack');
+  if(!(fieldLabelTrack instanceof HTMLElement)){
+    throw new Error('FIELD selector missing .fieldLabelTrack');
   }
-  syncFieldSelectorStylesFrom(fieldSelectorTrack);
-  return fieldSelectorTrack;
+  syncFieldSelectorStylesFrom(fieldLabelTrack);
+  return fieldLabelTrack;
 }
 
 function normalizeMapIndex(index){
@@ -1538,7 +1538,7 @@ function removeIncomingAccuracyValue(){
 }
 
 function ensureFieldDragTracks(){
-  const selectorTrack = getFieldSelectorTrack();
+  const selectorTrack = getFieldMotionTrack();
   if(!(selectorTrack instanceof HTMLElement)){
     return null;
   }
@@ -2968,7 +2968,7 @@ function normalizeFieldLabelsControlled({ cancelAnimation = false, resetFieldAni
 
   if(cancelAnimation){
     isAnimating = false;
-    const track = getFieldSelectorTrack();
+    const track = getFieldMotionTrack();
     if(track){
       setFieldSelectorStylesAuthorized(token, track, { transition: '' });
     }
@@ -2979,7 +2979,7 @@ function normalizeFieldLabelsControlled({ cancelAnimation = false, resetFieldAni
   }
 
   syncFieldLabelSlots(currentIndex, token);
-  const track = getFieldSelectorTrack();
+  const track = getFieldMotionTrack();
   if(track && !hasActiveInteraction){
     setFieldSelectorStylesAuthorized(token, track, { transform: getFieldBaseTransform() });
   }
@@ -3029,7 +3029,7 @@ function syncFieldSelectorLabels({ token } = {}){
   nextIndex = resolvedIndex;
   mapNameDisplay.setAttribute('aria-label', `${mapNameDisplayBaseLabel}: ${nextText}`);
   syncFieldLabelSlots(resolvedIndex, token);
-  const track = getFieldSelectorTrack();
+  const track = getFieldMotionTrack();
   if(track){
     setFieldSelectorStylesAuthorized(token, track, { transform: getFieldBaseTransform() });
   }
@@ -3056,7 +3056,7 @@ function updateMapNameDisplayControlled(options = {}, token = null){
     index: resolvedIndex,
     textContent: nextText
   });
-  const track = getFieldSelectorTrack();
+  const track = getFieldMotionTrack();
   if(track && !hasActiveInteraction){
     setFieldSelectorStylesAuthorized(token, track, { transform: getFieldBaseTransform() });
   }
@@ -3661,7 +3661,7 @@ if(hasMapButtons){
       isFieldDragging = false;
     }
 
-    const track = getFieldSelectorTrack();
+    const track = getFieldMotionTrack();
     if(!track){
       return null;
     }
