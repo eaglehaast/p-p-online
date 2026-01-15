@@ -3461,21 +3461,21 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, token =
   const endTransform = direction === 'prev' ? '0%' : '-50%';
   const leftSlot = direction === 'prev' ? incomingSlot : outgoingSlot;
   setFieldTrackOrder(leftSlot);
-  setFieldSelectorStylesAuthorized(token, track, { transition: 'none', transform: `translateX(${startTransform})` });
-  isAnimating = true;
-  markFieldAnimationStart(animationToken);
-  console.log(`[map selector] ${currentIndex} -> ${targetIndex}`, {
-    activeSlot,
-    direction,
-    isAnimating
-  });
-
   const tapeReset = updateFieldTapePosition(incomingMapIndex, {
     animate: true,
     direction,
     currentIndex: currentMapIndex,
     syncReset: true,
     fieldControlToken: token
+  });
+  setFieldSelectorStylesAuthorized(token, track, { transition: 'none', transform: `translateX(${startTransform})` });
+  void track.offsetWidth;
+  isAnimating = true;
+  markFieldAnimationStart(animationToken);
+  console.log(`[map selector] ${currentIndex} -> ${targetIndex}`, {
+    activeSlot,
+    direction,
+    isAnimating
   });
 
   requestAnimationFrame(() => {
