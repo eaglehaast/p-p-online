@@ -2707,7 +2707,16 @@ function changeAccuracyStep(delta, options = {}){
 }
 
 function changeFieldStep(delta, options = {}){
-  const exclusiveToken = FIELD_EXCLUSIVE_MODE ? startFieldExclusiveSession() : null;
+  const {
+    onFinish,
+    animate = true,
+    gestureVelocity = 0,
+    fieldControlToken: providedToken = null
+  } = options;
+  const exclusiveToken = FIELD_EXCLUSIVE_MODE ? (providedToken ?? startFieldExclusiveSession()) : null;
+  if(FIELD_EXCLUSIVE_MODE && providedToken !== null){
+    assertFieldControlToken(providedToken, 'changeFieldStep');
+  }
   if(isFieldAnimating || isAnimating){
     if(FIELD_EXCLUSIVE_MODE){
       normalizeFieldLabelsControlled({ cancelAnimation: true }, exclusiveToken);
@@ -2717,12 +2726,6 @@ function changeFieldStep(delta, options = {}){
     resetFieldAnimationTracking();
     cancelFieldLabelAnimation();
   }
-
-  const {
-    onFinish,
-    animate = true,
-    gestureVelocity = 0
-  } = options;
 
   const totalMaps = Math.max(1, MAPS.length);
   const normalizedCurrent = ((currentIndex % totalMaps) + totalMaps) % totalMaps;
@@ -4201,13 +4204,41 @@ if(addsCargoBtn){
 }
 
 const hasMapButtons = mapPrevBtn && mapNextBtn;
-  if(hasMapButtons){
+if(hasMapButtons){
   updateMapPreview();
   runFieldSelectorInitChecks();
   syncFieldSelectorState();
 
+  const prepareFieldArrowChange = () => {
+    if(fieldDragExclusiveToken !== null){
+      finalizeFieldExclusiveSession(fieldDragExclusiveToken);
+      fieldDragExclusiveToken = null;
+    }
+    if(isFieldDragging){
+      isFieldDragging = false;
+    }
+
+    const track = getFieldTapeTrack();
+    if(!track){
+      return null;
+    }
+
+    if(FIELD_EXCLUSIVE_MODE){
+      const controlToken = startFieldExclusiveSession();
+      setFieldTapeTrackStylesAuthorized(controlToken, track, {
+        transition: 'none',
+        transform: 'translateX(-100%)'
+      });
+      return controlToken;
+    }
+
+    setFieldTapeTrackStyles(track, { transition: 'none', transform: 'translateX(-100%)' });
+    return null;
+  };
+
   const changeMap = delta => {
-    changeFieldStep(delta, { animate: true });
+    const controlToken = prepareFieldArrowChange();
+    changeFieldStep(delta, { animate: true, fieldControlToken: controlToken });
   };
 
   addFieldAuditListener(mapPrevBtn, 'click', () => changeMap(-1));
