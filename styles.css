@@ -1034,6 +1034,15 @@ body, button {
     transform: translateY(0);
   }
 
+  #settingsLayer #cp_field_selector_root .fieldLabelSlot--incoming {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    pointer-events: none;
+    z-index: 3;
+  }
+
   #settingsLayer .cp-field-selector__frame {
     position: absolute;
     left: 0;
