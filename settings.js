@@ -3853,11 +3853,12 @@ if(hasMapButtons){
   syncFieldSelectorState();
   const changeMap = (delta) => {
     if(delta === 0) return;
+    const steps = 1;
     const direction = getRangeDirectionLabel(getRangeDirFromDelta(delta));
-    if(direction){
-      prepareIncomingFieldValue(direction, 1);
+    if(direction && steps > 1){
+      prepareIncomingFieldValue(direction, steps);
     }
-    queueFieldSteps(1, delta, 0);
+    queueFieldSteps(steps, delta, 0);
   };
 
   addFieldAuditListener(mapPrevBtn, 'click', () => changeMap(-1));
