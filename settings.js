@@ -1767,7 +1767,6 @@ function resetRangeDragVisual(animateReset){
     transition: '',
     transform: animateReset ? 'translateX(0)' : ''
   });
-  updateRangeTapePosition(rangeDisplayIdx, transformTarget);
 
   removeIncomingRangeValue();
 }
@@ -1779,7 +1778,6 @@ function resetAccuracyDragVisual(animateReset){
     transition: '',
     transform: animateReset ? 'translateX(0)' : ''
   });
-  updateAccuracyTapePosition(accuracyDisplayIdx, transformTarget);
 
   removeIncomingAccuracyValue();
 }
@@ -2054,13 +2052,6 @@ function createSliderDragHandlers(slider){
     const maxOffset = (slider.viewport().clientWidth || 0) * 0.55;
     const clampedDx = Math.max(-maxOffset, Math.min(maxOffset, dx));
     slider.setTrackStyles(transformTarget, { transform: `translateX(${clampedDx}px)` });
-    if(typeof slider.updateTapePosition === 'function' && Number.isFinite(slider.cellWidth)){
-      const baseIndex = typeof slider.getBaseIndex === 'function' ? slider.getBaseIndex() : slider.baseIndex;
-      if(Number.isFinite(baseIndex)){
-        const displayPosition = baseIndex - (clampedDx / slider.cellWidth);
-        slider.updateTapePosition(displayPosition, transformTarget);
-      }
-    }
 
     const minPreviewDx = Number.isFinite(slider.previewMinDx)
       ? Math.max(0, slider.previewMinDx)
@@ -2143,9 +2134,6 @@ const rangeDragHandlers = createSliderDragHandlers({
   queueSteps: queueRangeSteps,
   isAnimating: () => isRangeAnimating,
   clearStepQueue: clearRangeStepQueue,
-  getBaseIndex: () => rangeDisplayIdx,
-  cellWidth: RANGE_CELL_WIDTH,
-  updateTapePosition: updateRangeTapePosition,
   getPeekOffset: (direction) => getSliderPeekOffset(rangeDisplayViewport, direction),
   state: {
     isDragging: () => isRangeDragging,
@@ -2171,9 +2159,6 @@ const accuracyDragHandlers = createSliderDragHandlers({
   queueSteps: queueAccuracySteps,
   isAnimating: () => isAccuracyAnimating,
   clearStepQueue: clearAccuracyStepQueue,
-  getBaseIndex: () => accuracyDisplayIdx,
-  cellWidth: ACCURACY_CELL_WIDTH,
-  updateTapePosition: updateAccuracyTapePosition,
   getPeekOffset: (direction) => getSliderPeekOffset(accuracyDisplayViewport, direction),
   state: {
     isDragging: () => isAccuracyDragging,
