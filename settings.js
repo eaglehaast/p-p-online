@@ -1091,7 +1091,7 @@ function updateFieldLabelTapePosition(track = null, transformValue = null){
     return;
   }
   const offsetPx = getFieldTrackOffsetFromTransform(transformValue ?? targetTrack.style.transform);
-  tape.style.transform = `translateX(calc(-50% + ${-offsetPx}px))`;
+  tape.style.transform = `translateX(calc(-50% + ${offsetPx}px))`;
 }
 
 function updateRangeTapePosition(displayPosition = rangeScrollPos, track = null){
