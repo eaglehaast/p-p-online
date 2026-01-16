@@ -807,14 +807,6 @@ let fieldLabelTransitionTarget = null;
 let fieldLabelTransitionHandler = null;
 let fieldLabelFallbackTimeoutId = null;
 
-function clearFieldLabelTransitionHandlers(){
-  if(fieldLabelTransitionTarget && fieldLabelTransitionHandler){
-    fieldLabelTransitionTarget.removeEventListener('transitionend', fieldLabelTransitionHandler);
-  }
-  fieldLabelTransitionTarget = null;
-  fieldLabelTransitionHandler = null;
-}
-
 const FIELD_LABEL_EASING = 'cubic-bezier(0.175, 0.885, 0.32, 1.275)';
 const FIELD_LABEL_DURATION_MS = RANGE_BASE_STEP_MS;
 const FIELD_LABEL_SLOT_WIDTH = 58;
@@ -836,7 +828,11 @@ function cancelFieldLabelAnimation(){
     clearTimeout(fieldLabelFallbackTimeoutId);
     fieldLabelFallbackTimeoutId = null;
   }
-  clearFieldLabelTransitionHandlers();
+  if(fieldLabelTransitionTarget && fieldLabelTransitionHandler){
+    fieldLabelTransitionTarget.removeEventListener('transitionend', fieldLabelTransitionHandler);
+  }
+  fieldLabelTransitionTarget = null;
+  fieldLabelTransitionHandler = null;
 }
 
 
@@ -2981,8 +2977,6 @@ function endFieldExclusiveSession(token){
 function finalizeFieldExclusiveSession(token){
   if(!FIELD_EXCLUSIVE_MODE) return;
   if(fieldControlActiveToken === null) return;
-  if(token !== fieldControlActiveToken) return;
-  clearFieldLabelTransitionHandlers();
   requestAnimationFrame(() => endFieldExclusiveSession(token));
 }
 
@@ -3171,18 +3165,8 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, options
     transform: baseTransform
   });
 
-  const isTokenActive = () => !FIELD_EXCLUSIVE_MODE || token === fieldControlActiveToken;
-  const abortAnimation = () => {
-    cancelFieldLabelAnimation();
-    markFieldAnimationEnd(animationToken);
-  };
-
   const finalizeAnimation = () => {
     if(animationToken !== fieldAnimationToken) return;
-    if(!isTokenActive()){
-      abortAnimation();
-      return;
-    }
     cancelFieldLabelAnimation();
     setFieldSelectorStylesAuthorized(token, track, {
       transition: 'none',
@@ -3200,10 +3184,6 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, options
 
   const runAnimation = (startTime, timestamp) => {
     if(animationToken !== fieldAnimationToken) return;
-    if(!isTokenActive()){
-      abortAnimation();
-      return;
-    }
     const elapsed = timestamp - startTime;
     const t = Math.min(1, elapsed / totalDurationMs);
     const eased = easeOutCubic(t);
