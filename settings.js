@@ -2185,7 +2185,7 @@ const fieldDragHandlers = createSliderDragHandlers({
   queueSteps: queueFieldSteps,
   isAnimating: () => isFieldAnimating || isAnimating,
   clearStepQueue: clearFieldStepQueue,
-  previewUsesSteps: true,
+  previewUsesSteps: false,
   getPreviewSteps: ({ dx }) => getDragDistanceSteps(dx),
   getPeekOffset: (direction) => {
     const viewport = getFieldDragViewport();
