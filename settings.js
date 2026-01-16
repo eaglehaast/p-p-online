@@ -957,7 +957,11 @@ function setFieldSelectorStyles(target, styles){
   if(FIELD_EXCLUSIVE_MODE) return;
   logFieldAudit('setFieldSelectorStyles', target, { ...styles });
   setSliderTrackStyles(target, fieldSelectorState, styles);
-  if(target instanceof HTMLElement && target.classList.contains('fieldLabelTrack')){
+  if(
+    target instanceof HTMLElement
+    && target.classList.contains('fieldLabelTrack')
+    && !isFieldInteractionActive()
+  ){
     updateFieldLabelTapePosition(target, styles?.transform ?? null);
   }
 }
@@ -1066,21 +1070,6 @@ function normalizeMapIndex(index){
   return ((index % totalMaps) + totalMaps) % totalMaps;
 }
 
-function getFieldTrackOffsetFromTransform(transformValue){
-  if(typeof transformValue !== 'string'){
-    return 0;
-  }
-  const calcMatch = transformValue.match(/calc\(-50% \+ (-?\d+(?:\.\d+)?)px\)/);
-  if(calcMatch){
-    return Number(calcMatch[1]);
-  }
-  const pxMatch = transformValue.match(/translateX\((-?\d+(?:\.\d+)?)px\)/);
-  if(pxMatch){
-    return Number(pxMatch[1]);
-  }
-  return 0;
-}
-
 function updateFieldLabelTapePosition(track = null, transformValue = null){
   const targetTrack = track ?? getFieldMotionTrack();
   if(!(targetTrack instanceof HTMLElement)){
@@ -1090,8 +1079,7 @@ function updateFieldLabelTapePosition(track = null, transformValue = null){
   if(!(tape instanceof HTMLElement)){
     return;
   }
-  const offsetPx = getFieldTrackOffsetFromTransform(transformValue ?? targetTrack.style.transform);
-  tape.style.transform = `translateX(calc(-50% + ${offsetPx}px))`;
+  tape.style.transform = 'translateX(-50%)';
 }
 
 function updateRangeTapePosition(displayPosition = rangeScrollPos, track = null){
@@ -2993,7 +2981,11 @@ function assertFieldControlToken(token, context){
 function setFieldSelectorStylesAuthorized(token, target, styles){
   if(!FIELD_EXCLUSIVE_MODE){
     setFieldSelectorStyles(target, styles);
-    if(target instanceof HTMLElement && target.classList.contains('fieldLabelTrack')){
+    if(
+      target instanceof HTMLElement
+      && target.classList.contains('fieldLabelTrack')
+      && !isFieldInteractionActive()
+    ){
       updateFieldLabelTapePosition(target, styles?.transform ?? null);
     }
     return;
@@ -3001,7 +2993,11 @@ function setFieldSelectorStylesAuthorized(token, target, styles){
   assertFieldControlToken(token, 'setFieldSelectorStyles');
   logFieldAudit('setFieldSelectorStyles', target, { ...styles });
   setSliderTrackStyles(target, fieldSelectorState, styles);
-  if(target instanceof HTMLElement && target.classList.contains('fieldLabelTrack')){
+  if(
+    target instanceof HTMLElement
+    && target.classList.contains('fieldLabelTrack')
+    && !isFieldInteractionActive()
+  ){
     updateFieldLabelTapePosition(target, styles?.transform ?? null);
   }
 }
