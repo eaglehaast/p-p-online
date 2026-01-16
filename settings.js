@@ -802,6 +802,7 @@ let pendingFieldDir = 0;
 let fieldGestureVelocity = 0;
 let fieldAnimationToken = 0;
 let fieldAnimationPending = 0;
+let fieldLabelRafId = null;
 let fieldLabelTransitionTarget = null;
 let fieldLabelTransitionHandler = null;
 let fieldLabelFallbackTimeoutId = null;
@@ -819,6 +820,10 @@ function resetFieldAnimationTracking(){
 }
 
 function cancelFieldLabelAnimation(){
+  if(fieldLabelRafId !== null){
+    cancelAnimationFrame(fieldLabelRafId);
+    fieldLabelRafId = null;
+  }
   if(fieldLabelFallbackTimeoutId){
     clearTimeout(fieldLabelFallbackTimeoutId);
     fieldLabelFallbackTimeoutId = null;
@@ -3125,8 +3130,10 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, options
   const resolvedTarget = normalizeMapIndex(targetIndex);
   const stepCount = Math.max(1, Math.floor(Math.abs(options.steps ?? 1)));
   const stepDurationMs = Math.max(0, options.stepDurationMs ?? FIELD_LABEL_DURATION_MS);
-  const stepDelta = direction === 'next' ? 1 : -1;
   const stepOffsetPx = direction === 'next' ? -FIELD_LABEL_SLOT_WIDTH : FIELD_LABEL_SLOT_WIDTH;
+  const totalOffsetPx = stepOffsetPx * stepCount;
+  const startOffset = 0;
+  const endOffset = totalOffsetPx;
   const baseTransform = getFieldBaseTransform();
 
   normalizeFieldLabelsControlled({ cancelAnimation: true, resetFieldAnimation: false }, token);
@@ -3152,24 +3159,19 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, options
     steps: stepCount
   });
 
-  let remainingSteps = stepCount;
+  const totalDurationMs = stepDurationMs * stepCount;
+  setFieldSelectorStylesAuthorized(token, track, {
+    transition: 'none',
+    transform: baseTransform
+  });
 
-  const finalizeStep = () => {
+  const finalizeAnimation = () => {
     if(animationToken !== fieldAnimationToken) return;
     cancelFieldLabelAnimation();
     setFieldSelectorStylesAuthorized(token, track, {
       transition: 'none',
       transform: baseTransform
     });
-    currentIndex = normalizeMapIndex(currentIndex + stepDelta);
-    syncFieldLabelSlots(currentIndex, token);
-    remainingSteps -= 1;
-
-    if(remainingSteps > 0){
-      requestAnimationFrame(runStep);
-      return;
-    }
-
     currentIndex = resolvedTarget;
     syncFieldLabelSlots(currentIndex, token);
     isAnimating = false;
@@ -3180,41 +3182,30 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, options
     }
   };
 
-  const runStep = () => {
+  const runAnimation = (startTime, timestamp) => {
     if(animationToken !== fieldAnimationToken) return;
+    const elapsed = timestamp - startTime;
+    const t = Math.min(1, elapsed / totalDurationMs);
+    const eased = easeOutCubic(t);
+    const nextOffset = startOffset + (endOffset - startOffset) * eased;
     setFieldSelectorStylesAuthorized(token, track, {
       transition: 'none',
-      transform: baseTransform
+      transform: getFieldOffsetTransform(nextOffset)
     });
 
-    requestAnimationFrame(() => {
-      if(animationToken !== fieldAnimationToken) return;
-      const transition = getFieldSelectorTransition(stepDurationMs);
-      setFieldSelectorStylesAuthorized(token, track, {
-        transition,
-        transform: getFieldOffsetTransform(stepOffsetPx)
-      });
-    });
-
-    let resolved = false;
-    const handleTransitionEnd = (event) => {
-      if(event.target !== track || event.propertyName !== 'transform') return;
-      if(resolved) return;
-      resolved = true;
-      finalizeStep();
-    };
-
-    fieldLabelTransitionTarget = track;
-    fieldLabelTransitionHandler = handleTransitionEnd;
-    track.addEventListener('transitionend', handleTransitionEnd);
-    fieldLabelFallbackTimeoutId = window.setTimeout(() => {
-      if(resolved) return;
-      resolved = true;
-      finalizeStep();
-    }, stepDurationMs + 80);
+    if(t < 1){
+      fieldLabelRafId = requestAnimationFrame((now) => runAnimation(startTime, now));
+    } else {
+      finalizeAnimation();
+    }
   };
 
-  runStep();
+  if(totalDurationMs === 0){
+    finalizeAnimation();
+    return;
+  }
+
+  fieldLabelRafId = requestAnimationFrame((timestamp) => runAnimation(timestamp, timestamp));
 }
 
 function updateMapNameDisplay(options = {}){
