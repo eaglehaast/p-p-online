@@ -1031,10 +1031,12 @@ function getFieldBaseOffsetPx(){
 
 function getFieldOffsetTransform(offsetPx){
   const resolvedOffset = Number.isFinite(offsetPx) ? offsetPx : 0;
-  if(resolvedOffset === 0){
+  const dpr = window.devicePixelRatio || 1;
+  const snappedOffset = Math.round(resolvedOffset * dpr) / dpr;
+  if(snappedOffset === 0){
     return FIELD_LABEL_BASE_TRANSFORM;
   }
-  return `translateX(calc(-50% + ${resolvedOffset}px))`;
+  return `translateX(calc(-50% + ${snappedOffset}px))`;
 }
 
 function getFieldBaseTransform(){
