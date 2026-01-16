@@ -1685,18 +1685,11 @@ function prepareIncomingFieldValue(direction, steps = 1){
   incoming.dataset.direction = direction;
   incoming.dataset.steps = `${stepCount}`;
   incoming.style.transition = 'none';
-  incoming.style.transform = 'translateX(0px)';
-
-  const gapPx = Math.max(0, stepCount - 1) * FIELD_LABEL_SLOT_WIDTH;
-  if(direction === 'prev'){
-    incoming.style.marginLeft = '';
-    incoming.style.marginRight = `${gapPx}px`;
-    track.insertBefore(incoming, fieldLabelPrev);
-  } else {
-    incoming.style.marginLeft = `${gapPx}px`;
-    incoming.style.marginRight = '';
-    track.insertBefore(incoming, fieldLabelNext?.nextSibling ?? null);
-  }
+  incoming.style.position = 'absolute';
+  incoming.style.top = '0';
+  const offsetPx = stepDelta * FIELD_LABEL_SLOT_WIDTH * stepCount;
+  incoming.style.transform = `translateX(calc(-50% + ${offsetPx}px))`;
+  track.appendChild(incoming);
 
   return incoming;
 }
