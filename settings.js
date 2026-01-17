@@ -800,6 +800,7 @@ let fieldDragExclusiveToken = null;
 let pendingFieldSteps = 0;
 let pendingFieldDir = 0;
 let fieldGestureVelocity = 0;
+let fieldDurationScale = 1;
 let fieldAnimationToken = 0;
 let fieldAnimationPending = 0;
 let fieldLabelTransitionTarget = null;
@@ -1947,6 +1948,7 @@ function clearFieldStepQueue(){
   pendingFieldSteps = 0;
   pendingFieldDir = 0;
   fieldGestureVelocity = 0;
+  fieldDurationScale = 1;
 }
 
 function runFieldStepQueue(){
@@ -1963,17 +1965,20 @@ function runFieldStepQueue(){
   changeFieldStep(delta, {
     onFinish: clearFieldStepQueue,
     animate: true,
-    gestureVelocity: fieldGestureVelocity
+    gestureVelocity: fieldGestureVelocity,
+    durationScale: fieldDurationScale
   });
 }
 
-function queueFieldSteps(steps, dir, gestureVelocity = 0){
+function queueFieldSteps(steps, dir, gestureVelocity = 0, options = {}){
   if(steps <= 0 || dir === 0){
     clearFieldStepQueue();
     return;
   }
 
+  const { durationScale = 1 } = options;
   fieldGestureVelocity = gestureVelocity;
+  fieldDurationScale = durationScale;
   pendingFieldSteps = Math.min(RANGE_DRAG_MAX_STEPS, steps);
   pendingFieldDir = dir;
   runFieldStepQueue();
@@ -2085,7 +2090,7 @@ function createSliderDragHandlers(slider){
     }
   };
 
-  const handlePointerEnd = (event) => {
+  const handlePointerEnd = (event, queueOptions = null) => {
     if(!slider.state.isDragging()) return;
 
     if(slider.viewport() && slider.state.pointerId() !== null &&
@@ -2114,7 +2119,7 @@ function createSliderDragHandlers(slider){
     }
 
     slider.resetDragVisual(false);
-    slider.queueSteps(steps, dir, velocity);
+    slider.queueSteps(steps, dir, velocity, queueOptions);
   };
 
   return { handlePointerDown, handlePointerMove, handlePointerEnd };
@@ -2262,7 +2267,11 @@ function handleFieldPointerEnd(event){
     : null;
   const willQueueSteps = !isAnimatingNow && dragMetrics &&
     dragMetrics.steps !== 0 && dragMetrics.dir !== 0;
-  fieldDragHandlers.handlePointerEnd(event);
+  const releaseDurationBoost = dragMetrics && dragMetrics.velocity > 0 ? 1.2 : 1;
+  fieldDragHandlers.handlePointerEnd(
+    event,
+    willQueueSteps ? { durationScale: releaseDurationBoost } : null
+  );
   if(pendingFieldSteps !== 0){
     if(FIELD_EXCLUSIVE_MODE && fieldDragExclusiveToken !== null){
       finalizeFieldExclusiveSession(fieldDragExclusiveToken);
@@ -2434,6 +2443,7 @@ function changeFieldStep(delta, options = {}){
     onFinish,
     animate = true,
     gestureVelocity = 0,
+    durationScale = 1,
     fieldControlToken: providedToken = null
   } = options;
   const exclusiveToken = FIELD_EXCLUSIVE_MODE ? (providedToken ?? startFieldExclusiveSession()) : null;
@@ -2466,7 +2476,7 @@ function changeFieldStep(delta, options = {}){
 
   const direction = getRangeDirectionLabel(getRangeDirFromDelta(delta));
   const totalSteps = Math.max(1, Math.abs(delta));
-  const stepDurationMs = getFieldStepDuration(totalSteps, { gestureVelocity });
+  const stepDurationMs = getFieldStepDuration(totalSteps, { gestureVelocity }) * durationScale;
   const durationMs = stepDurationMs * totalSteps;
 
   mapIndex = nextIndexLocal;
