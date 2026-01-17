@@ -1052,7 +1052,8 @@ function getFieldSelectorRoot(){
 }
 
 function getFieldDragViewport(){
-  return getFieldSelectorRoot();
+  const root = getFieldSelectorRoot();
+  return root.querySelector('.fieldSelectorViewport');
 }
 
 function getFieldMotionTrack(){
@@ -3919,7 +3920,7 @@ if(hasMapButtons){
     addFieldAuditListener(accuracyDisplayViewport, 'pointerup', handleAccuracyPointerEnd);
     addFieldAuditListener(accuracyDisplayViewport, 'pointercancel', handleAccuracyPointerEnd);
   }
-  const fieldDragTarget = getFieldSelectorRoot();
+  const fieldDragTarget = getFieldDragViewport();
   const ensuredFieldTrack = ensureFieldDragTracks();
   if(fieldDragTarget && ensuredFieldTrack){
     addFieldAuditListener(fieldDragTarget, 'pointerdown', handleFieldPointerDown);
