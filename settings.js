@@ -799,6 +799,7 @@ let fieldDragLastDx = 0;
 let fieldDragExclusiveToken = null;
 let pendingFieldSteps = 0;
 let pendingFieldDir = 0;
+let pendingFieldRun = false;
 let fieldGestureVelocity = 0;
 let fieldDurationScale = 1;
 let fieldAnimationToken = 0;
@@ -819,6 +820,12 @@ function resetFieldAnimationTracking(){
   return fieldAnimationToken;
 }
 
+function runPendingFieldStepQueue(){
+  if(!pendingFieldRun) return;
+  pendingFieldRun = false;
+  runFieldStepQueue();
+}
+
 function cancelFieldLabelAnimation(){
   if(fieldLabelFallbackTimeoutId){
     clearTimeout(fieldLabelFallbackTimeoutId);
@@ -829,6 +836,7 @@ function cancelFieldLabelAnimation(){
   }
   fieldLabelTransitionTarget = null;
   fieldLabelTransitionHandler = null;
+  runPendingFieldStepQueue();
 }
 
 
@@ -843,6 +851,7 @@ function markFieldAnimationEnd(token){
   fieldAnimationPending = Math.max(0, fieldAnimationPending - 1);
   if(fieldAnimationPending === 0){
     isFieldAnimating = false;
+    runPendingFieldStepQueue();
   }
 }
 
@@ -1950,6 +1959,7 @@ function clearFieldStepQueue(){
   pendingFieldDir = 0;
   fieldGestureVelocity = 0;
   fieldDurationScale = 1;
+  pendingFieldRun = false;
 }
 
 function runFieldStepQueue(){
@@ -1959,9 +1969,11 @@ function runFieldStepQueue(){
   }
 
   if(isFieldAnimating || isAnimating){
+    pendingFieldRun = true;
     return;
   }
 
+  pendingFieldRun = false;
   const delta = pendingFieldDir * pendingFieldSteps;
   changeFieldStep(delta, {
     onFinish: clearFieldStepQueue,
@@ -3104,6 +3116,7 @@ function normalizeFieldLabelsControlled({ cancelAnimation = false, resetFieldAni
     if(resetFieldAnimation){
       resetFieldAnimationTracking();
     }
+    runPendingFieldStepQueue();
   }
 
   syncFieldLabelSlots(currentIndex, token);
