@@ -805,7 +805,6 @@ let fieldAnimationPending = 0;
 let fieldLabelTransitionTarget = null;
 let fieldLabelTransitionHandler = null;
 let fieldLabelFallbackTimeoutId = null;
-let fieldLabelScrollRafId = null;
 
 const FIELD_LABEL_EASING = 'cubic-bezier(0.175, 0.885, 0.32, 1.275)';
 const FIELD_LABEL_DURATION_MS = RANGE_BASE_STEP_MS;
@@ -829,13 +828,6 @@ function cancelFieldLabelAnimation(){
   }
   fieldLabelTransitionTarget = null;
   fieldLabelTransitionHandler = null;
-}
-
-function clearFieldScrollAnimation(){
-  if(fieldLabelScrollRafId !== null){
-    cancelAnimationFrame(fieldLabelScrollRafId);
-    fieldLabelScrollRafId = null;
-  }
 }
 
 
@@ -1971,8 +1963,7 @@ function runFieldStepQueue(){
   changeFieldStep(delta, {
     onFinish: clearFieldStepQueue,
     animate: true,
-    gestureVelocity: fieldGestureVelocity,
-    fromQueue: true
+    gestureVelocity: fieldGestureVelocity
   });
 }
 
@@ -2443,7 +2434,6 @@ function changeFieldStep(delta, options = {}){
     onFinish,
     animate = true,
     gestureVelocity = 0,
-    fromQueue = false,
     fieldControlToken: providedToken = null
   } = options;
   const exclusiveToken = FIELD_EXCLUSIVE_MODE ? (providedToken ?? startFieldExclusiveSession()) : null;
@@ -2458,7 +2448,6 @@ function changeFieldStep(delta, options = {}){
     }
     resetFieldAnimationTracking();
     cancelFieldLabelAnimation();
-    clearFieldScrollAnimation();
   }
 
   const totalMaps = Math.max(1, MAPS.length);
@@ -2490,83 +2479,6 @@ function changeFieldStep(delta, options = {}){
   );
 
   const animationToken = resetFieldAnimationTracking();
-  const shouldReleaseAnimate = animate && direction && fromQueue && gestureVelocity > 0;
-  const finish = () => {
-    saveSettings();
-    if(typeof onFinish === 'function'){
-      onFinish();
-    }
-  };
-
-  if(shouldReleaseAnimate){
-    normalizeFieldLabelsControlled({ cancelAnimation: true, resetFieldAnimation: false }, exclusiveToken);
-    cancelFieldLabelAnimation();
-    clearFieldScrollAnimation();
-    ensureFieldLabelsForDrag();
-
-    const track = getFieldMotionTrack();
-    if(!track || durationMs === 0){
-      currentIndex = normalizeMapIndex(nextIndexLocal);
-      syncFieldLabelSlots(nextIndexLocal, exclusiveToken);
-      setFieldSelectorStylesAuthorized(exclusiveToken, track, { transform: getFieldBaseTransform() });
-      removeIncomingFieldValue(exclusiveToken);
-      if(FIELD_EXCLUSIVE_MODE){
-        finalizeFieldExclusiveSession(exclusiveToken);
-      }
-      finish();
-      return;
-    }
-
-    isAnimating = true;
-    markFieldAnimationStart(animationToken);
-
-    const startPos = currentIndex;
-    const endPos = nextIndexLocal;
-    const totalSteps = Math.max(1, Math.abs(endPos - startPos));
-
-    const finalizeReleaseAnimation = () => {
-      if(animationToken !== fieldAnimationToken) return;
-      clearFieldScrollAnimation();
-      setFieldSelectorStylesAuthorized(exclusiveToken, track, {
-        transition: 'none',
-        transform: getFieldBaseTransform()
-      });
-      currentIndex = normalizeMapIndex(endPos);
-      syncFieldLabelSlots(endPos, exclusiveToken);
-      isAnimating = false;
-      markFieldAnimationEnd(animationToken);
-      removeIncomingFieldValue(exclusiveToken);
-      if(FIELD_EXCLUSIVE_MODE){
-        finalizeFieldExclusiveSession(exclusiveToken);
-      }
-      finish();
-    };
-
-    const runAnimation = (startTime, timestamp) => {
-      if(animationToken !== fieldAnimationToken) return;
-      const elapsed = timestamp - startTime;
-      const t = Math.min(1, elapsed / durationMs);
-      const overshootStrength = 0.9 * Math.min(1, 1 / totalSteps);
-      const eased = easeOutBack(t, overshootStrength);
-      const currentOffset = startPos + (endPos - startPos) * eased;
-      const offsetPx = (startPos - currentOffset) * FIELD_LABEL_SLOT_WIDTH;
-
-      setFieldSelectorStylesAuthorized(exclusiveToken, track, {
-        transition: 'none',
-        transform: getFieldOffsetTransform(offsetPx)
-      });
-
-      if(t < 1){
-        fieldLabelScrollRafId = requestAnimationFrame((now) => runAnimation(startTime, now));
-      } else {
-        finalizeReleaseAnimation();
-      }
-    };
-
-    fieldLabelScrollRafId = requestAnimationFrame((timestamp) => runAnimation(timestamp, timestamp));
-    return;
-  }
-
   if(animate && direction){
     animateFieldLabelChange(
       nextIndexLocal,
@@ -2583,10 +2495,18 @@ function changeFieldStep(delta, options = {}){
   }
 
   if(animate && direction){
-    window.setTimeout(finish, durationMs);
-    return;
+    window.setTimeout(() => {
+      saveSettings();
+      if(typeof onFinish === 'function'){
+        onFinish();
+      }
+    }, durationMs);
+  } else {
+    saveSettings();
+    if(typeof onFinish === 'function'){
+      onFinish();
+    }
   }
-  finish();
 }
 
 function updateAmplitudeDisplay(){
@@ -3170,7 +3090,6 @@ function normalizeFieldLabelsControlled({ cancelAnimation = false, resetFieldAni
       setFieldSelectorStylesAuthorized(token, track, { transition: '' });
     }
     cancelFieldLabelAnimation();
-    clearFieldScrollAnimation();
     if(resetFieldAnimation){
       resetFieldAnimationTracking();
     }
