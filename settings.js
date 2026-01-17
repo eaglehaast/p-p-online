@@ -807,7 +807,7 @@ let fieldLabelTransitionTarget = null;
 let fieldLabelTransitionHandler = null;
 let fieldLabelFallbackTimeoutId = null;
 
-const FIELD_LABEL_EASING = 'cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+const FIELD_LABEL_EASING = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
 const FIELD_LABEL_DURATION_MS = RANGE_BASE_STEP_MS;
 const FIELD_LABEL_SLOT_WIDTH = 58;
 const FIELD_LABEL_BASE_TRANSFORM = 'translateX(-50%)';
