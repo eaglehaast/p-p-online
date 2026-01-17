@@ -2946,6 +2946,7 @@ function resizeMapPreviewBricksCanvas(){
   }
 
   drawMapPreviewBricks(width, height);
+  updatePreviewBrickColliders(width, height);
 }
 
 function updateMapPreview(){
@@ -2957,6 +2958,7 @@ function updateMapPreview(){
   ensurePreviewCanvasLayering();
   mapPreview.style.backgroundImage = '';
   resizeMapPreviewBricksCanvas();
+  updatePreviewBrickColliders();
   refreshPreviewSimulationIfInitialized();
 }
 
@@ -3618,6 +3620,128 @@ function clamp(value, min, max){
   return Math.max(min, Math.min(max, value));
 }
 
+let previewBrickColliders = [];
+let previewBrickColliderMapIndex = null;
+let previewBrickColliderWidth = 0;
+let previewBrickColliderHeight = 0;
+
+function buildPreviewBrickColliders(boundsWidth, boundsHeight){
+  if(!hasCurrentMapBricks()){
+    return [];
+  }
+
+  const rectWidth = boundsWidth ?? mapPreview?.getBoundingClientRect().width ?? 0;
+  const rectHeight = boundsHeight ?? mapPreview?.getBoundingClientRect().height ?? 0;
+  if(rectWidth <= 0 || rectHeight <= 0){
+    return [];
+  }
+
+  const sprites = Array.isArray(MAPS[mapIndex]?.sprites) ? MAPS[mapIndex].sprites : [];
+  const previewBricks = sprites.filter(isBrickItem);
+  const scaleX = rectWidth / MAP_PREVIEW_BASE_WIDTH;
+  const scaleY = rectHeight / MAP_PREVIEW_BASE_HEIGHT;
+  const previewScale = Math.min(scaleX, scaleY);
+  const offsetX = (rectWidth - MAP_PREVIEW_BASE_WIDTH * previewScale) / 2;
+  const offsetY = (rectHeight - MAP_PREVIEW_BASE_HEIGHT * previewScale) / 2;
+
+  const colliders = [];
+  for(const brick of previewBricks){
+    const spriteName = typeof brick?.spriteName === 'string' ? brick.spriteName : "brick_1_default";
+    const sprite = getPreviewBrickSprite(spriteName);
+    if(!sprite){
+      continue;
+    }
+    if(!isSpriteReady(sprite)){
+      sprite.addEventListener('load', () => updatePreviewBrickColliders(rectWidth, rectHeight), { once: true });
+      continue;
+    }
+
+    const brickX = Number.isFinite(brick?.x) ? brick.x : 0;
+    const brickY = Number.isFinite(brick?.y) ? brick.y : 0;
+    const rotationDeg = Number.isFinite(brick?.rotate) ? brick.rotate : 0;
+    const uniformScale = Number.isFinite(brick?.scale) ? brick.scale : 1;
+    const scaleXLocal = Number.isFinite(brick?.scaleX) ? brick.scaleX : uniformScale;
+    const scaleYLocal = Number.isFinite(brick?.scaleY) ? brick.scaleY : uniformScale;
+
+    const baseWidth = sprite.naturalWidth || 0;
+    const baseHeight = sprite.naturalHeight || 0;
+    if(baseWidth <= 0 || baseHeight <= 0) continue;
+
+    const normalizedRotation = ((rotationDeg % 360) + 360) % 360;
+    const swapsDimensions = normalizedRotation % 180 !== 0;
+    const drawnWidth = (swapsDimensions ? baseHeight : baseWidth) * Math.abs(scaleXLocal) * previewScale;
+    const drawnHeight = (swapsDimensions ? baseWidth : baseHeight) * Math.abs(scaleYLocal) * previewScale;
+
+    colliders.push({
+      x: offsetX + brickX * previewScale,
+      y: offsetY + brickY * previewScale,
+      width: drawnWidth,
+      height: drawnHeight
+    });
+  }
+
+  return colliders;
+}
+
+function updatePreviewBrickColliders(boundsWidth = null, boundsHeight = null){
+  if(!mapPreview) return;
+  const rectWidth = boundsWidth ?? mapPreview.getBoundingClientRect().width;
+  const rectHeight = boundsHeight ?? mapPreview.getBoundingClientRect().height;
+  if(rectWidth <= 0 || rectHeight <= 0){
+    previewBrickColliders = [];
+    previewBrickColliderWidth = rectWidth;
+    previewBrickColliderHeight = rectHeight;
+    previewBrickColliderMapIndex = mapIndex;
+    return;
+  }
+
+  const shouldUpdate = previewBrickColliderMapIndex !== mapIndex
+    || previewBrickColliderWidth !== rectWidth
+    || previewBrickColliderHeight !== rectHeight;
+  if(!shouldUpdate) return;
+
+  previewBrickColliders = buildPreviewBrickColliders(rectWidth, rectHeight);
+  previewBrickColliderWidth = rectWidth;
+  previewBrickColliderHeight = rectHeight;
+  previewBrickColliderMapIndex = mapIndex;
+}
+
+function resolvePreviewBrickCollisions(plane){
+  if(!previewBrickColliders.length) return;
+  const radius = Math.max(plane.width, plane.height) / 2;
+
+  for(const collider of previewBrickColliders){
+    const halfWidth = collider.width / 2;
+    const halfHeight = collider.height / 2;
+    const centerX = collider.x + halfWidth;
+    const centerY = collider.y + halfHeight;
+    const dx = plane.x - centerX;
+    const dy = plane.y - centerY;
+
+    const closestX = clamp(plane.x, collider.x, collider.x + collider.width);
+    const closestY = clamp(plane.y, collider.y, collider.y + collider.height);
+    const distX = plane.x - closestX;
+    const distY = plane.y - closestY;
+    if((distX * distX + distY * distY) > radius * radius){
+      continue;
+    }
+
+    const overlapX = halfWidth + radius - Math.abs(dx);
+    const overlapY = halfHeight + radius - Math.abs(dy);
+    if(overlapX <= 0 || overlapY <= 0){
+      continue;
+    }
+
+    if(overlapX < overlapY){
+      plane.x += dx > 0 ? overlapX : -overlapX;
+      plane.vx = -plane.vx;
+    } else {
+      plane.y += dy > 0 ? overlapY : -overlapY;
+      plane.vy = -plane.vy;
+    }
+  }
+}
+
 function resolvePreviewCollisions(){
   for(let i = 0; i < previewPlanes.length; i++){
     for(let j = i + 1; j < previewPlanes.length; j++){
@@ -3668,6 +3792,8 @@ function updatePreviewPhysics(delta){
 
     plane.x += plane.vx * delta;
     plane.y += plane.vy * delta;
+    updatePreviewBounds(plane);
+    resolvePreviewBrickCollisions(plane);
     updatePreviewBounds(plane);
 
     if(Math.hypot(plane.vx, plane.vy) > 0.01){
