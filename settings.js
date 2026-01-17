@@ -2078,7 +2078,7 @@ function createSliderDragHandlers(slider){
 
     if(incoming){
       const peekOffset = slider.getPeekOffset(direction);
-      incoming.style.transform = `translateX(${peekOffset}px)`;
+      incoming.style.transform = `translateX(calc(-50% + ${peekOffset}px))`;
     } else {
       slider.removeIncomingValue();
     }
