@@ -525,6 +525,7 @@ body, button {
     pointer-events: none;
     object-fit: contain;
     transform-origin: right center;
+    transition: transform 180ms ease-out;
     opacity: 0.5;
   }
 
@@ -547,6 +548,7 @@ body, button {
       display: block;
       pointer-events: none;
       transform-origin: right center;
+      transition: transform 180ms ease-out;
     }
 
   /* Визуализация индикатора дальности на тестовых страницах */
