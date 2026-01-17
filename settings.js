@@ -1671,10 +1671,6 @@ function prepareIncomingFieldValue(direction, steps = 1){
     return null;
   }
   const stepCount = Math.max(1, Math.floor(Math.abs(steps)));
-  if(stepCount <= 1){
-    removeIncomingFieldValue();
-    return null;
-  }
   const stepDelta = direction === 'next' ? 1 : -1;
   const targetIndex = normalizeMapIndex(currentIndex + stepDelta * stepCount);
   const targetLabel = getFieldLabel(targetIndex);
