@@ -2502,14 +2502,17 @@ function changeFieldStep(delta, options = {}){
   const stepDurationMs = getFieldStepDuration(totalSteps, { gestureVelocity }) * durationScale;
   const durationMs = stepDurationMs * totalSteps;
 
-  mapIndex = nextIndexLocal;
   nextIndex = nextIndexLocal;
-  startPreviewSimulation();
-  updateMapPreview();
-  mapNameDisplay?.setAttribute(
-    'aria-label',
-    `${mapNameDisplayBaseLabel}: ${getFieldLabel(nextIndexLocal)}`
-  );
+
+  const applyMapPreviewUpdate = () => {
+    mapIndex = nextIndexLocal;
+    startPreviewSimulation();
+    updateMapPreview();
+    mapNameDisplay?.setAttribute(
+      'aria-label',
+      `${mapNameDisplayBaseLabel}: ${getFieldLabel(nextIndexLocal)}`
+    );
+  };
 
   const animationToken = resetFieldAnimationTracking();
   if(animate && direction){
@@ -2521,6 +2524,7 @@ function changeFieldStep(delta, options = {}){
       exclusiveToken
     );
   } else {
+    applyMapPreviewUpdate();
     updateMapNameDisplayControlled({ index: nextIndexLocal, animationToken }, exclusiveToken);
     if(FIELD_EXCLUSIVE_MODE){
       finalizeFieldExclusiveSession(exclusiveToken);
@@ -2529,6 +2533,7 @@ function changeFieldStep(delta, options = {}){
 
   if(animate && direction){
     window.setTimeout(() => {
+      applyMapPreviewUpdate();
       saveSettings();
       if(typeof onFinish === 'function'){
         onFinish();
