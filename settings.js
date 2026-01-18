@@ -3207,6 +3207,7 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, options
       transition: 'none',
       transform: baseTransform
     });
+    const isFinalStep = remainingSteps === 1;
     const intermediateIndex = normalizeMapIndex(currentIndex + stepDelta);
     updateMapPreviewIndex(intermediateIndex);
     currentIndex = intermediateIndex;
@@ -3218,15 +3219,27 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, options
       return;
     }
 
-    currentIndex = resolvedTarget;
-    syncFieldLabelSlots(currentIndex, token);
-    updateMapPreviewIndex(resolvedTarget);
-    isAnimating = false;
-    markFieldAnimationEnd(animationToken);
-    removeIncomingFieldValue(token);
-    if(FIELD_EXCLUSIVE_MODE){
-      finalizeFieldExclusiveSession(token);
+    const finalizeAnimation = () => {
+      if(animationToken !== fieldAnimationToken) return;
+      currentIndex = resolvedTarget;
+      syncFieldLabelSlots(currentIndex, token);
+      updateMapPreviewIndex(resolvedTarget);
+      isAnimating = false;
+      markFieldAnimationEnd(animationToken);
+      removeIncomingFieldValue(token);
+      if(FIELD_EXCLUSIVE_MODE){
+        finalizeFieldExclusiveSession(token);
+      }
+    };
+
+    if(isFinalStep){
+      window.setTimeout(() => {
+        requestAnimationFrame(finalizeAnimation);
+      }, 60);
+      return;
     }
+
+    finalizeAnimation();
   };
 
   const runStep = () => {
