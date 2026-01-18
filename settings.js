@@ -798,6 +798,7 @@ let fieldDragStartX = 0;
 let fieldDragStartTime = 0;
 let fieldDragPointerId = null;
 let fieldDragLastDx = 0;
+let fieldDragLastNonZeroDx = 0;
 let fieldDragMaxAbsDx = 0;
 let fieldDragExclusiveToken = null;
 let pendingFieldSteps = 0;
@@ -2297,7 +2298,11 @@ function handleFieldPointerMove(event){
   }
   if(isFieldDragging){
     const dx = event.clientX - fieldDragStartX;
-    fieldDragMaxAbsDx = Math.max(fieldDragMaxAbsDx, Math.abs(dx));
+    const absDx = Math.abs(dx);
+    fieldDragMaxAbsDx = Math.max(fieldDragMaxAbsDx, absDx);
+    if(absDx > 0){
+      fieldDragLastNonZeroDx = dx;
+    }
   }
   fieldDragHandlers.handlePointerMove(event);
 }
@@ -2335,6 +2340,7 @@ function handleFieldPointerEnd(event){
       fieldDragExclusiveToken = null;
     }
     fieldDragMaxAbsDx = 0;
+    fieldDragLastNonZeroDx = 0;
     return;
   }
   const isAnimatingNow = isFieldAnimating || isAnimating;
@@ -2349,6 +2355,8 @@ function handleFieldPointerEnd(event){
     )
     : null;
   const maxAbsDx = fieldDragMaxAbsDx;
+  const lastNonZeroDx = fieldDragLastNonZeroDx;
+  const hasLastNonZeroDx = Number.isFinite(lastNonZeroDx) && Math.abs(lastNonZeroDx) > 0;
   let steps = dragMetrics ? dragMetrics.steps : 0;
   let dir = dragMetrics ? dragMetrics.dir : 0;
   const velocity = dragMetrics ? dragMetrics.velocity : 0;
@@ -2362,7 +2370,7 @@ function handleFieldPointerEnd(event){
     );
     const calculatedSteps = Math.max(distanceSteps, velocitySteps);
     steps = Math.min(RANGE_DRAG_MAX_STEPS, Math.max(1, calculatedSteps));
-    const directionDx = hasLastDx ? lastDx : dragMetrics.dx;
+    const directionDx = hasLastNonZeroDx ? lastNonZeroDx : dragMetrics.dx;
     dir = getRangeDirFromDx(directionDx);
   }
   const willQueueSteps = !isAnimatingNow && dragMetrics && steps !== 0 && dir !== 0;
@@ -2383,6 +2391,7 @@ function handleFieldPointerEnd(event){
       fieldDragExclusiveToken = null;
     }
     fieldDragMaxAbsDx = 0;
+    fieldDragLastNonZeroDx = 0;
     return;
   }
   if(FIELD_EXCLUSIVE_MODE && fieldDragExclusiveToken !== null){
@@ -2390,6 +2399,7 @@ function handleFieldPointerEnd(event){
     fieldDragExclusiveToken = null;
   }
   fieldDragMaxAbsDx = 0;
+  fieldDragLastNonZeroDx = 0;
 }
 
 function updateRangeFlame(value = rangeCommittedValue){
