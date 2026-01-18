@@ -798,6 +798,7 @@ let fieldDragStartX = 0;
 let fieldDragStartTime = 0;
 let fieldDragPointerId = null;
 let fieldDragLastDx = 0;
+let fieldDragMaxAbsDx = 0;
 let fieldDragExclusiveToken = null;
 let pendingFieldSteps = 0;
 let pendingFieldDir = 0;
@@ -2105,7 +2106,7 @@ function createSliderDragHandlers(slider){
     }
   };
 
-  const handlePointerEnd = (event, queueOptions = null) => {
+  const handlePointerEnd = (event, queueOptions = null, metricsOverride = null) => {
     if(!slider.state.isDragging()) return;
 
     if(slider.viewport() && slider.state.pointerId() !== null &&
@@ -2113,12 +2114,27 @@ function createSliderDragHandlers(slider){
       slider.viewport().releasePointerCapture(slider.state.pointerId());
     }
 
-    const { dx, absDx, velocity, steps, dir } = getDragMetrics(
+    const metrics = getDragMetrics(
       slider.state.startX(),
       event.clientX,
       slider.state.startTime(),
       event.timeStamp
     );
+    const dx = metricsOverride && Number.isFinite(metricsOverride.dx)
+      ? metricsOverride.dx
+      : metrics.dx;
+    const absDx = metricsOverride && Number.isFinite(metricsOverride.absDx)
+      ? metricsOverride.absDx
+      : metrics.absDx;
+    const velocity = metricsOverride && Number.isFinite(metricsOverride.velocity)
+      ? metricsOverride.velocity
+      : metrics.velocity;
+    const steps = metricsOverride && Number.isFinite(metricsOverride.steps)
+      ? metricsOverride.steps
+      : metrics.steps;
+    const dir = metricsOverride && Number.isFinite(metricsOverride.dir)
+      ? metricsOverride.dir
+      : metrics.dir;
 
     slider.state.setDragging(false);
     slider.state.setPointerId(null);
@@ -2265,6 +2281,7 @@ function handleFieldPointerDown(event){
     }
     fieldDragExclusiveToken = startFieldExclusiveSession();
   }
+  fieldDragMaxAbsDx = 0;
   fieldDragHandlers.handlePointerDown(event);
   if(!isFieldDragging && FIELD_EXCLUSIVE_MODE){
     if(fieldDragExclusiveToken !== null){
@@ -2277,6 +2294,10 @@ function handleFieldPointerDown(event){
 function handleFieldPointerMove(event){
   if(!isFieldDragging && (isFieldAnimating || isAnimating)){
     return;
+  }
+  if(isFieldDragging){
+    const dx = event.clientX - fieldDragStartX;
+    fieldDragMaxAbsDx = Math.max(fieldDragMaxAbsDx, Math.abs(dx));
   }
   fieldDragHandlers.handlePointerMove(event);
 }
@@ -2313,6 +2334,7 @@ function handleFieldPointerEnd(event){
       finalizeFieldExclusiveSession(fieldDragExclusiveToken);
       fieldDragExclusiveToken = null;
     }
+    fieldDragMaxAbsDx = 0;
     return;
   }
   const isAnimatingNow = isFieldAnimating || isAnimating;
@@ -2326,24 +2348,48 @@ function handleFieldPointerEnd(event){
       event.timeStamp
     )
     : null;
-  const willQueueSteps = !isAnimatingNow && dragMetrics &&
-    dragMetrics.steps !== 0 && dragMetrics.dir !== 0;
-  const releaseDurationBoost = dragMetrics && dragMetrics.velocity > 0 ? 1.05 : 1;
+  const maxAbsDx = fieldDragMaxAbsDx;
+  let steps = dragMetrics ? dragMetrics.steps : 0;
+  let dir = dragMetrics ? dragMetrics.dir : 0;
+  const velocity = dragMetrics ? dragMetrics.velocity : 0;
+  if(dragMetrics && maxAbsDx >= RANGE_DRAG_STEP_PX){
+    const distanceSteps = Math.min(
+      RANGE_DRAG_MAX_STEPS,
+      Math.floor(maxAbsDx / RANGE_DRAG_STEP_PX)
+    );
+    const velocitySteps = Math.floor(
+      Math.max(0, velocity - RANGE_DRAG_VELOCITY_START) * RANGE_DRAG_VELOCITY_MULT
+    );
+    const calculatedSteps = Math.max(distanceSteps, velocitySteps);
+    steps = Math.min(RANGE_DRAG_MAX_STEPS, Math.max(1, calculatedSteps));
+    const directionDx = hasLastDx ? lastDx : dragMetrics.dx;
+    dir = getRangeDirFromDx(directionDx);
+  }
+  const willQueueSteps = !isAnimatingNow && dragMetrics && steps !== 0 && dir !== 0;
+  const releaseDurationBoost = dragMetrics && velocity > 0 ? 1.05 : 1;
   fieldDragHandlers.handlePointerEnd(
     event,
-    willQueueSteps ? { durationScale: releaseDurationBoost } : null
+    willQueueSteps ? { durationScale: releaseDurationBoost } : null,
+    dragMetrics ? {
+      steps,
+      dir,
+      absDx: maxAbsDx >= RANGE_DRAG_STEP_PX ? maxAbsDx : dragMetrics.absDx,
+      velocity
+    } : null
   );
   if(pendingFieldSteps !== 0){
     if(FIELD_EXCLUSIVE_MODE && fieldDragExclusiveToken !== null){
       finalizeFieldExclusiveSession(fieldDragExclusiveToken);
       fieldDragExclusiveToken = null;
     }
+    fieldDragMaxAbsDx = 0;
     return;
   }
   if(FIELD_EXCLUSIVE_MODE && fieldDragExclusiveToken !== null){
     finalizeFieldExclusiveSession(fieldDragExclusiveToken);
     fieldDragExclusiveToken = null;
   }
+  fieldDragMaxAbsDx = 0;
 }
 
 function updateRangeFlame(value = rangeCommittedValue){
