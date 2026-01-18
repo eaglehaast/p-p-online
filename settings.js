@@ -2286,8 +2286,15 @@ function handleFieldPointerEnd(event){
     return;
   }
   const isAnimatingNow = isFieldAnimating || isAnimating;
+  const lastDx = fieldDragLastDx;
+  const hasLastDx = Number.isFinite(lastDx) && Math.abs(lastDx) > 0;
   const dragMetrics = isFieldDragging
-    ? getDragMetrics(fieldDragStartX, event.clientX, fieldDragStartTime, event.timeStamp)
+    ? getDragMetrics(
+      fieldDragStartX,
+      hasLastDx ? fieldDragStartX + lastDx : event.clientX,
+      fieldDragStartTime,
+      event.timeStamp
+    )
     : null;
   const willQueueSteps = !isAnimatingNow && dragMetrics &&
     dragMetrics.steps !== 0 && dragMetrics.dir !== 0;
