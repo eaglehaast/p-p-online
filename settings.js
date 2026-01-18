@@ -2285,6 +2285,36 @@ function handleFieldPointerEnd(event){
   if(!isFieldDragging && (isFieldAnimating || isAnimating)){
     return;
   }
+  if(event.type === 'pointercancel'){
+    const lastDx = fieldDragLastDx;
+    const hasLastDx = Number.isFinite(lastDx) && Math.abs(lastDx) > 0;
+    const dragMetrics = isFieldDragging
+      ? getDragMetrics(
+        fieldDragStartX,
+        hasLastDx ? fieldDragStartX + lastDx : fieldDragStartX,
+        fieldDragStartTime,
+        event.timeStamp
+      )
+      : null;
+    const viewport = getFieldDragViewport();
+    if(viewport && fieldDragPointerId !== null &&
+       viewport.hasPointerCapture(fieldDragPointerId)){
+      viewport.releasePointerCapture(fieldDragPointerId);
+    }
+    isFieldDragging = false;
+    fieldDragPointerId = null;
+    if(isFieldAnimating || isAnimating){
+      resetFieldDragVisual(false);
+    } else {
+      const absDx = dragMetrics ? Math.abs(dragMetrics.dx) : 0;
+      resetFieldDragVisual(absDx > 0);
+    }
+    if(FIELD_EXCLUSIVE_MODE && fieldDragExclusiveToken !== null){
+      finalizeFieldExclusiveSession(fieldDragExclusiveToken);
+      fieldDragExclusiveToken = null;
+    }
+    return;
+  }
   const isAnimatingNow = isFieldAnimating || isAnimating;
   const lastDx = fieldDragLastDx;
   const hasLastDx = Number.isFinite(lastDx) && Math.abs(lastDx) > 0;
