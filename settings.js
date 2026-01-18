@@ -2291,7 +2291,7 @@ function handleFieldPointerEnd(event){
     : null;
   const willQueueSteps = !isAnimatingNow && dragMetrics &&
     dragMetrics.steps !== 0 && dragMetrics.dir !== 0;
-  const releaseDurationBoost = dragMetrics && dragMetrics.velocity > 0 ? 1.2 : 1;
+  const releaseDurationBoost = dragMetrics && dragMetrics.velocity > 0 ? 1.05 : 1;
   fieldDragHandlers.handlePointerEnd(
     event,
     willQueueSteps ? { durationScale: releaseDurationBoost } : null
