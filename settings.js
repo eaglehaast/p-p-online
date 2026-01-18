@@ -2348,6 +2348,9 @@ function handleFieldPointerEnd(event){
       event.timeStamp
     )
     : null;
+  if(dragMetrics){
+    fieldDragMaxAbsDx = Math.max(fieldDragMaxAbsDx, Math.abs(dragMetrics.dx));
+  }
   const maxAbsDx = fieldDragMaxAbsDx;
   let steps = dragMetrics ? dragMetrics.steps : 0;
   let dir = dragMetrics ? dragMetrics.dir : 0;
