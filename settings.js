@@ -811,8 +811,8 @@ let fieldLabelTransitionHandler = null;
 let fieldLabelFallbackTimeoutId = null;
 
 const FIELD_LABEL_EASING = 'cubic-bezier(0.1, 0.9, 0.2, 1)';
-const FIELD_LABEL_DURATION_MS = RANGE_BASE_STEP_MS;
-const FIELD_LABEL_DURATION_SCALE = 0.85;
+const FIELD_LABEL_DURATION_MS = 150;
+const FIELD_LABEL_MIN_STEP_MS = 90;
 const FIELD_LABEL_SLOT_WIDTH = 58;
 const FIELD_LABEL_BASE_TRANSFORM = 'translateX(-50%)';
 
@@ -1879,10 +1879,9 @@ function getRangeStepDuration(pendingSteps, { fastScroll = false, gestureVelocit
 
 function getFieldStepDuration(totalSteps, { gestureVelocity = 0 } = {}){
   if(totalSteps <= 1){
-    return FIELD_LABEL_DURATION_MS * FIELD_LABEL_DURATION_SCALE;
+    return FIELD_LABEL_DURATION_MS;
   }
-  const fastScroll = totalSteps >= RANGE_FAST_SCROLL_THRESHOLD;
-  return getRangeStepDuration(totalSteps, { fastScroll, gestureVelocity }) * FIELD_LABEL_DURATION_SCALE;
+  return Math.max(FIELD_LABEL_MIN_STEP_MS, FIELD_LABEL_DURATION_MS * 0.85);
 }
 
 function clearRangeStepQueue(){
