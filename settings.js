@@ -333,6 +333,7 @@ function sanitizeMapIndex(index, { excludeIndex, allowRandom } = {}){
 const PREVIEW_CELL_SIZE = 20;
 const PREVIEW_MAX_DRAG_DISTANCE = 100;
 const PREVIEW_DRAG_ROTATION_THRESHOLD = 5;
+const PREVIEW_PLANE_HITBOX_SHRINK_PX = 4;
 // Keep extended timing in the preview/container only; field flights use FIELD_FLIGHT_DURATION_SEC
 const CONTAINER_FLIGHT_DURATION_SEC = (68 / 60) * 2;
 const PREVIEW_FLIGHT_DURATION_SEC = CONTAINER_FLIGHT_DURATION_SEC;
@@ -3597,7 +3598,8 @@ function updatePreviewBounds(plane){
       boundsHeight
     });
   }
-  const radius = Math.max(plane.width, plane.height) / 2;
+  const rawRadius = Math.max(plane.width, plane.height) / 2;
+  const radius = Math.max(1, rawRadius - PREVIEW_PLANE_HITBOX_SHRINK_PX);
 
   if(plane.x - radius < 0){
     plane.x = radius;
@@ -3708,7 +3710,8 @@ function updatePreviewBrickColliders(boundsWidth = null, boundsHeight = null){
 
 function resolvePreviewBrickCollisions(plane){
   if(!previewBrickColliders.length) return;
-  const radius = Math.max(plane.width, plane.height) / 2;
+  const rawRadius = Math.max(plane.width, plane.height) / 2;
+  const radius = Math.max(1, rawRadius - PREVIEW_PLANE_HITBOX_SHRINK_PX);
 
   for(const collider of previewBrickColliders){
     const halfWidth = collider.width / 2;
