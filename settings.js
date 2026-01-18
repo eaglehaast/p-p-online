@@ -760,6 +760,7 @@ const previewPlaneBaselines = new WeakMap();
 let mapPreviewBricksCanvas = null;
 let mapPreviewBricksCtx = null;
 let mapPreviewBrickDpr = window.devicePixelRatio || 1;
+let lastPreviewMapIndex = null;
 const previewBrickSprites = new Map();
 const previewHandle = {
   active: false,
@@ -2505,9 +2506,7 @@ function changeFieldStep(delta, options = {}){
   nextIndex = nextIndexLocal;
 
   const applyMapPreviewUpdate = () => {
-    mapIndex = nextIndexLocal;
-    startPreviewSimulation();
-    updateMapPreview();
+    updateMapPreviewIndex(nextIndexLocal);
     mapNameDisplay?.setAttribute(
       'aria-label',
       `${mapNameDisplayBaseLabel}: ${getFieldLabel(nextIndexLocal)}`
@@ -2975,6 +2974,17 @@ function updateMapPreview(){
   resizeMapPreviewBricksCanvas();
   updatePreviewBrickColliders();
   refreshPreviewSimulationIfInitialized();
+  lastPreviewMapIndex = mapIndex;
+}
+
+function updateMapPreviewIndex(nextIndex, { force = false } = {}){
+  const resolvedIndex = normalizeMapIndex(nextIndex);
+  mapIndex = resolvedIndex;
+  if(!force && lastPreviewMapIndex === resolvedIndex){
+    return;
+  }
+  startPreviewSimulation();
+  updateMapPreview();
 }
 
 function getFieldLabelLayer(){
@@ -3197,7 +3207,9 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, options
       transition: 'none',
       transform: baseTransform
     });
-    currentIndex = normalizeMapIndex(currentIndex + stepDelta);
+    const intermediateIndex = normalizeMapIndex(currentIndex + stepDelta);
+    updateMapPreviewIndex(intermediateIndex);
+    currentIndex = intermediateIndex;
     syncFieldLabelSlots(currentIndex, token);
     remainingSteps -= 1;
 
@@ -3208,6 +3220,7 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, options
 
     currentIndex = resolvedTarget;
     syncFieldLabelSlots(currentIndex, token);
+    updateMapPreviewIndex(resolvedTarget);
     isAnimating = false;
     markFieldAnimationEnd(animationToken);
     removeIncomingFieldValue(token);
