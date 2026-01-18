@@ -2254,6 +2254,9 @@ function handleAccuracyPointerEnd(event){
 }
 
 function handleFieldPointerDown(event){
+  if(isFieldAnimating || isAnimating){
+    return;
+  }
   if(FIELD_EXCLUSIVE_MODE){
     if(fieldDragExclusiveToken !== null){
       finalizeFieldExclusiveSession(fieldDragExclusiveToken);
@@ -2271,10 +2274,16 @@ function handleFieldPointerDown(event){
 }
 
 function handleFieldPointerMove(event){
+  if(!isFieldDragging && (isFieldAnimating || isAnimating)){
+    return;
+  }
   fieldDragHandlers.handlePointerMove(event);
 }
 
 function handleFieldPointerEnd(event){
+  if(!isFieldDragging && (isFieldAnimating || isAnimating)){
+    return;
+  }
   const isAnimatingNow = isFieldAnimating || isAnimating;
   const dragMetrics = isFieldDragging
     ? getDragMetrics(fieldDragStartX, event.clientX, fieldDragStartTime, event.timeStamp)
