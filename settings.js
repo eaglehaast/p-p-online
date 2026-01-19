@@ -1348,8 +1348,14 @@ function applyRangeScrollVisual(scrollPos){
   const transformTarget = ensureRangeDisplayTrack();
 
   rangeScrollPos = clampedPos;
+  const lowIndex = Math.floor(clampedPos);
+  const highIndex = Math.min(lowIndex + 1, RANGE_DISPLAY_VALUES.length - 1);
+  const t = clampedPos - lowIndex;
+  const value = RANGE_DISPLAY_VALUES[lowIndex]
+    + t * (RANGE_DISPLAY_VALUES[highIndex] - RANGE_DISPLAY_VALUES[lowIndex]);
 
   updateRangeTapePosition(clampedPos, transformTarget);
+  updateRangeFlame(value);
 
   if(transformTarget){
     setRangeTrackStyles(transformTarget, { transition: 'none', transform: '' });
