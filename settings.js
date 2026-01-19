@@ -675,7 +675,7 @@ if(!fieldModuleRoot.contains(fieldSelectorRoot)){
 if(!(fieldModuleRoot.querySelector('#cp_field_selector_root') instanceof HTMLElement)){
   throw new Error('FIELD selector root not inside FIELD module');
 }
-const fieldSelectorLeft = 65;
+const fieldSelectorLeft = 60;
 const fieldSelectorTop = 257;
 let hasLoggedFieldSelectorPlacement = false;
 const logFieldSelectorPlacementOnce = () => {
