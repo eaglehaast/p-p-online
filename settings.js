@@ -2052,6 +2052,7 @@ function createSliderDragHandlers(slider){
     slider.state.setStartTime(event.timeStamp);
     slider.state.setLastDx(0);
 
+    slider.viewport().classList.add('is-dragging');
     slider.viewport().setPointerCapture(event.pointerId);
   };
 
@@ -2145,6 +2146,9 @@ function createSliderDragHandlers(slider){
 
     slider.state.setDragging(false);
     slider.state.setPointerId(null);
+    if(slider.viewport()){
+      slider.viewport().classList.remove('is-dragging');
+    }
 
     if(slider.isAnimating()){
       slider.resetDragVisual(false);
