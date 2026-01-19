@@ -626,6 +626,7 @@ body, button {
     touch-action: none;
     user-select: none;
     -webkit-user-select: none;
+    cursor: grab;
   }
 
   .range-display__layer,
@@ -967,6 +968,13 @@ body, button {
     touch-action: none;
     user-select: none;
     -webkit-user-select: none;
+    cursor: grab;
+  }
+
+  .range-display__viewport.is-dragging,
+  .accuracy-display__viewport.is-dragging,
+  #settingsLayer #cp_field_selector_root .fieldSelectorViewport.is-dragging {
+    cursor: grabbing;
   }
 
   #settingsLayer #cp_field_selector_root .fieldSelectorTrack {
