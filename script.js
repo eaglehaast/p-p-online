@@ -4090,6 +4090,33 @@ const handleCircle={
   origAngle:null
 };
 
+function isPlaneGrabbableAt(x, y) {
+  if(isGameOver || !gameMode) return false;
+
+  const currentColor = turnColors[turnIndex];
+  if(gameMode === "computer" && currentColor === "blue") return false; // ход ИИ
+
+  if(flyingPoints.some(fp => fp.plane.color === currentColor)) return false;
+
+  return points.some(pt =>
+    pt.color === currentColor &&
+    pt.isAlive && !pt.burning &&
+    Math.hypot(pt.x - x, pt.y - y) <= PLANE_TOUCH_RADIUS
+  );
+}
+
+function updateBoardCursorForHover(x, y) {
+  if(phase === 'AA_PLACEMENT') {
+    gsBoardCanvas.style.cursor = '';
+    return;
+  }
+  if(handleCircle.active) {
+    gsBoardCanvas.style.cursor = 'grabbing';
+    return;
+  }
+  gsBoardCanvas.style.cursor = isPlaneGrabbableAt(x, y) ? 'grab' : '';
+}
+
 function handleStart(e) {
   e.preventDefault();
   if(isGameOver || !gameMode) return;
@@ -4117,6 +4144,7 @@ function handleStart(e) {
   oscillationAngle = 0;
   oscillationDir = 1;
   roundTextTimer = 0; // Hide round label when player starts a move
+  gsBoardCanvas.style.cursor = 'grabbing';
 
   // Show overlay canvas for aiming arrow
   aimCanvas.style.display = "block";
@@ -4164,10 +4192,15 @@ function onCanvasPointerDown(e){
 
 function onCanvasPointerMove(e){
   logPointerDebugEvent(e);
-  if(phase !== 'AA_PLACEMENT') return;
+  const { x, y } = clientToBoard(e);
+  if(phase !== 'AA_PLACEMENT'){
+    updateBoardCursorForHover(x, y);
+    return;
+  }
   if(e.pointerType === 'mouse' || aaPointerDown){
     updateAAPreviewFromEvent(e);
   }
+  updateBoardCursorForHover(x, y);
 }
 
 function onCanvasPointerUp(e){
@@ -4335,14 +4368,18 @@ function onHandleMove(e){
 
   handleCircle.baseX = x;
   handleCircle.baseY = y;
+  gsBoardCanvas.style.cursor = 'grabbing';
 }
 
 function onHandleUp(){
   if(!handleCircle.active || !handleCircle.pointRef) return;
+  const { baseX, baseY } = handleCircle;
   let plane= handleCircle.pointRef;
   if(isGameOver || !gameMode){
     plane.angle = handleCircle.origAngle;
-    cleanupHandle(); return;
+    cleanupHandle();
+    updateBoardCursorForHover(baseX, baseY);
+    return;
   }
   let dx= handleCircle.shakyX - plane.x;
   let dy= handleCircle.shakyY - plane.y;
@@ -4352,6 +4389,7 @@ function onHandleUp(){
   if(dragDistance < CELL_SIZE){
     plane.angle = handleCircle.origAngle;
     cleanupHandle();
+    updateBoardCursorForHover(baseX, baseY);
     return;
   }
   if(dragDistance > MAX_DRAG_DISTANCE){
@@ -4388,6 +4426,7 @@ function onHandleUp(){
     renderScoreboard();
   }
   cleanupHandle();
+  updateBoardCursorForHover(baseX, baseY);
 }
 function cleanupHandle(){
   handleCircle.active= false;
