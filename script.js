@@ -4145,6 +4145,7 @@ function handleStart(e) {
   oscillationDir = 1;
   roundTextTimer = 0; // Hide round label when player starts a move
   gsBoardCanvas.style.cursor = 'grabbing';
+  document.body.style.cursor = 'grabbing';
 
   // Show overlay canvas for aiming arrow
   aimCanvas.style.display = "block";
@@ -4369,6 +4370,7 @@ function onHandleMove(e){
   handleCircle.baseX = x;
   handleCircle.baseY = y;
   gsBoardCanvas.style.cursor = 'grabbing';
+  document.body.style.cursor = 'grabbing';
 }
 
 function onHandleUp(){
@@ -4435,6 +4437,7 @@ function cleanupHandle(){
   // Hide overlay canvas when aiming ends
   aimCanvas.style.display = "none";
   aimCtx.clearRect(0,0,aimCanvas.width,aimCanvas.height);
+  document.body.style.cursor = '';
   window.removeEventListener("mousemove", onHandleMove);
   window.removeEventListener("mouseup", onHandleUp);
   window.removeEventListener("touchmove", onHandleMove);
