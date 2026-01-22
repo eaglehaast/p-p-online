@@ -996,6 +996,7 @@ function syncPlayButtonSkin(isReady){
   if(!(playBtn instanceof HTMLElement)) return;
   const ready = !!isReady;
   playBtn.disabled = !ready;
+  playBtn.classList.toggle("disabled", !ready);
   playBtn.setAttribute("aria-pressed", ready ? "true" : "false");
   applyMenuButtonSkin(playBtn, "play", ready);
 }
