@@ -1297,10 +1297,15 @@ body, button {
 
   #menuLayer #modeMenu .mm-plane {
     position: absolute;
+    left: 0;
+    top: 0;
     width: 120px;
     height: auto;
+    transform: translate(0px, 0px);
+    transition: transform 220ms ease-out, opacity 180ms ease-out;
+    will-change: transform, opacity;
     pointer-events: none;
-    z-index: 1;
+    z-index: 2;
   }
 
   #menuLayer #modeMenu .mm-plane__inner {
@@ -1312,8 +1317,7 @@ body, button {
   }
 
   #menuLayer #modeMenu .mm-plane--left {
-    left: 32px;
-    top: 140px;
+    opacity: 1;
   }
 
   #menuLayer #modeMenu .mm-plane--left .mm-plane__inner {
@@ -1321,8 +1325,7 @@ body, button {
   }
 
   #menuLayer #modeMenu .mm-plane--right {
-    right: 32px;
-    top: 140px;
+    opacity: 1;
   }
 
   #menuLayer #modeMenu .mm-plane--right .mm-plane__inner {
@@ -1331,13 +1334,13 @@ body, button {
 
   @keyframes mm-plane-sway {
     0% {
-      transform: rotate(-2deg) translateY(0);
+      transform: translateY(1px) rotate(-2deg);
     }
     50% {
-      transform: rotate(2deg) translateY(-3px);
+      transform: translateY(-1px) rotate(2deg);
     }
     100% {
-      transform: rotate(-2deg) translateY(0);
+      transform: translateY(1px) rotate(-2deg);
     }
   }
 
@@ -1380,6 +1383,7 @@ body, button {
   background-size: contain;
   background-position: center;
   cursor: pointer;
+  z-index: 3;
 }
 
 #menuLayer #modeMenu .mode-menu__btn:disabled {

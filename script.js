@@ -2370,6 +2370,8 @@ const modeMenuDiv = document.getElementById("modeMenu");
 const hotSeatBtn  = document.getElementById("hotSeatBtn");
 const computerBtn = document.getElementById("computerBtn");
 const onlineBtn   = document.getElementById("onlineBtn");
+const leftModePlane = document.getElementById("mm_plane_left");
+const rightModePlane = document.getElementById("mm_plane_right");
 
 const playBtn     = document.getElementById("playBtn");
 
@@ -4052,8 +4054,62 @@ if(advancedSettingsBtn){
     }
   });
 }
+function updateModePlanesPosition(selectedMode){
+  if(!(modeMenuDiv instanceof HTMLElement)) return;
+  if(!(leftModePlane instanceof HTMLElement) || !(rightModePlane instanceof HTMLElement)) return;
+
+  const buttonMap = {
+    hotSeat: hotSeatBtn,
+    computer: computerBtn,
+    online: onlineBtn
+  };
+  const activeButton = modeMenuDiv.querySelector(".mode-menu__btn.menu-btn--active")
+    || (selectedMode ? buttonMap[selectedMode] : null);
+
+  if(!(activeButton instanceof HTMLElement)) return;
+
+  const btnRect = activeButton.getBoundingClientRect();
+  const rootRect = modeMenuDiv.getBoundingClientRect();
+  if(!btnRect || !rootRect) return;
+
+  const rootX = btnRect.left - rootRect.left;
+  const rootY = btnRect.top - rootRect.top;
+  const sideOffset = 48;
+
+  const updatePlane = (plane, targetX) => {
+    const planeRect = plane.getBoundingClientRect();
+    const planeHeight = planeRect.height || plane.offsetHeight || 0;
+    const targetY = rootY + btnRect.height / 2 - planeHeight / 2;
+    plane.style.transform = `translate(${targetX}px, ${targetY}px)`;
+  };
+
+  const leftPlaneWidth = leftModePlane.getBoundingClientRect().width || leftModePlane.offsetWidth || 0;
+  const rightPlaneWidth = rightModePlane.getBoundingClientRect().width || rightModePlane.offsetWidth || 0;
+
+  const leftX = rootX - (leftPlaneWidth + sideOffset);
+  const rightX = rootX + btnRect.width + sideOffset;
+
+  const needsInitialPosition = !modeMenuDiv.dataset.mmPlanesReady;
+  if(needsInitialPosition){
+    leftModePlane.style.transition = "none";
+    rightModePlane.style.transition = "none";
+  }
+
+  updatePlane(leftModePlane, leftX);
+  updatePlane(rightModePlane, rightX);
+
+  if(needsInitialPosition){
+    requestAnimationFrame(() => {
+      leftModePlane.style.transition = "";
+      rightModePlane.style.transition = "";
+      modeMenuDiv.dataset.mmPlanesReady = "true";
+    });
+  }
+}
+
 function updateModeSelection(){
   syncModeButtonSkins(selectedMode);
+  updateModePlanesPosition(selectedMode);
 
   const ready = Boolean(selectedMode);
   syncPlayButtonSkin(ready);
