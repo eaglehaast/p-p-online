@@ -1357,13 +1357,13 @@ body, button {
 #menuLayer #modeMenu .mode-menu__btn.menu-btn--active:not(.mode-menu__btn--play)::before {
   left: calc(-36px - 12px);
   background-image: url('ui_gamescreen/PLANES/gs_plane_green.png');
-  transform: translateY(-50%) rotate(-12deg);
+  transform: translateY(-50%) rotate(90deg);
 }
 
 #menuLayer #modeMenu .mode-menu__btn.menu-btn--active:not(.mode-menu__btn--play)::after {
   right: calc(-36px - 12px);
   background-image: url('ui_gamescreen/PLANES/gs_plane_blue.png');
-  transform: translateY(-50%) rotate(12deg);
+  transform: translateY(-50%) rotate(-90deg);
 }
 
 #menuLayer #modeMenu .mode-menu__btn.disabled {
