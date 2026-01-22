@@ -1351,11 +1351,11 @@ body, button {
   height: calc(48 / var(--mm-base-height) * 100%);
   top: calc(151 / var(--mm-base-height) * 100%);
   left: calc(128 / var(--mm-base-width) * 100%);
-  background-image: url('ui_mainmenu/mm_hotseat_Default.png');
+  background-image: url('ui_mainmenu/mm_hotseat.png');
 }
 
 #menuLayer #modeMenu .mode-menu__btn--hotseat.selected {
-  background-image: url('ui_mainmenu/mm_hotseat_Active.png');
+  background-image: url('ui_mainmenu/mm_hotseat.png');
 }
 
 #menuLayer #modeMenu .mode-menu__btn--computer {
@@ -1363,11 +1363,11 @@ body, button {
   height: calc(48 / var(--mm-base-height) * 100%);
   top: calc(213 / var(--mm-base-height) * 100%);
   left: calc(118 / var(--mm-base-width) * 100%);
-  background-image: url('ui_mainmenu/mm_computer_default.png');
+  background-image: url('ui_mainmenu/mm_computer.png');
 }
 
 #menuLayer #modeMenu .mode-menu__btn--computer.selected {
-  background-image: url('ui_mainmenu/mm_computer_active.png');
+  background-image: url('ui_mainmenu/mm_computer.png');
 }
 
 #menuLayer #modeMenu .mode-menu__btn--online {
@@ -1375,11 +1375,11 @@ body, button {
   height: calc(48 / var(--mm-base-height) * 100%);
   top: calc(275 / var(--mm-base-height) * 100%);
   left: calc(152 / var(--mm-base-width) * 100%);
-  background-image: url('ui_mainmenu/mm_online_default.png');
+  background-image: url('ui_mainmenu/mm_online.png');
 }
 
 #menuLayer #modeMenu .mode-menu__btn--online.selected {
-  background-image: url('ui_mainmenu/mm_online_active.png');
+  background-image: url('ui_mainmenu/mm_online.png');
 }
 
 #menuLayer #modeMenu .mode-menu__btn--play {
@@ -1387,11 +1387,11 @@ body, button {
   height: calc(48 / var(--mm-base-height) * 100%);
   top: calc(383 / var(--mm-base-height) * 100%);
   left: calc(170 / var(--mm-base-width) * 100%);
-  background-image: url('ui_mainmenu/mm_play_default.png');
+  background-image: url('ui_mainmenu/mm_play.png');
 }
 
 #menuLayer #modeMenu .mode-menu__btn--play.active {
-  background-image: url('ui_mainmenu/mm_play_active.png');
+  background-image: url('ui_mainmenu/mm_play.png');
 }
 
 #menuLayer #modeMenu .mode-menu__btn--classic {
@@ -1399,11 +1399,11 @@ body, button {
   height: calc(48 / var(--mm-base-height) * 100%);
   top: calc(491 / var(--mm-base-height) * 100%);
   left: calc(94 / var(--mm-base-width) * 100%);
-  background-image: url('ui_mainmenu/mm_classicrules_default.png');
+  background-image: url('ui_mainmenu/mm_classicrules.png');
 }
 
 #menuLayer #modeMenu .mode-menu__btn--classic.selected {
-  background-image: url('ui_mainmenu/mm_classicrules_active.png');
+  background-image: url('ui_mainmenu/mm_classicrules.png');
 }
 
 #menuLayer #modeMenu .mode-menu__btn--advanced {
@@ -1411,11 +1411,11 @@ body, button {
   height: calc(86 / var(--mm-base-height) * 100%);
   top: calc(553 / var(--mm-base-height) * 100%);
   left: calc(111 / var(--mm-base-width) * 100%);
-  background-image: url('ui_mainmenu/mm_advancedsettings_default.png');
+  background-image: url('ui_mainmenu/mm_advancedsettings.png');
 }
 
 #menuLayer #modeMenu .mode-menu__btn--advanced.selected {
-  background-image: url('ui_mainmenu/mm_advancedsettings_active.png');
+  background-image: url('ui_mainmenu/mm_advancedsettings.png');
 }
 
 /* Индикатор дальности — самолёт с огнём */
