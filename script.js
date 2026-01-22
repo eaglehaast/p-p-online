@@ -2376,6 +2376,30 @@ const playBtn     = document.getElementById("playBtn");
 const classicRulesBtn     = document.getElementById("classicRulesBtn");
 const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
 
+function setupMenuPressFeedback(buttons) {
+  buttons.forEach((button) => {
+    if (!button) return;
+    const clearPressed = () => button.classList.remove("is-pressed");
+
+    button.addEventListener("pointerdown", () => {
+      button.classList.add("is-pressed");
+    });
+    button.addEventListener("pointerup", clearPressed);
+    button.addEventListener("pointercancel", clearPressed);
+    button.addEventListener("pointerleave", clearPressed);
+    button.addEventListener("blur", clearPressed);
+  });
+}
+
+setupMenuPressFeedback([
+  hotSeatBtn,
+  computerBtn,
+  onlineBtn,
+  playBtn,
+  classicRulesBtn,
+  advancedSettingsBtn
+]);
+
 let selectedMode = null;
 let selectedRuleset = "classic";
 

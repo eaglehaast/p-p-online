@@ -1341,6 +1341,16 @@ body, button {
   cursor: not-allowed;
 }
 
+#menuLayer #modeMenu .mode-menu__btn {
+  transition: transform 100ms ease-out, filter 100ms ease-out;
+}
+
+#menuLayer #modeMenu .mode-menu__btn:active:not(:disabled),
+#menuLayer #modeMenu .mode-menu__btn.is-pressed:not(:disabled) {
+  transform: translateY(1px) scale(0.98);
+  filter: brightness(0.96);
+}
+
 #menuLayer #modeMenu .mode-menu__btn.menu-btn--active:not(.mode-menu__btn--play)::before,
 #menuLayer #modeMenu .mode-menu__btn.menu-btn--active:not(.mode-menu__btn--play)::after {
   content: "";
