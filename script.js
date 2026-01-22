@@ -575,7 +575,9 @@ const MENU_CRITICAL = [
   "ui_mainmenu/mm_classicrules.png",
   "ui_mainmenu/mm_classicrules.png",
   "ui_mainmenu/mm_advancedsettings.png",
-  "ui_mainmenu/mm_advancedsettings.png"
+  "ui_mainmenu/mm_advancedsettings.png",
+  "ui_gamescreen/PLANES/gs_plane_green.png",
+  "ui_gamescreen/PLANES/gs_plane_blue.png"
 ];
 
 const GAME_ASSETS = [
