@@ -1347,10 +1347,10 @@ body, button {
 }
 
 #menuLayer #modeMenu .mode-menu__btn--hotseat {
-  width: calc(205 / var(--mm-base-width) * 100%);
-  height: calc(48 / var(--mm-base-height) * 100%);
-  top: calc(151 / var(--mm-base-height) * 100%);
-  left: calc(128 / var(--mm-base-width) * 100%);
+  width: 186px;
+  height: 36px;
+  top: 272px;
+  left: 137px;
   background-image: url('ui_mainmenu/mm_hotseat.png');
 }
 
@@ -1359,10 +1359,10 @@ body, button {
 }
 
 #menuLayer #modeMenu .mode-menu__btn--computer {
-  width: calc(224 / var(--mm-base-width) * 100%);
-  height: calc(48 / var(--mm-base-height) * 100%);
-  top: calc(213 / var(--mm-base-height) * 100%);
-  left: calc(118 / var(--mm-base-width) * 100%);
+  width: 196px;
+  height: 34px;
+  top: 332px;
+  left: 132px;
   background-image: url('ui_mainmenu/mm_computer.png');
 }
 
@@ -1371,10 +1371,10 @@ body, button {
 }
 
 #menuLayer #modeMenu .mode-menu__btn--online {
-  width: calc(156 / var(--mm-base-width) * 100%);
-  height: calc(48 / var(--mm-base-height) * 100%);
-  top: calc(275 / var(--mm-base-height) * 100%);
-  left: calc(152 / var(--mm-base-width) * 100%);
+  width: 134px;
+  height: 34px;
+  top: 390px;
+  left: 163px;
   background-image: url('ui_mainmenu/mm_online.png');
 }
 
@@ -1383,10 +1383,10 @@ body, button {
 }
 
 #menuLayer #modeMenu .mode-menu__btn--play {
-  width: calc(120 / var(--mm-base-width) * 100%);
-  height: calc(48 / var(--mm-base-height) * 100%);
-  top: calc(383 / var(--mm-base-height) * 100%);
-  left: calc(170 / var(--mm-base-width) * 100%);
+  width: 196px;
+  height: 64px;
+  top: 476px;
+  left: 132px;
   background-image: url('ui_mainmenu/mm_play.png');
 }
 
@@ -1395,10 +1395,10 @@ body, button {
 }
 
 #menuLayer #modeMenu .mode-menu__btn--classic {
-  width: calc(304 / var(--mm-base-width) * 100%);
-  height: calc(48 / var(--mm-base-height) * 100%);
-  top: calc(491 / var(--mm-base-height) * 100%);
-  left: calc(94 / var(--mm-base-width) * 100%);
+  width: 241px;
+  height: 31px;
+  top: 592px;
+  left: 109px;
   background-image: url('ui_mainmenu/mm_classicrules.png');
 }
 
@@ -1407,10 +1407,10 @@ body, button {
 }
 
 #menuLayer #modeMenu .mode-menu__btn--advanced {
-  width: calc(269 / var(--mm-base-width) * 100%);
-  height: calc(86 / var(--mm-base-height) * 100%);
-  top: calc(553 / var(--mm-base-height) * 100%);
-  left: calc(111 / var(--mm-base-width) * 100%);
+  width: 214px;
+  height: 65px;
+  top: 647px;
+  left: 123px;
   background-image: url('ui_mainmenu/mm_advancedsettings.png');
 }
 
