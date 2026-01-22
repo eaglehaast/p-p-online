@@ -1289,7 +1289,7 @@ body, button {
     padding: 0;
     margin: 0;
     z-index: 1000;
-    overflow: hidden;
+    overflow: visible;
     display: block;
     box-shadow: none;
     border: none;
@@ -1339,6 +1339,31 @@ body, button {
 #menuLayer #modeMenu .mode-menu__btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+#menuLayer #modeMenu .mode-menu__btn.menu-btn--active:not(.mode-menu__btn--play)::before,
+#menuLayer #modeMenu .mode-menu__btn.menu-btn--active:not(.mode-menu__btn--play)::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 36px;
+  height: 36px;
+  background-repeat: no-repeat;
+  background-size: contain;
+  background-position: center;
+  pointer-events: none;
+}
+
+#menuLayer #modeMenu .mode-menu__btn.menu-btn--active:not(.mode-menu__btn--play)::before {
+  left: calc(-36px - 12px);
+  background-image: url('ui_gamescreen/PLANES/gs_plane_green.png');
+  transform: translateY(-50%) rotate(0deg);
+}
+
+#menuLayer #modeMenu .mode-menu__btn.menu-btn--active:not(.mode-menu__btn--play)::after {
+  right: calc(-36px - 12px);
+  background-image: url('ui_gamescreen/PLANES/gs_plane_blue.png');
+  transform: translateY(-50%) rotate(0deg);
 }
 
 #menuLayer #modeMenu .mode-menu__btn.disabled {
