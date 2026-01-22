@@ -564,18 +564,18 @@ const BASE_SPRITE_PATHS = {
 
 const MENU_CRITICAL = [
   "ui_mainmenu/mm_background.png",
-  "ui_mainmenu/mm_hotseat_Default.png",
-  "ui_mainmenu/mm_hotseat_Active.png",
-  "ui_mainmenu/mm_computer_default.png",
-  "ui_mainmenu/mm_computer_active.png",
-  "ui_mainmenu/mm_online_default.png",
-  "ui_mainmenu/mm_online_active.png",
-  "ui_mainmenu/mm_play_default.png",
-  "ui_mainmenu/mm_play_active.png",
-  "ui_mainmenu/mm_classicrules_default.png",
-  "ui_mainmenu/mm_classicrules_active.png",
-  "ui_mainmenu/mm_advancedsettings_default.png",
-  "ui_mainmenu/mm_advancedsettings_active.png"
+  "ui_mainmenu/mm_hotseat.png",
+  "ui_mainmenu/mm_hotseat.png",
+  "ui_mainmenu/mm_computer.png",
+  "ui_mainmenu/mm_computer.png",
+  "ui_mainmenu/mm_online.png",
+  "ui_mainmenu/mm_online.png",
+  "ui_mainmenu/mm_play.png",
+  "ui_mainmenu/mm_play.png",
+  "ui_mainmenu/mm_classicrules.png",
+  "ui_mainmenu/mm_classicrules.png",
+  "ui_mainmenu/mm_advancedsettings.png",
+  "ui_mainmenu/mm_advancedsettings.png"
 ];
 
 const GAME_ASSETS = [
@@ -942,28 +942,28 @@ const testRestartBtn = document.getElementById("testRestartBtn");
 
 const MENU_BUTTON_SKINS = {
   hotSeat: {
-    default: "ui_mainmenu/mm_hotseat_Default.png",
-    active: "ui_mainmenu/mm_hotseat_Active.png"
+    default: "ui_mainmenu/mm_hotseat.png",
+    active: "ui_mainmenu/mm_hotseat.png"
   },
   computer: {
-    default: "ui_mainmenu/mm_computer_default.png",
-    active: "ui_mainmenu/mm_computer_active.png"
+    default: "ui_mainmenu/mm_computer.png",
+    active: "ui_mainmenu/mm_computer.png"
   },
   online: {
-    default: "ui_mainmenu/mm_online_default.png",
-    active: "ui_mainmenu/mm_online_active.png"
+    default: "ui_mainmenu/mm_online.png",
+    active: "ui_mainmenu/mm_online.png"
   },
   play: {
-    default: "ui_mainmenu/mm_play_default.png",
-    active: "ui_mainmenu/mm_play_active.png"
+    default: "ui_mainmenu/mm_play.png",
+    active: "ui_mainmenu/mm_play.png"
   },
   classicRules: {
-    default: "ui_mainmenu/mm_classicrules_default.png",
-    active: "ui_mainmenu/mm_classicrules_active.png"
+    default: "ui_mainmenu/mm_classicrules.png",
+    active: "ui_mainmenu/mm_classicrules.png"
   },
   advancedSettings: {
-    default: "ui_mainmenu/mm_advancedsettings_default.png",
-    active: "ui_mainmenu/mm_advancedsettings_active.png"
+    default: "ui_mainmenu/mm_advancedsettings.png",
+    active: "ui_mainmenu/mm_advancedsettings.png"
   }
 };
 
