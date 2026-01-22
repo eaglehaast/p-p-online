@@ -1279,7 +1279,7 @@ body, button {
 
   /* Меню выбора режима */
   #modeMenu {
-    position: absolute;
+    position: relative;
     left: 0;
     top: 0;
     width: var(--control-panel-base-width);
@@ -1293,6 +1293,52 @@ body, button {
     display: block;
     box-shadow: none;
     border: none;
+  }
+
+  #menuLayer #modeMenu .mm-plane {
+    position: absolute;
+    width: 120px;
+    height: auto;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  #menuLayer #modeMenu .mm-plane__inner {
+    display: block;
+    width: 100%;
+    height: auto;
+    transform-origin: center;
+    animation: mm-plane-sway 2.6s ease-in-out infinite;
+  }
+
+  #menuLayer #modeMenu .mm-plane--left {
+    left: 32px;
+    top: 140px;
+  }
+
+  #menuLayer #modeMenu .mm-plane--left .mm-plane__inner {
+    animation-delay: -0.6s;
+  }
+
+  #menuLayer #modeMenu .mm-plane--right {
+    right: 32px;
+    top: 140px;
+  }
+
+  #menuLayer #modeMenu .mm-plane--right .mm-plane__inner {
+    animation-delay: -1.4s;
+  }
+
+  @keyframes mm-plane-sway {
+    0% {
+      transform: rotate(-2deg) translateY(0);
+    }
+    50% {
+      transform: rotate(2deg) translateY(-3px);
+    }
+    100% {
+      transform: rotate(-2deg) translateY(0);
+    }
   }
 
   #menuLayer #modeMenu {
