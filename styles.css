@@ -254,7 +254,7 @@ body, button {
   }
 
   #menuLayer {
-    background-image: url("ui_mainmenu/mm_background.png");
+    background-image: url("ui_mainmenu/mm_frame.png");
     background-repeat: no-repeat;
     background-position: center;
     background-size: var(--control-panel-base-width) var(--control-panel-base-height);
