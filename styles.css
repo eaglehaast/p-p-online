@@ -1415,7 +1415,7 @@ body, button {
   background-image: url('ui_mainmenu/mm_play.png');
 }
 
-#menuLayer #modeMenu .mode-menu__btn--play.active {
+#menuLayer #modeMenu .mode-menu__btn--play.menu-btn--active {
   background-image: url('ui_mainmenu/mm_play.png');
 }
 
