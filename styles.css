@@ -1352,18 +1352,56 @@ body, button {
   background-size: contain;
   background-position: center;
   pointer-events: none;
+  will-change: transform;
 }
 
 #menuLayer #modeMenu .mode-menu__btn.menu-btn--active:not(.mode-menu__btn--play)::before {
   left: calc(-36px - 12px);
   background-image: url('ui_gamescreen/PLANES/gs_plane_green.png');
   transform: translateY(-50%) rotate(90deg);
+  animation: plane-float-left 4.2s ease-in-out infinite;
 }
 
 #menuLayer #modeMenu .mode-menu__btn.menu-btn--active:not(.mode-menu__btn--play)::after {
   right: calc(-36px - 12px);
   background-image: url('ui_gamescreen/PLANES/gs_plane_blue.png');
   transform: translateY(-50%) rotate(-90deg);
+  animation: plane-float-right 4.9s ease-in-out infinite;
+  animation-delay: -1.4s;
+}
+
+#menuLayer #modeMenu .mode-menu__btn.menu-btn--active:not(.mode-menu__btn--play):nth-of-type(even)::before {
+  animation-duration: 4.7s;
+  animation-delay: -0.8s;
+}
+
+#menuLayer #modeMenu .mode-menu__btn.menu-btn--active:not(.mode-menu__btn--play):nth-of-type(even)::after {
+  animation-duration: 5.3s;
+  animation-delay: -2.1s;
+}
+
+@keyframes plane-float-left {
+  0% {
+    transform: translateY(-50%) rotate(90deg);
+  }
+  50% {
+    transform: translateY(calc(-50% - 2px)) rotate(91deg);
+  }
+  100% {
+    transform: translateY(-50%) rotate(90deg);
+  }
+}
+
+@keyframes plane-float-right {
+  0% {
+    transform: translateY(-50%) rotate(-90deg);
+  }
+  50% {
+    transform: translateY(calc(-50% - 2px)) rotate(-91deg);
+  }
+  100% {
+    transform: translateY(-50%) rotate(-90deg);
+  }
 }
 
 #menuLayer #modeMenu .mode-menu__btn.disabled {
