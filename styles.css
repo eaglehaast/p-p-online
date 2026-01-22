@@ -1388,6 +1388,7 @@ body, button {
   top: 476px;
   left: 132px;
   background-image: url('ui_mainmenu/mm_play.png');
+  background-size: 100% 100%;
 }
 
 #menuLayer #modeMenu .mode-menu__btn--play.active {
