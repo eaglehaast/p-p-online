@@ -2405,6 +2405,7 @@ setupMenuPressFeedback([
 let selectedMode = null;
 let selectedRuleset = "classic";
 let lastModePlaneTarget = null;
+let lastMenuSelectionButton = null;
 
 let menuBackgroundSnapshot = null;
 let hasActivatedGameScreen = false;
@@ -3517,7 +3518,7 @@ if(hasCustomSettings && classicRulesBtn && advancedSettingsBtn){
 
 syncRulesButtonSkins(selectedRuleset);
 syncModeButtonSkins(selectedMode);
-updateModePlanesPosition(selectedMode);
+updateModePlanesPosition();
 syncPlayButtonSkin(false);
 
 
@@ -3957,7 +3958,7 @@ function resetGame(options = {}){
 
   // UI reset
   syncModeButtonSkins(null);
-  updateModePlanesPosition(selectedMode);
+  updateModePlanesPosition();
   syncPlayButtonSkin(false);
 
   if (shouldShowMenu) {
@@ -4019,15 +4020,18 @@ function startMainLoopIfNotRunning(reason = "startMainLoopIfNotRunning") {
 /* ======= MENU ======= */
 hotSeatBtn.addEventListener("click",()=>{
   selectedMode = (selectedMode==="hotSeat" ? null : "hotSeat");
-  updateModeSelection();
+  lastMenuSelectionButton = hotSeatBtn;
+  updateModeSelection(hotSeatBtn);
 });
 computerBtn.addEventListener("click",()=>{
   selectedMode = (selectedMode==="computer" ? null : "computer");
-  updateModeSelection();
+  lastMenuSelectionButton = computerBtn;
+  updateModeSelection(computerBtn);
 });
 onlineBtn.addEventListener("click",()=>{
   selectedMode = (selectedMode==="online" ? null : "online");
-  updateModeSelection();
+  lastMenuSelectionButton = onlineBtn;
+  updateModeSelection(onlineBtn);
 });
 if(classicRulesBtn){
   classicRulesBtn.addEventListener('click', () => {
@@ -4043,6 +4047,8 @@ if(classicRulesBtn){
     applyCurrentMap(upcomingRoundNumber);
     selectedRuleset = "classic";
     syncRulesButtonSkins(selectedRuleset);
+    lastMenuSelectionButton = classicRulesBtn;
+    updateModeSelection(classicRulesBtn);
   });
 }
 if(advancedSettingsBtn){
@@ -4051,32 +4057,30 @@ if(advancedSettingsBtn){
     applyCurrentMap();
     selectedRuleset = "advanced";
     syncRulesButtonSkins(selectedRuleset);
+    lastMenuSelectionButton = advancedSettingsBtn;
+    updateModeSelection(advancedSettingsBtn);
 
     if(!IS_TEST_HARNESS){
       showSettingsLayer();
     }
   });
 }
-function updateModePlanesPosition(selectedMode){
+function updateModePlanesPosition(activeButton){
   if(!(modeMenuDiv instanceof HTMLElement)) return;
   if(!(leftModePlane instanceof HTMLElement) || !(rightModePlane instanceof HTMLElement)) return;
 
-  const buttonMap = {
-    hotSeat: hotSeatBtn,
-    computer: computerBtn,
-    online: onlineBtn
-  };
-  if(!selectedMode){
+  const resolvedButton = activeButton
+    || lastMenuSelectionButton
+    || modeMenuDiv.querySelector('.mode-menu__btn.menu-btn--active')
+    || modeMenuDiv.querySelector('.mode-menu__btn.selected');
+
+  if(!(resolvedButton instanceof HTMLElement)){
     leftModePlane.style.opacity = "0";
     rightModePlane.style.opacity = "0";
     return;
   }
 
-  const activeButton = selectedMode ? buttonMap[selectedMode] : null;
-
-  if(!(activeButton instanceof HTMLElement)) return;
-
-  const btnRect = activeButton.getBoundingClientRect();
+  const btnRect = resolvedButton.getBoundingClientRect();
   const rootRect = modeMenuDiv.getBoundingClientRect();
   if(!btnRect || !rootRect) return;
 
@@ -4121,9 +4125,10 @@ function updateModePlanesPosition(selectedMode){
   }
 }
 
-function updateModeSelection(){
+function updateModeSelection(activeButton){
   syncModeButtonSkins(selectedMode);
-  updateModePlanesPosition(selectedMode);
+  syncRulesButtonSkins(selectedRuleset);
+  updateModePlanesPosition(activeButton);
 
   const ready = Boolean(selectedMode);
   syncPlayButtonSkin(ready);
