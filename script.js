@@ -3076,6 +3076,8 @@ const BOUNCE_FRAMES        = 68;
 // (Restored to the original pre-change speed used for gameplay physics)
 // Shortened by 1.5x to speed up on-field flight animation
 const FIELD_FLIGHT_DURATION_SEC = (BOUNCE_FRAMES / 60) * 2 / 1.5;
+const FIELD_PLANE_SWAY_DEG = 1.5;
+const FIELD_PLANE_SWAY_PERIOD_SEC = 2.6;
 const MAX_DRAG_DISTANCE    = 100;    // px
 const DRAG_ROTATION_THRESHOLD = 5;   // px slack before the plane starts to turn
 const ATTACK_RANGE_PX      = 300;    // px
@@ -6701,7 +6703,16 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
 
   ctx2d.save();
   ctx2d.translate(cx, cy);
-  ctx2d.rotate(angle);
+  const shouldSway = plane.isAlive === true
+    && plane.burning === false
+    && !(handleCircle.active && handleCircle.pointRef === plane);
+  const omega = (2 * Math.PI) / (FIELD_PLANE_SWAY_PERIOD_SEC * 60);
+  const phase = (plane.id ?? plane.uid ?? 0) * 0.37;
+  const swayAngle = shouldSway
+    ? Math.sin(globalFrame * omega + phase) * (FIELD_PLANE_SWAY_DEG * Math.PI / 180)
+    : 0;
+  const renderAngle = angle + swayAngle;
+  ctx2d.rotate(renderAngle);
 
   const drawSmokeWithAnchor = (scale, offsetY, tailTrim = 0) => {
     if (scale <= 0 || offsetY < 0) return;
