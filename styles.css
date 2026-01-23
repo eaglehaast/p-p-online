@@ -1316,7 +1316,10 @@ body, button {
     --mm-plane-rotation: 0deg;
     --mm-plane-offset-x: 0px;
     --mm-plane-offset-y: 0px;
-    transform-origin: center center;
+    transform-origin: 50% 50%;
+    transform-box: fill-box;
+    object-fit: contain;
+    object-position: center;
     animation: mm-plane-sway 2.6s ease-in-out infinite;
   }
 
