@@ -1316,11 +1316,23 @@ body, button {
     --mm-plane-rotation: 0deg;
     --mm-plane-offset-x: 0px;
     --mm-plane-offset-y: 0px;
-    transform-origin: 50% 50%;
+    --pivot-x: 0px;
+    --pivot-y: 0px;
+    transform-origin: calc(50% + var(--pivot-x, 0px)) calc(50% + var(--pivot-y, 0px));
     transform-box: fill-box;
     object-fit: contain;
     object-position: center;
     animation: mm-plane-sway 2.6s ease-in-out infinite;
+  }
+
+  #menuLayer #modeMenu .mm-plane--green .mm-plane__inner {
+    --pivot-x: -1px;
+    --pivot-y: 1px;
+  }
+
+  #menuLayer #modeMenu .mm-plane--blue .mm-plane__inner {
+    --pivot-x: 1px;
+    --pivot-y: -1px;
   }
 
   #menuLayer #modeMenu .mm-plane--left {
