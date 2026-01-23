@@ -1299,8 +1299,8 @@ body, button {
     position: absolute;
     left: 0;
     top: 0;
-    width: 120px;
-    height: auto;
+    width: 36px;
+    height: 36px;
     transform: translate(0px, 0px);
     transition: transform 220ms ease-out, opacity 180ms ease-out;
     will-change: transform, opacity;
@@ -1311,7 +1311,7 @@ body, button {
   #menuLayer #modeMenu .mm-plane__inner {
     display: block;
     width: 100%;
-    height: auto;
+    height: 100%;
     transform-origin: center;
     animation: mm-plane-sway 2.6s ease-in-out infinite;
   }
