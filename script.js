@@ -2414,6 +2414,11 @@ let lastModePlaneTarget = null;
 let lastRulesPlaneTarget = null;
 let lastModeSelectionButton = null;
 let lastRulesSelectionButton = null;
+let settingsLayerTimer = null;
+
+const MENU_PLANE_TRAVEL_MS = 220;
+const MENU_PLANE_FADE_MS = 180;
+const MENU_SETTINGS_DELAY_MS = Math.max(MENU_PLANE_TRAVEL_MS, MENU_PLANE_FADE_MS);
 
 let menuBackgroundSnapshot = null;
 let hasActivatedGameScreen = false;
@@ -4071,7 +4076,13 @@ if(advancedSettingsBtn){
     updateModeSelection(advancedSettingsBtn);
 
     if(!IS_TEST_HARNESS){
-      showSettingsLayer();
+      if (settingsLayerTimer) {
+        clearTimeout(settingsLayerTimer);
+      }
+      settingsLayerTimer = setTimeout(() => {
+        settingsLayerTimer = null;
+        showSettingsLayer();
+      }, MENU_SETTINGS_DELAY_MS);
     }
   });
 }
