@@ -6715,8 +6715,8 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   const rollOffset = shouldSway
     ? swayWave * FIELD_PLANE_ROLL_BOB_PX
     : 0;
-  const nx = Math.cos(angle + Math.PI / 2);
-  const ny = Math.sin(angle + Math.PI / 2);
+  const nx = Math.cos(angle);
+  const ny = Math.sin(angle);
   ctx2d.translate(cx + nx * rollOffset, cy + ny * rollOffset);
   ctx2d.rotate(angle + swayAngle);
 
