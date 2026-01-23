@@ -2404,6 +2404,7 @@ setupMenuPressFeedback([
 
 let selectedMode = null;
 let selectedRuleset = "classic";
+let lastModePlaneTarget = null;
 
 let menuBackgroundSnapshot = null;
 let hasActivatedGameScreen = false;
@@ -3516,6 +3517,7 @@ if(hasCustomSettings && classicRulesBtn && advancedSettingsBtn){
 
 syncRulesButtonSkins(selectedRuleset);
 syncModeButtonSkins(selectedMode);
+updateModePlanesPosition(selectedMode);
 syncPlayButtonSkin(false);
 
 
@@ -3955,6 +3957,7 @@ function resetGame(options = {}){
 
   // UI reset
   syncModeButtonSkins(null);
+  updateModePlanesPosition(selectedMode);
   syncPlayButtonSkin(false);
 
   if (shouldShowMenu) {
@@ -4063,8 +4066,13 @@ function updateModePlanesPosition(selectedMode){
     computer: computerBtn,
     online: onlineBtn
   };
-  const activeButton = modeMenuDiv.querySelector(".mode-menu__btn.menu-btn--active")
-    || (selectedMode ? buttonMap[selectedMode] : null);
+  if(!selectedMode){
+    leftModePlane.style.opacity = "0";
+    rightModePlane.style.opacity = "0";
+    return;
+  }
+
+  const activeButton = selectedMode ? buttonMap[selectedMode] : null;
 
   if(!(activeButton instanceof HTMLElement)) return;
 
@@ -4082,26 +4090,34 @@ function updateModePlanesPosition(selectedMode){
     const planeHeight = planeRect.height || plane.offsetHeight || 0;
     const targetY = rootY + btnRect.height / 2 - planeHeight / 2;
     plane.style.transform = `translate(${targetX}px, ${targetY}px)`;
+    return targetY;
   };
 
   const leftX = rootX - leftOffset;
   const rightX = rootX + btnRect.width + rightOffset;
+  leftModePlane.style.opacity = "1";
+  rightModePlane.style.opacity = "1";
 
   const needsInitialPosition = !modeMenuDiv.dataset.mmPlanesReady;
+  const applyTarget = () => {
+    const targetY = updatePlane(leftModePlane, leftX);
+    updatePlane(rightModePlane, rightX);
+    lastModePlaneTarget = { leftX, rightX, targetY };
+  };
+
   if(needsInitialPosition){
     leftModePlane.style.transition = "none";
     rightModePlane.style.transition = "none";
-  }
-
-  updatePlane(leftModePlane, leftX);
-  updatePlane(rightModePlane, rightX);
-
-  if(needsInitialPosition){
     requestAnimationFrame(() => {
-      leftModePlane.style.transition = "";
-      rightModePlane.style.transition = "";
-      modeMenuDiv.dataset.mmPlanesReady = "true";
+      applyTarget();
+      requestAnimationFrame(() => {
+        leftModePlane.style.transition = "";
+        rightModePlane.style.transition = "";
+        modeMenuDiv.dataset.mmPlanesReady = "true";
+      });
     });
+  } else {
+    applyTarget();
   }
 }
 
