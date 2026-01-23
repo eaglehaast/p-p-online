@@ -2381,6 +2381,8 @@ const playBtn     = document.getElementById("playBtn");
 
 const classicRulesBtn     = document.getElementById("classicRulesBtn");
 const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
+const modeMenuButtons = [hotSeatBtn, computerBtn, onlineBtn];
+const rulesMenuButtons = [classicRulesBtn, advancedSettingsBtn];
 
 function setupMenuPressFeedback(buttons) {
   buttons.forEach((button) => {
@@ -4073,9 +4075,6 @@ if(advancedSettingsBtn){
     }
   });
 }
-const modeMenuButtons = [hotSeatBtn, computerBtn, onlineBtn];
-const rulesMenuButtons = [classicRulesBtn, advancedSettingsBtn];
-
 function resolveModeButton(activeButton){
   if(!selectedMode) return null;
   if(modeMenuButtons.includes(activeButton)) return activeButton;
