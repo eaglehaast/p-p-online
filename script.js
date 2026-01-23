@@ -1006,6 +1006,8 @@ function syncPlayButtonSkin(isReady){
 function syncRulesButtonSkins(selection){
   applyMenuButtonSkin(classicRulesBtn, "classicRules", selection === "classic");
   applyMenuButtonSkin(advancedSettingsBtn, "advancedSettings", selection === "advanced");
+  classicRulesBtn?.classList.toggle("selected", selection === "classic");
+  advancedSettingsBtn?.classList.toggle("selected", selection === "advanced");
 }
 
 const IS_TEST_HARNESS = document.body.classList.contains('test-harness');
@@ -2370,8 +2372,10 @@ const modeMenuDiv = document.getElementById("modeMenu");
 const hotSeatBtn  = document.getElementById("hotSeatBtn");
 const computerBtn = document.getElementById("computerBtn");
 const onlineBtn   = document.getElementById("onlineBtn");
-const leftModePlane = document.getElementById("mm_plane_left");
-const rightModePlane = document.getElementById("mm_plane_right");
+const leftModePlane = document.getElementById("mm_plane_left_mode");
+const rightModePlane = document.getElementById("mm_plane_right_mode");
+const leftRulesPlane = document.getElementById("mm_plane_left_rules");
+const rightRulesPlane = document.getElementById("mm_plane_right_rules");
 
 const playBtn     = document.getElementById("playBtn");
 
@@ -2405,7 +2409,9 @@ setupMenuPressFeedback([
 let selectedMode = null;
 let selectedRuleset = "classic";
 let lastModePlaneTarget = null;
-let lastMenuSelectionButton = null;
+let lastRulesPlaneTarget = null;
+let lastModeSelectionButton = null;
+let lastRulesSelectionButton = null;
 
 let menuBackgroundSnapshot = null;
 let hasActivatedGameScreen = false;
@@ -3519,6 +3525,7 @@ if(hasCustomSettings && classicRulesBtn && advancedSettingsBtn){
 syncRulesButtonSkins(selectedRuleset);
 syncModeButtonSkins(selectedMode);
 updateModePlanesPosition();
+updateRulesPlanesPosition();
 syncPlayButtonSkin(false);
 
 
@@ -3959,6 +3966,7 @@ function resetGame(options = {}){
   // UI reset
   syncModeButtonSkins(null);
   updateModePlanesPosition();
+  updateRulesPlanesPosition();
   syncPlayButtonSkin(false);
 
   if (shouldShowMenu) {
@@ -4020,17 +4028,17 @@ function startMainLoopIfNotRunning(reason = "startMainLoopIfNotRunning") {
 /* ======= MENU ======= */
 hotSeatBtn.addEventListener("click",()=>{
   selectedMode = (selectedMode==="hotSeat" ? null : "hotSeat");
-  lastMenuSelectionButton = hotSeatBtn;
+  lastModeSelectionButton = hotSeatBtn;
   updateModeSelection(hotSeatBtn);
 });
 computerBtn.addEventListener("click",()=>{
   selectedMode = (selectedMode==="computer" ? null : "computer");
-  lastMenuSelectionButton = computerBtn;
+  lastModeSelectionButton = computerBtn;
   updateModeSelection(computerBtn);
 });
 onlineBtn.addEventListener("click",()=>{
   selectedMode = (selectedMode==="online" ? null : "online");
-  lastMenuSelectionButton = onlineBtn;
+  lastModeSelectionButton = onlineBtn;
   updateModeSelection(onlineBtn);
 });
 if(classicRulesBtn){
@@ -4047,7 +4055,7 @@ if(classicRulesBtn){
     applyCurrentMap(upcomingRoundNumber);
     selectedRuleset = "classic";
     syncRulesButtonSkins(selectedRuleset);
-    lastMenuSelectionButton = classicRulesBtn;
+    lastRulesSelectionButton = classicRulesBtn;
     updateModeSelection(classicRulesBtn);
   });
 }
@@ -4057,7 +4065,7 @@ if(advancedSettingsBtn){
     applyCurrentMap();
     selectedRuleset = "advanced";
     syncRulesButtonSkins(selectedRuleset);
-    lastMenuSelectionButton = advancedSettingsBtn;
+    lastRulesSelectionButton = advancedSettingsBtn;
     updateModeSelection(advancedSettingsBtn);
 
     if(!IS_TEST_HARNESS){
@@ -4065,14 +4073,35 @@ if(advancedSettingsBtn){
     }
   });
 }
+const modeMenuButtons = [hotSeatBtn, computerBtn, onlineBtn];
+const rulesMenuButtons = [classicRulesBtn, advancedSettingsBtn];
+
+function resolveModeButton(activeButton){
+  if(!selectedMode) return null;
+  if(modeMenuButtons.includes(activeButton)) return activeButton;
+  if(lastModeSelectionButton) return lastModeSelectionButton;
+  if(selectedMode === "hotSeat") return hotSeatBtn;
+  if(selectedMode === "computer") return computerBtn;
+  if(selectedMode === "online") return onlineBtn;
+  return modeMenuDiv?.querySelector('.mode-menu__btn.menu-btn--active') || null;
+}
+
+function resolveRulesButton(activeButton){
+  if(!selectedRuleset) return null;
+  if(rulesMenuButtons.includes(activeButton)) return activeButton;
+  if(lastRulesSelectionButton) return lastRulesSelectionButton;
+  const selectedButton = modeMenuDiv?.querySelector('.mode-menu__btn.selected');
+  if(rulesMenuButtons.includes(selectedButton)) return selectedButton;
+  if(selectedRuleset === "classic") return classicRulesBtn;
+  if(selectedRuleset === "advanced") return advancedSettingsBtn;
+  return null;
+}
+
 function updateModePlanesPosition(activeButton){
   if(!(modeMenuDiv instanceof HTMLElement)) return;
   if(!(leftModePlane instanceof HTMLElement) || !(rightModePlane instanceof HTMLElement)) return;
 
-  const resolvedButton = activeButton
-    || lastMenuSelectionButton
-    || modeMenuDiv.querySelector('.mode-menu__btn.menu-btn--active')
-    || modeMenuDiv.querySelector('.mode-menu__btn.selected');
+  const resolvedButton = resolveModeButton(activeButton);
 
   if(!(resolvedButton instanceof HTMLElement)){
     leftModePlane.style.opacity = "0";
@@ -4102,7 +4131,7 @@ function updateModePlanesPosition(activeButton){
   leftModePlane.style.opacity = "1";
   rightModePlane.style.opacity = "1";
 
-  const needsInitialPosition = !modeMenuDiv.dataset.mmPlanesReady;
+  const needsInitialPosition = !modeMenuDiv.dataset.mmModePlanesReady;
   const applyTarget = () => {
     const targetY = updatePlane(leftModePlane, leftX);
     updatePlane(rightModePlane, rightX);
@@ -4117,7 +4146,64 @@ function updateModePlanesPosition(activeButton){
       requestAnimationFrame(() => {
         leftModePlane.style.transition = "";
         rightModePlane.style.transition = "";
-        modeMenuDiv.dataset.mmPlanesReady = "true";
+        modeMenuDiv.dataset.mmModePlanesReady = "true";
+      });
+    });
+  } else {
+    applyTarget();
+  }
+}
+
+function updateRulesPlanesPosition(activeButton){
+  if(!(modeMenuDiv instanceof HTMLElement)) return;
+  if(!(leftRulesPlane instanceof HTMLElement) || !(rightRulesPlane instanceof HTMLElement)) return;
+
+  const resolvedButton = resolveRulesButton(activeButton);
+
+  if(!(resolvedButton instanceof HTMLElement)){
+    leftRulesPlane.style.opacity = "0";
+    rightRulesPlane.style.opacity = "0";
+    return;
+  }
+
+  const btnRect = resolvedButton.getBoundingClientRect();
+  const rootRect = modeMenuDiv.getBoundingClientRect();
+  if(!btnRect || !rootRect) return;
+
+  const rootX = btnRect.left - rootRect.left;
+  const rootY = btnRect.top - rootRect.top;
+  const leftOffset = 36 + 12;
+  const rightOffset = 12;
+
+  const updatePlane = (plane, targetX) => {
+    const planeRect = plane.getBoundingClientRect();
+    const planeHeight = planeRect.height || plane.offsetHeight || 0;
+    const targetY = rootY + btnRect.height / 2 - planeHeight / 2;
+    plane.style.transform = `translate(${targetX}px, ${targetY}px)`;
+    return targetY;
+  };
+
+  const leftX = rootX - leftOffset;
+  const rightX = rootX + btnRect.width + rightOffset;
+  leftRulesPlane.style.opacity = "1";
+  rightRulesPlane.style.opacity = "1";
+
+  const needsInitialPosition = !modeMenuDiv.dataset.mmRulesPlanesReady;
+  const applyTarget = () => {
+    const targetY = updatePlane(leftRulesPlane, leftX);
+    updatePlane(rightRulesPlane, rightX);
+    lastRulesPlaneTarget = { leftX, rightX, targetY };
+  };
+
+  if(needsInitialPosition){
+    leftRulesPlane.style.transition = "none";
+    rightRulesPlane.style.transition = "none";
+    requestAnimationFrame(() => {
+      applyTarget();
+      requestAnimationFrame(() => {
+        leftRulesPlane.style.transition = "";
+        rightRulesPlane.style.transition = "";
+        modeMenuDiv.dataset.mmRulesPlanesReady = "true";
       });
     });
   } else {
@@ -4129,6 +4215,7 @@ function updateModeSelection(activeButton){
   syncModeButtonSkins(selectedMode);
   syncRulesButtonSkins(selectedRuleset);
   updateModePlanesPosition(activeButton);
+  updateRulesPlanesPosition(activeButton);
 
   const ready = Boolean(selectedMode);
   syncPlayButtonSkin(ready);

@@ -1296,11 +1296,12 @@ body, button {
   }
 
   #menuLayer #modeMenu .mm-plane {
+    --mm-plane-size: 36px;
     position: absolute;
     left: 0;
     top: 0;
-    width: 36px;
-    height: 36px;
+    width: var(--mm-plane-size);
+    height: var(--mm-plane-size);
     transform: translate(0px, 0px);
     transition: transform 220ms ease-out, opacity 180ms ease-out;
     will-change: transform, opacity;
