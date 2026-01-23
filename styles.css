@@ -933,12 +933,12 @@ body, button {
 
   #settingsLayer #frame_field_1_visual .cp-field-selector__object--blue-plane {
     transform: scaleY(-1);
-    transform-origin: center;
+    transform-origin: center center;
   }
 
   #settingsLayer #frame_field_1_visual .cp-field-selector__object--blue-flag {
     transform: scaleY(-1);
-    transform-origin: center;
+    transform-origin: center center;
   }
 
     #settingsLayer #f_b_flag {
@@ -1314,7 +1314,7 @@ body, button {
     width: 100%;
     height: 100%;
     --mm-plane-rotation: 0deg;
-    transform-origin: center;
+    transform-origin: center center;
     animation: mm-plane-sway 2.6s ease-in-out infinite;
   }
 
@@ -1338,13 +1338,13 @@ body, button {
 
   @keyframes mm-plane-sway {
     0% {
-      transform: translateY(1px) rotate(calc(var(--mm-plane-rotation) - 2deg));
+      transform: translateY(1px) rotate(calc(var(--mm-plane-rotation) - 1.5deg));
     }
     50% {
-      transform: translateY(-1px) rotate(calc(var(--mm-plane-rotation) + 2deg));
+      transform: translateY(-1px) rotate(calc(var(--mm-plane-rotation) + 1.5deg));
     }
     100% {
-      transform: translateY(1px) rotate(calc(var(--mm-plane-rotation) - 2deg));
+      transform: translateY(1px) rotate(calc(var(--mm-plane-rotation) - 1.5deg));
     }
   }
 
