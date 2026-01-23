@@ -570,8 +570,8 @@ const MENU_CRITICAL = [
   "ui_mainmenu/mm_computer.png",
   "ui_mainmenu/mm_online.png",
   "ui_mainmenu/mm_online.png",
-  "ui_mainmenu/mm_playbutton.png",
-  "ui_mainmenu/mm_playbutton.png",
+  "ui_mainmenu/mm_play_2d.png",
+  "ui_mainmenu/mm_play_2d.png",
   "ui_mainmenu/mm_classicrules.png",
   "ui_mainmenu/mm_classicrules.png",
   "ui_mainmenu/mm_advancedsettings.png",
@@ -956,8 +956,8 @@ const MENU_BUTTON_SKINS = {
     active: "ui_mainmenu/mm_online.png"
   },
   play: {
-    default: "ui_mainmenu/mm_playbutton.png",
-    active: "ui_mainmenu/mm_playbutton.png"
+    default: "ui_mainmenu/mm_play_2d.png",
+    active: "ui_mainmenu/mm_play_2d.png"
   },
   classicRules: {
     default: "ui_mainmenu/mm_classicrules.png",

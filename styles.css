@@ -1523,11 +1523,11 @@ body, button {
   height: 64px;
   top: 476px;
   left: 132px;
-  background-image: url('ui_mainmenu/mm_playbutton.png');
+  background-image: url('ui_mainmenu/mm_play_2d.png');
 }
 
 #menuLayer #modeMenu .mode-menu__btn--play.menu-btn--active {
-  background-image: url('ui_mainmenu/mm_playbutton.png');
+  background-image: url('ui_mainmenu/mm_play_2d.png');
 }
 
 #menuLayer #modeMenu .mode-menu__btn--classic {
