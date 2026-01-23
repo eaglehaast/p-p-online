@@ -916,14 +916,12 @@ function startMenuPreload() {
   preloadPromise.then((results) => {
     menuAssetsReady = true;
     console.log("[BOOT] menu preload end", { ms: Math.round(performance.now() - start) });
-    applyMenuPlanePivotOffsets();
     preloadGameAssetsInBackground();
     return results;
   }).catch((err) => {
     console.warn("[BOOT] menu preload error", err);
     menuAssetsReady = true;
     console.log("[BOOT] menu preload end", { ms: Math.round(performance.now() - start) });
-    applyMenuPlanePivotOffsets();
     preloadGameAssetsInBackground();
   });
 
@@ -2387,101 +2385,6 @@ const modeMenuButtons = [hotSeatBtn, computerBtn, onlineBtn];
 const rulesMenuButtons = [classicRulesBtn, advancedSettingsBtn];
 
 const DEBUG_MENU_PLANE_PIVOT = false;
-let menuPlanePivotOffsetsApplied = false;
-const menuPlanePivotListeners = new WeakSet();
-
-function computeVisibleSpriteOffset(img) {
-  if (!isSpriteReady(img)) return null;
-  const width = img.naturalWidth || img.width || 0;
-  const height = img.naturalHeight || img.height || 0;
-  if (!width || !height) return null;
-
-  const canvas = typeof OffscreenCanvas !== "undefined"
-    ? new OffscreenCanvas(width, height)
-    : document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return { x: 0, y: 0 };
-  ctx.clearRect(0, 0, width, height);
-  ctx.drawImage(img, 0, 0, width, height);
-
-  const { data } = ctx.getImageData(0, 0, width, height);
-  let minX = width;
-  let minY = height;
-  let maxX = -1;
-  let maxY = -1;
-
-  for (let i = 3; i < data.length; i += 4) {
-    if (data[i] === 0) continue;
-    const pixelIndex = i / 4;
-    const x = pixelIndex % width;
-    const y = Math.floor(pixelIndex / width);
-    if (x < minX) minX = x;
-    if (y < minY) minY = y;
-    if (x > maxX) maxX = x;
-    if (y > maxY) maxY = y;
-  }
-
-  if (maxX < 0 || maxY < 0) {
-    return { x: 0, y: 0 };
-  }
-
-  const visibleCenterX = (minX + maxX) / 2;
-  const visibleCenterY = (minY + maxY) / 2;
-  const fullCenterX = (width - 1) / 2;
-  const fullCenterY = (height - 1) / 2;
-
-  return {
-    x: visibleCenterX - fullCenterX,
-    y: visibleCenterY - fullCenterY
-  };
-}
-
-function applyMenuPlanePivotOffsets() {
-  if (menuPlanePivotOffsetsApplied) return;
-
-  const targets = [
-    {
-      selector: ".mm-plane--green .mm-plane__inner",
-      src: "ui_gamescreen/PLANES/gs_plane_green.png",
-      label: "menuPlanePivot.green"
-    },
-    {
-      selector: ".mm-plane--blue .mm-plane__inner",
-      src: "ui_gamescreen/PLANES/gs_plane_blue.png",
-      label: "menuPlanePivot.blue"
-    }
-  ];
-
-  let allReady = true;
-
-  targets.forEach(({ selector, src, label }) => {
-    const { img } = loadImageAsset(src, label, { decoding: "async" });
-    if (!img || !isSpriteReady(img)) {
-      allReady = false;
-      if (img && !menuPlanePivotListeners.has(img)) {
-        img.addEventListener("load", applyMenuPlanePivotOffsets, { once: true });
-        menuPlanePivotListeners.add(img);
-      }
-      return;
-    }
-
-    const offsets = computeVisibleSpriteOffset(img);
-    if (!offsets) return;
-    const pivotX = `${offsets.x.toFixed(2)}px`;
-    const pivotY = `${offsets.y.toFixed(2)}px`;
-    document.querySelectorAll(selector).forEach((node) => {
-      if (!(node instanceof HTMLElement)) return;
-      node.style.setProperty("--pivot-x", pivotX);
-      node.style.setProperty("--pivot-y", pivotY);
-    });
-  });
-
-  if (!allReady) return;
-  menuPlanePivotOffsetsApplied = true;
-}
 
 function logMenuPlaneMetrics(label, outerEl, innerEl){
   if(!(outerEl instanceof HTMLElement) || !(innerEl instanceof HTMLElement)) return;
