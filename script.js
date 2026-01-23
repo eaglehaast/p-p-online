@@ -3078,6 +3078,7 @@ const BOUNCE_FRAMES        = 68;
 const FIELD_FLIGHT_DURATION_SEC = (BOUNCE_FRAMES / 60) * 2 / 1.5;
 const FIELD_PLANE_SWAY_DEG = 1.5;
 const FIELD_PLANE_SWAY_PERIOD_SEC = 2.6;
+const FIELD_PLANE_ROLL_BOB_PX = 1.5;
 const MAX_DRAG_DISTANCE    = 100;    // px
 const DRAG_ROTATION_THRESHOLD = 5;   // px slack before the plane starts to turn
 const ATTACK_RANGE_PX      = 300;    // px
@@ -6702,17 +6703,22 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   const showEngine = !isGhostState;
 
   ctx2d.save();
-  ctx2d.translate(cx, cy);
   const shouldSway = plane.isAlive === true
     && plane.burning === false
     && !(handleCircle.active && handleCircle.pointRef === plane);
   const omega = (2 * Math.PI) / (FIELD_PLANE_SWAY_PERIOD_SEC * 60);
   const phase = (plane.id ?? plane.uid ?? 0) * 0.37;
+  const swayWave = Math.sin(globalFrame * omega + phase);
   const swayAngle = shouldSway
-    ? Math.sin(globalFrame * omega + phase) * (FIELD_PLANE_SWAY_DEG * Math.PI / 180)
+    ? swayWave * (FIELD_PLANE_SWAY_DEG * Math.PI / 180)
     : 0;
-  const renderAngle = angle + swayAngle;
-  ctx2d.rotate(renderAngle);
+  const rollOffset = shouldSway
+    ? swayWave * FIELD_PLANE_ROLL_BOB_PX
+    : 0;
+  const nx = Math.cos(angle + Math.PI / 2);
+  const ny = Math.sin(angle + Math.PI / 2);
+  ctx2d.translate(cx + nx * rollOffset, cy + ny * rollOffset);
+  ctx2d.rotate(angle + swayAngle);
 
   const drawSmokeWithAnchor = (scale, offsetY, tailTrim = 0) => {
     if (scale <= 0 || offsetY < 0) return;
