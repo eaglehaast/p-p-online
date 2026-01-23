@@ -2408,7 +2408,7 @@ setupMenuPressFeedback([
   advancedSettingsBtn
 ]);
 
-let selectedMode = null;
+let selectedMode = "hotSeat";
 let selectedRuleset = "classic";
 let lastModePlaneTarget = null;
 let lastRulesPlaneTarget = null;
@@ -3528,7 +3528,7 @@ syncRulesButtonSkins(selectedRuleset);
 syncModeButtonSkins(selectedMode);
 updateModePlanesPosition();
 updateRulesPlanesPosition();
-syncPlayButtonSkin(false);
+syncPlayButtonSkin(true);
 
 
 const POINTS_TO_WIN = 24;
@@ -3952,7 +3952,7 @@ function resetGame(options = {}){
 
   hasShotThisRound = false;
 
-  selectedMode = shouldShowMenu ? null : selectedMode;
+  selectedMode = shouldShowMenu ? "hotSeat" : selectedMode;
   gameMode = shouldShowMenu ? null : gameMode;
   phase = shouldShowMenu ? 'MENU' : 'TURN';
   currentPlacer = null;
@@ -3966,10 +3966,10 @@ function resetGame(options = {}){
   }
 
   // UI reset
-  syncModeButtonSkins(null);
+  syncModeButtonSkins(selectedMode);
   updateModePlanesPosition();
   updateRulesPlanesPosition();
-  syncPlayButtonSkin(false);
+  syncPlayButtonSkin(true);
 
   if (shouldShowMenu) {
     // Показать меню, скрыть канвасы
@@ -4029,17 +4029,17 @@ function startMainLoopIfNotRunning(reason = "startMainLoopIfNotRunning") {
 
 /* ======= MENU ======= */
 hotSeatBtn.addEventListener("click",()=>{
-  selectedMode = (selectedMode==="hotSeat" ? null : "hotSeat");
+  selectedMode = "hotSeat";
   lastModeSelectionButton = hotSeatBtn;
   updateModeSelection(hotSeatBtn);
 });
 computerBtn.addEventListener("click",()=>{
-  selectedMode = (selectedMode==="computer" ? null : "computer");
+  selectedMode = "computer";
   lastModeSelectionButton = computerBtn;
   updateModeSelection(computerBtn);
 });
 onlineBtn.addEventListener("click",()=>{
-  selectedMode = (selectedMode==="online" ? null : "online");
+  selectedMode = "online";
   lastModeSelectionButton = onlineBtn;
   updateModeSelection(onlineBtn);
 });
@@ -4216,8 +4216,7 @@ function updateModeSelection(activeButton){
   updateModePlanesPosition(activeButton);
   updateRulesPlanesPosition(activeButton);
 
-  const ready = Boolean(selectedMode);
-  syncPlayButtonSkin(ready);
+  syncPlayButtonSkin(true);
 }
 
 playBtn.addEventListener("click",async ()=>{
