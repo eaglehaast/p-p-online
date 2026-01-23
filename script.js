@@ -2384,6 +2384,53 @@ const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
 const modeMenuButtons = [hotSeatBtn, computerBtn, onlineBtn];
 const rulesMenuButtons = [classicRulesBtn, advancedSettingsBtn];
 
+const DEBUG_MENU_PLANE_PIVOT = false;
+
+function logMenuPlaneMetrics(label, outerEl, innerEl){
+  if(!(outerEl instanceof HTMLElement) || !(innerEl instanceof HTMLElement)) return;
+
+  const outerRect = outerEl.getBoundingClientRect();
+  const innerRect = innerEl.getBoundingClientRect();
+  const styles = getComputedStyle(innerEl);
+  const payload = {
+    outerRect,
+    innerRect,
+    styles: {
+      transform: styles.transform,
+      transformOrigin: styles.transformOrigin,
+      transformBox: styles.transformBox,
+      width: styles.width,
+      height: styles.height
+    }
+  };
+
+  if(innerEl instanceof HTMLImageElement){
+    payload.image = {
+      naturalWidth: innerEl.naturalWidth,
+      naturalHeight: innerEl.naturalHeight,
+      width: innerEl.width,
+      height: innerEl.height
+    };
+  }
+
+  console.log(`[MM] ${label} metrics`, payload);
+}
+
+function logMenuPlaneMetricsOnce(){
+  if(!DEBUG_MENU_PLANE_PIVOT) return;
+  if(!(modeMenuDiv instanceof HTMLElement)) return;
+  if(modeMenuDiv.dataset.mmMenuPlaneMetricsLogged) return;
+
+  const findInner = (plane) => plane?.querySelector?.(".mm-plane__inner") || null;
+
+  logMenuPlaneMetrics("mm_plane_left_mode", leftModePlane, findInner(leftModePlane));
+  logMenuPlaneMetrics("mm_plane_right_mode", rightModePlane, findInner(rightModePlane));
+  logMenuPlaneMetrics("mm_plane_left_rules", leftRulesPlane, findInner(leftRulesPlane));
+  logMenuPlaneMetrics("mm_plane_right_rules", rightRulesPlane, findInner(rightRulesPlane));
+
+  modeMenuDiv.dataset.mmMenuPlaneMetricsLogged = "true";
+}
+
 function setupMenuPressFeedback(buttons) {
   buttons.forEach((button) => {
     if (!button) return;
@@ -4146,6 +4193,7 @@ function updateModePlanesPosition(activeButton){
     const targetY = updatePlane(leftModePlane, leftX);
     updatePlane(rightModePlane, rightX);
     lastModePlaneTarget = { leftX, rightX, targetY };
+    logMenuPlaneMetricsOnce();
   };
 
   if(needsInitialPosition){
@@ -4203,6 +4251,7 @@ function updateRulesPlanesPosition(activeButton){
     const targetY = updatePlane(leftRulesPlane, leftX);
     updatePlane(rightRulesPlane, rightX);
     lastRulesPlaneTarget = { leftX, rightX, targetY };
+    logMenuPlaneMetricsOnce();
   };
 
   if(needsInitialPosition){
