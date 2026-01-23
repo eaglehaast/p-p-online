@@ -4074,7 +4074,8 @@ function updateModePlanesPosition(selectedMode){
 
   const rootX = btnRect.left - rootRect.left;
   const rootY = btnRect.top - rootRect.top;
-  const sideOffset = 48;
+  const leftOffset = 36 + 12;
+  const rightOffset = 12;
 
   const updatePlane = (plane, targetX) => {
     const planeRect = plane.getBoundingClientRect();
@@ -4083,11 +4084,8 @@ function updateModePlanesPosition(selectedMode){
     plane.style.transform = `translate(${targetX}px, ${targetY}px)`;
   };
 
-  const leftPlaneWidth = leftModePlane.getBoundingClientRect().width || leftModePlane.offsetWidth || 0;
-  const rightPlaneWidth = rightModePlane.getBoundingClientRect().width || rightModePlane.offsetWidth || 0;
-
-  const leftX = rootX - (leftPlaneWidth + sideOffset);
-  const rightX = rootX + btnRect.width + sideOffset;
+  const leftX = rootX - leftOffset;
+  const rightX = rootX + btnRect.width + rightOffset;
 
   const needsInitialPosition = !modeMenuDiv.dataset.mmPlanesReady;
   if(needsInitialPosition){
