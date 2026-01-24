@@ -3077,7 +3077,7 @@ const BOUNCE_FRAMES        = 68;
 // Shortened by 1.5x to speed up on-field flight animation
 const FIELD_FLIGHT_DURATION_SEC = (BOUNCE_FRAMES / 60) * 2 / 1.5;
 const FIELD_PLANE_SWAY_DEG = 1.5;
-const FIELD_PLANE_SWAY_PERIOD_SEC = 1.8;
+const FIELD_PLANE_SWAY_PERIOD_SEC = 2.6;
 const FIELD_PLANE_ROLL_BOB_PX = 1.5;
 const MAX_DRAG_DISTANCE    = 100;    // px
 const DRAG_ROTATION_THRESHOLD = 5;   // px slack before the plane starts to turn
@@ -6708,8 +6708,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
     && !(handleCircle.active && handleCircle.pointRef === plane);
   const omega = (2 * Math.PI) / (FIELD_PLANE_SWAY_PERIOD_SEC * 60);
   const phase = (plane.id ?? plane.uid ?? 0) * 0.37;
-  const rawSway = Math.sin(globalFrame * omega + phase);
-  const swayWave = Math.sign(rawSway) * Math.pow(Math.abs(rawSway), 0.6);
+  const swayWave = Math.sin(globalFrame * omega + phase);
   const swayAngle = shouldSway
     ? swayWave * (FIELD_PLANE_SWAY_DEG * Math.PI / 180)
     : 0;
