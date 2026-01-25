@@ -6712,6 +6712,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   const swayAngle = shouldSway
     ? swayWave * (FIELD_PLANE_SWAY_DEG * Math.PI / 180)
     : 0;
+  const clipX = shouldSway ? Math.round(Math.abs(swayWave) * 1) : 0;
   const rollOffset = shouldSway
     ? Math.sin(globalFrame * omega + phase + Math.PI / 2) * FIELD_PLANE_ROLL_BOB_PX
     : 0;
@@ -6781,7 +6782,12 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
       ctx2d.filter = "grayscale(100%) brightness(90%)";
     }
 
+    ctx2d.save();
+    ctx2d.beginPath();
+    ctx2d.rect(-halfPlaneWidth + clipX, -halfPlaneHeight, PLANE_DRAW_W - clipX * 2, PLANE_DRAW_H);
+    ctx2d.clip();
     ctx2d.drawImage(bluePlaneImg, -halfPlaneWidth, -halfPlaneHeight, PLANE_DRAW_W, PLANE_DRAW_H);
+    ctx2d.restore();
     ctx2d.filter = previousFilter;
     if (!isGhostState) {
       addPlaneShading(ctx2d);
@@ -6798,7 +6804,12 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
       ctx2d.filter = "grayscale(100%) brightness(90%)";
     }
 
+    ctx2d.save();
+    ctx2d.beginPath();
+    ctx2d.rect(-halfPlaneWidth + clipX, -halfPlaneHeight, PLANE_DRAW_W - clipX * 2, PLANE_DRAW_H);
+    ctx2d.clip();
     ctx2d.drawImage(greenPlaneImg, -halfPlaneWidth, -halfPlaneHeight, PLANE_DRAW_W, PLANE_DRAW_H);
+    ctx2d.restore();
     ctx2d.filter = previousFilter;
     if (!isGhostState) {
       addPlaneShading(ctx2d);

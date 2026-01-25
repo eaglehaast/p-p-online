@@ -1323,6 +1323,7 @@ body, button {
     display: block;
     width: 100%;
     height: 100%;
+    clip-path: inset(0px);
     --mm-plane-rotation: 0deg;
     transform-origin: 50% 50%;
     transform-box: fill-box;
@@ -1374,12 +1375,15 @@ body, button {
 
   @keyframes mm-plane-rotate {
     0% {
+      clip-path: inset(0px 1px 0px 1px);
       transform: rotate(calc(var(--mm-plane-rotation) - 1.5deg));
     }
     50% {
+      clip-path: inset(0px);
       transform: rotate(calc(var(--mm-plane-rotation) + 1.5deg));
     }
     100% {
+      clip-path: inset(0px 1px 0px 1px);
       transform: rotate(calc(var(--mm-plane-rotation) - 1.5deg));
     }
   }
