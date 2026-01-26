@@ -1262,8 +1262,7 @@ function getVisualViewportState() {
 
 function getViewportAdjustedBoundingClientRect(element) {
   const rect = element?.getBoundingClientRect?.();
-  const { scale, offsetLeft, offsetTop } = getVisualViewportState();
-  const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  const { offsetLeft, offsetTop } = getVisualViewportState();
 
   if (!rect) {
     return { left: 0, top: 0, width: 0, height: 0 };
@@ -1275,10 +1274,10 @@ function getViewportAdjustedBoundingClientRect(element) {
   const height = Number.isFinite(rect.height) ? rect.height : 0;
 
   return {
-    left: (left - offsetLeft) * safeScale,
-    top: (top - offsetTop) * safeScale,
-    width: width * safeScale,
-    height: height * safeScale
+    left: left - offsetLeft,
+    top: top - offsetTop,
+    width,
+    height
   };
 }
 
@@ -1380,11 +1379,11 @@ function resolveClientPoint(input) {
 
   const rawX = Number.isFinite(source?.clientX) ? source.clientX : 0;
   const rawY = Number.isFinite(source?.clientY) ? source.clientY : 0;
-  const { scale, offsetLeft, offsetTop } = getVisualViewportState();
+  const { offsetLeft, offsetTop } = getVisualViewportState();
 
   return {
-    clientX: (rawX - offsetLeft) * scale,
-    clientY: (rawY - offsetTop) * scale
+    clientX: rawX - offsetLeft,
+    clientY: rawY - offsetTop
   };
 }
 
