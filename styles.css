@@ -51,6 +51,13 @@ body, button {
     touch-action: none;
   }
 
+  body.screen:not(:has(#screenWrapper)) {
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
   #screenWrapper {
     position: relative;
     width: 100vw;
