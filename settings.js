@@ -99,8 +99,12 @@ function updateUiFrameScale() {
   const rootStyles = window.getComputedStyle(document.documentElement);
   const designW = parseFloat(rootStyles.getPropertyValue('--design-w'));
   const designH = parseFloat(rootStyles.getPropertyValue('--design-h'));
-  const safeDesignW = Number.isFinite(designW) && designW > 0 ? designW : 460;
-  const safeDesignH = Number.isFinite(designH) && designH > 0 ? designH : 800;
+  const uiFrameWidth = Number.isFinite(uiFrameEl?.offsetWidth) ? uiFrameEl.offsetWidth : 0;
+  const uiFrameHeight = Number.isFinite(uiFrameEl?.offsetHeight) ? uiFrameEl.offsetHeight : 0;
+  const fallbackDesignW = uiFrameWidth > 0 ? uiFrameWidth : 1;
+  const fallbackDesignH = uiFrameHeight > 0 ? uiFrameHeight : 1;
+  const safeDesignW = Number.isFinite(designW) && designW > 0 ? designW : fallbackDesignW;
+  const safeDesignH = Number.isFinite(designH) && designH > 0 ? designH : fallbackDesignH;
   const scale = Math.min(viewW / safeDesignW, viewH / safeDesignH);
   const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
   document.documentElement.style.setProperty('--ui-scale', safeScale);
