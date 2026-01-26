@@ -48,27 +48,60 @@ const DEBUG_FIELD_AUDIT = false;
 const DEBUG_FIELD_MARKER = false;
 const FIELD_DEBUG_MARKER_QUERY_FLAG = 'field_debug_marker';
 
+function getVisualViewportState() {
+  const viewport = typeof window !== 'undefined' ? window.visualViewport : null;
+
+  const fallbackWidth = (typeof window !== 'undefined' && Number.isFinite(window.innerWidth))
+    ? window.innerWidth
+    : (typeof document !== 'undefined' && Number.isFinite(document.documentElement?.clientWidth))
+      ? document.documentElement.clientWidth
+      : (typeof document !== 'undefined' && Number.isFinite(document.body?.clientWidth))
+        ? document.body.clientWidth
+        : 0;
+
+  const fallbackHeight = (typeof window !== 'undefined' && Number.isFinite(window.innerHeight))
+    ? window.innerHeight
+    : (typeof document !== 'undefined' && Number.isFinite(document.documentElement?.clientHeight))
+      ? document.documentElement.clientHeight
+      : (typeof document !== 'undefined' && Number.isFinite(document.body?.clientHeight))
+        ? document.body.clientHeight
+        : 0;
+
+  const scale = Number.isFinite(viewport?.scale) && viewport.scale > 0 ? viewport.scale : 1;
+  const offsetLeft = Number.isFinite(viewport?.offsetLeft) ? viewport.offsetLeft : 0;
+  const offsetTop = Number.isFinite(viewport?.offsetTop) ? viewport.offsetTop : 0;
+  const width = Number.isFinite(viewport?.width) && viewport.width > 0 ? viewport.width : Math.max(1, fallbackWidth);
+  const height = Number.isFinite(viewport?.height) && viewport.height > 0 ? viewport.height : Math.max(1, fallbackHeight);
+
+  return {
+    raw: viewport || null,
+    scale,
+    offsetLeft,
+    offsetTop,
+    width,
+    height
+  };
+}
+
 function updateUiFrameScale() {
   if (!(uiFrameEl instanceof HTMLElement)) {
     return;
   }
-  const viewport = window.visualViewport;
-  const viewW = viewport?.width ?? window.innerWidth;
-  const viewH = viewport?.height ?? window.innerHeight;
+  const viewport = getVisualViewportState();
   const wrapperEl = document.getElementById('screenWrapper');
   const wrapperStyles = wrapperEl ? window.getComputedStyle(wrapperEl) : null;
   const paddingTop = wrapperStyles ? parseFloat(wrapperStyles.paddingTop) || 0 : 0;
   const paddingRight = wrapperStyles ? parseFloat(wrapperStyles.paddingRight) || 0 : 0;
   const paddingBottom = wrapperStyles ? parseFloat(wrapperStyles.paddingBottom) || 0 : 0;
   const paddingLeft = wrapperStyles ? parseFloat(wrapperStyles.paddingLeft) || 0 : 0;
-  const safeW = Math.max(1, viewW - paddingLeft - paddingRight);
-  const safeH = Math.max(1, viewH - paddingTop - paddingBottom);
+  const viewW = Math.max(1, viewport.width - paddingLeft - paddingRight);
+  const viewH = Math.max(1, viewport.height - paddingTop - paddingBottom);
   const rootStyles = window.getComputedStyle(document.documentElement);
   const designW = parseFloat(rootStyles.getPropertyValue('--design-w'));
   const designH = parseFloat(rootStyles.getPropertyValue('--design-h'));
   const safeDesignW = Number.isFinite(designW) && designW > 0 ? designW : 460;
   const safeDesignH = Number.isFinite(designH) && designH > 0 ? designH : 800;
-  const scale = Math.min(safeW / safeDesignW, safeH / safeDesignH);
+  const scale = Math.min(viewW / safeDesignW, viewH / safeDesignH);
   const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
   document.documentElement.style.setProperty('--ui-scale', safeScale);
 }

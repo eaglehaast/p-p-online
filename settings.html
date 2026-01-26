@@ -9,10 +9,18 @@
 </head>
 <body class="screen screen--settings settings-page">
   <div id="screenWrapper">
+    <div id="loadingOverlay" class="loading-overlay loading-overlay--hidden" aria-live="polite">
+      <img
+        src="preload_animation.gif"
+        class="loading-overlay__image"
+        alt="Загрузка"
+        width="240"
+        height="240"
+      />
+    </div>
     <div id="uiFrame">
       <div id="settingsLayer" class="layer layer--settings" aria-hidden="false">
-        <div class="stage-460x800">
-          <div class="settings-container">
+        <div class="settings-container">
             <div id="modeMenu">
               <h1 class="game-title"><span class="visually-hidden">Advanced Settings</span></h1>
             </div>
