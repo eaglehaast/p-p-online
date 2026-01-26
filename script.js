@@ -156,7 +156,7 @@ function designToBoardCoords(designX, designY) {
 
 function getCanvasDpr() {
   const RAW_DPR = window.devicePixelRatio || 1;
-  const CANVAS_DPR = Math.min(RAW_DPR, 2);
+  const CANVAS_DPR = RAW_DPR;
   return { RAW_DPR, CANVAS_DPR };
 }
 
@@ -454,30 +454,47 @@ function logPointerDebugEvent(event) {
   });
 }
 
+function getCanvasDesignMetrics(canvas) {
+  const isBoardLayer = canvas === gsBoardCanvas || canvas === planeCanvas;
+  const isFrameLayer = canvas === aimCanvas || canvas === hudCanvas;
+
+  if (isBoardLayer) {
+    return {
+      cssW: CANVAS_BASE_WIDTH,
+      cssH: CANVAS_BASE_HEIGHT,
+      offsetX: CANVAS_OFFSET_X,
+      offsetY: FRAME_PADDING_Y
+    };
+  }
+
+  if (isFrameLayer) {
+    return {
+      cssW: FRAME_BASE_WIDTH,
+      cssH: FRAME_BASE_HEIGHT,
+      offsetX: 0,
+      offsetY: 0
+    };
+  }
+
+  return {
+    cssW: CANVAS_BASE_WIDTH,
+    cssH: CANVAS_BASE_HEIGHT,
+    offsetX: 0,
+    offsetY: 0
+  };
+}
+
 function computeViewFromCanvas(canvas) {
   if (!(canvas instanceof HTMLCanvasElement)) {
     return;
   }
 
-  const rect = canvas.getBoundingClientRect();
-  const { CANVAS_DPR } = getCanvasDpr();
+  const { RAW_DPR } = getCanvasDpr();
+  const { cssW, cssH } = getCanvasDesignMetrics(canvas);
+  const pxW = Math.max(1, Math.round(cssW * RAW_DPR));
+  const pxH = Math.max(1, Math.round(cssH * RAW_DPR));
 
-  const cssW = Math.max(1, rect.width);
-  const cssH = Math.max(1, rect.height);
-  const backingW = Math.max(1, canvas.width || 0);
-  const backingH = Math.max(1, canvas.height || 0);
-
-  const isBaseSize =
-    Math.abs(cssW - CANVAS_BASE_WIDTH) < 0.01 &&
-    Math.abs(cssH - CANVAS_BASE_HEIGHT) < 0.01;
-  const backingMatchesCss =
-    Math.abs(backingW - cssW) < 0.5 &&
-    Math.abs(backingH - cssH) < 0.5;
-  const useBackingStore = !backingMatchesCss && backingW > 0 && backingH > 0;
-  const pxW = useBackingStore ? backingW : (isBaseSize ? CANVAS_BASE_WIDTH : Math.round(cssW * CANVAS_DPR));
-  const pxH = useBackingStore ? backingH : (isBaseSize ? CANVAS_BASE_HEIGHT : Math.round(cssH * CANVAS_DPR));
-
-  VIEW.dpr = useBackingStore ? pxW / cssW : (isBaseSize ? 1 : CANVAS_DPR);
+  VIEW.dpr = RAW_DPR;
   VIEW.cssW = cssW;
   VIEW.cssH = cssH;
   VIEW.pxW = pxW;
@@ -498,13 +515,15 @@ function resizeCanvasToMatchCss(canvas) {
   logResizeDebug('resizeCanvasToMatchCss');
   if (!(canvas instanceof HTMLCanvasElement)) return;
 
-  const rect = canvas.getBoundingClientRect();
-  const w = Math.max(1, rect.width);
-  const h = Math.max(1, rect.height);
-  const { CANVAS_DPR } = getCanvasDpr();
-  const backingW = Math.max(1, Math.round(w * CANVAS_DPR));
-  const backingH = Math.max(1, Math.round(h * CANVAS_DPR));
+  const { RAW_DPR } = getCanvasDpr();
+  const { cssW, cssH } = getCanvasDesignMetrics(canvas);
+  const w = Math.max(1, cssW);
+  const h = Math.max(1, cssH);
+  const backingW = Math.max(1, Math.round(w * RAW_DPR));
+  const backingH = Math.max(1, Math.round(h * RAW_DPR));
 
+  canvas.style.width = `${w}px`;
+  canvas.style.height = `${h}px`;
   if (canvas.width !== backingW) canvas.width = backingW;
   if (canvas.height !== backingH) canvas.height = backingH;
 }
@@ -516,9 +535,9 @@ function applyViewTransform(ctx) {
 
 function syncCanvasBackingStore(canvas, baseWidth, baseHeight) {
   if (!canvas) return;
-  const { CANVAS_DPR } = getCanvasDpr();
-  const backingW = Math.max(1, Math.round(baseWidth * CANVAS_DPR));
-  const backingH = Math.max(1, Math.round(baseHeight * CANVAS_DPR));
+  const { RAW_DPR } = getCanvasDpr();
+  const backingW = Math.max(1, Math.round(baseWidth * RAW_DPR));
+  const backingH = Math.max(1, Math.round(baseHeight * RAW_DPR));
 
   if (canvas.width !== backingW) canvas.width = backingW;
   if (canvas.height !== backingH) canvas.height = backingH;
@@ -530,9 +549,9 @@ function syncHudCanvasLayout() {
   hudCanvas.style.top = '0px';
   hudCanvas.style.width = `${FRAME_BASE_WIDTH}px`;
   hudCanvas.style.height = `${FRAME_BASE_HEIGHT}px`;
-  const { CANVAS_DPR } = getCanvasDpr();
-  const backingW = Math.max(1, Math.round(FRAME_BASE_WIDTH * CANVAS_DPR));
-  const backingH = Math.max(1, Math.round(FRAME_BASE_HEIGHT * CANVAS_DPR));
+  const { RAW_DPR } = getCanvasDpr();
+  const backingW = Math.max(1, Math.round(FRAME_BASE_WIDTH * RAW_DPR));
+  const backingH = Math.max(1, Math.round(FRAME_BASE_HEIGHT * RAW_DPR));
   if (hudCanvas.width !== backingW) hudCanvas.width = backingW;
   if (hudCanvas.height !== backingH) hudCanvas.height = backingH;
 }
@@ -543,9 +562,9 @@ function syncAimCanvasLayout() {
   aimCanvas.style.top = '0px';
   aimCanvas.style.width = `${FRAME_BASE_WIDTH}px`;
   aimCanvas.style.height = `${FRAME_BASE_HEIGHT}px`;
-  const { CANVAS_DPR } = getCanvasDpr();
-  const backingW = Math.max(1, Math.round(FRAME_BASE_WIDTH * CANVAS_DPR));
-  const backingH = Math.max(1, Math.round(FRAME_BASE_HEIGHT * CANVAS_DPR));
+  const { RAW_DPR } = getCanvasDpr();
+  const backingW = Math.max(1, Math.round(FRAME_BASE_WIDTH * RAW_DPR));
+  const backingH = Math.max(1, Math.round(FRAME_BASE_HEIGHT * RAW_DPR));
   if (aimCanvas.width !== backingW) aimCanvas.width = backingW;
   if (aimCanvas.height !== backingH) aimCanvas.height = backingH;
 }
@@ -1325,14 +1344,21 @@ function clientPointFromEvent(e) {
   };
 }
 
-function clientToWorld(point, rect = visualRect(gsBoardCanvas)) {
-  const scaleX = rect.width !== 0 ? VIEW.pxW / rect.width : 1;
-  const scaleY = rect.height !== 0 ? VIEW.pxH / rect.height : 1;
+function clientToWorld(point) {
+  const clientX = Number.isFinite(point?.x) ? point.x : 0;
+  const clientY = Number.isFinite(point?.y) ? point.y : 0;
+  const design = toDesignCoords(clientX, clientY);
+  const world = designToBoardCoords(design.x, design.y);
   return {
-    x: (point.x - rect.left) * scaleX / VIEW.scaleX,
-    y: (point.y - rect.top) * scaleY / VIEW.scaleY,
-    rect,
-    v: rect.v
+    x: world.x,
+    y: world.y,
+    rect: {
+      left: CANVAS_OFFSET_X,
+      top: FRAME_PADDING_Y,
+      width: CANVAS_BASE_WIDTH,
+      height: CANVAS_BASE_HEIGHT
+    },
+    v: null
   };
 }
 
@@ -1365,18 +1391,21 @@ function resolveClientPoint(input) {
 function clientToOverlay(event, overlay = aimCanvas) {
   const target = overlay || aimCanvas;
   const { clientX, clientY } = resolveClientPoint(event);
-  const rect = target?.getBoundingClientRect?.() || { left: 0, top: 0, width: 0, height: 0 };
-  const rectWidth = Number.isFinite(rect.width) && rect.width !== 0 ? rect.width : 1;
-  const rectHeight = Number.isFinite(rect.height) && rect.height !== 0 ? rect.height : 1;
-  const nx = (clientX - rect.left) / rectWidth;
-  const ny = (clientY - rect.top) / rectHeight;
-  const logicalWidth = target?.width ?? rectWidth * VIEW.dpr;
-  const logicalHeight = target?.height ?? rectHeight * VIEW.dpr;
+  const design = toDesignCoords(clientX, clientY);
+  const { cssW, cssH, offsetX, offsetY } = getCanvasDesignMetrics(target);
+  const localX = design.x - offsetX;
+  const localY = design.y - offsetY;
+  const safeCssW = cssW || 1;
+  const safeCssH = cssH || 1;
+  const nx = localX / safeCssW;
+  const ny = localY / safeCssH;
+  const logicalWidth = target?.width ?? Math.round(safeCssW * VIEW.dpr);
+  const logicalHeight = target?.height ?? Math.round(safeCssH * VIEW.dpr);
 
   return {
     clientX,
     clientY,
-    rect,
+    rect: { left: offsetX, top: offsetY, width: safeCssW, height: safeCssH },
     nx,
     ny,
     x: nx * logicalWidth,
@@ -1386,40 +1415,47 @@ function clientToOverlay(event, overlay = aimCanvas) {
 
 function clientToBoard(event) {
   const { clientX, clientY } = resolveClientPoint(event);
-  const rect = gsBoardCanvas?.getBoundingClientRect?.() || { left: 0, top: 0, width: 0, height: 0 };
-  const rectWidth = Number.isFinite(rect.width) && rect.width !== 0 ? rect.width : 1;
-  const rectHeight = Number.isFinite(rect.height) && rect.height !== 0 ? rect.height : 1;
-  const x_css = clientX - rect.left;
-  const y_css = clientY - rect.top;
-  const canvasScaleX = gsBoardCanvas?.width ? gsBoardCanvas.width / rectWidth : 1;
-  const canvasScaleY = gsBoardCanvas?.height ? gsBoardCanvas.height / rectHeight : 1;
-  const x_canvas = x_css * canvasScaleX;
-  const y_canvas = y_css * canvasScaleY;
-  const scaleX = Number.isFinite(VIEW.scaleX) && VIEW.scaleX !== 0 ? VIEW.scaleX : 1;
-  const scaleY = Number.isFinite(VIEW.scaleY) && VIEW.scaleY !== 0 ? VIEW.scaleY : 1;
-  const nx = x_css / rectWidth;
-  const ny = y_css / rectHeight;
+  const design = toDesignCoords(clientX, clientY);
+  const x_css = design.x - CANVAS_OFFSET_X;
+  const y_css = design.y - FRAME_PADDING_Y;
+  const nx = x_css / CANVAS_BASE_WIDTH;
+  const ny = y_css / CANVAS_BASE_HEIGHT;
 
   return {
     clientX,
     clientY,
-    rect,
+    rect: {
+      left: CANVAS_OFFSET_X,
+      top: FRAME_PADDING_Y,
+      width: CANVAS_BASE_WIDTH,
+      height: CANVAS_BASE_HEIGHT
+    },
     nx,
     ny,
     x_css,
     y_css,
-    x: x_canvas / scaleX,
-    y: y_canvas / scaleY
+    x: x_css,
+    y: y_css
   };
 }
 
 function worldToOverlayLocal(x, y, options = {}) {
   const { overlayRect: providedOverlayRect = null, boardRect: providedBoardRect = null } = options || {};
-  const boardRect = providedBoardRect ? normalizeRect(providedBoardRect) : getRawBoundingClientRect(gsBoardCanvas);
-  const overlayRect = providedOverlayRect ? normalizeRect(providedOverlayRect) : getRawBoundingClientRect(overlayContainer);
+  const boardRect = providedBoardRect ? normalizeRect(providedBoardRect) : {
+    left: CANVAS_OFFSET_X,
+    top: FRAME_PADDING_Y,
+    width: CANVAS_BASE_WIDTH,
+    height: CANVAS_BASE_HEIGHT
+  };
+  const overlayRect = providedOverlayRect ? normalizeRect(providedOverlayRect) : {
+    left: CANVAS_OFFSET_X,
+    top: FRAME_PADDING_Y,
+    width: CANVAS_BASE_WIDTH,
+    height: CANVAS_BASE_HEIGHT
+  };
 
-  const boardWidth = boardRect.width || 1;
-  const boardHeight = boardRect.height || 1;
+  const boardWidth = boardRect.width || CANVAS_BASE_WIDTH;
+  const boardHeight = boardRect.height || CANVAS_BASE_HEIGHT;
   const boardLeft = boardRect.left;
   const boardTop = boardRect.top;
   const safeX = Number.isFinite(x) ? x : 0;
@@ -1437,11 +1473,16 @@ function worldToOverlayLocal(x, y, options = {}) {
 
 function worldToOverlay(x, y, options = {}) {
   const { overlay = null, boardRect: providedBoardRect = null, overlayRect: providedOverlayRect = null } = options || {};
-  const boardRect = providedBoardRect || getViewportAdjustedBoundingClientRect(gsBoardCanvas);
-  const boardWidth = Number.isFinite(boardRect.width) && boardRect.width !== 0 ? boardRect.width : 1;
-  const boardHeight = Number.isFinite(boardRect.height) && boardRect.height !== 0 ? boardRect.height : 1;
-  const boardLeft = Number.isFinite(boardRect.left) ? boardRect.left : 0;
-  const boardTop = Number.isFinite(boardRect.top) ? boardRect.top : 0;
+  const boardRect = providedBoardRect || {
+    left: CANVAS_OFFSET_X,
+    top: FRAME_PADDING_Y,
+    width: CANVAS_BASE_WIDTH,
+    height: CANVAS_BASE_HEIGHT
+  };
+  const boardWidth = Number.isFinite(boardRect.width) && boardRect.width !== 0 ? boardRect.width : CANVAS_BASE_WIDTH;
+  const boardHeight = Number.isFinite(boardRect.height) && boardRect.height !== 0 ? boardRect.height : CANVAS_BASE_HEIGHT;
+  const boardLeft = Number.isFinite(boardRect.left) ? boardRect.left : CANVAS_OFFSET_X;
+  const boardTop = Number.isFinite(boardRect.top) ? boardRect.top : FRAME_PADDING_Y;
   const safeX = Number.isFinite(x) ? x : 0;
   const safeY = Number.isFinite(y) ? y : 0;
   const nx = safeX / WORLD.width;
@@ -1454,52 +1495,46 @@ function worldToOverlay(x, y, options = {}) {
   let overlayY = clientY;
 
   if (overlay || providedOverlayRect) {
-    overlayRect = providedOverlayRect || (overlay ? getViewportAdjustedBoundingClientRect(overlay) : null);
-    if (overlayRect) {
-      const overlayWidthPxRaw = Number.isFinite(overlayRect.width) && overlayRect.width !== 0 ? overlayRect.width : null;
-      const overlayHeightPxRaw = Number.isFinite(overlayRect.height) && overlayRect.height !== 0 ? overlayRect.height : null;
-      const overlayWidthPx = overlayWidthPxRaw ?? (overlay?.width ?? 1);
-      const overlayHeightPx = overlayHeightPxRaw ?? (overlay?.height ?? 1);
-      const overlayWidth = overlay?.width ?? overlayWidthPx;
-      const overlayHeight = overlay?.height ?? overlayHeightPx;
-      const overlayLeft = Number.isFinite(overlayRect.left) ? overlayRect.left : 0;
-      const overlayTop = Number.isFinite(overlayRect.top) ? overlayRect.top : 0;
-      const onx = (clientX - overlayLeft) / overlayWidthPx;
-      const ony = (clientY - overlayTop) / overlayHeightPx;
-      overlayX = onx * overlayWidth;
-      overlayY = ony * overlayHeight;
-    }
+    overlayRect = providedOverlayRect || {
+      left: CANVAS_OFFSET_X,
+      top: FRAME_PADDING_Y,
+      width: CANVAS_BASE_WIDTH,
+      height: CANVAS_BASE_HEIGHT
+    };
+    const overlayWidthPx = Number.isFinite(overlayRect.width) && overlayRect.width !== 0
+      ? overlayRect.width
+      : (overlay?.width ?? CANVAS_BASE_WIDTH);
+    const overlayHeightPx = Number.isFinite(overlayRect.height) && overlayRect.height !== 0
+      ? overlayRect.height
+      : (overlay?.height ?? CANVAS_BASE_HEIGHT);
+    const overlayWidth = overlay?.width ?? overlayWidthPx;
+    const overlayHeight = overlay?.height ?? overlayHeightPx;
+    const overlayLeft = Number.isFinite(overlayRect.left) ? overlayRect.left : CANVAS_OFFSET_X;
+    const overlayTop = Number.isFinite(overlayRect.top) ? overlayRect.top : FRAME_PADDING_Y;
+    const onx = (clientX - overlayLeft) / overlayWidthPx;
+    const ony = (clientY - overlayTop) / overlayHeightPx;
+    overlayX = onx * overlayWidth;
+    overlayY = ony * overlayHeight;
   }
 
   return { clientX, clientY, overlayX, overlayY, nx, ny, boardRect, overlayRect };
 }
 
-function worldToGameCanvas(x, y, rect = visualRect(gsBoardCanvas)) {
+function worldToGameCanvas(x, y) {
   const safeX = Number.isFinite(x) ? x : 0;
   const safeY = Number.isFinite(y) ? y : 0;
-  const canvasWidth = WORLD.width;
-  const canvasHeight = WORLD.height;
-  const rectWidth = Number.isFinite(rect?.width) && rect.width !== 0 ? rect.width : null;
-  const rectHeight = Number.isFinite(rect?.height) && rect.height !== 0 ? rect.height : null;
-  const rectLeft = Number.isFinite(rect?.left) ? rect.left : 0;
-  const rectTop = Number.isFinite(rect?.top) ? rect.top : 0;
-
-  const inCanvasSpace = safeX >= 0 && safeX <= canvasWidth && safeY >= 0 && safeY <= canvasHeight;
-
-  if (!rectWidth || !rectHeight || inCanvasSpace) {
-    return { x: safeX, y: safeY, scaleX: 1, scaleY: 1, fromLayout: false };
-  }
-
-  const scaleX = canvasWidth / rectWidth;
-  const scaleY = canvasHeight / rectHeight;
-
   return {
-    x: (safeX - rectLeft) * scaleX,
-    y: (safeY - rectTop) * scaleY,
-    scaleX,
-    scaleY,
-    fromLayout: true,
-    rect
+    x: safeX,
+    y: safeY,
+    scaleX: 1,
+    scaleY: 1,
+    fromLayout: false,
+    rect: {
+      left: CANVAS_OFFSET_X,
+      top: FRAME_PADDING_Y,
+      width: CANVAS_BASE_WIDTH,
+      height: CANVAS_BASE_HEIGHT
+    }
   };
 }
 
@@ -1513,15 +1548,15 @@ function syncOverlayCanvasToGameCanvas(targetCanvas, cssWidth, cssHeight) {
 
   const width = Math.max(1, Math.round(cssWidth || 0));
   const height = Math.max(1, Math.round(cssHeight || 0));
-  const { CANVAS_DPR } = getCanvasDpr();
+  const { RAW_DPR } = getCanvasDpr();
   targetCanvas.style.position = 'absolute';
   targetCanvas.style.left = '0px';
   targetCanvas.style.top = '0px';
   targetCanvas.style.width = `${width}px`;
   targetCanvas.style.height = `${height}px`;
 
-  const backingWidth = Math.max(1, Math.round(width * CANVAS_DPR));
-  const backingHeight = Math.max(1, Math.round(height * CANVAS_DPR));
+  const backingWidth = Math.max(1, Math.round(width * RAW_DPR));
+  const backingHeight = Math.max(1, Math.round(height * RAW_DPR));
 
   if (targetCanvas.width !== backingWidth) targetCanvas.width = backingWidth;
   if (targetCanvas.height !== backingHeight) targetCanvas.height = backingHeight;
@@ -1542,12 +1577,7 @@ function sizeAndAlignOverlays() {
   overlayContainer.style.width = `${width}px`;
   overlayContainer.style.height = `${height}px`;
   overlayContainer.style.transform = "none";
-
-  const rect = overlayContainer.getBoundingClientRect();
-  const cssWidth = Math.max(1, rect.width);
-  const cssHeight = Math.max(1, rect.height);
-
-  syncOverlayCanvasToGameCanvas(planeCanvas, cssWidth, cssHeight);
+  syncOverlayCanvasToGameCanvas(planeCanvas, width, height);
 
   debugLogLayerStack();
 }
@@ -1826,8 +1856,18 @@ function resolvePlaneFlameMetrics(context = 'plane flame') {
     return null;
   }
 
-  const boardRect = getRawBoundingClientRect(gsBoardCanvas);
-  const overlayRect = getRawBoundingClientRect(overlayContainer);
+  const boardRect = {
+    left: CANVAS_OFFSET_X,
+    top: FRAME_PADDING_Y,
+    width: CANVAS_BASE_WIDTH,
+    height: CANVAS_BASE_HEIGHT
+  };
+  const overlayRect = {
+    left: CANVAS_OFFSET_X,
+    top: FRAME_PADDING_Y,
+    width: CANVAS_BASE_WIDTH,
+    height: CANVAS_BASE_HEIGHT
+  };
   const host = ensurePlaneFlameHost();
 
   if (!(host instanceof HTMLElement)) {
@@ -1849,7 +1889,14 @@ function resolvePlaneFlameMetrics(context = 'plane flame') {
     return null;
   }
 
-  const hostRect = getRawBoundingClientRect(host);
+  const hostWidth = host.offsetWidth || overlayRect.width;
+  const hostHeight = host.offsetHeight || overlayRect.height;
+  const hostRect = {
+    left: overlayRect.left,
+    top: overlayRect.top,
+    width: hostWidth,
+    height: hostHeight
+  };
   if (!hostRect || hostRect.width <= FX_HOST_MIN_SIZE || hostRect.height <= FX_HOST_MIN_SIZE) {
     console.warn(`[FX] Skipping ${context}: host rect invalid`, { hostRect });
     return null;
@@ -2516,10 +2563,10 @@ let needsGameScreenSync = false;
 let menuScreenLocked = false;
 
 function getGameCanvasMetrics() {
-  const rect = gsBoardCanvas?.getBoundingClientRect?.();
   const { RAW_DPR, CANVAS_DPR } = getCanvasDpr();
+  const { cssW, cssH } = getCanvasDesignMetrics(gsBoardCanvas);
   return {
-    css: rect ? `${Math.round(rect.width)}x${Math.round(rect.height)}` : "unknown",
+    css: `${Math.round(cssW)}x${Math.round(cssH)}`,
     backing: gsBoardCanvas ? `${gsBoardCanvas.width}x${gsBoardCanvas.height}` : "unknown",
     RAW_DPR,
     CANVAS_DPR,
@@ -2959,24 +3006,15 @@ let FIELD_LEFT = 0;
 let FIELD_WIDTH = 0;
 
 function getFrameScaleFromLayout() {
-  if (!(gsFrameEl instanceof HTMLElement)) {
-    return { scaleX: 1, scaleY: 1 };
-  }
-
-  const rect = gsFrameEl.getBoundingClientRect();
-  const scaleX = rect.width / FRAME_BASE_WIDTH;
-  const scaleY = rect.height / FRAME_BASE_HEIGHT;
-
   return {
-    scaleX: Number.isFinite(scaleX) && scaleX > 0 ? scaleX : 1,
-    scaleY: Number.isFinite(scaleY) && scaleY > 0 ? scaleY : 1
+    scaleX: 1,
+    scaleY: 1
   };
 }
 
 function getFieldOffsetsInCanvasSpace(canvas, fallbackScaleX = 1, fallbackScaleY = 1) {
-  const { scaleX: frameScaleX, scaleY: frameScaleY } = getFrameScaleFromLayout();
-  const cssOffsetX = CANVAS_OFFSET_X * frameScaleX;
-  const cssOffsetY = FRAME_PADDING_Y * frameScaleY;
+  const cssOffsetX = CANVAS_OFFSET_X;
+  const cssOffsetY = FRAME_PADDING_Y;
 
   if (!(canvas instanceof HTMLCanvasElement)) {
     return {
@@ -2985,11 +3023,9 @@ function getFieldOffsetsInCanvasSpace(canvas, fallbackScaleX = 1, fallbackScaleY
     };
   }
 
-  const rect = canvas.getBoundingClientRect();
-  const rectWidth = Number.isFinite(rect?.width) ? rect.width : 0;
-  const rectHeight = Number.isFinite(rect?.height) ? rect.height : 0;
-  const canvasScaleX = rectWidth > 0 ? canvas.width / rectWidth : fallbackScaleX;
-  const canvasScaleY = rectHeight > 0 ? canvas.height / rectHeight : fallbackScaleY;
+  const { cssW, cssH } = getCanvasDesignMetrics(canvas);
+  const canvasScaleX = cssW > 0 ? canvas.width / cssW : fallbackScaleX;
+  const canvasScaleY = cssH > 0 ? canvas.height / cssH : fallbackScaleY;
 
   return {
     x: cssOffsetX * canvasScaleX,
@@ -8431,14 +8467,14 @@ function syncAllCanvasBackingStores() {
 }
 
 function resizeCanvasFixedForGameBoard() {
-  const { CANVAS_DPR } = getCanvasDpr();
+  const { RAW_DPR } = getCanvasDpr();
   updateUiFrameScale();
   syncBackgroundLayout(FRAME_BASE_WIDTH, FRAME_BASE_HEIGHT);
 
   const cssW = CANVAS_BASE_WIDTH;
   const cssH = CANVAS_BASE_HEIGHT;
-  const backingW = Math.max(1, Math.round(cssW * CANVAS_DPR));
-  const backingH = Math.max(1, Math.round(cssH * CANVAS_DPR));
+  const backingW = Math.max(1, Math.round(cssW * RAW_DPR));
+  const backingH = Math.max(1, Math.round(cssH * RAW_DPR));
 
   gsBoardCanvas.style.width = `${cssW}px`;
   gsBoardCanvas.style.height = `${cssH}px`;
@@ -8449,6 +8485,18 @@ function resizeCanvasFixedForGameBoard() {
   computeViewFromCanvas(gsBoardCanvas);
   applyViewTransform(gsBoardCtx);
   syncAimCanvasLayout();
+
+  if (planeCanvas) {
+    planeCanvas.style.width = `${cssW}px`;
+    planeCanvas.style.height = `${cssH}px`;
+    planeCanvas.style.left = `${CANVAS_OFFSET_X}px`;
+    planeCanvas.style.top = `${FRAME_PADDING_Y}px`;
+    const planeBackingW = Math.max(1, Math.round(cssW * RAW_DPR));
+    const planeBackingH = Math.max(1, Math.round(cssH * RAW_DPR));
+    if (planeCanvas.width !== planeBackingW) planeCanvas.width = planeBackingW;
+    if (planeCanvas.height !== planeBackingH) planeCanvas.height = planeBackingH;
+    applyViewTransform(planeCtx);
+  }
 }
 
 let lastResizeMetrics = {
@@ -8472,12 +8520,12 @@ function resizeCanvas() {
   const safeScale = 1;
   const cssW = CANVAS_BASE_WIDTH;
   const cssH = CANVAS_BASE_HEIGHT;
-  const { CANVAS_DPR } = getCanvasDpr();
+  const { RAW_DPR } = getCanvasDpr();
   const unchanged =
     Math.abs(cssW - lastResizeMetrics.cssW) < 0.1 &&
     Math.abs(cssH - lastResizeMetrics.cssH) < 0.1 &&
     Math.abs(safeScale - lastResizeMetrics.scale) < 0.0001 &&
-    Math.abs(CANVAS_DPR - lastResizeMetrics.dpr) < 0.001;
+    Math.abs(RAW_DPR - lastResizeMetrics.dpr) < 0.001;
 
   if (unchanged) {
     logResizeDebug();
@@ -8488,7 +8536,7 @@ function resizeCanvas() {
     cssW,
     cssH,
     scale: safeScale,
-    dpr: CANVAS_DPR
+    dpr: RAW_DPR
   };
 
   updateUiFrameScale();
@@ -8498,8 +8546,8 @@ function resizeCanvas() {
   canvas.style.height = CANVAS_BASE_HEIGHT + 'px';
   canvas.style.left = CANVAS_OFFSET_X + 'px';
   canvas.style.top = FRAME_PADDING_Y + 'px';
-  const gsBackingW = Math.max(1, Math.round(CANVAS_BASE_WIDTH * CANVAS_DPR));
-  const gsBackingH = Math.max(1, Math.round(CANVAS_BASE_HEIGHT * CANVAS_DPR));
+  const gsBackingW = Math.max(1, Math.round(CANVAS_BASE_WIDTH * RAW_DPR));
+  const gsBackingH = Math.max(1, Math.round(CANVAS_BASE_HEIGHT * RAW_DPR));
   if (canvas.width !== gsBackingW) canvas.width = gsBackingW;
   if (canvas.height !== gsBackingH) canvas.height = gsBackingH;
   computeViewFromCanvas(canvas);
@@ -8509,8 +8557,8 @@ function resizeCanvas() {
   if (planeCanvas) {
     planeCanvas.style.width = CANVAS_BASE_WIDTH + 'px';
     planeCanvas.style.height = CANVAS_BASE_HEIGHT + 'px';
-    const planeBackingW = Math.max(1, Math.round(CANVAS_BASE_WIDTH * CANVAS_DPR));
-    const planeBackingH = Math.max(1, Math.round(CANVAS_BASE_HEIGHT * CANVAS_DPR));
+    const planeBackingW = Math.max(1, Math.round(CANVAS_BASE_WIDTH * RAW_DPR));
+    const planeBackingH = Math.max(1, Math.round(CANVAS_BASE_HEIGHT * RAW_DPR));
     if (planeCanvas.width !== planeBackingW) planeCanvas.width = planeBackingW;
     if (planeCanvas.height !== planeBackingH) planeCanvas.height = planeBackingH;
   }
