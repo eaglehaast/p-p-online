@@ -2866,8 +2866,7 @@ function setBackgroundImage(...imageLayers) {
     gameBackgroundEl.style.backgroundImage = backgroundValue;
   }
 
-  const rect = gsFrameEl.getBoundingClientRect();
-  syncBackgroundLayout(rect.width, rect.height);
+  syncBackgroundLayout(FRAME_BASE_WIDTH, FRAME_BASE_HEIGHT);
 
   debugLogLayerStack();
 }
@@ -2921,6 +2920,45 @@ function clearBrickFrameImage(){
 
 let FIELD_LEFT = 0;
 let FIELD_WIDTH = 0;
+
+function getFrameScaleFromLayout() {
+  if (!(gsFrameEl instanceof HTMLElement)) {
+    return { scaleX: 1, scaleY: 1 };
+  }
+
+  const rect = gsFrameEl.getBoundingClientRect();
+  const scaleX = rect.width / FRAME_BASE_WIDTH;
+  const scaleY = rect.height / FRAME_BASE_HEIGHT;
+
+  return {
+    scaleX: Number.isFinite(scaleX) && scaleX > 0 ? scaleX : 1,
+    scaleY: Number.isFinite(scaleY) && scaleY > 0 ? scaleY : 1
+  };
+}
+
+function getFieldOffsetsInCanvasSpace(canvas, fallbackScaleX = 1, fallbackScaleY = 1) {
+  const { scaleX: frameScaleX, scaleY: frameScaleY } = getFrameScaleFromLayout();
+  const cssOffsetX = CANVAS_OFFSET_X * frameScaleX;
+  const cssOffsetY = FRAME_PADDING_Y * frameScaleY;
+
+  if (!(canvas instanceof HTMLCanvasElement)) {
+    return {
+      x: cssOffsetX * fallbackScaleX,
+      y: cssOffsetY * fallbackScaleY
+    };
+  }
+
+  const rect = canvas.getBoundingClientRect();
+  const rectWidth = Number.isFinite(rect?.width) ? rect.width : 0;
+  const rectHeight = Number.isFinite(rect?.height) ? rect.height : 0;
+  const canvasScaleX = rectWidth > 0 ? canvas.width / rectWidth : fallbackScaleX;
+  const canvasScaleY = rectHeight > 0 ? canvas.height / rectHeight : fallbackScaleY;
+
+  return {
+    x: cssOffsetX * canvasScaleX,
+    y: cssOffsetY * canvasScaleY
+  };
+}
 
 // Sprite used for the aiming arrow
 const { img: arrowSprite } = loadImageAsset("sprite_ copy.png", "arrowSprite");
@@ -6190,13 +6228,18 @@ function gameDraw(){
     aimCtx.setTransform(1, 0, 0, 1, 0, 0);
     aimCtx.clearRect(0, 0, aimCanvas.width, aimCanvas.height);
     aimCtx.save();
+    const { x: aimOffsetX, y: aimOffsetY } = getFieldOffsetsInCanvasSpace(
+      aimCanvas,
+      VIEW.scaleX,
+      VIEW.scaleY
+    );
     aimCtx.setTransform(
       VIEW.scaleX,
       0,
       0,
       VIEW.scaleY,
-      CANVAS_OFFSET_X * VIEW.scaleX,
-      FRAME_PADDING_Y * VIEW.scaleY
+      aimOffsetX,
+      aimOffsetY
     );
     aimCtx.globalAlpha = arrowAlpha;
     drawArrow(aimCtx, startX, startY, baseDx, baseDy);
@@ -7038,8 +7081,13 @@ function drawAimOverlay(rangeTextInfo) {
   if (!rangeTextInfo) return;
   if (!hudCtx || !(hudCanvas instanceof HTMLCanvasElement)) return;
 
-  const hudScaleX = hudCanvas.width / FRAME_BASE_WIDTH;
-  const hudScaleY = hudCanvas.height / FRAME_BASE_HEIGHT;
+  const hudScaleX = VIEW.scaleX;
+  const hudScaleY = VIEW.scaleY;
+  const { x: hudOffsetX, y: hudOffsetY } = getFieldOffsetsInCanvasSpace(
+    hudCanvas,
+    hudScaleX,
+    hudScaleY
+  );
 
   hudCtx.save();
   hudCtx.setTransform(
@@ -7047,8 +7095,8 @@ function drawAimOverlay(rangeTextInfo) {
     0,
     0,
     hudScaleY,
-    CANVAS_OFFSET_X * hudScaleX,
-    FRAME_PADDING_Y * hudScaleY
+    hudOffsetX,
+    hudOffsetY
   );
 
   hudCtx.globalAlpha = 1;
