@@ -8352,24 +8352,6 @@ function applyCurrentMap(upcomingRoundNumber){
   renderScoreboard();
 }
 
-function updateUiScale() {
-  if (uiFrameEl instanceof HTMLElement) {
-    uiFrameEl.style.width = `${FRAME_BASE_WIDTH}px`;
-    uiFrameEl.style.height = `${FRAME_BASE_HEIGHT}px`;
-  }
-
-  if (gsFrameEl instanceof HTMLElement) {
-    gsFrameEl.style.removeProperty('--game-scale');
-    gsFrameEl.style.removeProperty('left');
-    gsFrameEl.style.removeProperty('top');
-    gsFrameEl.style.width = `${FRAME_BASE_WIDTH}px`;
-    gsFrameEl.style.height = `${FRAME_BASE_HEIGHT}px`;
-  }
-
-  syncHudCanvasLayout();
-  syncAimCanvasLayout();
-}
-
 function updateUiFrameScale() {
   if (!(uiFrameEl instanceof HTMLElement)) {
     return;
@@ -8393,6 +8375,8 @@ function updateUiFrameScale() {
   const scale = Math.min(viewW / safeDesignW, viewH / safeDesignH);
   const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
   document.documentElement.style.setProperty('--ui-scale', safeScale);
+  syncHudCanvasLayout();
+  syncAimCanvasLayout();
 }
 
 /* ======= CANVAS RESIZE ======= */
@@ -8407,7 +8391,7 @@ function syncAllCanvasBackingStores() {
 
 function resizeCanvasFixedForGameBoard() {
   const { CANVAS_DPR } = getCanvasDpr();
-  updateUiScale();
+  updateUiFrameScale();
   syncBackgroundLayout(FRAME_BASE_WIDTH, FRAME_BASE_HEIGHT);
 
   const cssW = CANVAS_BASE_WIDTH;
@@ -8466,7 +8450,7 @@ function resizeCanvas() {
     dpr: CANVAS_DPR
   };
 
-  updateUiScale();
+  updateUiFrameScale();
   syncBackgroundLayout(FRAME_BASE_WIDTH, FRAME_BASE_HEIGHT);
   const canvas = gsBoardCanvas;
   canvas.style.width = CANVAS_BASE_WIDTH + 'px';
@@ -8546,7 +8530,6 @@ function resizeCanvas() {
 
 window.addEventListener('resize', resizeCanvas);
 window.addEventListener('resize', updateUiFrameScale);
-window.addEventListener('load', updateUiScale);
 window.addEventListener('load', updateUiFrameScale);
 // Lock orientation to portrait and prevent the canvas from redrawing on rotation
 function lockOrientation(){
@@ -8571,7 +8554,6 @@ window.addEventListener('orientationchange', updateUiFrameScale);
 
   async function bootstrapGame(){
     await waitForStylesReady();
-    updateUiScale();
     updateUiFrameScale();
     sizeAndAlignOverlays();
     resizeCanvas();

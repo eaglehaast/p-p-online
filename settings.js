@@ -41,11 +41,37 @@ const MAP_PREVIEW_BRICK_SPRITE_PATHS = {
 };
 
 const settingsLayer = document.getElementById('settingsLayer');
+const uiFrameEl = document.getElementById('uiFrame');
 const settingsRoot = settingsLayer ?? document;
 const selectInSettings = (selector) => settingsRoot.querySelector(selector);
 const DEBUG_FIELD_AUDIT = false;
 const DEBUG_FIELD_MARKER = false;
 const FIELD_DEBUG_MARKER_QUERY_FLAG = 'field_debug_marker';
+
+function updateUiFrameScale() {
+  if (!(uiFrameEl instanceof HTMLElement)) {
+    return;
+  }
+  const viewport = window.visualViewport;
+  const viewW = viewport?.width ?? window.innerWidth;
+  const viewH = viewport?.height ?? window.innerHeight;
+  const wrapperEl = document.getElementById('screenWrapper');
+  const wrapperStyles = wrapperEl ? window.getComputedStyle(wrapperEl) : null;
+  const paddingTop = wrapperStyles ? parseFloat(wrapperStyles.paddingTop) || 0 : 0;
+  const paddingRight = wrapperStyles ? parseFloat(wrapperStyles.paddingRight) || 0 : 0;
+  const paddingBottom = wrapperStyles ? parseFloat(wrapperStyles.paddingBottom) || 0 : 0;
+  const paddingLeft = wrapperStyles ? parseFloat(wrapperStyles.paddingLeft) || 0 : 0;
+  const safeW = Math.max(1, viewW - paddingLeft - paddingRight);
+  const safeH = Math.max(1, viewH - paddingTop - paddingBottom);
+  const rootStyles = window.getComputedStyle(document.documentElement);
+  const designW = parseFloat(rootStyles.getPropertyValue('--design-w'));
+  const designH = parseFloat(rootStyles.getPropertyValue('--design-h'));
+  const safeDesignW = Number.isFinite(designW) && designW > 0 ? designW : 460;
+  const safeDesignH = Number.isFinite(designH) && designH > 0 ? designH : 800;
+  const scale = Math.min(safeW / safeDesignW, safeH / safeDesignH);
+  const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  document.documentElement.style.setProperty('--ui-scale', safeScale);
+}
 
 function isFieldDebugMarkerEnabled(){
   if(DEBUG_FIELD_MARKER) return true;
@@ -4269,6 +4295,9 @@ function cleanupRenderers(){
 
 window.addEventListener('pagehide', cleanupRenderers);
 window.addEventListener('beforeunload', cleanupRenderers);
+window.addEventListener('resize', updateUiFrameScale);
+window.addEventListener('orientationchange', updateUiFrameScale);
+window.addEventListener('load', updateUiFrameScale);
 
 if(isFieldDebugMarkerEnabled() && !window.__fieldDebugBuildLogged){
   console.warn('FIELD_DEBUG_BUILD', FIELD_DEBUG_BUILD);
@@ -4291,6 +4320,7 @@ if(isFieldDebugMarkerEnabled() &&
 updateAmplitudeDisplay();
 updateAmplitudeIndicator();
 syncFieldSelectorState();
+updateUiFrameScale();
 
 const settingsBridge = window.paperWingsSettings || {};
 settingsBridge.onShow = handleSettingsLayerShow;

@@ -90,8 +90,8 @@ body, button {
 
   #gsFrame {
     position: relative;
-    width: 460px;
-    height: 800px;
+    width: 100%;
+    height: 100%;
     overflow: visible;
     z-index: 1;
   }
@@ -237,19 +237,17 @@ body, button {
   }
 
   :root {
-    --control-panel-base-width: 460px;
-    --control-panel-base-height: 800px;
     --ui-scale: 1;
   }
 
   /* ===== Temporary background-only layout for the settings control panel ===== */
   .screen {
-    min-height: 100vh;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
     margin: 0;
     padding: 0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    display: block;
   }
 
   .screen--settings {
@@ -258,8 +256,8 @@ body, button {
 
   .stage-460x800 {
     position: relative;
-    width: var(--control-panel-base-width);
-    height: var(--control-panel-base-height);
+    width: 100%;
+    height: 100%;
     background-repeat: no-repeat;
     background-size: 100% 100%;
   }
@@ -268,10 +266,7 @@ body, button {
     background-image: url("ui_mainmenu/mm_frame.png");
     background-repeat: no-repeat;
     background-position: center;
-    background-size: var(--control-panel-base-width) var(--control-panel-base-height);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    background-size: 100% 100%;
   }
 
   #menuLayer .stage-460x800 {
