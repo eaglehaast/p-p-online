@@ -8317,6 +8317,31 @@ function updateUiScale() {
   syncAimCanvasLayout();
 }
 
+function updateUiFrameScale() {
+  if (!(uiFrameEl instanceof HTMLElement)) {
+    return;
+  }
+
+  const viewport = getVisualViewportState();
+  const wrapperEl = document.getElementById("screenWrapper");
+  const wrapperStyles = wrapperEl ? window.getComputedStyle(wrapperEl) : null;
+  const paddingTop = wrapperStyles ? parseFloat(wrapperStyles.paddingTop) || 0 : 0;
+  const paddingRight = wrapperStyles ? parseFloat(wrapperStyles.paddingRight) || 0 : 0;
+  const paddingBottom = wrapperStyles ? parseFloat(wrapperStyles.paddingBottom) || 0 : 0;
+  const paddingLeft = wrapperStyles ? parseFloat(wrapperStyles.paddingLeft) || 0 : 0;
+
+  const viewW = Math.max(1, viewport.width - paddingLeft - paddingRight);
+  const viewH = Math.max(1, viewport.height - paddingTop - paddingBottom);
+  const rootStyles = window.getComputedStyle(document.documentElement);
+  const designW = parseFloat(rootStyles.getPropertyValue("--design-w"));
+  const designH = parseFloat(rootStyles.getPropertyValue("--design-h"));
+  const safeDesignW = Number.isFinite(designW) && designW > 0 ? designW : FRAME_BASE_WIDTH;
+  const safeDesignH = Number.isFinite(designH) && designH > 0 ? designH : FRAME_BASE_HEIGHT;
+  const scale = Math.min(viewW / safeDesignW, viewH / safeDesignH);
+
+  uiFrameEl.style.transform = `scale(${scale})`;
+}
+
 /* ======= CANVAS RESIZE ======= */
 function syncAllCanvasBackingStores() {
   logResizeDebug('syncAllCanvasBackingStores');
@@ -8467,7 +8492,9 @@ function resizeCanvas() {
 }
 
 window.addEventListener('resize', resizeCanvas);
+window.addEventListener('resize', updateUiFrameScale);
 window.addEventListener('load', updateUiScale);
+window.addEventListener('load', updateUiFrameScale);
 // Lock orientation to portrait and prevent the canvas from redrawing on rotation
 function lockOrientation(){
   if(screen.orientation && screen.orientation.lock){
@@ -8478,6 +8505,7 @@ function lockOrientation(){
 
 lockOrientation();
 window.addEventListener('orientationchange', lockOrientation);
+window.addEventListener('orientationchange', updateUiFrameScale);
 
   /* ======= BOOTSTRAP ======= */
   function waitForStylesReady() {
@@ -8491,6 +8519,7 @@ window.addEventListener('orientationchange', lockOrientation);
   async function bootstrapGame(){
     await waitForStylesReady();
     updateUiScale();
+    updateUiFrameScale();
     sizeAndAlignOverlays();
     resizeCanvas();
     resetGame();
