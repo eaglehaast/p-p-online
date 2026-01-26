@@ -65,6 +65,7 @@ body, button {
     width: calc(var(--design-w) * 1px);
     height: calc(var(--design-h) * 1px);
     transform-origin: center center;
+    transform: scale(var(--ui-scale));
   }
 
   .layer {
