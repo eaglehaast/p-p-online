@@ -146,6 +146,13 @@ function toDesignRect(element) {
   };
 }
 
+function getMapPreviewDesignRect() {
+  if(!mapPreview){
+    return { left: 0, top: 0, width: 0, height: 0 };
+  }
+  return toDesignRect(mapPreview);
+}
+
 function isFieldDebugMarkerEnabled(){
   if(DEBUG_FIELD_MARKER) return true;
   if(typeof window === 'undefined') return false;
@@ -2409,7 +2416,8 @@ function handleFieldPointerMove(event){
     return;
   }
   if(isFieldDragging){
-    const { x: designX } = getPointerDesignCoords(event);
+    const { clientX, clientY } = getPointerClientCoords(event);
+    const { x: designX } = toDesignCoords(clientX, clientY);
     const dx = designX - fieldDragStartX;
     const absDx = Math.abs(dx);
     fieldDragMaxAbsDx = Math.max(fieldDragMaxAbsDx, absDx);
@@ -2459,7 +2467,8 @@ function handleFieldPointerEnd(event){
   const isAnimatingNow = isFieldAnimating || isAnimating;
   const lastDx = fieldDragLastDx;
   const hasLastDx = Number.isFinite(lastDx) && Math.abs(lastDx) > 0;
-  const { x: designX } = getPointerDesignCoords(event);
+  const { clientX, clientY } = getPointerClientCoords(event);
+  const { x: designX } = toDesignCoords(clientX, clientY);
   const dragMetrics = isFieldDragging
     ? getDragMetrics(
       fieldDragStartX,
@@ -3088,8 +3097,9 @@ function drawMapPreviewBricks(boundsWidth, boundsHeight){
     return;
   }
 
-  const rectWidth = boundsWidth ?? mapPreview.getBoundingClientRect().width;
-  const rectHeight = boundsHeight ?? mapPreview.getBoundingClientRect().height;
+  const mapRect = getMapPreviewDesignRect();
+  const rectWidth = boundsWidth ?? mapRect.width;
+  const rectHeight = boundsHeight ?? mapRect.height;
   mapPreviewBricksCtx.clearRect(0, 0, rectWidth, rectHeight);
 
   const sprites = Array.isArray(MAPS[mapIndex]?.sprites) ? MAPS[mapIndex].sprites : [];
@@ -3146,7 +3156,7 @@ function resizeMapPreviewBricksCanvas(){
     return;
   }
 
-  const rect = mapPreview.getBoundingClientRect();
+  const rect = getMapPreviewDesignRect();
   const width = rect.width;
   const height = rect.height;
   if(width <= 0 || height <= 0){
@@ -3685,10 +3695,11 @@ function resetPreviewPlaneElement(el, baseline = null, width, height){
 function getPreviewPointerPosition(e){
   if(!mapPreviewContainer) return { x: 0, y: 0 };
   const rect = toDesignRect(mapPreviewContainer);
-  const { x: clientX, y: clientY } = getPointerDesignCoords(e);
+  const { clientX, clientY } = getPointerClientCoords(e);
+  const { x: clientXDesign, y: clientYDesign } = toDesignCoords(clientX, clientY);
   return {
-    x: clientX - rect.left,
-    y: clientY - rect.top
+    x: clientXDesign - rect.left,
+    y: clientYDesign - rect.top
   };
 }
 
@@ -3877,8 +3888,9 @@ function buildPreviewBrickColliders(boundsWidth, boundsHeight){
     return [];
   }
 
-  const rectWidth = boundsWidth ?? mapPreview?.getBoundingClientRect().width ?? 0;
-  const rectHeight = boundsHeight ?? mapPreview?.getBoundingClientRect().height ?? 0;
+  const mapRect = getMapPreviewDesignRect();
+  const rectWidth = boundsWidth ?? mapRect.width;
+  const rectHeight = boundsHeight ?? mapRect.height;
   if(rectWidth <= 0 || rectHeight <= 0){
     return [];
   }
@@ -3932,8 +3944,9 @@ function buildPreviewBrickColliders(boundsWidth, boundsHeight){
 
 function updatePreviewBrickColliders(boundsWidth = null, boundsHeight = null){
   if(!mapPreview) return;
-  const rectWidth = boundsWidth ?? mapPreview.getBoundingClientRect().width;
-  const rectHeight = boundsHeight ?? mapPreview.getBoundingClientRect().height;
+  const mapRect = getMapPreviewDesignRect();
+  const rectWidth = boundsWidth ?? mapRect.width;
+  const rectHeight = boundsHeight ?? mapRect.height;
   if(rectWidth <= 0 || rectHeight <= 0){
     previewBrickColliders = [];
     previewBrickColliderWidth = rectWidth;
