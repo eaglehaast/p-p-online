@@ -478,16 +478,14 @@ function applyViewTransform(ctx) {
   ctx.setTransform(VIEW.scaleX, 0, 0, VIEW.scaleY, 0, 0);
 }
 
-function syncCanvasBackingStore(canvas) {
+function syncCanvasBackingStore(canvas, baseWidth, baseHeight) {
   if (!canvas) return;
-  const r = canvas.getBoundingClientRect();
   const { CANVAS_DPR } = getCanvasDpr();
+  const backingW = Math.max(1, Math.round(baseWidth * CANVAS_DPR));
+  const backingH = Math.max(1, Math.round(baseHeight * CANVAS_DPR));
 
-  const w = Math.max(1, Math.round(r.width * CANVAS_DPR));
-  const h = Math.max(1, Math.round(r.height * CANVAS_DPR));
-
-  if (canvas.width !== w) canvas.width = w;
-  if (canvas.height !== h) canvas.height = h;
+  if (canvas.width !== backingW) canvas.width = backingW;
+  if (canvas.height !== backingH) canvas.height = backingH;
 }
 
 function syncHudCanvasLayout() {
@@ -496,7 +494,11 @@ function syncHudCanvasLayout() {
   hudCanvas.style.top = '0px';
   hudCanvas.style.width = `${FRAME_BASE_WIDTH}px`;
   hudCanvas.style.height = `${FRAME_BASE_HEIGHT}px`;
-  syncCanvasBackingStore(hudCanvas);
+  const { CANVAS_DPR } = getCanvasDpr();
+  const backingW = Math.max(1, Math.round(FRAME_BASE_WIDTH * CANVAS_DPR));
+  const backingH = Math.max(1, Math.round(FRAME_BASE_HEIGHT * CANVAS_DPR));
+  if (hudCanvas.width !== backingW) hudCanvas.width = backingW;
+  if (hudCanvas.height !== backingH) hudCanvas.height = backingH;
 }
 
 function syncAimCanvasLayout() {
@@ -505,7 +507,11 @@ function syncAimCanvasLayout() {
   aimCanvas.style.top = '0px';
   aimCanvas.style.width = `${FRAME_BASE_WIDTH}px`;
   aimCanvas.style.height = `${FRAME_BASE_HEIGHT}px`;
-  syncCanvasBackingStore(aimCanvas);
+  const { CANVAS_DPR } = getCanvasDpr();
+  const backingW = Math.max(1, Math.round(FRAME_BASE_WIDTH * CANVAS_DPR));
+  const backingH = Math.max(1, Math.round(FRAME_BASE_HEIGHT * CANVAS_DPR));
+  if (aimCanvas.width !== backingW) aimCanvas.width = backingW;
+  if (aimCanvas.height !== backingH) aimCanvas.height = backingH;
 }
 
 function logCanvasCreation(canvas, label = "") {
@@ -6181,7 +6187,6 @@ function gameDraw(){
     const tailX = plane.x + baseDx;
     const tailY = plane.y + baseDy;
 
-    const { CANVAS_DPR } = getCanvasDpr();
     aimCtx.setTransform(1, 0, 0, 1, 0, 0);
     aimCtx.clearRect(0, 0, aimCanvas.width, aimCanvas.height);
     aimCtx.save();
@@ -6190,8 +6195,8 @@ function gameDraw(){
       0,
       0,
       VIEW.scaleY,
-      CANVAS_OFFSET_X * CANVAS_DPR,
-      FRAME_PADDING_Y * CANVAS_DPR
+      CANVAS_OFFSET_X * VIEW.scaleX,
+      FRAME_PADDING_Y * VIEW.scaleY
     );
     aimCtx.globalAlpha = arrowAlpha;
     drawArrow(aimCtx, startX, startY, baseDx, baseDy);
@@ -8346,10 +8351,10 @@ function updateUiFrameScale() {
 function syncAllCanvasBackingStores() {
   logResizeDebug('syncAllCanvasBackingStores');
   trackBootResizeCount('syncAllCanvasBackingStores');
-  syncCanvasBackingStore(gsBoardCanvas);
-  syncCanvasBackingStore(planeCanvas);
-  syncCanvasBackingStore(aimCanvas);
-  syncCanvasBackingStore(hudCanvas);
+  syncCanvasBackingStore(gsBoardCanvas, CANVAS_BASE_WIDTH, CANVAS_BASE_HEIGHT);
+  syncCanvasBackingStore(planeCanvas, CANVAS_BASE_WIDTH, CANVAS_BASE_HEIGHT);
+  syncCanvasBackingStore(aimCanvas, FRAME_BASE_WIDTH, FRAME_BASE_HEIGHT);
+  syncCanvasBackingStore(hudCanvas, FRAME_BASE_WIDTH, FRAME_BASE_HEIGHT);
 }
 
 function resizeCanvasFixedForGameBoard() {
