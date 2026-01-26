@@ -8343,8 +8343,8 @@ function updateUiFrameScale() {
   const safeDesignW = Number.isFinite(designW) && designW > 0 ? designW : FRAME_BASE_WIDTH;
   const safeDesignH = Number.isFinite(designH) && designH > 0 ? designH : FRAME_BASE_HEIGHT;
   const scale = Math.min(viewW / safeDesignW, viewH / safeDesignH);
-
-  uiFrameEl.style.transform = `scale(${scale})`;
+  const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  document.documentElement.style.setProperty('--ui-scale', safeScale);
 }
 
 /* ======= CANVAS RESIZE ======= */
