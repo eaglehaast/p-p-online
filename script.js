@@ -1244,7 +1244,6 @@ function getVisualViewportState() {
         ? document.body.clientHeight
         : 0;
 
-  const scale = Number.isFinite(viewport?.scale) && viewport.scale > 0 ? viewport.scale : 1;
   const offsetLeft = Number.isFinite(viewport?.offsetLeft) ? viewport.offsetLeft : 0;
   const offsetTop = Number.isFinite(viewport?.offsetTop) ? viewport.offsetTop : 0;
   const width = Number.isFinite(viewport?.width) && viewport.width > 0 ? viewport.width : Math.max(1, fallbackWidth);
@@ -1252,7 +1251,7 @@ function getVisualViewportState() {
 
   return {
     raw: viewport || null,
-    scale,
+    scale: 1,
     offsetLeft,
     offsetTop,
     width,
@@ -1332,11 +1331,9 @@ function clientPointFromEvent(e) {
   const source = touch || e;
   const clientX = Number.isFinite(source?.clientX) ? source.clientX : 0;
   const clientY = Number.isFinite(source?.clientY) ? source.clientY : 0;
-  const scale = v.scale || 1;
-
   return {
-    x: (clientX - v.left) * scale,
-    y: (clientY - v.top) * scale,
+    x: clientX - v.left,
+    y: clientY - v.top,
     rawX: clientX,
     rawY: clientY,
     v
