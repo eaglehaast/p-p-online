@@ -119,6 +119,41 @@ const planeFlameDebugState = {
   logged: 0
 };
 
+function toDesignCoords(clientX, clientY) {
+  const rect = uiFrameEl?.getBoundingClientRect?.() || { left: 0, top: 0 };
+  const rootStyle = window.getComputedStyle(document.documentElement);
+  const uiScaleRaw = rootStyle.getPropertyValue('--ui-scale');
+  const uiScaleValue = uiScaleRaw ? parseFloat(uiScaleRaw) : 1;
+  const uiScale = Number.isFinite(uiScaleValue) && uiScaleValue > 0 ? uiScaleValue : 1;
+  return {
+    x: (clientX - rect.left) / uiScale,
+    y: (clientY - rect.top) / uiScale,
+    rect,
+    uiScale
+  };
+}
+
+function getPointerClientCoords(event) {
+  const touch = event?.touches?.[0] || event?.changedTouches?.[0] || event?.targetTouches?.[0] || null;
+  const source = touch || event;
+  return {
+    clientX: Number.isFinite(source?.clientX) ? source.clientX : 0,
+    clientY: Number.isFinite(source?.clientY) ? source.clientY : 0
+  };
+}
+
+function getPointerDesignCoords(event) {
+  const { clientX, clientY } = getPointerClientCoords(event);
+  return toDesignCoords(clientX, clientY);
+}
+
+function designToBoardCoords(designX, designY) {
+  return {
+    x: designX - CANVAS_OFFSET_X,
+    y: designY - FRAME_PADDING_Y
+  };
+}
+
 function getCanvasDpr() {
   const RAW_DPR = window.devicePixelRatio || 1;
   const CANVAS_DPR = Math.min(RAW_DPR, 2);
@@ -405,16 +440,17 @@ function drawStartPositionsDebug(ctx, scale = 1) {
 
 function logPointerDebugEvent(event) {
   if (!(DEBUG_LAYOUT || DEBUG_RENDER_INIT)) return;
-  const { clientX, clientY, x, y } = clientToBoard(event);
-  pointerDebugState.lastPoint = { x, y };
+  const design = getPointerDesignCoords(event);
+  const board = designToBoardCoords(design.x, design.y);
+  pointerDebugState.lastPoint = { x: board.x, y: board.y };
   if (pointerDebugState.logged >= 3) return;
   pointerDebugState.logged += 1;
   console.log("[pointer-debug]", {
     index: pointerDebugState.logged,
-    clientX,
-    clientY,
-    x,
-    y
+    clientX: design.rect ? design.rect.left + design.x * design.uiScale : null,
+    clientY: design.rect ? design.rect.top + design.y * design.uiScale : null,
+    x: board.x,
+    y: board.y
   });
 }
 
@@ -1271,6 +1307,7 @@ if (typeof window !== "undefined") {
   window.getViewportAdjustedBoundingClientRect = getViewportAdjustedBoundingClientRect;
 }
 
+// Legacy viewport conversion helpers (kept for debugging).
 function clientPointFromEvent(e) {
   const v = VV();
   const touch = e?.touches?.[0] || e?.changedTouches?.[0] || null;
@@ -4420,7 +4457,8 @@ function handleStart(e) {
 
   if(flyingPoints.some(fp=>fp.plane.color===currentColor)) return;
 
-  const { x: mx, y: my } = clientToBoard(e);
+  const { x: designX, y: designY } = getPointerDesignCoords(e);
+  const { x: mx, y: my } = designToBoardCoords(designX, designY);
 
   let found= points.find(pt=>
     pt.color=== currentColor &&
@@ -4469,8 +4507,9 @@ function handleAAPlacement(x, y){
 }
 
 function updateAAPreviewFromEvent(e){
-  const { x, y } = clientToBoard(e);
-  aaPlacementPreview = {x, y};
+  const { x: designX, y: designY } = getPointerDesignCoords(e);
+  const { x, y } = designToBoardCoords(designX, designY);
+  aaPlacementPreview = { x, y };
   aaPreviewTrail = [];
 }
 
@@ -4487,7 +4526,8 @@ function onCanvasPointerDown(e){
 
 function onCanvasPointerMove(e){
   logPointerDebugEvent(e);
-  const { x, y } = clientToBoard(e);
+  const { x: designX, y: designY } = getPointerDesignCoords(e);
+  const { x, y } = designToBoardCoords(designX, designY);
   if(phase !== 'AA_PLACEMENT'){
     updateBoardCursorForHover(x, y);
     return;
@@ -4659,7 +4699,8 @@ function drawAAPreview(){
 function onHandleMove(e){
   if(!handleCircle.active)return;
   e.preventDefault();
-  const { x, y } = clientToBoard(e);
+  const { x: designX, y: designY } = getPointerDesignCoords(e);
+  const { x, y } = designToBoardCoords(designX, designY);
 
   handleCircle.baseX = x;
   handleCircle.baseY = y;
