@@ -2955,8 +2955,21 @@ const CANVAS_BASE_HEIGHT = 640;
 const FRAME_PADDING_X = 50;
 const FRAME_PADDING_Y = 80;
 const CANVAS_OFFSET_X = 51;
-const FRAME_BASE_WIDTH = CANVAS_BASE_WIDTH + FRAME_PADDING_X * 2; // 460
-const FRAME_BASE_HEIGHT = CANVAS_BASE_HEIGHT + FRAME_PADDING_Y * 2; // 800
+const DEFAULT_FRAME_BASE_WIDTH = CANVAS_BASE_WIDTH + FRAME_PADDING_X * 2;
+const DEFAULT_FRAME_BASE_HEIGHT = CANVAS_BASE_HEIGHT + FRAME_PADDING_Y * 2;
+
+function getDesignSizeVar(varName, fallbackValue) {
+  if (typeof window === "undefined") {
+    return fallbackValue;
+  }
+  const rootStyles = window.getComputedStyle(document.documentElement);
+  const rawValue = rootStyles.getPropertyValue(varName);
+  const parsedValue = parseFloat(rawValue);
+  return Number.isFinite(parsedValue) && parsedValue > 0 ? parsedValue : fallbackValue;
+}
+
+const FRAME_BASE_WIDTH = getDesignSizeVar("--design-w", DEFAULT_FRAME_BASE_WIDTH);
+const FRAME_BASE_HEIGHT = getDesignSizeVar("--design-h", DEFAULT_FRAME_BASE_HEIGHT);
 const MAP_BRICK_THICKNESS = 20; // px, matches brick_1_default short side
 const MAP_DIAGONAL_BRICK_SIZE = MAP_BRICK_THICKNESS * 3;
 const FIELD_BORDER_THICKNESS = MAP_BRICK_THICKNESS; // px, width of brick frame edges
