@@ -157,6 +157,13 @@ function getMapPreviewDesignRect() {
   return toDesignRect(mapPreview);
 }
 
+function getMapPreviewContainerDesignRect() {
+  if(!mapPreviewContainer){
+    return { left: 0, top: 0, width: 0, height: 0 };
+  }
+  return toDesignRect(mapPreviewContainer);
+}
+
 function isFieldDebugMarkerEnabled(){
   if(DEBUG_FIELD_MARKER) return true;
   if(typeof window === 'undefined') return false;
@@ -3569,7 +3576,7 @@ function createPreviewCanvas(){
 function resizePreviewCanvas(){
   if(!isSettingsActive) return;
   if(!previewCanvas || !mapPreviewContainer) return;
-  const rect = mapPreviewContainer.getBoundingClientRect();
+  const rect = getMapPreviewContainerDesignRect();
   const width = rect.width;
   const height = rect.height;
   const map = MAPS[mapIndex];
@@ -3849,8 +3856,9 @@ function updatePreviewHandle(delta){
 function updatePreviewBounds(plane){
   if(!mapPreviewContainer) return;
   const dpr = previewDpr || window.devicePixelRatio || 1;
-  const boundsWidth = previewCanvas ? previewCanvas.width / dpr : mapPreviewContainer.clientWidth;
-  const boundsHeight = previewCanvas ? previewCanvas.height / dpr : mapPreviewContainer.clientHeight;
+  const rect = getMapPreviewContainerDesignRect();
+  const boundsWidth = previewCanvas ? previewCanvas.width / dpr : rect.width;
+  const boundsHeight = previewCanvas ? previewCanvas.height / dpr : rect.height;
   const map = MAPS[mapIndex];
   if(isRandomMap(map)){
     console.assert(boundsWidth > 0 && boundsHeight > 0, 'updatePreviewBounds dimensions', {
