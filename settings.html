@@ -7,13 +7,15 @@
   <link rel="stylesheet" href="styles.css" />
   <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Roboto&display=swap" rel="stylesheet">
 </head>
-<body class="settings-page">
-  <div id="settingsLayer" class="screen screen--settings">
-    <div class="stage-460x800">
-      <div class="settings-container">
-        <div id="modeMenu">
-          <h1 class="game-title"><span class="visually-hidden">Advanced Settings</span></h1>
-        </div>
+<body class="screen screen--settings settings-page">
+  <div id="screenWrapper">
+    <div id="uiFrame">
+      <div id="settingsLayer" class="layer layer--settings" aria-hidden="false">
+        <div class="stage-460x800">
+          <div class="settings-container">
+            <div id="modeMenu">
+              <h1 class="game-title"><span class="visually-hidden">Advanced Settings</span></h1>
+            </div>
 
     <div class="cp-adds" role="group" aria-label="Дополнительные настройки">
       <div id="frame_adds_1_nails" aria-hidden="true"></div>
@@ -76,10 +78,11 @@
                 <div class="accuracy-tape" aria-hidden="true"></div>
                 <div class="accuracy-display__item accuracy-display__item--current" id="accuracyDisplayItem">
                   <span id="amplitudeAngleDisplay" class="accuracy-display__value accuracy-display__value--current">10°</span>
-                </div>
-              </div>
-            </div>
           </div>
+        </div>
+      </div>
+    </div>
+  </div>
         </div>
       </div>
 
