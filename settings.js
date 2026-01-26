@@ -73,6 +73,46 @@ function updateUiFrameScale() {
   document.documentElement.style.setProperty('--ui-scale', safeScale);
 }
 
+function toDesignCoords(clientX, clientY) {
+  const rect = uiFrameEl?.getBoundingClientRect?.() || { left: 0, top: 0 };
+  const rootStyle = window.getComputedStyle(document.documentElement);
+  const uiScaleRaw = rootStyle.getPropertyValue('--ui-scale');
+  const uiScaleValue = uiScaleRaw ? parseFloat(uiScaleRaw) : 1;
+  const uiScale = Number.isFinite(uiScaleValue) && uiScaleValue > 0 ? uiScaleValue : 1;
+  return {
+    x: (clientX - rect.left) / uiScale,
+    y: (clientY - rect.top) / uiScale,
+    rect,
+    uiScale
+  };
+}
+
+function getPointerClientCoords(event) {
+  const touch = event?.touches?.[0] ?? event?.changedTouches?.[0] ?? event?.targetTouches?.[0] ?? null;
+  const source = touch || event;
+  return {
+    clientX: Number.isFinite(source?.clientX) ? source.clientX : 0,
+    clientY: Number.isFinite(source?.clientY) ? source.clientY : 0
+  };
+}
+
+function getPointerDesignCoords(event) {
+  const { clientX, clientY } = getPointerClientCoords(event);
+  return toDesignCoords(clientX, clientY);
+}
+
+function toDesignRect(element) {
+  const rect = element?.getBoundingClientRect?.() || { left: 0, top: 0, width: 0, height: 0 };
+  const designOrigin = toDesignCoords(rect.left, rect.top);
+  const scale = Number.isFinite(designOrigin.uiScale) && designOrigin.uiScale > 0 ? designOrigin.uiScale : 1;
+  return {
+    left: designOrigin.x,
+    top: designOrigin.y,
+    width: rect.width / scale,
+    height: rect.height / scale
+  };
+}
+
 function isFieldDebugMarkerEnabled(){
   if(DEBUG_FIELD_MARKER) return true;
   if(typeof window === 'undefined') return false;
@@ -2074,7 +2114,8 @@ function createSliderDragHandlers(slider){
 
     slider.state.setDragging(true);
     slider.state.setPointerId(event.pointerId);
-    slider.state.setStartX(event.clientX);
+    const { x: designX } = getPointerDesignCoords(event);
+    slider.state.setStartX(designX);
     slider.state.setStartTime(event.timeStamp);
     slider.state.setLastDx(0);
 
@@ -2086,7 +2127,8 @@ function createSliderDragHandlers(slider){
     if(!slider.state.isDragging() || slider.isAnimating() || !slider.viewport()) return;
     event.preventDefault();
 
-    const dx = event.clientX - slider.state.startX();
+    const { x: designX } = getPointerDesignCoords(event);
+    const dx = designX - slider.state.startX();
     slider.state.setLastDx(dx);
     const absDx = Math.abs(dx);
 
@@ -2118,13 +2160,13 @@ function createSliderDragHandlers(slider){
         ? slider.getPreviewSteps({
           dx,
           startX: slider.state.startX(),
-          currentX: event.clientX,
+          currentX: designX,
           startTime: slider.state.startTime(),
           eventTime: event.timeStamp
         })
         : getDragMetrics(
           slider.state.startX(),
-          event.clientX,
+          designX,
           slider.state.startTime(),
           event.timeStamp
         ).steps)
@@ -2148,9 +2190,10 @@ function createSliderDragHandlers(slider){
       slider.viewport().releasePointerCapture(slider.state.pointerId());
     }
 
+    const { x: designX } = getPointerDesignCoords(event);
     const metrics = getDragMetrics(
       slider.state.startX(),
-      event.clientX,
+      designX,
       slider.state.startTime(),
       event.timeStamp
     );
@@ -2333,7 +2376,8 @@ function handleFieldPointerMove(event){
     return;
   }
   if(isFieldDragging){
-    const dx = event.clientX - fieldDragStartX;
+    const { x: designX } = getPointerDesignCoords(event);
+    const dx = designX - fieldDragStartX;
     const absDx = Math.abs(dx);
     fieldDragMaxAbsDx = Math.max(fieldDragMaxAbsDx, absDx);
     if(absDx > 0){
@@ -2382,10 +2426,11 @@ function handleFieldPointerEnd(event){
   const isAnimatingNow = isFieldAnimating || isAnimating;
   const lastDx = fieldDragLastDx;
   const hasLastDx = Number.isFinite(lastDx) && Math.abs(lastDx) > 0;
+  const { x: designX } = getPointerDesignCoords(event);
   const dragMetrics = isFieldDragging
     ? getDragMetrics(
       fieldDragStartX,
-      hasLastDx ? fieldDragStartX + lastDx : event.clientX,
+      hasLastDx ? fieldDragStartX + lastDx : designX,
       fieldDragStartTime,
       event.timeStamp
     )
@@ -3606,10 +3651,8 @@ function resetPreviewPlaneElement(el, baseline = null, width, height){
 
 function getPreviewPointerPosition(e){
   if(!mapPreviewContainer) return { x: 0, y: 0 };
-  const rect = mapPreviewContainer.getBoundingClientRect();
-  const touch = e.touches?.[0] ?? e.changedTouches?.[0];
-  const clientX = touch?.clientX ?? e.clientX;
-  const clientY = touch?.clientY ?? e.clientY;
+  const rect = toDesignRect(mapPreviewContainer);
+  const { x: clientX, y: clientY } = getPointerDesignCoords(e);
   return {
     x: clientX - rect.left,
     y: clientY - rect.top
