@@ -8473,30 +8473,8 @@ function updateUiFrameScale() {
   const scale = Math.min(viewW / safeDesignW, viewH / safeDesignH);
   const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
   document.documentElement.style.setProperty('--ui-scale', safeScale);
-  updateGameScale();
   syncHudCanvasLayout();
   syncAimCanvasLayout();
-}
-
-function getViewportDimensions() {
-  const viewport = typeof window !== "undefined" ? window.visualViewport : null;
-  const width = viewport ? viewport.width : window.innerWidth;
-  const height = viewport ? viewport.height : window.innerHeight;
-  return {
-    width: Number.isFinite(width) && width > 0 ? width : 1,
-    height: Number.isFinite(height) && height > 0 ? height : 1
-  };
-}
-
-function updateGameScale() {
-  if (!(gsFrameEl instanceof HTMLElement)) {
-    return;
-  }
-
-  const { width, height } = getViewportDimensions();
-  const scale = Math.min(width / FRAME_BASE_WIDTH, height / FRAME_BASE_HEIGHT);
-  const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
-  gsFrameEl.style.setProperty('--game-scale', safeScale);
 }
 
 /* ======= CANVAS RESIZE ======= */
