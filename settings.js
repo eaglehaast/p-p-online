@@ -89,13 +89,18 @@ function updateUiFrameScale() {
   }
   const viewport = getVisualViewportState();
   const wrapperEl = document.getElementById('screenWrapper');
+  const wrapperRect = wrapperEl?.getBoundingClientRect?.() || null;
   const wrapperStyles = wrapperEl ? window.getComputedStyle(wrapperEl) : null;
   const paddingTop = wrapperStyles ? parseFloat(wrapperStyles.paddingTop) || 0 : 0;
   const paddingRight = wrapperStyles ? parseFloat(wrapperStyles.paddingRight) || 0 : 0;
   const paddingBottom = wrapperStyles ? parseFloat(wrapperStyles.paddingBottom) || 0 : 0;
   const paddingLeft = wrapperStyles ? parseFloat(wrapperStyles.paddingLeft) || 0 : 0;
-  const viewW = Math.max(1, viewport.width - paddingLeft - paddingRight);
-  const viewH = Math.max(1, viewport.height - paddingTop - paddingBottom);
+  const wrapperWidth = Number.isFinite(wrapperRect?.width) ? wrapperRect.width : 0;
+  const wrapperHeight = Number.isFinite(wrapperRect?.height) ? wrapperRect.height : 0;
+  const baseWidth = wrapperWidth || viewport.width;
+  const baseHeight = wrapperHeight || viewport.height;
+  const viewW = Math.max(1, baseWidth - paddingLeft - paddingRight);
+  const viewH = Math.max(1, baseHeight - paddingTop - paddingBottom);
   const rootStyles = window.getComputedStyle(document.documentElement);
   const designW = parseFloat(rootStyles.getPropertyValue('--design-w'));
   const designH = parseFloat(rootStyles.getPropertyValue('--design-h'));
