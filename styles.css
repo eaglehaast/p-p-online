@@ -39,7 +39,6 @@ body, button {
   html,
   body {
     height: 100%;
-    overflow: hidden;
   }
 
   body {
@@ -49,6 +48,7 @@ body, button {
     margin: 0;
     padding: 0;
     touch-action: none;
+    overflow: hidden;
   }
 
   .screen--standalone {
@@ -149,7 +149,6 @@ body, button {
     --field-top: 80px;
     --field-width: 360px;
     --field-height: 640px;
-    overflow: hidden;
     z-index: 0;
   }
 
@@ -296,7 +295,6 @@ body, button {
     margin: 0;
     padding: 0;
     transform: none !important;
-    overflow: hidden;
   }
 
   #settingsLayer .cp-adds {
@@ -1160,19 +1158,20 @@ body, button {
   }
 
 /* Игровое поле */
-#gameCanvas {
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
-  border-radius: 0;
-  background-color: transparent;
-  width: var(--field-width);
-  height: var(--field-height);
-  display: block;
-  position: absolute;
-  left: var(--field-left);
-  top: var(--field-top);
-  margin: 0;
-  z-index: 10;
-}
+  #gameCanvas {
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+    border-radius: 0;
+    background-color: transparent;
+    width: var(--field-width);
+    height: var(--field-height);
+    display: block;
+    position: absolute;
+    left: var(--field-left);
+    top: var(--field-top);
+    margin: 0;
+    overflow: hidden;
+    z-index: 10;
+  }
 
 .debug-layout #gameCanvas {
   outline: 1px solid blue;
@@ -1227,16 +1226,17 @@ body, button {
 }
 
 /* Overlay container */
-#overlayContainer {
-  position: absolute;
-  pointer-events: none;
-  transform-origin: 0 0;
-  left: var(--field-left);
-  top: var(--field-top);
-  width: var(--field-width);
-  height: var(--field-height);
-  z-index: 20;
-}
+  #overlayContainer {
+    position: absolute;
+    pointer-events: none;
+    transform-origin: 0 0;
+    left: var(--field-left);
+    top: var(--field-top);
+    width: var(--field-width);
+    height: var(--field-height);
+    overflow: hidden;
+    z-index: 20;
+  }
 
 #overlayContainer canvas {
   position: absolute;
