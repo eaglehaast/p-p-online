@@ -72,50 +72,52 @@
       </div>
 
       <div id="gsFrame" class="layer layer--game" hidden aria-hidden="true">
-        <div id="gameContainer">
-          <div id="gameBackground" aria-hidden="true"></div>
-          <!-- Base field and overlays -->
-          <canvas id="gameCanvas" width="360" height="640" style="display:none;"></canvas>
+        <div id="gameStage">
+          <div id="gameContainer">
+            <div id="gameBackground" aria-hidden="true"></div>
+            <!-- Base field and overlays -->
+            <canvas id="gameCanvas" width="360" height="640" style="display:none;"></canvas>
 
-          <!-- Full-frame overlay for the aiming arrow -->
-          <canvas id="aimCanvas" width="460" height="800" style="display:none;"></canvas>
+            <!-- Full-frame overlay for the aiming arrow -->
+            <canvas id="aimCanvas" width="460" height="800" style="display:none;"></canvas>
 
-          <div id="overlayContainer" aria-hidden="true">
-            <!-- Overlay canvas for planes -->
-            <canvas id="planeCanvas" width="360" height="640" style="display:none;"></canvas>
+            <div id="overlayContainer" aria-hidden="true">
+              <!-- Overlay canvas for planes -->
+              <canvas id="planeCanvas" width="360" height="640" style="display:none;"></canvas>
+            </div>
+
+            <div id="uiOverlay" aria-hidden="true">
+              <canvas id="hudCanvas" class="hud-canvas" width="460" height="800" aria-hidden="true"></canvas>
+                <!-- Plane counter containers -->
+              <div id="gs_planecounter_green" class="plane-counter plane-counter--green" aria-hidden="true"></div>
+              <div id="gs_planecounter_blue" class="plane-counter plane-counter--blue" aria-hidden="true"></div>
+
+              <!-- Score containers -->
+              <div id="blueScoreContainer" class="score-container score-container--blue" aria-hidden="true"></div>
+              <div id="greenScoreContainer" class="score-container score-container--green" aria-hidden="true"></div>
+            </div>
+
+            <div id="hudPlaneStyleProbes" aria-hidden="true"
+                 style="position:absolute;width:0;height:0;overflow:hidden;clip-path:inset(50%);">
+              <img src="ui_gamescreen/gamescreen_outside/planecounter_ green.png" class="hud-plane green" alt="" draggable="false">
+              <img src="ui_gamescreen/gamescreen_outside/planecounter_blue.png" class="hud-plane blue" alt="" draggable="false">
+            </div>
+
+            <!-- Turn indicators -->
+            <div id="mantisIndicator" class="turn-indicator" style="display:none;"></div>
+            <div id="goatIndicator" class="turn-indicator" style="display:none;"></div>
+
+            <!-- End Game Window -->
+            <div id="endGameButtons" style="display:none;" role="dialog" aria-labelledby="endGamePrompt">
+              <p id="endGamePrompt" class="visually-hidden">Play Again?</p>
+              <button id="yesButton" class="playagain-btn playagain-btn--yes" type="button" aria-label="Play again">
+                <span class="visually-hidden">Yes</span>
+              </button>
+              <button id="noButton" class="playagain-btn playagain-btn--no" type="button" aria-label="Return to menu">
+                <span class="visually-hidden">No</span>
+              </button>
+            </div>
           </div>
-
-          <div id="uiOverlay" aria-hidden="true">
-            <canvas id="hudCanvas" class="hud-canvas" width="460" height="800" aria-hidden="true"></canvas>
-              <!-- Plane counter containers -->
-            <div id="gs_planecounter_green" class="plane-counter plane-counter--green" aria-hidden="true"></div>
-            <div id="gs_planecounter_blue" class="plane-counter plane-counter--blue" aria-hidden="true"></div>
-
-            <!-- Score containers -->
-            <div id="blueScoreContainer" class="score-container score-container--blue" aria-hidden="true"></div>
-            <div id="greenScoreContainer" class="score-container score-container--green" aria-hidden="true"></div>
-          </div>
-
-          <div id="hudPlaneStyleProbes" aria-hidden="true"
-               style="position:absolute;width:0;height:0;overflow:hidden;clip-path:inset(50%);">
-            <img src="ui_gamescreen/gamescreen_outside/planecounter_ green.png" class="hud-plane green" alt="" draggable="false">
-            <img src="ui_gamescreen/gamescreen_outside/planecounter_blue.png" class="hud-plane blue" alt="" draggable="false">
-          </div>
-
-          <!-- Turn indicators -->
-          <div id="mantisIndicator" class="turn-indicator" style="display:none;"></div>
-          <div id="goatIndicator" class="turn-indicator" style="display:none;"></div>
-        </div>
-
-        <!-- End Game Window -->
-        <div id="endGameButtons" style="display:none;" role="dialog" aria-labelledby="endGamePrompt">
-          <p id="endGamePrompt" class="visually-hidden">Play Again?</p>
-          <button id="yesButton" class="playagain-btn playagain-btn--yes" type="button" aria-label="Play again">
-            <span class="visually-hidden">Yes</span>
-          </button>
-          <button id="noButton" class="playagain-btn playagain-btn--no" type="button" aria-label="Return to menu">
-            <span class="visually-hidden">No</span>
-          </button>
         </div>
       </div>
 
