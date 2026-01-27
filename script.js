@@ -1261,20 +1261,27 @@ function getVisualViewportState() {
 
 function getViewportAdjustedBoundingClientRect(element) {
   const rect = element?.getBoundingClientRect?.();
-  const { offsetLeft, offsetTop } = getVisualViewportState();
 
   if (!rect) {
     return { left: 0, top: 0, width: 0, height: 0 };
   }
 
-  const left = Number.isFinite(rect.left) ? rect.left : 0;
-  const top = Number.isFinite(rect.top) ? rect.top : 0;
-  const width = Number.isFinite(rect.width) ? rect.width : 0;
-  const height = Number.isFinite(rect.height) ? rect.height : 0;
+  const rawLeft = Number.isFinite(rect.left) ? rect.left : 0;
+  const rawTop = Number.isFinite(rect.top) ? rect.top : 0;
+  const rawWidth = Number.isFinite(rect.width) ? rect.width : 0;
+  const rawHeight = Number.isFinite(rect.height) ? rect.height : 0;
+  const topLeft = toDesignCoords(rawLeft, rawTop);
+  const bottomRight = toDesignCoords(rawLeft + rawWidth, rawTop + rawHeight);
+  const left = Number.isFinite(topLeft.x) ? topLeft.x : 0;
+  const top = Number.isFinite(topLeft.y) ? topLeft.y : 0;
+  const right = Number.isFinite(bottomRight.x) ? bottomRight.x : left;
+  const bottom = Number.isFinite(bottomRight.y) ? bottomRight.y : top;
+  const width = right - left;
+  const height = bottom - top;
 
   return {
-    left: left - offsetLeft,
-    top: top - offsetTop,
+    left,
+    top,
     width,
     height
   };
@@ -1376,11 +1383,10 @@ function resolveClientPoint(input) {
 
   const rawX = Number.isFinite(source?.clientX) ? source.clientX : 0;
   const rawY = Number.isFinite(source?.clientY) ? source.clientY : 0;
-  const { offsetLeft, offsetTop } = getVisualViewportState();
 
   return {
-    clientX: rawX - offsetLeft,
-    clientY: rawY - offsetTop
+    clientX: rawX,
+    clientY: rawY
   };
 }
 
