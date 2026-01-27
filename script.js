@@ -8499,14 +8499,17 @@ function resizeCanvas() {
     // continue resizing instead of early returning
   }
 
-  const safeScale = 1;
+  const rootStyle = window.getComputedStyle(document.documentElement);
+  const uiScaleRaw = rootStyle.getPropertyValue('--ui-scale');
+  const uiScaleValue = uiScaleRaw ? parseFloat(uiScaleRaw) : 1;
+  const uiScale = Number.isFinite(uiScaleValue) && uiScaleValue > 0 ? uiScaleValue : 1;
   const cssW = CANVAS_BASE_WIDTH;
   const cssH = CANVAS_BASE_HEIGHT;
   const { RAW_DPR } = getCanvasDpr();
   const unchanged =
     Math.abs(cssW - lastResizeMetrics.cssW) < 0.1 &&
     Math.abs(cssH - lastResizeMetrics.cssH) < 0.1 &&
-    Math.abs(safeScale - lastResizeMetrics.scale) < 0.0001 &&
+    Math.abs(uiScale - lastResizeMetrics.scale) < 0.0001 &&
     Math.abs(RAW_DPR - lastResizeMetrics.dpr) < 0.001;
 
   if (unchanged) {
@@ -8517,7 +8520,7 @@ function resizeCanvas() {
   lastResizeMetrics = {
     cssW,
     cssH,
-    scale: safeScale,
+    scale: uiScale,
     dpr: RAW_DPR
   };
 
