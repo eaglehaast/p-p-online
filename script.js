@@ -545,10 +545,6 @@ function syncCanvasBackingStore(canvas, baseWidth, baseHeight) {
 
 function syncHudCanvasLayout() {
   if (!(hudCanvas instanceof HTMLCanvasElement)) return;
-  hudCanvas.style.left = '0px';
-  hudCanvas.style.top = '0px';
-  hudCanvas.style.width = `${FRAME_BASE_WIDTH}px`;
-  hudCanvas.style.height = `${FRAME_BASE_HEIGHT}px`;
   const { RAW_DPR } = getCanvasDpr();
   const backingW = Math.max(1, Math.round(FRAME_BASE_WIDTH * RAW_DPR));
   const backingH = Math.max(1, Math.round(FRAME_BASE_HEIGHT * RAW_DPR));
@@ -558,10 +554,6 @@ function syncHudCanvasLayout() {
 
 function syncAimCanvasLayout() {
   if (!(aimCanvas instanceof HTMLCanvasElement)) return;
-  aimCanvas.style.left = '0px';
-  aimCanvas.style.top = '0px';
-  aimCanvas.style.width = `${FRAME_BASE_WIDTH}px`;
-  aimCanvas.style.height = `${FRAME_BASE_HEIGHT}px`;
   const { RAW_DPR } = getCanvasDpr();
   const backingW = Math.max(1, Math.round(FRAME_BASE_WIDTH * RAW_DPR));
   const backingH = Math.max(1, Math.round(FRAME_BASE_HEIGHT * RAW_DPR));
