@@ -2904,7 +2904,11 @@ function syncBackgroundLayout(containerWidth, containerHeight, containerLeft = n
 
   const sizeValue = `${containerWidth}px ${containerHeight}px`;
   const repeatedSize = duplicateBackgroundValue(sizeValue);
-  if (gameBackgroundEl) {
+  const computedSize = gameBackgroundEl ? window.getComputedStyle(gameBackgroundEl).backgroundSize : '';
+  const usesPercentSizing = computedSize
+    ? computedSize.split(',').every(layer => layer.includes('%'))
+    : false;
+  if (gameBackgroundEl && !usesPercentSizing) {
     gameBackgroundEl.style.backgroundSize = repeatedSize;
   }
 
@@ -8469,8 +8473,30 @@ function updateUiFrameScale() {
   const scale = Math.min(viewW / safeDesignW, viewH / safeDesignH);
   const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
   document.documentElement.style.setProperty('--ui-scale', safeScale);
+  updateGameScale();
   syncHudCanvasLayout();
   syncAimCanvasLayout();
+}
+
+function getViewportDimensions() {
+  const viewport = typeof window !== "undefined" ? window.visualViewport : null;
+  const width = viewport ? viewport.width : window.innerWidth;
+  const height = viewport ? viewport.height : window.innerHeight;
+  return {
+    width: Number.isFinite(width) && width > 0 ? width : 1,
+    height: Number.isFinite(height) && height > 0 ? height : 1
+  };
+}
+
+function updateGameScale() {
+  if (!(gsFrameEl instanceof HTMLElement)) {
+    return;
+  }
+
+  const { width, height } = getViewportDimensions();
+  const scale = Math.min(width / FRAME_BASE_WIDTH, height / FRAME_BASE_HEIGHT);
+  const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  gsFrameEl.style.setProperty('--game-scale', safeScale);
 }
 
 /* ======= CANVAS RESIZE ======= */
@@ -8648,6 +8674,9 @@ function lockOrientation(){
 lockOrientation();
 window.addEventListener('orientationchange', lockOrientation);
 window.addEventListener('orientationchange', updateUiFrameScale);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', updateUiFrameScale);
+}
 
   /* ======= BOOTSTRAP ======= */
   function waitForStylesReady() {
