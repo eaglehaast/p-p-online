@@ -8430,16 +8430,16 @@ function updateUiFrameScale() {
   const paddingBottom = wrapperStyles ? parseFloat(wrapperStyles.paddingBottom) || 0 : 0;
   const paddingLeft = wrapperStyles ? parseFloat(wrapperStyles.paddingLeft) || 0 : 0;
 
-  const baseWidth = wrapperRect ? wrapperRect.width : 0;
-  const baseHeight = wrapperRect ? wrapperRect.height : 0;
+  const viewport = typeof window !== "undefined" ? window.visualViewport : null;
+  const viewportWidth = viewport && Number.isFinite(viewport.width) ? viewport.width : 0;
+  const viewportHeight = viewport && Number.isFinite(viewport.height) ? viewport.height : 0;
+  const fallbackWidth = wrapperRect ? wrapperRect.width : window.innerWidth || 0;
+  const fallbackHeight = wrapperRect ? wrapperRect.height : window.innerHeight || 0;
+  const baseWidth = viewportWidth || fallbackWidth;
+  const baseHeight = viewportHeight || fallbackHeight;
   const viewW = Math.max(1, baseWidth - paddingLeft - paddingRight);
   const viewH = Math.max(1, baseHeight - paddingTop - paddingBottom);
-  const rootStyles = window.getComputedStyle(document.documentElement);
-  const designW = parseFloat(rootStyles.getPropertyValue("--design-w"));
-  const designH = parseFloat(rootStyles.getPropertyValue("--design-h"));
-  const safeDesignW = Number.isFinite(designW) && designW > 0 ? designW : FRAME_BASE_WIDTH;
-  const safeDesignH = Number.isFinite(designH) && designH > 0 ? designH : FRAME_BASE_HEIGHT;
-  const scale = Math.min(viewW / safeDesignW, viewH / safeDesignH);
+  const scale = Math.min(viewW / FRAME_BASE_WIDTH, viewH / FRAME_BASE_HEIGHT);
   const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
   document.documentElement.style.setProperty('--ui-scale', safeScale);
   syncHudCanvasLayout();
