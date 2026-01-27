@@ -8433,10 +8433,12 @@ function updateUiFrameScale() {
   const viewport = typeof window !== "undefined" ? window.visualViewport : null;
   const viewportWidth = viewport && Number.isFinite(viewport.width) ? viewport.width : 0;
   const viewportHeight = viewport && Number.isFinite(viewport.height) ? viewport.height : 0;
-  const fallbackWidth = wrapperRect ? wrapperRect.width : window.innerWidth || 0;
-  const fallbackHeight = wrapperRect ? wrapperRect.height : window.innerHeight || 0;
-  const baseWidth = viewportWidth || fallbackWidth;
-  const baseHeight = viewportHeight || fallbackHeight;
+  const wrapperWidth = wrapperRect && Number.isFinite(wrapperRect.width) ? wrapperRect.width : 0;
+  const wrapperHeight = wrapperRect && Number.isFinite(wrapperRect.height) ? wrapperRect.height : 0;
+  const fallbackWidth = window.innerWidth || 0;
+  const fallbackHeight = window.innerHeight || 0;
+  const baseWidth = wrapperWidth || viewportWidth || fallbackWidth;
+  const baseHeight = wrapperHeight || viewportHeight || fallbackHeight;
   const viewW = Math.max(1, baseWidth - paddingLeft - paddingRight);
   const viewH = Math.max(1, baseHeight - paddingTop - paddingBottom);
   const scale = Math.min(viewW / FRAME_BASE_WIDTH, viewH / FRAME_BASE_HEIGHT);
