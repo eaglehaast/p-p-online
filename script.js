@@ -1564,26 +1564,6 @@ function syncOverlayCanvasToGameCanvas(targetCanvas, cssWidth, cssHeight) {
   if (targetCanvas.height !== backingHeight) targetCanvas.height = backingHeight;
 }
 
-function sizeAndAlignOverlays() {
-  if (!(overlayContainer instanceof HTMLElement)) {
-    return;
-  }
-
-  const width = Math.max(1, Math.round(CANVAS_BASE_WIDTH));
-  const height = Math.max(1, Math.round(CANVAS_BASE_HEIGHT));
-  const left = CANVAS_OFFSET_X;
-  const top = FRAME_PADDING_Y;
-
-  overlayContainer.style.left = `${left}px`;
-  overlayContainer.style.top = `${top}px`;
-  overlayContainer.style.width = `${width}px`;
-  overlayContainer.style.height = `${height}px`;
-  overlayContainer.style.transform = "none";
-  syncOverlayCanvasToGameCanvas(planeCanvas, width, height);
-
-  debugLogLayerStack();
-}
-
 const FX_RECT_MISMATCH_KEYS = new Set();
 const FX_RECT_MISMATCH_TOLERANCE = 4;
 const FX_HOST_MIN_SIZE = 2;
@@ -2580,7 +2560,6 @@ function initGameRenderPipeline(reason = "activate") {
   renderInitState.firstFrameDrawn = false;
   renderInitState.lastDrawLogTime = 0;
   resizeCanvasFixedForGameBoard();
-  sizeAndAlignOverlays();
   applyViewTransform(aimCtx);
   applyViewTransform(planeCtx);
   const metrics = getGameCanvasMetrics();
@@ -8170,10 +8149,8 @@ function startNewRound(){
 
   if (needsGameScreenSync) {
     resizeCanvasFixedForGameBoard();
-    sizeAndAlignOverlays();
     requestAnimationFrame(() => {
       resizeCanvasFixedForGameBoard();
-      sizeAndAlignOverlays();
     });
     needsGameScreenSync = false;
     hasActivatedGameScreen = true;
@@ -8497,10 +8474,6 @@ function resizeCanvasFixedForGameBoard() {
   const backingW = Math.max(1, Math.round(cssW * RAW_DPR));
   const backingH = Math.max(1, Math.round(cssH * RAW_DPR));
 
-  gsBoardCanvas.style.width = `${cssW}px`;
-  gsBoardCanvas.style.height = `${cssH}px`;
-  gsBoardCanvas.style.left = `${CANVAS_OFFSET_X}px`;
-  gsBoardCanvas.style.top = `${FRAME_PADDING_Y}px`;
   if (gsBoardCanvas.width !== backingW) gsBoardCanvas.width = backingW;
   if (gsBoardCanvas.height !== backingH) gsBoardCanvas.height = backingH;
   computeViewFromCanvas(gsBoardCanvas);
@@ -8508,10 +8481,6 @@ function resizeCanvasFixedForGameBoard() {
   syncAimCanvasLayout();
 
   if (planeCanvas) {
-    planeCanvas.style.width = `${cssW}px`;
-    planeCanvas.style.height = `${cssH}px`;
-    planeCanvas.style.left = `${CANVAS_OFFSET_X}px`;
-    planeCanvas.style.top = `${FRAME_PADDING_Y}px`;
     const planeBackingW = Math.max(1, Math.round(cssW * RAW_DPR));
     const planeBackingH = Math.max(1, Math.round(cssH * RAW_DPR));
     if (planeCanvas.width !== planeBackingW) planeCanvas.width = planeBackingW;
@@ -8563,21 +8532,14 @@ function resizeCanvas() {
   updateUiFrameScale();
   syncBackgroundLayout(FRAME_BASE_WIDTH, FRAME_BASE_HEIGHT);
   const canvas = gsBoardCanvas;
-  canvas.style.width = CANVAS_BASE_WIDTH + 'px';
-  canvas.style.height = CANVAS_BASE_HEIGHT + 'px';
-  canvas.style.left = CANVAS_OFFSET_X + 'px';
-  canvas.style.top = FRAME_PADDING_Y + 'px';
   const gsBackingW = Math.max(1, Math.round(CANVAS_BASE_WIDTH * RAW_DPR));
   const gsBackingH = Math.max(1, Math.round(CANVAS_BASE_HEIGHT * RAW_DPR));
   if (canvas.width !== gsBackingW) canvas.width = gsBackingW;
   if (canvas.height !== gsBackingH) canvas.height = gsBackingH;
   computeViewFromCanvas(canvas);
 
-  sizeAndAlignOverlays();
   syncAimCanvasLayout();
   if (planeCanvas) {
-    planeCanvas.style.width = CANVAS_BASE_WIDTH + 'px';
-    planeCanvas.style.height = CANVAS_BASE_HEIGHT + 'px';
     const planeBackingW = Math.max(1, Math.round(CANVAS_BASE_WIDTH * RAW_DPR));
     const planeBackingH = Math.max(1, Math.round(CANVAS_BASE_HEIGHT * RAW_DPR));
     if (planeCanvas.width !== planeBackingW) planeCanvas.width = planeBackingW;
@@ -8586,14 +8548,6 @@ function resizeCanvas() {
   applyViewTransform(gsBoardCtx);
   applyViewTransform(aimCtx);
   applyViewTransform(planeCtx);
-
-  [mantisIndicator, goatIndicator].forEach(ind => {
-    ind.style.width = FRAME_BASE_WIDTH + 'px';
-    ind.style.height = FRAME_BASE_HEIGHT / 2 + 'px';
-    ind.style.backgroundSize = FRAME_BASE_WIDTH + 'px ' + FRAME_BASE_HEIGHT + 'px';
-  });
-  mantisIndicator.style.top = '0px';
-  goatIndicator.style.top = FRAME_BASE_HEIGHT / 2 + 'px';
 
   updateFieldDimensions();
 
@@ -8668,7 +8622,6 @@ if (window.visualViewport) {
   async function bootstrapGame(){
     await waitForStylesReady();
     updateUiFrameScale();
-    sizeAndAlignOverlays();
     resizeCanvas();
     resetGame();
   }
