@@ -153,13 +153,10 @@ body, button {
     width: 460px;
     height: 800px;
     flex: 0 0 auto;
-    --game-scale: 1;
     --field-left: 51px;
     --field-top: 80px;
     --field-width: 360px;
     --field-height: 640px;
-    transform: scale(var(--game-scale));
-    transform-origin: center;
     z-index: 0;
   }
 
