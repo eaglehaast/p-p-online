@@ -129,24 +129,6 @@ const wrapperSyncDebugState = {
   logged: false
 };
 
-function syncFieldCssVars() {
-  const gameContainer = document.getElementById("gameContainer");
-  if (!(gameContainer instanceof HTMLElement)) {
-    return;
-  }
-  const designW = FRAME_BASE_WIDTH;
-  const designH = FRAME_BASE_HEIGHT;
-  const fieldW = WORLD.width;
-  const fieldH = WORLD.height;
-  const fieldLeft = (designW - fieldW) / 2;
-  const fieldTop = (designH - fieldH) / 2;
-
-  gameContainer.style.setProperty('--field-left', `${fieldLeft}px`);
-  gameContainer.style.setProperty('--field-top', `${fieldTop}px`);
-  gameContainer.style.setProperty('--field-width', `${fieldW}px`);
-  gameContainer.style.setProperty('--field-height', `${fieldH}px`);
-}
-
 function toDesignCoords(clientX, clientY) {
   const rect = uiFrameEl?.getBoundingClientRect?.() || { left: 0, top: 0 };
   const rootStyle = window.getComputedStyle(document.documentElement);
@@ -8571,14 +8553,16 @@ function syncWrapperToVisualViewport() {
   const offsetLeft = viewport && Number.isFinite(viewport.offsetLeft) ? viewport.offsetLeft : 0;
   const offsetTop = viewport && Number.isFinite(viewport.offsetTop) ? viewport.offsetTop : 0;
 
-  wrapperEl.style.position = 'fixed';
-  wrapperEl.style.inset = 'auto';
-  wrapperEl.style.right = 'auto';
-  wrapperEl.style.bottom = 'auto';
-  wrapperEl.style.left = `${offsetLeft}px`;
-  wrapperEl.style.top = `${offsetTop}px`;
-  wrapperEl.style.width = `${width}px`;
-  wrapperEl.style.height = `${height}px`;
+wrapperEl.style.position = 'fixed';
+wrapperEl.style.inset = 'auto';
+wrapperEl.style.right = 'auto';
+wrapperEl.style.bottom = 'auto';
+
+wrapperEl.style.left = `${offsetLeft}px`;
+wrapperEl.style.top = `${offsetTop}px`;
+wrapperEl.style.width = `${width}px`;
+wrapperEl.style.height = `${height}px`;
+
 
   if (DEBUG_WRAPPER_SYNC && !wrapperSyncDebugState.logged) {
     wrapperSyncDebugState.logged = true;
