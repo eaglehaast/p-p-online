@@ -1236,10 +1236,10 @@ body, button {
     position: absolute;
     pointer-events: none;
     transform-origin: 0 0;
-    left: var(--field-left);
-    top: var(--field-top);
-    width: var(--field-width);
-    height: var(--field-height);
+    left: 50px;
+    top: 80px;
+    width: 360px;
+    height: 640px;
     overflow: hidden;
     z-index: 20;
   }

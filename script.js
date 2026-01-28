@@ -8712,6 +8712,17 @@ async function syncLayoutAndField(reason = "sync") {
   forceLayoutReflow();
 
   syncFieldCssVars();
+  if (overlayContainer) {
+    const overlayWidth = WORLD.width;
+    const overlayHeight = WORLD.height;
+    const overlayLeft = (FRAME_BASE_WIDTH - WORLD.width) / 2;
+    const overlayTop = (FRAME_BASE_HEIGHT - WORLD.height) / 2;
+
+    overlayContainer.style.width = `${overlayWidth}px`;
+    overlayContainer.style.height = `${overlayHeight}px`;
+    overlayContainer.style.left = `${overlayLeft}px`;
+    overlayContainer.style.top = `${overlayTop}px`;
+  }
   const rootStyle = window.getComputedStyle(document.documentElement);
   const uiScaleRaw = rootStyle.getPropertyValue('--ui-scale');
   const uiScaleValue = uiScaleRaw ? parseFloat(uiScaleRaw) : 1;
