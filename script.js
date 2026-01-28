@@ -8687,6 +8687,7 @@ async function syncLayoutAndField(reason = "sync") {
   await nextFrame();
   forceLayoutReflow();
 
+  syncFieldCssVars();
   const rootStyle = window.getComputedStyle(document.documentElement);
   const uiScaleRaw = rootStyle.getPropertyValue('--ui-scale');
   const uiScaleValue = uiScaleRaw ? parseFloat(uiScaleRaw) : 1;
