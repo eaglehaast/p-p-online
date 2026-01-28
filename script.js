@@ -603,6 +603,16 @@ function syncAimCanvasLayout() {
   if (aimCanvas.height !== backingH) aimCanvas.height = backingH;
 }
 
+function syncFieldCssVars() {
+  if (!gsFrameEl) return;
+  const fieldLeft = getFieldLeftCssValue();
+  const fieldTop = getFieldTopCssValue();
+  gsFrameEl.style.setProperty("--field-left", `${fieldLeft}px`);
+  gsFrameEl.style.setProperty("--field-top", `${fieldTop}px`);
+  gsFrameEl.style.setProperty("--field-width", `${WORLD.width}px`);
+  gsFrameEl.style.setProperty("--field-height", `${WORLD.height}px`);
+}
+
 function logCanvasCreation(canvas, label = "") {
   if (!(canvas instanceof HTMLCanvasElement)) {
     return;
@@ -2997,6 +3007,16 @@ const MAP_BRICK_THICKNESS = 20; // px, matches brick_1_default short side
 const MAP_DIAGONAL_BRICK_SIZE = MAP_BRICK_THICKNESS * 3;
 const FIELD_BORDER_THICKNESS = MAP_BRICK_THICKNESS; // px, width of brick frame edges
 
+function getFieldLeftCssValue() {
+  const computed = (FRAME_BASE_WIDTH - WORLD.width) / 2;
+  return Number.isFinite(computed) ? computed : FRAME_PADDING_X;
+}
+
+function getFieldTopCssValue() {
+  const computed = (FRAME_BASE_HEIGHT - WORLD.height) / 2;
+  return Number.isFinite(computed) ? computed : FRAME_PADDING_Y;
+}
+
 
 let brickFrameImg = null;
 let brickFrameData = null;
@@ -3320,10 +3340,12 @@ function getFieldCssMetrics() {
   if (typeof window === "undefined" || !gsFrameEl) {
     return null;
   }
+  const fallbackLeft = getFieldLeftCssValue();
+  const fallbackTop = getFieldTopCssValue();
   const style = window.getComputedStyle(gsFrameEl);
   return {
-    left: parseCssSize(style.getPropertyValue("--field-left"), CANVAS_OFFSET_X),
-    top: parseCssSize(style.getPropertyValue("--field-top"), FRAME_PADDING_Y),
+    left: parseCssSize(style.getPropertyValue("--field-left"), fallbackLeft),
+    top: parseCssSize(style.getPropertyValue("--field-top"), fallbackTop),
     width: parseCssSize(style.getPropertyValue("--field-width"), CANVAS_BASE_WIDTH),
     height: parseCssSize(style.getPropertyValue("--field-height"), CANVAS_BASE_HEIGHT)
   };
@@ -3362,8 +3384,10 @@ function isBrickPixel(x, y){
     const epsilon = 0.5;
 
     if (cssMetrics) {
-      const left = (cssMetrics.left - CANVAS_OFFSET_X) * scaleX;
-      const top = (cssMetrics.top - FRAME_PADDING_Y) * scaleY;
+      const baseLeft = getFieldLeftCssValue();
+      const baseTop = getFieldTopCssValue();
+      const left = (cssMetrics.left - baseLeft) * scaleX;
+      const top = (cssMetrics.top - baseTop) * scaleY;
       const width = cssMetrics.width * scaleX;
       const height = cssMetrics.height * scaleY;
 
