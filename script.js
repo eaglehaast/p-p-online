@@ -442,13 +442,13 @@ function drawStartPositionsDebug(ctx, scale = 1) {
   // Outer field bounds (full frame)
   ctx.strokeStyle = "rgba(0, 191, 255, 0.75)";
   ctx.lineWidth = frameLineWidth;
-  ctx.strokeRect(FIELD_LEFT, 0, FIELD_WIDTH, WORLD.height);
+  ctx.strokeRect(FIELD_LEFT, FIELD_TOP, FIELD_WIDTH, FIELD_HEIGHT);
 
   // Playable area without brick thickness
   const playableLeft = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
-  const playableTop = FIELD_BORDER_OFFSET_Y;
+  const playableTop = FIELD_TOP + FIELD_BORDER_OFFSET_Y;
   const playableWidth = Math.max(0, FIELD_WIDTH - FIELD_BORDER_OFFSET_X * 2);
-  const playableHeight = Math.max(0, WORLD.height - FIELD_BORDER_OFFSET_Y * 2);
+  const playableHeight = Math.max(0, FIELD_HEIGHT - FIELD_BORDER_OFFSET_Y * 2);
   ctx.strokeStyle = "rgba(255, 165, 0, 0.85)";
   ctx.lineWidth = fieldLineWidth;
   ctx.strokeRect(playableLeft, playableTop, playableWidth, playableHeight);
@@ -3030,7 +3030,9 @@ function clearBrickFrameImage(){
 }
 
 let FIELD_LEFT = 0;
+let FIELD_TOP = 0;
 let FIELD_WIDTH = 0;
+let FIELD_HEIGHT = 0;
 
 function getFrameScaleFromLayout() {
   return {
@@ -3256,10 +3258,10 @@ const START_PLANES = {
 
 function getStartPlaneWorldPositions(){
   const originX = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
-  const originY = FIELD_BORDER_OFFSET_Y;
+  const originY = FIELD_TOP + FIELD_BORDER_OFFSET_Y;
   const margin = PLANE_DRAW_H / 2 + 1;
-  const minY = margin;
-  const maxY = WORLD.height - margin;
+  const minY = FIELD_TOP + margin;
+  const maxY = FIELD_TOP + FIELD_HEIGHT - margin;
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const toWorld = (entry, color) => {
     const rawY = originY + entry.y;
@@ -3304,10 +3306,29 @@ function updateFieldBorderOffset(){
   FIELD_BORDER_OFFSET_Y = MAP_BRICK_THICKNESS;
 }
 
+function parseCssSize(value, fallback = 0) {
+  const parsed = parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function getFieldCssMetrics() {
+  if (typeof window === "undefined" || !gsFrameEl) {
+    return null;
+  }
+  const style = window.getComputedStyle(gsFrameEl);
+  return {
+    left: parseCssSize(style.getPropertyValue("--field-left"), CANVAS_OFFSET_X),
+    top: parseCssSize(style.getPropertyValue("--field-top"), FRAME_PADDING_Y),
+    width: parseCssSize(style.getPropertyValue("--field-width"), CANVAS_BASE_WIDTH),
+    height: parseCssSize(style.getPropertyValue("--field-height"), CANVAS_BASE_HEIGHT)
+  };
+}
+
 function isBrickPixel(x, y){
   if(!brickFrameData) return false;
+  if(!FIELD_WIDTH || !FIELD_HEIGHT) return false;
   const imgX = Math.floor((x - FIELD_LEFT) / FIELD_WIDTH * brickFrameData.width);
-  const imgY = Math.floor(y / WORLD.height * brickFrameData.height);
+  const imgY = Math.floor((y - FIELD_TOP) / FIELD_HEIGHT * brickFrameData.height);
   const { data, width, height } = brickFrameData;
   if(imgX < 0 || imgX >= width || imgY < 0 || imgY >= height) return false;
 
@@ -3330,14 +3351,37 @@ function isBrickPixel(x, y){
 }
 
   function updateFieldDimensions(){
-    if(brickFrameImg && brickFrameImg.naturalWidth && brickFrameImg.naturalHeight){
-      const aspect = brickFrameImg.naturalWidth / brickFrameImg.naturalHeight;
-      FIELD_WIDTH = WORLD.height * aspect;
-      FIELD_LEFT = (WORLD.width - FIELD_WIDTH) / 2;
+    const cssMetrics = getFieldCssMetrics();
+    const scaleX = CANVAS_BASE_WIDTH ? WORLD.width / CANVAS_BASE_WIDTH : 1;
+    const scaleY = CANVAS_BASE_HEIGHT ? WORLD.height / CANVAS_BASE_HEIGHT : 1;
+    const epsilon = 0.5;
+
+    if (cssMetrics) {
+      const left = (cssMetrics.left - CANVAS_OFFSET_X) * scaleX;
+      const top = (cssMetrics.top - FRAME_PADDING_Y) * scaleY;
+      const width = cssMetrics.width * scaleX;
+      const height = cssMetrics.height * scaleY;
+
+      FIELD_LEFT = Number.isFinite(left) ? left : 0;
+      FIELD_TOP = Number.isFinite(top) ? top : 0;
+      FIELD_WIDTH = Number.isFinite(width) ? width : WORLD.width;
+      FIELD_HEIGHT = Number.isFinite(height) ? height : WORLD.height;
     } else {
+      FIELD_LEFT = 0;
+      FIELD_TOP = 0;
+      FIELD_WIDTH = WORLD.width;
+      FIELD_HEIGHT = WORLD.height;
+    }
+
+    if (Math.abs(FIELD_LEFT) <= epsilon && Math.abs(FIELD_WIDTH - WORLD.width) <= epsilon) {
       FIELD_LEFT = 0;
       FIELD_WIDTH = WORLD.width;
     }
+    if (Math.abs(FIELD_TOP) <= epsilon && Math.abs(FIELD_HEIGHT - WORLD.height) <= epsilon) {
+      FIELD_TOP = 0;
+      FIELD_HEIGHT = WORLD.height;
+    }
+
     updateFieldBorderOffset();
     rebuildCollisionSurfaces();
   }
@@ -3931,7 +3975,7 @@ let HOME_ROW_Y = {
 };
 
 function getHomeRowY(color){
-  const fallback = color === "blue" ? 40 : WORLD.height - 40;
+  const fallback = color === "blue" ? FIELD_TOP + 40 : FIELD_TOP + FIELD_HEIGHT - 40;
   const rowY = HOME_ROW_Y[color];
   return Number.isFinite(rowY) ? rowY : fallback;
 }
@@ -3940,7 +3984,7 @@ function initPoints(){
   points = [];
   const startPositions = getStartPlaneWorldPositions();
   const firstBlueY = startPositions.blue[0]?.y ?? 0;
-  const firstGreenY = startPositions.green[0]?.y ?? WORLD.height;
+  const firstGreenY = startPositions.green[0]?.y ?? FIELD_TOP + FIELD_HEIGHT;
   HOME_ROW_Y = { blue: firstBlueY, green: firstGreenY };
 
   // Green (низ поля) — смотрят ВВЕРХ (к сопернику)
@@ -4050,7 +4094,7 @@ function getBaseAnchor(color){
     return { x: layout.x + layout.width / 2, y: layout.y + layout.height / 2 };
   }
   const centerX = FIELD_LEFT + FIELD_WIDTH / 2;
-  const fallbackY = color === "blue" ? 20 : WORLD.height - 20;
+  const fallbackY = color === "blue" ? FIELD_TOP + 20 : FIELD_TOP + FIELD_HEIGHT - 20;
   return { x: centerX, y: fallbackY };
 }
 
@@ -4657,12 +4701,12 @@ function isValidAAPlacement(x,y){
   // The center may touch field edges or overlap planes, but must not be inside
   // any collider so that AA can be destroyed by planes.
 
-  const half = WORLD.height / 2;
+  const half = FIELD_TOP + FIELD_HEIGHT / 2;
 
   if (currentPlacer === 'green') {
-    if (y < half || y > WORLD.height) return false;
+    if (y < half || y > FIELD_TOP + FIELD_HEIGHT) return false;
   } else if (currentPlacer === 'blue') {
-    if (y < 0 || y > half) return false;
+    if (y < FIELD_TOP || y > half) return false;
   } else {
     return false;
   }
@@ -4698,13 +4742,13 @@ function placeAA({owner,x,y}){
 function drawAAPlacementZone(){
   if(phase !== 'AA_PLACEMENT') return;
 
-  const half = WORLD.height / 2;
+  const half = FIELD_TOP + FIELD_HEIGHT / 2;
   gsBoardCtx.save();
   gsBoardCtx.fillStyle = colorWithAlpha(currentPlacer, 0.05);
   if(currentPlacer === 'green'){
-    gsBoardCtx.fillRect(FIELD_LEFT, half, FIELD_WIDTH, half);
+    gsBoardCtx.fillRect(FIELD_LEFT, half, FIELD_WIDTH, FIELD_TOP + FIELD_HEIGHT - half);
   } else {
-    gsBoardCtx.fillRect(FIELD_LEFT, 0, FIELD_WIDTH, half);
+    gsBoardCtx.fillRect(FIELD_LEFT, FIELD_TOP, FIELD_WIDTH, half - FIELD_TOP);
   }
   gsBoardCtx.restore();
 }
@@ -5307,8 +5351,8 @@ function buildColliderSurfaces(colliders){
 function buildFieldBorderSurfaces(){
   const leftX = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
   const rightX = FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X;
-  const topY = FIELD_BORDER_OFFSET_Y;
-  const bottomY = WORLD.height - FIELD_BORDER_OFFSET_Y;
+  const topY = FIELD_TOP + FIELD_BORDER_OFFSET_Y;
+  const bottomY = FIELD_TOP + FIELD_HEIGHT - FIELD_BORDER_OFFSET_Y;
 
   if(!Number.isFinite(leftX) || !Number.isFinite(rightX) ||
      !Number.isFinite(topY) || !Number.isFinite(bottomY)){
@@ -6393,7 +6437,11 @@ function gameDraw(){
     logAimDebug({
       start: { x: Math.round(startX), y: Math.round(startY) },
       tail: { x: Math.round(tailX), y: Math.round(tailY) },
-      inBounds: tailX >= 0 && tailX <= WORLD.width && tailY >= 0 && tailY <= WORLD.height
+      inBounds:
+        tailX >= FIELD_LEFT &&
+        tailX <= FIELD_LEFT + FIELD_WIDTH &&
+        tailY >= FIELD_TOP &&
+        tailY <= FIELD_TOP + FIELD_HEIGHT
     });
 
   } else {
