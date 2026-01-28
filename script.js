@@ -8553,14 +8553,16 @@ function syncWrapperToVisualViewport() {
   const offsetLeft = viewport && Number.isFinite(viewport.offsetLeft) ? viewport.offsetLeft : 0;
   const offsetTop = viewport && Number.isFinite(viewport.offsetTop) ? viewport.offsetTop : 0;
 
-  wrapperEl.style.position = 'fixed';
-  wrapperEl.style.inset = 'auto';
-  wrapperEl.style.right = 'auto';
-  wrapperEl.style.bottom = 'auto';
-  wrapperEl.style.left = `${offsetLeft}px`;
-  wrapperEl.style.top = `${offsetTop}px`;
-  wrapperEl.style.width = `${width}px`;
-  wrapperEl.style.height = `${height}px`;
+wrapperEl.style.position = 'fixed';
+wrapperEl.style.inset = 'auto';
+wrapperEl.style.right = 'auto';
+wrapperEl.style.bottom = 'auto';
+
+wrapperEl.style.left = `${offsetLeft}px`;
+wrapperEl.style.top = `${offsetTop}px`;
+wrapperEl.style.width = `${width}px`;
+wrapperEl.style.height = `${height}px`;
+
 
   if (DEBUG_WRAPPER_SYNC && !wrapperSyncDebugState.logged) {
     wrapperSyncDebugState.logged = true;
