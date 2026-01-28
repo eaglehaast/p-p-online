@@ -603,16 +603,6 @@ function syncAimCanvasLayout() {
   if (aimCanvas.height !== backingH) aimCanvas.height = backingH;
 }
 
-function syncFieldCssVars() {
-  if (!gsFrameEl) return;
-  const fieldLeft = getFieldLeftCssValue();
-  const fieldTop = getFieldTopCssValue();
-  gsFrameEl.style.setProperty("--field-left", `${fieldLeft}px`);
-  gsFrameEl.style.setProperty("--field-top", `${fieldTop}px`);
-  gsFrameEl.style.setProperty("--field-width", `${WORLD.width}px`);
-  gsFrameEl.style.setProperty("--field-height", `${WORLD.height}px`);
-}
-
 function logCanvasCreation(canvas, label = "") {
   if (!(canvas instanceof HTMLCanvasElement)) {
     return;
@@ -1595,11 +1585,6 @@ function syncOverlayCanvasToGameCanvas(targetCanvas, cssWidth, cssHeight) {
   const width = Math.max(1, Math.round(cssWidth || 0));
   const height = Math.max(1, Math.round(cssHeight || 0));
   const { RAW_DPR } = getCanvasDpr();
-  targetCanvas.style.position = 'absolute';
-  targetCanvas.style.left = '0px';
-  targetCanvas.style.top = '0px';
-  targetCanvas.style.width = `${width}px`;
-  targetCanvas.style.height = `${height}px`;
 
   const backingWidth = Math.max(1, Math.round(width * RAW_DPR));
   const backingHeight = Math.max(1, Math.round(height * RAW_DPR));
@@ -8297,15 +8282,8 @@ function startNewRound(){
   }
 
   requestAnimationFrame(() => {
-    const rect = overlayContainer?.getBoundingClientRect?.();
     const cssWidth = Math.max(1, WORLD.width);
     const cssHeight = Math.max(1, WORLD.height);
-    console.debug("[overlay] syncOverlayCanvasToGameCanvas sizes", {
-      rect: rect ? { width: rect.width, height: rect.height } : null,
-      world: { width: WORLD.width, height: WORLD.height },
-      cssWidth,
-      cssHeight
-    });
     syncOverlayCanvasToGameCanvas(planeCanvas, cssWidth, cssHeight);
     syncAimCanvasLayout();
   });
@@ -8715,9 +8693,18 @@ async function syncLayoutAndField(reason = "sync") {
   syncWrapperToVisualViewport();
   updateUiFrameScale();
   await nextFrame();
+  if (gsFrameEl) {
+    const fieldWidth = WORLD.width;
+    const fieldHeight = WORLD.height;
+    const fieldLeft = (FRAME_BASE_WIDTH - WORLD.width) / 2;
+    const fieldTop = (FRAME_BASE_HEIGHT - WORLD.height) / 2;
+    gsFrameEl.style.setProperty("--field-left", `${fieldLeft}px`);
+    gsFrameEl.style.setProperty("--field-top", `${fieldTop}px`);
+    gsFrameEl.style.setProperty("--field-width", `${fieldWidth}px`);
+    gsFrameEl.style.setProperty("--field-height", `${fieldHeight}px`);
+  }
   forceLayoutReflow();
 
-  syncFieldCssVars();
   const rootStyle = window.getComputedStyle(document.documentElement);
   const uiScaleRaw = rootStyle.getPropertyValue('--ui-scale');
   const uiScaleValue = uiScaleRaw ? parseFloat(uiScaleRaw) : 1;
