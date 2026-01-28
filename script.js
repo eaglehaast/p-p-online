@@ -25,6 +25,7 @@ const DEBUG_VFX = false;
 const DEBUG_BRICK_COLLISIONS = false;
 const DEBUG_COLLISIONS_TOI = false;
 const DEBUG_COLLISIONS_VERBOSE = false;
+const DEBUG_STARTUP_WORLDY = false;
 
 const bootTrace = {
   startTs: null,
@@ -119,6 +120,10 @@ const planeFlameDebugState = {
   logged: 0
 };
 
+const startupWorldYDebugState = {
+  logged: false
+};
+
 function toDesignCoords(clientX, clientY) {
   const rect = uiFrameEl?.getBoundingClientRect?.() || { left: 0, top: 0 };
   const rootStyle = window.getComputedStyle(document.documentElement);
@@ -196,6 +201,38 @@ function logResizeDebug(eventKey) {
   resizeDebugState.counts.syncAllCanvasBackingStores = 0;
   resizeDebugState.counts.resizeCanvasToMatchCss = 0;
   resizeDebugState.lastLogTime = now;
+}
+
+function logStartupWorldYOnce(startPositions) {
+  if (!DEBUG_STARTUP_WORLDY || startupWorldYDebugState.logged) return;
+  startupWorldYDebugState.logged = true;
+
+  const rootStyle = window.getComputedStyle(document.documentElement);
+  const uiScaleRaw = rootStyle.getPropertyValue('--ui-scale');
+  const uiScaleValue = uiScaleRaw ? parseFloat(uiScaleRaw) : 1;
+  const uiScale = Number.isFinite(uiScaleValue) && uiScaleValue > 0 ? uiScaleValue : 1;
+  const overlayRect = overlayContainer?.getBoundingClientRect?.();
+  const overlayRectSummary = overlayRect
+    ? {
+      left: overlayRect.left,
+      top: overlayRect.top,
+      width: overlayRect.width,
+      height: overlayRect.height
+    }
+    : null;
+
+  console.log('[startup-worldy]', {
+    uiScaleRaw,
+    uiScale,
+    FIELD_LEFT,
+    FIELD_BORDER_OFFSET_Y,
+    WORLD_height: WORLD.height,
+    overlayContainer: overlayRectSummary,
+    startWorldY: {
+      green: startPositions.green.map(({ y }) => y),
+      blue: startPositions.blue.map(({ y }) => y)
+    }
+  });
 }
 
 function logRenderInit(label, details = {}) {
@@ -3238,10 +3275,12 @@ function getStartPlaneWorldPositions(){
     return { x: originX + entry.x, y: clampedY };
   };
 
-  return {
-    blue: START_PLANES.blue.map((entry) => toWorld(entry, 'blue')),
-    green: START_PLANES.green.map((entry) => toWorld(entry, 'green')),
-  };
+  const blue = START_PLANES.blue.map((entry) => toWorld(entry, 'blue'));
+  const green = START_PLANES.green.map((entry) => toWorld(entry, 'green'));
+  const startPositions = { blue, green };
+  logStartupWorldYOnce(startPositions);
+
+  return startPositions;
 }
 const FLAG_LAYOUTS = {
   blue: { x: 170, y: 41, width: 20, height: 20 },
