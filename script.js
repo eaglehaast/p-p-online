@@ -8298,8 +8298,15 @@ function startNewRound(){
 
   requestAnimationFrame(() => {
     const rect = overlayContainer?.getBoundingClientRect?.();
-    const cssWidth = Math.max(1, rect?.width || CANVAS_BASE_WIDTH);
-    const cssHeight = Math.max(1, rect?.height || CANVAS_BASE_HEIGHT);
+    const cssWidth = Math.max(1, WORLD.width * uiScale);
+    const cssHeight = Math.max(1, WORLD.height * uiScale);
+    console.debug("[overlay] syncOverlayCanvasToGameCanvas sizes", {
+      rect: rect ? { width: rect.width, height: rect.height } : null,
+      world: { width: WORLD.width, height: WORLD.height },
+      uiScale,
+      cssWidth,
+      cssHeight
+    });
     syncOverlayCanvasToGameCanvas(planeCanvas, cssWidth, cssHeight);
     syncAimCanvasLayout();
   });
