@@ -8423,7 +8423,6 @@ function updateUiFrameScale() {
   }
 
   const wrapperEl = document.getElementById("screenWrapper");
-  const wrapperRect = wrapperEl ? wrapperEl.getBoundingClientRect() : null;
   const wrapperStyles = wrapperEl ? window.getComputedStyle(wrapperEl) : null;
   const paddingTop = wrapperStyles ? parseFloat(wrapperStyles.paddingTop) || 0 : 0;
   const paddingRight = wrapperStyles ? parseFloat(wrapperStyles.paddingRight) || 0 : 0;
@@ -8433,16 +8432,21 @@ function updateUiFrameScale() {
   const viewport = typeof window !== "undefined" ? window.visualViewport : null;
   const viewportWidth = viewport && Number.isFinite(viewport.width) ? viewport.width : 0;
   const viewportHeight = viewport && Number.isFinite(viewport.height) ? viewport.height : 0;
-  const wrapperWidth = wrapperRect && Number.isFinite(wrapperRect.width) ? wrapperRect.width : 0;
-  const wrapperHeight = wrapperRect && Number.isFinite(wrapperRect.height) ? wrapperRect.height : 0;
   const fallbackWidth = window.innerWidth || 0;
   const fallbackHeight = window.innerHeight || 0;
-  const baseWidth = wrapperWidth || viewportWidth || fallbackWidth;
-  const baseHeight = wrapperHeight || viewportHeight || fallbackHeight;
+  const baseWidth = viewportWidth || fallbackWidth;
+  const baseHeight = viewportHeight || fallbackHeight;
   const viewW = Math.max(1, baseWidth - paddingLeft - paddingRight);
   const viewH = Math.max(1, baseHeight - paddingTop - paddingBottom);
   const scale = Math.min(viewW / FRAME_BASE_WIDTH, viewH / FRAME_BASE_HEIGHT);
   const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  console.debug('[ui-scale]', {
+    visualViewport: viewport
+      ? { width: viewportWidth, height: viewportHeight }
+      : null,
+    inner: { width: fallbackWidth, height: fallbackHeight },
+    scale: safeScale
+  });
   document.documentElement.style.setProperty('--ui-scale', safeScale);
   syncHudCanvasLayout();
   syncAimCanvasLayout();
@@ -8605,6 +8609,7 @@ window.addEventListener('orientationchange', lockOrientation);
 window.addEventListener('orientationchange', updateUiFrameScale);
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', updateUiFrameScale);
+  window.visualViewport.addEventListener('scroll', updateUiFrameScale);
 }
 
   /* ======= BOOTSTRAP ======= */
