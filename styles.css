@@ -57,11 +57,9 @@ body, button {
 
 #screenWrapper {
   position: fixed;
-  inset: 0;
-  width: 100dvw;
-  height: 100dvh;
   display: grid;
   place-items: center;
+  box-sizing: border-box;
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
 
@@ -153,7 +151,7 @@ body, button {
     width: 460px;
     height: 800px;
     flex: 0 0 auto;
-    --field-left: 51px;
+    --field-left: 50px;
     --field-top: 80px;
     --field-width: 360px;
     --field-height: 640px;
