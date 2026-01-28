@@ -3220,11 +3220,27 @@ const START_PLANES = {
 function getStartPlaneWorldPositions(){
   const originX = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
   const originY = FIELD_BORDER_OFFSET_Y;
-  const toWorld = ({ x, y }) => ({ x: originX + x, y: originY + y });
+  const margin = PLANE_DRAW_H / 2 + 1;
+  const minY = margin;
+  const maxY = WORLD.height - margin;
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  const toWorld = (entry, color) => {
+    const rawY = originY + entry.y;
+    const clampedY = clamp(rawY, minY, maxY);
+    if (DEBUG_START_POSITIONS && color === 'green') {
+      console.log("[start-positions] green y clamp", {
+        rawY,
+        clampedY,
+        minY,
+        maxY
+      });
+    }
+    return { x: originX + entry.x, y: clampedY };
+  };
 
   return {
-    blue: START_PLANES.blue.map(toWorld),
-    green: START_PLANES.green.map(toWorld),
+    blue: START_PLANES.blue.map((entry) => toWorld(entry, 'blue')),
+    green: START_PLANES.green.map((entry) => toWorld(entry, 'green')),
   };
 }
 const FLAG_LAYOUTS = {
