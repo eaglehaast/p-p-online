@@ -3887,8 +3887,8 @@ function colorAngleOffset(color){
 }
 
 let HOME_ROW_Y = {
-  blue: getStartPlaneWorldPositions().blue[0]?.y ?? 40,
-  green: getStartPlaneWorldPositions().green[0]?.y ?? 0,
+  blue: 40,
+  green: 0,
 };
 
 function getHomeRowY(color){
@@ -8653,9 +8653,14 @@ if (window.visualViewport) {
     });
   }
 
+  function forceLayoutReflow() {
+    void (gsFrameEl?.offsetHeight || document.body?.offsetHeight || 0);
+  }
+
   async function bootstrapGame(){
     await waitForStylesReady();
     updateUiFrameScale();
+    forceLayoutReflow();
     resizeCanvas();
     resetGame();
   }
