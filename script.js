@@ -574,6 +574,11 @@ function resizeCanvasToMatchCss(canvas) {
 
 function applyViewTransform(ctx) {
   if (!ctx) return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+function applyWorldViewTransform(ctx) {
+  if (!ctx) return;
   ctx.setTransform(
     VIEW.scaleX * VIEW.dpr,
     0,
@@ -2461,13 +2466,13 @@ function ensurePlaneFlameFx(plane) {
 }
 
 
-function resetCanvasState(ctx, canvas){
+function resetCanvasState(ctx, canvas, applyTransform = applyViewTransform){
   if (!ctx || !canvas) return;
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  applyViewTransform(ctx);
+  applyTransform(ctx);
 }
 
 // Enable smoothing so rotated images (planes, arrows) don't appear jagged
@@ -2599,7 +2604,7 @@ function initGameRenderPipeline(reason = "activate") {
   renderInitState.lastDrawLogTime = 0;
   resizeCanvasFixedForGameBoard();
   applyViewTransform(aimCtx);
-  applyViewTransform(planeCtx);
+  applyWorldViewTransform(planeCtx);
   const metrics = getGameCanvasMetrics();
   logRenderInit("GAME enter", { reason, ...metrics });
   logRenderInit("resize ok", metrics);
@@ -4273,7 +4278,7 @@ function resetGame(options = {}){
     aimCanvas.style.display = "block";
     planeCanvas.style.display = "block";
   }
-  resetCanvasState(planeCtx, planeCanvas);
+  resetCanvasState(planeCtx, planeCanvas, applyWorldViewTransform);
 
   // Остановить основной цикл
   stopGameLoop();
@@ -6213,7 +6218,7 @@ function handleAAForPlane(p, fp){
 }
   /* ======= GAME LOOP ======= */
 function drawInitialFrame(reason = "initial") {
-  resetCanvasState(gsBoardCtx, gsBoardCanvas);
+  resetCanvasState(gsBoardCtx, gsBoardCanvas, applyWorldViewTransform);
   if (isSpriteReady(backgroundImg)) {
     drawFieldBackground(gsBoardCtx, WORLD.width, WORLD.height);
   } else {
@@ -6252,7 +6257,7 @@ function gameDraw(){
   globalFrame += delta;
 
   // фон
-  resetCanvasState(gsBoardCtx, gsBoardCanvas);
+  resetCanvasState(gsBoardCtx, gsBoardCanvas, applyWorldViewTransform);
   drawFieldBackground(gsBoardCtx, WORLD.width, WORLD.height);
   drawMapLayer(gsBoardCtx);
 
@@ -7180,7 +7185,7 @@ function drawPlaneCounterIcon(ctx2d, x, y, color, scale = 1) {
 }
 
 function drawPlanesAndTrajectories(){
-  resetCanvasState(planeCtx, planeCanvas);
+  resetCanvasState(planeCtx, planeCanvas, applyWorldViewTransform);
   const scaleX = VIEW.scaleX;
   const scaleY = VIEW.scaleY;
   planeCtx.save();
@@ -8670,7 +8675,7 @@ function resizeCanvasFixedForGameBoard() {
   if (gsBoardCanvas.width !== backingW) gsBoardCanvas.width = backingW;
   if (gsBoardCanvas.height !== backingH) gsBoardCanvas.height = backingH;
   computeViewFromCanvas(gsBoardCanvas);
-  applyViewTransform(gsBoardCtx);
+  applyWorldViewTransform(gsBoardCtx);
   syncAimCanvasLayout();
 
   if (planeCanvas) {
@@ -8678,7 +8683,7 @@ function resizeCanvasFixedForGameBoard() {
     const planeBackingH = Math.max(1, Math.round(cssH * RAW_DPR));
     if (planeCanvas.width !== planeBackingW) planeCanvas.width = planeBackingW;
     if (planeCanvas.height !== planeBackingH) planeCanvas.height = planeBackingH;
-    applyViewTransform(planeCtx);
+    applyWorldViewTransform(planeCtx);
   }
 }
 
@@ -8759,9 +8764,9 @@ async function syncLayoutAndField(reason = "sync") {
     if (hudCanvas.width !== hudBackingW) hudCanvas.width = hudBackingW;
     if (hudCanvas.height !== hudBackingH) hudCanvas.height = hudBackingH;
   }
-  applyViewTransform(gsBoardCtx);
+  applyWorldViewTransform(gsBoardCtx);
   applyViewTransform(aimCtx);
-  applyViewTransform(planeCtx);
+  applyWorldViewTransform(planeCtx);
 
   requestAnimationFrame(syncAllCanvasBackingStores);
   schedulePlaneFlameSync();
