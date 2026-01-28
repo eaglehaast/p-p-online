@@ -532,7 +532,9 @@ function computeViewFromCanvas(canvas) {
   }
 
   const { RAW_DPR } = getCanvasDpr();
-  const { cssW, cssH } = getCanvasDesignMetrics(canvas);
+  const rect = canvas.getBoundingClientRect();
+  const cssW = Math.max(1, rect.width);
+  const cssH = Math.max(1, rect.height);
   const pxW = Math.max(1, Math.round(cssW * RAW_DPR));
   const pxH = Math.max(1, Math.round(cssH * RAW_DPR));
 
@@ -541,8 +543,8 @@ function computeViewFromCanvas(canvas) {
   VIEW.cssH = cssH;
   VIEW.pxW = pxW;
   VIEW.pxH = pxH;
-  VIEW.scaleX = pxW / WORLD.width;
-  VIEW.scaleY = pxH / WORLD.height;
+  VIEW.scaleX = cssW / WORLD.width;
+  VIEW.scaleY = cssH / WORLD.height;
 }
 
 function worldToPx(x, y) {
@@ -572,7 +574,14 @@ function resizeCanvasToMatchCss(canvas) {
 
 function applyViewTransform(ctx) {
   if (!ctx) return;
-  ctx.setTransform(VIEW.scaleX, 0, 0, VIEW.scaleY, 0, 0);
+  ctx.setTransform(
+    VIEW.scaleX * VIEW.dpr,
+    0,
+    0,
+    VIEW.scaleY * VIEW.dpr,
+    0,
+    0
+  );
 }
 
 function syncCanvasBackingStore(canvas, baseWidth, baseHeight) {
