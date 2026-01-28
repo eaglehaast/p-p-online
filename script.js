@@ -8624,6 +8624,8 @@ function resizeCanvas() {
     // continue resizing instead of early returning
   }
 
+  updateUiFrameScale();
+
   const rootStyle = window.getComputedStyle(document.documentElement);
   const uiScaleRaw = rootStyle.getPropertyValue('--ui-scale');
   const uiScaleValue = uiScaleRaw ? parseFloat(uiScaleRaw) : 1;
@@ -8649,7 +8651,6 @@ function resizeCanvas() {
     dpr: RAW_DPR
   };
 
-  updateUiFrameScale();
   syncBackgroundLayout(FRAME_BASE_WIDTH, FRAME_BASE_HEIGHT);
   const canvas = gsBoardCanvas;
   const gsBackingW = Math.max(1, Math.round(CANVAS_BASE_WIDTH * RAW_DPR));
