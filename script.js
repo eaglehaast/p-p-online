@@ -3220,11 +3220,27 @@ const START_PLANES = {
 function getStartPlaneWorldPositions(){
   const originX = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
   const originY = FIELD_BORDER_OFFSET_Y;
-  const toWorld = ({ x, y }) => ({ x: originX + x, y: originY + y });
+  const margin = PLANE_DRAW_H / 2 + 1;
+  const minY = margin;
+  const maxY = WORLD.height - margin;
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  const toWorld = (entry, color) => {
+    const rawY = originY + entry.y;
+    const clampedY = clamp(rawY, minY, maxY);
+    if (DEBUG_START_POSITIONS && color === 'green') {
+      console.log("[start-positions] green y clamp", {
+        rawY,
+        clampedY,
+        minY,
+        maxY
+      });
+    }
+    return { x: originX + entry.x, y: clampedY };
+  };
 
   return {
-    blue: START_PLANES.blue.map(toWorld),
-    green: START_PLANES.green.map(toWorld),
+    blue: START_PLANES.blue.map((entry) => toWorld(entry, 'blue')),
+    green: START_PLANES.green.map((entry) => toWorld(entry, 'green')),
   };
 }
 const FLAG_LAYOUTS = {
@@ -3275,14 +3291,26 @@ function isBrickPixel(x, y){
 }
 
   function updateFieldDimensions(){
-    if(brickFrameImg && brickFrameImg.naturalWidth && brickFrameImg.naturalHeight){
-      const aspect = brickFrameImg.naturalWidth / brickFrameImg.naturalHeight;
-      FIELD_WIDTH = WORLD.height * aspect;
-      FIELD_LEFT = (WORLD.width - FIELD_WIDTH) / 2;
+    const container = gsFrameEl || document.getElementById("gameContainer");
+    const styles = container ? window.getComputedStyle(container) : null;
+    const cssLeftRaw = styles?.getPropertyValue('--field-left') ?? '';
+    const cssWidthRaw = styles?.getPropertyValue('--field-width') ?? '';
+    const cssLeft = parseFloat(cssLeftRaw);
+    const cssWidth = parseFloat(cssWidthRaw);
+
+    if (Number.isFinite(cssWidth) && cssWidth > 0) {
+      if (Math.abs(cssWidth - WORLD.width) < 0.1) {
+        FIELD_WIDTH = WORLD.width;
+        FIELD_LEFT = 0;
+      } else {
+        FIELD_WIDTH = cssWidth;
+        FIELD_LEFT = Number.isFinite(cssLeft) ? cssLeft : 0;
+      }
     } else {
       FIELD_LEFT = 0;
       FIELD_WIDTH = WORLD.width;
     }
+
     updateFieldBorderOffset();
     rebuildCollisionSurfaces();
   }
@@ -8521,6 +8549,7 @@ function resizeCanvas() {
     // continue resizing instead of early returning
   }
 
+  updateUiFrameScale();
   const rootStyle = window.getComputedStyle(document.documentElement);
   const uiScaleRaw = rootStyle.getPropertyValue('--ui-scale');
   const uiScaleValue = uiScaleRaw ? parseFloat(uiScaleRaw) : 1;
@@ -8546,7 +8575,6 @@ function resizeCanvas() {
     dpr: RAW_DPR
   };
 
-  updateUiFrameScale();
   syncBackgroundLayout(FRAME_BASE_WIDTH, FRAME_BASE_HEIGHT);
   const canvas = gsBoardCanvas;
   const gsBackingW = Math.max(1, Math.round(CANVAS_BASE_WIDTH * RAW_DPR));
@@ -8610,7 +8638,6 @@ function resizeCanvas() {
 }
 
 window.addEventListener('resize', resizeCanvas);
-window.addEventListener('resize', updateUiFrameScale);
 window.addEventListener('load', updateUiFrameScale);
 // Lock orientation to portrait and prevent the canvas from redrawing on rotation
 function lockOrientation(){
@@ -8622,7 +8649,7 @@ function lockOrientation(){
 
 lockOrientation();
 window.addEventListener('orientationchange', lockOrientation);
-window.addEventListener('orientationchange', updateUiFrameScale);
+window.addEventListener('orientationchange', resizeCanvas);
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', updateUiFrameScale);
   window.visualViewport.addEventListener('scroll', updateUiFrameScale);
@@ -8637,9 +8664,16 @@ if (window.visualViewport) {
     });
   }
 
+  function waitForNextFrame() {
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => resolve());
+    });
+  }
+
   async function bootstrapGame(){
     await waitForStylesReady();
     updateUiFrameScale();
+    await waitForNextFrame();
     resizeCanvas();
     resetGame();
   }
