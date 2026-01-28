@@ -8657,9 +8657,16 @@ if (window.visualViewport) {
     void (gsFrameEl?.offsetHeight || document.body?.offsetHeight || 0);
   }
 
+  function nextFrame() {
+    return new Promise((resolve) => {
+      window.requestAnimationFrame(() => resolve());
+    });
+  }
+
   async function bootstrapGame(){
     await waitForStylesReady();
     updateUiFrameScale();
+    await nextFrame();
     forceLayoutReflow();
     resizeCanvas();
     resetGame();
