@@ -8802,8 +8802,27 @@ async function syncLayoutAndField(reason = "sync") {
   }
 }
 
-window.addEventListener('resize', () => {
-  void syncLayoutAndField("viewport change");
+function logLayoutMetrics(reason) {
+  const overlayEl = overlayContainer || document.getElementById("overlayContainer");
+  const gameCanvasEl = gsBoardCanvas || document.getElementById("gameCanvas");
+  const uiFrameElLocal = uiFrameEl || document.getElementById("uiFrame");
+  const uiScaleRaw = getComputedStyle(document.documentElement).getPropertyValue('--ui-scale');
+  const uiScale = parseFloat(uiScaleRaw);
+
+  console.log('[layout metrics]', {
+    reason,
+    WORLD_width: WORLD.width,
+    FRAME_BASE_WIDTH,
+    uiScale,
+    overlayContainerWidth: overlayEl?.getBoundingClientRect?.().width ?? null,
+    gameCanvasWidth: gameCanvasEl?.getBoundingClientRect?.().width ?? null,
+    uiFrameWidth: uiFrameElLocal?.getBoundingClientRect?.().width ?? null
+  });
+}
+
+window.addEventListener('resize', async () => {
+  await syncLayoutAndField("viewport change");
+  logLayoutMetrics("resize");
 });
 window.addEventListener('load', () => {
   void syncLayoutAndField("load");
@@ -8822,11 +8841,17 @@ window.addEventListener('orientationchange', () => {
   void syncLayoutAndField("orientation change");
 });
 if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', () => {
-    void syncLayoutAndField("viewport change");
+  window.visualViewport.addEventListener('resize', async () => {
+    await syncLayoutAndField("viewport change");
+    if (window.visualViewport.scale !== 1) {
+      logLayoutMetrics("visualViewport resize");
+    }
   });
-  window.visualViewport.addEventListener('scroll', () => {
-    void syncLayoutAndField("viewport change");
+  window.visualViewport.addEventListener('scroll', async () => {
+    await syncLayoutAndField("viewport change");
+    if (window.visualViewport.scale !== 1) {
+      logLayoutMetrics("visualViewport scroll");
+    }
   });
 }
 
@@ -8842,6 +8867,7 @@ if (window.visualViewport) {
   async function bootstrapGame(){
     await waitForStylesReady();
     await syncLayoutAndField("bootstrap");
+    logLayoutMetrics("bootstrap");
     resetGame();
   }
 
