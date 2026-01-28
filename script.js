@@ -8536,6 +8536,24 @@ function applyCurrentMap(upcomingRoundNumber){
   renderScoreboard();
 }
 
+function syncWrapperToVisualViewport() {
+  const wrapperEl = document.getElementById("screenWrapper");
+  if (!(wrapperEl instanceof HTMLElement)) {
+    return;
+  }
+
+  const viewport = typeof window !== "undefined" ? window.visualViewport : null;
+  const width = viewport && Number.isFinite(viewport.width) ? viewport.width : (window.innerWidth || 0);
+  const height = viewport && Number.isFinite(viewport.height) ? viewport.height : (window.innerHeight || 0);
+  const offsetLeft = viewport && Number.isFinite(viewport.offsetLeft) ? viewport.offsetLeft : 0;
+  const offsetTop = viewport && Number.isFinite(viewport.offsetTop) ? viewport.offsetTop : 0;
+
+  wrapperEl.style.left = `${offsetLeft}px`;
+  wrapperEl.style.top = `${offsetTop}px`;
+  wrapperEl.style.width = `${width}px`;
+  wrapperEl.style.height = `${height}px`;
+}
+
 function updateUiFrameScale() {
   if (!(uiFrameEl instanceof HTMLElement)) {
     return;
@@ -8572,6 +8590,16 @@ function updateUiFrameScale() {
 }
 
 /* ======= CANVAS RESIZE ======= */
+function forceLayoutReflow() {
+  void (gsFrameEl?.offsetHeight || document.body?.offsetHeight || 0);
+}
+
+function nextFrame() {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
+}
+
 function syncAllCanvasBackingStores() {
   logResizeDebug('syncAllCanvasBackingStores');
   trackBootResizeCount('syncAllCanvasBackingStores');
@@ -8583,7 +8611,6 @@ function syncAllCanvasBackingStores() {
 
 function resizeCanvasFixedForGameBoard() {
   const { RAW_DPR } = getCanvasDpr();
-  updateUiFrameScale();
   syncBackgroundLayout(FRAME_BASE_WIDTH, FRAME_BASE_HEIGHT);
 
   const cssW = CANVAS_BASE_WIDTH;
@@ -8613,7 +8640,7 @@ let lastResizeMetrics = {
   dpr: 0
 };
 
-function resizeCanvas() {
+async function syncLayoutAndField(reason = "sync") {
   logResizeDebug('resizeCanvas');
   trackBootResizeCount('resizeCanvas');
   // Keep the game in portrait mode: if the device rotates to landscape,
@@ -8621,10 +8648,12 @@ function resizeCanvas() {
   // remain correctly sized even if the device starts in landscape.
   if(screen.orientation && screen.orientation.type.startsWith('landscape')){
     lockOrientation();
-    // continue resizing instead of early returning
   }
 
+  syncWrapperToVisualViewport();
   updateUiFrameScale();
+  await nextFrame();
+  forceLayoutReflow();
 
   const rootStyle = window.getComputedStyle(document.documentElement);
   const uiScaleRaw = rootStyle.getPropertyValue('--ui-scale');
@@ -8633,16 +8662,6 @@ function resizeCanvas() {
   const cssW = CANVAS_BASE_WIDTH;
   const cssH = CANVAS_BASE_HEIGHT;
   const { RAW_DPR } = getCanvasDpr();
-  const unchanged =
-    Math.abs(cssW - lastResizeMetrics.cssW) < 0.1 &&
-    Math.abs(cssH - lastResizeMetrics.cssH) < 0.1 &&
-    Math.abs(uiScale - lastResizeMetrics.scale) < 0.0001 &&
-    Math.abs(RAW_DPR - lastResizeMetrics.dpr) < 0.001;
-
-  if (unchanged) {
-    logResizeDebug();
-    return;
-  }
 
   lastResizeMetrics = {
     cssW,
@@ -8650,6 +8669,10 @@ function resizeCanvas() {
     scale: uiScale,
     dpr: RAW_DPR
   };
+
+  updateFieldDimensions();
+  syncAimCanvasLayout();
+  syncHudCanvasLayout();
 
   syncBackgroundLayout(FRAME_BASE_WIDTH, FRAME_BASE_HEIGHT);
   const canvas = gsBoardCanvas;
@@ -8659,21 +8682,29 @@ function resizeCanvas() {
   if (canvas.height !== gsBackingH) canvas.height = gsBackingH;
   computeViewFromCanvas(canvas);
 
-  syncAimCanvasLayout();
   if (planeCanvas) {
     const planeBackingW = Math.max(1, Math.round(CANVAS_BASE_WIDTH * RAW_DPR));
     const planeBackingH = Math.max(1, Math.round(CANVAS_BASE_HEIGHT * RAW_DPR));
     if (planeCanvas.width !== planeBackingW) planeCanvas.width = planeBackingW;
     if (planeCanvas.height !== planeBackingH) planeCanvas.height = planeBackingH;
   }
+  if (aimCanvas) {
+    const aimBackingW = Math.max(1, Math.round(FRAME_BASE_WIDTH * RAW_DPR));
+    const aimBackingH = Math.max(1, Math.round(FRAME_BASE_HEIGHT * RAW_DPR));
+    if (aimCanvas.width !== aimBackingW) aimCanvas.width = aimBackingW;
+    if (aimCanvas.height !== aimBackingH) aimCanvas.height = aimBackingH;
+  }
+  if (hudCanvas) {
+    const hudBackingW = Math.max(1, Math.round(FRAME_BASE_WIDTH * RAW_DPR));
+    const hudBackingH = Math.max(1, Math.round(FRAME_BASE_HEIGHT * RAW_DPR));
+    if (hudCanvas.width !== hudBackingW) hudCanvas.width = hudBackingW;
+    if (hudCanvas.height !== hudBackingH) hudCanvas.height = hudBackingH;
+  }
   applyViewTransform(gsBoardCtx);
   applyViewTransform(aimCtx);
   applyViewTransform(planeCtx);
 
-  updateFieldDimensions();
-
   requestAnimationFrame(syncAllCanvasBackingStores);
-
   schedulePlaneFlameSync();
 
   // Переинициализируем самолёты
@@ -8701,6 +8732,7 @@ function resizeCanvas() {
 
   if (DEBUG_RESIZE) {
     console.log('Layout rects after resize', {
+      reason,
       gsFrameEl: rectSummary(gsFrameEl),
       stage: rectSummary(gsFrameEl),
       gameCanvas: rectSummary(gsBoardCanvas),
@@ -8713,8 +8745,12 @@ function resizeCanvas() {
   }
 }
 
-window.addEventListener('resize', resizeCanvas);
-window.addEventListener('load', updateUiFrameScale);
+window.addEventListener('resize', () => {
+  void syncLayoutAndField("viewport change");
+});
+window.addEventListener('load', () => {
+  void syncLayoutAndField("load");
+});
 // Lock orientation to portrait and prevent the canvas from redrawing on rotation
 function lockOrientation(){
   if(screen.orientation && screen.orientation.lock){
@@ -8724,10 +8760,17 @@ function lockOrientation(){
 }
 
 lockOrientation();
-window.addEventListener('orientationchange', resizeCanvas);
+window.addEventListener('orientationchange', () => {
+  lockOrientation();
+  void syncLayoutAndField("orientation change");
+});
 if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', updateUiFrameScale);
-  window.visualViewport.addEventListener('scroll', updateUiFrameScale);
+  window.visualViewport.addEventListener('resize', () => {
+    void syncLayoutAndField("viewport change");
+  });
+  window.visualViewport.addEventListener('scroll', () => {
+    void syncLayoutAndField("viewport change");
+  });
 }
 
   /* ======= BOOTSTRAP ======= */
@@ -8739,22 +8782,9 @@ if (window.visualViewport) {
     });
   }
 
-  function forceLayoutReflow() {
-    void (gsFrameEl?.offsetHeight || document.body?.offsetHeight || 0);
-  }
-
-  function nextFrame() {
-    return new Promise((resolve) => {
-      window.requestAnimationFrame(() => resolve());
-    });
-  }
-
   async function bootstrapGame(){
     await waitForStylesReady();
-    updateUiFrameScale();
-    await nextFrame();
-    forceLayoutReflow();
-    resizeCanvas();
+    await syncLayoutAndField("bootstrap");
     resetGame();
   }
 
