@@ -4280,29 +4280,37 @@ function updateModePlanesPosition(activeButton){
   const rootRect = modeMenuDiv.getBoundingClientRect();
   if(!btnRect || !rootRect) return;
 
-  const rootX = btnRect.left - rootRect.left;
-  const rootY = btnRect.top - rootRect.top;
+  const btnLeftD = toDesignCoords(btnRect.left, btnRect.top).x;
+  const btnTopD = toDesignCoords(btnRect.left, btnRect.top).y;
+  const rootLeftD = toDesignCoords(rootRect.left, rootRect.top).x;
+  const rootTopD = toDesignCoords(rootRect.left, rootRect.top).y;
+  const designOrigin = toDesignCoords(rootRect.left, rootRect.top);
+  const uiScale = Number.isFinite(designOrigin.uiScale) ? designOrigin.uiScale : 1;
+  const btnW_D = btnRect.width / uiScale;
+  const btnH_D = btnRect.height / uiScale;
+  const rootX_D = btnLeftD - rootLeftD;
+  const rootY_D = btnTopD - rootTopD;
   const leftOffset = 36 + 12;
   const rightOffset = 12;
 
-  const updatePlane = (plane, targetX) => {
+  const updatePlane = (plane, targetX_D) => {
     const planeRect = plane.getBoundingClientRect();
-    const planeHeight = planeRect.height || plane.offsetHeight || 0;
-    const targetY = rootY + btnRect.height / 2 - planeHeight / 2;
-    plane.style.transform = `translate(${targetX}px, ${targetY}px)`;
-    return targetY;
+    const planeHeight_D = (planeRect.height || plane.offsetHeight || 0) / uiScale;
+    const targetY_D = rootY_D + btnH_D / 2 - planeHeight_D / 2;
+    plane.style.transform = `translate(${targetX_D}px, ${targetY_D}px)`;
+    return targetY_D;
   };
 
-  const leftX = rootX - leftOffset;
-  const rightX = rootX + btnRect.width + rightOffset;
+  const leftX_D = rootX_D - leftOffset;
+  const rightX_D = rootX_D + btnW_D + rightOffset;
   leftModePlane.style.opacity = "1";
   rightModePlane.style.opacity = "1";
 
   const needsInitialPosition = !modeMenuDiv.dataset.mmModePlanesReady;
   const applyTarget = () => {
-    const targetY = updatePlane(leftModePlane, leftX);
-    updatePlane(rightModePlane, rightX);
-    lastModePlaneTarget = { leftX, rightX, targetY };
+    const targetY = updatePlane(leftModePlane, leftX_D);
+    updatePlane(rightModePlane, rightX_D);
+    lastModePlaneTarget = { leftX: leftX_D, rightX: rightX_D, targetY };
     logMenuPlaneMetricsOnce();
   };
 
@@ -4338,29 +4346,37 @@ function updateRulesPlanesPosition(activeButton){
   const rootRect = modeMenuDiv.getBoundingClientRect();
   if(!btnRect || !rootRect) return;
 
-  const rootX = btnRect.left - rootRect.left;
-  const rootY = btnRect.top - rootRect.top;
+  const btnLeftD = toDesignCoords(btnRect.left, btnRect.top).x;
+  const btnTopD = toDesignCoords(btnRect.left, btnRect.top).y;
+  const rootLeftD = toDesignCoords(rootRect.left, rootRect.top).x;
+  const rootTopD = toDesignCoords(rootRect.left, rootRect.top).y;
+  const designOrigin = toDesignCoords(rootRect.left, rootRect.top);
+  const uiScale = Number.isFinite(designOrigin.uiScale) ? designOrigin.uiScale : 1;
+  const btnW_D = btnRect.width / uiScale;
+  const btnH_D = btnRect.height / uiScale;
+  const rootX_D = btnLeftD - rootLeftD;
+  const rootY_D = btnTopD - rootTopD;
   const leftOffset = 36 + 12;
   const rightOffset = 12;
 
-  const updatePlane = (plane, targetX) => {
+  const updatePlane = (plane, targetX_D) => {
     const planeRect = plane.getBoundingClientRect();
-    const planeHeight = planeRect.height || plane.offsetHeight || 0;
-    const targetY = rootY + btnRect.height / 2 - planeHeight / 2;
-    plane.style.transform = `translate(${targetX}px, ${targetY}px)`;
-    return targetY;
+    const planeHeight_D = (planeRect.height || plane.offsetHeight || 0) / uiScale;
+    const targetY_D = rootY_D + btnH_D / 2 - planeHeight_D / 2;
+    plane.style.transform = `translate(${targetX_D}px, ${targetY_D}px)`;
+    return targetY_D;
   };
 
-  const leftX = rootX - leftOffset;
-  const rightX = rootX + btnRect.width + rightOffset;
+  const leftX_D = rootX_D - leftOffset;
+  const rightX_D = rootX_D + btnW_D + rightOffset;
   leftRulesPlane.style.opacity = "1";
   rightRulesPlane.style.opacity = "1";
 
   const needsInitialPosition = !modeMenuDiv.dataset.mmRulesPlanesReady;
   const applyTarget = () => {
-    const targetY = updatePlane(leftRulesPlane, leftX);
-    updatePlane(rightRulesPlane, rightX);
-    lastRulesPlaneTarget = { leftX, rightX, targetY };
+    const targetY = updatePlane(leftRulesPlane, leftX_D);
+    updatePlane(rightRulesPlane, rightX_D);
+    lastRulesPlaneTarget = { leftX: leftX_D, rightX: rightX_D, targetY };
     logMenuPlaneMetricsOnce();
   };
 
