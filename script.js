@@ -26,6 +26,7 @@ const DEBUG_BRICK_COLLISIONS = false;
 const DEBUG_COLLISIONS_TOI = false;
 const DEBUG_COLLISIONS_VERBOSE = false;
 const DEBUG_STARTUP_WORLDY = false;
+const DEBUG_WRAPPER_SYNC = false;
 
 const bootTrace = {
   startTs: null,
@@ -121,6 +122,10 @@ const planeFlameDebugState = {
 };
 
 const startupWorldYDebugState = {
+  logged: false
+};
+
+const wrapperSyncDebugState = {
   logged: false
 };
 
@@ -8548,10 +8553,37 @@ function syncWrapperToVisualViewport() {
   const offsetLeft = viewport && Number.isFinite(viewport.offsetLeft) ? viewport.offsetLeft : 0;
   const offsetTop = viewport && Number.isFinite(viewport.offsetTop) ? viewport.offsetTop : 0;
 
-  wrapperEl.style.left = `${offsetLeft}px`;
-  wrapperEl.style.top = `${offsetTop}px`;
-  wrapperEl.style.width = `${width}px`;
-  wrapperEl.style.height = `${height}px`;
+wrapperEl.style.position = 'fixed';
+wrapperEl.style.inset = 'auto';
+wrapperEl.style.right = 'auto';
+wrapperEl.style.bottom = 'auto';
+
+wrapperEl.style.left = `${offsetLeft}px`;
+wrapperEl.style.top = `${offsetTop}px`;
+wrapperEl.style.width = `${width}px`;
+wrapperEl.style.height = `${height}px`;
+
+
+  if (DEBUG_WRAPPER_SYNC && !wrapperSyncDebugState.logged) {
+    wrapperSyncDebugState.logged = true;
+    const rect = wrapperEl.getBoundingClientRect();
+    console.debug('[wrapper-sync]', {
+      visualViewport: viewport
+        ? {
+          width: viewport.width,
+          height: viewport.height,
+          offsetLeft: viewport.offsetLeft,
+          offsetTop: viewport.offsetTop
+        }
+        : null,
+      wrapperRect: {
+        width: rect.width,
+        height: rect.height,
+        left: rect.left,
+        top: rect.top
+      }
+    });
+  }
 }
 
 function updateUiFrameScale() {
