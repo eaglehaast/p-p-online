@@ -8713,7 +8713,6 @@ function resizeCanvas() {
 }
 
 window.addEventListener('resize', resizeCanvas);
-window.addEventListener('resize', updateUiFrameScale);
 window.addEventListener('load', updateUiFrameScale);
 // Lock orientation to portrait and prevent the canvas from redrawing on rotation
 function lockOrientation(){
@@ -8724,8 +8723,7 @@ function lockOrientation(){
 }
 
 lockOrientation();
-window.addEventListener('orientationchange', lockOrientation);
-window.addEventListener('orientationchange', updateUiFrameScale);
+window.addEventListener('orientationchange', resizeCanvas);
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', updateUiFrameScale);
   window.visualViewport.addEventListener('scroll', updateUiFrameScale);
