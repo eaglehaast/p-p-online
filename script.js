@@ -610,7 +610,8 @@ function resizeCanvasToMatchCss(canvas) {
 
 function applyViewTransform(ctx) {
   if (!ctx) return;
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const dpr = Number.isFinite(FRAME_VIEW.dpr) && FRAME_VIEW.dpr > 0 ? FRAME_VIEW.dpr : 1;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
 function applyWorldViewTransform(ctx) {
@@ -2640,6 +2641,7 @@ function initGameRenderPipeline(reason = "activate") {
   renderInitState.lastDrawLogTime = 0;
   resizeCanvasFixedForGameBoard();
   applyViewTransform(aimCtx);
+  applyViewTransform(hudCtx);
   applyWorldViewTransform(planeCtx);
   const metrics = getGameCanvasMetrics();
   logRenderInit("GAME enter", { reason, ...metrics });
@@ -8806,6 +8808,7 @@ async function syncLayoutAndField(reason = "sync") {
   computeFrameViewFromCanvas(aimCanvas || hudCanvas);
   applyWorldViewTransform(gsBoardCtx);
   applyViewTransform(aimCtx);
+  applyViewTransform(hudCtx);
   applyWorldViewTransform(planeCtx);
 
   requestAnimationFrame(syncAllCanvasBackingStores);
