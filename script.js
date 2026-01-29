@@ -28,6 +28,7 @@ const DEBUG_COLLISIONS_VERBOSE = false;
 const DEBUG_STARTUP_WORLDY = false;
 const DEBUG_WRAPPER_SYNC = false;
 const DEBUG_BOARD_VIEW = false;
+const DEBUG_INPUT_TRANSFORMS = false;
 
 const bootTrace = {
   startTs: null,
@@ -122,6 +123,10 @@ const renderInitState = {
 const pointerDebugState = {
   logged: 0,
   lastPoint: null
+};
+
+const inputTransformDebugState = {
+  lastCrossByCanvas: new Map()
 };
 
 const aimDebugState = {
@@ -505,6 +510,72 @@ function logPointerDebugEvent(event) {
     x: board.x,
     y: board.y
   });
+}
+
+function getInputDebugCanvas(event) {
+  const target = event?.target;
+  if (target instanceof HTMLCanvasElement) {
+    if (target === aimCanvas) return { canvas: target, label: "aim" };
+    if (target === hudCanvas) return { canvas: target, label: "hud" };
+    if (target === gsBoardCanvas || target === planeCanvas) {
+      return { canvas: target, label: "board" };
+    }
+    return { canvas: target, label: target.id || "canvas" };
+  }
+  if (gsBoardCanvas instanceof HTMLCanvasElement) {
+    return { canvas: gsBoardCanvas, label: "board" };
+  }
+  return { canvas: null, label: "unknown" };
+}
+
+function drawInputDebugCross(ctx, canvas, local) {
+  if (!ctx || !canvas) return;
+  const { RAW_DPR } = getCanvasDpr();
+  const size = 2;
+  ctx.save();
+  ctx.setTransform(RAW_DPR, 0, 0, RAW_DPR, 0, 0);
+  ctx.strokeStyle = "rgba(255, 0, 255, 0.9)";
+  ctx.lineWidth = 1;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(local.x - size, local.y);
+  ctx.lineTo(local.x + size, local.y);
+  ctx.moveTo(local.x, local.y - size);
+  ctx.lineTo(local.x, local.y + size);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function logInputTransforms(event) {
+  if (!DEBUG_INPUT_TRANSFORMS) return;
+  if (event?.type !== "pointermove") return;
+  const { clientX, clientY } = getPointerClientCoords(event);
+  const { canvas, label } = getInputDebugCanvas(event);
+  if (!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  const local = { x: clientX - rect.left, y: clientY - rect.top };
+  const world = pxToWorld(local.x, local.y);
+  const roundTrip = worldToPx(world.x, world.y);
+  const distance = Math.hypot(local.x - roundTrip.x, local.y - roundTrip.y);
+
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    drawInputDebugCross(ctx, canvas, local);
+  }
+
+  const payload = {
+    canvas: label,
+    client: { x: clientX, y: clientY },
+    local,
+    world,
+    roundTrip,
+    distance
+  };
+  if (distance > 0.5) {
+    console.warn("[input-transform-mismatch]", payload);
+  } else {
+    console.log("[input-transform]", payload);
+  }
 }
 
 function getCanvasDesignMetrics(canvas) {
@@ -4733,6 +4804,7 @@ function onCanvasPointerDown(e){
 
 function onCanvasPointerMove(e){
   logPointerDebugEvent(e);
+  logInputTransforms(e);
   const { x: designX, y: designY } = getPointerDesignCoords(e);
   const { x, y } = designToBoardCoords(designX, designY);
   if(phase !== 'AA_PLACEMENT'){
@@ -4906,6 +4978,7 @@ function drawAAPreview(){
 function onHandleMove(e){
   if(!handleCircle.active)return;
   e.preventDefault();
+  logInputTransforms(e);
   const { x: designX, y: designY } = getPointerDesignCoords(e);
   const { x, y } = designToBoardCoords(designX, designY);
 
