@@ -8739,6 +8739,64 @@ let lastResizeMetrics = {
   dpr: 0
 };
 
+const DUMP_VIEWS_DEBOUNCE_MS = 100;
+let lastDumpViewsAt = 0;
+let lastDumpViewsReason = "";
+
+function dumpViews(reason) {
+  const now = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+  if (reason === lastDumpViewsReason && now - lastDumpViewsAt < DUMP_VIEWS_DEBOUNCE_MS) {
+    return;
+  }
+  lastDumpViewsAt = now;
+  lastDumpViewsReason = reason;
+
+  const describeCanvas = (canvas, ctx, viewLabel) => {
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const transform = ctx?.getTransform ? ctx.getTransform() : null;
+    return {
+      backingStore: { width: canvas.width, height: canvas.height },
+      css: { width: canvas.style.width, height: canvas.style.height },
+      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      devicePixelRatio: window.devicePixelRatio,
+      view: viewLabel,
+      transform: transform
+        ? { a: transform.a, b: transform.b, c: transform.c, d: transform.d, e: transform.e, f: transform.f }
+        : null
+    };
+  };
+
+  const uiScale = window.getComputedStyle(document.documentElement)
+    .getPropertyValue("--ui-scale")
+    .trim();
+
+  console.log("[dumpViews]", {
+    reason,
+    canvases: {
+      gsBoardCanvas: describeCanvas(gsBoardCanvas, gsBoardCtx, "BOARD_VIEW"),
+      planeCanvas: describeCanvas(planeCanvas, planeCtx, "BOARD_VIEW"),
+      aimCanvas: describeCanvas(aimCanvas, aimCtx, "FRAME_VIEW"),
+      hudCanvas: describeCanvas(hudCanvas, hudCtx, "FRAME_VIEW")
+    },
+    views: {
+      BOARD_VIEW: {
+        scaleX: BOARD_VIEW.scaleX,
+        scaleY: BOARD_VIEW.scaleY,
+        cssW: BOARD_VIEW.cssW,
+        cssH: BOARD_VIEW.cssH
+      },
+      FRAME_VIEW: {
+        scaleX: FRAME_VIEW.scaleX,
+        scaleY: FRAME_VIEW.scaleY,
+        cssW: FRAME_VIEW.cssW,
+        cssH: FRAME_VIEW.cssH
+      }
+    },
+    uiScale
+  });
+}
+
 async function syncLayoutAndField(reason = "sync") {
   logResizeDebug('resizeCanvas');
   trackBootResizeCount('resizeCanvas');
@@ -8852,6 +8910,8 @@ async function syncLayoutAndField(reason = "sync") {
       bluePlaneCounter: rectSummary(bluePlaneCounter),
     });
   }
+
+  dumpViews(reason);
 }
 
 function logLayoutMetrics(reason) {
