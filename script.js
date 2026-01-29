@@ -6476,23 +6476,25 @@ function gameDraw(){
     aimCtx.setTransform(1, 0, 0, 1, 0, 0);
     aimCtx.clearRect(0, 0, aimCanvas.width, aimCanvas.height);
     aimCtx.save();
+    const aimScaleX = BOARD_VIEW.scaleX * BOARD_VIEW.dpr;
+    const aimScaleY = BOARD_VIEW.scaleY * BOARD_VIEW.dpr;
     const { x: aimOffsetX, y: aimOffsetY } = getFieldOffsetsInCanvasSpace(
       aimCanvas,
-      BOARD_VIEW.scaleX,
-      BOARD_VIEW.scaleY
+      aimScaleX,
+      aimScaleY
     );
     aimCtx.setTransform(
-      BOARD_VIEW.scaleX,
+      aimScaleX,
       0,
       0,
-      BOARD_VIEW.scaleY,
+      aimScaleY,
       aimOffsetX,
       aimOffsetY
     );
     aimCtx.globalAlpha = arrowAlpha;
     drawArrow(aimCtx, startX, startY, baseDx, baseDy);
     if (DEBUG_AIM) {
-      const debugSize = 3 / Math.max(1, BOARD_VIEW.scaleX, BOARD_VIEW.scaleY);
+      const debugSize = 3 / Math.max(1, aimScaleX, aimScaleY);
       aimCtx.globalAlpha = 1;
       aimCtx.fillStyle = 'magenta';
       aimCtx.beginPath();
@@ -7333,8 +7335,8 @@ function drawAimOverlay(rangeTextInfo) {
   if (!rangeTextInfo) return;
   if (!hudCtx || !(hudCanvas instanceof HTMLCanvasElement)) return;
 
-  const hudScaleX = BOARD_VIEW.scaleX;
-  const hudScaleY = BOARD_VIEW.scaleY;
+  const hudScaleX = BOARD_VIEW.scaleX * BOARD_VIEW.dpr;
+  const hudScaleY = BOARD_VIEW.scaleY * BOARD_VIEW.dpr;
   const { x: hudOffsetX, y: hudOffsetY } = getFieldOffsetsInCanvasSpace(
     hudCanvas,
     hudScaleX,
