@@ -127,6 +127,10 @@ const pointerDebugState = {
   lastPoint: null
 };
 
+const overlayRectDebugState = {
+  logged: false
+};
+
 const inputTransformDebugState = {
   lastCrossByCanvas: new Map()
 };
@@ -330,6 +334,7 @@ function getPointerBoardCoords(event, canvas = gsBoardCanvas) {
   const { clientX, clientY } = getPointerClientCoords(event);
   const activeBoardCanvas = getActiveBoardCanvas(canvas);
   const rect = activeBoardCanvas?.getBoundingClientRect?.() || { left: 0, top: 0 };
+  logOverlayRectValidity('getPointerBoardCoords');
   const local = {
     x: clientX - rect.left,
     y: clientY - rect.top
@@ -475,6 +480,26 @@ function logLayoutDebug() {
   }
   console.log('[layout-debug] rects', rects);
   console.log('[layout-debug] transforms', transformStack);
+}
+
+function logOverlayRectValidity(source = "") {
+  if (!DEBUG_OVERLAY_POINTER || overlayRectDebugState.logged) return;
+  if (!(overlayContainer instanceof HTMLElement)) return;
+  const rect = overlayContainer.getBoundingClientRect();
+  const widthOk = Number.isFinite(rect.width) && rect.width > 0;
+  const heightOk = Number.isFinite(rect.height) && rect.height > 0;
+  const leftOk = Number.isFinite(rect.left);
+  const topOk = Number.isFinite(rect.top);
+  if (widthOk && heightOk && leftOk && topOk) return;
+  overlayRectDebugState.logged = true;
+  console.warn("[overlay-rect-debug] invalid overlay rect", {
+    source,
+    rect,
+    widthOk,
+    heightOk,
+    leftOk,
+    topOk
+  });
 }
 
 function debugLogLayerStack() {
@@ -5028,7 +5053,10 @@ function isPlaneGrabbableAt(x, y) {
 }
 
 function updateBoardCursorForHover(x, y) {
-  const cursorCanvas = getActiveBoardCanvas(gsBoardCanvas) || gsBoardCanvas;
+  const cursorCanvas =
+    overlayContainer instanceof HTMLElement
+      ? overlayContainer
+      : getActiveBoardCanvas(gsBoardCanvas) || gsBoardCanvas;
   if(phase === 'AA_PLACEMENT') {
     cursorCanvas.style.cursor = '';
     return;
@@ -5068,7 +5096,11 @@ function handleStart(e) {
   oscillationAngle = 0;
   oscillationDir = 1;
   roundTextTimer = 0; // Hide round label when player starts a move
-  (getActiveBoardCanvas(gsBoardCanvas) || gsBoardCanvas).style.cursor = 'grabbing';
+  const cursorTarget =
+    overlayContainer instanceof HTMLElement
+      ? overlayContainer
+      : getActiveBoardCanvas(gsBoardCanvas) || gsBoardCanvas;
+  cursorTarget.style.cursor = 'grabbing';
   document.body.style.cursor = 'grabbing';
 
   // Show overlay canvas for aiming arrow
@@ -5148,22 +5180,22 @@ function onCanvasPointerLeave() {
   aaPreviewTrail = [];
 }
 
-let boardPointerCanvas = null;
+let boardPointerTarget = null;
 function syncBoardPointerHandlers() {
-  const nextCanvas = getActiveBoardCanvas(gsBoardCanvas);
-  if (boardPointerCanvas === nextCanvas) return;
-  if (boardPointerCanvas) {
-    boardPointerCanvas.removeEventListener("pointerdown", onCanvasPointerDown);
-    boardPointerCanvas.removeEventListener("pointermove", onCanvasPointerMove);
-    boardPointerCanvas.removeEventListener("pointerup", onCanvasPointerUp);
-    boardPointerCanvas.removeEventListener("pointerleave", onCanvasPointerLeave);
+  const nextTarget = overlayContainer instanceof HTMLElement ? overlayContainer : null;
+  if (boardPointerTarget === nextTarget) return;
+  if (boardPointerTarget) {
+    boardPointerTarget.removeEventListener("pointerdown", onCanvasPointerDown);
+    boardPointerTarget.removeEventListener("pointermove", onCanvasPointerMove);
+    boardPointerTarget.removeEventListener("pointerup", onCanvasPointerUp);
+    boardPointerTarget.removeEventListener("pointerleave", onCanvasPointerLeave);
   }
-  boardPointerCanvas = nextCanvas;
-  if (!boardPointerCanvas) return;
-  boardPointerCanvas.addEventListener("pointerdown", onCanvasPointerDown);
-  boardPointerCanvas.addEventListener("pointermove", onCanvasPointerMove);
-  boardPointerCanvas.addEventListener("pointerup", onCanvasPointerUp);
-  boardPointerCanvas.addEventListener("pointerleave", onCanvasPointerLeave);
+  boardPointerTarget = nextTarget;
+  if (!boardPointerTarget) return;
+  boardPointerTarget.addEventListener("pointerdown", onCanvasPointerDown);
+  boardPointerTarget.addEventListener("pointermove", onCanvasPointerMove);
+  boardPointerTarget.addEventListener("pointerup", onCanvasPointerUp);
+  boardPointerTarget.addEventListener("pointerleave", onCanvasPointerLeave);
 }
 
 syncBoardPointerHandlers();
