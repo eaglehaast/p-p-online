@@ -65,10 +65,10 @@ body, button {
 
   #uiFrame {
     position: relative;
-    width: calc(var(--design-w) * 1px);
-    height: calc(var(--design-h) * 1px);
-    transform-origin: center center;
-    transform: scale(var(--ui-scale));
+    --design-w: 460;
+    --design-h: 800;
+    width: calc(var(--design-w) * var(--ui-scale) * 1px);
+    height: calc(var(--design-h) * var(--ui-scale) * 1px);
   }
 
   .layer {
