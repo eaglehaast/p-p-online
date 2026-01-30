@@ -3694,8 +3694,7 @@ const POINT_RADIUS         = planeMetric(15);     // px (увеличено дл
 const FLAG_INTERACTION_RADIUS = 25;  // px
 const BASE_INTERACTION_RADIUS = 40;  // px
 const SLIDE_THRESHOLD      = 0.1;
-// Larger hit area for selecting planes with touch/mouse
-const PLANE_TOUCH_RADIUS   = 20;                   // px
+const DEFAULT_PICK_R       = 18;                   // world units
 const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit Anti-Aircraft center
 const BOUNCE_FRAMES        = 68;
 // Duration of a full-speed flight on the field (measured in frames)
@@ -5048,19 +5047,43 @@ const handleCircle={
   origAngle:null
 };
 
+let selectedPlaneId = null;
+
+function activePlanes() {
+  return Array.isArray(points) ? points : [];
+}
+
+function hitTestPlane(worldPt, plane) {
+  const dx = worldPt.x - plane.x;
+  const dy = worldPt.y - plane.y;
+  const r = plane.pickRadiusWorld ?? DEFAULT_PICK_R;
+  return dx * dx + dy * dy <= r * r;
+}
+
+function findHitPlane(worldPt) {
+  let best = null;
+  let bestD2 = Infinity;
+  for (const plane of activePlanes()) {
+    if (!plane || !plane.isAlive || plane.burning) continue;
+    const dx = worldPt.x - plane.x;
+    const dy = worldPt.y - plane.y;
+    const d2 = dx * dx + dy * dy;
+    if (!hitTestPlane(worldPt, plane)) continue;
+    if (d2 < bestD2) {
+      best = plane;
+      bestD2 = d2;
+    }
+  }
+  return best;
+}
+
+function setSelectedPlane(planeId) {
+  selectedPlaneId = planeId ?? null;
+}
+
 function isPlaneGrabbableAt(x, y) {
-  if(isGameOver || !gameMode) return false;
-
-  const currentColor = turnColors[turnIndex];
-  if(gameMode === "computer" && currentColor === "blue") return false; // ход ИИ
-
-  if(flyingPoints.some(fp => fp.plane.color === currentColor)) return false;
-
-  return points.some(pt =>
-    pt.color === currentColor &&
-    pt.isAlive && !pt.burning &&
-    Math.hypot(pt.x - x, pt.y - y) <= PLANE_TOUCH_RADIUS
-  );
+  if (!isGameScreenActive()) return false;
+  return !!findHitPlane({ x, y });
 }
 
 function updateBoardCursorForHover(x, y) {
@@ -5079,31 +5102,17 @@ function updateBoardCursorForHover(x, y) {
   cursorCanvas.style.cursor = isPlaneGrabbableAt(x, y) ? 'grab' : '';
 }
 
-function handleStart(e) {
-  e.preventDefault();
-  if(isGameOver || !gameMode) return;
-
-  const currentColor= turnColors[turnIndex];
-  if(gameMode==="computer" && currentColor==="blue") return; // ход ИИ
-
-  if(flyingPoints.some(fp=>fp.plane.color===currentColor)) return;
-
-  const { world } = getPointerBoardCoords(e);
-  const { x: mx, y: my } = world;
-
-  let found= points.find(pt=>
-    pt.color=== currentColor &&
-    pt.isAlive && !pt.burning &&
-    Math.hypot(pt.x - mx, pt.y - my) <= PLANE_TOUCH_RADIUS
-  );
-  if(!found) return;
-
-  handleCircle.baseX= mx; handleCircle.baseY= my;
-  handleCircle.shakyX= mx; handleCircle.shakyY= my;
-  handleCircle.offsetX=0; handleCircle.offsetY=0;
-  handleCircle.active= true;
-  handleCircle.pointRef= found;
-  handleCircle.origAngle = found.angle;
+function beginDragPlane(plane, worldPt) {
+  const { x: mx, y: my } = worldPt;
+  handleCircle.baseX = mx;
+  handleCircle.baseY = my;
+  handleCircle.shakyX = mx;
+  handleCircle.shakyY = my;
+  handleCircle.offsetX = 0;
+  handleCircle.offsetY = 0;
+  handleCircle.active = true;
+  handleCircle.pointRef = plane;
+  handleCircle.origAngle = plane.angle;
   oscillationAngle = 0;
   oscillationDir = 1;
   roundTextTimer = 0; // Hide round label when player starts a move
@@ -5167,7 +5176,12 @@ function onBoardPointerDown(e){
     aaPointerDown = true;
     updateAAPreviewFromEvent(e);
   } else {
-    handleStart(e);
+    if (!isGameScreenActive()) return;
+    const { world } = getPointerBoardCoords(e);
+    const hit = findHitPlane(world);
+    if (!hit) return;
+    setSelectedPlane(hit.id ?? hit.uid ?? hit.name ?? null);
+    beginDragPlane(hit, world);
   }
 }
 
