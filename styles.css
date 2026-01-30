@@ -61,19 +61,21 @@ body, button {
   left: env(safe-area-inset-left);
   right: env(safe-area-inset-right);
   bottom: env(safe-area-inset-bottom);
-  display: grid;
-  place-items: center;
+  display: block;
   overflow: hidden;
 }
 
   #uiFrame {
-    position: relative;
+    position: fixed;
     --design-w: 460;
     --design-h: 800;
     width: calc(var(--design-w) * 1px);
     height: calc(var(--design-h) * 1px);
-    transform: scale(var(--ui-scale));
-    transform-origin: center center;
+    left: 50vw;
+    top: 50vh;
+    margin: 0;
+    transform: translate(-50%, -50%) scale(var(--ui-scale));
+    transform-origin: 50% 50%;
   }
 
   .layer {
