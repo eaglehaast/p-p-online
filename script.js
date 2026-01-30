@@ -350,7 +350,7 @@ function getPointerBoardCoords(event, canvas = gsBoardCanvas) {
   const { clientX, clientY } = getPointerClientCoords(event);
   const activeBoardCanvas = getActiveBoardCanvas(canvas);
   const fieldPx = clientToFieldPx(event);
-  const world = pxToWorld(fieldPx);
+  const world = fieldPxToWorld(fieldPx);
   return { clientX, clientY, px: fieldPx, world, canvas: activeBoardCanvas };
 }
 
@@ -917,6 +917,11 @@ function pxToWorld(pxOrX, y) {
     ? pxOrX
     : { x: pxOrX, y };
   return { x: px.x / BOARD_VIEW.scaleX, y: px.y / BOARD_VIEW.scaleY };
+}
+
+function fieldPxToWorld(pxOrX, y) {
+  const world = pxToWorld(pxOrX, y);
+  return { x: world.x + FIELD_LEFT, y: world.y + FIELD_TOP };
 }
 
 function resizeCanvasToMatchCss(canvas) {
@@ -4965,13 +4970,22 @@ const handleCircle={
 
 let selectedPlaneId = null;
 
+function getPlaneWorldPos(plane) {
+  return { x: plane.x, y: plane.y };
+}
+
+function getPlaneHitTestPos(plane) {
+  return getPlaneWorldPos(plane);
+}
+
 function hitTestPlanes(worldPt) {
   let best = null;
   let bestD2 = Infinity;
   for (const plane of points) {
     if (!plane || !plane.isAlive || plane.burning) continue;
-    const dx = worldPt.x - plane.x;
-    const dy = worldPt.y - plane.y;
+    const hitPos = getPlaneHitTestPos(plane);
+    const dx = worldPt.x - hitPos.x;
+    const dy = worldPt.y - hitPos.y;
     const d2 = dx * dx + dy * dy;
     const r = 18;
     if (d2 <= r * r && d2 < bestD2) {
@@ -5062,7 +5076,7 @@ function handleAAPlacement(x, y){
 
 function updateAAPreviewFromEvent(e){
   const fieldPx = clientToFieldPx(e);
-  const world = pxToWorld(fieldPx);
+  const world = fieldPxToWorld(fieldPx);
   const { x, y } = world;
   aaPlacementPreview = { x, y };
   aaPreviewTrail = [];
@@ -5079,15 +5093,20 @@ function onBoardPointerDown(e){
   } else {
     if (!isGameScreenActive()) return;
     const fieldPx = clientToFieldPx(e);
-    const world = pxToWorld(fieldPx);
+    const world = fieldPxToWorld(fieldPx);
     const hit = hitTestPlanes(world);
+    console.log("[plane-hit-test]", {
+      inputWorld: world,
+      renderPos: hit ? getPlaneWorldPos(hit) : null,
+      hitTestPos: hit ? getPlaneHitTestPos(hit) : null
+    });
     if (hit) beginDragFromHit(hit, world, e.pointerId);
   }
 }
 
 function onBoardPointerMove(e){
   const fieldPx = clientToFieldPx(e);
-  const world = pxToWorld(fieldPx);
+  const world = fieldPxToWorld(fieldPx);
   const { x, y } = world;
   if(phase !== 'AA_PLACEMENT'){
     updateBoardCursorForHover(x, y);
