@@ -554,7 +554,10 @@ function logAimDebug(details = {}) {
   aimDebugState.lastLogTime = now;
   const rectSummary = (el) => {
     if (!el?.getBoundingClientRect) return null;
-    const rect = el.getBoundingClientRect();
+    const rect = el instanceof HTMLCanvasElement
+      ? getVisibleCanvasRect(el)
+      : el.getBoundingClientRect();
+    if (!rect) return null;
     return {
       left: Math.round(rect.left),
       top: Math.round(rect.top),
@@ -572,7 +575,8 @@ function logAimDebug(details = {}) {
 
 function getGsBoardCanvasDebugInfo() {
   if (!gsBoardCanvas?.getBoundingClientRect) return null;
-  const rect = gsBoardCanvas.getBoundingClientRect();
+  const rect = getVisibleCanvasRect(gsBoardCanvas);
+  if (!rect) return null;
   return {
     rect: {
       left: rect.left,
@@ -779,6 +783,15 @@ function getVisibleCanvasRect(canvas) {
   return rect;
 }
 
+function pickVisibleCanvas(...candidates) {
+  for (const candidate of candidates) {
+    if (getVisibleCanvasRect(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
 function syncOverlayContainerToBoardCanvas() {
   if (!(overlayContainer instanceof HTMLElement)) return;
   if (!(gsBoardCanvas instanceof HTMLCanvasElement)) return;
@@ -861,7 +874,9 @@ function computeViewFromCanvas(canvas, targetView, baseWidth, baseHeight, source
 }
 
 function computeBoardViewFromCanvas(canvas) {
-  const boardCanvas = gsBoardCanvas instanceof HTMLCanvasElement ? gsBoardCanvas : canvas;
+  const preferredCanvas = canvas instanceof HTMLCanvasElement ? canvas : null;
+  const boardCanvas = pickVisibleCanvas(preferredCanvas, gsBoardCanvas, planeCanvas);
+  if (!boardCanvas) return;
   const sourceLabel = boardCanvas?.id || 'gsBoardCanvas';
   computeViewFromCanvas(boardCanvas, BOARD_VIEW, WORLD.width, WORLD.height, sourceLabel);
 }
@@ -9050,12 +9065,12 @@ function dumpViews(reason) {
 
   const describeCanvas = (canvas, ctx, viewLabel) => {
     if (!canvas) return null;
-    const rect = canvas.getBoundingClientRect();
+    const rect = getVisibleCanvasRect(canvas);
     const transform = ctx?.getTransform ? ctx.getTransform() : null;
     return {
       backingStore: { width: canvas.width, height: canvas.height },
       css: { width: canvas.style.width, height: canvas.style.height },
-      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      rect: rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null,
       devicePixelRatio: window.devicePixelRatio,
       view: viewLabel,
       transform: transform
