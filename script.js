@@ -31,6 +31,7 @@ const DEBUG_BOARD_VIEW = false;
 const DEBUG_INPUT_TRANSFORMS = false;
 const DEBUG_CANVAS_TRANSFORMS = false;
 const DEBUG_OVERLAY_POINTER = false;
+const DEBUG_POINTER_CAPTURE = false;
 
 const bootTrace = {
   startTs: null,
@@ -319,11 +320,18 @@ function getPointerClientCoords(event) {
   };
 }
 
-function clientToCanvasPx(canvas, e) {
+function clientToOverlayCssPx(overlay, e) {
+  const r = overlay.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+function overlayCssPxToCanvasPx(cssPx) {
+  const canvas = gameCanvas;
   const r = canvas.getBoundingClientRect();
-  const x = (e.clientX - r.left) * (canvas.width / r.width);
-  const y = (e.clientY - r.top) * (canvas.height / r.height);
-  return { x, y };
+  return {
+    x: cssPx.x * (canvas.width / r.width),
+    y: cssPx.y * (canvas.height / r.height),
+  };
 }
 
 function getActiveBoardCanvas(preferredCanvas = gsBoardCanvas) {
@@ -334,15 +342,14 @@ function getActiveBoardCanvas(preferredCanvas = gsBoardCanvas) {
 function getPointerBoardCoords(event, canvas = gsBoardCanvas) {
   const { clientX, clientY } = getPointerClientCoords(event);
   const activeBoardCanvas = getActiveBoardCanvas(canvas);
-  const rect = activeBoardCanvas?.getBoundingClientRect?.() || { left: 0, top: 0 };
+  const overlay =
+    overlayContainer instanceof HTMLElement ? overlayContainer : activeBoardCanvas;
+  const rect = overlay?.getBoundingClientRect?.() || { left: 0, top: 0 };
   logOverlayRectValidity('getPointerBoardCoords');
-  const local = {
-    x: clientX - rect.left,
-    y: clientY - rect.top
-  };
-  const px = activeBoardCanvas
-    ? clientToCanvasPx(activeBoardCanvas, event)
-    : { x: local.x, y: local.y };
+  const local = overlay
+    ? clientToOverlayCssPx(overlay, { clientX, clientY })
+    : { x: clientX - rect.left, y: clientY - rect.top };
+  const px = overlay ? overlayCssPxToCanvasPx(local) : { x: local.x, y: local.y };
   const world = pxToWorld(px);
   return { clientX, clientY, local, px, world, rect, canvas: activeBoardCanvas };
 }
@@ -5142,25 +5149,21 @@ function updateAAPreviewFromEvent(e){
 }
 
 function dbgPoint(e) {
-  const canvas = gameCanvas; // тот же, по которому приходит pointerdown
-  const r = canvas.getBoundingClientRect();
-  const px = {
-    x: (e.clientX - r.left) * (canvas.width / r.width),
-    y: (e.clientY - r.top)  * (canvas.height / r.height),
-  };
-  const world = pxToWorld(px);      // BOARD_VIEW
-  const px2 = worldToPx(world);     // BOARD_VIEW
+  const { px, world } = getPointerBoardCoords(e);
+  const px2 = worldToPx(world); // BOARD_VIEW
   const dx = px2.x - px.x;
   const dy = px2.y - px.y;
-  console.log('[inv]', { px, world, px2, dx, dy, rect: { l:r.left, t:r.top, w:r.width, h:r.height }, cw: canvas.width, ch: canvas.height });
+  console.log('[inv]', { px, world, px2, dx, dy });
 }
 
-function onCanvasPointerDown(e){
+function onBoardPointerDown(e){
+  e.preventDefault();
+  e.stopPropagation();
+  overlayContainer?.setPointerCapture?.(e.pointerId);
   dbgPoint(e);
   logPointerDebugEvent(e);
   logInputTransforms(e);
   if(phase === 'AA_PLACEMENT'){
-    e.preventDefault();
     aaPointerDown = true;
     updateAAPreviewFromEvent(e);
   } else {
@@ -5168,7 +5171,7 @@ function onCanvasPointerDown(e){
   }
 }
 
-function onCanvasPointerMove(e){
+function onBoardPointerMove(e){
   const { world } = getPointerBoardCoords(e);
   const { x, y } = world;
   if(phase !== 'AA_PLACEMENT'){
@@ -5181,7 +5184,7 @@ function onCanvasPointerMove(e){
   updateBoardCursorForHover(x, y);
 }
 
-function onCanvasPointerUp(e){
+function onBoardPointerUp(e){
   if(phase !== 'AA_PLACEMENT') return;
   aaPointerDown = false;
   if(!aaPlacementPreview) return;
@@ -5191,7 +5194,7 @@ function onCanvasPointerUp(e){
   aaPreviewTrail = [];
 }
 
-function onCanvasPointerLeave() {
+function onBoardPointerLeave() {
   aaPlacementPreview = null;
   aaPointerDown = false;
   aaPreviewTrail = [];
@@ -5202,17 +5205,20 @@ function syncBoardPointerHandlers() {
   const nextTarget = overlayContainer instanceof HTMLElement ? overlayContainer : null;
   if (boardPointerTarget === nextTarget) return;
   if (boardPointerTarget) {
-    boardPointerTarget.removeEventListener("pointerdown", onCanvasPointerDown);
-    boardPointerTarget.removeEventListener("pointermove", onCanvasPointerMove);
-    boardPointerTarget.removeEventListener("pointerup", onCanvasPointerUp);
-    boardPointerTarget.removeEventListener("pointerleave", onCanvasPointerLeave);
+    boardPointerTarget.removeEventListener("pointerdown", onBoardPointerDown);
+    boardPointerTarget.removeEventListener("pointermove", onBoardPointerMove);
+    boardPointerTarget.removeEventListener("pointerup", onBoardPointerUp);
+    boardPointerTarget.removeEventListener("pointercancel", onBoardPointerUp);
+    boardPointerTarget.removeEventListener("pointerleave", onBoardPointerLeave);
   }
   boardPointerTarget = nextTarget;
   if (!boardPointerTarget) return;
-  boardPointerTarget.addEventListener("pointerdown", onCanvasPointerDown);
-  boardPointerTarget.addEventListener("pointermove", onCanvasPointerMove);
-  boardPointerTarget.addEventListener("pointerup", onCanvasPointerUp);
-  boardPointerTarget.addEventListener("pointerleave", onCanvasPointerLeave);
+  boardPointerTarget.style.pointerEvents = "auto";
+  boardPointerTarget.addEventListener("pointerdown", onBoardPointerDown, { passive: false });
+  boardPointerTarget.addEventListener("pointermove", onBoardPointerMove, { passive: false });
+  boardPointerTarget.addEventListener("pointerup", onBoardPointerUp, { passive: false });
+  boardPointerTarget.addEventListener("pointercancel", onBoardPointerUp, { passive: false });
+  boardPointerTarget.addEventListener("pointerleave", onBoardPointerLeave);
 }
 
 syncBoardPointerHandlers();
@@ -5243,7 +5249,9 @@ function logGlobalPointerCapture(e) {
   );
 }
 
-window.addEventListener("pointerdown", logGlobalPointerCapture, { capture: true });
+if (DEBUG_POINTER_CAPTURE) {
+  window.addEventListener("pointerdown", logGlobalPointerCapture, { capture: true });
+}
 
 if (DEBUG_OVERLAY_POINTER) {
   window.addEventListener("pointermove", updateOverlayPointerProbe);
