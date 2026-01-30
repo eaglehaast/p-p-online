@@ -67,8 +67,10 @@ body, button {
     position: relative;
     --design-w: 460;
     --design-h: 800;
-    width: calc(var(--design-w) * var(--ui-scale) * 1px);
-    height: calc(var(--design-h) * var(--ui-scale) * 1px);
+    width: calc(var(--design-w) * 1px);
+    height: calc(var(--design-h) * 1px);
+    transform: scale(var(--ui-scale));
+    transform-origin: center center;
   }
 
   .layer {
