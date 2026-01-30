@@ -8931,20 +8931,19 @@ function updateUiFrameScale() {
   const hasWrapperSize = wrapperEl instanceof HTMLElement
     && wrapperEl.clientWidth > 0
     && wrapperEl.clientHeight > 0;
+  const source = hasWrapperSize
+    ? "screenWrapper"
+    : (viewportWidth && viewportHeight ? "visualViewport" : "inner");
   const baseWidth = hasWrapperSize ? wrapperEl.clientWidth : (viewportWidth || fallbackWidth);
   const baseHeight = hasWrapperSize ? wrapperEl.clientHeight : (viewportHeight || fallbackHeight);
-  const viewportBaseWidth = viewportWidth || fallbackWidth;
-  const viewportBaseHeight = viewportHeight || fallbackHeight;
-  const paddingAlreadyAccounted = hasWrapperSize
-    && viewportBaseWidth > 0
-    && viewportBaseHeight > 0
-    && baseWidth <= viewportBaseWidth - paddingX + 0.5
-    && baseHeight <= viewportBaseHeight - paddingY + 0.5;
-  const availW = Math.max(1, paddingAlreadyAccounted ? baseWidth : baseWidth - paddingX);
-  const availH = Math.max(1, paddingAlreadyAccounted ? baseHeight : baseHeight - paddingY);
+  const availW = Math.max(1, baseWidth - (hasWrapperSize ? paddingX : 0));
+  const availH = Math.max(1, baseHeight - (hasWrapperSize ? paddingY : 0));
   const scale = Math.min(availW / FRAME_BASE_WIDTH, availH / FRAME_BASE_HEIGHT);
   const clampedScale = Math.min(scale, 1.2);
   const safeScale = Number.isFinite(clampedScale) && clampedScale > 0 ? clampedScale : 1;
+  const scaledWidth = FRAME_BASE_WIDTH * safeScale;
+  const scaledHeight = FRAME_BASE_HEIGHT * safeScale;
+  const isClipped = scaledWidth > availW + 0.5 || scaledHeight > availH + 0.5;
   console.debug('[ui-scale]', {
     visualViewport: viewport
       ? { width: viewportWidth, height: viewportHeight }
@@ -8953,8 +8952,16 @@ function updateUiFrameScale() {
     wrapper: hasWrapperSize ? { width: baseWidth, height: baseHeight } : null,
     padding: { x: paddingX, y: paddingY },
     avail: { width: availW, height: availH },
+    source,
     scale: safeScale
   });
+  if (isClipped) {
+    console.warn('[ui-scale] clipping', {
+      source,
+      avail: { width: availW, height: availH },
+      scaled: { width: scaledWidth, height: scaledHeight }
+    });
+  }
   document.documentElement.style.setProperty('--ui-scale', safeScale);
   syncHudCanvasLayout();
   syncAimCanvasLayout();
