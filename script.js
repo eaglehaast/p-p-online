@@ -30,8 +30,6 @@ const DEBUG_WRAPPER_SYNC = false;
 const DEBUG_BOARD_VIEW = false;
 const DEBUG_INPUT_TRANSFORMS = false;
 const DEBUG_CANVAS_TRANSFORMS = false;
-const DEBUG_OVERLAY_POINTER = false;
-const DEBUG_POINTER_CAPTURE = false;
 
 const bootTrace = {
   startTs: null,
@@ -127,10 +125,6 @@ const renderInitState = {
 const pointerDebugState = {
   logged: 0,
   lastPoint: null
-};
-
-const overlayRectDebugState = {
-  logged: false
 };
 
 const inputTransformDebugState = {
@@ -320,17 +314,13 @@ function getPointerClientCoords(event) {
   };
 }
 
-function clientToOverlayCssPx(overlay, e) {
-  const r = overlay.getBoundingClientRect();
-  return { x: e.clientX - r.left, y: e.clientY - r.top };
-}
-
-function overlayCssPxToCanvasPx(cssPx) {
-  const canvas = gameCanvas;
-  const r = canvas.getBoundingClientRect();
+function clientToBoardPx(e) {
+  const c = gsBoardCanvas;
+  const { clientX, clientY } = resolveClientPoint(e);
+  const r = c.getBoundingClientRect();
   return {
-    x: cssPx.x * (canvas.width / r.width),
-    y: cssPx.y * (canvas.height / r.height),
+    x: (clientX - r.left) * (c.width / r.width),
+    y: (clientY - r.top) * (c.height / r.height),
   };
 }
 
@@ -342,16 +332,9 @@ function getActiveBoardCanvas(preferredCanvas = gsBoardCanvas) {
 function getPointerBoardCoords(event, canvas = gsBoardCanvas) {
   const { clientX, clientY } = getPointerClientCoords(event);
   const activeBoardCanvas = getActiveBoardCanvas(canvas);
-  const overlay =
-    overlayContainer instanceof HTMLElement ? overlayContainer : activeBoardCanvas;
-  const rect = overlay?.getBoundingClientRect?.() || { left: 0, top: 0 };
-  logOverlayRectValidity('getPointerBoardCoords');
-  const local = overlay
-    ? clientToOverlayCssPx(overlay, { clientX, clientY })
-    : { x: clientX - rect.left, y: clientY - rect.top };
-  const px = overlay ? overlayCssPxToCanvasPx(local) : { x: local.x, y: local.y };
+  const px = clientToBoardPx(event);
   const world = pxToWorld(px);
-  return { clientX, clientY, local, px, world, rect, canvas: activeBoardCanvas };
+  return { clientX, clientY, px, world, canvas: activeBoardCanvas };
 }
 
 function getCanvasDpr() {
@@ -488,26 +471,6 @@ function logLayoutDebug() {
   }
   console.log('[layout-debug] rects', rects);
   console.log('[layout-debug] transforms', transformStack);
-}
-
-function logOverlayRectValidity(source = "") {
-  if (!DEBUG_OVERLAY_POINTER || overlayRectDebugState.logged) return;
-  if (!(overlayContainer instanceof HTMLElement)) return;
-  const rect = overlayContainer.getBoundingClientRect();
-  const widthOk = Number.isFinite(rect.width) && rect.width > 0;
-  const heightOk = Number.isFinite(rect.height) && rect.height > 0;
-  const leftOk = Number.isFinite(rect.left);
-  const topOk = Number.isFinite(rect.top);
-  if (widthOk && heightOk && leftOk && topOk) return;
-  overlayRectDebugState.logged = true;
-  console.warn("[overlay-rect-debug] invalid overlay rect", {
-    source,
-    rect,
-    widthOk,
-    heightOk,
-    leftOk,
-    topOk
-  });
 }
 
 function debugLogLayerStack() {
@@ -692,21 +655,6 @@ function drawStartPositionsDebug(ctx, scale = 1) {
   startPositions.green.forEach((p) => drawMarker(p, "rgba(127, 142, 64, 0.9)"));
 
   ctx.restore();
-}
-
-function logPointerDebugEvent(event) {
-  if (!(DEBUG_LAYOUT || DEBUG_RENDER_INIT)) return;
-  const { world, local, rect } = getPointerBoardCoords(event);
-  pointerDebugState.lastPoint = { x: world.x, y: world.y };
-  if (pointerDebugState.logged >= 3) return;
-  pointerDebugState.logged += 1;
-  console.log("[pointer-debug]", {
-    index: pointerDebugState.logged,
-    clientX: rect?.left + local.x,
-    clientY: rect?.top + local.y,
-    x: world.x,
-    y: world.y
-  });
 }
 
 function getInputDebugCanvas(event) {
@@ -1034,55 +982,7 @@ function logCanvasCreation(canvas, label = "") {
 }
 
 const overlayContainer = document.getElementById("overlayContainer");
-const debugCursor =
-  overlayContainer instanceof HTMLElement ? document.createElement("div") : null;
-if (debugCursor) {
-  debugCursor.id = "debugCursor";
-  debugCursor.setAttribute("aria-hidden", "true");
-  Object.assign(debugCursor.style, {
-    position: "absolute",
-    width: "8px",
-    height: "8px",
-    background: "red",
-    borderRadius: "50%",
-    opacity: "1",
-    transform: "translate(-50%, -50%)",
-    pointerEvents: "none",
-    left: "0",
-    top: "0",
-    zIndex: "999999",
-  });
-  overlayContainer.appendChild(debugCursor);
-  window.addEventListener("pointermove", (event) => {
-    const rect = overlayContainer.getBoundingClientRect();
-    const left = event.clientX - rect.left;
-    const top = event.clientY - rect.top;
-    debugCursor.style.left = `${left}px`;
-    debugCursor.style.top = `${top}px`;
-  });
-  console.log("debugCursor created", overlayContainer);
-}
 const uiOverlay = document.getElementById("uiOverlay");
-const overlayPointerProbe =
-  DEBUG_OVERLAY_POINTER && overlayContainer instanceof HTMLElement
-    ? document.createElement("div")
-    : null;
-
-if (overlayPointerProbe) {
-  overlayPointerProbe.id = "overlayPointerProbe";
-  overlayPointerProbe.setAttribute("aria-hidden", "true");
-  Object.assign(overlayPointerProbe.style, {
-    position: "absolute",
-    width: "6px",
-    height: "6px",
-    border: "1px solid red",
-    transform: "translate(-50%, -50%)",
-    pointerEvents: "none",
-    left: "0",
-    top: "0",
-  });
-  overlayContainer.appendChild(overlayPointerProbe);
-}
 
 let OVERLAY_RESYNC_SCHEDULED = false;
 
@@ -1914,27 +1814,26 @@ function clientToOverlay(event, overlay = aimCanvas) {
 
 function clientToBoard(event) {
   const { clientX, clientY } = resolveClientPoint(event);
-  const design = toDesignCoords(clientX, clientY);
-  const x_css = design.x - CANVAS_OFFSET_X;
-  const y_css = design.y - FRAME_PADDING_Y;
-  const nx = x_css / CANVAS_BASE_WIDTH;
-  const ny = y_css / CANVAS_BASE_HEIGHT;
+  const px = clientToBoardPx(event);
+  const rect = gsBoardCanvas.getBoundingClientRect();
+  const nx = rect.width ? (clientX - rect.left) / rect.width : 0;
+  const ny = rect.height ? (clientY - rect.top) / rect.height : 0;
 
   return {
     clientX,
     clientY,
     rect: {
-      left: CANVAS_OFFSET_X,
-      top: FRAME_PADDING_Y,
-      width: CANVAS_BASE_WIDTH,
-      height: CANVAS_BASE_HEIGHT
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height
     },
     nx,
     ny,
-    x_css,
-    y_css,
-    x: x_css,
-    y: y_css
+    x_css: px.x,
+    y_css: px.y,
+    x: px.x,
+    y: px.y
   };
 }
 
@@ -5048,12 +4947,11 @@ const handleCircle={
 };
 
 let selectedPlaneId = null;
-let lastRenderedPlanes = [];
 
-function hitTestRenderedPlanes(worldPt) {
+function hitTestPlanes(worldPt) {
   let best = null;
   let bestD2 = Infinity;
-  for (const plane of lastRenderedPlanes) {
+  for (const plane of points) {
     if (!plane || !plane.isAlive || plane.burning) continue;
     const dx = worldPt.x - plane.x;
     const dy = worldPt.y - plane.y;
@@ -5073,7 +4971,7 @@ function setSelectedPlane(planeId) {
 
 function isPlaneGrabbableAt(x, y) {
   if (!isGameScreenActive()) return false;
-  return !!hitTestRenderedPlanes({ x, y });
+  return !!hitTestPlanes({ x, y });
 }
 
 function updateBoardCursorForHover(x, y) {
@@ -5152,20 +5050,10 @@ function updateAAPreviewFromEvent(e){
   aaPreviewTrail = [];
 }
 
-function dbgPoint(e) {
-  const { px, world } = getPointerBoardCoords(e);
-  const px2 = worldToPx(world); // BOARD_VIEW
-  const dx = px2.x - px.x;
-  const dy = px2.y - px.y;
-  console.log('[inv]', { px, world, px2, dx, dy });
-}
-
 function onBoardPointerDown(e){
   e.preventDefault();
   e.stopPropagation();
   overlayContainer?.setPointerCapture?.(e.pointerId);
-  dbgPoint(e);
-  logPointerDebugEvent(e);
   logInputTransforms(e);
   if(phase === 'AA_PLACEMENT'){
     aaPointerDown = true;
@@ -5173,7 +5061,7 @@ function onBoardPointerDown(e){
   } else {
     if (!isGameScreenActive()) return;
     const { world } = getPointerBoardCoords(e);
-    const hit = hitTestRenderedPlanes(world);
+    const hit = hitTestPlanes(world);
     if (hit) beginDragFromHit(hit, world, e.pointerId);
   }
 }
@@ -5229,41 +5117,6 @@ function syncBoardPointerHandlers() {
 }
 
 syncBoardPointerHandlers();
-
-function updateOverlayPointerProbe(e) {
-  if (!overlayPointerProbe || !(overlayContainer instanceof HTMLElement)) return;
-  if (e?.type !== "pointermove") return;
-  const rect = overlayContainer.getBoundingClientRect();
-  const left = e.clientX - rect.left;
-  const top = e.clientY - rect.top;
-  overlayPointerProbe.style.left = `${left}px`;
-  overlayPointerProbe.style.top = `${top}px`;
-}
-
-function logGlobalPointerCapture(e) {
-  const target = e.target;
-  const targetId = target?.id ?? "";
-  const targetClass = target ? String(target.className ?? "") : "";
-  const hitId = document.elementFromPoint(e.clientX, e.clientY)?.id ?? "";
-  console.log(
-    "[pointer-capture]",
-    e.type,
-    targetId,
-    targetClass,
-    e.clientX,
-    e.clientY,
-    hitId
-  );
-}
-
-if (DEBUG_POINTER_CAPTURE) {
-  window.addEventListener("pointerdown", logGlobalPointerCapture, { capture: true });
-}
-
-if (DEBUG_OVERLAY_POINTER) {
-  window.addEventListener("pointermove", updateOverlayPointerProbe);
-}
-
 
 function isValidAAPlacement(x,y){
   // Allow Anti-Aircraft placement anywhere within the player's half of the field.
@@ -7736,7 +7589,6 @@ function drawPlanesAndTrajectories(){
       activePlanes.push(point);
     }
   }
-  lastRenderedPlanes = activePlanes;
 
   const drawPlaneSegments = (ctx, plane) => {
     ctx.save();
@@ -9415,27 +9267,8 @@ async function updateViewsAndCanvases(reason = "sync") {
   dumpViews(reason);
 }
 
-function logLayoutMetrics(reason) {
-  const overlayEl = overlayContainer || document.getElementById("overlayContainer");
-  const gameCanvasEl = gsBoardCanvas || document.getElementById("gameCanvas");
-  const uiFrameElLocal = uiFrameEl || document.getElementById("uiFrame");
-  const uiScaleRaw = getComputedStyle(document.documentElement).getPropertyValue('--ui-scale');
-  const uiScale = parseFloat(uiScaleRaw);
-
-  console.log('[layout metrics]', {
-    reason,
-    WORLD_width: WORLD.width,
-    FRAME_BASE_WIDTH,
-    uiScale,
-    overlayContainerWidth: overlayEl?.getBoundingClientRect?.().width ?? null,
-    gameCanvasWidth: gameCanvasEl?.getBoundingClientRect?.().width ?? null,
-    uiFrameWidth: uiFrameElLocal?.getBoundingClientRect?.().width ?? null
-  });
-}
-
 window.addEventListener('resize', () => {
   requestLayoutUpdate("viewport change");
-  logLayoutMetrics("resize");
 });
 window.addEventListener('load', () => {
   requestLayoutUpdate("load");
@@ -9456,15 +9289,9 @@ window.addEventListener('orientationchange', () => {
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', () => {
     requestLayoutUpdate("viewport change");
-    if (window.visualViewport.scale !== 1) {
-      logLayoutMetrics("visualViewport resize");
-    }
   });
   window.visualViewport.addEventListener('scroll', () => {
     requestLayoutUpdate("viewport change");
-    if (window.visualViewport.scale !== 1) {
-      logLayoutMetrics("visualViewport scroll");
-    }
   });
 }
 
@@ -9480,7 +9307,6 @@ if (window.visualViewport) {
   async function bootstrapGame(){
     await waitForStylesReady();
     await updateViewsAndCanvases("bootstrap");
-    logLayoutMetrics("bootstrap");
     resetGame();
   }
 
