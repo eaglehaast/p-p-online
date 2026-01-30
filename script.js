@@ -5048,28 +5048,18 @@ const handleCircle={
 };
 
 let selectedPlaneId = null;
+let lastRenderedPlanes = [];
 
-function activePlanes() {
-  return Array.isArray(points) ? points : [];
-}
-
-function hitTestPlane(worldPt, plane) {
-  const dx = worldPt.x - plane.x;
-  const dy = worldPt.y - plane.y;
-  const r = plane.pickRadiusWorld ?? DEFAULT_PICK_R;
-  return dx * dx + dy * dy <= r * r;
-}
-
-function findHitPlane(worldPt) {
+function hitTestRenderedPlanes(worldPt) {
   let best = null;
   let bestD2 = Infinity;
-  for (const plane of activePlanes()) {
+  for (const plane of lastRenderedPlanes) {
     if (!plane || !plane.isAlive || plane.burning) continue;
     const dx = worldPt.x - plane.x;
     const dy = worldPt.y - plane.y;
     const d2 = dx * dx + dy * dy;
-    if (!hitTestPlane(worldPt, plane)) continue;
-    if (d2 < bestD2) {
+    const r = 18;
+    if (d2 <= r * r && d2 < bestD2) {
       best = plane;
       bestD2 = d2;
     }
@@ -5083,7 +5073,7 @@ function setSelectedPlane(planeId) {
 
 function isPlaneGrabbableAt(x, y) {
   if (!isGameScreenActive()) return false;
-  return !!findHitPlane({ x, y });
+  return !!hitTestRenderedPlanes({ x, y });
 }
 
 function updateBoardCursorForHover(x, y) {
@@ -5134,6 +5124,11 @@ function beginDragPlane(plane, worldPt) {
   window.addEventListener("pointerup", onHandleUp);
 }
 
+function beginDragFromHit(plane, worldPt) {
+  setSelectedPlane(plane.id ?? plane.uid ?? plane.name ?? null);
+  beginDragPlane(plane, worldPt);
+}
+
 function handleAAPlacement(x, y){
   if(phase !== 'AA_PLACEMENT') return;
   if(!isValidAAPlacement(x,y)) return;
@@ -5178,10 +5173,8 @@ function onBoardPointerDown(e){
   } else {
     if (!isGameScreenActive()) return;
     const { world } = getPointerBoardCoords(e);
-    const hit = findHitPlane(world);
-    if (!hit) return;
-    setSelectedPlane(hit.id ?? hit.uid ?? hit.name ?? null);
-    beginDragPlane(hit, world);
+    const hit = hitTestRenderedPlanes(world);
+    if (hit) beginDragFromHit(hit, world, e.pointerId);
   }
 }
 
@@ -7743,6 +7736,7 @@ function drawPlanesAndTrajectories(){
       activePlanes.push(point);
     }
   }
+  lastRenderedPlanes = activePlanes;
 
   const drawPlaneSegments = (ctx, plane) => {
     ctx.save();
