@@ -8878,23 +8878,39 @@ function updateUiFrameScale() {
   const paddingRight = wrapperStyles ? parseFloat(wrapperStyles.paddingRight) || 0 : 0;
   const paddingBottom = wrapperStyles ? parseFloat(wrapperStyles.paddingBottom) || 0 : 0;
   const paddingLeft = wrapperStyles ? parseFloat(wrapperStyles.paddingLeft) || 0 : 0;
+  const paddingX = paddingLeft + paddingRight;
+  const paddingY = paddingTop + paddingBottom;
 
   const viewport = typeof window !== "undefined" ? window.visualViewport : null;
   const viewportWidth = viewport && Number.isFinite(viewport.width) ? viewport.width : 0;
   const viewportHeight = viewport && Number.isFinite(viewport.height) ? viewport.height : 0;
   const fallbackWidth = window.innerWidth || 0;
   const fallbackHeight = window.innerHeight || 0;
-  const baseWidth = viewportWidth || fallbackWidth;
-  const baseHeight = viewportHeight || fallbackHeight;
-  const viewW = Math.max(1, baseWidth - paddingLeft - paddingRight);
-  const viewH = Math.max(1, baseHeight - paddingTop - paddingBottom);
-  const scale = Math.min(viewW / FRAME_BASE_WIDTH, viewH / FRAME_BASE_HEIGHT);
-  const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  const hasWrapperSize = wrapperEl instanceof HTMLElement
+    && wrapperEl.clientWidth > 0
+    && wrapperEl.clientHeight > 0;
+  const baseWidth = hasWrapperSize ? wrapperEl.clientWidth : (viewportWidth || fallbackWidth);
+  const baseHeight = hasWrapperSize ? wrapperEl.clientHeight : (viewportHeight || fallbackHeight);
+  const viewportBaseWidth = viewportWidth || fallbackWidth;
+  const viewportBaseHeight = viewportHeight || fallbackHeight;
+  const paddingAlreadyAccounted = hasWrapperSize
+    && viewportBaseWidth > 0
+    && viewportBaseHeight > 0
+    && baseWidth <= viewportBaseWidth - paddingX + 0.5
+    && baseHeight <= viewportBaseHeight - paddingY + 0.5;
+  const availW = Math.max(1, paddingAlreadyAccounted ? baseWidth : baseWidth - paddingX);
+  const availH = Math.max(1, paddingAlreadyAccounted ? baseHeight : baseHeight - paddingY);
+  const scale = Math.min(availW / FRAME_BASE_WIDTH, availH / FRAME_BASE_HEIGHT);
+  const clampedScale = Math.min(scale, 1.2);
+  const safeScale = Number.isFinite(clampedScale) && clampedScale > 0 ? clampedScale : 1;
   console.debug('[ui-scale]', {
     visualViewport: viewport
       ? { width: viewportWidth, height: viewportHeight }
       : null,
     inner: { width: fallbackWidth, height: fallbackHeight },
+    wrapper: hasWrapperSize ? { width: baseWidth, height: baseHeight } : null,
+    padding: { x: paddingX, y: paddingY },
+    avail: { width: availW, height: availH },
     scale: safeScale
   });
   document.documentElement.style.setProperty('--ui-scale', safeScale);
