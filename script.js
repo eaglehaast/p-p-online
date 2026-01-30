@@ -29,6 +29,7 @@ const DEBUG_STARTUP_WORLDY = false;
 const DEBUG_WRAPPER_SYNC = false;
 const DEBUG_BOARD_VIEW = false;
 const DEBUG_INPUT_TRANSFORMS = false;
+const DEBUG_CANVAS_TRANSFORMS = false;
 
 const bootTrace = {
   startTs: null,
@@ -129,6 +130,10 @@ const inputTransformDebugState = {
   lastCrossByCanvas: new Map()
 };
 
+const canvasTransformDebugState = {
+  logged: false
+};
+
 const aimDebugState = {
   lastLogTime: 0
 };
@@ -144,6 +149,146 @@ const startupWorldYDebugState = {
 const wrapperSyncDebugState = {
   logged: false
 };
+
+const CANVAS_TRANSFORM_USAGE = {
+  setTransform: [
+    {
+      ctx: "gsBoardCtx",
+      view: "BOARD_VIEW",
+      location: "applyWorldViewTransform()",
+      order: "resetCanvasState → applyWorldViewTransform → drawFieldBackground/drawMapLayer"
+    },
+    {
+      ctx: "planeCtx",
+      view: "BOARD_VIEW",
+      location: "applyWorldViewTransform()",
+      order: "drawPlanesAndTrajectories → resetCanvasState → applyWorldViewTransform"
+    },
+    {
+      ctx: "aimCtx (debug cross)",
+      view: "FRAME_VIEW (DPR only)",
+      location: "drawInputDebugCross()",
+      order: "logInputTransforms → drawInputDebugCross → setTransform(RAW_DPR) → draw cross"
+    },
+    {
+      ctx: "aimCtx",
+      view: "FRAME_VIEW",
+      location: "gameDraw()",
+      order: "gameDraw → aimCtx.setTransform(1) → clearRect (aim overlay reset)"
+    },
+    {
+      ctx: "aimCtx",
+      view: "BOARD_VIEW",
+      location: "gameDraw()",
+      order: "gameDraw → aimCtx.setTransform(1) → clearRect → setTransform(board+offset) → drawArrow"
+    },
+    {
+      ctx: "planeCtx",
+      view: "BOARD_VIEW (no DPR)",
+      location: "drawPlanesAndTrajectories()",
+      order: "drawPlanesAndTrajectories → resetCanvasState → applyWorldViewTransform → setTransform(scaleX/scaleY) → draw planes"
+    },
+    {
+      ctx: "hudCtx",
+      view: "BOARD_VIEW",
+      location: "drawAimOverlay()",
+      order: "drawAimOverlay → setTransform(board+offset) → draw range text → restore"
+    },
+    {
+      ctx: "hudCtx",
+      view: "FRAME_VIEW",
+      location: "renderScoreboard()",
+      order: "renderScoreboard → setTransform(1) → clearRect → draw HUD"
+    },
+    {
+      ctx: "hudCtx",
+      view: "FRAME_VIEW",
+      location: "drawHudDebugLayout()",
+      order: "drawHudDebugLayout → setTransform(1) → draw overlay"
+    },
+    {
+      ctx: "any ctx",
+      view: "FRAME_VIEW",
+      location: "applyViewTransform()",
+      order: "resetCanvasState → applyViewTransform (default)"
+    },
+    {
+      ctx: "any ctx",
+      view: "BOARD_VIEW",
+      location: "applyWorldViewTransform()",
+      order: "resetCanvasState → applyWorldViewTransform"
+    },
+    {
+      ctx: "any ctx",
+      view: "BOARD_VIEW/FRAME_VIEW (depends on applyTransform)",
+      location: "resetCanvasState()",
+      order: "resetCanvasState → setTransform(1) → clearRect → applyTransform"
+    }
+  ],
+  scale: [
+    {
+      ctx: "gsBoardCtx",
+      view: "BOARD_VIEW",
+      location: "drawMapSprites()",
+      order: "drawMapLayer → drawMapSprites → translate/rotate/scale → drawImage"
+    },
+    {
+      ctx: "planeCtx",
+      view: "BOARD_VIEW",
+      location: "drawJetFlame()",
+      order: "drawThinPlane → drawJetFlame → scale → draw flame"
+    },
+    {
+      ctx: "planeCtx",
+      view: "BOARD_VIEW",
+      location: "drawBlueJetFlame()",
+      order: "drawThinPlane → drawBlueJetFlame → scale → draw flame"
+    },
+    {
+      ctx: "planeCtx",
+      view: "BOARD_VIEW",
+      location: "drawDieselSmoke()",
+      order: "drawThinPlane → drawDieselSmoke → scale → draw smoke"
+    }
+  ],
+  resetCanvasState: [
+    {
+      ctx: "planeCtx",
+      view: "BOARD_VIEW",
+      location: "resetGame()",
+      order: "resetGame → resetCanvasState → applyWorldViewTransform"
+    },
+    {
+      ctx: "gsBoardCtx",
+      view: "BOARD_VIEW",
+      location: "drawInitialFrame()",
+      order: "drawInitialFrame → resetCanvasState → applyWorldViewTransform → drawFieldBackground"
+    },
+    {
+      ctx: "gsBoardCtx",
+      view: "BOARD_VIEW",
+      location: "gameDraw()",
+      order: "gameDraw → resetCanvasState → applyWorldViewTransform → drawFieldBackground → drawMapLayer"
+    },
+    {
+      ctx: "planeCtx",
+      view: "BOARD_VIEW",
+      location: "drawPlanesAndTrajectories()",
+      order: "drawPlanesAndTrajectories → resetCanvasState → applyWorldViewTransform"
+    }
+  ]
+};
+
+function logCanvasTransformUsage() {
+  if (!DEBUG_CANVAS_TRANSFORMS || canvasTransformDebugState.logged) return;
+  canvasTransformDebugState.logged = true;
+  console.groupCollapsed("[canvas-transforms] usage map");
+  console.log("Check order for potential double transforms.");
+  console.table(CANVAS_TRANSFORM_USAGE.setTransform);
+  console.table(CANVAS_TRANSFORM_USAGE.scale);
+  console.table(CANVAS_TRANSFORM_USAGE.resetCanvasState);
+  console.groupEnd();
+}
 
 function toDesignCoords(clientX, clientY) {
   const rect = uiFrameEl?.getBoundingClientRect?.() || { left: 0, top: 0 };
@@ -4421,6 +4566,7 @@ function startMainLoopIfNotRunning(reason = "startMainLoopIfNotRunning") {
     return;
   }
   logRenderInit("starting loop", { reason });
+  logCanvasTransformUsage();
   startGameLoop();
   logRenderInit("loop running", { reason });
 }
