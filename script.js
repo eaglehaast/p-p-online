@@ -998,6 +998,33 @@ function logCanvasCreation(canvas, label = "") {
 }
 
 const overlayContainer = document.getElementById("overlayContainer");
+const debugCursor =
+  overlayContainer instanceof HTMLElement ? document.createElement("div") : null;
+if (debugCursor) {
+  debugCursor.id = "debugCursor";
+  debugCursor.setAttribute("aria-hidden", "true");
+  Object.assign(debugCursor.style, {
+    position: "absolute",
+    width: "8px",
+    height: "8px",
+    border: "2px solid magenta",
+    borderRadius: "50%",
+    transform: "translate(-50%, -50%)",
+    pointerEvents: "none",
+    left: "0",
+    top: "0",
+    zIndex: "9999",
+  });
+  overlayContainer.appendChild(debugCursor);
+  overlayContainer.addEventListener("pointermove", (event) => {
+    const rect = overlayContainer.getBoundingClientRect();
+    const left = event.clientX - rect.left;
+    const top = event.clientY - rect.top;
+    debugCursor.style.left = `${left}px`;
+    debugCursor.style.top = `${top}px`;
+  });
+  console.log("debugCursor created", overlayContainer);
+}
 const uiOverlay = document.getElementById("uiOverlay");
 const overlayPointerProbe =
   DEBUG_OVERLAY_POINTER && overlayContainer instanceof HTMLElement
