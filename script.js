@@ -314,14 +314,41 @@ function getPointerClientCoords(event) {
   };
 }
 
-function clientToBoardPx(e) {
+function getBoardFieldRectPx() {
+  const c = gsBoardCanvas;
+  const cr = c.getBoundingClientRect();
+  const fr = overlayContainer?.getBoundingClientRect?.();
+
+  if (!fr) {
+    return {
+      x: 0,
+      y: 0,
+      w: c.width,
+      h: c.height
+    };
+  }
+
+  const sx = c.width / cr.width;
+  const sy = c.height / cr.height;
+
+  return {
+    x: (fr.left - cr.left) * sx,
+    y: (fr.top - cr.top) * sy,
+    w: fr.width * sx,
+    h: fr.height * sy
+  };
+}
+
+function clientToFieldPx(e) {
   const c = gsBoardCanvas;
   const { clientX, clientY } = resolveClientPoint(e);
   const r = c.getBoundingClientRect();
-  return {
+  const px = {
     x: (clientX - r.left) * (c.width / r.width),
-    y: (clientY - r.top) * (c.height / r.height),
+    y: (clientY - r.top) * (c.height / r.height)
   };
+  const field = getBoardFieldRectPx();
+  return { x: px.x - field.x, y: px.y - field.y };
 }
 
 function getActiveBoardCanvas(preferredCanvas = gsBoardCanvas) {
@@ -332,9 +359,9 @@ function getActiveBoardCanvas(preferredCanvas = gsBoardCanvas) {
 function getPointerBoardCoords(event, canvas = gsBoardCanvas) {
   const { clientX, clientY } = getPointerClientCoords(event);
   const activeBoardCanvas = getActiveBoardCanvas(canvas);
-  const px = clientToBoardPx(event);
-  const world = pxToWorld(px);
-  return { clientX, clientY, px, world, canvas: activeBoardCanvas };
+  const fieldPx = clientToFieldPx(event);
+  const world = pxToWorld(fieldPx);
+  return { clientX, clientY, px: fieldPx, world, canvas: activeBoardCanvas };
 }
 
 function getCanvasDpr() {
@@ -1814,7 +1841,7 @@ function clientToOverlay(event, overlay = aimCanvas) {
 
 function clientToBoard(event) {
   const { clientX, clientY } = resolveClientPoint(event);
-  const px = clientToBoardPx(event);
+  const px = clientToFieldPx(event);
   const rect = gsBoardCanvas.getBoundingClientRect();
   const nx = rect.width ? (clientX - rect.left) / rect.width : 0;
   const ny = rect.height ? (clientY - rect.top) / rect.height : 0;
