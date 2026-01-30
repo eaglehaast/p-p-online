@@ -9133,6 +9133,10 @@ function syncAllCanvasBackingStores() {
   syncBoardCanvasBackingStores();
   syncAimCanvasLayout();
   syncCanvasBackingStore(hudCanvas, FRAME_BASE_WIDTH, FRAME_BASE_HEIGHT);
+  if (gsBoardCanvas && planeCanvas) {
+    if (planeCanvas.width !== gsBoardCanvas.width) planeCanvas.width = gsBoardCanvas.width;
+    if (planeCanvas.height !== gsBoardCanvas.height) planeCanvas.height = gsBoardCanvas.height;
+  }
 }
 
 function resizeCanvasFixedForGameBoard() {
