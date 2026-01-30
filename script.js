@@ -794,16 +794,32 @@ function syncOverlayContainerToBoardCanvas() {
 function syncBoardCanvasBackingStores() {
   if (!(gsBoardCanvas instanceof HTMLCanvasElement)) return;
   const rect = getVisibleCanvasRect(gsBoardCanvas);
-  if (!rect) return;
+  if (!rect) {
+    syncPlaneCanvasToGameCanvas();
+    return;
+  }
   const { RAW_DPR } = getCanvasDpr();
   const backingW = Math.max(1, Math.round(rect.width * RAW_DPR));
   const backingH = Math.max(1, Math.round(rect.height * RAW_DPR));
 
   if (gsBoardCanvas.width !== backingW) gsBoardCanvas.width = backingW;
   if (gsBoardCanvas.height !== backingH) gsBoardCanvas.height = backingH;
-  if (planeCanvas) {
-    if (planeCanvas.width !== backingW) planeCanvas.width = backingW;
-    if (planeCanvas.height !== backingH) planeCanvas.height = backingH;
+  syncPlaneCanvasToGameCanvas();
+}
+
+function syncPlaneCanvasToGameCanvas() {
+  if (!(planeCanvas instanceof HTMLCanvasElement)) return;
+  if (!(gsBoardCanvas instanceof HTMLCanvasElement)) return;
+  const boardStyle = gsBoardCanvas.style;
+  planeCanvas.style.left = boardStyle.left;
+  planeCanvas.style.top = boardStyle.top;
+  planeCanvas.style.width = boardStyle.width;
+  planeCanvas.style.height = boardStyle.height;
+  if (planeCanvas.width !== gsBoardCanvas.width) {
+    planeCanvas.width = gsBoardCanvas.width;
+  }
+  if (planeCanvas.height !== gsBoardCanvas.height) {
+    planeCanvas.height = gsBoardCanvas.height;
   }
 }
 
@@ -7503,10 +7519,7 @@ function drawPlaneCounterIcon(ctx2d, x, y, color, scale = 1) {
 
 function drawPlanesAndTrajectories(){
   resetCanvasState(planeCtx, planeCanvas, applyWorldViewTransform);
-  const scaleX = BOARD_VIEW.scaleX;
-  const scaleY = BOARD_VIEW.scaleY;
   planeCtx.save();
-  planeCtx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
 
   const debugDrawOrder = DEBUG_VFX ? [] : null;
 
