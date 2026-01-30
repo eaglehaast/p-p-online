@@ -8998,14 +8998,6 @@ function updateUiFrameScale() {
   }
 
   const wrapperEl = document.getElementById("screenWrapper");
-  const wrapperStyles = wrapperEl ? window.getComputedStyle(wrapperEl) : null;
-  const paddingTop = wrapperStyles ? parseFloat(wrapperStyles.paddingTop) || 0 : 0;
-  const paddingRight = wrapperStyles ? parseFloat(wrapperStyles.paddingRight) || 0 : 0;
-  const paddingBottom = wrapperStyles ? parseFloat(wrapperStyles.paddingBottom) || 0 : 0;
-  const paddingLeft = wrapperStyles ? parseFloat(wrapperStyles.paddingLeft) || 0 : 0;
-  const paddingX = paddingLeft + paddingRight;
-  const paddingY = paddingTop + paddingBottom;
-
   const viewport = typeof window !== "undefined" ? window.visualViewport : null;
   const viewportWidth = viewport && Number.isFinite(viewport.width) ? viewport.width : 0;
   const viewportHeight = viewport && Number.isFinite(viewport.height) ? viewport.height : 0;
@@ -9019,8 +9011,8 @@ function updateUiFrameScale() {
     : (viewportWidth && viewportHeight ? "visualViewport" : "inner");
   const baseWidth = hasWrapperSize ? wrapperEl.clientWidth : (viewportWidth || fallbackWidth);
   const baseHeight = hasWrapperSize ? wrapperEl.clientHeight : (viewportHeight || fallbackHeight);
-  const availW = Math.max(1, baseWidth - (hasWrapperSize ? paddingX : 0));
-  const availH = Math.max(1, baseHeight - (hasWrapperSize ? paddingY : 0));
+  const availW = Math.max(1, baseWidth);
+  const availH = Math.max(1, baseHeight);
   const scale = Math.min(availW / FRAME_BASE_WIDTH, availH / FRAME_BASE_HEIGHT);
   const clampedScale = Math.min(scale, 1.2);
   const safeScale = Number.isFinite(clampedScale) && clampedScale > 0 ? clampedScale : 1;
@@ -9033,7 +9025,6 @@ function updateUiFrameScale() {
       : null,
     inner: { width: fallbackWidth, height: fallbackHeight },
     wrapper: hasWrapperSize ? { width: baseWidth, height: baseHeight } : null,
-    padding: { x: paddingX, y: paddingY },
     avail: { width: availW, height: availH },
     source,
     scale: safeScale
