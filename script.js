@@ -313,16 +313,27 @@ function getPointerClientCoords(event) {
   };
 }
 
+function clientToCanvasPx(canvas, clientX, clientY) {
+  const r = canvas.getBoundingClientRect();
+  const x = (clientX - r.left) * (canvas.width / r.width);
+  const y = (clientY - r.top) * (canvas.height / r.height);
+  return { x, y };
+}
+
 function getPointerBoardCoords(event, canvas = gsBoardCanvas) {
   const { clientX, clientY } = getPointerClientCoords(event);
   const targetCanvas = canvas instanceof HTMLCanvasElement ? canvas : gsBoardCanvas;
-  const rect = targetCanvas?.getBoundingClientRect?.() || { left: 0, top: 0 };
+  const activeBoardCanvas = targetCanvas instanceof HTMLCanvasElement ? targetCanvas : gsBoardCanvas;
+  const rect = activeBoardCanvas?.getBoundingClientRect?.() || { left: 0, top: 0 };
   const local = {
     x: clientX - rect.left,
     y: clientY - rect.top
   };
-  const world = pxToWorld(local.x, local.y);
-  return { clientX, clientY, local, world, rect, canvas: targetCanvas };
+  const px = activeBoardCanvas
+    ? clientToCanvasPx(activeBoardCanvas, clientX, clientY)
+    : { x: local.x, y: local.y };
+  const world = pxToWorld(px);
+  return { clientX, clientY, local, px, world, rect, canvas: activeBoardCanvas };
 }
 
 function getCanvasDpr() {
@@ -698,9 +709,10 @@ function logInputTransforms(event) {
   if (!canvas) return;
   const rect = canvas.getBoundingClientRect();
   const local = { x: clientX - rect.left, y: clientY - rect.top };
-  const world = pxToWorld(local.x, local.y);
+  const px = clientToCanvasPx(canvas, clientX, clientY);
+  const world = pxToWorld(px);
   const roundTrip = worldToPx(world.x, world.y);
-  const distance = Math.hypot(local.x - roundTrip.x, local.y - roundTrip.y);
+  const distance = Math.hypot(px.x - roundTrip.x, px.y - roundTrip.y);
 
   const ctx = canvas.getContext("2d");
   if (ctx) {
@@ -711,6 +723,7 @@ function logInputTransforms(event) {
     canvas: label,
     client: { x: clientX, y: clientY },
     local,
+    px,
     world,
     roundTrip,
     distance
@@ -846,8 +859,11 @@ function worldToPx(x, y) {
   return { x: x * BOARD_VIEW.scaleX, y: y * BOARD_VIEW.scaleY };
 }
 
-function pxToWorld(x, y) {
-  return { x: x / BOARD_VIEW.scaleX, y: y / BOARD_VIEW.scaleY };
+function pxToWorld(pxOrX, y) {
+  const px = typeof pxOrX === "object" && pxOrX !== null
+    ? pxOrX
+    : { x: pxOrX, y };
+  return { x: px.x / BOARD_VIEW.scaleX, y: px.y / BOARD_VIEW.scaleY };
 }
 
 function resizeCanvasToMatchCss(canvas) {
