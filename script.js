@@ -4970,20 +4970,22 @@ const handleCircle={
 
 let selectedPlaneId = null;
 
-function getPlaneWorldPos(plane) {
+const PLANES_RENDER_LIST = {
+  [Symbol.iterator]: function* planesRenderIterator() {
+    yield* points;
+  }
+};
+
+function getPlaneWorldPosForRender(plane) {
   return { x: plane.x, y: plane.y };
 }
 
-function getPlaneHitTestPos(plane) {
-  return getPlaneWorldPos(plane);
-}
-
-function hitTestPlanes(worldPt) {
+function hitTestRenderedPlanes(worldPt) {
   let best = null;
   let bestD2 = Infinity;
-  for (const plane of points) {
-    if (!plane || !plane.isAlive || plane.burning) continue;
-    const hitPos = getPlaneHitTestPos(plane);
+  for (const plane of PLANES_RENDER_LIST) {
+    if (!plane || (!plane.isAlive && !plane.burning)) continue;
+    const hitPos = getPlaneWorldPosForRender(plane);
     const dx = worldPt.x - hitPos.x;
     const dy = worldPt.y - hitPos.y;
     const d2 = dx * dx + dy * dy;
@@ -5002,7 +5004,7 @@ function setSelectedPlane(planeId) {
 
 function isPlaneGrabbableAt(x, y) {
   if (!isGameScreenActive()) return false;
-  return !!hitTestPlanes({ x, y });
+  return !!hitTestRenderedPlanes({ x, y });
 }
 
 function updateBoardCursorForHover(x, y) {
@@ -5094,12 +5096,14 @@ function onBoardPointerDown(e){
     if (!isGameScreenActive()) return;
     const fieldPx = clientToFieldPx(e);
     const world = fieldPxToWorld(fieldPx);
-    const hit = hitTestPlanes(world);
-    console.log("[plane-hit-test]", {
-      inputWorld: world,
-      renderPos: hit ? getPlaneWorldPos(hit) : null,
-      hitTestPos: hit ? getPlaneHitTestPos(hit) : null
-    });
+    const hit = hitTestRenderedPlanes(world);
+    if (hit) {
+      console.log("[hit-debug]", {
+        world,
+        renderPos: getPlaneWorldPosForRender(hit),
+        planeId: hit.id
+      });
+    }
     if (hit) beginDragFromHit(hit, world, e.pointerId);
   }
 }
