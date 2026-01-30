@@ -50,6 +50,7 @@ const gsFrameEl = document.getElementById("gameContainer");
 const gameBackgroundEl = document.getElementById("gameBackground") || gsFrameEl;
 const gameScreen = gsFrameLayer || document.getElementById("gameScreen") || gsFrameEl;
 const gsBoardCanvas  = document.getElementById("gameCanvas");
+const gameCanvas = gsBoardCanvas;
 const gsBoardCtx     = gsBoardCanvas.getContext("2d");
 
 const aimCanvas   = document.getElementById("aimCanvas");
@@ -737,7 +738,7 @@ function drawInputDebugCross(ctx, canvas, local) {
 
 function logInputTransforms(event) {
   if (!DEBUG_INPUT_TRANSFORMS) return;
-  if (event?.type !== "pointermove") return;
+  if (event?.type !== "pointerdown") return;
   const { clientX, clientY } = getPointerClientCoords(event);
   const { canvas, label } = getInputDebugCanvas(event);
   if (!canvas) return;
@@ -932,8 +933,11 @@ function computeFrameViewFromCanvas(canvas) {
   computeViewFromCanvas(canvas, FRAME_VIEW, FRAME_BASE_WIDTH, FRAME_BASE_HEIGHT, sourceLabel);
 }
 
-function worldToPx(x, y) {
-  return { x: x * BOARD_VIEW.scaleX, y: y * BOARD_VIEW.scaleY };
+function worldToPx(worldOrX, y) {
+  const world = typeof worldOrX === "object" && worldOrX !== null
+    ? worldOrX
+    : { x: worldOrX, y };
+  return { x: world.x * BOARD_VIEW.scaleX, y: world.y * BOARD_VIEW.scaleY };
 }
 
 function pxToWorld(pxOrX, y) {
@@ -5137,8 +5141,24 @@ function updateAAPreviewFromEvent(e){
   aaPreviewTrail = [];
 }
 
+function dbgPoint(e) {
+  const canvas = gameCanvas; // тот же, по которому приходит pointerdown
+  const r = canvas.getBoundingClientRect();
+  const px = {
+    x: (e.clientX - r.left) * (canvas.width / r.width),
+    y: (e.clientY - r.top)  * (canvas.height / r.height),
+  };
+  const world = pxToWorld(px);      // BOARD_VIEW
+  const px2 = worldToPx(world);     // BOARD_VIEW
+  const dx = px2.x - px.x;
+  const dy = px2.y - px.y;
+  console.log('[inv]', { px, world, px2, dx, dy, rect: { l:r.left, t:r.top, w:r.width, h:r.height }, cw: canvas.width, ch: canvas.height });
+}
+
 function onCanvasPointerDown(e){
+  dbgPoint(e);
   logPointerDebugEvent(e);
+  logInputTransforms(e);
   if(phase === 'AA_PLACEMENT'){
     e.preventDefault();
     aaPointerDown = true;
@@ -5149,8 +5169,6 @@ function onCanvasPointerDown(e){
 }
 
 function onCanvasPointerMove(e){
-  logPointerDebugEvent(e);
-  logInputTransforms(e);
   const { world } = getPointerBoardCoords(e);
   const { x, y } = world;
   if(phase !== 'AA_PLACEMENT'){
@@ -5164,7 +5182,6 @@ function onCanvasPointerMove(e){
 }
 
 function onCanvasPointerUp(e){
-  logPointerDebugEvent(e);
   if(phase !== 'AA_PLACEMENT') return;
   aaPointerDown = false;
   if(!aaPlacementPreview) return;
@@ -5227,8 +5244,6 @@ function logGlobalPointerCapture(e) {
 }
 
 window.addEventListener("pointerdown", logGlobalPointerCapture, { capture: true });
-window.addEventListener("pointermove", logGlobalPointerCapture, { capture: true });
-window.addEventListener("pointerup", logGlobalPointerCapture, { capture: true });
 
 if (DEBUG_OVERLAY_POINTER) {
   window.addEventListener("pointermove", updateOverlayPointerProbe);
