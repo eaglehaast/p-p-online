@@ -172,7 +172,7 @@ const CANVAS_TRANSFORM_USAGE = {
     },
     {
       ctx: "aimCtx",
-      view: "FRAME_VIEW",
+      view: "BOARD_VIEW",
       location: "gameDraw()",
       order: "gameDraw → aimCtx.setTransform(1) → clearRect (aim overlay reset)"
     },
@@ -180,7 +180,7 @@ const CANVAS_TRANSFORM_USAGE = {
       ctx: "aimCtx",
       view: "BOARD_VIEW",
       location: "gameDraw()",
-      order: "gameDraw → aimCtx.setTransform(1) → clearRect → setTransform(board+offset) → drawArrow"
+      order: "gameDraw → aimCtx.setTransform(1) → clearRect → applyWorldViewTransform → drawArrow"
     },
     {
       ctx: "planeCtx",
@@ -959,10 +959,12 @@ function syncHudCanvasLayout() {
 function syncAimCanvasLayout() {
   if (!(aimCanvas instanceof HTMLCanvasElement)) return;
   const { RAW_DPR } = getCanvasDpr();
-  const backingW = Math.max(1, Math.round(FRAME_BASE_WIDTH * RAW_DPR));
-  const backingH = Math.max(1, Math.round(FRAME_BASE_HEIGHT * RAW_DPR));
-  if (aimCanvas.width !== backingW) aimCanvas.width = backingW;
-  if (aimCanvas.height !== backingH) aimCanvas.height = backingH;
+  const fallbackW = Math.max(1, Math.round(CANVAS_BASE_WIDTH * RAW_DPR));
+  const fallbackH = Math.max(1, Math.round(CANVAS_BASE_HEIGHT * RAW_DPR));
+  const targetW = gsBoardCanvas?.width || fallbackW;
+  const targetH = gsBoardCanvas?.height || fallbackH;
+  if (aimCanvas.width !== targetW) aimCanvas.width = targetW;
+  if (aimCanvas.height !== targetH) aimCanvas.height = targetH;
 }
 
 function logCanvasCreation(canvas, label = "") {
@@ -2950,7 +2952,7 @@ function initGameRenderPipeline(reason = "activate") {
   renderInitState.firstFrameDrawn = false;
   renderInitState.lastDrawLogTime = 0;
   resizeCanvasFixedForGameBoard();
-  applyViewTransform(aimCtx);
+  applyWorldViewTransform(aimCtx);
   applyViewTransform(hudCtx);
   applyWorldViewTransform(planeCtx);
   const metrics = getGameCanvasMetrics();
@@ -6813,24 +6815,12 @@ function gameDraw(){
     aimCtx.setTransform(1, 0, 0, 1, 0, 0);
     aimCtx.clearRect(0, 0, aimCanvas.width, aimCanvas.height);
     aimCtx.save();
-    const aimScaleX = BOARD_VIEW.scaleX * BOARD_VIEW.dpr;
-    const aimScaleY = BOARD_VIEW.scaleY * BOARD_VIEW.dpr;
-    const { x: aimOffsetX, y: aimOffsetY } = getFieldOffsetsInCanvasSpace(
-      aimCanvas,
-      aimScaleX,
-      aimScaleY
-    );
-    aimCtx.setTransform(
-      aimScaleX,
-      0,
-      0,
-      aimScaleY,
-      aimOffsetX,
-      aimOffsetY
-    );
+    applyWorldViewTransform(aimCtx);
     aimCtx.globalAlpha = arrowAlpha;
     drawArrow(aimCtx, startX, startY, baseDx, baseDy);
     if (DEBUG_AIM) {
+      const aimScaleX = BOARD_VIEW.scaleX * BOARD_VIEW.dpr;
+      const aimScaleY = BOARD_VIEW.scaleY * BOARD_VIEW.dpr;
       const debugSize = 3 / Math.max(1, aimScaleX, aimScaleY);
       aimCtx.globalAlpha = 1;
       aimCtx.fillStyle = 'magenta';
@@ -9055,7 +9045,7 @@ function syncAllCanvasBackingStores() {
   logResizeDebug('syncAllCanvasBackingStores');
   trackBootResizeCount('syncAllCanvasBackingStores');
   syncBoardCanvasBackingStores();
-  syncCanvasBackingStore(aimCanvas, FRAME_BASE_WIDTH, FRAME_BASE_HEIGHT);
+  syncAimCanvasLayout();
   syncCanvasBackingStore(hudCanvas, FRAME_BASE_WIDTH, FRAME_BASE_HEIGHT);
 }
 
@@ -9066,7 +9056,8 @@ function resizeCanvasFixedForGameBoard() {
   computeBoardViewFromCanvas(gsBoardCanvas);
   applyWorldViewTransform(gsBoardCtx);
   syncAimCanvasLayout();
-  computeFrameViewFromCanvas(aimCanvas || hudCanvas);
+  computeFrameViewFromCanvas(hudCanvas);
+  applyWorldViewTransform(aimCtx);
 
   if (planeCanvas) {
     applyWorldViewTransform(planeCtx);
@@ -9117,7 +9108,7 @@ function dumpViews(reason) {
     canvases: {
       gsBoardCanvas: describeCanvas(gsBoardCanvas, gsBoardCtx, "BOARD_VIEW"),
       planeCanvas: describeCanvas(planeCanvas, planeCtx, "BOARD_VIEW"),
-      aimCanvas: describeCanvas(aimCanvas, aimCtx, "FRAME_VIEW"),
+      aimCanvas: describeCanvas(aimCanvas, aimCtx, "BOARD_VIEW"),
       hudCanvas: describeCanvas(hudCanvas, hudCtx, "FRAME_VIEW")
     },
     views: {
@@ -9180,27 +9171,21 @@ async function syncLayoutAndField(reason = "sync") {
   };
 
   updateFieldDimensions();
-  syncAimCanvasLayout();
   syncHudCanvasLayout();
 
   syncBackgroundLayout(FRAME_BASE_WIDTH, FRAME_BASE_HEIGHT);
   syncBoardCanvasBackingStores();
+  syncAimCanvasLayout();
   computeBoardViewFromCanvas(gsBoardCanvas);
-  if (aimCanvas) {
-    const aimBackingW = Math.max(1, Math.round(FRAME_BASE_WIDTH * RAW_DPR));
-    const aimBackingH = Math.max(1, Math.round(FRAME_BASE_HEIGHT * RAW_DPR));
-    if (aimCanvas.width !== aimBackingW) aimCanvas.width = aimBackingW;
-    if (aimCanvas.height !== aimBackingH) aimCanvas.height = aimBackingH;
-  }
   if (hudCanvas) {
     const hudBackingW = Math.max(1, Math.round(FRAME_BASE_WIDTH * RAW_DPR));
     const hudBackingH = Math.max(1, Math.round(FRAME_BASE_HEIGHT * RAW_DPR));
     if (hudCanvas.width !== hudBackingW) hudCanvas.width = hudBackingW;
     if (hudCanvas.height !== hudBackingH) hudCanvas.height = hudBackingH;
   }
-  computeFrameViewFromCanvas(aimCanvas || hudCanvas);
+  computeFrameViewFromCanvas(hudCanvas);
   applyWorldViewTransform(gsBoardCtx);
-  applyViewTransform(aimCtx);
+  applyWorldViewTransform(aimCtx);
   applyViewTransform(hudCtx);
   applyWorldViewTransform(planeCtx);
 
