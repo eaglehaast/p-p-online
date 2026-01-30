@@ -897,7 +897,41 @@ function computeBoardViewFromCanvas(canvas) {
   const boardCanvas = pickVisibleCanvas(preferredCanvas, gsBoardCanvas, planeCanvas);
   if (!boardCanvas) return;
   const sourceLabel = boardCanvas?.id || 'gsBoardCanvas';
-  computeViewFromCanvas(boardCanvas, BOARD_VIEW, WORLD.width, WORLD.height, sourceLabel);
+  const rect = getVisibleCanvasRect(boardCanvas);
+  if (!rect) return;
+  const rootStyle = window.getComputedStyle(document.documentElement);
+  const uiScaleRaw = rootStyle.getPropertyValue('--ui-scale');
+  const uiScaleValue = uiScaleRaw ? parseFloat(uiScaleRaw) : 1;
+  const uiScale = Number.isFinite(uiScaleValue) && uiScaleValue > 0 ? uiScaleValue : 1;
+  const normalizedWidth = rect.width / uiScale;
+  const normalizedHeight = rect.height / uiScale;
+  const { RAW_DPR } = getCanvasDpr();
+  const cssW = Math.max(1, normalizedWidth);
+  const cssH = Math.max(1, normalizedHeight);
+  const pxW = Math.max(1, Math.round(cssW * RAW_DPR));
+  const pxH = Math.max(1, Math.round(cssH * RAW_DPR));
+
+  BOARD_VIEW.dpr = RAW_DPR;
+  BOARD_VIEW.cssW = cssW;
+  BOARD_VIEW.cssH = cssH;
+  BOARD_VIEW.pxW = pxW;
+  BOARD_VIEW.pxH = pxH;
+  BOARD_VIEW.scaleX = cssW / WORLD.width;
+  BOARD_VIEW.scaleY = cssH / WORLD.height;
+  BOARD_VIEW.lastSource = sourceLabel;
+
+  if (DEBUG_BOARD_VIEW) {
+    console.log('[board-view]', {
+      source: sourceLabel,
+      rect: { width: rect.width, height: rect.height },
+      uiScale,
+      normalized: { width: cssW, height: cssH },
+      dpr: RAW_DPR,
+      scaleX: BOARD_VIEW.scaleX,
+      scaleY: BOARD_VIEW.scaleY,
+      lastSource: BOARD_VIEW.lastSource
+    });
+  }
 }
 
 function computeFrameViewFromCanvas(canvas) {
