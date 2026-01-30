@@ -76,12 +76,11 @@
           <div id="gameContainer">
             <div id="gameBackground" aria-hidden="true"></div>
             <!-- Base field and overlays -->
-            <canvas id="gameCanvas" width="360" height="640" style="display:none;"></canvas>
-
-            <!-- Full-frame overlay for the aiming arrow -->
-            <canvas id="aimCanvas" width="460" height="800" style="display:none;"></canvas>
+            <canvas id="gameCanvas" width="360" height="640"></canvas>
 
             <div id="overlayContainer" aria-hidden="true">
+              <!-- Field overlay for the aiming arrow -->
+              <canvas id="aimCanvas" width="360" height="640" style="display:none;"></canvas>
               <!-- Overlay canvas for planes -->
               <canvas id="planeCanvas" width="360" height="640" style="display:none;"></canvas>
             </div>
