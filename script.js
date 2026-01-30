@@ -317,16 +317,7 @@ function getPointerClientCoords(event) {
 function getBoardFieldRectPx() {
   const c = gsBoardCanvas;
   const cr = c.getBoundingClientRect();
-  const fr = overlayContainer?.getBoundingClientRect?.();
-
-  if (!fr) {
-    return {
-      x: 0,
-      y: 0,
-      w: c.width,
-      h: c.height
-    };
-  }
+  const fr = overlayContainer.getBoundingClientRect();
 
   const sx = c.width / cr.width;
   const sy = c.height / cr.height;
@@ -341,11 +332,10 @@ function getBoardFieldRectPx() {
 
 function clientToFieldPx(e) {
   const c = gsBoardCanvas;
-  const { clientX, clientY } = resolveClientPoint(e);
   const r = c.getBoundingClientRect();
   const px = {
-    x: (clientX - r.left) * (c.width / r.width),
-    y: (clientY - r.top) * (c.height / r.height)
+    x: (e.clientX - r.left) * (c.width / r.width),
+    y: (e.clientY - r.top) * (c.height / r.height)
   };
   const field = getBoardFieldRectPx();
   return { x: px.x - field.x, y: px.y - field.y };
@@ -5071,7 +5061,8 @@ function handleAAPlacement(x, y){
 }
 
 function updateAAPreviewFromEvent(e){
-  const { world } = getPointerBoardCoords(e);
+  const fieldPx = clientToFieldPx(e);
+  const world = pxToWorld(fieldPx);
   const { x, y } = world;
   aaPlacementPreview = { x, y };
   aaPreviewTrail = [];
@@ -5087,14 +5078,16 @@ function onBoardPointerDown(e){
     updateAAPreviewFromEvent(e);
   } else {
     if (!isGameScreenActive()) return;
-    const { world } = getPointerBoardCoords(e);
+    const fieldPx = clientToFieldPx(e);
+    const world = pxToWorld(fieldPx);
     const hit = hitTestPlanes(world);
     if (hit) beginDragFromHit(hit, world, e.pointerId);
   }
 }
 
 function onBoardPointerMove(e){
-  const { world } = getPointerBoardCoords(e);
+  const fieldPx = clientToFieldPx(e);
+  const world = pxToWorld(fieldPx);
   const { x, y } = world;
   if(phase !== 'AA_PLACEMENT'){
     updateBoardCursorForHover(x, y);
