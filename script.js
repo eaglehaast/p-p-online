@@ -313,16 +313,16 @@ function getPointerClientCoords(event) {
   };
 }
 
-function getPointerDesignCoords(event) {
+function getPointerBoardCoords(event, canvas = gsBoardCanvas) {
   const { clientX, clientY } = getPointerClientCoords(event);
-  return toDesignCoords(clientX, clientY);
-}
-
-function designToBoardCoords(designX, designY) {
-  return {
-    x: designX - CANVAS_OFFSET_X,
-    y: designY - FRAME_PADDING_Y
+  const targetCanvas = canvas instanceof HTMLCanvasElement ? canvas : gsBoardCanvas;
+  const rect = targetCanvas?.getBoundingClientRect?.() || { left: 0, top: 0 };
+  const local = {
+    x: clientX - rect.left,
+    y: clientY - rect.top
   };
+  const world = pxToWorld(local.x, local.y);
+  return { clientX, clientY, local, world, rect, canvas: targetCanvas };
 }
 
 function getCanvasDpr() {
@@ -643,17 +643,16 @@ function drawStartPositionsDebug(ctx, scale = 1) {
 
 function logPointerDebugEvent(event) {
   if (!(DEBUG_LAYOUT || DEBUG_RENDER_INIT)) return;
-  const design = getPointerDesignCoords(event);
-  const board = designToBoardCoords(design.x, design.y);
-  pointerDebugState.lastPoint = { x: board.x, y: board.y };
+  const { world, local, rect } = getPointerBoardCoords(event, gsBoardCanvas);
+  pointerDebugState.lastPoint = { x: world.x, y: world.y };
   if (pointerDebugState.logged >= 3) return;
   pointerDebugState.logged += 1;
   console.log("[pointer-debug]", {
     index: pointerDebugState.logged,
-    clientX: design.rect ? design.rect.left + design.x * design.uiScale : null,
-    clientY: design.rect ? design.rect.top + design.y * design.uiScale : null,
-    x: board.x,
-    y: board.y
+    clientX: rect?.left + local.x,
+    clientY: rect?.top + local.y,
+    x: world.x,
+    y: world.y
   });
 }
 
@@ -1695,16 +1694,15 @@ function clientPointFromEvent(e) {
 function clientToWorld(point) {
   const clientX = Number.isFinite(point?.x) ? point.x : 0;
   const clientY = Number.isFinite(point?.y) ? point.y : 0;
-  const design = toDesignCoords(clientX, clientY);
-  const world = designToBoardCoords(design.x, design.y);
+  const { world, rect } = getPointerBoardCoords({ clientX, clientY }, gsBoardCanvas);
   return {
     x: world.x,
     y: world.y,
     rect: {
-      left: CANVAS_OFFSET_X,
-      top: FRAME_PADDING_Y,
-      width: CANVAS_BASE_WIDTH,
-      height: CANVAS_BASE_HEIGHT
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height
     },
     v: null
   };
@@ -4925,8 +4923,8 @@ function handleStart(e) {
 
   if(flyingPoints.some(fp=>fp.plane.color===currentColor)) return;
 
-  const { x: designX, y: designY } = getPointerDesignCoords(e);
-  const { x: mx, y: my } = designToBoardCoords(designX, designY);
+  const { world } = getPointerBoardCoords(e, gsBoardCanvas);
+  const { x: mx, y: my } = world;
 
   let found= points.find(pt=>
     pt.color=== currentColor &&
@@ -4975,8 +4973,8 @@ function handleAAPlacement(x, y){
 }
 
 function updateAAPreviewFromEvent(e){
-  const { x: designX, y: designY } = getPointerDesignCoords(e);
-  const { x, y } = designToBoardCoords(designX, designY);
+  const { world } = getPointerBoardCoords(e, gsBoardCanvas);
+  const { x, y } = world;
   aaPlacementPreview = { x, y };
   aaPreviewTrail = [];
 }
@@ -4995,8 +4993,8 @@ function onCanvasPointerDown(e){
 function onCanvasPointerMove(e){
   logPointerDebugEvent(e);
   logInputTransforms(e);
-  const { x: designX, y: designY } = getPointerDesignCoords(e);
-  const { x, y } = designToBoardCoords(designX, designY);
+  const { world } = getPointerBoardCoords(e, gsBoardCanvas);
+  const { x, y } = world;
   if(phase !== 'AA_PLACEMENT'){
     updateBoardCursorForHover(x, y);
     return;
@@ -5169,8 +5167,8 @@ function onHandleMove(e){
   if(!handleCircle.active)return;
   e.preventDefault();
   logInputTransforms(e);
-  const { x: designX, y: designY } = getPointerDesignCoords(e);
-  const { x, y } = designToBoardCoords(designX, designY);
+  const { world } = getPointerBoardCoords(e, gsBoardCanvas);
+  const { x, y } = world;
 
   handleCircle.baseX = x;
   handleCircle.baseY = y;
