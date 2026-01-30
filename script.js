@@ -30,6 +30,7 @@ const DEBUG_WRAPPER_SYNC = false;
 const DEBUG_BOARD_VIEW = false;
 const DEBUG_INPUT_TRANSFORMS = false;
 const DEBUG_CANVAS_TRANSFORMS = false;
+const DEBUG_OVERLAY_POINTER = false;
 
 const bootTrace = {
   startTs: null,
@@ -998,6 +999,26 @@ function logCanvasCreation(canvas, label = "") {
 
 const overlayContainer = document.getElementById("overlayContainer");
 const uiOverlay = document.getElementById("uiOverlay");
+const overlayPointerProbe =
+  DEBUG_OVERLAY_POINTER && overlayContainer instanceof HTMLElement
+    ? document.createElement("div")
+    : null;
+
+if (overlayPointerProbe) {
+  overlayPointerProbe.id = "overlayPointerProbe";
+  overlayPointerProbe.setAttribute("aria-hidden", "true");
+  Object.assign(overlayPointerProbe.style, {
+    position: "absolute",
+    width: "6px",
+    height: "6px",
+    border: "1px solid red",
+    transform: "translate(-50%, -50%)",
+    pointerEvents: "none",
+    left: "0",
+    top: "0",
+  });
+  overlayContainer.appendChild(overlayPointerProbe);
+}
 
 let OVERLAY_RESYNC_SCHEDULED = false;
 
@@ -5119,6 +5140,16 @@ function syncBoardPointerHandlers() {
 
 syncBoardPointerHandlers();
 
+function updateOverlayPointerProbe(e) {
+  if (!overlayPointerProbe || !(overlayContainer instanceof HTMLElement)) return;
+  if (e?.type !== "pointermove") return;
+  const rect = overlayContainer.getBoundingClientRect();
+  const left = e.clientX - rect.left;
+  const top = e.clientY - rect.top;
+  overlayPointerProbe.style.left = `${left}px`;
+  overlayPointerProbe.style.top = `${top}px`;
+}
+
 function logGlobalPointerCapture(e) {
   const target = e.target;
   const targetId = target?.id ?? "";
@@ -5138,6 +5169,10 @@ function logGlobalPointerCapture(e) {
 window.addEventListener("pointerdown", logGlobalPointerCapture, { capture: true });
 window.addEventListener("pointermove", logGlobalPointerCapture, { capture: true });
 window.addEventListener("pointerup", logGlobalPointerCapture, { capture: true });
+
+if (DEBUG_OVERLAY_POINTER) {
+  window.addEventListener("pointermove", updateOverlayPointerProbe);
+}
 
 
 function isValidAAPlacement(x,y){
