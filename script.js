@@ -5119,6 +5119,26 @@ function syncBoardPointerHandlers() {
 
 syncBoardPointerHandlers();
 
+function logGlobalPointerCapture(e) {
+  const target = e.target;
+  const targetId = target?.id ?? "";
+  const targetClass = target ? String(target.className ?? "") : "";
+  const hitId = document.elementFromPoint(e.clientX, e.clientY)?.id ?? "";
+  console.log(
+    "[pointer-capture]",
+    e.type,
+    targetId,
+    targetClass,
+    e.clientX,
+    e.clientY,
+    hitId
+  );
+}
+
+window.addEventListener("pointerdown", logGlobalPointerCapture, { capture: true });
+window.addEventListener("pointermove", logGlobalPointerCapture, { capture: true });
+window.addEventListener("pointerup", logGlobalPointerCapture, { capture: true });
+
 
 function isValidAAPlacement(x,y){
   // Allow Anti-Aircraft placement anywhere within the player's half of the field.
