@@ -313,24 +313,28 @@ function getPointerClientCoords(event) {
   };
 }
 
-function clientToCanvasPx(canvas, clientX, clientY) {
+function clientToCanvasPx(canvas, e) {
   const r = canvas.getBoundingClientRect();
-  const x = (clientX - r.left) * (canvas.width / r.width);
-  const y = (clientY - r.top) * (canvas.height / r.height);
+  const x = (e.clientX - r.left) * (canvas.width / r.width);
+  const y = (e.clientY - r.top) * (canvas.height / r.height);
   return { x, y };
+}
+
+function getActiveBoardCanvas(preferredCanvas = gsBoardCanvas) {
+  const preferred = preferredCanvas instanceof HTMLCanvasElement ? preferredCanvas : null;
+  return pickVisibleCanvas(preferred, gsBoardCanvas, planeCanvas);
 }
 
 function getPointerBoardCoords(event, canvas = gsBoardCanvas) {
   const { clientX, clientY } = getPointerClientCoords(event);
-  const targetCanvas = canvas instanceof HTMLCanvasElement ? canvas : gsBoardCanvas;
-  const activeBoardCanvas = targetCanvas instanceof HTMLCanvasElement ? targetCanvas : gsBoardCanvas;
+  const activeBoardCanvas = getActiveBoardCanvas(canvas);
   const rect = activeBoardCanvas?.getBoundingClientRect?.() || { left: 0, top: 0 };
   const local = {
     x: clientX - rect.left,
     y: clientY - rect.top
   };
   const px = activeBoardCanvas
-    ? clientToCanvasPx(activeBoardCanvas, clientX, clientY)
+    ? clientToCanvasPx(activeBoardCanvas, event)
     : { x: local.x, y: local.y };
   const world = pxToWorld(px);
   return { clientX, clientY, local, px, world, rect, canvas: activeBoardCanvas };
@@ -658,7 +662,7 @@ function drawStartPositionsDebug(ctx, scale = 1) {
 
 function logPointerDebugEvent(event) {
   if (!(DEBUG_LAYOUT || DEBUG_RENDER_INIT)) return;
-  const { world, local, rect } = getPointerBoardCoords(event, gsBoardCanvas);
+  const { world, local, rect } = getPointerBoardCoords(event);
   pointerDebugState.lastPoint = { x: world.x, y: world.y };
   if (pointerDebugState.logged >= 3) return;
   pointerDebugState.logged += 1;
@@ -713,10 +717,11 @@ function logInputTransforms(event) {
   if (!canvas) return;
   const rect = canvas.getBoundingClientRect();
   const local = { x: clientX - rect.left, y: clientY - rect.top };
-  const px = clientToCanvasPx(canvas, clientX, clientY);
+  const px = clientToCanvasPx(canvas, event);
   const world = pxToWorld(px);
   const roundTrip = worldToPx(world.x, world.y);
   const distance = Math.hypot(px.x - roundTrip.x, px.y - roundTrip.y);
+  console.assert(distance < 1, "[input-invariant] worldToPx(pxToWorld(p)) drift", { px, roundTrip, distance });
 
   const ctx = canvas.getContext("2d");
   if (ctx) {
@@ -1741,7 +1746,7 @@ function clientPointFromEvent(e) {
 function clientToWorld(point) {
   const clientX = Number.isFinite(point?.x) ? point.x : 0;
   const clientY = Number.isFinite(point?.y) ? point.y : 0;
-  const { world, rect } = getPointerBoardCoords({ clientX, clientY }, gsBoardCanvas);
+  const { world, rect } = getPointerBoardCoords({ clientX, clientY });
   return {
     x: world.x,
     y: world.y,
@@ -3009,6 +3014,7 @@ function activateGameScreen() {
   if (gameScreen instanceof HTMLElement) {
     gameScreen.removeAttribute('aria-hidden');
   }
+  syncBoardPointerHandlers();
 
   if (!hasActivatedGameScreen || wasMenu) {
     needsGameScreenSync = true;
@@ -4621,6 +4627,7 @@ function resetGame(options = {}){
     aimCanvas.style.display = "block";
     planeCanvas.style.display = "block";
   }
+  syncBoardPointerHandlers();
   resetCanvasState(planeCtx, planeCanvas, applyWorldViewTransform);
 
   // Остановить основной цикл
@@ -4950,15 +4957,16 @@ function isPlaneGrabbableAt(x, y) {
 }
 
 function updateBoardCursorForHover(x, y) {
+  const cursorCanvas = getActiveBoardCanvas(gsBoardCanvas) || gsBoardCanvas;
   if(phase === 'AA_PLACEMENT') {
-    gsBoardCanvas.style.cursor = '';
+    cursorCanvas.style.cursor = '';
     return;
   }
   if(handleCircle.active) {
-    gsBoardCanvas.style.cursor = 'grabbing';
+    cursorCanvas.style.cursor = 'grabbing';
     return;
   }
-  gsBoardCanvas.style.cursor = isPlaneGrabbableAt(x, y) ? 'grab' : '';
+  cursorCanvas.style.cursor = isPlaneGrabbableAt(x, y) ? 'grab' : '';
 }
 
 function handleStart(e) {
@@ -4970,7 +4978,7 @@ function handleStart(e) {
 
   if(flyingPoints.some(fp=>fp.plane.color===currentColor)) return;
 
-  const { world } = getPointerBoardCoords(e, gsBoardCanvas);
+  const { world } = getPointerBoardCoords(e);
   const { x: mx, y: my } = world;
 
   let found= points.find(pt=>
@@ -4989,7 +4997,7 @@ function handleStart(e) {
   oscillationAngle = 0;
   oscillationDir = 1;
   roundTextTimer = 0; // Hide round label when player starts a move
-  gsBoardCanvas.style.cursor = 'grabbing';
+  (getActiveBoardCanvas(gsBoardCanvas) || gsBoardCanvas).style.cursor = 'grabbing';
   document.body.style.cursor = 'grabbing';
 
   // Show overlay canvas for aiming arrow
@@ -5020,7 +5028,7 @@ function handleAAPlacement(x, y){
 }
 
 function updateAAPreviewFromEvent(e){
-  const { world } = getPointerBoardCoords(e, gsBoardCanvas);
+  const { world } = getPointerBoardCoords(e);
   const { x, y } = world;
   aaPlacementPreview = { x, y };
   aaPreviewTrail = [];
@@ -5040,7 +5048,7 @@ function onCanvasPointerDown(e){
 function onCanvasPointerMove(e){
   logPointerDebugEvent(e);
   logInputTransforms(e);
-  const { world } = getPointerBoardCoords(e, gsBoardCanvas);
+  const { world } = getPointerBoardCoords(e);
   const { x, y } = world;
   if(phase !== 'AA_PLACEMENT'){
     updateBoardCursorForHover(x, y);
@@ -5063,10 +5071,31 @@ function onCanvasPointerUp(e){
   aaPreviewTrail = [];
 }
 
-gsBoardCanvas.addEventListener("pointerdown", onCanvasPointerDown);
-gsBoardCanvas.addEventListener("pointermove", onCanvasPointerMove);
-gsBoardCanvas.addEventListener("pointerup", onCanvasPointerUp);
-gsBoardCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; aaPointerDown = false; aaPreviewTrail = []; });
+function onCanvasPointerLeave() {
+  aaPlacementPreview = null;
+  aaPointerDown = false;
+  aaPreviewTrail = [];
+}
+
+let boardPointerCanvas = null;
+function syncBoardPointerHandlers() {
+  const nextCanvas = getActiveBoardCanvas(gsBoardCanvas);
+  if (boardPointerCanvas === nextCanvas) return;
+  if (boardPointerCanvas) {
+    boardPointerCanvas.removeEventListener("pointerdown", onCanvasPointerDown);
+    boardPointerCanvas.removeEventListener("pointermove", onCanvasPointerMove);
+    boardPointerCanvas.removeEventListener("pointerup", onCanvasPointerUp);
+    boardPointerCanvas.removeEventListener("pointerleave", onCanvasPointerLeave);
+  }
+  boardPointerCanvas = nextCanvas;
+  if (!boardPointerCanvas) return;
+  boardPointerCanvas.addEventListener("pointerdown", onCanvasPointerDown);
+  boardPointerCanvas.addEventListener("pointermove", onCanvasPointerMove);
+  boardPointerCanvas.addEventListener("pointerup", onCanvasPointerUp);
+  boardPointerCanvas.addEventListener("pointerleave", onCanvasPointerLeave);
+}
+
+syncBoardPointerHandlers();
 
 
 function isValidAAPlacement(x,y){
@@ -5214,12 +5243,12 @@ function onHandleMove(e){
   if(!handleCircle.active)return;
   e.preventDefault();
   logInputTransforms(e);
-  const { world } = getPointerBoardCoords(e, gsBoardCanvas);
+  const { world } = getPointerBoardCoords(e);
   const { x, y } = world;
 
   handleCircle.baseX = x;
   handleCircle.baseY = y;
-  gsBoardCanvas.style.cursor = 'grabbing';
+  (getActiveBoardCanvas(gsBoardCanvas) || gsBoardCanvas).style.cursor = 'grabbing';
   document.body.style.cursor = 'grabbing';
 }
 
