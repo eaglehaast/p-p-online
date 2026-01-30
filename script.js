@@ -1007,16 +1007,17 @@ if (debugCursor) {
     position: "absolute",
     width: "8px",
     height: "8px",
-    border: "2px solid magenta",
+    background: "red",
     borderRadius: "50%",
+    opacity: "1",
     transform: "translate(-50%, -50%)",
     pointerEvents: "none",
     left: "0",
     top: "0",
-    zIndex: "9999",
+    zIndex: "999999",
   });
   overlayContainer.appendChild(debugCursor);
-  overlayContainer.addEventListener("pointermove", (event) => {
+  window.addEventListener("pointermove", (event) => {
     const rect = overlayContainer.getBoundingClientRect();
     const left = event.clientX - rect.left;
     const top = event.clientY - rect.top;
