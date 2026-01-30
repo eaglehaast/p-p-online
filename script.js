@@ -797,16 +797,31 @@ function pickVisibleCanvas(...candidates) {
   return null;
 }
 
+function setInlineStyleIfChanged(element, property, value) {
+  if (!(element instanceof HTMLElement)) return false;
+  if (element.style[property] === value) return false;
+  element.style[property] = value;
+  return true;
+}
+
+function setCssVarIfChanged(element, name, value) {
+  if (!(element instanceof HTMLElement)) return false;
+  const current = element.style.getPropertyValue(name);
+  if (current === value) return false;
+  element.style.setProperty(name, value);
+  return true;
+}
+
 function syncOverlayContainerToBoardCanvas() {
   if (!(overlayContainer instanceof HTMLElement)) return;
   if (!(gsBoardCanvas instanceof HTMLCanvasElement)) return;
   if (isCanvasHidden(gsBoardCanvas)) return;
   const { offsetLeft, offsetTop, offsetWidth, offsetHeight } = gsBoardCanvas;
   if (offsetWidth <= 0 || offsetHeight <= 0) return;
-  overlayContainer.style.left = `${offsetLeft}px`;
-  overlayContainer.style.top = `${offsetTop}px`;
-  overlayContainer.style.width = `${offsetWidth}px`;
-  overlayContainer.style.height = `${offsetHeight}px`;
+  setInlineStyleIfChanged(overlayContainer, "left", `${offsetLeft}px`);
+  setInlineStyleIfChanged(overlayContainer, "top", `${offsetTop}px`);
+  setInlineStyleIfChanged(overlayContainer, "width", `${offsetWidth}px`);
+  setInlineStyleIfChanged(overlayContainer, "height", `${offsetHeight}px`);
 }
 
 function syncBoardCanvasBackingStores() {
@@ -829,10 +844,10 @@ function syncPlaneCanvasToGameCanvas() {
   if (!(planeCanvas instanceof HTMLCanvasElement)) return;
   if (!(gsBoardCanvas instanceof HTMLCanvasElement)) return;
   const boardStyle = gsBoardCanvas.style;
-  planeCanvas.style.left = boardStyle.left;
-  planeCanvas.style.top = boardStyle.top;
-  planeCanvas.style.width = boardStyle.width;
-  planeCanvas.style.height = boardStyle.height;
+  setInlineStyleIfChanged(planeCanvas, "left", boardStyle.left);
+  setInlineStyleIfChanged(planeCanvas, "top", boardStyle.top);
+  setInlineStyleIfChanged(planeCanvas, "width", boardStyle.width);
+  setInlineStyleIfChanged(planeCanvas, "height", boardStyle.height);
   if (planeCanvas.width !== gsBoardCanvas.width) {
     planeCanvas.width = gsBoardCanvas.width;
   }
@@ -913,8 +928,8 @@ function resizeCanvasToMatchCss(canvas) {
   const backingW = Math.max(1, Math.round(w * RAW_DPR));
   const backingH = Math.max(1, Math.round(h * RAW_DPR));
 
-  canvas.style.width = `${w}px`;
-  canvas.style.height = `${h}px`;
+  setInlineStyleIfChanged(canvas, "width", `${w}px`);
+  setInlineStyleIfChanged(canvas, "height", `${h}px`);
   if (canvas.width !== backingW) canvas.width = backingW;
   if (canvas.height !== backingH) canvas.height = backingH;
 }
@@ -3282,12 +3297,17 @@ function syncBackgroundLayout(containerWidth, containerHeight, containerLeft = n
     ? computedSize.split(',').every(layer => layer.includes('%'))
     : false;
   if (gameBackgroundEl && !usesPercentSizing) {
-    gameBackgroundEl.style.backgroundSize = repeatedSize;
+    if (computedSize !== repeatedSize) {
+      gameBackgroundEl.style.backgroundSize = repeatedSize;
+    }
   }
 
   const containerPosition = duplicateBackgroundValue('center top');
   if (gameBackgroundEl) {
-    gameBackgroundEl.style.backgroundPosition = containerPosition;
+    const computedPosition = window.getComputedStyle(gameBackgroundEl).backgroundPosition;
+    if (computedPosition !== containerPosition) {
+      gameBackgroundEl.style.backgroundPosition = containerPosition;
+    }
   }
 }
 
@@ -8939,15 +8959,15 @@ function syncWrapperToVisualViewport() {
   const offsetLeft = viewport && Number.isFinite(viewport.offsetLeft) ? viewport.offsetLeft : 0;
   const offsetTop = viewport && Number.isFinite(viewport.offsetTop) ? viewport.offsetTop : 0;
 
-wrapperEl.style.position = 'fixed';
-wrapperEl.style.inset = 'auto';
-wrapperEl.style.right = 'auto';
-wrapperEl.style.bottom = 'auto';
+  setInlineStyleIfChanged(wrapperEl, "position", "fixed");
+  setInlineStyleIfChanged(wrapperEl, "inset", "auto");
+  setInlineStyleIfChanged(wrapperEl, "right", "auto");
+  setInlineStyleIfChanged(wrapperEl, "bottom", "auto");
 
-wrapperEl.style.left = `${offsetLeft}px`;
-wrapperEl.style.top = `${offsetTop}px`;
-wrapperEl.style.width = `${width}px`;
-wrapperEl.style.height = `${height}px`;
+  setInlineStyleIfChanged(wrapperEl, "left", `${offsetLeft}px`);
+  setInlineStyleIfChanged(wrapperEl, "top", `${offsetTop}px`);
+  setInlineStyleIfChanged(wrapperEl, "width", `${width}px`);
+  setInlineStyleIfChanged(wrapperEl, "height", `${height}px`);
 
 
   if (DEBUG_WRAPPER_SYNC && !wrapperSyncDebugState.logged) {
@@ -9129,7 +9149,33 @@ function dumpViews(reason) {
   });
 }
 
-async function syncLayoutAndField(reason = "sync") {
+let layoutUpdatePending = false;
+let layoutUpdateInProgress = false;
+let queuedLayoutReason = null;
+
+function requestLayoutUpdate(reason = "sync") {
+  queuedLayoutReason = queuedLayoutReason || reason;
+  if (layoutUpdatePending || layoutUpdateInProgress) return;
+  layoutUpdatePending = true;
+  requestAnimationFrame(() => {
+    layoutUpdatePending = false;
+    void runLayoutUpdate();
+  });
+}
+
+async function runLayoutUpdate() {
+  if (layoutUpdateInProgress) return;
+  layoutUpdateInProgress = true;
+  const reason = queuedLayoutReason || "sync";
+  queuedLayoutReason = null;
+  await updateViewsAndCanvases(reason);
+  layoutUpdateInProgress = false;
+  if (queuedLayoutReason) {
+    requestLayoutUpdate(queuedLayoutReason);
+  }
+}
+
+async function updateViewsAndCanvases(reason = "sync") {
   logResizeDebug('resizeCanvas');
   trackBootResizeCount('resizeCanvas');
   // Keep the game in portrait mode: if the device rotates to landscape,
@@ -9147,10 +9193,10 @@ async function syncLayoutAndField(reason = "sync") {
     const fieldHeight = WORLD.height;
     const fieldLeft = (FRAME_BASE_WIDTH - WORLD.width) / 2;
     const fieldTop = (FRAME_BASE_HEIGHT - WORLD.height) / 2;
-    gsFrameEl.style.setProperty("--field-left", `${fieldLeft}px`);
-    gsFrameEl.style.setProperty("--field-top", `${fieldTop}px`);
-    gsFrameEl.style.setProperty("--field-width", `${fieldWidth}px`);
-    gsFrameEl.style.setProperty("--field-height", `${fieldHeight}px`);
+    setCssVarIfChanged(gsFrameEl, "--field-left", `${fieldLeft}px`);
+    setCssVarIfChanged(gsFrameEl, "--field-top", `${fieldTop}px`);
+    setCssVarIfChanged(gsFrameEl, "--field-width", `${fieldWidth}px`);
+    setCssVarIfChanged(gsFrameEl, "--field-height", `${fieldHeight}px`);
   }
   forceLayoutReflow();
   syncOverlayContainerToBoardCanvas();
@@ -9250,12 +9296,12 @@ function logLayoutMetrics(reason) {
   });
 }
 
-window.addEventListener('resize', async () => {
-  await syncLayoutAndField("viewport change");
+window.addEventListener('resize', () => {
+  requestLayoutUpdate("viewport change");
   logLayoutMetrics("resize");
 });
 window.addEventListener('load', () => {
-  void syncLayoutAndField("load");
+  requestLayoutUpdate("load");
 });
 // Lock orientation to portrait and prevent the canvas from redrawing on rotation
 function lockOrientation(){
@@ -9268,17 +9314,17 @@ function lockOrientation(){
 lockOrientation();
 window.addEventListener('orientationchange', () => {
   lockOrientation();
-  void syncLayoutAndField("orientation change");
+  requestLayoutUpdate("orientation change");
 });
 if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', async () => {
-    await syncLayoutAndField("viewport change");
+  window.visualViewport.addEventListener('resize', () => {
+    requestLayoutUpdate("viewport change");
     if (window.visualViewport.scale !== 1) {
       logLayoutMetrics("visualViewport resize");
     }
   });
-  window.visualViewport.addEventListener('scroll', async () => {
-    await syncLayoutAndField("viewport change");
+  window.visualViewport.addEventListener('scroll', () => {
+    requestLayoutUpdate("viewport change");
     if (window.visualViewport.scale !== 1) {
       logLayoutMetrics("visualViewport scroll");
     }
@@ -9296,7 +9342,7 @@ if (window.visualViewport) {
 
   async function bootstrapGame(){
     await waitForStylesReady();
-    await syncLayoutAndField("bootstrap");
+    await updateViewsAndCanvases("bootstrap");
     logLayoutMetrics("bootstrap");
     resetGame();
   }
