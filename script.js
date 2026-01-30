@@ -9031,8 +9031,8 @@ function syncWrapperToVisualViewport() {
   const viewport = typeof window !== "undefined" ? window.visualViewport : null;
   const width = viewport && Number.isFinite(viewport.width) ? viewport.width : (window.innerWidth || 0);
   const height = viewport && Number.isFinite(viewport.height) ? viewport.height : (window.innerHeight || 0);
-  const offsetLeft = viewport && Number.isFinite(viewport.offsetLeft) ? viewport.offsetLeft : 0;
-  const offsetTop = viewport && Number.isFinite(viewport.offsetTop) ? viewport.offsetTop : 0;
+  const offsetLeft = 0;
+  const offsetTop = 0;
 
   setInlineStyleIfChanged(wrapperEl, "position", "fixed");
   setInlineStyleIfChanged(wrapperEl, "inset", "auto");
