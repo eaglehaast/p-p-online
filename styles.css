@@ -57,19 +57,22 @@ body, button {
 
 #screenWrapper {
   position: fixed;
-  display: grid;
-  place-items: center;
+  inset: 0;
   box-sizing: border-box;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-  }
+  overflow: hidden;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
 
-  #uiFrame {
-    position: relative;
-    width: calc(var(--design-w) * 1px);
-    height: calc(var(--design-h) * 1px);
-    transform-origin: center center;
-    transform: scale(var(--ui-scale));
-  }
+#uiFrame {
+  position: fixed;
+  left: 50vw;
+  top: 50vh;
+  margin: 0;
+  transform: translate(-50%, -50%) scale(var(--ui-scale));
+  transform-origin: 50% 50%;
+  width: calc(var(--design-w) * 1px);
+  height: calc(var(--design-h) * 1px);
+}
 
   .layer {
     position: absolute;
