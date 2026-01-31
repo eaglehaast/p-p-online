@@ -60,7 +60,18 @@ body, button {
   inset: 0;
   box-sizing: border-box;
   overflow: hidden;
+  height: 100vh;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+@supports (height: 100dvh) {
+  .screen--standalone {
+    min-height: 100dvh;
+  }
+
+  #screenWrapper {
+    height: 100dvh;
+  }
 }
 
 #uiFrame {
