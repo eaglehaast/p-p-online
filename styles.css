@@ -44,7 +44,11 @@ body, button {
   body {
     position: relative;
     font-family: 'Roboto', sans-serif;
-    background-color: #000;
+    background-color: #101010;
+    background-image: url('letterbox.png');
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-position: center;
     margin: 0;
     padding: 0;
     touch-action: none;
@@ -83,6 +87,7 @@ body, button {
   transform-origin: 50% 50%;
   width: calc(var(--design-w) * 1px);
   height: calc(var(--design-h) * 1px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
 }
 
   .layer {
