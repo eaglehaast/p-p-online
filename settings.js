@@ -172,6 +172,9 @@ function getVisualViewportState() {
 }
 
 function updateUiFrameScale() {
+  if (typeof window !== 'undefined' && window.PINCH_ACTIVE) {
+    return;
+  }
   if (!(uiFrameEl instanceof HTMLElement)) {
     return;
   }
