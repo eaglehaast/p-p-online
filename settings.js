@@ -130,7 +130,7 @@ window.addEventListener('wheel', (event) => {
     }
     uiFrameInner.style.transformOrigin = `${originX}% ${originY}%`;
   }
-  const step = Math.exp(-event.deltaY * 0.002);
+  const step = Math.exp(-event.deltaY * 0.01);
   pinchScale = clamp(pinchScale * step, PINCH_MIN, PINCH_MAX);
   uiFrameInner.style.transform = `scale(${pinchScale})`;
   schedulePinchReset();
