@@ -90,6 +90,14 @@ body, button {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
 }
 
+.uiFrame--framed {
+  border-radius: 12px;
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.45),
+    0 0 0 5px rgba(0, 0, 0, 0.45),
+    0 0 0 2px rgba(255, 255, 255, 0.1) inset;
+}
+
   .layer {
     position: absolute;
     top: 0;
