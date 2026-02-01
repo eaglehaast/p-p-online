@@ -28,6 +28,10 @@ const DEBUG_COLLISIONS_VERBOSE = false;
 const DEBUG_STARTUP_WORLDY = false;
 const DEBUG_WRAPPER_SYNC = false;
 
+if (typeof window !== 'undefined') {
+  window.PINCH_ACTIVE = false;
+}
+
 const bootTrace = {
   startTs: null,
   markers: [],
@@ -8722,7 +8726,7 @@ let lastResizeMetrics = {
 };
 
 async function syncLayoutAndField(reason = "sync") {
-  if (isPinchActive()) {
+  if (typeof window !== 'undefined' && window.PINCH_ACTIVE) {
     return;
   }
   logResizeDebug('resizeCanvas');
@@ -8859,7 +8863,10 @@ if (typeof window !== 'undefined') {
 }
 
 function isPinchActive() {
-  return pinchActive === true;
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  return window.PINCH_ACTIVE === true;
 }
 
 function clamp(value, min, max) {
@@ -8919,7 +8926,7 @@ window.addEventListener('wheel', (event) => {
 }, { passive: false, capture: true });
 
 window.addEventListener('resize', async () => {
-  if (isPinchActive()) return;
+  if (window.PINCH_ACTIVE) return;
   await syncLayoutAndField("viewport change");
   logLayoutMetrics("resize");
 });
@@ -8941,14 +8948,14 @@ window.addEventListener('orientationchange', () => {
 });
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', async () => {
-    if (isPinchActive()) return;
+    if (window.PINCH_ACTIVE) return;
     await syncLayoutAndField("viewport change");
     if (window.visualViewport.scale !== 1) {
       logLayoutMetrics("visualViewport resize");
     }
   });
   window.visualViewport.addEventListener('scroll', async () => {
-    if (isPinchActive()) return;
+    if (window.PINCH_ACTIVE) return;
     await syncLayoutAndField("viewport change");
     if (window.visualViewport.scale !== 1) {
       logLayoutMetrics("visualViewport scroll");
