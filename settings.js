@@ -48,6 +48,10 @@ const DEBUG_FIELD_AUDIT = false;
 const DEBUG_FIELD_MARKER = false;
 const FIELD_DEBUG_MARKER_QUERY_FLAG = 'field_debug_marker';
 
+function isPinchActive() {
+  return typeof window !== 'undefined' && window.PINCH_ACTIVE === true;
+}
+
 function getVisualViewportState() {
   const viewport = typeof window !== 'undefined' ? window.visualViewport : null;
 
@@ -87,7 +91,7 @@ function updateUiFrameScale() {
   if (!(uiFrameEl instanceof HTMLElement)) {
     return;
   }
-  if (typeof window !== 'undefined' && window.PINCH_ACTIVE === true) {
+  if (isPinchActive()) {
     return;
   }
   const viewport = getVisualViewportState();
@@ -4404,7 +4408,12 @@ function cleanupRenderers(){
 
 window.addEventListener('pagehide', cleanupRenderers);
 window.addEventListener('beforeunload', cleanupRenderers);
-window.addEventListener('resize', updateUiFrameScale);
+window.addEventListener('resize', () => {
+  if (isPinchActive()) {
+    return;
+  }
+  updateUiFrameScale();
+});
 window.addEventListener('orientationchange', updateUiFrameScale);
 window.addEventListener('load', updateUiFrameScale);
 

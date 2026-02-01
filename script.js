@@ -8703,6 +8703,9 @@ let lastResizeMetrics = {
 };
 
 async function syncLayoutAndField(reason = "sync") {
+  if (isPinchActive()) {
+    return;
+  }
   logResizeDebug('resizeCanvas');
   trackBootResizeCount('resizeCanvas');
   // Keep the game in portrait mode: if the device rotates to landscape,
@@ -8834,6 +8837,10 @@ if (typeof window !== 'undefined') {
 let pinchResetTimer = null;
 let pinchScale = 1;
 
+function isPinchActive() {
+  return typeof window !== 'undefined' && window.PINCH_ACTIVE === true;
+}
+
 function resetPinchState() {
   PINCH_ACTIVE = false;
   if (typeof window !== 'undefined') {
@@ -8885,7 +8892,7 @@ window.addEventListener('wheel', (event) => {
 }, { passive: false });
 
 window.addEventListener('resize', async () => {
-  if (PINCH_ACTIVE) return;
+  if (isPinchActive()) return;
   await syncLayoutAndField("viewport change");
   logLayoutMetrics("resize");
 });
@@ -8907,14 +8914,14 @@ window.addEventListener('orientationchange', () => {
 });
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', async () => {
-    if (PINCH_ACTIVE) return;
+    if (isPinchActive()) return;
     await syncLayoutAndField("viewport change");
     if (window.visualViewport.scale !== 1) {
       logLayoutMetrics("visualViewport resize");
     }
   });
   window.visualViewport.addEventListener('scroll', async () => {
-    if (PINCH_ACTIVE) return;
+    if (isPinchActive()) return;
     await syncLayoutAndField("viewport change");
     if (window.visualViewport.scale !== 1) {
       logLayoutMetrics("visualViewport scroll");
