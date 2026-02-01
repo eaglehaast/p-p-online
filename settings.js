@@ -42,15 +42,99 @@ const MAP_PREVIEW_BRICK_SPRITE_PATHS = {
 
 const settingsLayer = document.getElementById('settingsLayer');
 const uiFrameEl = document.getElementById('uiFrame');
+const uiFrameInner = (() => {
+  if (!(uiFrameEl instanceof HTMLElement)) {
+    return null;
+  }
+  const existingInner = document.getElementById('uiFrameInner');
+  if (existingInner instanceof HTMLElement) {
+    return existingInner;
+  }
+  const inner = document.createElement('div');
+  inner.id = 'uiFrameInner';
+  inner.style.width = '100%';
+  inner.style.height = '100%';
+  inner.style.transformOrigin = '50% 50%';
+  while (uiFrameEl.firstChild) {
+    inner.appendChild(uiFrameEl.firstChild);
+  }
+  uiFrameEl.appendChild(inner);
+  return inner;
+})();
 const settingsRoot = settingsLayer ?? document;
 const selectInSettings = (selector) => settingsRoot.querySelector(selector);
 const DEBUG_FIELD_AUDIT = false;
 const DEBUG_FIELD_MARKER = false;
 const FIELD_DEBUG_MARKER_QUERY_FLAG = 'field_debug_marker';
+let pinchActive = false;
+let pinchScale = 1;
+let pinchResetTimer = null;
+const PINCH_RESET_MS = 900;
+const PINCH_MIN = 1;
+const PINCH_MAX = 2.2;
+if (typeof window !== 'undefined') {
+  window.PINCH_ACTIVE = pinchActive;
+}
 
 function isPinchActive() {
-  return typeof window !== 'undefined' && window.PINCH_ACTIVE === true;
+  return pinchActive === true;
 }
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function resetPinchState() {
+  pinchActive = false;
+  if (typeof window !== 'undefined') {
+    window.PINCH_ACTIVE = false;
+  }
+  if (pinchResetTimer) {
+    clearTimeout(pinchResetTimer);
+    pinchResetTimer = null;
+  }
+  pinchScale = 1;
+  if (uiFrameInner instanceof HTMLElement) {
+    uiFrameInner.style.transform = 'scale(1)';
+    uiFrameInner.style.transformOrigin = '50% 50%';
+  }
+}
+
+function schedulePinchReset() {
+  if (pinchResetTimer) {
+    clearTimeout(pinchResetTimer);
+  }
+  pinchResetTimer = window.setTimeout(() => {
+    resetPinchState();
+  }, PINCH_RESET_MS);
+}
+
+window.addEventListener('wheel', (event) => {
+  if (event.ctrlKey !== true) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if (!(uiFrameEl instanceof HTMLElement) || !(uiFrameInner instanceof HTMLElement)) return;
+  if (!pinchActive) {
+    pinchActive = true;
+    if (typeof window !== 'undefined') {
+      window.PINCH_ACTIVE = true;
+    }
+    const rect = uiFrameEl.getBoundingClientRect();
+    let originX = 50;
+    let originY = 50;
+    if (rect.width > 0 && rect.height > 0) {
+      originX = ((event.clientX - rect.left) / rect.width) * 100;
+      originY = ((event.clientY - rect.top) / rect.height) * 100;
+      originX = clamp(originX, 0, 100);
+      originY = clamp(originY, 0, 100);
+    }
+    uiFrameInner.style.transformOrigin = `${originX}% ${originY}%`;
+  }
+  const step = Math.exp(-event.deltaY * 0.002);
+  pinchScale = clamp(pinchScale * step, PINCH_MIN, PINCH_MAX);
+  uiFrameInner.style.transform = `scale(${pinchScale})`;
+  schedulePinchReset();
+}, { passive: false, capture: true });
 
 function getVisualViewportState() {
   const viewport = typeof window !== 'undefined' ? window.visualViewport : null;

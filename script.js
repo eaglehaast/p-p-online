@@ -39,6 +39,25 @@ const loadingOverlay = document.getElementById("loadingOverlay");
 document.documentElement.classList.toggle('debug-layout', DEBUG_LAYOUT);
 
 const uiFrameEl = document.getElementById("uiFrame");
+const uiFrameInner = (() => {
+  if (!(uiFrameEl instanceof HTMLElement)) {
+    return null;
+  }
+  const existingInner = document.getElementById("uiFrameInner");
+  if (existingInner instanceof HTMLElement) {
+    return existingInner;
+  }
+  const inner = document.createElement("div");
+  inner.id = "uiFrameInner";
+  inner.style.width = "100%";
+  inner.style.height = "100%";
+  inner.style.transformOrigin = "50% 50%";
+  while (uiFrameEl.firstChild) {
+    inner.appendChild(uiFrameEl.firstChild);
+  }
+  uiFrameEl.appendChild(inner);
+  return inner;
+})();
 const menuLayer = document.getElementById("menuLayer");
 const settingsLayer = document.getElementById("settingsLayer");
 const gsFrameLayer = document.getElementById("gsFrame");
@@ -8829,31 +8848,37 @@ function logLayoutMetrics(reason) {
   });
 }
 
-const PINCH_RESET_DELAY_MS = 200;
-let PINCH_ACTIVE = typeof window !== 'undefined' && window.PINCH_ACTIVE === true;
-if (typeof window !== 'undefined') {
-  window.PINCH_ACTIVE = PINCH_ACTIVE;
-}
-let pinchResetTimer = null;
+let pinchActive = false;
 let pinchScale = 1;
+let pinchResetTimer = null;
+const PINCH_RESET_MS = 900;
+const PINCH_MIN = 1;
+const PINCH_MAX = 2.2;
+if (typeof window !== 'undefined') {
+  window.PINCH_ACTIVE = pinchActive;
+}
 
 function isPinchActive() {
-  return typeof window !== 'undefined' && window.PINCH_ACTIVE === true;
+  return pinchActive === true;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function resetPinchState() {
-  PINCH_ACTIVE = false;
   if (typeof window !== 'undefined') {
-    window.PINCH_ACTIVE = PINCH_ACTIVE;
+    window.PINCH_ACTIVE = false;
   }
+  pinchActive = false;
   if (pinchResetTimer) {
     clearTimeout(pinchResetTimer);
     pinchResetTimer = null;
   }
   pinchScale = 1;
-  if (uiFrameEl instanceof HTMLElement) {
-    uiFrameEl.style.transform = "";
-    uiFrameEl.style.transformOrigin = "";
+  if (uiFrameInner instanceof HTMLElement) {
+    uiFrameInner.style.transform = "scale(1)";
+    uiFrameInner.style.transformOrigin = "50% 50%";
   }
 }
 
@@ -8863,33 +8888,35 @@ function schedulePinchReset() {
   }
   pinchResetTimer = window.setTimeout(() => {
     resetPinchState();
-  }, PINCH_RESET_DELAY_MS);
+  }, PINCH_RESET_MS);
 }
 
 window.addEventListener('wheel', (event) => {
   if (event.ctrlKey !== true) return;
   event.preventDefault();
-  if (!(uiFrameEl instanceof HTMLElement)) return;
-  PINCH_ACTIVE = true;
-  if (typeof window !== 'undefined') {
-    window.PINCH_ACTIVE = PINCH_ACTIVE;
+  event.stopImmediatePropagation();
+  if (!(uiFrameEl instanceof HTMLElement) || !(uiFrameInner instanceof HTMLElement)) return;
+  if (!pinchActive) {
+    pinchActive = true;
+    if (typeof window !== 'undefined') {
+      window.PINCH_ACTIVE = true;
+    }
+    const rect = uiFrameEl.getBoundingClientRect();
+    let originX = 50;
+    let originY = 50;
+    if (rect.width > 0 && rect.height > 0) {
+      originX = ((event.clientX - rect.left) / rect.width) * 100;
+      originY = ((event.clientY - rect.top) / rect.height) * 100;
+      originX = clamp(originX, 0, 100);
+      originY = clamp(originY, 0, 100);
+    }
+    uiFrameInner.style.transformOrigin = `${originX}% ${originY}%`;
   }
-  const delta = Number.isFinite(event.deltaY) ? event.deltaY : 0;
-  pinchScale *= Math.exp(-delta * 0.002);
-  pinchScale = Math.min(3, Math.max(0.5, pinchScale));
-  const rect = uiFrameEl.getBoundingClientRect();
-  let originX = 50;
-  let originY = 50;
-  if (rect.width > 0 && rect.height > 0) {
-    originX = ((event.clientX - rect.left) / rect.width) * 100;
-    originY = ((event.clientY - rect.top) / rect.height) * 100;
-    originX = Math.min(100, Math.max(0, originX));
-    originY = Math.min(100, Math.max(0, originY));
-  }
-  uiFrameEl.style.transformOrigin = `${originX}% ${originY}%`;
-  uiFrameEl.style.transform = `translate(-50%, -50%) scale(var(--ui-scale)) scale(${pinchScale})`;
+  const step = Math.exp(-event.deltaY * 0.002);
+  pinchScale = clamp(pinchScale * step, PINCH_MIN, PINCH_MAX);
+  uiFrameInner.style.transform = `scale(${pinchScale})`;
   schedulePinchReset();
-}, { passive: false });
+}, { passive: false, capture: true });
 
 window.addEventListener('resize', async () => {
   if (isPinchActive()) return;
