@@ -3247,8 +3247,8 @@ const BOUNCE_FRAMES        = 68;
 // (Restored to the original pre-change speed used for gameplay physics)
 // Shortened by 1.5x to speed up on-field flight animation
 const FIELD_FLIGHT_DURATION_SEC = (BOUNCE_FRAMES / 60) * 2 / 1.5;
-const FIELD_PLANE_SWAY_DEG = 1.5;
-const FIELD_PLANE_SWAY_PERIOD_SEC = 2.6;
+const FIELD_PLANE_SWAY_DEG = 0.75;
+const FIELD_PLANE_SWAY_PERIOD_SEC = 2.6 / 1.5;
 const FIELD_PLANE_ROLL_BOB_PX = 1.5;
 const MAX_DRAG_DISTANCE    = 100;    // px
 const DRAG_ROTATION_THRESHOLD = 5;   // px slack before the plane starts to turn
