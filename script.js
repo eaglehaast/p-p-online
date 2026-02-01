@@ -8826,7 +8826,39 @@ function logLayoutMetrics(reason) {
   });
 }
 
+const PINCH_RESET_DELAY_MS = 200;
+let PINCH_ACTIVE = false;
+let pinchResetTimer = null;
+
+function resetPinchState() {
+  PINCH_ACTIVE = false;
+  if (pinchResetTimer) {
+    clearTimeout(pinchResetTimer);
+    pinchResetTimer = null;
+  }
+  const wrapperEl = document.getElementById("screenWrapper");
+  if (wrapperEl instanceof HTMLElement) {
+    wrapperEl.style.transform = "";
+  }
+}
+
+function schedulePinchReset() {
+  if (pinchResetTimer) {
+    clearTimeout(pinchResetTimer);
+  }
+  pinchResetTimer = window.setTimeout(() => {
+    resetPinchState();
+  }, PINCH_RESET_DELAY_MS);
+}
+
+window.addEventListener('wheel', (event) => {
+  if (!event.ctrlKey) return;
+  PINCH_ACTIVE = true;
+  schedulePinchReset();
+}, { passive: true });
+
 window.addEventListener('resize', async () => {
+  if (PINCH_ACTIVE) return;
   await syncLayoutAndField("viewport change");
   logLayoutMetrics("resize");
 });
@@ -8848,12 +8880,14 @@ window.addEventListener('orientationchange', () => {
 });
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', async () => {
+    if (PINCH_ACTIVE) return;
     await syncLayoutAndField("viewport change");
     if (window.visualViewport.scale !== 1) {
       logLayoutMetrics("visualViewport resize");
     }
   });
   window.visualViewport.addEventListener('scroll', async () => {
+    if (PINCH_ACTIVE) return;
     await syncLayoutAndField("viewport change");
     if (window.visualViewport.scale !== 1) {
       logLayoutMetrics("visualViewport scroll");
