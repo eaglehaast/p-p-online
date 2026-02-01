@@ -8844,7 +8844,7 @@ function logLayoutMetrics(reason) {
 let pinchActive = false;
 let pinchScale = 1;
 let pinchResetTimer = null;
-const PINCH_RESET_MS = 900;
+const PINCH_RESET_MS = 4000;
 const PINCH_MIN = 1;
 const PINCH_MAX = 2.2;
 if (typeof window !== 'undefined') {
@@ -8887,6 +8887,19 @@ function schedulePinchReset() {
   }, PINCH_RESET_MS);
 }
 
+window.addEventListener('gesturestart', () => {
+  pinchActive = true;
+  window.PINCH_ACTIVE = true;
+}, { capture: true });
+
+window.addEventListener('gestureend', () => resetPinchState(), { capture: true });
+
+window.addEventListener('wheel', (event) => {
+  if (pinchActive && event.ctrlKey !== true) {
+    resetPinchState();
+  }
+}, { capture: true });
+
 window.addEventListener('wheel', (event) => {
   if (event.ctrlKey !== true) return;
   event.preventDefault();
@@ -8911,7 +8924,6 @@ window.addEventListener('wheel', (event) => {
   const step = Math.exp(-event.deltaY * 0.01);
   pinchScale = clamp(pinchScale * step, PINCH_MIN, PINCH_MAX);
   uiFrameInner.style.transform = `scale(${pinchScale})`;
-  schedulePinchReset();
 }, { passive: false, capture: true });
 
 window.addEventListener('resize', async () => {
