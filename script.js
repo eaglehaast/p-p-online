@@ -8827,12 +8827,18 @@ function logLayoutMetrics(reason) {
 }
 
 const PINCH_RESET_DELAY_MS = 200;
-let PINCH_ACTIVE = false;
+let PINCH_ACTIVE = typeof window !== 'undefined' && window.PINCH_ACTIVE === true;
+if (typeof window !== 'undefined') {
+  window.PINCH_ACTIVE = PINCH_ACTIVE;
+}
 let pinchResetTimer = null;
 let pinchScale = 1;
 
 function resetPinchState() {
   PINCH_ACTIVE = false;
+  if (typeof window !== 'undefined') {
+    window.PINCH_ACTIVE = PINCH_ACTIVE;
+  }
   if (pinchResetTimer) {
     clearTimeout(pinchResetTimer);
     pinchResetTimer = null;
@@ -8858,6 +8864,9 @@ window.addEventListener('wheel', (event) => {
   event.preventDefault();
   if (!(uiFrameEl instanceof HTMLElement)) return;
   PINCH_ACTIVE = true;
+  if (typeof window !== 'undefined') {
+    window.PINCH_ACTIVE = PINCH_ACTIVE;
+  }
   const delta = Number.isFinite(event.deltaY) ? event.deltaY : 0;
   pinchScale *= Math.exp(-delta * 0.002);
   pinchScale = Math.min(3, Math.max(0.5, pinchScale));
