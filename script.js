@@ -8829,6 +8829,7 @@ function logLayoutMetrics(reason) {
 const PINCH_RESET_DELAY_MS = 200;
 let PINCH_ACTIVE = false;
 let pinchResetTimer = null;
+let pinchScale = 1;
 
 function resetPinchState() {
   PINCH_ACTIVE = false;
@@ -8836,9 +8837,10 @@ function resetPinchState() {
     clearTimeout(pinchResetTimer);
     pinchResetTimer = null;
   }
-  const wrapperEl = document.getElementById("screenWrapper");
-  if (wrapperEl instanceof HTMLElement) {
-    wrapperEl.style.transform = "";
+  pinchScale = 1;
+  if (uiFrameEl instanceof HTMLElement) {
+    uiFrameEl.style.transform = "";
+    uiFrameEl.style.transformOrigin = "";
   }
 }
 
@@ -8852,10 +8854,26 @@ function schedulePinchReset() {
 }
 
 window.addEventListener('wheel', (event) => {
-  if (!event.ctrlKey) return;
+  if (event.ctrlKey !== true) return;
+  event.preventDefault();
+  if (!(uiFrameEl instanceof HTMLElement)) return;
   PINCH_ACTIVE = true;
+  const delta = Number.isFinite(event.deltaY) ? event.deltaY : 0;
+  pinchScale *= Math.exp(-delta * 0.002);
+  pinchScale = Math.min(3, Math.max(0.5, pinchScale));
+  const rect = uiFrameEl.getBoundingClientRect();
+  let originX = 50;
+  let originY = 50;
+  if (rect.width > 0 && rect.height > 0) {
+    originX = ((event.clientX - rect.left) / rect.width) * 100;
+    originY = ((event.clientY - rect.top) / rect.height) * 100;
+    originX = Math.min(100, Math.max(0, originX));
+    originY = Math.min(100, Math.max(0, originY));
+  }
+  uiFrameEl.style.transformOrigin = `${originX}% ${originY}%`;
+  uiFrameEl.style.transform = `translate(-50%, -50%) scale(var(--ui-scale)) scale(${pinchScale})`;
   schedulePinchReset();
-}, { passive: true });
+}, { passive: false });
 
 window.addEventListener('resize', async () => {
   if (PINCH_ACTIVE) return;
