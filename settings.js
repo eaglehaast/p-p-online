@@ -87,6 +87,9 @@ function updateUiFrameScale() {
   if (!(uiFrameEl instanceof HTMLElement)) {
     return;
   }
+  if (typeof window !== 'undefined' && window.PINCH_ACTIVE === true) {
+    return;
+  }
   const viewport = getVisualViewportState();
   const wrapperEl = document.getElementById('screenWrapper');
   const wrapperRect = wrapperEl?.getBoundingClientRect?.() || null;
