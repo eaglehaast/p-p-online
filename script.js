@@ -7794,8 +7794,6 @@ function updateAndDrawExplosions(ctx, now) {
   for (let i = activeExplosions.length - 1; i >= 0; i--) {
     const explosion = activeExplosions[i];
     const img = explosion.img || null;
-    const size = EXPLOSION_DRAW_SIZE;
-    const half = size / 2;
     const kind = explosion.kind ?? "sheet";
 
     if (kind === "gif") {
@@ -7841,6 +7839,8 @@ function updateAndDrawExplosions(ctx, now) {
       continue;
     }
 
+    const size = EXPLOSION_DRAW_SIZE;
+    const half = size / 2;
     const frameCount = Math.max(1, Number.isFinite(explosion.frameCount) ? explosion.frameCount : 1);
     const frameDurationMs = Math.max(1, Number.isFinite(explosion.frameDurationMs) ? explosion.frameDurationMs : 80);
     explosion.frameIndex = Number.isFinite(explosion.frameIndex) ? explosion.frameIndex : 0;
