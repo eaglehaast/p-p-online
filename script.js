@@ -7635,15 +7635,8 @@ function updateAndDrawExplosions(ctx, now) {
       }
 
       ctx.save();
-      const variants = Array.isArray(explosion.variants) ? explosion.variants : [];
-      const ready = variants.filter(isSpriteReady);
-      const pool = ready.length ? ready : variants;
-      const fallbackImg = pool[0] ?? null;
-      const drawImg = img && ((img instanceof ImageBitmap) || isSpriteReady(img))
-        ? img
-        : fallbackImg;
-      if (drawImg) {
-        ctx.drawImage(drawImg, explosion.x - half, explosion.y - half, size, size);
+      if (img && ((img instanceof ImageBitmap) || isSpriteReady(img))) {
+        ctx.drawImage(img, explosion.x - half, explosion.y - half, size, size);
       }
       ctx.restore();
 
