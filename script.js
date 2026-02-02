@@ -7586,11 +7586,14 @@ function createExplosionState(plane, x, y) {
     1,
     Math.round(EXPLOSION_MIN_DURATION_MS / baseFrameDuration)
   );
+  const readyFrames = frames.filter(isSpriteReady);
+  const pool = readyFrames.length ? readyFrames : frames;
+  const variantImg = pool.length
+    ? pool[Math.floor(Math.random() * pool.length)]
+    : null;
   const frameCount = desiredFrameCount > 0 ? desiredFrameCount : minFrameCount;
-  const frameDurationMs = desiredFrameCount > 0
-    ? Math.max(baseFrameDuration, Math.round(EXPLOSION_MIN_DURATION_MS / frameCount))
-    : baseFrameDuration;
-  const firstFrame = frames.find(isSpriteReady) || frames[0] || null;
+  const frameDurationMs = baseFrameDuration;
+  const firstFrame = variantImg || pool[0] || null;
   const frameW = firstFrame?.naturalWidth || EXPLOSION_DRAW_SIZE;
   const frameH = firstFrame?.naturalHeight || EXPLOSION_DRAW_SIZE;
   const drawSize = EXPLOSION_DRAW_SIZE;
@@ -7604,6 +7607,7 @@ function createExplosionState(plane, x, y) {
     frameDurationMs,
     drawSize,
     frames,
+    variantImg,
     sheet: null,
     startedAtMs: null,
     debugFramesLogged: 0,
@@ -7638,12 +7642,12 @@ function updateAndDrawExplosions(ctx, now) {
     const elapsed = now - explosion.startedAtMs;
     const frameIndex = Math.floor(elapsed / frameDuration);
 
-    if (frameIndex >= explosion.frameCount) {
+    if (elapsed >= EXPLOSION_MIN_DURATION_MS) {
       activeExplosions.splice(i, 1);
       continue;
     }
 
-    const img = explosion.frames?.[frameIndex] || null;
+    const img = explosion.variantImg || explosion.frames?.[0] || null;
     const size = explosion.drawSize || EXPLOSION_DRAW_SIZE;
     const half = size / 2;
 
