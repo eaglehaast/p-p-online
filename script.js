@@ -4130,6 +4130,17 @@ const EXPLOSION_DRAW_SIZE = 50;
 const EXPLOSION_FPS = 12;
 const EXPLOSION_FRAME_DURATION_MS = 1000 / EXPLOSION_FPS; // ~12fps
 const EXPLOSION_MIN_DURATION_MS = 600;
+const EXPLOSION_GIF_DURATION_MS = 1200;
+
+function resolveExplosionGifDurationMs(img) {
+  const datasetDuration = Number.parseFloat(img?.dataset?.durationMs);
+  const propDuration = Number.isFinite(img?.durationMs) ? img.durationMs : NaN;
+  const explicitDuration = Number.isFinite(propDuration) ? propDuration : datasetDuration;
+  if (Number.isFinite(explicitDuration) && explicitDuration > 0) {
+    return Math.max(explicitDuration, EXPLOSION_MIN_DURATION_MS);
+  }
+  return Math.max(EXPLOSION_GIF_DURATION_MS, EXPLOSION_MIN_DURATION_MS);
+}
 
 /* Планирование хода ИИ */
 let aiMoveScheduled = false;
@@ -7709,7 +7720,7 @@ function createExplosionState(plane, x, y) {
     img,
     variants,
     startedAtMs: null,
-    ttlMs: EXPLOSION_MIN_DURATION_MS,
+    ttlMs: resolveExplosionGifDurationMs(img),
     debugFramesLogged: 0,
   };
 }
@@ -7793,7 +7804,11 @@ function updateAndDrawExplosions(ctx, now) {
       explosion.startedAtMs = explosion.startedAtMs ?? now;
 
       const elapsed = now - explosion.startedAtMs;
-      const ttlMs = explosion.ttlMs ?? EXPLOSION_MIN_DURATION_MS;
+      const resolvedTtlMs = resolveExplosionGifDurationMs(img);
+      if (!Number.isFinite(explosion.ttlMs) || explosion.ttlMs < resolvedTtlMs) {
+        explosion.ttlMs = resolvedTtlMs;
+      }
+      const ttlMs = explosion.ttlMs ?? resolvedTtlMs;
 
       if (elapsed >= ttlMs) {
         if (explosion.domEntry?.element?.remove) {
