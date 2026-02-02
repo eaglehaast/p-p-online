@@ -7569,19 +7569,17 @@ function drawArrow(ctx, cx, cy, dx, dy) {
   ctx.restore();
 }
 
-function getExplosionFramesForColor(color) {
+function getExplosionVariantsForColor(color) {
   preloadExplosionSprites();
   const normalized = color === "green" ? "green" : "blue";
   const sprites = explosionImagesByColor[normalized] || [];
-  const ready = sprites.filter(isSpriteReady);
-  const frames = ready.length ? ready : sprites;
-  return frames.filter(Boolean);
+  return sprites.filter(Boolean);
 }
 
 function createExplosionState(plane, x, y) {
-  const frames = getExplosionFramesForColor(plane.color);
-  const readyFrames = frames.filter(isSpriteReady);
-  const pool = readyFrames.length ? readyFrames : frames;
+  const variants = getExplosionVariantsForColor(plane.color);
+  const readyVariants = variants.filter(isSpriteReady);
+  const pool = readyVariants.length ? readyVariants : variants;
   const img = pool.length
     ? pool[Math.floor(Math.random() * pool.length)]
     : null;
@@ -7591,6 +7589,7 @@ function createExplosionState(plane, x, y) {
     x,
     y,
     img,
+    variants,
     startedAtMs: null,
     ttlMs: EXPLOSION_MIN_DURATION_MS,
     debugFramesLogged: 0,
@@ -7636,13 +7635,15 @@ function updateAndDrawExplosions(ctx, now) {
       }
 
       ctx.save();
-      if (img && ((img instanceof ImageBitmap) || isSpriteReady(img))) {
-        ctx.drawImage(img, explosion.x - half, explosion.y - half, size, size);
-      } else {
-        ctx.fillStyle = "rgba(255, 200, 40, 0.9)";
-        ctx.beginPath();
-        ctx.arc(explosion.x, explosion.y, half, 0, Math.PI * 2);
-        ctx.fill();
+      const variants = Array.isArray(explosion.variants) ? explosion.variants : [];
+      const ready = variants.filter(isSpriteReady);
+      const pool = ready.length ? ready : variants;
+      const fallbackImg = pool[0] ?? null;
+      const drawImg = img && ((img instanceof ImageBitmap) || isSpriteReady(img))
+        ? img
+        : fallbackImg;
+      if (drawImg) {
+        ctx.drawImage(drawImg, explosion.x - half, explosion.y - half, size, size);
       }
       ctx.restore();
 
