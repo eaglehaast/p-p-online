@@ -7580,36 +7580,19 @@ function getExplosionFramesForColor(color) {
 
 function createExplosionState(plane, x, y) {
   const frames = getExplosionFramesForColor(plane.color);
-  const baseFrameDuration = EXPLOSION_FRAME_DURATION_MS;
-  const desiredFrameCount = frames.length;
-  const minFrameCount = Math.max(
-    1,
-    Math.round(EXPLOSION_MIN_DURATION_MS / baseFrameDuration)
-  );
   const readyFrames = frames.filter(isSpriteReady);
   const pool = readyFrames.length ? readyFrames : frames;
-  const variantImg = pool.length
+  const img = pool.length
     ? pool[Math.floor(Math.random() * pool.length)]
     : null;
-  const frameCount = desiredFrameCount > 0 ? desiredFrameCount : minFrameCount;
-  const frameDurationMs = baseFrameDuration;
-  const firstFrame = variantImg || pool[0] || null;
-  const frameW = firstFrame?.naturalWidth || EXPLOSION_DRAW_SIZE;
-  const frameH = firstFrame?.naturalHeight || EXPLOSION_DRAW_SIZE;
-  const drawSize = EXPLOSION_DRAW_SIZE;
 
   return {
+    kind: "gif",
     x,
     y,
-    frameW,
-    frameH,
-    frameCount,
-    frameDurationMs,
-    drawSize,
-    frames,
-    variantImg,
-    sheet: null,
+    img,
     startedAtMs: null,
+    ttlMs: EXPLOSION_MIN_DURATION_MS,
     debugFramesLogged: 0,
   };
 }
@@ -7638,34 +7621,21 @@ function updateAndDrawExplosions(ctx, now) {
     const explosion = activeExplosions[i];
     explosion.startedAtMs = explosion.startedAtMs ?? now;
 
-    const frameDuration = explosion.frameDurationMs || EXPLOSION_FRAME_DURATION_MS;
     const elapsed = now - explosion.startedAtMs;
-    const frameIndex = Math.floor(elapsed / frameDuration);
+    const ttlMs = explosion.ttlMs ?? EXPLOSION_MIN_DURATION_MS;
 
-    if (elapsed >= EXPLOSION_MIN_DURATION_MS) {
+    if (elapsed >= ttlMs) {
       activeExplosions.splice(i, 1);
       continue;
     }
 
-    const img = explosion.variantImg || explosion.frames?.[0] || null;
-    const size = explosion.drawSize || EXPLOSION_DRAW_SIZE;
+    const img = explosion.img || null;
+    const size = EXPLOSION_DRAW_SIZE;
     const half = size / 2;
 
     ctx.save();
     if (img && ((img instanceof ImageBitmap) || isSpriteReady(img))) {
       ctx.drawImage(img, explosion.x - half, explosion.y - half, size, size);
-    } else if (explosion.sheet && isSpriteReady(explosion.sheet)) {
-      ctx.drawImage(
-        explosion.sheet,
-        frameIndex * explosion.frameW,
-        0,
-        explosion.frameW,
-        explosion.frameH,
-        explosion.x - half,
-        explosion.y - half,
-        size,
-        size
-      );
     } else {
       ctx.fillStyle = "rgba(255, 200, 40, 0.9)";
       ctx.beginPath();
@@ -7678,11 +7648,7 @@ function updateAndDrawExplosions(ctx, now) {
       console.debug("[fx] explosion frame", {
         naturalW: img?.naturalWidth,
         naturalH: img?.naturalHeight,
-        frameW: explosion.frameW,
-        frameH: explosion.frameH,
-        frameCount: explosion.frameCount,
-        frameDurationMs: frameDuration,
-        frameIndex,
+        ttlMs,
       });
       explosion.debugFramesLogged++;
     }
