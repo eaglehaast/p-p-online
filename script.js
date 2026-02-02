@@ -652,6 +652,7 @@ function logCanvasCreation(canvas, label = "") {
 
 const overlayContainer = document.getElementById("overlayContainer");
 const overlayFxLayer = document.getElementById("overlayFxLayer");
+const fxHostLayer = document.getElementById("fxHostLayer");
 const uiOverlay = document.getElementById("uiOverlay");
 
 let OVERLAY_RESYNC_SCHEDULED = false;
@@ -1683,7 +1684,8 @@ function ensureFxHost(parentEl, idOrClass, options = {}) {
   Object.assign(host.style, {
     position: 'absolute',
     pointerEvents: 'none',
-    display
+    display,
+    overflow: 'visible'
   });
 
   if (fillParent) {
@@ -1802,6 +1804,14 @@ let flameStyleRevision = 0;
 
 let lastPlaneFlamePosLogTs = 0;
 
+function getFxHostBounds() {
+  const left = getFieldLeftCssValue();
+  const top = getFieldTopCssValue();
+  const width = Number.isFinite(WORLD?.width) ? WORLD.width : CANVAS_BASE_WIDTH;
+  const height = Number.isFinite(WORLD?.height) ? WORLD.height : CANVAS_BASE_HEIGHT;
+  return { left, top, width, height };
+}
+
 function logPlaneFlamePosition(plane, metrics, clientPoint, flameOffset) {
   if (!DEBUG_FLAME_POS) {
     return;
@@ -1865,23 +1875,37 @@ function logPlaneFlamePosition(plane, metrics, clientPoint, flameOffset) {
 }
 
 function ensurePlaneFlameHost() {
-  const parent = overlayFxLayer instanceof HTMLElement
-    ? overlayFxLayer
-    : (overlayContainer instanceof HTMLElement ? overlayContainer : null);
+  const parent = fxHostLayer instanceof HTMLElement
+    ? fxHostLayer
+    : (gsFrameLayer instanceof HTMLElement ? gsFrameLayer : null);
   if (!(parent instanceof HTMLElement)) {
     return null;
   }
-  return ensureFxHost(parent, PLANE_FLAME_HOST_ID);
+  const bounds = getFxHostBounds();
+  return ensureFxHost(parent, PLANE_FLAME_HOST_ID, {
+    fillParent: false,
+    left: bounds.left,
+    top: bounds.top,
+    width: bounds.width,
+    height: bounds.height
+  });
 }
 
 function ensureExplosionHost() {
-  const parent = overlayFxLayer instanceof HTMLElement
-    ? overlayFxLayer
-    : (overlayContainer instanceof HTMLElement ? overlayContainer : null);
+  const parent = fxHostLayer instanceof HTMLElement
+    ? fxHostLayer
+    : (gsFrameLayer instanceof HTMLElement ? gsFrameLayer : null);
   if (!(parent instanceof HTMLElement)) {
     return null;
   }
-  const host = ensureFxHost(parent, EXPLOSION_HOST_ID);
+  const bounds = getFxHostBounds();
+  const host = ensureFxHost(parent, EXPLOSION_HOST_ID, {
+    fillParent: false,
+    left: bounds.left,
+    top: bounds.top,
+    width: bounds.width,
+    height: bounds.height
+  });
   if (!(host instanceof HTMLElement)) {
     return null;
   }
@@ -1927,18 +1951,14 @@ function resolvePlaneFlameMetrics(context = 'plane flame') {
     return null;
   }
 
+  const bounds = getFxHostBounds();
   const boardRect = {
-    left: CANVAS_OFFSET_X,
-    top: FRAME_PADDING_Y,
-    width: CANVAS_BASE_WIDTH,
-    height: CANVAS_BASE_HEIGHT
+    left: bounds.left,
+    top: bounds.top,
+    width: bounds.width,
+    height: bounds.height
   };
-  const overlayRect = {
-    left: CANVAS_OFFSET_X,
-    top: FRAME_PADDING_Y,
-    width: CANVAS_BASE_WIDTH,
-    height: CANVAS_BASE_HEIGHT
-  };
+  const overlayRect = { ...boardRect };
   const host = ensurePlaneFlameHost();
 
   if (!(host instanceof HTMLElement)) {
@@ -2007,18 +2027,14 @@ function resolveExplosionMetrics(context = 'explosion') {
     return null;
   }
 
+  const bounds = getFxHostBounds();
   const boardRect = {
-    left: CANVAS_OFFSET_X,
-    top: FRAME_PADDING_Y,
-    width: CANVAS_BASE_WIDTH,
-    height: CANVAS_BASE_HEIGHT
+    left: bounds.left,
+    top: bounds.top,
+    width: bounds.width,
+    height: bounds.height
   };
-  const overlayRect = {
-    left: CANVAS_OFFSET_X,
-    top: FRAME_PADDING_Y,
-    width: CANVAS_BASE_WIDTH,
-    height: CANVAS_BASE_HEIGHT
-  };
+  const overlayRect = { ...boardRect };
   const host = ensureExplosionHost();
 
   if (!(host instanceof HTMLElement)) {
