@@ -2010,6 +2010,86 @@ function resolvePlaneFlameMetrics(context = 'plane flame') {
   return { boardRect: usableBoardRect, overlayRect, hostRect };
 }
 
+function resolveExplosionMetrics(context = 'explosion') {
+  if (!isGameScreenActive()) {
+    return null;
+  }
+
+  const canvasWidth = gsBoardCanvas?.offsetWidth || 0;
+  const canvasHeight = gsBoardCanvas?.offsetHeight || 0;
+  const overlayWidth = overlayContainer?.offsetWidth || 0;
+  const overlayHeight = overlayContainer?.offsetHeight || 0;
+
+  const hasUsableSurface = (
+    canvasWidth > FX_HOST_MIN_SIZE && canvasHeight > FX_HOST_MIN_SIZE
+  ) || (
+    overlayWidth > FX_HOST_MIN_SIZE && overlayHeight > FX_HOST_MIN_SIZE
+  );
+
+  if (!hasUsableSurface) {
+    return null;
+  }
+
+  const boardRect = {
+    left: CANVAS_OFFSET_X,
+    top: FRAME_PADDING_Y,
+    width: CANVAS_BASE_WIDTH,
+    height: CANVAS_BASE_HEIGHT
+  };
+  const overlayRect = {
+    left: CANVAS_OFFSET_X,
+    top: FRAME_PADDING_Y,
+    width: CANVAS_BASE_WIDTH,
+    height: CANVAS_BASE_HEIGHT
+  };
+  const host = ensureExplosionHost();
+
+  if (!(host instanceof HTMLElement)) {
+    console.warn(`[FX] Skipping ${context}: host missing`);
+    return null;
+  }
+
+  if (!host.isConnected) {
+    console.warn(`[FX] Skipping ${context}: host not connected`);
+    return null;
+  }
+
+  const hostStyle = window.getComputedStyle(host);
+  if (hostStyle.display === 'none' || hostStyle.visibility === 'hidden') {
+    console.warn(`[FX] Skipping ${context}: host hidden`, {
+      display: hostStyle.display,
+      visibility: hostStyle.visibility
+    });
+    return null;
+  }
+
+  const hostWidth = host.offsetWidth || overlayRect.width;
+  const hostHeight = host.offsetHeight || overlayRect.height;
+  const hostRect = {
+    left: overlayRect.left,
+    top: overlayRect.top,
+    width: hostWidth,
+    height: hostHeight
+  };
+  if (!hostRect || hostRect.width <= FX_HOST_MIN_SIZE || hostRect.height <= FX_HOST_MIN_SIZE) {
+    console.warn(`[FX] Skipping ${context}: host rect invalid`, { hostRect });
+    return null;
+  }
+
+  const usableBoardRect = (boardRect && boardRect.width > FX_HOST_MIN_SIZE && boardRect.height > FX_HOST_MIN_SIZE)
+    ? boardRect
+    : (overlayRect && overlayRect.width > FX_HOST_MIN_SIZE && overlayRect.height > FX_HOST_MIN_SIZE ? overlayRect : null);
+
+  if (!usableBoardRect) {
+    console.warn(`[FX] Skipping ${context}: board rect invalid`, { boardRect });
+    return null;
+  }
+
+  warnIfFxHostMismatch(usableBoardRect, hostRect, context);
+
+  return { boardRect: usableBoardRect, overlayRect, hostRect, host };
+}
+
 function getFlameDisplaySize(plane) {
   if (plane?.color === 'green') {
     return GREEN_FLAME_DISPLAY_SIZE;
@@ -7639,6 +7719,56 @@ function createExplosionState(plane, x, y) {
     ttlMs: EXPLOSION_MIN_DURATION_MS,
     debugFramesLogged: 0,
   };
+}
+
+function createExplosionImageEntry(explosionState, img) {
+  const host = ensureExplosionHost();
+  if (!host) {
+    return null;
+  }
+
+  const metrics = resolveExplosionMetrics('explosion');
+  if (!metrics) {
+    return null;
+  }
+
+  const x = explosionState?.x;
+  const y = explosionState?.y;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return null;
+  }
+
+  const resolvedSrc = img?.src || explosionState?.img?.src || '';
+  if (!resolvedSrc) {
+    return null;
+  }
+
+  const { boardRect, overlayRect } = metrics;
+  const { overlayX, overlayY } = worldToOverlayLocal(x, y, { boardRect, overlayRect });
+
+  const container = document.createElement('div');
+  container.classList.add('fx-explosion');
+  Object.assign(container.style, {
+    position: 'absolute',
+    pointerEvents: 'none',
+    transform: 'translate(-50%, -50%)',
+    width: `${EXPLOSION_DRAW_SIZE}px`,
+    height: `${EXPLOSION_DRAW_SIZE}px`,
+    left: `${Math.round(overlayX)}px`,
+    top: `${Math.round(overlayY)}px`
+  });
+
+  const image = new Image();
+  image.decoding = 'async';
+  image.width = EXPLOSION_DRAW_SIZE;
+  image.height = EXPLOSION_DRAW_SIZE;
+  image.className = 'fx-explosion-img';
+  image.src = resolvedSrc;
+
+  container.appendChild(image);
+  host.appendChild(container);
+
+  return { element: container, img: image, host, metrics };
 }
 
 function spawnExplosionForPlane(plane, x = null, y = null) {
