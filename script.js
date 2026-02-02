@@ -1794,7 +1794,7 @@ const GREEN_FLAME_DISPLAY_SIZE = { width: 10, height: 55 };
 const BASE_FLAME_DISPLAY_SIZE = BLUE_FLAME_DISPLAY_SIZE;
 const PLANE_FLAME_HOST_ID = 'planeFlameHost';
 const EXPLOSION_HOST_ID = 'explosionHost';
-const EXPLOSION_HOST_Z_INDEX = 26;
+const EXPLOSION_HOST_Z_INDEX = 24;
 
 let flameCycleIndex = 0;
 let flameStyleRevision = 0;
@@ -1872,44 +1872,16 @@ function ensurePlaneFlameHost() {
 }
 
 function ensureExplosionHost() {
-  const parentCandidates = [
-    overlayContainer,
-    gameScreen,
-    gsFrameLayer,
-    gsFrameEl,
-    document.body
-  ];
-  const parent = parentCandidates.find((candidate) => candidate instanceof HTMLElement) || null;
+  const parent = gsFrameLayer instanceof HTMLElement ? gsFrameLayer : null;
   if (!(parent instanceof HTMLElement)) {
     return null;
   }
-
-  let host = document.getElementById(EXPLOSION_HOST_ID);
+  const host = ensureFxHost(parent, EXPLOSION_HOST_ID);
   if (!(host instanceof HTMLElement)) {
-    host = document.createElement('div');
-    host.id = EXPLOSION_HOST_ID;
+    return null;
   }
 
-  if (!host.isConnected || host.parentElement !== parent) {
-    parent.appendChild(host);
-  }
-
-  if (parent !== document.body) {
-    const parentStyle = window.getComputedStyle(parent);
-    if (parentStyle.position === 'static') {
-      parent.style.position = 'relative';
-    }
-  }
-
-  host.classList.add('fx-host');
-  Object.assign(host.style, {
-    position: 'absolute',
-    inset: '0',
-    width: '100%',
-    height: '100%',
-    pointerEvents: 'none',
-    zIndex: String(EXPLOSION_HOST_Z_INDEX)
-  });
+  host.style.zIndex = String(EXPLOSION_HOST_Z_INDEX);
 
   return host;
 }
