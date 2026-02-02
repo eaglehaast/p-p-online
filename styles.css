@@ -1279,6 +1279,14 @@ body, button {
     z-index: 20;
   }
 
+#overlayFxLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 21;
+}
+
 #overlayContainer canvas {
   position: absolute;
   inset: 0;

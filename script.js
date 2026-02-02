@@ -651,6 +651,7 @@ function logCanvasCreation(canvas, label = "") {
 }
 
 const overlayContainer = document.getElementById("overlayContainer");
+const overlayFxLayer = document.getElementById("overlayFxLayer");
 const uiOverlay = document.getElementById("uiOverlay");
 
 let OVERLAY_RESYNC_SCHEDULED = false;
@@ -1864,7 +1865,9 @@ function logPlaneFlamePosition(plane, metrics, clientPoint, flameOffset) {
 }
 
 function ensurePlaneFlameHost() {
-  const parent = overlayContainer instanceof HTMLElement ? overlayContainer : null;
+  const parent = overlayFxLayer instanceof HTMLElement
+    ? overlayFxLayer
+    : (overlayContainer instanceof HTMLElement ? overlayContainer : null);
   if (!(parent instanceof HTMLElement)) {
     return null;
   }
@@ -1872,7 +1875,9 @@ function ensurePlaneFlameHost() {
 }
 
 function ensureExplosionHost() {
-  const parent = gsFrameLayer instanceof HTMLElement ? gsFrameLayer : null;
+  const parent = overlayFxLayer instanceof HTMLElement
+    ? overlayFxLayer
+    : (overlayContainer instanceof HTMLElement ? overlayContainer : null);
   if (!(parent instanceof HTMLElement)) {
     return null;
   }
