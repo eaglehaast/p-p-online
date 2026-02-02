@@ -670,11 +670,11 @@ const EXPLOSION_BLUE_SPRITES = [
 ];
 
 const EXPLOSION_GREEN_SPRITES = [
-  "ui_gamescreen/explosions_green/explosion_green_1.gif",
-  "ui_gamescreen/explosions_green/explosion_green_2.gif",
-  "ui_gamescreen/explosions_green/explosion_green_3.gif",
-  "ui_gamescreen/explosions_green/explosion_green_4.gif",
-  "ui_gamescreen/explosions_green/explosion_green_5.gif"
+  "ui_gamescreen/green_explosions_short/green_explosion_short1.gif",
+  "ui_gamescreen/green_explosions_short/green_explosion_short3.gif",
+  "ui_gamescreen/green_explosions_short/green_explosion_short4.gif",
+  "ui_gamescreen/green_explosions_short/green_explosion_short5.gif",
+  "ui_gamescreen/green_explosions_short/green_explosion_short6.gif"
 ];
 
 const ALL_EXPLOSION_SPRITES = [
