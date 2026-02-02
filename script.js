@@ -4132,6 +4132,7 @@ const EXPLOSION_FRAME_DURATION_MS = 1000 / EXPLOSION_FPS; // ~12fps
 const EXPLOSION_MIN_DURATION_MS = 600;
 const EXPLOSION_GIF_DURATION_MS = 1200;
 const EXPLOSION_GREEN_DEFAULT_DURATION_MS = 520;
+const EXPLOSION_BLUE_DEFAULT_DURATION_MS = EXPLOSION_GREEN_DEFAULT_DURATION_MS;
 const GREEN_EXPLOSION_DURATIONS_MS = {
   "green_explosion_short1.gif": 510,
   "green_explosion_short3.gif": 450,
@@ -4139,20 +4140,35 @@ const GREEN_EXPLOSION_DURATIONS_MS = {
   "green_explosion_short5.gif": 510,
   "green_explosion_short6.gif": 560,
 };
+const BLUE_EXPLOSION_DURATIONS_MS = {
+  "explosion_blue_short_1.gif": EXPLOSION_BLUE_DEFAULT_DURATION_MS,
+  "explosion_blue_short_2.gif": EXPLOSION_BLUE_DEFAULT_DURATION_MS,
+  "explosion_blue_short_3.gif": EXPLOSION_BLUE_DEFAULT_DURATION_MS,
+  "explosion_blue_short_4.gif": EXPLOSION_BLUE_DEFAULT_DURATION_MS,
+  "explosion_blue_short_5.gif": EXPLOSION_BLUE_DEFAULT_DURATION_MS,
+};
 
-function getGreenExplosionDurationMs(src = "") {
+function getShortExplosionDurationMs(src = "", color = "") {
   const trimmed = typeof src === "string" ? src.trim() : "";
   if (!trimmed) {
     return null;
   }
   const fileName = trimmed.split("/").pop() || "";
-  const duration = GREEN_EXPLOSION_DURATIONS_MS[fileName];
+  const isGreenExplosion = color === "green" || trimmed.includes("green_explosions_short/");
+  const isBlueExplosion = trimmed.includes("blue_explosions_short/");
+  const duration = isGreenExplosion
+    ? GREEN_EXPLOSION_DURATIONS_MS[fileName]
+    : isBlueExplosion
+      ? BLUE_EXPLOSION_DURATIONS_MS[fileName]
+      : null;
   return Number.isFinite(duration) ? duration : null;
 }
 
 function resolveExplosionGifDurationMs(img, color) {
   const src = img?.src ?? '';
-  const isGreenExplosion = color === "green" || src.includes("green_explosions_short/");
+  const isGreenExplosion = color === "green"
+    || src.includes("green_explosions_short/")
+    || src.includes("blue_explosions_short/");
   const datasetDuration = Number.parseFloat(img?.dataset?.durationMs);
   const propDuration = Number.isFinite(img?.durationMs) ? img.durationMs : NaN;
   const explicitDuration = Number.isFinite(propDuration) ? propDuration : datasetDuration;
@@ -7735,8 +7751,8 @@ function createExplosionState(plane, x, y) {
   const img = pool.length
     ? pool[Math.floor(Math.random() * pool.length)]
     : null;
-  if (plane.color === "green" && img) {
-    const durationMs = getGreenExplosionDurationMs(img.src);
+  if (img) {
+    const durationMs = getShortExplosionDurationMs(img.src, plane.color);
     if (Number.isFinite(durationMs)) {
       img.durationMs = durationMs;
     }
