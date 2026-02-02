@@ -662,11 +662,11 @@ const bluePlaneCounter  = document.getElementById("gs_planecounter_blue");
 
 // Animated GIF frames for explosion sprites
 const EXPLOSION_BLUE_SPRITES = [
-  "ui_gamescreen/explosions_blue/explosion_blue_1.gif",
-  "ui_gamescreen/explosions_blue/explosion_blue_2.gif",
-  "ui_gamescreen/explosions_blue/explosion_blue_3.gif",
-  "ui_gamescreen/explosions_blue/explosion_blue_4.gif",
-  "ui_gamescreen/explosions_blue/explosion_blue_5.gif"
+  "ui_gamescreen/blue_explosions_short/blue_explosion_short1.gif",
+  "ui_gamescreen/blue_explosions_short/blue_explosion_short3.gif",
+  "ui_gamescreen/blue_explosions_short/blue_explosion_short4.gif",
+  "ui_gamescreen/blue_explosions_short/blue_explosion_short5.gif",
+  "ui_gamescreen/blue_explosions_short/blue_explosion_short6.gif"
 ];
 
 const EXPLOSION_GREEN_SPRITES = [
@@ -4130,30 +4130,53 @@ const EXPLOSION_DRAW_SIZE = 50;
 const EXPLOSION_FPS = 12;
 const EXPLOSION_FRAME_DURATION_MS = 1000 / EXPLOSION_FPS; // ~12fps
 const EXPLOSION_MIN_DURATION_MS = 600;
-const EXPLOSION_GREEN_MIN_DURATION_MS = 0;
-const EXPLOSION_GREEN_MAX_DURATION_MS = 800;
 const EXPLOSION_GIF_DURATION_MS = 1200;
+const EXPLOSION_GREEN_DEFAULT_DURATION_MS = 520;
+const GREEN_EXPLOSION_DURATIONS_MS = {
+  "green_explosion_short1.gif": 510,
+  "green_explosion_short3.gif": 450,
+  "green_explosion_short4.gif": 480,
+  "green_explosion_short5.gif": 510,
+  "green_explosion_short6.gif": 560,
+};
+const EXPLOSION_BLUE_DEFAULT_DURATION_MS = 520;
+const BLUE_EXPLOSION_DURATIONS_MS = {
+  "blue_explosion_short1.gif": 510,
+  "blue_explosion_short3.gif": 450,
+  "blue_explosion_short4.gif": 480,
+  "blue_explosion_short5.gif": 510,
+  "blue_explosion_short6.gif": 560,
+};
 
-function resolveExplosionGifDurationMs(img) {
+function getExplosionDurationMs(src = "", color) {
+  const trimmed = typeof src === "string" ? src.trim() : "";
+  if (!trimmed) {
+    return null;
+  }
+  const fileName = trimmed.split("/").pop() || "";
+  const durationMap = color === "blue" ? BLUE_EXPLOSION_DURATIONS_MS : GREEN_EXPLOSION_DURATIONS_MS;
+  const duration = durationMap[fileName];
+  return Number.isFinite(duration) ? duration : null;
+}
+
+function resolveExplosionGifDurationMs(img, color) {
   const src = img?.src ?? '';
-  const isGreenExplosion = src.includes('green_explosions_short/');
+  const isGreenExplosion = color === "green" || src.includes("green_explosions_short/");
+  const isBlueExplosion = color === "blue" || src.includes("blue_explosions_short/");
   const datasetDuration = Number.parseFloat(img?.dataset?.durationMs);
   const propDuration = Number.isFinite(img?.durationMs) ? img.durationMs : NaN;
   const explicitDuration = Number.isFinite(propDuration) ? propDuration : datasetDuration;
   if (Number.isFinite(explicitDuration) && explicitDuration > 0) {
-    if (isGreenExplosion) {
-      return Math.min(
-        Math.max(explicitDuration, EXPLOSION_GREEN_MIN_DURATION_MS),
-        EXPLOSION_GREEN_MAX_DURATION_MS
-      );
+    if (isGreenExplosion || isBlueExplosion) {
+      return explicitDuration;
     }
     return Math.max(explicitDuration, EXPLOSION_MIN_DURATION_MS);
   }
   if (isGreenExplosion) {
-    return Math.min(
-      Math.max(EXPLOSION_GREEN_MAX_DURATION_MS, EXPLOSION_GREEN_MIN_DURATION_MS),
-      EXPLOSION_GREEN_MAX_DURATION_MS
-    );
+    return EXPLOSION_GREEN_DEFAULT_DURATION_MS;
+  }
+  if (isBlueExplosion) {
+    return EXPLOSION_BLUE_DEFAULT_DURATION_MS;
   }
   return Math.max(EXPLOSION_GIF_DURATION_MS, EXPLOSION_MIN_DURATION_MS);
 }
@@ -7728,6 +7751,12 @@ function createExplosionState(plane, x, y) {
   const img = pool.length
     ? pool[Math.floor(Math.random() * pool.length)]
     : null;
+  if ((plane.color === "green" || plane.color === "blue") && img) {
+    const durationMs = getExplosionDurationMs(img.src, plane.color);
+    if (Number.isFinite(durationMs)) {
+      img.durationMs = durationMs;
+    }
+  }
 
   return {
     kind: "gif",
@@ -7736,8 +7765,9 @@ function createExplosionState(plane, x, y) {
     img,
     variants,
     startedAtMs: null,
-    ttlMs: resolveExplosionGifDurationMs(img),
+    ttlMs: resolveExplosionGifDurationMs(img, plane.color),
     debugFramesLogged: 0,
+    color: plane.color,
   };
 }
 
@@ -7820,7 +7850,7 @@ function updateAndDrawExplosions(ctx, now) {
       explosion.startedAtMs = explosion.startedAtMs ?? now;
 
       const elapsed = now - explosion.startedAtMs;
-      const resolvedTtlMs = resolveExplosionGifDurationMs(img);
+      const resolvedTtlMs = resolveExplosionGifDurationMs(img, explosion.color);
       if (!Number.isFinite(explosion.ttlMs) || explosion.ttlMs < resolvedTtlMs) {
         explosion.ttlMs = resolvedTtlMs;
       }
