@@ -4130,14 +4130,30 @@ const EXPLOSION_DRAW_SIZE = 50;
 const EXPLOSION_FPS = 12;
 const EXPLOSION_FRAME_DURATION_MS = 1000 / EXPLOSION_FPS; // ~12fps
 const EXPLOSION_MIN_DURATION_MS = 600;
+const EXPLOSION_GREEN_MIN_DURATION_MS = 0;
+const EXPLOSION_GREEN_MAX_DURATION_MS = 800;
 const EXPLOSION_GIF_DURATION_MS = 1200;
 
 function resolveExplosionGifDurationMs(img) {
+  const src = img?.src ?? '';
+  const isGreenExplosion = src.includes('green_explosions_short/');
   const datasetDuration = Number.parseFloat(img?.dataset?.durationMs);
   const propDuration = Number.isFinite(img?.durationMs) ? img.durationMs : NaN;
   const explicitDuration = Number.isFinite(propDuration) ? propDuration : datasetDuration;
   if (Number.isFinite(explicitDuration) && explicitDuration > 0) {
+    if (isGreenExplosion) {
+      return Math.min(
+        Math.max(explicitDuration, EXPLOSION_GREEN_MIN_DURATION_MS),
+        EXPLOSION_GREEN_MAX_DURATION_MS
+      );
+    }
     return Math.max(explicitDuration, EXPLOSION_MIN_DURATION_MS);
+  }
+  if (isGreenExplosion) {
+    return Math.min(
+      Math.max(EXPLOSION_GREEN_MAX_DURATION_MS, EXPLOSION_GREEN_MIN_DURATION_MS),
+      EXPLOSION_GREEN_MAX_DURATION_MS
+    );
   }
   return Math.max(EXPLOSION_GIF_DURATION_MS, EXPLOSION_MIN_DURATION_MS);
 }
