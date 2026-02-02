@@ -662,11 +662,11 @@ const bluePlaneCounter  = document.getElementById("gs_planecounter_blue");
 
 // Animated GIF frames for explosion sprites
 const EXPLOSION_BLUE_SPRITES = [
-  "ui_gamescreen/explosions_blue/explosion_blue_1.gif",
-  "ui_gamescreen/explosions_blue/explosion_blue_2.gif",
-  "ui_gamescreen/explosions_blue/explosion_blue_3.gif",
-  "ui_gamescreen/explosions_blue/explosion_blue_4.gif",
-  "ui_gamescreen/explosions_blue/explosion_blue_5.gif"
+  "ui_gamescreen/blue_explosions_short/explosion_blue_short_1.gif",
+  "ui_gamescreen/blue_explosions_short/explosion_blue_short_2.gif",
+  "ui_gamescreen/blue_explosions_short/explosion_blue_short_3.gif",
+  "ui_gamescreen/blue_explosions_short/explosion_blue_short_4.gif",
+  "ui_gamescreen/blue_explosions_short/explosion_blue_short_5.gif"
 ];
 
 const EXPLOSION_GREEN_SPRITES = [
