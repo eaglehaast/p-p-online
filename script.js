@@ -7805,15 +7805,29 @@ function updateAndDrawExplosions(ctx, now) {
       const ttlMs = explosion.ttlMs ?? EXPLOSION_MIN_DURATION_MS;
 
       if (elapsed >= ttlMs) {
+        if (explosion.domEntry?.element?.remove) {
+          explosion.domEntry.element.remove();
+        }
+        if (explosion.domEntry) {
+          delete explosion.domEntry;
+        }
         activeExplosions.splice(i, 1);
         continue;
       }
 
-      ctx.save();
-      if (img && ((img instanceof ImageBitmap) || isSpriteReady(img))) {
-        ctx.drawImage(img, explosion.x - half, explosion.y - half, size, size);
+      if (!explosion.domEntry && img?.src) {
+        explosion.domEntry = createExplosionImageEntry(explosion, img);
       }
-      ctx.restore();
+
+      const metrics = resolveExplosionMetrics('explosion');
+      if (metrics && explosion.domEntry?.element) {
+        explosion.domEntry.metrics = metrics;
+        const { overlayX, overlayY } = worldToOverlayLocal(explosion.x, explosion.y, metrics);
+        Object.assign(explosion.domEntry.element.style, {
+          left: `${Math.round(overlayX)}px`,
+          top: `${Math.round(overlayY)}px`
+        });
+      }
 
       if (DEBUG_FX && explosion.debugFramesLogged < 3) {
         console.debug("[fx] explosion frame", {
