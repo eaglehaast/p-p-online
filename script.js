@@ -4126,7 +4126,7 @@ let animationFrameId = null;
 let gameDrawFirstLogged = false;
 
 const activeExplosions = [];
-const EXPLOSION_DRAW_SIZE = 165;
+const EXPLOSION_DRAW_SIZE = 50;
 const EXPLOSION_FPS = 12;
 const EXPLOSION_FRAME_DURATION_MS = 1000 / EXPLOSION_FPS; // ~12fps
 const EXPLOSION_MIN_DURATION_MS = 600;
