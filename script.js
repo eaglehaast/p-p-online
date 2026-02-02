@@ -7619,23 +7619,78 @@ function updateAndDrawExplosions(ctx, now) {
 
   for (let i = activeExplosions.length - 1; i >= 0; i--) {
     const explosion = activeExplosions[i];
-    explosion.startedAtMs = explosion.startedAtMs ?? now;
+    const img = explosion.img || null;
+    const size = EXPLOSION_DRAW_SIZE;
+    const half = size / 2;
+    const kind = explosion.kind ?? "sheet";
 
-    const elapsed = now - explosion.startedAtMs;
-    const ttlMs = explosion.ttlMs ?? EXPLOSION_MIN_DURATION_MS;
+    if (kind === "gif") {
+      explosion.startedAtMs = explosion.startedAtMs ?? now;
 
-    if (elapsed >= ttlMs) {
+      const elapsed = now - explosion.startedAtMs;
+      const ttlMs = explosion.ttlMs ?? EXPLOSION_MIN_DURATION_MS;
+
+      if (elapsed >= ttlMs) {
+        activeExplosions.splice(i, 1);
+        continue;
+      }
+
+      ctx.save();
+      if (img && ((img instanceof ImageBitmap) || isSpriteReady(img))) {
+        ctx.drawImage(img, explosion.x - half, explosion.y - half, size, size);
+      } else {
+        ctx.fillStyle = "rgba(255, 200, 40, 0.9)";
+        ctx.beginPath();
+        ctx.arc(explosion.x, explosion.y, half, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+
+      if (DEBUG_FX && explosion.debugFramesLogged < 3) {
+        console.debug("[fx] explosion frame", {
+          naturalW: img?.naturalWidth,
+          naturalH: img?.naturalHeight,
+          ttlMs,
+        });
+        explosion.debugFramesLogged++;
+      }
+
+      continue;
+    }
+
+    const frameCount = Math.max(1, Number.isFinite(explosion.frameCount) ? explosion.frameCount : 1);
+    const frameDurationMs = Math.max(1, Number.isFinite(explosion.frameDurationMs) ? explosion.frameDurationMs : 80);
+    explosion.frameIndex = Number.isFinite(explosion.frameIndex) ? explosion.frameIndex : 0;
+    explosion.lastFrameAtMs = Number.isFinite(explosion.lastFrameAtMs) ? explosion.lastFrameAtMs : now;
+
+    if (now - explosion.lastFrameAtMs >= frameDurationMs) {
+      const framesToAdvance = Math.floor((now - explosion.lastFrameAtMs) / frameDurationMs);
+      explosion.frameIndex += framesToAdvance;
+      explosion.lastFrameAtMs += framesToAdvance * frameDurationMs;
+    }
+
+    if (explosion.frameIndex >= frameCount) {
       activeExplosions.splice(i, 1);
       continue;
     }
 
-    const img = explosion.img || null;
-    const size = EXPLOSION_DRAW_SIZE;
-    const half = size / 2;
-
     ctx.save();
     if (img && ((img instanceof ImageBitmap) || isSpriteReady(img))) {
-      ctx.drawImage(img, explosion.x - half, explosion.y - half, size, size);
+      const sourceWidth = img.naturalWidth || img.width || size;
+      const sourceHeight = img.naturalHeight || img.height || size;
+      const frameWidth = sourceWidth / frameCount;
+      const sx = Math.floor(explosion.frameIndex) * frameWidth;
+      ctx.drawImage(
+        img,
+        sx,
+        0,
+        frameWidth,
+        sourceHeight,
+        explosion.x - half,
+        explosion.y - half,
+        size,
+        size
+      );
     } else {
       ctx.fillStyle = "rgba(255, 200, 40, 0.9)";
       ctx.beginPath();
@@ -7648,7 +7703,8 @@ function updateAndDrawExplosions(ctx, now) {
       console.debug("[fx] explosion frame", {
         naturalW: img?.naturalWidth,
         naturalH: img?.naturalHeight,
-        ttlMs,
+        frameIndex: explosion.frameIndex,
+        frameCount,
       });
       explosion.debugFramesLogged++;
     }
