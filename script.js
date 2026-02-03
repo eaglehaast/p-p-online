@@ -692,7 +692,7 @@ const BASE_SPRITE_PATHS = {
   green: "ui_gamescreen/flags and bases colored/green_base.png.png",
 };
 
-const MENU_CRITICAL = [
+const MAIN_MENU_ASSETS = [
   "ui_mainmenu/mm_hotseat.png",
   "ui_mainmenu/mm_computer.png",
   "ui_mainmenu/mm_online.png",
@@ -700,34 +700,17 @@ const MENU_CRITICAL = [
   "ui_mainmenu/mm_classicrules.png",
   "ui_mainmenu/mm_advancedsettings.png",
   "ui_gamescreen/PLANES/gs_plane_green.png",
-  "ui_gamescreen/PLANES/gs_plane_blue.png"
+  "ui_gamescreen/PLANES/gs_plane_blue.png",
+  "preload_animation.gif",
+  "letterbox2.png"
 ];
 
-const GAME_ASSETS = [
-  // Control panel
-  "ui_controlpanel/cp_background.png",
-  "ui_controlpanel/cp_frame_add.png",
-  "ui_controlpanel/cp_button_off.png",
-  "ui_controlpanel/cp_button_on.png",
-  "ui_controlpanel/cp_frame_accuracy.png",
-  "ui_controlpanel/cp_button_left.png",
-  "ui_controlpanel/cp_button_right.png",
-  "ui_controlpanel/cp_frame_range.png",
-  "ui_controlpanel/cp_frame_field.png",
-  "ui_controlpanel/cp_frame_resetand exit.png",
-  "ui_controlpanel/cp_button_reset.png",
-  "ui_controlpanel/cp_button_exit.png",
-  "ui_controlpanel/cp_acuracy_tape2.png",
-
-  // Plane sprites
-  "ui_gamescreen/PLANES/gs_plane_blue.png",
-  "ui_gamescreen/PLANES/gs_plane_green.png",
+const GAME_SCREEN_ASSETS = [
+  // Plane counters
   "ui_gamescreen/gamescreen_outside/planecounter_blue.png",
   "ui_gamescreen/gamescreen_outside/planecounter_ green.png",
 
   // UI extras
-  "preload_animation.gif",
-  "letterbox2.png",
   "sprite_ copy.png",
 
   // Game field background
@@ -746,6 +729,30 @@ const GAME_ASSETS = [
   // Explosion sprites
   ...ALL_EXPLOSION_SPRITES
 ];
+
+const SETTINGS_ASSETS = [
+  // Control panel
+  "ui_controlpanel/cp_background.png",
+  "ui_controlpanel/cp_frame_add.png",
+  "ui_controlpanel/cp_button_off.png",
+  "ui_controlpanel/cp_button_on.png",
+  "ui_controlpanel/cp_frame_accuracy.png",
+  "ui_controlpanel/cp_button_left.png",
+  "ui_controlpanel/cp_button_right.png",
+  "ui_controlpanel/cp_frame_range.png",
+  "ui_controlpanel/cp_frame_field.png",
+  "ui_controlpanel/cp_frame_resetand exit.png",
+  "ui_controlpanel/cp_button_reset.png",
+  "ui_controlpanel/cp_button_exit.png",
+  "ui_controlpanel/cp_acuracy_tape2.png"
+];
+
+const MENU_CRITICAL = MAIN_MENU_ASSETS;
+const PRELOAD_ASSETS = Array.from(new Set([
+  ...MAIN_MENU_ASSETS,
+  ...GAME_SCREEN_ASSETS,
+  ...SETTINGS_ASSETS
+]));
 
 let menuAssetsReady = false;
 let gameAssetsReady = false;
@@ -1001,7 +1008,7 @@ function preloadGameAssetsInBackground() {
   const start = performance.now();
   console.log("[BOOT] game preload start", { ms: 0 });
 
-  gameAssetsPromise = preloadImages(GAME_ASSETS)
+  gameAssetsPromise = preloadImages(PRELOAD_ASSETS)
     .then((results) => {
       gameAssetsReady = true;
       gameAssetsResults = Array.isArray(results) ? results : [];
