@@ -2555,6 +2555,7 @@ function handleFieldPointerEnd(event){
     return;
   }
   if(event.type === 'pointercancel'){
+    const maxAbsDx = fieldDragMaxAbsDx;
     const lastDx = fieldDragLastDx;
     const hasLastDx = Number.isFinite(lastDx) && Math.abs(lastDx) > 0;
     const dragMetrics = isFieldDragging
@@ -2572,10 +2573,19 @@ function handleFieldPointerEnd(event){
     }
     isFieldDragging = false;
     fieldDragPointerId = null;
+    const absDx = dragMetrics ? Math.abs(dragMetrics.dx) : 0;
     if(isFieldAnimating || isAnimating){
       resetFieldDragVisual(false);
+    } else if(maxAbsDx >= RANGE_DRAG_STEP_PX){
+      const directionDx = Number.isFinite(fieldDragLastNonZeroDx) && Math.abs(fieldDragLastNonZeroDx) > 0
+        ? fieldDragLastNonZeroDx
+        : (dragMetrics?.dx ?? 0);
+      const dir = getRangeDirFromDx(directionDx);
+      resetFieldDragVisual(false);
+      if(dir !== 0){
+        queueFieldSteps(1, dir, dragMetrics?.velocity ?? 0);
+      }
     } else {
-      const absDx = dragMetrics ? Math.abs(dragMetrics.dx) : 0;
       resetFieldDragVisual(absDx > 0);
     }
     if(FIELD_EXCLUSIVE_MODE && fieldDragExclusiveToken !== null){
