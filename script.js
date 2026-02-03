@@ -5468,6 +5468,45 @@ function getDiagonalColliderLocalPolygon(collider, margin = 0){
   return polygon;
 }
 
+function appendColliderPath(ctx2d, collider){
+  if(!ctx2d || !collider) return;
+
+  ctx2d.save();
+  ctx2d.translate(collider.cx, collider.cy);
+  ctx2d.rotate(collider.rotation);
+
+  if(collider.type === "diag"){
+    const polygon = getDiagonalColliderLocalPolygon(collider, 0);
+    if(polygon.length > 0){
+      ctx2d.moveTo(polygon[0].x, polygon[0].y);
+      for(let i = 1; i < polygon.length; i += 1){
+        ctx2d.lineTo(polygon[i].x, polygon[i].y);
+      }
+      ctx2d.closePath();
+    }
+  } else {
+    ctx2d.rect(
+      -collider.halfWidth,
+      -collider.halfHeight,
+      collider.halfWidth * 2,
+      collider.halfHeight * 2
+    );
+  }
+
+  ctx2d.restore();
+}
+
+function applyBrickTrailClip(ctx2d){
+  if(!ctx2d || !Array.isArray(colliders) || colliders.length === 0) return;
+
+  ctx2d.beginPath();
+  ctx2d.rect(FIELD_LEFT, FIELD_TOP, FIELD_WIDTH, FIELD_HEIGHT);
+  for(const collider of colliders){
+    appendColliderPath(ctx2d, collider);
+  }
+  ctx2d.clip("evenodd");
+}
+
 function getDiagonalColliderEdges(collider, margin = 0){
   const halfWidth = collider.halfWidth;
   const halfHeight = collider.halfHeight;
@@ -7700,6 +7739,8 @@ function drawAAUnits(){
   for(const aa of aaUnits){
     gsBoardCtx.save();
     // draw fading trail
+    gsBoardCtx.save();
+    applyBrickTrailClip(gsBoardCtx);
     for(const seg of aa.trail){
       const age = now - seg.time;
 
@@ -7728,6 +7769,7 @@ function drawAAUnits(){
       gsBoardCtx.stroke();
       gsBoardCtx.restore();
     }
+    gsBoardCtx.restore();
 
     gsBoardCtx.globalAlpha = 1;
     // radar sweep line with highlight
