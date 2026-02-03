@@ -1773,13 +1773,13 @@ body, button {
 #endGameButtons .playagain-btn--yes {
   left: 64px;
   top: 77px;
-  background-image: url('ui_gamescreen/playagain/playagain_yes.png');
+  background-image: url('ui_gamescreen/playagain/yes.png');
 }
 
 #endGameButtons .playagain-btn--no {
   left: 223px;
   top: 77px;
-  background-image: url('ui_gamescreen/playagain/playagain_no.png');
+  background-image: url('ui_gamescreen/playagain/no.png');
 }
 
 /* Плавные переходы */
