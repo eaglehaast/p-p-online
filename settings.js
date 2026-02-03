@@ -2555,6 +2555,7 @@ function handleFieldPointerEnd(event){
     return;
   }
   if(event.type === 'pointercancel'){
+    const maxAbsDx = fieldDragMaxAbsDx;
     const lastDx = fieldDragLastDx;
     const hasLastDx = Number.isFinite(lastDx) && Math.abs(lastDx) > 0;
     const dragMetrics = isFieldDragging
@@ -2572,10 +2573,23 @@ function handleFieldPointerEnd(event){
     }
     isFieldDragging = false;
     fieldDragPointerId = null;
+    const absDx = dragMetrics ? Math.abs(dragMetrics.dx) : 0;
     if(isFieldAnimating || isAnimating){
       resetFieldDragVisual(false);
+    } else if(maxAbsDx >= RANGE_DRAG_STEP_PX){
+      const directionDx = Number.isFinite(fieldDragLastNonZeroDx) && Math.abs(fieldDragLastNonZeroDx) > 0
+        ? fieldDragLastNonZeroDx
+        : (dragMetrics?.dx ?? 0);
+      const dir = getRangeDirFromDx(directionDx);
+      const steps = Math.min(
+        RANGE_DRAG_MAX_STEPS,
+        Math.max(1, Math.floor(maxAbsDx / RANGE_DRAG_STEP_PX))
+      );
+      resetFieldDragVisual(false);
+      if(dir !== 0){
+        queueFieldSteps(steps, dir, dragMetrics?.velocity ?? 0);
+      }
     } else {
-      const absDx = dragMetrics ? Math.abs(dragMetrics.dx) : 0;
       resetFieldDragVisual(absDx > 0);
     }
     if(FIELD_EXCLUSIVE_MODE && fieldDragExclusiveToken !== null){
@@ -3094,7 +3108,15 @@ function setupAccuracyCrackWatcher(){
     lockedSide = null;
   };
 
-  return { start, stop, shouldRunForAmplitude };
+  const reset = () => {
+    stop();
+    leftIndex = 0;
+    rightIndex = 0;
+    lockedSide = null;
+    overlay.textContent = '';
+  };
+
+  return { start, stop, reset, shouldRunForAmplitude };
 }
 
 const accuracyCrackWatcher = setupAccuracyCrackWatcher();
@@ -4289,6 +4311,9 @@ function syncFieldSelectorState(){
   updateRangeDisplay();
   updateAmplitudeDisplay();
   updateAmplitudeIndicator();
+  if(accuracyCrackWatcher){
+    accuracyCrackWatcher.reset();
+  }
   updateMapPreview();
   syncFieldSelectorState();
   setTumblerState(addsAABtn, addAA);
