@@ -7095,11 +7095,12 @@ function drawDieselSmoke(ctx2d, scale, baseOffsetY = getPlaneAnchorOffset("smoke
 function drawWingTrails(ctx2d){
   ctx2d.strokeStyle = "rgba(255,255,255,0.8)";
   ctx2d.lineWidth = 1;
+  const wingTrailOffsetX = planeMetric(16);
   ctx2d.beginPath();
-  ctx2d.moveTo(planeMetric(12), planeMetric(10));
-  ctx2d.lineTo(planeMetric(12), planeMetric(28));
-  ctx2d.moveTo(-planeMetric(12), planeMetric(10));
-  ctx2d.lineTo(-planeMetric(12), planeMetric(28));
+  ctx2d.moveTo(wingTrailOffsetX, planeMetric(10));
+  ctx2d.lineTo(wingTrailOffsetX, planeMetric(28));
+  ctx2d.moveTo(-wingTrailOffsetX, planeMetric(10));
+  ctx2d.lineTo(-wingTrailOffsetX, planeMetric(28));
   ctx2d.stroke();
 }
 
