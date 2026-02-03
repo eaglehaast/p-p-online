@@ -694,16 +694,10 @@ const BASE_SPRITE_PATHS = {
 
 const MENU_CRITICAL = [
   "ui_mainmenu/mm_hotseat.png",
-  "ui_mainmenu/mm_hotseat.png",
-  "ui_mainmenu/mm_computer.png",
   "ui_mainmenu/mm_computer.png",
   "ui_mainmenu/mm_online.png",
-  "ui_mainmenu/mm_online.png",
-  "ui_mainmenu/mm_playbutton.png",
   "ui_mainmenu/mm_playbutton.png",
   "ui_mainmenu/mm_classicrules.png",
-  "ui_mainmenu/mm_classicrules.png",
-  "ui_mainmenu/mm_advancedsettings.png",
   "ui_mainmenu/mm_advancedsettings.png",
   "ui_gamescreen/PLANES/gs_plane_green.png",
   "ui_gamescreen/PLANES/gs_plane_blue.png"
