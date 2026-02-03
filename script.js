@@ -614,6 +614,12 @@ function resetGame(){
   globalFrame=0;
   flyingPoints= [];
   buildings = [];
+  oscillationAngle = 0;
+  oscillationDir = 1;
+  aaPlacementPreview = null;
+  aaPreviewTrail = [];
+  aaPointerDown = false;
+  cleanupHandle();
   if(!advancedSettingsBtn?.classList.contains('selected')){
     settings.mapIndex = Math.floor(Math.random() * MAPS.length);
   }
@@ -646,6 +652,8 @@ function resetGame(){
   goatIndicator.style.display = "none";
   aimCanvas.style.display = "none";
   planeCanvas.style.display = "none";
+  aimCtx.clearRect(0,0,aimCanvas.width,aimCanvas.height);
+  gameCtx.clearRect(0,0,gameCanvas.width,gameCanvas.height);
   planeCtx.clearRect(0,0,planeCanvas.width,planeCanvas.height);
 
   // Остановить основной цикл
