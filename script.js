@@ -8532,8 +8532,8 @@ function startNewRound(){
     if(settings.mapIndex !== RANDOM_MAP_SENTINEL_INDEX){
       setMapIndexAndPersist(getRandomPlayableMapIndex());
     }
-    applyCurrentMap();
   }
+  applyCurrentMap();
   suppressAutoRandomMapForNextRound = false;
   cleanupGreenCrashFx();
   endGameDiv.style.display = "none";
