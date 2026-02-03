@@ -614,6 +614,12 @@ function resetGame(){
   globalFrame=0;
   flyingPoints= [];
   buildings = [];
+  oscillationAngle = 0;
+  oscillationDir = 1;
+  aaPlacementPreview = null;
+  aaPreviewTrail = [];
+  aaPointerDown = false;
+  cleanupHandle();
   if(!advancedSettingsBtn?.classList.contains('selected')){
     settings.mapIndex = Math.floor(Math.random() * MAPS.length);
   }
