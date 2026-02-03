@@ -7253,6 +7253,23 @@ function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0) {
   ctx2d.restore();
 }
 
+function drawWingTrailsClipped(ctx2d){
+  if (!(FIELD_WIDTH > 0 && FIELD_HEIGHT > 0)) {
+    drawWingTrails(ctx2d);
+    return;
+  }
+
+  const previousTransform = ctx2d.getTransform();
+  ctx2d.save();
+  ctx2d.setTransform(1, 0, 0, 1, 0, 0);
+  ctx2d.beginPath();
+  ctx2d.rect(FIELD_LEFT, FIELD_TOP, FIELD_WIDTH, FIELD_HEIGHT);
+  ctx2d.clip();
+  ctx2d.setTransform(previousTransform);
+  drawWingTrails(ctx2d);
+  ctx2d.restore();
+}
+
 
 function drawThinPlane(ctx2d, plane, glow = 0) {
   const { x: cx, y: cy, color, angle } = plane;
@@ -7301,7 +7318,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
       drawSmokeWithAnchor(scale, smokeAnchor.y);
       ctx2d.save();
       ctx2d.rotate(-swayAngle);
-      drawWingTrails(ctx2d);
+      drawWingTrailsClipped(ctx2d);
       ctx2d.restore();
     } else {
       drawSmokeWithAnchor(1, idleSmokeDistance, PLANE_VFX_IDLE_SMOKE_TAIL_TRIM_Y);
@@ -7337,7 +7354,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
 
         ctx2d.save();
         ctx2d.rotate(-swayAngle);
-        drawWingTrails(ctx2d);
+        drawWingTrailsClipped(ctx2d);
         ctx2d.restore();
       }
     }
@@ -7367,7 +7384,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
     if (showEngine && flightState) {
       ctx2d.save();
       ctx2d.rotate(-swayAngle);
-      drawWingTrails(ctx2d);
+      drawWingTrailsClipped(ctx2d);
       ctx2d.restore();
     }
 
