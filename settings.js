@@ -1039,12 +1039,21 @@ let fieldAnimationPending = 0;
 let fieldLabelTransitionTarget = null;
 let fieldLabelTransitionHandler = null;
 let fieldLabelFallbackTimeoutId = null;
+let fieldLabelRafId = null;
 
 const FIELD_LABEL_EASING = 'cubic-bezier(0.1, 0.9, 0.2, 1)';
 const FIELD_LABEL_DURATION_MS = 150;
 const FIELD_LABEL_MIN_STEP_MS = 90;
 const FIELD_LABEL_SLOT_WIDTH = 58;
 const FIELD_LABEL_BASE_TRANSFORM = 'translateX(-50%)';
+const FIELD_MOTION_DEBUG_QUERY_FLAG = 'field_motion_debug';
+
+function isFieldMotionDebugEnabled(){
+  if(typeof window === 'undefined') return false;
+  if(window.FIELD_MOTION_DEBUG === true) return true;
+  if(window.FIELD_MOTION_DEBUG === false) return false;
+  return window.location?.search?.includes(FIELD_MOTION_DEBUG_QUERY_FLAG) ?? false;
+}
 
 function resetFieldAnimationTracking(){
   fieldAnimationToken += 1;
@@ -1063,6 +1072,10 @@ function cancelFieldLabelAnimation(){
   if(fieldLabelFallbackTimeoutId){
     clearTimeout(fieldLabelFallbackTimeoutId);
     fieldLabelFallbackTimeoutId = null;
+  }
+  if(fieldLabelRafId !== null){
+    cancelAnimationFrame(fieldLabelRafId);
+    fieldLabelRafId = null;
   }
   if(fieldLabelTransitionTarget && fieldLabelTransitionHandler){
     fieldLabelTransitionTarget.removeEventListener('transitionend', fieldLabelTransitionHandler);
@@ -2114,10 +2127,9 @@ function getRangeStepDuration(pendingSteps, { fastScroll = false, gestureVelocit
 }
 
 function getFieldStepDuration(totalSteps, { gestureVelocity = 0 } = {}){
-  if(totalSteps <= 1){
-    return FIELD_LABEL_DURATION_MS;
-  }
-  return Math.max(FIELD_LABEL_MIN_STEP_MS, FIELD_LABEL_DURATION_MS * 0.85);
+  const fastScroll = totalSteps >= RANGE_FAST_SCROLL_THRESHOLD;
+  const baseDuration = getRangeStepDuration(totalSteps, { fastScroll, gestureVelocity });
+  return Math.max(FIELD_LABEL_MIN_STEP_MS, baseDuration);
 }
 
 function clearRangeStepQueue(){
@@ -3523,6 +3535,8 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, options
   const stepDelta = direction === 'next' ? 1 : -1;
   const stepOffsetPx = direction === 'next' ? -FIELD_LABEL_SLOT_WIDTH : FIELD_LABEL_SLOT_WIDTH;
   const baseTransform = getFieldBaseTransform();
+  const overshootStrength = 0.9 * Math.min(1, 1 / stepCount);
+  const debugMotion = isFieldMotionDebugEnabled();
 
   normalizeFieldLabelsControlled({ cancelAnimation: true, resetFieldAnimation: false }, token);
   cancelFieldLabelAnimation();
@@ -3598,31 +3612,37 @@ function animateFieldLabelChange(targetIndex, direction, animationToken, options
       transform: baseTransform
     });
 
-    requestAnimationFrame(() => {
+    const start = performance.now();
+    const tick = (now) => {
       if(animationToken !== fieldAnimationToken) return;
-      const transition = getFieldSelectorTransition(stepDurationMs);
+      const elapsed = now - start;
+      const progress = stepDurationMs > 0 ? Math.min(1, elapsed / stepDurationMs) : 1;
+      const easedProgress = easeOutBack(progress, overshootStrength);
+      const offsetPx = stepOffsetPx * easedProgress;
       setFieldSelectorStylesAuthorized(token, track, {
-        transition,
-        transform: getFieldOffsetTransform(stepOffsetPx)
+        transition: 'none',
+        transform: getFieldOffsetTransform(offsetPx)
       });
-    });
 
-    let resolved = false;
-    const handleTransitionEnd = (event) => {
-      if(event.target !== track || event.propertyName !== 'transform') return;
-      if(resolved) return;
-      resolved = true;
+      if(debugMotion){
+        console.log('[field motion]', {
+          elapsed: Math.round(elapsed),
+          progress: Number(progress.toFixed(3)),
+          easedProgress: Number(easedProgress.toFixed(3)),
+          offsetPx: Number(offsetPx.toFixed(2))
+        });
+      }
+
+      if(progress < 1){
+        fieldLabelRafId = requestAnimationFrame(tick);
+        return;
+      }
+
+      fieldLabelRafId = null;
       finalizeStep();
     };
 
-    fieldLabelTransitionTarget = track;
-    fieldLabelTransitionHandler = handleTransitionEnd;
-    track.addEventListener('transitionend', handleTransitionEnd);
-    fieldLabelFallbackTimeoutId = window.setTimeout(() => {
-      if(resolved) return;
-      resolved = true;
-      finalizeStep();
-    }, stepDurationMs + 80);
+    fieldLabelRafId = requestAnimationFrame(tick);
   };
 
   runStep();
