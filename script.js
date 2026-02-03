@@ -7116,6 +7116,7 @@ if (typeof window !== "undefined") {
     window.__contrailStyle = { ...(window.__contrailStyle || {}), ...next };
     return window.__contrailStyle;
   };
+  window.setContrailsStyle = window.setContrailStyle;
   window.resetContrailStyle = () => {
     window.__contrailStyle = {};
     return window.__contrailStyle;
