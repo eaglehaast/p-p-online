@@ -699,6 +699,7 @@ const MAIN_MENU_ASSETS = [
   "ui_mainmenu/mm_playbutton.png",
   "ui_mainmenu/mm_classicrules.png",
   "ui_mainmenu/mm_advancedsettings.png",
+  "ui_mainmenu/mm_frame.png",
   "ui_gamescreen/PLANES/gs_plane_green.png",
   "ui_gamescreen/PLANES/gs_plane_blue.png",
   "preload_animation.gif",
@@ -715,16 +716,47 @@ const GAME_SCREEN_ASSETS = [
 
   // Game field background
   "background paper 1.png",
+  "ui_gamescreen/gamescreen_outside/gs_background.png",
+  "ui_gamescreen/gamescreen_outside/goat and sparrow.png",
 
   // Game maps
   "ui_gamescreen/bricks/brick_1_default.png",
   "ui_gamescreen/bricks/brick4_diagonal copy.png",
+
+  // Match score
+  "ui_gamescreen/gamescreen_outside/matchscore_blue_corn.png",
+  "ui_gamescreen/gamescreen_outside/matchscore_green_egg2.png",
+  "ui_gamescreen/gamescreen_outside/matchscore_blue_corn_ghost.png",
+  "ui_gamescreen/gamescreen_outside/matchscore_green_egg_ghost.png",
+
+  // End game screen
+  "ui_gamescreen/playagain/playagain_container.png",
+  "ui_gamescreen/playagain/playagain_yes.png",
+  "ui_gamescreen/playagain/playagain_no.png",
 
   // Flags & bases
   BASE_SPRITE_PATHS.blue,
   BASE_SPRITE_PATHS.green,
   FLAG_SPRITE_PATHS.blue,
   FLAG_SPRITE_PATHS.green,
+
+  // Flame sprites
+  "ui_gamescreen/flames green/flame_green_1.gif",
+  "ui_gamescreen/flames green/flame_green_2.gif",
+  "ui_gamescreen/flames green/flame_green_3.gif",
+  "ui_gamescreen/flames green/flame_green_4.gif",
+  "ui_gamescreen/flames green/flame_green_5.gif",
+  "ui_gamescreen/flames green/flame_green_6.gif",
+  "ui_gamescreen/flames green/flame_green_7.gif",
+  "ui_gamescreen/flames green/flame_green_8.gif",
+  "ui_gamescreen/flames green/flame_green_9.gif",
+  "ui_gamescreen/flames green/flame_green_10.gif",
+  "ui_gamescreen/flames blue/flame_blue_1.gif",
+  "ui_gamescreen/flames blue/flame_blue_2.gif",
+  "ui_gamescreen/flames blue/flame_blue_3.gif",
+  "ui_gamescreen/flames blue/flame_blue_4.gif",
+  "ui_gamescreen/flames blue/flame_blue_5.gif",
+  "ui_gamescreen/flames blue/flame_blue_6.gif",
 
   // Explosion sprites
   ...ALL_EXPLOSION_SPRITES
@@ -737,14 +769,46 @@ const SETTINGS_ASSETS = [
   "ui_controlpanel/cp_button_off.png",
   "ui_controlpanel/cp_button_on.png",
   "ui_controlpanel/cp_frame_accuracy.png",
+  "ui_controlpanel/cp_frame_accuracy2.png",
   "ui_controlpanel/cp_button_left.png",
   "ui_controlpanel/cp_button_right.png",
   "ui_controlpanel/cp_frame_range.png",
+  "ui_controlpanel/cp_frame_range2.png",
   "ui_controlpanel/cp_frame_field.png",
+  "ui_controlpanel/cp_frame_field2.png",
   "ui_controlpanel/cp_frame_resetand exit.png",
   "ui_controlpanel/cp_button_reset.png",
   "ui_controlpanel/cp_button_exit.png",
-  "ui_controlpanel/cp_acuracy_tape2.png"
+  "ui_controlpanel/cp_acuracy_tape2.png",
+  "ui_controlpanel/cp_tape_range.png",
+  "ui_controlpanel/cp_tape_field_easy2.png",
+  "ui_controlpanel/field_planes/green_plane_mini.png",
+  "ui_controlpanel/field_planes/green_flag_mini.png",
+  "ui_controlpanel/field_planes/blue_plane_mini.png",
+  "ui_controlpanel/field_planes/blue_flag_mini.png",
+  "ui_controlpanel/hook.png",
+  "ui_controlpanel/rope_pendulum.png",
+  "ui_controlpanel/pendulum.png",
+  "ui_controlpanel/cp_range_contrail1.gif",
+  "ui_controlpanel/cp_range_contrail2.gif",
+  "ui_controlpanel/cp_range_flame_trail4.gif",
+  "ui_controlpanel/cp_range_plane 2.png",
+  "ui_controlpanel/steps/left_step 1.png",
+  "ui_controlpanel/steps/left_step 4.png",
+  "ui_controlpanel/steps/left_step 5.png",
+  "ui_controlpanel/steps/left_step 6.png",
+  "ui_controlpanel/steps/left_step 7.png",
+  "ui_controlpanel/steps/left_step 8.png",
+  "ui_controlpanel/steps/left_step 9.png",
+  "ui_controlpanel/steps/left_step 10.png",
+  "ui_controlpanel/steps/right_step 1.png",
+  "ui_controlpanel/steps/right_step 4.png",
+  "ui_controlpanel/steps/right_step 5.png",
+  "ui_controlpanel/steps/right_step 6.png",
+  "ui_controlpanel/steps/right_step 7.png",
+  "ui_controlpanel/steps/right_step 8 .png",
+  "ui_controlpanel/steps/right_step 9.png",
+  "ui_controlpanel/steps/right_step 10 .png"
 ];
 
 const MENU_CRITICAL = MAIN_MENU_ASSETS;
