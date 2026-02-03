@@ -7092,15 +7092,51 @@ function drawDieselSmoke(ctx2d, scale, baseOffsetY = getPlaneAnchorOffset("smoke
   ctx2d.restore();
 }
 
+function getContrailStyle(){
+  const base = {
+    offsetX: 24,
+    startY: 6,
+    endY: 44,
+    baseAlpha: 0.7,
+    pulseAmp: 0.15,
+    pulseSpeed: 0.12,
+    minWidth: 2.2,
+    maxWidth: 3.4,
+    color: [230, 230, 230]
+  };
+  if (typeof window === "undefined") {
+    return base;
+  }
+  const override = window.__contrailStyle || {};
+  return { ...base, ...override };
+}
+
+if (typeof window !== "undefined") {
+  window.setContrailStyle = (next = {}) => {
+    window.__contrailStyle = { ...(window.__contrailStyle || {}), ...next };
+    return window.__contrailStyle;
+  };
+  window.resetContrailStyle = () => {
+    window.__contrailStyle = {};
+    return window.__contrailStyle;
+  };
+}
+
 function drawWingTrails(ctx2d){
-  ctx2d.strokeStyle = "rgba(255,255,255,0.8)";
-  ctx2d.lineWidth = 1;
-  const wingTrailOffsetX = planeMetric(16);
+  const style = getContrailStyle();
+  const pulse = 1 + style.pulseAmp * Math.sin(globalFrame * style.pulseSpeed);
+  const alpha = Math.max(0, Math.min(1, style.baseAlpha * pulse));
+  const width = style.minWidth + (style.maxWidth - style.minWidth) * Math.max(0, pulse);
+  const [r, g, b] = style.color;
+  ctx2d.strokeStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+  ctx2d.lineWidth = width;
+  ctx2d.lineCap = "round";
+  const wingTrailOffsetX = planeMetric(style.offsetX);
   ctx2d.beginPath();
-  ctx2d.moveTo(wingTrailOffsetX, planeMetric(10));
-  ctx2d.lineTo(wingTrailOffsetX, planeMetric(28));
-  ctx2d.moveTo(-wingTrailOffsetX, planeMetric(10));
-  ctx2d.lineTo(-wingTrailOffsetX, planeMetric(28));
+  ctx2d.moveTo(wingTrailOffsetX, planeMetric(style.startY));
+  ctx2d.lineTo(wingTrailOffsetX, planeMetric(style.endY));
+  ctx2d.moveTo(-wingTrailOffsetX, planeMetric(style.startY));
+  ctx2d.lineTo(-wingTrailOffsetX, planeMetric(style.endY));
   ctx2d.stroke();
 }
 
@@ -7260,7 +7296,10 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
         scale = 3 - 2 * progress; // 10px -> 5px
       }
       drawSmokeWithAnchor(scale, smokeAnchor.y);
+      ctx2d.save();
+      ctx2d.rotate(-swayAngle);
       drawWingTrails(ctx2d);
+      ctx2d.restore();
     } else {
       drawSmokeWithAnchor(1, idleSmokeDistance, PLANE_VFX_IDLE_SMOKE_TAIL_TRIM_Y);
     }
@@ -7293,7 +7332,10 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
         const scale = progress < 0.75 ? 4 * progress : 12 * (1 - progress);
         drawBlueJetFlame(ctx2d, scale, jetAnchor.y);
 
+        ctx2d.save();
+        ctx2d.rotate(-swayAngle);
         drawWingTrails(ctx2d);
+        ctx2d.restore();
       }
     }
     const baseImgReady  = isSpriteReady(bluePlaneImg);
@@ -7317,6 +7359,13 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
     if (!baseImgReady) {
       ctx2d.restore();
       return;
+    }
+
+    if (showEngine && flightState) {
+      ctx2d.save();
+      ctx2d.rotate(-swayAngle);
+      drawWingTrails(ctx2d);
+      ctx2d.restore();
     }
 
     if (isGhostState) {
