@@ -3104,7 +3104,19 @@ function setupAccuracyCrackWatcher(){
     lockedSide = null;
   };
 
-  return { start, stop, shouldRunForAmplitude };
+  const reset = () => {
+    if(rafId){
+      cancelAnimationFrame(rafId);
+    }
+    overlay.innerHTML = '';
+    leftIndex = 0;
+    rightIndex = 0;
+    lockedSide = null;
+    running = false;
+    rafId = null;
+  };
+
+  return { start, stop, reset, shouldRunForAmplitude };
 }
 
 const accuracyCrackWatcher = setupAccuracyCrackWatcher();
@@ -4306,6 +4318,9 @@ function syncFieldSelectorState(){
   setTumblerState(addsCargoBtn, addCargo);
   syncToggleInput(addAAToggle, addAA);
   syncToggleInput(sharpEdgesToggle, sharpEdges);
+  if(accuracyCrackWatcher?.reset){
+    accuracyCrackWatcher.reset();
+  }
   saveSettings();
 }
 
