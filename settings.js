@@ -908,12 +908,19 @@ const fieldSelectorTop = 257;
 let hasLoggedFieldSelectorPlacement = false;
 const logFieldSelectorPlacementOnce = () => {
   if(hasLoggedFieldSelectorPlacement) return;
+
+  const selectorRect = fieldSelectorRoot.getBoundingClientRect();
+  const selectorIsHidden = fieldSelectorRoot.offsetParent === null;
+  const selectorHasZeroSize = selectorRect.width === 0 && selectorRect.height === 0;
+  if(selectorIsHidden || selectorHasZeroSize){
+    return;
+  }
+
   hasLoggedFieldSelectorPlacement = true;
 
   const fieldRootRect = fieldModuleRoot.getBoundingClientRect();
   const leftRect = fieldLeftInstance.getBoundingClientRect();
   const rightRect = fieldRightBtn.getBoundingClientRect();
-  const selectorRect = fieldSelectorRoot.getBoundingClientRect();
 
   console.debug('FIELD selector placement debug', {
     fieldRootRect,
