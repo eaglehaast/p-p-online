@@ -693,7 +693,6 @@ const BASE_SPRITE_PATHS = {
 };
 
 const MENU_CRITICAL = [
-  "ui_mainmenu/mm_background.png",
   "ui_mainmenu/mm_hotseat.png",
   "ui_mainmenu/mm_hotseat.png",
   "ui_mainmenu/mm_computer.png",
