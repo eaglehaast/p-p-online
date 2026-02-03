@@ -904,9 +904,12 @@ function getImage(url, label = "", options = {}) {
 
   const existing = imageCache.get(normalizedUrl);
   const stack = new Error().stack;
+  const suppressDuplicateWarning = !!options?.suppressDuplicateWarning;
 
   if (existing) {
-    logDuplicateRequest(label, normalizedUrl, stack);
+    if (!suppressDuplicateWarning) {
+      logDuplicateRequest(label, normalizedUrl, stack);
+    }
     applyImageOptions(existing, options);
     return { img: existing, isNew: false, url: normalizedUrl };
   }
