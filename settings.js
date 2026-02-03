@@ -3223,7 +3223,7 @@ function getPreviewBrickSprite(spriteName = "brick_1_default"){
   const registry = window.paperWingsAssets || null;
   const useRegistry = !!registry?.getImage;
   const { img, url } = useRegistry
-    ? registry.getImage(path, `mapPreviewBrick-${key}`)
+    ? registry.getImage(path, `mapPreviewBrick-${key}`, { suppressDuplicateWarning: true })
     : (() => {
         const normalized = typeof path === 'string' ? path.trim() : '';
         if (!normalized) return { img: null, url: '' };
