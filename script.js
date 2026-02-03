@@ -731,8 +731,8 @@ const GAME_SCREEN_ASSETS = [
 
   // End game screen
   "ui_gamescreen/playagain/playagain_container.png",
-  "ui_gamescreen/playagain/playagain_yes.png",
-  "ui_gamescreen/playagain/playagain_no.png",
+  "ui_gamescreen/playagain/yes.png",
+  "ui_gamescreen/playagain/no.png",
 
   // Flags & bases
   BASE_SPRITE_PATHS.blue,
