@@ -717,12 +717,18 @@ const GAME_ASSETS = [
   "ui_controlpanel/cp_frame_resetand exit.png",
   "ui_controlpanel/cp_button_reset.png",
   "ui_controlpanel/cp_button_exit.png",
+  "ui_controlpanel/cp_acuracy_tape2.png",
 
   // Plane sprites
   "ui_gamescreen/PLANES/gs_plane_blue.png",
   "ui_gamescreen/PLANES/gs_plane_green.png",
   "ui_gamescreen/gamescreen_outside/planecounter_blue.png",
   "ui_gamescreen/gamescreen_outside/planecounter_ green.png",
+
+  // UI extras
+  "preload_animation.gif",
+  "letterbox2.png",
+  "sprite_ copy.png",
 
   // Game field background
   "background paper 1.png",
