@@ -7026,9 +7026,9 @@ function drawWingTrails(ctx2d){
   ctx2d.lineWidth = 1;
   ctx2d.beginPath();
   ctx2d.moveTo(planeMetric(12), planeMetric(10));
-  ctx2d.lineTo(planeMetric(22), planeMetric(28));
+  ctx2d.lineTo(planeMetric(12), planeMetric(28));
   ctx2d.moveTo(-planeMetric(12), planeMetric(10));
-  ctx2d.lineTo(-planeMetric(22), planeMetric(28));
+  ctx2d.lineTo(-planeMetric(12), planeMetric(28));
   ctx2d.stroke();
 }
 
