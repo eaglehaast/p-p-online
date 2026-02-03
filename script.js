@@ -811,12 +811,11 @@ const SETTINGS_ASSETS = [
   "ui_controlpanel/steps/right_step 10 .png"
 ];
 
-const MENU_CRITICAL = MAIN_MENU_ASSETS;
-const PRELOAD_ASSETS = Array.from(new Set([
-  ...GAME_SCREEN_ASSETS,
-  ...SETTINGS_ASSETS
-]));
+const MENU_PRELOAD_LABEL = "menuPreload";
+const GAME_PRELOAD_LABEL = "gamePreload";
+const SETTINGS_PRELOAD_LABEL = "settingsPreload";
 
+const MENU_CRITICAL = MAIN_MENU_ASSETS;
 let menuAssetsReady = false;
 let gameAssetsReady = false;
 let isPreloadVisible = false;
@@ -1004,7 +1003,7 @@ function trackImageLoad(label, url, img, timeoutMs = IMAGE_LOAD_TIMEOUT_MS) {
   img.addEventListener("error", event => finalize("error", event), { once: true });
 }
 
-function preloadImages(assetList = [], { timeoutMs = IMAGE_LOAD_TIMEOUT_MS } = {}) {
+function preloadImages(assetList = [], { timeoutMs = IMAGE_LOAD_TIMEOUT_MS, label = "criticalPreload" } = {}) {
   if (!Array.isArray(assetList) || assetList.length === 0) {
     return Promise.resolve([]);
   }
@@ -1031,7 +1030,7 @@ function preloadImages(assetList = [], { timeoutMs = IMAGE_LOAD_TIMEOUT_MS } = {
       return;
     }
 
-    const { img, url } = getImage(normalizedSrc, "criticalPreload");
+    const { img, url } = getImage(normalizedSrc, label);
     if (!img || !url) {
       resolve({ url: normalizedSrc, status: "skipped" });
       return;
@@ -1059,7 +1058,7 @@ function preloadImages(assetList = [], { timeoutMs = IMAGE_LOAD_TIMEOUT_MS } = {
       return;
     }
 
-    primeImageLoad(img, url, "criticalPreload");
+    primeImageLoad(img, url, label);
   })));
 }
 
@@ -1071,10 +1070,13 @@ function preloadGameAssetsInBackground() {
   const start = performance.now();
   console.log("[BOOT] game preload start", { ms: 0 });
 
-  gameAssetsPromise = preloadImages(PRELOAD_ASSETS)
+  const gameScreenPromise = preloadImages(GAME_SCREEN_ASSETS, { label: GAME_PRELOAD_LABEL });
+  const settingsPromise = preloadImages(SETTINGS_ASSETS, { label: SETTINGS_PRELOAD_LABEL });
+
+  gameAssetsPromise = Promise.all([gameScreenPromise, settingsPromise])
     .then((results) => {
       gameAssetsReady = true;
-      gameAssetsResults = Array.isArray(results) ? results : [];
+      gameAssetsResults = results.flat().filter(Boolean);
       console.log("[BOOT] game preload end", { ms: Math.round(performance.now() - start) });
       return results;
     })
@@ -1099,7 +1101,7 @@ function startMenuPreload() {
     showLoadingOverlay();
   }
 
-  const preloadPromise = preloadImages(MENU_CRITICAL);
+  const preloadPromise = preloadImages(MENU_CRITICAL, { label: MENU_PRELOAD_LABEL });
 
   if (loadingOverlay) {
     Promise.all([
@@ -3059,10 +3061,10 @@ function preloadPlaneSprites() {
   if (planeSpritesPreloaded) {
     return;
   }
-  bluePlaneImg = loadImageAsset(PLANE_ASSET_PATHS.blue, "planeSprites.blue").img;
-  greenPlaneImg = loadImageAsset(PLANE_ASSET_PATHS.green, "planeSprites.green").img;
-  blueCounterPlaneImg = loadImageAsset(PLANE_ASSET_PATHS.blueCounter, "planeSprites.blueCounter").img;
-  greenCounterPlaneImg = loadImageAsset(PLANE_ASSET_PATHS.greenCounter, "planeSprites.greenCounter").img;
+  bluePlaneImg = loadImageAsset(PLANE_ASSET_PATHS.blue, MENU_PRELOAD_LABEL).img;
+  greenPlaneImg = loadImageAsset(PLANE_ASSET_PATHS.green, MENU_PRELOAD_LABEL).img;
+  blueCounterPlaneImg = loadImageAsset(PLANE_ASSET_PATHS.blueCounter, GAME_PRELOAD_LABEL).img;
+  greenCounterPlaneImg = loadImageAsset(PLANE_ASSET_PATHS.greenCounter, GAME_PRELOAD_LABEL).img;
 
   planeSpritesPreloaded = true;
 }
@@ -3077,7 +3079,7 @@ function preloadExplosionSprites() {
     const trimmed = src.trim();
     if (!trimmed) return;
 
-    const img = loadImageAsset(trimmed, `explosionSprites.${color}`, { decoding: 'async' }).img;
+    const img = loadImageAsset(trimmed, GAME_PRELOAD_LABEL, { decoding: 'async' }).img;
     explosionImagesByColor[color]?.push(img);
   };
 
@@ -3088,19 +3090,19 @@ function preloadExplosionSprites() {
 }
 const flameImages = new Map();
 for (const src of BURNING_FLAME_SRCS) {
-  const img = loadImageAsset(src, "flameImages", { decoding: 'async' }).img;
+  const img = loadImageAsset(src, GAME_PRELOAD_LABEL, { decoding: 'async' }).img;
   flameImages.set(src, img);
 }
 const defaultFlameImg = flameImages.get(DEFAULT_BURNING_FLAME_SRC) || null;
 
 const flagSprites = {
-  blue: loadImageAsset(FLAG_SPRITE_PATHS.blue, "flagSprite.blue", { decoding: 'async' }).img,
-  green: loadImageAsset(FLAG_SPRITE_PATHS.green, "flagSprite.green", { decoding: 'async' }).img,
+  blue: loadImageAsset(FLAG_SPRITE_PATHS.blue, GAME_PRELOAD_LABEL, { decoding: 'async' }).img,
+  green: loadImageAsset(FLAG_SPRITE_PATHS.green, GAME_PRELOAD_LABEL, { decoding: 'async' }).img,
 };
 
 const baseSprites = {
-  blue: loadImageAsset(BASE_SPRITE_PATHS.blue, "baseSprite.blue", { decoding: 'async' }).img,
-  green: loadImageAsset(BASE_SPRITE_PATHS.green, "baseSprite.green", { decoding: 'async' }).img,
+  blue: loadImageAsset(BASE_SPRITE_PATHS.blue, GAME_PRELOAD_LABEL, { decoding: 'async' }).img,
+  green: loadImageAsset(BASE_SPRITE_PATHS.green, GAME_PRELOAD_LABEL, { decoding: 'async' }).img,
 };
 
 function isSpriteReady(img) {
@@ -3111,7 +3113,7 @@ function isSpriteReady(img) {
     img.naturalHeight > 0
   );
 }
-const { img: backgroundImg } = loadImageAsset("background paper 1.png", "backgroundImg");
+const { img: backgroundImg } = loadImageAsset("background paper 1.png", GAME_PRELOAD_LABEL);
 backgroundImg?.addEventListener("load", () => {
   console.log("[IMG] load", { label: "backgroundImg", url: backgroundImg.src });
 });
@@ -3298,7 +3300,7 @@ function getFieldOffsetsInCanvasSpace(canvas, fallbackScaleX = 1, fallbackScaleY
 }
 
 // Sprite used for the aiming arrow
-const { img: arrowSprite } = loadImageAsset("sprite_ copy.png", "arrowSprite");
+const { img: arrowSprite } = loadImageAsset("sprite_ copy.png", GAME_PRELOAD_LABEL);
 arrowSprite?.addEventListener("load", () => {
   console.log("[IMG] load", { label: "arrowSprite", url: arrowSprite.src });
 });
@@ -4096,12 +4098,12 @@ function loadMatchScoreImagesIfNeeded(){
   matchScoreImagesRequested = true;
 
   Object.entries(MATCH_SCORE_ASSETS).forEach(([color, src]) => {
-    const { img } = loadImageAsset(src, "matchScoreIcon");
+    const { img } = loadImageAsset(src, GAME_PRELOAD_LABEL);
     matchScoreImages[color] = img || null;
   });
 
   Object.entries(MATCH_SCORE_GHOST_ASSETS).forEach(([color, src]) => {
-    const { img } = loadImageAsset(src, "matchScoreGhostIcon");
+    const { img } = loadImageAsset(src, GAME_PRELOAD_LABEL);
     matchScoreGhostImages[color] = img || null;
   });
 }
@@ -8788,7 +8790,7 @@ function ensureMapSpriteAssets(sprites = []){
   for(const spriteName of requested){
     const path = MAP_SPRITE_PATHS[spriteName] || MAP_BRICK_SPRITE_PATH;
     if(!MAP_SPRITE_ASSETS[spriteName]){
-      const { img } = loadImageAsset(path, `mapSprite-${spriteName}`);
+      const { img } = loadImageAsset(path, GAME_PRELOAD_LABEL);
       MAP_SPRITE_ASSETS[spriteName] = img;
     }
   }
