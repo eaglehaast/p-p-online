@@ -4235,16 +4235,24 @@ function getShortExplosionDurationMs(src = "", color = "") {
   return Number.isFinite(duration) ? duration : null;
 }
 
-function resolveExplosionGifDurationMs(img, color) {
-  const src = img?.src ?? '';
-  const isGreenExplosion = color === "green"
-    || src.includes("green_explosions_short/")
-    || src.includes("blue_explosions_short/");
+function getExactExplosionGifDurationMs(img) {
   const datasetDuration = Number.parseFloat(img?.dataset?.durationMs);
   const propDuration = Number.isFinite(img?.durationMs) ? img.durationMs : NaN;
   const explicitDuration = Number.isFinite(propDuration) ? propDuration : datasetDuration;
-  if (Number.isFinite(explicitDuration) && explicitDuration > 0) {
-    return isGreenExplosion ? explicitDuration : Math.max(explicitDuration, EXPLOSION_MIN_DURATION_MS);
+  return Number.isFinite(explicitDuration) && explicitDuration > 0 ? explicitDuration : null;
+}
+
+function resolveExplosionGifDurationMs(img, color) {
+  const src = img?.src ?? '';
+  const isShortExplosion = src.includes("green_explosions_short/")
+    || src.includes("blue_explosions_short/");
+  const isGreenExplosion = color === "green" || src.includes("green_explosions_short/");
+  const explicitDuration = getExactExplosionGifDurationMs(img);
+  if (Number.isFinite(explicitDuration)) {
+    return isShortExplosion ? explicitDuration : Math.max(explicitDuration, EXPLOSION_MIN_DURATION_MS);
+  }
+  if (isShortExplosion) {
+    return getShortExplosionDurationMs(src, color) ?? EXPLOSION_GREEN_DEFAULT_DURATION_MS;
   }
   if (isGreenExplosion) {
     return EXPLOSION_GREEN_DEFAULT_DURATION_MS;
@@ -7997,10 +8005,11 @@ function updateAndDrawExplosions(ctx, now) {
 
       const elapsed = now - explosion.startedAtMs;
       const resolvedTtlMs = resolveExplosionGifDurationMs(img, explosion.color);
-      if (!Number.isFinite(explosion.ttlMs) || explosion.ttlMs < resolvedTtlMs) {
-        explosion.ttlMs = resolvedTtlMs;
+      const exactTtlMs = getExactExplosionGifDurationMs(img);
+      if (Number.isFinite(exactTtlMs)) {
+        explosion.ttlMs = exactTtlMs;
       }
-      const ttlMs = explosion.ttlMs ?? resolvedTtlMs;
+      const ttlMs = Number.isFinite(explosion.ttlMs) ? explosion.ttlMs : resolvedTtlMs;
 
       if (elapsed >= ttlMs) {
         if (explosion.domEntry?.element?.remove) {
