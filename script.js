@@ -2947,10 +2947,6 @@ yesBtn.addEventListener("click", () => {
     greenScore = 0;
     syncAllStarStates();
     roundNumber = 0;
-    if(!advancedSettingsBtn?.classList.contains('selected')){
-      settings.mapIndex = Math.floor(Math.random() * MAPS.length);
-      applyCurrentMap();
-    }
   }
   startNewRound();
 });
@@ -2966,6 +2962,12 @@ function startNewRound(){
   }
   endGameDiv.style.display = "none";
   isGameOver=false; winnerColor=null;
+
+  loadSettings();
+  if(!advancedSettingsBtn?.classList.contains('selected')){
+    settings.mapIndex = Math.floor(Math.random() * MAPS.length);
+  }
+  applyCurrentMap();
 
   lastFirstTurn = 1 - lastFirstTurn;
   turnIndex = lastFirstTurn;
