@@ -7180,6 +7180,13 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   ctx2d.translate(cx + nx * rollOffset, cy + ny * rollOffset);
   ctx2d.rotate(angle + swayAngle);
 
+  const drawWingTrailsNoSway = () => {
+    ctx2d.save();
+    ctx2d.rotate(-swayAngle);
+    drawWingTrails(ctx2d);
+    ctx2d.restore();
+  };
+
   const drawSmokeWithAnchor = (scale, offsetY, tailTrim = 0) => {
     if (scale <= 0 || offsetY < 0) return;
     drawDieselSmoke(ctx2d, scale, offsetY, tailTrim);
@@ -7195,6 +7202,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
         scale = 3 - 2 * progress; // 10px -> 5px
       }
       drawSmokeWithAnchor(scale, smokeAnchor.y);
+      drawWingTrailsNoSway();
     } else {
       drawSmokeWithAnchor(1, idleSmokeDistance, PLANE_VFX_IDLE_SMOKE_TAIL_TRIM_Y);
     }
@@ -7227,7 +7235,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
         const scale = progress < 0.75 ? 4 * progress : 12 * (1 - progress);
         drawBlueJetFlame(ctx2d, scale, jetAnchor.y);
 
-        drawWingTrails(ctx2d);
+        drawWingTrailsNoSway();
       }
     }
     const baseImgReady  = isSpriteReady(bluePlaneImg);
