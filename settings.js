@@ -688,11 +688,13 @@ class ContrailRenderer {
     for (const streak of this.streaks) {
       const yBase = this.displayHeight * streak.y;
       const wobble = Math.sin(this.elapsed * 2.4 + streak.phase * Math.PI * 2) * streak.wobble * this.displayHeight;
-      const thickness = streak.thickness * (0.7 + 0.3 * this.scale);
+      const breathe = Math.sin(this.elapsed * 1.6 + streak.phase * Math.PI * 2);
+      const thickness = streak.thickness * (0.7 + 0.3 * this.scale) * 1.05 * (1 + breathe * 0.03);
+      const alpha = streak.alpha * (1 + breathe * 0.06);
       const start = -spacing + this.offset + streak.phase * spacing;
 
       for (let x = start; x < this.displayWidth + spacing; x += spacing) {
-        this.drawStreak(ctx, x, yBase + wobble, length, thickness, streak.alpha);
+        this.drawStreak(ctx, x, yBase + wobble, length, thickness, alpha);
       }
     }
 
