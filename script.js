@@ -7195,6 +7195,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
         scale = 3 - 2 * progress; // 10px -> 5px
       }
       drawSmokeWithAnchor(scale, smokeAnchor.y);
+      drawWingTrails(ctx2d);
     } else {
       drawSmokeWithAnchor(1, idleSmokeDistance, PLANE_VFX_IDLE_SMOKE_TAIL_TRIM_Y);
     }
