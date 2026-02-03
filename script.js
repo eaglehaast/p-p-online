@@ -719,6 +719,14 @@ const GAME_ASSETS = [
   "ui_controlpanel/cp_button_exit.png",
   "ui_controlpanel/cp_acuracy_tape2.png",
 
+  // Main menu
+  "ui_mainmenu/mm_hotseat.png",
+  "ui_mainmenu/mm_computer.png",
+  "ui_mainmenu/mm_online.png",
+  "ui_mainmenu/mm_playbutton.png",
+  "ui_mainmenu/mm_classicrules.png",
+  "ui_mainmenu/mm_advancedsettings.png",
+
   // Plane sprites
   "ui_gamescreen/PLANES/gs_plane_blue.png",
   "ui_gamescreen/PLANES/gs_plane_green.png",
