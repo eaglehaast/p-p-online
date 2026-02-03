@@ -3018,9 +3018,9 @@ const RIGHT_CRACK_STEPS = [
   'ui_controlpanel/steps/right_step 5.png',
   'ui_controlpanel/steps/right_step 6.png',
   'ui_controlpanel/steps/right_step 7.png',
-  'ui_controlpanel/steps/right_step 8 .png',
+  'ui_controlpanel/steps/right_step 8.png',
   'ui_controlpanel/steps/right_step 9.png',
-  'ui_controlpanel/steps/right_step 10 .png'
+  'ui_controlpanel/steps/right_step 10.png'
 ];
 
 function createCrackImage(src){
