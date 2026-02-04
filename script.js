@@ -3659,10 +3659,7 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 
 
-  if (typeof window.rangeCells === 'undefined') {
-    window.rangeCells = undefined;
-  }
-let aimingAmplitude;     // 0..20 (UI показывает *5)
+// shared settings in window.paperWingsSettings.settings
 
 let isGameOver   = false;
 let winnerColor  = null;
@@ -3931,13 +3928,38 @@ function normalizeFlameStyleKey(key) {
   return FLAME_STYLE_MAP.has(key) ? key : 'random';
 }
 
-let settings = {
+const settingsBridge = window.paperWingsSettings || (window.paperWingsSettings = {});
+const sharedSettings = settingsBridge.settings || (settingsBridge.settings = {
+  flightRangeCells: 30,
+  aimingAmplitude: 10 / 5,
   addAA: false,
   sharpEdges: false,
-  mapIndex: 0,
-  flameStyle: 'random',
-  randomizeMapEachRound: false
-};
+  mapIndex: 0
+});
+
+if(!Number.isFinite(sharedSettings.flightRangeCells)){
+  sharedSettings.flightRangeCells = 30;
+}
+if(!Number.isFinite(sharedSettings.aimingAmplitude)){
+  sharedSettings.aimingAmplitude = 10 / 5;
+}
+if(typeof sharedSettings.addAA !== 'boolean'){
+  sharedSettings.addAA = false;
+}
+if(typeof sharedSettings.sharpEdges !== 'boolean'){
+  sharedSettings.sharpEdges = false;
+}
+if(!Number.isInteger(sharedSettings.mapIndex)){
+  sharedSettings.mapIndex = 0;
+}
+if(typeof sharedSettings.flameStyle !== 'string'){
+  sharedSettings.flameStyle = 'random';
+}
+if(typeof sharedSettings.randomizeMapEachRound !== 'boolean'){
+  sharedSettings.randomizeMapEachRound = false;
+}
+
+const settings = sharedSettings;
 
 let storageAvailable = true;
 function getStoredSetting(key){
@@ -3976,7 +3998,6 @@ function setStoredSetting(key, value){
   }
 }
 
-const settingsBridge = window.paperWingsSettings || (window.paperWingsSettings = {});
 settingsBridge.setMapIndex = (nextIndex, options = {}) => {
   const { persist = true } = options;
   settings.mapIndex = clampMapIndex(nextIndex);
@@ -3988,10 +4009,10 @@ settingsBridge.setMapIndex = (nextIndex, options = {}) => {
 
 function loadSettings(){
   const previousFlameStyle = settings.flameStyle;
-    const fr = parseInt(getStoredSetting('settings.flightRangeCells'), 10);
-    window.rangeCells = Number.isNaN(fr) ? 30 : fr;
+  const fr = parseInt(getStoredSetting('settings.flightRangeCells'), 10);
+  settings.flightRangeCells = Number.isNaN(fr) ? 30 : fr;
   const amp = parseFloat(getStoredSetting('settings.aimingAmplitude'));
-  aimingAmplitude = Number.isNaN(amp) ? 10 / 5 : amp;
+  settings.aimingAmplitude = Number.isNaN(amp) ? 10 / 5 : amp;
   settings.addAA = getStoredSetting('settings.addAA') === 'true';
   settings.sharpEdges = getStoredSetting('settings.sharpEdges') === 'true';
   const mapIdx = parseInt(getStoredSetting('settings.mapIndex'), 10);
@@ -4002,10 +4023,10 @@ function loadSettings(){
 
   // Clamp loaded values so corrupted or out-of-range settings
   // don't break the game on startup
-    window.rangeCells = Math.min(MAX_FLIGHT_RANGE_CELLS,
-                               Math.max(MIN_FLIGHT_RANGE_CELLS, window.rangeCells));
-  aimingAmplitude  = Math.min(MAX_AMPLITUDE,
-                             Math.max(MIN_AMPLITUDE, aimingAmplitude));
+  settings.flightRangeCells = Math.min(MAX_FLIGHT_RANGE_CELLS,
+    Math.max(MIN_FLIGHT_RANGE_CELLS, settings.flightRangeCells));
+  settings.aimingAmplitude = Math.min(MAX_AMPLITUDE,
+    Math.max(MIN_AMPLITUDE, settings.aimingAmplitude));
 
   if(previousFlameStyle !== settings.flameStyle){
     onFlameStyleChanged();
@@ -4608,8 +4629,8 @@ onlineBtn.addEventListener("click",()=>{
 });
 if(classicRulesBtn){
   classicRulesBtn.addEventListener('click', () => {
-      window.rangeCells = 30;
-    aimingAmplitude = 10 / 5; // 10°
+    settings.flightRangeCells = 30;
+    settings.aimingAmplitude = 10 / 5; // 10°
     settings.addAA = false;
     settings.sharpEdges = false;
     const upcomingRoundNumber = roundNumber + 1;
@@ -5182,7 +5203,7 @@ function onHandleUp(){
   const dragAngle = Math.atan2(dy, dx);
 
   // дальность в пикселях
-    const flightDistancePx = window.rangeCells * CELL_SIZE;
+    const flightDistancePx = settings.flightRangeCells * CELL_SIZE;
   const speedPxPerSec = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
   const scale = dragDistance / MAX_DRAG_DISTANCE;
 
@@ -5274,7 +5295,7 @@ function doComputerMove(){
   }
 
   // 4. Attack logic (direct or with bounce)
-    const flightDistancePx = window.rangeCells * CELL_SIZE;
+    const flightDistancePx = settings.flightRangeCells * CELL_SIZE;
   const speedPxPerSec    = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
   let best = null; // {plane, enemy, vx, vy, totalDist}
 
@@ -5342,7 +5363,7 @@ function doComputerMove(){
 }
 
 function planPathToPoint(plane, tx, ty){
-    const flightDistancePx = window.rangeCells * CELL_SIZE;
+    const flightDistancePx = settings.flightRangeCells * CELL_SIZE;
   const speedPxPerSec    = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
 
   if(isPathClear(plane.x, plane.y, tx, ty)){
@@ -6687,7 +6708,7 @@ function gameDraw(){
     const clampedDist = Math.min(distPx, MAX_DRAG_DISTANCE);
 
     // use a constant aiming amplitude (in degrees) independent of drag distance
-    const maxAngleDeg = aimingAmplitude * 5;
+    const maxAngleDeg = settings.aimingAmplitude * 5;
     const maxAngleRad = maxAngleDeg * Math.PI / 180;
 
     // обновляем текущий угол раскачивания
@@ -7541,7 +7562,7 @@ function drawPlanesAndTrajectories(){
       if(vdist > MAX_DRAG_DISTANCE){
         vdist = MAX_DRAG_DISTANCE;
       }
-      const cells = (vdist / MAX_DRAG_DISTANCE) * window.rangeCells;
+      const cells = (vdist / MAX_DRAG_DISTANCE) * settings.flightRangeCells;
       const textX = p.x + POINT_RADIUS + 8;
       rangeTextInfo = { color: colorFor(p.color), cells, x: textX, y: p.y };
     }
@@ -8621,8 +8642,8 @@ function startNewRound(){
   logBootStep("startNewRound");
   loadSettings();
   console.log('[settings] load at match start', {
-    flightRangeCells: window.rangeCells,
-    aimingAmplitude,
+    flightRangeCells: settings.flightRangeCells,
+    aimingAmplitude: settings.aimingAmplitude,
     addAA: settings.addAA,
     sharpEdges: settings.sharpEdges,
     mapIndex: settings.mapIndex,

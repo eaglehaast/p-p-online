@@ -549,14 +549,23 @@ function sanitizeMapIndex(index, { excludeIndex, allowRandom } = {}){
   return selectable[randomIndex];
 }
 
-  const DEFAULT_SETTINGS = {
-    rangeCells: 30,
-    aimingAmplitude: 10 / 5,
-    addAA: false,
-    sharpEdges: false,
-    addCargo: false,
-    mapIndex: 0
-  };
+const DEFAULT_SETTINGS = {
+  rangeCells: 30,
+  aimingAmplitude: 10 / 5,
+  addAA: false,
+  sharpEdges: false,
+  addCargo: false,
+  mapIndex: 0
+};
+
+const settingsBridge = window.paperWingsSettings || (window.paperWingsSettings = {});
+const sharedSettings = settingsBridge.settings || (settingsBridge.settings = {
+  flightRangeCells: DEFAULT_SETTINGS.rangeCells,
+  aimingAmplitude: DEFAULT_SETTINGS.aimingAmplitude,
+  addAA: DEFAULT_SETTINGS.addAA,
+  sharpEdges: DEFAULT_SETTINGS.sharpEdges,
+  mapIndex: DEFAULT_SETTINGS.mapIndex
+});
 
 const PREVIEW_CELL_SIZE = 20;
 const PREVIEW_MAX_DRAG_DISTANCE = 100;
@@ -734,17 +743,17 @@ function getIntSetting(key, defaultValue){
   return Number.isNaN(value) ? defaultValue : value;
 }
 
-let settingsFlightRangeCells = getIntSetting('settings.flightRangeCells', 30);
-let rangeStep = getRangeStepForValue(settingsFlightRangeCells);
+sharedSettings.flightRangeCells = getIntSetting('settings.flightRangeCells', DEFAULT_SETTINGS.rangeCells);
+let rangeStep = getRangeStepForValue(sharedSettings.flightRangeCells);
 let rangeCommittedValue = getRangeValue(rangeStep);
 let rangePreviewValue = rangeCommittedValue;
-settingsFlightRangeCells = rangeCommittedValue;
-let settingsAimingAmplitude  = parseFloat(getStoredItem('settings.aimingAmplitude'));
-if(Number.isNaN(settingsAimingAmplitude)) settingsAimingAmplitude = 10 / 5;
-let addAA = getStoredItem('settings.addAA') === 'true';
-let sharpEdges = getStoredItem('settings.sharpEdges') === 'true';
+sharedSettings.flightRangeCells = rangeCommittedValue;
+sharedSettings.aimingAmplitude  = parseFloat(getStoredItem('settings.aimingAmplitude'));
+if(Number.isNaN(sharedSettings.aimingAmplitude)) sharedSettings.aimingAmplitude = DEFAULT_SETTINGS.aimingAmplitude;
+sharedSettings.addAA = getStoredItem('settings.addAA') === 'true';
+sharedSettings.sharpEdges = getStoredItem('settings.sharpEdges') === 'true';
 let addCargo = getStoredItem('settings.addCargo') === 'true';
-let mapIndex = sanitizeMapIndex(
+sharedSettings.mapIndex = sanitizeMapIndex(
   getIntSetting('settings.mapIndex', DEFAULT_SETTINGS.mapIndex),
   { allowRandom: true }
 );
@@ -756,7 +765,7 @@ let rangeOvershootTimer = null;
 let rangeTrackTransform = '';
 let rangeTrackTransition = '';
 let isRangeBumping = false;
-let accuracyDisplayIdx = getAccuracyDisplayIndex(settingsAimingAmplitude);
+let accuracyDisplayIdx = getAccuracyDisplayIndex(sharedSettings.aimingAmplitude);
 let accuracyScrollPos = accuracyDisplayIdx;
 let accuracyScrollRafId = null;
 let accuracyTrackTransform = '';
@@ -833,14 +842,14 @@ function syncRangeWithStep(step){
   rangeStep = clampRangeStep(step);
   rangeCommittedValue = getRangeValue(rangeStep);
   rangePreviewValue = rangeCommittedValue;
-  settingsFlightRangeCells = rangeCommittedValue;
+  sharedSettings.flightRangeCells = rangeCommittedValue;
 }
 
 function syncRangeStepFromValue(value){
   syncRangeWithStep(getRangeStepForValue(value));
 }
 
-syncRangeStepFromValue(settingsFlightRangeCells);
+syncRangeStepFromValue(sharedSettings.flightRangeCells);
 
 const rangeMinusBtn =
   selectInSettings('#rangeBtnLeft') ??
@@ -969,8 +978,8 @@ let fieldLabelTrack = fieldSelectorRoot?.querySelector('.fieldLabelTrack');
 let fieldLabelPrev = mapNameLabelPrev ?? null;
 let fieldLabelCurrent = mapNameLabelCurrent ?? null;
 let fieldLabelNext = mapNameLabelNext ?? null;
-let currentIndex = mapIndex;
-let nextIndex = mapIndex;
+let currentIndex = sharedSettings.mapIndex;
+let nextIndex = sharedSettings.mapIndex;
 let isAnimating = false;
 const mapPreviewContainer = selectInSettings('#frame_field_1_visual');
 const mapPreview = selectInSettings('#mapPreview');
@@ -1660,7 +1669,7 @@ function finishAccuracyScroll(targetIndex, dir, onFinish){
   const currentValue = ACCURACY_DISPLAY_VALUES[targetIndex];
   accuracyScrollPos = targetIndex;
   accuracyDisplayIdx = targetIndex;
-  settingsAimingAmplitude = MIN_AMPLITUDE + targetIndex;
+  sharedSettings.aimingAmplitude = MIN_AMPLITUDE + targetIndex;
   setAccuracyDisplayValue(currentValue);
   updateAccuracyTapePosition(accuracyDisplayIdx);
   updateAmplitudeIndicator();
@@ -1820,7 +1829,7 @@ function updateAccuracyDisplay(stepOverride, options = {}){
 
   accuracyDisplayIdx = displayIdx;
   accuracyScrollPos = displayIdx;
-  settingsAimingAmplitude = MIN_AMPLITUDE + displayIdx;
+  sharedSettings.aimingAmplitude = MIN_AMPLITUDE + displayIdx;
   setAccuracyDisplayValue(displayedAngle);
   updateAccuracyTapePosition(displayIdx);
   updateAmplitudeIndicator();
@@ -2713,7 +2722,7 @@ function updateRangeFlame(value = rangeCommittedValue){
 function commitRangeValue(value){
   rangeCommittedValue = value;
   rangePreviewValue = value;
-  settingsFlightRangeCells = value;
+  sharedSettings.flightRangeCells = value;
   updateRangeFlame(value);
   saveSettings();
 }
@@ -2820,7 +2829,7 @@ function changeAccuracyStep(delta, options = {}){
   const dir = getRangeDirFromDelta(delta);
   const animateDirection = getRangeDirectionLabel(dir);
 
-  settingsAimingAmplitude = MIN_AMPLITUDE + nextIndex;
+  sharedSettings.aimingAmplitude = MIN_AMPLITUDE + nextIndex;
   updateAmplitudeIndicator();
 
   if(commitImmediately){
@@ -2928,7 +2937,7 @@ function changeFieldStep(delta, options = {}){
 }
 
 function updateAmplitudeDisplay(){
-  const displayIdx = getAccuracyDisplayIndex(settingsAimingAmplitude);
+  const displayIdx = getAccuracyDisplayIndex(sharedSettings.aimingAmplitude);
   const displayedAngle = ACCURACY_DISPLAY_VALUES[displayIdx];
   accuracyDisplayIdx = displayIdx;
   accuracyScrollPos = displayIdx;
@@ -3001,7 +3010,7 @@ function updateAmplitudeIndicator(){
     selectInSettings('#amplitudeIndicator');
 
   if(pendulumHost){
-    const maxAngle = settingsAimingAmplitude * 5;
+    const maxAngle = sharedSettings.aimingAmplitude * 5;
     pendulumTarget = maxAngle;
     if(pendulumCurrent === null){
       pendulumCurrent = maxAngle;
@@ -3093,7 +3102,7 @@ function setupAccuracyCrackWatcher(){
       return;
     }
 
-    if(!shouldRunForAmplitude(settingsAimingAmplitude)){
+    if(!shouldRunForAmplitude(sharedSettings.aimingAmplitude)){
       running = false;
       rafId = null;
       lockedSide = null;
@@ -3119,7 +3128,7 @@ function setupAccuracyCrackWatcher(){
   };
 
   const start = () => {
-    if(running || !shouldRunForAmplitude(settingsAimingAmplitude)){
+    if(running || !shouldRunForAmplitude(sharedSettings.aimingAmplitude)){
       return;
     }
 
@@ -3164,7 +3173,7 @@ function syncAccuracyCrackWatcher(){
     return;
   }
 
-  if(accuracyCrackWatcher.shouldRunForAmplitude(settingsAimingAmplitude)){
+  if(accuracyCrackWatcher.shouldRunForAmplitude(sharedSettings.aimingAmplitude)){
     accuracyCrackWatcher.start();
   } else {
     accuracyCrackWatcher.stop();
@@ -3172,29 +3181,29 @@ function syncAccuracyCrackWatcher(){
 }
 
 function saveSettings(){
-  setStoredItem('settings.flightRangeCells', settingsFlightRangeCells);
-  setStoredItem('settings.aimingAmplitude', settingsAimingAmplitude);
-  setStoredItem('settings.addAA', addAA);
-  setStoredItem('settings.sharpEdges', sharpEdges);
+  setStoredItem('settings.flightRangeCells', sharedSettings.flightRangeCells);
+  setStoredItem('settings.aimingAmplitude', sharedSettings.aimingAmplitude);
+  setStoredItem('settings.addAA', sharedSettings.addAA);
+  setStoredItem('settings.sharpEdges', sharedSettings.sharpEdges);
   setStoredItem('settings.addCargo', addCargo);
-  mapIndex = sanitizeMapIndex(mapIndex, { allowRandom: true });
+  sharedSettings.mapIndex = sanitizeMapIndex(sharedSettings.mapIndex, { allowRandom: true });
   if(window.paperWingsSettings?.setMapIndex){
-    window.paperWingsSettings.setMapIndex(mapIndex, { persist: true });
+    window.paperWingsSettings.setMapIndex(sharedSettings.mapIndex, { persist: true });
   } else {
-    setStoredItem('settings.mapIndex', mapIndex);
+    setStoredItem('settings.mapIndex', sharedSettings.mapIndex);
   }
   console.log('[settings] save', {
-    flightRangeCells: settingsFlightRangeCells,
-    aimingAmplitude: settingsAimingAmplitude,
-    addAA,
-    sharpEdges,
+    flightRangeCells: sharedSettings.flightRangeCells,
+    aimingAmplitude: sharedSettings.aimingAmplitude,
+    addAA: sharedSettings.addAA,
+    sharpEdges: sharedSettings.sharpEdges,
     addCargo,
-    mapIndex
+    mapIndex: sharedSettings.mapIndex
   });
 }
 
 function hasCurrentMapBricks(){
-  const map = MAPS[mapIndex];
+  const map = MAPS[sharedSettings.mapIndex];
   const sprites = map?.sprites;
   return Array.isArray(sprites) && sprites.length > 0;
 }
@@ -3279,7 +3288,7 @@ function drawMapPreviewBricks(boundsWidth, boundsHeight){
   const rectHeight = boundsHeight ?? mapRect.height;
   mapPreviewBricksCtx.clearRect(0, 0, rectWidth, rectHeight);
 
-  const sprites = Array.isArray(MAPS[mapIndex]?.sprites) ? MAPS[mapIndex].sprites : [];
+  const sprites = Array.isArray(MAPS[sharedSettings.mapIndex]?.sprites) ? MAPS[sharedSettings.mapIndex].sprites : [];
   const previewBricks = sprites.filter(isBrickItem);
   const scaleX = rectWidth / MAP_PREVIEW_BASE_WIDTH;
   const scaleY = rectHeight / MAP_PREVIEW_BASE_HEIGHT;
@@ -3359,7 +3368,7 @@ function resizeMapPreviewBricksCanvas(){
 
 function updateMapPreview(){
   if(!mapPreview) return;
-  const map = MAPS[mapIndex];
+  const map = MAPS[sharedSettings.mapIndex];
   const randomSelection = isRandomMap(map);
   mapPreview.classList.toggle('map-preview--random', Boolean(randomSelection));
   restorePreviewPlaneVisibility();
@@ -3368,12 +3377,12 @@ function updateMapPreview(){
   resizeMapPreviewBricksCanvas();
   updatePreviewBrickColliders();
   refreshPreviewSimulationIfInitialized();
-  lastPreviewMapIndex = mapIndex;
+  lastPreviewMapIndex = sharedSettings.mapIndex;
 }
 
 function updateMapPreviewIndex(nextIndex, { force = false } = {}){
   const resolvedIndex = normalizeMapIndex(nextIndex);
-  mapIndex = resolvedIndex;
+  sharedSettings.mapIndex = resolvedIndex;
   if(!force && lastPreviewMapIndex === resolvedIndex){
     return;
   }
@@ -3691,7 +3700,7 @@ function syncFieldSelectorLabels({ token } = {}){
     assertFieldControlToken(token, 'syncFieldSelectorLabels');
   }
   if(!mapNameDisplay) return;
-  const resolvedIndex = mapIndex;
+  const resolvedIndex = sharedSettings.mapIndex;
   const nextText = getFieldLabel(resolvedIndex);
   currentIndex = resolvedIndex;
   nextIndex = resolvedIndex;
@@ -3708,7 +3717,7 @@ function updateMapNameDisplayControlled(options = {}, token = null){
     assertFieldControlToken(token, 'updateMapNameDisplay');
   }
   if(!mapNameDisplay) return;
-  const resolvedIndex = Number.isFinite(options.index) ? options.index : mapIndex;
+  const resolvedIndex = Number.isFinite(options.index) ? options.index : sharedSettings.mapIndex;
   const nextText = getFieldLabel(resolvedIndex);
   const shouldResetFieldAnimation = !options.animationToken;
   const hasActiveInteraction = isFieldInteractionActive();
@@ -3753,7 +3762,7 @@ function resizePreviewCanvas(){
   const rect = getMapPreviewContainerDesignRect();
   const width = rect.width;
   const height = rect.height;
-  const map = MAPS[mapIndex];
+  const map = MAPS[sharedSettings.mapIndex];
   if(isRandomMap(map)){
     console.assert(width > 0 && height > 0, 'resizePreviewCanvas dimensions', {
       width,
@@ -3948,7 +3957,7 @@ function onPreviewPointerUp(e){
   }
 
   const dragAngle = Math.atan2(dy, dx);
-  const previewFlightDistancePx = settingsFlightRangeCells * PREVIEW_CELL_SIZE * PREVIEW_FLIGHT_DISTANCE_SCALE;
+  const previewFlightDistancePx = sharedSettings.flightRangeCells * PREVIEW_CELL_SIZE * PREVIEW_FLIGHT_DISTANCE_SCALE;
   const previewFlightDurationSec = PREVIEW_FLIGHT_DURATION_SEC * PREVIEW_FLIGHT_DURATION_SCALE;
   const speedPxPerSec = previewFlightDistancePx / previewFlightDurationSec;
   const scale = dragDistance / PREVIEW_MAX_DRAG_DISTANCE;
@@ -3983,7 +3992,7 @@ function updatePreviewHandle(delta){
   const dy = previewHandle.baseY - plane.y;
   const dist = Math.hypot(dx, dy);
   const clampedDist = Math.min(dist, PREVIEW_MAX_DRAG_DISTANCE);
-  const maxAngleDeg = settingsAimingAmplitude * 5;
+  const maxAngleDeg = sharedSettings.aimingAmplitude * 5;
   const maxAngleRad = maxAngleDeg * Math.PI / 180;
 
   previewOscillationAngle += PREVIEW_OSCILLATION_SPEED * delta * previewOscillationDir;
@@ -4033,7 +4042,7 @@ function updatePreviewBounds(plane){
   const rect = getMapPreviewContainerDesignRect();
   const boundsWidth = previewCanvas ? previewCanvas.width / dpr : rect.width;
   const boundsHeight = previewCanvas ? previewCanvas.height / dpr : rect.height;
-  const map = MAPS[mapIndex];
+  const map = MAPS[sharedSettings.mapIndex];
   if(isRandomMap(map)){
     console.assert(boundsWidth > 0 && boundsHeight > 0, 'updatePreviewBounds dimensions', {
       boundsWidth,
@@ -4081,7 +4090,9 @@ function buildPreviewBrickColliders(boundsWidth, boundsHeight){
     return [];
   }
 
-  const sprites = Array.isArray(MAPS[mapIndex]?.sprites) ? MAPS[mapIndex].sprites : [];
+  const sprites = Array.isArray(MAPS[sharedSettings.mapIndex]?.sprites)
+    ? MAPS[sharedSettings.mapIndex].sprites
+    : [];
   const previewBricks = sprites.filter(isBrickItem);
   const scaleX = rectWidth / MAP_PREVIEW_BASE_WIDTH;
   const scaleY = rectHeight / MAP_PREVIEW_BASE_HEIGHT;
@@ -4137,11 +4148,11 @@ function updatePreviewBrickColliders(boundsWidth = null, boundsHeight = null){
     previewBrickColliders = [];
     previewBrickColliderWidth = rectWidth;
     previewBrickColliderHeight = rectHeight;
-    previewBrickColliderMapIndex = mapIndex;
+    previewBrickColliderMapIndex = sharedSettings.mapIndex;
     return;
   }
 
-  const shouldUpdate = previewBrickColliderMapIndex !== mapIndex
+  const shouldUpdate = previewBrickColliderMapIndex !== sharedSettings.mapIndex
     || previewBrickColliderWidth !== rectWidth
     || previewBrickColliderHeight !== rectHeight;
   if(!shouldUpdate) return;
@@ -4149,7 +4160,7 @@ function updatePreviewBrickColliders(boundsWidth = null, boundsHeight = null){
   previewBrickColliders = buildPreviewBrickColliders(rectWidth, rectHeight);
   previewBrickColliderWidth = rectWidth;
   previewBrickColliderHeight = rectHeight;
-  previewBrickColliderMapIndex = mapIndex;
+  previewBrickColliderMapIndex = sharedSettings.mapIndex;
 }
 
 function resolvePreviewBrickCollisions(plane){
@@ -4358,15 +4369,15 @@ function cancelFieldScrollForReset(){
   resetFieldDragVisual(false);
 }
 
-  function resetSettingsToDefaults(){
-    cancelFieldScrollForReset();
-    settingsFlightRangeCells = DEFAULT_SETTINGS.rangeCells;
-    syncRangeStepFromValue(settingsFlightRangeCells);
-    settingsAimingAmplitude = DEFAULT_SETTINGS.aimingAmplitude;
-    addAA = DEFAULT_SETTINGS.addAA;
-    sharpEdges = DEFAULT_SETTINGS.sharpEdges;
-    addCargo = DEFAULT_SETTINGS.addCargo;
-    mapIndex = DEFAULT_SETTINGS.mapIndex;
+function resetSettingsToDefaults(){
+  cancelFieldScrollForReset();
+  sharedSettings.flightRangeCells = DEFAULT_SETTINGS.rangeCells;
+  syncRangeStepFromValue(sharedSettings.flightRangeCells);
+  sharedSettings.aimingAmplitude = DEFAULT_SETTINGS.aimingAmplitude;
+  sharedSettings.addAA = DEFAULT_SETTINGS.addAA;
+  sharedSettings.sharpEdges = DEFAULT_SETTINGS.sharpEdges;
+  addCargo = DEFAULT_SETTINGS.addCargo;
+  sharedSettings.mapIndex = DEFAULT_SETTINGS.mapIndex;
 
   updateRangeFlame();
   updateRangeDisplay();
@@ -4374,11 +4385,11 @@ function cancelFieldScrollForReset(){
   updateAmplitudeIndicator();
   updateMapPreview();
   syncFieldSelectorState();
-  setTumblerState(addsAABtn, addAA);
-  setTumblerState(addsNailsBtn, sharpEdges);
+  setTumblerState(addsAABtn, sharedSettings.addAA);
+  setTumblerState(addsNailsBtn, sharedSettings.sharpEdges);
   setTumblerState(addsCargoBtn, addCargo);
-  syncToggleInput(addAAToggle, addAA);
-  syncToggleInput(sharpEdgesToggle, sharpEdges);
+  syncToggleInput(addAAToggle, sharedSettings.addAA);
+  syncToggleInput(sharpEdgesToggle, sharedSettings.sharpEdges);
   if(accuracyCrackWatcher?.reset){
     accuracyCrackWatcher.reset();
   }
@@ -4419,39 +4430,39 @@ function syncToggleInput(input, value){
 }
 
 if(addAAToggle){
-  addAAToggle.checked = addAA;
+  addAAToggle.checked = sharedSettings.addAA;
   addAAToggle.addEventListener('change', e => {
-    addAA = e.target.checked;
-    setTumblerState(addsAABtn, addAA);
+    sharedSettings.addAA = e.target.checked;
+    setTumblerState(addsAABtn, sharedSettings.addAA);
     saveSettings();
   });
 }
 
 if(sharpEdgesToggle){
-  sharpEdgesToggle.checked = sharpEdges;
+  sharpEdgesToggle.checked = sharedSettings.sharpEdges;
   sharpEdgesToggle.addEventListener('change', e => {
-    sharpEdges = e.target.checked;
-    setTumblerState(addsNailsBtn, sharpEdges);
+    sharedSettings.sharpEdges = e.target.checked;
+    setTumblerState(addsNailsBtn, sharedSettings.sharpEdges);
     saveSettings();
   });
 }
 
 if(addsNailsBtn){
-  setTumblerState(addsNailsBtn, sharpEdges);
+  setTumblerState(addsNailsBtn, sharedSettings.sharpEdges);
   addFieldAuditListener(addsNailsBtn, 'click', () => {
-    sharpEdges = !sharpEdges;
-    setTumblerState(addsNailsBtn, sharpEdges);
-    syncToggleInput(sharpEdgesToggle, sharpEdges);
+    sharedSettings.sharpEdges = !sharedSettings.sharpEdges;
+    setTumblerState(addsNailsBtn, sharedSettings.sharpEdges);
+    syncToggleInput(sharpEdgesToggle, sharedSettings.sharpEdges);
     saveSettings();
   });
 }
 
 if(addsAABtn){
-  setTumblerState(addsAABtn, addAA);
+  setTumblerState(addsAABtn, sharedSettings.addAA);
   addFieldAuditListener(addsAABtn, 'click', () => {
-    addAA = !addAA;
-    setTumblerState(addsAABtn, addAA);
-    syncToggleInput(addAAToggle, addAA);
+    sharedSettings.addAA = !sharedSettings.addAA;
+    setTumblerState(addsAABtn, sharedSettings.addAA);
+    syncToggleInput(addAAToggle, sharedSettings.addAA);
     saveSettings();
   });
 }
@@ -4625,9 +4636,7 @@ updateAmplitudeIndicator();
 syncFieldSelectorState();
 updateUiFrameScale();
 
-const settingsBridge = window.paperWingsSettings || {};
 settingsBridge.onShow = handleSettingsLayerShow;
 settingsBridge.onHide = handleSettingsLayerHide;
 settingsBridge.isActive = isSettingsActive;
-window.paperWingsSettings = settingsBridge;
 })();
