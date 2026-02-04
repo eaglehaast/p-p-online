@@ -7143,19 +7143,6 @@ function drawDieselSmoke(ctx2d, scale, baseOffsetY = getPlaneAnchorOffset("smoke
   ctx2d.restore();
 }
 
-function drawWingTrails(ctx2d){
-  const pulse = 0.7 + 0.3 * Math.sin(globalFrame * 0.12);
-  ctx2d.strokeStyle = `rgba(225,225,225,${(0.48 + 0.24 * pulse).toFixed(3)})`;
-  ctx2d.lineWidth = 1.6 + 0.6 * pulse;
-  const wingTrailOffsetX = planeMetric(22);
-  ctx2d.beginPath();
-  ctx2d.moveTo(wingTrailOffsetX, planeMetric(8));
-  ctx2d.lineTo(wingTrailOffsetX, planeMetric(34));
-  ctx2d.moveTo(-wingTrailOffsetX, planeMetric(8));
-  ctx2d.lineTo(-wingTrailOffsetX, planeMetric(34));
-  ctx2d.stroke();
-}
-
 function addPlaneShading(ctx2d){
   const grad = ctx2d.createRadialGradient(0, 0, planeMetric(8), 0, 0, planeMetric(18));
   grad.addColorStop(0, "rgba(255,255,255,0.15)");
@@ -7266,28 +7253,6 @@ function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0) {
   ctx2d.restore();
 }
 
-function drawWingTrailsClipped(ctx2d){
-  if (!(FIELD_WIDTH > 0 && FIELD_HEIGHT > 0)) {
-    drawWingTrails(ctx2d);
-    return;
-  }
-
-  const previousTransform = ctx2d.getTransform();
-  ctx2d.save();
-  ctx2d.setTransform(1, 0, 0, 1, 0, 0);
-  if (Array.isArray(colliders) && colliders.length > 0) {
-    applyBrickTrailClip(ctx2d);
-  } else {
-    ctx2d.beginPath();
-    ctx2d.rect(FIELD_LEFT, FIELD_TOP, FIELD_WIDTH, FIELD_HEIGHT);
-    ctx2d.clip();
-  }
-  ctx2d.setTransform(previousTransform);
-  drawWingTrails(ctx2d);
-  ctx2d.restore();
-}
-
-
 function drawThinPlane(ctx2d, plane, glow = 0) {
   const { x: cx, y: cy, color, angle } = plane;
   const isGhostState = plane.burning || !plane.isAlive;
@@ -7333,10 +7298,6 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
         scale = 3 - 2 * progress; // 10px -> 5px
       }
       drawSmokeWithAnchor(scale, smokeAnchor.y);
-      ctx2d.save();
-      ctx2d.rotate(-swayAngle);
-      drawWingTrailsClipped(ctx2d);
-      ctx2d.restore();
     } else {
       drawSmokeWithAnchor(1, idleSmokeDistance, PLANE_VFX_IDLE_SMOKE_TAIL_TRIM_Y);
     }
@@ -7368,11 +7329,6 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
         const progress = (FIELD_FLIGHT_DURATION_SEC - flightState.timeLeft) / FIELD_FLIGHT_DURATION_SEC;
         const scale = progress < 0.75 ? 4 * progress : 12 * (1 - progress);
         drawBlueJetFlame(ctx2d, scale, jetAnchor.y);
-
-        ctx2d.save();
-        ctx2d.rotate(-swayAngle);
-        drawWingTrailsClipped(ctx2d);
-        ctx2d.restore();
       }
     }
     const baseImgReady  = isSpriteReady(bluePlaneImg);
@@ -7396,13 +7352,6 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
     if (!baseImgReady) {
       ctx2d.restore();
       return;
-    }
-
-    if (showEngine && flightState) {
-      ctx2d.save();
-      ctx2d.rotate(-swayAngle);
-      drawWingTrailsClipped(ctx2d);
-      ctx2d.restore();
     }
 
     if (isGhostState) {
