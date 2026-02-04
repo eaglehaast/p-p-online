@@ -1049,6 +1049,7 @@ let fieldLabelTransitionTarget = null;
 let fieldLabelTransitionHandler = null;
 let fieldLabelFallbackTimeoutId = null;
 let fieldLabelRafId = null;
+let fieldStepTimeoutId = null;
 
 const FIELD_LABEL_EASING = 'cubic-bezier(0.1, 0.9, 0.2, 1)';
 const FIELD_LABEL_DURATION_MS = 150;
@@ -1068,6 +1069,10 @@ function resetFieldAnimationTracking(){
   fieldAnimationToken += 1;
   fieldAnimationPending = 0;
   isFieldAnimating = false;
+  if(fieldStepTimeoutId){
+    clearTimeout(fieldStepTimeoutId);
+    fieldStepTimeoutId = null;
+  }
   return fieldAnimationToken;
 }
 
@@ -2900,7 +2905,14 @@ function changeFieldStep(delta, options = {}){
   }
 
   if(animate && direction){
-    window.setTimeout(() => {
+    if(fieldStepTimeoutId){
+      clearTimeout(fieldStepTimeoutId);
+    }
+    fieldStepTimeoutId = window.setTimeout(() => {
+      fieldStepTimeoutId = null;
+      if(animationToken !== fieldAnimationToken){
+        return;
+      }
       applyMapPreviewUpdate();
       saveSettings();
       if(typeof onFinish === 'function'){
