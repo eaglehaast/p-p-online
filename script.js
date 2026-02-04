@@ -4205,7 +4205,7 @@ const EXPLOSION_FPS = 12;
 const EXPLOSION_FRAME_DURATION_MS = 1000 / EXPLOSION_FPS; // ~12fps
 const EXPLOSION_MIN_DURATION_MS = 600;
 const EXPLOSION_GIF_DURATION_MS = 1200;
-const EXPLOSION_GREEN_DEFAULT_DURATION_MS = 520;
+const EXPLOSION_GREEN_DEFAULT_DURATION_MS = 450;
 const EXPLOSION_BLUE_DEFAULT_DURATION_MS = EXPLOSION_GREEN_DEFAULT_DURATION_MS;
 const GREEN_EXPLOSION_DURATIONS_MS = {
   "green_explosion_short1.gif": 510,
@@ -4215,11 +4215,11 @@ const GREEN_EXPLOSION_DURATIONS_MS = {
   "green_explosion_short6.gif": 560,
 };
 const BLUE_EXPLOSION_DURATIONS_MS = {
-  "explosion_blue_short_1.gif": EXPLOSION_BLUE_DEFAULT_DURATION_MS,
-  "explosion_blue_short_2.gif": EXPLOSION_BLUE_DEFAULT_DURATION_MS,
-  "explosion_blue_short_3.gif": EXPLOSION_BLUE_DEFAULT_DURATION_MS,
-  "explosion_blue_short_4.gif": EXPLOSION_BLUE_DEFAULT_DURATION_MS,
-  "explosion_blue_short_5.gif": EXPLOSION_BLUE_DEFAULT_DURATION_MS,
+  "explosion_blue_short_1.gif": 480,
+  "explosion_blue_short_2.gif": 450,
+  "explosion_blue_short_3.gif": 570,
+  "explosion_blue_short_4.gif": 540,
+  "explosion_blue_short_5.gif": 480,
 };
 
 function getShortExplosionDurationMs(src = "", color = "") {
