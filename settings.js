@@ -1049,6 +1049,7 @@ let fieldLabelTransitionTarget = null;
 let fieldLabelTransitionHandler = null;
 let fieldLabelFallbackTimeoutId = null;
 let fieldLabelRafId = null;
+let fieldCommitTimeoutId = null;
 
 const FIELD_LABEL_EASING = 'cubic-bezier(0.1, 0.9, 0.2, 1)';
 const FIELD_LABEL_DURATION_MS = 150;
@@ -1092,6 +1093,13 @@ function cancelFieldLabelAnimation(){
   fieldLabelTransitionTarget = null;
   fieldLabelTransitionHandler = null;
   runPendingFieldStepQueue();
+}
+
+function clearFieldCommitTimeout(){
+  if(fieldCommitTimeoutId){
+    clearTimeout(fieldCommitTimeoutId);
+    fieldCommitTimeoutId = null;
+  }
 }
 
 
@@ -2852,6 +2860,7 @@ function changeFieldStep(delta, options = {}){
     resetFieldAnimationTracking();
     cancelFieldLabelAnimation();
   }
+  clearFieldCommitTimeout();
 
   const totalMaps = Math.max(1, MAPS.length);
   const normalizedCurrent = ((currentIndex % totalMaps) + totalMaps) % totalMaps;
@@ -2900,7 +2909,7 @@ function changeFieldStep(delta, options = {}){
   }
 
   if(animate && direction){
-    window.setTimeout(() => {
+    fieldCommitTimeoutId = window.setTimeout(() => {
       applyMapPreviewUpdate();
       saveSettings();
       if(typeof onFinish === 'function'){
@@ -4327,7 +4336,28 @@ function syncFieldSelectorState(){
   syncFieldSelectorLabels();
 }
 
+function cancelFieldScrollForReset(){
+  clearFieldStepQueue();
+  clearFieldCommitTimeout();
+  resetFieldAnimationTracking();
+  cancelFieldLabelAnimation();
+  if(FIELD_EXCLUSIVE_MODE){
+    if(fieldDragExclusiveToken !== null){
+      finalizeFieldExclusiveSession(fieldDragExclusiveToken);
+      fieldDragExclusiveToken = null;
+    }
+    const token = startFieldExclusiveSession();
+    normalizeFieldLabelsControlled({ cancelAnimation: true, resetFieldAnimation: false }, token);
+    resetFieldDragVisual(false);
+    finalizeFieldExclusiveSession(token);
+    return;
+  }
+  normalizeFieldLabels({ cancelAnimation: true, resetFieldAnimation: false });
+  resetFieldDragVisual(false);
+}
+
   function resetSettingsToDefaults(){
+    cancelFieldScrollForReset();
     settingsFlightRangeCells = DEFAULT_SETTINGS.rangeCells;
     syncRangeStepFromValue(settingsFlightRangeCells);
     settingsAimingAmplitude = DEFAULT_SETTINGS.aimingAmplitude;
