@@ -7145,8 +7145,8 @@ function drawDieselSmoke(ctx2d, scale, baseOffsetY = getPlaneAnchorOffset("smoke
 
 function drawWingTrails(ctx2d){
   const pulse = 0.7 + 0.3 * Math.sin(globalFrame * 0.12);
-  ctx2d.strokeStyle = `rgba(210,210,210,${(0.45 + 0.25 * pulse).toFixed(3)})`;
-  ctx2d.lineWidth = 1.4 + 0.6 * pulse;
+  ctx2d.strokeStyle = `rgba(225,225,225,${(0.48 + 0.24 * pulse).toFixed(3)})`;
+  ctx2d.lineWidth = 1.6 + 0.6 * pulse;
   const wingTrailOffsetX = planeMetric(22);
   ctx2d.beginPath();
   ctx2d.moveTo(wingTrailOffsetX, planeMetric(8));
