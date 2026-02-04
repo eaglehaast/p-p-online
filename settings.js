@@ -558,6 +558,15 @@ function sanitizeMapIndex(index, { excludeIndex, allowRandom } = {}){
     mapIndex: 0
   };
 
+  const settingsBridge = window.paperWingsSettings || (window.paperWingsSettings = {});
+  const settingsState = settingsBridge.settings || (settingsBridge.settings = {});
+  settingsState.flightRangeCells ??= DEFAULT_SETTINGS.rangeCells;
+  settingsState.aimingAmplitude ??= DEFAULT_SETTINGS.aimingAmplitude;
+  settingsState.addAA ??= DEFAULT_SETTINGS.addAA;
+  settingsState.sharpEdges ??= DEFAULT_SETTINGS.sharpEdges;
+  settingsState.addCargo ??= DEFAULT_SETTINGS.addCargo;
+  settingsState.mapIndex ??= DEFAULT_SETTINGS.mapIndex;
+
 const PREVIEW_CELL_SIZE = 20;
 const PREVIEW_MAX_DRAG_DISTANCE = 100;
 const PREVIEW_DRAG_ROTATION_THRESHOLD = 5;
@@ -734,20 +743,34 @@ function getIntSetting(key, defaultValue){
   return Number.isNaN(value) ? defaultValue : value;
 }
 
-let settingsFlightRangeCells = getIntSetting('settings.flightRangeCells', 30);
-let rangeStep = getRangeStepForValue(settingsFlightRangeCells);
+function syncSettingsStateFromStorage(){
+  if(settingsBridge.hasSyncedFromStorage){
+    return;
+  }
+  settingsBridge.hasSyncedFromStorage = true;
+  settingsState.flightRangeCells = getIntSetting('settings.flightRangeCells', settingsState.flightRangeCells);
+  const storedAmplitude = parseFloat(getStoredItem('settings.aimingAmplitude'));
+  settingsState.aimingAmplitude = Number.isNaN(storedAmplitude) ? settingsState.aimingAmplitude : storedAmplitude;
+  settingsState.addAA = getStoredItem('settings.addAA') === 'true';
+  settingsState.sharpEdges = getStoredItem('settings.sharpEdges') === 'true';
+  settingsState.addCargo = getStoredItem('settings.addCargo') === 'true';
+  settingsState.mapIndex = sanitizeMapIndex(
+    getIntSetting('settings.mapIndex', settingsState.mapIndex),
+    { allowRandom: true }
+  );
+}
+
+syncSettingsStateFromStorage();
+
+let rangeStep = getRangeStepForValue(settingsState.flightRangeCells);
 let rangeCommittedValue = getRangeValue(rangeStep);
 let rangePreviewValue = rangeCommittedValue;
-settingsFlightRangeCells = rangeCommittedValue;
-let settingsAimingAmplitude  = parseFloat(getStoredItem('settings.aimingAmplitude'));
-if(Number.isNaN(settingsAimingAmplitude)) settingsAimingAmplitude = 10 / 5;
-let addAA = getStoredItem('settings.addAA') === 'true';
-let sharpEdges = getStoredItem('settings.sharpEdges') === 'true';
-let addCargo = getStoredItem('settings.addCargo') === 'true';
-let mapIndex = sanitizeMapIndex(
-  getIntSetting('settings.mapIndex', DEFAULT_SETTINGS.mapIndex),
-  { allowRandom: true }
-);
+settingsState.flightRangeCells = rangeCommittedValue;
+let addAA = settingsState.addAA;
+let sharpEdges = settingsState.sharpEdges;
+let addCargo = settingsState.addCargo;
+let mapIndex = sanitizeMapIndex(settingsState.mapIndex, { allowRandom: true });
+settingsState.mapIndex = mapIndex;
 
 let rangeDisplayIdx = Math.floor(rangeStep / 2);
 let rangeScrollPos = rangeDisplayIdx;
@@ -756,7 +779,7 @@ let rangeOvershootTimer = null;
 let rangeTrackTransform = '';
 let rangeTrackTransition = '';
 let isRangeBumping = false;
-let accuracyDisplayIdx = getAccuracyDisplayIndex(settingsAimingAmplitude);
+let accuracyDisplayIdx = getAccuracyDisplayIndex(settingsState.aimingAmplitude);
 let accuracyScrollPos = accuracyDisplayIdx;
 let accuracyScrollRafId = null;
 let accuracyTrackTransform = '';
@@ -833,14 +856,14 @@ function syncRangeWithStep(step){
   rangeStep = clampRangeStep(step);
   rangeCommittedValue = getRangeValue(rangeStep);
   rangePreviewValue = rangeCommittedValue;
-  settingsFlightRangeCells = rangeCommittedValue;
+  settingsState.flightRangeCells = rangeCommittedValue;
 }
 
 function syncRangeStepFromValue(value){
   syncRangeWithStep(getRangeStepForValue(value));
 }
 
-syncRangeStepFromValue(settingsFlightRangeCells);
+syncRangeStepFromValue(settingsState.flightRangeCells);
 
 const rangeMinusBtn =
   selectInSettings('#rangeBtnLeft') ??
@@ -1660,7 +1683,7 @@ function finishAccuracyScroll(targetIndex, dir, onFinish){
   const currentValue = ACCURACY_DISPLAY_VALUES[targetIndex];
   accuracyScrollPos = targetIndex;
   accuracyDisplayIdx = targetIndex;
-  settingsAimingAmplitude = MIN_AMPLITUDE + targetIndex;
+  settingsState.aimingAmplitude = MIN_AMPLITUDE + targetIndex;
   setAccuracyDisplayValue(currentValue);
   updateAccuracyTapePosition(accuracyDisplayIdx);
   updateAmplitudeIndicator();
@@ -1820,7 +1843,7 @@ function updateAccuracyDisplay(stepOverride, options = {}){
 
   accuracyDisplayIdx = displayIdx;
   accuracyScrollPos = displayIdx;
-  settingsAimingAmplitude = MIN_AMPLITUDE + displayIdx;
+  settingsState.aimingAmplitude = MIN_AMPLITUDE + displayIdx;
   setAccuracyDisplayValue(displayedAngle);
   updateAccuracyTapePosition(displayIdx);
   updateAmplitudeIndicator();
@@ -2713,7 +2736,7 @@ function updateRangeFlame(value = rangeCommittedValue){
 function commitRangeValue(value){
   rangeCommittedValue = value;
   rangePreviewValue = value;
-  settingsFlightRangeCells = value;
+  settingsState.flightRangeCells = value;
   updateRangeFlame(value);
   saveSettings();
 }
@@ -2820,7 +2843,7 @@ function changeAccuracyStep(delta, options = {}){
   const dir = getRangeDirFromDelta(delta);
   const animateDirection = getRangeDirectionLabel(dir);
 
-  settingsAimingAmplitude = MIN_AMPLITUDE + nextIndex;
+  settingsState.aimingAmplitude = MIN_AMPLITUDE + nextIndex;
   updateAmplitudeIndicator();
 
   if(commitImmediately){
@@ -2928,7 +2951,7 @@ function changeFieldStep(delta, options = {}){
 }
 
 function updateAmplitudeDisplay(){
-  const displayIdx = getAccuracyDisplayIndex(settingsAimingAmplitude);
+  const displayIdx = getAccuracyDisplayIndex(settingsState.aimingAmplitude);
   const displayedAngle = ACCURACY_DISPLAY_VALUES[displayIdx];
   accuracyDisplayIdx = displayIdx;
   accuracyScrollPos = displayIdx;
@@ -3001,7 +3024,7 @@ function updateAmplitudeIndicator(){
     selectInSettings('#amplitudeIndicator');
 
   if(pendulumHost){
-    const maxAngle = settingsAimingAmplitude * 5;
+    const maxAngle = settingsState.aimingAmplitude * 5;
     pendulumTarget = maxAngle;
     if(pendulumCurrent === null){
       pendulumCurrent = maxAngle;
@@ -3093,7 +3116,7 @@ function setupAccuracyCrackWatcher(){
       return;
     }
 
-    if(!shouldRunForAmplitude(settingsAimingAmplitude)){
+    if(!shouldRunForAmplitude(settingsState.aimingAmplitude)){
       running = false;
       rafId = null;
       lockedSide = null;
@@ -3119,7 +3142,7 @@ function setupAccuracyCrackWatcher(){
   };
 
   const start = () => {
-    if(running || !shouldRunForAmplitude(settingsAimingAmplitude)){
+    if(running || !shouldRunForAmplitude(settingsState.aimingAmplitude)){
       return;
     }
 
@@ -3164,7 +3187,7 @@ function syncAccuracyCrackWatcher(){
     return;
   }
 
-  if(accuracyCrackWatcher.shouldRunForAmplitude(settingsAimingAmplitude)){
+  if(accuracyCrackWatcher.shouldRunForAmplitude(settingsState.aimingAmplitude)){
     accuracyCrackWatcher.start();
   } else {
     accuracyCrackWatcher.stop();
@@ -3172,20 +3195,24 @@ function syncAccuracyCrackWatcher(){
 }
 
 function saveSettings(){
-  setStoredItem('settings.flightRangeCells', settingsFlightRangeCells);
-  setStoredItem('settings.aimingAmplitude', settingsAimingAmplitude);
-  setStoredItem('settings.addAA', addAA);
-  setStoredItem('settings.sharpEdges', sharpEdges);
-  setStoredItem('settings.addCargo', addCargo);
+  settingsState.addAA = addAA;
+  settingsState.sharpEdges = sharpEdges;
+  settingsState.addCargo = addCargo;
+  setStoredItem('settings.flightRangeCells', settingsState.flightRangeCells);
+  setStoredItem('settings.aimingAmplitude', settingsState.aimingAmplitude);
+  setStoredItem('settings.addAA', settingsState.addAA);
+  setStoredItem('settings.sharpEdges', settingsState.sharpEdges);
+  setStoredItem('settings.addCargo', settingsState.addCargo);
   mapIndex = sanitizeMapIndex(mapIndex, { allowRandom: true });
+  settingsState.mapIndex = mapIndex;
   if(window.paperWingsSettings?.setMapIndex){
     window.paperWingsSettings.setMapIndex(mapIndex, { persist: true });
   } else {
     setStoredItem('settings.mapIndex', mapIndex);
   }
   console.log('[settings] save', {
-    flightRangeCells: settingsFlightRangeCells,
-    aimingAmplitude: settingsAimingAmplitude,
+    flightRangeCells: settingsState.flightRangeCells,
+    aimingAmplitude: settingsState.aimingAmplitude,
     addAA,
     sharpEdges,
     addCargo,
@@ -3948,7 +3975,7 @@ function onPreviewPointerUp(e){
   }
 
   const dragAngle = Math.atan2(dy, dx);
-  const previewFlightDistancePx = settingsFlightRangeCells * PREVIEW_CELL_SIZE * PREVIEW_FLIGHT_DISTANCE_SCALE;
+  const previewFlightDistancePx = settingsState.flightRangeCells * PREVIEW_CELL_SIZE * PREVIEW_FLIGHT_DISTANCE_SCALE;
   const previewFlightDurationSec = PREVIEW_FLIGHT_DURATION_SEC * PREVIEW_FLIGHT_DURATION_SCALE;
   const speedPxPerSec = previewFlightDistancePx / previewFlightDurationSec;
   const scale = dragDistance / PREVIEW_MAX_DRAG_DISTANCE;
@@ -3983,7 +4010,7 @@ function updatePreviewHandle(delta){
   const dy = previewHandle.baseY - plane.y;
   const dist = Math.hypot(dx, dy);
   const clampedDist = Math.min(dist, PREVIEW_MAX_DRAG_DISTANCE);
-  const maxAngleDeg = settingsAimingAmplitude * 5;
+  const maxAngleDeg = settingsState.aimingAmplitude * 5;
   const maxAngleRad = maxAngleDeg * Math.PI / 180;
 
   previewOscillationAngle += PREVIEW_OSCILLATION_SPEED * delta * previewOscillationDir;
@@ -4360,9 +4387,9 @@ function cancelFieldScrollForReset(){
 
   function resetSettingsToDefaults(){
     cancelFieldScrollForReset();
-    settingsFlightRangeCells = DEFAULT_SETTINGS.rangeCells;
-    syncRangeStepFromValue(settingsFlightRangeCells);
-    settingsAimingAmplitude = DEFAULT_SETTINGS.aimingAmplitude;
+    settingsState.flightRangeCells = DEFAULT_SETTINGS.rangeCells;
+    syncRangeStepFromValue(settingsState.flightRangeCells);
+    settingsState.aimingAmplitude = DEFAULT_SETTINGS.aimingAmplitude;
     addAA = DEFAULT_SETTINGS.addAA;
     sharpEdges = DEFAULT_SETTINGS.sharpEdges;
     addCargo = DEFAULT_SETTINGS.addCargo;
@@ -4625,7 +4652,6 @@ updateAmplitudeIndicator();
 syncFieldSelectorState();
 updateUiFrameScale();
 
-const settingsBridge = window.paperWingsSettings || {};
 settingsBridge.onShow = handleSettingsLayerShow;
 settingsBridge.onHide = handleSettingsLayerHide;
 settingsBridge.isActive = isSettingsActive;
