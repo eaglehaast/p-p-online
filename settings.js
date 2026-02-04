@@ -878,6 +878,9 @@ const sharpEdgesToggle = selectInSettings('#sharpEdgesToggle');
 const addsNailsBtn = selectInSettings('#instance_adds_tumbler1_nails');
 const addsAABtn = selectInSettings('#instance_adds_tumbler2_aa');
 const addsCargoBtn = selectInSettings('#instance_adds_tumbler3_cargo');
+const arcadePreviewStill = selectInSettings('#arcade_preview_still');
+const arcadePreviewGif = selectInSettings('#arcade_preview_gif');
+const arcadePreviewShadowClass = 'arcade-preview--shadow';
 const resetBtn = selectInSettings('#instance_reset');
 const exitBtn = selectInSettings('#instance_exit');
 const mapPrevBtn = selectInSettings('#instance_field_left');
@@ -4388,6 +4391,7 @@ function resetSettingsToDefaults(){
   setTumblerState(addsAABtn, sharedSettings.addAA);
   setTumblerState(addsNailsBtn, sharedSettings.sharpEdges);
   setTumblerState(addsCargoBtn, addCargo);
+  syncArcadeCargoPreview(addCargo);
   syncToggleInput(addAAToggle, sharedSettings.addAA);
   syncToggleInput(sharpEdgesToggle, sharedSettings.sharpEdges);
   if(accuracyCrackWatcher?.reset){
@@ -4426,6 +4430,16 @@ function setTumblerState(btn, isOn){
 function syncToggleInput(input, value){
   if(input){
     input.checked = value;
+  }
+}
+
+function syncArcadeCargoPreview(isCargoOn){
+  if(arcadePreviewStill){
+    arcadePreviewStill.style.display = isCargoOn ? 'none' : 'block';
+    arcadePreviewStill.classList.toggle(arcadePreviewShadowClass, !isCargoOn);
+  }
+  if(arcadePreviewGif){
+    arcadePreviewGif.style.display = isCargoOn ? 'block' : 'none';
   }
 }
 
@@ -4469,9 +4483,11 @@ if(addsAABtn){
 
 if(addsCargoBtn){
   setTumblerState(addsCargoBtn, addCargo);
+  syncArcadeCargoPreview(addCargo);
   addFieldAuditListener(addsCargoBtn, 'click', () => {
     addCargo = !addCargo;
     setTumblerState(addsCargoBtn, addCargo);
+    syncArcadeCargoPreview(addCargo);
     saveSettings();
   });
 }

@@ -357,6 +357,28 @@ body, button {
   #settingsLayer #frame_adds_2_aa { left: 271px; top: 492px; }
   #settingsLayer #frame_adds_3_cargo { left: 271px; top: 567px; }
 
+  #settingsLayer #arcade_preview_still,
+  #settingsLayer #arcade_preview_gif {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  #settingsLayer #arcade_preview_still {
+    display: block;
+  }
+
+  #settingsLayer #arcade_preview_gif {
+    display: none;
+  }
+
+  #settingsLayer #arcade_preview_still.arcade-preview--shadow {
+    filter: brightness(0.8) saturate(0.7);
+    opacity: 0.85;
+  }
+
   #settingsLayer .cp-adds__frame {
     position: absolute;
     left: 237px;
