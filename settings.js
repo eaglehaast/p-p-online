@@ -4327,7 +4327,27 @@ function syncFieldSelectorState(){
   syncFieldSelectorLabels();
 }
 
+function cancelFieldScrollForReset(){
+  clearFieldStepQueue();
+  resetFieldAnimationTracking();
+  cancelFieldLabelAnimation();
+  if(FIELD_EXCLUSIVE_MODE){
+    if(fieldDragExclusiveToken !== null){
+      finalizeFieldExclusiveSession(fieldDragExclusiveToken);
+      fieldDragExclusiveToken = null;
+    }
+    const token = startFieldExclusiveSession();
+    normalizeFieldLabelsControlled({ cancelAnimation: true, resetFieldAnimation: false }, token);
+    resetFieldDragVisual(false);
+    finalizeFieldExclusiveSession(token);
+    return;
+  }
+  normalizeFieldLabels({ cancelAnimation: true, resetFieldAnimation: false });
+  resetFieldDragVisual(false);
+}
+
   function resetSettingsToDefaults(){
+    cancelFieldScrollForReset();
     settingsFlightRangeCells = DEFAULT_SETTINGS.rangeCells;
     syncRangeStepFromValue(settingsFlightRangeCells);
     settingsAimingAmplitude = DEFAULT_SETTINGS.aimingAmplitude;
