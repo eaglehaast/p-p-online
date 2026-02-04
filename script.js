@@ -3497,8 +3497,8 @@ const START_PLANES = {
 };
 
 function getStartPlaneWorldPositions(){
-  const originX = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
-  const originY = FIELD_TOP + FIELD_BORDER_OFFSET_Y;
+  const originX = FIELD_LEFT;
+  const originY = FIELD_TOP;
   const margin = PLANE_DRAW_H / 2 + 1;
   const minY = FIELD_TOP + margin;
   const maxY = FIELD_TOP + FIELD_HEIGHT - margin;
