@@ -7275,9 +7275,13 @@ function drawWingTrailsClipped(ctx2d){
   const previousTransform = ctx2d.getTransform();
   ctx2d.save();
   ctx2d.setTransform(1, 0, 0, 1, 0, 0);
-  ctx2d.beginPath();
-  ctx2d.rect(FIELD_LEFT, FIELD_TOP, FIELD_WIDTH, FIELD_HEIGHT);
-  ctx2d.clip();
+  if (Array.isArray(colliders) && colliders.length > 0) {
+    applyBrickTrailClip(ctx2d);
+  } else {
+    ctx2d.beginPath();
+    ctx2d.rect(FIELD_LEFT, FIELD_TOP, FIELD_WIDTH, FIELD_HEIGHT);
+    ctx2d.clip();
+  }
   ctx2d.setTransform(previousTransform);
   drawWingTrails(ctx2d);
   ctx2d.restore();
