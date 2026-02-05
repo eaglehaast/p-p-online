@@ -558,7 +558,7 @@ body, button {
     position: absolute;
     inset: 0;
     z-index: 20;
-    pointer-events: none;
+    pointer-events: auto;
   }
 
   .settings-container .cp-range__btn {
@@ -566,7 +566,7 @@ body, button {
   }
 
   .settings-container #rangeIndicator {
-    pointer-events: none;
+    pointer-events: auto;
   }
 
   .settings-container #range_frame_visual {
@@ -789,6 +789,7 @@ body, button {
     left: 105px;
     top: 293px;
     z-index: 10;
+    pointer-events: auto;
   }
 
   .range-display__value,
@@ -833,6 +834,7 @@ body, button {
     left: 67px;
     width: 30px;
     height: 35px;
+    z-index: 31;
   }
 
   .settings-container #rangeBtnRight {
@@ -840,6 +842,7 @@ body, button {
     left: 171px;
     width: 30px;
     height: 35px;
+    z-index: 31;
   }
 
   .settings-container .cp-range__btn--left {
@@ -1699,8 +1702,15 @@ body, button {
   height: 250px;
   max-width: 100%;
   max-height: 100%;
-  pointer-events: none;
   flex: 0 0 auto;
+}
+
+#rangeIndicator {
+  pointer-events: auto;
+}
+
+#amplitudeIndicator {
+  pointer-events: none;
 }
 
 #range_frame_visual,

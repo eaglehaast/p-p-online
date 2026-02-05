@@ -1004,6 +1004,8 @@ const contrailImages = [
   selectInSettings('#contrail2')
 ];
 const isTestHarnessPage = document.body.classList.contains('test-harness');
+const DEBUG_RANGE_POINTER_QUERY_FLAG = 'range_pointer_debug';
+const DEBUG_RANGE_POINTER = isTestHarnessPage || (typeof window !== 'undefined' && window.location?.search?.includes(DEBUG_RANGE_POINTER_QUERY_FLAG));
 
 const isSettingsLayerVisible = () => (settingsLayer ? !settingsLayer.hidden : true);
 let isSettingsActive = isSettingsLayerVisible();
@@ -2539,6 +2541,12 @@ const fieldDragHandlers = createSliderDragHandlers({
 });
 
 function handleRangePointerDown(event){
+  if(DEBUG_RANGE_POINTER){
+    console.log('[range pointerdown]', {
+      target: event.target,
+      currentTarget: event.currentTarget
+    });
+  }
   rangeDragHandlers.handlePointerDown(event);
 }
 
