@@ -8,6 +8,16 @@
 2. Open `index.html` in any browser.
 3. Choose a game mode and press **Play**.
 
+## Quick pre-release check for settings IDs
+
+Before release, run:
+
+```bash
+./scripts/check-cp-adds-ids.sh
+```
+
+This command verifies that all `id` values inside `.cp-adds` are identical in `index.html` and `settings.html`.
+
 ## Game modes
 
 - **Hot Seat** – two players share the same computer.
