@@ -3482,6 +3482,7 @@ const FLAG_POLE_HEIGHT     = 20;     // высота флагштока
 const FLAG_WIDTH           = 12;     // ширина полотна флага
 const FLAG_HEIGHT          = 8;      // высота полотна флага
 const START_PLANES = {
+  // координаты задаются как верхний левый угол, внутри переводятся в центр
   blue: [
     { x: 44, y: 30 },
     { x: 103, y: 30 },
@@ -3504,17 +3505,18 @@ function getStartPlaneWorldPositions(){
   const maxY = FIELD_TOP + FIELD_HEIGHT - margin;
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const toWorld = (entry, color) => {
-    const rawY = originY + entry.y;
-    const clampedY = clamp(rawY, minY, maxY);
+    const centerX = originX + entry.x + PLANE_DRAW_W / 2;
+    const centerY = originY + entry.y + PLANE_DRAW_H / 2;
+    const clampedCenterY = clamp(centerY, minY, maxY);
     if (DEBUG_START_POSITIONS && color === 'green') {
       console.log("[start-positions] green y clamp", {
-        rawY,
-        clampedY,
+        centerY,
+        clampedCenterY,
         minY,
         maxY
       });
     }
-    return { x: originX + entry.x, y: clampedY };
+    return { x: centerX, y: clampedCenterY };
   };
 
   const blue = START_PLANES.blue.map((entry) => toWorld(entry, 'blue'));
