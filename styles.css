@@ -358,7 +358,9 @@ body, button {
   #settingsLayer #frame_adds_3_arcade { left: 271px; top: 567px; }
 
   #settingsLayer #arcade_preview_still,
-  #settingsLayer #arcade_preview_gif {
+  #settingsLayer #arcade_preview_gif,
+  #settingsLayer #flags_preview_off,
+  #settingsLayer #flags_preview_on {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -366,11 +368,13 @@ body, button {
     pointer-events: none;
   }
 
-  #settingsLayer #arcade_preview_still {
+  #settingsLayer #arcade_preview_still,
+  #settingsLayer #flags_preview_off {
     display: block;
   }
 
-  #settingsLayer #arcade_preview_gif {
+  #settingsLayer #arcade_preview_gif,
+  #settingsLayer #flags_preview_on {
     display: none;
   }
 

@@ -880,6 +880,8 @@ const addsFlagsBtn = selectInSettings('#instance_adds_tumbler2_flags');
 const addsArcadeBtn = selectInSettings('#instance_adds_tumbler3_arcade');
 const arcadePreviewStill = selectInSettings('#arcade_preview_still');
 const arcadePreviewGif = selectInSettings('#arcade_preview_gif');
+const flagsPreviewOff = selectInSettings('#flags_preview_off');
+const flagsPreviewOn = selectInSettings('#flags_preview_on');
 const arcadePreviewShadowClass = 'arcade-preview--shadow';
 const resetBtn = selectInSettings('#instance_reset');
 const exitBtn = selectInSettings('#instance_exit');
@@ -4452,6 +4454,15 @@ function syncArcadeCargoPreview(isArcadeOn){
   }
 }
 
+function syncFlagsPreview(isFlagsOn){
+  if(flagsPreviewOff){
+    flagsPreviewOff.style.display = isFlagsOn ? 'none' : 'block';
+  }
+  if(flagsPreviewOn){
+    flagsPreviewOn.style.display = isFlagsOn ? 'block' : 'none';
+  }
+}
+
 if(addAAToggle){
   addAAToggle.checked = sharedSettings.addAA;
   addAAToggle.addEventListener('change', e => {
@@ -4479,10 +4490,12 @@ if(addsCargoBtn){
 
 if(addsFlagsBtn){
   setTumblerState(addsFlagsBtn, addsUiState.flags);
+  syncFlagsPreview(addsUiState.flags);
   addFieldAuditListener(addsFlagsBtn, 'click', () => {
     // temporarily disabled: legacy adds should not activate gameplay from control-panel tumblers
     addsUiState.flags = !addsUiState.flags;
     setTumblerState(addsFlagsBtn, addsUiState.flags);
+    syncFlagsPreview(addsUiState.flags);
   });
 }
 
