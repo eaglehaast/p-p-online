@@ -3497,14 +3497,16 @@ const START_PLANES = {
 };
 
 function getStartPlaneWorldPositions(){
-  const originX = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
-  const originY = FIELD_TOP + FIELD_BORDER_OFFSET_Y;
+  const originX = FIELD_LEFT;
+  const originY = FIELD_TOP;
+  const planeCenterOffsetX = PLANE_DRAW_W / 2;
+  const planeCenterOffsetY = PLANE_DRAW_H / 2;
   const margin = PLANE_DRAW_H / 2 + 1;
   const minY = FIELD_TOP + margin;
   const maxY = FIELD_TOP + FIELD_HEIGHT - margin;
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const toWorld = (entry, color) => {
-    const rawY = originY + entry.y;
+    const rawY = originY + entry.y + planeCenterOffsetY;
     const clampedY = clamp(rawY, minY, maxY);
     if (DEBUG_START_POSITIONS && color === 'green') {
       console.log("[start-positions] green y clamp", {
@@ -3514,7 +3516,7 @@ function getStartPlaneWorldPositions(){
         maxY
       });
     }
-    return { x: originX + entry.x, y: clampedY };
+    return { x: originX + entry.x + planeCenterOffsetX, y: clampedY };
   };
 
   const blue = START_PLANES.blue.map((entry) => toWorld(entry, 'blue'));
