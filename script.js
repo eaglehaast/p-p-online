@@ -3939,6 +3939,7 @@ const sharedSettings = settingsBridge.settings || (settingsBridge.settings = {
   aimingAmplitude: 10 / 5,
   addAA: true,
   sharpEdges: true,
+  flagsEnabled: true,
   mapIndex: 0
 });
 
@@ -3953,6 +3954,9 @@ if(typeof sharedSettings.addAA !== 'boolean'){
 }
 if(typeof sharedSettings.sharpEdges !== 'boolean'){
   sharedSettings.sharpEdges = true;
+}
+if(typeof sharedSettings.flagsEnabled !== 'boolean'){
+  sharedSettings.flagsEnabled = true;
 }
 if(!Number.isInteger(sharedSettings.mapIndex)){
   sharedSettings.mapIndex = 0;
@@ -4029,6 +4033,8 @@ function loadSettings(){
   }
   const storedSharpEdges = getStoredSetting('settings.sharpEdges');
   settings.sharpEdges = storedSharpEdges === null ? true : storedSharpEdges === 'true';
+  const storedFlagsEnabled = getStoredSetting('settings.flagsEnabled');
+  settings.flagsEnabled = storedFlagsEnabled === null ? true : storedFlagsEnabled === 'true';
   const mapIdx = parseInt(getStoredSetting('settings.mapIndex'), 10);
   settings.mapIndex = clampMapIndex(mapIdx);
   const storedFlameStyle = normalizeFlameStyleKey(getStoredSetting('settings.flameStyle'));
@@ -4055,6 +4061,7 @@ const hasCustomSettings = storageAvailable && [
   'settings.aimingAmplitude',
   'settings.addAA',
   'settings.sharpEdges',
+  'settings.flagsEnabled',
   'settings.mapIndex',
   'settings.randomizeMapEachRound',
   'settings.flameStyle'
@@ -4372,6 +4379,10 @@ function getFlagConfigsForMap(map = null){
   });
 }
 
+function isFlagsModeEnabled(){
+  return settings.flagsEnabled !== false;
+}
+
 function setFlagConfigsForMap(map){
   flagConfigs = getFlagConfigsForMap(map);
   resetFlagsForNewRound();
@@ -4453,6 +4464,7 @@ function getFlagInteractionTarget(flag){
 }
 
 function getFlagCarrierForColor(color){
+  if(!isFlagsModeEnabled()) return null;
   const flag = flags.find(f => f.color === color && isFlagActive(f) && f.carrier);
   return flag ? flag.carrier : null;
 }
@@ -4462,6 +4474,7 @@ function getActiveFlagsByColor(color){
 }
 
 function getAvailableFlagsByColor(color){
+  if(!isFlagsModeEnabled()) return [];
   return getActiveFlagsByColor(color).filter(flag => !flag.carrier);
 }
 
@@ -5267,15 +5280,16 @@ function doComputerMove(){
   const enemies  = points.filter(p=> p.color==="green" && p.isAlive && !p.burning);
   if(!aiPlanes.length || !enemies.length) return;
 
+  const shouldUseFlagsMode = isFlagsModeEnabled();
   const homeBase = getBaseAnchor("blue");
-  const availableEnemyFlags = getAvailableFlagsByColor("green");
+  const availableEnemyFlags = shouldUseFlagsMode ? getAvailableFlagsByColor("green") : [];
 
   // 1. If we are carrying the enemy flag, prioritize returning home
-  const carrier = aiPlanes.find(p => {
+  const carrier = shouldUseFlagsMode ? aiPlanes.find(p => {
     if(!p.carriedFlagId) return false;
     const carriedFlag = getFlagById(p.carriedFlagId);
     return carriedFlag?.color === "green" && !flyingPoints.some(fp=>fp.plane===p);
-  });
+  }) : null;
   if(carrier){
     const move = planPathToPoint(carrier, homeBase.x, homeBase.y);
     if(move){
@@ -5286,7 +5300,7 @@ function doComputerMove(){
 
   // 2. If our flag is stolen, focus fire on the carrier
   let targetEnemies = enemies;
-  const stolenBlueFlagCarrier = getFlagCarrierForColor("blue");
+  const stolenBlueFlagCarrier = shouldUseFlagsMode ? getFlagCarrierForColor("blue") : null;
   if(stolenBlueFlagCarrier && stolenBlueFlagCarrier.color !== "blue"){
     targetEnemies = enemies.filter(e=>e===stolenBlueFlagCarrier);
   } else if(availableEnemyFlags.length){
@@ -7710,6 +7724,7 @@ function drawFlagSprite(ctx2d, flag, { anchor = null } = {}){
 }
 
 function drawBaseVisuals(){
+  if(!isFlagsModeEnabled()) return;
   const baseColors = ["blue", "green"];
 
   for(const color of baseColors){
@@ -7733,6 +7748,7 @@ function drawBaseVisuals(){
 }
 
 function drawFlagMarkers(){
+  if(!isFlagsModeEnabled()) return;
   for(const flag of flags){
     if(flag.state !== FLAG_STATES.ACTIVE) continue;
     if(flag.carrier) continue;
@@ -8142,7 +8158,7 @@ function checkPlaneHits(plane, fp){
 }
 
 function handleFlagInteractions(plane){
-  if(isGameOver) return;
+  if(isGameOver || !isFlagsModeEnabled()) return;
 
   const enemyColor = plane.color === "green" ? "blue" : "green";
   const availableEnemyFlags = getAvailableFlagsByColor(enemyColor);
@@ -8660,6 +8676,7 @@ function startNewRound(){
     aimingAmplitude: settings.aimingAmplitude,
     addAA: settings.addAA,
     sharpEdges: settings.sharpEdges,
+    flagsEnabled: settings.flagsEnabled,
     mapIndex: settings.mapIndex,
     randomizeMapEachRound: settings.randomizeMapEachRound,
     flameStyle: settings.flameStyle
