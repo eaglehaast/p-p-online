@@ -341,6 +341,7 @@ body, button {
   #settingsLayer .cp-adds {
     position: absolute;
     inset: 0;
+    isolation: isolate;
   }
 
   #settingsLayer #frame_adds_1_cargo,
@@ -350,7 +351,7 @@ body, button {
     width: 49px;
     height: 49px;
     pointer-events: none;
-    z-index: 10;
+    z-index: 0;
   }
 
   #settingsLayer #frame_adds_1_cargo { left: 271px; top: 418px; }
@@ -368,6 +369,7 @@ body, button {
     width: 100%;
     height: 100%;
     pointer-events: none;
+    z-index: 0;
   }
 
   #settingsLayer #arcade_preview_still,
