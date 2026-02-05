@@ -3926,6 +3926,9 @@ const FLAME_STYLE_OPTIONS = [
 
 const FLAME_STYLE_MAP = new Map(FLAME_STYLE_OPTIONS.map(option => [option.value, option]));
 
+// Temporary product decision: AA placement must stay fully disabled until the new flow is shipped.
+const AA_PLACEMENT_TEMP_DISABLED = true;
+
 function normalizeFlameStyleKey(key) {
   return FLAME_STYLE_MAP.has(key) ? key : 'random';
 }
@@ -4009,6 +4012,10 @@ settingsBridge.setMapIndex = (nextIndex, options = {}) => {
   return settings.mapIndex;
 };
 
+function isAAPlacementEnabled(){
+  return !AA_PLACEMENT_TEMP_DISABLED && settings.addAA === true;
+}
+
 function loadSettings(){
   const previousFlameStyle = settings.flameStyle;
   const fr = parseInt(getStoredSetting('settings.flightRangeCells'), 10);
@@ -4017,6 +4024,9 @@ function loadSettings(){
   settings.aimingAmplitude = Number.isNaN(amp) ? 10 / 5 : amp;
   const storedAddAA = getStoredSetting('settings.addAA');
   settings.addAA = storedAddAA === null ? true : storedAddAA === 'true';
+  if(AA_PLACEMENT_TEMP_DISABLED){
+    settings.addAA = false;
+  }
   const storedSharpEdges = getStoredSetting('settings.sharpEdges');
   settings.sharpEdges = storedSharpEdges === null ? true : storedSharpEdges === 'true';
   const mapIdx = parseInt(getStoredSetting('settings.mapIndex'), 10);
@@ -4635,7 +4645,7 @@ if(classicRulesBtn){
   classicRulesBtn.addEventListener('click', () => {
     settings.flightRangeCells = 30;
     settings.aimingAmplitude = 10 / 5; // 10°
-    settings.addAA = true;
+    settings.addAA = false;
     settings.sharpEdges = true;
     const upcomingRoundNumber = roundNumber + 1;
     settings.mapIndex = getRandomPlayableMapIndex(upcomingRoundNumber);
@@ -8726,11 +8736,12 @@ function startNewRound(){
   initPoints(); // ориентации на базе
   resetFlagsForNewRound();
   renderScoreboard();
-  if (settings.addAA) {
+  if (isAAPlacementEnabled()) {
     phase = 'AA_PLACEMENT';
     currentPlacer = 'green';
   } else {
     phase = 'TURN';
+    currentPlacer = null;
   }
   startMainLoopIfNotRunning("startNewRound");
 }
