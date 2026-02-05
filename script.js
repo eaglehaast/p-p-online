@@ -3934,8 +3934,8 @@ const settingsBridge = window.paperWingsSettings || (window.paperWingsSettings =
 const sharedSettings = settingsBridge.settings || (settingsBridge.settings = {
   flightRangeCells: 30,
   aimingAmplitude: 10 / 5,
-  addAA: false,
-  sharpEdges: false,
+  addAA: true,
+  sharpEdges: true,
   mapIndex: 0
 });
 
@@ -3946,10 +3946,10 @@ if(!Number.isFinite(sharedSettings.aimingAmplitude)){
   sharedSettings.aimingAmplitude = 10 / 5;
 }
 if(typeof sharedSettings.addAA !== 'boolean'){
-  sharedSettings.addAA = false;
+  sharedSettings.addAA = true;
 }
 if(typeof sharedSettings.sharpEdges !== 'boolean'){
-  sharedSettings.sharpEdges = false;
+  sharedSettings.sharpEdges = true;
 }
 if(!Number.isInteger(sharedSettings.mapIndex)){
   sharedSettings.mapIndex = 0;
@@ -4015,8 +4015,10 @@ function loadSettings(){
   settings.flightRangeCells = Number.isNaN(fr) ? 30 : fr;
   const amp = parseFloat(getStoredSetting('settings.aimingAmplitude'));
   settings.aimingAmplitude = Number.isNaN(amp) ? 10 / 5 : amp;
-  settings.addAA = getStoredSetting('settings.addAA') === 'true';
-  settings.sharpEdges = getStoredSetting('settings.sharpEdges') === 'true';
+  const storedAddAA = getStoredSetting('settings.addAA');
+  settings.addAA = storedAddAA === null ? true : storedAddAA === 'true';
+  const storedSharpEdges = getStoredSetting('settings.sharpEdges');
+  settings.sharpEdges = storedSharpEdges === null ? true : storedSharpEdges === 'true';
   const mapIdx = parseInt(getStoredSetting('settings.mapIndex'), 10);
   settings.mapIndex = clampMapIndex(mapIdx);
   const storedFlameStyle = normalizeFlameStyleKey(getStoredSetting('settings.flameStyle'));
@@ -4633,8 +4635,8 @@ if(classicRulesBtn){
   classicRulesBtn.addEventListener('click', () => {
     settings.flightRangeCells = 30;
     settings.aimingAmplitude = 10 / 5; // 10°
-    settings.addAA = false;
-    settings.sharpEdges = false;
+    settings.addAA = true;
+    settings.sharpEdges = true;
     const upcomingRoundNumber = roundNumber + 1;
     settings.mapIndex = getRandomPlayableMapIndex(upcomingRoundNumber);
     settings.randomizeMapEachRound = true;
