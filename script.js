@@ -152,33 +152,9 @@ const wrapperSyncDebugState = {
   logged: false
 };
 
-function toDesignCoords(clientX, clientY) {
-  const rect = uiFrameEl?.getBoundingClientRect?.() || { left: 0, top: 0 };
-  const rootStyle = window.getComputedStyle(document.documentElement);
-  const uiScaleRaw = rootStyle.getPropertyValue('--ui-scale');
-  const uiScaleValue = uiScaleRaw ? parseFloat(uiScaleRaw) : 1;
-  const uiScale = Number.isFinite(uiScaleValue) && uiScaleValue > 0 ? uiScaleValue : 1;
-  return {
-    x: (clientX - rect.left) / uiScale,
-    y: (clientY - rect.top) / uiScale,
-    rect,
-    uiScale
-  };
-}
-
-function getPointerClientCoords(event) {
-  const touch = event?.touches?.[0] || event?.changedTouches?.[0] || event?.targetTouches?.[0] || null;
-  const source = touch || event;
-  return {
-    clientX: Number.isFinite(source?.clientX) ? source.clientX : 0,
-    clientY: Number.isFinite(source?.clientY) ? source.clientY : 0
-  };
-}
-
-function getPointerDesignCoords(event) {
-  const { clientX, clientY } = getPointerClientCoords(event);
-  return toDesignCoords(clientX, clientY);
-}
+const toDesignCoords = (clientX, clientY) => window.PPInputCoords.toDesignCoords(clientX, clientY, uiFrameEl);
+const getPointerClientCoords = (event) => window.PPInputCoords.getPointerClientCoords(event);
+const getPointerDesignCoords = (event) => window.PPInputCoords.getPointerDesignCoords(event, uiFrameEl);
 
 function designToBoardCoords(designX, designY) {
   return {
