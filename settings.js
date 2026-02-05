@@ -4521,7 +4521,9 @@ if(sharpEdgesToggle){
 if(addsCargoBtn){
   setTumblerState(addsCargoBtn, addsUiState.cargo);
   syncCargoPreview(addsUiState.cargo);
-  addFieldAuditListener(addsCargoBtn, 'click', () => {
+  addFieldAuditListener(addsCargoBtn, 'click', (event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
     // temporarily disabled: legacy adds should not activate gameplay from control-panel tumblers
     addsUiState.cargo = !addsUiState.cargo;
     setTumblerState(addsCargoBtn, addsUiState.cargo);
@@ -4532,7 +4534,9 @@ if(addsCargoBtn){
 if(addsFlagsBtn){
   setTumblerState(addsFlagsBtn, addsUiState.flags);
   syncFlagsPreview(addsUiState.flags);
-  addFieldAuditListener(addsFlagsBtn, 'click', () => {
+  addFieldAuditListener(addsFlagsBtn, 'click', (event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
     // temporarily disabled: legacy adds should not activate gameplay from control-panel tumblers
     addsUiState.flags = !addsUiState.flags;
     setTumblerState(addsFlagsBtn, addsUiState.flags);
@@ -4543,7 +4547,9 @@ if(addsFlagsBtn){
 if(addsArcadeBtn){
   setTumblerState(addsArcadeBtn, addsUiState.arcade);
   syncArcadeCargoPreview(addsUiState.arcade);
-  addFieldAuditListener(addsArcadeBtn, 'click', () => {
+  addFieldAuditListener(addsArcadeBtn, 'click', (event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
     // temporarily disabled: legacy adds should not activate gameplay from control-panel tumblers
     addsUiState.arcade = !addsUiState.arcade;
     setTumblerState(addsArcadeBtn, addsUiState.arcade);
