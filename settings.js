@@ -888,6 +888,8 @@ const arcadePreviewStill = selectInSettings('#arcade_preview_still');
 const arcadePreviewGif = selectInSettings('#arcade_preview_gif');
 const flagsPreviewOff = selectInSettings('#flags_preview_off');
 const flagsPreviewOn = selectInSettings('#flags_preview_on');
+const cargoPreviewOff = selectInSettings('#cargo_preview_off');
+const cargoPreviewOn = selectInSettings('#cargo_preview_on');
 const arcadePreviewGifSrc = arcadePreviewGif?.getAttribute('src') || 'ui_controlpanel/cp_adds/cp_arcade.gif';
 const flagsPreviewOnGifSrc = flagsPreviewOn?.getAttribute('src') || 'ui_controlpanel/cp_adds/cp_flags_on.gif';
 const arcadePreviewShadowClass = 'arcade-preview--shadow';
@@ -4406,6 +4408,7 @@ function resetSettingsToDefaults(){
   setTumblerState(addsArcadeBtn, addsUiState.arcade);
   syncArcadeCargoPreview(addsUiState.arcade);
   syncFlagsPreview(addsUiState.flags);
+  syncCargoPreview(addsUiState.cargo);
   syncToggleInput(addAAToggle, sharedSettings.addAA);
   syncToggleInput(sharpEdgesToggle, sharedSettings.sharpEdges);
   if(accuracyCrackWatcher?.reset){
@@ -4482,6 +4485,15 @@ function syncFlagsPreview(isFlagsOn){
   }
 }
 
+function syncCargoPreview(isCargoOn){
+  if(cargoPreviewOff){
+    cargoPreviewOff.style.display = isCargoOn ? 'none' : 'block';
+  }
+  if(cargoPreviewOn){
+    cargoPreviewOn.style.display = isCargoOn ? 'block' : 'none';
+  }
+}
+
 if(addAAToggle){
   addAAToggle.checked = sharedSettings.addAA;
   addAAToggle.addEventListener('change', e => {
@@ -4500,10 +4512,12 @@ if(sharpEdgesToggle){
 
 if(addsCargoBtn){
   setTumblerState(addsCargoBtn, addsUiState.cargo);
+  syncCargoPreview(addsUiState.cargo);
   addFieldAuditListener(addsCargoBtn, 'click', () => {
     // temporarily disabled: legacy adds should not activate gameplay from control-panel tumblers
     addsUiState.cargo = !addsUiState.cargo;
     setTumblerState(addsCargoBtn, addsUiState.cargo);
+    syncCargoPreview(addsUiState.cargo);
   });
 }
 
