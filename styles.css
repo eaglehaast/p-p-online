@@ -360,7 +360,9 @@ body, button {
   #settingsLayer #arcade_preview_still,
   #settingsLayer #arcade_preview_gif,
   #settingsLayer #flags_preview_off,
-  #settingsLayer #flags_preview_on {
+  #settingsLayer #flags_preview_on,
+  #settingsLayer #cargo_preview_off,
+  #settingsLayer #cargo_preview_on {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -369,12 +371,14 @@ body, button {
   }
 
   #settingsLayer #arcade_preview_still,
-  #settingsLayer #flags_preview_off {
+  #settingsLayer #flags_preview_off,
+  #settingsLayer #cargo_preview_off {
     display: block;
   }
 
   #settingsLayer #arcade_preview_gif,
-  #settingsLayer #flags_preview_on {
+  #settingsLayer #flags_preview_on,
+  #settingsLayer #cargo_preview_on {
     display: none;
   }
 
