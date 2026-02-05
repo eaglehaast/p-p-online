@@ -888,6 +888,8 @@ const arcadePreviewStill = selectInSettings('#arcade_preview_still');
 const arcadePreviewGif = selectInSettings('#arcade_preview_gif');
 const flagsPreviewOff = selectInSettings('#flags_preview_off');
 const flagsPreviewOn = selectInSettings('#flags_preview_on');
+const arcadePreviewGifSrc = arcadePreviewGif?.getAttribute('src') || 'ui_controlpanel/cp_adds/cp_arcade.gif';
+const flagsPreviewOnGifSrc = flagsPreviewOn?.getAttribute('src') || 'ui_controlpanel/cp_adds/cp_flags_on.gif';
 const arcadePreviewShadowClass = 'arcade-preview--shadow';
 const resetBtn = selectInSettings('#instance_reset');
 const exitBtn = selectInSettings('#instance_exit');
@@ -4457,6 +4459,11 @@ function syncArcadeCargoPreview(isArcadeOn){
     arcadePreviewStill.classList.toggle(arcadePreviewShadowClass, !isArcadeOn);
   }
   if(arcadePreviewGif){
+    if(isArcadeOn){
+      arcadePreviewGif.src = arcadePreviewGifSrc;
+    }else{
+      arcadePreviewGif.src = '';
+    }
     arcadePreviewGif.style.display = isArcadeOn ? 'block' : 'none';
   }
 }
@@ -4466,6 +4473,11 @@ function syncFlagsPreview(isFlagsOn){
     flagsPreviewOff.style.display = isFlagsOn ? 'none' : 'block';
   }
   if(flagsPreviewOn){
+    if(isFlagsOn){
+      flagsPreviewOn.src = flagsPreviewOnGifSrc;
+    }else{
+      flagsPreviewOn.src = '';
+    }
     flagsPreviewOn.style.display = isFlagsOn ? 'block' : 'none';
   }
 }
