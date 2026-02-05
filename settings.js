@@ -552,8 +552,8 @@ function sanitizeMapIndex(index, { excludeIndex, allowRandom } = {}){
 const DEFAULT_SETTINGS = {
   rangeCells: 30,
   aimingAmplitude: 10 / 5,
-  addAA: false,
-  sharpEdges: false,
+  addAA: true,
+  sharpEdges: true,
   addCargo: false,
   mapIndex: 0
 };
@@ -750,8 +750,14 @@ let rangePreviewValue = rangeCommittedValue;
 sharedSettings.flightRangeCells = rangeCommittedValue;
 sharedSettings.aimingAmplitude  = parseFloat(getStoredItem('settings.aimingAmplitude'));
 if(Number.isNaN(sharedSettings.aimingAmplitude)) sharedSettings.aimingAmplitude = DEFAULT_SETTINGS.aimingAmplitude;
-sharedSettings.addAA = getStoredItem('settings.addAA') === 'true';
-sharedSettings.sharpEdges = getStoredItem('settings.sharpEdges') === 'true';
+const storedAddAA = getStoredItem('settings.addAA');
+sharedSettings.addAA = storedAddAA === null
+  ? DEFAULT_SETTINGS.addAA
+  : storedAddAA === 'true';
+const storedSharpEdges = getStoredItem('settings.sharpEdges');
+sharedSettings.sharpEdges = storedSharpEdges === null
+  ? DEFAULT_SETTINGS.sharpEdges
+  : storedSharpEdges === 'true';
 let addCargo = getStoredItem('settings.addCargo') === 'true';
 sharedSettings.mapIndex = sanitizeMapIndex(
   getIntSetting('settings.mapIndex', DEFAULT_SETTINGS.mapIndex),
@@ -4390,13 +4396,14 @@ function resetSettingsToDefaults(){
   updateAmplitudeIndicator();
   updateMapPreview();
   syncFieldSelectorState();
-  addsUiState.cargo = false;
-  addsUiState.flags = false;
+  addsUiState.cargo = true;
+  addsUiState.flags = true;
   addsUiState.arcade = false;
   setTumblerState(addsCargoBtn, addsUiState.cargo);
   setTumblerState(addsFlagsBtn, addsUiState.flags);
   setTumblerState(addsArcadeBtn, addsUiState.arcade);
   syncArcadeCargoPreview(addsUiState.arcade);
+  syncFlagsPreview(addsUiState.flags);
   syncToggleInput(addAAToggle, sharedSettings.addAA);
   syncToggleInput(sharpEdgesToggle, sharedSettings.sharpEdges);
   if(accuracyCrackWatcher?.reset){
@@ -4439,8 +4446,8 @@ function syncToggleInput(input, value){
 }
 
 const addsUiState = {
-  cargo: false,
-  flags: false,
+  cargo: true,
+  flags: true,
   arcade: false
 };
 
