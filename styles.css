@@ -341,7 +341,8 @@ body, button {
   #settingsLayer .cp-adds {
     position: absolute;
     inset: 0;
-    isolation: isolate;
+    z-index: 40;
+    pointer-events: none;
   }
 
   #settingsLayer #frame_adds_1_cargo,
@@ -413,6 +414,7 @@ body, button {
     background-size: 100% 100%;
     cursor: pointer;
     z-index: 30;
+    pointer-events: auto;
     background-image: url('ui_controlpanel/cp_button_off.png');
   }
 
@@ -432,6 +434,8 @@ body, button {
   #settingsLayer .cp-aiming-accuracy {
     position: absolute;
     inset: 0;
+    z-index: 30;
+    pointer-events: none;
   }
 
   #settingsLayer #amplitudeIndicator {
@@ -553,6 +557,12 @@ body, button {
   .settings-container .cp-range {
     position: absolute;
     inset: 0;
+    z-index: 20;
+    pointer-events: none;
+  }
+
+  .settings-container .cp-range__btn {
+    pointer-events: auto;
   }
 
   .settings-container #rangeIndicator {
@@ -855,6 +865,12 @@ body, button {
     top: 401px;
     width: 178px;
     height: 340px;
+    z-index: 20;
+    pointer-events: none;
+  }
+
+  #settingsLayer .cp-field-selector__btn {
+    pointer-events: auto;
   }
 
   #settingsLayer .cp-field-selector__indicator {
