@@ -343,9 +343,9 @@ body, button {
     inset: 0;
   }
 
-  #settingsLayer #frame_adds_1_nails,
-  #settingsLayer #frame_adds_2_aa,
-  #settingsLayer #frame_adds_3_cargo {
+  #settingsLayer #frame_adds_1_cargo,
+  #settingsLayer #frame_adds_2_flags,
+  #settingsLayer #frame_adds_3_arcade {
     position: absolute;
     width: 49px;
     height: 49px;
@@ -353,9 +353,9 @@ body, button {
     z-index: 10;
   }
 
-  #settingsLayer #frame_adds_1_nails { left: 271px; top: 418px; }
-  #settingsLayer #frame_adds_2_aa { left: 271px; top: 492px; }
-  #settingsLayer #frame_adds_3_cargo { left: 271px; top: 567px; }
+  #settingsLayer #frame_adds_1_cargo { left: 271px; top: 418px; }
+  #settingsLayer #frame_adds_2_flags { left: 271px; top: 492px; }
+  #settingsLayer #frame_adds_3_arcade { left: 271px; top: 567px; }
 
   #settingsLayer #arcade_preview_still,
   #settingsLayer #arcade_preview_gif {
@@ -385,7 +385,7 @@ body, button {
     top: 401px;
     width: 178px;
     height: 236px;
-    background-image: url('ui_controlpanel/cp_frame_add.png');
+    background-image: url('ui_controlpanel/cp_frame_add3.png');
     background-repeat: no-repeat;
     background-size: 100% 100%;
     pointer-events: none;
@@ -394,7 +394,7 @@ body, button {
 
   #settingsLayer .cp-adds__btn {
     position: absolute;
-    left: 336px;
+    left: 347px;
     width: 50px;
     height: 37px;
     border: none;
@@ -406,9 +406,9 @@ body, button {
     background-image: url('ui_controlpanel/cp_button_off.png');
   }
 
-  #settingsLayer #instance_adds_tumbler1_nails { top: 438px; }
-  #settingsLayer #instance_adds_tumbler2_aa { top: 512px; }
-  #settingsLayer #instance_adds_tumbler3_cargo { top: 587px; }
+  #settingsLayer #instance_adds_tumbler1_cargo { top: 417px; }
+  #settingsLayer #instance_adds_tumbler2_flags { top: 493px; }
+  #settingsLayer #instance_adds_tumbler3_arcade { top: 569px; }
 
   #settingsLayer .cp-adds__btn:focus-visible {
     outline: 2px solid #f6d265;

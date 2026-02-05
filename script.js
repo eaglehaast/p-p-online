@@ -765,7 +765,7 @@ const GAME_SCREEN_ASSETS = [
 const SETTINGS_ASSETS = [
   // Control panel
   "ui_controlpanel/cp_background.png",
-  "ui_controlpanel/cp_frame_add.png",
+  "ui_controlpanel/cp_frame_add3.png",
   "ui_controlpanel/cp_button_off.png",
   "ui_controlpanel/cp_button_on.png",
   "ui_controlpanel/cp_frame_accuracy.png",
