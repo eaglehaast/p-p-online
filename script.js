@@ -3642,7 +3642,7 @@ function spawnCargoForTurn(){
   cargoState.falling = true;
   cargoState.x = candidate.x;
   cargoState.targetY = candidate.targetY;
-  cargoState.y = FIELD_TOP + FIELD_HEIGHT - FIELD_BORDER_OFFSET_Y;
+  cargoState.y = FIELD_TOP + FIELD_BORDER_OFFSET_Y;
   cargoState.pickedAt = null;
 }
 
@@ -3655,8 +3655,8 @@ function updateCargoState(deltaSec, now){
     return;
   }
   if(cargoState.falling){
-    const nextY = cargoState.y - CARGO_FALL_SPEED * deltaSec;
-    if(nextY <= cargoState.targetY){
+    const nextY = cargoState.y + CARGO_FALL_SPEED * deltaSec;
+    if(nextY >= cargoState.targetY){
       cargoState.y = cargoState.targetY;
       cargoState.falling = false;
     } else {
