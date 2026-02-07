@@ -3600,9 +3600,7 @@ function isBrickPixel(x, y){
 }
 
 function resetCargoState(){
-  cargoState.active = false;
-  cargoState.falling = false;
-  cargoState.pickedAt = null;
+  cargoState.length = 0;
 }
 
 function findCargoSpawnTarget(){
@@ -3631,66 +3629,72 @@ function findCargoSpawnTarget(){
 
 function spawnCargoForTurn(){
   if(!settings.addCargo){
-    resetCargoState();
     return;
   }
   const candidate = findCargoSpawnTarget();
   if(!candidate){
-    resetCargoState();
     return;
   }
-  cargoState.active = true;
-  cargoState.falling = true;
-  cargoState.x = candidate.x;
-  cargoState.targetY = candidate.targetY;
-  cargoState.y = FIELD_TOP + FIELD_BORDER_OFFSET_Y;
-  cargoState.pickedAt = null;
+  cargoState.push({
+    x: candidate.x,
+    y: FIELD_TOP + FIELD_BORDER_OFFSET_Y,
+    targetY: candidate.targetY,
+    falling: true,
+    pickedAt: null
+  });
 }
 
 function updateCargoState(deltaSec, now){
-  if(!settings.addCargo){
-    resetCargoState();
+  if(cargoState.length === 0){
     return;
   }
-  if(!cargoState.active){
-    return;
-  }
-  if(cargoState.falling){
-    const nextY = cargoState.y + CARGO_FALL_SPEED * deltaSec;
-    if(nextY >= cargoState.targetY){
-      cargoState.y = cargoState.targetY;
-      cargoState.falling = false;
-    } else {
-      cargoState.y = nextY;
+  const remainingCargo = [];
+  for(const cargo of cargoState){
+    if(cargo.falling){
+      const nextY = cargo.y + CARGO_FALL_SPEED * deltaSec;
+      if(nextY >= cargo.targetY){
+        cargo.y = cargo.targetY;
+        cargo.falling = false;
+      } else {
+        cargo.y = nextY;
+      }
+    }
+    let pickedUp = false;
+    for(const plane of points){
+      if(!plane?.isAlive || plane?.burning) continue;
+      const dx = plane.x - cargo.x;
+      const dy = plane.y - cargo.y;
+      if(Math.hypot(dx, dy) < CARGO_RADIUS){
+        cargo.pickedAt = now;
+        pickedUp = true;
+        break;
+      }
+    }
+    if(!pickedUp){
+      remainingCargo.push(cargo);
     }
   }
-
-  for(const plane of points){
-    if(!plane?.isAlive || plane?.burning) continue;
-    const dx = plane.x - cargoState.x;
-    const dy = plane.y - cargoState.y;
-    if(Math.hypot(dx, dy) < CARGO_RADIUS){
-      cargoState.active = false;
-      cargoState.falling = false;
-      cargoState.pickedAt = now;
-      break;
-    }
+  if(remainingCargo.length !== cargoState.length){
+    cargoState.length = 0;
+    cargoState.push(...remainingCargo);
   }
 }
 
 function drawCargo(ctx2d){
-  if(!cargoState.active || !isSpriteReady(cargoSprite)) return;
+  if(cargoState.length === 0 || !isSpriteReady(cargoSprite)) return;
   const spriteWidth = cargoSprite.naturalWidth || 1;
   const spriteHeight = cargoSprite.naturalHeight || 1;
   const drawWidth = CARGO_RADIUS * 2;
   const drawHeight = drawWidth * (spriteHeight / spriteWidth);
-  ctx2d.drawImage(
-    cargoSprite,
-    cargoState.x - drawWidth / 2,
-    cargoState.y - drawHeight / 2,
-    drawWidth,
-    drawHeight
-  );
+  for(const cargo of cargoState){
+    ctx2d.drawImage(
+      cargoSprite,
+      cargo.x - drawWidth / 2,
+      cargo.y - drawHeight / 2,
+      drawWidth,
+      drawHeight
+    );
+  }
 }
 
   function updateFieldDimensions(){
@@ -3797,14 +3801,7 @@ let aaPointerDown = false;
 
 let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_START | TURN | ROUND_END
 
-const cargoState = {
-  active: false,
-  x: 0,
-  y: 0,
-  targetY: 0,
-  falling: false,
-  pickedAt: null
-};
+const cargoState = [];
 
 const CARGO_FALL_SPEED = 120;
 const CARGO_MAX_SPAWN_ATTEMPTS = 8;
