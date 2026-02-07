@@ -3659,6 +3659,10 @@ function updateCargoState(deltaSec, now){
         cargo.y = nextY;
       }
     }
+    if(cargo.falling){
+      remainingCargo.push(cargo);
+      continue;
+    }
     let pickedUp = false;
     for(const plane of points){
       if(!plane?.isAlive || plane?.burning) continue;
