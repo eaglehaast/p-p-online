@@ -722,6 +722,7 @@ const GAME_SCREEN_ASSETS = [
   // Game maps
   "ui_gamescreen/bricks/brick_1_default.png",
   "ui_gamescreen/bricks/brick4_diagonal copy.png",
+  "ui_controlpanel/cp_adds/cp_cargo_on.png",
 
   // Match score
   "ui_gamescreen/gamescreen_outside/matchscore_blue_corn.png",
@@ -3108,6 +3109,9 @@ const baseSprites = {
   green: loadImageAsset(BASE_SPRITE_PATHS.green, GAME_PRELOAD_LABEL, { decoding: 'async' }).img,
 };
 
+const CARGO_SPRITE_PATH = "ui_controlpanel/cp_adds/cp_cargo_on.png";
+const { img: cargoSprite } = loadImageAsset(CARGO_SPRITE_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
+
 function isSpriteReady(img) {
   return Boolean(
     img &&
@@ -3594,6 +3598,100 @@ function isBrickPixel(x, y){
   return false;
 }
 
+function resetCargoState(){
+  cargoState.active = false;
+  cargoState.falling = false;
+  cargoState.pickedAt = null;
+}
+
+function findCargoSpawnTarget(){
+  if(!FIELD_WIDTH || !FIELD_HEIGHT){
+    return null;
+  }
+  const minX = FIELD_LEFT + FIELD_WIDTH / 3;
+  const maxX = FIELD_LEFT + 2 * FIELD_WIDTH / 3;
+  const minY = FIELD_TOP + FIELD_HEIGHT / 3;
+  const maxY = FIELD_TOP + 2 * FIELD_HEIGHT / 3;
+  for(let attempt = 0; attempt < CARGO_MAX_SPAWN_ATTEMPTS; attempt++){
+    const x = minX + Math.random() * (maxX - minX);
+    const targetY = minY + Math.random() * (maxY - minY);
+    if(isBrickPixel(x, targetY)) continue;
+    const tooCloseToPlane = points.some(point => {
+      if(!point?.isAlive || point?.burning) return false;
+      const dx = point.x - x;
+      const dy = point.y - targetY;
+      return Math.hypot(dx, dy) < POINT_RADIUS;
+    });
+    if(tooCloseToPlane) continue;
+    return { x, targetY };
+  }
+  return null;
+}
+
+function spawnCargoForTurn(){
+  if(!settings.addCargo){
+    resetCargoState();
+    return;
+  }
+  const candidate = findCargoSpawnTarget();
+  if(!candidate){
+    resetCargoState();
+    return;
+  }
+  cargoState.active = true;
+  cargoState.falling = true;
+  cargoState.x = candidate.x;
+  cargoState.targetY = candidate.targetY;
+  cargoState.y = FIELD_TOP + FIELD_HEIGHT - FIELD_BORDER_OFFSET_Y;
+  cargoState.pickedAt = null;
+}
+
+function updateCargoState(deltaSec, now){
+  if(!settings.addCargo){
+    resetCargoState();
+    return;
+  }
+  if(!cargoState.active){
+    return;
+  }
+  if(cargoState.falling){
+    const nextY = cargoState.y - CARGO_FALL_SPEED * deltaSec;
+    if(nextY <= cargoState.targetY){
+      cargoState.y = cargoState.targetY;
+      cargoState.falling = false;
+    } else {
+      cargoState.y = nextY;
+    }
+  }
+
+  for(const plane of points){
+    if(!plane?.isAlive || plane?.burning) continue;
+    const dx = plane.x - cargoState.x;
+    const dy = plane.y - cargoState.y;
+    if(Math.hypot(dx, dy) < POINT_RADIUS){
+      cargoState.active = false;
+      cargoState.falling = false;
+      cargoState.pickedAt = now;
+      break;
+    }
+  }
+}
+
+function drawCargo(ctx2d){
+  if(!cargoState.active || !isSpriteReady(cargoSprite)) return;
+  const spriteWidth = cargoSprite.naturalWidth || 1;
+  const spriteHeight = cargoSprite.naturalHeight || 1;
+  const drawWidth = POINT_RADIUS * 2;
+  const drawHeight = drawWidth * (spriteHeight / spriteWidth);
+  ctx2d.drawImage(
+    cargoSprite,
+    cargoState.x - drawWidth / 2,
+    cargoState.y - drawHeight / 2,
+    drawWidth,
+    drawHeight
+  );
+}
+
   function updateFieldDimensions(){
     const cssMetrics = getFieldCssMetrics();
     const scaleX = CANVAS_BASE_WIDTH ? WORLD.width / CANVAS_BASE_WIDTH : 1;
@@ -3698,6 +3796,18 @@ let aaPointerDown = false;
 
 let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_START | TURN | ROUND_END
 
+const cargoState = {
+  active: false,
+  x: 0,
+  y: 0,
+  targetY: 0,
+  falling: false,
+  pickedAt: null
+};
+
+const CARGO_FALL_SPEED = 120;
+const CARGO_MAX_SPAWN_ATTEMPTS = 8;
+let turnAdvanceCount = 0;
 
 let currentPlacer = null; // 'green' | 'blue'
 
@@ -3940,6 +4050,7 @@ const sharedSettings = settingsBridge.settings || (settingsBridge.settings = {
   addAA: true,
   sharpEdges: true,
   flagsEnabled: true,
+  addCargo: false,
   mapIndex: 0
 });
 
@@ -3957,6 +4068,9 @@ if(typeof sharedSettings.sharpEdges !== 'boolean'){
 }
 if(typeof sharedSettings.flagsEnabled !== 'boolean'){
   sharedSettings.flagsEnabled = true;
+}
+if(typeof sharedSettings.addCargo !== 'boolean'){
+  sharedSettings.addCargo = false;
 }
 if(!Number.isInteger(sharedSettings.mapIndex)){
   sharedSettings.mapIndex = 0;
@@ -4035,6 +4149,8 @@ function loadSettings(){
   settings.sharpEdges = storedSharpEdges === null ? true : storedSharpEdges === 'true';
   const storedFlagsEnabled = getStoredSetting('settings.flagsEnabled');
   settings.flagsEnabled = storedFlagsEnabled === null ? true : storedFlagsEnabled === 'true';
+  const storedAddCargo = getStoredSetting('settings.addCargo');
+  settings.addCargo = storedAddCargo === null ? false : storedAddCargo === 'true';
   const mapIdx = parseInt(getStoredSetting('settings.mapIndex'), 10);
   settings.mapIndex = clampMapIndex(mapIdx);
   const storedFlameStyle = normalizeFlameStyleKey(getStoredSetting('settings.flameStyle'));
@@ -4062,6 +4178,7 @@ const hasCustomSettings = storageAvailable && [
   'settings.addAA',
   'settings.sharpEdges',
   'settings.flagsEnabled',
+  'settings.addCargo',
   'settings.mapIndex',
   'settings.randomizeMapEachRound',
   'settings.flameStyle'
@@ -4548,6 +4665,8 @@ function resetGame(options = {}){
 
   lastFirstTurn= 1 - lastFirstTurn;
   turnIndex= lastFirstTurn;
+  turnAdvanceCount = 0;
+  resetCargoState();
 
 
   globalFrame=0;
@@ -6501,14 +6620,22 @@ function destroyPlane(fp, scoringColor = null){
   awardPoint(scoringColor);
   checkVictory();
   if(!isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
-    turnIndex = (turnIndex + 1) % turnColors.length;
-    if(turnColors[turnIndex] === "blue" && gameMode === "computer"){
-      aiMoveScheduled = false;
-    }
+    advanceTurn();
   }
 }
 
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+
+function advanceTurn(){
+  turnIndex = (turnIndex + 1) % turnColors.length;
+  turnAdvanceCount += 1;
+  if(turnAdvanceCount >= 1){
+    spawnCargoForTurn();
+  }
+  if(turnColors[turnIndex] === "blue" && gameMode === "computer"){
+    aiMoveScheduled = false;
+  }
+}
 
 
 function angleDiffDeg(a, b){
@@ -6558,10 +6685,7 @@ function handleAAForPlane(p, fp){
               awardPoint(aa.owner);
               checkVictory();
               if(fp && !isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
-                turnIndex = (turnIndex + 1) % turnColors.length;
-                if(turnColors[turnIndex]==="blue" && gameMode==="computer"){
-                  aiMoveScheduled = false;
-                }
+                advanceTurn();
               }
               return true;
             }
@@ -6622,6 +6746,8 @@ function gameDraw(){
   resetCanvasState(gsBoardCtx, gsBoardCanvas);
   drawFieldBackground(gsBoardCtx, WORLD.width, WORLD.height);
   drawMapLayer(gsBoardCtx);
+  updateCargoState(deltaSec, now);
+  drawCargo(gsBoardCtx);
 
   // Планирование хода ИИ
   if (!isGameOver
@@ -6690,10 +6816,7 @@ function gameDraw(){
         flyingPoints = flyingPoints.filter(x => x !== fp);
         // смена хода, когда полётов текущего цвета больше нет
         if(!isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
-          turnIndex = (turnIndex + 1) % turnColors.length;
-          if(turnColors[turnIndex]==="blue" && gameMode==="computer"){
-            aiMoveScheduled = false; // разрешаем планирование следующего хода ИИ
-          }
+          advanceTurn();
         }
       }
     }
@@ -8677,6 +8800,7 @@ function startNewRound(){
     addAA: settings.addAA,
     sharpEdges: settings.sharpEdges,
     flagsEnabled: settings.flagsEnabled,
+    addCargo: settings.addCargo,
     mapIndex: settings.mapIndex,
     randomizeMapEachRound: settings.randomizeMapEachRound,
     flameStyle: settings.flameStyle
@@ -8709,6 +8833,8 @@ function startNewRound(){
 
   lastFirstTurn = 1 - lastFirstTurn;
   turnIndex = lastFirstTurn;
+  turnAdvanceCount = 0;
+  resetCargoState();
 
   roundNumber++;
   roundTextTimer = 120;
@@ -8790,6 +8916,7 @@ function resetPlanePositionsForCurrentMap(){
   hasShotThisRound = false;
   awaitingFlightResolution = false;
   aaUnits = [];
+  resetCargoState();
 
   points = [];
   initPoints();
