@@ -764,7 +764,10 @@ const storedFlagsEnabled = getStoredItem('settings.flagsEnabled');
 sharedSettings.flagsEnabled = storedFlagsEnabled === null
   ? DEFAULT_SETTINGS.flagsEnabled
   : storedFlagsEnabled === 'true';
-let addCargo = getStoredItem('settings.addCargo') === 'true';
+const storedAddCargo = getStoredItem('settings.addCargo');
+let addCargo = storedAddCargo === null
+  ? DEFAULT_SETTINGS.addCargo
+  : storedAddCargo === 'true';
 sharedSettings.mapIndex = sanitizeMapIndex(
   getIntSetting('settings.mapIndex', DEFAULT_SETTINGS.mapIndex),
   { allowRandom: true }
@@ -4416,7 +4419,7 @@ function resetSettingsToDefaults(){
   updateAmplitudeIndicator();
   updateMapPreview();
   syncFieldSelectorState();
-  addsUiState.cargo = true;
+  addsUiState.cargo = DEFAULT_SETTINGS.addCargo;
   addsUiState.flags = true;
   addsUiState.arcade = false;
   sharedSettings.flagsEnabled = true;
@@ -4468,7 +4471,7 @@ function syncToggleInput(input, value){
 }
 
 const addsUiState = {
-  cargo: true,
+  cargo: addCargo,
   flags: sharedSettings.flagsEnabled !== false,
   arcade: false
 };
