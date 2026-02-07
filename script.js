@@ -3455,6 +3455,7 @@ const HUD_PLANE_DEATH_SCALE_DELTA = 0.15;
 const HUD_BASE_PLANE_ICON_SIZE = planeMetric(16);
 const CELL_SIZE            = 20;     // px
 const POINT_RADIUS         = planeMetric(15);     // px (увеличено для мобильных)
+const CARGO_RADIUS         = POINT_RADIUS * 2;    // увеличенный радиус ящика
 const FLAG_INTERACTION_RADIUS = 25;  // px
 const BASE_INTERACTION_RADIUS = 40;  // px
 const SLIDE_THRESHOLD      = 0.1;
@@ -3668,7 +3669,7 @@ function updateCargoState(deltaSec, now){
     if(!plane?.isAlive || plane?.burning) continue;
     const dx = plane.x - cargoState.x;
     const dy = plane.y - cargoState.y;
-    if(Math.hypot(dx, dy) < POINT_RADIUS){
+    if(Math.hypot(dx, dy) < CARGO_RADIUS){
       cargoState.active = false;
       cargoState.falling = false;
       cargoState.pickedAt = now;
@@ -3681,7 +3682,7 @@ function drawCargo(ctx2d){
   if(!cargoState.active || !isSpriteReady(cargoSprite)) return;
   const spriteWidth = cargoSprite.naturalWidth || 1;
   const spriteHeight = cargoSprite.naturalHeight || 1;
-  const drawWidth = POINT_RADIUS * 2;
+  const drawWidth = CARGO_RADIUS * 2;
   const drawHeight = drawWidth * (spriteHeight / spriteWidth);
   ctx2d.drawImage(
     cargoSprite,
