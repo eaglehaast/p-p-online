@@ -4538,6 +4538,8 @@ if(addsCargoBtn){
     event?.stopPropagation?.();
     // temporarily disabled: legacy adds should not activate gameplay from control-panel tumblers
     addsUiState.cargo = !addsUiState.cargo;
+    addCargo = addsUiState.cargo;
+    saveSettings();
     setTumblerState(addsCargoBtn, addsUiState.cargo);
     syncCargoPreview(addsUiState.cargo);
   });
