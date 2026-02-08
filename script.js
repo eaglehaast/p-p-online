@@ -757,9 +757,14 @@ function syncInventoryUI(color){
   if(!(host instanceof HTMLElement)) return;
   host.innerHTML = "";
   const items = inventoryState[color] ?? [];
+  const countsByType = items.reduce((counts, item) => {
+    if (!item?.type) return counts;
+    counts[item.type] = (counts[item.type] ?? 0) + 1;
+    return counts;
+  }, {});
   const slotData = INVENTORY_SLOT_ORDER.map((type) => {
     const itemDef = INVENTORY_ITEMS.find((item) => item.type === type) ?? null;
-    const count = items.filter((item) => item?.type === type).length;
+    const count = countsByType[type] ?? 0;
     return {
       type,
       count,
@@ -767,8 +772,10 @@ function syncInventoryUI(color){
     };
   });
   for(const slot of slotData){
-    const img = document.createElement("img");
     const hasItem = slot.count > 0;
+    const slotContainer = document.createElement("div");
+    const img = document.createElement("img");
+    slotContainer.className = "inventory-slot";
     img.src = slot.iconPath || INVENTORY_EMPTY_ICON;
     img.alt = "";
     img.draggable = false;
@@ -776,7 +783,14 @@ function syncInventoryUI(color){
     if (!hasItem) {
       img.classList.add("inventory-item--ghost");
     }
-    host.appendChild(img);
+    slotContainer.appendChild(img);
+    if (hasItem) {
+      const countBadge = document.createElement("span");
+      countBadge.className = "inventory-item-count";
+      countBadge.textContent = slot.count;
+      slotContainer.appendChild(countBadge);
+    }
+    host.appendChild(slotContainer);
   }
 }
 
