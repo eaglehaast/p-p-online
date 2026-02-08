@@ -254,6 +254,14 @@ body, button {
     z-index: 25;
   }
 
+  .inventory-item {
+    width: 32px;
+    height: 32px;
+    margin-right: 6px;
+    object-fit: contain;
+    image-rendering: auto;
+  }
+
   .score-container {
     position: absolute;
     pointer-events: none;
