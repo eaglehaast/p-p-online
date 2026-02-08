@@ -659,6 +659,8 @@ let OVERLAY_RESYNC_SCHEDULED = false;
 
 const greenPlaneCounter = document.getElementById("gs_planecounter_green");
 const bluePlaneCounter  = document.getElementById("gs_planecounter_blue");
+const blueInventoryHost = document.getElementById("gs_inventory_blue");
+const greenInventoryHost = document.getElementById("gs_inventory_green");
 
 // Animated GIF frames for explosion sprites
 const EXPLOSION_BLUE_SPRITES = [
@@ -722,6 +724,53 @@ const INVENTORY_ITEMS = [
     iconPath: "ui_gamescreen/gamescreen_outside/gs_icon_prototypes/gs_cargoicon_dynamite.png",
   },
 ];
+
+const inventoryState = {
+  blue: [],
+  green: [],
+};
+
+const inventoryHosts = {
+  blue: blueInventoryHost,
+  green: greenInventoryHost,
+};
+
+function getRandomInventoryItem(){
+  if(INVENTORY_ITEMS.length === 0) return null;
+  const index = Math.floor(Math.random() * INVENTORY_ITEMS.length);
+  return INVENTORY_ITEMS[index] ?? null;
+}
+
+function syncInventoryUI(color){
+  const host = inventoryHosts[color];
+  if(!(host instanceof HTMLElement)) return;
+  host.innerHTML = "";
+  const items = inventoryState[color] ?? [];
+  for(const item of items){
+    const img = document.createElement("img");
+    img.src = item.iconPath;
+    img.alt = "";
+    img.draggable = false;
+    img.className = "inventory-item";
+    host.appendChild(img);
+  }
+}
+
+function addItemToInventory(color, item){
+  if(!color || !item) return;
+  if(!inventoryState[color]){
+    inventoryState[color] = [];
+  }
+  inventoryState[color].push(item);
+  syncInventoryUI(color);
+}
+
+function resetInventoryState(){
+  inventoryState.blue.length = 0;
+  inventoryState.green.length = 0;
+  syncInventoryUI("blue");
+  syncInventoryUI("green");
+}
 
 const MAIN_MENU_ASSETS = [
   "ui_mainmenu/mm_hotseat.png",
@@ -3704,6 +3753,8 @@ function updateCargoState(deltaSec, now){
       const dy = plane.y - cargo.y;
       if(Math.hypot(dx, dy) < CARGO_RADIUS){
         cargo.pickedAt = now;
+        const item = getRandomInventoryItem();
+        addItemToInventory(plane.color, item);
         pickedUp = true;
         break;
       }
@@ -4703,6 +4754,7 @@ function resetGame(options = {}){
   turnIndex= lastFirstTurn;
   turnAdvanceCount = 0;
   resetCargoState();
+  resetInventoryState();
 
 
   globalFrame=0;
@@ -8871,6 +8923,7 @@ function startNewRound(){
   turnIndex = lastFirstTurn;
   turnAdvanceCount = 0;
   resetCargoState();
+  resetInventoryState();
 
   roundNumber++;
   roundTextTimer = 120;
@@ -8953,6 +9006,7 @@ function resetPlanePositionsForCurrentMap(){
   awaitingFlightResolution = false;
   aaUnits = [];
   resetCargoState();
+  resetInventoryState();
 
   points = [];
   initPoints();
