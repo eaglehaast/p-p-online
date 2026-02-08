@@ -725,6 +725,17 @@ const INVENTORY_ITEMS = [
   },
 ];
 
+const INVENTORY_SLOT_ORDER = [
+  INVENTORY_ITEM_TYPES.CROSSHAIR,
+  INVENTORY_ITEM_TYPES.FUEL,
+  INVENTORY_ITEM_TYPES.MINE,
+  INVENTORY_ITEM_TYPES.DYNAMITE,
+  INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE,
+];
+
+const INVENTORY_EMPTY_ICON =
+  "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
+
 const inventoryState = {
   blue: [],
   green: [],
@@ -746,12 +757,25 @@ function syncInventoryUI(color){
   if(!(host instanceof HTMLElement)) return;
   host.innerHTML = "";
   const items = inventoryState[color] ?? [];
-  for(const item of items){
+  const slotData = INVENTORY_SLOT_ORDER.map((type) => {
+    const itemDef = INVENTORY_ITEMS.find((item) => item.type === type) ?? null;
+    const count = items.filter((item) => item?.type === type).length;
+    return {
+      type,
+      count,
+      iconPath: itemDef?.iconPath ?? "",
+    };
+  });
+  for(const slot of slotData){
     const img = document.createElement("img");
-    img.src = item.iconPath;
+    const hasItem = slot.count > 0;
+    img.src = hasItem ? slot.iconPath : INVENTORY_EMPTY_ICON;
     img.alt = "";
     img.draggable = false;
     img.className = "inventory-item";
+    if (!hasItem) {
+      img.classList.add("inventory-item--empty");
+    }
     host.appendChild(img);
   }
 }
