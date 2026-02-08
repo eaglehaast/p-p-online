@@ -692,6 +692,37 @@ const BASE_SPRITE_PATHS = {
   green: "ui_gamescreen/flags and bases colored/green_base.png.png",
 };
 
+const INVENTORY_ITEM_TYPES = {
+  MINE: "mine",
+  NUCLEAR_STRIKE: "nuclear_strike",
+  CROSSHAIR: "crosshair",
+  FUEL: "fuel",
+  DYNAMITE: "dynamite",
+};
+
+const INVENTORY_ITEMS = [
+  {
+    type: INVENTORY_ITEM_TYPES.MINE,
+    iconPath: "ui_gamescreen/gamescreen_outside/gs_icon_prototypes/gs_cargoicon_mine.png",
+  },
+  {
+    type: INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE,
+    iconPath: "ui_gamescreen/gamescreen_outside/gs_icon_prototypes/gs_cargoicon_nuclear_strike.png",
+  },
+  {
+    type: INVENTORY_ITEM_TYPES.CROSSHAIR,
+    iconPath: "ui_gamescreen/gamescreen_outside/gs_icon_prototypes/gs_cargoicon_crosshair.png",
+  },
+  {
+    type: INVENTORY_ITEM_TYPES.FUEL,
+    iconPath: "ui_gamescreen/gamescreen_outside/gs_icon_prototypes/gs_cargoicon_fuel_barrel.png",
+  },
+  {
+    type: INVENTORY_ITEM_TYPES.DYNAMITE,
+    iconPath: "ui_gamescreen/gamescreen_outside/gs_icon_prototypes/gs_cargoicon_dynamite.png",
+  },
+];
+
 const MAIN_MENU_ASSETS = [
   "ui_mainmenu/mm_hotseat.png",
   "ui_mainmenu/mm_computer.png",
@@ -723,6 +754,9 @@ const GAME_SCREEN_ASSETS = [
   "ui_gamescreen/bricks/brick_1_default.png",
   "ui_gamescreen/bricks/brick4_diagonal copy.png",
   "ui_controlpanel/cp_adds/cp_cargo_on.png",
+
+  // Inventory icons
+  ...INVENTORY_ITEMS.map(item => item.iconPath),
 
   // Match score
   "ui_gamescreen/gamescreen_outside/matchscore_blue_corn.png",
