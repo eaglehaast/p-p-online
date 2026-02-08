@@ -262,6 +262,10 @@ body, button {
     image-rendering: auto;
   }
 
+  .inventory-item--ghost {
+    opacity: 0.22;
+  }
+
   .score-container {
     position: absolute;
     pointer-events: none;
