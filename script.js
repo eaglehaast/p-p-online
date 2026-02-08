@@ -769,12 +769,12 @@ function syncInventoryUI(color){
   for(const slot of slotData){
     const img = document.createElement("img");
     const hasItem = slot.count > 0;
-    img.src = hasItem ? slot.iconPath : INVENTORY_EMPTY_ICON;
+    img.src = slot.iconPath || INVENTORY_EMPTY_ICON;
     img.alt = "";
     img.draggable = false;
     img.className = "inventory-item";
     if (!hasItem) {
-      img.classList.add("inventory-item--empty");
+      img.classList.add("inventory-item--ghost");
     }
     host.appendChild(img);
   }
