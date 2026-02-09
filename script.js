@@ -28,6 +28,7 @@ const DEBUG_COLLISIONS_TOI = false;
 const DEBUG_COLLISIONS_VERBOSE = false;
 const DEBUG_STARTUP_WORLDY = false;
 const DEBUG_WRAPPER_SYNC = false;
+const DEBUG_CHEATS = typeof location !== "undefined" && location.hash.includes("dev");
 
 if (typeof window !== 'undefined') {
   window.PINCH_ACTIVE = false;
@@ -935,11 +936,34 @@ function addItemToInventory(color, item){
   syncInventoryUI(color);
 }
 
+function giveItem(itemId, qty = 1, opts = { silent: false }){
+  if(!itemId) return;
+  const itemDef = INVENTORY_ITEMS.find((item) => item?.type === itemId) ?? null;
+  if(!itemDef) return;
+  const safeQty = Number.isFinite(qty) ? Math.max(0, Math.floor(qty)) : 0;
+  if(safeQty === 0) return;
+  const color = turnColors?.[turnIndex] ?? "blue";
+  if(!inventoryState[color]){
+    inventoryState[color] = [];
+  }
+  for(let i = 0; i < safeQty; i += 1){
+    inventoryState[color].push(itemDef);
+  }
+  if(!opts?.silent){
+    syncInventoryUI(color);
+  }
+}
+
 function resetInventoryState(){
   inventoryState.blue.length = 0;
   inventoryState.green.length = 0;
   syncInventoryUI("blue");
   syncInventoryUI("green");
+}
+
+if (DEBUG_CHEATS && typeof window !== "undefined") {
+  window.DEBUG_GIVE_ITEM = (itemId, qty = 1) => giveItem(itemId, qty);
+  window.DEBUG_CLEAR_INVENTORY = () => resetInventoryState();
 }
 
 const MAIN_MENU_ASSETS = [
