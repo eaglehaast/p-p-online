@@ -841,8 +841,8 @@ function onInventoryItemDragEnd(){
 }
 
 function isClientPointOverBoard(clientX, clientY){
-  const rect = getViewportAdjustedBoundingClientRect(gsBoardCanvas);
-  if (!rect) return false;
+  if (!gsBoardCanvas) return false;
+  const rect = gsBoardCanvas.getBoundingClientRect();
   return clientX >= rect.left
     && clientX <= rect.left + rect.width
     && clientY >= rect.top
