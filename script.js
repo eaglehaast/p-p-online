@@ -81,6 +81,7 @@ const planeCtx    = planeCanvas.getContext("2d");
 
 const hudCanvas = document.getElementById("hudCanvas");
 const hudCtx = hudCanvas instanceof HTMLCanvasElement ? hudCanvas.getContext("2d") : null;
+const boardDimmerLayer = document.getElementById("boardDimmerLayer");
 
 function logEndGameAction(action){
   if (!DEBUG_ENDGAME) return;
@@ -758,6 +759,28 @@ const inventoryHosts = {
 let nuclearStrikeHideTimeoutId = null;
 let activeNuclearDrag = null;
 
+function updateBoardDimmerMask(){
+  if (!(boardDimmerLayer instanceof HTMLElement)) return;
+  if (!(gsBoardCanvas instanceof HTMLElement)) return;
+  const container = gsFrameEl instanceof HTMLElement ? gsFrameEl : gsBoardCanvas.offsetParent;
+  if (!(container instanceof HTMLElement)) return;
+  const boardRect = gsBoardCanvas.getBoundingClientRect();
+  const containerRect = container.getBoundingClientRect();
+  const left = Math.round(boardRect.left - containerRect.left);
+  const top = Math.round(boardRect.top - containerRect.top);
+  const width = Math.round(boardRect.width);
+  const height = Math.round(boardRect.height);
+  boardDimmerLayer.style.setProperty("--dimmer-field-left", `${left}px`);
+  boardDimmerLayer.style.setProperty("--dimmer-field-top", `${top}px`);
+  boardDimmerLayer.style.setProperty("--dimmer-field-width", `${width}px`);
+  boardDimmerLayer.style.setProperty("--dimmer-field-height", `${height}px`);
+}
+
+function setBoardDimmerActive(isActive){
+  if (!(boardDimmerLayer instanceof HTMLElement)) return;
+  boardDimmerLayer.classList.toggle("is-active", Boolean(isActive));
+}
+
 function handleNuclearStrikeReady(){
   if(!(nuclearStrikeLayer instanceof HTMLElement) || !(nuclearStrikeGif instanceof HTMLImageElement) || !(nuclearStrikeFlash instanceof HTMLElement)) {
     return;
@@ -837,6 +860,8 @@ function onInventoryItemDragStart(event){
       event.dataTransfer.setDragImage(target, target.width / 2, target.height / 2);
     }
   }
+  updateBoardDimmerMask();
+  setBoardDimmerActive(true);
   if (DEBUG_NUKE) {
     console.log("[NUKE] drag start");
   }
@@ -844,6 +869,7 @@ function onInventoryItemDragStart(event){
 
 function onInventoryItemDragEnd(){
   if (!activeNuclearDrag) return;
+  setBoardDimmerActive(false);
   if (!activeNuclearDrag.consumed && DEBUG_NUKE) {
     console.log("[NUKE] drag cancelled");
   }
@@ -879,6 +905,7 @@ function onBoardDrop(event){
   }
   removeItemFromInventory(activeNuclearDrag.color, activeNuclearDrag.type);
   activeNuclearDrag.consumed = true;
+  setBoardDimmerActive(false);
   if (DEBUG_NUKE) {
     console.log(`[NUKE] drop ok at client(${Math.round(clientX)}, ${Math.round(clientY)})`);
   }
