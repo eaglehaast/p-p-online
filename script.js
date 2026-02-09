@@ -19,6 +19,7 @@ const DEBUG_ENDGAME = false;
 const DEBUG_AIM = false;
 const DEBUG_PLANE_SHADING = false;
 const DEBUG_FX = false;
+const DEBUG_NUKE = false;
 const DEBUG_FLAME_POS = false;
 const DEBUG_LAYERS = false;
 const DEBUG_VFX = false;
@@ -654,6 +655,9 @@ const overlayContainer = document.getElementById("overlayContainer");
 const overlayFxLayer = document.getElementById("overlayFxLayer");
 const fxHostLayer = document.getElementById("fxHostLayer");
 const uiOverlay = document.getElementById("uiOverlay");
+const nuclearStrikeLayer = document.getElementById("nuclearStrikeLayer");
+const nuclearStrikeGif = document.getElementById("nuclearStrikeGif");
+const nuclearStrikeFlash = document.getElementById("nuclearStrikeFlash");
 
 let OVERLAY_RESYNC_SCHEDULED = false;
 
@@ -702,6 +706,10 @@ const INVENTORY_ITEM_TYPES = {
   DYNAMITE: "dynamite",
 };
 
+const NUCLEAR_STRIKE_GIF_PATH =
+  "ui_gamescreen/gamescreen_outside/gs_cargoeffects/gs_cagroeffects_nuclearstrike.gif";
+const NUCLEAR_STRIKE_FX_HIDE_DELAY_MS = 1600;
+
 const INVENTORY_ITEMS = [
   {
     type: INVENTORY_ITEM_TYPES.MINE,
@@ -746,10 +754,126 @@ const inventoryHosts = {
   green: greenInventoryHost,
 };
 
+let nuclearStrikeHideTimeoutId = null;
+let activeNuclearDrag = null;
+
 function getRandomInventoryItem(){
   if(INVENTORY_ITEMS.length === 0) return null;
   const index = Math.floor(Math.random() * INVENTORY_ITEMS.length);
   return INVENTORY_ITEMS[index] ?? null;
+}
+
+function playNuclearStrikeFx(){
+  if(!(nuclearStrikeLayer instanceof HTMLElement) || !(nuclearStrikeGif instanceof HTMLImageElement) || !(nuclearStrikeFlash instanceof HTMLElement)) {
+    return;
+  }
+
+  nuclearStrikeLayer.hidden = false;
+
+  nuclearStrikeGif.removeAttribute("src");
+  void nuclearStrikeGif.offsetHeight;
+  nuclearStrikeGif.src = `${NUCLEAR_STRIKE_GIF_PATH}?t=${Date.now()}`;
+
+  nuclearStrikeFlash.classList.remove("is-on");
+  void nuclearStrikeFlash.offsetWidth;
+  nuclearStrikeFlash.classList.add("is-on");
+
+  if (nuclearStrikeHideTimeoutId) {
+    clearTimeout(nuclearStrikeHideTimeoutId);
+  }
+  nuclearStrikeHideTimeoutId = window.setTimeout(() => {
+    nuclearStrikeLayer.hidden = true;
+    nuclearStrikeFlash.classList.remove("is-on");
+  }, NUCLEAR_STRIKE_FX_HIDE_DELAY_MS);
+
+  if (DEBUG_NUKE) {
+    console.log("[NUKE] fx started");
+  }
+}
+
+function removeItemFromInventory(color, type){
+  if(!color || !type) return;
+  const items = inventoryState[color];
+  if(!Array.isArray(items) || items.length === 0) return;
+  const index = items.findIndex((item) => item?.type === type);
+  if(index < 0) return;
+  items.splice(index, 1);
+  syncInventoryUI(color);
+}
+
+function onInventoryItemDragStart(event){
+  const target = event.currentTarget;
+  if(!(target instanceof HTMLElement)) return;
+  const type = target.dataset.itemType;
+  const color = target.dataset.itemColor;
+  if (type !== INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE) {
+    event.preventDefault();
+    return;
+  }
+  const activeColor = turnColors[turnIndex];
+  if (color !== activeColor) {
+    event.preventDefault();
+    return;
+  }
+  activeNuclearDrag = {
+    color,
+    type,
+    consumed: false,
+  };
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", type);
+    if (target instanceof HTMLImageElement) {
+      event.dataTransfer.setDragImage(target, target.width / 2, target.height / 2);
+    }
+  }
+  if (DEBUG_NUKE) {
+    console.log("[NUKE] drag start");
+  }
+}
+
+function onInventoryItemDragEnd(){
+  if (!activeNuclearDrag) return;
+  if (!activeNuclearDrag.consumed && DEBUG_NUKE) {
+    console.log("[NUKE] drag cancelled");
+  }
+  activeNuclearDrag = null;
+}
+
+function isClientPointOverBoard(clientX, clientY){
+  const rect = getViewportAdjustedBoundingClientRect(gsBoardCanvas);
+  if (!rect) return false;
+  return clientX >= rect.left
+    && clientX <= rect.left + rect.width
+    && clientY >= rect.top
+    && clientY <= rect.top + rect.height;
+}
+
+function onBoardDragOver(event){
+  if (!activeNuclearDrag) return;
+  event.preventDefault();
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = "move";
+  }
+}
+
+function onBoardDrop(event){
+  if (!activeNuclearDrag) return;
+  event.preventDefault();
+  const { clientX, clientY } = event;
+  if (!isClientPointOverBoard(clientX, clientY)) {
+    if (DEBUG_NUKE) {
+      console.log("[NUKE] drop rejected");
+    }
+    return;
+  }
+  removeItemFromInventory(activeNuclearDrag.color, activeNuclearDrag.type);
+  activeNuclearDrag.consumed = true;
+  if (DEBUG_NUKE) {
+    console.log(`[NUKE] drop ok at client(${Math.round(clientX)}, ${Math.round(clientY)})`);
+  }
+  playNuclearStrikeFx();
+  activeNuclearDrag = null;
 }
 
 function syncInventoryUI(color){
@@ -782,6 +906,14 @@ function syncInventoryUI(color){
     img.className = "inventory-item";
     if (!hasItem) {
       img.classList.add("inventory-item--ghost");
+    }
+    if (hasItem && slot.type === INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE) {
+      img.draggable = true;
+      img.classList.add("inventory-item--draggable");
+      img.dataset.itemType = slot.type;
+      img.dataset.itemColor = color;
+      img.addEventListener("dragstart", onInventoryItemDragStart);
+      img.addEventListener("dragend", onInventoryItemDragEnd);
     }
     slotContainer.appendChild(img);
     if (hasItem) {
@@ -844,6 +976,7 @@ const GAME_SCREEN_ASSETS = [
 
   // Inventory icons
   ...INVENTORY_ITEMS.map(item => item.iconPath),
+  NUCLEAR_STRIKE_GIF_PATH,
 
   // Match score
   "ui_gamescreen/gamescreen_outside/matchscore_blue_corn.png",
@@ -5289,6 +5422,8 @@ gsBoardCanvas.addEventListener("pointerdown", onCanvasPointerDown);
 gsBoardCanvas.addEventListener("pointermove", onCanvasPointerMove);
 gsBoardCanvas.addEventListener("pointerup", onCanvasPointerUp);
 gsBoardCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; aaPointerDown = false; aaPreviewTrail = []; });
+gsBoardCanvas.addEventListener("dragover", onBoardDragOver);
+gsBoardCanvas.addEventListener("drop", onBoardDrop);
 
 
 function isValidAAPlacement(x,y){
