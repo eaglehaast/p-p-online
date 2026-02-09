@@ -371,6 +371,10 @@ body, button {
     height: 50px;
   }
 
+  #gs_inventory_blue .inventory-item-hint {
+    top: calc(100% + 6px);
+  }
+
   #gs_inventory_green {
     left: 68px;
     top: 735px;
