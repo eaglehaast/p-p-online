@@ -822,6 +822,9 @@ function playNuclearStrikeFx(){
   nuclearStrikeGif.removeAttribute("src");
   void nuclearStrikeGif.offsetHeight;
   nuclearStrikeGif.src = `${NUCLEAR_STRIKE_GIF_PATH}?t=${Date.now()}`;
+
+  destroyAllPlanesWithoutScoring();
+  lockInNoSurvivors({ roundTransitionDelay: MIN_ROUND_TRANSITION_DELAY_MS });
 }
 
 function removeItemFromInventory(color, type){
@@ -4098,6 +4101,7 @@ const AA_TRAIL_MS = 5000; // radar sweep afterglow duration
 
 let isGameOver   = false;
 let winnerColor  = null;
+let roundEndedByNuke = false;
 let awaitingFlightResolution = false;
 let pendingRoundTransitionDelay = null;
 let pendingRoundTransitionStart = 0;
@@ -4604,6 +4608,7 @@ function lockInWinner(color, options = {}){
 
   isGameOver = true;
   winnerColor = color;
+  roundEndedByNuke = false;
 
   if(roundTransitionTimeout){
     clearTimeout(roundTransitionTimeout);
@@ -4611,6 +4616,38 @@ function lockInWinner(color, options = {}){
   }
 
   shouldShowEndScreen = Boolean(options.showEndScreen);
+  if(endGameDiv){
+    endGameDiv.style.display = "none";
+  }
+
+  if(typeof options.roundTransitionDelay === "number" && Number.isFinite(options.roundTransitionDelay)){
+    pendingRoundTransitionDelay = options.roundTransitionDelay;
+    pendingRoundTransitionStart = performance.now();
+  } else {
+    pendingRoundTransitionDelay = null;
+    pendingRoundTransitionStart = 0;
+  }
+
+  awaitingFlightResolution = flyingPoints.length > 0;
+
+  if(!awaitingFlightResolution){
+    finalizePostFlightState();
+  }
+}
+
+function lockInNoSurvivors(options = {}){
+  if(isGameOver) return;
+
+  isGameOver = true;
+  winnerColor = null;
+  roundEndedByNuke = true;
+
+  if(roundTransitionTimeout){
+    clearTimeout(roundTransitionTimeout);
+    roundTransitionTimeout = null;
+  }
+
+  shouldShowEndScreen = false;
   if(endGameDiv){
     endGameDiv.style.display = "none";
   }
@@ -4970,6 +5007,7 @@ function resetGame(options = {}){
 
   isGameOver= false;
   winnerColor= null;
+  roundEndedByNuke = false;
   endGameDiv.style.display = "none";
   awaitingFlightResolution = false;
   pendingRoundTransitionDelay = null;
@@ -6955,6 +6993,28 @@ function destroyPlane(fp, scoringColor = null){
   }
 }
 
+function destroyAllPlanesWithoutScoring(){
+  points.forEach((p) => {
+    if(!p || !p.isAlive) return;
+    const carriedFlag = p.carriedFlagId ? getFlagById(p.carriedFlagId) : null;
+    if(isFlagActive(carriedFlag)){
+      dropFlagAtPosition(carriedFlag, { x: p.x, y: p.y });
+    }
+    clearFlagFromPlane(p);
+    p.isAlive = false;
+    p.burning = true;
+    ensurePlaneBurningFlame(p);
+    p.collisionX = p.x;
+    p.collisionY = p.y;
+    const crashTimestamp = performance.now();
+    p.crashStart = crashTimestamp;
+    p.killMarkerStart = crashTimestamp;
+    spawnExplosionForPlane(p, p.collisionX, p.collisionY);
+    schedulePlaneFlameFx(p);
+    flyingPoints = flyingPoints.filter(x => x.plane !== p);
+  });
+}
+
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 
 function advanceTurn(){
@@ -7308,49 +7368,61 @@ function gameDraw(){
 
   drawAimOverlay(rangeTextInfo);
 
-  if(isGameOver && winnerColor){
+  if(isGameOver && (winnerColor || roundEndedByNuke)){
     gsBoardCtx.font="48px 'Patrick Hand', cursive";
-    gsBoardCtx.fillStyle= colorFor(winnerColor);
-    const winnerName= `${winnerColor.charAt(0).toUpperCase() + winnerColor.slice(1)}`;
-    const text= shouldShowEndScreen
-      ? `${winnerName} wins the game!`
-      : `${winnerName} wins the round!`;
-    const metrics = gsBoardCtx.measureText(text);
-    const w = metrics.width;
-    const textX = (WORLD.width - w) / 2;
     const textBaselineY = WORLD.height / 2 - 80;
-    gsBoardCtx.fillText(text, textX, textBaselineY);
+    if(roundEndedByNuke){
+      const lines = ["No one survived.", "No one won the round."];
+      gsBoardCtx.fillStyle = "#ffffff";
+      lines.forEach((line, index) => {
+        const metrics = gsBoardCtx.measureText(line);
+        const w = metrics.width;
+        const textX = (WORLD.width - w) / 2;
+        const lineY = textBaselineY + index * 52;
+        gsBoardCtx.fillText(line, textX, lineY);
+      });
+    } else {
+      gsBoardCtx.fillStyle= colorFor(winnerColor);
+      const winnerName= `${winnerColor.charAt(0).toUpperCase() + winnerColor.slice(1)}`;
+      const text= shouldShowEndScreen
+        ? `${winnerName} wins the game!`
+        : `${winnerName} wins the round!`;
+      const metrics = gsBoardCtx.measureText(text);
+      const w = metrics.width;
+      const textX = (WORLD.width - w) / 2;
+      gsBoardCtx.fillText(text, textX, textBaselineY);
 
-    if(shouldShowEndScreen && endGameDiv){
-      const descent = Number.isFinite(metrics.actualBoundingBoxDescent) ? metrics.actualBoundingBoxDescent : 0;
-      const anchorCanvasX = WORLD.width / 2;
-      const anchorCanvasY = textBaselineY + descent + 24;
-      const boardRect = getViewportAdjustedBoundingClientRect(gsBoardCanvas);
-      const boardWidth = Number.isFinite(boardRect.width) ? boardRect.width : 0;
-      const boardHeight = Number.isFinite(boardRect.height) ? boardRect.height : 0;
-      const scaleX = WORLD.width !== 0 ? boardWidth / WORLD.width : 1;
-      const scaleY = WORLD.height !== 0 ? boardHeight / WORLD.height : 1;
-      const anchorClientX = (Number.isFinite(boardRect.left) ? boardRect.left : 0) + anchorCanvasX * scaleX;
-      const anchorClientY = (Number.isFinite(boardRect.top) ? boardRect.top : 0) + anchorCanvasY * scaleY;
+      if(shouldShowEndScreen && endGameDiv){
+        const descent = Number.isFinite(metrics.actualBoundingBoxDescent) ? metrics.actualBoundingBoxDescent : 0;
+        const anchorCanvasX = WORLD.width / 2;
+        const anchorCanvasY = textBaselineY + descent + 24;
+        const boardRect = getViewportAdjustedBoundingClientRect(gsBoardCanvas);
+        const boardWidth = Number.isFinite(boardRect.width) ? boardRect.width : 0;
+        const boardHeight = Number.isFinite(boardRect.height) ? boardRect.height : 0;
+        const scaleX = WORLD.width !== 0 ? boardWidth / WORLD.width : 1;
+        const scaleY = WORLD.height !== 0 ? boardHeight / WORLD.height : 1;
+        const anchorClientX = (Number.isFinite(boardRect.left) ? boardRect.left : 0) + anchorCanvasX * scaleX;
+        const anchorClientY = (Number.isFinite(boardRect.top) ? boardRect.top : 0) + anchorCanvasY * scaleY;
 
-      if(endGameDiv.style.display !== "block"){
-        endGameDiv.style.display = "block";
-      }
+        if(endGameDiv.style.display !== "block"){
+          endGameDiv.style.display = "block";
+        }
 
-      const panelWidth = endGameDiv.offsetWidth || 0;
-      const targetLeft = Math.round(anchorClientX - panelWidth / 2);
-      const targetTop = Math.round(anchorClientY);
+        const panelWidth = endGameDiv.offsetWidth || 0;
+        const targetLeft = Math.round(anchorClientX - panelWidth / 2);
+        const targetTop = Math.round(anchorClientY);
 
-      if(Number.isFinite(targetLeft)){
-        endGameDiv.style.left = `${targetLeft}px`;
-      }
-      if(Number.isFinite(targetTop)){
-        endGameDiv.style.top = `${targetTop}px`;
+        if(Number.isFinite(targetLeft)){
+          endGameDiv.style.left = `${targetLeft}px`;
+        }
+        if(Number.isFinite(targetTop)){
+          endGameDiv.style.top = `${targetTop}px`;
+        }
       }
     }
   }
 
-  if(endGameDiv && (!shouldShowEndScreen || !isGameOver || !winnerColor)){
+  if(endGameDiv && (!shouldShowEndScreen || !isGameOver || !winnerColor || roundEndedByNuke)){
     if(endGameDiv.style.display !== "none"){
       endGameDiv.style.display = "none";
     }
@@ -9155,7 +9227,7 @@ function startNewRound(){
   suppressAutoRandomMapForNextRound = false;
   cleanupGreenCrashFx();
   endGameDiv.style.display = "none";
-  isGameOver=false; winnerColor=null;
+  isGameOver=false; winnerColor=null; roundEndedByNuke = false;
   awaitingFlightResolution = false;
   pendingRoundTransitionDelay = null;
   pendingRoundTransitionStart = 0;
