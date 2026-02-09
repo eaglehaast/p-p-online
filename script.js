@@ -806,6 +806,9 @@ function handleNuclearStrikeReady(){
   if (DEBUG_NUKE) {
     console.log("[NUKE] fx started");
   }
+
+  destroyAllPlanesWithoutScoring();
+  lockInNoSurvivors({ roundTransitionDelay: MIN_ROUND_TRANSITION_DELAY_MS });
 }
 
 function getRandomInventoryItem(){
@@ -825,9 +828,6 @@ function playNuclearStrikeFx(){
   nuclearStrikeGif.removeAttribute("src");
   void nuclearStrikeGif.offsetHeight;
   nuclearStrikeGif.src = `${NUCLEAR_STRIKE_GIF_PATH}?t=${Date.now()}`;
-
-  destroyAllPlanesWithoutScoring();
-  lockInNoSurvivors({ roundTransitionDelay: MIN_ROUND_TRANSITION_DELAY_MS });
 }
 
 function removeItemFromInventory(color, type){
