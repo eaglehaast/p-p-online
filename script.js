@@ -713,7 +713,7 @@ const INVENTORY_ITEM_TYPES = {
 
 const NUCLEAR_STRIKE_GIF_PATH =
   "ui_gamescreen/gamescreen_outside/gs_cargoeffects/gs_cagroeffects_nuclearstrike.gif";
-const NUCLEAR_STRIKE_FX_HIDE_DELAY_MS = 2200;
+const NUCLEAR_STRIKE_FX_HIDE_DELAY_MS = 2000;
 
 const INVENTORY_ITEMS = [
   {
