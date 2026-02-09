@@ -229,7 +229,7 @@ body, button {
   #uiOverlay {
     position: absolute;
     inset: 0;
-    pointer-events: none;
+    pointer-events: auto;
     z-index: 25;
   }
 
