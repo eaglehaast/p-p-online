@@ -311,6 +311,30 @@ body, button {
     box-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
   }
 
+  .inventory-item-hint {
+    position: absolute;
+    left: 50%;
+    top: -38px;
+    transform: translateX(-50%);
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: #fff;
+    color: #000;
+    font-size: 11px;
+    line-height: 14px;
+    font-weight: 700;
+    white-space: nowrap;
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease-in-out;
+    z-index: 1;
+  }
+
+  .inventory-item-hint.is-visible {
+    opacity: 1;
+  }
+
   .score-container {
     position: absolute;
     pointer-events: none;

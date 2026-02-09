@@ -945,12 +945,22 @@ function syncInventoryUI(color){
       img.classList.add("inventory-item--ghost");
     }
     if (hasItem && slot.type === INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE) {
+      const hint = document.createElement("span");
+      const showHint = () => hint.classList.add("is-visible");
+      const hideHint = () => hint.classList.remove("is-visible");
+      hint.className = "inventory-item-hint";
+      hint.textContent = "Drop on the field. Think twice.";
       img.draggable = true;
       img.classList.add("inventory-item--draggable");
       img.dataset.itemType = slot.type;
       img.dataset.itemColor = color;
       img.addEventListener("dragstart", onInventoryItemDragStart);
       img.addEventListener("dragend", onInventoryItemDragEnd);
+      img.addEventListener("mouseenter", showHint);
+      img.addEventListener("mouseleave", hideHint);
+      img.addEventListener("dragstart", showHint);
+      img.addEventListener("dragend", hideHint);
+      slotContainer.appendChild(hint);
     }
     slotContainer.appendChild(img);
     if (hasItem) {
