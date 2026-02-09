@@ -1394,6 +1394,39 @@ body, button {
   z-index: 18;
 }
 
+/* Board dimmer overlay */
+#boardDimmerLayer {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 17;
+  transition: opacity 0.15s ease;
+  --dimmer-field-left: var(--field-left);
+  --dimmer-field-top: var(--field-top);
+  --dimmer-field-width: var(--field-width);
+  --dimmer-field-height: var(--field-height);
+  -webkit-mask:
+    linear-gradient(#000 0 0),
+    linear-gradient(#000 0 0);
+  -webkit-mask-position: 0 0, var(--dimmer-field-left) var(--dimmer-field-top);
+  -webkit-mask-size: 100% 100%, var(--dimmer-field-width) var(--dimmer-field-height);
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0),
+    linear-gradient(#000 0 0);
+  mask-position: 0 0, var(--dimmer-field-left) var(--dimmer-field-top);
+  mask-size: 100% 100%, var(--dimmer-field-width) var(--dimmer-field-height);
+  mask-repeat: no-repeat;
+  mask-composite: exclude;
+}
+
+#boardDimmerLayer.is-active {
+  opacity: 1;
+}
+
 /* Overlay container */
   #overlayContainer {
     position: absolute;
