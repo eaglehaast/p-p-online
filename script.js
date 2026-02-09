@@ -630,13 +630,16 @@ function syncAimCanvasLayout() {
 }
 
 function syncFieldCssVars() {
-  if (!gsFrameEl) return;
+  const fieldVarsHost = gsFrameEl instanceof HTMLElement
+    ? gsFrameEl
+    : (gsBoardCanvas?.parentElement instanceof HTMLElement ? gsBoardCanvas.parentElement : null);
+  if (!fieldVarsHost) return;
   const fieldLeft = getFieldLeftCssValue();
   const fieldTop = getFieldTopCssValue();
-  gsFrameEl.style.setProperty("--field-left", `${fieldLeft}px`);
-  gsFrameEl.style.setProperty("--field-top", `${fieldTop}px`);
-  gsFrameEl.style.setProperty("--field-width", `${WORLD.width}px`);
-  gsFrameEl.style.setProperty("--field-height", `${WORLD.height}px`);
+  fieldVarsHost.style.setProperty("--field-left", `${fieldLeft}px`);
+  fieldVarsHost.style.setProperty("--field-top", `${fieldTop}px`);
+  fieldVarsHost.style.setProperty("--field-width", `${WORLD.width}px`);
+  fieldVarsHost.style.setProperty("--field-height", `${WORLD.height}px`);
 }
 
 function logCanvasCreation(canvas, label = "") {
