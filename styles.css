@@ -229,8 +229,15 @@ body, button {
   #uiOverlay {
     position: absolute;
     inset: 0;
-    pointer-events: auto;
+    pointer-events: none;
     z-index: 25;
+  }
+
+  #inventoryLayer {
+    position: absolute;
+    inset: 0;
+    pointer-events: auto;
+    z-index: 26;
   }
 
   #hudCanvas {
