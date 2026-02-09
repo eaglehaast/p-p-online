@@ -758,22 +758,12 @@ const inventoryHosts = {
 let nuclearStrikeHideTimeoutId = null;
 let activeNuclearDrag = null;
 
-function getRandomInventoryItem(){
-  if(INVENTORY_ITEMS.length === 0) return null;
-  const index = Math.floor(Math.random() * INVENTORY_ITEMS.length);
-  return INVENTORY_ITEMS[index] ?? null;
-}
-
-function playNuclearStrikeFx(){
+function handleNuclearStrikeReady(){
   if(!(nuclearStrikeLayer instanceof HTMLElement) || !(nuclearStrikeGif instanceof HTMLImageElement) || !(nuclearStrikeFlash instanceof HTMLElement)) {
     return;
   }
 
   nuclearStrikeLayer.hidden = false;
-
-  nuclearStrikeGif.removeAttribute("src");
-  void nuclearStrikeGif.offsetHeight;
-  nuclearStrikeGif.src = `${NUCLEAR_STRIKE_GIF_PATH}?t=${Date.now()}`;
 
   nuclearStrikeFlash.classList.remove("is-on");
   void nuclearStrikeFlash.offsetWidth;
@@ -790,6 +780,25 @@ function playNuclearStrikeFx(){
   if (DEBUG_NUKE) {
     console.log("[NUKE] fx started");
   }
+}
+
+function getRandomInventoryItem(){
+  if(INVENTORY_ITEMS.length === 0) return null;
+  const index = Math.floor(Math.random() * INVENTORY_ITEMS.length);
+  return INVENTORY_ITEMS[index] ?? null;
+}
+
+function playNuclearStrikeFx(){
+  if(!(nuclearStrikeLayer instanceof HTMLElement) || !(nuclearStrikeGif instanceof HTMLImageElement) || !(nuclearStrikeFlash instanceof HTMLElement)) {
+    return;
+  }
+
+  nuclearStrikeGif.removeEventListener("load", handleNuclearStrikeReady);
+  nuclearStrikeGif.addEventListener("load", handleNuclearStrikeReady, { once: true });
+
+  nuclearStrikeGif.removeAttribute("src");
+  void nuclearStrikeGif.offsetHeight;
+  nuclearStrikeGif.src = `${NUCLEAR_STRIKE_GIF_PATH}?t=${Date.now()}`;
 }
 
 function removeItemFromInventory(color, type){
