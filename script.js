@@ -807,8 +807,11 @@ function handleNuclearStrikeReady(){
     console.log("[NUKE] fx started");
   }
 
-  destroyAllPlanesWithoutScoring();
-  lockInNoSurvivors({ roundTransitionDelay: MIN_ROUND_TRANSITION_DELAY_MS });
+  destroyAllPlanesWithNukeScoring();
+  const matchEnded = maybeLockInMatchOutcome({ showEndScreen: true });
+  if(!matchEnded){
+    lockInNoSurvivors({ roundTransitionDelay: MIN_ROUND_TRANSITION_DELAY_MS });
+  }
 }
 
 function getRandomInventoryItem(){
@@ -4589,6 +4592,8 @@ function resetMatchScoreAnimations(){
   matchScoreAnimationActiveUntil = 0;
 }
 
+let isDrawGame = false;
+
 let matchScoreImagesRequested = false;
 function loadMatchScoreImagesIfNeeded(){
   if (matchScoreImagesRequested) return;
@@ -4611,6 +4616,7 @@ function lockInWinner(color, options = {}){
 
   isGameOver = true;
   winnerColor = color;
+  isDrawGame = false;
   roundEndedByNuke = false;
 
   if(roundTransitionTimeout){
@@ -4643,6 +4649,7 @@ function lockInNoSurvivors(options = {}){
 
   isGameOver = true;
   winnerColor = null;
+  isDrawGame = false;
   roundEndedByNuke = true;
 
   if(roundTransitionTimeout){
@@ -4670,6 +4677,57 @@ function lockInNoSurvivors(options = {}){
   }
 }
 
+function lockInDraw(options = {}){
+  if(isGameOver) return;
+
+  isGameOver = true;
+  winnerColor = null;
+  isDrawGame = true;
+  roundEndedByNuke = false;
+
+  if(roundTransitionTimeout){
+    clearTimeout(roundTransitionTimeout);
+    roundTransitionTimeout = null;
+  }
+
+  shouldShowEndScreen = Boolean(options.showEndScreen);
+  if(endGameDiv){
+    endGameDiv.style.display = "none";
+  }
+
+  if(typeof options.roundTransitionDelay === "number" && Number.isFinite(options.roundTransitionDelay)){
+    pendingRoundTransitionDelay = options.roundTransitionDelay;
+    pendingRoundTransitionStart = performance.now();
+  } else {
+    pendingRoundTransitionDelay = null;
+    pendingRoundTransitionStart = 0;
+  }
+
+  awaitingFlightResolution = flyingPoints.length > 0;
+
+  if(!awaitingFlightResolution){
+    finalizePostFlightState();
+  }
+}
+
+function maybeLockInMatchOutcome(options = {}){
+  if(isGameOver) return true;
+
+  if(blueScore >= POINTS_TO_WIN && greenScore >= POINTS_TO_WIN){
+    lockInDraw(options);
+    return true;
+  }
+  if(blueScore >= POINTS_TO_WIN){
+    lockInWinner("blue", options);
+    return true;
+  }
+  if(greenScore >= POINTS_TO_WIN){
+    lockInWinner("green", options);
+    return true;
+  }
+  return false;
+}
+
 function finalizePostFlightState(){
   if(pendingRoundTransitionDelay !== null){
     const elapsed = performance.now() - pendingRoundTransitionStart;
@@ -4687,7 +4745,7 @@ function finalizePostFlightState(){
   }
 }
 
-function addScore(color, delta){
+function addScore(color, delta, options = {}){
   if(isGameOver) return;
 
   if(color === "blue"){
@@ -4712,12 +4770,8 @@ function addScore(color, delta){
     }
   }
 
-  if(!isGameOver){
-    if(blueScore >= POINTS_TO_WIN){
-      lockInWinner("blue", { showEndScreen: true });
-    } else if(greenScore >= POINTS_TO_WIN){
-      lockInWinner("green", { showEndScreen: true });
-    }
+  if(!isGameOver && !options.deferVictoryCheck){
+    maybeLockInMatchOutcome({ showEndScreen: true });
   }
 
   renderScoreboard();
@@ -7018,6 +7072,41 @@ function destroyAllPlanesWithoutScoring(){
   });
 }
 
+function destroyAllPlanesWithNukeScoring(){
+  const scoreDeltas = { blue: 0, green: 0 };
+
+  points.forEach((p) => {
+    if(!p || !p.isAlive) return;
+    const scoringColor = p.color === "green" ? "blue" : "green";
+    scoreDeltas[scoringColor] += 1;
+    const carriedFlag = p.carriedFlagId ? getFlagById(p.carriedFlagId) : null;
+    if(isFlagActive(carriedFlag)){
+      dropFlagAtPosition(carriedFlag, { x: p.x, y: p.y });
+    }
+    clearFlagFromPlane(p);
+    p.isAlive = false;
+    p.burning = true;
+    ensurePlaneBurningFlame(p);
+    p.collisionX = p.x;
+    p.collisionY = p.y;
+    const crashTimestamp = performance.now();
+    p.crashStart = crashTimestamp;
+    p.killMarkerStart = crashTimestamp;
+    spawnExplosionForPlane(p, p.collisionX, p.collisionY);
+    schedulePlaneFlameFx(p);
+    flyingPoints = flyingPoints.filter(x => x.plane !== p);
+  });
+
+  if(scoreDeltas.blue > 0){
+    addScore("blue", scoreDeltas.blue, { deferVictoryCheck: true });
+  }
+  if(scoreDeltas.green > 0){
+    addScore("green", scoreDeltas.green, { deferVictoryCheck: true });
+  }
+
+  return scoreDeltas;
+}
+
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 
 function advanceTurn(){
@@ -7371,9 +7460,37 @@ function gameDraw(){
 
   drawAimOverlay(rangeTextInfo);
 
-  if(isGameOver && (winnerColor || roundEndedByNuke)){
+  if(isGameOver && (winnerColor || roundEndedByNuke || isDrawGame)){
     gsBoardCtx.font="48px 'Patrick Hand', cursive";
     const textBaselineY = WORLD.height / 2 - 80;
+    const positionEndGamePanel = (metrics) => {
+      if(!shouldShowEndScreen || !endGameDiv) return;
+      const descent = Number.isFinite(metrics.actualBoundingBoxDescent) ? metrics.actualBoundingBoxDescent : 0;
+      const anchorCanvasX = WORLD.width / 2;
+      const anchorCanvasY = textBaselineY + descent + 24;
+      const boardRect = getViewportAdjustedBoundingClientRect(gsBoardCanvas);
+      const boardWidth = Number.isFinite(boardRect.width) ? boardRect.width : 0;
+      const boardHeight = Number.isFinite(boardRect.height) ? boardRect.height : 0;
+      const scaleX = WORLD.width !== 0 ? boardWidth / WORLD.width : 1;
+      const scaleY = WORLD.height !== 0 ? boardHeight / WORLD.height : 1;
+      const anchorClientX = (Number.isFinite(boardRect.left) ? boardRect.left : 0) + anchorCanvasX * scaleX;
+      const anchorClientY = (Number.isFinite(boardRect.top) ? boardRect.top : 0) + anchorCanvasY * scaleY;
+
+      if(endGameDiv.style.display !== "block"){
+        endGameDiv.style.display = "block";
+      }
+
+      const panelWidth = endGameDiv.offsetWidth || 0;
+      const targetLeft = Math.round(anchorClientX - panelWidth / 2);
+      const targetTop = Math.round(anchorClientY);
+
+      if(Number.isFinite(targetLeft)){
+        endGameDiv.style.left = `${targetLeft}px`;
+      }
+      if(Number.isFinite(targetTop)){
+        endGameDiv.style.top = `${targetTop}px`;
+      }
+    };
     if(roundEndedByNuke){
       const lines = ["No one survived.", "No one won the round."];
       gsBoardCtx.fillStyle = "#ffffff";
@@ -7384,6 +7501,14 @@ function gameDraw(){
         const lineY = textBaselineY + index * 52;
         gsBoardCtx.fillText(line, textX, lineY);
       });
+    } else if(isDrawGame){
+      gsBoardCtx.fillStyle = "#ffffff";
+      const text = "Игра окончена. Ничья.";
+      const metrics = gsBoardCtx.measureText(text);
+      const w = metrics.width;
+      const textX = (WORLD.width - w) / 2;
+      gsBoardCtx.fillText(text, textX, textBaselineY);
+      positionEndGamePanel(metrics);
     } else {
       gsBoardCtx.fillStyle= colorFor(winnerColor);
       const winnerName= `${winnerColor.charAt(0).toUpperCase() + winnerColor.slice(1)}`;
@@ -7394,38 +7519,11 @@ function gameDraw(){
       const w = metrics.width;
       const textX = (WORLD.width - w) / 2;
       gsBoardCtx.fillText(text, textX, textBaselineY);
-
-      if(shouldShowEndScreen && endGameDiv){
-        const descent = Number.isFinite(metrics.actualBoundingBoxDescent) ? metrics.actualBoundingBoxDescent : 0;
-        const anchorCanvasX = WORLD.width / 2;
-        const anchorCanvasY = textBaselineY + descent + 24;
-        const boardRect = getViewportAdjustedBoundingClientRect(gsBoardCanvas);
-        const boardWidth = Number.isFinite(boardRect.width) ? boardRect.width : 0;
-        const boardHeight = Number.isFinite(boardRect.height) ? boardRect.height : 0;
-        const scaleX = WORLD.width !== 0 ? boardWidth / WORLD.width : 1;
-        const scaleY = WORLD.height !== 0 ? boardHeight / WORLD.height : 1;
-        const anchorClientX = (Number.isFinite(boardRect.left) ? boardRect.left : 0) + anchorCanvasX * scaleX;
-        const anchorClientY = (Number.isFinite(boardRect.top) ? boardRect.top : 0) + anchorCanvasY * scaleY;
-
-        if(endGameDiv.style.display !== "block"){
-          endGameDiv.style.display = "block";
-        }
-
-        const panelWidth = endGameDiv.offsetWidth || 0;
-        const targetLeft = Math.round(anchorClientX - panelWidth / 2);
-        const targetTop = Math.round(anchorClientY);
-
-        if(Number.isFinite(targetLeft)){
-          endGameDiv.style.left = `${targetLeft}px`;
-        }
-        if(Number.isFinite(targetTop)){
-          endGameDiv.style.top = `${targetTop}px`;
-        }
-      }
+      positionEndGamePanel(metrics);
     }
   }
 
-  if(endGameDiv && (!shouldShowEndScreen || !isGameOver || !winnerColor || roundEndedByNuke)){
+  if(endGameDiv && (!shouldShowEndScreen || !isGameOver || (!winnerColor && !isDrawGame) || roundEndedByNuke)){
     if(endGameDiv.style.display !== "none"){
       endGameDiv.style.display = "none";
     }
@@ -8722,6 +8820,11 @@ function checkVictory(){
   const blueAlive  = points.filter(p=>p.isAlive && p.color==="blue").length;
   if(isGameOver) return;
 
+  if(blueScore >= POINTS_TO_WIN && greenScore >= POINTS_TO_WIN){
+    lockInDraw({ showEndScreen: true });
+    return;
+  }
+
   const canContinueSeries = blueScore < POINTS_TO_WIN && greenScore < POINTS_TO_WIN;
 
   if(greenAlive === 0){
@@ -9230,7 +9333,7 @@ function startNewRound(){
   suppressAutoRandomMapForNextRound = false;
   cleanupGreenCrashFx();
   endGameDiv.style.display = "none";
-  isGameOver=false; winnerColor=null; roundEndedByNuke = false;
+  isGameOver=false; winnerColor=null; isDrawGame = false; roundEndedByNuke = false;
   awaitingFlightResolution = false;
   pendingRoundTransitionDelay = null;
   pendingRoundTransitionStart = 0;
