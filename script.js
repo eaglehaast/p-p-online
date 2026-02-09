@@ -9238,7 +9238,6 @@ function startNewRound(){
   turnIndex = lastFirstTurn;
   turnAdvanceCount = 0;
   resetCargoState();
-  resetInventoryState();
 
   roundNumber++;
   roundTextTimer = 120;
@@ -9321,7 +9320,6 @@ function resetPlanePositionsForCurrentMap(){
   awaitingFlightResolution = false;
   aaUnits = [];
   resetCargoState();
-  resetInventoryState();
 
   points = [];
   initPoints();
