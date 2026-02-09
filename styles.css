@@ -1422,10 +1422,10 @@ body, button {
 #boardDimmerLayer {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.75);
   opacity: 0;
   pointer-events: none;
-  z-index: 17;
+  z-index: 150;
   transition: opacity 0.15s ease;
   --dimmer-field-left: var(--field-left);
   --dimmer-field-top: var(--field-top);
