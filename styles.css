@@ -327,6 +327,18 @@ body, button {
     z-index: 1;
   }
 
+  #inventoryLayer.is-nuke-locked,
+  body.nuke-input-locked #inventoryLayer {
+    pointer-events: none !important;
+  }
+
+  body.nuke-input-locked #instance_reset,
+  body.nuke-input-locked #instance_exit,
+  body.nuke-input-locked #yesButton,
+  body.nuke-input-locked #noButton {
+    pointer-events: none !important;
+  }
+
   .inventory-item-hint.is-visible {
     opacity: 1;
   }

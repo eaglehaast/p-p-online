@@ -672,6 +672,7 @@ const greenPlaneCounter = document.getElementById("gs_planecounter_green");
 const bluePlaneCounter  = document.getElementById("gs_planecounter_blue");
 const blueInventoryHost = document.getElementById("gs_inventory_blue");
 const greenInventoryHost = document.getElementById("gs_inventory_green");
+const inventoryLayer = document.getElementById("inventoryLayer");
 
 // Animated GIF frames for explosion sprites
 const EXPLOSION_BLUE_SPRITES = [
@@ -765,6 +766,7 @@ const inventoryHosts = {
 let nuclearStrikeHideTimeoutId = null;
 let activeNuclearDrag = null;
 let isNuclearStrikeResolutionActive = false;
+let isNukeCinematicActive = false;
 
 const NUCLEAR_STRIKE_STAGES = Object.freeze({
   IDLE: "idle",
@@ -783,10 +785,17 @@ const NUCLEAR_STRIKE_STAGE_TRANSITIONS = Object.freeze({
 });
 
 let nuclearStrikeStage = NUCLEAR_STRIKE_STAGES.IDLE;
-let nuclearStrikeActionLockActive = false;
+
+function applyNuclearStrikeInputLockUi(isLocked){
+  const lockEnabled = Boolean(isLocked);
+  document.body?.classList.toggle("nuke-input-locked", lockEnabled);
+  if(inventoryLayer instanceof HTMLElement){
+    inventoryLayer.classList.toggle("is-nuke-locked", lockEnabled);
+  }
+}
 
 function isNuclearStrikeActionLocked(){
-  return nuclearStrikeActionLockActive;
+  return Boolean(isNuclearStrikeResolutionActive || isNukeCinematicActive);
 }
 
 function updateBoardDimmerMask(){
@@ -857,15 +866,19 @@ function transitionNuclearStrikeStage(nextStage, context = {}){
     case NUCLEAR_STRIKE_STAGES.DRAGGING: {
       updateBoardDimmerMask();
       setBoardDimmerActive(true);
-      nuclearStrikeActionLockActive = false;
+      isNukeCinematicActive = false;
+      applyNuclearStrikeInputLockUi(false);
       break;
     }
     case NUCLEAR_STRIKE_STAGES.ARMED: {
       setBoardDimmerActive(false);
-      nuclearStrikeActionLockActive = true;
+      isNukeCinematicActive = true;
+      applyNuclearStrikeInputLockUi(true);
       break;
     }
     case NUCLEAR_STRIKE_STAGES.CINEMATIC: {
+      isNukeCinematicActive = true;
+      applyNuclearStrikeInputLockUi(true);
       playNuclearStrikeFx();
       window.requestAnimationFrame(() => {
         if(nuclearStrikeStage !== NUCLEAR_STRIKE_STAGES.CINEMATIC){
@@ -880,15 +893,17 @@ function transitionNuclearStrikeStage(nextStage, context = {}){
     }
     case NUCLEAR_STRIKE_STAGES.RESOLVED: {
       clearNuclearStrikeCinematicLayer();
-      nuclearStrikeActionLockActive = false;
       applyNuclearStrikePostResolution();
+      isNukeCinematicActive = false;
+      applyNuclearStrikeInputLockUi(false);
       transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.IDLE, { reason: "resolved" });
       break;
     }
     case NUCLEAR_STRIKE_STAGES.IDLE:
     default: {
       setBoardDimmerActive(false);
-      nuclearStrikeActionLockActive = false;
+      isNukeCinematicActive = false;
+      applyNuclearStrikeInputLockUi(false);
       break;
     }
   }
@@ -1013,6 +1028,10 @@ function isClientPointOverBoard(clientX, clientY){
 }
 
 function onBoardDragOver(event){
+  if(isNuclearStrikeActionLocked()){
+    event.preventDefault();
+    return;
+  }
   if (!activeNuclearDrag) return;
   event.preventDefault();
   if (event.dataTransfer) {
@@ -1021,6 +1040,10 @@ function onBoardDragOver(event){
 }
 
 function onBoardDrop(event){
+  if(isNuclearStrikeActionLocked()){
+    event.preventDefault();
+    return;
+  }
   if (!activeNuclearDrag) return;
   event.preventDefault();
   const { clientX, clientY } = event;
@@ -5636,6 +5659,7 @@ function handleStart(e) {
 }
 
 function handleAAPlacement(x, y){
+  if(isNuclearStrikeActionLocked()) return;
   if(phase !== 'AA_PLACEMENT') return;
   if(!isValidAAPlacement(x,y)) return;
 
@@ -5672,6 +5696,10 @@ function onCanvasPointerDown(e){
 
 function onCanvasPointerMove(e){
   logPointerDebugEvent(e);
+  if(isNuclearStrikeActionLocked()) {
+    gsBoardCanvas.style.cursor = '';
+    return;
+  }
   const { x: designX, y: designY } = getPointerDesignCoords(e);
   const { x, y } = designToBoardCoords(designX, designY);
   if(phase !== 'AA_PLACEMENT'){
@@ -5686,6 +5714,12 @@ function onCanvasPointerMove(e){
 
 function onCanvasPointerUp(e){
   logPointerDebugEvent(e);
+  if(isNuclearStrikeActionLocked()){
+    aaPointerDown = false;
+    aaPlacementPreview = null;
+    aaPreviewTrail = [];
+    return;
+  }
   if(phase !== 'AA_PLACEMENT') return;
   aaPointerDown = false;
   if(!aaPlacementPreview) return;
