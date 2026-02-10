@@ -1420,29 +1420,29 @@ body, button {
 
 /* Board dimmer overlay */
 #boardDimmerLayer {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.78);
   opacity: 0;
   pointer-events: none;
-  z-index: 17;
+  z-index: 9999;
   transition: opacity 0.15s ease;
-  --dimmer-field-left: var(--field-left);
-  --dimmer-field-top: var(--field-top);
-  --dimmer-field-width: var(--field-width);
-  --dimmer-field-height: var(--field-height);
+  --dimmer-hole-left: 0px;
+  --dimmer-hole-top: 0px;
+  --dimmer-hole-width: 0px;
+  --dimmer-hole-height: 0px;
   -webkit-mask:
     linear-gradient(#000 0 0),
     linear-gradient(#000 0 0);
-  -webkit-mask-position: 0 0, var(--dimmer-field-left) var(--dimmer-field-top);
-  -webkit-mask-size: 100% 100%, var(--dimmer-field-width) var(--dimmer-field-height);
+  -webkit-mask-position: 0 0, var(--dimmer-hole-left) var(--dimmer-hole-top);
+  -webkit-mask-size: 100% 100%, var(--dimmer-hole-width) var(--dimmer-hole-height);
   -webkit-mask-repeat: no-repeat;
   -webkit-mask-composite: xor;
   mask:
     linear-gradient(#000 0 0),
     linear-gradient(#000 0 0);
-  mask-position: 0 0, var(--dimmer-field-left) var(--dimmer-field-top);
-  mask-size: 100% 100%, var(--dimmer-field-width) var(--dimmer-field-height);
+  mask-position: 0 0, var(--dimmer-hole-left) var(--dimmer-hole-top);
+  mask-size: 100% 100%, var(--dimmer-hole-width) var(--dimmer-hole-height);
   mask-repeat: no-repeat;
   mask-composite: exclude;
 }
