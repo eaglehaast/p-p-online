@@ -713,9 +713,10 @@ const INVENTORY_ITEM_TYPES = {
   DYNAMITE: "dynamite",
 };
 
-const NUCLEAR_STRIKE_GIF_PATH =
-  "ui_gamescreen/gamescreen_outside/gs_cargoeffects/gs_cagroeffects_nuclearstrike.gif";
-const NUCLEAR_STRIKE_FX_HIDE_DELAY_MS = 2000;
+const NUCLEAR_STRIKE_FX = {
+  path: "ui_gamescreen/gamescreen_outside/gs_cargoeffects/gs_cagroeffects_nuclearstrike.gif",
+  durationMs: 1980,
+};
 
 const INVENTORY_ITEMS = [
   {
@@ -804,7 +805,9 @@ function handleNuclearStrikeReady(){
   nuclearStrikeHideTimeoutId = window.setTimeout(() => {
     nuclearStrikeLayer.hidden = true;
     nuclearStrikeFlash.classList.remove("is-on");
-  }, NUCLEAR_STRIKE_FX_HIDE_DELAY_MS);
+    nuclearStrikeGif.src = INVENTORY_EMPTY_ICON;
+    nuclearStrikeHideTimeoutId = null;
+  }, NUCLEAR_STRIKE_FX.durationMs);
 
   if (DEBUG_NUKE) {
     console.log("[NUKE] fx started");
@@ -829,7 +832,7 @@ function playNuclearStrikeFx(){
 
   nuclearStrikeGif.removeAttribute("src");
   void nuclearStrikeGif.offsetHeight;
-  nuclearStrikeGif.src = `${NUCLEAR_STRIKE_GIF_PATH}?t=${Date.now()}`;
+  nuclearStrikeGif.src = `${NUCLEAR_STRIKE_FX.path}?t=${Date.now()}`;
 }
 
 function removeItemFromInventory(color, type){
@@ -1054,7 +1057,7 @@ const GAME_SCREEN_ASSETS = [
 
   // Inventory icons
   ...INVENTORY_ITEMS.map(item => item.iconPath),
-  NUCLEAR_STRIKE_GIF_PATH,
+  NUCLEAR_STRIKE_FX.path,
 
   // Match score
   "ui_gamescreen/gamescreen_outside/matchscore_blue_corn.png",
