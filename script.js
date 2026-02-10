@@ -836,7 +836,7 @@ function clearNuclearStrikeCinematicLayer(){
 function applyNuclearStrikePostResolution(){
   const matchEnded = maybeLockInMatchOutcome({ showEndScreen: true });
   if(!matchEnded){
-    lockInNoSurvivors({ roundTransitionDelay: MIN_ROUND_TRANSITION_DELAY_MS });
+    lockInNoSurvivors({ roundTransitionDelay: NO_SURVIVORS_ROUND_TRANSITION_DELAY_MS });
   }
 }
 
@@ -7658,13 +7658,29 @@ function gameDraw(){
     };
     if(roundEndedByNuke){
       const lines = ["No one survived.", "No one won the round."];
+      endTextCtx.font = "700 44px 'Patrick Hand', cursive";
+      const lineHeight = 50;
+      const horizontalPadding = 22;
+      const verticalPadding = 18;
+      const maxLineWidth = lines.reduce((maxWidth, line) => {
+        const metrics = endTextCtx.measureText(line);
+        return Math.max(maxWidth, metrics.width);
+      }, 0);
+      const totalTextHeight = lineHeight * lines.length;
+      const panelWidth = maxLineWidth + horizontalPadding * 2;
+      const panelHeight = totalTextHeight + verticalPadding * 2;
+      const panelX = (textAreaWidth - panelWidth) / 2;
+      const panelY = textBaselineY - 40;
+
+      endTextCtx.fillStyle = "rgba(0, 0, 0, 0.75)";
+      endTextCtx.fillRect(panelX, panelY, panelWidth, panelHeight);
+
       endTextCtx.fillStyle = "#ffffff";
       lines.forEach((line, index) => {
         const metrics = endTextCtx.measureText(line);
         const w = metrics.width;
         const textX = (textAreaWidth - w) / 2;
-        const lineY = textBaselineY + index * 52;
-        endTextCtx.strokeText(line, textX, lineY);
+        const lineY = panelY + verticalPadding + 34 + index * lineHeight;
         endTextCtx.fillText(line, textX, lineY);
       });
     } else if(isDrawGame){
@@ -9213,6 +9229,7 @@ function updatePlaneCounterDeaths(color, aliveCount, now){
 }
 
 const MIN_ROUND_TRANSITION_DELAY_MS = 1200;
+const NO_SURVIVORS_ROUND_TRANSITION_DELAY_MS = 1000;
 function getKillMarkerProgress(plane, now = performance.now()){
   if (!plane) {
     return 0;
