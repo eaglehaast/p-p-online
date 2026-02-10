@@ -234,7 +234,7 @@ body, button {
     inset: 0;
     display: contents;
     pointer-events: none;
-    z-index: 26;
+    z-index: 60;
   }
 
   #hudCanvas {
@@ -255,7 +255,7 @@ body, button {
   .inventory-block {
     position: absolute;
     pointer-events: auto;
-    z-index: 25;
+    z-index: 60;
     display: flex;
     align-items: center;
   }
@@ -330,12 +330,18 @@ body, button {
     opacity: 0;
     visibility: hidden;
     transition: opacity 120ms ease;
-    z-index: 40;
+    z-index: 80;
   }
 
   .inventory-item-hint.is-visible {
     opacity: 1;
     visibility: visible;
+  }
+
+  #gs_inventory_green .inventory-item-hint {
+    top: auto;
+    bottom: 100%;
+    transform: translate(-50%, -6px);
   }
 
   #inventoryLayer.is-nuke-locked,
