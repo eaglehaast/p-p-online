@@ -726,6 +726,39 @@ const INVENTORY_ITEM_TYPES = {
   DYNAMITE: "dynamite",
 };
 
+const ITEM_USAGE_TARGETS = Object.freeze({
+  BOARD: "board",
+  SELF_PLANE: "self_plane",
+});
+
+const itemUsageConfig = Object.freeze({
+  [INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE]: {
+    target: ITEM_USAGE_TARGETS.BOARD,
+    hintText: "Drop on the field. Think twice.",
+    requiresDragAndDrop: true,
+  },
+  [INVENTORY_ITEM_TYPES.CROSSHAIR]: {
+    target: ITEM_USAGE_TARGETS.SELF_PLANE,
+    hintText: "Drop on your own plane to sharpen aim.",
+    requiresDragAndDrop: true,
+  },
+  [INVENTORY_ITEM_TYPES.FUEL]: {
+    target: ITEM_USAGE_TARGETS.SELF_PLANE,
+    hintText: "Drop on your own plane to refuel.",
+    requiresDragAndDrop: true,
+  },
+  [INVENTORY_ITEM_TYPES.MINE]: {
+    target: ITEM_USAGE_TARGETS.BOARD,
+    hintText: "",
+    requiresDragAndDrop: false,
+  },
+  [INVENTORY_ITEM_TYPES.DYNAMITE]: {
+    target: ITEM_USAGE_TARGETS.BOARD,
+    hintText: "",
+    requiresDragAndDrop: false,
+  },
+});
+
 const NUCLEAR_STRIKE_FX = {
   path: "ui_gamescreen/gamescreen_outside/gs_cargoeffects/gs_cagroeffects_nuclearstrike.gif",
   durationMs: 1980,
@@ -1269,6 +1302,38 @@ function removeItemFromInventory(color, type){
   syncInventoryUI(color);
 }
 
+function getItemUsageConfig(type){
+  if(!type) return null;
+  return itemUsageConfig[type] ?? null;
+}
+
+function getPlaneAtBoardPoint(color, x, y){
+  if(!color || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return points.find((plane) =>
+    plane?.color === color
+    && plane.isAlive
+    && !plane.burning
+    && Math.hypot(plane.x - x, plane.y - y) <= PLANE_TOUCH_RADIUS
+  ) ?? null;
+}
+
+function applyItemToOwnPlane(type, color, plane){
+  if(!plane) return false;
+  plane.inventoryEffects = plane.inventoryEffects || {};
+
+  if(type === INVENTORY_ITEM_TYPES.CROSSHAIR){
+    plane.inventoryEffects.crosshair = true;
+    return true;
+  }
+
+  if(type === INVENTORY_ITEM_TYPES.FUEL){
+    plane.inventoryEffects.fuel = true;
+    return true;
+  }
+
+  return false;
+}
+
 function onInventoryItemDragStart(event){
   if(isNuclearStrikeActionLocked()){
     event.preventDefault();
@@ -1278,7 +1343,8 @@ function onInventoryItemDragStart(event){
   if(!(target instanceof HTMLElement)) return;
   const type = target.dataset.itemType;
   const color = target.dataset.itemColor;
-  if (type !== INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE) {
+  const usageConfig = getItemUsageConfig(type);
+  if (!usageConfig?.requiresDragAndDrop) {
     event.preventDefault();
     return;
   }
@@ -1290,6 +1356,7 @@ function onInventoryItemDragStart(event){
   activeNuclearDrag = {
     color,
     type,
+    usageTarget: usageConfig.target,
     consumed: false,
   };
   if (event.dataTransfer) {
@@ -1299,9 +1366,11 @@ function onInventoryItemDragStart(event){
       event.dataTransfer.setDragImage(target, target.width / 2, target.height / 2);
     }
   }
-  updateBoardDimmerMask();
-  transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.DRAGGING, { reason: "drag start" });
-  if (DEBUG_NUKE) {
+  if(type === INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE){
+    updateBoardDimmerMask();
+    transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.DRAGGING, { reason: "drag start" });
+  }
+  if (DEBUG_NUKE && type === INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE) {
     console.log("[NUKE] drag start");
   }
 }
@@ -1345,13 +1414,41 @@ function onBoardDrop(event){
     }
     return;
   }
-  removeItemFromInventory(activeNuclearDrag.color, activeNuclearDrag.type);
-  activeNuclearDrag.consumed = true;
-  transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.ARMED, { reason: "drop accepted" });
-  if (DEBUG_NUKE) {
-    console.log(`[NUKE] drop ok at client(${Math.round(clientX)}, ${Math.round(clientY)})`);
+  const usageConfig = getItemUsageConfig(activeNuclearDrag.type);
+  if(!usageConfig){
+    cancelActiveNuclearDrag("drop without config");
+    return;
   }
-  transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.CINEMATIC, { reason: "drop accepted" });
+
+  if(usageConfig.target === ITEM_USAGE_TARGETS.BOARD){
+    removeItemFromInventory(activeNuclearDrag.color, activeNuclearDrag.type);
+    activeNuclearDrag.consumed = true;
+    if(activeNuclearDrag.type === INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE){
+      transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.ARMED, { reason: "drop accepted" });
+      if (DEBUG_NUKE) {
+        console.log(`[NUKE] drop ok at client(${Math.round(clientX)}, ${Math.round(clientY)})`);
+      }
+      transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.CINEMATIC, { reason: "drop accepted" });
+    }
+    cancelActiveNuclearDrag("dropped");
+    return;
+  }
+
+  if(usageConfig.target === ITEM_USAGE_TARGETS.SELF_PLANE){
+    const { x: designX, y: designY } = toDesignCoords(clientX, clientY);
+    const { x: boardX, y: boardY } = designToBoardCoords(designX, designY);
+    const ownPlane = getPlaneAtBoardPoint(activeNuclearDrag.color, boardX, boardY);
+    if(!ownPlane){
+      cancelActiveNuclearDrag("self target missed");
+      return;
+    }
+    const applied = applyItemToOwnPlane(activeNuclearDrag.type, activeNuclearDrag.color, ownPlane);
+    if(applied){
+      removeItemFromInventory(activeNuclearDrag.color, activeNuclearDrag.type);
+      activeNuclearDrag.consumed = true;
+    }
+  }
+
   cancelActiveNuclearDrag("dropped");
 }
 
@@ -1386,10 +1483,12 @@ function syncInventoryUI(color){
     if (!hasItem) {
       img.classList.add("inventory-item--ghost");
     }
-    if (hasItem && slot.type === INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE) {
+    const usageConfig = getItemUsageConfig(slot.type);
+    if (hasItem && usageConfig?.requiresDragAndDrop) {
       const showHint = () => {
         const state = inventoryHintState[color];
         if (!state) return;
+        state.text = usageConfig.hintText || "";
         state.visible = true;
       };
       const hideHint = () => {
@@ -1416,7 +1515,7 @@ function syncInventoryUI(color){
     }
     host.appendChild(slotContainer);
 
-    if (slot.type === INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE) {
+    if (usageConfig?.hintText) {
       const state = inventoryHintState[color];
       if (state) {
         const slotRect = getVirtualRectFromDom(slotContainer, gsFrameEl);
@@ -1425,7 +1524,7 @@ function syncInventoryUI(color){
           state.anchorY = slotRect.y + slotRect.height / 2;
         }
         state.color = color;
-        state.text = hasItem ? "Drop on the field. Think twice." : "";
+        state.text = hasItem ? usageConfig.hintText : "";
         state.visible = hasItem ? state.visible : false;
       }
     }
