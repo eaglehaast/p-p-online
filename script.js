@@ -766,6 +766,29 @@ let nuclearStrikeHideTimeoutId = null;
 let activeNuclearDrag = null;
 let isNuclearStrikeResolutionActive = false;
 
+const NUCLEAR_STRIKE_STAGES = Object.freeze({
+  IDLE: "idle",
+  DRAGGING: "dragging",
+  ARMED: "armed",
+  CINEMATIC: "cinematic",
+  RESOLVED: "resolved",
+});
+
+const NUCLEAR_STRIKE_STAGE_TRANSITIONS = Object.freeze({
+  [NUCLEAR_STRIKE_STAGES.IDLE]: [NUCLEAR_STRIKE_STAGES.DRAGGING],
+  [NUCLEAR_STRIKE_STAGES.DRAGGING]: [NUCLEAR_STRIKE_STAGES.IDLE, NUCLEAR_STRIKE_STAGES.ARMED],
+  [NUCLEAR_STRIKE_STAGES.ARMED]: [NUCLEAR_STRIKE_STAGES.CINEMATIC],
+  [NUCLEAR_STRIKE_STAGES.CINEMATIC]: [NUCLEAR_STRIKE_STAGES.RESOLVED],
+  [NUCLEAR_STRIKE_STAGES.RESOLVED]: [NUCLEAR_STRIKE_STAGES.IDLE],
+});
+
+let nuclearStrikeStage = NUCLEAR_STRIKE_STAGES.IDLE;
+let nuclearStrikeActionLockActive = false;
+
+function isNuclearStrikeActionLocked(){
+  return nuclearStrikeActionLockActive;
+}
+
 function updateBoardDimmerMask(){
   if (!(boardDimmerLayer instanceof HTMLElement)) return;
   if (!(gsBoardCanvas instanceof HTMLElement)) return;
@@ -788,16 +811,103 @@ function setBoardDimmerActive(isActive){
   boardDimmerLayer.classList.toggle("is-active", Boolean(isActive));
 }
 
+function clearNuclearStrikeCinematicLayer(){
+  if(!(nuclearStrikeLayer instanceof HTMLElement) || !(nuclearStrikeGif instanceof HTMLImageElement) || !(nuclearStrikeFlash instanceof HTMLElement)) {
+    return;
+  }
+  if(nuclearStrikeHideTimeoutId){
+    clearTimeout(nuclearStrikeHideTimeoutId);
+    nuclearStrikeHideTimeoutId = null;
+  }
+  nuclearStrikeLayer.hidden = true;
+  nuclearStrikeFlash.classList.remove("is-on");
+  nuclearStrikeGif.src = INVENTORY_EMPTY_ICON;
+}
+
+function applyNuclearStrikePostResolution(){
+  const matchEnded = maybeLockInMatchOutcome({ showEndScreen: true });
+  if(!matchEnded){
+    lockInNoSurvivors({ roundTransitionDelay: MIN_ROUND_TRANSITION_DELAY_MS });
+  }
+}
+
+function resolveNuclearStrikeSilently(){
+  isNuclearStrikeResolutionActive = true;
+  try {
+    destroyAllPlanesWithNukeScoring();
+  } finally {
+    isNuclearStrikeResolutionActive = false;
+  }
+}
+
+function transitionNuclearStrikeStage(nextStage, context = {}){
+  const currentStage = nuclearStrikeStage;
+  if(currentStage === nextStage) return true;
+  const allowedNextStages = NUCLEAR_STRIKE_STAGE_TRANSITIONS[currentStage] || [];
+  if(!allowedNextStages.includes(nextStage)){
+    if(DEBUG_NUKE){
+      console.warn(`[NUKE] invalid transition ${currentStage} -> ${nextStage}`);
+    }
+    return false;
+  }
+
+  nuclearStrikeStage = nextStage;
+
+  switch(nextStage){
+    case NUCLEAR_STRIKE_STAGES.DRAGGING: {
+      updateBoardDimmerMask();
+      setBoardDimmerActive(true);
+      nuclearStrikeActionLockActive = false;
+      break;
+    }
+    case NUCLEAR_STRIKE_STAGES.ARMED: {
+      setBoardDimmerActive(false);
+      nuclearStrikeActionLockActive = true;
+      break;
+    }
+    case NUCLEAR_STRIKE_STAGES.CINEMATIC: {
+      playNuclearStrikeFx();
+      resolveNuclearStrikeSilently();
+      window.setTimeout(() => {
+        transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.RESOLVED, { reason: "cinematic timeout" });
+      }, NUCLEAR_STRIKE_FX.durationMs);
+      break;
+    }
+    case NUCLEAR_STRIKE_STAGES.RESOLVED: {
+      clearNuclearStrikeCinematicLayer();
+      nuclearStrikeActionLockActive = false;
+      applyNuclearStrikePostResolution();
+      transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.IDLE, { reason: "resolved" });
+      break;
+    }
+    case NUCLEAR_STRIKE_STAGES.IDLE:
+    default: {
+      setBoardDimmerActive(false);
+      nuclearStrikeActionLockActive = false;
+      break;
+    }
+  }
+
+  if(DEBUG_NUKE){
+    const reasonLabel = context?.reason ? ` (${context.reason})` : "";
+    console.log(`[NUKE] stage ${currentStage} -> ${nextStage}${reasonLabel}`);
+  }
+
+  return true;
+}
+
 function cancelActiveNuclearDrag(reason = "cancel"){
   if (!activeNuclearDrag) return;
-  setBoardDimmerActive(false);
   if (!activeNuclearDrag.consumed && DEBUG_NUKE) {
     console.log(`[NUKE] drag ${reason}`);
   }
   activeNuclearDrag = null;
+  if(nuclearStrikeStage === NUCLEAR_STRIKE_STAGES.DRAGGING){
+    transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.IDLE, { reason });
+  }
 }
 
-function handleNuclearStrikeReady(){
+function showNuclearStrikeCinematicLayer(){
   if(!(nuclearStrikeLayer instanceof HTMLElement) || !(nuclearStrikeGif instanceof HTMLImageElement) || !(nuclearStrikeFlash instanceof HTMLElement)) {
     return;
   }
@@ -812,17 +922,12 @@ function handleNuclearStrikeReady(){
     clearTimeout(nuclearStrikeHideTimeoutId);
   }
   nuclearStrikeHideTimeoutId = window.setTimeout(() => {
-    nuclearStrikeLayer.hidden = true;
-    nuclearStrikeFlash.classList.remove("is-on");
-    nuclearStrikeGif.src = INVENTORY_EMPTY_ICON;
-    nuclearStrikeHideTimeoutId = null;
+    clearNuclearStrikeCinematicLayer();
   }, NUCLEAR_STRIKE_FX.durationMs);
 
   if (DEBUG_NUKE) {
     console.log("[NUKE] fx started");
   }
-
-  void resolveNuclearStrikePlaneQueue();
 }
 
 function getRandomInventoryItem(){
@@ -836,12 +941,10 @@ function playNuclearStrikeFx(){
     return;
   }
 
-  nuclearStrikeGif.removeEventListener("load", handleNuclearStrikeReady);
-  nuclearStrikeGif.addEventListener("load", handleNuclearStrikeReady, { once: true });
-
   nuclearStrikeGif.removeAttribute("src");
   void nuclearStrikeGif.offsetHeight;
   nuclearStrikeGif.src = `${NUCLEAR_STRIKE_FX.path}?t=${Date.now()}`;
+  showNuclearStrikeCinematicLayer();
 }
 
 function removeItemFromInventory(color, type){
@@ -855,6 +958,10 @@ function removeItemFromInventory(color, type){
 }
 
 function onInventoryItemDragStart(event){
+  if(isNuclearStrikeActionLocked()){
+    event.preventDefault();
+    return;
+  }
   const target = event.currentTarget;
   if(!(target instanceof HTMLElement)) return;
   const type = target.dataset.itemType;
@@ -881,7 +988,7 @@ function onInventoryItemDragStart(event){
     }
   }
   updateBoardDimmerMask();
-  setBoardDimmerActive(true);
+  transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.DRAGGING, { reason: "drag start" });
   if (DEBUG_NUKE) {
     console.log("[NUKE] drag start");
   }
@@ -920,11 +1027,11 @@ function onBoardDrop(event){
   }
   removeItemFromInventory(activeNuclearDrag.color, activeNuclearDrag.type);
   activeNuclearDrag.consumed = true;
-  setBoardDimmerActive(false);
+  transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.ARMED, { reason: "drop accepted" });
   if (DEBUG_NUKE) {
     console.log(`[NUKE] drop ok at client(${Math.round(clientX)}, ${Math.round(clientY)})`);
   }
-  playNuclearStrikeFx();
+  transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.CINEMATIC, { reason: "drop accepted" });
   cancelActiveNuclearDrag("dropped");
 }
 
@@ -5482,6 +5589,7 @@ function updateBoardCursorForHover(x, y) {
 
 function handleStart(e) {
   e.preventDefault();
+  if(isNuclearStrikeActionLocked()) return;
   if(isGameOver || !gameMode) return;
 
   const currentColor= turnColors[turnIndex];
@@ -5547,6 +5655,7 @@ function updateAAPreviewFromEvent(e){
 
 function onCanvasPointerDown(e){
   logPointerDebugEvent(e);
+  if(isNuclearStrikeActionLocked()) return;
   if(phase === 'AA_PLACEMENT'){
     e.preventDefault();
     aaPointerDown = true;
@@ -7070,67 +7179,6 @@ function destroyAllPlanesWithoutScoring(){
     schedulePlaneFlameFx(p);
     flyingPoints = flyingPoints.filter(x => x.plane !== p);
   });
-}
-
-function destroyPlaneWithoutScoring(plane){
-  if(!plane || !plane.isAlive) return null;
-  const p = plane;
-  const crashTimestamp = performance.now();
-  const carriedFlag = p.carriedFlagId ? getFlagById(p.carriedFlagId) : null;
-  if(isFlagActive(carriedFlag)){
-    dropFlagAtPosition(carriedFlag, { x: p.x, y: p.y });
-  }
-  clearFlagFromPlane(p);
-  p.isAlive = false;
-  p.burning = true;
-  ensurePlaneBurningFlame(p);
-  p.collisionX = p.x;
-  p.collisionY = p.y;
-  p.crashStart = crashTimestamp;
-  p.killMarkerStart = crashTimestamp;
-  const explosionState = spawnExplosionForPlane(p, p.collisionX, p.collisionY);
-  schedulePlaneFlameFx(p);
-  flyingPoints = flyingPoints.filter(x => x.plane !== p);
-  return explosionState;
-}
-
-function getPlaneExplosionDurationMs(explosionState){
-  if(Number.isFinite(explosionState?.ttlMs)){
-    return explosionState.ttlMs;
-  }
-  return EXPLOSION_MIN_DURATION_MS;
-}
-
-async function resolveNuclearStrikePlaneQueue(){
-  const queue = points.filter((p) => p && p.isAlive && (p.color === "blue" || p.color === "green"));
-  if(queue.length === 0){
-    const matchEnded = maybeLockInMatchOutcome({ showEndScreen: true });
-    if(!matchEnded){
-      lockInNoSurvivors({ roundTransitionDelay: MIN_ROUND_TRANSITION_DELAY_MS });
-    }
-    return;
-  }
-
-  isNuclearStrikeResolutionActive = true;
-
-  try {
-    for(const p of queue){
-      if(!p || !p.isAlive) continue;
-      const scoringColor = p.color === "green" ? "blue" : "green";
-      const explosionState = destroyPlaneWithoutScoring(p);
-      if(!explosionState) continue;
-      awardPoint(scoringColor);
-      checkVictory({ deferRoundLock: true });
-      await wait(getPlaneExplosionDurationMs(explosionState));
-    }
-  } finally {
-    isNuclearStrikeResolutionActive = false;
-  }
-
-  const matchEnded = maybeLockInMatchOutcome({ showEndScreen: true });
-  if(!matchEnded){
-    lockInNoSurvivors({ roundTransitionDelay: MIN_ROUND_TRANSITION_DELAY_MS });
-  }
 }
 
 function destroyAllPlanesWithNukeScoring(){
