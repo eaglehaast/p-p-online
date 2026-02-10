@@ -7513,18 +7513,26 @@ function gameDraw(){
   drawAimOverlay(rangeTextInfo);
 
   if(isGameOver && (winnerColor || roundEndedByNuke || isDrawGame)){
-    gsBoardCtx.font="48px 'Patrick Hand', cursive";
-    const textBaselineY = WORLD.height / 2 - 80;
+    const endTextCtx = hudCtx && hudCanvas instanceof HTMLCanvasElement ? hudCtx : gsBoardCtx;
+    const endTextCanvas = hudCtx && hudCanvas instanceof HTMLCanvasElement ? hudCanvas : gsBoardCanvas;
+    const textAreaWidth = endTextCanvas.width;
+    const textAreaHeight = endTextCanvas.height;
+    endTextCtx.save();
+    endTextCtx.setTransform(1, 0, 0, 1, 0, 0);
+    endTextCtx.font = "48px 'Patrick Hand', cursive";
+    endTextCtx.lineWidth = 4;
+    endTextCtx.strokeStyle = "#B22222";
+    const textBaselineY = textAreaHeight / 2 - 80;
     const positionEndGamePanel = (metrics) => {
       if(!shouldShowEndScreen || !endGameDiv) return;
       const descent = Number.isFinite(metrics.actualBoundingBoxDescent) ? metrics.actualBoundingBoxDescent : 0;
-      const anchorCanvasX = WORLD.width / 2;
+      const anchorCanvasX = textAreaWidth / 2;
       const anchorCanvasY = textBaselineY + descent + 24;
-      const boardRect = getViewportAdjustedBoundingClientRect(gsBoardCanvas);
+      const boardRect = getViewportAdjustedBoundingClientRect(endTextCanvas);
       const boardWidth = Number.isFinite(boardRect.width) ? boardRect.width : 0;
       const boardHeight = Number.isFinite(boardRect.height) ? boardRect.height : 0;
-      const scaleX = WORLD.width !== 0 ? boardWidth / WORLD.width : 1;
-      const scaleY = WORLD.height !== 0 ? boardHeight / WORLD.height : 1;
+      const scaleX = textAreaWidth !== 0 ? boardWidth / textAreaWidth : 1;
+      const scaleY = textAreaHeight !== 0 ? boardHeight / textAreaHeight : 1;
       const anchorClientX = (Number.isFinite(boardRect.left) ? boardRect.left : 0) + anchorCanvasX * scaleX;
       const anchorClientY = (Number.isFinite(boardRect.top) ? boardRect.top : 0) + anchorCanvasY * scaleY;
 
@@ -7545,34 +7553,38 @@ function gameDraw(){
     };
     if(roundEndedByNuke){
       const lines = ["No one survived.", "No one won the round."];
-      gsBoardCtx.fillStyle = "#ffffff";
+      endTextCtx.fillStyle = "#ffffff";
       lines.forEach((line, index) => {
-        const metrics = gsBoardCtx.measureText(line);
+        const metrics = endTextCtx.measureText(line);
         const w = metrics.width;
-        const textX = (WORLD.width - w) / 2;
+        const textX = (textAreaWidth - w) / 2;
         const lineY = textBaselineY + index * 52;
-        gsBoardCtx.fillText(line, textX, lineY);
+        endTextCtx.strokeText(line, textX, lineY);
+        endTextCtx.fillText(line, textX, lineY);
       });
     } else if(isDrawGame){
-      gsBoardCtx.fillStyle = "#ffffff";
+      endTextCtx.fillStyle = "#ffffff";
       const text = "Игра окончена. Ничья.";
-      const metrics = gsBoardCtx.measureText(text);
+      const metrics = endTextCtx.measureText(text);
       const w = metrics.width;
-      const textX = (WORLD.width - w) / 2;
-      gsBoardCtx.fillText(text, textX, textBaselineY);
+      const textX = (textAreaWidth - w) / 2;
+      endTextCtx.strokeText(text, textX, textBaselineY);
+      endTextCtx.fillText(text, textX, textBaselineY);
       positionEndGamePanel(metrics);
     } else {
-      gsBoardCtx.fillStyle= colorFor(winnerColor);
+      endTextCtx.fillStyle = colorFor(winnerColor);
       const winnerName= `${winnerColor.charAt(0).toUpperCase() + winnerColor.slice(1)}`;
       const text= shouldShowEndScreen
         ? `${winnerName} wins the game!`
         : `${winnerName} wins the round!`;
-      const metrics = gsBoardCtx.measureText(text);
+      const metrics = endTextCtx.measureText(text);
       const w = metrics.width;
-      const textX = (WORLD.width - w) / 2;
-      gsBoardCtx.fillText(text, textX, textBaselineY);
+      const textX = (textAreaWidth - w) / 2;
+      endTextCtx.strokeText(text, textX, textBaselineY);
+      endTextCtx.fillText(text, textX, textBaselineY);
       positionEndGamePanel(metrics);
     }
+    endTextCtx.restore();
   }
 
   if(endGameDiv && (!shouldShowEndScreen || !isGameOver || (!winnerColor && !isDrawGame) || roundEndedByNuke)){
