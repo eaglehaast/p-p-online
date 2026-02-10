@@ -499,6 +499,7 @@ body, button {
   #settingsLayer #flags_preview_on,
   #settingsLayer #cargo_preview_on {
     display: none;
+    opacity: 0.8;
   }
 
   #settingsLayer #arcade_preview_still.arcade-preview--shadow {
