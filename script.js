@@ -8798,11 +8798,10 @@ function drawProjectedPlaneGhost(ctx2d, color){
     return;
   }
 
-  const previousFilter = ctx2d.filter;
-  ctx2d.globalAlpha *= 0.32;
-  ctx2d.filter = "grayscale(100%) brightness(90%)";
+  // Рисуем "призрак" тем же спрайтом самолёта, только с прозрачностью,
+  // чтобы визуально совпадало с ghost-иконками в HUD/инвентаре.
+  ctx2d.globalAlpha *= 0.36;
   ctx2d.drawImage(sprite, -PLANE_DRAW_W / 2, -PLANE_DRAW_H / 2, PLANE_DRAW_W, PLANE_DRAW_H);
-  ctx2d.filter = previousFilter;
 }
 
 function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0) {
