@@ -927,6 +927,16 @@ function cancelActiveNuclearDrag(reason = "cancel"){
   }
 }
 
+function resetInventoryInteractionState(){
+  activeNuclearDrag = null;
+  isNuclearStrikeResolutionActive = false;
+  isNukeCinematicActive = false;
+  nuclearStrikeStage = NUCLEAR_STRIKE_STAGES.IDLE;
+  setBoardDimmerActive(false);
+  applyNuclearStrikeInputLockUi(false);
+  clearNuclearStrikeCinematicLayer();
+}
+
 function showNuclearStrikeCinematicLayer(){
   if(!(nuclearStrikeLayer instanceof HTMLElement) || !(nuclearStrikeGif instanceof HTMLImageElement) || !(nuclearStrikeFlash instanceof HTMLElement)) {
     return;
@@ -9449,6 +9459,8 @@ yesBtn.addEventListener("click", () => {
     greenScore = 0;
     resetMatchScoreAnimations();
     roundNumber = 0;
+    resetInventoryState();
+    resetInventoryInteractionState();
     if(shouldAutoRandomizeMap()){
       if(settings.mapIndex !== RANDOM_MAP_SENTINEL_INDEX){
         setMapIndexAndPersist(getRandomPlayableMapIndex());
