@@ -82,6 +82,18 @@ const planeCtx    = planeCanvas.getContext("2d");
 const hudCanvas = document.getElementById("hudCanvas");
 const hudCtx = hudCanvas instanceof HTMLCanvasElement ? hudCanvas.getContext("2d") : null;
 const boardDimmerLayer = document.getElementById("boardDimmerLayer");
+const boardDimmerHole = document.getElementById("boardDimmerHole");
+
+function supportsBoardDimmerMasking(){
+  if (!(window.CSS && typeof window.CSS.supports === "function")) return false;
+  const standardMask = CSS.supports("mask-composite", "exclude");
+  const webkitMask = CSS.supports("-webkit-mask-composite", "xor");
+  return Boolean(standardMask || webkitMask);
+}
+
+if (boardDimmerLayer instanceof HTMLElement && !supportsBoardDimmerMasking()) {
+  boardDimmerLayer.classList.add("board-dimmer--fallback");
+}
 
 function logEndGameAction(action){
   if (!DEBUG_ENDGAME) return;
@@ -810,6 +822,13 @@ function updateBoardDimmerMask(){
   boardDimmerLayer.style.setProperty("--dimmer-hole-top", `${top}px`);
   boardDimmerLayer.style.setProperty("--dimmer-hole-width", `${width}px`);
   boardDimmerLayer.style.setProperty("--dimmer-hole-height", `${height}px`);
+
+  if (boardDimmerHole instanceof HTMLElement) {
+    boardDimmerHole.style.left = `${left}px`;
+    boardDimmerHole.style.top = `${top}px`;
+    boardDimmerHole.style.width = `${width}px`;
+    boardDimmerHole.style.height = `${height}px`;
+  }
 }
 
 function setBoardDimmerActive(isActive){
