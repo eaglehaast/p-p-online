@@ -769,23 +769,32 @@ let isNuclearStrikeResolutionActive = false;
 function updateBoardDimmerMask(){
   if (!(boardDimmerLayer instanceof HTMLElement)) return;
   if (!(gsBoardCanvas instanceof HTMLElement)) return;
-  const container = gsFrameEl instanceof HTMLElement ? gsFrameEl : gsBoardCanvas.offsetParent;
-  if (!(container instanceof HTMLElement)) return;
   const boardRect = gsBoardCanvas.getBoundingClientRect();
-  const containerRect = container.getBoundingClientRect();
-  const left = Math.round(boardRect.left - containerRect.left);
-  const top = Math.round(boardRect.top - containerRect.top);
+  const left = Math.round(boardRect.left);
+  const top = Math.round(boardRect.top);
   const width = Math.round(boardRect.width);
   const height = Math.round(boardRect.height);
-  boardDimmerLayer.style.setProperty("--dimmer-field-left", `${left}px`);
-  boardDimmerLayer.style.setProperty("--dimmer-field-top", `${top}px`);
-  boardDimmerLayer.style.setProperty("--dimmer-field-width", `${width}px`);
-  boardDimmerLayer.style.setProperty("--dimmer-field-height", `${height}px`);
+  boardDimmerLayer.style.setProperty("--dimmer-hole-left", `${left}px`);
+  boardDimmerLayer.style.setProperty("--dimmer-hole-top", `${top}px`);
+  boardDimmerLayer.style.setProperty("--dimmer-hole-width", `${width}px`);
+  boardDimmerLayer.style.setProperty("--dimmer-hole-height", `${height}px`);
 }
 
 function setBoardDimmerActive(isActive){
   if (!(boardDimmerLayer instanceof HTMLElement)) return;
+  if (isActive) {
+    updateBoardDimmerMask();
+  }
   boardDimmerLayer.classList.toggle("is-active", Boolean(isActive));
+}
+
+function cancelActiveNuclearDrag(reason = "cancel"){
+  if (!activeNuclearDrag) return;
+  setBoardDimmerActive(false);
+  if (!activeNuclearDrag.consumed && DEBUG_NUKE) {
+    console.log(`[NUKE] drag ${reason}`);
+  }
+  activeNuclearDrag = null;
 }
 
 function handleNuclearStrikeReady(){
@@ -879,12 +888,7 @@ function onInventoryItemDragStart(event){
 }
 
 function onInventoryItemDragEnd(){
-  if (!activeNuclearDrag) return;
-  setBoardDimmerActive(false);
-  if (!activeNuclearDrag.consumed && DEBUG_NUKE) {
-    console.log("[NUKE] drag cancelled");
-  }
-  activeNuclearDrag = null;
+  cancelActiveNuclearDrag("ended");
 }
 
 function isClientPointOverBoard(clientX, clientY){
@@ -921,7 +925,7 @@ function onBoardDrop(event){
     console.log(`[NUKE] drop ok at client(${Math.round(clientX)}, ${Math.round(clientY)})`);
   }
   playNuclearStrikeFx();
-  activeNuclearDrag = null;
+  cancelActiveNuclearDrag("dropped");
 }
 
 function syncInventoryUI(color){
@@ -5583,7 +5587,9 @@ gsBoardCanvas.addEventListener("pointerup", onCanvasPointerUp);
 gsBoardCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; aaPointerDown = false; aaPreviewTrail = []; });
 gsBoardCanvas.addEventListener("dragover", onBoardDragOver);
 gsBoardCanvas.addEventListener("drop", onBoardDrop);
-
+window.addEventListener("dragend", () => cancelActiveNuclearDrag("ended outside board"));
+window.addEventListener("drop", () => cancelActiveNuclearDrag("dropped outside board"));
+window.addEventListener("dragcancel", () => cancelActiveNuclearDrag("cancelled"));
 
 function isValidAAPlacement(x,y){
   // Allow Anti-Aircraft placement anywhere within the player's half of the field.
@@ -9941,6 +9947,10 @@ async function syncLayoutAndField(reason = "sync") {
       height: rect.height
     };
   };
+
+  if (activeNuclearDrag) {
+    updateBoardDimmerMask();
+  }
 
   if (DEBUG_RESIZE) {
     console.log('Layout rects after resize', {
