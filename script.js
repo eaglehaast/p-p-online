@@ -1336,19 +1336,28 @@ function getPlaneAtBoardPoint(color, x, y){
 
 function applyItemToOwnPlane(type, color, plane){
   if(!plane) return false;
-  plane.inventoryEffects = plane.inventoryEffects || {};
-
-  if(type === INVENTORY_ITEM_TYPES.CROSSHAIR){
-    plane.inventoryEffects.crosshair = true;
-    return true;
-  }
-
-  if(type === INVENTORY_ITEM_TYPES.FUEL){
-    plane.inventoryEffects.fuel = true;
+  if(type === INVENTORY_ITEM_TYPES.CROSSHAIR || type === INVENTORY_ITEM_TYPES.FUEL){
+    plane.activeTurnBuff = type;
     return true;
   }
 
   return false;
+}
+
+function getPlaneActiveTurnBuff(plane){
+  if(!plane) return null;
+  return plane.activeTurnBuff === INVENTORY_ITEM_TYPES.CROSSHAIR || plane.activeTurnBuff === INVENTORY_ITEM_TYPES.FUEL
+    ? plane.activeTurnBuff
+    : null;
+}
+
+function getEffectiveFlightRangeCells(plane){
+  const baseRange = settings.flightRangeCells;
+  const activeTurnBuff = getPlaneActiveTurnBuff(plane);
+  if(activeTurnBuff === INVENTORY_ITEM_TYPES.FUEL){
+    return baseRange * 2;
+  }
+  return baseRange;
 }
 
 function getPendingInventoryTargetPlaneAt(x, y){
@@ -4265,6 +4274,14 @@ function getFieldOffsetsInCanvasSpace(canvas, fallbackScaleX = 1, fallbackScaleY
 
 // Sprite used for the aiming arrow
 const { img: arrowSprite } = loadImageAsset("sprite_ copy.png", GAME_PRELOAD_LABEL);
+const { img: crosshairIconSprite } = loadImageAsset(
+  "ui_gamescreen/gamescreen_outside/gs_icon_prototypes/gs_cargoicon_crosshair.png",
+  GAME_PRELOAD_LABEL
+);
+const { img: fuelIconSprite } = loadImageAsset(
+  "ui_gamescreen/gamescreen_outside/gs_icon_prototypes/gs_cargoicon_fuel_barrel.png",
+  GAME_PRELOAD_LABEL
+);
 arrowSprite?.addEventListener("load", () => {
   console.log("[IMG] load", { label: "arrowSprite", url: arrowSprite.src });
 });
@@ -5538,7 +5555,8 @@ function makePlane(x,y,color,angle){
     prevY: y,
     flagColor:null,
     carriedFlagId: null,
-    flameFxDisabled: false
+    flameFxDisabled: false,
+    activeTurnBuff: null
   };
 }
 
@@ -6446,7 +6464,8 @@ function onHandleUp(){
   const dragAngle = Math.atan2(dy, dx);
 
   // дальность в пикселях
-    const flightDistancePx = settings.flightRangeCells * CELL_SIZE;
+  const effectiveFlightRangeCells = getEffectiveFlightRangeCells(plane);
+  const flightDistancePx = effectiveFlightRangeCells * CELL_SIZE;
   const speedPxPerSec = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
   const scale = dragDistance / MAX_DRAG_DISTANCE;
 
@@ -6464,6 +6483,8 @@ function onHandleUp(){
     lastHitPlane:null,
     lastHitCooldown:0
   });
+
+  plane.activeTurnBuff = null;
 
   if(!hasShotThisRound){
     hasShotThisRound = true;
@@ -7772,6 +7793,10 @@ function destroyAllPlanesWithNukeScoring(){
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 
 function advanceTurn(){
+  points.forEach((plane) => {
+    if(!plane) return;
+    plane.activeTurnBuff = null;
+  });
   turnIndex = (turnIndex + 1) % turnColors.length;
   turnAdvanceCount += 1;
   if(turnAdvanceCount >= 1){
@@ -7998,6 +8023,7 @@ function gameDraw(){
   if(handleCircle.active && handleCircle.pointRef){
 
     const plane = handleCircle.pointRef;
+    const activeTurnBuff = getPlaneActiveTurnBuff(plane);
     let dx = handleCircle.baseX - plane.x;
     let dy = handleCircle.baseY - plane.y;
     let distPx = Math.hypot(dx, dy);
@@ -8006,7 +8032,10 @@ function gameDraw(){
     const clampedDist = Math.min(distPx, MAX_DRAG_DISTANCE);
 
     // use a constant aiming amplitude (in degrees) independent of drag distance
-    const maxAngleDeg = settings.aimingAmplitude * 5;
+    const aimingAmplitude = activeTurnBuff === INVENTORY_ITEM_TYPES.CROSSHAIR
+      ? 0
+      : settings.aimingAmplitude;
+    const maxAngleDeg = aimingAmplitude * 5;
     const maxAngleRad = maxAngleDeg * Math.PI / 180;
 
     // обновляем текущий угол раскачивания
@@ -8085,6 +8114,33 @@ function gameDraw(){
     );
     aimCtx.globalAlpha = arrowAlpha;
     drawArrow(aimCtx, startX, startY, baseDx, baseDy);
+
+    if(activeTurnBuff === INVENTORY_ITEM_TYPES.CROSSHAIR && vdist > 0){
+      const dragAngle = Math.atan2(vdy, vdx);
+      const dragScale = vdist / MAX_DRAG_DISTANCE;
+      const projectedDistancePx = dragScale * getEffectiveFlightRangeCells(plane) * CELL_SIZE;
+      const projectedEndX = plane.x - Math.cos(dragAngle) * projectedDistancePx;
+      const projectedEndY = plane.y - Math.sin(dragAngle) * projectedDistancePx;
+      const projectedPlaneAngle = Math.atan2(-vdy, -vdx) + Math.PI / 2;
+
+      aimCtx.globalAlpha = 0.55;
+      aimCtx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+      aimCtx.lineWidth = 1.2;
+      aimCtx.setLineDash([5, 4]);
+      aimCtx.beginPath();
+      aimCtx.moveTo(plane.x, plane.y);
+      aimCtx.lineTo(projectedEndX, projectedEndY);
+      aimCtx.stroke();
+      aimCtx.setLineDash([]);
+
+      aimCtx.save();
+      aimCtx.globalAlpha = 0.42;
+      aimCtx.translate(projectedEndX, projectedEndY);
+      aimCtx.rotate(projectedPlaneAngle);
+      drawPlaneOutline(aimCtx, plane.color);
+      aimCtx.restore();
+    }
+
     if (DEBUG_AIM) {
       const debugSize = 3 / Math.max(1, VIEW.scaleX, VIEW.scaleY);
       aimCtx.globalAlpha = 1;
@@ -8925,9 +8981,16 @@ function drawPlanesAndTrajectories(){
       if(vdist > MAX_DRAG_DISTANCE){
         vdist = MAX_DRAG_DISTANCE;
       }
-      const cells = (vdist / MAX_DRAG_DISTANCE) * settings.flightRangeCells;
+      const effectiveRangeCells = getEffectiveFlightRangeCells(p);
+      const cells = (vdist / MAX_DRAG_DISTANCE) * effectiveRangeCells;
       const textX = p.x + POINT_RADIUS + 8;
-      rangeTextInfo = { color: colorFor(p.color), cells, x: textX, y: p.y };
+      rangeTextInfo = {
+        color: colorFor(p.color),
+        cells,
+        x: textX,
+        y: p.y,
+        activeTurnBuff: getPlaneActiveTurnBuff(p)
+      };
     }
 
     if(p.flagColor){
@@ -9014,6 +9077,20 @@ function drawAimOverlay(rangeTextInfo) {
   hudCtx.fillText(numText, rangeTextInfo.x, rangeTextInfo.y - 8);
   hudCtx.strokeText("cells", rangeTextInfo.x, rangeTextInfo.y + 8);
   hudCtx.fillText("cells", rangeTextInfo.x, rangeTextInfo.y + 8);
+
+  const iconSize = 12;
+  const iconX = rangeTextInfo.x;
+  const iconY = rangeTextInfo.y + 18;
+  let buffIcon = null;
+  if(rangeTextInfo.activeTurnBuff === INVENTORY_ITEM_TYPES.CROSSHAIR){
+    buffIcon = crosshairIconSprite;
+  } else if(rangeTextInfo.activeTurnBuff === INVENTORY_ITEM_TYPES.FUEL){
+    buffIcon = fuelIconSprite;
+  }
+
+  if(buffIcon && isSpriteReady(buffIcon)){
+    hudCtx.drawImage(buffIcon, iconX, iconY, iconSize, iconSize);
+  }
 
   hudCtx.restore();
 }
