@@ -290,6 +290,12 @@ body, button {
     cursor: grabbing;
   }
 
+  .inventory-item--locked {
+    cursor: not-allowed;
+    opacity: 0.45;
+    filter: grayscale(0.35);
+  }
+
   .inventory-item-count {
     position: absolute;
     top: -4px;

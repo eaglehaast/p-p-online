@@ -834,6 +834,16 @@ const inventoryState = {
   green: [],
 };
 
+const turnInventoryLocked = {
+  blue: false,
+  green: false,
+};
+
+const activeTurnBuffByColor = {
+  blue: null,
+  green: null,
+};
+
 const inventoryHintState = {
   blue: {
     color: "blue",
@@ -873,6 +883,40 @@ function setPendingInventoryUse(nextState){
 
 function cancelPendingInventoryUse(){
   setPendingInventoryUse(null);
+}
+
+function isTurnBuffType(type){
+  return type === INVENTORY_ITEM_TYPES.CROSSHAIR || type === INVENTORY_ITEM_TYPES.FUEL;
+}
+
+function isInventoryActionBlockedForColor(color, type = null){
+  if(!color) return true;
+  if(turnInventoryLocked[color]) return true;
+  if(type && isTurnBuffType(type) && activeTurnBuffByColor[color] && activeTurnBuffByColor[color] !== type){
+    return true;
+  }
+  return false;
+}
+
+function lockInventoryAfterSuccessfulUse(color, type){
+  if(!color) return;
+  turnInventoryLocked[color] = true;
+  if(isTurnBuffType(type)){
+    activeTurnBuffByColor[color] = type;
+  }
+  if(pendingInventoryUse?.color === color){
+    cancelPendingInventoryUse();
+  }
+  syncInventoryUI(color);
+}
+
+function clearTurnBuffForColor(color){
+  if(!color) return;
+  activeTurnBuffByColor[color] = null;
+  points.forEach((plane) => {
+    if(!plane || plane.color !== color) return;
+    plane.activeTurnBuff = null;
+  });
 }
 let isNuclearStrikeResolutionActive = false;
 let isNukeCinematicActive = false;
@@ -1336,8 +1380,10 @@ function getPlaneAtBoardPoint(color, x, y){
 
 function applyItemToOwnPlane(type, color, plane){
   if(!plane) return false;
+  if(isInventoryActionBlockedForColor(color, type)) return false;
   if(type === INVENTORY_ITEM_TYPES.CROSSHAIR || type === INVENTORY_ITEM_TYPES.FUEL){
     plane.activeTurnBuff = type;
+    activeTurnBuffByColor[color] = type;
     return true;
   }
 
@@ -1369,13 +1415,17 @@ function getPendingInventoryTargetPlaneAt(x, y){
 
 function tryApplyPendingInventoryUseAt(x, y){
   if(!pendingInventoryUse) return false;
+  if(isInventoryActionBlockedForColor(pendingInventoryUse.color, pendingInventoryUse.type)){
+    cancelPendingInventoryUse();
+    return true;
+  }
   const targetPlane = getPendingInventoryTargetPlaneAt(x, y);
   if(!targetPlane) return false;
 
   const applied = applyItemToOwnPlane(pendingInventoryUse.type, pendingInventoryUse.color, targetPlane);
   if(applied){
     removeItemFromInventory(pendingInventoryUse.color, pendingInventoryUse.type);
-    cancelPendingInventoryUse();
+    lockInventoryAfterSuccessfulUse(pendingInventoryUse.color, pendingInventoryUse.type);
   }
   return true;
 }
@@ -1396,6 +1446,10 @@ function onInventoryItemDragStart(event){
   }
   const activeColor = turnColors[turnIndex];
   if (color !== activeColor) {
+    event.preventDefault();
+    return;
+  }
+  if (isInventoryActionBlockedForColor(color, type)) {
     event.preventDefault();
     return;
   }
@@ -1465,10 +1519,15 @@ function onBoardDrop(event){
     cancelActiveNuclearDrag("drop without config");
     return;
   }
+  if(isInventoryActionBlockedForColor(activeNuclearDrag.color, activeNuclearDrag.type)){
+    cancelActiveNuclearDrag("blocked by turn lock");
+    return;
+  }
 
   if(usageConfig.target === ITEM_USAGE_TARGETS.BOARD){
     removeItemFromInventory(activeNuclearDrag.color, activeNuclearDrag.type);
     activeNuclearDrag.consumed = true;
+    lockInventoryAfterSuccessfulUse(activeNuclearDrag.color, activeNuclearDrag.type);
     if(activeNuclearDrag.type === INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE){
       transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.ARMED, { reason: "drop accepted" });
       if (DEBUG_NUKE) {
@@ -1492,6 +1551,7 @@ function onBoardDrop(event){
     if(applied){
       removeItemFromInventory(activeNuclearDrag.color, activeNuclearDrag.type);
       activeNuclearDrag.consumed = true;
+      lockInventoryAfterSuccessfulUse(activeNuclearDrag.color, activeNuclearDrag.type);
     }
   }
 
@@ -1528,6 +1588,7 @@ function syncInventoryUI(color){
     const usageConfig = getItemUsageConfig(slot.type);
     const hintText = inventoryHintTexts[slot.type] ?? usageConfig?.hintText ?? "";
     const isInteractiveItem = hasItem && Boolean(usageConfig?.requiresDragAndDrop);
+    const isBlockedForColor = isInventoryActionBlockedForColor(color, slot.type);
 
     slotContainer.className = "inventory-slot";
     img.src = slot.iconPath || INVENTORY_EMPTY_ICON;
@@ -1541,11 +1602,15 @@ function syncInventoryUI(color){
     if (isInteractiveItem) {
       img.dataset.itemType = slot.type;
       img.dataset.itemColor = color;
+      if(isBlockedForColor){
+        img.classList.add("inventory-item--locked");
+      }
       if(isPendingInventoryTargetItem(slot.type)){
         img.draggable = false;
         img.addEventListener("click", () => {
           const activeColor = turnColors[turnIndex];
           if(color !== activeColor) return;
+          if(isInventoryActionBlockedForColor(color, slot.type)) return;
           if(pendingInventoryUse && pendingInventoryUse.color === color && pendingInventoryUse.type === slot.type){
             cancelPendingInventoryUse();
             return;
@@ -1553,10 +1618,14 @@ function syncInventoryUI(color){
           setPendingInventoryUse({ color, type: slot.type });
         });
       } else {
-        img.draggable = true;
-        img.classList.add("inventory-item--draggable");
-        img.addEventListener("dragstart", onInventoryItemDragStart);
-        img.addEventListener("dragend", onInventoryItemDragEnd);
+        if(isBlockedForColor){
+          img.draggable = false;
+        } else {
+          img.draggable = true;
+          img.classList.add("inventory-item--draggable");
+          img.addEventListener("dragstart", onInventoryItemDragStart);
+          img.addEventListener("dragend", onInventoryItemDragEnd);
+        }
       }
 
       if (hintText) {
@@ -1671,6 +1740,10 @@ function giveItem(itemId, qty = 1, opts = { silent: false }){
 function resetInventoryState(){
   inventoryState.blue.length = 0;
   inventoryState.green.length = 0;
+  turnInventoryLocked.blue = false;
+  turnInventoryLocked.green = false;
+  activeTurnBuffByColor.blue = null;
+  activeTurnBuffByColor.green = null;
   pendingInventoryUse = null;
   syncInventoryUI("blue");
   syncInventoryUI("green");
@@ -7793,11 +7866,16 @@ function destroyAllPlanesWithNukeScoring(){
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 
 function advanceTurn(){
-  points.forEach((plane) => {
-    if(!plane) return;
-    plane.activeTurnBuff = null;
-  });
+  const previousColor = turnColors[turnIndex];
+  clearTurnBuffForColor(previousColor);
   turnIndex = (turnIndex + 1) % turnColors.length;
+  const activeColor = turnColors[turnIndex];
+  turnInventoryLocked[activeColor] = false;
+  if(pendingInventoryUse && pendingInventoryUse.color !== activeColor){
+    cancelPendingInventoryUse();
+  }
+  syncInventoryUI("blue");
+  syncInventoryUI("green");
   turnAdvanceCount += 1;
   if(turnAdvanceCount >= 1){
     spawnCargoForTurn();
