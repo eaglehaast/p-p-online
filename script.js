@@ -860,10 +860,6 @@ let nuclearStrikeHideTimeoutId = null;
 let activeNuclearDrag = null;
 let pendingInventoryUse = null;
 
-function isPendingInventoryTargetItem(type){
-  return type === INVENTORY_ITEM_TYPES.CROSSHAIR || type === INVENTORY_ITEM_TYPES.FUEL;
-}
-
 function setPendingInventoryUse(nextState){
   if(nextState && (!nextState.color || !nextState.type)) return;
   pendingInventoryUse = nextState ? { color: nextState.color, type: nextState.type } : null;
@@ -1466,6 +1462,10 @@ function onBoardDrop(event){
     return;
   }
 
+  if(usageConfig.target !== ITEM_USAGE_TARGETS.BOARD){
+    return;
+  }
+
   if(usageConfig.target === ITEM_USAGE_TARGETS.BOARD){
     removeItemFromInventory(activeNuclearDrag.color, activeNuclearDrag.type);
     activeNuclearDrag.consumed = true;
@@ -1480,29 +1480,59 @@ function onBoardDrop(event){
     return;
   }
 
-  if(usageConfig.target === ITEM_USAGE_TARGETS.SELF_PLANE){
-    const { x: designX, y: designY } = toDesignCoords(clientX, clientY);
-    const { x: boardX, y: boardY } = designToBoardCoords(designX, designY);
-    const ownPlane = getPlaneAtBoardPoint(activeNuclearDrag.color, boardX, boardY);
-    if(!ownPlane){
-      cancelActiveNuclearDrag("self target missed");
-      return;
-    }
-    const applied = applyItemToOwnPlane(activeNuclearDrag.type, activeNuclearDrag.color, ownPlane);
-    if(applied){
-      removeItemFromInventory(activeNuclearDrag.color, activeNuclearDrag.type);
-      activeNuclearDrag.consumed = true;
-    }
-  }
-
   cancelActiveNuclearDrag("dropped");
 }
 
+function onSelfPlaneItemDrop(event){
+  if(isNuclearStrikeActionLocked()){
+    event.preventDefault();
+    return;
+  }
+  if(!activeNuclearDrag) return;
+  const usageConfig = getItemUsageConfig(activeNuclearDrag.type);
+  if(usageConfig?.target !== ITEM_USAGE_TARGETS.SELF_PLANE) return;
+
+  event.preventDefault();
+  const { clientX, clientY } = event;
+  if(!isClientPointOverBoard(clientX, clientY)){
+    cancelActiveNuclearDrag("self target outside board");
+    return;
+  }
+
+  const { x: designX, y: designY } = toDesignCoords(clientX, clientY);
+  const { x: boardX, y: boardY } = designToBoardCoords(designX, designY);
+  const ownPlane = getPlaneAtBoardPoint(activeNuclearDrag.color, boardX, boardY);
+  if(!ownPlane){
+    cancelActiveNuclearDrag("self target missed");
+    return;
+  }
+
+  const applied = applyItemToOwnPlane(activeNuclearDrag.type, activeNuclearDrag.color, ownPlane);
+  if(applied){
+    removeItemFromInventory(activeNuclearDrag.color, activeNuclearDrag.type);
+    activeNuclearDrag.consumed = true;
+  }
+  cancelActiveNuclearDrag("self target drop");
+}
+
+function onInventoryDrop(event){
+  if(!activeNuclearDrag) return;
+  const usageConfig = getItemUsageConfig(activeNuclearDrag.type);
+  if(!usageConfig){
+    event.preventDefault();
+    cancelActiveNuclearDrag("drop without config");
+    return;
+  }
+
+  if(usageConfig.target === ITEM_USAGE_TARGETS.SELF_PLANE){
+    onSelfPlaneItemDrop(event);
+    return;
+  }
+
+  onBoardDrop(event);
+}
+
 function syncInventoryUI(color){
-  const inventoryHintTexts = {
-    [INVENTORY_ITEM_TYPES.CROSSHAIR]: "Apply to your planes. Guaranteed hit!",
-    [INVENTORY_ITEM_TYPES.FUEL]: "Apply to your planes. Double flight range!",
-  };
   const host = inventoryHosts[color];
   if(!(host instanceof HTMLElement)) return;
   host.innerHTML = "";
@@ -1526,7 +1556,7 @@ function syncInventoryUI(color){
     const slotContainer = document.createElement("div");
     const img = document.createElement("img");
     const usageConfig = getItemUsageConfig(slot.type);
-    const hintText = inventoryHintTexts[slot.type] ?? usageConfig?.hintText ?? "";
+    const hintText = usageConfig?.hintText ?? "";
     const isInteractiveItem = hasItem && Boolean(usageConfig?.requiresDragAndDrop);
 
     slotContainer.className = "inventory-slot";
@@ -1541,23 +1571,10 @@ function syncInventoryUI(color){
     if (isInteractiveItem) {
       img.dataset.itemType = slot.type;
       img.dataset.itemColor = color;
-      if(isPendingInventoryTargetItem(slot.type)){
-        img.draggable = false;
-        img.addEventListener("click", () => {
-          const activeColor = turnColors[turnIndex];
-          if(color !== activeColor) return;
-          if(pendingInventoryUse && pendingInventoryUse.color === color && pendingInventoryUse.type === slot.type){
-            cancelPendingInventoryUse();
-            return;
-          }
-          setPendingInventoryUse({ color, type: slot.type });
-        });
-      } else {
-        img.draggable = true;
-        img.classList.add("inventory-item--draggable");
-        img.addEventListener("dragstart", onInventoryItemDragStart);
-        img.addEventListener("dragend", onInventoryItemDragEnd);
-      }
+      img.draggable = true;
+      img.classList.add("inventory-item--draggable");
+      img.addEventListener("dragstart", onInventoryItemDragStart);
+      img.addEventListener("dragend", onInventoryItemDragEnd);
 
       if (hintText) {
         const hintEl = document.createElement("span");
@@ -6270,7 +6287,7 @@ gsBoardCanvas.addEventListener("pointermove", onCanvasPointerMove);
 gsBoardCanvas.addEventListener("pointerup", onCanvasPointerUp);
 gsBoardCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; aaPointerDown = false; aaPreviewTrail = []; });
 gsBoardCanvas.addEventListener("dragover", onBoardDragOver);
-gsBoardCanvas.addEventListener("drop", onBoardDrop);
+gsBoardCanvas.addEventListener("drop", onInventoryDrop);
 window.addEventListener("dragend", () => cancelActiveNuclearDrag("ended outside board"));
 window.addEventListener("drop", () => cancelActiveNuclearDrag("dropped outside board"));
 window.addEventListener("dragcancel", () => cancelActiveNuclearDrag("cancelled"));
