@@ -1490,6 +1490,10 @@ function onBoardDrop(event){
 }
 
 function syncInventoryUI(color){
+  const inventoryHintTexts = {
+    [INVENTORY_ITEM_TYPES.CROSSHAIR]: "Apply to your planes. Guaranteed hit!",
+    [INVENTORY_ITEM_TYPES.FUEL]: "Apply to your planes. Double flight range!",
+  };
   const host = inventoryHosts[color];
   if(!(host instanceof HTMLElement)) return;
   host.innerHTML = "";
@@ -1512,6 +1516,10 @@ function syncInventoryUI(color){
     const hasItem = slot.count > 0;
     const slotContainer = document.createElement("div");
     const img = document.createElement("img");
+    const usageConfig = getItemUsageConfig(slot.type);
+    const hintText = inventoryHintTexts[slot.type] ?? usageConfig?.hintText ?? "";
+    const isInteractiveItem = hasItem && Boolean(usageConfig?.requiresDragAndDrop);
+
     slotContainer.className = "inventory-slot";
     img.src = slot.iconPath || INVENTORY_EMPTY_ICON;
     img.alt = "";
@@ -1520,20 +1528,8 @@ function syncInventoryUI(color){
     if (!hasItem) {
       img.classList.add("inventory-item--ghost");
     }
-    const usageConfig = getItemUsageConfig(slot.type);
-    if (hasItem && usageConfig?.requiresDragAndDrop) {
-      const showHint = () => {
-        const state = inventoryHintState[color];
-        if (!state) return;
-        state.text = usageConfig.hintText || "";
-        state.visible = true;
-      };
-      const hideHint = () => {
-        const state = inventoryHintState[color];
-        if (!state) return;
-        state.visible = false;
-      };
 
+    if (isInteractiveItem) {
       img.dataset.itemType = slot.type;
       img.dataset.itemColor = color;
       if(isPendingInventoryTargetItem(slot.type)){
@@ -1553,8 +1549,20 @@ function syncInventoryUI(color){
         img.addEventListener("dragstart", onInventoryItemDragStart);
         img.addEventListener("dragend", onInventoryItemDragEnd);
       }
-      img.addEventListener("mouseenter", showHint);
-      img.addEventListener("mouseleave", hideHint);
+
+      if (hintText) {
+        const hintEl = document.createElement("span");
+        hintEl.className = "inventory-item-hint";
+        hintEl.textContent = hintText;
+        slotContainer.appendChild(hintEl);
+
+        img.addEventListener("mouseenter", () => {
+          hintEl.classList.add("is-visible");
+        });
+        img.addEventListener("mouseleave", () => {
+          hintEl.classList.remove("is-visible");
+        });
+      }
     }
     if(
       hasItem
@@ -1573,18 +1581,10 @@ function syncInventoryUI(color){
     }
     host.appendChild(slotContainer);
 
-    if (usageConfig?.hintText) {
-      const state = inventoryHintState[color];
-      if (state) {
-        const slotRect = getVirtualRectFromDom(slotContainer, gsFrameEl);
-        if (slotRect) {
-          state.anchorX = slotRect.x + slotRect.width / 2;
-          state.anchorY = slotRect.y + slotRect.height / 2;
-        }
-        state.color = color;
-        state.text = hasItem ? usageConfig.hintText : "";
-        state.visible = hasItem ? state.visible : false;
-      }
+    const state = inventoryHintState[color];
+    if (state) {
+      state.visible = false;
+      state.text = "";
     }
   }
 }

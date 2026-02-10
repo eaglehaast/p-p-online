@@ -308,7 +308,34 @@ body, button {
   }
 
   .inventory-item-hint {
-    display: none !important;
+    position: absolute;
+    left: 50%;
+    top: 100%;
+    transform: translate(-50%, 6px);
+    min-width: 140px;
+    max-width: 200px;
+    padding: 5px 8px;
+    border-radius: 7px;
+    border: 2px solid rgba(1, 60, 131, 0.95);
+    background: rgba(255, 255, 255, 0.96);
+    color: #062447;
+    font-family: 'Patrick Hand', cursive;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+    pointer-events: none;
+    white-space: normal;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 120ms ease;
+    z-index: 40;
+  }
+
+  .inventory-item-hint.is-visible {
+    opacity: 1;
+    visibility: visible;
   }
 
   #inventoryLayer.is-nuke-locked,
