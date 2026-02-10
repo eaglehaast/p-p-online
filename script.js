@@ -801,6 +801,23 @@ const inventoryState = {
   green: [],
 };
 
+const inventoryHintState = {
+  blue: {
+    color: "blue",
+    text: "",
+    visible: false,
+    anchorX: 0,
+    anchorY: 0,
+  },
+  green: {
+    color: "green",
+    text: "",
+    visible: false,
+    anchorX: 0,
+    anchorY: 0,
+  },
+};
+
 const inventoryHosts = {
   blue: blueInventoryHost,
   green: greenInventoryHost,
@@ -1370,11 +1387,17 @@ function syncInventoryUI(color){
       img.classList.add("inventory-item--ghost");
     }
     if (hasItem && slot.type === INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE) {
-      const hint = document.createElement("span");
-      const showHint = () => hint.classList.add("is-visible");
-      const hideHint = () => hint.classList.remove("is-visible");
-      hint.className = "inventory-item-hint";
-      hint.textContent = "Drop on the field. Think twice.";
+      const showHint = () => {
+        const state = inventoryHintState[color];
+        if (!state) return;
+        state.visible = true;
+      };
+      const hideHint = () => {
+        const state = inventoryHintState[color];
+        if (!state) return;
+        state.visible = false;
+      };
+
       img.draggable = true;
       img.classList.add("inventory-item--draggable");
       img.dataset.itemType = slot.type;
@@ -1383,9 +1406,6 @@ function syncInventoryUI(color){
       img.addEventListener("dragend", onInventoryItemDragEnd);
       img.addEventListener("mouseenter", showHint);
       img.addEventListener("mouseleave", hideHint);
-      img.addEventListener("dragstart", showHint);
-      img.addEventListener("dragend", hideHint);
-      slotContainer.appendChild(hint);
     }
     slotContainer.appendChild(img);
     if (hasItem) {
@@ -1395,6 +1415,63 @@ function syncInventoryUI(color){
       slotContainer.appendChild(countBadge);
     }
     host.appendChild(slotContainer);
+
+    if (slot.type === INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE) {
+      const state = inventoryHintState[color];
+      if (state) {
+        const slotRect = getVirtualRectFromDom(slotContainer, gsFrameEl);
+        if (slotRect) {
+          state.anchorX = slotRect.x + slotRect.width / 2;
+          state.anchorY = slotRect.y + slotRect.height / 2;
+        }
+        state.color = color;
+        state.text = hasItem ? "Drop on the field. Think twice." : "";
+        state.visible = hasItem ? state.visible : false;
+      }
+    }
+  }
+}
+
+function drawInventoryHintOnHud(ctx) {
+  if (!(ctx instanceof CanvasRenderingContext2D)) return;
+  if (!(hudCanvas instanceof HTMLCanvasElement)) return;
+
+  const scaleX = FRAME_BASE_WIDTH !== 0 ? hudCanvas.width / FRAME_BASE_WIDTH : 1;
+  const scaleY = FRAME_BASE_HEIGHT !== 0 ? hudCanvas.height / FRAME_BASE_HEIGHT : 1;
+
+  const colorStyles = {
+    blue: {
+      fill: "rgba(255, 255, 255, 0.96)",
+      stroke: "rgba(1, 60, 131, 0.95)",
+      yShift: 30,
+    },
+    green: {
+      fill: "rgba(255, 255, 255, 0.96)",
+      stroke: "rgba(95, 130, 55, 0.95)",
+      yShift: -30,
+    },
+  };
+
+  for (const playerColor of ["blue", "green"]) {
+    const state = inventoryHintState[playerColor];
+    if (!state?.visible || !state.text) continue;
+    if (!Number.isFinite(state.anchorX) || !Number.isFinite(state.anchorY)) continue;
+
+    const style = colorStyles[state.color] ?? colorStyles.blue;
+    const canvasX = state.anchorX * scaleX;
+    const canvasY = (state.anchorY + style.yShift) * scaleY;
+
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.font = "700 12px 'Patrick Hand', cursive";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = style.stroke;
+    ctx.fillStyle = style.fill;
+    ctx.strokeText(state.text, canvasX, canvasY);
+    ctx.fillText(state.text, canvasX, canvasY);
+    ctx.restore();
   }
 }
 
@@ -7875,6 +7952,7 @@ function gameDraw(){
   renderScoreboard();
 
   drawAimOverlay(rangeTextInfo);
+  drawInventoryHintOnHud(hudCtx);
 
   const shouldShowNoSurvivorsText = roundEndedByNuke
     && nuclearStrikeTimelineState.currentPhase === NUCLEAR_STRIKE_TIMELINE_PHASES.SHOW_NO_SURVIVORS;
