@@ -831,7 +831,7 @@ function applyNuclearStrikePostResolution(){
   }
 }
 
-function resolveNuclearStrikeSilently(){
+function resolveNuclearStrikePlaneQueue(){
   isNuclearStrikeResolutionActive = true;
   try {
     destroyAllPlanesWithNukeScoring();
@@ -867,7 +867,12 @@ function transitionNuclearStrikeStage(nextStage, context = {}){
     }
     case NUCLEAR_STRIKE_STAGES.CINEMATIC: {
       playNuclearStrikeFx();
-      resolveNuclearStrikeSilently();
+      window.requestAnimationFrame(() => {
+        if(nuclearStrikeStage !== NUCLEAR_STRIKE_STAGES.CINEMATIC){
+          return;
+        }
+        resolveNuclearStrikePlaneQueue();
+      });
       window.setTimeout(() => {
         transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.RESOLVED, { reason: "cinematic timeout" });
       }, NUCLEAR_STRIKE_FX.durationMs);
@@ -7186,6 +7191,7 @@ function destroyAllPlanesWithNukeScoring(){
 
   points.forEach((p) => {
     if(!p || !p.isAlive) return;
+    if(p.color !== "blue" && p.color !== "green") return;
     const scoringColor = p.color === "green" ? "blue" : "green";
     scoreDeltas[scoringColor] += 1;
     const carriedFlag = p.carriedFlagId ? getFlagById(p.carriedFlagId) : null;
@@ -7194,15 +7200,11 @@ function destroyAllPlanesWithNukeScoring(){
     }
     clearFlagFromPlane(p);
     p.isAlive = false;
-    p.burning = true;
-    ensurePlaneBurningFlame(p);
+    p.burning = false;
     p.collisionX = p.x;
     p.collisionY = p.y;
-    const crashTimestamp = performance.now();
-    p.crashStart = crashTimestamp;
-    p.killMarkerStart = crashTimestamp;
-    spawnExplosionForPlane(p, p.collisionX, p.collisionY);
-    schedulePlaneFlameFx(p);
+    p.crashStart = 0;
+    p.killMarkerStart = 0;
     flyingPoints = flyingPoints.filter(x => x.plane !== p);
   });
 
@@ -7212,6 +7214,8 @@ function destroyAllPlanesWithNukeScoring(){
   if(scoreDeltas.green > 0){
     addScore("green", scoreDeltas.green, { deferVictoryCheck: true });
   }
+
+  maybeLockInMatchOutcome({ showEndScreen: true });
 
   return scoreDeltas;
 }
