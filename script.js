@@ -816,6 +816,7 @@ const nuclearStrikeTimelineState = {
   currentPhase: null,
   phaseStartAt: 0,
   scenarioStartAt: 0,
+  totalDurationMs: 0,
   totalElapsedMs: 0,
   phaseElapsedMs: 0,
   scoreDeltas: { blue: 0, green: 0 },
@@ -949,6 +950,7 @@ function resetNukeTimelineState(){
   nuclearStrikeTimelineState.currentPhase = null;
   nuclearStrikeTimelineState.phaseStartAt = 0;
   nuclearStrikeTimelineState.scenarioStartAt = 0;
+  nuclearStrikeTimelineState.totalDurationMs = 0;
   nuclearStrikeTimelineState.totalElapsedMs = 0;
   nuclearStrikeTimelineState.phaseElapsedMs = 0;
   nuclearStrikeTimelineState.scoreDeltas.blue = 0;
@@ -981,6 +983,7 @@ function startNukeTimeline(now = performance.now()){
   resetNukeTimelineState();
   nuclearStrikeTimelineState.isActive = true;
   nuclearStrikeTimelineState.scenarioStartAt = now;
+  nuclearStrikeTimelineState.totalDurationMs = getNukeTimelineTotalDurationMs();
   enterNukeTimelinePhase(NUCLEAR_STRIKE_TIMELINE_PHASES.GIF_PLAY, now);
 }
 
@@ -1010,6 +1013,7 @@ function updateNukeTimeline(now = performance.now()){
 
   const elapsed = Math.max(0, now - nuclearStrikeTimelineState.scenarioStartAt);
   const phaseInfo = getNukeTimelinePhaseByElapsed(elapsed);
+  nuclearStrikeTimelineState.totalDurationMs = getNukeTimelineTotalDurationMs();
   nuclearStrikeTimelineState.totalElapsedMs = elapsed;
 
   if(phaseInfo.phaseName && phaseInfo.phaseName !== nuclearStrikeTimelineState.currentPhase){
@@ -1022,7 +1026,7 @@ function updateNukeTimeline(now = performance.now()){
     applyNukeScoreCountup(now);
   }
 
-  const totalDuration = getNukeTimelineTotalDurationMs();
+  const totalDuration = nuclearStrikeTimelineState.totalDurationMs;
   if(elapsed >= totalDuration && !nuclearStrikeTimelineState.startNewRoundQueued){
     nuclearStrikeTimelineState.startNewRoundQueued = true;
     transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.RESOLVED, { reason: "timeline complete" });
@@ -1065,7 +1069,7 @@ function getNukeTimelineDebugSnapshot(){
     scenarioStartAt: nuclearStrikeTimelineState.scenarioStartAt,
     totalElapsedMs: nuclearStrikeTimelineState.totalElapsedMs,
     phaseElapsedMs: nuclearStrikeTimelineState.phaseElapsedMs,
-    totalDurationMs: getNukeTimelineTotalDurationMs(),
+    totalDurationMs: nuclearStrikeTimelineState.totalDurationMs,
     durations: { ...NUKE_TIMELINE },
     scoreDeltas: { ...nuclearStrikeTimelineState.scoreDeltas },
     awardedScore: { ...nuclearStrikeTimelineState.awardedScore },
@@ -7872,7 +7876,10 @@ function gameDraw(){
 
   drawAimOverlay(rangeTextInfo);
 
-  if(isGameOver && (winnerColor || roundEndedByNuke || isDrawGame)){
+  const shouldShowNoSurvivorsText = roundEndedByNuke
+    && nuclearStrikeTimelineState.currentPhase === NUCLEAR_STRIKE_TIMELINE_PHASES.SHOW_NO_SURVIVORS;
+
+  if(isGameOver && (winnerColor || isDrawGame || shouldShowNoSurvivorsText)){
     const endTextCtx = hudCtx && hudCanvas instanceof HTMLCanvasElement ? hudCtx : gsBoardCtx;
     const endTextCanvas = hudCtx && hudCanvas instanceof HTMLCanvasElement ? hudCanvas : gsBoardCanvas;
     const textAreaWidth = endTextCanvas.width;
@@ -7911,8 +7918,6 @@ function gameDraw(){
         endGameDiv.style.top = `${targetTop}px`;
       }
     };
-    const shouldShowNoSurvivorsText = roundEndedByNuke
-      && nuclearStrikeTimelineState.currentPhase === NUCLEAR_STRIKE_TIMELINE_PHASES.SHOW_NO_SURVIVORS;
     if(shouldShowNoSurvivorsText){
       const lines = ["No one survived.", "No one won the round."];
       endTextCtx.font = "700 44px 'Patrick Hand', cursive";
