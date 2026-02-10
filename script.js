@@ -731,6 +731,37 @@ const NUCLEAR_STRIKE_FX = {
   durationMs: 1980,
 };
 
+const NUCLEAR_STRIKE_TIMELINE_PHASES = Object.freeze({
+  GIF_PLAY: "gif_play",
+  PAUSE_AFTER_GIF: "pause_after_gif",
+  SCORE_COUNTUP: "score_countup",
+  PAUSE_AFTER_SCORE: "pause_after_score",
+  SHOW_NO_SURVIVORS: "show_no_survivors",
+  PAUSE_BEFORE_NEW_ROUND: "pause_before_new_round",
+});
+
+const NUCLEAR_STRIKE_TIMELINE_ORDER = Object.freeze([
+  NUCLEAR_STRIKE_TIMELINE_PHASES.GIF_PLAY,
+  NUCLEAR_STRIKE_TIMELINE_PHASES.PAUSE_AFTER_GIF,
+  NUCLEAR_STRIKE_TIMELINE_PHASES.SCORE_COUNTUP,
+  NUCLEAR_STRIKE_TIMELINE_PHASES.PAUSE_AFTER_SCORE,
+  NUCLEAR_STRIKE_TIMELINE_PHASES.SHOW_NO_SURVIVORS,
+  NUCLEAR_STRIKE_TIMELINE_PHASES.PAUSE_BEFORE_NEW_ROUND,
+]);
+
+const NUCLEAR_STRIKE_TIMELINE_DEFAULTS = Object.freeze({
+  [NUCLEAR_STRIKE_TIMELINE_PHASES.GIF_PLAY]: NUCLEAR_STRIKE_FX.durationMs,
+  [NUCLEAR_STRIKE_TIMELINE_PHASES.PAUSE_AFTER_GIF]: 1000,
+  [NUCLEAR_STRIKE_TIMELINE_PHASES.SCORE_COUNTUP]: 1000,
+  [NUCLEAR_STRIKE_TIMELINE_PHASES.PAUSE_AFTER_SCORE]: 1000,
+  [NUCLEAR_STRIKE_TIMELINE_PHASES.SHOW_NO_SURVIVORS]: 2000,
+  [NUCLEAR_STRIKE_TIMELINE_PHASES.PAUSE_BEFORE_NEW_ROUND]: 1000,
+});
+
+const NUKE_TIMELINE = {
+  ...NUCLEAR_STRIKE_TIMELINE_DEFAULTS,
+};
+
 const INVENTORY_ITEMS = [
   {
     type: INVENTORY_ITEM_TYPES.MINE,
@@ -779,6 +810,19 @@ let nuclearStrikeHideTimeoutId = null;
 let activeNuclearDrag = null;
 let isNuclearStrikeResolutionActive = false;
 let isNukeCinematicActive = false;
+
+const nuclearStrikeTimelineState = {
+  isActive: false,
+  currentPhase: null,
+  phaseStartAt: 0,
+  scenarioStartAt: 0,
+  totalElapsedMs: 0,
+  phaseElapsedMs: 0,
+  scoreDeltas: { blue: 0, green: 0 },
+  awardedScore: { blue: 0, green: 0 },
+  scoreQueueResolved: false,
+  startNewRoundQueued: false,
+};
 
 const NUCLEAR_STRIKE_STAGES = Object.freeze({
   IDLE: "idle",
@@ -852,17 +896,229 @@ function clearNuclearStrikeCinematicLayer(){
   nuclearStrikeGif.src = INVENTORY_EMPTY_ICON;
 }
 
+function getNukePhaseDurationMs(phaseName){
+  const configured = NUKE_TIMELINE[phaseName];
+  if(Number.isFinite(configured) && configured >= 0){
+    return configured;
+  }
+  return NUCLEAR_STRIKE_TIMELINE_DEFAULTS[phaseName] ?? 0;
+}
+
+function getNukeTimelineTotalDurationMs(){
+  return NUCLEAR_STRIKE_TIMELINE_ORDER.reduce((sum, phaseName) => sum + getNukePhaseDurationMs(phaseName), 0);
+}
+
+function getNukeTimelinePhaseStartMs(phaseName){
+  let elapsed = 0;
+  for(const candidate of NUCLEAR_STRIKE_TIMELINE_ORDER){
+    if(candidate === phaseName){
+      return elapsed;
+    }
+    elapsed += getNukePhaseDurationMs(candidate);
+  }
+  return elapsed;
+}
+
+function getNukeTimelinePhaseByElapsed(elapsedMs){
+  const safeElapsed = Math.max(0, elapsedMs);
+  let cursor = 0;
+  for(const phaseName of NUCLEAR_STRIKE_TIMELINE_ORDER){
+    const duration = getNukePhaseDurationMs(phaseName);
+    if(safeElapsed < cursor + duration){
+      return {
+        phaseName,
+        phaseStartOffsetMs: cursor,
+        phaseElapsedMs: safeElapsed - cursor,
+        phaseDurationMs: duration,
+      };
+    }
+    cursor += duration;
+  }
+  const lastPhase = NUCLEAR_STRIKE_TIMELINE_ORDER[NUCLEAR_STRIKE_TIMELINE_ORDER.length - 1] ?? null;
+  const fallbackDuration = lastPhase ? getNukePhaseDurationMs(lastPhase) : 0;
+  return {
+    phaseName: lastPhase,
+    phaseStartOffsetMs: Math.max(0, cursor - fallbackDuration),
+    phaseElapsedMs: fallbackDuration,
+    phaseDurationMs: fallbackDuration,
+  };
+}
+
+function resetNukeTimelineState(){
+  nuclearStrikeTimelineState.isActive = false;
+  nuclearStrikeTimelineState.currentPhase = null;
+  nuclearStrikeTimelineState.phaseStartAt = 0;
+  nuclearStrikeTimelineState.scenarioStartAt = 0;
+  nuclearStrikeTimelineState.totalElapsedMs = 0;
+  nuclearStrikeTimelineState.phaseElapsedMs = 0;
+  nuclearStrikeTimelineState.scoreDeltas.blue = 0;
+  nuclearStrikeTimelineState.scoreDeltas.green = 0;
+  nuclearStrikeTimelineState.awardedScore.blue = 0;
+  nuclearStrikeTimelineState.awardedScore.green = 0;
+  nuclearStrikeTimelineState.scoreQueueResolved = false;
+  nuclearStrikeTimelineState.startNewRoundQueued = false;
+}
+
+function enterNukeTimelinePhase(phaseName, now){
+  nuclearStrikeTimelineState.currentPhase = phaseName;
+  nuclearStrikeTimelineState.phaseStartAt = now;
+  nuclearStrikeTimelineState.phaseElapsedMs = 0;
+  if(phaseName === NUCLEAR_STRIKE_TIMELINE_PHASES.SCORE_COUNTUP && !nuclearStrikeTimelineState.scoreQueueResolved){
+    const deltas = resolveNuclearStrikePlaneQueue();
+    nuclearStrikeTimelineState.scoreDeltas.blue = deltas?.blue ?? 0;
+    nuclearStrikeTimelineState.scoreDeltas.green = deltas?.green ?? 0;
+    nuclearStrikeTimelineState.awardedScore.blue = 0;
+    nuclearStrikeTimelineState.awardedScore.green = 0;
+    nuclearStrikeTimelineState.scoreQueueResolved = true;
+  }
+  if(phaseName === NUCLEAR_STRIKE_TIMELINE_PHASES.SHOW_NO_SURVIVORS){
+    clearNuclearStrikeCinematicLayer();
+    applyNuclearStrikePostResolution();
+  }
+}
+
+function startNukeTimeline(now = performance.now()){
+  resetNukeTimelineState();
+  nuclearStrikeTimelineState.isActive = true;
+  nuclearStrikeTimelineState.scenarioStartAt = now;
+  enterNukeTimelinePhase(NUCLEAR_STRIKE_TIMELINE_PHASES.GIF_PLAY, now);
+}
+
+function applyNukeScoreCountup(now){
+  const phaseStart = nuclearStrikeTimelineState.phaseStartAt;
+  const duration = getNukePhaseDurationMs(NUCLEAR_STRIKE_TIMELINE_PHASES.SCORE_COUNTUP);
+  const progress = duration > 0
+    ? Math.max(0, Math.min(1, (now - phaseStart) / duration))
+    : 1;
+
+  for(const color of ["blue", "green"]){
+    const target = nuclearStrikeTimelineState.scoreDeltas[color] ?? 0;
+    const nextAwarded = Math.floor(target * progress);
+    const alreadyAwarded = nuclearStrikeTimelineState.awardedScore[color] ?? 0;
+    const delta = nextAwarded - alreadyAwarded;
+    if(delta > 0){
+      addScore(color, delta, { deferVictoryCheck: true });
+      nuclearStrikeTimelineState.awardedScore[color] = nextAwarded;
+    }
+  }
+}
+
+function updateNukeTimeline(now = performance.now()){
+  if(!nuclearStrikeTimelineState.isActive || nuclearStrikeStage !== NUCLEAR_STRIKE_STAGES.CINEMATIC){
+    return;
+  }
+
+  const elapsed = Math.max(0, now - nuclearStrikeTimelineState.scenarioStartAt);
+  const phaseInfo = getNukeTimelinePhaseByElapsed(elapsed);
+  nuclearStrikeTimelineState.totalElapsedMs = elapsed;
+
+  if(phaseInfo.phaseName && phaseInfo.phaseName !== nuclearStrikeTimelineState.currentPhase){
+    enterNukeTimelinePhase(phaseInfo.phaseName, now);
+  }
+
+  nuclearStrikeTimelineState.phaseElapsedMs = phaseInfo.phaseElapsedMs;
+
+  if(phaseInfo.phaseName === NUCLEAR_STRIKE_TIMELINE_PHASES.SCORE_COUNTUP){
+    applyNukeScoreCountup(now);
+  }
+
+  const totalDuration = getNukeTimelineTotalDurationMs();
+  if(elapsed >= totalDuration && !nuclearStrikeTimelineState.startNewRoundQueued){
+    nuclearStrikeTimelineState.startNewRoundQueued = true;
+    transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.RESOLVED, { reason: "timeline complete" });
+    startNewRound();
+  }
+}
+
+function getNukePlaneFadeFx(now = performance.now()){
+  if(!isNukeCinematicActive || nuclearStrikeStage !== NUCLEAR_STRIKE_STAGES.CINEMATIC){
+    return { alpha: 1, grayscale: 0, active: false };
+  }
+
+  const fadeStart = NUCLEAR_STRIKE_FX.durationMs * 0.5;
+  const fadeEnd = getNukeTimelinePhaseStartMs(NUCLEAR_STRIKE_TIMELINE_PHASES.SHOW_NO_SURVIVORS);
+  const elapsed = Math.max(0, now - nuclearStrikeTimelineState.scenarioStartAt);
+  const fadeDuration = Math.max(1, fadeEnd - fadeStart);
+  const progress = Math.max(0, Math.min(1, (elapsed - fadeStart) / fadeDuration));
+  const alpha = 1 - 0.9 * progress;
+  const grayscale = Math.round(100 * progress);
+  return {
+    active: progress > 0,
+    alpha,
+    grayscale,
+  };
+}
+
+function isNukeEliminatedPlaneRenderable(plane){
+  if(!plane?.nukeEliminated) return false;
+  if(!nuclearStrikeTimelineState.isActive) return false;
+  const hideFromMs = getNukeTimelinePhaseStartMs(NUCLEAR_STRIKE_TIMELINE_PHASES.SHOW_NO_SURVIVORS);
+  return nuclearStrikeTimelineState.totalElapsedMs < hideFromMs;
+}
+
+function getNukeTimelineDebugSnapshot(){
+  return {
+    stage: nuclearStrikeStage,
+    active: nuclearStrikeTimelineState.isActive,
+    currentPhase: nuclearStrikeTimelineState.currentPhase,
+    phaseStartAt: nuclearStrikeTimelineState.phaseStartAt,
+    scenarioStartAt: nuclearStrikeTimelineState.scenarioStartAt,
+    totalElapsedMs: nuclearStrikeTimelineState.totalElapsedMs,
+    phaseElapsedMs: nuclearStrikeTimelineState.phaseElapsedMs,
+    totalDurationMs: getNukeTimelineTotalDurationMs(),
+    durations: { ...NUKE_TIMELINE },
+    scoreDeltas: { ...nuclearStrikeTimelineState.scoreDeltas },
+    awardedScore: { ...nuclearStrikeTimelineState.awardedScore },
+  };
+}
+
+function ensureNukeDebugApi(){
+  if(typeof window === "undefined") return;
+  window.NUKE_DEBUG = {
+    getTimeline(){
+      return getNukeTimelineDebugSnapshot();
+    },
+    setDuration(phaseName, ms){
+      if(!Object.prototype.hasOwnProperty.call(NUKE_TIMELINE, phaseName)) return false;
+      const safeMs = Number.isFinite(ms) ? Math.max(0, Math.round(ms)) : null;
+      if(safeMs === null) return false;
+      NUKE_TIMELINE[phaseName] = safeMs;
+      return true;
+    },
+    skipTo(phaseName){
+      if(!NUCLEAR_STRIKE_TIMELINE_ORDER.includes(phaseName)) return false;
+      if(nuclearStrikeStage !== NUCLEAR_STRIKE_STAGES.CINEMATIC || !nuclearStrikeTimelineState.isActive){
+        return false;
+      }
+      const phaseOffset = getNukeTimelinePhaseStartMs(phaseName);
+      const now = performance.now();
+      nuclearStrikeTimelineState.scenarioStartAt = now - phaseOffset;
+      updateNukeTimeline(now);
+      return true;
+    },
+    restart(){
+      if(nuclearStrikeStage !== NUCLEAR_STRIKE_STAGES.CINEMATIC){
+        return false;
+      }
+      startNukeTimeline(performance.now());
+      return true;
+    }
+  };
+}
+
+ensureNukeDebugApi();
+
 function applyNuclearStrikePostResolution(){
   const matchEnded = maybeLockInMatchOutcome({ showEndScreen: true });
   if(!matchEnded){
-    lockInNoSurvivors({ roundTransitionDelay: NO_SURVIVORS_ROUND_TRANSITION_DELAY_MS });
+    lockInNoSurvivors();
   }
 }
 
 function resolveNuclearStrikePlaneQueue(){
   isNuclearStrikeResolutionActive = true;
   try {
-    destroyAllPlanesWithNukeScoring();
+    return destroyAllPlanesWithNukeScoring();
   } finally {
     isNuclearStrikeResolutionActive = false;
   }
@@ -899,20 +1155,12 @@ function transitionNuclearStrikeStage(nextStage, context = {}){
       isNukeCinematicActive = true;
       applyNuclearStrikeInputLockUi(true);
       playNuclearStrikeFx();
-      window.requestAnimationFrame(() => {
-        if(nuclearStrikeStage !== NUCLEAR_STRIKE_STAGES.CINEMATIC){
-          return;
-        }
-        resolveNuclearStrikePlaneQueue();
-      });
-      window.setTimeout(() => {
-        transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.RESOLVED, { reason: "cinematic timeout" });
-      }, NUCLEAR_STRIKE_FX.durationMs);
+      startNukeTimeline(performance.now());
       break;
     }
     case NUCLEAR_STRIKE_STAGES.RESOLVED: {
       clearNuclearStrikeCinematicLayer();
-      applyNuclearStrikePostResolution();
+      resetNukeTimelineState();
       isNukeCinematicActive = false;
       applyNuclearStrikeInputLockUi(false);
       transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.IDLE, { reason: "resolved" });
@@ -950,6 +1198,7 @@ function resetInventoryInteractionState(){
   activeNuclearDrag = null;
   isNuclearStrikeResolutionActive = false;
   isNukeCinematicActive = false;
+  resetNukeTimelineState();
   nuclearStrikeStage = NUCLEAR_STRIKE_STAGES.IDLE;
   setBoardDimmerActive(false);
   applyNuclearStrikeInputLockUi(false);
@@ -966,13 +1215,6 @@ function showNuclearStrikeCinematicLayer(){
   nuclearStrikeFlash.classList.remove("is-on");
   void nuclearStrikeFlash.offsetWidth;
   nuclearStrikeFlash.classList.add("is-on");
-
-  if (nuclearStrikeHideTimeoutId) {
-    clearTimeout(nuclearStrikeHideTimeoutId);
-  }
-  nuclearStrikeHideTimeoutId = window.setTimeout(() => {
-    clearNuclearStrikeCinematicLayer();
-  }, NUCLEAR_STRIKE_FX.durationMs);
 
   if (DEBUG_NUKE) {
     console.log("[NUKE] fx started");
@@ -7264,21 +7506,13 @@ function destroyAllPlanesWithNukeScoring(){
     clearFlagFromPlane(p);
     p.isAlive = false;
     p.burning = false;
+    p.nukeEliminated = true;
     p.collisionX = p.x;
     p.collisionY = p.y;
     p.crashStart = 0;
     p.killMarkerStart = 0;
     flyingPoints = flyingPoints.filter(x => x.plane !== p);
   });
-
-  if(scoreDeltas.blue > 0){
-    addScore("blue", scoreDeltas.blue, { deferVictoryCheck: true });
-  }
-  if(scoreDeltas.green > 0){
-    addScore("green", scoreDeltas.green, { deferVictoryCheck: true });
-  }
-
-  maybeLockInMatchOutcome({ showEndScreen: true });
 
   return scoreDeltas;
 }
@@ -7407,6 +7641,8 @@ function gameDraw(){
   drawMapLayer(gsBoardCtx);
   updateCargoState(deltaSec, now);
   drawCargo(gsBoardCtx);
+
+  updateNukeTimeline(now);
 
   // Планирование хода ИИ
   if (!isGameOver
@@ -7675,7 +7911,9 @@ function gameDraw(){
         endGameDiv.style.top = `${targetTop}px`;
       }
     };
-    if(roundEndedByNuke){
+    const shouldShowNoSurvivorsText = roundEndedByNuke
+      && nuclearStrikeTimelineState.currentPhase === NUCLEAR_STRIKE_TIMELINE_PHASES.SHOW_NO_SURVIVORS;
+    if(shouldShowNoSurvivorsText){
       const lines = ["No one survived.", "No one won the round."];
       endTextCtx.font = "700 44px 'Patrick Hand', cursive";
       const lineHeight = 50;
@@ -8135,7 +8373,7 @@ function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0) {
 
 function drawThinPlane(ctx2d, plane, glow = 0) {
   const { x: cx, y: cy, color, angle } = plane;
-  const isGhostState = plane.burning || !plane.isAlive;
+  const isGhostState = plane.burning || (!plane.isAlive && !plane.nukeEliminated);
   const halfPlaneWidth = PLANE_DRAW_W / 2;
   const halfPlaneHeight = PLANE_DRAW_H / 2;
   const flightState = flyingPoints.find(fp => fp.plane === plane) || null;
@@ -8143,7 +8381,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   const smokeAnchor = getPlaneAnchorOffset("smoke");
   const jetAnchor = getPlaneAnchorOffset("jet");
   const idleSmokeDistance = Math.max(0, smokeAnchor.y - PLANE_VFX_IDLE_SMOKE_DELTA_Y);
-  const showEngine = !isGhostState;
+  const showEngine = !isGhostState && !plane.nukeEliminated;
 
   ctx2d.save();
   const shouldSway = plane.isAlive === true
@@ -8196,6 +8434,8 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   ctx2d.shadowBlur = 0;
   ctx2d.filter = "none";
 
+  const nukeFadeFx = getNukePlaneFadeFx();
+  const shouldApplyNukeFade = nukeFadeFx.active && (plane.isAlive || plane.nukeEliminated);
   const previousFilter = ctx2d.filter;
   const baseGhostAlpha = 0.3;
   if (color === "blue") {
@@ -8221,6 +8461,10 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
       ctx2d.globalAlpha *= baseGhostAlpha;
       ctx2d.filter = "grayscale(100%) brightness(90%)";
     }
+    if (shouldApplyNukeFade) {
+      ctx2d.globalAlpha *= nukeFadeFx.alpha;
+      ctx2d.filter = `grayscale(${nukeFadeFx.grayscale}%)`;
+    }
 
     ctx2d.drawImage(bluePlaneImg, -halfPlaneWidth, -halfPlaneHeight, PLANE_DRAW_W, PLANE_DRAW_H);
     ctx2d.filter = previousFilter;
@@ -8237,6 +8481,10 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
     if (isGhostState) {
       ctx2d.globalAlpha *= baseGhostAlpha;
       ctx2d.filter = "grayscale(100%) brightness(90%)";
+    }
+    if (shouldApplyNukeFade) {
+      ctx2d.globalAlpha *= nukeFadeFx.alpha;
+      ctx2d.filter = `grayscale(${nukeFadeFx.grayscale}%)`;
     }
 
     ctx2d.drawImage(greenPlaneImg, -halfPlaneWidth, -halfPlaneHeight, PLANE_DRAW_W, PLANE_DRAW_H);
@@ -8390,7 +8638,7 @@ function drawPlanesAndTrajectories(){
   };
 
   const renderPlane = (p, targetCtx, { allowRangeLabel = false } = {}) => {
-    if(!p.isAlive && !p.burning) return;
+    if(!p.isAlive && !p.burning && !isNukeEliminatedPlaneRenderable(p)) return;
 
     if (debugDrawOrder) {
       const stateLabel = p.isAlive ? (p.burning ? 'burning' : 'alive') : 'crashed';
@@ -9248,7 +9496,6 @@ function updatePlaneCounterDeaths(color, aliveCount, now){
 }
 
 const MIN_ROUND_TRANSITION_DELAY_MS = 1200;
-const NO_SURVIVORS_ROUND_TRANSITION_DELAY_MS = 1000;
 function getKillMarkerProgress(plane, now = performance.now()){
   if (!plane) {
     return 0;
@@ -9561,6 +9808,7 @@ function startNewRound(){
 
   globalFrame=0;
   flyingPoints=[];
+  resetNukeTimelineState();
   hasShotThisRound=false;
   aaUnits = [];
 
