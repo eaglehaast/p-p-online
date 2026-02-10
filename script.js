@@ -7435,6 +7435,133 @@ function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
   return collided;
 }
 
+function isPointInsideFieldBounds(x, y){
+  return (
+    x >= FIELD_LEFT &&
+    x <= FIELD_LEFT + FIELD_WIDTH &&
+    y >= FIELD_TOP &&
+    y <= FIELD_TOP + FIELD_HEIGHT
+  );
+}
+
+function clampSegmentToFieldBounds(start, end){
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const candidates = [];
+  const left = FIELD_LEFT;
+  const right = FIELD_LEFT + FIELD_WIDTH;
+  const top = FIELD_TOP;
+  const bottom = FIELD_TOP + FIELD_HEIGHT;
+
+  if(dx !== 0){
+    const tLeft = (left - start.x) / dx;
+    const tRight = (right - start.x) / dx;
+    candidates.push(tLeft, tRight);
+  }
+  if(dy !== 0){
+    const tTop = (top - start.y) / dy;
+    const tBottom = (bottom - start.y) / dy;
+    candidates.push(tTop, tBottom);
+  }
+
+  let bestT = null;
+  for(const t of candidates){
+    if(!Number.isFinite(t) || t <= 0 || t > 1) continue;
+    const x = start.x + dx * t;
+    const y = start.y + dy * t;
+    if(!isPointInsideFieldBounds(x, y)) continue;
+    if(bestT === null || t < bestT){
+      bestT = t;
+    }
+  }
+
+  if(bestT === null){
+    return end;
+  }
+
+  return {
+    x: start.x + dx * bestT,
+    y: start.y + dy * bestT
+  };
+}
+
+function buildPredictedPathForAim(plane, dragVector){
+  const dragDistance = Math.hypot(dragVector.x, dragVector.y);
+  const maxRange = getEffectiveFlightRangeCells(plane) * CELL_SIZE;
+  const rangeScale = MAX_DRAG_DISTANCE > 0 ? Math.min(1, dragDistance / MAX_DRAG_DISTANCE) : 0;
+  let remainingDistance = maxRange * rangeScale;
+  const points = [{ x: plane.x, y: plane.y }];
+  const MAX_RICOCHETS = 12;
+  const TINY_EPSILON = 1e-4;
+  const EPS_PUSH = 0.5;
+
+  if(remainingDistance <= TINY_EPSILON || dragDistance <= TINY_EPSILON){
+    return points;
+  }
+
+  let dirX = -dragVector.x / dragDistance;
+  let dirY = -dragVector.y / dragDistance;
+  let currX = plane.x;
+  let currY = plane.y;
+  let ricochets = 0;
+
+  while(remainingDistance > TINY_EPSILON && ricochets <= MAX_RICOCHETS){
+    const targetX = currX + dirX * remainingDistance;
+    const targetY = currY + dirY * remainingDistance;
+    const hit = findFirstSurfaceHit(
+      { x: currX, y: currY },
+      { x: targetX, y: targetY },
+      POINT_RADIUS
+    );
+
+    if(!hit){
+      const endPoint = { x: targetX, y: targetY };
+      const boundedEnd = isPointInsideFieldBounds(endPoint.x, endPoint.y)
+        ? endPoint
+        : clampSegmentToFieldBounds({ x: currX, y: currY }, endPoint);
+      points.push(boundedEnd);
+      break;
+    }
+
+    const segmentDistance = remainingDistance * hit.t;
+    const hitX = currX + (targetX - currX) * hit.t;
+    const hitY = currY + (targetY - currY) * hit.t;
+    const boundedHit = isPointInsideFieldBounds(hitX, hitY)
+      ? { x: hitX, y: hitY }
+      : clampSegmentToFieldBounds({ x: currX, y: currY }, { x: hitX, y: hitY });
+    points.push(boundedHit);
+    remainingDistance -= segmentDistance;
+
+    const dot = dirX * hit.normal.x + dirY * hit.normal.y;
+    const absDot = Math.abs(dot);
+    const collisionResponse = absDot < SLIDE_THRESHOLD ? "slide" : "reflect";
+    if(collisionResponse === "slide"){
+      dirX = dirX - dot * hit.normal.x;
+      dirY = dirY - dot * hit.normal.y;
+    } else {
+      dirX = dirX - 2 * dot * hit.normal.x;
+      dirY = dirY - 2 * dot * hit.normal.y;
+    }
+
+    const dirLen = Math.hypot(dirX, dirY);
+    if(dirLen <= TINY_EPSILON){
+      break;
+    }
+    dirX /= dirLen;
+    dirY /= dirLen;
+
+    currX = boundedHit.x + hit.normal.x * EPS_PUSH;
+    currY = boundedHit.y + hit.normal.y * EPS_PUSH;
+    if(!isPointInsideFieldBounds(currX, currY)){
+      points[points.length - 1] = clampSegmentToFieldBounds(points[points.length - 2], boundedHit);
+      break;
+    }
+    ricochets += 1;
+  }
+
+  return points;
+}
+
 function resolveSpriteCollision(fp){
   const p = fp.plane;
   const prevX = Number.isFinite(p.prevX) ? p.prevX : p.x - fp.vx;
@@ -8133,29 +8260,33 @@ function gameDraw(){
     drawArrow(aimCtx, startX, startY, baseDx, baseDy);
 
     if(activeTurnBuff === INVENTORY_ITEM_TYPES.CROSSHAIR && vdist > 0){
-      const dragAngle = Math.atan2(vdy, vdx);
-      const dragScale = vdist / MAX_DRAG_DISTANCE;
-      const projectedDistancePx = dragScale * getEffectiveFlightRangeCells(plane) * CELL_SIZE;
-      const projectedEndX = plane.x - Math.cos(dragAngle) * projectedDistancePx;
-      const projectedEndY = plane.y - Math.sin(dragAngle) * projectedDistancePx;
-      const projectedPlaneAngle = Math.atan2(-vdy, -vdx) + Math.PI / 2;
+      const predictedPath = buildPredictedPathForAim(plane, { x: vdx, y: vdy });
+      const hasPath = predictedPath.length >= 2;
 
-      aimCtx.globalAlpha = 0.55;
-      aimCtx.strokeStyle = "rgba(255, 255, 255, 0.85)";
-      aimCtx.lineWidth = 1.2;
-      aimCtx.setLineDash([5, 4]);
-      aimCtx.beginPath();
-      aimCtx.moveTo(plane.x, plane.y);
-      aimCtx.lineTo(projectedEndX, projectedEndY);
-      aimCtx.stroke();
-      aimCtx.setLineDash([]);
+      if(hasPath){
+        aimCtx.globalAlpha = 0.55;
+        aimCtx.strokeStyle = plane.color;
+        aimCtx.lineWidth = 1.2;
+        aimCtx.setLineDash([5, 4]);
+        aimCtx.beginPath();
+        aimCtx.moveTo(predictedPath[0].x, predictedPath[0].y);
+        for(let i = 1; i < predictedPath.length; i += 1){
+          aimCtx.lineTo(predictedPath[i].x, predictedPath[i].y);
+        }
+        aimCtx.stroke();
+        aimCtx.setLineDash([]);
 
-      aimCtx.save();
-      aimCtx.globalAlpha = 0.42;
-      aimCtx.translate(projectedEndX, projectedEndY);
-      aimCtx.rotate(projectedPlaneAngle);
-      drawPlaneOutline(aimCtx, plane.color);
-      aimCtx.restore();
+        const endPoint = predictedPath[predictedPath.length - 1];
+        const prevPoint = predictedPath[predictedPath.length - 2];
+        const projectedPlaneAngle = Math.atan2(endPoint.y - prevPoint.y, endPoint.x - prevPoint.x) + Math.PI / 2;
+
+        aimCtx.save();
+        aimCtx.globalAlpha = 0.42;
+        aimCtx.translate(endPoint.x, endPoint.y);
+        aimCtx.rotate(projectedPlaneAngle);
+        drawPlaneOutline(aimCtx, plane.color);
+        aimCtx.restore();
+      }
     }
 
     if (DEBUG_AIM) {
