@@ -739,12 +739,12 @@ const itemUsageConfig = Object.freeze({
   },
   [INVENTORY_ITEM_TYPES.CROSSHAIR]: {
     target: ITEM_USAGE_TARGETS.SELF_PLANE,
-    hintText: "Drop on your own plane to sharpen aim.",
+    hintText: "Tap item, then tap your own plane to sharpen aim.",
     requiresDragAndDrop: true,
   },
   [INVENTORY_ITEM_TYPES.FUEL]: {
     target: ITEM_USAGE_TARGETS.SELF_PLANE,
-    hintText: "Drop on your own plane to refuel.",
+    hintText: "Tap item, then tap your own plane to refuel.",
     requiresDragAndDrop: true,
   },
   [INVENTORY_ITEM_TYPES.MINE]: {
@@ -858,6 +858,22 @@ const inventoryHosts = {
 
 let nuclearStrikeHideTimeoutId = null;
 let activeNuclearDrag = null;
+let pendingInventoryUse = null;
+
+function isPendingInventoryTargetItem(type){
+  return type === INVENTORY_ITEM_TYPES.CROSSHAIR || type === INVENTORY_ITEM_TYPES.FUEL;
+}
+
+function setPendingInventoryUse(nextState){
+  if(nextState && (!nextState.color || !nextState.type)) return;
+  pendingInventoryUse = nextState ? { color: nextState.color, type: nextState.type } : null;
+  syncInventoryUI("blue");
+  syncInventoryUI("green");
+}
+
+function cancelPendingInventoryUse(){
+  setPendingInventoryUse(null);
+}
 let isNuclearStrikeResolutionActive = false;
 let isNukeCinematicActive = false;
 
@@ -1250,6 +1266,7 @@ function cancelActiveNuclearDrag(reason = "cancel"){
 
 function resetInventoryInteractionState(){
   activeNuclearDrag = null;
+  pendingInventoryUse = null;
   isNuclearStrikeResolutionActive = false;
   isNukeCinematicActive = false;
   resetNukeTimelineState();
@@ -1332,6 +1349,26 @@ function applyItemToOwnPlane(type, color, plane){
   }
 
   return false;
+}
+
+function getPendingInventoryTargetPlaneAt(x, y){
+  if(!pendingInventoryUse) return null;
+  const currentColor = turnColors[turnIndex];
+  if(pendingInventoryUse.color !== currentColor) return null;
+  return getPlaneAtBoardPoint(currentColor, x, y);
+}
+
+function tryApplyPendingInventoryUseAt(x, y){
+  if(!pendingInventoryUse) return false;
+  const targetPlane = getPendingInventoryTargetPlaneAt(x, y);
+  if(!targetPlane) return false;
+
+  const applied = applyItemToOwnPlane(pendingInventoryUse.type, pendingInventoryUse.color, targetPlane);
+  if(applied){
+    removeItemFromInventory(pendingInventoryUse.color, pendingInventoryUse.type);
+    cancelPendingInventoryUse();
+  }
+  return true;
 }
 
 function onInventoryItemDragStart(event){
@@ -1497,14 +1534,35 @@ function syncInventoryUI(color){
         state.visible = false;
       };
 
-      img.draggable = true;
-      img.classList.add("inventory-item--draggable");
       img.dataset.itemType = slot.type;
       img.dataset.itemColor = color;
-      img.addEventListener("dragstart", onInventoryItemDragStart);
-      img.addEventListener("dragend", onInventoryItemDragEnd);
+      if(isPendingInventoryTargetItem(slot.type)){
+        img.draggable = false;
+        img.addEventListener("click", () => {
+          const activeColor = turnColors[turnIndex];
+          if(color !== activeColor) return;
+          if(pendingInventoryUse && pendingInventoryUse.color === color && pendingInventoryUse.type === slot.type){
+            cancelPendingInventoryUse();
+            return;
+          }
+          setPendingInventoryUse({ color, type: slot.type });
+        });
+      } else {
+        img.draggable = true;
+        img.classList.add("inventory-item--draggable");
+        img.addEventListener("dragstart", onInventoryItemDragStart);
+        img.addEventListener("dragend", onInventoryItemDragEnd);
+      }
       img.addEventListener("mouseenter", showHint);
       img.addEventListener("mouseleave", hideHint);
+    }
+    if(
+      hasItem
+      && pendingInventoryUse
+      && pendingInventoryUse.color === color
+      && pendingInventoryUse.type === slot.type
+    ){
+      img.classList.add("inventory-item--draggable");
     }
     slotContainer.appendChild(img);
     if (hasItem) {
@@ -1604,6 +1662,7 @@ function giveItem(itemId, qty = 1, opts = { silent: false }){
 function resetInventoryState(){
   inventoryState.blue.length = 0;
   inventoryState.green.length = 0;
+  pendingInventoryUse = null;
   syncInventoryUI("blue");
   syncInventoryUI("green");
 }
@@ -6041,6 +6100,7 @@ const handleCircle={
 
 function isPlaneGrabbableAt(x, y) {
   if(isGameOver || !gameMode) return false;
+  if(pendingInventoryUse) return false;
 
   const currentColor = turnColors[turnIndex];
   if(gameMode === "computer" && currentColor === "blue") return false; // ход ИИ
@@ -6071,13 +6131,18 @@ function handleStart(e) {
   if(isNuclearStrikeActionLocked()) return;
   if(isGameOver || !gameMode) return;
 
+  const { x: designX, y: designY } = getPointerDesignCoords(e);
+  const { x: mx, y: my } = designToBoardCoords(designX, designY);
+
+  if(pendingInventoryUse){
+    tryApplyPendingInventoryUseAt(mx, my);
+    return;
+  }
+
   const currentColor= turnColors[turnIndex];
   if(gameMode==="computer" && currentColor==="blue") return; // ход ИИ
 
   if(flyingPoints.some(fp=>fp.plane.color===currentColor)) return;
-
-  const { x: designX, y: designY } = getPointerDesignCoords(e);
-  const { x: mx, y: my } = designToBoardCoords(designX, designY);
 
   let found= points.find(pt=>
     pt.color=== currentColor &&
@@ -6140,6 +6205,8 @@ function onCanvasPointerDown(e){
     e.preventDefault();
     aaPointerDown = true;
     updateAAPreviewFromEvent(e);
+  } else if(pendingInventoryUse) {
+    handleStart(e);
   } else {
     handleStart(e);
   }
@@ -6189,6 +6256,11 @@ gsBoardCanvas.addEventListener("drop", onBoardDrop);
 window.addEventListener("dragend", () => cancelActiveNuclearDrag("ended outside board"));
 window.addEventListener("drop", () => cancelActiveNuclearDrag("dropped outside board"));
 window.addEventListener("dragcancel", () => cancelActiveNuclearDrag("cancelled"));
+window.addEventListener("keydown", (event) => {
+  if(event.key === "Escape"){
+    cancelPendingInventoryUse();
+  }
+});
 
 function isValidAAPlacement(x,y){
   // Allow Anti-Aircraft placement anywhere within the player's half of the field.
@@ -8793,6 +8865,8 @@ function drawPlanesAndTrajectories(){
 
   let rangeTextInfo = null;
   const activeColor = turnColors[turnIndex];
+  const pendingTargetColor = pendingInventoryUse?.color ?? null;
+  const shouldHighlightPendingTargets = Boolean(pendingInventoryUse);
   const showGlow = !handleCircle.active && !flyingPoints.some(fp => fp.plane.color === activeColor);
   const destroyedOrBurning = [];
   const activePlanes = [];
@@ -8862,6 +8936,22 @@ function drawPlanesAndTrajectories(){
       targetCtx.lineWidth = 3;
       targetCtx.beginPath();
       targetCtx.arc(p.x, p.y, POINT_RADIUS + 5, 0, Math.PI*2);
+      targetCtx.stroke();
+      targetCtx.restore();
+    }
+
+    if(
+      shouldHighlightPendingTargets
+      && p.color === pendingTargetColor
+      && p.color === activeColor
+      && p.isAlive === true
+      && p.burning === false
+    ){
+      targetCtx.save();
+      targetCtx.strokeStyle = "rgba(255, 255, 255, 0.95)";
+      targetCtx.lineWidth = 2;
+      targetCtx.beginPath();
+      targetCtx.arc(p.x, p.y, POINT_RADIUS + 9, 0, Math.PI * 2);
       targetCtx.stroke();
       targetCtx.restore();
     }
