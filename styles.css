@@ -1437,7 +1437,7 @@ body, button {
   background: rgba(0, 0, 0, 0.78);
   opacity: 0;
   pointer-events: none;
-  z-index: 9999;
+  z-index: 450;
   transition: opacity 0.15s ease;
   --dimmer-hole-left: 0px;
   --dimmer-hole-top: 0px;
@@ -1457,6 +1457,28 @@ body, button {
   mask-size: 100% 100%, var(--dimmer-hole-width) var(--dimmer-hole-height);
   mask-repeat: no-repeat;
   mask-composite: exclude;
+}
+
+#boardDimmerHole {
+  position: fixed;
+  left: var(--dimmer-hole-left);
+  top: var(--dimmer-hole-top);
+  width: var(--dimmer-hole-width);
+  height: var(--dimmer-hole-height);
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.78);
+  background: transparent;
+  pointer-events: none;
+  display: none;
+}
+
+#boardDimmerLayer.board-dimmer--fallback {
+  background: transparent;
+  -webkit-mask: none;
+  mask: none;
+}
+
+#boardDimmerLayer.board-dimmer--fallback #boardDimmerHole {
+  display: block;
 }
 
 #boardDimmerLayer.is-active {
