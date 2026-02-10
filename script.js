@@ -763,6 +763,7 @@ const inventoryHosts = {
 
 let nuclearStrikeHideTimeoutId = null;
 let activeNuclearDrag = null;
+let isNuclearStrikeResolutionActive = false;
 
 function updateBoardDimmerMask(){
   if (!(boardDimmerLayer instanceof HTMLElement)) return;
@@ -809,11 +810,7 @@ function handleNuclearStrikeReady(){
     console.log("[NUKE] fx started");
   }
 
-  destroyAllPlanesWithNukeScoring();
-  const matchEnded = maybeLockInMatchOutcome({ showEndScreen: true });
-  if(!matchEnded){
-    lockInNoSurvivors({ roundTransitionDelay: MIN_ROUND_TRANSITION_DELAY_MS });
-  }
+  void resolveNuclearStrikePlaneQueue();
 }
 
 function getRandomInventoryItem(){
@@ -4764,7 +4761,7 @@ function addScore(color, delta, options = {}){
     }
   }
 
-  if(!isGameOver && !options.deferVictoryCheck){
+  if(!isGameOver && !options.deferVictoryCheck && !isNuclearStrikeResolutionActive){
     maybeLockInMatchOutcome({ showEndScreen: true });
   }
 
@@ -7066,6 +7063,67 @@ function destroyAllPlanesWithoutScoring(){
   });
 }
 
+function destroyPlaneWithoutScoring(plane){
+  if(!plane || !plane.isAlive) return null;
+  const p = plane;
+  const crashTimestamp = performance.now();
+  const carriedFlag = p.carriedFlagId ? getFlagById(p.carriedFlagId) : null;
+  if(isFlagActive(carriedFlag)){
+    dropFlagAtPosition(carriedFlag, { x: p.x, y: p.y });
+  }
+  clearFlagFromPlane(p);
+  p.isAlive = false;
+  p.burning = true;
+  ensurePlaneBurningFlame(p);
+  p.collisionX = p.x;
+  p.collisionY = p.y;
+  p.crashStart = crashTimestamp;
+  p.killMarkerStart = crashTimestamp;
+  const explosionState = spawnExplosionForPlane(p, p.collisionX, p.collisionY);
+  schedulePlaneFlameFx(p);
+  flyingPoints = flyingPoints.filter(x => x.plane !== p);
+  return explosionState;
+}
+
+function getPlaneExplosionDurationMs(explosionState){
+  if(Number.isFinite(explosionState?.ttlMs)){
+    return explosionState.ttlMs;
+  }
+  return EXPLOSION_MIN_DURATION_MS;
+}
+
+async function resolveNuclearStrikePlaneQueue(){
+  const queue = points.filter((p) => p && p.isAlive && (p.color === "blue" || p.color === "green"));
+  if(queue.length === 0){
+    const matchEnded = maybeLockInMatchOutcome({ showEndScreen: true });
+    if(!matchEnded){
+      lockInNoSurvivors({ roundTransitionDelay: MIN_ROUND_TRANSITION_DELAY_MS });
+    }
+    return;
+  }
+
+  isNuclearStrikeResolutionActive = true;
+
+  try {
+    for(const p of queue){
+      if(!p || !p.isAlive) continue;
+      const scoringColor = p.color === "green" ? "blue" : "green";
+      const explosionState = destroyPlaneWithoutScoring(p);
+      if(!explosionState) continue;
+      awardPoint(scoringColor);
+      checkVictory({ deferRoundLock: true });
+      await wait(getPlaneExplosionDurationMs(explosionState));
+    }
+  } finally {
+    isNuclearStrikeResolutionActive = false;
+  }
+
+  const matchEnded = maybeLockInMatchOutcome({ showEndScreen: true });
+  if(!matchEnded){
+    lockInNoSurvivors({ roundTransitionDelay: MIN_ROUND_TRANSITION_DELAY_MS });
+  }
+}
+
 function destroyAllPlanesWithNukeScoring(){
   const scoreDeltas = { blue: 0, green: 0 };
 
@@ -8605,7 +8663,7 @@ function createExplosionImageEntry(explosionState, img) {
 
 function spawnExplosionForPlane(plane, x = null, y = null) {
   if (!plane || plane.explosionSpawned) {
-    return;
+    return null;
   }
 
   const cx = Number.isFinite(plane.x)
@@ -8618,6 +8676,7 @@ function spawnExplosionForPlane(plane, x = null, y = null) {
 
   activeExplosions.push(state);
   plane.explosionSpawned = true;
+  return state;
 }
 
 function updateAndDrawExplosions(ctx, now) {
@@ -8734,7 +8793,7 @@ function updateAndDrawExplosions(ctx, now) {
 /* ======= HITS / VICTORY ======= */
 function awardPoint(color){
   if(!color) return;
-  addScore(color, 1);
+  addScore(color, 1, { deferVictoryCheck: isNuclearStrikeResolutionActive });
 }
 function checkPlaneHits(plane, fp){
   if(isGameOver) return;
@@ -8809,17 +8868,20 @@ function handleFlagInteractions(plane){
     }
   }
 }
-function checkVictory(){
+function checkVictory(options = {}){
   const greenAlive = points.filter(p=>p.isAlive && p.color==="green").length;
   const blueAlive  = points.filter(p=>p.isAlive && p.color==="blue").length;
+  const deferRoundLock = Boolean(options.deferRoundLock);
   if(isGameOver) return;
 
-  if(blueScore >= POINTS_TO_WIN && greenScore >= POINTS_TO_WIN){
+  if(!deferRoundLock && blueScore >= POINTS_TO_WIN && greenScore >= POINTS_TO_WIN){
     lockInDraw({ showEndScreen: true });
     return;
   }
 
   const canContinueSeries = blueScore < POINTS_TO_WIN && greenScore < POINTS_TO_WIN;
+
+  if(deferRoundLock) return;
 
   if(greenAlive === 0){
     const options = canContinueSeries ? { roundTransitionDelay: MIN_ROUND_TRANSITION_DELAY_MS } : { showEndScreen: true };
