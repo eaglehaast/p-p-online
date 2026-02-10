@@ -739,12 +739,12 @@ const itemUsageConfig = Object.freeze({
   },
   [INVENTORY_ITEM_TYPES.CROSSHAIR]: {
     target: ITEM_USAGE_TARGETS.SELF_PLANE,
-    hintText: "Tap item, then tap your own plane to sharpen aim.",
+    hintText: "Apply to your plane. Guaranteed hit!",
     requiresDragAndDrop: true,
   },
   [INVENTORY_ITEM_TYPES.FUEL]: {
     target: ITEM_USAGE_TARGETS.SELF_PLANE,
-    hintText: "Tap item, then tap your own plane to refuel.",
+    hintText: "Apply to your plane. Double flight range!",
     requiresDragAndDrop: true,
   },
   [INVENTORY_ITEM_TYPES.MINE]: {
@@ -8284,7 +8284,7 @@ function gameDraw(){
         aimCtx.globalAlpha = 0.42;
         aimCtx.translate(endPoint.x, endPoint.y);
         aimCtx.rotate(projectedPlaneAngle);
-        drawPlaneOutline(aimCtx, plane.color);
+        drawProjectedPlaneGhost(aimCtx, plane.color);
         aimCtx.restore();
       }
     }
@@ -8787,6 +8787,25 @@ function drawPlaneOutline(ctx2d, color){
   ctx2d.lineCap = "round";
   tracePlaneSilhouettePath(ctx2d);
   ctx2d.stroke();
+}
+
+const PROJECTED_PLANE_GHOST_ALPHA = 0.22;
+
+function drawProjectedPlaneGhost(ctx2d, color){
+  const sprite = color === "green" ? greenPlaneImg : bluePlaneImg;
+  const spriteReady = isSpriteReady(sprite);
+
+  if(!spriteReady){
+    ctx2d.globalAlpha *= PROJECTED_PLANE_GHOST_ALPHA;
+    drawPlaneOutline(ctx2d, color);
+    return;
+  }
+
+  const previousFilter = ctx2d.filter;
+  ctx2d.globalAlpha *= PROJECTED_PLANE_GHOST_ALPHA;
+  ctx2d.filter = "grayscale(100%) brightness(88%)";
+  ctx2d.drawImage(sprite, -PLANE_DRAW_W / 2, -PLANE_DRAW_H / 2, PLANE_DRAW_W, PLANE_DRAW_H);
+  ctx2d.filter = previousFilter;
 }
 
 function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0) {
