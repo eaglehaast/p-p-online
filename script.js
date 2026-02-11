@@ -4091,8 +4091,10 @@ const baseSprites = {
   green: loadImageAsset(BASE_SPRITE_PATHS.green, GAME_PRELOAD_LABEL, { decoding: 'async' }).img,
 };
 
-const CARGO_SPRITE_PATH = "ui_controlpanel/cp_adds/cp_cargo_on.png";
+const CARGO_SPRITE_PATH = "ui_gamescreen/gs_cargo_box.png";
+const CARGO_ANIMATION_GIF_PATH = "ui_gamescreen/gs_cargo_animation.gif";
 const { img: cargoSprite } = loadImageAsset(CARGO_SPRITE_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
+const { img: cargoAnimationGif } = loadImageAsset(CARGO_ANIMATION_GIF_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
 
 function isSpriteReady(img) {
   return Boolean(
@@ -4447,6 +4449,8 @@ const HUD_BASE_PLANE_ICON_SIZE = planeMetric(16);
 const CELL_SIZE            = 20;     // px
 const POINT_RADIUS         = planeMetric(15);     // px (увеличено для мобильных)
 const CARGO_RADIUS         = POINT_RADIUS * 2;    // увеличенный радиус ящика
+const CARGO_GIF_OFFSET_X   = -34;
+const CARGO_GIF_OFFSET_Y   = -137;
 const FLAG_INTERACTION_RADIUS = 25;  // px
 const BASE_INTERACTION_RADIUS = 40;  // px
 const SLIDE_THRESHOLD      = 0.1;
@@ -4693,20 +4697,21 @@ function updateCargoState(deltaSec, now){
 }
 
 function drawCargo(ctx2d){
-  if(cargoState.length === 0 || !isSpriteReady(cargoSprite)) return;
-  const spriteWidth = cargoSprite.naturalWidth || 1;
-  const spriteHeight = cargoSprite.naturalHeight || 1;
-  const drawWidth = CARGO_RADIUS * 2;
-  const drawHeight = drawWidth * (spriteHeight / spriteWidth);
+  if(cargoState.length === 0) return;
+  const canDrawCargoBox = isSpriteReady(cargoSprite);
+  const canDrawCargoAnimation = isSpriteReady(cargoAnimationGif);
+
   for(const cargo of cargoState){
-    if(cargo.state !== "ready") continue;
-    ctx2d.drawImage(
-      cargoSprite,
-      cargo.x - drawWidth / 2,
-      cargo.y - drawHeight / 2,
-      drawWidth,
-      drawHeight
-    );
+    if(cargo.state === "animating" && canDrawCargoAnimation){
+      const gifX = cargo.x + CARGO_GIF_OFFSET_X;
+      const gifY = cargo.y + CARGO_GIF_OFFSET_Y;
+      ctx2d.drawImage(cargoAnimationGif, gifX, gifY);
+      continue;
+    }
+
+    if(cargo.state === "ready" && canDrawCargoBox){
+      ctx2d.drawImage(cargoSprite, cargo.x, cargo.y);
+    }
   }
 }
 
