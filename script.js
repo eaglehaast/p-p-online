@@ -750,7 +750,7 @@ const itemUsageConfig = Object.freeze({
   [INVENTORY_ITEM_TYPES.MINE]: {
     target: ITEM_USAGE_TARGETS.BOARD,
     hintText: "",
-    requiresDragAndDrop: false,
+    requiresDragAndDrop: true,
   },
   [INVENTORY_ITEM_TYPES.DYNAMITE]: {
     target: ITEM_USAGE_TARGETS.BOARD,
