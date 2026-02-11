@@ -4878,8 +4878,11 @@ const FIELD_FLIGHT_DURATION_SEC = (BOUNCE_FRAMES / 60) * 2 / 1.5;
 const FIELD_PLANE_SWAY_DEG = 0.75;
 const FIELD_PLANE_SWAY_PERIOD_SEC = 2.6 / 1.5;
 const FIELD_PLANE_ROLL_BOB_PX = 0.75;
-const FIELD_MINE_SWAY_DEG = 0.25;
-const FIELD_MINE_SWAY_OMEGA = 0.08;
+// Tuned for a readable mine idle animation: 3.2° gives visible sway without looking cartoony,
+// and 0.075 keeps the motion smooth after amplitude increase.
+const FIELD_MINE_SWAY_DEG = 3.2;
+const FIELD_MINE_SWAY_OMEGA = 0.075;
+const FIELD_MINE_BOB_PX = 1.4;
 const MAX_DRAG_DISTANCE    = 100;    // px
 const DRAG_ROTATION_THRESHOLD = 5;   // px slack before the plane starts to turn
 const ATTACK_RANGE_PX      = 300;    // px
@@ -9990,9 +9993,10 @@ function drawMines(){
     const phase = ((mine.x + mine.y) * 0.07) + i * 0.37;
     const swayDeg = Math.sin(globalFrame * FIELD_MINE_SWAY_OMEGA + phase) * FIELD_MINE_SWAY_DEG;
     const swayRad = swayDeg * Math.PI / 180;
+    const bobOffsetY = Math.sin(globalFrame * FIELD_MINE_SWAY_OMEGA * 1.15 + phase) * FIELD_MINE_BOB_PX;
 
     gsBoardCtx.save();
-    gsBoardCtx.translate(mine.x, mine.y);
+    gsBoardCtx.translate(mine.x, mine.y + bobOffsetY);
     gsBoardCtx.rotate(swayRad);
 
     if(isSpriteReady(mineIconSprite)){
@@ -10003,14 +10007,12 @@ function drawMines(){
         MINE_ICON_WIDTH,
         MINE_ICON_HEIGHT
       );
-      gsBoardCtx.restore();
-      continue;
+    } else {
+      gsBoardCtx.fillStyle = mine.owner === "blue" ? "#2d5cff" : "#3f9f3f";
+      gsBoardCtx.beginPath();
+      gsBoardCtx.arc(0, 0, CELL_SIZE * 0.25, 0, Math.PI * 2);
+      gsBoardCtx.fill();
     }
-
-    gsBoardCtx.fillStyle = mine.owner === "blue" ? "#2d5cff" : "#3f9f3f";
-    gsBoardCtx.beginPath();
-    gsBoardCtx.arc(0, 0, CELL_SIZE * 0.25, 0, Math.PI * 2);
-    gsBoardCtx.fill();
     gsBoardCtx.restore();
   }
 }
