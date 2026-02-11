@@ -4858,6 +4858,7 @@ const SLIDE_THRESHOLD      = 0.1;
 // Larger hit area for selecting planes with touch/mouse
 const PLANE_TOUCH_RADIUS   = 20;                   // px
 const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit Anti-Aircraft center
+const MINE_TRIGGER_RADIUS  = POINT_RADIUS;
 const BOUNCE_FRAMES        = 68;
 // Duration of a full-speed flight on the field (measured in frames)
 // (Restored to the original pre-change speed used for gameplay physics)
@@ -4866,6 +4867,8 @@ const FIELD_FLIGHT_DURATION_SEC = (BOUNCE_FRAMES / 60) * 2 / 1.5;
 const FIELD_PLANE_SWAY_DEG = 0.75;
 const FIELD_PLANE_SWAY_PERIOD_SEC = 2.6 / 1.5;
 const FIELD_PLANE_ROLL_BOB_PX = 0.75;
+const FIELD_MINE_SWAY_DEG = 0.25;
+const FIELD_MINE_SWAY_OMEGA = 0.08;
 const MAX_DRAG_DISTANCE    = 100;    // px
 const DRAG_ROTATION_THRESHOLD = 5;   // px slack before the plane starts to turn
 const ATTACK_RANGE_PX      = 300;    // px
@@ -8565,6 +8568,55 @@ function handleAAForPlane(p, fp){
   }
   return false;
 }
+
+function handleMineForPlane(p, fp){
+  if(!p?.isAlive || p?.burning) return false;
+  if(!Array.isArray(mines) || mines.length === 0) return false;
+
+  for(let i = 0; i < mines.length; i++){
+    const mine = mines[i];
+    if(!mine || mine.owner === p.color) continue;
+
+    const dx = p.x - mine.x;
+    const dy = p.y - mine.y;
+    const dist = Math.hypot(dx, dy);
+
+    if(dist > MINE_TRIGGER_RADIUS) continue;
+
+    const contactX = dist === 0 ? p.x : p.x - dx / dist * POINT_RADIUS;
+    const contactY = dist === 0 ? p.y : p.y - dy / dist * POINT_RADIUS;
+
+    p.isAlive = false;
+    p.burning = true;
+    ensurePlaneBurningFlame(p);
+    p.collisionX = p.x;
+    p.collisionY = p.y;
+    const mineCrashTimestamp = performance.now();
+    p.crashStart = mineCrashTimestamp;
+    p.killMarkerStart = mineCrashTimestamp;
+    spawnExplosionForPlane(p, contactX, contactY);
+    schedulePlaneFlameFx(p);
+
+    if(fp){
+      flyingPoints = flyingPoints.filter(x => x !== fp);
+    } else {
+      flyingPoints = flyingPoints.filter(x => x.plane !== p);
+    }
+
+    mines.splice(i, 1);
+
+    awardPoint(mine.owner);
+    checkVictory();
+
+    if(fp && !isGameOver && !flyingPoints.some(x => x.plane.color === p.color)){
+      advanceTurn();
+    }
+
+    return true;
+  }
+
+  return false;
+}
   /* ======= GAME LOOP ======= */
 function drawInitialFrame(reason = "initial") {
   resetCanvasState(gsBoardCtx, gsBoardCanvas);
@@ -8676,6 +8728,7 @@ function gameDraw(){
       checkPlaneHits(p, fp);
       handleFlagInteractions(p);
       if(handleAAForPlane(p, fp)) continue;
+      if(handleMineForPlane(p, fp)) continue;
 
       fp.timeLeft -= deltaSec;
       if(fp.timeLeft<=0){
@@ -8698,7 +8751,8 @@ function gameDraw(){
     for(const p of points){
       if(!p.isAlive || p.burning) continue;
       if(!flyingPoints.some(fp => fp.plane === p)){
-        handleAAForPlane(p, null);
+        if(handleAAForPlane(p, null)) continue;
+        handleMineForPlane(p, null);
       }
   }
   }
@@ -9915,16 +9969,26 @@ function drawMines(){
   const mineSize = CELL_SIZE * 0.9;
   const halfSize = mineSize / 2;
 
-  for(const mine of mines){
+  for(let i = 0; i < mines.length; i++){
+    const mine = mines[i];
+    if(!mine) continue;
+    const phase = ((mine.x + mine.y) * 0.07) + i * 0.37;
+    const swayDeg = Math.sin(globalFrame * FIELD_MINE_SWAY_OMEGA + phase) * FIELD_MINE_SWAY_DEG;
+    const swayRad = swayDeg * Math.PI / 180;
+
+    gsBoardCtx.save();
+    gsBoardCtx.translate(mine.x, mine.y);
+    gsBoardCtx.rotate(swayRad);
+
     if(isSpriteReady(mineIconSprite)){
-      gsBoardCtx.drawImage(mineIconSprite, mine.x - halfSize, mine.y - halfSize, mineSize, mineSize);
+      gsBoardCtx.drawImage(mineIconSprite, -halfSize, -halfSize, mineSize, mineSize);
+      gsBoardCtx.restore();
       continue;
     }
 
-    gsBoardCtx.save();
     gsBoardCtx.fillStyle = mine.owner === "blue" ? "#2d5cff" : "#3f9f3f";
     gsBoardCtx.beginPath();
-    gsBoardCtx.arc(mine.x, mine.y, CELL_SIZE * 0.25, 0, Math.PI * 2);
+    gsBoardCtx.arc(0, 0, CELL_SIZE * 0.25, 0, Math.PI * 2);
     gsBoardCtx.fill();
     gsBoardCtx.restore();
   }
