@@ -4202,16 +4202,26 @@ const CARGO_SPRITE_PATH = "ui_gamescreen/gs_cargo_box.png";
 const CARGO_ANIMATION_GIF_PATH = "ui_gamescreen/gs_cargo_animation_light.gif";
 const CARGO_ANIM_MS_FALLBACK = 1500;
 const CARGO_ANIM_LOOP_GUARD_MS = 120;
+const CARGO_FADE_IN_MS_DEFAULT = 0;
+const CARGO_DIMMING_DEFAULT = 0;
 const { img: cargoSprite } = loadImageAsset(CARGO_SPRITE_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
-const { img: cargoAnimationGif } = loadImageAsset(CARGO_ANIMATION_GIF_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
+let cargoAnimationGifPath = CARGO_ANIMATION_GIF_PATH;
+let cargoAnimationGif = loadImageAsset(cargoAnimationGifPath, GAME_PRELOAD_LABEL, { decoding: 'async' }).img;
 let cargoAnimDurationMs = CARGO_ANIM_MS_FALLBACK;
+let cargoAnimDurationOverrideMs = null;
+let cargoFadeInMs = CARGO_FADE_IN_MS_DEFAULT;
+let cargoGifDimming = CARGO_DIMMING_DEFAULT;
 
-async function loadCargoAnimDurationMs(){
+async function loadCargoAnimDurationMs(gifPath = cargoAnimationGifPath){
   if(typeof window === "undefined" || typeof fetch !== "function" || typeof ImageDecoder !== "function"){
     return CARGO_ANIM_MS_FALLBACK;
   }
+  if(typeof gifPath !== "string" || gifPath.trim().length === 0){
+    return CARGO_ANIM_MS_FALLBACK;
+  }
+  const safeGifPath = gifPath.trim();
   try {
-    const response = await fetch(CARGO_ANIMATION_GIF_PATH, { cache: "force-cache" });
+    const response = await fetch(safeGifPath, { cache: "force-cache" });
     if(!response.ok){
       return CARGO_ANIM_MS_FALLBACK;
     }
@@ -4238,7 +4248,104 @@ async function loadCargoAnimDurationMs(){
   }
 }
 
-loadCargoAnimDurationMs().then(durationMs => {
+function resolveCargoAnimLifetimeMs(){
+  if(Number.isFinite(cargoAnimDurationOverrideMs)){
+    return Math.max(0, cargoAnimDurationOverrideMs);
+  }
+  if(Number.isFinite(cargoAnimDurationMs)){
+    return Math.max(0, cargoAnimDurationMs);
+  }
+  return CARGO_ANIM_MS_FALLBACK;
+}
+
+function clampCargoDimming(value){
+  if(!Number.isFinite(value)) return CARGO_DIMMING_DEFAULT;
+  return Math.max(0, Math.min(1, value));
+}
+
+function applyCargoGifPath(nextPath){
+  if(typeof nextPath !== "string") return false;
+  const safePath = nextPath.trim();
+  if(!safePath) return false;
+  cargoAnimationGifPath = safePath;
+  cargoAnimationGif = loadImageAsset(cargoAnimationGifPath, GAME_PRELOAD_LABEL, { decoding: 'async' }).img;
+  loadCargoAnimDurationMs(cargoAnimationGifPath).then(durationMs => {
+    if(cargoAnimationGifPath !== safePath) return;
+    cargoAnimDurationMs = durationMs;
+  });
+
+  for(const cargo of cargoState){
+    if(cargo.state === "animating"){
+      cargo.gifSrc = cargoAnimationGifPath;
+      cargo.animDurationMs = resolveCargoAnimLifetimeMs();
+      if(cargo.domEntry?.img){
+        cargo.domEntry.img.src = cargo.gifSrc;
+      }
+    }
+  }
+  return true;
+}
+
+function setCargoAnimLifetimeOverrideMs(ms){
+  if(ms === null || ms === undefined){
+    cargoAnimDurationOverrideMs = null;
+    return true;
+  }
+  if(!Number.isFinite(ms)) return false;
+  cargoAnimDurationOverrideMs = Math.max(0, Math.round(ms));
+  for(const cargo of cargoState){
+    if(cargo.state === "animating"){
+      cargo.animDurationMs = resolveCargoAnimLifetimeMs();
+    }
+  }
+  return true;
+}
+
+function ensureCargoDebugApi(){
+  if(typeof window === "undefined") return;
+  window.CARGO_DEBUG = {
+    getConfig(){
+      return {
+        gifPath: cargoAnimationGifPath,
+        detectedLifetimeMs: cargoAnimDurationMs,
+        lifetimeOverrideMs: cargoAnimDurationOverrideMs,
+        activeLifetimeMs: resolveCargoAnimLifetimeMs(),
+        fadeInMs: cargoFadeInMs,
+        dimming: cargoGifDimming,
+      };
+    },
+    setFadeIn(ms = 0){
+      if(!Number.isFinite(ms)) return false;
+      cargoFadeInMs = Math.max(0, Math.round(ms));
+      return true;
+    },
+    setDimming(value = 0){
+      if(!Number.isFinite(value)) return false;
+      cargoGifDimming = clampCargoDimming(value);
+      return true;
+    },
+    setLifetime(ms){
+      return setCargoAnimLifetimeOverrideMs(ms);
+    },
+    clearLifetimeOverride(){
+      return setCargoAnimLifetimeOverrideMs(null);
+    },
+    async setGif(path){
+      if(!applyCargoGifPath(path)) return false;
+      return true;
+    },
+    reset(){
+      cargoFadeInMs = CARGO_FADE_IN_MS_DEFAULT;
+      cargoGifDimming = CARGO_DIMMING_DEFAULT;
+      setCargoAnimLifetimeOverrideMs(null);
+      applyCargoGifPath(CARGO_ANIMATION_GIF_PATH);
+      return true;
+    }
+  };
+}
+
+ensureCargoDebugApi();
+loadCargoAnimDurationMs(cargoAnimationGifPath).then(durationMs => {
   cargoAnimDurationMs = durationMs;
 });
 
@@ -4804,7 +4911,7 @@ function createCargoAnimationDomEntry(cargo, metrics) {
     return null;
   }
 
-  const gifSrc = cargoAnimationGif?.src || CARGO_ANIMATION_GIF_PATH;
+  const gifSrc = cargo?.gifSrc || cargoAnimationGif?.src || cargoAnimationGifPath || CARGO_ANIMATION_GIF_PATH;
   if (!gifSrc) {
     return null;
   }
@@ -4859,10 +4966,18 @@ function syncCargoAnimationDomEntry(cargo, metrics) {
     height: `${height}px`
   });
 
+  const elapsedMs = Math.max(0, performance.now() - (cargo.animStartedAt || 0));
+  const fadeInProgress = cargoFadeInMs > 0
+    ? Math.max(0, Math.min(1, elapsedMs / cargoFadeInMs))
+    : 1;
+  const brightness = Math.max(0, 1 - clampCargoDimming(cargoGifDimming));
+
   Object.assign(cargo.domEntry.img.style, {
     width: '100%',
     height: '100%',
-    display: 'block'
+    display: 'block',
+    opacity: String(fadeInProgress),
+    filter: `brightness(${brightness})`
   });
 }
 
@@ -4922,7 +5037,8 @@ function spawnCargoForTurn(){
     y: candidate.targetY,
     state: "animating",
     animStartedAt,
-    animDurationMs: cargoAnimDurationMs,
+    animDurationMs: resolveCargoAnimLifetimeMs(),
+    gifSrc: cargoAnimationGifPath,
     pickedAt: null
   });
 }
