@@ -1442,8 +1442,8 @@ function getInventoryDragFallbackGhost(){
   ghost.style.position = "fixed";
   ghost.style.left = "0";
   ghost.style.top = "0";
-  ghost.style.width = `${MINE_SIZE.SCREEN_PX}px`;
-  ghost.style.height = `${MINE_SIZE.SCREEN_PX}px`;
+  ghost.style.width = `${mineSizeRuntime.SCREEN_PX}px`;
+  ghost.style.height = `${mineSizeRuntime.SCREEN_PX}px`;
   ghost.style.pointerEvents = "none";
   ghost.style.opacity = "0";
   ghost.style.visibility = "hidden";
@@ -1481,7 +1481,7 @@ function updateInventoryDragFallbackPosition(clientX, clientY){
   if(!inventoryDragFallbackActive) return;
   if(!Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
   const ghost = getInventoryDragFallbackGhost();
-  const half = MINE_SIZE.SCREEN_PX / 2;
+  const half = mineSizeRuntime.SCREEN_PX / 2;
   const drawX = Math.round(clientX - half);
   const drawY = Math.round(clientY - half);
   ghost.style.transform = `translate3d(${drawX}px, ${drawY}px, 0)`;
@@ -1489,6 +1489,8 @@ function updateInventoryDragFallbackPosition(clientX, clientY){
 
 function activateInventoryDragFallback(target, clientX, clientY, type){
   const ghost = getInventoryDragFallbackGhost();
+  ghost.style.width = `${mineSizeRuntime.SCREEN_PX}px`;
+  ghost.style.height = `${mineSizeRuntime.SCREEN_PX}px`;
   const src = type === INVENTORY_ITEM_TYPES.MINE
     ? MINE_INVENTORY_ICON_PATH
     : (target instanceof HTMLImageElement ? (target.currentSrc || target.src || "") : "");
@@ -1541,8 +1543,8 @@ function getInventoryDragPreviewConfig(type, target, visualWidth, visualHeight){
   if(type === INVENTORY_ITEM_TYPES.MINE){
     return {
       src: MINE_INVENTORY_ICON_PATH,
-      width: MINE_SIZE.SCREEN_PX,
-      height: MINE_SIZE.SCREEN_PX,
+      width: mineSizeRuntime.SCREEN_PX,
+      height: mineSizeRuntime.SCREEN_PX,
     };
   }
 
@@ -1624,7 +1626,7 @@ function onInventoryItemDragStart(event){
       const hasDragImageIssues = detectProblematicDragImageConditions(event);
       const dragPreview = getSharedInventoryDragPreview();
       const fallbackSize = type === INVENTORY_ITEM_TYPES.MINE
-        ? MINE_SIZE.SCREEN_PX
+        ? mineSizeRuntime.SCREEN_PX
         : INVENTORY_ITEM_SIZE_PX;
       const targetRect = target.getBoundingClientRect();
       const visualWidth = Number.isFinite(targetRect.width) && targetRect.width > 0
@@ -1960,7 +1962,7 @@ function placeMine({ owner, x, y, cellX, cellY }){
 function syncInventoryUI(color){
   const host = inventoryHosts[color];
   if(!(host instanceof HTMLElement)) return;
-  host.style.setProperty("--inventory-mine-size", `${MINE_SIZE.SCREEN_PX}px`);
+  host.style.setProperty("--inventory-mine-size", `${mineSizeRuntime.SCREEN_PX}px`);
   host.innerHTML = "";
   const items = inventoryState[color] ?? [];
   const countsByType = items.reduce((counts, item) => {
@@ -4779,18 +4781,16 @@ function normalizeMineDebugSize(value){
   return Math.max(8, Math.min(128, rounded));
 }
 
-function applyMineScreenSizeToInventory(){
+function applyMineScreenSizeToDom(){
   if(typeof document !== "undefined"){
-    document.documentElement.style.setProperty("--inventory-mine-size", `${MINE_SIZE.SCREEN_PX}px`);
+    document.documentElement.style.setProperty("--inventory-mine-size", `${mineSizeRuntime.SCREEN_PX}px`);
   }
-  syncInventoryUI("blue");
-  syncInventoryUI("green");
 }
 
 function getMineDebugConfig(){
   return {
-    screenPx: MINE_SIZE.SCREEN_PX,
-    logicalPx: MINE_SIZE.LOGICAL_PX,
+    screenPx: mineSizeRuntime.SCREEN_PX,
+    logicalPx: mineSizeRuntime.LOGICAL_PX,
     defaults: {
       screenPx: MINE_SIZE_DEFAULTS.SCREEN_PX,
       logicalPx: MINE_SIZE_DEFAULTS.LOGICAL_PX,
@@ -4808,28 +4808,34 @@ function ensureMineDebugApi(){
     setScreenSize(px){
       const safePx = normalizeMineDebugSize(px);
       if(safePx === null) return false;
-      MINE_SIZE.SCREEN_PX = safePx;
-      applyMineScreenSizeToInventory();
+      mineSizeRuntime.SCREEN_PX = safePx;
+      applyMineScreenSizeToDom();
+      syncInventoryUI("blue");
+      syncInventoryUI("green");
       return true;
     },
     setLogicalSize(px){
       const safePx = normalizeMineDebugSize(px);
       if(safePx === null) return false;
-      MINE_SIZE.LOGICAL_PX = safePx;
+      mineSizeRuntime.LOGICAL_PX = safePx;
       return true;
     },
     setBoth(px){
       const safePx = normalizeMineDebugSize(px);
       if(safePx === null) return false;
-      MINE_SIZE.SCREEN_PX = safePx;
-      MINE_SIZE.LOGICAL_PX = safePx;
-      applyMineScreenSizeToInventory();
+      mineSizeRuntime.SCREEN_PX = safePx;
+      mineSizeRuntime.LOGICAL_PX = safePx;
+      applyMineScreenSizeToDom();
+      syncInventoryUI("blue");
+      syncInventoryUI("green");
       return true;
     },
     reset(){
-      MINE_SIZE.SCREEN_PX = MINE_SIZE_DEFAULTS.SCREEN_PX;
-      MINE_SIZE.LOGICAL_PX = MINE_SIZE_DEFAULTS.LOGICAL_PX;
-      applyMineScreenSizeToInventory();
+      mineSizeRuntime.SCREEN_PX = MINE_SIZE_DEFAULTS.SCREEN_PX;
+      mineSizeRuntime.LOGICAL_PX = MINE_SIZE_DEFAULTS.LOGICAL_PX;
+      applyMineScreenSizeToDom();
+      syncInventoryUI("blue");
+      syncInventoryUI("green");
       return true;
     },
   };
@@ -5184,7 +5190,7 @@ const MINE_SIZE_DEFAULTS = Object.freeze({
   SCREEN_PX: 30,
 });
 
-const MINE_SIZE = {
+const mineSizeRuntime = {
   LOGICAL_PX: MINE_SIZE_DEFAULTS.LOGICAL_PX,
   SCREEN_PX: MINE_SIZE_DEFAULTS.SCREEN_PX,
 };
@@ -5260,7 +5266,7 @@ const FLAG_WIDTH           = 12;     // ширина полотна флага
 const FLAG_HEIGHT          = 8;      // высота полотна флага
 
 document.documentElement.style.setProperty("--inventory-item-size", `${INVENTORY_ITEM_SIZE_PX}px`);
-document.documentElement.style.setProperty("--inventory-mine-size", `${MINE_SIZE.SCREEN_PX}px`);
+applyMineScreenSizeToDom();
 document.documentElement.style.setProperty("--inventory-slot-size", `${INVENTORY_SLOT_SIZE_PX}px`);
 
 ensureMineDebugApi();
@@ -10359,7 +10365,7 @@ function drawFlagMarkers(){
 
 function drawMines(){
   if(!Array.isArray(mines) || mines.length === 0) return;
-  const mineLogicalSize = MINE_SIZE.LOGICAL_PX;
+  const mineLogicalSize = mineSizeRuntime.LOGICAL_PX;
   const halfMineSize = mineLogicalSize / 2;
 
   for(let i = 0; i < mines.length; i++){
