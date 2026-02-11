@@ -1425,6 +1425,25 @@ function tryApplyPendingInventoryUseAt(x, y){
   return true;
 }
 
+let sharedInventoryDragPreview = null;
+
+function getSharedInventoryDragPreview(){
+  if(sharedInventoryDragPreview instanceof HTMLImageElement) return sharedInventoryDragPreview;
+  const preview = document.createElement("img");
+  preview.alt = "";
+  preview.draggable = false;
+  preview.setAttribute("aria-hidden", "true");
+  preview.style.position = "fixed";
+  preview.style.left = "-10000px";
+  preview.style.top = "-10000px";
+  preview.style.pointerEvents = "none";
+  preview.style.opacity = "0";
+  preview.style.zIndex = "-1";
+  document.body.appendChild(preview);
+  sharedInventoryDragPreview = preview;
+  return preview;
+}
+
 function onInventoryItemDragStart(event){
   if(isNuclearStrikeActionLocked()){
     event.preventDefault();
@@ -1454,25 +1473,17 @@ function onInventoryItemDragStart(event){
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", type);
     if (target instanceof HTMLImageElement) {
-      if(type === INVENTORY_ITEM_TYPES.MINE){
-        const mineDragPreview = document.createElement("img");
-        mineDragPreview.src = target.currentSrc || target.src;
-        mineDragPreview.width = MINE_ICON_WIDTH;
-        mineDragPreview.height = MINE_ICON_HEIGHT;
-        mineDragPreview.style.width = `${MINE_ICON_WIDTH}px`;
-        mineDragPreview.style.height = `${MINE_ICON_HEIGHT}px`;
-        mineDragPreview.style.position = "fixed";
-        mineDragPreview.style.left = "-9999px";
-        mineDragPreview.style.top = "-9999px";
-        mineDragPreview.style.pointerEvents = "none";
-        document.body.appendChild(mineDragPreview);
-        event.dataTransfer.setDragImage(mineDragPreview, Math.round(MINE_ICON_WIDTH / 2), Math.round(MINE_ICON_HEIGHT / 2));
-        requestAnimationFrame(() => {
-          mineDragPreview.remove();
-        });
-      } else {
-        event.dataTransfer.setDragImage(target, target.width / 2, target.height / 2);
-      }
+      const dragPreview = getSharedInventoryDragPreview();
+      const dragPreviewSize = type === INVENTORY_ITEM_TYPES.MINE
+        ? INVENTORY_MINE_SIZE_PX
+        : INVENTORY_ITEM_SIZE_PX;
+      dragPreview.src = target.currentSrc || target.src;
+      dragPreview.width = dragPreviewSize;
+      dragPreview.height = dragPreviewSize;
+      dragPreview.style.width = `${dragPreviewSize}px`;
+      dragPreview.style.height = `${dragPreviewSize}px`;
+      const dragOffset = Math.round(dragPreviewSize / 2);
+      event.dataTransfer.setDragImage(dragPreview, dragOffset, dragOffset);
     }
   }
   if(type === INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE){
@@ -4940,8 +4951,11 @@ const HUD_PLANE_DEATH_DURATION_MS = 160;
 const HUD_PLANE_DEATH_SCALE_DELTA = 0.15;
 const HUD_BASE_PLANE_ICON_SIZE = planeMetric(16);
 const CELL_SIZE            = 20;     // px
-const MINE_ICON_WIDTH      = 30;
-const MINE_ICON_HEIGHT     = 31;
+const INVENTORY_ITEM_SIZE_PX = 30;
+const INVENTORY_MINE_SIZE_PX = 30;
+const INVENTORY_SLOT_SIZE_PX = INVENTORY_ITEM_SIZE_PX;
+const MINE_ICON_WIDTH      = INVENTORY_MINE_SIZE_PX;
+const MINE_ICON_HEIGHT     = INVENTORY_MINE_SIZE_PX;
 const POINT_RADIUS         = planeMetric(15);     // px (увеличено для мобильных)
 const CARGO_PICKUP_RADIUS_MULTIPLIER = 2.2;
 const CARGO_RADIUS         = POINT_RADIUS * CARGO_PICKUP_RADIUS_MULTIPLIER;    // увеличенный радиус ящика
@@ -4983,6 +4997,11 @@ const EDGE_PLANE_PADDING_PX = 8;     // смещение крайних само
 const FLAG_POLE_HEIGHT     = 20;     // высота флагштока
 const FLAG_WIDTH           = 12;     // ширина полотна флага
 const FLAG_HEIGHT          = 8;      // высота полотна флага
+
+document.documentElement.style.setProperty("--inventory-item-size", `${INVENTORY_ITEM_SIZE_PX}px`);
+document.documentElement.style.setProperty("--inventory-mine-size", `${INVENTORY_MINE_SIZE_PX}px`);
+document.documentElement.style.setProperty("--inventory-slot-size", `${INVENTORY_SLOT_SIZE_PX}px`);
+
 const START_PLANES = {
   // координаты задаются как верхний левый угол, внутри переводятся в центр
   blue: [
