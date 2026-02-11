@@ -2851,6 +2851,8 @@ const BASE_FLAME_DISPLAY_SIZE = BLUE_FLAME_DISPLAY_SIZE;
 const PLANE_FLAME_HOST_ID = 'planeFlameHost';
 const EXPLOSION_HOST_ID = 'explosionHost';
 const EXPLOSION_HOST_Z_INDEX = 24;
+const CARGO_HOST_ID = 'cargoHost';
+const CARGO_HOST_Z_INDEX = 23;
 
 let flameCycleIndex = 0;
 let flameStyleRevision = 0;
@@ -2968,6 +2970,32 @@ function ensureExplosionHost() {
   }
 
   host.style.zIndex = String(EXPLOSION_HOST_Z_INDEX);
+
+  return host;
+}
+
+function ensureCargoHost() {
+  const parent = fxHostLayer instanceof HTMLElement
+    ? fxHostLayer
+    : (overlayFxLayer instanceof HTMLElement
+      ? overlayFxLayer
+      : (gsFrameLayer instanceof HTMLElement ? gsFrameLayer : null));
+  if (!(parent instanceof HTMLElement)) {
+    return null;
+  }
+  const bounds = getFxHostBounds();
+  const host = ensureFxHost(parent, CARGO_HOST_ID, {
+    fillParent: false,
+    left: bounds.left,
+    top: bounds.top,
+    width: bounds.width,
+    height: bounds.height
+  });
+  if (!(host instanceof HTMLElement)) {
+    return null;
+  }
+
+  host.style.zIndex = String(CARGO_HOST_Z_INDEX);
 
   return host;
 }
@@ -3093,6 +3121,82 @@ function resolveExplosionMetrics(context = 'explosion') {
   };
   const overlayRect = { ...boardRect };
   const host = ensureExplosionHost();
+
+  if (!(host instanceof HTMLElement)) {
+    console.warn(`[FX] Skipping ${context}: host missing`);
+    return null;
+  }
+
+  if (!host.isConnected) {
+    console.warn(`[FX] Skipping ${context}: host not connected`);
+    return null;
+  }
+
+  const hostStyle = window.getComputedStyle(host);
+  if (hostStyle.display === 'none' || hostStyle.visibility === 'hidden') {
+    console.warn(`[FX] Skipping ${context}: host hidden`, {
+      display: hostStyle.display,
+      visibility: hostStyle.visibility
+    });
+    return null;
+  }
+
+  const hostWidth = host.offsetWidth || overlayRect.width;
+  const hostHeight = host.offsetHeight || overlayRect.height;
+  const hostRect = {
+    left: overlayRect.left,
+    top: overlayRect.top,
+    width: hostWidth,
+    height: hostHeight
+  };
+  if (!hostRect || hostRect.width <= FX_HOST_MIN_SIZE || hostRect.height <= FX_HOST_MIN_SIZE) {
+    console.warn(`[FX] Skipping ${context}: host rect invalid`, { hostRect });
+    return null;
+  }
+
+  const usableBoardRect = (boardRect && boardRect.width > FX_HOST_MIN_SIZE && boardRect.height > FX_HOST_MIN_SIZE)
+    ? boardRect
+    : (overlayRect && overlayRect.width > FX_HOST_MIN_SIZE && overlayRect.height > FX_HOST_MIN_SIZE ? overlayRect : null);
+
+  if (!usableBoardRect) {
+    console.warn(`[FX] Skipping ${context}: board rect invalid`, { boardRect });
+    return null;
+  }
+
+  warnIfFxHostMismatch(usableBoardRect, hostRect, context);
+
+  return { boardRect: usableBoardRect, overlayRect, hostRect, host };
+}
+
+function resolveCargoMetrics(context = 'cargo') {
+  if (!isGameScreenActive()) {
+    return null;
+  }
+
+  const canvasWidth = gsBoardCanvas?.offsetWidth || 0;
+  const canvasHeight = gsBoardCanvas?.offsetHeight || 0;
+  const overlayWidth = overlayContainer?.offsetWidth || 0;
+  const overlayHeight = overlayContainer?.offsetHeight || 0;
+
+  const hasUsableSurface = (
+    canvasWidth > FX_HOST_MIN_SIZE && canvasHeight > FX_HOST_MIN_SIZE
+  ) || (
+    overlayWidth > FX_HOST_MIN_SIZE && overlayHeight > FX_HOST_MIN_SIZE
+  );
+
+  if (!hasUsableSurface) {
+    return null;
+  }
+
+  const bounds = getFxHostBounds();
+  const boardRect = {
+    left: bounds.left,
+    top: bounds.top,
+    width: bounds.width,
+    height: bounds.height
+  };
+  const overlayRect = { ...boardRect };
+  const host = ensureCargoHost();
 
   if (!(host instanceof HTMLElement)) {
     console.warn(`[FX] Skipping ${context}: host missing`);
@@ -3820,6 +3924,7 @@ function setLayerVisibility(layer, visible) {
 }
 
 function showSettingsLayer() {
+  clearCargoAnimationDomEntries();
   if (menuScreenLocked) {
     console.warn('[screen] Settings visibility request ignored because gameplay is active.');
     return;
@@ -3833,6 +3938,7 @@ function showSettingsLayer() {
 }
 
 function showMenuLayer() {
+  clearCargoAnimationDomEntries();
   if (menuScreenLocked) {
     console.warn('[screen] Menu visibility request ignored because gameplay is active.');
     return;
@@ -4652,7 +4758,125 @@ function isBrickPixel(x, y){
 }
 
 function resetCargoState(){
+  clearCargoAnimationDomEntries();
   cargoState.length = 0;
+}
+
+function removeCargoAnimationDomEntry(cargo) {
+  if (cargo?.domEntry?.element?.remove) {
+    cargo.domEntry.element.remove();
+  }
+  if (cargo?.domEntry) {
+    delete cargo.domEntry;
+  }
+}
+
+function clearCargoAnimationDomEntries() {
+  for (const cargo of cargoState) {
+    removeCargoAnimationDomEntry(cargo);
+  }
+
+  const host = document.getElementById(CARGO_HOST_ID);
+  if (host instanceof HTMLElement) {
+    host.querySelectorAll('.fx-cargo').forEach(node => node.remove());
+  }
+}
+
+function getCargoOverlayScale(metrics) {
+  const boardWidth = metrics?.boardRect?.width;
+  const boardHeight = metrics?.boardRect?.height;
+  const overlayWidth = metrics?.overlayRect?.width;
+  const overlayHeight = metrics?.overlayRect?.height;
+  return {
+    scaleX: boardWidth > 0 && overlayWidth > 0 ? overlayWidth / boardWidth : 1,
+    scaleY: boardHeight > 0 && overlayHeight > 0 ? overlayHeight / boardHeight : 1
+  };
+}
+
+function createCargoAnimationDomEntry(cargo, metrics) {
+  const host = metrics?.host || ensureCargoHost();
+  if (!(host instanceof HTMLElement)) {
+    return null;
+  }
+
+  const gifSrc = cargoAnimationGif?.src || CARGO_ANIMATION_GIF_PATH;
+  if (!gifSrc) {
+    return null;
+  }
+
+  const container = document.createElement('div');
+  container.classList.add('fx-cargo');
+  Object.assign(container.style, {
+    position: 'absolute',
+    pointerEvents: 'none'
+  });
+
+  const image = new Image();
+  image.decoding = 'async';
+  image.className = 'fx-cargo-img';
+  image.src = gifSrc;
+
+  container.appendChild(image);
+  host.appendChild(container);
+
+  return { element: container, img: image, host };
+}
+
+function syncCargoAnimationDomEntry(cargo, metrics) {
+  if (!cargo || cargo.state !== 'animating') {
+    removeCargoAnimationDomEntry(cargo);
+    return;
+  }
+
+  if (!cargo.domEntry) {
+    cargo.domEntry = createCargoAnimationDomEntry(cargo, metrics);
+  }
+
+  if (!cargo.domEntry?.element) {
+    return;
+  }
+
+  const offsetPoint = worldToOverlayLocal(
+    cargo.x + CARGO_GIF_OFFSET_X,
+    cargo.y + CARGO_GIF_OFFSET_Y,
+    metrics
+  );
+  const { scaleX, scaleY } = getCargoOverlayScale(metrics);
+  const naturalWidth = cargoAnimationGif?.naturalWidth || cargoAnimationGif?.width || 0;
+  const naturalHeight = cargoAnimationGif?.naturalHeight || cargoAnimationGif?.height || 0;
+  const width = Math.max(1, Math.round(Math.max(1, naturalWidth) * scaleX));
+  const height = Math.max(1, Math.round(Math.max(1, naturalHeight) * scaleY));
+
+  Object.assign(cargo.domEntry.element.style, {
+    left: `${Math.round(offsetPoint.overlayX)}px`,
+    top: `${Math.round(offsetPoint.overlayY)}px`,
+    width: `${width}px`,
+    height: `${height}px`
+  });
+
+  Object.assign(cargo.domEntry.img.style, {
+    width: '100%',
+    height: '100%',
+    display: 'block'
+  });
+}
+
+function syncCargoAnimationDomEntries() {
+  if (cargoState.length === 0) {
+    return;
+  }
+
+  const metrics = resolveCargoMetrics('cargo animation');
+  if (!metrics) {
+    for (const cargo of cargoState) {
+      removeCargoAnimationDomEntry(cargo);
+    }
+    return;
+  }
+
+  for (const cargo of cargoState) {
+    syncCargoAnimationDomEntry(cargo, metrics);
+  }
 }
 
 function findCargoSpawnTarget(){
@@ -4709,6 +4933,7 @@ function updateCargoState(now = performance.now()){
       : CARGO_ANIM_MS_FALLBACK;
     if(cargo.state === "animating" && now - cargo.animStartedAt >= animDurationMs){
       cargo.state = "ready";
+      removeCargoAnimationDomEntry(cargo);
     }
     if(cargo.state !== "ready"){
       remainingCargo.push(cargo);
@@ -4729,6 +4954,8 @@ function updateCargoState(now = performance.now()){
     }
     if(!pickedUp){
       remainingCargo.push(cargo);
+    } else {
+      removeCargoAnimationDomEntry(cargo);
     }
   }
   if(remainingCargo.length !== cargoState.length){
@@ -4740,18 +4967,8 @@ function updateCargoState(now = performance.now()){
 function drawCargo(ctx2d){
   if(cargoState.length === 0) return;
   const canDrawCargoBox = isSpriteReady(cargoSprite);
-  const canDrawCargoAnimation = isSpriteReady(cargoAnimationGif);
 
   for(const cargo of cargoState){
-    // x/y у cargo всегда в world/board координатах. Смещения GIF применяем в тех
-    // же единицах, чтобы позиция не «плыла» из-за DPR или CSS-масштаба интерфейса.
-    if(cargo.state === "animating" && canDrawCargoAnimation){
-      const gifX = cargo.x + CARGO_GIF_OFFSET_X;
-      const gifY = cargo.y + CARGO_GIF_OFFSET_Y;
-      ctx2d.drawImage(cargoAnimationGif, gifX, gifY);
-      continue;
-    }
-
     if(cargo.state === "ready" && canDrawCargoBox){
       ctx2d.drawImage(cargoSprite, cargo.x, cargo.y);
     }
@@ -8105,6 +8322,7 @@ function gameDraw(){
   drawFieldBackground(gsBoardCtx, WORLD.width, WORLD.height);
   drawMapLayer(gsBoardCtx);
   updateCargoState(now);
+  syncCargoAnimationDomEntries();
   drawCargo(gsBoardCtx);
 
   updateNukeTimeline(now);
