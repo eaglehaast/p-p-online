@@ -749,7 +749,7 @@ const itemUsageConfig = Object.freeze({
   },
   [INVENTORY_ITEM_TYPES.MINE]: {
     target: ITEM_USAGE_TARGETS.BOARD,
-    hintText: "",
+    hintText: "Install it on the field. Stay away.",
     requiresDragAndDrop: true,
   },
   [INVENTORY_ITEM_TYPES.DYNAMITE]: {
