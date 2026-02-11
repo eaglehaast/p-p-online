@@ -1725,6 +1725,15 @@ function isMinePlacementValid(placement){
   if(!Number.isFinite(placement.x) || !Number.isFinite(placement.y)) return false;
   if(!isPointInsideFieldBounds(placement.x, placement.y)) return false;
 
+  // «установка мины — в свободную точку, не в центр клетки»:
+  // проверяем фактическую дистанцию между минами в мировых пикселях,
+  // а не совпадение координат вычисленной клетки.
+  const tooCloseToAnotherMine = mines.some(mine => {
+    if(!Number.isFinite(mine?.x) || !Number.isFinite(mine?.y)) return false;
+    return Math.hypot(mine.x - placement.x, mine.y - placement.y) < MINE_PLACEMENT_MIN_DISTANCE;
+  });
+  if(tooCloseToAnotherMine) return false;
+
   if(isBrickPixel(placement.x, placement.y)) return false;
 
   const intersectsCollider = colliders.some(collider =>
@@ -1748,20 +1757,20 @@ function isMinePlacementValid(placement){
   });
   if(tooCloseToPlane) return false;
 
-  const mineInSameCell = mines.some(mine => mine.cellX === placement.cellX && mine.cellY === placement.cellY);
-  if(mineInSameCell) return false;
-
   return true;
 }
 
 function placeMine({ owner, x, y, cellX, cellY }){
+  // «установка мины — в свободную точку, не в центр клетки»:
+  // главным источником истины остаются мировые координаты x/y.
+  // cellX/cellY оставляем как вспомогательные данные для аналитики.
   mines.push({
     id: `mine-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     owner,
     x,
     y,
-    cellX,
-    cellY,
+    cellX: Number.isFinite(cellX) ? cellX : null,
+    cellY: Number.isFinite(cellY) ? cellY : null,
   });
 }
 
@@ -4956,6 +4965,7 @@ const SLIDE_THRESHOLD      = 0.1;
 const PLANE_TOUCH_RADIUS   = 20;                   // px
 const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit Anti-Aircraft center
 const MINE_TRIGGER_RADIUS  = POINT_RADIUS;
+const MINE_PLACEMENT_MIN_DISTANCE = 16; // px, минимальная дистанция между центрами мин при установке
 const BOUNCE_FRAMES        = 68;
 // Duration of a full-speed flight on the field (measured in frames)
 // (Restored to the original pre-change speed used for gameplay physics)
