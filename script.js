@@ -749,7 +749,7 @@ const itemUsageConfig = Object.freeze({
   },
   [INVENTORY_ITEM_TYPES.MINE]: {
     target: ITEM_USAGE_TARGETS.BOARD,
-    hintText: "Install it on the field. Stay away.",
+    hintText: "Install it on the field. Dangerous for everyone, including you.",
     requiresDragAndDrop: true,
   },
   [INVENTORY_ITEM_TYPES.DYNAMITE]: {
@@ -8575,7 +8575,7 @@ function handleMineForPlane(p, fp){
 
   for(let i = 0; i < mines.length; i++){
     const mine = mines[i];
-    if(!mine || mine.owner === p.color) continue;
+    if(!mine) continue;
 
     const dx = p.x - mine.x;
     const dy = p.y - mine.y;
@@ -8605,7 +8605,11 @@ function handleMineForPlane(p, fp){
 
     mines.splice(i, 1);
 
-    awardPoint(mine.owner);
+    // Self-detonation rule: stepping on your own mine destroys your plane,
+    // but does not grant a score point to the owner.
+    if(mine.owner && mine.owner !== p.color){
+      awardPoint(mine.owner);
+    }
     checkVictory();
 
     if(fp && !isGameOver && !flyingPoints.some(x => x.plane.color === p.color)){
