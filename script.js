@@ -4093,8 +4093,46 @@ const baseSprites = {
 
 const CARGO_SPRITE_PATH = "ui_gamescreen/gs_cargo_box.png";
 const CARGO_ANIMATION_GIF_PATH = "ui_gamescreen/gs_cargo_animation.gif";
+const CARGO_ANIM_MS_FALLBACK = 5040;
 const { img: cargoSprite } = loadImageAsset(CARGO_SPRITE_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
 const { img: cargoAnimationGif } = loadImageAsset(CARGO_ANIMATION_GIF_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
+let cargoAnimDurationMs = CARGO_ANIM_MS_FALLBACK;
+
+async function loadCargoAnimDurationMs(){
+  if(typeof window === "undefined" || typeof fetch !== "function" || typeof ImageDecoder !== "function"){
+    return CARGO_ANIM_MS_FALLBACK;
+  }
+  try {
+    const response = await fetch(CARGO_ANIMATION_GIF_PATH, { cache: "force-cache" });
+    if(!response.ok){
+      return CARGO_ANIM_MS_FALLBACK;
+    }
+    const data = await response.arrayBuffer();
+    const decoder = new ImageDecoder({ data, type: "image/gif" });
+    await decoder.tracks.ready;
+    const frameCount = decoder.tracks.selectedTrack?.frameCount;
+    if(!Number.isFinite(frameCount) || frameCount <= 0){
+      decoder.close();
+      return CARGO_ANIM_MS_FALLBACK;
+    }
+
+    let totalDurationMs = 0;
+    for(let frameIndex = 0; frameIndex < frameCount; frameIndex++){
+      const { image } = await decoder.decode({ frameIndex });
+      const frameDurationMs = Number.isFinite(image.duration) ? image.duration / 1000 : 0;
+      totalDurationMs += frameDurationMs;
+      image.close();
+    }
+    decoder.close();
+    return totalDurationMs > 0 ? totalDurationMs : CARGO_ANIM_MS_FALLBACK;
+  } catch (_error) {
+    return CARGO_ANIM_MS_FALLBACK;
+  }
+}
+
+loadCargoAnimDurationMs().then(durationMs => {
+  cargoAnimDurationMs = durationMs;
+});
 
 function isSpriteReady(img) {
   return Boolean(
@@ -4655,18 +4693,21 @@ function spawnCargoForTurn(){
     y: candidate.targetY,
     state: "animating",
     animStartedAt,
-    animEndsAt: animStartedAt + CARGO_ANIM_MS,
+    animDurationMs: cargoAnimDurationMs,
     pickedAt: null
   });
 }
 
-function updateCargoState(deltaSec, now){
+function updateCargoState(now = performance.now()){
   if(cargoState.length === 0){
     return;
   }
   const remainingCargo = [];
   for(const cargo of cargoState){
-    if(cargo.state === "animating" && now >= cargo.animEndsAt){
+    const animDurationMs = Number.isFinite(cargo.animDurationMs)
+      ? cargo.animDurationMs
+      : CARGO_ANIM_MS_FALLBACK;
+    if(cargo.state === "animating" && now - cargo.animStartedAt >= animDurationMs){
       cargo.state = "ready";
     }
     if(cargo.state !== "ready"){
@@ -4702,6 +4743,8 @@ function drawCargo(ctx2d){
   const canDrawCargoAnimation = isSpriteReady(cargoAnimationGif);
 
   for(const cargo of cargoState){
+    // x/y у cargo всегда в world/board координатах. Смещения GIF применяем в тех
+    // же единицах, чтобы позиция не «плыла» из-за DPR или CSS-масштаба интерфейса.
     if(cargo.state === "animating" && canDrawCargoAnimation){
       const gifX = cargo.x + CARGO_GIF_OFFSET_X;
       const gifY = cargo.y + CARGO_GIF_OFFSET_Y;
@@ -8061,7 +8104,7 @@ function gameDraw(){
   resetCanvasState(gsBoardCtx, gsBoardCanvas);
   drawFieldBackground(gsBoardCtx, WORLD.width, WORLD.height);
   drawMapLayer(gsBoardCtx);
-  updateCargoState(deltaSec, now);
+  updateCargoState(now);
   drawCargo(gsBoardCtx);
 
   updateNukeTimeline(now);
