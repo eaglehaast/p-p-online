@@ -28,6 +28,7 @@ const DEBUG_COLLISIONS_TOI = false;
 const DEBUG_COLLISIONS_VERBOSE = false;
 const DEBUG_STARTUP_WORLDY = false;
 const DEBUG_WRAPPER_SYNC = false;
+const DEBUG_DROP_COORDS = false;
 const DEBUG_CHEATS = typeof location !== "undefined" && location.hash.includes("dev");
 
 if (typeof window !== 'undefined') {
@@ -173,12 +174,60 @@ function toDesignCoords(clientX, clientY) {
   const uiScaleRaw = rootStyle.getPropertyValue('--ui-scale');
   const uiScaleValue = uiScaleRaw ? parseFloat(uiScaleRaw) : 1;
   const uiScale = Number.isFinite(uiScaleValue) && uiScaleValue > 0 ? uiScaleValue : 1;
+  const pinchScale = getEffectivePinchScale();
+  const effectiveScale = uiScale * pinchScale;
   return {
-    x: (clientX - rect.left) / uiScale,
-    y: (clientY - rect.top) / uiScale,
+    x: (clientX - rect.left) / effectiveScale,
+    y: (clientY - rect.top) / effectiveScale,
     rect,
-    uiScale
+    uiScale,
+    pinchScale,
+    effectiveScale
   };
+}
+
+function getPinchScaleFromUiFrameTransform() {
+  if (!(uiFrameInner instanceof HTMLElement)) return null;
+  const raw = uiFrameInner.style.transform
+    || window.getComputedStyle(uiFrameInner).transform
+    || "";
+  if (!raw || raw === "none") return null;
+
+  const scaleMatch = raw.match(/scale\(([^)]+)\)/i);
+  if (scaleMatch) {
+    const value = parseFloat(scaleMatch[1]);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+
+  const matrixMatch = raw.match(/matrix\(([^)]+)\)/i);
+  if (matrixMatch) {
+    const values = matrixMatch[1].split(',').map((token) => parseFloat(token.trim()));
+    const value = values[0];
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+
+  return null;
+}
+
+function getEffectivePinchScale() {
+  if (typeof window === 'undefined' || window.PINCH_ACTIVE !== true) {
+    return 1;
+  }
+
+  const runtimePinchScale = Number.isFinite(pinchScale) && pinchScale > 0 ? pinchScale : null;
+  const transformPinchScale = getPinchScaleFromUiFrameTransform();
+  const resolvedPinchScale = runtimePinchScale ?? transformPinchScale;
+
+  if (!Number.isFinite(resolvedPinchScale) || resolvedPinchScale <= 0) {
+    return 1;
+  }
+
+  return resolvedPinchScale;
+}
+
+function logDropCoordsDebug(context, payload) {
+  if (!DEBUG_DROP_COORDS) return;
+  console.log(`[drop-debug] ${context}`, payload);
 }
 
 function getPointerClientCoords(event) {
@@ -1487,6 +1536,17 @@ function onBoardDrop(event){
   if(usageConfig.target === ITEM_USAGE_TARGETS.BOARD){
     if(activeNuclearDrag.type === INVENTORY_ITEM_TYPES.MINE){
       const minePlacement = getMinePlacementFromDropPoint(clientX, clientY);
+      logDropCoordsDebug("onBoardDrop/mine", {
+        clientX,
+        clientY,
+        uiScale: minePlacement.uiScale,
+        pinchScale: minePlacement.pinchScale,
+        effectiveScale: minePlacement.effectiveScale,
+        boardX: minePlacement.boardX,
+        boardY: minePlacement.boardY,
+        cellX: minePlacement.cellX,
+        cellY: minePlacement.cellY
+      });
       const isPlacementValid = isMinePlacementValid(minePlacement);
       if(isPlacementValid){
         placeMine({
@@ -1535,8 +1595,18 @@ function onSelfPlaneItemDrop(event){
     return;
   }
 
-  const { x: designX, y: designY } = toDesignCoords(clientX, clientY);
+  const designPoint = toDesignCoords(clientX, clientY);
+  const { x: designX, y: designY } = designPoint;
   const { x: boardX, y: boardY } = designToBoardCoords(designX, designY);
+  logDropCoordsDebug("onSelfPlaneItemDrop", {
+    clientX,
+    clientY,
+    uiScale: designPoint.uiScale,
+    pinchScale: designPoint.pinchScale,
+    effectiveScale: designPoint.effectiveScale,
+    boardX,
+    boardY
+  });
   const ownPlane = getPlaneAtBoardPoint(activeNuclearDrag.color, boardX, boardY);
   if(!ownPlane){
     cancelActiveNuclearDrag("self target missed");
@@ -1569,7 +1639,8 @@ function onInventoryDrop(event){
 }
 
 function getMinePlacementFromDropPoint(clientX, clientY){
-  const { x: designX, y: designY } = toDesignCoords(clientX, clientY);
+  const designPoint = toDesignCoords(clientX, clientY);
+  const { x: designX, y: designY } = designPoint;
   const { x: boardX, y: boardY } = designToBoardCoords(designX, designY);
   const cellX = Math.floor((boardX - FIELD_LEFT) / CELL_SIZE);
   const cellY = Math.floor((boardY - FIELD_TOP) / CELL_SIZE);
@@ -1580,6 +1651,9 @@ function getMinePlacementFromDropPoint(clientX, clientY){
     cellY,
     x: boardX,
     y: boardY,
+    uiScale: designPoint.uiScale,
+    pinchScale: designPoint.pinchScale,
+    effectiveScale: designPoint.effectiveScale,
   };
 }
 
