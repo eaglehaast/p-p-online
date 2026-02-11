@@ -4198,8 +4198,9 @@ const baseSprites = {
 };
 
 const CARGO_SPRITE_PATH = "ui_gamescreen/gs_cargo_box.png";
-const CARGO_ANIMATION_GIF_PATH = "ui_gamescreen/gs_cargo_animation.gif";
-const CARGO_ANIM_MS_FALLBACK = 5040;
+// Light GIF is the base version because it plays back more consistently across devices.
+const CARGO_ANIMATION_GIF_PATH = "ui_gamescreen/gs_cargo_animation_light.gif";
+const CARGO_ANIM_MS_FALLBACK = 1500;
 const { img: cargoSprite } = loadImageAsset(CARGO_SPRITE_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
 const { img: cargoAnimationGif } = loadImageAsset(CARGO_ANIMATION_GIF_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
 let cargoAnimDurationMs = CARGO_ANIM_MS_FALLBACK;
