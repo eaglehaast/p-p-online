@@ -1442,8 +1442,8 @@ function getInventoryDragFallbackGhost(){
   ghost.style.position = "fixed";
   ghost.style.left = "0";
   ghost.style.top = "0";
-  ghost.style.width = `${INVENTORY_MINE_SIZE_PX}px`;
-  ghost.style.height = `${INVENTORY_MINE_SIZE_PX}px`;
+  ghost.style.width = `${MINE_SIZE.SCREEN_PX}px`;
+  ghost.style.height = `${MINE_SIZE.SCREEN_PX}px`;
   ghost.style.pointerEvents = "none";
   ghost.style.opacity = "0";
   ghost.style.visibility = "hidden";
@@ -1481,7 +1481,7 @@ function updateInventoryDragFallbackPosition(clientX, clientY){
   if(!inventoryDragFallbackActive) return;
   if(!Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
   const ghost = getInventoryDragFallbackGhost();
-  const half = INVENTORY_MINE_SIZE_PX / 2;
+  const half = MINE_SIZE.SCREEN_PX / 2;
   const drawX = Math.round(clientX - half);
   const drawY = Math.round(clientY - half);
   ghost.style.transform = `translate3d(${drawX}px, ${drawY}px, 0)`;
@@ -1541,8 +1541,8 @@ function getInventoryDragPreviewConfig(type, target, visualWidth, visualHeight){
   if(type === INVENTORY_ITEM_TYPES.MINE){
     return {
       src: MINE_INVENTORY_ICON_PATH,
-      width: INVENTORY_MINE_SIZE_PX,
-      height: INVENTORY_MINE_SIZE_PX,
+      width: MINE_SIZE.SCREEN_PX,
+      height: MINE_SIZE.SCREEN_PX,
     };
   }
 
@@ -1624,7 +1624,7 @@ function onInventoryItemDragStart(event){
       const hasDragImageIssues = detectProblematicDragImageConditions(event);
       const dragPreview = getSharedInventoryDragPreview();
       const fallbackSize = type === INVENTORY_ITEM_TYPES.MINE
-        ? INVENTORY_MINE_SIZE_PX
+        ? MINE_SIZE.SCREEN_PX
         : INVENTORY_ITEM_SIZE_PX;
       const targetRect = target.getBoundingClientRect();
       const visualWidth = Number.isFinite(targetRect.width) && targetRect.width > 0
@@ -1960,6 +1960,7 @@ function placeMine({ owner, x, y, cellX, cellY }){
 function syncInventoryUI(color){
   const host = inventoryHosts[color];
   if(!(host instanceof HTMLElement)) return;
+  host.style.setProperty("--inventory-mine-size", `${MINE_SIZE.SCREEN_PX}px`);
   host.innerHTML = "";
   const items = inventoryState[color] ?? [];
   const countsByType = items.reduce((counts, item) => {
@@ -5107,6 +5108,16 @@ document.addEventListener('dblclick', (e) => {
 const PLANE_DRAW_W         = 36;
 const PLANE_DRAW_H         = 36;
 const PLANE_METRIC_SCALE   = PLANE_DRAW_W / 40;
+
+// Single source of truth for mine size.
+// LOGICAL_PX controls mine size inside the game world (canvas drawing units).
+// SCREEN_PX controls mine size in interface pixels (inventory/drag preview via CSS variable).
+// Keep both values here so future tweaks do not create a second, conflicting size source.
+const MINE_SIZE = Object.freeze({
+  LOGICAL_PX: 30,
+  SCREEN_PX: 30,
+});
+
 function planeMetric(value) {
   return value * PLANE_METRIC_SCALE;
 }
@@ -5133,10 +5144,7 @@ const HUD_PLANE_DEATH_SCALE_DELTA = 0.15;
 const HUD_BASE_PLANE_ICON_SIZE = planeMetric(16);
 const CELL_SIZE            = 20;     // px
 const INVENTORY_ITEM_SIZE_PX = 30;
-const INVENTORY_MINE_SIZE_PX = 30;
 const INVENTORY_SLOT_SIZE_PX = INVENTORY_ITEM_SIZE_PX;
-const MINE_ICON_WIDTH      = INVENTORY_MINE_SIZE_PX;
-const MINE_ICON_HEIGHT     = INVENTORY_MINE_SIZE_PX;
 const POINT_RADIUS         = planeMetric(15);     // px (увеличено для мобильных)
 const CARGO_PICKUP_RADIUS_MULTIPLIER = 2.2;
 const CARGO_RADIUS         = POINT_RADIUS * CARGO_PICKUP_RADIUS_MULTIPLIER;    // увеличенный радиус ящика
@@ -5181,7 +5189,7 @@ const FLAG_WIDTH           = 12;     // ширина полотна флага
 const FLAG_HEIGHT          = 8;      // высота полотна флага
 
 document.documentElement.style.setProperty("--inventory-item-size", `${INVENTORY_ITEM_SIZE_PX}px`);
-document.documentElement.style.setProperty("--inventory-mine-size", `${INVENTORY_MINE_SIZE_PX}px`);
+document.documentElement.style.setProperty("--inventory-mine-size", `${MINE_SIZE.SCREEN_PX}px`);
 document.documentElement.style.setProperty("--inventory-slot-size", `${INVENTORY_SLOT_SIZE_PX}px`);
 
 const START_PLANES = {
@@ -10278,8 +10286,8 @@ function drawFlagMarkers(){
 
 function drawMines(){
   if(!Array.isArray(mines) || mines.length === 0) return;
-  const halfMineWidth = MINE_ICON_WIDTH / 2;
-  const halfMineHeight = MINE_ICON_HEIGHT / 2;
+  const mineLogicalSize = MINE_SIZE.LOGICAL_PX;
+  const halfMineSize = mineLogicalSize / 2;
 
   for(let i = 0; i < mines.length; i++){
     const mine = mines[i];
@@ -10295,10 +10303,10 @@ function drawMines(){
     if(isSpriteReady(mineIconSprite)){
       gsBoardCtx.drawImage(
         mineIconSprite,
-        -halfMineWidth,
-        -halfMineHeight,
-        MINE_ICON_WIDTH,
-        MINE_ICON_HEIGHT
+        -halfMineSize,
+        -halfMineSize,
+        mineLogicalSize,
+        mineLogicalSize
       );
     } else {
       gsBoardCtx.fillStyle = mine.owner === "blue" ? "#2d5cff" : "#3f9f3f";
