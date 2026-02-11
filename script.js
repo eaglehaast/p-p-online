@@ -4201,6 +4201,7 @@ const CARGO_SPRITE_PATH = "ui_gamescreen/gs_cargo_box.png";
 // Light GIF is the base version because it plays back more consistently across devices.
 const CARGO_ANIMATION_GIF_PATH = "ui_gamescreen/gs_cargo_animation_light.gif";
 const CARGO_ANIM_MS_FALLBACK = 1500;
+const CARGO_ANIM_LOOP_GUARD_MS = 120;
 const { img: cargoSprite } = loadImageAsset(CARGO_SPRITE_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
 const { img: cargoAnimationGif } = loadImageAsset(CARGO_ANIMATION_GIF_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
 let cargoAnimDurationMs = CARGO_ANIM_MS_FALLBACK;
@@ -4593,7 +4594,10 @@ const HUD_PLANE_DEATH_SCALE_DELTA = 0.15;
 const HUD_BASE_PLANE_ICON_SIZE = planeMetric(16);
 const CELL_SIZE            = 20;     // px
 const POINT_RADIUS         = planeMetric(15);     // px (увеличено для мобильных)
-const CARGO_RADIUS         = POINT_RADIUS * 2;    // увеличенный радиус ящика
+const CARGO_PICKUP_RADIUS_MULTIPLIER = 2.2;
+const CARGO_RADIUS         = POINT_RADIUS * CARGO_PICKUP_RADIUS_MULTIPLIER;    // увеличенный радиус ящика
+const CARGO_SPAWN_SAFE_RADIUS = CARGO_RADIUS + POINT_RADIUS;
+const CARGO_FALLBACK_SIZE_PX = 24;
 const CARGO_GIF_OFFSET_X   = -34;
 const CARGO_GIF_OFFSET_Y   = -137;
 const FLAG_INTERACTION_RADIUS = 25;  // px
@@ -4896,7 +4900,7 @@ function findCargoSpawnTarget(){
       if(!point?.isAlive || point?.burning) return false;
       const dx = point.x - x;
       const dy = point.y - targetY;
-      return Math.hypot(dx, dy) < POINT_RADIUS;
+      return Math.hypot(dx, dy) < CARGO_SPAWN_SAFE_RADIUS;
     });
     if(tooCloseToPlane) continue;
     return { x, targetY };
@@ -4923,6 +4927,24 @@ function spawnCargoForTurn(){
   });
 }
 
+function getCargoSpriteSize(){
+  const width = Number.isFinite(cargoSprite?.naturalWidth) && cargoSprite.naturalWidth > 0
+    ? cargoSprite.naturalWidth
+    : CARGO_FALLBACK_SIZE_PX;
+  const height = Number.isFinite(cargoSprite?.naturalHeight) && cargoSprite.naturalHeight > 0
+    ? cargoSprite.naturalHeight
+    : CARGO_FALLBACK_SIZE_PX;
+  return { width, height };
+}
+
+function getCargoVisualCenter(cargo){
+  const { width, height } = getCargoSpriteSize();
+  return {
+    x: cargo.x + width / 2,
+    y: cargo.y + height / 2
+  };
+}
+
 function updateCargoState(now = performance.now()){
   if(cargoState.length === 0){
     return;
@@ -4932,7 +4954,8 @@ function updateCargoState(now = performance.now()){
     const animDurationMs = Number.isFinite(cargo.animDurationMs)
       ? cargo.animDurationMs
       : CARGO_ANIM_MS_FALLBACK;
-    if(cargo.state === "animating" && now - cargo.animStartedAt >= animDurationMs){
+    const safeAnimDurationMs = Math.max(0, animDurationMs - CARGO_ANIM_LOOP_GUARD_MS);
+    if(cargo.state === "animating" && now - cargo.animStartedAt >= safeAnimDurationMs){
       cargo.state = "ready";
       removeCargoAnimationDomEntry(cargo);
     }
@@ -4943,8 +4966,9 @@ function updateCargoState(now = performance.now()){
     let pickedUp = false;
     for(const plane of points){
       if(!plane?.isAlive || plane?.burning) continue;
-      const dx = plane.x - cargo.x;
-      const dy = plane.y - cargo.y;
+      const pickupCenter = getCargoVisualCenter(cargo);
+      const dx = plane.x - pickupCenter.x;
+      const dy = plane.y - pickupCenter.y;
       if(Math.hypot(dx, dy) < CARGO_RADIUS){
         cargo.pickedAt = now;
         const item = getRandomInventoryItem();
