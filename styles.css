@@ -280,6 +280,11 @@ body, button {
     cursor: grab;
   }
 
+  .inventory-item--mine {
+    width: 30px;
+    height: 31px;
+  }
+
   .inventory-item--ghost {
     opacity: 0.22;
     pointer-events: none;

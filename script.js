@@ -1405,7 +1405,13 @@ function onInventoryItemDragStart(event){
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", type);
     if (target instanceof HTMLImageElement) {
-      event.dataTransfer.setDragImage(target, target.width / 2, target.height / 2);
+      if(type === INVENTORY_ITEM_TYPES.MINE){
+        target.width = MINE_ICON_WIDTH;
+        target.height = MINE_ICON_HEIGHT;
+        event.dataTransfer.setDragImage(target, Math.round(MINE_ICON_WIDTH / 2), Math.round(MINE_ICON_HEIGHT / 2));
+      } else {
+        event.dataTransfer.setDragImage(target, target.width / 2, target.height / 2);
+      }
     }
   }
   if(type === INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE){
@@ -1705,6 +1711,9 @@ function syncInventoryUI(color){
     img.alt = "";
     img.draggable = false;
     img.className = "inventory-item";
+    if (slot.type === INVENTORY_ITEM_TYPES.MINE) {
+      img.classList.add("inventory-item--mine");
+    }
     if (!hasItem) {
       img.classList.add("inventory-item--ghost");
     }
@@ -4845,6 +4854,8 @@ const HUD_PLANE_DEATH_DURATION_MS = 160;
 const HUD_PLANE_DEATH_SCALE_DELTA = 0.15;
 const HUD_BASE_PLANE_ICON_SIZE = planeMetric(16);
 const CELL_SIZE            = 20;     // px
+const MINE_ICON_WIDTH      = 30;
+const MINE_ICON_HEIGHT     = 31;
 const POINT_RADIUS         = planeMetric(15);     // px (увеличено для мобильных)
 const CARGO_PICKUP_RADIUS_MULTIPLIER = 2.2;
 const CARGO_RADIUS         = POINT_RADIUS * CARGO_PICKUP_RADIUS_MULTIPLIER;    // увеличенный радиус ящика
@@ -9970,8 +9981,8 @@ function drawFlagMarkers(){
 
 function drawMines(){
   if(!Array.isArray(mines) || mines.length === 0) return;
-  const mineSize = CELL_SIZE * 0.9;
-  const halfSize = mineSize / 2;
+  const halfMineWidth = MINE_ICON_WIDTH / 2;
+  const halfMineHeight = MINE_ICON_HEIGHT / 2;
 
   for(let i = 0; i < mines.length; i++){
     const mine = mines[i];
@@ -9985,7 +9996,13 @@ function drawMines(){
     gsBoardCtx.rotate(swayRad);
 
     if(isSpriteReady(mineIconSprite)){
-      gsBoardCtx.drawImage(mineIconSprite, -halfSize, -halfSize, mineSize, mineSize);
+      gsBoardCtx.drawImage(
+        mineIconSprite,
+        -halfMineWidth,
+        -halfMineHeight,
+        MINE_ICON_WIDTH,
+        MINE_ICON_HEIGHT
+      );
       gsBoardCtx.restore();
       continue;
     }
