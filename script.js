@@ -1474,16 +1474,24 @@ function onInventoryItemDragStart(event){
     event.dataTransfer.setData("text/plain", type);
     if (target instanceof HTMLImageElement) {
       const dragPreview = getSharedInventoryDragPreview();
-      const dragPreviewSize = type === INVENTORY_ITEM_TYPES.MINE
+      const fallbackSize = type === INVENTORY_ITEM_TYPES.MINE
         ? INVENTORY_MINE_SIZE_PX
         : INVENTORY_ITEM_SIZE_PX;
+      const targetRect = target.getBoundingClientRect();
+      const visualWidth = Number.isFinite(targetRect.width) && targetRect.width > 0
+        ? targetRect.width
+        : fallbackSize;
+      const visualHeight = Number.isFinite(targetRect.height) && targetRect.height > 0
+        ? targetRect.height
+        : fallbackSize;
       dragPreview.src = target.currentSrc || target.src;
-      dragPreview.width = dragPreviewSize;
-      dragPreview.height = dragPreviewSize;
-      dragPreview.style.width = `${dragPreviewSize}px`;
-      dragPreview.style.height = `${dragPreviewSize}px`;
-      const dragOffset = Math.round(dragPreviewSize / 2);
-      event.dataTransfer.setDragImage(dragPreview, dragOffset, dragOffset);
+      dragPreview.width = Math.max(1, Math.round(visualWidth));
+      dragPreview.height = Math.max(1, Math.round(visualHeight));
+      dragPreview.style.width = `${visualWidth}px`;
+      dragPreview.style.height = `${visualHeight}px`;
+      const dragOffsetX = Math.round(visualWidth / 2);
+      const dragOffsetY = Math.round(visualHeight / 2);
+      event.dataTransfer.setDragImage(dragPreview, dragOffsetX, dragOffsetY);
     }
   }
   if(type === INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE){
