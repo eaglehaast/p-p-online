@@ -749,7 +749,7 @@ const itemUsageConfig = Object.freeze({
   },
   [INVENTORY_ITEM_TYPES.MINE]: {
     target: ITEM_USAGE_TARGETS.BOARD,
-    hintText: "Install it on the field. Dangerous for everyone, including you.",
+    hintText: "install it on the field. Stay away!",
     requiresDragAndDrop: true,
   },
   [INVENTORY_ITEM_TYPES.DYNAMITE]: {
@@ -1406,9 +1406,21 @@ function onInventoryItemDragStart(event){
     event.dataTransfer.setData("text/plain", type);
     if (target instanceof HTMLImageElement) {
       if(type === INVENTORY_ITEM_TYPES.MINE){
-        target.width = MINE_ICON_WIDTH;
-        target.height = MINE_ICON_HEIGHT;
-        event.dataTransfer.setDragImage(target, Math.round(MINE_ICON_WIDTH / 2), Math.round(MINE_ICON_HEIGHT / 2));
+        const mineDragPreview = document.createElement("img");
+        mineDragPreview.src = target.currentSrc || target.src;
+        mineDragPreview.width = MINE_ICON_WIDTH;
+        mineDragPreview.height = MINE_ICON_HEIGHT;
+        mineDragPreview.style.width = `${MINE_ICON_WIDTH}px`;
+        mineDragPreview.style.height = `${MINE_ICON_HEIGHT}px`;
+        mineDragPreview.style.position = "fixed";
+        mineDragPreview.style.left = "-9999px";
+        mineDragPreview.style.top = "-9999px";
+        mineDragPreview.style.pointerEvents = "none";
+        document.body.appendChild(mineDragPreview);
+        event.dataTransfer.setDragImage(mineDragPreview, Math.round(MINE_ICON_WIDTH / 2), Math.round(MINE_ICON_HEIGHT / 2));
+        requestAnimationFrame(() => {
+          mineDragPreview.remove();
+        });
       } else {
         event.dataTransfer.setDragImage(target, target.width / 2, target.height / 2);
       }
@@ -1566,8 +1578,8 @@ function getMinePlacementFromDropPoint(clientX, clientY){
     boardY,
     cellX,
     cellY,
-    x: FIELD_LEFT + cellX * CELL_SIZE + CELL_SIZE / 2,
-    y: FIELD_TOP + cellY * CELL_SIZE + CELL_SIZE / 2,
+    x: boardX,
+    y: boardY,
   };
 }
 
@@ -4878,11 +4890,9 @@ const FIELD_FLIGHT_DURATION_SEC = (BOUNCE_FRAMES / 60) * 2 / 1.5;
 const FIELD_PLANE_SWAY_DEG = 0.75;
 const FIELD_PLANE_SWAY_PERIOD_SEC = 2.6 / 1.5;
 const FIELD_PLANE_ROLL_BOB_PX = 0.75;
-// Tuned for a readable mine idle animation: 3.2° gives visible sway without looking cartoony,
-// and 0.075 keeps the motion smooth after amplitude increase.
+// Mine idle animation keeps only horizontal sway without vertical bobbing.
 const FIELD_MINE_SWAY_DEG = 3.2;
 const FIELD_MINE_SWAY_OMEGA = 0.075;
-const FIELD_MINE_BOB_PX = 1.4;
 const MAX_DRAG_DISTANCE    = 100;    // px
 const DRAG_ROTATION_THRESHOLD = 5;   // px slack before the plane starts to turn
 const ATTACK_RANGE_PX      = 300;    // px
@@ -9993,10 +10003,9 @@ function drawMines(){
     const phase = ((mine.x + mine.y) * 0.07) + i * 0.37;
     const swayDeg = Math.sin(globalFrame * FIELD_MINE_SWAY_OMEGA + phase) * FIELD_MINE_SWAY_DEG;
     const swayRad = swayDeg * Math.PI / 180;
-    const bobOffsetY = Math.sin(globalFrame * FIELD_MINE_SWAY_OMEGA * 1.15 + phase) * FIELD_MINE_BOB_PX;
 
     gsBoardCtx.save();
-    gsBoardCtx.translate(mine.x, mine.y + bobOffsetY);
+    gsBoardCtx.translate(mine.x, mine.y);
     gsBoardCtx.rotate(swayRad);
 
     if(isSpriteReady(mineIconSprite)){
