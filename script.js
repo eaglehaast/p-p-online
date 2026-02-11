@@ -4652,7 +4652,87 @@ function isBrickPixel(x, y){
 }
 
 function resetCargoState(){
+  cleanupCargoFxEntries();
   cargoState.length = 0;
+}
+
+function removeCargoFxEntry(cargo){
+  if(!cargo?.domEntry){
+    return;
+  }
+  cargo.domEntry.element?.remove?.();
+  delete cargo.domEntry;
+}
+
+function cleanupCargoFxEntries(){
+  for(const cargo of cargoState){
+    removeCargoFxEntry(cargo);
+  }
+}
+
+function createCargoImageEntry(cargo){
+  const host = ensureExplosionHost();
+  if(!host || !cargoAnimationGif?.src){
+    return null;
+  }
+
+  const metrics = resolveExplosionMetrics('cargo');
+  if(!metrics){
+    return null;
+  }
+
+  const { boardRect, overlayRect } = metrics;
+  const { overlayX, overlayY } = worldToOverlayLocal(
+    cargo.x + CARGO_GIF_OFFSET_X,
+    cargo.y + CARGO_GIF_OFFSET_Y,
+    { boardRect, overlayRect }
+  );
+
+  const image = new Image();
+  image.decoding = 'async';
+  image.className = 'fx-cargo-img';
+  image.src = cargoAnimationGif.src;
+
+  Object.assign(image.style, {
+    position: 'absolute',
+    pointerEvents: 'none',
+    transform: 'translate(-50%, -50%)',
+    left: `${Math.round(overlayX)}px`,
+    top: `${Math.round(overlayY)}px`
+  });
+
+  host.appendChild(image);
+  return { element: image, host, metrics };
+}
+
+function updateCargoFxPosition(cargo, metrics){
+  const element = cargo?.domEntry?.element;
+  if(!element){
+    return;
+  }
+
+  const resolvedMetrics = metrics || resolveExplosionMetrics('cargo');
+  if(!resolvedMetrics){
+    return;
+  }
+
+  const { boardRect, overlayRect } = resolvedMetrics;
+  const { overlayX, overlayY } = worldToOverlayLocal(
+    cargo.x + CARGO_GIF_OFFSET_X,
+    cargo.y + CARGO_GIF_OFFSET_Y,
+    { boardRect, overlayRect }
+  );
+
+  cargo.domEntry.metrics = resolvedMetrics;
+  element.style.left = `${Math.round(overlayX)}px`;
+  element.style.top = `${Math.round(overlayY)}px`;
+}
+
+function ensureCargoFxEntry(cargo){
+  if(cargo?.domEntry?.element){
+    return;
+  }
+  cargo.domEntry = createCargoImageEntry(cargo);
 }
 
 function findCargoSpawnTarget(){
@@ -4702,13 +4782,19 @@ function updateCargoState(now = performance.now()){
   if(cargoState.length === 0){
     return;
   }
+  const fxMetrics = resolveExplosionMetrics('cargo');
   const remainingCargo = [];
   for(const cargo of cargoState){
     const animDurationMs = Number.isFinite(cargo.animDurationMs)
       ? cargo.animDurationMs
       : CARGO_ANIM_MS_FALLBACK;
+    if(cargo.state === "animating"){
+      ensureCargoFxEntry(cargo);
+      updateCargoFxPosition(cargo, fxMetrics);
+    }
     if(cargo.state === "animating" && now - cargo.animStartedAt >= animDurationMs){
       cargo.state = "ready";
+      removeCargoFxEntry(cargo);
     }
     if(cargo.state !== "ready"){
       remainingCargo.push(cargo);
@@ -4723,6 +4809,7 @@ function updateCargoState(now = performance.now()){
         cargo.pickedAt = now;
         const item = getRandomInventoryItem();
         addItemToInventory(plane.color, item);
+        removeCargoFxEntry(cargo);
         pickedUp = true;
         break;
       }
@@ -4740,18 +4827,8 @@ function updateCargoState(now = performance.now()){
 function drawCargo(ctx2d){
   if(cargoState.length === 0) return;
   const canDrawCargoBox = isSpriteReady(cargoSprite);
-  const canDrawCargoAnimation = isSpriteReady(cargoAnimationGif);
 
   for(const cargo of cargoState){
-    // x/y у cargo всегда в world/board координатах. Смещения GIF применяем в тех
-    // же единицах, чтобы позиция не «плыла» из-за DPR или CSS-масштаба интерфейса.
-    if(cargo.state === "animating" && canDrawCargoAnimation){
-      const gifX = cargo.x + CARGO_GIF_OFFSET_X;
-      const gifY = cargo.y + CARGO_GIF_OFFSET_Y;
-      ctx2d.drawImage(cargoAnimationGif, gifX, gifY);
-      continue;
-    }
-
     if(cargo.state === "ready" && canDrawCargoBox){
       ctx2d.drawImage(cargoSprite, cargo.x, cargo.y);
     }
