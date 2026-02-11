@@ -1299,6 +1299,7 @@ function transitionNuclearStrikeStage(nextStage, context = {}){
 }
 
 function cancelActiveNuclearDrag(reason = "cancel"){
+  resetInventoryDragFallbackGhost();
   if (!activeNuclearDrag) return;
   if (!activeNuclearDrag.consumed && DEBUG_NUKE) {
     console.log(`[NUKE] drag ${reason}`);
@@ -1310,6 +1311,7 @@ function cancelActiveNuclearDrag(reason = "cancel"){
 }
 
 function resetInventoryInteractionState(){
+  resetInventoryDragFallbackGhost();
   activeNuclearDrag = null;
   pendingInventoryUse = null;
   isNuclearStrikeResolutionActive = false;
@@ -1426,6 +1428,82 @@ function tryApplyPendingInventoryUseAt(x, y){
 }
 
 let sharedInventoryDragPreview = null;
+let inventoryDragFallbackGhost = null;
+let inventoryDragFallbackActive = false;
+let inventoryDragImageMarkedUnstable = false;
+
+function getInventoryDragFallbackGhost(){
+  if(inventoryDragFallbackGhost instanceof HTMLElement){
+    return inventoryDragFallbackGhost;
+  }
+  const ghost = document.createElement("div");
+  ghost.setAttribute("aria-hidden", "true");
+  ghost.style.position = "fixed";
+  ghost.style.left = "0";
+  ghost.style.top = "0";
+  ghost.style.width = `${INVENTORY_MINE_SIZE_PX}px`;
+  ghost.style.height = `${INVENTORY_MINE_SIZE_PX}px`;
+  ghost.style.pointerEvents = "none";
+  ghost.style.opacity = "0";
+  ghost.style.visibility = "hidden";
+  ghost.style.zIndex = "2147483647";
+  ghost.style.backgroundSize = "contain";
+  ghost.style.backgroundPosition = "center";
+  ghost.style.backgroundRepeat = "no-repeat";
+  ghost.style.transform = "translate3d(-10000px, -10000px, 0)";
+  document.body.appendChild(ghost);
+  inventoryDragFallbackGhost = ghost;
+  return ghost;
+}
+
+function detectProblematicDragImageConditions(event){
+  const transfer = event?.dataTransfer;
+  if(!transfer || typeof transfer.setDragImage !== "function") return true;
+  const nav = typeof navigator !== "undefined" ? navigator : null;
+  const hasTouchPoints = Boolean(nav && Number.isFinite(nav.maxTouchPoints) && nav.maxTouchPoints > 0);
+  const coarsePointer = typeof window !== "undefined"
+    && typeof window.matchMedia === "function"
+    && window.matchMedia("(pointer: coarse)").matches;
+  const ua = (nav?.userAgent || "").toLowerCase();
+  const isAppleMobileLike = ua.includes("iphone")
+    || ua.includes("ipad")
+    || ua.includes("ipod")
+    || (ua.includes("macintosh") && hasTouchPoints);
+  const isWebKitBrowser = ua.includes("applewebkit")
+    && !ua.includes("crios")
+    && !ua.includes("fxios")
+    && !ua.includes("edgios");
+  return inventoryDragImageMarkedUnstable || (isAppleMobileLike && isWebKitBrowser && (hasTouchPoints || coarsePointer));
+}
+
+function updateInventoryDragFallbackPosition(clientX, clientY){
+  if(!inventoryDragFallbackActive) return;
+  if(!Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
+  const ghost = getInventoryDragFallbackGhost();
+  const half = INVENTORY_MINE_SIZE_PX / 2;
+  const drawX = Math.round(clientX - half);
+  const drawY = Math.round(clientY - half);
+  ghost.style.transform = `translate3d(${drawX}px, ${drawY}px, 0)`;
+}
+
+function activateInventoryDragFallback(target, clientX, clientY){
+  const ghost = getInventoryDragFallbackGhost();
+  const src = target instanceof HTMLImageElement ? (target.currentSrc || target.src || "") : "";
+  ghost.style.backgroundImage = src ? `url("${src}")` : "none";
+  ghost.style.visibility = "visible";
+  ghost.style.opacity = "0.88";
+  inventoryDragFallbackActive = true;
+  updateInventoryDragFallbackPosition(clientX, clientY);
+}
+
+function resetInventoryDragFallbackGhost(){
+  inventoryDragFallbackActive = false;
+  if(!(inventoryDragFallbackGhost instanceof HTMLElement)) return;
+  inventoryDragFallbackGhost.style.opacity = "0";
+  inventoryDragFallbackGhost.style.visibility = "hidden";
+  inventoryDragFallbackGhost.style.backgroundImage = "none";
+  inventoryDragFallbackGhost.style.transform = "translate3d(-10000px, -10000px, 0)";
+}
 
 function getSharedInventoryDragPreview(){
   if(sharedInventoryDragPreview instanceof HTMLImageElement) return sharedInventoryDragPreview;
@@ -1473,6 +1551,7 @@ function onInventoryItemDragStart(event){
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", type);
     if (target instanceof HTMLImageElement) {
+      const hasDragImageIssues = detectProblematicDragImageConditions(event);
       const dragPreview = getSharedInventoryDragPreview();
       const fallbackSize = type === INVENTORY_ITEM_TYPES.MINE
         ? INVENTORY_MINE_SIZE_PX
@@ -1491,7 +1570,26 @@ function onInventoryItemDragStart(event){
       dragPreview.style.height = `${visualHeight}px`;
       const dragOffsetX = Math.round(visualWidth / 2);
       const dragOffsetY = Math.round(visualHeight / 2);
-      event.dataTransfer.setDragImage(dragPreview, dragOffsetX, dragOffsetY);
+      let dragImageApplied = false;
+      if(!hasDragImageIssues){
+        try {
+          event.dataTransfer.setDragImage(dragPreview, dragOffsetX, dragOffsetY);
+          dragImageApplied = true;
+        } catch (_error) {
+          inventoryDragImageMarkedUnstable = true;
+        }
+      }
+      if(type === INVENTORY_ITEM_TYPES.MINE && (hasDragImageIssues || !dragImageApplied)){
+        const fallbackClientX = Number.isFinite(event.clientX)
+          ? event.clientX
+          : targetRect.left + visualWidth / 2;
+        const fallbackClientY = Number.isFinite(event.clientY)
+          ? event.clientY
+          : targetRect.top + visualHeight / 2;
+        activateInventoryDragFallback(target, fallbackClientX, fallbackClientY);
+      } else {
+        resetInventoryDragFallbackGhost();
+      }
     }
   }
   if(type === INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE){
@@ -1504,6 +1602,7 @@ function onInventoryItemDragStart(event){
 }
 
 function onInventoryItemDragEnd(){
+  resetInventoryDragFallbackGhost();
   cancelActiveNuclearDrag("ended");
 }
 
@@ -1526,9 +1625,11 @@ function onBoardDragOver(event){
   if (event.dataTransfer) {
     event.dataTransfer.dropEffect = "move";
   }
+  updateInventoryDragFallbackPosition(event.clientX, event.clientY);
 }
 
 function onBoardDrop(event){
+  resetInventoryDragFallbackGhost();
   if(isNuclearStrikeActionLocked()){
     event.preventDefault();
     return;
@@ -1599,6 +1700,7 @@ function onBoardDrop(event){
 }
 
 function onSelfPlaneItemDrop(event){
+  resetInventoryDragFallbackGhost();
   if(isNuclearStrikeActionLocked()){
     event.preventDefault();
     return;
@@ -1641,6 +1743,7 @@ function onSelfPlaneItemDrop(event){
 }
 
 function onInventoryDrop(event){
+  resetInventoryDragFallbackGhost();
   if(!activeNuclearDrag) return;
   const usageConfig = getItemUsageConfig(activeNuclearDrag.type);
   if(!usageConfig){
@@ -6978,6 +7081,9 @@ gsBoardCanvas.addEventListener("drop", onInventoryDrop);
 window.addEventListener("dragend", () => cancelActiveNuclearDrag("ended outside board"));
 window.addEventListener("drop", () => cancelActiveNuclearDrag("dropped outside board"));
 window.addEventListener("dragcancel", () => cancelActiveNuclearDrag("cancelled"));
+window.addEventListener("dragover", (event) => {
+  updateInventoryDragFallbackPosition(event.clientX, event.clientY);
+});
 window.addEventListener("keydown", (event) => {
   if(event.key === "Escape"){
     cancelPendingInventoryUse();
