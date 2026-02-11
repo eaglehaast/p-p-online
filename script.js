@@ -1467,6 +1467,24 @@ function onBoardDrop(event){
   }
 
   if(usageConfig.target === ITEM_USAGE_TARGETS.BOARD){
+    if(activeNuclearDrag.type === INVENTORY_ITEM_TYPES.MINE){
+      const minePlacement = getMinePlacementFromDropPoint(clientX, clientY);
+      const isPlacementValid = isMinePlacementValid(minePlacement);
+      if(isPlacementValid){
+        placeMine({
+          owner: activeNuclearDrag.color,
+          x: minePlacement.x,
+          y: minePlacement.y,
+          cellX: minePlacement.cellX,
+          cellY: minePlacement.cellY,
+        });
+        removeItemFromInventory(activeNuclearDrag.color, activeNuclearDrag.type);
+        activeNuclearDrag.consumed = true;
+      }
+      cancelActiveNuclearDrag(isPlacementValid ? "mine dropped" : "mine drop rejected");
+      return;
+    }
+
     removeItemFromInventory(activeNuclearDrag.color, activeNuclearDrag.type);
     activeNuclearDrag.consumed = true;
     if(activeNuclearDrag.type === INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE){
@@ -1530,6 +1548,129 @@ function onInventoryDrop(event){
   }
 
   onBoardDrop(event);
+}
+
+function getMinePlacementFromDropPoint(clientX, clientY){
+  const { x: designX, y: designY } = toDesignCoords(clientX, clientY);
+  const { x: boardX, y: boardY } = designToBoardCoords(designX, designY);
+  const cellX = Math.floor((boardX - FIELD_LEFT) / CELL_SIZE);
+  const cellY = Math.floor((boardY - FIELD_TOP) / CELL_SIZE);
+  return {
+    boardX,
+    boardY,
+    cellX,
+    cellY,
+    x: FIELD_LEFT + cellX * CELL_SIZE + CELL_SIZE / 2,
+    y: FIELD_TOP + cellY * CELL_SIZE + CELL_SIZE / 2,
+  };
+}
+
+function isPointInAxisAlignedRect(x, y, rect){
+  if(!rect) return false;
+  return x >= rect.x
+    && x <= rect.x + rect.width
+    && y >= rect.y
+    && y <= rect.y + rect.height;
+}
+
+function rotatePointToColliderLocal(pointX, pointY, collider){
+  const dx = pointX - collider.cx;
+  const dy = pointY - collider.cy;
+  const cos = Math.cos(collider.rotation);
+  const sin = Math.sin(collider.rotation);
+  return {
+    x: dx * cos + dy * sin,
+    y: -dx * sin + dy * cos,
+  };
+}
+
+function isPointInPolygon(point, polygon){
+  if(!Array.isArray(polygon) || polygon.length < 3) return false;
+  let inside = false;
+  for(let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1){
+    const xi = polygon[i].x;
+    const yi = polygon[i].y;
+    const xj = polygon[j].x;
+    const yj = polygon[j].y;
+    const intersects = ((yi > point.y) !== (yj > point.y))
+      && (point.x < ((xj - xi) * (point.y - yi)) / ((yj - yi) || Number.EPSILON) + xi);
+    if(intersects){
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function isPointInsideCollider(pointX, pointY, collider){
+  if(!collider) return false;
+  const local = rotatePointToColliderLocal(pointX, pointY, collider);
+  if(collider.type === "diag"){
+    const polygon = getDiagonalColliderLocalPolygon(collider, 0);
+    const localPolygon = polygon.map(pt => ({
+      x: pt.x - collider.halfWidth,
+      y: pt.y - collider.halfHeight,
+    }));
+    return isPointInPolygon(local, localPolygon);
+  }
+  return Math.abs(local.x) <= collider.halfWidth && Math.abs(local.y) <= collider.halfHeight;
+}
+
+function getFlagPlacementRects(){
+  return flags
+    .filter(flag => flag?.state === FLAG_STATES.ACTIVE)
+    .map(flag => getFlagSpriteLayoutForPlacement(flag, getFlagAnchor(flag)))
+    .filter(Boolean);
+}
+
+function getBasePlacementRects(){
+  return ["blue", "green"]
+    .map((color) => getBaseLayout(color))
+    .filter(Boolean);
+}
+
+function isMinePlacementValid(placement){
+  if(!placement) return false;
+  if(!Number.isFinite(placement.x) || !Number.isFinite(placement.y)) return false;
+  if(!isPointInsideFieldBounds(placement.x, placement.y)) return false;
+
+  if(isBrickPixel(placement.x, placement.y)) return false;
+
+  const intersectsCollider = colliders.some(collider =>
+    isPointInsideCollider(placement.x, placement.y, collider)
+  );
+  if(intersectsCollider) return false;
+
+  const intersectsBase = getBasePlacementRects().some(rect =>
+    isPointInAxisAlignedRect(placement.x, placement.y, rect)
+  );
+  if(intersectsBase) return false;
+
+  const intersectsFlag = getFlagPlacementRects().some(rect =>
+    isPointInAxisAlignedRect(placement.x, placement.y, rect)
+  );
+  if(intersectsFlag) return false;
+
+  const tooCloseToPlane = points.some(plane => {
+    if(!plane?.isAlive || plane?.burning) return false;
+    return Math.hypot(plane.x - placement.x, plane.y - placement.y) < POINT_RADIUS;
+  });
+  if(tooCloseToPlane) return false;
+
+  const mineInSameCell = mines.some(mine => mine.cellX === placement.cellX && mine.cellY === placement.cellY);
+  if(mineInSameCell) return false;
+
+  return true;
+}
+
+function placeMine({ owner, x, y, cellX, cellY }){
+  mines.push({
+    id: `mine-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    owner,
+    x,
+    y,
+    cellX,
+    cellY,
+  });
 }
 
 function syncInventoryUI(color){
@@ -4554,6 +4695,10 @@ const { img: fuelIconSprite } = loadImageAsset(
   "ui_gamescreen/gamescreen_outside/gs_icon_prototypes/gs_cargoicon_fuel_barrel.png",
   GAME_PRELOAD_LABEL
 );
+const { img: mineIconSprite } = loadImageAsset(
+  "ui_gamescreen/gamescreen_outside/gs_icon_prototypes/gs_cargoicon_mine.png",
+  GAME_PRELOAD_LABEL
+);
 arrowSprite?.addEventListener("load", () => {
   console.log("[IMG] load", { label: "arrowSprite", url: arrowSprite.src });
 });
@@ -5214,6 +5359,7 @@ let colliders    = [];
 let colliderSurfaces = [];
 
 let aaUnits     = [];
+let mines       = [];
 let aaPlacementPreview = null;
 let aaPreviewTrail = [];
 
@@ -6183,6 +6329,7 @@ function resetGame(options = {}){
   applyCurrentMap();
 
   aaUnits = [];
+  mines = [];
 
   hasShotThisRound = false;
 
@@ -8564,6 +8711,7 @@ function gameDraw(){
 
   // установки ПВО
   drawAAUnits();
+  drawMines();
   drawAAPreview();
 
   // "ручка" при натяжке
@@ -9762,6 +9910,27 @@ function drawFlagMarkers(){
 }
 
 
+function drawMines(){
+  if(!Array.isArray(mines) || mines.length === 0) return;
+  const mineSize = CELL_SIZE * 0.9;
+  const halfSize = mineSize / 2;
+
+  for(const mine of mines){
+    if(isSpriteReady(mineIconSprite)){
+      gsBoardCtx.drawImage(mineIconSprite, mine.x - halfSize, mine.y - halfSize, mineSize, mineSize);
+      continue;
+    }
+
+    gsBoardCtx.save();
+    gsBoardCtx.fillStyle = mine.owner === "blue" ? "#2d5cff" : "#3f9f3f";
+    gsBoardCtx.beginPath();
+    gsBoardCtx.arc(mine.x, mine.y, CELL_SIZE * 0.25, 0, Math.PI * 2);
+    gsBoardCtx.fill();
+    gsBoardCtx.restore();
+  }
+}
+
+
 function drawAAUnits(){
   const now = performance.now();
   for(const aa of aaUnits){
@@ -10726,6 +10895,7 @@ function startNewRound(){
   resetNukeTimelineState();
   hasShotThisRound=false;
   aaUnits = [];
+  mines = [];
 
   aiMoveScheduled = false;
   gsBoardCanvas.style.display = "block";
@@ -10799,6 +10969,7 @@ function resetPlanePositionsForCurrentMap(){
   hasShotThisRound = false;
   awaitingFlightResolution = false;
   aaUnits = [];
+  mines = [];
   resetCargoState();
 
   points = [];
