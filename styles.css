@@ -1,6 +1,9 @@
 :root {
   --design-w: 460;
   --design-h: 800;
+  --inventory-item-size: 30px;
+  --inventory-mine-size: 30px;
+  --inventory-slot-size: var(--inventory-item-size);
 }
 
 body, button {
@@ -262,8 +265,8 @@ body, button {
 
   .inventory-slot {
     position: relative;
-    width: 32px;
-    height: 32px;
+    width: var(--inventory-slot-size);
+    height: var(--inventory-slot-size);
     margin-right: 6px;
     display: inline-flex;
     align-items: center;
@@ -272,8 +275,8 @@ body, button {
   }
 
   .inventory-item {
-    width: 100%;
-    height: 100%;
+    width: var(--inventory-item-size);
+    height: var(--inventory-item-size);
     object-fit: contain;
     image-rendering: auto;
     pointer-events: auto;
@@ -281,8 +284,8 @@ body, button {
   }
 
   .inventory-item--mine {
-    width: 30px;
-    height: 31px;
+    width: var(--inventory-mine-size);
+    height: var(--inventory-mine-size);
   }
 
   .inventory-item--ghost {
