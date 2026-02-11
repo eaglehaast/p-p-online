@@ -4773,6 +4773,72 @@ function ensureCargoDebugApi(){
   };
 }
 
+function normalizeMineDebugSize(value){
+  if(!Number.isFinite(value)) return null;
+  const rounded = Math.round(value);
+  return Math.max(8, Math.min(128, rounded));
+}
+
+function applyMineScreenSizeToInventory(){
+  if(typeof document !== "undefined"){
+    document.documentElement.style.setProperty("--inventory-mine-size", `${MINE_SIZE.SCREEN_PX}px`);
+  }
+  syncInventoryUI("blue");
+  syncInventoryUI("green");
+}
+
+function getMineDebugConfig(){
+  return {
+    screenPx: MINE_SIZE.SCREEN_PX,
+    logicalPx: MINE_SIZE.LOGICAL_PX,
+    defaults: {
+      screenPx: MINE_SIZE_DEFAULTS.SCREEN_PX,
+      logicalPx: MINE_SIZE_DEFAULTS.LOGICAL_PX,
+    },
+  };
+}
+
+function ensureMineDebugApi(){
+  if(typeof window === "undefined") return;
+  if(window.MINE_DEBUG) return;
+  window.MINE_DEBUG = {
+    getConfig(){
+      return getMineDebugConfig();
+    },
+    setScreenSize(px){
+      const safePx = normalizeMineDebugSize(px);
+      if(safePx === null) return false;
+      MINE_SIZE.SCREEN_PX = safePx;
+      applyMineScreenSizeToInventory();
+      return true;
+    },
+    setLogicalSize(px){
+      const safePx = normalizeMineDebugSize(px);
+      if(safePx === null) return false;
+      MINE_SIZE.LOGICAL_PX = safePx;
+      return true;
+    },
+    setBoth(px){
+      const safePx = normalizeMineDebugSize(px);
+      if(safePx === null) return false;
+      MINE_SIZE.SCREEN_PX = safePx;
+      MINE_SIZE.LOGICAL_PX = safePx;
+      applyMineScreenSizeToInventory();
+      return true;
+    },
+    reset(){
+      MINE_SIZE.SCREEN_PX = MINE_SIZE_DEFAULTS.SCREEN_PX;
+      MINE_SIZE.LOGICAL_PX = MINE_SIZE_DEFAULTS.LOGICAL_PX;
+      applyMineScreenSizeToInventory();
+      return true;
+    },
+  };
+
+  console.info(
+    "[MINE_DEBUG] ready. Try: MINE_DEBUG.getConfig(), MINE_DEBUG.setScreenSize(42), MINE_DEBUG.setLogicalSize(36), MINE_DEBUG.setBoth(32), MINE_DEBUG.reset()"
+  );
+}
+
 ensureCargoDebugApi();
 loadCargoAnimDurationMs(cargoAnimationGifPath).then(durationMs => {
   cargoAnimDurationMs = durationMs;
@@ -5113,10 +5179,15 @@ const PLANE_METRIC_SCALE   = PLANE_DRAW_W / 40;
 // LOGICAL_PX controls mine size inside the game world (canvas drawing units).
 // SCREEN_PX controls mine size in interface pixels (inventory/drag preview via CSS variable).
 // Keep both values here so future tweaks do not create a second, conflicting size source.
-const MINE_SIZE = Object.freeze({
+const MINE_SIZE_DEFAULTS = Object.freeze({
   LOGICAL_PX: 30,
   SCREEN_PX: 30,
 });
+
+const MINE_SIZE = {
+  LOGICAL_PX: MINE_SIZE_DEFAULTS.LOGICAL_PX,
+  SCREEN_PX: MINE_SIZE_DEFAULTS.SCREEN_PX,
+};
 
 function planeMetric(value) {
   return value * PLANE_METRIC_SCALE;
@@ -5191,6 +5262,8 @@ const FLAG_HEIGHT          = 8;      // высота полотна флага
 document.documentElement.style.setProperty("--inventory-item-size", `${INVENTORY_ITEM_SIZE_PX}px`);
 document.documentElement.style.setProperty("--inventory-mine-size", `${MINE_SIZE.SCREEN_PX}px`);
 document.documentElement.style.setProperty("--inventory-slot-size", `${INVENTORY_SLOT_SIZE_PX}px`);
+
+ensureMineDebugApi();
 
 const START_PLANES = {
   // координаты задаются как верхний левый угол, внутри переводятся в центр
