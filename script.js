@@ -4645,11 +4645,13 @@ function spawnCargoForTurn(){
   if(!candidate){
     return;
   }
+  const animStartedAt = performance.now();
   cargoState.push({
     x: candidate.x,
-    y: FIELD_TOP + FIELD_BORDER_OFFSET_Y,
-    targetY: candidate.targetY,
-    falling: true,
+    y: candidate.targetY,
+    state: "animating",
+    animStartedAt,
+    animEndsAt: animStartedAt + CARGO_ANIM_MS,
     pickedAt: null
   });
 }
@@ -4660,16 +4662,10 @@ function updateCargoState(deltaSec, now){
   }
   const remainingCargo = [];
   for(const cargo of cargoState){
-    if(cargo.falling){
-      const nextY = cargo.y + CARGO_FALL_SPEED * deltaSec;
-      if(nextY >= cargo.targetY){
-        cargo.y = cargo.targetY;
-        cargo.falling = false;
-      } else {
-        cargo.y = nextY;
-      }
+    if(cargo.state === "animating" && now >= cargo.animEndsAt){
+      cargo.state = "ready";
     }
-    if(cargo.falling){
+    if(cargo.state !== "ready"){
       remainingCargo.push(cargo);
       continue;
     }
@@ -4703,6 +4699,7 @@ function drawCargo(ctx2d){
   const drawWidth = CARGO_RADIUS * 2;
   const drawHeight = drawWidth * (spriteHeight / spriteWidth);
   for(const cargo of cargoState){
+    if(cargo.state !== "ready") continue;
     ctx2d.drawImage(
       cargoSprite,
       cargo.x - drawWidth / 2,
@@ -4820,7 +4817,6 @@ let phase = "MENU"; // MENU | AA_PLACEMENT (Anti-Aircraft placement) | ROUND_STA
 
 const cargoState = [];
 
-const CARGO_FALL_SPEED = 120;
 const CARGO_MAX_SPAWN_ATTEMPTS = 8;
 let turnAdvanceCount = 0;
 
