@@ -1634,7 +1634,13 @@ function clearInventoryDragArtifacts(){
   resetSharedInventoryDragPreview();
 }
 
-function getInventoryDragPreviewOffset(event, targetRect, visualWidth, visualHeight){
+function getInventoryDragPreviewOffset(type, event, targetRect, visualWidth, visualHeight){
+  if(type === INVENTORY_ITEM_TYPES.MINE){
+    return {
+      x: Math.round(visualWidth / 2),
+      y: Math.round(visualHeight / 2),
+    };
+  }
   if(Number.isFinite(event.offsetX) && Number.isFinite(event.offsetY)){
     return {
       x: Math.round(event.offsetX),
@@ -1707,7 +1713,7 @@ function onInventoryItemDragStart(event){
         : fallbackSize;
       const dragPreviewConfig = getInventoryDragPreviewConfig(type, target, visualWidth, visualHeight);
       applyInventoryDragPreviewState(dragPreview, dragPreviewConfig);
-      const dragOffset = getInventoryDragPreviewOffset(event, targetRect, visualWidth, visualHeight);
+      const dragOffset = getInventoryDragPreviewOffset(type, event, targetRect, visualWidth, visualHeight);
       let dragImageApplied = false;
       if(!hasDragImageIssues){
         try {
