@@ -1,9 +1,6 @@
 :root {
   --design-w: 460;
   --design-h: 800;
-  --inventory-item-size: 30px;
-  --inventory-mine-size: 30px;
-  --inventory-slot-size: var(--inventory-item-size);
 }
 
 body, button {
@@ -259,33 +256,34 @@ body, button {
     position: absolute;
     pointer-events: auto;
     z-index: 60;
-    display: flex;
-    align-items: center;
+    width: 342px;
+    height: 55px;
   }
 
   .inventory-slot {
     position: relative;
-    width: var(--inventory-slot-size);
-    height: var(--inventory-slot-size);
-    margin-right: 6px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+    width: 55px;
+    height: 55px;
     pointer-events: auto;
   }
 
+  .inventory-slot-frame {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 55px;
+    height: 55px;
+    object-fit: contain;
+    image-rendering: auto;
+    pointer-events: none;
+  }
+
   .inventory-item {
-    width: var(--inventory-item-size);
-    height: var(--inventory-item-size);
+    position: absolute;
     object-fit: contain;
     image-rendering: auto;
     pointer-events: auto;
     cursor: grab;
-  }
-
-  .inventory-item--mine {
-    width: var(--inventory-mine-size);
-    height: var(--inventory-mine-size);
   }
 
   .inventory-item--ghost {
@@ -300,56 +298,15 @@ body, button {
 
   .inventory-item-count {
     position: absolute;
-    top: -4px;
-    right: -4px;
-    min-width: 16px;
-    height: 16px;
-    padding: 0 4px;
-    border-radius: 999px;
-    background: rgba(0, 0, 0, 0.75);
-    color: #fff;
-    font-size: 11px;
-    line-height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #EBD9A3;
+    font-family: 'Silkscreen', 'Fantasque Sans Mono', monospace;
+    font-size: 9px;
+    line-height: 9px;
     font-weight: 700;
-    text-align: center;
-    box-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
-  }
-
-  .inventory-item-hint {
-    position: absolute;
-    left: 50%;
-    top: 100%;
-    transform: translate(-50%, 6px);
-    min-width: 140px;
-    max-width: 200px;
-    padding: 5px 8px;
-    border-radius: 7px;
-    border: 2px solid rgba(1, 60, 131, 0.95);
-    background: rgba(255, 255, 255, 0.96);
-    color: #062447;
-    font-family: 'Patrick Hand', cursive;
-    font-size: 12px;
-    font-weight: 700;
-    line-height: 1.2;
-    text-align: center;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
-    pointer-events: none;
-    white-space: normal;
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 120ms ease;
-    z-index: 80;
-  }
-
-  .inventory-item-hint.is-visible {
-    opacity: 1;
-    visibility: visible;
-  }
-
-  #gs_inventory_green .inventory-item-hint {
-    top: auto;
-    bottom: 100%;
-    transform: translate(-50%, -6px);
+    text-shadow: 0 1px 0 #5A3E1E;
   }
 
   #inventoryLayer.is-nuke-locked,
@@ -399,16 +356,16 @@ body, button {
 
   #gs_inventory_blue {
     left: 68px;
-    top: 15px;
+    top: 19px;
     width: 342px;
-    height: 50px;
+    height: 55px;
   }
 
   #gs_inventory_green {
     left: 68px;
-    top: 735px;
+    top: 733px;
     width: 342px;
-    height: 50px;
+    height: 55px;
   }
 
   :root {
