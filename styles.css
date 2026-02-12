@@ -261,7 +261,7 @@ body, button {
   }
 
   .inventory-slot {
-    position: relative;
+    position: absolute;
     width: 55px;
     height: 55px;
     pointer-events: auto;
@@ -349,18 +349,9 @@ body, button {
     height: 287px;
   }
 
-  #gs_inventory_blue {
-    left: 68px;
-    top: 19px;
-    width: 342px;
-    height: 55px;
-  }
-
+  #gs_inventory_blue,
   #gs_inventory_green {
-    left: 368px;
-    top: 733px;
-    width: 342px;
-    height: 55px;
+    /* Position and size are synchronized from INVENTORY_UI_CONFIG in script.js */
   }
 
   :root {

@@ -855,80 +855,81 @@ const NUKE_TIMELINE = {
   ...NUCLEAR_STRIKE_TIMELINE_DEFAULTS,
 };
 
-const INVENTORY_ITEMS = [
-  {
-    type: INVENTORY_ITEM_TYPES.MINE,
-    iconPath: "ui_gamescreen/gs_inventory/gs_inventory_mine.png",
-  },
-  {
-    type: INVENTORY_ITEM_TYPES.CROSSHAIR,
-    iconPath: "ui_gamescreen/gs_inventory/gs_inventory_crossfire.png",
-  },
-  {
-    type: INVENTORY_ITEM_TYPES.FUEL,
-    iconPath: "ui_gamescreen/gs_inventory/gs_inventory_fuel.png",
-  },
-  {
-    type: INVENTORY_ITEM_TYPES.WINGS,
-    iconPath: "ui_gamescreen/gs_inventory/gs_inventory_wings.png",
-  },
-  {
-    type: INVENTORY_ITEM_TYPES.DYNAMITE,
-    iconPath: "ui_gamescreen/gs_inventory/gs_inventory_dynamite.png",
-  },
-  {
-    type: INVENTORY_ITEM_TYPES.INVISIBILITY,
-    iconPath: "",
-  },
-];
-
-const INVENTORY_SLOT_ORDER = [
-  INVENTORY_ITEM_TYPES.CROSSHAIR,
-  INVENTORY_ITEM_TYPES.FUEL,
-  INVENTORY_ITEM_TYPES.WINGS,
-  INVENTORY_ITEM_TYPES.MINE,
-  INVENTORY_ITEM_TYPES.DYNAMITE,
-  INVENTORY_ITEM_TYPES.INVISIBILITY,
-];
-
-const INVENTORY_SLOT_LAYOUT = Object.freeze({
-  [INVENTORY_ITEM_TYPES.CROSSHAIR]: {
-    frameX: 0,
-    icon: { x: 14, y: 13, w: 28, h: 27 },
-    count: { x: 43, y: 3, w: 10, h: 9 },
-  },
-  [INVENTORY_ITEM_TYPES.FUEL]: {
-    frameX: 57,
-    icon: { x: 77, y: 13, w: 17, h: 28 },
-    count: { x: 100, y: 3, w: 10, h: 9 },
-  },
-  [INVENTORY_ITEM_TYPES.WINGS]: {
-    frameX: 114,
-    icon: { x: 129, y: 11, w: 33, h: 30 },
-    count: { x: 157, y: 3, w: 10, h: 9 },
-  },
-  [INVENTORY_ITEM_TYPES.MINE]: {
-    frameX: 171,
-    icon: { x: 185, y: 13, w: 28, h: 28 },
-    count: { x: 214, y: 3, w: 10, h: 9 },
-  },
-  [INVENTORY_ITEM_TYPES.DYNAMITE]: {
-    frameX: 228,
-    icon: { x: 247, y: 9, w: 19, h: 32 },
-    count: { x: 272, y: 3, w: 10, h: 9 },
-  },
-  [INVENTORY_ITEM_TYPES.INVISIBILITY]: {
-    frameX: 285,
-    icon: { x: 298, y: 12, w: 32, h: 31 },
-    count: { x: 329, y: 3, w: 10, h: 9 },
-  },
+const INVENTORY_UI_CONFIG = Object.freeze({
+  framePath: "ui_gamescreen/gs_inventory/gs_inventory_frame.png",
+  slotOrder: [
+    INVENTORY_ITEM_TYPES.CROSSHAIR,
+    INVENTORY_ITEM_TYPES.FUEL,
+    INVENTORY_ITEM_TYPES.WINGS,
+    INVENTORY_ITEM_TYPES.MINE,
+    INVENTORY_ITEM_TYPES.DYNAMITE,
+    INVENTORY_ITEM_TYPES.INVISIBILITY,
+  ],
+  containerSize: Object.freeze({ w: 342, h: 55 }),
+  slotSize: Object.freeze({ w: 55, h: 55 }),
+  containers: Object.freeze({
+    blue: Object.freeze({ x: 68, y: 19, w: 342, h: 55 }),
+    green: Object.freeze({ x: 368, y: 733, w: 342, h: 55 }),
+  }),
+  slots: Object.freeze({
+    [INVENTORY_ITEM_TYPES.CROSSHAIR]: Object.freeze({
+      frame: Object.freeze({ x: 0, y: 0, w: 55, h: 55 }),
+      icon: Object.freeze({ x: 14, y: 13, w: 28, h: 27 }),
+      countPocket: Object.freeze({ x: 43, y: 3, w: 10, h: 9 }),
+      iconPath: "ui_gamescreen/gs_inventory/gs_inventory_crossfire.png",
+    }),
+    [INVENTORY_ITEM_TYPES.FUEL]: Object.freeze({
+      frame: Object.freeze({ x: 57, y: 0, w: 55, h: 55 }),
+      icon: Object.freeze({ x: 77, y: 13, w: 17, h: 28 }),
+      countPocket: Object.freeze({ x: 100, y: 3, w: 10, h: 9 }),
+      iconPath: "ui_gamescreen/gs_inventory/gs_inventory_fuel.png",
+    }),
+    [INVENTORY_ITEM_TYPES.WINGS]: Object.freeze({
+      frame: Object.freeze({ x: 114, y: 0, w: 55, h: 55 }),
+      icon: Object.freeze({ x: 129, y: 11, w: 33, h: 30 }),
+      countPocket: Object.freeze({ x: 157, y: 3, w: 10, h: 9 }),
+      iconPath: "ui_gamescreen/gs_inventory/gs_inventory_wings.png",
+    }),
+    [INVENTORY_ITEM_TYPES.MINE]: Object.freeze({
+      frame: Object.freeze({ x: 171, y: 0, w: 55, h: 55 }),
+      icon: Object.freeze({ x: 185, y: 13, w: 28, h: 28 }),
+      countPocket: Object.freeze({ x: 214, y: 3, w: 10, h: 9 }),
+      iconPath: "ui_gamescreen/gs_inventory/gs_inventory_mine.png",
+    }),
+    [INVENTORY_ITEM_TYPES.DYNAMITE]: Object.freeze({
+      frame: Object.freeze({ x: 228, y: 0, w: 55, h: 55 }),
+      icon: Object.freeze({ x: 247, y: 9, w: 19, h: 32 }),
+      countPocket: Object.freeze({ x: 272, y: 3, w: 10, h: 9 }),
+      iconPath: "ui_gamescreen/gs_inventory/gs_inventory_dynamite.png",
+    }),
+    [INVENTORY_ITEM_TYPES.INVISIBILITY]: Object.freeze({
+      frame: Object.freeze({ x: 285, y: 0, w: 55, h: 55 }),
+      icon: Object.freeze({ x: 298, y: 12, w: 32, h: 31 }),
+      countPocket: Object.freeze({ x: 329, y: 3, w: 10, h: 9 }),
+      iconPathByColor: Object.freeze({
+        blue: "ui_gamescreen/gs_inventory/gs_inventory_invisible_blue.png",
+        green: "ui_gamescreen/gs_inventory/gs_inventory_invisible_green.png",
+      }),
+    }),
+  }),
 });
 
-const INVENTORY_FRAME_ICON_PATH = "ui_gamescreen/gs_inventory/gs_inventory_frame.png";
-const INVENTORY_INVISIBILITY_ICON_BY_COLOR = Object.freeze({
-  blue: "ui_gamescreen/gs_inventory/gs_inventory_invisible_blue.png",
-  green: "ui_gamescreen/gs_inventory/gs_inventory_invisible_green.png",
+const INVENTORY_ITEMS = INVENTORY_UI_CONFIG.slotOrder.map((type) => {
+  const slotConfig = INVENTORY_UI_CONFIG.slots[type] ?? null;
+  const fallbackIconPath = slotConfig?.iconPathByColor?.blue ?? slotConfig?.iconPath ?? "";
+  return { type, iconPath: fallbackIconPath };
 });
+
+const INVENTORY_ICON_ASSET_PATHS = Array.from(new Set(
+  INVENTORY_UI_CONFIG.slotOrder.flatMap((type) => {
+    const slotConfig = INVENTORY_UI_CONFIG.slots[type] ?? null;
+    if(!slotConfig) return [];
+    if(slotConfig.iconPathByColor){
+      return Object.values(slotConfig.iconPathByColor);
+    }
+    return slotConfig.iconPath ? [slotConfig.iconPath] : [];
+  })
+));
 
 const INVENTORY_EMPTY_ICON =
   "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
@@ -1486,11 +1487,12 @@ let inventoryDragImageMarkedUnstable = false;
 const MINE_INVENTORY_ICON_PATH = "ui_gamescreen/gs_inventory/gs_inventory_mine.png";
 
 function getInventoryIconPathForSlot(type, color){
-  if(type === INVENTORY_ITEM_TYPES.INVISIBILITY){
-    return INVENTORY_INVISIBILITY_ICON_BY_COLOR[color] || "";
+  const slotConfig = INVENTORY_UI_CONFIG.slots[type] ?? null;
+  if(!slotConfig) return "";
+  if(slotConfig.iconPathByColor){
+    return slotConfig.iconPathByColor[color] || slotConfig.iconPathByColor.blue || "";
   }
-  const itemDef = INVENTORY_ITEMS.find((item) => item.type === type);
-  return itemDef?.iconPath || "";
+  return slotConfig.iconPath || "";
 }
 
 function getInventoryDragFallbackGhost(){
@@ -1989,9 +1991,55 @@ function placeMine({ owner, x, y, cellX, cellY }){
   });
 }
 
+let inventoryCssSizeWarningShown = false;
+
+function validateInventoryCssSizing(host){
+  if(inventoryCssSizeWarningShown) return;
+  if(!(host instanceof HTMLElement)) return;
+  const expectedContainer = INVENTORY_UI_CONFIG.containerSize;
+  const expectedSlot = INVENTORY_UI_CONFIG.slotSize;
+  const computedHost = getComputedStyle(host);
+  const hostWidth = Math.round(parseFloat(computedHost.width));
+  const hostHeight = Math.round(parseFloat(computedHost.height));
+  if(hostWidth !== expectedContainer.w || hostHeight !== expectedContainer.h){
+    console.warn("[inventory] Container CSS size mismatch", {
+      expected: expectedContainer,
+      actual: { w: hostWidth, h: hostHeight },
+    });
+    inventoryCssSizeWarningShown = true;
+    return;
+  }
+  const tempSlot = document.createElement("div");
+  tempSlot.className = "inventory-slot";
+  host.appendChild(tempSlot);
+  const computedSlot = getComputedStyle(tempSlot);
+  const slotWidth = Math.round(parseFloat(computedSlot.width));
+  const slotHeight = Math.round(parseFloat(computedSlot.height));
+  tempSlot.remove();
+  if(slotWidth !== expectedSlot.w || slotHeight !== expectedSlot.h){
+    console.warn("[inventory] Slot CSS size mismatch", {
+      expected: expectedSlot,
+      actual: { w: slotWidth, h: slotHeight },
+    });
+    inventoryCssSizeWarningShown = true;
+  }
+}
+
+function applyInventoryContainerLayout(color, host){
+  if(!(host instanceof HTMLElement)) return;
+  const containerConfig = INVENTORY_UI_CONFIG.containers[color] ?? null;
+  if(!containerConfig) return;
+  host.style.left = `${containerConfig.x}px`;
+  host.style.top = `${containerConfig.y}px`;
+  host.style.width = `${containerConfig.w}px`;
+  host.style.height = `${containerConfig.h}px`;
+}
+
 function syncInventoryUI(color){
   const host = inventoryHosts[color];
   if(!(host instanceof HTMLElement)) return;
+  applyInventoryContainerLayout(color, host);
+  validateInventoryCssSizing(host);
   host.style.setProperty("--inventory-mine-size", `${mineSizeRuntime.SCREEN_PX}px`);
   host.innerHTML = "";
   const items = inventoryState[color] ?? [];
@@ -2000,13 +2048,13 @@ function syncInventoryUI(color){
     counts[item.type] = (counts[item.type] ?? 0) + 1;
     return counts;
   }, {});
-  const slotData = INVENTORY_SLOT_ORDER.map((type) => {
+  const slotData = INVENTORY_UI_CONFIG.slotOrder.map((type) => {
     const count = countsByType[type] ?? 0;
     return {
       type,
       count,
       iconPath: getInventoryIconPathForSlot(type, color),
-      layout: INVENTORY_SLOT_LAYOUT[type] ?? null,
+      layout: INVENTORY_UI_CONFIG.slots[type] ?? null,
     };
   });
   for(const slot of slotData){
@@ -2017,16 +2065,19 @@ function syncInventoryUI(color){
     const img = document.createElement("img");
     const usageConfig = getItemUsageConfig(slot.type);
     const iconLayout = slot.layout.icon;
-    const countLayout = slot.layout.count;
+    const countLayout = slot.layout.countPocket;
+    const frameLayout = slot.layout.frame;
     const isInteractiveItem = hasItem && Boolean(usageConfig?.requiresDragAndDrop);
 
     slotContainer.className = "inventory-slot";
-    slotContainer.style.left = `${Math.round(slot.layout.frameX)}px`;
+    slotContainer.style.left = `${Math.round(frameLayout.x)}px`;
 
-    frameImg.src = INVENTORY_FRAME_ICON_PATH;
+    frameImg.src = INVENTORY_UI_CONFIG.framePath;
     frameImg.alt = "";
     frameImg.draggable = false;
     frameImg.className = "inventory-slot-frame";
+    frameImg.style.width = `${Math.round(frameLayout.w)}px`;
+    frameImg.style.height = `${Math.round(frameLayout.h)}px`;
 
     img.src = slot.iconPath || INVENTORY_EMPTY_ICON;
     img.alt = "";
@@ -2195,7 +2246,8 @@ const GAME_SCREEN_ASSETS = [
   "ui_controlpanel/cp_adds/cp_cargo_on.png",
 
   // Inventory icons
-  ...INVENTORY_ITEMS.map(item => item.iconPath),
+  INVENTORY_UI_CONFIG.framePath,
+  ...INVENTORY_ICON_ASSET_PATHS,
   NUCLEAR_STRIKE_FX.path,
 
   // Match score
