@@ -232,7 +232,7 @@ body, button {
   #inventoryLayer {
     position: absolute;
     inset: 0;
-    display: contents;
+    display: block;
     pointer-events: none;
     z-index: 60;
   }
