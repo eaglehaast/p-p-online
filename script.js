@@ -885,6 +885,7 @@ const INVENTORY_UI_CONFIG = Object.freeze({
       iconPath: "ui_gamescreen/gs_inventory/gs_inventory_fuel.png",
     }),
     [INVENTORY_ITEM_TYPES.WINGS]: Object.freeze({
+      implemented: false,
       frame: Object.freeze({ x: 114, y: 0, w: 55, h: 55 }),
       icon: Object.freeze({ x: 129, y: 11, w: 33, h: 30 }),
       countPocket: Object.freeze({ x: 157, y: 3, w: 10, h: 9 }),
@@ -897,12 +898,14 @@ const INVENTORY_UI_CONFIG = Object.freeze({
       iconPath: "ui_gamescreen/gs_inventory/gs_inventory_mine.png",
     }),
     [INVENTORY_ITEM_TYPES.DYNAMITE]: Object.freeze({
+      implemented: false,
       frame: Object.freeze({ x: 228, y: 0, w: 55, h: 55 }),
       icon: Object.freeze({ x: 247, y: 9, w: 19, h: 32 }),
       countPocket: Object.freeze({ x: 272, y: 3, w: 10, h: 9 }),
       iconPath: "ui_gamescreen/gs_inventory/gs_inventory_dynamite.png",
     }),
     [INVENTORY_ITEM_TYPES.INVISIBILITY]: Object.freeze({
+      implemented: false,
       frame: Object.freeze({ x: 285, y: 0, w: 55, h: 55 }),
       icon: Object.freeze({ x: 298, y: 12, w: 32, h: 31 }),
       countPocket: Object.freeze({ x: 329, y: 3, w: 10, h: 9 }),
@@ -946,6 +949,7 @@ const inventoryHintState = {
     visible: false,
     anchorX: 0,
     anchorY: 0,
+    timeoutId: null,
   },
   green: {
     color: "green",
@@ -953,8 +957,11 @@ const inventoryHintState = {
     visible: false,
     anchorX: 0,
     anchorY: 0,
+    timeoutId: null,
   },
 };
+
+const INVENTORY_DISABLED_HINT_TEXT = "В разработке";
 
 const inventoryHosts = {
   blue: blueInventoryHost,
@@ -2035,6 +2042,24 @@ function applyInventoryContainerLayout(color, host){
   host.style.height = `${containerConfig.h}px`;
 }
 
+function showInventoryDisabledHint(color, slotLayout){
+  const state = inventoryHintState[color];
+  if(!state || !slotLayout?.frame) return;
+  const frame = slotLayout.frame;
+  state.text = INVENTORY_DISABLED_HINT_TEXT;
+  state.visible = true;
+  state.anchorX = frame.x + frame.w / 2;
+  state.anchorY = frame.y + frame.h / 2;
+  if(state.timeoutId){
+    clearTimeout(state.timeoutId);
+  }
+  state.timeoutId = setTimeout(() => {
+    state.visible = false;
+    state.text = "";
+    state.timeoutId = null;
+  }, 900);
+}
+
 function syncInventoryUI(color){
   const host = inventoryHosts[color];
   if(!(host instanceof HTMLElement)) return;
@@ -2067,10 +2092,17 @@ function syncInventoryUI(color){
     const iconLayout = slot.layout.icon;
     const countLayout = slot.layout.countPocket;
     const frameLayout = slot.layout.frame;
-    const isInteractiveItem = hasItem && Boolean(usageConfig?.requiresDragAndDrop);
+    const isImplemented = slot.layout.implemented !== false;
+    const isInteractiveItem = hasItem && isImplemented && Boolean(usageConfig?.requiresDragAndDrop);
 
     slotContainer.className = "inventory-slot";
     slotContainer.style.left = `${Math.round(frameLayout.x)}px`;
+    if(!isImplemented){
+      slotContainer.classList.add("inventory-slot--disabled");
+      slotContainer.addEventListener("click", () => {
+        showInventoryDisabledHint(color, slot.layout);
+      });
+    }
 
     frameImg.src = INVENTORY_UI_CONFIG.framePath;
     frameImg.alt = "";
@@ -2087,6 +2119,11 @@ function syncInventoryUI(color){
     img.style.top = `${Math.round(iconLayout.y)}px`;
     img.style.width = `${Math.round(iconLayout.w)}px`;
     img.style.height = `${Math.round(iconLayout.h)}px`;
+
+    if(!isImplemented){
+      img.classList.add("inventory-item--disabled");
+      img.draggable = false;
+    }
 
     if (!hasItem) {
       img.classList.add("inventory-item--ghost");

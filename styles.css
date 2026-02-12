@@ -292,6 +292,20 @@ body, button {
     cursor: default;
   }
 
+  .inventory-slot--disabled {
+    filter: saturate(0.55) brightness(0.86);
+  }
+
+  .inventory-item--disabled {
+    cursor: default;
+    pointer-events: none;
+  }
+
+  .inventory-slot--disabled .inventory-item-count {
+    color: #F1E6C2;
+    text-shadow: 0 1px 0 #4B3318;
+  }
+
   .inventory-item--draggable:active {
     cursor: grabbing;
   }
