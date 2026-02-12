@@ -117,6 +117,7 @@ function setScreenMode(mode) {
   document.body.classList.toggle('screen--menu', mode === 'MENU');
   document.body.classList.toggle('screen--game', mode === 'GAME');
   document.body.classList.toggle('screen--settings', mode === 'SETTINGS');
+  syncFieldCssVars();
 }
 
 setScreenMode('MENU');
@@ -693,6 +694,11 @@ function syncAimCanvasLayout() {
 }
 
 function syncFieldCssVars() {
+  // Expected layout chain for every viewport/screen change:
+  // 1) syncFieldCssVars() writes fresh CSS vars,
+  // 2) updateFieldDimensions() reads them,
+  // 3) world field geometry is rebuilt from those values.
+  // Keep this order, otherwise stale CSS numbers can desync collisions/canvas.
   const fieldVarsHost = gsFrameEl instanceof HTMLElement
     ? gsFrameEl
     : (gsBoardCanvas?.parentElement instanceof HTMLElement ? gsBoardCanvas.parentElement : null);
@@ -5296,7 +5302,7 @@ function processBrickFrameImage() {
     : FIELD_BORDER_THICKNESS;
 
 
-  updateFieldDimensions();
+  resyncFieldDimensions("brick frame loaded");
   if(points.length) initPoints();
 }
 
@@ -5477,6 +5483,34 @@ function parseCssSize(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function areFieldCssDimensionsReasonable(width, height) {
+  const minWidth = Math.max(64, WORLD.width * 0.4);
+  const minHeight = Math.max(64, WORLD.height * 0.4);
+  const maxWidth = Math.max(WORLD.width * 3, 1024);
+  const maxHeight = Math.max(WORLD.height * 3, 2048);
+  return width >= minWidth && width <= maxWidth && height >= minHeight && height <= maxHeight;
+}
+
+function logFieldCssAndCanvasMetrics(reason, cssMetrics) {
+  if (!DEBUG_RESIZE) return;
+  const canvasRect = gsBoardCanvas?.getBoundingClientRect?.();
+  console.log('[field-metrics]', {
+    reason,
+    cssMetrics,
+    gameCanvasRect: canvasRect
+      ? {
+          left: canvasRect.left,
+          top: canvasRect.top,
+          width: canvasRect.width,
+          height: canvasRect.height
+        }
+      : null,
+    gameCanvasBacking: gsBoardCanvas
+      ? { width: gsBoardCanvas.width, height: gsBoardCanvas.height }
+      : null
+  });
+}
+
 function getFieldCssMetrics() {
   if (typeof window === "undefined" || !gsFrameEl) {
     return null;
@@ -5484,12 +5518,31 @@ function getFieldCssMetrics() {
   const fallbackLeft = getFieldLeftCssValue();
   const fallbackTop = getFieldTopCssValue();
   const style = window.getComputedStyle(gsFrameEl);
-  return {
+  const metrics = {
     left: parseCssSize(style.getPropertyValue("--field-left"), fallbackLeft),
     top: parseCssSize(style.getPropertyValue("--field-top"), fallbackTop),
     width: parseCssSize(style.getPropertyValue("--field-width"), CANVAS_BASE_WIDTH),
     height: parseCssSize(style.getPropertyValue("--field-height"), CANVAS_BASE_HEIGHT)
   };
+
+  if (!areFieldCssDimensionsReasonable(metrics.width, metrics.height)) {
+    return {
+      left: 0,
+      top: 0,
+      width: WORLD.width,
+      height: WORLD.height
+    };
+  }
+
+  return metrics;
+}
+
+function resyncFieldDimensions(reason = 'resync') {
+  // Expected call chain:
+  // syncFieldCssVars() must always run immediately before updateFieldDimensions().
+  // Any UI/screen refactor should preserve this helper call to avoid stale field metrics.
+  syncFieldCssVars();
+  updateFieldDimensions(reason);
 }
 
 function getBoardCssRect() {
@@ -5784,13 +5837,14 @@ function drawCargo(ctx2d){
   }
 }
 
-  function updateFieldDimensions(){
+  function updateFieldDimensions(reason = 'update'){
     const cssMetrics = getFieldCssMetrics();
     const scaleX = CANVAS_BASE_WIDTH ? WORLD.width / CANVAS_BASE_WIDTH : 1;
     const scaleY = CANVAS_BASE_HEIGHT ? WORLD.height / CANVAS_BASE_HEIGHT : 1;
     const epsilon = 0.5;
+    const hasSafeCssMetrics = cssMetrics && areFieldCssDimensionsReasonable(cssMetrics.width, cssMetrics.height);
 
-    if (cssMetrics) {
+    if (hasSafeCssMetrics) {
       const baseLeft = getFieldLeftCssValue();
       const baseTop = getFieldTopCssValue();
       const left = (cssMetrics.left - baseLeft) * scaleX;
@@ -5818,6 +5872,7 @@ function drawCargo(ctx2d){
       FIELD_HEIGHT = WORLD.height;
     }
 
+    logFieldCssAndCanvasMetrics(reason, cssMetrics);
     updateFieldBorderOffset();
     rebuildCollisionSurfaces();
   }
@@ -11787,7 +11842,7 @@ function applyCurrentMap(upcomingRoundNumber){
   clearBrickFrameImage();
   setFlagConfigsForMap(normalizedMap);
   colliders = buildMapSpriteColliders(normalizedMap);
-  updateFieldDimensions();
+  resyncFieldDimensions("map applied");
   resetPlanePositionsForCurrentMap();
   renderScoreboard();
 }
@@ -11957,7 +12012,7 @@ async function syncLayoutAndField(reason = "sync") {
     dpr: RAW_DPR
   };
 
-  updateFieldDimensions();
+  resyncFieldDimensions(reason);
   syncAimCanvasLayout();
   syncHudCanvasLayout();
 
