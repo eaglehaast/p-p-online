@@ -2082,6 +2082,20 @@ function syncInventoryUI(color){
       layout: INVENTORY_UI_CONFIG.slots[type] ?? null,
     };
   });
+
+  const normalizeCountPocketLayout = (layout) => {
+    const frameLayout = layout?.frame ?? { x: 0, y: 0 };
+    const rawPocket = layout?.countPocket ?? { x: 0, y: 0, w: 10, h: 9 };
+    const localX = Math.round((rawPocket.x ?? 0) - (frameLayout.x ?? 0));
+    const localY = Math.round((rawPocket.y ?? 0) - (frameLayout.y ?? 0));
+    return {
+      x: localX,
+      y: localY,
+      w: 10,
+      h: 9,
+    };
+  };
+
   for(const slot of slotData){
     const hasItem = slot.count > 0;
     if(!slot.layout) continue;
@@ -2090,7 +2104,7 @@ function syncInventoryUI(color){
     const img = document.createElement("img");
     const usageConfig = getItemUsageConfig(slot.type);
     const iconLayout = slot.layout.icon;
-    const countLayout = slot.layout.countPocket;
+    const countLayout = normalizeCountPocketLayout(slot.layout);
     const frameLayout = slot.layout.frame;
     const isImplemented = slot.layout.implemented !== false;
     const isInteractiveItem = hasItem && isImplemented && Boolean(usageConfig?.requiresDragAndDrop);
@@ -2151,10 +2165,10 @@ function syncInventoryUI(color){
       const countBadge = document.createElement("span");
       countBadge.className = "inventory-item-count";
       countBadge.textContent = slot.count;
-      countBadge.style.left = `${Math.round(countLayout.x)}px`;
-      countBadge.style.top = `${Math.round(countLayout.y)}px`;
-      countBadge.style.width = `${Math.round(countLayout.w)}px`;
-      countBadge.style.height = `${Math.round(countLayout.h)}px`;
+      countBadge.style.left = `${countLayout.x}px`;
+      countBadge.style.top = `${countLayout.y}px`;
+      countBadge.style.width = `${countLayout.w}px`;
+      countBadge.style.height = `${countLayout.h}px`;
       slotContainer.appendChild(countBadge);
     }
     host.appendChild(slotContainer);
