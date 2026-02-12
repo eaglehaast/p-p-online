@@ -861,7 +861,7 @@ const NUKE_TIMELINE = {
 
 // Новый 6-слотовый inventory: все runtime-иконки и рамки только из ui_gamescreen/gs_inventory/.
 const INVENTORY_UI_CONFIG = Object.freeze({
-  frameAtlasPath: "ui_gamescreen/gs_inventory/gs_inventory_frame.png",
+  frameAtlasPath: "ui_gamescreen/gs_inventory/gs_inventory_frame_size.png",
   slotOrder: [
     INVENTORY_ITEM_TYPES.CROSSHAIR,
     INVENTORY_ITEM_TYPES.FUEL,
