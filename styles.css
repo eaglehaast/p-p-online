@@ -309,11 +309,6 @@ body, button {
     text-shadow: 0 1px 0 #5A3E1E;
   }
 
-  #inventoryLayer.is-nuke-locked,
-  body.nuke-input-locked #inventoryLayer {
-    pointer-events: none !important;
-  }
-
   body.nuke-input-locked #instance_reset,
   body.nuke-input-locked #instance_exit,
   body.nuke-input-locked #yesButton,
