@@ -120,8 +120,6 @@ function setScreenMode(mode) {
   syncFieldCssVars();
 }
 
-setScreenMode('MENU');
-
 const WORLD = { width: 360, height: 640 };
 const VIEW = {
   dpr: 1,
@@ -5116,6 +5114,8 @@ function getFieldTopCssValue() {
   const computed = (FRAME_BASE_HEIGHT - WORLD.height) / 2;
   return Number.isFinite(computed) ? computed : FRAME_PADDING_Y;
 }
+
+setScreenMode('MENU');
 
 
 let brickFrameImg = null;
