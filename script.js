@@ -855,6 +855,7 @@ const NUKE_TIMELINE = {
   ...NUCLEAR_STRIKE_TIMELINE_DEFAULTS,
 };
 
+// Новый 6-слотовый inventory: все runtime-иконки и рамки только из ui_gamescreen/gs_inventory/.
 const INVENTORY_UI_CONFIG = Object.freeze({
   framePath: "ui_gamescreen/gs_inventory/gs_inventory_frame.png",
   slotOrder: [
@@ -2296,7 +2297,7 @@ const GAME_SCREEN_ASSETS = [
   "ui_gamescreen/bricks/brick4_diagonal copy.png",
   "ui_controlpanel/cp_adds/cp_cargo_on.png",
 
-  // Inventory icons
+  // Новый 6-слотовый inventory: preload только из ui_gamescreen/gs_inventory/.
   INVENTORY_UI_CONFIG.framePath,
   ...INVENTORY_ICON_ASSET_PATHS,
   NUCLEAR_STRIKE_FX.path,
