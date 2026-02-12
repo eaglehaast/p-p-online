@@ -874,7 +874,7 @@ const INVENTORY_UI_CONFIG = Object.freeze({
   slotSize: Object.freeze({ w: 55, h: 55 }),
   containers: Object.freeze({
     blue: Object.freeze({ x: 68, y: 19, w: 342, h: 55 }),
-    green: Object.freeze({ x: 368, y: 733, w: 342, h: 55 }),
+    green: Object.freeze({ x: 68, y: 733, w: 342, h: 55 }),
   }),
   slots: Object.freeze({
     [INVENTORY_ITEM_TYPES.CROSSHAIR]: Object.freeze({
@@ -2192,16 +2192,14 @@ function syncInventoryUI(color){
     }
     slotContainer.appendChild(frameImg);
     slotContainer.appendChild(img);
-    if (hasItem) {
-      const countBadge = document.createElement("span");
-      countBadge.className = "inventory-item-count";
-      countBadge.textContent = slot.count;
-      countBadge.style.left = `${countLayout.x}px`;
-      countBadge.style.top = `${countLayout.y}px`;
-      countBadge.style.width = `${countLayout.w}px`;
-      countBadge.style.height = `${countLayout.h}px`;
-      slotContainer.appendChild(countBadge);
-    }
+    const countBadge = document.createElement("span");
+    countBadge.className = "inventory-item-count";
+    countBadge.textContent = slot.count;
+    countBadge.style.left = `${countLayout.x}px`;
+    countBadge.style.top = `${countLayout.y}px`;
+    countBadge.style.width = `${countLayout.w}px`;
+    countBadge.style.height = `${countLayout.h}px`;
+    slotContainer.appendChild(countBadge);
     host.appendChild(slotContainer);
 
     const state = inventoryHintState[color];

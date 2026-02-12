@@ -287,13 +287,13 @@ body, button {
   }
 
   .inventory-item--ghost {
-    opacity: 0.22;
+    opacity: 0.32;
     pointer-events: none;
     cursor: default;
   }
 
   .inventory-slot--disabled {
-    filter: saturate(0.55) brightness(0.86);
+    filter: none;
   }
 
   .inventory-item--disabled {
