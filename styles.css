@@ -315,12 +315,13 @@ body, button {
     display: flex;
     align-items: center;
     justify-content: center;
+    text-align: center;
     color: #EBD9A3;
     font-family: 'Silkscreen', 'Fantasque Sans Mono', monospace;
     font-size: 9px;
     line-height: 9px;
     font-weight: 700;
-    text-shadow: 0 1px 0 #5A3E1E;
+    text-shadow: 0 1px #5A3E1E;
   }
 
   body.nuke-input-locked #instance_reset,
