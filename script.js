@@ -894,7 +894,7 @@ const INVENTORY_UI_CONFIG = Object.freeze({
       frame: Object.freeze({ x: 114, y: 0, w: 55, h: 55 }),
       icon: Object.freeze({ x: 129, y: 11, w: 33, h: 30 }),
       countPocket: Object.freeze({ x: 157, y: 3, w: 10, h: 9 }),
-      iconPath: "ui_gamescreen/gs_inventory/gs_inventory_wings.png",
+      iconPath: "ui_gamescreen/gs_inventory/gs_inventory_wings_sharper_2.png",
     }),
     [INVENTORY_ITEM_TYPES.MINE]: Object.freeze({
       frame: Object.freeze({ x: 171, y: 0, w: 55, h: 55 }),
