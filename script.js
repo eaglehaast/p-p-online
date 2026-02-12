@@ -2101,6 +2101,19 @@ function syncInventoryUI(color){
     };
   };
 
+  const normalizeIconLayout = (layout) => {
+    const frameLayout = layout?.frame ?? { x: 0, y: 0 };
+    const rawIcon = layout?.icon ?? { x: 0, y: 0, w: 1, h: 1 };
+    const localX = Math.round((rawIcon.x ?? 0) - (frameLayout.x ?? 0));
+    const localY = Math.round((rawIcon.y ?? 0) - (frameLayout.y ?? 0));
+    return {
+      x: localX,
+      y: localY,
+      w: Math.max(1, Math.round(rawIcon.w ?? 1)),
+      h: Math.max(1, Math.round(rawIcon.h ?? 1)),
+    };
+  };
+
   const normalizeFrameSliceLayout = (layout) => {
     const rawFrame = layout?.frame ?? { x: 0, y: 0, w: 55, h: 55 };
     return {
@@ -2118,7 +2131,7 @@ function syncInventoryUI(color){
     const frameImg = document.createElement("img");
     const img = document.createElement("img");
     const usageConfig = getItemUsageConfig(slot.type);
-    const iconLayout = slot.layout.icon;
+    const iconLayout = normalizeIconLayout(slot.layout);
     const countLayout = normalizeCountPocketLayout(slot.layout);
     const frameLayout = slot.layout.frame;
     const frameSlice = normalizeFrameSliceLayout(slot.layout);
@@ -2147,10 +2160,10 @@ function syncInventoryUI(color){
     img.alt = "";
     img.draggable = false;
     img.className = "inventory-item";
-    img.style.left = `${Math.round(iconLayout.x)}px`;
-    img.style.top = `${Math.round(iconLayout.y)}px`;
-    img.style.width = `${Math.round(iconLayout.w)}px`;
-    img.style.height = `${Math.round(iconLayout.h)}px`;
+    img.style.left = `${iconLayout.x}px`;
+    img.style.top = `${iconLayout.y}px`;
+    img.style.width = `${iconLayout.w}px`;
+    img.style.height = `${iconLayout.h}px`;
 
     if(!isImplemented){
       img.classList.add("inventory-item--disabled");
