@@ -861,7 +861,7 @@ const NUKE_TIMELINE = {
 
 // Новый 6-слотовый inventory: все runtime-иконки и рамки только из ui_gamescreen/gs_inventory/.
 const INVENTORY_UI_CONFIG = Object.freeze({
-  framePath: "ui_gamescreen/gs_inventory/gs_inventory_frame.png",
+  frameAtlasPath: "ui_gamescreen/gs_inventory/gs_inventory_frame.png",
   slotOrder: [
     INVENTORY_ITEM_TYPES.CROSSHAIR,
     INVENTORY_ITEM_TYPES.FUEL,
@@ -2101,6 +2101,16 @@ function syncInventoryUI(color){
     };
   };
 
+  const normalizeFrameSliceLayout = (layout) => {
+    const rawFrame = layout?.frame ?? { x: 0, y: 0, w: 55, h: 55 };
+    return {
+      sx: Math.max(0, Math.round(rawFrame.x ?? 0)),
+      sy: Math.max(0, Math.round(rawFrame.y ?? 0)),
+      sw: Math.max(1, Math.round(rawFrame.w ?? 55)),
+      sh: Math.max(1, Math.round(rawFrame.h ?? 55)),
+    };
+  };
+
   for(const slot of slotData){
     const hasItem = slot.count > 0;
     if(!slot.layout) continue;
@@ -2111,6 +2121,7 @@ function syncInventoryUI(color){
     const iconLayout = slot.layout.icon;
     const countLayout = normalizeCountPocketLayout(slot.layout);
     const frameLayout = slot.layout.frame;
+    const frameSlice = normalizeFrameSliceLayout(slot.layout);
     const isImplemented = slot.layout.implemented !== false;
     const isInteractiveItem = hasItem && isImplemented && Boolean(usageConfig?.requiresDragAndDrop);
 
@@ -2123,12 +2134,14 @@ function syncInventoryUI(color){
       });
     }
 
-    frameImg.src = INVENTORY_UI_CONFIG.framePath;
+    frameImg.src = INVENTORY_UI_CONFIG.frameAtlasPath;
     frameImg.alt = "";
     frameImg.draggable = false;
     frameImg.className = "inventory-slot-frame";
-    frameImg.style.width = `${Math.round(frameLayout.w)}px`;
-    frameImg.style.height = `${Math.round(frameLayout.h)}px`;
+    frameImg.style.width = `${frameSlice.sw}px`;
+    frameImg.style.height = `${frameSlice.sh}px`;
+    frameImg.style.objectFit = "none";
+    frameImg.style.objectPosition = `-${frameSlice.sx}px -${frameSlice.sy}px`;
 
     img.src = slot.iconPath || INVENTORY_EMPTY_ICON;
     img.alt = "";
@@ -2302,7 +2315,7 @@ const GAME_SCREEN_ASSETS = [
   "ui_controlpanel/cp_adds/cp_cargo_on.png",
 
   // Новый 6-слотовый inventory: preload только из ui_gamescreen/gs_inventory/.
-  INVENTORY_UI_CONFIG.framePath,
+  INVENTORY_UI_CONFIG.frameAtlasPath,
   ...INVENTORY_ICON_ASSET_PATHS,
   NUCLEAR_STRIKE_FX.path,
 
