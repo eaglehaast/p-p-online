@@ -769,7 +769,6 @@ const BASE_SPRITE_PATHS = {
 
 const INVENTORY_ITEM_TYPES = {
   MINE: "mine",
-  NUCLEAR_STRIKE: "nuclear_strike",
   CROSSHAIR: "crosshair",
   FUEL: "fuel",
   WINGS: "wings",
@@ -777,17 +776,16 @@ const INVENTORY_ITEM_TYPES = {
   INVISIBILITY: "invisibility",
 };
 
+const NUCLEAR_STRIKE_ACTION_TYPES = Object.freeze({
+  NUCLEAR_STRIKE: "nuclear_strike",
+});
+
 const ITEM_USAGE_TARGETS = Object.freeze({
   BOARD: "board",
   SELF_PLANE: "self_plane",
 });
 
 const itemUsageConfig = Object.freeze({
-  [INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE]: {
-    target: ITEM_USAGE_TARGETS.BOARD,
-    hintText: "Drop on the field. Think twice.",
-    requiresDragAndDrop: true,
-  },
   [INVENTORY_ITEM_TYPES.CROSSHAIR]: {
     target: ITEM_USAGE_TARGETS.SELF_PLANE,
     hintText: "Apply to your plane. Guaranteed hit!",
@@ -821,6 +819,7 @@ const itemUsageConfig = Object.freeze({
 });
 
 const NUCLEAR_STRIKE_FX = {
+  type: NUCLEAR_STRIKE_ACTION_TYPES.NUCLEAR_STRIKE,
   path: "ui_gamescreen/gamescreen_outside/gs_cargoeffects/gs_cagroeffects_nuclearstrike.gif",
   durationMs: 1980,
 };
@@ -962,7 +961,7 @@ const inventoryHosts = {
 };
 
 let nuclearStrikeHideTimeoutId = null;
-let activeNuclearDrag = null;
+let activeInventoryDrag = null;
 let pendingInventoryUse = null;
 
 function setPendingInventoryUse(nextState){
@@ -1013,9 +1012,6 @@ let nuclearStrikeStage = NUCLEAR_STRIKE_STAGES.IDLE;
 function applyNuclearStrikeInputLockUi(isLocked){
   const lockEnabled = Boolean(isLocked);
   document.body?.classList.toggle("nuke-input-locked", lockEnabled);
-  if(inventoryLayer instanceof HTMLElement){
-    inventoryLayer.classList.toggle("is-nuke-locked", lockEnabled);
-  }
 }
 
 function isNuclearStrikeActionLocked(){
@@ -1354,13 +1350,13 @@ function transitionNuclearStrikeStage(nextStage, context = {}){
   return true;
 }
 
-function cancelActiveNuclearDrag(reason = "cancel"){
+function cancelActiveInventoryDrag(reason = "cancel"){
   resetInventoryDragFallbackGhost();
-  if (!activeNuclearDrag) return;
-  if (!activeNuclearDrag.consumed && DEBUG_NUKE) {
+  if (!activeInventoryDrag) return;
+  if (!activeInventoryDrag.consumed && DEBUG_NUKE) {
     console.log(`[NUKE] drag ${reason}`);
   }
-  activeNuclearDrag = null;
+  activeInventoryDrag = null;
   if(nuclearStrikeStage === NUCLEAR_STRIKE_STAGES.DRAGGING){
     transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.IDLE, { reason });
   }
@@ -1368,7 +1364,7 @@ function cancelActiveNuclearDrag(reason = "cancel"){
 
 function resetInventoryInteractionState(){
   resetInventoryDragFallbackGhost();
-  activeNuclearDrag = null;
+  activeInventoryDrag = null;
   pendingInventoryUse = null;
   isNuclearStrikeResolutionActive = false;
   isNukeCinematicActive = false;
@@ -1659,10 +1655,6 @@ function getMineFallbackClientPoint(event, targetRect, visualWidth, visualHeight
 }
 
 function onInventoryItemDragStart(event){
-  if(isNuclearStrikeActionLocked()){
-    event.preventDefault();
-    return;
-  }
   const target = event.currentTarget;
   if(!(target instanceof HTMLElement)) return;
   const type = target.dataset.itemType;
@@ -1677,7 +1669,7 @@ function onInventoryItemDragStart(event){
     event.preventDefault();
     return;
   }
-  activeNuclearDrag = {
+  activeInventoryDrag = {
     color,
     type,
     usageTarget: usageConfig.target,
@@ -1719,18 +1711,11 @@ function onInventoryItemDragStart(event){
       }
     }
   }
-  if(type === INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE){
-    updateBoardDimmerMask();
-    transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.DRAGGING, { reason: "drag start" });
-  }
-  if (DEBUG_NUKE && type === INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE) {
-    console.log("[NUKE] drag start");
-  }
 }
 
 function onInventoryItemDragEnd(){
   clearInventoryDragArtifacts();
-  cancelActiveNuclearDrag("ended");
+  cancelActiveInventoryDrag("ended");
 }
 
 function isClientPointOverBoard(clientX, clientY){
@@ -1743,11 +1728,7 @@ function isClientPointOverBoard(clientX, clientY){
 }
 
 function onBoardDragOver(event){
-  if(isNuclearStrikeActionLocked()){
-    event.preventDefault();
-    return;
-  }
-  if (!activeNuclearDrag) return;
+  if (!activeInventoryDrag) return;
   event.preventDefault();
   if (event.dataTransfer) {
     event.dataTransfer.dropEffect = "move";
@@ -1757,11 +1738,7 @@ function onBoardDragOver(event){
 
 function onBoardDrop(event){
   clearInventoryDragArtifacts();
-  if(isNuclearStrikeActionLocked()){
-    event.preventDefault();
-    return;
-  }
-  if (!activeNuclearDrag) return;
+  if (!activeInventoryDrag) return;
   event.preventDefault();
   const { clientX, clientY } = event;
   if (!isClientPointOverBoard(clientX, clientY)) {
@@ -1770,9 +1747,9 @@ function onBoardDrop(event){
     }
     return;
   }
-  const usageConfig = getItemUsageConfig(activeNuclearDrag.type);
+  const usageConfig = getItemUsageConfig(activeInventoryDrag.type);
   if(!usageConfig){
-    cancelActiveNuclearDrag("drop without config");
+    cancelActiveInventoryDrag("drop without config");
     return;
   }
 
@@ -1781,7 +1758,7 @@ function onBoardDrop(event){
   }
 
   if(usageConfig.target === ITEM_USAGE_TARGETS.BOARD){
-    if(activeNuclearDrag.type === INVENTORY_ITEM_TYPES.MINE){
+    if(activeInventoryDrag.type === INVENTORY_ITEM_TYPES.MINE){
       const minePlacement = getMinePlacementFromDropPoint(clientX, clientY);
       logDropCoordsDebug("onBoardDrop/mine", {
         clientX,
@@ -1797,49 +1774,38 @@ function onBoardDrop(event){
       const isPlacementValid = isMinePlacementValid(minePlacement);
       if(isPlacementValid){
         placeMine({
-          owner: activeNuclearDrag.color,
+          owner: activeInventoryDrag.color,
           x: minePlacement.x,
           y: minePlacement.y,
           cellX: minePlacement.cellX,
           cellY: minePlacement.cellY,
         });
-        removeItemFromInventory(activeNuclearDrag.color, activeNuclearDrag.type);
-        activeNuclearDrag.consumed = true;
+        removeItemFromInventory(activeInventoryDrag.color, activeInventoryDrag.type);
+        activeInventoryDrag.consumed = true;
       }
-      cancelActiveNuclearDrag(isPlacementValid ? "mine dropped" : "mine drop rejected");
+      cancelActiveInventoryDrag(isPlacementValid ? "mine dropped" : "mine drop rejected");
       return;
     }
 
-    removeItemFromInventory(activeNuclearDrag.color, activeNuclearDrag.type);
-    activeNuclearDrag.consumed = true;
-    if(activeNuclearDrag.type === INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE){
-      transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.ARMED, { reason: "drop accepted" });
-      if (DEBUG_NUKE) {
-        console.log(`[NUKE] drop ok at client(${Math.round(clientX)}, ${Math.round(clientY)})`);
-      }
-      transitionNuclearStrikeStage(NUCLEAR_STRIKE_STAGES.CINEMATIC, { reason: "drop accepted" });
-    }
-    cancelActiveNuclearDrag("dropped");
+    removeItemFromInventory(activeInventoryDrag.color, activeInventoryDrag.type);
+    activeInventoryDrag.consumed = true;
+    cancelActiveInventoryDrag("dropped");
     return;
   }
 
-  cancelActiveNuclearDrag("dropped");
+  cancelActiveInventoryDrag("dropped");
 }
 
 function onSelfPlaneItemDrop(event){
   clearInventoryDragArtifacts();
-  if(isNuclearStrikeActionLocked()){
-    event.preventDefault();
-    return;
-  }
-  if(!activeNuclearDrag) return;
-  const usageConfig = getItemUsageConfig(activeNuclearDrag.type);
+  if(!activeInventoryDrag) return;
+  const usageConfig = getItemUsageConfig(activeInventoryDrag.type);
   if(usageConfig?.target !== ITEM_USAGE_TARGETS.SELF_PLANE) return;
 
   event.preventDefault();
   const { clientX, clientY } = event;
   if(!isClientPointOverBoard(clientX, clientY)){
-    cancelActiveNuclearDrag("self target outside board");
+    cancelActiveInventoryDrag("self target outside board");
     return;
   }
 
@@ -1855,27 +1821,27 @@ function onSelfPlaneItemDrop(event){
     boardX,
     boardY
   });
-  const ownPlane = getPlaneAtBoardPoint(activeNuclearDrag.color, boardX, boardY);
+  const ownPlane = getPlaneAtBoardPoint(activeInventoryDrag.color, boardX, boardY);
   if(!ownPlane){
-    cancelActiveNuclearDrag("self target missed");
+    cancelActiveInventoryDrag("self target missed");
     return;
   }
 
-  const applied = applyItemToOwnPlane(activeNuclearDrag.type, activeNuclearDrag.color, ownPlane);
+  const applied = applyItemToOwnPlane(activeInventoryDrag.type, activeInventoryDrag.color, ownPlane);
   if(applied){
-    removeItemFromInventory(activeNuclearDrag.color, activeNuclearDrag.type);
-    activeNuclearDrag.consumed = true;
+    removeItemFromInventory(activeInventoryDrag.color, activeInventoryDrag.type);
+    activeInventoryDrag.consumed = true;
   }
-  cancelActiveNuclearDrag("self target drop");
+  cancelActiveInventoryDrag("self target drop");
 }
 
 function onInventoryDrop(event){
   clearInventoryDragArtifacts();
-  if(!activeNuclearDrag) return;
-  const usageConfig = getItemUsageConfig(activeNuclearDrag.type);
+  if(!activeInventoryDrag) return;
+  const usageConfig = getItemUsageConfig(activeInventoryDrag.type);
   if(!usageConfig){
     event.preventDefault();
-    cancelActiveNuclearDrag("drop without config");
+    cancelActiveInventoryDrag("drop without config");
     return;
   }
 
@@ -7292,13 +7258,13 @@ gsBoardCanvas.addEventListener("dragover", onBoardDragOver);
 gsBoardCanvas.addEventListener("drop", onInventoryDrop);
 window.addEventListener("dragend", () => {
   clearInventoryDragArtifacts();
-  cancelActiveNuclearDrag("ended outside board");
+  cancelActiveInventoryDrag("ended outside board");
 });
 window.addEventListener("drop", () => {
   clearInventoryDragArtifacts();
-  cancelActiveNuclearDrag("dropped outside board");
+  cancelActiveInventoryDrag("dropped outside board");
 });
-window.addEventListener("dragcancel", () => cancelActiveNuclearDrag("cancelled"));
+window.addEventListener("dragcancel", () => cancelActiveInventoryDrag("cancelled"));
 window.addEventListener("dragover", (event) => {
   updateInventoryDragFallbackPosition(event.clientX, event.clientY);
 });
@@ -11947,7 +11913,7 @@ async function syncLayoutAndField(reason = "sync") {
     };
   };
 
-  if (activeNuclearDrag) {
+  if (activeInventoryDrag) {
     updateBoardDimmerMask();
   }
 
