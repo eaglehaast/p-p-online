@@ -772,9 +772,7 @@ const INVENTORY_ITEM_TYPES = {
   NUCLEAR_STRIKE: "nuclear_strike",
   CROSSHAIR: "crosshair",
   FUEL: "fuel",
-  WINGS: "wings",
   DYNAMITE: "dynamite",
-  INVISIBILITY: "invisibility",
 };
 
 const ITEM_USAGE_TARGETS = Object.freeze({
@@ -805,16 +803,6 @@ const itemUsageConfig = Object.freeze({
   },
   [INVENTORY_ITEM_TYPES.DYNAMITE]: {
     target: ITEM_USAGE_TARGETS.BOARD,
-    hintText: "",
-    requiresDragAndDrop: false,
-  },
-  [INVENTORY_ITEM_TYPES.WINGS]: {
-    target: ITEM_USAGE_TARGETS.SELF_PLANE,
-    hintText: "",
-    requiresDragAndDrop: false,
-  },
-  [INVENTORY_ITEM_TYPES.INVISIBILITY]: {
-    target: ITEM_USAGE_TARGETS.SELF_PLANE,
     hintText: "",
     requiresDragAndDrop: false,
   },
@@ -859,77 +847,33 @@ const NUKE_TIMELINE = {
 const INVENTORY_ITEMS = [
   {
     type: INVENTORY_ITEM_TYPES.MINE,
-    iconPath: "ui_gamescreen/gs_inventory/gs_inventory_mine.png",
+    iconPath: "ui_gamescreen/gamescreen_outside/gs_icon_prototypes/gs_cargoicon_mine.png",
+  },
+  {
+    type: INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE,
+    iconPath: "ui_gamescreen/gamescreen_outside/gs_icon_prototypes/gs_cargoicon_nuclear_strike.png",
   },
   {
     type: INVENTORY_ITEM_TYPES.CROSSHAIR,
-    iconPath: "ui_gamescreen/gs_inventory/gs_inventory_crossfire.png",
+    iconPath: "ui_gamescreen/gamescreen_outside/gs_icon_prototypes/gs_cargoicon_crosshair.png",
   },
   {
     type: INVENTORY_ITEM_TYPES.FUEL,
-    iconPath: "ui_gamescreen/gs_inventory/gs_inventory_fuel.png",
-  },
-  {
-    type: INVENTORY_ITEM_TYPES.WINGS,
-    iconPath: "ui_gamescreen/gs_inventory/gs_inventory_wings.png",
+    iconPath: "ui_gamescreen/gamescreen_outside/gs_icon_prototypes/gs_cargoicon_fuel_barrel.png",
   },
   {
     type: INVENTORY_ITEM_TYPES.DYNAMITE,
-    iconPath: "ui_gamescreen/gs_inventory/gs_inventory_dynamite.png",
-  },
-  {
-    type: INVENTORY_ITEM_TYPES.INVISIBILITY,
-    iconPath: "",
+    iconPath: "ui_gamescreen/gamescreen_outside/gs_icon_prototypes/gs_cargoicon_dynamite.png",
   },
 ];
 
 const INVENTORY_SLOT_ORDER = [
   INVENTORY_ITEM_TYPES.CROSSHAIR,
   INVENTORY_ITEM_TYPES.FUEL,
-  INVENTORY_ITEM_TYPES.WINGS,
   INVENTORY_ITEM_TYPES.MINE,
   INVENTORY_ITEM_TYPES.DYNAMITE,
-  INVENTORY_ITEM_TYPES.INVISIBILITY,
+  INVENTORY_ITEM_TYPES.NUCLEAR_STRIKE,
 ];
-
-const INVENTORY_SLOT_LAYOUT = Object.freeze({
-  [INVENTORY_ITEM_TYPES.CROSSHAIR]: {
-    frameX: 0,
-    icon: { x: 14, y: 13, w: 28, h: 27 },
-    count: { x: 43, y: 3, w: 10, h: 9 },
-  },
-  [INVENTORY_ITEM_TYPES.FUEL]: {
-    frameX: 57,
-    icon: { x: 77, y: 13, w: 17, h: 28 },
-    count: { x: 100, y: 3, w: 10, h: 9 },
-  },
-  [INVENTORY_ITEM_TYPES.WINGS]: {
-    frameX: 114,
-    icon: { x: 129, y: 11, w: 33, h: 30 },
-    count: { x: 157, y: 3, w: 10, h: 9 },
-  },
-  [INVENTORY_ITEM_TYPES.MINE]: {
-    frameX: 171,
-    icon: { x: 185, y: 13, w: 28, h: 28 },
-    count: { x: 214, y: 3, w: 10, h: 9 },
-  },
-  [INVENTORY_ITEM_TYPES.DYNAMITE]: {
-    frameX: 228,
-    icon: { x: 247, y: 9, w: 19, h: 32 },
-    count: { x: 272, y: 3, w: 10, h: 9 },
-  },
-  [INVENTORY_ITEM_TYPES.INVISIBILITY]: {
-    frameX: 285,
-    icon: { x: 298, y: 12, w: 32, h: 31 },
-    count: { x: 329, y: 3, w: 10, h: 9 },
-  },
-});
-
-const INVENTORY_FRAME_ICON_PATH = "ui_gamescreen/gs_inventory/gs_inventory_frame.png";
-const INVENTORY_INVISIBILITY_ICON_BY_COLOR = Object.freeze({
-  blue: "ui_gamescreen/gs_inventory/gs_inventory_invisible_blue.png",
-  green: "ui_gamescreen/gs_inventory/gs_inventory_invisible_green.png",
-});
 
 const INVENTORY_EMPTY_ICON =
   "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
@@ -1487,15 +1431,7 @@ let sharedInventoryDragPreview = null;
 let inventoryDragFallbackGhost = null;
 let inventoryDragFallbackActive = false;
 let inventoryDragImageMarkedUnstable = false;
-const MINE_INVENTORY_ICON_PATH = "ui_gamescreen/gs_inventory/gs_inventory_mine.png";
-
-function getInventoryIconPathForSlot(type, color){
-  if(type === INVENTORY_ITEM_TYPES.INVISIBILITY){
-    return INVENTORY_INVISIBILITY_ICON_BY_COLOR[color] || "";
-  }
-  const itemDef = INVENTORY_ITEMS.find((item) => item.type === type);
-  return itemDef?.iconPath || "";
-}
+const MINE_INVENTORY_ICON_PATH = "ui_gamescreen/gamescreen_outside/gs_icon_prototypes/gs_cargoicon_mine.png";
 
 function getInventoryDragFallbackGhost(){
   if(inventoryDragFallbackGhost instanceof HTMLElement){
@@ -2035,42 +1971,30 @@ function syncInventoryUI(color){
     return counts;
   }, {});
   const slotData = INVENTORY_SLOT_ORDER.map((type) => {
+    const itemDef = INVENTORY_ITEMS.find((item) => item.type === type) ?? null;
     const count = countsByType[type] ?? 0;
     return {
       type,
       count,
-      iconPath: getInventoryIconPathForSlot(type, color),
-      layout: INVENTORY_SLOT_LAYOUT[type] ?? null,
+      iconPath: itemDef?.iconPath ?? "",
     };
   });
   for(const slot of slotData){
     const hasItem = slot.count > 0;
-    if(!slot.layout) continue;
     const slotContainer = document.createElement("div");
-    const frameImg = document.createElement("img");
     const img = document.createElement("img");
     const usageConfig = getItemUsageConfig(slot.type);
-    const iconLayout = slot.layout.icon;
-    const countLayout = slot.layout.count;
+    const hintText = usageConfig?.hintText ?? "";
     const isInteractiveItem = hasItem && Boolean(usageConfig?.requiresDragAndDrop);
 
     slotContainer.className = "inventory-slot";
-    slotContainer.style.left = `${Math.round(slot.layout.frameX)}px`;
-
-    frameImg.src = INVENTORY_FRAME_ICON_PATH;
-    frameImg.alt = "";
-    frameImg.draggable = false;
-    frameImg.className = "inventory-slot-frame";
-
     img.src = slot.iconPath || INVENTORY_EMPTY_ICON;
     img.alt = "";
     img.draggable = false;
     img.className = "inventory-item";
-    img.style.left = `${Math.round(iconLayout.x)}px`;
-    img.style.top = `${Math.round(iconLayout.y)}px`;
-    img.style.width = `${Math.round(iconLayout.w)}px`;
-    img.style.height = `${Math.round(iconLayout.h)}px`;
-
+    if (slot.type === INVENTORY_ITEM_TYPES.MINE) {
+      img.classList.add("inventory-item--mine");
+    }
     if (!hasItem) {
       img.classList.add("inventory-item--ghost");
     }
@@ -2082,6 +2006,20 @@ function syncInventoryUI(color){
       img.classList.add("inventory-item--draggable");
       img.addEventListener("dragstart", onInventoryItemDragStart);
       img.addEventListener("dragend", onInventoryItemDragEnd);
+
+      if (hintText) {
+        const hintEl = document.createElement("span");
+        hintEl.className = "inventory-item-hint";
+        hintEl.textContent = hintText;
+        slotContainer.appendChild(hintEl);
+
+        img.addEventListener("mouseenter", () => {
+          hintEl.classList.add("is-visible");
+        });
+        img.addEventListener("mouseleave", () => {
+          hintEl.classList.remove("is-visible");
+        });
+      }
     }
     if(
       hasItem
@@ -2091,16 +2029,11 @@ function syncInventoryUI(color){
     ){
       img.classList.add("inventory-item--draggable");
     }
-    slotContainer.appendChild(frameImg);
     slotContainer.appendChild(img);
     if (hasItem) {
       const countBadge = document.createElement("span");
       countBadge.className = "inventory-item-count";
       countBadge.textContent = slot.count;
-      countBadge.style.left = `${Math.round(countLayout.x)}px`;
-      countBadge.style.top = `${Math.round(countLayout.y)}px`;
-      countBadge.style.width = `${Math.round(countLayout.w)}px`;
-      countBadge.style.height = `${Math.round(countLayout.h)}px`;
       slotContainer.appendChild(countBadge);
     }
     host.appendChild(slotContainer);
@@ -5115,15 +5048,15 @@ function getFieldOffsetsInCanvasSpace(canvas, fallbackScaleX = 1, fallbackScaleY
 // Sprite used for the aiming arrow
 const { img: arrowSprite } = loadImageAsset("sprite_ copy.png", GAME_PRELOAD_LABEL);
 const { img: crosshairIconSprite } = loadImageAsset(
-  "ui_gamescreen/gs_inventory/gs_inventory_crossfire.png",
+  "ui_gamescreen/gamescreen_outside/gs_icon_prototypes/gs_cargoicon_crosshair.png",
   GAME_PRELOAD_LABEL
 );
 const { img: fuelIconSprite } = loadImageAsset(
-  "ui_gamescreen/gs_inventory/gs_inventory_fuel.png",
+  "ui_gamescreen/gamescreen_outside/gs_icon_prototypes/gs_cargoicon_fuel_barrel.png",
   GAME_PRELOAD_LABEL
 );
 const { img: mineIconSprite } = loadImageAsset(
-  "ui_gamescreen/gs_inventory/gs_inventory_mine.png",
+  "ui_gamescreen/gamescreen_outside/gs_icon_prototypes/gs_cargoicon_mine.png",
   GAME_PRELOAD_LABEL
 );
 arrowSprite?.addEventListener("load", () => {
@@ -5288,6 +5221,7 @@ const HUD_PLANE_DEATH_SCALE_DELTA = 0.15;
 const HUD_BASE_PLANE_ICON_SIZE = planeMetric(16);
 const CELL_SIZE            = 20;     // px
 const INVENTORY_ITEM_SIZE_PX = 30;
+const INVENTORY_SLOT_SIZE_PX = INVENTORY_ITEM_SIZE_PX;
 const POINT_RADIUS         = planeMetric(15);     // px (увеличено для мобильных)
 const CARGO_PICKUP_RADIUS_MULTIPLIER = 2.2;
 const CARGO_RADIUS         = POINT_RADIUS * CARGO_PICKUP_RADIUS_MULTIPLIER;    // увеличенный радиус ящика
@@ -5331,7 +5265,9 @@ const FLAG_POLE_HEIGHT     = 20;     // высота флагштока
 const FLAG_WIDTH           = 12;     // ширина полотна флага
 const FLAG_HEIGHT          = 8;      // высота полотна флага
 
+document.documentElement.style.setProperty("--inventory-item-size", `${INVENTORY_ITEM_SIZE_PX}px`);
 applyMineScreenSizeToDom();
+document.documentElement.style.setProperty("--inventory-slot-size", `${INVENTORY_SLOT_SIZE_PX}px`);
 
 ensureMineDebugApi();
 
