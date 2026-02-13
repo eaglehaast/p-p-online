@@ -1820,6 +1820,25 @@ function onBoardDrop(event){
       return;
     }
 
+    if(activeInventoryDrag.type === INVENTORY_ITEM_TYPES.DYNAMITE){
+      const dropPlacement = getDynamitePlacementFromDropPoint(clientX, clientY);
+      const targetBrick = findMapSpriteForDynamiteDrop(dropPlacement);
+      if(targetBrick){
+        dynamiteState.push({
+          id: `dynamite-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          owner: activeInventoryDrag.color,
+          x: targetBrick.cx,
+          y: targetBrick.cy,
+          spriteId: targetBrick.id,
+          spriteIndex: targetBrick.spriteIndex,
+        });
+        removeItemFromInventory(activeInventoryDrag.color, activeInventoryDrag.type);
+        activeInventoryDrag.consumed = true;
+      }
+      cancelActiveInventoryDrag(targetBrick ? "dynamite dropped" : "dynamite drop rejected");
+      return;
+    }
+
     removeItemFromInventory(activeInventoryDrag.color, activeInventoryDrag.type);
     activeInventoryDrag.consumed = true;
     cancelActiveInventoryDrag("dropped");
@@ -1903,6 +1922,77 @@ function getMinePlacementFromDropPoint(clientX, clientY){
     pinchScale: designPoint.pinchScale,
     effectiveScale: designPoint.effectiveScale,
   };
+}
+
+
+function getDynamitePlacementFromDropPoint(clientX, clientY){
+  const designPoint = toDesignCoords(clientX, clientY);
+  const { x: designX, y: designY } = designPoint;
+  const { x: boardX, y: boardY } = designToBoardCoords(designX, designY);
+  return {
+    boardX,
+    boardY,
+    uiScale: designPoint.uiScale,
+    pinchScale: designPoint.pinchScale,
+    effectiveScale: designPoint.effectiveScale,
+  };
+}
+
+const DYNAMITE_DROP_SNAP_RADIUS = 30;
+
+function getMapSpriteGeometry(sprite, spriteIndex){
+  if(!sprite) return null;
+  const spriteName = typeof sprite?.spriteName === "string" ? sprite.spriteName : "brick_1_default";
+  if(!MAP_SPRITE_PATHS[spriteName]) return null;
+  const { width: baseWidth, height: baseHeight } = getMapSpriteBaseSize(spriteName);
+  const { scaleX, scaleY } = getSpriteScale(sprite);
+  const rotationDeg = Number.isFinite(sprite?.rotate) ? sprite.rotate : 0;
+  const rotation = rotationDeg * Math.PI / 180;
+  const { cx, cy } = getSpriteColliderCenter(sprite, baseWidth, baseHeight, scaleX, scaleY, rotationDeg);
+  const collider = buildSpriteCollider(sprite, spriteIndex);
+  if(!collider) return null;
+
+  const baseId = sprite?.id ?? `${spriteName}-${spriteIndex}`;
+  const id = typeof baseId === "string" ? baseId : `${spriteName}-${spriteIndex}`;
+
+  return {
+    id,
+    spriteIndex,
+    cx,
+    cy,
+    halfWidth: collider.halfWidth,
+    halfHeight: collider.halfHeight,
+    rotation,
+    collider,
+  };
+}
+
+function findMapSpriteForDynamiteDrop(placement){
+  if(!placement) return null;
+
+  let nearestSprite = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  const spriteEntries = Array.isArray(currentMapSprites) ? currentMapSprites : [];
+  for(let i = 0; i < spriteEntries.length; i += 1){
+    const geometry = getMapSpriteGeometry(spriteEntries[i], i);
+    if(!geometry) continue;
+
+    if(isPointInsideCollider(placement.boardX, placement.boardY, geometry.collider)){
+      return geometry;
+    }
+
+    const distanceToCenter = Math.hypot(placement.boardX - geometry.cx, placement.boardY - geometry.cy);
+    if(distanceToCenter < nearestDistance){
+      nearestDistance = distanceToCenter;
+      nearestSprite = geometry;
+    }
+  }
+
+  if(nearestSprite && nearestDistance <= DYNAMITE_DROP_SNAP_RADIUS){
+    return nearestSprite;
+  }
+
+  return null;
 }
 
 function isPointInAxisAlignedRect(x, y, rect){
@@ -5981,6 +6071,7 @@ let colliderSurfaces = [];
 
 let aaUnits     = [];
 let mines       = [];
+let dynamiteState = [];
 let aaPlacementPreview = null;
 let aaPreviewTrail = [];
 
@@ -6951,6 +7042,7 @@ function resetGame(options = {}){
 
   aaUnits = [];
   mines = [];
+  dynamiteState = [];
 
   hasShotThisRound = false;
 
@@ -11613,6 +11705,7 @@ function startNewRound(){
   hasShotThisRound=false;
   aaUnits = [];
   mines = [];
+  dynamiteState = [];
 
   aiMoveScheduled = false;
   gsBoardCanvas.style.display = "block";
@@ -11687,6 +11780,7 @@ function resetPlanePositionsForCurrentMap(){
   awaitingFlightResolution = false;
   aaUnits = [];
   mines = [];
+  dynamiteState = [];
   resetCargoState();
 
   points = [];
