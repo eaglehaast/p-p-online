@@ -1824,14 +1824,36 @@ function onBoardDrop(event){
       const dropPlacement = getDynamitePlacementFromDropPoint(clientX, clientY);
       const targetBrick = findMapSpriteForDynamiteDrop(dropPlacement);
       if(targetBrick){
-        dynamiteState.push({
+        const dynamiteEntry = {
           id: `dynamite-${Date.now()}-${Math.random().toString(16).slice(2)}`,
           owner: activeInventoryDrag.color,
           x: targetBrick.cx,
           y: targetBrick.cy,
           spriteId: targetBrick.id,
           spriteIndex: targetBrick.spriteIndex,
-        });
+          spriteRef: targetBrick.spriteRef,
+        };
+        dynamiteState.push(dynamiteEntry);
+
+        setTimeout(() => {
+          const brickIndex = Array.isArray(currentMapSprites)
+            ? currentMapSprites.indexOf(dynamiteEntry.spriteRef)
+            : -1;
+
+          if(brickIndex < 0){
+            dynamiteState = dynamiteState.filter(entry => entry.id !== dynamiteEntry.id);
+            return;
+          }
+
+          currentMapSprites.splice(brickIndex, 1);
+          colliders = buildMapSpriteColliders({
+            name: currentMapName,
+            sprites: currentMapSprites,
+          });
+          rebuildCollisionSurfaces();
+          dynamiteState = dynamiteState.filter(entry => entry.id !== dynamiteEntry.id);
+        }, 1000);
+
         removeItemFromInventory(activeInventoryDrag.color, activeInventoryDrag.type);
         activeInventoryDrag.consumed = true;
       }
@@ -1958,6 +1980,7 @@ function getMapSpriteGeometry(sprite, spriteIndex){
   return {
     id,
     spriteIndex,
+    spriteRef: sprite,
     cx,
     cy,
     halfWidth: collider.halfWidth,
