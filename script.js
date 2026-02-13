@@ -10389,7 +10389,7 @@ function drawPlanesAndTrajectories(){
         cells,
         x: textX,
         y: p.y,
-        activeTurnBuffs: getPlaneActiveTurnBuffs(p)
+        activeEffectTypes: getPlaneActiveTurnBuffs(p)
       };
     }
 
@@ -10479,20 +10479,34 @@ function drawAimOverlay(rangeTextInfo) {
   hudCtx.fillText("cells", rangeTextInfo.x, rangeTextInfo.y + 8);
 
   const iconSize = 12;
+  const iconGap = 4;
+  const iconsTopOffset = 22;
   const iconX = rangeTextInfo.x;
-  const iconY = rangeTextInfo.y + 18;
-  const activeTurnBuffs = Array.isArray(rangeTextInfo.activeTurnBuffs) ? rangeTextInfo.activeTurnBuffs : [];
-  activeTurnBuffs.forEach((type, index) => {
-    let buffIcon = null;
-    if(type === INVENTORY_ITEM_TYPES.CROSSHAIR){
-      buffIcon = crosshairIconSprite;
-    } else if(type === INVENTORY_ITEM_TYPES.FUEL){
-      buffIcon = fuelIconSprite;
-    }
+  const iconY = rangeTextInfo.y + iconsTopOffset;
+  const effectIconByType = {
+    [INVENTORY_ITEM_TYPES.CROSSHAIR]: crosshairIconSprite,
+    [INVENTORY_ITEM_TYPES.FUEL]: fuelIconSprite
+  };
+  const effectDisplayOrder = [
+    INVENTORY_ITEM_TYPES.CROSSHAIR,
+    INVENTORY_ITEM_TYPES.FUEL
+  ];
+  const activeEffectTypes = Array.isArray(rangeTextInfo.activeEffectTypes)
+    ? rangeTextInfo.activeEffectTypes
+    : [];
 
-    if(buffIcon && isSpriteReady(buffIcon)){
-      hudCtx.drawImage(buffIcon, iconX + index * (iconSize + 4), iconY, iconSize, iconSize);
-    }
+  const iconsToDraw = effectDisplayOrder
+    .filter((effectType) => activeEffectTypes.includes(effectType))
+    .map((effectType) => effectIconByType[effectType])
+    .filter(Boolean);
+
+  let drawnIconsCount = 0;
+  iconsToDraw.forEach((iconSprite) => {
+    if(!isSpriteReady(iconSprite)) return;
+
+    const currentIconX = iconX + drawnIconsCount * (iconSize + iconGap);
+    hudCtx.drawImage(iconSprite, currentIconX, iconY, iconSize, iconSize);
+    drawnIconsCount += 1;
   });
 
   hudCtx.restore();
