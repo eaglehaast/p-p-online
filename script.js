@@ -890,7 +890,6 @@ const INVENTORY_UI_CONFIG = Object.freeze({
       iconPath: "ui_gamescreen/gs_inventory/gs_inventory_fuel.png",
     }),
     [INVENTORY_ITEM_TYPES.WINGS]: Object.freeze({
-      implemented: false,
       frame: Object.freeze({ x: 114, y: 0, w: 55, h: 55 }),
       icon: Object.freeze({ x: 129, y: 11, w: 33, h: 30 }),
       countPocket: Object.freeze({ x: 157, y: 3, w: 10, h: 9 }),
@@ -1448,10 +1447,21 @@ function getPlaneAtBoardPoint(color, x, y){
 
 function applyItemToOwnPlane(type, color, plane){
   if(!plane) return false;
-  if(type === INVENTORY_ITEM_TYPES.CROSSHAIR || type === INVENTORY_ITEM_TYPES.FUEL){
+  if(
+    type === INVENTORY_ITEM_TYPES.CROSSHAIR
+    || type === INVENTORY_ITEM_TYPES.FUEL
+    || type === INVENTORY_ITEM_TYPES.WINGS
+  ){
     if(!plane.activeTurnBuffs || typeof plane.activeTurnBuffs !== "object"){
       plane.activeTurnBuffs = {};
     }
+
+    if(type === INVENTORY_ITEM_TYPES.WINGS && plane.activeTurnBuffs[type] === true){
+      // Повторное применение обновляет эффект до 1 хода (текущая модель баффов = флаг на ход).
+      plane.activeTurnBuffs[type] = true;
+      return true;
+    }
+
     plane.activeTurnBuffs[type] = true;
     return true;
   }
@@ -1463,7 +1473,11 @@ function getPlaneActiveTurnBuffs(plane){
   if(!plane?.activeTurnBuffs || typeof plane.activeTurnBuffs !== "object") return [];
   return Object.keys(plane.activeTurnBuffs).filter((type) =>
     plane.activeTurnBuffs[type] === true
-    && (type === INVENTORY_ITEM_TYPES.CROSSHAIR || type === INVENTORY_ITEM_TYPES.FUEL)
+    && (
+      type === INVENTORY_ITEM_TYPES.CROSSHAIR
+      || type === INVENTORY_ITEM_TYPES.FUEL
+      || type === INVENTORY_ITEM_TYPES.WINGS
+    )
   );
 }
 
