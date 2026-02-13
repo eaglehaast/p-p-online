@@ -807,8 +807,8 @@ const itemUsageConfig = Object.freeze({
   },
   [INVENTORY_ITEM_TYPES.DYNAMITE]: {
     target: ITEM_USAGE_TARGETS.BOARD,
-    hintText: "",
-    requiresDragAndDrop: false,
+    hintText: "Drag it onto a brick tile to plant dynamite.",
+    requiresDragAndDrop: true,
   },
   [INVENTORY_ITEM_TYPES.WINGS]: {
     target: ITEM_USAGE_TARGETS.SELF_PLANE,
@@ -903,7 +903,7 @@ const INVENTORY_UI_CONFIG = Object.freeze({
       iconPath: "ui_gamescreen/gs_inventory/gs_inventory_mine.png",
     }),
     [INVENTORY_ITEM_TYPES.DYNAMITE]: Object.freeze({
-      implemented: false,
+      implemented: true,
       frame: Object.freeze({ x: 228, y: 0, w: 55, h: 55 }),
       icon: Object.freeze({ x: 247, y: 9, w: 19, h: 32 }),
       countPocket: Object.freeze({ x: 272, y: 3, w: 10, h: 9 }),
