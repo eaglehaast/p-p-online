@@ -1449,24 +1449,37 @@ function getPlaneAtBoardPoint(color, x, y){
 function applyItemToOwnPlane(type, color, plane){
   if(!plane) return false;
   if(type === INVENTORY_ITEM_TYPES.CROSSHAIR || type === INVENTORY_ITEM_TYPES.FUEL){
-    plane.activeTurnBuff = type;
+    if(!plane.activeTurnBuffs || typeof plane.activeTurnBuffs !== "object"){
+      plane.activeTurnBuffs = {};
+    }
+    plane.activeTurnBuffs[type] = true;
     return true;
   }
 
   return false;
 }
 
-function getPlaneActiveTurnBuff(plane){
-  if(!plane) return null;
-  return plane.activeTurnBuff === INVENTORY_ITEM_TYPES.CROSSHAIR || plane.activeTurnBuff === INVENTORY_ITEM_TYPES.FUEL
-    ? plane.activeTurnBuff
-    : null;
+function getPlaneActiveTurnBuffs(plane){
+  if(!plane?.activeTurnBuffs || typeof plane.activeTurnBuffs !== "object") return [];
+  return Object.keys(plane.activeTurnBuffs).filter((type) =>
+    plane.activeTurnBuffs[type] === true
+    && (type === INVENTORY_ITEM_TYPES.CROSSHAIR || type === INVENTORY_ITEM_TYPES.FUEL)
+  );
+}
+
+function planeHasActiveTurnBuff(plane, type){
+  if(!type) return false;
+  return getPlaneActiveTurnBuffs(plane).includes(type);
+}
+
+function clearPlaneActiveTurnBuffs(plane){
+  if(!plane) return;
+  plane.activeTurnBuffs = {};
 }
 
 function getEffectiveFlightRangeCells(plane){
   const baseRange = settings.flightRangeCells;
-  const activeTurnBuff = getPlaneActiveTurnBuff(plane);
-  if(activeTurnBuff === INVENTORY_ITEM_TYPES.FUEL){
+  if(planeHasActiveTurnBuff(plane, INVENTORY_ITEM_TYPES.FUEL)){
     return baseRange * 2;
   }
   return baseRange;
@@ -6729,7 +6742,7 @@ function makePlane(x,y,color,angle){
     flagColor:null,
     carriedFlagId: null,
     flameFxDisabled: false,
-    activeTurnBuff: null
+    activeTurnBuffs: {}
   };
 }
 
@@ -7667,7 +7680,7 @@ function onHandleUp(){
     lastHitCooldown:0
   });
 
-  plane.activeTurnBuff = null;
+  clearPlaneActiveTurnBuffs(plane);
 
   if(!hasShotThisRound){
     hasShotThisRound = true;
@@ -9105,7 +9118,7 @@ function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 function advanceTurn(){
   points.forEach((plane) => {
     if(!plane) return;
-    plane.activeTurnBuff = null;
+    clearPlaneActiveTurnBuffs(plane);
   });
   turnIndex = (turnIndex + 1) % turnColors.length;
   turnAdvanceCount += 1;
@@ -9390,7 +9403,8 @@ function gameDraw(){
   if(handleCircle.active && handleCircle.pointRef){
 
     const plane = handleCircle.pointRef;
-    const activeTurnBuff = getPlaneActiveTurnBuff(plane);
+    const activeTurnBuffs = getPlaneActiveTurnBuffs(plane);
+    const hasCrosshairBuff = activeTurnBuffs.includes(INVENTORY_ITEM_TYPES.CROSSHAIR);
     let dx = handleCircle.baseX - plane.x;
     let dy = handleCircle.baseY - plane.y;
     let distPx = Math.hypot(dx, dy);
@@ -9399,7 +9413,7 @@ function gameDraw(){
     const clampedDist = Math.min(distPx, MAX_DRAG_DISTANCE);
 
     // use a constant aiming amplitude (in degrees) independent of drag distance
-    const aimingAmplitude = activeTurnBuff === INVENTORY_ITEM_TYPES.CROSSHAIR
+    const aimingAmplitude = hasCrosshairBuff
       ? 0
       : settings.aimingAmplitude;
     const maxAngleDeg = aimingAmplitude * 5;
@@ -9482,7 +9496,7 @@ function gameDraw(){
     aimCtx.globalAlpha = arrowAlpha;
     drawArrow(aimCtx, startX, startY, baseDx, baseDy);
 
-    if(activeTurnBuff === INVENTORY_ITEM_TYPES.CROSSHAIR && vdist > 0){
+    if(hasCrosshairBuff && vdist > 0){
       const predictedPath = buildPredictedPathForAim(plane, { x: vdx, y: vdy });
       const hasPath = predictedPath.length >= 2;
 
@@ -10375,7 +10389,7 @@ function drawPlanesAndTrajectories(){
         cells,
         x: textX,
         y: p.y,
-        activeTurnBuff: getPlaneActiveTurnBuff(p)
+        activeTurnBuffs: getPlaneActiveTurnBuffs(p)
       };
     }
 
@@ -10467,16 +10481,19 @@ function drawAimOverlay(rangeTextInfo) {
   const iconSize = 12;
   const iconX = rangeTextInfo.x;
   const iconY = rangeTextInfo.y + 18;
-  let buffIcon = null;
-  if(rangeTextInfo.activeTurnBuff === INVENTORY_ITEM_TYPES.CROSSHAIR){
-    buffIcon = crosshairIconSprite;
-  } else if(rangeTextInfo.activeTurnBuff === INVENTORY_ITEM_TYPES.FUEL){
-    buffIcon = fuelIconSprite;
-  }
+  const activeTurnBuffs = Array.isArray(rangeTextInfo.activeTurnBuffs) ? rangeTextInfo.activeTurnBuffs : [];
+  activeTurnBuffs.forEach((type, index) => {
+    let buffIcon = null;
+    if(type === INVENTORY_ITEM_TYPES.CROSSHAIR){
+      buffIcon = crosshairIconSprite;
+    } else if(type === INVENTORY_ITEM_TYPES.FUEL){
+      buffIcon = fuelIconSprite;
+    }
 
-  if(buffIcon && isSpriteReady(buffIcon)){
-    hudCtx.drawImage(buffIcon, iconX, iconY, iconSize, iconSize);
-  }
+    if(buffIcon && isSpriteReady(buffIcon)){
+      hudCtx.drawImage(buffIcon, iconX + index * (iconSize + 4), iconY, iconSize, iconSize);
+    }
+  });
 
   hudCtx.restore();
 }
