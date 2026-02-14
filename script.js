@@ -7982,8 +7982,6 @@ function onHandleUp(){
     lastHitCooldown:0
   });
 
-  clearPlaneActiveTurnBuffs(plane);
-
   if(!hasShotThisRound){
     hasShotThisRound = true;
     renderScoreboard();
