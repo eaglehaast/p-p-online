@@ -2067,6 +2067,51 @@ function getDynamiteExplosionFrameIndexByElapsed(elapsedMs){
 }
 
 function updateAndDrawDynamiteExplosions(ctx2d, now){
+  const removeDomEntry = (entry) => {
+    if(entry?.domEntry?.remove){
+      entry.domEntry.remove();
+    }
+    if(entry){
+      delete entry.domEntry;
+    }
+  };
+
+  const syncDomEntry = (entry, frameImg, frameW, frameH) => {
+    const metrics = resolveExplosionMetrics('dynamite');
+    if(!metrics || !(metrics.host instanceof HTMLElement)){
+      removeDomEntry(entry);
+      return;
+    }
+
+    const { boardRect, overlayRect, host } = metrics;
+    const { overlayX, overlayY } = worldToOverlayLocal(entry.x, entry.bottomY, { boardRect, overlayRect });
+    const drawX = overlayX - frameW / 2;
+    const drawY = overlayY - frameH;
+
+    if(!(entry.domEntry instanceof HTMLImageElement)){
+      const image = document.createElement('img');
+      image.className = 'fx-dynamite-explosion-img';
+      Object.assign(image.style, {
+        position: 'absolute',
+        left: '0px',
+        top: '0px',
+        width: `${frameW}px`,
+        height: `${frameH}px`,
+        transform: `translate(${drawX}px, ${drawY}px)`,
+        transformOrigin: 'top left',
+        pointerEvents: 'none',
+        imageRendering: 'auto'
+      });
+      host.appendChild(image);
+      entry.domEntry = image;
+    }
+
+    entry.domEntry.src = frameImg.src;
+    entry.domEntry.style.width = `${frameW}px`;
+    entry.domEntry.style.height = `${frameH}px`;
+    entry.domEntry.style.transform = `translate(${drawX}px, ${drawY}px)`;
+  };
+
   if(!Array.isArray(dynamiteState) || dynamiteState.length === 0){
     return;
   }
@@ -2091,14 +2136,30 @@ function updateAndDrawDynamiteExplosions(ctx2d, now){
     if(frameImg && isSpriteReady(frameImg)){
       const frameW = frameImg.naturalWidth || 107;
       const frameH = frameImg.naturalHeight || 147;
-      const drawX = entry.x - frameW / 2;
-      const drawY = entry.bottomY - frameH;
-      ctx2d.drawImage(frameImg, drawX, drawY, frameW, frameH);
+      syncDomEntry(entry, frameImg, frameW, frameH);
+    } else {
+      removeDomEntry(entry);
     }
 
     if(elapsedMs >= DYNAMITE_EXPLOSION_TOTAL_DURATION_MS){
       removeBrickSpriteForDynamite(entry);
+      removeDomEntry(entry);
       dynamiteState.splice(i, 1);
+    }
+  }
+}
+
+function clearDynamiteExplosionDomEntries(){
+  if(!Array.isArray(dynamiteState) || dynamiteState.length === 0){
+    return;
+  }
+
+  for(const entry of dynamiteState){
+    if(entry?.domEntry?.remove){
+      entry.domEntry.remove();
+    }
+    if(entry){
+      delete entry.domEntry;
     }
   }
 }
@@ -5526,7 +5587,7 @@ function buildDynamiteFrameDurations(frameCount){
   const decayCount = Math.max(0, explosionCount - growthCount);
 
   for(let i = 0; i < fuseCount; i += 1){
-    durations.push(23);
+    durations.push(46);
   }
   for(let i = 0; i < growthCount; i += 1){
     durations.push(37);
@@ -7252,6 +7313,7 @@ function resetGame(options = {}){
 
   aaUnits = [];
   mines = [];
+  clearDynamiteExplosionDomEntries();
   dynamiteState = [];
 
   hasShotThisRound = false;
@@ -11936,6 +11998,7 @@ function startNewRound(){
   hasShotThisRound=false;
   aaUnits = [];
   mines = [];
+  clearDynamiteExplosionDomEntries();
   dynamiteState = [];
 
   aiMoveScheduled = false;
@@ -12011,6 +12074,7 @@ function resetPlanePositionsForCurrentMap(){
   awaitingFlightResolution = false;
   aaUnits = [];
   mines = [];
+  clearDynamiteExplosionDomEntries();
   dynamiteState = [];
   resetCargoState();
 
