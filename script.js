@@ -954,6 +954,7 @@ const playerInventoryEffects = {
     invisibilityFeedbackActive: false,
     invisibilityFeedbackStartAtMs: 0,
     invisibilityFeedbackStepDurationMs: 320,
+    invisibilityQueuedAlpha: 1,
   },
   green: {
     invisibilityQueued: false,
@@ -962,6 +963,7 @@ const playerInventoryEffects = {
     invisibilityFeedbackActive: false,
     invisibilityFeedbackStartAtMs: 0,
     invisibilityFeedbackStepDurationMs: 320,
+    invisibilityQueuedAlpha: 1,
   },
 };
 
@@ -986,6 +988,7 @@ function clearPlayerInvisibilityEffectState(color){
   state.invisibilityActive = false;
   state.invisibilityFeedbackActive = false;
   state.invisibilityFeedbackStartAtMs = 0;
+  state.invisibilityQueuedAlpha = 1;
 }
 
 function ensurePlaneInvisibilityFadeState(plane){
@@ -1051,7 +1054,13 @@ function startPlayerInvisibilityFeedback(color){
 
 function getPlayerInvisibilityFeedbackAlpha(color){
   const state = getPlayerInventoryEffectState(color);
-  if(!state || state.invisibilityFeedbackActive !== true) return 1;
+  if(!state) return 1;
+  if(state.invisibilityFeedbackActive !== true){
+    if(state.invisibilityWaitingEnemyTurn === true){
+      return Math.max(0, Math.min(1, state.invisibilityQueuedAlpha));
+    }
+    return 1;
+  }
 
   const phaseCount = INVISIBILITY_FEEDBACK_ALPHA_PHASES.length;
   const stepDurationMs = Math.max(1, state.invisibilityFeedbackStepDurationMs || 0);
@@ -1061,6 +1070,8 @@ function getPlayerInvisibilityFeedbackAlpha(color){
   if(elapsedMs >= totalDurationMs){
     state.invisibilityFeedbackActive = false;
     state.invisibilityFeedbackStartAtMs = 0;
+    state.invisibilityQueuedAlpha = state.invisibilityWaitingEnemyTurn === true ? 0.5 : 1;
+    if(state.invisibilityWaitingEnemyTurn === true) return state.invisibilityQueuedAlpha;
     return 1;
   }
 
@@ -1092,6 +1103,7 @@ function activateQueuedInvisibilityForEnemyTurn(nextTurnColor){
     state.invisibilityWaitingEnemyTurn = false;
     state.invisibilityFeedbackActive = false;
     state.invisibilityFeedbackStartAtMs = 0;
+    state.invisibilityQueuedAlpha = 1;
     for(const plane of points){
       if(plane?.color !== color) continue;
       startPlaneInvisibilityFade(plane, INVISIBILITY_MIN_ALPHA);
@@ -1602,6 +1614,7 @@ function queueInvisibilityEffectForPlayer(color){
   state.invisibilityQueued = true;
   state.invisibilityWaitingEnemyTurn = true;
   state.invisibilityActive = false;
+  state.invisibilityQueuedAlpha = 0.5;
   startPlayerInvisibilityFeedback(color);
   return true;
 }
