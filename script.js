@@ -5501,8 +5501,7 @@ const CARGO_ANIMATION_FRAME_PATHS = Array.from({ length: 20 }, (_value, index) =
   return `ui_gamescreen/gs_cargo_animations/gs_cargoanimation_${frameNumber}.png`;
 });
 const CARGO_ANIM_MS_FALLBACK = 1500;
-const CARGO_ANIM_LOOP_GUARD_MS = 120;
-const CARGO_FADE_IN_MS_DEFAULT = 0;
+const CARGO_FADE_IN_MS_DEFAULT = 1500;
 const CARGO_DIMMING_DEFAULT = 0;
 const { img: cargoSprite } = loadImageAsset(CARGO_SPRITE_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
 const cargoAnimationFrames = CARGO_ANIMATION_FRAME_PATHS.map((path) => loadImageAsset(path, GAME_PRELOAD_LABEL, { decoding: 'async' }).img);
@@ -5514,9 +5513,6 @@ let cargoAnimDimming = CARGO_DIMMING_DEFAULT;
 function resolveCargoAnimLifetimeMs(){
   if(Number.isFinite(cargoAnimDurationOverrideMs)){
     return Math.max(0, cargoAnimDurationOverrideMs);
-  }
-  if(Number.isFinite(cargoAnimDurationMs)){
-    return Math.max(0, cargoAnimDurationMs);
   }
   return CARGO_ANIM_MS_FALLBACK;
 }
@@ -5547,14 +5543,14 @@ function ensureCargoDebugApi(){
     getConfig(){
       return {
         frameCount: cargoAnimationFrames.length,
-        detectedLifetimeMs: cargoAnimDurationMs,
+        baseLifetimeMs: cargoAnimDurationMs,
         lifetimeOverrideMs: cargoAnimDurationOverrideMs,
         activeLifetimeMs: resolveCargoAnimLifetimeMs(),
         fadeInMs: cargoFadeInMs,
         dimming: cargoAnimDimming,
       };
     },
-    setFadeIn(ms = 0){
+    setFadeInDuration(ms = 0){
       if(!Number.isFinite(ms)) return false;
       cargoFadeInMs = Math.max(0, Math.round(ms));
       return true;
@@ -5564,11 +5560,20 @@ function ensureCargoDebugApi(){
       cargoAnimDimming = clampCargoDimming(value);
       return true;
     },
-    setLifetime(ms){
+    setAnimationLifetime(ms){
       return setCargoAnimLifetimeOverrideMs(ms);
     },
-    clearLifetimeOverride(){
+    clearAnimationLifetimeOverride(){
       return setCargoAnimLifetimeOverrideMs(null);
+    },
+    setFadeIn(ms = 0){
+      return this.setFadeInDuration(ms);
+    },
+    setLifetime(ms){
+      return this.setAnimationLifetime(ms);
+    },
+    clearLifetimeOverride(){
+      return this.clearAnimationLifetimeOverride();
     },
     reset(){
       cargoFadeInMs = CARGO_FADE_IN_MS_DEFAULT;
@@ -6530,8 +6535,7 @@ function updateCargoState(now = performance.now()){
     const animDurationMs = Number.isFinite(cargo.animDurationMs)
       ? cargo.animDurationMs
       : CARGO_ANIM_MS_FALLBACK;
-    const safeAnimDurationMs = Math.max(0, animDurationMs - CARGO_ANIM_LOOP_GUARD_MS);
-    if(cargo.state === "animating" && now - cargo.animStartedAt >= safeAnimDurationMs){
+    if(cargo.state === "animating" && now - cargo.animStartedAt >= animDurationMs){
       cargo.state = "ready";
       removeCargoAnimationDomEntry(cargo);
     }
