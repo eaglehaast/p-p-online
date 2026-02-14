@@ -966,6 +966,8 @@ const playerInventoryEffects = {
 };
 
 const INVISIBILITY_FEEDBACK_ALPHA_PHASES = Object.freeze([0.5, 0.9, 0.5, 0.9]);
+const INVISIBILITY_FADE_DURATION_MS = 1000;
+const INVISIBILITY_MIN_ALPHA = 0.06;
 
 function getOpponentColor(color){
   return color === "blue" ? "green" : (color === "green" ? "blue" : null);
@@ -984,6 +986,60 @@ function clearPlayerInvisibilityEffectState(color){
   state.invisibilityActive = false;
   state.invisibilityFeedbackActive = false;
   state.invisibilityFeedbackStartAtMs = 0;
+}
+
+function ensurePlaneInvisibilityFadeState(plane){
+  if(!plane || typeof plane !== "object") return null;
+  if(!Number.isFinite(plane.invisibilityAlphaCurrent)) plane.invisibilityAlphaCurrent = 1;
+  if(!Number.isFinite(plane.invisibilityFadeTargetAlpha)) plane.invisibilityFadeTargetAlpha = 1;
+  if(!Number.isFinite(plane.invisibilityFadeStartAtMs)) plane.invisibilityFadeStartAtMs = 0;
+  if(!Number.isFinite(plane.invisibilityFadeDurationMs) || plane.invisibilityFadeDurationMs <= 0){
+    plane.invisibilityFadeDurationMs = INVISIBILITY_FADE_DURATION_MS;
+  }
+  if(!Number.isFinite(plane.invisibilityFadeStartAlpha)){
+    plane.invisibilityFadeStartAlpha = plane.invisibilityAlphaCurrent;
+  }
+  return plane;
+}
+
+function startPlaneInvisibilityFade(plane, targetAlpha){
+  const state = ensurePlaneInvisibilityFadeState(plane);
+  if(!state) return;
+  const clampedTarget = Math.max(0, Math.min(1, targetAlpha));
+  const nowMs = performance.now();
+  const currentAlpha = getPlaneInvisibilityAlpha(plane, nowMs);
+  state.invisibilityFadeStartAlpha = currentAlpha;
+  state.invisibilityAlphaCurrent = currentAlpha;
+  state.invisibilityFadeTargetAlpha = clampedTarget;
+  state.invisibilityFadeStartAtMs = nowMs;
+  state.invisibilityFadeDurationMs = INVISIBILITY_FADE_DURATION_MS;
+}
+
+function getPlaneInvisibilityAlpha(plane, nowMs = performance.now()){
+  const state = ensurePlaneInvisibilityFadeState(plane);
+  if(!state) return 1;
+  const startAtMs = state.invisibilityFadeStartAtMs;
+  const durationMs = Math.max(1, state.invisibilityFadeDurationMs || INVISIBILITY_FADE_DURATION_MS);
+  const targetAlpha = Math.max(0, Math.min(1, state.invisibilityFadeTargetAlpha));
+
+  if(startAtMs <= 0){
+    state.invisibilityAlphaCurrent = targetAlpha;
+    return targetAlpha;
+  }
+
+  const elapsedMs = Math.max(0, nowMs - startAtMs);
+  const progress = Math.max(0, Math.min(1, elapsedMs / durationMs));
+  const startAlpha = Math.max(0, Math.min(1, state.invisibilityFadeStartAlpha));
+  const currentAlpha = startAlpha + (targetAlpha - startAlpha) * progress;
+  state.invisibilityAlphaCurrent = currentAlpha;
+
+  if(progress >= 1){
+    state.invisibilityAlphaCurrent = targetAlpha;
+    state.invisibilityFadeStartAtMs = 0;
+    state.invisibilityFadeStartAlpha = targetAlpha;
+  }
+
+  return state.invisibilityAlphaCurrent;
 }
 
 function startPlayerInvisibilityFeedback(color){
@@ -1036,6 +1092,10 @@ function activateQueuedInvisibilityForEnemyTurn(nextTurnColor){
     state.invisibilityWaitingEnemyTurn = false;
     state.invisibilityFeedbackActive = false;
     state.invisibilityFeedbackStartAtMs = 0;
+    for(const plane of points){
+      if(plane?.color !== color) continue;
+      startPlaneInvisibilityFade(plane, INVISIBILITY_MIN_ALPHA);
+    }
   }
 }
 
@@ -1044,6 +1104,10 @@ function expireInvisibilityAfterEnemyTurnEnded(previousTurnColor){
     const state = getPlayerInventoryEffectState(color);
     if(!state || state.invisibilityActive !== true) continue;
     if(previousTurnColor !== getOpponentColor(color)) continue;
+    for(const plane of points){
+      if(plane?.color !== color) continue;
+      startPlaneInvisibilityFade(plane, 1);
+    }
     clearPlayerInvisibilityEffectState(color);
   }
 }
@@ -7254,7 +7318,12 @@ function makePlane(x,y,color,angle){
     flagColor:null,
     carriedFlagId: null,
     flameFxDisabled: false,
-    activeTurnBuffs: {}
+    activeTurnBuffs: {},
+    invisibilityFadeTargetAlpha: 1,
+    invisibilityFadeStartAtMs: 0,
+    invisibilityFadeDurationMs: INVISIBILITY_FADE_DURATION_MS,
+    invisibilityFadeStartAlpha: 1,
+    invisibilityAlphaCurrent: 1,
   };
 }
 
@@ -10896,7 +10965,7 @@ function drawPlanesAndTrajectories(){
 
   const renderPlane = (p, targetCtx, { allowRangeLabel = false } = {}) => {
     if(!p.isAlive && !p.burning && !isNukeEliminatedPlaneRenderable(p)) return;
-    if(shouldHidePlaneByInvisibility(p.color)) return;
+    const invisibilityAlpha = getPlaneInvisibilityAlpha(p);
 
     if (debugDrawOrder) {
       const stateLabel = p.isAlive ? (p.burning ? 'burning' : 'alive') : 'crashed';
@@ -10907,6 +10976,9 @@ function drawPlanesAndTrajectories(){
         frameIndex: globalFrame
       });
     }
+
+    targetCtx.save();
+    targetCtx.globalAlpha *= invisibilityAlpha;
 
     // Allow wreck sprites to render after crash delay instead of exiting early.
     drawPlaneSegments(targetCtx, p);
@@ -10965,6 +11037,8 @@ function drawPlanesAndTrajectories(){
       targetCtx.stroke();
       targetCtx.restore();
     }
+
+    targetCtx.restore();
   };
 
   for(const p of destroyedOrBurning){
