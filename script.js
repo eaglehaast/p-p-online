@@ -1853,6 +1853,7 @@ function getInventoryDragFallbackGhost(){
 }
 
 function detectProblematicDragImageConditions(event){
+  if(isPointerPickupPrimaryMode()) return true;
   const transfer = event?.dataTransfer;
   if(!transfer || typeof transfer.setDragImage !== "function") return true;
   const nav = typeof navigator !== "undefined" ? navigator : null;
@@ -1870,6 +1871,25 @@ function detectProblematicDragImageConditions(event){
     && !ua.includes("fxios")
     && !ua.includes("edgios");
   return inventoryDragImageMarkedUnstable || (isAppleMobileLike && isWebKitBrowser && (hasTouchPoints || coarsePointer));
+}
+
+function hasPointerEventsSupport(){
+  return typeof window !== "undefined" && "PointerEvent" in window;
+}
+
+function hasCoarsePointerPreference(){
+  if(typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
+  const anyCoarsePointer = window.matchMedia("(any-pointer: coarse)").matches;
+  return coarsePointer || anyCoarsePointer;
+}
+
+function isPointerPickupPrimaryMode(){
+  return hasPointerEventsSupport() && hasCoarsePointerPreference();
+}
+
+function shouldUseLegacyDragDropFallback(){
+  return !isPointerPickupPrimaryMode();
 }
 
 function updateInventoryDragFallbackPosition(clientX, clientY){
@@ -2007,6 +2027,10 @@ function getMineFallbackClientPoint(event, targetRect, visualWidth, visualHeight
 }
 
 function onInventoryItemDragStart(event){
+  if(isPointerPickupPrimaryMode()){
+    event.preventDefault();
+    return;
+  }
   const target = event.currentTarget;
   if(!(target instanceof HTMLElement)) return;
   const type = target.dataset.itemType;
@@ -2130,6 +2154,7 @@ function isClientPointOverBoard(clientX, clientY){
 }
 
 function onBoardDragOver(event){
+  if(isPointerPickupPrimaryMode()) return;
   if (!activeInventoryDrag) return;
   event.preventDefault();
   if (event.dataTransfer) {
@@ -2802,10 +2827,13 @@ function syncInventoryUI(color){
     if (isInteractiveItem) {
       img.dataset.itemType = slot.type;
       img.dataset.itemColor = color;
-      img.draggable = true;
       img.classList.add("inventory-item--draggable");
-      img.addEventListener("dragstart", onInventoryItemDragStart);
-      img.addEventListener("dragend", onInventoryItemDragEnd);
+      const useLegacyDragDrop = shouldUseLegacyDragDropFallback();
+      img.draggable = useLegacyDragDrop;
+      if(useLegacyDragDrop){
+        img.addEventListener("dragstart", onInventoryItemDragStart);
+        img.addEventListener("dragend", onInventoryItemDragEnd);
+      }
       img.addEventListener("click", onInventoryItemPickupToggle);
       img.addEventListener("pointerdown", onInventoryItemPickupToggle);
       if(isSameInventoryItemSelection(activeInventoryPickup, color, slot.type)){
@@ -8136,20 +8164,22 @@ gsBoardCanvas.addEventListener("pointermove", onCanvasPointerMove);
 gsBoardCanvas.addEventListener("pointerup", onCanvasPointerUp);
 gsBoardCanvas.addEventListener("click", onBoardInventoryPickupApply);
 gsBoardCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; aaPointerDown = false; aaPreviewTrail = []; });
-gsBoardCanvas.addEventListener("dragover", onBoardDragOver);
-gsBoardCanvas.addEventListener("drop", onInventoryDrop);
-window.addEventListener("dragend", () => {
-  clearInventoryDragArtifacts();
-  cancelActiveInventoryDrag("ended outside board");
-});
-window.addEventListener("drop", () => {
-  clearInventoryDragArtifacts();
-  cancelActiveInventoryDrag("dropped outside board");
-});
-window.addEventListener("dragcancel", () => cancelActiveInventoryDrag("cancelled"));
-window.addEventListener("dragover", (event) => {
-  updateInventoryDragFallbackPosition(event.clientX, event.clientY);
-});
+if(shouldUseLegacyDragDropFallback()){
+  gsBoardCanvas.addEventListener("dragover", onBoardDragOver);
+  gsBoardCanvas.addEventListener("drop", onInventoryDrop);
+  window.addEventListener("dragend", () => {
+    clearInventoryDragArtifacts();
+    cancelActiveInventoryDrag("ended outside board");
+  });
+  window.addEventListener("drop", () => {
+    clearInventoryDragArtifacts();
+    cancelActiveInventoryDrag("dropped outside board");
+  });
+  window.addEventListener("dragcancel", () => cancelActiveInventoryDrag("cancelled"));
+  window.addEventListener("dragover", (event) => {
+    updateInventoryDragFallbackPosition(event.clientX, event.clientY);
+  });
+}
 window.addEventListener("pointermove", onInventoryPickupPointerMove);
 window.addEventListener("keydown", (event) => {
   if(event.key === "Escape"){
