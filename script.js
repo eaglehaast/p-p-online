@@ -817,8 +817,8 @@ const itemUsageConfig = Object.freeze({
   },
   [INVENTORY_ITEM_TYPES.INVISIBILITY]: {
     target: ITEM_USAGE_TARGETS.SELF_PLANE,
-    hintText: "",
-    requiresDragAndDrop: false,
+    hintText: "Drop on your plane. Invisibility will trigger on the opponent's next turn.",
+    requiresDragAndDrop: true,
   },
 });
 
@@ -909,7 +909,7 @@ const INVENTORY_UI_CONFIG = Object.freeze({
       iconPath: "ui_gamescreen/gs_inventory/gs_inventory_dynamite.png",
     }),
     [INVENTORY_ITEM_TYPES.INVISIBILITY]: Object.freeze({
-      implemented: false,
+      implemented: true,
       frame: Object.freeze({ x: 285, y: 0, w: 55, h: 55 }),
       icon: Object.freeze({ x: 298, y: 12, w: 32, h: 31 }),
       countPocket: Object.freeze({ x: 329, y: 3, w: 10, h: 9 }),
@@ -966,6 +966,7 @@ const inventoryHintState = {
 };
 
 const INVENTORY_DISABLED_HINT_TEXT = "В разработке";
+const INVENTORY_INVISIBILITY_ALREADY_ACTIVE_HINT_TEXT = "Невидимость уже активна или запланирована на следующий ход соперника";
 
 const inventoryHosts = {
   blue: blueInventoryHost,
@@ -1447,6 +1448,24 @@ function getPlaneAtBoardPoint(color, x, y){
 
 function applyItemToOwnPlane(type, color, plane){
   if(!plane) return false;
+
+  if(type === INVENTORY_ITEM_TYPES.INVISIBILITY){
+    if(!plane.pendingOpponentTurnBuffs || typeof plane.pendingOpponentTurnBuffs !== "object"){
+      plane.pendingOpponentTurnBuffs = {};
+    }
+    if(!plane.activeOpponentTurnBuffs || typeof plane.activeOpponentTurnBuffs !== "object"){
+      plane.activeOpponentTurnBuffs = {};
+    }
+    if(
+      plane.pendingOpponentTurnBuffs[INVENTORY_ITEM_TYPES.INVISIBILITY] === true
+      || plane.activeOpponentTurnBuffs[INVENTORY_ITEM_TYPES.INVISIBILITY] === true
+    ){
+      return false;
+    }
+    plane.pendingOpponentTurnBuffs[INVENTORY_ITEM_TYPES.INVISIBILITY] = true;
+    return true;
+  }
+
   if(
     type === INVENTORY_ITEM_TYPES.CROSSHAIR
     || type === INVENTORY_ITEM_TYPES.FUEL
@@ -1477,8 +1496,22 @@ function getPlaneActiveTurnBuffs(plane){
       type === INVENTORY_ITEM_TYPES.CROSSHAIR
       || type === INVENTORY_ITEM_TYPES.FUEL
       || type === INVENTORY_ITEM_TYPES.WINGS
+      || type === INVENTORY_ITEM_TYPES.INVISIBILITY
     )
   );
+}
+
+function planeHasOpponentTurnBuff(plane, type){
+  if(!type) return false;
+  return plane?.activeOpponentTurnBuffs?.[type] === true;
+}
+
+function isPlaneInvisibleForCurrentTurn(plane){
+  if(!plane || !plane.isAlive || plane.burning) return false;
+  const currentColor = turnColors[turnIndex];
+  if(!currentColor) return false;
+  return plane.color !== currentColor
+    && planeHasOpponentTurnBuff(plane, INVENTORY_ITEM_TYPES.INVISIBILITY);
 }
 
 function planeHasActiveTurnBuff(plane, type){
@@ -1978,6 +2011,14 @@ function onSelfPlaneItemDrop(event){
   if(applied){
     removeItemFromInventory(activeInventoryDrag.color, activeInventoryDrag.type);
     activeInventoryDrag.consumed = true;
+  } else if(activeInventoryDrag.type === INVENTORY_ITEM_TYPES.INVISIBILITY){
+    const slotLayout = INVENTORY_UI_CONFIG.slots[INVENTORY_ITEM_TYPES.INVISIBILITY] ?? null;
+    showInventoryHintMessage(
+      activeInventoryDrag.color,
+      slotLayout,
+      INVENTORY_INVISIBILITY_ALREADY_ACTIVE_HINT_TEXT,
+      1700
+    );
   }
   cancelActiveInventoryDrag("self target drop");
 }
@@ -2381,11 +2422,11 @@ function applyInventoryContainerLayout(color, host){
   host.style.height = `${containerConfig.h}px`;
 }
 
-function showInventoryDisabledHint(color, slotLayout){
+function showInventoryHintMessage(color, slotLayout, text, timeoutMs = 900){
   const state = inventoryHintState[color];
-  if(!state || !slotLayout?.frame) return;
+  if(!state || !slotLayout?.frame || !text) return;
   const frame = slotLayout.frame;
-  state.text = INVENTORY_DISABLED_HINT_TEXT;
+  state.text = text;
   state.visible = true;
   state.anchorX = frame.x + frame.w / 2;
   state.anchorY = frame.y + frame.h / 2;
@@ -2396,7 +2437,11 @@ function showInventoryDisabledHint(color, slotLayout){
     state.visible = false;
     state.text = "";
     state.timeoutId = null;
-  }, 900);
+  }, timeoutMs);
+}
+
+function showInventoryDisabledHint(color, slotLayout){
+  showInventoryHintMessage(color, slotLayout, INVENTORY_DISABLED_HINT_TEXT);
 }
 
 function syncInventoryUI(color){
@@ -2491,7 +2536,9 @@ function syncInventoryUI(color){
     frameImg.style.objectPosition = `-${frameSlice.sx}px -${frameSlice.sy}px`;
 
     img.src = slot.iconPath || INVENTORY_EMPTY_ICON;
-    img.alt = "";
+    const usageHintText = usageConfig?.hintText || "";
+    img.alt = usageHintText;
+    img.title = usageHintText;
     img.draggable = false;
     img.className = "inventory-item";
     img.style.left = `${iconLayout.x}px`;
@@ -7106,7 +7153,9 @@ function makePlane(x,y,color,angle){
     flagColor:null,
     carriedFlagId: null,
     flameFxDisabled: false,
-    activeTurnBuffs: {}
+    activeTurnBuffs: {},
+    pendingOpponentTurnBuffs: {},
+    activeOpponentTurnBuffs: {}
   };
 }
 
@@ -8074,7 +8123,7 @@ function doComputerMove(){
   if (gameMode!=="computer" || isGameOver) return;
 
   const aiPlanes = points.filter(p=> p.color==="blue" && p.isAlive && !p.burning);
-  const enemies  = points.filter(p=> p.color==="green" && p.isAlive && !p.burning);
+  const enemies  = points.filter((p) => p.color === "green" && p.isAlive && !p.burning && !isPlaneInvisibleForCurrentTurn(p));
   if(!aiPlanes.length || !enemies.length) return;
 
   const shouldUseFlagsMode = isFlagsModeEnabled();
@@ -9485,6 +9534,25 @@ function advanceTurn(){
     clearPlaneActiveTurnBuffs(plane);
   });
   turnIndex = (turnIndex + 1) % turnColors.length;
+  const currentTurnColor = turnColors[turnIndex];
+  points.forEach((plane) => {
+    if(!plane) return;
+    if(!plane.pendingOpponentTurnBuffs || typeof plane.pendingOpponentTurnBuffs !== "object"){
+      plane.pendingOpponentTurnBuffs = {};
+    }
+    if(!plane.activeOpponentTurnBuffs || typeof plane.activeOpponentTurnBuffs !== "object"){
+      plane.activeOpponentTurnBuffs = {};
+    }
+
+    const shouldEnableInvisibility =
+      plane.color !== currentTurnColor
+      && plane.pendingOpponentTurnBuffs[INVENTORY_ITEM_TYPES.INVISIBILITY] === true;
+
+    plane.activeOpponentTurnBuffs[INVENTORY_ITEM_TYPES.INVISIBILITY] = shouldEnableInvisibility;
+    if(shouldEnableInvisibility){
+      plane.pendingOpponentTurnBuffs[INVENTORY_ITEM_TYPES.INVISIBILITY] = false;
+    }
+  });
   turnAdvanceCount += 1;
   if(turnAdvanceCount >= 1){
     spawnCargoForTurn();
@@ -9502,6 +9570,7 @@ function angleDiffDeg(a, b){
 
 function handleAAForPlane(p, fp){
   const now = performance.now();
+  if(isPlaneInvisibleForCurrentTurn(p)) return;
   for(const aa of aaUnits){
     if(aa.owner === p.color) continue; // no friendly fire
     const dx = p.x - aa.x;
@@ -10759,7 +10828,14 @@ function drawPlanesAndTrajectories(){
       p.glow += (glowTarget - p.glow) * 0.1;
     }
     const renderGlow = (!p.isAlive || p.burning) ? 0 : p.glow;
-    drawThinPlane(targetCtx, p, renderGlow);
+    if(isPlaneInvisibleForCurrentTurn(p)){
+      targetCtx.save();
+      targetCtx.globalAlpha = 0.28;
+      drawThinPlane(targetCtx, p, renderGlow);
+      targetCtx.restore();
+    } else {
+      drawThinPlane(targetCtx, p, renderGlow);
+    }
 
     if(allowRangeLabel && handleCircle.active && handleCircle.pointRef === p){
       let vdx = handleCircle.shakyX - p.x;
@@ -11392,6 +11468,7 @@ function checkPlaneHits(plane, fp){
   for(const p of points){
     if(!p.isAlive || p.burning) continue;
     if(p.color !== enemyColor) continue;
+    if(isPlaneInvisibleForCurrentTurn(p)) continue;
     if(fp && fp.lastHitPlane === p && fp.lastHitCooldown > 0) continue;
     const targetHitbox = getPlaneHitbox(p);
     if(planeHitboxesIntersect(planeHitbox, targetHitbox)){
