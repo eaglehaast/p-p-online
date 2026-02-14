@@ -1883,35 +1883,23 @@ function onBoardDrop(event){
       const dropPlacement = getDynamitePlacementFromDropPoint(clientX, clientY);
       const targetBrick = findMapSpriteForDynamiteDrop(dropPlacement);
       if(targetBrick){
+        const bounds = getDynamiteSpriteBounds(targetBrick);
         const dynamiteEntry = {
           id: `dynamite-${Date.now()}-${Math.random().toString(16).slice(2)}`,
           owner: activeInventoryDrag.color,
-          x: targetBrick.cx,
-          y: targetBrick.cy,
+          anchorX: targetBrick.cx,
+          anchorY: bounds.bottom,
+          brickTopY: bounds.top,
+          brickHeight: bounds.height,
           spriteId: targetBrick.id,
           spriteIndex: targetBrick.spriteIndex,
           spriteRef: targetBrick.spriteRef,
+          startedAtMs: performance.now(),
+          frameStartedAtMs: performance.now(),
+          frameIndex: 0,
+          brickRemoved: false,
         };
         dynamiteState.push(dynamiteEntry);
-
-        setTimeout(() => {
-          const brickIndex = Array.isArray(currentMapSprites)
-            ? currentMapSprites.indexOf(dynamiteEntry.spriteRef)
-            : -1;
-
-          if(brickIndex < 0){
-            dynamiteState = dynamiteState.filter(entry => entry.id !== dynamiteEntry.id);
-            return;
-          }
-
-          currentMapSprites.splice(brickIndex, 1);
-          colliders = buildMapSpriteColliders({
-            name: currentMapName,
-            sprites: currentMapSprites,
-          });
-          rebuildCollisionSurfaces();
-          dynamiteState = dynamiteState.filter(entry => entry.id !== dynamiteEntry.id);
-        }, 1000);
 
         removeItemFromInventory(activeInventoryDrag.color, activeInventoryDrag.type);
         activeInventoryDrag.consumed = true;
@@ -2020,6 +2008,131 @@ function getDynamitePlacementFromDropPoint(clientX, clientY){
 }
 
 const DYNAMITE_DROP_SNAP_RADIUS = 30;
+const DYNAMITE_EXPLOSION_FRAME_PATHS = Array.from({ length: 17 }, (_unused, index) => {
+  const frameNumber = String(index + 1).padStart(2, "0");
+  return `ui_gamescreen/gs_inventory/gs_dynamite_explosion/gs_dynamiteexplosion_${frameNumber}.png`;
+});
+const DYNAMITE_FUSE_FRAME_COUNT = 4;
+const DYNAMITE_BRICK_REMOVAL_FRAME = 7;
+
+function getDynamiteFrameDurationMs(frameIndex){
+  const oneBasedFrame = frameIndex + 1;
+  if(oneBasedFrame <= DYNAMITE_FUSE_FRAME_COUNT){
+    return 22;
+  }
+  if(oneBasedFrame <= 12){
+    return 37;
+  }
+  return 27;
+}
+
+function getDynamiteSpriteBounds(geometry){
+  const corners = Array.isArray(geometry?.collider?.corners) ? geometry.collider.corners : [];
+  if(corners.length === 0){
+    return {
+      top: geometry?.cy ?? 0,
+      bottom: geometry?.cy ?? 0,
+      height: Math.max(1, (geometry?.halfHeight ?? 0) * 2),
+    };
+  }
+
+  let top = Number.POSITIVE_INFINITY;
+  let bottom = Number.NEGATIVE_INFINITY;
+  for(const corner of corners){
+    if(!Number.isFinite(corner?.y)) continue;
+    top = Math.min(top, corner.y);
+    bottom = Math.max(bottom, corner.y);
+  }
+
+  if(!Number.isFinite(top) || !Number.isFinite(bottom)){
+    const fallbackHeight = Math.max(1, (geometry?.halfHeight ?? 0) * 2);
+    return {
+      top: (geometry?.cy ?? 0) - fallbackHeight / 2,
+      bottom: (geometry?.cy ?? 0) + fallbackHeight / 2,
+      height: fallbackHeight,
+    };
+  }
+
+  return {
+    top,
+    bottom,
+    height: Math.max(1, bottom - top),
+  };
+}
+
+function updateDynamiteAnimations(now){
+  if(!Array.isArray(dynamiteState) || dynamiteState.length === 0) return;
+
+  const activeEntries = [];
+  for(const entry of dynamiteState){
+    if(!entry) continue;
+    if(!Number.isFinite(entry.startedAtMs)){
+      entry.startedAtMs = now;
+      entry.frameStartedAtMs = now;
+      entry.frameIndex = 0;
+    }
+
+    const frameCount = DYNAMITE_EXPLOSION_FRAME_PATHS.length;
+    if(frameCount === 0){
+      continue;
+    }
+
+    if(!Number.isFinite(entry.frameIndex)){
+      entry.frameIndex = 0;
+    }
+    if(!Number.isFinite(entry.frameStartedAtMs)){
+      entry.frameStartedAtMs = now;
+    }
+
+    let elapsedOnFrame = now - entry.frameStartedAtMs;
+    while(entry.frameIndex < frameCount && elapsedOnFrame >= getDynamiteFrameDurationMs(entry.frameIndex)){
+      elapsedOnFrame -= getDynamiteFrameDurationMs(entry.frameIndex);
+      entry.frameStartedAtMs += getDynamiteFrameDurationMs(entry.frameIndex);
+      entry.frameIndex += 1;
+    }
+
+    if(!entry.brickRemoved && (entry.frameIndex + 1) >= DYNAMITE_BRICK_REMOVAL_FRAME){
+      const brickIndex = Array.isArray(currentMapSprites)
+        ? currentMapSprites.indexOf(entry.spriteRef)
+        : -1;
+      if(brickIndex >= 0){
+        currentMapSprites.splice(brickIndex, 1);
+        colliders = buildMapSpriteColliders({
+          name: currentMapName,
+          sprites: currentMapSprites,
+        });
+        rebuildCollisionSurfaces();
+      }
+      entry.brickRemoved = true;
+    }
+
+    if(entry.frameIndex >= frameCount){
+      continue;
+    }
+
+    activeEntries.push(entry);
+  }
+
+  dynamiteState = activeEntries;
+}
+
+function drawDynamiteAnimations(ctx2d){
+  if(!Array.isArray(dynamiteState) || dynamiteState.length === 0) return;
+
+  for(const entry of dynamiteState){
+    if(!entry || !Number.isFinite(entry.frameIndex)) continue;
+    const frameImage = dynamiteExplosionFrames[entry.frameIndex];
+    if(!frameImage || !isSpriteReady(frameImage)) continue;
+
+    const frameWidth = frameImage.naturalWidth || 107;
+    const frameHeight = frameImage.naturalHeight || 147;
+    const brickHeight = Number.isFinite(entry.brickHeight) ? entry.brickHeight : MAP_BRICK_THICKNESS;
+    const brickTopY = Number.isFinite(entry.brickTopY) ? entry.brickTopY : (entry.anchorY - brickHeight / 2);
+    const drawX = entry.anchorX - frameWidth / 2;
+    const drawY = brickTopY - (frameHeight - brickHeight);
+    ctx2d.drawImage(frameImage, drawX, drawY, frameWidth, frameHeight);
+  }
+}
 
 function getMapSpriteGeometry(sprite, spriteIndex){
   if(!sprite) return null;
@@ -2519,6 +2632,7 @@ const GAME_SCREEN_ASSETS = [
   // Новый 6-слотовый inventory: preload только из ui_gamescreen/gs_inventory/.
   INVENTORY_UI_CONFIG.frameAtlasPath,
   ...INVENTORY_ICON_ASSET_PATHS,
+  ...DYNAMITE_EXPLOSION_FRAME_PATHS,
   NUCLEAR_STRIKE_FX.path,
 
   // Match score
@@ -5423,6 +5537,12 @@ const { img: mineIconSprite } = loadImageAsset(
   "ui_gamescreen/gs_inventory/gs_inventory_mine.png",
   GAME_PRELOAD_LABEL
 );
+const dynamiteExplosionFrames = DYNAMITE_EXPLOSION_FRAME_PATHS.map((path) => loadImageAsset(
+  path,
+  GAME_PRELOAD_LABEL,
+  { decoding: "async" }
+).img);
+
 arrowSprite?.addEventListener("load", () => {
   console.log("[IMG] load", { label: "arrowSprite", url: arrowSprite.src });
 });
@@ -9468,6 +9588,8 @@ function gameDraw(){
   lastFrameTime = now;
   globalFrame += delta;
 
+  updateDynamiteAnimations(now);
+
   // фон
   resetCanvasState(gsBoardCtx, gsBoardCanvas);
   drawFieldBackground(gsBoardCtx, WORLD.width, WORLD.height);
@@ -9929,6 +10051,7 @@ function drawMapSprites(ctx2d, sprites = currentMapSprites){
 
 function drawMapLayer(ctx2d){
   drawMapSprites(ctx2d);
+  drawDynamiteAnimations(ctx2d);
 }
 
 
