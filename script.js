@@ -2332,9 +2332,7 @@ function onBoardInventoryPickupApply(event){
   if(!activeInventoryPickup) return false;
   const { clientX, clientY } = getPointerClientCoords(event);
   if(!isClientPointOverBoard(clientX, clientY)){
-    const canceledColor = activeInventoryPickup.color;
     cancelActiveInventoryPickup();
-    showInventorySelectionCancelHint(canceledColor);
     return false;
   }
   const applied = applyInventoryItemAtBoardPoint(activeInventoryPickup, clientX, clientY, "onBoardPickup");
@@ -8173,9 +8171,7 @@ function onGlobalPointerDownInventoryCancel(event){
 
   if(isInsideBoard || isInsideInventory) return;
 
-  const canceledColor = activeInventoryPickup.color;
   cancelActiveInventoryPickup();
-  showInventorySelectionCancelHint(canceledColor);
 }
 
 gsBoardCanvas.addEventListener("pointerdown", onCanvasPointerDown);
