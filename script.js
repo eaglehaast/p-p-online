@@ -2868,7 +2868,7 @@ const GAME_SCREEN_ASSETS = [
 
   // Game field background
   "background paper 1.png",
-  "ui_gamescreen/backgroundpaperwithflames.png",
+  "ui_gamescreen/gamescreen_outside/gs_background.png",
   "ui_gamescreen/gamescreen_outside/goat and sparrow.png",
 
   // Game maps
@@ -12295,7 +12295,7 @@ function startNewRound(){
     syncAimCanvasLayout();
   });
 
-  setBackgroundImage('ui_gamescreen/backgroundpaperwithflames.png');
+  setBackgroundImage('ui_gamescreen/gamescreen_outside/gs_background.png');
 
   initPoints(); // ориентации на базе
   resetFlagsForNewRound();
