@@ -214,7 +214,7 @@ body, button {
   #gameBackground {
     position: absolute;
     inset: 0;
-    background-image: url("ui_gamescreen/gamescreen_outside/gs_background.png");
+    background-image: url("ui_gamescreen/backgroundpaperwithflames.png");
     background-size: 100% 100%;
     background-repeat: no-repeat;
     background-position: center top;
