@@ -1545,15 +1545,29 @@ function applyItemToOwnPlane(type, color, plane){
 }
 
 function getPlaneActiveTurnBuffs(plane){
-  if(!plane?.activeTurnBuffs || typeof plane.activeTurnBuffs !== "object") return [];
-  return Object.keys(plane.activeTurnBuffs).filter((type) =>
-    plane.activeTurnBuffs[type] === true
-    && (
-      type === INVENTORY_ITEM_TYPES.CROSSHAIR
-      || type === INVENTORY_ITEM_TYPES.FUEL
-      || type === INVENTORY_ITEM_TYPES.WINGS
-    )
-  );
+  const activeEffectTypes = [];
+
+  if(plane?.activeTurnBuffs && typeof plane.activeTurnBuffs === "object"){
+    activeEffectTypes.push(...Object.keys(plane.activeTurnBuffs).filter((type) =>
+      plane.activeTurnBuffs[type] === true
+      && (
+        type === INVENTORY_ITEM_TYPES.CROSSHAIR
+        || type === INVENTORY_ITEM_TYPES.FUEL
+        || type === INVENTORY_ITEM_TYPES.WINGS
+      )
+    ));
+  }
+
+  const planeColor = plane?.color;
+  if(
+    (planeColor === "blue" || planeColor === "green")
+    && isPlayerInvisibilityActive(planeColor)
+    && !activeEffectTypes.includes(INVENTORY_ITEM_TYPES.INVISIBILITY)
+  ){
+    activeEffectTypes.push(INVENTORY_ITEM_TYPES.INVISIBILITY);
+  }
+
+  return activeEffectTypes;
 }
 
 function planeHasActiveTurnBuff(plane, type){
@@ -5648,6 +5662,14 @@ const { img: fuelIconSprite } = loadImageAsset(
 );
 const { img: wingsIconSprite } = loadImageAsset(
   "ui_gamescreen/gs_inventory/gs_inventory_wings_sharper_2.png",
+  GAME_PRELOAD_LABEL
+);
+const { img: invisibilityIconSpriteBlue } = loadImageAsset(
+  INVENTORY_UI_CONFIG.slots[INVENTORY_ITEM_TYPES.INVISIBILITY].iconPathByColor.blue,
+  GAME_PRELOAD_LABEL
+);
+const { img: invisibilityIconSpriteGreen } = loadImageAsset(
+  INVENTORY_UI_CONFIG.slots[INVENTORY_ITEM_TYPES.INVISIBILITY].iconPathByColor.green,
   GAME_PRELOAD_LABEL
 );
 const { img: mineIconSprite } = loadImageAsset(
@@ -10865,7 +10887,8 @@ function drawPlanesAndTrajectories(){
         cells,
         x: textX,
         y: p.y,
-        activeEffectTypes: getPlaneActiveTurnBuffs(p)
+        activeEffectTypes: getPlaneActiveTurnBuffs(p),
+        planeColor: p.color
       };
     }
 
@@ -10959,15 +10982,20 @@ function drawAimOverlay(rangeTextInfo) {
   const iconsTopOffset = 22;
   const iconX = rangeTextInfo.x;
   const iconY = rangeTextInfo.y + iconsTopOffset;
+  const invisibilityIconSprite = rangeTextInfo.planeColor === "green"
+    ? invisibilityIconSpriteGreen
+    : invisibilityIconSpriteBlue;
   const effectIconByType = {
     [INVENTORY_ITEM_TYPES.CROSSHAIR]: crosshairIconSprite,
     [INVENTORY_ITEM_TYPES.FUEL]: fuelIconSprite,
-    [INVENTORY_ITEM_TYPES.WINGS]: wingsIconSprite
+    [INVENTORY_ITEM_TYPES.WINGS]: wingsIconSprite,
+    [INVENTORY_ITEM_TYPES.INVISIBILITY]: invisibilityIconSprite
   };
   const effectDisplayOrder = [
     INVENTORY_ITEM_TYPES.CROSSHAIR,
     INVENTORY_ITEM_TYPES.FUEL,
-    INVENTORY_ITEM_TYPES.WINGS
+    INVENTORY_ITEM_TYPES.WINGS,
+    INVENTORY_ITEM_TYPES.INVISIBILITY
   ];
   const activeEffectTypes = Array.isArray(rangeTextInfo.activeEffectTypes)
     ? rangeTextInfo.activeEffectTypes
