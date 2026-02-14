@@ -5455,6 +5455,10 @@ const { img: fuelIconSprite } = loadImageAsset(
   "ui_gamescreen/gs_inventory/gs_inventory_fuel.png",
   GAME_PRELOAD_LABEL
 );
+const { img: wingsIconSprite } = loadImageAsset(
+  "ui_gamescreen/gs_inventory/gs_inventory_wings_sharper_2.png",
+  GAME_PRELOAD_LABEL
+);
 const { img: mineIconSprite } = loadImageAsset(
   "ui_gamescreen/gs_inventory/gs_inventory_mine.png",
   GAME_PRELOAD_LABEL
@@ -10722,11 +10726,13 @@ function drawAimOverlay(rangeTextInfo) {
   const iconY = rangeTextInfo.y + iconsTopOffset;
   const effectIconByType = {
     [INVENTORY_ITEM_TYPES.CROSSHAIR]: crosshairIconSprite,
-    [INVENTORY_ITEM_TYPES.FUEL]: fuelIconSprite
+    [INVENTORY_ITEM_TYPES.FUEL]: fuelIconSprite,
+    [INVENTORY_ITEM_TYPES.WINGS]: wingsIconSprite
   };
   const effectDisplayOrder = [
     INVENTORY_ITEM_TYPES.CROSSHAIR,
-    INVENTORY_ITEM_TYPES.FUEL
+    INVENTORY_ITEM_TYPES.FUEL,
+    INVENTORY_ITEM_TYPES.WINGS
   ];
   const activeEffectTypes = Array.isArray(rangeTextInfo.activeEffectTypes)
     ? rangeTextInfo.activeEffectTypes
