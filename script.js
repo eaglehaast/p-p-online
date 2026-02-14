@@ -4874,12 +4874,16 @@ const noBtn       = document.getElementById("noButton");
 const PLANE_ASSET_PATHS = {
   blue: "ui_gamescreen/PLANES/gs_plane_blue.png",
   green: "ui_gamescreen/PLANES/gs_plane_green.png",
+  blueBroadwinged: "ui_gamescreen/gs_inventory/gs_plane_blue_broadwinged.png",
+  greenBroadwinged: "ui_gamescreen/gs_inventory/gs_plane_green_broadwinged.png",
   blueCounter: "ui_gamescreen/gamescreen_outside/planecounter_blue.png",
   greenCounter: "ui_gamescreen/gamescreen_outside/planecounter_ green.png"
 };
 
 let bluePlaneImg = null;
 let greenPlaneImg = null;
+let blueBroadwingedPlaneImg = null;
+let greenBroadwingedPlaneImg = null;
 let blueCounterPlaneImg = null;
 let greenCounterPlaneImg = null;
 
@@ -4897,6 +4901,8 @@ function preloadPlaneSprites() {
   }
   bluePlaneImg = loadImageAsset(PLANE_ASSET_PATHS.blue, MENU_PRELOAD_LABEL).img;
   greenPlaneImg = loadImageAsset(PLANE_ASSET_PATHS.green, MENU_PRELOAD_LABEL).img;
+  blueBroadwingedPlaneImg = loadImageAsset(PLANE_ASSET_PATHS.blueBroadwinged, GAME_PRELOAD_LABEL).img;
+  greenBroadwingedPlaneImg = loadImageAsset(PLANE_ASSET_PATHS.greenBroadwinged, GAME_PRELOAD_LABEL).img;
   blueCounterPlaneImg = loadImageAsset(PLANE_ASSET_PATHS.blueCounter, GAME_PRELOAD_LABEL).img;
   greenCounterPlaneImg = loadImageAsset(PLANE_ASSET_PATHS.greenCounter, GAME_PRELOAD_LABEL).img;
 
@@ -10221,6 +10227,9 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   const jetAnchor = getPlaneAnchorOffset("jet");
   const idleSmokeDistance = Math.max(0, smokeAnchor.y - PLANE_VFX_IDLE_SMOKE_DELTA_Y);
   const showEngine = !isGhostState && !plane.nukeEliminated;
+  const hasWingsBuff = planeHasActiveTurnBuff(plane, INVENTORY_ITEM_TYPES.WINGS);
+  const broadwingOverlayWidth = PLANE_DRAW_W * 1.38;
+  const broadwingOverlayHeight = PLANE_DRAW_H;
 
   ctx2d.save();
   const shouldSway = plane.isAlive === true
@@ -10306,6 +10315,15 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
     }
 
     ctx2d.drawImage(bluePlaneImg, -halfPlaneWidth, -halfPlaneHeight, PLANE_DRAW_W, PLANE_DRAW_H);
+    if (hasWingsBuff && isSpriteReady(blueBroadwingedPlaneImg)) {
+      ctx2d.drawImage(
+        blueBroadwingedPlaneImg,
+        -broadwingOverlayWidth / 2,
+        -broadwingOverlayHeight / 2,
+        broadwingOverlayWidth,
+        broadwingOverlayHeight
+      );
+    }
     ctx2d.filter = previousFilter;
     if (!isGhostState) {
       addPlaneShading(ctx2d);
@@ -10327,6 +10345,15 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
     }
 
     ctx2d.drawImage(greenPlaneImg, -halfPlaneWidth, -halfPlaneHeight, PLANE_DRAW_W, PLANE_DRAW_H);
+    if (hasWingsBuff && isSpriteReady(greenBroadwingedPlaneImg)) {
+      ctx2d.drawImage(
+        greenBroadwingedPlaneImg,
+        -broadwingOverlayWidth / 2,
+        -broadwingOverlayHeight / 2,
+        broadwingOverlayWidth,
+        broadwingOverlayHeight
+      );
+    }
     ctx2d.filter = previousFilter;
     if (!isGhostState) {
       addPlaneShading(ctx2d);
