@@ -967,7 +967,7 @@ const playerInventoryEffects = {
 
 const INVISIBILITY_FEEDBACK_ALPHA_PHASES = Object.freeze([0.5, 0.9, 0.5, 0.9]);
 const INVISIBILITY_FADE_DURATION_MS = 1000;
-const INVISIBILITY_MIN_ALPHA = 0.06;
+const INVISIBILITY_MIN_ALPHA = 0;
 
 function getOpponentColor(color){
   return color === "blue" ? "green" : (color === "green" ? "blue" : null);
