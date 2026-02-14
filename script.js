@@ -5586,14 +5586,16 @@ function buildDynamiteFrameDurations(frameCount){
   const growthCount = explosionCount > 0 ? Math.max(1, Math.round(explosionCount * 0.65)) : 0;
   const decayCount = Math.max(0, explosionCount - growthCount);
 
+  const durationScale = 2;
+
   for(let i = 0; i < fuseCount; i += 1){
-    durations.push(46);
+    durations.push(46 * durationScale);
   }
   for(let i = 0; i < growthCount; i += 1){
-    durations.push(37);
+    durations.push(37 * durationScale);
   }
   for(let i = 0; i < decayCount; i += 1){
-    durations.push(27);
+    durations.push(27 * durationScale);
   }
 
   return durations;
