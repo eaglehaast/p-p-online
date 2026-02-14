@@ -1486,6 +1486,51 @@ function planeHasActiveTurnBuff(plane, type){
   return getPlaneActiveTurnBuffs(plane).includes(type);
 }
 
+function getPlaneHitbox(plane){
+  const hasWingsBuff = planeHasActiveTurnBuff(plane, INVENTORY_ITEM_TYPES.WINGS);
+  const width = hasWingsBuff ? 72 : 36;
+  const height = 36;
+  const halfW = width / 2;
+  const halfH = height / 2;
+
+  return {
+    x: plane.x,
+    y: plane.y,
+    width,
+    height,
+    left: plane.x - halfW,
+    right: plane.x + halfW,
+    top: plane.y - halfH,
+    bottom: plane.y + halfH
+  };
+}
+
+function planeHitboxesIntersect(a, b){
+  return a.left < b.right
+    && a.right > b.left
+    && a.top < b.bottom
+    && a.bottom > b.top;
+}
+
+function getPlaneHitContactPoint(attackerPlane, targetPlane){
+  const targetHitbox = getPlaneHitbox(targetPlane);
+  const clampedX = Math.max(targetHitbox.left, Math.min(attackerPlane.x, targetHitbox.right));
+  const clampedY = Math.max(targetHitbox.top, Math.min(attackerPlane.y, targetHitbox.bottom));
+
+  if(
+    clampedX === attackerPlane.x
+    && clampedY === attackerPlane.y
+    && attackerPlane.x >= targetHitbox.left
+    && attackerPlane.x <= targetHitbox.right
+    && attackerPlane.y >= targetHitbox.top
+    && attackerPlane.y <= targetHitbox.bottom
+  ){
+    return { x: targetPlane.x, y: targetPlane.y };
+  }
+
+  return { x: clampedX, y: clampedY };
+}
+
 function clearPlaneActiveTurnBuffs(plane){
   if(!plane) return;
   plane.activeTurnBuffs = {};
@@ -11155,31 +11200,31 @@ function awardPoint(color){
 function checkPlaneHits(plane, fp){
   if(isGameOver) return;
   const enemyColor = (plane.color==="green") ? "blue" : "green";
+  const planeHitbox = getPlaneHitbox(plane);
   for(const p of points){
     if(!p.isAlive || p.burning) continue;
     if(p.color !== enemyColor) continue;
     if(fp && fp.lastHitPlane === p && fp.lastHitCooldown > 0) continue;
-    const dx = p.x - plane.x;
-    const dy = p.y - plane.y;
-    const d  = Math.hypot(dx, dy);
-    if(d < POINT_RADIUS*2){
+    const targetHitbox = getPlaneHitbox(p);
+    if(planeHitboxesIntersect(planeHitbox, targetHitbox)){
       p.isAlive = false;
       p.burning = true;
       ensurePlaneBurningFlame(p);
       flyingPoints = flyingPoints.filter(other => other.plane !== p);
-      const cx = d === 0 ? plane.x : plane.x + dx / d * POINT_RADIUS;
-        const cy = d === 0 ? plane.y : plane.y + dy / d * POINT_RADIUS;
-        p.collisionX = cx;
-        p.collisionY = cy;
-        const collisionCrashTimestamp = performance.now();
-        p.crashStart = collisionCrashTimestamp;
-        p.killMarkerStart = collisionCrashTimestamp;
-        spawnExplosionForPlane(p, cx, cy);
-        schedulePlaneFlameFx(p);
-        if(fp){
-          fp.lastHitPlane = p;
-          fp.lastHitCooldown = PLANE_HIT_COOLDOWN_SEC;
-        }
+      const contactPoint = getPlaneHitContactPoint(plane, p);
+      const cx = contactPoint.x;
+      const cy = contactPoint.y;
+      p.collisionX = cx;
+      p.collisionY = cy;
+      const collisionCrashTimestamp = performance.now();
+      p.crashStart = collisionCrashTimestamp;
+      p.killMarkerStart = collisionCrashTimestamp;
+      spawnExplosionForPlane(p, cx, cy);
+      schedulePlaneFlameFx(p);
+      if(fp){
+        fp.lastHitPlane = p;
+        fp.lastHitCooldown = PLANE_HIT_COOLDOWN_SEC;
+      }
       if(p.carriedFlagId){
         const carriedFlag = getFlagById(p.carriedFlagId);
         if(isFlagActive(carriedFlag)){
