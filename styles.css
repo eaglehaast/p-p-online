@@ -315,6 +315,10 @@ body, button {
     transform: scale(1.05);
   }
 
+  .inventory-slot--selected .inventory-slot-frame {
+    filter: drop-shadow(0 0 6px rgba(255, 238, 154, 0.75));
+  }
+
   .inventory-item-count {
     position: absolute;
     display: flex;
