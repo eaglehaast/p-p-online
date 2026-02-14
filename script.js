@@ -1838,7 +1838,6 @@ let inventoryDragFallbackActive = false;
 let inventoryDragFallbackWidth = 30;
 let inventoryDragFallbackHeight = 30;
 let inventoryDragImageMarkedUnstable = false;
-let lastInventoryPickupPointerDownAt = 0;
 const MINE_INVENTORY_ICON_PATH = "ui_gamescreen/gs_inventory/gs_inventory_mine.png";
 
 function getInventoryIconPathForSlot(type, color){
@@ -2121,12 +2120,6 @@ function isSameInventoryItemSelection(selection, color, type){
 }
 
 function onInventoryItemPickupToggle(event){
-  if(event.type === "click" && performance.now() - lastInventoryPickupPointerDownAt < 320){
-    return;
-  }
-  if(event.type === "pointerdown"){
-    lastInventoryPickupPointerDownAt = performance.now();
-  }
   const target = event.currentTarget;
   if(!(target instanceof HTMLImageElement)) return;
   const type = target.dataset.itemType;
@@ -2869,7 +2862,6 @@ function syncInventoryUI(color){
         img.addEventListener("dragstart", onInventoryItemDragStart);
         img.addEventListener("dragend", onInventoryItemDragEnd);
       }
-      img.addEventListener("click", onInventoryItemPickupToggle);
       img.addEventListener("pointerdown", onInventoryItemPickupToggle);
       if(isSameInventoryItemSelection(activeInventoryPickup, color, slot.type)){
         img.classList.add("inventory-item--selected");
