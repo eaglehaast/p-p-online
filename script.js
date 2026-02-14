@@ -1895,12 +1895,20 @@ function onBoardDrop(event){
         dynamiteState.push(dynamiteEntry);
 
         setTimeout(() => {
+          const runtimeIndex = Array.isArray(dynamiteState)
+            ? dynamiteState.findIndex(entry => entry.id === dynamiteEntry.id)
+            : -1;
+          if(runtimeIndex < 0){
+            return;
+          }
+
           const brickIndex = Array.isArray(currentMapSprites)
             ? currentMapSprites.indexOf(dynamiteEntry.spriteRef)
             : -1;
 
+          dynamiteState.splice(runtimeIndex, 1);
+
           if(brickIndex < 0){
-            dynamiteState = dynamiteState.filter(entry => entry.id !== dynamiteEntry.id);
             return;
           }
 
@@ -1910,7 +1918,6 @@ function onBoardDrop(event){
             sprites: currentMapSprites,
           });
           rebuildCollisionSurfaces();
-          dynamiteState = dynamiteState.filter(entry => entry.id !== dynamiteEntry.id);
         }, 1000);
 
         removeItemFromInventory(activeInventoryDrag.color, activeInventoryDrag.type);
