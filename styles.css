@@ -310,6 +310,11 @@ body, button {
     cursor: grabbing;
   }
 
+  .inventory-item--selected {
+    filter: drop-shadow(0 0 5px rgba(255, 222, 131, 0.95));
+    transform: scale(1.05);
+  }
+
   .inventory-item-count {
     position: absolute;
     display: flex;
