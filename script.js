@@ -1834,8 +1834,9 @@ function tryApplyPendingInventoryUseAt(x, y){
 let sharedInventoryDragPreview = null;
 let inventoryDragFallbackGhost = null;
 let inventoryDragFallbackActive = false;
-let inventoryDragFallbackWidth = mineSizeRuntime.SCREEN_PX;
-let inventoryDragFallbackHeight = mineSizeRuntime.SCREEN_PX;
+// Safe early defaults to avoid touching mineSizeRuntime before its declaration.
+let inventoryDragFallbackWidth = 30;
+let inventoryDragFallbackHeight = 30;
 let inventoryDragImageMarkedUnstable = false;
 let lastInventoryPickupPointerDownAt = 0;
 const MINE_INVENTORY_ICON_PATH = "ui_gamescreen/gs_inventory/gs_inventory_mine.png";
