@@ -2867,7 +2867,7 @@ const GAME_SCREEN_ASSETS = [
   "sprite_ copy.png",
 
   // Game field background
-  "background paper 1.png",
+  "ui_gamescreen/backgroundpaperwithflames.png",
   "ui_gamescreen/gamescreen_outside/gs_background.png",
   "ui_gamescreen/gamescreen_outside/goat and sparrow.png",
 
@@ -5580,7 +5580,7 @@ function isSpriteReady(img) {
     img.naturalHeight > 0
   );
 }
-const { img: backgroundImg } = loadImageAsset("background paper 1.png", GAME_PRELOAD_LABEL);
+const { img: backgroundImg } = loadImageAsset("ui_gamescreen/backgroundpaperwithflames.png", GAME_PRELOAD_LABEL);
 backgroundImg?.addEventListener("load", () => {
   console.log("[IMG] load", { label: "backgroundImg", url: backgroundImg.src });
 });
@@ -7557,7 +7557,7 @@ function resetGame(options = {}){
 
   if (shouldShowMenu) {
     menuScreenLocked = false;
-    setBackgroundImage('background paper 1.png');
+    setBackgroundImage('ui_gamescreen/backgroundpaperwithflames.png');
     hideGameBackgroundForMenu();
   } else {
     restoreGameBackgroundAfterMenu();
