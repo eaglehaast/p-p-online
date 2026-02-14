@@ -10641,7 +10641,7 @@ function drawProjectedPlaneGhost(ctx2d, color){
   ctx2d.drawImage(sprite, -PLANE_DRAW_W / 2, -PLANE_DRAW_H / 2, PLANE_DRAW_W, PLANE_DRAW_H);
 }
 
-function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0) {
+function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0, alphaMultiplier = 1) {
   if (!plane || glowStrength <= 0) {
     return;
   }
@@ -10658,6 +10658,11 @@ function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0) {
   const spriteReady = isSpriteReady(spriteImg);
 
   const blend = Math.max(0, Math.min(1, glowStrength));
+  const visibilityAlpha = Math.max(0, Math.min(1, alphaMultiplier));
+
+  if (visibilityAlpha <= 0.01) {
+    return;
+  }
 
   ctx2d.save();
 
@@ -10667,7 +10672,7 @@ function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0) {
   }
 
   ctx2d.globalCompositeOperation = "lighter";
-  ctx2d.globalAlpha = 0.3 + 0.45 * blend;
+  ctx2d.globalAlpha *= (0.3 + 0.45 * blend) * visibilityAlpha;
   ctx2d.filter = `blur(${(2 + 4 * blend).toFixed(2)}px)`;
 
   const baseSize = PLANE_DRAW_W;
@@ -10747,9 +10752,10 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
     ? 0
     : Math.max(0, Math.min(1, glow));
 
-  if (blend > 0) {
+  if (blend > 0 && !isInvisibilityFullyHidden) {
     const glowStrength = blend * 1.25; // boost brightness slightly
-    drawPlaneSpriteGlow(ctx2d, plane, glowStrength);
+    const glowVisibilityAlpha = Math.max(0, Math.min(1, resolvedInvisibilityAlpha * invisibilityFeedbackAlpha));
+    drawPlaneSpriteGlow(ctx2d, plane, glowStrength, glowVisibilityAlpha);
   }
 
   ctx2d.shadowColor = "transparent";
