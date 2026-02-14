@@ -1152,6 +1152,7 @@ const inventoryHosts = {
 
 let nuclearStrikeHideTimeoutId = null;
 let activeInventoryDrag = null;
+let activeInventoryPickup = null;
 let pendingInventoryUse = null;
 
 function setPendingInventoryUse(nextState){
@@ -1552,9 +1553,17 @@ function cancelActiveInventoryDrag(reason = "cancel"){
   }
 }
 
+function cancelActiveInventoryPickup(){
+  activeInventoryPickup = null;
+  resetInventoryDragFallbackGhost();
+  syncInventoryUI("blue");
+  syncInventoryUI("green");
+}
+
 function resetInventoryInteractionState(){
   resetInventoryDragFallbackGhost();
   activeInventoryDrag = null;
+  activeInventoryPickup = null;
   pendingInventoryUse = null;
   isNuclearStrikeResolutionActive = false;
   isNukeCinematicActive = false;
@@ -1804,7 +1813,10 @@ function tryApplyPendingInventoryUseAt(x, y){
 let sharedInventoryDragPreview = null;
 let inventoryDragFallbackGhost = null;
 let inventoryDragFallbackActive = false;
+let inventoryDragFallbackWidth = mineSizeRuntime.SCREEN_PX;
+let inventoryDragFallbackHeight = mineSizeRuntime.SCREEN_PX;
 let inventoryDragImageMarkedUnstable = false;
+let lastInventoryPickupPointerDownAt = 0;
 const MINE_INVENTORY_ICON_PATH = "ui_gamescreen/gs_inventory/gs_inventory_mine.png";
 
 function getInventoryIconPathForSlot(type, color){
@@ -1864,16 +1876,25 @@ function updateInventoryDragFallbackPosition(clientX, clientY){
   if(!inventoryDragFallbackActive) return;
   if(!Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
   const ghost = getInventoryDragFallbackGhost();
-  const half = mineSizeRuntime.SCREEN_PX / 2;
-  const drawX = Math.round(clientX - half);
-  const drawY = Math.round(clientY - half);
+  const halfWidth = inventoryDragFallbackWidth / 2;
+  const halfHeight = inventoryDragFallbackHeight / 2;
+  const drawX = Math.round(clientX - halfWidth);
+  const drawY = Math.round(clientY - halfHeight);
   ghost.style.transform = `translate3d(${drawX}px, ${drawY}px, 0)`;
 }
 
-function activateInventoryDragFallback(target, clientX, clientY, type){
+function activateInventoryDragFallback(target, clientX, clientY, type, options = {}){
   const ghost = getInventoryDragFallbackGhost();
-  ghost.style.width = `${mineSizeRuntime.SCREEN_PX}px`;
-  ghost.style.height = `${mineSizeRuntime.SCREEN_PX}px`;
+  const width = Number.isFinite(options.width) && options.width > 0
+    ? options.width
+    : mineSizeRuntime.SCREEN_PX;
+  const height = Number.isFinite(options.height) && options.height > 0
+    ? options.height
+    : mineSizeRuntime.SCREEN_PX;
+  inventoryDragFallbackWidth = width;
+  inventoryDragFallbackHeight = height;
+  ghost.style.width = `${Math.round(width)}px`;
+  ghost.style.height = `${Math.round(height)}px`;
   const src = type === INVENTORY_ITEM_TYPES.MINE
     ? MINE_INVENTORY_ICON_PATH
     : (target instanceof HTMLImageElement ? (target.currentSrc || target.src || "") : "");
@@ -1886,6 +1907,8 @@ function activateInventoryDragFallback(target, clientX, clientY, type){
 
 function resetInventoryDragFallbackGhost(){
   inventoryDragFallbackActive = false;
+  inventoryDragFallbackWidth = mineSizeRuntime.SCREEN_PX;
+  inventoryDragFallbackHeight = mineSizeRuntime.SCREEN_PX;
   if(!(inventoryDragFallbackGhost instanceof HTMLElement)) return;
   inventoryDragFallbackGhost.style.opacity = "0";
   inventoryDragFallbackGhost.style.visibility = "hidden";
@@ -2004,6 +2027,7 @@ function onInventoryItemDragStart(event){
     usageTarget: usageConfig.target,
     consumed: false,
   };
+  cancelActiveInventoryPickup();
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", type);
@@ -2042,6 +2066,55 @@ function onInventoryItemDragStart(event){
   }
 }
 
+function isSameInventoryItemSelection(selection, color, type){
+  return Boolean(
+    selection
+    && selection.color === color
+    && selection.type === type
+  );
+}
+
+function onInventoryItemPickupToggle(event){
+  if(event.type === "click" && performance.now() - lastInventoryPickupPointerDownAt < 320){
+    return;
+  }
+  if(event.type === "pointerdown"){
+    lastInventoryPickupPointerDownAt = performance.now();
+  }
+  const target = event.currentTarget;
+  if(!(target instanceof HTMLImageElement)) return;
+  const type = target.dataset.itemType;
+  const color = target.dataset.itemColor;
+  const usageConfig = getItemUsageConfig(type);
+  if (!usageConfig?.requiresDragAndDrop) return;
+
+  const activeColor = turnColors[turnIndex];
+  if (color !== activeColor) return;
+
+  if (isSameInventoryItemSelection(activeInventoryPickup, color, type)) {
+    cancelActiveInventoryPickup();
+    return;
+  }
+
+  activeInventoryPickup = {
+    color,
+    type,
+    usageTarget: usageConfig.target,
+  };
+
+  const rect = target.getBoundingClientRect();
+  const width = Number.isFinite(rect.width) && rect.width > 0
+    ? rect.width
+    : INVENTORY_ITEM_SIZE_PX;
+  const height = Number.isFinite(rect.height) && rect.height > 0
+    ? rect.height
+    : INVENTORY_ITEM_SIZE_PX;
+  const { clientX, clientY } = getPointerClientCoords(event);
+  activateInventoryDragFallback(target, clientX, clientY, type, { width, height });
+  syncInventoryUI("blue");
+  syncInventoryUI("green");
+}
+
 function onInventoryItemDragEnd(){
   clearInventoryDragArtifacts();
   cancelActiveInventoryDrag("ended");
@@ -2076,87 +2149,91 @@ function onBoardDrop(event){
     }
     return;
   }
-  const usageConfig = getItemUsageConfig(activeInventoryDrag.type);
-  if(!usageConfig){
-    cancelActiveInventoryDrag("drop without config");
-    return;
+  const applied = applyInventoryItemAtBoardPoint(activeInventoryDrag, clientX, clientY, "onBoardDrop");
+  if(applied){
+    removeItemFromInventory(activeInventoryDrag.color, activeInventoryDrag.type);
+    activeInventoryDrag.consumed = true;
+  }
+  cancelActiveInventoryDrag(applied ? "board dropped" : "board drop rejected");
+}
+
+function applyInventoryItemAtBoardPoint(activeItemState, clientX, clientY, dropContext){
+  if(!activeItemState) return false;
+  if(!isClientPointOverBoard(clientX, clientY)) return false;
+
+  const usageConfig = getItemUsageConfig(activeItemState.type);
+  if(!usageConfig) return false;
+
+  if(usageConfig.target === ITEM_USAGE_TARGETS.SELF_PLANE){
+    const designPoint = toDesignCoords(clientX, clientY);
+    const { x: boardX, y: boardY } = designToBoardCoords(designPoint.x, designPoint.y);
+    logDropCoordsDebug(`${dropContext}/self`, {
+      clientX,
+      clientY,
+      uiScale: designPoint.uiScale,
+      pinchScale: designPoint.pinchScale,
+      effectiveScale: designPoint.effectiveScale,
+      boardX,
+      boardY
+    });
+    const ownPlane = getPlaneAtBoardPoint(activeItemState.color, boardX, boardY);
+    if(!ownPlane) return false;
+    return applyItemToOwnPlane(activeItemState.type, activeItemState.color, ownPlane);
   }
 
-  if(usageConfig.target !== ITEM_USAGE_TARGETS.BOARD){
-    return;
+  if(usageConfig.target !== ITEM_USAGE_TARGETS.BOARD) return false;
+
+  if(activeItemState.type === INVENTORY_ITEM_TYPES.MINE){
+    const minePlacement = getMinePlacementFromDropPoint(clientX, clientY);
+    logDropCoordsDebug(`${dropContext}/mine`, {
+      clientX,
+      clientY,
+      uiScale: minePlacement.uiScale,
+      pinchScale: minePlacement.pinchScale,
+      effectiveScale: minePlacement.effectiveScale,
+      boardX: minePlacement.boardX,
+      boardY: minePlacement.boardY,
+      cellX: minePlacement.cellX,
+      cellY: minePlacement.cellY
+    });
+    const isPlacementValid = isMinePlacementValid(minePlacement);
+    if(!isPlacementValid) return false;
+    placeMine({
+      owner: activeItemState.color,
+      x: minePlacement.x,
+      y: minePlacement.y,
+      cellX: minePlacement.cellX,
+      cellY: minePlacement.cellY,
+    });
+    return true;
   }
 
-  if(usageConfig.target === ITEM_USAGE_TARGETS.BOARD){
-    if(activeInventoryDrag.type === INVENTORY_ITEM_TYPES.MINE){
-      const minePlacement = getMinePlacementFromDropPoint(clientX, clientY);
-      logDropCoordsDebug("onBoardDrop/mine", {
-        clientX,
-        clientY,
-        uiScale: minePlacement.uiScale,
-        pinchScale: minePlacement.pinchScale,
-        effectiveScale: minePlacement.effectiveScale,
-        boardX: minePlacement.boardX,
-        boardY: minePlacement.boardY,
-        cellX: minePlacement.cellX,
-        cellY: minePlacement.cellY
-      });
-      const isPlacementValid = isMinePlacementValid(minePlacement);
-      if(isPlacementValid){
-        placeMine({
-          owner: activeInventoryDrag.color,
-          x: minePlacement.x,
-          y: minePlacement.y,
-          cellX: minePlacement.cellX,
-          cellY: minePlacement.cellY,
-        });
-        removeItemFromInventory(activeInventoryDrag.color, activeInventoryDrag.type);
-        activeInventoryDrag.consumed = true;
-      }
-      cancelActiveInventoryDrag(isPlacementValid ? "mine dropped" : "mine drop rejected");
-      return;
-    }
-
-    if(activeInventoryDrag.type === INVENTORY_ITEM_TYPES.DYNAMITE){
-      const dropPlacement = getDynamitePlacementFromDropPoint(clientX, clientY);
-      const targetBrick = findMapSpriteForDynamiteDrop(dropPlacement);
-      if(targetBrick){
-        const dynamiteEntry = {
-          id: `dynamite-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-          owner: activeInventoryDrag.color,
-          x: targetBrick.cx,
-          y: targetBrick.cy,
-          bottomY: targetBrick.cy + targetBrick.halfHeight,
-          spriteId: targetBrick.id,
-          spriteIndex: targetBrick.spriteIndex,
-          spriteRef: targetBrick.spriteRef,
-          startedAtMs: performance.now(),
-          frameIndex: 0,
-          brickRemoved: false,
-        };
-        dynamiteState.push(dynamiteEntry);
-
-        removeItemFromInventory(activeInventoryDrag.color, activeInventoryDrag.type);
-        activeInventoryDrag.consumed = true;
-      }
-      cancelActiveInventoryDrag(targetBrick ? "dynamite dropped" : "dynamite drop rejected");
-      return;
-    }
-
-    if(activeInventoryDrag.type === INVENTORY_ITEM_TYPES.INVISIBILITY){
-      const effectQueued = queueInvisibilityEffectForPlayer(activeInventoryDrag.color);
-      if(effectQueued){
-        removeItemFromInventory(activeInventoryDrag.color, activeInventoryDrag.type);
-        activeInventoryDrag.consumed = true;
-      }
-      cancelActiveInventoryDrag(effectQueued ? "invisible dropped" : "invisible drop rejected");
-      return;
-    }
-
-    cancelActiveInventoryDrag("drop rejected: unsupported board item");
-    return;
+  if(activeItemState.type === INVENTORY_ITEM_TYPES.DYNAMITE){
+    const dropPlacement = getDynamitePlacementFromDropPoint(clientX, clientY);
+    const targetBrick = findMapSpriteForDynamiteDrop(dropPlacement);
+    if(!targetBrick) return false;
+    const dynamiteEntry = {
+      id: `dynamite-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      owner: activeItemState.color,
+      x: targetBrick.cx,
+      y: targetBrick.cy,
+      bottomY: targetBrick.cy + targetBrick.halfHeight,
+      spriteId: targetBrick.id,
+      spriteIndex: targetBrick.spriteIndex,
+      spriteRef: targetBrick.spriteRef,
+      startedAtMs: performance.now(),
+      frameIndex: 0,
+      brickRemoved: false,
+    };
+    dynamiteState.push(dynamiteEntry);
+    return true;
   }
 
-  cancelActiveInventoryDrag("dropped");
+  if(activeItemState.type === INVENTORY_ITEM_TYPES.INVISIBILITY){
+    return queueInvisibilityEffectForPlayer(activeItemState.color);
+  }
+
+  return false;
 }
 
 function onSelfPlaneItemDrop(event){
@@ -2172,25 +2249,7 @@ function onSelfPlaneItemDrop(event){
     return;
   }
 
-  const designPoint = toDesignCoords(clientX, clientY);
-  const { x: designX, y: designY } = designPoint;
-  const { x: boardX, y: boardY } = designToBoardCoords(designX, designY);
-  logDropCoordsDebug("onSelfPlaneItemDrop", {
-    clientX,
-    clientY,
-    uiScale: designPoint.uiScale,
-    pinchScale: designPoint.pinchScale,
-    effectiveScale: designPoint.effectiveScale,
-    boardX,
-    boardY
-  });
-  const ownPlane = getPlaneAtBoardPoint(activeInventoryDrag.color, boardX, boardY);
-  if(!ownPlane){
-    cancelActiveInventoryDrag("self target missed");
-    return;
-  }
-
-  const applied = applyItemToOwnPlane(activeInventoryDrag.type, activeInventoryDrag.color, ownPlane);
+  const applied = applyInventoryItemAtBoardPoint(activeInventoryDrag, clientX, clientY, "onSelfPlaneItemDrop");
   if(applied){
     removeItemFromInventory(activeInventoryDrag.color, activeInventoryDrag.type);
     activeInventoryDrag.consumed = true;
@@ -2214,6 +2273,22 @@ function onInventoryDrop(event){
   }
 
   onBoardDrop(event);
+}
+
+function onInventoryPickupPointerMove(event){
+  if(!activeInventoryPickup) return;
+  const { clientX, clientY } = getPointerClientCoords(event);
+  updateInventoryDragFallbackPosition(clientX, clientY);
+}
+
+function onBoardInventoryPickupApply(event){
+  if(!activeInventoryPickup) return false;
+  const { clientX, clientY } = getPointerClientCoords(event);
+  const applied = applyInventoryItemAtBoardPoint(activeInventoryPickup, clientX, clientY, "onBoardPickup");
+  if(!applied) return false;
+  removeItemFromInventory(activeInventoryPickup.color, activeInventoryPickup.type);
+  cancelActiveInventoryPickup();
+  return true;
 }
 
 function getMinePlacementFromDropPoint(clientX, clientY){
@@ -2731,6 +2806,11 @@ function syncInventoryUI(color){
       img.classList.add("inventory-item--draggable");
       img.addEventListener("dragstart", onInventoryItemDragStart);
       img.addEventListener("dragend", onInventoryItemDragEnd);
+      img.addEventListener("click", onInventoryItemPickupToggle);
+      img.addEventListener("pointerdown", onInventoryItemPickupToggle);
+      if(isSameInventoryItemSelection(activeInventoryPickup, color, slot.type)){
+        img.classList.add("inventory-item--selected");
+      }
     }
     if(
       hasItem
@@ -8033,6 +8113,9 @@ function onCanvasPointerMove(e){
 
 function onCanvasPointerUp(e){
   logPointerDebugEvent(e);
+  if(onBoardInventoryPickupApply(e)){
+    return;
+  }
   if(isNuclearStrikeActionLocked()){
     aaPointerDown = false;
     aaPlacementPreview = null;
@@ -8051,6 +8134,7 @@ function onCanvasPointerUp(e){
 gsBoardCanvas.addEventListener("pointerdown", onCanvasPointerDown);
 gsBoardCanvas.addEventListener("pointermove", onCanvasPointerMove);
 gsBoardCanvas.addEventListener("pointerup", onCanvasPointerUp);
+gsBoardCanvas.addEventListener("click", onBoardInventoryPickupApply);
 gsBoardCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; aaPointerDown = false; aaPreviewTrail = []; });
 gsBoardCanvas.addEventListener("dragover", onBoardDragOver);
 gsBoardCanvas.addEventListener("drop", onInventoryDrop);
@@ -8066,9 +8150,11 @@ window.addEventListener("dragcancel", () => cancelActiveInventoryDrag("cancelled
 window.addEventListener("dragover", (event) => {
   updateInventoryDragFallbackPosition(event.clientX, event.clientY);
 });
+window.addEventListener("pointermove", onInventoryPickupPointerMove);
 window.addEventListener("keydown", (event) => {
   if(event.key === "Escape"){
     cancelPendingInventoryUse();
+    cancelActiveInventoryPickup();
   }
 });
 
