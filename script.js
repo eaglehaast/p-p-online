@@ -1144,6 +1144,8 @@ const inventoryHintState = {
 };
 
 const INVENTORY_DISABLED_HINT_TEXT = "В разработке";
+const INVENTORY_SELECTED_HINT_TEXT = "Предмет выбран: тапните по полю, чтобы применить. Esc/повторный тап — отмена";
+const INVENTORY_SELECTION_CANCEL_HINT_TEXT = "Выбор предмета сброшен";
 
 const inventoryHosts = {
   blue: blueInventoryHost,
@@ -1558,6 +1560,25 @@ function cancelActiveInventoryPickup(){
   resetInventoryDragFallbackGhost();
   syncInventoryUI("blue");
   syncInventoryUI("green");
+}
+
+function showInventorySelectionCancelHint(color){
+  const state = inventoryHintState[color];
+  if(!state) return;
+  state.text = INVENTORY_SELECTION_CANCEL_HINT_TEXT;
+  state.visible = true;
+  state.anchorX = INVENTORY_UI_CONFIG.containerSize.w / 2;
+  state.anchorY = color === "blue"
+    ? INVENTORY_UI_CONFIG.containers.blue.y + INVENTORY_UI_CONFIG.containerSize.h / 2
+    : INVENTORY_UI_CONFIG.containers.green.y + INVENTORY_UI_CONFIG.containerSize.h / 2;
+  if(state.timeoutId){
+    clearTimeout(state.timeoutId);
+  }
+  state.timeoutId = setTimeout(() => {
+    state.visible = false;
+    state.text = "";
+    state.timeoutId = null;
+  }, 800);
 }
 
 function resetInventoryInteractionState(){
@@ -2309,6 +2330,12 @@ function onInventoryPickupPointerMove(event){
 function onBoardInventoryPickupApply(event){
   if(!activeInventoryPickup) return false;
   const { clientX, clientY } = getPointerClientCoords(event);
+  if(!isClientPointOverBoard(clientX, clientY)){
+    const canceledColor = activeInventoryPickup.color;
+    cancelActiveInventoryPickup();
+    showInventorySelectionCancelHint(canceledColor);
+    return false;
+  }
   const applied = applyInventoryItemAtBoardPoint(activeInventoryPickup, clientX, clientY, "onBoardPickup");
   if(!applied) return false;
   removeItemFromInventory(activeInventoryPickup.color, activeInventoryPickup.type);
@@ -2718,6 +2745,15 @@ function showInventoryDisabledHint(color, slotLayout){
 function syncInventoryUI(color){
   const host = inventoryHosts[color];
   if(!(host instanceof HTMLElement)) return;
+  const hintState = inventoryHintState[color];
+  if (hintState && hintState.timeoutId) {
+    clearTimeout(hintState.timeoutId);
+    hintState.timeoutId = null;
+  }
+  if (hintState) {
+    hintState.visible = false;
+    hintState.text = "";
+  }
   applyInventoryContainerLayout(color, host);
   validateInventoryCssSizing(host);
   host.style.setProperty("--inventory-mine-size", `${mineSizeRuntime.SCREEN_PX}px`);
@@ -2838,6 +2874,14 @@ function syncInventoryUI(color){
       img.addEventListener("pointerdown", onInventoryItemPickupToggle);
       if(isSameInventoryItemSelection(activeInventoryPickup, color, slot.type)){
         img.classList.add("inventory-item--selected");
+        slotContainer.classList.add("inventory-slot--selected");
+        if (hintState && slot.layout?.frame) {
+          const frame = slot.layout.frame;
+          hintState.visible = true;
+          hintState.text = INVENTORY_SELECTED_HINT_TEXT;
+          hintState.anchorX = frame.x + frame.w / 2;
+          hintState.anchorY = frame.y + frame.h / 2;
+        }
       }
     }
     if(
@@ -2859,12 +2903,6 @@ function syncInventoryUI(color){
     countBadge.style.height = `${countLayout.h}px`;
     slotContainer.appendChild(countBadge);
     host.appendChild(slotContainer);
-
-    const state = inventoryHintState[color];
-    if (state) {
-      state.visible = false;
-      state.text = "";
-    }
   }
 }
 
@@ -8159,6 +8197,23 @@ function onCanvasPointerUp(e){
   aaPreviewTrail = [];
 }
 
+function onGlobalPointerDownInventoryCancel(event){
+  if(!activeInventoryPickup) return;
+
+  const target = event.target;
+  const isInsideBoard = target instanceof Node && gsBoardCanvas instanceof HTMLElement
+    ? gsBoardCanvas.contains(target)
+    : false;
+  const isInsideInventory = target instanceof Node
+    && (blueInventoryHost?.contains(target) || greenInventoryHost?.contains(target));
+
+  if(isInsideBoard || isInsideInventory) return;
+
+  const canceledColor = activeInventoryPickup.color;
+  cancelActiveInventoryPickup();
+  showInventorySelectionCancelHint(canceledColor);
+}
+
 gsBoardCanvas.addEventListener("pointerdown", onCanvasPointerDown);
 gsBoardCanvas.addEventListener("pointermove", onCanvasPointerMove);
 gsBoardCanvas.addEventListener("pointerup", onCanvasPointerUp);
@@ -8181,6 +8236,7 @@ if(shouldUseLegacyDragDropFallback()){
   });
 }
 window.addEventListener("pointermove", onInventoryPickupPointerMove);
+window.addEventListener("pointerdown", onGlobalPointerDownInventoryCancel);
 window.addEventListener("keydown", (event) => {
   if(event.key === "Escape"){
     cancelPendingInventoryUse();
@@ -9826,6 +9882,9 @@ function destroyAllPlanesWithNukeScoring(){
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 
 function advanceTurn(){
+  cancelPendingInventoryUse();
+  cancelActiveInventoryPickup();
+
   const previousTurnColor = turnColors[turnIndex];
   expireInvisibilityAfterEnemyTurnEnded(previousTurnColor);
   points.forEach((plane) => {
