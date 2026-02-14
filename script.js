@@ -951,13 +951,21 @@ const playerInventoryEffects = {
     invisibilityQueued: false,
     invisibilityWaitingEnemyTurn: false,
     invisibilityActive: false,
+    invisibilityFeedbackActive: false,
+    invisibilityFeedbackStartAtMs: 0,
+    invisibilityFeedbackStepDurationMs: 160,
   },
   green: {
     invisibilityQueued: false,
     invisibilityWaitingEnemyTurn: false,
     invisibilityActive: false,
+    invisibilityFeedbackActive: false,
+    invisibilityFeedbackStartAtMs: 0,
+    invisibilityFeedbackStepDurationMs: 160,
   },
 };
+
+const INVISIBILITY_FEEDBACK_ALPHA_PHASES = Object.freeze([0.5, 0.9, 0.5, 0.9]);
 
 function getOpponentColor(color){
   return color === "blue" ? "green" : (color === "green" ? "blue" : null);
@@ -974,6 +982,37 @@ function clearPlayerInvisibilityEffectState(color){
   state.invisibilityQueued = false;
   state.invisibilityWaitingEnemyTurn = false;
   state.invisibilityActive = false;
+  state.invisibilityFeedbackActive = false;
+  state.invisibilityFeedbackStartAtMs = 0;
+}
+
+function startPlayerInvisibilityFeedback(color){
+  const state = getPlayerInventoryEffectState(color);
+  if(!state) return;
+  state.invisibilityFeedbackActive = true;
+  state.invisibilityFeedbackStartAtMs = performance.now();
+}
+
+function getPlayerInvisibilityFeedbackAlpha(color){
+  const state = getPlayerInventoryEffectState(color);
+  if(!state || state.invisibilityFeedbackActive !== true) return 1;
+
+  const phaseCount = INVISIBILITY_FEEDBACK_ALPHA_PHASES.length;
+  const stepDurationMs = Math.max(1, state.invisibilityFeedbackStepDurationMs || 0);
+  const elapsedMs = performance.now() - state.invisibilityFeedbackStartAtMs;
+  const totalDurationMs = phaseCount * stepDurationMs;
+
+  if(elapsedMs >= totalDurationMs){
+    state.invisibilityFeedbackActive = false;
+    state.invisibilityFeedbackStartAtMs = 0;
+    return 1;
+  }
+
+  const phaseIndex = Math.min(phaseCount - 1, Math.floor(elapsedMs / stepDurationMs));
+  const phaseProgress = (elapsedMs - phaseIndex * stepDurationMs) / stepDurationMs;
+  const fromAlpha = phaseIndex === 0 ? 1 : INVISIBILITY_FEEDBACK_ALPHA_PHASES[phaseIndex - 1];
+  const toAlpha = INVISIBILITY_FEEDBACK_ALPHA_PHASES[phaseIndex];
+  return fromAlpha + (toAlpha - fromAlpha) * phaseProgress;
 }
 
 function isPlayerInvisibilityActive(color){
@@ -995,6 +1034,8 @@ function activateQueuedInvisibilityForEnemyTurn(nextTurnColor){
     state.invisibilityActive = true;
     state.invisibilityQueued = false;
     state.invisibilityWaitingEnemyTurn = false;
+    state.invisibilityFeedbackActive = false;
+    state.invisibilityFeedbackStartAtMs = 0;
   }
 }
 
@@ -1497,6 +1538,7 @@ function queueInvisibilityEffectForPlayer(color){
   state.invisibilityQueued = true;
   state.invisibilityWaitingEnemyTurn = true;
   state.invisibilityActive = false;
+  startPlayerInvisibilityFeedback(color);
   return true;
 }
 
@@ -10560,6 +10602,9 @@ function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0) {
 function drawThinPlane(ctx2d, plane, glow = 0) {
   const { x: cx, y: cy, color, angle } = plane;
   const isGhostState = plane.burning || (!plane.isAlive && !plane.nukeEliminated);
+  const invisibilityFeedbackAlpha = (!isGhostState && plane.isAlive)
+    ? getPlayerInvisibilityFeedbackAlpha(color)
+    : 1;
   const halfPlaneWidth = PLANE_DRAW_W / 2;
   const halfPlaneHeight = PLANE_DRAW_H / 2;
   const flightState = flyingPoints.find(fp => fp.plane === plane) || null;
@@ -10627,6 +10672,9 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   const shouldApplyNukeFade = nukeFadeFx.active && (plane.isAlive || plane.nukeEliminated);
   const previousFilter = ctx2d.filter;
   const baseGhostAlpha = 0.3;
+  if(invisibilityFeedbackAlpha < 1){
+    ctx2d.globalAlpha *= invisibilityFeedbackAlpha;
+  }
   if (color === "blue") {
     if (showEngine) {
       const flicker = 1 + 0.05 * Math.sin(globalFrame * 0.1);
