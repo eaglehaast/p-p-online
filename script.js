@@ -5498,55 +5498,20 @@ const baseSprites = {
 };
 
 const CARGO_SPRITE_PATH = "ui_gamescreen/gs_cargo_box.png";
-// Light GIF is the base version because it plays back more consistently across devices.
-const CARGO_ANIMATION_GIF_PATH = "ui_gamescreen/gs_cargo_animation_light.gif";
+const CARGO_ANIMATION_FRAME_PATHS = Array.from({ length: 20 }, (_value, index) => {
+  const frameNumber = String(index + 1).padStart(2, "0");
+  return `ui_gamescreen/gs_cargo_animations/gs_cargoanimation_${frameNumber}.png`;
+});
 const CARGO_ANIM_MS_FALLBACK = 1500;
 const CARGO_ANIM_LOOP_GUARD_MS = 120;
 const CARGO_FADE_IN_MS_DEFAULT = 0;
 const CARGO_DIMMING_DEFAULT = 0;
 const { img: cargoSprite } = loadImageAsset(CARGO_SPRITE_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
-let cargoAnimationGifPath = CARGO_ANIMATION_GIF_PATH;
-let cargoAnimationGif = loadImageAsset(cargoAnimationGifPath, GAME_PRELOAD_LABEL, { decoding: 'async' }).img;
+const cargoAnimationFrames = CARGO_ANIMATION_FRAME_PATHS.map((path) => loadImageAsset(path, GAME_PRELOAD_LABEL, { decoding: 'async' }).img);
 let cargoAnimDurationMs = CARGO_ANIM_MS_FALLBACK;
 let cargoAnimDurationOverrideMs = null;
 let cargoFadeInMs = CARGO_FADE_IN_MS_DEFAULT;
-let cargoGifDimming = CARGO_DIMMING_DEFAULT;
-
-async function loadCargoAnimDurationMs(gifPath = cargoAnimationGifPath){
-  if(typeof window === "undefined" || typeof fetch !== "function" || typeof ImageDecoder !== "function"){
-    return CARGO_ANIM_MS_FALLBACK;
-  }
-  if(typeof gifPath !== "string" || gifPath.trim().length === 0){
-    return CARGO_ANIM_MS_FALLBACK;
-  }
-  const safeGifPath = gifPath.trim();
-  try {
-    const response = await fetch(safeGifPath, { cache: "force-cache" });
-    if(!response.ok){
-      return CARGO_ANIM_MS_FALLBACK;
-    }
-    const data = await response.arrayBuffer();
-    const decoder = new ImageDecoder({ data, type: "image/gif" });
-    await decoder.tracks.ready;
-    const frameCount = decoder.tracks.selectedTrack?.frameCount;
-    if(!Number.isFinite(frameCount) || frameCount <= 0){
-      decoder.close();
-      return CARGO_ANIM_MS_FALLBACK;
-    }
-
-    let totalDurationMs = 0;
-    for(let frameIndex = 0; frameIndex < frameCount; frameIndex++){
-      const { image } = await decoder.decode({ frameIndex });
-      const frameDurationMs = Number.isFinite(image.duration) ? image.duration / 1000 : 0;
-      totalDurationMs += frameDurationMs;
-      image.close();
-    }
-    decoder.close();
-    return totalDurationMs > 0 ? totalDurationMs : CARGO_ANIM_MS_FALLBACK;
-  } catch (_error) {
-    return CARGO_ANIM_MS_FALLBACK;
-  }
-}
+let cargoAnimDimming = CARGO_DIMMING_DEFAULT;
 
 function resolveCargoAnimLifetimeMs(){
   if(Number.isFinite(cargoAnimDurationOverrideMs)){
@@ -5561,29 +5526,6 @@ function resolveCargoAnimLifetimeMs(){
 function clampCargoDimming(value){
   if(!Number.isFinite(value)) return CARGO_DIMMING_DEFAULT;
   return Math.max(0, Math.min(1, value));
-}
-
-function applyCargoGifPath(nextPath){
-  if(typeof nextPath !== "string") return false;
-  const safePath = nextPath.trim();
-  if(!safePath) return false;
-  cargoAnimationGifPath = safePath;
-  cargoAnimationGif = loadImageAsset(cargoAnimationGifPath, GAME_PRELOAD_LABEL, { decoding: 'async' }).img;
-  loadCargoAnimDurationMs(cargoAnimationGifPath).then(durationMs => {
-    if(cargoAnimationGifPath !== safePath) return;
-    cargoAnimDurationMs = durationMs;
-  });
-
-  for(const cargo of cargoState){
-    if(cargo.state === "animating"){
-      cargo.gifSrc = cargoAnimationGifPath;
-      cargo.animDurationMs = resolveCargoAnimLifetimeMs();
-      if(cargo.domEntry?.img){
-        cargo.domEntry.img.src = cargo.gifSrc;
-      }
-    }
-  }
-  return true;
 }
 
 function setCargoAnimLifetimeOverrideMs(ms){
@@ -5606,12 +5548,12 @@ function ensureCargoDebugApi(){
   window.CARGO_DEBUG = {
     getConfig(){
       return {
-        gifPath: cargoAnimationGifPath,
+        frameCount: cargoAnimationFrames.length,
         detectedLifetimeMs: cargoAnimDurationMs,
         lifetimeOverrideMs: cargoAnimDurationOverrideMs,
         activeLifetimeMs: resolveCargoAnimLifetimeMs(),
         fadeInMs: cargoFadeInMs,
-        dimming: cargoGifDimming,
+        dimming: cargoAnimDimming,
       };
     },
     setFadeIn(ms = 0){
@@ -5621,7 +5563,7 @@ function ensureCargoDebugApi(){
     },
     setDimming(value = 0){
       if(!Number.isFinite(value)) return false;
-      cargoGifDimming = clampCargoDimming(value);
+      cargoAnimDimming = clampCargoDimming(value);
       return true;
     },
     setLifetime(ms){
@@ -5630,15 +5572,10 @@ function ensureCargoDebugApi(){
     clearLifetimeOverride(){
       return setCargoAnimLifetimeOverrideMs(null);
     },
-    async setGif(path){
-      if(!applyCargoGifPath(path)) return false;
-      return true;
-    },
     reset(){
       cargoFadeInMs = CARGO_FADE_IN_MS_DEFAULT;
-      cargoGifDimming = CARGO_DIMMING_DEFAULT;
+      cargoAnimDimming = CARGO_DIMMING_DEFAULT;
       setCargoAnimLifetimeOverrideMs(null);
-      applyCargoGifPath(CARGO_ANIMATION_GIF_PATH);
       return true;
     }
   };
@@ -5715,9 +5652,6 @@ function ensureMineDebugApi(){
 }
 
 ensureCargoDebugApi();
-loadCargoAnimDurationMs(cargoAnimationGifPath).then(durationMs => {
-  cargoAnimDurationMs = durationMs;
-});
 
 function isSpriteReady(img) {
   return Boolean(
@@ -6147,8 +6081,8 @@ const CARGO_PICKUP_RADIUS_MULTIPLIER = 2.2;
 const CARGO_RADIUS         = POINT_RADIUS * CARGO_PICKUP_RADIUS_MULTIPLIER;    // увеличенный радиус ящика
 const CARGO_SPAWN_SAFE_RADIUS = CARGO_RADIUS + POINT_RADIUS;
 const CARGO_FALLBACK_SIZE_PX = 24;
-const CARGO_GIF_OFFSET_X   = -34;
-const CARGO_GIF_OFFSET_Y   = -137;
+const CARGO_ANIM_OFFSET_X   = -34;
+const CARGO_ANIM_OFFSET_Y   = -137;
 const FLAG_INTERACTION_RADIUS = 25;  // px
 const BASE_INTERACTION_RADIUS = 40;  // px
 const SLIDE_THRESHOLD      = 0.1;
@@ -6404,14 +6338,38 @@ function getCargoOverlayScale(metrics) {
   };
 }
 
+function getCargoAnimationFrameByIndex(index = 0) {
+  if (!Array.isArray(cargoAnimationFrames) || cargoAnimationFrames.length === 0) {
+    return null;
+  }
+  const safeIndex = Math.max(0, Math.min(cargoAnimationFrames.length - 1, Math.floor(index)));
+  return cargoAnimationFrames[safeIndex] || cargoAnimationFrames[0] || null;
+}
+
+function getCargoAnimationFrameByElapsedMs(elapsedMs = 0) {
+  const frameCount = cargoAnimationFrames.length;
+  if (frameCount <= 0) {
+    return null;
+  }
+  const safeElapsedMs = Math.max(0, elapsedMs);
+  const durationMs = Math.max(1, CARGO_ANIM_MS_FALLBACK);
+  const progress = Math.max(0, Math.min(1, safeElapsedMs / durationMs));
+  const frameIndex = Math.min(frameCount - 1, Math.floor(progress * frameCount));
+  return getCargoAnimationFrameByIndex(frameIndex);
+}
+
+function getCargoAnimationBaseFrame() {
+  return getCargoAnimationFrameByIndex(0);
+}
+
 function createCargoAnimationDomEntry(cargo, metrics) {
   const host = metrics?.host || ensureCargoHost();
   if (!(host instanceof HTMLElement)) {
     return null;
   }
 
-  const gifSrc = cargo?.gifSrc || cargoAnimationGif?.src || cargoAnimationGifPath || CARGO_ANIMATION_GIF_PATH;
-  if (!gifSrc) {
+  const baseFrame = getCargoAnimationBaseFrame();
+  if (!baseFrame) {
     return null;
   }
 
@@ -6425,7 +6383,7 @@ function createCargoAnimationDomEntry(cargo, metrics) {
   const image = new Image();
   image.decoding = 'async';
   image.className = 'fx-cargo-img';
-  image.src = gifSrc;
+  image.src = baseFrame.src;
 
   container.appendChild(image);
   host.appendChild(container);
@@ -6447,14 +6405,21 @@ function syncCargoAnimationDomEntry(cargo, metrics) {
     return;
   }
 
+  const elapsedMs = Math.max(0, performance.now() - (cargo.animStartedAt || 0));
+  const activeFrame = getCargoAnimationFrameByElapsedMs(elapsedMs) || getCargoAnimationBaseFrame();
+
+  if (activeFrame?.src && cargo.domEntry.img.src !== activeFrame.src) {
+    cargo.domEntry.img.src = activeFrame.src;
+  }
+
   const offsetPoint = worldToOverlayLocal(
-    cargo.x + CARGO_GIF_OFFSET_X,
-    cargo.y + CARGO_GIF_OFFSET_Y,
+    cargo.x + CARGO_ANIM_OFFSET_X,
+    cargo.y + CARGO_ANIM_OFFSET_Y,
     metrics
   );
   const { scaleX, scaleY } = getCargoOverlayScale(metrics);
-  const naturalWidth = cargoAnimationGif?.naturalWidth || cargoAnimationGif?.width || 0;
-  const naturalHeight = cargoAnimationGif?.naturalHeight || cargoAnimationGif?.height || 0;
+  const naturalWidth = activeFrame?.naturalWidth || activeFrame?.width || 0;
+  const naturalHeight = activeFrame?.naturalHeight || activeFrame?.height || 0;
   const width = Math.max(1, Math.round(Math.max(1, naturalWidth) * scaleX));
   const height = Math.max(1, Math.round(Math.max(1, naturalHeight) * scaleY));
 
@@ -6465,11 +6430,10 @@ function syncCargoAnimationDomEntry(cargo, metrics) {
     height: `${height}px`
   });
 
-  const elapsedMs = Math.max(0, performance.now() - (cargo.animStartedAt || 0));
   const fadeInProgress = cargoFadeInMs > 0
     ? Math.max(0, Math.min(1, elapsedMs / cargoFadeInMs))
     : 1;
-  const brightness = Math.max(0, 1 - clampCargoDimming(cargoGifDimming));
+  const brightness = Math.max(0, 1 - clampCargoDimming(cargoAnimDimming));
 
   Object.assign(cargo.domEntry.img.style, {
     width: '100%',
@@ -6537,7 +6501,6 @@ function spawnCargoForTurn(){
     state: "animating",
     animStartedAt,
     animDurationMs: resolveCargoAnimLifetimeMs(),
-    gifSrc: cargoAnimationGifPath,
     pickedAt: null
   });
 }
