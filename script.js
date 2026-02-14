@@ -10826,7 +10826,7 @@ function drawPlanesAndTrajectories(){
 
   const renderPlane = (p, targetCtx, { allowRangeLabel = false } = {}) => {
     if(!p.isAlive && !p.burning && !isNukeEliminatedPlaneRenderable(p)) return;
-    if(p.isAlive && !p.burning && shouldHidePlaneByInvisibility(p.color)) return;
+    if(shouldHidePlaneByInvisibility(p.color)) return;
 
     if (debugDrawOrder) {
       const stateLabel = p.isAlive ? (p.burning ? 'burning' : 'alive') : 'crashed';
