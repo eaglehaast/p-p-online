@@ -1917,37 +1917,15 @@ function onBoardDrop(event){
           owner: activeInventoryDrag.color,
           x: targetBrick.cx,
           y: targetBrick.cy,
+          bottomY: targetBrick.cy + targetBrick.halfHeight,
           spriteId: targetBrick.id,
           spriteIndex: targetBrick.spriteIndex,
           spriteRef: targetBrick.spriteRef,
+          startedAtMs: performance.now(),
+          frameIndex: 0,
+          brickRemoved: false,
         };
         dynamiteState.push(dynamiteEntry);
-
-        setTimeout(() => {
-          const runtimeIndex = Array.isArray(dynamiteState)
-            ? dynamiteState.findIndex(entry => entry.id === dynamiteEntry.id)
-            : -1;
-          if(runtimeIndex < 0){
-            return;
-          }
-
-          const brickIndex = Array.isArray(currentMapSprites)
-            ? currentMapSprites.indexOf(dynamiteEntry.spriteRef)
-            : -1;
-
-          dynamiteState.splice(runtimeIndex, 1);
-
-          if(brickIndex < 0){
-            return;
-          }
-
-          currentMapSprites.splice(brickIndex, 1);
-          colliders = buildMapSpriteColliders({
-            name: currentMapName,
-            sprites: currentMapSprites,
-          });
-          rebuildCollisionSurfaces();
-        }, 1000);
 
         removeItemFromInventory(activeInventoryDrag.color, activeInventoryDrag.type);
         activeInventoryDrag.consumed = true;
@@ -2056,6 +2034,74 @@ function getDynamitePlacementFromDropPoint(clientX, clientY){
 }
 
 const DYNAMITE_DROP_SNAP_RADIUS = 30;
+
+function removeBrickSpriteForDynamite(entry){
+  if(!entry || entry.brickRemoved) return;
+  const brickIndex = Array.isArray(currentMapSprites)
+    ? currentMapSprites.indexOf(entry.spriteRef)
+    : -1;
+
+  entry.brickRemoved = true;
+
+  if(brickIndex < 0){
+    return;
+  }
+
+  currentMapSprites.splice(brickIndex, 1);
+  colliders = buildMapSpriteColliders({
+    name: currentMapName,
+    sprites: currentMapSprites,
+  });
+  rebuildCollisionSurfaces();
+}
+
+function getDynamiteExplosionFrameIndexByElapsed(elapsedMs){
+  let accumulatedMs = 0;
+  for(let i = 0; i < DYNAMITE_EXPLOSION_FRAME_DURATIONS_MS.length; i += 1){
+    accumulatedMs += DYNAMITE_EXPLOSION_FRAME_DURATIONS_MS[i];
+    if(elapsedMs < accumulatedMs){
+      return i;
+    }
+  }
+  return DYNAMITE_EXPLOSION_FRAME_DURATIONS_MS.length - 1;
+}
+
+function updateAndDrawDynamiteExplosions(ctx2d, now){
+  if(!Array.isArray(dynamiteState) || dynamiteState.length === 0){
+    return;
+  }
+
+  for(let i = dynamiteState.length - 1; i >= 0; i -= 1){
+    const entry = dynamiteState[i];
+    if(!entry){
+      dynamiteState.splice(i, 1);
+      continue;
+    }
+
+    entry.startedAtMs = Number.isFinite(entry.startedAtMs) ? entry.startedAtMs : now;
+    const elapsedMs = Math.max(0, now - entry.startedAtMs);
+    const frameIndex = getDynamiteExplosionFrameIndexByElapsed(elapsedMs);
+    entry.frameIndex = frameIndex;
+
+    if(frameIndex + 1 >= DYNAMITE_BRICK_REMOVAL_FRAME_INDEX){
+      removeBrickSpriteForDynamite(entry);
+    }
+
+    const frameImg = DYNAMITE_EXPLOSION_FRAMES[frameIndex] || null;
+    if(frameImg && isSpriteReady(frameImg)){
+      const frameW = frameImg.naturalWidth || 107;
+      const frameH = frameImg.naturalHeight || 147;
+      const drawX = entry.x - frameW / 2;
+      const drawY = entry.bottomY - frameH;
+      ctx2d.drawImage(frameImg, drawX, drawY, frameW, frameH);
+    }
+
+    if(elapsedMs >= DYNAMITE_EXPLOSION_TOTAL_DURATION_MS){
+      removeBrickSpriteForDynamite(entry);
+      dynamiteState.splice(i, 1);
+    }
+  }
+}
 
 function getMapSpriteGeometry(sprite, spriteIndex){
   if(!sprite) return null;
@@ -5463,6 +5509,42 @@ const { img: mineIconSprite } = loadImageAsset(
   "ui_gamescreen/gs_inventory/gs_inventory_mine.png",
   GAME_PRELOAD_LABEL
 );
+const DYNAMITE_EXPLOSION_FRAME_PATHS = Array.from({ length: 17 }, (_, index) => {
+  const frameNumber = String(index + 1).padStart(2, "0");
+  return `ui_gamescreen/gs_inventory/gs_dynamite_explosion/gs_dynamiteexplosion_${frameNumber}.png`;
+});
+const DYNAMITE_EXPLOSION_FRAMES = DYNAMITE_EXPLOSION_FRAME_PATHS.map((path) => loadImageAsset(path, GAME_PRELOAD_LABEL).img);
+
+function buildDynamiteFrameDurations(frameCount){
+  if(!Number.isFinite(frameCount) || frameCount <= 0){
+    return [];
+  }
+  const durations = [];
+  const fuseCount = Math.min(4, frameCount);
+  const explosionCount = Math.max(0, frameCount - fuseCount);
+  const growthCount = explosionCount > 0 ? Math.max(1, Math.round(explosionCount * 0.65)) : 0;
+  const decayCount = Math.max(0, explosionCount - growthCount);
+
+  for(let i = 0; i < fuseCount; i += 1){
+    durations.push(23);
+  }
+  for(let i = 0; i < growthCount; i += 1){
+    durations.push(37);
+  }
+  for(let i = 0; i < decayCount; i += 1){
+    durations.push(27);
+  }
+
+  return durations;
+}
+
+const DYNAMITE_EXPLOSION_FRAME_DURATIONS_MS = buildDynamiteFrameDurations(DYNAMITE_EXPLOSION_FRAMES.length);
+const DYNAMITE_EXPLOSION_TOTAL_DURATION_MS = DYNAMITE_EXPLOSION_FRAME_DURATIONS_MS.reduce((sum, value) => sum + value, 0);
+const DYNAMITE_BRICK_REMOVAL_FRAME_INDEX = Math.min(
+  DYNAMITE_EXPLOSION_FRAMES.length,
+  Math.max(6, Math.min(8, Math.min(4, DYNAMITE_EXPLOSION_FRAMES.length) + 3))
+);
+
 arrowSprite?.addEventListener("load", () => {
   console.log("[IMG] load", { label: "arrowSprite", url: arrowSprite.src });
 });
@@ -9478,6 +9560,7 @@ function drawInitialFrame(reason = "initial") {
     gsBoardCtx.fillRect(0, 0, WORLD.width, WORLD.height);
   }
   drawMapLayer(gsBoardCtx);
+  updateAndDrawDynamiteExplosions(gsBoardCtx, performance.now());
   if (DEBUG_LAYOUT || DEBUG_RENDER_INIT || DEBUG_START_POSITIONS) {
     drawDebugLayoutOverlay(gsBoardCtx);
   }
@@ -9512,6 +9595,7 @@ function gameDraw(){
   resetCanvasState(gsBoardCtx, gsBoardCanvas);
   drawFieldBackground(gsBoardCtx, WORLD.width, WORLD.height);
   drawMapLayer(gsBoardCtx);
+  updateAndDrawDynamiteExplosions(gsBoardCtx, now);
   updateCargoState(now);
   syncCargoAnimationDomEntries();
   drawCargo(gsBoardCtx);
