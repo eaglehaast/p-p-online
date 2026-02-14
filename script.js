@@ -949,11 +949,63 @@ const inventoryState = {
 const playerInventoryEffects = {
   blue: {
     invisibilityQueued: false,
+    invisibilityWaitingEnemyTurn: false,
+    invisibilityActive: false,
   },
   green: {
     invisibilityQueued: false,
+    invisibilityWaitingEnemyTurn: false,
+    invisibilityActive: false,
   },
 };
+
+function getOpponentColor(color){
+  return color === "blue" ? "green" : (color === "green" ? "blue" : null);
+}
+
+function getPlayerInventoryEffectState(color){
+  if(color !== "blue" && color !== "green") return null;
+  return playerInventoryEffects[color] ?? null;
+}
+
+function clearPlayerInvisibilityEffectState(color){
+  const state = getPlayerInventoryEffectState(color);
+  if(!state) return;
+  state.invisibilityQueued = false;
+  state.invisibilityWaitingEnemyTurn = false;
+  state.invisibilityActive = false;
+}
+
+function isPlayerInvisibilityActive(color){
+  const state = getPlayerInventoryEffectState(color);
+  return Boolean(state && state.invisibilityActive === true);
+}
+
+function shouldHidePlaneByInvisibility(planeColor){
+  if(!isPlayerInvisibilityActive(planeColor)) return false;
+  const activeTurnColor = turnColors?.[turnIndex] ?? null;
+  return activeTurnColor === getOpponentColor(planeColor);
+}
+
+function activateQueuedInvisibilityForEnemyTurn(nextTurnColor){
+  for(const color of ["blue", "green"]){
+    const state = getPlayerInventoryEffectState(color);
+    if(!state || state.invisibilityWaitingEnemyTurn !== true) continue;
+    if(nextTurnColor !== getOpponentColor(color)) continue;
+    state.invisibilityActive = true;
+    state.invisibilityQueued = false;
+    state.invisibilityWaitingEnemyTurn = false;
+  }
+}
+
+function expireInvisibilityAfterEnemyTurnEnded(previousTurnColor){
+  for(const color of ["blue", "green"]){
+    const state = getPlayerInventoryEffectState(color);
+    if(!state || state.invisibilityActive !== true) continue;
+    if(previousTurnColor !== getOpponentColor(color)) continue;
+    clearPlayerInvisibilityEffectState(color);
+  }
+}
 
 const inventoryHintState = {
   blue: {
@@ -1440,15 +1492,17 @@ function removeItemFromInventory(color, type){
 }
 
 function queueInvisibilityEffectForPlayer(color){
-  if(color !== "blue" && color !== "green") return false;
-  if(!playerInventoryEffects[color]) return false;
-  playerInventoryEffects[color].invisibilityQueued = true;
+  const state = getPlayerInventoryEffectState(color);
+  if(!state) return false;
+  state.invisibilityQueued = true;
+  state.invisibilityWaitingEnemyTurn = true;
+  state.invisibilityActive = false;
   return true;
 }
 
 function resetPlayerInventoryEffects(){
-  playerInventoryEffects.blue.invisibilityQueued = false;
-  playerInventoryEffects.green.invisibilityQueued = false;
+  clearPlayerInvisibilityEffectState("blue");
+  clearPlayerInvisibilityEffectState("green");
 }
 
 function getItemUsageConfig(type){
@@ -9510,11 +9564,15 @@ function destroyAllPlanesWithNukeScoring(){
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 
 function advanceTurn(){
+  const previousTurnColor = turnColors[turnIndex];
+  expireInvisibilityAfterEnemyTurnEnded(previousTurnColor);
   points.forEach((plane) => {
     if(!plane) return;
     clearPlaneActiveTurnBuffs(plane);
   });
   turnIndex = (turnIndex + 1) % turnColors.length;
+  const nextTurnColor = turnColors[turnIndex];
+  activateQueuedInvisibilityForEnemyTurn(nextTurnColor);
   turnAdvanceCount += 1;
   if(turnAdvanceCount >= 1){
     spawnCargoForTurn();
@@ -10768,6 +10826,7 @@ function drawPlanesAndTrajectories(){
 
   const renderPlane = (p, targetCtx, { allowRangeLabel = false } = {}) => {
     if(!p.isAlive && !p.burning && !isNukeEliminatedPlaneRenderable(p)) return;
+    if(p.isAlive && !p.burning && shouldHidePlaneByInvisibility(p.color)) return;
 
     if (debugDrawOrder) {
       const stateLabel = p.isAlive ? (p.burning ? 'burning' : 'alive') : 'crashed';
