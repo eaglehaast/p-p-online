@@ -10681,12 +10681,16 @@ function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0) {
   ctx2d.restore();
 }
 
-function drawThinPlane(ctx2d, plane, glow = 0) {
+function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
   const { x: cx, y: cy, color, angle } = plane;
   const isGhostState = plane.burning || (!plane.isAlive && !plane.nukeEliminated);
   const invisibilityFeedbackAlpha = (!isGhostState && plane.isAlive)
     ? getPlayerInvisibilityFeedbackAlpha(color)
     : 1;
+  const resolvedInvisibilityAlpha = Number.isFinite(invisibilityAlpha)
+    ? invisibilityAlpha
+    : getPlaneInvisibilityAlpha(plane);
+  const isInvisibilityFullyHidden = resolvedInvisibilityAlpha <= 0.01;
   const halfPlaneWidth = PLANE_DRAW_W / 2;
   const halfPlaneHeight = PLANE_DRAW_H / 2;
   const flightState = flyingPoints.find(fp => fp.plane === plane) || null;
@@ -10694,7 +10698,7 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
   const smokeAnchor = getPlaneAnchorOffset("smoke");
   const jetAnchor = getPlaneAnchorOffset("jet");
   const idleSmokeDistance = Math.max(0, smokeAnchor.y - PLANE_VFX_IDLE_SMOKE_DELTA_Y);
-  const showEngine = !isGhostState && !plane.nukeEliminated;
+  const showEngine = !isGhostState && !plane.nukeEliminated && !isInvisibilityFullyHidden;
   const hasWingsBuff = planeHasActiveTurnBuff(plane, INVENTORY_ITEM_TYPES.WINGS);
   const broadwingOverlayWidth = PLANE_DRAW_W * 1.38;
   const broadwingOverlayHeight = PLANE_DRAW_H;
@@ -10719,7 +10723,9 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
 
   const drawSmokeWithAnchor = (scale, offsetY, tailTrim = 0) => {
     if (scale <= 0 || offsetY < 0) return;
-    drawDieselSmoke(ctx2d, scale, offsetY, tailTrim);
+    if (!isInvisibilityFullyHidden) {
+      drawDieselSmoke(ctx2d, scale, offsetY, tailTrim);
+    }
   };
 
   if (color === "green" && showEngine) {
@@ -10762,12 +10768,16 @@ function drawThinPlane(ctx2d, plane, glow = 0) {
       const flicker = 1 + 0.05 * Math.sin(globalFrame * 0.1);
       const idleFlicker = PLANE_VFX_JET_IDLE_FLICKER_BASE + PLANE_VFX_JET_IDLE_FLICKER_AMPLITUDE * Math.sin(globalFrame * 0.12);
       const jetScale = isIdle ? idleFlicker : flicker;
-      drawJetFlame(ctx2d, jetScale, jetAnchor.y);
+      if (!isInvisibilityFullyHidden) {
+        drawJetFlame(ctx2d, jetScale, jetAnchor.y);
+      }
 
       if (flightState) {
         const progress = (FIELD_FLIGHT_DURATION_SEC - flightState.timeLeft) / FIELD_FLIGHT_DURATION_SEC;
         const scale = progress < 0.75 ? 4 * progress : 12 * (1 - progress);
-        drawBlueJetFlame(ctx2d, scale, jetAnchor.y);
+        if (!isInvisibilityFullyHidden) {
+          drawBlueJetFlame(ctx2d, scale, jetAnchor.y);
+        }
       }
     }
     const baseImgReady  = isSpriteReady(bluePlaneImg);
@@ -11003,7 +11013,7 @@ function drawPlanesAndTrajectories(){
       p.glow += (glowTarget - p.glow) * 0.1;
     }
     const renderGlow = (!p.isAlive || p.burning) ? 0 : p.glow;
-    drawThinPlane(targetCtx, p, renderGlow);
+    drawThinPlane(targetCtx, p, renderGlow, invisibilityAlpha);
 
     if(allowRangeLabel && handleCircle.active && handleCircle.pointRef === p){
       let vdx = handleCircle.shakyX - p.x;
