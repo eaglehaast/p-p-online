@@ -1505,6 +1505,35 @@ function getPlaneHitbox(plane){
   };
 }
 
+function getPlaneInteractionZone(plane){
+  const hitbox = getPlaneHitbox(plane);
+  const baseHalfWidth = 36 / 2;
+  const baseHalfHeight = 36 / 2;
+  const halfWidth = Math.max(0, hitbox.width / 2 - baseHalfWidth);
+  const halfHeight = Math.max(0, hitbox.height / 2 - baseHalfHeight);
+
+  return {
+    x: plane.x,
+    y: plane.y,
+    left: plane.x - halfWidth,
+    right: plane.x + halfWidth,
+    top: plane.y - halfHeight,
+    bottom: plane.y + halfHeight,
+  };
+}
+
+function doesPlaneZoneIntersectTargetZone(plane, target){
+  if(!plane || !target?.anchor || !Number.isFinite(target.radius)) return false;
+
+  const zone = getPlaneInteractionZone(plane);
+  const closestX = Math.max(zone.left, Math.min(target.anchor.x, zone.right));
+  const closestY = Math.max(zone.top, Math.min(target.anchor.y, zone.bottom));
+  const dx = target.anchor.x - closestX;
+  const dy = target.anchor.y - closestY;
+
+  return dx * dx + dy * dy < target.radius * target.radius;
+}
+
 function planeHitboxesIntersect(a, b){
   return a.left < b.right
     && a.right > b.left
@@ -11260,15 +11289,13 @@ function handleFlagInteractions(plane){
       if(flag.carrier) continue;
       const target = getFlagInteractionTarget(flag);
       if(!target) continue;
-      const dist = Math.hypot(plane.x - target.anchor.x, plane.y - target.anchor.y);
-      if(dist < target.radius && !plane.carriedFlagId){
+      if(doesPlaneZoneIntersectTargetZone(plane, target) && !plane.carriedFlagId){
         assignFlagToPlane(flag, plane);
         break;
       }
     }
   } else {
-    const distOwn = Math.hypot(plane.x - ownBase.anchor.x, plane.y - ownBase.anchor.y);
-    if(distOwn < ownBase.radius){
+    if(doesPlaneZoneIntersectTargetZone(plane, ownBase)){
       if(carriedFlag.color !== plane.color){
         addScore(plane.color, 5);
       }
