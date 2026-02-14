@@ -777,7 +777,7 @@ const INVENTORY_ITEM_TYPES = {
   FUEL: "fuel",
   WINGS: "wings",
   DYNAMITE: "dynamite",
-  INVISIBILITY: "invisibility",
+  INVISIBILITY: "invisible",
 };
 
 const NUCLEAR_STRIKE_ACTION_TYPES = Object.freeze({
@@ -816,9 +816,9 @@ const itemUsageConfig = Object.freeze({
     requiresDragAndDrop: true,
   },
   [INVENTORY_ITEM_TYPES.INVISIBILITY]: {
-    target: ITEM_USAGE_TARGETS.SELF_PLANE,
+    target: ITEM_USAGE_TARGETS.BOARD,
     hintText: "",
-    requiresDragAndDrop: false,
+    requiresDragAndDrop: true,
   },
 });
 
@@ -909,7 +909,7 @@ const INVENTORY_UI_CONFIG = Object.freeze({
       iconPath: "ui_gamescreen/gs_inventory/gs_inventory_dynamite.png",
     }),
     [INVENTORY_ITEM_TYPES.INVISIBILITY]: Object.freeze({
-      implemented: false,
+      implemented: true,
       frame: Object.freeze({ x: 285, y: 0, w: 55, h: 55 }),
       icon: Object.freeze({ x: 298, y: 12, w: 32, h: 31 }),
       countPocket: Object.freeze({ x: 329, y: 3, w: 10, h: 9 }),
@@ -944,6 +944,15 @@ const INVENTORY_EMPTY_ICON =
 const inventoryState = {
   blue: [],
   green: [],
+};
+
+const playerInventoryEffects = {
+  blue: {
+    invisibilityQueued: false,
+  },
+  green: {
+    invisibilityQueued: false,
+  },
 };
 
 const inventoryHintState = {
@@ -1428,6 +1437,18 @@ function removeItemFromInventory(color, type){
   if(index < 0) return;
   items.splice(index, 1);
   syncInventoryUI(color);
+}
+
+function queueInvisibilityEffectForPlayer(color){
+  if(color !== "blue" && color !== "green") return false;
+  if(!playerInventoryEffects[color]) return false;
+  playerInventoryEffects[color].invisibilityQueued = true;
+  return true;
+}
+
+function resetPlayerInventoryEffects(){
+  playerInventoryEffects.blue.invisibilityQueued = false;
+  playerInventoryEffects.green.invisibilityQueued = false;
 }
 
 function getItemUsageConfig(type){
@@ -1934,9 +1955,17 @@ function onBoardDrop(event){
       return;
     }
 
-    removeItemFromInventory(activeInventoryDrag.color, activeInventoryDrag.type);
-    activeInventoryDrag.consumed = true;
-    cancelActiveInventoryDrag("dropped");
+    if(activeInventoryDrag.type === INVENTORY_ITEM_TYPES.INVISIBILITY){
+      const effectQueued = queueInvisibilityEffectForPlayer(activeInventoryDrag.color);
+      if(effectQueued){
+        removeItemFromInventory(activeInventoryDrag.color, activeInventoryDrag.type);
+        activeInventoryDrag.consumed = true;
+      }
+      cancelActiveInventoryDrag(effectQueued ? "invisible dropped" : "invisible drop rejected");
+      return;
+    }
+
+    cancelActiveInventoryDrag("drop rejected: unsupported board item");
     return;
   }
 
@@ -2618,6 +2647,7 @@ function resetInventoryState(){
   inventoryState.blue.length = 0;
   inventoryState.green.length = 0;
   pendingInventoryUse = null;
+  resetPlayerInventoryEffects();
   syncInventoryUI("blue");
   syncInventoryUI("green");
 }
