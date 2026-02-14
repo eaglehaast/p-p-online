@@ -813,7 +813,7 @@ const itemUsageConfig = Object.freeze({
   [INVENTORY_ITEM_TYPES.WINGS]: {
     target: ITEM_USAGE_TARGETS.SELF_PLANE,
     hintText: "",
-    requiresDragAndDrop: false,
+    requiresDragAndDrop: true,
   },
   [INVENTORY_ITEM_TYPES.INVISIBILITY]: {
     target: ITEM_USAGE_TARGETS.SELF_PLANE,
