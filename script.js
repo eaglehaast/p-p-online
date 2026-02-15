@@ -1156,7 +1156,19 @@ let nuclearStrikeHideTimeoutId = null;
 let activeInventoryDrag = null;
 let activeInventoryPickup = null;
 let inventoryPickupHandledPointerId = null;
+let inventoryPickupActivationPointerId = null;
+let inventoryPickupActivationTimeStamp = null;
+let inventoryPickupUiSyncRafId = null;
 let pendingInventoryUse = null;
+
+function scheduleInventoryUiSync(){
+  if(inventoryPickupUiSyncRafId !== null) return;
+  inventoryPickupUiSyncRafId = requestAnimationFrame(() => {
+    inventoryPickupUiSyncRafId = null;
+    syncInventoryUI("blue");
+    syncInventoryUI("green");
+  });
+}
 
 function setPendingInventoryUse(nextState){
   if(nextState && (!nextState.color || !nextState.type)) return;
@@ -2122,6 +2134,8 @@ function isSameInventoryItemSelection(selection, color, type){
 
 function onInventoryItemPickupToggle(event){
   const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
+  inventoryPickupActivationPointerId = pointerId;
+  inventoryPickupActivationTimeStamp = Number.isFinite(event.timeStamp) ? event.timeStamp : null;
   if(pointerId !== null){
     if(inventoryPickupHandledPointerId === pointerId){
       return;
@@ -2159,8 +2173,7 @@ function onInventoryItemPickupToggle(event){
     : INVENTORY_ITEM_SIZE_PX;
   const { clientX, clientY } = getPointerClientCoords(event);
   activateInventoryDragFallback(target, clientX, clientY, type, { width, height });
-  syncInventoryUI("blue");
-  syncInventoryUI("green");
+  scheduleInventoryUiSync();
 }
 
 function onInventoryPickupPointerFinish(event){
@@ -8176,6 +8189,19 @@ function onCanvasPointerUp(e){
 
 function onGlobalPointerDownInventoryCancel(event){
   if(!activeInventoryPickup) return;
+
+  const eventPointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
+  const eventTimeStamp = Number.isFinite(event.timeStamp) ? event.timeStamp : null;
+  const isSameActivationPointerDown = eventPointerId !== null
+    && inventoryPickupActivationPointerId !== null
+    && eventPointerId === inventoryPickupActivationPointerId
+    && eventTimeStamp !== null
+    && inventoryPickupActivationTimeStamp !== null
+    && Math.abs(eventTimeStamp - inventoryPickupActivationTimeStamp) < 1;
+
+  if(isSameActivationPointerDown){
+    return;
+  }
 
   const target = event.target;
   const isInsideBoard = target instanceof Node && gsBoardCanvas instanceof HTMLElement
