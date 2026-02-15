@@ -3204,6 +3204,7 @@ function syncInventoryUI(color){
     const img = document.createElement("img");
     const usageConfig = getItemUsageConfig(slot.type);
     const tooltipLines = INVENTORY_TOOLTIP_TEXT_BY_TYPE[slot.type] ?? null;
+    const hasSlotTooltip = Array.isArray(tooltipLines) && tooltipLines.length === 2;
     const iconLayout = normalizeIconLayout(slot.layout);
     const countLayout = normalizeCountPocketLayout(slot.layout);
     const frameLayout = slot.layout.frame;
@@ -3247,15 +3248,16 @@ function syncInventoryUI(color){
       img.classList.add("inventory-item--ghost");
     }
 
+    if(hasSlotTooltip){
+      img.addEventListener("pointerenter", () => {
+        setInventoryHoverItem(color, slot.type);
+      });
+      img.addEventListener("pointerleave", () => {
+        setInventoryHoverItem(color, null);
+      });
+    }
+
     if (isInteractiveItem) {
-      if(Array.isArray(tooltipLines) && tooltipLines.length === 2){
-        img.addEventListener("pointerenter", () => {
-          setInventoryHoverItem(color, slot.type);
-        });
-        img.addEventListener("pointerleave", () => {
-          setInventoryHoverItem(color, null);
-        });
-      }
       img.dataset.itemType = slot.type;
       img.dataset.itemColor = color;
       img.classList.add("inventory-item--draggable");
@@ -3279,7 +3281,7 @@ function syncInventoryUI(color){
         }
       }
     }
-    if(hasItem && Array.isArray(tooltipLines) && tooltipLines.length === 2){
+    if(hasSlotTooltip){
       hasVisibleTooltipTarget = true;
     }
     if(
