@@ -1,6 +1,17 @@
 :root {
   --design-w: 460;
   --design-h: 800;
+
+  /* Inventory tooltip theme tokens */
+  --inventory-tooltip-background: rgba(0, 0, 0, 1);
+  --inventory-tooltip-color: #fff;
+  --inventory-tooltip-font-size: 9px;
+  --inventory-tooltip-line-height: 1.35;
+  --inventory-tooltip-padding: 5px 7px;
+  --inventory-tooltip-max-width: 190px;
+  --inventory-tooltip-border-radius: 2px;
+  --inventory-tooltip-border: none;
+  --inventory-tooltip-box-shadow: none;
 }
 
 body, button {
@@ -338,17 +349,19 @@ body, button {
     left: 0;
     top: 0;
     display: none;
-    max-width: 190px;
-    padding: 5px 7px;
-    background: #000;
-    color: #fff;
+    max-width: var(--inventory-tooltip-max-width, 190px);
+    padding: var(--inventory-tooltip-padding, 5px 7px);
+    background: var(--inventory-tooltip-background, rgba(0, 0, 0, 1));
+    color: var(--inventory-tooltip-color, #fff);
     font-family: 'Silkscreen', 'Fantasque Sans Mono', monospace;
-    font-size: 9px;
-    line-height: 1.35;
+    font-size: var(--inventory-tooltip-font-size, 9px);
+    line-height: var(--inventory-tooltip-line-height, 1.35);
     font-weight: 700;
     white-space: pre-line;
     text-align: center;
-    border-radius: 2px;
+    border-radius: var(--inventory-tooltip-border-radius, 2px);
+    border: var(--inventory-tooltip-border, none);
+    box-shadow: var(--inventory-tooltip-box-shadow, none);
     pointer-events: none;
     z-index: 120;
     transform: translate(-50%, -100%);
