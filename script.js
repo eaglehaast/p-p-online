@@ -8078,7 +8078,7 @@ function resetGame(options = {}){
 
   if (shouldShowMenu) {
     menuScreenLocked = false;
-    setBackgroundImage('ui_gamescreen/backgroundpaperwithflames.png');
+    setBackgroundImage('ui_gamescreen/paperwithred.png');
     hideGameBackgroundForMenu();
   } else {
     restoreGameBackgroundAfterMenu();
