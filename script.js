@@ -1732,6 +1732,12 @@ function getInventoryInteractionActiveItem(){
   return inventoryInteractionState.activeItem;
 }
 
+function clearInventoryHoverState(_color){
+  // Hover-driven inventory tooltips were intentionally removed.
+  // Keep this function as a compatibility no-op because sync/reset flows
+  // still call it while rebuilding inventory UI.
+}
+
 function cancelActiveInventoryPickup(){
   setInventoryInteractionState("idle", null);
   clearInventoryInteractionPointer();
