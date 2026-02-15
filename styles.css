@@ -365,28 +365,27 @@ body, button {
     z-index: 120;
     opacity: 0;
     visibility: hidden;
-    --inventory-tooltip-offset-x: -50%;
-    --inventory-tooltip-offset-y: -100%;
-    transform: translate(var(--inventory-tooltip-offset-x), calc(var(--inventory-tooltip-offset-y) + 2px));
+    transform: translate(-50%, -100%);
     transition:
       opacity 90ms ease-out,
-      transform 90ms ease-out,
       visibility 0s linear 90ms;
-    will-change: opacity, transform;
+    will-change: opacity;
   }
 
   .inventory-tooltip.is-visible {
     opacity: 1;
     visibility: visible;
-    transform: translate(var(--inventory-tooltip-offset-x), var(--inventory-tooltip-offset-y));
     transition:
       opacity 90ms ease-out,
-      transform 90ms ease-out,
       visibility 0s;
   }
 
   .inventory-tooltip.inventory-tooltip--below {
-    --inventory-tooltip-offset-y: 0;
+    transform: translate(-50%, 0);
+  }
+
+  .inventory-tooltip.inventory-tooltip--below.is-visible {
+    transform: translate(-50%, 0);
   }
 
   body.inventory-pointer-hidden,
