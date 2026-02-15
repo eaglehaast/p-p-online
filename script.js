@@ -6105,6 +6105,8 @@ let FIELD_BORDER_OFFSET_Y = FIELD_BORDER_THICKNESS; // и по вертикал�
 // Используем бесконечное количество сегментов,
 // чтобы следы самолётов сохранялись до конца раунда.
 const MAX_TRAIL_SEGMENTS   = Infinity;
+const PLANE_TRAIL_LINE_WIDTH = 1;
+const PLANE_TRAIL_ALPHA = 0.22;
 const BUILDING_BUFFER      = CELL_SIZE / 2;
 const MAX_BUILDINGS_GLOBAL = 100;
 const PLANES_PER_SIDE      = 4;      // количество самолётов у каждой команды
@@ -10080,7 +10082,7 @@ function gameDraw(){
       const seg = {
         x1: p.prevX, y1: p.prevY,
         x2: p.x, y2: p.y,
-        lineWidth: Math.max(0.1, 3 - (p.segments.length/25))
+        lineWidth: PLANE_TRAIL_LINE_WIDTH
       };
       p.segments.push(seg);
       if(p.segments.length > MAX_TRAIL_SEGMENTS) p.segments.shift();
@@ -11114,8 +11116,8 @@ function drawPlanesAndTrajectories(){
     ctx.save();
     for (const seg of plane.segments) {
       ctx.beginPath();
-      ctx.strokeStyle = colorFor(plane.color);
-      ctx.lineWidth = seg.lineWidth || 3;
+      ctx.strokeStyle = colorWithAlpha(plane.color, PLANE_TRAIL_ALPHA);
+      ctx.lineWidth = seg.lineWidth || PLANE_TRAIL_LINE_WIDTH;
       ctx.moveTo(seg.x1, seg.y1);
       ctx.lineTo(seg.x2, seg.y2);
       ctx.stroke();
