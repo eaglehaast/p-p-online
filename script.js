@@ -1211,17 +1211,13 @@ const INVENTORY_TOOLTIP_TEXT_BY_TYPE = Object.freeze({
     "Make sure you truly don’t need it.",
   ],
   [INVENTORY_ITEM_TYPES.INVISIBILITY]: [
-    "Drop on the field.",
-    "Hidden during enemy turn.",
+    "Hide your planes.",
+    "Works during the enemy's NEXT turn.",
   ],
 });
 
 const inventoryTooltipState = {
   element: null,
-  hoveredByColor: {
-    blue: null,
-    green: null,
-  },
 };
 
 const inventoryHosts = {
@@ -1240,17 +1236,6 @@ function ensureInventoryTooltipElement(){
   inventoryLayer.appendChild(tooltip);
   inventoryTooltipState.element = tooltip;
   return tooltip;
-}
-
-function setInventoryHoverItem(color, type){
-  if(color !== "blue" && color !== "green") return;
-  inventoryTooltipState.hoveredByColor[color] = type || null;
-  refreshInventoryTooltip();
-}
-
-function clearInventoryHoverState(color){
-  if(color !== "blue" && color !== "green") return;
-  inventoryTooltipState.hoveredByColor[color] = null;
 }
 
 function resolveInventoryTooltipAnchor(color, type){
@@ -1277,12 +1262,6 @@ function getInventoryTooltipTarget(){
   const activeItem = getInventoryInteractionActiveItem();
   if(activeItem?.color && activeItem?.type && inventoryInteractionState.mode !== "idle"){
     return activeItem;
-  }
-  for(const color of ["blue", "green"]){
-    const type = inventoryTooltipState.hoveredByColor[color];
-    if(type){
-      return { color, type };
-    }
   }
   return null;
 }
@@ -3194,8 +3173,6 @@ function syncInventoryUI(color){
     };
   };
 
-  let hasVisibleTooltipTarget = false;
-
   for(const slot of slotData){
     const hasItem = slot.count > 0;
     if(!slot.layout) continue;
@@ -3203,8 +3180,6 @@ function syncInventoryUI(color){
     const frameImg = document.createElement("img");
     const img = document.createElement("img");
     const usageConfig = getItemUsageConfig(slot.type);
-    const tooltipLines = INVENTORY_TOOLTIP_TEXT_BY_TYPE[slot.type] ?? null;
-    const hasSlotTooltip = Array.isArray(tooltipLines) && tooltipLines.length === 2;
     const iconLayout = normalizeIconLayout(slot.layout);
     const countLayout = normalizeCountPocketLayout(slot.layout);
     const frameLayout = slot.layout.frame;
@@ -3248,15 +3223,6 @@ function syncInventoryUI(color){
       img.classList.add("inventory-item--ghost");
     }
 
-    if(hasSlotTooltip){
-      slotContainer.addEventListener("pointerenter", () => {
-        setInventoryHoverItem(color, slot.type);
-      });
-      slotContainer.addEventListener("pointerleave", () => {
-        setInventoryHoverItem(color, null);
-      });
-    }
-
     if (isInteractiveItem) {
       img.dataset.itemType = slot.type;
       img.dataset.itemColor = color;
@@ -3281,9 +3247,6 @@ function syncInventoryUI(color){
         }
       }
     }
-    if(hasSlotTooltip){
-      hasVisibleTooltipTarget = true;
-    }
     if(
       hasItem
       && pendingInventoryUse
@@ -3305,9 +3268,6 @@ function syncInventoryUI(color){
     host.appendChild(slotContainer);
   }
 
-  if(!hasVisibleTooltipTarget){
-    clearInventoryHoverState(color);
-  }
   refreshInventoryTooltip();
 }
 
