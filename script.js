@@ -1218,6 +1218,8 @@ const INVENTORY_TOOLTIP_TEXT_BY_TYPE = Object.freeze({
 
 const inventoryTooltipState = {
   element: null,
+  previewTarget: null,
+  previewTimeoutId: null,
 };
 
 const inventoryHosts = {
@@ -1263,7 +1265,41 @@ function getInventoryTooltipTarget(){
   if(activeItem?.color && activeItem?.type && inventoryInteractionState.mode !== "idle"){
     return activeItem;
   }
+  const previewTarget = inventoryTooltipState.previewTarget;
+  if(previewTarget?.color && previewTarget?.type){
+    return previewTarget;
+  }
   return null;
+}
+
+function clearInventoryTooltipPreview(){
+  inventoryTooltipState.previewTarget = null;
+  if(inventoryTooltipState.previewTimeoutId){
+    clearTimeout(inventoryTooltipState.previewTimeoutId);
+    inventoryTooltipState.previewTimeoutId = null;
+  }
+}
+
+function showInventoryTooltipForSlot(color, type, options = {}){
+  const lines = INVENTORY_TOOLTIP_TEXT_BY_TYPE[type];
+  const anchor = resolveInventoryTooltipAnchor(color, type);
+  if(!Array.isArray(lines) || lines.length !== 2 || !anchor){
+    clearInventoryTooltipPreview();
+    refreshInventoryTooltip();
+    return;
+  }
+  clearInventoryTooltipPreview();
+  inventoryTooltipState.previewTarget = { color, type };
+  refreshInventoryTooltip();
+
+  const autoHideMsRaw = Number(options.autoHideMs);
+  const autoHideMs = Number.isFinite(autoHideMsRaw) ? autoHideMsRaw : 1400;
+  if(autoHideMs > 0){
+    inventoryTooltipState.previewTimeoutId = setTimeout(() => {
+      clearInventoryTooltipPreview();
+      refreshInventoryTooltip();
+    }, autoHideMs);
+  }
 }
 
 function refreshInventoryTooltip(){
@@ -1711,6 +1747,7 @@ function cancelActiveInventoryDrag(reason = "cancel"){
 }
 
 function setInventoryInteractionState(mode, activeItem){
+  clearInventoryTooltipPreview();
   inventoryInteractionState.mode = mode;
   inventoryInteractionState.activeItem = activeItem
     ? {
@@ -3227,6 +3264,11 @@ function syncInventoryUI(color){
 
     if (!hasItem) {
       img.classList.add("inventory-item--ghost");
+      img.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        showInventoryTooltipForSlot(color, slot.type);
+      });
     }
 
     if (isInteractiveItem) {
