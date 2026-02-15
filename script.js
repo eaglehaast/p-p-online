@@ -1155,6 +1155,7 @@ const inventoryHosts = {
 let nuclearStrikeHideTimeoutId = null;
 let activeInventoryDrag = null;
 let activeInventoryPickup = null;
+let inventoryPickupHandledPointerId = null;
 let pendingInventoryUse = null;
 
 function setPendingInventoryUse(nextState){
@@ -2120,6 +2121,14 @@ function isSameInventoryItemSelection(selection, color, type){
 }
 
 function onInventoryItemPickupToggle(event){
+  const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
+  if(pointerId !== null){
+    if(inventoryPickupHandledPointerId === pointerId){
+      return;
+    }
+    inventoryPickupHandledPointerId = pointerId;
+  }
+
   const target = event.currentTarget;
   if(!(target instanceof HTMLImageElement)) return;
   const type = target.dataset.itemType;
@@ -2152,6 +2161,14 @@ function onInventoryItemPickupToggle(event){
   activateInventoryDragFallback(target, clientX, clientY, type, { width, height });
   syncInventoryUI("blue");
   syncInventoryUI("green");
+}
+
+function onInventoryPickupPointerFinish(event){
+  if(inventoryPickupHandledPointerId === null) return;
+  const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
+  if(pointerId === null || pointerId === inventoryPickupHandledPointerId){
+    inventoryPickupHandledPointerId = null;
+  }
 }
 
 function onInventoryItemDragEnd(){
@@ -8193,6 +8210,8 @@ if(shouldUseLegacyDragDropFallback()){
 }
 window.addEventListener("pointermove", onInventoryPickupPointerMove);
 window.addEventListener("pointerdown", onGlobalPointerDownInventoryCancel);
+window.addEventListener("pointerup", onInventoryPickupPointerFinish);
+window.addEventListener("pointercancel", onInventoryPickupPointerFinish);
 window.addEventListener("keydown", (event) => {
   if(event.key === "Escape"){
     cancelPendingInventoryUse();
