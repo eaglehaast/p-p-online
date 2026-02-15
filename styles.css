@@ -3,15 +3,15 @@
   --design-h: 800;
 
   /* Inventory tooltip theme tokens */
-  --inventory-tooltip-background: rgba(0, 0, 0, 1);
-  --inventory-tooltip-color: #fff;
-  --inventory-tooltip-font-size: 9px;
-  --inventory-tooltip-line-height: 1.35;
-  --inventory-tooltip-padding: 5px 7px;
-  --inventory-tooltip-max-width: 190px;
-  --inventory-tooltip-border-radius: 2px;
-  --inventory-tooltip-border: none;
-  --inventory-tooltip-box-shadow: none;
+  --inventory-tooltip-background: rgba(210,190,150,0.97);
+  --inventory-tooltip-color: #251d14;
+  --inventory-tooltip-font-size: 12px;
+  --inventory-tooltip-line-height: 1.4;
+  --inventory-tooltip-padding: 8px 12px;
+  --inventory-tooltip-max-width: 200px;
+  --inventory-tooltip-border-radius: 6px;
+  --inventory-tooltip-border: 1px solid rgba(90,65,40,0.35);
+  --inventory-tooltip-box-shadow: 0 8px 18px rgba(0,0,0,0.18);
 }
 
 body, button {
@@ -353,7 +353,7 @@ body, button {
     padding: var(--inventory-tooltip-padding, 5px 7px);
     background: var(--inventory-tooltip-background, rgba(0, 0, 0, 1));
     color: var(--inventory-tooltip-color, #fff);
-    font-family: 'Silkscreen', 'Fantasque Sans Mono', monospace;
+    font-family: "Palatino Linotype", Palatino, "Book Antiqua", serif;
     font-size: var(--inventory-tooltip-font-size, 9px);
     line-height: var(--inventory-tooltip-line-height, 1.35);
     font-weight: 700;
