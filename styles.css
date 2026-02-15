@@ -299,7 +299,7 @@ body, button {
 
   .inventory-item--ghost {
     opacity: 0.32;
-    pointer-events: none;
+    pointer-events: auto;
     cursor: default;
   }
 
