@@ -1220,7 +1220,10 @@ const inventoryTooltipState = {
   element: null,
   previewTarget: null,
   previewTimeoutId: null,
+  previewPointerOrigin: null,
 };
+
+const INVENTORY_TOOLTIP_MOUSE_MOVE_DISMISS_THRESHOLD_PX = 8;
 
 const inventoryHosts = {
   blue: blueInventoryHost,
@@ -1274,6 +1277,7 @@ function getInventoryTooltipTarget(){
 
 function clearInventoryTooltipPreview(){
   inventoryTooltipState.previewTarget = null;
+  inventoryTooltipState.previewPointerOrigin = null;
   if(inventoryTooltipState.previewTimeoutId){
     clearTimeout(inventoryTooltipState.previewTimeoutId);
     inventoryTooltipState.previewTimeoutId = null;
@@ -1290,10 +1294,15 @@ function showInventoryTooltipForSlot(color, type, options = {}){
   }
   clearInventoryTooltipPreview();
   inventoryTooltipState.previewTarget = { color, type };
+  const pointerX = Number(options.pointerX);
+  const pointerY = Number(options.pointerY);
+  if(Number.isFinite(pointerX) && Number.isFinite(pointerY)){
+    inventoryTooltipState.previewPointerOrigin = { x: pointerX, y: pointerY };
+  }
   refreshInventoryTooltip();
 
   const autoHideMsRaw = Number(options.autoHideMs);
-  const autoHideMs = Number.isFinite(autoHideMsRaw) ? autoHideMsRaw : 1400;
+  const autoHideMs = Number.isFinite(autoHideMsRaw) ? autoHideMsRaw : 5000;
   if(autoHideMs > 0){
     inventoryTooltipState.previewTimeoutId = setTimeout(() => {
       clearInventoryTooltipPreview();
@@ -3271,7 +3280,10 @@ function syncInventoryUI(color){
       img.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        showInventoryTooltipForSlot(color, slot.type);
+        showInventoryTooltipForSlot(color, slot.type, {
+          pointerX: event.clientX,
+          pointerY: event.clientY,
+        });
       });
     }
 
@@ -8600,6 +8612,43 @@ function onGlobalPointerDownInventoryCancel(event){
   cancelActiveInventoryPickup();
 }
 
+function onInventoryTooltipPreviewPointerMove(event){
+  if(event.pointerType !== "mouse") return;
+  if(!inventoryTooltipState.previewTarget) return;
+
+  const origin = inventoryTooltipState.previewPointerOrigin;
+  if(!origin){
+    clearInventoryTooltipPreview();
+    refreshInventoryTooltip();
+    return;
+  }
+
+  const dx = event.clientX - origin.x;
+  const dy = event.clientY - origin.y;
+  const movedDistance = Math.hypot(dx, dy);
+  if(movedDistance < INVENTORY_TOOLTIP_MOUSE_MOVE_DISMISS_THRESHOLD_PX) return;
+
+  clearInventoryTooltipPreview();
+  refreshInventoryTooltip();
+}
+
+function onInventoryTooltipPreviewPointerDown(event){
+  if(event.pointerType === "mouse") return;
+  if(!inventoryTooltipState.previewTarget) return;
+
+  const target = event.target;
+  if(!(target instanceof Node)) return;
+
+  const isInsideInventory = Object.values(inventoryHosts).some((host) => host?.contains(target));
+  const tooltipElement = inventoryTooltipState.element;
+  const isInsideTooltip = tooltipElement instanceof HTMLElement && tooltipElement.contains(target);
+
+  if(isInsideInventory || isInsideTooltip) return;
+
+  clearInventoryTooltipPreview();
+  refreshInventoryTooltip();
+}
+
 gsBoardCanvas.addEventListener("pointerdown", onCanvasPointerDown);
 gsBoardCanvas.addEventListener("pointermove", onCanvasPointerMove);
 gsBoardCanvas.addEventListener("pointerup", onCanvasPointerUp);
@@ -8621,7 +8670,9 @@ if(shouldUseLegacyDragDropFallback()){
   });
 }
 window.addEventListener("pointermove", onInventoryPickupPointerMove);
+window.addEventListener("pointermove", onInventoryTooltipPreviewPointerMove);
 window.addEventListener("pointerdown", onGlobalPointerDownInventoryCancel);
+window.addEventListener("pointerdown", onInventoryTooltipPreviewPointerDown);
 window.addEventListener("pointerup", onInventoryPickupPointerFinish);
 window.addEventListener("pointercancel", onInventoryPickupPointerFinish);
 window.addEventListener("keydown", (event) => {
