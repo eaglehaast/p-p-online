@@ -1189,10 +1189,127 @@ const INVENTORY_DISABLED_HINT_TEXT = "";
 const INVENTORY_SELECTED_HINT_TEXT = "";
 const INVENTORY_SELECTION_CANCEL_HINT_TEXT = "";
 
+const INVENTORY_TOOLTIP_TEXT_BY_TYPE = Object.freeze({
+  [INVENTORY_ITEM_TYPES.CROSSHAIR]: [
+    "Install on your plane.",
+    "Absolute strike precision.",
+  ],
+  [INVENTORY_ITEM_TYPES.FUEL]: [
+    "Install on your plane.",
+    "Flight range doubled!",
+  ],
+  [INVENTORY_ITEM_TYPES.WINGS]: [
+    "Install on your plane.",
+    "Impact area doubled!",
+  ],
+  [INVENTORY_ITEM_TYPES.MINE]: [
+    "Place on the field.",
+    "Handle with care.",
+  ],
+  [INVENTORY_ITEM_TYPES.DYNAMITE]: [
+    "Place on a brick.",
+    "Make sure you truly don’t need it.",
+  ],
+  [INVENTORY_ITEM_TYPES.INVISIBILITY]: [
+    "Drop on the field.",
+    "Hidden during enemy turn.",
+  ],
+});
+
+const inventoryTooltipState = {
+  element: null,
+  hoveredByColor: {
+    blue: null,
+    green: null,
+  },
+};
+
 const inventoryHosts = {
   blue: blueInventoryHost,
   green: greenInventoryHost,
 };
+
+function ensureInventoryTooltipElement(){
+  if(inventoryTooltipState.element instanceof HTMLElement){
+    return inventoryTooltipState.element;
+  }
+  if(!(inventoryLayer instanceof HTMLElement)) return null;
+  const tooltip = document.createElement("div");
+  tooltip.className = "inventory-tooltip";
+  tooltip.setAttribute("aria-hidden", "true");
+  inventoryLayer.appendChild(tooltip);
+  inventoryTooltipState.element = tooltip;
+  return tooltip;
+}
+
+function setInventoryHoverItem(color, type){
+  if(color !== "blue" && color !== "green") return;
+  inventoryTooltipState.hoveredByColor[color] = type || null;
+  refreshInventoryTooltip();
+}
+
+function clearInventoryHoverState(color){
+  if(color !== "blue" && color !== "green") return;
+  inventoryTooltipState.hoveredByColor[color] = null;
+}
+
+function resolveInventoryTooltipAnchor(color, type){
+  const container = INVENTORY_UI_CONFIG.containers[color] ?? null;
+  const slotLayout = INVENTORY_UI_CONFIG.slots[type] ?? null;
+  const frame = slotLayout?.frame ?? null;
+  if(!container || !frame) return null;
+  const centerX = container.x + frame.x + frame.w / 2;
+  if(color === "green"){
+    return {
+      x: centerX,
+      y: container.y + frame.y - 6,
+      placement: "above",
+    };
+  }
+  return {
+    x: centerX,
+    y: container.y + frame.y + frame.h + 6,
+    placement: "below",
+  };
+}
+
+function getInventoryTooltipTarget(){
+  const activeItem = getInventoryInteractionActiveItem();
+  if(activeItem?.color && activeItem?.type && inventoryInteractionState.mode !== "idle"){
+    return activeItem;
+  }
+  for(const color of ["blue", "green"]){
+    const type = inventoryTooltipState.hoveredByColor[color];
+    if(type){
+      return { color, type };
+    }
+  }
+  return null;
+}
+
+function refreshInventoryTooltip(){
+  const tooltip = ensureInventoryTooltipElement();
+  if(!(tooltip instanceof HTMLElement)) return;
+  const target = getInventoryTooltipTarget();
+  if(!target){
+    tooltip.classList.remove("is-visible", "inventory-tooltip--above", "inventory-tooltip--below");
+    tooltip.textContent = "";
+    return;
+  }
+  const lines = INVENTORY_TOOLTIP_TEXT_BY_TYPE[target.type];
+  const anchor = resolveInventoryTooltipAnchor(target.color, target.type);
+  if(!Array.isArray(lines) || lines.length !== 2 || !anchor){
+    tooltip.classList.remove("is-visible", "inventory-tooltip--above", "inventory-tooltip--below");
+    tooltip.textContent = "";
+    return;
+  }
+  tooltip.textContent = `${lines[0]}\n${lines[1]}`;
+  tooltip.style.left = `${Math.round(anchor.x)}px`;
+  tooltip.style.top = `${Math.round(anchor.y)}px`;
+  tooltip.classList.toggle("inventory-tooltip--above", anchor.placement === "above");
+  tooltip.classList.toggle("inventory-tooltip--below", anchor.placement === "below");
+  tooltip.classList.add("is-visible");
+}
 
 let nuclearStrikeHideTimeoutId = null;
 let activeInventoryDrag = null;
@@ -1623,6 +1740,7 @@ function setInventoryInteractionState(mode, activeItem){
       usageTarget: activeItem.usageTarget,
     }
     : null;
+  refreshInventoryTooltip();
 }
 
 function clearInventoryInteractionPointer(){
@@ -1639,6 +1757,8 @@ function cancelActiveInventoryPickup(){
   setInventoryInteractionState("idle", null);
   clearInventoryInteractionPointer();
   resetInventoryDragFallbackGhost();
+  clearInventoryHoverState("blue");
+  clearInventoryHoverState("green");
   syncInventoryUI("blue");
   syncInventoryUI("green");
 }
@@ -3017,6 +3137,7 @@ function syncInventoryUI(color){
     hintState.visible = false;
     hintState.text = "";
   }
+  clearInventoryHoverState(color);
   applyInventoryContainerLayout(color, host);
   validateInventoryCssSizing(host);
   host.style.setProperty("--inventory-mine-size", `${mineSizeRuntime.SCREEN_PX}px`);
@@ -3073,6 +3194,8 @@ function syncInventoryUI(color){
     };
   };
 
+  let hasVisibleTooltipTarget = false;
+
   for(const slot of slotData){
     const hasItem = slot.count > 0;
     if(!slot.layout) continue;
@@ -3080,6 +3203,7 @@ function syncInventoryUI(color){
     const frameImg = document.createElement("img");
     const img = document.createElement("img");
     const usageConfig = getItemUsageConfig(slot.type);
+    const tooltipLines = INVENTORY_TOOLTIP_TEXT_BY_TYPE[slot.type] ?? null;
     const iconLayout = normalizeIconLayout(slot.layout);
     const countLayout = normalizeCountPocketLayout(slot.layout);
     const frameLayout = slot.layout.frame;
@@ -3124,6 +3248,14 @@ function syncInventoryUI(color){
     }
 
     if (isInteractiveItem) {
+      if(Array.isArray(tooltipLines) && tooltipLines.length === 2){
+        img.addEventListener("pointerenter", () => {
+          setInventoryHoverItem(color, slot.type);
+        });
+        img.addEventListener("pointerleave", () => {
+          setInventoryHoverItem(color, null);
+        });
+      }
       img.dataset.itemType = slot.type;
       img.dataset.itemColor = color;
       img.classList.add("inventory-item--draggable");
@@ -3147,6 +3279,9 @@ function syncInventoryUI(color){
         }
       }
     }
+    if(hasItem && Array.isArray(tooltipLines) && tooltipLines.length === 2){
+      hasVisibleTooltipTarget = true;
+    }
     if(
       hasItem
       && pendingInventoryUse
@@ -3167,6 +3302,11 @@ function syncInventoryUI(color){
     slotContainer.appendChild(countBadge);
     host.appendChild(slotContainer);
   }
+
+  if(!hasVisibleTooltipTarget){
+    clearInventoryHoverState(color);
+  }
+  refreshInventoryTooltip();
 }
 
 function drawInventoryHintOnHud(ctx) {
