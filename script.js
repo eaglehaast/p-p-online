@@ -3249,10 +3249,10 @@ function syncInventoryUI(color){
     }
 
     if(hasSlotTooltip){
-      img.addEventListener("pointerenter", () => {
+      slotContainer.addEventListener("pointerenter", () => {
         setInventoryHoverItem(color, slot.type);
       });
-      img.addEventListener("pointerleave", () => {
+      slotContainer.addEventListener("pointerleave", () => {
         setInventoryHoverItem(color, null);
       });
     }
