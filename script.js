@@ -29,6 +29,7 @@ const DEBUG_COLLISIONS_VERBOSE = false;
 const DEBUG_STARTUP_WORLDY = false;
 const DEBUG_WRAPPER_SYNC = false;
 const DEBUG_DROP_COORDS = false;
+const DEBUG_INVENTORY_INPUT = false;
 const DEBUG_CHEATS = typeof location !== "undefined" && location.hash.includes("dev");
 
 if (typeof window !== 'undefined') {
@@ -227,6 +228,47 @@ function getEffectivePinchScale() {
 function logDropCoordsDebug(context, payload) {
   if (!DEBUG_DROP_COORDS) return;
   console.log(`[drop-debug] ${context}`, payload);
+}
+
+function getInventoryDebugItemFromEvent(event){
+  const target = event?.target;
+  if(!(target instanceof Element)) return null;
+  const itemNode = target.closest?.("[data-item-color][data-item-type]");
+  if(!(itemNode instanceof HTMLElement)) return null;
+  const color = itemNode.dataset.itemColor || null;
+  const type = itemNode.dataset.itemType || null;
+  if(!color || !type) return null;
+  return { color, type };
+}
+
+function logInventoryInputDebug(eventName, event, nextState, details = {}){
+  if(!DEBUG_INVENTORY_INPUT) return;
+  const pointerId = Number.isFinite(event?.pointerId) ? event.pointerId : null;
+  const { clientX, clientY } = getPointerClientCoords(event || {});
+  const currentState = inventoryInteractionState.mode;
+  const foundItem = details.foundItem
+    ?? getInventoryDebugItemFromEvent(event)
+    ?? getInventoryInteractionActiveItem()
+    ?? null;
+  console.log("[inventory-input]", {
+    event: eventName,
+    pointerId,
+    clientX,
+    clientY,
+    item: foundItem ? { color: foundItem.color, type: foundItem.type } : null,
+    currentState,
+    nextState: nextState ?? currentState,
+    ...details,
+  });
+}
+
+function logInventoryInputEarlyExit(eventName, event, reason, details = {}){
+  if(!DEBUG_INVENTORY_INPUT) return;
+  logInventoryInputDebug(eventName, event, inventoryInteractionState.mode, {
+    reason,
+    earlyExit: true,
+    ...details,
+  });
 }
 
 function getPointerClientCoords(event) {
@@ -2160,21 +2202,40 @@ function isSameInventoryItemSelection(selection, color, type){
 }
 
 function onInventoryItemPointerDown(event){
+  logInventoryInputDebug("pointerdown", event, inventoryInteractionState.mode);
   const target = event.currentTarget;
-  if(!(target instanceof HTMLImageElement)) return;
+  if(!(target instanceof HTMLImageElement)){
+    logInventoryInputEarlyExit("pointerdown", event, "target is not inventory image");
+    return;
+  }
   const type = target.dataset.itemType;
   const color = target.dataset.itemColor;
   const usageConfig = getItemUsageConfig(type);
-  if (!usageConfig?.requiresDragAndDrop) return;
+  if (!usageConfig?.requiresDragAndDrop){
+    logInventoryInputEarlyExit("pointerdown", event, "item does not support drag-and-drop", {
+      foundItem: color && type ? { color, type } : null,
+    });
+    return;
+  }
 
   const activeColor = turnColors[turnIndex];
-  if (color !== activeColor) return;
+  if (color !== activeColor){
+    logInventoryInputEarlyExit("pointerdown", event, "not active player", {
+      foundItem: color && type ? { color, type } : null,
+      activeColor,
+    });
+    return;
+  }
 
   const selectedItem = getInventoryInteractionActiveItem();
   if(
     inventoryInteractionState.mode === "sticky"
     && isSameInventoryItemSelection(selectedItem, color, type)
   ){
+    logInventoryInputDebug("pointerdown", event, "idle", {
+      foundItem: { color, type },
+      reason: "toggle off sticky selection",
+    });
     cancelActiveInventoryPickup();
     return;
   }
@@ -2187,6 +2248,10 @@ function onInventoryItemPointerDown(event){
     usageTarget: usageConfig.target,
   };
 
+  logInventoryInputDebug("pointerdown", event, "holding", {
+    foundItem: nextActiveItem,
+    reason: "start holding item",
+  });
   setInventoryInteractionState("holding", nextActiveItem);
   inventoryInteractionState.pointerId = pointerId;
   inventoryInteractionState.downPoint = { x: clientX, y: clientY };
@@ -2204,17 +2269,25 @@ function onInventoryItemPointerDown(event){
 }
 
 function onInventoryPickupPointerFinish(event){
-  if(inventoryInteractionState.mode !== "holding") return;
+  logInventoryInputDebug(event.type, event, inventoryInteractionState.mode);
+  if(inventoryInteractionState.mode !== "holding"){
+    logInventoryInputEarlyExit(event.type, event, "state is not holding");
+    return;
+  }
   const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
   if(
     inventoryInteractionState.pointerId !== null
     && pointerId !== null
     && pointerId !== inventoryInteractionState.pointerId
   ){
+    logInventoryInputEarlyExit(event.type, event, "pointerId mismatch", {
+      expectedPointerId: inventoryInteractionState.pointerId,
+    });
     return;
   }
 
   if(event.type === "pointercancel"){
+    logInventoryInputDebug("pointercancel", event, "idle", { reason: "cancel active pickup" });
     cancelActiveInventoryPickup();
     return;
   }
@@ -2228,12 +2301,16 @@ function onInventoryPickupPointerFinish(event){
       const applied = applyInventoryItemAtBoardPoint(activeItem, clientX, clientY, "onPointerPickupDragDrop");
       if(applied){
         removeItemFromInventory(activeItem.color, activeItem.type);
+      } else {
+        logInventoryInputEarlyExit(event.type, event, "drop rejected", { foundItem: activeItem });
       }
     }
+    logInventoryInputDebug(event.type, event, "idle", { reason: "finish drag drop" });
     cancelActiveInventoryPickup();
     return;
   }
 
+  logInventoryInputDebug(event.type, event, "sticky", { reason: "switch to sticky mode" });
   setInventoryInteractionState("sticky", activeItem);
   clearInventoryInteractionPointer();
   scheduleInventoryUiSync();
@@ -2264,11 +2341,20 @@ function onBoardDragOver(event){
 }
 
 function onBoardDrop(event){
+  logInventoryInputDebug("drop", event, inventoryInteractionState.mode, {
+    foundItem: activeInventoryDrag,
+  });
   clearInventoryDragArtifacts();
-  if (!activeInventoryDrag) return;
+  if (!activeInventoryDrag){
+    logInventoryInputEarlyExit("drop", event, "no active drag item");
+    return;
+  }
   event.preventDefault();
   const { clientX, clientY } = event;
   if (!isClientPointOverBoard(clientX, clientY)) {
+    logInventoryInputEarlyExit("drop", event, "target outside board", {
+      foundItem: activeInventoryDrag,
+    });
     if (DEBUG_NUKE) {
       console.log("[NUKE] drop rejected");
     }
@@ -2283,11 +2369,24 @@ function onBoardDrop(event){
 }
 
 function applyInventoryItemAtBoardPoint(activeItemState, clientX, clientY, dropContext){
-  if(!activeItemState) return false;
-  if(!isClientPointOverBoard(clientX, clientY)) return false;
+  if(!activeItemState){
+    logInventoryInputEarlyExit(dropContext, null, "drop rejected: missing active item");
+    return false;
+  }
+  if(!isClientPointOverBoard(clientX, clientY)){
+    logInventoryInputEarlyExit(dropContext, { clientX, clientY }, "target outside board", {
+      foundItem: activeItemState,
+    });
+    return false;
+  }
 
   const usageConfig = getItemUsageConfig(activeItemState.type);
-  if(!usageConfig) return false;
+  if(!usageConfig){
+    logInventoryInputEarlyExit(dropContext, { clientX, clientY }, "drop rejected: missing usage config", {
+      foundItem: activeItemState,
+    });
+    return false;
+  }
 
   if(usageConfig.target === ITEM_USAGE_TARGETS.SELF_PLANE){
     const designPoint = toDesignCoords(clientX, clientY);
@@ -2302,11 +2401,22 @@ function applyInventoryItemAtBoardPoint(activeItemState, clientX, clientY, dropC
       boardY
     });
     const ownPlane = getPlaneAtBoardPoint(activeItemState.color, boardX, boardY);
-    if(!ownPlane) return false;
+    if(!ownPlane){
+      logInventoryInputEarlyExit(dropContext, { clientX, clientY }, "drop rejected: own plane not found", {
+        foundItem: activeItemState,
+      });
+      return false;
+    }
     return applyItemToOwnPlane(activeItemState.type, activeItemState.color, ownPlane);
   }
 
-  if(usageConfig.target !== ITEM_USAGE_TARGETS.BOARD) return false;
+  if(usageConfig.target !== ITEM_USAGE_TARGETS.BOARD){
+    logInventoryInputEarlyExit(dropContext, { clientX, clientY }, "drop rejected: unsupported usage target", {
+      foundItem: activeItemState,
+      usageTarget: usageConfig.target,
+    });
+    return false;
+  }
 
   if(activeItemState.type === INVENTORY_ITEM_TYPES.MINE){
     const minePlacement = getMinePlacementFromDropPoint(clientX, clientY);
@@ -2322,7 +2432,12 @@ function applyInventoryItemAtBoardPoint(activeItemState, clientX, clientY, dropC
       cellY: minePlacement.cellY
     });
     const isPlacementValid = isMinePlacementValid(minePlacement);
-    if(!isPlacementValid) return false;
+    if(!isPlacementValid){
+      logInventoryInputEarlyExit(dropContext, { clientX, clientY }, "drop rejected: mine placement invalid", {
+        foundItem: activeItemState,
+      });
+      return false;
+    }
     placeMine({
       owner: activeItemState.color,
       x: minePlacement.x,
@@ -2336,7 +2451,12 @@ function applyInventoryItemAtBoardPoint(activeItemState, clientX, clientY, dropC
   if(activeItemState.type === INVENTORY_ITEM_TYPES.DYNAMITE){
     const dropPlacement = getDynamitePlacementFromDropPoint(clientX, clientY);
     const targetBrick = findMapSpriteForDynamiteDrop(dropPlacement);
-    if(!targetBrick) return false;
+    if(!targetBrick){
+      logInventoryInputEarlyExit(dropContext, { clientX, clientY }, "drop rejected: no brick target", {
+        foundItem: activeItemState,
+      });
+      return false;
+    }
     const dynamiteEntry = {
       id: `dynamite-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       owner: activeItemState.color,
@@ -2401,13 +2521,20 @@ function onInventoryDrop(event){
 }
 
 function onInventoryPickupPointerMove(event){
-  if(inventoryInteractionState.mode !== "holding") return;
+  logInventoryInputDebug("pointermove", event, inventoryInteractionState.mode);
+  if(inventoryInteractionState.mode !== "holding"){
+    logInventoryInputEarlyExit("pointermove", event, "state is not holding");
+    return;
+  }
   const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
   if(
     inventoryInteractionState.pointerId !== null
     && pointerId !== null
     && pointerId !== inventoryInteractionState.pointerId
   ){
+    logInventoryInputEarlyExit("pointermove", event, "pointerId mismatch", {
+      expectedPointerId: inventoryInteractionState.pointerId,
+    });
     return;
   }
   const { clientX, clientY } = getPointerClientCoords(event);
@@ -2415,21 +2542,52 @@ function onInventoryPickupPointerMove(event){
   if(downPoint){
     inventoryInteractionState.movedPx = Math.hypot(clientX - downPoint.x, clientY - downPoint.y);
   }
-  if(inventoryInteractionState.movedPx < INVENTORY_PICKUP_DRAG_THRESHOLD_PX) return;
+  if(inventoryInteractionState.movedPx < INVENTORY_PICKUP_DRAG_THRESHOLD_PX){
+    logInventoryInputEarlyExit("pointermove", event, "drag threshold not reached", {
+      movedPx: inventoryInteractionState.movedPx,
+      thresholdPx: INVENTORY_PICKUP_DRAG_THRESHOLD_PX,
+    });
+    return;
+  }
   updateInventoryDragFallbackPosition(clientX, clientY);
 }
 
 function onBoardInventoryStickyApply(event){
-  if(inventoryInteractionState.mode !== "sticky") return false;
+  logInventoryInputDebug("click", event, inventoryInteractionState.mode);
+  if(inventoryInteractionState.mode !== "sticky"){
+    logInventoryInputEarlyExit("click", event, "state is not sticky");
+    return false;
+  }
   const activeItem = getInventoryInteractionActiveItem();
-  if(!activeItem) return false;
+  if(!activeItem){
+    logInventoryInputEarlyExit("click", event, "sticky mode without active item");
+    return false;
+  }
   const { clientX, clientY } = getPointerClientCoords(event);
-  if(!isClientPointOverBoard(clientX, clientY)) return false;
+  if(!isClientPointOverBoard(clientX, clientY)){
+    logInventoryInputEarlyExit("click", event, "target outside board", {
+      foundItem: activeItem,
+    });
+    return false;
+  }
   const applied = applyInventoryItemAtBoardPoint(activeItem, clientX, clientY, "onBoardStickyApply");
-  if(!applied) return false;
+  if(!applied){
+    logInventoryInputEarlyExit("click", event, "drop rejected", {
+      foundItem: activeItem,
+    });
+    return false;
+  }
   removeItemFromInventory(activeItem.color, activeItem.type);
+  logInventoryInputDebug("click", event, "idle", {
+    foundItem: activeItem,
+    reason: "sticky apply success",
+  });
   cancelActiveInventoryPickup();
   return true;
+}
+
+function onInventoryItemClick(event){
+  logInventoryInputDebug("click", event, inventoryInteractionState.mode);
 }
 
 function getMinePlacementFromDropPoint(clientX, clientY){
@@ -2960,6 +3118,7 @@ function syncInventoryUI(color){
         img.addEventListener("dragend", onInventoryItemDragEnd);
       }
       img.addEventListener("pointerdown", onInventoryItemPointerDown);
+      img.addEventListener("click", onInventoryItemClick);
       if(isSameInventoryItemSelection(getInventoryInteractionActiveItem(), color, slot.type) && inventoryInteractionState.mode !== "idle"){
         img.classList.add("inventory-item--selected");
         slotContainer.classList.add("inventory-slot--selected");
