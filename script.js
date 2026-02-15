@@ -1323,6 +1323,10 @@ function refreshInventoryTooltip(){
   tooltip.style.top = `${Math.round(anchor.y)}px`;
   tooltip.classList.toggle("inventory-tooltip--above", anchor.placement === "above");
   tooltip.classList.toggle("inventory-tooltip--below", anchor.placement === "below");
+  tooltip.classList.toggle(
+    "inventory-tooltip--invisibility",
+    target.type === INVENTORY_ITEM_TYPES.INVISIBILITY,
+  );
   tooltip.classList.add("is-visible");
 }
 
