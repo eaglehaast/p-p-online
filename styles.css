@@ -388,6 +388,22 @@ body, button {
     transform: translate(-50%, 0);
   }
 
+  .inventory-tooltip.inventory-tooltip--invisibility {
+    max-width: calc(var(--inventory-tooltip-max-width, 190px) + 78px);
+    line-height: 1.45;
+    padding: 9px 14px;
+  }
+
+  .inventory-tooltip.inventory-tooltip--invisibility.inventory-tooltip--above,
+  .inventory-tooltip.inventory-tooltip--invisibility.inventory-tooltip--above.is-visible {
+    transform: translate(calc(-50% - 24px), -100%);
+  }
+
+  .inventory-tooltip.inventory-tooltip--invisibility.inventory-tooltip--below,
+  .inventory-tooltip.inventory-tooltip--invisibility.inventory-tooltip--below.is-visible {
+    transform: translate(calc(-50% - 24px), 0);
+  }
+
   body.inventory-pointer-hidden,
   body.inventory-pointer-hidden * {
     cursor: none !important;
