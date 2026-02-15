@@ -1185,9 +1185,9 @@ const inventoryHintState = {
   },
 };
 
-const INVENTORY_DISABLED_HINT_TEXT = "В разработке";
-const INVENTORY_SELECTED_HINT_TEXT = "Предмет выбран: тапните по полю, чтобы применить. Esc/повторный тап — отмена";
-const INVENTORY_SELECTION_CANCEL_HINT_TEXT = "Выбор предмета сброшен";
+const INVENTORY_DISABLED_HINT_TEXT = "";
+const INVENTORY_SELECTED_HINT_TEXT = "";
+const INVENTORY_SELECTION_CANCEL_HINT_TEXT = "";
 
 const inventoryHosts = {
   blue: blueInventoryHost,
@@ -1916,6 +1916,7 @@ function tryApplyPendingInventoryUseAt(x, y){
 let sharedInventoryDragPreview = null;
 let inventoryDragFallbackGhost = null;
 let inventoryDragFallbackActive = false;
+let isInventoryPointerHidden = false;
 // Safe early defaults to avoid touching mineSizeRuntime before its declaration.
 let inventoryDragFallbackWidth = 30;
 let inventoryDragFallbackHeight = 30;
@@ -2006,6 +2007,13 @@ function updateInventoryDragFallbackPosition(clientX, clientY){
   ghost.style.transform = `translate3d(${drawX}px, ${drawY}px, 0)`;
 }
 
+function setInventoryPointerHidden(isHidden){
+  const hidden = Boolean(isHidden);
+  if(hidden === isInventoryPointerHidden) return;
+  isInventoryPointerHidden = hidden;
+  document.body?.classList.toggle("inventory-pointer-hidden", hidden);
+}
+
 function activateInventoryDragFallback(target, clientX, clientY, type, options = {}){
   const ghost = getInventoryDragFallbackGhost();
   const width = Number.isFinite(options.width) && options.width > 0
@@ -2025,11 +2033,13 @@ function activateInventoryDragFallback(target, clientX, clientY, type, options =
   ghost.style.visibility = "visible";
   ghost.style.opacity = "0.88";
   inventoryDragFallbackActive = true;
+  setInventoryPointerHidden(true);
   updateInventoryDragFallbackPosition(clientX, clientY);
 }
 
 function resetInventoryDragFallbackGhost(){
   inventoryDragFallbackActive = false;
+  setInventoryPointerHidden(false);
   inventoryDragFallbackWidth = mineSizeRuntime.SCREEN_PX;
   inventoryDragFallbackHeight = mineSizeRuntime.SCREEN_PX;
   if(!(inventoryDragFallbackGhost instanceof HTMLElement)) return;
@@ -2155,6 +2165,7 @@ function onInventoryItemDragStart(event){
     consumed: false,
   };
   cancelActiveInventoryPickup();
+  setInventoryPointerHidden(true);
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", type);
@@ -2522,6 +2533,11 @@ function onInventoryDrop(event){
 
 function onInventoryPickupPointerMove(event){
   logInventoryInputDebug("pointermove", event, inventoryInteractionState.mode);
+  if(inventoryInteractionState.mode === "sticky"){
+    const { clientX, clientY } = getPointerClientCoords(event);
+    updateInventoryDragFallbackPosition(clientX, clientY);
+    return;
+  }
   if(inventoryInteractionState.mode !== "holding"){
     logInventoryInputEarlyExit("pointermove", event, "state is not holding");
     return;
@@ -3154,6 +3170,7 @@ function syncInventoryUI(color){
 }
 
 function drawInventoryHintOnHud(ctx) {
+  return;
   if (!(ctx instanceof CanvasRenderingContext2D)) return;
   if (!(hudCanvas instanceof HTMLCanvasElement)) return;
 

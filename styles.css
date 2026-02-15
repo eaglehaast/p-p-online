@@ -333,6 +333,11 @@ body, button {
     text-shadow: 0 1px #5A3E1E;
   }
 
+  body.inventory-pointer-hidden,
+  body.inventory-pointer-hidden * {
+    cursor: none !important;
+  }
+
   body.nuke-input-locked #instance_reset,
   body.nuke-input-locked #instance_exit,
   body.nuke-input-locked #yesButton,
