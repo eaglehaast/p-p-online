@@ -1154,12 +1154,16 @@ const inventoryHosts = {
 
 let nuclearStrikeHideTimeoutId = null;
 let activeInventoryDrag = null;
-let activeInventoryPickup = null;
-let inventoryPickupHandledPointerId = null;
-let inventoryPickupActivationPointerId = null;
-let inventoryPickupActivationTimeStamp = null;
 let inventoryPickupUiSyncRafId = null;
 let pendingInventoryUse = null;
+const INVENTORY_PICKUP_DRAG_THRESHOLD_PX = 5;
+const inventoryInteractionState = {
+  mode: "idle",
+  activeItem: null,
+  pointerId: null,
+  downPoint: null,
+  movedPx: 0,
+};
 
 function scheduleInventoryUiSync(){
   if(inventoryPickupUiSyncRafId !== null) return;
@@ -1568,8 +1572,30 @@ function cancelActiveInventoryDrag(reason = "cancel"){
   }
 }
 
+function setInventoryInteractionState(mode, activeItem){
+  inventoryInteractionState.mode = mode;
+  inventoryInteractionState.activeItem = activeItem
+    ? {
+      color: activeItem.color,
+      type: activeItem.type,
+      usageTarget: activeItem.usageTarget,
+    }
+    : null;
+}
+
+function clearInventoryInteractionPointer(){
+  inventoryInteractionState.pointerId = null;
+  inventoryInteractionState.downPoint = null;
+  inventoryInteractionState.movedPx = 0;
+}
+
+function getInventoryInteractionActiveItem(){
+  return inventoryInteractionState.activeItem;
+}
+
 function cancelActiveInventoryPickup(){
-  activeInventoryPickup = null;
+  setInventoryInteractionState("idle", null);
+  clearInventoryInteractionPointer();
   resetInventoryDragFallbackGhost();
   syncInventoryUI("blue");
   syncInventoryUI("green");
@@ -1597,7 +1623,8 @@ function showInventorySelectionCancelHint(color){
 function resetInventoryInteractionState(){
   resetInventoryDragFallbackGhost();
   activeInventoryDrag = null;
-  activeInventoryPickup = null;
+  setInventoryInteractionState("idle", null);
+  clearInventoryInteractionPointer();
   pendingInventoryUse = null;
   isNuclearStrikeResolutionActive = false;
   isNukeCinematicActive = false;
@@ -2132,17 +2159,7 @@ function isSameInventoryItemSelection(selection, color, type){
   );
 }
 
-function onInventoryItemPickupToggle(event){
-  const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
-  inventoryPickupActivationPointerId = pointerId;
-  inventoryPickupActivationTimeStamp = Number.isFinite(event.timeStamp) ? event.timeStamp : null;
-  if(pointerId !== null){
-    if(inventoryPickupHandledPointerId === pointerId){
-      return;
-    }
-    inventoryPickupHandledPointerId = pointerId;
-  }
-
+function onInventoryItemPointerDown(event){
   const target = event.currentTarget;
   if(!(target instanceof HTMLImageElement)) return;
   const type = target.dataset.itemType;
@@ -2153,16 +2170,27 @@ function onInventoryItemPickupToggle(event){
   const activeColor = turnColors[turnIndex];
   if (color !== activeColor) return;
 
-  if (isSameInventoryItemSelection(activeInventoryPickup, color, type)) {
+  const selectedItem = getInventoryInteractionActiveItem();
+  if(
+    inventoryInteractionState.mode === "sticky"
+    && isSameInventoryItemSelection(selectedItem, color, type)
+  ){
     cancelActiveInventoryPickup();
     return;
   }
 
-  activeInventoryPickup = {
+  const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
+  const { clientX, clientY } = getPointerClientCoords(event);
+  const nextActiveItem = {
     color,
     type,
     usageTarget: usageConfig.target,
   };
+
+  setInventoryInteractionState("holding", nextActiveItem);
+  inventoryInteractionState.pointerId = pointerId;
+  inventoryInteractionState.downPoint = { x: clientX, y: clientY };
+  inventoryInteractionState.movedPx = 0;
 
   const rect = target.getBoundingClientRect();
   const width = Number.isFinite(rect.width) && rect.width > 0
@@ -2171,17 +2199,44 @@ function onInventoryItemPickupToggle(event){
   const height = Number.isFinite(rect.height) && rect.height > 0
     ? rect.height
     : INVENTORY_ITEM_SIZE_PX;
-  const { clientX, clientY } = getPointerClientCoords(event);
   activateInventoryDragFallback(target, clientX, clientY, type, { width, height });
   scheduleInventoryUiSync();
 }
 
 function onInventoryPickupPointerFinish(event){
-  if(inventoryPickupHandledPointerId === null) return;
+  if(inventoryInteractionState.mode !== "holding") return;
   const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
-  if(pointerId === null || pointerId === inventoryPickupHandledPointerId){
-    inventoryPickupHandledPointerId = null;
+  if(
+    inventoryInteractionState.pointerId !== null
+    && pointerId !== null
+    && pointerId !== inventoryInteractionState.pointerId
+  ){
+    return;
   }
+
+  if(event.type === "pointercancel"){
+    cancelActiveInventoryPickup();
+    return;
+  }
+
+  const activeItem = getInventoryInteractionActiveItem();
+  const { clientX, clientY } = getPointerClientCoords(event);
+  const didDrag = inventoryInteractionState.movedPx >= INVENTORY_PICKUP_DRAG_THRESHOLD_PX;
+
+  if(didDrag){
+    if(activeItem){
+      const applied = applyInventoryItemAtBoardPoint(activeItem, clientX, clientY, "onPointerPickupDragDrop");
+      if(applied){
+        removeItemFromInventory(activeItem.color, activeItem.type);
+      }
+    }
+    cancelActiveInventoryPickup();
+    return;
+  }
+
+  setInventoryInteractionState("sticky", activeItem);
+  clearInventoryInteractionPointer();
+  scheduleInventoryUiSync();
 }
 
 function onInventoryItemDragEnd(){
@@ -2346,21 +2401,33 @@ function onInventoryDrop(event){
 }
 
 function onInventoryPickupPointerMove(event){
-  if(!activeInventoryPickup) return;
+  if(inventoryInteractionState.mode !== "holding") return;
+  const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
+  if(
+    inventoryInteractionState.pointerId !== null
+    && pointerId !== null
+    && pointerId !== inventoryInteractionState.pointerId
+  ){
+    return;
+  }
   const { clientX, clientY } = getPointerClientCoords(event);
+  const downPoint = inventoryInteractionState.downPoint;
+  if(downPoint){
+    inventoryInteractionState.movedPx = Math.hypot(clientX - downPoint.x, clientY - downPoint.y);
+  }
+  if(inventoryInteractionState.movedPx < INVENTORY_PICKUP_DRAG_THRESHOLD_PX) return;
   updateInventoryDragFallbackPosition(clientX, clientY);
 }
 
-function onBoardInventoryPickupApply(event){
-  if(!activeInventoryPickup) return false;
+function onBoardInventoryStickyApply(event){
+  if(inventoryInteractionState.mode !== "sticky") return false;
+  const activeItem = getInventoryInteractionActiveItem();
+  if(!activeItem) return false;
   const { clientX, clientY } = getPointerClientCoords(event);
-  if(!isClientPointOverBoard(clientX, clientY)){
-    cancelActiveInventoryPickup();
-    return false;
-  }
-  const applied = applyInventoryItemAtBoardPoint(activeInventoryPickup, clientX, clientY, "onBoardPickup");
+  if(!isClientPointOverBoard(clientX, clientY)) return false;
+  const applied = applyInventoryItemAtBoardPoint(activeItem, clientX, clientY, "onBoardStickyApply");
   if(!applied) return false;
-  removeItemFromInventory(activeInventoryPickup.color, activeInventoryPickup.type);
+  removeItemFromInventory(activeItem.color, activeItem.type);
   cancelActiveInventoryPickup();
   return true;
 }
@@ -2892,8 +2959,8 @@ function syncInventoryUI(color){
         img.addEventListener("dragstart", onInventoryItemDragStart);
         img.addEventListener("dragend", onInventoryItemDragEnd);
       }
-      img.addEventListener("pointerdown", onInventoryItemPickupToggle);
-      if(isSameInventoryItemSelection(activeInventoryPickup, color, slot.type)){
+      img.addEventListener("pointerdown", onInventoryItemPointerDown);
+      if(isSameInventoryItemSelection(getInventoryInteractionActiveItem(), color, slot.type) && inventoryInteractionState.mode !== "idle"){
         img.classList.add("inventory-item--selected");
         slotContainer.classList.add("inventory-slot--selected");
         if (hintState && slot.layout?.frame) {
@@ -8137,6 +8204,10 @@ function updateAAPreviewFromEvent(e){
 
 function onCanvasPointerDown(e){
   logPointerDebugEvent(e);
+  if(onBoardInventoryStickyApply(e)){
+    e.preventDefault();
+    return;
+  }
   if(isNuclearStrikeActionLocked()) return;
   if(phase === 'AA_PLACEMENT'){
     e.preventDefault();
@@ -8169,9 +8240,6 @@ function onCanvasPointerMove(e){
 
 function onCanvasPointerUp(e){
   logPointerDebugEvent(e);
-  if(onBoardInventoryPickupApply(e)){
-    return;
-  }
   if(isNuclearStrikeActionLocked()){
     aaPointerDown = false;
     aaPlacementPreview = null;
@@ -8188,20 +8256,7 @@ function onCanvasPointerUp(e){
 }
 
 function onGlobalPointerDownInventoryCancel(event){
-  if(!activeInventoryPickup) return;
-
-  const eventPointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
-  const eventTimeStamp = Number.isFinite(event.timeStamp) ? event.timeStamp : null;
-  const isSameActivationPointerDown = eventPointerId !== null
-    && inventoryPickupActivationPointerId !== null
-    && eventPointerId === inventoryPickupActivationPointerId
-    && eventTimeStamp !== null
-    && inventoryPickupActivationTimeStamp !== null
-    && Math.abs(eventTimeStamp - inventoryPickupActivationTimeStamp) < 1;
-
-  if(isSameActivationPointerDown){
-    return;
-  }
+  if(inventoryInteractionState.mode !== "sticky") return;
 
   const target = event.target;
   const isInsideBoard = target instanceof Node && gsBoardCanvas instanceof HTMLElement
@@ -8218,7 +8273,6 @@ function onGlobalPointerDownInventoryCancel(event){
 gsBoardCanvas.addEventListener("pointerdown", onCanvasPointerDown);
 gsBoardCanvas.addEventListener("pointermove", onCanvasPointerMove);
 gsBoardCanvas.addEventListener("pointerup", onCanvasPointerUp);
-gsBoardCanvas.addEventListener("click", onBoardInventoryPickupApply);
 gsBoardCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; aaPointerDown = false; aaPreviewTrail = []; });
 if(shouldUseLegacyDragDropFallback()){
   gsBoardCanvas.addEventListener("dragover", onBoardDragOver);
