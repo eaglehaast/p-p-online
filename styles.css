@@ -348,7 +348,6 @@ body, button {
     position: absolute;
     left: 0;
     top: 0;
-    display: none;
     max-width: var(--inventory-tooltip-max-width, 190px);
     padding: var(--inventory-tooltip-padding, 5px 7px);
     background: var(--inventory-tooltip-background, rgba(0, 0, 0, 1));
@@ -364,15 +363,30 @@ body, button {
     box-shadow: var(--inventory-tooltip-box-shadow, none);
     pointer-events: none;
     z-index: 120;
-    transform: translate(-50%, -100%);
+    opacity: 0;
+    visibility: hidden;
+    --inventory-tooltip-offset-x: -50%;
+    --inventory-tooltip-offset-y: -100%;
+    transform: translate(var(--inventory-tooltip-offset-x), calc(var(--inventory-tooltip-offset-y) + 2px));
+    transition:
+      opacity 90ms ease-out,
+      transform 90ms ease-out,
+      visibility 0s linear 90ms;
+    will-change: opacity, transform;
   }
 
   .inventory-tooltip.is-visible {
-    display: block;
+    opacity: 1;
+    visibility: visible;
+    transform: translate(var(--inventory-tooltip-offset-x), var(--inventory-tooltip-offset-y));
+    transition:
+      opacity 90ms ease-out,
+      transform 90ms ease-out,
+      visibility 0s;
   }
 
   .inventory-tooltip.inventory-tooltip--below {
-    transform: translate(-50%, 0);
+    --inventory-tooltip-offset-y: 0;
   }
 
   body.inventory-pointer-hidden,

@@ -1292,14 +1292,14 @@ function refreshInventoryTooltip(){
   if(!(tooltip instanceof HTMLElement)) return;
   const target = getInventoryTooltipTarget();
   if(!target){
-    tooltip.classList.remove("is-visible", "inventory-tooltip--above", "inventory-tooltip--below");
+    tooltip.classList.remove("is-visible");
     tooltip.textContent = "";
     return;
   }
   const lines = INVENTORY_TOOLTIP_TEXT_BY_TYPE[target.type];
   const anchor = resolveInventoryTooltipAnchor(target.color, target.type);
   if(!Array.isArray(lines) || lines.length !== 2 || !anchor){
-    tooltip.classList.remove("is-visible", "inventory-tooltip--above", "inventory-tooltip--below");
+    tooltip.classList.remove("is-visible");
     tooltip.textContent = "";
     return;
   }
