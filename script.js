@@ -1228,6 +1228,29 @@ const inventoryTooltipState = {
   pendingClearOnTransitionEnd: null,
 };
 
+const INVENTORY_TOOLTIP_LAYOUT_DEFAULTS = Object.freeze({
+  anchorMode: "adjacent",
+  sideSwitchSlotIndex: 2,
+  offsetXPx: 0,
+  offsetYPx: 0,
+});
+
+const INVENTORY_TOOLTIP_STYLE_DEFAULTS = Object.freeze({
+  fontFamily: '"Palatino Linotype", Palatino, "Book Antiqua", serif',
+  fontWeight: "700",
+  fontSize: "12px",
+  lineHeight: "1.4",
+  maxWidth: "240px",
+  padding: "8px 12px",
+});
+
+const inventoryTooltipRuntimeConfig = {
+  layout: { ...INVENTORY_TOOLTIP_LAYOUT_DEFAULTS },
+  styles: { ...INVENTORY_TOOLTIP_STYLE_DEFAULTS },
+};
+
+applyInventoryTooltipRuntimeStyles();
+
 const INVENTORY_TOOLTIP_MOUSE_MOVE_DISMISS_THRESHOLD_PX = 8;
 
 const inventoryHosts = {
@@ -1298,19 +1321,122 @@ function getInventorySlotsForColor(color){
     });
 }
 
-function getInventoryTooltipAnchorLeftPx(slotRects, slotIndex, tooltipWidth){
+function getInventoryTooltipAnchorLeftPx(slotRects, slotIndex, tooltipWidth, options = {}){
   if(!Array.isArray(slotRects) || slotRects.length === 0) return 0;
   const maxIndex = slotRects.length - 1;
   const clampedIndex = Math.max(0, Math.min(maxIndex, slotIndex));
-  if(clampedIndex <= 2){
+  const sideSwitchSlotIndexRaw = Number.parseInt(options.sideSwitchSlotIndex, 10);
+  const sideSwitchSlotIndex = Number.isFinite(sideSwitchSlotIndexRaw)
+    ? Math.max(0, Math.min(maxIndex, sideSwitchSlotIndexRaw))
+    : 2;
+  const anchorMode = options.anchorMode === "self" ? "self" : "adjacent";
+  const activeRect = slotRects[clampedIndex];
+
+  if(clampedIndex <= sideSwitchSlotIndex){
+    if(anchorMode === "self"){
+      return Number(activeRect?.left) || 0;
+    }
     const nextIndex = Math.min(maxIndex, clampedIndex + 1);
     const nextRect = slotRects[nextIndex] ?? slotRects[clampedIndex];
     return Number(nextRect?.left) || 0;
+  }
+  if(anchorMode === "self"){
+    const activeRight = Number(activeRect?.right) || 0;
+    return activeRight - tooltipWidth;
   }
   const prevIndex = Math.max(0, clampedIndex - 1);
   const prevRect = slotRects[prevIndex] ?? slotRects[clampedIndex];
   const prevRight = Number(prevRect?.right) || 0;
   return prevRight - tooltipWidth;
+}
+
+function applyInventoryTooltipRuntimeStyles(){
+  if(typeof document === "undefined") return;
+  const root = document.documentElement;
+  if(!(root instanceof HTMLElement)) return;
+  root.style.setProperty("--inventory-tooltip-font-family", inventoryTooltipRuntimeConfig.styles.fontFamily);
+  root.style.setProperty("--inventory-tooltip-font-weight", inventoryTooltipRuntimeConfig.styles.fontWeight);
+  root.style.setProperty("--inventory-tooltip-font-size", inventoryTooltipRuntimeConfig.styles.fontSize);
+  root.style.setProperty("--inventory-tooltip-line-height", inventoryTooltipRuntimeConfig.styles.lineHeight);
+  root.style.setProperty("--inventory-tooltip-max-width", inventoryTooltipRuntimeConfig.styles.maxWidth);
+  root.style.setProperty("--inventory-tooltip-padding", inventoryTooltipRuntimeConfig.styles.padding);
+}
+
+function isInventoryTooltipAnchorModeSupported(value){
+  return value === "adjacent" || value === "self";
+}
+
+function setInventoryTooltipLayoutConfig(partialConfig = {}){
+  if(!partialConfig || typeof partialConfig !== "object") return false;
+  let changed = false;
+  if(Object.hasOwn(partialConfig, "anchorMode") && isInventoryTooltipAnchorModeSupported(partialConfig.anchorMode)){
+    inventoryTooltipRuntimeConfig.layout.anchorMode = partialConfig.anchorMode;
+    changed = true;
+  }
+  if(Object.hasOwn(partialConfig, "sideSwitchSlotIndex")){
+    const parsed = Number.parseInt(partialConfig.sideSwitchSlotIndex, 10);
+    if(Number.isFinite(parsed)){
+      inventoryTooltipRuntimeConfig.layout.sideSwitchSlotIndex = Math.max(0, Math.min(5, parsed));
+      changed = true;
+    }
+  }
+  if(Object.hasOwn(partialConfig, "offsetXPx")){
+    const parsed = Number(partialConfig.offsetXPx);
+    if(Number.isFinite(parsed)){
+      inventoryTooltipRuntimeConfig.layout.offsetXPx = Math.round(parsed);
+      changed = true;
+    }
+  }
+  if(Object.hasOwn(partialConfig, "offsetYPx")){
+    const parsed = Number(partialConfig.offsetYPx);
+    if(Number.isFinite(parsed)){
+      inventoryTooltipRuntimeConfig.layout.offsetYPx = Math.round(parsed);
+      changed = true;
+    }
+  }
+  if(changed){
+    refreshInventoryTooltip();
+  }
+  return changed;
+}
+
+function setInventoryTooltipStyleConfig(partialStyles = {}){
+  if(!partialStyles || typeof partialStyles !== "object") return false;
+  let changed = false;
+  const styleEntries = [
+    ["fontFamily", "fontFamily"],
+    ["fontWeight", "fontWeight"],
+    ["fontSize", "fontSize"],
+    ["lineHeight", "lineHeight"],
+    ["maxWidth", "maxWidth"],
+    ["padding", "padding"],
+  ];
+  for(const [key, targetKey] of styleEntries){
+    if(!Object.hasOwn(partialStyles, key)) continue;
+    const nextValue = String(partialStyles[key] ?? "").trim();
+    if(!nextValue) continue;
+    inventoryTooltipRuntimeConfig.styles[targetKey] = nextValue;
+    changed = true;
+  }
+  if(changed){
+    applyInventoryTooltipRuntimeStyles();
+    refreshInventoryTooltip();
+  }
+  return changed;
+}
+
+function resetInventoryTooltipRuntimeConfig(){
+  inventoryTooltipRuntimeConfig.layout = { ...INVENTORY_TOOLTIP_LAYOUT_DEFAULTS };
+  inventoryTooltipRuntimeConfig.styles = { ...INVENTORY_TOOLTIP_STYLE_DEFAULTS };
+  applyInventoryTooltipRuntimeStyles();
+  refreshInventoryTooltip();
+}
+
+function getInventoryTooltipRuntimeConfig(){
+  return {
+    layout: { ...inventoryTooltipRuntimeConfig.layout },
+    styles: { ...inventoryTooltipRuntimeConfig.styles },
+  };
 }
 
 function getInventoryTooltipTarget(){
@@ -1446,7 +1572,11 @@ function refreshInventoryTooltip(){
   const slotColor = target.color;
   const slots = getInventorySlotsForColor(slotColor);
   const slotRects = slots.map((slotElement) => slotElement.getBoundingClientRect());
-  const anchorLeftViewport = getInventoryTooltipAnchorLeftPx(slotRects, slotIndex, tooltipWidth);
+  const layout = inventoryTooltipRuntimeConfig.layout;
+  const anchorLeftViewport = getInventoryTooltipAnchorLeftPx(slotRects, slotIndex, tooltipWidth, {
+    sideSwitchSlotIndex: layout.sideSwitchSlotIndex,
+    anchorMode: layout.anchorMode,
+  });
   const anchorLeftInLayer = toInventoryTooltipLayerPoint({ x: anchorLeftViewport, y: 0 }).x;
 
   const inventoryRect = inventoryHosts[slotColor]?.getBoundingClientRect();
@@ -1457,10 +1587,10 @@ function refreshInventoryTooltip(){
   inventoryTooltipState.activeSlotIndex = slotIndex;
   inventoryTooltipState.activeSlotColor = slotColor;
 
-  tooltip.style.left = `${Math.round(anchorLeftInLayer)}px`;
-  tooltip.style.top = `${Math.round(tooltipTop)}px`;
+  tooltip.style.left = `${Math.round(anchorLeftInLayer + layout.offsetXPx)}px`;
+  tooltip.style.top = `${Math.round(tooltipTop + layout.offsetYPx)}px`;
   tooltip.classList.remove("is-left", "is-right");
-  tooltip.classList.add(slotIndex <= 2 ? "is-right" : "is-left");
+  tooltip.classList.add(slotIndex <= layout.sideSwitchSlotIndex ? "is-right" : "is-left");
   tooltip.classList.toggle(
     "inventory-tooltip--invisibility",
     target.type === INVENTORY_ITEM_TYPES.INVISIBILITY,
@@ -6171,6 +6301,67 @@ function getMineDebugConfig(){
   };
 }
 
+function runInventoryTooltipConsoleCommand(command, value){
+  const normalized = String(command ?? "").trim().toLowerCase();
+  switch(normalized){
+    case "get":
+      return getInventoryTooltipRuntimeConfig();
+    case "reset":
+      resetInventoryTooltipRuntimeConfig();
+      return true;
+    case "set-anchor":
+      return setInventoryTooltipLayoutConfig({ anchorMode: value });
+    case "set-threshold":
+      return setInventoryTooltipLayoutConfig({ sideSwitchSlotIndex: value });
+    case "set-x":
+      return setInventoryTooltipLayoutConfig({ offsetXPx: value });
+    case "set-y":
+      return setInventoryTooltipLayoutConfig({ offsetYPx: value });
+    case "set-font-family":
+      return setInventoryTooltipStyleConfig({ fontFamily: value });
+    case "set-font-weight":
+      return setInventoryTooltipStyleConfig({ fontWeight: value });
+    case "set-font-size":
+      return setInventoryTooltipStyleConfig({ fontSize: value });
+    case "set-line-height":
+      return setInventoryTooltipStyleConfig({ lineHeight: value });
+    case "set-max-width":
+      return setInventoryTooltipStyleConfig({ maxWidth: value });
+    case "set-padding":
+      return setInventoryTooltipStyleConfig({ padding: value });
+    default:
+      return false;
+  }
+}
+
+function ensureInventoryTooltipDebugApi(){
+  if(typeof window === "undefined") return;
+  window.INVENTORY_TOOLTIP_DEBUG = {
+    getConfig(){
+      return getInventoryTooltipRuntimeConfig();
+    },
+    setLayout(config = {}){
+      return setInventoryTooltipLayoutConfig(config);
+    },
+    setStyle(config = {}){
+      return setInventoryTooltipStyleConfig(config);
+    },
+    reset(){
+      resetInventoryTooltipRuntimeConfig();
+      return true;
+    },
+    command(command, value){
+      return runInventoryTooltipConsoleCommand(command, value);
+    },
+  };
+
+  window.INVENTORY_TOOLTIP_CMD = (command, value) => runInventoryTooltipConsoleCommand(command, value);
+
+  console.info(
+    '[INVENTORY_TOOLTIP_DEBUG] ready. Try: INVENTORY_TOOLTIP_CMD("get"), INVENTORY_TOOLTIP_CMD("set-x", 12), INVENTORY_TOOLTIP_CMD("set-y", -8), INVENTORY_TOOLTIP_CMD("set-anchor", "self"), INVENTORY_TOOLTIP_CMD("set-threshold", 2), INVENTORY_TOOLTIP_CMD("set-font-size", "14px"), INVENTORY_TOOLTIP_CMD("set-font-family", "Roboto, sans-serif"), INVENTORY_TOOLTIP_CMD("set-max-width", "280px"), INVENTORY_TOOLTIP_CMD("reset")'
+  );
+}
+
 function ensureMineDebugApi(){
   if(typeof window === "undefined") return;
   if(window.MINE_DEBUG) return;
@@ -6219,6 +6410,7 @@ function ensureMineDebugApi(){
 }
 
 ensureCargoDebugApi();
+ensureInventoryTooltipDebugApi();
 
 function isSpriteReady(img) {
   return Boolean(
