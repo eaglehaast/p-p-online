@@ -3019,15 +3019,12 @@ function updateAmplitudeIndicator(){
     selectInSettings('#amplitudeIndicator');
 
   if(pendulumHost){
-    const tuning = getActiveAimingTuning();
-    const referenceAccuracy = clampAimingPercent(tuning.referenceAccuracyPercent, AIMING_TUNING_DEFAULTS.referenceAccuracyPercent);
     const currentAccuracy = clampAimingPercent(
       Number.isFinite(sharedSettings.aimingAmplitude) ? sharedSettings.aimingAmplitude : DEFAULT_SETTINGS.aimingAmplitude,
       DEFAULT_SETTINGS.aimingAmplitude
     );
     const maxVisualAngle = MAX_ACCURACY_PERCENT;
-    const accuracyDelta = Math.max(0, referenceAccuracy - currentAccuracy);
-    const visualAngle = maxVisualAngle * (accuracyDelta / Math.max(referenceAccuracy, 1));
+    const visualAngle = maxVisualAngle - currentAccuracy;
     pendulumTarget = visualAngle;
     if(pendulumCurrent === null){
       pendulumCurrent = visualAngle;
