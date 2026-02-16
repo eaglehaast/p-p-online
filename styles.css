@@ -983,7 +983,7 @@ body, button {
 
   .accuracy-tape {
     width: 1276px;
-  background-image: url('ui_controlpanel/cp_acuracy_tape2.png');
+  background-image: url('ui_controlpanel/accuracy_tape_percent.png');
   }
 
   .range-display__item,
