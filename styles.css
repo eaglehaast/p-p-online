@@ -14,6 +14,15 @@
   --inventory-tooltip-border-radius: 6px;
   --inventory-tooltip-border: 1px solid rgba(90,65,40,0.35);
   --inventory-tooltip-box-shadow: 0 8px 18px rgba(0,0,0,0.18);
+
+  /* Round banner theme tokens (paper-card style, scaled up) */
+  --round-banner-background: var(--inventory-tooltip-background);
+  --round-banner-color: var(--inventory-tooltip-color);
+  --round-banner-font-family: var(--inventory-tooltip-font-family);
+  --round-banner-border-radius: var(--inventory-tooltip-border-radius);
+  --round-banner-border: var(--inventory-tooltip-border);
+  --round-banner-box-shadow: var(--inventory-tooltip-box-shadow);
+  --round-banner-padding: 14px 20px;
 }
 
 body, button {
@@ -412,6 +421,38 @@ body, button {
     max-width: 220px;
     line-height: 1.35;
     padding: 8px 12px;
+  }
+
+  .round-banner-layer {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 260;
+  }
+
+  .round-banner {
+    display: none;
+    max-width: calc(100% - 32px);
+    padding: var(--round-banner-padding, 14px 20px);
+    background: var(--round-banner-background, rgba(210,190,150,0.97));
+    color: var(--round-banner-color, #251d14);
+    border-radius: var(--round-banner-border-radius, 6px);
+    border: var(--round-banner-border, 1px solid rgba(90,65,40,0.35));
+    box-shadow: var(--round-banner-box-shadow, 0 8px 18px rgba(0,0,0,0.18));
+    font-family: var(--round-banner-font-family, "Palatino Linotype", Palatino, "Book Antiqua", serif);
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: center;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+  }
+
+  .round-banner.is-visible {
+    display: block;
   }
 
   body.inventory-pointer-hidden,
