@@ -22,11 +22,11 @@ const FIELD_DEBUG_BUILD = '2026-01-11-1106';
 const RANGE_DIR_NEXT = 1;
 const RANGE_DIR_PREV = -1;
 const RANGE_VISUAL_SIGN = -1;
-const MIN_AMPLITUDE = 0;
-const MAX_AMPLITUDE = 20;
+const MIN_ACCURACY_PERCENT = 0;
+const MAX_ACCURACY_PERCENT = 100;
 const ACCURACY_DISPLAY_VALUES = Array.from(
-  { length: MAX_AMPLITUDE - MIN_AMPLITUDE + 1 },
-  (_, index) => (index + MIN_AMPLITUDE) * 5
+  { length: (MAX_ACCURACY_PERCENT - MIN_ACCURACY_PERCENT) / 5 + 1 },
+  (_, index) => MIN_ACCURACY_PERCENT + index * 5
 );
 const ACCURACY_CELL_WIDTH = 58;
 const ACCURACY_TAPE_IMAGE_WIDTH = 1276;
@@ -403,7 +403,7 @@ function sanitizeMapIndex(index, { excludeIndex, allowRandom } = {}){
 
 const DEFAULT_SETTINGS = {
   rangeCells: 30,
-  aimingAmplitude: 10 / 5,
+  aimingAmplitude: 90,
   addAA: true,
   sharpEdges: true,
   flagsEnabled: true,
@@ -603,7 +603,11 @@ let rangeCommittedValue = getRangeValue(rangeStep);
 let rangePreviewValue = rangeCommittedValue;
 sharedSettings.flightRangeCells = rangeCommittedValue;
 sharedSettings.aimingAmplitude  = parseFloat(getStoredItem('settings.aimingAmplitude'));
-if(Number.isNaN(sharedSettings.aimingAmplitude)) sharedSettings.aimingAmplitude = DEFAULT_SETTINGS.aimingAmplitude;
+if(Number.isNaN(sharedSettings.aimingAmplitude)){
+  sharedSettings.aimingAmplitude = DEFAULT_SETTINGS.aimingAmplitude;
+} else if(sharedSettings.aimingAmplitude <= 20){
+  sharedSettings.aimingAmplitude *= 5;
+}
 const storedAddAA = getStoredItem('settings.addAA');
 sharedSettings.addAA = storedAddAA === null
   ? DEFAULT_SETTINGS.addAA
@@ -683,8 +687,13 @@ function clampAccuracyIndex(index){
 }
 
 function getAccuracyDisplayIndex(amplitude){
-  const clampedAmplitude = Math.min(MAX_AMPLITUDE, Math.max(MIN_AMPLITUDE, amplitude));
-  return clampAccuracyIndex(Math.round(clampedAmplitude - MIN_AMPLITUDE));
+  const clampedAccuracy = Math.min(MAX_ACCURACY_PERCENT, Math.max(MIN_ACCURACY_PERCENT, amplitude));
+  return clampAccuracyIndex(Math.round((clampedAccuracy - MIN_ACCURACY_PERCENT) / 5));
+}
+
+function getSpreadAngleDegByAccuracy(accuracyPercent, maxSpreadDeg = 12){
+  const p = clamp((Number.isFinite(accuracyPercent) ? accuracyPercent : DEFAULT_SETTINGS.aimingAmplitude) / 100, 0, 1);
+  return maxSpreadDeg * Math.pow(1 - p, 2);
 }
 
 function getRangeStepForValue(value){
@@ -1444,7 +1453,7 @@ function setAccuracyDisplayValue(displayedAngle){
   const el = selectInSettings('#amplitudeAngleDisplay');
   const transformTarget = ensureAccuracyDisplayTrack();
   if(el){
-    el.textContent = `${displayedAngle.toFixed(0)}°`;
+    el.textContent = `${displayedAngle.toFixed(0)}%`;
     el.classList.add('accuracy-display__value--current');
     el.classList.remove('accuracy-display__value--incoming', 'accuracy-display__value--outgoing');
   }
@@ -1547,7 +1556,7 @@ function finishAccuracyScroll(targetIndex, dir, onFinish){
   const currentValue = ACCURACY_DISPLAY_VALUES[targetIndex];
   accuracyScrollPos = targetIndex;
   accuracyDisplayIdx = targetIndex;
-  sharedSettings.aimingAmplitude = MIN_AMPLITUDE + targetIndex;
+  sharedSettings.aimingAmplitude = MIN_ACCURACY_PERCENT + targetIndex * 5;
   setAccuracyDisplayValue(currentValue);
   updateAccuracyTapePosition(accuracyDisplayIdx);
   updateAmplitudeIndicator();
@@ -1707,7 +1716,7 @@ function updateAccuracyDisplay(stepOverride, options = {}){
 
   accuracyDisplayIdx = displayIdx;
   accuracyScrollPos = displayIdx;
-  sharedSettings.aimingAmplitude = MIN_AMPLITUDE + displayIdx;
+  sharedSettings.aimingAmplitude = MIN_ACCURACY_PERCENT + displayIdx * 5;
   setAccuracyDisplayValue(displayedAngle);
   updateAccuracyTapePosition(displayIdx);
   updateAmplitudeIndicator();
@@ -1904,7 +1913,7 @@ function prepareIncomingAccuracyValue(direction){
     incomingContainer.appendChild(incoming);
   }
 
-  incoming.textContent = `${ACCURACY_DISPLAY_VALUES[targetIndex]}°`;
+  incoming.textContent = `${ACCURACY_DISPLAY_VALUES[targetIndex]}%`;
   incoming.dataset.direction = direction;
   incoming.style.transition = 'none';
 
@@ -2713,7 +2722,7 @@ function changeAccuracyStep(delta, options = {}){
   const dir = getRangeDirFromDelta(delta);
   const animateDirection = getRangeDirectionLabel(dir);
 
-  sharedSettings.aimingAmplitude = MIN_AMPLITUDE + nextIndex;
+  sharedSettings.aimingAmplitude = MIN_ACCURACY_PERCENT + nextIndex * 5;
   updateAmplitudeIndicator();
 
   if(commitImmediately){
@@ -2894,11 +2903,13 @@ function updateAmplitudeIndicator(){
     selectInSettings('#amplitudeIndicator');
 
   if(pendulumHost){
-    const maxAngle = sharedSettings.aimingAmplitude * 5;
-    pendulumTarget = maxAngle;
+    const p = clamp((Number.isFinite(sharedSettings.aimingAmplitude) ? sharedSettings.aimingAmplitude : DEFAULT_SETTINGS.aimingAmplitude) / 100, 0, 1);
+    const maxAngle = MAX_ACCURACY_PERCENT;
+    const visualAngle = maxAngle * (1 - p);
+    pendulumTarget = visualAngle;
     if(pendulumCurrent === null){
-      pendulumCurrent = maxAngle;
-      pendulumHost.style.setProperty('--amp', `${maxAngle}deg`);
+      pendulumCurrent = visualAngle;
+      pendulumHost.style.setProperty('--amp', `${visualAngle}deg`);
     }
     startPendulumAnimation();
   }
@@ -2960,7 +2971,7 @@ function setupAccuracyCrackWatcher(){
     return null;
   }
 
-  const TARGET_AMPLITUDE = 20;
+  const TARGET_ACCURACY = 0;
   const EXTREME_THRESHOLD = 99.5;
   const RESET_THRESHOLD = 90;
   const EPSILON = 0.001;
@@ -2971,7 +2982,7 @@ function setupAccuracyCrackWatcher(){
   let running = false;
   let rafId = null;
 
-  const shouldRunForAmplitude = (amplitude) => amplitude >= TARGET_AMPLITUDE - EPSILON;
+  const shouldRunForAmplitude = (accuracyPercent) => accuracyPercent <= TARGET_ACCURACY + EPSILON;
 
   const appendCrack = (side) => {
     if(side === 'left' && leftIndex < LEFT_CRACK_STEPS.length){
@@ -3878,7 +3889,7 @@ function updatePreviewHandle(delta){
   const dy = previewHandle.baseY - plane.y;
   const dist = Math.hypot(dx, dy);
   const clampedDist = Math.min(dist, PREVIEW_MAX_DRAG_DISTANCE);
-  const maxAngleDeg = sharedSettings.aimingAmplitude * 5;
+  const maxAngleDeg = getSpreadAngleDegByAccuracy(sharedSettings.aimingAmplitude);
   const maxAngleRad = maxAngleDeg * Math.PI / 180;
 
   previewOscillationAngle += PREVIEW_OSCILLATION_SPEED * delta * previewOscillationDir;

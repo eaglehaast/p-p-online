@@ -7452,8 +7452,9 @@ function drawCargo(ctx2d){
 const MIN_FLIGHT_RANGE_CELLS = 10;
 const MAX_FLIGHT_RANGE_CELLS = 50;
 
-const MIN_AMPLITUDE        = 0;
-const MAX_AMPLITUDE        = 20;     // UI показывает как *5°
+const MIN_ACCURACY_PERCENT = 0;
+const MAX_ACCURACY_PERCENT = 100;
+const MAX_SPREAD_DEG       = 12;
 const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 
 
@@ -7592,7 +7593,7 @@ function normalizeFlameStyleKey(key) {
 const settingsBridge = window.paperWingsSettings || (window.paperWingsSettings = {});
 const sharedSettings = settingsBridge.settings || (settingsBridge.settings = {
   flightRangeCells: 30,
-  aimingAmplitude: 10 / 5,
+  aimingAmplitude: 90,
   addAA: true,
   sharpEdges: true,
   flagsEnabled: true,
@@ -7604,7 +7605,7 @@ if(!Number.isFinite(sharedSettings.flightRangeCells)){
   sharedSettings.flightRangeCells = 30;
 }
 if(!Number.isFinite(sharedSettings.aimingAmplitude)){
-  sharedSettings.aimingAmplitude = 10 / 5;
+  sharedSettings.aimingAmplitude = 90;
 }
 if(typeof sharedSettings.addAA !== 'boolean'){
   sharedSettings.addAA = true;
@@ -7684,8 +7685,9 @@ function loadSettings(){
   const previousFlameStyle = settings.flameStyle;
   const fr = parseInt(getStoredSetting('settings.flightRangeCells'), 10);
   settings.flightRangeCells = Number.isNaN(fr) ? 30 : fr;
-  const amp = parseFloat(getStoredSetting('settings.aimingAmplitude'));
-  settings.aimingAmplitude = Number.isNaN(amp) ? 10 / 5 : amp;
+  if(!Number.isFinite(settings.aimingAmplitude)){
+    settings.aimingAmplitude = 90;
+  }
   const storedAddAA = getStoredSetting('settings.addAA');
   settings.addAA = storedAddAA === null ? true : storedAddAA === 'true';
   if(AA_PLACEMENT_TEMP_DISABLED){
@@ -7707,8 +7709,9 @@ function loadSettings(){
   // don't break the game on startup
   settings.flightRangeCells = Math.min(MAX_FLIGHT_RANGE_CELLS,
     Math.max(MIN_FLIGHT_RANGE_CELLS, settings.flightRangeCells));
-  settings.aimingAmplitude = Math.min(MAX_AMPLITUDE,
-    Math.max(MIN_AMPLITUDE, settings.aimingAmplitude));
+  if(!Number.isFinite(settings.aimingAmplitude)){
+    settings.aimingAmplitude = 90;
+  }
 
   if(previousFlameStyle !== settings.flameStyle){
     onFlameStyleChanged();
@@ -8417,7 +8420,7 @@ onlineBtn.addEventListener("click",()=>{
 if(classicRulesBtn){
   classicRulesBtn.addEventListener('click', () => {
     settings.flightRangeCells = 30;
-    settings.aimingAmplitude = 10 / 5; // 10°
+    settings.aimingAmplitude = 90;
     settings.addAA = false;
     settings.sharpEdges = true;
     const upcomingRoundNumber = roundNumber + 1;
@@ -9304,6 +9307,12 @@ function dist(a,b){ return Math.hypot(a.x-b.x,a.y-b.y); }
 function getRandomDeviation(distance, maxDev){
   let nd = Math.min(distance/ATTACK_RANGE_PX, 1);
   return (Math.random()*2 - 1) * (maxDev * nd);
+}
+
+function getSpreadAngleDegByAccuracy(accuracyPercent, maxSpreadDeg = MAX_SPREAD_DEG){
+  const safeAccuracy = Number.isFinite(accuracyPercent) ? accuracyPercent : 90;
+  const p = clamp(safeAccuracy / 100, 0, 1);
+  return maxSpreadDeg * Math.pow(1 - p, 2);
 }
 
 /* Зеркальный выстрел (одно отражение) */
@@ -10860,10 +10869,10 @@ function gameDraw(){
     const clampedDist = Math.min(distPx, MAX_DRAG_DISTANCE);
 
     // use a constant aiming amplitude (in degrees) independent of drag distance
-    const aimingAmplitude = hasCrosshairBuff
-      ? 0
+    const aimingAccuracyPercent = hasCrosshairBuff
+      ? 100
       : settings.aimingAmplitude;
-    const maxAngleDeg = aimingAmplitude * 5;
+    const maxAngleDeg = getSpreadAngleDegByAccuracy(aimingAccuracyPercent);
     const maxAngleRad = maxAngleDeg * Math.PI / 180;
 
     // обновляем текущий угол раскачивания
