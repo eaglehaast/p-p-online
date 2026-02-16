@@ -1221,6 +1221,8 @@ const inventoryTooltipState = {
   previewTarget: null,
   previewTimeoutId: null,
   previewPointerOrigin: null,
+  pendingClearTimeoutId: null,
+  pendingClearOnTransitionEnd: null,
 };
 
 const INVENTORY_TOOLTIP_MOUSE_MOVE_DISMISS_THRESHOLD_PX = 8;
@@ -1311,22 +1313,77 @@ function showInventoryTooltipForSlot(color, type, options = {}){
   }
 }
 
+function cancelInventoryTooltipDeferredClear(tooltip){
+  if(inventoryTooltipState.pendingClearTimeoutId){
+    clearTimeout(inventoryTooltipState.pendingClearTimeoutId);
+    inventoryTooltipState.pendingClearTimeoutId = null;
+  }
+  if(
+    tooltip instanceof HTMLElement
+    && typeof inventoryTooltipState.pendingClearOnTransitionEnd === "function"
+  ){
+    tooltip.removeEventListener("transitionend", inventoryTooltipState.pendingClearOnTransitionEnd);
+  }
+  inventoryTooltipState.pendingClearOnTransitionEnd = null;
+}
+
+function parseCssTimeToMs(rawValue){
+  const value = String(rawValue ?? "").trim();
+  if(!value) return 0;
+  if(value.endsWith("ms")) return Number.parseFloat(value) || 0;
+  if(value.endsWith("s")) return (Number.parseFloat(value) || 0) * 1000;
+  return Number.parseFloat(value) || 0;
+}
+
+function getInventoryTooltipOpacityFadeOutMs(tooltip){
+  if(!(tooltip instanceof HTMLElement) || typeof window === "undefined") return 0;
+  const styles = window.getComputedStyle(tooltip);
+  const properties = styles.transitionProperty.split(",").map((item) => item.trim());
+  const durations = styles.transitionDuration.split(",").map(parseCssTimeToMs);
+  const delays = styles.transitionDelay.split(",").map(parseCssTimeToMs);
+  const propertyIndex = properties.findIndex((property) => property === "opacity" || property === "all");
+  const safeIndex = propertyIndex >= 0 ? propertyIndex : 0;
+  const duration = durations[safeIndex] ?? durations[0] ?? 0;
+  const delay = delays[safeIndex] ?? delays[0] ?? 0;
+  return Math.max(0, duration + delay);
+}
+
+function deferInventoryTooltipTextClear(tooltip){
+  if(!(tooltip instanceof HTMLElement)) return;
+  cancelInventoryTooltipDeferredClear(tooltip);
+  const clearText = () => {
+    if(tooltip.classList.contains("is-visible")) return;
+    tooltip.textContent = "";
+    cancelInventoryTooltipDeferredClear(tooltip);
+  };
+  const transitionHandler = (event) => {
+    if(event.propertyName !== "opacity") return;
+    clearText();
+  };
+  inventoryTooltipState.pendingClearOnTransitionEnd = transitionHandler;
+  tooltip.addEventListener("transitionend", transitionHandler);
+
+  const fallbackMs = getInventoryTooltipOpacityFadeOutMs(tooltip) + 16;
+  inventoryTooltipState.pendingClearTimeoutId = setTimeout(clearText, fallbackMs);
+}
+
 function refreshInventoryTooltip(){
   const tooltip = ensureInventoryTooltipElement();
   if(!(tooltip instanceof HTMLElement)) return;
   const target = getInventoryTooltipTarget();
   if(!target){
     tooltip.classList.remove("is-visible");
-    tooltip.textContent = "";
+    deferInventoryTooltipTextClear(tooltip);
     return;
   }
   const lines = INVENTORY_TOOLTIP_TEXT_BY_TYPE[target.type];
   const anchor = resolveInventoryTooltipAnchor(target.color, target.type);
   if(!Array.isArray(lines) || lines.length !== 2 || !anchor){
     tooltip.classList.remove("is-visible");
-    tooltip.textContent = "";
+    deferInventoryTooltipTextClear(tooltip);
     return;
   }
+  cancelInventoryTooltipDeferredClear(tooltip);
   tooltip.textContent = `${lines[0]}\n${lines[1]}`;
   tooltip.style.left = `${Math.round(anchor.x)}px`;
   tooltip.style.top = `${Math.round(anchor.y)}px`;
