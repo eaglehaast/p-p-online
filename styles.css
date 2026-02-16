@@ -396,7 +396,7 @@ body, button {
   }
 
   .inventory-tooltip.inventory-tooltip--invisibility {
-    width: 220px;
+    width: max-content;
     max-width: 220px;
     line-height: 1.35;
     padding: 8px 12px;
@@ -1496,8 +1496,8 @@ body, button {
   pointer-events: none;
   display: block;
   background: transparent;
-  /* Ensure the arrow renders above the game field but below the planes */
-  z-index: 18;
+  /* Keep aiming arrow above inventory slots so trajectory tail never hides under them. */
+  z-index: 90;
 }
 
 /* Board dimmer overlay */
