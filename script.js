@@ -1192,7 +1192,7 @@ const INVENTORY_SELECTION_CANCEL_HINT_TEXT = "";
 const INVENTORY_TOOLTIP_TEXT_BY_TYPE = Object.freeze({
   [INVENTORY_ITEM_TYPES.CROSSHAIR]: [
     "Install on your plane.",
-    "Absolute strike precision!",
+    "Full precision!",
   ],
   [INVENTORY_ITEM_TYPES.FUEL]: [
     "Install on your plane.",
