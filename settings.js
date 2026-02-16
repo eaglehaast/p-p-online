@@ -433,6 +433,106 @@ const PREVIEW_OSCILLATION_SPEED = 0.01;
 const PREVIEW_FLIGHT_DISTANCE_SCALE = 1 / 1.5;
 const PREVIEW_FLIGHT_DURATION_SCALE = 1;
 
+const AIMING_TUNING_DEFAULTS = {
+  referenceAccuracyPercent: 90,
+  spreadAtReferenceDeg: 0.12,
+  amplitudeMultiplier: 1,
+  speedMultiplier: 1,
+  curveExponent: 2
+};
+
+function clampAimingPercent(value, fallback = DEFAULT_SETTINGS.aimingAmplitude){
+  const n = Number(value);
+  const safe = Number.isFinite(n) ? n : fallback;
+  return clamp(safe, 0, 100);
+}
+
+function normalizeAimingTuning(raw = {}){
+  const tuning = {
+    referenceAccuracyPercent: clampAimingPercent(raw.referenceAccuracyPercent, AIMING_TUNING_DEFAULTS.referenceAccuracyPercent),
+    spreadAtReferenceDeg: Number.isFinite(raw.spreadAtReferenceDeg) ? Math.max(0, raw.spreadAtReferenceDeg) : AIMING_TUNING_DEFAULTS.spreadAtReferenceDeg,
+    amplitudeMultiplier: Number.isFinite(raw.amplitudeMultiplier) ? Math.max(0, raw.amplitudeMultiplier) : AIMING_TUNING_DEFAULTS.amplitudeMultiplier,
+    speedMultiplier: Number.isFinite(raw.speedMultiplier) ? Math.max(0, raw.speedMultiplier) : AIMING_TUNING_DEFAULTS.speedMultiplier,
+    curveExponent: Number.isFinite(raw.curveExponent) ? Math.max(0.1, raw.curveExponent) : AIMING_TUNING_DEFAULTS.curveExponent
+  };
+  return tuning;
+}
+
+function getAimingSpreadScale(accuracyPercent, tuning = AIMING_TUNING_DEFAULTS){
+  const p = clampAimingPercent(accuracyPercent) / 100;
+  const refP = clampAimingPercent(tuning.referenceAccuracyPercent, AIMING_TUNING_DEFAULTS.referenceAccuracyPercent) / 100;
+  const exp = Number.isFinite(tuning.curveExponent) ? tuning.curveExponent : AIMING_TUNING_DEFAULTS.curveExponent;
+  const numerator = Math.pow(1 - p, exp);
+  const denominator = Math.pow(1 - refP, exp);
+  const normalizedDenominator = denominator <= 1e-6 ? 1 : denominator;
+  return numerator / normalizedDenominator;
+}
+
+function getAimingSpreadAngleDeg(accuracyPercent, tuning = AIMING_TUNING_DEFAULTS){
+  const spreadAtReferenceDeg = Number.isFinite(tuning.spreadAtReferenceDeg)
+    ? Math.max(0, tuning.spreadAtReferenceDeg)
+    : AIMING_TUNING_DEFAULTS.spreadAtReferenceDeg;
+  const amplitudeMultiplier = Number.isFinite(tuning.amplitudeMultiplier)
+    ? Math.max(0, tuning.amplitudeMultiplier)
+    : AIMING_TUNING_DEFAULTS.amplitudeMultiplier;
+  return spreadAtReferenceDeg * amplitudeMultiplier * getAimingSpreadScale(accuracyPercent, tuning);
+}
+
+function ensureAimingDebuggerBridge(){
+  const existing = window.paperWingsAimingDebugger;
+  if(existing && existing.state){
+    existing.state.tuning = normalizeAimingTuning(existing.state.tuning);
+    return existing;
+  }
+
+  const bridge = {
+    state: {
+      enabled: false,
+      tuning: normalizeAimingTuning(AIMING_TUNING_DEFAULTS)
+    },
+    setEnabled(value = true){
+      this.state.enabled = !!value;
+      return this.snapshot();
+    },
+    setAccuracy(percent){
+      const clamped = clampAimingPercent(percent);
+      sharedSettings.aimingAmplitude = clamped;
+      return this.snapshot();
+    },
+    setTuning(nextTuning = {}){
+      this.state.tuning = normalizeAimingTuning({ ...this.state.tuning, ...nextTuning });
+      return this.snapshot();
+    },
+    reset(){
+      this.state.enabled = false;
+      this.state.tuning = normalizeAimingTuning(AIMING_TUNING_DEFAULTS);
+      return this.snapshot();
+    },
+    snapshot(){
+      return {
+        enabled: this.state.enabled,
+        accuracyPercent: clampAimingPercent(sharedSettings.aimingAmplitude),
+        tuning: { ...this.state.tuning }
+      };
+    }
+  };
+
+  window.paperWingsAimingDebugger = bridge;
+  return bridge;
+}
+
+const aimingDebuggerBridge = ensureAimingDebuggerBridge();
+
+function getActiveAimingTuning(){
+  const tuning = aimingDebuggerBridge?.state?.tuning;
+  return normalizeAimingTuning(tuning || AIMING_TUNING_DEFAULTS);
+}
+
+function getAimingOscillationSpeed(){
+  const tuning = getActiveAimingTuning();
+  return PREVIEW_OSCILLATION_SPEED * tuning.speedMultiplier;
+}
+
 class ContrailRenderer {
   constructor(canvas, options = {}) {
     this.canvas = canvas;
@@ -691,9 +791,8 @@ function getAccuracyDisplayIndex(amplitude){
   return clampAccuracyIndex(Math.round((clampedAccuracy - MIN_ACCURACY_PERCENT) / 5));
 }
 
-function getSpreadAngleDegByAccuracy(accuracyPercent, maxSpreadDeg = 12){
-  const p = clamp((Number.isFinite(accuracyPercent) ? accuracyPercent : DEFAULT_SETTINGS.aimingAmplitude) / 100, 0, 1);
-  return maxSpreadDeg * Math.pow(1 - p, 2);
+function getSpreadAngleDegByAccuracy(accuracyPercent){
+  return getAimingSpreadAngleDeg(accuracyPercent, getActiveAimingTuning());
 }
 
 function getRangeStepForValue(value){
@@ -3892,7 +3991,7 @@ function updatePreviewHandle(delta){
   const maxAngleDeg = getSpreadAngleDegByAccuracy(sharedSettings.aimingAmplitude);
   const maxAngleRad = maxAngleDeg * Math.PI / 180;
 
-  previewOscillationAngle += PREVIEW_OSCILLATION_SPEED * delta * previewOscillationDir;
+  previewOscillationAngle += getAimingOscillationSpeed() * delta * previewOscillationDir;
   if(previewOscillationDir > 0 && previewOscillationAngle > maxAngleRad){
     previewOscillationAngle = maxAngleRad;
     previewOscillationDir = -1;

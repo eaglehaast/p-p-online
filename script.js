@@ -7457,6 +7457,109 @@ const MAX_ACCURACY_PERCENT = 100;
 const MAX_SPREAD_DEG       = 12;
 const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 
+const AIMING_TUNING_DEFAULTS = {
+  referenceAccuracyPercent: 90,
+  spreadAtReferenceDeg: 0.12,
+  amplitudeMultiplier: 1,
+  speedMultiplier: 1,
+  curveExponent: 2
+};
+
+function clampAimingPercent(value, fallback = 90){
+  const n = Number(value);
+  const safe = Number.isFinite(n) ? n : fallback;
+  return clamp(safe, 0, 100);
+}
+
+function normalizeAimingTuning(raw = {}){
+  return {
+    referenceAccuracyPercent: clampAimingPercent(raw.referenceAccuracyPercent, AIMING_TUNING_DEFAULTS.referenceAccuracyPercent),
+    spreadAtReferenceDeg: Number.isFinite(raw.spreadAtReferenceDeg) ? Math.max(0, raw.spreadAtReferenceDeg) : AIMING_TUNING_DEFAULTS.spreadAtReferenceDeg,
+    amplitudeMultiplier: Number.isFinite(raw.amplitudeMultiplier) ? Math.max(0, raw.amplitudeMultiplier) : AIMING_TUNING_DEFAULTS.amplitudeMultiplier,
+    speedMultiplier: Number.isFinite(raw.speedMultiplier) ? Math.max(0, raw.speedMultiplier) : AIMING_TUNING_DEFAULTS.speedMultiplier,
+    curveExponent: Number.isFinite(raw.curveExponent) ? Math.max(0.1, raw.curveExponent) : AIMING_TUNING_DEFAULTS.curveExponent
+  };
+}
+
+function ensureAimingDebuggerBridge(){
+  const existing = window.paperWingsAimingDebugger;
+  if(existing && existing.state){
+    existing.state.tuning = normalizeAimingTuning(existing.state.tuning);
+  }
+
+  const bridge = existing && existing.state ? existing : { state: { enabled: false, tuning: normalizeAimingTuning(AIMING_TUNING_DEFAULTS) } };
+
+  bridge.setEnabled = function(value = true){
+    this.state.enabled = !!value;
+    return this.snapshot();
+  };
+  bridge.setAccuracy = function(percent){
+    const clamped = clampAimingPercent(percent);
+    settings.aimingAmplitude = clamped;
+    setStoredSetting('settings.aimingAmplitude', clamped);
+    return this.snapshot();
+  };
+  bridge.setTuning = function(nextTuning = {}){
+    this.state.tuning = normalizeAimingTuning({ ...this.state.tuning, ...nextTuning });
+    return this.snapshot();
+  };
+  bridge.reset = function(){
+    this.state.enabled = false;
+    this.state.tuning = normalizeAimingTuning(AIMING_TUNING_DEFAULTS);
+    return this.snapshot();
+  };
+  bridge.getAccuracyTable = function(step = 10){
+    const safeStep = Math.max(1, Math.floor(Number(step) || 10));
+    const rows = [];
+    for(let accuracy = 0; accuracy <= 100; accuracy += safeStep){
+      rows.push({
+        accuracyPercent: accuracy,
+        spreadDeg: Number(getSpreadAngleDegByAccuracy(accuracy).toFixed(4))
+      });
+    }
+    if(rows[rows.length - 1]?.accuracyPercent !== 100){
+      rows.push({
+        accuracyPercent: 100,
+        spreadDeg: Number(getSpreadAngleDegByAccuracy(100).toFixed(4))
+      });
+    }
+    return rows;
+  };
+  bridge.snapshot = function(){
+    return {
+      enabled: this.state.enabled,
+      accuracyPercent: clampAimingPercent(settings.aimingAmplitude),
+      tuning: { ...this.state.tuning },
+      currentSpreadDeg: Number(getSpreadAngleDegByAccuracy(settings.aimingAmplitude).toFixed(4)),
+      currentOscillationSpeed: Number(getAimingOscillationSpeed().toFixed(5))
+    };
+  };
+
+  window.paperWingsAimingDebugger = bridge;
+  return bridge;
+}
+
+const aimingDebuggerBridge = ensureAimingDebuggerBridge();
+
+function getActiveAimingTuning(){
+  const tuning = aimingDebuggerBridge?.state?.tuning;
+  return normalizeAimingTuning(tuning || AIMING_TUNING_DEFAULTS);
+}
+
+function getAimingSpreadScale(accuracyPercent, tuning = AIMING_TUNING_DEFAULTS){
+  const p = clampAimingPercent(accuracyPercent) / 100;
+  const refP = clampAimingPercent(tuning.referenceAccuracyPercent, AIMING_TUNING_DEFAULTS.referenceAccuracyPercent) / 100;
+  const exp = Number.isFinite(tuning.curveExponent) ? tuning.curveExponent : AIMING_TUNING_DEFAULTS.curveExponent;
+  const numerator = Math.pow(1 - p, exp);
+  const denominator = Math.pow(1 - refP, exp);
+  const normalizedDenominator = denominator <= 1e-6 ? 1 : denominator;
+  return numerator / normalizedDenominator;
+}
+
+function getAimingOscillationSpeed(){
+  const tuning = getActiveAimingTuning();
+  return BASE_OSCILLATION_SPEED * tuning.speedMultiplier;
+}
 
 // Anti-Aircraft defaults and placement limits
 const AA_DEFAULTS = {
@@ -7496,7 +7599,7 @@ let globalFrame  = 0;
 let lastFrameTime = 0;
 let oscillationAngle = 0;
 let oscillationDir = 1;
-const oscillationSpeed = 0.01;
+const BASE_OSCILLATION_SPEED = 0.01;
 
 const turnColors = ["green","blue"];
 let lastFirstTurn= Math.floor(Math.random()*2);
@@ -9309,10 +9412,15 @@ function getRandomDeviation(distance, maxDev){
   return (Math.random()*2 - 1) * (maxDev * nd);
 }
 
-function getSpreadAngleDegByAccuracy(accuracyPercent, maxSpreadDeg = MAX_SPREAD_DEG){
-  const safeAccuracy = Number.isFinite(accuracyPercent) ? accuracyPercent : 90;
-  const p = clamp(safeAccuracy / 100, 0, 1);
-  return maxSpreadDeg * Math.pow(1 - p, 2);
+function getSpreadAngleDegByAccuracy(accuracyPercent){
+  const tuning = getActiveAimingTuning();
+  const spreadAtReferenceDeg = Number.isFinite(tuning.spreadAtReferenceDeg)
+    ? Math.max(0, tuning.spreadAtReferenceDeg)
+    : MAX_SPREAD_DEG * Math.pow(1 - AIMING_TUNING_DEFAULTS.referenceAccuracyPercent / 100, AIMING_TUNING_DEFAULTS.curveExponent);
+  const amplitudeMultiplier = Number.isFinite(tuning.amplitudeMultiplier)
+    ? Math.max(0, tuning.amplitudeMultiplier)
+    : 1;
+  return spreadAtReferenceDeg * amplitudeMultiplier * getAimingSpreadScale(accuracyPercent, tuning);
 }
 
 /* Зеркальный выстрел (одно отражение) */
@@ -10876,7 +10984,7 @@ function gameDraw(){
     const maxAngleRad = maxAngleDeg * Math.PI / 180;
 
     // обновляем текущий угол раскачивания
-    oscillationAngle += oscillationSpeed * delta * oscillationDir;
+    oscillationAngle += getAimingOscillationSpeed() * delta * oscillationDir;
     if(oscillationDir > 0 && oscillationAngle > maxAngleRad){
       oscillationAngle = maxAngleRad;
       oscillationDir = -1;
