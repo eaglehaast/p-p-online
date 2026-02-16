@@ -280,19 +280,6 @@ function createEasyMapDefinition(id, name, internalSprites){
   };
 }
 
-const EXTRA_EASY_MAPS = [
-  createEasyMapDefinition('easy_safe_crossroads', 'Safe Crossroads', EASY_SAFE_CROSSROADS_INTERNAL_SPRITES),
-  createEasyMapDefinition('easy_cage_fight', 'Cage Fight', EASY_CAGE_FIGHT_INTERNAL_SPRITES),
-  createEasyMapDefinition('easy_snakes', 'Snakes', EASY_SNAKES_INTERNAL_SPRITES),
-  createEasyMapDefinition('easy_diagonal_alley', 'Diagonal Alley', EASY_DIAGONAL_ALLEY_INTERNAL_SPRITES),
-  createEasyMapDefinition('easy_pillars', 'Pillars', EASY_PILLARS_INTERNAL_SPRITES),
-  createEasyMapDefinition('easy_crab_legs', 'Crab Legs', EASY_CRAB_LEGS_INTERNAL_SPRITES),
-  createEasyMapDefinition('easy_island', 'Island', EASY_ISLAND_INTERNAL_SPRITES),
-  createEasyMapDefinition('easy_twin_walls', 'Twin Walls', EASY_TWIN_WALLS_INTERNAL_SPRITES),
-  createEasyMapDefinition('easy_broken_arrow', 'Broken Arrow', EASY_BROKEN_ARROW_INTERNAL_SPRITES),
-  createEasyMapDefinition('easy_tanks_and_gaps', 'Tanks & Gaps', EASY_TANKS_AND_GAPS_INTERNAL_SPRITES)
-];
-
 const MAPS = [
   {
     id: 'clearSky',
@@ -316,8 +303,7 @@ const MAPS = [
     sprites: BROKEN_X_SPRITES,
     tier: 'easy',
     flags: BROKEN_X_FLAGS
-  },
-  ...EXTRA_EASY_MAPS
+  }
 ];
 
   window.paperWingsMapsData = {
