@@ -372,11 +372,12 @@ body, button {
     z-index: 1;
     opacity: 0;
     visibility: hidden;
-    transform: translate(-50%, -100%);
+    transform: translateX(0);
     transition:
       opacity 90ms ease-out,
+      transform 90ms ease-out,
       visibility 0s linear 90ms;
-    will-change: opacity;
+    will-change: opacity, transform;
   }
 
   .inventory-tooltip.is-visible {
@@ -384,15 +385,24 @@ body, button {
     visibility: visible;
     transition:
       opacity 90ms ease-out,
+      transform 90ms ease-out,
       visibility 0s;
   }
 
-  .inventory-tooltip.inventory-tooltip--below {
-    transform: translate(-50%, 0);
+  .inventory-tooltip.is-right {
+    transform: translateX(-3px);
   }
 
-  .inventory-tooltip.inventory-tooltip--below.is-visible {
-    transform: translate(-50%, 0);
+  .inventory-tooltip.is-right.is-visible {
+    transform: translateX(0);
+  }
+
+  .inventory-tooltip.is-left {
+    transform: translateX(3px);
+  }
+
+  .inventory-tooltip.is-left.is-visible {
+    transform: translateX(0);
   }
 
   .inventory-tooltip.inventory-tooltip--invisibility {
@@ -400,16 +410,6 @@ body, button {
     max-width: 220px;
     line-height: 1.35;
     padding: 8px 12px;
-  }
-
-  .inventory-tooltip.inventory-tooltip--invisibility.inventory-tooltip--above,
-  .inventory-tooltip.inventory-tooltip--invisibility.inventory-tooltip--above.is-visible {
-    transform: translate(calc(-100% + 44px), -100%);
-  }
-
-  .inventory-tooltip.inventory-tooltip--invisibility.inventory-tooltip--below,
-  .inventory-tooltip.inventory-tooltip--invisibility.inventory-tooltip--below.is-visible {
-    transform: translate(calc(-100% + 44px), 0);
   }
 
   body.inventory-pointer-hidden,

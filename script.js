@@ -1227,6 +1227,8 @@ const inventoryTooltipState = {
 };
 
 const INVENTORY_TOOLTIP_MOUSE_MOVE_DISMISS_THRESHOLD_PX = 8;
+const INVENTORY_TOOLTIP_SIDE_GAP_PX = 8;
+const INVENTORY_TOOLTIP_TOP_OFFSET_PX = 2;
 
 const inventoryHosts = {
   blue: blueInventoryHost,
@@ -1272,24 +1274,13 @@ function toInventoryTooltipLayerPoint(point){
   };
 }
 
-function resolveInventoryTooltipAnchor(color, type){
-  const container = INVENTORY_UI_CONFIG.containers[color] ?? null;
-  const slotLayout = INVENTORY_UI_CONFIG.slots[type] ?? null;
-  const frame = slotLayout?.frame ?? null;
-  if(!container || !frame) return null;
-  const centerX = container.x + frame.x + frame.w / 2;
-  if(color === "green"){
-    return {
-      x: centerX,
-      y: container.y + frame.y - 6,
-      placement: "above",
-    };
-  }
-  return {
-    x: centerX,
-    y: container.y + frame.y + frame.h + 6,
-    placement: "below",
-  };
+function resolveInventoryTooltipSlot(target){
+  if(!target?.color || !target?.type) return null;
+  const host = inventoryHosts[target.color];
+  if(!(host instanceof HTMLElement)) return null;
+  const selector = `.inventory-slot[data-slot-color="${target.color}"][data-slot-type="${target.type}"]`;
+  const slot = host.querySelector(selector);
+  return slot instanceof HTMLElement ? slot : null;
 }
 
 function getInventoryTooltipTarget(){
@@ -1315,8 +1306,8 @@ function clearInventoryTooltipPreview(){
 
 function showInventoryTooltipForSlot(color, type, options = {}){
   const lines = INVENTORY_TOOLTIP_TEXT_BY_TYPE[type];
-  const anchor = resolveInventoryTooltipAnchor(color, type);
-  if(!Array.isArray(lines) || lines.length !== 2 || !anchor){
+  const slot = resolveInventoryTooltipSlot({ color, type });
+  if(!Array.isArray(lines) || lines.length !== 2 || !(slot instanceof HTMLElement)){
     clearInventoryTooltipPreview();
     refreshInventoryTooltip();
     return;
@@ -1404,18 +1395,35 @@ function refreshInventoryTooltip(){
     return;
   }
   const lines = INVENTORY_TOOLTIP_TEXT_BY_TYPE[target.type];
-  const anchor = toInventoryTooltipLayerPoint(resolveInventoryTooltipAnchor(target.color, target.type));
-  if(!Array.isArray(lines) || lines.length !== 2 || !anchor){
+  const slot = resolveInventoryTooltipSlot(target);
+  if(!Array.isArray(lines) || lines.length !== 2 || !(slot instanceof HTMLElement)){
     tooltip.classList.remove("is-visible");
     deferInventoryTooltipTextClear(tooltip);
     return;
   }
   cancelInventoryTooltipDeferredClear(tooltip);
   tooltip.textContent = `${lines[0]}\n${lines[1]}`;
-  tooltip.style.left = `${Math.round(anchor.x)}px`;
-  tooltip.style.top = `${Math.round(anchor.y)}px`;
-  tooltip.classList.toggle("inventory-tooltip--above", anchor.placement === "above");
-  tooltip.classList.toggle("inventory-tooltip--below", anchor.placement === "below");
+  const slotRect = slot.getBoundingClientRect();
+  const slotLeftInLayer = toInventoryTooltipLayerPoint({ x: slotRect.left, y: slotRect.top });
+  const slotRightInLayer = toInventoryTooltipLayerPoint({ x: slotRect.right, y: slotRect.top });
+  const slotIndexRaw = Number.parseInt(slot.dataset.slotIndex ?? "", 10);
+  const slotCountRaw = Number.parseInt(slot.dataset.slotCount ?? "", 10);
+  const slotIndex = Number.isFinite(slotIndexRaw) ? slotIndexRaw : 0;
+  const slotCount = Number.isFinite(slotCountRaw) && slotCountRaw > 0
+    ? slotCountRaw
+    : INVENTORY_UI_CONFIG.slotOrder.length;
+  const slotMid = Math.floor(slotCount / 2);
+  const isRightSideTooltip = slotIndex < slotMid;
+  const tooltipWidth = tooltip.offsetWidth;
+  const tooltipLeft = isRightSideTooltip
+    ? slotRightInLayer.x + INVENTORY_TOOLTIP_SIDE_GAP_PX
+    : slotLeftInLayer.x - INVENTORY_TOOLTIP_SIDE_GAP_PX - tooltipWidth;
+  const tooltipTop = slotLeftInLayer.y + INVENTORY_TOOLTIP_TOP_OFFSET_PX;
+
+  tooltip.style.left = `${Math.round(tooltipLeft)}px`;
+  tooltip.style.top = `${Math.round(tooltipTop)}px`;
+  tooltip.classList.remove("is-left", "is-right");
+  tooltip.classList.add(isRightSideTooltip ? "is-right" : "is-left");
   tooltip.classList.toggle(
     "inventory-tooltip--invisibility",
     target.type === INVENTORY_ITEM_TYPES.INVISIBILITY,
@@ -3313,7 +3321,7 @@ function syncInventoryUI(color){
     };
   };
 
-  for(const slot of slotData){
+  for(const [slotIndex, slot] of slotData.entries()){
     const hasItem = slot.count > 0;
     if(!slot.layout) continue;
     const slotContainer = document.createElement("div");
@@ -3328,6 +3336,10 @@ function syncInventoryUI(color){
     const isInteractiveItem = hasItem && isImplemented && Boolean(usageConfig?.requiresDragAndDrop);
 
     slotContainer.className = "inventory-slot";
+    slotContainer.dataset.slotColor = color;
+    slotContainer.dataset.slotType = slot.type;
+    slotContainer.dataset.slotIndex = String(slotIndex);
+    slotContainer.dataset.slotCount = String(slotData.length);
     slotContainer.style.left = `${Math.round(frameLayout.x)}px`;
     if(!isImplemented){
       slotContainer.classList.add("inventory-slot--disabled");
