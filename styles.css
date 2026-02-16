@@ -396,8 +396,6 @@ body, button {
   }
 
   .inventory-tooltip.inventory-tooltip--invisibility {
-    width: 220px;
-    max-width: 220px;
     line-height: 1.35;
     padding: 8px 12px;
   }
