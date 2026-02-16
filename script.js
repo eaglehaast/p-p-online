@@ -1219,6 +1219,8 @@ const INVENTORY_TOOLTIP_TEXT_BY_TYPE = Object.freeze({
 const inventoryTooltipState = {
   element: null,
   layer: null,
+  activeSlotIndex: null,
+  activeSlotColor: null,
   previewTarget: null,
   previewTimeoutId: null,
   previewPointerOrigin: null,
@@ -1227,8 +1229,6 @@ const inventoryTooltipState = {
 };
 
 const INVENTORY_TOOLTIP_MOUSE_MOVE_DISMISS_THRESHOLD_PX = 8;
-const INVENTORY_TOOLTIP_SIDE_GAP_PX = 8;
-const INVENTORY_TOOLTIP_TOP_OFFSET_PX = 2;
 
 const inventoryHosts = {
   blue: blueInventoryHost,
@@ -1281,6 +1281,36 @@ function resolveInventoryTooltipSlot(target){
   const selector = `.inventory-slot[data-slot-color="${target.color}"][data-slot-type="${target.type}"]`;
   const slot = host.querySelector(selector);
   return slot instanceof HTMLElement ? slot : null;
+}
+
+function getInventorySlotsForColor(color){
+  const host = inventoryHosts[color];
+  if(!(host instanceof HTMLElement)) return [];
+  const slots = Array.from(host.querySelectorAll(`.inventory-slot[data-slot-color="${color}"]`));
+  return slots
+    .filter((slot) => slot instanceof HTMLElement)
+    .sort((a, b) => {
+      const aIndexRaw = Number.parseInt(a.dataset.slotIndex ?? "", 10);
+      const bIndexRaw = Number.parseInt(b.dataset.slotIndex ?? "", 10);
+      const aIndex = Number.isFinite(aIndexRaw) ? aIndexRaw : 0;
+      const bIndex = Number.isFinite(bIndexRaw) ? bIndexRaw : 0;
+      return aIndex - bIndex;
+    });
+}
+
+function getInventoryTooltipAnchorLeftPx(slotRects, slotIndex, tooltipWidth){
+  if(!Array.isArray(slotRects) || slotRects.length === 0) return 0;
+  const maxIndex = slotRects.length - 1;
+  const clampedIndex = Math.max(0, Math.min(maxIndex, slotIndex));
+  if(clampedIndex <= 2){
+    const nextIndex = Math.min(maxIndex, clampedIndex + 1);
+    const nextRect = slotRects[nextIndex] ?? slotRects[clampedIndex];
+    return Number(nextRect?.left) || 0;
+  }
+  const prevIndex = Math.max(0, clampedIndex - 1);
+  const prevRect = slotRects[prevIndex] ?? slotRects[clampedIndex];
+  const prevRight = Number(prevRect?.right) || 0;
+  return prevRight - tooltipWidth;
 }
 
 function getInventoryTooltipTarget(){
@@ -1390,6 +1420,8 @@ function refreshInventoryTooltip(){
   if(!(tooltip instanceof HTMLElement)) return;
   const target = getInventoryTooltipTarget();
   if(!target){
+    inventoryTooltipState.activeSlotIndex = null;
+    inventoryTooltipState.activeSlotColor = null;
     tooltip.classList.remove("is-visible");
     deferInventoryTooltipTextClear(tooltip);
     return;
@@ -1397,33 +1429,38 @@ function refreshInventoryTooltip(){
   const lines = INVENTORY_TOOLTIP_TEXT_BY_TYPE[target.type];
   const slot = resolveInventoryTooltipSlot(target);
   if(!Array.isArray(lines) || lines.length !== 2 || !(slot instanceof HTMLElement)){
+    inventoryTooltipState.activeSlotIndex = null;
+    inventoryTooltipState.activeSlotColor = null;
     tooltip.classList.remove("is-visible");
     deferInventoryTooltipTextClear(tooltip);
     return;
   }
   cancelInventoryTooltipDeferredClear(tooltip);
   tooltip.textContent = `${lines[0]}\n${lines[1]}`;
-  const slotRect = slot.getBoundingClientRect();
-  const slotLeftInLayer = toInventoryTooltipLayerPoint({ x: slotRect.left, y: slotRect.top });
-  const slotRightInLayer = toInventoryTooltipLayerPoint({ x: slotRect.right, y: slotRect.top });
-  const slotIndexRaw = Number.parseInt(slot.dataset.slotIndex ?? "", 10);
-  const slotCountRaw = Number.parseInt(slot.dataset.slotCount ?? "", 10);
-  const slotIndex = Number.isFinite(slotIndexRaw) ? slotIndexRaw : 0;
-  const slotCount = Number.isFinite(slotCountRaw) && slotCountRaw > 0
-    ? slotCountRaw
-    : INVENTORY_UI_CONFIG.slotOrder.length;
-  const slotMid = Math.floor(slotCount / 2);
-  const isRightSideTooltip = slotIndex < slotMid;
-  const tooltipWidth = tooltip.offsetWidth;
-  const tooltipLeft = isRightSideTooltip
-    ? slotRightInLayer.x + INVENTORY_TOOLTIP_SIDE_GAP_PX
-    : slotLeftInLayer.x - INVENTORY_TOOLTIP_SIDE_GAP_PX - tooltipWidth;
-  const tooltipTop = slotLeftInLayer.y + INVENTORY_TOOLTIP_TOP_OFFSET_PX;
 
-  tooltip.style.left = `${Math.round(tooltipLeft)}px`;
+  const tooltipWidth = tooltip.getBoundingClientRect().width;
+  const tooltipHeight = tooltip.getBoundingClientRect().height;
+
+  const slotIndexRaw = Number.parseInt(slot.dataset.slotIndex ?? "", 10);
+  const slotIndex = Number.isFinite(slotIndexRaw) ? slotIndexRaw : 0;
+  const slotColor = target.color;
+  const slots = getInventorySlotsForColor(slotColor);
+  const slotRects = slots.map((slotElement) => slotElement.getBoundingClientRect());
+  const anchorLeftViewport = getInventoryTooltipAnchorLeftPx(slotRects, slotIndex, tooltipWidth);
+  const anchorLeftInLayer = toInventoryTooltipLayerPoint({ x: anchorLeftViewport, y: 0 }).x;
+
+  const inventoryRect = inventoryHosts[slotColor]?.getBoundingClientRect();
+  const inventoryBottomViewport = Number(inventoryRect?.bottom) || 0;
+  const inventoryBottomInLayer = toInventoryTooltipLayerPoint({ x: 0, y: inventoryBottomViewport }).y;
+  const tooltipTop = inventoryBottomInLayer - tooltipHeight;
+
+  inventoryTooltipState.activeSlotIndex = slotIndex;
+  inventoryTooltipState.activeSlotColor = slotColor;
+
+  tooltip.style.left = `${Math.round(anchorLeftInLayer)}px`;
   tooltip.style.top = `${Math.round(tooltipTop)}px`;
   tooltip.classList.remove("is-left", "is-right");
-  tooltip.classList.add(isRightSideTooltip ? "is-right" : "is-left");
+  tooltip.classList.add(slotIndex <= 2 ? "is-right" : "is-left");
   tooltip.classList.toggle(
     "inventory-tooltip--invisibility",
     target.type === INVENTORY_ITEM_TYPES.INVISIBILITY,
@@ -8744,6 +8781,12 @@ function onInventoryTooltipPreviewPointerDown(event){
   clearInventoryTooltipPreview();
   refreshInventoryTooltip();
 }
+
+window.addEventListener("resize", () => {
+  if(inventoryTooltipState.activeSlotIndex === null) return;
+  if(typeof inventoryTooltipState.activeSlotColor !== "string") return;
+  refreshInventoryTooltip();
+});
 
 gsBoardCanvas.addEventListener("pointerdown", onCanvasPointerDown);
 gsBoardCanvas.addEventListener("pointermove", onCanvasPointerMove);
