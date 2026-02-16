@@ -7458,14 +7458,14 @@ const MAX_SPREAD_DEG       = 12;
 const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 
 const AIMING_TUNING_DEFAULTS = {
-  referenceAccuracyPercent: 90,
+  referenceAccuracyPercent: 80,
   spreadAtReferenceDeg: 10,
   amplitudeMultiplier: 0.5,
   speedMultiplier: 0.25,
   curveExponent: 2
 };
 
-function clampAimingPercent(value, fallback = 90){
+function clampAimingPercent(value, fallback = 80){
   const n = Number(value);
   const safe = Number.isFinite(n) ? n : fallback;
   return clamp(safe, 0, 100);
@@ -7550,15 +7550,32 @@ function getAimingSpreadScale(accuracyPercent, tuning = AIMING_TUNING_DEFAULTS){
   const p = clampAimingPercent(accuracyPercent) / 100;
   const refP = clampAimingPercent(tuning.referenceAccuracyPercent, AIMING_TUNING_DEFAULTS.referenceAccuracyPercent) / 100;
   const exp = Number.isFinite(tuning.curveExponent) ? tuning.curveExponent : AIMING_TUNING_DEFAULTS.curveExponent;
-  const numerator = Math.pow(1 - p, exp);
-  const denominator = Math.pow(1 - refP, exp);
-  const normalizedDenominator = denominator <= 1e-6 ? 1 : denominator;
-  return numerator / normalizedDenominator;
+  const normalizedRef = Math.max(refP, 1e-6);
+  const belowReferenceRatio = clamp((refP - p) / normalizedRef, 0, 1);
+
+  if(p >= refP){
+    const numerator = Math.pow(1 - p, exp);
+    const denominator = Math.pow(1 - refP, exp);
+    const normalizedDenominator = denominator <= 1e-6 ? 1 : denominator;
+    return numerator / normalizedDenominator;
+  }
+
+  return 1
+    + belowReferenceRatio * 1.8
+    + belowReferenceRatio * belowReferenceRatio * 2.2;
 }
 
 function getAimingOscillationSpeed(){
   const tuning = getActiveAimingTuning();
-  return BASE_OSCILLATION_SPEED * tuning.speedMultiplier;
+  const referenceAccuracy = clampAimingPercent(tuning.referenceAccuracyPercent, AIMING_TUNING_DEFAULTS.referenceAccuracyPercent);
+  const currentAccuracy = clampAimingPercent(settings.aimingAmplitude, referenceAccuracy);
+  const normalizedRef = Math.max(referenceAccuracy, 1e-6);
+  const belowReferenceRatio = clamp((referenceAccuracy - currentAccuracy) / normalizedRef, 0, 1);
+  const speedPenaltyScale = 1
+    + belowReferenceRatio * 0.4
+    + belowReferenceRatio * belowReferenceRatio * 0.2;
+
+  return BASE_OSCILLATION_SPEED * tuning.speedMultiplier * speedPenaltyScale;
 }
 
 function getDragOscillationMultiplier(dragScale){
@@ -7701,7 +7718,7 @@ function normalizeFlameStyleKey(key) {
 const settingsBridge = window.paperWingsSettings || (window.paperWingsSettings = {});
 const sharedSettings = settingsBridge.settings || (settingsBridge.settings = {
   flightRangeCells: 30,
-  aimingAmplitude: 90,
+  aimingAmplitude: 80,
   addAA: true,
   sharpEdges: true,
   flagsEnabled: true,
@@ -7713,7 +7730,7 @@ if(!Number.isFinite(sharedSettings.flightRangeCells)){
   sharedSettings.flightRangeCells = 30;
 }
 if(!Number.isFinite(sharedSettings.aimingAmplitude)){
-  sharedSettings.aimingAmplitude = 90;
+  sharedSettings.aimingAmplitude = 80;
 }
 if(typeof sharedSettings.addAA !== 'boolean'){
   sharedSettings.addAA = true;
@@ -7794,7 +7811,7 @@ function loadSettings(){
   const fr = parseInt(getStoredSetting('settings.flightRangeCells'), 10);
   settings.flightRangeCells = Number.isNaN(fr) ? 30 : fr;
   if(!Number.isFinite(settings.aimingAmplitude)){
-    settings.aimingAmplitude = 90;
+    settings.aimingAmplitude = 80;
   }
   const storedAddAA = getStoredSetting('settings.addAA');
   settings.addAA = storedAddAA === null ? true : storedAddAA === 'true';
@@ -7818,7 +7835,7 @@ function loadSettings(){
   settings.flightRangeCells = Math.min(MAX_FLIGHT_RANGE_CELLS,
     Math.max(MIN_FLIGHT_RANGE_CELLS, settings.flightRangeCells));
   if(!Number.isFinite(settings.aimingAmplitude)){
-    settings.aimingAmplitude = 90;
+    settings.aimingAmplitude = 80;
   }
 
   if(previousFlameStyle !== settings.flameStyle){
@@ -8528,7 +8545,7 @@ onlineBtn.addEventListener("click",()=>{
 if(classicRulesBtn){
   classicRulesBtn.addEventListener('click', () => {
     settings.flightRangeCells = 30;
-    settings.aimingAmplitude = 90;
+    settings.aimingAmplitude = 80;
     settings.addAA = false;
     settings.addCargo = true;
     settings.sharpEdges = true;

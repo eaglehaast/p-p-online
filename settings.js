@@ -403,7 +403,7 @@ function sanitizeMapIndex(index, { excludeIndex, allowRandom } = {}){
 
 const DEFAULT_SETTINGS = {
   rangeCells: 30,
-  aimingAmplitude: 90,
+  aimingAmplitude: 80,
   addAA: true,
   sharpEdges: true,
   flagsEnabled: true,
@@ -434,7 +434,7 @@ const PREVIEW_FLIGHT_DISTANCE_SCALE = 1 / 1.5;
 const PREVIEW_FLIGHT_DURATION_SCALE = 1;
 
 const AIMING_TUNING_DEFAULTS = {
-  referenceAccuracyPercent: 90,
+  referenceAccuracyPercent: 80,
   spreadAtReferenceDeg: 10,
   amplitudeMultiplier: 0.5,
   speedMultiplier: 0.25,
@@ -462,10 +462,19 @@ function getAimingSpreadScale(accuracyPercent, tuning = AIMING_TUNING_DEFAULTS){
   const p = clampAimingPercent(accuracyPercent) / 100;
   const refP = clampAimingPercent(tuning.referenceAccuracyPercent, AIMING_TUNING_DEFAULTS.referenceAccuracyPercent) / 100;
   const exp = Number.isFinite(tuning.curveExponent) ? tuning.curveExponent : AIMING_TUNING_DEFAULTS.curveExponent;
-  const numerator = Math.pow(1 - p, exp);
-  const denominator = Math.pow(1 - refP, exp);
-  const normalizedDenominator = denominator <= 1e-6 ? 1 : denominator;
-  return numerator / normalizedDenominator;
+  const normalizedRef = Math.max(refP, 1e-6);
+  const belowReferenceRatio = clamp((refP - p) / normalizedRef, 0, 1);
+
+  if(p >= refP){
+    const numerator = Math.pow(1 - p, exp);
+    const denominator = Math.pow(1 - refP, exp);
+    const normalizedDenominator = denominator <= 1e-6 ? 1 : denominator;
+    return numerator / normalizedDenominator;
+  }
+
+  return 1
+    + belowReferenceRatio * 1.8
+    + belowReferenceRatio * belowReferenceRatio * 2.2;
 }
 
 function getAimingSpreadAngleDeg(accuracyPercent, tuning = AIMING_TUNING_DEFAULTS){
@@ -530,7 +539,15 @@ function getActiveAimingTuning(){
 
 function getAimingOscillationSpeed(){
   const tuning = getActiveAimingTuning();
-  return PREVIEW_OSCILLATION_SPEED * tuning.speedMultiplier;
+  const referenceAccuracy = clampAimingPercent(tuning.referenceAccuracyPercent, AIMING_TUNING_DEFAULTS.referenceAccuracyPercent);
+  const currentAccuracy = clampAimingPercent(sharedSettings.aimingAmplitude, referenceAccuracy);
+  const normalizedRef = Math.max(referenceAccuracy, 1e-6);
+  const belowReferenceRatio = clamp((referenceAccuracy - currentAccuracy) / normalizedRef, 0, 1);
+  const speedPenaltyScale = 1
+    + belowReferenceRatio * 0.4
+    + belowReferenceRatio * belowReferenceRatio * 0.2;
+
+  return PREVIEW_OSCILLATION_SPEED * tuning.speedMultiplier * speedPenaltyScale;
 }
 
 class ContrailRenderer {
@@ -3002,9 +3019,15 @@ function updateAmplitudeIndicator(){
     selectInSettings('#amplitudeIndicator');
 
   if(pendulumHost){
-    const p = clamp((Number.isFinite(sharedSettings.aimingAmplitude) ? sharedSettings.aimingAmplitude : DEFAULT_SETTINGS.aimingAmplitude) / 100, 0, 1);
-    const maxAngle = MAX_ACCURACY_PERCENT;
-    const visualAngle = maxAngle * (1 - p);
+    const tuning = getActiveAimingTuning();
+    const referenceAccuracy = clampAimingPercent(tuning.referenceAccuracyPercent, AIMING_TUNING_DEFAULTS.referenceAccuracyPercent);
+    const currentAccuracy = clampAimingPercent(
+      Number.isFinite(sharedSettings.aimingAmplitude) ? sharedSettings.aimingAmplitude : DEFAULT_SETTINGS.aimingAmplitude,
+      DEFAULT_SETTINGS.aimingAmplitude
+    );
+    const maxVisualAngle = MAX_ACCURACY_PERCENT;
+    const accuracyDelta = Math.max(0, referenceAccuracy - currentAccuracy);
+    const visualAngle = maxVisualAngle * (accuracyDelta / Math.max(referenceAccuracy, 1));
     pendulumTarget = visualAngle;
     if(pendulumCurrent === null){
       pendulumCurrent = visualAngle;
