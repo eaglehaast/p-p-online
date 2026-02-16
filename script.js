@@ -1211,13 +1211,14 @@ const INVENTORY_TOOLTIP_TEXT_BY_TYPE = Object.freeze({
     "Make sure you truly don’t need it.",
   ],
   [INVENTORY_ITEM_TYPES.INVISIBILITY]: [
-    "Hide your planes.",
-    "Works during the enemy's NEXT turn.",
+    "Place on the field.",
+    "All planes hidden\nnext enemy turn.",
   ],
 });
 
 const inventoryTooltipState = {
   element: null,
+  layer: null,
   previewTarget: null,
   previewTimeoutId: null,
   previewPointerOrigin: null,
@@ -1236,13 +1237,39 @@ function ensureInventoryTooltipElement(){
   if(inventoryTooltipState.element instanceof HTMLElement){
     return inventoryTooltipState.element;
   }
-  if(!(inventoryLayer instanceof HTMLElement)) return null;
+  const tooltipLayerParent = gsFrameLayer instanceof HTMLElement
+    ? gsFrameLayer
+    : (inventoryLayer instanceof HTMLElement ? inventoryLayer : null);
+  if(!(tooltipLayerParent instanceof HTMLElement)) return null;
+
+  let tooltipLayer = inventoryTooltipState.layer;
+  if(!(tooltipLayer instanceof HTMLElement) || tooltipLayer.parentElement !== tooltipLayerParent){
+    tooltipLayer = document.createElement("div");
+    tooltipLayer.className = "inventory-tooltip-layer";
+    tooltipLayer.setAttribute("aria-hidden", "true");
+    tooltipLayerParent.appendChild(tooltipLayer);
+    inventoryTooltipState.layer = tooltipLayer;
+  }
+
   const tooltip = document.createElement("div");
   tooltip.className = "inventory-tooltip";
   tooltip.setAttribute("aria-hidden", "true");
-  inventoryLayer.appendChild(tooltip);
+  tooltipLayer.appendChild(tooltip);
   inventoryTooltipState.element = tooltip;
   return tooltip;
+}
+
+function toInventoryTooltipLayerPoint(point){
+  if(!point || typeof window === "undefined") return point;
+  if(!(gsFrameLayer instanceof HTMLElement) || !(gsFrameEl instanceof HTMLElement)) return point;
+  const stageRect = gsFrameLayer.getBoundingClientRect();
+  const containerRect = gsFrameEl.getBoundingClientRect();
+  if(!Number.isFinite(stageRect.left) || !Number.isFinite(containerRect.left)) return point;
+  return {
+    ...point,
+    x: point.x + (containerRect.left - stageRect.left),
+    y: point.y + (containerRect.top - stageRect.top),
+  };
 }
 
 function resolveInventoryTooltipAnchor(color, type){
@@ -1377,7 +1404,7 @@ function refreshInventoryTooltip(){
     return;
   }
   const lines = INVENTORY_TOOLTIP_TEXT_BY_TYPE[target.type];
-  const anchor = resolveInventoryTooltipAnchor(target.color, target.type);
+  const anchor = toInventoryTooltipLayerPoint(resolveInventoryTooltipAnchor(target.color, target.type));
   if(!Array.isArray(lines) || lines.length !== 2 || !anchor){
     tooltip.classList.remove("is-visible");
     deferInventoryTooltipTextClear(tooltip);
