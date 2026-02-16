@@ -150,136 +150,115 @@ const EASY_MAP_DEFAULT_FLAGS = [
   { color: "green", x: 170, y: 568, width: 20, height: 20 }
 ];
 
-const EASY_GATEHOUSE_INTERNAL_SPRITES = [
-  { spriteName: "brick_4", x: 80, y: 240, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 240, y: 240, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 80, y: 320, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 120, y: 320, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 240, y: 320, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 160, y: 280, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 200, y: 280, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 160, y: 360, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 200, y: 360, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 80, y: 400, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 240, y: 400, rotate: 0, scale: 1, scaleX: 1 }
+const EASY_SAFE_CROSSROADS_INTERNAL_SPRITES = [
+  { spriteName: "brick_1_default", x: 100, y: 300, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 140, y: 300, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 220, y: 300, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 260, y: 300, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 180, y: 220, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 180, y: 260, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 180, y: 340, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 180, y: 380, rotate: -90, scale: -1 }
 ];
 
-const EASY_TRIPLE_LANES_INTERNAL_SPRITES = [
-  { spriteName: "brick_4", x: 100, y: 200, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 100, y: 240, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 100, y: 400, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 100, y: 440, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 220, y: 200, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 220, y: 240, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 220, y: 400, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 220, y: 440, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 160, y: 280, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 160, y: 360, rotate: 0, scale: 1, scaleX: 1 }
+const EASY_CAGE_FIGHT_INTERNAL_SPRITES = [
+  { spriteName: "brick_1_default", x: 60, y: 80, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 120, y: 80, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 180, y: 80, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 240, y: 80, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 300, y: 80, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 60, y: 540, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 120, y: 540, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 180, y: 540, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 240, y: 540, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 300, y: 540, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 160, y: 300, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 200, y: 300, rotate: -90, scale: -1 }
 ];
 
-const EASY_COURTYARD_80_INTERNAL_SPRITES = [
-  { spriteName: "brick_4", x: 80, y: 280, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 120, y: 280, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 240, y: 280, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 80, y: 320, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 240, y: 320, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 80, y: 360, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 120, y: 360, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 240, y: 360, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 160, y: 320, rotate: 0, scale: 1, scaleX: 1 }
+const EASY_SNAKES_INTERNAL_SPRITES = [
+  { spriteName: "brick_1_default", x: 100, y: 260, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 100, y: 280, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 120, y: 280, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 120, y: 300, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 240, y: 380, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 240, y: 360, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 220, y: 360, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 220, y: 340, rotate: -90, scale: -1 }
 ];
 
-const EASY_SLALOM_SIDES_INTERNAL_SPRITES = [
-  { spriteName: "brick_4", x: 80, y: 240, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 120, y: 280, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 80, y: 320, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 120, y: 360, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 80, y: 400, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 240, y: 240, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 200, y: 280, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 240, y: 320, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 200, y: 360, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 240, y: 400, rotate: 0, scale: 1, scaleX: 1 }
+const EASY_DIAGONAL_ALLEY_INTERNAL_SPRITES = [
+  { spriteName: "brick_4_diagonal", x: 100, y: 220, rotate: 0, scale: 1, scaleX: 1 },
+  { spriteName: "brick_4_diagonal", x: 120, y: 240, rotate: 0, scale: 1, scaleX: 1 },
+  { spriteName: "brick_4_diagonal", x: 140, y: 260, rotate: 0, scale: 1, scaleX: 1 },
+  { spriteName: "brick_4_diagonal", x: 160, y: 280, rotate: 0, scale: 1, scaleX: 1 },
+  { spriteName: "brick_4_diagonal", x: 200, y: 280, rotate: 0, scale: 1, scaleX: 1 },
+  { spriteName: "brick_4_diagonal", x: 220, y: 260, rotate: 0, scale: 1, scaleX: 1 },
+  { spriteName: "brick_4_diagonal", x: 240, y: 240, rotate: 0, scale: 1, scaleX: 1 },
+  { spriteName: "brick_4_diagonal", x: 260, y: 220, rotate: 0, scale: 1, scaleX: 1 }
 ];
 
 const EASY_PILLARS_INTERNAL_SPRITES = [
-  { spriteName: "brick_4", x: 120, y: 240, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 200, y: 240, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 80, y: 320, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 240, y: 320, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 120, y: 400, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 200, y: 400, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 160, y: 280, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 160, y: 360, rotate: 0, scale: 1, scaleX: 1 }
+  { spriteName: "brick_1_default", x: 100, y: 280, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 140, y: 280, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 180, y: 280, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 220, y: 280, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 260, y: 280, rotate: -90, scale: -1 }
 ];
 
-const EASY_CROSSHUB_INTERNAL_SPRITES = [
-  { spriteName: "brick_4", x: 120, y: 320, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 160, y: 320, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 200, y: 320, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 160, y: 280, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 160, y: 360, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 80, y: 280, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 240, y: 280, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 80, y: 360, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 240, y: 360, rotate: 0, scale: 1, scaleX: 1 }
+const EASY_CRAB_LEGS_INTERNAL_SPRITES = [
+  { spriteName: "brick_1_default", x: 60, y: 260, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 60, y: 300, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 60, y: 340, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 280, y: 260, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 280, y: 300, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 280, y: 340, rotate: -90, scale: -1 }
 ];
 
-const EASY_TWIN_BUNKERS_INTERNAL_SPRITES = [
-  { spriteName: "brick_4", x: 80, y: 280, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 80, y: 320, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 80, y: 360, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 240, y: 280, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 240, y: 320, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 240, y: 360, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 160, y: 240, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 160, y: 400, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 120, y: 320, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 200, y: 320, rotate: 0, scale: 1, scaleX: 1 }
+const EASY_ISLAND_INTERNAL_SPRITES = [
+  { spriteName: "brick_1_default", x: 140, y: 260, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 180, y: 260, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 220, y: 260, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 140, y: 300, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 220, y: 300, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 140, y: 340, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 180, y: 340, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 220, y: 340, rotate: -90, scale: -1 }
 ];
 
-const EASY_FUNNEL_INTERNAL_SPRITES = [
-  { spriteName: "brick_4", x: 80, y: 240, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 240, y: 240, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 120, y: 280, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 200, y: 280, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 160, y: 320, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 120, y: 360, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 200, y: 360, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 80, y: 400, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 240, y: 400, rotate: 0, scale: 1, scaleX: 1 }
+const EASY_TWIN_WALLS_INTERNAL_SPRITES = [
+  { spriteName: "brick_1_default", x: 60, y: 240, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 100, y: 240, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 140, y: 240, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 180, y: 240, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 220, y: 240, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 260, y: 240, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 300, y: 240, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 60, y: 360, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 100, y: 360, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 140, y: 360, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 180, y: 360, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 220, y: 360, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 260, y: 360, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 300, y: 360, rotate: -90, scale: -1 }
 ];
 
-const EASY_BREACH_KEY_INTERNAL_SPRITES = [
-  { spriteName: "brick_4", x: 120, y: 320, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 160, y: 320, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 200, y: 320, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 120, y: 280, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 200, y: 280, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 120, y: 360, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 200, y: 360, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 80, y: 240, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 240, y: 240, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 80, y: 400, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 240, y: 400, rotate: 0, scale: 1, scaleX: 1 }
+const EASY_BROKEN_ARROW_INTERNAL_SPRITES = [
+  { spriteName: "brick_4_diagonal", x: 100, y: 220, rotate: 0, scale: 1, scaleX: 1 },
+  { spriteName: "brick_4_diagonal", x: 200, y: 220, rotate: 0, scale: 1, scaleX: 1 },
+  { spriteName: "brick_1_default", x: 60, y: 260, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 300, y: 260, rotate: -90, scale: -1 },
+  { spriteName: "brick_4_diagonal", x: 100, y: 360, rotate: 0, scale: 1, scaleX: 1 },
+  { spriteName: "brick_4_diagonal", x: 200, y: 360, rotate: 0, scale: 1, scaleX: 1 }
 ];
 
-const EASY_SIDE_CATWALKS_INTERNAL_SPRITES = [
-  { spriteName: "brick_4", x: 100, y: 160, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 100, y: 200, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 100, y: 240, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 100, y: 400, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 100, y: 440, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 100, y: 480, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 220, y: 160, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 220, y: 200, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 220, y: 240, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 220, y: 400, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 220, y: 440, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 220, y: 480, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 160, y: 280, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 160, y: 320, rotate: 0, scale: 1, scaleX: 1 },
-  { spriteName: "brick_4", x: 160, y: 360, rotate: 0, scale: 1, scaleX: 1 }
+const EASY_TANKS_AND_GAPS_INTERNAL_SPRITES = [
+  { spriteName: "brick_1_default", x: 100, y: 280, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 100, y: 300, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 100, y: 320, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 240, y: 280, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 240, y: 300, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 240, y: 320, rotate: -90, scale: -1 }
 ];
 
 function buildEasyMapSprites(internalSprites = []){
@@ -302,16 +281,16 @@ function createEasyMapDefinition(id, name, internalSprites){
 }
 
 const EXTRA_EASY_MAPS = [
-  createEasyMapDefinition('easy_gatehouse', 'easy_gatehouse', EASY_GATEHOUSE_INTERNAL_SPRITES),
-  createEasyMapDefinition('easy_triple_lanes', 'easy_triple_lanes', EASY_TRIPLE_LANES_INTERNAL_SPRITES),
-  createEasyMapDefinition('easy_courtyard_80', 'easy_courtyard_80', EASY_COURTYARD_80_INTERNAL_SPRITES),
-  createEasyMapDefinition('easy_slalom_sides', 'easy_slalom_sides', EASY_SLALOM_SIDES_INTERNAL_SPRITES),
-  createEasyMapDefinition('easy_pillars', 'easy_pillars', EASY_PILLARS_INTERNAL_SPRITES),
-  createEasyMapDefinition('easy_crosshub', 'easy_crosshub', EASY_CROSSHUB_INTERNAL_SPRITES),
-  createEasyMapDefinition('easy_twin_bunkers', 'easy_twin_bunkers', EASY_TWIN_BUNKERS_INTERNAL_SPRITES),
-  createEasyMapDefinition('easy_funnel', 'easy_funnel', EASY_FUNNEL_INTERNAL_SPRITES),
-  createEasyMapDefinition('easy_breach_key', 'easy_breach_key', EASY_BREACH_KEY_INTERNAL_SPRITES),
-  createEasyMapDefinition('easy_side_catwalks', 'easy_side_catwalks', EASY_SIDE_CATWALKS_INTERNAL_SPRITES)
+  createEasyMapDefinition('easy_safe_crossroads', 'Safe Crossroads', EASY_SAFE_CROSSROADS_INTERNAL_SPRITES),
+  createEasyMapDefinition('easy_cage_fight', 'Cage Fight', EASY_CAGE_FIGHT_INTERNAL_SPRITES),
+  createEasyMapDefinition('easy_snakes', 'Snakes', EASY_SNAKES_INTERNAL_SPRITES),
+  createEasyMapDefinition('easy_diagonal_alley', 'Diagonal Alley', EASY_DIAGONAL_ALLEY_INTERNAL_SPRITES),
+  createEasyMapDefinition('easy_pillars', 'Pillars', EASY_PILLARS_INTERNAL_SPRITES),
+  createEasyMapDefinition('easy_crab_legs', 'Crab Legs', EASY_CRAB_LEGS_INTERNAL_SPRITES),
+  createEasyMapDefinition('easy_island', 'Island', EASY_ISLAND_INTERNAL_SPRITES),
+  createEasyMapDefinition('easy_twin_walls', 'Twin Walls', EASY_TWIN_WALLS_INTERNAL_SPRITES),
+  createEasyMapDefinition('easy_broken_arrow', 'Broken Arrow', EASY_BROKEN_ARROW_INTERNAL_SPRITES),
+  createEasyMapDefinition('easy_tanks_and_gaps', 'Tanks & Gaps', EASY_TANKS_AND_GAPS_INTERNAL_SPRITES)
 ];
 
 const MAPS = [
