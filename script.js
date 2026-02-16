@@ -1192,7 +1192,7 @@ const INVENTORY_SELECTION_CANCEL_HINT_TEXT = "";
 const INVENTORY_TOOLTIP_TEXT_BY_TYPE = Object.freeze({
   [INVENTORY_ITEM_TYPES.CROSSHAIR]: [
     "Install on your plane.",
-    "Absolute strike precision.",
+    "Absolute strike precision!",
   ],
   [INVENTORY_ITEM_TYPES.FUEL]: [
     "Install on your plane.",
@@ -1204,16 +1204,31 @@ const INVENTORY_TOOLTIP_TEXT_BY_TYPE = Object.freeze({
   ],
   [INVENTORY_ITEM_TYPES.MINE]: [
     "Place on the field.",
-    "Handle with care.",
+    "Handle with care!",
   ],
   [INVENTORY_ITEM_TYPES.DYNAMITE]: [
     "Place on a brick.",
-    "Make sure you truly don’t need it.",
+    "Destroy it instantly!",
   ],
   [INVENTORY_ITEM_TYPES.INVISIBILITY]: [
     "Place on the field.",
-    "All planes hidden\nnext enemy turn.",
+    "Hide next enemy turn!",
   ],
+});
+
+const INVENTORY_TOOLTIP_FIXED_RECT = Object.freeze({
+  blue: Object.freeze({
+    y: 22,
+    width: 166,
+    height: 48,
+    xBySlotIndex: Object.freeze([127, 184, 241, 70, 127, 184]),
+  }),
+  green: Object.freeze({
+    y: 736,
+    width: 166,
+    height: 48,
+    xBySlotIndex: Object.freeze([127, 184, 241, 70, 127, 184]),
+  }),
 });
 
 const inventoryTooltipState = {
@@ -1564,33 +1579,26 @@ function refreshInventoryTooltip(){
   cancelInventoryTooltipDeferredClear(tooltip);
   tooltip.textContent = `${lines[0]}\n${lines[1]}`;
 
-  const tooltipWidth = tooltip.getBoundingClientRect().width;
-  const tooltipHeight = tooltip.getBoundingClientRect().height;
-
   const slotIndexRaw = Number.parseInt(slot.dataset.slotIndex ?? "", 10);
   const slotIndex = Number.isFinite(slotIndexRaw) ? slotIndexRaw : 0;
   const slotColor = target.color;
-  const slots = getInventorySlotsForColor(slotColor);
-  const slotRects = slots.map((slotElement) => slotElement.getBoundingClientRect());
-  const layout = inventoryTooltipRuntimeConfig.layout;
-  const anchorLeftViewport = getInventoryTooltipAnchorLeftPx(slotRects, slotIndex, tooltipWidth, {
-    sideSwitchSlotIndex: layout.sideSwitchSlotIndex,
-    anchorMode: layout.anchorMode,
-  });
-  const anchorLeftInLayer = toInventoryTooltipLayerPoint({ x: anchorLeftViewport, y: 0 }).x;
-
-  const inventoryRect = inventoryHosts[slotColor]?.getBoundingClientRect();
-  const inventoryBottomViewport = Number(inventoryRect?.bottom) || 0;
-  const inventoryBottomInLayer = toInventoryTooltipLayerPoint({ x: 0, y: inventoryBottomViewport }).y;
-  const tooltipTop = inventoryBottomInLayer - tooltipHeight;
+  const fixedRectConfig = INVENTORY_TOOLTIP_FIXED_RECT[slotColor];
+  const slotX = Number(fixedRectConfig?.xBySlotIndex?.[slotIndex]);
+  const tooltipLeft = Number.isFinite(slotX) ? slotX : 0;
+  const tooltipTop = Number.isFinite(fixedRectConfig?.y) ? fixedRectConfig.y : 0;
+  const tooltipWidth = Number.isFinite(fixedRectConfig?.width) ? fixedRectConfig.width : 166;
+  const tooltipHeight = Number.isFinite(fixedRectConfig?.height) ? fixedRectConfig.height : 48;
 
   inventoryTooltipState.activeSlotIndex = slotIndex;
   inventoryTooltipState.activeSlotColor = slotColor;
 
-  tooltip.style.left = `${Math.round(anchorLeftInLayer + layout.offsetXPx)}px`;
-  tooltip.style.top = `${Math.round(tooltipTop + layout.offsetYPx)}px`;
+  tooltip.style.left = `${Math.round(tooltipLeft)}px`;
+  tooltip.style.top = `${Math.round(tooltipTop)}px`;
+  tooltip.style.width = `${Math.round(tooltipWidth)}px`;
+  tooltip.style.height = `${Math.round(tooltipHeight)}px`;
+  tooltip.style.maxWidth = `${Math.round(tooltipWidth)}px`;
   tooltip.classList.remove("is-left", "is-right");
-  tooltip.classList.add(slotIndex <= layout.sideSwitchSlotIndex ? "is-right" : "is-left");
+  tooltip.classList.add("is-right");
   tooltip.classList.toggle(
     "inventory-tooltip--invisibility",
     target.type === INVENTORY_ITEM_TYPES.INVISIBILITY,
