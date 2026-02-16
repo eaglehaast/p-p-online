@@ -8525,6 +8525,7 @@ if(classicRulesBtn){
     settings.flightRangeCells = 30;
     settings.aimingAmplitude = 90;
     settings.addAA = false;
+    settings.addCargo = true;
     settings.sharpEdges = true;
     const upcomingRoundNumber = roundNumber + 1;
     settings.mapIndex = getRandomPlayableMapIndex(upcomingRoundNumber);
@@ -13181,6 +13182,9 @@ noBtn.addEventListener("click", () => {
 function startNewRound(){
   logBootStep("startNewRound");
   loadSettings();
+  if(selectedRuleset === "classic"){
+    settings.addCargo = true;
+  }
   console.log('[settings] load at match start', {
     flightRangeCells: settings.flightRangeCells,
     aimingAmplitude: settings.aimingAmplitude,
@@ -13268,6 +13272,7 @@ function startNewRound(){
   setBackgroundImage('ui_gamescreen/gamescreen_outside/gs_background.png');
 
   initPoints(); // ориентации на базе
+  spawnCargoForTurn();
   resetFlagsForNewRound();
   renderScoreboard();
   if (isAAPlacementEnabled()) {
