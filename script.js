@@ -7561,6 +7561,11 @@ function getAimingOscillationSpeed(){
   return BASE_OSCILLATION_SPEED * tuning.speedMultiplier;
 }
 
+function getDragOscillationMultiplier(dragScale){
+  const normalizedScale = clamp(Number.isFinite(dragScale) ? dragScale : 0, 0, 1);
+  return normalizedScale;
+}
+
 // Anti-Aircraft defaults and placement limits
 const AA_DEFAULTS = {
   radius: 60, // detection radius, 3x smaller than original 180
@@ -10981,11 +10986,13 @@ function gameDraw(){
     const aimingAccuracyPercent = hasCrosshairBuff
       ? 100
       : settings.aimingAmplitude;
-    const maxAngleDeg = getSpreadAngleDegByAccuracy(aimingAccuracyPercent);
+    const dragScale = MAX_DRAG_DISTANCE > 0 ? (clampedDist / MAX_DRAG_DISTANCE) : 0;
+    const dragOscillationMultiplier = getDragOscillationMultiplier(dragScale);
+    const maxAngleDeg = getSpreadAngleDegByAccuracy(aimingAccuracyPercent) * dragOscillationMultiplier;
     const maxAngleRad = maxAngleDeg * Math.PI / 180;
 
     // обновляем текущий угол раскачивания
-    oscillationAngle += getAimingOscillationSpeed() * delta * oscillationDir;
+    oscillationAngle += getAimingOscillationSpeed() * dragOscillationMultiplier * delta * oscillationDir;
     if(oscillationDir > 0 && oscillationAngle > maxAngleRad){
       oscillationAngle = maxAngleRad;
       oscillationDir = -1;
