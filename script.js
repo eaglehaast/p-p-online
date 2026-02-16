@@ -3846,7 +3846,7 @@ const SETTINGS_ASSETS = [
   "ui_controlpanel/cp_frame_resetand exit.png",
   "ui_controlpanel/cp_button_reset.png",
   "ui_controlpanel/cp_button_exit.png",
-  "ui_controlpanel/cp_acuracy_tape2.png",
+  "ui_controlpanel/accuracy_tape_percent.png",
   "ui_controlpanel/cp_tape_range.png",
   "ui_controlpanel/cp_tape_field_easy2.png",
   "ui_controlpanel/field_planes/green_plane_mini.png",
