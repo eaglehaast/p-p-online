@@ -7459,9 +7459,9 @@ const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 
 const AIMING_TUNING_DEFAULTS = {
   referenceAccuracyPercent: 90,
-  spreadAtReferenceDeg: 0.12,
-  amplitudeMultiplier: 1,
-  speedMultiplier: 1,
+  spreadAtReferenceDeg: 10,
+  amplitudeMultiplier: 0.5,
+  speedMultiplier: 0.25,
   curveExponent: 2
 };
 
