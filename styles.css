@@ -402,12 +402,12 @@ body, button {
 
   .inventory-tooltip.inventory-tooltip--invisibility.inventory-tooltip--above,
   .inventory-tooltip.inventory-tooltip--invisibility.inventory-tooltip--above.is-visible {
-    transform: translate(-50%, -100%);
+    transform: translate(calc(-100% + 44px), -100%);
   }
 
   .inventory-tooltip.inventory-tooltip--invisibility.inventory-tooltip--below,
   .inventory-tooltip.inventory-tooltip--invisibility.inventory-tooltip--below.is-visible {
-    transform: translate(-50%, 0);
+    transform: translate(calc(-100% + 44px), 0);
   }
 
   body.inventory-pointer-hidden,
