@@ -781,6 +781,62 @@ const blueInventoryHost = document.getElementById("gs_inventory_blue");
 const greenInventoryHost = document.getElementById("gs_inventory_green");
 const inventoryLayer = document.getElementById("inventoryLayer");
 
+const ROUND_BANNER_AUTO_HIDE_MS = 2000;
+const roundBannerState = {
+  layer: null,
+  element: null,
+  hideTimerId: null,
+};
+
+function ensureRoundBannerElement() {
+  if (roundBannerState.element instanceof HTMLElement) {
+    return roundBannerState.element;
+  }
+  const bannerHost = gsFrameLayer instanceof HTMLElement
+    ? gsFrameLayer
+    : (uiOverlay instanceof HTMLElement ? uiOverlay : null);
+  if (!(bannerHost instanceof HTMLElement)) return null;
+
+  let bannerLayer = roundBannerState.layer;
+  if (!(bannerLayer instanceof HTMLElement) || bannerLayer.parentElement !== bannerHost) {
+    bannerLayer = document.createElement("div");
+    bannerLayer.className = "round-banner-layer";
+    bannerLayer.setAttribute("aria-hidden", "true");
+    bannerHost.appendChild(bannerLayer);
+    roundBannerState.layer = bannerLayer;
+  }
+
+  const banner = document.createElement("div");
+  banner.className = "round-banner";
+  banner.setAttribute("aria-hidden", "true");
+  bannerLayer.appendChild(banner);
+  roundBannerState.element = banner;
+  return banner;
+}
+
+function clearRoundBanner() {
+  if (roundBannerState.hideTimerId !== null) {
+    clearTimeout(roundBannerState.hideTimerId);
+    roundBannerState.hideTimerId = null;
+  }
+  const banner = roundBannerState.element;
+  if (!(banner instanceof HTMLElement)) return;
+  banner.classList.remove("is-visible");
+  banner.textContent = "";
+}
+
+function showRoundBanner(text) {
+  const banner = ensureRoundBannerElement();
+  if (!(banner instanceof HTMLElement)) return;
+
+  clearRoundBanner();
+  banner.textContent = String(text ?? "");
+  banner.classList.add("is-visible");
+  roundBannerState.hideTimerId = setTimeout(() => {
+    clearRoundBanner();
+  }, ROUND_BANNER_AUTO_HIDE_MS);
+}
+
 // Animated GIF frames for explosion sprites
 const EXPLOSION_BLUE_SPRITES = [
   "ui_gamescreen/blue_explosions_short/explosion_blue_short_1.gif",
@@ -3687,6 +3743,12 @@ function resetInventoryState(){
 }
 
 if (DEBUG_CHEATS && typeof window !== "undefined") {
+  // DevTools usage on /#dev:
+  // DEBUG_BANNER_BLUE_WIN(); DEBUG_BANNER_GREEN_WIN(); DEBUG_BANNER_NEXT_ROUND(); DEBUG_BANNER_CLEAR();
+  window.DEBUG_BANNER_BLUE_WIN = () => showRoundBanner("BLUE WINS THE ROUND");
+  window.DEBUG_BANNER_GREEN_WIN = () => showRoundBanner("GREEN WINS THE ROUND");
+  window.DEBUG_BANNER_NEXT_ROUND = () => showRoundBanner("NEXT ROUND");
+  window.DEBUG_BANNER_CLEAR = () => clearRoundBanner();
   window.DEBUG_GIVE_ITEM = (itemId, qty = 1) => giveItem(itemId, qty);
   window.DEBUG_CLEAR_INVENTORY = () => resetInventoryState();
 }
