@@ -7858,6 +7858,16 @@ function loadSettings(){
 loadSettings();
 syncInventoryVisibility();
 
+window.addEventListener('paperWingsSettingsChanged', (event) => {
+  const payloadAddCargo = event?.detail?.addCargo;
+  if(typeof payloadAddCargo === 'boolean'){
+    settings.addCargo = payloadAddCargo;
+  } else if(typeof sharedSettings.addCargo === 'boolean'){
+    settings.addCargo = sharedSettings.addCargo;
+  }
+  syncInventoryVisibility();
+});
+
 // Highlight advanced settings button if custom settings are stored
 const hasCustomSettings = storageAvailable && [
   'settings.flightRangeCells',

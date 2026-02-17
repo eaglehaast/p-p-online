@@ -3195,6 +3195,7 @@ function syncAccuracyCrackWatcher(){
 }
 
 function saveSettings(){
+  sharedSettings.addCargo = addCargo;
   setStoredItem('settings.flightRangeCells', sharedSettings.flightRangeCells);
   setStoredItem('settings.aimingAmplitude', sharedSettings.aimingAmplitude);
   setStoredItem('settings.addAA', sharedSettings.addAA);
@@ -4393,6 +4394,7 @@ function resetSettingsToDefaults(){
   sharedSettings.addAA = DEFAULT_SETTINGS.addAA;
   sharedSettings.sharpEdges = DEFAULT_SETTINGS.sharpEdges;
   addCargo = DEFAULT_SETTINGS.addCargo;
+  sharedSettings.addCargo = addCargo;
   sharedSettings.mapIndex = DEFAULT_SETTINGS.mapIndex;
 
   updateRangeFlame();
@@ -4522,6 +4524,11 @@ if(addsCargoBtn){
     addsUiState.cargo = !addsUiState.cargo;
     addCargo = addsUiState.cargo;
     saveSettings();
+    window.dispatchEvent(new CustomEvent('paperWingsSettingsChanged', {
+      detail: {
+        addCargo
+      }
+    }));
     setTumblerState(addsCargoBtn, addsUiState.cargo);
     syncCargoPreview(addsUiState.cargo);
   });
