@@ -4990,9 +4990,12 @@ function logPlaneFlamePosition(plane, metrics, clientPoint, flameOffset) {
 }
 
 function ensurePlaneFlameHost() {
-  const parent = fxHostLayer instanceof HTMLElement
-    ? fxHostLayer
-    : (gsFrameLayer instanceof HTMLElement ? gsFrameLayer : null);
+  // Keep burning-flame FX below planeCanvas so alive planes are always rendered on top.
+  const parent = overlayFxLayer instanceof HTMLElement
+    ? overlayFxLayer
+    : (fxHostLayer instanceof HTMLElement
+      ? fxHostLayer
+      : (gsFrameLayer instanceof HTMLElement ? gsFrameLayer : null));
   if (!(parent instanceof HTMLElement)) {
     return null;
   }
