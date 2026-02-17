@@ -5000,10 +5000,11 @@ function ensurePlaneFlameHost() {
     return null;
   }
   const bounds = getFxHostBounds();
+  const useLocalCoordinates = parent === overlayFxLayer;
   return ensureFxHost(parent, PLANE_FLAME_HOST_ID, {
     fillParent: false,
-    left: bounds.left,
-    top: bounds.top,
+    left: useLocalCoordinates ? 0 : bounds.left,
+    top: useLocalCoordinates ? 0 : bounds.top,
     width: bounds.width,
     height: bounds.height
   });
