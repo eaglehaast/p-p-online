@@ -781,6 +781,13 @@ const blueInventoryHost = document.getElementById("gs_inventory_blue");
 const greenInventoryHost = document.getElementById("gs_inventory_green");
 const inventoryLayer = document.getElementById("inventoryLayer");
 
+function syncInventoryVisibility() {
+  if (!(inventoryLayer instanceof HTMLElement)) return;
+  const visible = settings?.addCargo === true;
+  inventoryLayer.style.display = visible ? "block" : "none";
+  inventoryLayer.setAttribute("aria-hidden", visible ? "false" : "true");
+}
+
 const ROUND_BANNER_AUTO_HIDE_MS = 2000;
 const roundBannerState = {
   layer: null,
@@ -3484,6 +3491,7 @@ function showInventoryDisabledHint(color, slotLayout){
 }
 
 function syncInventoryUI(color){
+  syncInventoryVisibility();
   const host = inventoryHosts[color];
   if(!(host instanceof HTMLElement)) return;
   const hintState = inventoryHintState[color];
@@ -7726,7 +7734,7 @@ const sharedSettings = settingsBridge.settings || (settingsBridge.settings = {
   addAA: true,
   sharpEdges: true,
   flagsEnabled: true,
-  addCargo: false,
+  addCargo: true,
   mapIndex: 0
 });
 
@@ -7746,7 +7754,7 @@ if(typeof sharedSettings.flagsEnabled !== 'boolean'){
   sharedSettings.flagsEnabled = true;
 }
 if(typeof sharedSettings.addCargo !== 'boolean'){
-  sharedSettings.addCargo = false;
+  sharedSettings.addCargo = true;
 }
 if(!Number.isInteger(sharedSettings.mapIndex)){
   sharedSettings.mapIndex = 0;
@@ -7827,7 +7835,7 @@ function loadSettings(){
   const storedFlagsEnabled = getStoredSetting('settings.flagsEnabled');
   settings.flagsEnabled = storedFlagsEnabled === null ? true : storedFlagsEnabled === 'true';
   const storedAddCargo = getStoredSetting('settings.addCargo');
-  settings.addCargo = storedAddCargo === null ? false : storedAddCargo === 'true';
+  settings.addCargo = storedAddCargo === null ? true : storedAddCargo === 'true';
   const mapIdx = parseInt(getStoredSetting('settings.mapIndex'), 10);
   settings.mapIndex = clampMapIndex(mapIdx);
   const storedFlameStyle = normalizeFlameStyleKey(getStoredSetting('settings.flameStyle'));
@@ -7848,6 +7856,7 @@ function loadSettings(){
 }
 
 loadSettings();
+syncInventoryVisibility();
 
 // Highlight advanced settings button if custom settings are stored
 const hasCustomSettings = storageAvailable && [

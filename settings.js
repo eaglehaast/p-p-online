@@ -407,7 +407,7 @@ const DEFAULT_SETTINGS = {
   addAA: true,
   sharpEdges: true,
   flagsEnabled: true,
-  addCargo: false,
+  addCargo: true,
   mapIndex: 0
 };
 
