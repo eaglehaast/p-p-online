@@ -1685,6 +1685,8 @@ const inventoryInteractionState = {
   movedPx: 0,
 };
 
+const MAP_EDITOR_BRICK_OVERLAP_RULE = "forbid"; // map editor rule: only one brick per grid cell
+
 const mapEditorBrickInteractionState = {
   mode: "idle",
   source: null,
@@ -1696,7 +1698,10 @@ const mapEditorBrickInteractionState = {
   previewClientY: null,
   previewBoardX: null,
   previewBoardY: null,
+  previewCellX: null,
+  previewCellY: null,
   previewInsideField: false,
+  previewCellOccupied: false,
 };
 
 function scheduleInventoryUiSync(){
@@ -2652,7 +2657,60 @@ function resetMapEditorBrickInteraction(){
   mapEditorBrickInteractionState.previewClientY = null;
   mapEditorBrickInteractionState.previewBoardX = null;
   mapEditorBrickInteractionState.previewBoardY = null;
+  mapEditorBrickInteractionState.previewCellX = null;
+  mapEditorBrickInteractionState.previewCellY = null;
   mapEditorBrickInteractionState.previewInsideField = false;
+  mapEditorBrickInteractionState.previewCellOccupied = false;
+}
+
+function clampBrickCellIndexX(cellX){
+  const maxCellX = Math.max(0, Math.floor((FIELD_WIDTH - 1) / CELL_SIZE));
+  return Math.max(0, Math.min(maxCellX, cellX));
+}
+
+function clampBrickCellIndexY(cellY){
+  const maxCellY = Math.max(0, Math.floor((FIELD_HEIGHT - 1) / CELL_SIZE));
+  return Math.max(0, Math.min(maxCellY, cellY));
+}
+
+function getBrickSnappedPlacementFromBoardPoint(boardX, boardY){
+  if(!Number.isFinite(boardX) || !Number.isFinite(boardY)) return null;
+  const rawCellX = Math.floor((boardX - FIELD_LEFT) / CELL_SIZE);
+  const rawCellY = Math.floor((boardY - FIELD_TOP) / CELL_SIZE);
+  const cellX = clampBrickCellIndexX(rawCellX);
+  const cellY = clampBrickCellIndexY(rawCellY);
+  return {
+    rawCellX,
+    rawCellY,
+    cellX,
+    cellY,
+    x: FIELD_LEFT + cellX * CELL_SIZE + CELL_SIZE / 2,
+    y: FIELD_TOP + cellY * CELL_SIZE + CELL_SIZE / 2,
+    insideField: isPointInsideFieldBounds(boardX, boardY),
+  };
+}
+
+function getBrickCellFromSprite(sprite){
+  if(!sprite || !Number.isFinite(sprite.x) || !Number.isFinite(sprite.y)) return null;
+  const spriteName = typeof sprite.spriteName === "string" ? sprite.spriteName : "brick_1_default";
+  const { width: baseWidth, height: baseHeight } = getMapSpriteBaseSize(spriteName);
+  const centerX = sprite.x + baseWidth / 2;
+  const centerY = sprite.y + baseHeight / 2;
+  const snapped = getBrickSnappedPlacementFromBoardPoint(centerX, centerY);
+  if(!snapped) return null;
+  return {
+    cellX: snapped.cellX,
+    cellY: snapped.cellY,
+  };
+}
+
+function isMapEditorBrickCellOccupied(cellX, cellY){
+  if(!Number.isFinite(cellX) || !Number.isFinite(cellY)) return false;
+  if(!Array.isArray(currentMapSprites) || currentMapSprites.length === 0) return false;
+  return currentMapSprites.some((sprite) => {
+    const spriteCell = getBrickCellFromSprite(sprite);
+    return spriteCell ? spriteCell.cellX === cellX && spriteCell.cellY === cellY : false;
+  });
 }
 
 function getMapEditorSpriteFromEventTarget(target){
@@ -2681,11 +2739,17 @@ function updateMapEditorBrickPreviewFromClientPoint(clientX, clientY){
   if(!Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
   const designPoint = toDesignCoords(clientX, clientY);
   const boardPoint = designToBoardCoords(designPoint.x, designPoint.y);
+  const snappedPlacement = getBrickSnappedPlacementFromBoardPoint(boardPoint.x, boardPoint.y);
   mapEditorBrickInteractionState.previewClientX = clientX;
   mapEditorBrickInteractionState.previewClientY = clientY;
-  mapEditorBrickInteractionState.previewBoardX = boardPoint.x;
-  mapEditorBrickInteractionState.previewBoardY = boardPoint.y;
-  mapEditorBrickInteractionState.previewInsideField = isPointInsideFieldBounds(boardPoint.x, boardPoint.y);
+  mapEditorBrickInteractionState.previewBoardX = snappedPlacement ? snappedPlacement.x : null;
+  mapEditorBrickInteractionState.previewBoardY = snappedPlacement ? snappedPlacement.y : null;
+  mapEditorBrickInteractionState.previewCellX = snappedPlacement ? snappedPlacement.cellX : null;
+  mapEditorBrickInteractionState.previewCellY = snappedPlacement ? snappedPlacement.cellY : null;
+  mapEditorBrickInteractionState.previewInsideField = snappedPlacement ? snappedPlacement.insideField : false;
+  mapEditorBrickInteractionState.previewCellOccupied = snappedPlacement
+    ? isMapEditorBrickCellOccupied(snappedPlacement.cellX, snappedPlacement.cellY)
+    : false;
 }
 
 function buildMapEditorBrickPlacementSprite(spriteName, boardX, boardY){
@@ -2710,6 +2774,7 @@ function commitMapEditorBrickDrop(clientX, clientY){
   if(typeof spriteName !== "string") return false;
   if(!Number.isFinite(boardX) || !Number.isFinite(boardY)) return false;
   if(!mapEditorBrickInteractionState.previewInsideField) return false;
+  if(MAP_EDITOR_BRICK_OVERLAP_RULE === "forbid" && mapEditorBrickInteractionState.previewCellOccupied) return false;
 
   const nextSprite = buildMapEditorBrickPlacementSprite(spriteName, boardX, boardY);
   if(!nextSprite) return false;
@@ -11671,7 +11736,9 @@ function drawMapLayer(ctx2d){
   const mapEditorPreviewSprite = getMapEditorBrickPreviewSprite();
   if(mapEditorPreviewSprite){
     ctx2d.save();
-    ctx2d.globalAlpha = mapEditorBrickInteractionState.previewInsideField ? 0.55 : 0.25;
+    const previewAllowed = mapEditorBrickInteractionState.previewInsideField
+      && !mapEditorBrickInteractionState.previewCellOccupied;
+    ctx2d.globalAlpha = previewAllowed ? 0.55 : 0.25;
     drawMapSprites(ctx2d, [mapEditorPreviewSprite]);
     ctx2d.restore();
   }
