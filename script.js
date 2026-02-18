@@ -2687,19 +2687,15 @@ function getBrickSnappedPlacementFromBoardPoint(boardX, boardY){
     rawCellY,
     cellX,
     cellY,
-    x: FIELD_LEFT + cellX * CELL_SIZE + CELL_SIZE / 2,
-    y: FIELD_TOP + cellY * CELL_SIZE + CELL_SIZE / 2,
+    x: FIELD_LEFT + cellX * CELL_SIZE,
+    y: FIELD_TOP + cellY * CELL_SIZE,
     insideField: isPointInsideFieldBounds(boardX, boardY),
   };
 }
 
 function getBrickCellFromSprite(sprite){
   if(!sprite || !Number.isFinite(sprite.x) || !Number.isFinite(sprite.y)) return null;
-  const spriteName = typeof sprite.spriteName === "string" ? sprite.spriteName : MAP_DEFAULT_SPRITE_NAME;
-  const { width: baseWidth, height: baseHeight } = getMapSpriteBaseSize(spriteName);
-  const centerX = sprite.x + baseWidth / 2;
-  const centerY = sprite.y + baseHeight / 2;
-  const snapped = getBrickSnappedPlacementFromBoardPoint(centerX, centerY);
+  const snapped = getBrickSnappedPlacementFromBoardPoint(sprite.x, sprite.y);
   if(!snapped) return null;
   return {
     cellX: snapped.cellX,
@@ -2758,11 +2754,10 @@ function updateMapEditorBrickPreviewFromClientPoint(clientX, clientY){
 function buildMapEditorBrickPlacementSprite(spriteName, boardX, boardY){
   if(typeof spriteName !== "string" || !MAP_VALID_SPRITE_NAMES.has(spriteName)) return null;
   if(!Number.isFinite(boardX) || !Number.isFinite(boardY)) return null;
-  const { width: baseWidth, height: baseHeight } = getMapSpriteBaseSize(spriteName);
   return {
     spriteName,
-    x: boardX - baseWidth / 2,
-    y: boardY - baseHeight / 2,
+    x: boardX,
+    y: boardY,
   };
 }
 
@@ -2840,7 +2835,7 @@ function onMapEditorBrickDragStart(event){
     event.dataTransfer.setData("text/plain", brick.spriteName);
     if(brick.element instanceof HTMLImageElement){
       try {
-        event.dataTransfer.setDragImage(brick.element, Math.round(brick.element.width / 2), Math.round(brick.element.height / 2));
+        event.dataTransfer.setDragImage(brick.element, 0, 0);
       } catch (_error) {
         // Ignore drag image errors; default browser preview is enough.
       }
