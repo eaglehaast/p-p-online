@@ -4285,8 +4285,10 @@ function syncPlayButtonSkin(isReady){
 function syncRulesButtonSkins(selection){
   applyMenuButtonSkin(classicRulesBtn, "classicRules", selection === "classic");
   applyMenuButtonSkin(advancedSettingsBtn, "advancedSettings", selection === "advanced");
+  applyMenuButtonSkin(editorBtn, "advancedSettings", selection === "mapeditor");
   classicRulesBtn?.classList.toggle("selected", selection === "classic");
   advancedSettingsBtn?.classList.toggle("selected", selection === "advanced");
+  editorBtn?.classList.toggle("selected", selection === "mapeditor");
 }
 
 const IS_TEST_HARNESS = document.body.classList.contains('test-harness');
@@ -5869,7 +5871,7 @@ const classicRulesBtn     = document.getElementById("classicRulesBtn");
 const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
 const editorBtn = document.getElementById("editorBtn");
 const modeMenuButtons = [hotSeatBtn, computerBtn, onlineBtn];
-const rulesMenuButtons = [classicRulesBtn, advancedSettingsBtn];
+const rulesMenuButtons = [classicRulesBtn, advancedSettingsBtn, editorBtn];
 
 const DEBUG_MENU_PLANE_PIVOT = false;
 
@@ -8617,6 +8619,26 @@ if(advancedSettingsBtn){
     }
   });
 }
+if(editorBtn){
+  editorBtn.addEventListener('click', () => {
+    loadSettings();
+    applyCurrentMap();
+    selectedRuleset = "mapeditor";
+    syncRulesButtonSkins(selectedRuleset);
+    lastRulesSelectionButton = editorBtn;
+    updateModeSelection(editorBtn);
+
+    if(!IS_TEST_HARNESS){
+      if (settingsLayerTimer) {
+        clearTimeout(settingsLayerTimer);
+      }
+      settingsLayerTimer = setTimeout(() => {
+        settingsLayerTimer = null;
+        showSettingsLayer();
+      }, MENU_SETTINGS_DELAY_MS);
+    }
+  });
+}
 function resolveModeButton(activeButton){
   if(!selectedMode) return null;
   if(modeMenuButtons.includes(activeButton)) return activeButton;
@@ -8635,6 +8657,7 @@ function resolveRulesButton(activeButton){
   if(rulesMenuButtons.includes(selectedButton)) return selectedButton;
   if(selectedRuleset === "classic") return classicRulesBtn;
   if(selectedRuleset === "advanced") return advancedSettingsBtn;
+  if(selectedRuleset === "mapeditor") return editorBtn;
   return null;
 }
 
@@ -13347,7 +13370,7 @@ function startNewRound(){
 
 /* ======= Map helpers ======= */
 function shouldAutoRandomizeMap(){
-  if(selectedRuleset !== "advanced"){
+  if(selectedRuleset === "classic"){
     return true;
   }
   return !!settings.randomizeMapEachRound;
