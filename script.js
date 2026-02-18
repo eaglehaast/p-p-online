@@ -2692,7 +2692,7 @@ function getBrickSnappedPlacementFromBoardPoint(boardX, boardY){
 
 function getBrickCellFromSprite(sprite){
   if(!sprite || !Number.isFinite(sprite.x) || !Number.isFinite(sprite.y)) return null;
-  const spriteName = typeof sprite.spriteName === "string" ? sprite.spriteName : "brick_1_default";
+  const spriteName = typeof sprite.spriteName === "string" ? sprite.spriteName : MAP_DEFAULT_SPRITE_NAME;
   const { width: baseWidth, height: baseHeight } = getMapSpriteBaseSize(spriteName);
   const centerX = sprite.x + baseWidth / 2;
   const centerY = sprite.y + baseHeight / 2;
@@ -2718,7 +2718,7 @@ function getMapEditorSpriteFromEventTarget(target){
   const brick = target.closest?.("[data-brick-sprite]");
   if(!(brick instanceof HTMLElement)) return null;
   const spriteName = brick.dataset.brickSprite;
-  if(typeof spriteName !== "string" || !MAP_SPRITE_PATHS[spriteName]) return null;
+  if(typeof spriteName !== "string" || !MAP_VALID_SPRITE_NAMES.has(spriteName)) return null;
   return {
     spriteName,
     element: brick,
@@ -2753,7 +2753,7 @@ function updateMapEditorBrickPreviewFromClientPoint(clientX, clientY){
 }
 
 function buildMapEditorBrickPlacementSprite(spriteName, boardX, boardY){
-  if(typeof spriteName !== "string" || !MAP_SPRITE_PATHS[spriteName]) return null;
+  if(typeof spriteName !== "string" || !MAP_VALID_SPRITE_NAMES.has(spriteName)) return null;
   if(!Number.isFinite(boardX) || !Number.isFinite(boardY)) return null;
   const { width: baseWidth, height: baseHeight } = getMapSpriteBaseSize(spriteName);
   return {
@@ -3547,8 +3547,8 @@ function clearDynamiteExplosionDomEntries(){
 
 function getMapSpriteGeometry(sprite, spriteIndex){
   if(!sprite) return null;
-  const spriteName = typeof sprite?.spriteName === "string" ? sprite.spriteName : "brick_1_default";
-  if(!MAP_SPRITE_PATHS[spriteName]) return null;
+  const spriteName = typeof sprite?.spriteName === "string" ? sprite.spriteName : MAP_DEFAULT_SPRITE_NAME;
+  if(!MAP_VALID_SPRITE_NAMES.has(spriteName)) return null;
   const { width: baseWidth, height: baseHeight } = getMapSpriteBaseSize(spriteName);
   const { scaleX, scaleY } = getSpriteScale(sprite);
   const rotationDeg = Number.isFinite(sprite?.rotate) ? sprite.rotate : 0;
@@ -6924,7 +6924,6 @@ function getDesignSizeVar(varName, fallbackValue) {
 const FRAME_BASE_WIDTH = getDesignSizeVar("--design-w", DEFAULT_FRAME_BASE_WIDTH);
 const FRAME_BASE_HEIGHT = getDesignSizeVar("--design-h", DEFAULT_FRAME_BASE_HEIGHT);
 const MAP_BRICK_THICKNESS = 20; // px, matches brick_1_default short side
-const MAP_DIAGONAL_BRICK_SIZE = MAP_BRICK_THICKNESS * 3;
 const FIELD_BORDER_THICKNESS = MAP_BRICK_THICKNESS; // px, width of brick frame edges
 
 function getFieldLeftCssValue() {
@@ -6945,10 +6944,7 @@ setScreenMode('MENU');
 
 let brickFrameImg = null;
 let brickFrameData = null;
-const MAP_SPRITE_ASSETS = {
-  brick_1_default: null,
-  brick_4_diagonal: null
-};
+const MAP_SPRITE_ASSETS = Object.create(null);
 
 function handleBrickFrameLoad() {
   if (!brickFrameImg) return;
@@ -7995,15 +7991,38 @@ let turnAdvanceCount = 0;
 
 let currentPlacer = null; // 'green' | 'blue'
 
+const MAP_DEFAULT_SPRITE_NAME = "brick_1_default";
 const MAP_BRICK_SPRITE_PATH = "ui_gamescreen/bricks/brick_1_default.png";
-const MAP_SPRITE_PATHS = {
-  brick_1_default: "ui_gamescreen/bricks/brick_1_default.png",
-  brick_2_brokenciga: "ui_gamescreen/bricks/brick_2_brokenciga.png",
-  brick_3_mini: "ui_gamescreen/bricks/brick_3_mini.png",
-  brick_4: "ui_gamescreen/bricks/brick4_diagonal copy.png",
-  brick_4_diagonal: "ui_gamescreen/bricks/brick4_diagonal copy.png",
-  brick_5_corner: "ui_gamescreen/bricks/brick_5_corner.png"
-};
+const MAP_SPRITE_PATHS = (() => {
+  const sidebarEntries = mapEditorBrickSidebar instanceof HTMLElement
+    ? Array.from(mapEditorBrickSidebar.querySelectorAll("[data-brick-sprite]"))
+      .map((element) => {
+        const spriteName = element.dataset.brickSprite;
+        const spritePath = element.getAttribute("src");
+        if(typeof spriteName !== "string" || spriteName.length === 0) return null;
+        if(typeof spritePath !== "string" || spritePath.length === 0) return null;
+        return [spriteName, spritePath];
+      })
+      .filter(Boolean)
+    : [];
+
+  const fromSidebar = Object.fromEntries(sidebarEntries);
+  if(!fromSidebar[MAP_DEFAULT_SPRITE_NAME]){
+    fromSidebar[MAP_DEFAULT_SPRITE_NAME] = MAP_BRICK_SPRITE_PATH;
+  }
+
+  return fromSidebar;
+})();
+const MAP_SPRITE_NAMES = Object.freeze(Object.keys(MAP_SPRITE_PATHS));
+const MAP_VALID_SPRITE_NAMES = new Set(MAP_SPRITE_NAMES);
+const MAP_DIAGONAL_SPRITE_NAME = "brick_4_diagonal";
+const MAP_SPRITE_BASE_SIZES = Object.freeze({
+  brick_1_default: { width: 20, height: 40 },
+  brick_2_brokenciga: { width: 42, height: 68 },
+  brick_3_mini: { width: 20, height: 20 },
+  brick_4_diagonal: { width: 60, height: 60 },
+  brick_5_corner: { width: 40, height: 40 }
+});
 const mapsDataBridge = window.paperWingsMapsData || {};
 const MAP_RENDER_MODES = mapsDataBridge.MAP_RENDER_MODES || { DATA: 'data' };
 const MAPS = Array.isArray(mapsDataBridge.MAPS) ? mapsDataBridge.MAPS : [];
@@ -11703,8 +11722,8 @@ function drawMapSprites(ctx2d, sprites = currentMapSprites){
   }
 
   for(const sprite of spriteEntries){
-    const spriteName = typeof sprite?.spriteName === "string" ? sprite.spriteName : "brick_1_default";
-    const brickSprite = MAP_SPRITE_ASSETS[spriteName] || MAP_SPRITE_ASSETS.brick_1_default;
+    const spriteName = typeof sprite?.spriteName === "string" ? sprite.spriteName : MAP_DEFAULT_SPRITE_NAME;
+    const brickSprite = MAP_SPRITE_ASSETS[spriteName] || MAP_SPRITE_ASSETS[MAP_DEFAULT_SPRITE_NAME];
     if(!brickSprite || !isSpriteReady(brickSprite)){
       continue;
     }
@@ -13823,12 +13842,16 @@ function syncMapEditorResetButtonVisibility(){
 
 function ensureMapSpriteAssets(sprites = []){
   const spriteEntries = Array.isArray(sprites) ? sprites : [];
-  const requested = new Set(
-    spriteEntries.map(entry => (typeof entry?.spriteName === "string" ? entry.spriteName : "brick_1_default"))
-  );
-  if(requested.size === 0){
-    requested.add("brick_1_default");
+  const requested = new Set(MAP_SPRITE_NAMES);
+
+  for(const entry of spriteEntries){
+    const spriteName = typeof entry?.spriteName === "string" ? entry.spriteName : MAP_DEFAULT_SPRITE_NAME;
+    if(MAP_VALID_SPRITE_NAMES.has(spriteName)){
+      requested.add(spriteName);
+    }
   }
+
+  requested.add(MAP_DEFAULT_SPRITE_NAME);
 
   for(const spriteName of requested){
     const path = MAP_SPRITE_PATHS[spriteName] || MAP_BRICK_SPRITE_PATH;
@@ -13838,7 +13861,7 @@ function ensureMapSpriteAssets(sprites = []){
     }
   }
 
-  return MAP_SPRITE_ASSETS.brick_1_default;
+  return MAP_SPRITE_ASSETS;
 }
 
 const MAP_WARN_ONCE_KEYS = new Set();
@@ -13857,12 +13880,16 @@ function getMapSpriteBaseSize(spriteName){
     return { width: asset.naturalWidth, height: asset.naturalHeight };
   }
 
-  if(spriteName === "brick_4_diagonal"){
-    const side = MAP_DIAGONAL_BRICK_SIZE;
-    return { width: side, height: side };
+  const configuredSize = MAP_SPRITE_BASE_SIZES[spriteName];
+  if(configuredSize){
+    return { width: configuredSize.width, height: configuredSize.height };
   }
 
-  return { width: MAP_BRICK_THICKNESS, height: MAP_BRICK_THICKNESS * 2 };
+  const defaultSize = MAP_SPRITE_BASE_SIZES[MAP_DEFAULT_SPRITE_NAME];
+  return {
+    width: defaultSize?.width || MAP_BRICK_THICKNESS,
+    height: defaultSize?.height || MAP_BRICK_THICKNESS * 2
+  };
 }
 
 function getSpriteScale(sprite){
@@ -13885,7 +13912,7 @@ function getSpriteColliderCenter(sprite, baseWidth, baseHeight, scaleX, scaleY, 
 function buildSpriteCollider(sprite, spriteIndex){
   if(!sprite) return null;
   const spriteName = typeof sprite?.spriteName === "string" ? sprite.spriteName : null;
-  if(!spriteName || !MAP_SPRITE_PATHS[spriteName]){
+  if(!spriteName || !MAP_VALID_SPRITE_NAMES.has(spriteName)){
     return null;
   }
 
@@ -13902,7 +13929,7 @@ function buildSpriteCollider(sprite, spriteIndex){
   const baseId = sprite?.id ?? `${spriteName}-${spriteIndex}`;
   const id = typeof baseId === "string" ? baseId : `${spriteName}-${spriteIndex}`;
 
-  if(spriteName === "brick_4_diagonal"){
+  if(spriteName === MAP_DIAGONAL_SPRITE_NAME){
     const normalizedRotation = ((rotationDeg % 360) + 360) % 360;
     const swapsDimensions = normalizedRotation % 180 !== 0;
     const drawnWidth = (swapsDimensions ? baseHeight : baseWidth) * Math.abs(scaleX);
@@ -13970,7 +13997,7 @@ function normalizeMapForRendering(map){
   normalizedMap.renderer = MAP_RENDERERS.SPRITES;
 
   if(Array.isArray(spritesSource)){
-    const validSpriteNames = new Set(Object.keys(MAP_SPRITE_PATHS));
+    const validSpriteNames = MAP_VALID_SPRITE_NAMES;
     normalizedMap.sprites = spritesSource.filter(sprite => {
       const spriteName = typeof sprite?.spriteName === "string" ? sprite.spriteName : "unknown";
       if(!validSpriteNames.has(spriteName)){
