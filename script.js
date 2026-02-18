@@ -4271,6 +4271,7 @@ function syncModeButtonSkins(mode){
   applyMenuButtonSkin(hotSeatBtn, "hotSeat", mode === "hotSeat");
   applyMenuButtonSkin(computerBtn, "computer", mode === "computer");
   applyMenuButtonSkin(onlineBtn, "online", mode === "online");
+  applyMenuButtonSkin(mapEditorBtn, "mapEditor", mode === "mapEditor");
 }
 
 function syncPlayButtonSkin(isReady){
@@ -5858,6 +5859,7 @@ const modeMenuDiv = document.getElementById("modeMenu");
 const hotSeatBtn  = document.getElementById("hotSeatBtn");
 const computerBtn = document.getElementById("computerBtn");
 const onlineBtn   = document.getElementById("onlineBtn");
+const mapEditorBtn = document.getElementById("mapEditorBtn");
 const leftModePlane = document.getElementById("mm_plane_left_mode");
 const rightModePlane = document.getElementById("mm_plane_right_mode");
 const leftRulesPlane = document.getElementById("mm_plane_left_rules");
@@ -5867,8 +5869,11 @@ const playBtn     = document.getElementById("playBtn");
 
 const classicRulesBtn     = document.getElementById("classicRulesBtn");
 const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
-const modeMenuButtons = [hotSeatBtn, computerBtn, onlineBtn];
+const modeMenuButtons = [hotSeatBtn, computerBtn, onlineBtn, mapEditorBtn];
 const rulesMenuButtons = [classicRulesBtn, advancedSettingsBtn];
+const mapEditorLayer = document.getElementById("mapEditorLayer");
+const mapEditorBoard = document.getElementById("mapEditorBoard");
+const mapEditorBrickButtons = Array.from(document.querySelectorAll(".map-editor-brick"));
 
 const DEBUG_MENU_PLANE_PIVOT = false;
 
@@ -5936,6 +5941,7 @@ setupMenuPressFeedback([
   hotSeatBtn,
   computerBtn,
   onlineBtn,
+  mapEditorBtn,
   playBtn,
   classicRulesBtn,
   advancedSettingsBtn
@@ -6011,6 +6017,9 @@ function showMenuLayer() {
     console.warn('[screen] Menu visibility request ignored because gameplay is active.');
     return;
   }
+
+  setMapEditorPlaceholderVisibility(false);
+  cancelMapEditorDrag();
 
   document.body.classList.add('menu-ready');
   setLayerVisibility(settingsLayer, false);
@@ -8576,6 +8585,11 @@ onlineBtn.addEventListener("click",()=>{
   lastModeSelectionButton = onlineBtn;
   updateModeSelection(onlineBtn);
 });
+mapEditorBtn?.addEventListener("click",()=>{
+  selectedMode = "mapEditor";
+  lastModeSelectionButton = mapEditorBtn;
+  updateModeSelection(mapEditorBtn);
+});
 if(classicRulesBtn){
   classicRulesBtn.addEventListener('click', () => {
     settings.flightRangeCells = 30;
@@ -8622,6 +8636,7 @@ function resolveModeButton(activeButton){
   if(selectedMode === "hotSeat") return hotSeatBtn;
   if(selectedMode === "computer") return computerBtn;
   if(selectedMode === "online") return onlineBtn;
+  if(selectedMode === "mapEditor") return mapEditorBtn;
   return modeMenuDiv?.querySelector('.mode-menu__btn.menu-btn--active') || null;
 }
 
@@ -8777,6 +8792,147 @@ function updateModeSelection(activeButton){
   syncPlayButtonSkin(true);
 }
 
+function setMapEditorPlaceholderVisibility(isVisible){
+  if(!(mapEditorLayer instanceof HTMLElement)) return;
+  mapEditorLayer.hidden = !isVisible;
+  mapEditorLayer.setAttribute("aria-hidden", isVisible ? "false" : "true");
+  document.body.classList.toggle("map-editor-active", !!isVisible);
+}
+
+const mapEditorState = {
+  dragPointerId: null,
+  dragType: null,
+  dragGhost: null,
+  isReady: false
+};
+
+function getMapEditorBrickConfig(type){
+  if(type === "brick_4_diagonal") return { src: "ui_gamescreen/bricks/brick4_diagonal copy.png", width: 40, height: 20 };
+  if(type === "brick_4_diagonal_mirror") return { src: "ui_gamescreen/bricks/brick4_diagonal copy.png", width: 40, height: 20, mirror: true };
+  if(type === "brick_1_vertical") return { src: "ui_gamescreen/bricks/brick_1_default.png", width: 20, height: 40, rotate: 90 };
+  return { src: "ui_gamescreen/bricks/brick_1_default.png", width: 40, height: 20 };
+}
+
+function snapMapEditorValue(value, step = 20){
+  return Math.round(value / step) * step;
+}
+
+function clearMapEditorBoard(){
+  if(!(mapEditorBoard instanceof HTMLElement)) return;
+  mapEditorBoard.querySelectorAll(".map-editor-board-brick").forEach((node) => node.remove());
+}
+
+function placeMapEditorBrick(clientX, clientY, type){
+  if(!(mapEditorBoard instanceof HTMLElement)) return;
+  const rect = mapEditorBoard.getBoundingClientRect();
+  if(clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return;
+
+  const config = getMapEditorBrickConfig(type);
+  const left = snapMapEditorValue(clientX - rect.left - config.width / 2);
+  const top = snapMapEditorValue(clientY - rect.top - config.height / 2);
+  const clampedLeft = Math.max(0, Math.min(rect.width - config.width, left));
+  const clampedTop = Math.max(0, Math.min(rect.height - config.height, top));
+
+  const brick = document.createElement("div");
+  brick.className = "map-editor-board-brick";
+  if(type === "brick_1_vertical"){
+    brick.classList.add("map-editor-board-brick--vertical");
+  }
+  brick.style.left = `${clampedLeft}px`;
+  brick.style.top = `${clampedTop}px`;
+
+  const image = document.createElement("img");
+  image.src = config.src;
+  image.alt = "";
+  image.draggable = false;
+  if(config.rotate || config.mirror){
+    const rotate = config.rotate ? ` rotate(${config.rotate}deg)` : "";
+    const mirror = config.mirror ? " scaleX(-1)" : "";
+    image.style.transform = `${mirror}${rotate}`.trim();
+  }
+
+  brick.appendChild(image);
+  mapEditorBoard.appendChild(brick);
+}
+
+function moveMapEditorGhost(clientX, clientY){
+  if(!(mapEditorState.dragGhost instanceof HTMLElement)) return;
+  mapEditorState.dragGhost.style.left = `${clientX}px`;
+  mapEditorState.dragGhost.style.top = `${clientY}px`;
+}
+
+function stopMapEditorDrag(event){
+  if(mapEditorState.dragPointerId === null) return;
+
+  if(event && Number.isFinite(event.clientX) && Number.isFinite(event.clientY)){
+    placeMapEditorBrick(event.clientX, event.clientY, mapEditorState.dragType);
+  }
+  mapEditorState.dragPointerId = null;
+  mapEditorState.dragType = null;
+  if(mapEditorState.dragGhost){
+    mapEditorState.dragGhost.remove();
+    mapEditorState.dragGhost = null;
+  }
+
+  window.removeEventListener("pointermove", onMapEditorPointerMove);
+  window.removeEventListener("pointerup", onMapEditorPointerUp);
+  window.removeEventListener("pointercancel", onMapEditorPointerUp);
+}
+
+function onMapEditorPointerMove(event){
+  if(event.pointerId !== mapEditorState.dragPointerId) return;
+  moveMapEditorGhost(event.clientX, event.clientY);
+}
+
+function onMapEditorPointerUp(event){
+  if(event.pointerId !== mapEditorState.dragPointerId) return;
+  stopMapEditorDrag(event);
+}
+
+function cancelMapEditorDrag(){
+  stopMapEditorDrag(null);
+}
+
+function startMapEditorDrag(event, type){
+  if(mapEditorState.dragPointerId !== null) return;
+  const config = getMapEditorBrickConfig(type);
+  mapEditorState.dragPointerId = event.pointerId;
+  mapEditorState.dragType = type;
+
+  const ghost = document.createElement("img");
+  ghost.src = config.src;
+  ghost.alt = "";
+  ghost.className = "map-editor-drag-ghost";
+  ghost.style.position = "fixed";
+  ghost.style.width = `${config.width}px`;
+  ghost.style.height = `${config.height}px`;
+  ghost.style.left = `${event.clientX}px`;
+  ghost.style.top = `${event.clientY}px`;
+  ghost.style.transform = `translate(-50%, -50%)${config.mirror ? " scaleX(-1)" : ""}${config.rotate ? ` rotate(${config.rotate}deg)` : ""}`;
+  ghost.style.pointerEvents = "none";
+  ghost.style.zIndex = "9999";
+  ghost.style.opacity = "0.9";
+  document.body.appendChild(ghost);
+  mapEditorState.dragGhost = ghost;
+
+  window.addEventListener("pointermove", onMapEditorPointerMove);
+  window.addEventListener("pointerup", onMapEditorPointerUp);
+  window.addEventListener("pointercancel", onMapEditorPointerUp);
+}
+
+function initMapEditorMode(){
+  if(mapEditorState.isReady) return;
+  mapEditorBrickButtons.forEach((button) => {
+    button.addEventListener("pointerdown", (event) => {
+      const brickType = button.dataset.brickType;
+      if(!brickType) return;
+      event.preventDefault();
+      startMapEditorDrag(event, brickType);
+    });
+  });
+  mapEditorState.isReady = true;
+}
+
 playBtn.addEventListener("click",async ()=>{
   if(!selectedMode){
     alert("Please select a game mode before starting.");
@@ -8822,6 +8978,15 @@ playBtn.addEventListener("click",async ()=>{
   restoreGameBackgroundAfterMenu();
   setMenuVisibility(false);
   activateGameScreen();
+
+  if(gameMode === "mapEditor"){
+    initMapEditorMode();
+    clearMapEditorBoard();
+    setMapEditorPlaceholderVisibility(true);
+    return;
+  }
+
+  setMapEditorPlaceholderVisibility(false);
   startNewRound();
 });
 
