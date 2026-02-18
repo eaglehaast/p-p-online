@@ -5867,6 +5867,7 @@ const playBtn     = document.getElementById("playBtn");
 
 const classicRulesBtn     = document.getElementById("classicRulesBtn");
 const advancedSettingsBtn = document.getElementById("advancedSettingsBtn");
+const editorBtn = document.getElementById("editorBtn");
 const modeMenuButtons = [hotSeatBtn, computerBtn, onlineBtn];
 const rulesMenuButtons = [classicRulesBtn, advancedSettingsBtn];
 
@@ -5938,7 +5939,8 @@ setupMenuPressFeedback([
   onlineBtn,
   playBtn,
   classicRulesBtn,
-  advancedSettingsBtn
+  advancedSettingsBtn,
+  editorBtn
 ]);
 
 let selectedMode = "hotSeat";
