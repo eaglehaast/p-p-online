@@ -1693,7 +1693,7 @@ const MAP_EDITOR_BRICK_OVERLAP_RULE = "forbid"; // map editor rule: only one bri
 const mapEditorBrickInteractionState = {
   mode: "idle",
   source: null,
-  activeSpriteName: null,
+  activeSpriteConfig: null,
   pointerId: null,
   downPoint: null,
   movedPx: 0,
@@ -2652,7 +2652,7 @@ function getMineFallbackClientPoint(event, targetRect, visualWidth, visualHeight
 function resetMapEditorBrickInteraction(){
   mapEditorBrickInteractionState.mode = "idle";
   mapEditorBrickInteractionState.source = null;
-  mapEditorBrickInteractionState.activeSpriteName = null;
+  mapEditorBrickInteractionState.activeSpriteConfig = null;
   mapEditorBrickInteractionState.pointerId = null;
   mapEditorBrickInteractionState.downPoint = null;
   mapEditorBrickInteractionState.movedPx = 0;
@@ -2718,16 +2718,30 @@ function getMapEditorSpriteFromEventTarget(target){
   if(!(brick instanceof HTMLElement)) return null;
   const spriteName = brick.dataset.brickSprite;
   if(typeof spriteName !== "string" || !MAP_VALID_SPRITE_NAMES.has(spriteName)) return null;
+
+  const rotate = Number.parseFloat(brick.dataset.brickRotate ?? "");
+  const scaleX = Number.parseFloat(brick.dataset.brickScaleX ?? "");
+  const scaleY = Number.parseFloat(brick.dataset.brickScaleY ?? "");
+
   return {
     spriteName,
+    rotate: Number.isFinite(rotate) ? rotate : 0,
+    scaleX: Number.isFinite(scaleX) ? scaleX : 1,
+    scaleY: Number.isFinite(scaleY) ? scaleY : 1,
     element: brick,
   };
 }
 
-function beginMapEditorBrickInteraction(spriteName, pointerId, clientX, clientY){
+function beginMapEditorBrickInteraction(spriteConfig, pointerId, clientX, clientY){
+  if(!spriteConfig || typeof spriteConfig.spriteName !== "string") return;
   mapEditorBrickInteractionState.mode = "holding";
   mapEditorBrickInteractionState.source = "brickSidebar";
-  mapEditorBrickInteractionState.activeSpriteName = spriteName;
+  mapEditorBrickInteractionState.activeSpriteConfig = {
+    spriteName: spriteConfig.spriteName,
+    rotate: Number.isFinite(spriteConfig.rotate) ? spriteConfig.rotate : 0,
+    scaleX: Number.isFinite(spriteConfig.scaleX) ? spriteConfig.scaleX : 1,
+    scaleY: Number.isFinite(spriteConfig.scaleY) ? spriteConfig.scaleY : 1,
+  };
   mapEditorBrickInteractionState.pointerId = pointerId;
   mapEditorBrickInteractionState.downPoint = { x: clientX, y: clientY };
   mapEditorBrickInteractionState.movedPx = 0;
@@ -2751,14 +2765,32 @@ function updateMapEditorBrickPreviewFromClientPoint(clientX, clientY){
     : false;
 }
 
-function buildMapEditorBrickPlacementSprite(spriteName, boardX, boardY){
-  if(typeof spriteName !== "string" || !MAP_VALID_SPRITE_NAMES.has(spriteName)) return null;
+function buildMapEditorBrickPlacementSprite(spriteConfig, boardX, boardY){
+  const spriteName = typeof spriteConfig?.spriteName === "string" ? spriteConfig.spriteName : null;
+  if(!spriteName || !MAP_VALID_SPRITE_NAMES.has(spriteName)) return null;
   if(!Number.isFinite(boardX) || !Number.isFinite(boardY)) return null;
-  return {
+
+  const rotate = Number.isFinite(spriteConfig?.rotate) ? spriteConfig.rotate : 0;
+  const scaleX = Number.isFinite(spriteConfig?.scaleX) ? spriteConfig.scaleX : 1;
+  const scaleY = Number.isFinite(spriteConfig?.scaleY) ? spriteConfig.scaleY : 1;
+
+  const sprite = {
     spriteName,
     x: boardX,
     y: boardY,
   };
+
+  if(rotate !== 0){
+    sprite.rotate = rotate;
+  }
+  if(scaleX !== 1){
+    sprite.scaleX = scaleX;
+  }
+  if(scaleY !== 1){
+    sprite.scaleY = scaleY;
+  }
+
+  return sprite;
 }
 
 function commitMapEditorBrickDrop(clientX, clientY){
@@ -2766,15 +2798,15 @@ function commitMapEditorBrickDrop(clientX, clientY){
   if(!isClientPointOverBoard(clientX, clientY)) return false;
 
   updateMapEditorBrickPreviewFromClientPoint(clientX, clientY);
-  const spriteName = mapEditorBrickInteractionState.activeSpriteName;
+  const spriteConfig = mapEditorBrickInteractionState.activeSpriteConfig;
   const boardX = mapEditorBrickInteractionState.previewBoardX;
   const boardY = mapEditorBrickInteractionState.previewBoardY;
-  if(typeof spriteName !== "string") return false;
+  if(!spriteConfig) return false;
   if(!Number.isFinite(boardX) || !Number.isFinite(boardY)) return false;
   if(!mapEditorBrickInteractionState.previewInsideField) return false;
   if(MAP_EDITOR_BRICK_OVERLAP_RULE === "forbid" && mapEditorBrickInteractionState.previewCellOccupied) return false;
 
-  const nextSprite = buildMapEditorBrickPlacementSprite(spriteName, boardX, boardY);
+  const nextSprite = buildMapEditorBrickPlacementSprite(spriteConfig, boardX, boardY);
   if(!nextSprite) return false;
 
   if(!Array.isArray(currentMapSprites)){
@@ -2792,12 +2824,12 @@ function commitMapEditorBrickDrop(clientX, clientY){
 function getMapEditorBrickPreviewSprite(){
   if(!isMapEditorBricksModeActive()) return null;
   if(mapEditorBrickInteractionState.mode === "idle") return null;
-  const spriteName = mapEditorBrickInteractionState.activeSpriteName;
+  const spriteConfig = mapEditorBrickInteractionState.activeSpriteConfig;
   const boardX = mapEditorBrickInteractionState.previewBoardX;
   const boardY = mapEditorBrickInteractionState.previewBoardY;
-  if(typeof spriteName !== "string") return null;
+  if(!spriteConfig) return null;
   if(!Number.isFinite(boardX) || !Number.isFinite(boardY)) return null;
-  return buildMapEditorBrickPlacementSprite(spriteName, boardX, boardY);
+  return buildMapEditorBrickPlacementSprite(spriteConfig, boardX, boardY);
 }
 
 function onMapEditorBrickPointerDown(event){
@@ -2810,7 +2842,7 @@ function onMapEditorBrickPointerDown(event){
 
   const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
   const { clientX, clientY } = getPointerClientCoords(event);
-  beginMapEditorBrickInteraction(brick.spriteName, pointerId, clientX, clientY);
+  beginMapEditorBrickInteraction(brick, pointerId, clientX, clientY);
 }
 
 function onMapEditorBrickDragStart(event){
@@ -2828,11 +2860,16 @@ function onMapEditorBrickDragStart(event){
   cancelActiveInventoryPickup();
   const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
   const { clientX, clientY } = getPointerClientCoords(event);
-  beginMapEditorBrickInteraction(brick.spriteName, pointerId, clientX, clientY);
+  beginMapEditorBrickInteraction(brick, pointerId, clientX, clientY);
 
   if(event.dataTransfer){
     event.dataTransfer.effectAllowed = "copy";
-    event.dataTransfer.setData("text/plain", brick.spriteName);
+    event.dataTransfer.setData("text/plain", JSON.stringify({
+      spriteName: brick.spriteName,
+      rotate: brick.rotate,
+      scaleX: brick.scaleX,
+      scaleY: brick.scaleY,
+    }));
     if(brick.element instanceof HTMLImageElement){
       try {
         event.dataTransfer.setDragImage(brick.element, 0, 0);
@@ -8035,7 +8072,6 @@ const MAP_VALID_SPRITE_NAMES = new Set(MAP_SPRITE_NAMES);
 const MAP_DIAGONAL_SPRITE_NAME = "brick_4_diagonal";
 const MAP_SPRITE_BASE_SIZES = Object.freeze({
   brick_1_default: { width: 20, height: 40 },
-  brick_2_brokenciga: { width: 42, height: 68 },
   brick_3_mini: { width: 20, height: 20 },
   brick_4_diagonal: { width: 60, height: 60 },
   brick_5_corner: { width: 40, height: 40 }
