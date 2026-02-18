@@ -486,6 +486,39 @@ body, button {
     box-shadow: 0 3px 8px rgba(0, 0, 0, 0.32);
   }
 
+  .map-editor-mode-toggle {
+    position: absolute;
+    left: 380px;
+    top: 625px;
+    z-index: 120;
+    display: flex;
+    gap: 8px;
+  }
+
+  .map-editor-mode-btn {
+    min-width: 90px;
+    min-height: 42px;
+    border: none;
+    border-radius: 8px;
+    padding: 0 14px;
+    background: rgba(75, 75, 75, 0.9);
+    color: #d6d2c8;
+    font: 700 22px/1 "Patrick Hand", cursive;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.32);
+    transition: background-color 140ms ease, color 140ms ease;
+  }
+
+  .map-editor-mode-btn.map-editor-mode-btn--active {
+    background: rgba(31, 20, 11, 0.9);
+    color: #f5e8cc;
+  }
+
+  .map-editor-mode-btn:active {
+    transform: translateY(1px);
+  }
+
   .map-editor-reset-btn:active {
     transform: translateY(1px);
   }

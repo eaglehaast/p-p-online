@@ -779,6 +779,9 @@ let OVERLAY_RESYNC_SCHEDULED = false;
 const greenPlaneCounter = document.getElementById("gs_planecounter_green");
 const bluePlaneCounter  = document.getElementById("gs_planecounter_blue");
 const mapEditorResetBtn = document.getElementById("mapEditorResetBtn");
+const mapEditorModeToggle = document.getElementById("mapEditorModeToggle");
+const mapEditorModeBricksBtn = document.getElementById("mapEditorModeBricksBtn");
+const mapEditorModePlanesBtn = document.getElementById("mapEditorModePlanesBtn");
 const mapEditorBrickSidebar = document.getElementById("mapEditorBrickSidebar");
 const blueInventoryHost = document.getElementById("gs_inventory_blue");
 const greenInventoryHost = document.getElementById("gs_inventory_green");
@@ -1686,6 +1689,12 @@ const inventoryInteractionState = {
 };
 
 const MAP_EDITOR_BRICK_OVERLAP_RULE = "forbid"; // map editor rule: only one brick per grid cell
+
+const MAP_EDITOR_CONTROL_MODES = Object.freeze({
+  BRICKS: "bricks",
+  PLANES: "planes",
+});
+let mapEditorControlMode = MAP_EDITOR_CONTROL_MODES.BRICKS;
 
 const mapEditorBrickInteractionState = {
   mode: "idle",
@@ -2684,19 +2693,15 @@ function getBrickSnappedPlacementFromBoardPoint(boardX, boardY){
     rawCellY,
     cellX,
     cellY,
-    x: FIELD_LEFT + cellX * CELL_SIZE + CELL_SIZE / 2,
-    y: FIELD_TOP + cellY * CELL_SIZE + CELL_SIZE / 2,
+    x: FIELD_LEFT + cellX * CELL_SIZE,
+    y: FIELD_TOP + cellY * CELL_SIZE,
     insideField: isPointInsideFieldBounds(boardX, boardY),
   };
 }
 
 function getBrickCellFromSprite(sprite){
   if(!sprite || !Number.isFinite(sprite.x) || !Number.isFinite(sprite.y)) return null;
-  const spriteName = typeof sprite.spriteName === "string" ? sprite.spriteName : MAP_DEFAULT_SPRITE_NAME;
-  const { width: baseWidth, height: baseHeight } = getMapSpriteBaseSize(spriteName);
-  const centerX = sprite.x + baseWidth / 2;
-  const centerY = sprite.y + baseHeight / 2;
-  const snapped = getBrickSnappedPlacementFromBoardPoint(centerX, centerY);
+  const snapped = getBrickSnappedPlacementFromBoardPoint(sprite.x, sprite.y);
   if(!snapped) return null;
   return {
     cellX: snapped.cellX,
@@ -2755,16 +2760,15 @@ function updateMapEditorBrickPreviewFromClientPoint(clientX, clientY){
 function buildMapEditorBrickPlacementSprite(spriteName, boardX, boardY){
   if(typeof spriteName !== "string" || !MAP_VALID_SPRITE_NAMES.has(spriteName)) return null;
   if(!Number.isFinite(boardX) || !Number.isFinite(boardY)) return null;
-  const { width: baseWidth, height: baseHeight } = getMapSpriteBaseSize(spriteName);
   return {
     spriteName,
-    x: boardX - baseWidth / 2,
-    y: boardY - baseHeight / 2,
+    x: boardX,
+    y: boardY,
   };
 }
 
 function commitMapEditorBrickDrop(clientX, clientY){
-  if(selectedRuleset !== "mapeditor") return false;
+  if(!isMapEditorBricksMode()) return false;
   if(!isClientPointOverBoard(clientX, clientY)) return false;
 
   updateMapEditorBrickPreviewFromClientPoint(clientX, clientY);
@@ -2791,8 +2795,12 @@ function commitMapEditorBrickDrop(clientX, clientY){
   return true;
 }
 
+function isMapEditorBricksMode(){
+  return selectedRuleset === "mapeditor" && mapEditorControlMode === MAP_EDITOR_CONTROL_MODES.BRICKS;
+}
+
 function getMapEditorBrickPreviewSprite(){
-  if(selectedRuleset !== "mapeditor") return null;
+  if(!isMapEditorBricksMode()) return null;
   if(mapEditorBrickInteractionState.mode === "idle") return null;
   const spriteName = mapEditorBrickInteractionState.activeSpriteName;
   const boardX = mapEditorBrickInteractionState.previewBoardX;
@@ -2803,7 +2811,7 @@ function getMapEditorBrickPreviewSprite(){
 }
 
 function onMapEditorBrickPointerDown(event){
-  if(selectedRuleset !== "mapeditor") return;
+  if(!isMapEditorBricksMode()) return;
   const brick = getMapEditorSpriteFromEventTarget(event.currentTarget);
   if(!brick) return;
 
@@ -2816,7 +2824,7 @@ function onMapEditorBrickPointerDown(event){
 }
 
 function onMapEditorBrickDragStart(event){
-  if(selectedRuleset !== "mapeditor"){
+  if(!isMapEditorBricksMode()){
     event.preventDefault();
     return;
   }
@@ -2846,6 +2854,7 @@ function onMapEditorBrickDragStart(event){
 }
 
 function onMapEditorBrickPointerMove(event){
+  if(!isMapEditorBricksMode()) return;
   if(mapEditorBrickInteractionState.mode !== "holding") return;
 
   const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
@@ -2866,6 +2875,7 @@ function onMapEditorBrickPointerMove(event){
 }
 
 function onMapEditorBrickPointerFinish(event){
+  if(!isMapEditorBricksMode()) return;
   if(mapEditorBrickInteractionState.mode !== "holding") return;
 
   const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
@@ -2887,6 +2897,7 @@ function onMapEditorBrickDragEnd(){
 }
 
 function onMapEditorBrickDragOver(event){
+  if(!isMapEditorBricksMode()) return;
   if(mapEditorBrickInteractionState.mode !== "holding") return;
   event.preventDefault();
   if(event.dataTransfer){
@@ -2896,6 +2907,7 @@ function onMapEditorBrickDragOver(event){
 }
 
 function onMapEditorBrickDrop(event){
+  if(!isMapEditorBricksMode()) return;
   if(mapEditorBrickInteractionState.mode !== "holding") return;
   event.preventDefault();
   commitMapEditorBrickDrop(event.clientX, event.clientY);
@@ -2903,6 +2915,7 @@ function onMapEditorBrickDrop(event){
 }
 
 function onGlobalPointerDownMapEditorBrickCancel(event){
+  if(!isMapEditorBricksMode()) return;
   if(mapEditorBrickInteractionState.mode !== "holding") return;
   const target = event.target;
   if(!(target instanceof Node)) return;
@@ -8972,6 +8985,7 @@ if(advancedSettingsBtn){
 if(editorBtn){
   editorBtn.addEventListener('click', async () => {
     selectedRuleset = "mapeditor";
+    setMapEditorControlMode(MAP_EDITOR_CONTROL_MODES.BRICKS);
     syncMapEditorResetButtonVisibility();
     loadSettingsForRuleset(selectedRuleset);
     settingsBridge.setMapIndex(0, { persist: true });
@@ -9311,6 +9325,10 @@ function updateAAPreviewFromEvent(e){
 
 function onCanvasPointerDown(e){
   logPointerDebugEvent(e);
+  if(isMapEditorBricksMode()){
+    e.preventDefault();
+    return;
+  }
   if(onBoardInventoryStickyApply(e)){
     e.preventDefault();
     return;
@@ -9329,6 +9347,10 @@ function onCanvasPointerDown(e){
 
 function onCanvasPointerMove(e){
   logPointerDebugEvent(e);
+  if(isMapEditorBricksMode()) {
+    gsBoardCanvas.style.cursor = '';
+    return;
+  }
   if(isNuclearStrikeActionLocked()) {
     gsBoardCanvas.style.cursor = '';
     return;
@@ -9347,6 +9369,12 @@ function onCanvasPointerMove(e){
 
 function onCanvasPointerUp(e){
   logPointerDebugEvent(e);
+  if(isMapEditorBricksMode()){
+    aaPointerDown = false;
+    aaPlacementPreview = null;
+    aaPreviewTrail = [];
+    return;
+  }
   if(isNuclearStrikeActionLocked()){
     aaPointerDown = false;
     aaPlacementPreview = null;
@@ -13636,6 +13664,18 @@ if(mapEditorResetBtn){
   });
 }
 
+if(mapEditorModeBricksBtn instanceof HTMLElement){
+  mapEditorModeBricksBtn.addEventListener("click", () => {
+    setMapEditorControlMode(MAP_EDITOR_CONTROL_MODES.BRICKS);
+  });
+}
+
+if(mapEditorModePlanesBtn instanceof HTMLElement){
+  mapEditorModePlanesBtn.addEventListener("click", () => {
+    setMapEditorControlMode(MAP_EDITOR_CONTROL_MODES.PLANES);
+  });
+}
+
 if(mapEditorBrickSidebar instanceof HTMLElement){
   const brickAssets = mapEditorBrickSidebar.querySelectorAll(".map-editor-brick-sidebar__asset");
   brickAssets.forEach((asset) => {
@@ -13654,6 +13694,7 @@ function startNewRound(){
   } else if(selectedRuleset === "mapeditor"){
     settingsBridge.setMapIndex(0, { persist: false });
     settings.randomizeMapEachRound = false;
+    setMapEditorControlMode(MAP_EDITOR_CONTROL_MODES.BRICKS);
   }
   console.log('[settings] load at match start', {
     flightRangeCells: settings.flightRangeCells,
@@ -13825,19 +13866,61 @@ function resetMapEditorPlanePlacement(){
   renderScoreboard();
 }
 
+function syncMapEditorModeButtons(){
+  const isBricks = mapEditorControlMode === MAP_EDITOR_CONTROL_MODES.BRICKS;
+  const isPlanes = mapEditorControlMode === MAP_EDITOR_CONTROL_MODES.PLANES;
+
+  if(mapEditorModeBricksBtn instanceof HTMLElement){
+    mapEditorModeBricksBtn.classList.toggle("map-editor-mode-btn--active", isBricks);
+    mapEditorModeBricksBtn.setAttribute("aria-pressed", isBricks ? "true" : "false");
+  }
+
+  if(mapEditorModePlanesBtn instanceof HTMLElement){
+    mapEditorModePlanesBtn.classList.toggle("map-editor-mode-btn--active", isPlanes);
+    mapEditorModePlanesBtn.setAttribute("aria-pressed", isPlanes ? "true" : "false");
+  }
+}
+
+function setMapEditorControlMode(nextMode){
+  if(nextMode !== MAP_EDITOR_CONTROL_MODES.BRICKS && nextMode !== MAP_EDITOR_CONTROL_MODES.PLANES){
+    return;
+  }
+  if(mapEditorControlMode === nextMode){
+    syncMapEditorModeButtons();
+    syncMapEditorResetButtonVisibility();
+    return;
+  }
+
+  mapEditorControlMode = nextMode;
+  if(nextMode === MAP_EDITOR_CONTROL_MODES.PLANES){
+    resetMapEditorBrickInteraction();
+  }
+
+  syncMapEditorModeButtons();
+  syncMapEditorResetButtonVisibility();
+}
+
 function syncMapEditorResetButtonVisibility(){
   const visible = selectedRuleset === "mapeditor"
     && document.body.classList.contains("screen--game");
+  const showBrickSidebar = visible && mapEditorControlMode === MAP_EDITOR_CONTROL_MODES.BRICKS;
 
   if(mapEditorResetBtn instanceof HTMLElement){
     mapEditorResetBtn.hidden = !visible;
     mapEditorResetBtn.setAttribute("aria-hidden", visible ? "false" : "true");
   }
 
-  if(mapEditorBrickSidebar instanceof HTMLElement){
-    mapEditorBrickSidebar.hidden = !visible;
-    mapEditorBrickSidebar.setAttribute("aria-hidden", visible ? "false" : "true");
+  if(mapEditorModeToggle instanceof HTMLElement){
+    mapEditorModeToggle.hidden = !visible;
+    mapEditorModeToggle.setAttribute("aria-hidden", visible ? "false" : "true");
   }
+
+  if(mapEditorBrickSidebar instanceof HTMLElement){
+    mapEditorBrickSidebar.hidden = !showBrickSidebar;
+    mapEditorBrickSidebar.setAttribute("aria-hidden", showBrickSidebar ? "false" : "true");
+  }
+
+  syncMapEditorModeButtons();
 }
 
 function ensureMapSpriteAssets(sprites = []){
