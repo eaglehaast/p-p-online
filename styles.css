@@ -499,11 +499,13 @@ body, button {
     position: absolute;
     inset: 0;
     z-index: 120;
+    pointer-events: none;
   }
 
   .map-editor-mode-btn {
     position: absolute;
     left: 380px;
+    pointer-events: auto;
   }
 
   #mapEditorModePlanesBtn {
