@@ -462,9 +462,32 @@ body, button {
 
   body.nuke-input-locked #instance_reset,
   body.nuke-input-locked #instance_exit,
+  body.nuke-input-locked #mapEditorResetBtn,
   body.nuke-input-locked #yesButton,
   body.nuke-input-locked #noButton {
     pointer-events: none !important;
+  }
+
+  .map-editor-reset-btn {
+    position: absolute;
+    right: 14px;
+    bottom: 14px;
+    z-index: 120;
+    min-width: 90px;
+    min-height: 42px;
+    border: none;
+    border-radius: 8px;
+    padding: 0 14px;
+    background: rgba(31, 20, 11, 0.9);
+    color: #f5e8cc;
+    font: 700 22px/1 "Patrick Hand", cursive;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.32);
+  }
+
+  .map-editor-reset-btn:active {
+    transform: translateY(1px);
   }
 
   .score-container {
