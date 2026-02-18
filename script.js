@@ -7358,6 +7358,10 @@ function getCargoSpriteSize(){
   return { width, height };
 }
 
+function getCargoSpriteDrawSize(){
+  return getCargoSpriteSize();
+}
+
 function getCargoVisualCenter(cargo){
   const { width, height } = getCargoSpriteSize();
   return {
@@ -7415,7 +7419,30 @@ function drawCargo(ctx2d){
 
   for(const cargo of cargoState){
     if(cargo.state === "ready" && canDrawCargoBox){
-      ctx2d.drawImage(cargoSprite, cargo.x, cargo.y);
+      const { width, height } = getCargoSpriteDrawSize();
+
+      ctx2d.save();
+      ctx2d.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx2d.beginPath();
+      ctx2d.ellipse(
+        cargo.x + width / 2,
+        cargo.y + height - 2,
+        width * 0.35,
+        height * 0.12,
+        0,
+        0,
+        Math.PI * 2
+      );
+      ctx2d.fill();
+      ctx2d.restore();
+
+      ctx2d.save();
+      ctx2d.shadowColor = 'rgba(0,0,0,0.25)';
+      ctx2d.shadowBlur = 8;
+      ctx2d.shadowOffsetX = 2;
+      ctx2d.shadowOffsetY = 3;
+      ctx2d.drawImage(cargoSprite, cargo.x, cargo.y, width, height);
+      ctx2d.restore();
     }
   }
 }
