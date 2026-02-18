@@ -535,7 +535,6 @@ body, button {
 
   .map-editor-brick-sidebar__asset {
     position: absolute;
-    left: 390px;
     width: auto;
     height: auto;
     max-width: none;
@@ -549,26 +548,6 @@ body, button {
 
   .map-editor-brick-sidebar__asset:active {
     cursor: grabbing;
-  }
-
-  .map-editor-brick-sidebar__asset--brick1-default {
-    top: 80px;
-  }
-
-  .map-editor-brick-sidebar__asset--brick5-corner {
-    top: 140px;
-  }
-
-  .map-editor-brick-sidebar__asset--brick3-mini {
-    top: 200px;
-  }
-
-  .map-editor-brick-sidebar__asset--brick2-brokenciga {
-    top: 240px;
-  }
-
-  .map-editor-brick-sidebar__asset--brick4-diagonal {
-    top: 330px;
   }
 
   .score-container {
