@@ -493,7 +493,6 @@ body, button {
   .map-editor-brick-sidebar {
     position: absolute;
     inset: 0;
-    pointer-events: none;
     z-index: 22;
   }
 
@@ -506,6 +505,13 @@ body, button {
     max-height: none;
     object-fit: contain;
     image-rendering: auto;
+    pointer-events: auto;
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .map-editor-brick-sidebar__asset:active {
+    cursor: grabbing;
   }
 
   .map-editor-brick-sidebar__asset--brick1-default {
