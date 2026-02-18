@@ -5962,6 +5962,10 @@ let hasActivatedGameScreen = false;
 let needsGameScreenSync = false;
 let menuScreenLocked = false;
 
+function isAdvancedLikeRuleset(ruleset = selectedRuleset){
+  return ruleset === "advanced" || ruleset === "mapeditor";
+}
+
 function getGameCanvasMetrics() {
   const { RAW_DPR, CANVAS_DPR } = getCanvasDpr();
   const { cssW, cssH } = getCanvasDesignMetrics(gsBoardCanvas);
@@ -7896,7 +7900,7 @@ const hasCustomSettings = storageAvailable && [
   'settings.flameStyle'
 ].some(key => getStoredSetting(key) !== null);
 
-if(hasCustomSettings && classicRulesBtn && advancedSettingsBtn){
+if(hasCustomSettings && classicRulesBtn && advancedSettingsBtn && !isAdvancedLikeRuleset(selectedRuleset)){
   selectedRuleset = "advanced";
 }
 
@@ -13265,6 +13269,7 @@ noBtn.addEventListener("click", () => {
 function startNewRound(){
   logBootStep("startNewRound");
   loadSettings();
+  const useStoredRulesetSettings = isAdvancedLikeRuleset(selectedRuleset);
   if(selectedRuleset === "classic"){
     settings.addCargo = true;
   }
@@ -13277,7 +13282,8 @@ function startNewRound(){
     addCargo: settings.addCargo,
     mapIndex: settings.mapIndex,
     randomizeMapEachRound: settings.randomizeMapEachRound,
-    flameStyle: settings.flameStyle
+    flameStyle: settings.flameStyle,
+    useStoredRulesetSettings
   });
   loadMatchScoreImagesIfNeeded();
   preloadPlaneSprites();
@@ -13372,6 +13378,9 @@ function startNewRound(){
 function shouldAutoRandomizeMap(){
   if(selectedRuleset === "classic"){
     return true;
+  }
+  if(isAdvancedLikeRuleset(selectedRuleset)){
+    return !!settings.randomizeMapEachRound;
   }
   return !!settings.randomizeMapEachRound;
 }
