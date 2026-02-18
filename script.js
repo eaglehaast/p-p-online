@@ -7422,27 +7422,13 @@ function drawCargo(ctx2d){
       const { width, height } = getCargoSpriteDrawSize();
 
       ctx2d.save();
-      ctx2d.fillStyle = 'rgba(0,0,0,0.35)';
-      ctx2d.beginPath();
-      ctx2d.ellipse(
-        cargo.x + width / 2,
-        cargo.y + height - 2,
-        width * 0.35,
-        height * 0.12,
-        0,
-        0,
-        Math.PI * 2
-      );
-      ctx2d.fill();
-      ctx2d.restore();
-
-      ctx2d.save();
-      ctx2d.shadowColor = 'rgba(0,0,0,0.25)';
-      ctx2d.shadowBlur = 8;
-      // Keep cargo shadow direction consistent with the rest of field objects: right + up.
-      ctx2d.shadowOffsetX = 2;
-      ctx2d.shadowOffsetY = -3;
-      ctx2d.filter = 'saturate(0.9) brightness(0.98)';
+      // Cargo sits on the ground: no detached oval "under" it, only a short cast shadow.
+      ctx2d.shadowColor = 'rgba(28, 20, 12, 0.22)';
+      ctx2d.shadowBlur = 2;
+      // Global lighting is from top-right, so shadow is pushed left with just a slight drop.
+      ctx2d.shadowOffsetX = -4;
+      ctx2d.shadowOffsetY = 1;
+      ctx2d.filter = 'saturate(0.92) brightness(0.99)';
       ctx2d.drawImage(cargoSprite, cargo.x, cargo.y, width, height);
       ctx2d.restore();
     }
