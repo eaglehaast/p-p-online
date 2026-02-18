@@ -8628,7 +8628,7 @@ if(advancedSettingsBtn){
   });
 }
 if(editorBtn){
-  editorBtn.addEventListener('click', () => {
+  editorBtn.addEventListener('click', async () => {
     loadSettings();
     applyCurrentMap();
     selectedRuleset = "mapeditor";
@@ -8636,15 +8636,7 @@ if(editorBtn){
     lastRulesSelectionButton = editorBtn;
     updateModeSelection(editorBtn);
 
-    if(!IS_TEST_HARNESS){
-      if (settingsLayerTimer) {
-        clearTimeout(settingsLayerTimer);
-      }
-      settingsLayerTimer = setTimeout(() => {
-        settingsLayerTimer = null;
-        showSettingsLayer();
-      }, MENU_SETTINGS_DELAY_MS);
-    }
+    await handlePlayStart();
   });
 }
 function resolveModeButton(activeButton){
@@ -8810,7 +8802,7 @@ function updateModeSelection(activeButton){
   syncPlayButtonSkin(true);
 }
 
-playBtn.addEventListener("click",async ()=>{
+async function handlePlayStart(){
   if(!selectedMode){
     alert("Please select a game mode before starting.");
     return;
@@ -8856,6 +8848,10 @@ playBtn.addEventListener("click",async ()=>{
   setMenuVisibility(false);
   activateGameScreen();
   startNewRound();
+}
+
+playBtn.addEventListener("click",async ()=>{
+  await handlePlayStart();
 });
 
 /* ======= INPUT (slingshot) ======= */
