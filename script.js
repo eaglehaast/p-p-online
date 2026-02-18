@@ -7437,11 +7437,11 @@ function drawCargo(ctx2d){
       ctx2d.restore();
 
       ctx2d.save();
-      ctx2d.shadowColor = 'rgba(0,0,0,0.25)';
-      ctx2d.shadowBlur = 8;
-      // Keep cargo shadow direction consistent with the rest of field objects: right + up.
-      ctx2d.shadowOffsetX = 2;
-      ctx2d.shadowOffsetY = -3;
+      ctx2d.shadowColor = 'rgba(34, 24, 14, 0.28)';
+      ctx2d.shadowBlur = 4;
+      // Field lighting is top-right, so the drop shadow should fall bottom-left.
+      ctx2d.shadowOffsetX = -2;
+      ctx2d.shadowOffsetY = 3;
       ctx2d.filter = 'saturate(0.9) brightness(0.98)';
       ctx2d.drawImage(cargoSprite, cargo.x, cargo.y, width, height);
       ctx2d.restore();
