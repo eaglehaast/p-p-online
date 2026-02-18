@@ -7878,6 +7878,14 @@ function loadSettings(){
   }
 }
 
+function loadSettingsForRuleset(ruleset = selectedRuleset){
+  loadSettings();
+  if(ruleset === "mapeditor"){
+    settingsBridge.setMapIndex(0, { persist: false });
+    settings.randomizeMapEachRound = false;
+  }
+}
+
 loadSettings();
 syncInventoryVisibility();
 
@@ -8629,9 +8637,11 @@ if(advancedSettingsBtn){
 }
 if(editorBtn){
   editorBtn.addEventListener('click', async () => {
-    loadSettings();
-    applyCurrentMap();
     selectedRuleset = "mapeditor";
+    loadSettingsForRuleset(selectedRuleset);
+    settingsBridge.setMapIndex(0, { persist: true });
+    settings.randomizeMapEachRound = false;
+    applyCurrentMap();
     syncRulesButtonSkins(selectedRuleset);
     lastRulesSelectionButton = editorBtn;
     updateModeSelection(editorBtn);
@@ -13268,10 +13278,13 @@ noBtn.addEventListener("click", () => {
 
 function startNewRound(){
   logBootStep("startNewRound");
-  loadSettings();
+  loadSettingsForRuleset(selectedRuleset);
   const useStoredRulesetSettings = isAdvancedLikeRuleset(selectedRuleset);
   if(selectedRuleset === "classic"){
     settings.addCargo = true;
+  } else if(selectedRuleset === "mapeditor"){
+    settingsBridge.setMapIndex(0, { persist: false });
+    settings.randomizeMapEachRound = false;
   }
   console.log('[settings] load at match start', {
     flightRangeCells: settings.flightRangeCells,
@@ -13378,6 +13391,9 @@ function startNewRound(){
 function shouldAutoRandomizeMap(){
   if(selectedRuleset === "classic"){
     return true;
+  }
+  if(selectedRuleset === "mapeditor"){
+    return false;
   }
   if(isAdvancedLikeRuleset(selectedRuleset)){
     return !!settings.randomizeMapEachRound;
