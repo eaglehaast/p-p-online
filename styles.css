@@ -473,13 +473,13 @@ body, button {
   .map-editor-reset-btn {
     z-index: 120;
     min-width: 90px;
-    min-height: 42px;
+    height: 40px;
     border: none;
     border-radius: 8px;
-    padding: 0 14px;
+    padding: 0 12px;
     background: rgba(31, 20, 11, 0.9);
     color: #f5e8cc;
-    font: 700 22px/1 "Patrick Hand", cursive;
+    font: 700 18px/1 "Patrick Hand", cursive;
     letter-spacing: 0.02em;
     cursor: pointer;
     box-shadow: 0 3px 8px rgba(0, 0, 0, 0.32);
@@ -497,15 +497,21 @@ body, button {
 
   .map-editor-mode-controls {
     position: absolute;
-    left: 380px;
-    top: 628px;
+    inset: 0;
     z-index: 120;
-    display: flex;
-    gap: 8px;
   }
 
   .map-editor-mode-btn {
-    min-width: 82px;
+    position: absolute;
+    left: 380px;
+  }
+
+  #mapEditorModePlanesBtn {
+    top: 560px;
+  }
+
+  #mapEditorModeBricksBtn {
+    top: 620px;
   }
 
   .map-editor-mode-btn[aria-pressed="false"] {
