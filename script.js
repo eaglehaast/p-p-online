@@ -1687,10 +1687,16 @@ const inventoryInteractionState = {
 
 const mapEditorBrickInteractionState = {
   mode: "idle",
+  source: null,
   activeSpriteName: null,
   pointerId: null,
   downPoint: null,
   movedPx: 0,
+  previewClientX: null,
+  previewClientY: null,
+  previewBoardX: null,
+  previewBoardY: null,
+  previewInsideField: false,
 };
 
 function scheduleInventoryUiSync(){
@@ -2637,10 +2643,16 @@ function getMineFallbackClientPoint(event, targetRect, visualWidth, visualHeight
 
 function resetMapEditorBrickInteraction(){
   mapEditorBrickInteractionState.mode = "idle";
+  mapEditorBrickInteractionState.source = null;
   mapEditorBrickInteractionState.activeSpriteName = null;
   mapEditorBrickInteractionState.pointerId = null;
   mapEditorBrickInteractionState.downPoint = null;
   mapEditorBrickInteractionState.movedPx = 0;
+  mapEditorBrickInteractionState.previewClientX = null;
+  mapEditorBrickInteractionState.previewClientY = null;
+  mapEditorBrickInteractionState.previewBoardX = null;
+  mapEditorBrickInteractionState.previewBoardY = null;
+  mapEditorBrickInteractionState.previewInsideField = false;
 }
 
 function getMapEditorSpriteFromEventTarget(target){
@@ -2657,10 +2669,72 @@ function getMapEditorSpriteFromEventTarget(target){
 
 function beginMapEditorBrickInteraction(spriteName, pointerId, clientX, clientY){
   mapEditorBrickInteractionState.mode = "holding";
+  mapEditorBrickInteractionState.source = "brickSidebar";
   mapEditorBrickInteractionState.activeSpriteName = spriteName;
   mapEditorBrickInteractionState.pointerId = pointerId;
   mapEditorBrickInteractionState.downPoint = { x: clientX, y: clientY };
   mapEditorBrickInteractionState.movedPx = 0;
+  updateMapEditorBrickPreviewFromClientPoint(clientX, clientY);
+}
+
+function updateMapEditorBrickPreviewFromClientPoint(clientX, clientY){
+  if(!Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
+  const designPoint = toDesignCoords(clientX, clientY);
+  const boardPoint = designToBoardCoords(designPoint.x, designPoint.y);
+  mapEditorBrickInteractionState.previewClientX = clientX;
+  mapEditorBrickInteractionState.previewClientY = clientY;
+  mapEditorBrickInteractionState.previewBoardX = boardPoint.x;
+  mapEditorBrickInteractionState.previewBoardY = boardPoint.y;
+  mapEditorBrickInteractionState.previewInsideField = isPointInsideFieldBounds(boardPoint.x, boardPoint.y);
+}
+
+function buildMapEditorBrickPlacementSprite(spriteName, boardX, boardY){
+  if(typeof spriteName !== "string" || !MAP_SPRITE_PATHS[spriteName]) return null;
+  if(!Number.isFinite(boardX) || !Number.isFinite(boardY)) return null;
+  const { width: baseWidth, height: baseHeight } = getMapSpriteBaseSize(spriteName);
+  return {
+    spriteName,
+    x: boardX - baseWidth / 2,
+    y: boardY - baseHeight / 2,
+  };
+}
+
+function commitMapEditorBrickDrop(clientX, clientY){
+  if(selectedRuleset !== "mapeditor") return false;
+  if(!isClientPointOverBoard(clientX, clientY)) return false;
+
+  updateMapEditorBrickPreviewFromClientPoint(clientX, clientY);
+  const spriteName = mapEditorBrickInteractionState.activeSpriteName;
+  const boardX = mapEditorBrickInteractionState.previewBoardX;
+  const boardY = mapEditorBrickInteractionState.previewBoardY;
+  if(typeof spriteName !== "string") return false;
+  if(!Number.isFinite(boardX) || !Number.isFinite(boardY)) return false;
+  if(!mapEditorBrickInteractionState.previewInsideField) return false;
+
+  const nextSprite = buildMapEditorBrickPlacementSprite(spriteName, boardX, boardY);
+  if(!nextSprite) return false;
+
+  if(!Array.isArray(currentMapSprites)){
+    currentMapSprites = [];
+  }
+  currentMapSprites.push(nextSprite);
+  colliders = buildMapSpriteColliders({
+    name: currentMapName,
+    sprites: currentMapSprites,
+  });
+  rebuildCollisionSurfaces();
+  return true;
+}
+
+function getMapEditorBrickPreviewSprite(){
+  if(selectedRuleset !== "mapeditor") return null;
+  if(mapEditorBrickInteractionState.mode === "idle") return null;
+  const spriteName = mapEditorBrickInteractionState.activeSpriteName;
+  const boardX = mapEditorBrickInteractionState.previewBoardX;
+  const boardY = mapEditorBrickInteractionState.previewBoardY;
+  if(typeof spriteName !== "string") return null;
+  if(!Number.isFinite(boardX) || !Number.isFinite(boardY)) return null;
+  return buildMapEditorBrickPlacementSprite(spriteName, boardX, boardY);
 }
 
 function onMapEditorBrickPointerDown(event){
@@ -2723,6 +2797,7 @@ function onMapEditorBrickPointerMove(event){
 
   const { clientX, clientY } = getPointerClientCoords(event);
   mapEditorBrickInteractionState.movedPx = Math.hypot(clientX - downPoint.x, clientY - downPoint.y);
+  updateMapEditorBrickPreviewFromClientPoint(clientX, clientY);
 }
 
 function onMapEditorBrickPointerFinish(event){
@@ -2737,10 +2812,28 @@ function onMapEditorBrickPointerFinish(event){
     return;
   }
 
+  const { clientX, clientY } = getPointerClientCoords(event);
+  commitMapEditorBrickDrop(clientX, clientY);
   resetMapEditorBrickInteraction();
 }
 
 function onMapEditorBrickDragEnd(){
+  resetMapEditorBrickInteraction();
+}
+
+function onMapEditorBrickDragOver(event){
+  if(mapEditorBrickInteractionState.mode !== "holding") return;
+  event.preventDefault();
+  if(event.dataTransfer){
+    event.dataTransfer.dropEffect = "copy";
+  }
+  updateMapEditorBrickPreviewFromClientPoint(event.clientX, event.clientY);
+}
+
+function onMapEditorBrickDrop(event){
+  if(mapEditorBrickInteractionState.mode !== "holding") return;
+  event.preventDefault();
+  commitMapEditorBrickDrop(event.clientX, event.clientY);
   resetMapEditorBrickInteraction();
 }
 
@@ -9247,6 +9340,8 @@ gsBoardCanvas.addEventListener("pointerdown", onCanvasPointerDown);
 gsBoardCanvas.addEventListener("pointermove", onCanvasPointerMove);
 gsBoardCanvas.addEventListener("pointerup", onCanvasPointerUp);
 gsBoardCanvas.addEventListener("pointerleave", () => { aaPlacementPreview = null; aaPointerDown = false; aaPreviewTrail = []; });
+gsBoardCanvas.addEventListener("dragover", onMapEditorBrickDragOver);
+gsBoardCanvas.addEventListener("drop", onMapEditorBrickDrop);
 if(shouldUseLegacyDragDropFallback()){
   gsBoardCanvas.addEventListener("dragover", onBoardDragOver);
   gsBoardCanvas.addEventListener("drop", onInventoryDrop);
@@ -11573,6 +11668,13 @@ function drawMapSprites(ctx2d, sprites = currentMapSprites){
 
 function drawMapLayer(ctx2d){
   drawMapSprites(ctx2d);
+  const mapEditorPreviewSprite = getMapEditorBrickPreviewSprite();
+  if(mapEditorPreviewSprite){
+    ctx2d.save();
+    ctx2d.globalAlpha = mapEditorBrickInteractionState.previewInsideField ? 0.55 : 0.25;
+    drawMapSprites(ctx2d, [mapEditorPreviewSprite]);
+    ctx2d.restore();
+  }
 }
 
 
