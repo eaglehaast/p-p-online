@@ -470,8 +470,8 @@ body, button {
 
   .map-editor-reset-btn {
     position: absolute;
-    right: 14px;
-    bottom: 14px;
+    left: 380px;
+    top: 680px;
     z-index: 120;
     min-width: 90px;
     min-height: 42px;
