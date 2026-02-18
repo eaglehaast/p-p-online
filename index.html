@@ -146,6 +146,34 @@
             </button>
 
             <div
+              id="mapEditorModeControls"
+              class="map-editor-mode-controls"
+              role="group"
+              aria-label="Режим управления редактором карты"
+              hidden
+              aria-hidden="true"
+            >
+              <button
+                id="mapEditorModeBricksBtn"
+                class="map-editor-reset-btn map-editor-mode-btn"
+                type="button"
+                aria-label="Режим кирпичей"
+                aria-pressed="true"
+              >
+                <span>Bricks</span>
+              </button>
+              <button
+                id="mapEditorModePlanesBtn"
+                class="map-editor-reset-btn map-editor-mode-btn"
+                type="button"
+                aria-label="Режим самолётов"
+                aria-pressed="false"
+              >
+                <span>Planes</span>
+              </button>
+            </div>
+
+            <div
               id="mapEditorBrickSidebar"
               class="map-editor-brick-sidebar"
               aria-hidden="true"
