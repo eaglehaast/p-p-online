@@ -4245,6 +4245,10 @@ const MENU_BUTTON_SKINS = {
   advancedSettings: {
     default: "ui_mainmenu/mm_advancedsettings.png",
     active: "ui_mainmenu/mm_advancedsettings.png"
+  },
+  mapEditor: {
+    default: null,
+    active: null
   }
 };
 
@@ -4285,7 +4289,7 @@ function syncPlayButtonSkin(isReady){
 function syncRulesButtonSkins(selection){
   applyMenuButtonSkin(classicRulesBtn, "classicRules", selection === "classic");
   applyMenuButtonSkin(advancedSettingsBtn, "advancedSettings", selection === "advanced");
-  applyMenuButtonSkin(editorBtn, "advancedSettings", selection === "mapeditor");
+  applyMenuButtonSkin(editorBtn, "mapEditor", selection === "mapeditor");
   classicRulesBtn?.classList.toggle("selected", selection === "classic");
   advancedSettingsBtn?.classList.toggle("selected", selection === "advanced");
   editorBtn?.classList.toggle("selected", selection === "mapeditor");
