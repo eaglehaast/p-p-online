@@ -1685,6 +1685,14 @@ const inventoryInteractionState = {
   movedPx: 0,
 };
 
+const mapEditorBrickInteractionState = {
+  mode: "idle",
+  activeSpriteName: null,
+  pointerId: null,
+  downPoint: null,
+  movedPx: 0,
+};
+
 function scheduleInventoryUiSync(){
   if(inventoryPickupUiSyncRafId !== null) return;
   inventoryPickupUiSyncRafId = requestAnimationFrame(() => {
@@ -2625,6 +2633,127 @@ function getMineFallbackClientPoint(event, targetRect, visualWidth, visualHeight
       ? event.clientY
       : targetRect.top + visualHeight / 2,
   };
+}
+
+function resetMapEditorBrickInteraction(){
+  mapEditorBrickInteractionState.mode = "idle";
+  mapEditorBrickInteractionState.activeSpriteName = null;
+  mapEditorBrickInteractionState.pointerId = null;
+  mapEditorBrickInteractionState.downPoint = null;
+  mapEditorBrickInteractionState.movedPx = 0;
+}
+
+function getMapEditorSpriteFromEventTarget(target){
+  if(!(target instanceof Element)) return null;
+  const brick = target.closest?.("[data-brick-sprite]");
+  if(!(brick instanceof HTMLElement)) return null;
+  const spriteName = brick.dataset.brickSprite;
+  if(typeof spriteName !== "string" || !MAP_SPRITE_PATHS[spriteName]) return null;
+  return {
+    spriteName,
+    element: brick,
+  };
+}
+
+function beginMapEditorBrickInteraction(spriteName, pointerId, clientX, clientY){
+  mapEditorBrickInteractionState.mode = "holding";
+  mapEditorBrickInteractionState.activeSpriteName = spriteName;
+  mapEditorBrickInteractionState.pointerId = pointerId;
+  mapEditorBrickInteractionState.downPoint = { x: clientX, y: clientY };
+  mapEditorBrickInteractionState.movedPx = 0;
+}
+
+function onMapEditorBrickPointerDown(event){
+  if(selectedRuleset !== "mapeditor") return;
+  const brick = getMapEditorSpriteFromEventTarget(event.currentTarget);
+  if(!brick) return;
+
+  event.preventDefault();
+  cancelActiveInventoryPickup();
+
+  const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
+  const { clientX, clientY } = getPointerClientCoords(event);
+  beginMapEditorBrickInteraction(brick.spriteName, pointerId, clientX, clientY);
+}
+
+function onMapEditorBrickDragStart(event){
+  if(selectedRuleset !== "mapeditor"){
+    event.preventDefault();
+    return;
+  }
+
+  const brick = getMapEditorSpriteFromEventTarget(event.currentTarget);
+  if(!brick){
+    event.preventDefault();
+    return;
+  }
+
+  cancelActiveInventoryPickup();
+  const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
+  const { clientX, clientY } = getPointerClientCoords(event);
+  beginMapEditorBrickInteraction(brick.spriteName, pointerId, clientX, clientY);
+
+  if(event.dataTransfer){
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData("text/plain", brick.spriteName);
+    if(brick.element instanceof HTMLImageElement){
+      try {
+        event.dataTransfer.setDragImage(brick.element, Math.round(brick.element.width / 2), Math.round(brick.element.height / 2));
+      } catch (_error) {
+        // Ignore drag image errors; default browser preview is enough.
+      }
+    }
+  }
+}
+
+function onMapEditorBrickPointerMove(event){
+  if(mapEditorBrickInteractionState.mode !== "holding") return;
+
+  const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
+  if(
+    mapEditorBrickInteractionState.pointerId !== null
+    && pointerId !== null
+    && pointerId !== mapEditorBrickInteractionState.pointerId
+  ){
+    return;
+  }
+
+  const downPoint = mapEditorBrickInteractionState.downPoint;
+  if(!downPoint) return;
+
+  const { clientX, clientY } = getPointerClientCoords(event);
+  mapEditorBrickInteractionState.movedPx = Math.hypot(clientX - downPoint.x, clientY - downPoint.y);
+}
+
+function onMapEditorBrickPointerFinish(event){
+  if(mapEditorBrickInteractionState.mode !== "holding") return;
+
+  const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
+  if(
+    mapEditorBrickInteractionState.pointerId !== null
+    && pointerId !== null
+    && pointerId !== mapEditorBrickInteractionState.pointerId
+  ){
+    return;
+  }
+
+  resetMapEditorBrickInteraction();
+}
+
+function onMapEditorBrickDragEnd(){
+  resetMapEditorBrickInteraction();
+}
+
+function onGlobalPointerDownMapEditorBrickCancel(event){
+  if(mapEditorBrickInteractionState.mode !== "holding") return;
+  const target = event.target;
+  if(!(target instanceof Node)) return;
+
+  const insideBoard = gsBoardCanvas instanceof HTMLElement && gsBoardCanvas.contains(target);
+  const insideSidebar = mapEditorBrickSidebar instanceof HTMLElement && mapEditorBrickSidebar.contains(target);
+  if(insideBoard || insideSidebar) return;
+
+  resetMapEditorBrickInteraction();
 }
 
 function onInventoryItemDragStart(event){
@@ -7711,8 +7840,11 @@ let currentPlacer = null; // 'green' | 'blue'
 const MAP_BRICK_SPRITE_PATH = "ui_gamescreen/bricks/brick_1_default.png";
 const MAP_SPRITE_PATHS = {
   brick_1_default: "ui_gamescreen/bricks/brick_1_default.png",
+  brick_2_brokenciga: "ui_gamescreen/bricks/brick_2_brokenciga.png",
+  brick_3_mini: "ui_gamescreen/bricks/brick_3_mini.png",
   brick_4: "ui_gamescreen/bricks/brick4_diagonal copy.png",
-  brick_4_diagonal: "ui_gamescreen/bricks/brick4_diagonal copy.png"
+  brick_4_diagonal: "ui_gamescreen/bricks/brick4_diagonal copy.png",
+  brick_5_corner: "ui_gamescreen/bricks/brick_5_corner.png"
 };
 const mapsDataBridge = window.paperWingsMapsData || {};
 const MAP_RENDER_MODES = mapsDataBridge.MAP_RENDER_MODES || { DATA: 'data' };
@@ -9133,10 +9265,14 @@ if(shouldUseLegacyDragDropFallback()){
 }
 window.addEventListener("pointermove", onInventoryPickupPointerMove);
 window.addEventListener("pointermove", onInventoryTooltipPreviewPointerMove);
+window.addEventListener("pointermove", onMapEditorBrickPointerMove);
 window.addEventListener("pointerdown", onGlobalPointerDownInventoryCancel);
 window.addEventListener("pointerdown", onInventoryTooltipPreviewPointerDown);
+window.addEventListener("pointerdown", onGlobalPointerDownMapEditorBrickCancel);
 window.addEventListener("pointerup", onInventoryPickupPointerFinish);
+window.addEventListener("pointerup", onMapEditorBrickPointerFinish);
 window.addEventListener("pointercancel", onInventoryPickupPointerFinish);
+window.addEventListener("pointercancel", onMapEditorBrickPointerFinish);
 window.addEventListener("keydown", (event) => {
   if(event.key === "Escape"){
     cancelPendingInventoryUse();
@@ -13309,6 +13445,15 @@ noBtn.addEventListener("click", () => {
 if(mapEditorResetBtn){
   mapEditorResetBtn.addEventListener("click", () => {
     resetMapEditorPlanePlacement();
+  });
+}
+
+if(mapEditorBrickSidebar instanceof HTMLElement){
+  const brickAssets = mapEditorBrickSidebar.querySelectorAll(".map-editor-brick-sidebar__asset");
+  brickAssets.forEach((asset) => {
+    asset.addEventListener("pointerdown", onMapEditorBrickPointerDown);
+    asset.addEventListener("dragstart", onMapEditorBrickDragStart);
+    asset.addEventListener("dragend", onMapEditorBrickDragEnd);
   });
 }
 
