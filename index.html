@@ -37,6 +37,10 @@
               <span class="visually-hidden">Online</span>
             </button>
 
+            <button id="mapEditorBtn" class="mode-menu__btn mode-menu__btn--map-editor" type="button" aria-label="Map Editor">
+              <span class="visually-hidden">Map Editor</span>
+            </button>
+
             <button id="playBtn" class="mode-menu__btn mode-menu__btn--play" type="button" aria-label="Play" disabled>
               <span class="visually-hidden">Play</span>
             </button>
@@ -97,6 +101,36 @@
               <!-- Score containers -->
               <div id="blueScoreContainer" class="score-container score-container--blue" aria-hidden="true"></div>
               <div id="greenScoreContainer" class="score-container score-container--green" aria-hidden="true"></div>
+            </div>
+
+            <div id="mapEditorLayer" class="map-editor-layer" hidden aria-hidden="true">
+              <div class="map-editor-panel map-editor-panel--left" aria-label="Left brick palette">
+                <button class="map-editor-brick" type="button" data-brick-type="brick_1_default" aria-label="Default brick">
+                  <img src="ui_gamescreen/bricks/brick_1_default.png" alt="" draggable="false" />
+                </button>
+                <button class="map-editor-brick" type="button" data-brick-type="brick_4_diagonal" aria-label="Diagonal brick">
+                  <img src="ui_gamescreen/bricks/brick4_diagonal copy.png" alt="" draggable="false" />
+                </button>
+                <button class="map-editor-brick" type="button" data-brick-type="brick_1_vertical" aria-label="Vertical brick">
+                  <img src="ui_gamescreen/bricks/brick_1_default.png" alt="" draggable="false" class="map-editor-brick__img--vertical" />
+                </button>
+              </div>
+
+              <div id="mapEditorBoard" class="map-editor-board" aria-label="Map editor board"></div>
+
+              <div class="map-editor-panel map-editor-panel--right" aria-label="Right brick palette">
+                <button class="map-editor-brick" type="button" data-brick-type="brick_1_default" aria-label="Default brick">
+                  <img src="ui_gamescreen/bricks/brick_1_default.png" alt="" draggable="false" />
+                </button>
+                <button class="map-editor-brick" type="button" data-brick-type="brick_4_diagonal_mirror" aria-label="Mirrored diagonal brick">
+                  <img src="ui_gamescreen/bricks/brick4_diagonal copy.png" alt="" draggable="false" class="map-editor-brick__img--mirror" />
+                </button>
+                <button class="map-editor-brick" type="button" data-brick-type="brick_1_vertical" aria-label="Vertical brick">
+                  <img src="ui_gamescreen/bricks/brick_1_default.png" alt="" draggable="false" class="map-editor-brick__img--vertical" />
+                </button>
+              </div>
+
+              <div class="map-editor-hint">Перетащите кирпич на поле</div>
             </div>
 
             <!-- Новый 6-слотовый inventory (runtime берёт иконки только из ui_gamescreen/gs_inventory/) -->
