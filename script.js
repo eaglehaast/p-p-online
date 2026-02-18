@@ -118,6 +118,7 @@ function setScreenMode(mode) {
   document.body.classList.toggle('screen--menu', mode === 'MENU');
   document.body.classList.toggle('screen--game', mode === 'GAME');
   document.body.classList.toggle('screen--settings', mode === 'SETTINGS');
+  syncMapEditorResetButtonVisibility();
   syncFieldCssVars();
 }
 
@@ -777,6 +778,7 @@ let OVERLAY_RESYNC_SCHEDULED = false;
 
 const greenPlaneCounter = document.getElementById("gs_planecounter_green");
 const bluePlaneCounter  = document.getElementById("gs_planecounter_blue");
+const mapEditorResetBtn = document.getElementById("mapEditorResetBtn");
 const blueInventoryHost = document.getElementById("gs_inventory_blue");
 const greenInventoryHost = document.getElementById("gs_inventory_green");
 const inventoryLayer = document.getElementById("inventoryLayer");
@@ -6147,6 +6149,7 @@ if(IS_TEST_HARNESS){
         console.warn('[Harness] Unable to sync advanced settings.', err);
       }
       selectedRuleset = "advanced";
+      syncMapEditorResetButtonVisibility();
       syncRulesButtonSkins(selectedRuleset);
     }
 
@@ -8610,6 +8613,7 @@ if(classicRulesBtn){
     onFlameStyleChanged();
     applyCurrentMap(upcomingRoundNumber);
     selectedRuleset = "classic";
+    syncMapEditorResetButtonVisibility();
     syncRulesButtonSkins(selectedRuleset);
     lastRulesSelectionButton = classicRulesBtn;
     updateModeSelection(classicRulesBtn);
@@ -8620,6 +8624,7 @@ if(advancedSettingsBtn){
     loadSettings();
     applyCurrentMap();
     selectedRuleset = "advanced";
+    syncMapEditorResetButtonVisibility();
     syncRulesButtonSkins(selectedRuleset);
     lastRulesSelectionButton = advancedSettingsBtn;
     updateModeSelection(advancedSettingsBtn);
@@ -8638,6 +8643,7 @@ if(advancedSettingsBtn){
 if(editorBtn){
   editorBtn.addEventListener('click', async () => {
     selectedRuleset = "mapeditor";
+    syncMapEditorResetButtonVisibility();
     loadSettingsForRuleset(selectedRuleset);
     settingsBridge.setMapIndex(0, { persist: true });
     settings.randomizeMapEachRound = false;
@@ -11330,7 +11336,7 @@ function gameDraw(){
     endGameDiv.style.top = "";
   }
 
-  if(roundTextTimer > 0){
+  if(roundTextTimer > 0 && selectedRuleset !== "mapeditor"){
     gsBoardCtx.font="48px 'Patrick Hand', cursive";
     gsBoardCtx.fillStyle = '#B22222';
     gsBoardCtx.strokeStyle = '#FFD700';
@@ -13056,6 +13062,10 @@ function renderScoreboard(now = performance.now()){
   hudCtx.setTransform(1, 0, 0, 1, 0, 0);
   hudCtx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
 
+  if(selectedRuleset === "mapeditor"){
+    return;
+  }
+
   const scaleX = hudCanvas.width / FRAME_BASE_WIDTH;
   const scaleY = hudCanvas.height / FRAME_BASE_HEIGHT;
 
@@ -13276,6 +13286,12 @@ noBtn.addEventListener("click", () => {
   resetGame({ forceMenu: true });
 });
 
+if(mapEditorResetBtn){
+  mapEditorResetBtn.addEventListener("click", () => {
+    resetMapEditorPlanePlacement();
+  });
+}
+
 function startNewRound(){
   logBootStep("startNewRound");
   loadSettingsForRuleset(selectedRuleset);
@@ -13330,7 +13346,7 @@ function startNewRound(){
   resetCargoState();
 
   roundNumber++;
-  roundTextTimer = 120;
+  roundTextTimer = selectedRuleset === "mapeditor" ? 0 : 120;
 
   globalFrame=0;
   flyingPoints=[];
@@ -13385,6 +13401,7 @@ function startNewRound(){
     currentPlacer = null;
   }
   startMainLoopIfNotRunning("startNewRound");
+  syncMapEditorResetButtonVisibility();
 }
 
 /* ======= Map helpers ======= */
@@ -13428,6 +13445,37 @@ function resetPlanePositionsForCurrentMap(){
   points = [];
   initPoints();
   resetFlagsForNewRound();
+}
+
+function resetMapEditorPlanePlacement(){
+  if(selectedRuleset !== "mapeditor") return;
+
+  resetPlanePositionsForCurrentMap();
+  isGameOver = false;
+  winnerColor = null;
+  isDrawGame = false;
+  roundEndedByNuke = false;
+  awaitingFlightResolution = false;
+  pendingRoundTransitionDelay = null;
+  pendingRoundTransitionStart = 0;
+  shouldShowEndScreen = false;
+  phase = "TURN";
+  currentPlacer = null;
+  roundTextTimer = 0;
+
+  if(endGameDiv instanceof HTMLElement){
+    endGameDiv.style.display = "none";
+  }
+
+  renderScoreboard();
+}
+
+function syncMapEditorResetButtonVisibility(){
+  if(!(mapEditorResetBtn instanceof HTMLElement)) return;
+  const visible = selectedRuleset === "mapeditor"
+    && document.body.classList.contains("screen--game");
+  mapEditorResetBtn.hidden = !visible;
+  mapEditorResetBtn.setAttribute("aria-hidden", visible ? "false" : "true");
 }
 
 function ensureMapSpriteAssets(sprites = []){
