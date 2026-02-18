@@ -7441,6 +7441,7 @@ function drawCargo(ctx2d){
       ctx2d.shadowBlur = 8;
       ctx2d.shadowOffsetX = 2;
       ctx2d.shadowOffsetY = 3;
+      ctx2d.filter = 'saturate(0.9) brightness(0.98)';
       ctx2d.drawImage(cargoSprite, cargo.x, cargo.y, width, height);
       ctx2d.restore();
     }
