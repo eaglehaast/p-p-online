@@ -7228,14 +7228,10 @@ function createCargoAnimationDomEntry(cargo, metrics) {
   image.className = 'fx-cargo-img';
   image.src = baseFrame.src;
 
-  const castShadow = document.createElement('div');
-  castShadow.className = 'fx-cargo-cast-shadow';
-
-  container.appendChild(castShadow);
   container.appendChild(image);
   host.appendChild(container);
 
-  return { element: container, img: image, castShadow, host };
+  return { element: container, img: image, host };
 }
 
 function syncCargoAnimationDomEntry(cargo, metrics) {
@@ -7281,23 +7277,6 @@ function syncCargoAnimationDomEntry(cargo, metrics) {
     ? Math.max(0, Math.min(1, elapsedMs / cargoFadeInMs))
     : 1;
   const brightness = Math.max(0, 1 - clampCargoDimming(cargoAnimDimming));
-  const shadowOpacity = Math.max(0, Math.min(1, 0.38 * fadeInProgress));
-
-  if (cargo.domEntry.castShadow) {
-    Object.assign(cargo.domEntry.castShadow.style, {
-      position: 'absolute',
-      pointerEvents: 'none',
-      left: `${Math.round(width * -0.44)}px`,
-      top: `${Math.round(height * 0.24)}px`,
-      width: `${Math.max(2, Math.round(width * 0.68))}px`,
-      height: `${Math.max(2, Math.round(height * 0.56))}px`,
-      borderRadius: '58% 36% 60% 42%',
-      transform: 'skewY(-14deg) rotate(-9deg)',
-      transformOrigin: 'right center',
-      background: `rgba(28, 20, 12, ${shadowOpacity.toFixed(3)})`,
-      filter: 'blur(3px)'
-    });
-  }
 
   Object.assign(cargo.domEntry.img.style, {
     position: 'relative',
@@ -7443,21 +7422,6 @@ function drawCargo(ctx2d){
   for(const cargo of cargoState){
     if(cargo.state === "ready" && canDrawCargoBox){
       const { width, height } = getCargoSpriteDrawSize();
-
-      ctx2d.save();
-      ctx2d.fillStyle = 'rgba(28, 20, 12, 0.28)';
-      ctx2d.beginPath();
-      ctx2d.ellipse(
-        cargo.x + width * 0.16,
-        cargo.y + height * 0.52,
-        width * 0.18,
-        height * 0.28,
-        -0.36,
-        0,
-        Math.PI * 2
-      );
-      ctx2d.fill();
-      ctx2d.restore();
 
       ctx2d.save();
       ctx2d.filter = 'saturate(0.9) brightness(0.98)';
