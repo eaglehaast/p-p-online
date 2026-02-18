@@ -779,6 +779,7 @@ let OVERLAY_RESYNC_SCHEDULED = false;
 const greenPlaneCounter = document.getElementById("gs_planecounter_green");
 const bluePlaneCounter  = document.getElementById("gs_planecounter_blue");
 const mapEditorResetBtn = document.getElementById("mapEditorResetBtn");
+const mapEditorBrickSidebar = document.getElementById("mapEditorBrickSidebar");
 const blueInventoryHost = document.getElementById("gs_inventory_blue");
 const greenInventoryHost = document.getElementById("gs_inventory_green");
 const inventoryLayer = document.getElementById("inventoryLayer");
@@ -13475,11 +13476,18 @@ function resetMapEditorPlanePlacement(){
 }
 
 function syncMapEditorResetButtonVisibility(){
-  if(!(mapEditorResetBtn instanceof HTMLElement)) return;
   const visible = selectedRuleset === "mapeditor"
     && document.body.classList.contains("screen--game");
-  mapEditorResetBtn.hidden = !visible;
-  mapEditorResetBtn.setAttribute("aria-hidden", visible ? "false" : "true");
+
+  if(mapEditorResetBtn instanceof HTMLElement){
+    mapEditorResetBtn.hidden = !visible;
+    mapEditorResetBtn.setAttribute("aria-hidden", visible ? "false" : "true");
+  }
+
+  if(mapEditorBrickSidebar instanceof HTMLElement){
+    mapEditorBrickSidebar.hidden = !visible;
+    mapEditorBrickSidebar.setAttribute("aria-hidden", visible ? "false" : "true");
+  }
 }
 
 function ensureMapSpriteAssets(sprites = []){
