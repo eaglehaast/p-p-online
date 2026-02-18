@@ -13884,7 +13884,7 @@ function syncMapEditorResetButtonVisibility(){
   if(mapEditorBrickSidebar instanceof HTMLElement){
     mapEditorBrickSidebar.hidden = !bricksModeActive;
     mapEditorBrickSidebar.setAttribute("aria-hidden", bricksModeActive ? "false" : "true");
-    mapEditorBrickSidebar.style.pointerEvents = bricksModeActive ? "auto" : "none";
+    mapEditorBrickSidebar.style.pointerEvents = "none";
   }
 
   if(!bricksModeActive){
