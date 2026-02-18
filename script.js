@@ -7439,8 +7439,9 @@ function drawCargo(ctx2d){
       ctx2d.save();
       ctx2d.shadowColor = 'rgba(0,0,0,0.25)';
       ctx2d.shadowBlur = 8;
+      // Keep cargo shadow direction consistent with the rest of field objects: right + up.
       ctx2d.shadowOffsetX = 2;
-      ctx2d.shadowOffsetY = 3;
+      ctx2d.shadowOffsetY = -3;
       ctx2d.filter = 'saturate(0.9) brightness(0.98)';
       ctx2d.drawImage(cargoSprite, cargo.x, cargo.y, width, height);
       ctx2d.restore();
