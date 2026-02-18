@@ -3753,6 +3753,21 @@ function resetInventoryState(){
   syncInventoryUI("green");
 }
 
+function seedMapEditorInventory(){
+  if(selectedRuleset !== "mapeditor") return;
+
+  const mapEditorQtyPerItem = 100;
+  for(const color of ["blue", "green"]){
+    inventoryState[color].length = 0;
+    for(const itemDef of INVENTORY_ITEMS){
+      for(let i = 0; i < mapEditorQtyPerItem; i += 1){
+        inventoryState[color].push(itemDef);
+      }
+    }
+    syncInventoryUI(color);
+  }
+}
+
 if (DEBUG_CHEATS && typeof window !== "undefined") {
   // DevTools usage on /#dev:
   // DEBUG_BANNER_BLUE_WIN(); DEBUG_BANNER_GREEN_WIN(); DEBUG_BANNER_NEXT_ROUND(); DEBUG_BANNER_CLEAR();
@@ -13395,6 +13410,7 @@ function startNewRound(){
   setBackgroundImage('ui_gamescreen/gamescreen_outside/gs_background.png');
 
   initPoints(); // ориентации на базе
+  seedMapEditorInventory();
   spawnCargoForTurn();
   resetFlagsForNewRound();
   renderScoreboard();
@@ -13456,6 +13472,7 @@ function resetMapEditorPlanePlacement(){
   if(selectedRuleset !== "mapeditor") return;
 
   resetPlanePositionsForCurrentMap();
+  seedMapEditorInventory();
   isGameOver = false;
   winnerColor = null;
   isDrawGame = false;
