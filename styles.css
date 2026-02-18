@@ -471,9 +471,6 @@ body, button {
   }
 
   .map-editor-reset-btn {
-    position: absolute;
-    left: 380px;
-    top: 680px;
     z-index: 120;
     min-width: 90px;
     min-height: 42px;
@@ -486,6 +483,12 @@ body, button {
     letter-spacing: 0.02em;
     cursor: pointer;
     box-shadow: 0 3px 8px rgba(0, 0, 0, 0.32);
+  }
+
+  .map-editor-reset-btn-positioned {
+    position: absolute;
+    left: 380px;
+    top: 680px;
   }
 
   .map-editor-reset-btn:active {
