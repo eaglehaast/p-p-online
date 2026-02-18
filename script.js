@@ -779,6 +779,9 @@ let OVERLAY_RESYNC_SCHEDULED = false;
 const greenPlaneCounter = document.getElementById("gs_planecounter_green");
 const bluePlaneCounter  = document.getElementById("gs_planecounter_blue");
 const mapEditorResetBtn = document.getElementById("mapEditorResetBtn");
+const mapEditorModeControls = document.getElementById("mapEditorModeControls");
+const mapEditorModeBricksBtn = document.getElementById("mapEditorModeBricksBtn");
+const mapEditorModePlanesBtn = document.getElementById("mapEditorModePlanesBtn");
 const mapEditorBrickSidebar = document.getElementById("mapEditorBrickSidebar");
 const blueInventoryHost = document.getElementById("gs_inventory_blue");
 const greenInventoryHost = document.getElementById("gs_inventory_green");
@@ -2764,7 +2767,7 @@ function buildMapEditorBrickPlacementSprite(spriteName, boardX, boardY){
 }
 
 function commitMapEditorBrickDrop(clientX, clientY){
-  if(selectedRuleset !== "mapeditor") return false;
+  if(!isMapEditorBricksModeActive()) return false;
   if(!isClientPointOverBoard(clientX, clientY)) return false;
 
   updateMapEditorBrickPreviewFromClientPoint(clientX, clientY);
@@ -2792,7 +2795,7 @@ function commitMapEditorBrickDrop(clientX, clientY){
 }
 
 function getMapEditorBrickPreviewSprite(){
-  if(selectedRuleset !== "mapeditor") return null;
+  if(!isMapEditorBricksModeActive()) return null;
   if(mapEditorBrickInteractionState.mode === "idle") return null;
   const spriteName = mapEditorBrickInteractionState.activeSpriteName;
   const boardX = mapEditorBrickInteractionState.previewBoardX;
@@ -2803,7 +2806,7 @@ function getMapEditorBrickPreviewSprite(){
 }
 
 function onMapEditorBrickPointerDown(event){
-  if(selectedRuleset !== "mapeditor") return;
+  if(!isMapEditorBricksModeActive()) return;
   const brick = getMapEditorSpriteFromEventTarget(event.currentTarget);
   if(!brick) return;
 
@@ -2816,7 +2819,7 @@ function onMapEditorBrickPointerDown(event){
 }
 
 function onMapEditorBrickDragStart(event){
-  if(selectedRuleset !== "mapeditor"){
+  if(!isMapEditorBricksModeActive()){
     event.preventDefault();
     return;
   }
@@ -2846,6 +2849,7 @@ function onMapEditorBrickDragStart(event){
 }
 
 function onMapEditorBrickPointerMove(event){
+  if(!isMapEditorBricksModeActive()) return;
   if(mapEditorBrickInteractionState.mode !== "holding") return;
 
   const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
@@ -2896,6 +2900,7 @@ function onMapEditorBrickDragOver(event){
 }
 
 function onMapEditorBrickDrop(event){
+  if(!isMapEditorBricksModeActive()) return;
   if(mapEditorBrickInteractionState.mode !== "holding") return;
   event.preventDefault();
   commitMapEditorBrickDrop(event.clientX, event.clientY);
@@ -6256,6 +6261,7 @@ setupMenuPressFeedback([
 
 let selectedMode = "hotSeat";
 let selectedRuleset = "classic";
+let mapEditorControlMode = "bricks";
 let lastModePlaneTarget = null;
 let lastRulesPlaneTarget = null;
 let lastModeSelectionButton = null;
@@ -6270,6 +6276,22 @@ let menuBackgroundSnapshot = null;
 let hasActivatedGameScreen = false;
 let needsGameScreenSync = false;
 let menuScreenLocked = false;
+
+function isMapEditorBricksModeActive(){
+  return selectedRuleset === "mapeditor" && mapEditorControlMode === "bricks";
+}
+
+function setMapEditorControlMode(nextMode){
+  const normalizedMode = nextMode === "planes" ? "planes" : "bricks";
+  if(mapEditorControlMode === normalizedMode) return;
+  mapEditorControlMode = normalizedMode;
+
+  if(mapEditorControlMode === "planes") {
+    resetMapEditorBrickInteraction();
+  }
+
+  syncMapEditorResetButtonVisibility();
+}
 
 function isAdvancedLikeRuleset(ruleset = selectedRuleset){
   return ruleset === "advanced" || ruleset === "mapeditor";
@@ -8972,6 +8994,7 @@ if(advancedSettingsBtn){
 if(editorBtn){
   editorBtn.addEventListener('click', async () => {
     selectedRuleset = "mapeditor";
+    mapEditorControlMode = "bricks";
     syncMapEditorResetButtonVisibility();
     loadSettingsForRuleset(selectedRuleset);
     settingsBridge.setMapIndex(0, { persist: true });
@@ -9311,6 +9334,7 @@ function updateAAPreviewFromEvent(e){
 
 function onCanvasPointerDown(e){
   logPointerDebugEvent(e);
+  if(isMapEditorBricksModeActive()) return;
   if(onBoardInventoryStickyApply(e)){
     e.preventDefault();
     return;
@@ -9329,6 +9353,7 @@ function onCanvasPointerDown(e){
 
 function onCanvasPointerMove(e){
   logPointerDebugEvent(e);
+  if(isMapEditorBricksModeActive()) return;
   if(isNuclearStrikeActionLocked()) {
     gsBoardCanvas.style.cursor = '';
     return;
@@ -9347,6 +9372,7 @@ function onCanvasPointerMove(e){
 
 function onCanvasPointerUp(e){
   logPointerDebugEvent(e);
+  if(isMapEditorBricksModeActive()) return;
   if(isNuclearStrikeActionLocked()){
     aaPointerDown = false;
     aaPlacementPreview = null;
@@ -13636,6 +13662,18 @@ if(mapEditorResetBtn){
   });
 }
 
+if(mapEditorModeBricksBtn instanceof HTMLElement){
+  mapEditorModeBricksBtn.addEventListener("click", () => {
+    setMapEditorControlMode("bricks");
+  });
+}
+
+if(mapEditorModePlanesBtn instanceof HTMLElement){
+  mapEditorModePlanesBtn.addEventListener("click", () => {
+    setMapEditorControlMode("planes");
+  });
+}
+
 if(mapEditorBrickSidebar instanceof HTMLElement){
   const brickAssets = mapEditorBrickSidebar.querySelectorAll(".map-editor-brick-sidebar__asset");
   brickAssets.forEach((asset) => {
@@ -13826,17 +13864,36 @@ function resetMapEditorPlanePlacement(){
 }
 
 function syncMapEditorResetButtonVisibility(){
-  const visible = selectedRuleset === "mapeditor"
+  const editorVisible = selectedRuleset === "mapeditor"
     && document.body.classList.contains("screen--game");
+  const bricksModeActive = editorVisible && mapEditorControlMode === "bricks";
+
+  if(mapEditorModeControls instanceof HTMLElement){
+    mapEditorModeControls.hidden = !editorVisible;
+    mapEditorModeControls.setAttribute("aria-hidden", editorVisible ? "false" : "true");
+  }
 
   if(mapEditorResetBtn instanceof HTMLElement){
-    mapEditorResetBtn.hidden = !visible;
-    mapEditorResetBtn.setAttribute("aria-hidden", visible ? "false" : "true");
+    mapEditorResetBtn.hidden = !editorVisible;
+    mapEditorResetBtn.setAttribute("aria-hidden", editorVisible ? "false" : "true");
+  }
+
+  if(mapEditorModeBricksBtn instanceof HTMLElement){
+    mapEditorModeBricksBtn.setAttribute("aria-pressed", bricksModeActive ? "true" : "false");
+  }
+
+  if(mapEditorModePlanesBtn instanceof HTMLElement){
+    mapEditorModePlanesBtn.setAttribute("aria-pressed", bricksModeActive ? "false" : "true");
   }
 
   if(mapEditorBrickSidebar instanceof HTMLElement){
-    mapEditorBrickSidebar.hidden = !visible;
-    mapEditorBrickSidebar.setAttribute("aria-hidden", visible ? "false" : "true");
+    mapEditorBrickSidebar.hidden = !bricksModeActive;
+    mapEditorBrickSidebar.setAttribute("aria-hidden", bricksModeActive ? "false" : "true");
+    mapEditorBrickSidebar.style.pointerEvents = bricksModeActive ? "auto" : "none";
+  }
+
+  if(!bricksModeActive){
+    resetMapEditorBrickInteraction();
   }
 }
 
