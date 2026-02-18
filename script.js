@@ -6603,6 +6603,7 @@ const CANVAS_BASE_WIDTH = 360;
 const CANVAS_BASE_HEIGHT = 640;
 const FRAME_PADDING_X = 50;
 const FRAME_PADDING_Y = 80;
+const MAP_EDITOR_CANVAS_LEFT = 10;
 const CANVAS_OFFSET_X = 51;
 const DEFAULT_FRAME_BASE_WIDTH = CANVAS_BASE_WIDTH + FRAME_PADDING_X * 2;
 const DEFAULT_FRAME_BASE_HEIGHT = CANVAS_BASE_HEIGHT + FRAME_PADDING_Y * 2;
@@ -6624,6 +6625,9 @@ const MAP_DIAGONAL_BRICK_SIZE = MAP_BRICK_THICKNESS * 3;
 const FIELD_BORDER_THICKNESS = MAP_BRICK_THICKNESS; // px, width of brick frame edges
 
 function getFieldLeftCssValue() {
+  if (selectedRuleset === "mapeditor") {
+    return MAP_EDITOR_CANVAS_LEFT;
+  }
   const computed = (FRAME_BASE_WIDTH - WORLD.width) / 2;
   return Number.isFinite(computed) ? computed : FRAME_PADDING_X;
 }
