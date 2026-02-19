@@ -9079,14 +9079,18 @@ function makePlane(x,y,color,angle){
     x, y,
     color,
     isAlive:true,
+    respawnState:"at_base",
     burning:false,
     crashStart:null,
     angle,
+    homeAngle: angle,
     segments:[],
     collisionX:null,
     collisionY:null,
     prevX: x,
     prevY: y,
+    homeX: x,
+    homeY: y,
     flagColor:null,
     carriedFlagId: null,
     flameFxDisabled: false,
@@ -9157,6 +9161,69 @@ function isFlagActive(flag){
 
 function isArcadeFlagRespawnEnabled(){
   return settings.arcadeMode === true && isAdvancedLikeRuleset(selectedRuleset);
+}
+
+function isArcadePlaneRespawnEnabled(){
+  return settings.arcadeMode === true && isAdvancedLikeRuleset(selectedRuleset);
+}
+
+function isPlaneAtBase(plane){
+  return plane?.respawnState === "at_base";
+}
+
+function setPlaneReadyAtBase(plane){
+  if(!plane) return;
+  const homeX = Number.isFinite(plane.homeX) ? plane.homeX : plane.x;
+  const homeY = Number.isFinite(plane.homeY) ? plane.homeY : plane.y;
+  plane.x = homeX;
+  plane.y = homeY;
+  plane.prevX = homeX;
+  plane.prevY = homeY;
+  if(Number.isFinite(plane.homeAngle)){
+    plane.angle = plane.homeAngle;
+  }
+  plane.burning = false;
+  plane.crashStart = null;
+  plane.killMarkerStart = null;
+  plane.collisionX = null;
+  plane.collisionY = null;
+  plane.respawnState = "at_base";
+}
+
+function markPlaneLaunchedFromBase(plane){
+  if(!plane) return;
+  plane.respawnState = "in_flight";
+}
+
+function eliminatePlane(plane, options = {}){
+  if(!plane) return;
+
+  const {
+    keepBurning = true,
+    keepCrashMarkers = true,
+    skipFlameFx = false,
+  } = options;
+
+  if(isArcadePlaneRespawnEnabled()){
+    setPlaneReadyAtBase(plane);
+    return;
+  }
+
+  plane.isAlive = false;
+  plane.burning = Boolean(keepBurning);
+  if(plane.burning){
+    ensurePlaneBurningFlame(plane);
+  }
+  if(keepCrashMarkers){
+    plane.collisionX = plane.x;
+    plane.collisionY = plane.y;
+    const crashTimestamp = performance.now();
+    plane.crashStart = crashTimestamp;
+    plane.killMarkerStart = crashTimestamp;
+  }
+  if(!skipFlameFx && plane.burning){
+    schedulePlaneFlameFx(plane);
+  }
 }
 
 function getFlagAnchor(flag){
@@ -9705,7 +9772,7 @@ function isPlaneGrabbableAt(x, y) {
 
   return points.some(pt =>
     pt.color === currentColor &&
-    pt.isAlive && !pt.burning &&
+    pt.isAlive && !pt.burning && isPlaneAtBase(pt) &&
     Math.hypot(pt.x - x, pt.y - y) <= PLANE_TOUCH_RADIUS
   );
 }
@@ -9742,7 +9809,7 @@ function handleStart(e) {
 
   let found= points.find(pt=>
     pt.color=== currentColor &&
-    pt.isAlive && !pt.burning &&
+    pt.isAlive && !pt.burning && isPlaneAtBase(pt) &&
     Math.hypot(pt.x - mx, pt.y - my) <= PLANE_TOUCH_RADIUS
   );
   if(!found) return;
@@ -10164,6 +10231,7 @@ function onHandleUp(){
 
   // нос по скорости
   plane.angle = Math.atan2(vy, vx) + Math.PI/2;
+  markPlaneLaunchedFromBase(plane);
 
   flyingPoints.push({
     plane, vx, vy,
@@ -10340,6 +10408,7 @@ function planPathToPoint(plane, tx, ty){
 
 function issueAIMove(plane, vx, vy){
   plane.angle = Math.atan2(vy, vx) + Math.PI/2;
+  markPlaneLaunchedFromBase(plane);
   flyingPoints.push({
     plane, vx, vy,
     timeLeft: FIELD_FLIGHT_DURATION_SEC,
@@ -11544,19 +11613,10 @@ function destroyPlane(fp, scoringColor = null){
     dropFlagAtPosition(carriedFlag, { x: p.x, y: p.y });
   }
   clearFlagFromPlane(p);
-  p.isAlive = false;
-  p.burning = true;
-  ensurePlaneBurningFlame(p);
-  p.collisionX = p.x;
-  p.collisionY = p.y;
-  const crashTimestamp = performance.now();
-  p.crashStart = crashTimestamp;
-  p.killMarkerStart = crashTimestamp;
-
-  spawnExplosionForPlane(p, p.collisionX, p.collisionY);
-
-
-  schedulePlaneFlameFx(p);
+  const crashX = p.x;
+  const crashY = p.y;
+  eliminatePlane(p);
+  spawnExplosionForPlane(p, crashX, crashY);
 
 
   flyingPoints = flyingPoints.filter(x=>x!==fp);
@@ -11575,16 +11635,10 @@ function destroyAllPlanesWithoutScoring(){
       dropFlagAtPosition(carriedFlag, { x: p.x, y: p.y });
     }
     clearFlagFromPlane(p);
-    p.isAlive = false;
-    p.burning = true;
-    ensurePlaneBurningFlame(p);
-    p.collisionX = p.x;
-    p.collisionY = p.y;
-    const crashTimestamp = performance.now();
-    p.crashStart = crashTimestamp;
-    p.killMarkerStart = crashTimestamp;
-    spawnExplosionForPlane(p, p.collisionX, p.collisionY);
-    schedulePlaneFlameFx(p);
+    const crashX = p.x;
+    const crashY = p.y;
+    eliminatePlane(p);
+    spawnExplosionForPlane(p, crashX, crashY);
     flyingPoints = flyingPoints.filter(x => x.plane !== p);
   });
 }
@@ -11602,13 +11656,12 @@ function destroyAllPlanesWithNukeScoring(){
       dropFlagAtPosition(carriedFlag, { x: p.x, y: p.y });
     }
     clearFlagFromPlane(p);
-    p.isAlive = false;
-    p.burning = false;
-    p.nukeEliminated = true;
-    p.collisionX = p.x;
-    p.collisionY = p.y;
-    p.crashStart = 0;
-    p.killMarkerStart = 0;
+    eliminatePlane(p, { keepBurning: false, keepCrashMarkers: false, skipFlameFx: true });
+    p.nukeEliminated = !isArcadePlaneRespawnEnabled();
+    if(!isArcadePlaneRespawnEnabled()){
+      p.crashStart = 0;
+      p.killMarkerStart = 0;
+    }
     flyingPoints = flyingPoints.filter(x => x.plane !== p);
   });
 
@@ -11646,6 +11699,7 @@ function angleDiffDeg(a, b){
 }
 
 function handleAAForPlane(p, fp){
+  if(isPlaneAtBase(p)) return false;
   const now = performance.now();
   for(const aa of aaUnits){
     if(aa.owner === p.color) continue; // no friendly fire
@@ -11672,18 +11726,11 @@ function handleAAForPlane(p, fp){
           } else if(now - p._aaTimes[aa.id] > aa.dwellTimeMs){
             if(!aa.lastTriggerAt || now - aa.lastTriggerAt > aa.cooldownMs){
               aa.lastTriggerAt = now;
-              p.isAlive=false;
-                p.burning=true;
-                ensurePlaneBurningFlame(p);
-                p.collisionX=p.x; p.collisionY=p.y;
-                const aaCrashTimestamp = performance.now();
-                p.crashStart = aaCrashTimestamp;
-                p.killMarkerStart = aaCrashTimestamp;
-                spawnExplosionForPlane(p, contactX, contactY);
-                schedulePlaneFlameFx(p);
-                if(fp) {
-                  flyingPoints = flyingPoints.filter(x=>x!==fp);
-                }
+              eliminatePlane(p);
+              spawnExplosionForPlane(p, contactX, contactY);
+              if(fp) {
+                flyingPoints = flyingPoints.filter(x=>x!==fp);
+              }
               awardPoint(aa.owner);
               checkVictory();
               if(fp && !isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
@@ -11706,6 +11753,7 @@ function handleAAForPlane(p, fp){
 }
 
 function handleMineForPlane(p, fp){
+  if(isPlaneAtBase(p)) return false;
   if(!p?.isAlive || p?.burning) return false;
   if(!Array.isArray(mines) || mines.length === 0) return false;
 
@@ -11722,16 +11770,8 @@ function handleMineForPlane(p, fp){
     const contactX = dist === 0 ? p.x : p.x - dx / dist * POINT_RADIUS;
     const contactY = dist === 0 ? p.y : p.y - dy / dist * POINT_RADIUS;
 
-    p.isAlive = false;
-    p.burning = true;
-    ensurePlaneBurningFlame(p);
-    p.collisionX = p.x;
-    p.collisionY = p.y;
-    const mineCrashTimestamp = performance.now();
-    p.crashStart = mineCrashTimestamp;
-    p.killMarkerStart = mineCrashTimestamp;
+    eliminatePlane(p);
     spawnExplosionForPlane(p, contactX, contactY);
-    schedulePlaneFlameFx(p);
 
     if(fp){
       flyingPoints = flyingPoints.filter(x => x !== fp);
@@ -13578,28 +13618,23 @@ function awardPoint(color){
 }
 function checkPlaneHits(plane, fp){
   if(isGameOver) return;
+  if(isPlaneAtBase(plane)) return;
   const enemyColor = (plane.color==="green") ? "blue" : "green";
   const planeHitbox = getPlaneHitbox(plane);
   for(const p of points){
-    if(!p.isAlive || p.burning) continue;
+    if(!p.isAlive || p.burning || isPlaneAtBase(p)) continue;
     if(p.color !== enemyColor) continue;
     if(fp && fp.lastHitPlane === p && fp.lastHitCooldown > 0) continue;
     const targetHitbox = getPlaneHitbox(p);
     if(planeHitboxesIntersect(planeHitbox, targetHitbox)){
-      p.isAlive = false;
-      p.burning = true;
-      ensurePlaneBurningFlame(p);
+      eliminatePlane(p);
       flyingPoints = flyingPoints.filter(other => other.plane !== p);
       const contactPoint = getPlaneHitContactPoint(plane, p);
       const cx = contactPoint.x;
       const cy = contactPoint.y;
       p.collisionX = cx;
       p.collisionY = cy;
-      const collisionCrashTimestamp = performance.now();
-      p.crashStart = collisionCrashTimestamp;
-      p.killMarkerStart = collisionCrashTimestamp;
       spawnExplosionForPlane(p, cx, cy);
-      schedulePlaneFlameFx(p);
       if(fp){
         fp.lastHitPlane = p;
         fp.lastHitCooldown = PLANE_HIT_COOLDOWN_SEC;
