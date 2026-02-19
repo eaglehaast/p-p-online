@@ -9155,6 +9155,10 @@ function isFlagActive(flag){
   return flag?.state === FLAG_STATES.ACTIVE;
 }
 
+function isArcadeFlagRespawnEnabled(){
+  return settings.arcadeMode === true && isAdvancedLikeRuleset(selectedRuleset);
+}
+
 function getFlagAnchor(flag){
   if(!flag){
     const fallbackY = getHomeRowY("blue");
@@ -9240,8 +9244,16 @@ function dropFlagAtPosition(flag, position){
   flag.carrier = null;
 }
 
-function captureFlag(flag){
+function captureFlag(flag, options = {}){
   if(!flag) return;
+
+  if(options.arcadeRespawn === true){
+    flag.state = FLAG_STATES.ACTIVE;
+    flag.carrier = null;
+    flag.droppedAt = null;
+    return;
+  }
+
   flag.state = FLAG_STATES.CAPTURED;
   flag.carrier = null;
   flag.droppedAt = null;
@@ -13630,7 +13642,7 @@ function handleFlagInteractions(plane){
       if(carriedFlag.color !== plane.color){
         addScore(plane.color, 5);
       }
-      captureFlag(carriedFlag);
+      captureFlag(carriedFlag, { arcadeRespawn: isArcadeFlagRespawnEnabled() });
       clearFlagFromPlane(plane);
     }
   }
