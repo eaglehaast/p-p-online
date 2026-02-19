@@ -8531,7 +8531,8 @@ const sharedSettings = settingsBridge.settings || (settingsBridge.settings = {
   sharpEdges: true,
   flagsEnabled: true,
   addCargo: true,
-  mapIndex: 0
+  mapIndex: 0,
+  arcadeMode: false
 });
 
 if(!Number.isFinite(sharedSettings.flightRangeCells)){
@@ -8560,6 +8561,9 @@ if(typeof sharedSettings.flameStyle !== 'string'){
 }
 if(typeof sharedSettings.randomizeMapEachRound !== 'boolean'){
   sharedSettings.randomizeMapEachRound = false;
+}
+if(typeof sharedSettings.arcadeMode !== 'boolean'){
+  sharedSettings.arcadeMode = false;
 }
 
 const settings = sharedSettings;
@@ -8637,6 +8641,10 @@ function loadSettings(){
   const storedFlameStyle = normalizeFlameStyleKey(getStoredSetting('settings.flameStyle'));
   settings.flameStyle = storedFlameStyle;
   settings.randomizeMapEachRound = getStoredSetting('settings.randomizeMapEachRound') === 'true';
+  const storedArcadeMode = getStoredSetting('settings.arcadeMode');
+  settings.arcadeMode = storedArcadeMode === null
+    ? false
+    : storedArcadeMode === 'true' || storedArcadeMode === true || storedArcadeMode === '1' || storedArcadeMode === 1;
 
   // Clamp loaded values so corrupted or out-of-range settings
   // don't break the game on startup
@@ -8656,6 +8664,10 @@ function loadSettingsForRuleset(ruleset = selectedRuleset){
   if(ruleset === "mapeditor"){
     settingsBridge.setMapIndex(0, { persist: false });
     settings.randomizeMapEachRound = false;
+    settings.arcadeMode = false;
+  }
+  if(ruleset === "classic"){
+    settings.arcadeMode = false;
   }
 }
 
@@ -8682,7 +8694,8 @@ const hasCustomSettings = storageAvailable && [
   'settings.addCargo',
   'settings.mapIndex',
   'settings.randomizeMapEachRound',
-  'settings.flameStyle'
+  'settings.flameStyle',
+  'settings.arcadeMode'
 ].some(key => getStoredSetting(key) !== null);
 
 if(hasCustomSettings && classicRulesBtn && advancedSettingsBtn && !isAdvancedLikeRuleset(selectedRuleset)){
@@ -14189,6 +14202,7 @@ function startNewRound(){
   logBootStep("startNewRound");
   loadSettingsForRuleset(selectedRuleset);
   const useStoredRulesetSettings = isAdvancedLikeRuleset(selectedRuleset);
+  const isArcadeUiMode = useStoredRulesetSettings && settings.arcadeMode === true;
   if(selectedRuleset === "classic"){
     settings.addCargo = true;
   } else if(selectedRuleset === "mapeditor"){
@@ -14203,8 +14217,10 @@ function startNewRound(){
     addCargo: settings.addCargo,
     mapIndex: settings.mapIndex,
     randomizeMapEachRound: settings.randomizeMapEachRound,
+    arcadeMode: settings.arcadeMode,
     flameStyle: settings.flameStyle,
-    useStoredRulesetSettings
+    useStoredRulesetSettings,
+    isArcadeUiMode
   });
   loadMatchScoreImagesIfNeeded();
   preloadPlaneSprites();
