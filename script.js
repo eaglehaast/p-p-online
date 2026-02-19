@@ -14203,7 +14203,6 @@ function startNewRound(){
   if(selectedRuleset === "classic"){
     settings.addCargo = true;
   } else if(selectedRuleset === "mapeditor"){
-    settingsBridge.setMapIndex(0, { persist: false });
     settings.randomizeMapEachRound = false;
   }
   console.log('[settings] load at match start', {
