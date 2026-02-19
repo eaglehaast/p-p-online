@@ -30,6 +30,7 @@ const DEBUG_STARTUP_WORLDY = false;
 const DEBUG_WRAPPER_SYNC = false;
 const DEBUG_DROP_COORDS = false;
 const DEBUG_INVENTORY_INPUT = false;
+const DEBUG_PLANE_GRAB = false;
 const DEBUG_CHEATS = typeof location !== "undefined" && location.hash.includes("dev");
 
 if (typeof window !== 'undefined') {
@@ -9135,6 +9136,15 @@ function isPlaneRespawnComplete(plane){
   return Number.isFinite(plane?.respawnStage) && plane.respawnStage >= 3;
 }
 
+function isPlaneInactiveForLaunch(plane){
+  if(!plane) return true;
+  if(plane.isAlive !== true) return true;
+  if(plane.burning) return true;
+  if(!isPlaneAtBase(plane)) return true;
+  if(isArcadePlaneRespawnEnabled() && !isPlaneRespawnComplete(plane)) return true;
+  return false;
+}
+
 function getFlagConfigsForMap(map = null){
   const mapFlags = Array.isArray(map?.flags) ? map.flags : null;
   const fallbackFlags = Object.entries(FLAG_LAYOUTS).map(([color, layout]) => ({ color, layout }));
@@ -9818,9 +9828,56 @@ function isPlaneGrabbableAt(x, y) {
 
   return points.some(pt =>
     pt.color === currentColor &&
-    pt.isAlive && !pt.burning && isPlaneAtBase(pt) && isPlaneRespawnComplete(pt) &&
+    !isPlaneInactiveForLaunch(pt) &&
     Math.hypot(pt.x - x, pt.y - y) <= PLANE_TOUCH_RADIUS
   );
+}
+
+function getGrabRejectReason(mx, my, currentColor){
+  if(isNuclearStrikeActionLocked()) return "nuclear_action_locked";
+  if(isGameOver || !gameMode) return "game_not_active";
+  if(pendingInventoryUse) return "pending_inventory_use";
+  if(gameMode === "computer" && currentColor === "blue") return "ai_turn";
+  if(flyingPoints.some(fp => fp.plane.color === currentColor)) return "plane_already_in_flight";
+
+  const nearCurrentTeamPlane = points.some(pt =>
+    pt.color === currentColor &&
+    Math.hypot(pt.x - mx, pt.y - my) <= PLANE_TOUCH_RADIUS
+  );
+  if(!nearCurrentTeamPlane) return "no_plane_under_pointer";
+
+  const nearLaunchReadyPlane = points.some(pt =>
+    pt.color === currentColor &&
+    !isPlaneInactiveForLaunch(pt) &&
+    Math.hypot(pt.x - mx, pt.y - my) <= PLANE_TOUCH_RADIUS
+  );
+
+  if(nearLaunchReadyPlane) return "unknown";
+
+  const blockedByRespawnStage = points.some(pt =>
+    pt.color === currentColor &&
+    isPlaneAtBase(pt) &&
+    isArcadePlaneRespawnEnabled() &&
+    !isPlaneRespawnComplete(pt) &&
+    Math.hypot(pt.x - mx, pt.y - my) <= PLANE_TOUCH_RADIUS
+  );
+  if(blockedByRespawnStage) return "respawn_not_ready";
+
+  const blockedByBurning = points.some(pt =>
+    pt.color === currentColor &&
+    pt.burning &&
+    Math.hypot(pt.x - mx, pt.y - my) <= PLANE_TOUCH_RADIUS
+  );
+  if(blockedByBurning) return "plane_burning";
+
+  const blockedByFlightState = points.some(pt =>
+    pt.color === currentColor &&
+    !isPlaneAtBase(pt) &&
+    Math.hypot(pt.x - mx, pt.y - my) <= PLANE_TOUCH_RADIUS
+  );
+  if(blockedByFlightState) return "plane_not_at_base";
+
+  return "plane_unavailable";
 }
 
 function updateBoardCursorForHover(x, y) {
@@ -9855,10 +9912,21 @@ function handleStart(e) {
 
   let found= points.find(pt=>
     pt.color=== currentColor &&
-    pt.isAlive && !pt.burning && isPlaneAtBase(pt) && isPlaneRespawnComplete(pt) &&
+    !isPlaneInactiveForLaunch(pt) &&
     Math.hypot(pt.x - mx, pt.y - my) <= PLANE_TOUCH_RADIUS
   );
-  if(!found) return;
+  if(!found){
+    if(DEBUG_PLANE_GRAB){
+      const reason = getGrabRejectReason(mx, my, currentColor);
+      console.debug("[plane-grab-debug] grab rejected", {
+        reason,
+        currentColor,
+        pointer: { x: mx, y: my },
+        turnColor: turnColors[turnIndex],
+      });
+    }
+    return;
+  }
 
   handleCircle.baseX= mx; handleCircle.baseY= my;
   handleCircle.shakyX= mx; handleCircle.shakyY= my;
@@ -11728,8 +11796,12 @@ function advanceTurn(){
   });
   turnIndex = (turnIndex + 1) % turnColors.length;
   const nextTurnColor = turnColors[turnIndex];
-  points.forEach((plane) => {
-    if(!plane || !isPlaneAtBase(plane) || plane.color !== nextTurnColor) return;
+  const planesToRespawn = points.filter(plane =>
+    plane &&
+    plane.color === nextTurnColor &&
+    isPlaneAtBase(plane)
+  );
+  planesToRespawn.forEach((plane) => {
     const currentStage = Number.isFinite(plane.respawnStage)
       ? Math.max(1, Math.min(3, Math.round(plane.respawnStage)))
       : 1;
