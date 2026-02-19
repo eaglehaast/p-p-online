@@ -9089,6 +9089,8 @@ function makePlane(x,y,color,angle){
     segments:[],
     collisionX:null,
     collisionY:null,
+    explosionSpawned: false,
+    explosionSpawnedFrame: null,
     prevX: x,
     prevY: y,
     homeX: x,
@@ -9214,6 +9216,8 @@ function setPlaneReadyAtBase(plane){
   plane.killMarkerStart = null;
   plane.collisionX = null;
   plane.collisionY = null;
+  plane.explosionSpawned = false;
+  plane.explosionSpawnedFrame = null;
   plane.respawnState = "at_base";
   plane.respawnStage = 1;
   plane.isInvulnerable = true;
@@ -9221,6 +9225,8 @@ function setPlaneReadyAtBase(plane){
 
 function markPlaneLaunchedFromBase(plane){
   if(!plane) return;
+  plane.explosionSpawned = false;
+  plane.explosionSpawnedFrame = null;
   plane.respawnState = "in_flight";
   plane.respawnStage = 3;
   plane.isInvulnerable = false;
@@ -13527,20 +13533,30 @@ function createExplosionImageEntry(explosionState, img) {
 }
 
 function spawnExplosionForPlane(plane, x = null, y = null) {
-  if (!plane || plane.explosionSpawned) {
+  if (!plane) {
     return null;
   }
 
-  const cx = Number.isFinite(plane.x)
-    ? plane.x
-    : (Number.isFinite(x) ? x : plane.collisionX);
-  const cy = Number.isFinite(plane.y)
-    ? plane.y
-    : (Number.isFinite(y) ? y : plane.collisionY);
+  const frameGuard = Number.isFinite(globalFrame) ? globalFrame : null;
+  if (frameGuard !== null && plane.explosionSpawnedFrame === frameGuard) {
+    return null;
+  }
+
+  if (frameGuard === null && plane.explosionSpawned) {
+    return null;
+  }
+
+  const cx = Number.isFinite(x)
+    ? x
+    : (Number.isFinite(plane.x) ? plane.x : plane.collisionX);
+  const cy = Number.isFinite(y)
+    ? y
+    : (Number.isFinite(plane.y) ? plane.y : plane.collisionY);
   const state = createExplosionState(plane, cx, cy);
 
   activeExplosions.push(state);
   plane.explosionSpawned = true;
+  plane.explosionSpawnedFrame = frameGuard;
   return state;
 }
 
@@ -13671,11 +13687,11 @@ function checkPlaneHits(plane, fp){
     if(fp && fp.lastHitPlane === p && fp.lastHitCooldown > 0) continue;
     const targetHitbox = getPlaneHitbox(p);
     if(planeHitboxesIntersect(planeHitbox, targetHitbox)){
-      eliminatePlane(p);
-      flyingPoints = flyingPoints.filter(other => other.plane !== p);
       const contactPoint = getPlaneHitContactPoint(plane, p);
       const cx = contactPoint.x;
       const cy = contactPoint.y;
+      eliminatePlane(p);
+      flyingPoints = flyingPoints.filter(other => other.plane !== p);
       p.collisionX = cx;
       p.collisionY = cy;
       spawnExplosionForPlane(p, cx, cy);
