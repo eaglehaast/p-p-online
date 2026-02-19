@@ -8211,6 +8211,95 @@ const MAP_RENDERERS = {
 let currentMapSprites = [];
 let currentMapName = "unknown map";
 
+function compactObjectFields(source, defaults = {}){
+  const compact = {};
+  if(!source || typeof source !== "object"){
+    return compact;
+  }
+
+  Object.entries(source).forEach(([key, value]) => {
+    if(value === undefined || value === null) return;
+    if(defaults[key] !== undefined && value === defaults[key]) return;
+    compact[key] = value;
+  });
+
+  return compact;
+}
+
+function serializeMapSpriteForExport(sprite){
+  if(!sprite || typeof sprite !== "object") return null;
+
+  const supportedFields = {
+    spriteName: typeof sprite.spriteName === "string" ? sprite.spriteName : undefined,
+    x: Number.isFinite(sprite.x) ? sprite.x : undefined,
+    y: Number.isFinite(sprite.y) ? sprite.y : undefined,
+    rotate: Number.isFinite(sprite.rotate) ? sprite.rotate : undefined,
+    scale: Number.isFinite(sprite.scale) ? sprite.scale : undefined,
+    scaleX: Number.isFinite(sprite.scaleX) ? sprite.scaleX : undefined,
+    scaleY: Number.isFinite(sprite.scaleY) ? sprite.scaleY : undefined,
+    id: typeof sprite.id === "string" && sprite.id.length > 0 ? sprite.id : undefined,
+  };
+
+  return compactObjectFields(supportedFields, {
+    rotate: 0,
+    scale: 1,
+    scaleX: 1,
+    scaleY: 1,
+  });
+}
+
+function resolveCurrentMapForExport(){
+  const byName = MAPS.find((map) => map?.name === currentMapName || map?.id === currentMapName);
+  if(byName) return byName;
+
+  const byIndex = MAPS[clampMapIndex(settings?.mapIndex)];
+  if(byIndex) return byIndex;
+
+  return null;
+}
+
+/**
+ * Каркас экспорта карты для будущего импорта:
+ * {
+ *   formatVersion: 1,
+ *   map: {
+ *     id?, name?, mode?, tier?,
+ *     sprites: [{ spriteName, x, y, rotate?, scale?, scaleX?, scaleY?, id? }],
+ *     flags?: [...]
+ *   }
+ * }
+ * Поля со значениями по умолчанию можно пропускать для компактного JSON.
+ */
+function serializeCurrentMapState(){
+  const currentMapMeta = resolveCurrentMapForExport();
+  const rawSprites = Array.isArray(currentMapSprites) ? currentMapSprites : [];
+  const sprites = rawSprites
+    .map((sprite) => serializeMapSpriteForExport(sprite))
+    .filter((sprite) => sprite && Object.keys(sprite).length > 0);
+
+  const rawMap = {
+    id: typeof currentMapMeta?.id === "string" && currentMapMeta.id.length > 0
+      ? currentMapMeta.id
+      : undefined,
+    name: typeof currentMapName === "string" && currentMapName.length > 0
+      ? currentMapName
+      : (typeof currentMapMeta?.name === "string" ? currentMapMeta.name : undefined),
+    mode: typeof currentMapMeta?.mode === "string" && currentMapMeta.mode.length > 0
+      ? currentMapMeta.mode
+      : undefined,
+    tier: typeof currentMapMeta?.tier === "string" && currentMapMeta.tier.length > 0
+      ? currentMapMeta.tier
+      : undefined,
+    sprites,
+    flags: Array.isArray(flagConfigs) && flagConfigs.length > 0 ? flagConfigs : undefined,
+  };
+
+  return {
+    formatVersion: 1,
+    map: compactObjectFields(rawMap),
+  };
+}
+
 const RANDOM_MAP_SENTINEL_INDEX = MAPS.findIndex(map => map?.name?.toLowerCase?.() === 'random map');
 const PLAYABLE_MAP_INDICES = MAPS
   .map((_, index) => index)
