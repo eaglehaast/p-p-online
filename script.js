@@ -780,6 +780,7 @@ const greenPlaneCounter = document.getElementById("gs_planecounter_green");
 const bluePlaneCounter  = document.getElementById("gs_planecounter_blue");
 const mapEditorResetBtn = document.getElementById("mapEditorResetBtn");
 const mapEditorSaveBtn = document.getElementById("mapEditorSaveBtn");
+const mapEditorResetMapBtn = document.getElementById("mapEditorResetMapBtn");
 const mapEditorSaveDialog = document.getElementById("mapEditorSaveDialog");
 const mapEditorSaveNameInput = document.getElementById("mapEditorSaveNameInput");
 const mapEditorSaveDialogCancelBtn = document.getElementById("mapEditorSaveDialogCancelBtn");
@@ -14113,6 +14114,22 @@ if(mapEditorResetBtn){
   });
 }
 
+if(mapEditorResetMapBtn instanceof HTMLElement){
+  mapEditorResetMapBtn.addEventListener("click", () => {
+    const clearSkyIndex = MAPS.findIndex((map) => {
+      const mapId = typeof map?.id === "string" ? map.id.trim().toLowerCase() : "";
+      const mapName = typeof map?.name === "string" ? map.name.trim().toLowerCase() : "";
+      return mapId === "clearsky" || mapName === "clear sky";
+    });
+    const targetMapIndex = clearSkyIndex >= 0 ? clearSkyIndex : 0;
+    setMapIndexAndPersist(targetMapIndex);
+    applyCurrentMap();
+    seedMapEditorInventory();
+    mapEditorControlMode = "bricks";
+    syncMapEditorResetButtonVisibility();
+  });
+}
+
 if(mapEditorSaveBtn instanceof HTMLElement){
   mapEditorSaveBtn.addEventListener("click", () => {
     openMapEditorSaveDialog();
@@ -14377,6 +14394,11 @@ function syncMapEditorResetButtonVisibility(){
   if(mapEditorSaveBtn instanceof HTMLElement){
     mapEditorSaveBtn.hidden = !editorVisible;
     mapEditorSaveBtn.setAttribute("aria-hidden", editorVisible ? "false" : "true");
+  }
+
+  if(mapEditorResetMapBtn instanceof HTMLElement){
+    mapEditorResetMapBtn.hidden = !editorVisible;
+    mapEditorResetMapBtn.setAttribute("aria-hidden", editorVisible ? "false" : "true");
   }
 
   if(!editorVisible){
