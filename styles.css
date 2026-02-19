@@ -508,6 +508,10 @@ body, button {
     background: rgba(10, 8, 6, 0.6);
   }
 
+  .map-editor-save-dialog[hidden] {
+    display: none;
+  }
+
   .map-editor-save-dialog__card {
     width: min(360px, calc(100% - 24px));
     border-radius: 10px;
