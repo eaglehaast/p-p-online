@@ -35,11 +35,6 @@ const FIELD_EXCLUSIVE_MODE = true;
 const MAP_PREVIEW_BASE_WIDTH = 360;
 const MAP_PREVIEW_BASE_HEIGHT = 640;
 const MAP_PREVIEW_BRICK_SPRITE_PATH = 'ui_gamescreen/bricks/brick_1_default.png';
-const MAP_PREVIEW_BRICK_SPRITE_PATHS = {
-  brick_1_default: 'ui_gamescreen/bricks/brick_1_default.png',
-  brick_4: 'ui_gamescreen/bricks/brick4_diagonal copy.png',
-  brick_4_diagonal: 'ui_gamescreen/bricks/brick4_diagonal copy.png'
-};
 
 const settingsLayer = document.getElementById('settingsLayer');
 const uiFrameEl = document.getElementById('uiFrame');
@@ -358,6 +353,21 @@ function isSpriteReady(img){
 
 const mapsDataBridge = window.paperWingsMapsData || {};
 const MAPS = Array.isArray(mapsDataBridge.MAPS) ? mapsDataBridge.MAPS : [];
+
+function getMapPreviewSpritePaths(){
+  const source = mapsDataBridge.MAP_SPRITE_PATHS;
+  if(source && typeof source === 'object'){
+    return source;
+  }
+
+  return {
+    brick_1_default: 'ui_gamescreen/bricks/brick_1_default.png',
+    brick_3_mini: 'ui_gamescreen/bricks/brick_3_mini.png',
+    brick_5_corner: 'ui_gamescreen/bricks/brick_5_corner.png',
+    brick_4: 'ui_gamescreen/bricks/brick4_diagonal copy.png',
+    brick_4_diagonal: 'ui_gamescreen/bricks/brick4_diagonal copy.png'
+  };
+}
 
 const fieldOptions = MAPS.map((map, index) => ({
   id: index,
@@ -3257,7 +3267,8 @@ function getPreviewBrickSprite(spriteName = "brick_1_default"){
     return cached;
   }
 
-  const path = MAP_PREVIEW_BRICK_SPRITE_PATHS[key] || MAP_PREVIEW_BRICK_SPRITE_PATH;
+  const mapPreviewSpritePaths = getMapPreviewSpritePaths();
+  const path = mapPreviewSpritePaths[key] || MAP_PREVIEW_BRICK_SPRITE_PATH;
   const registry = window.paperWingsAssets || null;
   const useRegistry = !!registry?.getImage;
   const { img, url } = useRegistry
