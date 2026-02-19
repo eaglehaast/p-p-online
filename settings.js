@@ -418,6 +418,7 @@ const DEFAULT_SETTINGS = {
   sharpEdges: true,
   flagsEnabled: true,
   addCargo: true,
+  arcadeMode: false,
   mapIndex: 0
 };
 
@@ -428,8 +429,13 @@ const sharedSettings = settingsBridge.settings || (settingsBridge.settings = {
   addAA: DEFAULT_SETTINGS.addAA,
   sharpEdges: DEFAULT_SETTINGS.sharpEdges,
   flagsEnabled: DEFAULT_SETTINGS.flagsEnabled,
+  arcadeMode: DEFAULT_SETTINGS.arcadeMode,
   mapIndex: DEFAULT_SETTINGS.mapIndex
 });
+
+if(typeof sharedSettings.arcadeMode !== 'boolean'){
+  sharedSettings.arcadeMode = DEFAULT_SETTINGS.arcadeMode;
+}
 
 const PREVIEW_CELL_SIZE = 20;
 const PREVIEW_MAX_DRAG_DISTANCE = 100;
@@ -751,6 +757,10 @@ const storedAddCargo = getStoredItem('settings.addCargo');
 let addCargo = storedAddCargo === null
   ? DEFAULT_SETTINGS.addCargo
   : storedAddCargo === 'true';
+const storedArcadeMode = getStoredItem('settings.arcadeMode');
+sharedSettings.arcadeMode = storedArcadeMode === null
+  ? DEFAULT_SETTINGS.arcadeMode
+  : storedArcadeMode === 'true';
 sharedSettings.mapIndex = sanitizeMapIndex(
   getIntSetting('settings.mapIndex', DEFAULT_SETTINGS.mapIndex),
   { allowRandom: true }
@@ -3212,6 +3222,7 @@ function saveSettings(){
   setStoredItem('settings.sharpEdges', sharedSettings.sharpEdges);
   setStoredItem('settings.flagsEnabled', sharedSettings.flagsEnabled);
   setStoredItem('settings.addCargo', addCargo);
+  setStoredItem('settings.arcadeMode', sharedSettings.arcadeMode);
   sharedSettings.mapIndex = sanitizeMapIndex(sharedSettings.mapIndex, { allowRandom: true });
   if(window.paperWingsSettings?.setMapIndex){
     window.paperWingsSettings.setMapIndex(sharedSettings.mapIndex, { persist: true });
@@ -3225,6 +3236,7 @@ function saveSettings(){
     sharpEdges: sharedSettings.sharpEdges,
     flagsEnabled: sharedSettings.flagsEnabled,
     addCargo,
+    arcadeMode: sharedSettings.arcadeMode,
     mapIndex: sharedSettings.mapIndex
   });
 }
@@ -4406,6 +4418,7 @@ function resetSettingsToDefaults(){
   sharedSettings.sharpEdges = DEFAULT_SETTINGS.sharpEdges;
   addCargo = DEFAULT_SETTINGS.addCargo;
   sharedSettings.addCargo = addCargo;
+  sharedSettings.arcadeMode = DEFAULT_SETTINGS.arcadeMode;
   sharedSettings.mapIndex = DEFAULT_SETTINGS.mapIndex;
 
   updateRangeFlame();
@@ -4416,7 +4429,7 @@ function resetSettingsToDefaults(){
   syncFieldSelectorState();
   addsUiState.cargo = DEFAULT_SETTINGS.addCargo;
   addsUiState.flags = true;
-  addsUiState.arcade = false;
+  addsUiState.arcade = DEFAULT_SETTINGS.arcadeMode;
   sharedSettings.flagsEnabled = true;
   setTumblerState(addsCargoBtn, addsUiState.cargo);
   setTumblerState(addsFlagsBtn, addsUiState.flags);
@@ -4468,7 +4481,7 @@ function syncToggleInput(input, value){
 const addsUiState = {
   cargo: addCargo,
   flags: sharedSettings.flagsEnabled !== false,
-  arcade: false
+  arcade: sharedSettings.arcadeMode === true
 };
 
 function syncArcadeCargoPreview(isArcadeOn){
@@ -4569,6 +4582,8 @@ if(addsArcadeBtn){
     event?.stopPropagation?.();
     // temporarily disabled: legacy adds should not activate gameplay from control-panel tumblers
     addsUiState.arcade = !addsUiState.arcade;
+    sharedSettings.arcadeMode = addsUiState.arcade;
+    saveSettings();
     setTumblerState(addsArcadeBtn, addsUiState.arcade);
     syncArcadeCargoPreview(addsUiState.arcade);
   });
