@@ -546,6 +546,11 @@ body, button {
     touch-action: none;
   }
 
+  /* Правило якоря для сайдбара: left/top всегда задают верхний левый угол видимого элемента, а не центр transform. */
+  .map-editor-brick-sidebar__asset--anchored {
+    transform-origin: top left;
+  }
+
   .map-editor-brick-sidebar__asset:active {
     cursor: grabbing;
   }
