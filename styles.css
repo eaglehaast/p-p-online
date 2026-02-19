@@ -466,6 +466,7 @@ body, button {
   body.nuke-input-locked #mapEditorModePlanesBtn,
   body.nuke-input-locked #mapEditorResetBtn,
   body.nuke-input-locked #mapEditorSaveBtn,
+  body.nuke-input-locked #mapEditorResetMapBtn,
   body.nuke-input-locked #yesButton,
   body.nuke-input-locked #noButton {
     pointer-events: none !important;
@@ -494,8 +495,14 @@ body, button {
 
   .map-editor-save-btn-positioned {
     position: absolute;
-    left: 380px;
+    left: 376px;
     top: 500px;
+  }
+
+  .map-editor-reset-map-btn-positioned {
+    position: absolute;
+    left: 376px;
+    top: 440px;
   }
 
   .map-editor-save-dialog {
