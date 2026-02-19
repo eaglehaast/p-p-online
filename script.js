@@ -8287,13 +8287,17 @@ function resolveExportMapId(){
     || "custom";
 }
 
-function downloadMapJsonFile(serializedMap){
+function downloadMapJsonFile(serializedMap, mapName = ""){
   const jsonText = JSON.stringify(serializedMap, null, 2);
   const blob = new Blob([jsonText], { type: "application/json;charset=utf-8" });
   const objectUrl = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = objectUrl;
-  link.download = `map_${resolveExportMapId()}.json`;
+  const sanitizedMapName = typeof mapName === "string"
+    ? mapName.trim().replace(/[\\/:*?"<>|]/g, "_")
+    : "";
+  const resolvedName = sanitizedMapName.length > 0 ? sanitizedMapName : resolveExportMapId();
+  link.download = `gs_maps_${resolvedName}.json`;
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -8350,7 +8354,7 @@ async function saveCurrentMapFromEditor(){
   const jsonText = JSON.stringify(serializedMap, null, 2);
   const copied = await copyMapJsonToClipboard(jsonText);
 
-  downloadMapJsonFile(serializedMap);
+  downloadMapJsonFile(serializedMap, mapName);
 
   if(copied){
     showRoundBanner("Карта скопирована и скачана");
