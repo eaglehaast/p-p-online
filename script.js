@@ -9465,7 +9465,14 @@ function onCanvasPointerDown(e){
 
 function onCanvasPointerMove(e){
   logPointerDebugEvent(e);
-  if(isMapEditorBricksModeActive()) return;
+  if(isMapEditorBricksModeActive()){
+    const { x: designX, y: designY } = getPointerDesignCoords(e);
+    const { x: boardX, y: boardY } = designToBoardCoords(designX, designY);
+    const spriteIndex = findMapEditorBrickSpriteIndexAtBoardPoint(boardX, boardY);
+    const isBrickDraggingActive = mapEditorBrickInteractionState.mode === "holding";
+    gsBoardCanvas.style.cursor = spriteIndex >= 0 && !isBrickDraggingActive ? "grab" : "";
+    return;
+  }
   if(isNuclearStrikeActionLocked()) {
     gsBoardCanvas.style.cursor = '';
     return;
