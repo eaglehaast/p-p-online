@@ -9117,6 +9117,20 @@ function getRespawnOpacityByStage(stage){
   return stageToOpacity[normalizedStage] ?? stageToOpacity[3];
 }
 
+function getInactivePlaneAlpha(now, plane){
+  const safeNow = Number.isFinite(now) ? now : performance.now();
+  const baseAlpha = 0.2;
+  const minAlpha = 0.1;
+  const amplitude = (baseAlpha - minAlpha) / 2;
+  const waveCenter = minAlpha + amplitude;
+  const pulseSpeed = 0.0022;
+  const phaseSeed = Number.isFinite(plane?.homeX) && Number.isFinite(plane?.homeY)
+    ? plane.homeX * 0.017 + plane.homeY * 0.013
+    : (plane?.color === "green" ? Math.PI / 3 : 0);
+  const wave = Math.sin(safeNow * pulseSpeed + phaseSeed);
+  return waveCenter + amplitude * wave;
+}
+
 function isPlaneRespawnComplete(plane){
   return Number.isFinite(plane?.respawnStage) && plane.respawnStage >= 3;
 }
@@ -12768,7 +12782,9 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
   const previousFilter = ctx2d.filter;
   const baseGhostAlpha = 0.3;
   const baseRespawnAlpha = isPlaneAtBase(plane)
-    ? getRespawnOpacityByStage(plane.respawnStage)
+    ? (isArcadePlaneRespawnEnabled()
+      ? getInactivePlaneAlpha(performance.now(), plane)
+      : getRespawnOpacityByStage(plane.respawnStage))
     : 1;
   if(invisibilityFeedbackAlpha < 1){
     ctx2d.globalAlpha *= invisibilityFeedbackAlpha;
@@ -14214,7 +14230,9 @@ function drawPlayerHUD(ctx, frame, color, isTurn, now = performance.now()){
     }
 
     const respawnAlpha = plane && isPlaneAtBase(plane)
-      ? getRespawnOpacityByStage(plane.respawnStage)
+      ? (isArcadePlaneRespawnEnabled()
+        ? getInactivePlaneAlpha(now, plane)
+        : getRespawnOpacityByStage(plane.respawnStage))
       : 1;
     const deadPlaneAlpha = plane && !plane.isAlive ? 0.25 : 1;
 
