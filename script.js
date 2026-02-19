@@ -1680,6 +1680,7 @@ let activeInventoryDrag = null;
 let inventoryPickupUiSyncRafId = null;
 let pendingInventoryUse = null;
 const INVENTORY_PICKUP_DRAG_THRESHOLD_PX = 5;
+const MAP_EDITOR_BRICK_PICKUP_DRAG_THRESHOLD_PX = 5;
 const inventoryInteractionState = {
   mode: "idle",
   activeItem: null,
@@ -2784,6 +2785,15 @@ function beginMapEditorBrickInteraction(spriteConfig, pointerId, clientX, client
   updateMapEditorBrickPreviewFromClientPoint(clientX, clientY);
 }
 
+function isSameMapEditorBrickSelection(spriteConfig){
+  const activeSpriteConfig = mapEditorBrickInteractionState.activeSpriteConfig;
+  if(!spriteConfig || !activeSpriteConfig) return false;
+  return spriteConfig.spriteName === activeSpriteConfig.spriteName
+    && spriteConfig.rotate === activeSpriteConfig.rotate
+    && spriteConfig.scaleX === activeSpriteConfig.scaleX
+    && spriteConfig.scaleY === activeSpriteConfig.scaleY;
+}
+
 function updateMapEditorBrickPreviewFromClientPoint(clientX, clientY){
   if(!Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
   const designPoint = toDesignCoords(clientX, clientY);
@@ -2924,6 +2934,16 @@ function onMapEditorBrickPointerDown(event){
   const brick = getMapEditorSpriteFromEventTarget(event.currentTarget);
   if(!brick) return;
 
+  if(
+    mapEditorBrickInteractionState.mode === "sticky"
+    && mapEditorBrickInteractionState.source === "brickSidebar"
+    && isSameMapEditorBrickSelection(brick)
+  ){
+    event.preventDefault();
+    resetMapEditorBrickInteraction();
+    return;
+  }
+
   event.preventDefault();
   cancelActiveInventoryPickup();
 
@@ -2969,10 +2989,12 @@ function onMapEditorBrickDragStart(event){
 
 function onMapEditorBrickPointerMove(event){
   if(!isMapEditorBricksModeActive()) return;
-  if(mapEditorBrickInteractionState.mode !== "holding") return;
+  if(mapEditorBrickInteractionState.mode !== "holding" && mapEditorBrickInteractionState.mode !== "sticky") return;
 
   const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
   if(
+    mapEditorBrickInteractionState.mode === "holding"
+    &&
     mapEditorBrickInteractionState.pointerId !== null
     && pointerId !== null
     && pointerId !== mapEditorBrickInteractionState.pointerId
@@ -2980,11 +3002,11 @@ function onMapEditorBrickPointerMove(event){
     return;
   }
 
-  const downPoint = mapEditorBrickInteractionState.downPoint;
-  if(!downPoint) return;
-
   const { clientX, clientY } = getPointerClientCoords(event);
-  mapEditorBrickInteractionState.movedPx = Math.hypot(clientX - downPoint.x, clientY - downPoint.y);
+  const downPoint = mapEditorBrickInteractionState.downPoint;
+  if(downPoint){
+    mapEditorBrickInteractionState.movedPx = Math.hypot(clientX - downPoint.x, clientY - downPoint.y);
+  }
   updateMapEditorBrickPreviewFromClientPoint(clientX, clientY);
 }
 
@@ -3001,7 +3023,20 @@ function onMapEditorBrickPointerFinish(event){
     return;
   }
 
+  if(event.type === "pointercancel"){
+    resetMapEditorBrickInteraction();
+    return;
+  }
+
   const { clientX, clientY } = getPointerClientCoords(event);
+  if(mapEditorBrickInteractionState.movedPx < MAP_EDITOR_BRICK_PICKUP_DRAG_THRESHOLD_PX){
+    mapEditorBrickInteractionState.mode = "sticky";
+    mapEditorBrickInteractionState.pointerId = null;
+    mapEditorBrickInteractionState.downPoint = null;
+    mapEditorBrickInteractionState.movedPx = 0;
+    return;
+  }
+
   commitMapEditorBrickDrop(clientX, clientY);
   resetMapEditorBrickInteraction();
 }
@@ -3030,7 +3065,7 @@ function onMapEditorBrickDrop(event){
 }
 
 function onGlobalPointerDownMapEditorBrickCancel(event){
-  if(mapEditorBrickInteractionState.mode !== "holding") return;
+  if(mapEditorBrickInteractionState.mode !== "holding" && mapEditorBrickInteractionState.mode !== "sticky") return;
   const target = event.target;
   if(!(target instanceof Node)) return;
 
@@ -9456,6 +9491,16 @@ function updateAAPreviewFromEvent(e){
 function onCanvasPointerDown(e){
   logPointerDebugEvent(e);
   if(isMapEditorBricksModeActive()){
+    if(mapEditorBrickInteractionState.mode === "sticky"){
+      const { clientX, clientY } = getPointerClientCoords(e);
+      if(isClientPointOverBoard(clientX, clientY)){
+        if(commitMapEditorBrickDrop(clientX, clientY)){
+          resetMapEditorBrickInteraction();
+        }
+        e.preventDefault();
+        return;
+      }
+    }
     if(onCanvasMapEditorBrickPointerDown(e)){
       e.preventDefault();
     }
