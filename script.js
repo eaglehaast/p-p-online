@@ -9079,6 +9079,7 @@ function makePlane(x,y,color,angle){
     x, y,
     color,
     isAlive:true,
+    isInvulnerable:true,
     respawnState:"at_base",
     respawnStage:3,
     burning:false,
@@ -9188,6 +9189,15 @@ function isPlaneAtBase(plane){
   return plane?.respawnState === "at_base";
 }
 
+function isPlaneTargetable(plane){
+  if(!plane) return false;
+  if(plane.isAlive !== true) return false;
+  if(plane.burning) return false;
+  if(plane.isInvulnerable === true) return false;
+  if(isPlaneAtBase(plane)) return false;
+  return true;
+}
+
 function setPlaneReadyAtBase(plane){
   if(!plane) return;
   const homeX = Number.isFinite(plane.homeX) ? plane.homeX : plane.x;
@@ -9206,16 +9216,19 @@ function setPlaneReadyAtBase(plane){
   plane.collisionY = null;
   plane.respawnState = "at_base";
   plane.respawnStage = 1;
+  plane.isInvulnerable = true;
 }
 
 function markPlaneLaunchedFromBase(plane){
   if(!plane) return;
   plane.respawnState = "in_flight";
   plane.respawnStage = 3;
+  plane.isInvulnerable = false;
 }
 
 function eliminatePlane(plane, options = {}){
   if(!plane) return;
+  if(!isPlaneTargetable(plane)) return;
 
   const {
     keepBurning = true,
@@ -11725,7 +11738,7 @@ function angleDiffDeg(a, b){
 }
 
 function handleAAForPlane(p, fp){
-  if(isPlaneAtBase(p)) return false;
+  if(!isPlaneTargetable(p)) return false;
   const now = performance.now();
   for(const aa of aaUnits){
     if(aa.owner === p.color) continue; // no friendly fire
@@ -11779,8 +11792,7 @@ function handleAAForPlane(p, fp){
 }
 
 function handleMineForPlane(p, fp){
-  if(isPlaneAtBase(p)) return false;
-  if(!p?.isAlive || p?.burning) return false;
+  if(!isPlaneTargetable(p)) return false;
   if(!Array.isArray(mines) || mines.length === 0) return false;
 
   for(let i = 0; i < mines.length; i++){
@@ -13650,11 +13662,11 @@ function awardPoint(color){
 }
 function checkPlaneHits(plane, fp){
   if(isGameOver) return;
-  if(isPlaneAtBase(plane)) return;
+  if(!isPlaneTargetable(plane)) return;
   const enemyColor = (plane.color==="green") ? "blue" : "green";
   const planeHitbox = getPlaneHitbox(plane);
   for(const p of points){
-    if(!p.isAlive || p.burning || isPlaneAtBase(p)) continue;
+    if(!isPlaneTargetable(p)) continue;
     if(p.color !== enemyColor) continue;
     if(fp && fp.lastHitPlane === p && fp.lastHitCooldown > 0) continue;
     const targetHitbox = getPlaneHitbox(p);
