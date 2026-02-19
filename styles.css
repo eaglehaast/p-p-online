@@ -465,6 +465,7 @@ body, button {
   body.nuke-input-locked #mapEditorModeBricksBtn,
   body.nuke-input-locked #mapEditorModePlanesBtn,
   body.nuke-input-locked #mapEditorResetBtn,
+  body.nuke-input-locked #mapEditorSaveBtn,
   body.nuke-input-locked #yesButton,
   body.nuke-input-locked #noButton {
     pointer-events: none !important;
@@ -489,6 +490,12 @@ body, button {
     position: absolute;
     left: 376px;
     top: 680px;
+  }
+
+  .map-editor-save-btn-positioned {
+    position: absolute;
+    left: 376px;
+    top: 730px;
   }
 
   .map-editor-reset-btn:active {

@@ -779,6 +779,7 @@ let OVERLAY_RESYNC_SCHEDULED = false;
 const greenPlaneCounter = document.getElementById("gs_planecounter_green");
 const bluePlaneCounter  = document.getElementById("gs_planecounter_blue");
 const mapEditorResetBtn = document.getElementById("mapEditorResetBtn");
+const mapEditorSaveBtn = document.getElementById("mapEditorSaveBtn");
 const mapEditorModeControls = document.getElementById("mapEditorModeControls");
 const mapEditorModeBricksBtn = document.getElementById("mapEditorModeBricksBtn");
 const mapEditorModePlanesBtn = document.getElementById("mapEditorModePlanesBtn");
@@ -8270,6 +8271,59 @@ function resolveCurrentMapForExport(){
  * }
  * Поля со значениями по умолчанию можно пропускать для компактного JSON.
  */
+function resolveExportMapId(){
+  const mapData = resolveCurrentMapForExport();
+  const candidate = typeof mapData?.id === "string" && mapData.id.trim().length > 0
+    ? mapData.id.trim()
+    : (typeof currentMapName === "string" && currentMapName.trim().length > 0 ? currentMapName.trim() : "custom");
+  return candidate
+    .replace(/\s+/g, "_")
+    .replace(/[^a-zA-Z0-9_-]/g, "")
+    .replace(/^_+|_+$/g, "")
+    || "custom";
+}
+
+function downloadMapJsonFile(serializedMap){
+  const jsonText = JSON.stringify(serializedMap, null, 2);
+  const blob = new Blob([jsonText], { type: "application/json;charset=utf-8" });
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = `map_${resolveExportMapId()}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
+async function copyMapJsonToClipboard(jsonText){
+  if(!navigator?.clipboard?.writeText){
+    return false;
+  }
+
+  try {
+    await navigator.clipboard.writeText(jsonText);
+    return true;
+  } catch (error) {
+    console.warn("[mapeditor] Clipboard copy failed", error);
+    return false;
+  }
+}
+
+async function saveCurrentMapFromEditor(){
+  const serializedMap = serializeCurrentMapState();
+  const jsonText = JSON.stringify(serializedMap, null, 2);
+  const copied = await copyMapJsonToClipboard(jsonText);
+
+  downloadMapJsonFile(serializedMap);
+
+  if(copied){
+    showRoundBanner("Карта скопирована и скачана");
+  } else {
+    showRoundBanner("Не удалось скопировать, скачайте файл");
+  }
+}
+
 function serializeCurrentMapState(){
   const currentMapMeta = resolveCurrentMapForExport();
   const rawSprites = Array.isArray(currentMapSprites) ? currentMapSprites : [];
@@ -13929,6 +13983,12 @@ if(mapEditorResetBtn){
   });
 }
 
+if(mapEditorSaveBtn instanceof HTMLElement){
+  mapEditorSaveBtn.addEventListener("click", () => {
+    saveCurrentMapFromEditor();
+  });
+}
+
 if(mapEditorModeBricksBtn instanceof HTMLElement){
   mapEditorModeBricksBtn.addEventListener("click", () => {
     setMapEditorControlMode("bricks");
@@ -14143,6 +14203,11 @@ function syncMapEditorResetButtonVisibility(){
   if(mapEditorResetBtn instanceof HTMLElement){
     mapEditorResetBtn.hidden = !editorVisible;
     mapEditorResetBtn.setAttribute("aria-hidden", editorVisible ? "false" : "true");
+  }
+
+  if(mapEditorSaveBtn instanceof HTMLElement){
+    mapEditorSaveBtn.hidden = !editorVisible;
+    mapEditorSaveBtn.setAttribute("aria-hidden", editorVisible ? "false" : "true");
   }
 
   if(mapEditorModeBricksBtn instanceof HTMLElement){
