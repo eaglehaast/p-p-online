@@ -2736,9 +2736,9 @@ function findMapEditorBrickSpriteIndexAtBoardPoint(boardX, boardY){
   if(!snappedPlacement || !snappedPlacement.insideField) return -1;
   for(let spriteIndex = currentMapSprites.length - 1; spriteIndex >= 0; spriteIndex -= 1){
     const sprite = currentMapSprites[spriteIndex];
-    const spriteCell = getBrickCellFromSprite(sprite);
-    if(!spriteCell) continue;
-    if(spriteCell.cellX === snappedPlacement.cellX && spriteCell.cellY === snappedPlacement.cellY){
+    const collider = buildSpriteCollider(sprite, spriteIndex);
+    if(!collider) continue;
+    if(isPointInsideCollider(boardX, boardY, collider)){
       return spriteIndex;
     }
   }
