@@ -156,6 +156,41 @@
             </button>
 
             <div
+              id="mapEditorSaveDialog"
+              class="map-editor-save-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="mapEditorSaveDialogTitle"
+              hidden
+              aria-hidden="true"
+            >
+              <div class="map-editor-save-dialog__card">
+                <h2 id="mapEditorSaveDialogTitle" class="map-editor-save-dialog__title">Сохранение карты</h2>
+
+                <label class="map-editor-save-dialog__label" for="mapEditorSaveNameInput">Название (до 10 символов)</label>
+                <input
+                  id="mapEditorSaveNameInput"
+                  class="map-editor-save-dialog__input"
+                  type="text"
+                  maxlength="10"
+                  autocomplete="off"
+                />
+
+                <fieldset class="map-editor-save-dialog__fieldset">
+                  <legend class="map-editor-save-dialog__legend">Сложность</legend>
+                  <label class="map-editor-save-dialog__option"><input type="radio" name="mapEditorDifficulty" value="easy" />Easy</label>
+                  <label class="map-editor-save-dialog__option"><input type="radio" name="mapEditorDifficulty" value="middle" />Middle</label>
+                  <label class="map-editor-save-dialog__option"><input type="radio" name="mapEditorDifficulty" value="hard" />Hard</label>
+                </fieldset>
+
+                <div class="map-editor-save-dialog__actions">
+                  <button id="mapEditorSaveDialogCancelBtn" class="map-editor-reset-btn" type="button">Cancel</button>
+                  <button id="mapEditorSaveDialogSubmitBtn" class="map-editor-reset-btn" type="button" disabled>Save</button>
+                </div>
+              </div>
+            </div>
+
+            <div
               id="mapEditorModeControls"
               class="map-editor-mode-controls"
               role="group"

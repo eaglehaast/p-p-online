@@ -780,6 +780,10 @@ const greenPlaneCounter = document.getElementById("gs_planecounter_green");
 const bluePlaneCounter  = document.getElementById("gs_planecounter_blue");
 const mapEditorResetBtn = document.getElementById("mapEditorResetBtn");
 const mapEditorSaveBtn = document.getElementById("mapEditorSaveBtn");
+const mapEditorSaveDialog = document.getElementById("mapEditorSaveDialog");
+const mapEditorSaveNameInput = document.getElementById("mapEditorSaveNameInput");
+const mapEditorSaveDialogCancelBtn = document.getElementById("mapEditorSaveDialogCancelBtn");
+const mapEditorSaveDialogSubmitBtn = document.getElementById("mapEditorSaveDialogSubmitBtn");
 const mapEditorModeControls = document.getElementById("mapEditorModeControls");
 const mapEditorModeBricksBtn = document.getElementById("mapEditorModeBricksBtn");
 const mapEditorModePlanesBtn = document.getElementById("mapEditorModePlanesBtn");
@@ -8311,6 +8315,19 @@ async function copyMapJsonToClipboard(jsonText){
 }
 
 async function saveCurrentMapFromEditor(){
+  const mapName = mapEditorSaveNameInput instanceof HTMLInputElement
+    ? mapEditorSaveNameInput.value.trim().slice(0, 10)
+    : "";
+  const mapDifficultyInput = document.querySelector('input[name="mapEditorDifficulty"]:checked');
+  const mapDifficulty = mapDifficultyInput instanceof HTMLInputElement
+    ? mapDifficultyInput.value
+    : "";
+
+  if(!mapName || !mapDifficulty){
+    showRoundBanner("Укажите название и сложность");
+    return;
+  }
+
   const spriteValidation = validateMapSpritesForTransfer(currentMapSprites);
   if(spriteValidation.errors.length > 0){
     const errorTitle = "Карту не сохранили: есть проблемы в спрайтах";
@@ -8326,7 +8343,10 @@ async function saveCurrentMapFromEditor(){
     alert([warningTitle, ...warningLines].join("\n"));
   }
 
-  const serializedMap = serializeCurrentMapState();
+  const serializedMap = serializeCurrentMapState({
+    mapName,
+    mapDifficulty,
+  });
   const jsonText = JSON.stringify(serializedMap, null, 2);
   const copied = await copyMapJsonToClipboard(jsonText);
 
@@ -8337,6 +8357,45 @@ async function saveCurrentMapFromEditor(){
   } else {
     showRoundBanner("Не удалось скопировать, скачайте файл");
   }
+}
+
+function setMapEditorSaveDialogVisible(visible){
+  if(!(mapEditorSaveDialog instanceof HTMLElement)) return;
+  mapEditorSaveDialog.hidden = !visible;
+  mapEditorSaveDialog.setAttribute("aria-hidden", visible ? "false" : "true");
+
+  if(visible){
+    mapEditorSaveNameInput?.focus();
+  }
+}
+
+function syncMapEditorSaveDialogSubmitState(){
+  if(!(mapEditorSaveDialogSubmitBtn instanceof HTMLButtonElement)) return;
+  const hasName = mapEditorSaveNameInput instanceof HTMLInputElement
+    && mapEditorSaveNameInput.value.trim().length > 0;
+  const hasDifficulty = !!document.querySelector('input[name="mapEditorDifficulty"]:checked');
+  mapEditorSaveDialogSubmitBtn.disabled = !(hasName && hasDifficulty);
+}
+
+function openMapEditorSaveDialog(){
+  if(!(mapEditorSaveNameInput instanceof HTMLInputElement)) return;
+  if(selectedRuleset !== "mapeditor") return;
+
+  mapEditorSaveNameInput.value = "";
+  document
+    .querySelectorAll('input[name="mapEditorDifficulty"]')
+    .forEach((input) => {
+      if(input instanceof HTMLInputElement){
+        input.checked = false;
+      }
+    });
+
+  syncMapEditorSaveDialogSubmitState();
+  setMapEditorSaveDialogVisible(true);
+}
+
+function closeMapEditorSaveDialog(){
+  setMapEditorSaveDialogVisible(false);
 }
 
 function validateMapSpritesForTransfer(sprites){
@@ -8386,7 +8445,11 @@ function validateMapSpritesForTransfer(sprites){
   return { errors, warnings };
 }
 
-function serializeCurrentMapState(){
+function serializeCurrentMapState(options = {}){
+  const customName = typeof options.mapName === "string" ? options.mapName.trim().slice(0, 10) : "";
+  const customDifficulty = typeof options.mapDifficulty === "string"
+    ? options.mapDifficulty.trim().toLowerCase()
+    : "";
   const currentMapMeta = resolveCurrentMapForExport();
   const rawSprites = Array.isArray(currentMapSprites) ? currentMapSprites : [];
   const sprites = rawSprites
@@ -8397,15 +8460,16 @@ function serializeCurrentMapState(){
     id: typeof currentMapMeta?.id === "string" && currentMapMeta.id.length > 0
       ? currentMapMeta.id
       : undefined,
-    name: typeof currentMapName === "string" && currentMapName.length > 0
+    name: customName || (typeof currentMapName === "string" && currentMapName.length > 0
       ? currentMapName
-      : (typeof currentMapMeta?.name === "string" ? currentMapMeta.name : undefined),
+      : (typeof currentMapMeta?.name === "string" ? currentMapMeta.name : undefined)),
     mode: typeof currentMapMeta?.mode === "string" && currentMapMeta.mode.length > 0
       ? currentMapMeta.mode
       : undefined,
-    tier: typeof currentMapMeta?.tier === "string" && currentMapMeta.tier.length > 0
+    tier: customDifficulty || (typeof currentMapMeta?.tier === "string" && currentMapMeta.tier.length > 0
       ? currentMapMeta.tier
-      : undefined,
+      : undefined),
+    difficulty: customDifficulty || undefined,
     sprites,
     flags: Array.isArray(flagConfigs) && flagConfigs.length > 0 ? flagConfigs : undefined,
   };
@@ -14047,7 +14111,46 @@ if(mapEditorResetBtn){
 
 if(mapEditorSaveBtn instanceof HTMLElement){
   mapEditorSaveBtn.addEventListener("click", () => {
-    saveCurrentMapFromEditor();
+    openMapEditorSaveDialog();
+  });
+}
+
+if(mapEditorSaveNameInput instanceof HTMLInputElement){
+  mapEditorSaveNameInput.addEventListener("input", () => {
+    if(mapEditorSaveNameInput.value.length > 10){
+      mapEditorSaveNameInput.value = mapEditorSaveNameInput.value.slice(0, 10);
+    }
+    syncMapEditorSaveDialogSubmitState();
+  });
+}
+
+if(mapEditorSaveDialogCancelBtn instanceof HTMLElement){
+  mapEditorSaveDialogCancelBtn.addEventListener("click", () => {
+    closeMapEditorSaveDialog();
+  });
+}
+
+if(mapEditorSaveDialogSubmitBtn instanceof HTMLButtonElement){
+  mapEditorSaveDialogSubmitBtn.addEventListener("click", async () => {
+    if(mapEditorSaveDialogSubmitBtn.disabled) return;
+    await saveCurrentMapFromEditor();
+    closeMapEditorSaveDialog();
+  });
+}
+
+document
+  .querySelectorAll('input[name="mapEditorDifficulty"]')
+  .forEach((input) => {
+    if(input instanceof HTMLInputElement){
+      input.addEventListener("change", syncMapEditorSaveDialogSubmitState);
+    }
+  });
+
+if(mapEditorSaveDialog instanceof HTMLElement){
+  mapEditorSaveDialog.addEventListener("click", (event) => {
+    if(event.target === mapEditorSaveDialog){
+      closeMapEditorSaveDialog();
+    }
   });
 }
 
@@ -14270,6 +14373,10 @@ function syncMapEditorResetButtonVisibility(){
   if(mapEditorSaveBtn instanceof HTMLElement){
     mapEditorSaveBtn.hidden = !editorVisible;
     mapEditorSaveBtn.setAttribute("aria-hidden", editorVisible ? "false" : "true");
+  }
+
+  if(!editorVisible){
+    closeMapEditorSaveDialog();
   }
 
   if(mapEditorModeBricksBtn instanceof HTMLElement){

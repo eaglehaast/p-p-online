@@ -494,8 +494,79 @@ body, button {
 
   .map-editor-save-btn-positioned {
     position: absolute;
-    left: 376px;
-    top: 730px;
+    left: 380px;
+    top: 500px;
+  }
+
+  .map-editor-save-dialog {
+    position: absolute;
+    inset: 0;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10, 8, 6, 0.6);
+  }
+
+  .map-editor-save-dialog__card {
+    width: min(360px, calc(100% - 24px));
+    border-radius: 10px;
+    border: 1px solid rgba(118, 95, 66, 0.9);
+    background: rgba(33, 24, 14, 0.96);
+    color: #f5e8cc;
+    padding: 14px;
+    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+  }
+
+  .map-editor-save-dialog__title {
+    margin: 0 0 10px;
+    font: 700 24px/1.1 "Patrick Hand", cursive;
+  }
+
+  .map-editor-save-dialog__label,
+  .map-editor-save-dialog__legend,
+  .map-editor-save-dialog__option {
+    font: 700 18px/1.15 "Patrick Hand", cursive;
+  }
+
+  .map-editor-save-dialog__input {
+    width: 100%;
+    box-sizing: border-box;
+    margin: 6px 0 12px;
+    border-radius: 6px;
+    border: 1px solid rgba(245, 232, 204, 0.45);
+    padding: 8px 10px;
+    font: 600 17px/1 "Roboto", sans-serif;
+    color: #2a1f12;
+    background: #f5e8cc;
+  }
+
+  .map-editor-save-dialog__fieldset {
+    margin: 0;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(245, 232, 204, 0.35);
+    display: grid;
+    gap: 6px;
+  }
+
+  .map-editor-save-dialog__option {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .map-editor-save-dialog__actions {
+    margin-top: 12px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+
+  .map-editor-save-dialog__actions button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    box-shadow: none;
   }
 
   .map-editor-reset-btn:active {
