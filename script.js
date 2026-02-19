@@ -9080,6 +9080,7 @@ function makePlane(x,y,color,angle){
     color,
     isAlive:true,
     respawnState:"at_base",
+    respawnStage:3,
     burning:false,
     crashStart:null,
     angle,
@@ -9101,6 +9102,22 @@ function makePlane(x,y,color,angle){
     invisibilityFadeStartAlpha: 1,
     invisibilityAlphaCurrent: 1,
   };
+}
+
+function getRespawnOpacityByStage(stage){
+  const stageToOpacity = {
+    1: 0.4,
+    2: 0.6,
+    3: 0.8,
+  };
+  const normalizedStage = Number.isFinite(stage)
+    ? Math.max(1, Math.min(3, Math.round(stage)))
+    : 3;
+  return stageToOpacity[normalizedStage] ?? stageToOpacity[3];
+}
+
+function isPlaneRespawnComplete(plane){
+  return Number.isFinite(plane?.respawnStage) && plane.respawnStage >= 3;
 }
 
 function getFlagConfigsForMap(map = null){
@@ -9188,11 +9205,13 @@ function setPlaneReadyAtBase(plane){
   plane.collisionX = null;
   plane.collisionY = null;
   plane.respawnState = "at_base";
+  plane.respawnStage = 1;
 }
 
 function markPlaneLaunchedFromBase(plane){
   if(!plane) return;
   plane.respawnState = "in_flight";
+  plane.respawnStage = 3;
 }
 
 function eliminatePlane(plane, options = {}){
@@ -9772,7 +9791,7 @@ function isPlaneGrabbableAt(x, y) {
 
   return points.some(pt =>
     pt.color === currentColor &&
-    pt.isAlive && !pt.burning && isPlaneAtBase(pt) &&
+    pt.isAlive && !pt.burning && isPlaneAtBase(pt) && isPlaneRespawnComplete(pt) &&
     Math.hypot(pt.x - x, pt.y - y) <= PLANE_TOUCH_RADIUS
   );
 }
@@ -9809,7 +9828,7 @@ function handleStart(e) {
 
   let found= points.find(pt=>
     pt.color=== currentColor &&
-    pt.isAlive && !pt.burning && isPlaneAtBase(pt) &&
+    pt.isAlive && !pt.burning && isPlaneAtBase(pt) && isPlaneRespawnComplete(pt) &&
     Math.hypot(pt.x - mx, pt.y - my) <= PLANE_TOUCH_RADIUS
   );
   if(!found) return;
@@ -11682,6 +11701,13 @@ function advanceTurn(){
   });
   turnIndex = (turnIndex + 1) % turnColors.length;
   const nextTurnColor = turnColors[turnIndex];
+  points.forEach((plane) => {
+    if(!plane || !isPlaneAtBase(plane) || plane.color !== nextTurnColor) return;
+    const currentStage = Number.isFinite(plane.respawnStage)
+      ? Math.max(1, Math.min(3, Math.round(plane.respawnStage)))
+      : 1;
+    plane.respawnStage = Math.min(3, currentStage + 1);
+  });
   activateQueuedInvisibilityForEnemyTurn(nextTurnColor);
   turnAdvanceCount += 1;
   if(turnAdvanceCount >= 1){
@@ -12729,8 +12755,14 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
   const shouldApplyNukeFade = nukeFadeFx.active && (plane.isAlive || plane.nukeEliminated);
   const previousFilter = ctx2d.filter;
   const baseGhostAlpha = 0.3;
+  const baseRespawnAlpha = isPlaneAtBase(plane)
+    ? getRespawnOpacityByStage(plane.respawnStage)
+    : 1;
   if(invisibilityFeedbackAlpha < 1){
     ctx2d.globalAlpha *= invisibilityFeedbackAlpha;
+  }
+  if(baseRespawnAlpha < 1){
+    ctx2d.globalAlpha *= baseRespawnAlpha;
   }
   if (color === "blue") {
     if (showEngine) {
@@ -14122,14 +14154,6 @@ function drawPlayerHUD(ctx, frame, color, isTurn, now = performance.now()){
 
   const playerPlanes = points.filter(p => p.color === color);
   const maxPerRow = 4;
-  const aliveCount = Math.max(
-    0,
-    Math.min(
-      maxPerRow,
-      playerPlanes.filter(p => p.isAlive && !p.burning).length
-    )
-  );
-
   const paddingX = PLANE_COUNTER_PADDING * scaleX;
   const paddingY = PLANE_COUNTER_PADDING * scaleY;
   const availableWidth = Math.max(0, width - paddingX * 2);
@@ -14162,40 +14186,30 @@ function drawPlayerHUD(ctx, frame, color, isTurn, now = performance.now()){
   }
 
   const slotOrderFromCenter = getPlaneCounterSlotOrderFromCenter(color);
-  const { slotsToHide } = updatePlaneCounterDeaths(color, aliveCount, now);
+  const planesBySlot = slotOrderFromCenter.map((planeIndex) => playerPlanes[planeIndex] || null);
 
   const previousAlpha = ctx.globalAlpha;
   ctx.globalAlpha *= HUD_PLANE_DIM_ALPHA;
 
   const centerX = paddingX + availableWidth / 2;
 
-  for (let slotIndex = 0; slotIndex < slotOrderFromCenter.length; slotIndex += 1) {
+  for (let slotIndex = 0; slotIndex < planesBySlot.length; slotIndex += 1) {
+    const plane = planesBySlot[slotIndex];
     const centerY = paddingY + slotHeight * (slotIndex + 0.5);
-    const deathStart = planeCounterDeathStartTimes[color][slotIndex];
-    const isSlotScheduledToHide = slotOrderFromCenter.indexOf(slotIndex) < slotsToHide;
 
-    if (deathStart === null && isSlotScheduledToHide) {
+    if (iconScale <= 0) {
       continue;
     }
 
-    if (iconScale > 0) {
-      if (deathStart === null) {
-        drawPlaneCounterIcon(ctx, centerX, centerY, color, iconScale);
-      } else {
-        const progress = clamp((now - deathStart) / HUD_PLANE_DEATH_DURATION_MS, 0, 1);
-        if (progress >= 1) {
-          continue;
-        }
-        const eased = easeOutCubic(progress);
-        const alpha = 1 - eased;
-        const scale = iconScale * (1 - HUD_PLANE_DEATH_SCALE_DELTA * eased);
+    const respawnAlpha = plane && isPlaneAtBase(plane)
+      ? getRespawnOpacityByStage(plane.respawnStage)
+      : 1;
+    const deadPlaneAlpha = plane && !plane.isAlive ? 0.25 : 1;
 
-        ctx.save();
-        ctx.globalAlpha *= alpha;
-        drawPlaneCounterIcon(ctx, centerX, centerY, color, scale);
-        ctx.restore();
-      }
-    }
+    ctx.save();
+    ctx.globalAlpha *= respawnAlpha * deadPlaneAlpha;
+    drawPlaneCounterIcon(ctx, centerX, centerY, color, iconScale);
+    ctx.restore();
   }
 
   ctx.globalAlpha = previousAlpha;
