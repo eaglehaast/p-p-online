@@ -12156,7 +12156,8 @@ function gameDraw(){
     gsBoardCtx.fillStyle = '#B22222';
     gsBoardCtx.strokeStyle = '#FFD700';
     gsBoardCtx.lineWidth = 2;
-    const text = `Round ${roundNumber}`;
+    const useArcadeRoundText = settings.arcadeMode === true && isAdvancedLikeRuleset(selectedRuleset);
+    const text = useArcadeRoundText ? "Arcade mode" : `Round ${roundNumber}`;
     const w = gsBoardCtx.measureText(text).width;
     const x = (WORLD.width - w) / 2;
     const y = WORLD.height / 2;
