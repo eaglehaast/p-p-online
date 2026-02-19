@@ -2525,6 +2525,13 @@ function setInventoryPointerHidden(isHidden){
   document.body?.classList.toggle("inventory-pointer-hidden", hidden);
 }
 
+function releaseInventoryPointerFromMapEditorInteraction(){
+  setInventoryPointerHidden(false);
+  if(inventoryDragFallbackActive || activeInventoryDrag){
+    setInventoryPointerHidden(true);
+  }
+}
+
 function activateInventoryDragFallback(target, clientX, clientY, type, options = {}){
   const ghost = getInventoryDragFallbackGhost();
   const width = Number.isFinite(options.width) && options.width > 0
@@ -2666,6 +2673,9 @@ function resetMapEditorBrickInteraction(){
   mapEditorBrickInteractionState.previewCellY = null;
   mapEditorBrickInteractionState.previewInsideField = false;
   mapEditorBrickInteractionState.previewCellOccupied = false;
+  if(mapEditorBrickInteractionState.mode === "idle"){
+    releaseInventoryPointerFromMapEditorInteraction();
+  }
 }
 
 function clampBrickCellIndexX(cellX){
@@ -2770,6 +2780,7 @@ function beginMapEditorBrickInteraction(spriteConfig, pointerId, clientX, client
   mapEditorBrickInteractionState.pointerId = pointerId;
   mapEditorBrickInteractionState.downPoint = { x: clientX, y: clientY };
   mapEditorBrickInteractionState.movedPx = 0;
+  setInventoryPointerHidden(true);
   updateMapEditorBrickPreviewFromClientPoint(clientX, clientY);
 }
 
@@ -2978,6 +2989,7 @@ function onMapEditorBrickPointerMove(event){
 }
 
 function onMapEditorBrickPointerFinish(event){
+  releaseInventoryPointerFromMapEditorInteraction();
   if(mapEditorBrickInteractionState.mode !== "holding") return;
 
   const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
@@ -2995,6 +3007,7 @@ function onMapEditorBrickPointerFinish(event){
 }
 
 function onMapEditorBrickDragEnd(){
+  releaseInventoryPointerFromMapEditorInteraction();
   resetMapEditorBrickInteraction();
 }
 
@@ -3008,6 +3021,7 @@ function onMapEditorBrickDragOver(event){
 }
 
 function onMapEditorBrickDrop(event){
+  releaseInventoryPointerFromMapEditorInteraction();
   if(!isMapEditorBricksModeActive()) return;
   if(mapEditorBrickInteractionState.mode !== "holding") return;
   event.preventDefault();
