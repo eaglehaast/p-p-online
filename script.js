@@ -8275,16 +8275,29 @@ function resolveCurrentMapForExport(){
  * }
  * Поля со значениями по умолчанию можно пропускать для компактного JSON.
  */
-function resolveExportMapId(){
+function normalizeExportMapIdCandidate(candidate){
+  if(typeof candidate !== "string"){
+    return "";
+  }
+
+  return candidate
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-zA-Z0-9_-]/g, "")
+    .replace(/^_+|_+$/g, "");
+}
+
+function resolveExportMapId(preferredName = ""){
+  const normalizedPreferredName = normalizeExportMapIdCandidate(preferredName);
+  if(normalizedPreferredName){
+    return normalizedPreferredName;
+  }
+
   const mapData = resolveCurrentMapForExport();
   const candidate = typeof mapData?.id === "string" && mapData.id.trim().length > 0
     ? mapData.id.trim()
     : (typeof currentMapName === "string" && currentMapName.trim().length > 0 ? currentMapName.trim() : "custom");
-  return candidate
-    .replace(/\s+/g, "_")
-    .replace(/[^a-zA-Z0-9_-]/g, "")
-    .replace(/^_+|_+$/g, "")
-    || "custom";
+  return normalizeExportMapIdCandidate(candidate) || "custom";
 }
 
 function downloadMapJsonFile(serializedMap, mapName = ""){
@@ -8460,10 +8473,13 @@ function serializeCurrentMapState(options = {}){
     .map((sprite) => serializeMapSpriteForExport(sprite))
     .filter((sprite) => sprite && Object.keys(sprite).length > 0);
 
+  const customMapId = customName ? normalizeExportMapIdCandidate(customName) : "";
+  const fallbackMapId = typeof currentMapMeta?.id === "string" && currentMapMeta.id.length > 0
+    ? currentMapMeta.id
+    : undefined;
+
   const rawMap = {
-    id: typeof currentMapMeta?.id === "string" && currentMapMeta.id.length > 0
-      ? currentMapMeta.id
-      : undefined,
+    id: customMapId || fallbackMapId,
     name: customName || (typeof currentMapName === "string" && currentMapName.length > 0
       ? currentMapName
       : (typeof currentMapMeta?.name === "string" ? currentMapMeta.name : undefined)),
