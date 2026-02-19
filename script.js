@@ -8311,6 +8311,21 @@ async function copyMapJsonToClipboard(jsonText){
 }
 
 async function saveCurrentMapFromEditor(){
+  const spriteValidation = validateMapSpritesForTransfer(currentMapSprites);
+  if(spriteValidation.errors.length > 0){
+    const errorTitle = "Карту не сохранили: есть проблемы в спрайтах";
+    const errorLines = spriteValidation.errors.map((message) => `• ${message}`);
+    alert([errorTitle, ...errorLines].join("\n"));
+    showRoundBanner("Сохранение остановлено: исправьте спрайты");
+    return;
+  }
+
+  if(spriteValidation.warnings.length > 0){
+    const warningTitle = "Карту сохранили, но есть замечания";
+    const warningLines = spriteValidation.warnings.map((message) => `• ${message}`);
+    alert([warningTitle, ...warningLines].join("\n"));
+  }
+
   const serializedMap = serializeCurrentMapState();
   const jsonText = JSON.stringify(serializedMap, null, 2);
   const copied = await copyMapJsonToClipboard(jsonText);
@@ -8322,6 +8337,53 @@ async function saveCurrentMapFromEditor(){
   } else {
     showRoundBanner("Не удалось скопировать, скачайте файл");
   }
+}
+
+function validateMapSpritesForTransfer(sprites){
+  const spriteEntries = Array.isArray(sprites) ? sprites : [];
+  const errors = [];
+  const warnings = [];
+  const allowedFields = new Set(["spriteName", "x", "y", "rotate", "scale", "scaleX", "scaleY", "id"]);
+
+  spriteEntries.forEach((sprite, index) => {
+    if(!sprite || typeof sprite !== "object"){
+      errors.push(`Кирпич #${index}: запись повреждена`);
+      return;
+    }
+
+    const spriteName = typeof sprite.spriteName === "string" ? sprite.spriteName : "";
+    if(!MAP_VALID_SPRITE_NAMES.has(spriteName)){
+      errors.push(`Кирпич #${index}: неизвестный тип спрайта`);
+    }
+
+    if(!Number.isFinite(sprite.x) || !Number.isFinite(sprite.y)){
+      errors.push(`Кирпич #${index}: некорректная позиция X/Y`);
+    }
+
+    if(sprite.rotate !== undefined && !Number.isFinite(sprite.rotate)){
+      errors.push(`Кирпич #${index}: угол поворота задан неверно`);
+    }
+
+    if(sprite.scale !== undefined && !Number.isFinite(sprite.scale)){
+      errors.push(`Кирпич #${index}: общий масштаб задан неверно`);
+    }
+
+    if(sprite.scaleX !== undefined && !Number.isFinite(sprite.scaleX)){
+      errors.push(`Кирпич #${index}: масштаб по ширине задан неверно`);
+    }
+
+    if(sprite.scaleY !== undefined && !Number.isFinite(sprite.scaleY)){
+      errors.push(`Кирпич #${index}: масштаб по высоте задан неверно`);
+    }
+
+    Object.keys(sprite).forEach((fieldName) => {
+      if(!allowedFields.has(fieldName)){
+        warnings.push(`Кирпич #${index}: лишнее поле «${fieldName}», его не сохраним`);
+      }
+    });
+  });
+
+  return { errors, warnings };
 }
 
 function serializeCurrentMapState(){
