@@ -8756,6 +8756,24 @@ const MATCH_SCORE_ANIMATION_START_SCALE = 0.2;
 const MATCH_SCORE_ANIMATION_PEAK_SCALE = 1.25;
 const MATCH_SCORE_STAGGER_DELAY_MS = 70;
 
+const ARCADE_SCORE_CONTAINERS = {
+  blue: { x: 417, y: 360, width: 35, height: 30 },
+  green: { x: 417, y: 409, width: 35, height: 30 }
+};
+
+const ARCADE_SCORE_CONTAINER_FILL = "#E6D2AE";
+
+const ARCADE_SCORE_TEXT_STYLES = {
+  blue: {
+    fill: "#425074",
+    font: "700 16px 'Silkscreen', 'Fantasque Sans Mono', monospace"
+  },
+  green: {
+    fill: "#57511B",
+    font: "700 16px 'Silkscreen', 'Fantasque Sans Mono', monospace"
+  }
+};
+
 const matchScoreSpawnTimes = {
   blue: Array.from({ length: POINTS_TO_WIN }, () => 0),
   green: Array.from({ length: POINTS_TO_WIN }, () => 0)
@@ -13789,6 +13807,46 @@ function drawMatchScore(ctx, scaleX = 1, scaleY = 1, now = performance.now()){
   }
 }
 
+function isArcadeScoreUiActive(){
+  if(selectedRuleset === "mapeditor") return false;
+  return settings.arcadeMode === true && isAdvancedLikeRuleset(selectedRuleset);
+}
+
+function drawArcadeScoreCounters(ctx, scaleX = 1, scaleY = 1){
+  if(!ctx) return;
+
+  const pairs = [
+    ["blue", blueScore],
+    ["green", greenScore]
+  ];
+
+  for(const [color, rawScore] of pairs){
+    const frame = ARCADE_SCORE_CONTAINERS[color];
+    const textStyle = ARCADE_SCORE_TEXT_STYLES[color];
+    if(!frame || !textStyle) continue;
+
+    const left = frame.x * scaleX;
+    const top = frame.y * scaleY;
+    const width = frame.width * scaleX;
+    const height = frame.height * scaleY;
+
+    if(!Number.isFinite(left) || !Number.isFinite(top) || width <= 0 || height <= 0) continue;
+
+    const normalizedScore = Math.max(0, Number.isFinite(rawScore) ? Math.floor(rawScore) : 0);
+    const scoreText = String(normalizedScore).padStart(3, "0");
+
+    ctx.save();
+    ctx.fillStyle = ARCADE_SCORE_CONTAINER_FILL;
+    ctx.fillRect(left, top, width, height);
+    ctx.fillStyle = textStyle.fill;
+    ctx.font = textStyle.font;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(scoreText, left + width / 2, top + height / 2);
+    ctx.restore();
+  }
+}
+
 const PLANE_COUNTER_PADDING = 2;
 const PLANE_COUNTER_CONTAINERS = {
   blue: HUD_LAYOUT.planeCounters.blue,
@@ -13917,7 +13975,11 @@ function renderScoreboard(now = performance.now()){
     );
   }
 
-  drawMatchScore(hudCtx, scaleX, scaleY, now);
+  if(isArcadeScoreUiActive()){
+    drawArcadeScoreCounters(hudCtx, scaleX, scaleY);
+  } else {
+    drawMatchScore(hudCtx, scaleX, scaleY, now);
+  }
 
   if (DEBUG_LAYOUT) {
     drawHudDebugLayout(hudCtx, scaleX, scaleY);
