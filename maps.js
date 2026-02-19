@@ -261,6 +261,92 @@ const EASY_TANKS_AND_GAPS_INTERNAL_SPRITES = [
   { spriteName: "brick_1_default", x: 240, y: 320, rotate: -90, scale: -1 }
 ];
 
+const WEAK_BRICK_SPRITES = [
+  { spriteName: "brick_1_default", x: 0, y: 20 },
+  { spriteName: "brick_1_default", x: 0, y: 60 },
+  { spriteName: "brick_1_default", x: 0, y: 100 },
+  { spriteName: "brick_1_default", x: 0, y: 140 },
+  { spriteName: "brick_1_default", x: 0, y: 180 },
+  { spriteName: "brick_1_default", x: 0, y: 220 },
+  { spriteName: "brick_1_default", x: 0, y: 260 },
+  { spriteName: "brick_1_default", x: 0, y: 300 },
+  { spriteName: "brick_1_default", x: 0, y: 340 },
+  { spriteName: "brick_1_default", x: 0, y: 380 },
+  { spriteName: "brick_1_default", x: 0, y: 420 },
+  { spriteName: "brick_1_default", x: 0, y: 460 },
+  { spriteName: "brick_1_default", x: 0, y: 500 },
+  { spriteName: "brick_1_default", x: 0, y: 540 },
+  { spriteName: "brick_1_default", x: 0, y: 580 },
+  { spriteName: "brick_1_default", x: 340, y: 20 },
+  { spriteName: "brick_1_default", x: 340, y: 60 },
+  { spriteName: "brick_1_default", x: 340, y: 100 },
+  { spriteName: "brick_1_default", x: 340, y: 140 },
+  { spriteName: "brick_1_default", x: 340, y: 180 },
+  { spriteName: "brick_1_default", x: 340, y: 220 },
+  { spriteName: "brick_1_default", x: 340, y: 260 },
+  { spriteName: "brick_1_default", x: 340, y: 300 },
+  { spriteName: "brick_1_default", x: 340, y: 340 },
+  { spriteName: "brick_1_default", x: 340, y: 380 },
+  { spriteName: "brick_1_default", x: 340, y: 420 },
+  { spriteName: "brick_1_default", x: 340, y: 460 },
+  { spriteName: "brick_1_default", x: 340, y: 500 },
+  { spriteName: "brick_1_default", x: 340, y: 540 },
+  { spriteName: "brick_1_default", x: 340, y: 580 },
+  { spriteName: "brick_1_default", x: 0, y: 0, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 40, y: 0, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 80, y: 0, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 120, y: 0, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 160, y: 0, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 200, y: 0, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 240, y: 0, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 280, y: 0, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 320, y: 0, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 0, y: 620, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 40, y: 620, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 80, y: 620, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 120, y: 620, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 160, y: 620, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 200, y: 620, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 240, y: 620, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 280, y: 620, rotate: -90, scale: -1 },
+  { spriteName: "brick_1_default", x: 320, y: 620, rotate: -90, scale: -1 },
+  { spriteName: "brick_3_mini", x: 320, y: 520 },
+  { spriteName: "brick_3_mini", x: 260, y: 520 },
+  { spriteName: "brick_5_corner", x: 140, y: 520, rotate: 270 },
+  { spriteName: "brick_5_corner", x: 180, y: 520 },
+  { spriteName: "brick_3_mini", x: 80, y: 520 },
+  { spriteName: "brick_3_mini", x: 20, y: 520 },
+  { spriteName: "brick_5_corner", x: 140, y: 60, rotate: 180 },
+  { spriteName: "brick_5_corner", x: 180, y: 60, rotate: 90 },
+  { spriteName: "brick_3_mini", x: 320, y: 80 },
+  { spriteName: "brick_3_mini", x: 20, y: 80 },
+  { spriteName: "brick_3_mini", x: 260, y: 80 },
+  { spriteName: "brick_3_mini", x: 80, y: 80 }
+];
+
+const WEAK_BRICK_FLAGS = [
+  {
+    id: "blue-0",
+    color: "blue",
+    layout: {
+      x: 170,
+      y: 41,
+      width: 20,
+      height: 20
+    }
+  },
+  {
+    id: "green-1",
+    color: "green",
+    layout: {
+      x: 170,
+      y: 568,
+      width: 20,
+      height: 20
+    }
+  }
+];
+
 function buildEasyMapSprites(internalSprites = []){
   return [...CLEAR_SKY_BORDER_SPRITES, ...internalSprites];
 }
@@ -303,6 +389,15 @@ const MAPS = [
     sprites: BROKEN_X_SPRITES,
     tier: 'easy',
     flags: BROKEN_X_FLAGS
+  },
+  {
+    id: 'clearSky',
+    name: 'Weak brick',
+    mode: MAP_RENDER_MODES.DATA,
+    tier: 'easy',
+    difficulty: 'easy',
+    sprites: WEAK_BRICK_SPRITES,
+    flags: WEAK_BRICK_FLAGS
   }
 ];
 

@@ -8455,6 +8455,12 @@ function serializeCurrentMapState(options = {}){
   const customDifficulty = typeof options.mapDifficulty === "string"
     ? options.mapDifficulty.trim().toLowerCase()
     : "";
+  const customId = customName
+    ? customName
+      .replace(/\s+/g, "_")
+      .replace(/[^a-zA-Z0-9_-]/g, "")
+      .replace(/^_+|_+$/g, "")
+    : "";
   const currentMapMeta = resolveCurrentMapForExport();
   const rawSprites = Array.isArray(currentMapSprites) ? currentMapSprites : [];
   const sprites = rawSprites
@@ -8462,9 +8468,9 @@ function serializeCurrentMapState(options = {}){
     .filter((sprite) => sprite && Object.keys(sprite).length > 0);
 
   const rawMap = {
-    id: typeof currentMapMeta?.id === "string" && currentMapMeta.id.length > 0
+    id: customId || (typeof currentMapMeta?.id === "string" && currentMapMeta.id.length > 0
       ? currentMapMeta.id
-      : undefined,
+      : undefined),
     name: customName || (typeof currentMapName === "string" && currentMapName.length > 0
       ? currentMapName
       : (typeof currentMapMeta?.name === "string" ? currentMapMeta.name : undefined)),
