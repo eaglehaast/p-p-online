@@ -2,6 +2,15 @@
 const MAP_RENDER_MODES = {
   DATA: 'data'
 };
+const MAP_DEFAULT_SPRITE_NAME = 'brick_1_default';
+const MAP_BRICK_SPRITE_PATH = 'ui_gamescreen/bricks/brick_1_default.png';
+const MAP_FALLBACK_SPRITE_PATHS = Object.freeze({
+  brick_1_default: 'ui_gamescreen/bricks/brick_1_default.png',
+  brick_3_mini: 'ui_gamescreen/bricks/brick_3_mini.png',
+  brick_5_corner: 'ui_gamescreen/bricks/brick_5_corner.png',
+  brick_4: 'ui_gamescreen/bricks/brick4_diagonal copy.png',
+  brick_4_diagonal: 'ui_gamescreen/bricks/brick4_diagonal copy.png'
+});
 const CLEAR_SKY_VERTICAL_Y = [20,60,100,140,180,220,260,300,340,380,420,460,500,540,580];
 const CLEAR_SKY_HORIZONTAL_X = [0,40,80,120,160,200,240,280,320];
 const CLEAR_SKY_BORDER_SPRITES = [
@@ -401,8 +410,37 @@ const MAPS = [
   }
 ];
 
+function collectMapSpritePathsFromSidebar(){
+  const sidebarEntries = Array.from(document.querySelectorAll('[data-brick-sprite]'))
+    .map((element) => {
+      const spriteName = element.dataset?.brickSprite;
+      const spritePath = element.getAttribute('src');
+      if(typeof spriteName !== 'string' || spriteName.length === 0) return null;
+      if(typeof spritePath !== 'string' || spritePath.length === 0) return null;
+      return [spriteName, spritePath];
+    })
+    .filter(Boolean);
+
+  const fromSidebar = Object.fromEntries(sidebarEntries);
+  const withFallbacks = {
+    ...MAP_FALLBACK_SPRITE_PATHS,
+    ...fromSidebar
+  };
+
+  if(!withFallbacks[MAP_DEFAULT_SPRITE_NAME]){
+    withFallbacks[MAP_DEFAULT_SPRITE_NAME] = MAP_BRICK_SPRITE_PATH;
+  }
+
+  return withFallbacks;
+}
+
+const MAP_SPRITE_PATHS = Object.freeze(collectMapSpritePathsFromSidebar());
+
   window.paperWingsMapsData = {
     MAP_RENDER_MODES,
-    MAPS
+    MAPS,
+    MAP_SPRITE_PATHS,
+    MAP_DEFAULT_SPRITE_NAME,
+    MAP_BRICK_SPRITE_PATH
   };
 })();

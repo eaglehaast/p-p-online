@@ -8176,28 +8176,12 @@ let turnAdvanceCount = 0;
 
 let currentPlacer = null; // 'green' | 'blue'
 
-const MAP_DEFAULT_SPRITE_NAME = "brick_1_default";
-const MAP_BRICK_SPRITE_PATH = "ui_gamescreen/bricks/brick_1_default.png";
-const MAP_SPRITE_PATHS = (() => {
-  const sidebarEntries = mapEditorBrickSidebar instanceof HTMLElement
-    ? Array.from(mapEditorBrickSidebar.querySelectorAll("[data-brick-sprite]"))
-      .map((element) => {
-        const spriteName = element.dataset.brickSprite;
-        const spritePath = element.getAttribute("src");
-        if(typeof spriteName !== "string" || spriteName.length === 0) return null;
-        if(typeof spritePath !== "string" || spritePath.length === 0) return null;
-        return [spriteName, spritePath];
-      })
-      .filter(Boolean)
-    : [];
-
-  const fromSidebar = Object.fromEntries(sidebarEntries);
-  if(!fromSidebar[MAP_DEFAULT_SPRITE_NAME]){
-    fromSidebar[MAP_DEFAULT_SPRITE_NAME] = MAP_BRICK_SPRITE_PATH;
-  }
-
-  return fromSidebar;
-})();
+const mapDataBridge = window.paperWingsMapsData || {};
+const MAP_DEFAULT_SPRITE_NAME = mapDataBridge.MAP_DEFAULT_SPRITE_NAME || "brick_1_default";
+const MAP_BRICK_SPRITE_PATH = mapDataBridge.MAP_BRICK_SPRITE_PATH || "ui_gamescreen/bricks/brick_1_default.png";
+const MAP_SPRITE_PATHS = mapDataBridge.MAP_SPRITE_PATHS || {
+  [MAP_DEFAULT_SPRITE_NAME]: MAP_BRICK_SPRITE_PATH
+};
 const MAP_SPRITE_NAMES = Object.freeze(Object.keys(MAP_SPRITE_PATHS));
 const MAP_VALID_SPRITE_NAMES = new Set(MAP_SPRITE_NAMES);
 const MAP_DIAGONAL_SPRITE_NAME = "brick_4_diagonal";
@@ -8207,9 +8191,8 @@ const MAP_SPRITE_BASE_SIZES = Object.freeze({
   brick_4_diagonal: { width: 60, height: 60 },
   brick_5_corner: { width: 40, height: 40 }
 });
-const mapsDataBridge = window.paperWingsMapsData || {};
-const MAP_RENDER_MODES = mapsDataBridge.MAP_RENDER_MODES || { DATA: 'data' };
-const MAPS = Array.isArray(mapsDataBridge.MAPS) ? mapsDataBridge.MAPS : [];
+const MAP_RENDER_MODES = mapDataBridge.MAP_RENDER_MODES || { DATA: 'data' };
+const MAPS = Array.isArray(mapDataBridge.MAPS) ? mapDataBridge.MAPS : [];
 
 const MAP_RENDERERS = {
   SPRITES: 'sprites'
