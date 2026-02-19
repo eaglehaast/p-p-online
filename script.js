@@ -8766,11 +8766,11 @@ const ARCADE_SCORE_CONTAINER_FILL = "#E6D2AE";
 const ARCADE_SCORE_TEXT_STYLES = {
   blue: {
     fill: "#425074",
-    font: "700 16px 'Silkscreen', 'Fantasque Sans Mono', monospace"
+    font: "700 18px 'Silkscreen', 'Fantasque Sans Mono', monospace"
   },
   green: {
     fill: "#57511B",
-    font: "700 16px 'Silkscreen', 'Fantasque Sans Mono', monospace"
+    font: "700 18px 'Silkscreen', 'Fantasque Sans Mono', monospace"
   }
 };
 
@@ -13815,6 +13815,10 @@ function isArcadeScoreUiActive(){
 function drawArcadeScoreCounters(ctx, scaleX = 1, scaleY = 1){
   if(!ctx) return;
 
+  const horizontalPadding = 2;
+  const verticalPadding = 2;
+  const fallbackFont = "700 17px 'Silkscreen', 'Fantasque Sans Mono', monospace";
+
   const pairs = [
     ["blue", blueScore],
     ["green", greenScore]
@@ -13839,10 +13843,25 @@ function drawArcadeScoreCounters(ctx, scaleX = 1, scaleY = 1){
     ctx.fillStyle = ARCADE_SCORE_CONTAINER_FILL;
     ctx.fillRect(left, top, width, height);
     ctx.fillStyle = textStyle.fill;
-    ctx.font = textStyle.font;
+
+    const insetX = horizontalPadding * scaleX;
+    const insetY = verticalPadding * scaleY;
+    const availableWidth = Math.max(0, width - insetX * 2);
+    let fontForRender = textStyle.font;
+
+    ctx.font = fontForRender;
+    if(ctx.measureText(scoreText).width > availableWidth){
+      fontForRender = fallbackFont;
+      ctx.font = fontForRender;
+    }
+
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(scoreText, left + width / 2, top + height / 2);
+
+    const textX = left + insetX + availableWidth / 2;
+    const availableHeight = Math.max(0, height - insetY * 2);
+    const textY = top + insetY + availableHeight / 2;
+    ctx.fillText(scoreText, textX, textY);
     ctx.restore();
   }
 }
