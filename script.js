@@ -14287,6 +14287,10 @@ function drawPlayerHUD(ctx, frame, color, isTurn, now = performance.now()){
 
   const slotOrderFromCenter = getPlaneCounterSlotOrderFromCenter(color);
   const planesBySlot = slotOrderFromCenter.map((planeIndex) => playerPlanes[planeIndex] || null);
+  const aliveCount = planesBySlot.reduce((count, plane) => (
+    plane && plane.isAlive && !plane.burning ? count + 1 : count
+  ), 0);
+  updatePlaneCounterDeaths(color, aliveCount, now);
 
   const previousAlpha = ctx.globalAlpha;
   ctx.globalAlpha *= HUD_PLANE_DIM_ALPHA;
@@ -14311,6 +14315,15 @@ function drawPlayerHUD(ctx, frame, color, isTurn, now = performance.now()){
     ctx.save();
     ctx.globalAlpha *= respawnAlpha * deadPlaneAlpha;
     drawPlaneCounterIcon(ctx, centerX, centerY, color, iconScale);
+    const killMarkerProgress = getKillMarkerProgress(plane, now);
+    if (killMarkerProgress > 0) {
+      const hudStyle = getHudPlaneStyle(color);
+      const hudStyleScale = Number.isFinite(hudStyle?.scale) && hudStyle.scale > 0
+        ? hudStyle.scale
+        : 1;
+      const iconSize = HUD_BASE_PLANE_ICON_SIZE * iconScale * MINI_PLANE_ICON_SCALE * hudStyleScale;
+      drawRedCross(ctx, centerX, centerY, iconSize, killMarkerProgress);
+    }
     ctx.restore();
   }
 
