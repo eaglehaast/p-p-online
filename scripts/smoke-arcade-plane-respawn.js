@@ -38,6 +38,7 @@ const functionNames = [
   'isPlaneAtBase',
   'isPlaneRespawnPenaltyActive',
   'isPlaneRespawnComplete',
+  'isPlaneRespawnBlockedByEnemy',
   'isPlaneLaunchStateReady',
   'isPlaneTargetable',
   'setPlaneReadyAtBase',
@@ -70,11 +71,13 @@ const context = {
 vm.createContext(context);
 vm.runInContext(extracted, context);
 
-// REGRESSION SHIELD (arcade mode edits): base restrictions must not leak into non-arcade.
+// REGRESSION SHIELD:
+// Единый источник истины по «неуязвимости» — только наблюдаемое поведение через respawnState/respawnStage.
+// В проверках ниже не читаем isInvulnerable: проверяем лишь targetable/launch-ready/блокировки.
+// Дополнительно: arcade-ограничения базы не должны протекать в non-arcade режимы.
 const nonArcadePlane = {
   isAlive: true,
   burning: false,
-  isInvulnerable: false,
   respawnState: 'at_base',
   respawnStage: 1,
   respawnPenaltyActive: false,
@@ -89,7 +92,8 @@ assert(
 );
 
 const nonArcadeLaunchPlane = {
-  isInvulnerable: true,
+  isAlive: true,
+  burning: false,
   respawnState: 'at_base',
   respawnStage: 1,
   respawnPenaltyActive: true,
@@ -104,8 +108,8 @@ assert(
   'Regression: launch from base should clear respawn penalty flag outside arcade too.'
 );
 assert(
-  nonArcadeLaunchPlane.isInvulnerable === false,
-  'markPlaneLaunchedFromBase should still disable invulnerability after launch.'
+  context.isPlaneTargetable(nonArcadeLaunchPlane) === true,
+  'Regression: after launch outside arcade, plane should remain targetable when alive and not burning.'
 );
 
 const resetToBasePlane = {
@@ -151,7 +155,6 @@ context.selectedRuleset = 'advanced';
 const arcadePlane = {
   isAlive: true,
   burning: false,
-  isInvulnerable: false,
   respawnState: 'at_base',
   respawnStage: 2,
   respawnPenaltyActive: true,
@@ -171,7 +174,8 @@ assert(
 );
 
 const arcadeLaunchPlane = {
-  isInvulnerable: true,
+  isAlive: true,
+  burning: false,
   respawnState: 'at_base',
   respawnStage: 1,
   respawnPenaltyActive: true,
@@ -186,26 +190,32 @@ assert(
   'Arcade: launch from base should clear respawn penalty flag.'
 );
 assert(
-  arcadeLaunchPlane.isInvulnerable === false,
-  'Arcade: markPlaneLaunchedFromBase should disable invulnerability.'
+  context.isPlaneTargetable(arcadeLaunchPlane) === true,
+  'Arcade: after launch from base, in_flight plane should be targetable when alive and not burning.'
 );
 
 context.points = [
-  { color: 'blue', respawnState: 'at_base', respawnStage: 1 },
-  { color: 'blue', respawnState: 'at_base', respawnStage: 2 },
-  { color: 'green', respawnState: 'at_base', respawnStage: 1 },
-  { color: 'blue', respawnState: 'in_flight', respawnStage: 1 },
+  { color: 'blue', respawnState: 'at_base', respawnStage: 1, respawnHalfTurnsRemaining: 4, respawnPenaltyActive: true },
+  { color: 'blue', respawnState: 'at_base', respawnStage: 2, respawnHalfTurnsRemaining: 2, respawnPenaltyActive: true },
+  { color: 'green', respawnState: 'at_base', respawnStage: 1, respawnHalfTurnsRemaining: 4, respawnPenaltyActive: true },
+  { color: 'blue', respawnState: 'in_flight', respawnStage: 1, respawnHalfTurnsRemaining: 4, respawnPenaltyActive: true },
 ];
 context.turnIndex = 0; // next turn is blue
 context.turnAdvanceCount = 0;
 context.advanceTurn();
 assert(
-  context.points[0].respawnStage === 2 && context.points[1].respawnStage === 3,
-  'Arcade: advanceTurn should increment respawnStage for next-turn color planes at base.'
+  context.points[0].respawnHalfTurnsRemaining === 3 &&
+  context.points[0].respawnStage === 1 &&
+  context.points[1].respawnHalfTurnsRemaining === 1 &&
+  context.points[1].respawnStage === 2,
+  'Arcade: advanceTurn should tick respawn timer and derive respawnStage for at_base planes.'
 );
 assert(
-  context.points[2].respawnStage === 1 && context.points[3].respawnStage === 1,
-  'Arcade: advanceTurn should not touch other colors or in_flight planes.'
+  context.points[2].respawnHalfTurnsRemaining === 3 &&
+  context.points[2].respawnStage === 1 &&
+  context.points[3].respawnHalfTurnsRemaining === 4 &&
+  context.points[3].respawnStage === 1,
+  'Arcade: advanceTurn should update only at_base planes and leave in_flight planes untouched.'
 );
 
 console.log('Smoke test passed: arcade respawn gating regression shield is active.');
