@@ -9254,6 +9254,8 @@ function isPlaneTargetable(plane){
   if(!plane) return false;
   if(plane.isAlive !== true) return false;
   if(plane.burning) return false;
+  // Единый источник истины для неуязвимости: проверяем только наблюдаемое respawn-состояние.
+  // Если самолёт стоит на базе в arcade, его нельзя выбрать целью независимо от других флагов.
   if(isArcadePlaneRespawnEnabled() && isPlaneAtBase(plane)) return false;
   return true;
 }
@@ -9283,7 +9285,8 @@ function setPlaneReadyAtBase(plane){
 
 function markPlaneLaunchedFromBase(plane){
   if(!plane) return;
-  plane.isInvulnerable = false;
+  // После запуска самолёт считается «в полёте» через respawnState/respawnStage.
+  // Отдельный флаг isInvulnerable здесь не переключаем, чтобы не было двойной трактовки состояния.
   plane.respawnPenaltyActive = false;
   plane.respawnHalfTurnsRemaining = 0;
   plane.respawnBlockedByEnemy = false;
