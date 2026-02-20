@@ -9083,6 +9083,8 @@ function makePlane(x,y,color,angle){
     respawnState:"at_base",
     respawnStage:3,
     respawnPenaltyActive:false,
+    respawnHalfTurnsRemaining:0,
+    respawnBlockedByEnemy:false,
     burning:false,
     crashStart:null,
     angle,
@@ -9134,6 +9136,27 @@ function getInactivePlaneAlpha(now, plane){
 
 function isPlaneRespawnComplete(plane){
   return Number.isFinite(plane?.respawnStage) && plane.respawnStage >= 3;
+}
+
+function isPlaneRespawnBlockedByEnemy(plane){
+  if(!plane) return false;
+  if(!isArcadePlaneRespawnEnabled() || !isPlaneAtBase(plane)){
+    plane.respawnBlockedByEnemy = false;
+    return false;
+  }
+
+  const homeX = Number.isFinite(plane.homeX) ? plane.homeX : plane.x;
+  const homeY = Number.isFinite(plane.homeY) ? plane.homeY : plane.y;
+  const blocked = points.some(enemyPlane => {
+    if(!enemyPlane || enemyPlane === plane) return false;
+    if(enemyPlane.color === plane.color) return false;
+    if(!isPlaneTargetable(enemyPlane)) return false;
+    const distanceToRespawn = Math.hypot(enemyPlane.x - homeX, enemyPlane.y - homeY);
+    return distanceToRespawn <= POINT_RADIUS * 2;
+  });
+
+  plane.respawnBlockedByEnemy = blocked;
+  return blocked;
 }
 
 function isPlaneInactiveForLaunch(plane){
@@ -9209,7 +9232,7 @@ function isPlaneLaunchStateReady(plane){
   if(!plane) return false;
   // Ограничения базы/восстановления — только для arcade, не для classic/advanced/hotseat.
   if(isArcadePlaneRespawnEnabled()){
-    return isPlaneAtBase(plane) && isPlaneRespawnComplete(plane);
+    return isPlaneAtBase(plane) && isPlaneRespawnComplete(plane) && !isPlaneRespawnBlockedByEnemy(plane);
   }
   return plane.isAlive === true && !plane.burning;
 }
@@ -9249,12 +9272,16 @@ function setPlaneReadyAtBase(plane){
   plane.respawnState = "at_base";
   plane.respawnStage = 1;
   plane.respawnPenaltyActive = true;
+  plane.respawnHalfTurnsRemaining = 4;
+  plane.respawnBlockedByEnemy = false;
 }
 
 function markPlaneLaunchedFromBase(plane){
   if(!plane) return;
   plane.isInvulnerable = false;
   plane.respawnPenaltyActive = false;
+  plane.respawnHalfTurnsRemaining = 0;
+  plane.respawnBlockedByEnemy = false;
   // Меняем respawn-состояние только в arcade: вне arcade база не должна диктовать этапы полёта.
   if(isArcadePlaneRespawnEnabled()){
     plane.respawnState = "in_flight";
@@ -9865,6 +9892,16 @@ function getGrabRejectReason(mx, my, currentColor){
   );
 
   if(nearLaunchReadyPlane) return "unknown";
+
+  const blockedByRespawnEnemy = points.some(pt =>
+    pt.color === currentColor &&
+    isArcadePlaneRespawnEnabled() &&
+    isPlaneAtBase(pt) &&
+    isPlaneRespawnComplete(pt) &&
+    isPlaneRespawnBlockedByEnemy(pt) &&
+    Math.hypot(pt.x - mx, pt.y - my) <= PLANE_TOUCH_RADIUS
+  );
+  if(blockedByRespawnEnemy) return "respawn_blocked_by_enemy";
 
   const blockedByRespawnStage = points.some(pt =>
     pt.color === currentColor &&
@@ -11810,17 +11847,26 @@ function advanceTurn(){
   turnIndex = (turnIndex + 1) % turnColors.length;
   const nextTurnColor = turnColors[turnIndex];
   if(isArcadePlaneRespawnEnabled()){
-    // Этапы возрождения у базы двигаем только в arcade-режиме.
-    const planesToRespawn = points.filter(plane =>
-      plane &&
-      plane.color === nextTurnColor &&
-      isPlaneAtBase(plane)
-    );
-    planesToRespawn.forEach((plane) => {
-      const currentStage = Number.isFinite(plane.respawnStage)
-        ? Math.max(1, Math.min(3, Math.round(plane.respawnStage)))
-        : 1;
-      plane.respawnStage = Math.min(3, currentStage + 1);
+    // Штраф за респаун тикает по полуходам и длится минимум 4 переключения хода.
+    points.forEach((plane) => {
+      if(!plane || !isPlaneAtBase(plane)) return;
+
+      const turnsLeftRaw = Number.isFinite(plane.respawnHalfTurnsRemaining)
+        ? Math.max(0, Math.round(plane.respawnHalfTurnsRemaining))
+        : 0;
+      const turnsLeft = Math.max(0, turnsLeftRaw - 1);
+      plane.respawnHalfTurnsRemaining = turnsLeft;
+      plane.respawnPenaltyActive = turnsLeft > 0;
+
+      if(turnsLeft >= 3){
+        plane.respawnStage = 1;
+      } else if(turnsLeft >= 1){
+        plane.respawnStage = 2;
+      } else {
+        plane.respawnStage = 3;
+      }
+
+      isPlaneRespawnBlockedByEnemy(plane);
     });
   }
   activateQueuedInvisibilityForEnemyTurn(nextTurnColor);
