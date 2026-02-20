@@ -9233,6 +9233,10 @@ function isArcadePlaneRespawnEnabled(){
   return settings.arcadeMode === true && isAdvancedLikeRuleset(selectedRuleset);
 }
 
+function isBaseInvulnerabilityEnabled(){
+  return settings.arcadeBaseInvulnerability === true;
+}
+
 function isPlaneLaunchStateReady(plane){
   if(!plane) return false;
   // Ограничения базы/восстановления — только для arcade, не для classic/advanced/hotseat.
@@ -9256,9 +9260,9 @@ function isPlaneTargetable(plane){
   if(!plane) return false;
   if(plane.isAlive !== true) return false;
   if(plane.burning) return false;
-  // Единый источник истины для неуязвимости: проверяем только наблюдаемое respawn-состояние.
-  // Если самолёт стоит на базе в arcade, его нельзя выбрать целью независимо от других флагов.
-  if(isArcadePlaneRespawnEnabled() && isPlaneAtBase(plane)) return false;
+  // Базовая неуязвимость — отдельное правило. По умолчанию самолёт на базе можно поразить,
+  // а режим неуязвимости включается только явным флагом.
+  if(isArcadePlaneRespawnEnabled() && isBaseInvulnerabilityEnabled() && isPlaneAtBase(plane)) return false;
   return true;
 }
 

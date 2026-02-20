@@ -35,6 +35,7 @@ function assert(condition, message){
 const gameSource = fs.readFileSync('script.js', 'utf8');
 const functionNames = [
   'isArcadePlaneRespawnEnabled',
+  'isBaseInvulnerabilityEnabled',
   'isPlaneAtBase',
   'isPlaneRespawnPenaltyActive',
   'isPlaneRespawnComplete',
@@ -169,9 +170,16 @@ assert(
   'Arcade: plane at base with stage 3 must be launch-ready.'
 );
 assert(
-  context.isPlaneTargetable(arcadePlane) === false,
-  'Arcade: plane at base must be non-targetable.'
+  context.isPlaneTargetable(arcadePlane) === true,
+  'Arcade: plane at base should stay targetable when base invulnerability flag is disabled.'
 );
+
+context.settings.arcadeBaseInvulnerability = true;
+assert(
+  context.isPlaneTargetable(arcadePlane) === false,
+  'Arcade: plane at base must become non-targetable only when base invulnerability flag is enabled.'
+);
+context.settings.arcadeBaseInvulnerability = false;
 
 const arcadeLaunchPlane = {
   isAlive: true,
