@@ -9237,7 +9237,9 @@ function isPlaneLaunchStateReady(plane){
   if(!plane) return false;
   // Ограничения базы/восстановления — только для arcade, не для classic/advanced/hotseat.
   if(isArcadePlaneRespawnEnabled()){
-    return isPlaneAtBase(plane) && isPlaneRespawnComplete(plane) && !isPlaneRespawnBlockedByEnemy(plane);
+    if(plane.isAlive !== true || plane.burning) return false;
+    if(!isPlaneAtBase(plane)) return true;
+    return isPlaneRespawnComplete(plane) && !isPlaneRespawnBlockedByEnemy(plane);
   }
   return plane.isAlive === true && !plane.burning;
 }
@@ -12908,8 +12910,11 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
   const blend = isGhostState
     ? 0
     : Math.max(0, Math.min(1, glow));
+  const isArcadeRespawnOutline = isArcadePlaneRespawnEnabled()
+    && isPlaneRespawnPenaltyActive(plane)
+    && isPlaneAtBase(plane);
 
-  if (blend > 0 && !isInvisibilityFullyHidden) {
+  if (blend > 0 && !isInvisibilityFullyHidden && !isArcadeRespawnOutline) {
     const glowStrength = blend * 1.25; // boost brightness slightly
     const glowVisibilityAlpha = Math.max(0, Math.min(1, resolvedInvisibilityAlpha * invisibilityFeedbackAlpha));
     drawPlaneSpriteGlow(ctx2d, plane, glowStrength, glowVisibilityAlpha);
@@ -12933,6 +12938,15 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
   }
   if(baseRespawnAlpha < 1){
     ctx2d.globalAlpha *= baseRespawnAlpha;
+  }
+
+  if (isArcadeRespawnOutline) {
+    const outlineAlpha = Math.max(0.25, baseRespawnAlpha);
+    ctx2d.globalAlpha = Math.min(1, ctx2d.globalAlpha * (1 / Math.max(0.001, baseRespawnAlpha)) * outlineAlpha);
+    ctx2d.lineWidth = 1.4;
+    drawPlaneOutline(ctx2d, color);
+    ctx2d.restore();
+    return;
   }
   if (color === "blue") {
     if (showEngine) {
@@ -13689,12 +13703,12 @@ function spawnExplosionForPlane(plane, x = null, y = null) {
     return null;
   }
 
-  const cx = Number.isFinite(plane.x)
-    ? plane.x
-    : (Number.isFinite(x) ? x : plane.collisionX);
-  const cy = Number.isFinite(plane.y)
-    ? plane.y
-    : (Number.isFinite(y) ? y : plane.collisionY);
+  const cx = Number.isFinite(x)
+    ? x
+    : (Number.isFinite(plane.x) ? plane.x : plane.collisionX);
+  const cy = Number.isFinite(y)
+    ? y
+    : (Number.isFinite(plane.y) ? plane.y : plane.collisionY);
   const state = createExplosionState(plane, cx, cy);
 
   activeExplosions.push(state);
