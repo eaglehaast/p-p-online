@@ -1163,6 +1163,17 @@ function getPlaneInvisibilityAlpha(plane, nowMs = performance.now()){
   return state.invisibilityAlphaCurrent;
 }
 
+function isInventoryInvisibilityEnabled(){
+  return !isArcadePlaneRespawnEnabled();
+}
+
+function resetAllPlaneInvisibilityToOpaque(){
+  for(const plane of points){
+    if(!plane) continue;
+    startPlaneInvisibilityFade(plane, 1);
+  }
+}
+
 function startPlayerInvisibilityFeedback(color){
   const state = getPlayerInventoryEffectState(color);
   if(!state) return;
@@ -1212,6 +1223,11 @@ function shouldHidePlaneByInvisibility(planeColor){
 }
 
 function activateQueuedInvisibilityForEnemyTurn(nextTurnColor){
+  if(!isInventoryInvisibilityEnabled()){
+    resetPlayerInventoryEffects();
+    resetAllPlaneInvisibilityToOpaque();
+    return;
+  }
   for(const color of ["blue", "green"]){
     const state = getPlayerInventoryEffectState(color);
     if(!state || state.invisibilityWaitingEnemyTurn !== true) continue;
@@ -1230,6 +1246,11 @@ function activateQueuedInvisibilityForEnemyTurn(nextTurnColor){
 }
 
 function expireInvisibilityAfterEnemyTurnEnded(previousTurnColor){
+  if(!isInventoryInvisibilityEnabled()){
+    resetPlayerInventoryEffects();
+    resetAllPlaneInvisibilityToOpaque();
+    return;
+  }
   for(const color of ["blue", "green"]){
     const state = getPlayerInventoryEffectState(color);
     if(!state || state.invisibilityActive !== true) continue;
@@ -2240,6 +2261,11 @@ function removeItemFromInventory(color, type){
 }
 
 function queueInvisibilityEffectForPlayer(color){
+  if(!isInventoryInvisibilityEnabled()){
+    resetPlayerInventoryEffects();
+    resetAllPlaneInvisibilityToOpaque();
+    return false;
+  }
   const state = getPlayerInventoryEffectState(color);
   if(!state) return false;
   state.invisibilityQueued = true;
@@ -8674,6 +8700,10 @@ function loadSettingsForRuleset(ruleset = selectedRuleset){
   if(ruleset === "classic"){
     settings.arcadeMode = false;
   }
+  if(!isInventoryInvisibilityEnabled()){
+    resetPlayerInventoryEffects();
+    resetAllPlaneInvisibilityToOpaque();
+  }
 }
 
 loadSettings();
@@ -12978,6 +13008,7 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
   const baseGhostAlpha = 0.3;
   const planeLifeState = getPlaneLifeState(plane);
   const isArcadeReadyAtBaseState = planeLifeState === PLANE_LIFE_STATES.DESTROYED_ARCADE_READY;
+  const shouldForceArcadeOpaqueAlivePlane = isArcadePlaneRespawnEnabled() && plane.isAlive && !isGhostState;
   const baseRespawnAlpha = isArcadeReadyAtBaseState
     ? 0.2
     : (isPlaneRespawnPenaltyActive(plane)
@@ -12985,7 +13016,7 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
       ? getInactivePlaneAlpha(performance.now(), plane)
       : getRespawnOpacityByStage(plane.respawnStage))
     : 1);
-  if(invisibilityFeedbackAlpha < 1){
+  if(invisibilityFeedbackAlpha < 1 && !shouldForceArcadeOpaqueAlivePlane){
     ctx2d.globalAlpha *= invisibilityFeedbackAlpha;
   }
   if(baseRespawnAlpha < 1){
@@ -13220,7 +13251,9 @@ function drawPlanesAndTrajectories(){
 
   const renderPlane = (p, targetCtx, { allowRangeLabel = false } = {}) => {
     if(!p.isAlive && !p.burning && !isNukeEliminatedPlaneRenderable(p)) return;
-    const invisibilityAlpha = getPlaneInvisibilityAlpha(p);
+    const invisibilityAlpha = (isArcadePlaneRespawnEnabled() && p.isAlive)
+      ? 1
+      : getPlaneInvisibilityAlpha(p);
 
     if (debugDrawOrder) {
       const stateLabel = p.isAlive ? (p.burning ? 'burning' : 'alive') : 'crashed';
@@ -14648,6 +14681,8 @@ function startNewRound(){
   turnIndex = lastFirstTurn;
   turnAdvanceCount = 0;
   resetCargoState();
+  resetPlayerInventoryEffects();
+  resetAllPlaneInvisibilityToOpaque();
 
   roundNumber++;
   roundTextTimer = selectedRuleset === "mapeditor" ? 0 : 120;
