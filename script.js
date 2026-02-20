@@ -12955,12 +12955,13 @@ function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0, alphaMultiplier = 1
 function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
   const { x: cx, y: cy, color, angle } = plane;
   const isGhostState = plane.burning || (!plane.isAlive && !plane.nukeEliminated);
-  const invisibilityFeedbackAlpha = (!isGhostState && plane.isAlive)
-    ? getPlayerInvisibilityFeedbackAlpha(color)
-    : 1;
   const resolvedInvisibilityAlpha = Number.isFinite(invisibilityAlpha)
     ? invisibilityAlpha
     : getPlaneInvisibilityAlpha(plane);
+  const invisibilityFeedbackAlpha = (!isGhostState && plane.isAlive)
+    ? getPlayerInvisibilityFeedbackAlpha(color)
+    : 1;
+  const invisibilityVisualAlpha = Math.max(0, Math.min(1, resolvedInvisibilityAlpha * invisibilityFeedbackAlpha));
   const isInvisibilityFullyHidden = resolvedInvisibilityAlpha <= 0.01;
   const halfPlaneWidth = PLANE_DRAW_W / 2;
   const halfPlaneHeight = PLANE_DRAW_H / 2;
@@ -13024,8 +13025,7 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
 
   if (blend > 0 && !isArcadePlaneRespawnEnabled() && !isInvisibilityFullyHidden && !isArcadeRespawnOutline) {
     const glowStrength = blend * 1.25; // boost brightness slightly
-    const glowVisibilityAlpha = Math.max(0, Math.min(1, resolvedInvisibilityAlpha * invisibilityFeedbackAlpha));
-    drawPlaneSpriteGlow(ctx2d, plane, glowStrength, glowVisibilityAlpha);
+    drawPlaneSpriteGlow(ctx2d, plane, glowStrength, invisibilityVisualAlpha);
   }
 
   ctx2d.shadowColor = "transparent";
@@ -13038,19 +13038,18 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
   const baseGhostAlpha = 0.3;
   const planeLifeState = getPlaneLifeState(plane);
   const isArcadeReadyAtBaseState = planeLifeState === PLANE_LIFE_STATES.DESTROYED_ARCADE_READY;
-  const shouldForceArcadeOpaqueAlivePlane = isArcadePlaneRespawnEnabled() && plane.isAlive && !isGhostState;
-  const baseRespawnAlpha = isArcadeReadyAtBaseState
+  const respawnVisualAlpha = isArcadeReadyAtBaseState
     ? 0.2
     : (isPlaneRespawnPenaltyActive(plane)
     ? (isArcadePlaneRespawnEnabled()
       ? getInactivePlaneAlpha(performance.now(), plane)
       : getRespawnOpacityByStage(plane.respawnStage))
     : 1);
-  if(invisibilityFeedbackAlpha < 1 && !shouldForceArcadeOpaqueAlivePlane){
-    ctx2d.globalAlpha *= invisibilityFeedbackAlpha;
-  }
-  if(baseRespawnAlpha < 1){
-    ctx2d.globalAlpha *= baseRespawnAlpha;
+  // Держим два канала отдельно: respawn — про этап восстановления самолёта,
+  // invisibility — только про предмет невидимости. Так проще менять каждый эффект независимо.
+  const finalAlpha = respawnVisualAlpha * invisibilityVisualAlpha;
+  if(finalAlpha < 1){
+    ctx2d.globalAlpha *= finalAlpha;
   }
 
   if (isArcadeRespawnOutline) {
@@ -13297,7 +13296,6 @@ function drawPlanesAndTrajectories(){
     }
 
     targetCtx.save();
-    targetCtx.globalAlpha *= invisibilityAlpha;
 
     // Allow wreck sprites to render after crash delay instead of exiting early.
     drawPlaneSegments(targetCtx, p);
