@@ -4275,6 +4275,13 @@ const MAIN_MENU_ASSETS = [
   "letterbox2.png"
 ];
 
+const HUD_PLANE_TIMER_FRAME_PATHS = [
+  "ui_gamescreen/gs_arcade_planetimer/gs_arcade_4.png",
+  "ui_gamescreen/gs_arcade_planetimer/gs_arcade_3.png",
+  "ui_gamescreen/gs_arcade_planetimer/gs_arcade_2.png",
+  "ui_gamescreen/gs_arcade_planetimer/gs_arcade_1.png"
+];
+
 const GAME_SCREEN_ASSETS = [
   // Plane counters
   "ui_gamescreen/gamescreen_outside/planecounter_blue.png",
@@ -4282,6 +4289,7 @@ const GAME_SCREEN_ASSETS = [
 
   // UI extras
   "sprite_ copy.png",
+  ...HUD_PLANE_TIMER_FRAME_PATHS,
 
   // Game field background
   "ui_gamescreen/paperwithred.png",
@@ -6806,12 +6814,6 @@ const baseSprites = {
 };
 
 const CARGO_SPRITE_PATH = "ui_gamescreen/gs_cargo_box.png";
-const HUD_PLANE_TIMER_FRAME_PATHS = [
-  "ui_gamescreen/gs_arcade_planetimer/gs_arcade_4.png",
-  "ui_gamescreen/gs_arcade_planetimer/gs_arcade_3.png",
-  "ui_gamescreen/gs_arcade_planetimer/gs_arcade_2.png",
-  "ui_gamescreen/gs_arcade_planetimer/gs_arcade_1.png"
-];
 const CARGO_ANIMATION_FRAME_PATHS = Array.from({ length: 20 }, (_value, index) => {
   const frameNumber = String(index + 1).padStart(2, "0");
   return `ui_gamescreen/gs_cargo_animations/gs_cargoanimation_${frameNumber}.png`;
