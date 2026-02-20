@@ -6806,6 +6806,12 @@ const baseSprites = {
 };
 
 const CARGO_SPRITE_PATH = "ui_gamescreen/gs_cargo_box.png";
+const HUD_PLANE_TIMER_FRAME_PATHS = [
+  "ui_gamescreen/gs_arcade_planetimer/gs_arcade_4.png",
+  "ui_gamescreen/gs_arcade_planetimer/gs_arcade_3.png",
+  "ui_gamescreen/gs_arcade_planetimer/gs_arcade_2.png",
+  "ui_gamescreen/gs_arcade_planetimer/gs_arcade_1.png"
+];
 const CARGO_ANIMATION_FRAME_PATHS = Array.from({ length: 20 }, (_value, index) => {
   const frameNumber = String(index + 1).padStart(2, "0");
   return `ui_gamescreen/gs_cargo_animations/gs_cargoanimation_${frameNumber}.png`;
@@ -6814,6 +6820,7 @@ const CARGO_ANIM_MS_FALLBACK = 1500;
 const CARGO_FADE_IN_MS_DEFAULT = 1500;
 const CARGO_DIMMING_DEFAULT = 0;
 const { img: cargoSprite } = loadImageAsset(CARGO_SPRITE_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
+const hudPlaneTimerFrames = HUD_PLANE_TIMER_FRAME_PATHS.map((path) => loadImageAsset(path, GAME_PRELOAD_LABEL, { decoding: 'async' }).img);
 const cargoAnimationFrames = CARGO_ANIMATION_FRAME_PATHS.map((path) => loadImageAsset(path, GAME_PRELOAD_LABEL, { decoding: 'async' }).img);
 let cargoAnimDurationMs = CARGO_ANIM_MS_FALLBACK;
 let cargoAnimDurationOverrideMs = null;
@@ -7443,11 +7450,7 @@ const PLANE_VFX_IDLE_SMOKE_TAIL_TRIM_Y = planeMetric(5);
 const MINI_PLANE_ICON_SCALE = 0.7;    // make HUD plane icons smaller on the counter
 const HUD_PLANE_DIM_ALPHA = 1;        // keep HUD planes at full opacity
 const HUD_PLANE_DIM_FILTER = "";     // no additional dimming filter for HUD planes
-const HUD_KILL_MARKER_COLOR = "#e42727";
-const HUD_KILL_MARKER_ALPHA = 0.85;
-const HUD_KILL_MARKER_LINE_WIDTH = planeMetric(4);
-const HUD_PLANE_DEATH_DURATION_MS = 160;
-const HUD_PLANE_DEATH_SCALE_DELTA = 0.15;
+const HUD_PLANE_TIMER_FRAME_DURATION_MS = 220;
 const HUD_BASE_PLANE_ICON_SIZE = planeMetric(16);
 const CELL_SIZE            = 20;     // px
 const INVENTORY_ITEM_SIZE_PX = 30;
@@ -13156,44 +13159,6 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
   ctx2d.restore();
 }
 
-function drawRedCross(ctx2d, cx, cy, size = 20, progress = 1){
-  const clampedProgress = Math.max(0, Math.min(1, progress));
-  if (clampedProgress <= 0) {
-    return;
-  }
-
-  ctx2d.save();
-  ctx2d.translate(cx, cy);
-  const previousFilter = ctx2d.filter;
-  ctx2d.filter = "none";
-  ctx2d.strokeStyle = HUD_KILL_MARKER_COLOR;
-  ctx2d.globalAlpha *= HUD_KILL_MARKER_ALPHA;
-  ctx2d.lineWidth = HUD_KILL_MARKER_LINE_WIDTH;
-  ctx2d.lineCap = "round";
-
-  const halfSize = size / 2;
-  const line1Progress = Math.min(1, clampedProgress * 2);
-  const line2Progress = Math.max(0, clampedProgress * 2 - 1);
-
-  ctx2d.beginPath();
-  if (line1Progress > 0) {
-    const endX = -halfSize + size * line1Progress;
-    const endY = -halfSize + size * line1Progress;
-    ctx2d.moveTo(-halfSize, -halfSize);
-    ctx2d.lineTo(endX, endY);
-  }
-  if (line2Progress > 0) {
-    const endX = halfSize - size * line2Progress;
-    const endY = -halfSize + size * line2Progress;
-    ctx2d.moveTo(halfSize, -halfSize);
-    ctx2d.lineTo(endX, endY);
-  }
-  ctx2d.stroke();
-
-  ctx2d.filter = previousFilter;
-  ctx2d.restore();
-}
-
 function hasCrashDelayElapsed(p){
   if (!p?.burning) {
     return false;
@@ -14319,21 +14284,21 @@ function updatePlaneCounterDeaths(color, aliveCount, now){
 }
 
 const MIN_ROUND_TRANSITION_DELAY_MS = 1200;
-function getKillMarkerProgress(plane, now = performance.now()){
-  if (!plane) {
-    return 0;
-  }
-
-  if (plane.isAlive && !plane.burning) {
-    if (plane.killMarkerStart) {
+function getHudPlaneTimerFrameImage(plane, now = performance.now()){
+  if (!plane || (plane.isAlive && !plane.burning)) {
+    if (plane?.killMarkerStart) {
       delete plane.killMarkerStart;
     }
-    return 0;
+    return null;
   }
 
-  const duration = HUD_PLANE_DEATH_DURATION_MS > 0
-    ? HUD_PLANE_DEATH_DURATION_MS
-    : 800;
+  if (isArcadePlaneRespawnEnabled() && isPlaneRespawnPenaltyActive(plane)) {
+    const turnsLeft = Number.isFinite(plane.respawnHalfTurnsRemaining)
+      ? Math.max(0, Math.round(plane.respawnHalfTurnsRemaining))
+      : 0;
+    const frameIndex = Math.max(0, Math.min(3, 4 - turnsLeft));
+    return turnsLeft >= 1 && turnsLeft <= 4 ? hudPlaneTimerFrames[frameIndex] : null;
+  }
 
   let start = plane.killMarkerStart;
   if (!Number.isFinite(start)) {
@@ -14341,17 +14306,38 @@ function getKillMarkerProgress(plane, now = performance.now()){
     plane.killMarkerStart = start;
   }
 
-  const elapsed = now - start;
-  if (!Number.isFinite(elapsed)) {
-    return 1;
+  const frameDuration = HUD_PLANE_TIMER_FRAME_DURATION_MS > 0
+    ? HUD_PLANE_TIMER_FRAME_DURATION_MS
+    : 220;
+  const elapsed = Math.max(0, now - start);
+  const frameIndex = Math.floor(elapsed / frameDuration);
+
+  if (!Number.isFinite(frameIndex) || frameIndex < 0 || frameIndex > 3) {
+    return null;
   }
 
-  if (duration <= 0) {
-    return 1;
-  }
-
-  return Math.max(0, Math.min(1, elapsed / duration));
+  return hudPlaneTimerFrames[frameIndex] || null;
 }
+
+function drawHudPlaneTimerOverlay(ctx2d, cx, cy, size, image){
+  const isReady = Boolean(
+    image
+    && image.complete
+    && image.naturalWidth > 0
+    && image.naturalHeight > 0
+  );
+  if (!isReady || size <= 0) {
+    return;
+  }
+
+  ctx2d.save();
+  const previousFilter = ctx2d.filter;
+  ctx2d.filter = "none";
+  ctx2d.drawImage(image, cx - size / 2, cy - size / 2, size, size);
+  ctx2d.filter = previousFilter;
+  ctx2d.restore();
+}
+
 function renderScoreboard(now = performance.now()){
   updateTurnIndicators();
   if (!hudCtx || !(hudCanvas instanceof HTMLCanvasElement)) {
@@ -14535,14 +14521,14 @@ function drawPlayerHUD(ctx, frame, color, isTurn, now = performance.now()){
     ctx.save();
     ctx.globalAlpha *= iconAlpha;
     drawPlaneCounterIcon(ctx, centerX, centerY, color, iconScale);
-    const killMarkerProgress = getKillMarkerProgress(plane, now);
-    if (killMarkerProgress > 0 && iconAlpha > 0) {
+    const timerFrameImage = getHudPlaneTimerFrameImage(plane, now);
+    if (timerFrameImage && iconAlpha > 0) {
       const hudStyle = getHudPlaneStyle(color);
       const hudStyleScale = Number.isFinite(hudStyle?.scale) && hudStyle.scale > 0
         ? hudStyle.scale
         : 1;
       const iconSize = HUD_BASE_PLANE_ICON_SIZE * iconScale * MINI_PLANE_ICON_SCALE * hudStyleScale;
-      drawRedCross(ctx, centerX, centerY, iconSize, killMarkerProgress);
+      drawHudPlaneTimerOverlay(ctx, centerX, centerY, iconSize, timerFrameImage);
     }
     ctx.restore();
   }
