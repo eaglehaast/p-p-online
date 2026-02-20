@@ -11946,6 +11946,23 @@ function advanceTurn(){
     points.forEach((plane) => {
       if(!plane || !isPlaneAtBase(plane)) return;
 
+      const planeLifeState = getPlaneLifeState(plane);
+      const isRespawnLifecyclePlane = (
+        planeLifeState === PLANE_LIFE_STATES.DESTROYED_ARCADE_UNAVAILABLE
+        || planeLifeState === PLANE_LIFE_STATES.DESTROYED_ARCADE_READY
+      );
+
+      // Уцелевшие самолёты, которые просто стоят на базе, не должны попадать
+      // в «послесмертный» цикл прозрачности/недоступности.
+      if(!isRespawnLifecyclePlane && plane.isAlive === true){
+        plane.respawnHalfTurnsRemaining = 0;
+        plane.respawnPenaltyActive = false;
+        plane.respawnStage = 3;
+        plane.lifeState = PLANE_LIFE_STATES.ALIVE;
+        plane.respawnBlockedByEnemy = false;
+        return;
+      }
+
       const turnsLeftRaw = Number.isFinite(plane.respawnHalfTurnsRemaining)
         ? Math.max(0, Math.round(plane.respawnHalfTurnsRemaining))
         : 0;
