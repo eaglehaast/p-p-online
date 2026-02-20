@@ -12863,17 +12863,21 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
   const halfPlaneHeight = PLANE_DRAW_H / 2;
   const flightState = flyingPoints.find(fp => fp.plane === plane) || null;
   const isIdle = !flightState;
+  const isArcadeRespawnOutline = isArcadePlaneRespawnEnabled()
+    && isPlaneRespawnPenaltyActive(plane)
+    && isPlaneAtBase(plane);
   const smokeAnchor = getPlaneAnchorOffset("smoke");
   const jetAnchor = getPlaneAnchorOffset("jet");
   const idleSmokeDistance = Math.max(0, smokeAnchor.y - PLANE_VFX_IDLE_SMOKE_DELTA_Y);
-  const showEngine = !isGhostState && !plane.nukeEliminated && !isInvisibilityFullyHidden;
-  const hasWingsBuff = planeHasActiveTurnBuff(plane, INVENTORY_ITEM_TYPES.WINGS);
+  const showEngine = !isGhostState && !plane.nukeEliminated && !isInvisibilityFullyHidden && !isArcadeRespawnOutline;
+  const hasWingsBuff = !isArcadeRespawnOutline && planeHasActiveTurnBuff(plane, INVENTORY_ITEM_TYPES.WINGS);
   const broadwingOverlayWidth = PLANE_DRAW_W * 1.38;
   const broadwingOverlayHeight = PLANE_DRAW_H;
 
   ctx2d.save();
   const shouldSway = plane.isAlive === true
     && plane.burning === false
+    && !isArcadeRespawnOutline
     && !(handleCircle.active && handleCircle.pointRef === plane);
   const omega = (2 * Math.PI) / (FIELD_PLANE_SWAY_PERIOD_SEC * 60);
   const phase = (plane.id ?? plane.uid ?? 0) * 0.37;
@@ -12914,9 +12918,6 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
   const blend = isGhostState
     ? 0
     : Math.max(0, Math.min(1, glow));
-  const isArcadeRespawnOutline = isArcadePlaneRespawnEnabled()
-    && isPlaneRespawnPenaltyActive(plane)
-    && isPlaneAtBase(plane);
 
   if (blend > 0 && !isInvisibilityFullyHidden && !isArcadeRespawnOutline) {
     const glowStrength = blend * 1.25; // boost brightness slightly
@@ -12945,12 +12946,7 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
   }
 
   if (isArcadeRespawnOutline) {
-    const outlineAlpha = Math.max(0.25, baseRespawnAlpha);
-    ctx2d.globalAlpha = Math.min(1, ctx2d.globalAlpha * (1 / Math.max(0.001, baseRespawnAlpha)) * outlineAlpha);
-    ctx2d.lineWidth = 1.4;
-    drawPlaneOutline(ctx2d, color);
-    ctx2d.restore();
-    return;
+    ctx2d.globalAlpha = 0.1;
   }
   if (color === "blue") {
     if (showEngine) {
@@ -12979,7 +12975,7 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
       ctx2d.globalAlpha *= baseGhostAlpha;
       ctx2d.filter = "grayscale(100%) brightness(90%)";
     }
-    if (shouldApplyNukeFade) {
+    if (shouldApplyNukeFade && !isArcadeRespawnOutline) {
       ctx2d.globalAlpha *= nukeFadeFx.alpha;
       ctx2d.filter = `grayscale(${nukeFadeFx.grayscale}%)`;
     }
@@ -12995,7 +12991,7 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
       );
     }
     ctx2d.filter = previousFilter;
-    if (!isGhostState) {
+    if (!isGhostState && !isArcadeRespawnOutline) {
       addPlaneShading(ctx2d);
     }
   } else if (color === "green") {
@@ -13009,7 +13005,7 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
       ctx2d.globalAlpha *= baseGhostAlpha;
       ctx2d.filter = "grayscale(100%) brightness(90%)";
     }
-    if (shouldApplyNukeFade) {
+    if (shouldApplyNukeFade && !isArcadeRespawnOutline) {
       ctx2d.globalAlpha *= nukeFadeFx.alpha;
       ctx2d.filter = `grayscale(${nukeFadeFx.grayscale}%)`;
     }
@@ -13025,7 +13021,7 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
       );
     }
     ctx2d.filter = previousFilter;
-    if (!isGhostState) {
+    if (!isGhostState && !isArcadeRespawnOutline) {
       addPlaneShading(ctx2d);
     }
   } else {
