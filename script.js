@@ -1164,7 +1164,7 @@ function getPlaneInvisibilityAlpha(plane, nowMs = performance.now()){
 }
 
 function isInventoryInvisibilityEnabled(){
-  return !isArcadePlaneRespawnEnabled();
+  return true;
 }
 
 function resetAllPlaneInvisibilityToOpaque(){
@@ -13284,9 +13284,7 @@ function drawPlanesAndTrajectories(){
 
   const renderPlane = (p, targetCtx, { allowRangeLabel = false } = {}) => {
     if(!p.isAlive && !p.burning && !isNukeEliminatedPlaneRenderable(p)) return;
-    const invisibilityAlpha = (isArcadePlaneRespawnEnabled() && p.isAlive)
-      ? 1
-      : getPlaneInvisibilityAlpha(p);
+    const invisibilityAlpha = getPlaneInvisibilityAlpha(p);
 
     if (debugDrawOrder) {
       const stateLabel = p.isAlive ? (p.burning ? 'burning' : 'alive') : 'crashed';
