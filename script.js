@@ -9085,6 +9085,7 @@ function makePlane(x,y,color,angle){
     x, y,
     color,
     isAlive:true,
+    lifeState:"alive",
     respawnState:"at_base",
     respawnStage:3,
     respawnPenaltyActive:false,
@@ -9111,6 +9112,18 @@ function makePlane(x,y,color,angle){
     invisibilityFadeStartAlpha: 1,
     invisibilityAlphaCurrent: 1,
   };
+}
+
+const PLANE_LIFE_STATES = Object.freeze({
+  ALIVE: "alive",
+  DESTROYED_CLASSIC: "destroyed_classic",
+  DESTROYED_ARCADE_UNAVAILABLE: "destroyed_arcade_unavailable",
+  DESTROYED_ARCADE_READY: "destroyed_arcade_ready",
+});
+
+function getPlaneLifeState(plane){
+  if(!plane) return PLANE_LIFE_STATES.DESTROYED_CLASSIC;
+  return plane.lifeState || (plane.isAlive ? PLANE_LIFE_STATES.ALIVE : PLANE_LIFE_STATES.DESTROYED_CLASSIC);
 }
 
 function getRespawnOpacityByStage(stage){
@@ -9243,6 +9256,7 @@ function isBaseInvulnerabilityEnabled(){
 
 function isPlaneLaunchStateReady(plane){
   if(!plane) return false;
+  if(getPlaneLifeState(plane) === PLANE_LIFE_STATES.DESTROYED_ARCADE_READY) return true;
   // Ограничения базы/восстановления — только для arcade, не для classic/advanced/hotseat.
   if(isArcadePlaneRespawnEnabled()){
     if(plane.isAlive !== true || plane.burning) return false;
@@ -9264,6 +9278,9 @@ function isPlaneTargetable(plane){
   if(!plane) return false;
   if(plane.isAlive !== true) return false;
   if(plane.burning) return false;
+  if(isArcadePlaneRespawnEnabled() && getPlaneLifeState(plane) === PLANE_LIFE_STATES.DESTROYED_ARCADE_READY){
+    return false;
+  }
   // Базовая неуязвимость — отдельное правило. По умолчанию самолёт на базе можно поразить,
   // а режим неуязвимости включается только явным флагом.
   if(isArcadePlaneRespawnEnabled() && isBaseInvulnerabilityEnabled() && isPlaneAtBase(plane)) return false;
@@ -9282,6 +9299,8 @@ function setPlaneReadyAtBase(plane){
     plane.angle = plane.homeAngle;
   }
   plane.burning = false;
+  plane.isAlive = true;
+  plane.lifeState = PLANE_LIFE_STATES.DESTROYED_ARCADE_UNAVAILABLE;
   plane.crashStart = null;
   plane.killMarkerStart = null;
   plane.collisionX = null;
@@ -9304,6 +9323,7 @@ function markPlaneLaunchedFromBase(plane){
   if(isArcadePlaneRespawnEnabled()){
     plane.respawnState = "in_flight";
     plane.respawnStage = 3;
+    plane.lifeState = PLANE_LIFE_STATES.ALIVE;
   }
 }
 
@@ -9323,6 +9343,7 @@ function eliminatePlane(plane, options = {}){
   }
 
   plane.isAlive = false;
+  plane.lifeState = PLANE_LIFE_STATES.DESTROYED_CLASSIC;
   plane.burning = Boolean(keepBurning);
   if(plane.burning){
     ensurePlaneBurningFlame(plane);
@@ -11884,6 +11905,12 @@ function advanceTurn(){
         plane.respawnStage = 3;
       }
 
+      if(plane.respawnPenaltyActive){
+        plane.lifeState = PLANE_LIFE_STATES.DESTROYED_ARCADE_UNAVAILABLE;
+      } else if(isPlaneRespawnComplete(plane)){
+        plane.lifeState = PLANE_LIFE_STATES.DESTROYED_ARCADE_READY;
+      }
+
       isPlaneRespawnBlockedByEnemy(plane);
     });
   }
@@ -11894,6 +11921,18 @@ function advanceTurn(){
   }
   if(turnColors[turnIndex] === "blue" && gameMode === "computer"){
     aiMoveScheduled = false;
+  }
+
+  if(isArcadePlaneRespawnEnabled()){
+    const hasCurrentColorFlyingPlane = flyingPoints.some(fp => fp?.plane?.color === nextTurnColor);
+    const hasCurrentColorLaunchReadyPlane = points.some(plane => (
+      plane &&
+      plane.color === nextTurnColor &&
+      !isPlaneInactiveForLaunch(plane)
+    ));
+    if(!hasCurrentColorFlyingPlane && !hasCurrentColorLaunchReadyPlane){
+      advanceTurn();
+    }
   }
 }
 
@@ -12937,11 +12976,15 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
   const shouldApplyNukeFade = nukeFadeFx.active && (plane.isAlive || plane.nukeEliminated);
   const previousFilter = ctx2d.filter;
   const baseGhostAlpha = 0.3;
-  const baseRespawnAlpha = isPlaneRespawnPenaltyActive(plane)
+  const planeLifeState = getPlaneLifeState(plane);
+  const isArcadeReadyAtBaseState = planeLifeState === PLANE_LIFE_STATES.DESTROYED_ARCADE_READY;
+  const baseRespawnAlpha = isArcadeReadyAtBaseState
+    ? 0.2
+    : (isPlaneRespawnPenaltyActive(plane)
     ? (isArcadePlaneRespawnEnabled()
       ? getInactivePlaneAlpha(performance.now(), plane)
       : getRespawnOpacityByStage(plane.respawnStage))
-    : 1;
+    : 1);
   if(invisibilityFeedbackAlpha < 1){
     ctx2d.globalAlpha *= invisibilityFeedbackAlpha;
   }
