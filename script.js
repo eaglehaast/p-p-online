@@ -9207,6 +9207,7 @@ function isArcadePlaneRespawnEnabled(){
 
 function isPlaneLaunchStateReady(plane){
   if(!plane) return false;
+  // Ограничения базы/восстановления — только для arcade, не для classic/advanced/hotseat.
   if(isArcadePlaneRespawnEnabled()){
     return isPlaneAtBase(plane) && isPlaneRespawnComplete(plane);
   }
@@ -9222,7 +9223,7 @@ function isPlaneTargetable(plane){
   if(plane.isAlive !== true) return false;
   if(plane.burning) return false;
   if(plane.isInvulnerable === true) return false;
-  if(isPlaneAtBase(plane)) return false;
+  if(isArcadePlaneRespawnEnabled() && isPlaneAtBase(plane)) return false;
   return true;
 }
 
@@ -9249,8 +9250,10 @@ function setPlaneReadyAtBase(plane){
 
 function markPlaneLaunchedFromBase(plane){
   if(!plane) return;
-  plane.respawnState = "in_flight";
-  plane.respawnStage = 3;
+  if(isArcadePlaneRespawnEnabled()){
+    plane.respawnState = "in_flight";
+    plane.respawnStage = 3;
+  }
   plane.isInvulnerable = false;
 }
 
@@ -9876,6 +9879,7 @@ function getGrabRejectReason(mx, my, currentColor){
 
   const blockedByFlightState = points.some(pt =>
     pt.color === currentColor &&
+    isArcadePlaneRespawnEnabled() &&
     !isPlaneAtBase(pt) &&
     Math.hypot(pt.x - mx, pt.y - my) <= PLANE_TOUCH_RADIUS
   );
@@ -11800,17 +11804,19 @@ function advanceTurn(){
   });
   turnIndex = (turnIndex + 1) % turnColors.length;
   const nextTurnColor = turnColors[turnIndex];
-  const planesToRespawn = points.filter(plane =>
-    plane &&
-    plane.color === nextTurnColor &&
-    isPlaneAtBase(plane)
-  );
-  planesToRespawn.forEach((plane) => {
-    const currentStage = Number.isFinite(plane.respawnStage)
-      ? Math.max(1, Math.min(3, Math.round(plane.respawnStage)))
-      : 1;
-    plane.respawnStage = Math.min(3, currentStage + 1);
-  });
+  if(isArcadePlaneRespawnEnabled()){
+    const planesToRespawn = points.filter(plane =>
+      plane &&
+      plane.color === nextTurnColor &&
+      isPlaneAtBase(plane)
+    );
+    planesToRespawn.forEach((plane) => {
+      const currentStage = Number.isFinite(plane.respawnStage)
+        ? Math.max(1, Math.min(3, Math.round(plane.respawnStage)))
+        : 1;
+      plane.respawnStage = Math.min(3, currentStage + 1);
+    });
+  }
   activateQueuedInvisibilityForEnemyTurn(nextTurnColor);
   turnAdvanceCount += 1;
   if(turnAdvanceCount >= 1){
