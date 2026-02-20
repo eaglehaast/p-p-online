@@ -8907,6 +8907,7 @@ function lockInDraw(options = {}){
 
 function maybeLockInMatchOutcome(options = {}){
   if(isGameOver) return true;
+  if(isArcadeInfiniteScoreMode()) return false;
 
   if(blueScore >= POINTS_TO_WIN && greenScore >= POINTS_TO_WIN){
     lockInDraw(options);
@@ -9198,6 +9199,10 @@ function isFlagActive(flag){
 }
 
 function isArcadeFlagRespawnEnabled(){
+  return settings.arcadeMode === true && isAdvancedLikeRuleset(selectedRuleset);
+}
+
+function isArcadeInfiniteScoreMode(){
   return settings.arcadeMode === true && isAdvancedLikeRuleset(selectedRuleset);
 }
 
@@ -13834,14 +13839,15 @@ function checkVictory(options = {}){
   const greenAlive = points.filter(p=>p.isAlive && p.color==="green").length;
   const blueAlive  = points.filter(p=>p.isAlive && p.color==="blue").length;
   const deferRoundLock = Boolean(options.deferRoundLock);
+  const isInfiniteScoreMode = isArcadeInfiniteScoreMode();
   if(isGameOver) return;
 
-  if(!deferRoundLock && blueScore >= POINTS_TO_WIN && greenScore >= POINTS_TO_WIN){
+  if(!isInfiniteScoreMode && !deferRoundLock && blueScore >= POINTS_TO_WIN && greenScore >= POINTS_TO_WIN){
     lockInDraw({ showEndScreen: true });
     return;
   }
 
-  const canContinueSeries = blueScore < POINTS_TO_WIN && greenScore < POINTS_TO_WIN;
+  const canContinueSeries = isInfiniteScoreMode || (blueScore < POINTS_TO_WIN && greenScore < POINTS_TO_WIN);
 
   if(deferRoundLock) return;
 
