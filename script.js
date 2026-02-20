@@ -14312,18 +14312,20 @@ function drawPlayerHUD(ctx, frame, color, isTurn, now = performance.now()){
       continue;
     }
 
-    const respawnAlpha = plane && isPlaneAtBase(plane)
-      ? (isArcadePlaneRespawnEnabled()
-        ? getInactivePlaneAlpha(now, plane)
-        : getRespawnOpacityByStage(plane.respawnStage))
+    const isArcadeRespawnActive = isArcadePlaneRespawnEnabled();
+    const respawnAlpha = isArcadeRespawnActive && plane && isPlaneAtBase(plane)
+      ? getInactivePlaneAlpha(now, plane)
       : 1;
-    const deadPlaneAlpha = plane && !plane.isAlive ? 0.25 : 1;
+    const deadPlaneAlpha = plane && !plane.isAlive
+      ? (isArcadeRespawnActive ? 0.25 : 0)
+      : 1;
+    const iconAlpha = respawnAlpha * deadPlaneAlpha;
 
     ctx.save();
-    ctx.globalAlpha *= respawnAlpha * deadPlaneAlpha;
+    ctx.globalAlpha *= iconAlpha;
     drawPlaneCounterIcon(ctx, centerX, centerY, color, iconScale);
     const killMarkerProgress = getKillMarkerProgress(plane, now);
-    if (killMarkerProgress > 0) {
+    if (killMarkerProgress > 0 && iconAlpha > 0) {
       const hudStyle = getHudPlaneStyle(color);
       const hudStyleScale = Number.isFinite(hudStyle?.scale) && hudStyle.scale > 0
         ? hudStyle.scale
