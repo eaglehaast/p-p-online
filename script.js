@@ -9221,6 +9221,7 @@ function isPlaneTargetable(plane){
   if(!plane) return false;
   if(plane.isAlive !== true) return false;
   if(plane.burning) return false;
+  if(isArcadePlaneRespawnEnabled() && isPlaneAtBase(plane)) return false;
   return true;
 }
 
@@ -9246,6 +9247,7 @@ function setPlaneReadyAtBase(plane){
 
 function markPlaneLaunchedFromBase(plane){
   if(!plane) return;
+  plane.isInvulnerable = false;
   // Меняем respawn-состояние только в arcade: вне arcade база не должна диктовать этапы полёта.
   if(isArcadePlaneRespawnEnabled()){
     plane.respawnState = "in_flight";
