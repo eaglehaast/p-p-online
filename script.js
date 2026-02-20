@@ -14123,8 +14123,8 @@ function getKillMarkerProgress(plane, now = performance.now()){
     return 0;
   }
 
-  const duration = HUD_KILL_MARKER_DRAW_DURATION_MS > 0
-    ? HUD_KILL_MARKER_DRAW_DURATION_MS
+  const duration = HUD_PLANE_DEATH_DURATION_MS > 0
+    ? HUD_PLANE_DEATH_DURATION_MS
     : 800;
 
   let start = plane.killMarkerStart;
