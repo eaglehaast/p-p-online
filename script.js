@@ -9080,7 +9080,6 @@ function makePlane(x,y,color,angle){
     x, y,
     color,
     isAlive:true,
-    isInvulnerable:true,
     respawnState:"at_base",
     respawnStage:3,
     burning:false,
@@ -9222,8 +9221,6 @@ function isPlaneTargetable(plane){
   if(!plane) return false;
   if(plane.isAlive !== true) return false;
   if(plane.burning) return false;
-  if(plane.isInvulnerable === true) return false;
-  if(isArcadePlaneRespawnEnabled() && isPlaneAtBase(plane)) return false;
   return true;
 }
 
@@ -9245,7 +9242,6 @@ function setPlaneReadyAtBase(plane){
   plane.collisionY = null;
   plane.respawnState = "at_base";
   plane.respawnStage = 1;
-  plane.isInvulnerable = true;
 }
 
 function markPlaneLaunchedFromBase(plane){
@@ -9255,7 +9251,6 @@ function markPlaneLaunchedFromBase(plane){
     plane.respawnState = "in_flight";
     plane.respawnStage = 3;
   }
-  plane.isInvulnerable = false;
 }
 
 function eliminatePlane(plane, options = {}){
