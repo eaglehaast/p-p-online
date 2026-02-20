@@ -9250,6 +9250,7 @@ function setPlaneReadyAtBase(plane){
 
 function markPlaneLaunchedFromBase(plane){
   if(!plane) return;
+  // Меняем respawn-состояние только в arcade: вне arcade база не должна диктовать этапы полёта.
   if(isArcadePlaneRespawnEnabled()){
     plane.respawnState = "in_flight";
     plane.respawnStage = 3;
@@ -11805,6 +11806,7 @@ function advanceTurn(){
   turnIndex = (turnIndex + 1) % turnColors.length;
   const nextTurnColor = turnColors[turnIndex];
   if(isArcadePlaneRespawnEnabled()){
+    // Этапы возрождения у базы двигаем только в arcade-режиме.
     const planesToRespawn = points.filter(plane =>
       plane &&
       plane.color === nextTurnColor &&

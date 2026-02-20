@@ -18,6 +18,14 @@ Before release, run:
 
 This command verifies that all `id` values inside `.cp-adds` are identical in `index.html` and `settings.html`.
 
+For arcade respawn regression smoke check, run:
+
+```bash
+node ./scripts/smoke-arcade-plane-respawn.js
+```
+
+This smoke script ensures base-related plane restrictions are applied only in arcade mode and do not leak into non-arcade rulesets.
+
 ## Game modes
 
 - **Hot Seat** – two players share the same computer.
