@@ -9082,6 +9082,7 @@ function makePlane(x,y,color,angle){
     isAlive:true,
     respawnState:"at_base",
     respawnStage:3,
+    respawnPenaltyActive:false,
     burning:false,
     crashStart:null,
     angle,
@@ -9217,6 +9218,10 @@ function isPlaneAtBase(plane){
   return plane?.respawnState === "at_base";
 }
 
+function isPlaneRespawnPenaltyActive(plane){
+  return plane?.respawnPenaltyActive === true;
+}
+
 function isPlaneTargetable(plane){
   if(!plane) return false;
   if(plane.isAlive !== true) return false;
@@ -9243,11 +9248,13 @@ function setPlaneReadyAtBase(plane){
   plane.collisionY = null;
   plane.respawnState = "at_base";
   plane.respawnStage = 1;
+  plane.respawnPenaltyActive = true;
 }
 
 function markPlaneLaunchedFromBase(plane){
   if(!plane) return;
   plane.isInvulnerable = false;
+  plane.respawnPenaltyActive = false;
   // Меняем respawn-состояние только в arcade: вне arcade база не должна диктовать этапы полёта.
   if(isArcadePlaneRespawnEnabled()){
     plane.respawnState = "in_flight";
@@ -12862,7 +12869,7 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
   const shouldApplyNukeFade = nukeFadeFx.active && (plane.isAlive || plane.nukeEliminated);
   const previousFilter = ctx2d.filter;
   const baseGhostAlpha = 0.3;
-  const baseRespawnAlpha = isPlaneAtBase(plane)
+  const baseRespawnAlpha = isPlaneRespawnPenaltyActive(plane)
     ? (isArcadePlaneRespawnEnabled()
       ? getInactivePlaneAlpha(performance.now(), plane)
       : getRespawnOpacityByStage(plane.respawnStage))
@@ -14315,7 +14322,7 @@ function drawPlayerHUD(ctx, frame, color, isTurn, now = performance.now()){
     }
 
     const isArcadeRespawnActive = isArcadePlaneRespawnEnabled();
-    const respawnAlpha = isArcadeRespawnActive && plane && isPlaneAtBase(plane)
+    const respawnAlpha = isArcadeRespawnActive && plane && isPlaneRespawnPenaltyActive(plane)
       ? getInactivePlaneAlpha(now, plane)
       : 1;
     const deadPlaneAlpha = plane && !plane.isAlive
