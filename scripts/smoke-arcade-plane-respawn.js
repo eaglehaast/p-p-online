@@ -36,9 +36,11 @@ const gameSource = fs.readFileSync('script.js', 'utf8');
 const functionNames = [
   'isArcadePlaneRespawnEnabled',
   'isPlaneAtBase',
+  'isPlaneRespawnPenaltyActive',
   'isPlaneRespawnComplete',
   'isPlaneLaunchStateReady',
   'isPlaneTargetable',
+  'setPlaneReadyAtBase',
   'markPlaneLaunchedFromBase',
   'advanceTurn',
 ];
@@ -75,6 +77,7 @@ const nonArcadePlane = {
   isInvulnerable: false,
   respawnState: 'at_base',
   respawnStage: 1,
+  respawnPenaltyActive: false,
 };
 assert(
   context.isPlaneLaunchStateReady(nonArcadePlane) === true,
@@ -89,6 +92,7 @@ const nonArcadeLaunchPlane = {
   isInvulnerable: true,
   respawnState: 'at_base',
   respawnStage: 1,
+  respawnPenaltyActive: true,
 };
 context.markPlaneLaunchedFromBase(nonArcadeLaunchPlane);
 assert(
@@ -96,8 +100,36 @@ assert(
   'Regression: markPlaneLaunchedFromBase must not force respawn stage/state outside arcade.'
 );
 assert(
+  nonArcadeLaunchPlane.respawnPenaltyActive === false,
+  'Regression: launch from base should clear respawn penalty flag outside arcade too.'
+);
+assert(
   nonArcadeLaunchPlane.isInvulnerable === false,
   'markPlaneLaunchedFromBase should still disable invulnerability after launch.'
+);
+
+const resetToBasePlane = {
+  x: 10,
+  y: 20,
+  prevX: 11,
+  prevY: 21,
+  homeX: 30,
+  homeY: 40,
+  angle: 0,
+  homeAngle: 1,
+  burning: false,
+  crashStart: null,
+  killMarkerStart: null,
+  collisionX: null,
+  collisionY: null,
+  respawnState: 'in_flight',
+  respawnStage: 3,
+  respawnPenaltyActive: false,
+};
+context.setPlaneReadyAtBase(resetToBasePlane);
+assert(
+  context.isPlaneRespawnPenaltyActive(resetToBasePlane) === true,
+  'setPlaneReadyAtBase should enable explicit respawn penalty flag.'
 );
 
 context.points = [
@@ -122,6 +154,7 @@ const arcadePlane = {
   isInvulnerable: false,
   respawnState: 'at_base',
   respawnStage: 2,
+  respawnPenaltyActive: true,
 };
 assert(
   context.isPlaneLaunchStateReady(arcadePlane) === false,
@@ -141,11 +174,16 @@ const arcadeLaunchPlane = {
   isInvulnerable: true,
   respawnState: 'at_base',
   respawnStage: 1,
+  respawnPenaltyActive: true,
 };
 context.markPlaneLaunchedFromBase(arcadeLaunchPlane);
 assert(
   arcadeLaunchPlane.respawnState === 'in_flight' && arcadeLaunchPlane.respawnStage === 3,
   'Arcade: markPlaneLaunchedFromBase should move plane to in_flight stage 3.'
+);
+assert(
+  arcadeLaunchPlane.respawnPenaltyActive === false,
+  'Arcade: launch from base should clear respawn penalty flag.'
 );
 assert(
   arcadeLaunchPlane.isInvulnerable === false,
