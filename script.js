@@ -12992,7 +12992,7 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
     ? 0
     : Math.max(0, Math.min(1, glow));
 
-  if (blend > 0 && !isInvisibilityFullyHidden && !isArcadeRespawnOutline) {
+  if (blend > 0 && !isArcadePlaneRespawnEnabled() && !isInvisibilityFullyHidden && !isArcadeRespawnOutline) {
     const glowStrength = blend * 1.25; // boost brightness slightly
     const glowVisibilityAlpha = Math.max(0, Math.min(1, resolvedInvisibilityAlpha * invisibilityFeedbackAlpha));
     drawPlaneSpriteGlow(ctx2d, plane, glowStrength, glowVisibilityAlpha);
@@ -13223,7 +13223,10 @@ function drawPlanesAndTrajectories(){
   const activeColor = turnColors[turnIndex];
   const pendingTargetColor = pendingInventoryUse?.color ?? null;
   const shouldHighlightPendingTargets = Boolean(pendingInventoryUse);
-  const showGlow = !handleCircle.active && !flyingPoints.some(fp => fp.plane.color === activeColor);
+  const isArcadeModeActive = isArcadePlaneRespawnEnabled();
+  const showGlow = isArcadeModeActive
+    ? false
+    : (!handleCircle.active && !flyingPoints.some(fp => fp.plane.color === activeColor));
   const destroyedOrBurning = [];
   const activePlanes = [];
 
@@ -13277,7 +13280,7 @@ function drawPlanesAndTrajectories(){
     } else {
       p.glow += (glowTarget - p.glow) * 0.1;
     }
-    const renderGlow = (!p.isAlive || p.burning) ? 0 : p.glow;
+    const renderGlow = (isArcadeModeActive || !p.isAlive || p.burning) ? 0 : p.glow;
     drawThinPlane(targetCtx, p, renderGlow, invisibilityAlpha);
 
     if(allowRangeLabel && handleCircle.active && handleCircle.pointRef === p){
