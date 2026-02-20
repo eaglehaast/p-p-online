@@ -9138,11 +9138,7 @@ function isPlaneRespawnComplete(plane){
 
 function isPlaneInactiveForLaunch(plane){
   if(!plane) return true;
-  if(plane.isAlive !== true) return true;
-  if(plane.burning) return true;
-  if(!isPlaneAtBase(plane)) return true;
-  if(isArcadePlaneRespawnEnabled() && !isPlaneRespawnComplete(plane)) return true;
-  return false;
+  return !isPlaneLaunchStateReady(plane);
 }
 
 function getFlagConfigsForMap(map = null){
@@ -9207,6 +9203,14 @@ function isArcadeFlagRespawnEnabled(){
 
 function isArcadePlaneRespawnEnabled(){
   return settings.arcadeMode === true && isAdvancedLikeRuleset(selectedRuleset);
+}
+
+function isPlaneLaunchStateReady(plane){
+  if(!plane) return false;
+  if(isArcadePlaneRespawnEnabled()){
+    return isPlaneAtBase(plane) && isPlaneRespawnComplete(plane);
+  }
+  return plane.isAlive === true && !plane.burning;
 }
 
 function isPlaneAtBase(plane){
