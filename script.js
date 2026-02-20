@@ -9141,6 +9141,7 @@ function makePlane(x,y,color,angle){
     invisibilityFadeDurationMs: INVISIBILITY_FADE_DURATION_MS,
     invisibilityFadeStartAlpha: 1,
     invisibilityAlphaCurrent: 1,
+    killAwardedThisLife: false,
   };
 }
 
@@ -9308,13 +9309,34 @@ function isPlaneTargetable(plane){
   if(!plane) return false;
   if(plane.isAlive !== true) return false;
   if(plane.burning) return false;
-  if(isArcadePlaneRespawnEnabled() && getPlaneLifeState(plane) === PLANE_LIFE_STATES.DESTROYED_ARCADE_READY){
+  const planeLifeState = getPlaneLifeState(plane);
+  if(
+    isArcadePlaneRespawnEnabled()
+    && (
+      planeLifeState === PLANE_LIFE_STATES.DESTROYED_ARCADE_UNAVAILABLE
+      || planeLifeState === PLANE_LIFE_STATES.DESTROYED_ARCADE_READY
+    )
+  ){
     return false;
   }
   // Базовая неуязвимость — отдельное правило. По умолчанию самолёт на базе можно поразить,
   // а режим неуязвимости включается только явным флагом.
   if(isArcadePlaneRespawnEnabled() && isBaseInvulnerabilityEnabled() && isPlaneAtBase(plane)) return false;
   return true;
+}
+
+function canAwardKillPointForPlane(plane){
+  return Boolean(plane) && plane.killAwardedThisLife !== true;
+}
+
+function markPlaneKillPointAwarded(plane){
+  if(!plane) return;
+  plane.killAwardedThisLife = true;
+}
+
+function resetPlaneKillPointAwardMarker(plane){
+  if(!plane) return;
+  plane.killAwardedThisLife = false;
 }
 
 function setPlaneReadyAtBase(plane){
@@ -9354,6 +9376,7 @@ function markPlaneLaunchedFromBase(plane){
     plane.respawnState = "in_flight";
     plane.respawnStage = 3;
     plane.lifeState = PLANE_LIFE_STATES.ALIVE;
+    resetPlaneKillPointAwardMarker(plane);
   }
 }
 
@@ -11853,7 +11876,10 @@ function destroyPlane(fp, scoringColor = null){
 
 
   flyingPoints = flyingPoints.filter(x=>x!==fp);
-  awardPoint(scoringColor);
+  if(canAwardKillPointForPlane(p)){
+    markPlaneKillPointAwarded(p);
+    awardPoint(scoringColor);
+  }
   checkVictory();
   if(!isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
     advanceTurn();
@@ -12005,7 +12031,10 @@ function handleAAForPlane(p, fp){
               if(fp) {
                 flyingPoints = flyingPoints.filter(x=>x!==fp);
               }
-              awardPoint(aa.owner);
+              if(canAwardKillPointForPlane(p)){
+                markPlaneKillPointAwarded(p);
+                awardPoint(aa.owner);
+              }
               checkVictory();
               if(fp && !isGameOver && !flyingPoints.some(x=>x.plane.color===p.color)){
                 advanceTurn();
@@ -12056,7 +12085,8 @@ function handleMineForPlane(p, fp){
 
     // Self-detonation rule: stepping on your own mine destroys your plane,
     // but does not grant a score point to the owner.
-    if(mine.owner && mine.owner !== p.color){
+    if(mine.owner && mine.owner !== p.color && canAwardKillPointForPlane(p)){
+      markPlaneKillPointAwarded(p);
       awardPoint(mine.owner);
     }
     checkVictory();
@@ -13949,7 +13979,10 @@ function checkPlaneHits(plane, fp){
         }
         clearFlagFromPlane(p);
       }
-      awardPoint(plane.color);
+      if(canAwardKillPointForPlane(p)){
+        markPlaneKillPointAwarded(p);
+        awardPoint(plane.color);
+      }
       checkVictory();
       if(isGameOver) return;
     }
