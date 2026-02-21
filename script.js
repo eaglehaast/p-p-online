@@ -9178,6 +9178,7 @@ function makePlane(x,y,color,angle){
     invisibilityFadeStartAlpha: 1,
     invisibilityAlphaCurrent: 1,
     killAwardedThisLife: false,
+    shieldActive: false,
   };
 }
 
@@ -9187,6 +9188,8 @@ const PLANE_LIFE_STATES = Object.freeze({
   DESTROYED_ARCADE_UNAVAILABLE: "destroyed_arcade_unavailable",
   DESTROYED_ARCADE_READY: "destroyed_arcade_ready",
 });
+
+const ARCADE_SHIELD_COLLIDER_SIZE = 40;
 
 function getPlaneLifeState(plane){
   if(!plane) return PLANE_LIFE_STATES.DESTROYED_CLASSIC;
@@ -9400,6 +9403,7 @@ function setPlaneReadyAtBase(plane){
   plane.respawnHalfTurnsRemaining = 5;
   plane.respawnBlockedByEnemy = false;
   plane.respawnHudCrossStart = now;
+  plane.shieldActive = false;
 }
 
 function markPlaneLaunchedFromBase(plane){
@@ -9410,6 +9414,7 @@ function markPlaneLaunchedFromBase(plane){
   plane.respawnHalfTurnsRemaining = 0;
   plane.respawnBlockedByEnemy = false;
   plane.respawnHudCrossStart = null;
+  plane.shieldActive = false;
   // Меняем respawn-состояние только в arcade: вне arcade база не должна диктовать этапы полёта.
   if(isArcadePlaneRespawnEnabled()){
     plane.respawnState = "in_flight";
@@ -11241,6 +11246,97 @@ function findFirstSurfaceHit(p0, p1, radius){
   return best;
 }
 
+function getShieldColliderForPlane(plane){
+  if(!plane || plane.shieldActive !== true) return null;
+  const halfSize = ARCADE_SHIELD_COLLIDER_SIZE / 2;
+  return {
+    minX: plane.x - halfSize,
+    maxX: plane.x + halfSize,
+    minY: plane.y - halfSize,
+    maxY: plane.y + halfSize,
+  };
+}
+
+function getSweptCircleAabbHit(p0, p1, radius, aabb){
+  const vx = p1.x - p0.x;
+  const vy = p1.y - p0.y;
+  const expanded = {
+    minX: aabb.minX - radius,
+    maxX: aabb.maxX + radius,
+    minY: aabb.minY - radius,
+    maxY: aabb.maxY + radius,
+  };
+
+  const EPS = 1e-6;
+  const invX = Math.abs(vx) < EPS ? null : 1 / vx;
+  const invY = Math.abs(vy) < EPS ? null : 1 / vy;
+
+  const tx1 = invX === null ? -Infinity : (expanded.minX - p0.x) * invX;
+  const tx2 = invX === null ? Infinity : (expanded.maxX - p0.x) * invX;
+  const ty1 = invY === null ? -Infinity : (expanded.minY - p0.y) * invY;
+  const ty2 = invY === null ? Infinity : (expanded.maxY - p0.y) * invY;
+
+  const tMinX = Math.min(tx1, tx2);
+  const tMaxX = Math.max(tx1, tx2);
+  const tMinY = Math.min(ty1, ty2);
+  const tMaxY = Math.max(ty1, ty2);
+
+  const tEntry = Math.max(tMinX, tMinY);
+  const tExit = Math.min(tMaxX, tMaxY);
+
+  if(tExit < 0 || tEntry > tExit || tEntry > 1) return null;
+  if(tEntry < 0) return null;
+
+  let normal = { x: 0, y: 0 };
+  if(tMinX > tMinY){
+    normal = { x: vx > 0 ? -1 : 1, y: 0 };
+  } else if(tMinY > tMinX){
+    normal = { x: 0, y: vy > 0 ? -1 : 1 };
+  } else {
+    normal = Math.abs(vx) >= Math.abs(vy)
+      ? { x: vx > 0 ? -1 : 1, y: 0 }
+      : { x: 0, y: vy > 0 ? -1 : 1 };
+  }
+
+  const hitX = p0.x + vx * tEntry;
+  const hitY = p0.y + vy * tEntry;
+  return {
+    t: tEntry,
+    normal,
+    hitPoint: {
+      x: hitX - normal.x * radius,
+      y: hitY - normal.y * radius,
+    }
+  };
+}
+
+function findFirstShieldHit(fp, p0, p1, radius){
+  if(!isArcadePlaneRespawnEnabled()) return null;
+  const attacker = fp?.plane;
+  if(!attacker) return null;
+
+  let best = null;
+  for(const victim of points){
+    if(!victim || victim === attacker) continue;
+    if(victim.color === attacker.color) continue;
+    if(victim.isAlive !== true || victim.burning) continue;
+    if(victim.shieldActive !== true) continue;
+
+    const shieldCollider = getShieldColliderForPlane(victim);
+    if(!shieldCollider) continue;
+    const hit = getSweptCircleAabbHit(p0, p1, radius, shieldCollider);
+    if(!hit) continue;
+    if(best && hit.t >= best.t) continue;
+    best = {
+      ...hit,
+      victim,
+      surface: { type: "shield", kind: "SHIELD" }
+    };
+  }
+
+  return best;
+}
+
 function getSurfaceHit(p0, p1, radius, surface){
   const vx = p1.x - p0.x;
   const vy = p1.y - p0.y;
@@ -11398,7 +11494,14 @@ function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
   while(remainingTime > TINY_EPSILON && bounces < MAX_BOUNCES_PER_TICK){
     const endX = currX + fp.vx * remainingTime;
     const endY = currY + fp.vy * remainingTime;
-    const hit = findFirstSurfaceHit({ x: currX, y: currY }, { x: endX, y: endY }, radius);
+    const p0 = { x: currX, y: currY };
+    const p1 = { x: endX, y: endY };
+    const surfaceHit = findFirstSurfaceHit(p0, p1, radius);
+    const shieldHit = findFirstShieldHit(fp, p0, p1, radius);
+    const hit = (!surfaceHit || (shieldHit && shieldHit.t < surfaceHit.t))
+      ? shieldHit
+      : surfaceHit;
+
     if(!hit){
       p.x = endX;
       p.y = endY;
@@ -11467,6 +11570,15 @@ function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
       vIn: { vx: incoming.vx, vy: incoming.vy },
       vOut: { vx: fp.vx, vy: fp.vy }
     });
+
+    if(hit.surface?.type === "shield" && hit.victim){
+      hit.victim.shieldActive = false;
+      hit.victim._shieldAlphaCurrent = 0;
+      if(fp){
+        fp.lastHitPlane = hit.victim;
+        fp.lastHitCooldown = PLANE_HIT_COOLDOWN_SEC;
+      }
+    }
 
     collided = true;
     remainingTime = remainingTime * Math.max(0, 1 - hit.t);
@@ -12020,8 +12132,10 @@ function advanceTurn(){
 
       if(plane.respawnPenaltyActive){
         plane.lifeState = PLANE_LIFE_STATES.DESTROYED_ARCADE_UNAVAILABLE;
+        plane.shieldActive = false;
       } else if(isPlaneRespawnComplete(plane)){
         plane.lifeState = PLANE_LIFE_STATES.DESTROYED_ARCADE_READY;
+        plane.shieldActive = true;
       }
 
       isPlaneRespawnBlockedByEnemy(plane);
@@ -13199,8 +13313,7 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
 function drawArcadeRespawnShield(ctx2d, plane){
   if(!ctx2d || !plane) return;
   if(!isArcadePlaneRespawnEnabled()) return;
-  if(!isPlaneAtBase(plane)) return;
-  if(getPlaneLifeState(plane) !== PLANE_LIFE_STATES.DESTROYED_ARCADE_READY) return;
+  if(!plane.shieldActive) return;
 
   const isPlaneGrabbed = handleCircle.active && handleCircle.pointRef === plane;
   const shieldAlphaTarget = isPlaneGrabbed ? 0 : 1;
