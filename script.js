@@ -4276,11 +4276,13 @@ const MAIN_MENU_ASSETS = [
 ];
 
 const HUD_PLANE_TIMER_FRAME_PATHS = [
-  "ui_gamescreen/gs_arcade_planetimer/gs_arcade_4.png",
-  "ui_gamescreen/gs_arcade_planetimer/gs_arcade_3.png",
-  "ui_gamescreen/gs_arcade_planetimer/gs_arcade_2.png",
-  "ui_gamescreen/gs_arcade_planetimer/gs_arcade_1.png"
+  "ui_gamescreen/gs_arcade_timer/gs_arcade_05.png",
+  "ui_gamescreen/gs_arcade_timer/gs_arcade_04.png",
+  "ui_gamescreen/gs_arcade_timer/gs_arcade_03.png",
+  "ui_gamescreen/gs_arcade_timer/gs_arcade_02.png",
+  "ui_gamescreen/gs_arcade_timer/gs_arcade_01.png"
 ];
+const HUD_PLANE_TIMER_GO_PATH = "ui_gamescreen/gs_arcade_timer/gs_arcade_go.png";
 
 const GAME_SCREEN_ASSETS = [
   // Plane counters
@@ -4290,6 +4292,7 @@ const GAME_SCREEN_ASSETS = [
   // UI extras
   "sprite_ copy.png",
   ...HUD_PLANE_TIMER_FRAME_PATHS,
+  HUD_PLANE_TIMER_GO_PATH,
 
   // Game field background
   "ui_gamescreen/paperwithred.png",
@@ -6823,6 +6826,7 @@ const CARGO_FADE_IN_MS_DEFAULT = 1500;
 const CARGO_DIMMING_DEFAULT = 0;
 const { img: cargoSprite } = loadImageAsset(CARGO_SPRITE_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
 const hudPlaneTimerFrames = HUD_PLANE_TIMER_FRAME_PATHS.map((path) => loadImageAsset(path, GAME_PRELOAD_LABEL, { decoding: 'async' }).img);
+const { img: hudPlaneTimerGoImage } = loadImageAsset(HUD_PLANE_TIMER_GO_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
 const cargoAnimationFrames = CARGO_ANIMATION_FRAME_PATHS.map((path) => loadImageAsset(path, GAME_PRELOAD_LABEL, { decoding: 'async' }).img);
 let cargoAnimDurationMs = CARGO_ANIM_MS_FALLBACK;
 let cargoAnimDurationOverrideMs = null;
@@ -14315,12 +14319,22 @@ function getHudPlaneTimerFrameImage(plane, now = performance.now()){
     return null;
   }
 
+  const isArcadeReadyAtBase = (
+    isArcadePlaneRespawnEnabled()
+    && isPlaneAtBase(plane)
+    && isPlaneRespawnComplete(plane)
+    && !isPlaneRespawnPenaltyActive(plane)
+  );
+  if (isArcadeReadyAtBase) {
+    return hudPlaneTimerGoImage || null;
+  }
+
   if (isArcadePlaneRespawnEnabled() && isPlaneRespawnPenaltyActive(plane)) {
     const turnsLeft = Number.isFinite(plane.respawnHalfTurnsRemaining)
       ? Math.max(0, Math.round(plane.respawnHalfTurnsRemaining))
       : 0;
-    const frameIndex = Math.max(0, Math.min(3, 4 - turnsLeft));
-    return turnsLeft >= 1 && turnsLeft <= 4 ? hudPlaneTimerFrames[frameIndex] : null;
+    const frameIndex = Math.max(0, Math.min(4, 5 - turnsLeft));
+    return turnsLeft >= 1 && turnsLeft <= 5 ? hudPlaneTimerFrames[frameIndex] : null;
   }
 
   if (plane.isAlive && !plane.burning) {
