@@ -9370,7 +9370,7 @@ function setPlaneReadyAtBase(plane){
   plane.respawnState = "at_base";
   plane.respawnStage = 1;
   plane.respawnPenaltyActive = true;
-  plane.respawnHalfTurnsRemaining = 4;
+  plane.respawnHalfTurnsRemaining = 5;
   plane.respawnBlockedByEnemy = false;
 }
 
@@ -11952,7 +11952,7 @@ function advanceTurn(){
   turnIndex = (turnIndex + 1) % turnColors.length;
   const nextTurnColor = turnColors[turnIndex];
   if(isArcadePlaneRespawnEnabled()){
-    // Штраф за респаун тикает по полуходам и длится минимум 4 переключения хода.
+    // Штраф за респаун тикает по полуходам и длится минимум 5 переключений хода.
     points.forEach((plane) => {
       if(!plane || !isPlaneAtBase(plane)) return;
 
