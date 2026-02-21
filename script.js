@@ -8801,8 +8801,8 @@ const MATCH_SCORE_ANIMATION_PEAK_SCALE = 1.25;
 const MATCH_SCORE_STAGGER_DELAY_MS = 70;
 
 const ARCADE_SCORE_CONTAINERS = {
-  blue: { x: 412, y: 360, width: 35, height: 30 },
-  green: { x: 412, y: 409, width: 35, height: 30 }
+  blue: { x: 412, y: 360, width: 46, height: 35 },
+  green: { x: 412, y: 409, width: 46, height: 35 }
 };
 
 const ARCADE_SCORE_CONTAINER_FILL = "#E6D2AE";
@@ -14184,8 +14184,8 @@ function isArcadeScoreUiActive(){
 function drawArcadeScoreCounters(ctx, scaleX = 1, scaleY = 1){
   if(!ctx) return;
 
-  const horizontalPadding = 2;
-  const verticalPadding = 2;
+  const horizontalPadding = 0;
+  const verticalPadding = 0;
   const fallbackFontSize = 24;
   const fallbackFontFamily = "'Silkscreen', 'Fantasque Sans Mono', monospace";
 
