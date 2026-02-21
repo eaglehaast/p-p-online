@@ -10539,7 +10539,9 @@ function onHandleUp(){
     timeLeft: FIELD_FLIGHT_DURATION_SEC,
     collisionCooldown:0,
     lastHitPlane:null,
-    lastHitCooldown:0
+    lastHitCooldown:0,
+    shieldBreakLockActive:false,
+    shieldBreakLockTarget:null
   });
 
   if(!hasShotThisRound){
@@ -10715,7 +10717,9 @@ function issueAIMove(plane, vx, vy){
     timeLeft: FIELD_FLIGHT_DURATION_SEC,
     collisionCooldown:0,
     lastHitPlane:null,
-    lastHitCooldown:0
+    lastHitCooldown:0,
+    shieldBreakLockActive:false,
+    shieldBreakLockTarget:null
   });
   if(!hasShotThisRound){
     hasShotThisRound = true;
@@ -11574,6 +11578,8 @@ function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
     if(hit.surface?.type === "shield" && hit.victim){
       hit.victim.shieldActive = false;
       hit.victim._shieldAlphaCurrent = 0;
+      fp.shieldBreakLockActive = true;
+      fp.shieldBreakLockTarget = hit.victim;
       // После отражения от щита «готовый к вылету» самолёт должен
       // перейти в обычное состояние: без щита и с возможностью быть сбитым
       // уже при следующем касании в том же ходу.
@@ -12356,6 +12362,22 @@ function gameDraw(){
         if(fp.lastHitCooldown <= 0){
           fp.lastHitPlane = null;
           fp.lastHitCooldown = 0;
+        }
+      }
+      if(fp.shieldBreakLockActive){
+        const lockTarget = fp.shieldBreakLockTarget;
+        const attackerTargetable = isPlaneTargetable(p);
+        const lockTargetTargetable = isPlaneTargetable(lockTarget);
+        if(!attackerTargetable || !lockTargetTargetable){
+          fp.shieldBreakLockActive = false;
+          fp.shieldBreakLockTarget = null;
+        } else {
+          const attackerHitbox = getPlaneHitbox(p);
+          const lockTargetHitbox = getPlaneHitbox(lockTarget);
+          if(!planeHitboxesIntersect(attackerHitbox, lockTargetHitbox)){
+            fp.shieldBreakLockActive = false;
+            fp.shieldBreakLockTarget = null;
+          }
         }
       }
       const prevX = p.x;
@@ -14131,7 +14153,13 @@ function checkPlaneHits(plane, fp){
     if(p.color !== enemyColor) continue;
     if(fp && fp.lastHitPlane === p && fp.lastHitCooldown > 0) continue;
     const targetHitbox = getPlaneHitbox(p);
-    if(planeHitboxesIntersect(planeHitbox, targetHitbox)){
+    const hitboxesIntersect = planeHitboxesIntersect(planeHitbox, targetHitbox);
+    if(fp && fp.shieldBreakLockActive && fp.shieldBreakLockTarget === p){
+      if(hitboxesIntersect) continue;
+      fp.shieldBreakLockActive = false;
+      fp.shieldBreakLockTarget = null;
+    }
+    if(hitboxesIntersect){
       const contactPoint = getPlaneHitContactPoint(plane, p);
       const cx = contactPoint.x;
       const cy = contactPoint.y;
