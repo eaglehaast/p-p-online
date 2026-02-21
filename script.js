@@ -11574,9 +11574,17 @@ function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
     if(hit.surface?.type === "shield" && hit.victim){
       hit.victim.shieldActive = false;
       hit.victim._shieldAlphaCurrent = 0;
-      if(fp){
-        fp.lastHitPlane = hit.victim;
-        fp.lastHitCooldown = PLANE_HIT_COOLDOWN_SEC;
+      // После снятия щита самолёт должен выйти из «respawn-ready неуязвим»
+      // в обычное состояние живого самолёта, иначе он остаётся нетаргетируемым
+      // и на следующем ходу щит будет повторно активирован логикой respawn lifecycle.
+      if(
+        isArcadePlaneRespawnEnabled()
+        && getPlaneLifeState(hit.victim) === PLANE_LIFE_STATES.DESTROYED_ARCADE_READY
+      ){
+        hit.victim.lifeState = PLANE_LIFE_STATES.ALIVE;
+        hit.victim.respawnPenaltyActive = false;
+        hit.victim.respawnHalfTurnsRemaining = 0;
+        hit.victim.respawnStage = Math.max(3, Number.isFinite(hit.victim.respawnStage) ? hit.victim.respawnStage : 3);
       }
     }
 
