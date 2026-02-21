@@ -13183,15 +13183,24 @@ function drawArcadeRespawnShield(ctx2d, plane){
   if(getPlaneLifeState(plane) !== PLANE_LIFE_STATES.DESTROYED_ARCADE_READY) return;
 
   const isPlaneGrabbed = handleCircle.active && handleCircle.pointRef === plane;
-  const shieldAlpha = isPlaneGrabbed ? 0.5 : 1;
-  if(shieldAlpha <= 0) return;
+  const shieldAlphaTarget = isPlaneGrabbed ? 0 : 1;
+  const hasShieldAlphaCurrent = Number.isFinite(plane._shieldAlphaCurrent);
+  const shieldAlphaCurrent = hasShieldAlphaCurrent ? plane._shieldAlphaCurrent : shieldAlphaTarget;
+  const shieldAlphaLerp = 0.22;
+  const shieldAlpha = shieldAlphaCurrent + (shieldAlphaTarget - shieldAlphaCurrent) * shieldAlphaLerp;
+
+  plane._shieldAlphaCurrent = Math.abs(shieldAlpha - shieldAlphaTarget) < 0.001
+    ? shieldAlphaTarget
+    : shieldAlpha;
+
+  if(plane._shieldAlphaCurrent <= 0.001) return;
 
   const baseSize = Math.max(PLANE_DRAW_W, PLANE_DRAW_H) * 1.45;
   const drawX = plane.x - baseSize / 2;
   const drawY = plane.y - baseSize / 2;
 
   ctx2d.save();
-  ctx2d.globalAlpha *= shieldAlpha;
+  ctx2d.globalAlpha *= plane._shieldAlphaCurrent;
 
   if(isSpriteReady(arcadeRespawnShieldImage)){
     ctx2d.drawImage(arcadeRespawnShieldImage, drawX, drawY, baseSize, baseSize);
