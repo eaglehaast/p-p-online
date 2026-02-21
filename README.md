@@ -26,6 +26,14 @@ node ./scripts/smoke-arcade-plane-respawn.js
 
 This smoke script ensures base-related plane restrictions are applied only in arcade mode and do not leak into non-arcade rulesets.
 
+For shield collision regression smoke check, run:
+
+```bash
+node ./scripts/smoke-shield-immediate-rehit.js
+```
+
+This smoke script verifies that shield reflection removes only the shield, while anti-repeat cooldown is applied only after a real plane elimination hit.
+
 ## Game modes
 
 - **Hot Seat** – two players share the same computer.
