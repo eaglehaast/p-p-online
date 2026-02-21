@@ -4284,6 +4284,7 @@ const HUD_PLANE_TIMER_FRAME_PATHS = [
   "ui_gamescreen/gs_arcade_timer/gs_arcade_01.png"
 ];
 const HUD_PLANE_TIMER_GO_PATH = "ui_gamescreen/gs_arcade_timer/gs_arcade_go_transperent.png";
+const ARCADE_RESPAWN_SHIELD_PATH = "ui_gamescreen/gs_arcade_timer/gs_arcade_shield.png";
 
 const GAME_SCREEN_ASSETS = [
   // Plane counters
@@ -4294,6 +4295,7 @@ const GAME_SCREEN_ASSETS = [
   "sprite_ copy.png",
   ...HUD_PLANE_TIMER_FRAME_PATHS,
   HUD_PLANE_TIMER_GO_PATH,
+  ARCADE_RESPAWN_SHIELD_PATH,
 
   // Game field background
   "ui_gamescreen/paperwithred.png",
@@ -6832,6 +6834,7 @@ const CARGO_DIMMING_DEFAULT = 0;
 const { img: cargoSprite } = loadImageAsset(CARGO_SPRITE_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
 const hudPlaneTimerFrames = HUD_PLANE_TIMER_FRAME_PATHS.map((path) => loadImageAsset(path, GAME_PRELOAD_LABEL, { decoding: 'async' }).img);
 const { img: hudPlaneTimerGoImage } = loadImageAsset(HUD_PLANE_TIMER_GO_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
+const { img: arcadeRespawnShieldImage } = loadImageAsset(ARCADE_RESPAWN_SHIELD_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
 const cargoAnimationFrames = CARGO_ANIMATION_FRAME_PATHS.map((path) => loadImageAsset(path, GAME_PRELOAD_LABEL, { decoding: 'async' }).img);
 let cargoAnimDurationMs = CARGO_ANIM_MS_FALLBACK;
 let cargoAnimDurationOverrideMs = null;
@@ -13072,7 +13075,7 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
   const planeLifeState = getPlaneLifeState(plane);
   const isArcadeReadyAtBaseState = planeLifeState === PLANE_LIFE_STATES.DESTROYED_ARCADE_READY;
   const respawnVisualAlpha = isArcadeReadyAtBaseState
-    ? 0.2
+    ? 1
     : (isPlaneRespawnPenaltyActive(plane)
     ? (isArcadePlaneRespawnEnabled()
       ? getInactivePlaneAlpha(performance.now(), plane)
@@ -13167,6 +13170,36 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
   } else {
     ctx2d.restore();
     return;
+  }
+
+  ctx2d.restore();
+}
+
+function drawArcadeRespawnShield(ctx2d, plane){
+  if(!ctx2d || !plane) return;
+  if(!isArcadePlaneRespawnEnabled()) return;
+  if(!isPlaneAtBase(plane)) return;
+  if(getPlaneLifeState(plane) !== PLANE_LIFE_STATES.DESTROYED_ARCADE_READY) return;
+
+  const isPlaneGrabbed = handleCircle.active && handleCircle.pointRef === plane;
+  const shieldAlpha = isPlaneGrabbed ? 0.5 : 1;
+  if(shieldAlpha <= 0) return;
+
+  const baseSize = Math.max(PLANE_DRAW_W, PLANE_DRAW_H) * 1.45;
+  const drawX = plane.x - baseSize / 2;
+  const drawY = plane.y - baseSize / 2;
+
+  ctx2d.save();
+  ctx2d.globalAlpha *= shieldAlpha;
+
+  if(isSpriteReady(arcadeRespawnShieldImage)){
+    ctx2d.drawImage(arcadeRespawnShieldImage, drawX, drawY, baseSize, baseSize);
+  } else {
+    ctx2d.strokeStyle = "rgba(190, 227, 255, 0.9)";
+    ctx2d.lineWidth = 2;
+    ctx2d.beginPath();
+    ctx2d.arc(plane.x, plane.y, baseSize * 0.45, 0, Math.PI * 2);
+    ctx2d.stroke();
   }
 
   ctx2d.restore();
@@ -13303,6 +13336,7 @@ function drawPlanesAndTrajectories(){
     }
     const renderGlow = (isArcadeModeActive || !p.isAlive || p.burning) ? 0 : p.glow;
     drawThinPlane(targetCtx, p, renderGlow, invisibilityAlpha);
+    drawArcadeRespawnShield(targetCtx, p);
 
     if(allowRangeLabel && handleCircle.active && handleCircle.pointRef === p){
       let vdx = handleCircle.shakyX - p.x;
