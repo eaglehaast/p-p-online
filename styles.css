@@ -211,6 +211,9 @@ body, button {
     z-index: 0;
   }
 
+  /* Важно: это размеры декоративных DOM-контейнеров (legacy/оверлей),
+     они НЕ управляют аркадным текстом счёта.
+     Аркадный текст рисуется на hudCanvas из ARCADE_SCORE_CONTAINERS в script.js. */
   #gameContainer #blueScoreContainer,
   #gameContainer #greenScoreContainer {
     position: absolute;
@@ -648,18 +651,17 @@ body, button {
     position: absolute;
     pointer-events: none;
     z-index: 35;
-    width: 70px;
-    height: 40px;
+    /* Заморожено: эти размеры не влияют на аркадный счёт на canvas. */
+    width: 0;
+    height: 0;
   }
 
-  #blueScoreContainer {
-    left: 16px;
-    top: 16px;
-  }
-
+  /* Legacy-позиции DOM-контейнеров счёта (не источник правды для аркадного текста). */
+  #blueScoreContainer,
   #greenScoreContainer {
-    right: 16px;
-    top: 16px;
+    left: auto;
+    right: auto;
+    top: auto;
   }
 
   #gs_planecounter_green {
