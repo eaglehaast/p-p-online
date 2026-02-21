@@ -291,27 +291,40 @@ body, button {
     color: #37d2ff;
     font-family: 'Silkscreen', 'Fantasque Sans Mono', monospace;
     font-size: 22px;
-    font-weight: 700;
+    font-weight: bold;
     line-height: 1;
     -webkit-text-stroke: 1px #0a2048;
-    text-shadow: 0 2px 0 #0a2048;
+    text-shadow:
+      -1px 0 0 #0a2048,
+      1px 0 0 #0a2048,
+      0 -1px 0 #0a2048,
+      0 1px 0 #0a2048,
+      0 2px 6px rgba(2, 10, 24, 0.55);
     transform-origin: center;
+    will-change: transform, opacity, filter;
     writing-mode: vertical-rl;
     text-orientation: upright;
   }
 
-  .arcade-score.is-animating {
-    animation: arcade-score-pop 220ms ease-out;
+  .score-bump {
+    animation: scoreBump 100ms ease-out;
   }
 
-  @keyframes arcade-score-pop {
+  @keyframes scoreBump {
     0% {
-      transform: scale(0.88);
-      opacity: 0.88;
+      transform: translateY(0);
+      opacity: 1;
+      filter: brightness(1);
+    }
+    50% {
+      transform: translateY(-3px);
+      opacity: 0.85;
+      filter: brightness(1.12);
     }
     100% {
-      transform: scale(1);
+      transform: translateY(0);
       opacity: 1;
+      filter: brightness(1);
     }
   }
 

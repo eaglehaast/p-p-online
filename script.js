@@ -14257,9 +14257,9 @@ function updateArcadeScore(value, options = {}){
   arcadeScoreEl.textContent = String(safeValue).padStart(3, "0");
 
   if(options.animate === true){
-    arcadeScoreEl.classList.remove("is-animating");
+    arcadeScoreEl.classList.remove("score-bump");
     void arcadeScoreEl.offsetWidth;
-    arcadeScoreEl.classList.add("is-animating");
+    arcadeScoreEl.classList.add("score-bump");
   }
 }
 
