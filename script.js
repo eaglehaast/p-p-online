@@ -794,6 +794,7 @@ const mapEditorBrickSidebar = document.getElementById("mapEditorBrickSidebar");
 const blueInventoryHost = document.getElementById("gs_inventory_blue");
 const greenInventoryHost = document.getElementById("gs_inventory_green");
 const inventoryLayer = document.getElementById("inventoryLayer");
+const arcadeScoreEl = document.getElementById("arcadeScore");
 
 function syncInventoryVisibility() {
   if (!(inventoryLayer instanceof HTMLElement)) return;
@@ -8765,6 +8766,7 @@ syncPlayButtonSkin(true);
 const POINTS_TO_WIN = 24;
 let greenScore = 0;
 let blueScore  = 0;
+let arcadeScoreValue = 0;
 let roundNumber = 0;
 let roundTextTimer = 0;
 let roundTransitionTimeout = null;
@@ -9018,6 +9020,11 @@ function addScore(color, delta, options = {}){
         matchScoreSpawnTimes.green[i] = 0;
       }
     }
+  }
+
+  arcadeScoreValue = color === "green" ? greenScore : blueScore;
+  if(isArcadeDomScoreMode()) {
+    updateArcadeScore(arcadeScoreValue, { animate: true });
   }
 
   if(!isGameOver && !options.deferVictoryCheck && !isNuclearStrikeResolutionActive){
@@ -9563,7 +9570,9 @@ function resetGame(options = {}){
 
   greenScore = 0;
   blueScore  = 0;
+  arcadeScoreValue = 0;
   resetMatchScoreAnimations();
+  updateArcadeScore(arcadeScoreValue);
   roundNumber = 0;
   roundTextTimer = 0;
   if(roundTransitionTimeout){
@@ -14232,9 +14241,31 @@ function isArcadeScoreUiActive(){
   return settings.arcadeMode === true && isAdvancedLikeRuleset(selectedRuleset);
 }
 
+function isArcadeDomScoreMode(){
+  return isArcadeScoreUiActive();
+}
+
+function updateArcadeScore(value, options = {}){
+  if(!(arcadeScoreEl instanceof HTMLElement)) return;
+
+  const domMode = isArcadeDomScoreMode();
+  arcadeScoreEl.style.display = domMode ? "flex" : "none";
+  arcadeScoreEl.setAttribute("aria-hidden", domMode ? "false" : "true");
+  if(!domMode) return;
+
+  const safeValue = Math.max(0, Number.isFinite(value) ? Math.floor(value) : 0);
+  arcadeScoreEl.textContent = String(safeValue).padStart(3, "0");
+
+  if(options.animate === true){
+    arcadeScoreEl.classList.remove("is-animating");
+    void arcadeScoreEl.offsetWidth;
+    arcadeScoreEl.classList.add("is-animating");
+  }
+}
+
 // Размеры и положение текста аркадного счёта меняются только в ARCADE_SCORE_CONTAINERS (HUD_LAYOUT.arcadeScore), а не в CSS контейнерах.
 function drawArcadeScoreCounters(ctx, scaleX = 1, scaleY = 1){
-  if(!ctx) return;
+  if(!ctx || isArcadeDomScoreMode()) return;
 
   const horizontalPadding = 0;
   const verticalPadding = 0;
@@ -14474,6 +14505,7 @@ function drawHudPlaneTimerOverlay(ctx2d, cx, cy, size, image){
 
 function renderScoreboard(now = performance.now()){
   updateTurnIndicators();
+  updateArcadeScore(arcadeScoreValue);
   if (!hudCtx || !(hudCanvas instanceof HTMLCanvasElement)) {
     return;
   }
@@ -14691,7 +14723,9 @@ yesBtn.addEventListener("click", () => {
   if (gameOver) {
     blueScore = 0;
     greenScore = 0;
+    arcadeScoreValue = 0;
     resetMatchScoreAnimations();
+    updateArcadeScore(arcadeScoreValue);
     roundNumber = 0;
     resetInventoryState();
     resetInventoryInteractionState();
