@@ -14211,7 +14211,7 @@ function drawArcadeScoreCounters(ctx, scaleX = 1, scaleY = 1){
   const halfPixelOffsetY = pixelUnitY * 0.5;
   const snapToPixelGridX = (value) => Math.round(value / pixelUnitX) * pixelUnitX;
   const snapToPixelGridY = (value) => Math.round(value / pixelUnitY) * pixelUnitY;
-  const stabilizeStrokeWidth = 1.15 / Math.max(transformScaleX, transformScaleY);
+  const stabilizeStrokeWidth = 2.3 / Math.max(transformScaleX, transformScaleY);
 
   for(const [color, rawScore] of pairs){
     const frame = ARCADE_SCORE_CONTAINERS[color];
