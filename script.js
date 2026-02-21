@@ -13196,8 +13196,9 @@ function drawArcadeRespawnShield(ctx2d, plane){
   if(plane._shieldAlphaCurrent <= 0.001) return;
 
   const baseSize = Math.max(PLANE_DRAW_W, PLANE_DRAW_H) * 1.45;
+  const shieldYOffset = plane.color === "blue" ? -5 : 0;
   const drawX = plane.x - baseSize / 2;
-  const drawY = plane.y - baseSize / 2;
+  const drawY = plane.y - baseSize / 2 + shieldYOffset;
 
   ctx2d.save();
   ctx2d.globalAlpha *= plane._shieldAlphaCurrent;
@@ -13208,7 +13209,7 @@ function drawArcadeRespawnShield(ctx2d, plane){
     ctx2d.strokeStyle = "rgba(190, 227, 255, 0.9)";
     ctx2d.lineWidth = 2;
     ctx2d.beginPath();
-    ctx2d.arc(plane.x, plane.y, baseSize * 0.45, 0, Math.PI * 2);
+    ctx2d.arc(plane.x, plane.y + shieldYOffset, baseSize * 0.45, 0, Math.PI * 2);
     ctx2d.stroke();
   }
 
