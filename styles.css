@@ -279,8 +279,6 @@ body, button {
 
   .arcade-score {
     position: absolute;
-    left: 411px;
-    top: 97px;
     width: 48px;
     height: 287px;
     display: none;
@@ -298,6 +296,16 @@ body, button {
     transform-origin: center;
     writing-mode: vertical-rl;
     text-orientation: upright;
+  }
+
+  .arcade-score--blue {
+    left: 411px;
+    top: 97px;
+  }
+
+  .arcade-score--green {
+    left: 411px;
+    top: 416px;
   }
 
   .arcade-score.is-animating {

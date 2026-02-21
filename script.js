@@ -794,7 +794,10 @@ const mapEditorBrickSidebar = document.getElementById("mapEditorBrickSidebar");
 const blueInventoryHost = document.getElementById("gs_inventory_blue");
 const greenInventoryHost = document.getElementById("gs_inventory_green");
 const inventoryLayer = document.getElementById("inventoryLayer");
-const arcadeScoreEl = document.getElementById("arcadeScore");
+const arcadeScoreEls = Object.freeze({
+  blue: document.getElementById("arcadeScoreBlue"),
+  green: document.getElementById("arcadeScoreGreen")
+});
 
 function syncInventoryVisibility() {
   if (!(inventoryLayer instanceof HTMLElement)) return;
@@ -8765,7 +8768,6 @@ syncPlayButtonSkin(true);
 const POINTS_TO_WIN = 24;
 let greenScore = 0;
 let blueScore  = 0;
-let arcadeScoreValue = 0;
 let roundNumber = 0;
 let roundTextTimer = 0;
 let roundTransitionTimeout = null;
@@ -9021,9 +9023,9 @@ function addScore(color, delta, options = {}){
     }
   }
 
-  arcadeScoreValue = color === "green" ? greenScore : blueScore;
   if(isArcadeDomScoreMode()) {
-    updateArcadeScore(arcadeScoreValue, { animate: true });
+    const scoreByColor = color === "green" ? greenScore : blueScore;
+    updateArcadeScore(color, scoreByColor, { animate: true });
   }
 
   if(!isGameOver && !options.deferVictoryCheck && !isNuclearStrikeResolutionActive){
@@ -9573,9 +9575,8 @@ function resetGame(options = {}){
 
   greenScore = 0;
   blueScore  = 0;
-  arcadeScoreValue = 0;
   resetMatchScoreAnimations();
-  updateArcadeScore(arcadeScoreValue);
+  updateArcadeScore({ blue: 0, green: 0 });
   roundNumber = 0;
   roundTextTimer = 0;
   if(roundTransitionTimeout){
@@ -14248,21 +14249,36 @@ function isArcadeDomScoreMode(){
   return isArcadeScoreUiActive();
 }
 
-function updateArcadeScore(value, options = {}){
-  if(!(arcadeScoreEl instanceof HTMLElement)) return;
+function updateArcadeScore(colorOrScores, valueOrOptions, maybeOptions = {}){
+  const entries = Object.entries(arcadeScoreEls).filter(([, element]) => element instanceof HTMLElement);
+  if(entries.length === 0) return;
 
   const domMode = isArcadeDomScoreMode();
-  arcadeScoreEl.style.display = domMode ? "flex" : "none";
-  arcadeScoreEl.setAttribute("aria-hidden", domMode ? "false" : "true");
+  for (const [, element] of entries){
+    element.style.display = domMode ? "flex" : "none";
+    element.setAttribute("aria-hidden", domMode ? "false" : "true");
+  }
   if(!domMode) return;
 
-  const safeValue = Math.max(0, Number.isFinite(value) ? Math.floor(value) : 0);
-  arcadeScoreEl.textContent = String(safeValue).padStart(3, "0");
+  const hasSingleColorUpdate = typeof colorOrScores === "string";
+  const scores = hasSingleColorUpdate
+    ? { [colorOrScores]: valueOrOptions }
+    : (colorOrScores && typeof colorOrScores === "object" ? colorOrScores : {});
+  const options = hasSingleColorUpdate
+    ? (maybeOptions && typeof maybeOptions === "object" ? maybeOptions : {})
+    : (valueOrOptions && typeof valueOrOptions === "object" ? valueOrOptions : {});
 
-  if(options.animate === true){
-    arcadeScoreEl.classList.remove("is-animating");
-    void arcadeScoreEl.offsetWidth;
-    arcadeScoreEl.classList.add("is-animating");
+  for (const [color, element] of entries){
+    if(!(color in scores)) continue;
+
+    const safeValue = Math.max(0, Number.isFinite(scores[color]) ? Math.floor(scores[color]) : 0);
+    element.textContent = String(safeValue).padStart(3, "0");
+
+    if(options.animate === true){
+      element.classList.remove("is-animating");
+      void element.offsetWidth;
+      element.classList.add("is-animating");
+    }
   }
 }
 
@@ -14493,7 +14509,7 @@ function drawHudPlaneTimerOverlay(ctx2d, cx, cy, size, image){
 
 function renderScoreboard(now = performance.now()){
   updateTurnIndicators();
-  updateArcadeScore(arcadeScoreValue);
+  updateArcadeScore({ blue: blueScore, green: greenScore });
   if (!hudCtx || !(hudCanvas instanceof HTMLCanvasElement)) {
     return;
   }
@@ -14711,9 +14727,8 @@ yesBtn.addEventListener("click", () => {
   if (gameOver) {
     blueScore = 0;
     greenScore = 0;
-    arcadeScoreValue = 0;
     resetMatchScoreAnimations();
-    updateArcadeScore(arcadeScoreValue);
+    updateArcadeScore({ blue: 0, green: 0 });
     roundNumber = 0;
     resetInventoryState();
     resetInventoryInteractionState();
