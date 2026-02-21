@@ -7465,7 +7465,6 @@ const PLANE_VFX_IDLE_SMOKE_TAIL_TRIM_Y = planeMetric(5);
 const MINI_PLANE_ICON_SCALE = 0.7;    // make HUD plane icons smaller on the counter
 const HUD_PLANE_DIM_ALPHA = 1;        // keep HUD planes at full opacity
 const HUD_PLANE_DIM_FILTER = "";     // no additional dimming filter for HUD planes
-const HUD_PLANE_TIMER_FRAME_DURATION_MS = 220;
 const HUD_PLANE_CROSS_MIN_LIFETIME_MS = 1000;
 const HUD_BASE_PLANE_ICON_SIZE = planeMetric(16);
 const CELL_SIZE            = 20;     // px
@@ -9148,6 +9147,7 @@ function makePlane(x,y,color,angle){
     respawnPenaltyActive:false,
     respawnHalfTurnsRemaining:0,
     respawnBlockedByEnemy:false,
+    respawnHudCrossStart:null,
     burning:false,
     crashStart:null,
     angle,
@@ -9368,6 +9368,7 @@ function resetPlaneKillPointAwardMarker(plane){
 
 function setPlaneReadyAtBase(plane){
   if(!plane) return;
+  const now = performance.now();
   const homeX = Number.isFinite(plane.homeX) ? plane.homeX : plane.x;
   const homeY = Number.isFinite(plane.homeY) ? plane.homeY : plane.y;
   plane.x = homeX;
@@ -9389,6 +9390,7 @@ function setPlaneReadyAtBase(plane){
   plane.respawnPenaltyActive = true;
   plane.respawnHalfTurnsRemaining = 5;
   plane.respawnBlockedByEnemy = false;
+  plane.respawnHudCrossStart = now;
 }
 
 function markPlaneLaunchedFromBase(plane){
@@ -9398,6 +9400,7 @@ function markPlaneLaunchedFromBase(plane){
   plane.respawnPenaltyActive = false;
   plane.respawnHalfTurnsRemaining = 0;
   plane.respawnBlockedByEnemy = false;
+  plane.respawnHudCrossStart = null;
   // Меняем respawn-состояние только в arcade: вне arcade база не должна диктовать этапы полёта.
   if(isArcadePlaneRespawnEnabled()){
     plane.respawnState = "in_flight";
@@ -14433,6 +14436,10 @@ function getHudPlaneTimerFrameImage(plane, now = performance.now()){
     return null;
   }
 
+  if (!isArcadePlaneRespawnEnabled()) {
+    return null;
+  }
+
   const isArcadeReadyAtBase = (
     isArcadePlaneRespawnEnabled()
     && getPlaneLifeState(plane) === PLANE_LIFE_STATES.DESTROYED_ARCADE_READY
@@ -14444,7 +14451,17 @@ function getHudPlaneTimerFrameImage(plane, now = performance.now()){
     return hudPlaneTimerGoImage || null;
   }
 
-  if (isArcadePlaneRespawnEnabled() && isPlaneRespawnPenaltyActive(plane)) {
+  if (isPlaneRespawnPenaltyActive(plane)) {
+    let crossStart = plane.respawnHudCrossStart;
+    if (!Number.isFinite(crossStart)) {
+      crossStart = now;
+      plane.respawnHudCrossStart = crossStart;
+    }
+    const elapsedCross = Math.max(0, now - crossStart);
+    if (elapsedCross < HUD_PLANE_CROSS_MIN_LIFETIME_MS) {
+      return hudPlaneTimerFrames[0] || null;
+    }
+
     const turnsLeft = Number.isFinite(plane.respawnHalfTurnsRemaining)
       ? Math.max(0, Math.round(plane.respawnHalfTurnsRemaining))
       : 0;
@@ -14452,36 +14469,7 @@ function getHudPlaneTimerFrameImage(plane, now = performance.now()){
     return turnsLeft >= 1 && turnsLeft <= 5 ? hudPlaneTimerFrames[frameIndex] : null;
   }
 
-  if (plane.isAlive && !plane.burning) {
-    if (plane?.killMarkerStart) {
-      delete plane.killMarkerStart;
-    }
-    return null;
-  }
-
-  let start = plane.killMarkerStart;
-  if (!Number.isFinite(start)) {
-    start = Number.isFinite(plane.crashStart) ? plane.crashStart : now;
-    plane.killMarkerStart = start;
-  }
-
-  const frameDuration = HUD_PLANE_TIMER_FRAME_DURATION_MS > 0
-    ? HUD_PLANE_TIMER_FRAME_DURATION_MS
-    : 220;
-  const elapsed = Math.max(0, now - start);
-
-  if (elapsed < HUD_PLANE_CROSS_MIN_LIFETIME_MS) {
-    return hudPlaneTimerFrames[0] || null;
-  }
-
-  const elapsedAfterCross = elapsed - HUD_PLANE_CROSS_MIN_LIFETIME_MS;
-  const frameIndex = 1 + Math.floor(elapsedAfterCross / frameDuration);
-
-  if (!Number.isFinite(frameIndex) || frameIndex < 0 || frameIndex > 3) {
-    return null;
-  }
-
-  return hudPlaneTimerFrames[frameIndex] || null;
+  return null;
 }
 
 function drawHudPlaneTimerOverlay(ctx2d, cx, cy, size, image){
