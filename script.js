@@ -11574,6 +11574,12 @@ function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
     if(hit.surface?.type === "shield" && hit.victim){
       hit.victim.shieldActive = false;
       hit.victim._shieldAlphaCurrent = 0;
+      // После отражения от щита «готовый к вылету» самолёт должен
+      // перейти в обычное состояние: без щита и с возможностью быть сбитым
+      // уже при следующем касании в том же ходу.
+      if(hit.victim.lifeState === "destroyed_arcade_ready"){
+        hit.victim.lifeState = "alive";
+      }
     }
 
     collided = true;
