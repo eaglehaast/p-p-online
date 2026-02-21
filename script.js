@@ -14321,6 +14321,7 @@ function getHudPlaneTimerFrameImage(plane, now = performance.now()){
 
   const isArcadeReadyAtBase = (
     isArcadePlaneRespawnEnabled()
+    && getPlaneLifeState(plane) === PLANE_LIFE_STATES.DESTROYED_ARCADE_READY
     && isPlaneAtBase(plane)
     && isPlaneRespawnComplete(plane)
     && !isPlaneRespawnPenaltyActive(plane)
