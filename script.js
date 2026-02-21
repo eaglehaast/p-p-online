@@ -8802,6 +8802,7 @@ const ARCADE_SCORE_CONTAINERS = {
 };
 
 const ARCADE_SCORE_CONTAINER_FILL = "#E6D2AE";
+const ARCADE_SCORE_TEXT_STROKE = ARCADE_SCORE_CONTAINER_FILL;
 
 const ARCADE_SCORE_TEXT_STYLES = {
   blue: {
@@ -14204,8 +14205,6 @@ function drawArcadeScoreCounters(ctx, scaleX = 1, scaleY = 1){
     const scoreText = String(normalizedScore).padStart(3, "0");
 
     ctx.save();
-    ctx.fillStyle = ARCADE_SCORE_CONTAINER_FILL;
-    ctx.fillRect(left, top, width, height);
     ctx.fillStyle = textStyle.fill;
 
     const insetX = horizontalPadding * scaleX;
@@ -14225,6 +14224,9 @@ function drawArcadeScoreCounters(ctx, scaleX = 1, scaleY = 1){
     const textX = left + insetX + availableWidth / 2;
     const availableHeight = Math.max(0, height - insetY * 2);
     const textY = top + insetY + availableHeight / 2;
+    ctx.strokeStyle = ARCADE_SCORE_TEXT_STROKE;
+    ctx.lineWidth = 1;
+    ctx.strokeText(scoreText, textX, textY);
     ctx.fillText(scoreText, textX, textY);
     ctx.restore();
   }
