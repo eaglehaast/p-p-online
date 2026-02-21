@@ -14287,10 +14287,7 @@ function updatePlaneCounterDeaths(color, aliveCount, now){
 
 const MIN_ROUND_TRANSITION_DELAY_MS = 1200;
 function getHudPlaneTimerFrameImage(plane, now = performance.now()){
-  if (!plane || (plane.isAlive && !plane.burning)) {
-    if (plane?.killMarkerStart) {
-      delete plane.killMarkerStart;
-    }
+  if (!plane) {
     return null;
   }
 
@@ -14300,6 +14297,13 @@ function getHudPlaneTimerFrameImage(plane, now = performance.now()){
       : 0;
     const frameIndex = Math.max(0, Math.min(3, 4 - turnsLeft));
     return turnsLeft >= 1 && turnsLeft <= 4 ? hudPlaneTimerFrames[frameIndex] : null;
+  }
+
+  if (plane.isAlive && !plane.burning) {
+    if (plane?.killMarkerStart) {
+      delete plane.killMarkerStart;
+    }
+    return null;
   }
 
   let start = plane.killMarkerStart;
