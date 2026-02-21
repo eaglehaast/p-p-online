@@ -375,13 +375,59 @@ function createEasyMapDefinition(id, name, internalSprites){
   };
 }
 
+const JSON_MAP_SOURCES = Object.freeze([
+  'ui_gamescreen/maps/gs_maps_Pebbles.json',
+  'ui_gamescreen/maps/gs_maps_TwinGate.json',
+  'ui_gamescreen/maps/gs_maps_arena.json',
+  'ui_gamescreen/maps/gs_maps_horserows.json'
+]);
+
+function loadMapDefinitionFromJson(path){
+  if(typeof XMLHttpRequest !== 'function') return null;
+
+  try {
+    const request = new XMLHttpRequest();
+    request.open('GET', path, false);
+    request.send();
+
+    if(request.status !== 200) return null;
+
+    const parsed = JSON.parse(request.responseText);
+    const map = parsed?.map;
+    if(!map || typeof map !== 'object') return null;
+    if(typeof map.id !== 'string' || map.id.length === 0) return null;
+    if(typeof map.name !== 'string' || map.name.length === 0) return null;
+
+    return {
+      ...map,
+      mode: map.mode || MAP_RENDER_MODES.DATA,
+      sprites: Array.isArray(map.sprites) ? map.sprites : [],
+      tier: typeof map.tier === 'string' && map.tier.length > 0 ? map.tier : 'easy',
+      difficulty: typeof map.difficulty === 'string' && map.difficulty.length > 0 ? map.difficulty : undefined,
+      flags: Array.isArray(map.flags) ? map.flags : []
+    };
+  } catch(error){
+    console.warn('[maps] failed to load map json', { path, error });
+    return null;
+  }
+}
+
+function loadMapsFromJsonSources(){
+  return JSON_MAP_SOURCES
+    .map((path) => loadMapDefinitionFromJson(path))
+    .filter(Boolean);
+}
+
+const IMPORTED_JSON_MAPS = loadMapsFromJsonSources();
+
 const MAPS = [
   {
     id: 'clearSky',
     name: 'Clear Sky',
     mode: MAP_RENDER_MODES.DATA,
     sprites: CLEAR_SKY_BORDER_SPRITES,
-    tier: 'easy'
+    tier: 'middle',
+    difficulty: 'middle'
   },
   {
     id: 'fiveBricks',
@@ -392,14 +438,6 @@ const MAPS = [
     flags: FIVE_BRICKS_FLAGS
   },
   {
-    id: 'brokenX',
-    name: 'brokenX',
-    mode: MAP_RENDER_MODES.DATA,
-    sprites: BROKEN_X_SPRITES,
-    tier: 'easy',
-    flags: BROKEN_X_FLAGS
-  },
-  {
     id: 'clearSky',
     name: 'Weak brick',
     mode: MAP_RENDER_MODES.DATA,
@@ -407,7 +445,8 @@ const MAPS = [
     difficulty: 'easy',
     sprites: WEAK_BRICK_SPRITES,
     flags: WEAK_BRICK_FLAGS
-  }
+  },
+  ...IMPORTED_JSON_MAPS
 ];
 
 function collectMapSpritePathsFromSidebar(){
