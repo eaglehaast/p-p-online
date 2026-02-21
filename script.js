@@ -4288,7 +4288,10 @@ const HUD_PLANE_TIMER_FRAME_PATHS = [
   "ui_gamescreen/gs_arcade_timer/gs_arcade_01.png"
 ];
 const HUD_PLANE_TIMER_GO_PATH = "ui_gamescreen/gs_arcade_timer/gs_arcade_go_transperent.png";
-const ARCADE_RESPAWN_SHIELD_PATH = "ui_gamescreen/gs_arcade_timer/gs_arcade_shield.png";
+const ARCADE_RESPAWN_SHIELD_PATHS = {
+  blue: "ui_gamescreen/gs_aracade_shield_blue.png",
+  green: "ui_gamescreen/gs_aracade_shield_green.png",
+};
 
 const GAME_SCREEN_ASSETS = [
   // Plane counters
@@ -4299,7 +4302,8 @@ const GAME_SCREEN_ASSETS = [
   "sprite_ copy.png",
   ...HUD_PLANE_TIMER_FRAME_PATHS,
   HUD_PLANE_TIMER_GO_PATH,
-  ARCADE_RESPAWN_SHIELD_PATH,
+  ARCADE_RESPAWN_SHIELD_PATHS.blue,
+  ARCADE_RESPAWN_SHIELD_PATHS.green,
 
   // Game field background
   "ui_gamescreen/paperwithred.png",
@@ -6838,7 +6842,10 @@ const CARGO_DIMMING_DEFAULT = 0;
 const { img: cargoSprite } = loadImageAsset(CARGO_SPRITE_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
 const hudPlaneTimerFrames = HUD_PLANE_TIMER_FRAME_PATHS.map((path) => loadImageAsset(path, GAME_PRELOAD_LABEL, { decoding: 'async' }).img);
 const { img: hudPlaneTimerGoImage } = loadImageAsset(HUD_PLANE_TIMER_GO_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
-const { img: arcadeRespawnShieldImage } = loadImageAsset(ARCADE_RESPAWN_SHIELD_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
+const arcadeRespawnShieldImages = {
+  blue: loadImageAsset(ARCADE_RESPAWN_SHIELD_PATHS.blue, GAME_PRELOAD_LABEL, { decoding: 'async' }).img,
+  green: loadImageAsset(ARCADE_RESPAWN_SHIELD_PATHS.green, GAME_PRELOAD_LABEL, { decoding: 'async' }).img,
+};
 const cargoAnimationFrames = CARGO_ANIMATION_FRAME_PATHS.map((path) => loadImageAsset(path, GAME_PRELOAD_LABEL, { decoding: 'async' }).img);
 let cargoAnimDurationMs = CARGO_ANIM_MS_FALLBACK;
 let cargoAnimDurationOverrideMs = null;
@@ -13216,8 +13223,9 @@ function drawArcadeRespawnShield(ctx2d, plane){
   ctx2d.save();
   ctx2d.globalAlpha *= plane._shieldAlphaCurrent;
 
-  if(isSpriteReady(arcadeRespawnShieldImage)){
-    ctx2d.drawImage(arcadeRespawnShieldImage, drawX, drawY, baseSize, baseSize);
+  const shieldSprite = arcadeRespawnShieldImages[plane.color] || null;
+  if(isSpriteReady(shieldSprite)){
+    ctx2d.drawImage(shieldSprite, drawX, drawY, baseSize, baseSize);
   } else {
     ctx2d.strokeStyle = "rgba(190, 227, 255, 0.9)";
     ctx2d.lineWidth = 2;
