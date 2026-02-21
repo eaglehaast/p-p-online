@@ -11574,10 +11574,6 @@ function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
     if(hit.surface?.type === "shield" && hit.victim){
       hit.victim.shieldActive = false;
       hit.victim._shieldAlphaCurrent = 0;
-      if(fp){
-        fp.lastHitPlane = hit.victim;
-        fp.lastHitCooldown = PLANE_HIT_COOLDOWN_SEC;
-      }
     }
 
     collided = true;
