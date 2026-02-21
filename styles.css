@@ -832,9 +832,14 @@ body, button {
     opacity: 0.8;
   }
 
+  #settingsLayer #arcade_preview_gif {
+    opacity: 0.92;
+    filter: brightness(1.08) saturate(1.05);
+  }
+
   #settingsLayer #arcade_preview_still.arcade-preview--shadow {
-    filter: brightness(0.8) saturate(0.7);
-    opacity: 0.85;
+    filter: brightness(0.9) saturate(0.82);
+    opacity: 0.92;
   }
 
   #settingsLayer .cp-adds__frame {
