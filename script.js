@@ -7465,6 +7465,7 @@ const MINI_PLANE_ICON_SCALE = 0.7;    // make HUD plane icons smaller on the cou
 const HUD_PLANE_DIM_ALPHA = 1;        // keep HUD planes at full opacity
 const HUD_PLANE_DIM_FILTER = "";     // no additional dimming filter for HUD planes
 const HUD_PLANE_TIMER_FRAME_DURATION_MS = 220;
+const HUD_PLANE_CROSS_MIN_LIFETIME_MS = 1000;
 const HUD_BASE_PLANE_ICON_SIZE = planeMetric(16);
 const CELL_SIZE            = 20;     // px
 const INVENTORY_ITEM_SIZE_PX = 30;
@@ -14427,7 +14428,13 @@ function getHudPlaneTimerFrameImage(plane, now = performance.now()){
     ? HUD_PLANE_TIMER_FRAME_DURATION_MS
     : 220;
   const elapsed = Math.max(0, now - start);
-  const frameIndex = Math.floor(elapsed / frameDuration);
+
+  if (elapsed < HUD_PLANE_CROSS_MIN_LIFETIME_MS) {
+    return hudPlaneTimerFrames[0] || null;
+  }
+
+  const elapsedAfterCross = elapsed - HUD_PLANE_CROSS_MIN_LIFETIME_MS;
+  const frameIndex = 1 + Math.floor(elapsedAfterCross / frameDuration);
 
   if (!Number.isFinite(frameIndex) || frameIndex < 0 || frameIndex > 3) {
     return null;
