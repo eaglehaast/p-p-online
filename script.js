@@ -4820,6 +4820,10 @@ const HUD_LAYOUT = {
   planeCounters: {
     blue: { x: 3, y: 97, width: 48, height: 287 },
     green: { x: 3, y: 416, width: 48, height: 287 }
+  },
+  arcadeScore: {
+    blue: { x: 412, y: 360, width: 46, height: 35 },
+    green: { x: 412, y: 409, width: 46, height: 35 }
   }
 };
 
@@ -8800,10 +8804,7 @@ const MATCH_SCORE_ANIMATION_START_SCALE = 0.2;
 const MATCH_SCORE_ANIMATION_PEAK_SCALE = 1.25;
 const MATCH_SCORE_STAGGER_DELAY_MS = 70;
 
-const ARCADE_SCORE_CONTAINERS = {
-  blue: { x: 412, y: 360, width: 46, height: 35 },
-  green: { x: 412, y: 409, width: 46, height: 35 }
-};
+const ARCADE_SCORE_CONTAINERS = Object.freeze(HUD_LAYOUT.arcadeScore);
 
 const ARCADE_SCORE_CONTAINER_FILL = "#E6D2AE";
 const ARCADE_SCORE_TEXT_STROKE = ARCADE_SCORE_CONTAINER_FILL;
@@ -14185,6 +14186,7 @@ function isArcadeScoreUiActive(){
   return settings.arcadeMode === true && isAdvancedLikeRuleset(selectedRuleset);
 }
 
+// Размеры и положение текста аркадного счёта меняются только в ARCADE_SCORE_CONTAINERS (HUD_LAYOUT.arcadeScore), а не в CSS контейнерах.
 function drawArcadeScoreCounters(ctx, scaleX = 1, scaleY = 1){
   if(!ctx) return;
 
