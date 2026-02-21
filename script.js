@@ -32,6 +32,7 @@ const DEBUG_DROP_COORDS = false;
 const DEBUG_INVENTORY_INPUT = false;
 const DEBUG_PLANE_GRAB = false;
 const DEBUG_CHEATS = typeof location !== "undefined" && location.hash.includes("dev");
+const DEBUG_ARCADE_SCORE_TEXT = false;
 
 if (typeof window !== 'undefined') {
   window.PINCH_ACTIVE = false;
@@ -14201,6 +14202,17 @@ function drawArcadeScoreCounters(ctx, scaleX = 1, scaleY = 1){
     ["green", greenScore]
   ];
 
+  const transform = typeof ctx.getTransform === "function" ? ctx.getTransform() : null;
+  const transformScaleX = Math.max(0.001, Math.abs(transform?.a) || 1);
+  const transformScaleY = Math.max(0.001, Math.abs(transform?.d) || 1);
+  const pixelUnitX = 1 / transformScaleX;
+  const pixelUnitY = 1 / transformScaleY;
+  const halfPixelOffsetX = pixelUnitX * 0.5;
+  const halfPixelOffsetY = pixelUnitY * 0.5;
+  const snapToPixelGridX = (value) => Math.round(value / pixelUnitX) * pixelUnitX;
+  const snapToPixelGridY = (value) => Math.round(value / pixelUnitY) * pixelUnitY;
+  const stabilizeStrokeWidth = 1.15 / Math.max(transformScaleX, transformScaleY);
+
   for(const [color, rawScore] of pairs){
     const frame = ARCADE_SCORE_CONTAINERS[color];
     const textStyle = ARCADE_SCORE_TEXT_STYLES[color];
@@ -14258,12 +14270,28 @@ function drawArcadeScoreCounters(ctx, scaleX = 1, scaleY = 1){
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
-    const textX = left + insetX + availableWidth / 2;
-    const textY = top + insetY + availableHeight / 2;
+    const textX = snapToPixelGridX(left + insetX + availableWidth / 2) + halfPixelOffsetX;
+    const textY = snapToPixelGridY(top + insetY + availableHeight / 2) + halfPixelOffsetY;
     ctx.strokeStyle = ARCADE_SCORE_TEXT_STROKE;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = stabilizeStrokeWidth;
     ctx.strokeText(scoreText, textX, textY);
     ctx.fillText(scoreText, textX, textY);
+
+    if(DEBUG_ARCADE_SCORE_TEXT){
+      const debugLeft = snapToPixelGridX(left) + halfPixelOffsetX;
+      const debugTop = snapToPixelGridY(top) + halfPixelOffsetY;
+      const debugWidth = snapToPixelGridX(width);
+      const debugHeight = snapToPixelGridY(height);
+      ctx.save();
+      ctx.strokeStyle = color === "blue" ? "#2ec5ff" : "#57ff2e";
+      ctx.lineWidth = Math.max(stabilizeStrokeWidth, 1 / Math.max(transformScaleX, transformScaleY));
+      ctx.strokeRect(debugLeft, debugTop, debugWidth, debugHeight);
+      ctx.fillStyle = "#ff3b30";
+      ctx.beginPath();
+      ctx.arc(textX, textY, Math.max(1.5 * pixelUnitX, 1.5 * pixelUnitY), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
     ctx.restore();
   }
 }
