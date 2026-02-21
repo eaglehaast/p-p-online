@@ -8807,11 +8807,11 @@ const ARCADE_SCORE_TEXT_STROKE = ARCADE_SCORE_CONTAINER_FILL;
 const ARCADE_SCORE_TEXT_STYLES = {
   blue: {
     fill: "#425074",
-    font: "700 18px 'Silkscreen', 'Fantasque Sans Mono', monospace"
+    font: "700 24px 'Silkscreen', 'Fantasque Sans Mono', monospace"
   },
   green: {
     fill: "#57511B",
-    font: "700 18px 'Silkscreen', 'Fantasque Sans Mono', monospace"
+    font: "700 24px 'Silkscreen', 'Fantasque Sans Mono', monospace"
   }
 };
 
@@ -14182,7 +14182,8 @@ function drawArcadeScoreCounters(ctx, scaleX = 1, scaleY = 1){
 
   const horizontalPadding = 2;
   const verticalPadding = 2;
-  const fallbackFont = "700 17px 'Silkscreen', 'Fantasque Sans Mono', monospace";
+  const fallbackFontSize = 24;
+  const fallbackFontFamily = "'Silkscreen', 'Fantasque Sans Mono', monospace";
 
   const pairs = [
     ["blue", blueScore],
@@ -14210,19 +14211,40 @@ function drawArcadeScoreCounters(ctx, scaleX = 1, scaleY = 1){
     const insetX = horizontalPadding * scaleX;
     const insetY = verticalPadding * scaleY;
     const availableWidth = Math.max(0, width - insetX * 2);
+    const availableHeight = Math.max(0, height - insetY * 2);
+    let fontSize = Math.round(fallbackFontSize * Math.min(scaleX, scaleY));
+    fontSize = Math.max(1, fontSize);
     let fontForRender = textStyle.font;
 
+    const fitFont = (initialSize) => {
+      let candidateSize = Math.max(1, initialSize);
+      while(candidateSize >= 1){
+        const candidate = `700 ${candidateSize}px ${fallbackFontFamily}`;
+        ctx.font = candidate;
+        const metrics = ctx.measureText(scoreText);
+        const candidateWidth = metrics.width;
+        const candidateHeight = (metrics.actualBoundingBoxAscent || 0) + (metrics.actualBoundingBoxDescent || 0);
+        if(candidateWidth <= availableWidth && (availableHeight <= 0 || candidateHeight <= availableHeight)){
+          return candidate;
+        }
+        candidateSize -= 1;
+      }
+      return `700 1px ${fallbackFontFamily}`;
+    };
+
     ctx.font = fontForRender;
-    if(ctx.measureText(scoreText).width > availableWidth){
-      fontForRender = fallbackFont;
-      ctx.font = fontForRender;
+    const primaryMetrics = ctx.measureText(scoreText);
+    const primaryHeight = (primaryMetrics.actualBoundingBoxAscent || 0) + (primaryMetrics.actualBoundingBoxDescent || 0);
+    if(primaryMetrics.width > availableWidth || (availableHeight > 0 && primaryHeight > availableHeight)){
+      fontForRender = fitFont(fontSize);
     }
+
+    ctx.font = fontForRender;
 
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
     const textX = left + insetX + availableWidth / 2;
-    const availableHeight = Math.max(0, height - insetY * 2);
     const textY = top + insetY + availableHeight / 2;
     ctx.strokeStyle = ARCADE_SCORE_TEXT_STROKE;
     ctx.lineWidth = 1;
