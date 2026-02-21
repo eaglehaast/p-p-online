@@ -277,6 +277,44 @@ body, button {
     z-index: 30;
   }
 
+  .arcade-score {
+    position: absolute;
+    left: 411px;
+    top: 97px;
+    width: 48px;
+    height: 287px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 36;
+    color: #37d2ff;
+    font-family: 'Silkscreen', 'Fantasque Sans Mono', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1;
+    -webkit-text-stroke: 1px #0a2048;
+    text-shadow: 0 2px 0 #0a2048;
+    transform-origin: center;
+    writing-mode: vertical-rl;
+    text-orientation: upright;
+  }
+
+  .arcade-score.is-animating {
+    animation: arcade-score-pop 220ms ease-out;
+  }
+
+  @keyframes arcade-score-pop {
+    0% {
+      transform: scale(0.88);
+      opacity: 0.88;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
   .inventory-block {
     position: absolute;
     pointer-events: auto;
