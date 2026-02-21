@@ -8812,15 +8812,15 @@ const ARCADE_SCORE_TEXT_STROKE = ARCADE_SCORE_CONTAINER_FILL;
 const ARCADE_SCORE_TEXT_STYLES = {
   blue: {
     fill: "#425074",
-    fontWeight: 700,
+    fontWeight: 500,
     baseFontSize: 24,
-    fontFamily: "'Silkscreen', 'Fantasque Sans Mono', monospace"
+    fontFamily: "'Inter', 'Roboto', sans-serif"
   },
   green: {
     fill: "#57511B",
-    fontWeight: 700,
+    fontWeight: 500,
     baseFontSize: 24,
-    fontFamily: "'Silkscreen', 'Fantasque Sans Mono', monospace"
+    fontFamily: "'Inter', 'Roboto', sans-serif"
   }
 };
 
@@ -14261,7 +14261,9 @@ function drawArcadeScoreCounters(ctx, scaleX = 1, scaleY = 1){
     const textX = left + insetX + availableWidth / 2;
     const textY = top + insetY + availableHeight / 2;
     ctx.strokeStyle = ARCADE_SCORE_TEXT_STROKE;
-    ctx.lineWidth = 1;
+    ctx.lineJoin = "round";
+    ctx.miterLimit = 2;
+    ctx.lineWidth = 3;
     ctx.strokeText(scoreText, textX, textY);
     ctx.fillText(scoreText, textX, textY);
     ctx.restore();
