@@ -8815,13 +8815,13 @@ const ARCADE_SCORE_TEXT_STROKE = ARCADE_SCORE_CONTAINER_FILL;
 
 const ARCADE_SCORE_TEXT_STYLES = {
   blue: {
-    fill: "#425074",
+    fill: ARCADE_SCORE_CONTAINER_FILL,
     fontWeight: 500,
     baseFontSize: 24,
     fontFamily: "'Inter', 'Roboto', sans-serif"
   },
   green: {
-    fill: "#57511B",
+    fill: ARCADE_SCORE_CONTAINER_FILL,
     fontWeight: 500,
     baseFontSize: 24,
     fontFamily: "'Inter', 'Roboto', sans-serif"
