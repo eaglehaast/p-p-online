@@ -14527,8 +14527,10 @@ function drawPlayerHUD(ctx, frame, color, isTurn, now = performance.now()){
     ctx.save();
     ctx.globalAlpha *= iconAlpha;
     drawPlaneCounterIcon(ctx, centerX, centerY, color, iconScale);
+    ctx.restore();
+
     const timerFrameImage = getHudPlaneTimerFrameImage(plane, now);
-    if (timerFrameImage && iconAlpha > 0) {
+    if (timerFrameImage) {
       const hudStyle = getHudPlaneStyle(color);
       const hudStyleScale = Number.isFinite(hudStyle?.scale) && hudStyle.scale > 0
         ? hudStyle.scale
@@ -14536,7 +14538,6 @@ function drawPlayerHUD(ctx, frame, color, isTurn, now = performance.now()){
       const iconSize = HUD_BASE_PLANE_ICON_SIZE * iconScale * MINI_PLANE_ICON_SCALE * hudStyleScale;
       drawHudPlaneTimerOverlay(ctx, centerX, centerY, iconSize, timerFrameImage);
     }
-    ctx.restore();
   }
 
   ctx.globalAlpha = previousAlpha;
