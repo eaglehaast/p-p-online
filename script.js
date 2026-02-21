@@ -8811,11 +8811,15 @@ const ARCADE_SCORE_TEXT_STROKE = ARCADE_SCORE_CONTAINER_FILL;
 const ARCADE_SCORE_TEXT_STYLES = {
   blue: {
     fill: "#425074",
-    font: "700 24px 'Silkscreen', 'Fantasque Sans Mono', monospace"
+    fontWeight: 700,
+    baseFontSize: 24,
+    fontFamily: "'Silkscreen', 'Fantasque Sans Mono', monospace"
   },
   green: {
     fill: "#57511B",
-    font: "700 24px 'Silkscreen', 'Fantasque Sans Mono', monospace"
+    fontWeight: 700,
+    baseFontSize: 24,
+    fontFamily: "'Silkscreen', 'Fantasque Sans Mono', monospace"
   }
 };
 
@@ -14188,6 +14192,7 @@ function drawArcadeScoreCounters(ctx, scaleX = 1, scaleY = 1){
   const verticalPadding = 0;
   const fallbackFontSize = 24;
   const fallbackFontFamily = "'Silkscreen', 'Fantasque Sans Mono', monospace";
+  const fallbackFontWeight = 700;
 
   const pairs = [
     ["blue", blueScore],
@@ -14216,14 +14221,17 @@ function drawArcadeScoreCounters(ctx, scaleX = 1, scaleY = 1){
     const insetY = verticalPadding * scaleY;
     const availableWidth = Math.max(0, width - insetX * 2);
     const availableHeight = Math.max(0, height - insetY * 2);
-    let fontSize = Math.round(fallbackFontSize * Math.min(scaleX, scaleY));
-    fontSize = Math.max(1, fontSize);
-    let fontForRender = textStyle.font;
+    const baseFontSize = Number.isFinite(textStyle.baseFontSize) ? textStyle.baseFontSize : fallbackFontSize;
+    const scaledFontSize = Math.max(1, Math.round(baseFontSize * Math.min(scaleX, scaleY)));
+    const fontWeight = textStyle.fontWeight || fallbackFontWeight;
+    const fontFamily = textStyle.fontFamily || fallbackFontFamily;
+
+    let fontForRender = `${fontWeight} ${scaledFontSize}px ${fontFamily}`;
 
     const fitFont = (initialSize) => {
       let candidateSize = Math.max(1, initialSize);
       while(candidateSize >= 1){
-        const candidate = `700 ${candidateSize}px ${fallbackFontFamily}`;
+        const candidate = `${fontWeight} ${candidateSize}px ${fontFamily}`;
         ctx.font = candidate;
         const metrics = ctx.measureText(scoreText);
         const candidateWidth = metrics.width;
@@ -14233,14 +14241,14 @@ function drawArcadeScoreCounters(ctx, scaleX = 1, scaleY = 1){
         }
         candidateSize -= 1;
       }
-      return `700 1px ${fallbackFontFamily}`;
+      return `${fontWeight} 1px ${fontFamily}`;
     };
 
     ctx.font = fontForRender;
     const primaryMetrics = ctx.measureText(scoreText);
     const primaryHeight = (primaryMetrics.actualBoundingBoxAscent || 0) + (primaryMetrics.actualBoundingBoxDescent || 0);
     if(primaryMetrics.width > availableWidth || (availableHeight > 0 && primaryHeight > availableHeight)){
-      fontForRender = fitFont(fontSize);
+      fontForRender = fitFont(scaledFontSize);
     }
 
     ctx.font = fontForRender;
