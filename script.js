@@ -8797,8 +8797,8 @@ const MATCH_SCORE_ANIMATION_PEAK_SCALE = 1.25;
 const MATCH_SCORE_STAGGER_DELAY_MS = 70;
 
 const ARCADE_SCORE_CONTAINERS = {
-  blue: { x: 417, y: 360, width: 35, height: 30 },
-  green: { x: 417, y: 409, width: 35, height: 30 }
+  blue: { x: 412, y: 360, width: 35, height: 30 },
+  green: { x: 412, y: 409, width: 35, height: 30 }
 };
 
 const ARCADE_SCORE_CONTAINER_FILL = "#E6D2AE";
