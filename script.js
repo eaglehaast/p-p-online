@@ -4282,7 +4282,7 @@ const HUD_PLANE_TIMER_FRAME_PATHS = [
   "ui_gamescreen/gs_arcade_timer/gs_arcade_02.png",
   "ui_gamescreen/gs_arcade_timer/gs_arcade_01.png"
 ];
-const HUD_PLANE_TIMER_GO_PATH = "ui_gamescreen/gs_arcade_timer/gs_arcade_go.png";
+const HUD_PLANE_TIMER_GO_PATH = "ui_gamescreen/gs_arcade_timer/gs_arcade_go_transperent.png";
 
 const GAME_SCREEN_ASSETS = [
   // Plane counters
