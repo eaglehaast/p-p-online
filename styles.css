@@ -277,35 +277,32 @@ body, button {
     z-index: 30;
   }
 
-  .arcade-score {
+  #arcadeScoreBlue,
+  #arcadeScoreGreen {
     position: absolute;
-    width: 48px;
-    height: 287px;
+    width: 46px;
+    height: 35px;
     display: none;
     align-items: center;
     justify-content: center;
     pointer-events: none;
     z-index: 36;
-    color: #37d2ff;
-    font-family: 'Silkscreen', 'Fantasque Sans Mono', monospace;
-    font-size: 22px;
-    font-weight: 700;
+    color: #E6D2AE;
+    font-family: 'Inter', 'Roboto', sans-serif;
+    font-size: 24px;
+    font-weight: 500;
     line-height: 1;
-    -webkit-text-stroke: 1px #0a2048;
-    text-shadow: 0 2px 0 #0a2048;
     transform-origin: center;
-    writing-mode: vertical-rl;
-    text-orientation: upright;
   }
 
-  .arcade-score--blue {
-    left: 411px;
-    top: 97px;
+  #arcadeScoreBlue {
+    left: 412px;
+    top: 360px;
   }
 
-  .arcade-score--green {
-    left: 411px;
-    top: 416px;
+  #arcadeScoreGreen {
+    left: 412px;
+    top: 409px;
   }
 
   .arcade-score.is-animating {
