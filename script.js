@@ -4277,7 +4277,7 @@ const MAIN_MENU_ASSETS = [
 ];
 
 const HUD_PLANE_TIMER_FRAME_PATHS = [
-  "ui_gamescreen/gs_arcade_timer/gs_arcade_05.png",
+  "ui_gamescreen/gs_aracade_timer_cross.png",
   "ui_gamescreen/gs_arcade_timer/gs_arcade_04.png",
   "ui_gamescreen/gs_arcade_timer/gs_arcade_03.png",
   "ui_gamescreen/gs_arcade_timer/gs_arcade_02.png",
