@@ -13527,7 +13527,7 @@ function drawPlanesAndTrajectories(){
       };
     }
 
-    if(p.flagColor){
+    if(p.flagColor && !isPlaneInvisible(p)){
       targetCtx.save();
       targetCtx.strokeStyle = colorFor(p.flagColor);
       targetCtx.lineWidth = 3;
