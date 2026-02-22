@@ -10575,6 +10575,14 @@ const AI_MODES = Object.freeze({
   DEFENSE: "defense"
 });
 
+const AI_EARLY_GAME_TURN_LIMIT = 6;
+const AI_CARGO_RISK_ACCEPTANCE = 0.42;
+const AI_CARGO_SWITCH_TO_AGGRESSION_ITEMS = 2;
+
+function logAiDecision(reason, details = {}){
+  console.debug(`[ai] ${reason}`, details);
+}
+
 function createInitialAiRoundState(){
   return {
     mode: AI_MODES.ATTRITION,
@@ -10802,6 +10810,7 @@ function selectAiModeForCurrentTurn(context){
   const scoreGap = greenScore - blueScore;
   const aiAliveCount = aiPlanes.length;
   const enemyAliveCount = enemies.length;
+  const hasEnoughResourcesForAggression = blueInventoryCount >= AI_CARGO_SWITCH_TO_AGGRESSION_ITEMS;
 
   let mode = AI_MODES.ATTRITION;
   let targetPriorities = ["attack_enemy_plane", "close_distance"];
@@ -10809,6 +10818,12 @@ function selectAiModeForCurrentTurn(context){
   if(stolenBlueFlagCarrier && stolenBlueFlagCarrier.color !== "blue"){
     mode = AI_MODES.DEFENSE;
     targetPriorities = ["eliminate_flag_carrier", "protect_home_flag"];
+  } else if(hasEnoughResourcesForAggression && shouldUseFlagsMode && availableEnemyFlags.length > 0){
+    mode = AI_MODES.FLAG_PRESSURE;
+    targetPriorities = ["capture_enemy_flag", "return_with_flag"];
+  } else if(hasEnoughResourcesForAggression){
+    mode = AI_MODES.ATTRITION;
+    targetPriorities = ["attack_enemy_plane", "close_distance"];
   } else if(shouldUseFlagsMode && availableEnemyFlags.length > 0){
     mode = AI_MODES.FLAG_PRESSURE;
     targetPriorities = ["capture_enemy_flag", "return_with_flag"];
@@ -10823,7 +10838,97 @@ function selectAiModeForCurrentTurn(context){
   aiRoundState.mode = mode;
   aiRoundState.targetPriorities = targetPriorities;
   aiRoundState.currentGoal = targetPriorities[0] ?? null;
+  logAiDecision("mode_selected", {
+    mode,
+    turnAdvanceCount,
+    blueInventoryCount,
+    hasEnoughResourcesForAggression,
+    priorities: targetPriorities,
+  });
   return mode;
+}
+
+function estimateCargoInterceptionChance(plane, cargoCenter, enemies){
+  if(!Array.isArray(enemies) || enemies.length === 0) return 0;
+
+  let threateningEnemies = 0;
+  for(const enemy of enemies){
+    const enemyDist = dist(enemy, cargoCenter);
+    const planeDist = dist(plane, cargoCenter);
+    const canEnemyShootLane = isPathClear(enemy.x, enemy.y, cargoCenter.x, cargoCenter.y);
+    const enemyCanReachQuickly = enemyDist <= MAX_DRAG_DISTANCE * 0.85;
+    if(canEnemyShootLane && enemyCanReachQuickly && enemyDist <= planeDist * 1.15){
+      threateningEnemies += 1;
+    }
+  }
+  return Math.min(1, threateningEnemies / Math.max(1, enemies.length));
+}
+
+function evaluateCargoPickupRisk(plane, cargo, context){
+  const cargoCenter = getCargoVisualCenter(cargo);
+  const nearestEnemyDistance = Array.isArray(context?.enemies) && context.enemies.length > 0
+    ? Math.min(...context.enemies.map((enemy) => dist(enemy, cargoCenter)))
+    : Number.POSITIVE_INFINITY;
+  const interceptionChance = estimateCargoInterceptionChance(plane, cargoCenter, context?.enemies || []);
+  const carryingEnemyFlag = Boolean(plane?.carriedFlagId && getFlagById(plane.carriedFlagId)?.color === "green");
+  const isSafePath = isPathClear(plane.x, plane.y, cargoCenter.x, cargoCenter.y);
+
+  let risk = 0;
+  risk += nearestEnemyDistance < ATTACK_RANGE_PX ? 0.55 : nearestEnemyDistance < ATTACK_RANGE_PX * 1.5 ? 0.3 : 0.1;
+  risk += interceptionChance * 0.35;
+  risk += carryingEnemyFlag ? 0.6 : 0;
+  if(!isSafePath) risk += 0.45;
+
+  return {
+    totalRisk: Math.min(1, risk),
+    nearestEnemyDistance,
+    interceptionChance,
+    carryingEnemyFlag,
+    isSafePath,
+    cargoCenter,
+  };
+}
+
+function tryPlanEarlyCargoPickupMove(context){
+  if(turnAdvanceCount >= AI_EARLY_GAME_TURN_LIMIT) return null;
+
+  const groundedAiPlanes = context.aiPlanes.filter((plane) => !flyingPoints.some(fp => fp.plane === plane));
+  if(groundedAiPlanes.length === 0) return null;
+  const readyCargo = cargoState.filter((cargo) => cargo?.state === "ready");
+  if(readyCargo.length === 0) return null;
+
+  let bestCandidate = null;
+  for(const plane of groundedAiPlanes){
+    for(const cargo of readyCargo){
+      const move = planPathToPoint(plane, cargo.x, cargo.y);
+      if(!move) continue;
+      const riskInfo = evaluateCargoPickupRisk(plane, cargo, context);
+      if(!riskInfo.isSafePath || riskInfo.totalRisk > AI_CARGO_RISK_ACCEPTANCE) continue;
+      if(!bestCandidate || riskInfo.totalRisk < bestCandidate.riskInfo.totalRisk || (riskInfo.totalRisk === bestCandidate.riskInfo.totalRisk && move.totalDist < bestCandidate.move.totalDist)){
+        bestCandidate = { plane, cargo, move, riskInfo };
+      }
+    }
+  }
+
+  if(bestCandidate){
+    aiRoundState.currentGoal = "pickup_cargo_early";
+    logAiDecision("early_cargo_pickup", {
+      planeId: bestCandidate.plane.id,
+      risk: Number(bestCandidate.riskInfo.totalRisk.toFixed(3)),
+      nearestEnemyDistance: Number(bestCandidate.riskInfo.nearestEnemyDistance.toFixed(1)),
+      interceptionChance: Number(bestCandidate.riskInfo.interceptionChance.toFixed(2)),
+      carryingEnemyFlag: bestCandidate.riskInfo.carryingEnemyFlag,
+      turnAdvanceCount,
+    });
+    return { plane: bestCandidate.plane, ...bestCandidate.move };
+  }
+
+  logAiDecision("early_cargo_skip", {
+    reason: "high_risk_or_no_safe_path",
+    turnAdvanceCount,
+    cargoCount: readyCargo.length,
+  });
+  return null;
 }
 
 function planModeDrivenAiMove(context){
@@ -10882,7 +10987,7 @@ function planModeDrivenAiMove(context){
     let bestCargoMove = null;
     for(const plane of groundedAiPlanes){
       for(const cargo of cargoState){
-        if(!cargo?.active) continue;
+        if(cargo?.state !== "ready") continue;
         const move = planPathToPoint(plane, cargo.x, cargo.y);
         if(move && (!bestCargoMove || move.totalDist < bestCargoMove.totalDist)){
           bestCargoMove = { plane, ...move };
@@ -11038,8 +11143,21 @@ function doComputerMove(){
   };
 
   selectAiModeForCurrentTurn(modeContext);
+
+  const earlyCargoMove = tryPlanEarlyCargoPickupMove(modeContext);
+  if(earlyCargoMove){
+    maybeUseInventoryBeforeLaunch(modeContext, earlyCargoMove);
+    issueAIMove(earlyCargoMove.plane, earlyCargoMove.vx, earlyCargoMove.vy);
+    return;
+  }
+
   const modeMove = planModeDrivenAiMove(modeContext);
   if(modeMove){
+    logAiDecision("mode_move", {
+      mode: aiRoundState.mode,
+      goal: aiRoundState.currentGoal,
+      planeId: modeMove.plane?.id ?? null,
+    });
     maybeUseInventoryBeforeLaunch(modeContext, modeMove);
     issueAIMove(modeMove.plane, modeMove.vx, modeMove.vy);
     return;
@@ -11048,6 +11166,9 @@ function doComputerMove(){
   const fallbackMove = getFallbackAiMove(modeContext);
   if(fallbackMove){
     aiRoundState.currentGoal = "fallback_legacy_logic";
+    logAiDecision("fallback_move", {
+      planeId: fallbackMove.plane?.id ?? null,
+    });
     maybeUseInventoryBeforeLaunch(modeContext, fallbackMove);
     issueAIMove(fallbackMove.plane, fallbackMove.vx, fallbackMove.vy);
   }
