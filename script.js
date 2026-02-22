@@ -7962,6 +7962,21 @@ function getCargoVisualCenter(cargo){
   };
 }
 
+function doesCargoIntersectPlaneBeneficialZone(cargo, plane){
+  const { width, height } = getCargoSpriteSize();
+  const cargoLeft = cargo.x;
+  const cargoRight = cargo.x + width;
+  const cargoTop = cargo.y;
+  const cargoBottom = cargo.y + height;
+
+  // широкие крылья расширяют только полезные взаимодействия
+  const beneficialZone = getPlaneBeneficialHitbox(plane);
+  return cargoLeft < beneficialZone.right
+    && cargoRight > beneficialZone.left
+    && cargoTop < beneficialZone.bottom
+    && cargoBottom > beneficialZone.top;
+}
+
 function updateCargoState(now = performance.now()){
   if(cargoState.length === 0){
     return;
@@ -7982,10 +7997,7 @@ function updateCargoState(now = performance.now()){
     let pickedUp = false;
     for(const plane of points){
       if(!plane?.isAlive || plane?.burning) continue;
-      const pickupCenter = getCargoVisualCenter(cargo);
-      const dx = plane.x - pickupCenter.x;
-      const dy = plane.y - pickupCenter.y;
-      if(Math.hypot(dx, dy) < CARGO_RADIUS){
+      if(doesCargoIntersectPlaneBeneficialZone(cargo, plane)){
         cargo.pickedAt = now;
         const item = getRandomInventoryItem();
         addItemToInventory(plane.color, item);
