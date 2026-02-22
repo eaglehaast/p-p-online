@@ -14018,7 +14018,8 @@ function drawPlanesAndTrajectories(){
       };
     }
 
-    if(p.flagColor && !isPlaneInvisible(p)){
+    const isPlaneFullyHiddenByInvisibility = invisibilityAlpha <= 0.01;
+    if(p.flagColor && !isPlaneFullyHiddenByInvisibility){
       targetCtx.save();
       targetCtx.strokeStyle = colorFor(p.flagColor);
       targetCtx.lineWidth = 3;
