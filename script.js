@@ -10713,6 +10713,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
   const priorityEnemy = getBluePriorityEnemy(context);
   const landingPoint = getAiMoveLandingPoint(plannedMove);
   const enemyBase = getBaseAnchor("green");
+  const riskProfile = context?.aiRiskProfile?.profile || "balanced";
 
   if(inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0){
     const enemyFlag = context?.shouldUseFlagsMode ? getAvailableFlagsByColor("green")[0] : null;
@@ -10720,7 +10721,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     const farObjective = (enemyFlagAnchor && dist(plannedMove.plane, enemyFlagAnchor) > MAX_DRAG_DISTANCE * 0.8)
       || (priorityEnemy && dist(plannedMove.plane, priorityEnemy) > MAX_DRAG_DISTANCE * 0.8)
       || moveDistance > MAX_DRAG_DISTANCE * 0.8;
-    if(farObjective && applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, "blue", plannedMove.plane)){
+    const shouldBoostRange = farObjective || (riskProfile === "comeback" && moveDistance > MAX_DRAG_DISTANCE * 0.55);
+    if(shouldBoostRange && applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, "blue", plannedMove.plane)){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
       return true;
     }
@@ -10730,7 +10732,9 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     const cleanFinishingChance = isPathClear(plannedMove.plane.x, plannedMove.plane.y, priorityEnemy.x, priorityEnemy.y)
       && dist(plannedMove.plane, priorityEnemy) <= MAX_DRAG_DISTANCE
       && !priorityEnemy.shieldActive;
-    if(cleanFinishingChance && applyItemToOwnPlane(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
+    const comebackPressureShot = riskProfile === "comeback"
+      && dist(plannedMove.plane, priorityEnemy) <= MAX_DRAG_DISTANCE * 1.2;
+    if((cleanFinishingChance || comebackPressureShot) && applyItemToOwnPlane(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
       return true;
     }
@@ -10775,7 +10779,9 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       : Number.POSITIVE_INFINITY;
     const expectCounterMove = nearestEnemyDistance <= ATTACK_RANGE_PX * 1.15
       || (context?.enemies?.length ?? 0) >= (context?.aiPlanes?.length ?? 0);
-    if(expectCounterMove && queueInvisibilityEffectForPlayer("blue")){
+    const shouldUseInvisibility = expectCounterMove
+      || (riskProfile === "comeback" && moveDistance >= MAX_DRAG_DISTANCE * 0.6);
+    if(shouldUseInvisibility && queueInvisibilityEffectForPlayer("blue")){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.INVISIBILITY);
       return true;
     }
@@ -10807,7 +10813,8 @@ function selectAiModeForCurrentTurn(context){
     enemies,
     availableEnemyFlags,
     stolenBlueFlagCarrier,
-    blueInventoryCount
+    blueInventoryCount,
+    aiRiskProfile
   } = context;
   const scoreGap = greenScore - blueScore;
   const aiAliveCount = aiPlanes.length;
@@ -10820,6 +10827,12 @@ function selectAiModeForCurrentTurn(context){
   if(stolenBlueFlagCarrier && stolenBlueFlagCarrier.color !== "blue"){
     mode = AI_MODES.DEFENSE;
     targetPriorities = ["eliminate_flag_carrier", "protect_home_flag"];
+  } else if(aiRiskProfile?.profile === "conservative"){
+    mode = AI_MODES.DEFENSE;
+    targetPriorities = ["preserve_planes", "protect_home_flag", "safe_attack"];
+  } else if(aiRiskProfile?.profile === "comeback" && shouldUseFlagsMode && availableEnemyFlags.length > 0){
+    mode = AI_MODES.FLAG_PRESSURE;
+    targetPriorities = ["capture_enemy_flag", "return_with_flag", "high_risk_attack"];
   } else if(hasEnoughResourcesForAggression && shouldUseFlagsMode && availableEnemyFlags.length > 0){
     mode = AI_MODES.FLAG_PRESSURE;
     targetPriorities = ["capture_enemy_flag", "return_with_flag"];
@@ -10845,9 +10858,35 @@ function selectAiModeForCurrentTurn(context){
     turnAdvanceCount,
     blueInventoryCount,
     hasEnoughResourcesForAggression,
+    riskProfile: aiRiskProfile?.profile || "balanced",
     priorities: targetPriorities,
   });
   return mode;
+}
+
+
+function getAiRiskProfile(context){
+  const aiAliveCount = Array.isArray(context?.aiPlanes) ? context.aiPlanes.length : 0;
+  const enemyAliveCount = Array.isArray(context?.enemies) ? context.enemies.length : 0;
+  const scoreDiff = blueScore - greenScore;
+  const blueToWin = Math.max(0, POINTS_TO_WIN - blueScore);
+  const greenToWin = Math.max(0, POINTS_TO_WIN - greenScore);
+
+  let profile = "balanced";
+  if(scoreDiff <= -4 || (scoreDiff <= -2 && greenToWin <= 4) || (scoreDiff < 0 && aiAliveCount < enemyAliveCount)){
+    profile = "comeback";
+  } else if(scoreDiff >= 3 || blueToWin <= 3 || (scoreDiff >= 1 && aiAliveCount >= enemyAliveCount + 1)){
+    profile = "conservative";
+  }
+
+  return {
+    profile,
+    scoreDiff,
+    blueToWin,
+    greenToWin,
+    aiAliveCount,
+    enemyAliveCount,
+  };
 }
 
 function estimateCargoInterceptionChance(plane, cargoCenter, enemies){
@@ -11022,6 +11061,7 @@ function planModeDrivenAiMove(context){
 function getFallbackAiMove(context){
   const { aiPlanes, enemies, shouldUseFlagsMode, availableEnemyFlags } = context;
   const homeBase = context.homeBase;
+  const riskProfile = context?.aiRiskProfile?.profile || "balanced";
 
   const carrier = shouldUseFlagsMode ? aiPlanes.find(p => {
     if(!p.carriedFlagId) return false;
@@ -11039,7 +11079,7 @@ function getFallbackAiMove(context){
   const stolenBlueFlagCarrier = shouldUseFlagsMode ? getFlagCarrierForColor("blue") : null;
   if(stolenBlueFlagCarrier && stolenBlueFlagCarrier.color !== "blue"){
     targetEnemies = enemies.filter(e=>e===stolenBlueFlagCarrier);
-  } else if(availableEnemyFlags.length){
+  } else if(availableEnemyFlags.length && (riskProfile === "comeback" || riskProfile === "balanced")){
     let bestCap = null;
     for(const plane of aiPlanes){
       if(flyingPoints.some(fp=>fp.plane===plane)) continue;
@@ -11077,11 +11117,12 @@ function getFallbackAiMove(context){
         const vx = Math.cos(ang) * scale * speedPxPerSec;
         const vy = Math.sin(ang) * scale * speedPxPerSec;
 
-        if(!best || directDist < best.totalDist){
+        const allowLongDirectAttack = riskProfile !== "conservative" || directDist <= MAX_DRAG_DISTANCE * 0.85;
+        if(allowLongDirectAttack && (!best || directDist < best.totalDist)){
           best = {plane, enemy, vx, vy, totalDist: directDist};
         }
       } else {
-        const mirror = findMirrorShot(plane, enemy);
+        const mirror = riskProfile === "conservative" ? null : findMirrorShot(plane, enemy);
         if(mirror){
           const dx = mirror.mirrorTarget.x - plane.x;
           const dy = mirror.mirrorTarget.y - plane.y;
@@ -11091,7 +11132,8 @@ function getFallbackAiMove(context){
           const vx = Math.cos(ang) * scale * speedPxPerSec;
           const vy = Math.sin(ang) * scale * speedPxPerSec;
 
-          if(!best || mirror.totalDist < best.totalDist){
+          const mirrorWeight = riskProfile === "comeback" ? 0.82 : 1;
+          if(!best || mirror.totalDist * mirrorWeight < best.totalDist){
             best = {plane, enemy, vx, vy, totalDist: mirror.totalDist};
           }
         }
@@ -11102,8 +11144,15 @@ function getFallbackAiMove(context){
   if(!best){
     const plane = aiPlanes[0];
     const enemy = targetEnemies.reduce((a,b)=> (dist(plane,a)<dist(plane,b)?a:b));
-    const dx= enemy.x - plane.x;
-    const dy= enemy.y - plane.y;
+    const conservativeRetreat = riskProfile === "conservative";
+    const fallbackTarget = conservativeRetreat
+      ? {
+          x: (plane.x + homeBase.x) * 0.5,
+          y: (plane.y + homeBase.y) * 0.5,
+        }
+      : enemy;
+    const dx= fallbackTarget.x - plane.x;
+    const dy= fallbackTarget.y - plane.y;
     const ang = Math.atan2(dy, dx) + getRandomDeviation(Math.hypot(dx,dy), AI_MAX_ANGLE_DEVIATION);
 
     const desired = Math.min(Math.hypot(dx,dy)*0.5, MAX_DRAG_DISTANCE);
@@ -11143,8 +11192,22 @@ function doComputerMove(){
     stolenBlueFlagCarrier,
     blueInventoryCount: getAvailableInventoryCount("blue")
   };
+  modeContext.aiRiskProfile = getAiRiskProfile(modeContext);
+  logAiDecision("risk_profile", modeContext.aiRiskProfile);
 
   selectAiModeForCurrentTurn(modeContext);
+
+  if(modeContext.aiRiskProfile.profile === "comeback" && shouldUseFlagsMode && availableEnemyFlags.length > 0){
+    const quickFlagMove = planModeDrivenAiMove(modeContext);
+    if(quickFlagMove && aiRoundState.currentGoal === "capture_enemy_flag"){
+      logAiDecision("comeback_quick_flag", {
+        planeId: quickFlagMove.plane?.id ?? null,
+      });
+      maybeUseInventoryBeforeLaunch(modeContext, quickFlagMove);
+      issueAIMove(quickFlagMove.plane, quickFlagMove.vx, quickFlagMove.vy);
+      return;
+    }
+  }
 
   const earlyCargoMove = tryPlanEarlyCargoPickupMove(modeContext);
   if(earlyCargoMove){
