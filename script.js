@@ -10972,6 +10972,223 @@ function tryPlanEarlyCargoPickupMove(context){
   return null;
 }
 
+function getGroundedAiPlanes(aiPlanes){
+  if(!Array.isArray(aiPlanes)) return [];
+  return aiPlanes.filter((plane) => !flyingPoints.some(fp => fp.plane === plane));
+}
+
+function assignAiRolesForTurn(context){
+  const groundedAiPlanes = getGroundedAiPlanes(context?.aiPlanes);
+  if(groundedAiPlanes.length === 0) return null;
+
+  const roles = {
+    runner: null,
+    interceptor: null,
+    collector: null,
+    striker: null,
+  };
+  const reservedPlaneIds = new Set();
+  const claimPlaneForRole = (roleName, plane) => {
+    if(!plane || reservedPlaneIds.has(plane.id)) return false;
+    roles[roleName] = plane;
+    reservedPlaneIds.add(plane.id);
+    return true;
+  };
+
+  const shouldUseFlagsMode = Boolean(context?.shouldUseFlagsMode);
+  const availableEnemyFlags = Array.isArray(context?.availableEnemyFlags) ? context.availableEnemyFlags : [];
+  const readyCargo = cargoState.filter((cargo) => cargo?.state === "ready");
+
+  const flagCarrier = shouldUseFlagsMode
+    ? groundedAiPlanes.find((plane) => {
+        if(!plane?.carriedFlagId) return false;
+        const carriedFlag = getFlagById(plane.carriedFlagId);
+        return carriedFlag?.color === "green";
+      })
+    : null;
+  claimPlaneForRole("runner", flagCarrier);
+
+  if(!roles.runner && shouldUseFlagsMode && availableEnemyFlags.length > 0){
+    let bestRunner = null;
+    for(const plane of groundedAiPlanes){
+      if(reservedPlaneIds.has(plane.id)) continue;
+      for(const flag of availableEnemyFlags){
+        const anchor = getFlagAnchor(flag);
+        const move = planPathToPoint(plane, anchor.x, anchor.y);
+        if(move && (!bestRunner || move.totalDist < bestRunner.move.totalDist)){
+          bestRunner = { plane, move };
+        }
+      }
+    }
+    claimPlaneForRole("runner", bestRunner?.plane || null);
+  }
+
+  if(context?.stolenBlueFlagCarrier){
+    let bestInterceptor = null;
+    for(const plane of groundedAiPlanes){
+      if(reservedPlaneIds.has(plane.id)) continue;
+      const toCarrier = planPathToPoint(plane, context.stolenBlueFlagCarrier.x, context.stolenBlueFlagCarrier.y);
+      if(toCarrier && (!bestInterceptor || toCarrier.totalDist < bestInterceptor.move.totalDist)){
+        bestInterceptor = { plane, move: toCarrier };
+      }
+    }
+    claimPlaneForRole("interceptor", bestInterceptor?.plane || null);
+  }
+
+  if(readyCargo.length > 0){
+    let bestCollector = null;
+    for(const plane of groundedAiPlanes){
+      if(reservedPlaneIds.has(plane.id)) continue;
+      for(const cargo of readyCargo){
+        const move = planPathToPoint(plane, cargo.x, cargo.y);
+        if(!move) continue;
+        const riskInfo = evaluateCargoPickupRisk(plane, cargo, context);
+        if(!riskInfo.isSafePath || riskInfo.totalRisk > AI_CARGO_RISK_ACCEPTANCE) continue;
+        if(!bestCollector || riskInfo.totalRisk < bestCollector.riskInfo.totalRisk || (riskInfo.totalRisk === bestCollector.riskInfo.totalRisk && move.totalDist < bestCollector.move.totalDist)){
+          bestCollector = { plane, move, cargo, riskInfo };
+        }
+      }
+    }
+    claimPlaneForRole("collector", bestCollector?.plane || null);
+  }
+
+  if(Array.isArray(context?.enemies) && context.enemies.length > 0){
+    let bestStriker = null;
+    for(const plane of groundedAiPlanes){
+      if(reservedPlaneIds.has(plane.id)) continue;
+      for(const enemy of context.enemies){
+        const move = planPathToPoint(plane, enemy.x, enemy.y);
+        if(!move) continue;
+        const score = move.totalDist + (isPathClear(plane.x, plane.y, enemy.x, enemy.y) ? 0 : ATTACK_RANGE_PX * 0.65);
+        if(!bestStriker || score < bestStriker.score){
+          bestStriker = { plane, enemy, move, score };
+        }
+      }
+    }
+    claimPlaneForRole("striker", bestStriker?.plane || null);
+  }
+
+  const hasAnyRole = Boolean(roles.runner || roles.interceptor || roles.collector || roles.striker);
+  if(!hasAnyRole) return null;
+
+  const roleDebug = {};
+  for(const [name, plane] of Object.entries(roles)){
+    roleDebug[name] = plane?.id ?? null;
+  }
+  logAiDecision("roles_assigned", roleDebug);
+
+  return { roles, groundedAiPlanes };
+}
+
+function isLandingPointUnderPressure(plane, move, enemies){
+  if(!plane || !move || !Array.isArray(enemies) || enemies.length === 0) return false;
+  const landingPoint = {
+    x: plane.x + (move.vx || 0) * FIELD_FLIGHT_DURATION_SEC,
+    y: plane.y + (move.vy || 0) * FIELD_FLIGHT_DURATION_SEC,
+  };
+  const nearestEnemyDistance = Math.min(...enemies.map((enemy) => dist(enemy, landingPoint)));
+  return nearestEnemyDistance < ATTACK_RANGE_PX * 1.1;
+}
+
+function planRoleDrivenAiMove(context, rolePack){
+  if(!rolePack?.roles) return null;
+  const { roles } = rolePack;
+  const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
+
+  if(roles.runner){
+    const runner = roles.runner;
+    const runnerTargets = [];
+    if(runner.carriedFlagId){
+      const carriedFlag = getFlagById(runner.carriedFlagId);
+      if(carriedFlag?.color === "green"){
+        runnerTargets.push(context.homeBase);
+      }
+    }
+    if(runnerTargets.length === 0 && context.shouldUseFlagsMode){
+      for(const flag of context.availableEnemyFlags || []){
+        runnerTargets.push(getFlagAnchor(flag));
+      }
+    }
+    let bestRunnerMove = null;
+    for(const target of runnerTargets){
+      const move = planPathToPoint(runner, target.x, target.y);
+      if(!move) continue;
+      if(isLandingPointUnderPressure(runner, move, enemies)) continue;
+      if(!bestRunnerMove || move.totalDist < bestRunnerMove.totalDist){
+        bestRunnerMove = move;
+      }
+    }
+    if(bestRunnerMove){
+      aiRoundState.currentGoal = "role_runner";
+      return { plane: runner, ...bestRunnerMove };
+    }
+  }
+
+  if(roles.interceptor && context?.stolenBlueFlagCarrier){
+    const interceptor = roles.interceptor;
+    const carrier = context.stolenBlueFlagCarrier;
+    const blockTargets = [{ x: carrier.x, y: carrier.y }];
+    if(context.homeBase){
+      blockTargets.push({
+        x: (carrier.x + context.homeBase.x) / 2,
+        y: (carrier.y + context.homeBase.y) / 2,
+      });
+    }
+
+    let bestInterceptMove = null;
+    for(const target of blockTargets){
+      const move = planPathToPoint(interceptor, target.x, target.y);
+      if(!move) continue;
+      if(!bestInterceptMove || move.totalDist < bestInterceptMove.totalDist){
+        bestInterceptMove = move;
+      }
+    }
+    if(bestInterceptMove){
+      aiRoundState.currentGoal = "role_interceptor";
+      return { plane: interceptor, ...bestInterceptMove };
+    }
+  }
+
+  if(roles.collector){
+    const collector = roles.collector;
+    const readyCargo = cargoState.filter((cargo) => cargo?.state === "ready");
+    let bestCollectorMove = null;
+    for(const cargo of readyCargo){
+      const move = planPathToPoint(collector, cargo.x, cargo.y);
+      if(!move) continue;
+      const riskInfo = evaluateCargoPickupRisk(collector, cargo, context);
+      if(!riskInfo.isSafePath || riskInfo.totalRisk > AI_CARGO_RISK_ACCEPTANCE) continue;
+      if(!bestCollectorMove || riskInfo.totalRisk < bestCollectorMove.riskInfo.totalRisk || (riskInfo.totalRisk === bestCollectorMove.riskInfo.totalRisk && move.totalDist < bestCollectorMove.move.totalDist)){
+        bestCollectorMove = { cargo, move, riskInfo };
+      }
+    }
+    if(bestCollectorMove){
+      aiRoundState.currentGoal = "role_collector";
+      return { plane: collector, ...bestCollectorMove.move };
+    }
+  }
+
+  if(roles.striker && enemies.length > 0){
+    const striker = roles.striker;
+    let bestStrike = null;
+    for(const enemy of enemies){
+      const move = planPathToPoint(striker, enemy.x, enemy.y);
+      if(!move) continue;
+      const clearLaneBonus = isPathClear(striker.x, striker.y, enemy.x, enemy.y) ? 0.7 : 1;
+      const hitChanceScore = move.totalDist * clearLaneBonus;
+      if(!bestStrike || hitChanceScore < bestStrike.hitChanceScore){
+        bestStrike = { enemy, move, hitChanceScore };
+      }
+    }
+    if(bestStrike){
+      aiRoundState.currentGoal = "role_striker";
+      return { plane: striker, ...bestStrike.move };
+    }
+  }
+
+  return null;
+}
+
 function planModeDrivenAiMove(context){
   const {
     aiPlanes,
@@ -11196,6 +11413,23 @@ function doComputerMove(){
   logAiDecision("risk_profile", modeContext.aiRiskProfile);
 
   selectAiModeForCurrentTurn(modeContext);
+
+  const rolePack = assignAiRolesForTurn(modeContext);
+  if(rolePack){
+    const roleMove = planRoleDrivenAiMove(modeContext, rolePack);
+    if(roleMove){
+      logAiDecision("role_move", {
+        goal: aiRoundState.currentGoal,
+        planeId: roleMove.plane?.id ?? null,
+      });
+      maybeUseInventoryBeforeLaunch(modeContext, roleMove);
+      issueAIMove(roleMove.plane, roleMove.vx, roleMove.vy);
+      return;
+    }
+    logAiDecision("role_move_skip", { reason: "no_role_path", hasRoles: true });
+  } else {
+    logAiDecision("role_assignment_skip", { reason: "no_available_roles" });
+  }
 
   if(modeContext.aiRiskProfile.profile === "comeback" && shouldUseFlagsMode && availableEnemyFlags.length > 0){
     const quickFlagMove = planModeDrivenAiMove(modeContext);
