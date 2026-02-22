@@ -2356,10 +2356,13 @@ function planeHasActiveTurnBuff(plane, type){
   return getPlaneActiveTurnBuffs(plane).includes(type);
 }
 
-function getPlaneHitbox(plane){
-  const hasWingsBuff = planeHasActiveTurnBuff(plane, INVENTORY_ITEM_TYPES.WINGS);
-  const width = hasWingsBuff ? 72 : 36;
-  const height = 36;
+const PLANE_DANGER_HITBOX_WIDTH = 36;
+const PLANE_BENEFICIAL_HITBOX_WIDTH_WITH_WINGS = 96;
+const PLANE_HITBOX_HEIGHT = 36;
+
+function getPlaneDangerHitbox(plane){
+  const width = PLANE_DANGER_HITBOX_WIDTH;
+  const height = PLANE_HITBOX_HEIGHT;
   const halfW = width / 2;
   const halfH = height / 2;
 
@@ -2375,10 +2378,33 @@ function getPlaneHitbox(plane){
   };
 }
 
-function getPlaneInteractionZone(plane){
-  const hitbox = getPlaneHitbox(plane);
-  const baseHalfWidth = 36 / 2;
-  const baseHalfHeight = 36 / 2;
+function getPlaneBeneficialHitbox(plane){
+  const hasWingsBuff = planeHasActiveTurnBuff(plane, INVENTORY_ITEM_TYPES.WINGS);
+  const width = hasWingsBuff ? PLANE_BENEFICIAL_HITBOX_WIDTH_WITH_WINGS : PLANE_DANGER_HITBOX_WIDTH;
+  const height = PLANE_HITBOX_HEIGHT;
+  const halfW = width / 2;
+  const halfH = height / 2;
+
+  return {
+    x: plane.x,
+    y: plane.y,
+    width,
+    height,
+    left: plane.x - halfW,
+    right: plane.x + halfW,
+    top: plane.y - halfH,
+    bottom: plane.y + halfH
+  };
+}
+
+function getPlaneHitbox(plane){
+  return getPlaneDangerHitbox(plane);
+}
+
+function getPlaneBeneficialInteractionZone(plane){
+  const hitbox = getPlaneBeneficialHitbox(plane);
+  const baseHalfWidth = PLANE_DANGER_HITBOX_WIDTH / 2;
+  const baseHalfHeight = PLANE_HITBOX_HEIGHT / 2;
   const halfWidth = Math.max(0, hitbox.width / 2 - baseHalfWidth);
   const halfHeight = Math.max(0, hitbox.height / 2 - baseHalfHeight);
 
@@ -2395,7 +2421,7 @@ function getPlaneInteractionZone(plane){
 function doesPlaneZoneIntersectTargetZone(plane, target){
   if(!plane || !target?.anchor || !Number.isFinite(target.radius)) return false;
 
-  const zone = getPlaneInteractionZone(plane);
+  const zone = getPlaneBeneficialInteractionZone(plane);
   const closestX = Math.max(zone.left, Math.min(target.anchor.x, zone.right));
   const closestY = Math.max(zone.top, Math.min(target.anchor.y, zone.bottom));
   const dx = target.anchor.x - closestX;
@@ -7441,7 +7467,7 @@ document.addEventListener('dblclick', (e) => {
 /* ======= CONFIG ======= */
 const PLANE_DRAW_W         = 36;
 const PLANE_DRAW_H         = 36;
-const BROADWING_OVERLAY_DRAW_W = 96;
+const BROADWING_OVERLAY_DRAW_W = PLANE_BENEFICIAL_HITBOX_WIDTH_WITH_WINGS;
 const BROADWING_OVERLAY_DRAW_H = PLANE_DRAW_H;
 const PLANE_METRIC_SCALE   = PLANE_DRAW_W / 40;
 
