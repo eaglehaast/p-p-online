@@ -10647,6 +10647,10 @@ const AI_MODES = Object.freeze({
 
 const AI_EARLY_GAME_TURN_LIMIT = 6;
 const AI_CARGO_RISK_ACCEPTANCE = 0.42;
+const AI_CARGO_RISK_YELLOW_ZONE_MARGIN = 0.12;
+const AI_CARGO_FAVORABLE_DISTANCE = MAX_DRAG_DISTANCE * 0.72;
+const AI_CARGO_IMMEDIATE_THREAT_DISTANCE = ATTACK_RANGE_PX * 0.9;
+const AI_CARGO_IMMEDIATE_THREAT_INTERCEPTION = 0.5;
 const AI_CARGO_SWITCH_TO_AGGRESSION_ITEMS = 2;
 
 function logAiDecision(reason, details = {}){
@@ -11049,6 +11053,27 @@ function evaluateCargoPickupRisk(plane, cargo, context){
   };
 }
 
+function evaluateFavorableCargoCandidate(plane, cargo, move, riskInfo){
+  if(!plane || !cargo || !move || !riskInfo) return null;
+
+  const yellowRiskMin = AI_CARGO_RISK_ACCEPTANCE;
+  const yellowRiskMax = AI_CARGO_RISK_ACCEPTANCE + AI_CARGO_RISK_YELLOW_ZONE_MARGIN;
+  const isNearPlane = move.totalDist <= AI_CARGO_FAVORABLE_DISTANCE;
+  const inYellowRiskZone = riskInfo.totalRisk > yellowRiskMin && riskInfo.totalRisk <= yellowRiskMax;
+  const hasImmediateThreat = riskInfo.nearestEnemyDistance <= AI_CARGO_IMMEDIATE_THREAT_DISTANCE
+    || riskInfo.interceptionChance >= AI_CARGO_IMMEDIATE_THREAT_INTERCEPTION
+    || riskInfo.carryingEnemyFlag;
+
+  return {
+    isFavorableCargo: isNearPlane && inYellowRiskZone && !hasImmediateThreat,
+    isNearPlane,
+    inYellowRiskZone,
+    hasImmediateThreat,
+    yellowRiskMin,
+    yellowRiskMax,
+  };
+}
+
 function tryPlanEarlyCargoPickupMove(context){
   if(turnAdvanceCount >= AI_EARLY_GAME_TURN_LIMIT) return null;
 
@@ -11058,14 +11083,35 @@ function tryPlanEarlyCargoPickupMove(context){
   if(readyCargo.length === 0) return null;
 
   let bestCandidate = null;
+  let skipStats = {
+    blockedByPath: 0,
+    blockedByRisk: 0,
+    blockedByDistance: 0,
+    blockedByThreat: 0,
+    considered: 0,
+  };
   for(const plane of groundedAiPlanes){
     for(const cargo of readyCargo){
+      skipStats.considered += 1;
       const move = planPathToPoint(plane, cargo.x, cargo.y);
       if(!move) continue;
       const riskInfo = evaluateCargoPickupRisk(plane, cargo, context);
-      if(!riskInfo.isSafePath || riskInfo.totalRisk > AI_CARGO_RISK_ACCEPTANCE) continue;
+      const favorableInfo = evaluateFavorableCargoCandidate(plane, cargo, move, riskInfo);
+      const isAcceptedByBaseRisk = riskInfo.isSafePath && riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE;
+      const isAcceptedByFavorableOverride = riskInfo.isSafePath && favorableInfo?.isFavorableCargo;
+
+      if(!isAcceptedByBaseRisk && !isAcceptedByFavorableOverride){
+        if(!riskInfo.isSafePath) skipStats.blockedByPath += 1;
+        if(riskInfo.totalRisk > AI_CARGO_RISK_ACCEPTANCE){
+          if(favorableInfo?.hasImmediateThreat) skipStats.blockedByThreat += 1;
+          else if(!favorableInfo?.isNearPlane) skipStats.blockedByDistance += 1;
+          else skipStats.blockedByRisk += 1;
+        }
+        continue;
+      }
+
       if(!bestCandidate || riskInfo.totalRisk < bestCandidate.riskInfo.totalRisk || (riskInfo.totalRisk === bestCandidate.riskInfo.totalRisk && move.totalDist < bestCandidate.move.totalDist)){
-        bestCandidate = { plane, cargo, move, riskInfo };
+        bestCandidate = { plane, cargo, move, riskInfo, favorableInfo, acceptedBy: isAcceptedByBaseRisk ? "base_threshold" : "favorable_override" };
       }
     }
   }
@@ -11078,15 +11124,19 @@ function tryPlanEarlyCargoPickupMove(context){
       nearestEnemyDistance: Number(bestCandidate.riskInfo.nearestEnemyDistance.toFixed(1)),
       interceptionChance: Number(bestCandidate.riskInfo.interceptionChance.toFixed(2)),
       carryingEnemyFlag: bestCandidate.riskInfo.carryingEnemyFlag,
+      moveTotalDist: Number(bestCandidate.move.totalDist.toFixed(1)),
+      acceptedBy: bestCandidate.acceptedBy,
+      favorableCargo: Boolean(bestCandidate.favorableInfo?.isFavorableCargo),
       turnAdvanceCount,
     });
     return { plane: bestCandidate.plane, ...bestCandidate.move };
   }
 
   logAiDecision("early_cargo_skip", {
-    reason: "high_risk_or_no_safe_path",
+    reason: "risk_distance_or_threat",
     turnAdvanceCount,
     cargoCount: readyCargo.length,
+    skipStats,
   });
   return null;
 }
@@ -11156,17 +11206,33 @@ function assignAiRolesForTurn(context){
 
   if(readyCargo.length > 0){
     let bestCollector = null;
+    let bestFavorableCollector = null;
     for(const plane of groundedAiPlanes){
       if(reservedPlaneIds.has(plane.id)) continue;
       for(const cargo of readyCargo){
         const move = planPathToPoint(plane, cargo.x, cargo.y);
         if(!move) continue;
         const riskInfo = evaluateCargoPickupRisk(plane, cargo, context);
-        if(!riskInfo.isSafePath || riskInfo.totalRisk > AI_CARGO_RISK_ACCEPTANCE) continue;
+        const favorableInfo = evaluateFavorableCargoCandidate(plane, cargo, move, riskInfo);
+        if(!riskInfo.isSafePath || riskInfo.totalRisk > AI_CARGO_RISK_ACCEPTANCE){
+          if(favorableInfo?.isFavorableCargo && (!bestFavorableCollector || move.totalDist < bestFavorableCollector.move.totalDist || (move.totalDist === bestFavorableCollector.move.totalDist && riskInfo.totalRisk < bestFavorableCollector.riskInfo.totalRisk))){
+            bestFavorableCollector = { plane, move, cargo, riskInfo, favorableInfo };
+          }
+          continue;
+        }
         if(!bestCollector || riskInfo.totalRisk < bestCollector.riskInfo.totalRisk || (riskInfo.totalRisk === bestCollector.riskInfo.totalRisk && move.totalDist < bestCollector.move.totalDist)){
-          bestCollector = { plane, move, cargo, riskInfo };
+          bestCollector = { plane, move, cargo, riskInfo, favorableInfo };
         }
       }
+    }
+    if(!bestCollector && bestFavorableCollector){
+      bestCollector = bestFavorableCollector;
+      logAiDecision("collector_role_soft_override", {
+        planeId: bestCollector.plane.id,
+        cargoId: bestCollector.cargo?.id ?? null,
+        risk: Number(bestCollector.riskInfo.totalRisk.toFixed(3)),
+        distance: Number(bestCollector.move.totalDist.toFixed(1)),
+      });
     }
     claimPlaneForRole("collector", bestCollector?.plane || null);
   }
@@ -11194,6 +11260,7 @@ function assignAiRolesForTurn(context){
   for(const [name, plane] of Object.entries(roles)){
     roleDebug[name] = plane?.id ?? null;
   }
+  roleDebug.collectorReason = roles.collector ? "best_available_or_favorable_cargo" : "cargo_skipped_risk_distance_or_threat";
   logAiDecision("roles_assigned", roleDebug);
 
   return { roles, groundedAiPlanes };
@@ -11272,19 +11339,57 @@ function planRoleDrivenAiMove(context, rolePack){
     const collector = roles.collector;
     const readyCargo = cargoState.filter((cargo) => cargo?.state === "ready");
     let bestCollectorMove = null;
+    let bestFavorableCollectorMove = null;
+    const collectorSkipStats = {
+      blockedByPath: 0,
+      blockedByRisk: 0,
+      blockedByDistance: 0,
+      blockedByThreat: 0,
+    };
     for(const cargo of readyCargo){
       const move = planPathToPoint(collector, cargo.x, cargo.y);
       if(!move) continue;
       const riskInfo = evaluateCargoPickupRisk(collector, cargo, context);
-      if(!riskInfo.isSafePath || riskInfo.totalRisk > AI_CARGO_RISK_ACCEPTANCE) continue;
-      if(!bestCollectorMove || riskInfo.totalRisk < bestCollectorMove.riskInfo.totalRisk || (riskInfo.totalRisk === bestCollectorMove.riskInfo.totalRisk && move.totalDist < bestCollectorMove.move.totalDist)){
-        bestCollectorMove = { cargo, move, riskInfo };
+      const favorableInfo = evaluateFavorableCargoCandidate(collector, cargo, move, riskInfo);
+      if(!riskInfo.isSafePath){
+        collectorSkipStats.blockedByPath += 1;
+        continue;
       }
+      if(riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE){
+        if(!bestCollectorMove || riskInfo.totalRisk < bestCollectorMove.riskInfo.totalRisk || (riskInfo.totalRisk === bestCollectorMove.riskInfo.totalRisk && move.totalDist < bestCollectorMove.move.totalDist)){
+          bestCollectorMove = { cargo, move, riskInfo, favorableInfo, acceptedBy: "base_threshold" };
+        }
+        continue;
+      }
+      if(favorableInfo?.isFavorableCargo){
+        if(!bestFavorableCollectorMove || move.totalDist < bestFavorableCollectorMove.move.totalDist || (move.totalDist === bestFavorableCollectorMove.move.totalDist && riskInfo.totalRisk < bestFavorableCollectorMove.riskInfo.totalRisk)){
+          bestFavorableCollectorMove = { cargo, move, riskInfo, favorableInfo, acceptedBy: "favorable_override" };
+        }
+        continue;
+      }
+
+      if(favorableInfo?.hasImmediateThreat) collectorSkipStats.blockedByThreat += 1;
+      else if(!favorableInfo?.isNearPlane) collectorSkipStats.blockedByDistance += 1;
+      else collectorSkipStats.blockedByRisk += 1;
     }
-    if(bestCollectorMove){
+    const selectedCollectorMove = bestCollectorMove || bestFavorableCollectorMove;
+    if(selectedCollectorMove){
       aiRoundState.currentGoal = "role_collector";
-      return { plane: collector, ...bestCollectorMove.move };
+      logAiDecision("role_collector_pick", {
+        planeId: collector.id,
+        cargoId: selectedCollectorMove.cargo?.id ?? null,
+        acceptedBy: selectedCollectorMove.acceptedBy,
+        risk: Number(selectedCollectorMove.riskInfo.totalRisk.toFixed(3)),
+        distance: Number(selectedCollectorMove.move.totalDist.toFixed(1)),
+      });
+      return { plane: collector, ...selectedCollectorMove.move };
     }
+
+    logAiDecision("role_collector_skip", {
+      planeId: collector.id,
+      reason: "risk_distance_or_threat",
+      collectorSkipStats,
+    });
   }
 
   if(roles.striker && enemies.length > 0){
@@ -11362,16 +11467,62 @@ function planModeDrivenAiMove(context){
   if(aiRoundState.mode === AI_MODES.RESOURCE_FIRST){
     aiRoundState.currentGoal = "pickup_cargo";
     let bestCargoMove = null;
+    let bestFavorableCargoMove = null;
+    const cargoSkipStats = {
+      blockedByPath: 0,
+      blockedByRisk: 0,
+      blockedByDistance: 0,
+      blockedByThreat: 0,
+    };
     for(const plane of groundedAiPlanes){
       for(const cargo of cargoState){
         if(cargo?.state !== "ready") continue;
         const move = planPathToPoint(plane, cargo.x, cargo.y);
-        if(move && (!bestCargoMove || move.totalDist < bestCargoMove.totalDist)){
-          bestCargoMove = { plane, ...move };
+        if(!move) continue;
+        const riskInfo = evaluateCargoPickupRisk(plane, cargo, context);
+        const favorableInfo = evaluateFavorableCargoCandidate(plane, cargo, move, riskInfo);
+
+        if(!riskInfo.isSafePath){
+          cargoSkipStats.blockedByPath += 1;
+          continue;
         }
+
+        if(riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE){
+          if(!bestCargoMove || riskInfo.totalRisk < bestCargoMove.riskInfo.totalRisk || (riskInfo.totalRisk === bestCargoMove.riskInfo.totalRisk && move.totalDist < bestCargoMove.move.totalDist)){
+            bestCargoMove = { plane, move, cargo, riskInfo, favorableInfo, acceptedBy: "base_threshold" };
+          }
+          continue;
+        }
+
+        if(favorableInfo?.isFavorableCargo){
+          if(!bestFavorableCargoMove || move.totalDist < bestFavorableCargoMove.move.totalDist || (move.totalDist === bestFavorableCargoMove.move.totalDist && riskInfo.totalRisk < bestFavorableCargoMove.riskInfo.totalRisk)){
+            bestFavorableCargoMove = { plane, move, cargo, riskInfo, favorableInfo, acceptedBy: "favorable_override" };
+          }
+          continue;
+        }
+
+        if(favorableInfo?.hasImmediateThreat) cargoSkipStats.blockedByThreat += 1;
+        else if(!favorableInfo?.isNearPlane) cargoSkipStats.blockedByDistance += 1;
+        else cargoSkipStats.blockedByRisk += 1;
       }
     }
-    if(bestCargoMove) return bestCargoMove;
+
+    const selectedCargoMove = bestCargoMove || bestFavorableCargoMove;
+    if(selectedCargoMove){
+      logAiDecision("mode_cargo_selected", {
+        planeId: selectedCargoMove.plane.id,
+        cargoId: selectedCargoMove.cargo?.id ?? null,
+        acceptedBy: selectedCargoMove.acceptedBy,
+        risk: Number(selectedCargoMove.riskInfo.totalRisk.toFixed(3)),
+        distance: Number(selectedCargoMove.move.totalDist.toFixed(1)),
+      });
+      return { plane: selectedCargoMove.plane, ...selectedCargoMove.move };
+    }
+
+    logAiDecision("mode_cargo_skipped", {
+      reason: "risk_distance_or_threat",
+      cargoSkipStats,
+    });
   }
 
   if(aiRoundState.mode === AI_MODES.DEFENSE){
