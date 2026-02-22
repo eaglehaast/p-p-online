@@ -375,6 +375,14 @@ function createEasyMapDefinition(id, name, internalSprites){
   };
 }
 
+function normalizeImportedMapTier(rawTier){
+  const normalized = typeof rawTier === 'string' ? rawTier.trim().toLowerCase() : '';
+  if(normalized === 'easy'){
+    return 'easy';
+  }
+  return 'middle';
+}
+
 const JSON_MAP_SOURCES = Object.freeze([
   'ui_gamescreen/maps/gs_maps_Pebbles.json',
   'ui_gamescreen/maps/gs_maps_TwinGate.json',
@@ -398,12 +406,13 @@ function loadMapDefinitionFromJson(path){
     if(typeof map.id !== 'string' || map.id.length === 0) return null;
     if(typeof map.name !== 'string' || map.name.length === 0) return null;
 
+    const normalizedTier = normalizeImportedMapTier(map.tier);
     return {
       ...map,
       mode: map.mode || MAP_RENDER_MODES.DATA,
       sprites: Array.isArray(map.sprites) ? map.sprites : [],
-      tier: typeof map.tier === 'string' && map.tier.length > 0 ? map.tier : 'easy',
-      difficulty: typeof map.difficulty === 'string' && map.difficulty.length > 0 ? map.difficulty : undefined,
+      tier: normalizedTier,
+      difficulty: normalizedTier,
       flags: Array.isArray(map.flags) ? map.flags : []
     };
   } catch(error){
