@@ -7441,6 +7441,8 @@ document.addEventListener('dblclick', (e) => {
 /* ======= CONFIG ======= */
 const PLANE_DRAW_W         = 36;
 const PLANE_DRAW_H         = 36;
+const BROADWING_OVERLAY_DRAW_W = 96;
+const BROADWING_OVERLAY_DRAW_H = PLANE_DRAW_H;
 const PLANE_METRIC_SCALE   = PLANE_DRAW_W / 40;
 
 // Single source of truth for mine size.
@@ -13538,8 +13540,8 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
   const idleSmokeDistance = Math.max(0, smokeAnchor.y - PLANE_VFX_IDLE_SMOKE_DELTA_Y);
   const showEngine = !isGhostState && !plane.nukeEliminated && !isInvisibilityFullyHidden && !isArcadeRespawnOutline;
   const hasWingsBuff = !isArcadeRespawnOutline && planeHasActiveTurnBuff(plane, INVENTORY_ITEM_TYPES.WINGS);
-  const broadwingOverlayWidth = PLANE_DRAW_W * 1.38;
-  const broadwingOverlayHeight = PLANE_DRAW_H;
+  const broadwingOverlayWidth = BROADWING_OVERLAY_DRAW_W;
+  const broadwingOverlayHeight = BROADWING_OVERLAY_DRAW_H;
 
   ctx2d.save();
   const shouldSway = plane.isAlive === true
