@@ -1965,6 +1965,7 @@ body, button {
     will-change: transform, opacity;
     pointer-events: none;
     z-index: 2;
+    opacity: 0;
   }
 
   #menuLayer #modeMenu .mm-plane__bob {
@@ -1992,7 +1993,7 @@ body, button {
   }
 
   #menuLayer #modeMenu .mm-plane--left {
-    opacity: 1;
+    opacity: 0;
   }
 
   #menuLayer #modeMenu .mm-plane--left .mm-plane__bob {
@@ -2006,7 +2007,7 @@ body, button {
   }
 
   #menuLayer #modeMenu .mm-plane--right {
-    opacity: 1;
+    opacity: 0;
   }
 
   #menuLayer #modeMenu .mm-plane--right .mm-plane__bob {
