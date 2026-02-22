@@ -9174,6 +9174,48 @@ function resolveExplosionGifDurationMs(img, color) {
 
 /* Планирование хода ИИ */
 let aiMoveScheduled = false;
+const AI_MOVE_INITIAL_DELAY_MS = 300;
+const AI_MOVE_CARGO_RETRY_DELAY_MS = 200;
+const AI_MOVE_CARGO_WAIT_TIMEOUT_MS = 1800;
+
+function hasAnimatingCargo(){
+  return cargoState.some(cargo => cargo?.state === "animating");
+}
+
+function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayMs = AI_MOVE_INITIAL_DELAY_MS){
+  setTimeout(() => {
+    if (
+      isGameOver
+      || gameMode !== "computer"
+      || turnColors[turnIndex] !== "blue"
+      || flyingPoints.some(fp => fp.plane.color === "blue")
+    ) {
+      aiMoveScheduled = false;
+      return;
+    }
+
+    if (hasAnimatingCargo()) {
+      const waitElapsedMs = Math.round(performance.now() - startedAt);
+      if (waitElapsedMs >= AI_MOVE_CARGO_WAIT_TIMEOUT_MS) {
+        logAiDecision("ai_wait_timeout_reached", {
+          waitElapsedMs,
+          timeoutMs: AI_MOVE_CARGO_WAIT_TIMEOUT_MS,
+        });
+        doComputerMove();
+        return;
+      }
+
+      logAiDecision("ai_wait_for_cargo_animation", {
+        waitElapsedMs,
+        retryInMs: AI_MOVE_CARGO_RETRY_DELAY_MS,
+      });
+      scheduleComputerMoveWithCargoGate(startedAt, AI_MOVE_CARGO_RETRY_DELAY_MS);
+      return;
+    }
+
+    doComputerMove();
+  }, delayMs);
+}
 
 /* ======= INIT ======= */
 function colorAngleOffset(color){
@@ -13414,7 +13456,7 @@ function gameDraw(){
       && !aiMoveScheduled
       && !flyingPoints.some(fp => fp.plane.color === "blue")) {
     aiMoveScheduled = true;
-    setTimeout(() => { doComputerMove(); }, 300);
+    scheduleComputerMoveWithCargoGate();
   }
 
   for(const aa of aaUnits){
