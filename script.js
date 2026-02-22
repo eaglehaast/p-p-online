@@ -6760,8 +6760,8 @@ const noBtn       = document.getElementById("noButton");
 const PLANE_ASSET_PATHS = {
   blue: "ui_gamescreen/PLANES/gs_plane_blue.png",
   green: "ui_gamescreen/PLANES/gs_plane_green.png",
-  blueBroadwinged: "ui_gamescreen/gs_inventory/gs_plane_blue_broadwinged.png",
-  greenBroadwinged: "ui_gamescreen/gs_inventory/gs_plane_green_broadwinged.png",
+  blueBroadwinged: "ui_gamescreen/gs_inventory/broadwinged_blue.png",
+  greenBroadwinged: "ui_gamescreen/gs_inventory/broadwinged_green.png",
   blueCounter: "ui_gamescreen/gamescreen_outside/planecounter_blue.png",
   greenCounter: "ui_gamescreen/gamescreen_outside/planecounter_ green.png"
 };
