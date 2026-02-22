@@ -26,6 +26,10 @@ function assert(condition, message){
 
 const gameSource = fs.readFileSync('script.js', 'utf8');
 const extracted = [
+  'getPlaneActiveTurnBuffs',
+  'planeHasActiveTurnBuff',
+  'getPlaneDangerGeometry',
+  'getPlaneBeneficialGeometry',
   'resolveFlightSurfaceCollision',
   'checkPlaneHits',
 ].map((name) => extractFunctionSource(gameSource, name)).join('\n\n');
@@ -51,6 +55,13 @@ function createScenarioContext(){
     Number,
     settings: { sharpEdges: false },
     POINT_RADIUS: 10,
+    PLANE_GEOMETRY_TRUTH: {
+      DANGER_HITBOX_WIDTH: 36,
+      BENEFICIAL_HITBOX_WIDTH_WITH_WINGS: 96,
+      HITBOX_HEIGHT: 36,
+    },
+    INVENTORY_ITEM_TYPES: { WINGS: 'wings', CROSSHAIR: 'crosshair', FUEL: 'fuel', INVISIBILITY: 'invisibility' },
+    isPlayerInvisibilityActive: () => false,
     SLIDE_THRESHOLD: 0.3,
     PLANE_HIT_COOLDOWN_SEC: 0.2,
     currentMapName: 'smoke-test',

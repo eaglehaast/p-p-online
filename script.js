@@ -2356,45 +2356,57 @@ function planeHasActiveTurnBuff(plane, type){
   return getPlaneActiveTurnBuffs(plane).includes(type);
 }
 
-const PLANE_DANGER_HITBOX_WIDTH = 36;
-const PLANE_BENEFICIAL_HITBOX_WIDTH_WITH_WINGS = 96;
-const PLANE_HITBOX_HEIGHT = 36;
+const PLANE_GEOMETRY_TRUTH = {
+  DANGER_HITBOX_WIDTH: 36,
+  BENEFICIAL_HITBOX_WIDTH_WITH_WINGS: 96,
+  HITBOX_HEIGHT: 36,
+};
 
-function getPlaneDangerHitbox(plane){
-  const width = PLANE_DANGER_HITBOX_WIDTH;
-  const height = PLANE_HITBOX_HEIGHT;
-  const halfW = width / 2;
-  const halfH = height / 2;
-
+function getPlaneDangerGeometry(plane){
+  const width = PLANE_GEOMETRY_TRUTH.DANGER_HITBOX_WIDTH;
+  const height = PLANE_GEOMETRY_TRUTH.HITBOX_HEIGHT;
   return {
-    x: plane.x,
-    y: plane.y,
-    width,
-    height,
-    left: plane.x - halfW,
-    right: plane.x + halfW,
-    top: plane.y - halfH,
-    bottom: plane.y + halfH
+    radius: POINT_RADIUS,
+    hitbox: {
+      x: plane.x,
+      y: plane.y,
+      width,
+      height,
+      left: plane.x - width / 2,
+      right: plane.x + width / 2,
+      top: plane.y - height / 2,
+      bottom: plane.y + height / 2
+    }
   };
 }
 
-function getPlaneBeneficialHitbox(plane){
+function getPlaneBeneficialGeometry(plane){
   const hasWingsBuff = planeHasActiveTurnBuff(plane, INVENTORY_ITEM_TYPES.WINGS);
-  const width = hasWingsBuff ? PLANE_BENEFICIAL_HITBOX_WIDTH_WITH_WINGS : PLANE_DANGER_HITBOX_WIDTH;
-  const height = PLANE_HITBOX_HEIGHT;
-  const halfW = width / 2;
-  const halfH = height / 2;
-
+  const width = hasWingsBuff
+    ? PLANE_GEOMETRY_TRUTH.BENEFICIAL_HITBOX_WIDTH_WITH_WINGS
+    : PLANE_GEOMETRY_TRUTH.DANGER_HITBOX_WIDTH;
+  const height = PLANE_GEOMETRY_TRUTH.HITBOX_HEIGHT;
   return {
-    x: plane.x,
-    y: plane.y,
-    width,
-    height,
-    left: plane.x - halfW,
-    right: plane.x + halfW,
-    top: plane.y - halfH,
-    bottom: plane.y + halfH
+    radius: POINT_RADIUS,
+    hitbox: {
+      x: plane.x,
+      y: plane.y,
+      width,
+      height,
+      left: plane.x - width / 2,
+      right: plane.x + width / 2,
+      top: plane.y - height / 2,
+      bottom: plane.y + height / 2
+    }
   };
+}
+
+function getPlaneDangerHitbox(plane){
+  return getPlaneDangerGeometry(plane).hitbox;
+}
+
+function getPlaneBeneficialHitbox(plane){
+  return getPlaneBeneficialGeometry(plane).hitbox;
 }
 
 function getPlaneHitbox(plane){
@@ -2402,9 +2414,9 @@ function getPlaneHitbox(plane){
 }
 
 function getPlaneBeneficialInteractionZone(plane){
-  const hitbox = getPlaneBeneficialHitbox(plane);
-  const baseHalfWidth = PLANE_DANGER_HITBOX_WIDTH / 2;
-  const baseHalfHeight = PLANE_HITBOX_HEIGHT / 2;
+  const hitbox = getPlaneBeneficialGeometry(plane).hitbox;
+  const baseHalfWidth = PLANE_GEOMETRY_TRUTH.DANGER_HITBOX_WIDTH / 2;
+  const baseHalfHeight = PLANE_GEOMETRY_TRUTH.HITBOX_HEIGHT / 2;
   const halfWidth = Math.max(0, hitbox.width / 2 - baseHalfWidth);
   const halfHeight = Math.max(0, hitbox.height / 2 - baseHalfHeight);
 
@@ -2438,7 +2450,7 @@ function planeHitboxesIntersect(a, b){
 }
 
 function getPlaneHitContactPoint(attackerPlane, targetPlane){
-  const targetHitbox = getPlaneHitbox(targetPlane);
+  const targetHitbox = getPlaneBeneficialGeometry(targetPlane).hitbox;
   const clampedX = Math.max(targetHitbox.left, Math.min(attackerPlane.x, targetHitbox.right));
   const clampedY = Math.max(targetHitbox.top, Math.min(attackerPlane.y, targetHitbox.bottom));
 
@@ -7970,7 +7982,7 @@ function doesCargoIntersectPlaneBeneficialZone(cargo, plane){
   const cargoBottom = cargo.y + height;
 
   // широкие крылья расширяют только полезные взаимодействия
-  const beneficialZone = getPlaneBeneficialHitbox(plane);
+  const beneficialZone = getPlaneBeneficialGeometry(plane).hitbox;
   return cargoLeft < beneficialZone.right
     && cargoRight > beneficialZone.left
     && cargoTop < beneficialZone.bottom
@@ -12309,7 +12321,7 @@ function logCollisionVerbose(payload){
 
 function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
   const p = fp.plane;
-  const radius = POINT_RADIUS;
+  const radius = getPlaneDangerGeometry(p).radius;
   const EPS_PUSH = 0.5;
   const EXTRA_PUSH = EPS_PUSH * 0.5;
   const MAX_PUSH = EPS_PUSH * 2;
@@ -12597,8 +12609,8 @@ function resolveSpriteCollision(fp){
   fp.vy = incoming.vy - 2 * dot * closest.ny;
 
   const EPS = 0.5;
-  p.x = closest.hit.x + closest.nx * (POINT_RADIUS + EPS);
-  p.y = closest.hit.y + closest.ny * (POINT_RADIUS + EPS);
+  p.x = closest.hit.x + closest.nx * (radius + EPS);
+  p.y = closest.hit.y + closest.ny * (radius + EPS);
 
   return true;
 }
@@ -12618,7 +12630,7 @@ function resolveDiagonalBrickCollision(fp, collider){
   const bandHalfWidth = Number.isFinite(collider.bandHalfWidth)
     ? collider.bandHalfWidth
     : MAP_BRICK_THICKNESS;
-  const radius = POINT_RADIUS;
+  const radius = getPlaneDangerGeometry(p).radius;
 
   const toLocal = (x, y) => ({
     x: (x - collider.cx) * cos + (y - collider.cy) * sin,
@@ -12753,8 +12765,8 @@ function resolveDiagonalBrickCollision(fp, collider){
   }
 
   const EPS = 0.5;
-  p.x = hitWorldX + worldNormal.x * (POINT_RADIUS + EPS);
-  p.y = hitWorldY + worldNormal.y * (POINT_RADIUS + EPS);
+  p.x = hitWorldX + worldNormal.x * (radius + EPS);
+  p.y = hitWorldY + worldNormal.y * (radius + EPS);
 
   logCollisionTOI({
     plane: p,
@@ -12794,7 +12806,8 @@ function planeBuildingCollision(fp, collider){
     const dx = localX - clampedX;
     const dy = localY - clampedY;
     const dist2 = dx*dx + dy*dy;
-    if(dist2 >= POINT_RADIUS*POINT_RADIUS) break;
+    const dangerRadius = getPlaneDangerGeometry(p).radius;
+    if(dist2 >= dangerRadius*dangerRadius) break;
 
     collided = true;
 
@@ -12841,8 +12854,8 @@ function planeBuildingCollision(fp, collider){
     const EPS = 0.5;
     const closestWorldX = collider.cx + clampedX * cos - clampedY * sin;
     const closestWorldY = collider.cy + clampedX * sin + clampedY * cos;
-    p.x = closestWorldX + nx * (POINT_RADIUS + EPS);
-    p.y = closestWorldY + ny * (POINT_RADIUS + EPS);
+    p.x = closestWorldX + nx * (dangerRadius + EPS);
+    p.y = closestWorldY + ny * (dangerRadius + EPS);
   }
 
   return collided;
@@ -13072,10 +13085,12 @@ function handleMineForPlane(p, fp){
     const dy = p.y - mine.y;
     const dist = Math.hypot(dx, dy);
 
-    if(dist > MINE_TRIGGER_RADIUS) continue;
+    const dangerRadius = getPlaneDangerGeometry(p).radius;
+    const mineTriggerRadius = Math.max(MINE_TRIGGER_RADIUS, dangerRadius);
+    if(dist > mineTriggerRadius) continue;
 
-    const contactX = dist === 0 ? p.x : p.x - dx / dist * POINT_RADIUS;
-    const contactY = dist === 0 ? p.y : p.y - dy / dist * POINT_RADIUS;
+    const contactX = dist === 0 ? p.x : p.x - dx / dist * dangerRadius;
+    const contactY = dist === 0 ? p.y : p.y - dy / dist * dangerRadius;
 
     eliminatePlane(p);
     spawnExplosionForPlane(p, contactX, contactY);
@@ -14974,12 +14989,12 @@ function checkPlaneHits(plane, fp){
   if(isGameOver) return;
   if(!isPlaneTargetable(plane)) return;
   const enemyColor = (plane.color==="green") ? "blue" : "green";
-  const planeHitbox = getPlaneHitbox(plane);
+  const planeHitbox = getPlaneBeneficialGeometry(plane).hitbox;
   for(const p of points){
     if(!isPlaneTargetable(p)) continue;
     if(p.color !== enemyColor) continue;
     if(fp && fp.lastHitPlane === p && fp.lastHitCooldown > 0) continue;
-    const targetHitbox = getPlaneHitbox(p);
+    const targetHitbox = getPlaneBeneficialGeometry(p).hitbox;
     const hitboxesIntersect = planeHitboxesIntersect(planeHitbox, targetHitbox);
     if(fp && fp.shieldBreakLockActive && fp.shieldBreakLockTarget === p){
       if(hitboxesIntersect) continue;
