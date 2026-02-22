@@ -10568,18 +10568,156 @@ function cleanupHandle(){
 }
 
 /* ======= AI ======= */
-function doComputerMove(){
-  if (gameMode!=="computer" || isGameOver) return;
+const AI_MODES = Object.freeze({
+  RESOURCE_FIRST: "resource_first",
+  FLAG_PRESSURE: "flag_pressure",
+  ATTRITION: "attrition",
+  DEFENSE: "defense"
+});
 
-  const aiPlanes = points.filter(p=> p.color==="blue" && p.isAlive && !p.burning);
-  const enemies  = points.filter(p=> p.color==="green" && p.isAlive && !p.burning);
-  if(!aiPlanes.length || !enemies.length) return;
+function createInitialAiRoundState(){
+  return {
+    mode: AI_MODES.ATTRITION,
+    turnNumber: 0,
+    targetPriorities: [],
+    currentGoal: null
+  };
+}
 
-  const shouldUseFlagsMode = isFlagsModeEnabled();
-  const homeBase = getBaseAnchor("blue");
-  const availableEnemyFlags = shouldUseFlagsMode ? getAvailableFlagsByColor("green") : [];
+let aiRoundState = createInitialAiRoundState();
 
-  // 1. If we are carrying the enemy flag, prioritize returning home
+function getAvailableInventoryCount(color){
+  const items = inventoryState[color];
+  if(!Array.isArray(items)) return 0;
+  return items.length;
+}
+
+function selectAiModeForCurrentTurn(context){
+  const {
+    shouldUseFlagsMode,
+    aiPlanes,
+    enemies,
+    availableEnemyFlags,
+    stolenBlueFlagCarrier,
+    blueInventoryCount
+  } = context;
+  const scoreGap = greenScore - blueScore;
+  const aiAliveCount = aiPlanes.length;
+  const enemyAliveCount = enemies.length;
+
+  let mode = AI_MODES.ATTRITION;
+  let targetPriorities = ["attack_enemy_plane", "close_distance"];
+
+  if(stolenBlueFlagCarrier && stolenBlueFlagCarrier.color !== "blue"){
+    mode = AI_MODES.DEFENSE;
+    targetPriorities = ["eliminate_flag_carrier", "protect_home_flag"];
+  } else if(shouldUseFlagsMode && availableEnemyFlags.length > 0){
+    mode = AI_MODES.FLAG_PRESSURE;
+    targetPriorities = ["capture_enemy_flag", "return_with_flag"];
+  } else if(blueInventoryCount > 0 && aiAliveCount > 1){
+    mode = AI_MODES.RESOURCE_FIRST;
+    targetPriorities = ["pickup_cargo", "prepare_attack"];
+  } else if(scoreGap > 0 || aiAliveCount < enemyAliveCount){
+    mode = AI_MODES.DEFENSE;
+    targetPriorities = ["preserve_planes", "safe_attack"];
+  }
+
+  aiRoundState.mode = mode;
+  aiRoundState.targetPriorities = targetPriorities;
+  aiRoundState.currentGoal = targetPriorities[0] ?? null;
+  return mode;
+}
+
+function planModeDrivenAiMove(context){
+  const {
+    aiPlanes,
+    homeBase,
+    availableEnemyFlags,
+    stolenBlueFlagCarrier,
+    shouldUseFlagsMode,
+    enemies
+  } = context;
+
+  const groundedAiPlanes = aiPlanes.filter((plane) => !flyingPoints.some(fp=>fp.plane===plane));
+  if(groundedAiPlanes.length === 0) return null;
+
+  const carrier = shouldUseFlagsMode ? groundedAiPlanes.find(p => {
+    if(!p.carriedFlagId) return false;
+    const carriedFlag = getFlagById(p.carriedFlagId);
+    return carriedFlag?.color === "green";
+  }) : null;
+  if(carrier){
+    aiRoundState.currentGoal = "return_with_flag";
+    const move = planPathToPoint(carrier, homeBase.x, homeBase.y);
+    if(move) return { plane: carrier, ...move };
+  }
+
+  if(aiRoundState.mode === AI_MODES.DEFENSE && stolenBlueFlagCarrier){
+    aiRoundState.currentGoal = "eliminate_flag_carrier";
+    let bestDefenseMove = null;
+    for(const plane of groundedAiPlanes){
+      const move = planPathToPoint(plane, stolenBlueFlagCarrier.x, stolenBlueFlagCarrier.y);
+      if(move && (!bestDefenseMove || move.totalDist < bestDefenseMove.totalDist)){
+        bestDefenseMove = { plane, ...move };
+      }
+    }
+    if(bestDefenseMove) return bestDefenseMove;
+  }
+
+  if(aiRoundState.mode === AI_MODES.FLAG_PRESSURE && availableEnemyFlags.length > 0){
+    aiRoundState.currentGoal = "capture_enemy_flag";
+    let bestCap = null;
+    for(const plane of groundedAiPlanes){
+      for(const flag of availableEnemyFlags){
+        const targetAnchor = getFlagAnchor(flag);
+        const move = planPathToPoint(plane, targetAnchor.x, targetAnchor.y);
+        if(move && (!bestCap || move.totalDist < bestCap.totalDist)){
+          bestCap = { plane, ...move };
+        }
+      }
+    }
+    if(bestCap) return bestCap;
+  }
+
+  if(aiRoundState.mode === AI_MODES.RESOURCE_FIRST){
+    aiRoundState.currentGoal = "pickup_cargo";
+    let bestCargoMove = null;
+    for(const plane of groundedAiPlanes){
+      for(const cargo of cargoState){
+        if(!cargo?.active) continue;
+        const move = planPathToPoint(plane, cargo.x, cargo.y);
+        if(move && (!bestCargoMove || move.totalDist < bestCargoMove.totalDist)){
+          bestCargoMove = { plane, ...move };
+        }
+      }
+    }
+    if(bestCargoMove) return bestCargoMove;
+  }
+
+  if(aiRoundState.mode === AI_MODES.DEFENSE){
+    aiRoundState.currentGoal = "preserve_planes";
+    let safestMove = null;
+    for(const plane of groundedAiPlanes){
+      const nearestEnemy = enemies.reduce((a,b)=> (dist(plane,a) < dist(plane,b) ? a : b), enemies[0]);
+      if(!nearestEnemy) continue;
+      const awayAngle = Math.atan2(plane.y - nearestEnemy.y, plane.x - nearestEnemy.x);
+      const targetX = plane.x + Math.cos(awayAngle) * MAX_DRAG_DISTANCE;
+      const targetY = plane.y + Math.sin(awayAngle) * MAX_DRAG_DISTANCE;
+      const move = planPathToPoint(plane, targetX, targetY);
+      if(move && (!safestMove || move.totalDist < safestMove.totalDist)){
+        safestMove = { plane, ...move };
+      }
+    }
+    if(safestMove) return safestMove;
+  }
+
+  return null;
+}
+
+function getFallbackAiMove(context){
+  const { aiPlanes, enemies, shouldUseFlagsMode, availableEnemyFlags } = context;
+  const homeBase = context.homeBase;
+
   const carrier = shouldUseFlagsMode ? aiPlanes.find(p => {
     if(!p.carriedFlagId) return false;
     const carriedFlag = getFlagById(p.carriedFlagId);
@@ -10588,18 +10726,15 @@ function doComputerMove(){
   if(carrier){
     const move = planPathToPoint(carrier, homeBase.x, homeBase.y);
     if(move){
-      issueAIMove(carrier, move.vx, move.vy);
+      return { plane: carrier, ...move };
     }
-    return;
   }
 
-  // 2. If our flag is stolen, focus fire on the carrier
   let targetEnemies = enemies;
   const stolenBlueFlagCarrier = shouldUseFlagsMode ? getFlagCarrierForColor("blue") : null;
   if(stolenBlueFlagCarrier && stolenBlueFlagCarrier.color !== "blue"){
     targetEnemies = enemies.filter(e=>e===stolenBlueFlagCarrier);
   } else if(availableEnemyFlags.length){
-    // 3. Enemy flag available – attempt to steal it
     let bestCap = null;
     for(const plane of aiPlanes){
       if(flyingPoints.some(fp=>fp.plane===plane)) continue;
@@ -10612,15 +10747,13 @@ function doComputerMove(){
       }
     }
     if(bestCap){
-      issueAIMove(bestCap.plane, bestCap.vx, bestCap.vy);
-      return;
+      return bestCap;
     }
   }
 
-  // 4. Attack logic (direct or with bounce)
-    const flightDistancePx = settings.flightRangeCells * CELL_SIZE;
-  const speedPxPerSec    = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
-  let best = null; // {plane, enemy, vx, vy, totalDist}
+  const flightDistancePx = settings.flightRangeCells * CELL_SIZE;
+  const speedPxPerSec = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
+  let best = null;
 
   for(const plane of aiPlanes){
     if(flyingPoints.some(fp=>fp.plane===plane)) continue;
@@ -10633,15 +10766,14 @@ function doComputerMove(){
         let dev = getRandomDeviation(Math.hypot(dx,dy), AI_MAX_ANGLE_DEVIATION);
         let ang = baseAngle + dev;
 
-        const dist = Math.hypot(dx,dy);
-        const scale = Math.min(dist / MAX_DRAG_DISTANCE, 1);
+        const directDist = Math.hypot(dx,dy);
+        const scale = Math.min(directDist / MAX_DRAG_DISTANCE, 1);
 
         const vx = Math.cos(ang) * scale * speedPxPerSec;
         const vy = Math.sin(ang) * scale * speedPxPerSec;
-        const totalDist = dist;
 
-        if(!best || totalDist < best.totalDist){
-          best = {plane, enemy, vx, vy, totalDist};
+        if(!best || directDist < best.totalDist){
+          best = {plane, enemy, vx, vy, totalDist: directDist};
         }
       } else {
         const mirror = findMirrorShot(plane, enemy);
@@ -10662,26 +10794,62 @@ function doComputerMove(){
     }
   }
 
-  // 5. If nothing else, crawl closer to nearest enemy
   if(!best){
     const plane = aiPlanes[0];
     const enemy = targetEnemies.reduce((a,b)=> (dist(plane,a)<dist(plane,b)?a:b));
-    const dx= enemy.x - plane.x, dy= enemy.y - plane.y;
+    const dx= enemy.x - plane.x;
+    const dy= enemy.y - plane.y;
     const ang = Math.atan2(dy, dx) + getRandomDeviation(Math.hypot(dx,dy), AI_MAX_ANGLE_DEVIATION);
 
     const desired = Math.min(Math.hypot(dx,dy)*0.5, MAX_DRAG_DISTANCE);
-    const scale   = desired / MAX_DRAG_DISTANCE;
+    const scale = desired / MAX_DRAG_DISTANCE;
 
     best = {
-      plane, enemy,
+      plane,
+      enemy,
       vx: Math.cos(ang)*scale*speedPxPerSec,
       vy: Math.sin(ang)*scale*speedPxPerSec,
       totalDist: desired
     };
   }
 
-  if(best){
-    issueAIMove(best.plane, best.vx, best.vy);
+  return best;
+}
+
+function doComputerMove(){
+  if (gameMode!=="computer" || isGameOver) return;
+
+  const aiPlanes = points.filter(p=> p.color==="blue" && p.isAlive && !p.burning);
+  const enemies  = points.filter(p=> p.color==="green" && p.isAlive && !p.burning);
+  if(!aiPlanes.length || !enemies.length) return;
+
+  const shouldUseFlagsMode = isFlagsModeEnabled();
+  const homeBase = getBaseAnchor("blue");
+  const availableEnemyFlags = shouldUseFlagsMode ? getAvailableFlagsByColor("green") : [];
+
+  aiRoundState.turnNumber += 1;
+  const stolenBlueFlagCarrier = shouldUseFlagsMode ? getFlagCarrierForColor("blue") : null;
+  const modeContext = {
+    aiPlanes,
+    enemies,
+    shouldUseFlagsMode,
+    homeBase,
+    availableEnemyFlags,
+    stolenBlueFlagCarrier,
+    blueInventoryCount: getAvailableInventoryCount("blue")
+  };
+
+  selectAiModeForCurrentTurn(modeContext);
+  const modeMove = planModeDrivenAiMove(modeContext);
+  if(modeMove){
+    issueAIMove(modeMove.plane, modeMove.vx, modeMove.vy);
+    return;
+  }
+
+  const fallbackMove = getFallbackAiMove(modeContext);
+  if(fallbackMove){
+    aiRoundState.currentGoal = "fallback_legacy_logic";
+    issueAIMove(fallbackMove.plane, fallbackMove.vx, fallbackMove.vy);
   }
 }
 
@@ -15044,6 +15212,7 @@ function startNewRound(){
 
   roundNumber++;
   roundTextTimer = selectedRuleset === "mapeditor" ? 0 : 120;
+  aiRoundState = createInitialAiRoundState();
 
   globalFrame=0;
   flyingPoints=[];
