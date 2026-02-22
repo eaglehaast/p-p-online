@@ -9842,6 +9842,14 @@ function resolveRulesButton(activeButton){
   return null;
 }
 
+function hasValidMenuPlaneGeometry(btnRect, rootRect, uiScale){
+  if(!btnRect || !rootRect) return false;
+  if(!Number.isFinite(uiScale) || uiScale <= 0) return false;
+  if(btnRect.width <= 0 || btnRect.height <= 0) return false;
+  if(rootRect.width <= 0 || rootRect.height <= 0) return false;
+  return true;
+}
+
 function updateModePlanesPosition(activeButton){
   if(!(modeMenuDiv instanceof HTMLElement)) return;
   if(!(leftModePlane instanceof HTMLElement) || !(rightModePlane instanceof HTMLElement)) return;
@@ -9864,6 +9872,11 @@ function updateModePlanesPosition(activeButton){
   const rootTopD = toDesignCoords(rootRect.left, rootRect.top).y;
   const designOrigin = toDesignCoords(rootRect.left, rootRect.top);
   const uiScale = Number.isFinite(designOrigin.uiScale) ? designOrigin.uiScale : 1;
+  if(!hasValidMenuPlaneGeometry(btnRect, rootRect, uiScale)){
+    leftModePlane.style.opacity = "0";
+    rightModePlane.style.opacity = "0";
+    return;
+  }
   const btnW_D = btnRect.width / uiScale;
   const btnH_D = btnRect.height / uiScale;
   const rootX_D = btnLeftD - rootLeftD;
@@ -9930,6 +9943,11 @@ function updateRulesPlanesPosition(activeButton){
   const rootTopD = toDesignCoords(rootRect.left, rootRect.top).y;
   const designOrigin = toDesignCoords(rootRect.left, rootRect.top);
   const uiScale = Number.isFinite(designOrigin.uiScale) ? designOrigin.uiScale : 1;
+  if(!hasValidMenuPlaneGeometry(btnRect, rootRect, uiScale)){
+    leftRulesPlane.style.opacity = "0";
+    rightRulesPlane.style.opacity = "0";
+    return;
+  }
   const btnW_D = btnRect.width / uiScale;
   const btnH_D = btnRect.height / uiScale;
   const rootX_D = btnLeftD - rootLeftD;
