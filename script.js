@@ -10769,6 +10769,69 @@ function tryPlaceBlueMineNearEnemyBase(){
   return false;
 }
 
+function tryPlaceBlueDefensiveMine(context, plannedMove){
+  const landingPoint = getAiMoveLandingPoint(plannedMove);
+  const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
+  if(!landingPoint || enemies.length === 0) return false;
+
+  let mostDangerousEnemy = null;
+  let bestThreatScore = Number.NEGATIVE_INFINITY;
+  for(const enemy of enemies){
+    const enemyToLanding = Math.hypot(enemy.x - landingPoint.x, enemy.y - landingPoint.y);
+    const canContestSoon = enemyToLanding <= MAX_DRAG_DISTANCE * 1.05;
+    const hasClearLane = isPathClear(enemy.x, enemy.y, landingPoint.x, landingPoint.y);
+    if(!canContestSoon || !hasClearLane) continue;
+
+    const threatScore = MAX_DRAG_DISTANCE - enemyToLanding;
+    if(threatScore > bestThreatScore){
+      bestThreatScore = threatScore;
+      mostDangerousEnemy = enemy;
+    }
+  }
+
+  if(!mostDangerousEnemy) return false;
+
+  const blockPoint = {
+    x: landingPoint.x + (mostDangerousEnemy.x - landingPoint.x) * 0.42,
+    y: landingPoint.y + (mostDangerousEnemy.y - landingPoint.y) * 0.42,
+  };
+  const placement = {
+    x: blockPoint.x,
+    y: blockPoint.y,
+    cellX: Math.floor((blockPoint.x - FIELD_LEFT) / CELL_SIZE),
+    cellY: Math.floor((blockPoint.y - FIELD_TOP) / CELL_SIZE),
+  };
+
+  if(!isMinePlacementValid(placement)) return false;
+
+  placeMine({
+    owner: "blue",
+    x: placement.x,
+    y: placement.y,
+    cellX: placement.cellX,
+    cellY: placement.cellY,
+  });
+  return true;
+}
+
+function getNearestDynamiteTargetToPoint(anchor){
+  if(!anchor || !Number.isFinite(anchor.x) || !Number.isFinite(anchor.y)) return null;
+
+  const spriteEntries = Array.isArray(currentMapSprites) ? currentMapSprites : [];
+  let nearest = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for(let i = 0; i < spriteEntries.length; i += 1){
+    const geometry = getMapSpriteGeometry(spriteEntries[i], i);
+    if(!geometry) continue;
+    const distance = Math.hypot(geometry.cx - anchor.x, geometry.cy - anchor.y);
+    if(distance < nearestDistance){
+      nearest = geometry;
+      nearestDistance = distance;
+    }
+  }
+  return nearest;
+}
+
 function maybeUseInventoryBeforeLaunch(context, plannedMove){
   if(!plannedMove?.plane) return false;
 
@@ -10808,36 +10871,24 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     }
   }
 
-  if(inventory.counts[INVENTORY_ITEM_TYPES.MINE] > 0 && tryPlaceBlueMineNearEnemyBase()){
+  if(inventory.counts[INVENTORY_ITEM_TYPES.MINE] > 0
+    && (tryPlaceBlueDefensiveMine(context, plannedMove) || tryPlaceBlueMineNearEnemyBase())){
     removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
     return true;
   }
 
   if(inventory.counts[INVENTORY_ITEM_TYPES.DYNAMITE] > 0){
-    const objectiveAnchor = context?.shouldUseFlagsMode && context.availableEnemyFlags?.[0]
-      ? getFlagAnchor(context.availableEnemyFlags[0])
-      : enemyBase;
-    const pathBlockedToObjective = !!objectiveAnchor
-      && !isPathClear(plannedMove.plane.x, plannedMove.plane.y, objectiveAnchor.x, objectiveAnchor.y);
-    if(pathBlockedToObjective){
-      const nearestBlocker = Array.isArray(colliders) && colliders.length > 0
-        ? colliders.reduce((best, collider) => {
-          if(!best) return collider;
-          const colliderDistance = Math.hypot(collider.cx - objectiveAnchor.x, collider.cy - objectiveAnchor.y);
-          const bestDistance = Math.hypot(best.cx - objectiveAnchor.x, best.cy - objectiveAnchor.y);
-          return colliderDistance < bestDistance ? collider : best;
-        }, null)
-        : null;
-      const planted = nearestBlocker
-        ? placeBlueDynamiteAt(nearestBlocker.cx, nearestBlocker.cy)
-        : placeBlueDynamiteAt(
-            (plannedMove.plane.x + objectiveAnchor.x) * 0.5,
-            (plannedMove.plane.y + objectiveAnchor.y) * 0.5
-          );
-      if(planted){
-        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
-        return true;
-      }
+    const homeBase = getBaseAnchor("blue");
+    const pressureEnemy = getBluePriorityEnemy(context);
+    const defensiveTarget = getNearestDynamiteTargetToPoint(homeBase);
+    const offensiveTarget = getNearestDynamiteTargetToPoint(pressureEnemy);
+
+    const planted = (defensiveTarget && placeBlueDynamiteAt(defensiveTarget.cx, defensiveTarget.cy))
+      || (offensiveTarget && placeBlueDynamiteAt(offensiveTarget.cx, offensiveTarget.cy));
+
+    if(planted){
+      removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
+      return true;
     }
   }
 
@@ -10943,7 +10994,7 @@ function getAiRiskProfile(context){
   let profile = "balanced";
   if(scoreDiff <= -4 || (scoreDiff <= -2 && greenToWin <= 4) || (scoreDiff < 0 && aiAliveCount < enemyAliveCount)){
     profile = "comeback";
-  } else if(scoreDiff >= 3 || blueToWin <= 3 || (scoreDiff >= 1 && aiAliveCount >= enemyAliveCount + 1)){
+  } else if(scoreDiff >= 3 || blueToWin <= 3 || (scoreDiff >= 2 && aiAliveCount >= enemyAliveCount + 2)){
     profile = "conservative";
   }
 
