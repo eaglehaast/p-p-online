@@ -10592,6 +10592,204 @@ function getAvailableInventoryCount(color){
   return items.length;
 }
 
+function evaluateBlueInventoryState(){
+  const items = Array.isArray(inventoryState.blue) ? inventoryState.blue : [];
+  const counts = {
+    [INVENTORY_ITEM_TYPES.FUEL]: 0,
+    [INVENTORY_ITEM_TYPES.CROSSHAIR]: 0,
+    [INVENTORY_ITEM_TYPES.MINE]: 0,
+    [INVENTORY_ITEM_TYPES.DYNAMITE]: 0,
+    [INVENTORY_ITEM_TYPES.INVISIBILITY]: 0,
+    [INVENTORY_ITEM_TYPES.WINGS]: 0,
+  };
+
+  for(const item of items){
+    const type = item?.type;
+    if(type in counts){
+      counts[type] += 1;
+    }
+  }
+
+  return {
+    total: items.length,
+    counts,
+  };
+}
+
+function getAiMoveLandingPoint(move){
+  if(!move?.plane || !Number.isFinite(move.vx) || !Number.isFinite(move.vy)) return null;
+  return {
+    x: move.plane.x + move.vx * FIELD_FLIGHT_DURATION_SEC,
+    y: move.plane.y + move.vy * FIELD_FLIGHT_DURATION_SEC,
+  };
+}
+
+function getBluePriorityEnemy(context){
+  const carrier = context?.stolenBlueFlagCarrier;
+  if(carrier && carrier.color !== "blue"){
+    return carrier;
+  }
+  const blueFlagCarrier = getFlagCarrierForColor("blue");
+  if(blueFlagCarrier && blueFlagCarrier.color !== "blue"){
+    return blueFlagCarrier;
+  }
+  const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
+  const blueBase = getBaseAnchor("blue");
+  return enemies.reduce((best, enemy) => {
+    if(!best) return enemy;
+    return dist(enemy, blueBase) < dist(best, blueBase) ? enemy : best;
+  }, null);
+}
+
+function placeBlueDynamiteAt(boardX, boardY){
+  const targetBrick = findMapSpriteForDynamiteDrop({ boardX, boardY });
+  if(!targetBrick) return false;
+  const dynamiteEntry = {
+    id: `dynamite-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    owner: "blue",
+    x: targetBrick.cx,
+    y: targetBrick.cy,
+    bottomY: targetBrick.cy + targetBrick.halfHeight,
+    spriteId: targetBrick.id,
+    spriteIndex: targetBrick.spriteIndex,
+    spriteRef: targetBrick.spriteRef,
+    startedAtMs: performance.now(),
+    frameIndex: 0,
+    brickRemoved: false,
+  };
+  dynamiteState.push(dynamiteEntry);
+  return true;
+}
+
+function tryPlaceBlueMineNearEnemyBase(){
+  const enemyBase = getBaseAnchor("green");
+  const candidates = [
+    { x: enemyBase.x - CELL_SIZE * 1.2, y: enemyBase.y + CELL_SIZE * 0.8 },
+    { x: enemyBase.x + CELL_SIZE * 1.2, y: enemyBase.y + CELL_SIZE * 0.8 },
+    { x: enemyBase.x, y: enemyBase.y + CELL_SIZE * 1.6 },
+    { x: enemyBase.x, y: enemyBase.y - CELL_SIZE * 1.4 },
+  ];
+
+  for(const candidate of candidates){
+    const placement = {
+      x: candidate.x,
+      y: candidate.y,
+      cellX: Math.floor((candidate.x - FIELD_LEFT) / CELL_SIZE),
+      cellY: Math.floor((candidate.y - FIELD_TOP) / CELL_SIZE),
+    };
+    if(!isMinePlacementValid(placement)) continue;
+    placeMine({
+      owner: "blue",
+      x: placement.x,
+      y: placement.y,
+      cellX: placement.cellX,
+      cellY: placement.cellY,
+    });
+    return true;
+  }
+
+  return false;
+}
+
+function maybeUseInventoryBeforeLaunch(context, plannedMove){
+  if(!plannedMove?.plane) return false;
+
+  const inventory = evaluateBlueInventoryState();
+  if(inventory.total <= 0) return false;
+
+  const moveDistance = Number.isFinite(plannedMove.totalDist)
+    ? plannedMove.totalDist
+    : Math.hypot(plannedMove.vx || 0, plannedMove.vy || 0) * FIELD_FLIGHT_DURATION_SEC;
+  const priorityEnemy = getBluePriorityEnemy(context);
+  const landingPoint = getAiMoveLandingPoint(plannedMove);
+  const enemyBase = getBaseAnchor("green");
+
+  if(inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0){
+    const enemyFlag = context?.shouldUseFlagsMode ? getAvailableFlagsByColor("green")[0] : null;
+    const enemyFlagAnchor = enemyFlag ? getFlagAnchor(enemyFlag) : null;
+    const farObjective = (enemyFlagAnchor && dist(plannedMove.plane, enemyFlagAnchor) > MAX_DRAG_DISTANCE * 0.8)
+      || (priorityEnemy && dist(plannedMove.plane, priorityEnemy) > MAX_DRAG_DISTANCE * 0.8)
+      || moveDistance > MAX_DRAG_DISTANCE * 0.8;
+    if(farObjective && applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, "blue", plannedMove.plane)){
+      removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
+      return true;
+    }
+  }
+
+  if(inventory.counts[INVENTORY_ITEM_TYPES.CROSSHAIR] > 0 && priorityEnemy){
+    const cleanFinishingChance = isPathClear(plannedMove.plane.x, plannedMove.plane.y, priorityEnemy.x, priorityEnemy.y)
+      && dist(plannedMove.plane, priorityEnemy) <= MAX_DRAG_DISTANCE
+      && !priorityEnemy.shieldActive;
+    if(cleanFinishingChance && applyItemToOwnPlane(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
+      removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
+      return true;
+    }
+  }
+
+  if(inventory.counts[INVENTORY_ITEM_TYPES.MINE] > 0 && tryPlaceBlueMineNearEnemyBase()){
+    removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
+    return true;
+  }
+
+  if(inventory.counts[INVENTORY_ITEM_TYPES.DYNAMITE] > 0){
+    const objectiveAnchor = context?.shouldUseFlagsMode && context.availableEnemyFlags?.[0]
+      ? getFlagAnchor(context.availableEnemyFlags[0])
+      : enemyBase;
+    const pathBlockedToObjective = !!objectiveAnchor
+      && !isPathClear(plannedMove.plane.x, plannedMove.plane.y, objectiveAnchor.x, objectiveAnchor.y);
+    if(pathBlockedToObjective){
+      const nearestBlocker = Array.isArray(colliders) && colliders.length > 0
+        ? colliders.reduce((best, collider) => {
+          if(!best) return collider;
+          const colliderDistance = Math.hypot(collider.cx - objectiveAnchor.x, collider.cy - objectiveAnchor.y);
+          const bestDistance = Math.hypot(best.cx - objectiveAnchor.x, best.cy - objectiveAnchor.y);
+          return colliderDistance < bestDistance ? collider : best;
+        }, null)
+        : null;
+      const planted = nearestBlocker
+        ? placeBlueDynamiteAt(nearestBlocker.cx, nearestBlocker.cy)
+        : placeBlueDynamiteAt(
+            (plannedMove.plane.x + objectiveAnchor.x) * 0.5,
+            (plannedMove.plane.y + objectiveAnchor.y) * 0.5
+          );
+      if(planted){
+        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
+        return true;
+      }
+    }
+  }
+
+  if(inventory.counts[INVENTORY_ITEM_TYPES.INVISIBILITY] > 0){
+    const nearestEnemyDistance = Array.isArray(context?.enemies) && context.enemies.length > 0
+      ? Math.min(...context.enemies.map(enemy => dist(plannedMove.plane, enemy)))
+      : Number.POSITIVE_INFINITY;
+    const expectCounterMove = nearestEnemyDistance <= ATTACK_RANGE_PX * 1.15
+      || (context?.enemies?.length ?? 0) >= (context?.aiPlanes?.length ?? 0);
+    if(expectCounterMove && queueInvisibilityEffectForPlayer("blue")){
+      removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.INVISIBILITY);
+      return true;
+    }
+  }
+
+  if(inventory.counts[INVENTORY_ITEM_TYPES.WINGS] > 0 && landingPoint){
+    const contactTargets = [enemyBase];
+    if(context?.shouldUseFlagsMode){
+      for(const flag of context.availableEnemyFlags || []){
+        contactTargets.push(getFlagAnchor(flag));
+      }
+    }
+    const reachesContactZone = contactTargets.some((target) =>
+      target && dist(landingPoint, target) <= CELL_SIZE * 2.4
+    );
+    if(reachesContactZone && applyItemToOwnPlane(INVENTORY_ITEM_TYPES.WINGS, "blue", plannedMove.plane)){
+      removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.WINGS);
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function selectAiModeForCurrentTurn(context){
   const {
     shouldUseFlagsMode,
@@ -10842,6 +11040,7 @@ function doComputerMove(){
   selectAiModeForCurrentTurn(modeContext);
   const modeMove = planModeDrivenAiMove(modeContext);
   if(modeMove){
+    maybeUseInventoryBeforeLaunch(modeContext, modeMove);
     issueAIMove(modeMove.plane, modeMove.vx, modeMove.vy);
     return;
   }
@@ -10849,6 +11048,7 @@ function doComputerMove(){
   const fallbackMove = getFallbackAiMove(modeContext);
   if(fallbackMove){
     aiRoundState.currentGoal = "fallback_legacy_logic";
+    maybeUseInventoryBeforeLaunch(modeContext, fallbackMove);
     issueAIMove(fallbackMove.plane, fallbackMove.vx, fallbackMove.vy);
   }
 }
