@@ -8547,7 +8547,7 @@ function validateMapSpritesForTransfer(sprites){
 function serializeCurrentMapState(options = {}){
   const customName = typeof options.mapName === "string" ? options.mapName.trim().slice(0, 10) : "";
   const customDifficulty = typeof options.mapDifficulty === "string"
-    ? options.mapDifficulty.trim().toLowerCase()
+    ? normalizeMapTier(options.mapDifficulty)
     : "";
   const customId = customName
     ? customName
@@ -8590,19 +8590,30 @@ const PLAYABLE_MAP_INDICES = MAPS
   .map((_, index) => index)
   .filter(index => index !== RANDOM_MAP_SENTINEL_INDEX);
 
-function getMapTierForRound(roundNumber){
-  if(roundNumber <= 2){
+let randomMapPairSequenceNumber = null;
+let randomMapPairIndex = null;
+
+function normalizeMapTier(tier){
+  const normalizedTier = typeof tier === 'string' ? tier.trim().toLowerCase() : '';
+  if(normalizedTier === 'easy'){
     return 'easy';
   }
-  if(roundNumber <= 4){
+  if(normalizedTier === 'hard'){
     return 'middle';
   }
-  return 'hard';
+  return 'middle';
+}
+
+function getMapTierForRound(roundNumber){
+  if(roundNumber <= 4){
+    return 'easy';
+  }
+  return 'middle';
 }
 
 function getPlayableMapIndicesForRound(roundNumber = 1){
   const targetTier = getMapTierForRound(roundNumber);
-  const tierMatches = PLAYABLE_MAP_INDICES.filter(index => MAPS[index]?.tier === targetTier);
+  const tierMatches = PLAYABLE_MAP_INDICES.filter(index => normalizeMapTier(MAPS[index]?.tier) === targetTier);
   if(tierMatches.length){
     return tierMatches;
   }
@@ -9642,6 +9653,8 @@ function resetGame(options = {}){
   resetMatchScoreAnimations();
   updateArcadeScore({ blue: 0, green: 0 });
   roundNumber = 0;
+  randomMapPairSequenceNumber = null;
+  randomMapPairIndex = null;
   roundTextTimer = 0;
   if(roundTransitionTimeout){
     clearTimeout(roundTransitionTimeout);
@@ -9771,6 +9784,8 @@ if(classicRulesBtn){
     settings.addCargo = true;
     settings.sharpEdges = true;
     const upcomingRoundNumber = roundNumber + 1;
+    randomMapPairSequenceNumber = null;
+    randomMapPairIndex = null;
     settings.mapIndex = getRandomPlayableMapIndex(upcomingRoundNumber);
     settings.randomizeMapEachRound = true;
     settings.flameStyle = 'random';
@@ -15943,6 +15958,8 @@ yesBtn.addEventListener("click", () => {
     resetMatchScoreAnimations();
     updateArcadeScore({ blue: 0, green: 0 });
     roundNumber = 0;
+    randomMapPairSequenceNumber = null;
+    randomMapPairIndex = null;
     resetInventoryState();
     resetInventoryInteractionState();
     if(shouldAutoRandomizeMap()){
@@ -16180,12 +16197,22 @@ function shouldAutoRandomizeMap(){
 }
 
 function getRandomPlayableMapIndex(upcomingRoundNumber = roundNumber + 1){
+  const pairSequenceNumber = Math.ceil(Math.max(1, upcomingRoundNumber) / 2);
+  if(randomMapPairSequenceNumber === pairSequenceNumber && Number.isInteger(randomMapPairIndex)){
+    return randomMapPairIndex;
+  }
+
   const playableForRound = getPlayableMapIndicesForRound(upcomingRoundNumber);
   if(playableForRound.length === 0){
+    randomMapPairSequenceNumber = pairSequenceNumber;
+    randomMapPairIndex = 0;
     return 0;
   }
+
   const randomIndex = Math.floor(Math.random() * playableForRound.length);
-  return playableForRound[randomIndex] ?? 0;
+  randomMapPairSequenceNumber = pairSequenceNumber;
+  randomMapPairIndex = playableForRound[randomIndex] ?? 0;
+  return randomMapPairIndex;
 }
 
 function setMapIndexAndPersist(nextIndex){
