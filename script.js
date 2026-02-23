@@ -10893,6 +10893,125 @@ function getNearestDynamiteTargetToPoint(anchor){
   return nearest;
 }
 
+function getAiStrategicTargetPoint(context, plannedMove){
+  const landingPoint = getAiMoveLandingPoint(plannedMove);
+  const goal = aiRoundState?.currentGoal;
+
+  if(goal === "capture_enemy_flag"){
+    const flags = Array.isArray(context?.availableEnemyFlags) ? context.availableEnemyFlags : [];
+    if(flags.length > 0){
+      const bestFlag = flags
+        .map((flag) => getFlagAnchor(flag))
+        .filter(Boolean)
+        .sort((a, b) => dist(plannedMove.plane, a) - dist(plannedMove.plane, b))[0];
+      if(bestFlag) return bestFlag;
+    }
+  }
+
+  if(goal === "return_with_flag" || goal === "protect_home_flag"){
+    const homeBase = context?.homeBase || getBaseAnchor("blue");
+    if(homeBase) return homeBase;
+  }
+
+  if(goal === "eliminate_flag_carrier"){
+    const carrier = context?.stolenBlueFlagCarrier;
+    if(carrier) return { x: carrier.x, y: carrier.y };
+  }
+
+  const priorityEnemy = getBluePriorityEnemy(context);
+  if(priorityEnemy){
+    return { x: priorityEnemy.x, y: priorityEnemy.y };
+  }
+
+  return landingPoint;
+}
+
+function isPathClearIgnoringColliderById(x1, y1, x2, y2, ignoredColliderId){
+  for(const collider of colliders){
+    if(collider?.id === ignoredColliderId) continue;
+    if(checkLineIntersectionWithCollider(x1, y1, x2, y2, collider)) return false;
+  }
+  return true;
+}
+
+function getDynamiteCandidateForCurrentRoute(context, plannedMove){
+  const plane = plannedMove?.plane;
+  if(!plane) return null;
+
+  const routeTarget = getAiStrategicTargetPoint(context, plannedMove);
+  if(!routeTarget || !Number.isFinite(routeTarget.x) || !Number.isFinite(routeTarget.y)) return null;
+
+  const routeBlockedNow = !isPathClear(plane.x, plane.y, routeTarget.x, routeTarget.y);
+  if(!routeBlockedNow) return null;
+
+  const spriteEntries = Array.isArray(currentMapSprites) ? currentMapSprites : [];
+  const geometries = [];
+  for(let i = 0; i < spriteEntries.length; i += 1){
+    const geometry = getMapSpriteGeometry(spriteEntries[i], i);
+    if(geometry) geometries.push(geometry);
+  }
+
+  const lineCandidates = geometries.filter((geometry) =>
+    checkLineIntersectionWithCollider(plane.x, plane.y, routeTarget.x, routeTarget.y, geometry.collider)
+  );
+
+  const firstBlock = findFirstColliderHit(plane.x, plane.y, routeTarget.x, routeTarget.y);
+  const nearestBlockCandidate = firstBlock
+    ? geometries.find((geometry) => geometry.collider?.id === firstBlock.collider?.id) || null
+    : null;
+
+  const orderedCandidates = [];
+  if(nearestBlockCandidate) orderedCandidates.push(nearestBlockCandidate);
+  for(const candidate of lineCandidates){
+    if(!orderedCandidates.some((entry) => entry.id === candidate.id)){
+      orderedCandidates.push(candidate);
+    }
+  }
+
+  for(const candidate of orderedCandidates){
+    const pathClearAfterExplosion = isPathClearIgnoringColliderById(
+      plane.x,
+      plane.y,
+      routeTarget.x,
+      routeTarget.y,
+      candidate.collider?.id
+    );
+    if(pathClearAfterExplosion){
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function isDynamiteTargetUsefulForCurrentRoute(targetGeometry, context, plannedMove){
+  const plane = plannedMove?.plane;
+  if(!plane || !targetGeometry?.collider?.id) return false;
+
+  const routeTarget = getAiStrategicTargetPoint(context, plannedMove);
+  if(!routeTarget || !Number.isFinite(routeTarget.x) || !Number.isFinite(routeTarget.y)) return false;
+
+  const intersectsRoute = checkLineIntersectionWithCollider(
+    plane.x,
+    plane.y,
+    routeTarget.x,
+    routeTarget.y,
+    targetGeometry.collider
+  );
+  if(!intersectsRoute) return false;
+
+  const routeBlockedNow = !isPathClear(plane.x, plane.y, routeTarget.x, routeTarget.y);
+  if(!routeBlockedNow) return false;
+
+  return isPathClearIgnoringColliderById(
+    plane.x,
+    plane.y,
+    routeTarget.x,
+    routeTarget.y,
+    targetGeometry.collider.id
+  );
+}
+
 function maybeUseInventoryBeforeLaunch(context, plannedMove){
   if(!plannedMove?.plane) return false;
 
@@ -10941,10 +11060,18 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
   if(inventory.counts[INVENTORY_ITEM_TYPES.DYNAMITE] > 0){
     const homeBase = getBaseAnchor("blue");
     const pressureEnemy = getBluePriorityEnemy(context);
-    const defensiveTarget = getNearestDynamiteTargetToPoint(homeBase);
-    const offensiveTarget = getNearestDynamiteTargetToPoint(pressureEnemy);
+    const routeAwareTarget = getDynamiteCandidateForCurrentRoute(context, plannedMove);
+    const defensiveTargetRaw = getNearestDynamiteTargetToPoint(homeBase);
+    const offensiveTargetRaw = getNearestDynamiteTargetToPoint(pressureEnemy);
+    const defensiveTarget = isDynamiteTargetUsefulForCurrentRoute(defensiveTargetRaw, context, plannedMove)
+      ? defensiveTargetRaw
+      : null;
+    const offensiveTarget = isDynamiteTargetUsefulForCurrentRoute(offensiveTargetRaw, context, plannedMove)
+      ? offensiveTargetRaw
+      : null;
 
-    const planted = (defensiveTarget && placeBlueDynamiteAt(defensiveTarget.cx, defensiveTarget.cy))
+    const planted = (routeAwareTarget && placeBlueDynamiteAt(routeAwareTarget.cx, routeAwareTarget.cy))
+      || (defensiveTarget && placeBlueDynamiteAt(defensiveTarget.cx, defensiveTarget.cy))
       || (offensiveTarget && placeBlueDynamiteAt(offensiveTarget.cx, offensiveTarget.cy));
 
     if(planted){
