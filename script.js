@@ -11510,6 +11510,10 @@ function planRoleDrivenAiMove(context, rolePack){
 
   if(roles.runner){
     const runner = roles.runner;
+    const isFlagCarrierRunner = Boolean(
+      runner.carriedFlagId
+      && getFlagById(runner.carriedFlagId)?.color === "green"
+    );
     const runnerTargets = [];
     if(runner.carriedFlagId){
       const carriedFlag = getFlagById(runner.carriedFlagId);
@@ -11526,7 +11530,7 @@ function planRoleDrivenAiMove(context, rolePack){
     for(const target of runnerTargets){
       const move = planPathToPoint(runner, target.x, target.y);
       if(!move) continue;
-      if(isLandingPointUnderPressure(runner, move, enemies)) continue;
+      if(!isFlagCarrierRunner && isLandingPointUnderPressure(runner, move, enemies)) continue;
       if(!bestRunnerMove || move.totalDist < bestRunnerMove.totalDist){
         bestRunnerMove = move;
       }
