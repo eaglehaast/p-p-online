@@ -10755,6 +10755,45 @@ function evaluateBlueInventoryState(){
   };
 }
 
+function hasBlueDynamiteAvailable(){
+  const inventory = evaluateBlueInventoryState();
+  return (inventory?.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] || 0) > 0;
+}
+
+function findSafePreparationMoveForAttack(plane, enemy){
+  if(!plane || !enemy) return null;
+
+  const candidateAngles = [0, 25, -25, 50, -50, 75, -75, 100, -100, 135, -135, 160, -160, 180];
+  const candidateRanges = [
+    ATTACK_RANGE_PX * 0.72,
+    ATTACK_RANGE_PX,
+    ATTACK_RANGE_PX * 1.2,
+    ATTACK_RANGE_PX * 1.45,
+  ];
+  let bestCandidate = null;
+
+  for(const range of candidateRanges){
+    for(const angleDeg of candidateAngles){
+      const angle = Math.atan2(plane.y - enemy.y, plane.x - enemy.x) + (angleDeg * Math.PI / 180);
+      const tx = enemy.x + Math.cos(angle) * range;
+      const ty = enemy.y + Math.sin(angle) * range;
+      if(!isPathClear(tx, ty, enemy.x, enemy.y)) continue;
+      const move = planPathToPoint(plane, tx, ty);
+      if(!move) continue;
+
+      const score = move.totalDist + dist({x: tx, y: ty}, enemy) * 0.3;
+      if(!bestCandidate || score < bestCandidate.score){
+        bestCandidate = {
+          move,
+          score,
+        };
+      }
+    }
+  }
+
+  return bestCandidate?.move || null;
+}
+
 function getAiMoveLandingPoint(move){
   if(!move?.plane || !Number.isFinite(move.vx) || !Number.isFinite(move.vy)) return null;
   return {
@@ -10894,6 +10933,10 @@ function getNearestDynamiteTargetToPoint(anchor){
 }
 
 function getAiStrategicTargetPoint(context, plannedMove){
+  if(plannedMove?.targetEnemy && Number.isFinite(plannedMove.targetEnemy.x) && Number.isFinite(plannedMove.targetEnemy.y)){
+    return { x: plannedMove.targetEnemy.x, y: plannedMove.targetEnemy.y };
+  }
+
   const landingPoint = getAiMoveLandingPoint(plannedMove);
   const goal = aiRoundState?.currentGoal;
 
@@ -11624,13 +11667,30 @@ function planModeDrivenAiMove(context){
   if(aiRoundState.mode === AI_MODES.DEFENSE && stolenBlueFlagCarrier){
     aiRoundState.currentGoal = "eliminate_flag_carrier";
     let bestDefenseMove = null;
+    let bestPreparationMove = null;
+    const dynamiteAvailable = hasBlueDynamiteAvailable();
     for(const plane of groundedAiPlanes){
       const move = planPathToPoint(plane, stolenBlueFlagCarrier.x, stolenBlueFlagCarrier.y);
       if(move && (!bestDefenseMove || move.totalDist < bestDefenseMove.totalDist)){
         bestDefenseMove = { plane, ...move };
+        continue;
+      }
+
+      const preparationMove = findSafePreparationMoveForAttack(plane, stolenBlueFlagCarrier);
+      if(preparationMove && (!bestPreparationMove || preparationMove.totalDist < bestPreparationMove.totalDist)){
+        bestPreparationMove = {
+          plane,
+          ...preparationMove,
+          targetEnemy: stolenBlueFlagCarrier,
+          goalName: dynamiteAvailable ? "prepare_dynamite_breach" : "prepare_clear_shot",
+        };
       }
     }
     if(bestDefenseMove) return bestDefenseMove;
+    if(bestPreparationMove){
+      aiRoundState.currentGoal = bestPreparationMove.goalName;
+      return bestPreparationMove;
+    }
   }
 
   if(aiRoundState.mode === AI_MODES.FLAG_PRESSURE && availableEnemyFlags.length > 0){
@@ -11770,6 +11830,9 @@ function getFallbackAiMove(context){
   const flightDistancePx = settings.flightRangeCells * CELL_SIZE;
   const speedPxPerSec = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
   let best = null;
+  let bestPreparation = null;
+  let bestPreparationScore = Number.POSITIVE_INFINITY;
+  const dynamiteAvailable = hasBlueDynamiteAvailable();
 
   for(const plane of aiPlanes){
     if(flyingPoints.some(fp=>fp.plane===plane)) continue;
@@ -11807,14 +11870,44 @@ function getFallbackAiMove(context){
           if(!best || mirror.totalDist * mirrorWeight < best.totalDist){
             best = {plane, enemy, vx, vy, totalDist: mirror.totalDist};
           }
+        } else {
+          const preparationMove = findSafePreparationMoveForAttack(plane, enemy);
+          if(preparationMove){
+            const prepWeight = riskProfile === "comeback" ? 0.95 : 1;
+            const preparationScore = preparationMove.totalDist * prepWeight;
+            if(!bestPreparation || preparationScore < bestPreparationScore){
+              bestPreparationScore = preparationScore;
+              bestPreparation = {
+                plane,
+                enemy,
+                targetEnemy: enemy,
+                goalName: dynamiteAvailable ? "prepare_dynamite_breach" : "prepare_clear_shot",
+                ...preparationMove,
+              };
+            }
+          }
         }
       }
     }
   }
 
+  if(!best && bestPreparation){
+    return bestPreparation;
+  }
+
   if(!best){
     const plane = aiPlanes[0];
     const enemy = targetEnemies.reduce((a,b)=> (dist(plane,a)<dist(plane,b)?a:b));
+    const preparationMove = findSafePreparationMoveForAttack(plane, enemy);
+    if(preparationMove){
+      return {
+        plane,
+        enemy,
+        targetEnemy: enemy,
+        goalName: dynamiteAvailable ? "prepare_dynamite_breach" : "prepare_clear_shot",
+        ...preparationMove,
+      };
+    }
     const conservativeRetreat = riskProfile === "conservative";
     const fallbackTarget = conservativeRetreat
       ? {
@@ -11918,7 +12011,7 @@ function doComputerMove(){
 
   const fallbackMove = getFallbackAiMove(modeContext);
   if(fallbackMove){
-    aiRoundState.currentGoal = "fallback_legacy_logic";
+    aiRoundState.currentGoal = fallbackMove.goalName || "fallback_legacy_logic";
     logAiDecision("fallback_move", {
       planeId: fallbackMove.plane?.id ?? null,
     });
