@@ -10709,6 +10709,7 @@ const AI_CARGO_FAVORABLE_DISTANCE = MAX_DRAG_DISTANCE * 0.72;
 const AI_CARGO_IMMEDIATE_THREAT_DISTANCE = ATTACK_RANGE_PX * 0.9;
 const AI_CARGO_IMMEDIATE_THREAT_INTERCEPTION = 0.5;
 const AI_CARGO_SWITCH_TO_AGGRESSION_ITEMS = 2;
+const AI_LONG_SHOT_DISTANCE_THRESHOLD = MAX_DRAG_DISTANCE * 0.85;
 
 function logAiDecision(reason, details = {}){
   console.debug(`[ai] ${reason}`, details);
@@ -10800,6 +10801,36 @@ function getAiMoveLandingPoint(move){
     x: move.plane.x + move.vx * FIELD_FLIGHT_DURATION_SEC,
     y: move.plane.y + move.vy * FIELD_FLIGHT_DURATION_SEC,
   };
+}
+
+function getAiLongShotPenaltyMultiplier(distanceToTarget, targetPriority = "normal", riskProfile = "balanced"){
+  if(!Number.isFinite(distanceToTarget) || distanceToTarget <= AI_LONG_SHOT_DISTANCE_THRESHOLD) return 1;
+
+  const maxEffectiveDistance = Math.max(MAX_DRAG_DISTANCE * 1.25, AI_LONG_SHOT_DISTANCE_THRESHOLD + 1);
+  const overflowDistance = Math.max(0, distanceToTarget - AI_LONG_SHOT_DISTANCE_THRESHOLD);
+  const overflowRatio = Math.min(1, overflowDistance / (maxEffectiveDistance - AI_LONG_SHOT_DISTANCE_THRESHOLD));
+
+  const profilePenaltyCeil = riskProfile === "comeback"
+    ? 1.32
+    : riskProfile === "conservative"
+      ? 1.45
+      : 1.38;
+
+  const baseMultiplier = 1 + (profilePenaltyCeil - 1) * overflowRatio;
+  const criticalTargetSoftener = targetPriority === "critical" ? 0.55 : 1;
+  return 1 + (baseMultiplier - 1) * criticalTargetSoftener;
+}
+
+function getAiTargetPriority(enemy, context){
+  if(!enemy) return "normal";
+  const homeBase = context?.homeBase || getBaseAnchor("blue");
+  const isFlagCarrier = Boolean(
+    context?.stolenBlueFlagCarrier
+    && context.stolenBlueFlagCarrier.color !== "blue"
+    && context.stolenBlueFlagCarrier === enemy
+  );
+  const isNearBlueBase = Boolean(homeBase) && dist(enemy, homeBase) <= ATTACK_RANGE_PX * 1.2;
+  return (isFlagCarrier || isNearBlueBase) ? "critical" : "normal";
 }
 
 function getBluePriorityEnemy(context){
@@ -11625,12 +11656,26 @@ function planRoleDrivenAiMove(context, rolePack){
 
   if(roles.striker && enemies.length > 0){
     const striker = roles.striker;
+    const riskProfile = context?.aiRiskProfile?.profile || "balanced";
     let bestStrike = null;
     for(const enemy of enemies){
       const move = planPathToPoint(striker, enemy.x, enemy.y);
       if(!move) continue;
       const clearLaneBonus = isPathClear(striker.x, striker.y, enemy.x, enemy.y) ? 0.7 : 1;
-      const hitChanceScore = move.totalDist * clearLaneBonus;
+      const targetPriority = getAiTargetPriority(enemy, context);
+      const longShotPenalty = getAiLongShotPenaltyMultiplier(move.totalDist, targetPriority, riskProfile);
+      const hitChanceScore = move.totalDist * clearLaneBonus * longShotPenalty;
+      if(longShotPenalty > 1){
+        logAiDecision("long_shot_penalty_applied", {
+          source: "role_striker",
+          planeId: striker.id,
+          enemyId: enemy.id,
+          riskProfile,
+          targetPriority,
+          distance: Number(move.totalDist.toFixed(1)),
+          penalty: Number(longShotPenalty.toFixed(3)),
+        });
+      }
       if(!bestStrike || hitChanceScore < bestStrike.hitChanceScore){
         bestStrike = { enemy, move, hitChanceScore };
       }
@@ -11855,9 +11900,24 @@ function getFallbackAiMove(context){
         const vx = Math.cos(ang) * scale * speedPxPerSec;
         const vy = Math.sin(ang) * scale * speedPxPerSec;
 
-        const allowLongDirectAttack = riskProfile !== "conservative" || directDist <= MAX_DRAG_DISTANCE * 0.85;
-        if(allowLongDirectAttack && (!best || directDist < best.totalDist)){
-          best = {plane, enemy, vx, vy, totalDist: directDist};
+        const targetPriority = getAiTargetPriority(enemy, context);
+        const longShotPenalty = getAiLongShotPenaltyMultiplier(directDist, targetPriority, riskProfile);
+        const directAttackScore = directDist * longShotPenalty;
+
+        if(longShotPenalty > 1){
+          logAiDecision("long_shot_penalty_applied", {
+            source: "fallback_direct_attack",
+            planeId: plane.id,
+            enemyId: enemy.id,
+            riskProfile,
+            targetPriority,
+            distance: Number(directDist.toFixed(1)),
+            penalty: Number(longShotPenalty.toFixed(3)),
+          });
+        }
+
+        if(!best || directAttackScore < (best.directAttackScore ?? best.totalDist)){
+          best = {plane, enemy, vx, vy, totalDist: directDist, directAttackScore};
         }
       } else {
         const mirror = riskProfile === "conservative" ? null : findMirrorShot(plane, enemy);
