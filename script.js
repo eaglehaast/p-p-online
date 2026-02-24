@@ -10850,6 +10850,100 @@ function getBluePriorityEnemy(context){
   }, null);
 }
 
+function getCriticalBlueBaseThreat(context){
+  const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
+  if(!enemies.length) return null;
+
+  const blueBase = getBaseAnchor("blue");
+  const criticalDistance = ATTACK_RANGE_PX * 1.15;
+  const fastAttackDistance = ATTACK_RANGE_PX * 1.05;
+
+  let bestThreat = null;
+  for(const enemy of enemies){
+    const distanceToBase = dist(enemy, blueBase);
+    const hasCleanLineToBase = isPathClear(enemy.x, enemy.y, blueBase.x, blueBase.y);
+    const canAttackSoon = distanceToBase <= fastAttackDistance || (distanceToBase <= criticalDistance && hasCleanLineToBase);
+    if(!canAttackSoon) continue;
+
+    if(!bestThreat || distanceToBase < bestThreat.distanceToBase){
+      bestThreat = {
+        enemy,
+        base: blueBase,
+        distanceToBase,
+        hasCleanLineToBase,
+      };
+    }
+  }
+
+  return bestThreat;
+}
+
+function getEmergencyDefenseMove(context, threat){
+  if(!threat || !Array.isArray(context?.aiPlanes) || !context.aiPlanes.length) return null;
+
+  const { aiPlanes } = context;
+  let bestIntercept = null;
+
+  for(const plane of aiPlanes){
+    const directIntercept = planPathToPoint(plane, threat.enemy.x, threat.enemy.y);
+    if(directIntercept){
+      const score = directIntercept.totalDist + dist(plane, threat.enemy) * 0.2;
+      if(!bestIntercept || score < bestIntercept.score){
+        bestIntercept = {
+          plane,
+          enemy: threat.enemy,
+          goalName: "emergency_base_defense_intercept",
+          ...directIntercept,
+          score,
+        };
+      }
+      continue;
+    }
+
+    const prepIntercept = findSafePreparationMoveForAttack(plane, threat.enemy);
+    if(prepIntercept){
+      const score = prepIntercept.totalDist + dist(plane, threat.enemy) * 0.3;
+      if(!bestIntercept || score < bestIntercept.score){
+        bestIntercept = {
+          plane,
+          enemy: threat.enemy,
+          goalName: "emergency_base_defense_prepare",
+          ...prepIntercept,
+          score,
+        };
+      }
+    }
+  }
+
+  if(bestIntercept) return bestIntercept;
+
+  let bestBlock = null;
+  for(const plane of aiPlanes){
+    const baseToEnemyDistance = Math.max(1, threat.distanceToBase);
+    const ratio = Math.min(0.6, ATTACK_RANGE_PX / baseToEnemyDistance);
+    const blockPoint = {
+      x: threat.base.x + (threat.enemy.x - threat.base.x) * ratio,
+      y: threat.base.y + (threat.enemy.y - threat.base.y) * ratio,
+    };
+    const blockMove = planPathToPoint(plane, blockPoint.x, blockPoint.y);
+    if(!blockMove) continue;
+
+    const score = blockMove.totalDist;
+    if(!bestBlock || score < bestBlock.score){
+      bestBlock = {
+        plane,
+        enemy: threat.enemy,
+        goalName: "emergency_base_defense_block",
+        blockPoint,
+        ...blockMove,
+        score,
+      };
+    }
+  }
+
+  return bestBlock;
+}
+
 function placeBlueDynamiteAt(boardX, boardY){
   const targetBrick = findMapSpriteForDynamiteDrop({ boardX, boardY });
   if(!targetBrick) return false;
@@ -12024,6 +12118,24 @@ function doComputerMove(){
   logAiDecision("risk_profile", modeContext.aiRiskProfile);
 
   selectAiModeForCurrentTurn(modeContext);
+
+  const criticalBaseThreat = getCriticalBlueBaseThreat(modeContext);
+  if(criticalBaseThreat){
+    const emergencyMove = getEmergencyDefenseMove(modeContext, criticalBaseThreat);
+    if(emergencyMove){
+      aiRoundState.currentGoal = emergencyMove.goalName || "emergency_base_defense";
+      logAiDecision("emergency_base_defense", {
+        enemyId: criticalBaseThreat.enemy?.id ?? null,
+        planeId: emergencyMove.plane?.id ?? null,
+        distanceToBase: criticalBaseThreat.distanceToBase,
+        hasCleanLineToBase: criticalBaseThreat.hasCleanLineToBase,
+        goal: aiRoundState.currentGoal,
+      });
+      maybeUseInventoryBeforeLaunch(modeContext, emergencyMove);
+      issueAIMove(emergencyMove.plane, emergencyMove.vx, emergencyMove.vy);
+      return;
+    }
+  }
 
   const rolePack = assignAiRolesForTurn(modeContext);
   if(rolePack){
