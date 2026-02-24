@@ -12197,25 +12197,58 @@ function doComputerMove(){
 }
 
 function planPathToPoint(plane, tx, ty){
-    const flightDistancePx = settings.flightRangeCells * CELL_SIZE;
+  const flightDistancePx = settings.flightRangeCells * CELL_SIZE;
   const speedPxPerSec    = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
+
+  function buildMoveWithSafeDeviation(baseAngle, distance, scale, meta = {}){
+    const attemptDeviation = getRandomDeviation(distance, AI_MAX_ANGLE_DEVIATION);
+    const deviations = [
+      attemptDeviation,
+      attemptDeviation * 0.5,
+      attemptDeviation * 0.25
+    ];
+
+    for(const deviation of deviations){
+      const actualAngle = baseAngle + deviation;
+      const vx = Math.cos(actualAngle) * scale * speedPxPerSec;
+      const vy = Math.sin(actualAngle) * scale * speedPxPerSec;
+      const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
+      const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
+      if(isPathClear(plane.x, plane.y, landingX, landingY)){
+        return { vx, vy, totalDist: distance };
+      }
+    }
+
+    logAiDecision("blocked_after_deviation", {
+      planeId: plane?.id ?? null,
+      targetX: tx,
+      targetY: ty,
+      distance,
+      ...meta
+    });
+    return null;
+  }
 
   if(isPathClear(plane.x, plane.y, tx, ty)){
     const dx = tx - plane.x;
     const dy = ty - plane.y;
-    const ang = Math.atan2(dy, dx) + getRandomDeviation(Math.hypot(dx,dy), AI_MAX_ANGLE_DEVIATION);
     const dist = Math.hypot(dx, dy);
     const scale = Math.min(dist / MAX_DRAG_DISTANCE, 1);
-    return {vx: Math.cos(ang)*scale*speedPxPerSec, vy: Math.sin(ang)*scale*speedPxPerSec, totalDist: dist};
+    const baseAngle = Math.atan2(dy, dx);
+    return buildMoveWithSafeDeviation(baseAngle, dist, scale, {
+      moveType: "direct"
+    });
   }
 
   const mirror = findMirrorShot(plane, {x:tx, y:ty});
   if(mirror){
     const dx = mirror.mirrorTarget.x - plane.x;
     const dy = mirror.mirrorTarget.y - plane.y;
-    const ang = Math.atan2(dy, dx) + getRandomDeviation(mirror.totalDist, AI_MAX_ANGLE_DEVIATION);
+    const baseAngle = Math.atan2(dy, dx);
     const scale = Math.min(mirror.totalDist / (2*MAX_DRAG_DISTANCE), 1);
-    return {vx: Math.cos(ang)*scale*speedPxPerSec, vy: Math.sin(ang)*scale*speedPxPerSec, totalDist: mirror.totalDist};
+    return buildMoveWithSafeDeviation(baseAngle, mirror.totalDist, scale, {
+      moveType: "mirror"
+    });
   }
   return null;
 }
