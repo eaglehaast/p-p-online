@@ -12674,11 +12674,32 @@ function checkLineIntersectionWithCollider(x1,y1,x2,y2,collider, ignoreEdge=null
 }
 
 function doLinesIntersect(x1,y1,x2,y2, x3,y3,x4,y4){
-  function ccw(ax,ay,bx,by,cx,cy){
-    return (cy - ay) * (bx - ax) > (by - ay) * (cx - ax);
+  const epsilon = 1e-6;
+
+  function orientation(ax,ay,bx,by,cx,cy){
+    const cross = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+    if(Math.abs(cross) <= epsilon) return 0;
+    return cross > 0 ? 1 : -1;
   }
-  return (ccw(x1,y1,x3,y3,x4,y4) !== ccw(x2,y2,x3,y3,x4,y4)) &&
-         (ccw(x1,y1,x2,y2,x3,y3) !== ccw(x1,y1,x2,y2,x4,y4));
+
+  function onSegment(ax,ay,bx,by,cx,cy){
+    return cx >= Math.min(ax, bx) - epsilon && cx <= Math.max(ax, bx) + epsilon &&
+           cy >= Math.min(ay, by) - epsilon && cy <= Math.max(ay, by) + epsilon;
+  }
+
+  const o1 = orientation(x1,y1,x2,y2,x3,y3);
+  const o2 = orientation(x1,y1,x2,y2,x4,y4);
+  const o3 = orientation(x3,y3,x4,y4,x1,y1);
+  const o4 = orientation(x3,y3,x4,y4,x2,y2);
+
+  if(o1 !== o2 && o3 !== o4) return true;
+
+  if(o1 === 0 && onSegment(x1,y1,x2,y2,x3,y3)) return true;
+  if(o2 === 0 && onSegment(x1,y1,x2,y2,x4,y4)) return true;
+  if(o3 === 0 && onSegment(x3,y3,x4,y4,x1,y1)) return true;
+  if(o4 === 0 && onSegment(x3,y3,x4,y4,x2,y2)) return true;
+
+  return false;
 }
 
 function reflectPointAcrossLine(px, py, x1, y1, x2, y2){
