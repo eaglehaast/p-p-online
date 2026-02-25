@@ -12530,8 +12530,59 @@ function getFallbackAiMove(context){
           enemyId: enemy.id,
         });
 
-        const vx = Math.cos(ang) * scale * speedPxPerSec;
-        const vy = Math.sin(ang) * scale * speedPxPerSec;
+        let vx = Math.cos(ang) * scale * speedPxPerSec;
+        let vy = Math.sin(ang) * scale * speedPxPerSec;
+
+        let landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
+        let landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
+        let selectedDev = dev;
+        if(!isPathClear(plane.x, plane.y, landingX, landingY)){
+          const fallbackDeviationScales = [0.5, 0.25, 0];
+          let foundClearTrajectory = false;
+
+          for(const deviationScale of fallbackDeviationScales){
+            const fallbackDev = dev * deviationScale;
+            const fallbackAng = baseAngle + fallbackDev;
+            const fallbackVx = Math.cos(fallbackAng) * scale * speedPxPerSec;
+            const fallbackVy = Math.sin(fallbackAng) * scale * speedPxPerSec;
+            const fallbackLandingX = plane.x + fallbackVx * FIELD_FLIGHT_DURATION_SEC;
+            const fallbackLandingY = plane.y + fallbackVy * FIELD_FLIGHT_DURATION_SEC;
+            if(isPathClear(plane.x, plane.y, fallbackLandingX, fallbackLandingY)){
+              ang = fallbackAng;
+              vx = fallbackVx;
+              vy = fallbackVy;
+              landingX = fallbackLandingX;
+              landingY = fallbackLandingY;
+              selectedDev = fallbackDev;
+              foundClearTrajectory = true;
+              break;
+            }
+          }
+
+          if(!foundClearTrajectory){
+            logAiDecision("fallback_direct_attack_blocked_after_deviation", {
+              source: "fallback_direct_attack",
+              planeId: plane.id,
+              enemyId: enemy.id,
+              distance: Number(directDist.toFixed(1)),
+              initialDeviation: Number(dev.toFixed(4)),
+              reason: "blocked_after_deviation",
+            });
+            continue;
+          }
+
+          if(Math.abs(selectedDev - dev) > 0.000001){
+            logAiDecision("fallback_direct_attack_blocked_after_deviation", {
+              source: "fallback_direct_attack",
+              planeId: plane.id,
+              enemyId: enemy.id,
+              distance: Number(directDist.toFixed(1)),
+              initialDeviation: Number(dev.toFixed(4)),
+              adjustedDeviation: Number(selectedDev.toFixed(4)),
+              reason: "deviation_reduced_for_clear_path",
+            });
+          }
+        }
 
         const targetPriority = getAiTargetPriority(enemy, context);
         const longShotPenalty = getAiLongShotPenaltyMultiplier(directDist, targetPriority, riskProfile);
