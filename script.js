@@ -8093,6 +8093,8 @@ const MIN_ACCURACY_PERCENT = 0;
 const MAX_ACCURACY_PERCENT = 100;
 const MAX_SPREAD_DEG       = 12;
 const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
+const AI_MIRROR_FIRST_BOUNCE_MIN_DISTANCE = CARGO_SPAWN_SAFE_RADIUS * 1.25;
+const AI_MIRROR_MAX_PATH_RATIO = 1.8;
 
 const AIMING_TUNING_DEFAULTS = {
   referenceAccuracyPercent: 80,
@@ -12014,7 +12016,9 @@ function getFallbackAiMove(context){
           best = {plane, enemy, vx, vy, totalDist: directDist, directAttackScore};
         }
       } else {
-        const mirror = riskProfile === "conservative" ? null : findMirrorShot(plane, enemy);
+        const mirror = riskProfile === "conservative"
+          ? null
+          : findMirrorShot(plane, enemy, { logReject: true });
         if(mirror){
           const dx = mirror.mirrorTarget.x - plane.x;
           const dy = mirror.mirrorTarget.y - plane.y;
@@ -12240,7 +12244,7 @@ function planPathToPoint(plane, tx, ty){
     });
   }
 
-  const mirror = findMirrorShot(plane, {x:tx, y:ty});
+  const mirror = findMirrorShot(plane, {x:tx, y:ty}, { logReject: true });
   if(mirror){
     const dx = mirror.mirrorTarget.x - plane.x;
     const dy = mirror.mirrorTarget.y - plane.y;
@@ -12289,8 +12293,12 @@ function getSpreadAngleDegByAccuracy(accuracyPercent){
 }
 
 /* Зеркальный выстрел (одно отражение) */
-function findMirrorShot(plane, enemy){
+function findMirrorShot(plane, enemy, options = {}){
   let best = null; // {mirrorTarget, totalDist}
+  const directDist = Math.hypot(plane.x - enemy.x, plane.y - enemy.y);
+  const minBounceDistance = AI_MIRROR_FIRST_BOUNCE_MIN_DISTANCE;
+  let rejectedTooClose = false;
+  let rejectedTooLong = false;
 
   for(const collider of colliders){
     const edges = getColliderEdges(collider, 0);
@@ -12313,12 +12321,42 @@ function findMirrorShot(plane, enemy){
 
       const totalDist = Math.hypot(plane.x - inter.x, plane.y - inter.y) +
                         Math.hypot(inter.x  - enemy.x, inter.y  - enemy.y);
+      const firstLegDist = Math.hypot(plane.x - inter.x, plane.y - inter.y);
+
+      if(firstLegDist < minBounceDistance){
+        rejectedTooClose = true;
+        continue;
+      }
+
+      if(directDist > 0 && totalDist > directDist * AI_MIRROR_MAX_PATH_RATIO){
+        rejectedTooLong = true;
+        continue;
+      }
 
       if(!best || totalDist < best.totalDist){
         best = {mirrorTarget, totalDist};
       }
     }
   }
+
+  if(!best && options.logReject){
+    if(rejectedTooClose){
+      logAiDecision("mirror_rejected", {
+        reason: "mirror_rejected_too_close",
+        planeId: plane?.id ?? null,
+        enemyId: enemy?.id ?? null,
+        minBounceDistance: Number(minBounceDistance.toFixed(1)),
+      });
+    } else if(rejectedTooLong){
+      logAiDecision("mirror_rejected", {
+        reason: "mirror_rejected_too_long",
+        planeId: plane?.id ?? null,
+        enemyId: enemy?.id ?? null,
+        maxPathRatio: AI_MIRROR_MAX_PATH_RATIO,
+      });
+    }
+  }
+
   return best;
 }
 
