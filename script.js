@@ -11016,6 +11016,8 @@ const AI_MIN_LAUNCH_SCALE_DEFAULT = 0.22;
 const AI_OPENING_CENTER_TURN_LIMIT = 2;
 const AI_OPENING_DIRECT_FINISHER_MIN_LEAD = 2;
 const AI_CENTER_CONTROL_DISTANCE = MAX_DRAG_DISTANCE * 0.35;
+const AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD = 3;
+const AI_INVENTORY_SOFT_FALLBACK_COOLDOWN_TURNS = 4;
 
 function logAiDecision(reason, details = {}){
   console.debug(`[ai] ${reason}`, details);
@@ -11045,7 +11047,10 @@ function createInitialAiRoundState(){
     mode: AI_MODES.ATTRITION,
     turnNumber: 0,
     targetPriorities: [],
-    currentGoal: null
+    currentGoal: null,
+    inventoryIdleTurns: 0,
+    inventorySoftFallbackCooldown: 0,
+    lastInventorySoftFallbackUsed: false,
   };
 }
 
@@ -11581,6 +11586,8 @@ function evaluateCrosshairBestUse(context, plannedMove){
 function maybeUseInventoryBeforeLaunch(context, plannedMove){
   if(!plannedMove?.plane) return false;
 
+  aiRoundState.lastInventorySoftFallbackUsed = false;
+
   const inventory = evaluateBlueInventoryState();
   if(inventory.total <= 0) return false;
 
@@ -11591,6 +11598,18 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
   const landingPoint = getAiMoveLandingPoint(plannedMove);
   const enemyBase = getBaseAnchor("green");
   const riskProfile = context?.aiRiskProfile?.profile || "balanced";
+  const softFallbackReady = aiRoundState.inventoryIdleTurns >= AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD
+    && aiRoundState.inventorySoftFallbackCooldown <= 0;
+
+  function markSoftFallbackUse(itemType, details = {}){
+    aiRoundState.lastInventorySoftFallbackUsed = true;
+    logAiDecision("inventory_soft_fallback_used", {
+      itemType,
+      idleTurns: aiRoundState.inventoryIdleTurns,
+      cooldown: aiRoundState.inventorySoftFallbackCooldown,
+      ...details,
+    });
+  }
 
   if(inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0){
     const enemyFlag = context?.shouldUseFlagsMode ? getAvailableFlagsByColor("green")[0] : null;
@@ -11598,9 +11617,20 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     const farObjective = (enemyFlagAnchor && dist(plannedMove.plane, enemyFlagAnchor) > MAX_DRAG_DISTANCE * 0.8)
       || (priorityEnemy && dist(plannedMove.plane, priorityEnemy) > MAX_DRAG_DISTANCE * 0.8)
       || moveDistance > MAX_DRAG_DISTANCE * 0.8;
+    const moderateObjective = (enemyFlagAnchor && dist(plannedMove.plane, enemyFlagAnchor) > MAX_DRAG_DISTANCE * 0.7)
+      || (priorityEnemy && dist(plannedMove.plane, priorityEnemy) > MAX_DRAG_DISTANCE * 0.7)
+      || moveDistance > MAX_DRAG_DISTANCE * 0.7;
     const shouldBoostRange = farObjective || (riskProfile === "comeback" && moveDistance > MAX_DRAG_DISTANCE * 0.55);
-    if(shouldBoostRange && applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, "blue", plannedMove.plane)){
+    const shouldUseFuelBySoftFallback = !shouldBoostRange && softFallbackReady && moderateObjective;
+    if((shouldBoostRange || shouldUseFuelBySoftFallback)
+      && applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, "blue", plannedMove.plane)){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
+      if(shouldUseFuelBySoftFallback){
+        markSoftFallbackUse(INVENTORY_ITEM_TYPES.FUEL, {
+          moveDistance: Number(moveDistance.toFixed(1)),
+          reason: "moderate_far_objective",
+        });
+      }
       return true;
     }
   }
@@ -11608,6 +11638,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
   if(inventory.counts[INVENTORY_ITEM_TYPES.CROSSHAIR] > 0){
     const bestCrosshairScenario = evaluateCrosshairBestUse(context, plannedMove);
     const CROSSHAIR_MIN_NOTICEABLE_VALUE = 0.85;
+    const CROSSHAIR_SOFT_FALLBACK_MIN_VALUE = 0.72;
 
     if(bestCrosshairScenario && bestCrosshairScenario.totalValue >= CROSSHAIR_MIN_NOTICEABLE_VALUE){
       if(applyItemToOwnPlane(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
@@ -11626,6 +11657,9 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         return true;
       }
     } else {
+      const moderateCrosshairScenario = bestCrosshairScenario
+        && bestCrosshairScenario.totalValue >= CROSSHAIR_SOFT_FALLBACK_MIN_VALUE
+        && bestCrosshairScenario.distanceToEnemy <= MAX_DRAG_DISTANCE * 1.1;
       const cleanFinishingChance = priorityEnemy
         && isPathClear(plannedMove.plane.x, plannedMove.plane.y, priorityEnemy.x, priorityEnemy.y)
         && dist(plannedMove.plane, priorityEnemy) <= MAX_DRAG_DISTANCE
@@ -11642,6 +11676,19 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
             enemyId: priorityEnemy?.id ?? null,
             bestValue: null,
             fallback: "legacy_clean_or_comeback",
+          });
+          return true;
+        }
+      }
+
+      if(moderateCrosshairScenario && softFallbackReady){
+        if(applyItemToOwnPlane(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
+          removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
+          markSoftFallbackUse(INVENTORY_ITEM_TYPES.CROSSHAIR, {
+            bestValue: Number(bestCrosshairScenario.totalValue.toFixed(3)),
+            thresholdMain: CROSSHAIR_MIN_NOTICEABLE_VALUE,
+            thresholdSoft: CROSSHAIR_SOFT_FALLBACK_MIN_VALUE,
+            enemyId: bestCrosshairScenario.enemy?.id ?? null,
           });
           return true;
         }
@@ -11709,13 +11756,46 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     const reachesContactZone = contactTargets.some((target) =>
       target && dist(landingPoint, target) <= CELL_SIZE * 2.4
     );
-    if(reachesContactZone && applyItemToOwnPlane(INVENTORY_ITEM_TYPES.WINGS, "blue", plannedMove.plane)){
+    const reachesModerateContactZone = contactTargets.some((target) =>
+      target && dist(landingPoint, target) <= CELL_SIZE * 3.1
+    );
+    const shouldUseWingsBySoftFallback = !reachesContactZone && softFallbackReady && reachesModerateContactZone;
+    if((reachesContactZone || shouldUseWingsBySoftFallback)
+      && applyItemToOwnPlane(INVENTORY_ITEM_TYPES.WINGS, "blue", plannedMove.plane)){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.WINGS);
+      if(shouldUseWingsBySoftFallback){
+        markSoftFallbackUse(INVENTORY_ITEM_TYPES.WINGS, {
+          reason: "approaching_contact_zone",
+        });
+      }
       return true;
     }
   }
 
   return false;
+}
+
+function registerAiInventoryUsageAfterMove(itemUsed){
+  if(itemUsed){
+    aiRoundState.inventoryIdleTurns = 0;
+  } else {
+    aiRoundState.inventoryIdleTurns += 1;
+  }
+
+  if(aiRoundState.inventorySoftFallbackCooldown > 0){
+    aiRoundState.inventorySoftFallbackCooldown -= 1;
+  }
+
+  if(aiRoundState.lastInventorySoftFallbackUsed){
+    aiRoundState.inventorySoftFallbackCooldown = AI_INVENTORY_SOFT_FALLBACK_COOLDOWN_TURNS;
+    aiRoundState.lastInventorySoftFallbackUsed = false;
+  }
+}
+
+function issueAIMoveWithInventoryUsage(context, plannedMove){
+  const itemUsed = maybeUseInventoryBeforeLaunch(context, plannedMove);
+  registerAiInventoryUsageAfterMove(itemUsed);
+  issueAIMove(plannedMove.plane, plannedMove.vx, plannedMove.vy);
 }
 
 function selectAiModeForCurrentTurn(context){
@@ -12733,16 +12813,14 @@ function doComputerMove(){
         hasCleanLineToBase: criticalBaseThreat.hasCleanLineToBase,
         goal: aiRoundState.currentGoal,
       });
-      maybeUseInventoryBeforeLaunch(modeContext, emergencyMove);
-      issueAIMove(emergencyMove.plane, emergencyMove.vx, emergencyMove.vy);
+      issueAIMoveWithInventoryUsage(modeContext, emergencyMove);
       return;
     }
   }
 
   const openingCenterMove = tryPlanOpeningCenterControlMove(modeContext);
   if(openingCenterMove){
-    maybeUseInventoryBeforeLaunch(modeContext, openingCenterMove);
-    issueAIMove(openingCenterMove.plane, openingCenterMove.vx, openingCenterMove.vy);
+    issueAIMoveWithInventoryUsage(modeContext, openingCenterMove);
     return;
   }
 
@@ -12761,8 +12839,7 @@ function doComputerMove(){
       distance: Number((earlyDirectFinisherMove.totalDist || 0).toFixed(1)),
       reason: "direct_finisher",
     });
-    maybeUseInventoryBeforeLaunch(modeContext, earlyDirectFinisherMove);
-    issueAIMove(earlyDirectFinisherMove.plane, earlyDirectFinisherMove.vx, earlyDirectFinisherMove.vy);
+    issueAIMoveWithInventoryUsage(modeContext, earlyDirectFinisherMove);
     return;
   }
 
@@ -12774,8 +12851,7 @@ function doComputerMove(){
         goal: aiRoundState.currentGoal,
         planeId: roleMove.plane?.id ?? null,
       });
-      maybeUseInventoryBeforeLaunch(modeContext, roleMove);
-      issueAIMove(roleMove.plane, roleMove.vx, roleMove.vy);
+      issueAIMoveWithInventoryUsage(modeContext, roleMove);
       return;
     }
     logAiDecision("role_move_skip", { reason: "no_role_path", hasRoles: true });
@@ -12789,16 +12865,14 @@ function doComputerMove(){
       logAiDecision("comeback_quick_flag", {
         planeId: quickFlagMove.plane?.id ?? null,
       });
-      maybeUseInventoryBeforeLaunch(modeContext, quickFlagMove);
-      issueAIMove(quickFlagMove.plane, quickFlagMove.vx, quickFlagMove.vy);
+      issueAIMoveWithInventoryUsage(modeContext, quickFlagMove);
       return;
     }
   }
 
   const earlyCargoMove = tryPlanEarlyCargoPickupMove(modeContext);
   if(earlyCargoMove){
-    maybeUseInventoryBeforeLaunch(modeContext, earlyCargoMove);
-    issueAIMove(earlyCargoMove.plane, earlyCargoMove.vx, earlyCargoMove.vy);
+    issueAIMoveWithInventoryUsage(modeContext, earlyCargoMove);
     return;
   }
 
@@ -12809,8 +12883,7 @@ function doComputerMove(){
       goal: aiRoundState.currentGoal,
       planeId: modeMove.plane?.id ?? null,
     });
-    maybeUseInventoryBeforeLaunch(modeContext, modeMove);
-    issueAIMove(modeMove.plane, modeMove.vx, modeMove.vy);
+    issueAIMoveWithInventoryUsage(modeContext, modeMove);
     return;
   }
 
@@ -12821,8 +12894,7 @@ function doComputerMove(){
       planeId: fallbackMove.plane?.id ?? null,
       reason: fallbackMove.decisionReason || "fallback_legacy_logic",
     });
-    maybeUseInventoryBeforeLaunch(modeContext, fallbackMove);
-    issueAIMove(fallbackMove.plane, fallbackMove.vx, fallbackMove.vy);
+    issueAIMoveWithInventoryUsage(modeContext, fallbackMove);
   }
 }
 
