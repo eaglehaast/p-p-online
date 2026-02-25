@@ -34,6 +34,24 @@ node ./scripts/smoke-shield-immediate-rehit.js
 
 This smoke script verifies that shield reflection removes only the shield, while anti-repeat cooldown is applied only after a real plane elimination hit.
 
+## AI self-analyzer (match JSON)
+
+For **Computer** mode, the game now records each finished match in browser storage:
+
+- launches (speed, direction, power ratio),
+- turn switches,
+- per-round eliminations,
+- auto-generated behavior patterns,
+- simple AI adjustment recommendations.
+
+To export the latest report as JSON, open browser console and run:
+
+```js
+window.exportLatestAiSelfAnalyzerJson()
+```
+
+This downloads a file like `ai-self-analyzer-<timestamp>.json`.
+
 ## Game modes
 
 - **Hot Seat** – two players share the same computer.
