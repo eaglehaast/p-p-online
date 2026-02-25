@@ -8941,6 +8941,255 @@ function resetMatchScoreAnimations(){
 
 let isDrawGame = false;
 
+const AI_SELF_ANALYZER_STORAGE_KEY = "paper-wings-ai-self-analyzer-v1";
+const AI_SELF_ANALYZER_MAX_MATCHES = 30;
+const planeAnalyticsIds = new WeakMap();
+let nextPlaneAnalyticsId = 1;
+
+const aiSelfAnalyzerState = {
+  activeMatch: null,
+  history: [],
+};
+
+function safeNowIso(){
+  try {
+    return new Date().toISOString();
+  } catch (_error){
+    return "";
+  }
+}
+
+function ensurePlaneAnalyticsId(plane){
+  if(!plane || typeof plane !== "object") return null;
+  if(!planeAnalyticsIds.has(plane)){
+    planeAnalyticsIds.set(plane, `plane_${nextPlaneAnalyticsId++}`);
+  }
+  return planeAnalyticsIds.get(plane);
+}
+
+function getAnalyticsHistoryFromStorage(){
+  if(typeof localStorage === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(AI_SELF_ANALYZER_STORAGE_KEY);
+    if(!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_error){
+    return [];
+  }
+}
+
+function saveAnalyticsHistoryToStorage(history){
+  if(typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(AI_SELF_ANALYZER_STORAGE_KEY, JSON.stringify(history));
+  } catch (_error){
+    // ignore quota errors
+  }
+}
+
+function startAiSelfAnalyzerMatchIfNeeded(){
+  if(aiSelfAnalyzerState.activeMatch) return;
+  aiSelfAnalyzerState.activeMatch = {
+    version: 1,
+    startedAt: safeNowIso(),
+    finishedAt: null,
+    mode: gameMode || selectedMode || null,
+    ruleset: selectedRuleset || null,
+    mapIndex: settings?.mapIndex ?? null,
+    rounds: [],
+    turns: [],
+    events: [],
+    summary: null,
+  };
+}
+
+function ensureAiSelfAnalyzerRound(){
+  const active = aiSelfAnalyzerState.activeMatch;
+  if(!active) return null;
+  let round = active.rounds.find((entry) => entry.roundNumber === roundNumber);
+  if(!round){
+    round = {
+      roundNumber,
+      startedAt: safeNowIso(),
+      launches: [],
+      eliminationsByColor: { blue: 0, green: 0 },
+      turnSwitches: 0,
+      scoreTimeline: []
+    };
+    active.rounds.push(round);
+  }
+  return round;
+}
+
+function recordAiSelfAnalyzerLaunch(plane, vx, vy, actor){
+  const active = aiSelfAnalyzerState.activeMatch;
+  if(!active || !plane) return;
+  const round = ensureAiSelfAnalyzerRound();
+  if(!round) return;
+
+  const planeId = ensurePlaneAnalyticsId(plane);
+  const maxLaunchSpeed = Math.max(1, (getEffectiveFlightRangeCells(plane) * CELL_SIZE) / FIELD_FLIGHT_DURATION_SEC);
+  const launchSpeed = Math.hypot(vx, vy);
+  const powerRatio = Math.max(0, Math.min(1, launchSpeed / maxLaunchSpeed));
+  const angleDeg = (Math.atan2(vy, vx) * 180 / Math.PI + 360) % 360;
+
+  const event = {
+    type: "launch",
+    at: safeNowIso(),
+    roundNumber,
+    turnColor: turnColors[turnIndex] ?? null,
+    planeId,
+    color: plane.color,
+    actor,
+    speed: Number(launchSpeed.toFixed(2)),
+    powerRatio: Number(powerRatio.toFixed(4)),
+    angleDeg: Number(angleDeg.toFixed(2))
+  };
+
+  round.launches.push(event);
+  round.scoreTimeline.push({
+    at: event.at,
+    blueScore,
+    greenScore
+  });
+  active.events.push(event);
+}
+
+function recordAiSelfAnalyzerTurnAdvance(previousTurnColor, nextTurnColor){
+  const active = aiSelfAnalyzerState.activeMatch;
+  if(!active) return;
+  const round = ensureAiSelfAnalyzerRound();
+  if(!round) return;
+  round.turnSwitches += 1;
+  active.turns.push({
+    at: safeNowIso(),
+    roundNumber,
+    previousTurnColor,
+    nextTurnColor
+  });
+}
+
+function recordAiSelfAnalyzerElimination(plane){
+  const active = aiSelfAnalyzerState.activeMatch;
+  if(!active || !plane) return;
+  const round = ensureAiSelfAnalyzerRound();
+  if(!round) return;
+  if(plane.color === "blue" || plane.color === "green"){
+    round.eliminationsByColor[plane.color] += 1;
+  }
+}
+
+function buildAiSelfAnalyzerSummary(match){
+  const launches = match.rounds.flatMap((round) => round.launches || []);
+  const groupedByColor = {
+    blue: launches.filter((event) => event.color === "blue"),
+    green: launches.filter((event) => event.color === "green")
+  };
+  const analyzeColor = (color) => {
+    const colorLaunches = groupedByColor[color];
+    const total = colorLaunches.length;
+    const avgPower = total > 0
+      ? colorLaunches.reduce((sum, event) => sum + (event.powerRatio || 0), 0) / total
+      : 0;
+    const longShotRate = total > 0
+      ? colorLaunches.filter((event) => (event.powerRatio || 0) >= 0.75).length / total
+      : 0;
+
+    let repeatedPlaneShots = 0;
+    for(let i = 1; i < colorLaunches.length; i += 1){
+      if(colorLaunches[i].planeId === colorLaunches[i - 1].planeId){
+        repeatedPlaneShots += 1;
+      }
+    }
+    const repeatRate = total > 1 ? repeatedPlaneShots / (total - 1) : 0;
+
+    const angleBuckets = {};
+    colorLaunches.forEach((event) => {
+      const bucket = Math.round((event.angleDeg || 0) / 45) * 45;
+      angleBuckets[bucket] = (angleBuckets[bucket] || 0) + 1;
+    });
+    const dominantAngles = Object.entries(angleBuckets)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([angle, count]) => ({ angleDeg: Number(angle), count }));
+
+    return {
+      totalLaunches: total,
+      avgPowerRatio: Number(avgPower.toFixed(4)),
+      longShotRate: Number(longShotRate.toFixed(4)),
+      repeatedPlaneRate: Number(repeatRate.toFixed(4)),
+      dominantAngles
+    };
+  };
+
+  const blueStats = analyzeColor("blue");
+  const greenStats = analyzeColor("green");
+
+  const aiRecommendations = [];
+  if(blueStats.longShotRate >= 0.6){
+    aiRecommendations.push("Blue часто использует дальние выстрелы: ИИ стоит чаще играть через короткие ответные ходы и вынуждать ошибки на рикошетах.");
+  }
+  if(blueStats.repeatedPlaneRate >= 0.5){
+    aiRecommendations.push("Blue часто запускает один и тот же самолёт подряд: ИИ может заранее закрывать траектории вокруг этого самолёта.");
+  }
+  if(greenStats.avgPowerRatio <= 0.45){
+    aiRecommendations.push("Green в среднем играет короткими выстрелами: ИИ можно чаще агрессировать и поддавливать по дальности.");
+  }
+
+  return {
+    totalRounds: match.rounds.length,
+    totalLaunches: launches.length,
+    launchesByColor: {
+      blue: blueStats,
+      green: greenStats
+    },
+    aiRecommendations
+  };
+}
+
+function finalizeAiSelfAnalyzerMatch(result){
+  const active = aiSelfAnalyzerState.activeMatch;
+  if(!active) return;
+
+  active.finishedAt = safeNowIso();
+  active.result = result;
+  active.summary = buildAiSelfAnalyzerSummary(active);
+
+  const previousHistory = getAnalyticsHistoryFromStorage();
+  const nextHistory = [active, ...previousHistory].slice(0, AI_SELF_ANALYZER_MAX_MATCHES);
+  aiSelfAnalyzerState.history = nextHistory;
+  saveAnalyticsHistoryToStorage(nextHistory);
+  aiSelfAnalyzerState.activeMatch = null;
+}
+
+function exportLatestAiSelfAnalyzerJson(){
+  const history = getAnalyticsHistoryFromStorage();
+  if(history.length === 0){
+    return null;
+  }
+  const latest = history[0];
+  if(typeof document === "undefined"){
+    return latest;
+  }
+  const payload = JSON.stringify(latest, null, 2);
+  const blob = new Blob([payload], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const suffix = latest.finishedAt ? latest.finishedAt.replace(/[:.]/g, "-") : "latest";
+  link.href = url;
+  link.download = `ai-self-analyzer-${suffix}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  return latest;
+}
+
+if(typeof window !== "undefined"){
+  window.exportLatestAiSelfAnalyzerJson = exportLatestAiSelfAnalyzerJson;
+}
+
 let matchScoreImagesRequested = false;
 function loadMatchScoreImagesIfNeeded(){
   if (matchScoreImagesRequested) return;
@@ -8972,6 +9221,9 @@ function lockInWinner(color, options = {}){
   }
 
   shouldShowEndScreen = Boolean(options.showEndScreen);
+  if(shouldShowEndScreen){
+    finalizeAiSelfAnalyzerMatch({ type: "winner", winnerColor: color, isDraw: false, blueScore, greenScore });
+  }
   if(endGameDiv){
     endGameDiv.style.display = "none";
   }
@@ -9038,6 +9290,9 @@ function lockInDraw(options = {}){
   }
 
   shouldShowEndScreen = Boolean(options.showEndScreen);
+  if(shouldShowEndScreen){
+    finalizeAiSelfAnalyzerMatch({ type: "draw", winnerColor: null, isDraw: true, blueScore, greenScore });
+  }
   if(endGameDiv){
     endGameDiv.style.display = "none";
   }
@@ -9557,6 +9812,7 @@ function markPlaneLaunchedFromBase(plane){
 function eliminatePlane(plane, options = {}){
   if(!plane) return;
   if(!isPlaneTargetable(plane)) return;
+  recordAiSelfAnalyzerElimination(plane);
 
   const {
     keepBurning = true,
@@ -9710,6 +9966,7 @@ function resetGame(options = {}){
   pendingRoundTransitionDelay = null;
   pendingRoundTransitionStart = 0;
   shouldShowEndScreen = false;
+  aiSelfAnalyzerState.activeMatch = null;
 
   cleanupGreenCrashFx();
 
@@ -10707,6 +10964,7 @@ function onHandleUp(){
     shieldBreakLockActive:false,
     shieldBreakLockTarget:null
   });
+  recordAiSelfAnalyzerLaunch(plane, vx, vy, "human");
 
   if(!hasShotThisRound){
     hasShotThisRound = true;
@@ -12506,6 +12764,7 @@ function issueAIMove(plane, vx, vy){
     shieldBreakLockActive:false,
     shieldBreakLockTarget:null
   });
+  recordAiSelfAnalyzerLaunch(plane, vx, vy, "computer");
   if(!hasShotThisRound){
     hasShotThisRound = true;
     renderScoreboard();
@@ -13942,6 +14201,7 @@ function advanceTurn(){
   });
   turnIndex = (turnIndex + 1) % turnColors.length;
   const nextTurnColor = turnColors[turnIndex];
+  recordAiSelfAnalyzerTurnAdvance(previousTurnColor, nextTurnColor);
   if(isArcadePlaneRespawnEnabled()){
     // Штраф за респаун тикает по полуходам и длится минимум 5 переключений хода.
     points.forEach((plane) => {
@@ -16889,7 +17149,9 @@ function startNewRound(){
   resetPlayerInventoryEffects();
   resetAllPlaneInvisibilityToOpaque();
 
+  startAiSelfAnalyzerMatchIfNeeded();
   roundNumber++;
+  ensureAiSelfAnalyzerRound();
   roundTextTimer = selectedRuleset === "mapeditor" ? 0 : 120;
   aiRoundState = createInitialAiRoundState();
 
