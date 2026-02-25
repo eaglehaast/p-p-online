@@ -9095,6 +9095,9 @@ function buildAiSelfAnalyzerSummary(match){
     const longShotRate = total > 0
       ? colorLaunches.filter((event) => (event.powerRatio || 0) >= 0.75).length / total
       : 0;
+    const veryLowPowerRate = total > 0
+      ? colorLaunches.filter((event) => (event.powerRatio || 0) < 0.30).length / total
+      : 0;
 
     let repeatedPlaneShots = 0;
     for(let i = 1; i < colorLaunches.length; i += 1){
@@ -9118,6 +9121,7 @@ function buildAiSelfAnalyzerSummary(match){
       totalLaunches: total,
       avgPowerRatio: Number(avgPower.toFixed(4)),
       longShotRate: Number(longShotRate.toFixed(4)),
+      veryLowPowerRate: Number(veryLowPowerRate.toFixed(4)),
       repeatedPlaneRate: Number(repeatRate.toFixed(4)),
       dominantAngles
     };
@@ -9132,6 +9136,9 @@ function buildAiSelfAnalyzerSummary(match){
   }
   if(blueStats.repeatedPlaneRate >= 0.5){
     aiRecommendations.push("Blue часто запускает один и тот же самолёт подряд: ИИ может заранее закрывать траектории вокруг этого самолёта.");
+  }
+  if(blueStats.veryLowPowerRate >= 0.12){
+    aiRecommendations.push("Blue слишком часто использует сверхслабые выстрелы: стоит повысить минимальную силу обычных ходов, кроме точных добиваний вблизи.");
   }
   if(greenStats.avgPowerRatio <= 0.45){
     aiRecommendations.push("Green в среднем играет короткими выстрелами: ИИ можно чаще агрессировать и поддавливать по дальности.");
