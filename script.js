@@ -11972,6 +11972,21 @@ function getFallbackAiMove(context){
     }
   }
 
+  const directFinisherMove = findDirectFinisherMove(aiPlanes, targetEnemies, {
+    source: "fallback",
+    goalName: "direct_finisher",
+  });
+  if(directFinisherMove){
+    logAiDecision("direct_finisher", {
+      source: "fallback",
+      planeId: directFinisherMove.plane?.id ?? null,
+      enemyId: directFinisherMove.enemy?.id ?? null,
+      distance: Number((directFinisherMove.totalDist || 0).toFixed(1)),
+      reason: "direct_finisher",
+    });
+    return directFinisherMove;
+  }
+
   const flightDistancePx = settings.flightRangeCells * CELL_SIZE;
   const speedPxPerSec = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
   let best = null;
@@ -12141,6 +12156,24 @@ function doComputerMove(){
     }
   }
 
+  const earlyDirectFinisherMove = findDirectFinisherMove(modeContext.aiPlanes, modeContext.enemies, {
+    source: "do_computer_move",
+    goalName: "direct_finisher",
+  });
+  if(earlyDirectFinisherMove){
+    aiRoundState.currentGoal = earlyDirectFinisherMove.goalName;
+    logAiDecision("direct_finisher", {
+      source: "do_computer_move",
+      planeId: earlyDirectFinisherMove.plane?.id ?? null,
+      enemyId: earlyDirectFinisherMove.enemy?.id ?? null,
+      distance: Number((earlyDirectFinisherMove.totalDist || 0).toFixed(1)),
+      reason: "direct_finisher",
+    });
+    maybeUseInventoryBeforeLaunch(modeContext, earlyDirectFinisherMove);
+    issueAIMove(earlyDirectFinisherMove.plane, earlyDirectFinisherMove.vx, earlyDirectFinisherMove.vy);
+    return;
+  }
+
   const rolePack = assignAiRolesForTurn(modeContext);
   if(rolePack){
     const roleMove = planRoleDrivenAiMove(modeContext, rolePack);
@@ -12194,13 +12227,14 @@ function doComputerMove(){
     aiRoundState.currentGoal = fallbackMove.goalName || "fallback_legacy_logic";
     logAiDecision("fallback_move", {
       planeId: fallbackMove.plane?.id ?? null,
+      reason: fallbackMove.decisionReason || "fallback_legacy_logic",
     });
     maybeUseInventoryBeforeLaunch(modeContext, fallbackMove);
     issueAIMove(fallbackMove.plane, fallbackMove.vx, fallbackMove.vy);
   }
 }
 
-function planPathToPoint(plane, tx, ty){
+function planPathToPoint(plane, tx, ty, options = {}){
   const flightDistancePx = settings.flightRangeCells * CELL_SIZE;
   const speedPxPerSec    = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
 
@@ -12239,6 +12273,25 @@ function planPathToPoint(plane, tx, ty){
     const dist = Math.hypot(dx, dy);
     const scale = Math.min(dist / MAX_DRAG_DISTANCE, 1);
     const baseAngle = Math.atan2(dy, dx);
+
+    const finisherTarget = options?.targetEnemy || null;
+    const shouldPrioritizeDirectFinisher = Boolean(options?.prioritizeDirectFinisher)
+      || (finisherTarget
+        && finisherTarget.x === tx
+        && finisherTarget.y === ty
+        && isDirectFinisherScenario(plane, finisherTarget));
+
+    if(shouldPrioritizeDirectFinisher && dist <= MAX_DRAG_DISTANCE){
+      const vx = Math.cos(baseAngle) * scale * speedPxPerSec;
+      const vy = Math.sin(baseAngle) * scale * speedPxPerSec;
+      return {
+        vx,
+        vy,
+        totalDist: dist,
+        decisionReason: "direct_finisher",
+      };
+    }
+
     return buildMoveWithSafeDeviation(baseAngle, dist, scale, {
       moveType: "direct"
     });
@@ -12255,6 +12308,43 @@ function planPathToPoint(plane, tx, ty){
     });
   }
   return null;
+}
+
+function isDirectFinisherScenario(plane, enemy){
+  if(!plane || !enemy) return false;
+  if(enemy.shieldActive) return false;
+  if(!isPathClear(plane.x, plane.y, enemy.x, enemy.y)) return false;
+  return Math.hypot(enemy.x - plane.x, enemy.y - plane.y) <= MAX_DRAG_DISTANCE;
+}
+
+function findDirectFinisherMove(aiPlanes, enemies, options = {}){
+  if(!Array.isArray(aiPlanes) || !Array.isArray(enemies)) return null;
+
+  let best = null;
+  for(const plane of aiPlanes){
+    if(flyingPoints.some(fp=>fp.plane===plane)) continue;
+
+    for(const enemy of enemies){
+      if(!isDirectFinisherScenario(plane, enemy)) continue;
+
+      const move = planPathToPoint(plane, enemy.x, enemy.y, {
+        prioritizeDirectFinisher: true,
+        targetEnemy: enemy,
+      });
+      if(!move) continue;
+
+      if(!best || move.totalDist < best.totalDist){
+        best = {
+          plane,
+          enemy,
+          ...move,
+          goalName: options.goalName || "direct_finisher",
+          decisionReason: "direct_finisher",
+        };
+      }
+    }
+  }
+  return best;
 }
 
 function issueAIMove(plane, vx, vy){
