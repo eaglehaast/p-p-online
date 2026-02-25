@@ -6535,6 +6535,13 @@ let hasActivatedGameScreen = false;
 let needsGameScreenSync = false;
 let menuScreenLocked = false;
 
+const GAME_MODE_STORAGE_KEY = 'settings.gameMode';
+const VALID_GAME_MODES = new Set(["hotSeat", "computer", "online"]);
+
+function normalizeGameMode(mode){
+  return VALID_GAME_MODES.has(mode) ? mode : null;
+}
+
 function isMapEditorBricksModeActive(){
   return selectedRuleset === "mapeditor" && mapEditorControlMode === "bricks";
 }
@@ -8729,6 +8736,21 @@ function setStoredSetting(key, value){
   }
 }
 
+function getStoredGameMode(fallbackMode = "hotSeat"){
+  const storedMode = normalizeGameMode(getStoredSetting(GAME_MODE_STORAGE_KEY));
+  if(storedMode){
+    return storedMode;
+  }
+  return normalizeGameMode(fallbackMode) || "hotSeat";
+}
+
+function setStoredGameMode(mode){
+  const normalized = normalizeGameMode(mode);
+  if(!normalized) return false;
+  setStoredSetting(GAME_MODE_STORAGE_KEY, normalized);
+  return true;
+}
+
 settingsBridge.setMapIndex = (nextIndex, options = {}) => {
   const { persist = true } = options;
   settings.mapIndex = clampMapIndex(nextIndex);
@@ -8800,6 +8822,7 @@ function loadSettingsForRuleset(ruleset = selectedRuleset){
 }
 
 loadSettings();
+selectedMode = getStoredGameMode(selectedMode);
 syncInventoryVisibility();
 
 window.addEventListener('paperWingsSettingsChanged', (event) => {
@@ -9676,7 +9699,7 @@ function getBaseInteractionTarget(color){
 
 
 function resetGame(options = {}){
-  const { forceGameScreen = false, forceMenu = false } = options;
+  const { forceGameScreen = false, forceMenu = false, resetModeToDefault = false } = options;
   const shouldShowMenu = forceMenu || (!forceGameScreen && !menuScreenLocked);
 
   isGameOver= false;
@@ -9729,7 +9752,9 @@ function resetGame(options = {}){
 
   hasShotThisRound = false;
 
-  selectedMode = shouldShowMenu ? "hotSeat" : selectedMode;
+  if(shouldShowMenu){
+    selectedMode = resetModeToDefault ? "hotSeat" : getStoredGameMode(selectedMode);
+  }
   gameMode = shouldShowMenu ? null : gameMode;
   phase = shouldShowMenu ? 'MENU' : 'TURN';
   currentPlacer = null;
@@ -9807,16 +9832,19 @@ function startMainLoopIfNotRunning(reason = "startMainLoopIfNotRunning") {
 /* ======= MENU ======= */
 hotSeatBtn.addEventListener("click",()=>{
   selectedMode = "hotSeat";
+  setStoredGameMode(selectedMode);
   lastModeSelectionButton = hotSeatBtn;
   updateModeSelection(hotSeatBtn);
 });
 computerBtn.addEventListener("click",()=>{
   selectedMode = "computer";
+  setStoredGameMode(selectedMode);
   lastModeSelectionButton = computerBtn;
   updateModeSelection(computerBtn);
 });
 onlineBtn.addEventListener("click",()=>{
   selectedMode = "online";
+  setStoredGameMode(selectedMode);
   lastModeSelectionButton = onlineBtn;
   updateModeSelection(onlineBtn);
 });
@@ -10061,16 +10089,22 @@ function updateModeSelection(activeButton){
 }
 
 async function handlePlayStart(){
-  if(!selectedMode){
-    alert("Please select a game mode before starting.");
-    return;
+  const normalizedMode = normalizeGameMode(selectedMode);
+  if(!normalizedMode){
+    const reason = '[MODE] Match start aborted: selectedMode is missing or invalid.';
+    console.error(reason, { selectedMode });
+    alert("Cannot start match: game mode is not selected. Please pick a mode and try again.");
+    return false;
   }
+  selectedMode = normalizedMode;
+  setStoredGameMode(selectedMode);
+
   bootTrace.startTs = performance.now();
   bootTrace.markers = [];
   gameDrawFirstLogged = false;
   const readyAtClick = gameAssetsReady;
-  console.log("[BOOT] play pressed", { gameReady: readyAtClick });
-  gameMode = selectedMode;
+  console.log("[BOOT] play pressed", { gameReady: readyAtClick, selectedMode });
+  gameMode = normalizedMode;
 
   if (readyAtClick && Array.isArray(gameAssetsResults)) {
     const failedReady = gameAssetsResults.filter(entry => entry && entry.status && entry.status !== "fulfilled");
@@ -10106,6 +10140,7 @@ async function handlePlayStart(){
   setMenuVisibility(false);
   activateGameScreen();
   startNewRound();
+  return true;
 }
 
 playBtn.addEventListener("click",async ()=>{
@@ -16798,6 +16833,7 @@ if(mapEditorBrickSidebar instanceof HTMLElement){
 
 function startNewRound(){
   logBootStep("startNewRound");
+  console.log('[mode] startNewRound effective gameMode', { gameMode, selectedMode, selectedRuleset, phase });
   loadSettingsForRuleset(selectedRuleset);
   const useStoredRulesetSettings = isAdvancedLikeRuleset(selectedRuleset);
   const isArcadeUiMode = useStoredRulesetSettings && settings.arcadeMode === true;
