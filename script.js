@@ -11005,6 +11005,9 @@ const AI_CARGO_IMMEDIATE_THREAT_DISTANCE = ATTACK_RANGE_PX * 0.9;
 const AI_CARGO_IMMEDIATE_THREAT_INTERCEPTION = 0.5;
 const AI_CARGO_SWITCH_TO_AGGRESSION_ITEMS = 2;
 const AI_LONG_SHOT_DISTANCE_THRESHOLD = MAX_DRAG_DISTANCE * 0.85;
+const AI_OPENING_CENTER_TURN_LIMIT = 2;
+const AI_OPENING_DIRECT_FINISHER_MIN_LEAD = 2;
+const AI_CENTER_CONTROL_DISTANCE = MAX_DRAG_DISTANCE * 0.35;
 
 function logAiDecision(reason, details = {}){
   console.debug(`[ai] ${reason}`, details);
@@ -11710,8 +11713,8 @@ function selectAiModeForCurrentTurn(context){
     mode = AI_MODES.DEFENSE;
     targetPriorities = ["eliminate_flag_carrier", "protect_home_flag"];
   } else if(aiRiskProfile?.profile === "conservative"){
-    mode = AI_MODES.DEFENSE;
-    targetPriorities = ["preserve_planes", "protect_home_flag", "safe_attack"];
+    mode = AI_MODES.ATTRITION;
+    targetPriorities = ["force_trade", "attack_enemy_plane", "contest_center"];
   } else if(aiRiskProfile?.profile === "comeback" && shouldUseFlagsMode && availableEnemyFlags.length > 0){
     mode = AI_MODES.FLAG_PRESSURE;
     targetPriorities = ["capture_enemy_flag", "return_with_flag", "high_risk_attack"];
@@ -11744,6 +11747,88 @@ function selectAiModeForCurrentTurn(context){
     priorities: targetPriorities,
   });
   return mode;
+}
+
+function getCenterControlAnchor(){
+  return {
+    x: FIELD_LEFT + FIELD_WIDTH / 2,
+    y: FIELD_TOP + FIELD_HEIGHT / 2,
+  };
+}
+
+function shouldSkipDirectFinisherInOpening(context){
+  const scoreLead = blueScore - greenScore;
+  const isOpeningTurn = turnAdvanceCount <= AI_OPENING_CENTER_TURN_LIMIT;
+  if(!isOpeningTurn) return false;
+  if(scoreLead >= AI_OPENING_DIRECT_FINISHER_MIN_LEAD) return false;
+  logAiDecision("opening_skip_direct_finisher", {
+    turnAdvanceCount,
+    scoreLead,
+    reason: "opening_center_priority",
+  });
+  return true;
+}
+
+function tryPlanOpeningCenterControlMove(context){
+  if(turnAdvanceCount > AI_OPENING_CENTER_TURN_LIMIT) return null;
+
+  const groundedAiPlanes = getGroundedAiPlanes(context?.aiPlanes);
+  if(groundedAiPlanes.length === 0) return null;
+
+  const center = getCenterControlAnchor();
+  const readyCargo = cargoState.filter((cargo) => cargo?.state === "ready");
+
+  let bestCargoCandidate = null;
+  for(const plane of groundedAiPlanes){
+    for(const cargo of readyCargo){
+      const move = planPathToPoint(plane, cargo.x, cargo.y);
+      if(!move) continue;
+      const riskInfo = evaluateCargoPickupRisk(plane, cargo, context);
+      const favorableInfo = evaluateFavorableCargoCandidate(plane, cargo, move, riskInfo);
+      const canTakeCargo = riskInfo.isSafePath
+        && (riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE || favorableInfo?.isFavorableCargo);
+      if(!canTakeCargo) continue;
+
+      if(!bestCargoCandidate
+        || move.totalDist < bestCargoCandidate.move.totalDist
+        || (move.totalDist === bestCargoCandidate.move.totalDist && riskInfo.totalRisk < bestCargoCandidate.riskInfo.totalRisk)){
+        bestCargoCandidate = { plane, move, cargo, riskInfo };
+      }
+    }
+  }
+
+  if(bestCargoCandidate){
+    aiRoundState.currentGoal = "opening_cargo_center";
+    logAiDecision("opening_center_cargo", {
+      planeId: bestCargoCandidate.plane.id,
+      cargoId: bestCargoCandidate.cargo?.id ?? null,
+      turnAdvanceCount,
+      distance: Number(bestCargoCandidate.move.totalDist.toFixed(1)),
+      risk: Number(bestCargoCandidate.riskInfo.totalRisk.toFixed(3)),
+    });
+    return { plane: bestCargoCandidate.plane, ...bestCargoCandidate.move };
+  }
+
+  let bestCenterMove = null;
+  for(const plane of groundedAiPlanes){
+    if(dist(plane, center) <= AI_CENTER_CONTROL_DISTANCE) continue;
+    const move = planPathToPoint(plane, center.x, center.y);
+    if(move && (!bestCenterMove || move.totalDist < bestCenterMove.move.totalDist)){
+      bestCenterMove = { plane, move };
+    }
+  }
+
+  if(bestCenterMove){
+    aiRoundState.currentGoal = "opening_center_control";
+    logAiDecision("opening_center_move", {
+      planeId: bestCenterMove.plane.id,
+      turnAdvanceCount,
+      distance: Number(bestCenterMove.move.totalDist.toFixed(1)),
+    });
+    return { plane: bestCenterMove.plane, ...bestCenterMove.move };
+  }
+
+  return null;
 }
 
 
@@ -12561,10 +12646,19 @@ function doComputerMove(){
     }
   }
 
-  const earlyDirectFinisherMove = findDirectFinisherMove(modeContext.aiPlanes, modeContext.enemies, {
-    source: "do_computer_move",
-    goalName: "direct_finisher",
-  });
+  const openingCenterMove = tryPlanOpeningCenterControlMove(modeContext);
+  if(openingCenterMove){
+    maybeUseInventoryBeforeLaunch(modeContext, openingCenterMove);
+    issueAIMove(openingCenterMove.plane, openingCenterMove.vx, openingCenterMove.vy);
+    return;
+  }
+
+  const earlyDirectFinisherMove = shouldSkipDirectFinisherInOpening(modeContext)
+    ? null
+    : findDirectFinisherMove(modeContext.aiPlanes, modeContext.enemies, {
+        source: "do_computer_move",
+        goalName: "direct_finisher",
+      });
   if(earlyDirectFinisherMove){
     aiRoundState.currentGoal = earlyDirectFinisherMove.goalName;
     logAiDecision("direct_finisher", {
