@@ -11182,6 +11182,79 @@ function isDynamiteTargetUsefulForCurrentRoute(targetGeometry, context, plannedM
   );
 }
 
+function evaluateCrosshairBestUse(context, plannedMove){
+  const plane = plannedMove?.plane;
+  if(!plane) return null;
+
+  const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
+  if(enemies.length === 0) return null;
+
+  const aiAliveCount = Array.isArray(context?.aiPlanes) ? context.aiPlanes.length : 1;
+  const enemyAliveCount = enemies.length;
+  const teamPressureFactor = Math.max(0.8, Math.min(1.25, enemyAliveCount / Math.max(1, aiAliveCount)));
+  const landingPoint = getAiMoveLandingPoint(plannedMove) || plane;
+  const homeBase = getBaseAnchor("blue");
+  const availableEnemyFlags = Array.isArray(context?.availableEnemyFlags) ? context.availableEnemyFlags : [];
+  const readyCargo = cargoState.filter((cargo) => cargo?.state === "ready");
+  const priorityEnemy = getBluePriorityEnemy(context);
+
+  let bestScenario = null;
+
+  for(const enemy of enemies){
+    if(!enemy?.isAlive || enemy.burning) continue;
+
+    const distanceToEnemy = dist(plane, enemy);
+    const withinExtendedRange = distanceToEnemy <= MAX_DRAG_DISTANCE * 1.2;
+    if(!withinExtendedRange) continue;
+
+    const hasCleanPath = isPathClear(plane.x, plane.y, enemy.x, enemy.y);
+    const rangeFactor = Math.max(0, 1 - (distanceToEnemy / (MAX_DRAG_DISTANCE * 1.2)));
+    const baseHitChance = hasCleanPath ? 0.75 : 0.35;
+    const shieldFactor = enemy.shieldActive ? 0.2 : 1;
+    const hitChance = Math.max(0, Math.min(1, baseHitChance * rangeFactor * shieldFactor));
+
+    const carriesBlueFlag = Boolean(context?.stolenBlueFlagCarrier && context.stolenBlueFlagCarrier.id === enemy.id);
+    const targetValue = 1
+      + (enemy === priorityEnemy ? 0.45 : 0)
+      + (carriesBlueFlag ? 1.7 : 0);
+
+    const cargoPickupChance = readyCargo.some((cargo) => dist(landingPoint, cargo) <= CELL_SIZE * 2.4) ? 0.35 : 0;
+    const flagCaptureChance = availableEnemyFlags.some((flag) => {
+      const anchor = getFlagAnchor(flag);
+      return anchor && dist(landingPoint, anchor) <= CELL_SIZE * 2.4;
+    }) ? 0.5 : 0;
+
+    const carryingEnemyFlag = Boolean(plane.carriedFlagId && getFlagById(plane.carriedFlagId)?.color === "green");
+    const flagReturnChance = carryingEnemyFlag && homeBase && dist(landingPoint, homeBase) <= CELL_SIZE * 2.4
+      ? 0.65
+      : 0;
+
+    const objectiveValue = (cargoPickupChance * 0.6) + (flagCaptureChance * 1.1) + (flagReturnChance * 1.4);
+    const totalValue = hitChance * (targetValue + objectiveValue) * teamPressureFactor;
+
+    const scenario = {
+      enemy,
+      totalValue,
+      hitChance,
+      targetValue,
+      objectiveValue,
+      carriesBlueFlag,
+      hasCleanPath,
+      distanceToEnemy,
+      cargoPickupChance,
+      flagCaptureChance,
+      flagReturnChance,
+      teamPressureFactor,
+    };
+
+    if(!bestScenario || scenario.totalValue > bestScenario.totalValue){
+      bestScenario = scenario;
+    }
+  }
+
+  return bestScenario;
+}
+
 function maybeUseInventoryBeforeLaunch(context, plannedMove){
   if(!plannedMove?.plane) return false;
 
@@ -11209,15 +11282,54 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     }
   }
 
-  if(inventory.counts[INVENTORY_ITEM_TYPES.CROSSHAIR] > 0 && priorityEnemy){
-    const cleanFinishingChance = isPathClear(plannedMove.plane.x, plannedMove.plane.y, priorityEnemy.x, priorityEnemy.y)
-      && dist(plannedMove.plane, priorityEnemy) <= MAX_DRAG_DISTANCE
-      && !priorityEnemy.shieldActive;
-    const comebackPressureShot = riskProfile === "comeback"
-      && dist(plannedMove.plane, priorityEnemy) <= MAX_DRAG_DISTANCE * 1.2;
-    if((cleanFinishingChance || comebackPressureShot) && applyItemToOwnPlane(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
-      removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
-      return true;
+  if(inventory.counts[INVENTORY_ITEM_TYPES.CROSSHAIR] > 0){
+    const bestCrosshairScenario = evaluateCrosshairBestUse(context, plannedMove);
+    const CROSSHAIR_MIN_NOTICEABLE_VALUE = 0.85;
+
+    if(bestCrosshairScenario && bestCrosshairScenario.totalValue >= CROSSHAIR_MIN_NOTICEABLE_VALUE){
+      if(applyItemToOwnPlane(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
+        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
+        logAiDecision("crosshair_used_best_value", {
+          planeId: plannedMove.plane?.id ?? null,
+          enemyId: bestCrosshairScenario.enemy?.id ?? null,
+          bestValue: Number(bestCrosshairScenario.totalValue.toFixed(3)),
+          hitChance: Number(bestCrosshairScenario.hitChance.toFixed(3)),
+          targetValue: Number(bestCrosshairScenario.targetValue.toFixed(3)),
+          objectiveValue: Number(bestCrosshairScenario.objectiveValue.toFixed(3)),
+          carriesBlueFlag: bestCrosshairScenario.carriesBlueFlag,
+          distanceToEnemy: Number(bestCrosshairScenario.distanceToEnemy.toFixed(1)),
+          hasCleanPath: bestCrosshairScenario.hasCleanPath,
+        });
+        return true;
+      }
+    } else {
+      const cleanFinishingChance = priorityEnemy
+        && isPathClear(plannedMove.plane.x, plannedMove.plane.y, priorityEnemy.x, priorityEnemy.y)
+        && dist(plannedMove.plane, priorityEnemy) <= MAX_DRAG_DISTANCE
+        && !priorityEnemy.shieldActive;
+      const comebackPressureShot = priorityEnemy
+        && riskProfile === "comeback"
+        && dist(plannedMove.plane, priorityEnemy) <= MAX_DRAG_DISTANCE * 1.2;
+
+      if(!bestCrosshairScenario && (cleanFinishingChance || comebackPressureShot)){
+        if(applyItemToOwnPlane(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
+          removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
+          logAiDecision("crosshair_used_best_value", {
+            planeId: plannedMove.plane?.id ?? null,
+            enemyId: priorityEnemy?.id ?? null,
+            bestValue: null,
+            fallback: "legacy_clean_or_comeback",
+          });
+          return true;
+        }
+      }
+
+      logAiDecision("crosshair_saved", {
+        planeId: plannedMove.plane?.id ?? null,
+        reason: bestCrosshairScenario ? "best_value_below_threshold" : "no_reliable_scenario",
+        bestValue: bestCrosshairScenario ? Number(bestCrosshairScenario.totalValue.toFixed(3)) : null,
+        threshold: CROSSHAIR_MIN_NOTICEABLE_VALUE,
+      });
     }
   }
 
