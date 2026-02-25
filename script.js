@@ -11005,12 +11005,32 @@ const AI_CARGO_IMMEDIATE_THREAT_DISTANCE = ATTACK_RANGE_PX * 0.9;
 const AI_CARGO_IMMEDIATE_THREAT_INTERCEPTION = 0.5;
 const AI_CARGO_SWITCH_TO_AGGRESSION_ITEMS = 2;
 const AI_LONG_SHOT_DISTANCE_THRESHOLD = MAX_DRAG_DISTANCE * 0.85;
+const AI_MIN_LAUNCH_SCALE_DEFAULT = 0.22;
 const AI_OPENING_CENTER_TURN_LIMIT = 2;
 const AI_OPENING_DIRECT_FINISHER_MIN_LEAD = 2;
 const AI_CENTER_CONTROL_DISTANCE = MAX_DRAG_DISTANCE * 0.35;
 
 function logAiDecision(reason, details = {}){
   console.debug(`[ai] ${reason}`, details);
+}
+
+function applyAiMinLaunchScale(scale, details = {}){
+  if(!Number.isFinite(scale)) return scale;
+
+  const isDirectFinisher = details?.decisionReason === "direct_finisher"
+    || details?.goalName === "direct_finisher";
+  if(isDirectFinisher) return scale;
+
+  const minScale = Math.max(0, Math.min(1, AI_MIN_LAUNCH_SCALE_DEFAULT));
+  const adjustedScale = Math.max(scale, minScale);
+  if(adjustedScale > scale){
+    logAiDecision("ai_min_launch_scale_applied", {
+      oldScale: Number(scale.toFixed(3)),
+      newScale: Number(adjustedScale.toFixed(3)),
+      ...details,
+    });
+  }
+  return adjustedScale;
 }
 
 function createInitialAiRoundState(){
@@ -12496,7 +12516,12 @@ function getFallbackAiMove(context){
         let ang = baseAngle + dev;
 
         const directDist = Math.hypot(dx,dy);
-        const scale = Math.min(directDist / MAX_DRAG_DISTANCE, 1);
+        const baseScale = Math.min(directDist / MAX_DRAG_DISTANCE, 1);
+        const scale = applyAiMinLaunchScale(baseScale, {
+          source: "fallback_direct_attack",
+          planeId: plane.id,
+          enemyId: enemy.id,
+        });
 
         const vx = Math.cos(ang) * scale * speedPxPerSec;
         const vy = Math.sin(ang) * scale * speedPxPerSec;
@@ -12529,7 +12554,12 @@ function getFallbackAiMove(context){
           const dy = mirror.mirrorTarget.y - plane.y;
           const ang = Math.atan2(dy, dx) + getRandomDeviation(mirror.totalDist, AI_MAX_ANGLE_DEVIATION);
 
-          const scale = Math.min(mirror.totalDist / (2*MAX_DRAG_DISTANCE), 1);
+          const baseScale = Math.min(mirror.totalDist / (2*MAX_DRAG_DISTANCE), 1);
+          const scale = applyAiMinLaunchScale(baseScale, {
+            source: "fallback_mirror_attack",
+            planeId: plane.id,
+            enemyId: enemy.id,
+          });
           const vx = Math.cos(ang) * scale * speedPxPerSec;
           const vy = Math.sin(ang) * scale * speedPxPerSec;
 
@@ -12587,7 +12617,12 @@ function getFallbackAiMove(context){
     const ang = Math.atan2(dy, dx) + getRandomDeviation(Math.hypot(dx,dy), AI_MAX_ANGLE_DEVIATION);
 
     const desired = Math.min(Math.hypot(dx,dy)*0.5, MAX_DRAG_DISTANCE);
-    const scale = desired / MAX_DRAG_DISTANCE;
+    const baseScale = desired / MAX_DRAG_DISTANCE;
+    const scale = applyAiMinLaunchScale(baseScale, {
+      source: "fallback_idle_move",
+      planeId: plane?.id ?? null,
+      enemyId: enemy?.id ?? null,
+    });
 
     best = {
       plane,
@@ -12770,7 +12805,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
     const dx = tx - plane.x;
     const dy = ty - plane.y;
     const dist = Math.hypot(dx, dy);
-    const scale = Math.min(dist / MAX_DRAG_DISTANCE, 1);
+    const baseScale = Math.min(dist / MAX_DRAG_DISTANCE, 1);
     const baseAngle = Math.atan2(dy, dx);
 
     const finisherTarget = options?.targetEnemy || null;
@@ -12779,6 +12814,15 @@ function planPathToPoint(plane, tx, ty, options = {}){
         && finisherTarget.x === tx
         && finisherTarget.y === ty
         && isDirectFinisherScenario(plane, finisherTarget));
+
+    const scale = applyAiMinLaunchScale(baseScale, {
+      source: "plan_path_direct",
+      planeId: plane?.id ?? null,
+      decisionReason: shouldPrioritizeDirectFinisher ? "direct_finisher" : (options?.decisionReason || null),
+      goalName: options?.goalName || null,
+      targetX: tx,
+      targetY: ty,
+    });
 
     if(shouldPrioritizeDirectFinisher && dist <= MAX_DRAG_DISTANCE){
       const vx = Math.cos(baseAngle) * scale * speedPxPerSec;
@@ -12801,7 +12845,15 @@ function planPathToPoint(plane, tx, ty, options = {}){
     const dx = mirror.mirrorTarget.x - plane.x;
     const dy = mirror.mirrorTarget.y - plane.y;
     const baseAngle = Math.atan2(dy, dx);
-    const scale = Math.min(mirror.totalDist / (2*MAX_DRAG_DISTANCE), 1);
+    const baseScale = Math.min(mirror.totalDist / (2*MAX_DRAG_DISTANCE), 1);
+    const scale = applyAiMinLaunchScale(baseScale, {
+      source: "plan_path_mirror",
+      planeId: plane?.id ?? null,
+      goalName: options?.goalName || null,
+      decisionReason: options?.decisionReason || null,
+      targetX: tx,
+      targetY: ty,
+    });
     return buildMoveWithSafeDeviation(baseAngle, mirror.totalDist, scale, {
       moveType: "mirror"
     });
