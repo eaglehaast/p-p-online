@@ -11018,6 +11018,8 @@ const AI_OPENING_DIRECT_FINISHER_MIN_LEAD = 2;
 const AI_CENTER_CONTROL_DISTANCE = MAX_DRAG_DISTANCE * 0.35;
 const AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD = 3;
 const AI_INVENTORY_SOFT_FALLBACK_COOLDOWN_TURNS = 4;
+const AI_REPEAT_PLANE_SOFT_PENALTY = 0.2;
+const AI_REPEAT_PLANE_HARD_PENALTY = 0.38;
 
 function logAiDecision(reason, details = {}){
   console.debug(`[ai] ${reason}`, details);
@@ -11051,10 +11053,32 @@ function createInitialAiRoundState(){
     inventoryIdleTurns: 0,
     inventorySoftFallbackCooldown: 0,
     lastInventorySoftFallbackUsed: false,
+    lastLaunchedPlaneId: null,
+    consecutiveSamePlaneLaunches: 0,
   };
 }
 
 let aiRoundState = createInitialAiRoundState();
+
+function getAiPlaneSelectionPenalty(plane){
+  if(!plane || !aiRoundState?.lastLaunchedPlaneId) return 0;
+  if(plane.id !== aiRoundState.lastLaunchedPlaneId) return 0;
+  const streak = Math.max(1, Number(aiRoundState.consecutiveSamePlaneLaunches) || 1);
+  return AI_REPEAT_PLANE_SOFT_PENALTY + Math.min(0.6, (streak - 1) * AI_REPEAT_PLANE_HARD_PENALTY);
+}
+
+function rankAiPlanesForCurrentTurn(aiPlanes){
+  if(!Array.isArray(aiPlanes) || aiPlanes.length <= 1) return aiPlanes;
+
+  return [...aiPlanes].sort((a, b) => {
+    const penaltyA = getAiPlaneSelectionPenalty(a);
+    const penaltyB = getAiPlaneSelectionPenalty(b);
+    if(Math.abs(penaltyA - penaltyB) > 0.0001){
+      return penaltyA - penaltyB;
+    }
+    return (a.id || "").localeCompare(b.id || "");
+  });
+}
 
 function getAvailableInventoryCount(color){
   const items = inventoryState[color];
@@ -11637,8 +11661,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
 
   if(inventory.counts[INVENTORY_ITEM_TYPES.CROSSHAIR] > 0){
     const bestCrosshairScenario = evaluateCrosshairBestUse(context, plannedMove);
-    const CROSSHAIR_MIN_NOTICEABLE_VALUE = 0.85;
-    const CROSSHAIR_SOFT_FALLBACK_MIN_VALUE = 0.72;
+    const CROSSHAIR_MIN_NOTICEABLE_VALUE = 0.78;
+    const CROSSHAIR_SOFT_FALLBACK_MIN_VALUE = 0.62;
 
     if(bestCrosshairScenario && bestCrosshairScenario.totalValue >= CROSSHAIR_MIN_NOTICEABLE_VALUE){
       if(applyItemToOwnPlane(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
@@ -11709,6 +11733,17 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     return true;
   }
 
+  if(inventory.counts[INVENTORY_ITEM_TYPES.MINE] > 0 && softFallbackReady){
+    const softMinePlaced = tryPlaceBlueDefensiveMine(context, plannedMove) || tryPlaceBlueMineNearEnemyBase();
+    if(softMinePlaced){
+      removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
+      markSoftFallbackUse(INVENTORY_ITEM_TYPES.MINE, {
+        reason: "mine_soft_fallback",
+      });
+      return true;
+    }
+  }
+
   if(inventory.counts[INVENTORY_ITEM_TYPES.DYNAMITE] > 0){
     const homeBase = getBaseAnchor("blue");
     const pressureEnemy = getBluePriorityEnemy(context);
@@ -11729,6 +11764,19 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     if(planted){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
       return true;
+    }
+
+    if(!planted && softFallbackReady){
+      const relaxedTarget = defensiveTargetRaw || offensiveTargetRaw;
+      if(relaxedTarget && placeBlueDynamiteAt(relaxedTarget.cx, relaxedTarget.cy)){
+        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
+        markSoftFallbackUse(INVENTORY_ITEM_TYPES.DYNAMITE, {
+          reason: "dynamite_soft_fallback_relaxed_target",
+          targetX: relaxedTarget.cx,
+          targetY: relaxedTarget.cy,
+        });
+        return true;
+      }
     }
   }
 
@@ -12787,8 +12835,9 @@ function doComputerMove(){
 
   aiRoundState.turnNumber += 1;
   const stolenBlueFlagCarrier = shouldUseFlagsMode ? getFlagCarrierForColor("blue") : null;
+  const rankedAiPlanes = rankAiPlanesForCurrentTurn(aiPlanes);
   const modeContext = {
-    aiPlanes,
+    aiPlanes: rankedAiPlanes,
     enemies,
     shouldUseFlagsMode,
     homeBase,
@@ -13014,11 +13063,13 @@ function findDirectFinisherMove(aiPlanes, enemies, options = {}){
       });
       if(!move) continue;
 
-      if(!best || move.totalDist < best.totalDist){
+      const adjustedDist = move.totalDist * (1 + getAiPlaneSelectionPenalty(plane));
+      if(!best || adjustedDist < best.adjustedDist){
         best = {
           plane,
           enemy,
           ...move,
+          adjustedDist,
           goalName: options.goalName || "direct_finisher",
           decisionReason: "direct_finisher",
         };
@@ -13041,6 +13092,14 @@ function issueAIMove(plane, vx, vy){
     shieldBreakLockTarget:null
   });
   recordAiSelfAnalyzerLaunch(plane, vx, vy, "computer");
+  if(plane?.id){
+    if(aiRoundState.lastLaunchedPlaneId === plane.id){
+      aiRoundState.consecutiveSamePlaneLaunches += 1;
+    } else {
+      aiRoundState.lastLaunchedPlaneId = plane.id;
+      aiRoundState.consecutiveSamePlaneLaunches = 1;
+    }
+  }
   if(!hasShotThisRound){
     hasShotThisRound = true;
     renderScoreboard();
@@ -13049,8 +13108,17 @@ function issueAIMove(plane, vx, vy){
 }
 function dist(a,b){ return Math.hypot(a.x-b.x,a.y-b.y); }
 function getRandomDeviation(distance, maxDev){
-  let nd = Math.min(distance/ATTACK_RANGE_PX, 1);
-  return (Math.random()*2 - 1) * (maxDev * nd);
+  const safeDistance = Math.max(0, Number.isFinite(distance) ? distance : 0);
+  const ratio = Math.max(0, Math.min(1, safeDistance / ATTACK_RANGE_PX));
+  let distanceFactor = ratio * ratio;
+
+  if(ratio <= 0.55){
+    distanceFactor *= 0.2;
+  } else if(ratio <= 0.75){
+    distanceFactor *= 0.45;
+  }
+
+  return (Math.random()*2 - 1) * (maxDev * distanceFactor);
 }
 
 function getSpreadAngleDegByAccuracy(accuracyPercent){
