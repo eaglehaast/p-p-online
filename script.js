@@ -12259,7 +12259,196 @@ function detectConsumedInventoryType(beforeCounts = {}, afterCounts = {}){
   return null;
 }
 
+function hasReliableCorridorForMove(plane, landingPoint, sampleCount = 18){
+  if(!plane || !landingPoint) return false;
+  const checksPerSample = [
+    { x: 0, y: 0 },
+    { x: POINT_RADIUS, y: 0 },
+    { x: -POINT_RADIUS, y: 0 },
+    { x: 0, y: POINT_RADIUS },
+    { x: 0, y: -POINT_RADIUS },
+    { x: POINT_RADIUS * 0.7, y: POINT_RADIUS * 0.7 },
+    { x: POINT_RADIUS * 0.7, y: -POINT_RADIUS * 0.7 },
+    { x: -POINT_RADIUS * 0.7, y: POINT_RADIUS * 0.7 },
+    { x: -POINT_RADIUS * 0.7, y: -POINT_RADIUS * 0.7 },
+  ];
+
+  for(let i = 0; i <= sampleCount; i += 1){
+    const t = sampleCount <= 0 ? 1 : i / sampleCount;
+    const sampleX = plane.x + (landingPoint.x - plane.x) * t;
+    const sampleY = plane.y + (landingPoint.y - plane.y) * t;
+    if(!isPointInsideFieldBounds(sampleX, sampleY)) return false;
+
+    for(const collider of colliders){
+      for(const offset of checksPerSample){
+        if(isPointInsideCollider(sampleX + offset.x, sampleY + offset.y, collider)){
+          return false;
+        }
+      }
+    }
+  }
+
+  return true;
+}
+
+function shouldRequireOcclusionCheck(context, plannedMove){
+  const goal = plannedMove?.goalName || aiRoundState?.currentGoal || "";
+  if(typeof goal !== "string") return false;
+  const attackOrPickupGoals = [
+    "attack",
+    "eliminate",
+    "capture",
+    "pickup",
+    "finisher",
+    "striker",
+  ];
+  if(attackOrPickupGoals.some((token) => goal.includes(token))) return true;
+
+  if(plannedMove?.targetEnemy) return true;
+  return false;
+}
+
+function validateAiMovePreflight(plane, plannedMove, context){
+  if(!plane || !plannedMove || !Number.isFinite(plannedMove.vx) || !Number.isFinite(plannedMove.vy)){
+    return { valid: false, reason: "preflight_invalid_move_payload" };
+  }
+
+  const landingPoint = getAiMoveLandingPoint(plannedMove) || {
+    x: plane.x + plannedMove.vx * FIELD_FLIGHT_DURATION_SEC,
+    y: plane.y + plannedMove.vy * FIELD_FLIGHT_DURATION_SEC,
+  };
+
+  const sampleCount = 20;
+  const hasCorridor = hasReliableCorridorForMove(plane, landingPoint, sampleCount);
+  if(!hasCorridor){
+    return {
+      valid: false,
+      reason: "preflight_blocked_sample",
+      landingPoint,
+      sampleCount,
+    };
+  }
+
+  if(shouldRequireOcclusionCheck(context, plannedMove)){
+    const routeTarget = getAiStrategicTargetPoint(context, plannedMove);
+    if(routeTarget && !hasReliableCorridorForMove(plane, routeTarget, sampleCount)){
+      return {
+        valid: false,
+        reason: "preflight_target_occluded",
+        landingPoint,
+        routeTarget,
+        sampleCount,
+      };
+    }
+  }
+
+  return {
+    valid: true,
+    landingPoint,
+    sampleCount,
+  };
+}
+
+function findNearestSafeTargetMove(context, sourceMove){
+  const plane = sourceMove?.plane;
+  const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
+  if(!plane || enemies.length === 0) return null;
+
+  const sortedEnemies = enemies
+    .filter((enemy) => enemy?.isAlive && !enemy.burning)
+    .slice()
+    .sort((a, b) => dist(plane, a) - dist(plane, b));
+
+  for(const enemy of sortedEnemies){
+    const move = planPathToPoint(plane, enemy.x, enemy.y, {
+      targetEnemy: enemy,
+      goalName: "fallback_safe_enemy",
+      decisionReason: "preflight_invalid",
+    });
+    if(!move) continue;
+    const candidate = { plane, ...move, targetEnemy: enemy, goalName: "fallback_safe_enemy" };
+    const preflight = validateAiMovePreflight(plane, candidate, context);
+    if(preflight.valid) return candidate;
+  }
+  return null;
+}
+
+function findSafeCenterMove(context, sourceMove){
+  const plane = sourceMove?.plane;
+  if(!plane) return null;
+  const center = getCenterControlAnchor();
+  const move = planPathToPoint(plane, center.x, center.y, {
+    goalName: "fallback_safe_center",
+    decisionReason: "preflight_invalid",
+  });
+  if(!move) return null;
+  const candidate = { plane, ...move, goalName: "fallback_safe_center" };
+  const preflight = validateAiMovePreflight(plane, candidate, context);
+  return preflight.valid ? candidate : null;
+}
+
+function findDefensiveFallbackMove(context, sourceMove){
+  const plane = sourceMove?.plane;
+  const homeBase = context?.homeBase || getBaseAnchor("blue");
+  if(!plane || !homeBase) return null;
+
+  const move = planPathToPoint(plane, homeBase.x, homeBase.y, {
+    goalName: "fallback_defensive",
+    decisionReason: "preflight_invalid",
+  });
+  if(!move) return null;
+  const candidate = { plane, ...move, goalName: "fallback_defensive" };
+  const preflight = validateAiMovePreflight(plane, candidate, context);
+  return preflight.valid ? candidate : null;
+}
+
+function getAiPreflightFallbackMove(context, plannedMove){
+  return findNearestSafeTargetMove(context, plannedMove)
+    || findSafeCenterMove(context, plannedMove)
+    || findDefensiveFallbackMove(context, plannedMove)
+    || getFallbackAiMove(context);
+}
+
 function issueAIMoveWithInventoryUsage(context, plannedMove){
+  if(!plannedMove?.plane) return;
+
+  const preflight = validateAiMovePreflight(plannedMove.plane, plannedMove, context);
+  if(!preflight.valid){
+    logAiDecision(preflight.reason || "preflight_blocked_sample", {
+      planeId: plannedMove.plane?.id ?? null,
+      goalName: plannedMove.goalName || aiRoundState?.currentGoal || null,
+      landingPoint: preflight.landingPoint || null,
+      routeTarget: preflight.routeTarget || null,
+      sampleCount: preflight.sampleCount || null,
+    });
+
+    const fallbackMove = getAiPreflightFallbackMove(context, plannedMove);
+    if(fallbackMove?.plane && Number.isFinite(fallbackMove.vx) && Number.isFinite(fallbackMove.vy)){
+      const fallbackPreflight = validateAiMovePreflight(fallbackMove.plane, fallbackMove, context);
+      if(!fallbackPreflight.valid){
+        logAiDecision("preflight_fallback_invalid", {
+          blockedReason: preflight.reason,
+          fallbackReason: fallbackPreflight.reason,
+          fallbackPlaneId: fallbackMove.plane?.id ?? null,
+        });
+        return;
+      }
+      logAiDecision("preflight_fallback_move", {
+        blockedReason: preflight.reason,
+        originalPlaneId: plannedMove.plane?.id ?? null,
+        fallbackPlaneId: fallbackMove.plane?.id ?? null,
+        fallbackGoal: fallbackMove.goalName || fallbackMove.decisionReason || "fallback_move",
+      });
+      plannedMove = fallbackMove;
+    } else {
+      logAiDecision("preflight_fallback_unavailable", {
+        blockedReason: preflight.reason,
+        planeId: plannedMove.plane?.id ?? null,
+      });
+      return;
+    }
+  }
+
   const beforeInventoryState = evaluateBlueInventoryState();
   const itemUsed = maybeUseInventoryBeforeLaunch(context, plannedMove);
   if(itemUsed){
