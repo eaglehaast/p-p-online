@@ -11103,6 +11103,10 @@ const AI_RECENT_PLANE_HISTORY_LIMIT = 6;
 const AI_ROTATION_BONUS_PER_IDLE_TURN = 0.04;
 const AI_ROTATION_BONUS_MAX = 0.22;
 const AI_REPEAT_WINDOW_PENALTY_STEP = 0.12;
+const AI_GOAL_BLACKLIST_MIN_TTL_TURNS = 2;
+const AI_GOAL_BLACKLIST_MAX_TTL_TURNS = 4;
+const AI_RECENT_MOVEMENT_ERRORS_LIMIT = 12;
+const AI_EARLY_WALL_HIT_PROGRESS_THRESHOLD = 0.35;
 
 function logAiDecision(reason, details = {}){
   const payload = details && typeof details === "object" ? { ...details } : {};
@@ -11182,7 +11186,124 @@ function createInitialAiRoundState(){
     recentLaunchPlaneIds: [],
     planeIdleTurnsById: {},
     navigationGrid: null,
+    recentMovementErrors: [],
+    temporaryGoalBlacklist: {},
   };
+}
+
+function getAiDirectionSector(fromX, fromY, toX, toY, sectorsCount = 8){
+  if(!Number.isFinite(fromX) || !Number.isFinite(fromY) || !Number.isFinite(toX) || !Number.isFinite(toY)) return null;
+  const normalizedSectors = Math.max(4, Math.round(sectorsCount));
+  const angle = Math.atan2(toY - fromY, toX - fromX);
+  const normalized = (angle + Math.PI * 2) % (Math.PI * 2);
+  const sector = Math.floor((normalized / (Math.PI * 2)) * normalizedSectors);
+  return Math.max(0, Math.min(normalizedSectors - 1, sector));
+}
+
+function buildAiGoalBlacklistKey(targetType, targetId, sector){
+  if(!targetType || !targetId || !Number.isFinite(sector)) return null;
+  return `${targetType}:${targetId}:s${sector}`;
+}
+
+function cleanupAiGoalTemporaryBlacklist(){
+  if(!aiRoundState || typeof aiRoundState !== "object") return;
+  if(!aiRoundState.temporaryGoalBlacklist || typeof aiRoundState.temporaryGoalBlacklist !== "object"){
+    aiRoundState.temporaryGoalBlacklist = {};
+    return;
+  }
+
+  const blacklist = aiRoundState.temporaryGoalBlacklist;
+  const currentTurn = Number.isFinite(aiRoundState.turnNumber) ? aiRoundState.turnNumber : 0;
+  for(const key of Object.keys(blacklist)){
+    const entry = blacklist[key];
+    if(!entry || !Number.isFinite(entry.expiresOnTurn) || entry.expiresOnTurn <= currentTurn){
+      delete blacklist[key];
+    }
+  }
+}
+
+function getAiGoalTemporaryBlacklistEntry(plane, target, targetType){
+  if(!plane || !target || !targetType) return null;
+  cleanupAiGoalTemporaryBlacklist();
+  const sector = getAiDirectionSector(plane.x, plane.y, target.x, target.y);
+  const targetId = target.id ?? `${Math.round(target.x)}:${Math.round(target.y)}`;
+  const key = buildAiGoalBlacklistKey(targetType, targetId, sector);
+  if(!key) return null;
+  const entry = aiRoundState?.temporaryGoalBlacklist?.[key];
+  if(!entry) return null;
+  return { key, sector, targetId, entry };
+}
+
+function isAiCandidateTemporarilyBlacklisted(plane, target, targetType, goalName = null){
+  const hit = getAiGoalTemporaryBlacklistEntry(plane, target, targetType);
+  if(!hit) return false;
+  logAiDecision("ai_goal_blacklisted_temporarily", {
+    planeId: plane?.id ?? null,
+    targetId: hit.targetId,
+    targetType,
+    goalName: goalName || aiRoundState?.currentGoal || null,
+    directionSector: hit.sector,
+    expiresOnTurn: hit.entry.expiresOnTurn ?? null,
+    reason: hit.entry.reason || "recent_early_wall_hit",
+  });
+  return true;
+}
+
+function appendAiRecentMovementError(event){
+  if(!aiRoundState || typeof aiRoundState !== "object") return;
+  if(!Array.isArray(aiRoundState.recentMovementErrors)){
+    aiRoundState.recentMovementErrors = [];
+  }
+  aiRoundState.recentMovementErrors.push(event);
+  if(aiRoundState.recentMovementErrors.length > AI_RECENT_MOVEMENT_ERRORS_LIMIT){
+    aiRoundState.recentMovementErrors.splice(0, aiRoundState.recentMovementErrors.length - AI_RECENT_MOVEMENT_ERRORS_LIMIT);
+  }
+}
+
+function addAiTemporaryBlacklistFromMovementError(errorEvent){
+  if(!errorEvent || !errorEvent.targetType || !errorEvent.targetId || !Number.isFinite(errorEvent.directionSector)) return;
+  if(!aiRoundState || typeof aiRoundState !== "object") return;
+  if(!aiRoundState.temporaryGoalBlacklist || typeof aiRoundState.temporaryGoalBlacklist !== "object"){
+    aiRoundState.temporaryGoalBlacklist = {};
+  }
+
+  const key = buildAiGoalBlacklistKey(errorEvent.targetType, errorEvent.targetId, errorEvent.directionSector);
+  if(!key) return;
+  const currentTurn = Number.isFinite(aiRoundState.turnNumber) ? aiRoundState.turnNumber : 0;
+  const ttlRange = AI_GOAL_BLACKLIST_MAX_TTL_TURNS - AI_GOAL_BLACKLIST_MIN_TTL_TURNS + 1;
+  const ttlTurns = AI_GOAL_BLACKLIST_MIN_TTL_TURNS + Math.floor(Math.random() * ttlRange);
+  aiRoundState.temporaryGoalBlacklist[key] = {
+    reason: errorEvent.collisionReason || "recent_early_wall_hit",
+    goalName: errorEvent.goalName || null,
+    createdTurn: currentTurn,
+    expiresOnTurn: currentTurn + ttlTurns,
+  };
+}
+
+function registerAiEarlyWallCollision(fp, collisionSurfaceType){
+  const goalContext = fp?.aiGoalContext;
+  if(!goalContext?.target || !goalContext?.targetType) return;
+  if(collisionSurfaceType !== "field" && collisionSurfaceType !== "axis" && collisionSurfaceType !== "diag") return;
+
+  const elapsed = FIELD_FLIGHT_DURATION_SEC - (Number.isFinite(fp.timeLeft) ? fp.timeLeft : FIELD_FLIGHT_DURATION_SEC);
+  const progress = FIELD_FLIGHT_DURATION_SEC > 0 ? elapsed / FIELD_FLIGHT_DURATION_SEC : 0;
+  if(progress > AI_EARLY_WALL_HIT_PROGRESS_THRESHOLD) return;
+
+  const target = goalContext.target;
+  const targetId = target.id ?? `${Math.round(target.x)}:${Math.round(target.y)}`;
+  const directionSector = getAiDirectionSector(goalContext.fromX, goalContext.fromY, target.x, target.y);
+  if(!Number.isFinite(directionSector)) return;
+
+  const errorEvent = {
+    turnNumber: Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null,
+    goalName: goalContext.goalName || aiRoundState?.currentGoal || null,
+    targetId,
+    targetType: goalContext.targetType,
+    directionSector,
+    collisionReason: `early_collision_${collisionSurfaceType}`,
+  };
+  appendAiRecentMovementError(errorEvent);
+  addAiTemporaryBlacklistFromMovementError(errorEvent);
 }
 
 function buildAiRoundNavigationGrid(){
@@ -12468,7 +12589,11 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     }
   }
   registerAiInventoryUsageAfterMove(itemUsed);
-  issueAIMove(plannedMove.plane, plannedMove.vx, plannedMove.vy);
+  issueAIMove(plannedMove.plane, plannedMove.vx, plannedMove.vy, {
+    goalName: plannedMove.goalName || aiRoundState?.currentGoal || null,
+    targetEnemy: plannedMove.targetEnemy || null,
+    targetCargo: plannedMove.targetCargo || null,
+  });
 }
 
 function selectAiModeForCurrentTurn(context){
@@ -12712,11 +12837,16 @@ function tryPlanEarlyCargoPickupMove(context){
     blockedByRisk: 0,
     blockedByDistance: 0,
     blockedByThreat: 0,
+    blockedByBlacklist: 0,
     considered: 0,
   };
   for(const plane of groundedAiPlanes){
     for(const cargo of readyCargo){
       skipStats.considered += 1;
+      if(isAiCandidateTemporarilyBlacklisted(plane, cargo, "cargo", "pickup_cargo_early")){
+        skipStats.blockedByBlacklist += 1;
+        continue;
+      }
       const move = planPathToPoint(plane, cargo.x, cargo.y);
       if(!move) continue;
       const riskInfo = evaluateCargoPickupRisk(plane, cargo, context);
@@ -12753,7 +12883,7 @@ function tryPlanEarlyCargoPickupMove(context){
       favorableCargo: Boolean(bestCandidate.favorableInfo?.isFavorableCargo),
       turnAdvanceCount,
     });
-    return { plane: bestCandidate.plane, ...bestCandidate.move };
+    return { plane: bestCandidate.plane, ...bestCandidate.move, goalName: "pickup_cargo_early", targetCargo: bestCandidate.cargo };
   }
 
   logAiDecision("early_cargo_skip", {
@@ -12984,8 +13114,13 @@ function planRoleDrivenAiMove(context, rolePack){
       blockedByRisk: 0,
       blockedByDistance: 0,
       blockedByThreat: 0,
+      blockedByBlacklist: 0,
     };
     for(const cargo of readyCargo){
+      if(isAiCandidateTemporarilyBlacklisted(collector, cargo, "cargo", "role_collector")){
+        collectorSkipStats.blockedByBlacklist += 1;
+        continue;
+      }
       const move = planPathToPoint(collector, cargo.x, cargo.y);
       if(!move) continue;
       const riskInfo = evaluateCargoPickupRisk(collector, cargo, context);
@@ -13023,7 +13158,7 @@ function planRoleDrivenAiMove(context, rolePack){
         risk: Number(selectedCollectorMove.riskInfo.totalRisk.toFixed(3)),
         distance: Number(selectedCollectorMove.move.totalDist.toFixed(1)),
       });
-      return { plane: collector, ...selectedCollectorMove.move };
+      return { plane: collector, ...selectedCollectorMove.move, targetCargo: selectedCollectorMove.cargo };
     }
 
     logAiDecision("role_collector_skip", {
@@ -13038,6 +13173,9 @@ function planRoleDrivenAiMove(context, rolePack){
     const riskProfile = context?.aiRiskProfile?.profile || "balanced";
     let bestStrike = null;
     for(const enemy of enemies){
+      if(isAiCandidateTemporarilyBlacklisted(striker, enemy, "enemy", "role_striker")){
+        continue;
+      }
       const move = planPathToPoint(striker, enemy.x, enemy.y);
       if(!move) continue;
       const clearLaneBonus = isPathClear(striker.x, striker.y, enemy.x, enemy.y) ? 0.7 : 1;
@@ -13062,7 +13200,7 @@ function planRoleDrivenAiMove(context, rolePack){
     }
     if(bestStrike){
       aiRoundState.currentGoal = "role_striker";
-      return { plane: striker, ...bestStrike.move };
+      return { plane: striker, ...bestStrike.move, targetEnemy: bestStrike.enemy };
     }
   }
 
@@ -13099,11 +13237,14 @@ function planModeDrivenAiMove(context){
     let bestPreparationMove = null;
     const dynamiteAvailable = hasBlueDynamiteAvailable();
     for(const plane of groundedAiPlanes){
+      if(isAiCandidateTemporarilyBlacklisted(plane, stolenBlueFlagCarrier, "enemy", "eliminate_flag_carrier")){
+        continue;
+      }
       const move = planPathToPoint(plane, stolenBlueFlagCarrier.x, stolenBlueFlagCarrier.y);
       if(move){
         const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
         if(!bestDefenseMove || adjustedDist < bestDefenseMove.adjustedDist){
-          bestDefenseMove = { plane, ...move, adjustedDist };
+          bestDefenseMove = { plane, ...move, adjustedDist, targetEnemy: stolenBlueFlagCarrier };
         }
         continue;
       }
@@ -13156,10 +13297,15 @@ function planModeDrivenAiMove(context){
       blockedByRisk: 0,
       blockedByDistance: 0,
       blockedByThreat: 0,
+      blockedByBlacklist: 0,
     };
     for(const plane of groundedAiPlanes){
       for(const cargo of cargoState){
         if(cargo?.state !== "ready") continue;
+        if(isAiCandidateTemporarilyBlacklisted(plane, cargo, "cargo", "pickup_cargo")){
+          cargoSkipStats.blockedByBlacklist += 1;
+          continue;
+        }
         const move = planPathToPoint(plane, cargo.x, cargo.y);
         if(!move) continue;
         const riskInfo = evaluateCargoPickupRisk(plane, cargo, context);
@@ -13201,7 +13347,7 @@ function planModeDrivenAiMove(context){
         risk: Number(selectedCargoMove.riskInfo.totalRisk.toFixed(3)),
         distance: Number(selectedCargoMove.move.totalDist.toFixed(1)),
       });
-      return { plane: selectedCargoMove.plane, ...selectedCargoMove.move };
+      return { plane: selectedCargoMove.plane, ...selectedCargoMove.move, targetCargo: selectedCargoMove.cargo };
     }
 
     logAiDecision("mode_cargo_skipped", {
@@ -13216,6 +13362,7 @@ function planModeDrivenAiMove(context){
     for(const plane of groundedAiPlanes){
       const nearestEnemy = enemies.reduce((a,b)=> (dist(plane,a) < dist(plane,b) ? a : b), enemies[0]);
       if(!nearestEnemy) continue;
+      if(isAiCandidateTemporarilyBlacklisted(plane, nearestEnemy, "enemy", "preserve_planes")) continue;
       const awayAngle = Math.atan2(plane.y - nearestEnemy.y, plane.x - nearestEnemy.x);
       const targetX = plane.x + Math.cos(awayAngle) * MAX_DRAG_DISTANCE;
       const targetY = plane.y + Math.sin(awayAngle) * MAX_DRAG_DISTANCE;
@@ -13531,6 +13678,7 @@ function doComputerMove(){
   const availableEnemyFlags = shouldUseFlagsMode ? getAvailableFlagsByColor("green") : [];
 
   aiRoundState.turnNumber += 1;
+  cleanupAiGoalTemporaryBlacklist();
   updateAiPlaneIdleCounters(aiPlanes);
   const stolenBlueFlagCarrier = shouldUseFlagsMode ? getFlagCarrierForColor("blue") : null;
   const rankedAiPlanes = rankAiPlanesForCurrentTurn(aiPlanes);
@@ -13796,9 +13944,11 @@ function findDirectFinisherMove(aiPlanes, enemies, options = {}){
   return best;
 }
 
-function issueAIMove(plane, vx, vy){
+function issueAIMove(plane, vx, vy, options = {}){
   plane.angle = Math.atan2(vy, vx) + Math.PI/2;
   markPlaneLaunchedFromBase(plane);
+  const aiTarget = options?.targetEnemy || options?.targetCargo || null;
+  const aiTargetType = options?.targetEnemy ? "enemy" : (options?.targetCargo ? "cargo" : null);
   flyingPoints.push({
     plane, vx, vy,
     timeLeft: FIELD_FLIGHT_DURATION_SEC,
@@ -13806,7 +13956,15 @@ function issueAIMove(plane, vx, vy){
     lastHitPlane:null,
     lastHitCooldown:0,
     shieldBreakLockActive:false,
-    shieldBreakLockTarget:null
+    shieldBreakLockTarget:null,
+    aiEarlyWallCollisionLogged:false,
+    aiGoalContext: aiTarget ? {
+      goalName: options?.goalName || aiRoundState?.currentGoal || null,
+      targetType: aiTargetType,
+      target: aiTarget,
+      fromX: plane.x,
+      fromY: plane.y,
+    } : null
   });
   recordAiSelfAnalyzerLaunch(plane, vx, vy, "computer");
   if(plane?.id){
@@ -14689,6 +14847,11 @@ function resolveFlightSurfaceCollision(fp, startX, startY, deltaSec){
       p.x = endX;
       p.y = endY;
       return collided;
+    }
+
+    if(!fp.aiEarlyWallCollisionLogged){
+      registerAiEarlyWallCollision(fp, hit.surface?.type);
+      fp.aiEarlyWallCollisionLogged = true;
     }
 
     const moveX = endX - currX;
