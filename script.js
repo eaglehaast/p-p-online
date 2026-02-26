@@ -11020,6 +11020,10 @@ const AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD = 3;
 const AI_INVENTORY_SOFT_FALLBACK_COOLDOWN_TURNS = 4;
 const AI_REPEAT_PLANE_SOFT_PENALTY = 0.42;
 const AI_REPEAT_PLANE_HARD_PENALTY = 0.65;
+const AI_RECENT_PLANE_HISTORY_LIMIT = 6;
+const AI_ROTATION_BONUS_PER_IDLE_TURN = 0.04;
+const AI_ROTATION_BONUS_MAX = 0.22;
+const AI_REPEAT_WINDOW_PENALTY_STEP = 0.12;
 
 function logAiDecision(reason, details = {}){
   const payload = details && typeof details === "object" ? { ...details } : {};
@@ -11028,12 +11032,23 @@ function logAiDecision(reason, details = {}){
     .find((value) => Number.isFinite(value));
 
   let adjustedScore = Number.isFinite(payload.adjustedScore) ? payload.adjustedScore : null;
+  let scoringExplanation = null;
   if(adjustedScore === null && Number.isFinite(rawDistance) && planeId){
     const plane = payload.plane || (Array.isArray(allPlanes)
       ? allPlanes.find((candidate) => candidate?.id === planeId)
       : null);
     if(plane){
-      adjustedScore = getAiPlaneAdjustedScore(rawDistance, plane);
+      scoringExplanation = scoreMoveForPlane(rawDistance, plane);
+      adjustedScore = scoringExplanation.finalScore;
+    }
+  }
+
+  if(!scoringExplanation && Number.isFinite(rawDistance) && planeId){
+    const plane = payload.plane || (Array.isArray(allPlanes)
+      ? allPlanes.find((candidate) => candidate?.id === planeId)
+      : null);
+    if(plane){
+      scoringExplanation = scoreMoveForPlane(rawDistance, plane);
     }
   }
 
@@ -11042,6 +11057,15 @@ function logAiDecision(reason, details = {}){
     planeId,
     rawDistance: Number.isFinite(rawDistance) ? Number(rawDistance.toFixed(3)) : null,
     adjustedScore: Number.isFinite(adjustedScore) ? Number(adjustedScore.toFixed(3)) : null,
+    rotationBonus: Number.isFinite(scoringExplanation?.rotationBonus)
+      ? Number(scoringExplanation.rotationBonus.toFixed(3))
+      : null,
+    repeatPenalty: Number.isFinite(scoringExplanation?.repeatPenalty)
+      ? Number(scoringExplanation.repeatPenalty.toFixed(3))
+      : null,
+    finalScore: Number.isFinite(scoringExplanation?.finalScore)
+      ? Number(scoringExplanation.finalScore.toFixed(3))
+      : (Number.isFinite(adjustedScore) ? Number(adjustedScore.toFixed(3)) : null),
   });
 }
 
@@ -11076,6 +11100,8 @@ function createInitialAiRoundState(){
     lastLaunchedPlaneId: null,
     consecutiveSamePlaneLaunches: 0,
     lastLaunchTurnByPlaneId: {},
+    recentLaunchPlaneIds: [],
+    planeIdleTurnsById: {},
   };
 }
 
@@ -11088,14 +11114,58 @@ function getAiPlaneSelectionPenalty(plane){
   return AI_REPEAT_PLANE_SOFT_PENALTY + Math.min(0.9, (streak - 1) * AI_REPEAT_PLANE_HARD_PENALTY);
 }
 
-function getAiPlanePenaltyMultiplier(plane){
-  const penalty = getAiPlaneSelectionPenalty(plane);
-  return 1 + penalty;
+function getAiPlaneRotationScoring(score, plane){
+  const rawScore = Number.isFinite(score) ? score : 0;
+  if(!plane?.id){
+    return {
+      rawScore,
+      rotationBonus: 0,
+      repeatPenalty: 0,
+      streakPenalty: 0,
+      repeatInWindow: 0,
+      idleTurns: 0,
+      finalMultiplier: 1,
+      finalScore: rawScore,
+    };
+  }
+
+  const historyWindow = Array.isArray(aiRoundState?.recentLaunchPlaneIds)
+    ? aiRoundState.recentLaunchPlaneIds
+    : [];
+  const repeatInWindow = historyWindow.reduce((count, planeId) => (
+    planeId === plane.id ? count + 1 : count
+  ), 0);
+
+  const idleTurnsMap = aiRoundState?.planeIdleTurnsById;
+  const idleTurnsRaw = idleTurnsMap && Number.isFinite(idleTurnsMap[plane.id])
+    ? idleTurnsMap[plane.id]
+    : getAiPlaneIdleTurns(plane);
+  const idleTurns = Math.max(0, idleTurnsRaw);
+
+  const rotationBonus = Math.min(AI_ROTATION_BONUS_MAX, idleTurns * AI_ROTATION_BONUS_PER_IDLE_TURN);
+  const repeatPenalty = repeatInWindow * AI_REPEAT_WINDOW_PENALTY_STEP;
+  const streakPenalty = getAiPlaneSelectionPenalty(plane);
+  const finalMultiplier = Math.max(0.35, 1 + repeatPenalty + streakPenalty - rotationBonus);
+
+  return {
+    rawScore,
+    rotationBonus,
+    repeatPenalty,
+    streakPenalty,
+    repeatInWindow,
+    idleTurns,
+    finalMultiplier,
+    finalScore: rawScore * finalMultiplier,
+  };
+}
+
+function scoreMoveForPlane(score, plane){
+  return getAiPlaneRotationScoring(score, plane);
 }
 
 function getAiPlaneAdjustedScore(score, plane){
   if(!Number.isFinite(score)) return score;
-  return score * getAiPlanePenaltyMultiplier(plane);
+  return scoreMoveForPlane(score, plane).finalScore;
 }
 
 function getStableHashFromParts(parts){
@@ -11115,6 +11185,22 @@ function getAiPlaneIdleTurns(plane){
   const lastLaunchTurn = history[plane.id];
   if(!Number.isFinite(lastLaunchTurn)) return turnNumber + 1;
   return Math.max(0, turnNumber - lastLaunchTurn);
+}
+
+function updateAiPlaneIdleCounters(aiPlanes){
+  if(!aiRoundState || typeof aiRoundState !== "object") return;
+  if(!aiRoundState.planeIdleTurnsById || typeof aiRoundState.planeIdleTurnsById !== "object"){
+    aiRoundState.planeIdleTurnsById = {};
+  }
+
+  const idleMap = aiRoundState.planeIdleTurnsById;
+  if(!Array.isArray(aiPlanes)) return;
+
+  for(const plane of aiPlanes){
+    if(!plane?.id) continue;
+    const currentValue = Number.isFinite(idleMap[plane.id]) ? idleMap[plane.id] : 0;
+    idleMap[plane.id] = Math.max(0, currentValue + 1);
+  }
 }
 
 function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, tieSeedParts = []){
@@ -11151,10 +11237,10 @@ function rankAiPlanesForCurrentTurn(aiPlanes){
   if(!Array.isArray(aiPlanes) || aiPlanes.length <= 1) return aiPlanes;
 
   return [...aiPlanes].sort((a, b) => {
-    const penaltyA = getAiPlaneSelectionPenalty(a);
-    const penaltyB = getAiPlaneSelectionPenalty(b);
-    if(Math.abs(penaltyA - penaltyB) > 0.0001){
-      return penaltyA - penaltyB;
+    const rankingScoreA = scoreMoveForPlane(1, a).finalScore;
+    const rankingScoreB = scoreMoveForPlane(1, b).finalScore;
+    if(Math.abs(rankingScoreA - rankingScoreB) > 0.0001){
+      return rankingScoreA - rankingScoreB;
     }
     const idleA = getAiPlaneIdleTurns(a);
     const idleB = getAiPlaneIdleTurns(b);
@@ -13015,6 +13101,7 @@ function doComputerMove(){
   const availableEnemyFlags = shouldUseFlagsMode ? getAvailableFlagsByColor("green") : [];
 
   aiRoundState.turnNumber += 1;
+  updateAiPlaneIdleCounters(aiPlanes);
   const stolenBlueFlagCarrier = shouldUseFlagsMode ? getFlagCarrierForColor("blue") : null;
   const rankedAiPlanes = rankAiPlanesForCurrentTurn(aiPlanes);
   const modeContext = {
@@ -13283,9 +13370,22 @@ function issueAIMove(plane, vx, vy){
     if(!aiRoundState.lastLaunchTurnByPlaneId || typeof aiRoundState.lastLaunchTurnByPlaneId !== "object"){
       aiRoundState.lastLaunchTurnByPlaneId = {};
     }
+    if(!aiRoundState.planeIdleTurnsById || typeof aiRoundState.planeIdleTurnsById !== "object"){
+      aiRoundState.planeIdleTurnsById = {};
+    }
+    if(!Array.isArray(aiRoundState.recentLaunchPlaneIds)){
+      aiRoundState.recentLaunchPlaneIds = [];
+    }
+
     aiRoundState.lastLaunchTurnByPlaneId[plane.id] = Number.isFinite(aiRoundState.turnNumber)
       ? aiRoundState.turnNumber
       : 0;
+    aiRoundState.planeIdleTurnsById[plane.id] = 0;
+
+    aiRoundState.recentLaunchPlaneIds.push(plane.id);
+    if(aiRoundState.recentLaunchPlaneIds.length > AI_RECENT_PLANE_HISTORY_LIMIT){
+      aiRoundState.recentLaunchPlaneIds.splice(0, aiRoundState.recentLaunchPlaneIds.length - AI_RECENT_PLANE_HISTORY_LIMIT);
+    }
   }
   if(!hasShotThisRound){
     hasShotThisRound = true;
