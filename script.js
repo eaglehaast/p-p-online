@@ -11022,7 +11022,27 @@ const AI_REPEAT_PLANE_SOFT_PENALTY = 0.42;
 const AI_REPEAT_PLANE_HARD_PENALTY = 0.65;
 
 function logAiDecision(reason, details = {}){
-  console.debug(`[ai] ${reason}`, details);
+  const payload = details && typeof details === "object" ? { ...details } : {};
+  const planeId = payload.planeId ?? payload.plane?.id ?? null;
+  const rawDistance = [payload.rawDistance, payload.moveTotalDist, payload.totalDist, payload.distance]
+    .find((value) => Number.isFinite(value));
+
+  let adjustedScore = Number.isFinite(payload.adjustedScore) ? payload.adjustedScore : null;
+  if(adjustedScore === null && Number.isFinite(rawDistance) && planeId){
+    const plane = payload.plane || (Array.isArray(allPlanes)
+      ? allPlanes.find((candidate) => candidate?.id === planeId)
+      : null);
+    if(plane){
+      adjustedScore = getAiPlaneAdjustedScore(rawDistance, plane);
+    }
+  }
+
+  console.debug(`[ai] ${reason}`, {
+    ...payload,
+    planeId,
+    rawDistance: Number.isFinite(rawDistance) ? Number(rawDistance.toFixed(3)) : null,
+    adjustedScore: Number.isFinite(adjustedScore) ? Number(adjustedScore.toFixed(3)) : null,
+  });
 }
 
 function applyAiMinLaunchScale(scale, details = {}){
@@ -12216,8 +12236,11 @@ function assignAiRolesForTurn(context){
       for(const flag of availableEnemyFlags){
         const anchor = getFlagAnchor(flag);
         const move = planPathToPoint(plane, anchor.x, anchor.y);
-        if(move && (!bestRunner || move.totalDist < bestRunner.move.totalDist)){
-          bestRunner = { plane, move };
+        if(move){
+          const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
+          if(!bestRunner || adjustedDist < bestRunner.adjustedDist){
+            bestRunner = { plane, move, adjustedDist };
+          }
         }
       }
     }
@@ -12229,8 +12252,11 @@ function assignAiRolesForTurn(context){
     for(const plane of groundedAiPlanes){
       if(reservedPlaneIds.has(plane.id)) continue;
       const toCarrier = planPathToPoint(plane, context.stolenBlueFlagCarrier.x, context.stolenBlueFlagCarrier.y);
-      if(toCarrier && (!bestInterceptor || toCarrier.totalDist < bestInterceptor.move.totalDist)){
-        bestInterceptor = { plane, move: toCarrier };
+      if(toCarrier){
+        const adjustedDist = getAiPlaneAdjustedScore(toCarrier.totalDist, plane);
+        if(!bestInterceptor || adjustedDist < bestInterceptor.adjustedDist){
+          bestInterceptor = { plane, move: toCarrier, adjustedDist };
+        }
       }
     }
     claimPlaneForRole("interceptor", bestInterceptor?.plane || null);
@@ -12247,13 +12273,15 @@ function assignAiRolesForTurn(context){
         const riskInfo = evaluateCargoPickupRisk(plane, cargo, context);
         const favorableInfo = evaluateFavorableCargoCandidate(plane, cargo, move, riskInfo);
         if(!riskInfo.isSafePath || riskInfo.totalRisk > AI_CARGO_RISK_ACCEPTANCE){
-          if(favorableInfo?.isFavorableCargo && (!bestFavorableCollector || move.totalDist < bestFavorableCollector.move.totalDist || (move.totalDist === bestFavorableCollector.move.totalDist && riskInfo.totalRisk < bestFavorableCollector.riskInfo.totalRisk))){
-            bestFavorableCollector = { plane, move, cargo, riskInfo, favorableInfo };
+          const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
+          if(favorableInfo?.isFavorableCargo && (!bestFavorableCollector || adjustedDist < bestFavorableCollector.adjustedDist || (adjustedDist === bestFavorableCollector.adjustedDist && riskInfo.totalRisk < bestFavorableCollector.riskInfo.totalRisk))){
+            bestFavorableCollector = { plane, move, cargo, riskInfo, favorableInfo, adjustedDist };
           }
           continue;
         }
-        if(!bestCollector || riskInfo.totalRisk < bestCollector.riskInfo.totalRisk || (riskInfo.totalRisk === bestCollector.riskInfo.totalRisk && move.totalDist < bestCollector.move.totalDist)){
-          bestCollector = { plane, move, cargo, riskInfo, favorableInfo };
+        const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
+        if(!bestCollector || riskInfo.totalRisk < bestCollector.riskInfo.totalRisk || (riskInfo.totalRisk === bestCollector.riskInfo.totalRisk && adjustedDist < bestCollector.adjustedDist)){
+          bestCollector = { plane, move, cargo, riskInfo, favorableInfo, adjustedDist };
         }
       }
     }
@@ -12276,7 +12304,8 @@ function assignAiRolesForTurn(context){
       for(const enemy of context.enemies){
         const move = planPathToPoint(plane, enemy.x, enemy.y);
         if(!move) continue;
-        const score = move.totalDist + (isPathClear(plane.x, plane.y, enemy.x, enemy.y) ? 0 : ATTACK_RANGE_PX * 0.65);
+        const rawScore = move.totalDist + (isPathClear(plane.x, plane.y, enemy.x, enemy.y) ? 0 : ATTACK_RANGE_PX * 0.65);
+        const score = getAiPlaneAdjustedScore(rawScore, plane);
         if(!bestStriker || score < bestStriker.score){
           bestStriker = { plane, enemy, move, score };
         }
@@ -12336,8 +12365,9 @@ function planRoleDrivenAiMove(context, rolePack){
       const move = planPathToPoint(runner, target.x, target.y);
       if(!move) continue;
       if(!isFlagCarrierRunner && isLandingPointUnderPressure(runner, move, enemies)) continue;
-      if(!bestRunnerMove || move.totalDist < bestRunnerMove.totalDist){
-        bestRunnerMove = move;
+      const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, runner);
+      if(!bestRunnerMove || adjustedDist < bestRunnerMove.adjustedDist){
+        bestRunnerMove = { ...move, adjustedDist };
       }
     }
     if(bestRunnerMove){
@@ -12361,8 +12391,9 @@ function planRoleDrivenAiMove(context, rolePack){
     for(const target of blockTargets){
       const move = planPathToPoint(interceptor, target.x, target.y);
       if(!move) continue;
-      if(!bestInterceptMove || move.totalDist < bestInterceptMove.totalDist){
-        bestInterceptMove = move;
+      const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, interceptor);
+      if(!bestInterceptMove || adjustedDist < bestInterceptMove.adjustedDist){
+        bestInterceptMove = { ...move, adjustedDist };
       }
     }
     if(bestInterceptMove){
@@ -12392,14 +12423,16 @@ function planRoleDrivenAiMove(context, rolePack){
         continue;
       }
       if(riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE){
-        if(!bestCollectorMove || riskInfo.totalRisk < bestCollectorMove.riskInfo.totalRisk || (riskInfo.totalRisk === bestCollectorMove.riskInfo.totalRisk && move.totalDist < bestCollectorMove.move.totalDist)){
-          bestCollectorMove = { cargo, move, riskInfo, favorableInfo, acceptedBy: "base_threshold" };
+        const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, collector);
+        if(!bestCollectorMove || riskInfo.totalRisk < bestCollectorMove.riskInfo.totalRisk || (riskInfo.totalRisk === bestCollectorMove.riskInfo.totalRisk && adjustedDist < bestCollectorMove.adjustedDist)){
+          bestCollectorMove = { cargo, move, riskInfo, favorableInfo, acceptedBy: "base_threshold", adjustedDist };
         }
         continue;
       }
       if(favorableInfo?.isFavorableCargo){
-        if(!bestFavorableCollectorMove || move.totalDist < bestFavorableCollectorMove.move.totalDist || (move.totalDist === bestFavorableCollectorMove.move.totalDist && riskInfo.totalRisk < bestFavorableCollectorMove.riskInfo.totalRisk)){
-          bestFavorableCollectorMove = { cargo, move, riskInfo, favorableInfo, acceptedBy: "favorable_override" };
+        const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, collector);
+        if(!bestFavorableCollectorMove || adjustedDist < bestFavorableCollectorMove.adjustedDist || (adjustedDist === bestFavorableCollectorMove.adjustedDist && riskInfo.totalRisk < bestFavorableCollectorMove.riskInfo.totalRisk)){
+          bestFavorableCollectorMove = { cargo, move, riskInfo, favorableInfo, acceptedBy: "favorable_override", adjustedDist };
         }
         continue;
       }
@@ -12438,7 +12471,8 @@ function planRoleDrivenAiMove(context, rolePack){
       const clearLaneBonus = isPathClear(striker.x, striker.y, enemy.x, enemy.y) ? 0.7 : 1;
       const targetPriority = getAiTargetPriority(enemy, context);
       const longShotPenalty = getAiLongShotPenaltyMultiplier(move.totalDist, targetPriority, riskProfile);
-      const hitChanceScore = move.totalDist * clearLaneBonus * longShotPenalty;
+      const rawHitChanceScore = move.totalDist * clearLaneBonus * longShotPenalty;
+      const hitChanceScore = getAiPlaneAdjustedScore(rawHitChanceScore, striker);
       if(longShotPenalty > 1){
         logAiDecision("long_shot_penalty_applied", {
           source: "role_striker",
@@ -12494,19 +12528,26 @@ function planModeDrivenAiMove(context){
     const dynamiteAvailable = hasBlueDynamiteAvailable();
     for(const plane of groundedAiPlanes){
       const move = planPathToPoint(plane, stolenBlueFlagCarrier.x, stolenBlueFlagCarrier.y);
-      if(move && (!bestDefenseMove || move.totalDist < bestDefenseMove.totalDist)){
-        bestDefenseMove = { plane, ...move };
+      if(move){
+        const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
+        if(!bestDefenseMove || adjustedDist < bestDefenseMove.adjustedDist){
+          bestDefenseMove = { plane, ...move, adjustedDist };
+        }
         continue;
       }
 
       const preparationMove = findSafePreparationMoveForAttack(plane, stolenBlueFlagCarrier);
-      if(preparationMove && (!bestPreparationMove || preparationMove.totalDist < bestPreparationMove.totalDist)){
-        bestPreparationMove = {
-          plane,
-          ...preparationMove,
-          targetEnemy: stolenBlueFlagCarrier,
-          goalName: dynamiteAvailable ? "prepare_dynamite_breach" : "prepare_clear_shot",
-        };
+      if(preparationMove){
+        const adjustedDist = getAiPlaneAdjustedScore(preparationMove.totalDist, plane);
+        if(!bestPreparationMove || adjustedDist < bestPreparationMove.adjustedDist){
+          bestPreparationMove = {
+            plane,
+            ...preparationMove,
+            adjustedDist,
+            targetEnemy: stolenBlueFlagCarrier,
+            goalName: dynamiteAvailable ? "prepare_dynamite_breach" : "prepare_clear_shot",
+          };
+        }
       }
     }
     if(bestDefenseMove) return bestDefenseMove;
