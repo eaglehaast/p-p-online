@@ -2999,6 +2999,7 @@ function commitMapEditorBrickDrop(clientX, clientY){
         sprites: currentMapSprites,
       });
       rebuildCollisionSurfaces();
+      refreshAiRoundNavigationGrid();
       return true;
     }
     return false;
@@ -3031,6 +3032,7 @@ function commitMapEditorBrickDrop(clientX, clientY){
     sprites: currentMapSprites,
   });
   rebuildCollisionSurfaces();
+  refreshAiRoundNavigationGrid();
   return true;
 }
 
@@ -3739,6 +3741,7 @@ function removeBrickSpriteForDynamite(entry){
     sprites: currentMapSprites,
   });
   rebuildCollisionSurfaces();
+  refreshAiRoundNavigationGrid();
 }
 
 function getDynamiteExplosionFrameIndexByElapsed(elapsedMs){
@@ -8165,6 +8168,7 @@ function drawCargo(ctx2d){
     logFieldCssAndCanvasMetrics(reason, cssMetrics);
     updateFieldBorderOffset();
     rebuildCollisionSurfaces();
+    refreshAiRoundNavigationGrid();
   }
 
 
@@ -11177,6 +11181,140 @@ function createInitialAiRoundState(){
     lastLaunchTurnByPlaneId: {},
     recentLaunchPlaneIds: [],
     planeIdleTurnsById: {},
+    navigationGrid: null,
+  };
+}
+
+function buildAiRoundNavigationGrid(){
+  const fieldWidth = Number.isFinite(FIELD_WIDTH) ? FIELD_WIDTH : 0;
+  const fieldHeight = Number.isFinite(FIELD_HEIGHT) ? FIELD_HEIGHT : 0;
+  if(fieldWidth <= 0 || fieldHeight <= 0){
+    return null;
+  }
+
+  const cols = Math.max(1, Math.ceil(fieldWidth / CELL_SIZE));
+  const rows = Math.max(1, Math.ceil(fieldHeight / CELL_SIZE));
+  const walkableMask = new Array(cols * rows).fill(false);
+  const componentIds = new Array(cols * rows).fill(-1);
+  const colliderList = Array.isArray(colliders) ? colliders : [];
+
+  const getIndex = (cellX, cellY) => cellY * cols + cellX;
+
+  for(let cellY = 0; cellY < rows; cellY += 1){
+    for(let cellX = 0; cellX < cols; cellX += 1){
+      const centerX = Math.min(FIELD_LEFT + fieldWidth, FIELD_LEFT + (cellX + 0.5) * CELL_SIZE);
+      const centerY = Math.min(FIELD_TOP + fieldHeight, FIELD_TOP + (cellY + 0.5) * CELL_SIZE);
+      if(!isPointInsideFieldBounds(centerX, centerY)) continue;
+
+      let blocked = false;
+      for(const collider of colliderList){
+        if(isPointInsideCollider(centerX, centerY, collider)){
+          blocked = true;
+          break;
+        }
+      }
+
+      if(!blocked){
+        walkableMask[getIndex(cellX, cellY)] = true;
+      }
+    }
+  }
+
+  let componentCounter = 0;
+  const queue = [];
+  const neighbors = [
+    { x: 1, y: 0 },
+    { x: -1, y: 0 },
+    { x: 0, y: 1 },
+    { x: 0, y: -1 },
+  ];
+
+  for(let cellY = 0; cellY < rows; cellY += 1){
+    for(let cellX = 0; cellX < cols; cellX += 1){
+      const index = getIndex(cellX, cellY);
+      if(!walkableMask[index] || componentIds[index] !== -1) continue;
+
+      componentIds[index] = componentCounter;
+      queue.push({ x: cellX, y: cellY });
+
+      while(queue.length > 0){
+        const current = queue.shift();
+        for(const delta of neighbors){
+          const nextX = current.x + delta.x;
+          const nextY = current.y + delta.y;
+          if(nextX < 0 || nextY < 0 || nextX >= cols || nextY >= rows) continue;
+          const nextIndex = getIndex(nextX, nextY);
+          if(!walkableMask[nextIndex] || componentIds[nextIndex] !== -1) continue;
+          componentIds[nextIndex] = componentCounter;
+          queue.push({ x: nextX, y: nextY });
+        }
+      }
+
+      componentCounter += 1;
+    }
+  }
+
+  return {
+    cellSize: CELL_SIZE,
+    cols,
+    rows,
+    originX: FIELD_LEFT,
+    originY: FIELD_TOP,
+    walkableMask,
+    componentIds,
+    componentCount: componentCounter,
+  };
+}
+
+function refreshAiRoundNavigationGrid(){
+  if(!aiRoundState || typeof aiRoundState !== "object") return;
+  aiRoundState.navigationGrid = buildAiRoundNavigationGrid();
+}
+
+function getAiNavigationCellForPoint(navigationGrid, x, y){
+  if(!navigationGrid || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+  const cellX = Math.floor((x - navigationGrid.originX) / navigationGrid.cellSize);
+  const cellY = Math.floor((y - navigationGrid.originY) / navigationGrid.cellSize);
+  if(cellX < 0 || cellY < 0 || cellX >= navigationGrid.cols || cellY >= navigationGrid.rows) return null;
+  const index = cellY * navigationGrid.cols + cellX;
+  const isWalkable = Boolean(navigationGrid.walkableMask?.[index]);
+  return {
+    x: cellX,
+    y: cellY,
+    index,
+    isWalkable,
+    componentId: isWalkable ? navigationGrid.componentIds?.[index] ?? -1 : -1,
+  };
+}
+
+function evaluateAiNavigationConnectivity(startX, startY, targetX, targetY){
+  const navigationGrid = aiRoundState?.navigationGrid;
+  if(!navigationGrid){
+    return { reachable: true, reason: "navigation_grid_missing" };
+  }
+
+  const startCell = getAiNavigationCellForPoint(navigationGrid, startX, startY);
+  const targetCell = getAiNavigationCellForPoint(navigationGrid, targetX, targetY);
+
+  if(!startCell){
+    return { reachable: false, reason: "start_outside_navigation_grid", startCell: null, targetCell };
+  }
+  if(!targetCell){
+    return { reachable: false, reason: "target_outside_navigation_grid", startCell, targetCell: null };
+  }
+  if(!startCell.isWalkable){
+    return { reachable: false, reason: "start_cell_blocked", startCell, targetCell };
+  }
+  if(!targetCell.isWalkable){
+    return { reachable: false, reason: "target_cell_blocked", startCell, targetCell };
+  }
+
+  const reachable = startCell.componentId === targetCell.componentId;
+  return {
+    reachable,
+    reason: reachable ? "reachable" : "different_navigation_component",
+    startCell,
+    targetCell,
   };
 }
 
@@ -13347,6 +13485,25 @@ function planPathToPoint(plane, tx, ty, options = {}){
       targetY: ty,
       distance,
       ...meta
+    });
+    return null;
+  }
+
+  const navigationCheck = evaluateAiNavigationConnectivity(plane.x, plane.y, tx, ty);
+  if(!navigationCheck.reachable){
+    logAiDecision("blocked_by_round_navigation", {
+      planeId: plane?.id ?? null,
+      targetX: tx,
+      targetY: ty,
+      reason: navigationCheck.reason,
+      startCell: navigationCheck.startCell
+        ? { x: navigationCheck.startCell.x, y: navigationCheck.startCell.y }
+        : null,
+      targetCell: navigationCheck.targetCell
+        ? { x: navigationCheck.targetCell.x, y: navigationCheck.targetCell.y }
+        : null,
+      goalName: options?.goalName || null,
+      decisionReason: options?.decisionReason || null,
     });
     return null;
   }
@@ -17888,6 +18045,7 @@ function startNewRound(){
   ensureAiSelfAnalyzerRound();
   roundTextTimer = selectedRuleset === "mapeditor" ? 0 : 120;
   aiRoundState = createInitialAiRoundState();
+  refreshAiRoundNavigationGrid();
 
   globalFrame=0;
   flyingPoints=[];
