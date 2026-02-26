@@ -383,6 +383,28 @@ body, button {
     transform: scale(1.05);
   }
 
+  .inventory-item--consume-fx {
+    animation: inventory-consume-pop 340ms ease-out forwards;
+    transform-origin: center center;
+    will-change: transform, opacity;
+    pointer-events: none;
+  }
+
+  @keyframes inventory-consume-pop {
+    0% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    40% {
+      opacity: 0.95;
+      transform: scale(2);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.8);
+    }
+  }
+
   .inventory-slot--selected .inventory-slot-frame {
     filter: drop-shadow(0 0 6px rgba(255, 238, 154, 0.75));
   }

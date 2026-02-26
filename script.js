@@ -1375,6 +1375,73 @@ const inventoryHosts = {
   green: greenInventoryHost,
 };
 
+const inventorySlotItemElementByColor = {
+  blue: new Map(),
+  green: new Map(),
+};
+
+const INVENTORY_CONSUME_FX_CLASS = "inventory-item--consume-fx";
+const INVENTORY_CONSUME_FX_DURATION_MS = 340;
+
+function getInventorySlotItemElement(color, type){
+  if(!color || !type) return null;
+  const host = inventoryHosts[color];
+  if(!(host instanceof HTMLElement)) return null;
+
+  const cache = inventorySlotItemElementByColor[color];
+  if(cache instanceof Map){
+    const cachedElement = cache.get(type);
+    if(cachedElement instanceof HTMLElement && host.contains(cachedElement)){
+      return cachedElement;
+    }
+  }
+
+  const selector = `.inventory-slot[data-slot-color="${color}"][data-slot-type="${type}"] .inventory-item`;
+  const item = host.querySelector(selector);
+  if(item instanceof HTMLElement && cache instanceof Map){
+    cache.set(type, item);
+  }
+  return item instanceof HTMLElement ? item : null;
+}
+
+function playInventoryConsumeFx(color, itemType){
+  const itemElement = getInventorySlotItemElement(color, itemType);
+  if(!(itemElement instanceof HTMLElement)){
+    logAiDecision("inventory_fx_played", {
+      color,
+      itemType,
+      result: "failed",
+      reason: "slot_item_not_found",
+    });
+    return false;
+  }
+
+  if(itemElement.dataset.consumeFxTimeoutId){
+    const previousTimeoutId = Number.parseInt(itemElement.dataset.consumeFxTimeoutId, 10);
+    if(Number.isFinite(previousTimeoutId)){
+      clearTimeout(previousTimeoutId);
+    }
+  }
+
+  itemElement.classList.remove(INVENTORY_CONSUME_FX_CLASS);
+  void itemElement.offsetWidth;
+  itemElement.classList.add(INVENTORY_CONSUME_FX_CLASS);
+
+  const timeoutId = setTimeout(() => {
+    itemElement.classList.remove(INVENTORY_CONSUME_FX_CLASS);
+    delete itemElement.dataset.consumeFxTimeoutId;
+  }, INVENTORY_CONSUME_FX_DURATION_MS);
+  itemElement.dataset.consumeFxTimeoutId = String(timeoutId);
+
+  logAiDecision("inventory_fx_played", {
+    color,
+    itemType,
+    result: "ok",
+    durationMs: INVENTORY_CONSUME_FX_DURATION_MS,
+  });
+  return true;
+}
+
 function ensureInventoryTooltipElement(){
   if(inventoryTooltipState.element instanceof HTMLElement){
     return inventoryTooltipState.element;
@@ -4022,6 +4089,10 @@ function syncInventoryUI(color){
   syncInventoryVisibility();
   const host = inventoryHosts[color];
   if(!(host instanceof HTMLElement)) return;
+  const slotItemCache = inventorySlotItemElementByColor[color];
+  if(slotItemCache instanceof Map){
+    slotItemCache.clear();
+  }
   const hintState = inventoryHintState[color];
   if (hintState && hintState.timeoutId) {
     clearTimeout(hintState.timeoutId);
@@ -4132,6 +4203,10 @@ function syncInventoryUI(color){
     img.style.top = `${iconLayout.y}px`;
     img.style.width = `${iconLayout.w}px`;
     img.style.height = `${iconLayout.h}px`;
+
+    if(slotItemCache instanceof Map){
+      slotItemCache.set(slot.type, img);
+    }
 
     if(!isImplemented){
       img.classList.add("inventory-item--disabled");
@@ -12035,8 +12110,36 @@ function registerAiInventoryUsageAfterMove(itemUsed){
   }
 }
 
+function detectConsumedInventoryType(beforeCounts = {}, afterCounts = {}){
+  for(const type of Object.values(INVENTORY_ITEM_TYPES)){
+    const before = Number(beforeCounts[type] ?? 0);
+    const after = Number(afterCounts[type] ?? 0);
+    if(before > after){
+      return type;
+    }
+  }
+  return null;
+}
+
 function issueAIMoveWithInventoryUsage(context, plannedMove){
+  const beforeInventoryState = evaluateBlueInventoryState();
   const itemUsed = maybeUseInventoryBeforeLaunch(context, plannedMove);
+  if(itemUsed){
+    const afterInventoryState = evaluateBlueInventoryState();
+    const consumedItemType = detectConsumedInventoryType(
+      beforeInventoryState?.counts,
+      afterInventoryState?.counts
+    );
+    if(consumedItemType){
+      playInventoryConsumeFx("blue", consumedItemType);
+    } else {
+      logAiDecision("inventory_fx_played", {
+        color: "blue",
+        result: "failed",
+        reason: "item_used_but_type_not_detected",
+      });
+    }
+  }
   registerAiInventoryUsageAfterMove(itemUsed);
   issueAIMove(plannedMove.plane, plannedMove.vx, plannedMove.vy);
 }
