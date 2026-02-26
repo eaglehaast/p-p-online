@@ -11018,8 +11018,8 @@ const AI_OPENING_DIRECT_FINISHER_MIN_LEAD = 2;
 const AI_CENTER_CONTROL_DISTANCE = MAX_DRAG_DISTANCE * 0.35;
 const AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD = 3;
 const AI_INVENTORY_SOFT_FALLBACK_COOLDOWN_TURNS = 4;
-const AI_REPEAT_PLANE_SOFT_PENALTY = 0.2;
-const AI_REPEAT_PLANE_HARD_PENALTY = 0.38;
+const AI_REPEAT_PLANE_SOFT_PENALTY = 0.42;
+const AI_REPEAT_PLANE_HARD_PENALTY = 0.65;
 
 function logAiDecision(reason, details = {}){
   console.debug(`[ai] ${reason}`, details);
@@ -11064,7 +11064,17 @@ function getAiPlaneSelectionPenalty(plane){
   if(!plane || !aiRoundState?.lastLaunchedPlaneId) return 0;
   if(plane.id !== aiRoundState.lastLaunchedPlaneId) return 0;
   const streak = Math.max(1, Number(aiRoundState.consecutiveSamePlaneLaunches) || 1);
-  return AI_REPEAT_PLANE_SOFT_PENALTY + Math.min(0.6, (streak - 1) * AI_REPEAT_PLANE_HARD_PENALTY);
+  return AI_REPEAT_PLANE_SOFT_PENALTY + Math.min(0.9, (streak - 1) * AI_REPEAT_PLANE_HARD_PENALTY);
+}
+
+function getAiPlanePenaltyMultiplier(plane){
+  const penalty = getAiPlaneSelectionPenalty(plane);
+  return 1 + penalty;
+}
+
+function getAiPlaneAdjustedScore(score, plane){
+  if(!Number.isFinite(score)) return score;
+  return score * getAiPlanePenaltyMultiplier(plane);
 }
 
 function rankAiPlanesForCurrentTurn(aiPlanes){
@@ -11780,16 +11790,39 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     }
   }
 
+  const hasNonInvisibilityItems = inventory.total > (inventory.counts[INVENTORY_ITEM_TYPES.INVISIBILITY] || 0);
+
   if(inventory.counts[INVENTORY_ITEM_TYPES.INVISIBILITY] > 0){
     const nearestEnemyDistance = Array.isArray(context?.enemies) && context.enemies.length > 0
       ? Math.min(...context.enemies.map(enemy => dist(plannedMove.plane, enemy)))
       : Number.POSITIVE_INFINITY;
     const expectCounterMove = nearestEnemyDistance <= ATTACK_RANGE_PX * 1.15
       || (context?.enemies?.length ?? 0) >= (context?.aiPlanes?.length ?? 0);
-    const shouldUseInvisibility = expectCounterMove
-      || (riskProfile === "comeback" && moveDistance >= MAX_DRAG_DISTANCE * 0.6);
+    const shouldUseInvisibility = (expectCounterMove
+      || (riskProfile === "comeback" && moveDistance >= MAX_DRAG_DISTANCE * 0.6))
+      && (!softFallbackReady || !hasNonInvisibilityItems);
     if(shouldUseInvisibility && queueInvisibilityEffectForPlayer("blue")){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.INVISIBILITY);
+      return true;
+    }
+  }
+
+  if(softFallbackReady){
+    if(inventory.counts[INVENTORY_ITEM_TYPES.CROSSHAIR] > 0
+      && applyItemToOwnPlane(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
+      removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
+      markSoftFallbackUse(INVENTORY_ITEM_TYPES.CROSSHAIR, {
+        reason: "generic_soft_fallback_usage",
+      });
+      return true;
+    }
+
+    if(inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0
+      && applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, "blue", plannedMove.plane)){
+      removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
+      markSoftFallbackUse(INVENTORY_ITEM_TYPES.FUEL, {
+        reason: "generic_soft_fallback_usage",
+      });
       return true;
     }
   }
@@ -12490,8 +12523,11 @@ function planModeDrivenAiMove(context){
       for(const flag of availableEnemyFlags){
         const targetAnchor = getFlagAnchor(flag);
         const move = planPathToPoint(plane, targetAnchor.x, targetAnchor.y);
-        if(move && (!bestCap || move.totalDist < bestCap.totalDist)){
-          bestCap = { plane, ...move };
+        if(move){
+          const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
+          if(!bestCap || adjustedDist < bestCap.adjustedDist){
+            bestCap = { plane, ...move, adjustedDist };
+          }
         }
       }
     }
@@ -12522,15 +12558,17 @@ function planModeDrivenAiMove(context){
         }
 
         if(riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE){
-          if(!bestCargoMove || riskInfo.totalRisk < bestCargoMove.riskInfo.totalRisk || (riskInfo.totalRisk === bestCargoMove.riskInfo.totalRisk && move.totalDist < bestCargoMove.move.totalDist)){
-            bestCargoMove = { plane, move, cargo, riskInfo, favorableInfo, acceptedBy: "base_threshold" };
+          const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
+          if(!bestCargoMove || riskInfo.totalRisk < bestCargoMove.riskInfo.totalRisk || (riskInfo.totalRisk === bestCargoMove.riskInfo.totalRisk && adjustedDist < bestCargoMove.adjustedDist)){
+            bestCargoMove = { plane, move, cargo, riskInfo, favorableInfo, acceptedBy: "base_threshold", adjustedDist };
           }
           continue;
         }
 
         if(favorableInfo?.isFavorableCargo){
-          if(!bestFavorableCargoMove || move.totalDist < bestFavorableCargoMove.move.totalDist || (move.totalDist === bestFavorableCargoMove.move.totalDist && riskInfo.totalRisk < bestFavorableCargoMove.riskInfo.totalRisk)){
-            bestFavorableCargoMove = { plane, move, cargo, riskInfo, favorableInfo, acceptedBy: "favorable_override" };
+          const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
+          if(!bestFavorableCargoMove || adjustedDist < bestFavorableCargoMove.adjustedDist || (adjustedDist === bestFavorableCargoMove.adjustedDist && riskInfo.totalRisk < bestFavorableCargoMove.riskInfo.totalRisk)){
+            bestFavorableCargoMove = { plane, move, cargo, riskInfo, favorableInfo, acceptedBy: "favorable_override", adjustedDist };
           }
           continue;
         }
@@ -12569,8 +12607,11 @@ function planModeDrivenAiMove(context){
       const targetX = plane.x + Math.cos(awayAngle) * MAX_DRAG_DISTANCE;
       const targetY = plane.y + Math.sin(awayAngle) * MAX_DRAG_DISTANCE;
       const move = planPathToPoint(plane, targetX, targetY);
-      if(move && (!safestMove || move.totalDist < safestMove.totalDist)){
-        safestMove = { plane, ...move };
+      if(move){
+        const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
+        if(!safestMove || adjustedDist < safestMove.adjustedDist){
+          safestMove = { plane, ...move, adjustedDist };
+        }
       }
     }
     if(safestMove) return safestMove;
@@ -12607,8 +12648,11 @@ function getFallbackAiMove(context){
       for(const flag of availableEnemyFlags){
         const targetAnchor = getFlagAnchor(flag);
         const move = planPathToPoint(plane, targetAnchor.x, targetAnchor.y);
-        if(move && (!bestCap || move.totalDist < bestCap.totalDist)){
-          bestCap = {plane, ...move};
+        if(move){
+          const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
+          if(!bestCap || adjustedDist < bestCap.adjustedDist){
+            bestCap = {plane, ...move, adjustedDist};
+          }
         }
       }
     }
@@ -12714,7 +12758,7 @@ function getFallbackAiMove(context){
 
         const targetPriority = getAiTargetPriority(enemy, context);
         const longShotPenalty = getAiLongShotPenaltyMultiplier(directDist, targetPriority, riskProfile);
-        const directAttackScore = directDist * longShotPenalty;
+        const directAttackScore = getAiPlaneAdjustedScore(directDist * longShotPenalty, plane);
 
         if(longShotPenalty > 1){
           logAiDecision("long_shot_penalty_applied", {
@@ -12750,14 +12794,15 @@ function getFallbackAiMove(context){
           const vy = Math.sin(ang) * scale * speedPxPerSec;
 
           const mirrorWeight = riskProfile === "comeback" ? 0.82 : 1;
-          if(!best || mirror.totalDist * mirrorWeight < best.totalDist){
-            best = {plane, enemy, vx, vy, totalDist: mirror.totalDist};
+          const mirrorScore = getAiPlaneAdjustedScore(mirror.totalDist * mirrorWeight, plane);
+          if(!best || mirrorScore < (best.directAttackScore ?? best.totalDist)){
+            best = {plane, enemy, vx, vy, totalDist: mirror.totalDist, directAttackScore: mirrorScore};
           }
         } else {
           const preparationMove = findSafePreparationMoveForAttack(plane, enemy);
           if(preparationMove){
             const prepWeight = riskProfile === "comeback" ? 0.95 : 1;
-            const preparationScore = preparationMove.totalDist * prepWeight;
+            const preparationScore = getAiPlaneAdjustedScore(preparationMove.totalDist * prepWeight, plane);
             if(!bestPreparation || preparationScore < bestPreparationScore){
               bestPreparationScore = preparationScore;
               bestPreparation = {
@@ -13063,7 +13108,7 @@ function findDirectFinisherMove(aiPlanes, enemies, options = {}){
       });
       if(!move) continue;
 
-      const adjustedDist = move.totalDist * (1 + getAiPlaneSelectionPenalty(plane));
+      const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
       if(!best || adjustedDist < best.adjustedDist){
         best = {
           plane,
