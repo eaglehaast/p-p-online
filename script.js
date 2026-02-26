@@ -11075,6 +11075,7 @@ function createInitialAiRoundState(){
     lastInventorySoftFallbackUsed: false,
     lastLaunchedPlaneId: null,
     consecutiveSamePlaneLaunches: 0,
+    lastLaunchTurnByPlaneId: {},
   };
 }
 
@@ -11097,6 +11098,55 @@ function getAiPlaneAdjustedScore(score, plane){
   return score * getAiPlanePenaltyMultiplier(plane);
 }
 
+function getStableHashFromParts(parts){
+  const source = Array.isArray(parts) ? parts.join("|") : String(parts ?? "");
+  let hash = 0;
+  for(let i = 0; i < source.length; i += 1){
+    hash = (hash * 31 + source.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+}
+
+function getAiPlaneIdleTurns(plane){
+  if(!plane?.id) return 0;
+  const history = aiRoundState?.lastLaunchTurnByPlaneId;
+  const turnNumber = Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : 0;
+  if(!history || typeof history !== "object") return turnNumber + 1;
+  const lastLaunchTurn = history[plane.id];
+  if(!Number.isFinite(lastLaunchTurn)) return turnNumber + 1;
+  return Math.max(0, turnNumber - lastLaunchTurn);
+}
+
+function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, tieSeedParts = []){
+  if(!nextCandidate) return false;
+  if(!currentCandidate) return true;
+
+  const epsilon = 0.0001;
+  if((nextCandidate.score ?? Number.POSITIVE_INFINITY) < (currentCandidate.score ?? Number.POSITIVE_INFINITY) - epsilon){
+    return true;
+  }
+  if((nextCandidate.score ?? Number.POSITIVE_INFINITY) > (currentCandidate.score ?? Number.POSITIVE_INFINITY) + epsilon){
+    return false;
+  }
+
+  const idleDiff = (nextCandidate.idleTurns ?? 0) - (currentCandidate.idleTurns ?? 0);
+  if(Math.abs(idleDiff) > 0){
+    return idleDiff > 0;
+  }
+
+  const seedPrefix = [
+    Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : 0,
+    ...tieSeedParts,
+  ];
+  const nextTieHash = getStableHashFromParts([...seedPrefix, nextCandidate.plane?.id ?? "", nextCandidate.enemy?.id ?? ""]);
+  const currentTieHash = getStableHashFromParts([...seedPrefix, currentCandidate.plane?.id ?? "", currentCandidate.enemy?.id ?? ""]);
+  if(nextTieHash !== currentTieHash){
+    return nextTieHash < currentTieHash;
+  }
+
+  return false;
+}
+
 function rankAiPlanesForCurrentTurn(aiPlanes){
   if(!Array.isArray(aiPlanes) || aiPlanes.length <= 1) return aiPlanes;
 
@@ -11106,7 +11156,13 @@ function rankAiPlanesForCurrentTurn(aiPlanes){
     if(Math.abs(penaltyA - penaltyB) > 0.0001){
       return penaltyA - penaltyB;
     }
-    return (a.id || "").localeCompare(b.id || "");
+    const idleA = getAiPlaneIdleTurns(a);
+    const idleB = getAiPlaneIdleTurns(b);
+    if(idleA !== idleB){
+      return idleB - idleA;
+    }
+    return getStableHashFromParts(["rank", aiRoundState?.turnNumber ?? 0, a?.id ?? ""])
+      - getStableHashFromParts(["rank", aiRoundState?.turnNumber ?? 0, b?.id ?? ""]);
   });
 }
 
@@ -12865,44 +12921,83 @@ function getFallbackAiMove(context){
   }
 
   if(!best){
-    const plane = aiPlanes[0];
-    const enemy = targetEnemies.reduce((a,b)=> (dist(plane,a)<dist(plane,b)?a:b));
-    const preparationMove = findSafePreparationMoveForAttack(plane, enemy);
-    if(preparationMove){
-      return {
+    let fallbackCandidate = null;
+    for(const plane of aiPlanes){
+      if(flyingPoints.some(fp=>fp.plane===plane)) continue;
+      const enemy = targetEnemies.reduce((a,b)=> (dist(plane,a)<dist(plane,b)?a:b), targetEnemies[0]);
+      if(!enemy) continue;
+
+      const idleTurns = getAiPlaneIdleTurns(plane);
+      const preparationMove = findSafePreparationMoveForAttack(plane, enemy);
+      if(preparationMove){
+        const preparationScore = getAiPlaneAdjustedScore(preparationMove.totalDist, plane);
+        const candidate = {
+          plane,
+          enemy,
+          targetEnemy: enemy,
+          goalName: dynamiteAvailable ? "prepare_dynamite_breach" : "prepare_clear_shot",
+          decisionReason: "fallback_rotation",
+          score: preparationScore,
+          idleTurns,
+          ...preparationMove,
+        };
+        if(compareAiCandidateByScoreAndRotation(candidate, fallbackCandidate, ["fallback_rotation", "prepare"])){
+          fallbackCandidate = candidate;
+        }
+        continue;
+      }
+
+      const conservativeRetreat = riskProfile === "conservative";
+      const fallbackTarget = conservativeRetreat
+        ? {
+            x: (plane.x + homeBase.x) * 0.5,
+            y: (plane.y + homeBase.y) * 0.5,
+          }
+        : enemy;
+      const dx= fallbackTarget.x - plane.x;
+      const dy= fallbackTarget.y - plane.y;
+      const angleBase = Math.atan2(dy, dx);
+
+      const desired = Math.min(Math.hypot(dx,dy)*0.5, MAX_DRAG_DISTANCE);
+      const retreatScore = getAiPlaneAdjustedScore(desired, plane);
+      const candidate = {
         plane,
         enemy,
-        targetEnemy: enemy,
-        goalName: dynamiteAvailable ? "prepare_dynamite_breach" : "prepare_clear_shot",
-        ...preparationMove,
+        fallbackTarget,
+        desired,
+        angleBase,
+        decisionReason: "fallback_rotation",
+        score: retreatScore,
+        idleTurns,
+      };
+      if(compareAiCandidateByScoreAndRotation(candidate, fallbackCandidate, ["fallback_rotation", "retreat"])){
+        fallbackCandidate = candidate;
+      }
+    }
+
+    if(fallbackCandidate){
+      if(Number.isFinite(fallbackCandidate.vx) && Number.isFinite(fallbackCandidate.vy)){
+        return fallbackCandidate;
+      }
+
+      const ang = fallbackCandidate.angleBase
+        + getRandomDeviation(Math.max(0, fallbackCandidate.desired || 0), AI_MAX_ANGLE_DEVIATION);
+      const baseScale = Math.max(0, fallbackCandidate.desired || 0) / MAX_DRAG_DISTANCE;
+      const scale = applyAiMinLaunchScale(baseScale, {
+        source: "fallback_idle_move",
+        planeId: fallbackCandidate.plane?.id ?? null,
+        enemyId: fallbackCandidate.enemy?.id ?? null,
+      });
+
+      best = {
+        plane: fallbackCandidate.plane,
+        enemy: fallbackCandidate.enemy,
+        decisionReason: "fallback_rotation",
+        vx: Math.cos(ang)*scale*speedPxPerSec,
+        vy: Math.sin(ang)*scale*speedPxPerSec,
+        totalDist: fallbackCandidate.desired,
       };
     }
-    const conservativeRetreat = riskProfile === "conservative";
-    const fallbackTarget = conservativeRetreat
-      ? {
-          x: (plane.x + homeBase.x) * 0.5,
-          y: (plane.y + homeBase.y) * 0.5,
-        }
-      : enemy;
-    const dx= fallbackTarget.x - plane.x;
-    const dy= fallbackTarget.y - plane.y;
-    const ang = Math.atan2(dy, dx) + getRandomDeviation(Math.hypot(dx,dy), AI_MAX_ANGLE_DEVIATION);
-
-    const desired = Math.min(Math.hypot(dx,dy)*0.5, MAX_DRAG_DISTANCE);
-    const baseScale = desired / MAX_DRAG_DISTANCE;
-    const scale = applyAiMinLaunchScale(baseScale, {
-      source: "fallback_idle_move",
-      planeId: plane?.id ?? null,
-      enemyId: enemy?.id ?? null,
-    });
-
-    best = {
-      plane,
-      enemy,
-      vx: Math.cos(ang)*scale*speedPxPerSec,
-      vy: Math.sin(ang)*scale*speedPxPerSec,
-      totalDist: desired
-    };
   }
 
   return best;
@@ -13185,6 +13280,12 @@ function issueAIMove(plane, vx, vy){
       aiRoundState.lastLaunchedPlaneId = plane.id;
       aiRoundState.consecutiveSamePlaneLaunches = 1;
     }
+    if(!aiRoundState.lastLaunchTurnByPlaneId || typeof aiRoundState.lastLaunchTurnByPlaneId !== "object"){
+      aiRoundState.lastLaunchTurnByPlaneId = {};
+    }
+    aiRoundState.lastLaunchTurnByPlaneId[plane.id] = Number.isFinite(aiRoundState.turnNumber)
+      ? aiRoundState.turnNumber
+      : 0;
   }
   if(!hasShotThisRound){
     hasShotThisRound = true;
