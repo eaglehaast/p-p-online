@@ -12857,34 +12857,56 @@ function selectAiModeForCurrentTurn(context){
   const aiAliveCount = aiPlanes.length;
   const enemyAliveCount = enemies.length;
   const hasEnoughResourcesForAggression = blueInventoryCount >= AI_CARGO_SWITCH_TO_AGGRESSION_ITEMS;
+  const immediateThreat = Boolean(stolenBlueFlagCarrier)
+    || Boolean(aiRiskProfile?.immediateThreat)
+    || aiAliveCount < enemyAliveCount;
 
   let mode = AI_MODES.ATTRITION;
   let targetPriorities = ["attack_enemy_plane", "close_distance"];
+  let priorityReason = "default_attrition";
+  aiRoundState.defenseShouldPreserve = false;
 
   if(stolenBlueFlagCarrier && stolenBlueFlagCarrier.color !== "blue"){
     mode = AI_MODES.DEFENSE;
     targetPriorities = ["eliminate_flag_carrier", "protect_home_flag"];
+    priorityReason = "immediate_threat";
+    aiRoundState.defenseShouldPreserve = true;
   } else if(aiRiskProfile?.profile === "conservative"){
     mode = AI_MODES.ATTRITION;
-    targetPriorities = ["force_trade", "attack_enemy_plane", "contest_center"];
+    targetPriorities = immediateThreat
+      ? ["contest_center", "pickup_cargo", "attack_enemy_plane"]
+      : ["pickup_cargo", "contest_center", "attack_enemy_plane"];
+    priorityReason = immediateThreat ? "immediate_threat" : "score_lead_only";
   } else if(aiRiskProfile?.profile === "comeback" && shouldUseFlagsMode && availableEnemyFlags.length > 0){
     mode = AI_MODES.FLAG_PRESSURE;
     targetPriorities = ["capture_enemy_flag", "return_with_flag", "high_risk_attack"];
+    priorityReason = "comeback_pressure";
   } else if(hasEnoughResourcesForAggression && shouldUseFlagsMode && availableEnemyFlags.length > 0){
     mode = AI_MODES.FLAG_PRESSURE;
     targetPriorities = ["capture_enemy_flag", "return_with_flag"];
+    priorityReason = "resource_aggression_with_flags";
   } else if(hasEnoughResourcesForAggression){
     mode = AI_MODES.ATTRITION;
     targetPriorities = ["attack_enemy_plane", "close_distance"];
+    priorityReason = "resource_aggression";
   } else if(shouldUseFlagsMode && availableEnemyFlags.length > 0){
     mode = AI_MODES.FLAG_PRESSURE;
     targetPriorities = ["capture_enemy_flag", "return_with_flag"];
+    priorityReason = "flags_available";
   } else if(blueInventoryCount > 0 && aiAliveCount > 1){
     mode = AI_MODES.RESOURCE_FIRST;
     targetPriorities = ["pickup_cargo", "prepare_attack"];
+    priorityReason = "resource_setup";
   } else if(scoreGap > 0 || aiAliveCount < enemyAliveCount){
     mode = AI_MODES.DEFENSE;
-    targetPriorities = ["preserve_planes", "safe_attack"];
+    if(immediateThreat){
+      targetPriorities = ["preserve_planes", "safe_attack"];
+      priorityReason = "immediate_threat";
+      aiRoundState.defenseShouldPreserve = true;
+    } else {
+      targetPriorities = ["contest_center", "safe_attack", "pickup_cargo"];
+      priorityReason = "score_lead_only";
+    }
   }
 
   aiRoundState.mode = mode;
@@ -12896,6 +12918,7 @@ function selectAiModeForCurrentTurn(context){
     blueInventoryCount,
     hasEnoughResourcesForAggression,
     riskProfile: aiRiskProfile?.profile || "balanced",
+    reason: priorityReason,
     priorities: targetPriorities,
   });
   return mode;
@@ -12990,21 +13013,54 @@ function getAiRiskProfile(context){
   const scoreDiff = blueScore - greenScore;
   const blueToWin = Math.max(0, POINTS_TO_WIN - blueScore);
   const greenToWin = Math.max(0, POINTS_TO_WIN - greenScore);
+  const center = getCenterControlAnchor();
+
+  const aiClosestToCenter = aiAliveCount > 0
+    ? Math.min(...context.aiPlanes.map((plane) => dist(plane, center)))
+    : Number.POSITIVE_INFINITY;
+  const enemyClosestToCenter = enemyAliveCount > 0
+    ? Math.min(...context.enemies.map((enemy) => dist(enemy, center)))
+    : Number.POSITIVE_INFINITY;
+  const centerControlLead = enemyClosestToCenter - aiClosestToCenter;
+  const hasCenterAdvantage = centerControlLead >= CELL_SIZE;
+
+  const aiThreatenedPlanes = Array.isArray(context?.aiPlanes)
+    ? context.aiPlanes.filter((plane) => {
+      const nearestEnemy = Array.isArray(context?.enemies) && context.enemies.length > 0
+        ? Math.min(...context.enemies.map((enemy) => dist(enemy, plane)))
+        : Number.POSITIVE_INFINITY;
+      return nearestEnemy <= ATTACK_RANGE_PX * 1.1;
+    }).length
+    : 0;
+  const immediateThreat = aiThreatenedPlanes >= Math.max(1, Math.ceil(aiAliveCount * 0.5));
+
+  const scoreLeadNearWin = scoreDiff >= 3 || blueToWin <= 3;
+  const stablePlaneAdvantage = aiAliveCount >= enemyAliveCount + 1;
+  const hasPositionalStability = hasCenterAdvantage || stablePlaneAdvantage;
 
   let profile = "balanced";
+  let conservativeReason = null;
   if(scoreDiff <= -4 || (scoreDiff <= -2 && greenToWin <= 4) || (scoreDiff < 0 && aiAliveCount < enemyAliveCount)){
     profile = "comeback";
-  } else if(scoreDiff >= 3 || blueToWin <= 3 || (scoreDiff >= 2 && aiAliveCount >= enemyAliveCount + 2)){
+  } else if((scoreLeadNearWin && hasPositionalStability) || (scoreDiff >= 2 && aiAliveCount >= enemyAliveCount + 2 && hasCenterAdvantage)){
     profile = "conservative";
+    conservativeReason = hasCenterAdvantage ? "score_plus_position" : "score_plus_plane_edge";
+  } else if(scoreLeadNearWin && !hasPositionalStability){
+    conservativeReason = "score_lead_only";
   }
 
   return {
     profile,
+    conservativeReason,
+    immediateThreat,
     scoreDiff,
     blueToWin,
     greenToWin,
     aiAliveCount,
     enemyAliveCount,
+    hasCenterAdvantage,
+    centerControlLead,
+    aiThreatenedPlanes,
   };
 }
 
@@ -13628,24 +13684,30 @@ function planModeDrivenAiMove(context){
   }
 
   if(aiRoundState.mode === AI_MODES.DEFENSE){
-    aiRoundState.currentGoal = "preserve_planes";
-    let safestMove = null;
-    for(const plane of groundedAiPlanes){
-      const nearestEnemy = enemies.reduce((a,b)=> (dist(plane,a) < dist(plane,b) ? a : b), enemies[0]);
-      if(!nearestEnemy) continue;
-      if(isAiCandidateTemporarilyBlacklisted(plane, nearestEnemy, "enemy", "preserve_planes")) continue;
-      const awayAngle = Math.atan2(plane.y - nearestEnemy.y, plane.x - nearestEnemy.x);
-      const targetX = plane.x + Math.cos(awayAngle) * MAX_DRAG_DISTANCE;
-      const targetY = plane.y + Math.sin(awayAngle) * MAX_DRAG_DISTANCE;
-      const move = planPathToPoint(plane, targetX, targetY);
-      if(move){
-        const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
-        if(!safestMove || adjustedDist < safestMove.adjustedDist){
-          safestMove = { plane, ...move, adjustedDist };
+    if(aiRoundState.defenseShouldPreserve){
+      aiRoundState.currentGoal = "preserve_planes";
+      let safestMove = null;
+      for(const plane of groundedAiPlanes){
+        const nearestEnemy = enemies.reduce((a,b)=> (dist(plane,a) < dist(plane,b) ? a : b), enemies[0]);
+        if(!nearestEnemy) continue;
+        if(isAiCandidateTemporarilyBlacklisted(plane, nearestEnemy, "enemy", "preserve_planes")) continue;
+        const awayAngle = Math.atan2(plane.y - nearestEnemy.y, plane.x - nearestEnemy.x);
+        const targetX = plane.x + Math.cos(awayAngle) * MAX_DRAG_DISTANCE;
+        const targetY = plane.y + Math.sin(awayAngle) * MAX_DRAG_DISTANCE;
+        const move = planPathToPoint(plane, targetX, targetY);
+        if(move){
+          const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
+          if(!safestMove || adjustedDist < safestMove.adjustedDist){
+            safestMove = { plane, ...move, adjustedDist };
+          }
         }
       }
+      if(safestMove) return safestMove;
+    } else {
+      logAiDecision("defense_preserve_skipped", {
+        reason: "score_lead_only",
+      });
     }
-    if(safestMove) return safestMove;
   }
 
   return null;
