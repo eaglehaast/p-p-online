@@ -11103,19 +11103,7 @@ const AI_RECENT_PLANE_HISTORY_LIMIT = 6;
 const AI_ROTATION_BONUS_PER_IDLE_TURN = 0.04;
 const AI_ROTATION_BONUS_MAX = 0.22;
 const AI_REPEAT_WINDOW_PENALTY_STEP = 0.12;
-const AI_GOAL_BLACKLIST_MIN_TTL_TURNS = 1;
-const AI_GOAL_BLACKLIST_MAX_TTL_TURNS = 2;
-const AI_GOAL_BLACKLIST_CARGO_MIN_TTL_TURNS = 1;
-const AI_GOAL_BLACKLIST_CARGO_MAX_TTL_TURNS = 1;
-const AI_GOAL_BLACKLIST_ENEMY_MIN_TTL_TURNS = 1;
-const AI_GOAL_BLACKLIST_ENEMY_MAX_TTL_TURNS = 2;
 const AI_RECENT_MOVEMENT_ERRORS_LIMIT = 12;
-const AI_EARLY_WALL_HIT_PROGRESS_THRESHOLD = 0.22;
-const AI_EARLY_WALL_HIT_PROGRESS_THRESHOLD_LONG_SHOT = 0.16;
-const AI_INITIATIVE_BLACKLIST_REPEAT_THRESHOLD = 2;
-// Этап 1: снимаем collision-штрафы, чтобы вернуть активность ИИ.
-// Следующий этап: точечная настройка без глобальных запретов направлений.
-const AI_DISABLE_WALL_COLLISION_PENALTIES = true;
 
 function logAiDecision(reason, details = {}){
   const payload = details && typeof details === "object" ? { ...details } : {};
@@ -11196,7 +11184,6 @@ function createInitialAiRoundState(){
     planeIdleTurnsById: {},
     navigationGrid: null,
     recentMovementErrors: [],
-    temporaryGoalBlacklist: {},
   };
 }
 
@@ -11209,101 +11196,8 @@ function getAiDirectionSector(fromX, fromY, toX, toY, sectorsCount = 8){
   return Math.max(0, Math.min(normalizedSectors - 1, sector));
 }
 
-function buildAiGoalBlacklistKey(targetType, targetId, sector){
-  if(!targetType || !targetId || !Number.isFinite(sector)) return null;
-  return `${targetType}:${targetId}:s${sector}`;
-}
-
-function cleanupAiGoalTemporaryBlacklist(){
-  if(!aiRoundState || typeof aiRoundState !== "object") return;
-  if(!aiRoundState.temporaryGoalBlacklist || typeof aiRoundState.temporaryGoalBlacklist !== "object"){
-    aiRoundState.temporaryGoalBlacklist = {};
-    return;
-  }
-
-  const blacklist = aiRoundState.temporaryGoalBlacklist;
-  const currentTurn = Number.isFinite(aiRoundState.turnNumber) ? aiRoundState.turnNumber : 0;
-  for(const key of Object.keys(blacklist)){
-    const entry = blacklist[key];
-    if(!entry || !Number.isFinite(entry.expiresOnTurn) || entry.expiresOnTurn <= currentTurn){
-      delete blacklist[key];
-    }
-  }
-}
-
-function getAiGoalTemporaryBlacklistEntry(plane, target, targetType){
-  if(!plane || !target || !targetType) return null;
-  cleanupAiGoalTemporaryBlacklist();
-  const sector = getAiDirectionSector(plane.x, plane.y, target.x, target.y);
-  const targetId = target.id ?? `${Math.round(target.x)}:${Math.round(target.y)}`;
-  const key = buildAiGoalBlacklistKey(targetType, targetId, sector);
-  if(!key) return null;
-  const entry = aiRoundState?.temporaryGoalBlacklist?.[key];
-  if(!entry) return null;
-  return { key, sector, targetId, entry };
-}
-
-function isAiGoalInitiativeForBlacklist(goalName){
-  if(typeof goalName !== "string" || !goalName) return false;
-  return goalName === "pickup_cargo"
-    || goalName === "pickup_cargo_early"
-    || goalName === "role_striker"
-    || goalName.startsWith("attack_");
-}
-
-function getAiBlacklistTtlRangeForTarget(targetType){
-  if(targetType === "cargo"){
-    return {
-      min: AI_GOAL_BLACKLIST_CARGO_MIN_TTL_TURNS,
-      max: AI_GOAL_BLACKLIST_CARGO_MAX_TTL_TURNS,
-    };
-  }
-  if(targetType === "enemy"){
-    return {
-      min: AI_GOAL_BLACKLIST_ENEMY_MIN_TTL_TURNS,
-      max: AI_GOAL_BLACKLIST_ENEMY_MAX_TTL_TURNS,
-    };
-  }
-  return {
-    min: AI_GOAL_BLACKLIST_MIN_TTL_TURNS,
-    max: AI_GOAL_BLACKLIST_MAX_TTL_TURNS,
-  };
-}
-
 function isAiCandidateTemporarilyBlacklisted(plane, target, targetType, goalName = null){
-  if(AI_DISABLE_WALL_COLLISION_PENALTIES) return false;
-  const hit = getAiGoalTemporaryBlacklistEntry(plane, target, targetType);
-  if(!hit) return false;
-  const effectiveGoalName = goalName || aiRoundState?.currentGoal || null;
-  const failureCount = Number.isFinite(hit.entry?.failureCount) ? hit.entry.failureCount : 1;
-  const isInitiativeGoal = isAiGoalInitiativeForBlacklist(effectiveGoalName);
-  const requiredFailures = isInitiativeGoal ? AI_INITIATIVE_BLACKLIST_REPEAT_THRESHOLD : 1;
-  if(failureCount < requiredFailures){
-    logAiDecision("ai_goal_blacklist_soft_skip", {
-      planeId: plane?.id ?? null,
-      targetId: hit.targetId,
-      targetType,
-      goalName: effectiveGoalName,
-      directionSector: hit.sector,
-      expiresOnTurn: hit.entry.expiresOnTurn ?? null,
-      reason: hit.entry.reason || "recent_early_wall_hit",
-      failureCount,
-      requiredFailures,
-      softSkipReason: "insufficient_repeat_failures_for_initiative_goal",
-    });
-    return false;
-  }
-  logAiDecision("ai_goal_blacklisted_temporarily", {
-    planeId: plane?.id ?? null,
-    targetId: hit.targetId,
-    targetType,
-    goalName: effectiveGoalName,
-    directionSector: hit.sector,
-    expiresOnTurn: hit.entry.expiresOnTurn ?? null,
-    reason: hit.entry.reason || "recent_early_wall_hit",
-    failureCount,
-  });
-  return true;
+  return false;
 }
 
 function appendAiRecentMovementError(event){
@@ -11317,68 +11211,11 @@ function appendAiRecentMovementError(event){
   }
 }
 
-function addAiTemporaryBlacklistFromMovementError(errorEvent){
-  if(!errorEvent || !errorEvent.targetType || !errorEvent.targetId || !Number.isFinite(errorEvent.directionSector)) return;
-  if(!aiRoundState || typeof aiRoundState !== "object") return;
-  if(!aiRoundState.temporaryGoalBlacklist || typeof aiRoundState.temporaryGoalBlacklist !== "object"){
-    aiRoundState.temporaryGoalBlacklist = {};
-  }
-
-  const key = buildAiGoalBlacklistKey(errorEvent.targetType, errorEvent.targetId, errorEvent.directionSector);
-  if(!key) return;
-  cleanupAiGoalTemporaryBlacklist();
-  const currentTurn = Number.isFinite(aiRoundState.turnNumber) ? aiRoundState.turnNumber : 0;
-  const ttlSettings = getAiBlacklistTtlRangeForTarget(errorEvent.targetType);
-  const ttlMin = Math.max(1, ttlSettings.min);
-  const ttlMax = Math.max(ttlMin, ttlSettings.max);
-  const ttlRange = ttlMax - ttlMin + 1;
-  const ttlTurns = ttlMin + Math.floor(Math.random() * ttlRange);
-  const previousEntry = aiRoundState.temporaryGoalBlacklist[key];
-  const failureCount = (Number.isFinite(previousEntry?.failureCount) ? previousEntry.failureCount : 0) + 1;
-  aiRoundState.temporaryGoalBlacklist[key] = {
-    reason: errorEvent.collisionReason || "recent_early_wall_hit",
-    goalName: errorEvent.goalName || null,
-    createdTurn: currentTurn,
-    expiresOnTurn: currentTurn + ttlTurns,
-    failureCount,
-  };
-}
-
 function registerAiEarlyWallCollision(fp, collisionSurfaceType){
-  if(AI_DISABLE_WALL_COLLISION_PENALTIES) return;
   const goalContext = fp?.aiGoalContext;
   if(!goalContext?.target || !goalContext?.targetType) return;
   if(collisionSurfaceType !== "field" && collisionSurfaceType !== "axis" && collisionSurfaceType !== "diag") return;
-
-  const elapsed = FIELD_FLIGHT_DURATION_SEC - (Number.isFinite(fp.timeLeft) ? fp.timeLeft : FIELD_FLIGHT_DURATION_SEC);
-  const progress = FIELD_FLIGHT_DURATION_SEC > 0 ? elapsed / FIELD_FLIGHT_DURATION_SEC : 0;
-
   const target = goalContext.target;
-  const plannedDistance = Number.isFinite(goalContext.fromX)
-    && Number.isFinite(goalContext.fromY)
-    && Number.isFinite(target?.x)
-    && Number.isFinite(target?.y)
-    ? dist({ x: goalContext.fromX, y: goalContext.fromY }, target)
-    : null;
-  const isLongShot = Number.isFinite(plannedDistance) && plannedDistance >= AI_LONG_SHOT_DISTANCE_THRESHOLD;
-  const progressThreshold = isLongShot
-    ? AI_EARLY_WALL_HIT_PROGRESS_THRESHOLD_LONG_SHOT
-    : AI_EARLY_WALL_HIT_PROGRESS_THRESHOLD;
-  if(progress > progressThreshold){
-    logAiDecision("ai_goal_blacklist_soft_skip", {
-      planeId: fp?.plane?.id ?? null,
-      goalName: goalContext.goalName || aiRoundState?.currentGoal || null,
-      targetType: goalContext.targetType,
-      targetId: target?.id ?? null,
-      collisionReason: `collision_${collisionSurfaceType}`,
-      progress: Number(progress.toFixed(3)),
-      progressThreshold: Number(progressThreshold.toFixed(3)),
-      plannedDistance: Number.isFinite(plannedDistance) ? Number(plannedDistance.toFixed(1)) : null,
-      isLongShot,
-      softSkipReason: "collision_not_early_enough_for_blacklist",
-    });
-    return;
-  }
 
   const targetId = target.id ?? `${Math.round(target.x)}:${Math.round(target.y)}`;
   const directionSector = getAiDirectionSector(goalContext.fromX, goalContext.fromY, target.x, target.y);
@@ -11393,7 +11230,14 @@ function registerAiEarlyWallCollision(fp, collisionSurfaceType){
     collisionReason: `early_collision_${collisionSurfaceType}`,
   };
   appendAiRecentMovementError(errorEvent);
-  addAiTemporaryBlacklistFromMovementError(errorEvent);
+  logAiDecision("collision_logged_no_penalty", {
+    planeId: fp?.plane?.id ?? null,
+    goalName: goalContext.goalName || aiRoundState?.currentGoal || null,
+    targetType: goalContext.targetType,
+    targetId,
+    directionSector,
+    collisionReason: `collision_${collisionSurfaceType}`,
+  });
 }
 
 function buildAiRoundNavigationGrid(){
