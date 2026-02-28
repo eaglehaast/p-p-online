@@ -12380,9 +12380,21 @@ function detectConsumedInventoryType(beforeCounts = {}, afterCounts = {}){
   return null;
 }
 
-function hasReliableCorridorForMove(plane, landingPoint, sampleCount = 18){
+function hasReliableCorridorForMove(plane, landingPoint, options = 18){
   if(!plane || !landingPoint) return false;
-  const checksPerSample = [
+  const normalizedOptions = typeof options === "number"
+    ? { sampleCount: options }
+    : (options || {});
+
+  const sampleCount = Number.isFinite(normalizedOptions.sampleCount)
+    ? Math.max(1, Math.floor(normalizedOptions.sampleCount))
+    : 18;
+  const maxProgress = Number.isFinite(normalizedOptions.maxProgress)
+    ? Math.min(1, Math.max(0, normalizedOptions.maxProgress))
+    : 1;
+  const lateralMode = normalizedOptions.lateralMode === "soft" ? "soft" : "full";
+
+  const fullChecksPerSample = [
     { x: 0, y: 0 },
     { x: POINT_RADIUS, y: 0 },
     { x: -POINT_RADIUS, y: 0 },
@@ -12393,9 +12405,15 @@ function hasReliableCorridorForMove(plane, landingPoint, sampleCount = 18){
     { x: -POINT_RADIUS * 0.7, y: POINT_RADIUS * 0.7 },
     { x: -POINT_RADIUS * 0.7, y: -POINT_RADIUS * 0.7 },
   ];
+  const softChecksPerSample = [
+    { x: 0, y: 0 },
+    { x: POINT_RADIUS * 0.7, y: 0 },
+    { x: -POINT_RADIUS * 0.7, y: 0 },
+  ];
+  const checksPerSample = lateralMode === "soft" ? softChecksPerSample : fullChecksPerSample;
 
   for(let i = 0; i <= sampleCount; i += 1){
-    const t = sampleCount <= 0 ? 1 : i / sampleCount;
+    const t = sampleCount <= 0 ? maxProgress : (i / sampleCount) * maxProgress;
     const sampleX = plane.x + (landingPoint.x - plane.x) * t;
     const sampleY = plane.y + (landingPoint.y - plane.y) * t;
     if(!isPointInsideFieldBounds(sampleX, sampleY)) return false;
@@ -12415,15 +12433,12 @@ function hasReliableCorridorForMove(plane, landingPoint, sampleCount = 18){
 function shouldRequireOcclusionCheck(context, plannedMove){
   const goal = plannedMove?.goalName || aiRoundState?.currentGoal || "";
   if(typeof goal !== "string") return false;
-  const attackOrPickupGoals = [
+  const combatGoals = [
     "attack",
     "eliminate",
-    "capture",
-    "pickup",
     "finisher",
-    "striker",
   ];
-  if(attackOrPickupGoals.some((token) => goal.includes(token))) return true;
+  if(combatGoals.some((token) => goal.includes(token))) return true;
 
   if(plannedMove?.targetEnemy) return true;
   return false;
@@ -12440,7 +12455,11 @@ function validateAiMovePreflight(plane, plannedMove, context){
   };
 
   const sampleCount = 20;
-  const hasCorridor = hasReliableCorridorForMove(plane, landingPoint, sampleCount);
+  const hasCorridor = hasReliableCorridorForMove(plane, landingPoint, {
+    sampleCount,
+    lateralMode: "full",
+    maxProgress: 1,
+  });
   if(!hasCorridor){
     return {
       valid: false,
@@ -12452,14 +12471,40 @@ function validateAiMovePreflight(plane, plannedMove, context){
 
   if(shouldRequireOcclusionCheck(context, plannedMove)){
     const routeTarget = getAiStrategicTargetPoint(context, plannedMove);
-    if(routeTarget && !hasReliableCorridorForMove(plane, routeTarget, sampleCount)){
-      return {
-        valid: false,
-        reason: "preflight_target_occluded",
-        landingPoint,
-        routeTarget,
+    if(routeTarget){
+      const targetSampleCount = 10;
+      const partialTargetProgress = 0.65;
+      const hasSoftTargetCorridor = hasReliableCorridorForMove(plane, routeTarget, {
+        sampleCount: targetSampleCount,
+        lateralMode: "soft",
+        maxProgress: partialTargetProgress,
+      });
+      if(!hasSoftTargetCorridor){
+        return {
+          valid: false,
+          reason: "preflight_target_occluded",
+          landingPoint,
+          routeTarget,
+          sampleCount: targetSampleCount,
+        };
+      }
+
+      const hasStrictTargetCorridor = hasReliableCorridorForMove(plane, routeTarget, {
         sampleCount,
-      };
+        lateralMode: "full",
+        maxProgress: 1,
+      });
+      if(!hasStrictTargetCorridor){
+        return {
+          valid: true,
+          reason: "preflight_soft_occlusion_allowed",
+          landingPoint,
+          routeTarget,
+          sampleCount: targetSampleCount,
+          strictSampleCount: sampleCount,
+          partialTargetProgress,
+        };
+      }
     }
   }
 
@@ -12635,6 +12680,16 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       });
       plannedMove = emergencyMove;
     }
+  } else if(preflight.reason === "preflight_soft_occlusion_allowed"){
+    logAiDecision("preflight_soft_occlusion_allowed", {
+      planeId: plannedMove.plane?.id ?? null,
+      goalName: plannedMove.goalName || aiRoundState?.currentGoal || null,
+      landingPoint: preflight.landingPoint || null,
+      routeTarget: preflight.routeTarget || null,
+      sampleCount: preflight.sampleCount || null,
+      strictSampleCount: preflight.strictSampleCount || null,
+      partialTargetProgress: preflight.partialTargetProgress || null,
+    });
   }
 
   const beforeInventoryState = evaluateBlueInventoryState();
