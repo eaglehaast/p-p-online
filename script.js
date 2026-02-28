@@ -12530,6 +12530,51 @@ function getAiPreflightFallbackMove(context, plannedMove){
     || getFallbackAiMove(context);
 }
 
+function findEmergencyPathClearAiMove(context, sourceMove){
+  const allAiPlanes = Array.isArray(context?.aiPlanes)
+    ? context.aiPlanes.filter((plane) => plane?.isAlive && !plane.burning)
+    : points.filter((plane) => plane?.color === "blue" && plane?.isAlive && !plane.burning);
+  if(!allAiPlanes.length) return null;
+
+  const preferredPlane = sourceMove?.plane || null;
+  const planes = preferredPlane
+    ? [preferredPlane, ...allAiPlanes.filter((plane) => plane !== preferredPlane)]
+    : allAiPlanes;
+  const center = getCenterControlAnchor();
+  const speedPxPerSec = (settings.flightRangeCells * CELL_SIZE) / FIELD_FLIGHT_DURATION_SEC;
+  const powerScales = [0.95, 0.8, 0.65, 0.5, 0.35];
+  const angleOffsets = [0, 0.35, -0.35, 0.7, -0.7, 1.05, -1.05, Math.PI];
+
+  for(const plane of planes){
+    if(flyingPoints.some((fp) => fp.plane === plane)) continue;
+    const baseAngle = Math.atan2(center.y - plane.y, center.x - plane.x);
+
+    for(const scale of powerScales){
+      for(const offset of angleOffsets){
+        const angle = baseAngle + offset;
+        const vx = Math.cos(angle) * speedPxPerSec * scale;
+        const vy = Math.sin(angle) * speedPxPerSec * scale;
+        const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
+        const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
+
+        if(!isPointInsideFieldBounds(landingX, landingY)) continue;
+        if(!isPathClear(plane.x, plane.y, landingX, landingY)) continue;
+
+        return {
+          plane,
+          vx,
+          vy,
+          totalDist: Math.hypot(landingX - plane.x, landingY - plane.y),
+          goalName: "emergency_path_clear_fallback",
+          decisionReason: "preflight_hard_fallback",
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
 function issueAIMoveWithInventoryUsage(context, plannedMove){
   if(!plannedMove?.plane) return;
 
@@ -12552,21 +12597,43 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
           fallbackReason: fallbackPreflight.reason,
           fallbackPlaneId: fallbackMove.plane?.id ?? null,
         });
-        return;
+        const emergencyMove = findEmergencyPathClearAiMove(context, plannedMove);
+        if(!emergencyMove){
+          return;
+        }
+        logAiDecision("preflight_emergency_path_clear_move", {
+          blockedReason: preflight.reason,
+          fallbackReason: fallbackPreflight.reason,
+          originalPlaneId: plannedMove.plane?.id ?? null,
+          emergencyPlaneId: emergencyMove.plane?.id ?? null,
+          emergencyGoal: emergencyMove.goalName,
+        });
+        plannedMove = emergencyMove;
+      } else {
+        logAiDecision("preflight_fallback_move", {
+          blockedReason: preflight.reason,
+          originalPlaneId: plannedMove.plane?.id ?? null,
+          fallbackPlaneId: fallbackMove.plane?.id ?? null,
+          fallbackGoal: fallbackMove.goalName || fallbackMove.decisionReason || "fallback_move",
+        });
+        plannedMove = fallbackMove;
       }
-      logAiDecision("preflight_fallback_move", {
-        blockedReason: preflight.reason,
-        originalPlaneId: plannedMove.plane?.id ?? null,
-        fallbackPlaneId: fallbackMove.plane?.id ?? null,
-        fallbackGoal: fallbackMove.goalName || fallbackMove.decisionReason || "fallback_move",
-      });
-      plannedMove = fallbackMove;
     } else {
       logAiDecision("preflight_fallback_unavailable", {
         blockedReason: preflight.reason,
         planeId: plannedMove.plane?.id ?? null,
       });
-      return;
+      const emergencyMove = findEmergencyPathClearAiMove(context, plannedMove);
+      if(!emergencyMove){
+        return;
+      }
+      logAiDecision("preflight_emergency_path_clear_move", {
+        blockedReason: preflight.reason,
+        originalPlaneId: plannedMove.plane?.id ?? null,
+        emergencyPlaneId: emergencyMove.plane?.id ?? null,
+        emergencyGoal: emergencyMove.goalName,
+      });
+      plannedMove = emergencyMove;
     }
   }
 
