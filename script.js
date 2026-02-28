@@ -11113,6 +11113,9 @@ const AI_RECENT_MOVEMENT_ERRORS_LIMIT = 12;
 const AI_EARLY_WALL_HIT_PROGRESS_THRESHOLD = 0.22;
 const AI_EARLY_WALL_HIT_PROGRESS_THRESHOLD_LONG_SHOT = 0.16;
 const AI_INITIATIVE_BLACKLIST_REPEAT_THRESHOLD = 2;
+// Этап 1: снимаем collision-штрафы, чтобы вернуть активность ИИ.
+// Следующий этап: точечная настройка без глобальных запретов направлений.
+const AI_DISABLE_WALL_COLLISION_PENALTIES = true;
 
 function logAiDecision(reason, details = {}){
   const payload = details && typeof details === "object" ? { ...details } : {};
@@ -11268,6 +11271,7 @@ function getAiBlacklistTtlRangeForTarget(targetType){
 }
 
 function isAiCandidateTemporarilyBlacklisted(plane, target, targetType, goalName = null){
+  if(AI_DISABLE_WALL_COLLISION_PENALTIES) return false;
   const hit = getAiGoalTemporaryBlacklistEntry(plane, target, targetType);
   if(!hit) return false;
   const effectiveGoalName = goalName || aiRoundState?.currentGoal || null;
@@ -11341,6 +11345,7 @@ function addAiTemporaryBlacklistFromMovementError(errorEvent){
 }
 
 function registerAiEarlyWallCollision(fp, collisionSurfaceType){
+  if(AI_DISABLE_WALL_COLLISION_PENALTIES) return;
   const goalContext = fp?.aiGoalContext;
   if(!goalContext?.target || !goalContext?.targetType) return;
   if(collisionSurfaceType !== "field" && collisionSurfaceType !== "axis" && collisionSurfaceType !== "diag") return;
@@ -13158,7 +13163,6 @@ function tryPlanEarlyCargoPickupMove(context){
     for(const cargo of readyCargo){
       skipStats.considered += 1;
       if(isAiCandidateTemporarilyBlacklisted(plane, cargo, "cargo", "pickup_cargo_early")){
-        skipStats.blockedByBlacklist += 1;
         continue;
       }
       const move = planPathToPoint(plane, cargo.x, cargo.y);
@@ -13438,7 +13442,6 @@ function planRoleDrivenAiMove(context, rolePack){
     };
     for(const cargo of readyCargo){
       if(isAiCandidateTemporarilyBlacklisted(collector, cargo, "cargo", "role_collector")){
-        collectorSkipStats.blockedByBlacklist += 1;
         continue;
       }
       const move = planPathToPoint(collector, cargo.x, cargo.y);
@@ -13623,7 +13626,6 @@ function planModeDrivenAiMove(context){
       for(const cargo of cargoState){
         if(cargo?.state !== "ready") continue;
         if(isAiCandidateTemporarilyBlacklisted(plane, cargo, "cargo", "pickup_cargo")){
-          cargoSkipStats.blockedByBlacklist += 1;
           continue;
         }
         const move = planPathToPoint(plane, cargo.x, cargo.y);
