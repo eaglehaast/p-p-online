@@ -12935,7 +12935,7 @@ function tryPlanOpeningCenterControlMove(context){
     for(const cargo of readyCargo){
       const move = planPathToPoint(plane, cargo.x, cargo.y);
       if(!move) continue;
-      const riskInfo = evaluateCargoPickupRisk(plane, cargo, context);
+      const riskInfo = evaluateCargoPickupRisk(plane, cargo, context, move);
       const favorableInfo = evaluateFavorableCargoCandidate(plane, cargo, move, riskInfo);
       const canTakeCargo = riskInfo.isSafePath
         && (riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE || favorableInfo?.isFavorableCargo);
@@ -13024,7 +13024,7 @@ function estimateCargoInterceptionChance(plane, cargoCenter, enemies){
   return Math.min(1, threateningEnemies / Math.max(1, enemies.length));
 }
 
-function evaluateCargoPickupRisk(plane, cargo, context){
+function evaluateCargoPickupRisk(plane, cargo, context, plannedMove = null){
   const cargoCenter = getCargoVisualCenter(cargo);
   const nearestEnemyDistance = Array.isArray(context?.enemies) && context.enemies.length > 0
     ? Math.min(...context.enemies.map((enemy) => dist(enemy, cargoCenter)))
@@ -13032,12 +13032,19 @@ function evaluateCargoPickupRisk(plane, cargo, context){
   const interceptionChance = estimateCargoInterceptionChance(plane, cargoCenter, context?.enemies || []);
   const carryingEnemyFlag = Boolean(plane?.carriedFlagId && getFlagById(plane.carriedFlagId)?.color === "green");
   const isSafePath = isPathClear(plane.x, plane.y, cargoCenter.x, cargoCenter.y);
+  const hasWorkingRoute = Boolean(plannedMove);
+  const directDistance = dist(plane, cargoCenter);
+  const routeDistance = plannedMove?.totalDist ?? directDistance;
+  const detourRatio = directDistance > 0 ? Math.max(0, (routeDistance - directDistance) / directDistance) : 0;
+  const indirectRouteRiskPenalty = !isSafePath
+    ? (hasWorkingRoute ? Math.min(0.24, 0.09 + detourRatio * 0.18) : 0.45)
+    : 0;
 
   let risk = 0;
   risk += nearestEnemyDistance < ATTACK_RANGE_PX ? 0.55 : nearestEnemyDistance < ATTACK_RANGE_PX * 1.5 ? 0.3 : 0.1;
   risk += interceptionChance * 0.35;
   risk += carryingEnemyFlag ? 0.6 : 0;
-  if(!isSafePath) risk += 0.45;
+  risk += indirectRouteRiskPenalty;
 
   return {
     totalRisk: Math.min(1, risk),
@@ -13045,6 +13052,10 @@ function evaluateCargoPickupRisk(plane, cargo, context){
     interceptionChance,
     carryingEnemyFlag,
     isSafePath,
+    hasWorkingRoute,
+    indirectRouteRiskPenalty,
+    directDistance,
+    routeDistance,
     cargoCenter,
   };
 }
@@ -13096,13 +13107,16 @@ function tryPlanEarlyCargoPickupMove(context){
       }
       const move = planPathToPoint(plane, cargo.x, cargo.y);
       if(!move) continue;
-      const riskInfo = evaluateCargoPickupRisk(plane, cargo, context);
+      const riskInfo = evaluateCargoPickupRisk(plane, cargo, context, move);
       const favorableInfo = evaluateFavorableCargoCandidate(plane, cargo, move, riskInfo);
-      const isAcceptedByBaseRisk = riskInfo.isSafePath && riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE;
-      const isAcceptedByFavorableOverride = riskInfo.isSafePath && favorableInfo?.isFavorableCargo;
+      const isAcceptedByBaseRisk = riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE;
+      const isAcceptedByFavorableOverride = favorableInfo?.isFavorableCargo;
+      const isAcceptedByIndirectRouteValue = !riskInfo.isSafePath
+        && riskInfo.hasWorkingRoute
+        && riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE + AI_CARGO_RISK_YELLOW_ZONE_MARGIN;
 
-      if(!isAcceptedByBaseRisk && !isAcceptedByFavorableOverride){
-        if(!riskInfo.isSafePath) skipStats.blockedByPath += 1;
+      if(!isAcceptedByBaseRisk && !isAcceptedByFavorableOverride && !isAcceptedByIndirectRouteValue){
+        if(!riskInfo.hasWorkingRoute) skipStats.blockedByPath += 1;
         if(riskInfo.totalRisk > AI_CARGO_RISK_ACCEPTANCE){
           if(favorableInfo?.hasImmediateThreat) skipStats.blockedByThreat += 1;
           else if(!favorableInfo?.isNearPlane) skipStats.blockedByDistance += 1;
@@ -13112,7 +13126,10 @@ function tryPlanEarlyCargoPickupMove(context){
       }
 
       if(!bestCandidate || riskInfo.totalRisk < bestCandidate.riskInfo.totalRisk || (riskInfo.totalRisk === bestCandidate.riskInfo.totalRisk && move.totalDist < bestCandidate.move.totalDist)){
-        bestCandidate = { plane, cargo, move, riskInfo, favorableInfo, acceptedBy: isAcceptedByBaseRisk ? "base_threshold" : "favorable_override" };
+        const acceptedBy = isAcceptedByBaseRisk
+          ? "base_threshold"
+          : (isAcceptedByFavorableOverride ? "favorable_override" : "indirect_route_value");
+        bestCandidate = { plane, cargo, move, riskInfo, favorableInfo, acceptedBy };
       }
     }
   }
@@ -13219,7 +13236,7 @@ function assignAiRolesForTurn(context){
       for(const cargo of readyCargo){
         const move = planPathToPoint(plane, cargo.x, cargo.y);
         if(!move) continue;
-        const riskInfo = evaluateCargoPickupRisk(plane, cargo, context);
+        const riskInfo = evaluateCargoPickupRisk(plane, cargo, context, move);
         const favorableInfo = evaluateFavorableCargoCandidate(plane, cargo, move, riskInfo);
         if(!riskInfo.isSafePath || riskInfo.totalRisk > AI_CARGO_RISK_ACCEPTANCE){
           const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
@@ -13370,7 +13387,7 @@ function planRoleDrivenAiMove(context, rolePack){
       }
       const move = planPathToPoint(collector, cargo.x, cargo.y);
       if(!move) continue;
-      const riskInfo = evaluateCargoPickupRisk(collector, cargo, context);
+      const riskInfo = evaluateCargoPickupRisk(collector, cargo, context, move);
       const favorableInfo = evaluateFavorableCargoCandidate(collector, cargo, move, riskInfo);
       if(!riskInfo.isSafePath){
         collectorSkipStats.blockedByPath += 1;
@@ -13555,13 +13572,11 @@ function planModeDrivenAiMove(context){
         }
         const move = planPathToPoint(plane, cargo.x, cargo.y);
         if(!move) continue;
-        const riskInfo = evaluateCargoPickupRisk(plane, cargo, context);
+        const riskInfo = evaluateCargoPickupRisk(plane, cargo, context, move);
         const favorableInfo = evaluateFavorableCargoCandidate(plane, cargo, move, riskInfo);
-
-        if(!riskInfo.isSafePath){
-          cargoSkipStats.blockedByPath += 1;
-          continue;
-        }
+        const isAcceptedByIndirectRouteValue = !riskInfo.isSafePath
+          && riskInfo.hasWorkingRoute
+          && riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE + AI_CARGO_RISK_YELLOW_ZONE_MARGIN;
 
         if(riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE){
           const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
@@ -13579,7 +13594,16 @@ function planModeDrivenAiMove(context){
           continue;
         }
 
-        if(favorableInfo?.hasImmediateThreat) cargoSkipStats.blockedByThreat += 1;
+        if(isAcceptedByIndirectRouteValue){
+          const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
+          if(!bestFavorableCargoMove || adjustedDist < bestFavorableCargoMove.adjustedDist || (adjustedDist === bestFavorableCargoMove.adjustedDist && riskInfo.totalRisk < bestFavorableCargoMove.riskInfo.totalRisk)){
+            bestFavorableCargoMove = { plane, move, cargo, riskInfo, favorableInfo, acceptedBy: "indirect_route_value", adjustedDist };
+          }
+          continue;
+        }
+
+        if(!riskInfo.hasWorkingRoute) cargoSkipStats.blockedByPath += 1;
+        else if(favorableInfo?.hasImmediateThreat) cargoSkipStats.blockedByThreat += 1;
         else if(!favorableInfo?.isNearPlane) cargoSkipStats.blockedByDistance += 1;
         else cargoSkipStats.blockedByRisk += 1;
       }
