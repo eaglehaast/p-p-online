@@ -11496,32 +11496,72 @@ function getAiNavigationCellForPoint(navigationGrid, x, y){
 function evaluateAiNavigationConnectivity(startX, startY, targetX, targetY){
   const navigationGrid = aiRoundState?.navigationGrid;
   if(!navigationGrid){
-    return { reachable: true, reason: "navigation_grid_missing" };
+    return { reachable: true, reason: "navigation_grid_missing", blockLevel: null, hardBlocked: false };
   }
 
   const startCell = getAiNavigationCellForPoint(navigationGrid, startX, startY);
   const targetCell = getAiNavigationCellForPoint(navigationGrid, targetX, targetY);
 
   if(!startCell){
-    return { reachable: false, reason: "start_outside_navigation_grid", startCell: null, targetCell };
+    return {
+      reachable: false,
+      reason: "start_outside_navigation_grid",
+      blockLevel: "hard_blocked",
+      hardBlocked: true,
+      startCell: null,
+      targetCell,
+    };
   }
   if(!targetCell){
-    return { reachable: false, reason: "target_outside_navigation_grid", startCell, targetCell: null };
+    return {
+      reachable: false,
+      reason: "target_outside_navigation_grid",
+      blockLevel: "hard_blocked",
+      hardBlocked: true,
+      startCell,
+      targetCell: null,
+    };
   }
   if(!startCell.isWalkable){
-    return { reachable: false, reason: "start_cell_blocked", startCell, targetCell };
+    return {
+      reachable: false,
+      reason: "start_cell_blocked",
+      blockLevel: "hard_blocked",
+      hardBlocked: true,
+      startCell,
+      targetCell,
+    };
   }
   if(!targetCell.isWalkable){
-    return { reachable: false, reason: "target_cell_blocked", startCell, targetCell };
+    return {
+      reachable: false,
+      reason: "target_cell_blocked",
+      blockLevel: "hard_blocked",
+      hardBlocked: true,
+      startCell,
+      targetCell,
+    };
   }
 
   const reachable = startCell.componentId === targetCell.componentId;
   return {
     reachable,
     reason: reachable ? "reachable" : "different_navigation_component",
+    blockLevel: reachable ? null : "soft_navigation_warning",
+    hardBlocked: false,
     startCell,
     targetCell,
   };
+}
+
+function isAiGoalHighPriorityForSoftNavigationBypass(options = {}){
+  const goalName = String(options?.goalName || aiRoundState?.currentGoal || "").toLowerCase();
+  const decisionReason = String(options?.decisionReason || "").toLowerCase();
+  const semanticTags = [goalName, decisionReason].join(" ");
+  return semanticTags.includes("attack")
+    || semanticTags.includes("cargo")
+    || semanticTags.includes("center")
+    || semanticTags.includes("flag");
 }
 
 let aiRoundState = createInitialAiRoundState();
@@ -14035,11 +14075,15 @@ function planPathToPoint(plane, tx, ty, options = {}){
 
   const navigationCheck = evaluateAiNavigationConnectivity(plane.x, plane.y, tx, ty);
   if(!navigationCheck.reachable){
-    logAiDecision("blocked_by_round_navigation", {
+    const isHighPriorityGoal = isAiGoalHighPriorityForSoftNavigationBypass(options);
+    const logDetails = {
       planeId: plane?.id ?? null,
       targetX: tx,
       targetY: ty,
       reason: navigationCheck.reason,
+      blockLevel: navigationCheck.blockLevel,
+      navigationHardBlocked: Boolean(navigationCheck.hardBlocked),
+      isHighPriorityGoal,
       startCell: navigationCheck.startCell
         ? { x: navigationCheck.startCell.x, y: navigationCheck.startCell.y }
         : null,
@@ -14048,8 +14092,20 @@ function planPathToPoint(plane, tx, ty, options = {}){
         : null,
       goalName: options?.goalName || null,
       decisionReason: options?.decisionReason || null,
+    };
+
+    if(navigationCheck.hardBlocked){
+      logAiDecision("hard_blocked", logDetails);
+      return null;
+    }
+
+    logAiDecision("soft_navigation_warning", {
+      ...logDetails,
+      continuedPlanning: true,
+      warningPolicy: isHighPriorityGoal
+        ? "priority_goal_bypass_soft_navigation_filter"
+        : "soft_navigation_filter_relaxed",
     });
-    return null;
   }
 
   if(isPathClear(plane.x, plane.y, tx, ty)){
