@@ -11164,21 +11164,33 @@ const AI_OPENING_DIRECT_FINISHER_MIN_LEAD = 2;
 const AI_CENTER_CONTROL_DISTANCE = MAX_DRAG_DISTANCE * 0.35;
 const AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD = 3;
 const AI_INVENTORY_SOFT_FALLBACK_COOLDOWN_TURNS = 4;
-const AI_REPEAT_PLANE_SOFT_PENALTY = 0.42;
-const AI_REPEAT_PLANE_HARD_PENALTY = 0.65;
+const AI_REPEAT_PLANE_SOFT_PENALTY = 0.48;
+const AI_REPEAT_PLANE_HARD_PENALTY = 0.72;
 const AI_RECENT_PLANE_HISTORY_LIMIT = 6;
-const AI_ROTATION_BONUS_PER_IDLE_TURN = 0.04;
-const AI_ROTATION_BONUS_MAX = 0.22;
-const AI_REPEAT_WINDOW_PENALTY_STEP = 0.12;
-const AI_REPEAT_FORCE_SCORE_MARGIN = MAX_DRAG_DISTANCE * 0.12;
-const AI_REPEAT_ALLOWED_REASON_KEYWORDS = Object.freeze([
+const AI_ROTATION_BONUS_PER_IDLE_TURN = 0.05;
+const AI_ROTATION_BONUS_MAX = 0.26;
+const AI_REPEAT_WINDOW_PENALTY_STEP = 0.15;
+const AI_REPEAT_FORCE_SCORE_MARGIN = MAX_DRAG_DISTANCE * 0.08;
+const AI_REPEAT_OPENING_FORCE_TURN_LIMIT = 2;
+const AI_REPEAT_ALLOWED_REASON_CODES = Object.freeze([
   "direct_finisher",
-  "cargo",
+  "opening_center_cargo",
+  "mode_flag_pressure",
+  "fallback_flag_pressure",
+  "emergency_base_defense",
+  "emergency_hold_position",
+  "critical_base_threat",
+]);
+const AI_REPEAT_ALLOWED_REASON_TOKENS = Object.freeze([
+  "intercept",
+  "finisher",
+  "defense",
   "flag",
+  "cargo",
   "critical",
   "emergency",
-  "intercept",
-  "defense",
+  "protect",
+  "hold",
 ]);
 
 function logAiDecision(reason, details = {}){
@@ -11384,6 +11396,14 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
       const repeatedCandidate = nextIsRepeat ? nextCandidate : currentCandidate;
       const isRepeatedCandidateCritical = isAiRepeatPlaneCriticalCandidate(repeatedCandidate);
 
+      if(
+        Number.isFinite(aiRoundState?.turnNumber)
+        && aiRoundState.turnNumber <= AI_REPEAT_OPENING_FORCE_TURN_LIMIT
+        && !isRepeatedCandidateCritical
+      ){
+        return !nextIsRepeat;
+      }
+
       if(scoreGap <= AI_REPEAT_FORCE_SCORE_MARGIN && !isRepeatedCandidateCritical){
         return !nextIsRepeat;
       }
@@ -11434,13 +11454,25 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
 
 function isAiRepeatPlaneCriticalCandidate(candidate){
   if(!candidate || typeof candidate !== "object") return false;
-  const rawReason = [candidate.decisionReason, candidate.goalName]
+  const reasonParts = [candidate.decisionReason, candidate.goalName]
     .filter((value) => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.trim().toLowerCase());
+  if(reasonParts.length === 0) return false;
+
+  if(reasonParts.some((value) => AI_REPEAT_ALLOWED_REASON_CODES.includes(value))){
+    return true;
+  }
+
+  const rawReason = reasonParts
     .join(" ")
     .toLowerCase();
   if(!rawReason) return false;
 
-  return AI_REPEAT_ALLOWED_REASON_KEYWORDS.some((keyword) => rawReason.includes(keyword));
+  const reasonTokens = rawReason
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length > 0);
+
+  return reasonTokens.some((token) => AI_REPEAT_ALLOWED_REASON_TOKENS.includes(token));
 }
 
 function rankAiPlanesForCurrentTurn(aiPlanes){
