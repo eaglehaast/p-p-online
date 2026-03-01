@@ -31,10 +31,15 @@ const context = {
   Math,
   Number,
   AI_REPEAT_FORCE_SCORE_MARGIN: 25,
-  AI_REPEAT_ALLOWED_REASON_KEYWORDS: ['direct_finisher', 'cargo', 'flag', 'critical', 'emergency', 'intercept', 'defense'],
+  AI_REPEAT_OPENING_FORCE_TURN_LIMIT: 2,
+  AI_OPENING_SOFT_RANDOM_TURN_LIMIT: 2,
+  AI_OPENING_SOFT_RANDOM_SCORE_MARGIN: 3.5,
+  AI_OPENING_SOFT_RANDOM_MAX_SHIFT: 0.045,
+  AI_REPEAT_ALLOWED_REASON_CODES: ['direct_finisher', 'opening_center_cargo', 'mode_flag_pressure', 'fallback_flag_pressure', 'emergency_base_defense', 'emergency_hold_position', 'critical_base_threat'],
+  AI_REPEAT_ALLOWED_REASON_TOKENS: ['intercept', 'finisher', 'defense', 'flag', 'cargo', 'critical', 'emergency', 'protect', 'hold'],
   aiRoundState: { lastLaunchedPlaneId: 'b1', turnNumber: 7 },
   scoreMoveForPlane: () => ({ idleTurns: 0, repeatInWindow: 0, rotationBonus: 0 }),
-  getStableHashFromParts: () => 0,
+  getStableHashFromParts: (parts) => String(parts).length,
 };
 
 vm.createContext(context);
