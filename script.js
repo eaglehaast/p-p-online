@@ -9324,8 +9324,23 @@ function exportLatestAiSelfAnalyzerJson(){
   return latest;
 }
 
+function getAiSelfAnalyzerSnapshot(options = {}){
+  const includeHistory = Boolean(options?.includeHistory);
+  const activeMatch = aiSelfAnalyzerState.activeMatch
+    ? JSON.parse(JSON.stringify(aiSelfAnalyzerState.activeMatch))
+    : null;
+  const history = includeHistory ? getAnalyticsHistoryFromStorage() : [];
+
+  return {
+    activeMatch,
+    latestFinishedMatch: history[0] || null,
+    totalFinishedMatches: history.length,
+  };
+}
+
 if(typeof window !== "undefined"){
   window.exportLatestAiSelfAnalyzerJson = exportLatestAiSelfAnalyzerJson;
+  window.getAiSelfAnalyzerSnapshot = getAiSelfAnalyzerSnapshot;
 }
 
 let matchScoreImagesRequested = false;
@@ -11155,6 +11170,16 @@ const AI_RECENT_PLANE_HISTORY_LIMIT = 6;
 const AI_ROTATION_BONUS_PER_IDLE_TURN = 0.04;
 const AI_ROTATION_BONUS_MAX = 0.22;
 const AI_REPEAT_WINDOW_PENALTY_STEP = 0.12;
+const AI_REPEAT_FORCE_SCORE_MARGIN = MAX_DRAG_DISTANCE * 0.12;
+const AI_REPEAT_ALLOWED_REASON_KEYWORDS = Object.freeze([
+  "direct_finisher",
+  "cargo",
+  "flag",
+  "critical",
+  "emergency",
+  "intercept",
+  "defense",
+]);
 
 function logAiDecision(reason, details = {}){
   const payload = details && typeof details === "object" ? { ...details } : {};
@@ -11239,6 +11264,7 @@ function createInitialAiRoundState(){
     lastLaunchTurnByPlaneId: {},
     recentLaunchPlaneIds: [],
     planeIdleTurnsById: {},
+    tieBreakerSeed: 0,
   };
 }
 
@@ -11345,6 +11371,25 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
   if(!currentCandidate) return true;
 
   const epsilon = 0.0001;
+  const nextPlaneId = nextCandidate?.plane?.id ?? null;
+  const currentPlaneId = currentCandidate?.plane?.id ?? null;
+  const repeatedPlaneId = aiRoundState?.lastLaunchedPlaneId ?? null;
+
+  if(nextPlaneId && currentPlaneId && repeatedPlaneId && nextPlaneId !== currentPlaneId){
+    const nextIsRepeat = nextPlaneId === repeatedPlaneId;
+    const currentIsRepeat = currentPlaneId === repeatedPlaneId;
+
+    if(nextIsRepeat !== currentIsRepeat){
+      const scoreGap = Math.abs((nextCandidate.score ?? 0) - (currentCandidate.score ?? 0));
+      const repeatedCandidate = nextIsRepeat ? nextCandidate : currentCandidate;
+      const isRepeatedCandidateCritical = isAiRepeatPlaneCriticalCandidate(repeatedCandidate);
+
+      if(scoreGap <= AI_REPEAT_FORCE_SCORE_MARGIN && !isRepeatedCandidateCritical){
+        return !nextIsRepeat;
+      }
+    }
+  }
+
   if((nextCandidate.score ?? Number.POSITIVE_INFINITY) < (currentCandidate.score ?? Number.POSITIVE_INFINITY) - epsilon){
     return true;
   }
@@ -11387,6 +11432,17 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
   return false;
 }
 
+function isAiRepeatPlaneCriticalCandidate(candidate){
+  if(!candidate || typeof candidate !== "object") return false;
+  const rawReason = [candidate.decisionReason, candidate.goalName]
+    .filter((value) => typeof value === "string" && value.trim().length > 0)
+    .join(" ")
+    .toLowerCase();
+  if(!rawReason) return false;
+
+  return AI_REPEAT_ALLOWED_REASON_KEYWORDS.some((keyword) => rawReason.includes(keyword));
+}
+
 function rankAiPlanesForCurrentTurn(aiPlanes){
   if(!Array.isArray(aiPlanes) || aiPlanes.length <= 1) return aiPlanes;
 
@@ -11401,8 +11457,8 @@ function rankAiPlanesForCurrentTurn(aiPlanes){
     if(idleA !== idleB){
       return idleB - idleA;
     }
-    return getStableHashFromParts(["rank", aiRoundState?.turnNumber ?? 0, a?.id ?? ""])
-      - getStableHashFromParts(["rank", aiRoundState?.turnNumber ?? 0, b?.id ?? ""]);
+    return getStableHashFromParts(["rank", aiRoundState?.turnNumber ?? 0, aiRoundState?.tieBreakerSeed ?? 0, a?.id ?? ""])
+      - getStableHashFromParts(["rank", aiRoundState?.turnNumber ?? 0, aiRoundState?.tieBreakerSeed ?? 0, b?.id ?? ""]);
   });
 }
 
@@ -12277,6 +12333,29 @@ function detectConsumedInventoryType(beforeCounts = {}, afterCounts = {}){
 }
 
 function issueAIMoveWithInventoryUsage(context, plannedMove){
+  if(
+    !plannedMove?.plane
+    || !Number.isFinite(plannedMove?.vx)
+    || !Number.isFinite(plannedMove?.vy)
+  ){
+    recordAiSelfAnalyzerDecision("invalid_move_fail_safe", {
+      goal: aiRoundState?.currentGoal || "invalid_move_fail_safe",
+      planeId: plannedMove?.plane?.id ?? null,
+      rejectReasons: ["invalid_planned_move"],
+    });
+    logAiDecision("invalid_move_fail_safe", {
+      goal: aiRoundState?.currentGoal || null,
+      plannedMove: {
+        planeId: plannedMove?.plane?.id ?? null,
+        vx: plannedMove?.vx ?? null,
+        vy: plannedMove?.vy ?? null,
+      },
+    });
+    aiMoveScheduled = false;
+    advanceTurn();
+    return;
+  }
+
   const beforeInventoryState = evaluateBlueInventoryState();
   const itemUsed = maybeUseInventoryBeforeLaunch(context, plannedMove);
   if(itemUsed){
@@ -18332,6 +18411,7 @@ function startNewRound(){
   ensureAiSelfAnalyzerRound();
   roundTextTimer = selectedRuleset === "mapeditor" ? 0 : 120;
   aiRoundState = createInitialAiRoundState();
+  aiRoundState.tieBreakerSeed = Math.floor(Math.random() * 0x7fffffff);
 
   globalFrame=0;
   flyingPoints=[];
