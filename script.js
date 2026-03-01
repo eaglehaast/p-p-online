@@ -13881,7 +13881,8 @@ function getFallbackAiMove(context){
       const dy= fallbackTarget.y - plane.y;
       const angleBase = Math.atan2(dy, dx);
 
-      const desired = Math.min(Math.hypot(dx,dy)*0.5, MAX_DRAG_DISTANCE);
+      const retreatScale = conservativeRetreat ? 0.5 : 0.62;
+      const desired = Math.min(Math.hypot(dx,dy) * retreatScale, MAX_DRAG_DISTANCE);
       const retreatScore = getAiPlaneAdjustedScore(desired, plane);
       const candidate = {
         plane,
@@ -14275,6 +14276,7 @@ function doComputerMove(){
 function planPathToPoint(plane, tx, ty, options = {}){
   const flightDistancePx = settings.flightRangeCells * CELL_SIZE;
   const speedPxPerSec    = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
+  const extendedDetourColliderThreshold = 18;
 
   function buildMoveWithSafeDeviation(baseAngle, distance, scale, meta = {}){
     const attemptDeviation = getRandomDeviation(distance, AI_MAX_ANGLE_DEVIATION);
@@ -14330,11 +14332,44 @@ function planPathToPoint(plane, tx, ty, options = {}){
       }
     }
 
+    const colliderCount = Array.isArray(colliders) ? colliders.length : 0;
+    const shouldUseExtendedDetours = (settings.mapIndex !== 0)
+      || (colliderCount > extendedDetourColliderThreshold);
+    if(shouldUseExtendedDetours){
+      const extendedDeviationSteps = [
+        Math.PI / 15,
+        Math.PI / 10,
+      ];
+
+      for(const step of extendedDeviationSteps){
+        for(const deviation of [-step, step]){
+          const actualAngle = baseAngle + deviation;
+          const vx = Math.cos(actualAngle) * scale * speedPxPerSec;
+          const vy = Math.sin(actualAngle) * scale * speedPxPerSec;
+          const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
+          const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
+          if(isPathClear(plane.x, plane.y, landingX, landingY)){
+            logAiDecision("detour_angle_selected", {
+              planeId: plane?.id ?? null,
+              targetX: tx,
+              targetY: ty,
+              distance,
+              deviation,
+              reason: "detour_extended",
+              ...meta
+            });
+            return { vx, vy, totalDist: distance };
+          }
+        }
+      }
+    }
+
     logAiDecision("detour_not_found", {
       planeId: plane?.id ?? null,
       targetX: tx,
       targetY: ty,
       distance,
+      extendedDetourEnabled: shouldUseExtendedDetours,
       ...meta
     });
 
