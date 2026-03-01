@@ -12414,27 +12414,66 @@ function detectConsumedInventoryType(beforeCounts = {}, afterCounts = {}){
   return null;
 }
 
+function failSafeAdvanceTurn(reason, details = {}){
+  const safeReason = typeof reason === "string" && reason ? reason : "unspecified_fail_safe";
+  const safeDetails = details && typeof details === "object" ? details : {};
+  const rejectReasons = Array.isArray(safeDetails.rejectReasons)
+    ? safeDetails.rejectReasons
+    : [safeReason];
+  const reasonCodes = Array.isArray(safeDetails.reasonCodes)
+    ? safeDetails.reasonCodes
+    : ["fail_safe_turn_advance"];
+  const goal = safeDetails.goal || aiRoundState?.currentGoal || safeReason;
+  const planeId = safeDetails.planeId ?? safeDetails?.move?.plane?.id ?? null;
+
+  recordAiSelfAnalyzerDecision(safeReason, {
+    goal,
+    planeId,
+    reasonCodes,
+    rejectReasons,
+  });
+
+  aiMoveScheduled = false;
+  advanceTurn();
+}
+
 function issueAIMoveWithInventoryUsage(context, plannedMove){
+  const failSafeHandler = typeof failSafeAdvanceTurn === "function"
+    ? failSafeAdvanceTurn
+    : (fallbackReason, fallbackDetails = {}) => {
+        const rejectReasons = Array.isArray(fallbackDetails.rejectReasons)
+          ? fallbackDetails.rejectReasons
+          : [fallbackReason];
+        const reasonCodes = Array.isArray(fallbackDetails.reasonCodes)
+          ? fallbackDetails.reasonCodes
+          : ["fail_safe_turn_advance"];
+        const goal = fallbackDetails.goal || aiRoundState?.currentGoal || fallbackReason;
+        const planeId = fallbackDetails.planeId ?? fallbackDetails?.move?.plane?.id ?? null;
+        recordAiSelfAnalyzerDecision(fallbackReason, {
+          goal,
+          planeId,
+          reasonCodes,
+          rejectReasons,
+        });
+        aiMoveScheduled = false;
+        advanceTurn();
+      };
+
   if(
     !plannedMove?.plane
     || !Number.isFinite(plannedMove?.vx)
     || !Number.isFinite(plannedMove?.vy)
   ){
-    recordAiSelfAnalyzerDecision("invalid_move_fail_safe", {
+    failSafeHandler("invalid_move_fail_safe", {
       goal: aiRoundState?.currentGoal || "invalid_move_fail_safe",
-      planeId: plannedMove?.plane?.id ?? null,
-      rejectReasons: ["invalid_planned_move"],
-    });
-    logAiDecision("invalid_move_fail_safe", {
-      goal: aiRoundState?.currentGoal || null,
       plannedMove: {
         planeId: plannedMove?.plane?.id ?? null,
         vx: plannedMove?.vx ?? null,
         vy: plannedMove?.vy ?? null,
       },
+      rejectReasons: ["invalid_planned_move"],
+      reasonCodes: ["issue_move_validation_failed", "fail_safe_turn_advance"],
     });
-    aiMoveScheduled = false;
-    advanceTurn();
     return;
   }
 
@@ -13596,6 +13635,27 @@ function getFallbackAiMove(context){
 function doComputerMove(){
   if (gameMode!=="computer" || isGameOver) return;
 
+  const failSafeHandler = typeof failSafeAdvanceTurn === "function"
+    ? failSafeAdvanceTurn
+    : (fallbackReason, fallbackDetails = {}) => {
+        const rejectReasons = Array.isArray(fallbackDetails.rejectReasons)
+          ? fallbackDetails.rejectReasons
+          : [fallbackReason];
+        const reasonCodes = Array.isArray(fallbackDetails.reasonCodes)
+          ? fallbackDetails.reasonCodes
+          : ["fail_safe_turn_advance"];
+        const goal = fallbackDetails.goal || aiRoundState?.currentGoal || fallbackReason;
+        const planeId = fallbackDetails.planeId ?? fallbackDetails?.move?.plane?.id ?? null;
+        recordAiSelfAnalyzerDecision(fallbackReason, {
+          goal,
+          planeId,
+          reasonCodes,
+          rejectReasons,
+        });
+        aiMoveScheduled = false;
+        advanceTurn();
+      };
+
   const recordDecisionEvent = (stage, data = {}) => {
     recordAiSelfAnalyzerDecision(stage, {
       goal: data.goal,
@@ -13607,7 +13667,18 @@ function doComputerMove(){
 
   const aiPlanes = points.filter(p=> p.color==="blue" && p.isAlive && !p.burning);
   const enemies  = points.filter(p=> p.color==="green" && p.isAlive && !p.burning);
-  if(!aiPlanes.length || !enemies.length) return;
+  if(!aiPlanes.length || !enemies.length){
+    failSafeHandler("no_move_found", {
+      goal: aiRoundState.currentGoal || "no_move_found",
+      reasonCodes: ["turn_precheck_failed", "fail_safe_turn_advance"],
+      rejectReasons: [!aiPlanes.length ? "no_alive_ai_planes" : "no_alive_enemies"],
+      counts: {
+        aiPlanes: aiPlanes.length,
+        enemies: enemies.length,
+      },
+    });
+    return;
+  }
 
   const shouldUseFlagsMode = isFlagsModeEnabled();
   const homeBase = getBaseAnchor("blue");
@@ -13876,8 +13947,19 @@ function doComputerMove(){
       blueInventory: modeContext.blueInventoryCount,
     },
   });
-  aiMoveScheduled = false;
-  advanceTurn();
+  failSafeHandler("no_move_found", {
+    goal: aiRoundState.currentGoal || "no_move_found",
+    turn: aiRoundState.turnNumber,
+    mode: aiRoundState.mode || null,
+    counts: {
+      aiPlanes: aiPlanes.length,
+      enemies: enemies.length,
+      availableEnemyFlags: availableEnemyFlags.length,
+      blueInventory: modeContext.blueInventoryCount,
+    },
+    reasonCodes: ["all_strategies_failed", "fail_safe_turn_advance"],
+    rejectReasons: ["no_valid_move_found"],
+  });
 }
 
 function planPathToPoint(plane, tx, ty, options = {}){
