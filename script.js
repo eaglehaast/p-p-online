@@ -13697,7 +13697,26 @@ function doComputerMove(){
       reason: fallbackMove.decisionReason || "fallback_legacy_logic",
     });
     issueAIMoveWithInventoryUsage(modeContext, fallbackMove);
+    return;
   }
+
+  recordDecisionEvent("no_move_found", {
+    goal: aiRoundState.currentGoal || "no_move_found",
+    reasonCodes: ["all_strategies_failed", "fail_safe_turn_advance"],
+    rejectReasons: ["no_valid_move_found"],
+  });
+  logAiDecision("ai_no_move_fail_safe", {
+    turn: aiRoundState.turnNumber,
+    mode: aiRoundState.mode || null,
+    counts: {
+      aiPlanes: aiPlanes.length,
+      enemies: enemies.length,
+      availableEnemyFlags: availableEnemyFlags.length,
+      blueInventory: modeContext.blueInventoryCount,
+    },
+  });
+  aiMoveScheduled = false;
+  advanceTurn();
 }
 
 function planPathToPoint(plane, tx, ty, options = {}){
