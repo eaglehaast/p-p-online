@@ -13857,7 +13857,6 @@ function doComputerMove(){
   const availableEnemyFlags = shouldUseFlagsMode ? getAvailableFlagsByColor("green") : [];
 
   aiRoundState.turnNumber += 1;
-  cleanupAiGoalTemporaryBlacklist();
   updateAiPlaneIdleCounters(aiPlanes);
   const stolenBlueFlagCarrier = shouldUseFlagsMode ? getFlagCarrierForColor("blue") : null;
   const rankedAiPlanes = rankAiPlanesForCurrentTurn(aiPlanes);
