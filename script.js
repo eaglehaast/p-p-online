@@ -13341,6 +13341,49 @@ function planPathToPoint(plane, tx, ty, options = {}){
       }
     }
 
+    const deterministicDeviationSteps = [
+      0,
+      Math.PI / 72,
+      Math.PI / 48,
+      Math.PI / 36,
+      Math.PI / 24
+    ];
+    const deterministicDeviations = [];
+    for(const step of deterministicDeviationSteps){
+      if(step === 0){
+        deterministicDeviations.push(0);
+      } else {
+        deterministicDeviations.push(-step, step);
+      }
+    }
+
+    for(const deviation of deterministicDeviations){
+      const actualAngle = baseAngle + deviation;
+      const vx = Math.cos(actualAngle) * scale * speedPxPerSec;
+      const vy = Math.sin(actualAngle) * scale * speedPxPerSec;
+      const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
+      const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
+      if(isPathClear(plane.x, plane.y, landingX, landingY)){
+        logAiDecision("detour_angle_selected", {
+          planeId: plane?.id ?? null,
+          targetX: tx,
+          targetY: ty,
+          distance,
+          deviation,
+          ...meta
+        });
+        return { vx, vy, totalDist: distance };
+      }
+    }
+
+    logAiDecision("detour_not_found", {
+      planeId: plane?.id ?? null,
+      targetX: tx,
+      targetY: ty,
+      distance,
+      ...meta
+    });
+
     logAiDecision("blocked_after_deviation", {
       planeId: plane?.id ?? null,
       targetX: tx,
