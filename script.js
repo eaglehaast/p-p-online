@@ -11289,6 +11289,14 @@ const AI_REPEAT_OPENING_FORCE_TURN_LIMIT = 2;
 const AI_OPENING_SOFT_RANDOM_TURN_LIMIT = 2;
 const AI_OPENING_SOFT_RANDOM_SCORE_MARGIN = MAX_DRAG_DISTANCE * 0.035;
 const AI_OPENING_SOFT_RANDOM_MAX_SHIFT = 0.045;
+const AI_OPENING_AGGRESSION_BIAS_TURN_LIMIT = 2;
+const AI_OPENING_AGGRESSION_BIAS_MAX_LEAD = 1;
+const AI_OPENING_AGGRESSION_BIAS_DISCOUNT = 0.92;
+const AI_OPENING_AGGRESSION_TARGETS = Object.freeze([
+  "attack_enemy_plane",
+  "interceptor",
+  "direct_finisher",
+]);
 const AI_REPEAT_ALLOWED_REASON_CODES = Object.freeze([
   "direct_finisher",
   "opening_center_cargo",
@@ -11458,6 +11466,51 @@ function scoreMoveForPlane(score, plane){
 function getAiPlaneAdjustedScore(score, plane){
   if(!Number.isFinite(score)) return score;
   return scoreMoveForPlane(score, plane).finalScore;
+}
+
+function isOpeningAggressionBiasAllowed(context){
+  if(turnAdvanceCount > AI_OPENING_AGGRESSION_BIAS_TURN_LIMIT) return false;
+  const scoreLead = blueScore - greenScore;
+  if(scoreLead > AI_OPENING_AGGRESSION_BIAS_MAX_LEAD) return false;
+  if(context?.aiRiskProfile?.profile === "conservative") return false;
+  return true;
+}
+
+function applyOpeningAggressionBias(score, details = {}){
+  if(!Number.isFinite(score)) return { score, applied: false };
+  const targetType = details?.targetType;
+  if(!AI_OPENING_AGGRESSION_TARGETS.includes(targetType)) return { score, applied: false };
+  if(!details?.hasValidPath) return { score, applied: false };
+
+  const riskInfo = details?.riskInfo;
+  if(riskInfo){
+    if(!riskInfo.isSafePath) return { score, applied: false };
+    if(Number.isFinite(riskInfo.totalRisk) && riskInfo.totalRisk > AI_CARGO_RISK_ACCEPTANCE) return { score, applied: false };
+  }
+
+  if(!isOpeningAggressionBiasAllowed(details?.context)) return { score, applied: false };
+
+  const biasedScore = score * AI_OPENING_AGGRESSION_BIAS_DISCOUNT;
+  logAiDecision("opening_aggression_bias_applied", {
+    reason: "opening_aggression_bias_applied",
+    targetType,
+    planeId: details?.plane?.id ?? null,
+    enemyId: details?.enemy?.id ?? null,
+    turnAdvanceCount,
+    scoreBefore: Number(score.toFixed(3)),
+    scoreAfter: Number(biasedScore.toFixed(3)),
+  });
+  return {
+    score: biasedScore,
+    applied: true,
+  };
+}
+
+function appendOpeningAggressionReasonCode(reasonCodes, move){
+  if(!Array.isArray(reasonCodes)) return reasonCodes;
+  if(!move?.openingAggressionBiasApplied) return reasonCodes;
+  if(reasonCodes.includes("opening_aggression_bias_applied")) return reasonCodes;
+  return [...reasonCodes, "opening_aggression_bias_applied"];
 }
 
 function getStableHashFromParts(parts){
@@ -12627,6 +12680,7 @@ function selectAiModeForCurrentTurn(context){
   const aiAliveCount = aiPlanes.length;
   const enemyAliveCount = enemies.length;
   const hasEnoughResourcesForAggression = blueInventoryCount >= AI_CARGO_SWITCH_TO_AGGRESSION_ITEMS;
+  const openingAggressionBiasAllowed = isOpeningAggressionBiasAllowed(context);
 
   let mode = AI_MODES.ATTRITION;
   let targetPriorities = ["attack_enemy_plane", "close_distance"];
@@ -12657,6 +12711,10 @@ function selectAiModeForCurrentTurn(context){
     targetPriorities = ["preserve_planes", "safe_attack"];
   }
 
+  if(openingAggressionBiasAllowed && mode === AI_MODES.ATTRITION){
+    targetPriorities = ["attack_enemy_plane", "close_distance", ...targetPriorities.filter((goal) => goal !== "attack_enemy_plane" && goal !== "close_distance")];
+  }
+
   aiRoundState.mode = mode;
   aiRoundState.targetPriorities = targetPriorities;
   aiRoundState.currentGoal = targetPriorities[0] ?? null;
@@ -12665,6 +12723,7 @@ function selectAiModeForCurrentTurn(context){
     turnAdvanceCount,
     blueInventoryCount,
     hasEnoughResourcesForAggression,
+    openingAggressionBiasAllowed,
     riskProfile: aiRiskProfile?.profile || "balanced",
     priorities: targetPriorities,
   });
@@ -12683,6 +12742,25 @@ function shouldSkipDirectFinisherInOpening(context){
   const isOpeningTurn = turnAdvanceCount <= AI_OPENING_CENTER_TURN_LIMIT;
   if(!isOpeningTurn) return false;
   if(scoreLead >= AI_OPENING_DIRECT_FINISHER_MIN_LEAD) return false;
+
+  if(isOpeningAggressionBiasAllowed(context)){
+    const openingAggressiveFinisher = findDirectFinisherMove(context?.aiPlanes, context?.enemies, {
+      source: "opening_bias_probe",
+      goalName: "direct_finisher",
+      context,
+    });
+    if(openingAggressiveFinisher?.openingAggressionBiasApplied){
+      logAiDecision("opening_direct_finisher_bias_unlocked", {
+        turnAdvanceCount,
+        scoreLead,
+        planeId: openingAggressiveFinisher.plane?.id ?? null,
+        enemyId: openingAggressiveFinisher.enemy?.id ?? null,
+        reason: "opening_aggression_bias_applied",
+      });
+      return false;
+    }
+  }
+
   logAiDecision("opening_skip_direct_finisher", {
     turnAdvanceCount,
     scoreLead,
@@ -12991,11 +13069,21 @@ function assignAiRolesForTurn(context){
       if(reservedPlaneIds.has(plane.id)) continue;
       const toCarrier = planPathToPoint(plane, context.stolenBlueFlagCarrier.x, context.stolenBlueFlagCarrier.y);
       if(toCarrier){
+        const baseAdjustedDist = getAiPlaneAdjustedScore(toCarrier.totalDist, plane);
+        const aggressionBias = applyOpeningAggressionBias(baseAdjustedDist, {
+          targetType: "interceptor",
+          context,
+          plane,
+          enemy: context.stolenBlueFlagCarrier,
+          hasValidPath: true,
+        });
         const candidate = {
           plane,
           move: toCarrier,
-          adjustedDist: getAiPlaneAdjustedScore(toCarrier.totalDist, plane),
-          score: getAiPlaneAdjustedScore(toCarrier.totalDist, plane),
+          adjustedDist: aggressionBias.score,
+          score: aggressionBias.score,
+          openingAggressionBiasApplied: aggressionBias.applied,
+          openingAggressionBiasTarget: aggressionBias.applied ? "interceptor" : null,
           idleTurns: getAiPlaneIdleTurns(plane),
         };
         if(compareAiCandidateByScoreAndRotation(candidate, bestInterceptor, ["assign_roles", "interceptor"])){
@@ -13049,11 +13137,21 @@ function assignAiRolesForTurn(context){
         const move = planPathToPoint(plane, enemy.x, enemy.y);
         if(!move) continue;
         const rawScore = move.totalDist + (isPathClear(plane.x, plane.y, enemy.x, enemy.y) ? 0 : ATTACK_RANGE_PX * 0.65);
+        const baseScore = getAiPlaneAdjustedScore(rawScore, plane);
+        const aggressionBias = applyOpeningAggressionBias(baseScore, {
+          targetType: "attack_enemy_plane",
+          context,
+          plane,
+          enemy,
+          hasValidPath: true,
+        });
         const candidate = {
           plane,
           enemy,
           move,
-          score: getAiPlaneAdjustedScore(rawScore, plane),
+          score: aggressionBias.score,
+          openingAggressionBiasApplied: aggressionBias.applied,
+          openingAggressionBiasTarget: aggressionBias.applied ? "attack_enemy_plane" : null,
           idleTurns: getAiPlaneIdleTurns(plane),
         };
         if(compareAiCandidateByScoreAndRotation(candidate, bestStriker, ["assign_roles", "striker", enemy?.id ?? ""])){
@@ -13142,8 +13240,20 @@ function planRoleDrivenAiMove(context, rolePack){
       const move = planPathToPoint(interceptor, target.x, target.y);
       if(!move) continue;
       const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, interceptor);
-      if(!bestInterceptMove || adjustedDist < bestInterceptMove.adjustedDist){
-        bestInterceptMove = { ...move, adjustedDist };
+      const aggressionBias = applyOpeningAggressionBias(adjustedDist, {
+        targetType: "interceptor",
+        context,
+        plane: interceptor,
+        enemy: carrier,
+        hasValidPath: true,
+      });
+      if(!bestInterceptMove || aggressionBias.score < bestInterceptMove.adjustedDist){
+        bestInterceptMove = {
+          ...move,
+          adjustedDist: aggressionBias.score,
+          openingAggressionBiasApplied: aggressionBias.applied,
+          openingAggressionBiasTarget: aggressionBias.applied ? "interceptor" : null,
+        };
       }
     }
     if(bestInterceptMove){
@@ -13279,11 +13389,21 @@ function planModeDrivenAiMove(context){
     for(const plane of groundedAiPlanes){
       const move = planPathToPoint(plane, stolenBlueFlagCarrier.x, stolenBlueFlagCarrier.y);
       if(move){
+        const baseAdjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
+        const aggressionBias = applyOpeningAggressionBias(baseAdjustedDist, {
+          targetType: "interceptor",
+          context,
+          plane,
+          enemy: stolenBlueFlagCarrier,
+          hasValidPath: true,
+        });
         const candidate = {
           plane,
           ...move,
-          adjustedDist: getAiPlaneAdjustedScore(move.totalDist, plane),
-          score: getAiPlaneAdjustedScore(move.totalDist, plane),
+          adjustedDist: aggressionBias.score,
+          score: aggressionBias.score,
+          openingAggressionBiasApplied: aggressionBias.applied,
+          openingAggressionBiasTarget: aggressionBias.applied ? "interceptor" : null,
           idleTurns: getAiPlaneIdleTurns(plane),
         };
         if(compareAiCandidateByScoreAndRotation(candidate, bestDefenseMove, ["mode_defense", "direct"])){
@@ -13481,6 +13601,7 @@ function getFallbackAiMove(context){
   const directFinisherMove = findDirectFinisherMove(aiPlanes, targetEnemies, {
     source: "fallback",
     goalName: "direct_finisher",
+    context,
   });
   if(directFinisherMove){
     logAiDecision("direct_finisher", {
@@ -13919,13 +14040,17 @@ function doComputerMove(){
     : findDirectFinisherMove(modeContext.aiPlanes, modeContext.enemies, {
         source: "do_computer_move",
         goalName: "direct_finisher",
+        context: modeContext,
       });
   if(earlyDirectFinisherMove){
     aiRoundState.currentGoal = earlyDirectFinisherMove.goalName;
     recordDecisionEvent("direct_finisher_selected", {
       goal: aiRoundState.currentGoal,
       move: earlyDirectFinisherMove,
-      reasonCodes: ["direct_finisher_available", "clear_attack_lane", "high_value_target"],
+      reasonCodes: appendOpeningAggressionReasonCode(
+        ["direct_finisher_available", "clear_attack_lane", "high_value_target"],
+        earlyDirectFinisherMove
+      ),
     });
     logAiDecision("direct_finisher", {
       source: "do_computer_move",
@@ -13945,7 +14070,10 @@ function doComputerMove(){
       recordDecisionEvent("role_move_selected", {
         goal: aiRoundState.currentGoal,
         move: roleMove,
-        reasonCodes: ["role_assignment_ready", "role_lane_found", "team_balance"],
+        reasonCodes: appendOpeningAggressionReasonCode(
+          ["role_assignment_ready", "role_lane_found", "team_balance"],
+          roleMove
+        ),
       });
       logAiDecision("role_move", {
         goal: aiRoundState.currentGoal,
@@ -14013,7 +14141,10 @@ function doComputerMove(){
     recordDecisionEvent("mode_move_selected", {
       goal: aiRoundState.currentGoal,
       move: modeMove,
-      reasonCodes: ["mode_strategy", "best_available_lane", "no_better_finisher"],
+      reasonCodes: appendOpeningAggressionReasonCode(
+        ["mode_strategy", "best_available_lane", "no_better_finisher"],
+        modeMove
+      ),
     });
     logAiDecision("mode_move", {
       mode: aiRoundState.mode,
@@ -14036,7 +14167,10 @@ function doComputerMove(){
     recordDecisionEvent("fallback_selected", {
       goal: aiRoundState.currentGoal,
       move: fallbackMove,
-      reasonCodes: ["fallback_strategy", "last_resort_plan", "keep_turn_progress"],
+      reasonCodes: appendOpeningAggressionReasonCode(
+        ["fallback_strategy", "last_resort_plan", "keep_turn_progress"],
+        fallbackMove
+      ),
     });
     logAiDecision("fallback_move", {
       planeId: fallbackMove.plane?.id ?? null,
@@ -14236,12 +14370,22 @@ function findDirectFinisherMove(aiPlanes, enemies, options = {}){
       if(!move) continue;
 
       const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
-      if(!best || adjustedDist < best.adjustedDist){
+      const aggressionBias = applyOpeningAggressionBias(adjustedDist, {
+        targetType: "direct_finisher",
+        context: options?.context || null,
+        plane,
+        enemy,
+        hasValidPath: true,
+      });
+      const biasedAdjustedDist = aggressionBias.score;
+      if(!best || biasedAdjustedDist < best.adjustedDist){
         best = {
           plane,
           enemy,
           ...move,
-          adjustedDist,
+          adjustedDist: biasedAdjustedDist,
+          openingAggressionBiasApplied: aggressionBias.applied,
+          openingAggressionBiasTarget: aggressionBias.applied ? "direct_finisher" : null,
           goalName: options.goalName || "direct_finisher",
           decisionReason: "direct_finisher",
         };
