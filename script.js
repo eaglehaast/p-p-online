@@ -11274,6 +11274,8 @@ const AI_CARGO_SWITCH_TO_AGGRESSION_ITEMS = 2;
 const AI_LONG_SHOT_DISTANCE_THRESHOLD = MAX_DRAG_DISTANCE * 0.85;
 const AI_MIN_LAUNCH_SCALE_DEFAULT = 0.22;
 const AI_MIN_LAUNCH_SCALE_ATTACK_CONTEXT = 0.32;
+const AI_ATTACK_LOCAL_MIN_BOOST = 0.06;
+const AI_FINISHER_OVERSHOOT_FACTOR = 1.04;
 const AI_OPENING_CENTER_TURN_LIMIT = 2;
 const AI_OPENING_DIRECT_FINISHER_MIN_LEAD = 2;
 const AI_CENTER_CONTROL_DISTANCE = MAX_DRAG_DISTANCE * 0.35;
@@ -11369,22 +11371,8 @@ function logAiDecision(reason, details = {}){
   });
 }
 
-function applyAiMinLaunchScale(scale, details = {}){
-  if(!Number.isFinite(scale)) return scale;
-
-  const isDirectFinisher = details?.decisionReason === "direct_finisher"
-    || details?.goalName === "direct_finisher";
-  if(isDirectFinisher) return scale;
-
-  const reasonText = `${details?.decisionReason || ""} ${details?.goalName || ""}`.toLowerCase();
-  const moveDistance = Number.isFinite(details?.moveDistance)
-    ? details.moveDistance
-    : (Number.isFinite(details?.distance) ? details.distance : null);
-  const moveDistanceRatio = Number.isFinite(moveDistance) && MAX_DRAG_DISTANCE > 0
-    ? moveDistance / MAX_DRAG_DISTANCE
-    : null;
-
-  const isDefenseOrRetreatContext = [
+function isDefenseOrRetreatContext(reasonText = ""){
+  return [
     "defense",
     "defend",
     "retreat",
@@ -11394,8 +11382,10 @@ function applyAiMinLaunchScale(scale, details = {}){
     "protect",
     "emergency_base"
   ].some((marker) => reasonText.includes(marker));
+}
 
-  const isAttackIntentContext = [
+function isAttackContext(reasonText = ""){
+  return [
     "attack",
     "pressure",
     "direct",
@@ -11405,16 +11395,45 @@ function applyAiMinLaunchScale(scale, details = {}){
     "chase",
     "strike"
   ].some((marker) => reasonText.includes(marker));
+}
+
+function applyAiMinLaunchScale(scale, details = {}){
+  if(!Number.isFinite(scale)) return scale;
+
+  const reasonText = `${details?.decisionReason || ""} ${details?.goalName || ""}`.toLowerCase();
+  const moveDistance = Number.isFinite(details?.moveDistance)
+    ? details.moveDistance
+    : (Number.isFinite(details?.distance) ? details.distance : null);
+  const moveDistanceRatio = Number.isFinite(moveDistance) && MAX_DRAG_DISTANCE > 0
+    ? moveDistance / MAX_DRAG_DISTANCE
+    : null;
+
+  const targetX = Number.isFinite(details?.targetX) ? details.targetX : null;
+  const targetY = Number.isFinite(details?.targetY) ? details.targetY : null;
+  const enemyBase = getBaseAnchor("green");
+  const targetNearEnemyBase = Boolean(enemyBase)
+    && Number.isFinite(targetX)
+    && Number.isFinite(targetY)
+    && Math.hypot(targetX - enemyBase.x, targetY - enemyBase.y) <= ATTACK_RANGE_PX * 1.15;
+  const isDirectFinisherGoal = details?.goalName === "direct_finisher";
+
+  const isDefenseContext = isDefenseOrRetreatContext(reasonText);
+  const isAttackIntentContext = isAttackContext(reasonText);
   const isLongLaneDistanceContext = Number.isFinite(moveDistanceRatio)
     && moveDistanceRatio >= 0.68;
 
-  const shouldUseAttackContextMin = !isDefenseOrRetreatContext
+  const shouldUseAttackContextMin = !isDefenseContext
     && (isAttackIntentContext || isLongLaneDistanceContext);
 
   const targetMinScale = shouldUseAttackContextMin
     ? AI_MIN_LAUNCH_SCALE_ATTACK_CONTEXT
     : AI_MIN_LAUNCH_SCALE_DEFAULT;
-  const minScale = Math.max(0, Math.min(1, targetMinScale));
+  const shouldUseAttackLocalBoost = shouldUseAttackContextMin
+    && (targetNearEnemyBase || isDirectFinisherGoal);
+  const boostedTargetMinScale = shouldUseAttackLocalBoost
+    ? targetMinScale + AI_ATTACK_LOCAL_MIN_BOOST
+    : targetMinScale;
+  const minScale = Math.max(0, Math.min(1, boostedTargetMinScale));
   const adjustedScale = Math.max(scale, minScale);
   if(adjustedScale > scale){
     if(shouldUseAttackContextMin){
@@ -11424,6 +11443,8 @@ function applyAiMinLaunchScale(scale, details = {}){
         minScale: Number(minScale.toFixed(3)),
         moveDistance: Number.isFinite(moveDistance) ? Number(moveDistance.toFixed(2)) : null,
         moveDistanceRatio: Number.isFinite(moveDistanceRatio) ? Number(moveDistanceRatio.toFixed(3)) : null,
+        targetNearEnemyBase,
+        localBoostApplied: shouldUseAttackLocalBoost,
         ...details,
       });
     }
@@ -11434,6 +11455,8 @@ function applyAiMinLaunchScale(scale, details = {}){
       contextType: shouldUseAttackContextMin ? "attack_context" : "default",
       moveDistance: Number.isFinite(moveDistance) ? Number(moveDistance.toFixed(2)) : null,
       moveDistanceRatio: Number.isFinite(moveDistanceRatio) ? Number(moveDistanceRatio.toFixed(3)) : null,
+      targetNearEnemyBase,
+      localBoostApplied: shouldUseAttackLocalBoost,
       ...details,
     });
   }
@@ -14407,9 +14430,39 @@ function planPathToPoint(plane, tx, ty, options = {}){
       targetY: ty,
     });
 
+    const reasonText = `${options?.decisionReason || ""} ${options?.goalName || ""} ${shouldPrioritizeDirectFinisher ? "direct_finisher" : ""}`
+      .toLowerCase();
+    const explicitOvershootFactor = Number(options?.overshootFactor);
+    const overshootFactor = Number.isFinite(explicitOvershootFactor)
+      ? explicitOvershootFactor
+      : AI_FINISHER_OVERSHOOT_FACTOR;
+    const canApplyAttackOvershoot = shouldPrioritizeDirectFinisher
+      && dist <= MAX_DRAG_DISTANCE
+      && isAttackContext(reasonText)
+      && !isDefenseOrRetreatContext(reasonText)
+      && Number.isFinite(overshootFactor)
+      && overshootFactor > 1;
+
     if(shouldPrioritizeDirectFinisher && dist <= MAX_DRAG_DISTANCE){
-      const vx = Math.cos(baseAngle) * scale * speedPxPerSec;
-      const vy = Math.sin(baseAngle) * scale * speedPxPerSec;
+      const cappedOvershootFactor = Math.min(1.06, Math.max(1.03, overshootFactor));
+      const finalScale = canApplyAttackOvershoot
+        ? Math.max(scale, Math.min(1, scale * cappedOvershootFactor))
+        : scale;
+
+      if(canApplyAttackOvershoot && finalScale > scale){
+        logAiDecision("attack_overshoot_applied", {
+          reason: "attack_overshoot_applied",
+          baseScale: Number(scale.toFixed(3)),
+          finalScale: Number(finalScale.toFixed(3)),
+          goalName: options?.goalName || null,
+          targetEnemyId: finisherTarget?.id ?? options?.targetEnemyId ?? null,
+          overshootFactor: Number(cappedOvershootFactor.toFixed(3)),
+          planeId: plane?.id ?? null,
+        });
+      }
+
+      const vx = Math.cos(baseAngle) * finalScale * speedPxPerSec;
+      const vy = Math.sin(baseAngle) * finalScale * speedPxPerSec;
       return {
         vx,
         vy,
