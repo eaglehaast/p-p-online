@@ -11545,6 +11545,49 @@ function getEmergencyDefenseMove(context, threat){
   return bestBlock;
 }
 
+function getEmergencyBaseHoldPositionMove(context, threat){
+  if(!threat || !Array.isArray(context?.aiPlanes) || !context.aiPlanes.length) return null;
+
+  const { aiPlanes } = context;
+  const base = threat.base || getBaseAnchor("blue");
+  if(!base) return null;
+
+  const enemy = threat.enemy;
+  if(!enemy) return null;
+
+  const halfCenterY = FIELD_TOP + FIELD_HEIGHT / 2;
+  const isTopHalf = base.y <= halfCenterY;
+  const halfMinY = isTopHalf ? FIELD_TOP : halfCenterY;
+  const halfMaxY = isTopHalf ? halfCenterY : FIELD_TOP + FIELD_HEIGHT;
+  const ratio = 0.45;
+  const targetX = base.x + (enemy.x - base.x) * ratio;
+  const targetY = base.y + (enemy.y - base.y) * ratio;
+  const holdPoint = {
+    x: Math.max(FIELD_LEFT, Math.min(FIELD_LEFT + FIELD_WIDTH, targetX)),
+    y: Math.max(halfMinY, Math.min(halfMaxY, targetY)),
+  };
+
+  let bestHoldMove = null;
+  for(const plane of aiPlanes){
+    const holdMove = planPathToPoint(plane, holdPoint.x, holdPoint.y);
+    if(!holdMove) continue;
+
+    const score = holdMove.totalDist;
+    if(!bestHoldMove || score < bestHoldMove.score){
+      bestHoldMove = {
+        plane,
+        enemy,
+        goalName: "emergency_base_hold_position",
+        holdPoint,
+        ...holdMove,
+        score,
+      };
+    }
+  }
+
+  return bestHoldMove;
+}
+
 function placeBlueDynamiteAt(boardX, boardY){
   const targetBrick = findMapSpriteForDynamiteDrop({ boardX, boardY });
   if(!targetBrick) return false;
@@ -13222,6 +13265,7 @@ function doComputerMove(){
   selectAiModeForCurrentTurn(modeContext);
 
   const criticalBaseThreat = getCriticalBlueBaseThreat(modeContext);
+  const hasCriticalBaseThreat = Boolean(criticalBaseThreat);
   if(criticalBaseThreat){
     const emergencyMove = getEmergencyDefenseMove(modeContext, criticalBaseThreat);
     if(emergencyMove){
@@ -13236,12 +13280,38 @@ function doComputerMove(){
       issueAIMoveWithInventoryUsage(modeContext, emergencyMove);
       return;
     }
+
+    const holdPositionMove = getEmergencyBaseHoldPositionMove(modeContext, criticalBaseThreat);
+    if(holdPositionMove){
+      aiRoundState.currentGoal = holdPositionMove.goalName;
+      logAiDecision("emergency_base_hold_position", {
+        enemyId: criticalBaseThreat.enemy?.id ?? null,
+        planeId: holdPositionMove.plane?.id ?? null,
+        distanceToBase: criticalBaseThreat.distanceToBase,
+        hasCleanLineToBase: criticalBaseThreat.hasCleanLineToBase,
+        holdPoint: holdPositionMove.holdPoint
+          ? {
+              x: Number(holdPositionMove.holdPoint.x.toFixed(1)),
+              y: Number(holdPositionMove.holdPoint.y.toFixed(1)),
+            }
+          : null,
+      });
+      issueAIMoveWithInventoryUsage(modeContext, holdPositionMove);
+      return;
+    }
   }
 
-  const openingCenterMove = tryPlanOpeningCenterControlMove(modeContext);
-  if(openingCenterMove){
-    issueAIMoveWithInventoryUsage(modeContext, openingCenterMove);
-    return;
+  if(hasCriticalBaseThreat){
+    logAiDecision("critical_threat_center_blocked", {
+      enemyId: criticalBaseThreat?.enemy?.id ?? null,
+      reason: "critical_base_threat",
+    });
+  } else {
+    const openingCenterMove = tryPlanOpeningCenterControlMove(modeContext);
+    if(openingCenterMove){
+      issueAIMoveWithInventoryUsage(modeContext, openingCenterMove);
+      return;
+    }
   }
 
   const earlyDirectFinisherMove = shouldSkipDirectFinisherInOpening(modeContext)
