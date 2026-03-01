@@ -9018,6 +9018,7 @@ let isDrawGame = false;
 
 const AI_SELF_ANALYZER_STORAGE_KEY = "paper-wings-ai-self-analyzer-v1";
 const AI_SELF_ANALYZER_MAX_MATCHES = 30;
+const AI_SELF_ANALYZER_MAX_DECISION_EVENTS = 140;
 const planeAnalyticsIds = new WeakMap();
 let nextPlaneAnalyticsId = 1;
 
@@ -9074,9 +9075,64 @@ function startAiSelfAnalyzerMatchIfNeeded(){
     mapIndex: settings?.mapIndex ?? null,
     rounds: [],
     turns: [],
+    eventTypes: ["launch", "ai_decision"],
     events: [],
     summary: null,
   };
+}
+
+function recordAiSelfAnalyzerEvent(event){
+  const active = aiSelfAnalyzerState.activeMatch;
+  if(!active || !event || typeof event !== "object") return;
+
+  active.events.push(event);
+
+  const decisionEvents = active.events.filter((entry) => entry?.type === "ai_decision");
+  const overflow = decisionEvents.length - AI_SELF_ANALYZER_MAX_DECISION_EVENTS;
+  if(overflow > 0){
+    let removed = 0;
+    active.events = active.events.filter((entry) => {
+      if(entry?.type !== "ai_decision") return true;
+      if(removed < overflow){
+        removed += 1;
+        return false;
+      }
+      return true;
+    });
+  }
+}
+
+function recordAiSelfAnalyzerDecision(stage, details = {}){
+  const active = aiSelfAnalyzerState.activeMatch;
+  if(!active || !stage) return;
+
+  const compactReasonCodes = Array.isArray(details.reasonCodes)
+    ? details.reasonCodes
+      .filter((code) => typeof code === "string" && code.trim().length > 0)
+      .slice(0, 3)
+    : [];
+  const compactRejectReasons = Array.isArray(details.rejectReasons)
+    ? details.rejectReasons
+      .filter((code) => typeof code === "string" && code.trim().length > 0)
+      .slice(0, 4)
+    : [];
+
+  const event = {
+    type: "ai_decision",
+    at: safeNowIso(),
+    roundNumber,
+    turnColor: turnColors[turnIndex] ?? null,
+    stage,
+    goal: details.goal ?? aiRoundState?.currentGoal ?? null,
+    planeId: details.planeId ?? null,
+    reasonCodes: compactReasonCodes,
+  };
+
+  if(compactRejectReasons.length > 0){
+    event.rejectReasons = compactRejectReasons;
+  }
+
+  recordAiSelfAnalyzerEvent(event);
 }
 
 function ensureAiSelfAnalyzerRound(){
@@ -9128,7 +9184,7 @@ function recordAiSelfAnalyzerLaunch(plane, vx, vy, actor){
     blueScore,
     greenScore
   });
-  active.events.push(event);
+  recordAiSelfAnalyzerEvent(event);
 }
 
 function recordAiSelfAnalyzerTurnAdvance(previousTurnColor, nextTurnColor){
@@ -13352,6 +13408,15 @@ function getFallbackAiMove(context){
 function doComputerMove(){
   if (gameMode!=="computer" || isGameOver) return;
 
+  const recordDecisionEvent = (stage, data = {}) => {
+    recordAiSelfAnalyzerDecision(stage, {
+      goal: data.goal,
+      planeId: data.planeId ?? data.move?.plane?.id ?? null,
+      reasonCodes: data.reasonCodes,
+      rejectReasons: data.rejectReasons,
+    });
+  };
+
   const aiPlanes = points.filter(p=> p.color==="blue" && p.isAlive && !p.burning);
   const enemies  = points.filter(p=> p.color==="green" && p.isAlive && !p.burning);
   if(!aiPlanes.length || !enemies.length) return;
@@ -13384,6 +13449,11 @@ function doComputerMove(){
     const emergencyMove = getEmergencyDefenseMove(modeContext, criticalBaseThreat);
     if(emergencyMove){
       aiRoundState.currentGoal = emergencyMove.goalName || "emergency_base_defense";
+      recordDecisionEvent("critical_threat_emergency_move", {
+        goal: aiRoundState.currentGoal,
+        move: emergencyMove,
+        reasonCodes: ["critical_base_threat", "protect_home_base", "clean_intercept_available"],
+      });
       logAiDecision("emergency_base_defense", {
         enemyId: criticalBaseThreat.enemy?.id ?? null,
         planeId: emergencyMove.plane?.id ?? null,
@@ -13398,6 +13468,12 @@ function doComputerMove(){
     const holdPositionMove = getEmergencyBaseHoldPositionMove(modeContext, criticalBaseThreat);
     if(holdPositionMove){
       aiRoundState.currentGoal = holdPositionMove.goalName;
+      recordDecisionEvent("critical_threat_hold_position", {
+        goal: aiRoundState.currentGoal,
+        move: holdPositionMove,
+        reasonCodes: ["critical_base_threat", "intercept_lane_blocked", "fallback_hold_line"],
+        rejectReasons: ["direct_intercept_unavailable"],
+      });
       logAiDecision("emergency_base_hold_position", {
         enemyId: criticalBaseThreat.enemy?.id ?? null,
         planeId: holdPositionMove.plane?.id ?? null,
@@ -13416,6 +13492,11 @@ function doComputerMove(){
   }
 
   if(hasCriticalBaseThreat){
+    recordDecisionEvent("opening_center_rejected", {
+      goal: aiRoundState.currentGoal || "emergency_base_defense",
+      reasonCodes: ["critical_base_threat", "opening_center_blocked"],
+      rejectReasons: ["critical_base_threat"],
+    });
     logAiDecision("critical_threat_center_blocked", {
       enemyId: criticalBaseThreat?.enemy?.id ?? null,
       reason: "critical_base_threat",
@@ -13423,12 +13504,31 @@ function doComputerMove(){
   } else {
     const openingCenterMove = tryPlanOpeningCenterControlMove(modeContext);
     if(openingCenterMove){
+      recordDecisionEvent("opening_center_selected", {
+        goal: openingCenterMove.goalName || "opening_center_control",
+        move: openingCenterMove,
+        reasonCodes: ["opening_center_control", "no_critical_threat", "center_lane_available"],
+      });
       issueAIMoveWithInventoryUsage(modeContext, openingCenterMove);
       return;
     }
+
+    recordDecisionEvent("opening_center_rejected", {
+      goal: "opening_center_control",
+      reasonCodes: ["opening_center_attempt_failed", "search_next_plan"],
+      rejectReasons: ["no_clear_lane", "blocked_path"],
+    });
   }
 
-  const earlyDirectFinisherMove = shouldSkipDirectFinisherInOpening(modeContext)
+  const skippedEarlyDirectFinisher = shouldSkipDirectFinisherInOpening(modeContext);
+  if(skippedEarlyDirectFinisher){
+    recordDecisionEvent("direct_finisher_rejected", {
+      goal: "direct_finisher",
+      reasonCodes: ["direct_finisher_skipped", "opening_safety_priority"],
+      rejectReasons: ["opening_phase_restriction"],
+    });
+  }
+  const earlyDirectFinisherMove = skippedEarlyDirectFinisher
     ? null
     : findDirectFinisherMove(modeContext.aiPlanes, modeContext.enemies, {
         source: "do_computer_move",
@@ -13436,6 +13536,11 @@ function doComputerMove(){
       });
   if(earlyDirectFinisherMove){
     aiRoundState.currentGoal = earlyDirectFinisherMove.goalName;
+    recordDecisionEvent("direct_finisher_selected", {
+      goal: aiRoundState.currentGoal,
+      move: earlyDirectFinisherMove,
+      reasonCodes: ["direct_finisher_available", "clear_attack_lane", "high_value_target"],
+    });
     logAiDecision("direct_finisher", {
       source: "do_computer_move",
       planeId: earlyDirectFinisherMove.plane?.id ?? null,
@@ -13451,6 +13556,11 @@ function doComputerMove(){
   if(rolePack){
     const roleMove = planRoleDrivenAiMove(modeContext, rolePack);
     if(roleMove){
+      recordDecisionEvent("role_move_selected", {
+        goal: aiRoundState.currentGoal,
+        move: roleMove,
+        reasonCodes: ["role_assignment_ready", "role_lane_found", "team_balance"],
+      });
       logAiDecision("role_move", {
         goal: aiRoundState.currentGoal,
         planeId: roleMove.plane?.id ?? null,
@@ -13458,30 +13568,67 @@ function doComputerMove(){
       issueAIMoveWithInventoryUsage(modeContext, roleMove);
       return;
     }
+    recordDecisionEvent("role_move_rejected", {
+      goal: aiRoundState.currentGoal || "role_move",
+      reasonCodes: ["role_assignment_ready", "role_path_failed"],
+      rejectReasons: ["no_role_path"],
+    });
     logAiDecision("role_move_skip", { reason: "no_role_path", hasRoles: true });
   } else {
+    recordDecisionEvent("role_assignment_rejected", {
+      goal: "role_move",
+      reasonCodes: ["role_assignment_missing", "search_other_strategy"],
+      rejectReasons: ["no_available_roles"],
+    });
     logAiDecision("role_assignment_skip", { reason: "no_available_roles" });
   }
 
   if(modeContext.aiRiskProfile.profile === "comeback" && shouldUseFlagsMode && availableEnemyFlags.length > 0){
     const quickFlagMove = planModeDrivenAiMove(modeContext);
     if(quickFlagMove && aiRoundState.currentGoal === "capture_enemy_flag"){
+      recordDecisionEvent("comeback_flag_selected", {
+        goal: aiRoundState.currentGoal,
+        move: quickFlagMove,
+        reasonCodes: ["comeback_mode", "flag_pressure", "fast_flag_window"],
+      });
       logAiDecision("comeback_quick_flag", {
         planeId: quickFlagMove.plane?.id ?? null,
       });
       issueAIMoveWithInventoryUsage(modeContext, quickFlagMove);
       return;
     }
+
+    recordDecisionEvent("comeback_flag_rejected", {
+      goal: "capture_enemy_flag",
+      reasonCodes: ["comeback_mode", "flag_plan_not_confirmed"],
+      rejectReasons: ["blocked_path", "no_clear_lane"],
+    });
   }
 
   const earlyCargoMove = tryPlanEarlyCargoPickupMove(modeContext);
   if(earlyCargoMove){
+    recordDecisionEvent("early_cargo_selected", {
+      goal: earlyCargoMove.goalName || "early_cargo_pickup",
+      move: earlyCargoMove,
+      reasonCodes: ["cargo_priority", "safe_pickup_window", "resource_setup"],
+    });
     issueAIMoveWithInventoryUsage(modeContext, earlyCargoMove);
     return;
   }
 
+  recordDecisionEvent("early_cargo_rejected", {
+    goal: "early_cargo_pickup",
+    reasonCodes: ["cargo_pickup_rejected", "risk_control"],
+    rejectReasons: ["cargo_risk", "blocked_path"],
+  });
+
   const modeMove = planModeDrivenAiMove(modeContext);
   if(modeMove){
+    recordDecisionEvent("mode_move_selected", {
+      goal: aiRoundState.currentGoal,
+      move: modeMove,
+      reasonCodes: ["mode_strategy", "best_available_lane", "no_better_finisher"],
+    });
     logAiDecision("mode_move", {
       mode: aiRoundState.mode,
       goal: aiRoundState.currentGoal,
@@ -13491,9 +13638,20 @@ function doComputerMove(){
     return;
   }
 
+  recordDecisionEvent("mode_move_rejected", {
+    goal: aiRoundState.currentGoal || "mode_strategy",
+    reasonCodes: ["mode_strategy_failed", "fallback_required"],
+    rejectReasons: ["blocked_path", "no_clear_lane"],
+  });
+
   const fallbackMove = getFallbackAiMove(modeContext);
   if(fallbackMove){
     aiRoundState.currentGoal = fallbackMove.goalName || "fallback_legacy_logic";
+    recordDecisionEvent("fallback_selected", {
+      goal: aiRoundState.currentGoal,
+      move: fallbackMove,
+      reasonCodes: ["fallback_strategy", "last_resort_plan", "keep_turn_progress"],
+    });
     logAiDecision("fallback_move", {
       planeId: fallbackMove.plane?.id ?? null,
       reason: fallbackMove.decisionReason || "fallback_legacy_logic",
