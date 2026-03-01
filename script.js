@@ -11558,6 +11558,33 @@ function getCriticalBlueBaseThreat(context){
   return bestThreat;
 }
 
+function getEarlyBaseWarningThreat(context){
+  const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
+  if(!enemies.length) return null;
+  if(turnAdvanceCount > AI_OPENING_CENTER_TURN_LIMIT) return null;
+
+  const blueBase = getBaseAnchor("blue");
+  const warningDistance = ATTACK_RANGE_PX * 1.7;
+
+  let bestThreat = null;
+  for(const enemy of enemies){
+    const distanceToBase = dist(enemy, blueBase);
+    if(distanceToBase > warningDistance) continue;
+
+    const hasCleanLineToBase = isPathClear(enemy.x, enemy.y, blueBase.x, blueBase.y);
+    if(!bestThreat || distanceToBase < bestThreat.distanceToBase){
+      bestThreat = {
+        enemy,
+        base: blueBase,
+        distanceToBase,
+        hasCleanLineToBase,
+      };
+    }
+  }
+
+  return bestThreat;
+}
+
 function getEmergencyDefenseMove(context, threat){
   if(!threat || !Array.isArray(context?.aiPlanes) || !context.aiPlanes.length) return null;
 
@@ -13445,6 +13472,8 @@ function doComputerMove(){
 
   const criticalBaseThreat = getCriticalBlueBaseThreat(modeContext);
   const hasCriticalBaseThreat = Boolean(criticalBaseThreat);
+  const earlyBaseWarningThreat = hasCriticalBaseThreat ? null : getEarlyBaseWarningThreat(modeContext);
+  const hasEarlyBaseWarningThreat = Boolean(earlyBaseWarningThreat);
   if(criticalBaseThreat){
     const emergencyMove = getEmergencyDefenseMove(modeContext, criticalBaseThreat);
     if(emergencyMove){
@@ -13500,6 +13529,17 @@ function doComputerMove(){
     logAiDecision("critical_threat_center_blocked", {
       enemyId: criticalBaseThreat?.enemy?.id ?? null,
       reason: "critical_base_threat",
+    });
+  } else if(hasEarlyBaseWarningThreat){
+    recordDecisionEvent("opening_center_rejected", {
+      goal: aiRoundState.currentGoal || "opening_center_control",
+      reasonCodes: ["early_base_warning", "opening_center_blocked"],
+      rejectReasons: ["early_base_warning"],
+    });
+    logAiDecision("early_base_warning_center_skipped", {
+      enemyId: earlyBaseWarningThreat?.enemy?.id ?? null,
+      distanceToBase: earlyBaseWarningThreat?.distanceToBase ?? null,
+      reason: "early_base_warning",
     });
   } else {
     const openingCenterMove = tryPlanOpeningCenterControlMove(modeContext);
