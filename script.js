@@ -9338,9 +9338,123 @@ function getAiSelfAnalyzerSnapshot(options = {}){
   };
 }
 
+function formatAiDebugClock(isoString){
+  if(typeof isoString !== "string" || isoString.length === 0) return "--:--:--";
+  const timePart = isoString.split("T")[1] || "";
+  return timePart.split(".")[0] || "--:--:--";
+}
+
+function buildAiDebugDecisionCompactLine(event){
+  if(!event || typeof event !== "object") return "(invalid decision event)";
+  const reasonCodes = Array.isArray(event.reasonCodes) && event.reasonCodes.length > 0
+    ? event.reasonCodes.join(",")
+    : "-";
+  const rejectReasons = Array.isArray(event.rejectReasons) && event.rejectReasons.length > 0
+    ? event.rejectReasons.join(",")
+    : "-";
+  const planeId = typeof event.planeId === "string" && event.planeId.length > 0 ? event.planeId : "-";
+
+  return [
+    formatAiDebugClock(event.at),
+    `R${event.roundNumber ?? "?"}`,
+    `turn:${event.turnColor ?? "-"}`,
+    `stage:${event.stage ?? "-"}`,
+    `goal:${event.goal ?? "-"}`,
+    `plane:${planeId}`,
+    `reasons:${reasonCodes}`,
+    `reject:${rejectReasons}`,
+  ].join(" | ");
+}
+
+function getAiDebugLastDecisions(limit = 5){
+  const safeLimit = Math.max(1, Math.min(30, Math.floor(Number(limit) || 5)));
+  const snapshot = getAiSelfAnalyzerSnapshot();
+  const activeMatch = snapshot?.activeMatch;
+  const events = Array.isArray(activeMatch?.events) ? activeMatch.events : [];
+  const decisions = events.filter((event) => event?.type === "ai_decision");
+  return decisions.slice(-safeLimit);
+}
+
+function printAiDebugSnapshot(){
+  const snapshot = getAiSelfAnalyzerSnapshot();
+  const activeMatch = snapshot?.activeMatch;
+  if(!activeMatch){
+    console.info("[AI_DEBUG] Активный матч не найден.");
+    return null;
+  }
+
+  const roundsCount = Array.isArray(activeMatch.rounds) ? activeMatch.rounds.length : 0;
+  const turnsCount = Array.isArray(activeMatch.turns) ? activeMatch.turns.length : 0;
+  const eventsCount = Array.isArray(activeMatch.events) ? activeMatch.events.length : 0;
+  const decisions = getAiDebugLastDecisions(1);
+  const lastDecisionLine = decisions.length > 0
+    ? buildAiDebugDecisionCompactLine(decisions[0])
+    : "(решений ИИ пока нет)";
+
+  const compact = {
+    startedAt: activeMatch.startedAt || null,
+    mode: activeMatch.mode || null,
+    ruleset: activeMatch.ruleset || null,
+    mapIndex: activeMatch.mapIndex ?? null,
+    roundNumber,
+    turnColor: turnColors[turnIndex] ?? null,
+    roundsCount,
+    turnsCount,
+    eventsCount,
+    lastDecision: lastDecisionLine,
+  };
+
+  console.info("[AI_DEBUG] snapshot", compact);
+  return compact;
+}
+
+function printAiDebugStatus(){
+  const status = {
+    mode: aiRoundState?.mode ?? null,
+    goal: aiRoundState?.currentGoal ?? null,
+    turn: aiRoundState?.turnNumber ?? null,
+    turnColor: turnColors[turnIndex] ?? null,
+    aiMoveScheduled,
+    gameMode: gameMode || selectedMode || null,
+    roundNumber,
+  };
+  console.info("[AI_DEBUG] status", status);
+  return status;
+}
+
+function printAiDebugLastDecisions(limit = 5){
+  const decisions = getAiDebugLastDecisions(limit);
+  if(decisions.length === 0){
+    console.info("[AI_DEBUG] last-decisions: пока нет decision-событий.");
+    return [];
+  }
+
+  const lines = decisions.map((event, index) => `${index + 1}. ${buildAiDebugDecisionCompactLine(event)}`);
+  console.info(`[AI_DEBUG] last-decisions (${decisions.length}):`);
+  lines.forEach((line) => console.info(line));
+  return lines;
+}
+
+function AI_DEBUG_CMD(command, arg){
+  const normalized = typeof command === "string" ? command.trim().toLowerCase() : "";
+  if(normalized === "snapshot"){
+    return printAiDebugSnapshot();
+  }
+  if(normalized === "last-decisions"){
+    return printAiDebugLastDecisions(arg);
+  }
+  if(normalized === "status"){
+    return printAiDebugStatus();
+  }
+
+  console.info('[AI_DEBUG] Неизвестная команда. Доступно: "snapshot", "last-decisions", "status".');
+  return null;
+}
+
 if(typeof window !== "undefined"){
   window.exportLatestAiSelfAnalyzerJson = exportLatestAiSelfAnalyzerJson;
   window.getAiSelfAnalyzerSnapshot = getAiSelfAnalyzerSnapshot;
+  window.AI_DEBUG_CMD = AI_DEBUG_CMD;
 }
 
 let matchScoreImagesRequested = false;
