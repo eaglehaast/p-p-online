@@ -53,6 +53,18 @@ window.exportLatestAiSelfAnalyzerJson()
 
 This downloads a file like `ai-self-analyzer-<timestamp>.json`.
 
+For quick live diagnostics during an active match, use compact AI debug commands:
+
+```js
+window.AI_DEBUG_CMD("snapshot")
+window.AI_DEBUG_CMD("last-decisions", 5)
+window.AI_DEBUG_CMD("status")
+```
+
+- `snapshot` prints a short current-match summary (mode, turn, counts, last decision).
+- `last-decisions` prints last `N` AI decision events in one-line compact format.
+- `status` prints current AI mode/goal/turn and `aiMoveScheduled` flag.
+
 ### How to read `ai_decision` in the exported JSON
 
 Look at `events` and filter entries with `type: "ai_decision"`.
