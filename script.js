@@ -11273,6 +11273,7 @@ const AI_CARGO_IMMEDIATE_THREAT_INTERCEPTION = 0.5;
 const AI_CARGO_SWITCH_TO_AGGRESSION_ITEMS = 2;
 const AI_LONG_SHOT_DISTANCE_THRESHOLD = MAX_DRAG_DISTANCE * 0.85;
 const AI_MIN_LAUNCH_SCALE_DEFAULT = 0.22;
+const AI_MIN_LAUNCH_SCALE_ATTACK_CONTEXT = 0.32;
 const AI_OPENING_CENTER_TURN_LIMIT = 2;
 const AI_OPENING_DIRECT_FINISHER_MIN_LEAD = 2;
 const AI_CENTER_CONTROL_DISTANCE = MAX_DRAG_DISTANCE * 0.35;
@@ -11375,12 +11376,64 @@ function applyAiMinLaunchScale(scale, details = {}){
     || details?.goalName === "direct_finisher";
   if(isDirectFinisher) return scale;
 
-  const minScale = Math.max(0, Math.min(1, AI_MIN_LAUNCH_SCALE_DEFAULT));
+  const reasonText = `${details?.decisionReason || ""} ${details?.goalName || ""}`.toLowerCase();
+  const moveDistance = Number.isFinite(details?.moveDistance)
+    ? details.moveDistance
+    : (Number.isFinite(details?.distance) ? details.distance : null);
+  const moveDistanceRatio = Number.isFinite(moveDistance) && MAX_DRAG_DISTANCE > 0
+    ? moveDistance / MAX_DRAG_DISTANCE
+    : null;
+
+  const isDefenseOrRetreatContext = [
+    "defense",
+    "defend",
+    "retreat",
+    "fallback",
+    "hold",
+    "intercept",
+    "protect",
+    "emergency_base"
+  ].some((marker) => reasonText.includes(marker));
+
+  const isAttackIntentContext = [
+    "attack",
+    "pressure",
+    "direct",
+    "finisher",
+    "long_lane",
+    "long_shot",
+    "chase",
+    "strike"
+  ].some((marker) => reasonText.includes(marker));
+  const isLongLaneDistanceContext = Number.isFinite(moveDistanceRatio)
+    && moveDistanceRatio >= 0.68;
+
+  const shouldUseAttackContextMin = !isDefenseOrRetreatContext
+    && (isAttackIntentContext || isLongLaneDistanceContext);
+
+  const targetMinScale = shouldUseAttackContextMin
+    ? AI_MIN_LAUNCH_SCALE_ATTACK_CONTEXT
+    : AI_MIN_LAUNCH_SCALE_DEFAULT;
+  const minScale = Math.max(0, Math.min(1, targetMinScale));
   const adjustedScale = Math.max(scale, minScale);
   if(adjustedScale > scale){
+    if(shouldUseAttackContextMin){
+      logAiDecision("ai_context_min_launch_scale_applied", {
+        oldScale: Number(scale.toFixed(3)),
+        newScale: Number(adjustedScale.toFixed(3)),
+        minScale: Number(minScale.toFixed(3)),
+        moveDistance: Number.isFinite(moveDistance) ? Number(moveDistance.toFixed(2)) : null,
+        moveDistanceRatio: Number.isFinite(moveDistanceRatio) ? Number(moveDistanceRatio.toFixed(3)) : null,
+        ...details,
+      });
+    }
     logAiDecision("ai_min_launch_scale_applied", {
       oldScale: Number(scale.toFixed(3)),
       newScale: Number(adjustedScale.toFixed(3)),
+      minScale: Number(minScale.toFixed(3)),
+      contextType: shouldUseAttackContextMin ? "attack_context" : "default",
+      moveDistance: Number.isFinite(moveDistance) ? Number(moveDistance.toFixed(2)) : null,
+      moveDistanceRatio: Number.isFinite(moveDistanceRatio) ? Number(moveDistanceRatio.toFixed(3)) : null,
       ...details,
     });
   }
@@ -13638,6 +13691,9 @@ function getFallbackAiMove(context){
           source: "fallback_direct_attack",
           planeId: plane.id,
           enemyId: enemy.id,
+          decisionReason: "fallback_direct_attack",
+          goalName: "attack_enemy_plane",
+          moveDistance: directDist,
         });
 
         let vx = Math.cos(ang) * scale * speedPxPerSec;
@@ -13737,6 +13793,9 @@ function getFallbackAiMove(context){
             source: "fallback_mirror_attack",
             planeId: plane.id,
             enemyId: enemy.id,
+            decisionReason: "fallback_mirror_attack",
+            goalName: "attack_enemy_plane",
+            moveDistance: mirror.totalDist,
           });
           const vx = Math.cos(ang) * scale * speedPxPerSec;
           const vy = Math.sin(ang) * scale * speedPxPerSec;
@@ -13851,6 +13910,9 @@ function getFallbackAiMove(context){
         source: "fallback_idle_move",
         planeId: fallbackCandidate.plane?.id ?? null,
         enemyId: fallbackCandidate.enemy?.id ?? null,
+        decisionReason: fallbackCandidate.decisionReason || "fallback_rotation",
+        goalName: fallbackCandidate.goalName || null,
+        moveDistance: Math.max(0, fallbackCandidate.desired || 0),
       });
 
       best = {
@@ -14305,6 +14367,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       planeId: plane?.id ?? null,
       decisionReason: shouldPrioritizeDirectFinisher ? "direct_finisher" : (options?.decisionReason || null),
       goalName: options?.goalName || null,
+      moveDistance: dist,
       targetX: tx,
       targetY: ty,
     });
@@ -14336,6 +14399,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       planeId: plane?.id ?? null,
       goalName: options?.goalName || null,
       decisionReason: options?.decisionReason || null,
+      moveDistance: mirror.totalDist,
       targetX: tx,
       targetY: ty,
     });
