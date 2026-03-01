@@ -11172,6 +11172,9 @@ const AI_ROTATION_BONUS_MAX = 0.26;
 const AI_REPEAT_WINDOW_PENALTY_STEP = 0.15;
 const AI_REPEAT_FORCE_SCORE_MARGIN = MAX_DRAG_DISTANCE * 0.08;
 const AI_REPEAT_OPENING_FORCE_TURN_LIMIT = 2;
+const AI_OPENING_SOFT_RANDOM_TURN_LIMIT = 2;
+const AI_OPENING_SOFT_RANDOM_SCORE_MARGIN = MAX_DRAG_DISTANCE * 0.035;
+const AI_OPENING_SOFT_RANDOM_MAX_SHIFT = 0.045;
 const AI_REPEAT_ALLOWED_REASON_CODES = Object.freeze([
   "direct_finisher",
   "opening_center_cargo",
@@ -11439,8 +11442,31 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
     return rotationBonusDiff > 0;
   }
 
+  const scoreGap = Math.abs((nextCandidate.score ?? Number.POSITIVE_INFINITY) - (currentCandidate.score ?? Number.POSITIVE_INFINITY));
+  const canUseOpeningSoftRandom = Number.isFinite(aiRoundState?.turnNumber)
+    && aiRoundState.turnNumber <= AI_OPENING_SOFT_RANDOM_TURN_LIMIT
+    && Number.isFinite(scoreGap)
+    && scoreGap <= AI_OPENING_SOFT_RANDOM_SCORE_MARGIN;
+
+  if(canUseOpeningSoftRandom){
+    const seedPrefix = [
+      "opening_soft_random",
+      Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : 0,
+      aiRoundState?.tieBreakerSeed ?? 0,
+      ...tieSeedParts,
+    ];
+    const nextNoise = (getStableHashFromParts([...seedPrefix, nextCandidate.plane?.id ?? "", nextCandidate.enemy?.id ?? "", "noise"])
+      / 0xffffffff) * AI_OPENING_SOFT_RANDOM_MAX_SHIFT;
+    const currentNoise = (getStableHashFromParts([...seedPrefix, currentCandidate.plane?.id ?? "", currentCandidate.enemy?.id ?? "", "noise"])
+      / 0xffffffff) * AI_OPENING_SOFT_RANDOM_MAX_SHIFT;
+    if(Math.abs(nextNoise - currentNoise) > epsilon){
+      return nextNoise < currentNoise;
+    }
+  }
+
   const seedPrefix = [
     Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : 0,
+    aiRoundState?.tieBreakerSeed ?? 0,
     ...tieSeedParts,
   ];
   const nextTieHash = getStableHashFromParts([...seedPrefix, nextCandidate.plane?.id ?? "", nextCandidate.enemy?.id ?? ""]);
@@ -11484,6 +11510,30 @@ function rankAiPlanesForCurrentTurn(aiPlanes){
     if(Math.abs(rankingScoreA - rankingScoreB) > 0.0001){
       return rankingScoreA - rankingScoreB;
     }
+
+    const scoreGap = Math.abs(rankingScoreA - rankingScoreB);
+    const canUseOpeningSoftRandom = Number.isFinite(aiRoundState?.turnNumber)
+      && aiRoundState.turnNumber <= AI_OPENING_SOFT_RANDOM_TURN_LIMIT
+      && scoreGap <= AI_OPENING_SOFT_RANDOM_SCORE_MARGIN;
+
+    if(canUseOpeningSoftRandom){
+      const softRandomA = (getStableHashFromParts([
+        "rank_opening_soft_random",
+        aiRoundState?.turnNumber ?? 0,
+        aiRoundState?.tieBreakerSeed ?? 0,
+        a?.id ?? "",
+      ]) / 0xffffffff) * AI_OPENING_SOFT_RANDOM_MAX_SHIFT;
+      const softRandomB = (getStableHashFromParts([
+        "rank_opening_soft_random",
+        aiRoundState?.turnNumber ?? 0,
+        aiRoundState?.tieBreakerSeed ?? 0,
+        b?.id ?? "",
+      ]) / 0xffffffff) * AI_OPENING_SOFT_RANDOM_MAX_SHIFT;
+      if(Math.abs(softRandomA - softRandomB) > 0.0001){
+        return softRandomA - softRandomB;
+      }
+    }
+
     const idleA = getAiPlaneIdleTurns(a);
     const idleB = getAiPlaneIdleTurns(b);
     if(idleA !== idleB){
