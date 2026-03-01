@@ -16117,6 +16117,28 @@ function handleMineForPlane(p, fp){
   if(!isPlaneTargetable(p)) return false;
   if(!Array.isArray(mines) || mines.length === 0) return false;
 
+  const prevX = Number.isFinite(p.prevX) ? p.prevX : p.x;
+  const prevY = Number.isFinite(p.prevY) ? p.prevY : p.y;
+
+  const segmentIntersectsCircle = (x1, y1, x2, y2, cx, cy, radius) => {
+    const segX = x2 - x1;
+    const segY = y2 - y1;
+    const segLenSq = segX * segX + segY * segY;
+    if(segLenSq === 0){
+      const pointDx = x1 - cx;
+      const pointDy = y1 - cy;
+      return pointDx * pointDx + pointDy * pointDy <= radius * radius;
+    }
+    const toCenterX = cx - x1;
+    const toCenterY = cy - y1;
+    const t = clamp((toCenterX * segX + toCenterY * segY) / segLenSq, 0, 1);
+    const closestX = x1 + segX * t;
+    const closestY = y1 + segY * t;
+    const missX = closestX - cx;
+    const missY = closestY - cy;
+    return missX * missX + missY * missY <= radius * radius;
+  };
+
   for(let i = 0; i < mines.length; i++){
     const mine = mines[i];
     if(!mine) continue;
@@ -16127,7 +16149,15 @@ function handleMineForPlane(p, fp){
 
     const dangerRadius = getPlaneDangerGeometry(p).radius;
     const mineTriggerRadius = Math.max(MINE_TRIGGER_RADIUS, dangerRadius);
-    if(dist > mineTriggerRadius) continue;
+
+    const segmentHit = segmentIntersectsCircle(
+      prevX, prevY,
+      p.x, p.y,
+      mine.x, mine.y,
+      mineTriggerRadius,
+    );
+
+    if(dist > mineTriggerRadius && !segmentHit) continue;
 
     const contactX = dist === 0 ? p.x : p.x - dx / dist * dangerRadius;
     const contactY = dist === 0 ? p.y : p.y - dy / dist * dangerRadius;
