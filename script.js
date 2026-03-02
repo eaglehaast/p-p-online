@@ -15805,6 +15805,7 @@ function isDirectFinisherScenario(plane, enemy){
 function findDirectFinisherMove(aiPlanes, enemies, options = {}){
   if(!Array.isArray(aiPlanes) || !Array.isArray(enemies)) return null;
 
+  const riskProfile = options?.context?.aiRiskProfile?.profile || "balanced";
   let best = null;
   for(const plane of aiPlanes){
     if(flyingPoints.some(fp=>fp.plane===plane)) continue;
@@ -15831,7 +15832,48 @@ function findDirectFinisherMove(aiPlanes, enemies, options = {}){
         enemy,
         hasValidPath: true,
       });
-      const biasedAdjustedDist = Math.max(0, aggressionBias.score - clusterBonus);
+      const landingX = plane.x + move.vx * FIELD_FLIGHT_DURATION_SEC;
+      const landingY = plane.y + move.vy * FIELD_FLIGHT_DURATION_SEC;
+
+      let biasedAdjustedDist = Math.max(0, aggressionBias.score - clusterBonus);
+      const targetIsCritical = Boolean(enemy?.carriedFlagId);
+      if(!targetIsCritical && riskProfile !== "comeback"){
+        const landingThreatRadius = ATTACK_RANGE_PX * 1.1;
+        let landingThreatCount = 0;
+        let nearestLandingThreatDist = Number.POSITIVE_INFINITY;
+
+        for(const otherEnemy of enemies){
+          if(!otherEnemy?.isAlive || otherEnemy === enemy) continue;
+          const enemyToLandingDist = Math.hypot((otherEnemy.x || 0) - landingX, (otherEnemy.y || 0) - landingY);
+          if(enemyToLandingDist > landingThreatRadius) continue;
+          if(!isPathClear(otherEnemy.x, otherEnemy.y, landingX, landingY)) continue;
+
+          landingThreatCount += 1;
+          if(enemyToLandingDist < nearestLandingThreatDist){
+            nearestLandingThreatDist = enemyToLandingDist;
+          }
+        }
+
+        if(landingThreatCount > 0){
+          const proximityFactor = Math.max(0, 1 - (nearestLandingThreatDist / landingThreatRadius));
+          const landingRiskPenalty = ATTACK_RANGE_PX * (0.04 + proximityFactor * 0.06 + (landingThreatCount - 1) * 0.015);
+          biasedAdjustedDist += landingRiskPenalty;
+          logAiDecision("direct_finisher_post_risk_penalty_applied", {
+            planeId: plane?.id ?? null,
+            enemyId: enemy?.id ?? null,
+            landingX: Number(landingX.toFixed(1)),
+            landingY: Number(landingY.toFixed(1)),
+            landingThreatCount,
+            landingThreatRadius: Number(landingThreatRadius.toFixed(1)),
+            nearestLandingThreatDist: Number.isFinite(nearestLandingThreatDist)
+              ? Number(nearestLandingThreatDist.toFixed(1))
+              : null,
+            landingRiskPenalty: Number(landingRiskPenalty.toFixed(2)),
+            riskProfile,
+          });
+        }
+      }
+
       if(!best || biasedAdjustedDist < best.adjustedDist){
         best = {
           plane,
