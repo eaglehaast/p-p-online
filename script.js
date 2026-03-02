@@ -14514,6 +14514,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
   const flightDistancePx = settings.flightRangeCells * CELL_SIZE;
   const speedPxPerSec    = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
   const extendedDetourColliderThreshold = 18;
+  const narrowCorridorColliderThreshold = 26;
 
   function buildMoveWithSafeDeviation(baseAngle, distance, scale, meta = {}){
     const attemptDeviation = getRandomDeviation(distance, AI_MAX_ANGLE_DEVIATION);
@@ -14534,13 +14535,31 @@ function planPathToPoint(plane, tx, ty, options = {}){
       }
     }
 
-    const deterministicDeviationSteps = [
-      0,
-      Math.PI / 72,
-      Math.PI / 48,
-      Math.PI / 36,
-      Math.PI / 24
-    ];
+    const colliderCount = Array.isArray(colliders) ? colliders.length : 0;
+    const shouldUseNarrowCorridorAttempt = colliderCount >= narrowCorridorColliderThreshold;
+
+    const deterministicDeviationSteps = shouldUseNarrowCorridorAttempt
+      ? [
+        Math.PI / 96,
+        Math.PI / 72,
+        Math.PI / 60,
+        Math.PI / 48,
+        Math.PI / 40,
+        Math.PI / 36,
+        Math.PI / 30,
+        Math.PI / 24,
+      ]
+      : [
+        0,
+        Math.PI / 96,
+        Math.PI / 72,
+        Math.PI / 60,
+        Math.PI / 48,
+        Math.PI / 40,
+        Math.PI / 36,
+        Math.PI / 30,
+        Math.PI / 24,
+      ];
     const deterministicDeviations = [];
     for(const step of deterministicDeviationSteps){
       if(step === 0){
@@ -14569,7 +14588,59 @@ function planPathToPoint(plane, tx, ty, options = {}){
       }
     }
 
-    const colliderCount = Array.isArray(colliders) ? colliders.length : 0;
+    if(shouldUseNarrowCorridorAttempt){
+      const narrowCorridorDeviationSteps = [
+        0,
+        Math.PI / 120,
+        Math.PI / 90,
+        Math.PI / 72,
+      ];
+      const narrowCorridorScaleFactors = [1, 0.92, 0.84, 0.76];
+
+      for(const scaleFactor of narrowCorridorScaleFactors){
+        const narrowedScale = Math.max(0.2, Math.min(1, scale * scaleFactor));
+        for(const step of narrowCorridorDeviationSteps){
+          const deviationsToTry = step === 0 ? [0] : [-step, step];
+          for(const deviation of deviationsToTry){
+            const actualAngle = baseAngle + deviation;
+            const vx = Math.cos(actualAngle) * narrowedScale * speedPxPerSec;
+            const vy = Math.sin(actualAngle) * narrowedScale * speedPxPerSec;
+            const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
+            const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
+            if(isPathClear(plane.x, plane.y, landingX, landingY)){
+              logAiDecision("narrow_corridor_selected", {
+                reasonCode: "narrow_corridor_selected",
+                planeId: plane?.id ?? null,
+                targetX: tx,
+                targetY: ty,
+                distance,
+                deviation,
+                narrowedScale: Number(narrowedScale.toFixed(3)),
+                colliderCount,
+                ...meta
+              });
+              return {
+                vx,
+                vy,
+                totalDist: distance * narrowedScale,
+                moveType: meta?.moveType || "direct"
+              };
+            }
+          }
+        }
+      }
+
+      logAiDecision("narrow_corridor_rejected", {
+        reasonCode: "narrow_corridor_rejected",
+        planeId: plane?.id ?? null,
+        targetX: tx,
+        targetY: ty,
+        distance,
+        colliderCount,
+        ...meta
+      });
+    }
+
     const shouldUseExtendedDetours = (settings.mapIndex !== 0)
       || (colliderCount > extendedDetourColliderThreshold);
     if(shouldUseExtendedDetours){
