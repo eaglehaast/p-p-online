@@ -12813,8 +12813,30 @@ function getCenterControlAnchor(){
 }
 
 function shouldSkipDirectFinisherInOpening(context){
+  const currentMapMeta = (typeof resolveCurrentMapForExport === "function")
+    ? resolveCurrentMapForExport()
+    : null;
+  const mapId = typeof currentMapMeta?.id === "string"
+    ? currentMapMeta.id.trim().toLowerCase()
+    : "";
+  const mapName = typeof currentMapMeta?.name === "string"
+    ? currentMapMeta.name.trim().toLowerCase()
+    : (typeof currentMapName === "string" ? currentMapName.trim().toLowerCase() : "");
+  const mapTier = typeof currentMapMeta?.tier === "string"
+    ? currentMapMeta.tier.trim().toLowerCase()
+    : (typeof currentMapMeta?.difficulty === "string" ? currentMapMeta.difficulty.trim().toLowerCase() : "");
+  const isClearSkyMap = mapId === "clearsky" || mapName === "clear sky";
+  const isHighObstacleMap = !isClearSkyMap && (mapTier === "middle" || mapTier === "hard");
+  const openingRestrictionTurnLimit = isHighObstacleMap ? 1 : AI_OPENING_CENTER_TURN_LIMIT;
   const scoreLead = blueScore - greenScore;
-  const isOpeningTurn = turnAdvanceCount <= AI_OPENING_CENTER_TURN_LIMIT;
+  const isOpeningTurn = turnAdvanceCount <= openingRestrictionTurnLimit;
+  const mapAdjustedRestrictionApplied = isHighObstacleMap && openingRestrictionTurnLimit !== AI_OPENING_CENTER_TURN_LIMIT;
+  shouldSkipDirectFinisherInOpening.lastDecision = {
+    mapAdjustedRestrictionApplied,
+    openingRestrictionTurnLimit,
+    mapId: mapId || null,
+    mapName: mapName || null,
+  };
   if(!isOpeningTurn) return false;
   if(scoreLead >= AI_OPENING_DIRECT_FINISHER_MIN_LEAD) return false;
 
@@ -12839,7 +12861,10 @@ function shouldSkipDirectFinisherInOpening(context){
   logAiDecision("opening_skip_direct_finisher", {
     turnAdvanceCount,
     scoreLead,
-    reason: "opening_center_priority",
+    reason: mapAdjustedRestrictionApplied ? "opening_phase_restriction_map_adjusted" : "opening_center_priority",
+    mapAdjustedRestrictionApplied,
+    openingRestrictionTurnLimit,
+    mapName: currentMapMeta?.name || currentMapName,
   });
   return true;
 }
@@ -14114,10 +14139,14 @@ function doComputerMove(){
 
   const skippedEarlyDirectFinisher = shouldSkipDirectFinisherInOpening(modeContext);
   if(skippedEarlyDirectFinisher){
+    const openingRestrictionDecision = shouldSkipDirectFinisherInOpening.lastDecision;
+    const mapAdjustedRestrictionApplied = Boolean(openingRestrictionDecision?.mapAdjustedRestrictionApplied);
     recordDecisionEvent("direct_finisher_rejected", {
       goal: "direct_finisher",
       reasonCodes: ["direct_finisher_skipped", "opening_safety_priority"],
-      rejectReasons: ["opening_phase_restriction"],
+      rejectReasons: mapAdjustedRestrictionApplied
+        ? ["opening_phase_restriction", "opening_phase_restriction_map_adjusted"]
+        : ["opening_phase_restriction"],
     });
   }
   const earlyDirectFinisherMove = skippedEarlyDirectFinisher
