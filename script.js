@@ -12551,7 +12551,13 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     const moderateObjective = (enemyFlagAnchor && dist(plannedMove.plane, enemyFlagAnchor) > MAX_DRAG_DISTANCE * 0.7)
       || (priorityEnemy && dist(plannedMove.plane, priorityEnemy) > MAX_DRAG_DISTANCE * 0.7)
       || moveDistance > MAX_DRAG_DISTANCE * 0.7;
-    const shouldBoostRange = farObjective || (riskProfile === "comeback" && moveDistance > MAX_DRAG_DISTANCE * 0.55);
+    const attackGoal = aiRoundState?.currentGoal === "direct_finisher" || plannedMove?.goalName === "direct_finisher";
+    const shouldUseFuelForAttackCommit = attackGoal
+      && hasPriorityEnemyPathClear
+      && priorityEnemyDistance > MAX_DRAG_DISTANCE * 0.55;
+    const shouldBoostRange = farObjective
+      || shouldUseFuelForAttackCommit
+      || (riskProfile === "comeback" && moveDistance > MAX_DRAG_DISTANCE * 0.55);
     const shouldUseFuelBySoftFallback = !shouldBoostRange && softFallbackReady && moderateObjective;
     if((shouldBoostRange || shouldUseFuelBySoftFallback)
       && applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, "blue", plannedMove.plane)){
@@ -12675,9 +12681,9 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       ? offensiveTargetRaw
       : null;
 
-    const planted = (routeAwareTarget && placeBlueDynamiteAt(routeAwareTarget.cx, routeAwareTarget.cy))
-      || (defensiveTarget && placeBlueDynamiteAt(defensiveTarget.cx, defensiveTarget.cy))
-      || (offensiveTarget && placeBlueDynamiteAt(offensiveTarget.cx, offensiveTarget.cy));
+    const planted = routeAwareTarget
+      ? placeBlueDynamiteAt(routeAwareTarget.cx, routeAwareTarget.cy)
+      : false;
 
     if(planted){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
@@ -14908,6 +14914,11 @@ function findDirectFinisherMove(aiPlanes, enemies, options = {}){
       if(!move) continue;
 
       const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
+      const nearbyEnemiesCount = enemies.filter((otherEnemy) => {
+        if(!otherEnemy?.isAlive || otherEnemy === enemy) return false;
+        return dist(enemy, otherEnemy) <= CELL_SIZE * 1.25;
+      }).length;
+      const clusterBonus = Math.min(MAX_DRAG_DISTANCE * 0.18, nearbyEnemiesCount * CELL_SIZE * 0.35);
       const aggressionBias = applyOpeningAggressionBias(adjustedDist, {
         targetType: "direct_finisher",
         context: options?.context || null,
@@ -14915,13 +14926,15 @@ function findDirectFinisherMove(aiPlanes, enemies, options = {}){
         enemy,
         hasValidPath: true,
       });
-      const biasedAdjustedDist = aggressionBias.score;
+      const biasedAdjustedDist = Math.max(0, aggressionBias.score - clusterBonus);
       if(!best || biasedAdjustedDist < best.adjustedDist){
         best = {
           plane,
           enemy,
           ...move,
           adjustedDist: biasedAdjustedDist,
+          nearbyEnemiesCount,
+          clusterBonus,
           openingAggressionBiasApplied: aggressionBias.applied,
           openingAggressionBiasTarget: aggressionBias.applied ? "direct_finisher" : null,
           goalName: options.goalName || "direct_finisher",
