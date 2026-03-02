@@ -4330,7 +4330,6 @@ function syncInventoryUI(color){
 }
 
 function drawInventoryHintOnHud(ctx) {
-  return;
   if (!(ctx instanceof CanvasRenderingContext2D)) return;
   if (!(hudCanvas instanceof HTMLCanvasElement)) return;
 
