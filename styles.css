@@ -2411,6 +2411,7 @@ body, button {
   height: 240px;
   background: url('ui_gamescreen/playagain/playagain_container.png') center / contain no-repeat;
   opacity: 0;
+  visibility: hidden;
   transform: translateY(-220px) scale(0.98);
   pointer-events: none;
   transition: opacity 0.15s linear;
@@ -2418,6 +2419,7 @@ body, button {
 
 #endGameButtons.is-visible {
   opacity: 1;
+  visibility: visible;
   animation: endgame-panel-drop 0.58s cubic-bezier(0.22, 1, 0.36, 1) both;
   pointer-events: auto;
 }
