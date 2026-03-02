@@ -8006,17 +8006,42 @@ function findCargoSpawnTarget(){
   const maxX = Math.max(minX, FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X);
   const minY = FIELD_TOP + FIELD_HEIGHT / 3;
   const maxY = FIELD_TOP + 2 * FIELD_HEIGHT / 3;
+  const { width: cargoWidth, height: cargoHeight } = getCargoSpriteSize();
+
+  const doesCargoRectIntersectBrick = (cargoRect) => {
+    const probePoints = [
+      { x: cargoRect.left, y: cargoRect.top },
+      { x: cargoRect.right, y: cargoRect.top },
+      { x: cargoRect.left, y: cargoRect.bottom },
+      { x: cargoRect.right, y: cargoRect.bottom },
+      { x: (cargoRect.left + cargoRect.right) / 2, y: (cargoRect.top + cargoRect.bottom) / 2 },
+      { x: (cargoRect.left + cargoRect.right) / 2, y: cargoRect.top },
+      { x: (cargoRect.left + cargoRect.right) / 2, y: cargoRect.bottom },
+      { x: cargoRect.left, y: (cargoRect.top + cargoRect.bottom) / 2 },
+      { x: cargoRect.right, y: (cargoRect.top + cargoRect.bottom) / 2 }
+    ];
+    return probePoints.some((probe) => isBrickPixel(probe.x, probe.y));
+  };
+
   for(let attempt = 0; attempt < CARGO_MAX_SPAWN_ATTEMPTS; attempt++){
     const x = minX + Math.random() * (maxX - minX);
     const targetY = minY + Math.random() * (maxY - minY);
-    if(isBrickPixel(x, targetY)) continue;
-    const tooCloseToPlane = points.some(point => {
+    const cargoRect = {
+      left: x,
+      right: x + cargoWidth,
+      top: targetY,
+      bottom: targetY + cargoHeight
+    };
+
+    // карго не должно появляться поверх кирпичей и самолётов — проверяем площадь, а не одну точку
+    if(doesCargoRectIntersectBrick(cargoRect)) continue;
+
+    const intersectsPlane = points.some(point => {
       if(!point?.isAlive || point?.burning) return false;
-      const dx = point.x - x;
-      const dy = point.y - targetY;
-      return Math.hypot(dx, dy) < CARGO_SPAWN_SAFE_RADIUS;
+      const planeHitbox = getPlaneDangerHitbox(point);
+      return planeHitboxesIntersect(cargoRect, planeHitbox);
     });
-    if(tooCloseToPlane) continue;
+    if(intersectsPlane) continue;
     return { x, targetY };
   }
   return null;
