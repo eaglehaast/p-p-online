@@ -10508,7 +10508,9 @@ function resetGame(options = {}){
   hasShotThisRound = false;
 
   if(shouldShowMenu){
-    selectedMode = resetModeToDefault ? "hotSeat" : getStoredGameMode(selectedMode);
+    selectedMode = resetModeToDefault
+      ? "hotSeat"
+      : (normalizeGameMode(selectedMode) || "hotSeat");
   }
   gameMode = shouldShowMenu ? null : gameMode;
   phase = shouldShowMenu ? 'MENU' : 'TURN';
