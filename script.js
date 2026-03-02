@@ -11299,6 +11299,9 @@ const AI_CARGO_SWITCH_TO_AGGRESSION_ITEMS = 2;
 const AI_LONG_SHOT_DISTANCE_THRESHOLD = MAX_DRAG_DISTANCE * 0.85;
 const AI_MIN_LAUNCH_SCALE_DEFAULT = 0.22;
 const AI_ATTACK_SOFT_MIN_BOOST = 0.06;
+const AI_ATTACK_MID_LONG_MIN_BOOST_MAX = 0.08;
+const AI_ATTACK_MID_LONG_DISTANCE_RATIO_START = 0.58;
+const AI_ATTACK_MID_LONG_DISTANCE_RATIO_FULL = 0.92;
 const AI_FINISHER_OVERSHOOT_FACTOR = 1.04;
 const AI_OPENING_CENTER_TURN_LIMIT = 2;
 const AI_OPENING_DIRECT_FINISHER_MIN_LEAD = 2;
@@ -11450,11 +11453,29 @@ function applyAiMinLaunchScale(scale, details = {}){
     && (isAttackIntentContext || isLongLaneDistanceContext);
   const shouldUseAttackLocalBoost = isAttackSoftContext
     && (targetNearEnemyBase || isDirectFinisherGoal);
+  const hasMidLongAttackDistance = Number.isFinite(moveDistanceRatio)
+    && moveDistanceRatio >= AI_ATTACK_MID_LONG_DISTANCE_RATIO_START;
+  const shouldUseAttackMidLongBoost = !isDefenseContext
+    && isAttackIntentContext
+    && hasMidLongAttackDistance;
+  const midLongProgress = shouldUseAttackMidLongBoost
+    ? Math.max(
+      0,
+      Math.min(
+        1,
+        (moveDistanceRatio - AI_ATTACK_MID_LONG_DISTANCE_RATIO_START)
+          / Math.max(0.0001, AI_ATTACK_MID_LONG_DISTANCE_RATIO_FULL - AI_ATTACK_MID_LONG_DISTANCE_RATIO_START)
+      )
+    )
+    : 0;
+  const attackMidLongBoost = shouldUseAttackMidLongBoost
+    ? Math.min(AI_ATTACK_MID_LONG_MIN_BOOST_MAX, AI_ATTACK_MID_LONG_MIN_BOOST_MAX * midLongProgress)
+    : 0;
 
   const baseMinScale = AI_MIN_LAUNCH_SCALE_DEFAULT;
-  const boostedMinScale = shouldUseAttackLocalBoost
-    ? baseMinScale + AI_ATTACK_SOFT_MIN_BOOST
-    : baseMinScale;
+  const boostedMinScale = baseMinScale
+    + (shouldUseAttackLocalBoost ? AI_ATTACK_SOFT_MIN_BOOST : 0)
+    + attackMidLongBoost;
   const minScale = Math.max(0, Math.min(1, boostedMinScale));
   const adjustedScale = Math.max(scale, minScale);
   if(adjustedScale > scale){
@@ -11471,16 +11492,34 @@ function applyAiMinLaunchScale(scale, details = {}){
         ...details,
       });
     }
+    if(attackMidLongBoost > 0){
+      logAiDecision("ai_attack_mid_long_soft_min_launch_scale_applied", {
+        oldScale: Number(scale.toFixed(3)),
+        newScale: Number(adjustedScale.toFixed(3)),
+        baseMinScale: Number(baseMinScale.toFixed(3)),
+        midLongBoost: Number(attackMidLongBoost.toFixed(3)),
+        midLongBoostCap: Number(AI_ATTACK_MID_LONG_MIN_BOOST_MAX.toFixed(3)),
+        moveDistance: Number.isFinite(moveDistance) ? Number(moveDistance.toFixed(2)) : null,
+        moveDistanceRatio: Number.isFinite(moveDistanceRatio) ? Number(moveDistanceRatio.toFixed(3)) : null,
+        moveDistanceRatioStart: Number(AI_ATTACK_MID_LONG_DISTANCE_RATIO_START.toFixed(3)),
+        moveDistanceRatioFull: Number(AI_ATTACK_MID_LONG_DISTANCE_RATIO_FULL.toFixed(3)),
+        ...details,
+      });
+    }
     logAiDecision("ai_min_launch_scale_applied", {
       oldScale: Number(scale.toFixed(3)),
       newScale: Number(adjustedScale.toFixed(3)),
       minScale: Number(minScale.toFixed(3)),
-      contextType: shouldUseAttackLocalBoost ? "attack_soft_local" : "default",
+      contextType: shouldUseAttackLocalBoost
+        ? "attack_soft_local"
+        : (attackMidLongBoost > 0 ? "attack_mid_long_soft" : "default"),
       moveDistance: Number.isFinite(moveDistance) ? Number(moveDistance.toFixed(2)) : null,
       moveDistanceRatio: Number.isFinite(moveDistanceRatio) ? Number(moveDistanceRatio.toFixed(3)) : null,
       targetNearEnemyBase,
       isDirectFinisherGoal,
       localBoostApplied: shouldUseAttackLocalBoost,
+      midLongBoostApplied: attackMidLongBoost > 0,
+      attackMidLongBoost: Number(attackMidLongBoost.toFixed(3)),
       ...details,
     });
   }
