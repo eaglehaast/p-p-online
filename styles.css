@@ -2421,7 +2421,7 @@ body, button {
 #endGameButtons.is-visible {
   opacity: 1;
   visibility: visible;
-  animation: endgame-panel-drop 0.58s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: endgame-panel-drop 0.84s cubic-bezier(0.18, 0.82, 0.32, 1) both;
   pointer-events: auto;
 }
 
@@ -2430,16 +2430,16 @@ body, button {
     transform: translateY(-220px) rotate(-8deg) scale(0.98);
     opacity: 0;
   }
-  52% {
+  64% {
     transform: translateY(4px) rotate(2deg) scale(1);
     opacity: 1;
   }
-  70% {
-    transform: translateY(-12px) rotate(-1.4deg) scale(1);
+  78% {
+    transform: translateY(-11px) rotate(-1.2deg) scale(1);
     opacity: 1;
   }
-  84% {
-    transform: translateY(3px) rotate(0.6deg) scale(1);
+  90% {
+    transform: translateY(2px) rotate(0.5deg) scale(1);
     opacity: 1;
   }
   100% {
