@@ -9490,6 +9490,10 @@ function lockInWinner(color, options = {}){
     clearTimeout(roundTransitionTimeout);
     roundTransitionTimeout = null;
   }
+  if(aiPostInventoryLaunchTimeout){
+    clearTimeout(aiPostInventoryLaunchTimeout);
+    aiPostInventoryLaunchTimeout = null;
+  }
 
   shouldShowEndScreen = Boolean(options.showEndScreen);
   if(shouldShowEndScreen){
@@ -9725,6 +9729,7 @@ function resolveExplosionGifDurationMs(img, color) {
 
 /* Планирование хода ИИ */
 let aiMoveScheduled = false;
+let aiPostInventoryLaunchTimeout = null;
 const AI_MOVE_INITIAL_DELAY_MS = 300;
 const AI_MOVE_CARGO_RETRY_DELAY_MS = 200;
 const AI_MOVE_CARGO_WAIT_TIMEOUT_MS = 1800;
@@ -11319,6 +11324,7 @@ const AI_REPEAT_OPENING_FORCE_TURN_LIMIT = 2;
 const AI_OPENING_SOFT_RANDOM_TURN_LIMIT = 2;
 const AI_OPENING_SOFT_RANDOM_SCORE_MARGIN = MAX_DRAG_DISTANCE * 0.035;
 const AI_OPENING_SOFT_RANDOM_MAX_SHIFT = 0.045;
+const AI_POST_INVENTORY_LAUNCH_DELAY_MS = 1000;
 const AI_OPENING_AGGRESSION_BIAS_TURN_LIMIT = 2;
 const AI_OPENING_AGGRESSION_BIAS_MAX_LEAD = 1;
 const AI_OPENING_AGGRESSION_BIAS_DISCOUNT = 0.92;
@@ -12846,6 +12852,24 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     }
   }
   registerAiInventoryUsageAfterMove(itemUsed);
+
+  if(itemUsed === true){
+    if(aiPostInventoryLaunchTimeout){
+      clearTimeout(aiPostInventoryLaunchTimeout);
+      aiPostInventoryLaunchTimeout = null;
+    }
+    logAiDecision("post_inventory_delay_applied", {
+      delayMs: AI_POST_INVENTORY_LAUNCH_DELAY_MS,
+      planeId: plannedMove?.plane?.id ?? null,
+      goal: aiRoundState?.currentGoal || null,
+    });
+    aiPostInventoryLaunchTimeout = setTimeout(() => {
+      aiPostInventoryLaunchTimeout = null;
+      issueAIMove(plannedMove.plane, plannedMove.vx, plannedMove.vy);
+    }, AI_POST_INVENTORY_LAUNCH_DELAY_MS);
+    return;
+  }
+
   issueAIMove(plannedMove.plane, plannedMove.vx, plannedMove.vy);
 }
 
@@ -19330,6 +19354,10 @@ function startNewRound(){
   if(roundTransitionTimeout){
     clearTimeout(roundTransitionTimeout);
     roundTransitionTimeout = null;
+  }
+  if(aiPostInventoryLaunchTimeout){
+    clearTimeout(aiPostInventoryLaunchTimeout);
+    aiPostInventoryLaunchTimeout = null;
   }
   const shouldRandomize = !suppressAutoRandomMapForNextRound && shouldAutoRandomizeMap() && roundNumber > 0;
   if(shouldRandomize){
