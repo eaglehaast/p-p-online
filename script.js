@@ -8001,26 +8001,57 @@ function findCargoSpawnTarget(){
   if(!FIELD_WIDTH || !FIELD_HEIGHT){
     return null;
   }
-  // по X — вся ширина, по Y — средняя треть (по гейм-дизайну)
-  const minX = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
-  const maxX = Math.max(minX, FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X);
-  const minY = FIELD_TOP + FIELD_HEIGHT / 3;
-  const maxY = FIELD_TOP + 2 * FIELD_HEIGHT / 3;
   const { width: cargoWidth, height: cargoHeight } = getCargoSpriteSize();
 
+  // по X — вся ширина, по Y — средняя треть (по гейм-дизайну),
+  // но с учётом габаритов png, чтобы ящик целиком оставался в поле.
+  const fieldMinX = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
+  const fieldMaxX = FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X - cargoWidth;
+  const fieldMinY = FIELD_TOP + FIELD_BORDER_OFFSET_Y;
+  const fieldMaxY = FIELD_TOP + FIELD_HEIGHT - FIELD_BORDER_OFFSET_Y - cargoHeight;
+  const spawnMinY = FIELD_TOP + FIELD_HEIGHT / 3;
+  const spawnMaxY = FIELD_TOP + 2 * FIELD_HEIGHT / 3;
+
+  const minX = fieldMinX;
+  const maxX = fieldMaxX;
+  const minY = Math.max(fieldMinY, spawnMinY);
+  const maxY = Math.min(fieldMaxY, spawnMaxY);
+
+  if(maxX < minX || maxY < minY){
+    return null;
+  }
+
   const doesCargoRectIntersectBrick = (cargoRect) => {
-    const probePoints = [
-      { x: cargoRect.left, y: cargoRect.top },
-      { x: cargoRect.right, y: cargoRect.top },
-      { x: cargoRect.left, y: cargoRect.bottom },
-      { x: cargoRect.right, y: cargoRect.bottom },
-      { x: (cargoRect.left + cargoRect.right) / 2, y: (cargoRect.top + cargoRect.bottom) / 2 },
-      { x: (cargoRect.left + cargoRect.right) / 2, y: cargoRect.top },
-      { x: (cargoRect.left + cargoRect.right) / 2, y: cargoRect.bottom },
-      { x: cargoRect.left, y: (cargoRect.top + cargoRect.bottom) / 2 },
-      { x: cargoRect.right, y: (cargoRect.top + cargoRect.bottom) / 2 }
-    ];
-    return probePoints.some((probe) => isBrickPixel(probe.x, probe.y));
+    const sampleStep = 3;
+    const sampledYs = new Set([cargoRect.top, cargoRect.bottom]);
+    const sampledXs = new Set([cargoRect.left, cargoRect.right]);
+
+    for(let y = cargoRect.top; y <= cargoRect.bottom; y += sampleStep){
+      sampledYs.add(y);
+    }
+    for(let x = cargoRect.left; x <= cargoRect.right; x += sampleStep){
+      sampledXs.add(x);
+    }
+
+    for(const y of sampledYs){
+      for(const x of sampledXs){
+        if(isBrickPixel(x, y)){
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  const getPlaneVisualRect = (plane) => {
+    const halfPlaneWidth = PLANE_DRAW_W / 2;
+    const halfPlaneHeight = PLANE_DRAW_H / 2;
+    return {
+      left: plane.x - halfPlaneWidth,
+      right: plane.x + halfPlaneWidth,
+      top: plane.y - halfPlaneHeight,
+      bottom: plane.y + halfPlaneHeight
+    };
   };
 
   for(let attempt = 0; attempt < CARGO_MAX_SPAWN_ATTEMPTS; attempt++){
@@ -8038,8 +8069,7 @@ function findCargoSpawnTarget(){
 
     const intersectsPlane = points.some(point => {
       if(!point?.isAlive || point?.burning) return false;
-      const planeHitbox = getPlaneDangerHitbox(point);
-      return planeHitboxesIntersect(cargoRect, planeHitbox);
+      return planeHitboxesIntersect(cargoRect, getPlaneVisualRect(point));
     });
     if(intersectsPlane) continue;
     return { x, targetY };
