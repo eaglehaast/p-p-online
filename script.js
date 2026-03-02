@@ -12612,9 +12612,20 @@ function tryPlaceBlueMineNearEnemyBase(){
 }
 
 function tryPlaceBlueDefensiveMine(context, plannedMove){
+  const plane = plannedMove?.plane;
   const landingPoint = getAiMoveLandingPoint(plannedMove);
   const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
-  if(!landingPoint || enemies.length === 0) return false;
+  if(!plane || !landingPoint || enemies.length === 0) return false;
+
+  function isPlacementSelfRisky(point){
+    if(!point) return true;
+    const currentToLandingDistance = Math.hypot(point.x - plane.x, point.y - plane.y);
+    const landingToMineDistance = Math.hypot(point.x - landingPoint.x, point.y - landingPoint.y);
+    const mineDangerRadius = MINE_EFFECT_RADIUS * 1.1;
+    const blocksImmediateCorridor = currentToLandingDistance <= mineDangerRadius;
+    const blocksLandingCorridor = landingToMineDistance <= mineDangerRadius;
+    return blocksImmediateCorridor || blocksLandingCorridor;
+  }
 
   let mostDangerousEnemy = null;
   let bestThreatScore = Number.NEGATIVE_INFINITY;
@@ -12643,6 +12654,17 @@ function tryPlaceBlueDefensiveMine(context, plannedMove){
     cellX: Math.floor((blockPoint.x - FIELD_LEFT) / CELL_SIZE),
     cellY: Math.floor((blockPoint.y - FIELD_TOP) / CELL_SIZE),
   };
+
+  if(isPlacementSelfRisky(placement)){
+    logAiDecision("mine_skipped_self_risk", {
+      planeId: plane?.id ?? null,
+      enemyId: mostDangerousEnemy?.id ?? null,
+      reason: "defensive_mine_blocks_own_corridor",
+      distanceFromPlane: Number(Math.hypot(placement.x - plane.x, placement.y - plane.y).toFixed(1)),
+      distanceFromLanding: Number(Math.hypot(placement.x - landingPoint.x, placement.y - landingPoint.y).toFixed(1)),
+    });
+    return false;
+  }
 
   if(!isMinePlacementValid(placement)) return false;
 
@@ -12901,6 +12923,36 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
   const riskProfile = context?.aiRiskProfile?.profile || "balanced";
   const softFallbackReady = aiRoundState.inventoryIdleTurns >= AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD
     && aiRoundState.inventorySoftFallbackCooldown <= 0;
+  const attackRangePx = typeof ATTACK_RANGE_PX === "number" && Number.isFinite(ATTACK_RANGE_PX) ? ATTACK_RANGE_PX : MAX_DRAG_DISTANCE * 0.58;
+
+  function evaluateDirectAttackWindow(enemy){
+    if(!enemy) return null;
+    const carrierPriority = enemy?.carriedFlagId ? 0.45 : 0;
+    const shieldPriority = enemy?.shieldActive ? -0.25 : 0.22;
+    const directRangePriority = isPriorityEnemyInDirectRange ? 0.3 : -0.18;
+    const clearPathPriority = hasPriorityEnemyPathClear ? 0.2 : -0.25;
+    const finishingDistance = Math.max(0, 1 - (priorityEnemyDistance / (MAX_DRAG_DISTANCE * 1.15)));
+    const finishingPriority = finishingDistance * (enemy?.shieldActive ? 0.08 : 0.22);
+    const total = carrierPriority + shieldPriority + directRangePriority + clearPathPriority + finishingPriority;
+    return {
+      total,
+      carrierPriority,
+      shieldPriority,
+      directRangePriority,
+      clearPathPriority,
+      finishingPriority,
+    };
+  }
+
+  function isPlannedMoveLikelyProfitableTrade(enemy){
+    if(!enemy || !landingPoint) return false;
+    const landingDistance = dist(landingPoint, enemy);
+    const fromCurrentDistance = dist(plannedMove.plane, enemy);
+    const inFightWindow = landingDistance <= attackRangePx * 1.25 || fromCurrentDistance <= attackRangePx * 1.1;
+    const laneOpenAfterMove = isPathClear(landingPoint.x, landingPoint.y, enemy.x, enemy.y);
+    const enemyLooksVulnerable = !enemy.shieldActive || landingDistance <= attackRangePx * 0.9;
+    return inFightWindow && laneOpenAfterMove && enemyLooksVulnerable;
+  }
 
 
 
@@ -13024,7 +13076,20 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
   }
 
   if(inventory.counts[INVENTORY_ITEM_TYPES.MINE] > 0){
-    if(hasGoodDirectHitChance){
+    const directAttackWindow = evaluateDirectAttackWindow(priorityEnemy);
+    const strongAttackWindow = Boolean(directAttackWindow) && directAttackWindow.total >= 0.55;
+    const profitableTradeWindow = isPlannedMoveLikelyProfitableTrade(priorityEnemy);
+    const shouldSkipMineForAttack = strongAttackWindow || profitableTradeWindow;
+
+    if(shouldSkipMineForAttack){
+      logAiDecision("mine_skipped_due_to_attack_window", {
+        planeId: plannedMove.plane?.id ?? null,
+        enemyId: priorityEnemy?.id ?? null,
+        attackWindowScore: directAttackWindow ? Number(directAttackWindow.total.toFixed(3)) : null,
+        profitableTradeWindow,
+        enemyShieldActive: Boolean(priorityEnemy?.shieldActive),
+        carriesFlag: Boolean(priorityEnemy?.carriedFlagId),
+      });
       logAiDecision("mine_saved_for_direct_attack", {
         planeId: plannedMove.plane?.id ?? null,
         enemyId: priorityEnemy?.id ?? null,
@@ -13033,21 +13098,48 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         inDirectRange: isPriorityEnemyInDirectRange,
         hasClearPath: hasPriorityEnemyPathClear,
         shieldPriorityFactor: directAttackShieldFactor,
+        attackWindowScore: directAttackWindow ? Number(directAttackWindow.total.toFixed(3)) : null,
+        carriesFlag: Boolean(priorityEnemy?.carriedFlagId),
+        profitableTradeWindow,
       });
     } else if(tryPlaceBlueDefensiveMine(context, plannedMove) || tryPlaceBlueMineNearEnemyBase()){
+      logAiDecision("mine_placed_for_cover", {
+        planeId: plannedMove.plane?.id ?? null,
+        enemyId: priorityEnemy?.id ?? null,
+        softFallback: false,
+      });
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
       return true;
     }
 
-    if(!hasGoodDirectHitChance && softFallbackReady){
+    const safeAfterPlacement = !landingPoint
+      ? false
+      : !Array.isArray(context?.enemies) || context.enemies.every((enemy) => {
+        const enemyDistance = dist(landingPoint, enemy);
+        const enemyHasLane = isPathClear(enemy.x, enemy.y, landingPoint.x, landingPoint.y);
+        return !enemyHasLane || enemyDistance > MAX_DRAG_DISTANCE * 0.95;
+      });
+
+    if(!shouldSkipMineForAttack && softFallbackReady && safeAfterPlacement){
       const softMinePlaced = tryPlaceBlueDefensiveMine(context, plannedMove) || tryPlaceBlueMineNearEnemyBase();
       if(softMinePlaced){
         removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
+        logAiDecision("mine_placed_for_cover", {
+          planeId: plannedMove.plane?.id ?? null,
+          enemyId: priorityEnemy?.id ?? null,
+          softFallback: true,
+        });
         markSoftFallbackUse(INVENTORY_ITEM_TYPES.MINE, {
           reason: "mine_soft_fallback",
         });
         return true;
       }
+    } else if(!shouldSkipMineForAttack && softFallbackReady && !safeAfterPlacement){
+      logAiDecision("mine_skipped_self_risk", {
+        planeId: plannedMove.plane?.id ?? null,
+        enemyId: priorityEnemy?.id ?? null,
+        reason: "unsafe_post_mine_position",
+      });
     }
   }
 
