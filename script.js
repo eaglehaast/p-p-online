@@ -119,7 +119,9 @@ function logEndGameAction(action){
 
 function setEndGamePanelVisible(isVisible){
   if(!(endGameDiv instanceof HTMLElement)) return;
-  endGameDiv.classList.toggle("is-visible", Boolean(isVisible));
+  const visible = Boolean(isVisible);
+  endGameDiv.classList.toggle("is-visible", visible);
+  endGameDiv.setAttribute("aria-hidden", visible ? "false" : "true");
 }
 
 function setScreenMode(mode) {
