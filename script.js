@@ -8178,26 +8178,51 @@ function findCargoSpawnTarget(){
     };
   };
 
-  for(let attempt = 0; attempt < CARGO_MAX_SPAWN_ATTEMPTS; attempt++){
-    const x = minX + Math.random() * (maxX - minX);
-    const targetY = minY + Math.random() * (maxY - minY);
-    const cargoRect = {
+  const isCargoRectBlocked = (cargoRect) => {
+    if(doesCargoRectIntersectAnyObstacle(cargoRect)) return true;
+    return points.some(point => {
+      if(!point?.isAlive || point?.burning) return false;
+      return planeHitboxesIntersect(cargoRect, getPlaneVisualRect(point));
+    });
+  };
+
+  const buildSpawnFromTopLeft = (x, targetY) => ({
+    x,
+    targetY,
+    cargoRect: {
       left: x,
       right: x + cargoWidth,
       top: targetY,
       bottom: targetY + cargoHeight
-    };
+    }
+  });
 
-    // карго не должно появляться в препятствиях и за внутренней границей поля.
-    if(doesCargoRectIntersectAnyObstacle(cargoRect)) continue;
+  const trySpawnAt = (x, targetY) => {
+    const spawn = buildSpawnFromTopLeft(x, targetY);
+    if(isCargoRectBlocked(spawn.cargoRect)) return null;
+    return { x: spawn.x, targetY: spawn.targetY };
+  };
 
-    const intersectsPlane = points.some(point => {
-      if(!point?.isAlive || point?.burning) return false;
-      return planeHitboxesIntersect(cargoRect, getPlaneVisualRect(point));
-    });
-    if(intersectsPlane) continue;
-    return { x, targetY };
+  for(let attempt = 0; attempt < CARGO_MAX_SPAWN_ATTEMPTS; attempt++){
+    const x = minX + Math.random() * (maxX - minX);
+    const targetY = minY + Math.random() * (maxY - minY);
+    const spawn = trySpawnAt(x, targetY);
+    if(spawn) return spawn;
   }
+
+  // Если случайные попытки не нашли место, перебираем сетку по всей зоне спавна.
+  // Это делает спавн стабильным даже на плотно застроенной карте.
+  const gridStep = Math.max(2, Math.floor(Math.min(cargoWidth, cargoHeight) / 2));
+  for(let y = minY; y <= maxY; y += gridStep){
+    for(let x = minX; x <= maxX; x += gridStep){
+      const spawn = trySpawnAt(x, y);
+      if(spawn) return spawn;
+    }
+  }
+
+  const edgeSpawn = trySpawnAt(maxX, maxY);
+  if(edgeSpawn) return edgeSpawn;
+
   return null;
 }
 
