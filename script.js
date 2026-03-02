@@ -13043,8 +13043,19 @@ function evaluateCrosshairBestUse(context, plannedMove){
 function maybeUseInventoryBeforeLaunch(context, plannedMove){
   if(!plannedMove?.plane) return false;
 
-  const allowInventoryUsage = plannedMove?.allowInventoryUsage === true
+  const explicitInventoryUnlock = plannedMove?.allowInventoryUsage === true
     && plannedMove?.inventoryUsageReason === "bad_direct_fallback";
+  const strategicGoal = plannedMove?.goalName || aiRoundState?.currentGoal || "";
+  const strategicInventoryGoals = new Set([
+    "direct_finisher",
+    "capture_enemy_flag",
+    "return_with_flag",
+    "emergency_base_defense",
+    "critical_base_hold_position",
+  ]);
+  const allowInventoryUsage = explicitInventoryUnlock
+    || strategicInventoryGoals.has(strategicGoal)
+    || aiRoundState.inventoryIdleTurns >= 2;
 
   aiRoundState.lastInventorySoftFallbackUsed = false;
 
@@ -13108,10 +13119,12 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
 
   function tryApplyAiInventoryItem(itemType){
     if(!allowInventoryUsage){
-      logAiDecision("inventory_saved_for_bad_direct_fallback", {
+      logAiDecision("inventory_usage_locked", {
         itemType,
         planeId: plannedMove?.plane?.id ?? null,
-        reason: "inventory_locked_until_bad_direct_fallback",
+        reason: "inventory_locked_for_low_confidence_move",
+        goal: strategicGoal || null,
+        idleTurns: aiRoundState.inventoryIdleTurns,
       });
       return false;
     }
@@ -15120,8 +15133,7 @@ function getFallbackAiMove(context){
 function getGuaranteedAnyLegalLaunch(modeContext){
   const fallbackAiPlanes = points.filter(plane =>
     plane.color === "blue"
-    && plane.isAlive
-    && !plane.burning
+    && isPlaneLaunchStateReady(plane)
     && !flyingPoints.some(fp => fp.plane === plane)
   );
   if (!fallbackAiPlanes.length) return null;
@@ -15169,6 +15181,48 @@ function getGuaranteedAnyLegalLaunch(modeContext){
 
   return null;
 }
+
+function getForcedProgressLaunchMove(modeContext){
+  const fallbackAiPlanes = points.filter(plane =>
+    plane.color === "blue"
+    && isPlaneLaunchStateReady(plane)
+    && !flyingPoints.some(fp => fp.plane === plane)
+  );
+  if(!fallbackAiPlanes.length) return null;
+
+  const flightDistancePx = settings.flightRangeCells * CELL_SIZE;
+  const speedPxPerSec = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
+  if(!Number.isFinite(speedPxPerSec) || speedPxPerSec <= 0) return null;
+
+  const preferredAngles = [
+    Math.PI / 2,
+    Math.PI / 3,
+    (2 * Math.PI) / 3,
+    Math.PI / 4,
+    (3 * Math.PI) / 4,
+    Math.PI,
+  ];
+  const safeScale = 0.22;
+
+  for(const plane of fallbackAiPlanes){
+    for(const angle of preferredAngles){
+      const vx = Math.cos(angle) * safeScale * speedPxPerSec;
+      const vy = Math.sin(angle) * safeScale * speedPxPerSec;
+      if(!Number.isFinite(vx) || !Number.isFinite(vy)) continue;
+      return {
+        plane,
+        vx,
+        vy,
+        totalDist: Math.hypot(vx, vy) * FIELD_FLIGHT_DURATION_SEC,
+        goalName: "forced_progress_launch",
+        decisionReason: "forced_progress_launch",
+      };
+    }
+  }
+
+  return null;
+}
+
 
 function doComputerMove(){
   if (gameMode!=="computer" || isGameOver) return;
@@ -15583,6 +15637,23 @@ function doComputerMove(){
       reason: guaranteedLaunchMove.decisionReason || "super_reserve_guaranteed_legal_launch",
     });
     issueAIMoveWithInventoryUsage(modeContext, guaranteedLaunchMove);
+    return;
+  }
+
+  const forcedProgressMove = getForcedProgressLaunchMove(modeContext);
+  if(forcedProgressMove){
+    aiRoundState.currentGoal = forcedProgressMove.goalName || "forced_progress_launch";
+    recordDecisionEvent("forced_progress_selected", {
+      goal: aiRoundState.currentGoal,
+      move: forcedProgressMove,
+      reasonCodes: ["forced_progress", "prevent_ai_stall", "keep_turn_progress"],
+      rejectReasons: ["no_legal_path_found_by_standard_planners"],
+    });
+    logAiDecision("forced_progress_move", {
+      planeId: forcedProgressMove.plane?.id ?? null,
+      reason: forcedProgressMove.decisionReason || "forced_progress_launch",
+    });
+    issueAIMoveWithInventoryUsage(modeContext, forcedProgressMove);
     return;
   }
 
