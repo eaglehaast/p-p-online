@@ -4533,7 +4533,6 @@ const SETTINGS_ASSETS = [
   "ui_controlpanel/cp_frame_add3.png",
   "ui_controlpanel/cp_button_off.png",
   "ui_controlpanel/cp_button_on.png",
-  "ui_controlpanel/cp_frame_accuracy.png",
   "ui_controlpanel/cp_frame_accuracy2.png",
   "ui_controlpanel/cp_button_left.png",
   "ui_controlpanel/cp_button_right.png",
