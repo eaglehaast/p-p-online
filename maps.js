@@ -390,17 +390,16 @@ const JSON_MAP_SOURCES = Object.freeze([
   'ui_gamescreen/maps/gs_maps_horserows.json'
 ]);
 
-function loadMapDefinitionFromJson(path){
-  if(typeof XMLHttpRequest !== 'function') return null;
+async function loadMapDefinitionFromJson(path){
+  if(typeof fetch !== 'function') return null;
 
   try {
-    const request = new XMLHttpRequest();
-    request.open('GET', path, false);
-    request.send();
+    const response = await fetch(path);
+    if(!response.ok){
+      throw new Error(`HTTP ${response.status}`);
+    }
 
-    if(request.status !== 200) return null;
-
-    const parsed = JSON.parse(request.responseText);
+    const parsed = await response.json();
     const map = parsed?.map;
     if(!map || typeof map !== 'object') return null;
     if(typeof map.id !== 'string' || map.id.length === 0) return null;
@@ -422,12 +421,9 @@ function loadMapDefinitionFromJson(path){
 }
 
 function loadMapsFromJsonSources(){
-  return JSON_MAP_SOURCES
-    .map((path) => loadMapDefinitionFromJson(path))
-    .filter(Boolean);
+  return Promise.all(JSON_MAP_SOURCES.map((path) => loadMapDefinitionFromJson(path)))
+    .then((maps) => maps.filter(Boolean));
 }
-
-const IMPORTED_JSON_MAPS = loadMapsFromJsonSources();
 
 const MAPS = [
   {
@@ -455,8 +451,13 @@ const MAPS = [
     sprites: WEAK_BRICK_SPRITES,
     flags: WEAK_BRICK_FLAGS
   },
-  ...IMPORTED_JSON_MAPS
 ];
+
+async function initializeImportedJsonMaps(){
+  const importedMaps = await loadMapsFromJsonSources();
+  MAPS.push(...importedMaps);
+  return importedMaps;
+}
 
 function collectMapSpritePathsFromSidebar(){
   const sidebarEntries = Array.from(document.querySelectorAll('[data-brick-sprite]'))
@@ -487,6 +488,7 @@ const MAP_SPRITE_PATHS = Object.freeze(collectMapSpritePathsFromSidebar());
   window.paperWingsMapsData = {
     MAP_RENDER_MODES,
     MAPS,
+    MAPS_READY: initializeImportedJsonMaps(),
     MAP_SPRITE_PATHS,
     MAP_DEFAULT_SPRITE_NAME,
     MAP_BRICK_SPRITE_PATH
