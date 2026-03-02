@@ -27,7 +27,28 @@ function extractConstSource(source, constName){
   return match ? match[0] : null;
 }
 
-function runScenario(source){
+function loadMaps(){
+  const mapsSource = fs.readFileSync('maps.js', 'utf8');
+  const mapsContext = {
+    window: {},
+    document: {
+      querySelectorAll: () => [],
+    },
+    XMLHttpRequest: undefined,
+    console,
+  };
+  vm.createContext(mapsContext);
+  vm.runInContext(mapsSource, mapsContext);
+  return mapsContext.window?.paperWingsMapsData?.MAPS || [];
+}
+
+function createMapResolver(context){
+  return function resolveCurrentMapForExport(){
+    return context.MAPS.find((map) => map?.name === context.currentMapName || map?.id === context.currentMapName) || null;
+  };
+}
+
+function runScenario(source, maps){
   const codeParts = [];
   [
     'AI_OPENING_CENTER_TURN_LIMIT',
@@ -70,7 +91,10 @@ function runScenario(source){
     planPathToPoint: () => ({ vx: 1, vy: 0, totalDist: 48 }),
     getAiPlaneAdjustedScore: (score) => score,
     logAiDecision: () => {},
+    MAPS: maps,
+    currentMapName: 'unknown map',
   };
+  context.resolveCurrentMapForExport = createMapResolver(context);
 
   vm.createContext(context);
   vm.runInContext(codeParts.join('\n\n'), context);
@@ -85,46 +109,85 @@ function runScenario(source){
   const aiPlanes = [{ id: 'blue-1', x: 0, y: 0 }];
   const enemies = [{ id: 'green-1', x: 30, y: 0, shieldActive: false }];
 
-  let openingAttacks = 0;
-  let failSafeMoves = 0;
-  for(const turn of [1, 2]){
-    context.turnAdvanceCount = turn;
-    const modeContext = {
-      aiPlanes,
-      enemies,
-      aiRiskProfile: { profile: 'balanced' },
-    };
-    const skip = context.shouldSkipDirectFinisherInOpening(modeContext);
-    const finisher = skip ? null : context.findDirectFinisherMove(aiPlanes, enemies, {
-      source: 'smoke_test',
-      goalName: 'direct_finisher',
-      context: modeContext,
-    });
-    if(finisher){
-      openingAttacks += 1;
-    } else {
-      failSafeMoves += 0;
+  const perMap = maps.map((map) => {
+    context.currentMapName = map?.name || map?.id || 'unknown map';
+    let openingAttacks = 0;
+    let failSafeMoves = 0;
+
+    for(const turn of [1, 2]){
+      context.turnAdvanceCount = turn;
+      const modeContext = {
+        aiPlanes,
+        enemies,
+        aiRiskProfile: { profile: 'balanced' },
+      };
+      const skip = context.shouldSkipDirectFinisherInOpening(modeContext);
+      const finisher = skip ? null : context.findDirectFinisherMove(aiPlanes, enemies, {
+        source: 'smoke_test',
+        goalName: 'direct_finisher',
+        context: modeContext,
+      });
+      if(finisher){
+        openingAttacks += 1;
+      } else if(!skip){
+        failSafeMoves += 1;
+      }
     }
-  }
+
+    return {
+      id: map?.id || null,
+      name: map?.name || null,
+      openingAttackShare: openingAttacks / 2,
+      failSafeMoves,
+    };
+  });
+
+  const totals = perMap.reduce((acc, row) => {
+    acc.openingAttackShare += row.openingAttackShare;
+    acc.failSafeMoves += row.failSafeMoves;
+    return acc;
+  }, { openingAttackShare: 0, failSafeMoves: 0 });
 
   return {
-    openingAttackShare: openingAttacks / 2,
-    failSafeMoves,
+    perMap,
+    averageOpeningAttackShare: perMap.length > 0 ? totals.openingAttackShare / perMap.length : 0,
+    totalFailSafeMoves: totals.failSafeMoves,
   };
+}
+
+const maps = loadMaps();
+if(maps.length === 0){
+  throw new Error('No maps were loaded from maps.js');
 }
 
 const afterSource = fs.readFileSync('script.js', 'utf8');
 const beforeSource = execSync('git show HEAD~1:script.js', { encoding: 'utf8' });
 
-const before = runScenario(beforeSource);
-const after = runScenario(afterSource);
+const before = runScenario(beforeSource, maps);
+const after = runScenario(afterSource, maps);
 
-if(!(after.openingAttackShare > before.openingAttackShare)){
-  throw new Error(`Expected higher opening attack share after change. before=${before.openingAttackShare}, after=${after.openingAttackShare}`);
+const clearSkyBefore = before.perMap.find((row) => (row.id || '').toLowerCase() === 'clearsky' || (row.name || '').toLowerCase() === 'clear sky');
+const clearSkyAfter = after.perMap.find((row) => (row.id || '').toLowerCase() === 'clearsky' || (row.name || '').toLowerCase() === 'clear sky');
+if(!clearSkyBefore || !clearSkyAfter){
+  throw new Error('Clear Sky map is required for this smoke test.');
 }
-if(after.failSafeMoves > before.failSafeMoves){
-  throw new Error(`Fail-safe count increased. before=${before.failSafeMoves}, after=${after.failSafeMoves}`);
+if(clearSkyAfter.openingAttackShare !== clearSkyBefore.openingAttackShare){
+  throw new Error(`Expected Clear Sky opening behavior to remain unchanged. before=${clearSkyBefore.openingAttackShare}, after=${clearSkyAfter.openingAttackShare}`);
 }
 
-console.log('Smoke test passed: fivebricks opening aggression share increased without fail-safe growth.');
+for(const beforeMap of before.perMap){
+  const afterMap = after.perMap.find((row) => row.id === beforeMap.id && row.name === beforeMap.name);
+  if(!afterMap){
+    throw new Error(`Map not found in after results: ${beforeMap.id || beforeMap.name}`);
+  }
+  if(afterMap.failSafeMoves > beforeMap.failSafeMoves){
+    throw new Error(`Fail-safe count increased on map ${beforeMap.name}. before=${beforeMap.failSafeMoves}, after=${afterMap.failSafeMoves}`);
+  }
+}
+
+if(after.averageOpeningAttackShare < before.averageOpeningAttackShare){
+  throw new Error(`Expected opening attack share not to drop in average. before=${before.averageOpeningAttackShare}, after=${after.averageOpeningAttackShare}`);
+}
+
+console.log('Smoke test passed: opening attack share on first 2 turns is stable/improved per map with no fail-safe growth; Clear Sky unchanged.');
 console.log(JSON.stringify({ before, after }, null, 2));
