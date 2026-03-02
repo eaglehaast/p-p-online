@@ -8068,44 +8068,55 @@ function findCargoSpawnTarget(){
     return null;
   }
 
-  const doesCargoRectIntersectBrick = (cargoRect) => {
-    const hasBrickFrameData = Boolean(brickFrameData);
-    const geometryIntersects = doesCargoRectIntersectGeometry(cargoRect);
+  const doesCargoRectIntersectAnyObstacle = (cargoRect) => {
+    const playableRect = {
+      left: FIELD_LEFT + FIELD_BORDER_OFFSET_X,
+      right: FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X,
+      top: FIELD_TOP + FIELD_BORDER_OFFSET_Y,
+      bottom: FIELD_TOP + FIELD_HEIGHT - FIELD_BORDER_OFFSET_Y
+    };
 
-    if(!hasBrickFrameData && DEBUG_CHEATS){
-      console.debug('[cargo-spawn] brickFrameData missing, using geometry fallback', {
-        cargoRect,
-        collidersCount: Array.isArray(colliders) ? colliders.length : 0,
-        geometryIntersects
-      });
-    }
-
-    if(geometryIntersects){
+    // Проверка внутренней границы поля: карго должно помещаться целиком.
+    if(
+      cargoRect.left < playableRect.left
+      || cargoRect.right > playableRect.right
+      || cargoRect.top < playableRect.top
+      || cargoRect.bottom > playableRect.bottom
+    ){
       return true;
     }
-    if(!hasBrickFrameData){
+
+    if(!Array.isArray(colliders) || colliders.length === 0){
       return false;
     }
 
-    const sampleStep = 3;
-    const sampledYs = new Set([cargoRect.top, cargoRect.bottom]);
-    const sampledXs = new Set([cargoRect.left, cargoRect.right]);
+    const intersectsRectAabb = (a, b) => (
+      a.left <= b.right
+      && a.right >= b.left
+      && a.top <= b.bottom
+      && a.bottom >= b.top
+    );
 
-    for(let y = cargoRect.top; y <= cargoRect.bottom; y += sampleStep){
-      sampledYs.add(y);
-    }
-    for(let x = cargoRect.left; x <= cargoRect.right; x += sampleStep){
-      sampledXs.add(x);
-    }
+    return colliders.some(collider => {
+      if(!collider) return false;
+      const hw = Number.isFinite(collider.halfWidth) ? collider.halfWidth : 0;
+      const hh = Number.isFinite(collider.halfHeight) ? collider.halfHeight : 0;
+      const rotation = Number.isFinite(collider.rotation) ? collider.rotation : 0;
+      const cos = Math.cos(rotation);
+      const sin = Math.sin(rotation);
 
-    for(const y of sampledYs){
-      for(const x of sampledXs){
-        if(isBrickPixel(x, y)){
-          return true;
-        }
-      }
-    }
-    return false;
+      // AABB вращённого прямоугольника коллайдера.
+      const aabbHalfWidth = Math.abs(cos) * hw + Math.abs(sin) * hh;
+      const aabbHalfHeight = Math.abs(sin) * hw + Math.abs(cos) * hh;
+      const colliderAabb = {
+        left: collider.cx - aabbHalfWidth,
+        right: collider.cx + aabbHalfWidth,
+        top: collider.cy - aabbHalfHeight,
+        bottom: collider.cy + aabbHalfHeight
+      };
+
+      return intersectsRectAabb(cargoRect, colliderAabb);
+    });
   };
 
   const getPlaneVisualRect = (plane) => {
@@ -8129,8 +8140,8 @@ function findCargoSpawnTarget(){
       bottom: targetY + cargoHeight
     };
 
-    // карго не должно появляться поверх кирпичей и самолётов — проверяем площадь, а не одну точку
-    if(doesCargoRectIntersectBrick(cargoRect)) continue;
+    // карго не должно появляться в препятствиях и за внутренней границей поля.
+    if(doesCargoRectIntersectAnyObstacle(cargoRect)) continue;
 
     const intersectsPlane = points.some(point => {
       if(!point?.isAlive || point?.burning) return false;
