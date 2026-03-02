@@ -11518,6 +11518,7 @@ const AI_CARGO_IMMEDIATE_THREAT_DISTANCE = ATTACK_RANGE_PX * 0.9;
 const AI_CARGO_IMMEDIATE_THREAT_INTERCEPTION = 0.5;
 const AI_CARGO_SWITCH_TO_AGGRESSION_ITEMS = 2;
 const AI_LONG_SHOT_DISTANCE_THRESHOLD = MAX_DRAG_DISTANCE * 0.85;
+const AI_LONG_SHOT_LARGE_PENALTY_LOG_THRESHOLD = 1.2;
 const AI_MIN_LAUNCH_SCALE_DEFAULT = 0.22;
 const AI_ATTACK_SOFT_MIN_BOOST = 0.06;
 const AI_ATTACK_MID_LONG_MIN_BOOST_MAX = 0.08;
@@ -12416,11 +12417,11 @@ function getAiLongShotPenaltyMultiplier(distanceToTarget, targetPriority = "norm
   const profilePenaltyCeil = riskProfile === "comeback"
     ? 1.32
     : riskProfile === "conservative"
-      ? 1.45
-      : 1.38;
+      ? 1.56
+      : 1.46;
 
   const baseMultiplier = 1 + (profilePenaltyCeil - 1) * overflowRatio;
-  const criticalTargetSoftener = targetPriority === "critical" ? 0.55 : 1;
+  const criticalTargetSoftener = targetPriority === "critical" ? 0.62 : 1;
   let penalty = 1 + (baseMultiplier - 1) * criticalTargetSoftener;
 
   const onlyLineAvailable = Boolean(options?.onlyLineAvailable);
@@ -14202,7 +14203,7 @@ function planRoleDrivenAiMove(context, rolePack){
       const rawHitChanceScore = move.totalDist * clearLaneBonus * longShotPenalty * (1 - Math.min(0.2, mirrorScoreBonus));
       const hitChanceScore = getAiPlaneAdjustedScore(rawHitChanceScore, striker);
       if(longShotPenalty > 1){
-        logAiDecision("long_shot_penalty_applied", {
+        logAiDecision("long_shot_penalty_observed", {
           source: "role_striker",
           planeId: striker.id,
           enemyId: enemy.id,
@@ -14211,6 +14212,13 @@ function planRoleDrivenAiMove(context, rolePack){
           distance: Number(move.totalDist.toFixed(1)),
           penalty: Number(longShotPenalty.toFixed(3)),
         });
+        if(longShotPenalty >= AI_LONG_SHOT_LARGE_PENALTY_LOG_THRESHOLD){
+          logAiDecision("long_shot_penalty_applied", {
+            distanceToTarget: Number(move.totalDist.toFixed(1)),
+            penalty: Number(longShotPenalty.toFixed(3)),
+            targetPriority,
+          });
+        }
       }
       if(isMirrorMove){
         logAiDecision("mirror_selected_reason", {
@@ -14713,7 +14721,7 @@ function getFallbackAiMove(context){
         }
 
         if(longShotPenalty > 1){
-          logAiDecision("long_shot_penalty_applied", {
+          logAiDecision("long_shot_penalty_observed", {
             source: "fallback_direct_attack",
             planeId: plane.id,
             enemyId: enemy.id,
@@ -14722,6 +14730,13 @@ function getFallbackAiMove(context){
             distance: Number(directDist.toFixed(1)),
             penalty: Number(longShotPenalty.toFixed(3)),
           });
+          if(longShotPenalty >= AI_LONG_SHOT_LARGE_PENALTY_LOG_THRESHOLD){
+            logAiDecision("long_shot_penalty_applied", {
+              distanceToTarget: Number(directDist.toFixed(1)),
+              penalty: Number(longShotPenalty.toFixed(3)),
+              targetPriority,
+            });
+          }
         }
 
         const directCandidate = {
