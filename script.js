@@ -7837,6 +7837,51 @@ function isBrickPixel(x, y){
   return false;
 }
 
+function isCargoRectInsidePlayableField(cargoRect){
+  const playableLeft = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
+  const playableTop = FIELD_TOP + FIELD_BORDER_OFFSET_Y;
+  const playableRight = FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X;
+  const playableBottom = FIELD_TOP + FIELD_HEIGHT - FIELD_BORDER_OFFSET_Y;
+
+  return (
+    cargoRect.left >= playableLeft &&
+    cargoRect.right <= playableRight &&
+    cargoRect.top >= playableTop &&
+    cargoRect.bottom <= playableBottom
+  );
+}
+
+function doesCargoRectIntersectColliders(cargoRect){
+  if(!Array.isArray(colliders) || colliders.length === 0) return false;
+
+  const sampleStep = 3;
+  const sampledYs = new Set([cargoRect.top, cargoRect.bottom]);
+  const sampledXs = new Set([cargoRect.left, cargoRect.right]);
+
+  for(let y = cargoRect.top; y <= cargoRect.bottom; y += sampleStep){
+    sampledYs.add(y);
+  }
+  for(let x = cargoRect.left; x <= cargoRect.right; x += sampleStep){
+    sampledXs.add(x);
+  }
+
+  for(const y of sampledYs){
+    for(const x of sampledXs){
+      for(const collider of colliders){
+        if(isPointInsideCollider(x, y, collider)){
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function doesCargoRectIntersectGeometry(cargoRect){
+  if(!isCargoRectInsidePlayableField(cargoRect)) return true;
+  return doesCargoRectIntersectColliders(cargoRect);
+}
+
 function resetCargoState(){
   clearCargoAnimationDomEntries();
   cargoState.length = 0;
@@ -8024,6 +8069,24 @@ function findCargoSpawnTarget(){
   }
 
   const doesCargoRectIntersectBrick = (cargoRect) => {
+    const hasBrickFrameData = Boolean(brickFrameData);
+    const geometryIntersects = doesCargoRectIntersectGeometry(cargoRect);
+
+    if(!hasBrickFrameData && DEBUG_CHEATS){
+      console.debug('[cargo-spawn] brickFrameData missing, using geometry fallback', {
+        cargoRect,
+        collidersCount: Array.isArray(colliders) ? colliders.length : 0,
+        geometryIntersects
+      });
+    }
+
+    if(geometryIntersects){
+      return true;
+    }
+    if(!hasBrickFrameData){
+      return false;
+    }
+
     const sampleStep = 3;
     const sampledYs = new Set([cargoRect.top, cargoRect.bottom]);
     const sampledXs = new Set([cargoRect.left, cargoRect.right]);
