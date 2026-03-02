@@ -2431,15 +2431,15 @@ body, button {
     opacity: 0;
   }
   64% {
-    transform: translateY(4px) rotate(2deg) scale(1);
+    transform: translateY(2px) rotate(1deg) scale(1);
     opacity: 1;
   }
   78% {
-    transform: translateY(-11px) rotate(-1.2deg) scale(1);
+    transform: translateY(-5.5px) rotate(-0.6deg) scale(1);
     opacity: 1;
   }
   90% {
-    transform: translateY(2px) rotate(0.5deg) scale(1);
+    transform: translateY(1px) rotate(0.25deg) scale(1);
     opacity: 1;
   }
   100% {
