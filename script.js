@@ -11330,6 +11330,11 @@ const AI_POST_INVENTORY_LAUNCH_DELAY_MS = 1000;
 const AI_OPENING_AGGRESSION_BIAS_TURN_LIMIT = 2;
 const AI_OPENING_AGGRESSION_BIAS_MAX_LEAD = 1;
 const AI_OPENING_AGGRESSION_BIAS_DISCOUNT = 0.92;
+const AI_ANGLE_REPEAT_HISTORY_LIMIT = 3;
+const AI_ANGLE_REPEAT_TIGHT_SPREAD_DEG = 7;
+const AI_ANGLE_SAFE_FAN_MIN_DEG = 12;
+const AI_ANGLE_SAFE_FAN_MAX_DEG = 18;
+const AI_ANGLE_REPEAT_STREAK_ALERT_COUNT = 2;
 const AI_OPENING_AGGRESSION_TARGETS = Object.freeze([
   "attack_enemy_plane",
   "interceptor",
@@ -11586,8 +11591,98 @@ function createInitialAiRoundState(){
     consecutiveSamePlaneLaunches: 0,
     lastLaunchTurnByPlaneId: {},
     recentLaunchPlaneIds: [],
+    recentLaunchAnglesDeg: [],
+    angleRepeatStreakCount: 0,
     planeIdleTurnsById: {},
     tieBreakerSeed: 0,
+  };
+}
+
+function normalizeAngleDeg(angleDeg){
+  if(!Number.isFinite(angleDeg)) return 0;
+  const normalized = angleDeg % 360;
+  return normalized < 0 ? normalized + 360 : normalized;
+}
+
+function getAngleDeltaDeg(aDeg, bDeg){
+  if(!Number.isFinite(aDeg) || !Number.isFinite(bDeg)) return 180;
+  const direct = Math.abs(normalizeAngleDeg(aDeg) - normalizeAngleDeg(bDeg));
+  return Math.min(direct, 360 - direct);
+}
+
+function getAiRecentAngleSpreadMeta(historyAnglesDeg){
+  const normalizedHistory = Array.isArray(historyAnglesDeg)
+    ? historyAnglesDeg
+      .filter((angle) => Number.isFinite(angle))
+      .map((angle) => normalizeAngleDeg(angle))
+    : [];
+  if(normalizedHistory.length < 2){
+    return {
+      clustered: false,
+      spreadDeg: null,
+      baselineDeg: null,
+      sampleCount: normalizedHistory.length,
+    };
+  }
+
+  const baselineDeg = normalizedHistory[normalizedHistory.length - 1];
+  const deltas = normalizedHistory.map((angle) => getAngleDeltaDeg(angle, baselineDeg));
+  const spreadDeg = Math.max(...deltas);
+  return {
+    clustered: spreadDeg <= AI_ANGLE_REPEAT_TIGHT_SPREAD_DEG,
+    spreadDeg,
+    baselineDeg,
+    sampleCount: normalizedHistory.length,
+  };
+}
+
+function applyAiAntiRepeatAngleGuard(baseAngleRad, options = {}){
+  if(!Number.isFinite(baseAngleRad)){
+    return {
+      adjustedAngleRad: baseAngleRad,
+      usedSafeFan: false,
+      safeFanOffsetDeg: 0,
+      spreadDeg: null,
+      sampleCount: 0,
+      repeatStreakCount: Number.isFinite(options?.repeatStreakCount) ? options.repeatStreakCount : 0,
+    };
+  }
+
+  const repeatHistory = Array.isArray(options?.recentAnglesDeg)
+    ? options.recentAnglesDeg
+    : [];
+  const spreadMeta = getAiRecentAngleSpreadMeta(repeatHistory);
+  const repeatStreakCount = Number.isFinite(options?.repeatStreakCount)
+    ? Math.max(0, options.repeatStreakCount)
+    : 0;
+  const shouldUseSafeFan = spreadMeta.clustered
+    && (spreadMeta.sampleCount >= AI_ANGLE_REPEAT_HISTORY_LIMIT || repeatStreakCount >= AI_ANGLE_REPEAT_STREAK_ALERT_COUNT);
+
+  if(!shouldUseSafeFan){
+    return {
+      adjustedAngleRad: baseAngleRad,
+      usedSafeFan: false,
+      safeFanOffsetDeg: 0,
+      spreadDeg: Number.isFinite(spreadMeta.spreadDeg) ? spreadMeta.spreadDeg : null,
+      sampleCount: spreadMeta.sampleCount,
+      repeatStreakCount,
+    };
+  }
+
+  const seedParts = Array.isArray(options?.seedParts) ? options.seedParts : [];
+  const hashRatio = (getStableHashFromParts([...seedParts, "ai_angle_safe_fan_offset"]) / 0xffffffff);
+  const offsetDeg = AI_ANGLE_SAFE_FAN_MIN_DEG
+    + (AI_ANGLE_SAFE_FAN_MAX_DEG - AI_ANGLE_SAFE_FAN_MIN_DEG) * hashRatio;
+  const direction = (getStableHashFromParts([...seedParts, "ai_angle_safe_fan_direction"]) % 2 === 0) ? -1 : 1;
+  const adjustedAngleRad = baseAngleRad + direction * offsetDeg * (Math.PI / 180);
+
+  return {
+    adjustedAngleRad,
+    usedSafeFan: true,
+    safeFanOffsetDeg: direction * offsetDeg,
+    spreadDeg: spreadMeta.spreadDeg,
+    sampleCount: spreadMeta.sampleCount,
+    repeatStreakCount,
   };
 }
 
@@ -14649,6 +14744,19 @@ function planPathToPoint(plane, tx, ty, options = {}){
   const narrowCorridorColliderThreshold = 26;
 
   function buildMoveWithSafeDeviation(baseAngle, distance, scale, meta = {}){
+    const angleGuard = applyAiAntiRepeatAngleGuard(baseAngle, {
+      recentAnglesDeg: aiRoundState?.recentLaunchAnglesDeg,
+      repeatStreakCount: aiRoundState?.angleRepeatStreakCount,
+      seedParts: [
+        aiRoundState?.turnNumber ?? 0,
+        aiRoundState?.tieBreakerSeed ?? 0,
+        plane?.id ?? "",
+        Number.isFinite(tx) ? tx.toFixed(2) : "",
+        Number.isFinite(ty) ? ty.toFixed(2) : "",
+        meta?.moveType ?? "direct",
+      ],
+    });
+    const effectiveBaseAngle = angleGuard.adjustedAngleRad;
     const attemptDeviation = getRandomDeviation(distance, AI_MAX_ANGLE_DEVIATION);
     const deviations = [
       attemptDeviation,
@@ -14657,7 +14765,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
     ];
 
     for(const deviation of deviations){
-      const actualAngle = baseAngle + deviation;
+      const actualAngle = effectiveBaseAngle + deviation;
       const vx = Math.cos(actualAngle) * scale * speedPxPerSec;
       const vy = Math.sin(actualAngle) * scale * speedPxPerSec;
       const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
@@ -14702,7 +14810,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
     }
 
     for(const deviation of deterministicDeviations){
-      const actualAngle = baseAngle + deviation;
+      const actualAngle = effectiveBaseAngle + deviation;
       const vx = Math.cos(actualAngle) * scale * speedPxPerSec;
       const vy = Math.sin(actualAngle) * scale * speedPxPerSec;
       const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
@@ -14720,6 +14828,20 @@ function planPathToPoint(plane, tx, ty, options = {}){
       }
     }
 
+    if(angleGuard.usedSafeFan){
+      logAiDecision("ai_safe_fan_angle_applied", {
+        planeId: plane?.id ?? null,
+        goalName: meta?.goalName ?? null,
+        decisionReason: meta?.decisionReason ?? null,
+        targetX: tx,
+        targetY: ty,
+        safeFanOffsetDeg: Number(angleGuard.safeFanOffsetDeg.toFixed(2)),
+        spreadDeg: Number.isFinite(angleGuard.spreadDeg) ? Number(angleGuard.spreadDeg.toFixed(2)) : null,
+        sampleCount: angleGuard.sampleCount,
+        repeatStreakCount: angleGuard.repeatStreakCount,
+      });
+    }
+
     if(shouldUseNarrowCorridorAttempt){
       const narrowCorridorDeviationSteps = [
         0,
@@ -14734,7 +14856,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
         for(const step of narrowCorridorDeviationSteps){
           const deviationsToTry = step === 0 ? [0] : [-step, step];
           for(const deviation of deviationsToTry){
-            const actualAngle = baseAngle + deviation;
+            const actualAngle = effectiveBaseAngle + deviation;
             const vx = Math.cos(actualAngle) * narrowedScale * speedPxPerSec;
             const vy = Math.sin(actualAngle) * narrowedScale * speedPxPerSec;
             const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
@@ -14989,6 +15111,7 @@ function findDirectFinisherMove(aiPlanes, enemies, options = {}){
 
 function issueAIMove(plane, vx, vy){
   plane.angle = Math.atan2(vy, vx) + Math.PI/2;
+  const launchAngleDeg = normalizeAngleDeg((Math.atan2(vy, vx) * 180 / Math.PI + 360) % 360);
   markPlaneLaunchedFromBase(plane);
   flyingPoints.push({
     plane, vx, vy,
@@ -15027,6 +15150,23 @@ function issueAIMove(plane, vx, vy){
       aiRoundState.recentLaunchPlaneIds.splice(0, aiRoundState.recentLaunchPlaneIds.length - AI_RECENT_PLANE_HISTORY_LIMIT);
     }
   }
+
+  if(!Array.isArray(aiRoundState.recentLaunchAnglesDeg)){
+    aiRoundState.recentLaunchAnglesDeg = [];
+  }
+  aiRoundState.recentLaunchAnglesDeg.push(launchAngleDeg);
+  if(aiRoundState.recentLaunchAnglesDeg.length > AI_ANGLE_REPEAT_HISTORY_LIMIT){
+    aiRoundState.recentLaunchAnglesDeg.splice(0, aiRoundState.recentLaunchAnglesDeg.length - AI_ANGLE_REPEAT_HISTORY_LIMIT);
+  }
+  const latestAngleSpreadMeta = getAiRecentAngleSpreadMeta(aiRoundState.recentLaunchAnglesDeg);
+  if(latestAngleSpreadMeta.clustered && latestAngleSpreadMeta.sampleCount >= 2){
+    aiRoundState.angleRepeatStreakCount = (Number.isFinite(aiRoundState.angleRepeatStreakCount)
+      ? aiRoundState.angleRepeatStreakCount
+      : 0) + 1;
+  } else {
+    aiRoundState.angleRepeatStreakCount = 0;
+  }
+
   if(!hasShotThisRound){
     hasShotThisRound = true;
     renderScoreboard();
