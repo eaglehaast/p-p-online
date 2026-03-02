@@ -14083,6 +14083,84 @@ function planModeDrivenAiMove(context){
     aiRoundState.currentGoal = "return_with_flag";
     const move = planPathToPoint(carrier, homeBase.x, homeBase.y);
     if(move) return { plane: carrier, ...move };
+
+    const directDx = homeBase.x - carrier.x;
+    const directDy = homeBase.y - carrier.y;
+    const directDist = Math.hypot(directDx, directDy);
+    const dirX = directDist > 0 ? directDx / directDist : 1;
+    const dirY = directDist > 0 ? directDy / directDist : 0;
+    const sideX = -dirY;
+    const sideY = dirX;
+    const waypointCount = 5;
+    const fallbackWaypoints = [];
+    for(let i = 1; i <= waypointCount; i += 1){
+      const t = i / (waypointCount + 1);
+      const lateralMagnitude = Math.max(CELL_SIZE * 0.75, directDist * 0.08);
+      const lateralSign = i % 2 === 0 ? -1 : 1;
+      const lateralScale = ((i - 1) % 3 === 0) ? 1 : 0.6;
+      fallbackWaypoints.push({
+        x: carrier.x + directDx * t + sideX * lateralMagnitude * lateralSign * lateralScale,
+        y: carrier.y + directDy * t + sideY * lateralMagnitude * lateralSign * lateralScale,
+      });
+    }
+
+    for(const waypoint of fallbackWaypoints){
+      const fallbackMove = planPathToPoint(carrier, waypoint.x, waypoint.y);
+      if(!fallbackMove) continue;
+      aiRoundState.currentGoal = "return_with_flag_fallback";
+      logAiDecision("return_with_flag_fallback_path", {
+        planeId: carrier.id,
+        goalName: "return_with_flag_fallback",
+        fallbackType: "waypoint",
+        waypointX: Number(waypoint.x.toFixed(1)),
+        waypointY: Number(waypoint.y.toFixed(1)),
+        distanceToHome: Number(directDist.toFixed(1)),
+      });
+      return { plane: carrier, ...fallbackMove, goalName: "return_with_flag_fallback" };
+    }
+
+    if(Array.isArray(enemies) && enemies.length > 0){
+      const nearestEnemy = enemies.reduce((nearest, enemy) => (
+        !nearest || dist(carrier, enemy) < dist(carrier, nearest) ? enemy : nearest
+      ), null);
+      if(nearestEnemy){
+        const awayDx = carrier.x - nearestEnemy.x;
+        const awayDy = carrier.y - nearestEnemy.y;
+        const awayDist = Math.hypot(awayDx, awayDy);
+        const awayX = awayDist > 0 ? awayDx / awayDist : 0;
+        const awayY = awayDist > 0 ? awayDy / awayDist : 0;
+        const blendX = dirX * 0.65 + awayX * 0.35;
+        const blendY = dirY * 0.65 + awayY * 0.35;
+        const blendDist = Math.hypot(blendX, blendY);
+        const retreatDirX = blendDist > 0 ? blendX / blendDist : dirX;
+        const retreatDirY = blendDist > 0 ? blendY / blendDist : dirY;
+        const retreatDistance = Math.max(CELL_SIZE * 2, MAX_DRAG_DISTANCE * 0.45);
+        const retreatTargetX = carrier.x + retreatDirX * retreatDistance;
+        const retreatTargetY = carrier.y + retreatDirY * retreatDistance;
+        const safeRetreatMove = planPathToPoint(carrier, retreatTargetX, retreatTargetY);
+        if(safeRetreatMove){
+          aiRoundState.currentGoal = "return_with_flag_fallback";
+          logAiDecision("return_with_flag_fallback_path", {
+            planeId: carrier.id,
+            goalName: "return_with_flag_fallback",
+            fallbackType: "safe_retreat",
+            nearestEnemyId: nearestEnemy.id ?? null,
+            retreatTargetX: Number(retreatTargetX.toFixed(1)),
+            retreatTargetY: Number(retreatTargetY.toFixed(1)),
+            distanceToHome: Number(directDist.toFixed(1)),
+          });
+          return { plane: carrier, ...safeRetreatMove, goalName: "return_with_flag_fallback" };
+        }
+      }
+    }
+
+    logAiDecision("return_with_flag_fallback_failed", {
+      planeId: carrier.id,
+      goalName: "return_with_flag_fallback",
+      reason: "no_valid_waypoint_or_safe_retreat",
+      distanceToHome: Number(directDist.toFixed(1)),
+      hasEnemies: Array.isArray(enemies) && enemies.length > 0,
+    });
   }
 
   if(aiRoundState.mode === AI_MODES.DEFENSE && stolenBlueFlagCarrier){
