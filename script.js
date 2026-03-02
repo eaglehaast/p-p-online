@@ -11307,6 +11307,8 @@ const AI_ATTACK_SOFT_MIN_BOOST = 0.06;
 const AI_ATTACK_MID_LONG_MIN_BOOST_MAX = 0.08;
 const AI_ATTACK_MID_LONG_DISTANCE_RATIO_START = 0.58;
 const AI_ATTACK_MID_LONG_DISTANCE_RATIO_FULL = 0.92;
+const AI_ATTACK_SCALE_GUARD_FLOOR = 0.32;
+const AI_ATTACK_SCALE_GUARD_SHORT_CONTROL_DISTANCE_RATIO_MAX = 0.45;
 const AI_FINISHER_OVERSHOOT_FACTOR = 1.04;
 const AI_OPENING_CENTER_TURN_LIMIT = 2;
 const AI_OPENING_DIRECT_FINISHER_MIN_LEAD = 2;
@@ -11430,6 +11432,22 @@ function isAttackContext(reasonText = ""){
   ].some((marker) => reasonText.includes(marker));
 }
 
+function isIntentionalShortControlContext(reasonText = "", moveDistanceRatio = null){
+  const hasShortControlIntent = [
+    "hold",
+    "intercept",
+    "control",
+    "close_control",
+    "close-range",
+    "short_range",
+    "careful"
+  ].some((marker) => reasonText.includes(marker));
+
+  if(!hasShortControlIntent) return false;
+  if(!Number.isFinite(moveDistanceRatio)) return true;
+  return moveDistanceRatio <= AI_ATTACK_SCALE_GUARD_SHORT_CONTROL_DISTANCE_RATIO_MAX;
+}
+
 function applyAiMinLaunchScale(scale, details = {}){
   if(!Number.isFinite(scale)) return scale;
 
@@ -11452,6 +11470,7 @@ function applyAiMinLaunchScale(scale, details = {}){
 
   const isDefenseContext = isDefenseOrRetreatContext(reasonText);
   const isAttackIntentContext = isAttackContext(reasonText);
+  const isIntentionalShortControl = isIntentionalShortControlContext(reasonText, moveDistanceRatio);
   const isLongLaneDistanceContext = Number.isFinite(moveDistanceRatio)
     && moveDistanceRatio >= 0.68;
 
@@ -11482,9 +11501,28 @@ function applyAiMinLaunchScale(scale, details = {}){
   const boostedMinScale = baseMinScale
     + (shouldUseAttackLocalBoost ? AI_ATTACK_SOFT_MIN_BOOST : 0)
     + attackMidLongBoost;
-  const minScale = Math.max(0, Math.min(1, boostedMinScale));
+  const shouldUseAttackFloorGuard = isAttackIntentContext
+    && !isDefenseContext
+    && !isIntentionalShortControl;
+  const guardedMinScale = shouldUseAttackFloorGuard
+    ? Math.max(boostedMinScale, AI_ATTACK_SCALE_GUARD_FLOOR)
+    : boostedMinScale;
+  const minScale = Math.max(0, Math.min(1, guardedMinScale));
   const adjustedScale = Math.max(scale, minScale);
   if(adjustedScale > scale){
+    if(shouldUseAttackFloorGuard && minScale >= AI_ATTACK_SCALE_GUARD_FLOOR){
+      logAiDecision("ai_attack_floor_scale_guard_applied", {
+        oldScale: Number(scale.toFixed(3)),
+        newScale: Number(adjustedScale.toFixed(3)),
+        floorScale: Number(AI_ATTACK_SCALE_GUARD_FLOOR.toFixed(3)),
+        boostedMinScaleBeforeGuard: Number(boostedMinScale.toFixed(3)),
+        moveDistance: Number.isFinite(moveDistance) ? Number(moveDistance.toFixed(2)) : null,
+        moveDistanceRatio: Number.isFinite(moveDistanceRatio) ? Number(moveDistanceRatio.toFixed(3)) : null,
+        isDefenseContext,
+        isIntentionalShortControl,
+        ...details,
+      });
+    }
     if(shouldUseAttackLocalBoost){
       logAiDecision("ai_attack_soft_min_launch_scale_applied", {
         oldScale: Number(scale.toFixed(3)),
@@ -11526,6 +11564,9 @@ function applyAiMinLaunchScale(scale, details = {}){
       localBoostApplied: shouldUseAttackLocalBoost,
       midLongBoostApplied: attackMidLongBoost > 0,
       attackMidLongBoost: Number(attackMidLongBoost.toFixed(3)),
+      attackFloorGuardApplied: shouldUseAttackFloorGuard && minScale >= AI_ATTACK_SCALE_GUARD_FLOOR,
+      attackFloorGuardScale: Number(AI_ATTACK_SCALE_GUARD_FLOOR.toFixed(3)),
+      intentionalShortControl: isIntentionalShortControl,
       ...details,
     });
   }
