@@ -11408,6 +11408,8 @@ const AI_POST_INVENTORY_LAUNCH_DELAY_MS = 1000;
 const AI_OPENING_AGGRESSION_BIAS_TURN_LIMIT = 2;
 const AI_OPENING_AGGRESSION_BIAS_MAX_LEAD = 1;
 const AI_OPENING_AGGRESSION_BIAS_DISCOUNT = 0.92;
+const AI_FLAG_PRESSURE_SAFETY_WINDOW_TURN_LIMIT = 4;
+const AI_FLAG_PRESSURE_NEARBY_THREAT_DISTANCE = ATTACK_RANGE_PX * 1.55;
 const AI_ANGLE_REPEAT_HISTORY_LIMIT = 3;
 const AI_ANGLE_REPEAT_TIGHT_SPREAD_DEG = 7;
 const AI_ANGLE_SAFE_FAN_MIN_DEG = 12;
@@ -13223,6 +13225,7 @@ function selectAiModeForCurrentTurn(context){
   const enemyAliveCount = enemies.length;
   const hasEnoughResourcesForAggression = blueInventoryCount >= AI_CARGO_SWITCH_TO_AGGRESSION_ITEMS;
   const openingAggressionBiasAllowed = isOpeningAggressionBiasAllowed(context);
+  const blueBase = context?.homeBase || getBaseAnchor("blue");
 
   let mode = AI_MODES.ATTRITION;
   let targetPriorities = ["attack_enemy_plane", "close_distance"];
@@ -13253,6 +13256,49 @@ function selectAiModeForCurrentTurn(context){
     targetPriorities = ["preserve_planes", "safe_attack"];
   }
 
+  let flagPressureGatePassed = null;
+  let flagPressureGateReason = "flag_pressure_not_requested";
+  if(mode === AI_MODES.FLAG_PRESSURE){
+    const inSafetyWindow = turnAdvanceCount <= AI_FLAG_PRESSURE_SAFETY_WINDOW_TURN_LIMIT;
+    const hasNumericalAdvantage = aiAliveCount > enemyAliveCount;
+    const hasCleanRoundTrip = aiPlanes.some((plane) => {
+      if(!plane) return false;
+      return availableEnemyFlags.some((flag) => {
+        const targetAnchor = getFlagAnchor(flag);
+        if(!targetAnchor || !Number.isFinite(targetAnchor.x) || !Number.isFinite(targetAnchor.y)) return false;
+        return isPathClear(plane.x, plane.y, targetAnchor.x, targetAnchor.y)
+          && isPathClear(targetAnchor.x, targetAnchor.y, blueBase.x, blueBase.y);
+      });
+    });
+    const hasNearbyThreat = enemies.some((enemy) => {
+      if(!enemy || !Number.isFinite(enemy.x) || !Number.isFinite(enemy.y)) return false;
+      const distanceToBase = dist(enemy, blueBase);
+      if(distanceToBase > AI_FLAG_PRESSURE_NEARBY_THREAT_DISTANCE) return false;
+      return isPathClear(enemy.x, enemy.y, blueBase.x, blueBase.y);
+    });
+    const noNearbyThreat = !hasNearbyThreat;
+    const hasSafetyFactor = hasNumericalAdvantage || hasCleanRoundTrip || noNearbyThreat;
+    const explicitBenefit = (aiRiskProfile?.profile === "comeback" && availableEnemyFlags.length > 0)
+      || (hasEnoughResourcesForAggression && (hasNumericalAdvantage || hasCleanRoundTrip));
+
+    flagPressureGatePassed = !inSafetyWindow || hasSafetyFactor || explicitBenefit;
+    if(!inSafetyWindow){
+      flagPressureGateReason = "safety_window_inactive";
+    } else if(hasSafetyFactor){
+      if(hasNumericalAdvantage) flagPressureGateReason = "safety_factor_numerical_advantage";
+      else if(hasCleanRoundTrip) flagPressureGateReason = "safety_factor_clean_round_trip";
+      else flagPressureGateReason = "safety_factor_no_nearby_threat";
+    } else if(explicitBenefit){
+      flagPressureGateReason = "soft_override_explicit_benefit";
+    } else {
+      flagPressureGateReason = "blocked_in_safety_window";
+      mode = (blueInventoryCount > 0 && aiAliveCount > 1) ? AI_MODES.RESOURCE_FIRST : AI_MODES.ATTRITION;
+      targetPriorities = mode === AI_MODES.RESOURCE_FIRST
+        ? ["pickup_cargo", "prepare_attack"]
+        : ["attack_enemy_plane", "close_distance"];
+    }
+  }
+
   if(openingAggressionBiasAllowed && mode === AI_MODES.ATTRITION){
     targetPriorities = ["attack_enemy_plane", "close_distance", ...targetPriorities.filter((goal) => goal !== "attack_enemy_plane" && goal !== "close_distance")];
   }
@@ -13266,6 +13312,8 @@ function selectAiModeForCurrentTurn(context){
     blueInventoryCount,
     hasEnoughResourcesForAggression,
     openingAggressionBiasAllowed,
+    flagPressureGatePassed,
+    flagPressureGateReason,
     riskProfile: aiRiskProfile?.profile || "balanced",
     priorities: targetPriorities,
   });
