@@ -2412,7 +2412,7 @@ body, button {
   background: url('ui_gamescreen/playagain/playagain_container.png') center / contain no-repeat;
   opacity: 0;
   visibility: hidden;
-  transform: translateY(-220px) rotate(-4deg) scale(0.98);
+  transform: translateY(-220px) rotate(0deg) scale(0.98);
   transform-origin: 50% 0;
   pointer-events: none;
   transition: opacity 0.15s linear;
@@ -2427,19 +2427,19 @@ body, button {
 
 @keyframes endgame-panel-drop {
   0% {
-    transform: translateY(-220px) rotate(-8deg) scale(0.98);
+    transform: translateY(-220px) rotate(0deg) scale(0.98);
     opacity: 0;
   }
   64% {
-    transform: translateY(2px) rotate(1deg) scale(1);
+    transform: translateY(0.67px) rotate(0deg) scale(1);
     opacity: 1;
   }
   78% {
-    transform: translateY(-5.5px) rotate(-0.6deg) scale(1);
+    transform: translateY(-1.83px) rotate(0deg) scale(1);
     opacity: 1;
   }
   90% {
-    transform: translateY(1px) rotate(0.25deg) scale(1);
+    transform: translateY(0.33px) rotate(0deg) scale(1);
     opacity: 1;
   }
   100% {
