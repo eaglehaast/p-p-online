@@ -12997,6 +12997,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
   const softFallbackReady = aiRoundState.inventoryIdleTurns >= AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD
     && aiRoundState.inventorySoftFallbackCooldown <= 0;
   const attackRangePx = typeof ATTACK_RANGE_PX === "number" && Number.isFinite(ATTACK_RANGE_PX) ? ATTACK_RANGE_PX : MAX_DRAG_DISTANCE * 0.58;
+  const baseFlightRange = MAX_DRAG_DISTANCE;
+  const fuelFlightRange = baseFlightRange * 2;
 
   function evaluateDirectAttackWindow(enemy){
     if(!enemy) return null;
@@ -13050,9 +13052,52 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     });
   }
 
+  function evaluateFuelMaterialGain(enemyFlagAnchor){
+    const contactTargets = [
+      {
+        name: "enemy_base",
+        target: enemyBase,
+        contactRadius: CELL_SIZE * 2.4,
+      },
+      {
+        name: "priority_enemy",
+        target: priorityEnemy,
+        contactRadius: attackRangePx,
+      },
+      {
+        name: "enemy_flag",
+        target: enemyFlagAnchor,
+        contactRadius: CELL_SIZE * 2.4,
+      },
+    ];
+
+    const scoredTargets = contactTargets
+      .filter((entry) => Boolean(entry.target))
+      .map((entry) => {
+        const targetDistance = dist(plannedMove.plane, entry.target);
+        const reachableWithoutFuel = targetDistance <= baseFlightRange + entry.contactRadius;
+        const reachableWithFuel = targetDistance <= fuelFlightRange + entry.contactRadius;
+        return {
+          ...entry,
+          targetDistance,
+          reachableWithoutFuel,
+          reachableWithFuel,
+        };
+      });
+
+    const newReachableTarget = scoredTargets.find((entry) => entry.reachableWithFuel && !entry.reachableWithoutFuel) || null;
+
+    return {
+      hasMaterialGain: Boolean(newReachableTarget),
+      newReachableTarget,
+      scoredTargets,
+    };
+  }
+
   if(inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0){
     const enemyFlag = context?.shouldUseFlagsMode ? getAvailableFlagsByColor("green")[0] : null;
     const enemyFlagAnchor = enemyFlag ? getFlagAnchor(enemyFlag) : null;
+    const fuelMaterialGain = evaluateFuelMaterialGain(enemyFlagAnchor);
     const farObjective = (enemyFlagAnchor && dist(plannedMove.plane, enemyFlagAnchor) > MAX_DRAG_DISTANCE * 0.8)
       || (priorityEnemy && dist(plannedMove.plane, priorityEnemy) > MAX_DRAG_DISTANCE * 0.8)
       || moveDistance > MAX_DRAG_DISTANCE * 0.8;
@@ -13067,9 +13112,30 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       || shouldUseFuelForAttackCommit
       || (riskProfile === "comeback" && moveDistance > MAX_DRAG_DISTANCE * 0.55);
     const shouldUseFuelBySoftFallback = !shouldBoostRange && softFallbackReady && moderateObjective;
-    if((shouldBoostRange || shouldUseFuelBySoftFallback)
+    const shouldTryFuelNow = shouldBoostRange || shouldUseFuelBySoftFallback;
+    if(shouldTryFuelNow && !fuelMaterialGain.hasMaterialGain){
+      logAiDecision("fuel_saved_no_material_gain", {
+        planeId: plannedMove.plane?.id ?? null,
+        reason: shouldUseFuelBySoftFallback ? "soft_fallback_without_new_contact" : "boost_without_new_contact",
+        riskProfile,
+        moveDistance: Number(moveDistance.toFixed(1)),
+        attackGoal,
+        candidateTarget: null,
+      });
+    }
+
+    if(shouldTryFuelNow
+      && fuelMaterialGain.hasMaterialGain
       && tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.FUEL, "blue", plannedMove.plane)){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
+      logAiDecision("fuel_used_material_gain", {
+        planeId: plannedMove.plane?.id ?? null,
+        reason: shouldUseFuelBySoftFallback ? "soft_fallback_new_contact" : "boost_new_contact",
+        gainedContactTarget: fuelMaterialGain.newReachableTarget?.name || null,
+        gainedContactDistance: fuelMaterialGain.newReachableTarget
+          ? Number(fuelMaterialGain.newReachableTarget.targetDistance.toFixed(1))
+          : null,
+      });
       if(shouldUseFuelBySoftFallback){
         markSoftFallbackUse(INVENTORY_ITEM_TYPES.FUEL, {
           moveDistance: Number(moveDistance.toFixed(1)),
@@ -13280,12 +13346,18 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     }
 
     if(inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0
+      && evaluateFuelMaterialGain(null).hasMaterialGain
       && tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.FUEL, "blue", plannedMove.plane)){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
       markSoftFallbackUse(INVENTORY_ITEM_TYPES.FUEL, {
         reason: "generic_soft_fallback_usage",
       });
       return true;
+    } else if(inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0){
+      logAiDecision("fuel_saved_no_material_gain", {
+        planeId: plannedMove.plane?.id ?? null,
+        reason: "generic_soft_fallback_without_new_contact",
+      });
     }
   }
 
