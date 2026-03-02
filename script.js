@@ -9112,7 +9112,7 @@ function loadSettingsForRuleset(ruleset = selectedRuleset){
 }
 
 loadSettings();
-selectedMode = getStoredGameMode(selectedMode);
+selectedMode = "hotSeat";
 syncInventoryVisibility();
 
 window.addEventListener('paperWingsSettingsChanged', (event) => {
@@ -9125,23 +9125,8 @@ window.addEventListener('paperWingsSettingsChanged', (event) => {
   syncInventoryVisibility();
 });
 
-// Highlight advanced settings button if custom settings are stored
-const hasCustomSettings = storageAvailable && [
-  'settings.flightRangeCells',
-  'settings.aimingAmplitude',
-  'settings.addAA',
-  'settings.sharpEdges',
-  'settings.flagsEnabled',
-  'settings.addCargo',
-  'settings.mapIndex',
-  'settings.randomizeMapEachRound',
-  'settings.flameStyle',
-  'settings.arcadeMode'
-].some(key => getStoredSetting(key) !== null);
-
-if(hasCustomSettings && classicRulesBtn && advancedSettingsBtn && !isAdvancedLikeRuleset(selectedRuleset)){
-  selectedRuleset = "advanced";
-}
+// Always keep menu defaults on first paint so startup state stays predictable.
+selectedRuleset = "classic";
 
 syncRulesButtonSkins(selectedRuleset);
 syncModeButtonSkins(selectedMode);
