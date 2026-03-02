@@ -11808,8 +11808,95 @@ function createInitialAiRoundState(){
     recentLaunchAnglesDeg: [],
     angleRepeatStreakCount: 0,
     planeIdleTurnsById: {},
+    dynamiteIntent: null,
     tieBreakerSeed: 0,
   };
+}
+
+const AI_DYNAMITE_INTENT_SCORE_BONUS = 0.94;
+const AI_DYNAMITE_INTENT_LINE_TOLERANCE = CELL_SIZE * 0.9;
+
+function clearAiDynamiteIntent(reason = "cleared"){
+  if(!aiRoundState?.dynamiteIntent) return;
+  const previousIntent = aiRoundState.dynamiteIntent;
+  aiRoundState.dynamiteIntent = null;
+  if(reason === "expired"){
+    logAiDecision("dynamite_intent_expired", {
+      reason: "turn_window_elapsed",
+      colliderId: previousIntent?.colliderId ?? null,
+      targetX: Number.isFinite(previousIntent?.x) ? Number(previousIntent.x.toFixed(1)) : null,
+      targetY: Number.isFinite(previousIntent?.y) ? Number(previousIntent.y.toFixed(1)) : null,
+      expiresTurn: previousIntent?.expiresTurn ?? null,
+      turn: aiRoundState?.turnNumber ?? null,
+    });
+  }
+}
+
+function getDistanceFromPointToSegment(pointX, pointY, x1, y1, x2, y2){
+  if(![pointX, pointY, x1, y1, x2, y2].every(Number.isFinite)) return Number.POSITIVE_INFINITY;
+  const segmentDx = x2 - x1;
+  const segmentDy = y2 - y1;
+  const segmentLenSq = segmentDx * segmentDx + segmentDy * segmentDy;
+  if(segmentLenSq <= 0) return Math.hypot(pointX - x1, pointY - y1);
+  const projection = ((pointX - x1) * segmentDx + (pointY - y1) * segmentDy) / segmentLenSq;
+  const clampedProjection = Math.max(0, Math.min(1, projection));
+  const closestX = x1 + segmentDx * clampedProjection;
+  const closestY = y1 + segmentDy * clampedProjection;
+  return Math.hypot(pointX - closestX, pointY - closestY);
+}
+
+function getAiDynamiteIntentScoreAdjustment(score, move, context = {}){
+  const baseScore = Number.isFinite(score) ? score : 0;
+  const intent = aiRoundState?.dynamiteIntent;
+  if(!intent || !Number.isFinite(intent?.expiresTurn)) return { score: baseScore, usedIntent: false, bonusApplied: false };
+  if(!Number.isFinite(aiRoundState?.turnNumber) || aiRoundState.turnNumber > intent.expiresTurn){
+    return { score: baseScore, usedIntent: false, bonusApplied: false };
+  }
+
+  const plane = move?.plane || context?.plane;
+  if(!plane || !Number.isFinite(plane.x) || !Number.isFinite(plane.y)) return { score: baseScore, usedIntent: false, bonusApplied: false };
+
+  const landingPoint = getAiMoveLandingPoint(move);
+  const targetX = Number.isFinite(landingPoint?.x) ? landingPoint.x : null;
+  const targetY = Number.isFinite(landingPoint?.y) ? landingPoint.y : null;
+  if(!Number.isFinite(targetX) || !Number.isFinite(targetY)) return { score: baseScore, usedIntent: false, bonusApplied: false };
+
+  const distanceToIntentLane = getDistanceFromPointToSegment(intent.x, intent.y, plane.x, plane.y, targetX, targetY);
+  const usesIntentLane = distanceToIntentLane <= AI_DYNAMITE_INTENT_LINE_TOLERANCE;
+  if(!usesIntentLane){
+    return { score: baseScore, usedIntent: false, bonusApplied: false };
+  }
+
+  return {
+    score: baseScore * AI_DYNAMITE_INTENT_SCORE_BONUS,
+    usedIntent: true,
+    bonusApplied: true,
+  };
+}
+
+function consumeAiDynamiteIntentIfUsed(plannedMove){
+  const intent = aiRoundState?.dynamiteIntent;
+  if(!intent) return false;
+  const usageCheck = getAiDynamiteIntentScoreAdjustment(1, plannedMove, { plane: plannedMove?.plane });
+  if(!usageCheck.usedIntent) return false;
+  logAiDecision("dynamite_intent_used", {
+    planeId: plannedMove?.plane?.id ?? null,
+    colliderId: intent?.colliderId ?? null,
+    targetX: Number.isFinite(intent?.x) ? Number(intent.x.toFixed(1)) : null,
+    targetY: Number.isFinite(intent?.y) ? Number(intent.y.toFixed(1)) : null,
+    turn: aiRoundState?.turnNumber ?? null,
+  });
+  clearAiDynamiteIntent("used");
+  return true;
+}
+
+function expireAiDynamiteIntentIfNeeded(){
+  const intent = aiRoundState?.dynamiteIntent;
+  if(!intent || !Number.isFinite(intent?.expiresTurn)) return;
+  if(!Number.isFinite(aiRoundState?.turnNumber)) return;
+  if(aiRoundState.turnNumber > intent.expiresTurn){
+    clearAiDynamiteIntent("expired");
+  }
 }
 
 function normalizeAngleDeg(angleDeg){
@@ -13285,8 +13372,29 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       ? placeBlueDynamiteAt(routeAwareTarget.cx, routeAwareTarget.cy)
       : false;
 
+    function setDynamiteIntentFromTarget(targetGeometry){
+      if(!targetGeometry) return;
+      const expiresTurn = (Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : 0) + 1;
+      aiRoundState.dynamiteIntent = {
+        colliderId: targetGeometry?.collider?.id ?? null,
+        spriteId: targetGeometry?.id ?? null,
+        x: targetGeometry?.cx ?? null,
+        y: targetGeometry?.cy ?? null,
+        expiresTurn,
+      };
+      logAiDecision("dynamite_intent_set", {
+        colliderId: targetGeometry?.collider?.id ?? null,
+        spriteId: targetGeometry?.id ?? null,
+        targetX: Number.isFinite(targetGeometry?.cx) ? Number(targetGeometry.cx.toFixed(1)) : null,
+        targetY: Number.isFinite(targetGeometry?.cy) ? Number(targetGeometry.cy.toFixed(1)) : null,
+        expiresTurn,
+        turn: aiRoundState?.turnNumber ?? null,
+      });
+    }
+
     if(planted){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
+      setDynamiteIntentFromTarget(routeAwareTarget);
       return true;
     }
 
@@ -13294,6 +13402,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       const relaxedTarget = defensiveTargetRaw || offensiveTargetRaw;
       if(relaxedTarget && placeBlueDynamiteAt(relaxedTarget.cx, relaxedTarget.cy)){
         removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
+        setDynamiteIntentFromTarget(relaxedTarget);
         markSoftFallbackUse(INVENTORY_ITEM_TYPES.DYNAMITE, {
           reason: "dynamite_soft_fallback_relaxed_target",
           targetX: relaxedTarget.cx,
@@ -13466,6 +13575,8 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     });
     return;
   }
+
+  consumeAiDynamiteIntentIfUsed(plannedMove);
 
   const beforeInventoryState = evaluateBlueInventoryState();
   const itemUsed = maybeUseInventoryBeforeLaunch(context, plannedMove);
@@ -14057,11 +14168,12 @@ function assignAiRolesForTurn(context){
           enemy,
           hasValidPath: true,
         });
+        const intentAdjustment = getAiDynamiteIntentScoreAdjustment(aggressionBias.score, { ...move, plane }, { plane });
         const candidate = {
           plane,
           enemy,
           move,
-          score: aggressionBias.score,
+          score: intentAdjustment.score,
           openingAggressionBiasApplied: aggressionBias.applied,
           openingAggressionBiasTarget: aggressionBias.applied ? "attack_enemy_plane" : null,
           idleTurns: getAiPlaneIdleTurns(plane),
@@ -14258,7 +14370,9 @@ function planRoleDrivenAiMove(context, rolePack){
         ? ((directPathClear ? 0 : AI_MIRROR_SCORE_BLOCKED_DIRECT_BONUS) + (mirrorPressureTarget ? AI_MIRROR_SCORE_PRESSURE_BONUS : 0))
         : 0;
       const rawHitChanceScore = move.totalDist * clearLaneBonus * longShotPenalty * (1 - Math.min(0.2, mirrorScoreBonus));
-      const hitChanceScore = getAiPlaneAdjustedScore(rawHitChanceScore, striker);
+      const baseHitChanceScore = getAiPlaneAdjustedScore(rawHitChanceScore, striker);
+      const intentAdjustment = getAiDynamiteIntentScoreAdjustment(baseHitChanceScore, { ...move, plane: striker }, { plane: striker });
+      const hitChanceScore = intentAdjustment.score;
       if(longShotPenalty > 1){
         logAiDecision("long_shot_penalty_observed", {
           source: "role_striker",
@@ -14420,11 +14534,12 @@ function planModeDrivenAiMove(context){
           enemy: stolenBlueFlagCarrier,
           hasValidPath: true,
         });
+        const intentAdjustment = getAiDynamiteIntentScoreAdjustment(aggressionBias.score, { ...move, plane }, { plane });
         const candidate = {
           plane,
           ...move,
-          adjustedDist: aggressionBias.score,
-          score: aggressionBias.score,
+          adjustedDist: intentAdjustment.score,
+          score: intentAdjustment.score,
           openingAggressionBiasApplied: aggressionBias.applied,
           openingAggressionBiasTarget: aggressionBias.applied ? "interceptor" : null,
           idleTurns: getAiPlaneIdleTurns(plane),
@@ -14437,13 +14552,15 @@ function planModeDrivenAiMove(context){
 
       const preparationMove = findSafePreparationMoveForAttack(plane, stolenBlueFlagCarrier);
       if(preparationMove){
+        const basePreparationScore = getAiPlaneAdjustedScore(preparationMove.totalDist, plane);
+        const preparationIntentAdjustment = getAiDynamiteIntentScoreAdjustment(basePreparationScore, { ...preparationMove, plane }, { plane });
         const candidate = {
           plane,
           ...preparationMove,
-          adjustedDist: getAiPlaneAdjustedScore(preparationMove.totalDist, plane),
+          adjustedDist: preparationIntentAdjustment.score,
           targetEnemy: stolenBlueFlagCarrier,
           goalName: dynamiteAvailable ? "prepare_dynamite_breach" : "prepare_clear_shot",
-          score: getAiPlaneAdjustedScore(preparationMove.totalDist, plane),
+          score: preparationIntentAdjustment.score,
           idleTurns: getAiPlaneIdleTurns(plane),
         };
         if(compareAiCandidateByScoreAndRotation(candidate, bestPreparationMove, ["mode_defense", "prepare"])){
@@ -15104,6 +15221,7 @@ function doComputerMove(){
   const availableEnemyFlags = shouldUseFlagsMode ? getAvailableFlagsByColor("green") : [];
 
   aiRoundState.turnNumber += 1;
+  expireAiDynamiteIntentIfNeeded();
   updateAiPlaneIdleCounters(aiPlanes);
   const stolenBlueFlagCarrier = shouldUseFlagsMode ? getFlagCarrierForColor("blue") : null;
   const rankedAiPlanes = rankAiPlanesForCurrentTurn(aiPlanes);
