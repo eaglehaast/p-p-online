@@ -17304,12 +17304,10 @@ function gameDraw(){
       const anchorClientX = (Number.isFinite(boardRect.left) ? boardRect.left : 0) + anchorCanvasX * scaleX;
       const anchorClientY = (Number.isFinite(boardRect.top) ? boardRect.top : 0) + anchorCanvasY * scaleY;
       const panelWidth = endGameDiv.offsetWidth || 0;
+      const panelHeight = endGameDiv.offsetHeight || 0;
       const targetLeft = Math.round(anchorClientX - panelWidth / 2);
-      const targetTop = Math.round(anchorClientY);
-
-      if(!endGameDiv.classList.contains("is-visible")){
-        return;
-      }
+      const boardTop = Number.isFinite(boardRect.top) ? boardRect.top : 0;
+      const targetTop = Math.round(boardTop + (boardHeight - panelHeight) / 2);
 
       if(Number.isFinite(targetLeft)){
         endGameDiv.style.left = `${targetLeft}px`;
