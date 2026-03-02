@@ -8175,8 +8175,12 @@ const MIN_ACCURACY_PERCENT = 0;
 const MAX_ACCURACY_PERCENT = 100;
 const MAX_SPREAD_DEG       = 12;
 const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
-const AI_MIRROR_FIRST_BOUNCE_MIN_DISTANCE = CARGO_SPAWN_SAFE_RADIUS * 1.25;
-const AI_MIRROR_MAX_PATH_RATIO = 1.8;
+const AI_MIRROR_FIRST_BOUNCE_MIN_DISTANCE = CARGO_SPAWN_SAFE_RADIUS * 1.05;
+const AI_MIRROR_MAX_PATH_RATIO = 1.95;
+const AI_MIRROR_MAX_PATH_RATIO_OBSTACLE_BONUS = 0.35;
+const AI_MIRROR_PATH_PRESSURE_BONUS = 0.2;
+const AI_MIRROR_SCORE_PRESSURE_BONUS = 0.12;
+const AI_MIRROR_SCORE_BLOCKED_DIRECT_BONUS = 0.08;
 
 const AIMING_TUNING_DEFAULTS = {
   referenceAccuracyPercent: 80,
@@ -11884,7 +11888,40 @@ function getAiMoveLandingPoint(move){
   };
 }
 
-function getAiLongShotPenaltyMultiplier(distanceToTarget, targetPriority = "normal", riskProfile = "balanced"){
+function getCurrentMapMetaNormalized(){
+  const currentMapMeta = (typeof resolveCurrentMapForExport === "function")
+    ? resolveCurrentMapForExport()
+    : null;
+  const mapId = typeof currentMapMeta?.id === "string"
+    ? currentMapMeta.id.trim().toLowerCase()
+    : "";
+  const mapName = typeof currentMapMeta?.name === "string"
+    ? currentMapMeta.name.trim().toLowerCase()
+    : (typeof currentMapName === "string" ? currentMapName.trim().toLowerCase() : "");
+  return { mapId, mapName, mapMeta: currentMapMeta };
+}
+
+function isCurrentMapClearSky(){
+  const { mapId, mapName } = getCurrentMapMetaNormalized();
+  return mapId === "clearsky" || mapName === "clear sky";
+}
+
+function getMirrorPathRatioLimit(options = {}){
+  const pressureBoost = Number.isFinite(options?.pressureBoost)
+    ? Math.max(0, options.pressureBoost)
+    : 0;
+  const mapBonus = isCurrentMapClearSky() ? 0 : AI_MIRROR_MAX_PATH_RATIO_OBSTACLE_BONUS;
+  return AI_MIRROR_MAX_PATH_RATIO + mapBonus + pressureBoost;
+}
+
+function isMirrorPressureTarget(enemy, context = null){
+  if(!enemy) return false;
+  const targetPriority = getAiTargetPriority(enemy, context);
+  if(targetPriority === "critical") return true;
+  return isDirectFinisherScenario(context?.plane || null, enemy);
+}
+
+function getAiLongShotPenaltyMultiplier(distanceToTarget, targetPriority = "normal", riskProfile = "balanced", options = {}){
   if(!Number.isFinite(distanceToTarget) || distanceToTarget <= AI_LONG_SHOT_DISTANCE_THRESHOLD) return 1;
 
   const maxEffectiveDistance = Math.max(MAX_DRAG_DISTANCE * 1.25, AI_LONG_SHOT_DISTANCE_THRESHOLD + 1);
@@ -11899,7 +11936,18 @@ function getAiLongShotPenaltyMultiplier(distanceToTarget, targetPriority = "norm
 
   const baseMultiplier = 1 + (profilePenaltyCeil - 1) * overflowRatio;
   const criticalTargetSoftener = targetPriority === "critical" ? 0.55 : 1;
-  return 1 + (baseMultiplier - 1) * criticalTargetSoftener;
+  let penalty = 1 + (baseMultiplier - 1) * criticalTargetSoftener;
+
+  const onlyLineAvailable = Boolean(options?.onlyLineAvailable);
+  const cleanRicochetAvailable = Boolean(options?.cleanRicochetAvailable);
+  if(onlyLineAvailable){
+    penalty = 1 + (penalty - 1) * 0.45;
+  }
+  if(cleanRicochetAvailable){
+    penalty = 1 + (penalty - 1) * 0.75;
+  }
+
+  return penalty;
 }
 
 function getAiTargetPriority(enemy, context){
@@ -13447,12 +13495,26 @@ function planRoleDrivenAiMove(context, rolePack){
     const riskProfile = context?.aiRiskProfile?.profile || "balanced";
     let bestStrike = null;
     for(const enemy of enemies){
-      const move = planPathToPoint(striker, enemy.x, enemy.y);
+      const directPathClear = isPathClear(striker.x, striker.y, enemy.x, enemy.y);
+      const mirrorPressureTarget = isMirrorPressureTarget(enemy, context);
+      const move = planPathToPoint(striker, enemy.x, enemy.y, {
+        targetEnemy: enemy,
+        targetEnemyId: enemy?.id ?? null,
+        decisionReason: "role_striker",
+        goalName: "attack_enemy_plane",
+      });
       if(!move) continue;
-      const clearLaneBonus = isPathClear(striker.x, striker.y, enemy.x, enemy.y) ? 0.7 : 1;
+      const isMirrorMove = move?.moveType === "mirror" || !directPathClear;
+      const clearLaneBonus = directPathClear ? 0.7 : 1;
       const targetPriority = getAiTargetPriority(enemy, context);
-      const longShotPenalty = getAiLongShotPenaltyMultiplier(move.totalDist, targetPriority, riskProfile);
-      const rawHitChanceScore = move.totalDist * clearLaneBonus * longShotPenalty;
+      const longShotPenalty = getAiLongShotPenaltyMultiplier(move.totalDist, targetPriority, riskProfile, {
+        onlyLineAvailable: !directPathClear,
+        cleanRicochetAvailable: isMirrorMove,
+      });
+      const mirrorScoreBonus = isMirrorMove
+        ? ((directPathClear ? 0 : AI_MIRROR_SCORE_BLOCKED_DIRECT_BONUS) + (mirrorPressureTarget ? AI_MIRROR_SCORE_PRESSURE_BONUS : 0))
+        : 0;
+      const rawHitChanceScore = move.totalDist * clearLaneBonus * longShotPenalty * (1 - Math.min(0.2, mirrorScoreBonus));
       const hitChanceScore = getAiPlaneAdjustedScore(rawHitChanceScore, striker);
       if(longShotPenalty > 1){
         logAiDecision("long_shot_penalty_applied", {
@@ -13463,6 +13525,18 @@ function planRoleDrivenAiMove(context, rolePack){
           targetPriority,
           distance: Number(move.totalDist.toFixed(1)),
           penalty: Number(longShotPenalty.toFixed(3)),
+        });
+      }
+      if(isMirrorMove){
+        logAiDecision("mirror_selected_reason", {
+          source: "role_striker",
+          reason: !directPathClear ? "direct_path_blocked" : "tactical_preference",
+          planeId: striker.id,
+          enemyId: enemy.id,
+          pressureTarget: mirrorPressureTarget,
+          mirrorScoreBonus: Number(Math.min(0.2, mirrorScoreBonus).toFixed(3)),
+          clearSky: isCurrentMapClearSky(),
+          pathDistance: Number(move.totalDist.toFixed(1)),
         });
       }
       if(!bestStrike || hitChanceScore < bestStrike.hitChanceScore){
@@ -13819,7 +13893,9 @@ function getFallbackAiMove(context){
         }
 
         const targetPriority = getAiTargetPriority(enemy, context);
-        const longShotPenalty = getAiLongShotPenaltyMultiplier(directDist, targetPriority, riskProfile);
+        const longShotPenalty = getAiLongShotPenaltyMultiplier(directDist, targetPriority, riskProfile, {
+          onlyLineAvailable: false,
+        });
         const directAttackScore = getAiPlaneAdjustedScore(directDist * longShotPenalty, plane);
 
         if(longShotPenalty > 1){
@@ -13848,9 +13924,15 @@ function getFallbackAiMove(context){
           best = directCandidate;
         }
       } else {
+        const directPathBlocked = true;
+        const mirrorPressureTarget = isMirrorPressureTarget(enemy, context);
+        const mirrorPressureBoost = mirrorPressureTarget ? AI_MIRROR_PATH_PRESSURE_BONUS : 0;
         const mirror = riskProfile === "conservative"
           ? null
-          : findMirrorShot(plane, enemy, { logReject: true });
+          : findMirrorShot(plane, enemy, {
+            logReject: true,
+            pressureBoost: mirrorPressureBoost,
+          });
         if(mirror){
           const dx = mirror.mirrorTarget.x - plane.x;
           const dy = mirror.mirrorTarget.y - plane.y;
@@ -13869,7 +13951,21 @@ function getFallbackAiMove(context){
           const vy = Math.sin(ang) * scale * speedPxPerSec;
 
           const mirrorWeight = riskProfile === "comeback" ? 0.82 : 1;
-          const mirrorScore = getAiPlaneAdjustedScore(mirror.totalDist * mirrorWeight, plane);
+          const blockedDirectBonus = directPathBlocked ? AI_MIRROR_SCORE_BLOCKED_DIRECT_BONUS : 0;
+          const pressureBonus = mirrorPressureTarget ? AI_MIRROR_SCORE_PRESSURE_BONUS : 0;
+          const mirrorBonus = Math.min(0.2, blockedDirectBonus + pressureBonus);
+          const mirrorScore = getAiPlaneAdjustedScore(mirror.totalDist * mirrorWeight * (1 - mirrorBonus), plane);
+          logAiDecision("mirror_selected_reason", {
+            source: "fallback_attack",
+            reason: directPathBlocked ? "direct_path_blocked" : "tactical_preference",
+            planeId: plane.id,
+            enemyId: enemy.id,
+            mirrorBonus: Number(mirrorBonus.toFixed(3)),
+            blockedDirectBonus: Number(blockedDirectBonus.toFixed(3)),
+            pressureBonus: Number(pressureBonus.toFixed(3)),
+            clearSky: isCurrentMapClearSky(),
+            pathDistance: Number(mirror.totalDist.toFixed(1)),
+          });
           const mirrorCandidate = {
             plane,
             enemy,
@@ -14434,7 +14530,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
       const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
       if(isPathClear(plane.x, plane.y, landingX, landingY)){
-        return { vx, vy, totalDist: distance };
+        return { vx, vy, totalDist: distance, moveType: meta?.moveType || "direct" };
       }
     }
 
@@ -14469,7 +14565,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
           deviation,
           ...meta
         });
-        return { vx, vy, totalDist: distance };
+        return { vx, vy, totalDist: distance, moveType: meta?.moveType || "direct" };
       }
     }
 
@@ -14499,7 +14595,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
               reason: "detour_extended",
               ...meta
             });
-            return { vx, vy, totalDist: distance };
+            return { vx, vy, totalDist: distance, moveType: meta?.moveType || "direct" };
           }
         }
       }
@@ -14586,6 +14682,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
         vy,
         totalDist: dist,
         decisionReason: "direct_finisher",
+        moveType: "direct",
       };
     }
 
@@ -14594,7 +14691,13 @@ function planPathToPoint(plane, tx, ty, options = {}){
     });
   }
 
-  const mirror = findMirrorShot(plane, {x:tx, y:ty}, { logReject: true });
+  const mirrorPressureBoost = isMirrorPressureTarget(options?.targetEnemy || { x: tx, y: ty }, { ...options, plane })
+    ? AI_MIRROR_PATH_PRESSURE_BONUS
+    : 0;
+  const mirror = findMirrorShot(plane, {x:tx, y:ty}, {
+    logReject: true,
+    pressureBoost: mirrorPressureBoost,
+  });
   if(mirror){
     const dx = mirror.mirrorTarget.x - plane.x;
     const dy = mirror.mirrorTarget.y - plane.y;
@@ -14608,6 +14711,15 @@ function planPathToPoint(plane, tx, ty, options = {}){
       moveDistance: mirror.totalDist,
       targetX: tx,
       targetY: ty,
+    });
+    logAiDecision("mirror_selected_reason", {
+      source: "plan_path_to_point",
+      reason: "direct_path_blocked",
+      planeId: plane?.id ?? null,
+      targetEnemyId: options?.targetEnemy?.id ?? options?.targetEnemyId ?? null,
+      pressureBoost: Number(mirrorPressureBoost.toFixed(2)),
+      clearSky: isCurrentMapClearSky(),
+      pathDistance: Number(mirror.totalDist.toFixed(1)),
     });
     return buildMoveWithSafeDeviation(baseAngle, mirror.totalDist, scale, {
       moveType: "mirror"
@@ -14742,6 +14854,10 @@ function findMirrorShot(plane, enemy, options = {}){
   let best = null; // {mirrorTarget, totalDist}
   const directDist = Math.hypot(plane.x - enemy.x, plane.y - enemy.y);
   const minBounceDistance = AI_MIRROR_FIRST_BOUNCE_MIN_DISTANCE;
+  const pressureBoost = Number.isFinite(options?.pressureBoost)
+    ? Math.max(0, options.pressureBoost)
+    : 0;
+  const maxPathRatio = getMirrorPathRatioLimit({ pressureBoost });
   let rejectedTooClose = false;
   let rejectedTooLong = false;
 
@@ -14773,7 +14889,7 @@ function findMirrorShot(plane, enemy, options = {}){
         continue;
       }
 
-      if(directDist > 0 && totalDist > directDist * AI_MIRROR_MAX_PATH_RATIO){
+      if(directDist > 0 && totalDist > directDist * maxPathRatio){
         rejectedTooLong = true;
         continue;
       }
@@ -14797,7 +14913,8 @@ function findMirrorShot(plane, enemy, options = {}){
         reason: "mirror_rejected_too_long",
         planeId: plane?.id ?? null,
         enemyId: enemy?.id ?? null,
-        maxPathRatio: AI_MIRROR_MAX_PATH_RATIO,
+        maxPathRatio: Number(maxPathRatio.toFixed(2)),
+        clearSky: isCurrentMapClearSky(),
       });
     }
   }
