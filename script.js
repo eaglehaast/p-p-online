@@ -111,9 +111,15 @@ function logEndGameAction(action){
       settings: body.classList.contains('screen--settings'),
     },
     menuLocked: menuScreenLocked,
-    endGameVisible: endGameDiv?.style?.display,
+    endGameVisible: endGameDiv?.classList?.contains("is-visible") ?? false,
     loopRunning: animationFrameId !== null,
   });
+}
+
+
+function setEndGamePanelVisible(isVisible){
+  if(!(endGameDiv instanceof HTMLElement)) return;
+  endGameDiv.classList.toggle("is-visible", Boolean(isVisible));
 }
 
 function setScreenMode(mode) {
@@ -9501,7 +9507,7 @@ function lockInWinner(color, options = {}){
     finalizeAiSelfAnalyzerMatch({ type: "winner", winnerColor: color, isDraw: false, blueScore, greenScore });
   }
   if(endGameDiv){
-    endGameDiv.style.display = "none";
+    setEndGamePanelVisible(false);
   }
 
   if(typeof options.roundTransitionDelay === "number" && Number.isFinite(options.roundTransitionDelay)){
@@ -9534,7 +9540,7 @@ function lockInNoSurvivors(options = {}){
 
   shouldShowEndScreen = false;
   if(endGameDiv){
-    endGameDiv.style.display = "none";
+    setEndGamePanelVisible(false);
   }
 
   if(typeof options.roundTransitionDelay === "number" && Number.isFinite(options.roundTransitionDelay)){
@@ -9570,7 +9576,7 @@ function lockInDraw(options = {}){
     finalizeAiSelfAnalyzerMatch({ type: "draw", winnerColor: null, isDraw: true, blueScore, greenScore });
   }
   if(endGameDiv){
-    endGameDiv.style.display = "none";
+    setEndGamePanelVisible(false);
   }
 
   if(typeof options.roundTransitionDelay === "number" && Number.isFinite(options.roundTransitionDelay)){
@@ -9625,7 +9631,7 @@ function finalizePostFlightState(){
   }
 
   if(shouldShowEndScreen && !roundEndedByNuke && endGameDiv){
-    endGameDiv.style.display = "block";
+    setEndGamePanelVisible(true);
   }
 }
 
@@ -10264,7 +10270,7 @@ function resetGame(options = {}){
   isGameOver= false;
   winnerColor= null;
   roundEndedByNuke = false;
-  endGameDiv.style.display = "none";
+  setEndGamePanelVisible(false);
   awaitingFlightResolution = false;
   pendingRoundTransitionDelay = null;
   pendingRoundTransitionStart = 0;
@@ -17276,7 +17282,7 @@ function gameDraw(){
       const targetLeft = Math.round(anchorClientX - panelWidth / 2);
       const targetTop = Math.round(anchorClientY);
 
-      if(endGameDiv.style.display !== "block"){
+      if(!endGameDiv.classList.contains("is-visible")){
         return;
       }
 
@@ -17340,9 +17346,7 @@ function gameDraw(){
   }
 
   if(endGameDiv && (!shouldShowEndScreen || !isGameOver || (!winnerColor && !isDrawGame) || roundEndedByNuke)){
-    if(endGameDiv.style.display !== "none"){
-      endGameDiv.style.display = "none";
-    }
+    setEndGamePanelVisible(false);
     endGameDiv.style.left = "";
     endGameDiv.style.top = "";
   }
@@ -19663,7 +19667,7 @@ function startNewRound(){
   applyCurrentMap();
   suppressAutoRandomMapForNextRound = false;
   cleanupGreenCrashFx();
-  endGameDiv.style.display = "none";
+  setEndGamePanelVisible(false);
   isGameOver=false; winnerColor=null; isDrawGame = false; roundEndedByNuke = false;
   awaitingFlightResolution = false;
   pendingRoundTransitionDelay = null;
@@ -19813,7 +19817,7 @@ function resetMapEditorPlanePlacement(){
   roundTextTimer = 0;
 
   if(endGameDiv instanceof HTMLElement){
-    endGameDiv.style.display = "none";
+    setEndGamePanelVisible(false);
   }
 
   renderScoreboard();
