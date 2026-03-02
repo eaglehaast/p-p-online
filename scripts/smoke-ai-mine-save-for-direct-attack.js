@@ -104,6 +104,9 @@ assert(used === false, 'Direct hit chance should keep mine for launch, so invent
 assert(defensiveMineCalls === 0 && nearBaseMineCalls === 0,
   'Mine placement attempts must be skipped when direct hit chance is good.');
 
+const skippedLog = decisionLogs.find((entry) => entry.reason === 'mine_skipped_due_to_attack_window');
+assert(Boolean(skippedLog), 'AI must log mine_skipped_due_to_attack_window when preserving mine for attack.');
+
 const savedLog = decisionLogs.find((entry) => entry.reason === 'mine_saved_for_direct_attack');
 assert(Boolean(savedLog), 'AI must log mine_saved_for_direct_attack when skipping mine placement.');
 assert(savedLog.details.enemyShieldActive === false, 'Log should capture enemy shield state for traceability.');
