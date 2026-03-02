@@ -2403,13 +2403,14 @@ body, button {
 
 /* Окно конца игры */
 #endGameButtons {
+  --playagain-scale: 1;
   position: absolute;
   left: 0;
   top: 0;
   z-index: 250;
-  width: 368px;
-  height: 240px;
-  background: url('ui_gamescreen/playagain/playagain_container.png') center / contain no-repeat;
+  width: calc(388px * var(--playagain-scale));
+  height: calc(230px * var(--playagain-scale));
+  background: url('ui_gamescreen/playagain/playagain_container.png') center / 100% 100% no-repeat;
   opacity: 0;
   visibility: hidden;
   transform: translateY(-220px) rotate(0deg) scale(0.98);
@@ -2450,8 +2451,8 @@ body, button {
 
 #endGameButtons .playagain-btn {
   position: absolute;
-  width: 104px;
-  height: 97px;
+  width: calc(104px * var(--playagain-scale));
+  height: calc(97px * var(--playagain-scale));
   border: none;
   background: center / contain no-repeat;
   padding: 0;
@@ -2474,14 +2475,14 @@ body, button {
 }
 
 #endGameButtons .playagain-btn--yes {
-  left: 64px;
-  top: 77px;
+  left: calc(64px * var(--playagain-scale));
+  top: calc(77px * var(--playagain-scale));
   background-image: url('ui_gamescreen/playagain/yes.png');
 }
 
 #endGameButtons .playagain-btn--no {
-  left: 223px;
-  top: 77px;
+  left: calc(223px * var(--playagain-scale));
+  top: calc(77px * var(--playagain-scale));
   background-image: url('ui_gamescreen/playagain/no.png');
 }
 
