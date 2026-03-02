@@ -11315,6 +11315,11 @@ const AI_ATTACK_MID_LONG_DISTANCE_RATIO_START = 0.58;
 const AI_ATTACK_MID_LONG_DISTANCE_RATIO_FULL = 0.92;
 const AI_ATTACK_SCALE_GUARD_FLOOR = 0.32;
 const AI_ATTACK_SCALE_GUARD_SHORT_CONTROL_DISTANCE_RATIO_MAX = 0.45;
+const AI_LONG_SHOT_POWER_RATIO_THRESHOLD = 0.75;
+const AI_TACTICAL_MEDIUM_STREAK_TRIGGER = 2;
+const AI_TACTICAL_MEDIUM_TRIGGER_CHANCE = 0.3;
+const AI_TACTICAL_MEDIUM_SCALE_MIN = 0.52;
+const AI_TACTICAL_MEDIUM_SCALE_MAX = 0.68;
 const AI_FINISHER_OVERSHOOT_FACTOR = 1.04;
 const AI_OPENING_CENTER_TURN_LIMIT = 2;
 const AI_OPENING_DIRECT_FINISHER_MIN_LEAD = 2;
@@ -11595,6 +11600,7 @@ function createInitialAiRoundState(){
     lastInventorySoftFallbackUsed: false,
     lastLaunchedPlaneId: null,
     consecutiveSamePlaneLaunches: 0,
+    consecutiveLongLaunches: 0,
     lastLaunchTurnByPlaneId: {},
     recentLaunchPlaneIds: [],
     recentLaunchAnglesDeg: [],
@@ -14743,6 +14749,45 @@ function doComputerMove(){
   });
 }
 
+function tryGetAiTacticalMediumScale(baseScale, baseAngle, plane, speedPxPerSec){
+  const normalizedBaseScale = Math.max(0, Math.min(1, Number.isFinite(baseScale) ? baseScale : 0));
+  if(normalizedBaseScale < AI_LONG_SHOT_POWER_RATIO_THRESHOLD) return null;
+
+  const longStreak = Number.isFinite(aiRoundState?.consecutiveLongLaunches)
+    ? aiRoundState.consecutiveLongLaunches
+    : 0;
+  if(longStreak < AI_TACTICAL_MEDIUM_STREAK_TRIGGER) return null;
+  if(Math.random() > AI_TACTICAL_MEDIUM_TRIGGER_CHANCE) return null;
+
+  const cappedScale = Math.min(
+    AI_TACTICAL_MEDIUM_SCALE_MAX,
+    Math.max(AI_TACTICAL_MEDIUM_SCALE_MIN, normalizedBaseScale * 0.78)
+  );
+  const mediumScale = Math.min(normalizedBaseScale, cappedScale);
+  if(mediumScale >= normalizedBaseScale) return null;
+
+  const safeDeviationSteps = [0, Math.PI / 90, Math.PI / 72];
+  for(const step of safeDeviationSteps){
+    const deviations = step === 0 ? [0] : [-step, step];
+    for(const deviation of deviations){
+      const angle = baseAngle + deviation;
+      const vx = Math.cos(angle) * mediumScale * speedPxPerSec;
+      const vy = Math.sin(angle) * mediumScale * speedPxPerSec;
+      const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
+      const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
+      if(isPathClear(plane.x, plane.y, landingX, landingY)){
+        return {
+          mediumScale,
+          safetyDeviation: deviation,
+          longStreak,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
 function planPathToPoint(plane, tx, ty, options = {}){
   const flightDistancePx = settings.flightRangeCells * CELL_SIZE;
   const speedPxPerSec    = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
@@ -14750,6 +14795,22 @@ function planPathToPoint(plane, tx, ty, options = {}){
   const narrowCorridorColliderThreshold = 26;
 
   function buildMoveWithSafeDeviation(baseAngle, distance, scale, meta = {}){
+    const tacticalMedium = tryGetAiTacticalMediumScale(scale, baseAngle, plane, speedPxPerSec);
+    const workingScale = tacticalMedium ? tacticalMedium.mediumScale : scale;
+    if(tacticalMedium){
+      logAiDecision("ai_tactical_medium_launch_applied", {
+        planeId: plane?.id ?? null,
+        targetX: tx,
+        targetY: ty,
+        baseScale: Number(scale.toFixed(3)),
+        tacticalScale: Number(workingScale.toFixed(3)),
+        longStreak: tacticalMedium.longStreak,
+        safetyDeviation: Number(tacticalMedium.safetyDeviation.toFixed(4)),
+        goalName: meta?.goalName ?? options?.goalName ?? null,
+        decisionReason: meta?.decisionReason ?? options?.decisionReason ?? null,
+      });
+    }
+
     const angleGuard = applyAiAntiRepeatAngleGuard(baseAngle, {
       recentAnglesDeg: aiRoundState?.recentLaunchAnglesDeg,
       repeatStreakCount: aiRoundState?.angleRepeatStreakCount,
@@ -14772,8 +14833,8 @@ function planPathToPoint(plane, tx, ty, options = {}){
 
     for(const deviation of deviations){
       const actualAngle = effectiveBaseAngle + deviation;
-      const vx = Math.cos(actualAngle) * scale * speedPxPerSec;
-      const vy = Math.sin(actualAngle) * scale * speedPxPerSec;
+      const vx = Math.cos(actualAngle) * workingScale * speedPxPerSec;
+      const vy = Math.sin(actualAngle) * workingScale * speedPxPerSec;
       const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
       const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
       if(isPathClear(plane.x, plane.y, landingX, landingY)){
@@ -14817,8 +14878,8 @@ function planPathToPoint(plane, tx, ty, options = {}){
 
     for(const deviation of deterministicDeviations){
       const actualAngle = effectiveBaseAngle + deviation;
-      const vx = Math.cos(actualAngle) * scale * speedPxPerSec;
-      const vy = Math.sin(actualAngle) * scale * speedPxPerSec;
+      const vx = Math.cos(actualAngle) * workingScale * speedPxPerSec;
+      const vy = Math.sin(actualAngle) * workingScale * speedPxPerSec;
       const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
       const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
       if(isPathClear(plane.x, plane.y, landingX, landingY)){
@@ -14858,7 +14919,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       const narrowCorridorScaleFactors = [1, 0.92, 0.84, 0.76];
 
       for(const scaleFactor of narrowCorridorScaleFactors){
-        const narrowedScale = Math.max(0.2, Math.min(1, scale * scaleFactor));
+        const narrowedScale = Math.max(0.2, Math.min(1, workingScale * scaleFactor));
         for(const step of narrowCorridorDeviationSteps){
           const deviationsToTry = step === 0 ? [0] : [-step, step];
           for(const deviation of deviationsToTry){
@@ -14912,8 +14973,8 @@ function planPathToPoint(plane, tx, ty, options = {}){
       for(const step of extendedDeviationSteps){
         for(const deviation of [-step, step]){
           const actualAngle = baseAngle + deviation;
-          const vx = Math.cos(actualAngle) * scale * speedPxPerSec;
-          const vy = Math.sin(actualAngle) * scale * speedPxPerSec;
+          const vx = Math.cos(actualAngle) * workingScale * speedPxPerSec;
+          const vy = Math.sin(actualAngle) * workingScale * speedPxPerSec;
           const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
           const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
           if(isPathClear(plane.x, plane.y, landingX, landingY)){
@@ -15171,6 +15232,19 @@ function issueAIMove(plane, vx, vy){
       : 0) + 1;
   } else {
     aiRoundState.angleRepeatStreakCount = 0;
+  }
+
+  const launchSpeed = Math.hypot(vx, vy);
+  const maxLaunchSpeed = MAX_DRAG_DISTANCE > 0
+    ? (MAX_DRAG_DISTANCE / FIELD_FLIGHT_DURATION_SEC)
+    : 0;
+  const powerRatio = maxLaunchSpeed > 0 ? launchSpeed / maxLaunchSpeed : 0;
+  if(powerRatio >= AI_LONG_SHOT_POWER_RATIO_THRESHOLD){
+    aiRoundState.consecutiveLongLaunches = (Number.isFinite(aiRoundState.consecutiveLongLaunches)
+      ? aiRoundState.consecutiveLongLaunches
+      : 0) + 1;
+  } else {
+    aiRoundState.consecutiveLongLaunches = 0;
   }
 
   if(!hasShotThisRound){
