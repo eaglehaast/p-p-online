@@ -14934,6 +14934,88 @@ function doComputerMove(){
     }
   }
 
+  const hasEnemyBlueFlagCarrier = Boolean(
+    modeContext.stolenBlueFlagCarrier
+    && modeContext.stolenBlueFlagCarrier.color !== "blue"
+  );
+  if(hasEnemyBlueFlagCarrier){
+    const blueHomeBase = modeContext.homeBase || getBaseAnchor("blue");
+    const carrierThreat = {
+      enemy: modeContext.stolenBlueFlagCarrier,
+      base: blueHomeBase,
+      distanceToBase: dist(modeContext.stolenBlueFlagCarrier, blueHomeBase),
+      hasCleanLineToBase: isPathClear(
+        modeContext.stolenBlueFlagCarrier.x,
+        modeContext.stolenBlueFlagCarrier.y,
+        blueHomeBase.x,
+        blueHomeBase.y,
+      ),
+    };
+
+    const carrierEmergencyMove = getEmergencyDefenseMove(modeContext, carrierThreat);
+    if(carrierEmergencyMove){
+      aiRoundState.currentGoal = carrierEmergencyMove.goalName || "eliminate_flag_carrier";
+      recordDecisionEvent("flag_carrier_priority_emergency_move", {
+        goal: aiRoundState.currentGoal,
+        move: carrierEmergencyMove,
+        reasonCodes: ["flag_carrier_priority_override", "protect_home_flag", "clean_intercept_available"],
+      });
+      logAiDecision("flag_carrier_priority_emergency_move", {
+        enemyId: carrierThreat.enemy?.id ?? null,
+        planeId: carrierEmergencyMove.plane?.id ?? null,
+        distanceToBase: carrierThreat.distanceToBase,
+        hasCleanLineToBase: carrierThreat.hasCleanLineToBase,
+        goal: aiRoundState.currentGoal,
+      });
+      issueAIMoveWithInventoryUsage(modeContext, carrierEmergencyMove);
+      return;
+    }
+
+    const carrierHoldMove = getEmergencyBaseHoldPositionMove(modeContext, carrierThreat);
+    if(carrierHoldMove){
+      aiRoundState.currentGoal = carrierHoldMove.goalName || "emergency_base_hold_position";
+      recordDecisionEvent("flag_carrier_priority_hold_position", {
+        goal: aiRoundState.currentGoal,
+        move: carrierHoldMove,
+        reasonCodes: ["flag_carrier_priority_override", "protect_home_flag", "fallback_hold_line"],
+        rejectReasons: ["direct_intercept_unavailable"],
+      });
+      logAiDecision("flag_carrier_priority_hold_position", {
+        enemyId: carrierThreat.enemy?.id ?? null,
+        planeId: carrierHoldMove.plane?.id ?? null,
+        distanceToBase: carrierThreat.distanceToBase,
+        hasCleanLineToBase: carrierThreat.hasCleanLineToBase,
+      });
+      issueAIMoveWithInventoryUsage(modeContext, carrierHoldMove);
+      return;
+    }
+
+    const previousMode = aiRoundState.mode;
+    aiRoundState.mode = AI_MODES.DEFENSE;
+    const carrierDefenseModeMove = planModeDrivenAiMove(modeContext);
+    if(carrierDefenseModeMove){
+      const selectedGoal = aiRoundState.currentGoal || carrierDefenseModeMove.goalName || "eliminate_flag_carrier";
+      recordDecisionEvent("flag_carrier_priority_mode_defense", {
+        goal: selectedGoal,
+        move: carrierDefenseModeMove,
+        reasonCodes: ["flag_carrier_priority_override", "mode_defense", "intercept_fallback"],
+      });
+      logAiDecision("flag_carrier_priority_mode_defense", {
+        enemyId: carrierThreat.enemy?.id ?? null,
+        planeId: carrierDefenseModeMove.plane?.id ?? null,
+        goal: selectedGoal,
+      });
+      issueAIMoveWithInventoryUsage(modeContext, carrierDefenseModeMove);
+      return;
+    }
+    aiRoundState.mode = previousMode;
+    recordDecisionEvent("flag_carrier_priority_rejected", {
+      goal: "eliminate_flag_carrier",
+      reasonCodes: ["flag_carrier_priority_override", "defense_chain_failed", "search_next_plan"],
+      rejectReasons: ["no_emergency_or_defense_move"],
+    });
+  }
+
   if(hasCriticalBaseThreat){
     recordDecisionEvent("opening_center_rejected", {
       goal: aiRoundState.currentGoal || "emergency_base_defense",
