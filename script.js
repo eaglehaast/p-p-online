@@ -10407,7 +10407,7 @@ if(classicRulesBtn){
     const upcomingRoundNumber = roundNumber + 1;
     randomMapPairSequenceNumber = null;
     randomMapPairIndex = null;
-    settings.mapIndex = getRandomPlayableMapIndex(upcomingRoundNumber);
+    setMapIndexAndPersist(getRandomPlayableMapIndex(upcomingRoundNumber));
     settings.randomizeMapEachRound = true;
     settings.flameStyle = 'random';
     onFlameStyleChanged();
