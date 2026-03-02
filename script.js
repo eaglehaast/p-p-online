@@ -9731,6 +9731,27 @@ function hasAnimatingCargo(){
 
 function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayMs = AI_MOVE_INITIAL_DELAY_MS){
   setTimeout(() => {
+    const runComputerMoveSafely = (reasonCode) => {
+      try {
+        doComputerMove();
+      } catch (error) {
+        logAiDecision("ai_move_exception_fail_safe", {
+          reasonCode,
+          message: error?.message || String(error),
+        });
+        aiMoveScheduled = false;
+        if (typeof failSafeAdvanceTurn === "function") {
+          failSafeAdvanceTurn("ai_move_exception", {
+            goal: aiRoundState?.currentGoal || "ai_move_exception",
+            reasonCodes: ["ai_move_exception", "fail_safe_turn_advance"],
+            rejectReasons: ["do_computer_move_exception"],
+          });
+          return;
+        }
+        advanceTurn();
+      }
+    };
+
     if (
       isGameOver
       || gameMode !== "computer"
@@ -9748,7 +9769,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           waitElapsedMs,
           timeoutMs: AI_MOVE_CARGO_WAIT_TIMEOUT_MS,
         });
-        doComputerMove();
+        runComputerMoveSafely("cargo_wait_timeout");
         return;
       }
 
@@ -9760,7 +9781,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       return;
     }
 
-    doComputerMove();
+    runComputerMoveSafely("cargo_gate_ready");
   }, delayMs);
 }
 
@@ -13977,6 +13998,59 @@ function getFallbackAiMove(context){
   return best;
 }
 
+function getGuaranteedAnyLegalLaunch(modeContext){
+  const fallbackAiPlanes = points.filter(plane =>
+    plane.color === "blue"
+    && plane.isAlive
+    && !plane.burning
+    && !flyingPoints.some(fp => fp.plane === plane)
+  );
+  if (!fallbackAiPlanes.length) return null;
+
+  const flightDistancePx = settings.flightRangeCells * CELL_SIZE;
+  const speedPxPerSec = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
+  const strengthScales = [1, 0.78, 0.58];
+  const angleSet = [
+    0,
+    Math.PI / 12,
+    -Math.PI / 12,
+    Math.PI / 6,
+    -Math.PI / 6,
+    Math.PI / 4,
+    -Math.PI / 4,
+    Math.PI / 2,
+    -Math.PI / 2,
+    (3 * Math.PI) / 4,
+    (-3 * Math.PI) / 4,
+    Math.PI,
+  ];
+
+  for (const plane of fallbackAiPlanes) {
+    for (const scale of strengthScales) {
+      for (const angle of angleSet) {
+        const vx = Math.cos(angle) * scale * speedPxPerSec;
+        const vy = Math.sin(angle) * scale * speedPxPerSec;
+        const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
+        const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
+        if (!isPathClear(plane.x, plane.y, landingX, landingY)) {
+          continue;
+        }
+
+        return {
+          plane,
+          vx,
+          vy,
+          totalDist: Math.hypot(landingX - plane.x, landingY - plane.y),
+          goalName: "guaranteed_any_legal_launch",
+          decisionReason: "super_reserve_guaranteed_legal_launch",
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
 function doComputerMove(){
   if (gameMode!=="computer" || isGameOver) return;
 
@@ -14291,6 +14365,22 @@ function doComputerMove(){
       reason: fallbackMove.decisionReason || "fallback_legacy_logic",
     });
     issueAIMoveWithInventoryUsage(modeContext, fallbackMove);
+    return;
+  }
+
+  const guaranteedLaunchMove = getGuaranteedAnyLegalLaunch(modeContext);
+  if(guaranteedLaunchMove){
+    aiRoundState.currentGoal = guaranteedLaunchMove.goalName || "guaranteed_any_legal_launch";
+    recordDecisionEvent("super_reserve_selected", {
+      goal: aiRoundState.currentGoal,
+      move: guaranteedLaunchMove,
+      reasonCodes: ["super_reserve", "guaranteed_any_legal_launch", "keep_turn_progress"],
+    });
+    logAiDecision("super_reserve_move", {
+      planeId: guaranteedLaunchMove.plane?.id ?? null,
+      reason: guaranteedLaunchMove.decisionReason || "super_reserve_guaranteed_legal_launch",
+    });
+    issueAIMoveWithInventoryUsage(modeContext, guaranteedLaunchMove);
     return;
   }
 
