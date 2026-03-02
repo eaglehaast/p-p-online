@@ -9607,6 +9607,10 @@ function maybeLockInMatchOutcome(options = {}){
 }
 
 function finalizePostFlightState(){
+  if(awaitingFlightResolution){
+    return;
+  }
+
   if(pendingRoundTransitionDelay !== null){
     const elapsed = performance.now() - pendingRoundTransitionStart;
     const remaining = Math.max(0, pendingRoundTransitionDelay - elapsed);
@@ -9616,9 +9620,10 @@ function finalizePostFlightState(){
     roundTransitionTimeout = setTimeout(startNewRound, remaining);
     pendingRoundTransitionDelay = null;
     pendingRoundTransitionStart = 0;
+    return;
   }
 
-  if(shouldShowEndScreen && endGameDiv){
+  if(shouldShowEndScreen && !roundEndedByNuke && endGameDiv){
     endGameDiv.style.display = "block";
   }
 }
@@ -17052,14 +17057,13 @@ function gameDraw(){
       const scaleY = textAreaHeight !== 0 ? boardHeight / textAreaHeight : 1;
       const anchorClientX = (Number.isFinite(boardRect.left) ? boardRect.left : 0) + anchorCanvasX * scaleX;
       const anchorClientY = (Number.isFinite(boardRect.top) ? boardRect.top : 0) + anchorCanvasY * scaleY;
-
-      if(endGameDiv.style.display !== "block"){
-        endGameDiv.style.display = "block";
-      }
-
       const panelWidth = endGameDiv.offsetWidth || 0;
       const targetLeft = Math.round(anchorClientX - panelWidth / 2);
       const targetTop = Math.round(anchorClientY);
+
+      if(endGameDiv.style.display !== "block"){
+        return;
+      }
 
       if(Number.isFinite(targetLeft)){
         endGameDiv.style.left = `${targetLeft}px`;
