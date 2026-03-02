@@ -7995,8 +7995,9 @@ function findCargoSpawnTarget(){
   if(!FIELD_WIDTH || !FIELD_HEIGHT){
     return null;
   }
-  const minX = FIELD_LEFT + FIELD_WIDTH / 3;
-  const maxX = FIELD_LEFT + 2 * FIELD_WIDTH / 3;
+  // по X — вся ширина, по Y — средняя треть (по гейм-дизайну)
+  const minX = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
+  const maxX = Math.max(minX, FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X);
   const minY = FIELD_TOP + FIELD_HEIGHT / 3;
   const maxY = FIELD_TOP + 2 * FIELD_HEIGHT / 3;
   for(let attempt = 0; attempt < CARGO_MAX_SPAWN_ATTEMPTS; attempt++){
