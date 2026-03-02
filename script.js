@@ -11535,6 +11535,7 @@ const AI_ROTATION_BONUS_PER_IDLE_TURN = 0.05;
 const AI_ROTATION_BONUS_MAX = 0.26;
 const AI_REPEAT_WINDOW_PENALTY_STEP = 0.15;
 const AI_REPEAT_FORCE_SCORE_MARGIN = MAX_DRAG_DISTANCE * 0.08;
+const AI_ROTATION_TACTICAL_PRIORITY_GAP = MAX_DRAG_DISTANCE * 0.04;
 const AI_REPEAT_OPENING_FORCE_TURN_LIMIT = 2;
 const AI_OPENING_SOFT_RANDOM_TURN_LIMIT = 2;
 const AI_OPENING_SOFT_RANDOM_SCORE_MARGIN = MAX_DRAG_DISTANCE * 0.035;
@@ -12195,13 +12196,37 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
   const nextPlaneId = nextCandidate?.plane?.id ?? null;
   const currentPlaneId = currentCandidate?.plane?.id ?? null;
   const repeatedPlaneId = aiRoundState?.lastLaunchedPlaneId ?? null;
+  const scoreGap = Math.abs((nextCandidate.score ?? Number.POSITIVE_INFINITY) - (currentCandidate.score ?? Number.POSITIVE_INFINITY));
 
-  if(nextPlaneId && currentPlaneId && repeatedPlaneId && nextPlaneId !== currentPlaneId){
+  const nextIsAttackingCandidate = Boolean(nextCandidate?.enemy) || nextCandidate?.targetType === "attack_enemy_plane";
+  const currentIsAttackingCandidate = Boolean(currentCandidate?.enemy) || currentCandidate?.targetType === "attack_enemy_plane";
+  const shouldBypassRotationForTacticalPriority = nextIsAttackingCandidate
+    && currentIsAttackingCandidate
+    && Number.isFinite(scoreGap)
+    && scoreGap > AI_ROTATION_TACTICAL_PRIORITY_GAP;
+
+  if(shouldBypassRotationForTacticalPriority){
+    const tacticalPriorityReason = (nextCandidate.score ?? Number.POSITIVE_INFINITY) < (currentCandidate.score ?? Number.POSITIVE_INFINITY)
+      ? "next_candidate_has_clear_tactical_advantage"
+      : "current_candidate_has_clear_tactical_advantage";
+    logAiDecision("rotation_tactical_priority_bypass", {
+      rotationBypassed: true,
+      scoreGap: Number(scoreGap.toFixed(3)),
+      tacticalPriorityReason,
+      threshold: Number(AI_ROTATION_TACTICAL_PRIORITY_GAP.toFixed(3)),
+      nextPlaneId,
+      currentPlaneId,
+      nextScore: Number.isFinite(nextCandidate?.score) ? Number(nextCandidate.score.toFixed(3)) : null,
+      currentScore: Number.isFinite(currentCandidate?.score) ? Number(currentCandidate.score.toFixed(3)) : null,
+      tieSeedParts,
+    });
+  }
+
+  if(!shouldBypassRotationForTacticalPriority && nextPlaneId && currentPlaneId && repeatedPlaneId && nextPlaneId !== currentPlaneId){
     const nextIsRepeat = nextPlaneId === repeatedPlaneId;
     const currentIsRepeat = currentPlaneId === repeatedPlaneId;
 
     if(nextIsRepeat !== currentIsRepeat){
-      const scoreGap = Math.abs((nextCandidate.score ?? 0) - (currentCandidate.score ?? 0));
       const repeatedCandidate = nextIsRepeat ? nextCandidate : currentCandidate;
       const isRepeatedCandidateCritical = isAiRepeatPlaneCriticalCandidate(repeatedCandidate);
 
@@ -12248,7 +12273,6 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
     return rotationBonusDiff > 0;
   }
 
-  const scoreGap = Math.abs((nextCandidate.score ?? Number.POSITIVE_INFINITY) - (currentCandidate.score ?? Number.POSITIVE_INFINITY));
   const canUseOpeningSoftRandom = Number.isFinite(aiRoundState?.turnNumber)
     && aiRoundState.turnNumber <= AI_OPENING_SOFT_RANDOM_TURN_LIMIT
     && Number.isFinite(scoreGap)
