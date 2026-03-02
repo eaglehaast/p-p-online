@@ -124,6 +124,54 @@ function setEndGamePanelVisible(isVisible){
   endGameDiv.setAttribute("aria-hidden", visible ? "false" : "true");
 }
 
+let endGamePanelPreviewEnabled = false;
+
+function placeEndGamePanelAtBoardCenter(){
+  if(!(endGameDiv instanceof HTMLElement) || !(gsBoardCanvas instanceof HTMLCanvasElement)) return false;
+  const boardRect = getViewportAdjustedBoundingClientRect(gsBoardCanvas);
+  const boardWidth = Number.isFinite(boardRect.width) ? boardRect.width : 0;
+  const boardHeight = Number.isFinite(boardRect.height) ? boardRect.height : 0;
+  if(boardWidth <= 0 || boardHeight <= 0) return false;
+
+  const panelWidth = endGameDiv.offsetWidth || 0;
+  const panelHeight = endGameDiv.offsetHeight || 0;
+  const targetLeft = Math.round(boardRect.left + (boardWidth - panelWidth) / 2);
+  const targetTop = Math.round(boardRect.top + (boardHeight - panelHeight) / 2);
+  endGameDiv.style.left = `${targetLeft}px`;
+  endGameDiv.style.top = `${targetTop}px`;
+  return true;
+}
+
+function setPlayAgainPanelPreview(isVisible = true){
+  if(!(endGameDiv instanceof HTMLElement)) return false;
+  const visible = Boolean(isVisible);
+  endGamePanelPreviewEnabled = visible;
+
+  if(!visible){
+    setEndGamePanelVisible(false);
+    endGameDiv.style.left = "";
+    endGameDiv.style.top = "";
+    return true;
+  }
+
+  placeEndGamePanelAtBoardCenter();
+  endGameDiv.classList.remove("is-visible");
+  void endGameDiv.offsetWidth;
+  setEndGamePanelVisible(true);
+  return true;
+}
+
+if(typeof window !== "undefined"){
+  window.PLAYAGAIN_PANEL = {
+    show(){
+      return setPlayAgainPanelPreview(true);
+    },
+    hide(){
+      return setPlayAgainPanelPreview(false);
+    }
+  };
+}
+
 function setScreenMode(mode) {
   document.body.classList.toggle('screen--menu', mode === 'MENU');
   document.body.classList.toggle('screen--game', mode === 'GAME');
@@ -17939,7 +17987,7 @@ function gameDraw(){
     endTextCtx.restore();
   }
 
-  if(endGameDiv && (!shouldShowEndScreen || !isGameOver || (!winnerColor && !isDrawGame) || roundEndedByNuke)){
+  if(endGameDiv && !endGamePanelPreviewEnabled && (!shouldShowEndScreen || !isGameOver || (!winnerColor && !isDrawGame) || roundEndedByNuke)){
     setEndGamePanelVisible(false);
     endGameDiv.style.left = "";
     endGameDiv.style.top = "";
