@@ -11332,6 +11332,10 @@ const AI_OPENING_DIRECT_FINISHER_MIN_LEAD = 2;
 const AI_CENTER_CONTROL_DISTANCE = MAX_DRAG_DISTANCE * 0.35;
 const AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD = 3;
 const AI_INVENTORY_SOFT_FALLBACK_COOLDOWN_TURNS = 4;
+const AI_FALLBACK_DIRECT_QUALITY_MIN = 0.4;
+const AI_FALLBACK_SAFE_ANGLE_SHORT_SCALE = 0.38;
+const AI_FALLBACK_SAFE_ANGLE_CANDIDATE_DEG = Object.freeze([28, -28, 44, -44, 62, -62, 88, -88]);
+const AI_FALLBACK_RICOCHET_PREP_SCALE = 0.66;
 const AI_REPEAT_PLANE_SOFT_PENALTY = 0.48;
 const AI_REPEAT_PLANE_HARD_PENALTY = 0.72;
 const AI_RECENT_PLANE_HISTORY_LIMIT = 6;
@@ -12079,6 +12083,82 @@ function findSafePreparationMoveForAttack(plane, enemy){
   return bestCandidate?.move || null;
 }
 
+function getFallbackDirectAttackQuality(plane, enemy, directDist, riskProfile = "balanced"){
+  if(!plane || !enemy || !Number.isFinite(directDist) || directDist <= 0) return 0;
+  const normalizedDistance = Math.min(1.4, directDist / Math.max(1, MAX_DRAG_DISTANCE));
+  const distanceQuality = Math.max(0, 1 - normalizedDistance);
+  const pathQuality = isPathClear(plane.x, plane.y, enemy.x, enemy.y) ? 1 : 0;
+  const shieldQuality = enemy.shieldActive ? 0.65 : 1;
+  const profileShift = riskProfile === "comeback"
+    ? 0.07
+    : riskProfile === "conservative"
+      ? -0.08
+      : 0;
+  return Math.max(0, Math.min(1, (distanceQuality * 0.65 + pathQuality * 0.35) * shieldQuality + profileShift));
+}
+
+function findFallbackSafeAngleRepositionMove(plane, enemy, speedPxPerSec){
+  if(!plane || !enemy || !Number.isFinite(speedPxPerSec) || speedPxPerSec <= 0) return null;
+  const baseAngle = Math.atan2(enemy.y - plane.y, enemy.x - plane.x);
+  const baseScale = AI_FALLBACK_SAFE_ANGLE_SHORT_SCALE;
+  const scale = applyAiMinLaunchScale(baseScale, {
+    source: "fallback_safe_angle",
+    planeId: plane.id,
+    enemyId: enemy.id,
+    decisionReason: "fallback_safe_angle_reposition",
+    goalName: "fallback_safe_angle_reposition",
+    moveDistance: MAX_DRAG_DISTANCE * baseScale,
+  });
+
+  for(const angleOffsetDeg of AI_FALLBACK_SAFE_ANGLE_CANDIDATE_DEG){
+    const angle = baseAngle + (angleOffsetDeg * Math.PI / 180);
+    const vx = Math.cos(angle) * scale * speedPxPerSec;
+    const vy = Math.sin(angle) * scale * speedPxPerSec;
+    const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
+    const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
+    if(!isPathClear(plane.x, plane.y, landingX, landingY)) continue;
+    return {
+      plane,
+      enemy,
+      vx,
+      vy,
+      totalDist: Math.hypot(landingX - plane.x, landingY - plane.y),
+      goalName: "fallback_safe_angle_reposition",
+      decisionReason: "fallback_safe_angle_reposition",
+      score: getAiPlaneAdjustedScore(Math.hypot(landingX - plane.x, landingY - plane.y), plane),
+      idleTurns: getAiPlaneIdleTurns(plane),
+    };
+  }
+
+  return null;
+}
+
+function findFallbackRicochetPreparationMove(plane, enemy){
+  if(!plane || !enemy) return null;
+  const preparationMove = findSafePreparationMoveForAttack(plane, enemy);
+  if(!preparationMove) return null;
+
+  const vx = Number(preparationMove.vx) * AI_FALLBACK_RICOCHET_PREP_SCALE;
+  const vy = Number(preparationMove.vy) * AI_FALLBACK_RICOCHET_PREP_SCALE;
+  if(!Number.isFinite(vx) || !Number.isFinite(vy)) return null;
+
+  const totalDist = Math.hypot(vx, vy) * FIELD_FLIGHT_DURATION_SEC;
+
+  return {
+    plane,
+    enemy,
+    targetEnemy: enemy,
+    ...preparationMove,
+    vx,
+    vy,
+    totalDist,
+    goalName: "fallback_prepare_ricochet",
+    decisionReason: "fallback_prepare_ricochet",
+    score: getAiPlaneAdjustedScore(totalDist, plane),
+    idleTurns: getAiPlaneIdleTurns(plane),
+  };
+}
+
 function getAiMoveLandingPoint(move){
   if(!move?.plane || !Number.isFinite(move.vx) || !Number.isFinite(move.vy)) return null;
   return {
@@ -12660,6 +12740,9 @@ function evaluateCrosshairBestUse(context, plannedMove){
 function maybeUseInventoryBeforeLaunch(context, plannedMove){
   if(!plannedMove?.plane) return false;
 
+  const allowInventoryUsage = plannedMove?.allowInventoryUsage === true
+    && plannedMove?.inventoryUsageReason === "bad_direct_fallback";
+
   aiRoundState.lastInventorySoftFallbackUsed = false;
 
   const inventory = evaluateBlueInventoryState();
@@ -12686,6 +12769,19 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
   const softFallbackReady = aiRoundState.inventoryIdleTurns >= AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD
     && aiRoundState.inventorySoftFallbackCooldown <= 0;
 
+
+
+  function tryApplyAiInventoryItem(itemType){
+    if(!allowInventoryUsage){
+      logAiDecision("inventory_saved_for_bad_direct_fallback", {
+        itemType,
+        planeId: plannedMove?.plane?.id ?? null,
+        reason: "inventory_locked_until_bad_direct_fallback",
+      });
+      return false;
+    }
+    return applyItemToOwnPlane(itemType, "blue", plannedMove.plane);
+  }
   function markSoftFallbackUse(itemType, details = {}){
     aiRoundState.lastInventorySoftFallbackUsed = true;
     logAiDecision("inventory_soft_fallback_used", {
@@ -12714,7 +12810,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       || (riskProfile === "comeback" && moveDistance > MAX_DRAG_DISTANCE * 0.55);
     const shouldUseFuelBySoftFallback = !shouldBoostRange && softFallbackReady && moderateObjective;
     if((shouldBoostRange || shouldUseFuelBySoftFallback)
-      && applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, "blue", plannedMove.plane)){
+      && tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.FUEL, "blue", plannedMove.plane)){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
       if(shouldUseFuelBySoftFallback){
         markSoftFallbackUse(INVENTORY_ITEM_TYPES.FUEL, {
@@ -12732,7 +12828,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     const CROSSHAIR_SOFT_FALLBACK_MIN_VALUE = 0.62;
 
     if(bestCrosshairScenario && bestCrosshairScenario.totalValue >= CROSSHAIR_MIN_NOTICEABLE_VALUE){
-      if(applyItemToOwnPlane(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
+      if(tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
         removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
         logAiDecision("crosshair_used_best_value", {
           planeId: plannedMove.plane?.id ?? null,
@@ -12760,7 +12856,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         && dist(plannedMove.plane, priorityEnemy) <= MAX_DRAG_DISTANCE * 1.2;
 
       if(!bestCrosshairScenario && (cleanFinishingChance || comebackPressureShot)){
-        if(applyItemToOwnPlane(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
+        if(tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
           removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
           logAiDecision("crosshair_used_best_value", {
             planeId: plannedMove.plane?.id ?? null,
@@ -12773,7 +12869,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       }
 
       if(moderateCrosshairScenario && softFallbackReady){
-        if(applyItemToOwnPlane(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
+        if(tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
           removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
           markSoftFallbackUse(INVENTORY_ITEM_TYPES.CROSSHAIR, {
             bestValue: Number(bestCrosshairScenario.totalValue.toFixed(3)),
@@ -12877,7 +12973,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
 
   if(softFallbackReady){
     if(inventory.counts[INVENTORY_ITEM_TYPES.CROSSHAIR] > 0
-      && applyItemToOwnPlane(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
+      && tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
       markSoftFallbackUse(INVENTORY_ITEM_TYPES.CROSSHAIR, {
         reason: "generic_soft_fallback_usage",
@@ -12886,7 +12982,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     }
 
     if(inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0
-      && applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, "blue", plannedMove.plane)){
+      && tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.FUEL, "blue", plannedMove.plane)){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
       markSoftFallbackUse(INVENTORY_ITEM_TYPES.FUEL, {
         reason: "generic_soft_fallback_usage",
@@ -12910,7 +13006,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     );
     const shouldUseWingsBySoftFallback = !reachesContactZone && softFallbackReady && reachesModerateContactZone;
     if((reachesContactZone || shouldUseWingsBySoftFallback)
-      && applyItemToOwnPlane(INVENTORY_ITEM_TYPES.WINGS, "blue", plannedMove.plane)){
+      && tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.WINGS, "blue", plannedMove.plane)){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.WINGS);
       if(shouldUseWingsBySoftFallback){
         markSoftFallbackUse(INVENTORY_ITEM_TYPES.WINGS, {
@@ -14044,14 +14140,31 @@ function getFallbackAiMove(context){
     context,
   });
   if(directFinisherMove){
-    logAiDecision("direct_finisher", {
+    const directFinisherQuality = getFallbackDirectAttackQuality(
+      directFinisherMove.plane,
+      directFinisherMove.enemy,
+      directFinisherMove.totalDist,
+      riskProfile
+    );
+    if(directFinisherQuality >= AI_FALLBACK_DIRECT_QUALITY_MIN){
+      logAiDecision("direct_finisher", {
+        source: "fallback",
+        planeId: directFinisherMove.plane?.id ?? null,
+        enemyId: directFinisherMove.enemy?.id ?? null,
+        distance: Number((directFinisherMove.totalDist || 0).toFixed(1)),
+        reason: "direct_finisher",
+      });
+      return directFinisherMove;
+    }
+    logAiDecision("direct_finisher_rejected_in_fallback", {
       source: "fallback",
       planeId: directFinisherMove.plane?.id ?? null,
       enemyId: directFinisherMove.enemy?.id ?? null,
       distance: Number((directFinisherMove.totalDist || 0).toFixed(1)),
-      reason: "direct_finisher",
+      quality: Number(directFinisherQuality.toFixed(3)),
+      threshold: AI_FALLBACK_DIRECT_QUALITY_MIN,
+      reason: "low_direct_quality",
     });
-    return directFinisherMove;
   }
 
   const flightDistancePx = settings.flightRangeCells * CELL_SIZE;
@@ -14059,6 +14172,7 @@ function getFallbackAiMove(context){
   let best = null;
   let bestPreparation = null;
   let bestPreparationScore = Number.POSITIVE_INFINITY;
+  let bestPoorDirectCandidate = null;
   const dynamiteAvailable = hasBlueDynamiteAvailable();
 
   for(const plane of aiPlanes){
@@ -14137,11 +14251,44 @@ function getFallbackAiMove(context){
           }
         }
 
+        const directQuality = getFallbackDirectAttackQuality(plane, enemy, directDist, riskProfile);
         const targetPriority = getAiTargetPriority(enemy, context);
         const longShotPenalty = getAiLongShotPenaltyMultiplier(directDist, targetPriority, riskProfile, {
           onlyLineAvailable: false,
         });
         const directAttackScore = getAiPlaneAdjustedScore(directDist * longShotPenalty, plane);
+
+        if(directQuality < AI_FALLBACK_DIRECT_QUALITY_MIN){
+          const poorDirectCandidate = {
+            plane,
+            enemy,
+            directQuality,
+            directAttackScore,
+            totalDist: directDist,
+            idleTurns: getAiPlaneIdleTurns(plane),
+          };
+          if(compareAiCandidateByScoreAndRotation(poorDirectCandidate, bestPoorDirectCandidate, ["fallback_attack", "poor_direct", enemy?.id ?? ""])){
+            bestPoorDirectCandidate = poorDirectCandidate;
+          }
+
+          const safeAngleMove = findFallbackSafeAngleRepositionMove(plane, enemy, speedPxPerSec);
+          if(safeAngleMove){
+            if(compareAiCandidateByScoreAndRotation(safeAngleMove, bestPreparation, ["fallback_attack", "safe_angle", enemy?.id ?? ""])){
+              bestPreparation = safeAngleMove;
+              bestPreparationScore = safeAngleMove.score;
+            }
+            continue;
+          }
+
+          const ricochetPreparation = findFallbackRicochetPreparationMove(plane, enemy);
+          if(ricochetPreparation){
+            if(compareAiCandidateByScoreAndRotation(ricochetPreparation, bestPreparation, ["fallback_attack", "prepare_ricochet", enemy?.id ?? ""])){
+              bestPreparation = ricochetPreparation;
+              bestPreparationScore = ricochetPreparation.score;
+            }
+            continue;
+          }
+        }
 
         if(longShotPenalty > 1){
           logAiDecision("long_shot_penalty_applied", {
@@ -14249,6 +14396,24 @@ function getFallbackAiMove(context){
   }
 
   if(!best && bestPreparation){
+    if(bestPoorDirectCandidate){
+      bestPreparation.allowInventoryUsage = true;
+      bestPreparation.inventoryUsageReason = "bad_direct_fallback";
+      bestPreparation.badDirectMeta = {
+        planeId: bestPoorDirectCandidate.plane?.id ?? null,
+        enemyId: bestPoorDirectCandidate.enemy?.id ?? null,
+        quality: Number(bestPoorDirectCandidate.directQuality.toFixed(3)),
+        threshold: AI_FALLBACK_DIRECT_QUALITY_MIN,
+      };
+      logAiDecision("fallback_bad_direct_upgrade", {
+        reason: "bad_direct_quality",
+        planeId: bestPoorDirectCandidate.plane?.id ?? null,
+        enemyId: bestPoorDirectCandidate.enemy?.id ?? null,
+        quality: Number(bestPoorDirectCandidate.directQuality.toFixed(3)),
+        threshold: AI_FALLBACK_DIRECT_QUALITY_MIN,
+        selectedFallback: bestPreparation.decisionReason || bestPreparation.goalName || "fallback_preparation",
+      });
+    }
     return bestPreparation;
   }
 
