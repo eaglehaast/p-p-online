@@ -11817,6 +11817,9 @@ function createInitialAiRoundState(){
 
 const AI_DYNAMITE_INTENT_SCORE_BONUS = 0.94;
 const AI_DYNAMITE_INTENT_LINE_TOLERANCE = CELL_SIZE * 0.9;
+const AI_MULTI_KILL_TIE_BREAK_BONUS = CELL_SIZE * 0.08;
+const AI_MULTI_KILL_LINE_TOLERANCE = CELL_SIZE * 0.75;
+const AI_MULTI_KILL_CONTACT_TOLERANCE = CELL_SIZE * 1.1;
 
 function clearAiDynamiteIntent(reason = "cleared"){
   if(!aiRoundState?.dynamiteIntent) return;
@@ -11845,6 +11848,58 @@ function getDistanceFromPointToSegment(pointX, pointY, x1, y1, x2, y2){
   const closestX = x1 + segmentDx * clampedProjection;
   const closestY = y1 + segmentDy * clampedProjection;
   return Math.hypot(pointX - closestX, pointY - closestY);
+}
+
+function getAiMultiKillPotentialContext({ plane, enemy, enemies, lineEndX, lineEndY }){
+  if(!plane || !enemy || !Array.isArray(enemies)){
+    return {
+      multiKillPotential: 0,
+      secondaryEnemyId: null,
+      lineDistance: null,
+      contactDistance: null,
+    };
+  }
+  if(![plane.x, plane.y, enemy.x, enemy.y, lineEndX, lineEndY].every(Number.isFinite)){
+    return {
+      multiKillPotential: 0,
+      secondaryEnemyId: null,
+      lineDistance: null,
+      contactDistance: null,
+    };
+  }
+
+  let secondaryEnemy = null;
+  let bestLineDistance = Number.POSITIVE_INFINITY;
+  let bestContactDistance = Number.POSITIVE_INFINITY;
+  for(const otherEnemy of enemies){
+    if(!otherEnemy || otherEnemy === enemy) continue;
+    if(!Number.isFinite(otherEnemy.x) || !Number.isFinite(otherEnemy.y)) continue;
+    const lineDistance = getDistanceFromPointToSegment(
+      otherEnemy.x,
+      otherEnemy.y,
+      plane.x,
+      plane.y,
+      lineEndX,
+      lineEndY
+    );
+    const contactDistance = Math.hypot(otherEnemy.x - enemy.x, otherEnemy.y - enemy.y);
+    const onAttackLane = lineDistance <= AI_MULTI_KILL_LINE_TOLERANCE;
+    const nearContactPoint = contactDistance <= AI_MULTI_KILL_CONTACT_TOLERANCE;
+    if(!onAttackLane && !nearContactPoint) continue;
+
+    if(lineDistance < bestLineDistance || (Math.abs(lineDistance - bestLineDistance) < 0.0001 && contactDistance < bestContactDistance)){
+      secondaryEnemy = otherEnemy;
+      bestLineDistance = lineDistance;
+      bestContactDistance = contactDistance;
+    }
+  }
+
+  return {
+    multiKillPotential: secondaryEnemy ? 1 : 0,
+    secondaryEnemyId: secondaryEnemy?.id ?? null,
+    lineDistance: Number.isFinite(bestLineDistance) ? bestLineDistance : null,
+    contactDistance: Number.isFinite(bestContactDistance) ? bestContactDistance : null,
+  };
 }
 
 function getAiDynamiteIntentScoreAdjustment(score, move, context = {}){
@@ -14928,6 +14983,37 @@ function getFallbackAiMove(context){
           }
         }
 
+        const directMultiKill = getAiMultiKillPotentialContext({
+          plane,
+          enemy,
+          enemies: targetEnemies,
+          lineEndX: enemy.x,
+          lineEndY: enemy.y,
+        });
+        const directSafetyContext = {
+          goalName: "attack_enemy_plane",
+          decisionReason: "fallback_direct_attack",
+        };
+        const directBonusAllowed = !isDefenseOrRetreatContext(directSafetyContext);
+        const directScoreBefore = directAttackScore;
+        const directMultiKillBonusApplied = directBonusAllowed && directMultiKill.multiKillPotential === 1
+          ? AI_MULTI_KILL_TIE_BREAK_BONUS
+          : 0;
+        const directScoreAfter = Math.max(0, directScoreBefore - directMultiKillBonusApplied);
+        logAiDecision("fallback_attack_candidate_scored", {
+          source: "fallback_attack",
+          candidateType: "direct",
+          planeId: plane.id,
+          enemyId: enemy.id,
+          secondaryEnemyId: directMultiKill.secondaryEnemyId,
+          multiKillPotential: directMultiKill.multiKillPotential,
+          multiKillBonusApplied: Number(directMultiKillBonusApplied.toFixed(3)),
+          scoreBefore: Number(directScoreBefore.toFixed(3)),
+          scoreAfter: Number(directScoreAfter.toFixed(3)),
+          lineDistance: Number.isFinite(directMultiKill.lineDistance) ? Number(directMultiKill.lineDistance.toFixed(2)) : null,
+          contactDistance: Number.isFinite(directMultiKill.contactDistance) ? Number(directMultiKill.contactDistance.toFixed(2)) : null,
+        });
+
         const directCandidate = {
           plane,
           enemy,
@@ -14935,7 +15021,7 @@ function getFallbackAiMove(context){
           vy,
           totalDist: directDist,
           directAttackScore,
-          score: directAttackScore,
+          score: directScoreAfter,
           idleTurns: getAiPlaneIdleTurns(plane),
         };
         if(compareAiCandidateByScoreAndRotation(directCandidate, best, ["fallback_attack", "direct", enemy?.id ?? ""])){
@@ -14984,6 +15070,37 @@ function getFallbackAiMove(context){
             clearSky: isCurrentMapClearSky(),
             pathDistance: Number(mirror.totalDist.toFixed(1)),
           });
+          const mirrorMultiKill = getAiMultiKillPotentialContext({
+            plane,
+            enemy,
+            enemies: targetEnemies,
+            lineEndX: mirror.mirrorTarget.x,
+            lineEndY: mirror.mirrorTarget.y,
+          });
+          const mirrorSafetyContext = {
+            goalName: "attack_enemy_plane",
+            decisionReason: "fallback_mirror_attack",
+          };
+          const mirrorBonusAllowed = !isDefenseOrRetreatContext(mirrorSafetyContext);
+          const mirrorScoreBefore = mirrorScore;
+          const mirrorMultiKillBonusApplied = mirrorBonusAllowed && mirrorMultiKill.multiKillPotential === 1
+            ? AI_MULTI_KILL_TIE_BREAK_BONUS
+            : 0;
+          const mirrorScoreAfter = Math.max(0, mirrorScoreBefore - mirrorMultiKillBonusApplied);
+          logAiDecision("fallback_attack_candidate_scored", {
+            source: "fallback_attack",
+            candidateType: "mirror",
+            planeId: plane.id,
+            enemyId: enemy.id,
+            secondaryEnemyId: mirrorMultiKill.secondaryEnemyId,
+            multiKillPotential: mirrorMultiKill.multiKillPotential,
+            multiKillBonusApplied: Number(mirrorMultiKillBonusApplied.toFixed(3)),
+            scoreBefore: Number(mirrorScoreBefore.toFixed(3)),
+            scoreAfter: Number(mirrorScoreAfter.toFixed(3)),
+            lineDistance: Number.isFinite(mirrorMultiKill.lineDistance) ? Number(mirrorMultiKill.lineDistance.toFixed(2)) : null,
+            contactDistance: Number.isFinite(mirrorMultiKill.contactDistance) ? Number(mirrorMultiKill.contactDistance.toFixed(2)) : null,
+          });
+
           const mirrorCandidate = {
             plane,
             enemy,
@@ -14991,7 +15108,7 @@ function getFallbackAiMove(context){
             vy,
             totalDist: mirror.totalDist,
             directAttackScore: mirrorScore,
-            score: mirrorScore,
+            score: mirrorScoreAfter,
             idleTurns: getAiPlaneIdleTurns(plane),
           };
           if(compareAiCandidateByScoreAndRotation(mirrorCandidate, best, ["fallback_attack", "mirror", enemy?.id ?? ""])){
