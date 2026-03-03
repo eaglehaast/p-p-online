@@ -73,6 +73,12 @@ function runAttemptBatch(planPathToPoint, repeatCount){
   const target = { x: 260, y: 118 };
   let successCount = 0;
   let aliveMoves = 0;
+  let nearAngleRepeats = 0;
+  let nearLandingRepeats = 0;
+  const nearAngleThresholdRad = Math.PI / 180 * 6;
+  const nearLandingThresholdPx = 16;
+  let prevAngle = null;
+  let prevLanding = null;
 
   for(let i = 1; i <= repeatCount; i += 1){
     const move = planPathToPoint(plane, target.x, target.y);
@@ -80,18 +86,27 @@ function runAttemptBatch(planPathToPoint, repeatCount){
       aliveMoves += 1;
       const landingX = plane.x + move.vx * 1;
       const landingY = plane.y + move.vy * 1;
+      const angle = Math.atan2(move.vy, move.vx);
+      if(prevAngle !== null && Math.abs(angle - prevAngle) <= nearAngleThresholdRad) nearAngleRepeats += 1;
+      if(prevLanding && Math.hypot(landingX - prevLanding.x, landingY - prevLanding.y) <= nearLandingThresholdPx) nearLandingRepeats += 1;
+      prevAngle = angle;
+      prevLanding = { x: landingX, y: landingY };
       if(landingX > 180 && landingY >= 80 && landingY <= 120) successCount += 1;
     }
   }
 
+  const pairCount = Math.max(1, aliveMoves - 1);
   return {
     successCount,
     aliveMoves,
     ratio: successCount / repeatCount,
+    nearAngleRepeatRatio: nearAngleRepeats / pairCount,
+    nearLandingRepeatRatio: nearLandingRepeats / pairCount,
   };
 }
 
 const source = fs.readFileSync('script.js', 'utf8');
+const progressMetaSrc = extractFunctionSource(source, 'getAiNoticeableProgressMeta');
 const planPathSrc = extractFunctionSource(source, 'planPathToPoint');
 
 const deterministicBeforeSteps = [
@@ -121,6 +136,20 @@ const context = {
   applyAiMinLaunchScale(baseScale){
     return baseScale;
   },
+  tryGetAiTacticalMediumScale(){
+    return null;
+  },
+  applyAiAntiRepeatAngleGuard(baseAngle){
+    return {
+      adjustedAngleRad: baseAngle,
+      usedSafeFan: false,
+      safeFanOffsetDeg: 0,
+      spreadDeg: 0,
+      sampleCount: 0,
+      repeatStreakCount: 0,
+    };
+  },
+  aiRoundState: { recentLaunchAnglesDeg: [], angleRepeatStreakCount: 0, turnNumber: 1, tieBreakerSeed: 1 },
   isMirrorPressureTarget(){
     return false;
   },
@@ -144,6 +173,7 @@ const context = {
 };
 
 vm.createContext(context);
+vm.runInContext(progressMetaSrc, context);
 vm.runInContext(planPathSrc, context);
 
 function planPathBefore(plane, tx, ty){
@@ -215,4 +245,6 @@ assert(selected > 0, 'Expected narrow corridor selected reason code to appear in
 console.log('Smoke test passed: narrow corridor branch improves 2-cell gap traversal ratio.');
 console.log('Before ratio:', before.ratio.toFixed(3), `(${before.successCount}/${repeatCount})`);
 console.log('After ratio :', after.ratio.toFixed(3), `(${after.successCount}/${repeatCount})`);
+console.log('Near-repeat angle ratio before/after:', before.nearAngleRepeatRatio.toFixed(3), '/', after.nearAngleRepeatRatio.toFixed(3));
+console.log('Near-repeat landing ratio before/after:', before.nearLandingRepeatRatio.toFixed(3), '/', after.nearLandingRepeatRatio.toFixed(3));
 console.log('Reason code logs:', { narrow_corridor_selected: selected, narrow_corridor_rejected: rejected });
