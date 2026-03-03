@@ -11870,9 +11870,132 @@ function createInitialAiRoundState(){
     recentLaunchAnglesDeg: [],
     angleRepeatStreakCount: 0,
     planeIdleTurnsById: {},
+    stuckByPlaneId: {},
     dynamiteIntent: null,
     tieBreakerSeed: 0,
   };
+}
+
+const AI_STUCK_ATTEMPT_HISTORY_LIMIT = 3;
+const AI_STUCK_BLOCKED_STREAK_THRESHOLD = 2;
+const AI_STUCK_DIRECTION_SECTOR_STEP_DEG = 45;
+const AI_STUCK_REPEAT_SECTOR_SCORE_PENALTY = CELL_SIZE * 0.35;
+
+function getAiDirectionSectorDeg(angleRad){
+  if(!Number.isFinite(angleRad)) return null;
+  const angleDeg = normalizeAngleDeg(angleRad * 180 / Math.PI);
+  const step = Math.max(1, AI_STUCK_DIRECTION_SECTOR_STEP_DEG);
+  return normalizeAngleDeg(Math.round(angleDeg / step) * step);
+}
+
+function getAiStuckStateForPlane(planeId){
+  if(!planeId || !aiRoundState || typeof aiRoundState !== "object") return null;
+  if(!aiRoundState.stuckByPlaneId || typeof aiRoundState.stuckByPlaneId !== "object"){
+    aiRoundState.stuckByPlaneId = {};
+  }
+  if(!aiRoundState.stuckByPlaneId[planeId] || typeof aiRoundState.stuckByPlaneId[planeId] !== "object"){
+    aiRoundState.stuckByPlaneId[planeId] = {
+      attempts: [],
+      pathBlockedStreak: 0,
+      isStuck: false,
+      currentTurnNumber: null,
+      currentTurnSectorCounts: {},
+      lastSector: null,
+      lastProgress: 0,
+      lastNoticeableProgress: false,
+    };
+  }
+  return aiRoundState.stuckByPlaneId[planeId];
+}
+
+function updateAiStuckAttempt(plane, details = {}){
+  const planeId = plane?.id;
+  if(!planeId) return null;
+  const planeStuckState = getAiStuckStateForPlane(planeId);
+  if(!planeStuckState) return null;
+
+  const progressMeta = details?.progressMeta || getAiNoticeableProgressMeta(plane.x, plane.y, plane.x, plane.y, plane.x, plane.y);
+  const progress = Number.isFinite(progressMeta?.improvement) ? progressMeta.improvement : 0;
+  const hasNoticeableProgress = Boolean(progressMeta?.hasNoticeableProgress);
+  const sector = Number.isFinite(details?.sector) ? details.sector : null;
+  const pathBlocked = Boolean(details?.pathBlocked);
+  const turn = Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null;
+
+  planeStuckState.attempts.push({
+    turn,
+    pathBlocked,
+    progress,
+    hasNoticeableProgress,
+    sector,
+  });
+  if(planeStuckState.attempts.length > AI_STUCK_ATTEMPT_HISTORY_LIMIT){
+    planeStuckState.attempts.splice(0, planeStuckState.attempts.length - AI_STUCK_ATTEMPT_HISTORY_LIMIT);
+  }
+
+  let blockedStreak = 0;
+  for(let i = planeStuckState.attempts.length - 1; i >= 0; i -= 1){
+    const attempt = planeStuckState.attempts[i];
+    if(attempt?.pathBlocked && !attempt?.hasNoticeableProgress){
+      blockedStreak += 1;
+      continue;
+    }
+    break;
+  }
+
+  const wasStuck = planeStuckState.isStuck;
+  planeStuckState.pathBlockedStreak = blockedStreak;
+  planeStuckState.isStuck = blockedStreak >= AI_STUCK_BLOCKED_STREAK_THRESHOLD;
+  planeStuckState.lastSector = sector;
+  planeStuckState.lastProgress = progress;
+  planeStuckState.lastNoticeableProgress = hasNoticeableProgress;
+
+  if(planeStuckState.isStuck && !wasStuck){
+    logAiDecision("ai_stuck_detected", {
+      planeId,
+      streak: blockedStreak,
+      sector,
+      progress: Number(progress.toFixed(2)),
+    });
+  }
+
+  return planeStuckState;
+}
+
+function getAiStuckRepeatSectorPenalty(plane, sector){
+  const planeId = plane?.id;
+  if(!planeId || !Number.isFinite(sector)) return 0;
+  const planeStuckState = getAiStuckStateForPlane(planeId);
+  if(!planeStuckState?.isStuck) return 0;
+
+  const currentTurn = Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null;
+  if(planeStuckState.currentTurnNumber !== currentTurn){
+    planeStuckState.currentTurnNumber = currentTurn;
+    planeStuckState.currentTurnSectorCounts = {};
+  }
+
+  const repeatedCount = Number.isFinite(planeStuckState.currentTurnSectorCounts[sector])
+    ? planeStuckState.currentTurnSectorCounts[sector]
+    : 0;
+  if(repeatedCount <= 0) return 0;
+  return AI_STUCK_REPEAT_SECTOR_SCORE_PENALTY * repeatedCount;
+}
+
+function markAiStuckSectorUsed(plane, sector){
+  const planeId = plane?.id;
+  if(!planeId || !Number.isFinite(sector)) return;
+  const planeStuckState = getAiStuckStateForPlane(planeId);
+  if(!planeStuckState) return;
+
+  const currentTurn = Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null;
+  if(planeStuckState.currentTurnNumber !== currentTurn){
+    planeStuckState.currentTurnNumber = currentTurn;
+    planeStuckState.currentTurnSectorCounts = {};
+  }
+
+  const prevCount = Number.isFinite(planeStuckState.currentTurnSectorCounts[sector])
+    ? planeStuckState.currentTurnSectorCounts[sector]
+    : 0;
+  planeStuckState.currentTurnSectorCounts[sector] = prevCount + 1;
 }
 
 const AI_DYNAMITE_INTENT_SCORE_BONUS = 0.94;
@@ -16043,6 +16166,30 @@ function planPathToPoint(plane, tx, ty, options = {}){
   const extendedDetourColliderThreshold = 18;
   const narrowCorridorColliderThreshold = 26;
 
+  function finalizePlannedMove(move, actualAngle, progressMeta){
+    if(!move) return null;
+    const sector = getAiDirectionSectorDeg(actualAngle);
+    const safeProgressMeta = progressMeta || getAiNoticeableProgressMeta(plane.x, plane.y, plane.x, plane.y, tx, ty);
+    const repeatSectorPenalty = getAiStuckRepeatSectorPenalty(plane, sector);
+    const baseTotalDist = Number.isFinite(move.totalDist) ? move.totalDist : 0;
+    const adjustedTotalDist = baseTotalDist + repeatSectorPenalty;
+
+    markAiStuckSectorUsed(plane, sector);
+    updateAiStuckAttempt(plane, {
+      pathBlocked: false,
+      progressMeta: safeProgressMeta,
+      sector,
+    });
+
+    return {
+      ...move,
+      totalDist: adjustedTotalDist,
+      baseTotalDist,
+      sector,
+      repeatSectorPenalty,
+    };
+  }
+
   function buildMoveWithSafeDeviation(baseAngle, distance, scale, meta = {}){
     const tacticalMedium = tryGetAiTacticalMediumScale(scale, baseAngle, plane, speedPxPerSec);
     const workingScale = tacticalMedium ? tacticalMedium.mediumScale : scale;
@@ -16087,7 +16234,11 @@ function planPathToPoint(plane, tx, ty, options = {}){
       const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
       const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
       if(isPathClear(plane.x, plane.y, landingX, landingY)){
-        return { vx, vy, totalDist: distance, moveType: meta?.moveType || "direct" };
+        return finalizePlannedMove(
+          { vx, vy, totalDist: distance, moveType: meta?.moveType || "direct" },
+          actualAngle,
+          getAiNoticeableProgressMeta(plane.x, plane.y, landingX, landingY, tx, ty)
+        );
       }
     }
 
@@ -16140,7 +16291,11 @@ function planPathToPoint(plane, tx, ty, options = {}){
           deviation,
           ...meta
         });
-        return { vx, vy, totalDist: distance, moveType: meta?.moveType || "direct" };
+        return finalizePlannedMove(
+          { vx, vy, totalDist: distance, moveType: meta?.moveType || "direct" },
+          actualAngle,
+          getAiNoticeableProgressMeta(plane.x, plane.y, landingX, landingY, tx, ty)
+        );
       }
     }
 
@@ -16207,12 +16362,16 @@ function planPathToPoint(plane, tx, ty, options = {}){
                 colliderCount,
                 ...meta
               });
-              return {
-                vx,
-                vy,
-                totalDist: distance * narrowedScale,
-                moveType: meta?.moveType || "direct"
-              };
+              return finalizePlannedMove(
+                {
+                  vx,
+                  vy,
+                  totalDist: distance * narrowedScale,
+                  moveType: meta?.moveType || "direct"
+                },
+                actualAngle,
+                progressMeta
+              );
             }
           }
         }
@@ -16254,7 +16413,11 @@ function planPathToPoint(plane, tx, ty, options = {}){
               reason: "detour_extended",
               ...meta
             });
-            return { vx, vy, totalDist: distance, moveType: meta?.moveType || "direct" };
+            return finalizePlannedMove(
+              { vx, vy, totalDist: distance, moveType: meta?.moveType || "direct" },
+              actualAngle,
+              getAiNoticeableProgressMeta(plane.x, plane.y, landingX, landingY, tx, ty)
+            );
           }
         }
       }
@@ -16275,6 +16438,11 @@ function planPathToPoint(plane, tx, ty, options = {}){
       targetY: ty,
       distance,
       ...meta
+    });
+    updateAiStuckAttempt(plane, {
+      pathBlocked: true,
+      progressMeta: getAiNoticeableProgressMeta(plane.x, plane.y, plane.x, plane.y, tx, ty),
+      sector: getAiDirectionSectorDeg(baseAngle),
     });
     return null;
   }
@@ -16337,13 +16505,15 @@ function planPathToPoint(plane, tx, ty, options = {}){
 
       const vx = Math.cos(baseAngle) * finalScale * speedPxPerSec;
       const vy = Math.sin(baseAngle) * finalScale * speedPxPerSec;
-      return {
+      const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
+      const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
+      return finalizePlannedMove({
         vx,
         vy,
         totalDist: dist,
         decisionReason: "direct_finisher",
         moveType: "direct",
-      };
+      }, baseAngle, getAiNoticeableProgressMeta(plane.x, plane.y, landingX, landingY, tx, ty));
     }
 
     return buildMoveWithSafeDeviation(baseAngle, dist, scale, {
