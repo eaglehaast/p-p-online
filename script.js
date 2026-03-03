@@ -11511,6 +11511,8 @@ const AI_ATTACK_MID_LONG_DISTANCE_RATIO_START = 0.58;
 const AI_ATTACK_MID_LONG_DISTANCE_RATIO_FULL = 0.92;
 const AI_ATTACK_SCALE_GUARD_FLOOR = 0.32;
 const AI_ATTACK_SCALE_GUARD_SHORT_CONTROL_DISTANCE_RATIO_MAX = 0.45;
+const AI_ATTACK_CLOSE_RANGE_DISTANCE_RATIO_MAX = 0.4;
+const AI_ATTACK_CLOSE_RANGE_SAFE_MIN_SCALE = 0.34;
 const AI_LONG_SHOT_POWER_RATIO_THRESHOLD = 0.75;
 const AI_TACTICAL_MEDIUM_STREAK_TRIGGER = 2;
 const AI_TACTICAL_MEDIUM_TRIGGER_CHANCE = 0.3;
@@ -11651,6 +11653,33 @@ function isAttackContext(reasonText = ""){
   ].some((marker) => reasonText.includes(marker));
 }
 
+function isCombatGoal(goalName = ""){
+  const goalText = `${goalName || ""}`.toLowerCase();
+  if(!goalText) return false;
+  return [
+    "attack",
+    "direct_finisher",
+    "eliminate",
+    "pressure",
+    "strike",
+    "chase"
+  ].some((marker) => goalText.includes(marker));
+}
+
+function isExplicitDefensiveGoal(goalName = ""){
+  const goalText = `${goalName || ""}`.toLowerCase();
+  if(!goalText) return false;
+  return [
+    "defense",
+    "defend",
+    "retreat",
+    "hold",
+    "intercept",
+    "protect",
+    "emergency_base"
+  ].some((marker) => goalText.includes(marker));
+}
+
 function isIntentionalShortControlContext(reasonText = "", moveDistanceRatio = null){
   const hasShortControlIntent = [
     "hold",
@@ -11689,7 +11718,17 @@ function applyAiMinLaunchScale(scale, details = {}){
 
   const isDefenseContext = isDefenseOrRetreatContext(reasonText);
   const isAttackIntentContext = isAttackContext(reasonText);
+  const isCombatGoalContext = isCombatGoal(details?.goalName || "");
+  const isDefensiveGoalContext = isExplicitDefensiveGoal(details?.goalName || "");
   const isIntentionalShortControl = isIntentionalShortControlContext(reasonText, moveDistanceRatio);
+  const hasDirectLineOfSight = details?.hasDirectLineOfSight === true;
+  const isCloseRangeDistance = Number.isFinite(moveDistanceRatio)
+    && moveDistanceRatio <= AI_ATTACK_CLOSE_RANGE_DISTANCE_RATIO_MAX;
+  const shouldUseCloseRangeCombatMinScale = hasDirectLineOfSight
+    && isCloseRangeDistance
+    && !isDefensiveGoalContext
+    && !isIntentionalShortControl
+    && (isAttackIntentContext || isCombatGoalContext);
   const isLongLaneDistanceContext = Number.isFinite(moveDistanceRatio)
     && moveDistanceRatio >= 0.68;
 
@@ -11717,7 +11756,11 @@ function applyAiMinLaunchScale(scale, details = {}){
     : 0;
 
   const baseMinScale = AI_MIN_LAUNCH_SCALE_DEFAULT;
+  const closeRangeCombatMinScale = shouldUseCloseRangeCombatMinScale
+    ? AI_ATTACK_CLOSE_RANGE_SAFE_MIN_SCALE
+    : 0;
   const boostedMinScale = baseMinScale
+    + (closeRangeCombatMinScale > 0 ? Math.max(0, closeRangeCombatMinScale - baseMinScale) : 0)
     + (shouldUseAttackLocalBoost ? AI_ATTACK_SOFT_MIN_BOOST : 0)
     + attackMidLongBoost;
   const shouldUseAttackFloorGuard = isAttackIntentContext
@@ -11738,6 +11781,7 @@ function applyAiMinLaunchScale(scale, details = {}){
         moveDistance: Number.isFinite(moveDistance) ? Number(moveDistance.toFixed(2)) : null,
         moveDistanceRatio: Number.isFinite(moveDistanceRatio) ? Number(moveDistanceRatio.toFixed(3)) : null,
         isDefenseContext,
+        isDefensiveGoalContext,
         isIntentionalShortControl,
         ...details,
       });
@@ -11752,6 +11796,22 @@ function applyAiMinLaunchScale(scale, details = {}){
         moveDistanceRatio: Number.isFinite(moveDistanceRatio) ? Number(moveDistanceRatio.toFixed(3)) : null,
         targetNearEnemyBase,
         isDirectFinisherGoal,
+        ...details,
+      });
+    }
+    if(shouldUseCloseRangeCombatMinScale && minScale >= AI_ATTACK_CLOSE_RANGE_SAFE_MIN_SCALE){
+      logAiDecision("ai_close_range_min_scale_applied", {
+        oldScale: Number(scale.toFixed(3)),
+        newScale: Number(adjustedScale.toFixed(3)),
+        closeRangeSafeMinScale: Number(AI_ATTACK_CLOSE_RANGE_SAFE_MIN_SCALE.toFixed(3)),
+        closeRangeDistanceRatioMax: Number(AI_ATTACK_CLOSE_RANGE_DISTANCE_RATIO_MAX.toFixed(3)),
+        moveDistance: Number.isFinite(moveDistance) ? Number(moveDistance.toFixed(2)) : null,
+        moveDistanceRatio: Number.isFinite(moveDistanceRatio) ? Number(moveDistanceRatio.toFixed(3)) : null,
+        hasDirectLineOfSight,
+        isCombatGoalContext,
+        isDefenseContext,
+        isDefensiveGoalContext,
+        isIntentionalShortControl,
         ...details,
       });
     }
@@ -11775,12 +11835,13 @@ function applyAiMinLaunchScale(scale, details = {}){
       minScale: Number(minScale.toFixed(3)),
       contextType: shouldUseAttackLocalBoost
         ? "attack_soft_local"
-        : (attackMidLongBoost > 0 ? "attack_mid_long_soft" : "default"),
+        : (shouldUseCloseRangeCombatMinScale ? "attack_close_range_safe_min" : (attackMidLongBoost > 0 ? "attack_mid_long_soft" : "default")),
       moveDistance: Number.isFinite(moveDistance) ? Number(moveDistance.toFixed(2)) : null,
       moveDistanceRatio: Number.isFinite(moveDistanceRatio) ? Number(moveDistanceRatio.toFixed(3)) : null,
       targetNearEnemyBase,
       isDirectFinisherGoal,
       localBoostApplied: shouldUseAttackLocalBoost,
+      closeRangeCombatMinApplied: shouldUseCloseRangeCombatMinScale,
       midLongBoostApplied: attackMidLongBoost > 0,
       attackMidLongBoost: Number(attackMidLongBoost.toFixed(3)),
       attackFloorGuardApplied: shouldUseAttackFloorGuard && minScale >= AI_ATTACK_SCALE_GUARD_FLOOR,
@@ -15001,6 +15062,7 @@ function getFallbackAiMove(context){
           decisionReason: "fallback_direct_attack",
           goalName: "attack_enemy_plane",
           moveDistance: directDist,
+          hasDirectLineOfSight: true,
         });
 
         let vx = Math.cos(ang) * scale * speedPxPerSec;
@@ -16237,6 +16299,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       decisionReason: shouldPrioritizeDirectFinisher ? "direct_finisher" : (options?.decisionReason || null),
       goalName: options?.goalName || null,
       moveDistance: dist,
+      hasDirectLineOfSight: true,
       targetX: tx,
       targetY: ty,
     });
