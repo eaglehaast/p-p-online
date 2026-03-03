@@ -11520,8 +11520,8 @@ const AI_FINISHER_OVERSHOOT_FACTOR = 1.04;
 const AI_OPENING_CENTER_TURN_LIMIT = 2;
 const AI_OPENING_DIRECT_FINISHER_MIN_LEAD = 2;
 const AI_CENTER_CONTROL_DISTANCE = MAX_DRAG_DISTANCE * 0.35;
-const AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD = 3;
-const AI_INVENTORY_SOFT_FALLBACK_COOLDOWN_TURNS = 4;
+const AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD = 2;
+const AI_INVENTORY_SOFT_FALLBACK_COOLDOWN_TURNS = 3;
 const AI_FALLBACK_DIRECT_QUALITY_MIN = 0.4;
 const AI_FALLBACK_SAFE_ANGLE_SHORT_SCALE = 0.38;
 const AI_FALLBACK_SAFE_ANGLE_CANDIDATE_DEG = Object.freeze([28, -28, 44, -44, 62, -62, 88, -88]);
@@ -13207,9 +13207,6 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     "emergency_base_defense",
     "critical_base_hold_position",
   ]);
-  const allowInventoryUsage = explicitInventoryUnlock
-    || strategicInventoryGoals.has(strategicGoal)
-    || aiRoundState.inventoryIdleTurns >= 2;
 
   aiRoundState.lastInventorySoftFallbackUsed = false;
 
@@ -13239,6 +13236,31 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
   const attackRangePx = typeof ATTACK_RANGE_PX === "number" && Number.isFinite(ATTACK_RANGE_PX) ? ATTACK_RANGE_PX : MAX_DRAG_DISTANCE * 0.58;
   const baseFlightRange = MAX_DRAG_DISTANCE;
   const fuelFlightRange = baseFlightRange * 2;
+  const effectiveCellSize = typeof CELL_SIZE === "number" && Number.isFinite(CELL_SIZE) ? CELL_SIZE : 40;
+  const contactTargetsForUnlock = [enemyBase];
+  if(context?.shouldUseFlagsMode){
+    for(const flag of context.availableEnemyFlags || []){
+      const anchor = getFlagAnchor(flag);
+      if(anchor) contactTargetsForUnlock.push(anchor);
+    }
+  }
+  const entersContactZoneThisTurn = Boolean(landingPoint)
+    && contactTargetsForUnlock.some((target) => target && dist(landingPoint, target) <= effectiveCellSize * 2.8);
+  const likelyContactOnNextTurn = Boolean(landingPoint)
+    && contactTargetsForUnlock.some((target) => {
+      if(!target) return false;
+      const distanceFromLanding = dist(landingPoint, target);
+      return distanceFromLanding <= baseFlightRange + effectiveCellSize * 2.4
+        && isPathClear(landingPoint.x, landingPoint.y, target.x, target.y);
+    });
+  const safeBoostOpportunity = hasPriorityEnemyPathClear
+    && moveDistance >= MAX_DRAG_DISTANCE * 0.65
+    && (priorityEnemyDistance <= MAX_DRAG_DISTANCE * 1.2 || entersContactZoneThisTurn || likelyContactOnNextTurn);
+  const tacticalInventoryAdvantage = hasGoodDirectHitChance || entersContactZoneThisTurn || safeBoostOpportunity;
+  const allowInventoryUsage = explicitInventoryUnlock
+    || strategicInventoryGoals.has(strategicGoal)
+    || tacticalInventoryAdvantage
+    || aiRoundState.inventoryIdleTurns >= 2;
 
   function evaluateDirectAttackWindow(enemy){
     if(!enemy) return null;
@@ -13340,12 +13362,12 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     const enemyFlag = context?.shouldUseFlagsMode ? getAvailableFlagsByColor("green")[0] : null;
     const enemyFlagAnchor = enemyFlag ? getFlagAnchor(enemyFlag) : null;
     const fuelMaterialGain = evaluateFuelMaterialGain(enemyFlagAnchor);
-    const farObjective = (enemyFlagAnchor && dist(plannedMove.plane, enemyFlagAnchor) > MAX_DRAG_DISTANCE * 0.8)
-      || (priorityEnemy && dist(plannedMove.plane, priorityEnemy) > MAX_DRAG_DISTANCE * 0.8)
-      || moveDistance > MAX_DRAG_DISTANCE * 0.8;
-    const moderateObjective = (enemyFlagAnchor && dist(plannedMove.plane, enemyFlagAnchor) > MAX_DRAG_DISTANCE * 0.7)
-      || (priorityEnemy && dist(plannedMove.plane, priorityEnemy) > MAX_DRAG_DISTANCE * 0.7)
-      || moveDistance > MAX_DRAG_DISTANCE * 0.7;
+    const farObjective = (enemyFlagAnchor && dist(plannedMove.plane, enemyFlagAnchor) > MAX_DRAG_DISTANCE * 0.75)
+      || (priorityEnemy && dist(plannedMove.plane, priorityEnemy) > MAX_DRAG_DISTANCE * 0.75)
+      || moveDistance > MAX_DRAG_DISTANCE * 0.75;
+    const moderateObjective = (enemyFlagAnchor && dist(plannedMove.plane, enemyFlagAnchor) > MAX_DRAG_DISTANCE * 0.65)
+      || (priorityEnemy && dist(plannedMove.plane, priorityEnemy) > MAX_DRAG_DISTANCE * 0.65)
+      || moveDistance > MAX_DRAG_DISTANCE * 0.65;
     const attackGoal = aiRoundState?.currentGoal === "direct_finisher" || plannedMove?.goalName === "direct_finisher";
     const shouldUseFuelForAttackCommit = attackGoal
       && hasPriorityEnemyPathClear
@@ -13390,8 +13412,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
 
   if(inventory.counts[INVENTORY_ITEM_TYPES.CROSSHAIR] > 0){
     const bestCrosshairScenario = evaluateCrosshairBestUse(context, plannedMove);
-    const CROSSHAIR_MIN_NOTICEABLE_VALUE = 0.78;
-    const CROSSHAIR_SOFT_FALLBACK_MIN_VALUE = 0.62;
+    const CROSSHAIR_MIN_NOTICEABLE_VALUE = 0.74;
+    const CROSSHAIR_SOFT_FALLBACK_MIN_VALUE = 0.58;
 
     if(bestCrosshairScenario && bestCrosshairScenario.totalValue >= CROSSHAIR_MIN_NOTICEABLE_VALUE){
       if(tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
@@ -13633,18 +13655,29 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       }
     }
     const reachesContactZone = contactTargets.some((target) =>
-      target && dist(landingPoint, target) <= CELL_SIZE * 2.4
+      target && dist(landingPoint, target) <= effectiveCellSize * 2.4
     );
     const reachesModerateContactZone = contactTargets.some((target) =>
-      target && dist(landingPoint, target) <= CELL_SIZE * 3.1
+      target && dist(landingPoint, target) <= effectiveCellSize * 3.1
     );
+    const likelyContactNextTurn = contactTargets.some((target) => {
+      if(!target) return false;
+      const distanceFromLanding = dist(landingPoint, target);
+      return distanceFromLanding <= baseFlightRange + effectiveCellSize * 2.4
+        && isPathClear(landingPoint.x, landingPoint.y, target.x, target.y);
+    });
     const shouldUseWingsBySoftFallback = !reachesContactZone && softFallbackReady && reachesModerateContactZone;
-    if((reachesContactZone || shouldUseWingsBySoftFallback)
+    if((reachesContactZone || likelyContactNextTurn || shouldUseWingsBySoftFallback)
       && tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.WINGS, "blue", plannedMove.plane)){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.WINGS);
       if(shouldUseWingsBySoftFallback){
         markSoftFallbackUse(INVENTORY_ITEM_TYPES.WINGS, {
           reason: "approaching_contact_zone",
+        });
+      } else if(likelyContactNextTurn && !reachesContactZone){
+        logAiDecision("wings_used_contact_likely_next_turn", {
+          planeId: plannedMove.plane?.id ?? null,
+          contactNow: reachesContactZone,
         });
       }
       return true;
