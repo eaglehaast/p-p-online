@@ -12455,6 +12455,21 @@ function getFallbackDirectAttackQuality(plane, enemy, directDist, riskProfile = 
   return Math.max(0, Math.min(1, (distanceQuality * 0.65 + pathQuality * 0.35) * shieldQuality + profileShift));
 }
 
+function getAiNoticeableProgressMeta(fromX, fromY, toX, toY, targetX, targetY){
+  const beforeDist = Math.hypot(targetX - fromX, targetY - fromY);
+  const afterDist = Math.hypot(targetX - toX, targetY - toY);
+  const improvement = beforeDist - afterDist;
+  const noticeableThreshold = CELL_SIZE * 0.12;
+  const hasNoticeableProgress = improvement >= noticeableThreshold;
+  return {
+    beforeDist,
+    afterDist,
+    improvement,
+    noticeableThreshold,
+    hasNoticeableProgress,
+  };
+}
+
 function findFallbackSafeAngleRepositionMove(plane, enemy, speedPxPerSec){
   if(!plane || !enemy || !Number.isFinite(speedPxPerSec) || speedPxPerSec <= 0) return null;
   const baseAngle = Math.atan2(enemy.y - plane.y, enemy.x - plane.x);
@@ -12468,14 +12483,46 @@ function findFallbackSafeAngleRepositionMove(plane, enemy, speedPxPerSec){
     moveDistance: MAX_DRAG_DISTANCE * baseScale,
   });
 
+  let bestCandidate = null;
+
   for(const angleOffsetDeg of AI_FALLBACK_SAFE_ANGLE_CANDIDATE_DEG){
     const angle = baseAngle + (angleOffsetDeg * Math.PI / 180);
     const vx = Math.cos(angle) * scale * speedPxPerSec;
     const vy = Math.sin(angle) * scale * speedPxPerSec;
     const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
     const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
-    if(!isPathClear(plane.x, plane.y, landingX, landingY)) continue;
-    return {
+
+    if(!isPathClear(plane.x, plane.y, landingX, landingY)){
+      logAiDecision("fallback_safe_angle_rejected", {
+        reasonCode: "blocked_path",
+        planeId: plane?.id ?? null,
+        enemyId: enemy?.id ?? null,
+        angleOffsetDeg,
+      });
+      continue;
+    }
+
+    const hasLineOfSightToTarget = isPathClear(landingX, landingY, enemy.x, enemy.y);
+    const progressMeta = getAiNoticeableProgressMeta(plane.x, plane.y, landingX, landingY, enemy.x, enemy.y);
+    const score =
+      (hasLineOfSightToTarget ? 3 : 0)
+      + Math.max(-2, Math.min(2, progressMeta.improvement / Math.max(1, CELL_SIZE * 0.2)))
+      + (progressMeta.hasNoticeableProgress ? 1 : -2.2);
+
+    logAiDecision("fallback_safe_angle_candidate_scored", {
+      planeId: plane?.id ?? null,
+      enemyId: enemy?.id ?? null,
+      angleOffsetDeg,
+      score: Number(score.toFixed(3)),
+      hasLineOfSightToTarget,
+      distanceBefore: Number(progressMeta.beforeDist.toFixed(2)),
+      distanceAfter: Number(progressMeta.afterDist.toFixed(2)),
+      improvement: Number(progressMeta.improvement.toFixed(2)),
+      hasNoticeableProgress: progressMeta.hasNoticeableProgress,
+      noticeableThreshold: Number(progressMeta.noticeableThreshold.toFixed(2)),
+    });
+
+    const move = {
       plane,
       enemy,
       vx,
@@ -12485,10 +12532,40 @@ function findFallbackSafeAngleRepositionMove(plane, enemy, speedPxPerSec){
       decisionReason: "fallback_safe_angle_reposition",
       score: getAiPlaneAdjustedScore(Math.hypot(landingX - plane.x, landingY - plane.y), plane),
       idleTurns: getAiPlaneIdleTurns(plane),
+      candidateScore: score,
+      hasLineOfSightToTarget,
+      progressMeta,
     };
+
+    if(!bestCandidate || score > bestCandidate.candidateScore){
+      bestCandidate = move;
+    }
   }
 
-  return null;
+  if(!bestCandidate) return null;
+
+  if(!bestCandidate.hasLineOfSightToTarget && !bestCandidate.progressMeta?.hasNoticeableProgress){
+    logAiDecision("fallback_safe_angle_rejected", {
+      reasonCode: "weak_candidates_only",
+      planeId: plane?.id ?? null,
+      enemyId: enemy?.id ?? null,
+      bestCandidateScore: Number(bestCandidate.candidateScore.toFixed(3)),
+      hasLineOfSightToTarget: false,
+      hasNoticeableProgress: false,
+    });
+    return null;
+  }
+
+  logAiDecision("fallback_safe_angle_selected", {
+    planeId: plane?.id ?? null,
+    enemyId: enemy?.id ?? null,
+    bestCandidateScore: Number(bestCandidate.candidateScore.toFixed(3)),
+    hasLineOfSightToTarget: bestCandidate.hasLineOfSightToTarget,
+    improvement: Number((bestCandidate.progressMeta?.improvement ?? 0).toFixed(2)),
+    hasNoticeableProgress: Boolean(bestCandidate.progressMeta?.hasNoticeableProgress),
+  });
+
+  return bestCandidate;
 }
 
 function findFallbackRicochetPreparationMove(plane, enemy){
@@ -16006,6 +16083,23 @@ function planPathToPoint(plane, tx, ty, options = {}){
             const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
             const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
             if(isPathClear(plane.x, plane.y, landingX, landingY)){
+              const progressMeta = getAiNoticeableProgressMeta(plane.x, plane.y, landingX, landingY, tx, ty);
+              if(!progressMeta.hasNoticeableProgress){
+                logAiDecision("narrow_corridor_rejected", {
+                  reasonCode: "no_noticeable_progress",
+                  planeId: plane?.id ?? null,
+                  targetX: tx,
+                  targetY: ty,
+                  distance,
+                  deviation,
+                  narrowedScale: Number(narrowedScale.toFixed(3)),
+                  improvement: Number(progressMeta.improvement.toFixed(2)),
+                  noticeableThreshold: Number(progressMeta.noticeableThreshold.toFixed(2)),
+                  colliderCount,
+                  ...meta
+                });
+                continue;
+              }
               logAiDecision("narrow_corridor_selected", {
                 reasonCode: "narrow_corridor_selected",
                 planeId: plane?.id ?? null,
@@ -16014,6 +16108,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
                 distance,
                 deviation,
                 narrowedScale: Number(narrowedScale.toFixed(3)),
+                improvement: Number(progressMeta.improvement.toFixed(2)),
                 colliderCount,
                 ...meta
               });
