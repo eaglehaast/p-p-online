@@ -9358,6 +9358,10 @@ function recordAiSelfAnalyzerDecision(stage, details = {}){
     event.rejectReasons = compactRejectReasons;
   }
 
+  if(typeof details.errorMessage === "string" && details.errorMessage.trim().length > 0){
+    event.errorMessage = details.errorMessage.trim().slice(0, 240);
+  }
+
   const move = details?.move;
   if(move && typeof move === "object"){
     const movePlane = move.plane;
@@ -10065,6 +10069,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
             goal: aiRoundState?.currentGoal || "ai_move_exception",
             reasonCodes: ["ai_move_exception", "fail_safe_turn_advance"],
             rejectReasons: ["do_computer_move_exception"],
+            errorMessage: error?.message || String(error),
           });
           return;
         }
@@ -14036,10 +14041,51 @@ function failSafeAdvanceTurn(reason, details = {}){
     planeId,
     reasonCodes,
     rejectReasons,
+    errorMessage: safeDetails.errorMessage,
   });
 
   aiMoveScheduled = false;
   advanceTurn();
+}
+
+function validateAiLaunchMoveCandidate(move){
+  const plane = move?.plane;
+  if(!plane || typeof plane !== "object"){
+    return {
+      ok: false,
+      reason: "invalid_plane_for_launch",
+      message: "Plane object is missing for launch",
+    };
+  }
+
+  if(!Number.isFinite(plane.x) || !Number.isFinite(plane.y)){
+    return {
+      ok: false,
+      reason: "invalid_plane_coordinates",
+      message: "Plane coordinates are missing or not numeric",
+    };
+  }
+
+  if(!isPlaneLaunchStateReady(plane)){
+    return {
+      ok: false,
+      reason: "invalid_plane_state_for_launch",
+      message: "Plane is not in launch-ready state",
+    };
+  }
+
+  if(!Number.isFinite(move?.vx) || !Number.isFinite(move?.vy)){
+    return {
+      ok: false,
+      reason: "invalid_launch_vector",
+      message: "Launch vector is missing or not numeric",
+    };
+  }
+
+  return {
+    ok: true,
+    reason: "ok",
+  };
 }
 
 function issueAIMoveWithInventoryUsage(context, plannedMove){
@@ -14059,6 +14105,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
           planeId,
           reasonCodes,
           rejectReasons,
+          errorMessage: fallbackDetails.errorMessage,
         });
         aiMoveScheduled = false;
         advanceTurn();
@@ -14126,11 +14173,8 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
 
   function launchFallbackIfNeeded(staleCheck){
     const fallbackMove = getFallbackAiMove(context) || getGuaranteedAnyLegalLaunch(context);
-    if(
-      fallbackMove?.plane
-      && Number.isFinite(fallbackMove?.vx)
-      && Number.isFinite(fallbackMove?.vy)
-    ){
+    const fallbackValidation = validateAiLaunchMoveCandidate(fallbackMove);
+    if(fallbackValidation.ok){
       issueAIMove(fallbackMove.plane, fallbackMove.vx, fallbackMove.vy);
       logAiDecision("stale_target_replanned", {
         planeId: plannedMove?.plane?.id ?? null,
@@ -14146,11 +14190,8 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     return false;
   }
 
-  if(
-    !plannedMove?.plane
-    || !Number.isFinite(plannedMove?.vx)
-    || !Number.isFinite(plannedMove?.vy)
-  ){
+  const plannedMoveValidation = validateAiLaunchMoveCandidate(plannedMove);
+  if(!plannedMoveValidation.ok){
     failSafeHandler("invalid_move_fail_safe", {
       goal: aiRoundState?.currentGoal || "invalid_move_fail_safe",
       plannedMove: {
@@ -14158,8 +14199,9 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
         vx: plannedMove?.vx ?? null,
         vy: plannedMove?.vy ?? null,
       },
-      rejectReasons: ["invalid_planned_move"],
-      reasonCodes: ["issue_move_validation_failed", "fail_safe_turn_advance"],
+      rejectReasons: [plannedMoveValidation.reason || "invalid_planned_move"],
+      reasonCodes: ["issue_move_validation_failed", "fail_safe_turn_advance", "invalid_plane_for_launch"],
+      errorMessage: plannedMoveValidation.message || null,
     });
     return;
   }
@@ -15986,6 +16028,7 @@ function doComputerMove(){
           planeId,
           reasonCodes,
           rejectReasons,
+          errorMessage: fallbackDetails.errorMessage,
         });
         aiMoveScheduled = false;
         advanceTurn();
@@ -16350,8 +16393,10 @@ function doComputerMove(){
     rejectReasons: ["blocked_path", "no_clear_lane"],
   });
 
+  const rejectedReserveReasons = [];
   const fallbackMove = getFallbackAiMove(modeContext);
-  if(fallbackMove){
+  const fallbackValidation = validateAiLaunchMoveCandidate(fallbackMove);
+  if(fallbackMove && fallbackValidation.ok){
     aiRoundState.currentGoal = fallbackMove.goalName || "fallback_legacy_logic";
     recordDecisionEvent("fallback_selected", {
       goal: aiRoundState.currentGoal,
@@ -16368,9 +16413,18 @@ function doComputerMove(){
     issueAIMoveWithInventoryUsage(modeContext, fallbackMove);
     return;
   }
+  if(fallbackMove && !fallbackValidation.ok){
+    rejectedReserveReasons.push(fallbackValidation.reason || "invalid_fallback_move");
+    logAiDecision("fallback_move_invalid", {
+      planeId: fallbackMove?.plane?.id ?? null,
+      reason: fallbackValidation.reason || "invalid_fallback_move",
+      message: fallbackValidation.message || null,
+    });
+  }
 
   const guaranteedLaunchMove = getGuaranteedAnyLegalLaunch(modeContext);
-  if(guaranteedLaunchMove){
+  const guaranteedValidation = validateAiLaunchMoveCandidate(guaranteedLaunchMove);
+  if(guaranteedLaunchMove && guaranteedValidation.ok){
     aiRoundState.currentGoal = guaranteedLaunchMove.goalName || "guaranteed_any_legal_launch";
     recordDecisionEvent("super_reserve_selected", {
       goal: aiRoundState.currentGoal,
@@ -16384,9 +16438,18 @@ function doComputerMove(){
     issueAIMoveWithInventoryUsage(modeContext, guaranteedLaunchMove);
     return;
   }
+  if(guaranteedLaunchMove && !guaranteedValidation.ok){
+    rejectedReserveReasons.push(guaranteedValidation.reason || "invalid_guaranteed_launch_move");
+    logAiDecision("super_reserve_move_invalid", {
+      planeId: guaranteedLaunchMove?.plane?.id ?? null,
+      reason: guaranteedValidation.reason || "invalid_guaranteed_launch_move",
+      message: guaranteedValidation.message || null,
+    });
+  }
 
   const forcedProgressMove = getForcedProgressLaunchMove(modeContext);
-  if(forcedProgressMove){
+  const forcedProgressValidation = validateAiLaunchMoveCandidate(forcedProgressMove);
+  if(forcedProgressMove && forcedProgressValidation.ok){
     aiRoundState.currentGoal = forcedProgressMove.goalName || "forced_progress_launch";
     recordDecisionEvent("forced_progress_selected", {
       goal: aiRoundState.currentGoal,
@@ -16401,11 +16464,21 @@ function doComputerMove(){
     issueAIMoveWithInventoryUsage(modeContext, forcedProgressMove);
     return;
   }
+  if(forcedProgressMove && !forcedProgressValidation.ok){
+    rejectedReserveReasons.push(forcedProgressValidation.reason || "invalid_forced_progress_move");
+    logAiDecision("forced_progress_move_invalid", {
+      planeId: forcedProgressMove?.plane?.id ?? null,
+      reason: forcedProgressValidation.reason || "invalid_forced_progress_move",
+      message: forcedProgressValidation.message || null,
+    });
+  }
 
   recordDecisionEvent("no_move_found", {
     goal: aiRoundState.currentGoal || "no_move_found",
     reasonCodes: ["all_strategies_failed", "fail_safe_turn_advance"],
-    rejectReasons: ["no_valid_move_found"],
+    rejectReasons: rejectedReserveReasons.length
+      ? ["no_valid_move_found", ...rejectedReserveReasons.slice(0, 3)]
+      : ["no_valid_move_found"],
   });
   logAiDecision("ai_no_move_fail_safe", {
     turn: aiRoundState.turnNumber,
@@ -16428,7 +16501,9 @@ function doComputerMove(){
       blueInventory: modeContext.blueInventoryCount,
     },
     reasonCodes: ["all_strategies_failed", "fail_safe_turn_advance"],
-    rejectReasons: ["no_valid_move_found"],
+    rejectReasons: rejectedReserveReasons.length
+      ? ["no_valid_move_found", ...rejectedReserveReasons.slice(0, 3)]
+      : ["no_valid_move_found"],
   });
 }
 
@@ -17068,6 +17143,28 @@ function findDirectFinisherMove(aiPlanes, enemies, options = {}){
 }
 
 function issueAIMove(plane, vx, vy){
+  const launchValidation = validateAiLaunchMoveCandidate({ plane, vx, vy });
+  if(!launchValidation.ok){
+    logAiDecision("issue_ai_move_invalid_input", {
+      planeId: plane?.id ?? null,
+      reason: launchValidation.reason || "invalid_plane_for_launch",
+      message: launchValidation.message || null,
+    });
+    if(typeof failSafeAdvanceTurn === "function"){
+      failSafeAdvanceTurn("invalid_move_fail_safe", {
+        goal: aiRoundState?.currentGoal || "invalid_move_fail_safe",
+        planeId: plane?.id ?? null,
+        reasonCodes: ["invalid_plane_for_launch", "fail_safe_turn_advance"],
+        rejectReasons: [launchValidation.reason || "invalid_plane_for_launch"],
+        errorMessage: launchValidation.message || null,
+      });
+    }
+    return {
+      ok: false,
+      reason: launchValidation.reason || "invalid_plane_for_launch",
+    };
+  }
+
   plane.angle = Math.atan2(vy, vx) + Math.PI/2;
   const launchAngleDeg = normalizeAngleDeg((Math.atan2(vy, vx) * 180 / Math.PI + 360) % 360);
   markPlaneLaunchedFromBase(plane);
@@ -17143,6 +17240,7 @@ function issueAIMove(plane, vx, vy){
     renderScoreboard();
   }
   roundTextTimer = 0;
+  return { ok: true };
 }
 function dist(a,b){ return Math.hypot(a.x-b.x,a.y-b.y); }
 function getRandomDeviation(distance, maxDev){
