@@ -10031,6 +10031,94 @@ function exportAiSelfAnalyzerGapJson(){
   return payloadObject;
 }
 
+function exportPlayerVsAiGapReportJson(){
+  const snapshot = getAiSelfAnalyzerSnapshot({ includeHistory: true });
+  const source = snapshot?.activeMatch || snapshot?.latestFinishedMatch;
+
+  const fallbackReport = {
+    reportType: "human_vs_ai_gap_report",
+    generatedAt: safeNowIso(),
+    sourceStartedAt: source?.startedAt || null,
+    sourceFinishedAt: source?.finishedAt || null,
+    status: "insufficient_data",
+    statusMessage: "Недостаточно данных для сравнения человека и ИИ. Сыграйте минимум один раунд с зафиксированными решениями.",
+    humanStrengths: [],
+    aiWeaknesses: [],
+    gapMetrics: {
+      reason: "missing_required_events",
+      required: ["human_decision", "ai_decision", "launch"],
+      available: {
+        humanDecisionEvents: 0,
+        aiDecisionEvents: 0,
+        launches: 0,
+      },
+    },
+    improvementBacklog: [],
+  };
+
+  if(!source){
+    if(typeof document === "undefined") return fallbackReport;
+    return fallbackReport;
+  }
+
+  const events = Array.isArray(source.events) ? source.events : [];
+  const humanDecisionEvents = events.filter((event) => event?.type === "human_decision");
+  const aiDecisionEvents = events.filter((event) => event?.type === "ai_decision");
+  const launches = events.filter((event) => event?.type === "launch");
+  const hasEnoughData = humanDecisionEvents.length > 0 && aiDecisionEvents.length > 0 && launches.length > 0;
+
+  let report = fallbackReport;
+  if(hasEnoughData){
+    const builtReport = buildAiSelfAnalyzerGapReport(source);
+    if(builtReport){
+      report = {
+        reportType: builtReport.reportType,
+        generatedAt: builtReport.generatedAt,
+        sourceStartedAt: builtReport.sourceStartedAt,
+        sourceFinishedAt: builtReport.sourceFinishedAt,
+        status: "ok",
+        statusMessage: "Сравнительный отчёт успешно собран.",
+        humanStrengths: builtReport.sections?.humanStrengths || [],
+        aiWeaknesses: builtReport.sections?.aiWeaknesses || [],
+        gapMetrics: builtReport.sections?.gapMetrics || {},
+        improvementBacklog: builtReport.sections?.improvementBacklog || [],
+        sections: builtReport.sections,
+        raw: builtReport.raw,
+      };
+    }
+  } else {
+    report = {
+      ...fallbackReport,
+      gapMetrics: {
+        ...fallbackReport.gapMetrics,
+        available: {
+          humanDecisionEvents: humanDecisionEvents.length,
+          aiDecisionEvents: aiDecisionEvents.length,
+          launches: launches.length,
+        },
+      },
+    };
+  }
+
+  if(typeof document === "undefined"){
+    return report;
+  }
+
+  const payload = JSON.stringify(report, null, 2);
+  const blob = new Blob([payload], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const suffix = safeNowIso().replace(/[:.]/g, "-");
+  link.href = url;
+  link.download = `player-vs-ai-gap-report-${suffix}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+
+  return report;
+}
+
 function getAiSelfAnalyzerSnapshot(options = {}){
   const includeHistory = Boolean(options?.includeHistory);
   const activeMatch = aiSelfAnalyzerState.activeMatch
@@ -10162,6 +10250,7 @@ if(typeof window !== "undefined"){
   window.exportLatestAiSelfAnalyzerJson = exportLatestAiSelfAnalyzerJson;
   window.exportAiSelfAnalyzerTurnsJson = exportAiSelfAnalyzerTurnsJson;
   window.exportAiSelfAnalyzerGapJson = exportAiSelfAnalyzerGapJson;
+  window.exportPlayerVsAiGapReportJson = exportPlayerVsAiGapReportJson;
   window.getAiSelfAnalyzerSnapshot = getAiSelfAnalyzerSnapshot;
   window.AI_DEBUG_CMD = AI_DEBUG_CMD;
 }
