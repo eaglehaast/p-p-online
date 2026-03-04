@@ -11526,6 +11526,11 @@ const AI_CENTER_CONTROL_DISTANCE = MAX_DRAG_DISTANCE * 0.35;
 const AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD = 2;
 const AI_INVENTORY_SOFT_FALLBACK_COOLDOWN_TURNS = 3;
 const AI_FALLBACK_DIRECT_QUALITY_MIN = 0.4;
+const AI_WALL_LOCKED_TARGET_COMBAT_RADIUS = ATTACK_RANGE_PX;
+const AI_WALL_LOCKED_MIRROR_BONUS = 0.07;
+const AI_WALL_LOCKED_POOR_DIRECT_QUALITY_PENALTY = 0.2;
+const AI_WALL_LOCKED_POOR_DIRECT_SCORE_PENALTY = ATTACK_RANGE_PX * 0.2;
+const AI_WALL_LOCKED_DIRECT_TIE_BREAK_PENALTY = 0.001;
 const AI_FALLBACK_SAFE_ANGLE_SHORT_SCALE = 0.38;
 const AI_FALLBACK_SAFE_ANGLE_CANDIDATE_DEG = Object.freeze([28, -28, 44, -44, 62, -62, 88, -88]);
 const AI_FALLBACK_RICOCHET_PREP_SCALE = 0.66;
@@ -15164,6 +15169,7 @@ function getFallbackAiMove(context){
   let bestPreparation = null;
   let bestPreparationScore = Number.POSITIVE_INFINITY;
   let bestPoorDirectCandidate = null;
+  const wallLockedRicochetPreferredTargets = new Set();
   const dynamiteAvailable = hasBlueDynamiteAvailable();
 
   for(const plane of aiPlanes){
@@ -15339,16 +15345,45 @@ function getFallbackAiMove(context){
           vy,
           totalDist: directDist,
           directAttackScore,
-          score: directScoreAfter,
+          score: directScoreAfter + (wallLockedRicochetPreferredTargets.has(enemy?.id)
+            ? AI_WALL_LOCKED_DIRECT_TIE_BREAK_PENALTY
+            : 0),
           idleTurns: getAiPlaneIdleTurns(plane),
         };
+        if(wallLockedRicochetPreferredTargets.has(enemy?.id)){
+          directCandidate.reasonCode = "wall_locked_target_prefers_ricochet";
+        }
         if(compareAiCandidateByScoreAndRotation(directCandidate, best, ["fallback_attack", "direct", enemy?.id ?? ""])){
           best = directCandidate;
         }
       } else {
         const directPathBlocked = true;
+        const directDist = Math.hypot(enemy.x - plane.x, enemy.y - plane.y);
+        const wallLockedTargetTrigger = directPathBlocked && directDist <= AI_WALL_LOCKED_TARGET_COMBAT_RADIUS;
         const mirrorPressureTarget = isMirrorPressureTarget(enemy, context);
         const mirrorPressureBoost = mirrorPressureTarget ? AI_MIRROR_PATH_PRESSURE_BONUS : 0;
+
+        const blockedDirectQuality = getFallbackDirectAttackQuality(plane, enemy, directDist, riskProfile);
+        if(blockedDirectQuality < AI_FALLBACK_DIRECT_QUALITY_MIN){
+          const qualityPenalty = wallLockedTargetTrigger ? AI_WALL_LOCKED_POOR_DIRECT_QUALITY_PENALTY : 0;
+          const adjustedQuality = Math.max(0, blockedDirectQuality - qualityPenalty);
+          const blockedScorePenalty = wallLockedTargetTrigger ? AI_WALL_LOCKED_POOR_DIRECT_SCORE_PENALTY : 0;
+          const blockedDirectScore = getAiPlaneAdjustedScore(directDist, plane) + blockedScorePenalty;
+          const poorDirectCandidate = {
+            plane,
+            enemy,
+            directQuality: adjustedQuality,
+            directAttackScore: blockedDirectScore,
+            totalDist: directDist,
+            score: blockedDirectScore,
+            idleTurns: getAiPlaneIdleTurns(plane),
+            reasonCode: wallLockedTargetTrigger ? "wall_locked_target_prefers_ricochet" : "blocked_direct_path",
+          };
+          if(compareAiCandidateByScoreAndRotation(poorDirectCandidate, bestPoorDirectCandidate, ["fallback_attack", "poor_direct_blocked", enemy?.id ?? ""])){
+            bestPoorDirectCandidate = poorDirectCandidate;
+          }
+        }
+
         const mirror = riskProfile === "conservative"
           ? null
           : findMirrorShot(plane, enemy, {
@@ -15375,16 +15410,28 @@ function getFallbackAiMove(context){
           const mirrorWeight = riskProfile === "comeback" ? 0.82 : 1;
           const blockedDirectBonus = directPathBlocked ? AI_MIRROR_SCORE_BLOCKED_DIRECT_BONUS : 0;
           const pressureBonus = mirrorPressureTarget ? AI_MIRROR_SCORE_PRESSURE_BONUS : 0;
-          const mirrorBonus = Math.min(0.2, blockedDirectBonus + pressureBonus);
+          const wallLockedBonus = wallLockedTargetTrigger ? AI_WALL_LOCKED_MIRROR_BONUS : 0;
+          const mirrorBonus = Math.min(0.2, blockedDirectBonus + pressureBonus + wallLockedBonus);
           const mirrorScore = getAiPlaneAdjustedScore(mirror.totalDist * mirrorWeight * (1 - mirrorBonus), plane);
+          const reasonCode = wallLockedTargetTrigger
+            ? "wall_locked_target_prefers_ricochet"
+            : (directPathBlocked ? "direct_path_blocked" : "tactical_preference");
+          if(wallLockedTargetTrigger && enemy?.id){
+            wallLockedRicochetPreferredTargets.add(enemy.id);
+          }
           logAiDecision("mirror_selected_reason", {
             source: "fallback_attack",
             reason: directPathBlocked ? "direct_path_blocked" : "tactical_preference",
+            reasonCode,
             planeId: plane.id,
             enemyId: enemy.id,
             mirrorBonus: Number(mirrorBonus.toFixed(3)),
             blockedDirectBonus: Number(blockedDirectBonus.toFixed(3)),
             pressureBonus: Number(pressureBonus.toFixed(3)),
+            wallLockedBonus: Number(wallLockedBonus.toFixed(3)),
+            wallLockedTargetTrigger,
+            directDistance: Number(directDist.toFixed(1)),
+            combatRadius: Number(AI_WALL_LOCKED_TARGET_COMBAT_RADIUS.toFixed(1)),
             clearSky: isCurrentMapClearSky(),
             pathDistance: Number(mirror.totalDist.toFixed(1)),
           });
