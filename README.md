@@ -39,7 +39,7 @@ This smoke script verifies that shield reflection removes only the shield, while
 For **Computer** mode, the game now records each finished match in browser storage:
 
 - launches (speed, direction, power ratio),
-- AI decision snapshots (`ai_decision`: stage, goal, chosen plane, compact reasons/reject reasons),
+- AI decision snapshots (`ai_decision`: stage, goal, chosen plane, compact reasons/reject reasons, selected move details),
 - turn switches,
 - per-round eliminations,
 - auto-generated behavior patterns,
@@ -52,6 +52,15 @@ window.exportLatestAiSelfAnalyzerJson()
 ```
 
 This downloads a file like `ai-self-analyzer-<timestamp>.json`.
+
+To export AI turn-by-turn report (works even before match is finished), run:
+
+```js
+window.exportAiSelfAnalyzerTurnsJson()
+```
+
+This downloads a file like `ai-self-analyzer-turns-<timestamp>.json`.
+The file includes full active match state (or latest finished match if no active one) plus `aiMotivation.decisionEvents` — an easy-to-filter sequence of AI decisions with selected move vectors and compact reasons.
 
 For quick live diagnostics during an active match, use compact AI debug commands:
 
@@ -89,6 +98,7 @@ How to interpret:
 - `planeId`: which plane was selected (or `null` if no candidate was chosen),
 - `reasonCodes`: short “why selected / why switched” explanation,
 - `rejectReasons`: compact “why candidate was rejected” notes.
+- `selectedMove`: what AI finally launched (`vx`, `vy`, `totalDist`, `goalName`, `decisionReason`).
 
 Decision events are capped (last N entries kept) to prevent JSON from growing too much during long sessions.
 
