@@ -9600,6 +9600,39 @@ function exportAiSelfAnalyzerTurnsJson(){
   const turnsCount = Array.isArray(source.turns) ? source.turns.length : 0;
   const events = Array.isArray(source.events) ? source.events : [];
   const decisionEvents = events.filter((event) => event?.type === "ai_decision");
+  const decisionReport = decisionEvents.map((event) => {
+    const selectedMove = event?.selectedMove && typeof event.selectedMove === "object"
+      ? {
+        planeId: event.selectedMove.planeId ?? null,
+        vx: Number.isFinite(event.selectedMove.vx) ? event.selectedMove.vx : null,
+        vy: Number.isFinite(event.selectedMove.vy) ? event.selectedMove.vy : null,
+        totalDist: Number.isFinite(event.selectedMove.totalDist) ? event.selectedMove.totalDist : null,
+        decisionReason: event.selectedMove.decisionReason || null,
+      }
+      : null;
+
+    const consideredMoves = Array.isArray(event?.consideredMoves)
+      ? event.consideredMoves
+        .slice(0, 3)
+        .map((candidate) => ({
+          planeId: candidate?.planeId ?? null,
+          score: Number.isFinite(candidate?.score) ? candidate.score : null,
+          reason: candidate?.reason || null,
+          rejectedBy: candidate?.rejectedBy || null,
+        }))
+      : [];
+
+    return {
+      at: event?.at || null,
+      roundNumber: Number.isFinite(event?.roundNumber) ? event.roundNumber : null,
+      turnColor: event?.turnColor || null,
+      stage: event?.stage || null,
+      goal: event?.goal || null,
+      selectedMove,
+      consideredMoves,
+      rejectReasons: Array.isArray(event?.rejectReasons) ? event.rejectReasons : [],
+    };
+  });
   const launches = events.filter((event) => event?.type === "launch");
 
   const payloadObject = {
@@ -9612,6 +9645,7 @@ function exportAiSelfAnalyzerTurnsJson(){
     turnsCount,
     launchEventsCount: launches.length,
     aiDecisionEventsCount: decisionEvents.length,
+    decisionReport,
     aiMotivation: {
       description: "Лента решений ИИ по ходу матча. Показывает, какие варианты рассматривались, что было отвергнуто и какой ход выбран.",
       decisionEvents,
