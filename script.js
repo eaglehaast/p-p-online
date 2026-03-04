@@ -13242,7 +13242,7 @@ function tryPlaceBlueDefensiveMine(context, plannedMove){
     if(!point) return true;
     const currentToLandingDistance = Math.hypot(point.x - plane.x, point.y - plane.y);
     const landingToMineDistance = Math.hypot(point.x - landingPoint.x, point.y - landingPoint.y);
-    const mineDangerRadius = MINE_EFFECT_RADIUS * 1.1;
+    const mineDangerRadius = MINE_TRIGGER_RADIUS * 1.1;
     const blocksImmediateCorridor = currentToLandingDistance <= mineDangerRadius;
     const blocksLandingCorridor = landingToMineDistance <= mineDangerRadius;
     return blocksImmediateCorridor || blocksLandingCorridor;
