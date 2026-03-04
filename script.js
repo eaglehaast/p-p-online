@@ -17168,6 +17168,121 @@ function doComputerMove(){
     });
   }
 
+  const currentGoalText = `${aiRoundState.currentGoal || ""}`.toLowerCase();
+  const emergencyStageActive = currentGoalText.includes("critical_base_threat")
+    || currentGoalText.includes("emergency_");
+  if(!emergencyStageActive && typeof planPathToPoint === "function"){
+    const safeAiPlanes = Array.isArray(modeContext?.aiPlanes)
+      ? modeContext.aiPlanes.filter((plane) => (
+          isPlaneLaunchStateReady(plane)
+          && !flyingPoints.some((fp) => fp.plane === plane)
+        ))
+      : [];
+
+    const enemyTargets = Array.isArray(modeContext?.enemies)
+      ? modeContext.enemies.filter((enemy) => enemy?.isAlive)
+      : [];
+    const cargoTargets = Array.isArray(cargoState)
+      ? cargoState.filter((cargo) => cargo?.state === "ready").map((cargo) => {
+          const center = getCargoVisualCenter(cargo);
+          return {
+            targetType: "cargo",
+            id: cargo?.id ?? null,
+            x: center?.x,
+            y: center?.y,
+            payload: cargo,
+          };
+        })
+      : [];
+    const enemyBase = getBaseAnchor("green");
+    const baseTargets = enemyBase && Number.isFinite(enemyBase.x) && Number.isFinite(enemyBase.y)
+      ? [{ targetType: "enemy_base", id: "base_green", x: enemyBase.x, y: enemyBase.y, payload: enemyBase }]
+      : [];
+
+    const prioritizedGroups = [
+      {
+        kind: "enemy_plane",
+        targets: enemyTargets.map((enemy) => ({
+          targetType: "enemy_plane",
+          id: enemy?.id ?? null,
+          x: enemy?.x,
+          y: enemy?.y,
+          payload: enemy,
+        })),
+      },
+      { kind: "cargo", targets: cargoTargets },
+      { kind: "enemy_base", targets: baseTargets },
+    ];
+
+    let safeShortMove = null;
+    const shortMoveMaxDist = Math.min(MAX_DRAG_DISTANCE * 0.42, ATTACK_RANGE_PX * 0.85);
+
+    for(const group of prioritizedGroups){
+      for(const plane of safeAiPlanes){
+        const nearestTarget = group.targets.reduce((best, target) => {
+          if(!Number.isFinite(target?.x) || !Number.isFinite(target?.y)) return best;
+          if(!best) return target;
+          const bestDist = Math.hypot((best.x || 0) - plane.x, (best.y || 0) - plane.y);
+          const nextDist = Math.hypot((target.x || 0) - plane.x, (target.y || 0) - plane.y);
+          return nextDist < bestDist ? target : best;
+        }, null);
+        if(!nearestTarget) continue;
+
+        const plannedMove = planPathToPoint(plane, nearestTarget.x, nearestTarget.y, {
+          goalName: "safe_short_fallback_progress",
+          decisionReason: "safe_short_fallback_progress",
+        });
+        if(!plannedMove) continue;
+
+        const baseDist = Number.isFinite(plannedMove.baseTotalDist) && plannedMove.baseTotalDist > 0
+          ? plannedMove.baseTotalDist
+          : (Number.isFinite(plannedMove.totalDist) ? plannedMove.totalDist : 0);
+        if(!Number.isFinite(baseDist) || baseDist <= 0) continue;
+
+        const distanceScale = Math.max(0.22, Math.min(0.4, shortMoveMaxDist / baseDist));
+        const shortMove = {
+          ...plannedMove,
+          plane,
+          vx: plannedMove.vx * distanceScale,
+          vy: plannedMove.vy * distanceScale,
+          totalDist: baseDist * distanceScale,
+          goalName: "safe_short_fallback_progress",
+          decisionReason: `safe_short_fallback_progress_${group.kind}`,
+          targetType: group.kind,
+        };
+
+        const shortMoveValidation = validateAiLaunchMoveCandidate(shortMove);
+        if(!shortMoveValidation.ok) continue;
+
+        safeShortMove = { move: shortMove, target: nearestTarget, group: group.kind };
+        break;
+      }
+      if(safeShortMove) break;
+    }
+
+    if(safeShortMove){
+      aiRoundState.currentGoal = "safe_short_fallback_progress";
+      recordDecisionEvent("safe_short_fallback_selected", {
+        goal: aiRoundState.currentGoal,
+        move: safeShortMove.move,
+        reasonCodes: [
+          "safe_short_fallback_progress",
+          "mode_fallback_gap_covered",
+          `safe_short_target_${safeShortMove.group}`,
+        ],
+      });
+      logAiDecision("safe_short_fallback_selected", {
+        planeId: safeShortMove.move.plane?.id ?? null,
+        targetType: safeShortMove.group,
+        targetId: safeShortMove.target?.id ?? null,
+        distance: Number((safeShortMove.move.totalDist || 0).toFixed(1)),
+        reasonCode: "safe_short_fallback_progress",
+      });
+      issueAIMoveWithInventoryUsage(modeContext, safeShortMove.move);
+      return;
+    }
+  }
+
   recordDecisionEvent("no_move_found", {
     goal: aiRoundState.currentGoal || "no_move_found",
     reasonCodes: ["all_strategies_failed", "fail_safe_turn_advance"],
