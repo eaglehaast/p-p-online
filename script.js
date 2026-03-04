@@ -17951,6 +17951,11 @@ function findDirectFinisherMove(aiPlanes, enemies, options = {}){
 
         const hasObjectiveValue = hasDirectFinisherObjectiveValue(plane, enemy, landingX, landingY);
         const goalName = `${options?.goalName || aiRoundState?.currentGoal || ""}`.toLowerCase();
+        const emergencyPenaltyGuard = goalName.includes("critical_threat_emergency_move")
+          || goalName.includes("critical_base_threat")
+          || goalName.includes("emergency_base_defense")
+          || goalName.includes("emergency_base_hold_position")
+          || goalName.includes("emergency_");
         const isCriticalBaseDefense = isExplicitDefensiveGoal(goalName);
         const highImmediateResponse = landingThreatCount > 0 && (
           landingThreatCount >= 2
@@ -17962,8 +17967,9 @@ function findDirectFinisherMove(aiPlanes, enemies, options = {}){
           const nearestFactor = Number.isFinite(nearestLandingThreatDist)
             ? Math.max(0, 1 - (nearestLandingThreatDist / landingThreatRadius))
             : 0;
+          const unprofitableTradeNearestFactorCoeff = emergencyPenaltyGuard ? 0.095 : 0.1064;
           const unprofitableTradePenalty = ATTACK_RANGE_PX * (
-            0.08 + nearestFactor * 0.095 + (landingThreatCount - 1) * 0.025
+            0.08 + nearestFactor * unprofitableTradeNearestFactorCoeff + (landingThreatCount - 1) * 0.025
           );
           biasedAdjustedDist += unprofitableTradePenalty;
           logAiDecision("direct_finisher_unprofitable_trade_penalty", {
