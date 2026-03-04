@@ -9301,7 +9301,7 @@ function startAiSelfAnalyzerMatchIfNeeded(){
     mapIndex: settings?.mapIndex ?? null,
     rounds: [],
     turns: [],
-    eventTypes: ["launch", "ai_decision"],
+    eventTypes: ["launch", "ai_decision", "human_decision"],
     events: [],
     summary: null,
   };
@@ -9313,12 +9313,14 @@ function recordAiSelfAnalyzerEvent(event){
 
   active.events.push(event);
 
-  const decisionEvents = active.events.filter((entry) => entry?.type === "ai_decision");
+  const decisionEvents = active.events.filter((entry) => (
+    entry?.type === "ai_decision" || entry?.type === "human_decision"
+  ));
   const overflow = decisionEvents.length - AI_SELF_ANALYZER_MAX_DECISION_EVENTS;
   if(overflow > 0){
     let removed = 0;
     active.events = active.events.filter((entry) => {
-      if(entry?.type !== "ai_decision") return true;
+      if(entry?.type !== "ai_decision" && entry?.type !== "human_decision") return true;
       if(removed < overflow){
         removed += 1;
         return false;
@@ -9394,6 +9396,163 @@ function recordAiSelfAnalyzerDecision(stage, details = {}){
 
   if(consideredMoves.length > 0){
     event.consideredMoves = consideredMoves;
+  }
+
+  recordAiSelfAnalyzerEvent(event);
+}
+
+function getHumanDecisionLandingPoint(plane, vx, vy){
+  if(!plane) return null;
+  const moveDurationSec = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
+    ? FIELD_FLIGHT_DURATION_SEC
+    : 1;
+  return {
+    x: plane.x + vx * moveDurationSec,
+    y: plane.y + vy * moveDurationSec,
+  };
+}
+
+function getHumanDecisionNearestTarget(plane, landingPoint){
+  if(!plane || !landingPoint) return null;
+  const enemyColor = plane.color === "blue" ? "green" : "blue";
+  const candidates = [];
+
+  points
+    .filter((candidate) => candidate?.color === enemyColor && candidate !== plane && isPlaneTargetable(candidate))
+    .forEach((enemyPlane) => {
+      candidates.push({
+        kind: "enemy_plane",
+        id: ensurePlaneAnalyticsId(enemyPlane),
+        distance: dist(landingPoint, enemyPlane),
+      });
+    });
+
+  const enemyBase = getBaseAnchor(enemyColor);
+  if(enemyBase){
+    candidates.push({
+      kind: "enemy_base",
+      id: `base_${enemyColor}`,
+      distance: dist(landingPoint, enemyBase),
+    });
+  }
+
+  cargoState
+    .filter((cargo) => cargo?.state === "ready")
+    .forEach((cargo, cargoIndex) => {
+      const cargoCenter = getCargoVisualCenter(cargo);
+      candidates.push({
+        kind: "cargo",
+        id: `cargo_${cargoIndex}`,
+        distance: dist(landingPoint, cargoCenter),
+      });
+    });
+
+  getAvailableFlagsByColor(enemyColor).forEach((flag) => {
+    const flagAnchor = getFlagAnchor(flag);
+    candidates.push({
+      kind: "enemy_flag",
+      id: flag?.id || `flag_${enemyColor}`,
+      distance: dist(landingPoint, flagAnchor),
+    });
+  });
+
+  if(candidates.length === 0) return null;
+  const nearest = candidates.reduce((best, candidate) => (
+    !best || candidate.distance < best.distance ? candidate : best
+  ), null);
+
+  return {
+    kind: nearest.kind,
+    id: nearest.id,
+    distance: Number(nearest.distance.toFixed(1)),
+  };
+}
+
+function evaluateHumanDecisionRisk(plane, landingPoint){
+  if(!plane || !landingPoint) return { score: null };
+  const enemyColor = plane.color === "blue" ? "green" : "blue";
+  const enemyPlanes = points.filter((candidate) => candidate?.color === enemyColor && isPlaneTargetable(candidate));
+  const nearestEnemyDistance = enemyPlanes.reduce((best, enemyPlane) => {
+    const nextDistance = dist(landingPoint, enemyPlane);
+    return Math.min(best, nextDistance);
+  }, Number.POSITIVE_INFINITY);
+
+  const enemyBase = getBaseAnchor(enemyColor);
+  const enemyBaseDistance = enemyBase ? dist(landingPoint, enemyBase) : Number.POSITIVE_INFINITY;
+  const hasClearEnemyLane = enemyPlanes.some((enemyPlane) => isPathClear(enemyPlane.x, enemyPlane.y, landingPoint.x, landingPoint.y));
+
+  let score = 0;
+  if(Number.isFinite(nearestEnemyDistance)){
+    if(nearestEnemyDistance <= ATTACK_RANGE_PX * 0.7) score += 0.65;
+    else if(nearestEnemyDistance <= ATTACK_RANGE_PX) score += 0.45;
+    else if(nearestEnemyDistance <= ATTACK_RANGE_PX * 1.35) score += 0.25;
+  }
+  if(Number.isFinite(enemyBaseDistance)){
+    if(enemyBaseDistance <= ATTACK_RANGE_PX * 0.85) score += 0.35;
+    else if(enemyBaseDistance <= ATTACK_RANGE_PX * 1.2) score += 0.18;
+  }
+  if(hasClearEnemyLane) score += 0.18;
+
+  return {
+    score: Number(Math.min(1, score).toFixed(3)),
+    nearestEnemyDistance: Number.isFinite(nearestEnemyDistance) ? Number(nearestEnemyDistance.toFixed(1)) : null,
+    enemyBaseDistance: Number.isFinite(enemyBaseDistance) ? Number(enemyBaseDistance.toFixed(1)) : null,
+    hasClearEnemyLane,
+  };
+}
+
+function getHumanDecisionTag(nearestTarget, risk){
+  if(nearestTarget?.kind === "enemy_plane" && Number.isFinite(nearestTarget?.distance) && nearestTarget.distance <= ATTACK_RANGE_PX * 0.9){
+    return "attack";
+  }
+  if(nearestTarget?.kind === "cargo" && Number.isFinite(nearestTarget?.distance) && nearestTarget.distance <= ATTACK_RANGE_PX * 0.85){
+    return "cargo";
+  }
+  if(nearestTarget?.kind === "enemy_base" && Number.isFinite(nearestTarget?.distance) && nearestTarget.distance <= ATTACK_RANGE_PX){
+    return "block";
+  }
+  if(Number.isFinite(risk?.score) && risk.score <= 0.35){
+    return "safe";
+  }
+  return "attack";
+}
+
+function recordHumanDecisionEvent(plane, vx, vy){
+  const active = aiSelfAnalyzerState.activeMatch;
+  if(!active || !plane) return;
+
+  const planeId = ensurePlaneAnalyticsId(plane);
+  const landingPoint = getHumanDecisionLandingPoint(plane, vx, vy);
+  const nearestTarget = getHumanDecisionNearestTarget(plane, landingPoint);
+  const risk = evaluateHumanDecisionRisk(plane, landingPoint);
+  const decisionTag = getHumanDecisionTag(nearestTarget, risk);
+  const totalDist = Math.hypot(vx, vy) * FIELD_FLIGHT_DURATION_SEC;
+
+  const event = {
+    type: "human_decision",
+    at: safeNowIso(),
+    roundNumber,
+    turnColor: turnColors[turnIndex] ?? null,
+    stage: "human_confirm",
+    goal: nearestTarget?.kind ?? decisionTag,
+    planeId,
+    reasonCodes: [decisionTag],
+    selectedMove: {
+      planeId,
+      vx: Number.isFinite(vx) ? Number(vx.toFixed(3)) : null,
+      vy: Number.isFinite(vy) ? Number(vy.toFixed(3)) : null,
+      totalDist: Number.isFinite(totalDist) ? Number(totalDist.toFixed(2)) : null,
+      goalName: nearestTarget?.kind ?? null,
+      decisionReason: decisionTag,
+    },
+    decisionTag,
+  };
+
+  if(nearestTarget){
+    event.nearestTarget = nearestTarget;
+  }
+  if(Number.isFinite(risk?.score)){
+    event.risk = risk;
   }
 
   recordAiSelfAnalyzerEvent(event);
@@ -9599,7 +9758,8 @@ function exportAiSelfAnalyzerTurnsJson(){
 
   const turnsCount = Array.isArray(source.turns) ? source.turns.length : 0;
   const events = Array.isArray(source.events) ? source.events : [];
-  const decisionEvents = events.filter((event) => event?.type === "ai_decision");
+  const aiDecisionEvents = events.filter((event) => event?.type === "ai_decision");
+  const humanDecisionEvents = events.filter((event) => event?.type === "human_decision");
   const launches = events.filter((event) => event?.type === "launch");
 
   const payloadObject = {
@@ -9611,10 +9771,15 @@ function exportAiSelfAnalyzerTurnsJson(){
     roundNumber: source.rounds?.length || null,
     turnsCount,
     launchEventsCount: launches.length,
-    aiDecisionEventsCount: decisionEvents.length,
+    aiDecisionEventsCount: aiDecisionEvents.length,
+    humanDecisionEventsCount: humanDecisionEvents.length,
     aiMotivation: {
       description: "Лента решений ИИ по ходу матча. Показывает, какие варианты рассматривались, что было отвергнуто и какой ход выбран.",
-      decisionEvents,
+      decisionEvents: aiDecisionEvents,
+    },
+    humanMotivation: {
+      description: "Лента подтверждённых ходов человека в компактном формате, сопоставимом с ai_decision.",
+      decisionEvents: humanDecisionEvents,
     },
     source,
   };
@@ -11580,6 +11745,7 @@ function onHandleUp(){
     shieldBreakLockTarget:null
   });
   recordAiSelfAnalyzerLaunch(plane, vx, vy, "human");
+  recordHumanDecisionEvent(plane, vx, vy);
 
   if(!hasShotThisRound){
     hasShotThisRound = true;
