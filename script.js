@@ -9358,6 +9358,40 @@ function recordAiSelfAnalyzerDecision(stage, details = {}){
     event.rejectReasons = compactRejectReasons;
   }
 
+  const move = details?.move;
+  if(move && typeof move === "object"){
+    const movePlane = move.plane;
+    const movePlaneId = movePlane?.id ?? details.planeId ?? null;
+    const moveDistance = Number.isFinite(move.totalDist)
+      ? move.totalDist
+      : (Number.isFinite(move.moveTotalDist) ? move.moveTotalDist : null);
+
+    event.selectedMove = {
+      planeId: movePlaneId,
+      vx: Number.isFinite(move.vx) ? Number(move.vx.toFixed(3)) : null,
+      vy: Number.isFinite(move.vy) ? Number(move.vy.toFixed(3)) : null,
+      totalDist: Number.isFinite(moveDistance) ? Number(moveDistance.toFixed(2)) : null,
+      goalName: move.goalName || null,
+      decisionReason: move.decisionReason || null,
+    };
+  }
+
+  const consideredMoves = Array.isArray(details?.consideredMoves)
+    ? details.consideredMoves
+      .slice(0, 6)
+      .map((candidate) => ({
+        planeId: candidate?.planeId ?? candidate?.plane?.id ?? null,
+        score: Number.isFinite(candidate?.score) ? Number(candidate.score.toFixed(3)) : null,
+        reason: candidate?.reason || null,
+        rejectedBy: candidate?.rejectedBy || null,
+      }))
+      .filter((candidate) => candidate.planeId || candidate.score !== null || candidate.reason || candidate.rejectedBy)
+    : [];
+
+  if(consideredMoves.length > 0){
+    event.consideredMoves = consideredMoves;
+  }
+
   recordAiSelfAnalyzerEvent(event);
 }
 
@@ -9550,6 +9584,55 @@ function exportLatestAiSelfAnalyzerJson(){
   return latest;
 }
 
+function exportAiSelfAnalyzerTurnsJson(){
+  const snapshot = getAiSelfAnalyzerSnapshot({ includeHistory: true });
+  const activeMatch = snapshot?.activeMatch;
+  const latestFinishedMatch = snapshot?.latestFinishedMatch;
+  const source = activeMatch || latestFinishedMatch;
+  if(!source){
+    return null;
+  }
+
+  const turnsCount = Array.isArray(source.turns) ? source.turns.length : 0;
+  const events = Array.isArray(source.events) ? source.events : [];
+  const decisionEvents = events.filter((event) => event?.type === "ai_decision");
+  const launches = events.filter((event) => event?.type === "launch");
+
+  const payloadObject = {
+    reportType: activeMatch ? "active_turns_report" : "finished_match_turns_report",
+    generatedAt: safeNowIso(),
+    isMatchFinished: Boolean(source.finishedAt),
+    sourceStartedAt: source.startedAt || null,
+    sourceFinishedAt: source.finishedAt || null,
+    roundNumber: source.rounds?.length || null,
+    turnsCount,
+    launchEventsCount: launches.length,
+    aiDecisionEventsCount: decisionEvents.length,
+    aiMotivation: {
+      description: "Лента решений ИИ по ходу матча. Показывает, какие варианты рассматривались, что было отвергнуто и какой ход выбран.",
+      decisionEvents,
+    },
+    source,
+  };
+
+  if(typeof document === "undefined"){
+    return payloadObject;
+  }
+
+  const payload = JSON.stringify(payloadObject, null, 2);
+  const blob = new Blob([payload], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const suffix = safeNowIso().replace(/[:.]/g, "-");
+  link.href = url;
+  link.download = `ai-self-analyzer-turns-${suffix}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  return payloadObject;
+}
+
 function getAiSelfAnalyzerSnapshot(options = {}){
   const includeHistory = Boolean(options?.includeHistory);
   const activeMatch = aiSelfAnalyzerState.activeMatch
@@ -9679,6 +9762,7 @@ function AI_DEBUG_CMD(command, arg){
 
 if(typeof window !== "undefined"){
   window.exportLatestAiSelfAnalyzerJson = exportLatestAiSelfAnalyzerJson;
+  window.exportAiSelfAnalyzerTurnsJson = exportAiSelfAnalyzerTurnsJson;
   window.getAiSelfAnalyzerSnapshot = getAiSelfAnalyzerSnapshot;
   window.AI_DEBUG_CMD = AI_DEBUG_CMD;
 }
@@ -15808,6 +15892,8 @@ function doComputerMove(){
       planeId: data.planeId ?? data.move?.plane?.id ?? null,
       reasonCodes: data.reasonCodes,
       rejectReasons: data.rejectReasons,
+      move: data.move,
+      consideredMoves: data.consideredMoves,
     });
   };
 
