@@ -12152,6 +12152,8 @@ const AI_PLANNED_MOVE_TARGET_REVALIDATION_RADIUS_PX = ATTACK_RANGE_PX * 0.45;
 const AI_OPENING_AGGRESSION_BIAS_TURN_LIMIT = 2;
 const AI_OPENING_AGGRESSION_BIAS_MAX_LEAD = 1;
 const AI_OPENING_AGGRESSION_BIAS_DISCOUNT = 0.92;
+const AI_PRE_FALLBACK_ATTACK_RADIUS = ATTACK_RANGE_PX * 1.05;
+const AI_IMMEDIATE_RESPONSE_DANGER_RADIUS = ATTACK_RANGE_PX * 0.95;
 const AI_FLAG_PRESSURE_SAFETY_WINDOW_TURN_LIMIT = 4;
 const AI_FLAG_PRESSURE_NEARBY_THREAT_DISTANCE = ATTACK_RANGE_PX * 1.55;
 const AI_ANGLE_REPEAT_HISTORY_LIMIT = 3;
@@ -15922,6 +15924,77 @@ function planModeDrivenAiMove(context){
   return null;
 }
 
+function getImmediateResponseThreatMeta(context, landingX, landingY, primaryEnemy = null){
+  if(!context || !Number.isFinite(landingX) || !Number.isFinite(landingY)){
+    return { count: 0, nearestDist: Number.POSITIVE_INFINITY };
+  }
+
+  let count = 0;
+  let nearestDist = Number.POSITIVE_INFINITY;
+  for(const enemy of context.enemies || []){
+    if(!enemy?.isAlive || enemy === primaryEnemy) continue;
+    const enemyDist = Math.hypot((enemy.x || 0) - landingX, (enemy.y || 0) - landingY);
+    if(enemyDist > AI_IMMEDIATE_RESPONSE_DANGER_RADIUS) continue;
+    if(!isPathClear(enemy.x, enemy.y, landingX, landingY)) continue;
+    count += 1;
+    if(enemyDist < nearestDist) nearestDist = enemyDist;
+  }
+
+  return { count, nearestDist };
+}
+
+function findPreFallbackAttackMove(context){
+  if(!context?.aiPlanes?.length || !context?.enemies?.length) return null;
+  const closeEnemies = context.enemies.filter((enemy) => {
+    if(!enemy?.isAlive) return false;
+    return context.aiPlanes.some((plane) => {
+      if(!plane?.isAlive) return false;
+      return Math.hypot((enemy.x || 0) - plane.x, (enemy.y || 0) - plane.y) <= AI_PRE_FALLBACK_ATTACK_RADIUS;
+    });
+  });
+  if(!closeEnemies.length) return null;
+
+  return findDirectFinisherMove(context.aiPlanes, closeEnemies, {
+    source: "pre_fallback_attack",
+    goalName: "pre_fallback_attack_radius",
+    context,
+  });
+}
+
+function findPreFallbackPositionalMove(context){
+  if(!context?.aiPlanes?.length || !context?.enemies?.length) return null;
+  const enemyBase = getBaseAnchor("green");
+  let bestCandidate = null;
+
+  for(const plane of context.aiPlanes){
+    if(!isPlaneLaunchStateReady(plane) || flyingPoints.some((fp) => fp.plane === plane)) continue;
+    const move = planPathToPoint(plane, enemyBase.x, enemyBase.y, {
+      goalName: "pre_fallback_positioning",
+      decisionReason: "pre_fallback_positioning",
+    });
+    if(!move) continue;
+
+    const landing = getAiMoveLandingPoint({ plane, ...move });
+    if(!landing) continue;
+    const threatMeta = getImmediateResponseThreatMeta(context, landing.x, landing.y);
+    if(threatMeta.count > 0) continue;
+
+    const candidate = {
+      plane,
+      ...move,
+      goalName: "pre_fallback_positioning",
+      decisionReason: "pre_fallback_positioning",
+      score: getAiPlaneAdjustedScore(move.totalDist, plane),
+      idleTurns: getAiPlaneIdleTurns(plane),
+    };
+    if(compareAiCandidateByScoreAndRotation(candidate, bestCandidate, ["pre_fallback", "positioning"])){
+      bestCandidate = candidate;
+    }
+  }
+
+  return bestCandidate;
+}
+
 function getFallbackAiMove(context){
   const { aiPlanes, enemies, shouldUseFlagsMode, availableEnemyFlags } = context;
   const homeBase = context.homeBase;
@@ -16093,7 +16166,33 @@ function getFallbackAiMove(context){
         const longShotPenalty = getAiLongShotPenaltyMultiplier(directDist, targetPriority, riskProfile, {
           onlyLineAvailable: false,
         });
-        const directAttackScore = getAiPlaneAdjustedScore(directDist * longShotPenalty, plane);
+        const immediateThreatMeta = getImmediateResponseThreatMeta(context, landingX, landingY, enemy);
+        let directAttackScore = getAiPlaneAdjustedScore(directDist * longShotPenalty, plane);
+        if(
+          immediateThreatMeta.count > 0
+          && riskProfile !== "comeback"
+          && !enemy?.carriedFlagId
+        ){
+          const proximityFactor = Number.isFinite(immediateThreatMeta.nearestDist)
+            ? Math.max(0, 1 - (immediateThreatMeta.nearestDist / AI_IMMEDIATE_RESPONSE_DANGER_RADIUS))
+            : 0;
+          const immediateRiskPenalty = ATTACK_RANGE_PX * (
+            0.06
+            + proximityFactor * 0.08
+            + Math.max(0, immediateThreatMeta.count - 1) * 0.02
+          );
+          directAttackScore += immediateRiskPenalty;
+          logAiDecision("fallback_direct_attack_immediate_response_penalty", {
+            planeId: plane?.id ?? null,
+            enemyId: enemy?.id ?? null,
+            threatCount: immediateThreatMeta.count,
+            nearestThreatDist: Number.isFinite(immediateThreatMeta.nearestDist)
+              ? Number(immediateThreatMeta.nearestDist.toFixed(1))
+              : null,
+            immediateRiskPenalty: Number(immediateRiskPenalty.toFixed(2)),
+            riskProfile,
+          });
+        }
 
         if(directQuality < AI_FALLBACK_DIRECT_QUALITY_MIN){
           const poorDirectCandidate = {
@@ -16510,6 +16609,39 @@ function getForcedProgressLaunchMove(modeContext){
     && !flyingPoints.some(fp => fp.plane === plane)
   );
   if(!fallbackAiPlanes.length) return null;
+
+  const enemies = Array.isArray(modeContext?.enemies) ? modeContext.enemies : [];
+  let safeUsefulMove = null;
+  for(const plane of fallbackAiPlanes){
+    const nearestEnemy = enemies.reduce((best, enemy) => {
+      if(!enemy?.isAlive) return best;
+      if(!best) return enemy;
+      return dist(plane, enemy) < dist(plane, best) ? enemy : best;
+    }, null);
+    if(!nearestEnemy) continue;
+
+    const usefulMove = planPathToPoint(plane, nearestEnemy.x, nearestEnemy.y, {
+      goalName: "forced_progress_safe_useful",
+      decisionReason: "forced_progress_safe_useful",
+    });
+    if(!usefulMove) continue;
+
+    const landing = getAiMoveLandingPoint({ plane, ...usefulMove });
+    if(!landing) continue;
+    const threatMeta = getImmediateResponseThreatMeta(modeContext, landing.x, landing.y, nearestEnemy);
+    if(threatMeta.count > 0) continue;
+
+    safeUsefulMove = {
+      plane,
+      ...usefulMove,
+      goalName: "forced_progress_safe_useful",
+      decisionReason: "forced_progress_safe_useful",
+      score: getAiPlaneAdjustedScore(usefulMove.totalDist, plane),
+      idleTurns: getAiPlaneIdleTurns(plane),
+    };
+    break;
+  }
+  if(safeUsefulMove) return safeUsefulMove;
 
   const flightDistancePx = settings.flightRangeCells * CELL_SIZE;
   const speedPxPerSec = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
@@ -16928,6 +17060,33 @@ function doComputerMove(){
     reasonCodes: ["mode_strategy_failed", "fallback_required"],
     rejectReasons: ["blocked_path", "no_clear_lane"],
   });
+
+  const preFallbackAttackMove = findPreFallbackAttackMove(modeContext);
+  const preFallbackAttackValidation = validateAiLaunchMoveCandidate(preFallbackAttackMove);
+  if(preFallbackAttackMove && preFallbackAttackValidation.ok){
+    aiRoundState.currentGoal = preFallbackAttackMove.goalName || "pre_fallback_attack_radius";
+    recordDecisionEvent("pre_fallback_attack_selected", {
+      goal: aiRoundState.currentGoal,
+      move: preFallbackAttackMove,
+      reasonCodes: ["pre_fallback_attack", "enemy_in_radius", "reduce_fallback_usage"],
+    });
+    issueAIMoveWithInventoryUsage(modeContext, preFallbackAttackMove);
+    return;
+  }
+
+  const preFallbackPositionalMove = findPreFallbackPositionalMove(modeContext);
+  const preFallbackPositionalValidation = validateAiLaunchMoveCandidate(preFallbackPositionalMove);
+  if(preFallbackPositionalMove && preFallbackPositionalValidation.ok){
+    aiRoundState.currentGoal = preFallbackPositionalMove.goalName || "pre_fallback_positioning";
+    recordDecisionEvent("pre_fallback_position_selected", {
+      goal: aiRoundState.currentGoal,
+      move: preFallbackPositionalMove,
+      reasonCodes: ["pre_fallback_positioning", "safe_progress", "reduce_no_move"],
+      rejectReasons: ["attack_in_radius_unavailable"],
+    });
+    issueAIMoveWithInventoryUsage(modeContext, preFallbackPositionalMove);
+    return;
+  }
 
   const rejectedReserveReasons = [];
   const fallbackMove = getFallbackAiMove(modeContext);
@@ -17609,7 +17768,7 @@ function findDirectFinisherMove(aiPlanes, enemies, options = {}){
 
         if(landingThreatCount > 0){
           const proximityFactor = Math.max(0, 1 - (nearestLandingThreatDist / landingThreatRadius));
-          const landingRiskPenalty = ATTACK_RANGE_PX * (0.04 + proximityFactor * 0.06 + (landingThreatCount - 1) * 0.015);
+          const landingRiskPenalty = ATTACK_RANGE_PX * (0.055 + proximityFactor * 0.075 + (landingThreatCount - 1) * 0.02);
           biasedAdjustedDist += landingRiskPenalty;
           logAiDecision("direct_finisher_post_risk_penalty_applied", {
             planeId: plane?.id ?? null,
@@ -17640,7 +17799,7 @@ function findDirectFinisherMove(aiPlanes, enemies, options = {}){
             ? Math.max(0, 1 - (nearestLandingThreatDist / landingThreatRadius))
             : 0;
           const unprofitableTradePenalty = ATTACK_RANGE_PX * (
-            0.065 + nearestFactor * 0.08 + (landingThreatCount - 1) * 0.02
+            0.08 + nearestFactor * 0.095 + (landingThreatCount - 1) * 0.025
           );
           biasedAdjustedDist += unprofitableTradePenalty;
           logAiDecision("direct_finisher_unprofitable_trade_penalty", {
