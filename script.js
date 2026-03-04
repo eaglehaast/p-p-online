@@ -11658,6 +11658,7 @@ const AI_OPENING_SOFT_RANDOM_TURN_LIMIT = 2;
 const AI_OPENING_SOFT_RANDOM_SCORE_MARGIN = MAX_DRAG_DISTANCE * 0.035;
 const AI_OPENING_SOFT_RANDOM_MAX_SHIFT = 0.045;
 const AI_POST_INVENTORY_LAUNCH_DELAY_MS = 1000;
+const AI_PLANNED_MOVE_TARGET_REVALIDATION_RADIUS_PX = ATTACK_RANGE_PX * 0.45;
 const AI_OPENING_AGGRESSION_BIAS_TURN_LIMIT = 2;
 const AI_OPENING_AGGRESSION_BIAS_MAX_LEAD = 1;
 const AI_OPENING_AGGRESSION_BIAS_DISCOUNT = 0.92;
@@ -14063,6 +14064,88 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
         advanceTurn();
       };
 
+  function revalidatePlannedMove(move){
+    const plane = move?.plane;
+    if(!plane || !isPlaneLaunchStateReady(plane)){
+      return {
+        ok: false,
+        reason: "plane_unavailable",
+      };
+    }
+    if(flyingPoints.some((flight) => flight?.plane === plane)){
+      return {
+        ok: false,
+        reason: "plane_already_in_flight",
+      };
+    }
+
+    const targetEnemy = move?.targetEnemy || move?.enemy || null;
+    if(targetEnemy){
+      if(!isPlaneTargetable(targetEnemy)){
+        return {
+          ok: false,
+          reason: "target_not_alive",
+          expectedEnemyId: targetEnemy?.id ?? null,
+        };
+      }
+      const latestEnemy = Array.isArray(allPlanes)
+        ? allPlanes.find((candidate) => candidate?.id === targetEnemy?.id)
+        : null;
+      if(!latestEnemy || !isPlaneTargetable(latestEnemy)){
+        return {
+          ok: false,
+          reason: "target_missing",
+          expectedEnemyId: targetEnemy?.id ?? null,
+        };
+      }
+      const drift = Math.hypot(latestEnemy.x - targetEnemy.x, latestEnemy.y - targetEnemy.y);
+      if(drift > AI_PLANNED_MOVE_TARGET_REVALIDATION_RADIUS_PX){
+        return {
+          ok: false,
+          reason: "target_shifted",
+          expectedEnemyId: targetEnemy?.id ?? null,
+          drift,
+          radius: AI_PLANNED_MOVE_TARGET_REVALIDATION_RADIUS_PX,
+        };
+      }
+    }
+
+    const landingPoint = getAiMoveLandingPoint(move);
+    if(!landingPoint || !isPathClear(plane.x, plane.y, landingPoint.x, landingPoint.y)){
+      return {
+        ok: false,
+        reason: "path_blocked",
+      };
+    }
+
+    return {
+      ok: true,
+      reason: "ok",
+    };
+  }
+
+  function launchFallbackIfNeeded(staleCheck){
+    const fallbackMove = getFallbackAiMove(context) || getGuaranteedAnyLegalLaunch(context);
+    if(
+      fallbackMove?.plane
+      && Number.isFinite(fallbackMove?.vx)
+      && Number.isFinite(fallbackMove?.vy)
+    ){
+      issueAIMove(fallbackMove.plane, fallbackMove.vx, fallbackMove.vy);
+      logAiDecision("stale_target_replanned", {
+        planeId: plannedMove?.plane?.id ?? null,
+        previousEnemyId: plannedMove?.targetEnemy?.id ?? plannedMove?.enemy?.id ?? null,
+        previousGoal: plannedMove?.goalName ?? null,
+        staleReason: staleCheck?.reason ?? "unknown",
+        fallbackPlaneId: fallbackMove?.plane?.id ?? null,
+        fallbackEnemyId: fallbackMove?.targetEnemy?.id ?? fallbackMove?.enemy?.id ?? null,
+        fallbackGoal: fallbackMove?.goalName ?? null,
+      });
+      return true;
+    }
+    return false;
+  }
+
   if(
     !plannedMove?.plane
     || !Number.isFinite(plannedMove?.vx)
@@ -14158,8 +14241,30 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     });
     aiPostInventoryLaunchTimeout = setTimeout(() => {
       aiPostInventoryLaunchTimeout = null;
+      const staleCheck = revalidatePlannedMove(plannedMove);
+      if(!staleCheck.ok){
+        if(launchFallbackIfNeeded(staleCheck)) return;
+        failSafeHandler("stale_target_launch_failed", {
+          goal: aiRoundState?.currentGoal || plannedMove?.goalName || "stale_target_launch_failed",
+          planeId: plannedMove?.plane?.id ?? null,
+          rejectReasons: [staleCheck.reason || "stale_target_revalidation_failed"],
+          reasonCodes: ["stale_target_revalidation_failed", "fail_safe_turn_advance"],
+        });
+        return;
+      }
       issueAIMove(plannedMove.plane, plannedMove.vx, plannedMove.vy);
     }, AI_POST_INVENTORY_LAUNCH_DELAY_MS);
+    return;
+  }
+
+  const immediateCheck = revalidatePlannedMove(plannedMove);
+  if(!immediateCheck.ok){
+    failSafeHandler("stale_target_launch_blocked", {
+      goal: aiRoundState?.currentGoal || plannedMove?.goalName || "stale_target_launch_blocked",
+      planeId: plannedMove?.plane?.id ?? null,
+      rejectReasons: [immediateCheck.reason || "stale_target_revalidation_failed"],
+      reasonCodes: ["stale_target_revalidation_failed", "fail_safe_turn_advance"],
+    });
     return;
   }
 
@@ -22273,3 +22378,84 @@ if (window.visualViewport) {
   }
 
 bootstrapGame();
+  function revalidatePlannedMove(move){
+    const plane = move?.plane;
+    if(!plane || !isPlaneLaunchStateReady(plane)){
+      return {
+        ok: false,
+        reason: "plane_unavailable",
+      };
+    }
+    if(flyingPoints.some((flight) => flight?.plane === plane)){
+      return {
+        ok: false,
+        reason: "plane_already_in_flight",
+      };
+    }
+
+    const targetEnemy = move?.targetEnemy || move?.enemy || null;
+    if(targetEnemy){
+      if(!isPlaneTargetable(targetEnemy)){
+        return {
+          ok: false,
+          reason: "target_not_alive",
+          expectedEnemyId: targetEnemy?.id ?? null,
+        };
+      }
+      const latestEnemy = Array.isArray(allPlanes)
+        ? allPlanes.find((candidate) => candidate?.id === targetEnemy?.id)
+        : null;
+      if(!latestEnemy || !isPlaneTargetable(latestEnemy)){
+        return {
+          ok: false,
+          reason: "target_missing",
+          expectedEnemyId: targetEnemy?.id ?? null,
+        };
+      }
+      const drift = Math.hypot(latestEnemy.x - targetEnemy.x, latestEnemy.y - targetEnemy.y);
+      if(drift > AI_PLANNED_MOVE_TARGET_REVALIDATION_RADIUS_PX){
+        return {
+          ok: false,
+          reason: "target_shifted",
+          expectedEnemyId: targetEnemy?.id ?? null,
+          drift,
+          radius: AI_PLANNED_MOVE_TARGET_REVALIDATION_RADIUS_PX,
+        };
+      }
+    }
+
+    const landingPoint = getAiMoveLandingPoint(move);
+    if(!landingPoint || !isPathClear(plane.x, plane.y, landingPoint.x, landingPoint.y)){
+      return {
+        ok: false,
+        reason: "path_blocked",
+      };
+    }
+
+    return {
+      ok: true,
+      reason: "ok",
+    };
+  }
+
+  function launchFallbackIfNeeded(staleCheck){
+    const fallbackMove = getFallbackAiMove(context) || getGuaranteedAnyLegalLaunch(context);
+    if(
+      fallbackMove?.plane
+      && Number.isFinite(fallbackMove?.vx)
+      && Number.isFinite(fallbackMove?.vy)
+    ){
+      issueAIMove(fallbackMove.plane, fallbackMove.vx, fallbackMove.vy);
+      logAiDecision("stale_target_replanned", {
+        planeId: plannedMove?.plane?.id ?? null,
+        previousEnemyId: plannedMove?.targetEnemy?.id ?? plannedMove?.enemy?.id ?? null,
+        previousGoal: plannedMove?.goalName ?? null,
+        staleReason: staleCheck?.reason ?? "unknown",
+        fallbackPlaneId: fallbackMove?.plane?.id ?? null,
+        fallbackEnemyId: fallbackMove?.targetEnemy?.id ?? fallbackMove?.enemy?.id ?? null,
+        fallbackGoal: fallbackMove?.goalName ?? null,
+      });
+      return true;
+    }
+    return false;
+  }
