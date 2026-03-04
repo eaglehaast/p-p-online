@@ -13802,6 +13802,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
 
     if(planted){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
+      plannedMove.inventoryUsageReason = "dynamite_route_opening";
       setDynamiteIntentFromTarget(routeAwareTarget);
       return true;
     }
@@ -13810,6 +13811,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       const relaxedTarget = defensiveTargetRaw || offensiveTargetRaw;
       if(relaxedTarget && placeBlueDynamiteAt(relaxedTarget.cx, relaxedTarget.cy)){
         removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
+        plannedMove.inventoryUsageReason = "dynamite_route_opening";
         setDynamiteIntentFromTarget(relaxedTarget);
         markSoftFallbackUse(INVENTORY_ITEM_TYPES.DYNAMITE, {
           reason: "dynamite_soft_fallback_relaxed_target",
@@ -13998,13 +14000,56 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   consumeAiDynamiteIntentIfUsed(plannedMove);
 
   const beforeInventoryState = evaluateBlueInventoryState();
+  const dynamiteStateCountBeforeUsage = Array.isArray(dynamiteState) ? dynamiteState.length : 0;
   const itemUsed = maybeUseInventoryBeforeLaunch(context, plannedMove);
-  if(itemUsed){
-    const afterInventoryState = evaluateBlueInventoryState();
-    const consumedItemType = detectConsumedInventoryType(
+  const afterInventoryState = itemUsed ? evaluateBlueInventoryState() : beforeInventoryState;
+  const consumedItemType = itemUsed
+    ? detectConsumedInventoryType(
       beforeInventoryState?.counts,
       afterInventoryState?.counts
-    );
+    )
+    : null;
+
+  let effectiveItemUsed = itemUsed;
+  if(itemUsed && consumedItemType === INVENTORY_ITEM_TYPES.DYNAMITE && aiRoundState?.dynamiteIntent){
+    const usageCheck = getAiDynamiteIntentScoreAdjustment(1, plannedMove, { plane: plannedMove?.plane });
+    if(!usageCheck.usedIntent){
+      const intent = aiRoundState?.dynamiteIntent;
+      let removedDynamitePlacement = false;
+      if(Array.isArray(dynamiteState) && dynamiteState.length > dynamiteStateCountBeforeUsage){
+        for(let i = dynamiteState.length - 1; i >= dynamiteStateCountBeforeUsage; i -= 1){
+          const entry = dynamiteState[i];
+          const sameSprite = intent?.spriteId && entry?.spriteId === intent.spriteId;
+          const sameCollider = intent?.colliderId && entry?.spriteRef?.collider?.id === intent.colliderId;
+          const samePoint = Number.isFinite(intent?.x) && Number.isFinite(intent?.y)
+            && Math.hypot((entry?.x ?? Infinity) - intent.x, (entry?.y ?? Infinity) - intent.y) <= 0.6;
+          if(entry?.owner === "blue" && (sameSprite || sameCollider || samePoint || i === dynamiteState.length - 1)){
+            dynamiteState.splice(i, 1);
+            removedDynamitePlacement = true;
+            break;
+          }
+        }
+      }
+
+      const dynamiteInventoryItem = INVENTORY_ITEMS.find((item) => item?.type === INVENTORY_ITEM_TYPES.DYNAMITE) ?? null;
+      if(dynamiteInventoryItem){
+        addItemToInventory("blue", dynamiteInventoryItem);
+      }
+
+      logAiDecision("dynamite_plan_desync_prevented", {
+        planeId: plannedMove?.plane?.id ?? null,
+        colliderId: intent?.colliderId ?? null,
+        targetX: Number.isFinite(intent?.x) ? Number(intent.x.toFixed(1)) : null,
+        targetY: Number.isFinite(intent?.y) ? Number(intent.y.toFixed(1)) : null,
+        turn: aiRoundState?.turnNumber ?? null,
+        removedDynamitePlacement,
+      });
+      clearAiDynamiteIntent("plan_desync_prevented");
+      effectiveItemUsed = false;
+    }
+  }
+
+  if(effectiveItemUsed){
     if(consumedItemType){
       playInventoryConsumeFx("blue", consumedItemType);
     } else {
@@ -14015,9 +14060,9 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       });
     }
   }
-  registerAiInventoryUsageAfterMove(itemUsed);
+  registerAiInventoryUsageAfterMove(effectiveItemUsed);
 
-  if(itemUsed === true){
+  if(effectiveItemUsed === true){
     if(aiPostInventoryLaunchTimeout){
       clearTimeout(aiPostInventoryLaunchTimeout);
       aiPostInventoryLaunchTimeout = null;
