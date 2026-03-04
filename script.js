@@ -14057,6 +14057,35 @@ function failSafeAdvanceTurn(reason, details = {}){
   });
 
   aiMoveScheduled = false;
+
+  if(turnColors[turnIndex] === "blue"){
+    const guaranteedMove = getGuaranteedAnyLegalLaunch();
+    if(
+      guaranteedMove?.plane
+      && Number.isFinite(guaranteedMove?.vx)
+      && Number.isFinite(guaranteedMove?.vy)
+    ){
+      logAiDecision("fail_safe_forced_launch_selected", {
+        goal,
+        previousReason: safeReason,
+        planeId: guaranteedMove.plane?.id ?? null,
+        selectedMove: {
+          planeId: guaranteedMove.plane?.id ?? null,
+          vx: Number(guaranteedMove.vx.toFixed(3)),
+          vy: Number(guaranteedMove.vy.toFixed(3)),
+          totalDist: Number.isFinite(guaranteedMove.totalDist)
+            ? Number(guaranteedMove.totalDist.toFixed(2))
+            : null,
+          goalName: guaranteedMove.goalName ?? "guaranteed_any_legal_launch",
+          decisionReason: guaranteedMove.decisionReason ?? "super_reserve_guaranteed_legal_launch",
+        },
+        reasonCodes: ["fail_safe_forced_launch", "keep_turn_progress"],
+      });
+      issueAIMove(guaranteedMove.plane, guaranteedMove.vx, guaranteedMove.vy);
+      return;
+    }
+  }
+
   advanceTurn();
 }
 
@@ -14311,6 +14340,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
 
   const immediateCheck = revalidatePlannedMove(plannedMove);
   if(!immediateCheck.ok){
+    if(launchFallbackIfNeeded(immediateCheck)) return;
     failSafeHandler("stale_target_launch_blocked", {
       goal: aiRoundState?.currentGoal || plannedMove?.goalName || "stale_target_launch_blocked",
       planeId: plannedMove?.plane?.id ?? null,
