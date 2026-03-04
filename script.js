@@ -12123,6 +12123,9 @@ const AI_TACTICAL_MEDIUM_SCALE_MAX = 0.68;
 const AI_FINISHER_OVERSHOOT_FACTOR = 1.04;
 const AI_OPENING_CENTER_TURN_LIMIT = 2;
 const AI_OPENING_DIRECT_FINISHER_MIN_LEAD = 2;
+const AI_OPENING_DIRECT_FINISHER_EXCEPTION_DISTANCE = MAX_DRAG_DISTANCE * 0.5;
+const AI_OPENING_DIRECT_FINISHER_EXCEPTION_THREAT_COUNT = 2;
+const AI_OPENING_DIRECT_FINISHER_EXCEPTION_NEAREST_THREAT_DISTANCE = ATTACK_RANGE_PX * 0.75;
 const AI_CENTER_CONTROL_DISTANCE = MAX_DRAG_DISTANCE * 0.35;
 const AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD = 2;
 const AI_INVENTORY_SOFT_FALLBACK_COOLDOWN_TURNS = 3;
@@ -15014,6 +15017,42 @@ function shouldSkipDirectFinisherInOpening(context){
     }
   }
 
+  const openingExceptionFinisher = findDirectFinisherMove(context?.aiPlanes, context?.enemies, {
+    source: "opening_exception_probe",
+    goalName: "direct_finisher",
+    context,
+  });
+  if(openingExceptionFinisher?.totalDist <= AI_OPENING_DIRECT_FINISHER_EXCEPTION_DISTANCE){
+    const landingPoint = typeof getAiMoveLandingPoint === "function"
+      ? getAiMoveLandingPoint(openingExceptionFinisher)
+      : (() => {
+          const flightDurationSec = typeof FIELD_FLIGHT_DURATION_SEC === "number"
+            ? FIELD_FLIGHT_DURATION_SEC
+            : 0;
+          return {
+            x: (openingExceptionFinisher?.plane?.x || 0) + (openingExceptionFinisher?.vx || 0) * flightDurationSec,
+            y: (openingExceptionFinisher?.plane?.y || 0) + (openingExceptionFinisher?.vy || 0) * flightDurationSec,
+          };
+        })();
+    const immediateResponseThreat = typeof getImmediateResponseThreatMeta === "function"
+      ? getImmediateResponseThreatMeta(
+          context,
+          landingPoint?.x,
+          landingPoint?.y,
+          openingExceptionFinisher?.enemy || null
+        )
+      : { count: 0, nearestDist: Number.POSITIVE_INFINITY };
+    const immediateHighThreat = immediateResponseThreat.count > 0 && (
+      immediateResponseThreat.count >= AI_OPENING_DIRECT_FINISHER_EXCEPTION_THREAT_COUNT
+      || (
+        Number.isFinite(immediateResponseThreat.nearestDist)
+        && immediateResponseThreat.nearestDist <= AI_OPENING_DIRECT_FINISHER_EXCEPTION_NEAREST_THREAT_DISTANCE
+      )
+    );
+    const hasCriticalBaseThreat = Boolean(context?.criticalBaseThreat);
+    if(!hasCriticalBaseThreat && !immediateHighThreat) return false;
+  }
+
   logAiDecision("opening_skip_direct_finisher", {
     turnAdvanceCount,
     scoreLead,
@@ -16752,6 +16791,7 @@ function doComputerMove(){
   selectAiModeForCurrentTurn(modeContext);
 
   const criticalBaseThreat = getCriticalBlueBaseThreat(modeContext);
+  modeContext.criticalBaseThreat = criticalBaseThreat;
   const hasCriticalBaseThreat = Boolean(criticalBaseThreat);
   const earlyBaseWarningThreat = hasCriticalBaseThreat ? null : getEarlyBaseWarningThreat(modeContext);
   const hasEarlyBaseWarningThreat = Boolean(earlyBaseWarningThreat);
