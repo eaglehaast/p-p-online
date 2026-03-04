@@ -8388,6 +8388,7 @@ const AI_MIRROR_FIRST_BOUNCE_MIN_DISTANCE = CARGO_SPAWN_SAFE_RADIUS * 1.05;
 const AI_MIRROR_MAX_PATH_RATIO = 1.95;
 const AI_MIRROR_MAX_PATH_RATIO_OBSTACLE_BONUS = 0.35;
 const AI_MIRROR_PATH_PRESSURE_BONUS = 0.2;
+const AI_MIRROR_STUCK_RECOVERY_PRESSURE_BONUS = 0.08;
 const AI_MIRROR_SCORE_PRESSURE_BONUS = 0.12;
 const AI_MIRROR_SCORE_BLOCKED_DIRECT_BONUS = 0.08;
 
@@ -16555,6 +16556,45 @@ function planPathToPoint(plane, tx, ty, options = {}){
       moveType: "mirror"
     });
   }
+
+  const planeStuckState = getAiStuckStateForPlane(plane?.id);
+  if(planeStuckState?.isStuck){
+    const stuckRecoveryMirror = findMirrorShot(plane, {x:tx, y:ty}, {
+      logReject: true,
+      pressureBoost: AI_MIRROR_STUCK_RECOVERY_PRESSURE_BONUS,
+    });
+    if(stuckRecoveryMirror){
+      const dx = stuckRecoveryMirror.mirrorTarget.x - plane.x;
+      const dy = stuckRecoveryMirror.mirrorTarget.y - plane.y;
+      const baseAngle = Math.atan2(dy, dx);
+      const baseScale = Math.min(stuckRecoveryMirror.totalDist / (2*MAX_DRAG_DISTANCE), 1);
+      const scale = applyAiMinLaunchScale(baseScale, {
+        source: "plan_path_mirror_stuck_recovery",
+        planeId: plane?.id ?? null,
+        goalName: options?.goalName || null,
+        decisionReason: options?.decisionReason || null,
+        moveDistance: stuckRecoveryMirror.totalDist,
+        targetX: tx,
+        targetY: ty,
+      });
+      const move = buildMoveWithSafeDeviation(baseAngle, stuckRecoveryMirror.totalDist, scale, {
+        moveType: "mirror"
+      });
+      if(move){
+        logAiDecision("mirror_selected_reason", {
+          source: "plan_path_to_point",
+          reason: "stuck_recovery",
+          planeId: plane?.id ?? null,
+          targetEnemyId: options?.targetEnemy?.id ?? options?.targetEnemyId ?? null,
+          pressureBoost: Number(AI_MIRROR_STUCK_RECOVERY_PRESSURE_BONUS.toFixed(2)),
+          clearSky: isCurrentMapClearSky(),
+          pathDistance: Number(stuckRecoveryMirror.totalDist.toFixed(1)),
+        });
+        return move;
+      }
+    }
+  }
+
   return null;
 }
 
