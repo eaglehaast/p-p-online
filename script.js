@@ -17222,7 +17222,27 @@ function doComputerMove(){
   }
 
   const currentGoalText = `${aiRoundState.currentGoal || ""}`.toLowerCase();
-  const emergencyStageActive = currentGoalText.includes("critical_base_threat")
+  const emergencyGuardTokens = [
+    "critical_base_threat",
+    "critical_threat_emergency_move",
+    "emergency_base_defense",
+  ];
+  const recentDecisionEvents = Array.isArray(aiSelfAnalyzerState?.activeMatch?.events)
+    ? aiSelfAnalyzerState.activeMatch.events
+        .filter((event) => event?.type === "ai_decision")
+        .slice(-4)
+    : [];
+  const emergencyDecisionContext = recentDecisionEvents.some((event) => {
+    const stageText = `${event?.stage || ""}`.toLowerCase();
+    const reasonCodes = Array.isArray(event?.reasonCodes) ? event.reasonCodes : [];
+    return emergencyGuardTokens.some((token) => (
+      stageText.includes(token)
+      || reasonCodes.some((code) => `${code || ""}`.toLowerCase().includes(token))
+    ));
+  });
+  const emergencyStageActive = hasCriticalBaseThreat
+    || emergencyDecisionContext
+    || emergencyGuardTokens.some((token) => currentGoalText.includes(token))
     || currentGoalText.includes("emergency_");
   if(!emergencyStageActive && typeof planPathToPoint === "function"){
     const safeAiPlanes = Array.isArray(modeContext?.aiPlanes)
@@ -17247,9 +17267,17 @@ function doComputerMove(){
           };
         })
       : [];
-    const enemyBase = getBaseAnchor("green");
-    const baseTargets = enemyBase && Number.isFinite(enemyBase.x) && Number.isFinite(enemyBase.y)
-      ? [{ targetType: "enemy_base", id: "base_green", x: enemyBase.x, y: enemyBase.y, payload: enemyBase }]
+    const enemyFlagTargets = shouldUseFlagsMode
+      ? (modeContext.availableEnemyFlags || []).map((flag) => {
+          const anchor = getFlagAnchor(flag);
+          return {
+            targetType: "enemy_flag",
+            id: flag?.id ?? null,
+            x: anchor?.x,
+            y: anchor?.y,
+            payload: flag,
+          };
+        }).filter((target) => Number.isFinite(target?.x) && Number.isFinite(target?.y))
       : [];
 
     const prioritizedGroups = [
@@ -17264,11 +17292,11 @@ function doComputerMove(){
         })),
       },
       { kind: "cargo", targets: cargoTargets },
-      { kind: "enemy_base", targets: baseTargets },
+      { kind: "enemy_flag", targets: enemyFlagTargets },
     ];
 
     let safeShortMove = null;
-    const shortMoveMaxDist = Math.min(MAX_DRAG_DISTANCE * 0.42, ATTACK_RANGE_PX * 0.85);
+    const shortMoveMaxDist = Math.min(MAX_DRAG_DISTANCE * 0.36, ATTACK_RANGE_PX * 0.72);
 
     for(const group of prioritizedGroups){
       for(const plane of safeAiPlanes){
