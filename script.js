@@ -11762,7 +11762,16 @@ function logAiDecision(reason, details = {}){
   });
 }
 
+function normalizeAiReasonText(reasonText = ""){
+  if(typeof reasonText === "string") return reasonText.toLowerCase();
+  if(reasonText && typeof reasonText === "object"){
+    return `${reasonText.decisionReason || ""} ${reasonText.goalName || ""}`.toLowerCase();
+  }
+  return `${reasonText || ""}`.toLowerCase();
+}
+
 function isDefenseOrRetreatContext(reasonText = ""){
+  const normalizedReasonText = normalizeAiReasonText(reasonText);
   return [
     "defense",
     "defend",
@@ -11772,10 +11781,11 @@ function isDefenseOrRetreatContext(reasonText = ""){
     "intercept",
     "protect",
     "emergency_base"
-  ].some((marker) => reasonText.includes(marker));
+  ].some((marker) => normalizedReasonText.includes(marker));
 }
 
 function isAttackContext(reasonText = ""){
+  const normalizedReasonText = normalizeAiReasonText(reasonText);
   return [
     "attack",
     "pressure",
@@ -11785,7 +11795,7 @@ function isAttackContext(reasonText = ""){
     "long_shot",
     "chase",
     "strike"
-  ].some((marker) => reasonText.includes(marker));
+  ].some((marker) => normalizedReasonText.includes(marker));
 }
 
 function isCombatGoal(goalName = ""){
@@ -11816,6 +11826,7 @@ function isExplicitDefensiveGoal(goalName = ""){
 }
 
 function isIntentionalShortControlContext(reasonText = "", moveDistanceRatio = null){
+  const normalizedReasonText = normalizeAiReasonText(reasonText);
   const hasShortControlIntent = [
     "hold",
     "intercept",
@@ -11824,7 +11835,7 @@ function isIntentionalShortControlContext(reasonText = "", moveDistanceRatio = n
     "close-range",
     "short_range",
     "careful"
-  ].some((marker) => reasonText.includes(marker));
+  ].some((marker) => normalizedReasonText.includes(marker));
 
   if(!hasShortControlIntent) return false;
   if(!Number.isFinite(moveDistanceRatio)) return true;
