@@ -11695,6 +11695,22 @@ const AI_REPEAT_ALLOWED_REASON_TOKENS = Object.freeze([
   "hold",
 ]);
 
+
+function getActualPlanesList(preferredPlanes = null){
+  if(Array.isArray(preferredPlanes) && preferredPlanes.length){
+    return preferredPlanes;
+  }
+  if(Array.isArray(points)){
+    return points;
+  }
+  return [];
+}
+
+function findActualPlaneById(planeId, preferredPlanes = null){
+  if(!planeId) return null;
+  return getActualPlanesList(preferredPlanes).find((candidate) => candidate?.id === planeId) || null;
+}
+
 function logAiDecision(reason, details = {}){
   const payload = details && typeof details === "object" ? { ...details } : {};
   const planeId = payload.planeId ?? payload.plane?.id ?? null;
@@ -11704,9 +11720,7 @@ function logAiDecision(reason, details = {}){
   let adjustedScore = Number.isFinite(payload.adjustedScore) ? payload.adjustedScore : null;
   let scoringExplanation = null;
   if(adjustedScore === null && Number.isFinite(rawDistance) && planeId){
-    const plane = payload.plane || (Array.isArray(allPlanes)
-      ? allPlanes.find((candidate) => candidate?.id === planeId)
-      : null);
+    const plane = payload.plane || findActualPlaneById(planeId);
     if(plane){
       scoringExplanation = scoreMoveForPlane(rawDistance, plane);
       adjustedScore = scoringExplanation.finalScore;
@@ -11714,9 +11728,7 @@ function logAiDecision(reason, details = {}){
   }
 
   if(!scoringExplanation && Number.isFinite(rawDistance) && planeId){
-    const plane = payload.plane || (Array.isArray(allPlanes)
-      ? allPlanes.find((candidate) => candidate?.id === planeId)
-      : null);
+    const plane = payload.plane || findActualPlaneById(planeId);
     if(plane){
       scoringExplanation = scoreMoveForPlane(rawDistance, plane);
     }
@@ -14088,9 +14100,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
           expectedEnemyId: targetEnemy?.id ?? null,
         };
       }
-      const latestEnemy = Array.isArray(allPlanes)
-        ? allPlanes.find((candidate) => candidate?.id === targetEnemy?.id)
-        : null;
+      const latestEnemy = findActualPlaneById(targetEnemy?.id, context?.enemies);
       if(!latestEnemy || !isPlaneTargetable(latestEnemy)){
         return {
           ok: false,
@@ -22402,9 +22412,7 @@ bootstrapGame();
           expectedEnemyId: targetEnemy?.id ?? null,
         };
       }
-      const latestEnemy = Array.isArray(allPlanes)
-        ? allPlanes.find((candidate) => candidate?.id === targetEnemy?.id)
-        : null;
+      const latestEnemy = findActualPlaneById(targetEnemy?.id, context?.enemies);
       if(!latestEnemy || !isPlaneTargetable(latestEnemy)){
         return {
           ok: false,
