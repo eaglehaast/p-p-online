@@ -12157,6 +12157,7 @@ const AI_OPENING_AGGRESSION_BIAS_MAX_LEAD = 1;
 const AI_OPENING_AGGRESSION_BIAS_DISCOUNT = 0.92;
 const AI_PRE_FALLBACK_ATTACK_RADIUS = ATTACK_RANGE_PX * 1.05;
 const AI_IMMEDIATE_RESPONSE_DANGER_RADIUS = ATTACK_RANGE_PX * 0.95;
+const AI_FALLBACK_IMMEDIATE_RISK_PENALTY_NON_EMERGENCY_BOOST = 1.08;
 const AI_FLAG_PRESSURE_SAFETY_WINDOW_TURN_LIMIT = 4;
 const AI_FLAG_PRESSURE_NEARBY_THREAT_DISTANCE = ATTACK_RANGE_PX * 1.55;
 const AI_ANGLE_REPEAT_HISTORY_LIMIT = 3;
@@ -16212,13 +16213,21 @@ function getFallbackAiMove(context){
           && riskProfile !== "comeback"
           && !enemy?.carriedFlagId
         ){
+          const currentGoalText = `${aiRoundState?.currentGoal || ""}`.toLowerCase();
+          const isEmergencyGoal = currentGoalText.includes("critical_base_threat")
+            || currentGoalText.includes("emergency_");
           const proximityFactor = Number.isFinite(immediateThreatMeta.nearestDist)
             ? Math.max(0, 1 - (immediateThreatMeta.nearestDist / AI_IMMEDIATE_RESPONSE_DANGER_RADIUS))
             : 0;
-          const immediateRiskPenalty = ATTACK_RANGE_PX * (
+          const immediateRiskPenaltyBase = ATTACK_RANGE_PX * (
             0.06
             + proximityFactor * 0.08
             + Math.max(0, immediateThreatMeta.count - 1) * 0.02
+          );
+          const immediateRiskPenalty = immediateRiskPenaltyBase * (
+            isEmergencyGoal
+              ? 1
+              : AI_FALLBACK_IMMEDIATE_RISK_PENALTY_NON_EMERGENCY_BOOST
           );
           directAttackScore += immediateRiskPenalty;
           logAiDecision("fallback_direct_attack_immediate_response_penalty", {
@@ -16228,6 +16237,10 @@ function getFallbackAiMove(context){
             nearestThreatDist: Number.isFinite(immediateThreatMeta.nearestDist)
               ? Number(immediateThreatMeta.nearestDist.toFixed(1))
               : null,
+            emergencyStageActive: isEmergencyGoal,
+            nonEmergencyBoost: isEmergencyGoal
+              ? 1
+              : Number(AI_FALLBACK_IMMEDIATE_RISK_PENALTY_NON_EMERGENCY_BOOST.toFixed(3)),
             immediateRiskPenalty: Number(immediateRiskPenalty.toFixed(2)),
             riskProfile,
           });
