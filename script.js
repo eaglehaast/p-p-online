@@ -9802,6 +9802,235 @@ function exportAiSelfAnalyzerTurnsJson(){
   return payloadObject;
 }
 
+function buildAiSelfAnalyzerGapReport(source){
+  if(!source || typeof source !== "object") return null;
+
+  const events = Array.isArray(source.events) ? source.events : [];
+  const rounds = Array.isArray(source.rounds) ? source.rounds : [];
+  const result = source.result && typeof source.result === "object" ? source.result : {};
+
+  const humanDecisionEvents = events.filter((event) => event?.type === "human_decision");
+  const aiDecisionEvents = events.filter((event) => event?.type === "ai_decision");
+  const launches = events.filter((event) => event?.type === "launch");
+
+  const humanLaunches = launches.filter((event) => event?.actor === "human");
+  const aiLaunches = launches.filter((event) => event?.actor === "computer");
+
+  const humanColors = new Set(humanLaunches.map((event) => event?.color).filter((color) => color === "blue" || color === "green"));
+  const aiColors = new Set(aiLaunches.map((event) => event?.color).filter((color) => color === "blue" || color === "green"));
+
+  const eliminationsByColor = rounds.reduce((acc, round) => {
+    const row = round?.eliminationsByColor || {};
+    acc.blue += Number.isFinite(row.blue) ? row.blue : 0;
+    acc.green += Number.isFinite(row.green) ? row.green : 0;
+    return acc;
+  }, { blue: 0, green: 0 });
+
+  const finalScore = {
+    blue: Number.isFinite(result.blueScore) ? result.blueScore : 0,
+    green: Number.isFinite(result.greenScore) ? result.greenScore : 0,
+  };
+
+  const sumByColors = (sourceByColor, colors) => Array.from(colors).reduce((acc, color) => (
+    acc + (Number.isFinite(sourceByColor[color]) ? sourceByColor[color] : 0)
+  ), 0);
+
+  const calcHumanDecisionMetrics = () => {
+    const riskyDecisions = humanDecisionEvents.filter((event) => Number.isFinite(event?.risk?.score) && event.risk.score >= 0.6);
+    const riskyMisses = riskyDecisions.filter((event) => {
+      const targetDistance = Number.isFinite(event?.nearestTarget?.distance) ? event.nearestTarget.distance : null;
+      return !Number.isFinite(targetDistance) || targetDistance > ATTACK_RANGE_PX;
+    });
+    const finishingAttempts = humanDecisionEvents.filter((event) => (
+      event?.nearestTarget?.kind === "enemy_plane"
+      && Number.isFinite(event?.nearestTarget?.distance)
+      && event.nearestTarget.distance <= ATTACK_RANGE_PX * 0.9
+    ));
+
+    const positionalProgress = humanDecisionEvents
+      .map((event) => {
+        const targetDistance = Number.isFinite(event?.nearestTarget?.distance) ? event.nearestTarget.distance : null;
+        const moveDistance = Number.isFinite(event?.selectedMove?.totalDist) ? event.selectedMove.totalDist : null;
+        if(!Number.isFinite(targetDistance) || !Number.isFinite(moveDistance) || targetDistance <= 0) return null;
+        return Math.max(0, Math.min(1, moveDistance / targetDistance));
+      })
+      .filter((value) => Number.isFinite(value));
+
+    const avgPositionalProgress = positionalProgress.length > 0
+      ? positionalProgress.reduce((sum, value) => sum + value, 0) / positionalProgress.length
+      : 0;
+
+    return {
+      decisions: humanDecisionEvents.length,
+      riskyDecisions: riskyDecisions.length,
+      riskyMisses: riskyMisses.length,
+      riskyMissRate: riskyDecisions.length > 0 ? riskyMisses.length / riskyDecisions.length : 0,
+      finishingAttempts: finishingAttempts.length,
+      finishingRate: humanDecisionEvents.length > 0 ? finishingAttempts.length / humanDecisionEvents.length : 0,
+      avgPositionalProgress,
+    };
+  };
+
+  const calcAiDecisionMetrics = () => {
+    const fallbackDecisions = aiDecisionEvents.filter((event) => {
+      const stage = typeof event?.stage === "string" ? event.stage.toLowerCase() : "";
+      const reasonCodes = Array.isArray(event?.reasonCodes) ? event.reasonCodes : [];
+      return stage.includes("fallback") || reasonCodes.some((code) => String(code).toLowerCase().includes("fallback"));
+    });
+
+    const decisionsWithoutMove = aiDecisionEvents.filter((event) => !event?.selectedMove);
+    const rejectReasonLoad = aiDecisionEvents
+      .map((event) => Array.isArray(event?.rejectReasons) ? event.rejectReasons.length : 0)
+      .filter((value) => Number.isFinite(value));
+    const avgRejectReasonLoad = rejectReasonLoad.length > 0
+      ? rejectReasonLoad.reduce((sum, value) => sum + value, 0) / rejectReasonLoad.length
+      : 0;
+
+    const avgMoveDistance = aiDecisionEvents
+      .map((event) => Number.isFinite(event?.selectedMove?.totalDist) ? event.selectedMove.totalDist : null)
+      .filter((value) => Number.isFinite(value));
+
+    return {
+      decisions: aiDecisionEvents.length,
+      fallbackDecisions: fallbackDecisions.length,
+      fallbackRate: aiDecisionEvents.length > 0 ? fallbackDecisions.length / aiDecisionEvents.length : 0,
+      decisionsWithoutMove: decisionsWithoutMove.length,
+      noMoveRate: aiDecisionEvents.length > 0 ? decisionsWithoutMove.length / aiDecisionEvents.length : 0,
+      avgRejectReasonLoad,
+      avgMoveDistance: avgMoveDistance.length > 0
+        ? avgMoveDistance.reduce((sum, value) => sum + value, 0) / avgMoveDistance.length
+        : 0,
+    };
+  };
+
+  const humanDecisionMetrics = calcHumanDecisionMetrics();
+  const aiDecisionMetrics = calcAiDecisionMetrics();
+
+  const factualConsequences = {
+    human: {
+      launches: humanLaunches.length,
+      pointsGained: sumByColors(finalScore, humanColors),
+      losses: sumByColors(eliminationsByColor, humanColors),
+    },
+    ai: {
+      launches: aiLaunches.length,
+      pointsGained: sumByColors(finalScore, aiColors),
+      losses: sumByColors(eliminationsByColor, aiColors),
+    },
+  };
+
+  factualConsequences.human.pointsPerLaunch = factualConsequences.human.launches > 0
+    ? factualConsequences.human.pointsGained / factualConsequences.human.launches
+    : 0;
+  factualConsequences.ai.pointsPerLaunch = factualConsequences.ai.launches > 0
+    ? factualConsequences.ai.pointsGained / factualConsequences.ai.launches
+    : 0;
+
+  const humanStrengths = [];
+  if(humanDecisionMetrics.riskyMissRate + 0.05 < aiDecisionMetrics.noMoveRate){
+    humanStrengths.push("Человек реже теряет ход в рискованных эпизодах: меньше ситуаций, где решение остаётся без полезного продолжения.");
+  }
+  if(humanDecisionMetrics.finishingRate > 0.2){
+    humanStrengths.push("Человек чаще доводит атаку до добивания цели, когда соперник уже в досягаемости.");
+  }
+  if(factualConsequences.human.pointsPerLaunch > factualConsequences.ai.pointsPerLaunch){
+    humanStrengths.push("По фактическому результату у человека выше отдача от каждого запуска (очков за ход больше).");
+  }
+
+  const aiWeaknesses = [];
+  if(aiDecisionMetrics.fallbackRate >= 0.2){
+    aiWeaknesses.push("ИИ слишком часто уходит в fallback-ветку: значит, базовые правила выбора хода не срабатывают стабильно.");
+  }
+  if(aiDecisionMetrics.noMoveRate >= 0.15){
+    aiWeaknesses.push("У ИИ заметная доля решений без выбранного хода — игра теряет темп и инициативу.");
+  }
+  if(factualConsequences.ai.losses > factualConsequences.human.losses){
+    aiWeaknesses.push("ИИ чаще теряет самолёты по фактическим итогам раундов.");
+  }
+
+  const gapMetrics = {
+    decisionCountGap: humanDecisionMetrics.decisions - aiDecisionMetrics.decisions,
+    riskyMissRateGap: Number((humanDecisionMetrics.riskyMissRate - aiDecisionMetrics.noMoveRate).toFixed(4)),
+    finishingRateGap: Number((humanDecisionMetrics.finishingRate - aiDecisionMetrics.fallbackRate).toFixed(4)),
+    pointsPerLaunchGap: Number((factualConsequences.human.pointsPerLaunch - factualConsequences.ai.pointsPerLaunch).toFixed(4)),
+    lossesGap: factualConsequences.human.losses - factualConsequences.ai.losses,
+    positionalProgressGap: Number((humanDecisionMetrics.avgPositionalProgress - (aiDecisionMetrics.avgMoveDistance > 0 ? 1 : 0)).toFixed(4)),
+    humanDecisionMetrics,
+    aiDecisionMetrics,
+    factualConsequences,
+  };
+
+  const improvementBacklog = [
+    {
+      condition: "Если noMoveRate ИИ > 0.15",
+      changeRule: "добавить принудительный безопасный ход по ближайшей полезной цели вместо пропуска выбора",
+      expectedEffect: "снижается число пустых решений и повышается темп партии"
+    },
+    {
+      condition: "Если fallbackRate ИИ > 0.20",
+      changeRule: "расширить основной набор эвристик перед fallback: сначала атака в радиусе, затем позиционный выход, и только потом fallback",
+      expectedEffect: "ИИ реже уходит в аварийный сценарий и чаще делает объяснимый ход"
+    },
+    {
+      condition: "Если pointsPerLaunchGap в пользу человека > 0.10",
+      changeRule: "усилить правило приоритета добивания цели, когда вражеский самолёт уже в зоне атаки",
+      expectedEffect: "повышается конверсия ходов ИИ в очки"
+    },
+    {
+      condition: "Если lossesGap < 0 (ИИ теряет больше)",
+      changeRule: "повысить штраф за маршруты, где после хода самолёт остаётся в зоне немедленной ответной атаки",
+      expectedEffect: "уменьшается число лишних потерь у ИИ"
+    }
+  ];
+
+  return {
+    reportType: "human_vs_ai_gap_report",
+    generatedAt: safeNowIso(),
+    sourceStartedAt: source.startedAt || null,
+    sourceFinishedAt: source.finishedAt || null,
+    sections: {
+      humanStrengths,
+      aiWeaknesses,
+      gapMetrics,
+      improvementBacklog,
+    },
+    raw: {
+      humanDecisionEvents,
+      aiDecisionEvents,
+      launches,
+      eliminationsByColor,
+      finalScore,
+    }
+  };
+}
+
+function exportAiSelfAnalyzerGapJson(){
+  const snapshot = getAiSelfAnalyzerSnapshot({ includeHistory: true });
+  const source = snapshot?.activeMatch || snapshot?.latestFinishedMatch;
+  if(!source) return null;
+
+  const payloadObject = buildAiSelfAnalyzerGapReport(source);
+  if(!payloadObject) return null;
+
+  if(typeof document === "undefined"){
+    return payloadObject;
+  }
+
+  const payload = JSON.stringify(payloadObject, null, 2);
+  const blob = new Blob([payload], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const suffix = safeNowIso().replace(/[:.]/g, "-");
+  link.href = url;
+  link.download = `ai-self-analyzer-gap-${suffix}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+
+  return payloadObject;
+}
+
 function getAiSelfAnalyzerSnapshot(options = {}){
   const includeHistory = Boolean(options?.includeHistory);
   const activeMatch = aiSelfAnalyzerState.activeMatch
@@ -9932,6 +10161,7 @@ function AI_DEBUG_CMD(command, arg){
 if(typeof window !== "undefined"){
   window.exportLatestAiSelfAnalyzerJson = exportLatestAiSelfAnalyzerJson;
   window.exportAiSelfAnalyzerTurnsJson = exportAiSelfAnalyzerTurnsJson;
+  window.exportAiSelfAnalyzerGapJson = exportAiSelfAnalyzerGapJson;
   window.getAiSelfAnalyzerSnapshot = getAiSelfAnalyzerSnapshot;
   window.AI_DEBUG_CMD = AI_DEBUG_CMD;
 }
