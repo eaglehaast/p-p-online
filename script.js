@@ -16813,6 +16813,35 @@ function isDirectFinisherScenario(plane, enemy){
 function findDirectFinisherMove(aiPlanes, enemies, options = {}){
   if(!Array.isArray(aiPlanes) || !Array.isArray(enemies)) return null;
 
+  function hasDirectFinisherObjectiveValue(plane, enemy, landingX, landingY){
+    if(!plane || !enemy) return false;
+
+    const context = options?.context || null;
+    const readyCargo = cargoState.filter((cargo) => cargo?.state === "ready");
+    const cargoPathTolerance = CELL_SIZE * 0.7;
+    const hasCargoAlongPath = readyCargo.some((cargo) => {
+      if(!cargo || !Number.isFinite(cargo.x) || !Number.isFinite(cargo.y)) return false;
+      const toRouteDist = getDistanceFromPointToSegment(cargo.x, cargo.y, plane.x, plane.y, landingX, landingY);
+      if(toRouteDist > cargoPathTolerance) return false;
+
+      const toPlaneDist = Math.hypot(cargo.x - plane.x, cargo.y - plane.y);
+      const toLandingDist = Math.hypot(cargo.x - landingX, cargo.y - landingY);
+      const routeDist = Math.max(1, Math.hypot(landingX - plane.x, landingY - plane.y));
+      return toPlaneDist <= routeDist && toLandingDist <= routeDist;
+    });
+
+    const stolenBlueFlagCarrier = context?.stolenBlueFlagCarrier;
+    const interceptsFlagCarrier = Boolean(
+      enemy?.carriedFlagId
+      || (stolenBlueFlagCarrier && stolenBlueFlagCarrier.id === enemy.id)
+    );
+
+    const activeGoalName = `${options?.goalName || aiRoundState?.currentGoal || ""}`.toLowerCase();
+    const defendsHomeBase = isExplicitDefensiveGoal(activeGoalName);
+
+    return hasCargoAlongPath || interceptsFlagCarrier || defendsHomeBase;
+  }
+
   const riskProfile = options?.context?.aiRiskProfile?.profile || "balanced";
   let best = null;
   for(const plane of aiPlanes){
@@ -16878,6 +16907,38 @@ function findDirectFinisherMove(aiPlanes, enemies, options = {}){
               : null,
             landingRiskPenalty: Number(landingRiskPenalty.toFixed(2)),
             riskProfile,
+          });
+        }
+
+        const hasObjectiveValue = hasDirectFinisherObjectiveValue(plane, enemy, landingX, landingY);
+        const goalName = `${options?.goalName || aiRoundState?.currentGoal || ""}`.toLowerCase();
+        const isCriticalBaseDefense = isExplicitDefensiveGoal(goalName);
+        const highImmediateResponse = landingThreatCount > 0 && (
+          landingThreatCount >= 2
+          || (Number.isFinite(nearestLandingThreatDist) && nearestLandingThreatDist <= ATTACK_RANGE_PX * 0.75)
+        );
+        const allowUnprofitableTrade = targetIsCritical || isCriticalBaseDefense || riskProfile === "comeback";
+
+        if(highImmediateResponse && !hasObjectiveValue && !allowUnprofitableTrade){
+          const nearestFactor = Number.isFinite(nearestLandingThreatDist)
+            ? Math.max(0, 1 - (nearestLandingThreatDist / landingThreatRadius))
+            : 0;
+          const unprofitableTradePenalty = ATTACK_RANGE_PX * (
+            0.065 + nearestFactor * 0.08 + (landingThreatCount - 1) * 0.02
+          );
+          biasedAdjustedDist += unprofitableTradePenalty;
+          logAiDecision("direct_finisher_unprofitable_trade_penalty", {
+            planeId: plane?.id ?? null,
+            enemyId: enemy?.id ?? null,
+            landingThreatCount,
+            nearestLandingThreatDist: Number.isFinite(nearestLandingThreatDist)
+              ? Number(nearestLandingThreatDist.toFixed(1))
+              : null,
+            hasObjectiveValue,
+            allowUnprofitableTrade,
+            isCriticalBaseDefense,
+            riskProfile,
+            unprofitableTradePenalty: Number(unprofitableTradePenalty.toFixed(2)),
           });
         }
       }

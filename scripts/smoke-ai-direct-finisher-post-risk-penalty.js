@@ -37,6 +37,19 @@ const context = {
   MAX_DRAG_DISTANCE: 500,
   FIELD_FLIGHT_DURATION_SEC: 1,
   flyingPoints: [],
+  cargoState: [],
+  aiRoundState: { currentGoal: "direct_finisher" },
+  isExplicitDefensiveGoal: () => false,
+  getDistanceFromPointToSegment: (px, py, x1, y1, x2, y2) => {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const lenSq = dx * dx + dy * dy;
+    if(lenSq <= 0) return Math.hypot(px - x1, py - y1);
+    const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
+    const cx = x1 + dx * t;
+    const cy = y1 + dy * t;
+    return Math.hypot(px - cx, py - cy);
+  },
   isDirectFinisherScenario: () => true,
   dist: (a, b) => Math.hypot(a.x - b.x, a.y - b.y),
   getAiPlaneAdjustedScore: (score) => score,
