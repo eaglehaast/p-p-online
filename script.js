@@ -17190,123 +17190,125 @@ function doComputerMove(){
   }
 
   const currentGoalText = `${aiRoundState.currentGoal || ""}`.toLowerCase();
-  const emergencyGuardTokens = [
-    "critical_base_threat",
-    "critical_threat_emergency_move",
-    "emergency_base_defense",
-  ];
-  const recentDecisionEvents = Array.isArray(aiSelfAnalyzerState?.activeMatch?.events)
-    ? aiSelfAnalyzerState.activeMatch.events
-        .filter((event) => event?.type === "ai_decision")
-        .slice(-4)
-    : [];
-  const emergencyDecisionContext = recentDecisionEvents.some((event) => {
-    const stageText = `${event?.stage || ""}`.toLowerCase();
-    const reasonCodes = Array.isArray(event?.reasonCodes) ? event.reasonCodes : [];
-    return emergencyGuardTokens.some((token) => (
-      stageText.includes(token)
-      || reasonCodes.some((code) => `${code || ""}`.toLowerCase().includes(token))
-    ));
-  });
-  const emergencyStageActive = hasCriticalBaseThreat
-    || emergencyDecisionContext
-    || emergencyGuardTokens.some((token) => currentGoalText.includes(token))
-    || currentGoalText.includes("emergency_");
-  if(!emergencyStageActive && typeof planPathToPoint === "function"){
+  const isCriticalOrEmergencyStage = currentGoalText.startsWith("critical_") || currentGoalText.startsWith("emergency_");
+  if(!isCriticalOrEmergencyStage && typeof planPathToPoint === "function"){
     const safeAiPlanes = Array.isArray(modeContext?.aiPlanes)
       ? modeContext.aiPlanes.filter((plane) => (
           isPlaneLaunchStateReady(plane)
           && !flyingPoints.some((fp) => fp.plane === plane)
         ))
       : [];
-
     const enemyTargets = Array.isArray(modeContext?.enemies)
       ? modeContext.enemies.filter((enemy) => enemy?.isAlive)
       : [];
-    const cargoTargets = Array.isArray(cargoState)
-      ? cargoState.filter((cargo) => cargo?.state === "ready").map((cargo) => {
-          const center = getCargoVisualCenter(cargo);
-          return {
-            targetType: "cargo",
-            id: cargo?.id ?? null,
-            x: center?.x,
-            y: center?.y,
-            payload: cargo,
-          };
-        })
-      : [];
-    const enemyFlagTargets = shouldUseFlagsMode
-      ? (modeContext.availableEnemyFlags || []).map((flag) => {
-          const anchor = getFlagAnchor(flag);
-          return {
-            targetType: "enemy_flag",
-            id: flag?.id ?? null,
-            x: anchor?.x,
-            y: anchor?.y,
-            payload: flag,
-          };
-        }).filter((target) => Number.isFinite(target?.x) && Number.isFinite(target?.y))
-      : [];
-
-    const prioritizedGroups = [
-      {
-        kind: "enemy_plane",
-        targets: enemyTargets.map((enemy) => ({
-          targetType: "enemy_plane",
-          id: enemy?.id ?? null,
-          x: enemy?.x,
-          y: enemy?.y,
-          payload: enemy,
-        })),
-      },
-      { kind: "cargo", targets: cargoTargets },
-      { kind: "enemy_flag", targets: enemyFlagTargets },
-    ];
-
-    let safeShortMove = null;
     const shortMoveMaxDist = Math.min(MAX_DRAG_DISTANCE * 0.36, ATTACK_RANGE_PX * 0.72);
 
-    for(const group of prioritizedGroups){
-      for(const plane of safeAiPlanes){
-        const nearestTarget = group.targets.reduce((best, target) => {
-          if(!Number.isFinite(target?.x) || !Number.isFinite(target?.y)) return best;
-          if(!best) return target;
-          const bestDist = Math.hypot((best.x || 0) - plane.x, (best.y || 0) - plane.y);
-          const nextDist = Math.hypot((target.x || 0) - plane.x, (target.y || 0) - plane.y);
-          return nextDist < bestDist ? target : best;
-        }, null);
-        if(!nearestTarget) continue;
-
-        const plannedMove = planPathToPoint(plane, nearestTarget.x, nearestTarget.y, {
-          goalName: "safe_short_fallback_progress",
-          decisionReason: "safe_short_fallback_progress",
-        });
-        if(!plannedMove) continue;
-
-        const baseDist = Number.isFinite(plannedMove.baseTotalDist) && plannedMove.baseTotalDist > 0
-          ? plannedMove.baseTotalDist
-          : (Number.isFinite(plannedMove.totalDist) ? plannedMove.totalDist : 0);
-        if(!Number.isFinite(baseDist) || baseDist <= 0) continue;
-
-        const distanceScale = Math.max(0.22, Math.min(0.4, shortMoveMaxDist / baseDist));
-        const shortMove = {
-          ...plannedMove,
-          plane,
-          vx: plannedMove.vx * distanceScale,
-          vy: plannedMove.vy * distanceScale,
-          totalDist: baseDist * distanceScale,
-          goalName: "safe_short_fallback_progress",
-          decisionReason: `safe_short_fallback_progress_${group.kind}`,
-          targetType: group.kind,
-        };
-
-        const shortMoveValidation = validateAiLaunchMoveCandidate(shortMove);
-        if(!shortMoveValidation.ok) continue;
-
-        safeShortMove = { move: shortMove, target: nearestTarget, group: group.kind };
-        break;
+    let safeShortMove = null;
+    let bestEnemyCandidate = null;
+    for(const plane of safeAiPlanes){
+      for(const enemy of enemyTargets){
+        if(!Number.isFinite(enemy?.x) || !Number.isFinite(enemy?.y)) continue;
+        const enemyDistance = Math.hypot(enemy.x - plane.x, enemy.y - plane.y);
+        if(enemyDistance > MAX_DRAG_DISTANCE * 1.05) continue;
+        if(!isPathClear(plane.x, plane.y, enemy.x, enemy.y)) continue;
+        if(bestEnemyCandidate && bestEnemyCandidate.distance <= enemyDistance) continue;
+        bestEnemyCandidate = { plane, enemy, distance: enemyDistance };
       }
-      if(safeShortMove) break;
+    }
+
+    if(bestEnemyCandidate){
+      const plannedEnemyMove = planPathToPoint(bestEnemyCandidate.plane, bestEnemyCandidate.enemy.x, bestEnemyCandidate.enemy.y, {
+        goalName: "safe_short_fallback_progress",
+        decisionReason: "safe_short_fallback_progress_enemy_plane",
+      });
+      if(plannedEnemyMove){
+        const baseDist = Number.isFinite(plannedEnemyMove.baseTotalDist) && plannedEnemyMove.baseTotalDist > 0
+          ? plannedEnemyMove.baseTotalDist
+          : (Number.isFinite(plannedEnemyMove.totalDist) ? plannedEnemyMove.totalDist : 0);
+        if(Number.isFinite(baseDist) && baseDist > 0){
+          const distanceScale = Math.max(0.22, Math.min(0.4, shortMoveMaxDist / baseDist));
+          const shortEnemyMove = {
+            ...plannedEnemyMove,
+            plane: bestEnemyCandidate.plane,
+            vx: plannedEnemyMove.vx * distanceScale,
+            vy: plannedEnemyMove.vy * distanceScale,
+            totalDist: baseDist * distanceScale,
+            goalName: "safe_short_fallback_progress",
+            decisionReason: "safe_short_fallback_progress_enemy_plane",
+            targetType: "enemy_plane",
+          };
+          const shortEnemyValidation = validateAiLaunchMoveCandidate(shortEnemyMove);
+          if(shortEnemyValidation.ok){
+            safeShortMove = { move: shortEnemyMove, target: bestEnemyCandidate.enemy, group: "enemy_plane" };
+          }
+        }
+      }
+    }
+
+    if(!safeShortMove){
+      let bestThreatAvoidance = null;
+      for(const plane of safeAiPlanes){
+        const nearestThreat = enemyTargets.reduce((nearest, enemy) => {
+          if(!Number.isFinite(enemy?.x) || !Number.isFinite(enemy?.y)) return nearest;
+          const distance = Math.hypot(enemy.x - plane.x, enemy.y - plane.y);
+          if(!nearest || distance < nearest.distance){
+            return { enemy, distance };
+          }
+          return nearest;
+        }, null);
+        if(!nearestThreat || nearestThreat.distance <= 0) continue;
+
+        const awayX = (plane.x - nearestThreat.enemy.x) / nearestThreat.distance;
+        const awayY = (plane.y - nearestThreat.enemy.y) / nearestThreat.distance;
+        const shiftDistance = Math.min(MAX_DRAG_DISTANCE * 0.34, Math.max(CELL_SIZE * 1.2, nearestThreat.distance * 0.32));
+        const targetX = Math.max(
+          FIELD_LEFT + FIELD_BORDER_OFFSET_X,
+          Math.min(FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X, plane.x + awayX * shiftDistance)
+        );
+        const targetY = Math.max(
+          FIELD_TOP + FIELD_BORDER_OFFSET_Y,
+          Math.min(FIELD_TOP + FIELD_HEIGHT - FIELD_BORDER_OFFSET_Y, plane.y + awayY * shiftDistance)
+        );
+
+        const plannedAvoidanceMove = planPathToPoint(plane, targetX, targetY, {
+          goalName: "safe_short_fallback_progress",
+          decisionReason: "safe_short_fallback_progress_threat_avoidance",
+        });
+        if(!plannedAvoidanceMove) continue;
+
+        const landing = getAiMoveLandingPoint({ plane, ...plannedAvoidanceMove });
+        if(!landing) continue;
+        const beforeDist = nearestThreat.distance;
+        const afterDist = Math.hypot(landing.x - nearestThreat.enemy.x, landing.y - nearestThreat.enemy.y);
+        const distanceGain = afterDist - beforeDist;
+        if(distanceGain <= 0) continue;
+
+        const avoidanceValidation = validateAiLaunchMoveCandidate({ plane, ...plannedAvoidanceMove });
+        if(!avoidanceValidation.ok) continue;
+
+        if(!bestThreatAvoidance || distanceGain > bestThreatAvoidance.distanceGain){
+          bestThreatAvoidance = {
+            move: {
+              ...plannedAvoidanceMove,
+              plane,
+              goalName: "safe_short_fallback_progress",
+              decisionReason: "safe_short_fallback_progress_threat_avoidance",
+              targetType: "threat_avoidance",
+            },
+            target: nearestThreat.enemy,
+            group: "threat_avoidance",
+            distanceGain,
+          };
+        }
+      }
+
+      if(bestThreatAvoidance){
+        safeShortMove = {
+          move: bestThreatAvoidance.move,
+          target: bestThreatAvoidance.target,
+          group: bestThreatAvoidance.group,
+        };
+      }
     }
 
     if(safeShortMove){
