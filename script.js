@@ -16022,6 +16022,105 @@ function findPreFallbackAttackMove(context){
   return localAttackMove;
 }
 
+function estimatePreFallbackLocalAttackRisk(context, localAttackMove){
+  if(!context || !localAttackMove) return Number.POSITIVE_INFINITY;
+  const landing = getAiMoveLandingPoint(localAttackMove);
+  if(!landing) return Number.POSITIVE_INFINITY;
+
+  const threatMeta = getImmediateResponseThreatMeta(
+    context,
+    landing.x,
+    landing.y,
+    localAttackMove.enemy || null
+  );
+  if(threatMeta.count <= 0) return 0;
+
+  const nearestThreatFactor = Number.isFinite(threatMeta.nearestDist)
+    ? Math.max(0, 1 - (threatMeta.nearestDist / AI_IMMEDIATE_RESPONSE_DANGER_RADIUS))
+    : 1;
+  const threatCountPenalty = Math.min(0.7, threatMeta.count * 0.32);
+  const proximityPenalty = Math.min(0.35, nearestThreatFactor * 0.35);
+  return Math.min(1, threatCountPenalty + proximityPenalty);
+}
+
+function findPreFallbackPositionalExitMove(context){
+  if(typeof planPathToPoint !== "function") return null;
+  const safeAiPlanes = Array.isArray(context?.aiPlanes)
+    ? context.aiPlanes.filter((plane) => (
+        isPlaneLaunchStateReady(plane)
+        && !flyingPoints.some((fp) => fp.plane === plane)
+      ))
+    : [];
+  const enemyTargets = Array.isArray(context?.enemies)
+    ? context.enemies.filter((enemy) => enemy?.isAlive)
+    : [];
+  if(!safeAiPlanes.length || !enemyTargets.length) return null;
+
+  let bestThreatAvoidance = null;
+  for(const plane of safeAiPlanes){
+    const nearestThreat = enemyTargets.reduce((nearest, enemy) => {
+      if(!Number.isFinite(enemy?.x) || !Number.isFinite(enemy?.y)) return nearest;
+      const distance = Math.hypot(enemy.x - plane.x, enemy.y - plane.y);
+      if(!nearest || distance < nearest.distance){
+        return { enemy, distance };
+      }
+      return nearest;
+    }, null);
+    if(!nearestThreat || nearestThreat.distance <= 0) continue;
+
+    const awayX = (plane.x - nearestThreat.enemy.x) / nearestThreat.distance;
+    const awayY = (plane.y - nearestThreat.enemy.y) / nearestThreat.distance;
+    const shiftDistance = Math.min(MAX_DRAG_DISTANCE * 0.34, Math.max(CELL_SIZE * 1.2, nearestThreat.distance * 0.32));
+    const targetX = Math.max(
+      FIELD_LEFT + FIELD_BORDER_OFFSET_X,
+      Math.min(FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X, plane.x + awayX * shiftDistance)
+    );
+    const targetY = Math.max(
+      FIELD_TOP + FIELD_BORDER_OFFSET_Y,
+      Math.min(FIELD_TOP + FIELD_HEIGHT - FIELD_BORDER_OFFSET_Y, plane.y + awayY * shiftDistance)
+    );
+
+    const plannedAvoidanceMove = planPathToPoint(plane, targetX, targetY, {
+      goalName: "safe_short_fallback_progress",
+      decisionReason: "safe_short_fallback_progress_threat_avoidance",
+    });
+    if(!plannedAvoidanceMove) continue;
+
+    const landing = getAiMoveLandingPoint({ plane, ...plannedAvoidanceMove });
+    if(!landing) continue;
+    const beforeDist = nearestThreat.distance;
+    const afterDist = Math.hypot(landing.x - nearestThreat.enemy.x, landing.y - nearestThreat.enemy.y);
+    const distanceGain = afterDist - beforeDist;
+    if(distanceGain <= 0) continue;
+
+    const avoidanceValidation = validateAiLaunchMoveCandidate({ plane, ...plannedAvoidanceMove });
+    if(!avoidanceValidation.ok) continue;
+
+    if(!bestThreatAvoidance || distanceGain > bestThreatAvoidance.distanceGain){
+      bestThreatAvoidance = {
+        move: {
+          ...plannedAvoidanceMove,
+          plane,
+          goalName: "safe_short_fallback_progress",
+          decisionReason: "safe_short_fallback_progress_threat_avoidance",
+          targetType: "threat_avoidance",
+        },
+        target: nearestThreat.enemy,
+        group: "threat_avoidance",
+        distanceGain,
+      };
+    }
+  }
+
+  return bestThreatAvoidance
+    ? {
+        move: bestThreatAvoidance.move,
+        target: bestThreatAvoidance.target,
+        group: bestThreatAvoidance.group,
+      }
+    : null;
+}
+
 function isEmergencyDefenseStageGoal(goalName){
   const goalText = `${goalName || ""}`.toLowerCase();
   if(!goalText) return false;
@@ -17109,8 +17208,47 @@ function doComputerMove(){
 
   const rejectedReserveReasons = [];
   const emergencyDefenseStageActive = isEmergencyDefenseStageGoal(aiRoundState.currentGoal);
-  const preFallbackAttackMove = emergencyDefenseStageActive ? null : findPreFallbackAttackMove(modeContext);
-  const fallbackMove = preFallbackAttackMove || getFallbackAiMove(modeContext);
+  if(!emergencyDefenseStageActive){
+    const preFallbackAttackMove = findPreFallbackAttackMove(modeContext);
+    const preFallbackAttackRisk = estimatePreFallbackLocalAttackRisk(modeContext, preFallbackAttackMove);
+    if(preFallbackAttackMove && preFallbackAttackRisk <= AI_CARGO_RISK_ACCEPTANCE){
+      aiRoundState.currentGoal = preFallbackAttackMove.goalName || "pre_fallback_attack_radius";
+      recordDecisionEvent("pre_fallback_bridge_selected", {
+        goal: aiRoundState.currentGoal,
+        move: preFallbackAttackMove,
+        reasonCodes: ["pre_fallback_bridge", "local_attack_radius", "risk_threshold_respected"],
+      });
+      logAiDecision("pre_fallback_bridge_selected", {
+        stage: "local_attack_radius",
+        planeId: preFallbackAttackMove.plane?.id ?? null,
+        enemyId: preFallbackAttackMove.enemy?.id ?? null,
+        risk: Number(preFallbackAttackRisk.toFixed(3)),
+        riskThreshold: AI_CARGO_RISK_ACCEPTANCE,
+      });
+      issueAIMoveWithInventoryUsage(modeContext, preFallbackAttackMove);
+      return;
+    }
+
+    const positionalExitMove = findPreFallbackPositionalExitMove(modeContext);
+    if(positionalExitMove?.move){
+      aiRoundState.currentGoal = "safe_short_fallback_progress";
+      recordDecisionEvent("pre_fallback_bridge_selected", {
+        goal: aiRoundState.currentGoal,
+        move: positionalExitMove.move,
+        reasonCodes: ["pre_fallback_bridge", "positional_exit", "corridor_recovery"],
+      });
+      logAiDecision("pre_fallback_bridge_selected", {
+        stage: "positional_exit",
+        planeId: positionalExitMove.move.plane?.id ?? null,
+        targetId: positionalExitMove.target?.id ?? null,
+        targetType: positionalExitMove.group,
+      });
+      issueAIMoveWithInventoryUsage(modeContext, positionalExitMove.move);
+      return;
+    }
+  }
+
+  const fallbackMove = getFallbackAiMove(modeContext);
   const fallbackValidation = validateAiLaunchMoveCandidate(fallbackMove);
   if(fallbackMove && fallbackValidation.ok){
     aiRoundState.currentGoal = fallbackMove.goalName || "fallback_legacy_logic";
