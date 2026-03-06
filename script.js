@@ -12219,6 +12219,9 @@ const AI_FALLBACK_ATTACK_SCORE_TIE_EPSILON = ATTACK_RANGE_PX * 0.015;
 const AI_FALLBACK_SAFE_ANGLE_SHORT_SCALE = 0.38;
 const AI_FALLBACK_SAFE_ANGLE_CANDIDATE_DEG = Object.freeze([28, -28, 44, -44, 62, -62, 88, -88]);
 const AI_FALLBACK_RICOCHET_PREP_SCALE = 0.66;
+const AI_LANE_PROGRESS_PRIMARY_THRESHOLD_SCALE = 0.12;
+const AI_LANE_PROGRESS_RESERVE_THRESHOLD_SCALE = 0.07;
+const AI_LANE_TIGHT_PASS_SCORE_PENALTY_SCALE = 0.24;
 const AI_REPEAT_PLANE_SOFT_PENALTY = 0.48;
 const AI_REPEAT_PLANE_HARD_PENALTY = 0.72;
 const AI_RECENT_PLANE_HISTORY_LIMIT = 6;
@@ -13385,16 +13388,20 @@ function getFallbackDirectAttackQuality(plane, enemy, directDist, riskProfile = 
   return Math.max(0, Math.min(1, (distanceQuality * 0.65 + pathQuality * 0.35) * shieldQuality + profileShift));
 }
 
-function getAiNoticeableProgressMeta(fromX, fromY, toX, toY, targetX, targetY){
+function getAiNoticeableProgressMeta(fromX, fromY, toX, toY, targetX, targetY, options = {}){
   const beforeDist = Math.hypot(targetX - fromX, targetY - fromY);
   const afterDist = Math.hypot(targetX - toX, targetY - toY);
   const improvement = beforeDist - afterDist;
-  const noticeableThreshold = CELL_SIZE * 0.12;
+  const thresholdScale = Number.isFinite(options?.thresholdScale)
+    ? Math.max(0, options.thresholdScale)
+    : AI_LANE_PROGRESS_PRIMARY_THRESHOLD_SCALE;
+  const noticeableThreshold = CELL_SIZE * thresholdScale;
   const hasNoticeableProgress = improvement >= noticeableThreshold;
   return {
     beforeDist,
     afterDist,
     improvement,
+    thresholdScale,
     noticeableThreshold,
     hasNoticeableProgress,
   };
@@ -17563,11 +17570,12 @@ function doComputerMove(){
   if(rolePack){
     const roleMove = planRoleDrivenAiMove(modeContext, rolePack);
     if(roleMove){
+      const roleLanePassCode = roleMove?.lanePassReasonCode || "role_lane_found";
       recordDecisionEvent("role_move_selected", {
         goal: aiRoundState.currentGoal,
         move: roleMove,
         reasonCodes: appendOpeningAggressionReasonCode(
-          ["role_assignment_ready", "role_lane_found", "team_balance"],
+          ["role_assignment_ready", roleLanePassCode, "team_balance"],
           roleMove
         ),
       });
@@ -18067,6 +18075,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
   const narrowCorridorColliderThreshold = 26;
   const narrowCorridorRouteNearbyThreshold = 5;
   const narrowCorridorRouteProbeRadiusPx = CELL_SIZE * 1.1;
+  const isCriticalOrEmergencyStage = isEmergencyDefenseStageGoal(options?.goalName || aiRoundState?.currentGoal);
 
   function finalizePlannedMove(move, actualAngle, progressMeta){
     if(!move) return null;
@@ -18243,8 +18252,62 @@ function planPathToPoint(plane, tx, ty, options = {}){
             const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
             const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
             if(isPathClear(plane.x, plane.y, landingX, landingY)){
-              const progressMeta = getAiNoticeableProgressMeta(plane.x, plane.y, landingX, landingY, tx, ty);
-              if(!progressMeta.hasNoticeableProgress){
+              const primaryProgressMeta = getAiNoticeableProgressMeta(
+                plane.x,
+                plane.y,
+                landingX,
+                landingY,
+                tx,
+                ty,
+                { thresholdScale: AI_LANE_PROGRESS_PRIMARY_THRESHOLD_SCALE }
+              );
+              if(!primaryProgressMeta.hasNoticeableProgress){
+                const reserveProgressMeta = getAiNoticeableProgressMeta(
+                  plane.x,
+                  plane.y,
+                  landingX,
+                  landingY,
+                  tx,
+                  ty,
+                  { thresholdScale: AI_LANE_PROGRESS_RESERVE_THRESHOLD_SCALE }
+                );
+                if(!isCriticalOrEmergencyStage && reserveProgressMeta.hasNoticeableProgress){
+                  const laneTightPenalty = CELL_SIZE * AI_LANE_TIGHT_PASS_SCORE_PENALTY_SCALE;
+                  const tightMove = finalizePlannedMove(
+                    {
+                      vx,
+                      vy,
+                      totalDist: distance * narrowedScale,
+                      moveType: meta?.moveType || "direct",
+                      laneTightPassApplied: true,
+                      laneTightPenalty,
+                      lanePassType: "lane_tight_pass",
+                      lanePassReasonCode: "lane_tight_pass",
+                    },
+                    actualAngle,
+                    reserveProgressMeta
+                  );
+                  if(tightMove){
+                    tightMove.totalDist += laneTightPenalty;
+                  }
+                  logAiDecision("narrow_corridor_selected", {
+                    reasonCode: "narrow_corridor_selected",
+                    lanePassType: "lane_tight_pass",
+                    planeId: plane?.id ?? null,
+                    targetX: tx,
+                    targetY: ty,
+                    distance,
+                    deviation,
+                    narrowedScale: Number(narrowedScale.toFixed(3)),
+                    improvement: Number(reserveProgressMeta.improvement.toFixed(2)),
+                    noticeableThreshold: Number(reserveProgressMeta.noticeableThreshold.toFixed(2)),
+                    colliderCount,
+                    routeNearbyColliderCount,
+                    ...meta
+                  });
+                  return tightMove;
+                }
+
                 logAiDecision("narrow_corridor_rejected", {
                   reasonCode: "no_noticeable_progress",
                   planeId: plane?.id ?? null,
@@ -18253,37 +18316,45 @@ function planPathToPoint(plane, tx, ty, options = {}){
                   distance,
                   deviation,
                   narrowedScale: Number(narrowedScale.toFixed(3)),
-                  improvement: Number(progressMeta.improvement.toFixed(2)),
-                  noticeableThreshold: Number(progressMeta.noticeableThreshold.toFixed(2)),
+                  improvement: Number(primaryProgressMeta.improvement.toFixed(2)),
+                  noticeableThreshold: Number(primaryProgressMeta.noticeableThreshold.toFixed(2)),
+                  reserveThreshold: Number((CELL_SIZE * AI_LANE_PROGRESS_RESERVE_THRESHOLD_SCALE).toFixed(2)),
+                  reservePassAllowed: !isCriticalOrEmergencyStage,
                   colliderCount,
                   routeNearbyColliderCount,
                   ...meta
                 });
                 continue;
               }
+
+              const comfortMove = finalizePlannedMove(
+                {
+                  vx,
+                  vy,
+                  totalDist: distance * narrowedScale,
+                  moveType: meta?.moveType || "direct",
+                  lanePassType: "lane_comfort_pass",
+                  lanePassReasonCode: "lane_comfort_pass",
+                },
+                actualAngle,
+                primaryProgressMeta
+              );
               logAiDecision("narrow_corridor_selected", {
                 reasonCode: "narrow_corridor_selected",
+                lanePassType: "lane_comfort_pass",
                 planeId: plane?.id ?? null,
                 targetX: tx,
                 targetY: ty,
                 distance,
                 deviation,
                 narrowedScale: Number(narrowedScale.toFixed(3)),
-                improvement: Number(progressMeta.improvement.toFixed(2)),
+                improvement: Number(primaryProgressMeta.improvement.toFixed(2)),
+                noticeableThreshold: Number(primaryProgressMeta.noticeableThreshold.toFixed(2)),
                 colliderCount,
                 routeNearbyColliderCount,
                 ...meta
               });
-              return finalizePlannedMove(
-                {
-                  vx,
-                  vy,
-                  totalDist: distance * narrowedScale,
-                  moveType: meta?.moveType || "direct"
-                },
-                actualAngle,
-                progressMeta
-              );
+              return comfortMove;
             }
           }
         }
