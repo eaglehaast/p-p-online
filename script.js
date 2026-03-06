@@ -18339,6 +18339,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       pressureBoost: Number(mirrorPressureBoost.toFixed(2)),
       clearSky: isCurrentMapClearSky(),
       pathDistance: Number(mirror.totalDist.toFixed(1)),
+      stuckMirrorRelaxation: false,
     });
     return buildMoveWithSafeDeviation(baseAngle, mirror.totalDist, scale, {
       moveType: "mirror"
@@ -18350,6 +18351,9 @@ function planPathToPoint(plane, tx, ty, options = {}){
     const stuckRecoveryMirror = findMirrorShot(plane, {x:tx, y:ty}, {
       logReject: true,
       pressureBoost: AI_MIRROR_STUCK_RECOVERY_PRESSURE_BONUS,
+      minBounceDistanceScale: 0.75,
+      maxPathRatioBonus: 0.12,
+      stuckMirrorRelaxation: true,
     });
     if(stuckRecoveryMirror){
       const dx = stuckRecoveryMirror.mirrorTarget.x - plane.x;
@@ -18377,6 +18381,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
           pressureBoost: Number(AI_MIRROR_STUCK_RECOVERY_PRESSURE_BONUS.toFixed(2)),
           clearSky: isCurrentMapClearSky(),
           pathDistance: Number(stuckRecoveryMirror.totalDist.toFixed(1)),
+          stuckMirrorRelaxation: true,
         });
         return move;
       }
@@ -18688,11 +18693,18 @@ function getSpreadAngleDegByAccuracy(accuracyPercent){
 function findMirrorShot(plane, enemy, options = {}){
   let best = null; // {mirrorTarget, totalDist}
   const directDist = Math.hypot(plane.x - enemy.x, plane.y - enemy.y);
-  const minBounceDistance = AI_MIRROR_FIRST_BOUNCE_MIN_DISTANCE;
+  const minBounceDistanceScale = Number.isFinite(options?.minBounceDistanceScale)
+    ? Math.max(0, options.minBounceDistanceScale)
+    : 1;
+  const minBounceDistance = AI_MIRROR_FIRST_BOUNCE_MIN_DISTANCE * minBounceDistanceScale;
+  const maxPathRatioBonus = Number.isFinite(options?.maxPathRatioBonus)
+    ? Math.max(0, options.maxPathRatioBonus)
+    : 0;
   const pressureBoost = Number.isFinite(options?.pressureBoost)
     ? Math.max(0, options.pressureBoost)
     : 0;
-  const maxPathRatio = getMirrorPathRatioLimit({ pressureBoost });
+  const maxPathRatio = getMirrorPathRatioLimit({ pressureBoost }) + maxPathRatioBonus;
+  const stuckMirrorRelaxation = options?.stuckMirrorRelaxation === true;
   let rejectedTooClose = false;
   let rejectedTooLong = false;
 
@@ -18770,6 +18782,7 @@ function findMirrorShot(plane, enemy, options = {}){
         planeId: plane?.id ?? null,
         enemyId: enemy?.id ?? null,
         minBounceDistance: Number(minBounceDistance.toFixed(1)),
+        stuckMirrorRelaxation,
       });
     } else if(rejectedTooLong){
       logAiDecision("mirror_rejected", {
@@ -18778,6 +18791,7 @@ function findMirrorShot(plane, enemy, options = {}){
         enemyId: enemy?.id ?? null,
         maxPathRatio: Number(maxPathRatio.toFixed(2)),
         clearSky: isCurrentMapClearSky(),
+        stuckMirrorRelaxation,
       });
     }
   }
