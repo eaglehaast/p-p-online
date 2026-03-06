@@ -17887,11 +17887,62 @@ function tryGetAiTacticalMediumScale(baseScale, baseAngle, plane, speedPxPerSec)
   return null;
 }
 
+function countRouteNearbyColliders(x1, y1, x2, y2, radiusPx){
+  if(!Array.isArray(colliders) || colliders.length === 0) return 0;
+  const safeRadius = Number.isFinite(radiusPx) ? Math.max(0, radiusPx) : 0;
+  const segmentDx = x2 - x1;
+  const segmentDy = y2 - y1;
+  const segmentLengthSq = segmentDx * segmentDx + segmentDy * segmentDy;
+
+  let nearbyCount = 0;
+  for(const collider of colliders){
+    if(!collider) continue;
+    const cx = Number.isFinite(collider.cx) ? collider.cx : null;
+    const cy = Number.isFinite(collider.cy) ? collider.cy : null;
+    if(cx === null || cy === null) continue;
+
+    const halfWidth = Number.isFinite(collider.halfWidth) ? collider.halfWidth : 0;
+    const halfHeight = Number.isFinite(collider.halfHeight) ? collider.halfHeight : 0;
+    const rotation = Number.isFinite(collider.rotation) ? collider.rotation : 0;
+    const cos = Math.cos(rotation);
+    const sin = Math.sin(rotation);
+    const aabbHalfWidth = Math.abs(halfWidth * cos) + Math.abs(halfHeight * sin);
+    const aabbHalfHeight = Math.abs(halfWidth * sin) + Math.abs(halfHeight * cos);
+
+    const expandedLeft = cx - aabbHalfWidth - safeRadius;
+    const expandedRight = cx + aabbHalfWidth + safeRadius;
+    const expandedTop = cy - aabbHalfHeight - safeRadius;
+    const expandedBottom = cy + aabbHalfHeight + safeRadius;
+
+    let closestX;
+    let closestY;
+    if(segmentLengthSq <= 0.000001){
+      closestX = x1;
+      closestY = y1;
+    } else {
+      const t = Math.max(0, Math.min(1, ((cx - x1) * segmentDx + (cy - y1) * segmentDy) / segmentLengthSq));
+      closestX = x1 + segmentDx * t;
+      closestY = y1 + segmentDy * t;
+    }
+
+    if(closestX >= expandedLeft
+      && closestX <= expandedRight
+      && closestY >= expandedTop
+      && closestY <= expandedBottom){
+      nearbyCount += 1;
+    }
+  }
+
+  return nearbyCount;
+}
+
 function planPathToPoint(plane, tx, ty, options = {}){
   const flightDistancePx = settings.flightRangeCells * CELL_SIZE;
   const speedPxPerSec    = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
   const extendedDetourColliderThreshold = 18;
   const narrowCorridorColliderThreshold = 26;
+  const narrowCorridorRouteNearbyThreshold = 5;
+  const narrowCorridorRouteProbeRadiusPx = CELL_SIZE * 1.1;
 
   function finalizePlannedMove(move, actualAngle, progressMeta){
     if(!move) return null;
@@ -17970,7 +18021,15 @@ function planPathToPoint(plane, tx, ty, options = {}){
     }
 
     const colliderCount = Array.isArray(colliders) ? colliders.length : 0;
-    const shouldUseNarrowCorridorAttempt = colliderCount >= narrowCorridorColliderThreshold;
+    const routeNearbyColliderCount = countRouteNearbyColliders(
+      plane.x,
+      plane.y,
+      tx,
+      ty,
+      narrowCorridorRouteProbeRadiusPx
+    );
+    const shouldUseNarrowCorridorAttempt = routeNearbyColliderCount >= narrowCorridorRouteNearbyThreshold
+      || colliderCount >= narrowCorridorColliderThreshold;
 
     const deterministicDeviationSteps = shouldUseNarrowCorridorAttempt
       ? [
@@ -18073,6 +18132,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
                   improvement: Number(progressMeta.improvement.toFixed(2)),
                   noticeableThreshold: Number(progressMeta.noticeableThreshold.toFixed(2)),
                   colliderCount,
+                  routeNearbyColliderCount,
                   ...meta
                 });
                 continue;
@@ -18087,6 +18147,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
                 narrowedScale: Number(narrowedScale.toFixed(3)),
                 improvement: Number(progressMeta.improvement.toFixed(2)),
                 colliderCount,
+                routeNearbyColliderCount,
                 ...meta
               });
               return finalizePlannedMove(
@@ -18111,6 +18172,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
         targetY: ty,
         distance,
         colliderCount,
+        routeNearbyColliderCount,
         ...meta
       });
     }
