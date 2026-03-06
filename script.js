@@ -13651,6 +13651,10 @@ function getEarlyBaseWarningThreat(context){
 
   const blueBase = getBaseAnchor("blue");
   const warningDistance = ATTACK_RANGE_PX * 1.7;
+  const criticalDistance = ATTACK_RANGE_PX * 1.15;
+  const nearCriticalDistance = criticalDistance + ATTACK_RANGE_PX * 0.2;
+  const urgentTrajectoryCosThreshold = 0.74;
+  const urgentTrajectorySpeedThreshold = MAX_DRAG_DISTANCE * 0.25;
 
   let bestThreat = null;
   for(const enemy of enemies){
@@ -13658,17 +13662,84 @@ function getEarlyBaseWarningThreat(context){
     if(distanceToBase > warningDistance) continue;
 
     const hasCleanLineToBase = isPathClear(enemy.x, enemy.y, blueBase.x, blueBase.y);
+    const enemyVelocityX = Number(enemy?.vx) || 0;
+    const enemyVelocityY = Number(enemy?.vy) || 0;
+    const enemySpeed = Math.hypot(enemyVelocityX, enemyVelocityY);
+    const vectorToBaseX = blueBase.x - enemy.x;
+    const vectorToBaseY = blueBase.y - enemy.y;
+    const vectorToBaseLength = Math.hypot(vectorToBaseX, vectorToBaseY);
+    const hasBaseTrajectoryUrgency = enemySpeed >= urgentTrajectorySpeedThreshold
+      && vectorToBaseLength > 0.0001
+      && ((enemyVelocityX * vectorToBaseX + enemyVelocityY * vectorToBaseY) / (enemySpeed * vectorToBaseLength)) >= urgentTrajectoryCosThreshold;
+    const isNearCriticalDistance = distanceToBase <= nearCriticalDistance;
+    const passesSoftWarningFilter = hasCleanLineToBase || isNearCriticalDistance || hasBaseTrajectoryUrgency;
+    if(!passesSoftWarningFilter) continue;
+
     if(!bestThreat || distanceToBase < bestThreat.distanceToBase){
       bestThreat = {
         enemy,
         base: blueBase,
         distanceToBase,
         hasCleanLineToBase,
+        isNearCriticalDistance,
+        hasBaseTrajectoryUrgency,
       };
     }
   }
 
   return bestThreat;
+}
+
+function getEarlyWarningDirectFinisherOverride(context, earlyWarningThreat){
+  if(!context || !earlyWarningThreat) return { allow: false, reason: "missing_context_or_warning" };
+
+  const directFinisherMove = findDirectFinisherMove(context.aiPlanes, context.enemies, {
+    source: "early_warning_override_probe",
+    goalName: "direct_finisher",
+    context,
+  });
+  if(!directFinisherMove) return { allow: false, reason: "no_direct_finisher" };
+
+  const hasCleanDirectLane = Boolean(directFinisherMove?.plane && directFinisherMove?.enemy)
+    && isPathClear(
+      directFinisherMove.plane.x,
+      directFinisherMove.plane.y,
+      directFinisherMove.enemy.x,
+      directFinisherMove.enemy.y,
+    );
+  const shortDistanceThreshold = AI_OPENING_DIRECT_FINISHER_EXCEPTION_DISTANCE * 1.1;
+  const isShortDirectAttack = Number.isFinite(directFinisherMove?.totalDist)
+    && directFinisherMove.totalDist <= shortDistanceThreshold;
+
+  const landingPoint = typeof getAiMoveLandingPoint === "function"
+    ? getAiMoveLandingPoint(directFinisherMove)
+    : null;
+  const immediateResponseThreat = (landingPoint && typeof getImmediateResponseThreatMeta === "function")
+    ? getImmediateResponseThreatMeta(
+        context,
+        landingPoint.x,
+        landingPoint.y,
+        directFinisherMove.enemy || null
+      )
+    : { count: 0, nearestDist: Number.POSITIVE_INFINITY };
+  const lowImmediateRisk = immediateResponseThreat.count === 0
+    || (
+      immediateResponseThreat.count <= 1
+      && Number.isFinite(immediateResponseThreat.nearestDist)
+      && immediateResponseThreat.nearestDist > AI_OPENING_DIRECT_FINISHER_EXCEPTION_NEAREST_THREAT_DISTANCE * 1.2
+    );
+
+  const allow = hasCleanDirectLane && isShortDirectAttack && lowImmediateRisk;
+  return {
+    allow,
+    move: directFinisherMove,
+    hasCleanDirectLane,
+    isShortDirectAttack,
+    lowImmediateRisk,
+    immediateResponseThreat,
+    shortDistanceThreshold,
+    reason: allow ? "clean_short_low_risk" : "constraints_not_met",
+  };
 }
 
 function getEmergencyDefenseMove(context, threat){
@@ -17309,7 +17380,31 @@ function doComputerMove(){
     });
   }
 
-  const skippedEarlyDirectFinisher = shouldSkipDirectFinisherInOpening(modeContext);
+  let skippedEarlyDirectFinisher = shouldSkipDirectFinisherInOpening(modeContext);
+  let earlyWarningFinisherOverride = null;
+  if(skippedEarlyDirectFinisher && hasEarlyBaseWarningThreat && !hasCriticalBaseThreat){
+    earlyWarningFinisherOverride = getEarlyWarningDirectFinisherOverride(modeContext, earlyBaseWarningThreat);
+    if(earlyWarningFinisherOverride?.allow){
+      skippedEarlyDirectFinisher = false;
+      recordDecisionEvent("direct_finisher_opening_override", {
+        goal: "direct_finisher",
+        reasonCodes: ["early_base_warning", "clean_short_attack", "low_immediate_risk"],
+      });
+      logAiDecision("direct_finisher_opening_override", {
+        warningEnemyId: earlyBaseWarningThreat?.enemy?.id ?? null,
+        hasCleanLineToBase: earlyBaseWarningThreat?.hasCleanLineToBase ?? null,
+        isNearCriticalDistance: earlyBaseWarningThreat?.isNearCriticalDistance ?? null,
+        hasBaseTrajectoryUrgency: earlyBaseWarningThreat?.hasBaseTrajectoryUrgency ?? null,
+        planeId: earlyWarningFinisherOverride.move?.plane?.id ?? null,
+        enemyId: earlyWarningFinisherOverride.move?.enemy?.id ?? null,
+        distance: Number((earlyWarningFinisherOverride.move?.totalDist || 0).toFixed(1)),
+        immediateThreatCount: earlyWarningFinisherOverride.immediateResponseThreat?.count ?? 0,
+        nearestThreatDist: Number.isFinite(earlyWarningFinisherOverride.immediateResponseThreat?.nearestDist)
+          ? Number(earlyWarningFinisherOverride.immediateResponseThreat.nearestDist.toFixed(1))
+          : null,
+      });
+    }
+  }
   if(skippedEarlyDirectFinisher){
     const openingRestrictionDecision = shouldSkipDirectFinisherInOpening.lastDecision;
     const mapAdjustedRestrictionApplied = Boolean(openingRestrictionDecision?.mapAdjustedRestrictionApplied);
