@@ -18316,42 +18316,70 @@ function findMirrorShot(plane, enemy, options = {}){
   let rejectedTooClose = false;
   let rejectedTooLong = false;
 
+  const mirrorEdges = [];
   for(const collider of colliders){
     const edges = getColliderEdges(collider, 0);
+    for(const edge of edges){
+      mirrorEdges.push({
+        edge,
+        collider,
+        ignoreEdge: { colliderId: collider.id, edgeIndex: edge.edgeIndex },
+        isFieldBorder: false,
+      });
+    }
+  }
+  const fieldBorderEdges = buildFieldBorderSurfaces();
+  fieldBorderEdges.forEach((borderEdge, borderIndex) => {
+    mirrorEdges.push({
+      edge: {
+        x1: borderEdge.p1.x,
+        y1: borderEdge.p1.y,
+        x2: borderEdge.p2.x,
+        y2: borderEdge.p2.y,
+      },
+      collider: null,
+      ignoreEdge: { colliderId: `field_border_${borderIndex}`, edgeIndex: borderIndex },
+      isFieldBorder: true,
+    });
+  });
 
-    for(const e of edges){
-      const mirrorTarget = reflectPointAcrossLine(enemy.x, enemy.y, e.x1, e.y1, e.x2, e.y2);
+  for(const mirrorEdge of mirrorEdges){
+    const { edge: e, collider, ignoreEdge, isFieldBorder } = mirrorEdge;
+    const mirrorTarget = reflectPointAcrossLine(enemy.x, enemy.y, e.x1, e.y1, e.x2, e.y2);
 
-      // Пересечение линии (plane -> mirrorTarget) с ребром
-      const inter = lineSegmentIntersection(
-        plane.x, plane.y, mirrorTarget.x, mirrorTarget.y,
-        e.x1, e.y1, e.x2, e.y2
-      );
-      if(!inter) continue;
+    // Пересечение линии (plane -> mirrorTarget) с ребром
+    const inter = lineSegmentIntersection(
+      plane.x, plane.y, mirrorTarget.x, mirrorTarget.y,
+      e.x1, e.y1, e.x2, e.y2
+    );
+    if(!inter) continue;
 
-      const ignoreEdge = { colliderId: collider.id, edgeIndex: e.edgeIndex };
+    const pathClearToBounce = isFieldBorder
+      ? isPathClear(plane.x, plane.y, inter.x, inter.y)
+      : isPathClearExceptEdge(plane.x, plane.y, inter.x, inter.y, collider, ignoreEdge);
+    if(!pathClearToBounce) continue;
 
-      // Путь чист?
-      if(!isPathClearExceptEdge(plane.x, plane.y, inter.x, inter.y, collider, ignoreEdge)) continue;
-      if(!isPathClearExceptEdge(inter.x, inter.y, enemy.x, enemy.y, collider, ignoreEdge)) continue;
+    const pathClearFromBounce = isFieldBorder
+      ? isPathClear(inter.x, inter.y, enemy.x, enemy.y)
+      : isPathClearExceptEdge(inter.x, inter.y, enemy.x, enemy.y, collider, ignoreEdge);
+    if(!pathClearFromBounce) continue;
 
-      const totalDist = Math.hypot(plane.x - inter.x, plane.y - inter.y) +
-                        Math.hypot(inter.x  - enemy.x, inter.y  - enemy.y);
-      const firstLegDist = Math.hypot(plane.x - inter.x, plane.y - inter.y);
+    const totalDist = Math.hypot(plane.x - inter.x, plane.y - inter.y) +
+                      Math.hypot(inter.x  - enemy.x, inter.y  - enemy.y);
+    const firstLegDist = Math.hypot(plane.x - inter.x, plane.y - inter.y);
 
-      if(firstLegDist < minBounceDistance){
-        rejectedTooClose = true;
-        continue;
-      }
+    if(firstLegDist < minBounceDistance){
+      rejectedTooClose = true;
+      continue;
+    }
 
-      if(directDist > 0 && totalDist > directDist * maxPathRatio){
-        rejectedTooLong = true;
-        continue;
-      }
+    if(directDist > 0 && totalDist > directDist * maxPathRatio){
+      rejectedTooLong = true;
+      continue;
+    }
 
-      if(!best || totalDist < best.totalDist){
-        best = {mirrorTarget, totalDist};
-      }
+    if(!best || totalDist < best.totalDist){
+      best = {mirrorTarget, totalDist};
     }
   }
 
