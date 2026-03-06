@@ -18107,9 +18107,13 @@ function findDirectFinisherMove(aiPlanes, enemies, options = {}){
           const nearestFactor = Number.isFinite(nearestLandingThreatDist)
             ? Math.max(0, 1 - (nearestLandingThreatDist / landingThreatRadius))
             : 0;
-          const unprofitableTradeNearestFactorCoeff = emergencyPenaltyGuard ? 0.095 : 0.1064;
+          const clearFinishingChance = Number.isFinite(move.totalDist)
+            && move.totalDist <= ATTACK_RANGE_PX * 0.9
+            && nearbyEnemiesCount === 0;
+          const unprofitableTradeNearestFactorCoeff = emergencyPenaltyGuard ? 0.095 : 0.1192;
+          const unprofitableTradeFinisherSoftener = (!emergencyPenaltyGuard && clearFinishingChance) ? 0.88 : 1;
           const unprofitableTradePenalty = ATTACK_RANGE_PX * (
-            0.08 + nearestFactor * unprofitableTradeNearestFactorCoeff + (landingThreatCount - 1) * 0.025
+            0.08 + nearestFactor * (unprofitableTradeNearestFactorCoeff * unprofitableTradeFinisherSoftener) + (landingThreatCount - 1) * 0.025
           );
           biasedAdjustedDist += unprofitableTradePenalty;
           logAiDecision("direct_finisher_unprofitable_trade_penalty", {
@@ -18122,7 +18126,10 @@ function findDirectFinisherMove(aiPlanes, enemies, options = {}){
             hasObjectiveValue,
             allowUnprofitableTrade,
             isCriticalBaseDefense,
+            clearFinishingChance,
             riskProfile,
+            unprofitableTradeNearestFactorCoeff,
+            unprofitableTradeFinisherSoftener,
             unprofitableTradePenalty: Number(unprofitableTradePenalty.toFixed(2)),
           });
         }
