@@ -15173,17 +15173,23 @@ function shouldSkipDirectFinisherInOpening(context){
 }
 
 function tryPlanOpeningCenterControlMove(context){
-  if(turnAdvanceCount > AI_OPENING_CENTER_TURN_LIMIT) return null;
+  if(turnAdvanceCount > AI_OPENING_CENTER_TURN_LIMIT){
+    return { move: null, rejectReason: "turn_limit" };
+  }
 
   const groundedAiPlanes = getGroundedAiPlanes(context?.aiPlanes);
-  if(groundedAiPlanes.length === 0) return null;
+  if(groundedAiPlanes.length === 0){
+    return { move: null, rejectReason: "no_grounded_plane" };
+  }
 
   const center = getCenterControlAnchor();
   const readyCargo = cargoState.filter((cargo) => cargo?.state === "ready");
+  let pathCheckPerformed = false;
 
   let bestCargoCandidate = null;
   for(const plane of groundedAiPlanes){
     for(const cargo of readyCargo){
+      pathCheckPerformed = true;
       const move = planPathToPoint(plane, cargo.x, cargo.y);
       if(!move) continue;
       const riskInfo = evaluateCargoPickupRisk(plane, cargo, context);
@@ -15220,12 +15226,13 @@ function tryPlanOpeningCenterControlMove(context){
       distance: Number(bestCargoCandidate.move.totalDist.toFixed(1)),
       risk: Number(bestCargoCandidate.riskInfo.totalRisk.toFixed(3)),
     });
-    return { plane: bestCargoCandidate.plane, ...bestCargoCandidate.move };
+    return { move: { plane: bestCargoCandidate.plane, ...bestCargoCandidate.move }, rejectReason: null };
   }
 
   let bestCenterMove = null;
   for(const plane of groundedAiPlanes){
     if(dist(plane, center) <= AI_CENTER_CONTROL_DISTANCE) continue;
+    pathCheckPerformed = true;
     const move = planPathToPoint(plane, center.x, center.y);
     if(!move) continue;
     const candidate = {
@@ -15246,10 +15253,15 @@ function tryPlanOpeningCenterControlMove(context){
       turnAdvanceCount,
       distance: Number(bestCenterMove.move.totalDist.toFixed(1)),
     });
-    return { plane: bestCenterMove.plane, ...bestCenterMove.move };
+    return { move: { plane: bestCenterMove.plane, ...bestCenterMove.move }, rejectReason: null };
   }
 
-  return null;
+  return {
+    move: null,
+    rejectReason: pathCheckPerformed
+      ? "no_candidate_after_path_check"
+      : "no_opening_target_available",
+  };
 }
 
 
@@ -15340,12 +15352,22 @@ function evaluateFavorableCargoCandidate(plane, cargo, move, riskInfo){
 }
 
 function tryPlanEarlyCargoPickupMove(context){
-  if(turnAdvanceCount >= AI_EARLY_GAME_TURN_LIMIT) return null;
+  tryPlanEarlyCargoPickupMove.lastRejectReason = null;
+  if(turnAdvanceCount >= AI_EARLY_GAME_TURN_LIMIT){
+    tryPlanEarlyCargoPickupMove.lastRejectReason = "turn_limit";
+    return null;
+  }
 
   const groundedAiPlanes = context.aiPlanes.filter((plane) => !flyingPoints.some(fp => fp.plane === plane));
-  if(groundedAiPlanes.length === 0) return null;
+  if(groundedAiPlanes.length === 0){
+    tryPlanEarlyCargoPickupMove.lastRejectReason = "no_grounded_plane";
+    return null;
+  }
   const readyCargo = cargoState.filter((cargo) => cargo?.state === "ready");
-  if(readyCargo.length === 0) return null;
+  if(readyCargo.length === 0){
+    tryPlanEarlyCargoPickupMove.lastRejectReason = "no_ready_cargo";
+    return null;
+  }
 
   let bestCandidate = null;
   let skipStats = {
@@ -15358,6 +15380,7 @@ function tryPlanEarlyCargoPickupMove(context){
   for(const plane of groundedAiPlanes){
     for(const cargo of readyCargo){
       skipStats.considered += 1;
+      skipStats.pathChecks = (skipStats.pathChecks || 0) + 1;
       const move = planPathToPoint(plane, cargo.x, cargo.y);
       if(!move) continue;
       const riskInfo = evaluateCargoPickupRisk(plane, cargo, context);
@@ -15382,6 +15405,7 @@ function tryPlanEarlyCargoPickupMove(context){
   }
 
   if(bestCandidate){
+    tryPlanEarlyCargoPickupMove.lastRejectReason = null;
     aiRoundState.currentGoal = "pickup_cargo_early";
     logAiDecision("early_cargo_pickup", {
       planeId: bestCandidate.plane.id,
@@ -15403,6 +15427,13 @@ function tryPlanEarlyCargoPickupMove(context){
     cargoCount: readyCargo.length,
     skipStats,
   });
+  tryPlanEarlyCargoPickupMove.lastRejectReason = skipStats.blockedByPath > 0
+    ? "blocked_path"
+    : skipStats.blockedByThreat > 0
+      ? "cargo_immediate_threat"
+      : skipStats.blockedByDistance > 0
+        ? "cargo_too_far"
+        : "cargo_risk";
   return null;
 }
 
@@ -15820,6 +15851,7 @@ function planRoleDrivenAiMove(context, rolePack){
 }
 
 function planModeDrivenAiMove(context){
+  planModeDrivenAiMove.lastRejectReason = null;
   const {
     aiPlanes,
     homeBase,
@@ -15830,7 +15862,10 @@ function planModeDrivenAiMove(context){
   } = context;
 
   const groundedAiPlanes = aiPlanes.filter((plane) => !flyingPoints.some(fp=>fp.plane===plane));
-  if(groundedAiPlanes.length === 0) return null;
+  if(groundedAiPlanes.length === 0){
+    planModeDrivenAiMove.lastRejectReason = "no_grounded_plane";
+    return null;
+  }
 
   const carrier = shouldUseFlagsMode ? groundedAiPlanes.find(p => {
     if(!p.carriedFlagId) return false;
@@ -15919,6 +15954,7 @@ function planModeDrivenAiMove(context){
       distanceToHome: Number(directDist.toFixed(1)),
       hasEnemies: Array.isArray(enemies) && enemies.length > 0,
     });
+    planModeDrivenAiMove.lastRejectReason = "carrier_return_path_blocked";
   }
 
   if(aiRoundState.mode === AI_MODES.DEFENSE && stolenBlueFlagCarrier){
@@ -16000,6 +16036,7 @@ function planModeDrivenAiMove(context){
       }
     }
     if(bestCap) return bestCap;
+    planModeDrivenAiMove.lastRejectReason = "no_flag_path";
   }
 
   if(aiRoundState.mode === AI_MODES.RESOURCE_FIRST){
@@ -16063,6 +16100,13 @@ function planModeDrivenAiMove(context){
       reason: "risk_distance_or_threat",
       cargoSkipStats,
     });
+    planModeDrivenAiMove.lastRejectReason = cargoSkipStats.blockedByPath > 0
+      ? "blocked_path"
+      : cargoSkipStats.blockedByThreat > 0
+        ? "cargo_immediate_threat"
+        : cargoSkipStats.blockedByDistance > 0
+          ? "cargo_too_far"
+          : "cargo_risk";
   }
 
   if(aiRoundState.mode === AI_MODES.DEFENSE){
@@ -16089,8 +16133,12 @@ function planModeDrivenAiMove(context){
       }
     }
     if(safestMove) return safestMove;
+    planModeDrivenAiMove.lastRejectReason = "no_retreat_path";
   }
 
+  if(!planModeDrivenAiMove.lastRejectReason){
+    planModeDrivenAiMove.lastRejectReason = "no_mode_candidate";
+  }
   return null;
 }
 
@@ -17238,7 +17286,8 @@ function doComputerMove(){
       reason: "early_base_warning",
     });
   } else {
-    const openingCenterMove = tryPlanOpeningCenterControlMove(modeContext);
+    const openingCenterPlan = tryPlanOpeningCenterControlMove(modeContext);
+    const openingCenterMove = openingCenterPlan?.move || null;
     if(openingCenterMove){
       recordDecisionEvent("opening_center_selected", {
         goal: openingCenterMove.goalName || "opening_center_control",
@@ -17249,10 +17298,14 @@ function doComputerMove(){
       return;
     }
 
+    const openingCenterRejectReason = openingCenterPlan?.rejectReason || "opening_center_attempt_failed";
+    const openingCenterRejectReasons = openingCenterRejectReason === "no_candidate_after_path_check"
+      ? [openingCenterRejectReason, "blocked_path", "no_clear_lane"]
+      : [openingCenterRejectReason];
     recordDecisionEvent("opening_center_rejected", {
       goal: "opening_center_control",
       reasonCodes: ["opening_center_attempt_failed", "search_next_plan"],
-      rejectReasons: ["no_clear_lane", "blocked_path"],
+      rejectReasons: openingCenterRejectReasons,
     });
   }
 
@@ -17363,10 +17416,13 @@ function doComputerMove(){
     return;
   }
 
+  const earlyCargoRejectReason = tryPlanEarlyCargoPickupMove.lastRejectReason || "cargo_pickup_rejected";
   recordDecisionEvent("early_cargo_rejected", {
     goal: "early_cargo_pickup",
     reasonCodes: ["cargo_pickup_rejected", "risk_control"],
-    rejectReasons: ["cargo_risk", "blocked_path"],
+    rejectReasons: earlyCargoRejectReason === "blocked_path"
+      ? [earlyCargoRejectReason, "no_clear_lane"]
+      : [earlyCargoRejectReason],
   });
 
   const modeMove = planModeDrivenAiMove(modeContext);
@@ -17388,10 +17444,13 @@ function doComputerMove(){
     return;
   }
 
+  const modeMoveRejectReason = planModeDrivenAiMove.lastRejectReason || "mode_strategy_failed";
   recordDecisionEvent("mode_move_rejected", {
     goal: aiRoundState.currentGoal || "mode_strategy",
     reasonCodes: ["mode_strategy_failed", "fallback_required"],
-    rejectReasons: ["blocked_path", "no_clear_lane"],
+    rejectReasons: modeMoveRejectReason === "blocked_path"
+      ? [modeMoveRejectReason, "no_clear_lane"]
+      : [modeMoveRejectReason],
   });
 
   const rejectedReserveReasons = [];
