@@ -3877,7 +3877,7 @@ function updateAndDrawDynamiteExplosions(ctx2d, now){
     const frameImg = DYNAMITE_EXPLOSION_FRAMES[frameIndex] || null;
     if(frameImg && isSpriteReady(frameImg)){
       const frameW = frameImg.naturalWidth || 107;
-      const frameH = frameImg.naturalHeight || 147;
+      const frameH = frameImg.naturalHeight || 157;
       syncDomEntry(entry, frameImg, frameW, frameH);
     } else {
       removeDomEntry(entry);
