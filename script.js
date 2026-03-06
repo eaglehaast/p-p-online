@@ -9872,11 +9872,33 @@ function buildAiSelfAnalyzerGapReport(source){
   };
 
   const calcAiDecisionMetrics = () => {
-    const fallbackDecisions = aiDecisionEvents.filter((event) => {
+    const includesFallbackToken = (value) => String(value || "").toLowerCase().includes("fallback");
+    const isFallbackStageOrReason = (event) => {
       const stage = typeof event?.stage === "string" ? event.stage.toLowerCase() : "";
       const reasonCodes = Array.isArray(event?.reasonCodes) ? event.reasonCodes : [];
-      return stage.includes("fallback") || reasonCodes.some((code) => String(code).toLowerCase().includes("fallback"));
-    });
+      return stage.includes("fallback") || reasonCodes.some((code) => includesFallbackToken(code));
+    };
+
+    const getTurnGroupKey = (event, index) => {
+      const colorKey = event?.turnColor || "unknown_color";
+      const roundKey = Number.isFinite(event?.roundNumber) ? event.roundNumber : "unknown_round";
+      const explicitMarker = event?.turnMarker || event?.turnId || event?.turnNumber;
+      if(explicitMarker !== null && explicitMarker !== undefined){
+        return `${colorKey}:${roundKey}:${explicitMarker}`;
+      }
+      if(Number.isFinite(event?.roundNumber) && event?.turnColor){
+        return `${colorKey}:${roundKey}`;
+      }
+      return `${colorKey}:${roundKey}:fallback_turn_${index}`;
+    };
+
+    const isExplicitFinalStage = (event) => {
+      const stage = typeof event?.stage === "string" ? event.stage.toLowerCase() : "";
+      if(!stage) return false;
+      return stage.endsWith("_selected") || stage.endsWith("_move") || stage === "no_move_found";
+    };
+
+    const fallbackDecisions = aiDecisionEvents.filter((event) => isFallbackStageOrReason(event));
 
     const decisionsWithoutMove = aiDecisionEvents.filter((event) => !event?.selectedMove);
     const rejectReasonLoad = aiDecisionEvents
@@ -9890,7 +9912,42 @@ function buildAiSelfAnalyzerGapReport(source){
       .map((event) => Number.isFinite(event?.selectedMove?.totalDist) ? event.selectedMove.totalDist : null)
       .filter((value) => Number.isFinite(value));
 
-    return {
+    const groupedTurnEvents = aiDecisionEvents.reduce((map, event, index) => {
+      const key = getTurnGroupKey(event, index);
+      if(!map[key]){
+        map[key] = [];
+      }
+      map[key].push(event);
+      return map;
+    }, {});
+
+    const finalTurnEvents = Object.values(groupedTurnEvents)
+      .map((turnEvents) => {
+        const explicitFinalEvents = turnEvents.filter((event) => isExplicitFinalStage(event));
+        if(explicitFinalEvents.length > 0){
+          return explicitFinalEvents[explicitFinalEvents.length - 1];
+        }
+        return turnEvents[turnEvents.length - 1] || null;
+      })
+      .filter((event) => Boolean(event));
+
+    const finalDecisionsWithoutMove = finalTurnEvents.filter((event) => !event?.selectedMove);
+    const finalFallbackDecisions = finalTurnEvents.filter((event) => {
+      if(!event?.selectedMove) return false;
+      const move = event.selectedMove || {};
+      const stage = typeof event?.stage === "string" ? event.stage.toLowerCase() : "";
+      return (
+        stage.includes("fallback")
+        || includesFallbackToken(move.goalName)
+        || includesFallbackToken(move.decisionReason)
+        || isFallbackStageOrReason(event)
+      );
+    });
+    const finalAvgMoveDistance = finalTurnEvents
+      .map((event) => Number.isFinite(event?.selectedMove?.totalDist) ? event.selectedMove.totalDist : null)
+      .filter((value) => Number.isFinite(value));
+
+    const pipelineDiagnostics = {
       decisions: aiDecisionEvents.length,
       fallbackDecisions: fallbackDecisions.length,
       fallbackRate: aiDecisionEvents.length > 0 ? fallbackDecisions.length / aiDecisionEvents.length : 0,
@@ -9900,6 +9957,29 @@ function buildAiSelfAnalyzerGapReport(source){
       avgMoveDistance: avgMoveDistance.length > 0
         ? avgMoveDistance.reduce((sum, value) => sum + value, 0) / avgMoveDistance.length
         : 0,
+    };
+
+    const turnOutcomeMetrics = {
+      turns: finalTurnEvents.length,
+      fallbackDecisions: finalFallbackDecisions.length,
+      fallbackRate: finalTurnEvents.length > 0 ? finalFallbackDecisions.length / finalTurnEvents.length : 0,
+      decisionsWithoutMove: finalDecisionsWithoutMove.length,
+      noMoveRate: finalTurnEvents.length > 0 ? finalDecisionsWithoutMove.length / finalTurnEvents.length : 0,
+      avgMoveDistance: finalAvgMoveDistance.length > 0
+        ? finalAvgMoveDistance.reduce((sum, value) => sum + value, 0) / finalAvgMoveDistance.length
+        : 0,
+    };
+
+    return {
+      pipelineDiagnostics,
+      turnOutcomeMetrics,
+      decisions: turnOutcomeMetrics.turns,
+      fallbackDecisions: turnOutcomeMetrics.fallbackDecisions,
+      fallbackRate: turnOutcomeMetrics.fallbackRate,
+      decisionsWithoutMove: turnOutcomeMetrics.decisionsWithoutMove,
+      noMoveRate: turnOutcomeMetrics.noMoveRate,
+      avgRejectReasonLoad: pipelineDiagnostics.avgRejectReasonLoad,
+      avgMoveDistance: turnOutcomeMetrics.avgMoveDistance,
     };
   };
 
