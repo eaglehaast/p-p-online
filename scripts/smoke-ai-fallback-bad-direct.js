@@ -32,6 +32,7 @@ function assert(condition, message){
 
 const source = fs.readFileSync('script.js', 'utf8');
 const MAX_DRAG_DISTANCE = extractConstValue(source, 'MAX_DRAG_DISTANCE');
+const ATTACK_RANGE_PX = extractConstValue(source, 'ATTACK_RANGE_PX');
 const context = {
   Math,
   MAX_DRAG_DISTANCE,
@@ -43,6 +44,10 @@ const context = {
   AI_MIRROR_PATH_PRESSURE_BONUS: 0,
   AI_MIRROR_SCORE_BLOCKED_DIRECT_BONUS: 0,
   AI_MIRROR_SCORE_PRESSURE_BONUS: 0,
+  AI_WALL_LOCKED_TARGET_COMBAT_RADIUS: extractConstValue(source, 'AI_WALL_LOCKED_TARGET_COMBAT_RADIUS', { ATTACK_RANGE_PX }),
+  AI_WALL_LOCKED_MIRROR_BONUS: extractConstValue(source, 'AI_WALL_LOCKED_MIRROR_BONUS'),
+  AI_WALL_LOCKED_POOR_DIRECT_SCORE_PENALTY: extractConstValue(source, 'AI_WALL_LOCKED_POOR_DIRECT_SCORE_PENALTY', { ATTACK_RANGE_PX }),
+  AI_WALL_LOCKED_POOR_DIRECT_QUALITY_PENALTY: extractConstValue(source, 'AI_WALL_LOCKED_POOR_DIRECT_QUALITY_PENALTY'),
   AI_MAX_ANGLE_DEVIATION: 0,
   AI_MULTI_KILL_PRIMARY_BONUS: 0,
   AI_IMMEDIATE_RESPONSE_DANGER_RADIUS: MAX_DRAG_DISTANCE,
@@ -72,6 +77,7 @@ const context = {
   isPathClear: () => true,
   getAiNoticeableProgressMeta: () => ({ hasProgress: true, progressRatio: 0.5, beforeDist: 100, afterDist: 50, improvement: 50, noticeableThreshold: 10 }),
   logAiDecision: () => {},
+  isCurrentMapClearSky: () => false,
 };
 
 vm.createContext(context);
@@ -86,6 +92,59 @@ const fnNames = [
 ];
 vm.runInContext(fnNames.map((name) => extractFunctionSource(source, name)).join('\n\n'), context);
 
+
+function runWallLockedMirrorShareBatch(basePlane){
+  const distances = [];
+  for(let distance = 70; distance <= 220; distance += 5){
+    distances.push(distance);
+  }
+
+  let mirrorSelectedCount = 0;
+  const rows = [];
+
+  const originalSafeCandidates = context.AI_FALLBACK_SAFE_ANGLE_CANDIDATE_DEG;
+  const originalRicochetScale = context.AI_FALLBACK_RICOCHET_PREP_SCALE;
+  context.AI_FALLBACK_SAFE_ANGLE_CANDIDATE_DEG = [];
+  context.AI_FALLBACK_RICOCHET_PREP_SCALE = 0;
+
+  for(const distance of distances){
+    const scenarioEnemy = { id: `g-${distance}`, x: basePlane.x + distance, y: basePlane.y, shieldActive: false };
+    context.isPathClear = () => false;
+    context.findMirrorShot = () => ({
+      mirrorTarget: { x: basePlane.x + Math.max(60, distance * 0.9), y: basePlane.y + 40 },
+      totalDist: Math.max(60, distance * 0.72),
+    });
+
+    const scenarioMove = context.getFallbackAiMove({
+      aiPlanes: [basePlane],
+      enemies: [scenarioEnemy],
+      shouldUseFlagsMode: false,
+      availableEnemyFlags: [],
+      homeBase: { x: 30, y: 100 },
+      aiRiskProfile: { profile: 'balanced' },
+    });
+
+    const selectedMirror = scenarioMove?.decisionReason === 'fallback_mirror_attack';
+    if(selectedMirror) mirrorSelectedCount += 1;
+
+    rows.push({
+      distance,
+      selectedMirror,
+      decisionReason: scenarioMove?.decisionReason || null,
+    });
+  }
+
+  context.AI_FALLBACK_SAFE_ANGLE_CANDIDATE_DEG = originalSafeCandidates;
+  context.AI_FALLBACK_RICOCHET_PREP_SCALE = originalRicochetScale;
+
+  const share = distances.length > 0 ? mirrorSelectedCount / distances.length : 0;
+  return {
+    total: distances.length,
+    mirrorSelectedCount,
+    mirrorSelectedShare: share,
+    rows,
+  };
+}
 const plane = { id: 'b1', x: 100, y: 100 };
 const enemy = { id: 'g1', x: 390, y: 100, shieldActive: false };
 
@@ -107,6 +166,10 @@ assert(move.inventoryUsageReason === 'bad_direct_fallback', 'Inventory gate reas
 const quality = context.getFallbackDirectAttackQuality(plane, enemy, Math.hypot(enemy.x - plane.x, enemy.y - plane.y), 'balanced');
 assert(quality < context.AI_FALLBACK_DIRECT_QUALITY_MIN, 'Scenario must represent low direct quality.');
 
+const wallLockedBatch = runWallLockedMirrorShareBatch(plane);
+
 console.log('Smoke test passed: low-quality direct shot switches to fallback priority and unlocks inventory only for that case.');
 console.log(`directQuality=${quality.toFixed(3)} threshold=${context.AI_FALLBACK_DIRECT_QUALITY_MIN}`);
 console.log(`decisionReason=${move.decisionReason}`);
+console.log(`wallLockedMirrorSelected=${wallLockedBatch.mirrorSelectedCount}/${wallLockedBatch.total}`);
+console.log(`wallLockedMirrorSelectedShare=${wallLockedBatch.mirrorSelectedShare.toFixed(4)}`);
