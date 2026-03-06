@@ -7486,7 +7486,7 @@ const { img: mineIconSprite } = loadImageAsset(
 );
 const DYNAMITE_EXPLOSION_FRAME_PATHS = Array.from({ length: 17 }, (_, index) => {
   const frameNumber = String(index + 1).padStart(2, "0");
-  return `ui_gamescreen/gs_inventory/gs_dynamiteexplosion_002/gs_dynamite_explosion_${frameNumber}.png`;
+  return `ui_gamescreen/gs_inventory/gs_dynamiteexplosion_03/gs_dynamiteexplosion_${frameNumber}.png`;
 });
 const DYNAMITE_EXPLOSION_FRAMES = DYNAMITE_EXPLOSION_FRAME_PATHS.map((path) => loadImageAsset(path, GAME_PRELOAD_LABEL).img);
 
