@@ -15255,7 +15255,43 @@ function tryPlanOpeningCenterControlMove(context){
 
   const center = getCenterControlAnchor();
   const readyCargo = cargoState.filter((cargo) => cargo?.state === "ready");
+  const softPathPenaltyBase = Math.max(CELL_SIZE * 0.45, ATTACK_RANGE_PX * 0.1);
+  const softPathScaleSteps = [0.82, 0.68, 0.54];
+  const activeGoalName = `${context?.goalName || aiRoundState?.currentGoal || ""}`.toLowerCase();
+  const strictPathFiltering = activeGoalName.includes("critical_base_threat")
+    || activeGoalName.includes("emergency_base_defense");
   let pathCheckPerformed = false;
+
+  function buildSoftPathMove(plane, targetX, targetY){
+    if(strictPathFiltering) return null;
+    if(!plane || !Number.isFinite(targetX) || !Number.isFinite(targetY)) return null;
+
+    const dx = targetX - plane.x;
+    const dy = targetY - plane.y;
+    const fullDistance = Math.hypot(dx, dy);
+    if(!Number.isFinite(fullDistance) || fullDistance <= CELL_SIZE * 0.2) return null;
+
+    for(const scale of softPathScaleSteps){
+      const probeX = plane.x + dx * scale;
+      const probeY = plane.y + dy * scale;
+      const move = planPathToPoint(plane, probeX, probeY, {
+        goalName: "opening_center_soft_path",
+        decisionReason: "opening_center_soft_path",
+      });
+      if(!move) continue;
+
+      const remainingDistance = Math.hypot(targetX - probeX, targetY - probeY);
+      const softPathPenalty = softPathPenaltyBase + remainingDistance * 0.16;
+      return {
+        ...move,
+        softPathPenaltyApplied: true,
+        softPathPenalty,
+        softPathReasonCode: "soft_path_pass_with_penalty",
+      };
+    }
+
+    return null;
+  }
 
   let bestCargoCandidate = null;
   for(const plane of groundedAiPlanes){
@@ -15304,12 +15340,15 @@ function tryPlanOpeningCenterControlMove(context){
   for(const plane of groundedAiPlanes){
     if(dist(plane, center) <= AI_CENTER_CONTROL_DISTANCE) continue;
     pathCheckPerformed = true;
-    const move = planPathToPoint(plane, center.x, center.y);
+    const directMove = planPathToPoint(plane, center.x, center.y);
+    const move = directMove || buildSoftPathMove(plane, center.x, center.y);
     if(!move) continue;
+
+    const softPathPenalty = move?.softPathPenaltyApplied ? (move.softPathPenalty || softPathPenaltyBase) : 0;
     const candidate = {
       plane,
       move,
-      score: getAiPlaneAdjustedScore(move.totalDist, plane),
+      score: getAiPlaneAdjustedScore(move.totalDist, plane) + softPathPenalty,
       idleTurns: getAiPlaneIdleTurns(plane),
     };
     if(compareAiCandidateByScoreAndRotation(candidate, bestCenterMove, ["opening_center_move"])){
@@ -15323,6 +15362,8 @@ function tryPlanOpeningCenterControlMove(context){
       planeId: bestCenterMove.plane.id,
       turnAdvanceCount,
       distance: Number(bestCenterMove.move.totalDist.toFixed(1)),
+      softPathPenaltyApplied: Boolean(bestCenterMove.move?.softPathPenaltyApplied),
+      softPathPenalty: Number((bestCenterMove.move?.softPathPenalty || 0).toFixed(2)),
     });
     return { move: { plane: bestCenterMove.plane, ...bestCenterMove.move }, rejectReason: null };
   }
@@ -17360,10 +17401,14 @@ function doComputerMove(){
     const openingCenterPlan = tryPlanOpeningCenterControlMove(modeContext);
     const openingCenterMove = openingCenterPlan?.move || null;
     if(openingCenterMove){
+      const openingCenterReasonCodes = ["opening_center_control", "no_critical_threat", "center_lane_available"];
+      if(openingCenterMove?.softPathPenaltyApplied){
+        openingCenterReasonCodes.push(openingCenterMove.softPathReasonCode || "soft_path_pass_with_penalty");
+      }
       recordDecisionEvent("opening_center_selected", {
         goal: openingCenterMove.goalName || "opening_center_control",
         move: openingCenterMove,
-        reasonCodes: ["opening_center_control", "no_critical_threat", "center_lane_available"],
+        reasonCodes: openingCenterReasonCodes,
       });
       issueAIMoveWithInventoryUsage(modeContext, openingCenterMove);
       return;
