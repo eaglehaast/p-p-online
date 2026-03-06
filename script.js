@@ -12637,6 +12637,7 @@ function markAiStuckSectorUsed(plane, sector){
 
 const AI_DYNAMITE_INTENT_SCORE_BONUS = 0.94;
 const AI_DYNAMITE_INTENT_LINE_TOLERANCE = CELL_SIZE * 0.9;
+const AI_MULTI_KILL_PRIMARY_BONUS = CELL_SIZE * 0.55;
 const AI_MULTI_KILL_TIE_BREAK_BONUS = CELL_SIZE * 0.08;
 const AI_MULTI_KILL_LINE_TOLERANCE = CELL_SIZE * 0.75;
 const AI_MULTI_KILL_CONTACT_TOLERANCE = CELL_SIZE * 1.1;
@@ -15645,7 +15646,15 @@ function planRoleDrivenAiMove(context, rolePack){
       const rawHitChanceScore = move.totalDist * clearLaneBonus * longShotPenalty * (1 - Math.min(0.2, mirrorScoreBonus));
       const baseHitChanceScore = getAiPlaneAdjustedScore(rawHitChanceScore, striker);
       const intentAdjustment = getAiDynamiteIntentScoreAdjustment(baseHitChanceScore, { ...move, plane: striker }, { plane: striker });
-      const hitChanceScore = intentAdjustment.score;
+      const multiKillMeta = getAiMultiKillPotentialContext({
+        plane: striker,
+        enemy,
+        enemies,
+        lineEndX: move?.moveType === "mirror" ? (move?.mirrorTarget?.x ?? enemy.x) : enemy.x,
+        lineEndY: move?.moveType === "mirror" ? (move?.mirrorTarget?.y ?? enemy.y) : enemy.y,
+      });
+      const multiKillBonus = multiKillMeta.multiKillPotential === 1 ? AI_MULTI_KILL_PRIMARY_BONUS : 0;
+      const hitChanceScore = Math.max(0, intentAdjustment.score - multiKillBonus);
       if(longShotPenalty > 1){
         logAiDecision("long_shot_penalty_observed", {
           source: "role_striker",
@@ -15677,10 +15686,25 @@ function planRoleDrivenAiMove(context, rolePack){
         });
       }
       if(!bestStrike || hitChanceScore < bestStrike.hitChanceScore){
-        bestStrike = { enemy, move, hitChanceScore };
+        bestStrike = {
+          enemy,
+          move,
+          hitChanceScore,
+          multiKillPotential: multiKillMeta.multiKillPotential,
+          secondaryEnemyId: multiKillMeta.secondaryEnemyId,
+          multiKillBonusApplied: multiKillBonus,
+        };
       }
     }
     if(bestStrike){
+      logAiDecision("role_striker_pick", {
+        planeId: striker.id,
+        enemyId: bestStrike.enemy?.id ?? null,
+        secondaryEnemyId: bestStrike.secondaryEnemyId ?? null,
+        multiKillPotential: bestStrike.multiKillPotential ?? 0,
+        multiKillBonusApplied: Number((bestStrike.multiKillBonusApplied ?? 0).toFixed(3)),
+        scoreAfterBonuses: Number(bestStrike.hitChanceScore.toFixed(3)),
+      });
       aiRoundState.currentGoal = "role_striker";
       return { plane: striker, ...bestStrike.move };
     }
@@ -16403,7 +16427,7 @@ function getFallbackAiMove(context){
         const directBonusAllowed = !isDefenseOrRetreatContext(directSafetyContext);
         const directScoreBefore = directAttackScore;
         const directMultiKillBonusApplied = directBonusAllowed && directMultiKill.multiKillPotential === 1
-          ? AI_MULTI_KILL_TIE_BREAK_BONUS
+          ? AI_MULTI_KILL_PRIMARY_BONUS
           : 0;
         const directScoreAfter = Math.max(0, directScoreBefore - directMultiKillBonusApplied);
         logAiDecision("fallback_attack_candidate_scored", {
@@ -16531,7 +16555,7 @@ function getFallbackAiMove(context){
           const mirrorBonusAllowed = !isDefenseOrRetreatContext(mirrorSafetyContext);
           const mirrorScoreBefore = mirrorScore;
           const mirrorMultiKillBonusApplied = mirrorBonusAllowed && mirrorMultiKill.multiKillPotential === 1
-            ? AI_MULTI_KILL_TIE_BREAK_BONUS
+            ? AI_MULTI_KILL_PRIMARY_BONUS
             : 0;
           const mirrorScoreAfter = Math.max(0, mirrorScoreBefore - mirrorMultiKillBonusApplied);
           logAiDecision("fallback_attack_candidate_scored", {
@@ -18040,7 +18064,7 @@ function findDirectFinisherMove(aiPlanes, enemies, options = {}){
         if(!otherEnemy?.isAlive || otherEnemy === enemy) return false;
         return dist(enemy, otherEnemy) <= CELL_SIZE * 1.25;
       }).length;
-      const clusterBonus = Math.min(MAX_DRAG_DISTANCE * 0.18, nearbyEnemiesCount * CELL_SIZE * 0.35);
+      const clusterBonus = Math.min(MAX_DRAG_DISTANCE * 0.22, nearbyEnemiesCount * Math.max(CELL_SIZE * 0.35, AI_MULTI_KILL_PRIMARY_BONUS));
       const aggressionBias = applyOpeningAggressionBias(adjustedDist, {
         targetType: "direct_finisher",
         context: options?.context || null,
