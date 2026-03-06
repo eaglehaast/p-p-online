@@ -107,6 +107,7 @@ function runAttemptBatch(planPathToPoint, repeatCount){
 
 const source = fs.readFileSync('script.js', 'utf8');
 const progressMetaSrc = extractFunctionSource(source, 'getAiNoticeableProgressMeta');
+const routeNearbySrc = extractFunctionSource(source, 'countRouteNearbyColliders');
 const planPathSrc = extractFunctionSource(source, 'planPathToPoint');
 
 const deterministicBeforeSteps = [
@@ -119,6 +120,18 @@ const deterministicBeforeSteps = [
 
 const logs = [];
 const random = makeSeededRandom(20260302);
+const smokeColliders = [
+  { id: 'near-1', cx: 96, cy: 96, halfWidth: 10, halfHeight: 10, rotation: 0 },
+  { id: 'near-2', cx: 114, cy: 104, halfWidth: 10, halfHeight: 10, rotation: 0 },
+  { id: 'near-3', cx: 132, cy: 112, halfWidth: 10, halfHeight: 10, rotation: 0 },
+  { id: 'near-4', cx: 150, cy: 120, halfWidth: 10, halfHeight: 10, rotation: 0 },
+  { id: 'near-5', cx: 168, cy: 126, halfWidth: 10, halfHeight: 10, rotation: 0 },
+  { id: 'far-1', cx: 20, cy: 220, halfWidth: 10, halfHeight: 10, rotation: 0 },
+  { id: 'far-2', cx: 220, cy: 220, halfWidth: 10, halfHeight: 10, rotation: 0 },
+  { id: 'far-3', cx: 300, cy: 40, halfWidth: 10, halfHeight: 10, rotation: 0 },
+  { id: 'far-4', cx: 300, cy: 200, halfWidth: 10, halfHeight: 10, rotation: 0 },
+  { id: 'far-5', cx: 40, cy: 20, halfWidth: 10, halfHeight: 10, rotation: 0 },
+];
 
 const context = {
   Math,
@@ -127,7 +140,7 @@ const context = {
   FIELD_FLIGHT_DURATION_SEC: 1,
   AI_MAX_ANGLE_DEVIATION: Math.PI / 6,
   MAX_DRAG_DISTANCE: 360,
-  colliders: Array.from({ length: 30 }, (_, index) => ({ id: index + 1 })),
+  colliders: smokeColliders,
   isPathClear: makeGapPathClear(),
   getRandomDeviation(distance, maxDeviation){
     const centered = random() * 2 - 1;
@@ -150,6 +163,14 @@ const context = {
     };
   },
   aiRoundState: { recentLaunchAnglesDeg: [], angleRepeatStreakCount: 0, turnNumber: 1, tieBreakerSeed: 1 },
+  getAiDirectionSectorDeg(){
+    return 0;
+  },
+  getAiStuckRepeatSectorPenalty(){
+    return 0;
+  },
+  markAiStuckSectorUsed(){},
+  updateAiStuckAttempt(){},
   isMirrorPressureTarget(){
     return false;
   },
@@ -174,6 +195,7 @@ const context = {
 
 vm.createContext(context);
 vm.runInContext(progressMetaSrc, context);
+vm.runInContext(routeNearbySrc, context);
 vm.runInContext(planPathSrc, context);
 
 function planPathBefore(plane, tx, ty){
@@ -220,12 +242,25 @@ const repeatCount = 30;
 const before = runAttemptBatch(planPathBefore, repeatCount);
 const after = runAttemptBatch(context.planPathToPoint, repeatCount);
 
+const localNearbyCount = context.countRouteNearbyColliders(40, 100, 260, 118, context.CELL_SIZE * 1.1);
+assert(context.colliders.length < 26,
+  `Expected low global collider count for fallback check. got=${context.colliders.length}`);
+assert(localNearbyCount >= 5,
+  `Expected local nearby colliders to trigger narrow corridor. got=${localNearbyCount}`);
+
 assert(after.ratio > before.ratio,
   `Expected narrow corridor success ratio to improve. before=${before.ratio}, after=${after.ratio}`);
 assert(after.aliveMoves === repeatCount,
   `Expected AI to keep producing moves in the narrow corridor scenario. got=${after.aliveMoves}/${repeatCount}`);
 
 const reasonProbePlane = { id: 'probe', x: 0, y: 0 };
+context.colliders = [
+  { id: 'probe-1', cx: 30, cy: 2, halfWidth: 8, halfHeight: 8, rotation: 0 },
+  { id: 'probe-2', cx: 60, cy: -2, halfWidth: 8, halfHeight: 8, rotation: 0 },
+  { id: 'probe-3', cx: 90, cy: 3, halfWidth: 8, halfHeight: 8, rotation: 0 },
+  { id: 'probe-4', cx: 120, cy: -3, halfWidth: 8, halfHeight: 8, rotation: 0 },
+  { id: 'probe-5', cx: 150, cy: 2, halfWidth: 8, halfHeight: 8, rotation: 0 },
+];
 context.isPathClear = function probePathClear(x1, y1, x2, y2){
   const angle = Math.atan2(y2 - y1, x2 - x1);
   const expectedNarrow = Math.PI / 90;
@@ -245,6 +280,7 @@ assert(selected > 0, 'Expected narrow corridor selected reason code to appear in
 console.log('Smoke test passed: narrow corridor branch improves 2-cell gap traversal ratio.');
 console.log('Before ratio:', before.ratio.toFixed(3), `(${before.successCount}/${repeatCount})`);
 console.log('After ratio :', after.ratio.toFixed(3), `(${after.successCount}/${repeatCount})`);
+console.log('Nearby colliders on route:', localNearbyCount, `(global=${context.colliders.length})`);
 console.log('Near-repeat angle ratio before/after:', before.nearAngleRepeatRatio.toFixed(3), '/', after.nearAngleRepeatRatio.toFixed(3));
 console.log('Near-repeat landing ratio before/after:', before.nearLandingRepeatRatio.toFixed(3), '/', after.nearLandingRepeatRatio.toFixed(3));
 console.log('Reason code logs:', { narrow_corridor_selected: selected, narrow_corridor_rejected: rejected });
