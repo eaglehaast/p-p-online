@@ -8417,7 +8417,7 @@ const AI_MIRROR_MAX_PATH_RATIO_OBSTACLE_BONUS = 0.35;
 const AI_MIRROR_PATH_PRESSURE_BONUS = 0.2;
 const AI_MIRROR_STUCK_RECOVERY_PRESSURE_BONUS = 0.08;
 const AI_MIRROR_SCORE_PRESSURE_BONUS = 0.12;
-const AI_MIRROR_SCORE_BLOCKED_DIRECT_BONUS = 0.12;
+const AI_MIRROR_SCORE_BLOCKED_DIRECT_BONUS = 0.06;
 
 const AIMING_TUNING_DEFAULTS = {
   referenceAccuracyPercent: 80,
@@ -12131,10 +12131,11 @@ const AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD = 2;
 const AI_INVENTORY_SOFT_FALLBACK_COOLDOWN_TURNS = 3;
 const AI_FALLBACK_DIRECT_QUALITY_MIN = 0.4;
 const AI_WALL_LOCKED_TARGET_COMBAT_RADIUS = ATTACK_RANGE_PX;
-const AI_WALL_LOCKED_MIRROR_BONUS = 0.1;
+const AI_WALL_LOCKED_MIRROR_BONUS = 0.04;
 const AI_WALL_LOCKED_POOR_DIRECT_QUALITY_PENALTY = 0.2;
 const AI_WALL_LOCKED_POOR_DIRECT_SCORE_PENALTY = ATTACK_RANGE_PX * 0.2;
-const AI_WALL_LOCKED_DIRECT_TIE_BREAK_PENALTY = 0.001;
+const AI_WALL_LOCKED_DIRECT_TIE_BREAK_PENALTY = 0.0003;
+const AI_FALLBACK_ATTACK_SCORE_TIE_EPSILON = ATTACK_RANGE_PX * 0.015;
 const AI_FALLBACK_SAFE_ANGLE_SHORT_SCALE = 0.38;
 const AI_FALLBACK_SAFE_ANGLE_CANDIDATE_DEG = Object.freeze([28, -28, 44, -44, 62, -62, 88, -88]);
 const AI_FALLBACK_RICOCHET_PREP_SCALE = 0.66;
@@ -13061,6 +13062,26 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
       if(scoreGap <= AI_REPEAT_FORCE_SCORE_MARGIN && !isRepeatedCandidateCritical){
         return !nextIsRepeat;
       }
+    }
+  }
+
+  const nextNormalizedScore = nextCandidate?.normalizedScore;
+  const currentNormalizedScore = currentCandidate?.normalizedScore;
+  const sameEnemyId = (nextCandidate?.enemy?.id ?? null) && (nextCandidate?.enemy?.id === currentCandidate?.enemy?.id);
+  const differentTrajectoryType = nextCandidate?.trajectoryType && currentCandidate?.trajectoryType
+    && nextCandidate.trajectoryType !== currentCandidate.trajectoryType;
+  if(
+    Number.isFinite(nextNormalizedScore)
+    && Number.isFinite(currentNormalizedScore)
+    && sameEnemyId
+    && differentTrajectoryType
+  ){
+    const normalizedGap = Math.abs(nextNormalizedScore - currentNormalizedScore);
+    if(normalizedGap <= AI_FALLBACK_ATTACK_SCORE_TIE_EPSILON){
+      const nextResponseRisk = Number.isFinite(nextCandidate?.responseRisk) ? nextCandidate.responseRisk : Number.POSITIVE_INFINITY;
+      const currentResponseRisk = Number.isFinite(currentCandidate?.responseRisk) ? currentCandidate.responseRisk : Number.POSITIVE_INFINITY;
+      if(nextResponseRisk + epsilon < currentResponseRisk) return true;
+      if(nextResponseRisk > currentResponseRisk + epsilon) return false;
     }
   }
 
@@ -16151,6 +16172,39 @@ function isEmergencyDefenseStageGoal(goalName){
   return goalText.includes("critical_base_threat") || goalText.startsWith("emergency_base_defense_");
 }
 
+function getFallbackCandidateResponseRisk(threatMeta){
+  if(!threatMeta || threatMeta.count <= 0) return 0;
+  const proximityFactor = Number.isFinite(threatMeta.nearestDist)
+    ? Math.max(0, 1 - (threatMeta.nearestDist / AI_IMMEDIATE_RESPONSE_DANGER_RADIUS))
+    : 1;
+  return Number((Math.min(1, threatMeta.count * 0.25 + proximityFactor * 0.75)).toFixed(4));
+}
+
+function buildFallbackAttackScoreDetails({
+  plane,
+  weightedDistance,
+  bonusParts = [],
+  safetyContext,
+  multiKillPotential,
+  tieBreakPenalty = 0,
+}){
+  const bonusTotal = Math.min(0.2, bonusParts.reduce((sum, bonus) => sum + Math.max(0, bonus || 0), 0));
+  const rawScore = getAiPlaneAdjustedScore(weightedDistance * (1 - bonusTotal), plane);
+  const bonusAllowed = !isDefenseOrRetreatContext(safetyContext);
+  const multiKillBonusApplied = bonusAllowed && multiKillPotential?.multiKillPotential === 1
+    ? AI_MULTI_KILL_PRIMARY_BONUS
+    : 0;
+  const scoreAfter = Math.max(0, rawScore - multiKillBonusApplied);
+  const normalizedScore = scoreAfter + Math.max(0, tieBreakPenalty || 0);
+  return {
+    bonusTotal,
+    scoreBefore: rawScore,
+    scoreAfter,
+    normalizedScore,
+    multiKillBonusApplied,
+  };
+}
+
 function getFallbackAiMove(context){
   const { aiPlanes, enemies, shouldUseFlagsMode, availableEnemyFlags } = context;
   const homeBase = context.homeBase;
@@ -16424,12 +16478,18 @@ function getFallbackAiMove(context){
           goalName: "attack_enemy_plane",
           decisionReason: "fallback_direct_attack",
         };
-        const directBonusAllowed = !isDefenseOrRetreatContext(directSafetyContext);
-        const directScoreBefore = directAttackScore;
-        const directMultiKillBonusApplied = directBonusAllowed && directMultiKill.multiKillPotential === 1
-          ? AI_MULTI_KILL_PRIMARY_BONUS
+        const directTieBreakPenalty = wallLockedRicochetPreferredTargets.has(enemy?.id)
+          ? AI_WALL_LOCKED_DIRECT_TIE_BREAK_PENALTY
           : 0;
-        const directScoreAfter = Math.max(0, directScoreBefore - directMultiKillBonusApplied);
+        const directScoreMeta = buildFallbackAttackScoreDetails({
+          plane,
+          weightedDistance: directDist * longShotPenalty,
+          bonusParts: [],
+          safetyContext: directSafetyContext,
+          multiKillPotential: directMultiKill,
+          tieBreakPenalty: directTieBreakPenalty,
+        });
+        const directResponseRisk = getFallbackCandidateResponseRisk(immediateThreatMeta);
         logAiDecision("fallback_attack_candidate_scored", {
           source: "fallback_attack",
           candidateType: "direct",
@@ -16437,9 +16497,14 @@ function getFallbackAiMove(context){
           enemyId: enemy.id,
           secondaryEnemyId: directMultiKill.secondaryEnemyId,
           multiKillPotential: directMultiKill.multiKillPotential,
-          multiKillBonusApplied: Number(directMultiKillBonusApplied.toFixed(3)),
-          scoreBefore: Number(directScoreBefore.toFixed(3)),
-          scoreAfter: Number(directScoreAfter.toFixed(3)),
+          multiKillBonusApplied: Number(directScoreMeta.multiKillBonusApplied.toFixed(3)),
+          scoreBefore: Number(directScoreMeta.scoreBefore.toFixed(3)),
+          scoreAfter: Number(directScoreMeta.scoreAfter.toFixed(3)),
+          normalizedScore: Number(directScoreMeta.normalizedScore.toFixed(3)),
+          normalizedDirectScore: Number(directScoreMeta.normalizedScore.toFixed(3)),
+          normalizedMirrorScore: null,
+          tieBreakPenalty: Number(directTieBreakPenalty.toFixed(4)),
+          responseRisk: Number(directResponseRisk.toFixed(4)),
           lineDistance: Number.isFinite(directMultiKill.lineDistance) ? Number(directMultiKill.lineDistance.toFixed(2)) : null,
           contactDistance: Number.isFinite(directMultiKill.contactDistance) ? Number(directMultiKill.contactDistance.toFixed(2)) : null,
         });
@@ -16451,9 +16516,10 @@ function getFallbackAiMove(context){
           vy,
           totalDist: directDist,
           directAttackScore,
-          score: directScoreAfter + (wallLockedRicochetPreferredTargets.has(enemy?.id)
-            ? AI_WALL_LOCKED_DIRECT_TIE_BREAK_PENALTY
-            : 0),
+          score: directScoreMeta.normalizedScore,
+          normalizedScore: directScoreMeta.normalizedScore,
+          responseRisk: directResponseRisk,
+          trajectoryType: "direct",
           idleTurns: getAiPlaneIdleTurns(plane),
         };
         if(wallLockedRicochetPreferredTargets.has(enemy?.id)){
@@ -16518,7 +16584,6 @@ function getFallbackAiMove(context){
           const pressureBonus = mirrorPressureTarget ? AI_MIRROR_SCORE_PRESSURE_BONUS : 0;
           const wallLockedBonus = wallLockedTargetTrigger ? AI_WALL_LOCKED_MIRROR_BONUS : 0;
           const mirrorBonus = Math.min(0.2, blockedDirectBonus + pressureBonus + wallLockedBonus);
-          const mirrorScore = getAiPlaneAdjustedScore(mirror.totalDist * mirrorWeight * (1 - mirrorBonus), plane);
           const reasonCode = wallLockedTargetTrigger
             ? "wall_locked_target_prefers_ricochet"
             : (directPathBlocked ? "direct_path_blocked" : "tactical_preference");
@@ -16552,12 +16617,18 @@ function getFallbackAiMove(context){
             goalName: "attack_enemy_plane",
             decisionReason: "fallback_mirror_attack",
           };
-          const mirrorBonusAllowed = !isDefenseOrRetreatContext(mirrorSafetyContext);
-          const mirrorScoreBefore = mirrorScore;
-          const mirrorMultiKillBonusApplied = mirrorBonusAllowed && mirrorMultiKill.multiKillPotential === 1
-            ? AI_MULTI_KILL_PRIMARY_BONUS
-            : 0;
-          const mirrorScoreAfter = Math.max(0, mirrorScoreBefore - mirrorMultiKillBonusApplied);
+          const mirrorScoreMeta = buildFallbackAttackScoreDetails({
+            plane,
+            weightedDistance: mirror.totalDist * mirrorWeight,
+            bonusParts: [blockedDirectBonus, pressureBonus, wallLockedBonus],
+            safetyContext: mirrorSafetyContext,
+            multiKillPotential: mirrorMultiKill,
+            tieBreakPenalty: 0,
+          });
+          const mirrorLandingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
+          const mirrorLandingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
+          const mirrorImmediateThreatMeta = getImmediateResponseThreatMeta(context, mirrorLandingX, mirrorLandingY, enemy);
+          const mirrorResponseRisk = getFallbackCandidateResponseRisk(mirrorImmediateThreatMeta);
           logAiDecision("fallback_attack_candidate_scored", {
             source: "fallback_attack",
             candidateType: "mirror",
@@ -16565,9 +16636,14 @@ function getFallbackAiMove(context){
             enemyId: enemy.id,
             secondaryEnemyId: mirrorMultiKill.secondaryEnemyId,
             multiKillPotential: mirrorMultiKill.multiKillPotential,
-            multiKillBonusApplied: Number(mirrorMultiKillBonusApplied.toFixed(3)),
-            scoreBefore: Number(mirrorScoreBefore.toFixed(3)),
-            scoreAfter: Number(mirrorScoreAfter.toFixed(3)),
+            multiKillBonusApplied: Number(mirrorScoreMeta.multiKillBonusApplied.toFixed(3)),
+            scoreBefore: Number(mirrorScoreMeta.scoreBefore.toFixed(3)),
+            scoreAfter: Number(mirrorScoreMeta.scoreAfter.toFixed(3)),
+            normalizedScore: Number(mirrorScoreMeta.normalizedScore.toFixed(3)),
+            normalizedDirectScore: null,
+            normalizedMirrorScore: Number(mirrorScoreMeta.normalizedScore.toFixed(3)),
+            mirrorBonus: Number(mirrorScoreMeta.bonusTotal.toFixed(3)),
+            responseRisk: Number(mirrorResponseRisk.toFixed(4)),
             lineDistance: Number.isFinite(mirrorMultiKill.lineDistance) ? Number(mirrorMultiKill.lineDistance.toFixed(2)) : null,
             contactDistance: Number.isFinite(mirrorMultiKill.contactDistance) ? Number(mirrorMultiKill.contactDistance.toFixed(2)) : null,
           });
@@ -16578,8 +16654,11 @@ function getFallbackAiMove(context){
             vx,
             vy,
             totalDist: mirror.totalDist,
-            directAttackScore: mirrorScore,
-            score: mirrorScoreAfter,
+            directAttackScore: mirrorScoreMeta.scoreBefore,
+            score: mirrorScoreMeta.normalizedScore,
+            normalizedScore: mirrorScoreMeta.normalizedScore,
+            responseRisk: mirrorResponseRisk,
+            trajectoryType: "mirror",
             idleTurns: getAiPlaneIdleTurns(plane),
           };
           if(compareAiCandidateByScoreAndRotation(mirrorCandidate, best, ["fallback_attack", "mirror", enemy?.id ?? ""])){
