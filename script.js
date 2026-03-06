@@ -14700,12 +14700,15 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
           expectedEnemyId: targetEnemy?.id ?? null,
         };
       }
-      const latestEnemy = findActualPlaneById(targetEnemy?.id, context?.enemies);
+      const latestEnemyLive = findActualPlaneById(targetEnemy?.id);
+      const latestEnemy = latestEnemyLive || findActualPlaneById(targetEnemy?.id, context?.enemies);
+      const revalidationSource = latestEnemyLive ? "live_points" : "context_fallback";
       if(!latestEnemy || !isPlaneTargetable(latestEnemy)){
         return {
           ok: false,
           reason: "target_missing",
           expectedEnemyId: targetEnemy?.id ?? null,
+          revalidationSource,
         };
       }
       const drift = Math.hypot(latestEnemy.x - targetEnemy.x, latestEnemy.y - targetEnemy.y);
@@ -14716,6 +14719,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
           expectedEnemyId: targetEnemy?.id ?? null,
           drift,
           radius: AI_PLANNED_MOVE_TARGET_REVALIDATION_RADIUS_PX,
+          revalidationSource,
         };
       }
     }
@@ -14744,6 +14748,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
         previousEnemyId: plannedMove?.targetEnemy?.id ?? plannedMove?.enemy?.id ?? null,
         previousGoal: plannedMove?.goalName ?? null,
         staleReason: staleCheck?.reason ?? "unknown",
+        revalidationSource: staleCheck?.revalidationSource ?? "live_points",
         fallbackPlaneId: fallbackMove?.plane?.id ?? null,
         fallbackEnemyId: fallbackMove?.targetEnemy?.id ?? fallbackMove?.enemy?.id ?? null,
         fallbackGoal: fallbackMove?.goalName ?? null,
@@ -23619,82 +23624,3 @@ if (window.visualViewport) {
   }
 
 bootstrapGame();
-  function revalidatePlannedMove(move){
-    const plane = move?.plane;
-    if(!plane || !isPlaneLaunchStateReady(plane)){
-      return {
-        ok: false,
-        reason: "plane_unavailable",
-      };
-    }
-    if(flyingPoints.some((flight) => flight?.plane === plane)){
-      return {
-        ok: false,
-        reason: "plane_already_in_flight",
-      };
-    }
-
-    const targetEnemy = move?.targetEnemy || move?.enemy || null;
-    if(targetEnemy){
-      if(!isPlaneTargetable(targetEnemy)){
-        return {
-          ok: false,
-          reason: "target_not_alive",
-          expectedEnemyId: targetEnemy?.id ?? null,
-        };
-      }
-      const latestEnemy = findActualPlaneById(targetEnemy?.id, context?.enemies);
-      if(!latestEnemy || !isPlaneTargetable(latestEnemy)){
-        return {
-          ok: false,
-          reason: "target_missing",
-          expectedEnemyId: targetEnemy?.id ?? null,
-        };
-      }
-      const drift = Math.hypot(latestEnemy.x - targetEnemy.x, latestEnemy.y - targetEnemy.y);
-      if(drift > AI_PLANNED_MOVE_TARGET_REVALIDATION_RADIUS_PX){
-        return {
-          ok: false,
-          reason: "target_shifted",
-          expectedEnemyId: targetEnemy?.id ?? null,
-          drift,
-          radius: AI_PLANNED_MOVE_TARGET_REVALIDATION_RADIUS_PX,
-        };
-      }
-    }
-
-    const landingPoint = getAiMoveLandingPoint(move);
-    if(!landingPoint || !isPathClear(plane.x, plane.y, landingPoint.x, landingPoint.y)){
-      return {
-        ok: false,
-        reason: "path_blocked",
-      };
-    }
-
-    return {
-      ok: true,
-      reason: "ok",
-    };
-  }
-
-  function launchFallbackIfNeeded(staleCheck){
-    const fallbackMove = getFallbackAiMove(context) || getGuaranteedAnyLegalLaunch(context);
-    if(
-      fallbackMove?.plane
-      && Number.isFinite(fallbackMove?.vx)
-      && Number.isFinite(fallbackMove?.vy)
-    ){
-      issueAIMove(fallbackMove.plane, fallbackMove.vx, fallbackMove.vy);
-      logAiDecision("stale_target_replanned", {
-        planeId: plannedMove?.plane?.id ?? null,
-        previousEnemyId: plannedMove?.targetEnemy?.id ?? plannedMove?.enemy?.id ?? null,
-        previousGoal: plannedMove?.goalName ?? null,
-        staleReason: staleCheck?.reason ?? "unknown",
-        fallbackPlaneId: fallbackMove?.plane?.id ?? null,
-        fallbackEnemyId: fallbackMove?.targetEnemy?.id ?? fallbackMove?.enemy?.id ?? null,
-        fallbackGoal: fallbackMove?.goalName ?? null,
-      });
-      return true;
-    }
-    return false;
-  }
