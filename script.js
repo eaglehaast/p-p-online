@@ -13054,6 +13054,13 @@ function appendOpeningAggressionReasonCode(reasonCodes, move){
   return [...reasonCodes, "opening_aggression_bias_applied"];
 }
 
+function appendBounceCandidateReasonCode(reasonCodes, move){
+  if(!Array.isArray(reasonCodes)) return reasonCodes;
+  if(!move?.bounceCandidateUsed) return reasonCodes;
+  if(reasonCodes.includes("bounce_candidate_used")) return reasonCodes;
+  return [...reasonCodes, "bounce_candidate_used"];
+}
+
 function getStableHashFromParts(parts){
   const source = Array.isArray(parts) ? parts.join("|") : String(parts ?? "");
   let hash = 0;
@@ -15962,6 +15969,88 @@ function planRoleDrivenAiMove(context, rolePack){
   return null;
 }
 
+function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {}){
+  if(!Array.isArray(planes) || !Array.isArray(availableEnemyFlags)) return [];
+
+  const goalText = `${options?.goalName || aiRoundState?.currentGoal || ""}`.toLowerCase();
+  const allowBounceStage = !goalText.includes("critical_base_threat")
+    && !goalText.includes("emergency_base_defense");
+  const leftWallX = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
+  const rightWallX = FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X;
+  const hasWallData = Number.isFinite(leftWallX) && Number.isFinite(rightWallX);
+
+  const directCandidates = [];
+  for(const plane of planes){
+    if(flyingPoints.some((fp) => fp.plane === plane)) continue;
+    for(const flag of availableEnemyFlags){
+      const targetAnchor = getFlagAnchor(flag);
+      const move = planPathToPoint(plane, targetAnchor.x, targetAnchor.y, {
+        goalName: options?.goalName || "capture_enemy_flag",
+        decisionReason: options?.decisionReason || "flag_capture_direct",
+      });
+      if(!move) continue;
+      const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
+      directCandidates.push({
+        plane,
+        flag,
+        ...move,
+        candidateType: "direct",
+        adjustedDist,
+        score: adjustedDist,
+        idleTurns: getAiPlaneIdleTurns(plane),
+      });
+    }
+  }
+
+  if(directCandidates.length > 0 || !allowBounceStage || !hasWallData){
+    return directCandidates;
+  }
+
+  const bounceCandidates = [];
+  for(const plane of planes){
+    if(flyingPoints.some((fp) => fp.plane === plane)) continue;
+    for(const flag of availableEnemyFlags){
+      const targetAnchor = getFlagAnchor(flag);
+      const mirroredTargets = [
+        {
+          wall: "left",
+          wallX: leftWallX,
+          targetX: 2 * leftWallX - targetAnchor.x,
+          targetY: targetAnchor.y,
+        },
+        {
+          wall: "right",
+          wallX: rightWallX,
+          targetX: 2 * rightWallX - targetAnchor.x,
+          targetY: targetAnchor.y,
+        },
+      ];
+      for(const mirroredTarget of mirroredTargets){
+        const move = planPathToPoint(plane, mirroredTarget.targetX, mirroredTarget.targetY, {
+          goalName: options?.goalName || "capture_enemy_flag",
+          decisionReason: "flag_capture_bounce_candidate",
+        });
+        if(!move) continue;
+        const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
+        bounceCandidates.push({
+          plane,
+          flag,
+          ...move,
+          candidateType: "bounce",
+          bounceCandidateUsed: true,
+          bounceSourceWall: mirroredTarget.wall,
+          bounceSourceWallX: mirroredTarget.wallX,
+          adjustedDist,
+          score: adjustedDist,
+          idleTurns: getAiPlaneIdleTurns(plane),
+        });
+      }
+    }
+  }
+
+  return bounceCandidates;
+}
+
 function planModeDrivenAiMove(context){
   planModeDrivenAiMove.lastRejectReason = null;
   const {
@@ -16129,22 +16218,13 @@ function planModeDrivenAiMove(context){
   if(aiRoundState.mode === AI_MODES.FLAG_PRESSURE && availableEnemyFlags.length > 0){
     aiRoundState.currentGoal = "capture_enemy_flag";
     let bestCap = null;
-    for(const plane of groundedAiPlanes){
-      for(const flag of availableEnemyFlags){
-        const targetAnchor = getFlagAnchor(flag);
-        const move = planPathToPoint(plane, targetAnchor.x, targetAnchor.y);
-        if(move){
-          const candidate = {
-            plane,
-            ...move,
-            adjustedDist: getAiPlaneAdjustedScore(move.totalDist, plane),
-            score: getAiPlaneAdjustedScore(move.totalDist, plane),
-            idleTurns: getAiPlaneIdleTurns(plane),
-          };
-          if(compareAiCandidateByScoreAndRotation(candidate, bestCap, ["mode_flag_pressure", flag?.id ?? ""])){
-            bestCap = candidate;
-          }
-        }
+    const capCandidates = buildFlagCaptureBaseCandidates(groundedAiPlanes, availableEnemyFlags, {
+      goalName: "capture_enemy_flag",
+      decisionReason: "mode_flag_pressure",
+    });
+    for(const candidate of capCandidates){
+      if(compareAiCandidateByScoreAndRotation(candidate, bestCap, ["mode_flag_pressure", candidate?.flag?.id ?? "", candidate?.candidateType || "direct"])){
+        bestCap = candidate;
       }
     }
     if(bestCap) return bestCap;
@@ -16473,23 +16553,13 @@ function getFallbackAiMove(context){
     targetEnemies = enemies.filter(e=>e===stolenBlueFlagCarrier);
   } else if(availableEnemyFlags.length && (riskProfile === "comeback" || riskProfile === "balanced")){
     let bestCap = null;
-    for(const plane of aiPlanes){
-      if(flyingPoints.some(fp=>fp.plane===plane)) continue;
-      for(const flag of availableEnemyFlags){
-        const targetAnchor = getFlagAnchor(flag);
-        const move = planPathToPoint(plane, targetAnchor.x, targetAnchor.y);
-        if(move){
-          const candidate = {
-            plane,
-            ...move,
-            adjustedDist: getAiPlaneAdjustedScore(move.totalDist, plane),
-            score: getAiPlaneAdjustedScore(move.totalDist, plane),
-            idleTurns: getAiPlaneIdleTurns(plane),
-          };
-          if(compareAiCandidateByScoreAndRotation(candidate, bestCap, ["fallback_flag_pressure", flag?.id ?? ""])){
-            bestCap = candidate;
-          }
-        }
+    const capCandidates = buildFlagCaptureBaseCandidates(aiPlanes, availableEnemyFlags, {
+      goalName: "capture_enemy_flag",
+      decisionReason: "fallback_flag_pressure",
+    });
+    for(const candidate of capCandidates){
+      if(compareAiCandidateByScoreAndRotation(candidate, bestCap, ["fallback_flag_pressure", candidate?.flag?.id ?? "", candidate?.candidateType || "direct"])){
+        bestCap = candidate;
       }
     }
     if(bestCap){
@@ -17529,7 +17599,10 @@ function doComputerMove(){
       recordDecisionEvent("comeback_flag_selected", {
         goal: aiRoundState.currentGoal,
         move: quickFlagMove,
-        reasonCodes: ["comeback_mode", "flag_pressure", "fast_flag_window"],
+        reasonCodes: appendBounceCandidateReasonCode(
+          ["comeback_mode", "flag_pressure", "fast_flag_window"],
+          quickFlagMove
+        ),
       });
       logAiDecision("comeback_quick_flag", {
         planeId: quickFlagMove.plane?.id ?? null,
@@ -17570,8 +17643,11 @@ function doComputerMove(){
     recordDecisionEvent("mode_move_selected", {
       goal: aiRoundState.currentGoal,
       move: modeMove,
-      reasonCodes: appendOpeningAggressionReasonCode(
-        ["mode_strategy", "best_available_lane", "no_better_finisher"],
+      reasonCodes: appendBounceCandidateReasonCode(
+        appendOpeningAggressionReasonCode(
+          ["mode_strategy", "best_available_lane", "no_better_finisher"],
+          modeMove
+        ),
         modeMove
       ),
     });
@@ -17642,8 +17718,11 @@ function doComputerMove(){
     recordDecisionEvent("fallback_selected", {
       goal: aiRoundState.currentGoal,
       move: fallbackMove,
-      reasonCodes: appendOpeningAggressionReasonCode(
-        ["fallback_strategy", "last_resort_plan", "keep_turn_progress"],
+      reasonCodes: appendBounceCandidateReasonCode(
+        appendOpeningAggressionReasonCode(
+          ["fallback_strategy", "last_resort_plan", "keep_turn_progress"],
+          fallbackMove
+        ),
         fallbackMove
       ),
     });
