@@ -44,6 +44,9 @@ const context = {
   AI_MIRROR_SCORE_BLOCKED_DIRECT_BONUS: 0,
   AI_MIRROR_SCORE_PRESSURE_BONUS: 0,
   AI_MAX_ANGLE_DEVIATION: 0,
+  AI_MULTI_KILL_PRIMARY_BONUS: 0,
+  AI_IMMEDIATE_RESPONSE_DANGER_RADIUS: MAX_DRAG_DISTANCE,
+  AI_FALLBACK_ATTACK_SCORE_TIE_EPSILON: 0.001,
   settings: { flightRangeCells: 20 },
   CELL_SIZE: 16,
   flyingPoints: [],
@@ -61,9 +64,13 @@ const context = {
   getAiPlaneAdjustedScore: (dist) => dist,
   getAiPlaneIdleTurns: () => 0,
   compareAiCandidateByScoreAndRotation: (candidate, best) => !best || candidate.score < best.score,
+  getImmediateResponseThreatMeta: () => ({ count: 0, nearestDist: Number.POSITIVE_INFINITY }),
+  getAiMultiKillPotentialContext: () => ({ multiKillPotential: 0, secondaryEnemyId: null, lineDistance: Number.NaN, contactDistance: Number.NaN }),
+  isDefenseOrRetreatContext: () => false,
   applyAiMinLaunchScale: (scale) => scale,
   dist: (a, b) => Math.hypot(a.x - b.x, a.y - b.y),
   isPathClear: () => true,
+  getAiNoticeableProgressMeta: () => ({ hasProgress: true, progressRatio: 0.5, beforeDist: 100, afterDist: 50, improvement: 50, noticeableThreshold: 10 }),
   logAiDecision: () => {},
 };
 
@@ -73,6 +80,8 @@ const fnNames = [
   'getFallbackDirectAttackQuality',
   'findFallbackSafeAngleRepositionMove',
   'findFallbackRicochetPreparationMove',
+  'getFallbackCandidateResponseRisk',
+  'buildFallbackAttackScoreDetails',
   'getFallbackAiMove',
 ];
 vm.runInContext(fnNames.map((name) => extractFunctionSource(source, name)).join('\n\n'), context);
