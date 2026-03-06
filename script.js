@@ -3615,6 +3615,7 @@ function applyInventoryItemAtBoardPoint(activeItemState, clientX, clientY, dropC
       spriteRef: targetBrick.spriteRef,
       startedAtMs: performance.now(),
       frameIndex: 0,
+      finalFadeStartedAtMs: null,
       brickRemoved: false,
     };
     dynamiteState.push(dynamiteEntry);
@@ -3808,6 +3809,22 @@ function getDynamiteExplosionFrameIndexByElapsed(elapsedMs){
   return DYNAMITE_EXPLOSION_FRAME_DURATIONS_MS.length - 1;
 }
 
+function findActiveDynamiteEntryForSprite(sprite){
+  if(!sprite || !Array.isArray(dynamiteState) || dynamiteState.length === 0){
+    return null;
+  }
+
+  const spriteId = typeof sprite?.id === "string" ? sprite.id : null;
+  for(let i = dynamiteState.length - 1; i >= 0; i -= 1){
+    const entry = dynamiteState[i];
+    if(!entry || entry.brickRemoved) continue;
+    if(entry.spriteRef === sprite) return entry;
+    if(spriteId && entry.spriteId === spriteId) return entry;
+  }
+
+  return null;
+}
+
 function updateAndDrawDynamiteExplosions(ctx2d, now){
   const removeDomEntry = (entry) => {
     if(entry?.domEntry?.remove){
@@ -3870,7 +3887,14 @@ function updateAndDrawDynamiteExplosions(ctx2d, now){
     const frameIndex = getDynamiteExplosionFrameIndexByElapsed(elapsedMs);
     entry.frameIndex = frameIndex;
 
-    if(frameIndex + 1 >= DYNAMITE_BRICK_REMOVAL_FRAME_INDEX){
+    if(frameIndex + 1 >= DYNAMITE_BRICK_REMOVAL_FRAME_INDEX && !Number.isFinite(entry.finalFadeStartedAtMs)){
+      entry.finalFadeStartedAtMs = now;
+    }
+
+    const finalFadeElapsedMs = Number.isFinite(entry.finalFadeStartedAtMs)
+      ? Math.max(0, now - entry.finalFadeStartedAtMs)
+      : 0;
+    if(Number.isFinite(entry.finalFadeStartedAtMs) && finalFadeElapsedMs >= DYNAMITE_BRICK_FADE_OUT_DURATION_MS){
       removeBrickSpriteForDynamite(entry);
     }
 
@@ -7521,6 +7545,7 @@ const DYNAMITE_BRICK_REMOVAL_FRAME_INDEX = Math.min(
   DYNAMITE_EXPLOSION_FRAMES.length,
   Math.max(6, Math.min(8, Math.min(4, DYNAMITE_EXPLOSION_FRAMES.length) + 3))
 );
+const DYNAMITE_BRICK_FADE_OUT_DURATION_MS = 280;
 
 arrowSprite?.addEventListener("load", () => {
   console.log("[IMG] load", { label: "arrowSprite", url: arrowSprite.src });
@@ -13878,6 +13903,7 @@ function placeBlueDynamiteAt(boardX, boardY){
     spriteRef: targetBrick.spriteRef,
     startedAtMs: performance.now(),
     frameIndex: 0,
+    finalFadeStartedAtMs: null,
     brickRemoved: false,
   };
   dynamiteState.push(dynamiteEntry);
@@ -20965,6 +20991,8 @@ function drawMapSprites(ctx2d, sprites = currentMapSprites){
     return;
   }
 
+  const now = performance.now();
+
   for(const sprite of spriteEntries){
     const spriteName = typeof sprite?.spriteName === "string" ? sprite.spriteName : MAP_DEFAULT_SPRITE_NAME;
     const brickSprite = MAP_SPRITE_ASSETS[spriteName] || MAP_SPRITE_ASSETS[MAP_DEFAULT_SPRITE_NAME];
@@ -20984,8 +21012,19 @@ function drawMapSprites(ctx2d, sprites = currentMapSprites){
     const swapsDimensions = normalizedRotation % 180 !== 0;
     const drawnWidth = (swapsDimensions ? baseHeight : baseWidth) * Math.abs(scaleX);
     const drawnHeight = (swapsDimensions ? baseWidth : baseHeight) * Math.abs(scaleY);
+    const activeDynamiteEntry = findActiveDynamiteEntryForSprite(sprite);
+    const finalFadeStartedAtMs = activeDynamiteEntry?.finalFadeStartedAtMs;
+    const isFinalFadeActive = Number.isFinite(finalFadeStartedAtMs);
+    const finalFadeElapsedMs = isFinalFadeActive ? Math.max(0, now - finalFadeStartedAtMs) : 0;
+    const finalFadeProgress = isFinalFadeActive
+      ? Math.min(1, finalFadeElapsedMs / DYNAMITE_BRICK_FADE_OUT_DURATION_MS)
+      : 0;
+    const brickAlpha = isFinalFadeActive ? Math.max(0, 1 - finalFadeProgress) : 1;
 
     ctx2d.save();
+    if(brickAlpha < 1){
+      ctx2d.globalAlpha *= brickAlpha;
+    }
     ctx2d.translate(x + drawnWidth / 2, y + drawnHeight / 2);
     ctx2d.rotate(rotationDeg * Math.PI / 180);
     ctx2d.scale(scaleX, scaleY);
