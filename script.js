@@ -13271,6 +13271,17 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
     return false;
   }
 
+  const nextRouteQuality = Number.isFinite(nextCandidate?.routeQualityScore)
+    ? nextCandidate.routeQualityScore
+    : (Number.isFinite(nextCandidate?.routeMetrics?.qualityScore) ? nextCandidate.routeMetrics.qualityScore : null);
+  const currentRouteQuality = Number.isFinite(currentCandidate?.routeQualityScore)
+    ? currentCandidate.routeQualityScore
+    : (Number.isFinite(currentCandidate?.routeMetrics?.qualityScore) ? currentCandidate.routeMetrics.qualityScore : null);
+  if(Number.isFinite(nextRouteQuality) && Number.isFinite(currentRouteQuality) && Math.abs(nextRouteQuality - currentRouteQuality) > 0.0001){
+    compareAiCandidateByScoreAndRotation.lastClassTieBreakReason = "route_quality_priority";
+    return nextRouteQuality > currentRouteQuality;
+  }
+
   const nextRotationMeta = scoreMoveForPlane(1, nextCandidate.plane);
   const currentRotationMeta = scoreMoveForPlane(1, currentCandidate.plane);
   const nextIdleTurns = nextCandidate.idleTurns ?? nextRotationMeta.idleTurns ?? 0;
@@ -15365,6 +15376,11 @@ function tryPlanOpeningCenterControlMove(context){
   const strictPathFiltering = activeGoalName.includes("critical_base_threat")
     || activeGoalName.includes("emergency_base_defense");
   let pathCheckPerformed = false;
+  const pathRejectCodeHits = new Map();
+  function markPathRejectCode(code){
+    const safeCode = typeof code === "string" && code.trim().length > 0 ? code : "blocked_path";
+    pathRejectCodeHits.set(safeCode, (pathRejectCodeHits.get(safeCode) || 0) + 1);
+  }
 
   function buildSoftPathMove(plane, targetX, targetY){
     if(strictPathFiltering) return null;
@@ -15402,7 +15418,10 @@ function tryPlanOpeningCenterControlMove(context){
     for(const cargo of readyCargo){
       pathCheckPerformed = true;
       const move = planPathToPoint(plane, cargo.x, cargo.y);
-      if(!move) continue;
+      if(!move){
+        markPathRejectCode(planPathToPoint.lastRejectCode);
+        continue;
+      }
       const riskInfo = evaluateCargoPickupRisk(plane, cargo, context);
       const favorableInfo = evaluateFavorableCargoCandidate(plane, cargo, move, riskInfo);
       const canTakeCargo = riskInfo.isSafePath
@@ -15445,6 +15464,9 @@ function tryPlanOpeningCenterControlMove(context){
     if(dist(plane, center) <= AI_CENTER_CONTROL_DISTANCE) continue;
     pathCheckPerformed = true;
     const directMove = planPathToPoint(plane, center.x, center.y);
+    if(!directMove){
+      markPathRejectCode(planPathToPoint.lastRejectCode);
+    }
     const move = directMove || buildSoftPathMove(plane, center.x, center.y);
     if(!move) continue;
 
@@ -15475,7 +15497,10 @@ function tryPlanOpeningCenterControlMove(context){
   return {
     move: null,
     rejectReason: pathCheckPerformed
-      ? "no_candidate_after_path_check"
+      ? (
+        [...pathRejectCodeHits.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
+        || "no_candidate_after_path_check"
+      )
       : "no_opening_target_available",
   };
 }
@@ -16104,6 +16129,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
       const move = planPathToPoint(plane, targetAnchor.x, targetAnchor.y, {
         goalName: baseGoalName,
         decisionReason: baseDecisionReason,
+        routeClass: "direct",
       });
       if(!move) continue;
       const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
@@ -16117,7 +16143,8 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
         directPathBlocked: false,
         goalName: baseGoalName,
       });
-      const finalScore = adjustedDist + classScoreMeta.normalizedClassScore * MAX_DRAG_DISTANCE * 0.035;
+      const routeQualityBonus = (Number.isFinite(move?.routeQualityScore) ? (1 - move.routeQualityScore) : 0) * MAX_DRAG_DISTANCE * 0.04;
+      const finalScore = adjustedDist + classScoreMeta.normalizedClassScore * MAX_DRAG_DISTANCE * 0.035 + routeQualityBonus;
       directCandidates.push({
         plane,
         flag,
@@ -16148,6 +16175,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
         const move = planPathToPoint(plane, targetAnchor.x + offset.x, targetAnchor.y + offset.y, {
           goalName: baseGoalName,
           decisionReason: "flag_capture_gap_candidate",
+          routeClass: "gap",
         });
         if(!move) continue;
         const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
@@ -16161,7 +16189,8 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
           directPathBlocked: !isPathClear(plane.x, plane.y, targetAnchor.x, targetAnchor.y),
           goalName: baseGoalName,
         });
-        const finalScore = adjustedDist + classScoreMeta.normalizedClassScore * MAX_DRAG_DISTANCE * 0.035;
+        const routeQualityBonus = (Number.isFinite(move?.routeQualityScore) ? (1 - move.routeQualityScore) : 0) * MAX_DRAG_DISTANCE * 0.04;
+      const finalScore = adjustedDist + classScoreMeta.normalizedClassScore * MAX_DRAG_DISTANCE * 0.035 + routeQualityBonus;
         gapCandidates.push({
           plane,
           flag,
@@ -16204,6 +16233,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
           const move = planPathToPoint(plane, mirroredTarget.targetX, mirroredTarget.targetY, {
             goalName: baseGoalName,
             decisionReason: "flag_capture_bounce_candidate",
+            routeClass: "ricochet",
           });
           if(!move) continue;
           const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
@@ -16217,7 +16247,8 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
             directPathBlocked: !isPathClear(plane.x, plane.y, targetAnchor.x, targetAnchor.y),
             goalName: baseGoalName,
           });
-          const finalScore = adjustedDist + classScoreMeta.normalizedClassScore * MAX_DRAG_DISTANCE * 0.035;
+          const routeQualityBonus = (Number.isFinite(move?.routeQualityScore) ? (1 - move.routeQualityScore) : 0) * MAX_DRAG_DISTANCE * 0.04;
+      const finalScore = adjustedDist + classScoreMeta.normalizedClassScore * MAX_DRAG_DISTANCE * 0.035 + routeQualityBonus;
           bounceCandidates.push({
             plane,
             flag,
@@ -17855,9 +17886,7 @@ function doComputerMove(){
     }
 
     const openingCenterRejectReason = openingCenterPlan?.rejectReason || "opening_center_attempt_failed";
-    const openingCenterRejectReasons = openingCenterRejectReason === "no_candidate_after_path_check"
-      ? [openingCenterRejectReason, "blocked_path", "no_clear_lane"]
-      : [openingCenterRejectReason];
+    const openingCenterRejectReasons = [openingCenterRejectReason];
     recordDecisionEvent("opening_center_rejected", {
       goal: "opening_center_control",
       reasonCodes: ["opening_center_attempt_failed", "search_next_plan"],
@@ -17985,7 +18014,7 @@ function doComputerMove(){
     recordDecisionEvent("comeback_flag_rejected", {
       goal: "capture_enemy_flag",
       reasonCodes: ["comeback_mode", "flag_plan_not_confirmed"],
-      rejectReasons: ["blocked_path", "no_clear_lane"],
+      rejectReasons: ["unsafe_lane"],
     });
   }
 
@@ -18004,9 +18033,7 @@ function doComputerMove(){
   recordDecisionEvent("early_cargo_rejected", {
     goal: "early_cargo_pickup",
     reasonCodes: ["cargo_pickup_rejected", "risk_control"],
-    rejectReasons: earlyCargoRejectReason === "blocked_path"
-      ? [earlyCargoRejectReason, "no_clear_lane"]
-      : [earlyCargoRejectReason],
+    rejectReasons: [earlyCargoRejectReason],
   });
 
   const modeMove = planModeDrivenAiMove(modeContext);
@@ -18035,9 +18062,7 @@ function doComputerMove(){
   recordDecisionEvent("mode_move_rejected", {
     goal: aiRoundState.currentGoal || "mode_strategy",
     reasonCodes: ["mode_strategy_failed", "fallback_required"],
-    rejectReasons: modeMoveRejectReason === "blocked_path"
-      ? [modeMoveRejectReason, "no_clear_lane"]
-      : [modeMoveRejectReason],
+    rejectReasons: [modeMoveRejectReason],
   });
 
   const rejectedReserveReasons = [];
@@ -18439,6 +18464,80 @@ function planPathToPoint(plane, tx, ty, options = {}){
   const narrowCorridorRouteNearbyThreshold = 5;
   const narrowCorridorRouteProbeRadiusPx = CELL_SIZE * 1.1;
   const isCriticalOrEmergencyStage = isEmergencyDefenseStageGoal(options?.goalName || aiRoundState?.currentGoal);
+  const relaxedEmergencyThreshold = isCriticalOrEmergencyStage
+    && (typeof options?.goalName === "string")
+    && (options.goalName.includes("critical_base_threat") || options.goalName.includes("emergency_base_defense"));
+  const defaultRouteClass = typeof options?.routeClass === "string"
+    ? options.routeClass
+    : ((`${options?.decisionReason || ""}`.toLowerCase().includes("gap") || `${options?.goalName || ""}`.toLowerCase().includes("gap"))
+      ? "gap"
+      : "direct");
+  planPathToPoint.lastRejectCode = null;
+
+  function estimateRouteClearancePx(x1, y1, x2, y2){
+    if(!Array.isArray(colliders) || colliders.length === 0) return CELL_SIZE * 2;
+    let minClearance = Number.POSITIVE_INFINITY;
+    for(const collider of colliders){
+      if(!collider || !Number.isFinite(collider.cx) || !Number.isFinite(collider.cy)) continue;
+      const toRouteDist = getDistanceFromPointToSegment(collider.cx, collider.cy, x1, y1, x2, y2);
+      const halfWidth = Number.isFinite(collider.halfWidth) ? collider.halfWidth : 0;
+      const halfHeight = Number.isFinite(collider.halfHeight) ? collider.halfHeight : 0;
+      const colliderRadius = Math.hypot(halfWidth, halfHeight);
+      const clearance = toRouteDist - colliderRadius;
+      if(clearance < minClearance) minClearance = clearance;
+    }
+    if(!Number.isFinite(minClearance)) return CELL_SIZE * 2;
+    return Math.max(0, minClearance);
+  }
+
+  function evaluateRouteMetrics({ landingX, landingY, distance, candidateClass = defaultRouteClass, progressMeta }){
+    const safeProgressMeta = progressMeta || getAiNoticeableProgressMeta(plane.x, plane.y, landingX, landingY, tx, ty);
+    const clearancePx = estimateRouteClearancePx(plane.x, plane.y, landingX, landingY);
+    const nearbyCount = countRouteNearbyColliders(plane.x, plane.y, landingX, landingY, CELL_SIZE * 0.85);
+    const corridorTightness = Math.max(0, Math.min(1, nearbyCount / 6));
+    const progress = Number.isFinite(safeProgressMeta?.improvement)
+      ? Math.max(0, safeProgressMeta.improvement)
+      : 0;
+
+    let responseRisk = 0;
+    if(typeof getImmediateResponseThreatMeta === "function" && options?.context){
+      const threatMeta = getImmediateResponseThreatMeta(options.context, landingX, landingY, options?.targetEnemy || null);
+      responseRisk = getFallbackCandidateResponseRisk(threatMeta);
+    }
+
+    const minProgress = safeProgressMeta?.noticeableThreshold
+      ? safeProgressMeta.noticeableThreshold * (relaxedEmergencyThreshold ? 0.6 : 1)
+      : CELL_SIZE * (relaxedEmergencyThreshold ? 0.24 : 0.4);
+    const maxResponseRisk = relaxedEmergencyThreshold ? 0.95 : 0.8;
+    const minGapClearance = relaxedEmergencyThreshold ? CELL_SIZE * 0.04 : CELL_SIZE * 0.08;
+
+    let rejectCode = null;
+    if(progress + 0.0001 < minProgress){
+      rejectCode = "insufficient_progress";
+    } else if(responseRisk > maxResponseRisk || corridorTightness > 0.95){
+      rejectCode = "unsafe_lane";
+    } else if(candidateClass === "gap" && clearancePx < minGapClearance){
+      rejectCode = "blocked_at_gap";
+    }
+
+    const clearanceNorm = Math.max(0, Math.min(1, clearancePx / Math.max(1, CELL_SIZE * 1.5)));
+    const progressNorm = Math.max(0, Math.min(1, progress / Math.max(1, distance)));
+    const qualityScore = Number((
+      progressNorm * 0.5
+      + clearanceNorm * 0.25
+      + (1 - responseRisk) * 0.15
+      + (1 - corridorTightness) * 0.1
+    ).toFixed(6));
+
+    return {
+      clearance: Number(clearancePx.toFixed(2)),
+      progress: Number(progress.toFixed(2)),
+      responseRisk: Number(responseRisk.toFixed(4)),
+      corridorTightness: Number(corridorTightness.toFixed(4)),
+      qualityScore,
+      rejectCode,
+    };
+  }
 
   function finalizePlannedMove(move, actualAngle, progressMeta){
     if(!move) return null;
@@ -18501,19 +18600,55 @@ function planPathToPoint(plane, tx, ty, options = {}){
       attemptDeviation * 0.25
     ];
 
+    let bestRoute = null;
+    let bestRouteScore = Number.NEGATIVE_INFINITY;
+    let bestRejectCode = null;
+
+    function considerCandidate(vx, vy, actualAngle, totalDist, candidateMeta = {}, progressMeta = null){
+      const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
+      const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
+      const candidateClass = candidateMeta?.candidateClass || meta?.candidateClass || defaultRouteClass;
+      if(!isPathClear(plane.x, plane.y, landingX, landingY)){
+        bestRejectCode = candidateClass === "gap" ? "blocked_at_gap" : (bestRejectCode || "blocked_path");
+        return;
+      }
+      const routeMetrics = evaluateRouteMetrics({
+        landingX,
+        landingY,
+        distance: totalDist,
+        candidateClass,
+        progressMeta,
+      });
+      if(routeMetrics.rejectCode){
+        bestRejectCode = routeMetrics.rejectCode;
+        return;
+      }
+      const move = finalizePlannedMove(
+        {
+          vx,
+          vy,
+          totalDist,
+          moveType: meta?.moveType || "direct",
+          routeMetrics,
+          routeQualityScore: routeMetrics.qualityScore,
+          ...candidateMeta,
+        },
+        actualAngle,
+        progressMeta || getAiNoticeableProgressMeta(plane.x, plane.y, landingX, landingY, tx, ty)
+      );
+      const candidateScore = routeMetrics.qualityScore;
+      if(candidateScore > bestRouteScore + 0.000001
+        || (Math.abs(candidateScore - bestRouteScore) <= 0.000001 && move.totalDist < (bestRoute?.totalDist ?? Number.POSITIVE_INFINITY))){
+        bestRoute = move;
+        bestRouteScore = candidateScore;
+      }
+    }
+
     for(const deviation of deviations){
       const actualAngle = effectiveBaseAngle + deviation;
       const vx = Math.cos(actualAngle) * workingScale * speedPxPerSec;
       const vy = Math.sin(actualAngle) * workingScale * speedPxPerSec;
-      const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
-      const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
-      if(isPathClear(plane.x, plane.y, landingX, landingY)){
-        return finalizePlannedMove(
-          { vx, vy, totalDist: distance, moveType: meta?.moveType || "direct" },
-          actualAngle,
-          getAiNoticeableProgressMeta(plane.x, plane.y, landingX, landingY, tx, ty)
-        );
-      }
+      considerCandidate(vx, vy, actualAngle, distance, { candidateClass: defaultRouteClass });
     }
 
     const colliderCount = Array.isArray(colliders) ? colliders.length : 0;
@@ -18562,9 +18697,8 @@ function planPathToPoint(plane, tx, ty, options = {}){
       const actualAngle = effectiveBaseAngle + deviation;
       const vx = Math.cos(actualAngle) * workingScale * speedPxPerSec;
       const vy = Math.sin(actualAngle) * workingScale * speedPxPerSec;
-      const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
-      const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
-      if(isPathClear(plane.x, plane.y, landingX, landingY)){
+      considerCandidate(vx, vy, actualAngle, distance, { candidateClass: defaultRouteClass });
+      if(bestRoute){
         logAiDecision("detour_angle_selected", {
           planeId: plane?.id ?? null,
           targetX: tx,
@@ -18573,11 +18707,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
           deviation,
           ...meta
         });
-        return finalizePlannedMove(
-          { vx, vy, totalDist: distance, moveType: meta?.moveType || "direct" },
-          actualAngle,
-          getAiNoticeableProgressMeta(plane.x, plane.y, landingX, landingY, tx, ty)
-        );
+        break;
       }
     }
 
@@ -18636,23 +18766,14 @@ function planPathToPoint(plane, tx, ty, options = {}){
                 );
                 if(!isCriticalOrEmergencyStage && reserveProgressMeta.hasNoticeableProgress){
                   const laneTightPenalty = CELL_SIZE * AI_LANE_TIGHT_PASS_SCORE_PENALTY_SCALE;
-                  const tightMove = finalizePlannedMove(
-                    {
-                      vx,
-                      vy,
-                      totalDist: distance * narrowedScale,
-                      moveType: meta?.moveType || "direct",
-                      laneTightPassApplied: true,
-                      laneTightPenalty,
-                      lanePassType: "lane_tight_pass",
-                      lanePassReasonCode: "lane_tight_pass",
-                    },
-                    actualAngle,
-                    reserveProgressMeta
-                  );
-                  if(tightMove){
-                    tightMove.totalDist += laneTightPenalty;
-                  }
+                  considerCandidate(vx, vy, actualAngle, distance * narrowedScale + laneTightPenalty, {
+                    laneTightPassApplied: true,
+                    laneTightPenalty,
+                    lanePassType: "lane_tight_pass",
+                    lanePassReasonCode: "lane_tight_pass",
+                    candidateClass: "gap",
+                  }, reserveProgressMeta);
+                  const tightMove = bestRoute;
                   logAiDecision("narrow_corridor_selected", {
                     reasonCode: "narrow_corridor_selected",
                     lanePassType: "lane_tight_pass",
@@ -18668,7 +18789,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
                     routeNearbyColliderCount,
                     ...meta
                   });
-                  return tightMove;
+                  if(tightMove) return tightMove;
                 }
 
                 logAiDecision("narrow_corridor_rejected", {
@@ -18690,18 +18811,12 @@ function planPathToPoint(plane, tx, ty, options = {}){
                 continue;
               }
 
-              const comfortMove = finalizePlannedMove(
-                {
-                  vx,
-                  vy,
-                  totalDist: distance * narrowedScale,
-                  moveType: meta?.moveType || "direct",
-                  lanePassType: "lane_comfort_pass",
-                  lanePassReasonCode: "lane_comfort_pass",
-                },
-                actualAngle,
-                primaryProgressMeta
-              );
+              considerCandidate(vx, vy, actualAngle, distance * narrowedScale, {
+                lanePassType: "lane_comfort_pass",
+                lanePassReasonCode: "lane_comfort_pass",
+                candidateClass: "gap",
+              }, primaryProgressMeta);
+              const comfortMove = bestRoute;
               logAiDecision("narrow_corridor_selected", {
                 reasonCode: "narrow_corridor_selected",
                 lanePassType: "lane_comfort_pass",
@@ -18717,7 +18832,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
                 routeNearbyColliderCount,
                 ...meta
               });
-              return comfortMove;
+              if(comfortMove) return comfortMove;
             }
           }
         }
@@ -18748,9 +18863,8 @@ function planPathToPoint(plane, tx, ty, options = {}){
           const actualAngle = baseAngle + deviation;
           const vx = Math.cos(actualAngle) * workingScale * speedPxPerSec;
           const vy = Math.sin(actualAngle) * workingScale * speedPxPerSec;
-          const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
-          const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
-          if(isPathClear(plane.x, plane.y, landingX, landingY)){
+          considerCandidate(vx, vy, actualAngle, distance, { candidateClass: defaultRouteClass });
+          if(bestRoute){
             logAiDecision("detour_angle_selected", {
               planeId: plane?.id ?? null,
               targetX: tx,
@@ -18760,14 +18874,15 @@ function planPathToPoint(plane, tx, ty, options = {}){
               reason: "detour_extended",
               ...meta
             });
-            return finalizePlannedMove(
-              { vx, vy, totalDist: distance, moveType: meta?.moveType || "direct" },
-              actualAngle,
-              getAiNoticeableProgressMeta(plane.x, plane.y, landingX, landingY, tx, ty)
-            );
+            break;
           }
         }
+        if(bestRoute) break;
       }
+    }
+
+    if(bestRoute){
+      return bestRoute;
     }
 
     logAiDecision("detour_not_found", {
@@ -18791,6 +18906,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       progressMeta: getAiNoticeableProgressMeta(plane.x, plane.y, plane.x, plane.y, tx, ty),
       sector: getAiDirectionSectorDeg(baseAngle),
     });
+    planPathToPoint.lastRejectCode = bestRejectCode || "blocked_path";
     return null;
   }
 
@@ -18854,13 +18970,18 @@ function planPathToPoint(plane, tx, ty, options = {}){
       const vy = Math.sin(baseAngle) * finalScale * speedPxPerSec;
       const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
       const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
-      return finalizePlannedMove({
+      const finisherMove = finalizePlannedMove({
         vx,
         vy,
         totalDist: dist,
         decisionReason: "direct_finisher",
         moveType: "direct",
       }, baseAngle, getAiNoticeableProgressMeta(plane.x, plane.y, landingX, landingY, tx, ty));
+      if(finisherMove){
+        finisherMove.routeMetrics = evaluateRouteMetrics({ landingX, landingY, distance: dist, candidateClass: "direct" });
+        finisherMove.routeQualityScore = finisherMove.routeMetrics.qualityScore;
+      }
+      return finisherMove;
     }
 
     return buildMoveWithSafeDeviation(baseAngle, dist, scale, {
@@ -18874,6 +18995,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
   const mirror = findMirrorShot(plane, {x:tx, y:ty}, {
     logReject: true,
     pressureBoost: mirrorPressureBoost,
+    diagnostics: true,
   });
   if(mirror){
     const dx = mirror.mirrorTarget.x - plane.x;
@@ -18900,7 +19022,8 @@ function planPathToPoint(plane, tx, ty, options = {}){
       stuckMirrorRelaxation: false,
     });
     return buildMoveWithSafeDeviation(baseAngle, mirror.totalDist, scale, {
-      moveType: "mirror"
+      moveType: "mirror",
+      candidateClass: "ricochet",
     });
   }
 
@@ -18928,7 +19051,8 @@ function planPathToPoint(plane, tx, ty, options = {}){
         targetY: ty,
       });
       const move = buildMoveWithSafeDeviation(baseAngle, stuckRecoveryMirror.totalDist, scale, {
-        moveType: "mirror"
+        moveType: "mirror",
+        candidateClass: "ricochet",
       });
       if(move){
         logAiDecision("mirror_selected_reason", {
@@ -18946,6 +19070,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
     }
   }
 
+  planPathToPoint.lastRejectCode = findMirrorShot.lastRejectCode || "blocked_path";
   return null;
 }
 
@@ -19265,6 +19390,8 @@ function findMirrorShot(plane, enemy, options = {}){
   const stuckMirrorRelaxation = options?.stuckMirrorRelaxation === true;
   let rejectedTooClose = false;
   let rejectedTooLong = false;
+  let rejectedToBounceSegment = false;
+  let rejectedAfterBounceSegment = false;
 
   const mirrorEdges = [];
   for(const collider of colliders){
@@ -19307,12 +19434,18 @@ function findMirrorShot(plane, enemy, options = {}){
     const pathClearToBounce = isFieldBorder
       ? isPathClear(plane.x, plane.y, inter.x, inter.y)
       : isPathClearExceptEdge(plane.x, plane.y, inter.x, inter.y, collider, ignoreEdge);
-    if(!pathClearToBounce) continue;
+    if(!pathClearToBounce){
+      rejectedToBounceSegment = true;
+      continue;
+    }
 
     const pathClearFromBounce = isFieldBorder
       ? isPathClear(inter.x, inter.y, enemy.x, enemy.y)
       : isPathClearExceptEdge(inter.x, inter.y, enemy.x, enemy.y, collider, ignoreEdge);
-    if(!pathClearFromBounce) continue;
+    if(!pathClearFromBounce){
+      rejectedAfterBounceSegment = true;
+      continue;
+    }
 
     const totalDist = Math.hypot(plane.x - inter.x, plane.y - inter.y) +
                       Math.hypot(inter.x  - enemy.x, inter.y  - enemy.y);
@@ -19333,8 +19466,30 @@ function findMirrorShot(plane, enemy, options = {}){
     }
   }
 
+  if(!best){
+    if(rejectedAfterBounceSegment){
+      findMirrorShot.lastRejectCode = "blocked_after_bounce";
+    } else if(rejectedToBounceSegment){
+      findMirrorShot.lastRejectCode = "blocked_path";
+    } else if(rejectedTooClose){
+      findMirrorShot.lastRejectCode = "blocked_after_bounce";
+    } else if(rejectedTooLong){
+      findMirrorShot.lastRejectCode = "blocked_after_bounce";
+    } else {
+      findMirrorShot.lastRejectCode = "blocked_path";
+    }
+  } else {
+    findMirrorShot.lastRejectCode = null;
+  }
+
   if(!best && options.logReject){
-    if(rejectedTooClose){
+    if(rejectedAfterBounceSegment){
+      logAiDecision("mirror_rejected", {
+        reason: "blocked_after_bounce",
+        planeId: plane?.id ?? null,
+        enemyId: enemy?.id ?? null,
+      });
+    } else if(rejectedTooClose){
       logAiDecision("mirror_rejected", {
         reason: "mirror_rejected_too_close",
         planeId: plane?.id ?? null,

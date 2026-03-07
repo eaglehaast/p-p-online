@@ -140,6 +140,9 @@ const context = {
   FIELD_FLIGHT_DURATION_SEC: 1,
   AI_MAX_ANGLE_DEVIATION: Math.PI / 6,
   MAX_DRAG_DISTANCE: 360,
+  AI_LANE_PROGRESS_PRIMARY_THRESHOLD_SCALE: 0.5,
+  AI_LANE_PROGRESS_RESERVE_THRESHOLD_SCALE: 0.25,
+  AI_LANE_TIGHT_PASS_SCORE_PENALTY_SCALE: 0.35,
   colliders: smokeColliders,
   isPathClear: makeGapPathClear(),
   getRandomDeviation(distance, maxDeviation){
@@ -171,6 +174,24 @@ const context = {
   },
   markAiStuckSectorUsed(){},
   updateAiStuckAttempt(){},
+  isEmergencyDefenseStageGoal(){
+    return false;
+  },
+  getDistanceFromPointToSegment(px, py, x1, y1, x2, y2){
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const lenSq = dx * dx + dy * dy;
+    const t = lenSq <= 1e-6 ? 0 : Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
+    const cx = x1 + dx * t;
+    const cy = y1 + dy * t;
+    return Math.hypot(px - cx, py - cy);
+  },
+  getImmediateResponseThreatMeta(){
+    return { count: 0, nearestDist: Number.POSITIVE_INFINITY };
+  },
+  getFallbackCandidateResponseRisk(){
+    return 0;
+  },
   isMirrorPressureTarget(){
     return false;
   },
