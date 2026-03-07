@@ -9442,6 +9442,41 @@ function recordAiSelfAnalyzerDecision(stage, details = {}){
     const directCount = Number(initialCandidateSetDiagnostics.directCount);
     const gapCount = Number(initialCandidateSetDiagnostics.gapCount);
     const ricochetCount = Number(initialCandidateSetDiagnostics.ricochetCount);
+    const shortlistDiagnostics = initialCandidateSetDiagnostics?.shortlistDiagnostics;
+    const safeShortlistDiagnostics = shortlistDiagnostics && typeof shortlistDiagnostics === "object"
+      ? ["direct", "gap", "ricochet"].reduce((acc, classKey) => {
+          const entry = shortlistDiagnostics[classKey];
+          if(!entry || typeof entry !== "object") return acc;
+          const safeReasons = {};
+          const rawReasons = entry.rejectReasons && typeof entry.rejectReasons === "object" ? entry.rejectReasons : {};
+          for(const [reason, count] of Object.entries(rawReasons)){
+            const safeCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+            if(safeCount > 0) safeReasons[reason] = safeCount;
+          }
+          acc[classKey] = {
+            initialReachable: Number.isFinite(entry.initialReachable) ? Math.max(0, Math.floor(entry.initialReachable)) : 0,
+            shortlistCount: Number.isFinite(entry.shortlistCount) ? Math.max(0, Math.floor(entry.shortlistCount)) : 0,
+            rejectedBetweenInitialAndShortlist: Number.isFinite(entry.rejectedBetweenInitialAndShortlist)
+              ? Math.max(0, Math.floor(entry.rejectedBetweenInitialAndShortlist))
+              : 0,
+            rejectReasons: safeReasons,
+          };
+          return acc;
+        }, {})
+      : null;
+    const safeDisproportionateReasons = Array.isArray(initialCandidateSetDiagnostics?.disproportionateShortlistRejectReasons)
+      ? initialCandidateSetDiagnostics.disproportionateShortlistRejectReasons
+        .slice(0, 2)
+        .map((entry) => ({
+          reason: typeof entry?.reason === "string" ? entry.reason : "unknown",
+          specialCount: Number.isFinite(entry?.specialCount) ? Math.max(0, Math.floor(entry.specialCount)) : 0,
+          directCount: Number.isFinite(entry?.directCount) ? Math.max(0, Math.floor(entry.directCount)) : 0,
+          specialRate: Number.isFinite(entry?.specialRate) ? Number(entry.specialRate.toFixed(4)) : 0,
+          directRate: Number.isFinite(entry?.directRate) ? Number(entry.directRate.toFixed(4)) : 0,
+          disproportionality: Number.isFinite(entry?.disproportionality) ? Number(entry.disproportionality.toFixed(4)) : 0,
+        }))
+      : [];
+
     event.initialCandidateSetDiagnostics = {
       directCount: Number.isFinite(directCount) ? Math.max(0, Math.floor(directCount)) : 0,
       gapCount: Number.isFinite(gapCount) ? Math.max(0, Math.floor(gapCount)) : 0,
@@ -9450,6 +9485,8 @@ function recordAiSelfAnalyzerDecision(stage, details = {}){
       hasGap: Boolean(initialCandidateSetDiagnostics.hasGap),
       hasRicochet: Boolean(initialCandidateSetDiagnostics.hasRicochet),
       goalName: initialCandidateSetDiagnostics.goalName || null,
+      shortlistDiagnostics: safeShortlistDiagnostics,
+      disproportionateShortlistRejectReasons: safeDisproportionateReasons,
     };
   }
 
@@ -10010,6 +10047,92 @@ function buildAiSelfAnalyzerGapReport(source){
       || !event.initialCandidateSetDiagnostics?.hasRicochet
     ));
 
+    const shortlistRejectStats = {
+      direct: { rejected: 0, reasons: {} },
+      gap: { rejected: 0, reasons: {} },
+      ricochet: { rejected: 0, reasons: {} },
+    };
+    const addShortlistRejectReason = (classKey, reasonMap) => {
+      if(!shortlistRejectStats[classKey] || !reasonMap || typeof reasonMap !== "object") return;
+      for(const [reason, count] of Object.entries(reasonMap)){
+        const safeCount = Number.isFinite(count) ? Math.max(0, count) : 0;
+        if(safeCount <= 0) continue;
+        shortlistRejectStats[classKey].reasons[reason] = (shortlistRejectStats[classKey].reasons[reason] || 0) + safeCount;
+      }
+    };
+
+    let shortlistDecisionsWithDiagnostics = 0;
+    for(const event of initialSetEvents){
+      const diagnostics = event?.initialCandidateSetDiagnostics?.shortlistDiagnostics;
+      if(!diagnostics || typeof diagnostics !== "object") continue;
+      shortlistDecisionsWithDiagnostics += 1;
+      for(const classKey of ["direct", "gap", "ricochet"]){
+        const meta = diagnostics[classKey] || {};
+        const rejected = Number.isFinite(meta?.rejectedBetweenInitialAndShortlist)
+          ? Math.max(0, meta.rejectedBetweenInitialAndShortlist)
+          : 0;
+        shortlistRejectStats[classKey].rejected += rejected;
+        addShortlistRejectReason(classKey, meta?.rejectReasons || {});
+      }
+    }
+
+    const normalModeBothSpecialLossEvents = initialSetEvents.filter((event) => {
+      const goalName = `${event?.initialCandidateSetDiagnostics?.goalName || event?.goal || ""}`.toLowerCase();
+      const isEmergency = goalName.includes("critical_base_threat") || goalName.includes("emergency_base_defense");
+      if(isEmergency) return false;
+      const diagnostics = event?.initialCandidateSetDiagnostics?.shortlistDiagnostics;
+      if(!diagnostics || typeof diagnostics !== "object") return false;
+      const gapInitial = Number.isFinite(diagnostics?.gap?.initialReachable) ? diagnostics.gap.initialReachable : 0;
+      const ricochetInitial = Number.isFinite(diagnostics?.ricochet?.initialReachable) ? diagnostics.ricochet.initialReachable : 0;
+      const gapShort = Number.isFinite(diagnostics?.gap?.shortlistCount) ? diagnostics.gap.shortlistCount : 0;
+      const ricochetShort = Number.isFinite(diagnostics?.ricochet?.shortlistCount) ? diagnostics.ricochet.shortlistCount : 0;
+      return gapInitial > 0 && ricochetInitial > 0 && gapShort <= 0 && ricochetShort <= 0;
+    });
+
+    const specialRejectedTotal = shortlistRejectStats.gap.rejected + shortlistRejectStats.ricochet.rejected;
+    const directRejectedTotal = shortlistRejectStats.direct.rejected;
+    const mergedSpecialReasons = {};
+    for(const [reason, count] of Object.entries(shortlistRejectStats.gap.reasons)){
+      mergedSpecialReasons[reason] = (mergedSpecialReasons[reason] || 0) + count;
+    }
+    for(const [reason, count] of Object.entries(shortlistRejectStats.ricochet.reasons)){
+      mergedSpecialReasons[reason] = (mergedSpecialReasons[reason] || 0) + count;
+    }
+
+    const shortlistDisproportionateReasons = Object.entries(mergedSpecialReasons)
+      .map(([reason, specialCount]) => {
+        const safeSpecialCount = Number.isFinite(specialCount) ? Math.max(0, specialCount) : 0;
+        const directCount = Number.isFinite(shortlistRejectStats.direct.reasons[reason])
+          ? Math.max(0, shortlistRejectStats.direct.reasons[reason])
+          : 0;
+        const specialRate = specialRejectedTotal > 0 ? safeSpecialCount / specialRejectedTotal : 0;
+        const directRate = directRejectedTotal > 0 ? directCount / directRejectedTotal : 0;
+        return {
+          reason,
+          specialCount: safeSpecialCount,
+          directCount,
+          specialRate,
+          directRate,
+          disproportionality: specialRate - directRate,
+        };
+      })
+      .filter((item) => item.specialCount > 0)
+      .sort((a, b) => {
+        if(Math.abs((b.disproportionality || 0) - (a.disproportionality || 0)) > 0.000001){
+          return (b.disproportionality || 0) - (a.disproportionality || 0);
+        }
+        return (b.specialCount || 0) - (a.specialCount || 0);
+      })
+      .slice(0, 2)
+      .map((item) => ({
+        reason: item.reason,
+        specialCount: item.specialCount,
+        directCount: item.directCount,
+        specialRate: Number(item.specialRate.toFixed(4)),
+        directRate: Number(item.directRate.toFixed(4)),
+        disproportionality: Number(item.disproportionality.toFixed(4)),
+      }));
+
     const pipelineDiagnostics = {
       decisions: aiDecisionEvents.length,
       fallbackDecisions: fallbackDecisions.length,
@@ -10025,6 +10148,12 @@ function buildAiSelfAnalyzerGapReport(source){
         gapPresentRate: initialSetEvents.length > 0 ? initialSetWithGap.length / initialSetEvents.length : 0,
         ricochetPresentRate: initialSetEvents.length > 0 ? initialSetWithRicochet.length / initialSetEvents.length : 0,
         missingGapOrRicochetRate: initialSetEvents.length > 0 ? initialSetMissingGapOrRicochet.length / initialSetEvents.length : 0,
+        shortlistDecisionsWithDiagnostics,
+        shortlistRejectStats,
+        shortlistDisproportionateReasons,
+        normalModeBothSpecialLossRate: initialSetEvents.length > 0
+          ? normalModeBothSpecialLossEvents.length / initialSetEvents.length
+          : 0,
       },
     };
 
@@ -16310,6 +16439,61 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     target[key] = (target[key] || 0) + 1;
   }
 
+  function mergeReasonMaps(...maps){
+    const merged = {};
+    for(const map of maps){
+      if(!map || typeof map !== "object") continue;
+      for(const [reason, count] of Object.entries(map)){
+        const safeCount = Number.isFinite(count) ? Math.max(0, count) : 0;
+        if(safeCount <= 0) continue;
+        merged[reason] = (merged[reason] || 0) + safeCount;
+      }
+    }
+    return merged;
+  }
+
+  function getDominantShortlistRejectReasons(shortlistDiagnostics){
+    if(!shortlistDiagnostics || typeof shortlistDiagnostics !== "object") return [];
+    const directReasons = shortlistDiagnostics?.direct?.rejectReasons || {};
+    const specialReasons = mergeReasonMaps(
+      shortlistDiagnostics?.gap?.rejectReasons || {},
+      shortlistDiagnostics?.ricochet?.rejectReasons || {}
+    );
+    const directRejected = Number.isFinite(shortlistDiagnostics?.direct?.rejectedBetweenInitialAndShortlist)
+      ? Math.max(0, shortlistDiagnostics.direct.rejectedBetweenInitialAndShortlist)
+      : 0;
+    const specialRejected = ["gap", "ricochet"].reduce((sum, key) => {
+      const value = shortlistDiagnostics?.[key]?.rejectedBetweenInitialAndShortlist;
+      return sum + (Number.isFinite(value) ? Math.max(0, value) : 0);
+    }, 0);
+    if(specialRejected <= 0) return [];
+
+    const ranked = Object.entries(specialReasons)
+      .map(([reason, count]) => {
+        const safeCount = Number.isFinite(count) ? Math.max(0, count) : 0;
+        const directCount = Number.isFinite(directReasons[reason]) ? Math.max(0, directReasons[reason]) : 0;
+        const specialRate = specialRejected > 0 ? safeCount / specialRejected : 0;
+        const directRate = directRejected > 0 ? directCount / directRejected : 0;
+        return {
+          reason,
+          specialCount: safeCount,
+          directCount,
+          specialRate: Number(specialRate.toFixed(4)),
+          directRate: Number(directRate.toFixed(4)),
+          disproportionality: Number((specialRate - directRate).toFixed(4)),
+        };
+      })
+      .filter((item) => item.specialCount > 0)
+      .sort((a, b) => {
+        if(Math.abs((b.disproportionality || 0) - (a.disproportionality || 0)) > 0.0001){
+          return (b.disproportionality || 0) - (a.disproportionality || 0);
+        }
+        return (b.specialCount || 0) - (a.specialCount || 0);
+      });
+
+    return ranked.slice(0, 2);
+  }
+
   function trimCandidatesByClass(candidates){
     if(!Array.isArray(candidates) || candidates.length === 0) return [];
     const sorted = candidates.slice().sort((a, b) => {
@@ -16589,6 +16773,57 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
   const trimmedDirectCandidates = trimCandidatesByClass(directCandidates);
   const trimmedGapCandidates = trimCandidatesByClass(gapCandidates);
   const trimmedBounceCandidates = trimCandidatesByClass(bounceCandidates);
+
+  const isNormalStage = !isEmergencyDefenseStage;
+  const hadSpecialInInitialSet = gapCandidates.length > 0 && bounceCandidates.length > 0;
+  const lostBothSpecialInShortlist = trimmedGapCandidates.length === 0 && trimmedBounceCandidates.length === 0;
+  if(isNormalStage && hadSpecialInInitialSet && lostBothSpecialInShortlist){
+    const fallbackGap = gapCandidates
+      .slice()
+      .sort((a, b) => (Number.isFinite(a?.score) ? a.score : Number.POSITIVE_INFINITY) - (Number.isFinite(b?.score) ? b.score : Number.POSITIVE_INFINITY))[0] || null;
+    const fallbackRicochet = bounceCandidates
+      .slice()
+      .sort((a, b) => (Number.isFinite(a?.score) ? a.score : Number.POSITIVE_INFINITY) - (Number.isFinite(b?.score) ? b.score : Number.POSITIVE_INFINITY))[0] || null;
+    if(fallbackGap) trimmedGapCandidates.push(fallbackGap);
+    if(fallbackRicochet) trimmedBounceCandidates.push(fallbackRicochet);
+    logAiDecision("flag_capture_shortlist_special_route_restore", {
+      goalName: baseGoalName,
+      reason: "post_check_preserve_gap_and_ricochet",
+      restoredGap: Boolean(fallbackGap),
+      restoredRicochet: Boolean(fallbackRicochet),
+    });
+  }
+
+  function buildShortlistDiagnostics(classKey, initialCandidates, shortlistedCandidates, typeDiagnostics){
+    const initialCount = Array.isArray(initialCandidates) ? initialCandidates.length : 0;
+    const shortlistCount = Array.isArray(shortlistedCandidates) ? shortlistedCandidates.length : 0;
+    const scoreCutoffRejected = Math.max(0, initialCount - shortlistCount);
+    const rejectReasons = mergeReasonMaps(
+      typeDiagnostics?.preValidationReasons,
+      typeDiagnostics?.validationReasons,
+      scoreCutoffRejected > 0 ? { shortlist_score_cutoff: scoreCutoffRejected } : null
+    );
+    const rejectedBetweenInitialAndShortlist = Math.max(0,
+      (Number.isFinite(typeDiagnostics?.preValidationRejected) ? typeDiagnostics.preValidationRejected : 0)
+      + (Number.isFinite(typeDiagnostics?.validationRejected) ? typeDiagnostics.validationRejected : 0)
+      + scoreCutoffRejected
+    );
+    return {
+      classKey,
+      initialReachable: initialCount,
+      shortlistCount,
+      rejectedBetweenInitialAndShortlist,
+      rejectReasons,
+    };
+  }
+
+  const shortlistDiagnostics = {
+    direct: buildShortlistDiagnostics("direct", directCandidates, trimmedDirectCandidates, candidateTypeDiagnostics.direct),
+    gap: buildShortlistDiagnostics("gap", gapCandidates, trimmedGapCandidates, candidateTypeDiagnostics.gap),
+    ricochet: buildShortlistDiagnostics("ricochet", bounceCandidates, trimmedBounceCandidates, candidateTypeDiagnostics.ricochet),
+  };
+  const disproportionateShortlistRejectReasons = getDominantShortlistRejectReasons(shortlistDiagnostics);
+
   const combinedCandidates = [
     ...trimmedDirectCandidates,
     ...trimmedGapCandidates,
@@ -16605,6 +16840,8 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     hasGap: trimmedGapCandidates.length > 0,
     hasRicochet: trimmedBounceCandidates.length > 0,
     candidateTypeDiagnostics,
+    shortlistDiagnostics,
+    disproportionateShortlistRejectReasons,
     zeroCandidateReasons: {
       direct: trimmedDirectCandidates.length > 0 ? [] : [
         ...(Object.keys(candidateTypeDiagnostics.direct.preValidationReasons || {}).length > 0 ? ["filtered_before_validation"] : []),
@@ -16635,6 +16872,8 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     gapAttemptBudget,
     ricochetAttemptBudget,
     candidateTypeDiagnostics,
+    shortlistDiagnostics,
+    disproportionateShortlistRejectReasons,
     bounceAllowed: allowBounceStage,
     isEmergencyDefenseStage,
     emergencyBounceBlockedDirectOnly: isEmergencyDefenseStage,
@@ -18947,16 +19186,26 @@ function planPathToPoint(plane, tx, ty, options = {}){
       responseRisk = getFallbackCandidateResponseRisk(threatMeta);
     }
 
-    const minProgress = safeProgressMeta?.noticeableThreshold
+    const minProgressBase = safeProgressMeta?.noticeableThreshold
       ? safeProgressMeta.noticeableThreshold * (relaxedEmergencyThreshold ? 0.6 : 1)
       : CELL_SIZE * (relaxedEmergencyThreshold ? 0.24 : 0.4);
-    const maxResponseRisk = relaxedEmergencyThreshold ? 0.95 : 0.8;
-    const minGapClearance = relaxedEmergencyThreshold ? CELL_SIZE * 0.04 : CELL_SIZE * 0.08;
+    const minProgress = candidateClass === "ricochet"
+      ? minProgressBase * 0.9
+      : minProgressBase;
+    const maxResponseRiskBase = relaxedEmergencyThreshold ? 0.95 : 0.8;
+    const maxResponseRisk = candidateClass === "ricochet"
+      ? Math.min(0.97, maxResponseRiskBase + 0.12)
+      : maxResponseRiskBase;
+    const maxCorridorTightness = candidateClass === "ricochet" ? 0.985 : 0.95;
+    const minGapClearanceBase = relaxedEmergencyThreshold ? CELL_SIZE * 0.04 : CELL_SIZE * 0.08;
+    const minGapClearance = candidateClass === "gap"
+      ? Math.max(CELL_SIZE * 0.02, minGapClearanceBase * 0.6)
+      : minGapClearanceBase;
 
     let rejectCode = null;
     if(progress + 0.0001 < minProgress){
       rejectCode = "insufficient_progress";
-    } else if(responseRisk > maxResponseRisk || corridorTightness > 0.95){
+    } else if(responseRisk > maxResponseRisk || corridorTightness > maxCorridorTightness){
       rejectCode = "unsafe_lane";
     } else if(candidateClass === "gap" && clearancePx < minGapClearance){
       rejectCode = "blocked_at_gap";

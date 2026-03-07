@@ -69,7 +69,9 @@ const context = {
   isDefenseOrRetreatContext(){ return false; },
   isDirectFinisherScenario(){ return false; },
   isMirrorPressureTarget(){ return false; },
+  isCurrentMapClearSky(){ return false; },
   AI_MIRROR_PATH_PRESSURE_BONUS: 0,
+  AI_MIRROR_STUCK_RECOVERY_PRESSURE_BONUS: 0,
   getDistanceFromPointToSegment(px, py, x1, y1, x2, y2){
     const dx = x2 - x1;
     const dy = y2 - y1;
