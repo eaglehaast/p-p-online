@@ -12344,6 +12344,9 @@ const AI_CLASS_SCORE_ANTI_SKEW_DENSE_DIRECT_PENALTY = 0.035;
 const AI_CLASS_SCORE_ANTI_SKEW_DENSE_RICOCHET_BONUS = -0.03;
 const AI_CLASS_SCORE_ANTI_SKEW_DENSE_GAP_BONUS = -0.015;
 const AI_CLASS_SCORE_TIE_EPSILON = 0.025;
+const AI_DIRECT_LOW_PASSABILITY_CLEARANCE_THRESHOLD_PX = CELL_SIZE * 0.32;
+const AI_DIRECT_LOW_PASSABILITY_CORRIDOR_TIGHTNESS_THRESHOLD = 0.72;
+const AI_DIRECT_LOW_PASSABILITY_SCORE_PENALTY = MAX_DRAG_DISTANCE * 0.03;
 const AI_FLAG_PRESSURE_SAFETY_WINDOW_TURN_LIMIT = 4;
 const AI_FLAG_PRESSURE_NEARBY_THREAT_DISTANCE = ATTACK_RANGE_PX * 1.55;
 const AI_ANGLE_REPEAT_HISTORY_LIMIT = 3;
@@ -16188,8 +16191,18 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
         directPathBlocked: false,
         goalName: baseGoalName,
       });
-      const routeQualityBonus = (Number.isFinite(move?.routeQualityScore) ? (1 - move.routeQualityScore) : 0) * MAX_DRAG_DISTANCE * 0.04;
-      const finalScore = adjustedDist + classScoreMeta.normalizedClassScore * MAX_DRAG_DISTANCE * 0.035 + routeQualityBonus;
+      const classWeightPenalty = classScoreMeta.normalizedClassScore * MAX_DRAG_DISTANCE * 0.035;
+      const routeQualityPenalty = (Number.isFinite(move?.routeQualityScore) ? (1 - move.routeQualityScore) : 0) * MAX_DRAG_DISTANCE * 0.04;
+      const routeMetrics = move?.routeMetrics || null;
+      const directLowPassability = Boolean(
+        Number.isFinite(routeMetrics?.clearance) && routeMetrics.clearance <= AI_DIRECT_LOW_PASSABILITY_CLEARANCE_THRESHOLD_PX
+      ) || Boolean(
+        Number.isFinite(routeMetrics?.corridorTightness) && routeMetrics.corridorTightness >= AI_DIRECT_LOW_PASSABILITY_CORRIDOR_TIGHTNESS_THRESHOLD
+      );
+      const lowPassabilityPenalty = !isEmergencyDefenseStage && directLowPassability
+        ? AI_DIRECT_LOW_PASSABILITY_SCORE_PENALTY
+        : 0;
+      const finalScore = adjustedDist + classWeightPenalty + routeQualityPenalty + lowPassabilityPenalty;
       directCandidates.push({
         plane,
         flag,
@@ -16199,6 +16212,14 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
         score: finalScore,
         normalizedScore: finalScore,
         classScoreBreakdown: classScoreMeta.classScoreBreakdown,
+        finalScoreBreakdown: {
+          distance: Number(adjustedDist.toFixed(3)),
+          classWeightPenalty: Number(classWeightPenalty.toFixed(3)),
+          routeQualityPenalty: Number(routeQualityPenalty.toFixed(3)),
+          lowPassabilityPenalty: Number(lowPassabilityPenalty.toFixed(3)),
+          total: Number(finalScore.toFixed(3)),
+        },
+        lowPassabilityBlockedLike: directLowPassability,
         selectedClass: "direct",
         idleTurns: getAiPlaneIdleTurns(plane),
       });
@@ -16234,8 +16255,9 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
           directPathBlocked: !isPathClear(plane.x, plane.y, targetAnchor.x, targetAnchor.y),
           goalName: baseGoalName,
         });
-        const routeQualityBonus = (Number.isFinite(move?.routeQualityScore) ? (1 - move.routeQualityScore) : 0) * MAX_DRAG_DISTANCE * 0.04;
-      const finalScore = adjustedDist + classScoreMeta.normalizedClassScore * MAX_DRAG_DISTANCE * 0.035 + routeQualityBonus;
+        const classWeightPenalty = classScoreMeta.normalizedClassScore * MAX_DRAG_DISTANCE * 0.035;
+        const routeQualityPenalty = (Number.isFinite(move?.routeQualityScore) ? (1 - move.routeQualityScore) : 0) * MAX_DRAG_DISTANCE * 0.04;
+        const finalScore = adjustedDist + classWeightPenalty + routeQualityPenalty;
         gapCandidates.push({
           plane,
           flag,
@@ -16247,6 +16269,14 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
           score: finalScore,
           normalizedScore: finalScore,
           classScoreBreakdown: classScoreMeta.classScoreBreakdown,
+          finalScoreBreakdown: {
+            distance: Number(adjustedDist.toFixed(3)),
+            classWeightPenalty: Number(classWeightPenalty.toFixed(3)),
+            routeQualityPenalty: Number(routeQualityPenalty.toFixed(3)),
+            lowPassabilityPenalty: 0,
+            total: Number(finalScore.toFixed(3)),
+          },
+          lowPassabilityBlockedLike: false,
           selectedClass: "gap",
           idleTurns: getAiPlaneIdleTurns(plane),
         });
@@ -16294,8 +16324,9 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
             directPathBlocked: !isPathClear(plane.x, plane.y, targetAnchor.x, targetAnchor.y),
             goalName: baseGoalName,
           });
-          const routeQualityBonus = (Number.isFinite(move?.routeQualityScore) ? (1 - move.routeQualityScore) : 0) * MAX_DRAG_DISTANCE * 0.04;
-      const finalScore = adjustedDist + classScoreMeta.normalizedClassScore * MAX_DRAG_DISTANCE * 0.035 + routeQualityBonus;
+          const classWeightPenalty = classScoreMeta.normalizedClassScore * MAX_DRAG_DISTANCE * 0.035;
+          const routeQualityPenalty = (Number.isFinite(move?.routeQualityScore) ? (1 - move.routeQualityScore) : 0) * MAX_DRAG_DISTANCE * 0.04;
+          const finalScore = adjustedDist + classWeightPenalty + routeQualityPenalty;
           bounceCandidates.push({
             plane,
             flag,
@@ -16308,6 +16339,14 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
             score: finalScore,
             normalizedScore: finalScore,
             classScoreBreakdown: classScoreMeta.classScoreBreakdown,
+            finalScoreBreakdown: {
+              distance: Number(adjustedDist.toFixed(3)),
+              classWeightPenalty: Number(classWeightPenalty.toFixed(3)),
+              routeQualityPenalty: Number(routeQualityPenalty.toFixed(3)),
+              lowPassabilityPenalty: 0,
+              total: Number(finalScore.toFixed(3)),
+            },
+            lowPassabilityBlockedLike: false,
             selectedClass: "ricochet",
             idleTurns: getAiPlaneIdleTurns(plane),
           });
@@ -16528,9 +16567,14 @@ function planModeDrivenAiMove(context){
     });
     for(const candidate of capCandidates){
       if(compareAiCandidateByScoreAndRotation(candidate, bestCap, ["mode_flag_pressure", candidate?.flag?.id ?? "", candidate?.candidateType || "direct"])){
+        candidate.classTieBreakReason = compareAiCandidateByScoreAndRotation.lastClassTieBreakReason || null;
         bestCap = candidate;
       }
     }
+    logAiFinalComparedDiagnostics(capCandidates, bestCap, {
+      source: "mode_flag_pressure",
+      goalName: "capture_enemy_flag",
+    });
     if(bestCap) return bestCap;
     planModeDrivenAiMove.lastRejectReason = "no_flag_path";
   }
@@ -16816,6 +16860,69 @@ function getAiCandidateClassLabel(candidate){
   return rawType;
 }
 
+function buildAiFinalComparedSnapshot(candidate){
+  if(!candidate || typeof candidate !== "object") return null;
+  const routeMetrics = candidate?.routeMetrics || null;
+  const score = Number.isFinite(candidate?.score) ? Number(candidate.score.toFixed(3)) : null;
+  const normalizedScore = Number.isFinite(candidate?.normalizedScore) ? Number(candidate.normalizedScore.toFixed(3)) : null;
+  return {
+    planeId: candidate?.plane?.id ?? null,
+    enemyId: candidate?.enemy?.id ?? null,
+    classLabel: getAiCandidateClassLabel(candidate),
+    score,
+    normalizedScore,
+    finalScoreBreakdown: candidate?.finalScoreBreakdown || null,
+    lowPassabilityBlockedLike: candidate?.lowPassabilityBlockedLike === true,
+    classTieBreakReason: candidate?.classTieBreakReason || null,
+    routeMetrics: routeMetrics
+      ? {
+          clearance: Number.isFinite(routeMetrics?.clearance) ? Number(routeMetrics.clearance.toFixed(2)) : null,
+          corridorTightness: Number.isFinite(routeMetrics?.corridorTightness) ? Number(routeMetrics.corridorTightness.toFixed(4)) : null,
+          qualityScore: Number.isFinite(routeMetrics?.qualityScore) ? Number(routeMetrics.qualityScore.toFixed(4)) : null,
+        }
+      : null,
+  };
+}
+
+function logAiFinalComparedDiagnostics(candidates, bestCandidate, meta = {}){
+  if(!Array.isArray(candidates) || candidates.length === 0) return;
+  const snapshots = candidates.map((candidate) => buildAiFinalComparedSnapshot(candidate)).filter(Boolean);
+  const classPresence = snapshots.reduce((acc, item) => {
+    const classLabel = item?.classLabel;
+    if(classLabel === "direct" || classLabel === "gap" || classLabel === "ricochet"){
+      acc[classLabel] += 1;
+    }
+    return acc;
+  }, { direct: 0, gap: 0, ricochet: 0 });
+  const winner = buildAiFinalComparedSnapshot(bestCandidate);
+  const winnerClass = winner?.classLabel || null;
+  const hasGapOrRicochet = classPresence.gap > 0 || classPresence.ricochet > 0;
+  const directLowPassabilityWin = hasGapOrRicochet
+    && winnerClass === "direct"
+    && winner?.lowPassabilityBlockedLike === true;
+
+  const payload = {
+    source: meta?.source || "unknown",
+    goalName: meta?.goalName || null,
+    comparedCount: snapshots.length,
+    classPresence,
+    winner,
+    finalCompared: snapshots,
+  };
+
+  logAiDecision("final_compared", payload);
+  if(directLowPassabilityWin){
+    logAiDecision("final_compared_direct_low_passability_win", {
+      ...payload,
+      reason: "gap_or_ricochet_present_but_low_passability_direct_selected",
+    });
+  }
+
+  if(aiRoundState && typeof aiRoundState === "object"){
+    aiRoundState.lastFinalComparedDiagnostics = payload;
+  }
+}
+
 function getAiCandidateClassComparableScore({
   plane,
   routeDistance,
@@ -16949,6 +17056,10 @@ function getFallbackAiMove(context){
         bestCap = candidate;
       }
     }
+    logAiFinalComparedDiagnostics(capCandidates, bestCap, {
+      source: "fallback_flag_pressure",
+      goalName: "capture_enemy_flag",
+    });
     if(bestCap){
       return bestCap;
     }
@@ -17702,6 +17813,7 @@ function getForcedProgressLaunchMove(modeContext){
 function doComputerMove(){
   if (gameMode!=="computer" || isGameOver) return;
   aiRoundState.lastInitialCandidateSetDiagnostics = null;
+  aiRoundState.lastFinalComparedDiagnostics = null;
 
   const failSafeHandler = typeof failSafeAdvanceTurn === "function"
     ? failSafeAdvanceTurn
@@ -17734,6 +17846,7 @@ function doComputerMove(){
       move: data.move,
       consideredMoves: data.consideredMoves,
       initialCandidateSetDiagnostics: data.initialCandidateSetDiagnostics || aiRoundState.lastInitialCandidateSetDiagnostics || null,
+      finalComparedDiagnostics: data.finalComparedDiagnostics || aiRoundState.lastFinalComparedDiagnostics || null,
     });
   };
 
