@@ -10363,11 +10363,12 @@ function buildAiFallbackDiagnosticsReport(source){
 
   const fallbackRootCauseStats = {
     no_candidates_generated: 0,
-    generated_but_all_rejected_before_shortlist: 0,
-    generated_but_all_rejected_by_path: 0,
-    generated_but_all_rejected_after_bounce: 0,
-    generated_but_all_rejected_by_safety: 0,
-    generated_but_all_rejected_in_ranking: 0,
+    raw_attempts_but_no_valid_candidates: 0,
+    all_valid_candidates_rejected_before_shortlist: 0,
+    all_valid_candidates_rejected_by_path: 0,
+    all_valid_candidates_rejected_after_bounce: 0,
+    all_valid_candidates_rejected_by_safety: 0,
+    all_valid_candidates_rejected_in_ranking: 0,
     attempt_budget_exhausted: 0,
     mode_restriction_only: 0,
     opening_restriction_only: 0,
@@ -10492,21 +10493,96 @@ function buildAiFallbackDiagnosticsReport(source){
     if(has("attempt_budget_exhausted")) return "attempt_budget_exhausted";
 
     if(diagnostics && typeof diagnostics === "object"){
-      const totalGenerated = routeClasses.reduce((sum, classKey) => {
+      const perClassStats = routeClasses.map((classKey) => {
         const shortlistMeta = getShortlistMeta(shortlist, classKey);
-        return sum + (Number(shortlistMeta.initialReachable) || 0);
-      }, 0);
-      if(totalGenerated <= 0) return "no_candidates_generated";
+        const validGenerated = Math.max(0, Number(shortlistMeta.initialReachable) || 0);
+        const shortlistCount = Math.max(0, Number(shortlistMeta.shortlistCount) || 0);
+        const rejectedBetween = Math.max(0, Math.min(validGenerated, Number(shortlistMeta.rejectedBetweenInitialAndShortlist) || 0));
+        const earlyAttemptsValue = Number(diagnostics?.[`${classKey}Count`]);
+        const hasEarlyAttempts = Number.isFinite(earlyAttemptsValue);
+        const rawAttemptedFromDiagnostics = hasEarlyAttempts ? Math.max(0, Math.floor(earlyAttemptsValue)) : 0;
+        const initialReachableValue = Number(shortlistMeta.initialReachable);
+        const rejectedBetweenValue = Number(shortlistMeta.rejectedBetweenInitialAndShortlist);
+        const hasShortlistAttemptFields = Number.isFinite(initialReachableValue) && Number.isFinite(rejectedBetweenValue);
+        const rawAttemptedFromShortlist = hasShortlistAttemptFields
+          ? Math.max(0, Math.floor(initialReachableValue + rejectedBetweenValue))
+          : 0;
+        const rawAttempted = hasEarlyAttempts
+          ? rawAttemptedFromDiagnostics
+          : (hasShortlistAttemptFields ? rawAttemptedFromShortlist : 0);
+        const rejectReasonsMap = shortlistMeta.rejectReasons && typeof shortlistMeta.rejectReasons === "object"
+          ? shortlistMeta.rejectReasons
+          : {};
 
-      const rejectKeys = routeClasses.flatMap((classKey) => Object.keys(getShortlistMeta(shortlist, classKey)?.rejectReasons || {}).map((key) => toText(key)));
-      if(rejectKeys.some((key) => key.includes("blocked_after_bounce") || key.includes("after_bounce"))) return "generated_but_all_rejected_after_bounce";
-      if(rejectKeys.some((key) => key.includes("unsafe"))) return "generated_but_all_rejected_by_safety";
-      if(rejectKeys.some((key) => key.includes("shortlist_score_cutoff") || key.includes("ranking") || key.includes("score_cutoff"))) return "generated_but_all_rejected_in_ranking";
-      if(rejectKeys.some((key) => key.includes("blocked") || key.includes("path") || key.includes("before_bounce") || key.includes("gap_entry") || key.includes("gap_exit"))) return "generated_but_all_rejected_by_path";
+        return {
+          classKey,
+          raw_attempted: rawAttempted,
+          valid_generated: validGenerated,
+          shortlistCount,
+          rejectedBetween,
+          rejectReasonsMap,
+        };
+      });
 
-      const totalShortlist = routeClasses.reduce((sum, classKey) => sum + (Number(getShortlistMeta(shortlist, classKey).shortlistCount) || 0), 0);
-      if(totalShortlist <= 0) return "generated_but_all_rejected_before_shortlist";
-      if(fallbackStages.has(event?.stage)) return "generated_but_all_rejected_in_ranking";
+      const totalRawAttempted = perClassStats.reduce((sum, stats) => sum + stats.raw_attempted, 0);
+      if(totalRawAttempted <= 0) return "no_candidates_generated";
+
+      const totalValidGenerated = perClassStats.reduce((sum, stats) => sum + stats.valid_generated, 0);
+      if(totalValidGenerated <= 0) return "raw_attempts_but_no_valid_candidates";
+
+      const totalShortlist = perClassStats.reduce((sum, stats) => sum + stats.shortlistCount, 0);
+      if(totalShortlist <= 0){
+        const rejectedReasonTotals = perClassStats.reduce((acc, stats) => {
+          const maxByClass = stats.rejectedBetween > 0 ? stats.rejectedBetween : Number.POSITIVE_INFINITY;
+          let accounted = 0;
+          for(const [reason, count] of Object.entries(stats.rejectReasonsMap)){
+            const safeCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+            if(safeCount <= 0) continue;
+            const available = Number.isFinite(maxByClass)
+              ? Math.max(0, maxByClass - accounted)
+              : safeCount;
+            if(available <= 0) break;
+            const actual = Number.isFinite(maxByClass) ? Math.min(safeCount, available) : safeCount;
+            const reasonText = toText(reason);
+            accounted += actual;
+
+            if(reasonText.includes("blocked_after_bounce")){
+              acc.afterBounce += actual;
+              continue;
+            }
+            if(reasonText.includes("unsafe") || reasonText.includes("threat")){
+              acc.safety += actual;
+              continue;
+            }
+            if(reasonText.includes("ranking") || reasonText.includes("score_cutoff") || reasonText.includes("shortlist_cutoff")){
+              acc.ranking += actual;
+              continue;
+            }
+            if(reasonText.includes("path") || reasonText.includes("gap_entry") || reasonText.includes("before_bounce") || reasonText.includes("blocked_path")){
+              acc.path += actual;
+              continue;
+            }
+
+            acc.other += actual;
+          }
+          return acc;
+        }, { afterBounce: 0, path: 0, safety: 0, ranking: 0, other: 0 });
+
+        const dominantReason = Object.entries(rejectedReasonTotals)
+          .filter(([reasonKey]) => reasonKey !== "other")
+          .sort((a, b) => b[1] - a[1])[0];
+
+        if(dominantReason && dominantReason[1] > 0){
+          if(dominantReason[0] === "afterBounce") return "all_valid_candidates_rejected_after_bounce";
+          if(dominantReason[0] === "path") return "all_valid_candidates_rejected_by_path";
+          if(dominantReason[0] === "safety") return "all_valid_candidates_rejected_by_safety";
+          if(dominantReason[0] === "ranking") return "all_valid_candidates_rejected_in_ranking";
+        }
+
+        return "all_valid_candidates_rejected_before_shortlist";
+      }
+
+      if(fallbackStages.has(event?.stage)) return "all_valid_candidates_rejected_in_ranking";
     }
 
     return "unknown";
