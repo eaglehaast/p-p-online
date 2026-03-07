@@ -8,6 +8,12 @@
 2. Open `index.html` in any browser.
 3. Choose a game mode and press **Play**.
 
+## Repository housekeeping note
+
+Legacy development artifacts from the old `dev/` folder (including `dev/test-harness.html` and `dev/settings-test.html`) were removed from the main branch to avoid confusion for new contributors.
+
+If historical reference is needed, use branch `archive/dev-artifacts`.
+
 ## Quick pre-release check for settings IDs
 
 Before release, run:
