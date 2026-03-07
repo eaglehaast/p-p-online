@@ -108,6 +108,7 @@ const activeMatch = {
 const report = buildRuntime(source, activeMatch).exportAiFallbackDiagnosticsReportJson();
 assert(report && report.reportType === 'ai_fallback_diagnostics_report', 'Expected fallback diagnostics report type.');
 assert(report.fallbackRootCauseStats && typeof report.fallbackRootCauseStats === 'object', 'Expected fallbackRootCauseStats block.');
+assert(report.candidateGenerationStats?.direct, 'Expected candidateGenerationStats.direct block.');
 assert(report.candidateFunnelStats?.direct, 'Expected candidateFunnelStats.direct block.');
 assert(report.firstBlockingObjectStats?.gap, 'Expected firstBlockingObjectStats.gap block.');
 assert(report.blockedSegmentStats?.ricochet, 'Expected blockedSegmentStats.ricochet block.');
