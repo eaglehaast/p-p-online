@@ -18107,6 +18107,7 @@ function getFallbackAiMove(context){
           : findMirrorShot(plane, enemy, {
             logReject: true,
             pressureBoost: mirrorPressureBoost,
+            goalName: "attack_enemy_plane",
           });
         if(mirror){
           const dx = mirror.mirrorTarget.x - plane.x;
@@ -19892,6 +19893,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
     logReject: true,
     pressureBoost: mirrorPressureBoost,
     diagnostics: true,
+    goalName: options?.goalName || "",
   });
   if(mirror){
     const dx = mirror.mirrorTarget.x - plane.x;
@@ -19931,6 +19933,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       minBounceDistanceScale: 0.75,
       maxPathRatioBonus: 0.12,
       stuckMirrorRelaxation: true,
+      goalName: options?.goalName || "",
     });
     if(stuckRecoveryMirror){
       const dx = stuckRecoveryMirror.mirrorTarget.x - plane.x;
@@ -20284,10 +20287,32 @@ function findMirrorShot(plane, enemy, options = {}){
     : 0;
   const maxPathRatio = getMirrorPathRatioLimit({ pressureBoost }) + maxPathRatioBonus;
   const stuckMirrorRelaxation = options?.stuckMirrorRelaxation === true;
+  const mirrorGoalName = `${options?.goalName || ""}`.toLowerCase();
+  const isEmergencyMirrorGoal = mirrorGoalName.includes("critical_base_threat")
+    || mirrorGoalName.includes("emergency_base_defense");
   let rejectedTooClose = false;
   let rejectedTooLong = false;
   let rejectedToBounceSegment = false;
   let rejectedAfterBounceSegment = false;
+
+  const secondSegmentTouchTolerance = isEmergencyMirrorGoal ? 0 : 0.6;
+  const isSecondSegmentClear = (fromX, fromY, toX, toY, pathMeta) => {
+    const strictClear = pathMeta.isFieldBorder
+      ? isPathClear(fromX, fromY, toX, toY)
+      : isPathClearExceptEdge(fromX, fromY, toX, toY, pathMeta.collider, pathMeta.ignoreEdge);
+    if(strictClear || secondSegmentTouchTolerance <= 0) return strictClear;
+
+    const dx = toX - fromX;
+    const dy = toY - fromY;
+    const legLen = Math.hypot(dx, dy);
+    if(legLen <= 1e-6) return false;
+
+    const shiftedFromX = fromX + (dx / legLen) * secondSegmentTouchTolerance;
+    const shiftedFromY = fromY + (dy / legLen) * secondSegmentTouchTolerance;
+    return pathMeta.isFieldBorder
+      ? isPathClear(shiftedFromX, shiftedFromY, toX, toY)
+      : isPathClearExceptEdge(shiftedFromX, shiftedFromY, toX, toY, pathMeta.collider, pathMeta.ignoreEdge);
+  };
 
   const mirrorEdges = [];
   for(const collider of colliders){
@@ -20335,9 +20360,11 @@ function findMirrorShot(plane, enemy, options = {}){
       continue;
     }
 
-    const pathClearFromBounce = isFieldBorder
-      ? isPathClear(inter.x, inter.y, enemy.x, enemy.y)
-      : isPathClearExceptEdge(inter.x, inter.y, enemy.x, enemy.y, collider, ignoreEdge);
+    const pathClearFromBounce = isSecondSegmentClear(inter.x, inter.y, enemy.x, enemy.y, {
+      isFieldBorder,
+      collider,
+      ignoreEdge,
+    });
     if(!pathClearFromBounce){
       rejectedAfterBounceSegment = true;
       continue;
@@ -20368,9 +20395,9 @@ function findMirrorShot(plane, enemy, options = {}){
     } else if(rejectedToBounceSegment){
       findMirrorShot.lastRejectCode = "blocked_path";
     } else if(rejectedTooClose){
-      findMirrorShot.lastRejectCode = "blocked_after_bounce";
+      findMirrorShot.lastRejectCode = "mirror_rejected_too_close";
     } else if(rejectedTooLong){
-      findMirrorShot.lastRejectCode = "blocked_after_bounce";
+      findMirrorShot.lastRejectCode = "mirror_rejected_too_long";
     } else {
       findMirrorShot.lastRejectCode = "blocked_path";
     }
