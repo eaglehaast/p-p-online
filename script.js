@@ -16262,8 +16262,53 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
   const maxCandidatesPerClass = Number.isFinite(parsedMaxCandidatesPerClass)
     ? Math.max(1, Math.floor(parsedMaxCandidatesPerClass))
     : 3;
+  const parsedGapAttemptBudget = Number(options?.gapAttemptBudget);
+  const parsedRicochetAttemptBudget = Number(options?.ricochetAttemptBudget);
+  const defaultSpecialRouteBudget = Math.max(2, maxCandidatesPerClass * 3);
+  const gapAttemptBudget = Number.isFinite(parsedGapAttemptBudget)
+    ? Math.max(1, Math.floor(parsedGapAttemptBudget))
+    : defaultSpecialRouteBudget;
+  const ricochetAttemptBudget = Number.isFinite(parsedRicochetAttemptBudget)
+    ? Math.max(1, Math.floor(parsedRicochetAttemptBudget))
+    : defaultSpecialRouteBudget;
   const baseGoalName = options?.goalName || "capture_enemy_flag";
   const baseDecisionReason = options?.decisionReason || "flag_capture_direct";
+  const groundedPlanes = planes.filter((plane) => !flyingPoints.some((fp) => fp.plane === plane));
+
+  const candidateTypeDiagnostics = {
+    direct: {
+      attempted: 0,
+      preValidationRejected: 0,
+      preValidationReasons: {},
+      validationRejected: 0,
+      validationReasons: {},
+      accepted: 0,
+    },
+    gap: {
+      attempted: 0,
+      preValidationRejected: 0,
+      preValidationReasons: {},
+      validationRejected: 0,
+      validationReasons: {},
+      accepted: 0,
+      attemptBudget: gapAttemptBudget,
+    },
+    ricochet: {
+      attempted: 0,
+      preValidationRejected: 0,
+      preValidationReasons: {},
+      validationRejected: 0,
+      validationReasons: {},
+      accepted: 0,
+      attemptBudget: ricochetAttemptBudget,
+    },
+  };
+
+  function addRejectReason(target, reason){
+    if(!target || typeof target !== "object") return;
+    const key = `${reason || "unknown"}`;
+    target[key] = (target[key] || 0) + 1;
+  }
 
   function trimCandidatesByClass(candidates){
     if(!Array.isArray(candidates) || candidates.length === 0) return [];
@@ -16281,15 +16326,25 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
 
   const directCandidates = [];
   for(const plane of planes){
-    if(flyingPoints.some((fp) => fp.plane === plane)) continue;
+    const isFlying = flyingPoints.some((fp) => fp.plane === plane);
+    if(isFlying){
+      candidateTypeDiagnostics.direct.preValidationRejected += availableEnemyFlags.length;
+      addRejectReason(candidateTypeDiagnostics.direct.preValidationReasons, "plane_not_grounded");
+      continue;
+    }
     for(const flag of availableEnemyFlags){
+      candidateTypeDiagnostics.direct.attempted += 1;
       const targetAnchor = getFlagAnchor(flag);
       const move = planPathToPoint(plane, targetAnchor.x, targetAnchor.y, {
         goalName: baseGoalName,
         decisionReason: baseDecisionReason,
         routeClass: "direct",
       });
-      if(!move) continue;
+      if(!move){
+        candidateTypeDiagnostics.direct.validationRejected += 1;
+        addRejectReason(candidateTypeDiagnostics.direct.validationReasons, planPathToPoint.lastRejectCode || "validation_failed");
+        continue;
+      }
       const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
       const classScoreMeta = getAiCandidateClassComparableScore({
         plane,
@@ -16333,6 +16388,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
         selectedClass: "direct",
         idleTurns: getAiPlaneIdleTurns(plane),
       });
+      candidateTypeDiagnostics.direct.accepted += 1;
     }
   }
 
@@ -16343,125 +16399,190 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     { x: 0, y: -CELL_SIZE * 0.55 },
     { x: 0, y: CELL_SIZE * 0.55 },
   ];
+  const gapAttempts = [];
   for(const plane of planes){
-    if(flyingPoints.some((fp) => fp.plane === plane)) continue;
+    const isFlying = flyingPoints.some((fp) => fp.plane === plane);
+    if(isFlying){
+      candidateTypeDiagnostics.gap.preValidationRejected += availableEnemyFlags.length * gapOffsets.length;
+      addRejectReason(candidateTypeDiagnostics.gap.preValidationReasons, "plane_not_grounded");
+      continue;
+    }
     for(const flag of availableEnemyFlags){
       const targetAnchor = getFlagAnchor(flag);
       for(const offset of gapOffsets){
-        const move = planPathToPoint(plane, targetAnchor.x + offset.x, targetAnchor.y + offset.y, {
-          goalName: baseGoalName,
-          decisionReason: "flag_capture_gap_candidate",
-          routeClass: "gap",
-        });
-        if(!move) continue;
-        const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
-        const classScoreMeta = getAiCandidateClassComparableScore({
-          plane,
-          routeDistance: move.totalDist,
-          fromPoint: plane,
-          landingPoint: { x: plane.x + move.vx * FIELD_FLIGHT_DURATION_SEC, y: plane.y + move.vy * FIELD_FLIGHT_DURATION_SEC },
-          targetPoint: targetAnchor,
-          candidateClass: "gap",
-          directPathBlocked: !isPathClear(plane.x, plane.y, targetAnchor.x, targetAnchor.y),
-          goalName: baseGoalName,
-        });
-        const classWeightPenalty = classScoreMeta.normalizedClassScore * MAX_DRAG_DISTANCE * 0.035;
-        const routeQualityPenalty = (Number.isFinite(move?.routeQualityScore) ? (1 - move.routeQualityScore) : 0) * MAX_DRAG_DISTANCE * 0.04;
-        const finalScore = adjustedDist + classWeightPenalty + routeQualityPenalty;
-        gapCandidates.push({
-          plane,
-          flag,
-          ...move,
-          candidateType: "gap",
-          gapOffsetX: Number(offset.x.toFixed(1)),
-          gapOffsetY: Number(offset.y.toFixed(1)),
-          adjustedDist,
-          score: finalScore,
-          normalizedScore: finalScore,
-          classScoreBreakdown: classScoreMeta.classScoreBreakdown,
-          finalScoreBreakdown: {
-            distance: Number(adjustedDist.toFixed(3)),
-            classWeightPenalty: Number(classWeightPenalty.toFixed(3)),
-            routeQualityPenalty: Number(routeQualityPenalty.toFixed(3)),
-            lowPassabilityPenalty: 0,
-            total: Number(finalScore.toFixed(3)),
-          },
-          lowPassabilityBlockedLike: false,
-          selectedClass: "gap",
-          idleTurns: getAiPlaneIdleTurns(plane),
-        });
+        gapAttempts.push({ plane, flag, targetAnchor, offset });
       }
     }
   }
 
+  for(let index = 0; index < gapAttempts.length && candidateTypeDiagnostics.gap.attempted < gapAttemptBudget; index += 1){
+    const { plane, flag, targetAnchor, offset } = gapAttempts[index];
+    candidateTypeDiagnostics.gap.attempted += 1;
+    const move = planPathToPoint(plane, targetAnchor.x + offset.x, targetAnchor.y + offset.y, {
+      goalName: baseGoalName,
+      decisionReason: "flag_capture_gap_candidate",
+      routeClass: "gap",
+    });
+    if(!move){
+      candidateTypeDiagnostics.gap.validationRejected += 1;
+      addRejectReason(candidateTypeDiagnostics.gap.validationReasons, planPathToPoint.lastRejectCode || "validation_failed");
+      continue;
+    }
+    const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
+    const classScoreMeta = getAiCandidateClassComparableScore({
+      plane,
+      routeDistance: move.totalDist,
+      fromPoint: plane,
+      landingPoint: { x: plane.x + move.vx * FIELD_FLIGHT_DURATION_SEC, y: plane.y + move.vy * FIELD_FLIGHT_DURATION_SEC },
+      targetPoint: targetAnchor,
+      candidateClass: "gap",
+      directPathBlocked: !isPathClear(plane.x, plane.y, targetAnchor.x, targetAnchor.y),
+      goalName: baseGoalName,
+    });
+    const classWeightPenalty = classScoreMeta.normalizedClassScore * MAX_DRAG_DISTANCE * 0.035;
+    const routeQualityPenalty = (Number.isFinite(move?.routeQualityScore) ? (1 - move.routeQualityScore) : 0) * MAX_DRAG_DISTANCE * 0.04;
+    const finalScore = adjustedDist + classWeightPenalty + routeQualityPenalty;
+    gapCandidates.push({
+      plane,
+      flag,
+      ...move,
+      candidateType: "gap",
+      gapOffsetX: Number(offset.x.toFixed(1)),
+      gapOffsetY: Number(offset.y.toFixed(1)),
+      adjustedDist,
+      score: finalScore,
+      normalizedScore: finalScore,
+      classScoreBreakdown: classScoreMeta.classScoreBreakdown,
+      finalScoreBreakdown: {
+        distance: Number(adjustedDist.toFixed(3)),
+        classWeightPenalty: Number(classWeightPenalty.toFixed(3)),
+        routeQualityPenalty: Number(routeQualityPenalty.toFixed(3)),
+        lowPassabilityPenalty: 0,
+        total: Number(finalScore.toFixed(3)),
+      },
+      lowPassabilityBlockedLike: false,
+      selectedClass: "gap",
+      idleTurns: getAiPlaneIdleTurns(plane),
+    });
+    candidateTypeDiagnostics.gap.accepted += 1;
+  }
+
+  if(gapAttempts.length === 0){
+    candidateTypeDiagnostics.gap.preValidationRejected += 1;
+    addRejectReason(candidateTypeDiagnostics.gap.preValidationReasons, groundedPlanes.length === 0 ? "no_grounded_planes" : "no_target_pairs");
+  } else if(candidateTypeDiagnostics.gap.attempted < gapAttempts.length){
+    candidateTypeDiagnostics.gap.preValidationRejected += gapAttempts.length - candidateTypeDiagnostics.gap.attempted;
+    addRejectReason(candidateTypeDiagnostics.gap.preValidationReasons, "attempt_budget_exhausted");
+  }
+
   const bounceCandidates = [];
-  if(allowBounceStage && hasWallData){
+  const ricochetAttempts = [];
+  if(!allowBounceStage){
+    candidateTypeDiagnostics.ricochet.preValidationRejected += 1;
+    addRejectReason(candidateTypeDiagnostics.ricochet.preValidationReasons, "ricochet_disabled");
+  } else if(!hasWallData){
+    candidateTypeDiagnostics.ricochet.preValidationRejected += 1;
+    addRejectReason(candidateTypeDiagnostics.ricochet.preValidationReasons, "missing_wall_geometry");
+  } else {
     for(const plane of planes){
-      if(flyingPoints.some((fp) => fp.plane === plane)) continue;
+      const isFlying = flyingPoints.some((fp) => fp.plane === plane);
+      if(isFlying){
+        candidateTypeDiagnostics.ricochet.preValidationRejected += availableEnemyFlags.length * 2;
+        addRejectReason(candidateTypeDiagnostics.ricochet.preValidationReasons, "plane_not_grounded");
+        continue;
+      }
       for(const flag of availableEnemyFlags){
         const targetAnchor = getFlagAnchor(flag);
         const isDirectPathBlockedForTarget = !isPathClear(plane.x, plane.y, targetAnchor.x, targetAnchor.y);
-        if(isEmergencyDefenseStage && !isDirectPathBlockedForTarget) continue;
-        const mirroredTargets = [
-          {
+        if(isEmergencyDefenseStage && !isDirectPathBlockedForTarget){
+          candidateTypeDiagnostics.ricochet.preValidationRejected += 2;
+          addRejectReason(candidateTypeDiagnostics.ricochet.preValidationReasons, "emergency_stage_direct_open_lane");
+          continue;
+        }
+        ricochetAttempts.push({
+          plane,
+          flag,
+          targetAnchor,
+          mirroredTarget: {
             wall: "left",
             wallX: leftWallX,
             targetX: 2 * leftWallX - targetAnchor.x,
             targetY: targetAnchor.y,
           },
-          {
+        });
+        ricochetAttempts.push({
+          plane,
+          flag,
+          targetAnchor,
+          mirroredTarget: {
             wall: "right",
             wallX: rightWallX,
             targetX: 2 * rightWallX - targetAnchor.x,
             targetY: targetAnchor.y,
           },
-        ];
-        for(const mirroredTarget of mirroredTargets){
-          const move = planPathToPoint(plane, mirroredTarget.targetX, mirroredTarget.targetY, {
-            goalName: baseGoalName,
-            decisionReason: "flag_capture_bounce_candidate",
-            routeClass: "ricochet",
-          });
-          if(!move) continue;
-          const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
-          const classScoreMeta = getAiCandidateClassComparableScore({
-            plane,
-            routeDistance: move.totalDist,
-            fromPoint: plane,
-            landingPoint: { x: plane.x + move.vx * FIELD_FLIGHT_DURATION_SEC, y: plane.y + move.vy * FIELD_FLIGHT_DURATION_SEC },
-            targetPoint: targetAnchor,
-            candidateClass: "ricochet",
-            directPathBlocked: !isPathClear(plane.x, plane.y, targetAnchor.x, targetAnchor.y),
-            goalName: baseGoalName,
-          });
-          const classWeightPenalty = classScoreMeta.normalizedClassScore * MAX_DRAG_DISTANCE * 0.035;
-          const routeQualityPenalty = (Number.isFinite(move?.routeQualityScore) ? (1 - move.routeQualityScore) : 0) * MAX_DRAG_DISTANCE * 0.04;
-          const finalScore = adjustedDist + classWeightPenalty + routeQualityPenalty;
-          bounceCandidates.push({
-            plane,
-            flag,
-            ...move,
-            candidateType: "bounce",
-            bounceCandidateUsed: true,
-            bounceSourceWall: mirroredTarget.wall,
-            bounceSourceWallX: mirroredTarget.wallX,
-            adjustedDist,
-            score: finalScore,
-            normalizedScore: finalScore,
-            classScoreBreakdown: classScoreMeta.classScoreBreakdown,
-            finalScoreBreakdown: {
-              distance: Number(adjustedDist.toFixed(3)),
-              classWeightPenalty: Number(classWeightPenalty.toFixed(3)),
-              routeQualityPenalty: Number(routeQualityPenalty.toFixed(3)),
-              lowPassabilityPenalty: 0,
-              total: Number(finalScore.toFixed(3)),
-            },
-            lowPassabilityBlockedLike: false,
-            selectedClass: "ricochet",
-            idleTurns: getAiPlaneIdleTurns(plane),
-          });
-        }
+        });
       }
+    }
+
+    for(let index = 0; index < ricochetAttempts.length && candidateTypeDiagnostics.ricochet.attempted < ricochetAttemptBudget; index += 1){
+      const { plane, flag, targetAnchor, mirroredTarget } = ricochetAttempts[index];
+      candidateTypeDiagnostics.ricochet.attempted += 1;
+      const move = planPathToPoint(plane, mirroredTarget.targetX, mirroredTarget.targetY, {
+        goalName: baseGoalName,
+        decisionReason: "flag_capture_bounce_candidate",
+        routeClass: "ricochet",
+      });
+      if(!move){
+        candidateTypeDiagnostics.ricochet.validationRejected += 1;
+        addRejectReason(candidateTypeDiagnostics.ricochet.validationReasons, planPathToPoint.lastRejectCode || "validation_failed");
+        continue;
+      }
+      const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
+      const classScoreMeta = getAiCandidateClassComparableScore({
+        plane,
+        routeDistance: move.totalDist,
+        fromPoint: plane,
+        landingPoint: { x: plane.x + move.vx * FIELD_FLIGHT_DURATION_SEC, y: plane.y + move.vy * FIELD_FLIGHT_DURATION_SEC },
+        targetPoint: targetAnchor,
+        candidateClass: "ricochet",
+        directPathBlocked: !isPathClear(plane.x, plane.y, targetAnchor.x, targetAnchor.y),
+        goalName: baseGoalName,
+      });
+      const classWeightPenalty = classScoreMeta.normalizedClassScore * MAX_DRAG_DISTANCE * 0.035;
+      const routeQualityPenalty = (Number.isFinite(move?.routeQualityScore) ? (1 - move.routeQualityScore) : 0) * MAX_DRAG_DISTANCE * 0.04;
+      const finalScore = adjustedDist + classWeightPenalty + routeQualityPenalty;
+      bounceCandidates.push({
+        plane,
+        flag,
+        ...move,
+        candidateType: "bounce",
+        bounceCandidateUsed: true,
+        bounceSourceWall: mirroredTarget.wall,
+        bounceSourceWallX: mirroredTarget.wallX,
+        adjustedDist,
+        score: finalScore,
+        normalizedScore: finalScore,
+        classScoreBreakdown: classScoreMeta.classScoreBreakdown,
+        finalScoreBreakdown: {
+          distance: Number(adjustedDist.toFixed(3)),
+          classWeightPenalty: Number(classWeightPenalty.toFixed(3)),
+          routeQualityPenalty: Number(routeQualityPenalty.toFixed(3)),
+          lowPassabilityPenalty: 0,
+          total: Number(finalScore.toFixed(3)),
+        },
+        lowPassabilityBlockedLike: false,
+        selectedClass: "ricochet",
+        idleTurns: getAiPlaneIdleTurns(plane),
+      });
+      candidateTypeDiagnostics.ricochet.accepted += 1;
+    }
+
+    if(ricochetAttempts.length === 0){
+      candidateTypeDiagnostics.ricochet.preValidationRejected += 1;
+      addRejectReason(candidateTypeDiagnostics.ricochet.preValidationReasons, groundedPlanes.length === 0 ? "no_grounded_planes" : "no_target_pairs");
+    } else if(candidateTypeDiagnostics.ricochet.attempted < ricochetAttempts.length){
+      candidateTypeDiagnostics.ricochet.preValidationRejected += ricochetAttempts.length - candidateTypeDiagnostics.ricochet.attempted;
+      addRejectReason(candidateTypeDiagnostics.ricochet.preValidationReasons, "attempt_budget_exhausted");
     }
   }
 
@@ -16483,6 +16604,21 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     hasDirect: trimmedDirectCandidates.length > 0,
     hasGap: trimmedGapCandidates.length > 0,
     hasRicochet: trimmedBounceCandidates.length > 0,
+    candidateTypeDiagnostics,
+    zeroCandidateReasons: {
+      direct: trimmedDirectCandidates.length > 0 ? [] : [
+        ...(Object.keys(candidateTypeDiagnostics.direct.preValidationReasons || {}).length > 0 ? ["filtered_before_validation"] : []),
+        ...(Object.keys(candidateTypeDiagnostics.direct.validationReasons || {}).length > 0 ? ["geometrically_unreachable_or_rejected"] : []),
+      ],
+      gap: trimmedGapCandidates.length > 0 ? [] : [
+        ...(Object.keys(candidateTypeDiagnostics.gap.preValidationReasons || {}).length > 0 ? ["filtered_before_validation"] : []),
+        ...(Object.keys(candidateTypeDiagnostics.gap.validationReasons || {}).length > 0 ? ["geometrically_unreachable_or_rejected"] : []),
+      ],
+      ricochet: trimmedBounceCandidates.length > 0 ? [] : [
+        ...(Object.keys(candidateTypeDiagnostics.ricochet.preValidationReasons || {}).length > 0 ? ["filtered_before_validation"] : []),
+        ...(Object.keys(candidateTypeDiagnostics.ricochet.validationReasons || {}).length > 0 ? ["geometrically_unreachable_or_rejected"] : []),
+      ],
+    },
   };
 
   logAiDecision("flag_capture_candidate_summary", {
@@ -16496,6 +16632,9 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     ricochetReachableCount: bounceCandidates.length,
     interclassComparison: true,
     maxCandidatesPerClass,
+    gapAttemptBudget,
+    ricochetAttemptBudget,
+    candidateTypeDiagnostics,
     bounceAllowed: allowBounceStage,
     isEmergencyDefenseStage,
     emergencyBounceBlockedDirectOnly: isEmergencyDefenseStage,
@@ -18773,6 +18912,8 @@ function planPathToPoint(plane, tx, ty, options = {}){
     : ((`${options?.decisionReason || ""}`.toLowerCase().includes("gap") || `${options?.goalName || ""}`.toLowerCase().includes("gap"))
       ? "gap"
       : "direct");
+  const requestedRouteClass = `${defaultRouteClass || "direct"}`.toLowerCase();
+  const shouldForceNonDirectBranch = requestedRouteClass === "ricochet";
   planPathToPoint.lastRejectCode = null;
 
   function estimateRouteClearancePx(x1, y1, x2, y2){
@@ -19211,7 +19352,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
     return null;
   }
 
-  if(isPathClear(plane.x, plane.y, tx, ty)){
+  if(isPathClear(plane.x, plane.y, tx, ty) && !shouldForceNonDirectBranch){
     const dx = tx - plane.x;
     const dy = ty - plane.y;
     const dist = Math.hypot(dx, dy);
