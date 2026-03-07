@@ -95,7 +95,9 @@ function runScenario(source){
       if(key === 'direct' || key === 'gap' || key === 'ricochet') acc[key] += 1;
       return acc;
     }, { direct: 0, gap: 0, ricochet: 0 });
+    const totalShortlist = counts.direct + counts.gap + counts.ricochet;
     const best = candidates[0] || null;
+    const diagnostics = rt.aiRoundState?.lastInitialCandidateSetDiagnostics || {};
     return {
       goalName,
       directCount: counts.direct,
@@ -103,7 +105,11 @@ function runScenario(source){
       ricochetCount: counts.ricochet,
       hasGap: counts.gap > 0,
       hasRicochet: counts.ricochet > 0,
+      gapShortlistShare: totalShortlist > 0 ? counts.gap / totalShortlist : 0,
+      ricochetShortlistShare: totalShortlist > 0 ? counts.ricochet / totalShortlist : 0,
       selectedClass: best?.selectedClass || null,
+      shortlistDiagnostics: diagnostics.shortlistDiagnostics || null,
+      disproportionateShortlistRejectReasons: diagnostics.disproportionateShortlistRejectReasons || [],
     };
   });
 
@@ -116,6 +122,27 @@ function runScenario(source){
   const critical = decisions.filter((d) => d.goalName !== 'capture_enemy_flag');
   const criticalNoMove = critical.filter((d) => d.selectedClass === null).length;
 
+  const avgGapShortlistShare = decisions.reduce((sum, d) => sum + (d.gapShortlistShare || 0), 0) / Math.max(1, decisions.length);
+  const avgRicochetShortlistShare = decisions.reduce((sum, d) => sum + (d.ricochetShortlistShare || 0), 0) / Math.max(1, decisions.length);
+
+  const rejectReasonsByClass = { direct: {}, gap: {}, ricochet: {} };
+  const rejectedByClass = { direct: 0, gap: 0, ricochet: 0 };
+  for(const decision of decisions){
+    const shortlistDiagnostics = decision.shortlistDiagnostics || {};
+    for(const key of ['direct', 'gap', 'ricochet']){
+      const meta = shortlistDiagnostics[key] || {};
+      rejectedByClass[key] += Number.isFinite(meta.rejectedBetweenInitialAndShortlist)
+        ? Math.max(0, meta.rejectedBetweenInitialAndShortlist)
+        : 0;
+      const reasons = meta.rejectReasons || {};
+      for(const [reason, count] of Object.entries(reasons)){
+        const safeCount = Number.isFinite(count) ? Math.max(0, count) : 0;
+        if(safeCount <= 0) continue;
+        rejectReasonsByClass[key][reason] = (rejectReasonsByClass[key][reason] || 0) + safeCount;
+      }
+    }
+  }
+
   return {
     decisions,
     summary: {
@@ -123,9 +150,14 @@ function runScenario(source){
       gapPresentRate: withGap / total,
       ricochetPresentRate: withRicochet / total,
       missingGapOrRicochetRate: missingGapOrRicochet / total,
+      gapShortlistShare: Number(avgGapShortlistShare.toFixed(4)),
+      ricochetShortlistShare: Number(avgRicochetShortlistShare.toFixed(4)),
       noMoveRate: noMove / total,
       fallbackRate: fallback / total,
       criticalBaseThreatNoMoveRate: critical.length > 0 ? criticalNoMove / critical.length : 0,
+      shortlistRejectedByClass: rejectedByClass,
+      shortlistRejectReasonsByClass: rejectReasonsByClass,
+      topDisproportionateReasons: decisions.flatMap((d) => Array.isArray(d.disproportionateShortlistRejectReasons) ? d.disproportionateShortlistRejectReasons : []).slice(0, 2),
     },
   };
 }
