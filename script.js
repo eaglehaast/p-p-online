@@ -7071,12 +7071,13 @@ const baseSprites = {
 };
 
 const CARGO_SPRITE_PATH = "ui_gamescreen/gs_cargo_box.png";
-const CARGO_ANIMATION_FRAME_PATHS = Array.from({ length: 20 }, (_value, index) => {
+const CARGO_ANIMATION_FRAME_PATHS = Array.from({ length: 10 }, (_value, index) => {
   const frameNumber = String(index + 1).padStart(2, "0");
-  return `ui_gamescreen/gs_cargo_animations/gs_cargoanimation_${frameNumber}.png`;
+  return `ui_gamescreen/gs_cargoanimation_short/_a_gs_cargoanimation_${frameNumber}.png`;
 });
-const CARGO_ANIM_MS_FALLBACK = 1500;
-const CARGO_FADE_IN_MS_DEFAULT = 1500;
+const CARGO_ANIM_FRAME_MS = 75;
+const CARGO_ANIM_MS_FALLBACK = CARGO_ANIMATION_FRAME_PATHS.length * CARGO_ANIM_FRAME_MS;
+const CARGO_FADE_IN_MS_DEFAULT = 0;
 const CARGO_DIMMING_DEFAULT = 0;
 const { img: cargoSprite } = loadImageAsset(CARGO_SPRITE_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
 const hudPlaneTimerFrames = HUD_PLANE_TIMER_FRAME_PATHS.map((path) => loadImageAsset(path, GAME_PRELOAD_LABEL, { decoding: 'async' }).img);
@@ -8122,9 +8123,6 @@ function syncCargoAnimationDomEntry(cargo, metrics) {
     height: `${height}px`
   });
 
-  const fadeInProgress = cargoFadeInMs > 0
-    ? Math.max(0, Math.min(1, elapsedMs / cargoFadeInMs))
-    : 1;
   const brightness = Math.max(0, 1 - clampCargoDimming(cargoAnimDimming));
 
   Object.assign(cargo.domEntry.img.style, {
@@ -8133,7 +8131,7 @@ function syncCargoAnimationDomEntry(cargo, metrics) {
     width: '100%',
     height: '100%',
     display: 'block',
-    opacity: String(fadeInProgress),
+    opacity: '1',
     filter: `brightness(${brightness})`
   });
 }
