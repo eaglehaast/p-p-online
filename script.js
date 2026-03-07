@@ -11973,6 +11973,7 @@ function finalizeStickyAimLaunchAt(boardX, boardY){
 
 function addStickyAimGlobalPointerListeners(){
   if(handleCircle.hasGlobalPointerListeners) return;
+  window.addEventListener("pointerdown", onGlobalStickyAimPointerDownWhileArmed, true);
   window.addEventListener("pointermove", onGlobalStickyAimPointerMove);
   window.addEventListener("pointerup", onGlobalStickyAimPointerUpOrCancel);
   window.addEventListener("pointercancel", onGlobalStickyAimPointerUpOrCancel);
@@ -11981,10 +11982,29 @@ function addStickyAimGlobalPointerListeners(){
 
 function removeStickyAimGlobalPointerListeners(){
   if(!handleCircle.hasGlobalPointerListeners) return;
+  window.removeEventListener("pointerdown", onGlobalStickyAimPointerDownWhileArmed, true);
   window.removeEventListener("pointermove", onGlobalStickyAimPointerMove);
   window.removeEventListener("pointerup", onGlobalStickyAimPointerUpOrCancel);
   window.removeEventListener("pointercancel", onGlobalStickyAimPointerUpOrCancel);
   handleCircle.hasGlobalPointerListeners = false;
+}
+
+function onGlobalStickyAimPointerDownWhileArmed(e){
+  if(!handleCircle.active || phase === 'AA_PLACEMENT') return;
+  if(handleCircle.pointerDown) return;
+
+  const target = e.target;
+  const isInsideBoard = target instanceof Node && gsBoardCanvas instanceof HTMLElement
+    ? gsBoardCanvas.contains(target)
+    : false;
+  if(isInsideBoard) return;
+
+  const { x: designX, y: designY } = getPointerDesignCoords(e);
+  const { x, y } = designToBoardCoords(designX, designY);
+  finalizeStickyAimLaunchAt(x, y);
+
+  e.preventDefault();
+  e.stopPropagation();
 }
 
 function beginStickyAimHoldTracking(e, boardX, boardY){
