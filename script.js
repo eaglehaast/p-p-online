@@ -12699,6 +12699,114 @@ function createInitialAiRoundState(){
     stuckByPlaneId: {},
     dynamiteIntent: null,
     tieBreakerSeed: 0,
+    openingTemplateSuppressed: false,
+    lastOpeningNonTrivialStartMeta: null,
+  };
+}
+
+function evaluateOpeningNonTrivialStartMeta(context){
+  const goalText = `${context?.goalName || aiRoundState?.currentGoal || ""}`.toLowerCase();
+  const protectedCriticalBranch = goalText.includes("critical_base_threat") || goalText.includes("emergency_base_defense");
+  if(protectedCriticalBranch){
+    return {
+      suppressTemplate: false,
+      protectedCriticalBranch: true,
+      hasGapTraversal: false,
+      hasSingleBounceRicochet: false,
+      hasSafeCenterRoute: false,
+      inspectedPlanes: 0,
+      inspectedTargets: 0,
+      reason: "critical_branch_guard",
+    };
+  }
+
+  if(turnAdvanceCount > AI_REPEAT_OPENING_FORCE_TURN_LIMIT){
+    return {
+      suppressTemplate: false,
+      protectedCriticalBranch: false,
+      hasGapTraversal: false,
+      hasSingleBounceRicochet: false,
+      hasSafeCenterRoute: false,
+      inspectedPlanes: 0,
+      inspectedTargets: 0,
+      reason: "outside_opening_repeat_window",
+    };
+  }
+
+  const groundedPlanes = getGroundedAiPlanes(context?.aiPlanes);
+  const targets = [];
+  const availableEnemyFlags = Array.isArray(context?.availableEnemyFlags) ? context.availableEnemyFlags : [];
+  for(const flag of availableEnemyFlags){
+    const anchor = getFlagAnchor(flag);
+    if(Number.isFinite(anchor?.x) && Number.isFinite(anchor?.y)){
+      targets.push({ x: anchor.x, y: anchor.y, id: flag?.id || null });
+    }
+  }
+  if(targets.length === 0 && Array.isArray(context?.enemies)){
+    for(const enemy of context.enemies){
+      if(enemy?.isAlive && Number.isFinite(enemy?.x) && Number.isFinite(enemy?.y)){
+        targets.push({ x: enemy.x, y: enemy.y, id: enemy?.id || null });
+      }
+    }
+  }
+
+  const centerAnchor = getCenterControlAnchor();
+  let hasGapTraversal = false;
+  let hasSingleBounceRicochet = false;
+  let hasSafeCenterRoute = false;
+
+  for(const plane of groundedPlanes){
+    if(!plane) continue;
+
+    if(Number.isFinite(centerAnchor?.x) && Number.isFinite(centerAnchor?.y)){
+      const centerMove = planPathToPoint(plane, centerAnchor.x, centerAnchor.y, {
+        goalName: "opening_non_trivial_probe_center",
+        decisionReason: "opening_non_trivial_probe_center",
+      });
+      if(centerMove){
+        const landing = getAiMoveLandingPoint({ plane, ...centerMove });
+        const centerThreatMeta = landing
+          ? getImmediateResponseThreatMeta(context, landing.x, landing.y)
+          : { count: Number.POSITIVE_INFINITY };
+        if((centerThreatMeta?.count || 0) === 0){
+          hasSafeCenterRoute = true;
+        }
+      }
+    }
+
+    if(hasGapTraversal && hasSingleBounceRicochet && hasSafeCenterRoute) break;
+
+    for(const target of targets){
+      if(!hasGapTraversal){
+        const gapMove = planPathToPoint(plane, target.x, target.y, {
+          goalName: "opening_non_trivial_probe_gap",
+          decisionReason: "opening_non_trivial_probe_gap",
+          routeClass: "gap",
+        });
+        if(gapMove) hasGapTraversal = true;
+      }
+      if(!hasSingleBounceRicochet){
+        const ricochetMove = planPathToPoint(plane, target.x, target.y, {
+          goalName: "opening_non_trivial_probe_ricochet",
+          decisionReason: "opening_non_trivial_probe_ricochet",
+          routeClass: "ricochet",
+        });
+        if(ricochetMove) hasSingleBounceRicochet = true;
+      }
+      if(hasGapTraversal && hasSingleBounceRicochet && hasSafeCenterRoute) break;
+    }
+  }
+
+  const suppressTemplate = hasGapTraversal || hasSingleBounceRicochet || hasSafeCenterRoute;
+  return {
+    suppressTemplate,
+    protectedCriticalBranch: false,
+    hasGapTraversal,
+    hasSingleBounceRicochet,
+    hasSafeCenterRoute,
+    inspectedPlanes: groundedPlanes.length,
+    inspectedTargets: targets.length,
+    reason: suppressTemplate ? "non_trivial_opening_available" : "non_trivial_opening_not_found",
   };
 }
 
@@ -13239,6 +13347,7 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
     });
   }
 
+  const openingTemplateSuppressed = Boolean(aiRoundState?.openingTemplateSuppressed);
   if(!shouldBypassRotationForTacticalPriority && nextPlaneId && currentPlaneId && repeatedPlaneId && nextPlaneId !== currentPlaneId){
     const nextIsRepeat = nextPlaneId === repeatedPlaneId;
     const currentIsRepeat = currentPlaneId === repeatedPlaneId;
@@ -13251,11 +13360,12 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
         Number.isFinite(aiRoundState?.turnNumber)
         && aiRoundState.turnNumber <= AI_REPEAT_OPENING_FORCE_TURN_LIMIT
         && !isRepeatedCandidateCritical
+        && !openingTemplateSuppressed
       ){
         return !nextIsRepeat;
       }
 
-      if(scoreGap <= AI_REPEAT_FORCE_SCORE_MARGIN && !isRepeatedCandidateCritical){
+      if(scoreGap <= AI_REPEAT_FORCE_SCORE_MARGIN && !isRepeatedCandidateCritical && !openingTemplateSuppressed){
         return !nextIsRepeat;
       }
     }
@@ -17893,6 +18003,23 @@ function doComputerMove(){
   const hasCriticalBaseThreat = Boolean(criticalBaseThreat);
   const earlyBaseWarningThreat = hasCriticalBaseThreat ? null : getEarlyBaseWarningThreat(modeContext);
   const hasEarlyBaseWarningThreat = Boolean(earlyBaseWarningThreat);
+
+  const openingNonTrivialStartMeta = evaluateOpeningNonTrivialStartMeta({
+    ...modeContext,
+    goalName: hasCriticalBaseThreat ? "critical_base_threat" : (aiRoundState.currentGoal || ""),
+  });
+  aiRoundState.lastOpeningNonTrivialStartMeta = openingNonTrivialStartMeta;
+  aiRoundState.openingTemplateSuppressed = Boolean(openingNonTrivialStartMeta?.suppressTemplate);
+  logAiDecision("opening_non_trivial_start_probe", {
+    suppressTemplate: aiRoundState.openingTemplateSuppressed,
+    protectedCriticalBranch: Boolean(openingNonTrivialStartMeta?.protectedCriticalBranch),
+    hasGapTraversal: Boolean(openingNonTrivialStartMeta?.hasGapTraversal),
+    hasSingleBounceRicochet: Boolean(openingNonTrivialStartMeta?.hasSingleBounceRicochet),
+    hasSafeCenterRoute: Boolean(openingNonTrivialStartMeta?.hasSafeCenterRoute),
+    inspectedPlanes: openingNonTrivialStartMeta?.inspectedPlanes ?? 0,
+    inspectedTargets: openingNonTrivialStartMeta?.inspectedTargets ?? 0,
+    reason: openingNonTrivialStartMeta?.reason || null,
+  });
   if(criticalBaseThreat){
     const emergencyMove = getEmergencyDefenseMove(modeContext, criticalBaseThreat);
     if(emergencyMove){
