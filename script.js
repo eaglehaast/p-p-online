@@ -12173,8 +12173,17 @@ function onCanvasPointerUp(e){
 
     const { x: designX, y: designY } = getPointerDesignCoords(e);
     const { x, y } = designToBoardCoords(designX, designY);
-    const launchX = holdResult.moved ? x : handleCircle.baseX;
-    const launchY = holdResult.moved ? y : handleCircle.baseY;
+    const plane = handleCircle.pointRef;
+    if(!plane) return;
+
+    const launchX = holdResult.moved ? x : handleCircle.pointerDownStartX;
+    const launchY = holdResult.moved ? y : handleCircle.pointerDownStartY;
+    const tapDistanceFromPlane = Math.hypot(launchX - plane.x, launchY - plane.y);
+    if(!holdResult.moved && tapDistanceFromPlane < CELL_SIZE){
+      e.preventDefault();
+      return;
+    }
+
     finalizeStickyAimLaunchAt(launchX, launchY);
     e.preventDefault();
     return;
@@ -12223,8 +12232,16 @@ function onGlobalStickyAimPointerUpOrCancel(e){
 
   const { x: designX, y: designY } = getPointerDesignCoords(e);
   const { x, y } = designToBoardCoords(designX, designY);
-  const launchX = holdResult.moved ? x : handleCircle.baseX;
-  const launchY = holdResult.moved ? y : handleCircle.baseY;
+  const plane = handleCircle.pointRef;
+  if(!plane) return;
+
+  const launchX = holdResult.moved ? x : handleCircle.pointerDownStartX;
+  const launchY = holdResult.moved ? y : handleCircle.pointerDownStartY;
+  const tapDistanceFromPlane = Math.hypot(launchX - plane.x, launchY - plane.y);
+  if(!holdResult.moved && tapDistanceFromPlane < CELL_SIZE){
+    return;
+  }
+
   finalizeStickyAimLaunchAt(launchX, launchY);
 }
 
