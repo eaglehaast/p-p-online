@@ -34,6 +34,14 @@ node ./scripts/smoke-shield-immediate-rehit.js
 
 This smoke script verifies that shield reflection removes only the shield, while anti-repeat cooldown is applied only after a real plane elimination hit.
 
+## Asset source: cargo icons
+
+Current cargo icons used by the game are stored only in:
+
+- `ui_gamescreen/gs_inventory/`
+
+The legacy prototype folder `ui_gamescreen/gamescreen_outside/gs_icon_prototypes/` is removed and must not be used as a runtime source.
+
 ## AI self-analyzer (match JSON)
 
 For **Computer** mode, the game now records each finished match in browser storage:
