@@ -7070,7 +7070,7 @@ const baseSprites = {
   green: loadImageAsset(BASE_SPRITE_PATHS.green, GAME_PRELOAD_LABEL, { decoding: 'async' }).img,
 };
 
-const CARGO_SPRITE_PATH = "ui_gamescreen/gs_cargoanimation_20/gs_cargoanimation_20.png";
+const CARGO_SPRITE_PATH = "ui_gamescreen/gs_cargo_box.png";
 const CARGO_ANIMATION_FRAME_PATHS = Array.from({ length: 10 }, (_value, index) => {
   const frameNumber = String(index + 1).padStart(2, "0");
   return `ui_gamescreen/gs_cargoanimation_20/gs_cargoanimation_${frameNumber}.png`;
@@ -7732,6 +7732,7 @@ const CARGO_PICKUP_RADIUS_MULTIPLIER = 2.2;
 const CARGO_RADIUS         = POINT_RADIUS * CARGO_PICKUP_RADIUS_MULTIPLIER;    // увеличенный радиус ящика
 const CARGO_SPAWN_SAFE_RADIUS = CARGO_RADIUS + POINT_RADIUS;
 const CARGO_FALLBACK_SIZE_PX = 24;
+const CARGO_SAFE_MAX_DIM_PX = CARGO_FALLBACK_SIZE_PX * 4;
 const CARGO_ANIM_OFFSET_X   = -34;
 const CARGO_ANIM_OFFSET_Y   = -137;
 const FLAG_INTERACTION_RADIUS = 25;  // px
@@ -8335,13 +8336,18 @@ function spawnCargoForTurn(){
 }
 
 function getCargoSpriteSize(){
-  const width = Number.isFinite(cargoSprite?.naturalWidth) && cargoSprite.naturalWidth > 0
+  const loadedWidth = Number.isFinite(cargoSprite?.naturalWidth) && cargoSprite.naturalWidth > 0
     ? cargoSprite.naturalWidth
     : CARGO_FALLBACK_SIZE_PX;
-  const height = Number.isFinite(cargoSprite?.naturalHeight) && cargoSprite.naturalHeight > 0
+  const loadedHeight = Number.isFinite(cargoSprite?.naturalHeight) && cargoSprite.naturalHeight > 0
     ? cargoSprite.naturalHeight
     : CARGO_FALLBACK_SIZE_PX;
-  return { width, height };
+
+  if(loadedWidth > CARGO_SAFE_MAX_DIM_PX || loadedHeight > CARGO_SAFE_MAX_DIM_PX){
+    return { width: CARGO_FALLBACK_SIZE_PX, height: CARGO_FALLBACK_SIZE_PX };
+  }
+
+  return { width: loadedWidth, height: loadedHeight };
 }
 
 function getCargoSpriteDrawSize(){
