@@ -10352,7 +10352,8 @@ function buildAiFallbackDiagnosticsReport(source){
   const routeClasses = ["direct", "gap", "ricochet"];
 
   const createEmptyFunnelEntry = () => ({
-    generated: 0,
+    raw_attempted: 0,
+    valid_generated: 0,
     geometryPass: 0,
     pathPass: 0,
     safetyPass: 0,
@@ -10519,9 +10520,9 @@ function buildAiFallbackDiagnosticsReport(source){
     if(diagnostics && typeof diagnostics === "object"){
       for(const classKey of routeClasses){
         const shortlistMeta = getShortlistMeta(shortlist, classKey);
-        const generated = Math.max(0, Number(shortlistMeta.initialReachable) || 0);
+        const validGenerated = Math.max(0, Number(shortlistMeta.initialReachable) || 0);
         const shortlistCount = Math.max(0, Number(shortlistMeta.shortlistCount) || 0);
-        const rejectedBetween = Math.max(0, Math.min(generated, Number(shortlistMeta.rejectedBetweenInitialAndShortlist) || 0));
+        const rejectedBetween = Math.max(0, Math.min(validGenerated, Number(shortlistMeta.rejectedBetweenInitialAndShortlist) || 0));
         const earlyAttemptsValue = Number(diagnostics?.[`${classKey}Count`]);
         const hasEarlyAttempts = Number.isFinite(earlyAttemptsValue);
         const rawAttemptedFromDiagnostics = hasEarlyAttempts ? Math.max(0, Math.floor(earlyAttemptsValue)) : 0;
@@ -10553,19 +10554,20 @@ function buildAiFallbackDiagnosticsReport(source){
         const rankingRejected = Math.min(remainingRejected, rankingRejectedRaw);
         remainingRejected -= rankingRejected;
 
-        const geometryPass = Math.max(0, generated - geometryRejected);
+        const geometryPass = Math.max(0, validGenerated - geometryRejected);
         const pathPass = Math.max(0, geometryPass - pathRejected);
         const safetyPass = Math.max(0, pathPass - safetyRejected);
-        const shortlistPass = Math.max(0, Math.min(safetyPass, generated, shortlistCount));
+        const shortlistPass = Math.max(0, Math.min(safetyPass, validGenerated, shortlistCount));
 
-        candidateFunnelStats[classKey].generated += generated;
+        candidateFunnelStats[classKey].raw_attempted += rawAttempted;
+        candidateFunnelStats[classKey].valid_generated += validGenerated;
         candidateFunnelStats[classKey].geometryPass += geometryPass;
         candidateFunnelStats[classKey].pathPass += pathPass;
         candidateFunnelStats[classKey].safetyPass += safetyPass;
         candidateFunnelStats[classKey].shortlistPass += shortlistPass;
 
         candidateGenerationStats[classKey].raw_attempted += rawAttempted;
-        candidateGenerationStats[classKey].valid_generated += generated;
+        candidateGenerationStats[classKey].valid_generated += validGenerated;
         candidateGenerationStats[classKey].rejected_by_geometry += geometryRejected;
 
         if(classKey === "gap"){
@@ -10619,17 +10621,17 @@ function buildAiFallbackDiagnosticsReport(source){
         goalBeforeFallback: event?.goal || null,
         rootCause,
         directSummary: {
-          generated: Number(getShortlistMeta(shortlist, "direct").initialReachable) || 0,
+          valid_generated: Number(getShortlistMeta(shortlist, "direct").initialReachable) || 0,
           shortlistPass: Number(getShortlistMeta(shortlist, "direct").shortlistCount) || 0,
           topRejectReason: Object.keys(getShortlistMeta(shortlist, "direct").rejectReasons || {})[0] || null,
         },
         gapSummary: {
-          generated: Number(getShortlistMeta(shortlist, "gap").initialReachable) || 0,
+          valid_generated: Number(getShortlistMeta(shortlist, "gap").initialReachable) || 0,
           shortlistPass: Number(getShortlistMeta(shortlist, "gap").shortlistCount) || 0,
           topRejectReason: Object.keys(getShortlistMeta(shortlist, "gap").rejectReasons || {})[0] || null,
         },
         ricochetSummary: {
-          generated: Number(getShortlistMeta(shortlist, "ricochet").initialReachable) || 0,
+          valid_generated: Number(getShortlistMeta(shortlist, "ricochet").initialReachable) || 0,
           shortlistPass: Number(getShortlistMeta(shortlist, "ricochet").shortlistCount) || 0,
           topRejectReason: Object.keys(getShortlistMeta(shortlist, "ricochet").rejectReasons || {})[0] || null,
         },
@@ -10641,7 +10643,8 @@ function buildAiFallbackDiagnosticsReport(source){
 
   for(const classKey of routeClasses){
     const funnel = candidateFunnelStats[classKey];
-    funnel.geometryPass = Math.max(0, Math.min(funnel.generated, funnel.geometryPass));
+    funnel.valid_generated = Math.max(0, Math.min(funnel.raw_attempted, funnel.valid_generated));
+    funnel.geometryPass = Math.max(0, Math.min(funnel.valid_generated, funnel.geometryPass));
     funnel.pathPass = Math.max(0, Math.min(funnel.geometryPass, funnel.pathPass));
     funnel.safetyPass = Math.max(0, Math.min(funnel.pathPass, funnel.safetyPass));
     funnel.shortlistPass = Math.max(0, Math.min(funnel.safetyPass, funnel.shortlistPass));
@@ -10655,9 +10658,9 @@ function buildAiFallbackDiagnosticsReport(source){
   const summary = [
     `Всего fallback-эпизодов: ${totalFallbackEpisodes}.`,
     `Самая частая корневая причина: ${topRootCause[0]} (${topRootCause[1]}).`,
-    `Direct: generated=${candidateFunnelStats.direct.generated}, shortlistPass=${candidateFunnelStats.direct.shortlistPass}, selected=${candidateFunnelStats.direct.selected}.`,
-    `Gap: generated=${candidateFunnelStats.gap.generated}, shortlistPass=${candidateFunnelStats.gap.shortlistPass}, selected=${candidateFunnelStats.gap.selected}.`,
-    `Ricochet: generated=${candidateFunnelStats.ricochet.generated}, shortlistPass=${candidateFunnelStats.ricochet.shortlistPass}, selected=${candidateFunnelStats.ricochet.selected}.`,
+    `Direct: raw_attempted=${candidateFunnelStats.direct.raw_attempted}, valid_generated=${candidateFunnelStats.direct.valid_generated}, shortlistPass=${candidateFunnelStats.direct.shortlistPass}, selected=${candidateFunnelStats.direct.selected}.`,
+    `Gap: raw_attempted=${candidateFunnelStats.gap.raw_attempted}, valid_generated=${candidateFunnelStats.gap.valid_generated}, shortlistPass=${candidateFunnelStats.gap.shortlistPass}, selected=${candidateFunnelStats.gap.selected}.`,
+    `Ricochet: raw_attempted=${candidateFunnelStats.ricochet.raw_attempted}, valid_generated=${candidateFunnelStats.ricochet.valid_generated}, shortlistPass=${candidateFunnelStats.ricochet.shortlistPass}, selected=${candidateFunnelStats.ricochet.selected}.`,
     specialShortlistTotal <= 0
       ? "Special-маршруты чаще всего не доходят до shortlist и ломаются до выбора финального кандидата."
       : "Special-маршруты иногда попадают в shortlist, но часть теряется позже на отборе.",
