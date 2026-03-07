@@ -11815,6 +11815,7 @@ const handleCircle={
   pointRef:null,
   origAngle:null,
   pointerId:null,
+  hasGlobalPointerListeners:false,
   pointerDown:false,
   movedWhilePointerDown:false,
   pointerDownStartX:0,
@@ -11972,6 +11973,22 @@ function finalizeStickyAimLaunchAt(boardX, boardY){
   onHandleUp();
 }
 
+function addStickyAimGlobalPointerListeners(){
+  if(handleCircle.hasGlobalPointerListeners) return;
+  window.addEventListener("pointermove", onGlobalStickyAimPointerMove);
+  window.addEventListener("pointerup", onGlobalStickyAimPointerUpOrCancel);
+  window.addEventListener("pointercancel", onGlobalStickyAimPointerUpOrCancel);
+  handleCircle.hasGlobalPointerListeners = true;
+}
+
+function removeStickyAimGlobalPointerListeners(){
+  if(!handleCircle.hasGlobalPointerListeners) return;
+  window.removeEventListener("pointermove", onGlobalStickyAimPointerMove);
+  window.removeEventListener("pointerup", onGlobalStickyAimPointerUpOrCancel);
+  window.removeEventListener("pointercancel", onGlobalStickyAimPointerUpOrCancel);
+  handleCircle.hasGlobalPointerListeners = false;
+}
+
 function beginStickyAimHoldTracking(e, boardX, boardY){
   if(!handleCircle.active) return;
   if(!Number.isFinite(e?.pointerId)) return;
@@ -11981,6 +11998,7 @@ function beginStickyAimHoldTracking(e, boardX, boardY){
   handleCircle.movedWhilePointerDown = false;
   handleCircle.pointerDownStartX = boardX;
   handleCircle.pointerDownStartY = boardY;
+  addStickyAimGlobalPointerListeners();
 
   if(typeof gsBoardCanvas?.setPointerCapture === "function"){
     try {
@@ -11993,6 +12011,11 @@ function beginStickyAimHoldTracking(e, boardX, boardY){
 
 function endStickyAimHoldTracking(e){
   const trackedPointerId = handleCircle.pointerId;
+  const samePointer = Number.isFinite(e?.pointerId) && Number.isFinite(trackedPointerId)
+    ? e.pointerId === trackedPointerId
+    : true;
+
+  if(!samePointer) return false;
 
   if(Number.isFinite(trackedPointerId) && typeof gsBoardCanvas?.releasePointerCapture === "function"){
     try {
@@ -12004,9 +12027,6 @@ function endStickyAimHoldTracking(e){
     }
   }
 
-  const samePointer = Number.isFinite(e?.pointerId) && Number.isFinite(trackedPointerId)
-    ? e.pointerId === trackedPointerId
-    : true;
   const wasHolding = handleCircle.pointerDown;
   const movedWhileHolding = handleCircle.movedWhilePointerDown;
 
@@ -12014,7 +12034,7 @@ function endStickyAimHoldTracking(e){
   handleCircle.pointerDown = false;
   handleCircle.movedWhilePointerDown = false;
 
-  if(!samePointer || !wasHolding) return false;
+  if(!wasHolding) return false;
   return movedWhileHolding;
 }
 
@@ -12161,6 +12181,44 @@ function onCanvasPointerUp(e){
   handleAAPlacement(x, y);
   aaPlacementPreview = null;
   aaPreviewTrail = [];
+}
+
+function onGlobalStickyAimPointerMove(e){
+  if(!handleCircle.active || phase === 'AA_PLACEMENT') return;
+
+  const trackedPointerId = handleCircle.pointerId;
+  if(handleCircle.pointerDown && Number.isFinite(trackedPointerId) && Number.isFinite(e?.pointerId) && e.pointerId !== trackedPointerId){
+    return;
+  }
+
+  const { x: designX, y: designY } = getPointerDesignCoords(e);
+  const { x, y } = designToBoardCoords(designX, designY);
+  handleCircle.baseX = x;
+  handleCircle.baseY = y;
+
+  if(handleCircle.pointerDown){
+    const moveDistance = Math.hypot(
+      x - handleCircle.pointerDownStartX,
+      y - handleCircle.pointerDownStartY
+    );
+    if(moveDistance >= STICKY_AIM_HOLD_MOVE_THRESHOLD_PX){
+      handleCircle.movedWhilePointerDown = true;
+    }
+  }
+
+  gsBoardCanvas.style.cursor = 'grabbing';
+  document.body.style.cursor = 'grabbing';
+}
+
+function onGlobalStickyAimPointerUpOrCancel(e){
+  if(!handleCircle.active || phase === 'AA_PLACEMENT') return;
+
+  const shouldFinalizeHoldLaunch = endStickyAimHoldTracking(e);
+  if(!shouldFinalizeHoldLaunch) return;
+
+  const { x: designX, y: designY } = getPointerDesignCoords(e);
+  const { x, y } = designToBoardCoords(designX, designY);
+  finalizeStickyAimLaunchAt(x, y);
 }
 
 function onGlobalPointerDownInventoryCancel(event){
@@ -12493,6 +12551,7 @@ function cleanupHandle(){
   window.removeEventListener("touchend", onHandleUp);
   window.removeEventListener("pointermove", onHandleMove);
   window.removeEventListener("pointerup", onHandleUp);
+  removeStickyAimGlobalPointerListeners();
 }
 
 /* ======= AI ======= */
