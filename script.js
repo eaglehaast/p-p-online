@@ -9437,6 +9437,22 @@ function recordAiSelfAnalyzerDecision(stage, details = {}){
     event.consideredMoves = consideredMoves;
   }
 
+  const initialCandidateSetDiagnostics = details?.initialCandidateSetDiagnostics;
+  if(initialCandidateSetDiagnostics && typeof initialCandidateSetDiagnostics === "object"){
+    const directCount = Number(initialCandidateSetDiagnostics.directCount);
+    const gapCount = Number(initialCandidateSetDiagnostics.gapCount);
+    const ricochetCount = Number(initialCandidateSetDiagnostics.ricochetCount);
+    event.initialCandidateSetDiagnostics = {
+      directCount: Number.isFinite(directCount) ? Math.max(0, Math.floor(directCount)) : 0,
+      gapCount: Number.isFinite(gapCount) ? Math.max(0, Math.floor(gapCount)) : 0,
+      ricochetCount: Number.isFinite(ricochetCount) ? Math.max(0, Math.floor(ricochetCount)) : 0,
+      hasDirect: Boolean(initialCandidateSetDiagnostics.hasDirect),
+      hasGap: Boolean(initialCandidateSetDiagnostics.hasGap),
+      hasRicochet: Boolean(initialCandidateSetDiagnostics.hasRicochet),
+      goalName: initialCandidateSetDiagnostics.goalName || null,
+    };
+  }
+
   recordAiSelfAnalyzerEvent(event);
 }
 
@@ -9986,6 +10002,14 @@ function buildAiSelfAnalyzerGapReport(source){
       .map((event) => Number.isFinite(event?.selectedMove?.totalDist) ? event.selectedMove.totalDist : null)
       .filter((value) => Number.isFinite(value));
 
+    const initialSetEvents = aiDecisionEvents.filter((event) => event?.initialCandidateSetDiagnostics);
+    const initialSetWithGap = initialSetEvents.filter((event) => event.initialCandidateSetDiagnostics?.hasGap);
+    const initialSetWithRicochet = initialSetEvents.filter((event) => event.initialCandidateSetDiagnostics?.hasRicochet);
+    const initialSetMissingGapOrRicochet = initialSetEvents.filter((event) => (
+      !event.initialCandidateSetDiagnostics?.hasGap
+      || !event.initialCandidateSetDiagnostics?.hasRicochet
+    ));
+
     const pipelineDiagnostics = {
       decisions: aiDecisionEvents.length,
       fallbackDecisions: fallbackDecisions.length,
@@ -9996,6 +10020,12 @@ function buildAiSelfAnalyzerGapReport(source){
       avgMoveDistance: avgMoveDistance.length > 0
         ? avgMoveDistance.reduce((sum, value) => sum + value, 0) / avgMoveDistance.length
         : 0,
+      initialSetDiagnostics: {
+        decisionsWithInitialSet: initialSetEvents.length,
+        gapPresentRate: initialSetEvents.length > 0 ? initialSetWithGap.length / initialSetEvents.length : 0,
+        ricochetPresentRate: initialSetEvents.length > 0 ? initialSetWithRicochet.length / initialSetEvents.length : 0,
+        missingGapOrRicochetRate: initialSetEvents.length > 0 ? initialSetMissingGapOrRicochet.length / initialSetEvents.length : 0,
+      },
     };
 
     const turnOutcomeMetrics = {
@@ -16109,8 +16139,9 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
   if(!Array.isArray(planes) || !Array.isArray(availableEnemyFlags)) return [];
 
   const goalText = `${options?.goalName || aiRoundState?.currentGoal || ""}`.toLowerCase();
-  const allowBounceStage = !goalText.includes("critical_base_threat")
-    && !goalText.includes("emergency_base_defense");
+  const isEmergencyDefenseStage = goalText.includes("critical_base_threat")
+    || goalText.includes("emergency_base_defense");
+  const allowBounceStage = true;
   const leftWallX = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
   const rightWallX = FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X;
   const hasWallData = Number.isFinite(leftWallX) && Number.isFinite(rightWallX);
@@ -16229,6 +16260,8 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
       if(flyingPoints.some((fp) => fp.plane === plane)) continue;
       for(const flag of availableEnemyFlags){
         const targetAnchor = getFlagAnchor(flag);
+        const isDirectPathBlockedForTarget = !isPathClear(plane.x, plane.y, targetAnchor.x, targetAnchor.y);
+        if(isEmergencyDefenseStage && !isDirectPathBlockedForTarget) continue;
         const mirroredTargets = [
           {
             wall: "left",
@@ -16292,6 +16325,17 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     ...trimmedBounceCandidates,
   ];
 
+  aiRoundState.lastInitialCandidateSetDiagnostics = {
+    source: "buildFlagCaptureBaseCandidates",
+    goalName: baseGoalName,
+    directCount: trimmedDirectCandidates.length,
+    gapCount: trimmedGapCandidates.length,
+    ricochetCount: trimmedBounceCandidates.length,
+    hasDirect: trimmedDirectCandidates.length > 0,
+    hasGap: trimmedGapCandidates.length > 0,
+    hasRicochet: trimmedBounceCandidates.length > 0,
+  };
+
   logAiDecision("flag_capture_candidate_summary", {
     goalName: baseGoalName,
     decisionReason: options?.decisionReason || null,
@@ -16304,7 +16348,8 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     interclassComparison: true,
     maxCandidatesPerClass,
     bounceAllowed: allowBounceStage,
-    isEmergencyDefenseStage: !allowBounceStage,
+    isEmergencyDefenseStage,
+    emergencyBounceBlockedDirectOnly: isEmergencyDefenseStage,
   });
 
   return combinedCandidates;
@@ -17656,6 +17701,7 @@ function getForcedProgressLaunchMove(modeContext){
 
 function doComputerMove(){
   if (gameMode!=="computer" || isGameOver) return;
+  aiRoundState.lastInitialCandidateSetDiagnostics = null;
 
   const failSafeHandler = typeof failSafeAdvanceTurn === "function"
     ? failSafeAdvanceTurn
@@ -17687,6 +17733,7 @@ function doComputerMove(){
       rejectReasons: data.rejectReasons,
       move: data.move,
       consideredMoves: data.consideredMoves,
+      initialCandidateSetDiagnostics: data.initialCandidateSetDiagnostics || aiRoundState.lastInitialCandidateSetDiagnostics || null,
     });
   };
 
