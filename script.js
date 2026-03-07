@@ -12015,7 +12015,7 @@ function endStickyAimHoldTracking(e){
     ? e.pointerId === trackedPointerId
     : true;
 
-  if(!samePointer) return false;
+  if(!samePointer) return { ended: false, moved: false };
 
   if(Number.isFinite(trackedPointerId) && typeof gsBoardCanvas?.releasePointerCapture === "function"){
     try {
@@ -12034,8 +12034,11 @@ function endStickyAimHoldTracking(e){
   handleCircle.pointerDown = false;
   handleCircle.movedWhilePointerDown = false;
 
-  if(!wasHolding) return false;
-  return movedWhileHolding;
+  if(!wasHolding) return { ended: false, moved: false };
+  return {
+    ended: true,
+    moved: movedWhileHolding,
+  };
 }
 
 function handleAAPlacement(x, y){
@@ -12088,7 +12091,7 @@ function onCanvasPointerDown(e){
   if(handleCircle.active && phase !== 'AA_PLACEMENT'){
     const { x: designX, y: designY } = getPointerDesignCoords(e);
     const { x, y } = designToBoardCoords(designX, designY);
-    finalizeStickyAimLaunchAt(x, y);
+    beginStickyAimHoldTracking(e, x, y);
     e.preventDefault();
     return;
   }
@@ -12165,12 +12168,14 @@ function onCanvasPointerUp(e){
   if(phase !== 'AA_PLACEMENT'){
     if(!handleCircle.active) return;
 
-    const shouldFinalizeHoldLaunch = endStickyAimHoldTracking(e);
-    if(!shouldFinalizeHoldLaunch) return;
+    const holdResult = endStickyAimHoldTracking(e);
+    if(!holdResult.ended) return;
 
     const { x: designX, y: designY } = getPointerDesignCoords(e);
     const { x, y } = designToBoardCoords(designX, designY);
-    finalizeStickyAimLaunchAt(x, y);
+    const launchX = holdResult.moved ? x : handleCircle.baseX;
+    const launchY = holdResult.moved ? y : handleCircle.baseY;
+    finalizeStickyAimLaunchAt(launchX, launchY);
     e.preventDefault();
     return;
   }
@@ -12213,12 +12218,14 @@ function onGlobalStickyAimPointerMove(e){
 function onGlobalStickyAimPointerUpOrCancel(e){
   if(!handleCircle.active || phase === 'AA_PLACEMENT') return;
 
-  const shouldFinalizeHoldLaunch = endStickyAimHoldTracking(e);
-  if(!shouldFinalizeHoldLaunch) return;
+  const holdResult = endStickyAimHoldTracking(e);
+  if(!holdResult.ended) return;
 
   const { x: designX, y: designY } = getPointerDesignCoords(e);
   const { x, y } = designToBoardCoords(designX, designY);
-  finalizeStickyAimLaunchAt(x, y);
+  const launchX = holdResult.moved ? x : handleCircle.baseX;
+  const launchY = holdResult.moved ? y : handleCircle.baseY;
+  finalizeStickyAimLaunchAt(launchX, launchY);
 }
 
 function onGlobalPointerDownInventoryCancel(event){
@@ -12459,18 +12466,6 @@ function drawAAPreview(){
 }
 
 
-function onHandleMove(e){
-  if(!handleCircle.active)return;
-  e.preventDefault();
-  const { x: designX, y: designY } = getPointerDesignCoords(e);
-  const { x, y } = designToBoardCoords(designX, designY);
-
-  handleCircle.baseX = x;
-  handleCircle.baseY = y;
-  gsBoardCanvas.style.cursor = 'grabbing';
-  document.body.style.cursor = 'grabbing';
-}
-
 function onHandleUp(){
   if(!handleCircle.active || !handleCircle.pointRef) return;
   const { baseX, baseY } = handleCircle;
@@ -12545,12 +12540,6 @@ function cleanupHandle(){
   aimCanvas.style.display = "none";
   aimCtx.clearRect(0,0,aimCanvas.width,aimCanvas.height);
   document.body.style.cursor = '';
-  window.removeEventListener("mousemove", onHandleMove);
-  window.removeEventListener("mouseup", onHandleUp);
-  window.removeEventListener("touchmove", onHandleMove);
-  window.removeEventListener("touchend", onHandleUp);
-  window.removeEventListener("pointermove", onHandleMove);
-  window.removeEventListener("pointerup", onHandleUp);
   removeStickyAimGlobalPointerListeners();
 }
 
