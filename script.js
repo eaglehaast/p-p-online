@@ -16589,6 +16589,27 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
   const baseGoalName = options?.goalName || "capture_enemy_flag";
   const baseDecisionReason = options?.decisionReason || "flag_capture_direct";
   const groundedPlanes = planes.filter((plane) => !flyingPoints.some((fp) => fp.plane === plane));
+  function snapshotRouteClassRejectDiagnosticEntry(entry){
+    const safeEntry = entry && typeof entry === "object" ? entry : {};
+    const safeRejectCodes = {};
+    const rawRejectCodes = safeEntry.rejectCodes && typeof safeEntry.rejectCodes === "object" ? safeEntry.rejectCodes : {};
+    for(const [code, count] of Object.entries(rawRejectCodes)){
+      const safeCount = Number.isFinite(count) ? Math.max(0, count) : 0;
+      if(safeCount > 0) safeRejectCodes[code] = safeCount;
+    }
+    return {
+      attempted: Number.isFinite(safeEntry.attempted) ? Math.max(0, safeEntry.attempted) : 0,
+      accepted: Number.isFinite(safeEntry.accepted) ? Math.max(0, safeEntry.accepted) : 0,
+      rejected: Number.isFinite(safeEntry.rejected) ? Math.max(0, safeEntry.rejected) : 0,
+      rejectCodes: safeRejectCodes,
+    };
+  }
+
+  const routeClassRejectDiagnosticsBefore = {
+    direct: snapshotRouteClassRejectDiagnosticEntry(aiRoundState?.routeClassRejectDiagnostics?.classes?.direct),
+    gap: snapshotRouteClassRejectDiagnosticEntry(aiRoundState?.routeClassRejectDiagnostics?.classes?.gap),
+    ricochet: snapshotRouteClassRejectDiagnosticEntry(aiRoundState?.routeClassRejectDiagnostics?.classes?.ricochet),
+  };
 
   const candidateTypeDiagnostics = {
     direct: {
@@ -16681,6 +16702,49 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
       });
 
     return ranked.slice(0, 2);
+  }
+
+  function buildRouteClassRejectDiagnosticsDelta(){
+    const runtimeDiagnostics = aiRoundState?.routeClassRejectDiagnostics?.classes;
+    if(!runtimeDiagnostics || typeof runtimeDiagnostics !== "object") return null;
+
+    function buildClassDelta(classKey){
+      const current = runtimeDiagnostics[classKey] || {};
+      const before = routeClassRejectDiagnosticsBefore[classKey] || {};
+      const attempted = Math.max(0,
+        (Number.isFinite(current.attempted) ? current.attempted : 0)
+        - (Number.isFinite(before.attempted) ? before.attempted : 0)
+      );
+      const accepted = Math.max(0,
+        (Number.isFinite(current.accepted) ? current.accepted : 0)
+        - (Number.isFinite(before.accepted) ? before.accepted : 0)
+      );
+      const rejected = Math.max(0,
+        (Number.isFinite(current.rejected) ? current.rejected : 0)
+        - (Number.isFinite(before.rejected) ? before.rejected : 0)
+      );
+      const rejectCodes = {};
+      const currentRejectCodes = current.rejectCodes && typeof current.rejectCodes === "object" ? current.rejectCodes : {};
+      const beforeRejectCodes = before.rejectCodes && typeof before.rejectCodes === "object" ? before.rejectCodes : {};
+      for(const [code, count] of Object.entries(currentRejectCodes)){
+        const safeCount = Number.isFinite(count) ? Math.max(0, count) : 0;
+        const baseline = Number.isFinite(beforeRejectCodes[code]) ? Math.max(0, beforeRejectCodes[code]) : 0;
+        const delta = Math.max(0, safeCount - baseline);
+        if(delta > 0) rejectCodes[code] = delta;
+      }
+      return {
+        attempted,
+        accepted,
+        rejected,
+        rejectCodes,
+      };
+    }
+
+    return {
+      direct: buildClassDelta("direct"),
+      gap: buildClassDelta("gap"),
+      ricochet: buildClassDelta("ricochet"),
+    };
   }
 
   function trimCandidatesByClass(candidates){
@@ -17027,6 +17091,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     gap: buildShortlistDiagnostics("gap", gapCandidates, trimmedGapCandidates, candidateTypeDiagnostics.gap),
     ricochet: buildShortlistDiagnostics("ricochet", bounceCandidates, trimmedBounceCandidates, candidateTypeDiagnostics.ricochet),
   };
+  const routeClassRejectDiagnostics = buildRouteClassRejectDiagnosticsDelta();
   const disproportionateShortlistRejectReasons = getDominantShortlistRejectReasons(shortlistDiagnostics);
 
   const combinedCandidates = [
@@ -17046,6 +17111,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     hasRicochet: trimmedBounceCandidates.length > 0,
     candidateTypeDiagnostics,
     shortlistDiagnostics,
+    routeClassRejectDiagnostics,
     disproportionateShortlistRejectReasons,
     zeroCandidateReasons: {
       direct: trimmedDirectCandidates.length > 0 ? [] : [
@@ -17078,6 +17144,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     ricochetAttemptBudget,
     candidateTypeDiagnostics,
     shortlistDiagnostics,
+    routeClassRejectDiagnostics,
     disproportionateShortlistRejectReasons,
     bounceAllowed: allowBounceStage,
     isEmergencyDefenseStage,
@@ -19359,7 +19426,62 @@ function planPathToPoint(plane, tx, ty, options = {}){
       : "direct");
   const requestedRouteClass = `${defaultRouteClass || "direct"}`.toLowerCase();
   const shouldForceNonDirectBranch = requestedRouteClass === "ricochet";
+  const routeClassRejectDiagnosticsEnabled = options?.enableRouteClassRejectDiagnostics !== false;
   planPathToPoint.lastRejectCode = null;
+
+  function recordRouteClassRejectDiagnostic(candidateClass, rejectCode){
+    if(!routeClassRejectDiagnosticsEnabled || !aiRoundState || typeof aiRoundState !== "object") return;
+    const classKey = `${candidateClass || "direct"}`.toLowerCase();
+    if(classKey !== "direct" && classKey !== "gap" && classKey !== "ricochet") return;
+
+    const safePlaneId = plane?.id ?? "unknown_plane";
+    const safeTx = Number.isFinite(tx) ? Number(tx.toFixed(2)) : tx;
+    const safeTy = Number.isFinite(ty) ? Number(ty.toFixed(2)) : ty;
+    const pairKey = `${safePlaneId}:${safeTx}:${safeTy}`;
+    const diagnostics = aiRoundState.routeClassRejectDiagnostics && typeof aiRoundState.routeClassRejectDiagnostics === "object"
+      ? aiRoundState.routeClassRejectDiagnostics
+      : {
+          pairOrder: [],
+          pairs: {},
+          classes: {
+            direct: { attempted: 0, accepted: 0, rejected: 0, rejectCodes: {} },
+            gap: { attempted: 0, accepted: 0, rejected: 0, rejectCodes: {} },
+            ricochet: { attempted: 0, accepted: 0, rejected: 0, rejectCodes: {} },
+          },
+        };
+    aiRoundState.routeClassRejectDiagnostics = diagnostics;
+
+    if(!diagnostics.pairs[pairKey]){
+      diagnostics.pairs[pairKey] = {
+        pairKey,
+        planeId: safePlaneId,
+        targetX: safeTx,
+        targetY: safeTy,
+        classes: {
+          direct: { attempted: 0, accepted: 0, rejected: 0, rejectCodes: {} },
+          gap: { attempted: 0, accepted: 0, rejected: 0, rejectCodes: {} },
+          ricochet: { attempted: 0, accepted: 0, rejected: 0, rejectCodes: {} },
+        },
+      };
+      diagnostics.pairOrder.push(pairKey);
+      if(diagnostics.pairOrder.length > 200) diagnostics.pairOrder.shift();
+    }
+
+    const pairMeta = diagnostics.pairs[pairKey];
+    const pairClassMeta = pairMeta.classes[classKey];
+    const classMeta = diagnostics.classes[classKey];
+    pairClassMeta.attempted += 1;
+    classMeta.attempted += 1;
+    if(rejectCode){
+      pairClassMeta.rejected += 1;
+      classMeta.rejected += 1;
+      pairClassMeta.rejectCodes[rejectCode] = (pairClassMeta.rejectCodes[rejectCode] || 0) + 1;
+      classMeta.rejectCodes[rejectCode] = (classMeta.rejectCodes[rejectCode] || 0) + 1;
+    } else {
+      pairClassMeta.accepted += 1;
+      classMeta.accepted += 1;
+    }
+  }
 
   function estimateRouteClearancePx(x1, y1, x2, y2){
     if(!Array.isArray(colliders) || colliders.length === 0) return CELL_SIZE * 2;
@@ -19397,15 +19519,17 @@ function planPathToPoint(plane, tx, ty, options = {}){
       : CELL_SIZE * (relaxedEmergencyThreshold ? 0.24 : 0.4);
     const minProgress = candidateClass === "ricochet"
       ? minProgressBase * 0.9
-      : minProgressBase;
+      : (candidateClass === "gap" && !relaxedEmergencyThreshold ? minProgressBase * 0.85 : minProgressBase);
     const maxResponseRiskBase = relaxedEmergencyThreshold ? 0.95 : 0.8;
     const maxResponseRisk = candidateClass === "ricochet"
       ? Math.min(0.97, maxResponseRiskBase + 0.12)
       : maxResponseRiskBase;
-    const maxCorridorTightness = candidateClass === "ricochet" ? 0.985 : 0.95;
+    const maxCorridorTightness = candidateClass === "ricochet"
+      ? 0.985
+      : (candidateClass === "gap" && !relaxedEmergencyThreshold ? 0.965 : 0.95);
     const minGapClearanceBase = relaxedEmergencyThreshold ? CELL_SIZE * 0.04 : CELL_SIZE * 0.08;
     const minGapClearance = candidateClass === "gap"
-      ? Math.max(CELL_SIZE * 0.02, minGapClearanceBase * 0.6)
+      ? Math.max(0, minGapClearanceBase * (relaxedEmergencyThreshold ? 0.6 : 0))
       : minGapClearanceBase;
 
     let rejectCode = null;
@@ -19416,6 +19540,8 @@ function planPathToPoint(plane, tx, ty, options = {}){
     } else if(candidateClass === "gap" && clearancePx < minGapClearance){
       rejectCode = "blocked_at_gap";
     }
+
+    recordRouteClassRejectDiagnostic(candidateClass, rejectCode);
 
     const clearanceNorm = Math.max(0, Math.min(1, clearancePx / Math.max(1, CELL_SIZE * 1.5)));
     const progressNorm = Math.max(0, Math.min(1, progress / Math.max(1, distance)));
