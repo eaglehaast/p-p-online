@@ -9515,6 +9515,44 @@ function recordAiSelfAnalyzerDecision(stage, details = {}){
     };
   }
 
+  const finalComparedDiagnostics = details?.finalComparedDiagnostics;
+  if(finalComparedDiagnostics && typeof finalComparedDiagnostics === "object"){
+    const safeClassPresence = finalComparedDiagnostics?.classPresence && typeof finalComparedDiagnostics.classPresence === "object"
+      ? {
+          direct: Number.isFinite(finalComparedDiagnostics.classPresence.direct)
+            ? Math.max(0, Math.floor(finalComparedDiagnostics.classPresence.direct))
+            : 0,
+          gap: Number.isFinite(finalComparedDiagnostics.classPresence.gap)
+            ? Math.max(0, Math.floor(finalComparedDiagnostics.classPresence.gap))
+            : 0,
+          ricochet: Number.isFinite(finalComparedDiagnostics.classPresence.ricochet)
+            ? Math.max(0, Math.floor(finalComparedDiagnostics.classPresence.ricochet))
+            : 0,
+        }
+      : null;
+    const winner = finalComparedDiagnostics?.winner;
+    event.finalComparedDiagnostics = {
+      source: finalComparedDiagnostics.source || null,
+      goalName: finalComparedDiagnostics.goalName || null,
+      comparedCount: Number.isFinite(finalComparedDiagnostics.comparedCount)
+        ? Math.max(0, Math.floor(finalComparedDiagnostics.comparedCount))
+        : 0,
+      classPresence: safeClassPresence,
+      winnerClass: typeof winner?.classLabel === "string" ? winner.classLabel : null,
+    };
+  }
+
+  const fallbackDiagnostics = details?.fallbackDiagnostics;
+  if(fallbackDiagnostics && typeof fallbackDiagnostics === "object"){
+    event.fallbackDiagnostics = {
+      stageBeforeFallback: fallbackDiagnostics.stageBeforeFallback || null,
+      fallbackGoal: fallbackDiagnostics.fallbackGoal || null,
+      fallbackDecisionReason: fallbackDiagnostics.fallbackDecisionReason || null,
+      fallbackValidationReason: fallbackDiagnostics.fallbackValidationReason || null,
+      rootCauseHint: fallbackDiagnostics.rootCauseHint || null,
+    };
+  }
+
   recordAiSelfAnalyzerEvent(event);
 }
 
@@ -10307,6 +10345,273 @@ function buildAiSelfAnalyzerGapReport(source){
   };
 }
 
+function buildAiFallbackDiagnosticsReport(source){
+  const events = Array.isArray(source?.events) ? source.events : [];
+  const aiDecisionEvents = events.filter((event) => event?.type === "ai_decision");
+  const fallbackStages = new Set(["fallback_selected", "super_reserve_selected", "forced_progress_selected", "safe_short_fallback_selected"]);
+  const routeClasses = ["direct", "gap", "ricochet"];
+
+  const createEmptyFunnelEntry = () => ({
+    generated: 0,
+    geometryPass: 0,
+    pathPass: 0,
+    safetyPass: 0,
+    shortlistPass: 0,
+    selected: 0,
+  });
+
+  const fallbackRootCauseStats = {
+    no_candidates_generated: 0,
+    all_candidates_blocked_before_shortlist: 0,
+    all_candidates_rejected_by_safety: 0,
+    all_candidates_lost_in_ranking: 0,
+    attempt_budget_exhausted: 0,
+    mode_restriction_only: 0,
+    opening_restriction_only: 0,
+    defense_override: 0,
+    unknown: 0,
+  };
+
+  const candidateFunnelStats = {
+    direct: createEmptyFunnelEntry(),
+    gap: createEmptyFunnelEntry(),
+    ricochet: createEmptyFunnelEntry(),
+  };
+
+  const firstBlockingObjectStats = {
+    direct: { brick: 0, side_wall: 0, top_bottom_wall: 0, own_plane: 0, enemy_plane: 0, own_base: 0, enemy_base: 0, map_boundary: 0, unknown: 0 },
+    gap: { brick: 0, side_wall: 0, top_bottom_wall: 0, own_plane: 0, enemy_plane: 0, own_base: 0, enemy_base: 0, map_boundary: 0, unknown: 0 },
+    ricochet: { brick: 0, side_wall: 0, top_bottom_wall: 0, own_plane: 0, enemy_plane: 0, own_base: 0, enemy_base: 0, map_boundary: 0, unknown: 0 },
+  };
+
+  const blockedSegmentStats = {
+    gap: { before_bounce: 0, after_bounce: 0, gap_entry: 0, gap_exit: 0, final_approach: 0, unknown: 0 },
+    ricochet: { before_bounce: 0, after_bounce: 0, gap_entry: 0, gap_exit: 0, final_approach: 0, unknown: 0 },
+  };
+
+  const specialRouteFailureStats = {
+    gap: { blocked_path: 0, blocked_after_bounce: 0, attempt_budget_exhausted: 0, no_gap_window: 0, invalid_bounce_geometry: 0, unsafe_after_path: 0, rejected_in_shortlist: 0, rejected_in_ranking: 0, unknown: 0 },
+    ricochet: { blocked_path: 0, blocked_after_bounce: 0, attempt_budget_exhausted: 0, no_gap_window: 0, invalid_bounce_geometry: 0, unsafe_after_path: 0, rejected_in_shortlist: 0, rejected_in_ranking: 0, unknown: 0 },
+  };
+
+  const fallbackEpisodes = [];
+
+  const mapReasonToObject = (reason) => {
+    const text = `${reason || ""}`.toLowerCase();
+    if(text.includes("wall") && (text.includes("top") || text.includes("bottom"))) return "top_bottom_wall";
+    if(text.includes("wall")) return "side_wall";
+    if(text.includes("brick") || text.includes("collider")) return "brick";
+    if(text.includes("own_plane") || text.includes("friendly_plane")) return "own_plane";
+    if(text.includes("enemy_plane")) return "enemy_plane";
+    if(text.includes("own_base")) return "own_base";
+    if(text.includes("enemy_base")) return "enemy_base";
+    if(text.includes("boundary") || text.includes("out_of_bounds")) return "map_boundary";
+    return "unknown";
+  };
+
+  const mapReasonToSegment = (reason) => {
+    const text = `${reason || ""}`.toLowerCase();
+    if(text.includes("after_bounce")) return "after_bounce";
+    if(text.includes("before_bounce")) return "before_bounce";
+    if(text.includes("gap") && text.includes("entry")) return "gap_entry";
+    if(text.includes("gap") && text.includes("exit")) return "gap_exit";
+    if(text.includes("final") || text.includes("approach")) return "final_approach";
+    return "unknown";
+  };
+
+  const mapReasonToSpecialFailure = (reason) => {
+    const text = `${reason || ""}`.toLowerCase();
+    if(text.includes("attempt_budget_exhausted")) return "attempt_budget_exhausted";
+    if(text.includes("shortlist")) return "rejected_in_shortlist";
+    if(text.includes("score_cutoff") || text.includes("ranking")) return "rejected_in_ranking";
+    if(text.includes("blocked_after_bounce") || text.includes("after_bounce")) return "blocked_after_bounce";
+    if(text.includes("blocked") || text.includes("path")) return "blocked_path";
+    if(text.includes("gap") && text.includes("window")) return "no_gap_window";
+    if(text.includes("bounce") && text.includes("invalid")) return "invalid_bounce_geometry";
+    if(text.includes("unsafe")) return "unsafe_after_path";
+    return "unknown";
+  };
+
+  const normalizeRootCause = (event) => {
+    const stage = `${event?.stage || ""}`.toLowerCase();
+    const goal = `${event?.goal || ""}`.toLowerCase();
+    const reasonCodes = Array.isArray(event?.reasonCodes) ? event.reasonCodes.map((code) => `${code}`.toLowerCase()) : [];
+    const rejectReasons = Array.isArray(event?.rejectReasons) ? event.rejectReasons.map((code) => `${code}`.toLowerCase()) : [];
+    const diagnostics = event?.initialCandidateSetDiagnostics;
+
+    const has = (token) => reasonCodes.some((item) => item.includes(token)) || rejectReasons.some((item) => item.includes(token));
+
+    if(has("opening_phase_restriction")) return "opening_restriction_only";
+    if(has("critical_base_threat") || goal.includes("critical_base_threat") || goal.includes("emergency_base_defense")) return "defense_override";
+    if(has("mode_strategy_failed") || has("mode_move_restriction")) return "mode_restriction_only";
+    if(has("attempt_budget_exhausted")) return "attempt_budget_exhausted";
+
+    if(diagnostics && typeof diagnostics === "object"){
+      const totalGenerated = (Number(diagnostics.directCount) || 0) + (Number(diagnostics.gapCount) || 0) + (Number(diagnostics.ricochetCount) || 0);
+      if(totalGenerated <= 0) return "no_candidates_generated";
+      const shortlist = diagnostics?.shortlistDiagnostics;
+      if(shortlist && typeof shortlist === "object"){
+        const totalShortlist = routeClasses.reduce((sum, classKey) => sum + (Number(shortlist?.[classKey]?.shortlistCount) || 0), 0);
+        if(totalShortlist <= 0){
+          const rejectKeys = routeClasses.flatMap((classKey) => Object.keys(shortlist?.[classKey]?.rejectReasons || {}).map((key) => key.toLowerCase()));
+          if(rejectKeys.some((key) => key.includes("unsafe"))) return "all_candidates_rejected_by_safety";
+          if(rejectKeys.some((key) => key.includes("shortlist_score_cutoff"))) return "all_candidates_lost_in_ranking";
+          return "all_candidates_blocked_before_shortlist";
+        }
+      }
+    }
+
+    if(stage.includes("fallback")) return "unknown";
+    return "unknown";
+  };
+
+  for(const event of aiDecisionEvents){
+    const diagnostics = event?.initialCandidateSetDiagnostics;
+    const shortlist = diagnostics?.shortlistDiagnostics;
+
+    if(diagnostics && typeof diagnostics === "object"){
+      for(const classKey of routeClasses){
+        const generated = Number(diagnostics?.[`${classKey}Count`]) || 0;
+        candidateFunnelStats[classKey].generated += Math.max(0, generated);
+
+        const shortlistMeta = shortlist?.[classKey] || {};
+        const initialReachable = Number(shortlistMeta.initialReachable) || 0;
+        const shortlistCount = Number(shortlistMeta.shortlistCount) || 0;
+        const rejectedBetween = Number(shortlistMeta.rejectedBetweenInitialAndShortlist) || 0;
+
+        const geometryRejected = Object.entries(shortlistMeta.rejectReasons || {}).reduce((sum, [reason, count]) => {
+          const safeCount = Number.isFinite(count) ? Math.max(0, count) : 0;
+          return `${reason}`.toLowerCase().includes("geometrically") ? sum + safeCount : sum;
+        }, 0);
+
+        candidateFunnelStats[classKey].geometryPass += Math.max(0, generated - geometryRejected);
+        candidateFunnelStats[classKey].pathPass += Math.max(0, initialReachable);
+        candidateFunnelStats[classKey].safetyPass += Math.max(0, initialReachable - rejectedBetween);
+        candidateFunnelStats[classKey].shortlistPass += Math.max(0, shortlistCount);
+
+        const rejectReasonsMap = shortlistMeta.rejectReasons && typeof shortlistMeta.rejectReasons === "object"
+          ? shortlistMeta.rejectReasons
+          : {};
+        for(const [reason, count] of Object.entries(rejectReasonsMap)){
+          const safeCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+          if(safeCount <= 0) continue;
+          const blocker = mapReasonToObject(reason);
+          firstBlockingObjectStats[classKey][blocker] += safeCount;
+          if(classKey === "gap" || classKey === "ricochet"){
+            blockedSegmentStats[classKey][mapReasonToSegment(reason)] += safeCount;
+            specialRouteFailureStats[classKey][mapReasonToSpecialFailure(reason)] += safeCount;
+          }
+        }
+      }
+    }
+
+    if(event?.selectedMove){
+      const text = `${event?.selectedMove?.decisionReason || ""} ${event?.selectedMove?.goalName || ""}`.toLowerCase();
+      const selectedClass = text.includes("ricochet") ? "ricochet" : (text.includes("gap") ? "gap" : "direct");
+      candidateFunnelStats[selectedClass].selected += 1;
+    }
+
+    if(fallbackStages.has(event?.stage)){
+      const rootCause = normalizeRootCause(event);
+      fallbackRootCauseStats[rootCause] = (fallbackRootCauseStats[rootCause] || 0) + 1;
+      fallbackEpisodes.push({
+        roundNumber: Number.isFinite(event?.roundNumber) ? event.roundNumber : null,
+        stageBeforeFallback: event?.fallbackDiagnostics?.stageBeforeFallback || null,
+        goalBeforeFallback: event?.goal || null,
+        rootCause,
+        directSummary: {
+          generated: Number(diagnostics?.directCount) || 0,
+          shortlistPass: Number(shortlist?.direct?.shortlistCount) || 0,
+          topRejectReason: Object.keys(shortlist?.direct?.rejectReasons || {})[0] || null,
+        },
+        gapSummary: {
+          generated: Number(diagnostics?.gapCount) || 0,
+          shortlistPass: Number(shortlist?.gap?.shortlistCount) || 0,
+          topRejectReason: Object.keys(shortlist?.gap?.rejectReasons || {})[0] || null,
+        },
+        ricochetSummary: {
+          generated: Number(diagnostics?.ricochetCount) || 0,
+          shortlistPass: Number(shortlist?.ricochet?.shortlistCount) || 0,
+          topRejectReason: Object.keys(shortlist?.ricochet?.rejectReasons || {})[0] || null,
+        },
+        fallbackGoal: event?.fallbackDiagnostics?.fallbackGoal || event?.selectedMove?.goalName || null,
+        fallbackDecisionReason: event?.fallbackDiagnostics?.fallbackDecisionReason || event?.selectedMove?.decisionReason || null,
+      });
+    }
+  }
+
+  const totalFallbackEpisodes = fallbackEpisodes.length;
+  const topRootCause = Object.entries(fallbackRootCauseStats).sort((a, b) => b[1] - a[1])[0] || ["unknown", 0];
+  const specialShortlistTotal = candidateFunnelStats.gap.shortlistPass + candidateFunnelStats.ricochet.shortlistPass;
+
+  const summary = [
+    `Всего fallback-эпизодов: ${totalFallbackEpisodes}.`,
+    `Самая частая корневая причина: ${topRootCause[0]} (${topRootCause[1]}).`,
+    `Direct: generated=${candidateFunnelStats.direct.generated}, shortlistPass=${candidateFunnelStats.direct.shortlistPass}, selected=${candidateFunnelStats.direct.selected}.`,
+    `Gap: generated=${candidateFunnelStats.gap.generated}, shortlistPass=${candidateFunnelStats.gap.shortlistPass}, selected=${candidateFunnelStats.gap.selected}.`,
+    `Ricochet: generated=${candidateFunnelStats.ricochet.generated}, shortlistPass=${candidateFunnelStats.ricochet.shortlistPass}, selected=${candidateFunnelStats.ricochet.selected}.`,
+    specialShortlistTotal <= 0
+      ? "Special-маршруты чаще всего не доходят до shortlist и ломаются до выбора финального кандидата."
+      : "Special-маршруты иногда попадают в shortlist, но часть теряется позже на отборе.",
+  ];
+
+  return {
+    reportType: "ai_fallback_diagnostics_report",
+    generatedAt: safeNowIso(),
+    sourceStartedAt: source?.startedAt || null,
+    sourceFinishedAt: source?.finishedAt || null,
+    fallbackRootCauseStats,
+    candidateFunnelStats,
+    firstBlockingObjectStats,
+    blockedSegmentStats,
+    specialRouteFailureStats,
+    fallbackEpisodeSamples: fallbackEpisodes.slice(-6),
+    summary,
+  };
+}
+
+function exportAiFallbackDiagnosticsReportJson(){
+  const snapshot = getAiSelfAnalyzerSnapshot({ includeHistory: true });
+  const source = snapshot?.activeMatch || snapshot?.latestFinishedMatch;
+
+  if(!source){
+    return {
+      reportType: "ai_fallback_diagnostics_report",
+      generatedAt: safeNowIso(),
+      sourceStartedAt: null,
+      sourceFinishedAt: null,
+      status: "insufficient_data",
+      statusMessage: "Нет данных матча для fallback-диагностики.",
+      fallbackRootCauseStats: {},
+      candidateFunnelStats: {},
+      firstBlockingObjectStats: {},
+      blockedSegmentStats: {},
+      specialRouteFailureStats: {},
+      fallbackEpisodeSamples: [],
+      summary: ["Недостаточно данных для отчёта."],
+    };
+  }
+
+  const report = buildAiFallbackDiagnosticsReport(source);
+  if(typeof document === "undefined"){
+    return report;
+  }
+
+  const payload = JSON.stringify(report, null, 2);
+  const blob = new Blob([payload], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const suffix = safeNowIso().replace(/[:.]/g, "-");
+  link.href = url;
+  link.download = `ai-fallback-diagnostics-report-${suffix}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+
+  return report;
+}
+
 function exportAiSelfAnalyzerGapJson(){
   const snapshot = getAiSelfAnalyzerSnapshot({ includeHistory: true });
   const source = snapshot?.activeMatch || snapshot?.latestFinishedMatch;
@@ -10568,8 +10873,11 @@ function AI_DEBUG_CMD(command, arg){
   if(normalized === "reset-cargo"){
     return forceResetCargoNow();
   }
+  if(normalized === "fallback-report"){
+    return exportAiFallbackDiagnosticsReportJson();
+  }
 
-  console.info('[AI_DEBUG] Неизвестная команда. Доступно: "snapshot", "last-decisions", "status", "reset-cargo".');
+  console.info('[AI_DEBUG] Неизвестная команда. Доступно: "snapshot", "last-decisions", "status", "reset-cargo", "fallback-report".');
   return null;
 }
 
@@ -10578,6 +10886,7 @@ if(typeof window !== "undefined"){
   window.exportAiSelfAnalyzerTurnsJson = exportAiSelfAnalyzerTurnsJson;
   window.exportAiSelfAnalyzerGapJson = exportAiSelfAnalyzerGapJson;
   window.exportPlayerVsAiGapReportJson = exportPlayerVsAiGapReportJson;
+  window.exportAiFallbackDiagnosticsReportJson = exportAiFallbackDiagnosticsReportJson;
   window.getAiSelfAnalyzerSnapshot = getAiSelfAnalyzerSnapshot;
   window.AI_DEBUG_CMD = AI_DEBUG_CMD;
   window.RESET_CARGO = forceResetCargoNow;
@@ -18655,6 +18964,7 @@ function doComputerMove(){
       consideredMoves: data.consideredMoves,
       initialCandidateSetDiagnostics: data.initialCandidateSetDiagnostics || aiRoundState.lastInitialCandidateSetDiagnostics || null,
       finalComparedDiagnostics: data.finalComparedDiagnostics || aiRoundState.lastFinalComparedDiagnostics || null,
+      fallbackDiagnostics: data.fallbackDiagnostics || null,
     });
   };
 
@@ -19120,6 +19430,12 @@ function doComputerMove(){
         ),
         fallbackMove
       ),
+      fallbackDiagnostics: {
+        stageBeforeFallback: "mode_move_rejected",
+        fallbackGoal: fallbackMove.goalName || aiRoundState.currentGoal || null,
+        fallbackDecisionReason: fallbackMove.decisionReason || "fallback_legacy_logic",
+        rootCauseHint: modeMoveRejectReason || null,
+      },
     });
     logAiDecision("fallback_move", {
       planeId: fallbackMove.plane?.id ?? null,
@@ -19145,6 +19461,12 @@ function doComputerMove(){
       goal: aiRoundState.currentGoal,
       move: guaranteedLaunchMove,
       reasonCodes: ["super_reserve", "guaranteed_any_legal_launch", "keep_turn_progress"],
+      fallbackDiagnostics: {
+        stageBeforeFallback: "fallback_selected",
+        fallbackGoal: guaranteedLaunchMove.goalName || aiRoundState.currentGoal || null,
+        fallbackDecisionReason: guaranteedLaunchMove.decisionReason || "super_reserve_guaranteed_legal_launch",
+        rootCauseHint: rejectedReserveReasons[0] || "invalid_fallback_move",
+      },
     });
     logAiDecision("super_reserve_move", {
       planeId: guaranteedLaunchMove.plane?.id ?? null,
@@ -19171,6 +19493,12 @@ function doComputerMove(){
       move: forcedProgressMove,
       reasonCodes: ["forced_progress", "prevent_ai_stall", "keep_turn_progress"],
       rejectReasons: ["no_legal_path_found_by_standard_planners"],
+      fallbackDiagnostics: {
+        stageBeforeFallback: "super_reserve_rejected",
+        fallbackGoal: forcedProgressMove.goalName || aiRoundState.currentGoal || null,
+        fallbackDecisionReason: forcedProgressMove.decisionReason || "forced_progress_launch",
+        rootCauseHint: rejectedReserveReasons[0] || "no_legal_path_found_by_standard_planners",
+      },
     });
     logAiDecision("forced_progress_move", {
       planeId: forcedProgressMove.plane?.id ?? null,
@@ -19320,6 +19648,12 @@ function doComputerMove(){
           "mode_fallback_gap_covered",
           `safe_short_target_${safeShortMove.group}`,
         ],
+        fallbackDiagnostics: {
+          stageBeforeFallback: "forced_progress_rejected",
+          fallbackGoal: safeShortMove.move?.goalName || aiRoundState.currentGoal || null,
+          fallbackDecisionReason: safeShortMove.move?.decisionReason || "safe_short_fallback_progress",
+          rootCauseHint: rejectedReserveReasons[0] || "no_legal_path_found_by_standard_planners",
+        },
       });
       logAiDecision("safe_short_fallback_selected", {
         planeId: safeShortMove.move.plane?.id ?? null,
