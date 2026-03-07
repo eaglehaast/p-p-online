@@ -8,6 +8,16 @@
 2. Open `index.html` in any browser.
 3. Choose a game mode and press **Play**.
 
+## Building a release web package
+
+To prepare deployment files without development/archive content, run:
+
+```bash
+./scripts/build-web-package.sh
+```
+
+This command creates a clean `dist_web/` folder that includes only runtime files required by the game. Development-only folders (like `dev/`), archived assets (`archive_assets/`), docs and helper scripts are excluded from the release package.
+
 ## Quick pre-release check for settings IDs
 
 Before release, run:
