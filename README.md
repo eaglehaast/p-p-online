@@ -83,14 +83,18 @@ window.AI_DEBUG_CMD("snapshot")
 window.AI_DEBUG_CMD("last-decisions", 5)
 window.AI_DEBUG_CMD("status")
 window.AI_DEBUG_CMD("reset-cargo")
+window.AI_DEBUG_CMD("fallback-report")
 window.RESET_CARGO()
+window.exportAiFallbackDiagnosticsReportJson()
 ```
 
 - `snapshot` prints a short current-match summary (mode, turn, counts, last decision).
 - `last-decisions` prints last `N` AI decision events in one-line compact format.
 - `status` prints current AI mode/goal/turn and `aiMoveScheduled` flag.
 - `reset-cargo` instantly clears all current cargo and (if cargo is enabled in settings) immediately spawns a fresh one.
+- `fallback-report` builds and returns/downloads a dedicated fallback diagnostics JSON report.
 - `RESET_CARGO()` is a direct one-line alias for the same forced cargo reset (without passing command strings).
+- `exportAiFallbackDiagnosticsReportJson()` exports the same fallback diagnostics report directly, without using command strings.
 
 ### How to read `ai_decision` in the exported JSON
 
