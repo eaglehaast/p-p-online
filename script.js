@@ -7545,7 +7545,7 @@ const DYNAMITE_BRICK_REMOVAL_FRAME_INDEX = Math.min(
   DYNAMITE_EXPLOSION_FRAMES.length,
   Math.max(6, Math.min(8, Math.min(4, DYNAMITE_EXPLOSION_FRAMES.length) + 3))
 );
-const DYNAMITE_BRICK_FADE_OUT_DURATION_MS = 140;
+const DYNAMITE_BRICK_FADE_OUT_DURATION_MS = 280;
 
 arrowSprite?.addEventListener("load", () => {
   console.log("[IMG] load", { label: "arrowSprite", url: arrowSprite.src });
