@@ -16036,6 +16036,26 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
   const leftWallX = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
   const rightWallX = FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X;
   const hasWallData = Number.isFinite(leftWallX) && Number.isFinite(rightWallX);
+  const parsedMaxCandidatesPerClass = Number(options?.maxCandidatesPerClass);
+  const maxCandidatesPerClass = Number.isFinite(parsedMaxCandidatesPerClass)
+    ? Math.max(1, Math.floor(parsedMaxCandidatesPerClass))
+    : 3;
+  const baseGoalName = options?.goalName || "capture_enemy_flag";
+  const baseDecisionReason = options?.decisionReason || "flag_capture_direct";
+
+  function trimCandidatesByClass(candidates){
+    if(!Array.isArray(candidates) || candidates.length === 0) return [];
+    const sorted = candidates.slice().sort((a, b) => {
+      const scoreA = Number.isFinite(a?.score) ? a.score : Number.POSITIVE_INFINITY;
+      const scoreB = Number.isFinite(b?.score) ? b.score : Number.POSITIVE_INFINITY;
+      if(Math.abs(scoreA - scoreB) > 0.000001) return scoreA - scoreB;
+      const idleA = Number.isFinite(a?.idleTurns) ? a.idleTurns : 0;
+      const idleB = Number.isFinite(b?.idleTurns) ? b.idleTurns : 0;
+      if(idleA !== idleB) return idleB - idleA;
+      return `${a?.plane?.id || ""}`.localeCompare(`${b?.plane?.id || ""}`);
+    });
+    return sorted.slice(0, maxCandidatesPerClass);
+  }
 
   const directCandidates = [];
   for(const plane of planes){
@@ -16043,8 +16063,8 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     for(const flag of availableEnemyFlags){
       const targetAnchor = getFlagAnchor(flag);
       const move = planPathToPoint(plane, targetAnchor.x, targetAnchor.y, {
-        goalName: options?.goalName || "capture_enemy_flag",
-        decisionReason: options?.decisionReason || "flag_capture_direct",
+        goalName: baseGoalName,
+        decisionReason: baseDecisionReason,
       });
       if(!move) continue;
       const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
@@ -16060,44 +16080,31 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     }
   }
 
-  if(directCandidates.length > 0 || !allowBounceStage || !hasWallData){
-    return directCandidates;
-  }
-
-  const bounceCandidates = [];
+  const gapCandidates = [];
+  const gapOffsets = [
+    { x: -CELL_SIZE * 0.55, y: 0 },
+    { x: CELL_SIZE * 0.55, y: 0 },
+    { x: 0, y: -CELL_SIZE * 0.55 },
+    { x: 0, y: CELL_SIZE * 0.55 },
+  ];
   for(const plane of planes){
     if(flyingPoints.some((fp) => fp.plane === plane)) continue;
     for(const flag of availableEnemyFlags){
       const targetAnchor = getFlagAnchor(flag);
-      const mirroredTargets = [
-        {
-          wall: "left",
-          wallX: leftWallX,
-          targetX: 2 * leftWallX - targetAnchor.x,
-          targetY: targetAnchor.y,
-        },
-        {
-          wall: "right",
-          wallX: rightWallX,
-          targetX: 2 * rightWallX - targetAnchor.x,
-          targetY: targetAnchor.y,
-        },
-      ];
-      for(const mirroredTarget of mirroredTargets){
-        const move = planPathToPoint(plane, mirroredTarget.targetX, mirroredTarget.targetY, {
-          goalName: options?.goalName || "capture_enemy_flag",
-          decisionReason: "flag_capture_bounce_candidate",
+      for(const offset of gapOffsets){
+        const move = planPathToPoint(plane, targetAnchor.x + offset.x, targetAnchor.y + offset.y, {
+          goalName: baseGoalName,
+          decisionReason: "flag_capture_gap_candidate",
         });
         if(!move) continue;
         const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
-        bounceCandidates.push({
+        gapCandidates.push({
           plane,
           flag,
           ...move,
-          candidateType: "bounce",
-          bounceCandidateUsed: true,
-          bounceSourceWall: mirroredTarget.wall,
-          bounceSourceWallX: mirroredTarget.wallX,
+          candidateType: "gap",
+          gapOffsetX: Number(offset.x.toFixed(1)),
+          gapOffsetY: Number(offset.y.toFixed(1)),
           adjustedDist,
           score: adjustedDist,
           idleTurns: getAiPlaneIdleTurns(plane),
@@ -16106,7 +16113,75 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     }
   }
 
-  return bounceCandidates;
+  const bounceCandidates = [];
+  if(allowBounceStage && hasWallData){
+    for(const plane of planes){
+      if(flyingPoints.some((fp) => fp.plane === plane)) continue;
+      for(const flag of availableEnemyFlags){
+        const targetAnchor = getFlagAnchor(flag);
+        const mirroredTargets = [
+          {
+            wall: "left",
+            wallX: leftWallX,
+            targetX: 2 * leftWallX - targetAnchor.x,
+            targetY: targetAnchor.y,
+          },
+          {
+            wall: "right",
+            wallX: rightWallX,
+            targetX: 2 * rightWallX - targetAnchor.x,
+            targetY: targetAnchor.y,
+          },
+        ];
+        for(const mirroredTarget of mirroredTargets){
+          const move = planPathToPoint(plane, mirroredTarget.targetX, mirroredTarget.targetY, {
+            goalName: baseGoalName,
+            decisionReason: "flag_capture_bounce_candidate",
+          });
+          if(!move) continue;
+          const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
+          bounceCandidates.push({
+            plane,
+            flag,
+            ...move,
+            candidateType: "bounce",
+            bounceCandidateUsed: true,
+            bounceSourceWall: mirroredTarget.wall,
+            bounceSourceWallX: mirroredTarget.wallX,
+            adjustedDist,
+            score: adjustedDist,
+            idleTurns: getAiPlaneIdleTurns(plane),
+          });
+        }
+      }
+    }
+  }
+
+  const trimmedDirectCandidates = trimCandidatesByClass(directCandidates);
+  const trimmedGapCandidates = trimCandidatesByClass(gapCandidates);
+  const trimmedBounceCandidates = trimCandidatesByClass(bounceCandidates);
+  const combinedCandidates = [
+    ...trimmedDirectCandidates,
+    ...trimmedGapCandidates,
+    ...trimmedBounceCandidates,
+  ];
+
+  logAiDecision("flag_capture_candidate_summary", {
+    goalName: baseGoalName,
+    decisionReason: options?.decisionReason || null,
+    directCount: trimmedDirectCandidates.length,
+    gapCount: trimmedGapCandidates.length,
+    ricochetCount: trimmedBounceCandidates.length,
+    directReachableCount: directCandidates.length,
+    gapReachableCount: gapCandidates.length,
+    ricochetReachableCount: bounceCandidates.length,
+    interclassComparison: true,
+    maxCandidatesPerClass,
+    bounceAllowed: allowBounceStage,
+    isEmergencyDefenseStage: !allowBounceStage,
+  });
+
+  return combinedCandidates;
 }
 
 function planModeDrivenAiMove(context){
