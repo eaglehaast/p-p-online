@@ -3815,11 +3815,25 @@ function findActiveDynamiteEntryForSprite(sprite){
   }
 
   const spriteId = typeof sprite?.id === "string" ? sprite.id : null;
+  const spriteIndex = Array.isArray(currentMapSprites)
+    ? currentMapSprites.indexOf(sprite)
+    : -1;
+
   for(let i = dynamiteState.length - 1; i >= 0; i -= 1){
     const entry = dynamiteState[i];
     if(!entry || entry.brickRemoved) continue;
     if(entry.spriteRef === sprite) return entry;
-    if(spriteId && entry.spriteId === spriteId) return entry;
+
+    const entryHasIndex = Number.isFinite(entry?.spriteIndex) && entry.spriteIndex >= 0;
+    if(
+      spriteId
+      && entry.spriteId === spriteId
+      && entryHasIndex
+      && spriteIndex >= 0
+      && entry.spriteIndex === spriteIndex
+    ){
+      return entry;
+    }
   }
 
   return null;
