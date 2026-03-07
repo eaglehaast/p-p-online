@@ -4581,6 +4581,7 @@ const SETTINGS_ASSETS = [
   "ui_controlpanel/cp_range_contrail2.gif",
   "ui_controlpanel/cp_range_flame_trail4.gif",
   "ui_controlpanel/cp_range_plane 2.png",
+  // left/right_step 2-3 intentionally removed: animation shortened
   "ui_controlpanel/steps/left_step 1.png",
   "ui_controlpanel/steps/left_step 4.png",
   "ui_controlpanel/steps/left_step 5.png",
