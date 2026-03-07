@@ -10335,6 +10335,27 @@ function printAiDebugLastDecisions(limit = 5){
   return lines;
 }
 
+function forceResetCargoNow(){
+  const beforeCount = Array.isArray(cargoState) ? cargoState.length : 0;
+  const cargoEnabled = Boolean(settings?.addCargo);
+
+  resetCargoState();
+
+  if(cargoEnabled){
+    spawnCargoForTurn();
+  }
+
+  const afterCount = Array.isArray(cargoState) ? cargoState.length : 0;
+  const result = {
+    reset: true,
+    cargoEnabled,
+    beforeCount,
+    afterCount,
+  };
+  console.info('[cargo] force reset complete', result);
+  return result;
+}
+
 function AI_DEBUG_CMD(command, arg){
   const normalized = typeof command === "string" ? command.trim().toLowerCase() : "";
   if(normalized === "snapshot"){
@@ -10346,8 +10367,11 @@ function AI_DEBUG_CMD(command, arg){
   if(normalized === "status"){
     return printAiDebugStatus();
   }
+  if(normalized === "reset-cargo"){
+    return forceResetCargoNow();
+  }
 
-  console.info('[AI_DEBUG] Неизвестная команда. Доступно: "snapshot", "last-decisions", "status".');
+  console.info('[AI_DEBUG] Неизвестная команда. Доступно: "snapshot", "last-decisions", "status", "reset-cargo".');
   return null;
 }
 
@@ -10358,6 +10382,7 @@ if(typeof window !== "undefined"){
   window.exportPlayerVsAiGapReportJson = exportPlayerVsAiGapReportJson;
   window.getAiSelfAnalyzerSnapshot = getAiSelfAnalyzerSnapshot;
   window.AI_DEBUG_CMD = AI_DEBUG_CMD;
+  window.RESET_CARGO = forceResetCargoNow;
 }
 
 let matchScoreImagesRequested = false;
