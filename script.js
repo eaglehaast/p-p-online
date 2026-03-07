@@ -16556,7 +16556,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
   const parsedGapAttemptBudget = Number(options?.gapAttemptBudget);
   const parsedRicochetAttemptBudget = Number(options?.ricochetAttemptBudget);
   const defaultSpecialRouteBudget = Math.max(2, maxCandidatesPerClass * 3);
-  const gapAttemptBudget = Number.isFinite(parsedGapAttemptBudget)
+  let gapAttemptBudget = Number.isFinite(parsedGapAttemptBudget)
     ? Math.max(1, Math.floor(parsedGapAttemptBudget))
     : defaultSpecialRouteBudget;
   const ricochetAttemptBudget = Number.isFinite(parsedRicochetAttemptBudget)
@@ -16577,6 +16577,9 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     },
     gap: {
       attempted: 0,
+      attemptsTotal: 0,
+      attemptsReachedPlanPath: 0,
+      attemptsTrimmedByBudget: 0,
       preValidationRejected: 0,
       preValidationReasons: {},
       validationRejected: 0,
@@ -16761,9 +16764,23 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     }
   }
 
+  candidateTypeDiagnostics.gap.attemptsTotal = gapAttempts.length;
+  if(!Number.isFinite(parsedGapAttemptBudget)){
+    if(isEmergencyDefenseStage){
+      gapAttemptBudget = defaultSpecialRouteBudget;
+    } else {
+      const gapBudgetMin = Math.max(2, maxCandidatesPerClass * 2);
+      const gapBudgetMax = Math.max(gapBudgetMin, maxCandidatesPerClass * 12);
+      const gapBudgetScaledByAttempts = gapAttempts.length;
+      gapAttemptBudget = Math.max(gapBudgetMin, Math.min(gapBudgetMax, gapBudgetScaledByAttempts));
+    }
+  }
+  candidateTypeDiagnostics.gap.attemptBudget = gapAttemptBudget;
+
   for(let index = 0; index < gapAttempts.length && candidateTypeDiagnostics.gap.attempted < gapAttemptBudget; index += 1){
     const { plane, flag, targetAnchor, offset } = gapAttempts[index];
     candidateTypeDiagnostics.gap.attempted += 1;
+    candidateTypeDiagnostics.gap.attemptsReachedPlanPath += 1;
     const move = planPathToPoint(plane, targetAnchor.x + offset.x, targetAnchor.y + offset.y, {
       goalName: baseGoalName,
       decisionReason: "flag_capture_gap_candidate",
@@ -16817,7 +16834,9 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     candidateTypeDiagnostics.gap.preValidationRejected += 1;
     addRejectReason(candidateTypeDiagnostics.gap.preValidationReasons, groundedPlanes.length === 0 ? "no_grounded_planes" : "no_target_pairs");
   } else if(candidateTypeDiagnostics.gap.attempted < gapAttempts.length){
-    candidateTypeDiagnostics.gap.preValidationRejected += gapAttempts.length - candidateTypeDiagnostics.gap.attempted;
+    const trimmedByBudget = gapAttempts.length - candidateTypeDiagnostics.gap.attempted;
+    candidateTypeDiagnostics.gap.attemptsTrimmedByBudget = trimmedByBudget;
+    candidateTypeDiagnostics.gap.preValidationRejected += trimmedByBudget;
     addRejectReason(candidateTypeDiagnostics.gap.preValidationReasons, "attempt_budget_exhausted");
   }
 
