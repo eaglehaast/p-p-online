@@ -7071,7 +7071,8 @@ const baseSprites = {
 };
 
 const CARGO_SPRITE_PATH = "ui_gamescreen/gs_cargo_box.png";
-const CARGO_ANIMATION_FRAME_PATHS = Array.from({ length: 10 }, (_value, index) => {
+const CARGO_ANIMATION_FRAME_COUNT = 20;
+const CARGO_ANIMATION_FRAME_PATHS = Array.from({ length: CARGO_ANIMATION_FRAME_COUNT }, (_value, index) => {
   const frameNumber = String(index + 1).padStart(2, "0");
   return `ui_gamescreen/gs_cargoanimation_20/gs_cargoanimation_${frameNumber}.png`;
 });
