@@ -11822,6 +11822,10 @@ const handleCircle={
 
 const STICKY_AIM_HOLD_MOVE_THRESHOLD_PX = 4;
 
+function shouldUseStickyAimForPointerEvent(event){
+  return event?.pointerType !== "touch";
+}
+
 function isPlaneGrabbableAt(x, y) {
   if(isGameOver || !gameMode) return false;
   if(pendingInventoryUse) return false;
@@ -12109,7 +12113,9 @@ function onCanvasPointerDown(e){
   if(handleCircle.active && phase !== 'AA_PLACEMENT'){
     const { x: designX, y: designY } = getPointerDesignCoords(e);
     const { x, y } = designToBoardCoords(designX, designY);
-    beginStickyAimHoldTracking(e, x, y);
+    if(shouldUseStickyAimForPointerEvent(e)){
+      beginStickyAimHoldTracking(e, x, y);
+    }
     e.preventDefault();
     return;
   }
@@ -12123,7 +12129,9 @@ function onCanvasPointerDown(e){
     const { x: designX, y: designY } = getPointerDesignCoords(e);
     const { x, y } = designToBoardCoords(designX, designY);
     handleStart(e);
-    beginStickyAimHoldTracking(e, x, y);
+    if(shouldUseStickyAimForPointerEvent(e)){
+      beginStickyAimHoldTracking(e, x, y);
+    }
   }
 }
 
@@ -12185,6 +12193,18 @@ function onCanvasPointerUp(e){
 
   if(phase !== 'AA_PLACEMENT'){
     if(!handleCircle.active) return;
+
+    if(!shouldUseStickyAimForPointerEvent(e)){
+      const { x: designX, y: designY } = getPointerDesignCoords(e);
+      const { x, y } = designToBoardCoords(designX, designY);
+      handleCircle.baseX = x;
+      handleCircle.baseY = y;
+      handleCircle.shakyX = x;
+      handleCircle.shakyY = y;
+      onHandleUp();
+      e.preventDefault();
+      return;
+    }
 
     const holdResult = endStickyAimHoldTracking(e);
     if(!holdResult.ended) return;
