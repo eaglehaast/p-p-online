@@ -11684,8 +11684,15 @@ const handleCircle={
   offsetX:0, offsetY:0,
   active:false,
   pointRef:null,
-  origAngle:null
+  origAngle:null,
+  pointerId:null,
+  pointerDown:false,
+  movedWhilePointerDown:false,
+  pointerDownStartX:0,
+  pointerDownStartY:0
 };
+
+const STICKY_AIM_HOLD_MOVE_THRESHOLD_PX = 4;
 
 function isPlaneGrabbableAt(x, y) {
   if(isGameOver || !gameMode) return false;
@@ -11823,13 +11830,63 @@ function handleStart(e) {
 
   // Show overlay canvas for aiming arrow
   aimCanvas.style.display = "block";
+}
 
-  window.addEventListener("mousemove", onHandleMove);
-  window.addEventListener("mouseup", onHandleUp);
-  window.addEventListener("touchmove", onHandleMove);
-  window.addEventListener("touchend", onHandleUp);
-  window.addEventListener("pointermove", onHandleMove);
-  window.addEventListener("pointerup", onHandleUp);
+function finalizeStickyAimLaunchAt(boardX, boardY){
+  if(!handleCircle.active || !handleCircle.pointRef) return;
+
+  handleCircle.baseX = boardX;
+  handleCircle.baseY = boardY;
+  handleCircle.shakyX = boardX;
+  handleCircle.shakyY = boardY;
+
+  onHandleUp();
+}
+
+function beginStickyAimHoldTracking(e, boardX, boardY){
+  if(!handleCircle.active) return;
+  if(!Number.isFinite(e?.pointerId)) return;
+
+  handleCircle.pointerId = e.pointerId;
+  handleCircle.pointerDown = true;
+  handleCircle.movedWhilePointerDown = false;
+  handleCircle.pointerDownStartX = boardX;
+  handleCircle.pointerDownStartY = boardY;
+
+  if(typeof gsBoardCanvas?.setPointerCapture === "function"){
+    try {
+      gsBoardCanvas.setPointerCapture(e.pointerId);
+    } catch(_err){
+      // Ignore unsupported pointer capture errors.
+    }
+  }
+}
+
+function endStickyAimHoldTracking(e){
+  const trackedPointerId = handleCircle.pointerId;
+
+  if(Number.isFinite(trackedPointerId) && typeof gsBoardCanvas?.releasePointerCapture === "function"){
+    try {
+      if(gsBoardCanvas.hasPointerCapture(trackedPointerId)){
+        gsBoardCanvas.releasePointerCapture(trackedPointerId);
+      }
+    } catch(_err){
+      // Ignore unsupported pointer capture errors.
+    }
+  }
+
+  const samePointer = Number.isFinite(e?.pointerId) && Number.isFinite(trackedPointerId)
+    ? e.pointerId === trackedPointerId
+    : true;
+  const wasHolding = handleCircle.pointerDown;
+  const movedWhileHolding = handleCircle.movedWhilePointerDown;
+
+  handleCircle.pointerId = null;
+  handleCircle.pointerDown = false;
+  handleCircle.movedWhilePointerDown = false;
+
+  if(!samePointer || !wasHolding) return false;
+  return movedWhileHolding;
 }
 
 function handleAAPlacement(x, y){
@@ -11879,6 +11936,13 @@ function onCanvasPointerDown(e){
     return;
   }
   if(isNuclearStrikeActionLocked()) return;
+  if(handleCircle.active && phase !== 'AA_PLACEMENT'){
+    const { x: designX, y: designY } = getPointerDesignCoords(e);
+    const { x, y } = designToBoardCoords(designX, designY);
+    finalizeStickyAimLaunchAt(x, y);
+    e.preventDefault();
+    return;
+  }
   if(phase === 'AA_PLACEMENT'){
     e.preventDefault();
     aaPointerDown = true;
@@ -11886,7 +11950,10 @@ function onCanvasPointerDown(e){
   } else if(pendingInventoryUse) {
     handleStart(e);
   } else {
+    const { x: designX, y: designY } = getPointerDesignCoords(e);
+    const { x, y } = designToBoardCoords(designX, designY);
     handleStart(e);
+    beginStickyAimHoldTracking(e, x, y);
   }
 }
 
@@ -11906,6 +11973,26 @@ function onCanvasPointerMove(e){
   }
   const { x: designX, y: designY } = getPointerDesignCoords(e);
   const { x, y } = designToBoardCoords(designX, designY);
+
+  if(handleCircle.active && phase !== 'AA_PLACEMENT'){
+    handleCircle.baseX = x;
+    handleCircle.baseY = y;
+
+    if(handleCircle.pointerDown){
+      const moveDistance = Math.hypot(
+        x - handleCircle.pointerDownStartX,
+        y - handleCircle.pointerDownStartY
+      );
+      if(moveDistance >= STICKY_AIM_HOLD_MOVE_THRESHOLD_PX){
+        handleCircle.movedWhilePointerDown = true;
+      }
+    }
+
+    gsBoardCanvas.style.cursor = 'grabbing';
+    document.body.style.cursor = 'grabbing';
+    return;
+  }
+
   if(phase !== 'AA_PLACEMENT'){
     updateBoardCursorForHover(x, y);
     return;
@@ -11925,7 +12012,20 @@ function onCanvasPointerUp(e){
     aaPreviewTrail = [];
     return;
   }
-  if(phase !== 'AA_PLACEMENT') return;
+
+  if(phase !== 'AA_PLACEMENT'){
+    if(!handleCircle.active) return;
+
+    const shouldFinalizeHoldLaunch = endStickyAimHoldTracking(e);
+    if(!shouldFinalizeHoldLaunch) return;
+
+    const { x: designX, y: designY } = getPointerDesignCoords(e);
+    const { x, y } = designToBoardCoords(designX, designY);
+    finalizeStickyAimLaunchAt(x, y);
+    e.preventDefault();
+    return;
+  }
+
   aaPointerDown = false;
   if(!aaPlacementPreview) return;
   const {x, y} = aaPlacementPreview;
@@ -12251,6 +12351,9 @@ function cleanupHandle(){
   handleCircle.active= false;
   handleCircle.pointRef= null;
   handleCircle.origAngle = null;
+  handleCircle.pointerId = null;
+  handleCircle.pointerDown = false;
+  handleCircle.movedWhilePointerDown = false;
   // Hide overlay canvas when aiming ends
   aimCanvas.style.display = "none";
   aimCtx.clearRect(0,0,aimCanvas.width,aimCanvas.height);
