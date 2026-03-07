@@ -10376,17 +10376,21 @@ function buildAiFallbackDiagnosticsReport(source){
 
   const candidateGenerationStats = {
     direct: {
-      generated: 0,
+      raw_attempted: 0,
+      valid_generated: 0,
       skipped_due_to_mode: 0,
       skipped_due_to_stage: 0,
+      rejected_by_geometry: 0,
     },
     gap: {
-      generated: 0,
+      raw_attempted: 0,
+      valid_generated: 0,
       no_gap_window: 0,
       rejected_by_geometry: 0,
     },
     ricochet: {
-      generated: 0,
+      raw_attempted: 0,
+      valid_generated: 0,
       invalid_bounce_geometry: 0,
       rejected_by_geometry: 0,
     },
@@ -10518,6 +10522,18 @@ function buildAiFallbackDiagnosticsReport(source){
         const generated = Math.max(0, Number(shortlistMeta.initialReachable) || 0);
         const shortlistCount = Math.max(0, Number(shortlistMeta.shortlistCount) || 0);
         const rejectedBetween = Math.max(0, Math.min(generated, Number(shortlistMeta.rejectedBetweenInitialAndShortlist) || 0));
+        const earlyAttemptsValue = Number(diagnostics?.[`${classKey}Count`]);
+        const hasEarlyAttempts = Number.isFinite(earlyAttemptsValue);
+        const rawAttemptedFromDiagnostics = hasEarlyAttempts ? Math.max(0, Math.floor(earlyAttemptsValue)) : 0;
+        const initialReachableValue = Number(shortlistMeta.initialReachable);
+        const rejectedBetweenValue = Number(shortlistMeta.rejectedBetweenInitialAndShortlist);
+        const hasShortlistAttemptFields = Number.isFinite(initialReachableValue) && Number.isFinite(rejectedBetweenValue);
+        const rawAttemptedFromShortlist = hasShortlistAttemptFields
+          ? Math.max(0, Math.floor(initialReachableValue + rejectedBetweenValue))
+          : 0;
+        const rawAttempted = hasEarlyAttempts
+          ? rawAttemptedFromDiagnostics
+          : (hasShortlistAttemptFields ? rawAttemptedFromShortlist : 0);
         const rejectReasonsMap = shortlistMeta.rejectReasons && typeof shortlistMeta.rejectReasons === "object"
           ? shortlistMeta.rejectReasons
           : {};
@@ -10548,16 +10564,14 @@ function buildAiFallbackDiagnosticsReport(source){
         candidateFunnelStats[classKey].safetyPass += safetyPass;
         candidateFunnelStats[classKey].shortlistPass += shortlistPass;
 
-        if(classKey === "direct"){
-          candidateGenerationStats.direct.generated += generated;
-        } else if(classKey === "gap"){
-          candidateGenerationStats.gap.generated += generated;
+        candidateGenerationStats[classKey].raw_attempted += rawAttempted;
+        candidateGenerationStats[classKey].valid_generated += generated;
+        candidateGenerationStats[classKey].rejected_by_geometry += geometryRejected;
+
+        if(classKey === "gap"){
           candidateGenerationStats.gap.no_gap_window += getReasonCountByTokens(rejectReasonsMap, ["no_gap_window", "gap_window"]);
-          candidateGenerationStats.gap.rejected_by_geometry += geometryRejected;
         } else if(classKey === "ricochet"){
-          candidateGenerationStats.ricochet.generated += generated;
           candidateGenerationStats.ricochet.invalid_bounce_geometry += getReasonCountByTokens(rejectReasonsMap, ["invalid_bounce_geometry", "missing_wall_geometry"]);
-          candidateGenerationStats.ricochet.rejected_by_geometry += geometryRejected;
         }
 
         const sortedReasons = Object.entries(rejectReasonsMap)
