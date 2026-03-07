@@ -10481,6 +10481,29 @@ function buildAiFallbackDiagnosticsReport(source){
     return tokens.some((token) => toText(reason).includes(token)) ? sum + safeCount : sum;
   }, 0);
 
+  const getRawAttemptedCount = (diagnostics, shortlistMeta, classKey) => {
+    const earlyAttemptsValue = Number(diagnostics?.[`${classKey}Count`]);
+    const hasEarlyAttempts = Number.isFinite(earlyAttemptsValue);
+    const rawAttemptedFromDiagnostics = hasEarlyAttempts ? Math.max(0, Math.floor(earlyAttemptsValue)) : 0;
+    const initialReachableValue = Number(shortlistMeta?.initialReachable);
+    const rejectedBetweenValue = Number(shortlistMeta?.rejectedBetweenInitialAndShortlist);
+    const hasShortlistAttemptFields = Number.isFinite(initialReachableValue) && Number.isFinite(rejectedBetweenValue);
+    const rawAttemptedFromShortlist = hasShortlistAttemptFields
+      ? Math.max(0, Math.floor(initialReachableValue + rejectedBetweenValue))
+      : 0;
+    return hasEarlyAttempts
+      ? rawAttemptedFromDiagnostics
+      : (hasShortlistAttemptFields ? rawAttemptedFromShortlist : 0);
+  };
+
+  const getTopRejectReasonByCount = (rejectReasonsMap) => {
+    const sortedReasons = Object.entries(rejectReasonsMap || {})
+      .map(([reason, count]) => [reason, Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0])
+      .filter(([, count]) => count > 0)
+      .sort((a, b) => b[1] - a[1]);
+    return sortedReasons.length > 0 ? sortedReasons[0][0] : null;
+  };
+
   const normalizeRootCause = (event) => {
     const diagnostics = event?.initialCandidateSetDiagnostics;
     const shortlist = diagnostics?.shortlistDiagnostics;
@@ -10498,18 +10521,7 @@ function buildAiFallbackDiagnosticsReport(source){
         const validGenerated = Math.max(0, Number(shortlistMeta.initialReachable) || 0);
         const shortlistCount = Math.max(0, Number(shortlistMeta.shortlistCount) || 0);
         const rejectedBetween = Math.max(0, Math.min(validGenerated, Number(shortlistMeta.rejectedBetweenInitialAndShortlist) || 0));
-        const earlyAttemptsValue = Number(diagnostics?.[`${classKey}Count`]);
-        const hasEarlyAttempts = Number.isFinite(earlyAttemptsValue);
-        const rawAttemptedFromDiagnostics = hasEarlyAttempts ? Math.max(0, Math.floor(earlyAttemptsValue)) : 0;
-        const initialReachableValue = Number(shortlistMeta.initialReachable);
-        const rejectedBetweenValue = Number(shortlistMeta.rejectedBetweenInitialAndShortlist);
-        const hasShortlistAttemptFields = Number.isFinite(initialReachableValue) && Number.isFinite(rejectedBetweenValue);
-        const rawAttemptedFromShortlist = hasShortlistAttemptFields
-          ? Math.max(0, Math.floor(initialReachableValue + rejectedBetweenValue))
-          : 0;
-        const rawAttempted = hasEarlyAttempts
-          ? rawAttemptedFromDiagnostics
-          : (hasShortlistAttemptFields ? rawAttemptedFromShortlist : 0);
+        const rawAttempted = getRawAttemptedCount(diagnostics, shortlistMeta, classKey);
         const rejectReasonsMap = shortlistMeta.rejectReasons && typeof shortlistMeta.rejectReasons === "object"
           ? shortlistMeta.rejectReasons
           : {};
@@ -10599,18 +10611,7 @@ function buildAiFallbackDiagnosticsReport(source){
         const validGenerated = Math.max(0, Number(shortlistMeta.initialReachable) || 0);
         const shortlistCount = Math.max(0, Number(shortlistMeta.shortlistCount) || 0);
         const rejectedBetween = Math.max(0, Math.min(validGenerated, Number(shortlistMeta.rejectedBetweenInitialAndShortlist) || 0));
-        const earlyAttemptsValue = Number(diagnostics?.[`${classKey}Count`]);
-        const hasEarlyAttempts = Number.isFinite(earlyAttemptsValue);
-        const rawAttemptedFromDiagnostics = hasEarlyAttempts ? Math.max(0, Math.floor(earlyAttemptsValue)) : 0;
-        const initialReachableValue = Number(shortlistMeta.initialReachable);
-        const rejectedBetweenValue = Number(shortlistMeta.rejectedBetweenInitialAndShortlist);
-        const hasShortlistAttemptFields = Number.isFinite(initialReachableValue) && Number.isFinite(rejectedBetweenValue);
-        const rawAttemptedFromShortlist = hasShortlistAttemptFields
-          ? Math.max(0, Math.floor(initialReachableValue + rejectedBetweenValue))
-          : 0;
-        const rawAttempted = hasEarlyAttempts
-          ? rawAttemptedFromDiagnostics
-          : (hasShortlistAttemptFields ? rawAttemptedFromShortlist : 0);
+        const rawAttempted = getRawAttemptedCount(diagnostics, shortlistMeta, classKey);
         const rejectReasonsMap = shortlistMeta.rejectReasons && typeof shortlistMeta.rejectReasons === "object"
           ? shortlistMeta.rejectReasons
           : {};
@@ -10691,25 +10692,31 @@ function buildAiFallbackDiagnosticsReport(source){
     if(fallbackStages.has(event?.stage)){
       const rootCause = normalizeRootCause(event);
       fallbackRootCauseStats[rootCause] = (fallbackRootCauseStats[rootCause] || 0) + 1;
+      const directShortlistMeta = getShortlistMeta(shortlist, "direct");
+      const gapShortlistMeta = getShortlistMeta(shortlist, "gap");
+      const ricochetShortlistMeta = getShortlistMeta(shortlist, "ricochet");
       fallbackEpisodes.push({
         roundNumber: Number.isFinite(event?.roundNumber) ? event.roundNumber : null,
         stageBeforeFallback: event?.fallbackDiagnostics?.stageBeforeFallback || null,
         goalBeforeFallback: event?.goal || null,
         rootCause,
         directSummary: {
-          valid_generated: Number(getShortlistMeta(shortlist, "direct").initialReachable) || 0,
-          shortlistPass: Number(getShortlistMeta(shortlist, "direct").shortlistCount) || 0,
-          topRejectReason: Object.keys(getShortlistMeta(shortlist, "direct").rejectReasons || {})[0] || null,
+          raw_attempted: getRawAttemptedCount(diagnostics, directShortlistMeta, "direct"),
+          valid_generated: Number(directShortlistMeta.initialReachable) || 0,
+          shortlistPass: Number(directShortlistMeta.shortlistCount) || 0,
+          topRejectReason: getTopRejectReasonByCount(directShortlistMeta.rejectReasons),
         },
         gapSummary: {
-          valid_generated: Number(getShortlistMeta(shortlist, "gap").initialReachable) || 0,
-          shortlistPass: Number(getShortlistMeta(shortlist, "gap").shortlistCount) || 0,
-          topRejectReason: Object.keys(getShortlistMeta(shortlist, "gap").rejectReasons || {})[0] || null,
+          raw_attempted: getRawAttemptedCount(diagnostics, gapShortlistMeta, "gap"),
+          valid_generated: Number(gapShortlistMeta.initialReachable) || 0,
+          shortlistPass: Number(gapShortlistMeta.shortlistCount) || 0,
+          topRejectReason: getTopRejectReasonByCount(gapShortlistMeta.rejectReasons),
         },
         ricochetSummary: {
-          valid_generated: Number(getShortlistMeta(shortlist, "ricochet").initialReachable) || 0,
-          shortlistPass: Number(getShortlistMeta(shortlist, "ricochet").shortlistCount) || 0,
-          topRejectReason: Object.keys(getShortlistMeta(shortlist, "ricochet").rejectReasons || {})[0] || null,
+          raw_attempted: getRawAttemptedCount(diagnostics, ricochetShortlistMeta, "ricochet"),
+          valid_generated: Number(ricochetShortlistMeta.initialReachable) || 0,
+          shortlistPass: Number(ricochetShortlistMeta.shortlistCount) || 0,
+          topRejectReason: getTopRejectReasonByCount(ricochetShortlistMeta.rejectReasons),
         },
         fallbackGoal: event?.fallbackDiagnostics?.fallbackGoal || event?.selectedMove?.goalName || null,
         fallbackDecisionReason: event?.fallbackDiagnostics?.fallbackDecisionReason || event?.selectedMove?.decisionReason || null,
