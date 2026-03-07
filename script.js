@@ -10362,14 +10362,34 @@ function buildAiFallbackDiagnosticsReport(source){
 
   const fallbackRootCauseStats = {
     no_candidates_generated: 0,
-    all_candidates_blocked_before_shortlist: 0,
-    all_candidates_rejected_by_safety: 0,
-    all_candidates_lost_in_ranking: 0,
+    generated_but_all_rejected_before_shortlist: 0,
+    generated_but_all_rejected_by_path: 0,
+    generated_but_all_rejected_after_bounce: 0,
+    generated_but_all_rejected_by_safety: 0,
+    generated_but_all_rejected_in_ranking: 0,
     attempt_budget_exhausted: 0,
     mode_restriction_only: 0,
     opening_restriction_only: 0,
     defense_override: 0,
     unknown: 0,
+  };
+
+  const candidateGenerationStats = {
+    direct: {
+      generated: 0,
+      skipped_due_to_mode: 0,
+      skipped_due_to_stage: 0,
+    },
+    gap: {
+      generated: 0,
+      no_gap_window: 0,
+      rejected_by_geometry: 0,
+    },
+    ricochet: {
+      generated: 0,
+      invalid_bounce_geometry: 0,
+      rejected_by_geometry: 0,
+    },
   };
 
   const candidateFunnelStats = {
@@ -10396,31 +10416,35 @@ function buildAiFallbackDiagnosticsReport(source){
 
   const fallbackEpisodes = [];
 
+  const toText = (value) => `${value || ""}`.toLowerCase();
+  const hasAnyToken = (items, tokens) => items.some((item) => tokens.some((token) => item.includes(token)));
+
   const mapReasonToObject = (reason) => {
-    const text = `${reason || ""}`.toLowerCase();
-    if(text.includes("wall") && (text.includes("top") || text.includes("bottom"))) return "top_bottom_wall";
-    if(text.includes("wall")) return "side_wall";
-    if(text.includes("brick") || text.includes("collider")) return "brick";
-    if(text.includes("own_plane") || text.includes("friendly_plane")) return "own_plane";
-    if(text.includes("enemy_plane")) return "enemy_plane";
-    if(text.includes("own_base")) return "own_base";
-    if(text.includes("enemy_base")) return "enemy_base";
-    if(text.includes("boundary") || text.includes("out_of_bounds")) return "map_boundary";
+    const text = toText(reason);
+    if(text.includes("brick") || text.includes("collider") || text.includes("obstacle")) return "brick";
+    if(text.includes("boundary") || text.includes("out_of_bounds") || text.includes("field_edge") || text.includes("map_edge") || text.includes("outside_field")) return "map_boundary";
+    if(text.includes("top_wall") || text.includes("bottom_wall") || text.includes("ceiling") || text.includes("floor") || ((text.includes("wall") || text.includes("border")) && (text.includes("top") || text.includes("bottom") || text.includes("ceiling") || text.includes("floor")))) return "top_bottom_wall";
+    if(text.includes("wall") || text.includes("left") || text.includes("right")) return "side_wall";
+    if(text.includes("own_plane") || text.includes("friendly_plane") || text.includes("ally_plane") || text.includes("same_team_plane")) return "own_plane";
+    if(text.includes("enemy_plane") || text.includes("opponent_plane") || text.includes("target_plane")) return "enemy_plane";
+    if(text.includes("own_base") || text.includes("friendly_base") || text.includes("home_base")) return "own_base";
+    if(text.includes("enemy_base") || text.includes("opponent_base")) return "enemy_base";
     return "unknown";
   };
 
-  const mapReasonToSegment = (reason) => {
-    const text = `${reason || ""}`.toLowerCase();
-    if(text.includes("after_bounce")) return "after_bounce";
-    if(text.includes("before_bounce")) return "before_bounce";
-    if(text.includes("gap") && text.includes("entry")) return "gap_entry";
-    if(text.includes("gap") && text.includes("exit")) return "gap_exit";
-    if(text.includes("final") || text.includes("approach")) return "final_approach";
+  const mapReasonToSegment = (reason, classKey) => {
+    const text = toText(reason);
+    if(text.includes("blocked_after_bounce") || text.includes("after_bounce") || text.includes("post_bounce")) return "after_bounce";
+    if(text.includes("before_bounce") || text.includes("pre_bounce")) return "before_bounce";
+    if(text.includes("gap_entry") || (text.includes("gap") && text.includes("entry"))) return "gap_entry";
+    if(text.includes("gap_exit") || (text.includes("gap") && text.includes("exit"))) return "gap_exit";
+    if(text.includes("final") || text.includes("approach") || text.includes("terminal") || text.includes("landing") || text.includes("target_zone")) return "final_approach";
+    if(text.includes("blocked_path") || text.includes("path_blocked")) return classKey === "gap" ? "gap_entry" : "before_bounce";
     return "unknown";
   };
 
   const mapReasonToSpecialFailure = (reason) => {
-    const text = `${reason || ""}`.toLowerCase();
+    const text = toText(reason);
     if(text.includes("attempt_budget_exhausted")) return "attempt_budget_exhausted";
     if(text.includes("shortlist")) return "rejected_in_shortlist";
     if(text.includes("score_cutoff") || text.includes("ranking")) return "rejected_in_ranking";
@@ -10432,83 +10456,144 @@ function buildAiFallbackDiagnosticsReport(source){
     return "unknown";
   };
 
-  const normalizeRootCause = (event) => {
-    const stage = `${event?.stage || ""}`.toLowerCase();
-    const goal = `${event?.goal || ""}`.toLowerCase();
-    const reasonCodes = Array.isArray(event?.reasonCodes) ? event.reasonCodes.map((code) => `${code}`.toLowerCase()) : [];
-    const rejectReasons = Array.isArray(event?.rejectReasons) ? event.rejectReasons.map((code) => `${code}`.toLowerCase()) : [];
-    const diagnostics = event?.initialCandidateSetDiagnostics;
+  const getEventContextTokens = (event) => {
+    const stage = toText(event?.stage);
+    const goal = toText(event?.goal);
+    const reasonCodes = Array.isArray(event?.reasonCodes) ? event.reasonCodes.map((code) => toText(code)) : [];
+    const rejectReasons = Array.isArray(event?.rejectReasons) ? event.rejectReasons.map((code) => toText(code)) : [];
+    const combined = [...reasonCodes, ...rejectReasons, stage, goal].filter(Boolean);
+    return { stage, goal, reasonCodes, rejectReasons, combined };
+  };
 
-    const has = (token) => reasonCodes.some((item) => item.includes(token)) || rejectReasons.some((item) => item.includes(token));
+  const getShortlistMeta = (shortlist, classKey) => shortlist?.[classKey] && typeof shortlist[classKey] === "object"
+    ? shortlist[classKey]
+    : {};
+
+  const getReasonCountByTokens = (rejectReasonsMap, tokens) => Object.entries(rejectReasonsMap || {}).reduce((sum, [reason, count]) => {
+    const safeCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+    if(safeCount <= 0) return sum;
+    return tokens.some((token) => toText(reason).includes(token)) ? sum + safeCount : sum;
+  }, 0);
+
+  const normalizeRootCause = (event) => {
+    const diagnostics = event?.initialCandidateSetDiagnostics;
+    const shortlist = diagnostics?.shortlistDiagnostics;
+    const tokens = getEventContextTokens(event);
+    const has = (token) => hasAnyToken(tokens.combined, [token]);
 
     if(has("opening_phase_restriction")) return "opening_restriction_only";
-    if(has("critical_base_threat") || goal.includes("critical_base_threat") || goal.includes("emergency_base_defense")) return "defense_override";
+    if(has("critical_base_threat") || has("emergency_base_defense")) return "defense_override";
     if(has("mode_strategy_failed") || has("mode_move_restriction")) return "mode_restriction_only";
     if(has("attempt_budget_exhausted")) return "attempt_budget_exhausted";
 
     if(diagnostics && typeof diagnostics === "object"){
-      const totalGenerated = (Number(diagnostics.directCount) || 0) + (Number(diagnostics.gapCount) || 0) + (Number(diagnostics.ricochetCount) || 0);
+      const totalGenerated = routeClasses.reduce((sum, classKey) => {
+        const shortlistMeta = getShortlistMeta(shortlist, classKey);
+        return sum + (Number(shortlistMeta.initialReachable) || 0);
+      }, 0);
       if(totalGenerated <= 0) return "no_candidates_generated";
-      const shortlist = diagnostics?.shortlistDiagnostics;
-      if(shortlist && typeof shortlist === "object"){
-        const totalShortlist = routeClasses.reduce((sum, classKey) => sum + (Number(shortlist?.[classKey]?.shortlistCount) || 0), 0);
-        if(totalShortlist <= 0){
-          const rejectKeys = routeClasses.flatMap((classKey) => Object.keys(shortlist?.[classKey]?.rejectReasons || {}).map((key) => key.toLowerCase()));
-          if(rejectKeys.some((key) => key.includes("unsafe"))) return "all_candidates_rejected_by_safety";
-          if(rejectKeys.some((key) => key.includes("shortlist_score_cutoff"))) return "all_candidates_lost_in_ranking";
-          return "all_candidates_blocked_before_shortlist";
-        }
-      }
+
+      const rejectKeys = routeClasses.flatMap((classKey) => Object.keys(getShortlistMeta(shortlist, classKey)?.rejectReasons || {}).map((key) => toText(key)));
+      if(rejectKeys.some((key) => key.includes("blocked_after_bounce") || key.includes("after_bounce"))) return "generated_but_all_rejected_after_bounce";
+      if(rejectKeys.some((key) => key.includes("unsafe"))) return "generated_but_all_rejected_by_safety";
+      if(rejectKeys.some((key) => key.includes("shortlist_score_cutoff") || key.includes("ranking") || key.includes("score_cutoff"))) return "generated_but_all_rejected_in_ranking";
+      if(rejectKeys.some((key) => key.includes("blocked") || key.includes("path") || key.includes("before_bounce") || key.includes("gap_entry") || key.includes("gap_exit"))) return "generated_but_all_rejected_by_path";
+
+      const totalShortlist = routeClasses.reduce((sum, classKey) => sum + (Number(getShortlistMeta(shortlist, classKey).shortlistCount) || 0), 0);
+      if(totalShortlist <= 0) return "generated_but_all_rejected_before_shortlist";
+      if(fallbackStages.has(event?.stage)) return "generated_but_all_rejected_in_ranking";
     }
 
-    if(stage.includes("fallback")) return "unknown";
     return "unknown";
   };
 
   for(const event of aiDecisionEvents){
     const diagnostics = event?.initialCandidateSetDiagnostics;
     const shortlist = diagnostics?.shortlistDiagnostics;
+    const eventTokens = getEventContextTokens(event);
 
     if(diagnostics && typeof diagnostics === "object"){
       for(const classKey of routeClasses){
-        const generated = Number(diagnostics?.[`${classKey}Count`]) || 0;
-        candidateFunnelStats[classKey].generated += Math.max(0, generated);
-
-        const shortlistMeta = shortlist?.[classKey] || {};
-        const initialReachable = Number(shortlistMeta.initialReachable) || 0;
-        const shortlistCount = Number(shortlistMeta.shortlistCount) || 0;
-        const rejectedBetween = Number(shortlistMeta.rejectedBetweenInitialAndShortlist) || 0;
-
-        const geometryRejected = Object.entries(shortlistMeta.rejectReasons || {}).reduce((sum, [reason, count]) => {
-          const safeCount = Number.isFinite(count) ? Math.max(0, count) : 0;
-          return `${reason}`.toLowerCase().includes("geometrically") ? sum + safeCount : sum;
-        }, 0);
-
-        candidateFunnelStats[classKey].geometryPass += Math.max(0, generated - geometryRejected);
-        candidateFunnelStats[classKey].pathPass += Math.max(0, initialReachable);
-        candidateFunnelStats[classKey].safetyPass += Math.max(0, initialReachable - rejectedBetween);
-        candidateFunnelStats[classKey].shortlistPass += Math.max(0, shortlistCount);
-
+        const shortlistMeta = getShortlistMeta(shortlist, classKey);
+        const generated = Math.max(0, Number(shortlistMeta.initialReachable) || 0);
+        const shortlistCount = Math.max(0, Number(shortlistMeta.shortlistCount) || 0);
+        const rejectedBetween = Math.max(0, Math.min(generated, Number(shortlistMeta.rejectedBetweenInitialAndShortlist) || 0));
         const rejectReasonsMap = shortlistMeta.rejectReasons && typeof shortlistMeta.rejectReasons === "object"
           ? shortlistMeta.rejectReasons
           : {};
-        for(const [reason, count] of Object.entries(rejectReasonsMap)){
-          const safeCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
-          if(safeCount <= 0) continue;
-          const blocker = mapReasonToObject(reason);
-          firstBlockingObjectStats[classKey][blocker] += safeCount;
+
+        const geometryRejectedRaw = getReasonCountByTokens(rejectReasonsMap, ["geometr", "invalid_bounce_geometry", "validation_failed", "unreachable", "missing_wall_geometry"]);
+        const pathRejectedRaw = getReasonCountByTokens(rejectReasonsMap, ["blocked", "path", "bounce", "gap_entry", "gap_exit", "before_bounce", "after_bounce"]);
+        const safetyRejectedRaw = getReasonCountByTokens(rejectReasonsMap, ["unsafe", "threat", "danger", "collision_risk"]);
+        const rankingRejectedRaw = getReasonCountByTokens(rejectReasonsMap, ["shortlist", "score_cutoff", "ranking"]);
+
+        let remainingRejected = rejectedBetween;
+        const geometryRejected = Math.min(remainingRejected, geometryRejectedRaw);
+        remainingRejected -= geometryRejected;
+        const pathRejected = Math.min(remainingRejected, pathRejectedRaw);
+        remainingRejected -= pathRejected;
+        const safetyRejected = Math.min(remainingRejected, safetyRejectedRaw);
+        remainingRejected -= safetyRejected;
+        const rankingRejected = Math.min(remainingRejected, rankingRejectedRaw);
+        remainingRejected -= rankingRejected;
+
+        const geometryPass = Math.max(0, generated - geometryRejected);
+        const pathPass = Math.max(0, geometryPass - pathRejected);
+        const safetyPass = Math.max(0, pathPass - safetyRejected);
+        const shortlistPass = Math.max(0, Math.min(safetyPass, generated, shortlistCount));
+
+        candidateFunnelStats[classKey].generated += generated;
+        candidateFunnelStats[classKey].geometryPass += geometryPass;
+        candidateFunnelStats[classKey].pathPass += pathPass;
+        candidateFunnelStats[classKey].safetyPass += safetyPass;
+        candidateFunnelStats[classKey].shortlistPass += shortlistPass;
+
+        if(classKey === "direct"){
+          candidateGenerationStats.direct.generated += generated;
+        } else if(classKey === "gap"){
+          candidateGenerationStats.gap.generated += generated;
+          candidateGenerationStats.gap.no_gap_window += getReasonCountByTokens(rejectReasonsMap, ["no_gap_window", "gap_window"]);
+          candidateGenerationStats.gap.rejected_by_geometry += geometryRejected;
+        } else if(classKey === "ricochet"){
+          candidateGenerationStats.ricochet.generated += generated;
+          candidateGenerationStats.ricochet.invalid_bounce_geometry += getReasonCountByTokens(rejectReasonsMap, ["invalid_bounce_geometry", "missing_wall_geometry"]);
+          candidateGenerationStats.ricochet.rejected_by_geometry += geometryRejected;
+        }
+
+        const sortedReasons = Object.entries(rejectReasonsMap)
+          .map(([reason, count]) => [reason, Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0])
+          .filter(([, count]) => count > 0)
+          .sort((a, b) => b[1] - a[1]);
+        if(sortedReasons.length > 0){
+          const [topReason, topCount] = sortedReasons[0];
+          const blocker = mapReasonToObject(topReason);
+          firstBlockingObjectStats[classKey][blocker] += topCount;
           if(classKey === "gap" || classKey === "ricochet"){
-            blockedSegmentStats[classKey][mapReasonToSegment(reason)] += safeCount;
-            specialRouteFailureStats[classKey][mapReasonToSpecialFailure(reason)] += safeCount;
+            blockedSegmentStats[classKey][mapReasonToSegment(topReason, classKey)] += topCount;
+            specialRouteFailureStats[classKey][mapReasonToSpecialFailure(topReason)] += topCount;
           }
         }
       }
     }
 
-    if(event?.selectedMove){
+    if(event?.selectedMove && diagnostics && typeof diagnostics === "object"){
       const text = `${event?.selectedMove?.decisionReason || ""} ${event?.selectedMove?.goalName || ""}`.toLowerCase();
       const selectedClass = text.includes("ricochet") ? "ricochet" : (text.includes("gap") ? "gap" : "direct");
-      candidateFunnelStats[selectedClass].selected += 1;
+      const selectedClassGenerated = Math.max(0, Number(getShortlistMeta(shortlist, selectedClass).initialReachable) || 0);
+      if(selectedClassGenerated > 0){
+        candidateFunnelStats[selectedClass].selected += 1;
+      }
+    }
+
+    if(eventTokens.combined.some((token) => token.includes("mode_strategy_failed") || token.includes("mode_move_restriction"))){
+      if((Number(getShortlistMeta(shortlist, "direct").initialReachable) || 0) <= 0){
+        candidateGenerationStats.direct.skipped_due_to_mode += 1;
+      }
+    }
+    if(eventTokens.combined.some((token) => token.includes("opening_phase_restriction") || token.includes("critical_base_threat") || token.includes("emergency_base_defense"))){
+      if((Number(getShortlistMeta(shortlist, "direct").initialReachable) || 0) <= 0){
+        candidateGenerationStats.direct.skipped_due_to_stage += 1;
+      }
     }
 
     if(fallbackStages.has(event?.stage)){
@@ -10520,24 +10605,33 @@ function buildAiFallbackDiagnosticsReport(source){
         goalBeforeFallback: event?.goal || null,
         rootCause,
         directSummary: {
-          generated: Number(diagnostics?.directCount) || 0,
-          shortlistPass: Number(shortlist?.direct?.shortlistCount) || 0,
-          topRejectReason: Object.keys(shortlist?.direct?.rejectReasons || {})[0] || null,
+          generated: Number(getShortlistMeta(shortlist, "direct").initialReachable) || 0,
+          shortlistPass: Number(getShortlistMeta(shortlist, "direct").shortlistCount) || 0,
+          topRejectReason: Object.keys(getShortlistMeta(shortlist, "direct").rejectReasons || {})[0] || null,
         },
         gapSummary: {
-          generated: Number(diagnostics?.gapCount) || 0,
-          shortlistPass: Number(shortlist?.gap?.shortlistCount) || 0,
-          topRejectReason: Object.keys(shortlist?.gap?.rejectReasons || {})[0] || null,
+          generated: Number(getShortlistMeta(shortlist, "gap").initialReachable) || 0,
+          shortlistPass: Number(getShortlistMeta(shortlist, "gap").shortlistCount) || 0,
+          topRejectReason: Object.keys(getShortlistMeta(shortlist, "gap").rejectReasons || {})[0] || null,
         },
         ricochetSummary: {
-          generated: Number(diagnostics?.ricochetCount) || 0,
-          shortlistPass: Number(shortlist?.ricochet?.shortlistCount) || 0,
-          topRejectReason: Object.keys(shortlist?.ricochet?.rejectReasons || {})[0] || null,
+          generated: Number(getShortlistMeta(shortlist, "ricochet").initialReachable) || 0,
+          shortlistPass: Number(getShortlistMeta(shortlist, "ricochet").shortlistCount) || 0,
+          topRejectReason: Object.keys(getShortlistMeta(shortlist, "ricochet").rejectReasons || {})[0] || null,
         },
         fallbackGoal: event?.fallbackDiagnostics?.fallbackGoal || event?.selectedMove?.goalName || null,
         fallbackDecisionReason: event?.fallbackDiagnostics?.fallbackDecisionReason || event?.selectedMove?.decisionReason || null,
       });
     }
+  }
+
+  for(const classKey of routeClasses){
+    const funnel = candidateFunnelStats[classKey];
+    funnel.geometryPass = Math.max(0, Math.min(funnel.generated, funnel.geometryPass));
+    funnel.pathPass = Math.max(0, Math.min(funnel.geometryPass, funnel.pathPass));
+    funnel.safetyPass = Math.max(0, Math.min(funnel.pathPass, funnel.safetyPass));
+    funnel.shortlistPass = Math.max(0, Math.min(funnel.safetyPass, funnel.shortlistPass));
+    funnel.selected = Math.max(0, Math.min(funnel.shortlistPass, funnel.selected));
   }
 
   const totalFallbackEpisodes = fallbackEpisodes.length;
@@ -10561,6 +10655,7 @@ function buildAiFallbackDiagnosticsReport(source){
     sourceStartedAt: source?.startedAt || null,
     sourceFinishedAt: source?.finishedAt || null,
     fallbackRootCauseStats,
+    candidateGenerationStats,
     candidateFunnelStats,
     firstBlockingObjectStats,
     blockedSegmentStats,
@@ -10583,6 +10678,7 @@ function exportAiFallbackDiagnosticsReportJson(){
       status: "insufficient_data",
       statusMessage: "Нет данных матча для fallback-диагностики.",
       fallbackRootCauseStats: {},
+      candidateGenerationStats: {},
       candidateFunnelStats: {},
       firstBlockingObjectStats: {},
       blockedSegmentStats: {},
