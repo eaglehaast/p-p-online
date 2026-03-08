@@ -7072,10 +7072,12 @@ const baseSprites = {
 
 const CARGO_SPRITE_PATH = "ui_gamescreen/gs_cargo_box.png";
 const CARGO_ANIMATION_FRAME_COUNT = 23;
+const CARGO_ANIM_START_FRAME = 7;
 const CARGO_ANIMATION_FRAME_PATHS = Array.from({ length: CARGO_ANIMATION_FRAME_COUNT }, (_value, index) => {
   const frameNumber = String(index + 1).padStart(2, "0");
   return `ui_gamescreen/gs_cargoanimation_23/gs_cargoanimation_${frameNumber}.png`;
 });
+const CARGO_ANIM_START_INDEX = Math.max(0, Math.min(CARGO_ANIMATION_FRAME_COUNT - 1, CARGO_ANIM_START_FRAME - 1));
 const CARGO_TIMING_EARLY_MS = 40;
 const CARGO_TIMING_MID_MS = 55;
 const CARGO_TIMING_LATE_MS = 80;
@@ -7084,6 +7086,8 @@ const CARGO_TIMING_COLLAPSED_PARACHUTE_MS = 170;
 const CARGO_TIMING_CLEAN_BOX_ENTRY_MS = 85;
 const CARGO_TIMING_BOX_MS = 95;
 const CARGO_ANIM_FRAME_DURATIONS_MS = Array.from({ length: CARGO_ANIMATION_FRAME_COUNT }, (_value, index) => {
+  if (index < CARGO_ANIM_START_INDEX) return 0;
+
   if (index <= 15) return CARGO_TIMING_EARLY_MS;
   if (index <= 18) return CARGO_TIMING_MID_MS;
   if (index === 19) return CARGO_TIMING_LATE_MS;
@@ -8073,13 +8077,18 @@ function getCargoAnimationFrameByElapsedMs(elapsedMs = 0, durationMs = CARGO_ANI
   if (frameCount <= 0) {
     return null;
   }
+  const startIndex = Math.max(0, Math.min(frameCount - 1, CARGO_ANIM_START_INDEX));
 
   const frameDurations = Array.isArray(CARGO_ANIM_FRAME_DURATIONS_MS)
     ? CARGO_ANIM_FRAME_DURATIONS_MS
     : [];
   if (frameDurations.length !== frameCount) {
     const uniformProgress = Math.max(0, Math.min(1, Math.max(0, elapsedMs) / Math.max(1, durationMs)));
-    const fallbackFrameIndex = Math.min(frameCount - 1, Math.floor(uniformProgress * frameCount));
+    const animatedFrameCount = Math.max(1, frameCount - startIndex);
+    const fallbackFrameIndex = Math.min(
+      frameCount - 1,
+      startIndex + Math.floor(uniformProgress * animatedFrameCount)
+    );
     return getCargoAnimationFrameByIndex(fallbackFrameIndex);
   }
 
@@ -8089,18 +8098,19 @@ function getCargoAnimationFrameByElapsedMs(elapsedMs = 0, durationMs = CARGO_ANI
   const durationScale = targetDurationMs / sourceDurationMs;
 
   let cumulativeDuration = 0;
-  for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+  for (let frameIndex = startIndex; frameIndex < frameCount; frameIndex += 1) {
     cumulativeDuration += Math.max(1, frameDurations[frameIndex]) * durationScale;
     if (safeElapsedMs < cumulativeDuration || frameIndex === frameCount - 1) {
       return getCargoAnimationFrameByIndex(frameIndex);
     }
   }
 
-  return getCargoAnimationFrameByIndex(frameCount - 1);
+  return getCargoAnimationFrameByIndex(startIndex);
 }
 
 function getCargoAnimationBaseFrame() {
-  return getCargoAnimationFrameByIndex(0);
+  const startIndex = Math.max(0, Math.min(cargoAnimationFrames.length - 1, CARGO_ANIM_START_INDEX));
+  return getCargoAnimationFrameByIndex(startIndex);
 }
 
 function createCargoAnimationDomEntry(cargo, metrics) {
