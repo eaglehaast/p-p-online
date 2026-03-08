@@ -10499,6 +10499,10 @@ function buildAiFallbackDiagnosticsReport(source){
 
   const mapReasonToSegment = (reason, classKey) => {
     const text = toText(reason);
+    if(text.includes("to_bounce_segment") || text.includes("bounce_entry") || text.includes("mirror_entry")) return "before_bounce";
+    if(text.includes("from_bounce_segment") || text.includes("bounce_exit") || text.includes("mirror_exit")) return "after_bounce";
+    if(text.includes("gap_entry_probe") || text.includes("entry_probe")) return "gap_entry";
+    if(text.includes("gap_exit_probe") || text.includes("exit_probe")) return "gap_exit";
     if(text.includes("blocked_after_bounce") || text.includes("after_bounce") || text.includes("post_bounce")) return "after_bounce";
     if(text.includes("before_bounce") || text.includes("pre_bounce")) return "before_bounce";
     if(text.includes("gap_entry") || (text.includes("gap") && text.includes("entry"))) return "gap_entry";
@@ -10513,7 +10517,10 @@ function buildAiFallbackDiagnosticsReport(source){
     if(text.includes("attempt_budget_exhausted")) return "attempt_budget_exhausted";
     if(text.includes("shortlist")) return "rejected_in_shortlist";
     if(text.includes("score_cutoff") || text.includes("ranking")) return "rejected_in_ranking";
+    if(text.includes("mirror_rejected_too_close") || text.includes("min_bounce_distance") || text.includes("too_close")) return "invalid_bounce_geometry";
+    if(text.includes("mirror_rejected_too_long") || text.includes("max_path_ratio") || text.includes("too_long")) return "invalid_bounce_geometry";
     if(text.includes("blocked_after_bounce") || text.includes("after_bounce")) return "blocked_after_bounce";
+    if(text.includes("no_mirror_intersection") || text.includes("mirror_entry") || text.includes("to_bounce_segment") || text.includes("entry_probe") || text.includes("pre_validation")) return "blocked_path";
     if(text.includes("blocked") || text.includes("path")) return "blocked_path";
     if(text.includes("gap") && text.includes("window")) return "no_gap_window";
     if(text.includes("bounce") && text.includes("invalid")) return "invalid_bounce_geometry";
@@ -20492,7 +20499,9 @@ function planPathToPoint(plane, tx, ty, options = {}){
           }
         }
         if(!canUseGapCandidateAfterEntryCheck){
-          bestRejectCode = candidateClass === "gap" ? "blocked_at_gap" : (bestRejectCode || "blocked_path");
+          bestRejectCode = candidateClass === "gap"
+            ? "blocked_at_gap__gap_entry_probe_blocked"
+            : (bestRejectCode || "blocked_path__candidate_segment_blocked");
           return;
         }
       }
@@ -20790,7 +20799,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       progressMeta: getAiNoticeableProgressMeta(plane.x, plane.y, plane.x, plane.y, tx, ty),
       sector: getAiDirectionSectorDeg(baseAngle),
     });
-    planPathToPoint.lastRejectCode = bestRejectCode || "blocked_path";
+    planPathToPoint.lastRejectCode = bestRejectCode || "blocked_path__detour_exhausted";
     return null;
   }
 
@@ -20956,7 +20965,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
     }
   }
 
-  planPathToPoint.lastRejectCode = findMirrorShot.lastRejectCode || "blocked_path";
+  planPathToPoint.lastRejectCode = findMirrorShot.lastRejectCode || "blocked_path__mirror_not_found";
   return null;
 }
 
@@ -21283,6 +21292,7 @@ function findMirrorShot(plane, enemy, options = {}){
   let rejectedTooLong = false;
   let rejectedToBounceSegment = false;
   let rejectedAfterBounceSegment = false;
+  let rejectedNoMirrorIntersection = false;
 
   const firstSegmentTouchTolerance = isEmergencyMirrorGoal ? 0 : 0.6;
   const secondSegmentTouchTolerance = isEmergencyMirrorGoal ? 0 : 0.6;
@@ -21340,7 +21350,10 @@ function findMirrorShot(plane, enemy, options = {}){
       plane.x, plane.y, mirrorTarget.x, mirrorTarget.y,
       e.x1, e.y1, e.x2, e.y2
     );
-    if(!inter) continue;
+    if(!inter){
+      rejectedNoMirrorIntersection = true;
+      continue;
+    }
 
     const firstLegDx = inter.x - plane.x;
     const firstLegDy = inter.y - plane.y;
@@ -21397,15 +21410,17 @@ function findMirrorShot(plane, enemy, options = {}){
 
   if(!best){
     if(rejectedAfterBounceSegment){
-      findMirrorShot.lastRejectCode = "blocked_after_bounce";
+      findMirrorShot.lastRejectCode = "blocked_after_bounce__from_bounce_segment_blocked";
     } else if(rejectedToBounceSegment){
-      findMirrorShot.lastRejectCode = "blocked_path";
+      findMirrorShot.lastRejectCode = "blocked_path__to_bounce_segment_blocked";
     } else if(rejectedTooClose){
-      findMirrorShot.lastRejectCode = "mirror_rejected_too_close";
+      findMirrorShot.lastRejectCode = "mirror_rejected_too_close__min_bounce_distance";
     } else if(rejectedTooLong){
-      findMirrorShot.lastRejectCode = "mirror_rejected_too_long";
+      findMirrorShot.lastRejectCode = "mirror_rejected_too_long__max_path_ratio";
+    } else if(rejectedNoMirrorIntersection){
+      findMirrorShot.lastRejectCode = "blocked_path__no_mirror_intersection";
     } else {
-      findMirrorShot.lastRejectCode = "blocked_path";
+      findMirrorShot.lastRejectCode = "blocked_path__no_mirror_geometry";
     }
   } else {
     findMirrorShot.lastRejectCode = null;
@@ -21414,13 +21429,13 @@ function findMirrorShot(plane, enemy, options = {}){
   if(!best && options.logReject){
     if(rejectedAfterBounceSegment){
       logAiDecision("mirror_rejected", {
-        reason: "blocked_after_bounce",
+        reason: "blocked_after_bounce__from_bounce_segment_blocked",
         planeId: plane?.id ?? null,
         enemyId: enemy?.id ?? null,
       });
     } else if(rejectedTooClose){
       logAiDecision("mirror_rejected", {
-        reason: "mirror_rejected_too_close",
+        reason: "mirror_rejected_too_close__min_bounce_distance",
         planeId: plane?.id ?? null,
         enemyId: enemy?.id ?? null,
         minBounceDistance: Number(minBounceDistance.toFixed(1)),
@@ -21428,12 +21443,20 @@ function findMirrorShot(plane, enemy, options = {}){
       });
     } else if(rejectedTooLong){
       logAiDecision("mirror_rejected", {
-        reason: "mirror_rejected_too_long",
+        reason: "mirror_rejected_too_long__max_path_ratio",
         planeId: plane?.id ?? null,
         enemyId: enemy?.id ?? null,
         maxPathRatio: Number(maxPathRatio.toFixed(2)),
         clearSky: isCurrentMapClearSky(),
         stuckMirrorRelaxation,
+      });
+    } else if(rejectedToBounceSegment || rejectedNoMirrorIntersection){
+      logAiDecision("mirror_rejected", {
+        reason: rejectedToBounceSegment
+          ? "blocked_path__to_bounce_segment_blocked"
+          : "blocked_path__no_mirror_intersection",
+        planeId: plane?.id ?? null,
+        enemyId: enemy?.id ?? null,
       });
     }
   }
