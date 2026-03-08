@@ -7079,6 +7079,7 @@ const CARGO_ANIMATION_FRAME_PATHS = Array.from({ length: CARGO_ANIMATION_FRAME_C
 });
 const CARGO_ANIM_START_INDEX = Math.max(0, Math.min(CARGO_ANIMATION_FRAME_COUNT - 1, CARGO_ANIM_START_FRAME - 1));
 const CARGO_ANIM_FAST_MS = 35;
+const CARGO_ANIM_MID_MS = 29;
 const CARGO_ANIM_MEDIUM_MS = 45;
 const CARGO_ANIM_SLOW_MS = 65;
 const CARGO_ANIM_SLOWER_MS = 90;
@@ -7089,8 +7090,9 @@ const CARGO_ANIM_FRAME_DURATIONS_MS = Array.from({ length: CARGO_ANIMATION_FRAME
   if (index < CARGO_ANIM_START_INDEX) return 0;
 
   // Frame ranges (1-based):
-  // startFrame..16 => FAST, 17..19 => MEDIUM, 20 => SLOW, 21 => SLOWER, 22 => LAND, 23 => FRAME_23.
-  if (index <= 15) return CARGO_ANIM_FAST_MS;
+  // startFrame..10 => FAST, 11..16 => MID, 17..19 => MEDIUM, 20 => SLOW, 21 => SLOWER, 22 => LAND, 23 => FRAME_23.
+  if (index <= 9) return CARGO_ANIM_FAST_MS;
+  if (index <= 15) return CARGO_ANIM_MID_MS;
   if (index <= 18) return CARGO_ANIM_MEDIUM_MS;
   if (index === 19) return CARGO_ANIM_SLOW_MS;
   if (index === 20) return CARGO_ANIM_SLOWER_MS;
@@ -7756,9 +7758,9 @@ const CARGO_SAFE_MAX_DIM_PX = CARGO_FALLBACK_SIZE_PX * 4;
 const CARGO_ANIM_OFFSET_X   = -34;
 const CARGO_ANIM_OFFSET_Y   = -137;
 const CARGO_LANDING_SETTLE_ENABLED = true;
-const CARGO_LANDING_BOUNCE_PX = 1;
-const CARGO_LANDING_PHASE1_MS = 60;
-const CARGO_LANDING_PHASE2_MS = 60;
+const CARGO_LANDING_BOUNCE_PX = 0.8;
+const CARGO_LANDING_PHASE1_MS = 55;
+const CARGO_LANDING_PHASE2_MS = 55;
 const FLAG_INTERACTION_RADIUS = 25;  // px
 const BASE_INTERACTION_RADIUS = 40;  // px
 const SLIDE_THRESHOLD      = 0.1;
