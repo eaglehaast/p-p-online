@@ -7071,12 +7071,12 @@ const baseSprites = {
 };
 
 const CARGO_SPRITE_PATH = "ui_gamescreen/gs_cargo_box.png";
-const CARGO_ANIMATION_FRAME_COUNT = 20;
+const CARGO_ANIMATION_FRAME_COUNT = 23;
 const CARGO_ANIMATION_FRAME_PATHS = Array.from({ length: CARGO_ANIMATION_FRAME_COUNT }, (_value, index) => {
   const frameNumber = String(index + 1).padStart(2, "0");
-  return `ui_gamescreen/gs_cargoanimation_20/gs_cargoanimation_${frameNumber}.png`;
+  return `ui_gamescreen/gs_cargoanimation_23/gs_cargoanimation_${frameNumber}.png`;
 });
-const CARGO_ANIM_FRAME_MS = 95;
+const CARGO_ANIM_FRAME_MS = 83;
 const CARGO_ANIM_LAST_FRAME_HOLD_MS = 190;
 const CARGO_ANIM_FRAME_DURATIONS_MS = CARGO_ANIMATION_FRAME_PATHS.map((_path, index, arr) => {
   const isLastFrame = index === arr.length - 1;
