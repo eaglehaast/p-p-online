@@ -21276,12 +21276,15 @@ function findMirrorShot(plane, enemy, options = {}){
   const stuckMirrorRelaxation = options?.stuckMirrorRelaxation === true;
   const mirrorGoalName = `${options?.goalName || ""}`.toLowerCase();
   const isEmergencyMirrorGoal = mirrorGoalName.includes("critical_base_threat")
-    || mirrorGoalName.includes("emergency_base_defense");
+    || mirrorGoalName.includes("emergency_base_defense")
+    || mirrorGoalName.includes("critical")
+    || mirrorGoalName.includes("emergency");
   let rejectedTooClose = false;
   let rejectedTooLong = false;
   let rejectedToBounceSegment = false;
   let rejectedAfterBounceSegment = false;
 
+  const firstSegmentTouchTolerance = isEmergencyMirrorGoal ? 0 : 0.6;
   const secondSegmentTouchTolerance = isEmergencyMirrorGoal ? 0 : 0.6;
   const isSecondSegmentClear = (fromX, fromY, toX, toY, pathMeta) => {
     const strictClear = pathMeta.isFieldBorder
@@ -21339,9 +21342,27 @@ function findMirrorShot(plane, enemy, options = {}){
     );
     if(!inter) continue;
 
-    const pathClearToBounce = isFieldBorder
+    const firstLegDx = inter.x - plane.x;
+    const firstLegDy = inter.y - plane.y;
+    const firstLegDist = Math.hypot(firstLegDx, firstLegDy);
+
+    const pathClearToBounceStrict = isFieldBorder
       ? isPathClear(plane.x, plane.y, inter.x, inter.y)
       : isPathClearExceptEdge(plane.x, plane.y, inter.x, inter.y, collider, ignoreEdge);
+    const canUseFirstSegmentSoftCheck = !isEmergencyMirrorGoal
+      && firstSegmentTouchTolerance > 0
+      && Number.isFinite(firstLegDist)
+      && firstLegDist >= Math.max(minBounceDistance, 1e-6);
+    const pathClearToBounceSoft = !pathClearToBounceStrict && canUseFirstSegmentSoftCheck
+      ? (() => {
+          const shiftedPlaneX = plane.x + (firstLegDx / firstLegDist) * firstSegmentTouchTolerance;
+          const shiftedPlaneY = plane.y + (firstLegDy / firstLegDist) * firstSegmentTouchTolerance;
+          return isFieldBorder
+            ? isPathClear(shiftedPlaneX, shiftedPlaneY, inter.x, inter.y)
+            : isPathClearExceptEdge(shiftedPlaneX, shiftedPlaneY, inter.x, inter.y, collider, ignoreEdge);
+        })()
+      : false;
+    const pathClearToBounce = pathClearToBounceStrict || pathClearToBounceSoft;
     if(!pathClearToBounce){
       rejectedToBounceSegment = true;
       continue;
@@ -21359,8 +21380,6 @@ function findMirrorShot(plane, enemy, options = {}){
 
     const totalDist = Math.hypot(plane.x - inter.x, plane.y - inter.y) +
                       Math.hypot(inter.x  - enemy.x, inter.y  - enemy.y);
-    const firstLegDist = Math.hypot(plane.x - inter.x, plane.y - inter.y);
-
     if(firstLegDist < minBounceDistance){
       rejectedTooClose = true;
       continue;
