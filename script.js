@@ -10902,7 +10902,9 @@ function buildAiFallbackDiagnosticsReport(source){
     `Ricochet special failure: ${ricochetTopSpecialFailure[0]} (count=${ricochetTopSpecialFailure[1]}).`,
   ];
 
-  return {
+  const fallbackEpisodeSamples = fallbackEpisodes.slice(-6);
+
+  const report = {
     reportType: "ai_fallback_diagnostics_report",
     generatedAt: safeNowIso(),
     sourceStartedAt: source?.startedAt || null,
@@ -10913,9 +10915,67 @@ function buildAiFallbackDiagnosticsReport(source){
     firstBlockingObjectStats,
     blockedSegmentStats,
     specialRouteFailureStats,
-    fallbackEpisodeSamples: fallbackEpisodes.slice(-6),
+    fallbackEpisodeSamples,
     summary,
   };
+
+  const hasPositiveStat = (stats) => Object.values(stats || {}).some((value) => Number.isFinite(value) && value > 0);
+  const hasTopRejectReasonInSamples = (classKey) => report.fallbackEpisodeSamples.some((episode) => {
+    const classSummary = episode?.[`${classKey}Summary`];
+    return classSummary?.topRejectReason != null;
+  });
+
+  const summarySignals = [
+    { prefix: "Самая частая корневая причина:", stats: report.fallbackRootCauseStats },
+    { prefix: "Gap ломается на сегменте:", stats: report.blockedSegmentStats?.gap },
+    { prefix: "Ricochet ломается на сегменте:", stats: report.blockedSegmentStats?.ricochet },
+    { prefix: "Gap special failure:", stats: report.specialRouteFailureStats?.gap },
+    { prefix: "Ricochet special failure:", stats: report.specialRouteFailureStats?.ricochet },
+  ];
+
+  const summaryMismatchDetected = summarySignals.some(({ prefix, stats }) => {
+    const line = report.summary.find((entry) => entry.startsWith(prefix));
+    if(!line) return false;
+
+    const reasonPart = line.slice(prefix.length).trim();
+    const reasonKey = reasonPart.split(" ")[0] || "";
+    if(!reasonKey || reasonKey === "unknown") return false;
+
+    const reasonCount = Number.isFinite(stats?.[reasonKey]) ? stats[reasonKey] : 0;
+    return reasonCount <= 0;
+  });
+
+  const rejectReasonPresentInSamples = report.fallbackEpisodeSamples.some((episode) => (
+    episode?.directSummary?.topRejectReason != null
+    || episode?.gapSummary?.topRejectReason != null
+    || episode?.ricochetSummary?.topRejectReason != null
+  ));
+
+  report.consistencyChecks = {
+    gapAttemptedButZeroRawAttempted: (
+      (
+        hasPositiveStat(report.blockedSegmentStats?.gap)
+        || hasPositiveStat(report.specialRouteFailureStats?.gap)
+        || hasTopRejectReasonInSamples("gap")
+      )
+      && (report.candidateFunnelStats?.gap?.raw_attempted || 0) === 0
+    ),
+    ricochetAttemptedButZeroRawAttempted: (
+      (
+        hasPositiveStat(report.blockedSegmentStats?.ricochet)
+        || hasPositiveStat(report.specialRouteFailureStats?.ricochet)
+        || hasTopRejectReasonInSamples("ricochet")
+      )
+      && (report.candidateFunnelStats?.ricochet?.raw_attempted || 0) === 0
+    ),
+    rejectReasonPresentButNoCandidatesGenerated: (
+      rejectReasonPresentInSamples
+      && (report.fallbackRootCauseStats?.no_candidates_generated || 0) > 0
+    ),
+    summaryMismatchDetected,
+  };
+
+  return report;
 }
 
 function exportAiFallbackDiagnosticsReportJson(){
