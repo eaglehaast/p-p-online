@@ -14741,7 +14741,7 @@ function hasBlueDynamiteAvailable(){
   return (inventory?.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] || 0) > 0;
 }
 
-function findSafePreparationMoveForAttack(plane, enemy){
+function findSafePreparationMoveForAttack(plane, enemy, options = {}){
   if(!plane || !enemy) return null;
 
   const candidateAngles = [0, 25, -25, 50, -50, 75, -75, 100, -100, 135, -135, 160, -160, 180];
@@ -14751,6 +14751,9 @@ function findSafePreparationMoveForAttack(plane, enemy){
     ATTACK_RANGE_PX * 1.2,
     ATTACK_RANGE_PX * 1.45,
   ];
+  const preparationGoalName = typeof options?.goalName === "string" && options.goalName.trim().length > 0
+    ? options.goalName.trim()
+    : "prepare_clear_shot";
   let bestCandidate = null;
 
   for(const range of candidateRanges){
@@ -14759,7 +14762,13 @@ function findSafePreparationMoveForAttack(plane, enemy){
       const tx = enemy.x + Math.cos(angle) * range;
       const ty = enemy.y + Math.sin(angle) * range;
       if(!isPathClear(tx, ty, enemy.x, enemy.y)) continue;
-      const move = planPathToPoint(plane, tx, ty);
+      const move = planPathWithSpecialRouteProbe(plane, tx, ty, {
+        goalName: preparationGoalName,
+        decisionReason: preparationGoalName,
+        targetEnemy: enemy,
+        specialAttemptBudget: 2,
+        compareLabel: [preparationGoalName, plane?.id ?? "", enemy?.id ?? ""],
+      });
       if(!move) continue;
 
       const score = move.totalDist + dist({x: tx, y: ty}, enemy) * 0.3;
@@ -14902,6 +14911,59 @@ function findFallbackSafeAngleRepositionMove(plane, enemy, speedPxPerSec){
     improvement: Number((bestCandidate.progressMeta?.improvement ?? 0).toFixed(2)),
     hasNoticeableProgress: Boolean(bestCandidate.progressMeta?.hasNoticeableProgress),
   });
+
+  return bestCandidate;
+}
+
+function planPathWithSpecialRouteProbe(plane, tx, ty, options = {}){
+  if(!plane || !Number.isFinite(tx) || !Number.isFinite(ty)) return null;
+
+  const goalName = typeof options?.goalName === "string" ? options.goalName : "";
+  const isEmergencyGoal = isEmergencyDefenseStageGoal(goalName || aiRoundState?.currentGoal);
+  const decisionReasonBase = typeof options?.decisionReason === "string" && options.decisionReason.trim().length > 0
+    ? options.decisionReason.trim()
+    : (goalName || "path_probe");
+  const specialRouteClasses = Array.isArray(options?.specialRouteClasses)
+    ? options.specialRouteClasses.filter((classKey) => classKey === "gap" || classKey === "ricochet")
+    : ["gap", "ricochet"];
+  const specialAttemptBudget = Number.isFinite(options?.specialAttemptBudget)
+    ? Math.max(0, Math.floor(options.specialAttemptBudget))
+    : 2;
+  const compareLabel = Array.isArray(options?.compareLabel) ? options.compareLabel : [goalName || "route_probe"];
+  const passThroughOptions = {
+    ...options,
+  };
+  delete passThroughOptions.specialRouteClasses;
+  delete passThroughOptions.specialAttemptBudget;
+  delete passThroughOptions.compareLabel;
+
+  const attemptRouteClasses = isEmergencyGoal
+    ? ["direct"]
+    : ["direct", ...specialRouteClasses.slice(0, specialAttemptBudget)];
+
+  let bestCandidate = null;
+  for(const routeClass of attemptRouteClasses){
+    const move = planPathToPoint(plane, tx, ty, {
+      ...passThroughOptions,
+      goalName,
+      decisionReason: routeClass === "direct"
+        ? decisionReasonBase
+        : `${decisionReasonBase}_${routeClass}`,
+      routeClass,
+    });
+    if(!move) continue;
+
+    const candidate = {
+      plane,
+      ...move,
+      routeClass,
+      score: getAiPlaneAdjustedScore(move.totalDist, plane),
+      idleTurns: getAiPlaneIdleTurns(plane),
+    };
+    if(compareAiCandidateByScoreAndRotation(candidate, bestCandidate, [...compareLabel, routeClass])){
+      bestCandidate = candidate;
+    }
+  }
 
   return bestCandidate;
 }
@@ -16718,7 +16780,12 @@ function tryPlanOpeningCenterControlMove(context){
   for(const plane of groundedAiPlanes){
     for(const cargo of readyCargo){
       pathCheckPerformed = true;
-      const move = planPathToPoint(plane, cargo.x, cargo.y);
+      const move = planPathWithSpecialRouteProbe(plane, cargo.x, cargo.y, {
+        goalName: "opening_center_control",
+        decisionReason: "opening_center_cargo",
+        specialAttemptBudget: 2,
+        compareLabel: ["opening_center_cargo", cargo?.id ?? ""],
+      });
       if(!move){
         markPathRejectCode(planPathToPoint.lastRejectCode);
         continue;
@@ -16764,7 +16831,12 @@ function tryPlanOpeningCenterControlMove(context){
   for(const plane of groundedAiPlanes){
     if(dist(plane, center) <= AI_CENTER_CONTROL_DISTANCE) continue;
     pathCheckPerformed = true;
-    const directMove = planPathToPoint(plane, center.x, center.y);
+    const directMove = planPathWithSpecialRouteProbe(plane, center.x, center.y, {
+      goalName: "opening_center_control",
+      decisionReason: "opening_center_move",
+      specialAttemptBudget: 2,
+      compareLabel: ["opening_center_move", plane?.id ?? ""],
+    });
     if(!directMove){
       markPathRejectCode(planPathToPoint.lastRejectCode);
     }
@@ -18007,8 +18079,13 @@ function planModeDrivenAiMove(context){
   }) : null;
   if(carrier){
     aiRoundState.currentGoal = "return_with_flag";
-    const move = planPathToPoint(carrier, homeBase.x, homeBase.y);
-    if(move) return { plane: carrier, ...move };
+    const move = planPathWithSpecialRouteProbe(carrier, homeBase.x, homeBase.y, {
+      goalName: "return_with_flag",
+      decisionReason: "return_with_flag",
+      specialAttemptBudget: 2,
+      compareLabel: ["return_with_flag", carrier?.id ?? ""],
+    });
+    if(move) return move;
 
     const directDx = homeBase.x - carrier.x;
     const directDy = homeBase.y - carrier.y;
@@ -18122,7 +18199,9 @@ function planModeDrivenAiMove(context){
         continue;
       }
 
-      const preparationMove = findSafePreparationMoveForAttack(plane, stolenBlueFlagCarrier);
+      const preparationMove = findSafePreparationMoveForAttack(plane, stolenBlueFlagCarrier, {
+        goalName: dynamiteAvailable ? "prepare_dynamite_breach" : "prepare_clear_shot",
+      });
       if(preparationMove){
         const basePreparationScore = getAiPlaneAdjustedScore(preparationMove.totalDist, plane);
         const preparationIntentAdjustment = getAiDynamiteIntentScoreAdjustment(basePreparationScore, { ...preparationMove, plane }, { plane });
@@ -19126,7 +19205,9 @@ function getFallbackAiMove(context){
             best = mirrorCandidate;
           }
         } else {
-          const preparationMove = findSafePreparationMoveForAttack(plane, enemy);
+          const preparationMove = findSafePreparationMoveForAttack(plane, enemy, {
+            goalName: dynamiteAvailable ? "prepare_dynamite_breach" : "prepare_clear_shot",
+          });
           if(preparationMove){
             const prepWeight = riskProfile === "comeback" ? 0.95 : 1;
             const preparationScore = getAiPlaneAdjustedScore(preparationMove.totalDist * prepWeight, plane);
@@ -19184,7 +19265,9 @@ function getFallbackAiMove(context){
       if(!enemy) continue;
 
       const idleTurns = getAiPlaneIdleTurns(plane);
-      const preparationMove = findSafePreparationMoveForAttack(plane, enemy);
+      const preparationMove = findSafePreparationMoveForAttack(plane, enemy, {
+        goalName: dynamiteAvailable ? "prepare_dynamite_breach" : "prepare_clear_shot",
+      });
       if(preparationMove){
         const preparationScore = getAiPlaneAdjustedScore(preparationMove.totalDist, plane);
         const candidate = {
@@ -19343,26 +19426,31 @@ function getForcedProgressLaunchMove(modeContext){
     }, null);
     if(!nearestEnemy) continue;
 
-    const usefulMove = planPathToPoint(plane, nearestEnemy.x, nearestEnemy.y, {
+    const usefulMove = planPathWithSpecialRouteProbe(plane, nearestEnemy.x, nearestEnemy.y, {
       goalName: "forced_progress_safe_useful",
       decisionReason: "forced_progress_safe_useful",
+      targetEnemy: nearestEnemy,
+      context: modeContext,
+      specialAttemptBudget: 2,
+      compareLabel: ["forced_progress_safe_useful", plane?.id ?? "", nearestEnemy?.id ?? ""],
     });
     if(!usefulMove) continue;
 
-    const landing = getAiMoveLandingPoint({ plane, ...usefulMove });
+    const landing = getAiMoveLandingPoint(usefulMove);
     if(!landing) continue;
     const threatMeta = getImmediateResponseThreatMeta(modeContext, landing.x, landing.y, nearestEnemy);
     if(threatMeta.count > 0) continue;
 
-    safeUsefulMove = {
-      plane,
+    const candidate = {
       ...usefulMove,
       goalName: "forced_progress_safe_useful",
       decisionReason: "forced_progress_safe_useful",
       score: getAiPlaneAdjustedScore(usefulMove.totalDist, plane),
       idleTurns: getAiPlaneIdleTurns(plane),
     };
-    break;
+    if(compareAiCandidateByScoreAndRotation(candidate, safeUsefulMove, ["forced_progress_safe_useful", plane?.id ?? ""])){
+      safeUsefulMove = candidate;
+    }
   }
   if(safeUsefulMove) return safeUsefulMove;
 
