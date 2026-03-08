@@ -7076,11 +7076,20 @@ const CARGO_ANIMATION_FRAME_PATHS = Array.from({ length: CARGO_ANIMATION_FRAME_C
   const frameNumber = String(index + 1).padStart(2, "0");
   return `ui_gamescreen/gs_cargoanimation_23/gs_cargoanimation_${frameNumber}.png`;
 });
-const CARGO_ANIM_FRAME_MS = 83;
-const CARGO_ANIM_LAST_FRAME_HOLD_MS = 190;
-const CARGO_ANIM_FRAME_DURATIONS_MS = CARGO_ANIMATION_FRAME_PATHS.map((_path, index, arr) => {
-  const isLastFrame = index === arr.length - 1;
-  return CARGO_ANIM_FRAME_MS + (isLastFrame ? CARGO_ANIM_LAST_FRAME_HOLD_MS : 0);
+const CARGO_TIMING_EARLY_MS = 40;
+const CARGO_TIMING_MID_MS = 55;
+const CARGO_TIMING_LATE_MS = 80;
+const CARGO_TIMING_TOUCH_MS = 115;
+const CARGO_TIMING_COLLAPSE_MS = 130;
+const CARGO_TIMING_BOX_MS = 95;
+const CARGO_ANIM_FRAME_DURATIONS_MS = Array.from({ length: CARGO_ANIMATION_FRAME_COUNT }, (_value, index) => {
+  const frameNumber = index + 1;
+  if (frameNumber <= 16) return CARGO_TIMING_EARLY_MS;
+  if (frameNumber <= 19) return CARGO_TIMING_MID_MS;
+  if (frameNumber === 20) return CARGO_TIMING_LATE_MS;
+  if (frameNumber === 21) return CARGO_TIMING_TOUCH_MS;
+  if (frameNumber === 22) return CARGO_TIMING_COLLAPSE_MS;
+  return CARGO_TIMING_BOX_MS;
 });
 const CARGO_ANIM_MS_FALLBACK = CARGO_ANIM_FRAME_DURATIONS_MS.reduce((sum, duration) => sum + duration, 0);
 const CARGO_FADE_IN_MS_DEFAULT = 0;
