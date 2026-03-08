@@ -10488,6 +10488,52 @@ function buildAiFallbackDiagnosticsReport(source){
     return tokens.some((token) => toText(reason).includes(token)) ? sum + safeCount : sum;
   }, 0);
 
+  const hasAnyPositiveCounter = (stats) => Object.values(stats || {}).some((count) => Number.isFinite(count) && count > 0);
+  const hasAnyPositiveCounterByKeys = (stats, keys) => keys.some((key) => Number.isFinite(stats?.[key]) && stats[key] > 0);
+
+  const buildAttemptedEvidenceForClass = (classKey, rejectReasonsMap) => {
+    const safeRejectReasonsMap = rejectReasonsMap && typeof rejectReasonsMap === "object"
+      ? rejectReasonsMap
+      : {};
+    const hasRejectReason = hasAnyPositiveCounter(safeRejectReasonsMap);
+    const firstBlockingMap = { brick: 0, side_wall: 0, top_bottom_wall: 0, own_plane: 0, enemy_plane: 0, own_base: 0, enemy_base: 0, map_boundary: 0, unknown: 0 };
+    const blockedSegmentsMap = { before_bounce: 0, after_bounce: 0, gap_entry: 0, gap_exit: 0, final_approach: 0, unknown: 0 };
+    const specialFailuresMap = { blocked_path: 0, blocked_after_bounce: 0, attempt_budget_exhausted: 0, no_gap_window: 0, invalid_bounce_geometry: 0, unsafe_after_path: 0, rejected_in_shortlist: 0, rejected_in_ranking: 0, unknown: 0 };
+
+    for(const [reason, count] of Object.entries(safeRejectReasonsMap)){
+      const safeCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+      if(safeCount <= 0) continue;
+
+      firstBlockingMap[mapReasonToObject(reason)] += safeCount;
+      if(classKey === "gap" || classKey === "ricochet"){
+        blockedSegmentsMap[mapReasonToSegment(reason, classKey)] += safeCount;
+        specialFailuresMap[mapReasonToSpecialFailure(reason)] += safeCount;
+      }
+    }
+
+    const attemptedEvidence = classKey === "gap"
+      ? (
+        hasAnyPositiveCounterByKeys(blockedSegmentsMap, ["before_bounce", "after_bounce", "gap_entry", "gap_exit", "final_approach"])
+        || hasAnyPositiveCounter(specialFailuresMap)
+        || hasRejectReason
+      )
+      : classKey === "ricochet"
+        ? (
+          hasAnyPositiveCounterByKeys(blockedSegmentsMap, ["before_bounce", "after_bounce"])
+          || hasAnyPositiveCounter(specialFailuresMap)
+          || hasRejectReason
+        )
+        : (hasAnyPositiveCounter(firstBlockingMap) || hasRejectReason);
+
+    return {
+      attemptedEvidence,
+      hasRejectReason,
+      firstBlockingMap,
+      blockedSegmentsMap,
+      specialFailuresMap,
+    };
+  };
+
   const getRawAttemptedCount = (diagnostics, shortlistMeta, classKey) => {
     const earlyAttemptsValue = Number(diagnostics?.[`${classKey}Count`]);
     const hasEarlyAttempts = Number.isFinite(earlyAttemptsValue);
@@ -10524,14 +10570,16 @@ function buildAiFallbackDiagnosticsReport(source){
     const rejectReasonsMap = shortlistMeta.rejectReasons && typeof shortlistMeta.rejectReasons === "object"
       ? shortlistMeta.rejectReasons
       : {};
+    const attemptedEvidenceMeta = buildAttemptedEvidenceForClass(classKey, rejectReasonsMap);
 
     return {
       classKey,
-      raw_attempted: rawAttempted,
+      raw_attempted: rawAttempted > 0 ? rawAttempted : (attemptedEvidenceMeta.attemptedEvidence ? 1 : 0),
       valid_generated: validGenerated,
       shortlistCount,
       rejectedBetween,
       rejectReasonsMap,
+      attempted_evidence: attemptedEvidenceMeta.attemptedEvidence,
     };
   });
 
@@ -10636,6 +10684,8 @@ function buildAiFallbackDiagnosticsReport(source){
         const rejectReasonsMap = shortlistMeta.rejectReasons && typeof shortlistMeta.rejectReasons === "object"
           ? shortlistMeta.rejectReasons
           : {};
+        const attemptedEvidenceMeta = buildAttemptedEvidenceForClass(classKey, rejectReasonsMap);
+        const rawAttemptedWithEvidence = rawAttempted > 0 ? rawAttempted : (attemptedEvidenceMeta.attemptedEvidence ? 1 : 0);
 
         const geometryRejectedRaw = getReasonCountByTokens(rejectReasonsMap, ["geometr", "invalid_bounce_geometry", "validation_failed", "unreachable", "missing_wall_geometry"]);
         const pathRejectedRaw = getReasonCountByTokens(rejectReasonsMap, ["blocked", "path", "bounce", "gap_entry", "gap_exit", "before_bounce", "after_bounce"]);
@@ -10657,14 +10707,14 @@ function buildAiFallbackDiagnosticsReport(source){
         const safetyPass = Math.max(0, pathPass - safetyRejected);
         const shortlistPass = Math.max(0, Math.min(safetyPass, validGenerated, shortlistCount));
 
-        candidateFunnelStats[classKey].raw_attempted += rawAttempted;
+        candidateFunnelStats[classKey].raw_attempted += rawAttemptedWithEvidence;
         candidateFunnelStats[classKey].valid_generated += validGenerated;
         candidateFunnelStats[classKey].geometryPass += geometryPass;
         candidateFunnelStats[classKey].pathPass += pathPass;
         candidateFunnelStats[classKey].safetyPass += safetyPass;
         candidateFunnelStats[classKey].shortlistPass += shortlistPass;
 
-        candidateGenerationStats[classKey].raw_attempted += rawAttempted;
+        candidateGenerationStats[classKey].raw_attempted += rawAttemptedWithEvidence;
         candidateGenerationStats[classKey].valid_generated += validGenerated;
         candidateGenerationStats[classKey].rejected_by_geometry += geometryRejected;
 
@@ -10714,9 +10764,12 @@ function buildAiFallbackDiagnosticsReport(source){
       const perClassStats = buildPerClassStats(diagnostics, shortlist);
       const rootCause = normalizeRootCause(event);
       fallbackRootCauseStats[rootCause] = (fallbackRootCauseStats[rootCause] || 0) + 1;
-      const directStats = perClassStats.find((stats) => stats.classKey === "direct") || { raw_attempted: 0, valid_generated: 0, shortlistCount: 0, rejectReasonsMap: {} };
-      const gapStats = perClassStats.find((stats) => stats.classKey === "gap") || { raw_attempted: 0, valid_generated: 0, shortlistCount: 0, rejectReasonsMap: {} };
-      const ricochetStats = perClassStats.find((stats) => stats.classKey === "ricochet") || { raw_attempted: 0, valid_generated: 0, shortlistCount: 0, rejectReasonsMap: {} };
+      const directStats = perClassStats.find((stats) => stats.classKey === "direct") || { raw_attempted: 0, valid_generated: 0, shortlistCount: 0, rejectReasonsMap: {}, attempted_evidence: false };
+      const gapStats = perClassStats.find((stats) => stats.classKey === "gap") || { raw_attempted: 0, valid_generated: 0, shortlistCount: 0, rejectReasonsMap: {}, attempted_evidence: false };
+      const ricochetStats = perClassStats.find((stats) => stats.classKey === "ricochet") || { raw_attempted: 0, valid_generated: 0, shortlistCount: 0, rejectReasonsMap: {}, attempted_evidence: false };
+      const directTopRejectReason = getTopRejectReasonByCount(directStats.rejectReasonsMap);
+      const gapTopRejectReason = getTopRejectReasonByCount(gapStats.rejectReasonsMap);
+      const ricochetTopRejectReason = getTopRejectReasonByCount(ricochetStats.rejectReasonsMap);
       fallbackEpisodes.push({
         roundNumber: Number.isFinite(event?.roundNumber) ? event.roundNumber : null,
         stageBeforeFallback: event?.fallbackDiagnostics?.stageBeforeFallback || null,
@@ -10726,19 +10779,22 @@ function buildAiFallbackDiagnosticsReport(source){
           raw_attempted: directStats.raw_attempted,
           valid_generated: directStats.valid_generated,
           shortlistPass: directStats.shortlistCount,
-          topRejectReason: getTopRejectReasonByCount(directStats.rejectReasonsMap),
+          topRejectReason: directTopRejectReason,
+          attempted_evidence: directStats.attempted_evidence || directTopRejectReason !== null,
         },
         gapSummary: {
           raw_attempted: gapStats.raw_attempted,
           valid_generated: gapStats.valid_generated,
           shortlistPass: gapStats.shortlistCount,
-          topRejectReason: getTopRejectReasonByCount(gapStats.rejectReasonsMap),
+          topRejectReason: gapTopRejectReason,
+          attempted_evidence: gapStats.attempted_evidence || gapTopRejectReason !== null,
         },
         ricochetSummary: {
           raw_attempted: ricochetStats.raw_attempted,
           valid_generated: ricochetStats.valid_generated,
           shortlistPass: ricochetStats.shortlistCount,
-          topRejectReason: getTopRejectReasonByCount(ricochetStats.rejectReasonsMap),
+          topRejectReason: ricochetTopRejectReason,
+          attempted_evidence: ricochetStats.attempted_evidence || ricochetTopRejectReason !== null,
         },
         fallbackGoal: event?.fallbackDiagnostics?.fallbackGoal || event?.selectedMove?.goalName || null,
         fallbackDecisionReason: event?.fallbackDiagnostics?.fallbackDecisionReason || event?.selectedMove?.decisionReason || null,
@@ -10754,6 +10810,34 @@ function buildAiFallbackDiagnosticsReport(source){
     funnel.safetyPass = Math.max(0, Math.min(funnel.pathPass, funnel.safetyPass));
     funnel.shortlistPass = Math.max(0, Math.min(funnel.safetyPass, funnel.shortlistPass));
     funnel.selected = Math.max(0, Math.min(funnel.shortlistPass, funnel.selected));
+  }
+
+  const hasEpisodeTopRejectReason = (classKey) => fallbackEpisodes.some((episode) => episode?.[`${classKey}Summary`]?.topRejectReason != null);
+
+  const aggregateAttemptedEvidence = {
+    gap: (
+      hasAnyPositiveCounterByKeys(blockedSegmentStats.gap, ["before_bounce", "after_bounce", "gap_entry", "gap_exit", "final_approach"])
+      || hasAnyPositiveCounter(specialRouteFailureStats.gap)
+      || hasEpisodeTopRejectReason("gap")
+    ),
+    ricochet: (
+      hasAnyPositiveCounterByKeys(blockedSegmentStats.ricochet, ["before_bounce", "after_bounce"])
+      || hasAnyPositiveCounter(specialRouteFailureStats.ricochet)
+      || hasEpisodeTopRejectReason("ricochet")
+    ),
+    direct: (
+      hasAnyPositiveCounter(firstBlockingObjectStats.direct)
+      || hasEpisodeTopRejectReason("direct")
+    ),
+  };
+
+  for(const classKey of routeClasses){
+    if(candidateFunnelStats[classKey].raw_attempted <= 0 && aggregateAttemptedEvidence[classKey]){
+      candidateFunnelStats[classKey].raw_attempted = 1;
+    }
+    if(candidateGenerationStats[classKey].raw_attempted <= 0 && aggregateAttemptedEvidence[classKey]){
+      candidateGenerationStats[classKey].raw_attempted = 1;
+    }
   }
 
   const totalFallbackEpisodes = fallbackEpisodes.length;
