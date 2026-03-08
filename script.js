@@ -7734,6 +7734,8 @@ const CARGO_RADIUS         = POINT_RADIUS * CARGO_PICKUP_RADIUS_MULTIPLIER;    /
 const CARGO_SPAWN_SAFE_RADIUS = CARGO_RADIUS + POINT_RADIUS;
 const CARGO_FALLBACK_SIZE_PX = 24;
 const CARGO_SAFE_MAX_DIM_PX = CARGO_FALLBACK_SIZE_PX * 4;
+// Формула выравнивания: ΔX = boxX - animX, ΔY = boxY - animY.
+// Контрольные значения для текущего спрайта: ΔX = -34, ΔY = -137.
 const CARGO_ANIM_OFFSET_X   = -34;
 const CARGO_ANIM_OFFSET_Y   = -137;
 const FLAG_INTERACTION_RADIUS = 25;  // px
@@ -8146,8 +8148,8 @@ function syncCargoAnimationDomEntry(cargo, metrics) {
   const height = Math.max(1, Math.round(Math.max(1, naturalHeight) * scaleY));
 
   Object.assign(cargo.domEntry.element.style, {
-    left: `${Math.round(offsetPoint.overlayX)}px`,
-    top: `${Math.round(offsetPoint.overlayY)}px`,
+    left: `${offsetPoint.overlayX}px`,
+    top: `${offsetPoint.overlayY}px`,
     width: `${width}px`,
     height: `${height}px`
   });
