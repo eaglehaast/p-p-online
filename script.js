@@ -20803,7 +20803,39 @@ function planPathToPoint(plane, tx, ty, options = {}){
     return null;
   }
 
-  if(isPathClear(plane.x, plane.y, tx, ty) && !shouldForceNonDirectBranch){
+  const hasDirectLine = isPathClear(plane.x, plane.y, tx, ty);
+  const candidateBasket = [];
+  const emergencyBaseDefenseGoal = activeGoalName.includes("emergency_base_defense");
+  const allowSpecialCandidates = !activeGoalName.includes("emergency_");
+
+  function registerCandidate(move){
+    if(move) candidateBasket.push(move);
+  }
+
+  function pickBestCandidate(candidates){
+    if(!Array.isArray(candidates) || candidates.length === 0) return null;
+    let bestCandidate = null;
+    let bestScore = Number.NEGATIVE_INFINITY;
+
+    for(const candidate of candidates){
+      if(!candidate) continue;
+      const qualityScore = Number.isFinite(candidate?.routeQualityScore)
+        ? candidate.routeQualityScore
+        : (Number.isFinite(candidate?.routeMetrics?.qualityScore) ? candidate.routeMetrics.qualityScore : Number.NEGATIVE_INFINITY);
+      const fallbackScore = Number.isFinite(candidate?.score) ? candidate.score : Number.NEGATIVE_INFINITY;
+      const candidateScore = Number.isFinite(qualityScore) ? qualityScore : fallbackScore;
+      if(candidateScore > bestScore + 0.000001
+        || (Math.abs(candidateScore - bestScore) <= 0.000001
+          && (candidate.totalDist ?? Number.POSITIVE_INFINITY) < (bestCandidate?.totalDist ?? Number.POSITIVE_INFINITY))){
+        bestCandidate = candidate;
+        bestScore = candidateScore;
+      }
+    }
+
+    return bestCandidate;
+  }
+
+  if(hasDirectLine && !shouldForceNonDirectBranch){
     const dx = tx - plane.x;
     const dy = ty - plane.y;
     const dist = Math.hypot(dx, dy);
@@ -20816,6 +20848,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
         && finisherTarget.x === tx
         && finisherTarget.y === ty
         && isDirectFinisherScenario(plane, finisherTarget));
+    const shouldHardPrioritizeDirect = shouldPrioritizeDirectFinisher || emergencyBaseDefenseGoal;
 
     const scale = applyAiMinLaunchScale(baseScale, {
       source: "plan_path_direct",
@@ -20873,52 +20906,70 @@ function planPathToPoint(plane, tx, ty, options = {}){
       if(finisherMove){
         finisherMove.routeMetrics = evaluateRouteMetrics({ landingX, landingY, distance: dist, candidateClass: "direct" });
         finisherMove.routeQualityScore = finisherMove.routeMetrics.qualityScore;
+        if(shouldHardPrioritizeDirect) return finisherMove;
+        registerCandidate(finisherMove);
       }
-      return finisherMove;
     }
 
-    return buildMoveWithSafeDeviation(baseAngle, dist, scale, {
-      moveType: "direct"
+    const directMove = buildMoveWithSafeDeviation(baseAngle, dist, scale, {
+      moveType: "direct",
+      candidateClass: "direct",
     });
+    if(shouldHardPrioritizeDirect && directMove) return directMove;
+    registerCandidate(directMove);
+
+    if(allowSpecialCandidates){
+      const gapMove = buildMoveWithSafeDeviation(baseAngle, dist, scale, {
+        moveType: "direct",
+        candidateClass: "gap",
+      });
+      registerCandidate(gapMove);
+    }
   }
 
-  const mirrorPressureBoost = isMirrorPressureTarget(options?.targetEnemy || { x: tx, y: ty }, { ...options, plane })
-    ? AI_MIRROR_PATH_PRESSURE_BONUS
-    : 0;
-  const mirror = findMirrorShot(plane, {x:tx, y:ty}, {
-    logReject: true,
-    pressureBoost: mirrorPressureBoost,
-    diagnostics: true,
-    goalName: options?.goalName || "",
-  });
-  if(mirror){
-    const dx = mirror.mirrorTarget.x - plane.x;
-    const dy = mirror.mirrorTarget.y - plane.y;
-    const baseAngle = Math.atan2(dy, dx);
-    const baseScale = Math.min(mirror.totalDist / (2*MAX_DRAG_DISTANCE), 1);
-    const scale = applyAiMinLaunchScale(baseScale, {
-      source: "plan_path_mirror",
-      planeId: plane?.id ?? null,
-      goalName: options?.goalName || null,
-      decisionReason: options?.decisionReason || null,
-      moveDistance: mirror.totalDist,
-      targetX: tx,
-      targetY: ty,
+  let mirrorRejectCode = null;
+  if(allowSpecialCandidates || shouldForceNonDirectBranch || !hasDirectLine){
+    const mirrorPressureBoost = isMirrorPressureTarget(options?.targetEnemy || { x: tx, y: ty }, { ...options, plane })
+      ? AI_MIRROR_PATH_PRESSURE_BONUS
+      : 0;
+    const mirror = findMirrorShot(plane, {x:tx, y:ty}, {
+      logReject: true,
+      pressureBoost: mirrorPressureBoost,
+      diagnostics: true,
+      goalName: options?.goalName || "",
     });
-    logAiDecision("mirror_selected_reason", {
-      source: "plan_path_to_point",
-      reason: "direct_path_blocked",
-      planeId: plane?.id ?? null,
-      targetEnemyId: options?.targetEnemy?.id ?? options?.targetEnemyId ?? null,
-      pressureBoost: Number(mirrorPressureBoost.toFixed(2)),
-      clearSky: isCurrentMapClearSky(),
-      pathDistance: Number(mirror.totalDist.toFixed(1)),
-      stuckMirrorRelaxation: false,
-    });
-    return buildMoveWithSafeDeviation(baseAngle, mirror.totalDist, scale, {
-      moveType: "mirror",
-      candidateClass: "ricochet",
-    });
+    if(mirror){
+      const dx = mirror.mirrorTarget.x - plane.x;
+      const dy = mirror.mirrorTarget.y - plane.y;
+      const baseAngle = Math.atan2(dy, dx);
+      const baseScale = Math.min(mirror.totalDist / (2*MAX_DRAG_DISTANCE), 1);
+      const scale = applyAiMinLaunchScale(baseScale, {
+        source: "plan_path_mirror",
+        planeId: plane?.id ?? null,
+        goalName: options?.goalName || null,
+        decisionReason: options?.decisionReason || null,
+        moveDistance: mirror.totalDist,
+        targetX: tx,
+        targetY: ty,
+      });
+      logAiDecision("mirror_selected_reason", {
+        source: "plan_path_to_point",
+        reason: hasDirectLine ? "mirror_competing_with_direct" : "direct_path_blocked",
+        planeId: plane?.id ?? null,
+        targetEnemyId: options?.targetEnemy?.id ?? options?.targetEnemyId ?? null,
+        pressureBoost: Number(mirrorPressureBoost.toFixed(2)),
+        clearSky: isCurrentMapClearSky(),
+        pathDistance: Number(mirror.totalDist.toFixed(1)),
+        stuckMirrorRelaxation: false,
+      });
+      const mirrorMove = buildMoveWithSafeDeviation(baseAngle, mirror.totalDist, scale, {
+        moveType: "mirror",
+        candidateClass: "ricochet",
+      });
+      registerCandidate(mirrorMove);
+    } else {
+      mirrorRejectCode = findMirrorShot.lastRejectCode || "blocked_path__mirror_not_found";
+    }
   }
 
   const planeStuckState = getAiStuckStateForPlane(plane?.id);
@@ -20960,12 +21011,15 @@ function planPathToPoint(plane, tx, ty, options = {}){
           pathDistance: Number(stuckRecoveryMirror.totalDist.toFixed(1)),
           stuckMirrorRelaxation: true,
         });
-        return move;
+        registerCandidate(move);
       }
     }
   }
 
-  planPathToPoint.lastRejectCode = findMirrorShot.lastRejectCode || "blocked_path__mirror_not_found";
+  const bestCandidate = pickBestCandidate(candidateBasket);
+  if(bestCandidate) return bestCandidate;
+
+  planPathToPoint.lastRejectCode = mirrorRejectCode || findMirrorShot.lastRejectCode || "blocked_path__mirror_not_found";
   return null;
 }
 
