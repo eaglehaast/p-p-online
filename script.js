@@ -10874,17 +10874,6 @@ function buildAiFallbackDiagnosticsReport(source){
 
   const totalFallbackEpisodes = fallbackEpisodes.length;
   const topRootCause = Object.entries(fallbackRootCauseStats).sort((a, b) => b[1] - a[1])[0] || ["unknown", 0];
-  const specialShortlistTotal = candidateFunnelStats.gap.shortlistPass + candidateFunnelStats.ricochet.shortlistPass;
-
-  const rootCauseLabels = {
-    raw_attempts_but_no_valid_candidates: "чаще пытались, но не получили валидных кандидатов",
-    all_valid_candidates_rejected_by_path: "кандидаты чаще отсеивались на проверке пути",
-    all_valid_candidates_rejected_after_bounce: "кандидаты чаще ломались после отскока",
-    all_valid_candidates_rejected_by_safety: "кандидаты чаще отсеивались из-за риска столкновения",
-    all_valid_candidates_rejected_in_ranking: "кандидаты доходили до сравнения, но проигрывали по приоритету",
-  };
-  const topRootCauseLabel = rootCauseLabels[topRootCause[0]] || "корневая причина не распознана (нужно смотреть детали эпизодов)";
-
   const getTopFailureKey = (stats, keys) => {
     const entries = keys
       .map((key) => [key, Number.isFinite(stats?.[key]) ? Math.max(0, stats[key]) : 0])
@@ -10893,30 +10882,24 @@ function buildAiFallbackDiagnosticsReport(source){
     return entries[0];
   };
 
-  const gapTopFailure = getTopFailureKey(specialRouteFailureStats.gap, ["gap_entry", "no_gap_window"]);
-  const ricochetTopFailure = getTopFailureKey(specialRouteFailureStats.ricochet, ["before_bounce", "after_bounce", "invalid_bounce_geometry"]);
-  const gapFailureLabels = {
-    gap_entry: "чаще ломается на входе в щель (gap_entry)",
-    no_gap_window: "чаще не находится подходящее окно для пролёта (no_gap_window)",
-  };
-  const ricochetFailureLabels = {
-    before_bounce: "чаще ломается до отскока (before_bounce)",
-    after_bounce: "чаще ломается после отскока (after_bounce)",
-    invalid_bounce_geometry: "чаще отбрасывается из-за неправильной геометрии отскока (invalid_bounce_geometry)",
-  };
+  const segmentKeys = ["before_bounce", "after_bounce", "gap_entry", "gap_exit", "final_approach", "unknown"];
+  const specialFailureKeys = ["blocked_path", "blocked_after_bounce", "attempt_budget_exhausted", "no_gap_window", "invalid_bounce_geometry", "unsafe_after_path", "rejected_in_shortlist", "rejected_in_ranking", "unknown"];
+
+  const gapTopSegmentFailure = getTopFailureKey(blockedSegmentStats.gap, segmentKeys);
+  const ricochetTopSegmentFailure = getTopFailureKey(blockedSegmentStats.ricochet, segmentKeys);
+  const gapTopSpecialFailure = getTopFailureKey(specialRouteFailureStats.gap, specialFailureKeys);
+  const ricochetTopSpecialFailure = getTopFailureKey(specialRouteFailureStats.ricochet, specialFailureKeys);
 
   const summary = [
     `Всего fallback-эпизодов: ${totalFallbackEpisodes}.`,
     `Самая частая корневая причина: ${topRootCause[0]} (${topRootCause[1]}).`,
-    `Пояснение по top root cause: ${topRootCauseLabel}.`,
     `Direct: raw_attempted=${candidateFunnelStats.direct.raw_attempted}, valid_generated=${candidateFunnelStats.direct.valid_generated}, shortlistPass=${candidateFunnelStats.direct.shortlistPass}, selected=${candidateFunnelStats.direct.selected}.`,
     `Gap: raw_attempted=${candidateFunnelStats.gap.raw_attempted}, valid_generated=${candidateFunnelStats.gap.valid_generated}, shortlistPass=${candidateFunnelStats.gap.shortlistPass}, selected=${candidateFunnelStats.gap.selected}.`,
     `Ricochet: raw_attempted=${candidateFunnelStats.ricochet.raw_attempted}, valid_generated=${candidateFunnelStats.ricochet.valid_generated}, shortlistPass=${candidateFunnelStats.ricochet.shortlistPass}, selected=${candidateFunnelStats.ricochet.selected}.`,
-    `Special routes (gap): ${gapFailureLabels[gapTopFailure[0]] || "нет явного доминирующего сбоя"}. Счётчик=${gapTopFailure[1]}.`,
-    `Special routes (ricochet): ${ricochetFailureLabels[ricochetTopFailure[0]] || "нет явного доминирующего сбоя"}. Счётчик=${ricochetTopFailure[1]}.`,
-    specialShortlistTotal <= 0
-      ? "Special-маршруты чаще всего не доходят до shortlist и ломаются до выбора финального кандидата."
-      : "Special-маршруты иногда попадают в shortlist, но часть теряется позже на отборе.",
+    `Gap ломается на сегменте: ${gapTopSegmentFailure[0]} (count=${gapTopSegmentFailure[1]}).`,
+    `Ricochet ломается на сегменте: ${ricochetTopSegmentFailure[0]} (count=${ricochetTopSegmentFailure[1]}).`,
+    `Gap special failure: ${gapTopSpecialFailure[0]} (count=${gapTopSpecialFailure[1]}).`,
+    `Ricochet special failure: ${ricochetTopSpecialFailure[0]} (count=${ricochetTopSpecialFailure[1]}).`,
   ];
 
   return {
