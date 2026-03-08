@@ -7078,29 +7078,26 @@ const CARGO_ANIMATION_FRAME_PATHS = Array.from({ length: CARGO_ANIMATION_FRAME_C
   return `ui_gamescreen/gs_cargoanimation_23/gs_cargoanimation_${frameNumber}.png`;
 });
 const CARGO_ANIM_START_INDEX = Math.max(0, Math.min(CARGO_ANIMATION_FRAME_COUNT - 1, CARGO_ANIM_START_FRAME - 1));
-const CARGO_TIMING_EARLY_MS = 40;
-const CARGO_TIMING_MID_MS = 55;
-const CARGO_TIMING_LATE_MS = 80;
-const CARGO_TIMING_NEAR_TOUCH_MS = 115;
-const CARGO_TIMING_COLLAPSED_PARACHUTE_MS = 170;
-const CARGO_TIMING_CLEAN_BOX_ENTRY_MS = 85;
-const CARGO_TIMING_BOX_MS = 95;
+const CARGO_ANIM_FAST_MS = 35;
+const CARGO_ANIM_MEDIUM_MS = 45;
+const CARGO_ANIM_SLOW_MS = 65;
+const CARGO_ANIM_SLOWER_MS = 90;
+const CARGO_ANIM_LAND_MS = 110;
+const CARGO_ANIM_FRAME_23_MS = 65;
+const CARGO_ANIM_LAND_REPEAT = 2;
 const CARGO_ANIM_FRAME_DURATIONS_MS = Array.from({ length: CARGO_ANIMATION_FRAME_COUNT }, (_value, index) => {
   if (index < CARGO_ANIM_START_INDEX) return 0;
 
-  if (index <= 15) return CARGO_TIMING_EARLY_MS;
-  if (index <= 18) return CARGO_TIMING_MID_MS;
-  if (index === 19) return CARGO_TIMING_LATE_MS;
+  // Frame ranges (1-based):
+  // startFrame..16 => FAST, 17..19 => MEDIUM, 20 => SLOW, 21 => SLOWER, 22 => LAND, 23 => FRAME_23.
+  if (index <= 15) return CARGO_ANIM_FAST_MS;
+  if (index <= 18) return CARGO_ANIM_MEDIUM_MS;
+  if (index === 19) return CARGO_ANIM_SLOW_MS;
+  if (index === 20) return CARGO_ANIM_SLOWER_MS;
+  if (index === 21) return CARGO_ANIM_LAND_MS * Math.max(1, CARGO_ANIM_LAND_REPEAT);
+  if (index === 22) return CARGO_ANIM_FRAME_23_MS;
 
-  // Final sequence explicit holds:
-  // index 20 (frame 21): near touch, longer than average;
-  // index 21 (frame 22): collapsed parachute, longest final hold;
-  // index 22 (frame 23): clean box entry, shorter to avoid sticky final frame.
-  if (index === 20) return CARGO_TIMING_NEAR_TOUCH_MS;
-  if (index === 21) return CARGO_TIMING_COLLAPSED_PARACHUTE_MS;
-  if (index === 22) return CARGO_TIMING_CLEAN_BOX_ENTRY_MS;
-
-  return CARGO_TIMING_BOX_MS;
+  return CARGO_ANIM_FAST_MS;
 });
 const CARGO_ANIM_MS_FALLBACK = CARGO_ANIM_FRAME_DURATIONS_MS.reduce((sum, duration) => sum + duration, 0);
 const CARGO_FADE_IN_MS_DEFAULT = 0;
