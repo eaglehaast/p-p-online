@@ -20255,7 +20255,10 @@ function planPathToPoint(plane, tx, ty, options = {}){
   const narrowCorridorColliderThreshold = 26;
   const narrowCorridorRouteNearbyThreshold = 5;
   const narrowCorridorRouteProbeRadiusPx = CELL_SIZE * 1.1;
+  const activeGoalName = `${options?.goalName || aiRoundState?.currentGoal || ""}`.toLowerCase();
   const isCriticalOrEmergencyStage = isEmergencyDefenseStageGoal(options?.goalName || aiRoundState?.currentGoal);
+  const strictGapPathRejectStage = activeGoalName.includes("critical_base_threat")
+    || activeGoalName.includes("emergency_");
   const relaxedEmergencyThreshold = isCriticalOrEmergencyStage
     && (typeof options?.goalName === "string")
     && (options.goalName.includes("critical_base_threat") || options.goalName.includes("emergency_base_defense"));
@@ -20471,9 +20474,27 @@ function planPathToPoint(plane, tx, ty, options = {}){
       const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
       const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
       const candidateClass = candidateMeta?.candidateClass || meta?.candidateClass || defaultRouteClass;
-      if(!isPathClear(plane.x, plane.y, landingX, landingY)){
-        bestRejectCode = candidateClass === "gap" ? "blocked_at_gap" : (bestRejectCode || "blocked_path");
-        return;
+      const fullPathClear = isPathClear(plane.x, plane.y, landingX, landingY);
+      if(!fullPathClear){
+        let canUseGapCandidateAfterEntryCheck = false;
+        if(candidateClass === "gap" && !strictGapPathRejectStage){
+          const dx = landingX - plane.x;
+          const dy = landingY - plane.y;
+          const fullPathLength = Math.hypot(dx, dy);
+          const minEntryProbePx = CELL_SIZE * 0.2;
+          const maxEntryProbePx = CELL_SIZE * 0.6;
+          const entryProbePx = Math.max(minEntryProbePx, Math.min(maxEntryProbePx, fullPathLength * 0.2));
+          if(fullPathLength > 0.0001){
+            const entryRatio = Math.max(0, Math.min(1, entryProbePx / fullPathLength));
+            const entryX = plane.x + dx * entryRatio;
+            const entryY = plane.y + dy * entryRatio;
+            canUseGapCandidateAfterEntryCheck = isPathClear(plane.x, plane.y, entryX, entryY);
+          }
+        }
+        if(!canUseGapCandidateAfterEntryCheck){
+          bestRejectCode = candidateClass === "gap" ? "blocked_at_gap" : (bestRejectCode || "blocked_path");
+          return;
+        }
       }
       const routeMetrics = evaluateRouteMetrics({
         landingX,
