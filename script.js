@@ -7754,6 +7754,10 @@ const CARGO_SAFE_MAX_DIM_PX = CARGO_FALLBACK_SIZE_PX * 4;
 // Контрольные значения для текущего спрайта: ΔX = -34, ΔY = -137.
 const CARGO_ANIM_OFFSET_X   = -34;
 const CARGO_ANIM_OFFSET_Y   = -137;
+const CARGO_LANDING_SETTLE_ENABLED = true;
+const CARGO_LANDING_BOUNCE_PX = 1;
+const CARGO_LANDING_PHASE1_MS = 60;
+const CARGO_LANDING_PHASE2_MS = 60;
 const FLAG_INTERACTION_RADIUS = 25;  // px
 const BASE_INTERACTION_RADIUS = 40;  // px
 const SLIDE_THRESHOLD      = 0.1;
@@ -8407,6 +8411,7 @@ function updateCargoState(now = performance.now()){
       : CARGO_ANIM_MS_FALLBACK;
     if(cargo.state === "animating" && now - cargo.animStartedAt >= animDurationMs){
       cargo.state = "ready";
+      cargo.landingSettledAt = now;
       removeCargoAnimationDomEntry(cargo);
     }
     if(cargo.state !== "ready"){
@@ -8436,17 +8441,46 @@ function updateCargoState(now = performance.now()){
   }
 }
 
+function getCargoLandingSettleYOffset(cargo, now = performance.now()){
+  if(!CARGO_LANDING_SETTLE_ENABLED || cargo?.state !== "ready"){
+    return 0;
+  }
+  if(!Number.isFinite(cargo.landingSettledAt)){
+    return 0;
+  }
+
+  const elapsedMs = Math.max(0, now - cargo.landingSettledAt);
+  const phase1Ms = Math.max(0, CARGO_LANDING_PHASE1_MS);
+  const phase2Ms = Math.max(0, CARGO_LANDING_PHASE2_MS);
+  const totalMs = phase1Ms + phase2Ms;
+  if(totalMs <= 0 || elapsedMs > totalMs){
+    return 0;
+  }
+
+  const bouncePx = Math.max(0, CARGO_LANDING_BOUNCE_PX);
+  if(elapsedMs <= phase1Ms){
+    return phase1Ms > 0 ? (elapsedMs / phase1Ms) * bouncePx : bouncePx;
+  }
+
+  const phase2ElapsedMs = elapsedMs - phase1Ms;
+  return phase2Ms > 0
+    ? (1 - phase2ElapsedMs / phase2Ms) * bouncePx
+    : 0;
+}
+
 function drawCargo(ctx2d){
   if(cargoState.length === 0) return;
   const canDrawCargoBox = isSpriteReady(cargoSprite);
+  const now = performance.now();
 
   for(const cargo of cargoState){
     if(cargo.state === "ready" && canDrawCargoBox){
       const { width, height } = getCargoSpriteDrawSize();
+      const yOffset = getCargoLandingSettleYOffset(cargo, now);
 
       ctx2d.save();
       ctx2d.filter = 'saturate(0.9) brightness(0.98)';
-      ctx2d.drawImage(cargoSprite, cargo.x, cargo.y, width, height);
+      ctx2d.drawImage(cargoSprite, cargo.x, cargo.y + yOffset, width, height);
       ctx2d.restore();
     }
   }
