@@ -20856,6 +20856,9 @@ function planPathToPoint(plane, tx, ty, options = {}){
         && finisherTarget.y === ty
         && isDirectFinisherScenario(plane, finisherTarget));
     const shouldHardPrioritizeDirect = shouldPrioritizeDirectFinisher || emergencyBaseDefenseGoal;
+    const allowFinisherSafetyBypass = Boolean(options?.allowFinisherSafetyBypass)
+      && shouldPrioritizeDirectFinisher
+      && emergencyBaseDefenseGoal;
 
     const scale = applyAiMinLaunchScale(baseScale, {
       source: "plan_path_direct",
@@ -20913,8 +20916,24 @@ function planPathToPoint(plane, tx, ty, options = {}){
       if(finisherMove){
         finisherMove.routeMetrics = evaluateRouteMetrics({ landingX, landingY, distance: dist, candidateClass: "direct" });
         finisherMove.routeQualityScore = finisherMove.routeMetrics.qualityScore;
-        if(shouldHardPrioritizeDirect) return finisherMove;
-        registerCandidate(finisherMove);
+        if(finisherMove.routeMetrics.rejectCode){
+          planPathToPoint.lastRejectCode = finisherMove.routeMetrics.rejectCode;
+          if(allowFinisherSafetyBypass){
+            logAiDecision("direct_finisher_safety_bypass", {
+              planeId: plane?.id ?? null,
+              goalName: options?.goalName || null,
+              rejectCode: finisherMove.routeMetrics.rejectCode,
+              targetEnemyId: finisherTarget?.id ?? options?.targetEnemyId ?? null,
+            });
+            if(shouldHardPrioritizeDirect) return finisherMove;
+            registerCandidate(finisherMove);
+          } else if(!emergencyBaseDefenseGoal){
+            registerCandidate(finisherMove);
+          }
+        } else {
+          if(shouldHardPrioritizeDirect) return finisherMove;
+          registerCandidate(finisherMove);
+        }
       }
     }
 
