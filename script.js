@@ -10591,6 +10591,15 @@ function buildAiFallbackDiagnosticsReport(source){
     return sortedReasons.length > 0 ? sortedReasons[0][0] : null;
   };
 
+  const getCoreClassStats = (perClassStats) => {
+    const emptyStats = { raw_attempted: 0, valid_generated: 0, shortlistCount: 0, rejectReasonsMap: {}, attempted_evidence: false };
+    return {
+      direct: perClassStats.find((stats) => stats.classKey === "direct") || emptyStats,
+      gap: perClassStats.find((stats) => stats.classKey === "gap") || emptyStats,
+      ricochet: perClassStats.find((stats) => stats.classKey === "ricochet") || emptyStats,
+    };
+  };
+
   const normalizeRootCause = (event) => {
     const diagnostics = event?.initialCandidateSetDiagnostics;
     const shortlist = diagnostics?.shortlistDiagnostics;
@@ -10604,9 +10613,12 @@ function buildAiFallbackDiagnosticsReport(source){
 
     if(diagnostics && typeof diagnostics === "object"){
       const perClassStats = buildPerClassStats(diagnostics, shortlist);
+      const coreClassStats = getCoreClassStats(perClassStats);
 
-      const attemptedByAnyClass = perClassStats.some((stats) => stats.raw_attempted > 0);
-      if(!attemptedByAnyClass) return "no_candidates_generated";
+      const noRawAttemptInCoreClasses = coreClassStats.direct.raw_attempted === 0
+        && coreClassStats.gap.raw_attempted === 0
+        && coreClassStats.ricochet.raw_attempted === 0;
+      if(noRawAttemptInCoreClasses) return "no_candidates_generated";
 
       const totalValidGenerated = perClassStats.reduce((sum, stats) => sum + stats.valid_generated, 0);
       if(totalValidGenerated <= 0) return "raw_attempts_but_no_valid_candidates";
@@ -10762,14 +10774,32 @@ function buildAiFallbackDiagnosticsReport(source){
 
     if(fallbackStages.has(event?.stage)){
       const perClassStats = buildPerClassStats(diagnostics, shortlist);
-      const rootCause = normalizeRootCause(event);
-      fallbackRootCauseStats[rootCause] = (fallbackRootCauseStats[rootCause] || 0) + 1;
-      const directStats = perClassStats.find((stats) => stats.classKey === "direct") || { raw_attempted: 0, valid_generated: 0, shortlistCount: 0, rejectReasonsMap: {}, attempted_evidence: false };
-      const gapStats = perClassStats.find((stats) => stats.classKey === "gap") || { raw_attempted: 0, valid_generated: 0, shortlistCount: 0, rejectReasonsMap: {}, attempted_evidence: false };
-      const ricochetStats = perClassStats.find((stats) => stats.classKey === "ricochet") || { raw_attempted: 0, valid_generated: 0, shortlistCount: 0, rejectReasonsMap: {}, attempted_evidence: false };
+      const coreClassStats = getCoreClassStats(perClassStats);
+      const directStats = coreClassStats.direct;
+      const gapStats = coreClassStats.gap;
+      const ricochetStats = coreClassStats.ricochet;
       const directTopRejectReason = getTopRejectReasonByCount(directStats.rejectReasonsMap);
       const gapTopRejectReason = getTopRejectReasonByCount(gapStats.rejectReasonsMap);
       const ricochetTopRejectReason = getTopRejectReasonByCount(ricochetStats.rejectReasonsMap);
+      const allCoreValidGeneratedAreZero = directStats.valid_generated === 0
+        && gapStats.valid_generated === 0
+        && ricochetStats.valid_generated === 0;
+      const noRawAttemptInCoreClasses = directStats.raw_attempted === 0
+        && gapStats.raw_attempted === 0
+        && ricochetStats.raw_attempted === 0;
+      const hasAnyTopRejectReason = directTopRejectReason !== null
+        || gapTopRejectReason !== null
+        || ricochetTopRejectReason !== null;
+
+      let rootCause = normalizeRootCause(event);
+      if(allCoreValidGeneratedAreZero && hasAnyTopRejectReason){
+        rootCause = "raw_attempts_but_no_valid_candidates";
+      }
+      if(rootCause === "no_candidates_generated" && !noRawAttemptInCoreClasses){
+        rootCause = "raw_attempts_but_no_valid_candidates";
+      }
+      fallbackRootCauseStats[rootCause] = (fallbackRootCauseStats[rootCause] || 0) + 1;
+
       fallbackEpisodes.push({
         roundNumber: Number.isFinite(event?.roundNumber) ? event.roundNumber : null,
         stageBeforeFallback: event?.fallbackDiagnostics?.stageBeforeFallback || null,
