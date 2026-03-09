@@ -10614,6 +10614,7 @@ function buildAiFallbackDiagnosticsReport(source){
   const fallbackEpisodes = [];
   const gapAfterBounceSamples = [];
   const specialRouteRejectDiagnostics = [];
+  const normalizedSpecialRouteRejectedAttempts = [];
 
   const toText = (value) => `${value || ""}`.toLowerCase();
   const hasAnyToken = (items, tokens) => items.some((item) => tokens.some((token) => item.includes(token)));
@@ -10631,6 +10632,14 @@ function buildAiFallbackDiagnosticsReport(source){
     return "unknown";
   };
 
+  const normalizeSpecialRouteClass = (routeClass, fallbackClassKey = "unknown") => {
+    const classText = toText(routeClass || fallbackClassKey);
+    if(classText.includes("gap")) return "gap";
+    if(classText.includes("ricochet") || classText.includes("bounce") || classText.includes("mirror")) return "ricochet";
+    if(classText.includes("direct")) return "direct";
+    return "unknown";
+  };
+
   const mapReasonToSegment = (reason, classKey) => {
     const text = toText(reason);
     if(text.includes("to_bounce_segment") || text.includes("bounce_entry") || text.includes("mirror_entry")) return "before_bounce";
@@ -10641,6 +10650,7 @@ function buildAiFallbackDiagnosticsReport(source){
     if(text.includes("before_bounce") || text.includes("pre_bounce")) return "before_bounce";
     if(text.includes("gap_entry") || (text.includes("gap") && text.includes("entry"))) return "gap_entry";
     if(text.includes("gap_exit") || (text.includes("gap") && text.includes("exit"))) return "gap_exit";
+    if(text.includes("post_gap") || text.includes("continuation") || text.includes("post_position")) return "post_gap_positioning";
     if(text.includes("final") || text.includes("approach") || text.includes("terminal") || text.includes("landing") || text.includes("target_zone")) return "final_approach";
     if(text.includes("blocked_path") || text.includes("path_blocked")) return classKey === "gap" ? "gap_entry" : "before_bounce";
     return "unknown";
@@ -10662,6 +10672,28 @@ function buildAiFallbackDiagnosticsReport(source){
     return "unknown";
   };
 
+  const normalizeSpecialRouteRejectDiagnostic = ({ routeClass, rejectReason, segmentLabel, blockingObjectType, classKeyFallback }) => {
+    const normalizedRouteClass = normalizeSpecialRouteClass(routeClass, classKeyFallback);
+    const rawReason = `${rejectReason || "unknown"}`;
+    const rawSegmentLabel = `${segmentLabel || "unknown"}`;
+    const normalizedReason = mapReasonToSpecialFailure(rawReason);
+    const normalizedSegmentFromReason = mapReasonToSegment(rawReason, normalizedRouteClass);
+    const normalizedSegmentFromLabel = mapReasonToSegment(rawSegmentLabel, normalizedRouteClass);
+    const normalizedSegment = normalizedSegmentFromReason !== "unknown"
+      ? normalizedSegmentFromReason
+      : normalizedSegmentFromLabel;
+    const normalizedBlockingObjectType = mapReasonToObject(blockingObjectType || rawReason);
+
+    return {
+      normalizedReason,
+      normalizedSegment,
+      normalizedRouteClass,
+      blockingObjectType: normalizedBlockingObjectType,
+      rawReason,
+      rawSegmentLabel,
+    };
+  };
+
   const classifyGapAfterBounceSegmentLabel = (rawSegmentLabel, rejectReason) => {
     const safeRaw = `${rawSegmentLabel || ""}`.toLowerCase();
     if(safeRaw === "after_bounce" || safeRaw === "final_approach" || safeRaw === "post_gap_positioning") return safeRaw;
@@ -10672,12 +10704,8 @@ function buildAiFallbackDiagnosticsReport(source){
     return "unknown";
   };
 
-  const shouldCountAsGapBlockedAfterBounce = (sample) => {
-    if(`${sample?.routeClass || ""}`.toLowerCase() !== "gap") return false;
-    const reason = toText(sample?.rejectReason);
-    if(reason.includes("blocked_after_bounce") || reason.includes("from_bounce_segment")) return true;
-    return mapReasonToSpecialFailure(reason) === "blocked_after_bounce";
-  };
+  const shouldCountAsGapBlockedAfterBounce = (sample) => sample?.normalizedRouteClass === "gap"
+    && (sample?.normalizedSegment === "after_bounce" || sample?.normalizedReason === "blocked_after_bounce");
 
   const getEventContextTokens = (event) => {
     const stage = toText(event?.stage);
@@ -10707,7 +10735,7 @@ function buildAiFallbackDiagnosticsReport(source){
       : {};
     const hasRejectReason = hasAnyPositiveCounter(safeRejectReasonsMap);
     const firstBlockingMap = { brick: 0, side_wall: 0, top_bottom_wall: 0, own_plane: 0, enemy_plane: 0, own_base: 0, enemy_base: 0, map_boundary: 0, unknown: 0 };
-    const blockedSegmentsMap = { before_bounce: 0, after_bounce: 0, gap_entry: 0, gap_exit: 0, final_approach: 0, unknown: 0 };
+    const blockedSegmentsMap = { before_bounce: 0, after_bounce: 0, gap_entry: 0, gap_exit: 0, final_approach: 0, post_gap_positioning: 0, unknown: 0 };
     const specialFailuresMap = { blocked_path: 0, blocked_after_bounce: 0, attempt_budget_exhausted: 0, no_gap_window: 0, invalid_bounce_geometry: 0, unsafe_after_path: 0, rejected_in_shortlist: 0, rejected_in_ranking: 0, unknown: 0 };
 
     for(const [reason, count] of Object.entries(safeRejectReasonsMap)){
@@ -10716,8 +10744,9 @@ function buildAiFallbackDiagnosticsReport(source){
 
       firstBlockingMap[mapReasonToObject(reason)] += safeCount;
       if(classKey === "gap" || classKey === "ricochet"){
-        blockedSegmentsMap[mapReasonToSegment(reason, classKey)] += safeCount;
-        specialFailuresMap[mapReasonToSpecialFailure(reason)] += safeCount;
+        const normalized = normalizeSpecialRouteRejectDiagnostic({ routeClass: classKey, rejectReason: reason, classKeyFallback: classKey });
+        blockedSegmentsMap[normalized.normalizedSegment] += safeCount;
+        specialFailuresMap[normalized.normalizedReason] += safeCount;
       }
     }
 
@@ -10994,13 +11023,24 @@ function buildAiFallbackDiagnosticsReport(source){
           .map(([reason, count]) => [reason, Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0])
           .filter(([, count]) => count > 0)
           .sort((a, b) => b[1] - a[1]);
-        if(sortedReasons.length > 0){
-          const [topReason, topCount] = sortedReasons[0];
-          const blocker = mapReasonToObject(topReason);
-          firstBlockingObjectStats[classKey][blocker] += topCount;
+        for(const [reason, reasonCount] of sortedReasons){
+          const blocker = mapReasonToObject(reason);
+          firstBlockingObjectStats[classKey][blocker] += reasonCount;
           if(classKey === "gap" || classKey === "ricochet"){
-            blockedSegmentStats[classKey][mapReasonToSegment(topReason, classKey)] += topCount;
-            specialRouteFailureStats[classKey][mapReasonToSpecialFailure(topReason)] += topCount;
+            const normalized = normalizeSpecialRouteRejectDiagnostic({
+              routeClass: classKey,
+              rejectReason: reason,
+              blockingObjectType: blocker,
+              classKeyFallback: classKey,
+            });
+            blockedSegmentStats[classKey][normalized.normalizedSegment] += reasonCount;
+            specialRouteFailureStats[classKey][normalized.normalizedReason] += reasonCount;
+            normalizedSpecialRouteRejectedAttempts.push({
+              ...normalized,
+              count: reasonCount,
+              roundNumber: Number.isFinite(event?.roundNumber) ? event.roundNumber : null,
+              goal: event?.goal || null,
+            });
           }
         }
       }
@@ -11033,8 +11073,8 @@ function buildAiFallbackDiagnosticsReport(source){
       const gapStats = coreClassStats.gap;
       const ricochetStats = coreClassStats.ricochet;
       const directTopRejectReason = getTopRejectReasonByCount(directStats.rejectReasonsMap);
-      const gapTopRejectReason = getTopRejectReasonByCount(gapStats.rejectReasonsMap);
-      const ricochetTopRejectReason = getTopRejectReasonByCount(ricochetStats.rejectReasonsMap);
+      const gapTopRejectReason = getTopNormalizedRejectReasonByCount("gap", gapStats.rejectReasonsMap)[0] || null;
+      const ricochetTopRejectReason = getTopNormalizedRejectReasonByCount("ricochet", ricochetStats.rejectReasonsMap)[0] || null;
       const allCoreValidGeneratedAreZero = directStats.valid_generated === 0
         && gapStats.valid_generated === 0
         && ricochetStats.valid_generated === 0;
@@ -11100,7 +11140,7 @@ function buildAiFallbackDiagnosticsReport(source){
 
   const aggregateAttemptedEvidence = {
     gap: (
-      hasAnyPositiveCounterByKeys(blockedSegmentStats.gap, ["before_bounce", "after_bounce", "gap_entry", "gap_exit", "final_approach"])
+      hasAnyPositiveCounterByKeys(blockedSegmentStats.gap, ["before_bounce", "after_bounce", "gap_entry", "gap_exit", "final_approach", "post_gap_positioning"])
       || hasAnyPositiveCounter(specialRouteFailureStats.gap)
       || hasEpisodeTopRejectReason("gap")
     ),
@@ -11134,7 +11174,20 @@ function buildAiFallbackDiagnosticsReport(source){
     return entries[0];
   };
 
-  const segmentKeys = ["before_bounce", "after_bounce", "gap_entry", "gap_exit", "final_approach", "unknown"];
+  function getTopNormalizedRejectReasonByCount(classKey, rejectReasonsMap){
+    const normalizedCounts = {};
+    for(const [reason, count] of Object.entries(rejectReasonsMap || {})){
+      const safeCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+      if(safeCount <= 0) continue;
+      const normalized = normalizeSpecialRouteRejectDiagnostic({ routeClass: classKey, rejectReason: reason, classKeyFallback: classKey });
+      const key = normalized.normalizedReason || "unknown";
+      normalizedCounts[key] = (normalizedCounts[key] || 0) + safeCount;
+    }
+    const entries = Object.entries(normalizedCounts).sort((a, b) => b[1] - a[1]);
+    return entries[0] && entries[0][1] > 0 ? entries[0] : ["unknown", 0];
+  }
+
+  const segmentKeys = ["before_bounce", "after_bounce", "gap_entry", "gap_exit", "final_approach", "post_gap_positioning", "unknown"];
   const specialFailureKeys = ["blocked_path", "blocked_after_bounce", "attempt_budget_exhausted", "no_gap_window", "invalid_bounce_geometry", "unsafe_after_path", "rejected_in_shortlist", "rejected_in_ranking", "unknown"];
 
   const gapTopSegmentFailure = getTopFailureKey(blockedSegmentStats.gap, segmentKeys);
@@ -11181,25 +11234,19 @@ function buildAiFallbackDiagnosticsReport(source){
   const gapAfterBounceSegmentDistribution = { after_bounce: 0, final_approach: 0, post_gap_positioning: 0, unknown: 0 };
   const gapAfterBounceReasons = {};
   const gapAfterBounceBlockingObjectTypes = {};
-  const gapAfterBounceDetailedEvents = specialRouteRejectDiagnostics
-    .filter((sample) => shouldCountAsGapBlockedAfterBounce(sample))
-    .map((sample) => {
-      const normalizedSegment = classifyGapAfterBounceSegmentLabel(sample?.segmentLabel, sample?.rejectReason);
-      return {
-        ...sample,
-        segmentLabel: normalizedSegment,
-      };
-    });
+  const gapAfterBounceDetailedEvents = normalizedSpecialRouteRejectedAttempts
+    .filter((sample) => shouldCountAsGapBlockedAfterBounce(sample));
   for(const sample of gapAfterBounceDetailedEvents){
-    const reason = `${sample?.rejectReason || "unknown"}`;
-    const objectType = `${sample?.blockingObjectType || sample?.firstBlockingObjectType || "unknown"}`;
-    const segmentLabel = `${sample?.segmentLabel || "unknown"}`;
-    gapAfterBounceReasons[reason] = (gapAfterBounceReasons[reason] || 0) + 1;
-    gapAfterBounceBlockingObjectTypes[objectType] = (gapAfterBounceBlockingObjectTypes[objectType] || 0) + 1;
+    const reason = `${sample?.normalizedReason || "unknown"}`;
+    const objectType = `${sample?.blockingObjectType || "unknown"}`;
+    const segmentLabel = `${sample?.normalizedSegment || "unknown"}`;
+    const sampleCount = Number.isFinite(sample?.count) ? Math.max(0, Math.floor(sample.count)) : 1;
+    gapAfterBounceReasons[reason] = (gapAfterBounceReasons[reason] || 0) + sampleCount;
+    gapAfterBounceBlockingObjectTypes[objectType] = (gapAfterBounceBlockingObjectTypes[objectType] || 0) + sampleCount;
     if(segmentLabel in gapAfterBounceSegmentDistribution){
-      gapAfterBounceSegmentDistribution[segmentLabel] += 1;
+      gapAfterBounceSegmentDistribution[segmentLabel] += sampleCount;
     } else {
-      gapAfterBounceSegmentDistribution.unknown += 1;
+      gapAfterBounceSegmentDistribution.unknown += sampleCount;
     }
   }
 
@@ -11209,13 +11256,17 @@ function buildAiFallbackDiagnosticsReport(source){
     .map(([key, count]) => ({ key, count }));
 
   const gapAfterBounceDetailedStats = {
-    total: gapAfterBounceDetailedEvents.length,
+    total: gapAfterBounceDetailedEvents.reduce((sum, event) => sum + (Number.isFinite(event?.count) ? Math.max(0, Math.floor(event.count)) : 1), 0),
+    sourceEventCount: normalizedSpecialRouteRejectedAttempts.reduce((sum, event) => sum + (Number.isFinite(event?.count) ? Math.max(0, Math.floor(event.count)) : 1), 0),
+    matchedBySegmentCount: gapAfterBounceDetailedEvents.reduce((sum, event) => sum + (event?.normalizedSegment === "after_bounce" ? (Number.isFinite(event?.count) ? Math.max(0, Math.floor(event.count)) : 1) : 0), 0),
+    matchedByReasonCount: gapAfterBounceDetailedEvents.reduce((sum, event) => sum + (event?.normalizedReason === "blocked_after_bounce" ? (Number.isFinite(event?.count) ? Math.max(0, Math.floor(event.count)) : 1) : 0), 0),
     topRejectReasons: topByCount(gapAfterBounceReasons, 8),
     topBlockingObjectTypes: topByCount(gapAfterBounceBlockingObjectTypes, 8),
     segmentLabelDistribution: gapAfterBounceSegmentDistribution,
+    samples: gapAfterBounceDetailedEvents.slice(-8),
   };
 
-  const gapAfterBounceSamplesCompact = gapAfterBounceDetailedEvents.slice(-8);
+  const gapAfterBounceSamplesCompact = gapAfterBounceDetailedStats.samples;
 
   const report = {
     reportType: "ai_fallback_diagnostics_report",
@@ -11235,8 +11286,10 @@ function buildAiFallbackDiagnosticsReport(source){
     summary,
   };
 
-  const gapAfterBounceDetailMismatch = (report.specialRouteFailureStats?.gap?.blocked_after_bounce || 0) > 0
-    && (report.gapAfterBounceDetailedStats?.total || 0) === 0;
+  const normalizedGapAfterBounceTotal = normalizedSpecialRouteRejectedAttempts
+    .filter((sample) => sample?.normalizedRouteClass === "gap" && (sample?.normalizedSegment === "after_bounce" || sample?.normalizedReason === "blocked_after_bounce"))
+    .reduce((sum, sample) => sum + (Number.isFinite(sample?.count) ? Math.max(0, Math.floor(sample.count)) : 1), 0);
+  const gapAfterBounceDetailMismatch = normalizedGapAfterBounceTotal !== (report.gapAfterBounceDetailedStats?.total || 0);
 
   const hasPositiveStat = (stats) => Object.values(stats || {}).some((value) => Number.isFinite(value) && value > 0);
   const hasTopRejectReasonInSamples = (classKey) => report.fallbackEpisodeSamples.some((episode) => {
@@ -11318,9 +11371,13 @@ function exportAiFallbackDiagnosticsReportJson(){
       specialRouteFailureStats: {},
       gapAfterBounceDetailedStats: {
         total: 0,
+        sourceEventCount: 0,
+        matchedBySegmentCount: 0,
+        matchedByReasonCount: 0,
         topRejectReasons: [],
         topBlockingObjectTypes: [],
         segmentLabelDistribution: { after_bounce: 0, final_approach: 0, post_gap_positioning: 0, unknown: 0 },
+        samples: [],
       },
       gapAfterBounceSamples: [],
       fallbackEpisodeSamples: [],
@@ -11357,9 +11414,13 @@ function DEBUG_AI_GAP_AFTER_BOUNCE_REPORT(){
     sourceFinishedAt: fallbackReport?.sourceFinishedAt || null,
     gapAfterBounceDetailedStats: fallbackReport?.gapAfterBounceDetailedStats || {
       total: 0,
+      sourceEventCount: 0,
+      matchedBySegmentCount: 0,
+      matchedByReasonCount: 0,
       topRejectReasons: [],
       topBlockingObjectTypes: [],
       segmentLabelDistribution: { after_bounce: 0, final_approach: 0, post_gap_positioning: 0, unknown: 0 },
+      samples: [],
     },
     gapAfterBounceSamples: Array.isArray(fallbackReport?.gapAfterBounceSamples)
       ? fallbackReport.gapAfterBounceSamples
