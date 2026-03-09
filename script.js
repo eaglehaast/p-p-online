@@ -7105,9 +7105,16 @@ const CARGO_ANIM_MS_FALLBACK = CARGO_ANIM_FRAME_DURATIONS_MS.reduce((sum, durati
 const CARGO_FADE_IN_MS_DEFAULT = 0;
 const CARGO_DIMMING_DEFAULT = 0;
 const CARGO_FADE_IN_ENABLED = true;
-const CARGO_FADE_IN_FRAMES = 5;
+const CARGO_FADE_IN_USE_LOCAL_FRAMES = true;
+const CARGO_FADE_IN_ALPHA_STEPS = [
+  0.00, // local frame 1
+  0.06, // local frame 2
+  0.15, // local frame 3
+  0.30, // local frame 4
+  0.55, // local frame 5
+  0.82, // local frame 6
+];
 const CARGO_FADE_IN_START_ALPHA = 0.45;
-const CARGO_FADE_IN_CURVE = [0.00, 0.08, 0.18, 0.32, 0.55, 0.82];
 const { img: cargoSprite } = loadImageAsset(CARGO_SPRITE_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
 const hudPlaneTimerFrames = HUD_PLANE_TIMER_FRAME_PATHS.map((path) => loadImageAsset(path, GAME_PRELOAD_LABEL, { decoding: 'async' }).img);
 const { img: hudPlaneTimerGoImage } = loadImageAsset(HUD_PLANE_TIMER_GO_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
@@ -7158,6 +7165,8 @@ function ensureCargoDebugApi(){
         lifetimeOverrideMs: cargoAnimDurationOverrideMs,
         activeLifetimeMs: resolveCargoAnimLifetimeMs(),
         fadeInMs: cargoFadeInMs,
+        fadeInUseLocalFrames: CARGO_FADE_IN_USE_LOCAL_FRAMES,
+        fadeInAlphaSteps: CARGO_FADE_IN_ALPHA_STEPS.slice(),
         dimming: cargoAnimDimming,
       };
     },
@@ -8145,32 +8154,35 @@ function getCargoEarlyFadeInAlpha(frameIndex, startIndex) {
     return 1;
   }
 
-  const fadeFrames = Math.max(0, Math.round(CARGO_FADE_IN_FRAMES));
-  if (fadeFrames <= 0) {
-    return 1;
-  }
+  const safeFrameIndex = Number.isFinite(frameIndex)
+    ? Math.max(0, Math.floor(frameIndex))
+    : Math.max(0, Math.min(cargoAnimationFrames.length - 1, CARGO_ANIM_START_INDEX));
+  const safeStartIndex = Number.isFinite(startIndex)
+    ? Math.max(0, Math.floor(startIndex))
+    : Math.max(0, Math.min(cargoAnimationFrames.length - 1, CARGO_ANIM_START_INDEX));
 
-  const relativeFrame = Math.max(0, frameIndex - startIndex);
-  if (relativeFrame >= fadeFrames) {
-    return 1;
-  }
+  const localFrameIndex = CARGO_FADE_IN_USE_LOCAL_FRAMES
+    ? Math.max(0, safeFrameIndex - safeStartIndex)
+    : safeFrameIndex;
+  const localFrameNumber = localFrameIndex + 1;
 
-  const fadeCurve = Array.isArray(CARGO_FADE_IN_CURVE)
-    ? CARGO_FADE_IN_CURVE
-    : null;
-  if (fadeCurve && fadeCurve.length > 0) {
-    const maxCurveFrames = Math.min(fadeFrames, fadeCurve.length);
-    if (relativeFrame < maxCurveFrames) {
-      const curveAlpha = Number(fadeCurve[relativeFrame]);
-      return Number.isFinite(curveAlpha)
-        ? Math.max(0, Math.min(1, curveAlpha))
-        : 1;
+  if (Array.isArray(CARGO_FADE_IN_ALPHA_STEPS) && CARGO_FADE_IN_ALPHA_STEPS.length > 0) {
+    const stepIndex = localFrameNumber - 1;
+    if (stepIndex < CARGO_FADE_IN_ALPHA_STEPS.length) {
+      const stepAlpha = Number(CARGO_FADE_IN_ALPHA_STEPS[stepIndex]);
+      if (Number.isFinite(stepAlpha)) {
+        return Math.max(0, Math.min(1, stepAlpha));
+      }
     }
     return 1;
   }
 
   const startAlpha = Math.max(0, Math.min(1, CARGO_FADE_IN_START_ALPHA));
-  const fadeProgress = (relativeFrame + 1) / fadeFrames;
+  if (localFrameNumber <= 1) {
+    return startAlpha;
+  }
+
+  const fadeProgress = Math.min(1, (localFrameNumber - 1) / 5);
   return startAlpha + (1 - startAlpha) * fadeProgress;
 }
 
