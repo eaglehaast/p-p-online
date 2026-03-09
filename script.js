@@ -20363,6 +20363,10 @@ function planPathToPoint(plane, tx, ty, options = {}){
   const isCriticalOrEmergencyStage = isEmergencyDefenseStageGoal(options?.goalName || aiRoundState?.currentGoal);
   const strictGapPathRejectStage = activeGoalName.includes("critical_base_threat")
     || activeGoalName.includes("emergency_");
+  const strictSpecialPathRejectStage = strictGapPathRejectStage
+    || activeGoalName.includes("defense")
+    || activeGoalName.includes("defence")
+    || activeGoalName.includes("override");
   const relaxedEmergencyThreshold = isCriticalOrEmergencyStage
     && (typeof options?.goalName === "string")
     && (options.goalName.includes("critical_base_threat") || options.goalName.includes("emergency_base_defense"));
@@ -20580,25 +20584,28 @@ function planPathToPoint(plane, tx, ty, options = {}){
       const candidateClass = candidateMeta?.candidateClass || meta?.candidateClass || defaultRouteClass;
       const fullPathClear = isPathClear(plane.x, plane.y, landingX, landingY);
       if(!fullPathClear){
-        let canUseGapCandidateAfterEntryCheck = false;
-        if(candidateClass === "gap" && !strictGapPathRejectStage){
-          const dx = landingX - plane.x;
-          const dy = landingY - plane.y;
-          const fullPathLength = Math.hypot(dx, dy);
-          const minEntryProbePx = CELL_SIZE * 0.2;
-          const maxEntryProbePx = CELL_SIZE * 0.6;
-          const entryProbePx = Math.max(minEntryProbePx, Math.min(maxEntryProbePx, fullPathLength * 0.2));
-          if(fullPathLength > 0.0001){
-            const entryRatio = Math.max(0, Math.min(1, entryProbePx / fullPathLength));
-            const entryX = plane.x + dx * entryRatio;
-            const entryY = plane.y + dy * entryRatio;
-            canUseGapCandidateAfterEntryCheck = isPathClear(plane.x, plane.y, entryX, entryY);
-          }
+        const dx = landingX - plane.x;
+        const dy = landingY - plane.y;
+        const fullPathLength = Math.hypot(dx, dy);
+        let canUseSpecialCandidateAfterEntryCheck = false;
+        if(!strictSpecialPathRejectStage && (candidateClass === "gap" || candidateClass === "ricochet") && fullPathLength > 0.0001){
+          const probeRatio = candidateClass === "ricochet" ? 0.34 : 0.2;
+          const minEntryProbePx = CELL_SIZE * (candidateClass === "ricochet" ? 0.3 : 0.2);
+          const maxEntryProbePx = CELL_SIZE * (candidateClass === "ricochet" ? 0.9 : 0.6);
+          const entryProbePx = Math.max(minEntryProbePx, Math.min(maxEntryProbePx, fullPathLength * probeRatio));
+          const entryRatio = Math.max(0, Math.min(1, entryProbePx / fullPathLength));
+          const entryX = plane.x + dx * entryRatio;
+          const entryY = plane.y + dy * entryRatio;
+          canUseSpecialCandidateAfterEntryCheck = isPathClear(plane.x, plane.y, entryX, entryY);
         }
-        if(!canUseGapCandidateAfterEntryCheck){
-          bestRejectCode = candidateClass === "gap"
-            ? "blocked_at_gap__gap_entry_probe_blocked"
-            : (bestRejectCode || "blocked_path__candidate_segment_blocked");
+        if(!canUseSpecialCandidateAfterEntryCheck){
+          if(candidateClass === "gap"){
+            bestRejectCode = "blocked_at_gap__gap_entry_probe_blocked";
+          } else if(candidateClass === "ricochet"){
+            bestRejectCode = "blocked_path_before_bounce__candidate_segment_blocked";
+          } else {
+            bestRejectCode = bestRejectCode || "blocked_path__candidate_segment_blocked";
+          }
           return;
         }
       }
@@ -21457,7 +21464,10 @@ function findMirrorShot(plane, enemy, options = {}){
   const isEmergencyMirrorGoal = mirrorGoalName.includes("critical_base_threat")
     || mirrorGoalName.includes("emergency_base_defense")
     || mirrorGoalName.includes("critical")
-    || mirrorGoalName.includes("emergency");
+    || mirrorGoalName.includes("emergency")
+    || mirrorGoalName.includes("defense")
+    || mirrorGoalName.includes("defence")
+    || mirrorGoalName.includes("override");
   let rejectedTooClose = false;
   let rejectedTooLong = false;
   let rejectedToBounceSegment = false;
@@ -21582,7 +21592,7 @@ function findMirrorShot(plane, enemy, options = {}){
     if(rejectedAfterBounceSegment){
       findMirrorShot.lastRejectCode = "blocked_after_bounce__from_bounce_segment_blocked";
     } else if(rejectedToBounceSegment){
-      findMirrorShot.lastRejectCode = "blocked_path__to_bounce_segment_blocked";
+      findMirrorShot.lastRejectCode = "blocked_path_before_bounce__to_bounce_segment_blocked";
     } else if(rejectedTooClose){
       findMirrorShot.lastRejectCode = "mirror_rejected_too_close__min_bounce_distance";
     } else if(rejectedTooLong){
@@ -21623,7 +21633,7 @@ function findMirrorShot(plane, enemy, options = {}){
     } else if(rejectedToBounceSegment || rejectedNoMirrorIntersection){
       logAiDecision("mirror_rejected", {
         reason: rejectedToBounceSegment
-          ? "blocked_path__to_bounce_segment_blocked"
+          ? "blocked_path_before_bounce__to_bounce_segment_blocked"
           : "blocked_path__no_mirror_intersection",
         planeId: plane?.id ?? null,
         enemyId: enemy?.id ?? null,
