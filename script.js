@@ -7107,6 +7107,7 @@ const CARGO_DIMMING_DEFAULT = 0;
 const CARGO_FADE_IN_ENABLED = true;
 const CARGO_FADE_IN_FRAMES = 5;
 const CARGO_FADE_IN_START_ALPHA = 0.45;
+const CARGO_FADE_IN_CURVE = [0.00, 0.08, 0.18, 0.32, 0.55, 0.82];
 const { img: cargoSprite } = loadImageAsset(CARGO_SPRITE_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
 const hudPlaneTimerFrames = HUD_PLANE_TIMER_FRAME_PATHS.map((path) => loadImageAsset(path, GAME_PRELOAD_LABEL, { decoding: 'async' }).img);
 const { img: hudPlaneTimerGoImage } = loadImageAsset(HUD_PLANE_TIMER_GO_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
@@ -8151,6 +8152,20 @@ function getCargoEarlyFadeInAlpha(frameIndex, startIndex) {
 
   const relativeFrame = Math.max(0, frameIndex - startIndex);
   if (relativeFrame >= fadeFrames) {
+    return 1;
+  }
+
+  const fadeCurve = Array.isArray(CARGO_FADE_IN_CURVE)
+    ? CARGO_FADE_IN_CURVE
+    : null;
+  if (fadeCurve && fadeCurve.length > 0) {
+    const maxCurveFrames = Math.min(fadeFrames, fadeCurve.length);
+    if (relativeFrame < maxCurveFrames) {
+      const curveAlpha = Number(fadeCurve[relativeFrame]);
+      return Number.isFinite(curveAlpha)
+        ? Math.max(0, Math.min(1, curveAlpha))
+        : 1;
+    }
     return 1;
   }
 
