@@ -7071,52 +7071,37 @@ const baseSprites = {
 };
 
 const CARGO_SPRITE_PATH = "ui_gamescreen/gs_cargo_box.png";
-const CARGO_ANIMATION_FRAME_COUNT = 23;
-const CARGO_ANIM_START_FRAME = 7;
+const CARGO_ANIMATION_FRAME_COUNT = 14;
 const CARGO_ANIMATION_FRAME_PATHS = Array.from({ length: CARGO_ANIMATION_FRAME_COUNT }, (_value, index) => {
   const frameNumber = String(index + 1).padStart(2, "0");
-  return `ui_gamescreen/gs_cargoanimation_23/gs_cargoanimation_${frameNumber}.png`;
+  return `ui_gamescreen/gs_cargoanimation_14/gs_cargoanimation_${frameNumber}.png`;
 });
-const CARGO_ANIM_START_INDEX = Math.max(0, Math.min(CARGO_ANIMATION_FRAME_COUNT - 1, CARGO_ANIM_START_FRAME - 1));
+const CARGO_ANIM_START_INDEX = 0;
 const CARGO_ANIM_FAST_MS = 35;
 const CARGO_ANIM_MID_MS = 29;
 const CARGO_ANIM_MEDIUM_MS = 45;
 const CARGO_ANIM_SLOW_MS = 65;
 const CARGO_ANIM_SLOWER_MS = 90;
 const CARGO_ANIM_LAND_MS = 110;
-const CARGO_ANIM_FRAME_23_MS = 65;
+const CARGO_ANIM_FINAL_FRAME_MS = 65;
 const CARGO_ANIM_LAND_REPEAT = 2;
 const CARGO_ANIM_FRAME_DURATIONS_MS = Array.from({ length: CARGO_ANIMATION_FRAME_COUNT }, (_value, index) => {
-  if (index < CARGO_ANIM_START_INDEX) return 0;
+  const localFrame = index + 1;
 
-  // Frame ranges (1-based):
-  // startFrame..10 => FAST, 11..16 => MID, 17..19 => MEDIUM, 20 => SLOW, 21 => SLOWER, 22 => LAND, 23 => FRAME_23.
-  if (index <= 9) return CARGO_ANIM_FAST_MS;
-  if (index <= 15) return CARGO_ANIM_MID_MS;
-  if (index <= 18) return CARGO_ANIM_MEDIUM_MS;
-  if (index === 19) return CARGO_ANIM_SLOW_MS;
-  if (index === 20) return CARGO_ANIM_SLOWER_MS;
-  if (index === 21) return CARGO_ANIM_LAND_MS * Math.max(1, CARGO_ANIM_LAND_REPEAT);
-  if (index === 22) return CARGO_ANIM_FRAME_23_MS;
+  // For 14 frames: 1..3 => FAST, 4..8 => MID, 9..10 => MEDIUM,
+  // 11 => SLOW, 12 => SLOWER, 13 => LAND, 14 => FINAL.
+  if (localFrame <= 3) return CARGO_ANIM_FAST_MS;
+  if (localFrame <= 8) return CARGO_ANIM_MID_MS;
+  if (localFrame <= 10) return CARGO_ANIM_MEDIUM_MS;
+  if (localFrame === 11) return CARGO_ANIM_SLOW_MS;
+  if (localFrame === 12) return CARGO_ANIM_SLOWER_MS;
+  if (localFrame === 13) return CARGO_ANIM_LAND_MS * Math.max(1, CARGO_ANIM_LAND_REPEAT);
+  if (localFrame === 14) return CARGO_ANIM_FINAL_FRAME_MS;
 
   return CARGO_ANIM_FAST_MS;
 });
 const CARGO_ANIM_MS_FALLBACK = CARGO_ANIM_FRAME_DURATIONS_MS.reduce((sum, duration) => sum + duration, 0);
-const CARGO_FADE_IN_MS_DEFAULT = 0;
 const CARGO_DIMMING_DEFAULT = 0;
-const CARGO_FADE_IN_ENABLED = true;
-const CARGO_FADE_IN_USE_LOCAL_FRAMES = true;
-const CARGO_FADE_IN_OPACITY_STEPS = [
-  0.00, // local frame 1
-  0.00, // local frame 2
-  0.08, // local frame 3
-  0.18, // local frame 4
-  0.35, // local frame 5
-  0.62, // local frame 6
-  0.85, // local frame 7
-  1.00, // local frame 8
-];
-const CARGO_FADE_IN_START_ALPHA = 0.45;
 const { img: cargoSprite } = loadImageAsset(CARGO_SPRITE_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
 const hudPlaneTimerFrames = HUD_PLANE_TIMER_FRAME_PATHS.map((path) => loadImageAsset(path, GAME_PRELOAD_LABEL, { decoding: 'async' }).img);
 const { img: hudPlaneTimerGoImage } = loadImageAsset(HUD_PLANE_TIMER_GO_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
@@ -7127,7 +7112,6 @@ const arcadeRespawnShieldImages = {
 const cargoAnimationFrames = CARGO_ANIMATION_FRAME_PATHS.map((path) => loadImageAsset(path, GAME_PRELOAD_LABEL, { decoding: 'async' }).img);
 let cargoAnimDurationMs = CARGO_ANIM_MS_FALLBACK;
 let cargoAnimDurationOverrideMs = null;
-let cargoFadeInMs = CARGO_FADE_IN_MS_DEFAULT;
 let cargoAnimDimming = CARGO_DIMMING_DEFAULT;
 
 function resolveCargoAnimLifetimeMs(){
@@ -7166,16 +7150,8 @@ function ensureCargoDebugApi(){
         baseLifetimeMs: cargoAnimDurationMs,
         lifetimeOverrideMs: cargoAnimDurationOverrideMs,
         activeLifetimeMs: resolveCargoAnimLifetimeMs(),
-        fadeInMs: cargoFadeInMs,
-        fadeInUseLocalFrames: CARGO_FADE_IN_USE_LOCAL_FRAMES,
-        fadeInOpacitySteps: CARGO_FADE_IN_OPACITY_STEPS.slice(),
         dimming: cargoAnimDimming,
       };
-    },
-    setFadeInDuration(ms = 0){
-      if(!Number.isFinite(ms)) return false;
-      cargoFadeInMs = Math.max(0, Math.round(ms));
-      return true;
     },
     setDimming(value = 0){
       if(!Number.isFinite(value)) return false;
@@ -7188,9 +7164,6 @@ function ensureCargoDebugApi(){
     clearAnimationLifetimeOverride(){
       return setCargoAnimLifetimeOverrideMs(null);
     },
-    setFadeIn(ms = 0){
-      return this.setFadeInDuration(ms);
-    },
     setLifetime(ms){
       return this.setAnimationLifetime(ms);
     },
@@ -7198,7 +7171,6 @@ function ensureCargoDebugApi(){
       return this.clearAnimationLifetimeOverride();
     },
     reset(){
-      cargoFadeInMs = CARGO_FADE_IN_MS_DEFAULT;
       cargoAnimDimming = CARGO_DIMMING_DEFAULT;
       setCargoAnimLifetimeOverrideMs(null);
       return true;
@@ -8151,43 +8123,6 @@ function getCargoAnimationFrameStateByElapsedMs(elapsedMs = 0, durationMs = CARG
   };
 }
 
-function getCargoEarlyFadeInAlpha(frameIndex, startIndex) {
-  if (!CARGO_FADE_IN_ENABLED) {
-    return 1;
-  }
-
-  const safeFrameIndex = Number.isFinite(frameIndex)
-    ? Math.max(0, Math.floor(frameIndex))
-    : Math.max(0, Math.min(cargoAnimationFrames.length - 1, CARGO_ANIM_START_INDEX));
-  const safeStartIndex = Number.isFinite(startIndex)
-    ? Math.max(0, Math.floor(startIndex))
-    : Math.max(0, Math.min(cargoAnimationFrames.length - 1, CARGO_ANIM_START_INDEX));
-
-  const localFrameIndex = CARGO_FADE_IN_USE_LOCAL_FRAMES
-    ? Math.max(0, safeFrameIndex - safeStartIndex)
-    : safeFrameIndex;
-  const localFrameNumber = localFrameIndex + 1;
-
-  if (Array.isArray(CARGO_FADE_IN_OPACITY_STEPS) && CARGO_FADE_IN_OPACITY_STEPS.length > 0) {
-    const stepIndex = localFrameNumber - 1;
-    if (stepIndex < CARGO_FADE_IN_OPACITY_STEPS.length) {
-      const stepAlpha = Number(CARGO_FADE_IN_OPACITY_STEPS[stepIndex]);
-      if (Number.isFinite(stepAlpha)) {
-        return Math.max(0, Math.min(1, stepAlpha));
-      }
-    }
-    return 1;
-  }
-
-  const startAlpha = Math.max(0, Math.min(1, CARGO_FADE_IN_START_ALPHA));
-  if (localFrameNumber <= 1) {
-    return startAlpha;
-  }
-
-  const fadeProgress = Math.min(1, (localFrameNumber - 1) / 5);
-  return startAlpha + (1 - startAlpha) * fadeProgress;
-}
-
 function getCargoAnimationBaseFrame() {
   const startIndex = Math.max(0, Math.min(cargoAnimationFrames.length - 1, CARGO_ANIM_START_INDEX));
   return getCargoAnimationFrameByIndex(startIndex);
@@ -8242,14 +8177,6 @@ function syncCargoAnimationDomEntry(cargo, metrics) {
     : resolveCargoAnimLifetimeMs();
   const activeFrameState = getCargoAnimationFrameStateByElapsedMs(elapsedMs, activeDurationMs);
   const activeFrame = activeFrameState?.frame || getCargoAnimationBaseFrame();
-  const activeFrameIndex = Number.isFinite(activeFrameState?.index)
-    ? activeFrameState.index
-    : Math.max(0, Math.min(cargoAnimationFrames.length - 1, CARGO_ANIM_START_INDEX));
-  const startFrameIndex = Number.isFinite(activeFrameState?.startIndex)
-    ? activeFrameState.startIndex
-    : Math.max(0, Math.min(cargoAnimationFrames.length - 1, CARGO_ANIM_START_INDEX));
-  const fadeInAlpha = getCargoEarlyFadeInAlpha(activeFrameIndex, startFrameIndex);
-
   if (activeFrame?.src && cargo.domEntry.img.src !== activeFrame.src) {
     cargo.domEntry.img.src = activeFrame.src;
   }
@@ -8280,7 +8207,7 @@ function syncCargoAnimationDomEntry(cargo, metrics) {
     width: '100%',
     height: '100%',
     display: 'block',
-    opacity: `${fadeInAlpha}`,
+    opacity: '1',
     filter: `brightness(${brightness})`,
     transform: 'none'
   });
