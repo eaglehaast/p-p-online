@@ -20606,7 +20606,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
     return Math.max(0, minClearance);
   }
 
-  function evaluateRouteMetrics({ landingX, landingY, distance, candidateClass = defaultRouteClass, progressMeta }){
+  function evaluateRouteMetrics({ landingX, landingY, distance, candidateClass = defaultRouteClass, progressMeta, postGapContinuation = false }){
     const safeProgressMeta = progressMeta || getAiNoticeableProgressMeta(plane.x, plane.y, landingX, landingY, tx, ty);
     const clearancePx = estimateRouteClearancePx(plane.x, plane.y, landingX, landingY);
     const nearbyCount = countRouteNearbyColliders(plane.x, plane.y, landingX, landingY, CELL_SIZE * 0.85);
@@ -20631,12 +20631,17 @@ function planPathToPoint(plane, tx, ty, options = {}){
     const maxResponseRisk = candidateClass === "ricochet"
       ? Math.min(0.97, maxResponseRiskBase + 0.12)
       : maxResponseRiskBase;
+    const isNormalModeGapPostContinuation = candidateClass === "gap"
+      && postGapContinuation
+      && !strictSpecialPathRejectStage;
     const maxCorridorTightness = candidateClass === "ricochet"
       ? 0.985
-      : (candidateClass === "gap" && !relaxedEmergencyThreshold ? 0.965 : 0.95);
+      : (candidateClass === "gap" && !relaxedEmergencyThreshold
+        ? (isNormalModeGapPostContinuation ? 0.978 : 0.965)
+        : 0.95);
     const minGapClearanceBase = relaxedEmergencyThreshold ? CELL_SIZE * 0.04 : CELL_SIZE * 0.08;
     const minGapClearance = candidateClass === "gap"
-      ? Math.max(0, minGapClearanceBase * (relaxedEmergencyThreshold ? 0.6 : 0))
+      ? Math.max(0, minGapClearanceBase * (relaxedEmergencyThreshold ? 0.6 : (isNormalModeGapPostContinuation ? 0.65 : 0)))
       : minGapClearanceBase;
 
     let rejectCode = null;
@@ -20739,6 +20744,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
       const candidateClass = candidateMeta?.candidateClass || meta?.candidateClass || defaultRouteClass;
       const fullPathClear = isPathClear(plane.x, plane.y, landingX, landingY);
+      let shouldUsePostGapContinuationTolerance = false;
       if(!fullPathClear){
         const dx = landingX - plane.x;
         const dy = landingY - plane.y;
@@ -20769,6 +20775,9 @@ function planPathToPoint(plane, tx, ty, options = {}){
           }
           return;
         }
+        if(candidateClass === "gap" && !strictSpecialPathRejectStage){
+          shouldUsePostGapContinuationTolerance = true;
+        }
       }
       const routeMetrics = evaluateRouteMetrics({
         landingX,
@@ -20776,6 +20785,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
         distance: totalDist,
         candidateClass,
         progressMeta,
+        postGapContinuation: shouldUsePostGapContinuationTolerance,
       });
       if(routeMetrics.rejectCode){
         bestRejectCode = routeMetrics.rejectCode;
