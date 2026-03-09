@@ -11583,7 +11583,7 @@ function finalizePostFlightState(){
 }
 
 function addScore(color, delta, options = {}){
-  if(isGameOver) return;
+  if(isGameOver && !awaitingFlightResolution) return;
 
   if(color === "blue"){
     const previous = blueScore;
@@ -25168,7 +25168,7 @@ function checkPlaneHits(plane, fp){
 }
 
 function handleFlagInteractions(plane){
-  if(isGameOver || !isFlagsModeEnabled()) return;
+  if((isGameOver && !awaitingFlightResolution) || !isFlagsModeEnabled()) return;
 
   const enemyColor = plane.color === "green" ? "blue" : "green";
   const availableEnemyFlags = getAvailableFlagsByColor(enemyColor);
