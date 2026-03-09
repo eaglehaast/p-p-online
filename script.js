@@ -9657,6 +9657,40 @@ function recordAiSelfAnalyzerDecision(stage, details = {}){
           disproportionality: Number.isFinite(entry?.disproportionality) ? Number(entry.disproportionality.toFixed(4)) : 0,
         }))
       : [];
+    const safeGapAfterBounceDiagnostics = Array.isArray(initialCandidateSetDiagnostics?.gapAfterBounceDiagnostics)
+      ? initialCandidateSetDiagnostics.gapAfterBounceDiagnostics
+        .slice(-20)
+        .map((entry) => {
+          const safeEntry = entry && typeof entry === "object" ? entry : {};
+          const toSafePoint = (point) => {
+            if(!point || typeof point !== "object") return null;
+            if(!Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+            return {
+              x: Number(point.x.toFixed(2)),
+              y: Number(point.y.toFixed(2)),
+            };
+          };
+          return {
+            routeClass: `${safeEntry.routeClass || "gap"}`,
+            roundNumber: Number.isFinite(safeEntry.roundNumber) ? Math.max(0, Math.floor(safeEntry.roundNumber)) : null,
+            stage: safeEntry.stage || null,
+            goal: safeEntry.goal || null,
+            planeId: safeEntry.planeId || null,
+            secondSegmentStart: toSafePoint(safeEntry.secondSegmentStart),
+            secondSegmentEnd: toSafePoint(safeEntry.secondSegmentEnd),
+            bouncePoint: toSafePoint(safeEntry.bouncePoint),
+            rejectReason: safeEntry.rejectReason || "unknown",
+            firstBlockingObjectType: safeEntry.firstBlockingObjectType || "unknown",
+            firstBlockingObjectId: safeEntry.firstBlockingObjectId || null,
+            distanceFromSecondSegmentStartToBlockingPoint: Number.isFinite(safeEntry.distanceFromSecondSegmentStartToBlockingPoint)
+              ? Number(safeEntry.distanceFromSecondSegmentStartToBlockingPoint.toFixed(2))
+              : null,
+            segmentLabel: safeEntry.segmentLabel || "unknown",
+            candidateSafetyRiskSummary: safeEntry.candidateSafetyRiskSummary || null,
+            passedFirstSegment: safeEntry.passedFirstSegment === true,
+          };
+        })
+      : [];
 
     event.initialCandidateSetDiagnostics = {
       directCount: Number.isFinite(directCount) ? Math.max(0, Math.floor(directCount)) : 0,
@@ -9667,6 +9701,7 @@ function recordAiSelfAnalyzerDecision(stage, details = {}){
       hasRicochet: Boolean(initialCandidateSetDiagnostics.hasRicochet),
       goalName: initialCandidateSetDiagnostics.goalName || null,
       shortlistDiagnostics: safeShortlistDiagnostics,
+      gapAfterBounceDiagnostics: safeGapAfterBounceDiagnostics,
       disproportionateShortlistRejectReasons: safeDisproportionateReasons,
     };
   }
@@ -10577,6 +10612,7 @@ function buildAiFallbackDiagnosticsReport(source){
   };
 
   const fallbackEpisodes = [];
+  const gapAfterBounceSamples = [];
 
   const toText = (value) => `${value || ""}`.toLowerCase();
   const hasAnyToken = (items, tokens) => items.some((item) => tokens.some((token) => item.includes(token)));
@@ -10843,6 +10879,32 @@ function buildAiFallbackDiagnosticsReport(source){
     const eventTokens = getEventContextTokens(event);
 
     if(diagnostics && typeof diagnostics === "object"){
+      const gapAfterBounceDiagnostics = Array.isArray(diagnostics?.gapAfterBounceDiagnostics)
+        ? diagnostics.gapAfterBounceDiagnostics
+        : [];
+      for(const sample of gapAfterBounceDiagnostics){
+        if(!sample || typeof sample !== "object") continue;
+        gapAfterBounceSamples.push({
+          routeClass: `${sample.routeClass || "gap"}`,
+          roundNumber: Number.isFinite(sample.roundNumber) ? sample.roundNumber : (Number.isFinite(event?.roundNumber) ? event.roundNumber : null),
+          stage: sample.stage || event?.stage || null,
+          goal: sample.goal || event?.goal || null,
+          planeId: sample.planeId || null,
+          secondSegmentStart: sample.secondSegmentStart || null,
+          secondSegmentEnd: sample.secondSegmentEnd || null,
+          bouncePoint: sample.bouncePoint || null,
+          rejectReason: sample.rejectReason || "unknown",
+          firstBlockingObjectType: sample.firstBlockingObjectType || "unknown",
+          firstBlockingObjectId: sample.firstBlockingObjectId || null,
+          distanceFromSecondSegmentStartToBlockingPoint: Number.isFinite(sample.distanceFromSecondSegmentStartToBlockingPoint)
+            ? Number(sample.distanceFromSecondSegmentStartToBlockingPoint)
+            : null,
+          segmentLabel: sample.segmentLabel || "unknown",
+          candidateSafetyRiskSummary: sample.candidateSafetyRiskSummary || null,
+          passedFirstSegment: sample.passedFirstSegment === true,
+        });
+      }
+
       for(const classKey of routeClasses){
         const shortlistMeta = getShortlistMeta(shortlist, classKey);
         const validGenerated = Math.max(0, Number(shortlistMeta.initialReachable) || 0);
@@ -11080,6 +11142,35 @@ function buildAiFallbackDiagnosticsReport(source){
   ];
 
   const fallbackEpisodeSamples = fallbackEpisodes.slice(-6);
+  const gapAfterBounceSegmentDistribution = { after_bounce: 0, final_approach: 0, post_gap_positioning: 0, unknown: 0 };
+  const gapAfterBounceReasons = {};
+  const gapAfterBounceBlockingObjectTypes = {};
+  for(const sample of gapAfterBounceSamples){
+    const reason = `${sample?.rejectReason || "unknown"}`;
+    const objectType = `${sample?.firstBlockingObjectType || "unknown"}`;
+    const segmentLabel = `${sample?.segmentLabel || "unknown"}`;
+    gapAfterBounceReasons[reason] = (gapAfterBounceReasons[reason] || 0) + 1;
+    gapAfterBounceBlockingObjectTypes[objectType] = (gapAfterBounceBlockingObjectTypes[objectType] || 0) + 1;
+    if(segmentLabel in gapAfterBounceSegmentDistribution){
+      gapAfterBounceSegmentDistribution[segmentLabel] += 1;
+    } else {
+      gapAfterBounceSegmentDistribution.unknown += 1;
+    }
+  }
+
+  const topByCount = (statsMap, limit = 5) => Object.entries(statsMap || {})
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([key, count]) => ({ key, count }));
+
+  const gapAfterBounceDetailedStats = {
+    total: gapAfterBounceSamples.length,
+    topRejectReasons: topByCount(gapAfterBounceReasons, 8),
+    topBlockingObjectTypes: topByCount(gapAfterBounceBlockingObjectTypes, 8),
+    segmentLabelDistribution: gapAfterBounceSegmentDistribution,
+  };
+
+  const gapAfterBounceSamplesCompact = gapAfterBounceSamples.slice(-8);
 
   const report = {
     reportType: "ai_fallback_diagnostics_report",
@@ -11093,6 +11184,8 @@ function buildAiFallbackDiagnosticsReport(source){
     blockedSegmentStats,
     specialRouteFailureStats,
     specialRouteProgressStats,
+    gapAfterBounceDetailedStats,
+    gapAfterBounceSamples: gapAfterBounceSamplesCompact,
     fallbackEpisodeSamples,
     summary,
   };
@@ -11174,6 +11267,13 @@ function exportAiFallbackDiagnosticsReportJson(){
       firstBlockingObjectStats: {},
       blockedSegmentStats: {},
       specialRouteFailureStats: {},
+      gapAfterBounceDetailedStats: {
+        total: 0,
+        topRejectReasons: [],
+        topBlockingObjectTypes: [],
+        segmentLabelDistribution: { after_bounce: 0, final_approach: 0, post_gap_positioning: 0, unknown: 0 },
+      },
+      gapAfterBounceSamples: [],
       fallbackEpisodeSamples: [],
       summary: ["Недостаточно данных для отчёта."],
     };
@@ -11197,6 +11297,26 @@ function exportAiFallbackDiagnosticsReportJson(){
   URL.revokeObjectURL(url);
 
   return report;
+}
+
+function DEBUG_AI_GAP_AFTER_BOUNCE_REPORT(){
+  const fallbackReport = exportAiFallbackDiagnosticsReportJson();
+  const compact = {
+    reportType: "ai_gap_after_bounce_report",
+    generatedAt: fallbackReport?.generatedAt || safeNowIso(),
+    sourceStartedAt: fallbackReport?.sourceStartedAt || null,
+    sourceFinishedAt: fallbackReport?.sourceFinishedAt || null,
+    gapAfterBounceDetailedStats: fallbackReport?.gapAfterBounceDetailedStats || {
+      total: 0,
+      topRejectReasons: [],
+      topBlockingObjectTypes: [],
+      segmentLabelDistribution: { after_bounce: 0, final_approach: 0, post_gap_positioning: 0, unknown: 0 },
+    },
+    gapAfterBounceSamples: Array.isArray(fallbackReport?.gapAfterBounceSamples)
+      ? fallbackReport.gapAfterBounceSamples
+      : [],
+  };
+  return compact;
 }
 
 function exportAiSelfAnalyzerGapJson(){
@@ -11463,8 +11583,11 @@ function AI_DEBUG_CMD(command, arg){
   if(normalized === "fallback-report"){
     return exportAiFallbackDiagnosticsReportJson();
   }
+  if(normalized === "gap-after-bounce-report"){
+    return DEBUG_AI_GAP_AFTER_BOUNCE_REPORT();
+  }
 
-  console.info('[AI_DEBUG] Неизвестная команда. Доступно: "snapshot", "last-decisions", "status", "reset-cargo", "fallback-report".');
+  console.info('[AI_DEBUG] Неизвестная команда. Доступно: "snapshot", "last-decisions", "status", "reset-cargo", "fallback-report", "gap-after-bounce-report".');
   return null;
 }
 
@@ -11474,6 +11597,7 @@ if(typeof window !== "undefined"){
   window.exportAiSelfAnalyzerGapJson = exportAiSelfAnalyzerGapJson;
   window.exportPlayerVsAiGapReportJson = exportPlayerVsAiGapReportJson;
   window.exportAiFallbackDiagnosticsReportJson = exportAiFallbackDiagnosticsReportJson;
+  window.DEBUG_AI_GAP_AFTER_BOUNCE_REPORT = DEBUG_AI_GAP_AFTER_BOUNCE_REPORT;
   window.getAiSelfAnalyzerSnapshot = getAiSelfAnalyzerSnapshot;
   window.AI_DEBUG_CMD = AI_DEBUG_CMD;
   window.RESET_CARGO = forceResetCargoNow;
@@ -17644,6 +17768,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
       preValidationReasons: {},
       validationRejected: 0,
       validationReasons: {},
+      afterBounceRejectSamples: [],
       accepted: 0,
       attemptBudget: gapAttemptBudget,
     },
@@ -17662,6 +17787,44 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     if(!target || typeof target !== "object") return;
     const key = `${reason || "unknown"}`;
     target[key] = (target[key] || 0) + 1;
+  }
+
+  function toSafePoint(point){
+    if(!point || typeof point !== "object") return null;
+    if(!Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+    return {
+      x: Number(point.x.toFixed(2)),
+      y: Number(point.y.toFixed(2)),
+    };
+  }
+
+  function toSafeDistance(value){
+    return Number.isFinite(value) ? Number(value.toFixed(2)) : null;
+  }
+
+  function pushGapAfterBounceRejectSample(rawMeta, context = {}){
+    if(!rawMeta || typeof rawMeta !== "object") return;
+    const sample = {
+      routeClass: "gap",
+      roundNumber: Number.isFinite(roundNumber) ? roundNumber : null,
+      stage: options?.decisionReason || null,
+      goal: options?.goalName || null,
+      planeId: context?.planeId ?? null,
+      secondSegmentStart: toSafePoint(rawMeta.secondSegmentStart),
+      secondSegmentEnd: toSafePoint(rawMeta.secondSegmentEnd),
+      bouncePoint: toSafePoint(rawMeta.bouncePoint),
+      rejectReason: rawMeta.rejectReason || "blocked_after_bounce__from_bounce_segment_blocked",
+      firstBlockingObjectType: rawMeta.firstBlockingObjectType || "unknown",
+      firstBlockingObjectId: rawMeta.firstBlockingObjectId || null,
+      distanceFromSecondSegmentStartToBlockingPoint: toSafeDistance(rawMeta.distanceFromSecondSegmentStartToBlockingPoint),
+      segmentLabel: rawMeta.segmentLabel || "after_bounce",
+      candidateSafetyRiskSummary: rawMeta.candidateSafetyRiskSummary || null,
+      passedFirstSegment: true,
+    };
+    candidateTypeDiagnostics.gap.afterBounceRejectSamples.push(sample);
+    if(candidateTypeDiagnostics.gap.afterBounceRejectSamples.length > 24){
+      candidateTypeDiagnostics.gap.afterBounceRejectSamples.shift();
+    }
   }
 
   function mergeReasonMaps(...maps){
@@ -17892,6 +18055,11 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     if(!move){
       candidateTypeDiagnostics.gap.validationRejected += 1;
       addRejectReason(candidateTypeDiagnostics.gap.validationReasons, planPathToPoint.lastRejectCode || "validation_failed");
+      if(planPathToPoint.lastRejectMeta && planPathToPoint.lastRejectMeta.passedFirstSegment === true){
+        pushGapAfterBounceRejectSample(planPathToPoint.lastRejectMeta, {
+          planeId: plane?.id ?? null,
+        });
+      }
       continue;
     }
     const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
@@ -18127,6 +18295,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     candidateTypeDiagnostics,
     shortlistDiagnostics,
     routeClassRejectDiagnostics,
+    gapAfterBounceDiagnostics: candidateTypeDiagnostics.gap.afterBounceRejectSamples.slice(-20),
     disproportionateShortlistRejectReasons,
     zeroCandidateReasons: {
       direct: trimmedDirectCandidates.length > 0 ? [] : [
@@ -21602,6 +21771,7 @@ function findMirrorShot(plane, enemy, options = {}){
     || mirrorGoalName.includes("defence")
     || mirrorGoalName.includes("override");
   const allowNormalModeFirstSegmentRelaxation = options?.allowNormalModeFirstSegmentRelaxation !== false;
+  findMirrorShot.lastRejectMeta = null;
   let rejectedTooClose = false;
   let rejectedTooLong = false;
   let rejectedToBounceSegment = false;
@@ -21656,6 +21826,80 @@ function findMirrorShot(plane, enemy, options = {}){
     return pathMeta.isFieldBorder
       ? isPathClear(relaxedFromX, relaxedFromY, relaxedToX, relaxedToY)
       : isPathClearExceptEdge(relaxedFromX, relaxedFromY, relaxedToX, relaxedToY, pathMeta.collider, pathMeta.ignoreEdge);
+  };
+
+  const classifyBlockingObjectType = (surface) => {
+    if(!surface || typeof surface !== "object") return "unknown";
+    if(surface.type === "field"){
+      if(surface.id === "field-border-top" || surface.id === "field-border-bottom") return "top_bottom_wall";
+      if(surface.id === "field-border-left" || surface.id === "field-border-right") return "side_wall";
+      return "map_boundary";
+    }
+    if(surface.type === "axis" || surface.type === "diag") return "brick";
+    return "unknown";
+  };
+
+  const getFirstBlockingMetaOnSegment = (fromX, fromY, toX, toY, pathMeta) => {
+    const segmentDx = toX - fromX;
+    const segmentDy = toY - fromY;
+    const segmentLen = Math.hypot(segmentDx, segmentDy);
+    if(segmentLen <= 1e-6) return null;
+
+    const probeEdges = [];
+    for(const candidateCollider of colliders){
+      const edges = getColliderEdges(candidateCollider, POINT_RADIUS);
+      for(const edge of edges){
+        if(pathMeta && pathMeta.ignoreEdge && edge.colliderId === pathMeta.ignoreEdge.colliderId && edge.edgeIndex === pathMeta.ignoreEdge.edgeIndex){
+          continue;
+        }
+        probeEdges.push({
+          x1: edge.x1,
+          y1: edge.y1,
+          x2: edge.x2,
+          y2: edge.y2,
+          surface: {
+            type: edge.kind === "V" || edge.kind === "H" ? "axis" : "diag",
+            colliderId: candidateCollider.id,
+            id: `${candidateCollider.id}-edge-${edge.edgeIndex}`,
+          },
+        });
+      }
+    }
+
+    for(const border of buildFieldBorderSurfaces()){
+      probeEdges.push({
+        x1: border.p1.x,
+        y1: border.p1.y,
+        x2: border.p2.x,
+        y2: border.p2.y,
+        surface: {
+          type: "field",
+          id: border.id,
+        },
+      });
+    }
+
+    let bestHit = null;
+    for(const edge of probeEdges){
+      const inter = lineSegmentIntersection(fromX, fromY, toX, toY, edge.x1, edge.y1, edge.x2, edge.y2);
+      if(!inter) continue;
+      const hitDist = Math.hypot(inter.x - fromX, inter.y - fromY);
+      if(hitDist <= 1e-6 || hitDist > segmentLen + 1e-6) continue;
+      if(!bestHit || hitDist < bestHit.distance){
+        bestHit = {
+          distance: hitDist,
+          point: inter,
+          surface: edge.surface,
+        };
+      }
+    }
+
+    if(!bestHit) return null;
+    return {
+      firstBlockingObjectType: classifyBlockingObjectType(bestHit.surface),
+      firstBlockingObjectId: bestHit.surface?.colliderId || bestHit.surface?.id || null,
+      distanceFromSecondSegmentStartToBlockingPoint: Number(bestHit.distance.toFixed(2)),
+    };
   };
 
   const mirrorEdges = [];
@@ -21766,6 +22010,26 @@ function findMirrorShot(plane, enemy, options = {}){
     });
     if(!pathClearFromBounce){
       rejectedAfterBounceSegment = true;
+      const blockingMeta = getFirstBlockingMetaOnSegment(inter.x, inter.y, enemy.x, enemy.y, {
+        isFieldBorder,
+        collider,
+        ignoreEdge,
+      }) || {};
+      findMirrorShot.lastRejectMeta = {
+        routeClass: "gap",
+        secondSegmentStart: { x: inter.x, y: inter.y },
+        secondSegmentEnd: { x: enemy.x, y: enemy.y },
+        bouncePoint: { x: inter.x, y: inter.y },
+        rejectReason: "blocked_after_bounce__from_bounce_segment_blocked",
+        firstBlockingObjectType: blockingMeta.firstBlockingObjectType || "unknown",
+        firstBlockingObjectId: blockingMeta.firstBlockingObjectId || null,
+        distanceFromSecondSegmentStartToBlockingPoint: Number.isFinite(blockingMeta.distanceFromSecondSegmentStartToBlockingPoint)
+          ? blockingMeta.distanceFromSecondSegmentStartToBlockingPoint
+          : null,
+        segmentLabel: "after_bounce",
+        candidateSafetyRiskSummary: null,
+        passedFirstSegment: true,
+      };
       continue;
     }
 
@@ -21802,6 +22066,7 @@ function findMirrorShot(plane, enemy, options = {}){
     }
   } else {
     findMirrorShot.lastRejectCode = null;
+    findMirrorShot.lastRejectMeta = null;
   }
 
   if(!best && options.logReject){
