@@ -20635,8 +20635,10 @@ function planPathToPoint(plane, tx, ty, options = {}){
         const dx = landingX - plane.x;
         const dy = landingY - plane.y;
         const fullPathLength = Math.hypot(dx, dy);
+        const isRelaxedSpecialFirstSegment = !strictSpecialPathRejectStage
+          && (candidateClass === "gap" || candidateClass === "ricochet");
         let canUseSpecialCandidateAfterEntryCheck = false;
-        if(!strictSpecialPathRejectStage && (candidateClass === "gap" || candidateClass === "ricochet") && fullPathLength > 0.0001){
+        if(isRelaxedSpecialFirstSegment && fullPathLength > 0.0001){
           const probeRatio = candidateClass === "ricochet" ? 0.34 : 0.2;
           const minEntryProbePx = CELL_SIZE * (candidateClass === "ricochet" ? 0.3 : 0.2);
           const maxEntryProbePx = CELL_SIZE * (candidateClass === "ricochet" ? 0.9 : 0.6);
@@ -20645,6 +20647,9 @@ function planPathToPoint(plane, tx, ty, options = {}){
           const entryX = plane.x + dx * entryRatio;
           const entryY = plane.y + dy * entryRatio;
           canUseSpecialCandidateAfterEntryCheck = isPathClear(plane.x, plane.y, entryX, entryY);
+          if(!canUseSpecialCandidateAfterEntryCheck && candidateClass === "gap"){
+            canUseSpecialCandidateAfterEntryCheck = true;
+          }
         }
         if(!canUseSpecialCandidateAfterEntryCheck){
           if(candidateClass === "gap"){
@@ -21522,7 +21527,7 @@ function findMirrorShot(plane, enemy, options = {}){
   let rejectedAfterBounceSegment = false;
   let rejectedNoMirrorIntersection = false;
 
-  const firstSegmentTouchTolerance = isEmergencyMirrorGoal ? 0 : 0.6;
+  const firstSegmentTouchTolerance = isEmergencyMirrorGoal ? 0 : Math.max(0.6, CELL_SIZE * 0.35);
   const secondSegmentTouchTolerance = isEmergencyMirrorGoal ? 0 : 0.6;
   const isSecondSegmentClear = (fromX, fromY, toX, toY, pathMeta) => {
     const strictClear = pathMeta.isFieldBorder
