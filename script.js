@@ -11088,6 +11088,27 @@ function buildAiFallbackDiagnosticsReport(source){
   const gapTopSpecialFailure = getTopFailureKey(specialRouteFailureStats.gap, specialFailureKeys);
   const ricochetTopSpecialFailure = getTopFailureKey(specialRouteFailureStats.ricochet, specialFailureKeys);
 
+  const specialRouteProgressStats = {
+    gap: {
+      rejected_before_bounce: Math.max(0, Number(blockedSegmentStats.gap.before_bounce) || 0),
+      reached_valid_generated: Math.max(0, Number(candidateFunnelStats.gap.valid_generated) || 0),
+      rejected_after_before_bounce: Math.max(0,
+        (Math.max(0, Number(candidateFunnelStats.gap.raw_attempted) || 0)
+          - (Math.max(0, Number(blockedSegmentStats.gap.before_bounce) || 0)
+            + Math.max(0, Number(candidateFunnelStats.gap.valid_generated) || 0)))
+      ),
+    },
+    ricochet: {
+      rejected_before_bounce: Math.max(0, Number(blockedSegmentStats.ricochet.before_bounce) || 0),
+      reached_valid_generated: Math.max(0, Number(candidateFunnelStats.ricochet.valid_generated) || 0),
+      rejected_after_before_bounce: Math.max(0,
+        (Math.max(0, Number(candidateFunnelStats.ricochet.raw_attempted) || 0)
+          - (Math.max(0, Number(blockedSegmentStats.ricochet.before_bounce) || 0)
+            + Math.max(0, Number(candidateFunnelStats.ricochet.valid_generated) || 0)))
+      ),
+    },
+  };
+
   const summary = [
     `Всего fallback-эпизодов: ${totalFallbackEpisodes}.`,
     `Самая частая корневая причина: ${topRootCause[0]} (${topRootCause[1]}).`,
@@ -11098,6 +11119,8 @@ function buildAiFallbackDiagnosticsReport(source){
     `Ricochet ломается на сегменте: ${ricochetTopSegmentFailure[0]} (count=${ricochetTopSegmentFailure[1]}).`,
     `Gap special failure: ${gapTopSpecialFailure[0]} (count=${gapTopSpecialFailure[1]}).`,
     `Ricochet special failure: ${ricochetTopSpecialFailure[0]} (count=${ricochetTopSpecialFailure[1]}).`,
+    `Gap progress: before_bounce_rejected=${specialRouteProgressStats.gap.rejected_before_bounce}, valid_generated=${specialRouteProgressStats.gap.reached_valid_generated}, rejected_later=${specialRouteProgressStats.gap.rejected_after_before_bounce}.`,
+    `Ricochet progress: before_bounce_rejected=${specialRouteProgressStats.ricochet.rejected_before_bounce}, valid_generated=${specialRouteProgressStats.ricochet.reached_valid_generated}, rejected_later=${specialRouteProgressStats.ricochet.rejected_after_before_bounce}.`,
   ];
 
   const fallbackEpisodeSamples = fallbackEpisodes.slice(-6);
@@ -11113,6 +11136,7 @@ function buildAiFallbackDiagnosticsReport(source){
     firstBlockingObjectStats,
     blockedSegmentStats,
     specialRouteFailureStats,
+    specialRouteProgressStats,
     fallbackEpisodeSamples,
     summary,
   };
@@ -21197,6 +21221,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       pressureBoost: mirrorPressureBoost,
       diagnostics: true,
       goalName: options?.goalName || "",
+      allowNormalModeFirstSegmentRelaxation: !strictSpecialPathRejectStage,
     });
     if(mirror){
       const dx = mirror.mirrorTarget.x - plane.x;
@@ -21241,6 +21266,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       maxPathRatioBonus: 0.12,
       stuckMirrorRelaxation: true,
       goalName: options?.goalName || "",
+      allowNormalModeFirstSegmentRelaxation: !strictSpecialPathRejectStage,
     });
     if(stuckRecoveryMirror){
       const dx = stuckRecoveryMirror.mirrorTarget.x - plane.x;
@@ -21605,6 +21631,7 @@ function findMirrorShot(plane, enemy, options = {}){
     || mirrorGoalName.includes("defense")
     || mirrorGoalName.includes("defence")
     || mirrorGoalName.includes("override");
+  const allowNormalModeFirstSegmentRelaxation = options?.allowNormalModeFirstSegmentRelaxation !== false;
   let rejectedTooClose = false;
   let rejectedTooLong = false;
   let rejectedToBounceSegment = false;
@@ -21692,7 +21719,23 @@ function findMirrorShot(plane, enemy, options = {}){
             : isPathClearExceptEdge(shiftedPlaneX, shiftedPlaneY, inter.x, inter.y, collider, ignoreEdge);
         })()
       : false;
-    const pathClearToBounce = pathClearToBounceStrict || pathClearToBounceSoft;
+    const pathClearToBounceRelaxed = !pathClearToBounceStrict
+      && !pathClearToBounceSoft
+      && allowNormalModeFirstSegmentRelaxation
+      && !isEmergencyMirrorGoal
+      && Number.isFinite(firstLegDist)
+      && firstLegDist > 0.0001
+      ? (() => {
+          const relaxedStartOffset = Math.min(firstLegDist * 0.45, Math.max(CELL_SIZE * 0.95, firstSegmentTouchTolerance));
+          if(relaxedStartOffset <= firstSegmentTouchTolerance + 0.0001) return false;
+          const shiftedPlaneX = plane.x + (firstLegDx / firstLegDist) * relaxedStartOffset;
+          const shiftedPlaneY = plane.y + (firstLegDy / firstLegDist) * relaxedStartOffset;
+          return isFieldBorder
+            ? isPathClear(shiftedPlaneX, shiftedPlaneY, inter.x, inter.y)
+            : isPathClearExceptEdge(shiftedPlaneX, shiftedPlaneY, inter.x, inter.y, collider, ignoreEdge);
+        })()
+      : false;
+    const pathClearToBounce = pathClearToBounceStrict || pathClearToBounceSoft || pathClearToBounceRelaxed;
     if(!pathClearToBounce){
       rejectedToBounceSegment = true;
       continue;
