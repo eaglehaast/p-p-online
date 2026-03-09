@@ -7764,6 +7764,21 @@ const CARGO_LANDING_SETTLE_ENABLED = true;
 const CARGO_LANDING_BOUNCE_PX = 0.8;
 const CARGO_LANDING_PHASE1_MS = 55;
 const CARGO_LANDING_PHASE2_MS = 55;
+const CARGO_SHADOW_ENABLED = true;
+const CARGO_SHADOW_START_ALPHA = 0.11;
+const CARGO_SHADOW_END_ALPHA = 0.22;
+const CARGO_SHADOW_START_SCALE = 0.45;
+const CARGO_SHADOW_END_SCALE = 0.85;
+const CARGO_SHADOW_LAND_SPREAD_ENABLED = true;
+const CARGO_SHADOW_LAND_SPREAD_AMOUNT = 0.08;
+const CARGO_SHADOW_LAND_SPREAD_DURATION = 90;
+const CARGO_ROTATION_ENABLED = true;
+const CARGO_ROTATION_MAX_DEG = 1;
+const CARGO_ROTATION_SPEED = 4.2;
+const CARGO_ROTATION_FADE_OUT_NEAR_LAND = 0.72;
+const CARGO_HIGHLIGHT_ENABLED = true;
+const CARGO_HIGHLIGHT_DURATION = 90;
+const CARGO_HIGHLIGHT_INTENSITY = 0.08;
 const FLAG_INTERACTION_RADIUS = 25;  // px
 const BASE_INTERACTION_RADIUS = 40;  // px
 const SLIDE_THRESHOLD      = 0.1;
@@ -8208,6 +8223,7 @@ function syncCargoAnimationDomEntry(cargo, metrics) {
     ? activeFrameState.startIndex
     : Math.max(0, Math.min(cargoAnimationFrames.length - 1, CARGO_ANIM_START_INDEX));
   const fadeInAlpha = getCargoEarlyFadeInAlpha(activeFrameIndex, startFrameIndex);
+  const progress = Math.max(0, Math.min(1, elapsedMs / Math.max(1, activeDurationMs)));
 
   if (activeFrame?.src && cargo.domEntry.img.src !== activeFrame.src) {
     cargo.domEntry.img.src = activeFrame.src;
@@ -8232,6 +8248,16 @@ function syncCargoAnimationDomEntry(cargo, metrics) {
   });
 
   const brightness = Math.max(0, 1 - clampCargoDimming(cargoAnimDimming));
+  let rotationDeg = 0;
+  if (CARGO_ROTATION_ENABLED) {
+    const maxDeg = Math.max(0, CARGO_ROTATION_MAX_DEG);
+    const speed = Math.max(0, CARGO_ROTATION_SPEED);
+    const fadeStart = Math.max(0, Math.min(1, CARGO_ROTATION_FADE_OUT_NEAR_LAND));
+    const fadeOutT = progress <= fadeStart
+      ? 1
+      : Math.max(0, Math.min(1, 1 - (progress - fadeStart) / Math.max(0.0001, 1 - fadeStart)));
+    rotationDeg = Math.sin(elapsedMs * 0.001 * speed * Math.PI * 2) * maxDeg * fadeOutT;
+  }
 
   Object.assign(cargo.domEntry.img.style, {
     position: 'relative',
@@ -8240,7 +8266,9 @@ function syncCargoAnimationDomEntry(cargo, metrics) {
     height: '100%',
     display: 'block',
     opacity: `${fadeInAlpha}`,
-    filter: `brightness(${brightness})`
+    filter: `brightness(${brightness})`,
+    transformOrigin: '50% 85%',
+    transform: `rotate(${rotationDeg}deg)`
   });
 }
 
@@ -8525,18 +8553,89 @@ function getCargoLandingSettleYOffset(cargo, now = performance.now()){
     : 0;
 }
 
+function getCargoFallProgress(cargo, now = performance.now()) {
+  if (cargo?.state !== 'animating') {
+    return 1;
+  }
+  const duration = Number.isFinite(cargo.animDurationMs) ? cargo.animDurationMs : CARGO_ANIM_MS_FALLBACK;
+  return Math.max(0, Math.min(1, (now - (cargo.animStartedAt || 0)) / Math.max(1, duration)));
+}
+
+function getCargoShadowState(cargo, now = performance.now()) {
+  if (!CARGO_SHADOW_ENABLED) {
+    return null;
+  }
+
+  const startAlpha = Math.max(0, Math.min(1, CARGO_SHADOW_START_ALPHA));
+  const endAlpha = Math.max(0, Math.min(1, CARGO_SHADOW_END_ALPHA));
+  const startScale = Math.max(0, CARGO_SHADOW_START_SCALE);
+  const endScale = Math.max(0, CARGO_SHADOW_END_SCALE);
+  const progress = getCargoFallProgress(cargo, now);
+
+  let alpha = lerp(startAlpha, endAlpha, progress);
+  let scale = lerp(startScale, endScale, progress);
+
+  if (CARGO_SHADOW_LAND_SPREAD_ENABLED && cargo?.state === 'ready' && Number.isFinite(cargo.landingSettledAt)) {
+    const spreadDuration = Math.max(1, CARGO_SHADOW_LAND_SPREAD_DURATION);
+    const spreadElapsed = Math.max(0, now - cargo.landingSettledAt);
+    if (spreadElapsed < spreadDuration) {
+      const spreadStrength = 1 - spreadElapsed / spreadDuration;
+      scale += Math.max(0, CARGO_SHADOW_LAND_SPREAD_AMOUNT) * spreadStrength;
+    }
+  }
+
+  return { alpha, scale };
+}
+
+function drawCargoShadow(ctx2d, cargo, now = performance.now()) {
+  const shadow = getCargoShadowState(cargo, now);
+  if (!shadow) {
+    return;
+  }
+
+  const { width, height } = getCargoSpriteDrawSize();
+  const shadowWidth = Math.max(1, width * shadow.scale);
+  const shadowHeight = Math.max(1, height * 0.2 * shadow.scale);
+  const centerX = cargo.x + width * 0.5;
+  const centerY = cargo.y + height * 0.9;
+
+  ctx2d.save();
+  ctx2d.fillStyle = `rgba(0, 0, 0, ${Math.max(0, Math.min(1, shadow.alpha))})`;
+  ctx2d.beginPath();
+  ctx2d.ellipse(centerX, centerY, shadowWidth * 0.5, shadowHeight * 0.5, 0, 0, Math.PI * 2);
+  ctx2d.fill();
+  ctx2d.restore();
+}
+
+function getCargoHighlightBoost(cargo, now = performance.now()) {
+  if (!CARGO_HIGHLIGHT_ENABLED || cargo?.state !== 'ready' || !Number.isFinite(cargo.landingSettledAt)) {
+    return 0;
+  }
+  const duration = Math.max(1, CARGO_HIGHLIGHT_DURATION);
+  const elapsed = Math.max(0, now - cargo.landingSettledAt);
+  if (elapsed >= duration) {
+    return 0;
+  }
+  const progress = 1 - elapsed / duration;
+  return Math.max(0, CARGO_HIGHLIGHT_INTENSITY) * progress;
+}
+
 function drawCargo(ctx2d){
   if(cargoState.length === 0) return;
   const canDrawCargoBox = isSpriteReady(cargoSprite);
   const now = performance.now();
 
   for(const cargo of cargoState){
+    drawCargoShadow(ctx2d, cargo, now);
+
     if(cargo.state === "ready" && canDrawCargoBox){
       const { width, height } = getCargoSpriteDrawSize();
       const yOffset = getCargoLandingSettleYOffset(cargo, now);
+      const highlightBoost = getCargoHighlightBoost(cargo, now);
+      const brightness = 0.98 + highlightBoost;
 
       ctx2d.save();
-      ctx2d.filter = 'saturate(0.9) brightness(0.98)';
+      ctx2d.filter = `saturate(0.9) brightness(${brightness})`;
       ctx2d.drawImage(cargoSprite, cargo.x, cargo.y + yOffset, width, height);
       ctx2d.restore();
     }
