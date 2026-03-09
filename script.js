@@ -21261,6 +21261,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       diagnostics: true,
       goalName: options?.goalName || "",
       allowNormalModeFirstSegmentRelaxation: !strictSpecialPathRejectStage,
+      allowGapAfterBounceGrace: requestedRouteClass === "gap" && !strictSpecialPathRejectStage,
     });
     if(mirror){
       const dx = mirror.mirrorTarget.x - plane.x;
@@ -21306,6 +21307,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       stuckMirrorRelaxation: true,
       goalName: options?.goalName || "",
       allowNormalModeFirstSegmentRelaxation: !strictSpecialPathRejectStage,
+      allowGapAfterBounceGrace: false,
     });
     if(stuckRecoveryMirror){
       const dx = stuckRecoveryMirror.mirrorTarget.x - plane.x;
@@ -21679,6 +21681,10 @@ function findMirrorShot(plane, enemy, options = {}){
 
   const firstSegmentTouchTolerance = isEmergencyMirrorGoal ? 0 : Math.max(0.6, CELL_SIZE * 0.35);
   const secondSegmentTouchTolerance = isEmergencyMirrorGoal ? 0 : 0.6;
+  const allowGapAfterBounceGrace = options?.allowGapAfterBounceGrace === true && !isEmergencyMirrorGoal;
+  const gapAfterBounceGraceDistance = allowGapAfterBounceGrace
+    ? Math.max(secondSegmentTouchTolerance, Math.min(CELL_SIZE * 0.7, CELL_SIZE * 1.35))
+    : 0;
   const isSecondSegmentClear = (fromX, fromY, toX, toY, pathMeta) => {
     const strictClear = pathMeta.isFieldBorder
       ? isPathClear(fromX, fromY, toX, toY)
@@ -21692,9 +21698,16 @@ function findMirrorShot(plane, enemy, options = {}){
 
     const shiftedFromX = fromX + (dx / legLen) * secondSegmentTouchTolerance;
     const shiftedFromY = fromY + (dy / legLen) * secondSegmentTouchTolerance;
-    return pathMeta.isFieldBorder
+    const softClear = pathMeta.isFieldBorder
       ? isPathClear(shiftedFromX, shiftedFromY, toX, toY)
       : isPathClearExceptEdge(shiftedFromX, shiftedFromY, toX, toY, pathMeta.collider, pathMeta.ignoreEdge);
+    if(softClear || gapAfterBounceGraceDistance <= secondSegmentTouchTolerance + 0.0001) return softClear;
+
+    const relaxedFromX = fromX + (dx / legLen) * gapAfterBounceGraceDistance;
+    const relaxedFromY = fromY + (dy / legLen) * gapAfterBounceGraceDistance;
+    return pathMeta.isFieldBorder
+      ? isPathClear(relaxedFromX, relaxedFromY, toX, toY)
+      : isPathClearExceptEdge(relaxedFromX, relaxedFromY, toX, toY, pathMeta.collider, pathMeta.ignoreEdge);
   };
 
   const mirrorEdges = [];
