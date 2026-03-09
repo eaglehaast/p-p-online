@@ -7106,13 +7106,15 @@ const CARGO_FADE_IN_MS_DEFAULT = 0;
 const CARGO_DIMMING_DEFAULT = 0;
 const CARGO_FADE_IN_ENABLED = true;
 const CARGO_FADE_IN_USE_LOCAL_FRAMES = true;
-const CARGO_FADE_IN_ALPHA_STEPS = [
+const CARGO_FADE_IN_OPACITY_STEPS = [
   0.00, // local frame 1
-  0.06, // local frame 2
-  0.15, // local frame 3
-  0.30, // local frame 4
-  0.55, // local frame 5
-  0.82, // local frame 6
+  0.00, // local frame 2
+  0.08, // local frame 3
+  0.18, // local frame 4
+  0.35, // local frame 5
+  0.62, // local frame 6
+  0.85, // local frame 7
+  1.00, // local frame 8
 ];
 const CARGO_FADE_IN_START_ALPHA = 0.45;
 const { img: cargoSprite } = loadImageAsset(CARGO_SPRITE_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
@@ -7166,7 +7168,7 @@ function ensureCargoDebugApi(){
         activeLifetimeMs: resolveCargoAnimLifetimeMs(),
         fadeInMs: cargoFadeInMs,
         fadeInUseLocalFrames: CARGO_FADE_IN_USE_LOCAL_FRAMES,
-        fadeInAlphaSteps: CARGO_FADE_IN_ALPHA_STEPS.slice(),
+        fadeInOpacitySteps: CARGO_FADE_IN_OPACITY_STEPS.slice(),
         dimming: cargoAnimDimming,
       };
     },
@@ -8166,10 +8168,10 @@ function getCargoEarlyFadeInAlpha(frameIndex, startIndex) {
     : safeFrameIndex;
   const localFrameNumber = localFrameIndex + 1;
 
-  if (Array.isArray(CARGO_FADE_IN_ALPHA_STEPS) && CARGO_FADE_IN_ALPHA_STEPS.length > 0) {
+  if (Array.isArray(CARGO_FADE_IN_OPACITY_STEPS) && CARGO_FADE_IN_OPACITY_STEPS.length > 0) {
     const stepIndex = localFrameNumber - 1;
-    if (stepIndex < CARGO_FADE_IN_ALPHA_STEPS.length) {
-      const stepAlpha = Number(CARGO_FADE_IN_ALPHA_STEPS[stepIndex]);
+    if (stepIndex < CARGO_FADE_IN_OPACITY_STEPS.length) {
+      const stepAlpha = Number(CARGO_FADE_IN_OPACITY_STEPS[stepIndex]);
       if (Number.isFinite(stepAlpha)) {
         return Math.max(0, Math.min(1, stepAlpha));
       }
