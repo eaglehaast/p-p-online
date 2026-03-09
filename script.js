@@ -20668,7 +20668,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
         : 0.95);
     const minGapClearanceBase = relaxedEmergencyThreshold ? CELL_SIZE * 0.04 : CELL_SIZE * 0.08;
     const minGapClearance = candidateClass === "gap"
-      ? Math.max(0, minGapClearanceBase * (relaxedEmergencyThreshold ? 0.6 : (isNormalModeGapPostContinuation ? 0.65 : 0)))
+      ? Math.max(0, minGapClearanceBase * (relaxedEmergencyThreshold ? 0.6 : (isNormalModeGapPostContinuation ? 0.35 : 0)))
       : minGapClearanceBase;
 
     let rejectCode = null;
