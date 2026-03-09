@@ -7104,6 +7104,9 @@ const CARGO_ANIM_FRAME_DURATIONS_MS = Array.from({ length: CARGO_ANIMATION_FRAME
 const CARGO_ANIM_MS_FALLBACK = CARGO_ANIM_FRAME_DURATIONS_MS.reduce((sum, duration) => sum + duration, 0);
 const CARGO_FADE_IN_MS_DEFAULT = 0;
 const CARGO_DIMMING_DEFAULT = 0;
+const CARGO_FADE_IN_ENABLED = true;
+const CARGO_FADE_IN_FRAMES = 5;
+const CARGO_FADE_IN_START_ALPHA = 0.45;
 const { img: cargoSprite } = loadImageAsset(CARGO_SPRITE_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
 const hudPlaneTimerFrames = HUD_PLANE_TIMER_FRAME_PATHS.map((path) => loadImageAsset(path, GAME_PRELOAD_LABEL, { decoding: 'async' }).img);
 const { img: hudPlaneTimerGoImage } = loadImageAsset(HUD_PLANE_TIMER_GO_PATH, GAME_PRELOAD_LABEL, { decoding: 'async' });
@@ -8072,6 +8075,11 @@ function getCargoAnimationFrameByIndex(index = 0) {
 }
 
 function getCargoAnimationFrameByElapsedMs(elapsedMs = 0, durationMs = CARGO_ANIM_MS_FALLBACK) {
+  const frameState = getCargoAnimationFrameStateByElapsedMs(elapsedMs, durationMs);
+  return frameState?.frame || null;
+}
+
+function getCargoAnimationFrameStateByElapsedMs(elapsedMs = 0, durationMs = CARGO_ANIM_MS_FALLBACK) {
   const frameCount = cargoAnimationFrames.length;
   if (frameCount <= 0) {
     return null;
@@ -8088,7 +8096,11 @@ function getCargoAnimationFrameByElapsedMs(elapsedMs = 0, durationMs = CARGO_ANI
       frameCount - 1,
       startIndex + Math.floor(uniformProgress * animatedFrameCount)
     );
-    return getCargoAnimationFrameByIndex(fallbackFrameIndex);
+    return {
+      frame: getCargoAnimationFrameByIndex(fallbackFrameIndex),
+      index: fallbackFrameIndex,
+      startIndex
+    };
   }
 
   const safeElapsedMs = Math.max(0, elapsedMs);
@@ -8100,11 +8112,39 @@ function getCargoAnimationFrameByElapsedMs(elapsedMs = 0, durationMs = CARGO_ANI
   for (let frameIndex = startIndex; frameIndex < frameCount; frameIndex += 1) {
     cumulativeDuration += Math.max(1, frameDurations[frameIndex]) * durationScale;
     if (safeElapsedMs < cumulativeDuration || frameIndex === frameCount - 1) {
-      return getCargoAnimationFrameByIndex(frameIndex);
+      return {
+        frame: getCargoAnimationFrameByIndex(frameIndex),
+        index: frameIndex,
+        startIndex
+      };
     }
   }
 
-  return getCargoAnimationFrameByIndex(startIndex);
+  return {
+    frame: getCargoAnimationFrameByIndex(startIndex),
+    index: startIndex,
+    startIndex
+  };
+}
+
+function getCargoEarlyFadeInAlpha(frameIndex, startIndex) {
+  if (!CARGO_FADE_IN_ENABLED) {
+    return 1;
+  }
+
+  const fadeFrames = Math.max(0, Math.round(CARGO_FADE_IN_FRAMES));
+  if (fadeFrames <= 0) {
+    return 1;
+  }
+
+  const relativeFrame = Math.max(0, frameIndex - startIndex);
+  if (relativeFrame >= fadeFrames) {
+    return 1;
+  }
+
+  const startAlpha = Math.max(0, Math.min(1, CARGO_FADE_IN_START_ALPHA));
+  const fadeProgress = (relativeFrame + 1) / fadeFrames;
+  return startAlpha + (1 - startAlpha) * fadeProgress;
 }
 
 function getCargoAnimationBaseFrame() {
@@ -8159,7 +8199,15 @@ function syncCargoAnimationDomEntry(cargo, metrics) {
   const activeDurationMs = Number.isFinite(cargo.animDurationMs)
     ? cargo.animDurationMs
     : resolveCargoAnimLifetimeMs();
-  const activeFrame = getCargoAnimationFrameByElapsedMs(elapsedMs, activeDurationMs) || getCargoAnimationBaseFrame();
+  const activeFrameState = getCargoAnimationFrameStateByElapsedMs(elapsedMs, activeDurationMs);
+  const activeFrame = activeFrameState?.frame || getCargoAnimationBaseFrame();
+  const activeFrameIndex = Number.isFinite(activeFrameState?.index)
+    ? activeFrameState.index
+    : Math.max(0, Math.min(cargoAnimationFrames.length - 1, CARGO_ANIM_START_INDEX));
+  const startFrameIndex = Number.isFinite(activeFrameState?.startIndex)
+    ? activeFrameState.startIndex
+    : Math.max(0, Math.min(cargoAnimationFrames.length - 1, CARGO_ANIM_START_INDEX));
+  const fadeInAlpha = getCargoEarlyFadeInAlpha(activeFrameIndex, startFrameIndex);
 
   if (activeFrame?.src && cargo.domEntry.img.src !== activeFrame.src) {
     cargo.domEntry.img.src = activeFrame.src;
@@ -8191,7 +8239,7 @@ function syncCargoAnimationDomEntry(cargo, metrics) {
     width: '100%',
     height: '100%',
     display: 'block',
-    opacity: '1',
+    opacity: `${fadeInAlpha}`,
     filter: `brightness(${brightness})`
   });
 }
