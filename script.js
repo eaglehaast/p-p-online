@@ -21188,6 +21188,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       diagnostics: true,
       goalName: options?.goalName || "",
       allowNormalModeFirstSegmentRelaxation: !strictSpecialPathRejectStage,
+      allowGapBeforeBounceGrace: requestedRouteClass === "gap" && !strictSpecialPathRejectStage,
       allowGapAfterBounceGrace: requestedRouteClass === "gap" && !strictSpecialPathRejectStage,
     });
     if(mirror){
@@ -21608,6 +21609,10 @@ function findMirrorShot(plane, enemy, options = {}){
 
   const firstSegmentTouchTolerance = isEmergencyMirrorGoal ? 0 : Math.max(0.6, CELL_SIZE * 0.35);
   const secondSegmentTouchTolerance = isEmergencyMirrorGoal ? 0 : 0.6;
+  const allowGapBeforeBounceGrace = options?.allowGapBeforeBounceGrace === true && !isEmergencyMirrorGoal;
+  const gapBeforeBounceGraceDistance = allowGapBeforeBounceGrace
+    ? Math.max(firstSegmentTouchTolerance, Math.min(CELL_SIZE * 0.85, CELL_SIZE * 1.4))
+    : 0;
   const allowGapAfterBounceGrace = options?.allowGapAfterBounceGrace === true && !isEmergencyMirrorGoal;
   const gapAfterBounceGraceDistance = allowGapAfterBounceGrace
     ? Math.max(secondSegmentTouchTolerance, Math.min(CELL_SIZE * 0.7, CELL_SIZE * 1.35))
@@ -21714,7 +21719,25 @@ function findMirrorShot(plane, enemy, options = {}){
             : isPathClearExceptEdge(shiftedPlaneX, shiftedPlaneY, inter.x, inter.y, collider, ignoreEdge);
         })()
       : false;
-    const pathClearToBounce = pathClearToBounceStrict || pathClearToBounceSoft || pathClearToBounceRelaxed;
+    const pathClearToBounceGapGrace = !pathClearToBounceStrict
+      && !pathClearToBounceSoft
+      && !pathClearToBounceRelaxed
+      && gapBeforeBounceGraceDistance > firstSegmentTouchTolerance + 0.0001
+      && Number.isFinite(firstLegDist)
+      && firstLegDist > 0.0001
+      ? (() => {
+          const relaxedStartOffset = Math.min(firstLegDist * 0.5, gapBeforeBounceGraceDistance);
+          const shiftedPlaneX = plane.x + (firstLegDx / firstLegDist) * relaxedStartOffset;
+          const shiftedPlaneY = plane.y + (firstLegDy / firstLegDist) * relaxedStartOffset;
+          return isFieldBorder
+            ? isPathClear(shiftedPlaneX, shiftedPlaneY, inter.x, inter.y)
+            : isPathClearExceptEdge(shiftedPlaneX, shiftedPlaneY, inter.x, inter.y, collider, ignoreEdge);
+        })()
+      : false;
+    const pathClearToBounce = pathClearToBounceStrict
+      || pathClearToBounceSoft
+      || pathClearToBounceRelaxed
+      || pathClearToBounceGapGrace;
     if(!pathClearToBounce){
       rejectedToBounceSegment = true;
       continue;
