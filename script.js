@@ -928,18 +928,10 @@ const EXPLOSION_BLUE_SPRITES = [
 ];
 const BLUE_EXPLOSION_VARIANT_COUNT = 5;
 const BLUE_SEQUENCE_FRAME_ORDER = Object.freeze([
-  3, 5, 7, 9,
-  11, 13, 15, 16,
-  17, 18,
-  17, 18,
-  19, 20, 22, 24,
+  1, 5, 9, 13, 17, 21,
 ]);
 const BLUE_SEQUENCE_FRAME_DURATION_MULTIPLIERS = Object.freeze([
-  0.7, 0.7, 0.7, 0.7,
-  1.0, 1.0, 1.0, 1.0,
-  1.6, 1.6,
-  1.0, 1.0,
-  0.8, 0.8, 0.8, 0.8,
+  1, 1, 1, 1, 1, 1,
 ]);
 
 function buildBlueSequenceFrameDurations(frameCount, ttlMs) {
