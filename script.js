@@ -21304,9 +21304,14 @@ function planPathToPoint(plane, tx, ty, options = {}){
       && specialContinuationRouteClear
       && !strictSpecialPathRejectStage
       && !isCriticalOrEmergencyStage;
+    const shouldSkipRicochetPostContinuationSoftReject = candidateClass === "ricochet"
+      && isNormalModeRicochetPostContinuation
+      && specialContinuationRouteClear
+      && !strictSpecialPathRejectStage
+      && !isCriticalOrEmergencyStage;
 
     let rejectCode = null;
-    if(!shouldSkipGapPostContinuationSoftReject){
+    if(!shouldSkipGapPostContinuationSoftReject && !shouldSkipRicochetPostContinuationSoftReject){
       if(progress + 0.0001 < minProgress){
         rejectCode = "insufficient_progress";
       } else if(responseRisk > maxResponseRisk || corridorTightness > maxCorridorTightness){
@@ -21598,25 +21603,36 @@ function planPathToPoint(plane, tx, ty, options = {}){
         specialContinuationRouteClear,
       });
       if(routeMetrics.rejectCode){
-        bestRejectCode = routeMetrics.rejectCode;
-        if(candidateClass === "gap" && specialContinuationRouteClear){
-          bestRejectMeta = {
-            routeClass: "gap",
-            rejectCode: routeMetrics.rejectCode,
-            rejectReason: routeMetrics.rejectCode,
-            reason: "rejected_after_second_segment_validation",
-            segmentStage: "post_second_segment_validation",
-            segmentLabel: "post_gap_positioning",
-            blockerType: "none",
-            firstBlockingObjectType: "none",
-            landingSafety: "safe",
-            candidateSafetyRiskSummary: "rejected_by_route_metrics_after_second_segment_validation",
-            passedFirstSegment: true,
-          };
-        } else {
-          bestRejectMeta = null;
+        const isSoftPostContinuationRejectCode = routeMetrics.rejectCode === "insufficient_progress"
+          || routeMetrics.rejectCode === "unsafe_lane"
+          || routeMetrics.rejectCode === "blocked_at_gap";
+        const canBypassSpecialPostContinuationReject = isSoftPostContinuationRejectCode
+          && specialContinuationRouteClear
+          && !strictSpecialPathRejectStage
+          && !isCriticalOrEmergencyStage
+          && (candidateClass === "ricochet" || candidateClass === "gap");
+
+        if(!canBypassSpecialPostContinuationReject){
+          bestRejectCode = routeMetrics.rejectCode;
+          if(candidateClass === "gap" && specialContinuationRouteClear){
+            bestRejectMeta = {
+              routeClass: "gap",
+              rejectCode: routeMetrics.rejectCode,
+              rejectReason: routeMetrics.rejectCode,
+              reason: "rejected_after_second_segment_validation",
+              segmentStage: "post_second_segment_validation",
+              segmentLabel: "post_gap_positioning",
+              blockerType: "none",
+              firstBlockingObjectType: "none",
+              landingSafety: "safe",
+              candidateSafetyRiskSummary: "rejected_by_route_metrics_after_second_segment_validation",
+              passedFirstSegment: true,
+            };
+          } else {
+            bestRejectMeta = null;
+          }
+          return;
         }
-        return;
       }
       const move = finalizePlannedMove(
         {
