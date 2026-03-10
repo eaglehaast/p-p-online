@@ -20861,7 +20861,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
     return true;
   }
 
-  function evaluateRouteMetrics({ landingX, landingY, distance, candidateClass = defaultRouteClass, progressMeta, postGapContinuation = false }){
+  function evaluateRouteMetrics({ landingX, landingY, distance, candidateClass = defaultRouteClass, progressMeta, postGapContinuation = false, postRicochetContinuation = false }){
     const safeProgressMeta = progressMeta || getAiNoticeableProgressMeta(plane.x, plane.y, landingX, landingY, tx, ty);
     const clearancePx = estimateRouteClearancePx(plane.x, plane.y, landingX, landingY);
     const nearbyCount = countRouteNearbyColliders(plane.x, plane.y, landingX, landingY, CELL_SIZE * 0.85);
@@ -20882,17 +20882,20 @@ function planPathToPoint(plane, tx, ty, options = {}){
     const isNormalModeGapPostContinuation = candidateClass === "gap"
       && postGapContinuation
       && !strictSpecialPathRejectStage;
+    const isNormalModeRicochetPostContinuation = candidateClass === "ricochet"
+      && postRicochetContinuation
+      && !strictSpecialPathRejectStage;
     const minProgress = candidateClass === "ricochet"
-      ? minProgressBase * 0.9
+      ? minProgressBase * (isNormalModeRicochetPostContinuation ? 0.74 : 0.9)
       : (candidateClass === "gap" && !relaxedEmergencyThreshold
         ? minProgressBase * (isNormalModeGapPostContinuation ? 0.56 : 0.85)
         : minProgressBase);
     const maxResponseRiskBase = relaxedEmergencyThreshold ? 0.95 : 0.8;
     const maxResponseRisk = candidateClass === "ricochet"
-      ? Math.min(0.97, maxResponseRiskBase + 0.12)
+      ? Math.min(0.98, maxResponseRiskBase + (isNormalModeRicochetPostContinuation ? 0.15 : 0.12))
       : (isNormalModeGapPostContinuation ? Math.min(0.93, maxResponseRiskBase + 0.08) : maxResponseRiskBase);
     const maxCorridorTightness = candidateClass === "ricochet"
-      ? 0.985
+      ? (isNormalModeRicochetPostContinuation ? 0.992 : 0.985)
       : (candidateClass === "gap" && !relaxedEmergencyThreshold
         ? (isNormalModeGapPostContinuation ? 0.985 : 0.965)
         : 0.95);
@@ -21003,6 +21006,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       const candidateClass = candidateMeta?.candidateClass || meta?.candidateClass || defaultRouteClass;
       const fullPathClear = isPathClear(plane.x, plane.y, landingX, landingY);
       let shouldUsePostGapContinuationTolerance = false;
+      let shouldUsePostRicochetContinuationTolerance = false;
       let gapEntryX = null;
       let gapEntryY = null;
       if(!fullPathClear){
@@ -21086,6 +21090,13 @@ function planPathToPoint(plane, tx, ty, options = {}){
           }
           shouldUsePostGapContinuationTolerance = true;
         }
+        if(candidateClass === "ricochet" && !strictSpecialPathRejectStage && canUseSpecialCandidateAfterEntryCheck === true){
+          shouldUsePostRicochetContinuationTolerance = true;
+          if(!isCandidateLandingSafe(landingX, landingY)){
+            bestRejectCode = "blocked_after_bounce__invalid_ricochet_landing";
+            return;
+          }
+        }
       }
       const routeMetrics = evaluateRouteMetrics({
         landingX,
@@ -21094,6 +21105,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
         candidateClass,
         progressMeta,
         postGapContinuation: shouldUsePostGapContinuationTolerance,
+        postRicochetContinuation: shouldUsePostRicochetContinuationTolerance,
       });
       if(routeMetrics.rejectCode){
         bestRejectCode = routeMetrics.rejectCode;
