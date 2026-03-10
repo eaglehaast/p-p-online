@@ -14132,6 +14132,7 @@ function createInitialAiRoundState(){
     tieBreakerSeed: 0,
     openingTemplateSuppressed: false,
     lastOpeningNonTrivialStartMeta: null,
+    lastFallbackMoveMeta: null,
   };
 }
 
@@ -14715,6 +14716,133 @@ function getStableHashFromParts(parts){
     hash = (hash * 31 + source.charCodeAt(i)) >>> 0;
   }
   return hash;
+}
+
+function getFallbackMoveSignature(move){
+  if(!move || typeof move !== "object") return null;
+  const planeId = move?.plane?.id ?? null;
+  if(!planeId) return null;
+
+  const enemyId = move?.enemy?.id ?? move?.targetEnemy?.id ?? null;
+  const fallbackTarget = move?.fallbackTarget;
+  const targetX = Number.isFinite(fallbackTarget?.x)
+    ? Number(fallbackTarget.x.toFixed(1))
+    : null;
+  const targetY = Number.isFinite(fallbackTarget?.y)
+    ? Number(fallbackTarget.y.toFixed(1))
+    : null;
+  const headingDeg = Number.isFinite(move?.vx) && Number.isFinite(move?.vy)
+    ? normalizeAngleDeg((Math.atan2(move.vy, move.vx) * 180 / Math.PI + 360) % 360)
+    : (Number.isFinite(move?.angleBase)
+      ? normalizeAngleDeg((move.angleBase * 180 / Math.PI + 360) % 360)
+      : null);
+
+  return {
+    planeId,
+    headingDeg: Number.isFinite(headingDeg) ? Number(headingDeg.toFixed(1)) : null,
+    goalName: `${move?.goalName || ""}`.toLowerCase(),
+    decisionReason: `${move?.decisionReason || ""}`.toLowerCase(),
+    enemyId,
+    targetX,
+    targetY,
+    turnNumber: Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null,
+  };
+}
+
+function applyFallbackAntiRepeatPenalty(candidate, context = {}){
+  if(!candidate || typeof candidate !== "object") return candidate;
+  const goalText = `${candidate?.goalName || aiRoundState?.currentGoal || ""}`.toLowerCase();
+  const isEmergencyOrDefense = isEmergencyDefenseStageGoal(goalText)
+    || goalText.includes("defense")
+    || goalText.includes("defence")
+    || goalText.includes("critical")
+    || goalText.includes("emergency")
+    || goalText.includes("override");
+  if(isEmergencyOrDefense) return candidate;
+
+  const previous = aiRoundState?.lastFallbackMoveMeta;
+  if(!previous || !previous.planeId || !candidate?.plane?.id) return candidate;
+
+  const currentTurn = Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null;
+  const turnDelta = (Number.isFinite(currentTurn) && Number.isFinite(previous.turnNumber))
+    ? Math.abs(currentTurn - previous.turnNumber)
+    : Number.POSITIVE_INFINITY;
+  if(turnDelta > 1) return candidate;
+
+  const samePlane = previous.planeId === candidate.plane.id;
+  if(!samePlane) return candidate;
+
+  const headingDeg = Number.isFinite(candidate?.vx) && Number.isFinite(candidate?.vy)
+    ? normalizeAngleDeg((Math.atan2(candidate.vy, candidate.vx) * 180 / Math.PI + 360) % 360)
+    : (Number.isFinite(candidate?.angleBase)
+      ? normalizeAngleDeg((candidate.angleBase * 180 / Math.PI + 360) % 360)
+      : null);
+  const prevHeading = Number.isFinite(previous.headingDeg) ? previous.headingDeg : null;
+  const headingDiffRaw = (Number.isFinite(headingDeg) && Number.isFinite(prevHeading))
+    ? Math.abs(headingDeg - prevHeading)
+    : Number.POSITIVE_INFINITY;
+  const headingDiff = headingDiffRaw > 180 ? 360 - headingDiffRaw : headingDiffRaw;
+  const similarHeading = Number.isFinite(headingDiff) && headingDiff <= 22;
+
+  const currentGoal = `${candidate?.goalName || ""}`.toLowerCase();
+  const currentReason = `${candidate?.decisionReason || ""}`.toLowerCase();
+  const similarGoal = Boolean(currentGoal) && currentGoal === (previous.goalName || "");
+  const similarReason = Boolean(currentReason) && currentReason === (previous.decisionReason || "");
+  const similarEnemy = (candidate?.enemy?.id ?? candidate?.targetEnemy?.id ?? null) === (previous.enemyId ?? null);
+
+  let penalty = 0;
+  if(samePlane) penalty += MAX_DRAG_DISTANCE * 0.08;
+  if(similarHeading) penalty += MAX_DRAG_DISTANCE * 0.04;
+  if(similarGoal || similarReason) penalty += MAX_DRAG_DISTANCE * 0.035;
+  if(similarEnemy) penalty += MAX_DRAG_DISTANCE * 0.02;
+
+  const isOpeningTurn = Number.isFinite(currentTurn) && currentTurn <= 3;
+  if(isOpeningTurn && (similarGoal || similarReason || similarHeading)){
+    penalty += MAX_DRAG_DISTANCE * 0.035;
+  }
+
+  if(penalty <= 0.0001) return candidate;
+
+  return {
+    ...candidate,
+    score: (Number.isFinite(candidate.score) ? candidate.score : 0) + penalty,
+    fallbackRepeatPenalty: Number(penalty.toFixed(3)),
+    fallbackRepeatPenaltyMeta: {
+      samePlane,
+      similarHeading,
+      similarGoal,
+      similarReason,
+      similarEnemy,
+      turnDelta: Number.isFinite(turnDelta) ? turnDelta : null,
+      isOpeningTurn,
+    },
+  };
+}
+
+function shouldPreferAlternativeFallbackOpeningCandidate(selectedCandidate, alternativeCandidate){
+  if(!selectedCandidate || !alternativeCandidate) return false;
+  const currentTurn = Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null;
+  if(!Number.isFinite(currentTurn) || currentTurn > 3) return false;
+
+  const selectedPenalty = Number.isFinite(selectedCandidate?.fallbackRepeatPenalty) ? selectedCandidate.fallbackRepeatPenalty : 0;
+  if(selectedPenalty <= 0) return false;
+
+  const selectedScore = Number.isFinite(selectedCandidate?.score) ? selectedCandidate.score : Number.POSITIVE_INFINITY;
+  const alternativeScore = Number.isFinite(alternativeCandidate?.score) ? alternativeCandidate.score : Number.POSITIVE_INFINITY;
+  if(!Number.isFinite(selectedScore) || !Number.isFinite(alternativeScore)) return false;
+
+  const scoreGap = alternativeScore - selectedScore;
+  const maxAllowedGap = Math.max(MAX_DRAG_DISTANCE * 0.045, selectedPenalty * 0.9);
+  if(scoreGap > maxAllowedGap) return false;
+
+  const selectedPlaneId = selectedCandidate?.plane?.id ?? null;
+  const alternativePlaneId = alternativeCandidate?.plane?.id ?? null;
+  const previousPlaneId = aiRoundState?.lastFallbackMoveMeta?.planeId ?? null;
+  if(!selectedPlaneId || !alternativePlaneId || !previousPlaneId) return false;
+  if(selectedPlaneId !== previousPlaneId) return false;
+  if(alternativePlaneId === previousPlaneId) return false;
+
+  return true;
 }
 
 function getAiPlaneIdleTurns(plane){
@@ -19085,6 +19213,21 @@ function getFallbackAiMove(context){
   const { aiPlanes, enemies, shouldUseFlagsMode, availableEnemyFlags } = context;
   const homeBase = context.homeBase;
   const riskProfile = context?.aiRiskProfile?.profile || "balanced";
+  const openingTurnActive = Number.isFinite(aiRoundState?.turnNumber) && aiRoundState.turnNumber <= 3;
+
+  function withFallbackAntiRepeat(candidate, sourceTag){
+    const adjusted = applyFallbackAntiRepeatPenalty(candidate, { source: sourceTag });
+    if(adjusted?.fallbackRepeatPenalty > 0){
+      logAiDecision("fallback_repeat_penalty_applied", {
+        source: sourceTag,
+        planeId: adjusted?.plane?.id ?? null,
+        enemyId: adjusted?.enemy?.id ?? adjusted?.targetEnemy?.id ?? null,
+        penalty: adjusted.fallbackRepeatPenalty,
+        ...adjusted.fallbackRepeatPenaltyMeta,
+      });
+    }
+    return adjusted;
+  }
 
   const carrier = shouldUseFlagsMode ? aiPlanes.find(p => {
     if(!p.carriedFlagId) return false;
@@ -19649,6 +19792,7 @@ function getFallbackAiMove(context){
 
   if(!best){
     let fallbackCandidate = null;
+    const fallbackRotationCandidates = [];
     for(const plane of aiPlanes){
       if(flyingPoints.some(fp=>fp.plane===plane)) continue;
       const enemy = targetEnemies.reduce((a,b)=> (dist(plane,a)<dist(plane,b)?a:b), targetEnemies[0]);
@@ -19660,7 +19804,7 @@ function getFallbackAiMove(context){
       });
       if(preparationMove){
         const preparationScore = getAiPlaneAdjustedScore(preparationMove.totalDist, plane);
-        const candidate = {
+        const candidate = withFallbackAntiRepeat({
           plane,
           enemy,
           targetEnemy: enemy,
@@ -19668,8 +19812,10 @@ function getFallbackAiMove(context){
           decisionReason: "fallback_rotation",
           score: preparationScore,
           idleTurns,
+          fallbackSafetyTier: "prepare",
           ...preparationMove,
-        };
+        }, "fallback_rotation_prepare");
+        fallbackRotationCandidates.push(candidate);
         if(compareAiCandidateByScoreAndRotation(candidate, fallbackCandidate, ["fallback_rotation", "prepare"])){
           fallbackCandidate = candidate;
         }
@@ -19690,7 +19836,7 @@ function getFallbackAiMove(context){
       const retreatScale = conservativeRetreat ? 0.5 : 0.62;
       const desired = Math.min(Math.hypot(dx,dy) * retreatScale, MAX_DRAG_DISTANCE);
       const retreatScore = getAiPlaneAdjustedScore(desired, plane);
-      const candidate = {
+      const candidate = withFallbackAntiRepeat({
         plane,
         enemy,
         fallbackTarget,
@@ -19699,13 +19845,31 @@ function getFallbackAiMove(context){
         decisionReason: "fallback_rotation",
         score: retreatScore,
         idleTurns,
-      };
+        fallbackSafetyTier: "retreat",
+      }, "fallback_rotation_retreat");
+      fallbackRotationCandidates.push(candidate);
       if(compareAiCandidateByScoreAndRotation(candidate, fallbackCandidate, ["fallback_rotation", "retreat"])){
         fallbackCandidate = candidate;
       }
     }
 
     if(fallbackCandidate){
+      if(openingTurnActive && fallbackRotationCandidates.length > 1){
+        const sameTierAlternative = fallbackRotationCandidates
+          .filter((candidate) => candidate
+            && candidate !== fallbackCandidate
+            && (candidate.fallbackSafetyTier || "retreat") === (fallbackCandidate.fallbackSafetyTier || "retreat"))
+          .sort((a, b) => (a.score ?? Number.POSITIVE_INFINITY) - (b.score ?? Number.POSITIVE_INFINITY))[0] || null;
+        if(shouldPreferAlternativeFallbackOpeningCandidate(fallbackCandidate, sameTierAlternative)){
+          fallbackCandidate = sameTierAlternative;
+          logAiDecision("fallback_opening_diversity_guard_applied", {
+            selectedPlaneId: fallbackCandidate?.plane?.id ?? null,
+            selectedTier: fallbackCandidate?.fallbackSafetyTier || null,
+            turnNumber: aiRoundState?.turnNumber ?? null,
+          });
+        }
+      }
+
       if(Number.isFinite(fallbackCandidate.vx) && Number.isFinite(fallbackCandidate.vy)){
         return fallbackCandidate;
       }
@@ -20392,6 +20556,9 @@ function doComputerMove(){
       planeId: fallbackMove.plane?.id ?? null,
       reason: fallbackMove.decisionReason || "fallback_legacy_logic",
     });
+    if(aiRoundState && typeof aiRoundState === "object"){
+      aiRoundState.lastFallbackMoveMeta = getFallbackMoveSignature(fallbackMove);
+    }
     issueAIMoveWithInventoryUsage(modeContext, fallbackMove);
     return;
   }
@@ -20861,7 +21028,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
     return true;
   }
 
-  function evaluateRouteMetrics({ landingX, landingY, distance, candidateClass = defaultRouteClass, progressMeta, postGapContinuation = false, postRicochetContinuation = false }){
+  function evaluateRouteMetrics({ landingX, landingY, distance, candidateClass = defaultRouteClass, progressMeta, postGapContinuation = false, postRicochetContinuation = false, specialContinuationRouteClear = false }){
     const safeProgressMeta = progressMeta || getAiNoticeableProgressMeta(plane.x, plane.y, landingX, landingY, tx, ty);
     const clearancePx = estimateRouteClearancePx(plane.x, plane.y, landingX, landingY);
     const nearbyCount = countRouteNearbyColliders(plane.x, plane.y, landingX, landingY, CELL_SIZE * 0.85);
@@ -20886,9 +21053,9 @@ function planPathToPoint(plane, tx, ty, options = {}){
       && postRicochetContinuation
       && !strictSpecialPathRejectStage;
     const minProgress = candidateClass === "ricochet"
-      ? minProgressBase * (isNormalModeRicochetPostContinuation ? 0.74 : 0.9)
+      ? minProgressBase * (isNormalModeRicochetPostContinuation ? 0.7 : 0.9)
       : (candidateClass === "gap" && !relaxedEmergencyThreshold
-        ? minProgressBase * (isNormalModeGapPostContinuation ? 0.56 : 0.85)
+        ? minProgressBase * (isNormalModeGapPostContinuation ? 0.52 : 0.85)
         : minProgressBase);
     const maxResponseRiskBase = relaxedEmergencyThreshold ? 0.95 : 0.8;
     const maxResponseRisk = candidateClass === "ricochet"
@@ -20917,11 +21084,17 @@ function planPathToPoint(plane, tx, ty, options = {}){
 
     const clearanceNorm = Math.max(0, Math.min(1, clearancePx / Math.max(1, CELL_SIZE * 1.5)));
     const progressNorm = Math.max(0, Math.min(1, progress / Math.max(1, distance)));
+    const continuationBonus = (!strictSpecialPathRejectStage
+      && specialContinuationRouteClear
+      && (candidateClass === "gap" || candidateClass === "ricochet"))
+      ? 0.018
+      : 0;
     const qualityScore = Number((
       progressNorm * 0.5
       + clearanceNorm * 0.25
       + (1 - responseRisk) * 0.15
       + (1 - corridorTightness) * 0.1
+      + continuationBonus
     ).toFixed(6));
 
     return {
@@ -21007,6 +21180,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       const fullPathClear = isPathClear(plane.x, plane.y, landingX, landingY);
       let shouldUsePostGapContinuationTolerance = false;
       let shouldUsePostRicochetContinuationTolerance = false;
+      let specialContinuationRouteClear = false;
       let gapEntryX = null;
       let gapEntryY = null;
       if(!fullPathClear){
@@ -21089,9 +21263,45 @@ function planPathToPoint(plane, tx, ty, options = {}){
             return;
           }
           shouldUsePostGapContinuationTolerance = true;
+          specialContinuationRouteClear = true;
         }
         if(candidateClass === "ricochet" && !strictSpecialPathRejectStage && canUseSpecialCandidateAfterEntryCheck === true){
+          const ricochetContinuationLen = Number.isFinite(gapEntryX)
+            && Number.isFinite(gapEntryY)
+            ? Math.hypot(landingX - gapEntryX, landingY - gapEntryY)
+            : 0;
+          let hasRicochetContinuationSegment = Number.isFinite(gapEntryX)
+            && Number.isFinite(gapEntryY)
+            && ricochetContinuationLen > CELL_SIZE * 0.22
+            && (() => {
+              const continuationProbePx = Math.min(ricochetContinuationLen, Math.max(CELL_SIZE * 0.25, CELL_SIZE * 0.58));
+              const continuationRatio = continuationProbePx / ricochetContinuationLen;
+              const continuationX = gapEntryX + (landingX - gapEntryX) * continuationRatio;
+              const continuationY = gapEntryY + (landingY - gapEntryY) * continuationRatio;
+              return isPathClear(gapEntryX, gapEntryY, continuationX, continuationY);
+            })();
+
+          if(!hasRicochetContinuationSegment && Number.isFinite(gapEntryX) && Number.isFinite(gapEntryY) && ricochetContinuationLen > CELL_SIZE * 0.22){
+            const shiftedStartPx = Math.min(CELL_SIZE * 0.24, ricochetContinuationLen * 0.34);
+            if(shiftedStartPx > 0 && shiftedStartPx < ricochetContinuationLen){
+              const shiftedStartRatio = shiftedStartPx / ricochetContinuationLen;
+              const shiftedStartX = gapEntryX + (landingX - gapEntryX) * shiftedStartRatio;
+              const shiftedStartY = gapEntryY + (landingY - gapEntryY) * shiftedStartRatio;
+              const shiftedProbePx = Math.min(ricochetContinuationLen - shiftedStartPx, Math.max(CELL_SIZE * 0.2, CELL_SIZE * 0.45));
+              const shiftedProbeRatio = shiftedProbePx / ricochetContinuationLen;
+              const shiftedProbeX = gapEntryX + (landingX - gapEntryX) * (shiftedStartRatio + shiftedProbeRatio);
+              const shiftedProbeY = gapEntryY + (landingY - gapEntryY) * (shiftedStartRatio + shiftedProbeRatio);
+              hasRicochetContinuationSegment = isPathClear(shiftedStartX, shiftedStartY, shiftedProbeX, shiftedProbeY);
+            }
+          }
+
+          if(!hasRicochetContinuationSegment){
+            bestRejectCode = "blocked_after_bounce__post_ricochet_continuation_blocked";
+            return;
+          }
+
           shouldUsePostRicochetContinuationTolerance = true;
+          specialContinuationRouteClear = true;
           if(!isCandidateLandingSafe(landingX, landingY)){
             bestRejectCode = "blocked_after_bounce__invalid_ricochet_landing";
             return;
@@ -21106,6 +21316,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
         progressMeta,
         postGapContinuation: shouldUsePostGapContinuationTolerance,
         postRicochetContinuation: shouldUsePostRicochetContinuationTolerance,
+        specialContinuationRouteClear,
       });
       if(routeMetrics.rejectCode){
         bestRejectCode = routeMetrics.rejectCode;
@@ -22099,6 +22310,16 @@ function findMirrorShot(plane, enemy, options = {}){
     };
   };
 
+  const isExplicitSolidBlockerType = (type) => {
+    const safeType = `${type || ""}`.toLowerCase();
+    return safeType === "brick"
+      || safeType === "own_base"
+      || safeType === "enemy_base"
+      || safeType === "map_boundary"
+      || safeType === "side_wall"
+      || safeType === "top_bottom_wall";
+  };
+
   const mirrorEdges = [];
   for(const collider of colliders){
     const edges = getColliderEdges(collider, 0);
@@ -22143,6 +22364,11 @@ function findMirrorShot(plane, enemy, options = {}){
     const firstLegDx = inter.x - plane.x;
     const firstLegDy = inter.y - plane.y;
     const firstLegDist = Math.hypot(firstLegDx, firstLegDy);
+    const beforeBounceBlockingMeta = getFirstBlockingMetaOnSegment(plane.x, plane.y, inter.x, inter.y, {
+      isFieldBorder,
+      collider,
+      ignoreEdge,
+    }) || null;
 
     const pathClearToBounceStrict = isFieldBorder
       ? isPathClear(plane.x, plane.y, inter.x, inter.y)
@@ -22199,7 +22425,12 @@ function findMirrorShot(plane, enemy, options = {}){
       || pathClearToBounceSoft
       || pathClearToBounceRelaxed
       || pathClearToBounceGapGrace;
-    if(!pathClearToBounce){
+    const allowRicochetBorderlineBeforeBounce = !pathClearToBounce
+      && allowRicochetBeforeBounceBorderline
+      && !isEmergencyMirrorGoal
+      && firstLegDist >= minBounceDistance * 0.88
+      && !isExplicitSolidBlockerType(beforeBounceBlockingMeta?.firstBlockingObjectType);
+    if(!pathClearToBounce && !allowRicochetBorderlineBeforeBounce){
       rejectedToBounceSegment = true;
       continue;
     }
@@ -22209,13 +22440,20 @@ function findMirrorShot(plane, enemy, options = {}){
       collider,
       ignoreEdge,
     });
-    if(!pathClearFromBounce){
+    const afterBounceBlockingMeta = getFirstBlockingMetaOnSegment(inter.x, inter.y, enemy.x, enemy.y, {
+      isFieldBorder,
+      collider,
+      ignoreEdge,
+    }) || null;
+    const afterBounceContinuationLen = Math.hypot(enemy.x - inter.x, enemy.y - inter.y);
+    const allowGapLikePostBouncePositioning = !pathClearFromBounce
+      && !isEmergencyMirrorGoal
+      && allowGapAfterBounceGrace
+      && afterBounceContinuationLen <= CELL_SIZE * 1.45
+      && !isExplicitSolidBlockerType(afterBounceBlockingMeta?.firstBlockingObjectType);
+    if(!pathClearFromBounce && !allowGapLikePostBouncePositioning){
       rejectedAfterBounceSegment = true;
-      const blockingMeta = getFirstBlockingMetaOnSegment(inter.x, inter.y, enemy.x, enemy.y, {
-        isFieldBorder,
-        collider,
-        ignoreEdge,
-      }) || {};
+      const blockingMeta = afterBounceBlockingMeta || {};
       findMirrorShot.lastRejectMeta = {
         routeClass: "gap",
         secondSegmentStart: { x: inter.x, y: inter.y },
