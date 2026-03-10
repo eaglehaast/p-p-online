@@ -11963,11 +11963,11 @@ const GREEN_EXPLOSION_DURATIONS_MS = {
   "green_explosion_short6.gif": 560,
 };
 const BLUE_EXPLOSION_DURATIONS_MS = {
-  "explosion_blue_short_1.gif": 480,
-  "explosion_blue_short_2.gif": 450,
-  "explosion_blue_short_3.gif": 570,
-  "explosion_blue_short_4.gif": 540,
-  "explosion_blue_short_5.gif": 480,
+  "explosion_blue_short_1.gif": 1100,
+  "explosion_blue_short_2.gif": 1100,
+  "explosion_blue_short_3.gif": 1100,
+  "explosion_blue_short_4.gif": 1100,
+  "explosion_blue_short_5.gif": 1100,
 };
 
 function getShortExplosionDurationMs(src = "", color = "") {
