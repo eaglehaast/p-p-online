@@ -9523,8 +9523,29 @@ function startAiSelfAnalyzerMatchIfNeeded(){
     turns: [],
     eventTypes: ["launch", "ai_decision", "human_decision"],
     events: [],
+    flowCounters: {
+      aiTurnEntered: 0,
+      aiTurnAbortedBeforePlanner: 0,
+      plannerEntered: 0,
+      candidateGenerationEntered: 0,
+      fallbackEntered: 0,
+      diagnosticsEventWrites: 0,
+      diagnosticsEventFlushes: 0,
+    },
     summary: null,
   };
+}
+
+
+function bumpAiFlowCounter(counterKey, amount = 1){
+  const active = aiSelfAnalyzerState.activeMatch;
+  if(!active || typeof counterKey !== "string" || counterKey.length === 0) return;
+  if(!active.flowCounters || typeof active.flowCounters !== "object"){
+    active.flowCounters = {};
+  }
+  const current = Number.isFinite(active.flowCounters[counterKey]) ? active.flowCounters[counterKey] : 0;
+  const delta = Number.isFinite(amount) ? amount : 1;
+  active.flowCounters[counterKey] = current + delta;
 }
 
 function recordAiSelfAnalyzerEvent(event){
@@ -9744,6 +9765,7 @@ function recordAiSelfAnalyzerDecision(stage, details = {}){
     };
   }
 
+  bumpAiFlowCounter("diagnosticsEventWrites");
   recordAiSelfAnalyzerEvent(event);
 }
 
@@ -10059,6 +10081,7 @@ function finalizeAiSelfAnalyzerMatch(result){
   const active = aiSelfAnalyzerState.activeMatch;
   if(!active) return;
 
+  bumpAiFlowCounter("diagnosticsEventFlushes");
   active.finishedAt = safeNowIso();
   active.result = result;
   active.summary = buildAiSelfAnalyzerSummary(active);
@@ -11333,6 +11356,7 @@ function buildAiFallbackDiagnosticsReport(source){
 
   const report = {
     reportType: "ai_fallback_diagnostics_report",
+    sourceEventCount: aiDecisionEvents.length,
     generatedAt: safeNowIso(),
     sourceStartedAt: source?.startedAt || null,
     sourceFinishedAt: source?.finishedAt || null,
@@ -11348,6 +11372,17 @@ function buildAiFallbackDiagnosticsReport(source){
     gapAfterBounceSamples: gapAfterBounceSamplesCompact,
     fallbackEpisodeSamples,
     summary,
+    flowDiagnostics: source?.flowCounters && typeof source.flowCounters === "object"
+      ? { ...source.flowCounters }
+      : {
+          aiTurnEntered: 0,
+          aiTurnAbortedBeforePlanner: 0,
+          plannerEntered: 0,
+          candidateGenerationEntered: 0,
+          fallbackEntered: 0,
+          diagnosticsEventWrites: 0,
+          diagnosticsEventFlushes: 0,
+        },
   };
 
   const normalizedGapAfterBounceTotal = normalizedSpecialRouteRejectedAttempts
@@ -11427,6 +11462,7 @@ function exportAiFallbackDiagnosticsReportJson(){
       sourceFinishedAt: null,
       status: "insufficient_data",
       statusMessage: "Нет данных матча для fallback-диагностики.",
+      sourceEventCount: 0,
       fallbackRootCauseStats: {},
       candidateGenerationStats: {},
       candidateFunnelStats: {},
@@ -11445,6 +11481,15 @@ function exportAiFallbackDiagnosticsReportJson(){
       },
       gapAfterBounceSamples: [],
       fallbackEpisodeSamples: [],
+      flowDiagnostics: {
+        aiTurnEntered: 0,
+        aiTurnAbortedBeforePlanner: 0,
+        plannerEntered: 0,
+        candidateGenerationEntered: 0,
+        fallbackEntered: 0,
+        diagnosticsEventWrites: 0,
+        diagnosticsEventFlushes: 0,
+      },
       summary: ["Недостаточно данных для отчёта."],
     };
   }
@@ -11467,6 +11512,30 @@ function exportAiFallbackDiagnosticsReportJson(){
   URL.revokeObjectURL(url);
 
   return report;
+}
+
+function DEBUG_AI_FLOW_COUNTERS(){
+  const snapshot = getAiSelfAnalyzerSnapshot({ includeHistory: true });
+  const source = snapshot?.activeMatch || snapshot?.latestFinishedMatch;
+  const flow = source?.flowCounters && typeof source.flowCounters === "object"
+    ? source.flowCounters
+    : {};
+  return {
+    reportType: "ai_flow_counters_report",
+    generatedAt: safeNowIso(),
+    sourceStartedAt: source?.startedAt || null,
+    sourceFinishedAt: source?.finishedAt || null,
+    sourceEventCount: Array.isArray(source?.events)
+      ? source.events.filter((event) => event?.type === "ai_decision").length
+      : 0,
+    aiTurnEntered: Number.isFinite(flow.aiTurnEntered) ? flow.aiTurnEntered : 0,
+    aiTurnAbortedBeforePlanner: Number.isFinite(flow.aiTurnAbortedBeforePlanner) ? flow.aiTurnAbortedBeforePlanner : 0,
+    plannerEntered: Number.isFinite(flow.plannerEntered) ? flow.plannerEntered : 0,
+    candidateGenerationEntered: Number.isFinite(flow.candidateGenerationEntered) ? flow.candidateGenerationEntered : 0,
+    fallbackEntered: Number.isFinite(flow.fallbackEntered) ? flow.fallbackEntered : 0,
+    diagnosticsEventWrites: Number.isFinite(flow.diagnosticsEventWrites) ? flow.diagnosticsEventWrites : 0,
+    diagnosticsEventFlushes: Number.isFinite(flow.diagnosticsEventFlushes) ? flow.diagnosticsEventFlushes : 0,
+  };
 }
 
 function DEBUG_AI_GAP_AFTER_BOUNCE_REPORT(){
@@ -18596,6 +18665,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
 }
 
 function planModeDrivenAiMove(context){
+  bumpAiFlowCounter("candidateGenerationEntered");
   planModeDrivenAiMove.lastRejectReason = null;
   const {
     aiPlanes,
@@ -20032,6 +20102,8 @@ function getForcedProgressLaunchMove(modeContext){
 
 function doComputerMove(){
   if (gameMode!=="computer" || isGameOver) return;
+  startAiSelfAnalyzerMatchIfNeeded();
+  bumpAiFlowCounter("aiTurnEntered");
   aiRoundState.lastInitialCandidateSetDiagnostics = null;
   aiRoundState.lastFinalComparedDiagnostics = null;
 
@@ -20074,6 +20146,7 @@ function doComputerMove(){
   const aiPlanes = points.filter(p=> p.color==="blue" && p.isAlive && !p.burning);
   const enemies  = points.filter(p=> p.color==="green" && p.isAlive && !p.burning);
   if(!aiPlanes.length || !enemies.length){
+    bumpAiFlowCounter("aiTurnAbortedBeforePlanner");
     failSafeHandler("no_move_found", {
       goal: aiRoundState.currentGoal || "no_move_found",
       reasonCodes: ["turn_precheck_failed", "fail_safe_turn_advance"],
@@ -20107,6 +20180,7 @@ function doComputerMove(){
   modeContext.aiRiskProfile = getAiRiskProfile(modeContext);
   logAiDecision("risk_profile", modeContext.aiRiskProfile);
 
+  bumpAiFlowCounter("plannerEntered");
   selectAiModeForCurrentTurn(modeContext);
 
   const criticalBaseThreat = getCriticalBlueBaseThreat(modeContext);
@@ -20519,6 +20593,7 @@ function doComputerMove(){
     }
   }
 
+  bumpAiFlowCounter("fallbackEntered");
   const fallbackMove = getFallbackAiMove(modeContext);
   const fallbackValidation = validateAiLaunchMoveCandidate(fallbackMove);
   if(fallbackMove && fallbackValidation.ok){
