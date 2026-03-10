@@ -11348,6 +11348,9 @@ function buildAiFallbackDiagnosticsReport(source){
       specialContinuationRouteClear: sample?.candidateMetadata?.specialContinuationRouteClear === true,
       strictSpecialPathRejectStage: sample?.candidateMetadata?.strictSpecialPathRejectStage === true,
       isCriticalOrEmergencyStage: sample?.candidateMetadata?.isCriticalOrEmergencyStage === true,
+      passedSecondSegmentValidation: sample?.candidateMetadata?.passedSecondSegmentValidation === true,
+      candidateClass: sample?.candidateMetadata?.candidateClass || sample?.routeClass || "gap",
+      finalizeStage: sample?.candidateMetadata?.finalizeStage || null,
     })),
     afterBounceSourceSamples: gapAfterBounceDetailedEvents.slice(-8),
   };
@@ -11374,6 +11377,9 @@ function buildAiFallbackDiagnosticsReport(source){
         specialContinuationRouteClear: sample?.candidateMetadata?.specialContinuationRouteClear === true,
         strictSpecialPathRejectStage: sample?.candidateMetadata?.strictSpecialPathRejectStage === true,
         isCriticalOrEmergencyStage: sample?.candidateMetadata?.isCriticalOrEmergencyStage === true,
+        passedSecondSegmentValidation: sample?.candidateMetadata?.passedSecondSegmentValidation === true,
+        candidateClass: sample?.candidateMetadata?.candidateClass || sample?.routeClass || "ricochet",
+        finalizeStage: sample?.candidateMetadata?.finalizeStage || null,
       })),
   };
 
@@ -18202,6 +18208,9 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
       specialContinuationRouteClear: rawMeta.specialContinuationRouteClear === true,
       strictSpecialPathRejectStage: rawMeta.strictSpecialPathRejectStage === true,
       isCriticalOrEmergencyStage: rawMeta.isCriticalOrEmergencyStage === true,
+      passedSecondSegmentValidation: rawMeta.passedSecondSegmentValidation === true,
+      candidateClass: rawMeta.candidateClass || "gap",
+      finalizeStage: rawMeta.finalizeStage || null,
     };
     candidateTypeDiagnostics.gap.afterBounceRejectSamples.push(sample);
     if(candidateTypeDiagnostics.gap.afterBounceRejectSamples.length > 24){
@@ -18257,6 +18266,9 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
         specialContinuationRouteClear: context?.specialContinuationRouteClear === true,
         strictSpecialPathRejectStage: context?.strictSpecialPathRejectStage === true,
         isCriticalOrEmergencyStage: context?.isCriticalOrEmergencyStage === true,
+        passedSecondSegmentValidation: context?.passedSecondSegmentValidation === true,
+        candidateClass: context?.candidateClass || classKey,
+        finalizeStage: context?.finalizeStage || null,
         secondSegmentLength: Number.isFinite(context?.secondSegmentLength)
           ? Number(context.secondSegmentLength.toFixed(2))
           : null,
@@ -18513,6 +18525,9 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
         specialContinuationRouteClear: planPathToPoint.lastRejectMeta?.specialContinuationRouteClear === true,
         strictSpecialPathRejectStage: planPathToPoint.lastRejectMeta?.strictSpecialPathRejectStage === true,
         isCriticalOrEmergencyStage: planPathToPoint.lastRejectMeta?.isCriticalOrEmergencyStage === true,
+        passedSecondSegmentValidation: planPathToPoint.lastRejectMeta?.passedSecondSegmentValidation === true,
+        candidateClass: planPathToPoint.lastRejectMeta?.candidateClass || "gap",
+        finalizeStage: planPathToPoint.lastRejectMeta?.finalizeStage || null,
       });
       if(planPathToPoint.lastRejectMeta && planPathToPoint.lastRejectMeta.passedFirstSegment === true){
         pushGapAfterBounceRejectSample(planPathToPoint.lastRejectMeta, {
@@ -18651,6 +18666,9 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
           secondSegmentLength: planPathToPoint.lastRejectMeta?.secondSegmentLength,
           landingInsideObstacle: planPathToPoint.lastRejectMeta?.landingInsideObstacle === true,
           rejectedByHardCollision: planPathToPoint.lastRejectMeta?.rejectedByHardCollision === true,
+          passedSecondSegmentValidation: planPathToPoint.lastRejectMeta?.passedSecondSegmentValidation === true,
+          candidateClass: planPathToPoint.lastRejectMeta?.candidateClass || "ricochet",
+          finalizeStage: planPathToPoint.lastRejectMeta?.finalizeStage || null,
         });
         continue;
       }
@@ -21440,12 +21458,37 @@ function planPathToPoint(plane, tx, ty, options = {}){
       const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
       const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
       const candidateClass = candidateMeta?.candidateClass || meta?.candidateClass || defaultRouteClass;
+      const isSpecialCandidateClass = candidateClass === "gap" || candidateClass === "ricochet";
       const fullPathClear = isPathClear(plane.x, plane.y, landingX, landingY);
       let shouldUsePostGapContinuationTolerance = false;
       let shouldUsePostRicochetContinuationTolerance = false;
       let specialContinuationRouteClear = false;
       let gapEntryX = null;
       let gapEntryY = null;
+      function buildLateSpecialRejectMeta(rejectCode, reason, segmentLabel, blockerType, passedSecondSegmentValidation = false, beforeFinalizePlannedMove = true){
+        return {
+          routeClass: candidateClass,
+          rejectCode,
+          rejectReason: rejectCode,
+          reason: reason || rejectCode,
+          segmentStage: "post_second_segment_validation",
+          segmentLabel: segmentLabel || (candidateClass === "gap" ? "post_gap_positioning" : "after_bounce"),
+          blockerType: blockerType || "route_metrics",
+          firstBlockingObjectType: "none",
+          landingSafety: isCandidateLandingSafe(landingX, landingY) ? "safe" : "unsafe",
+          candidateSafetyRiskSummary: "rejected_by_late_special_route_validation",
+          passedFirstSegment: true,
+          passedSecondSegmentValidation: passedSecondSegmentValidation === true,
+          wasAfterSecondSegmentValidation: passedSecondSegmentValidation === true,
+          specialContinuationRouteClear: specialContinuationRouteClear === true,
+          strictSpecialPathRejectStage: strictSpecialPathRejectStage === true,
+          isCriticalOrEmergencyStage: isCriticalOrEmergencyStage === true,
+          candidateClass,
+          finalizeStage: beforeFinalizePlannedMove === true
+            ? "before_finalizePlannedMove_before_initialReachable"
+            : "after_finalizePlannedMove_or_initialReachable",
+        };
+      }
       if(!fullPathClear){
         const dx = landingX - plane.x;
         const dy = landingY - plane.y;
@@ -21539,12 +21582,28 @@ function planPathToPoint(plane, tx, ty, options = {}){
           }
           if(!hasGapContinuationSegment){
             bestRejectCode = "blocked_after_bounce__soft_post_gap_rule";
-            bestRejectMeta = null;
+            bestRejectMeta = isSpecialCandidateClass
+              ? buildLateSpecialRejectMeta(
+                bestRejectCode,
+                "rejected_after_second_segment_validation",
+                "post_gap_positioning",
+                "second_segment_soft_rule",
+                true
+              )
+              : null;
             return;
           }
           if(!isCandidateLandingSafe(landingX, landingY)){
             bestRejectCode = "blocked_after_bounce__invalid_gap_landing";
-            bestRejectMeta = null;
+            bestRejectMeta = isSpecialCandidateClass
+              ? buildLateSpecialRejectMeta(
+                bestRejectCode,
+                "rejected_after_second_segment_validation",
+                "post_gap_positioning",
+                "landing_safety",
+                true
+              )
+              : null;
             return;
           }
           shouldUsePostGapContinuationTolerance = true;
@@ -21602,6 +21661,15 @@ function planPathToPoint(plane, tx, ty, options = {}){
 
           if(!hasRicochetContinuationSegment){
             bestRejectCode = "blocked_after_bounce__soft_post_ricochet_rule";
+            bestRejectMeta = isSpecialCandidateClass
+              ? buildLateSpecialRejectMeta(
+                bestRejectCode,
+                "rejected_after_second_segment_validation",
+                "after_bounce",
+                "second_segment_soft_rule",
+                true
+              )
+              : null;
             return;
           }
 
@@ -21609,6 +21677,15 @@ function planPathToPoint(plane, tx, ty, options = {}){
           specialContinuationRouteClear = true;
           if(!isCandidateLandingSafe(landingX, landingY)){
             bestRejectCode = "blocked_after_bounce__invalid_ricochet_landing";
+            bestRejectMeta = isSpecialCandidateClass
+              ? buildLateSpecialRejectMeta(
+                bestRejectCode,
+                "rejected_after_second_segment_validation",
+                "after_bounce",
+                "landing_safety",
+                true
+              )
+              : null;
             return;
           }
         }
@@ -21645,24 +21722,14 @@ function planPathToPoint(plane, tx, ty, options = {}){
 
         if(!canBypassSpecialPostContinuationReject){
           bestRejectCode = routeMetrics.rejectCode;
-          if((candidateClass === "gap" || candidateClass === "ricochet") && specialContinuationRouteClear){
-            bestRejectMeta = {
-              routeClass: candidateClass,
-              rejectCode: routeMetrics.rejectCode,
-              rejectReason: routeMetrics.rejectCode,
-              reason: "rejected_after_second_segment_validation",
-              segmentStage: "post_second_segment_validation",
-              segmentLabel: candidateClass === "gap" ? "post_gap_positioning" : "after_bounce",
-              blockerType: "route_metrics",
-              firstBlockingObjectType: "none",
-              landingSafety: isCandidateLandingSafe(landingX, landingY) ? "safe" : "unsafe",
-              candidateSafetyRiskSummary: "rejected_by_route_metrics_after_second_segment_validation",
-              passedFirstSegment: true,
-              wasAfterSecondSegmentValidation: true,
-              specialContinuationRouteClear: specialContinuationRouteClear === true,
-              strictSpecialPathRejectStage: strictSpecialPathRejectStage === true,
-              isCriticalOrEmergencyStage: isCriticalOrEmergencyStage === true,
-            };
+          if(isSpecialCandidateClass && specialContinuationRouteClear){
+            bestRejectMeta = buildLateSpecialRejectMeta(
+              routeMetrics.rejectCode,
+              "rejected_after_second_segment_validation",
+              candidateClass === "gap" ? "post_gap_positioning" : "after_bounce",
+              "route_metrics",
+              true
+            );
           } else {
             bestRejectMeta = null;
           }
