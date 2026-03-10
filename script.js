@@ -12033,6 +12033,28 @@ const BLUE_EXPLOSION_DURATIONS_MS = {
   "explosion_blue_short_4.gif": 1100,
   "explosion_blue_short_5.gif": 1100,
 };
+const EXPLOSION_PLAYBACK_RATE_DEFAULT = 1;
+const EXPLOSION_PLAYBACK_RATE_STEP = 0.1;
+const EXPLOSION_PLAYBACK_RATE_MIN = 0.1;
+const EXPLOSION_PLAYBACK_RATE_MAX = 5;
+let explosionPlaybackRate = EXPLOSION_PLAYBACK_RATE_DEFAULT;
+
+function clampExplosionPlaybackRate(value){
+  if(!Number.isFinite(value)) return EXPLOSION_PLAYBACK_RATE_DEFAULT;
+  return Math.max(EXPLOSION_PLAYBACK_RATE_MIN, Math.min(EXPLOSION_PLAYBACK_RATE_MAX, value));
+}
+
+function applyExplosionPlaybackRate(durationMs){
+  if(!Number.isFinite(durationMs) || durationMs <= 0) return durationMs;
+  const safeRate = clampExplosionPlaybackRate(explosionPlaybackRate);
+  return durationMs / safeRate;
+}
+
+function setExplosionPlaybackRate(value){
+  if(!Number.isFinite(value) || value <= 0) return false;
+  explosionPlaybackRate = clampExplosionPlaybackRate(value);
+  return true;
+}
 
 function getShortExplosionDurationMs(src = "", color = "") {
   const trimmed = typeof src === "string" ? src.trim() : "";
@@ -26003,13 +26025,22 @@ function getExplosionVariantsForColor(color) {
   return sprites.filter(Boolean);
 }
 
-function createExplosionState(plane, x, y) {
+function createExplosionState(plane, x, y, options = {}) {
   const variants = getExplosionVariantsForColor(plane.color);
-  const readyVariants = variants.filter(isSpriteReady);
-  const pool = readyVariants.length ? readyVariants : variants;
-  const img = pool.length
-    ? pool[Math.floor(Math.random() * pool.length)]
+  const requestedVariantIndex = Number.isFinite(options.variantIndex)
+    ? Math.max(0, Math.floor(options.variantIndex))
     : null;
+  const fallbackPool = variants.filter(Boolean);
+  const imgFromRequestedVariant = requestedVariantIndex !== null
+    ? (fallbackPool[requestedVariantIndex] || null)
+    : null;
+  const readyVariants = fallbackPool.filter(isSpriteReady);
+  const randomPool = readyVariants.length ? readyVariants : fallbackPool;
+  const img = imgFromRequestedVariant || (randomPool.length
+    ? randomPool[Math.floor(Math.random() * randomPool.length)]
+    : null);
+
+  const baseTtlMs = resolveExplosionGifDurationMs(img, plane.color);
 
   const state = {
     kind: "gif",
@@ -26018,7 +26049,8 @@ function createExplosionState(plane, x, y) {
     img,
     variants,
     startedAtMs: null,
-    ttlMs: resolveExplosionGifDurationMs(img, plane.color),
+    baseTtlMs,
+    ttlMs: applyExplosionPlaybackRate(baseTtlMs),
     debugFramesLogged: 0,
     color: plane.color,
   };
@@ -26033,15 +26065,17 @@ function createExplosionState(plane, x, y) {
       state.sequenceFrameCount = sequenceFrames.length;
       state.sequenceVariantIndex = variantIndex;
       if (Number.isFinite(sequenceDurationMs)) {
-        state.ttlMs = sequenceDurationMs;
-        state.sequenceFrameDurationsMs = buildBlueSequenceFrameDurations(sequenceFrames.length, sequenceDurationMs);
+        state.baseTtlMs = sequenceDurationMs;
+        state.ttlMs = applyExplosionPlaybackRate(sequenceDurationMs);
+        state.sequenceFrameDurationsMs = buildBlueSequenceFrameDurations(sequenceFrames.length, state.ttlMs);
       }
     }
   } else if (img) {
     const durationMs = getShortExplosionDurationMs(img.src, plane.color);
     if (Number.isFinite(durationMs)) {
       img.durationMs = durationMs;
-      state.ttlMs = durationMs;
+      state.baseTtlMs = durationMs;
+      state.ttlMs = applyExplosionPlaybackRate(durationMs);
     }
   }
 
@@ -26099,7 +26133,7 @@ function createExplosionImageEntry(explosionState, img) {
   return { element: container, img: image, host, metrics };
 }
 
-function spawnExplosionForPlane(plane, x = null, y = null) {
+function spawnExplosionForPlane(plane, x = null, y = null, options = {}) {
   if (!plane || plane.explosionSpawned) {
     return null;
   }
@@ -26115,11 +26149,56 @@ function spawnExplosionForPlane(plane, x = null, y = null) {
   if (!Number.isFinite(cx) || !Number.isFinite(cy)) {
     return null;
   }
-  const state = createExplosionState(plane, cx, cy);
+  const state = createExplosionState(plane, cx, cy, options);
 
   activeExplosions.push(state);
   plane.explosionSpawned = true;
   return state;
+}
+
+function normalizeExplosionDebugColor(value){
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized === "green" ? "green" : "blue";
+}
+
+function ensureExplosionDebugApi(){
+  if(typeof window === "undefined") return;
+  if(window.EXPLOSION_DEBUG) return;
+
+  const makeMockPlane = (color) => ({ color, explosionSpawned: false, x: null, y: null, collisionX: null, collisionY: null });
+
+  window.EXPLOSION_DEBUG = {
+    getPlaybackRate(){
+      return explosionPlaybackRate;
+    },
+    setPlaybackRate(rate){
+      return setExplosionPlaybackRate(rate);
+    },
+    increasePlaybackRateByTenPercent(){
+      return setExplosionPlaybackRate(explosionPlaybackRate * (1 + EXPLOSION_PLAYBACK_RATE_STEP));
+    },
+    decreasePlaybackRateByTenPercent(){
+      return setExplosionPlaybackRate(explosionPlaybackRate * (1 - EXPLOSION_PLAYBACK_RATE_STEP));
+    },
+    play(color = "blue", variant = 1, x = null, y = null){
+      const safeColor = normalizeExplosionDebugColor(color);
+      const safeVariant = Number.isFinite(variant) ? Math.max(1, Math.floor(variant)) : 1;
+      const safeX = Number.isFinite(x) ? x : CENTER_X;
+      const safeY = Number.isFinite(y) ? y : CENTER_Y;
+      const mockPlane = makeMockPlane(safeColor);
+      return spawnExplosionForPlane(mockPlane, safeX, safeY, { variantIndex: safeVariant - 1 });
+    },
+  };
+
+  window.EXPLOSION_PLAY = (playerColor = "blue", explosionNumber = 1) => {
+    return window.EXPLOSION_DEBUG.play(playerColor, explosionNumber);
+  };
+  window.EXPLOSION_SPEED_UP = () => window.EXPLOSION_DEBUG.increasePlaybackRateByTenPercent();
+  window.EXPLOSION_SPEED_DOWN = () => window.EXPLOSION_DEBUG.decreasePlaybackRateByTenPercent();
+
+  console.info(
+    '[EXPLOSION_DEBUG] ready. Try: EXPLOSION_PLAY("blue", 1..5), EXPLOSION_PLAY("green", 1..5), EXPLOSION_SPEED_UP(), EXPLOSION_SPEED_DOWN(), EXPLOSION_DEBUG.setPlaybackRate(1), EXPLOSION_DEBUG.getPlaybackRate()'
+  );
 }
 
 function updateAndDrawExplosions(ctx, now) {
@@ -26134,12 +26213,16 @@ function updateAndDrawExplosions(ctx, now) {
       explosion.startedAtMs = explosion.startedAtMs ?? now;
 
       const elapsed = now - explosion.startedAtMs;
-      const resolvedTtlMs = resolveExplosionGifDurationMs(img, explosion.color);
+      const resolvedBaseTtlMs = Number.isFinite(explosion.baseTtlMs)
+        ? explosion.baseTtlMs
+        : resolveExplosionGifDurationMs(img, explosion.color);
       const exactTtlMs = getExactExplosionGifDurationMs(img);
       if (Number.isFinite(exactTtlMs)) {
-        explosion.ttlMs = exactTtlMs;
+        explosion.baseTtlMs = exactTtlMs;
       }
-      const ttlMs = Number.isFinite(explosion.ttlMs) ? explosion.ttlMs : resolvedTtlMs;
+      const activeBaseTtlMs = Number.isFinite(explosion.baseTtlMs) ? explosion.baseTtlMs : resolvedBaseTtlMs;
+      const ttlMs = applyExplosionPlaybackRate(activeBaseTtlMs);
+      explosion.ttlMs = ttlMs;
 
       if (elapsed >= ttlMs) {
         if (explosion.domEntry?.element?.remove) {
@@ -26270,6 +26353,8 @@ function updateAndDrawExplosions(ctx, now) {
     }
   }
 }
+
+ensureExplosionDebugApi();
 
 /* ======= HITS / VICTORY ======= */
 function awardPoint(color){
