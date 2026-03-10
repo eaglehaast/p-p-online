@@ -9526,6 +9526,7 @@ function startAiSelfAnalyzerMatchIfNeeded(){
     flowCounters: {
       aiTurnEntered: 0,
       aiTurnAbortedBeforePlanner: 0,
+      aiTurnAbortedBeforeCandidateGeneration: 0,
       plannerEntered: 0,
       candidateGenerationEntered: 0,
       fallbackEntered: 0,
@@ -11377,6 +11378,7 @@ function buildAiFallbackDiagnosticsReport(source){
       : {
           aiTurnEntered: 0,
           aiTurnAbortedBeforePlanner: 0,
+          aiTurnAbortedBeforeCandidateGeneration: 0,
           plannerEntered: 0,
           candidateGenerationEntered: 0,
           fallbackEntered: 0,
@@ -11484,6 +11486,7 @@ function exportAiFallbackDiagnosticsReportJson(){
       flowDiagnostics: {
         aiTurnEntered: 0,
         aiTurnAbortedBeforePlanner: 0,
+        aiTurnAbortedBeforeCandidateGeneration: 0,
         plannerEntered: 0,
         candidateGenerationEntered: 0,
         fallbackEntered: 0,
@@ -11530,6 +11533,9 @@ function DEBUG_AI_FLOW_COUNTERS(){
       : 0,
     aiTurnEntered: Number.isFinite(flow.aiTurnEntered) ? flow.aiTurnEntered : 0,
     aiTurnAbortedBeforePlanner: Number.isFinite(flow.aiTurnAbortedBeforePlanner) ? flow.aiTurnAbortedBeforePlanner : 0,
+    aiTurnAbortedBeforeCandidateGeneration: Number.isFinite(flow.aiTurnAbortedBeforeCandidateGeneration)
+      ? flow.aiTurnAbortedBeforeCandidateGeneration
+      : 0,
     plannerEntered: Number.isFinite(flow.plannerEntered) ? flow.plannerEntered : 0,
     candidateGenerationEntered: Number.isFinite(flow.candidateGenerationEntered) ? flow.candidateGenerationEntered : 0,
     fallbackEntered: Number.isFinite(flow.fallbackEntered) ? flow.fallbackEntered : 0,
@@ -20143,6 +20149,43 @@ function doComputerMove(){
     });
   };
 
+  const tracePlannerFlow = (step, details = {}) => {
+    const reasonCode = typeof details.reasonCode === "string" && details.reasonCode
+      ? details.reasonCode
+      : "unspecified";
+    logAiDecision("planner_flow_trace", {
+      step,
+      reasonCode,
+      goal: details.goal ?? aiRoundState.currentGoal ?? null,
+      mode: details.mode ?? aiRoundState.mode ?? null,
+      planeId: details.planeId ?? details.move?.plane?.id ?? null,
+      selected: Boolean(details.move),
+      errorMessage: details.errorMessage || null,
+    });
+    recordAiSelfAnalyzerDecision(`planner_flow_${step}`, {
+      goal: details.goal ?? aiRoundState.currentGoal ?? null,
+      planeId: details.planeId ?? details.move?.plane?.id ?? null,
+      reasonCodes: [
+        `planner_step_${step}`,
+        reasonCode,
+      ],
+      rejectReasons: Array.isArray(details.rejectReasons) && details.rejectReasons.length > 0
+        ? details.rejectReasons
+        : undefined,
+      move: details.move,
+      errorMessage: details.errorMessage,
+    });
+  };
+
+  const tracePreCandidateExit = (reasonCode, move = null) => {
+    bumpAiFlowCounter("aiTurnAbortedBeforeCandidateGeneration");
+    tracePlannerFlow("aborted_before_candidate_generation", {
+      reasonCode,
+      move,
+      rejectReasons: [reasonCode],
+    });
+  };
+
   const aiPlanes = points.filter(p=> p.color==="blue" && p.isAlive && !p.burning);
   const enemies  = points.filter(p=> p.color==="green" && p.isAlive && !p.burning);
   if(!aiPlanes.length || !enemies.length){
@@ -20181,6 +20224,9 @@ function doComputerMove(){
   logAiDecision("risk_profile", modeContext.aiRiskProfile);
 
   bumpAiFlowCounter("plannerEntered");
+  tracePlannerFlow("entered_planner", {
+    reasonCode: "planner_entered",
+  });
   selectAiModeForCurrentTurn(modeContext);
 
   const criticalBaseThreat = getCriticalBlueBaseThreat(modeContext);
@@ -20188,11 +20234,37 @@ function doComputerMove(){
   const hasCriticalBaseThreat = Boolean(criticalBaseThreat);
   const earlyBaseWarningThreat = hasCriticalBaseThreat ? null : getEarlyBaseWarningThreat(modeContext);
   const hasEarlyBaseWarningThreat = Boolean(earlyBaseWarningThreat);
-
-  const openingNonTrivialStartMeta = evaluateOpeningNonTrivialStartMeta({
-    ...modeContext,
-    goalName: hasCriticalBaseThreat ? "critical_base_threat" : (aiRoundState.currentGoal || ""),
+  tracePlannerFlow("resolved_stage_goal", {
+    reasonCode: hasCriticalBaseThreat
+      ? "critical_base_threat"
+      : (hasEarlyBaseWarningThreat ? "early_base_warning" : "normal_stage"),
+    goal: aiRoundState.currentGoal || null,
+    mode: aiRoundState.mode || null,
   });
+
+  let openingNonTrivialStartMeta = null;
+  try {
+    openingNonTrivialStartMeta = evaluateOpeningNonTrivialStartMeta({
+      ...modeContext,
+      goalName: hasCriticalBaseThreat ? "critical_base_threat" : (aiRoundState.currentGoal || ""),
+    });
+  } catch (error) {
+    tracePlannerFlow("aborted_before_candidate_generation", {
+      reasonCode: "opening_non_trivial_probe_exception",
+      rejectReasons: ["opening_non_trivial_probe_exception"],
+      errorMessage: error?.message || String(error),
+    });
+    openingNonTrivialStartMeta = {
+      suppressTemplate: false,
+      protectedCriticalBranch: false,
+      hasGapTraversal: false,
+      hasSingleBounceRicochet: false,
+      hasSafeCenterRoute: false,
+      inspectedPlanes: 0,
+      inspectedTargets: 0,
+      reason: "opening_non_trivial_probe_exception",
+    };
+  }
   aiRoundState.lastOpeningNonTrivialStartMeta = openingNonTrivialStartMeta;
   aiRoundState.openingTemplateSuppressed = Boolean(openingNonTrivialStartMeta?.suppressTemplate);
   logAiDecision("opening_non_trivial_start_probe", {
@@ -20367,6 +20439,7 @@ function doComputerMove(){
         move: openingCenterMove,
         reasonCodes: openingCenterReasonCodes,
       });
+      tracePreCandidateExit("opening_center_selected", openingCenterMove);
       issueAIMoveWithInventoryUsage(modeContext, openingCenterMove);
       return;
     }
@@ -20433,6 +20506,7 @@ function doComputerMove(){
         earlyDirectFinisherMove
       ),
     });
+    tracePreCandidateExit("direct_finisher_selected", earlyDirectFinisherMove);
     logAiDecision("direct_finisher", {
       source: "do_computer_move",
       planeId: earlyDirectFinisherMove.plane?.id ?? null,
@@ -20457,6 +20531,7 @@ function doComputerMove(){
           roleMove
         ),
       });
+      tracePreCandidateExit("role_move_selected", roleMove);
       logAiDecision("role_move", {
         goal: aiRoundState.currentGoal,
         planeId: roleMove.plane?.id ?? null,
@@ -20480,6 +20555,12 @@ function doComputerMove(){
   }
 
   if(modeContext.aiRiskProfile.profile === "comeback" && shouldUseFlagsMode && availableEnemyFlags.length > 0){
+    tracePlannerFlow("passed_preconditions", {
+      reasonCode: "comeback_flag_probe",
+    });
+    tracePlannerFlow("entering_candidate_generation", {
+      reasonCode: "comeback_flag_probe",
+    });
     const quickFlagMove = planModeDrivenAiMove(modeContext);
     if(quickFlagMove && aiRoundState.currentGoal === "capture_enemy_flag"){
       recordDecisionEvent("comeback_flag_selected", {
@@ -20511,6 +20592,7 @@ function doComputerMove(){
       move: earlyCargoMove,
       reasonCodes: ["cargo_priority", "safe_pickup_window", "resource_setup"],
     });
+    tracePreCandidateExit("early_cargo_selected", earlyCargoMove);
     issueAIMoveWithInventoryUsage(modeContext, earlyCargoMove);
     return;
   }
@@ -20522,6 +20604,12 @@ function doComputerMove(){
     rejectReasons: [earlyCargoRejectReason],
   });
 
+  tracePlannerFlow("passed_preconditions", {
+    reasonCode: "standard_mode_probe",
+  });
+  tracePlannerFlow("entering_candidate_generation", {
+    reasonCode: "standard_mode_probe",
+  });
   const modeMove = planModeDrivenAiMove(modeContext);
   if(modeMove){
     recordDecisionEvent("mode_move_selected", {
@@ -20594,6 +20682,9 @@ function doComputerMove(){
   }
 
   bumpAiFlowCounter("fallbackEntered");
+  tracePlannerFlow("entering_fallback", {
+    reasonCode: "mode_move_not_found",
+  });
   const fallbackMove = getFallbackAiMove(modeContext);
   const fallbackValidation = validateAiLaunchMoveCandidate(fallbackMove);
   if(fallbackMove && fallbackValidation.ok){
