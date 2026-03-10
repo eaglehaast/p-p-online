@@ -21035,8 +21035,8 @@ function planPathToPoint(plane, tx, ty, options = {}){
           }
           return;
         }
-        if(candidateClass === "gap" && !strictSpecialPathRejectStage){
-          const hasGapContinuationSegment = Number.isFinite(gapEntryX)
+        if(candidateClass === "gap" && !strictSpecialPathRejectStage && canUseSpecialCandidateAfterEntryCheck === true){
+          let hasGapContinuationSegment = Number.isFinite(gapEntryX)
             && Number.isFinite(gapEntryY)
             && (() => {
               const continuationLen = Math.hypot(landingX - gapEntryX, landingY - gapEntryY);
@@ -21047,6 +21047,33 @@ function planPathToPoint(plane, tx, ty, options = {}){
               const continuationY = gapEntryY + (landingY - gapEntryY) * continuationRatio;
               return isPathClear(gapEntryX, gapEntryY, continuationX, continuationY);
             })();
+          const shouldUsePostGapContinuationTolerance = hasGapContinuationSegment === false;
+          if(!hasGapContinuationSegment && shouldUsePostGapContinuationTolerance){
+            const continuationDx = landingX - gapEntryX;
+            const continuationDy = landingY - gapEntryY;
+            const continuationLen = Math.hypot(continuationDx, continuationDy);
+            if(continuationLen > CELL_SIZE * 0.2){
+              const maxContinuationStartShiftPx = Math.min(CELL_SIZE * 0.18, continuationLen * 0.3);
+              const continuationStartShiftCandidates = [maxContinuationStartShiftPx * 0.5, maxContinuationStartShiftPx];
+              for(let i = 0; i < continuationStartShiftCandidates.length; i += 1){
+                const shiftPx = continuationStartShiftCandidates[i];
+                if(!(shiftPx > 0 && shiftPx < continuationLen)) continue;
+                const shiftedStartRatio = shiftPx / continuationLen;
+                const shiftedStartX = gapEntryX + continuationDx * shiftedStartRatio;
+                const shiftedStartY = gapEntryY + continuationDy * shiftedStartRatio;
+                const shiftedContinuationLen = continuationLen - shiftPx;
+                if(shiftedContinuationLen <= CELL_SIZE * 0.15) continue;
+                const shiftedProbePx = Math.min(shiftedContinuationLen, Math.max(CELL_SIZE * 0.2, CELL_SIZE * 0.42));
+                const shiftedProbeRatio = shiftedProbePx / continuationLen;
+                const shiftedProbeX = gapEntryX + continuationDx * (shiftedStartRatio + shiftedProbeRatio);
+                const shiftedProbeY = gapEntryY + continuationDy * (shiftedStartRatio + shiftedProbeRatio);
+                if(isPathClear(shiftedStartX, shiftedStartY, shiftedProbeX, shiftedProbeY)){
+                  hasGapContinuationSegment = true;
+                  break;
+                }
+              }
+            }
+          }
           if(!hasGapContinuationSegment){
             bestRejectCode = "blocked_after_bounce__post_gap_continuation_blocked";
             return;
