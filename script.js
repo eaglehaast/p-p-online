@@ -21601,11 +21601,21 @@ function planPathToPoint(plane, tx, ty, options = {}){
         const isSoftPostContinuationRejectCode = routeMetrics.rejectCode === "insufficient_progress"
           || routeMetrics.rejectCode === "unsafe_lane"
           || routeMetrics.rejectCode === "blocked_at_gap";
-        const canBypassSpecialPostContinuationReject = isSoftPostContinuationRejectCode
+        const hasGapLateRejectHardBlocker = !isSoftPostContinuationRejectCode;
+        const hasAcceptableGapLandingSafety = isCandidateLandingSafe(landingX, landingY);
+        const canBypassGapLateSoftReject = candidateClass === "gap"
+          && specialContinuationRouteClear
+          && isSoftPostContinuationRejectCode
+          && !hasGapLateRejectHardBlocker
+          && hasAcceptableGapLandingSafety
+          && !strictSpecialPathRejectStage
+          && !isCriticalOrEmergencyStage;
+        const canBypassRicochetLateSoftReject = candidateClass === "ricochet"
+          && isSoftPostContinuationRejectCode
           && specialContinuationRouteClear
           && !strictSpecialPathRejectStage
-          && !isCriticalOrEmergencyStage
-          && (candidateClass === "ricochet" || candidateClass === "gap");
+          && !isCriticalOrEmergencyStage;
+        const canBypassSpecialPostContinuationReject = canBypassGapLateSoftReject || canBypassRicochetLateSoftReject;
 
         if(!canBypassSpecialPostContinuationReject){
           bestRejectCode = routeMetrics.rejectCode;
