@@ -928,10 +928,10 @@ const EXPLOSION_BLUE_SPRITES = [
 ];
 const BLUE_EXPLOSION_VARIANT_COUNT = 5;
 const BLUE_SEQUENCE_FRAME_ORDER = Object.freeze([
-  1, 5, 9, 13, 17, 21,
+  1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21,
 ]);
 const BLUE_SEQUENCE_FRAME_DURATION_MULTIPLIERS = Object.freeze([
-  1, 1, 1, 1, 1, 1,
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 ]);
 
 function buildBlueSequenceFrameDurations(frameCount, ttlMs) {
@@ -12036,11 +12036,11 @@ const GREEN_EXPLOSION_DURATIONS_MS = {
   "green_explosion_short6.gif": 560,
 };
 const BLUE_EXPLOSION_DURATIONS_MS = {
-  "explosion_blue_short_1.gif": 1100,
-  "explosion_blue_short_2.gif": 1100,
-  "explosion_blue_short_3.gif": 1100,
-  "explosion_blue_short_4.gif": 1100,
-  "explosion_blue_short_5.gif": 1100,
+  "explosion_blue_short_1.gif": 550,
+  "explosion_blue_short_2.gif": 550,
+  "explosion_blue_short_3.gif": 550,
+  "explosion_blue_short_4.gif": 550,
+  "explosion_blue_short_5.gif": 550,
 };
 const EXPLOSION_PLAYBACK_RATE_DEFAULT = 1;
 const EXPLOSION_PLAYBACK_RATE_STEP = 0.1;
