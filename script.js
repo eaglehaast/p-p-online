@@ -927,20 +927,13 @@ const EXPLOSION_BLUE_SPRITES = [
   "ui_gamescreen/blue_explosions_short/explosion_blue_short_5.gif"
 ];
 const BLUE_EXPLOSION_VARIANT_COUNT = 5;
-const BLUE_SEQUENCE_FRAME_ORDER = Object.freeze([
-  3, 5, 7, 9,
-  11, 13, 15, 16,
-  17, 18,
-  17, 18,
-  19, 20, 22, 24,
-]);
-const BLUE_SEQUENCE_FRAME_DURATION_MULTIPLIERS = Object.freeze([
-  0.7, 0.7, 0.7, 0.7,
-  1.0, 1.0, 1.0, 1.0,
-  1.6, 1.6,
-  1.0, 1.0,
-  0.8, 0.8, 0.8, 0.8,
-]);
+const BLUE_SEQUENCE_FRAME_STEP = 4;
+const BLUE_SEQUENCE_FRAME_ORDER = Object.freeze(
+  Array.from(
+    { length: Math.ceil(31 / BLUE_SEQUENCE_FRAME_STEP) },
+    (_unused, index) => 1 + index * BLUE_SEQUENCE_FRAME_STEP
+  ).filter((frameNumber) => frameNumber <= 31)
+);
 
 function buildBlueSequenceFrameDurations(frameCount, ttlMs) {
   if (!Number.isFinite(frameCount) || frameCount <= 0 || !Number.isFinite(ttlMs) || ttlMs <= 0) {
@@ -948,12 +941,7 @@ function buildBlueSequenceFrameDurations(frameCount, ttlMs) {
   }
 
   const totalDurationMs = Math.max(frameCount, Math.round(ttlMs));
-  const frameWeights = Array.from({ length: frameCount }, (_unused, frameIndex) => {
-    const configuredWeight = Number(BLUE_SEQUENCE_FRAME_DURATION_MULTIPLIERS[frameIndex]);
-    return Number.isFinite(configuredWeight) && configuredWeight > 0
-      ? configuredWeight
-      : 1;
-  });
+  const frameWeights = Array.from({ length: frameCount }, () => 1);
 
   const totalWeight = frameWeights.reduce((sum, weight) => sum + weight, 0);
   if (!(totalWeight > 0)) {
