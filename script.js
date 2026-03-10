@@ -927,38 +927,33 @@ const EXPLOSION_BLUE_SPRITES = [
   "ui_gamescreen/blue_explosions_short/explosion_blue_short_5.gif"
 ];
 const BLUE_EXPLOSION_VARIANT_COUNT = 5;
-const BLUE_EXPLOSION_SEQUENCE_FRAME_COUNT = 31;
-const BLUE_SEQUENCE_EXPLOSION_TEMPO_PROFILE = Object.freeze({
-  fastSegmentShare: 0.38,
-  fastFrameWeight: 0.72,
-  slowFrameWeight: 1.28,
-  tailHoldFrames: 2,
-  tailHoldMultiplier: 1.8,
-});
+const BLUE_SEQUENCE_FRAME_ORDER = Object.freeze([
+  3, 5, 7, 9,
+  11, 13, 15, 16,
+  17, 18,
+  17, 18,
+  19, 20, 22, 24,
+]);
+const BLUE_SEQUENCE_FRAME_DURATION_MULTIPLIERS = Object.freeze([
+  0.7, 0.7, 0.7, 0.7,
+  1.0, 1.0, 1.0, 1.0,
+  1.6, 1.6,
+  1.0, 1.0,
+  0.8, 0.8, 0.8, 0.8,
+]);
 
-function buildBlueSequenceFrameDurations(frameCount, ttlMs, tempoProfile = BLUE_SEQUENCE_EXPLOSION_TEMPO_PROFILE) {
+function buildBlueSequenceFrameDurations(frameCount, ttlMs) {
   if (!Number.isFinite(frameCount) || frameCount <= 0 || !Number.isFinite(ttlMs) || ttlMs <= 0) {
     return [];
   }
 
   const totalDurationMs = Math.max(frameCount, Math.round(ttlMs));
-  const share = Math.min(0.95, Math.max(0.05, Number(tempoProfile?.fastSegmentShare) || 0.38));
-  const fastFrameCount = Math.min(frameCount, Math.max(1, Math.round(frameCount * share)));
-  const fastWeight = Math.max(0.01, Number(tempoProfile?.fastFrameWeight) || 0.72);
-  const slowWeight = Math.max(0.01, Number(tempoProfile?.slowFrameWeight) || 1.28);
-  const tailHoldFrames = Math.min(frameCount, Math.max(0, Math.round(Number(tempoProfile?.tailHoldFrames) || 0)));
-  const tailHoldMultiplier = Math.max(1, Number(tempoProfile?.tailHoldMultiplier) || 1);
-
-  const frameWeights = Array.from({ length: frameCount }, (_unused, frameIndex) => (
-    frameIndex < fastFrameCount ? fastWeight : slowWeight
-  ));
-
-  if (tailHoldFrames > 0) {
-    const tailStart = frameCount - tailHoldFrames;
-    for (let frameIndex = tailStart; frameIndex < frameCount; frameIndex += 1) {
-      frameWeights[frameIndex] *= tailHoldMultiplier;
-    }
-  }
+  const frameWeights = Array.from({ length: frameCount }, (_unused, frameIndex) => {
+    const configuredWeight = Number(BLUE_SEQUENCE_FRAME_DURATION_MULTIPLIERS[frameIndex]);
+    return Number.isFinite(configuredWeight) && configuredWeight > 0
+      ? configuredWeight
+      : 1;
+  });
 
   const totalWeight = frameWeights.reduce((sum, weight) => sum + weight, 0);
   if (!(totalWeight > 0)) {
@@ -996,8 +991,8 @@ function buildBlueSequenceFrameDurations(frameCount, ttlMs, tempoProfile = BLUE_
 function buildBlueExplosionSequenceFramePaths(variantIndex) {
   const variant = variantIndex + 1;
   const folder = `ui_gamescreen/gs_blue_explosions/explosion_blue_${variant}`;
-  return Array.from({ length: BLUE_EXPLOSION_SEQUENCE_FRAME_COUNT }, (_unused, frameIndex) => {
-    const frame = String(frameIndex + 1).padStart(2, "0");
+  return BLUE_SEQUENCE_FRAME_ORDER.map((frameNumber) => {
+    const frame = String(frameNumber).padStart(2, "0");
     return `${folder}/explosion_blue_${variant}_${frame}.png`;
   });
 }
