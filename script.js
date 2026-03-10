@@ -10672,16 +10672,16 @@ function buildAiFallbackDiagnosticsReport(source){
     return "unknown";
   };
 
-  const normalizeSpecialRouteRejectDiagnostic = ({ routeClass, rejectReason, segmentLabel, blockingObjectType, classKeyFallback }) => {
+  const normalizeSpecialRouteRejectDiagnostic = ({ routeClass, rejectReason, segmentLabel, blockingObjectType, classKeyFallback, candidateMetadata }) => {
     const normalizedRouteClass = normalizeSpecialRouteClass(routeClass, classKeyFallback);
     const rawReason = `${rejectReason || "unknown"}`;
     const rawSegmentLabel = `${segmentLabel || "unknown"}`;
-    const normalizedReason = mapReasonToSpecialFailure(rawReason);
+    const normalizedReason = candidateMetadata?.rejectReasonNormalized || mapReasonToSpecialFailure(rawReason);
     const normalizedSegmentFromReason = mapReasonToSegment(rawReason, normalizedRouteClass);
     const normalizedSegmentFromLabel = mapReasonToSegment(rawSegmentLabel, normalizedRouteClass);
-    const normalizedSegment = normalizedSegmentFromReason !== "unknown"
+    const normalizedSegment = candidateMetadata?.rejectSegmentNormalized || (normalizedSegmentFromReason !== "unknown"
       ? normalizedSegmentFromReason
-      : normalizedSegmentFromLabel;
+      : normalizedSegmentFromLabel);
     const normalizedBlockingObjectType = mapReasonToObject(blockingObjectType || rawReason);
 
     return {
@@ -10691,6 +10691,19 @@ function buildAiFallbackDiagnosticsReport(source){
       blockingObjectType: normalizedBlockingObjectType,
       rawReason,
       rawSegmentLabel,
+      ricochetDetails: candidateMetadata && typeof candidateMetadata === "object" ? {
+        bounceWall: candidateMetadata?.bounceWall || null,
+        bouncePoint: candidateMetadata?.bouncePoint || null,
+        toBounceClear: typeof candidateMetadata?.toBounceClear === "boolean" ? candidateMetadata.toBounceClear : null,
+        fromBounceClear: typeof candidateMetadata?.fromBounceClear === "boolean" ? candidateMetadata.fromBounceClear : null,
+        finalTargetKind: candidateMetadata?.finalTargetKind || null,
+        isEmergencyContext: typeof candidateMetadata?.isEmergencyContext === "boolean" ? candidateMetadata.isEmergencyContext : null,
+        isDefenseOverride: typeof candidateMetadata?.isDefenseOverride === "boolean" ? candidateMetadata.isDefenseOverride : null,
+        pathLengthBeforeBounce: Number.isFinite(candidateMetadata?.pathLengthBeforeBounce) ? candidateMetadata.pathLengthBeforeBounce : null,
+        pathLengthAfterBounce: Number.isFinite(candidateMetadata?.pathLengthAfterBounce) ? candidateMetadata.pathLengthAfterBounce : null,
+        totalPathRatio: Number.isFinite(candidateMetadata?.totalPathRatio) ? candidateMetadata.totalPathRatio : null,
+        diedBeforeValidGenerated: typeof candidateMetadata?.diedBeforeValidGenerated === "boolean" ? candidateMetadata.diedBeforeValidGenerated : null,
+      } : null,
     };
   };
 
@@ -10957,17 +10970,19 @@ function buildAiFallbackDiagnosticsReport(source){
         : [];
       for(const sample of eventSpecialRouteRejectDiagnostics){
         if(!sample || typeof sample !== "object") continue;
-        specialRouteRejectDiagnostics.push({
+        const safeCandidateMetadata = sample.candidateMetadata && typeof sample.candidateMetadata === "object"
+          ? sample.candidateMetadata
+          : null;
+        const safeSample = {
           routeClass: `${sample.routeClass || "unknown"}`,
           rejectReason: sample.rejectReason || "unknown",
           blockingObjectType: sample.blockingObjectType || "unknown",
           segmentLabel: sample.segmentLabel || "unknown",
           roundNumber: Number.isFinite(sample.roundNumber) ? sample.roundNumber : (Number.isFinite(event?.roundNumber) ? event.roundNumber : null),
           goal: sample.goal || event?.goal || null,
-          candidateMetadata: sample.candidateMetadata && typeof sample.candidateMetadata === "object"
-            ? sample.candidateMetadata
-            : null,
-        });
+          candidateMetadata: safeCandidateMetadata,
+        };
+        specialRouteRejectDiagnostics.push(safeSample);
       }
 
       for(const classKey of routeClasses){
@@ -11265,6 +11280,54 @@ function buildAiFallbackDiagnosticsReport(source){
     segmentLabelDistribution: gapAfterBounceSegmentDistribution,
     samples: gapAfterBounceDetailedEvents.slice(-8),
   };
+  const normalizedSpecialRouteRejectDiagnostics = specialRouteRejectDiagnostics
+    .map((sample) => {
+      const normalized = normalizeSpecialRouteRejectDiagnostic({
+        routeClass: sample?.routeClass,
+        rejectReason: sample?.rejectReason,
+        segmentLabel: sample?.segmentLabel,
+        blockingObjectType: sample?.blockingObjectType,
+        classKeyFallback: sample?.routeClass || "unknown",
+        candidateMetadata: sample?.candidateMetadata,
+      });
+      return {
+        ...normalized,
+        count: 1,
+        roundNumber: sample?.roundNumber ?? null,
+        goal: sample?.goal ?? null,
+      };
+    })
+    .filter((sample) => sample?.normalizedRouteClass === "ricochet");
+  const ricochetRejectDetailedStats = {
+    total: normalizedSpecialRouteRejectDiagnostics.reduce((sum, event) => sum + (Number.isFinite(event?.count) ? Math.max(0, Math.floor(event.count)) : 1), 0),
+    sourceEventCount: normalizedSpecialRouteRejectDiagnostics.reduce((sum, event) => sum + (Number.isFinite(event?.count) ? Math.max(0, Math.floor(event.count)) : 1), 0),
+    bounceWallDistribution: normalizedSpecialRouteRejectDiagnostics.reduce((acc, event) => {
+      const key = `${event?.ricochetDetails?.bounceWall || "unknown"}`;
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {}),
+    finalTargetKindDistribution: normalizedSpecialRouteRejectDiagnostics.reduce((acc, event) => {
+      const key = `${event?.ricochetDetails?.finalTargetKind || "unknown"}`;
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {}),
+    toBounceBlockedCount: normalizedSpecialRouteRejectDiagnostics.reduce((sum, event) => sum + (event?.ricochetDetails?.toBounceClear === false ? 1 : 0), 0),
+    fromBounceBlockedCount: normalizedSpecialRouteRejectDiagnostics.reduce((sum, event) => sum + (event?.ricochetDetails?.fromBounceClear === false ? 1 : 0), 0),
+    emergencyContextCount: normalizedSpecialRouteRejectDiagnostics.reduce((sum, event) => sum + (event?.ricochetDetails?.isEmergencyContext === true ? 1 : 0), 0),
+    defenseOverrideCount: normalizedSpecialRouteRejectDiagnostics.reduce((sum, event) => sum + (event?.ricochetDetails?.isDefenseOverride === true ? 1 : 0), 0),
+    diedBeforeValidGeneratedCount: normalizedSpecialRouteRejectDiagnostics.reduce((sum, event) => sum + (event?.ricochetDetails?.diedBeforeValidGenerated === true ? 1 : 0), 0),
+    topRejectReasons: topByCount(normalizedSpecialRouteRejectDiagnostics.reduce((acc, event) => {
+      const key = `${event?.normalizedReason || "unknown"}`;
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {}), 8),
+    segmentLabelDistribution: normalizedSpecialRouteRejectDiagnostics.reduce((acc, event) => {
+      const key = `${event?.normalizedSegment || "unknown"}`;
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {}),
+    samples: normalizedSpecialRouteRejectDiagnostics.slice(-8),
+  };
 
   const gapAfterBounceSamplesCompact = gapAfterBounceDetailedStats.samples;
 
@@ -11281,6 +11344,7 @@ function buildAiFallbackDiagnosticsReport(source){
     specialRouteFailureStats,
     specialRouteProgressStats,
     gapAfterBounceDetailedStats,
+    ricochetRejectDetailedStats,
     gapAfterBounceSamples: gapAfterBounceSamplesCompact,
     fallbackEpisodeSamples,
     summary,
@@ -17969,6 +18033,19 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
         planeId: context?.planeId ?? null,
         firstBlockingObjectId: context?.firstBlockingObjectId ?? null,
         distanceFromSecondSegmentStartToBlockingPoint: toSafeDistance(context?.distanceFromSecondSegmentStartToBlockingPoint),
+        ...(context?.bounceWall ? { bounceWall: context.bounceWall } : {}),
+        ...(toSafePoint(context?.bouncePoint) ? { bouncePoint: toSafePoint(context?.bouncePoint) } : {}),
+        ...(typeof context?.toBounceClear === "boolean" ? { toBounceClear: context.toBounceClear } : {}),
+        ...(typeof context?.fromBounceClear === "boolean" ? { fromBounceClear: context.fromBounceClear } : {}),
+        ...(context?.rejectReasonNormalized ? { rejectReasonNormalized: context.rejectReasonNormalized } : {}),
+        ...(context?.rejectSegmentNormalized ? { rejectSegmentNormalized: context.rejectSegmentNormalized } : {}),
+        ...(context?.finalTargetKind ? { finalTargetKind: context.finalTargetKind } : {}),
+        ...(typeof context?.isEmergencyContext === "boolean" ? { isEmergencyContext: context.isEmergencyContext } : {}),
+        ...(typeof context?.isDefenseOverride === "boolean" ? { isDefenseOverride: context.isDefenseOverride } : {}),
+        ...(toSafeDistance(context?.pathLengthBeforeBounce) != null ? { pathLengthBeforeBounce: toSafeDistance(context.pathLengthBeforeBounce) } : {}),
+        ...(toSafeDistance(context?.pathLengthAfterBounce) != null ? { pathLengthAfterBounce: toSafeDistance(context.pathLengthAfterBounce) } : {}),
+        ...(Number.isFinite(context?.totalPathRatio) ? { totalPathRatio: Number(context.totalPathRatio.toFixed(4)) } : {}),
+        ...(typeof context?.diedBeforeValidGenerated === "boolean" ? { diedBeforeValidGenerated: context.diedBeforeValidGenerated } : {}),
       },
     };
     candidateTypeDiagnostics.specialRouteRejectDiagnostics.push(event);
@@ -18336,6 +18413,19 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
           firstBlockingObjectId: planPathToPoint.lastRejectMeta?.firstBlockingObjectId || null,
           distanceFromSecondSegmentStartToBlockingPoint: planPathToPoint.lastRejectMeta?.distanceFromSecondSegmentStartToBlockingPoint,
           segmentLabel: planPathToPoint.lastRejectMeta?.segmentLabel || null,
+          bounceWall: planPathToPoint.lastRejectMeta?.bounceWall || mirroredTarget?.wall || null,
+          bouncePoint: planPathToPoint.lastRejectMeta?.bouncePoint || null,
+          toBounceClear: planPathToPoint.lastRejectMeta?.toBounceClear,
+          fromBounceClear: planPathToPoint.lastRejectMeta?.fromBounceClear,
+          rejectReasonNormalized: planPathToPoint.lastRejectMeta?.rejectReasonNormalized || null,
+          rejectSegmentNormalized: planPathToPoint.lastRejectMeta?.rejectSegmentNormalized || null,
+          finalTargetKind: planPathToPoint.lastRejectMeta?.finalTargetKind || "flag_anchor",
+          isEmergencyContext: planPathToPoint.lastRejectMeta?.isEmergencyContext,
+          isDefenseOverride: planPathToPoint.lastRejectMeta?.isDefenseOverride,
+          pathLengthBeforeBounce: planPathToPoint.lastRejectMeta?.pathLengthBeforeBounce,
+          pathLengthAfterBounce: planPathToPoint.lastRejectMeta?.pathLengthAfterBounce,
+          totalPathRatio: planPathToPoint.lastRejectMeta?.totalPathRatio,
+          diedBeforeValidGenerated: planPathToPoint.lastRejectMeta?.diedBeforeValidGenerated,
         });
         continue;
       }
@@ -19533,6 +19623,8 @@ function getFallbackAiMove(context){
             logReject: true,
             pressureBoost: mirrorPressureBoost,
             goalName: "attack_enemy_plane",
+            routeClass: "ricochet",
+            finalTargetKind: "enemy_plane",
           });
         if(mirror){
           const dx = mirror.mirrorTarget.x - plane.x;
@@ -20827,6 +20919,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
   const shouldForceNonDirectBranch = requestedRouteClass === "ricochet";
   const routeClassRejectDiagnosticsEnabled = options?.enableRouteClassRejectDiagnostics !== false;
   planPathToPoint.lastRejectCode = null;
+  planPathToPoint.lastRejectMeta = null;
 
   function recordRouteClassRejectDiagnostic(candidateClass, rejectCode){
     if(!routeClassRejectDiagnosticsEnabled || !aiRoundState || typeof aiRoundState !== "object") return;
@@ -21529,6 +21622,8 @@ function planPathToPoint(plane, tx, ty, options = {}){
       pressureBoost: mirrorPressureBoost,
       diagnostics: true,
       goalName: options?.goalName || "",
+      routeClass: requestedRouteClass,
+      finalTargetKind: options?.targetEnemy?.id != null ? "enemy_plane" : "point",
       allowNormalModeFirstSegmentRelaxation: !strictSpecialPathRejectStage,
       allowGapBeforeBounceGrace: requestedRouteClass === "gap" && !strictSpecialPathRejectStage,
       allowGapAfterBounceGrace: requestedRouteClass === "gap" && !strictSpecialPathRejectStage,
@@ -21565,6 +21660,9 @@ function planPathToPoint(plane, tx, ty, options = {}){
       registerCandidate(mirrorMove);
     } else {
       mirrorRejectCode = findMirrorShot.lastRejectCode || "blocked_path__mirror_not_found";
+      if(findMirrorShot.lastRejectMeta && typeof findMirrorShot.lastRejectMeta === "object"){
+        planPathToPoint.lastRejectMeta = { ...findMirrorShot.lastRejectMeta };
+      }
     }
   }
 
@@ -21577,6 +21675,8 @@ function planPathToPoint(plane, tx, ty, options = {}){
       maxPathRatioBonus: 0.12,
       stuckMirrorRelaxation: true,
       goalName: options?.goalName || "",
+      routeClass: "ricochet",
+      finalTargetKind: options?.targetEnemy?.id != null ? "enemy_plane" : "point",
       allowNormalModeFirstSegmentRelaxation: !strictSpecialPathRejectStage,
       allowGapAfterBounceGrace: false,
     });
@@ -21618,6 +21718,9 @@ function planPathToPoint(plane, tx, ty, options = {}){
   if(bestCandidate) return bestCandidate;
 
   planPathToPoint.lastRejectCode = mirrorRejectCode || findMirrorShot.lastRejectCode || "blocked_path__mirror_not_found";
+  if(!planPathToPoint.lastRejectMeta && findMirrorShot.lastRejectMeta && typeof findMirrorShot.lastRejectMeta === "object"){
+    planPathToPoint.lastRejectMeta = { ...findMirrorShot.lastRejectMeta };
+  }
   return null;
 }
 
@@ -21922,6 +22025,10 @@ function getSpreadAngleDegByAccuracy(accuracyPercent){
 /* Зеркальный выстрел (одно отражение) */
 function findMirrorShot(plane, enemy, options = {}){
   let best = null; // {mirrorTarget, totalDist}
+  const requestedRouteClassRaw = `${options?.routeClass || ""}`.toLowerCase();
+  const routeClass = requestedRouteClassRaw === "gap"
+    ? "gap"
+    : (requestedRouteClassRaw === "ricochet" ? "ricochet" : (options?.allowGapAfterBounceGrace === true ? "gap" : "ricochet"));
   const directDist = Math.hypot(plane.x - enemy.x, plane.y - enemy.y);
   const minBounceDistanceScale = Number.isFinite(options?.minBounceDistanceScale)
     ? Math.max(0, options.minBounceDistanceScale)
@@ -21945,6 +22052,14 @@ function findMirrorShot(plane, enemy, options = {}){
     || mirrorGoalName.includes("override");
   const allowNormalModeFirstSegmentRelaxation = options?.allowNormalModeFirstSegmentRelaxation !== false;
   findMirrorShot.lastRejectMeta = null;
+  const finalTargetKind = options?.finalTargetKind
+    || (enemy && Number.isFinite(enemy?.x) && Number.isFinite(enemy?.y)
+      ? (enemy?.id != null ? "enemy_plane" : "point")
+      : "unknown");
+  const isDefenseOverride = mirrorGoalName.includes("override")
+    || mirrorGoalName.includes("defense")
+    || mirrorGoalName.includes("defence");
+  let lastRejectedCandidateMeta = null;
   let rejectedTooClose = false;
   let rejectedTooLong = false;
   let rejectedToBounceSegment = false;
@@ -22155,6 +22270,22 @@ function findMirrorShot(plane, enemy, options = {}){
     );
     if(!inter){
       rejectedNoMirrorIntersection = true;
+      lastRejectedCandidateMeta = {
+        routeClass,
+        bounceWall: null,
+        bouncePoint: null,
+        toBounceClear: false,
+        fromBounceClear: false,
+        rejectReasonNormalized: "blocked_path",
+        rejectSegmentNormalized: "before_bounce",
+        finalTargetKind,
+        isEmergencyContext: isEmergencyMirrorGoal,
+        isDefenseOverride,
+        pathLengthBeforeBounce: null,
+        pathLengthAfterBounce: null,
+        totalPathRatio: null,
+        diedBeforeValidGenerated: true,
+      };
       continue;
     }
 
@@ -22213,8 +22344,35 @@ function findMirrorShot(plane, enemy, options = {}){
       || pathClearToBounceSoft
       || pathClearToBounceRelaxed
       || pathClearToBounceGapGrace;
+    const bounceWall = isFieldBorder
+      ? (Math.abs(e.x1 - e.x2) <= 1e-6
+        ? (Math.abs(e.x1 - FIELD_LEFT) <= 1e-6 ? "left" : (Math.abs(e.x1 - FIELD_RIGHT) <= 1e-6 ? "right" : null))
+        : null)
+      : null;
     if(!pathClearToBounce){
       rejectedToBounceSegment = true;
+      const totalDistIfComplete = Number.isFinite(firstLegDist)
+        ? firstLegDist + Math.hypot(inter.x - enemy.x, inter.y - enemy.y)
+        : null;
+      const totalPathRatio = (directDist > 1e-6 && Number.isFinite(totalDistIfComplete))
+        ? Number((totalDistIfComplete / directDist).toFixed(4))
+        : null;
+      lastRejectedCandidateMeta = {
+        routeClass,
+        bounceWall,
+        bouncePoint: { x: inter.x, y: inter.y },
+        toBounceClear: false,
+        fromBounceClear: null,
+        rejectReasonNormalized: "blocked_path",
+        rejectSegmentNormalized: "before_bounce",
+        finalTargetKind,
+        isEmergencyContext: isEmergencyMirrorGoal,
+        isDefenseOverride,
+        pathLengthBeforeBounce: Number.isFinite(firstLegDist) ? Number(firstLegDist.toFixed(2)) : null,
+        pathLengthAfterBounce: Number.isFinite(totalDistIfComplete) ? Number((totalDistIfComplete - firstLegDist).toFixed(2)) : null,
+        totalPathRatio,
+        diedBeforeValidGenerated: true,
+      };
       continue;
     }
 
@@ -22225,26 +22383,44 @@ function findMirrorShot(plane, enemy, options = {}){
     });
     if(!pathClearFromBounce){
       rejectedAfterBounceSegment = true;
+      const secondLegDist = Math.hypot(inter.x - enemy.x, inter.y - enemy.y);
+      const totalDist = firstLegDist + secondLegDist;
+      const totalPathRatio = (directDist > 1e-6 && Number.isFinite(totalDist))
+        ? Number((totalDist / directDist).toFixed(4))
+        : null;
       const blockingMeta = getFirstBlockingMetaOnSegment(inter.x, inter.y, enemy.x, enemy.y, {
         isFieldBorder,
         collider,
         ignoreEdge,
       }) || {};
-      findMirrorShot.lastRejectMeta = {
-        routeClass: "gap",
+      lastRejectedCandidateMeta = {
+        routeClass,
+        bounceWall,
         secondSegmentStart: { x: inter.x, y: inter.y },
         secondSegmentEnd: { x: enemy.x, y: enemy.y },
         bouncePoint: { x: inter.x, y: inter.y },
         rejectReason: "blocked_after_bounce__from_bounce_segment_blocked",
+        rejectReasonNormalized: "blocked_after_bounce",
+        rejectSegmentNormalized: "after_bounce",
+        toBounceClear: true,
+        fromBounceClear: false,
         firstBlockingObjectType: blockingMeta.firstBlockingObjectType || "unknown",
         firstBlockingObjectId: blockingMeta.firstBlockingObjectId || null,
         distanceFromSecondSegmentStartToBlockingPoint: Number.isFinite(blockingMeta.distanceFromSecondSegmentStartToBlockingPoint)
           ? blockingMeta.distanceFromSecondSegmentStartToBlockingPoint
           : null,
         segmentLabel: "after_bounce",
+        finalTargetKind,
+        isEmergencyContext: isEmergencyMirrorGoal,
+        isDefenseOverride,
+        pathLengthBeforeBounce: Number.isFinite(firstLegDist) ? Number(firstLegDist.toFixed(2)) : null,
+        pathLengthAfterBounce: Number.isFinite(secondLegDist) ? Number(secondLegDist.toFixed(2)) : null,
+        totalPathRatio,
+        diedBeforeValidGenerated: true,
         candidateSafetyRiskSummary: null,
         passedFirstSegment: true,
       };
+      findMirrorShot.lastRejectMeta = lastRejectedCandidateMeta;
       continue;
     }
 
@@ -22252,11 +22428,47 @@ function findMirrorShot(plane, enemy, options = {}){
                       Math.hypot(inter.x  - enemy.x, inter.y  - enemy.y);
     if(firstLegDist < minBounceDistance){
       rejectedTooClose = true;
+      const secondLegDist = Math.hypot(inter.x - enemy.x, inter.y - enemy.y);
+      const totalPathRatio = (directDist > 1e-6 && Number.isFinite(totalDist))
+        ? Number((totalDist / directDist).toFixed(4))
+        : null;
+      lastRejectedCandidateMeta = {
+        routeClass,
+        bounceWall,
+        bouncePoint: { x: inter.x, y: inter.y },
+        toBounceClear: true,
+        fromBounceClear: true,
+        rejectReasonNormalized: "invalid_bounce_geometry",
+        rejectSegmentNormalized: "before_bounce",
+        finalTargetKind,
+        isEmergencyContext: isEmergencyMirrorGoal,
+        isDefenseOverride,
+        pathLengthBeforeBounce: Number.isFinite(firstLegDist) ? Number(firstLegDist.toFixed(2)) : null,
+        pathLengthAfterBounce: Number.isFinite(secondLegDist) ? Number(secondLegDist.toFixed(2)) : null,
+        totalPathRatio,
+        diedBeforeValidGenerated: true,
+      };
       continue;
     }
 
     if(directDist > 0 && totalDist > directDist * maxPathRatio){
       rejectedTooLong = true;
+      lastRejectedCandidateMeta = {
+        routeClass,
+        bounceWall,
+        bouncePoint: { x: inter.x, y: inter.y },
+        toBounceClear: true,
+        fromBounceClear: true,
+        rejectReasonNormalized: "invalid_bounce_geometry",
+        rejectSegmentNormalized: "after_bounce",
+        finalTargetKind,
+        isEmergencyContext: isEmergencyMirrorGoal,
+        isDefenseOverride,
+        pathLengthBeforeBounce: Number.isFinite(firstLegDist) ? Number(firstLegDist.toFixed(2)) : null,
+        pathLengthAfterBounce: Number.isFinite(totalDist - firstLegDist) ? Number((totalDist - firstLegDist).toFixed(2)) : null,
+        totalPathRatio: Number((totalDist / directDist).toFixed(4)),
+        diedBeforeValidGenerated: true,
+      };
       continue;
     }
 
@@ -22278,6 +22490,12 @@ function findMirrorShot(plane, enemy, options = {}){
       findMirrorShot.lastRejectCode = "blocked_path__no_mirror_intersection";
     } else {
       findMirrorShot.lastRejectCode = "blocked_path__no_mirror_geometry";
+    }
+    if(lastRejectedCandidateMeta && !findMirrorShot.lastRejectMeta){
+      findMirrorShot.lastRejectMeta = {
+        ...lastRejectedCandidateMeta,
+        rejectReason: findMirrorShot.lastRejectCode || null,
+      };
     }
   } else {
     findMirrorShot.lastRejectCode = null;
