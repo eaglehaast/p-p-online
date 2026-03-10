@@ -26588,23 +26588,16 @@ function updateAndDrawExplosions(ctx, now) {
         const frameCount = explosion.sequenceFrames.length;
         const frameDurationMs = Math.max(1, ttlMs / frameCount);
         const frameIndex = Math.min(frameCount - 1, Math.floor(elapsed / frameDurationMs));
+        const minScale = 0.5;
+        const maxScale = 2;
+        const frameProgress = frameCount <= 1
+          ? 1
+          : frameIndex / (frameCount - 1);
+        const scaleFactor = minScale + (maxScale - minScale) * frameProgress;
 
         explosion.sequenceFrameIndex = frameIndex;
         explosion.nextFrameAtMs = explosion.startedAtMs + (frameIndex + 1) * frameDurationMs;
-
-        if (explosion.color !== "blue") {
-          const minScale = 0.5;
-          const maxScale = 2;
-          const frameProgress = frameCount <= 1
-            ? 1
-            : frameIndex / (frameCount - 1);
-          const scaleFactor = minScale + (maxScale - minScale) * frameProgress;
-          applyExplosionDomScale(explosion.domEntry, scaleFactor);
-        }
-
-        if (explosion.color === "blue") {
-          applyExplosionDomScale(explosion.domEntry, 1);
-        }
+        applyExplosionDomScale(explosion.domEntry, scaleFactor);
 
         const frameImg = explosion.sequenceFrames[frameIndex];
         if (frameImg?.src && explosion.domEntry.img.src !== frameImg.src) {
