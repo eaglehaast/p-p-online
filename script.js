@@ -21174,13 +21174,21 @@ function planPathToPoint(plane, tx, ty, options = {}){
       ? Math.max(0, minGapClearanceBase * (relaxedEmergencyThreshold ? 0.6 : (isNormalModeGapPostContinuation ? 0.35 : 0)))
       : minGapClearanceBase;
 
+    const shouldSkipGapPostContinuationSoftReject = candidateClass === "gap"
+      && isNormalModeGapPostContinuation
+      && specialContinuationRouteClear
+      && !strictSpecialPathRejectStage
+      && !isCriticalOrEmergencyStage;
+
     let rejectCode = null;
-    if(progress + 0.0001 < minProgress){
-      rejectCode = "insufficient_progress";
-    } else if(responseRisk > maxResponseRisk || corridorTightness > maxCorridorTightness){
-      rejectCode = "unsafe_lane";
-    } else if(candidateClass === "gap" && clearancePx < minGapClearance){
-      rejectCode = "blocked_at_gap";
+    if(!shouldSkipGapPostContinuationSoftReject){
+      if(progress + 0.0001 < minProgress){
+        rejectCode = "insufficient_progress";
+      } else if(responseRisk > maxResponseRisk || corridorTightness > maxCorridorTightness){
+        rejectCode = "unsafe_lane";
+      } else if(candidateClass === "gap" && clearancePx < minGapClearance){
+        rejectCode = "blocked_at_gap";
+      }
     }
 
     recordRouteClassRejectDiagnostic(candidateClass, rejectCode);
