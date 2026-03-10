@@ -26183,8 +26183,10 @@ function ensureExplosionDebugApi(){
     play(color = "blue", variant = 1, x = null, y = null){
       const safeColor = normalizeExplosionDebugColor(color);
       const safeVariant = Number.isFinite(variant) ? Math.max(1, Math.floor(variant)) : 1;
-      const safeX = Number.isFinite(x) ? x : CENTER_X;
-      const safeY = Number.isFinite(y) ? y : CENTER_Y;
+      const defaultCenterX = Number.isFinite(WORLD?.width) ? WORLD.width / 2 : 0;
+      const defaultCenterY = Number.isFinite(WORLD?.height) ? WORLD.height / 2 : 0;
+      const safeX = Number.isFinite(x) ? x : defaultCenterX;
+      const safeY = Number.isFinite(y) ? y : defaultCenterY;
       const mockPlane = makeMockPlane(safeColor);
       return spawnExplosionForPlane(mockPlane, safeX, safeY, { variantIndex: safeVariant - 1 });
     },
