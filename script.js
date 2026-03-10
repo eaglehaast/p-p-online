@@ -18936,6 +18936,7 @@ function buildAiFinalComparedSnapshot(candidate){
           clearance: Number.isFinite(routeMetrics?.clearance) ? Number(routeMetrics.clearance.toFixed(2)) : null,
           corridorTightness: Number.isFinite(routeMetrics?.corridorTightness) ? Number(routeMetrics.corridorTightness.toFixed(4)) : null,
           qualityScore: Number.isFinite(routeMetrics?.qualityScore) ? Number(routeMetrics.qualityScore.toFixed(4)) : null,
+          postGapToleranceUsed: routeMetrics?.postGapToleranceUsed === true,
         }
       : null,
   };
@@ -20927,6 +20928,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       corridorTightness: Number(corridorTightness.toFixed(4)),
       qualityScore,
       rejectCode,
+      postGapToleranceUsed: isNormalModeGapPostContinuation === true,
     };
   }
 
@@ -21047,7 +21049,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
               const continuationY = gapEntryY + (landingY - gapEntryY) * continuationRatio;
               return isPathClear(gapEntryX, gapEntryY, continuationX, continuationY);
             })();
-          const shouldUsePostGapContinuationTolerance = hasGapContinuationSegment === false;
+          shouldUsePostGapContinuationTolerance = hasGapContinuationSegment === false;
           if(!hasGapContinuationSegment && shouldUsePostGapContinuationTolerance){
             const continuationDx = landingX - gapEntryX;
             const continuationDy = landingY - gapEntryY;
