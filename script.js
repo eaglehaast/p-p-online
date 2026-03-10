@@ -21035,40 +21035,46 @@ function planPathToPoint(plane, tx, ty, options = {}){
       const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
       const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
       const candidateClass = candidateMeta?.candidateClass || meta?.candidateClass || defaultRouteClass;
+      const isRicochetCandidateContext = candidateClass === "ricochet"
+        && requestedRouteClass === "ricochet";
       const fullPathClear = isPathClear(plane.x, plane.y, landingX, landingY);
       let shouldUsePostGapContinuationTolerance = false;
       if(!fullPathClear){
-        const dx = landingX - plane.x;
-        const dy = landingY - plane.y;
-        const fullPathLength = Math.hypot(dx, dy);
-        const isRelaxedSpecialFirstSegment = !strictSpecialPathRejectStage
-          && (candidateClass === "gap" || candidateClass === "ricochet");
-        let canUseSpecialCandidateAfterEntryCheck = false;
-        if(isRelaxedSpecialFirstSegment && fullPathLength > 0.0001){
-          const probeRatio = candidateClass === "ricochet" ? 0.34 : 0.2;
-          const minEntryProbePx = CELL_SIZE * (candidateClass === "ricochet" ? 0.3 : 0.2);
-          const maxEntryProbePx = CELL_SIZE * (candidateClass === "ricochet" ? 0.9 : 0.6);
-          const entryProbePx = Math.max(minEntryProbePx, Math.min(maxEntryProbePx, fullPathLength * probeRatio));
-          const entryRatio = Math.max(0, Math.min(1, entryProbePx / fullPathLength));
-          const entryX = plane.x + dx * entryRatio;
-          const entryY = plane.y + dy * entryRatio;
-          canUseSpecialCandidateAfterEntryCheck = isPathClear(plane.x, plane.y, entryX, entryY);
-          if(!canUseSpecialCandidateAfterEntryCheck && candidateClass === "gap"){
-            canUseSpecialCandidateAfterEntryCheck = true;
+        const shouldDeferRicochetBlockedSegmentReject = isRicochetCandidateContext
+          && !strictSpecialPathRejectStage;
+        if(!shouldDeferRicochetBlockedSegmentReject){
+          const dx = landingX - plane.x;
+          const dy = landingY - plane.y;
+          const fullPathLength = Math.hypot(dx, dy);
+          const isRelaxedSpecialFirstSegment = !strictSpecialPathRejectStage
+            && (candidateClass === "gap" || candidateClass === "ricochet");
+          let canUseSpecialCandidateAfterEntryCheck = false;
+          if(isRelaxedSpecialFirstSegment && fullPathLength > 0.0001){
+            const probeRatio = candidateClass === "ricochet" ? 0.34 : 0.2;
+            const minEntryProbePx = CELL_SIZE * (candidateClass === "ricochet" ? 0.3 : 0.2);
+            const maxEntryProbePx = CELL_SIZE * (candidateClass === "ricochet" ? 0.9 : 0.6);
+            const entryProbePx = Math.max(minEntryProbePx, Math.min(maxEntryProbePx, fullPathLength * probeRatio));
+            const entryRatio = Math.max(0, Math.min(1, entryProbePx / fullPathLength));
+            const entryX = plane.x + dx * entryRatio;
+            const entryY = plane.y + dy * entryRatio;
+            canUseSpecialCandidateAfterEntryCheck = isPathClear(plane.x, plane.y, entryX, entryY);
+            if(!canUseSpecialCandidateAfterEntryCheck && candidateClass === "gap"){
+              canUseSpecialCandidateAfterEntryCheck = true;
+            }
           }
-        }
-        if(!canUseSpecialCandidateAfterEntryCheck){
-          if(candidateClass === "gap"){
-            bestRejectCode = "blocked_at_gap__gap_entry_probe_blocked";
-          } else if(candidateClass === "ricochet"){
-            bestRejectCode = "blocked_path_before_bounce__candidate_segment_blocked";
-          } else {
-            bestRejectCode = bestRejectCode || "blocked_path__candidate_segment_blocked";
+          if(!canUseSpecialCandidateAfterEntryCheck){
+            if(candidateClass === "gap"){
+              bestRejectCode = "blocked_at_gap__gap_entry_probe_blocked";
+            } else if(candidateClass === "ricochet"){
+              bestRejectCode = "blocked_path_before_bounce__candidate_segment_blocked";
+            } else {
+              bestRejectCode = bestRejectCode || "blocked_path__candidate_segment_blocked";
+            }
+            return;
           }
-          return;
-        }
-        if(candidateClass === "gap" && !strictSpecialPathRejectStage){
-          shouldUsePostGapContinuationTolerance = true;
+          if(candidateClass === "gap" && !strictSpecialPathRejectStage){
+            shouldUsePostGapContinuationTolerance = true;
+          }
         }
       }
       const routeMetrics = evaluateRouteMetrics({
