@@ -11173,7 +11173,24 @@ function buildAiFallbackDiagnosticsReport(source){
   const specialRouteProgressStats = {
     gap: {
       rejected_before_bounce: Math.max(0, Number(blockedSegmentStats.gap.before_bounce) || 0),
+      reached_second_segment_validation: Math.max(0,
+        (Math.max(0, Number(candidateFunnelStats.gap.raw_attempted) || 0)
+          - Math.max(0, Number(blockedSegmentStats.gap.before_bounce) || 0))
+      ),
       reached_valid_generated: Math.max(0, Number(candidateFunnelStats.gap.valid_generated) || 0),
+      rejected_on_soft_after_bounce_rule: Math.max(0,
+        Number((specialRouteRejectDiagnostics || []).filter((sample) => {
+          if(`${sample?.routeClass || ""}`.toLowerCase() !== "gap") return false;
+          return `${sample?.rejectReason || ""}`.toLowerCase().includes("soft_post_gap_rule");
+        }).length) || 0
+      ),
+      rejected_on_hard_after_bounce_rule: Math.max(0,
+        Number((specialRouteRejectDiagnostics || []).filter((sample) => {
+          if(`${sample?.routeClass || ""}`.toLowerCase() !== "gap") return false;
+          const reason = `${sample?.rejectReason || ""}`.toLowerCase();
+          return reason.includes("blocked_after_bounce") && !reason.includes("soft_post_gap_rule");
+        }).length) || 0
+      ),
       rejected_after_before_bounce: Math.max(0,
         (Math.max(0, Number(candidateFunnelStats.gap.raw_attempted) || 0)
           - (Math.max(0, Number(blockedSegmentStats.gap.before_bounce) || 0)
@@ -11182,7 +11199,24 @@ function buildAiFallbackDiagnosticsReport(source){
     },
     ricochet: {
       rejected_before_bounce: Math.max(0, Number(blockedSegmentStats.ricochet.before_bounce) || 0),
+      reached_second_segment_validation: Math.max(0,
+        (Math.max(0, Number(candidateFunnelStats.ricochet.raw_attempted) || 0)
+          - Math.max(0, Number(blockedSegmentStats.ricochet.before_bounce) || 0))
+      ),
       reached_valid_generated: Math.max(0, Number(candidateFunnelStats.ricochet.valid_generated) || 0),
+      rejected_on_soft_after_bounce_rule: Math.max(0,
+        Number((specialRouteRejectDiagnostics || []).filter((sample) => {
+          if(`${sample?.routeClass || ""}`.toLowerCase() !== "ricochet") return false;
+          return `${sample?.rejectReason || ""}`.toLowerCase().includes("soft_post_ricochet_rule");
+        }).length) || 0
+      ),
+      rejected_on_hard_after_bounce_rule: Math.max(0,
+        Number((specialRouteRejectDiagnostics || []).filter((sample) => {
+          if(`${sample?.routeClass || ""}`.toLowerCase() !== "ricochet") return false;
+          const reason = `${sample?.rejectReason || ""}`.toLowerCase();
+          return reason.includes("blocked_after_bounce") && !reason.includes("soft_post_ricochet_rule");
+        }).length) || 0
+      ),
       rejected_after_before_bounce: Math.max(0,
         (Math.max(0, Number(candidateFunnelStats.ricochet.raw_attempted) || 0)
           - (Math.max(0, Number(blockedSegmentStats.ricochet.before_bounce) || 0)
@@ -11201,8 +11235,8 @@ function buildAiFallbackDiagnosticsReport(source){
     `Ricochet ломается на сегменте: ${ricochetTopSegmentFailure[0]} (count=${ricochetTopSegmentFailure[1]}).`,
     `Gap special failure: ${gapTopSpecialFailure[0]} (count=${gapTopSpecialFailure[1]}).`,
     `Ricochet special failure: ${ricochetTopSpecialFailure[0]} (count=${ricochetTopSpecialFailure[1]}).`,
-    `Gap progress: before_bounce_rejected=${specialRouteProgressStats.gap.rejected_before_bounce}, valid_generated=${specialRouteProgressStats.gap.reached_valid_generated}, rejected_later=${specialRouteProgressStats.gap.rejected_after_before_bounce}.`,
-    `Ricochet progress: before_bounce_rejected=${specialRouteProgressStats.ricochet.rejected_before_bounce}, valid_generated=${specialRouteProgressStats.ricochet.reached_valid_generated}, rejected_later=${specialRouteProgressStats.ricochet.rejected_after_before_bounce}.`,
+    `Gap progress: before_bounce_rejected=${specialRouteProgressStats.gap.rejected_before_bounce}, reached_second_segment_validation=${specialRouteProgressStats.gap.reached_second_segment_validation}, soft_after_bounce_rejected=${specialRouteProgressStats.gap.rejected_on_soft_after_bounce_rule}, hard_after_bounce_rejected=${specialRouteProgressStats.gap.rejected_on_hard_after_bounce_rule}, valid_generated=${specialRouteProgressStats.gap.reached_valid_generated}, rejected_later=${specialRouteProgressStats.gap.rejected_after_before_bounce}.`,
+    `Ricochet progress: before_bounce_rejected=${specialRouteProgressStats.ricochet.rejected_before_bounce}, reached_second_segment_validation=${specialRouteProgressStats.ricochet.reached_second_segment_validation}, soft_after_bounce_rejected=${specialRouteProgressStats.ricochet.rejected_on_soft_after_bounce_rule}, hard_after_bounce_rejected=${specialRouteProgressStats.ricochet.rejected_on_hard_after_bounce_rule}, valid_generated=${specialRouteProgressStats.ricochet.reached_valid_generated}, rejected_later=${specialRouteProgressStats.ricochet.rejected_after_before_bounce}.`,
   ];
 
   const fallbackEpisodeSamples = fallbackEpisodes.slice(-6);
@@ -11241,9 +11275,24 @@ function buildAiFallbackDiagnosticsReport(source){
     topRejectReasons: topByCount(gapAfterBounceReasons, 8),
     topBlockingObjectTypes: topByCount(gapAfterBounceBlockingObjectTypes, 8),
     segmentLabelDistribution: gapAfterBounceSegmentDistribution,
+    afterBounceSourceSamples: gapAfterBounceDetailedEvents.slice(-8),
   };
 
   const gapAfterBounceSamplesCompact = gapAfterBounceDetailedEvents.slice(-8);
+  const ricochetRejectDetailedStats = {
+    total: specialRouteRejectDiagnostics.filter((sample) => `${sample?.routeClass || ""}`.toLowerCase() === "ricochet").length,
+    samples: specialRouteRejectDiagnostics
+      .filter((sample) => `${sample?.routeClass || ""}`.toLowerCase() === "ricochet")
+      .slice(-10)
+      .map((sample) => ({
+        rejectReason: sample?.rejectReason || "unknown",
+        bounceWall: sample?.bounceWall || sample?.candidateMetadata?.bounceWall || "unknown",
+        secondSegmentLength: sample?.secondSegmentLength ?? sample?.candidateMetadata?.secondSegmentLength ?? null,
+        landingInsideObstacle: sample?.landingInsideObstacle === true,
+        blockerType: sample?.blockingObjectType || "unknown",
+        rejectedByHardCollision: sample?.rejectedByHardCollision === true,
+      })),
+  };
 
   const report = {
     reportType: "ai_fallback_diagnostics_report",
@@ -11258,6 +11307,7 @@ function buildAiFallbackDiagnosticsReport(source){
     specialRouteFailureStats,
     specialRouteProgressStats,
     gapAfterBounceDetailedStats,
+    ricochetRejectDetailedStats,
     gapAfterBounceSamples: gapAfterBounceSamplesCompact,
     fallbackEpisodeSamples,
     summary,
@@ -11349,6 +11399,11 @@ function exportAiFallbackDiagnosticsReportJson(){
         topRejectReasons: [],
         topBlockingObjectTypes: [],
         segmentLabelDistribution: { after_bounce: 0, final_approach: 0, post_gap_positioning: 0, unknown: 0 },
+        afterBounceSourceSamples: [],
+      },
+      ricochetRejectDetailedStats: {
+        total: 0,
+        samples: [],
       },
       gapAfterBounceSamples: [],
       fallbackEpisodeSamples: [],
@@ -11388,6 +11443,11 @@ function DEBUG_AI_GAP_AFTER_BOUNCE_REPORT(){
       topRejectReasons: [],
       topBlockingObjectTypes: [],
       segmentLabelDistribution: { after_bounce: 0, final_approach: 0, post_gap_positioning: 0, unknown: 0 },
+      afterBounceSourceSamples: [],
+    },
+    ricochetRejectDetailedStats: fallbackReport?.ricochetRejectDetailedStats || {
+      total: 0,
+      samples: [],
     },
     gapAfterBounceSamples: Array.isArray(fallbackReport?.gapAfterBounceSamples)
       ? fallbackReport.gapAfterBounceSamples
@@ -18060,10 +18120,20 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
       segmentLabel: segmentLabel || "unknown",
       roundNumber: Number.isFinite(roundNumber) ? roundNumber : null,
       goal: options?.goalName || null,
+      bounceWall: context?.bounceWall || context?.sourceWall || null,
+      secondSegmentLength: Number.isFinite(context?.secondSegmentLength)
+        ? Number(context.secondSegmentLength.toFixed(2))
+        : null,
+      landingInsideObstacle: context?.landingInsideObstacle === true,
+      rejectedByHardCollision: context?.rejectedByHardCollision === true,
       candidateMetadata: {
         planeId: context?.planeId ?? null,
         firstBlockingObjectId: context?.firstBlockingObjectId ?? null,
         distanceFromSecondSegmentStartToBlockingPoint: toSafeDistance(context?.distanceFromSecondSegmentStartToBlockingPoint),
+        bounceWall: context?.bounceWall || context?.sourceWall || null,
+        secondSegmentLength: Number.isFinite(context?.secondSegmentLength)
+          ? Number(context.secondSegmentLength.toFixed(2))
+          : null,
       },
     };
     candidateTypeDiagnostics.specialRouteRejectDiagnostics.push(event);
@@ -18431,6 +18501,10 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
           firstBlockingObjectId: planPathToPoint.lastRejectMeta?.firstBlockingObjectId || null,
           distanceFromSecondSegmentStartToBlockingPoint: planPathToPoint.lastRejectMeta?.distanceFromSecondSegmentStartToBlockingPoint,
           segmentLabel: planPathToPoint.lastRejectMeta?.segmentLabel || null,
+          bounceWall: mirroredTarget?.wall || null,
+          secondSegmentLength: planPathToPoint.lastRejectMeta?.secondSegmentLength,
+          landingInsideObstacle: planPathToPoint.lastRejectMeta?.landingInsideObstacle === true,
+          rejectedByHardCollision: planPathToPoint.lastRejectMeta?.rejectedByHardCollision === true,
         });
         continue;
       }
@@ -20962,6 +21036,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
   const shouldForceNonDirectBranch = requestedRouteClass === "ricochet";
   const routeClassRejectDiagnosticsEnabled = options?.enableRouteClassRejectDiagnostics !== false;
   planPathToPoint.lastRejectCode = null;
+  planPathToPoint.lastRejectMeta = null;
 
   function recordRouteClassRejectDiagnostic(candidateClass, rejectCode){
     if(!routeClassRejectDiagnosticsEnabled || !aiRoundState || typeof aiRoundState !== "object") return;
@@ -21244,10 +21319,13 @@ function planPathToPoint(plane, tx, ty, options = {}){
           return;
         }
         if(candidateClass === "gap" && !strictSpecialPathRejectStage && canUseSpecialCandidateAfterEntryCheck === true){
+          const continuationLen = Number.isFinite(gapEntryX)
+            && Number.isFinite(gapEntryY)
+            ? Math.hypot(landingX - gapEntryX, landingY - gapEntryY)
+            : 0;
           let hasGapContinuationSegment = Number.isFinite(gapEntryX)
             && Number.isFinite(gapEntryY)
             && (() => {
-              const continuationLen = Math.hypot(landingX - gapEntryX, landingY - gapEntryY);
               if(continuationLen <= CELL_SIZE * 0.2) return false;
               const continuationProbePx = Math.min(continuationLen, Math.max(CELL_SIZE * 0.35, CELL_SIZE * 0.65));
               const continuationRatio = continuationProbePx / continuationLen;
@@ -21282,8 +21360,25 @@ function planPathToPoint(plane, tx, ty, options = {}){
               }
             }
           }
+          const allowSoftGapAfterBounceContinuation = !hasGapContinuationSegment
+            && continuationLen > CELL_SIZE * 0.22
+            && continuationLen <= CELL_SIZE * 1.7
+            && (() => {
+              const startTrimPx = Math.min(continuationLen * 0.36, CELL_SIZE * 0.32);
+              const endTrimPx = Math.min(continuationLen * 0.24, CELL_SIZE * 0.2);
+              const visibleLen = continuationLen - startTrimPx - endTrimPx;
+              if(visibleLen <= CELL_SIZE * 0.16) return false;
+              const sx = gapEntryX + ((landingX - gapEntryX) / continuationLen) * startTrimPx;
+              const sy = gapEntryY + ((landingY - gapEntryY) / continuationLen) * startTrimPx;
+              const ex = landingX - ((landingX - gapEntryX) / continuationLen) * endTrimPx;
+              const ey = landingY - ((landingY - gapEntryY) / continuationLen) * endTrimPx;
+              return isPathClear(sx, sy, ex, ey);
+            })();
+          if(!hasGapContinuationSegment && allowSoftGapAfterBounceContinuation){
+            hasGapContinuationSegment = true;
+          }
           if(!hasGapContinuationSegment){
-            bestRejectCode = "blocked_after_bounce__post_gap_continuation_blocked";
+            bestRejectCode = "blocked_after_bounce__soft_post_gap_rule";
             return;
           }
           if(!isCandidateLandingSafe(landingX, landingY)){
@@ -21323,8 +21418,28 @@ function planPathToPoint(plane, tx, ty, options = {}){
             }
           }
 
+          const allowSoftRicochetAfterBounceContinuation = !hasRicochetContinuationSegment
+            && ricochetContinuationLen > CELL_SIZE * 0.24
+            && ricochetContinuationLen <= CELL_SIZE * 1.8
+            && Number.isFinite(gapEntryX)
+            && Number.isFinite(gapEntryY)
+            && (() => {
+              const startTrimPx = Math.min(ricochetContinuationLen * 0.38, CELL_SIZE * 0.36);
+              const endTrimPx = Math.min(ricochetContinuationLen * 0.28, CELL_SIZE * 0.24);
+              const visibleLen = ricochetContinuationLen - startTrimPx - endTrimPx;
+              if(visibleLen <= CELL_SIZE * 0.16) return false;
+              const sx = gapEntryX + ((landingX - gapEntryX) / ricochetContinuationLen) * startTrimPx;
+              const sy = gapEntryY + ((landingY - gapEntryY) / ricochetContinuationLen) * startTrimPx;
+              const ex = landingX - ((landingX - gapEntryX) / ricochetContinuationLen) * endTrimPx;
+              const ey = landingY - ((landingY - gapEntryY) / ricochetContinuationLen) * endTrimPx;
+              return isPathClear(sx, sy, ex, ey);
+            })();
+          if(!hasRicochetContinuationSegment && allowSoftRicochetAfterBounceContinuation){
+            hasRicochetContinuationSegment = true;
+          }
+
           if(!hasRicochetContinuationSegment){
-            bestRejectCode = "blocked_after_bounce__post_ricochet_continuation_blocked";
+            bestRejectCode = "blocked_after_bounce__soft_post_ricochet_rule";
             return;
           }
 
@@ -21827,6 +21942,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       registerCandidate(mirrorMove);
     } else {
       mirrorRejectCode = findMirrorShot.lastRejectCode || "blocked_path__mirror_not_found";
+      planPathToPoint.lastRejectMeta = findMirrorShot.lastRejectMeta || null;
     }
   }
 
@@ -21880,6 +21996,9 @@ function planPathToPoint(plane, tx, ty, options = {}){
   if(bestCandidate) return bestCandidate;
 
   planPathToPoint.lastRejectCode = mirrorRejectCode || findMirrorShot.lastRejectCode || "blocked_path__mirror_not_found";
+  if(!planPathToPoint.lastRejectMeta){
+    planPathToPoint.lastRejectMeta = findMirrorShot.lastRejectMeta || null;
+  }
   return null;
 }
 
@@ -22479,7 +22598,28 @@ function findMirrorShot(plane, enemy, options = {}){
       && allowGapAfterBounceGrace
       && afterBounceContinuationLen <= CELL_SIZE * 1.45
       && !isExplicitSolidBlockerType(afterBounceBlockingMeta?.firstBlockingObjectType);
-    if(!pathClearFromBounce && !allowGapLikePostBouncePositioning){
+    const allowSoftPostBounceContinuation = !pathClearFromBounce
+      && !allowGapLikePostBouncePositioning
+      && !isEmergencyMirrorGoal
+      && !isExplicitSolidBlockerType(afterBounceBlockingMeta?.firstBlockingObjectType)
+      && afterBounceContinuationLen > CELL_SIZE * 0.22
+      && afterBounceContinuationLen <= CELL_SIZE * 1.9
+      && (() => {
+        const startTrimPx = Math.min(afterBounceContinuationLen * 0.38, CELL_SIZE * 0.35);
+        const endTrimPx = Math.min(afterBounceContinuationLen * 0.28, CELL_SIZE * 0.25);
+        const visibleLen = afterBounceContinuationLen - startTrimPx - endTrimPx;
+        if(visibleLen <= CELL_SIZE * 0.16) return false;
+        const sx = inter.x + ((enemy.x - inter.x) / afterBounceContinuationLen) * startTrimPx;
+        const sy = inter.y + ((enemy.y - inter.y) / afterBounceContinuationLen) * startTrimPx;
+        const ex = enemy.x - ((enemy.x - inter.x) / afterBounceContinuationLen) * endTrimPx;
+        const ey = enemy.y - ((enemy.y - inter.y) / afterBounceContinuationLen) * endTrimPx;
+        return isSecondSegmentClear(sx, sy, ex, ey, {
+          isFieldBorder,
+          collider,
+          ignoreEdge,
+        });
+      })();
+    if(!pathClearFromBounce && !allowGapLikePostBouncePositioning && !allowSoftPostBounceContinuation){
       rejectedAfterBounceSegment = true;
       const blockingMeta = afterBounceBlockingMeta || {};
       findMirrorShot.lastRejectMeta = {
@@ -22487,6 +22627,9 @@ function findMirrorShot(plane, enemy, options = {}){
         secondSegmentStart: { x: inter.x, y: inter.y },
         secondSegmentEnd: { x: enemy.x, y: enemy.y },
         bouncePoint: { x: inter.x, y: inter.y },
+        secondSegmentLength: Number.isFinite(afterBounceContinuationLen) ? Number(afterBounceContinuationLen.toFixed(2)) : null,
+        landingInsideObstacle: isPointInsideCollider(enemy.x, enemy.y, collider),
+        rejectedByHardCollision: isExplicitSolidBlockerType(blockingMeta.firstBlockingObjectType),
         rejectReason: "blocked_after_bounce__from_bounce_segment_blocked",
         firstBlockingObjectType: blockingMeta.firstBlockingObjectType || "unknown",
         firstBlockingObjectId: blockingMeta.firstBlockingObjectId || null,
