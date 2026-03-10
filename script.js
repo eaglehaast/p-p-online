@@ -26104,13 +26104,14 @@ function spawnExplosionForPlane(plane, x = null, y = null) {
     return null;
   }
 
-  const hasExplicitContact = Number.isFinite(x) && Number.isFinite(y);
-  const cx = hasExplicitContact
-    ? x
-    : (Number.isFinite(plane.collisionX) ? plane.collisionX : plane.x);
-  const cy = hasExplicitContact
-    ? y
-    : (Number.isFinite(plane.collisionY) ? plane.collisionY : plane.y);
+  // Always anchor plane-destruction explosions at the destroyed plane center.
+  // This keeps FX placement consistent regardless of where collision contact happened.
+  const cx = Number.isFinite(plane.x)
+    ? plane.x
+    : (Number.isFinite(x) ? x : plane.collisionX);
+  const cy = Number.isFinite(plane.y)
+    ? plane.y
+    : (Number.isFinite(y) ? y : plane.collisionY);
   if (!Number.isFinite(cx) || !Number.isFinite(cy)) {
     return null;
   }
