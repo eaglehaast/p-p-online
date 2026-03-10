@@ -928,10 +928,10 @@ const EXPLOSION_BLUE_SPRITES = [
 ];
 const BLUE_EXPLOSION_VARIANT_COUNT = 5;
 const BLUE_SEQUENCE_FRAME_ORDER = Object.freeze([
-  1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21,
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
 ]);
 const BLUE_SEQUENCE_FRAME_DURATION_MULTIPLIERS = Object.freeze([
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 ]);
 
 function buildBlueSequenceFrameDurations(frameCount, ttlMs) {
@@ -982,7 +982,7 @@ function buildBlueSequenceFrameDurations(frameCount, ttlMs) {
 
 function buildBlueExplosionSequenceFramePaths(variantIndex) {
   const variant = variantIndex + 1;
-  const folder = `ui_gamescreen/gs_blue_explosions/explosion_blue_${variant}`;
+  const folder = `ui_gamescreen/gs_blue_explosions_sprite/explosion_blue_${variant}`;
   return BLUE_SEQUENCE_FRAME_ORDER.map((frameNumber) => {
     const frame = String(frameNumber).padStart(2, "0");
     return `${folder}/explosion_blue_${variant}_${frame}.png`;
