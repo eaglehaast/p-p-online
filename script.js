@@ -918,7 +918,7 @@ function showRoundBanner(text) {
   }, ROUND_BANNER_AUTO_HIDE_MS);
 }
 
-// Animated GIF frames for explosion sprites
+// Animated explosion sprites
 const EXPLOSION_BLUE_SPRITES = [
   "ui_gamescreen/blue_explosions_short/explosion_blue_short_1.gif",
   "ui_gamescreen/blue_explosions_short/explosion_blue_short_2.gif",
@@ -926,6 +926,26 @@ const EXPLOSION_BLUE_SPRITES = [
   "ui_gamescreen/blue_explosions_short/explosion_blue_short_4.gif",
   "ui_gamescreen/blue_explosions_short/explosion_blue_short_5.gif"
 ];
+const BLUE_EXPLOSION_VARIANT_COUNT = 5;
+const BLUE_EXPLOSION_SEQUENCE_FRAME_COUNT = 31;
+
+function buildBlueExplosionSequenceFramePaths(variantIndex) {
+  const variant = variantIndex + 1;
+  const folder = `ui_gamescreen/gs_blue_explosions/explosion_blue_${variant}`;
+  return Array.from({ length: BLUE_EXPLOSION_SEQUENCE_FRAME_COUNT }, (_unused, frameIndex) => {
+    const frame = String(frameIndex + 1).padStart(2, "0");
+    return `${folder}/explosion_blue_${variant}_${frame}.png`;
+  });
+}
+
+const EXPLOSION_BLUE_SEQUENCE_VARIANTS = Array.from(
+  { length: BLUE_EXPLOSION_VARIANT_COUNT },
+  (_unused, variantIndex) => ({
+    variantIndex,
+    legacyGifSrc: EXPLOSION_BLUE_SPRITES[variantIndex] || "",
+    framePaths: buildBlueExplosionSequenceFramePaths(variantIndex),
+  })
+);
 
 const EXPLOSION_GREEN_SPRITES = [
   "ui_gamescreen/green_explosions_short/green_explosion_short1.gif",
@@ -7016,6 +7036,7 @@ const explosionImagesByColor = {
   blue: [],
   green: []
 };
+const blueExplosionSequenceImagesByVariant = [];
 
 let explosionSpritesPreloaded = false;
 
@@ -7048,7 +7069,14 @@ function preloadExplosionSprites() {
     explosionImagesByColor[color]?.push(img);
   };
 
-  EXPLOSION_BLUE_SPRITES.forEach(src => registerExplosionSprite(src, "blue"));
+  EXPLOSION_BLUE_SEQUENCE_VARIANTS.forEach((variant) => {
+    const frameImages = variant.framePaths.map((src) => loadImageAsset(src, GAME_PRELOAD_LABEL, { decoding: 'async' }).img);
+    blueExplosionSequenceImagesByVariant[variant.variantIndex] = frameImages;
+    const firstFrame = frameImages[0];
+    if (firstFrame) {
+      explosionImagesByColor.blue.push(firstFrame);
+    }
+  });
   EXPLOSION_GREEN_SPRITES.forEach(src => registerExplosionSprite(src, "green"));
 
   explosionSpritesPreloaded = true;
@@ -25767,14 +25795,8 @@ function createExplosionState(plane, x, y) {
   const img = pool.length
     ? pool[Math.floor(Math.random() * pool.length)]
     : null;
-  if (img) {
-    const durationMs = getShortExplosionDurationMs(img.src, plane.color);
-    if (Number.isFinite(durationMs)) {
-      img.durationMs = durationMs;
-    }
-  }
 
-  return {
+  const state = {
     kind: "gif",
     x,
     y,
@@ -25785,6 +25807,29 @@ function createExplosionState(plane, x, y) {
     debugFramesLogged: 0,
     color: plane.color,
   };
+
+  if (plane.color === "blue" && img) {
+    const variantIndex = variants.indexOf(img);
+    if (variantIndex >= 0) {
+      const sequenceFrames = blueExplosionSequenceImagesByVariant[variantIndex] || [];
+      const legacyGifSrc = EXPLOSION_BLUE_SEQUENCE_VARIANTS[variantIndex]?.legacyGifSrc || "";
+      const sequenceDurationMs = getShortExplosionDurationMs(legacyGifSrc, plane.color);
+      state.sequenceFrames = sequenceFrames;
+      state.sequenceFrameCount = sequenceFrames.length;
+      state.sequenceVariantIndex = variantIndex;
+      if (Number.isFinite(sequenceDurationMs)) {
+        state.ttlMs = sequenceDurationMs;
+      }
+    }
+  } else if (img) {
+    const durationMs = getShortExplosionDurationMs(img.src, plane.color);
+    if (Number.isFinite(durationMs)) {
+      img.durationMs = durationMs;
+      state.ttlMs = durationMs;
+    }
+  }
+
+  return state;
 }
 
 function createExplosionImageEntry(explosionState, img) {
@@ -25804,7 +25849,8 @@ function createExplosionImageEntry(explosionState, img) {
     return null;
   }
 
-  const resolvedSrc = img?.src || explosionState?.img?.src || '';
+  const firstSequenceFrame = explosionState?.sequenceFrames?.[0] || null;
+  const resolvedSrc = firstSequenceFrame?.src || img?.src || explosionState?.img?.src || '';
   if (!resolvedSrc) {
     return null;
   }
@@ -25889,8 +25935,21 @@ function updateAndDrawExplosions(ctx, now) {
         continue;
       }
 
-      if (!explosion.domEntry && img?.src) {
+      if (!explosion.domEntry && (img?.src || explosion?.sequenceFrames?.[0]?.src)) {
         explosion.domEntry = createExplosionImageEntry(explosion, img);
+      }
+
+      if (explosion.domEntry?.img && Array.isArray(explosion.sequenceFrames) && explosion.sequenceFrames.length) {
+        const frameCount = explosion.sequenceFrames.length;
+        const frameDurationMs = Math.max(1, ttlMs / frameCount);
+        const frameIndex = Math.min(
+          frameCount - 1,
+          Math.max(0, Math.floor(elapsed / frameDurationMs))
+        );
+        const frameImg = explosion.sequenceFrames[frameIndex];
+        if (frameImg?.src && explosion.domEntry.img.src !== frameImg.src) {
+          explosion.domEntry.img.src = frameImg.src;
+        }
       }
 
       const metrics = resolveExplosionMetrics('explosion');
