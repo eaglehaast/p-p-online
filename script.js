@@ -21959,6 +21959,45 @@ function findMirrorShot(plane, enemy, options = {}){
   const gapFinalLegRelaxationDistance = allowGapFinalLegRelaxation
     ? Math.max(gapAfterBounceGraceDistance, Math.min(CELL_SIZE * 1.15, CELL_SIZE * 1.8))
     : 0;
+  const gapSecondSegmentNearBounceTolerance = allowGapAfterBounceGrace
+    ? Math.max(secondSegmentTouchTolerance, Math.min(CELL_SIZE * 0.38, CELL_SIZE * 0.75))
+    : 0;
+  const gapSecondSegmentWallEpsilon = allowGapAfterBounceGrace
+    ? Math.max(0.45, Math.min(CELL_SIZE * 0.22, CELL_SIZE * 0.55))
+    : 0;
+  const segmentIntersectsObstacleWithTolerance = (fromX, fromY, toX, toY, pathMeta) => {
+    const blockMeta = getFirstBlockingMetaOnSegment(fromX, fromY, toX, toY, pathMeta);
+    if(!blockMeta) return false;
+    if(!allowGapAfterBounceGrace) return true;
+
+    const blockDistance = Number.isFinite(blockMeta.distanceFromSecondSegmentStartToBlockingPoint)
+      ? blockMeta.distanceFromSecondSegmentStartToBlockingPoint
+      : Infinity;
+    if(blockDistance <= gapSecondSegmentNearBounceTolerance) return false;
+
+    const isBrickBlock = blockMeta.firstBlockingObjectType === "brick";
+    if(!isBrickBlock || gapSecondSegmentWallEpsilon <= 0) return true;
+
+    const dx = toX - fromX;
+    const dy = toY - fromY;
+    const legLen = Math.hypot(dx, dy);
+    if(legLen <= 1e-6) return true;
+
+    const ux = dx / legLen;
+    const uy = dy / legLen;
+    const fromShift = Math.min(legLen * 0.25, gapSecondSegmentWallEpsilon);
+    const toShift = Math.min(legLen * 0.2, gapSecondSegmentWallEpsilon);
+    const relaxedFromX = fromX + ux * fromShift;
+    const relaxedFromY = fromY + uy * fromShift;
+    const relaxedToX = toX - ux * toShift;
+    const relaxedToY = toY - uy * toShift;
+    if(Math.hypot(relaxedToX - relaxedFromX, relaxedToY - relaxedFromY) <= 1e-6) return true;
+
+    const clearWithEpsilon = pathMeta.isFieldBorder
+      ? isPathClear(relaxedFromX, relaxedFromY, relaxedToX, relaxedToY)
+      : isPathClearExceptEdge(relaxedFromX, relaxedFromY, relaxedToX, relaxedToY, pathMeta.collider, pathMeta.ignoreEdge);
+    return !clearWithEpsilon;
+  };
   const isSecondSegmentClear = (fromX, fromY, toX, toY, pathMeta) => {
     const strictClear = pathMeta.isFieldBorder
       ? isPathClear(fromX, fromY, toX, toY)
@@ -21990,9 +22029,12 @@ function findMirrorShot(plane, enemy, options = {}){
     if(relaxedToOffset <= 0.0001) return relaxedFromClear;
     const relaxedToX = toX - (dx / legLen) * relaxedToOffset;
     const relaxedToY = toY - (dy / legLen) * relaxedToOffset;
-    return pathMeta.isFieldBorder
+    const finalSegmentClear = pathMeta.isFieldBorder
       ? isPathClear(relaxedFromX, relaxedFromY, relaxedToX, relaxedToY)
       : isPathClearExceptEdge(relaxedFromX, relaxedFromY, relaxedToX, relaxedToY, pathMeta.collider, pathMeta.ignoreEdge);
+    if(finalSegmentClear) return true;
+
+    return !segmentIntersectsObstacleWithTolerance(fromX, fromY, toX, toY, pathMeta);
   };
 
   const classifyBlockingObjectType = (surface) => {
