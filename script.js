@@ -13955,6 +13955,7 @@ const AI_ROTATION_BONUS_PER_IDLE_TURN = 0.05;
 const AI_ROTATION_BONUS_MAX = 0.26;
 const AI_REPEAT_WINDOW_PENALTY_STEP = 0.15;
 const AI_REPEAT_FORCE_SCORE_MARGIN = MAX_DRAG_DISTANCE * 0.08;
+const AI_REPEAT_TIE_BREAK_SCORE_MARGIN = MAX_DRAG_DISTANCE * 0.04;
 const AI_ROTATION_TACTICAL_PRIORITY_GAP = MAX_DRAG_DISTANCE * 0.04;
 const AI_REPEAT_OPENING_FORCE_TURN_LIMIT = 2;
 const AI_OPENING_SOFT_RANDOM_TURN_LIMIT = 2;
@@ -15186,6 +15187,14 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
   }
   if((nextCandidate.score ?? Number.POSITIVE_INFINITY) > (currentCandidate.score ?? Number.POSITIVE_INFINITY) + epsilon){
     return false;
+  }
+
+  if(nextPlaneId && currentPlaneId && repeatedPlaneId && nextPlaneId !== currentPlaneId && Number.isFinite(scoreGap)){
+    const nextIsRepeat = nextPlaneId === repeatedPlaneId;
+    const currentIsRepeat = currentPlaneId === repeatedPlaneId;
+    if(nextIsRepeat !== currentIsRepeat && scoreGap <= AI_REPEAT_TIE_BREAK_SCORE_MARGIN){
+      return !nextIsRepeat;
+    }
   }
 
   const nextRouteQuality = Number.isFinite(nextCandidate?.routeQualityScore)
@@ -21188,6 +21197,9 @@ function planPathToPoint(plane, tx, ty, options = {}){
     || activeGoalName.includes("defense")
     || activeGoalName.includes("defence")
     || activeGoalName.includes("override");
+  const isDefenseOverrideStage = activeGoalName.includes("defense")
+    || activeGoalName.includes("defence")
+    || activeGoalName.includes("override");
   const relaxedEmergencyThreshold = isCriticalOrEmergencyStage
     && (typeof options?.goalName === "string")
     && (options.goalName.includes("critical_base_threat") || options.goalName.includes("emergency_base_defense"));
@@ -21201,6 +21213,66 @@ function planPathToPoint(plane, tx, ty, options = {}){
   const routeClassRejectDiagnosticsEnabled = options?.enableRouteClassRejectDiagnostics !== false;
   planPathToPoint.lastRejectCode = null;
   planPathToPoint.lastRejectMeta = null;
+
+  function getSpecialPromotionState(){
+    if(!aiRoundState || typeof aiRoundState !== "object") return null;
+    const turnNumber = Number.isFinite(aiRoundState.turnNumber) ? aiRoundState.turnNumber : -1;
+    const existing = aiRoundState.specialCandidatePromotionState;
+    if(!existing || existing.turnNumber !== turnNumber){
+      aiRoundState.specialCandidatePromotionState = {
+        turnNumber,
+        usedByClass: { gap: false, ricochet: false },
+      };
+    }
+    return aiRoundState.specialCandidatePromotionState;
+  }
+
+  function canUseSpecialPromotionForClass(classKey){
+    if(classKey !== "gap" && classKey !== "ricochet") return false;
+    const state = getSpecialPromotionState();
+    if(!state) return true;
+    return state.usedByClass[classKey] !== true;
+  }
+
+  function markSpecialPromotionUsed(classKey){
+    if(classKey !== "gap" && classKey !== "ricochet") return;
+    const state = getSpecialPromotionState();
+    if(!state) return;
+    state.usedByClass[classKey] = true;
+  }
+
+  function isBetterSpecialPromotionCandidate(nextCandidate, currentCandidate){
+    if(!nextCandidate) return false;
+    if(!currentCandidate) return true;
+    const epsilon = 0.0001;
+
+    const nextDist = Number.isFinite(nextCandidate?.totalDist) ? nextCandidate.totalDist : Number.POSITIVE_INFINITY;
+    const currentDist = Number.isFinite(currentCandidate?.totalDist) ? currentCandidate.totalDist : Number.POSITIVE_INFINITY;
+    if(Math.abs(nextDist - currentDist) > epsilon) return nextDist < currentDist;
+
+    const nextRisk = Number.isFinite(nextCandidate?.routeMetrics?.responseRisk) ? nextCandidate.routeMetrics.responseRisk : Number.POSITIVE_INFINITY;
+    const currentRisk = Number.isFinite(currentCandidate?.routeMetrics?.responseRisk) ? currentCandidate.routeMetrics.responseRisk : Number.POSITIVE_INFINITY;
+    if(Math.abs(nextRisk - currentRisk) > epsilon) return nextRisk < currentRisk;
+
+    const nextContinuation = nextCandidate?.specialPromotionMeta?.continuationClear === true;
+    const currentContinuation = currentCandidate?.specialPromotionMeta?.continuationClear === true;
+    if(nextContinuation !== currentContinuation) return nextContinuation;
+
+    const nextProgress = Number.isFinite(nextCandidate?.routeMetrics?.progress) ? nextCandidate.routeMetrics.progress : 0;
+    const currentProgress = Number.isFinite(currentCandidate?.routeMetrics?.progress) ? currentCandidate.routeMetrics.progress : 0;
+    if(Math.abs(nextProgress - currentProgress) > Math.max(0.25, CELL_SIZE * 0.03)) return nextProgress > currentProgress;
+
+    const lastPlaneId = aiRoundState?.lastLaunchedPlaneId ?? null;
+    if(lastPlaneId){
+      const nextPlaneId = nextCandidate?.plane?.id ?? null;
+      const currentPlaneId = currentCandidate?.plane?.id ?? null;
+      const nextDifferentPlane = nextPlaneId && nextPlaneId !== lastPlaneId;
+      const currentDifferentPlane = currentPlaneId && currentPlaneId !== lastPlaneId;
+      if(nextDifferentPlane !== currentDifferentPlane) return nextDifferentPlane;
+    }
+
+    return false;
+  }
 
   function recordRouteClassRejectDiagnostic(candidateClass, rejectCode){
     if(!routeClassRejectDiagnosticsEnabled || !aiRoundState || typeof aiRoundState !== "object") return;
@@ -21451,6 +21523,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
 
     let bestRoute = null;
     let bestRouteScore = Number.NEGATIVE_INFINITY;
+    let bestPromotedSpecialRoute = null;
     let bestRejectCode = null;
     let bestRejectMeta = null;
 
@@ -21718,7 +21791,10 @@ function planPathToPoint(plane, tx, ty, options = {}){
           && specialContinuationRouteClear
           && !strictSpecialPathRejectStage
           && !isCriticalOrEmergencyStage;
-        const canBypassSpecialPostContinuationReject = canBypassGapLateSoftReject || canBypassRicochetLateSoftReject;
+        const canBypassSpecialPostContinuationReject = (canBypassGapLateSoftReject || canBypassRicochetLateSoftReject)
+          && !isDefenseOverrideStage
+          && canUseSpecialPromotionForClass(candidateClass)
+          && isCandidateLandingSafe(landingX, landingY);
 
         if(!canBypassSpecialPostContinuationReject){
           bestRejectCode = routeMetrics.rejectCode;
@@ -21735,6 +21811,30 @@ function planPathToPoint(plane, tx, ty, options = {}){
           }
           return;
         }
+
+        const promotedMove = finalizePlannedMove(
+          {
+            vx,
+            vy,
+            totalDist,
+            moveType: meta?.moveType || "direct",
+            routeMetrics,
+            routeQualityScore: routeMetrics.qualityScore,
+            specialPromotionApplied: true,
+            specialPromotionMeta: {
+              candidateClass,
+              bypassedRejectCode: routeMetrics.rejectCode,
+              continuationClear: specialContinuationRouteClear === true,
+            },
+            ...candidateMeta,
+          },
+          actualAngle,
+          progressMeta || getAiNoticeableProgressMeta(plane.x, plane.y, landingX, landingY, tx, ty)
+        );
+        if(promotedMove && isBetterSpecialPromotionCandidate(promotedMove, bestPromotedSpecialRoute)){
+          bestPromotedSpecialRoute = promotedMove;
+        }
+        return;
       }
       const move = finalizePlannedMove(
         {
@@ -21963,6 +22063,21 @@ function planPathToPoint(plane, tx, ty, options = {}){
       });
     }
 
+    if(bestPromotedSpecialRoute){
+      const promotedScore = Number.isFinite(bestPromotedSpecialRoute?.routeQualityScore)
+        ? bestPromotedSpecialRoute.routeQualityScore
+        : (Number.isFinite(bestPromotedSpecialRoute?.routeMetrics?.qualityScore)
+          ? bestPromotedSpecialRoute.routeMetrics.qualityScore
+          : Number.NEGATIVE_INFINITY);
+      if(!bestRoute
+        || promotedScore > bestRouteScore + 0.000001
+        || (Math.abs(promotedScore - bestRouteScore) <= 0.000001
+          && (bestPromotedSpecialRoute.totalDist ?? Number.POSITIVE_INFINITY) < (bestRoute?.totalDist ?? Number.POSITIVE_INFINITY))){
+        bestRoute = bestPromotedSpecialRoute;
+        bestRouteScore = promotedScore;
+      }
+    }
+
     const shouldUseExtendedDetours = (settings.mapIndex !== 0)
       || (colliderCount > extendedDetourColliderThreshold);
     if(shouldUseExtendedDetours){
@@ -22030,6 +22145,10 @@ function planPathToPoint(plane, tx, ty, options = {}){
   const allowSpecialCandidates = !activeGoalName.includes("emergency_");
 
   function registerCandidate(move){
+    if(move?.specialPromotionApplied === true && (move?.candidateClass === "gap" || move?.candidateClass === "ricochet")){
+      if(!canUseSpecialPromotionForClass(move.candidateClass)) return;
+      markSpecialPromotionUsed(move.candidateClass);
+    }
     if(move) candidateBasket.push(move);
   }
 
