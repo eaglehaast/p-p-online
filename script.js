@@ -998,6 +998,56 @@ const EXPLOSION_BLUE_SEQUENCE_VARIANTS = Array.from(
   })
 );
 
+function buildGreenExplosionSequenceFramePaths(variantIndex) {
+  const variant = variantIndex + 1;
+  const folder = `ui_gamescreen/gs_green_explosions_sprite/explosion_green_${variant}`;
+
+  if (variant === 1) {
+    return [
+      `${folder}/explosion_green_2_01.png`,
+      `${folder}/explosion_green_2_02.png`,
+      `${folder}/explosion_green_2_03.png`,
+      `${folder}/explosion_green_2_04.png`,
+      `${folder}/explosion_green_2_05.png`,
+      `${folder}/explosion_green_2_06.png`,
+      `${folder}/explosion_green_2_07.png`,
+      `${folder}/explosion_green_2_08.png`,
+      `${folder}/explosion_green_2_09.png`,
+      `${folder}/explosion_green_2_10.png`,
+      `${folder}/explosion_green_2_11.png`,
+      `${folder}/explosion_green_2_12.png`,
+      `${folder}/explosion_green_2_13.png`,
+      `${folder}/explosion_green_2_14.png`,
+      `${folder}/explosion_green_2_15.png`,
+    ];
+  }
+
+  if (variant === 2) {
+    return [
+      `${folder}/explosion_green_1_01.png`,
+      `${folder}/explosion_green_1_02.png`,
+      `${folder}/explosion_green_1_03.png`,
+      `${folder}/explosion_green_1_04.png`,
+      `${folder}/explosion_green_1_05.png`,
+      `${folder}/explosion_green_1_06.png`,
+      `${folder}/explosion_green_1_07.png`,
+      `${folder}/explosion_green_1_08.png`,
+      `${folder}/explosion_green_1_09.png`,
+      `${folder}/explosion_green_1_10.png`,
+      `${folder}/explosion_green_1_11.png`,
+      `${folder}/explosion_green_1_12.png`,
+      `${folder}/explosion_green_1_13.png`,
+      `${folder}/explosion_green_1_14.png`,
+      `${folder}/explosion_green_1_15.png`,
+    ];
+  }
+
+  return BLUE_SEQUENCE_FRAME_ORDER.map((frameNumber) => {
+    const frame = String(frameNumber).padStart(2, "0");
+    return `${folder}/explosion_green_${variant}_${frame}.png`;
+  });
+}
+
 const EXPLOSION_GREEN_SPRITES = [
   "ui_gamescreen/green_explosions_short/green_explosion_short1.gif",
   "ui_gamescreen/green_explosions_short/green_explosion_short3.gif",
@@ -1005,6 +1055,15 @@ const EXPLOSION_GREEN_SPRITES = [
   "ui_gamescreen/green_explosions_short/green_explosion_short5.gif",
   "ui_gamescreen/green_explosions_short/green_explosion_short6.gif"
 ];
+
+const EXPLOSION_GREEN_SEQUENCE_VARIANTS = Array.from(
+  { length: BLUE_EXPLOSION_VARIANT_COUNT },
+  (_unused, variantIndex) => ({
+    variantIndex,
+    legacyGifSrc: EXPLOSION_GREEN_SPRITES[variantIndex] || "",
+    framePaths: buildGreenExplosionSequenceFramePaths(variantIndex),
+  })
+);
 
 const ALL_EXPLOSION_SPRITES = [
   ...EXPLOSION_BLUE_SPRITES,
@@ -7088,6 +7147,7 @@ const explosionImagesByColor = {
   green: []
 };
 const blueExplosionSequenceImagesByVariant = [];
+const greenExplosionSequenceImagesByVariant = [];
 
 let explosionSpritesPreloaded = false;
 
@@ -7128,6 +7188,16 @@ function preloadExplosionSprites() {
       explosionImagesByColor.blue.push(firstFrame);
     }
   });
+
+  EXPLOSION_GREEN_SEQUENCE_VARIANTS.forEach((variant) => {
+    const frameImages = variant.framePaths.map((src) => loadImageAsset(src, GAME_PRELOAD_LABEL, { decoding: 'async' }).img);
+    greenExplosionSequenceImagesByVariant[variant.variantIndex] = frameImages;
+    const firstFrame = frameImages[0];
+    if (firstFrame) {
+      explosionImagesByColor.green.push(firstFrame);
+    }
+  });
+
   EXPLOSION_GREEN_SPRITES.forEach(src => registerExplosionSprite(src, "green"));
 
   explosionSpritesPreloaded = true;
@@ -26233,11 +26303,16 @@ function createExplosionState(plane, x, y, options = {}) {
     color: plane.color,
   };
 
-  if (plane.color === "blue" && img) {
+  if ((plane.color === "blue" || plane.color === "green") && img) {
     const variantIndex = variants.indexOf(img);
     if (variantIndex >= 0) {
-      const sequenceFrames = blueExplosionSequenceImagesByVariant[variantIndex] || [];
-      const legacyGifSrc = EXPLOSION_BLUE_SEQUENCE_VARIANTS[variantIndex]?.legacyGifSrc || "";
+      const sequenceFrames = plane.color === "blue"
+        ? (blueExplosionSequenceImagesByVariant[variantIndex] || [])
+        : (greenExplosionSequenceImagesByVariant[variantIndex] || []);
+      const variantConfig = plane.color === "blue"
+        ? EXPLOSION_BLUE_SEQUENCE_VARIANTS[variantIndex]
+        : EXPLOSION_GREEN_SEQUENCE_VARIANTS[variantIndex];
+      const legacyGifSrc = variantConfig?.legacyGifSrc || "";
       const sequenceDurationMs = getShortExplosionDurationMs(legacyGifSrc, plane.color);
       state.sequenceFrames = sequenceFrames;
       state.sequenceFrameCount = sequenceFrames.length;
