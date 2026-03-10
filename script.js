@@ -26301,6 +26301,8 @@ function createExplosionState(plane, x, y, options = {}) {
     ttlMs: applyExplosionPlaybackRate(baseTtlMs),
     debugFramesLogged: 0,
     color: plane.color,
+    sequenceFrameIndex: 0,
+    nextFrameAtMs: null,
   };
 
   if ((plane.color === "blue" || plane.color === "green") && img) {
@@ -26320,7 +26322,9 @@ function createExplosionState(plane, x, y, options = {}) {
       if (Number.isFinite(sequenceDurationMs)) {
         state.baseTtlMs = sequenceDurationMs;
         state.ttlMs = applyExplosionPlaybackRate(sequenceDurationMs);
-        state.sequenceFrameDurationsMs = buildBlueSequenceFrameDurations(sequenceFrames.length, state.ttlMs);
+        if (plane.color === "blue") {
+          state.sequenceFrameDurationsMs = buildBlueSequenceFrameDurations(sequenceFrames.length, state.ttlMs);
+        }
       }
     }
   } else if (img) {
@@ -26493,7 +26497,10 @@ function updateAndDrawExplosions(ctx, now) {
       const ttlMs = applyExplosionPlaybackRate(activeBaseTtlMs);
       explosion.ttlMs = ttlMs;
 
-      if (elapsed >= ttlMs) {
+      const hasSequenceFrames = Array.isArray(explosion.sequenceFrames) && explosion.sequenceFrames.length > 0;
+      const isGreenSequence = explosion.color === "green" && hasSequenceFrames;
+
+      if (!isGreenSequence && elapsed >= ttlMs) {
         if (explosion.domEntry?.element?.remove) {
           explosion.domEntry.element.remove();
         }
@@ -26508,7 +26515,7 @@ function updateAndDrawExplosions(ctx, now) {
         explosion.domEntry = createExplosionImageEntry(explosion, img);
       }
 
-      if (explosion.domEntry?.img && Array.isArray(explosion.sequenceFrames) && explosion.sequenceFrames.length) {
+      if (explosion.domEntry?.img && hasSequenceFrames) {
         const frameCount = explosion.sequenceFrames.length;
         let frameIndex = 0;
 
@@ -26534,10 +26541,20 @@ function updateAndDrawExplosions(ctx, now) {
           }
         } else {
           const frameDurationMs = Math.max(1, ttlMs / frameCount);
-          frameIndex = Math.min(
-            frameCount - 1,
-            Math.max(0, Math.floor(elapsed / frameDurationMs))
-          );
+
+          explosion.sequenceFrameIndex = Number.isFinite(explosion.sequenceFrameIndex)
+            ? Math.max(0, Math.floor(explosion.sequenceFrameIndex))
+            : 0;
+          explosion.nextFrameAtMs = Number.isFinite(explosion.nextFrameAtMs)
+            ? explosion.nextFrameAtMs
+            : (explosion.startedAtMs + frameDurationMs);
+
+          if (explosion.sequenceFrameIndex < frameCount - 1 && now >= explosion.nextFrameAtMs) {
+            explosion.sequenceFrameIndex += 1;
+            explosion.nextFrameAtMs += frameDurationMs;
+          }
+
+          frameIndex = Math.min(frameCount - 1, explosion.sequenceFrameIndex);
 
           const minScale = 0.5;
           const maxScale = 2;
@@ -26555,6 +26572,22 @@ function updateAndDrawExplosions(ctx, now) {
         const frameImg = explosion.sequenceFrames[frameIndex];
         if (frameImg?.src && explosion.domEntry.img.src !== frameImg.src) {
           explosion.domEntry.img.src = frameImg.src;
+        }
+
+        if (
+          isGreenSequence
+          && explosion.sequenceFrameIndex >= frameCount - 1
+          && Number.isFinite(explosion.nextFrameAtMs)
+          && now >= explosion.nextFrameAtMs
+        ) {
+          if (explosion.domEntry?.element?.remove) {
+            explosion.domEntry.element.remove();
+          }
+          if (explosion.domEntry) {
+            delete explosion.domEntry;
+          }
+          activeExplosions.splice(i, 1);
+          continue;
         }
       }
 
