@@ -10758,9 +10758,8 @@ function buildAiFallbackDiagnosticsReport(source){
 
   const shouldCountAsGapBlockedAfterBounce = (sample) => {
     if(`${sample?.routeClass || ""}`.toLowerCase() !== "gap") return false;
-    const reason = toText(sample?.rejectReason);
-    if(reason.includes("blocked_after_bounce") || reason.includes("from_bounce_segment")) return true;
-    return mapReasonToSpecialFailure(reason) === "blocked_after_bounce";
+    if(sample?.candidateMetadata?.wasAfterSecondSegmentValidation !== true) return false;
+    return true;
   };
 
   const getEventContextTokens = (event) => {
@@ -11345,23 +11344,36 @@ function buildAiFallbackDiagnosticsReport(source){
       reason: sample?.candidateMetadata?.reason || sample?.rejectReason || "unknown",
       rejectReason: sample?.rejectReason || "unknown",
       segmentLabel: sample?.segmentLabel || "unknown",
+      wasAfterSecondSegmentValidation: sample?.candidateMetadata?.wasAfterSecondSegmentValidation === true,
+      specialContinuationRouteClear: sample?.candidateMetadata?.specialContinuationRouteClear === true,
+      strictSpecialPathRejectStage: sample?.candidateMetadata?.strictSpecialPathRejectStage === true,
+      isCriticalOrEmergencyStage: sample?.candidateMetadata?.isCriticalOrEmergencyStage === true,
     })),
     afterBounceSourceSamples: gapAfterBounceDetailedEvents.slice(-8),
   };
 
   const gapAfterBounceSamplesCompact = gapAfterBounceDetailedEvents.slice(-8);
+  const ricochetLateRejectEvents = specialRouteRejectDiagnostics
+    .filter((sample) => `${sample?.routeClass || ""}`.toLowerCase() === "ricochet")
+    .filter((sample) => sample?.candidateMetadata?.wasAfterSecondSegmentValidation === true);
+
   const ricochetRejectDetailedStats = {
-    total: specialRouteRejectDiagnostics.filter((sample) => `${sample?.routeClass || ""}`.toLowerCase() === "ricochet").length,
-    samples: specialRouteRejectDiagnostics
-      .filter((sample) => `${sample?.routeClass || ""}`.toLowerCase() === "ricochet")
+    total: ricochetLateRejectEvents.length,
+    samples: ricochetLateRejectEvents
       .slice(-10)
       .map((sample) => ({
+        rejectCode: sample?.candidateMetadata?.rejectCode || sample?.rejectReason || "unknown",
+        routeClass: sample?.candidateMetadata?.routeClass || sample?.routeClass || "ricochet",
+        segmentStage: sample?.candidateMetadata?.segmentStage || null,
+        blockerType: sample?.candidateMetadata?.blockerType || sample?.blockingObjectType || "unknown",
+        landingSafety: sample?.candidateMetadata?.landingSafety || null,
+        reason: sample?.candidateMetadata?.reason || sample?.rejectReason || "unknown",
         rejectReason: sample?.rejectReason || "unknown",
-        bounceWall: sample?.bounceWall || sample?.candidateMetadata?.bounceWall || "unknown",
-        secondSegmentLength: sample?.secondSegmentLength ?? sample?.candidateMetadata?.secondSegmentLength ?? null,
-        landingInsideObstacle: sample?.landingInsideObstacle === true,
-        blockerType: sample?.blockingObjectType || "unknown",
-        rejectedByHardCollision: sample?.rejectedByHardCollision === true,
+        segmentLabel: sample?.segmentLabel || "unknown",
+        wasAfterSecondSegmentValidation: sample?.candidateMetadata?.wasAfterSecondSegmentValidation === true,
+        specialContinuationRouteClear: sample?.candidateMetadata?.specialContinuationRouteClear === true,
+        strictSpecialPathRejectStage: sample?.candidateMetadata?.strictSpecialPathRejectStage === true,
+        isCriticalOrEmergencyStage: sample?.candidateMetadata?.isCriticalOrEmergencyStage === true,
       })),
   };
 
@@ -18186,6 +18198,10 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
       blockerType: rawMeta.blockerType || rawMeta.firstBlockingObjectType || "unknown",
       landingSafety: rawMeta.landingSafety || null,
       reason: rawMeta.reason || rawMeta.rejectReason || "unknown",
+      wasAfterSecondSegmentValidation: rawMeta.wasAfterSecondSegmentValidation === true,
+      specialContinuationRouteClear: rawMeta.specialContinuationRouteClear === true,
+      strictSpecialPathRejectStage: rawMeta.strictSpecialPathRejectStage === true,
+      isCriticalOrEmergencyStage: rawMeta.isCriticalOrEmergencyStage === true,
     };
     candidateTypeDiagnostics.gap.afterBounceRejectSamples.push(sample);
     if(candidateTypeDiagnostics.gap.afterBounceRejectSamples.length > 24){
@@ -18237,6 +18253,10 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
         blockerType: context?.blockerType || context?.blockingObjectType || "unknown",
         landingSafety: context?.landingSafety || null,
         reason: context?.reason || reason,
+        wasAfterSecondSegmentValidation: context?.wasAfterSecondSegmentValidation === true,
+        specialContinuationRouteClear: context?.specialContinuationRouteClear === true,
+        strictSpecialPathRejectStage: context?.strictSpecialPathRejectStage === true,
+        isCriticalOrEmergencyStage: context?.isCriticalOrEmergencyStage === true,
         secondSegmentLength: Number.isFinite(context?.secondSegmentLength)
           ? Number(context.secondSegmentLength.toFixed(2))
           : null,
@@ -18489,6 +18509,10 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
         firstBlockingObjectId: planPathToPoint.lastRejectMeta?.firstBlockingObjectId || null,
         distanceFromSecondSegmentStartToBlockingPoint: planPathToPoint.lastRejectMeta?.distanceFromSecondSegmentStartToBlockingPoint,
         segmentLabel: planPathToPoint.lastRejectMeta?.segmentLabel || null,
+        wasAfterSecondSegmentValidation: planPathToPoint.lastRejectMeta?.wasAfterSecondSegmentValidation === true,
+        specialContinuationRouteClear: planPathToPoint.lastRejectMeta?.specialContinuationRouteClear === true,
+        strictSpecialPathRejectStage: planPathToPoint.lastRejectMeta?.strictSpecialPathRejectStage === true,
+        isCriticalOrEmergencyStage: planPathToPoint.lastRejectMeta?.isCriticalOrEmergencyStage === true,
       });
       if(planPathToPoint.lastRejectMeta && planPathToPoint.lastRejectMeta.passedFirstSegment === true){
         pushGapAfterBounceRejectSample(planPathToPoint.lastRejectMeta, {
@@ -18609,10 +18633,20 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
         addRejectReason(candidateTypeDiagnostics.ricochet.validationReasons, rejectCode);
         pushSpecialRouteRejectDiagnostic("ricochet", rejectCode, {
           planeId: plane?.id ?? null,
+          rejectCode,
+          routeClass: "ricochet",
+          segmentStage: planPathToPoint.lastRejectMeta?.segmentStage || null,
+          blockerType: planPathToPoint.lastRejectMeta?.blockerType || planPathToPoint.lastRejectMeta?.firstBlockingObjectType || "unknown",
+          landingSafety: planPathToPoint.lastRejectMeta?.landingSafety || null,
+          reason: planPathToPoint.lastRejectMeta?.reason || rejectCode,
           blockingObjectType: planPathToPoint.lastRejectMeta?.firstBlockingObjectType || "unknown",
           firstBlockingObjectId: planPathToPoint.lastRejectMeta?.firstBlockingObjectId || null,
           distanceFromSecondSegmentStartToBlockingPoint: planPathToPoint.lastRejectMeta?.distanceFromSecondSegmentStartToBlockingPoint,
           segmentLabel: planPathToPoint.lastRejectMeta?.segmentLabel || null,
+          wasAfterSecondSegmentValidation: planPathToPoint.lastRejectMeta?.wasAfterSecondSegmentValidation === true,
+          specialContinuationRouteClear: planPathToPoint.lastRejectMeta?.specialContinuationRouteClear === true,
+          strictSpecialPathRejectStage: planPathToPoint.lastRejectMeta?.strictSpecialPathRejectStage === true,
+          isCriticalOrEmergencyStage: planPathToPoint.lastRejectMeta?.isCriticalOrEmergencyStage === true,
           bounceWall: mirroredTarget?.wall || null,
           secondSegmentLength: planPathToPoint.lastRejectMeta?.secondSegmentLength,
           landingInsideObstacle: planPathToPoint.lastRejectMeta?.landingInsideObstacle === true,
@@ -21611,19 +21645,23 @@ function planPathToPoint(plane, tx, ty, options = {}){
 
         if(!canBypassSpecialPostContinuationReject){
           bestRejectCode = routeMetrics.rejectCode;
-          if(candidateClass === "gap" && specialContinuationRouteClear){
+          if((candidateClass === "gap" || candidateClass === "ricochet") && specialContinuationRouteClear){
             bestRejectMeta = {
-              routeClass: "gap",
+              routeClass: candidateClass,
               rejectCode: routeMetrics.rejectCode,
               rejectReason: routeMetrics.rejectCode,
               reason: "rejected_after_second_segment_validation",
               segmentStage: "post_second_segment_validation",
-              segmentLabel: "post_gap_positioning",
-              blockerType: "none",
+              segmentLabel: candidateClass === "gap" ? "post_gap_positioning" : "after_bounce",
+              blockerType: "route_metrics",
               firstBlockingObjectType: "none",
-              landingSafety: "safe",
+              landingSafety: isCandidateLandingSafe(landingX, landingY) ? "safe" : "unsafe",
               candidateSafetyRiskSummary: "rejected_by_route_metrics_after_second_segment_validation",
               passedFirstSegment: true,
+              wasAfterSecondSegmentValidation: true,
+              specialContinuationRouteClear: specialContinuationRouteClear === true,
+              strictSpecialPathRejectStage: strictSpecialPathRejectStage === true,
+              isCriticalOrEmergencyStage: isCriticalOrEmergencyStage === true,
             };
           } else {
             bestRejectMeta = null;
