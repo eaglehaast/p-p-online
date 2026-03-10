@@ -20837,6 +20837,29 @@ function planPathToPoint(plane, tx, ty, options = {}){
     return Math.max(0, minClearance);
   }
 
+  function isCandidateLandingSafe(landingX, landingY){
+    if(!Number.isFinite(landingX) || !Number.isFinite(landingY)) return false;
+    if(!isPointInsideFieldBounds(landingX, landingY)) return false;
+    if(isBrickPixel(landingX, landingY)) return false;
+
+    const intersectsCollider = Array.isArray(colliders)
+      && colliders.some(collider => isPointInsideCollider(landingX, landingY, collider));
+    if(intersectsCollider) return false;
+
+    const intersectsBase = getBasePlacementRects().some(rect =>
+      isPointInAxisAlignedRect(landingX, landingY, rect)
+    );
+    if(intersectsBase) return false;
+
+    const intersectsPlane = points.some(otherPlane => {
+      if(!otherPlane?.isAlive || otherPlane?.burning) return false;
+      return Math.hypot(otherPlane.x - landingX, otherPlane.y - landingY) < POINT_RADIUS * 0.9;
+    });
+    if(intersectsPlane) return false;
+
+    return true;
+  }
+
   function evaluateRouteMetrics({ landingX, landingY, distance, candidateClass = defaultRouteClass, progressMeta, postGapContinuation = false }){
     const safeProgressMeta = progressMeta || getAiNoticeableProgressMeta(plane.x, plane.y, landingX, landingY, tx, ty);
     const clearancePx = estimateRouteClearancePx(plane.x, plane.y, landingX, landingY);
@@ -20855,20 +20878,22 @@ function planPathToPoint(plane, tx, ty, options = {}){
     const minProgressBase = safeProgressMeta?.noticeableThreshold
       ? safeProgressMeta.noticeableThreshold * (relaxedEmergencyThreshold ? 0.6 : 1)
       : CELL_SIZE * (relaxedEmergencyThreshold ? 0.24 : 0.4);
-    const minProgress = candidateClass === "ricochet"
-      ? minProgressBase * 0.9
-      : (candidateClass === "gap" && !relaxedEmergencyThreshold ? minProgressBase * 0.85 : minProgressBase);
-    const maxResponseRiskBase = relaxedEmergencyThreshold ? 0.95 : 0.8;
-    const maxResponseRisk = candidateClass === "ricochet"
-      ? Math.min(0.97, maxResponseRiskBase + 0.12)
-      : maxResponseRiskBase;
     const isNormalModeGapPostContinuation = candidateClass === "gap"
       && postGapContinuation
       && !strictSpecialPathRejectStage;
+    const minProgress = candidateClass === "ricochet"
+      ? minProgressBase * 0.9
+      : (candidateClass === "gap" && !relaxedEmergencyThreshold
+        ? minProgressBase * (isNormalModeGapPostContinuation ? 0.56 : 0.85)
+        : minProgressBase);
+    const maxResponseRiskBase = relaxedEmergencyThreshold ? 0.95 : 0.8;
+    const maxResponseRisk = candidateClass === "ricochet"
+      ? Math.min(0.97, maxResponseRiskBase + 0.12)
+      : (isNormalModeGapPostContinuation ? Math.min(0.93, maxResponseRiskBase + 0.08) : maxResponseRiskBase);
     const maxCorridorTightness = candidateClass === "ricochet"
       ? 0.985
       : (candidateClass === "gap" && !relaxedEmergencyThreshold
-        ? (isNormalModeGapPostContinuation ? 0.978 : 0.965)
+        ? (isNormalModeGapPostContinuation ? 0.985 : 0.965)
         : 0.95);
     const minGapClearanceBase = relaxedEmergencyThreshold ? CELL_SIZE * 0.04 : CELL_SIZE * 0.08;
     const minGapClearance = candidateClass === "gap"
@@ -20976,6 +21001,8 @@ function planPathToPoint(plane, tx, ty, options = {}){
       const candidateClass = candidateMeta?.candidateClass || meta?.candidateClass || defaultRouteClass;
       const fullPathClear = isPathClear(plane.x, plane.y, landingX, landingY);
       let shouldUsePostGapContinuationTolerance = false;
+      let gapEntryX = null;
+      let gapEntryY = null;
       if(!fullPathClear){
         const dx = landingX - plane.x;
         const dy = landingY - plane.y;
@@ -20991,6 +21018,8 @@ function planPathToPoint(plane, tx, ty, options = {}){
           const entryRatio = Math.max(0, Math.min(1, entryProbePx / fullPathLength));
           const entryX = plane.x + dx * entryRatio;
           const entryY = plane.y + dy * entryRatio;
+          gapEntryX = entryX;
+          gapEntryY = entryY;
           canUseSpecialCandidateAfterEntryCheck = isPathClear(plane.x, plane.y, entryX, entryY);
           if(!canUseSpecialCandidateAfterEntryCheck && candidateClass === "gap"){
             canUseSpecialCandidateAfterEntryCheck = true;
@@ -21007,6 +21036,25 @@ function planPathToPoint(plane, tx, ty, options = {}){
           return;
         }
         if(candidateClass === "gap" && !strictSpecialPathRejectStage){
+          const hasGapContinuationSegment = Number.isFinite(gapEntryX)
+            && Number.isFinite(gapEntryY)
+            && (() => {
+              const continuationLen = Math.hypot(landingX - gapEntryX, landingY - gapEntryY);
+              if(continuationLen <= CELL_SIZE * 0.2) return false;
+              const continuationProbePx = Math.min(continuationLen, Math.max(CELL_SIZE * 0.35, CELL_SIZE * 0.65));
+              const continuationRatio = continuationProbePx / continuationLen;
+              const continuationX = gapEntryX + (landingX - gapEntryX) * continuationRatio;
+              const continuationY = gapEntryY + (landingY - gapEntryY) * continuationRatio;
+              return isPathClear(gapEntryX, gapEntryY, continuationX, continuationY);
+            })();
+          if(!hasGapContinuationSegment){
+            bestRejectCode = "blocked_after_bounce__post_gap_continuation_blocked";
+            return;
+          }
+          if(!isCandidateLandingSafe(landingX, landingY)){
+            bestRejectCode = "blocked_after_bounce__invalid_gap_landing";
+            return;
+          }
           shouldUsePostGapContinuationTolerance = true;
         }
       }
@@ -21463,6 +21511,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       diagnostics: true,
       goalName: options?.goalName || "",
       allowNormalModeFirstSegmentRelaxation: !strictSpecialPathRejectStage,
+      allowRicochetBeforeBounceBorderline: requestedRouteClass === "ricochet" && !strictSpecialPathRejectStage,
       allowGapBeforeBounceGrace: requestedRouteClass === "gap" && !strictSpecialPathRejectStage,
       allowGapAfterBounceGrace: requestedRouteClass === "gap" && !strictSpecialPathRejectStage,
       allowGapFinalLegRelaxation: requestedRouteClass === "gap" && !strictSpecialPathRejectStage,
@@ -21877,6 +21926,7 @@ function findMirrorShot(plane, enemy, options = {}){
     || mirrorGoalName.includes("defence")
     || mirrorGoalName.includes("override");
   const allowNormalModeFirstSegmentRelaxation = options?.allowNormalModeFirstSegmentRelaxation !== false;
+  const allowRicochetBeforeBounceBorderline = options?.allowRicochetBeforeBounceBorderline === true && !isEmergencyMirrorGoal;
   findMirrorShot.lastRejectMeta = null;
   let rejectedTooClose = false;
   let rejectedTooLong = false;
@@ -22076,7 +22126,11 @@ function findMirrorShot(plane, enemy, options = {}){
       && Number.isFinite(firstLegDist)
       && firstLegDist > 0.0001
       ? (() => {
-          const relaxedStartOffset = Math.min(firstLegDist * 0.45, Math.max(CELL_SIZE * 0.95, firstSegmentTouchTolerance));
+          const relaxedStartOffsetBase = Math.min(firstLegDist * 0.45, Math.max(CELL_SIZE * 0.95, firstSegmentTouchTolerance));
+          const ricochetBorderlineBonus = allowRicochetBeforeBounceBorderline
+            ? Math.min(CELL_SIZE * 0.35, Math.max(0, firstLegDist * 0.16))
+            : 0;
+          const relaxedStartOffset = Math.min(firstLegDist * 0.72, relaxedStartOffsetBase + ricochetBorderlineBonus);
           if(relaxedStartOffset <= firstSegmentTouchTolerance + 0.0001) return false;
           const shiftedPlaneX = plane.x + (firstLegDx / firstLegDist) * relaxedStartOffset;
           const shiftedPlaneY = plane.y + (firstLegDy / firstLegDist) * relaxedStartOffset;
