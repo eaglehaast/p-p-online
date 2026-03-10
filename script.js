@@ -26386,6 +26386,20 @@ function createExplosionImageEntry(explosionState, img) {
   return { element: container, img: image, host, metrics };
 }
 
+function applyExplosionDomScale(domEntry, scaleFactor = 1) {
+  const element = domEntry?.element;
+  if (!element?.style) {
+    return;
+  }
+
+  if (!Number.isFinite(scaleFactor) || Math.abs(scaleFactor - 1) < 0.0001) {
+    element.style.transform = 'translate(-50%, -50%)';
+    return;
+  }
+
+  element.style.transform = `translate(-50%, -50%) scale(${scaleFactor})`;
+}
+
 function spawnExplosionForPlane(plane, x = null, y = null, options = {}) {
   if (!plane || plane.explosionSpawned) {
     return null;
@@ -26524,6 +26538,18 @@ function updateAndDrawExplosions(ctx, now) {
             frameCount - 1,
             Math.max(0, Math.floor(elapsed / frameDurationMs))
           );
+
+          const minScale = 0.5;
+          const maxScale = 2;
+          const frameProgress = frameCount <= 1
+            ? 1
+            : frameIndex / (frameCount - 1);
+          const scaleFactor = minScale + (maxScale - minScale) * frameProgress;
+          applyExplosionDomScale(explosion.domEntry, scaleFactor);
+        }
+
+        if (explosion.color === "blue") {
+          applyExplosionDomScale(explosion.domEntry, 1);
         }
 
         const frameImg = explosion.sequenceFrames[frameIndex];
