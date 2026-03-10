@@ -930,55 +930,6 @@ const BLUE_EXPLOSION_VARIANT_COUNT = 5;
 const BLUE_SEQUENCE_FRAME_ORDER = Object.freeze([
   1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
 ]);
-const BLUE_SEQUENCE_FRAME_DURATION_MULTIPLIERS = Object.freeze([
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-]);
-
-function buildBlueSequenceFrameDurations(frameCount, ttlMs) {
-  if (!Number.isFinite(frameCount) || frameCount <= 0 || !Number.isFinite(ttlMs) || ttlMs <= 0) {
-    return [];
-  }
-
-  const totalDurationMs = Math.max(frameCount, Math.round(ttlMs));
-  const frameWeights = Array.from({ length: frameCount }, (_unused, frameIndex) => {
-    const configuredWeight = Number(BLUE_SEQUENCE_FRAME_DURATION_MULTIPLIERS[frameIndex]);
-    return Number.isFinite(configuredWeight) && configuredWeight > 0
-      ? configuredWeight
-      : 1;
-  });
-
-  const totalWeight = frameWeights.reduce((sum, weight) => sum + weight, 0);
-  if (!(totalWeight > 0)) {
-    return [];
-  }
-
-  const rawDurations = frameWeights.map((weight) => (weight / totalWeight) * totalDurationMs);
-  const frameDurations = rawDurations.map((value) => Math.max(1, Math.floor(value)));
-  let delta = totalDurationMs - frameDurations.reduce((sum, value) => sum + value, 0);
-
-  if (delta > 0) {
-    const byFractionDesc = rawDurations
-      .map((value, index) => ({ index, fraction: value - Math.floor(value) }))
-      .sort((a, b) => b.fraction - a.fraction);
-    for (let step = 0; step < delta; step += 1) {
-      const target = byFractionDesc[step % byFractionDesc.length];
-      frameDurations[target.index] += 1;
-    }
-  } else if (delta < 0) {
-    const byFractionAsc = rawDurations
-      .map((value, index) => ({ index, fraction: value - Math.floor(value) }))
-      .sort((a, b) => a.fraction - b.fraction);
-    delta = Math.abs(delta);
-    for (let step = 0; step < delta; step += 1) {
-      const target = byFractionAsc[step % byFractionAsc.length];
-      if (frameDurations[target.index] > 1) {
-        frameDurations[target.index] -= 1;
-      }
-    }
-  }
-
-  return frameDurations;
-}
 
 function buildBlueExplosionSequenceFramePaths(variantIndex) {
   const variant = variantIndex + 1;
@@ -26443,9 +26394,6 @@ function createExplosionState(plane, x, y, options = {}) {
       if (Number.isFinite(sequenceDurationMs)) {
         state.baseTtlMs = sequenceDurationMs;
         state.ttlMs = applyExplosionPlaybackRate(sequenceDurationMs);
-        if (plane.color === "blue") {
-          state.sequenceFrameDurationsMs = buildBlueSequenceFrameDurations(sequenceFrames.length, state.ttlMs);
-        }
       }
     }
   } else if (img) {
@@ -26638,45 +26586,13 @@ function updateAndDrawExplosions(ctx, now) {
 
       if (explosion.domEntry?.img && hasSequenceFrames) {
         const frameCount = explosion.sequenceFrames.length;
-        let frameIndex = 0;
+        const frameDurationMs = Math.max(1, ttlMs / frameCount);
+        const frameIndex = Math.min(frameCount - 1, Math.floor(elapsed / frameDurationMs));
 
-        if (explosion.color === "blue") {
-          if (
-            !Array.isArray(explosion.sequenceFrameDurationsMs)
-            || explosion.sequenceFrameDurationsMs.length !== frameCount
-            || explosion.sequenceFrameDurationTotalMs !== ttlMs
-          ) {
-            explosion.sequenceFrameDurationsMs = buildBlueSequenceFrameDurations(frameCount, ttlMs);
-            explosion.sequenceFrameDurationTotalMs = ttlMs;
-          }
+        explosion.sequenceFrameIndex = frameIndex;
+        explosion.nextFrameAtMs = explosion.startedAtMs + (frameIndex + 1) * frameDurationMs;
 
-          const durations = explosion.sequenceFrameDurationsMs;
-          let accumulatedMs = 0;
-          frameIndex = frameCount - 1;
-          for (let index = 0; index < durations.length; index += 1) {
-            accumulatedMs += durations[index];
-            if (elapsed < accumulatedMs) {
-              frameIndex = index;
-              break;
-            }
-          }
-        } else {
-          const frameDurationMs = Math.max(1, ttlMs / frameCount);
-
-          explosion.sequenceFrameIndex = Number.isFinite(explosion.sequenceFrameIndex)
-            ? Math.max(0, Math.floor(explosion.sequenceFrameIndex))
-            : 0;
-          explosion.nextFrameAtMs = Number.isFinite(explosion.nextFrameAtMs)
-            ? explosion.nextFrameAtMs
-            : (explosion.startedAtMs + frameDurationMs);
-
-          if (explosion.sequenceFrameIndex < frameCount - 1 && now >= explosion.nextFrameAtMs) {
-            explosion.sequenceFrameIndex += 1;
-            explosion.nextFrameAtMs += frameDurationMs;
-          }
-
-          frameIndex = Math.min(frameCount - 1, explosion.sequenceFrameIndex);
-
+        if (explosion.color !== "blue") {
           const minScale = 0.5;
           const maxScale = 2;
           const frameProgress = frameCount <= 1
