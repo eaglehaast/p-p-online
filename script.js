@@ -928,6 +928,70 @@ const EXPLOSION_BLUE_SPRITES = [
 ];
 const BLUE_EXPLOSION_VARIANT_COUNT = 5;
 const BLUE_EXPLOSION_SEQUENCE_FRAME_COUNT = 31;
+const BLUE_SEQUENCE_EXPLOSION_TEMPO_PROFILE = Object.freeze({
+  fastSegmentShare: 0.38,
+  fastFrameWeight: 0.72,
+  slowFrameWeight: 1.28,
+  tailHoldFrames: 2,
+  tailHoldMultiplier: 1.8,
+});
+
+function buildBlueSequenceFrameDurations(frameCount, ttlMs, tempoProfile = BLUE_SEQUENCE_EXPLOSION_TEMPO_PROFILE) {
+  if (!Number.isFinite(frameCount) || frameCount <= 0 || !Number.isFinite(ttlMs) || ttlMs <= 0) {
+    return [];
+  }
+
+  const totalDurationMs = Math.max(frameCount, Math.round(ttlMs));
+  const share = Math.min(0.95, Math.max(0.05, Number(tempoProfile?.fastSegmentShare) || 0.38));
+  const fastFrameCount = Math.min(frameCount, Math.max(1, Math.round(frameCount * share)));
+  const fastWeight = Math.max(0.01, Number(tempoProfile?.fastFrameWeight) || 0.72);
+  const slowWeight = Math.max(0.01, Number(tempoProfile?.slowFrameWeight) || 1.28);
+  const tailHoldFrames = Math.min(frameCount, Math.max(0, Math.round(Number(tempoProfile?.tailHoldFrames) || 0)));
+  const tailHoldMultiplier = Math.max(1, Number(tempoProfile?.tailHoldMultiplier) || 1);
+
+  const frameWeights = Array.from({ length: frameCount }, (_unused, frameIndex) => (
+    frameIndex < fastFrameCount ? fastWeight : slowWeight
+  ));
+
+  if (tailHoldFrames > 0) {
+    const tailStart = frameCount - tailHoldFrames;
+    for (let frameIndex = tailStart; frameIndex < frameCount; frameIndex += 1) {
+      frameWeights[frameIndex] *= tailHoldMultiplier;
+    }
+  }
+
+  const totalWeight = frameWeights.reduce((sum, weight) => sum + weight, 0);
+  if (!(totalWeight > 0)) {
+    return [];
+  }
+
+  const rawDurations = frameWeights.map((weight) => (weight / totalWeight) * totalDurationMs);
+  const frameDurations = rawDurations.map((value) => Math.max(1, Math.floor(value)));
+  let delta = totalDurationMs - frameDurations.reduce((sum, value) => sum + value, 0);
+
+  if (delta > 0) {
+    const byFractionDesc = rawDurations
+      .map((value, index) => ({ index, fraction: value - Math.floor(value) }))
+      .sort((a, b) => b.fraction - a.fraction);
+    for (let step = 0; step < delta; step += 1) {
+      const target = byFractionDesc[step % byFractionDesc.length];
+      frameDurations[target.index] += 1;
+    }
+  } else if (delta < 0) {
+    const byFractionAsc = rawDurations
+      .map((value, index) => ({ index, fraction: value - Math.floor(value) }))
+      .sort((a, b) => a.fraction - b.fraction);
+    delta = Math.abs(delta);
+    for (let step = 0; step < delta; step += 1) {
+      const target = byFractionAsc[step % byFractionAsc.length];
+      if (frameDurations[target.index] > 1) {
+        frameDurations[target.index] -= 1;
+      }
+    }
+  }
+
+  return frameDurations;
+}
 
 function buildBlueExplosionSequenceFramePaths(variantIndex) {
   const variant = variantIndex + 1;
@@ -25962,6 +26026,7 @@ function createExplosionState(plane, x, y) {
       state.sequenceVariantIndex = variantIndex;
       if (Number.isFinite(sequenceDurationMs)) {
         state.ttlMs = sequenceDurationMs;
+        state.sequenceFrameDurationsMs = buildBlueSequenceFrameDurations(sequenceFrames.length, sequenceDurationMs);
       }
     }
   } else if (img) {
@@ -26084,11 +26149,36 @@ function updateAndDrawExplosions(ctx, now) {
 
       if (explosion.domEntry?.img && Array.isArray(explosion.sequenceFrames) && explosion.sequenceFrames.length) {
         const frameCount = explosion.sequenceFrames.length;
-        const frameDurationMs = Math.max(1, ttlMs / frameCount);
-        const frameIndex = Math.min(
-          frameCount - 1,
-          Math.max(0, Math.floor(elapsed / frameDurationMs))
-        );
+        let frameIndex = 0;
+
+        if (explosion.color === "blue") {
+          if (
+            !Array.isArray(explosion.sequenceFrameDurationsMs)
+            || explosion.sequenceFrameDurationsMs.length !== frameCount
+            || explosion.sequenceFrameDurationTotalMs !== ttlMs
+          ) {
+            explosion.sequenceFrameDurationsMs = buildBlueSequenceFrameDurations(frameCount, ttlMs);
+            explosion.sequenceFrameDurationTotalMs = ttlMs;
+          }
+
+          const durations = explosion.sequenceFrameDurationsMs;
+          let accumulatedMs = 0;
+          frameIndex = frameCount - 1;
+          for (let index = 0; index < durations.length; index += 1) {
+            accumulatedMs += durations[index];
+            if (elapsed < accumulatedMs) {
+              frameIndex = index;
+              break;
+            }
+          }
+        } else {
+          const frameDurationMs = Math.max(1, ttlMs / frameCount);
+          frameIndex = Math.min(
+            frameCount - 1,
+            Math.max(0, Math.floor(elapsed / frameDurationMs))
+          );
+        }
+
         const frameImg = explosion.sequenceFrames[frameIndex];
         if (frameImg?.src && explosion.domEntry.img.src !== frameImg.src) {
           explosion.domEntry.img.src = frameImg.src;
