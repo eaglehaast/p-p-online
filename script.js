@@ -21794,8 +21794,10 @@ function planPathToPoint(plane, tx, ty, options = {}){
         postRicochetContinuation: shouldUsePostRicochetContinuationTolerance,
         specialContinuationRouteClear,
       });
-      const shouldBypassBounceSegmentBlockedReject = routeMetrics.rejectCode === "blocked_after_bounce__from_bounce_segment_blocked"
-        && (candidateClass === "gap" || candidateClass === "ricochet");
+      const shouldBypassBounceSegmentBlockedReject = (
+        routeMetrics.rejectCode === "blocked_after_bounce__from_bounce_segment_blocked"
+        || routeMetrics.rejectCode === "blocked_path_before_bounce__to_bounce_segment_blocked"
+      ) && (candidateClass === "gap" || candidateClass === "ricochet");
       if(routeMetrics.rejectCode && !shouldBypassBounceSegmentBlockedReject){
         const isSoftPostContinuationRejectCode = routeMetrics.rejectCode === "insufficient_progress"
           || routeMetrics.rejectCode === "unsafe_lane"
