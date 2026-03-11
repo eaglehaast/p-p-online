@@ -21223,6 +21223,12 @@ function planPathToPoint(plane, tx, ty, options = {}){
     || activeGoalName.includes("defense")
     || activeGoalName.includes("defence")
     || activeGoalName.includes("override");
+  const isUrgentInterceptStage = activeGoalName.includes("intercept");
+  const isCarryingEnemyFlag = Boolean(plane?.carriedFlagId && getFlagById(plane.carriedFlagId)?.color === "green");
+  const shouldKeepStrictSpecialSecondSegmentReject = strictSpecialPathRejectStage
+    || isCriticalOrEmergencyStage
+    || isUrgentInterceptStage
+    || isCarryingEnemyFlag;
   const isDefenseOverrideStage = activeGoalName.includes("defense")
     || activeGoalName.includes("defence")
     || activeGoalName.includes("override");
@@ -21679,7 +21685,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
           if(!hasGapContinuationSegment && allowSoftGapAfterBounceContinuation){
             hasGapContinuationSegment = true;
           }
-          if(!hasGapContinuationSegment){
+          if(!hasGapContinuationSegment && shouldKeepStrictSpecialSecondSegmentReject){
             bestRejectCode = "blocked_after_bounce__soft_post_gap_rule";
             bestRejectMeta = isSpecialCandidateClass
               ? buildLateSpecialRejectMeta(
@@ -21758,7 +21764,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
             hasRicochetContinuationSegment = true;
           }
 
-          if(!hasRicochetContinuationSegment){
+          if(!hasRicochetContinuationSegment && shouldKeepStrictSpecialSecondSegmentReject){
             bestRejectCode = "blocked_after_bounce__soft_post_ricochet_rule";
             bestRejectMeta = isSpecialCandidateClass
               ? buildLateSpecialRejectMeta(
@@ -21799,7 +21805,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
         postRicochetContinuation: shouldUsePostRicochetContinuationTolerance,
         specialContinuationRouteClear,
       });
-      const shouldBypassBounceSegmentBlockedReject = (
+      const shouldBypassBounceSegmentBlockedReject = !shouldKeepStrictSpecialSecondSegmentReject && (
         routeMetrics.rejectCode === "blocked_after_bounce__from_bounce_segment_blocked"
         || routeMetrics.rejectCode === "blocked_path_before_bounce__to_bounce_segment_blocked"
       ) && (candidateClass === "gap" || candidateClass === "ricochet");
