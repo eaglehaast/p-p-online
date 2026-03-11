@@ -1017,8 +1017,8 @@ const EXPLOSION_GREEN_SEQUENCE_VARIANTS = Array.from(
 );
 
 const EXPLOSION_SEQUENCE_CONFIG = Object.freeze({
-  minScale: 0.5,
-  maxScale: 2,
+  minScale: 0,
+  maxScale: 1.5,
 });
 
 const ALL_EXPLOSION_SPRITES = [
