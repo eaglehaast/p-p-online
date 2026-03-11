@@ -1016,6 +1016,11 @@ const EXPLOSION_GREEN_SEQUENCE_VARIANTS = Array.from(
   })
 );
 
+const EXPLOSION_SEQUENCE_CONFIG = Object.freeze({
+  minScale: 0.5,
+  maxScale: 2,
+});
+
 const ALL_EXPLOSION_SPRITES = [
   ...EXPLOSION_BLUE_SPRITES,
   ...EXPLOSION_GREEN_SPRITES
@@ -26590,12 +26595,11 @@ function updateAndDrawExplosions(ctx, now) {
         const frameCount = explosion.sequenceFrames.length;
         const frameDurationMs = Math.max(1, ttlMs / frameCount);
         const frameIndex = Math.min(frameCount - 1, Math.floor(elapsed / frameDurationMs));
-        const minScale = 0.5;
-        const maxScale = 2;
         const frameProgress = frameCount <= 1
           ? 1
           : frameIndex / (frameCount - 1);
-        const scaleFactor = minScale + (maxScale - minScale) * frameProgress;
+        const scaleFactor = EXPLOSION_SEQUENCE_CONFIG.minScale
+          + (EXPLOSION_SEQUENCE_CONFIG.maxScale - EXPLOSION_SEQUENCE_CONFIG.minScale) * frameProgress;
 
         explosion.sequenceFrameIndex = frameIndex;
         explosion.nextFrameAtMs = explosion.startedAtMs + (frameIndex + 1) * frameDurationMs;
