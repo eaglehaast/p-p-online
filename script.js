@@ -11971,23 +11971,7 @@ const EXPLOSION_FPS = 12;
 const EXPLOSION_FRAME_DURATION_MS = 1000 / EXPLOSION_FPS; // ~12fps
 const EXPLOSION_MIN_DURATION_MS = 600;
 const EXPLOSION_GIF_DURATION_MS = 1200;
-const EXPLOSION_GREEN_DEFAULT_DURATION_MS = 780;
-const EXPLOSION_BLUE_DEFAULT_DURATION_MS = EXPLOSION_GREEN_DEFAULT_DURATION_MS;
 const EXPLOSION_MAX_FRAME_ADVANCE_PER_TICK = 1;
-const GREEN_EXPLOSION_DURATIONS_MS = {
-  "green_explosion_short1.gif": 790,
-  "green_explosion_short3.gif": 760,
-  "green_explosion_short4.gif": 780,
-  "green_explosion_short5.gif": 820,
-  "green_explosion_short6.gif": 860,
-};
-const BLUE_EXPLOSION_DURATIONS_MS = {
-  "explosion_blue_short_1.gif": 760,
-  "explosion_blue_short_2.gif": 780,
-  "explosion_blue_short_3.gif": 800,
-  "explosion_blue_short_4.gif": 840,
-  "explosion_blue_short_5.gif": 880,
-};
 const EXPLOSION_PLAYBACK_RATE_DEFAULT = 1;
 const EXPLOSION_PLAYBACK_RATE_STEP = 0.1;
 const EXPLOSION_PLAYBACK_RATE_MIN = 0.1;
@@ -12085,19 +12069,38 @@ function logExplosionDisplayedFrames(explosion, reason){
 }
 
 function getShortExplosionDurationMs(src = "", color = "") {
-  const trimmed = typeof src === "string" ? src.trim() : "";
-  if (!trimmed) {
+  const normalizedColor = color === "green"
+    ? "green"
+    : color === "blue"
+      ? "blue"
+      : "";
+
+  const resolvedBySrc = normalizedColor
+    || (typeof src === "string" && src.includes("ui_gamescreen/gs_green_explosion_one/")
+      ? "green"
+      : typeof src === "string" && src.includes("ui_gamescreen/gs_blue_explosion_one/")
+        ? "blue"
+        : "");
+
+  if (!resolvedBySrc) {
     return null;
   }
-  const fileName = trimmed.split("/").pop() || "";
-  const isGreenExplosion = color === "green" || trimmed.includes("green_explosions_short/");
-  const isBlueExplosion = trimmed.includes("blue_explosions_short/");
-  const duration = isGreenExplosion
-    ? GREEN_EXPLOSION_DURATIONS_MS[fileName]
-    : isBlueExplosion
-      ? BLUE_EXPLOSION_DURATIONS_MS[fileName]
-      : null;
-  return Number.isFinite(duration) ? duration : null;
+
+  const sequenceFrames = explosionSequenceImagesByColor[resolvedBySrc];
+  const frameCount = Array.isArray(sequenceFrames) && sequenceFrames.length > 0
+    ? sequenceFrames.length
+    : (resolvedBySrc === "green"
+      ? EXPLOSION_GREEN_SEQUENCE.framePaths.length
+      : EXPLOSION_BLUE_SEQUENCE.framePaths.length);
+
+  if (!Number.isFinite(frameCount) || frameCount <= 0) {
+    return null;
+  }
+
+  return Math.max(
+    EXPLOSION_MIN_DURATION_MS,
+    frameCount * EXPLOSION_FRAME_DURATION_MS * EXPLOSION_SEQUENCE_DURATION_SCALE
+  );
 }
 
 function getExactExplosionGifDurationMs(img) {
@@ -12109,19 +12112,12 @@ function getExactExplosionGifDurationMs(img) {
 
 function resolveExplosionGifDurationMs(img, color) {
   const src = img?.src ?? '';
-  const isShortExplosion = src.includes("green_explosions_short/")
-    || src.includes("blue_explosions_short/");
-  const isGreenExplosion = color === "green" || src.includes("green_explosions_short/");
   const explicitDuration = getExactExplosionGifDurationMs(img);
   if (Number.isFinite(explicitDuration)) {
-    return isShortExplosion ? explicitDuration : Math.max(explicitDuration, EXPLOSION_MIN_DURATION_MS);
+    return Math.max(explicitDuration, EXPLOSION_MIN_DURATION_MS);
   }
-  if (isShortExplosion) {
-    return getShortExplosionDurationMs(src, color) ?? EXPLOSION_GREEN_DEFAULT_DURATION_MS;
-  }
-  if (isGreenExplosion) {
-    return EXPLOSION_GREEN_DEFAULT_DURATION_MS;
-  }
+  const sequenceDurationMs = getShortExplosionDurationMs(src, color);
+  if (Number.isFinite(sequenceDurationMs)) return sequenceDurationMs;
   return Math.max(EXPLOSION_GIF_DURATION_MS, EXPLOSION_MIN_DURATION_MS);
 }
 
