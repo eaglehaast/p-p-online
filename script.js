@@ -12162,7 +12162,11 @@ function tryStartAiPlanningFromCommittedState(trigger = "unspecified"){
     lastPlayerMoveCommitMeta.finished
     && lastPlayerMoveCommitMeta.turnCommitSequence === turnCommitSequence,
   );
-  if(!playerMoveCommitFinishedBeforePlannerStart){
+  const initialAiTurnWithoutPlayerCommit = Boolean(
+    !lastPlayerMoveCommitMeta.finished
+    && turnAdvanceCount === 0,
+  );
+  if(!playerMoveCommitFinishedBeforePlannerStart && !initialAiTurnWithoutPlayerCommit){
     return false;
   }
 
@@ -20886,9 +20890,15 @@ function doComputerMove(){
 
   const aiPlanes = points.filter(p=> p.color==="blue" && p.isAlive && !p.burning);
   const enemies  = points.filter(p=> p.color==="green" && p.isAlive && !p.burning);
+  const currentTurnCommitSequence = typeof turnCommitSequence === "number"
+    ? turnCommitSequence
+    : 0;
+  const currentTurnNumber = typeof turnAdvanceCount === "number"
+    ? turnAdvanceCount
+    : 0;
   aiCachedTargetMemory = {
-    turnCommitSequence,
-    turnNumber: turnAdvanceCount,
+    turnCommitSequence: currentTurnCommitSequence,
+    turnNumber: currentTurnNumber,
     enemyIds: enemies.map((plane) => plane?.id ?? null),
   };
   if(!aiPlanes.length || !enemies.length){
