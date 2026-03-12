@@ -1015,11 +1015,6 @@ const EXPLOSION_GREEN_SEQUENCE_VARIANTS = Array.from(
   })
 );
 
-const EXPLOSION_SEQUENCE_CONFIG = Object.freeze({
-  minScale: 0,
-  maxScale: 1.5,
-});
-
 const ALL_EXPLOSION_SPRITES = [
   ...EXPLOSION_BLUE_SPRITES,
   ...EXPLOSION_GREEN_SPRITES
@@ -27119,13 +27114,7 @@ function updateAndDrawExplosions(ctx, now) {
           targetFrameIndex,
           previousFrameIndex + maxAdvance,
         );
-        const frameProgress = frameCount <= 1
-          ? 1
-          : frameIndex / (frameCount - 1);
-        const scaleFactor = explosion.color === "green"
-          ? 1
-          : EXPLOSION_SEQUENCE_CONFIG.minScale
-            + (EXPLOSION_SEQUENCE_CONFIG.maxScale - EXPLOSION_SEQUENCE_CONFIG.minScale) * frameProgress;
+        const scaleFactor = 1;
 
         explosion.sequenceFrameIndex = frameIndex;
         explosion.nextFrameAtMs = explosion.startedAtMs + (frameEndsMs[frameIndex] || sequenceTotalDurationMs);
