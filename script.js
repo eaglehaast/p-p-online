@@ -21805,34 +21805,22 @@ function planPathToPoint(plane, tx, ty, options = {}){
         postRicochetContinuation: shouldUsePostRicochetContinuationTolerance,
         specialContinuationRouteClear,
       });
-      const shouldBypassBounceSegmentBlockedReject = !shouldKeepStrictSpecialSecondSegmentReject && (
-        routeMetrics.rejectCode === "blocked_after_bounce__from_bounce_segment_blocked"
-        || routeMetrics.rejectCode === "blocked_path_before_bounce__to_bounce_segment_blocked"
-      ) && (candidateClass === "gap" || candidateClass === "ricochet");
-      if(routeMetrics.rejectCode && !shouldBypassBounceSegmentBlockedReject){
-        const isSoftPostContinuationRejectCode = routeMetrics.rejectCode === "insufficient_progress"
-          || routeMetrics.rejectCode === "unsafe_lane"
-          || routeMetrics.rejectCode === "blocked_at_gap";
-        const hasGapLateRejectHardBlocker = !isSoftPostContinuationRejectCode;
-        const hasAcceptableGapLandingSafety = isCandidateLandingSafe(landingX, landingY);
-        const canBypassGapLateSoftReject = candidateClass === "gap"
-          && specialContinuationRouteClear
-          && isSoftPostContinuationRejectCode
-          && !hasGapLateRejectHardBlocker
-          && hasAcceptableGapLandingSafety
-          && !strictSpecialPathRejectStage
-          && !isCriticalOrEmergencyStage;
-        const canBypassRicochetLateSoftReject = candidateClass === "ricochet"
-          && isSoftPostContinuationRejectCode
-          && specialContinuationRouteClear
-          && !strictSpecialPathRejectStage
-          && !isCriticalOrEmergencyStage;
-        const canBypassSpecialPostContinuationReject = (canBypassGapLateSoftReject || canBypassRicochetLateSoftReject)
-          && !isDefenseOverrideStage
-          && canUseSpecialPromotionForClass(candidateClass)
-          && isCandidateLandingSafe(landingX, landingY);
-
-        if(!canBypassSpecialPostContinuationReject){
+      const isLateSpecialBounceRejectCode = routeMetrics.rejectCode === "blocked_after_bounce__from_bounce_segment_blocked"
+        || routeMetrics.rejectCode === "blocked_path_before_bounce__to_bounce_segment_blocked";
+      const hasImmediateOwnBaseThreat = activeGoalName.includes("critical_base_threat")
+        || activeGoalName.includes("emergency_base_defense");
+      const canPromoteLateSpecialCandidate = isSpecialCandidateClass
+        && specialContinuationRouteClear
+        && isLateSpecialBounceRejectCode
+        && !shouldKeepStrictSpecialSecondSegmentReject
+        && !strictSpecialPathRejectStage
+        && !isCriticalOrEmergencyStage
+        && !isDefenseOverrideStage
+        && !hasImmediateOwnBaseThreat
+        && canUseSpecialPromotionForClass(candidateClass)
+        && isCandidateLandingSafe(landingX, landingY);
+      if(routeMetrics.rejectCode){
+        if(!canPromoteLateSpecialCandidate){
           bestRejectCode = routeMetrics.rejectCode;
           if(isSpecialCandidateClass && specialContinuationRouteClear){
             bestRejectMeta = buildLateSpecialRejectMeta(
