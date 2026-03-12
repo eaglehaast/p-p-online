@@ -17304,6 +17304,18 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
         advanceTurn();
       };
 
+  function emitFallbackExecutionLog(event, payload = {}){
+    const stage = plannedMove?.fallbackChainStage || null;
+    if(!stage) return;
+    logAiDecision(event, {
+      fallbackStage: stage,
+      planeId: plannedMove?.plane?.id ?? null,
+      goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+      decisionReason: plannedMove?.decisionReason || null,
+      ...payload,
+    });
+  }
+
   function revalidatePlannedMove(move){
     const plane = move?.plane;
     if(!plane || !isPlaneLaunchStateReady(plane)){
@@ -17367,11 +17379,63 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   }
 
   function launchFallbackIfNeeded(staleCheck){
-    const fallbackMove = getFallbackAiMove(context) || getGuaranteedAnyLegalLaunch(context);
-    const fallbackValidation = validateAiLaunchMoveCandidate(fallbackMove);
-    if(fallbackValidation.ok){
-      issueAIMove(fallbackMove.plane, fallbackMove.vx, fallbackMove.vy);
+    const fallbackCandidates = [
+      {
+        stage: "fallback_primary_replan",
+        move: getFallbackAiMove(context),
+      },
+      {
+        stage: "fallback_super_reserve_replan",
+        move: getGuaranteedAnyLegalLaunch(context),
+      },
+      {
+        stage: "fallback_forced_progress_replan",
+        move: typeof getForcedProgressLaunchMove === "function" ? getForcedProgressLaunchMove(context) : null,
+      },
+    ];
+
+    for(const candidate of fallbackCandidates){
+      const fallbackMove = candidate.move;
+      if(!fallbackMove){
+        logAiDecision("fallback_replan_candidate_missing", {
+          stage: candidate.stage,
+          staleReason: staleCheck?.reason || "unknown",
+          previousPlaneId: plannedMove?.plane?.id ?? null,
+          previousEnemyId: plannedMove?.targetEnemy?.id ?? plannedMove?.enemy?.id ?? null,
+          previousGoal: plannedMove?.goalName ?? null,
+        });
+        continue;
+      }
+      const fallbackValidation = validateAiLaunchMoveCandidate(fallbackMove);
+      if(!fallbackValidation.ok){
+        logAiDecision("fallback_replan_candidate_invalid", {
+          stage: candidate.stage,
+          reason: fallbackValidation.reason || "invalid_fallback_move",
+          message: fallbackValidation.message || null,
+          fallbackPlaneId: fallbackMove?.plane?.id ?? null,
+          fallbackEnemyId: fallbackMove?.targetEnemy?.id ?? fallbackMove?.enemy?.id ?? null,
+        });
+        continue;
+      }
+      logAiDecision("fallback_replan_execution_started", {
+        stage: candidate.stage,
+        staleReason: staleCheck?.reason || "unknown",
+        revalidationSource: staleCheck?.revalidationSource ?? "live_points",
+        fallbackPlaneId: fallbackMove?.plane?.id ?? null,
+        fallbackEnemyId: fallbackMove?.targetEnemy?.id ?? fallbackMove?.enemy?.id ?? null,
+        fallbackGoal: fallbackMove?.goalName ?? null,
+      });
+      const fallbackIssueResult = issueAIMove(fallbackMove.plane, fallbackMove.vx, fallbackMove.vy);
+      if(fallbackIssueResult?.ok !== false){
+        logAiDecision("fallback_replan_execution_committed", {
+          stage: candidate.stage,
+          fallbackPlaneId: fallbackMove?.plane?.id ?? null,
+          fallbackEnemyId: fallbackMove?.targetEnemy?.id ?? fallbackMove?.enemy?.id ?? null,
+          fallbackGoal: fallbackMove?.goalName ?? null,
+        });
+      }
       logAiDecision("stale_target_replanned", {
+        stage: candidate.stage,
         planeId: plannedMove?.plane?.id ?? null,
         previousEnemyId: plannedMove?.targetEnemy?.id ?? plannedMove?.enemy?.id ?? null,
         previousGoal: plannedMove?.goalName ?? null,
@@ -17383,11 +17447,22 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       });
       return true;
     }
+    logAiDecision("fallback_replan_exhausted", {
+      staleReason: staleCheck?.reason || "unknown",
+      previousPlaneId: plannedMove?.plane?.id ?? null,
+      previousEnemyId: plannedMove?.targetEnemy?.id ?? plannedMove?.enemy?.id ?? null,
+      previousGoal: plannedMove?.goalName ?? null,
+    });
     return false;
   }
 
   const plannedMoveValidation = validateAiLaunchMoveCandidate(plannedMove);
   if(!plannedMoveValidation.ok){
+    emitFallbackExecutionLog("fallback_execution_aborted", {
+      abortReason: plannedMoveValidation.reason || "invalid_planned_move",
+      abortMessage: plannedMoveValidation.message || null,
+      step: "validation",
+    });
     failSafeHandler("invalid_move_fail_safe", {
       goal: aiRoundState?.currentGoal || "invalid_move_fail_safe",
       plannedMove: {
@@ -17481,6 +17556,10 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       aiPostInventoryLaunchTimeout = null;
       const staleCheck = revalidatePlannedMove(plannedMove);
       if(!staleCheck.ok){
+        emitFallbackExecutionLog("fallback_execution_aborted", {
+          abortReason: staleCheck.reason || "stale_target_revalidation_failed",
+          step: "revalidation_after_inventory",
+        });
         if(launchFallbackIfNeeded(staleCheck)) return;
         failSafeHandler("stale_target_launch_failed", {
           goal: aiRoundState?.currentGoal || plannedMove?.goalName || "stale_target_launch_failed",
@@ -17490,13 +17569,25 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
         });
         return;
       }
-      issueAIMove(plannedMove.plane, plannedMove.vx, plannedMove.vy);
+      emitFallbackExecutionLog("fallback_execution_started", {
+        step: "delayed_launch_after_inventory",
+      });
+      const delayedLaunchResult = issueAIMove(plannedMove.plane, plannedMove.vx, plannedMove.vy);
+      if(delayedLaunchResult?.ok !== false){
+        emitFallbackExecutionLog("fallback_execution_committed", {
+          step: "delayed_launch_after_inventory",
+        });
+      }
     }, AI_POST_INVENTORY_LAUNCH_DELAY_MS);
     return;
   }
 
   const immediateCheck = revalidatePlannedMove(plannedMove);
   if(!immediateCheck.ok){
+    emitFallbackExecutionLog("fallback_execution_aborted", {
+      abortReason: immediateCheck.reason || "stale_target_revalidation_failed",
+      step: "revalidation_before_launch",
+    });
     if(launchFallbackIfNeeded(immediateCheck)) return;
     failSafeHandler("stale_target_launch_blocked", {
       goal: aiRoundState?.currentGoal || plannedMove?.goalName || "stale_target_launch_blocked",
@@ -17507,7 +17598,15 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     return;
   }
 
-  issueAIMove(plannedMove.plane, plannedMove.vx, plannedMove.vy);
+  emitFallbackExecutionLog("fallback_execution_started", {
+    step: "immediate_launch",
+  });
+  const immediateLaunchResult = issueAIMove(plannedMove.plane, plannedMove.vx, plannedMove.vy);
+  if(immediateLaunchResult?.ok !== false){
+    emitFallbackExecutionLog("fallback_execution_committed", {
+      step: "immediate_launch",
+    });
+  }
 }
 
 function selectAiModeForCurrentTurn(context){
@@ -21310,8 +21409,19 @@ function doComputerMove(){
     return;
   }
 
+  logAiDecision("fallback_entered", {
+    stageBeforeFallback: "mode_move_rejected",
+    modeMoveRejectReason,
+    currentGoal: aiRoundState.currentGoal || null,
+  });
   const fallbackMove = getFallbackAiMove(modeContext);
   const fallbackValidation = validateAiLaunchMoveCandidate(fallbackMove);
+  logAiDecision("fallback_move_evaluated", {
+    hasMove: Boolean(fallbackMove),
+    moveType: fallbackMove?.decisionReason || fallbackMove?.goalName || null,
+    valid: fallbackValidation.ok,
+    validationReason: fallbackValidation.reason || null,
+  });
   if(fallbackMove && fallbackValidation.ok){
     aiRoundState.currentGoal = fallbackMove.goalName || "fallback_legacy_logic";
     recordDecisionEvent("fallback_selected", {
@@ -21338,7 +21448,10 @@ function doComputerMove(){
     if(aiRoundState && typeof aiRoundState === "object"){
       aiRoundState.lastFallbackMoveMeta = getFallbackMoveSignature(fallbackMove);
     }
-    issueAIMoveWithInventoryUsage(modeContext, fallbackMove);
+    issueAIMoveWithInventoryUsage(modeContext, {
+      ...fallbackMove,
+      fallbackChainStage: "fallback_selected",
+    });
     return;
   }
   if(fallbackMove && !fallbackValidation.ok){
@@ -21369,7 +21482,10 @@ function doComputerMove(){
       planeId: guaranteedLaunchMove.plane?.id ?? null,
       reason: guaranteedLaunchMove.decisionReason || "super_reserve_guaranteed_legal_launch",
     });
-    issueAIMoveWithInventoryUsage(modeContext, guaranteedLaunchMove);
+    issueAIMoveWithInventoryUsage(modeContext, {
+      ...guaranteedLaunchMove,
+      fallbackChainStage: "super_reserve_selected",
+    });
     return;
   }
   if(guaranteedLaunchMove && !guaranteedValidation.ok){
@@ -21401,7 +21517,10 @@ function doComputerMove(){
       planeId: forcedProgressMove.plane?.id ?? null,
       reason: forcedProgressMove.decisionReason || "forced_progress_launch",
     });
-    issueAIMoveWithInventoryUsage(modeContext, forcedProgressMove);
+    issueAIMoveWithInventoryUsage(modeContext, {
+      ...forcedProgressMove,
+      fallbackChainStage: "forced_progress_selected",
+    });
     return;
   }
   if(forcedProgressMove && !forcedProgressValidation.ok){
@@ -21559,7 +21678,10 @@ function doComputerMove(){
         distance: Number((safeShortMove.move.totalDist || 0).toFixed(1)),
         reasonCode: "safe_short_fallback_progress",
       });
-      issueAIMoveWithInventoryUsage(modeContext, safeShortMove.move);
+      issueAIMoveWithInventoryUsage(modeContext, {
+        ...safeShortMove.move,
+        fallbackChainStage: "safe_short_fallback_selected",
+      });
       return;
     }
   }
