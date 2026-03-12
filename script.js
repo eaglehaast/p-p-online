@@ -954,23 +954,12 @@ function buildGreenExplosionSequenceFramePaths(variantIndex) {
   const folder = `ui_gamescreen/gs_green_explosions_sprite/explosion_green_${variant}`;
 
   if (variant === 1) {
-    return [
-      `${folder}/explosion_green_2_01.png`,
-      `${folder}/explosion_green_2_02.png`,
-      `${folder}/explosion_green_2_03.png`,
-      `${folder}/explosion_green_2_04.png`,
-      `${folder}/explosion_green_2_05.png`,
-      `${folder}/explosion_green_2_06.png`,
-      `${folder}/explosion_green_2_07.png`,
-      `${folder}/explosion_green_2_08.png`,
-      `${folder}/explosion_green_2_09.png`,
-      `${folder}/explosion_green_2_10.png`,
-      `${folder}/explosion_green_2_11.png`,
-      `${folder}/explosion_green_2_12.png`,
-      `${folder}/explosion_green_2_13.png`,
-      `${folder}/explosion_green_2_14.png`,
-      `${folder}/explosion_green_2_15.png`,
-    ];
+    const firstVariantFolder = "ui_gamescreen/gs_green_explosion_one";
+
+    return Array.from({ length: 25 }, (_unused, frameIndex) => {
+      const frame = String(frameIndex + 1).padStart(2, "0");
+      return `${firstVariantFolder}/explosion_green_3_${frame}.png`;
+    });
   }
 
   if (variant === 2) {
