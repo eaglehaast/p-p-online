@@ -12070,21 +12070,22 @@ const EXPLOSION_FPS = 12;
 const EXPLOSION_FRAME_DURATION_MS = 1000 / EXPLOSION_FPS; // ~12fps
 const EXPLOSION_MIN_DURATION_MS = 600;
 const EXPLOSION_GIF_DURATION_MS = 1200;
-const EXPLOSION_GREEN_DEFAULT_DURATION_MS = 450;
+const EXPLOSION_GREEN_DEFAULT_DURATION_MS = 780;
 const EXPLOSION_BLUE_DEFAULT_DURATION_MS = EXPLOSION_GREEN_DEFAULT_DURATION_MS;
+const EXPLOSION_MAX_FRAME_ADVANCE_PER_TICK = 1;
 const GREEN_EXPLOSION_DURATIONS_MS = {
-  "green_explosion_short1.gif": 510,
-  "green_explosion_short3.gif": 450,
-  "green_explosion_short4.gif": 480,
-  "green_explosion_short5.gif": 510,
-  "green_explosion_short6.gif": 560,
+  "green_explosion_short1.gif": 790,
+  "green_explosion_short3.gif": 760,
+  "green_explosion_short4.gif": 780,
+  "green_explosion_short5.gif": 820,
+  "green_explosion_short6.gif": 860,
 };
 const BLUE_EXPLOSION_DURATIONS_MS = {
-  "explosion_blue_short_1.gif": 550,
-  "explosion_blue_short_2.gif": 550,
-  "explosion_blue_short_3.gif": 550,
-  "explosion_blue_short_4.gif": 550,
-  "explosion_blue_short_5.gif": 550,
+  "explosion_blue_short_1.gif": 760,
+  "explosion_blue_short_2.gif": 780,
+  "explosion_blue_short_3.gif": 800,
+  "explosion_blue_short_4.gif": 840,
+  "explosion_blue_short_5.gif": 880,
 };
 const EXPLOSION_PLAYBACK_RATE_DEFAULT = 1;
 const EXPLOSION_PLAYBACK_RATE_STEP = 0.1;
@@ -12107,6 +12108,34 @@ function setExplosionPlaybackRate(value){
   if(!Number.isFinite(value) || value <= 0) return false;
   explosionPlaybackRate = clampExplosionPlaybackRate(value);
   return true;
+}
+
+function registerExplosionDisplayedFrame(explosion, frameLabel){
+  if(!explosion || !Number.isFinite(frameLabel)) return;
+  if(!(explosion.displayedFrames instanceof Set)){
+    explosion.displayedFrames = new Set();
+  }
+  explosion.displayedFrames.add(frameLabel);
+}
+
+function logExplosionDisplayedFrames(explosion, reason){
+  if(!DEBUG_FX || !explosion) return;
+  const displayedFrameCount = explosion.displayedFrames instanceof Set
+    ? explosion.displayedFrames.size
+    : 0;
+  console.debug('[fx] explosion displayed frames', {
+    reason,
+    kind: explosion.kind,
+    color: explosion.color,
+    variantIndex: explosion.sequenceVariantIndex,
+    displayedFrameCount,
+    expectedFrames: Number.isFinite(explosion.sequenceFrameCount)
+      ? explosion.sequenceFrameCount
+      : Number.isFinite(explosion.frameCount)
+        ? explosion.frameCount
+        : null,
+    ttlMs: explosion.ttlMs,
+  });
 }
 
 function getShortExplosionDurationMs(src = "", color = "") {
@@ -26376,6 +26405,7 @@ function createExplosionState(plane, x, y, options = {}) {
     color: plane.color,
     sequenceFrameIndex: 0,
     nextFrameAtMs: null,
+    displayedFrames: new Set(),
   };
 
   if ((plane.color === "blue" || plane.color === "green") && img) {
@@ -26547,6 +26577,17 @@ function ensureExplosionDebugApi(){
 function updateAndDrawExplosions(ctx, now) {
   if (!ctx) return;
 
+  const removeExplosionEntry = (index, explosion, reason) => {
+    if (explosion?.domEntry?.element?.remove) {
+      explosion.domEntry.element.remove();
+    }
+    if (explosion?.domEntry) {
+      delete explosion.domEntry;
+    }
+    logExplosionDisplayedFrames(explosion, reason);
+    activeExplosions.splice(index, 1);
+  };
+
   for (let i = activeExplosions.length - 1; i >= 0; i--) {
     const explosion = activeExplosions[i];
     const img = explosion.img || null;
@@ -26572,13 +26613,7 @@ function updateAndDrawExplosions(ctx, now) {
       // Для покадровых последовательностей удаляем только после фактического показа финального кадра,
       // иначе последний кадр может не успеть отрисоваться ни разу при пограничном elapsed.
       if (!hasSequenceFrames && elapsed >= ttlMs) {
-        if (explosion.domEntry?.element?.remove) {
-          explosion.domEntry.element.remove();
-        }
-        if (explosion.domEntry) {
-          delete explosion.domEntry;
-        }
-        activeExplosions.splice(i, 1);
+        removeExplosionEntry(i, explosion, 'gif_ttl_elapsed');
         continue;
       }
 
@@ -26589,7 +26624,16 @@ function updateAndDrawExplosions(ctx, now) {
       if (explosion.domEntry?.img && hasSequenceFrames) {
         const frameCount = explosion.sequenceFrames.length;
         const frameDurationMs = Math.max(1, ttlMs / frameCount);
-        const frameIndex = Math.min(frameCount - 1, Math.floor(elapsed / frameDurationMs));
+        const elapsedFrames = Math.floor(elapsed / frameDurationMs);
+        const targetFrameIndex = Math.min(frameCount - 1, Math.max(0, elapsedFrames));
+        const previousFrameIndex = Number.isFinite(explosion.sequenceFrameIndex)
+          ? explosion.sequenceFrameIndex
+          : 0;
+        const maxAdvance = Math.max(1, EXPLOSION_MAX_FRAME_ADVANCE_PER_TICK);
+        const frameIndex = Math.min(
+          targetFrameIndex,
+          previousFrameIndex + maxAdvance,
+        );
         const frameProgress = frameCount <= 1
           ? 1
           : frameIndex / (frameCount - 1);
@@ -26604,19 +26648,14 @@ function updateAndDrawExplosions(ctx, now) {
         if (frameImg?.src && explosion.domEntry.img.src !== frameImg.src) {
           explosion.domEntry.img.src = frameImg.src;
         }
+        registerExplosionDisplayedFrame(explosion, frameIndex);
 
         if (
           explosion.sequenceFrameIndex >= frameCount - 1
           && Number.isFinite(explosion.nextFrameAtMs)
           && now >= explosion.nextFrameAtMs
         ) {
-          if (explosion.domEntry?.element?.remove) {
-            explosion.domEntry.element.remove();
-          }
-          if (explosion.domEntry) {
-            delete explosion.domEntry;
-          }
-          activeExplosions.splice(i, 1);
+          removeExplosionEntry(i, explosion, 'sequence_complete');
           continue;
         }
       }
@@ -26657,9 +26696,12 @@ function updateAndDrawExplosions(ctx, now) {
     }
 
     if (explosion.frameIndex >= frameCount) {
+      logExplosionDisplayedFrames(explosion, 'sheet_complete');
       activeExplosions.splice(i, 1);
       continue;
     }
+
+    registerExplosionDisplayedFrame(explosion, explosion.frameIndex);
 
     ctx.save();
     if (img && ((img instanceof ImageBitmap) || isSpriteReady(img))) {
