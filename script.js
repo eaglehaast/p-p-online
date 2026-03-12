@@ -933,6 +933,16 @@ const BLUE_SEQUENCE_FRAME_ORDER = Object.freeze([
 
 function buildBlueExplosionSequenceFramePaths(variantIndex) {
   const variant = variantIndex + 1;
+
+  if (variant === 1) {
+    const firstVariantFolder = "ui_gamescreen/gs_blue_explosion_one";
+
+    return Array.from({ length: 25 }, (_unused, frameIndex) => {
+      const frame = String(frameIndex + 1).padStart(2, "0");
+      return `${firstVariantFolder}/explosion_blue_1_${frame}.png`;
+    });
+  }
+
   const folder = `ui_gamescreen/gs_blue_explosions_sprite/explosion_blue_${variant}`;
   return BLUE_SEQUENCE_FRAME_ORDER.map((frameNumber) => {
     const frame = String(frameNumber).padStart(2, "0");
