@@ -12113,6 +12113,15 @@ let lastPlayerMoveCommitMeta = {
   finished: false,
   finishedAtMs: 0,
 };
+
+function resetLastPlayerMoveCommitMeta(){
+  lastPlayerMoveCommitMeta = {
+    turnCommitSequence: 0,
+    turnNumber: 0,
+    finished: false,
+    finishedAtMs: 0,
+  };
+}
 const AI_MOVE_INITIAL_DELAY_MS = 300;
 const AI_MOVE_CARGO_RETRY_DELAY_MS = 200;
 const AI_MOVE_CARGO_WAIT_TIMEOUT_MS = 1800;
@@ -12815,6 +12824,7 @@ function resetGame(options = {}){
   lastFirstTurn= 1 - lastFirstTurn;
   turnIndex= lastFirstTurn;
   turnAdvanceCount = 0;
+  resetLastPlayerMoveCommitMeta();
   resetCargoState();
   resetInventoryState();
 
@@ -28181,6 +28191,7 @@ function startNewRound(){
   turnIndex = lastFirstTurn;
   turnAdvanceCount = 0;
   turnCommitSequence = 0;
+  resetLastPlayerMoveCommitMeta();
   invalidateAiPlanningState("start_new_round");
   resetCargoState();
   resetPlayerInventoryEffects();
