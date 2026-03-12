@@ -26568,9 +26568,10 @@ function updateAndDrawExplosions(ctx, now) {
       explosion.ttlMs = ttlMs;
 
       const hasSequenceFrames = Array.isArray(explosion.sequenceFrames) && explosion.sequenceFrames.length > 0;
-      const isGreenSequence = explosion.color === "green" && hasSequenceFrames;
 
-      if (!isGreenSequence && elapsed >= ttlMs) {
+      // Для покадровых последовательностей удаляем только после фактического показа финального кадра,
+      // иначе последний кадр может не успеть отрисоваться ни разу при пограничном elapsed.
+      if (!hasSequenceFrames && elapsed >= ttlMs) {
         if (explosion.domEntry?.element?.remove) {
           explosion.domEntry.element.remove();
         }
@@ -26605,8 +26606,7 @@ function updateAndDrawExplosions(ctx, now) {
         }
 
         if (
-          isGreenSequence
-          && explosion.sequenceFrameIndex >= frameCount - 1
+          explosion.sequenceFrameIndex >= frameCount - 1
           && Number.isFinite(explosion.nextFrameAtMs)
           && now >= explosion.nextFrameAtMs
         ) {
