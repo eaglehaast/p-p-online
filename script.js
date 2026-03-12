@@ -14390,6 +14390,7 @@ function createInitialAiRoundState(){
     openingTemplateSuppressed: false,
     lastOpeningNonTrivialStartMeta: null,
     lastFallbackMoveMeta: null,
+    lossCompressionMode: false,
   };
 }
 
@@ -15633,13 +15634,13 @@ function planPathWithSpecialRouteProbe(plane, tx, ty, options = {}){
     });
     if(!move) continue;
 
-    const candidate = {
+    const candidate = applyLossCompressionScoreAdjustments({
       plane,
       ...move,
       routeClass,
       score: getAiPlaneAdjustedScore(move.totalDist, plane),
       idleTurns: getAiPlaneIdleTurns(plane),
-    };
+    }, options?.context || null);
     if(compareAiCandidateByScoreAndRotation(candidate, bestCandidate, [...compareLabel, routeClass])){
       bestCandidate = candidate;
     }
@@ -15896,6 +15897,181 @@ function getEarlyWarningDirectFinisherOverride(context, earlyWarningThreat){
     immediateResponseThreat,
     shortDistanceThreshold,
     reason: allow ? "clean_short_low_risk" : "constraints_not_met",
+  };
+}
+
+
+function evaluateLossCompressionMode(modeContext){
+  const aiPlanes = Array.isArray(modeContext?.aiPlanes) ? modeContext.aiPlanes : [];
+  const enemies = Array.isArray(modeContext?.enemies) ? modeContext.enemies : [];
+  const readyAiPlanes = aiPlanes.filter((plane) => isPlaneLaunchStateReady(plane) && !flyingPoints.some((fp) => fp.plane === plane));
+  const activeEnemyPlanes = enemies.filter((enemy) => enemy?.isAlive);
+
+  if(readyAiPlanes.length !== 1){
+    return {
+      enabled: false,
+      reason: "ai_ready_planes_not_one",
+      metrics: {
+        aiReadyPlanes: readyAiPlanes.length,
+        enemyActivePlanes: activeEnemyPlanes.length,
+      },
+    };
+  }
+
+  const enemyCountAdvantage = activeEnemyPlanes.length >= 2 && activeEnemyPlanes.length - readyAiPlanes.length >= 1;
+  if(!enemyCountAdvantage){
+    return {
+      enabled: false,
+      reason: "enemy_advantage_not_confirmed",
+      metrics: {
+        aiReadyPlanes: readyAiPlanes.length,
+        enemyActivePlanes: activeEnemyPlanes.length,
+      },
+    };
+  }
+
+  const criticalThreat = modeContext?.criticalBaseThreat || getCriticalBlueBaseThreat(modeContext);
+  const earlyThreat = criticalThreat ? null : getEarlyBaseWarningThreat(modeContext);
+  const forcedDefensiveIntercept = Boolean(criticalThreat || earlyThreat);
+  if(forcedDefensiveIntercept){
+    return {
+      enabled: false,
+      reason: "forced_defensive_intercept_required",
+      metrics: {
+        aiReadyPlanes: readyAiPlanes.length,
+        enemyActivePlanes: activeEnemyPlanes.length,
+        hasCriticalThreat: Boolean(criticalThreat),
+        hasEarlyWarningThreat: Boolean(earlyThreat),
+      },
+    };
+  }
+
+  const homeBase = modeContext?.homeBase || getBaseAnchor("blue");
+  const centerPoint = {
+    x: FIELD_LEFT + FIELD_WIDTH * 0.5,
+    y: FIELD_TOP + FIELD_HEIGHT * 0.5,
+  };
+
+  let enemyCleanLaneCount = 0;
+  let enemyCenterPressureCount = 0;
+  let enemyResourceAccessCount = 0;
+
+  for(const enemy of activeEnemyPlanes){
+    if(homeBase && isPathClear(enemy.x, enemy.y, homeBase.x, homeBase.y)) enemyCleanLaneCount += 1;
+    if(dist(enemy, centerPoint) <= ATTACK_RANGE_PX * 1.25) enemyCenterPressureCount += 1;
+
+    const canReachCargoLine = Array.isArray(cargoState)
+      ? cargoState.some((cargo) => cargo?.state === "idle" && Number.isFinite(cargo?.x) && Number.isFinite(cargo?.y) && isPathClear(enemy.x, enemy.y, cargo.x, cargo.y))
+      : false;
+    if(canReachCargoLine) enemyResourceAccessCount += 1;
+  }
+
+  const shouldUseFlagsMode = Boolean(modeContext?.shouldUseFlagsMode);
+  if(shouldUseFlagsMode && Array.isArray(modeContext?.availableEnemyFlags) && modeContext.availableEnemyFlags.length > 0){
+    enemyResourceAccessCount += modeContext.availableEnemyFlags.filter((flag) => {
+      const anchor = getFlagAnchor(flag);
+      if(!Number.isFinite(anchor?.x) || !Number.isFinite(anchor?.y)) return false;
+      return activeEnemyPlanes.some((enemy) => isPathClear(enemy.x, enemy.y, anchor.x, anchor.y));
+    }).length;
+  }
+
+  const mapControlSignals = [
+    enemyCleanLaneCount >= 1,
+    enemyCenterPressureCount >= 1,
+    enemyResourceAccessCount >= 1,
+  ].filter(Boolean).length;
+
+  const holdMove = getEmergencyBaseHoldPositionMove(modeContext, {
+    enemy: activeEnemyPlanes[0] || null,
+    base: homeBase,
+    distanceToBase: (activeEnemyPlanes[0] && homeBase) ? dist(activeEnemyPlanes[0], homeBase) : Number.POSITIVE_INFINITY,
+    hasCleanLineToBase: Boolean(activeEnemyPlanes[0] && homeBase && isPathClear(activeEnemyPlanes[0].x, activeEnemyPlanes[0].y, homeBase.x, homeBase.y)),
+  });
+  const passiveDefenseInsufficient = !holdMove || !Number.isFinite(holdMove?.totalDist) || holdMove.totalDist > MAX_DRAG_DISTANCE * 0.62;
+
+  const enabled = mapControlSignals >= 2 && passiveDefenseInsufficient;
+  return {
+    enabled,
+    reason: enabled ? "hopeless_position_confirmed" : "map_control_or_passive_defense_not_confirmed",
+    metrics: {
+      aiReadyPlanes: readyAiPlanes.length,
+      enemyActivePlanes: activeEnemyPlanes.length,
+      enemyCleanLaneCount,
+      enemyCenterPressureCount,
+      enemyResourceAccessCount,
+      mapControlSignals,
+      passiveDefenseInsufficient,
+      hasHoldMove: Boolean(holdMove),
+      holdMoveDistance: Number.isFinite(holdMove?.totalDist) ? Number(holdMove.totalDist.toFixed(1)) : null,
+    },
+  };
+}
+
+function applyLossCompressionScoreAdjustments(candidate, modeContext){
+  if(!candidate || typeof candidate !== "object") return candidate;
+  if(!aiRoundState?.lossCompressionMode) return candidate;
+
+  const scoreBefore = Number.isFinite(candidate.score) ? candidate.score : 0;
+  const goalText = `${candidate?.goalName || ""}`.toLowerCase();
+  const reasonText = `${candidate?.decisionReason || ""}`.toLowerCase();
+  const typeText = `${candidate?.candidateType || candidate?.trajectoryType || ""}`.toLowerCase();
+  const enemy = candidate?.enemy || candidate?.targetEnemy || null;
+
+  const adjustment = {
+    cargoPickupBonus: 0,
+    resourceDenialBonus: 0,
+    interceptAttemptBonus: 0,
+    specialRouteBonus: 0,
+    passiveBaseHoverPenalty: 0,
+    boringCirclingPenalty: 0,
+    imperfectContinuationRelief: 0,
+    riskyGeometryRelief: 0,
+    postMoveExposureRelief: 0,
+  };
+
+  if(goalText.includes("cargo") || reasonText.includes("cargo")) adjustment.cargoPickupBonus += MAX_DRAG_DISTANCE * 0.09;
+  if(goalText.includes("flag") || reasonText.includes("flag") || reasonText.includes("resource") || reasonText.includes("denial")) adjustment.resourceDenialBonus += MAX_DRAG_DISTANCE * 0.06;
+  if(reasonText.includes("intercept") || reasonText.includes("attack") || reasonText.includes("finisher")) adjustment.interceptAttemptBonus += MAX_DRAG_DISTANCE * 0.05;
+  if(typeText.includes("gap") || typeText.includes("ricochet") || reasonText.includes("gap") || reasonText.includes("ricochet") || reasonText.includes("special")) adjustment.specialRouteBonus += MAX_DRAG_DISTANCE * 0.045;
+
+  const homeBase = modeContext?.homeBase || getBaseAnchor("blue");
+  const landing = getAiMoveLandingPoint(candidate);
+  const landingToBase = (landing && homeBase) ? dist(landing, homeBase) : Number.POSITIVE_INFINITY;
+  if(Number.isFinite(landingToBase) && landingToBase <= ATTACK_RANGE_PX * 1.05 && !reasonText.includes("intercept")){
+    adjustment.passiveBaseHoverPenalty += MAX_DRAG_DISTANCE * 0.08;
+  }
+
+  if(reasonText.includes("fallback_rotation") || reasonText.includes("hold") || reasonText.includes("safe_short_fallback_progress")){
+    adjustment.boringCirclingPenalty += MAX_DRAG_DISTANCE * 0.05;
+  }
+
+  adjustment.imperfectContinuationRelief += MAX_DRAG_DISTANCE * 0.022;
+  adjustment.riskyGeometryRelief += MAX_DRAG_DISTANCE * 0.018;
+  adjustment.postMoveExposureRelief += MAX_DRAG_DISTANCE * 0.015;
+
+  const totalBoost = adjustment.cargoPickupBonus
+    + adjustment.resourceDenialBonus
+    + adjustment.interceptAttemptBonus
+    + adjustment.specialRouteBonus
+    + adjustment.imperfectContinuationRelief
+    + adjustment.riskyGeometryRelief
+    + adjustment.postMoveExposureRelief;
+  const totalPenalty = adjustment.passiveBaseHoverPenalty + adjustment.boringCirclingPenalty;
+  const adjustedScore = Math.max(0, scoreBefore - totalBoost + totalPenalty);
+
+  return {
+    ...candidate,
+    score: adjustedScore,
+    normalizedScore: Number.isFinite(candidate.normalizedScore)
+      ? Math.max(0, candidate.normalizedScore - totalBoost + totalPenalty)
+      : candidate.normalizedScore,
+    lossCompressionAdjustment: {
+      ...adjustment,
+      totalBoost: Number(totalBoost.toFixed(3)),
+      totalPenalty: Number(totalPenalty.toFixed(3)),
+      scoreBefore: Number(scoreBefore.toFixed(3)),
+      scoreAfter: Number(adjustedScore.toFixed(3)),
+    },
   };
 }
 
@@ -19515,6 +19691,7 @@ function buildFallbackAttackScoreDetails({
   multiKillPotential,
   classScoreMeta = null,
   tieBreakPenalty = 0,
+  modeContext = null,
 }){
   const bonusTotal = Math.min(0.2, bonusParts.reduce((sum, bonus) => sum + Math.max(0, bonus || 0), 0));
   const rawScore = getAiPlaneAdjustedScore(weightedDistance * (1 - bonusTotal), plane);
@@ -19529,11 +19706,12 @@ function buildFallbackAttackScoreDetails({
   const normalizedScore = scoreAfter
     + Math.max(0, tieBreakPenalty || 0)
     + classNormalized * Math.max(1, MAX_DRAG_DISTANCE) * 0.045;
+  const adjustedMeta = applyLossCompressionScoreAdjustments({ score: normalizedScore }, modeContext);
   return {
     bonusTotal,
     scoreBefore: rawScore,
     scoreAfter,
-    normalizedScore,
+    normalizedScore: Number.isFinite(adjustedMeta?.score) ? adjustedMeta.score : normalizedScore,
     multiKillBonusApplied,
     classScoreBreakdown: classScoreMeta?.classScoreBreakdown || null,
   };
@@ -19556,7 +19734,7 @@ function getFallbackAiMove(context){
         ...adjusted.fallbackRepeatPenaltyMeta,
       });
     }
-    return adjusted;
+    return applyLossCompressionScoreAdjustments(adjusted, context);
   }
 
   const carrier = shouldUseFlagsMode ? aiPlanes.find(p => {
@@ -19592,7 +19770,7 @@ function getFallbackAiMove(context){
       goalName: "capture_enemy_flag",
     });
     if(bestCap){
-      return bestCap;
+      return applyLossCompressionScoreAdjustments(bestCap, context);
     }
   }
 
@@ -19623,7 +19801,7 @@ function getFallbackAiMove(context){
       });
       const finisherScore = (Number.isFinite(directFinisherMove.score) ? directFinisherMove.score : directFinisherMove.totalDist)
         + finisherClassMeta.normalizedClassScore * MAX_DRAG_DISTANCE * 0.045;
-      directFinisherCandidate = {
+      directFinisherCandidate = applyLossCompressionScoreAdjustments({
         ...directFinisherMove,
         trajectoryType: "direct",
         candidateType: "direct",
@@ -19631,7 +19809,7 @@ function getFallbackAiMove(context){
         normalizedScore: finisherScore,
         classScoreBreakdown: finisherClassMeta.classScoreBreakdown,
         selectedClass: "direct",
-      };
+      }, context);
       logAiDecision("direct_finisher", {
         source: "fallback",
         planeId: directFinisherMove.plane?.id ?? null,
@@ -19784,14 +19962,17 @@ function getFallbackAiMove(context){
         }
 
         if(directQuality < AI_FALLBACK_DIRECT_QUALITY_MIN){
-          const poorDirectCandidate = {
+          const poorDirectCandidate = applyLossCompressionScoreAdjustments({
             plane,
             enemy,
             directQuality,
             directAttackScore,
             totalDist: directDist,
+            score: directAttackScore,
             idleTurns: getAiPlaneIdleTurns(plane),
-          };
+            decisionReason: "fallback_poor_direct",
+            goalName: "attack_enemy_plane",
+          }, context);
           if(compareAiCandidateByScoreAndRotation(poorDirectCandidate, bestPoorDirectCandidate, ["fallback_attack", "poor_direct", enemy?.id ?? ""])){
             bestPoorDirectCandidate = poorDirectCandidate;
           }
@@ -19865,6 +20046,7 @@ function getFallbackAiMove(context){
             goalName: directSafetyContext.goalName,
           }),
           tieBreakPenalty: directTieBreakPenalty,
+          modeContext: context,
         });
         const directResponseRisk = getFallbackCandidateResponseRisk(immediateThreatMeta);
         logAiDecision("fallback_attack_candidate_scored", {
@@ -19889,7 +20071,7 @@ function getFallbackAiMove(context){
           contactDistance: Number.isFinite(directMultiKill.contactDistance) ? Number(directMultiKill.contactDistance.toFixed(2)) : null,
         });
 
-        const directCandidate = {
+        const directCandidate = applyLossCompressionScoreAdjustments({
           plane,
           enemy,
           vx,
@@ -19904,7 +20086,7 @@ function getFallbackAiMove(context){
           classScoreBreakdown: directScoreMeta.classScoreBreakdown,
           selectedClass: "direct",
           idleTurns: getAiPlaneIdleTurns(plane),
-        };
+        }, context);
         if(wallLockedRicochetPreferredTargets.has(enemy?.id)){
           directCandidate.reasonCode = "wall_locked_target_prefers_ricochet";
         }
@@ -20023,6 +20205,7 @@ function getFallbackAiMove(context){
               goalName: mirrorSafetyContext.goalName,
             }),
             tieBreakPenalty: 0,
+            modeContext: context,
           });
           const mirrorResponseRisk = getFallbackCandidateResponseRisk(mirrorImmediateThreatMeta);
           logAiDecision("fallback_attack_candidate_scored", {
@@ -20047,7 +20230,7 @@ function getFallbackAiMove(context){
             contactDistance: Number.isFinite(mirrorMultiKill.contactDistance) ? Number(mirrorMultiKill.contactDistance.toFixed(2)) : null,
           });
 
-          const mirrorCandidate = {
+          const mirrorCandidate = applyLossCompressionScoreAdjustments({
             plane,
             enemy,
             vx,
@@ -20062,7 +20245,7 @@ function getFallbackAiMove(context){
             classScoreBreakdown: mirrorScoreMeta.classScoreBreakdown,
             selectedClass: "ricochet",
             idleTurns: getAiPlaneIdleTurns(plane),
-          };
+          }, context);
           if(compareAiCandidateByScoreAndRotation(mirrorCandidate, best, ["fallback_attack", "mirror", enemy?.id ?? ""])){
             mirrorCandidate.classTieBreakReason = compareAiCandidateByScoreAndRotation.lastClassTieBreakReason || null;
             best = mirrorCandidate;
@@ -20074,7 +20257,7 @@ function getFallbackAiMove(context){
           if(preparationMove){
             const prepWeight = riskProfile === "comeback" ? 0.95 : 1;
             const preparationScore = getAiPlaneAdjustedScore(preparationMove.totalDist * prepWeight, plane);
-            const preparationCandidate = {
+            const preparationCandidate = applyLossCompressionScoreAdjustments({
               plane,
               enemy,
               targetEnemy: enemy,
@@ -20082,7 +20265,7 @@ function getFallbackAiMove(context){
               ...preparationMove,
               score: preparationScore,
               idleTurns: getAiPlaneIdleTurns(plane),
-            };
+            }, context);
             if(compareAiCandidateByScoreAndRotation(preparationCandidate, bestPreparation, ["fallback_attack", "prepare", enemy?.id ?? ""])){
               bestPreparation = preparationCandidate;
               bestPreparationScore = preparationScore;
@@ -20134,7 +20317,7 @@ function getFallbackAiMove(context){
       });
       if(preparationMove){
         const preparationScore = getAiPlaneAdjustedScore(preparationMove.totalDist, plane);
-        const candidate = withFallbackAntiRepeat({
+        const candidate = withFallbackAntiRepeat(applyLossCompressionScoreAdjustments({
           plane,
           enemy,
           targetEnemy: enemy,
@@ -20144,7 +20327,7 @@ function getFallbackAiMove(context){
           idleTurns,
           fallbackSafetyTier: "prepare",
           ...preparationMove,
-        }, "fallback_rotation_prepare");
+        }, context), "fallback_rotation_prepare");
         fallbackRotationCandidates.push(candidate);
         if(compareAiCandidateByScoreAndRotation(candidate, fallbackCandidate, ["fallback_rotation", "prepare"])){
           fallbackCandidate = candidate;
@@ -20166,7 +20349,7 @@ function getFallbackAiMove(context){
       const retreatScale = conservativeRetreat ? 0.5 : 0.62;
       const desired = Math.min(Math.hypot(dx,dy) * retreatScale, MAX_DRAG_DISTANCE);
       const retreatScore = getAiPlaneAdjustedScore(desired, plane);
-      const candidate = withFallbackAntiRepeat({
+      const candidate = withFallbackAntiRepeat(applyLossCompressionScoreAdjustments({
         plane,
         enemy,
         fallbackTarget,
@@ -20176,7 +20359,7 @@ function getFallbackAiMove(context){
         score: retreatScore,
         idleTurns,
         fallbackSafetyTier: "retreat",
-      }, "fallback_rotation_retreat");
+      }, context), "fallback_rotation_retreat");
       fallbackRotationCandidates.push(candidate);
       if(compareAiCandidateByScoreAndRotation(candidate, fallbackCandidate, ["fallback_rotation", "retreat"])){
         fallbackCandidate = candidate;
@@ -20216,14 +20399,14 @@ function getFallbackAiMove(context){
         moveDistance: Math.max(0, fallbackCandidate.desired || 0),
       });
 
-      best = {
+      best = applyLossCompressionScoreAdjustments({
         plane: fallbackCandidate.plane,
         enemy: fallbackCandidate.enemy,
         decisionReason: "fallback_rotation",
         vx: Math.cos(ang)*scale*speedPxPerSec,
         vy: Math.sin(ang)*scale*speedPxPerSec,
         totalDist: fallbackCandidate.desired,
-      };
+      }, context);
     }
   }
 
@@ -20372,6 +20555,74 @@ function getForcedProgressLaunchMove(modeContext){
 }
 
 
+
+function getLossCompressionAggressiveMove(modeContext){
+  if(!aiRoundState?.lossCompressionMode) return null;
+  const aiPlanes = Array.isArray(modeContext?.aiPlanes) ? modeContext.aiPlanes : [];
+  const enemies = Array.isArray(modeContext?.enemies) ? modeContext.enemies : [];
+  let bestCandidate = null;
+
+  for(const plane of aiPlanes){
+    if(!isPlaneLaunchStateReady(plane) || flyingPoints.some((fp) => fp.plane === plane)) continue;
+
+    for(const enemy of enemies){
+      if(!enemy?.isAlive) continue;
+      const move = planPathWithSpecialRouteProbe(plane, enemy.x, enemy.y, {
+        goalName: "loss_compression_intercept",
+        decisionReason: "loss_compression_intercept_attempt",
+        targetEnemy: enemy,
+        context: modeContext,
+        specialAttemptBudget: 2,
+        compareLabel: ["loss_compression", plane?.id ?? "", enemy?.id ?? ""],
+      });
+      if(!move) continue;
+      const validated = validateAiLaunchMoveCandidate(move);
+      if(!validated.ok) continue;
+      const aggressive = applyLossCompressionScoreAdjustments({
+        ...move,
+        plane,
+        enemy,
+        goalName: move.goalName || "loss_compression_intercept",
+        decisionReason: move.decisionReason || "loss_compression_intercept_attempt",
+        score: Number.isFinite(move.score) ? move.score : getAiPlaneAdjustedScore(move.totalDist, plane),
+        idleTurns: getAiPlaneIdleTurns(plane),
+      }, modeContext);
+      if(compareAiCandidateByScoreAndRotation(aggressive, bestCandidate, ["loss_compression", "aggressive_enemy"])){
+        bestCandidate = aggressive;
+      }
+    }
+
+    if(Array.isArray(cargoState)){
+      for(const cargo of cargoState){
+        if(cargo?.state !== "idle" || !Number.isFinite(cargo?.x) || !Number.isFinite(cargo?.y)) continue;
+        const move = planPathWithSpecialRouteProbe(plane, cargo.x, cargo.y, {
+          goalName: "loss_compression_cargo",
+          decisionReason: "loss_compression_cargo_pickup",
+          context: modeContext,
+          specialAttemptBudget: 2,
+          compareLabel: ["loss_compression", plane?.id ?? "", "cargo"],
+        });
+        if(!move) continue;
+        const validated = validateAiLaunchMoveCandidate(move);
+        if(!validated.ok) continue;
+        const aggressive = applyLossCompressionScoreAdjustments({
+          ...move,
+          plane,
+          goalName: move.goalName || "loss_compression_cargo",
+          decisionReason: move.decisionReason || "loss_compression_cargo_pickup",
+          score: Number.isFinite(move.score) ? move.score : getAiPlaneAdjustedScore(move.totalDist, plane),
+          idleTurns: getAiPlaneIdleTurns(plane),
+        }, modeContext);
+        if(compareAiCandidateByScoreAndRotation(aggressive, bestCandidate, ["loss_compression", "aggressive_cargo"])){
+          bestCandidate = aggressive;
+        }
+      }
+    }
+  }
+
+  return bestCandidate;
+}
+
 function doComputerMove(){
   if (gameMode!=="computer" || isGameOver) return;
   aiRoundState.lastInitialCandidateSetDiagnostics = null;
@@ -20456,6 +20707,30 @@ function doComputerMove(){
   const hasCriticalBaseThreat = Boolean(criticalBaseThreat);
   const earlyBaseWarningThreat = hasCriticalBaseThreat ? null : getEarlyBaseWarningThreat(modeContext);
   const hasEarlyBaseWarningThreat = Boolean(earlyBaseWarningThreat);
+  modeContext.earlyBaseWarningThreat = earlyBaseWarningThreat;
+
+  const lossCompressionEvaluation = evaluateLossCompressionMode(modeContext);
+  aiRoundState.lossCompressionMode = Boolean(lossCompressionEvaluation?.enabled);
+  modeContext.lossCompressionMode = aiRoundState.lossCompressionMode;
+  if(aiRoundState.lossCompressionMode){
+    recordDecisionEvent("loss_compression_mode_enabled", {
+      goal: aiRoundState.currentGoal || "loss_compression_mode",
+      reasonCodes: ["loss_compression_mode", "hopeless_position_detected", "fallback_bias_reduced"],
+      fallbackDiagnostics: {
+        detectorReason: lossCompressionEvaluation?.reason || null,
+        metrics: lossCompressionEvaluation?.metrics || null,
+      },
+    });
+    logAiDecision("loss_compression_mode_enabled", {
+      reason: lossCompressionEvaluation?.reason || null,
+      metrics: lossCompressionEvaluation?.metrics || null,
+    });
+  } else {
+    logAiDecision("loss_compression_mode_disabled", {
+      reason: lossCompressionEvaluation?.reason || null,
+      metrics: lossCompressionEvaluation?.metrics || null,
+    });
+  }
 
   const openingNonTrivialStartMeta = evaluateOpeningNonTrivialStartMeta({
     ...modeContext,
@@ -20859,6 +21134,32 @@ function doComputerMove(){
       issueAIMoveWithInventoryUsage(modeContext, positionalExitMove.move);
       return;
     }
+  }
+
+  const lossCompressionAggressiveMove = aiRoundState.lossCompressionMode
+    ? getLossCompressionAggressiveMove(modeContext)
+    : null;
+  if(aiRoundState.lossCompressionMode && lossCompressionAggressiveMove){
+    aiRoundState.currentGoal = lossCompressionAggressiveMove.goalName || "loss_compression_intercept";
+    recordDecisionEvent("loss_compression_aggressive_selected", {
+      goal: aiRoundState.currentGoal,
+      move: lossCompressionAggressiveMove,
+      reasonCodes: ["loss_compression_mode", "aggressive_valid_candidate", "fallback_bypassed"],
+      fallbackDiagnostics: {
+        stageBeforeFallback: "mode_move_rejected",
+        fallbackGoal: "fallback_bypassed",
+        fallbackDecisionReason: "loss_compression_aggressive_override",
+        rootCauseHint: modeMoveRejectReason || null,
+      },
+    });
+    logAiDecision("loss_compression_fallback_bypassed", {
+      planeId: lossCompressionAggressiveMove.plane?.id ?? null,
+      enemyId: lossCompressionAggressiveMove.enemy?.id ?? null,
+      reason: lossCompressionAggressiveMove.decisionReason || null,
+      adjustment: lossCompressionAggressiveMove.lossCompressionAdjustment || null,
+    });
+    issueAIMoveWithInventoryUsage(modeContext, lossCompressionAggressiveMove);
+    return;
   }
 
   const fallbackMove = getFallbackAiMove(modeContext);
