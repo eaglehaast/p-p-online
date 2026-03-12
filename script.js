@@ -12762,6 +12762,54 @@ function clearFlagFromPlane(plane){
   plane.flagColor = null;
 }
 
+function getPlaneFlagDropPosition(plane, fallbackPosition = null){
+  if(
+    fallbackPosition
+    && Number.isFinite(fallbackPosition.x)
+    && Number.isFinite(fallbackPosition.y)
+  ){
+    return { x: fallbackPosition.x, y: fallbackPosition.y };
+  }
+  if(!plane) return null;
+
+  const x = Number.isFinite(plane.collisionX)
+    ? plane.collisionX
+    : (Number.isFinite(plane.x) ? plane.x : null);
+  const y = Number.isFinite(plane.collisionY)
+    ? plane.collisionY
+    : (Number.isFinite(plane.y) ? plane.y : null);
+
+  if(!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x, y };
+}
+
+function dropActiveFlagFromPlane(plane, dropPosition = null){
+  if(!plane?.carriedFlagId) return false;
+
+  const carriedFlag = getFlagById(plane.carriedFlagId);
+  if(!isFlagActive(carriedFlag)){
+    clearFlagFromPlane(plane);
+    return false;
+  }
+
+  const safeDropPosition = getPlaneFlagDropPosition(plane, dropPosition);
+  if(!safeDropPosition) return false;
+
+  dropFlagAtPosition(carriedFlag, safeDropPosition);
+  clearFlagFromPlane(plane);
+  return true;
+}
+
+function enforceFlagCarrierResolution(){
+  if(!Array.isArray(flags) || flags.length === 0) return;
+
+  for(const flag of flags){
+    if(!isFlagActive(flag) || !flag?.carrier) continue;
+    if(isPlaneTargetable(flag.carrier)) continue;
+    dropActiveFlagFromPlane(flag.carrier);
+  }
+}
+
 function dropFlagAtPosition(flag, position){
   if(!flag || !isFlagActive(flag)) return;
   flag.droppedAt = position || null;
@@ -24825,11 +24873,7 @@ function planeBuildingCollision(fp, collider){
 
 function destroyPlane(fp, scoringColor = null){
   const p = fp.plane;
-  const carriedFlag = p.carriedFlagId ? getFlagById(p.carriedFlagId) : null;
-  if(isFlagActive(carriedFlag)){
-    dropFlagAtPosition(carriedFlag, { x: p.x, y: p.y });
-  }
-  clearFlagFromPlane(p);
+  dropActiveFlagFromPlane(p, { x: p.x, y: p.y });
   const crashX = p.x;
   const crashY = p.y;
   eliminatePlane(p);
@@ -24850,11 +24894,7 @@ function destroyPlane(fp, scoringColor = null){
 function destroyAllPlanesWithoutScoring(){
   points.forEach((p) => {
     if(!p || !p.isAlive) return;
-    const carriedFlag = p.carriedFlagId ? getFlagById(p.carriedFlagId) : null;
-    if(isFlagActive(carriedFlag)){
-      dropFlagAtPosition(carriedFlag, { x: p.x, y: p.y });
-    }
-    clearFlagFromPlane(p);
+    dropActiveFlagFromPlane(p, { x: p.x, y: p.y });
     const crashX = p.x;
     const crashY = p.y;
     eliminatePlane(p);
@@ -24871,11 +24911,7 @@ function destroyAllPlanesWithNukeScoring(){
     if(p.color !== "blue" && p.color !== "green") return;
     const scoringColor = p.color === "green" ? "blue" : "green";
     scoreDeltas[scoringColor] += 1;
-    const carriedFlag = p.carriedFlagId ? getFlagById(p.carriedFlagId) : null;
-    if(isFlagActive(carriedFlag)){
-      dropFlagAtPosition(carriedFlag, { x: p.x, y: p.y });
-    }
-    clearFlagFromPlane(p);
+    dropActiveFlagFromPlane(p, { x: p.x, y: p.y });
     eliminatePlane(p, { keepBurning: false, keepCrashMarkers: false, skipFlameFx: true });
     p.nukeEliminated = !isArcadePlaneRespawnEnabled();
     if(!isArcadePlaneRespawnEnabled()){
@@ -25010,6 +25046,7 @@ function handleAAForPlane(p, fp){
           } else if(now - p._aaTimes[aa.id] > aa.dwellTimeMs){
             if(!aa.lastTriggerAt || now - aa.lastTriggerAt > aa.cooldownMs){
               aa.lastTriggerAt = now;
+              dropActiveFlagFromPlane(p, { x: contactX, y: contactY });
               eliminatePlane(p);
               spawnExplosionForPlane(p, contactX, contactY);
               if(fp) {
@@ -25088,6 +25125,7 @@ function handleMineForPlane(p, fp){
     const contactX = dist === 0 ? p.x : p.x - dx / dist * dangerRadius;
     const contactY = dist === 0 ? p.y : p.y - dy / dist * dangerRadius;
 
+    dropActiveFlagFromPlane(p, { x: contactX, y: contactY });
     eliminatePlane(p);
     spawnExplosionForPlane(p, contactX, contactY);
 
@@ -25434,6 +25472,8 @@ function gameDraw(){
 
   // самолёты + их трейлы
   const rangeTextInfo = drawPlanesAndTrajectories();
+
+  enforceFlagCarrierResolution();
 
   // Флаги рисуются после обломков самолётов, чтобы не прятаться под ними
   drawFlagMarkers();
@@ -27168,13 +27208,7 @@ function checkPlaneHits(plane, fp){
         fp.lastHitPlane = p;
         fp.lastHitCooldown = PLANE_HIT_COOLDOWN_SEC;
       }
-      if(p.carriedFlagId){
-        const carriedFlag = getFlagById(p.carriedFlagId);
-        if(isFlagActive(carriedFlag)){
-          dropFlagAtPosition(carriedFlag, { x: cx, y: cy });
-        }
-        clearFlagFromPlane(p);
-      }
+      dropActiveFlagFromPlane(p, { x: cx, y: cy });
       if(canAwardKillPointForPlane(p)){
         markPlaneKillPointAwarded(p);
         awardPoint(plane.color);
