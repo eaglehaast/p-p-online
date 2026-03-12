@@ -14141,7 +14141,6 @@ const AI_OPENING_AGGRESSION_TARGETS = Object.freeze([
 ]);
 const AI_REPEAT_ALLOWED_REASON_CODES = Object.freeze([
   "direct_finisher",
-  "opening_center_cargo",
   "mode_flag_pressure",
   "fallback_flag_pressure",
   "emergency_base_defense",
@@ -14152,13 +14151,12 @@ const AI_REPEAT_ALLOWED_REASON_TOKENS = Object.freeze([
   "intercept",
   "finisher",
   "defense",
-  "flag",
-  "cargo",
   "critical",
   "emergency",
   "protect",
   "hold",
 ]);
+const AI_REPEAT_ALLOWED_REASON_STRONG_TOKEN_MATCH_MIN = 2;
 
 
 function getActualPlanesList(preferredPlanes = null){
@@ -15263,7 +15261,19 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
 
     if(nextIsRepeat !== currentIsRepeat){
       const repeatedCandidate = nextIsRepeat ? nextCandidate : currentCandidate;
-      const isRepeatedCandidateCritical = isAiRepeatPlaneCriticalCandidate(repeatedCandidate);
+      const repeatedCandidateCriticalMeta = evaluateAiRepeatPlaneCriticalCandidate(repeatedCandidate);
+      const isRepeatedCandidateCritical = repeatedCandidateCriticalMeta.isCritical;
+
+      logAiDecision("rotation_repeat_critical_evaluated", {
+        repeatedPlaneId,
+        repeatedCandidatePlaneId: repeatedCandidate?.plane?.id ?? null,
+        repeatedDecisionReason: repeatedCandidate?.decisionReason ?? null,
+        repeatedGoalName: repeatedCandidate?.goalName ?? null,
+        criticalByExactCode: repeatedCandidateCriticalMeta.criticalByExactCode,
+        criticalByTokenMatch: repeatedCandidateCriticalMeta.criticalByTokenMatch,
+        matchedTokens: repeatedCandidateCriticalMeta.matchedTokens,
+        strongTokenMatchMin: AI_REPEAT_ALLOWED_REASON_STRONG_TOKEN_MATCH_MIN,
+      });
 
       if(
         Number.isFinite(aiRoundState?.turnNumber)
@@ -15413,27 +15423,51 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
   return false;
 }
 
-function isAiRepeatPlaneCriticalCandidate(candidate){
-  if(!candidate || typeof candidate !== "object") return false;
+function evaluateAiRepeatPlaneCriticalCandidate(candidate){
+  const defaultMeta = {
+    isCritical: false,
+    criticalByExactCode: false,
+    criticalByTokenMatch: false,
+    matchedTokens: [],
+  };
+  if(!candidate || typeof candidate !== "object") return defaultMeta;
   const reasonParts = [candidate.decisionReason, candidate.goalName]
     .filter((value) => typeof value === "string" && value.trim().length > 0)
     .map((value) => value.trim().toLowerCase());
-  if(reasonParts.length === 0) return false;
+  if(reasonParts.length === 0) return defaultMeta;
 
-  if(reasonParts.some((value) => AI_REPEAT_ALLOWED_REASON_CODES.includes(value))){
-    return true;
+  const criticalByExactCode = reasonParts.some((value) => AI_REPEAT_ALLOWED_REASON_CODES.includes(value));
+  if(criticalByExactCode){
+    return {
+      ...defaultMeta,
+      isCritical: true,
+      criticalByExactCode: true,
+    };
   }
 
   const rawReason = reasonParts
     .join(" ")
     .toLowerCase();
-  if(!rawReason) return false;
+  if(!rawReason) return defaultMeta;
 
   const reasonTokens = rawReason
     .split(/[^a-z0-9]+/)
     .filter((token) => token.length > 0);
 
-  return reasonTokens.some((token) => AI_REPEAT_ALLOWED_REASON_TOKENS.includes(token));
+  const matchedTokens = [...new Set(reasonTokens
+    .filter((token) => AI_REPEAT_ALLOWED_REASON_TOKENS.includes(token)))];
+  const criticalByTokenMatch = matchedTokens.length >= AI_REPEAT_ALLOWED_REASON_STRONG_TOKEN_MATCH_MIN;
+
+  return {
+    ...defaultMeta,
+    isCritical: criticalByTokenMatch,
+    criticalByTokenMatch,
+    matchedTokens,
+  };
+}
+
+function isAiRepeatPlaneCriticalCandidate(candidate){
+  return evaluateAiRepeatPlaneCriticalCandidate(candidate).isCritical;
 }
 
 function rankAiPlanesForCurrentTurn(aiPlanes){
