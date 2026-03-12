@@ -11976,7 +11976,9 @@ const EXPLOSION_PLAYBACK_RATE_DEFAULT = 1;
 const EXPLOSION_PLAYBACK_RATE_STEP = 0.1;
 const EXPLOSION_PLAYBACK_RATE_MIN = 0.1;
 const EXPLOSION_PLAYBACK_RATE_MAX = 5;
-const EXPLOSION_SEQUENCE_DURATION_SCALE = 1.2;
+// 25 кадров × ~83мс ≈ 2083мс при scale=1.
+// Держим около 1.55-1.6с, чтобы взрыв оставался читаемым, но не тормозил темп матча.
+const EXPLOSION_SEQUENCE_DURATION_SCALE = 0.75;
 const EXPLOSION_SEQUENCE_LAST_FRAME_HOLD_MS = 120;
 let explosionPlaybackRate = EXPLOSION_PLAYBACK_RATE_DEFAULT;
 
