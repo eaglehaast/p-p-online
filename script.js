@@ -12127,6 +12127,12 @@ let aiPostInventoryLaunchTimeout = null;
 let turnCommitSequence = 0;
 let aiPlanningSnapshotCache = null;
 let aiCachedTargetMemory = null;
+let lastPlayerMoveCommitMeta = {
+  turnCommitSequence: 0,
+  turnNumber: 0,
+  finished: false,
+  finishedAtMs: 0,
+};
 const AI_MOVE_INITIAL_DELAY_MS = 300;
 const AI_MOVE_CARGO_RETRY_DELAY_MS = 200;
 const AI_MOVE_CARGO_WAIT_TIMEOUT_MS = 1800;
@@ -12172,19 +12178,20 @@ function tryStartAiPlanningFromCommittedState(trigger = "unspecified"){
     return false;
   }
 
-  const hadSnapshotForCurrentCommit = aiPlanningSnapshotCache?.turnCommitSequence === turnCommitSequence;
-  const snapshot = hadSnapshotForCurrentCommit
-    ? aiPlanningSnapshotCache
-    : buildCommittedEnemySnapshot();
-  const snapshotRebuiltThisTurn = !hadSnapshotForCurrentCommit;
-  if(snapshotRebuiltThisTurn){
-    aiPlanningSnapshotCache = snapshot;
+  const playerMoveCommitFinishedBeforePlannerStart = Boolean(
+    lastPlayerMoveCommitMeta.finished
+    && lastPlayerMoveCommitMeta.turnCommitSequence === turnCommitSequence,
+  );
+  if(!playerMoveCommitFinishedBeforePlannerStart){
+    return false;
   }
 
-  const cachedTargetReused = Boolean(
-    aiCachedTargetMemory
-    && aiCachedTargetMemory.turnCommitSequence === turnCommitSequence,
-  );
+  const snapshot = buildCommittedEnemySnapshot();
+  aiPlanningSnapshotCache = snapshot;
+  const snapshotRebuiltThisTurn = true;
+  const staleCachedTargetDetected = Boolean(aiCachedTargetMemory);
+  aiCachedTargetMemory = null;
+  const cachedTargetReused = false;
 
   aiMoveScheduled = true;
   const plannerStartLabel = `turn_commit_${turnCommitSequence}_t${turnAdvanceCount}`;
@@ -12196,6 +12203,8 @@ function tryStartAiPlanningFromCommittedState(trigger = "unspecified"){
     plannerStartAtMs: Number(snapshot.rebuiltAt.toFixed(2)),
     snapshotRebuiltThisTurn,
     cachedTargetReused,
+    staleCachedTargetDetected,
+    playerMoveCommitFinishedBeforePlannerStart,
     enemyCommittedPositions: snapshot.enemies,
   });
 
@@ -24938,6 +24947,21 @@ function advanceTurn(){
     spawnCargoForTurn();
   }
   turnCommitSequence += 1;
+  if(previousTurnColor === "green"){
+    lastPlayerMoveCommitMeta = {
+      turnCommitSequence,
+      turnNumber: turnAdvanceCount,
+      finished: true,
+      finishedAtMs: performance.now(),
+    };
+  } else {
+    lastPlayerMoveCommitMeta = {
+      turnCommitSequence,
+      turnNumber: turnAdvanceCount,
+      finished: false,
+      finishedAtMs: 0,
+    };
+  }
   invalidateAiPlanningState("turn_advanced");
   if(turnColors[turnIndex] === "blue" && gameMode === "computer"){
     aiMoveScheduled = false;
