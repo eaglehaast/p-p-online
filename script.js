@@ -12108,6 +12108,14 @@ function buildExplosionSequenceFrameDurationsMs(frameCount, totalDurationMs) {
   return durations;
 }
 
+function buildUniformFrameDurationsMs(frameCount, totalDurationMs) {
+  const safeFrameCount = Math.max(1, Number.isFinite(frameCount) ? Math.floor(frameCount) : 1);
+  const safeTotalDurationMs = Math.max(1, Number.isFinite(totalDurationMs) ? totalDurationMs : 1);
+  const perFrameDurationMs = safeTotalDurationMs / safeFrameCount;
+
+  return Array.from({ length: safeFrameCount }, () => perFrameDurationMs);
+}
+
 function buildExplosionSequenceFrameEndsMs(frameDurationsMs = []) {
   let elapsedMs = 0;
   return frameDurationsMs.map((durationMs) => {
@@ -26880,6 +26888,7 @@ function createExplosionState(plane, x, y, options = {}) {
       state.sequenceFrames = sequenceFrames;
       state.sequenceFrameCount = sequenceFrames.length;
       state.sequenceVariantIndex = variantIndex;
+      state.useUniformSequenceFrameDurations = plane.color === "green" && variantIndex === 0;
       if (Number.isFinite(sequenceDurationMs)) {
         const tunedDurationMs = sequenceDurationMs * EXPLOSION_SEQUENCE_DURATION_SCALE;
         state.baseTtlMs = tunedDurationMs;
@@ -27082,7 +27091,10 @@ function updateAndDrawExplosions(ctx, now) {
 
       if (explosion.domEntry?.img && hasSequenceFrames) {
         const frameCount = explosion.sequenceFrames.length;
-        const frameDurationsMs = buildExplosionSequenceFrameDurationsMs(frameCount, ttlMs);
+        const useUniformFrameDurations = explosion.useUniformSequenceFrameDurations === true;
+        const frameDurationsMs = useUniformFrameDurations
+          ? buildUniformFrameDurationsMs(frameCount, ttlMs)
+          : buildExplosionSequenceFrameDurationsMs(frameCount, ttlMs);
         const frameEndsMs = buildExplosionSequenceFrameEndsMs(frameDurationsMs);
         const sequenceTotalDurationMs = frameEndsMs[frameEndsMs.length - 1] || ttlMs;
         const elapsedFrameIndex = frameEndsMs.findIndex((frameEndMs) => elapsed < frameEndMs);
