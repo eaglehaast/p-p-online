@@ -11886,10 +11886,7 @@ function lockInWinner(color, options = {}){
     clearTimeout(roundTransitionTimeout);
     roundTransitionTimeout = null;
   }
-  if(aiPostInventoryLaunchTimeout){
-    clearTimeout(aiPostInventoryLaunchTimeout);
-    aiPostInventoryLaunchTimeout = null;
-  }
+  clearAiPostInventoryLaunchTimeout("lock_in_winner");
 
   shouldShowEndScreen = Boolean(options.showEndScreen);
   if(shouldShowEndScreen){
@@ -12182,15 +12179,94 @@ function resolveExplosionGifDurationMs(img, color) {
 /* Планирование хода ИИ */
 let aiMoveScheduled = false;
 let aiPostInventoryLaunchTimeout = null;
+let turnCommitSequence = 0;
+let aiPlanningSnapshotCache = null;
+let aiCachedTargetMemory = null;
 const AI_MOVE_INITIAL_DELAY_MS = 300;
 const AI_MOVE_CARGO_RETRY_DELAY_MS = 200;
 const AI_MOVE_CARGO_WAIT_TIMEOUT_MS = 1800;
+
+function clearAiPostInventoryLaunchTimeout(reason = "unspecified"){
+  if(!aiPostInventoryLaunchTimeout) return false;
+  clearTimeout(aiPostInventoryLaunchTimeout);
+  aiPostInventoryLaunchTimeout = null;
+  logAiDecision("ai_post_inventory_timeout_cleared", { reason });
+  return true;
+}
+
+function invalidateAiPlanningState(reason = "unspecified"){
+  clearAiPostInventoryLaunchTimeout(`planning_invalidate:${reason}`);
+  aiPlanningSnapshotCache = null;
+  aiCachedTargetMemory = null;
+}
+
+function buildCommittedEnemySnapshot(){
+  const enemies = points
+    .filter((plane) => plane?.color === "green" && isPlaneTargetable(plane))
+    .map((plane) => ({
+      id: plane.id ?? null,
+      x: Number.isFinite(plane.x) ? Number(plane.x.toFixed(1)) : null,
+      y: Number.isFinite(plane.y) ? Number(plane.y.toFixed(1)) : null,
+    }));
+
+  return {
+    turnCommitSequence,
+    rebuiltAt: performance.now(),
+    enemies,
+  };
+}
+
+function tryStartAiPlanningFromCommittedState(trigger = "unspecified"){
+  if(
+    isGameOver
+    || gameMode !== "computer"
+    || turnColors[turnIndex] !== "blue"
+    || aiMoveScheduled
+    || flyingPoints.some((fp) => fp?.plane?.color === "blue")
+  ){
+    return false;
+  }
+
+  const hadSnapshotForCurrentCommit = aiPlanningSnapshotCache?.turnCommitSequence === turnCommitSequence;
+  const snapshot = hadSnapshotForCurrentCommit
+    ? aiPlanningSnapshotCache
+    : buildCommittedEnemySnapshot();
+  const snapshotRebuiltThisTurn = !hadSnapshotForCurrentCommit;
+  if(snapshotRebuiltThisTurn){
+    aiPlanningSnapshotCache = snapshot;
+  }
+
+  const cachedTargetReused = Boolean(
+    aiCachedTargetMemory
+    && aiCachedTargetMemory.turnCommitSequence === turnCommitSequence,
+  );
+
+  aiMoveScheduled = true;
+  const plannerStartLabel = `turn_commit_${turnCommitSequence}_t${turnAdvanceCount}`;
+  logAiDecision("ai_planner_start_committed_state", {
+    trigger,
+    turnNumber: turnAdvanceCount,
+    turnCommitSequence,
+    plannerStartLabel,
+    plannerStartAtMs: Number(snapshot.rebuiltAt.toFixed(2)),
+    snapshotRebuiltThisTurn,
+    cachedTargetReused,
+    enemyCommittedPositions: snapshot.enemies,
+  });
+
+  scheduleComputerMoveWithCargoGate(performance.now(), AI_MOVE_INITIAL_DELAY_MS, {
+    trigger,
+    turnCommitSequence,
+    plannerStartLabel,
+  });
+  return true;
+}
 
 function hasAnimatingCargo(){
   return cargoState.some(cargo => cargo?.state === "animating");
 }
 
-function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayMs = AI_MOVE_INITIAL_DELAY_MS){
+function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayMs = AI_MOVE_INITIAL_DELAY_MS, planningContext = null){
   setTimeout(() => {
     const runComputerMoveSafely = (reasonCode) => {
       try {
@@ -12224,6 +12300,20 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       return;
     }
 
+    if(
+      planningContext
+      && Number.isFinite(planningContext.turnCommitSequence)
+      && planningContext.turnCommitSequence !== turnCommitSequence
+    ){
+      logAiDecision("ai_planner_start_dropped_stale_commit", {
+        plannedTurnCommitSequence: planningContext.turnCommitSequence,
+        currentTurnCommitSequence: turnCommitSequence,
+        plannerStartLabel: planningContext.plannerStartLabel || null,
+      });
+      aiMoveScheduled = false;
+      return;
+    }
+
     if (hasAnimatingCargo()) {
       const waitElapsedMs = Math.round(performance.now() - startedAt);
       if (waitElapsedMs >= AI_MOVE_CARGO_WAIT_TIMEOUT_MS) {
@@ -12239,7 +12329,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         waitElapsedMs,
         retryInMs: AI_MOVE_CARGO_RETRY_DELAY_MS,
       });
-      scheduleComputerMoveWithCargoGate(startedAt, AI_MOVE_CARGO_RETRY_DELAY_MS);
+      scheduleComputerMoveWithCargoGate(startedAt, AI_MOVE_CARGO_RETRY_DELAY_MS, planningContext);
       return;
     }
 
@@ -20666,6 +20756,11 @@ function doComputerMove(){
 
   const aiPlanes = points.filter(p=> p.color==="blue" && p.isAlive && !p.burning);
   const enemies  = points.filter(p=> p.color==="green" && p.isAlive && !p.burning);
+  aiCachedTargetMemory = {
+    turnCommitSequence,
+    turnNumber: turnAdvanceCount,
+    enemyIds: enemies.map((plane) => plane?.id ?? null),
+  };
   if(!aiPlanes.length || !enemies.length){
     failSafeHandler("no_move_found", {
       goal: aiRoundState.currentGoal || "no_move_found",
@@ -24861,8 +24956,11 @@ function advanceTurn(){
   if(turnAdvanceCount >= 1){
     spawnCargoForTurn();
   }
+  turnCommitSequence += 1;
+  invalidateAiPlanningState("turn_advanced");
   if(turnColors[turnIndex] === "blue" && gameMode === "computer"){
     aiMoveScheduled = false;
+    tryStartAiPlanningFromCommittedState("advance_turn_commit_ready");
   }
 
   if(isArcadePlaneRespawnEnabled()){
@@ -25071,14 +25169,7 @@ function gameDraw(){
   updateNukeTimeline(now);
 
   // Планирование хода ИИ
-  if (!isGameOver
-      && gameMode === "computer"
-      && turnColors[turnIndex] === "blue"
-      && !aiMoveScheduled
-      && !flyingPoints.some(fp => fp.plane.color === "blue")) {
-    aiMoveScheduled = true;
-    scheduleComputerMoveWithCargoGate();
-  }
+  tryStartAiPlanningFromCommittedState("game_draw_tick");
 
   for(const aa of aaUnits){
     aa.sweepAngleDeg = (aa.sweepAngleDeg + aa.rotationDegPerSec * deltaSec) % 360;
@@ -27926,10 +28017,7 @@ function startNewRound(){
     clearTimeout(roundTransitionTimeout);
     roundTransitionTimeout = null;
   }
-  if(aiPostInventoryLaunchTimeout){
-    clearTimeout(aiPostInventoryLaunchTimeout);
-    aiPostInventoryLaunchTimeout = null;
-  }
+  clearAiPostInventoryLaunchTimeout("start_new_round");
   const shouldRandomize = !suppressAutoRandomMapForNextRound && shouldAutoRandomizeMap() && roundNumber > 0;
   if(shouldRandomize){
     if(settings.mapIndex !== RANDOM_MAP_SENTINEL_INDEX){
@@ -27950,6 +28038,8 @@ function startNewRound(){
   lastFirstTurn = 1 - lastFirstTurn;
   turnIndex = lastFirstTurn;
   turnAdvanceCount = 0;
+  turnCommitSequence = 0;
+  invalidateAiPlanningState("start_new_round");
   resetCargoState();
   resetPlayerInventoryEffects();
   resetAllPlaneInvisibilityToOpaque();
