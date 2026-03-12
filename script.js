@@ -27112,8 +27112,10 @@ function updateAndDrawExplosions(ctx, now) {
         const frameProgress = frameCount <= 1
           ? 1
           : frameIndex / (frameCount - 1);
-        const scaleFactor = EXPLOSION_SEQUENCE_CONFIG.minScale
-          + (EXPLOSION_SEQUENCE_CONFIG.maxScale - EXPLOSION_SEQUENCE_CONFIG.minScale) * frameProgress;
+        const scaleFactor = explosion.color === "green"
+          ? 1
+          : EXPLOSION_SEQUENCE_CONFIG.minScale
+            + (EXPLOSION_SEQUENCE_CONFIG.maxScale - EXPLOSION_SEQUENCE_CONFIG.minScale) * frameProgress;
 
         explosion.sequenceFrameIndex = frameIndex;
         explosion.nextFrameAtMs = explosion.startedAtMs + (frameEndsMs[frameIndex] || sequenceTotalDurationMs);
