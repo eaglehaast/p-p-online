@@ -11967,46 +11967,24 @@ let gameDrawFirstLogged = false;
 
 const activeExplosions = [];
 const EXPLOSION_DRAW_SIZE = 50;
-const EXPLOSION_FPS = 12;
-const EXPLOSION_FRAME_DURATION_MS = 1000 / EXPLOSION_FPS; // ~12fps
 const EXPLOSION_MIN_DURATION_MS = 600;
-const EXPLOSION_GIF_DURATION_MS = 1200;
+const EXPLOSION_TARGET_DURATION_MS = 900;
+const EXPLOSION_GIF_DURATION_MS = EXPLOSION_TARGET_DURATION_MS;
 const EXPLOSION_MAX_FRAME_ADVANCE_PER_TICK = 1;
 const EXPLOSION_PLAYBACK_RATE_DEFAULT = 1;
 const EXPLOSION_PLAYBACK_RATE_STEP = 0.1;
 const EXPLOSION_PLAYBACK_RATE_MIN = 0.1;
 const EXPLOSION_PLAYBACK_RATE_MAX = 5;
-// 25 кадров × ~83мс ≈ 2083мс при scale=1.
-// Держим около 1.55-1.6с, чтобы взрыв оставался читаемым, но не тормозил темп матча.
-const EXPLOSION_SEQUENCE_DURATION_SCALE = 0.75;
-const EXPLOSION_SEQUENCE_LAST_FRAME_HOLD_MS = 120;
+// Взрыв самолёта должен длиться около 900мс без доп. множителей.
+// Для этого делим общее время поровну между кадрами последовательности.
 let explosionPlaybackRate = EXPLOSION_PLAYBACK_RATE_DEFAULT;
 
-function buildExplosionSequenceFrameDurationsMs(frameCount, totalDurationMs) {
+function buildExplosionSequenceFrameDurationsMs(frameCount, totalDurationMs = EXPLOSION_TARGET_DURATION_MS) {
   const safeFrameCount = Math.max(1, Number.isFinite(frameCount) ? Math.floor(frameCount) : 1);
-  const safeTotalDurationMs = Math.max(1, Number.isFinite(totalDurationMs) ? totalDurationMs : 1);
+  const safeTotalDurationMs = Math.max(1, Number.isFinite(totalDurationMs) ? totalDurationMs : EXPLOSION_TARGET_DURATION_MS);
+  const perFrameDurationMs = safeTotalDurationMs / safeFrameCount;
 
-  const weights = Array.from({ length: safeFrameCount }, (_, index) => {
-    const progress = safeFrameCount <= 1 ? 1 : index / (safeFrameCount - 1);
-    if (progress < 0.33) {
-      return 0.75;
-    }
-    if (progress < 0.8) {
-      return 1;
-    }
-    return 1.35;
-  });
-
-  if (safeFrameCount > 1) {
-    weights[safeFrameCount - 1] += 0.7;
-  }
-
-  const totalWeight = weights.reduce((sum, value) => sum + value, 0);
-  const weightedBudgetMs = Math.max(1, safeTotalDurationMs - EXPLOSION_SEQUENCE_LAST_FRAME_HOLD_MS);
-  const durations = weights.map((weight) => weightedBudgetMs * (weight / totalWeight));
-  durations[safeFrameCount - 1] += EXPLOSION_SEQUENCE_LAST_FRAME_HOLD_MS;
-
-  return durations;
+  return Array.from({ length: safeFrameCount }, () => perFrameDurationMs);
 }
 
 function buildUniformFrameDurationsMs(frameCount, totalDurationMs) {
@@ -12101,7 +12079,7 @@ function getShortExplosionDurationMs(src = "", color = "") {
 
   return Math.max(
     EXPLOSION_MIN_DURATION_MS,
-    frameCount * EXPLOSION_FRAME_DURATION_MS * EXPLOSION_SEQUENCE_DURATION_SCALE
+    EXPLOSION_TARGET_DURATION_MS
   );
 }
 
