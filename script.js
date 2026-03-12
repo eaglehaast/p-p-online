@@ -12088,7 +12088,44 @@ const EXPLOSION_PLAYBACK_RATE_DEFAULT = 1;
 const EXPLOSION_PLAYBACK_RATE_STEP = 0.1;
 const EXPLOSION_PLAYBACK_RATE_MIN = 0.1;
 const EXPLOSION_PLAYBACK_RATE_MAX = 5;
+const EXPLOSION_SEQUENCE_DURATION_SCALE = 1.2;
+const EXPLOSION_SEQUENCE_LAST_FRAME_HOLD_MS = 120;
 let explosionPlaybackRate = EXPLOSION_PLAYBACK_RATE_DEFAULT;
+
+function buildExplosionSequenceFrameDurationsMs(frameCount, totalDurationMs) {
+  const safeFrameCount = Math.max(1, Number.isFinite(frameCount) ? Math.floor(frameCount) : 1);
+  const safeTotalDurationMs = Math.max(1, Number.isFinite(totalDurationMs) ? totalDurationMs : 1);
+
+  const weights = Array.from({ length: safeFrameCount }, (_, index) => {
+    const progress = safeFrameCount <= 1 ? 1 : index / (safeFrameCount - 1);
+    if (progress < 0.33) {
+      return 0.75;
+    }
+    if (progress < 0.8) {
+      return 1;
+    }
+    return 1.35;
+  });
+
+  if (safeFrameCount > 1) {
+    weights[safeFrameCount - 1] += 0.7;
+  }
+
+  const totalWeight = weights.reduce((sum, value) => sum + value, 0);
+  const weightedBudgetMs = Math.max(1, safeTotalDurationMs - EXPLOSION_SEQUENCE_LAST_FRAME_HOLD_MS);
+  const durations = weights.map((weight) => weightedBudgetMs * (weight / totalWeight));
+  durations[safeFrameCount - 1] += EXPLOSION_SEQUENCE_LAST_FRAME_HOLD_MS;
+
+  return durations;
+}
+
+function buildExplosionSequenceFrameEndsMs(frameDurationsMs = []) {
+  let elapsedMs = 0;
+  return frameDurationsMs.map((durationMs) => {
+    elapsedMs += Math.max(1, durationMs);
+    return elapsedMs;
+  });
+}
 
 function clampExplosionPlaybackRate(value){
   if(!Number.isFinite(value)) return EXPLOSION_PLAYBACK_RATE_DEFAULT;
@@ -26855,8 +26892,9 @@ function createExplosionState(plane, x, y, options = {}) {
       state.sequenceFrameCount = sequenceFrames.length;
       state.sequenceVariantIndex = variantIndex;
       if (Number.isFinite(sequenceDurationMs)) {
-        state.baseTtlMs = sequenceDurationMs;
-        state.ttlMs = applyExplosionPlaybackRate(sequenceDurationMs);
+        const tunedDurationMs = sequenceDurationMs * EXPLOSION_SEQUENCE_DURATION_SCALE;
+        state.baseTtlMs = tunedDurationMs;
+        state.ttlMs = applyExplosionPlaybackRate(tunedDurationMs);
       }
     }
   } else if (img) {
@@ -27055,9 +27093,13 @@ function updateAndDrawExplosions(ctx, now) {
 
       if (explosion.domEntry?.img && hasSequenceFrames) {
         const frameCount = explosion.sequenceFrames.length;
-        const frameDurationMs = Math.max(1, ttlMs / frameCount);
-        const elapsedFrames = Math.floor(elapsed / frameDurationMs);
-        const targetFrameIndex = Math.min(frameCount - 1, Math.max(0, elapsedFrames));
+        const frameDurationsMs = buildExplosionSequenceFrameDurationsMs(frameCount, ttlMs);
+        const frameEndsMs = buildExplosionSequenceFrameEndsMs(frameDurationsMs);
+        const sequenceTotalDurationMs = frameEndsMs[frameEndsMs.length - 1] || ttlMs;
+        const elapsedFrameIndex = frameEndsMs.findIndex((frameEndMs) => elapsed < frameEndMs);
+        const targetFrameIndex = elapsedFrameIndex >= 0
+          ? elapsedFrameIndex
+          : frameCount - 1;
         const previousFrameIndex = Number.isFinite(explosion.sequenceFrameIndex)
           ? explosion.sequenceFrameIndex
           : 0;
@@ -27073,7 +27115,7 @@ function updateAndDrawExplosions(ctx, now) {
           + (EXPLOSION_SEQUENCE_CONFIG.maxScale - EXPLOSION_SEQUENCE_CONFIG.minScale) * frameProgress;
 
         explosion.sequenceFrameIndex = frameIndex;
-        explosion.nextFrameAtMs = explosion.startedAtMs + (frameIndex + 1) * frameDurationMs;
+        explosion.nextFrameAtMs = explosion.startedAtMs + (frameEndsMs[frameIndex] || sequenceTotalDurationMs);
         applyExplosionDomScale(explosion.domEntry, scaleFactor);
 
         const frameImg = explosion.sequenceFrames[frameIndex];
@@ -27084,8 +27126,8 @@ function updateAndDrawExplosions(ctx, now) {
 
         if (
           explosion.sequenceFrameIndex >= frameCount - 1
-          && Number.isFinite(explosion.nextFrameAtMs)
-          && now >= explosion.nextFrameAtMs
+          && Number.isFinite(sequenceTotalDurationMs)
+          && elapsed >= sequenceTotalDurationMs
         ) {
           removeExplosionEntry(i, explosion, 'sequence_complete');
           continue;
