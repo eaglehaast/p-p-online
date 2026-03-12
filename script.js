@@ -14104,6 +14104,8 @@ const AI_REPEAT_WINDOW_PENALTY_STEP = 0.15;
 const AI_REPEAT_FORCE_SCORE_MARGIN = MAX_DRAG_DISTANCE * 0.08;
 const AI_REPEAT_TIE_BREAK_SCORE_MARGIN = MAX_DRAG_DISTANCE * 0.04;
 const AI_ROTATION_TACTICAL_PRIORITY_GAP = MAX_DRAG_DISTANCE * 0.04;
+const AI_ROTATION_TACTICAL_PRIORITY_CLEAR_GAP = MAX_DRAG_DISTANCE * 0.055;
+const AI_ROTATION_TACTICAL_PRIORITY_REPEAT_CONFLICT_MARGIN = MAX_DRAG_DISTANCE * 0.065;
 const AI_REPEAT_OPENING_FORCE_TURN_LIMIT = 2;
 const AI_OPENING_SOFT_RANDOM_TURN_LIMIT = 2;
 const AI_OPENING_SOFT_RANDOM_SCORE_MARGIN = MAX_DRAG_DISTANCE * 0.035;
@@ -15232,22 +15234,35 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
 
   const nextIsAttackingCandidate = Boolean(nextCandidate?.enemy) || nextCandidate?.targetType === "attack_enemy_plane";
   const currentIsAttackingCandidate = Boolean(currentCandidate?.enemy) || currentCandidate?.targetType === "attack_enemy_plane";
+  const tacticalPriorityGapReached = Number.isFinite(scoreGap) && scoreGap > AI_ROTATION_TACTICAL_PRIORITY_GAP;
+  const tacticalPriorityGapClearlyReached = Number.isFinite(scoreGap) && scoreGap > AI_ROTATION_TACTICAL_PRIORITY_CLEAR_GAP;
+  const repeatConflictDetected = Boolean(nextPlaneId && currentPlaneId && repeatedPlaneId && nextPlaneId !== currentPlaneId)
+    && ((nextPlaneId === repeatedPlaneId) !== (currentPlaneId === repeatedPlaneId));
+  const repeatBypassDeniedByMargin = repeatConflictDetected
+    && Number.isFinite(scoreGap)
+    && scoreGap < AI_ROTATION_TACTICAL_PRIORITY_REPEAT_CONFLICT_MARGIN;
   const shouldBypassRotationForTacticalPriority = nextIsAttackingCandidate
     && currentIsAttackingCandidate
-    && Number.isFinite(scoreGap)
-    && scoreGap > AI_ROTATION_TACTICAL_PRIORITY_GAP;
+    && tacticalPriorityGapReached
+    && tacticalPriorityGapClearlyReached
+    && !repeatBypassDeniedByMargin;
 
-  if(shouldBypassRotationForTacticalPriority){
+  if(nextIsAttackingCandidate && currentIsAttackingCandidate && tacticalPriorityGapReached){
     const tacticalPriorityReason = (nextCandidate.score ?? Number.POSITIVE_INFINITY) < (currentCandidate.score ?? Number.POSITIVE_INFINITY)
       ? "next_candidate_has_clear_tactical_advantage"
       : "current_candidate_has_clear_tactical_advantage";
     logAiDecision("rotation_tactical_priority_bypass", {
-      rotationBypassed: true,
+      rotationBypassed: shouldBypassRotationForTacticalPriority,
       scoreGap: Number(scoreGap.toFixed(3)),
       tacticalPriorityReason,
       threshold: Number(AI_ROTATION_TACTICAL_PRIORITY_GAP.toFixed(3)),
+      clearThreshold: Number(AI_ROTATION_TACTICAL_PRIORITY_CLEAR_GAP.toFixed(3)),
+      repeatConflictMargin: Number(AI_ROTATION_TACTICAL_PRIORITY_REPEAT_CONFLICT_MARGIN.toFixed(3)),
+      repeatConflictDetected,
+      repeatBypassDeniedByMargin,
       nextPlaneId,
       currentPlaneId,
+      repeatedPlaneId,
       nextScore: Number.isFinite(nextCandidate?.score) ? Number(nextCandidate.score.toFixed(3)) : null,
       currentScore: Number.isFinite(currentCandidate?.score) ? Number(currentCandidate.score.toFixed(3)) : null,
       tieSeedParts,
