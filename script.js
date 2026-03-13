@@ -12162,7 +12162,7 @@ function tryStartAiPlanningFromCommittedState(trigger = "unspecified"){
     || gameMode !== "computer"
     || turnColors[turnIndex] !== "blue"
     || aiMoveScheduled
-    || flyingPoints.some((fp) => fp?.plane?.color === "blue")
+    || flyingPoints.length > 0
   ){
     return false;
   }
@@ -12241,7 +12241,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       isGameOver
       || gameMode !== "computer"
       || turnColors[turnIndex] !== "blue"
-      || flyingPoints.some(fp => fp.plane.color === "blue")
+      || flyingPoints.length > 0
     ) {
       aiMoveScheduled = false;
       return;
@@ -17296,6 +17296,19 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
         advanceTurn();
       };
 
+  const initialTargetEnemy = plannedMove?.targetEnemy || plannedMove?.enemy || null;
+  const initialTargetSnapshot = initialTargetEnemy && Number.isFinite(initialTargetEnemy.x) && Number.isFinite(initialTargetEnemy.y)
+    ? {
+        id: initialTargetEnemy.id ?? null,
+        x: Number(initialTargetEnemy.x),
+        y: Number(initialTargetEnemy.y),
+      }
+    : null;
+
+  if(initialTargetSnapshot){
+    plannedMove.targetEnemySnapshot = initialTargetSnapshot;
+  }
+
   function emitFallbackExecutionLog(event, payload = {}){
     const stage = plannedMove?.fallbackChainStage || null;
     if(!stage) return;
@@ -17324,31 +17337,46 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     }
 
     const targetEnemy = move?.targetEnemy || move?.enemy || null;
-    if(targetEnemy){
+    const targetSnapshot = move?.targetEnemySnapshot || (
+      targetEnemy && Number.isFinite(targetEnemy.x) && Number.isFinite(targetEnemy.y)
+        ? {
+            id: targetEnemy.id ?? null,
+            x: Number(targetEnemy.x),
+            y: Number(targetEnemy.y),
+          }
+        : null
+    );
+    if(targetEnemy || targetSnapshot){
+      const expectedEnemyId = targetSnapshot?.id ?? targetEnemy?.id ?? null;
       if(!isPlaneTargetable(targetEnemy)){
         return {
           ok: false,
           reason: "target_not_alive",
-          expectedEnemyId: targetEnemy?.id ?? null,
+          expectedEnemyId,
         };
       }
-      const latestEnemyLive = findActualPlaneById(targetEnemy?.id);
-      const latestEnemy = latestEnemyLive || findActualPlaneById(targetEnemy?.id, context?.enemies);
+      const latestEnemyLive = findActualPlaneById(expectedEnemyId);
+      const latestEnemy = latestEnemyLive || findActualPlaneById(expectedEnemyId, context?.enemies);
       const revalidationSource = latestEnemyLive ? "live_points" : "context_fallback";
       if(!latestEnemy || !isPlaneTargetable(latestEnemy)){
         return {
           ok: false,
           reason: "target_missing",
-          expectedEnemyId: targetEnemy?.id ?? null,
+          expectedEnemyId,
           revalidationSource,
         };
       }
-      const drift = Math.hypot(latestEnemy.x - targetEnemy.x, latestEnemy.y - targetEnemy.y);
+      const baselineX = targetSnapshot?.x;
+      const baselineY = targetSnapshot?.y;
+      const canMeasureDrift = Number.isFinite(baselineX) && Number.isFinite(baselineY);
+      const drift = canMeasureDrift
+        ? Math.hypot(latestEnemy.x - baselineX, latestEnemy.y - baselineY)
+        : 0;
       if(drift > AI_PLANNED_MOVE_TARGET_REVALIDATION_RADIUS_PX){
         return {
           ok: false,
           reason: "target_shifted",
-          expectedEnemyId: targetEnemy?.id ?? null,
+          expectedEnemyId,
           drift,
           radius: AI_PLANNED_MOVE_TARGET_REVALIDATION_RADIUS_PX,
           revalidationSource,

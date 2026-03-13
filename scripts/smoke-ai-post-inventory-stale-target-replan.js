@@ -106,6 +106,10 @@ function createRuntime(scenario){
     registerAiInventoryUsageAfterMove(){},
     isPlaneLaunchStateReady(plane){ return plane?.isAlive === true && plane?.burning !== true; },
     isPlaneTargetable(plane){ return plane?.isAlive === true && plane?.burning !== true && plane?.lifeState === 'alive'; },
+    findActualPlaneById(id, pool){
+      const source = Array.isArray(pool) ? pool : allPlanes;
+      return source.find((plane) => plane?.id === id) || null;
+    },
     getAiMoveLandingPoint(move){ return { x: move.plane.x + move.vx, y: move.plane.y + move.vy }; },
     isPathClear(){ return true; },
     getFallbackAiMove(){ return { ...scenario.fallbackMove, plane: scenario.fallbackMove.plane }; },
@@ -134,6 +138,7 @@ function runBeforeBehavior(scenario){
 const source = fs.readFileSync('script.js', 'utf8');
 const aiRadiusConst = extractConstSource(source, 'AI_PLANNED_MOVE_TARGET_REVALIDATION_RADIUS_PX');
 const fns = [
+  'validateAiLaunchMoveCandidate',
   'getAiDynamiteIntentScoreAdjustment',
   'detectConsumedInventoryType',
   'issueAIMoveWithInventoryUsage',
