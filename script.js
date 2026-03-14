@@ -17797,6 +17797,22 @@ function shouldSkipDirectFinisherInOpening(context){
     goalName: "direct_finisher",
     context,
   });
+  const hasClusterFinisherValue = Number.isFinite(openingExceptionFinisher?.nearbyEnemiesCount)
+    && openingExceptionFinisher.nearbyEnemiesCount >= 1;
+  if(hasClusterFinisherValue){
+    logAiDecision("opening_direct_finisher_cluster_unlocked", {
+      turnAdvanceCount,
+      scoreLead,
+      planeId: openingExceptionFinisher?.plane?.id ?? null,
+      enemyId: openingExceptionFinisher?.enemy?.id ?? null,
+      nearbyEnemiesCount: openingExceptionFinisher.nearbyEnemiesCount,
+      clusterBonus: Number.isFinite(openingExceptionFinisher?.clusterBonus)
+        ? Number(openingExceptionFinisher.clusterBonus.toFixed(2))
+        : null,
+      reason: "multi_kill_window",
+    });
+    return false;
+  }
   if(openingExceptionFinisher?.totalDist <= AI_OPENING_DIRECT_FINISHER_EXCEPTION_DISTANCE){
     const landingPoint = typeof getAiMoveLandingPoint === "function"
       ? getAiMoveLandingPoint(openingExceptionFinisher)
