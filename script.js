@@ -4432,6 +4432,167 @@ function getCurrentTurnOpponentColor(){
   return getOpponentColor(currentTurnColor) ?? "green";
 }
 
+function createAiFuelTrainingSession(){
+  return {
+    reportType: "ai_fuel_training_report",
+    version: 1,
+    generatedAt: null,
+    events: [],
+    attempts: [],
+    lastUpdatedAt: null,
+  };
+}
+
+let aiFuelTrainingSession = createAiFuelTrainingSession();
+
+function pushAiFuelTrainingEvent(eventType, payload = {}){
+  if(!aiFuelTrainingSession || typeof aiFuelTrainingSession !== "object"){
+    aiFuelTrainingSession = createAiFuelTrainingSession();
+  }
+  const timestamp = safeNowIso();
+  const turnNumber = Number.isFinite(turnAdvanceCount)
+    ? turnAdvanceCount
+    : (Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null);
+  const event = {
+    eventType,
+    timestamp,
+    turnNumber,
+    ...payload,
+  };
+  aiFuelTrainingSession.events.push(event);
+  aiFuelTrainingSession.lastUpdatedAt = timestamp;
+  return event;
+}
+
+function createAiFuelTrainingAttemptBase(meta = {}){
+  return {
+    attemptId: `attempt_${(aiFuelTrainingSession?.attempts?.length || 0) + 1}`,
+    activatedAt: safeNowIso(),
+    activatedOnTurn: Number.isFinite(meta.requestedAtTurn)
+      ? meta.requestedAtTurn
+      : (Number.isFinite(turnAdvanceCount) ? turnAdvanceCount : null),
+    source: meta.source || "unknown",
+    fuelGrant: null,
+    softRequirementActivated: true,
+    nextAiTurn: {
+      resolved: false,
+      usedFuel: null,
+      consumedItemType: null,
+      reason: null,
+      reasonSource: null,
+      planeId: null,
+      aiTurnNumber: null,
+      summary: "Ожидание следующего хода ИИ.",
+      updatedAt: null,
+    },
+    summary: "Тренировка включена, ожидаем ход ИИ.",
+  };
+}
+
+function getLatestPendingAiFuelTrainingAttempt(){
+  if(!Array.isArray(aiFuelTrainingSession?.attempts)) return null;
+  for(let i = aiFuelTrainingSession.attempts.length - 1; i >= 0; i -= 1){
+    const attempt = aiFuelTrainingSession.attempts[i];
+    if(attempt?.nextAiTurn?.resolved !== true){
+      return attempt;
+    }
+  }
+  return null;
+}
+
+function markAiFuelTrainingActivation(meta = {}){
+  const attempt = createAiFuelTrainingAttemptBase(meta);
+  const latestFuelGrant = [...(aiFuelTrainingSession?.events || [])]
+    .reverse()
+    .find((event) => event?.eventType === "fuel_granted") || null;
+  if(latestFuelGrant){
+    attempt.fuelGrant = {
+      timestamp: latestFuelGrant.timestamp || null,
+      turnNumber: Number.isFinite(latestFuelGrant.turnNumber) ? latestFuelGrant.turnNumber : null,
+      targetColor: latestFuelGrant.targetColor || null,
+      quantity: Number.isFinite(latestFuelGrant.quantity) ? latestFuelGrant.quantity : null,
+      source: latestFuelGrant.source || null,
+    };
+  }
+  aiFuelTrainingSession.attempts.push(attempt);
+  pushAiFuelTrainingEvent("fuel_training_soft_requirement_activated", {
+    source: attempt.source,
+    requestedAtTurn: attempt.activatedOnTurn,
+    attemptId: attempt.attemptId,
+  });
+  return attempt;
+}
+
+function updateAiFuelTrainingOutcome(details = {}){
+  const attempt = getLatestPendingAiFuelTrainingAttempt();
+  if(!attempt) return null;
+  const timestamp = safeNowIso();
+  const usedFuel = details.usedFuel === true;
+  const reason = details.reason || "unknown";
+  const reasonSource = details.reasonSource || "local_check";
+  const consumedItemType = details.consumedItemType || null;
+  attempt.nextAiTurn = {
+    resolved: true,
+    usedFuel,
+    consumedItemType,
+    reason,
+    reasonSource,
+    planeId: details.planeId ?? null,
+    aiTurnNumber: Number.isFinite(aiRoundState?.turnNumber)
+      ? aiRoundState.turnNumber
+      : (Number.isFinite(turnAdvanceCount) ? turnAdvanceCount : null),
+    summary: usedFuel
+      ? "ИИ использовал топливо на следующем ходе."
+      : "ИИ не использовал топливо на следующем ходе.",
+    updatedAt: timestamp,
+  };
+  attempt.summary = `${attempt.nextAiTurn.summary} Причина: ${reason}.`;
+  pushAiFuelTrainingEvent("fuel_training_next_ai_turn_resolved", {
+    attemptId: attempt.attemptId,
+    usedFuel,
+    consumedItemType,
+    reason,
+    reasonSource,
+    planeId: details.planeId ?? null,
+  });
+  return attempt;
+}
+
+function buildAiFuelTrainingReportJson(){
+  const attempts = Array.isArray(aiFuelTrainingSession?.attempts)
+    ? aiFuelTrainingSession.attempts
+    : [];
+  const completedAttempts = attempts.filter((attempt) => attempt?.nextAiTurn?.resolved === true);
+  const usedFuelCount = completedAttempts.filter((attempt) => attempt?.nextAiTurn?.usedFuel === true).length;
+  const skippedFuelCount = completedAttempts.filter((attempt) => attempt?.nextAiTurn?.usedFuel === false).length;
+  return {
+    reportType: "ai_fuel_training_report",
+    version: 1,
+    generatedAt: safeNowIso(),
+    lastUpdatedAt: aiFuelTrainingSession?.lastUpdatedAt || null,
+    stats: {
+      attemptsTotal: attempts.length,
+      attemptsResolved: completedAttempts.length,
+      usedFuelCount,
+      skippedFuelCount,
+    },
+    attempts,
+    events: Array.isArray(aiFuelTrainingSession?.events) ? aiFuelTrainingSession.events : [],
+    summary: [
+      `Всего попыток: ${attempts.length}.`,
+      `Завершённых попыток: ${completedAttempts.length}.`,
+      `ИИ использовал топливо: ${usedFuelCount}.`,
+      `ИИ не использовал топливо: ${skippedFuelCount}.`,
+    ],
+  };
+}
+
+function exportAiFuelTrainingReportJson(){
+  const report = buildAiFuelTrainingReportJson();
+  console.info("[ai-fuel-training] report", report);
+  return report;
+}
+
 function requestAiFuelTrainingForNextTurn(source = "debug_command"){
   if(!aiRoundState || typeof aiRoundState !== "object") return false;
   const requestedAtTurn = Number.isFinite(turnAdvanceCount)
@@ -4442,6 +4603,10 @@ function requestAiFuelTrainingForNextTurn(source = "debug_command"){
     requestedAtTurn,
     source: source || "unknown",
   };
+  markAiFuelTrainingActivation({
+    requestedAtTurn,
+    source: source || "unknown",
+  });
   return true;
 }
 
@@ -4460,6 +4625,13 @@ function giveItem(itemId, qty = 1, opts = { silent: false }){
   }
   for(let i = 0; i < safeQty; i += 1){
     inventoryState[targetColor].push(itemDef);
+  }
+  if(itemDef.type === INVENTORY_ITEM_TYPES.FUEL){
+    pushAiFuelTrainingEvent("fuel_granted", {
+      targetColor,
+      quantity: safeQty,
+      source: opts?.source || "give_item",
+    });
   }
   syncInventoryUI(targetColor);
   if(!opts?.silent){
@@ -4500,7 +4672,10 @@ if (DEBUG_CHEATS && typeof window !== "undefined") {
   window.DEBUG_BANNER_CLEAR = () => clearRoundBanner();
   window.DEBUG_GIVE_ITEM = (itemId, qty = 1) => giveItem(itemId, qty);
   window.DEBUG_GIVE_OPPONENT_FUEL = (qty = 1) => {
-    giveItem(INVENTORY_ITEM_TYPES.FUEL, qty, { targetColor: getCurrentTurnOpponentColor() });
+    giveItem(INVENTORY_ITEM_TYPES.FUEL, qty, {
+      targetColor: getCurrentTurnOpponentColor(),
+      source: "debug_give_opponent_fuel",
+    });
     requestAiFuelTrainingForNextTurn("debug_give_opponent_fuel");
   };
   window.DEBUG_CLEAR_INVENTORY = () => resetInventoryState();
@@ -11781,6 +11956,7 @@ if(typeof window !== "undefined"){
   window.exportAiSelfAnalyzerGapJson = exportAiSelfAnalyzerGapJson;
   window.exportPlayerVsAiGapReportJson = exportPlayerVsAiGapReportJson;
   window.exportAiFallbackDiagnosticsReportJson = exportAiFallbackDiagnosticsReportJson;
+  window.exportAiFuelTrainingReportJson = exportAiFuelTrainingReportJson;
   window.DEBUG_AI_GAP_AFTER_BOUNCE_REPORT = DEBUG_AI_GAP_AFTER_BOUNCE_REPORT;
   window.getAiSelfAnalyzerSnapshot = getAiSelfAnalyzerSnapshot;
   window.AI_DEBUG_CMD = AI_DEBUG_CMD;
@@ -16867,6 +17043,13 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       planeId: plannedMove?.plane?.id ?? null,
       ...details,
     });
+    updateAiFuelTrainingOutcome({
+      usedFuel: false,
+      consumedItemType: null,
+      reason: `fuel_training_skipped_with_reason:${reason}`,
+      reasonSource: "logAiDecision",
+      planeId: plannedMove?.plane?.id ?? null,
+    });
   }
 
   const fuelTrainingMeta = aiRoundState?.trainingForceFuelOnNextAiTurn || null;
@@ -16889,6 +17072,13 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         logAiDecision("fuel_training_applied", {
           requestedAtTurn: fuelTrainingMeta.requestedAtTurn ?? null,
           source: fuelTrainingMeta.source ?? null,
+          planeId: plannedMove?.plane?.id ?? null,
+        });
+        updateAiFuelTrainingOutcome({
+          usedFuel: true,
+          consumedItemType: INVENTORY_ITEM_TYPES.FUEL,
+          reason: "fuel_training_applied",
+          reasonSource: "logAiDecision",
           planeId: plannedMove?.plane?.id ?? null,
         });
         return true;
@@ -17646,6 +17836,26 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       });
     }
   }
+
+  const pendingFuelTrainingAttempt = getLatestPendingAiFuelTrainingAttempt();
+  if(pendingFuelTrainingAttempt){
+    const usedFuel = effectiveItemUsed && consumedItemType === INVENTORY_ITEM_TYPES.FUEL;
+    const reason = usedFuel
+      ? "fuel_used_on_next_ai_turn"
+      : (
+        effectiveItemUsed
+          ? `other_inventory_item_used:${consumedItemType || "unknown"}`
+          : "no_inventory_item_used"
+      );
+    updateAiFuelTrainingOutcome({
+      usedFuel,
+      consumedItemType: consumedItemType || null,
+      reason,
+      reasonSource: "local_check",
+      planeId: plannedMove?.plane?.id ?? null,
+    });
+  }
+
   registerAiInventoryUsageAfterMove(effectiveItemUsed);
 
   if(effectiveItemUsed === true){
