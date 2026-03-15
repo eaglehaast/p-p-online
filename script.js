@@ -4691,7 +4691,9 @@ function seedMapEditorInventory(){
 
 function giveOpponentFuelFromConsole(qty = 1, source = "console_give_opponent_fuel"){
   const normalizedQty = Number.isFinite(qty) ? Math.max(1, Math.floor(qty)) : 1;
-  const targetColor = getCurrentTurnOpponentColor();
+  const targetColor = gameMode === "computer"
+    ? "blue"
+    : getCurrentTurnOpponentColor();
   giveItem(INVENTORY_ITEM_TYPES.FUEL, normalizedQty, {
     targetColor,
     source,
@@ -18418,6 +18420,51 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     && plannedMove?.plane
     && Number.isFinite(plannedMove.vx)
     && Number.isFinite(plannedMove.vy)){
+    function forceFuelMoveToMaxRange(){
+      const boostedFlightRangeCellsRaw = getEffectiveFlightRangeCells(plannedMove.plane);
+      const boostedFlightRangeCells = Number.isFinite(boostedFlightRangeCellsRaw)
+        ? Math.max(0, boostedFlightRangeCellsRaw)
+        : 0;
+      const boostedFlightDistancePx = boostedFlightRangeCells * CELL_SIZE;
+      const boostedSpeedPxPerSec = FIELD_FLIGHT_DURATION_SEC > 0
+        ? boostedFlightDistancePx / FIELD_FLIGHT_DURATION_SEC
+        : 0;
+      const launchAngle = Math.atan2(plannedMove.vy, plannedMove.vx);
+      if(!Number.isFinite(boostedSpeedPxPerSec) || boostedSpeedPxPerSec <= 0 || !Number.isFinite(launchAngle)){
+        logAiDecision("fuel_launch_forced_max_range_skipped", {
+          planeId: plannedMove?.plane?.id ?? null,
+          reason: "invalid_speed_or_angle",
+          boostedFlightRangeCells: Number.isFinite(boostedFlightRangeCells)
+            ? Number(boostedFlightRangeCells.toFixed(2))
+            : null,
+          boostedSpeedPxPerSec: Number.isFinite(boostedSpeedPxPerSec)
+            ? Number(boostedSpeedPxPerSec.toFixed(4))
+            : null,
+        });
+        return false;
+      }
+
+      plannedMove.vx = Math.cos(launchAngle) * boostedSpeedPxPerSec;
+      plannedMove.vy = Math.sin(launchAngle) * boostedSpeedPxPerSec;
+      plannedMove.totalDist = boostedFlightDistancePx;
+      plannedMove.landingPoint = getAiMoveLandingPoint({
+        plane: plannedMove.plane,
+        vx: plannedMove.vx,
+        vy: plannedMove.vy,
+      });
+
+      logAiDecision("fuel_launch_forced_max_range", {
+        planeId: plannedMove?.plane?.id ?? null,
+        boostedFlightRangeCells: Number(boostedFlightRangeCells.toFixed(2)),
+        boostedFlightDistancePx: Number(boostedFlightDistancePx.toFixed(1)),
+        launchAngleDeg: Number((((launchAngle * 180) / Math.PI + 360) % 360).toFixed(2)),
+        vx: Number(plannedMove.vx.toFixed(4)),
+        vy: Number(plannedMove.vy.toFixed(4)),
+        totalDist: Number(plannedMove.totalDist.toFixed(1)),
+      });
+      return true;
+    }
+
     function buildFuelReplannedMove(){
       if(typeof planPathWithSpecialRouteProbe !== "function") return null;
 
@@ -18550,6 +18597,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
             }
           : null,
       });
+      forceFuelMoveToMaxRange();
     } else {
       const baseFlightRangeCells = Number.isFinite(settings?.flightRangeCells)
         ? settings.flightRangeCells
@@ -18610,10 +18658,24 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
         },
       });
 
-      recoverFuelConsumptionAfterRejectedPlan({
-        reason: "fuel_replan_missing_scale_blocked",
+      plannedMove.vx = scaledVx;
+      plannedMove.vy = scaledVy;
+      plannedMove.totalDist = scaledTotalDist;
+      plannedMove.landingPoint = scaledLandingPoint;
+
+      logAiDecision("fuel_replan_missing_scale_applied", {
+        planeId: plannedMove.plane?.id ?? null,
+        multiplier: Number.isFinite(fuelSpeedMultiplier) ? Number(fuelSpeedMultiplier.toFixed(3)) : null,
+        scaledTotalDist: Number.isFinite(scaledTotalDist) ? Number(scaledTotalDist.toFixed(1)) : null,
+        landingPoint: scaledLandingPoint
+          ? {
+              x: Number(scaledLandingPoint.x.toFixed(1)),
+              y: Number(scaledLandingPoint.y.toFixed(1)),
+            }
+          : null,
       });
-      effectiveItemUsed = false;
+
+      forceFuelMoveToMaxRange();
     }
   }
 
