@@ -4663,6 +4663,26 @@ function seedMapEditorInventory(){
   }
 }
 
+function giveOpponentFuelFromConsole(qty = 1, source = "console_give_opponent_fuel"){
+  const normalizedQty = Number.isFinite(qty) ? Math.max(1, Math.floor(qty)) : 1;
+  const targetColor = getCurrentTurnOpponentColor();
+  giveItem(INVENTORY_ITEM_TYPES.FUEL, normalizedQty, {
+    targetColor,
+    source,
+  });
+  requestAiFuelTrainingForNextTurn(source);
+  return {
+    ok: true,
+    targetColor,
+    qty: normalizedQty,
+    source,
+  };
+}
+
+if(typeof window !== "undefined"){
+  window.GIVE_OPPONENT_FUEL = (qty = 1) => giveOpponentFuelFromConsole(qty, "console_any_mode");
+}
+
 if (DEBUG_CHEATS && typeof window !== "undefined") {
   // DevTools usage on /#dev:
   // DEBUG_BANNER_BLUE_WIN(); DEBUG_BANNER_GREEN_WIN(); DEBUG_BANNER_NEXT_ROUND(); DEBUG_BANNER_CLEAR();
@@ -4671,13 +4691,7 @@ if (DEBUG_CHEATS && typeof window !== "undefined") {
   window.DEBUG_BANNER_NEXT_ROUND = () => showRoundBanner("NEXT ROUND");
   window.DEBUG_BANNER_CLEAR = () => clearRoundBanner();
   window.DEBUG_GIVE_ITEM = (itemId, qty = 1) => giveItem(itemId, qty);
-  window.DEBUG_GIVE_OPPONENT_FUEL = (qty = 1) => {
-    giveItem(INVENTORY_ITEM_TYPES.FUEL, qty, {
-      targetColor: getCurrentTurnOpponentColor(),
-      source: "debug_give_opponent_fuel",
-    });
-    requestAiFuelTrainingForNextTurn("debug_give_opponent_fuel");
-  };
+  window.DEBUG_GIVE_OPPONENT_FUEL = (qty = 1) => giveOpponentFuelFromConsole(qty, "debug_give_opponent_fuel");
   window.DEBUG_CLEAR_INVENTORY = () => resetInventoryState();
 }
 
