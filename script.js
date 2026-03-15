@@ -2626,6 +2626,18 @@ function getAiFlightRangeProfile(plane){
   };
 }
 
+function getPlaneEffectiveRangePx(plane){
+  const profile = getAiFlightRangeProfile(plane);
+  if(Number.isFinite(profile?.flightDistancePx) && profile.flightDistancePx > 0) return profile.flightDistancePx;
+  return MAX_DRAG_DISTANCE;
+}
+
+function getDistanceRatioToEffectiveRange(distancePx, effectiveRangePx){
+  if(!Number.isFinite(distancePx) || distancePx < 0) return null;
+  if(!Number.isFinite(effectiveRangePx) || effectiveRangePx <= 0) return null;
+  return distancePx / effectiveRangePx;
+}
+
 function getPendingInventoryTargetPlaneAt(x, y){
   if(!pendingInventoryUse) return null;
   const currentColor = turnColors[turnIndex];
@@ -9830,6 +9842,15 @@ function recordAiSelfAnalyzerDecision(stage, details = {}){
       ? move.totalDist
       : (Number.isFinite(move.moveTotalDist) ? move.moveTotalDist : null);
 
+    const moveEffectiveRangePxRaw = Number(move?.effectiveRangePx);
+    const moveEffectiveRangePx = Number.isFinite(moveEffectiveRangePxRaw) && moveEffectiveRangePxRaw > 0
+      ? moveEffectiveRangePxRaw
+      : getPlaneEffectiveRangePx(movePlane || null);
+    const moveDistanceRatioRaw = Number(move?.distanceRatioToEffectiveRange);
+    const moveDistanceRatio = Number.isFinite(moveDistanceRatioRaw)
+      ? moveDistanceRatioRaw
+      : getDistanceRatioToEffectiveRange(moveDistance, moveEffectiveRangePx);
+
     event.selectedMove = {
       planeId: movePlaneId,
       vx: Number.isFinite(move.vx) ? Number(move.vx.toFixed(3)) : null,
@@ -9837,6 +9858,9 @@ function recordAiSelfAnalyzerDecision(stage, details = {}){
       totalDist: Number.isFinite(moveDistance) ? Number(moveDistance.toFixed(2)) : null,
       goalName: move.goalName || null,
       decisionReason: move.decisionReason || null,
+      effectiveRangePx: Number.isFinite(moveEffectiveRangePx) ? Number(moveEffectiveRangePx.toFixed(1)) : null,
+      distanceToTargetPx: Number.isFinite(moveDistance) ? Number(moveDistance.toFixed(1)) : null,
+      distanceRatioToEffectiveRange: Number.isFinite(moveDistanceRatio) ? Number(moveDistanceRatio.toFixed(4)) : null,
     };
   }
 
@@ -14281,7 +14305,7 @@ const AI_CARGO_FAVORABLE_DISTANCE = MAX_DRAG_DISTANCE * 0.72;
 const AI_CARGO_IMMEDIATE_THREAT_DISTANCE = ATTACK_RANGE_PX * 0.9;
 const AI_CARGO_IMMEDIATE_THREAT_INTERCEPTION = 0.5;
 const AI_CARGO_SWITCH_TO_AGGRESSION_ITEMS = 2;
-const AI_LONG_SHOT_DISTANCE_THRESHOLD = MAX_DRAG_DISTANCE * 0.85;
+const AI_LONG_SHOT_DISTANCE_THRESHOLD_RATIO = 0.85;
 const AI_LONG_SHOT_LARGE_PENALTY_LOG_THRESHOLD = 1.2;
 const AI_MIN_LAUNCH_SCALE_DEFAULT = 0.22;
 const AI_ATTACK_SOFT_MIN_BOOST = 0.06;
@@ -14300,7 +14324,7 @@ const AI_TACTICAL_MEDIUM_SCALE_MAX = 0.68;
 const AI_FINISHER_OVERSHOOT_FACTOR = 1.04;
 const AI_OPENING_CENTER_TURN_LIMIT = 2;
 const AI_OPENING_DIRECT_FINISHER_MIN_LEAD = 2;
-const AI_OPENING_DIRECT_FINISHER_EXCEPTION_DISTANCE = MAX_DRAG_DISTANCE * 0.5;
+const AI_OPENING_DIRECT_FINISHER_EXCEPTION_DISTANCE_RATIO = 0.5;
 const AI_OPENING_DIRECT_FINISHER_EXCEPTION_THREAT_COUNT = 2;
 const AI_OPENING_DIRECT_FINISHER_EXCEPTION_NEAREST_THREAT_DISTANCE = ATTACK_RANGE_PX * 0.75;
 const AI_CENTER_CONTROL_DISTANCE = MAX_DRAG_DISTANCE * 0.35;
@@ -16087,11 +16111,16 @@ function isMirrorPressureTarget(enemy, context = null){
 }
 
 function getAiLongShotPenaltyMultiplier(distanceToTarget, targetPriority = "normal", riskProfile = "balanced", options = {}){
-  if(!Number.isFinite(distanceToTarget) || distanceToTarget <= AI_LONG_SHOT_DISTANCE_THRESHOLD) return 1;
+  const effectiveRangePxRaw = Number(options?.effectiveRangePx);
+  const effectiveRangePx = Number.isFinite(effectiveRangePxRaw) && effectiveRangePxRaw > 0
+    ? effectiveRangePxRaw
+    : MAX_DRAG_DISTANCE;
+  const longShotDistanceThreshold = effectiveRangePx * AI_LONG_SHOT_DISTANCE_THRESHOLD_RATIO;
+  if(!Number.isFinite(distanceToTarget) || distanceToTarget <= longShotDistanceThreshold) return 1;
 
-  const maxEffectiveDistance = Math.max(MAX_DRAG_DISTANCE * 1.25, AI_LONG_SHOT_DISTANCE_THRESHOLD + 1);
-  const overflowDistance = Math.max(0, distanceToTarget - AI_LONG_SHOT_DISTANCE_THRESHOLD);
-  const overflowRatio = Math.min(1, overflowDistance / (maxEffectiveDistance - AI_LONG_SHOT_DISTANCE_THRESHOLD));
+  const maxEffectiveDistance = Math.max(effectiveRangePx * 1.25, longShotDistanceThreshold + 1);
+  const overflowDistance = Math.max(0, distanceToTarget - longShotDistanceThreshold);
+  const overflowRatio = Math.min(1, overflowDistance / (maxEffectiveDistance - longShotDistanceThreshold));
 
   const profilePenaltyCeil = riskProfile === "comeback"
     ? 1.32
@@ -16235,7 +16264,8 @@ function getEarlyWarningDirectFinisherOverride(context, earlyWarningThreat){
       directFinisherMove.enemy.x,
       directFinisherMove.enemy.y,
     );
-  const shortDistanceThreshold = AI_OPENING_DIRECT_FINISHER_EXCEPTION_DISTANCE * 1.1;
+  const directFinisherEffectiveRangePx = getPlaneEffectiveRangePx(directFinisherMove?.plane || null);
+  const shortDistanceThreshold = directFinisherEffectiveRangePx * AI_OPENING_DIRECT_FINISHER_EXCEPTION_DISTANCE_RATIO * 1.1;
   const isShortDirectAttack = Number.isFinite(directFinisherMove?.totalDist)
     && directFinisherMove.totalDist <= shortDistanceThreshold;
 
@@ -16631,11 +16661,12 @@ function tryPlaceBlueDefensiveMine(context, plannedMove){
   let bestThreatScore = Number.NEGATIVE_INFINITY;
   for(const enemy of enemies){
     const enemyToLanding = Math.hypot(enemy.x - landingPoint.x, enemy.y - landingPoint.y);
-    const canContestSoon = enemyToLanding <= MAX_DRAG_DISTANCE * 1.05;
+    const enemyEffectiveRangePx = getPlaneEffectiveRangePx(enemy);
+    const canContestSoon = enemyToLanding <= enemyEffectiveRangePx * 1.05;
     const hasClearLane = isPathClear(enemy.x, enemy.y, landingPoint.x, landingPoint.y);
     if(!canContestSoon || !hasClearLane) continue;
 
-    const threatScore = MAX_DRAG_DISTANCE - enemyToLanding;
+    const threatScore = getPlaneEffectiveRangePx(enemy) - enemyToLanding;
     if(threatScore > bestThreatScore){
       bestThreatScore = threatScore;
       mostDangerousEnemy = enemy;
@@ -17172,7 +17203,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     : Infinity;
   const hasPriorityEnemyPathClear = Boolean(priorityEnemy)
     && isPathClear(plannedMove.plane.x, plannedMove.plane.y, priorityEnemy.x, priorityEnemy.y);
-  const isPriorityEnemyInDirectRange = priorityEnemyDistance <= MAX_DRAG_DISTANCE;
+  const plannedMoveEffectiveRangePx = getPlaneEffectiveRangePx(plannedMove.plane);
+  const isPriorityEnemyInDirectRange = priorityEnemyDistance <= plannedMoveEffectiveRangePx;
   const directAttackShieldFactor = priorityEnemy?.shieldActive ? 0.45 : 1;
   const hasGoodDirectHitChance = Boolean(priorityEnemy)
     && isPriorityEnemyInDirectRange
@@ -17209,8 +17241,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         && isPathClear(landingPoint.x, landingPoint.y, target.x, target.y);
     });
   const safeBoostOpportunity = hasPriorityEnemyPathClear
-    && moveDistance >= MAX_DRAG_DISTANCE * 0.65
-    && (priorityEnemyDistance <= MAX_DRAG_DISTANCE * 1.2 || entersContactZoneThisTurn || likelyContactOnNextTurn);
+    && moveDistance >= plannedMoveEffectiveRangePx * 0.65
+    && (priorityEnemyDistance <= plannedMoveEffectiveRangePx * 1.2 || entersContactZoneThisTurn || likelyContactOnNextTurn);
   const tacticalInventoryAdvantage = hasGoodDirectHitChance || entersContactZoneThisTurn || safeBoostOpportunity;
   const allowInventoryUsage = explicitInventoryUnlock
     || strategicInventoryGoals.has(strategicGoal)
@@ -17223,7 +17255,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     const shieldPriority = enemy?.shieldActive ? -0.25 : 0.22;
     const directRangePriority = isPriorityEnemyInDirectRange ? 0.3 : -0.18;
     const clearPathPriority = hasPriorityEnemyPathClear ? 0.2 : -0.25;
-    const finishingDistance = Math.max(0, 1 - (priorityEnemyDistance / (MAX_DRAG_DISTANCE * 1.15)));
+    const finishingDistance = Math.max(0, 1 - (priorityEnemyDistance / (plannedMoveEffectiveRangePx * 1.15)));
     const finishingPriority = finishingDistance * (enemy?.shieldActive ? 0.08 : 0.22);
     const total = carrierPriority + shieldPriority + directRangePriority + clearPathPriority + finishingPriority;
     return {
@@ -17506,14 +17538,14 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     } else {
       const moderateCrosshairScenario = bestCrosshairScenario
         && bestCrosshairScenario.totalValue >= CROSSHAIR_SOFT_FALLBACK_MIN_VALUE
-        && bestCrosshairScenario.distanceToEnemy <= MAX_DRAG_DISTANCE * 1.1;
+        && bestCrosshairScenario.distanceToEnemy <= plannedMoveEffectiveRangePx * 1.1;
       const cleanFinishingChance = priorityEnemy
         && isPathClear(plannedMove.plane.x, plannedMove.plane.y, priorityEnemy.x, priorityEnemy.y)
-        && dist(plannedMove.plane, priorityEnemy) <= MAX_DRAG_DISTANCE
+        && dist(plannedMove.plane, priorityEnemy) <= plannedMoveEffectiveRangePx
         && !priorityEnemy.shieldActive;
       const comebackPressureShot = priorityEnemy
         && riskProfile === "comeback"
-        && dist(plannedMove.plane, priorityEnemy) <= MAX_DRAG_DISTANCE * 1.2;
+        && dist(plannedMove.plane, priorityEnemy) <= plannedMoveEffectiveRangePx * 1.2;
 
       if(!bestCrosshairScenario && (cleanFinishingChance || comebackPressureShot)){
         if(tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
@@ -17592,7 +17624,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       : !Array.isArray(context?.enemies) || context.enemies.every((enemy) => {
         const enemyDistance = dist(landingPoint, enemy);
         const enemyHasLane = isPathClear(enemy.x, enemy.y, landingPoint.x, landingPoint.y);
-        return !enemyHasLane || enemyDistance > MAX_DRAG_DISTANCE * 0.95;
+        return !enemyHasLane || enemyDistance > plannedMoveEffectiveRangePx * 0.95;
       });
 
     if(!shouldSkipMineForAttack && softFallbackReady && safeAfterPlacement){
@@ -18708,7 +18740,7 @@ function shouldSkipDirectFinisherInOpening(context){
     });
     return false;
   }
-  if(openingExceptionFinisher?.totalDist <= AI_OPENING_DIRECT_FINISHER_EXCEPTION_DISTANCE){
+  if(openingExceptionFinisher?.totalDist <= getPlaneEffectiveRangePx(openingExceptionFinisher?.plane || null) * AI_OPENING_DIRECT_FINISHER_EXCEPTION_DISTANCE_RATIO){
     const landingPoint = typeof getAiMoveLandingPoint === "function"
       ? getAiMoveLandingPoint(openingExceptionFinisher)
       : (() => {
@@ -19419,6 +19451,7 @@ function planRoleDrivenAiMove(context, rolePack){
       const longShotPenalty = getAiLongShotPenaltyMultiplier(move.totalDist, targetPriority, riskProfile, {
         onlyLineAvailable: !directPathClear,
         cleanRicochetAvailable: isMirrorMove,
+        effectiveRangePx: getPlaneEffectiveRangePx(striker),
       });
       const mirrorScoreBonus = isMirrorMove
         ? ((directPathClear ? 0 : AI_MIRROR_SCORE_BLOCKED_DIRECT_BONUS) + (mirrorPressureTarget ? AI_MIRROR_SCORE_PRESSURE_BONUS : 0))
@@ -21104,6 +21137,7 @@ function getFallbackAiMove(context){
         const targetPriority = getAiTargetPriority(enemy, context);
         const longShotPenalty = getAiLongShotPenaltyMultiplier(directDist, targetPriority, riskProfile, {
           onlyLineAvailable: false,
+          effectiveRangePx: planeFlightProfile.flightDistancePx,
         });
         const immediateThreatMeta = getImmediateResponseThreatMeta(context, landingX, landingY, enemy);
         let directAttackScore = getAiPlaneAdjustedScore(directDist * longShotPenalty, plane);
@@ -21609,12 +21643,22 @@ function getFallbackAiMove(context){
   }
 
   if(best){
+    const effectiveRangePx = getPlaneEffectiveRangePx(best.plane);
+    const distanceToTargetPx = Number.isFinite(best?.totalDist) ? best.totalDist : null;
+    const ratioRaw = getDistanceRatioToEffectiveRange(distanceToTargetPx, effectiveRangePx);
+    const distanceRatioToEffectiveRange = Number.isFinite(ratioRaw) ? ratioRaw : null;
+    best.effectiveRangePx = Number.isFinite(effectiveRangePx) ? effectiveRangePx : null;
+    best.distanceToTargetPx = distanceToTargetPx;
+    best.distanceRatioToEffectiveRange = distanceRatioToEffectiveRange;
     logAiDecision("fallback_selected_candidate_class", {
       selectedClass: getAiCandidateClassLabel(best),
       classTieBreakReason: best.classTieBreakReason || null,
       classScoreBreakdown: best.classScoreBreakdown || null,
       planeId: best.plane?.id ?? null,
       enemyId: best.enemy?.id ?? null,
+      effectiveRangePx: Number.isFinite(effectiveRangePx) ? Number(effectiveRangePx.toFixed(1)) : null,
+      distanceToTargetPx: Number.isFinite(distanceToTargetPx) ? Number(distanceToTargetPx.toFixed(1)) : null,
+      distanceRatioToEffectiveRange: Number.isFinite(distanceRatioToEffectiveRange) ? Number(distanceRatioToEffectiveRange.toFixed(4)) : null,
     });
   }
 
@@ -23805,7 +23849,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
     const dx = tx - plane.x;
     const dy = ty - plane.y;
     const dist = Math.hypot(dx, dy);
-    const baseScale = Math.min(dist / MAX_DRAG_DISTANCE, 1);
+    const baseScale = Math.min(dist / Math.max(1, flightDistancePx), 1);
     const baseAngle = Math.atan2(dy, dx);
 
     const finisherTarget = options?.targetEnemy || null;
@@ -23813,7 +23857,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       || (finisherTarget
         && finisherTarget.x === tx
         && finisherTarget.y === ty
-        && isDirectFinisherScenario(plane, finisherTarget));
+        && isDirectFinisherScenario(plane, finisherTarget, { effectiveRangePx: flightDistancePx }));
     const shouldHardPrioritizeDirect = shouldPrioritizeDirectFinisher || emergencyBaseDefenseGoal;
     const allowFinisherSafetyBypass = Boolean(options?.allowFinisherSafetyBypass)
       && shouldPrioritizeDirectFinisher
@@ -23837,13 +23881,13 @@ function planPathToPoint(plane, tx, ty, options = {}){
       ? explicitOvershootFactor
       : AI_FINISHER_OVERSHOOT_FACTOR;
     const canApplyAttackOvershoot = shouldPrioritizeDirectFinisher
-      && dist <= MAX_DRAG_DISTANCE
+      && dist <= Math.max(1, flightDistancePx)
       && isAttackContext(reasonText)
       && !isDefenseOrRetreatContext(reasonText)
       && Number.isFinite(overshootFactor)
       && overshootFactor > 1;
 
-    if(shouldPrioritizeDirectFinisher && dist <= MAX_DRAG_DISTANCE){
+    if(shouldPrioritizeDirectFinisher && dist <= Math.max(1, flightDistancePx)){
       const cappedOvershootFactor = Math.min(1.06, Math.max(1.03, overshootFactor));
       const finalScale = canApplyAttackOvershoot
         ? Math.max(scale, Math.min(1, scale * cappedOvershootFactor))
@@ -24019,11 +24063,15 @@ function planPathToPoint(plane, tx, ty, options = {}){
   return null;
 }
 
-function isDirectFinisherScenario(plane, enemy){
+function isDirectFinisherScenario(plane, enemy, options = {}){
   if(!plane || !enemy) return false;
   if(enemy.shieldActive) return false;
   if(!isPathClear(plane.x, plane.y, enemy.x, enemy.y)) return false;
-  return Math.hypot(enemy.x - plane.x, enemy.y - plane.y) <= MAX_DRAG_DISTANCE;
+  const effectiveRangePxRaw = Number(options?.effectiveRangePx);
+  const effectiveRangePx = Number.isFinite(effectiveRangePxRaw) && effectiveRangePxRaw > 0
+    ? effectiveRangePxRaw
+    : getPlaneEffectiveRangePx(plane);
+  return Math.hypot(enemy.x - plane.x, enemy.y - plane.y) <= effectiveRangePx;
 }
 
 function findDirectFinisherMove(aiPlanes, enemies, options = {}){
