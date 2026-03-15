@@ -17221,8 +17221,20 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     ? settings.flightRangeCells
     : 30;
   const baseFlightRange = baseFlightRangeCells * CELL_SIZE;
-  // Учитываем временный бафф топлива через getEffectiveFlightRangeCells(plane).
-  const fuelFlightRange = getEffectiveFlightRangeCells(plannedMove.plane) * CELL_SIZE;
+  // Для оценки выгоды топлива создаём временную копию самолёта с включённым fuel-баффом,
+  // чтобы расчёт не зависел от того, применён ли предмет к plannedMove.plane в текущий момент.
+  const rangePlane = {
+    ...plannedMove.plane,
+    activeTurnBuffs: {
+      ...(plannedMove.plane?.activeTurnBuffs || {}),
+      fuel: true,
+    },
+  };
+  const fuelFlightRangeCellsRaw = getEffectiveFlightRangeCells(rangePlane);
+  const fuelFlightRangeCells = Number.isFinite(fuelFlightRangeCellsRaw)
+    ? fuelFlightRangeCellsRaw
+    : baseFlightRangeCells * 2;
+  const fuelFlightRange = fuelFlightRangeCells * CELL_SIZE;
   const effectiveCellSize = typeof CELL_SIZE === "number" && Number.isFinite(CELL_SIZE) ? CELL_SIZE : 40;
   const contactTargetsForUnlock = [enemyBase];
   if(context?.shouldUseFlagsMode){
