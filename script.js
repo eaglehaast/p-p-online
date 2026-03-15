@@ -18405,6 +18405,43 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
 
   registerAiInventoryUsageAfterMove(effectiveItemUsed);
 
+  function recoverFuelConsumptionAfterRejectedPlan(staleCheck){
+    if(!(effectiveItemUsed && consumedItemType === INVENTORY_ITEM_TYPES.FUEL)) return false;
+
+    const plane = plannedMove?.plane;
+    const hadFuelBuffBeforeRecovery = planeHasActiveTurnBuff(plane, INVENTORY_ITEM_TYPES.FUEL);
+
+    if(plane?.activeTurnBuffs && typeof plane.activeTurnBuffs === "object"){
+      delete plane.activeTurnBuffs[INVENTORY_ITEM_TYPES.FUEL];
+    }
+
+    const fuelInventoryItem = INVENTORY_ITEMS.find((item) => item?.type === INVENTORY_ITEM_TYPES.FUEL) ?? null;
+    let restoredFuelToInventory = false;
+    if(fuelInventoryItem){
+      addItemToInventory("blue", fuelInventoryItem);
+      restoredFuelToInventory = true;
+    }
+
+    const hasFuelBuffAfterRecovery = planeHasActiveTurnBuff(plane, INVENTORY_ITEM_TYPES.FUEL);
+    const inventoryStateAfterRecovery = evaluateBlueInventoryState();
+    const fuelCountAfterRecovery = Number.isFinite(inventoryStateAfterRecovery?.counts?.[INVENTORY_ITEM_TYPES.FUEL])
+      ? inventoryStateAfterRecovery.counts[INVENTORY_ITEM_TYPES.FUEL]
+      : null;
+
+    logAiDecision("fuel_plan_rejected_recovered", {
+      planeId: plane?.id ?? null,
+      staleReason: staleCheck?.reason || "stale_target_revalidation_failed",
+      action: "return",
+      restoredFuelToInventory,
+      hadFuelBuffBeforeRecovery,
+      hasFuelBuffAfterRecovery,
+      fuelCountAfterRecovery,
+      stateConsistent: hasFuelBuffAfterRecovery === false && (fuelCountAfterRecovery === null || fuelCountAfterRecovery >= 1),
+    });
+
+    return true;
+  }
+
   if(effectiveItemUsed === true){
     if(aiPostInventoryLaunchTimeout){
       clearTimeout(aiPostInventoryLaunchTimeout);
@@ -18423,6 +18460,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
           abortReason: staleCheck.reason || "stale_target_revalidation_failed",
           step: "revalidation_after_inventory",
         });
+        recoverFuelConsumptionAfterRejectedPlan(staleCheck);
         if(launchFallbackIfNeeded(staleCheck)) return;
         failSafeHandler("stale_target_launch_failed", {
           goal: aiRoundState?.currentGoal || plannedMove?.goalName || "stale_target_launch_failed",
