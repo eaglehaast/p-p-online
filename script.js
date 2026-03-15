@@ -16878,6 +16878,258 @@ function evaluateCrosshairBestUse(context, plannedMove){
   return bestScenario;
 }
 
+function evaluateFuelTacticalPlans(context, plannedMove){
+  const plane = plannedMove?.plane;
+  const enemyBase = getBaseAnchor("green");
+  const homeBase = context?.homeBase || getBaseAnchor("blue");
+  const priorityEnemy = getBluePriorityEnemy(context);
+  const enemyFlag = context?.shouldUseFlagsMode ? getAvailableFlagsByColor("green")[0] : null;
+  const enemyFlagAnchor = enemyFlag ? getFlagAnchor(enemyFlag) : null;
+  const baseFlightRange = MAX_DRAG_DISTANCE;
+  const fuelFlightRange = baseFlightRange * 2;
+  const effectiveCellSize = typeof CELL_SIZE === "number" && Number.isFinite(CELL_SIZE) ? CELL_SIZE : 40;
+  const attackRangePx = typeof ATTACK_RANGE_PX === "number" && Number.isFinite(ATTACK_RANGE_PX) ? ATTACK_RANGE_PX : MAX_DRAG_DISTANCE * 0.58;
+
+  function getFieldWalls(){
+    if(!Number.isFinite(FIELD_LEFT) || !Number.isFinite(FIELD_TOP) || !Number.isFinite(FIELD_WIDTH) || !Number.isFinite(FIELD_HEIGHT)){
+      return [];
+    }
+    const right = FIELD_LEFT + FIELD_WIDTH;
+    const bottom = FIELD_TOP + FIELD_HEIGHT;
+    return [
+      { id: "left", x1: FIELD_LEFT, y1: FIELD_TOP, x2: FIELD_LEFT, y2: bottom },
+      { id: "right", x1: right, y1: FIELD_TOP, x2: right, y2: bottom },
+      { id: "top", x1: FIELD_LEFT, y1: FIELD_TOP, x2: right, y2: FIELD_TOP },
+      { id: "bottom", x1: FIELD_LEFT, y1: bottom, x2: right, y2: bottom },
+    ];
+  }
+
+  function evaluateReachabilityWithRicochet(fromPoint, toPoint, maxDistance){
+    if(!fromPoint || !toPoint || !Number.isFinite(maxDistance) || maxDistance <= 0){
+      return {
+        reachable: false,
+        routeType: null,
+        bouncePoint: null,
+        distance: Infinity,
+        reason: "invalid_input",
+      };
+    }
+
+    const directDistance = dist(fromPoint, toPoint);
+    if(directDistance <= maxDistance && isPathClear(fromPoint.x, fromPoint.y, toPoint.x, toPoint.y)){
+      return {
+        reachable: true,
+        routeType: "direct",
+        bouncePoint: null,
+        distance: directDistance,
+        reason: "direct_path_clear",
+      };
+    }
+
+    let bestRicochet = null;
+    const walls = getFieldWalls();
+    for(const wall of walls){
+      const mirroredTarget = reflectPointAcrossLine(toPoint.x, toPoint.y, wall.x1, wall.y1, wall.x2, wall.y2);
+      const bounce = lineSegmentIntersection(
+        fromPoint.x,
+        fromPoint.y,
+        mirroredTarget.x,
+        mirroredTarget.y,
+        wall.x1,
+        wall.y1,
+        wall.x2,
+        wall.y2,
+      );
+      if(!bounce) continue;
+
+      const firstLegClear = isPathClear(fromPoint.x, fromPoint.y, bounce.x, bounce.y);
+      const secondLegClear = isPathClear(bounce.x, bounce.y, toPoint.x, toPoint.y);
+      if(!firstLegClear || !secondLegClear) continue;
+
+      const totalDistance = dist(fromPoint, bounce) + dist(bounce, toPoint);
+      if(totalDistance > maxDistance * 1.03) continue;
+
+      const candidate = {
+        reachable: true,
+        routeType: "ricochet",
+        bouncePoint: { x: bounce.x, y: bounce.y, wallId: wall.id },
+        distance: totalDistance,
+        reason: "ricochet_path_clear",
+      };
+      if(!bestRicochet || candidate.distance < bestRicochet.distance){
+        bestRicochet = candidate;
+      }
+    }
+
+    if(bestRicochet) return bestRicochet;
+
+    return {
+      reachable: false,
+      routeType: null,
+      bouncePoint: null,
+      distance: directDistance,
+      reason: "direct_or_ricochet_not_reachable",
+    };
+  }
+
+  function buildSafeCorridorPoint(targetPoint){
+    if(!targetPoint || !homeBase) return null;
+    const midX = (targetPoint.x + homeBase.x) / 2;
+    const midY = (targetPoint.y + homeBase.y) / 2;
+    const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
+    let nearestEnemyDist = Infinity;
+    for(const enemy of enemies){
+      if(!enemy?.isAlive || enemy.burning) continue;
+      nearestEnemyDist = Math.min(nearestEnemyDist, dist(enemy, { x: midX, y: midY }));
+    }
+    return {
+      x: midX,
+      y: midY,
+      corridorSafetyHint: Number.isFinite(nearestEnemyDist)
+        ? Math.max(0, Math.min(1, nearestEnemyDist / (baseFlightRange * 0.8)))
+        : 1,
+    };
+  }
+
+  function evaluateReturnSafetyScore(returnLeg, remainingRange, returnPoint){
+    if(!returnLeg?.reachable) return 0;
+    const routeSafetyFactor = returnLeg.routeType === "ricochet" ? 0.78 : 1;
+    const distanceSlack = Math.max(0, remainingRange - returnLeg.distance);
+    const distanceSafetyFactor = Math.max(0, Math.min(1, distanceSlack / (baseFlightRange * 0.65)));
+    const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
+    let nearestEnemyDist = Infinity;
+    for(const enemy of enemies){
+      if(!enemy?.isAlive || enemy.burning) continue;
+      nearestEnemyDist = Math.min(nearestEnemyDist, dist(enemy, returnPoint));
+    }
+    const enemySafetyFactor = Number.isFinite(nearestEnemyDist)
+      ? Math.max(0, Math.min(1, nearestEnemyDist / (baseFlightRange * 0.7)))
+      : 1;
+    const corridorHint = Number.isFinite(returnPoint?.corridorSafetyHint) ? returnPoint.corridorSafetyHint : 1;
+    return Math.max(0, Math.min(1, (routeSafetyFactor * 0.4) + (distanceSafetyFactor * 0.3) + (enemySafetyFactor * 0.2) + (corridorHint * 0.1)));
+  }
+
+  const candidates = [
+    {
+      scenario: "fuel_base_strike_return",
+      targetName: "enemy_base",
+      targetPoint: enemyBase,
+      contactRadius: effectiveCellSize * 2.4,
+      objectivePriority: 1.05,
+    },
+    {
+      scenario: "fuel_flag_steal_return",
+      targetName: "enemy_flag",
+      targetPoint: enemyFlagAnchor,
+      contactRadius: effectiveCellSize * 2.4,
+      objectivePriority: 1.25,
+    },
+    {
+      scenario: "fuel_deep_hit_return",
+      targetName: "priority_enemy",
+      targetPoint: priorityEnemy,
+      contactRadius: attackRangePx,
+      objectivePriority: 1.15,
+    },
+  ];
+
+  const rejectedScenarios = [];
+  const evaluatedCandidates = candidates.map((candidate) => {
+    if(!plane || !candidate.targetPoint || !homeBase){
+      const reason = !plane ? "plane_missing" : (!homeBase ? "home_base_missing" : "target_missing");
+      const rejected = {
+        ...candidate,
+        isRejected: true,
+        rejectReason: reason,
+        returnSafetyScore: 0,
+        totalScore: 0,
+      };
+      rejectedScenarios.push({ scenario: candidate.scenario, reason });
+      return rejected;
+    }
+
+    const targetLeg = evaluateReachabilityWithRicochet(plane, candidate.targetPoint, fuelFlightRange + candidate.contactRadius);
+    if(!targetLeg.reachable){
+      const rejected = {
+        ...candidate,
+        isRejected: true,
+        rejectReason: "target_unreachable_with_fuel",
+        targetLeg,
+        returnSafetyScore: 0,
+        totalScore: 0,
+      };
+      rejectedScenarios.push({ scenario: candidate.scenario, reason: rejected.rejectReason });
+      return rejected;
+    }
+
+    const remainingRange = Math.max(0, fuelFlightRange - targetLeg.distance);
+    const returnCandidates = [
+      {
+        name: "home_base",
+        point: homeBase,
+      },
+      {
+        name: "safe_corridor",
+        point: buildSafeCorridorPoint(candidate.targetPoint),
+      },
+    ].filter((entry) => Boolean(entry.point));
+
+    let bestReturnPlan = null;
+    for(const entry of returnCandidates){
+      const returnLeg = evaluateReachabilityWithRicochet(candidate.targetPoint, entry.point, remainingRange + effectiveCellSize * 1.2);
+      const returnSafetyScore = evaluateReturnSafetyScore(returnLeg, remainingRange, entry.point);
+      const returnPlan = {
+        returnName: entry.name,
+        point: entry.point,
+        returnLeg,
+        returnSafetyScore,
+      };
+      if(!bestReturnPlan || returnPlan.returnSafetyScore > bestReturnPlan.returnSafetyScore){
+        bestReturnPlan = returnPlan;
+      }
+    }
+
+    const hasSafeReturn = Boolean(bestReturnPlan?.returnLeg?.reachable) && bestReturnPlan.returnSafetyScore >= 0.45;
+    if(!hasSafeReturn){
+      const rejected = {
+        ...candidate,
+        isRejected: true,
+        rejectReason: "return_unreachable_or_unsafe",
+        targetLeg,
+        returnPlan: bestReturnPlan,
+        returnSafetyScore: Number(bestReturnPlan?.returnSafetyScore ?? 0),
+        totalScore: 0,
+      };
+      rejectedScenarios.push({ scenario: candidate.scenario, reason: rejected.rejectReason });
+      return rejected;
+    }
+
+    const targetLegScore = targetLeg.routeType === "ricochet" ? 0.88 : 1;
+    const totalScore = candidate.objectivePriority + (targetLegScore * 0.35) + (bestReturnPlan.returnSafetyScore * 1.2);
+    return {
+      ...candidate,
+      isRejected: false,
+      rejectReason: null,
+      targetLeg,
+      returnPlan: bestReturnPlan,
+      returnSafetyScore: Number(bestReturnPlan.returnSafetyScore.toFixed(3)),
+      totalScore: Number(totalScore.toFixed(3)),
+    };
+  });
+
+  const selectedCandidate = evaluatedCandidates
+    .filter((candidate) => !candidate.isRejected)
+    .sort((a, b) => b.totalScore - a.totalScore)[0] || null;
+
+  return {
+    selectedCandidate,
+    candidates: evaluatedCandidates,
+    rejectedScenarios,
+    returnSafetyScore: selectedCandidate?.returnSafetyScore ?? 0,
+    blockedByReturnSafety: !selectedCandidate && evaluatedCandidates.some((entry) => entry.rejectReason === "return_unreachable_or_unsafe"),
+  };
+}
+
 function maybeUseInventoryBeforeLaunch(context, plannedMove){
   if(!plannedMove?.plane) return false;
 
@@ -17118,6 +17370,31 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     const enemyFlag = context?.shouldUseFlagsMode ? getAvailableFlagsByColor("green")[0] : null;
     const enemyFlagAnchor = enemyFlag ? getFlagAnchor(enemyFlag) : null;
     const fuelMaterialGain = evaluateFuelMaterialGain(enemyFlagAnchor);
+    const fuelTacticalPlans = evaluateFuelTacticalPlans(context, plannedMove);
+    plannedMove.aiFuelTacticalDecision = {
+      stage: "primary",
+      selectedScenario: fuelTacticalPlans?.selectedCandidate?.scenario ?? null,
+      targetContactPoint: fuelTacticalPlans?.selectedCandidate?.targetPoint
+        ? {
+            x: Number(fuelTacticalPlans.selectedCandidate.targetPoint.x.toFixed(1)),
+            y: Number(fuelTacticalPlans.selectedCandidate.targetPoint.y.toFixed(1)),
+          }
+        : null,
+      returnPlan: fuelTacticalPlans?.selectedCandidate?.returnPlan
+        ? {
+            type: fuelTacticalPlans.selectedCandidate.returnPlan.returnName,
+            point: {
+              x: Number(fuelTacticalPlans.selectedCandidate.returnPlan.point.x.toFixed(1)),
+              y: Number(fuelTacticalPlans.selectedCandidate.returnPlan.point.y.toFixed(1)),
+            },
+            routeType: fuelTacticalPlans.selectedCandidate.returnPlan.returnLeg?.routeType ?? null,
+          }
+        : null,
+      returnSafetyScore: Number(fuelTacticalPlans?.returnSafetyScore ?? 0),
+      rejectedScenarios: fuelTacticalPlans?.rejectedScenarios || [],
+      baseFilterHasMaterialGain: fuelMaterialGain.hasMaterialGain,
+      rejectionReason: null,
+    };
     const farObjective = (enemyFlagAnchor && dist(plannedMove.plane, enemyFlagAnchor) > MAX_DRAG_DISTANCE * 0.75)
       || (priorityEnemy && dist(plannedMove.plane, priorityEnemy) > MAX_DRAG_DISTANCE * 0.75)
       || moveDistance > MAX_DRAG_DISTANCE * 0.75;
@@ -17134,6 +17411,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     const shouldUseFuelBySoftFallback = !shouldBoostRange && softFallbackReady && moderateObjective;
     const shouldTryFuelNow = shouldBoostRange || shouldUseFuelBySoftFallback;
     if(shouldTryFuelNow && !fuelMaterialGain.hasMaterialGain){
+      plannedMove.aiFuelTacticalDecision.rejectionReason = "base_filter_no_material_gain";
       logAiDecision("fuel_saved_no_material_gain", {
         planeId: plannedMove.plane?.id ?? null,
         reason: shouldUseFuelBySoftFallback ? "soft_fallback_without_new_contact" : "boost_without_new_contact",
@@ -17146,6 +17424,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
 
     if(shouldTryFuelNow
       && fuelMaterialGain.hasMaterialGain
+      && fuelTacticalPlans?.selectedCandidate
       && tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.FUEL, "blue", plannedMove.plane)){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
       logAiDecision("fuel_used_material_gain", {
@@ -17155,6 +17434,14 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         gainedContactDistance: fuelMaterialGain.newReachableTarget
           ? Number(fuelMaterialGain.newReachableTarget.targetDistance.toFixed(1))
           : null,
+        fuelScenario: fuelTacticalPlans.selectedCandidate.scenario,
+        returnSafetyScore: fuelTacticalPlans.selectedCandidate.returnSafetyScore,
+        returnPoint: fuelTacticalPlans.selectedCandidate.returnPlan?.point
+          ? {
+              x: Number(fuelTacticalPlans.selectedCandidate.returnPlan.point.x.toFixed(1)),
+              y: Number(fuelTacticalPlans.selectedCandidate.returnPlan.point.y.toFixed(1)),
+            }
+          : null,
       });
       if(shouldUseFuelBySoftFallback){
         markSoftFallbackUse(INVENTORY_ITEM_TYPES.FUEL, {
@@ -17163,6 +17450,15 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         });
       }
       return true;
+    } else if(shouldTryFuelNow && fuelMaterialGain.hasMaterialGain && !fuelTacticalPlans?.selectedCandidate){
+      plannedMove.aiFuelTacticalDecision.rejectionReason = fuelTacticalPlans?.blockedByReturnSafety
+        ? "blocked_return_unreachable_or_unsafe"
+        : "no_tactical_candidate";
+      logAiDecision("fuel_saved_no_material_gain", {
+        planeId: plannedMove.plane?.id ?? null,
+        reason: plannedMove.aiFuelTacticalDecision.rejectionReason,
+        rejectedScenarios: fuelTacticalPlans?.rejectedScenarios || [],
+      });
     }
   }
 
@@ -17389,18 +17685,57 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       return true;
     }
 
+    const softFallbackFuelMaterialGain = evaluateFuelMaterialGain(null);
+    const softFallbackFuelPlan = evaluateFuelTacticalPlans(context, plannedMove);
     if(inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0
-      && evaluateFuelMaterialGain(null).hasMaterialGain
+      && softFallbackFuelMaterialGain.hasMaterialGain
+      && softFallbackFuelPlan.selectedCandidate
       && tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.FUEL, "blue", plannedMove.plane)){
+      plannedMove.aiFuelTacticalDecision = {
+        stage: "soft_fallback",
+        selectedScenario: softFallbackFuelPlan.selectedCandidate.scenario,
+        targetContactPoint: softFallbackFuelPlan.selectedCandidate.targetPoint
+          ? {
+              x: Number(softFallbackFuelPlan.selectedCandidate.targetPoint.x.toFixed(1)),
+              y: Number(softFallbackFuelPlan.selectedCandidate.targetPoint.y.toFixed(1)),
+            }
+          : null,
+        returnPlan: softFallbackFuelPlan.selectedCandidate.returnPlan
+          ? {
+              type: softFallbackFuelPlan.selectedCandidate.returnPlan.returnName,
+              point: {
+                x: Number(softFallbackFuelPlan.selectedCandidate.returnPlan.point.x.toFixed(1)),
+                y: Number(softFallbackFuelPlan.selectedCandidate.returnPlan.point.y.toFixed(1)),
+              },
+              routeType: softFallbackFuelPlan.selectedCandidate.returnPlan.returnLeg?.routeType ?? null,
+            }
+          : null,
+        returnSafetyScore: Number(softFallbackFuelPlan.selectedCandidate.returnSafetyScore ?? 0),
+        rejectedScenarios: softFallbackFuelPlan.rejectedScenarios || [],
+        baseFilterHasMaterialGain: softFallbackFuelMaterialGain.hasMaterialGain,
+        rejectionReason: null,
+      };
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
       markSoftFallbackUse(INVENTORY_ITEM_TYPES.FUEL, {
         reason: "generic_soft_fallback_usage",
       });
       return true;
     } else if(inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0){
+      plannedMove.aiFuelTacticalDecision = {
+        stage: "soft_fallback",
+        selectedScenario: softFallbackFuelPlan?.selectedCandidate?.scenario ?? null,
+        targetContactPoint: null,
+        returnPlan: null,
+        returnSafetyScore: Number(softFallbackFuelPlan?.returnSafetyScore ?? 0),
+        rejectedScenarios: softFallbackFuelPlan?.rejectedScenarios || [],
+        baseFilterHasMaterialGain: softFallbackFuelMaterialGain.hasMaterialGain,
+        rejectionReason: !softFallbackFuelMaterialGain.hasMaterialGain
+          ? "base_filter_no_material_gain"
+          : "blocked_return_unreachable_or_unsafe",
+      };
       logAiDecision("fuel_saved_no_material_gain", {
         planeId: plannedMove.plane?.id ?? null,
-        reason: "generic_soft_fallback_without_new_contact",
+        reason: plannedMove.aiFuelTacticalDecision.rejectionReason,
       });
     }
   }
@@ -17802,6 +18137,18 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       afterInventoryState?.counts
     )
     : null;
+  if(plannedMove?.aiFuelTacticalDecision){
+    logAiDecision("fuel_tactical_plan_evaluated", {
+      planeId: plannedMove?.plane?.id ?? null,
+      selectedScenario: plannedMove.aiFuelTacticalDecision.selectedScenario,
+      targetContactPoint: plannedMove.aiFuelTacticalDecision.targetContactPoint,
+      returnPlan: plannedMove.aiFuelTacticalDecision.returnPlan,
+      returnSafetyScore: plannedMove.aiFuelTacticalDecision.returnSafetyScore,
+      rejectedScenarios: plannedMove.aiFuelTacticalDecision.rejectedScenarios,
+      rejectionReason: plannedMove.aiFuelTacticalDecision.rejectionReason,
+      baseFilterHasMaterialGain: plannedMove.aiFuelTacticalDecision.baseFilterHasMaterialGain,
+    });
+  }
 
   let effectiveItemUsed = itemUsed;
   if(itemUsed && consumedItemType === INVENTORY_ITEM_TYPES.DYNAMITE && aiRoundState?.dynamiteIntent){
@@ -17852,6 +18199,20 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
         reason: "item_used_but_type_not_detected",
       });
     }
+  }
+
+  if(plannedMove?.aiFuelTacticalDecision){
+    logAiDecision("fuel_tactical_plan_final", {
+      planeId: plannedMove?.plane?.id ?? null,
+      selectedScenario: plannedMove.aiFuelTacticalDecision.selectedScenario,
+      targetContactPoint: plannedMove.aiFuelTacticalDecision.targetContactPoint,
+      returnPlan: plannedMove.aiFuelTacticalDecision.returnPlan,
+      returnSafetyScore: plannedMove.aiFuelTacticalDecision.returnSafetyScore,
+      rejectedScenarios: plannedMove.aiFuelTacticalDecision.rejectedScenarios,
+      rejectionReason: plannedMove.aiFuelTacticalDecision.rejectionReason,
+      fuelApplied: effectiveItemUsed && consumedItemType === INVENTORY_ITEM_TYPES.FUEL,
+      consumedItemType: consumedItemType || null,
+    });
   }
 
   const pendingFuelTrainingAttempt = getLatestPendingAiFuelTrainingAttempt();
