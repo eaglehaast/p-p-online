@@ -17221,8 +17221,9 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     ? settings.flightRangeCells
     : 30;
   const baseFlightRange = baseFlightRangeCells * CELL_SIZE;
-  // Учитываем временный бафф топлива через getEffectiveFlightRangeCells(plane).
-  const fuelFlightRange = getEffectiveFlightRangeCells(plannedMove.plane) * CELL_SIZE;
+  // Для сравнений «без топлива / с топливом» считаем fuel-дальность принудительно,
+  // даже если бафф ещё не применён к самолёту (он ставится позже при реальном использовании предмета).
+  const fuelFlightRange = baseFlightRange * 2;
   const effectiveCellSize = typeof CELL_SIZE === "number" && Number.isFinite(CELL_SIZE) ? CELL_SIZE : 40;
   const contactTargetsForUnlock = [enemyBase];
   if(context?.shouldUseFlagsMode){
