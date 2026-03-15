@@ -21544,6 +21544,10 @@ function getFallbackAiMove(context){
       if(!enemy) continue;
 
       const idleTurns = getAiPlaneIdleTurns(plane);
+      const planeFlightProfile = getAiFlightRangeProfile(plane);
+      const fallbackSpeedPxPerSec = Number.isFinite(planeFlightProfile?.speedPxPerSec)
+        ? planeFlightProfile.speedPxPerSec
+        : null;
       const preparationMove = findSafePreparationMoveForAttack(plane, enemy, {
         goalName: dynamiteAvailable ? "prepare_dynamite_breach" : "prepare_clear_shot",
       });
@@ -21558,6 +21562,7 @@ function getFallbackAiMove(context){
           score: preparationScore,
           idleTurns,
           fallbackSafetyTier: "prepare",
+          speedPxPerSec: fallbackSpeedPxPerSec,
           ...preparationMove,
         }, context), "fallback_rotation_prepare");
         fallbackRotationCandidates.push(candidate);
@@ -21591,6 +21596,7 @@ function getFallbackAiMove(context){
         score: retreatScore,
         idleTurns,
         fallbackSafetyTier: "retreat",
+        speedPxPerSec: fallbackSpeedPxPerSec,
       }, context), "fallback_rotation_retreat");
       fallbackRotationCandidates.push(candidate);
       if(compareAiCandidateByScoreAndRotation(candidate, fallbackCandidate, ["fallback_rotation", "retreat"])){
@@ -21630,6 +21636,16 @@ function getFallbackAiMove(context){
         goalName: fallbackCandidate.goalName || null,
         moveDistance: Math.max(0, fallbackCandidate.desired || 0),
       });
+      const fallbackRangeProfile = getAiFlightRangeProfile(fallbackCandidate.plane);
+      const baseFlightRangeCells = Number.isFinite(settings?.flightRangeCells)
+        ? settings.flightRangeCells
+        : 30;
+      const fallbackBaseSpeed = (Math.max(0, baseFlightRangeCells) * CELL_SIZE) / FIELD_FLIGHT_DURATION_SEC;
+      const speedPxPerSec = Number.isFinite(fallbackCandidate?.speedPxPerSec) && fallbackCandidate.speedPxPerSec > 0
+        ? fallbackCandidate.speedPxPerSec
+        : (Number.isFinite(fallbackRangeProfile?.speedPxPerSec) && fallbackRangeProfile.speedPxPerSec > 0
+          ? fallbackRangeProfile.speedPxPerSec
+          : fallbackBaseSpeed);
 
       best = applyLossCompressionScoreAdjustments({
         plane: fallbackCandidate.plane,
