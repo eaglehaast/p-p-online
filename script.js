@@ -22732,8 +22732,38 @@ function countRouteNearbyColliders(x1, y1, x2, y2, radiusPx){
 }
 
 function planPathToPoint(plane, tx, ty, options = {}){
-  const flightDistancePx = settings.flightRangeCells * CELL_SIZE;
+  const baseFlightRangeCells = Number.isFinite(settings?.flightRangeCells)
+    ? settings.flightRangeCells
+    : 0;
+  const useFuelBoostedRange = options?.useFuelBoostedRange === true;
+  const hasFuelBuffActive = planeHasActiveTurnBuff(plane, INVENTORY_ITEM_TYPES.FUEL);
+  const shouldUseEffectiveRange = useFuelBoostedRange || hasFuelBuffActive;
+  const rangePlane = shouldUseEffectiveRange && !hasFuelBuffActive
+    ? {
+        ...plane,
+        activeTurnBuffs: {
+          ...(plane?.activeTurnBuffs && typeof plane.activeTurnBuffs === "object" ? plane.activeTurnBuffs : {}),
+          [INVENTORY_ITEM_TYPES.FUEL]: true,
+        },
+      }
+    : plane;
+  const effectiveFlightRangeCells = shouldUseEffectiveRange
+    ? getEffectiveFlightRangeCells(rangePlane)
+    : baseFlightRangeCells;
+  const flightDistancePx = effectiveFlightRangeCells * CELL_SIZE;
   const speedPxPerSec    = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
+  logAiDecision("plan_path_range_profile", {
+    planeId: plane?.id ?? null,
+    targetX: Number.isFinite(tx) ? Number(tx.toFixed(1)) : tx,
+    targetY: Number.isFinite(ty) ? Number(ty.toFixed(1)) : ty,
+    useFuelBoostedRange,
+    baseFlightRangeCells,
+    effectiveFlightRangeCells,
+    hasFuelBuffActive,
+    shouldUseEffectiveRange,
+    goalName: options?.goalName || null,
+    decisionReason: options?.decisionReason || null,
+  });
   const extendedDetourColliderThreshold = 18;
   const narrowCorridorColliderThreshold = 26;
   const narrowCorridorRouteNearbyThreshold = 5;
