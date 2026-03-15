@@ -18245,6 +18245,139 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     && plannedMove?.plane
     && Number.isFinite(plannedMove.vx)
     && Number.isFinite(plannedMove.vy)){
+    function buildFuelReplannedMove(){
+      if(typeof planPathWithSpecialRouteProbe !== "function") return null;
+
+      const plane = plannedMove?.plane;
+      if(!plane) return null;
+
+      const latestTargetEnemy = plannedMove?.targetEnemy?.id
+        ? findActualPlaneById(plannedMove.targetEnemy.id) || plannedMove.targetEnemy
+        : plannedMove?.targetEnemy || null;
+      const fallbackLandingPoint = getAiMoveLandingPoint(plannedMove);
+      const candidateTargets = [];
+
+      const tacticalFuelPoint = plannedMove?.aiFuelTacticalDecision?.targetContactPoint;
+      if(Number.isFinite(tacticalFuelPoint?.x) && Number.isFinite(tacticalFuelPoint?.y)){
+        candidateTargets.push({
+          label: "fuel_tactical_contact",
+          x: tacticalFuelPoint.x,
+          y: tacticalFuelPoint.y,
+        });
+      }
+
+      if(Number.isFinite(latestTargetEnemy?.x) && Number.isFinite(latestTargetEnemy?.y)){
+        candidateTargets.push({
+          label: "target_enemy",
+          x: latestTargetEnemy.x,
+          y: latestTargetEnemy.y,
+        });
+      }
+
+      const targetSnapshot = plannedMove?.targetEnemySnapshot;
+      if(Number.isFinite(targetSnapshot?.x) && Number.isFinite(targetSnapshot?.y)){
+        candidateTargets.push({
+          label: "target_snapshot",
+          x: targetSnapshot.x,
+          y: targetSnapshot.y,
+        });
+      }
+
+      if(Number.isFinite(fallbackLandingPoint?.x) && Number.isFinite(fallbackLandingPoint?.y)){
+        candidateTargets.push({
+          label: "original_landing",
+          x: fallbackLandingPoint.x,
+          y: fallbackLandingPoint.y,
+        });
+      }
+
+      const uniqueTargets = [];
+      const seenTargetKeys = new Set();
+      for(const target of candidateTargets){
+        const key = `${Math.round(target.x)}:${Math.round(target.y)}`;
+        if(seenTargetKeys.has(key)) continue;
+        seenTargetKeys.add(key);
+        uniqueTargets.push(target);
+      }
+
+      for(const target of uniqueTargets){
+        const replanned = planPathWithSpecialRouteProbe(plane, target.x, target.y, {
+          goalName: plannedMove?.goalName || aiRoundState?.currentGoal || "fuel_replan",
+          decisionReason: `${plannedMove?.decisionReason || "fuel_replan"}_fuel_replan`,
+          targetEnemy: latestTargetEnemy,
+          enemy: plannedMove?.enemy || latestTargetEnemy,
+          context,
+          routeClass: plannedMove?.routeClass,
+          compareLabel: [
+            "fuel_replan",
+            plannedMove?.goalName || "",
+            plannedMove?.plane?.id || "",
+            target.label,
+          ],
+          useFuelBoostedRange: true,
+        });
+
+        if(replanned && Number.isFinite(replanned.vx) && Number.isFinite(replanned.vy)){
+          return {
+            move: replanned,
+            target,
+          };
+        }
+      }
+
+      return null;
+    }
+
+    const fuelReplanResult = buildFuelReplannedMove();
+    if(fuelReplanResult?.move){
+      const originalDist = Number.isFinite(plannedMove.totalDist)
+        ? plannedMove.totalDist
+        : Math.hypot(plannedMove.vx || 0, plannedMove.vy || 0) * FIELD_FLIGHT_DURATION_SEC;
+      const replannedMove = fuelReplanResult.move;
+      const replannedLandingPoint = getAiMoveLandingPoint({
+        plane: plannedMove.plane,
+        vx: replannedMove.vx,
+        vy: replannedMove.vy,
+      });
+
+      plannedMove.vx = replannedMove.vx;
+      plannedMove.vy = replannedMove.vy;
+      plannedMove.totalDist = Number.isFinite(replannedMove.totalDist)
+        ? replannedMove.totalDist
+        : Math.hypot(replannedMove.vx, replannedMove.vy) * FIELD_FLIGHT_DURATION_SEC;
+      plannedMove.score = Number.isFinite(replannedMove.score)
+        ? replannedMove.score
+        : plannedMove.score;
+      plannedMove.routeClass = replannedMove.routeClass || plannedMove.routeClass;
+      plannedMove.routeMetrics = replannedMove.routeMetrics || plannedMove.routeMetrics;
+      plannedMove.ricochetMeta = replannedMove.ricochetMeta || plannedMove.ricochetMeta;
+      plannedMove.specialPromotionMeta = replannedMove.specialPromotionMeta || plannedMove.specialPromotionMeta;
+      plannedMove.fuelReplanned = true;
+      plannedMove.fuelReplannedTarget = {
+        source: fuelReplanResult.target?.label || null,
+        x: Number.isFinite(fuelReplanResult.target?.x) ? Number(fuelReplanResult.target.x.toFixed(1)) : null,
+        y: Number.isFinite(fuelReplanResult.target?.y) ? Number(fuelReplanResult.target.y.toFixed(1)) : null,
+      };
+      plannedMove.landingPoint = replannedLandingPoint;
+      plannedMove.aiFuelReplanMeta = {
+        originalDist: Number.isFinite(originalDist) ? Number(originalDist.toFixed(1)) : null,
+        replannedDist: Number.isFinite(plannedMove.totalDist) ? Number(plannedMove.totalDist.toFixed(1)) : null,
+        targetSource: fuelReplanResult.target?.label || null,
+      };
+
+      logAiDecision("fuel_launch_replanned", {
+        planeId: plannedMove.plane?.id ?? null,
+        sourceTarget: fuelReplanResult.target?.label || null,
+        originalDist: Number.isFinite(originalDist) ? Number(originalDist.toFixed(1)) : null,
+        replannedDist: Number.isFinite(plannedMove.totalDist) ? Number(plannedMove.totalDist.toFixed(1)) : null,
+        landingPoint: replannedLandingPoint
+          ? {
+              x: Number(replannedLandingPoint.x.toFixed(1)),
+              y: Number(replannedLandingPoint.y.toFixed(1)),
+            }
+          : null,
+      });
+    } else {
     const baseFlightRangeCells = Number.isFinite(settings?.flightRangeCells)
       ? settings.flightRangeCells
       : 30;
@@ -18260,11 +18393,13 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
 
       logAiDecision("fuel_launch_vector_scaled", {
         planeId: plannedMove.plane?.id ?? null,
+        fallbackUsed: true,
         multiplier: Number(fuelSpeedMultiplier.toFixed(3)),
         boostedFlightRangeCells: Number(boostedFlightRangeCells.toFixed(2)),
         baseFlightRangeCells: Number(baseFlightRangeCells.toFixed(2)),
         totalDist: Number(plannedMove.totalDist.toFixed(1)),
       });
+    }
     }
   }
 
