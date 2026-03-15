@@ -94,7 +94,7 @@ Fast one-line fuel injection for the opponent (works in any mode, no `#dev` need
 window.GIVE_OPPONENT_FUEL(1)
 ```
 
-This immediately adds fuel to the current turn opponent and schedules AI fuel-training refresh for the next turn.
+This immediately gives fuel to the opponent and, in computer mode, forces the AI to spend fuel on its very next turn (training override ignores normal inventory lock heuristics).
 
 If you are in `#dev` mode, `window.DEBUG_GIVE_OPPONENT_FUEL(1)` remains available as a debug alias.
 

@@ -17076,7 +17076,12 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     });
 
     if(inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0){
-      if(tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.FUEL, "blue", plannedMove.plane)){
+      const appliedByForcedTraining = applyItemToOwnPlane(
+        INVENTORY_ITEM_TYPES.FUEL,
+        "blue",
+        plannedMove.plane,
+      );
+      if(appliedByForcedTraining){
         removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
         aiRoundState.trainingForceFuelOnNextAiTurn = {
           enabled: false,
@@ -17087,6 +17092,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
           requestedAtTurn: fuelTrainingMeta.requestedAtTurn ?? null,
           source: fuelTrainingMeta.source ?? null,
           planeId: plannedMove?.plane?.id ?? null,
+          bypassedInventoryLock: allowInventoryUsage !== true,
         });
         updateAiFuelTrainingOutcome({
           usedFuel: true,
@@ -17098,10 +17104,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         return true;
       }
 
-      const skipReason = allowInventoryUsage
-        ? "apply_item_returned_false"
-        : "inventory_usage_locked";
-      consumeFuelTrainingFlag(skipReason, {
+      consumeFuelTrainingFlag("apply_item_returned_false", {
         allowInventoryUsage,
       });
     } else {
