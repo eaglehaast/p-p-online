@@ -16923,7 +16923,7 @@ function evaluateCrosshairBestUse(context, plannedMove){
   return bestScenario;
 }
 
-function evaluateFuelTacticalPlans(context, plannedMove){
+function evaluateFuelTacticalPlans(context, plannedMove, options = {}){
   const plane = plannedMove?.plane;
   const enemyBase = getBaseAnchor("green");
   const homeBase = context?.homeBase || getBaseAnchor("blue");
@@ -16934,16 +16934,19 @@ function evaluateFuelTacticalPlans(context, plannedMove){
   const baseFlightRange = Number.isFinite(baseRangeProfile?.flightDistancePx) && baseRangeProfile.flightDistancePx > 0
     ? baseRangeProfile.flightDistancePx
     : MAX_DRAG_DISTANCE;
-  const fuelRangePlane = {
-    ...plane,
-    activeTurnBuffs: {
-      ...(plane?.activeTurnBuffs || {}),
-      fuel: true,
-    },
-  };
-  const fuelRangeProfile = getAiFlightRangeProfile(fuelRangePlane);
-  const fuelFlightRange = Number.isFinite(fuelRangeProfile?.flightDistancePx) && fuelRangeProfile.flightDistancePx > 0
-    ? fuelRangeProfile.flightDistancePx
+  const evaluateWithFuel = options?.useFuel !== false;
+  const fuelRangePlane = evaluateWithFuel
+    ? {
+        ...plane,
+        activeTurnBuffs: {
+          ...(plane?.activeTurnBuffs || {}),
+          fuel: true,
+        },
+      }
+    : plane;
+  const evaluatedRangeProfile = getAiFlightRangeProfile(fuelRangePlane);
+  const flightRangeForEvaluation = Number.isFinite(evaluatedRangeProfile?.flightDistancePx) && evaluatedRangeProfile.flightDistancePx > 0
+    ? evaluatedRangeProfile.flightDistancePx
     : baseFlightRange;
   const effectiveCellSize = typeof CELL_SIZE === "number" && Number.isFinite(CELL_SIZE) ? CELL_SIZE : 40;
   const attackRangePx = typeof ATTACK_RANGE_PX === "number" && Number.isFinite(ATTACK_RANGE_PX) ? ATTACK_RANGE_PX : MAX_DRAG_DISTANCE * 0.58;
@@ -17106,7 +17109,7 @@ function evaluateFuelTacticalPlans(context, plannedMove){
       return rejected;
     }
 
-    const targetLeg = evaluateReachabilityWithRicochet(plane, candidate.targetPoint, fuelFlightRange + candidate.contactRadius);
+    const targetLeg = evaluateReachabilityWithRicochet(plane, candidate.targetPoint, flightRangeForEvaluation + candidate.contactRadius);
     if(!targetLeg.reachable){
       const rejected = {
         ...candidate,
@@ -17120,7 +17123,7 @@ function evaluateFuelTacticalPlans(context, plannedMove){
       return rejected;
     }
 
-    const remainingRange = Math.max(0, fuelFlightRange - targetLeg.distance);
+    const remainingRange = Math.max(0, flightRangeForEvaluation - targetLeg.distance);
     const returnCandidates = [
       {
         name: "home_base",
@@ -17180,6 +17183,7 @@ function evaluateFuelTacticalPlans(context, plannedMove){
     .sort((a, b) => b.totalScore - a.totalScore)[0] || null;
 
   return {
+    evaluatedWithFuel: evaluateWithFuel,
     selectedCandidate,
     candidates: evaluatedCandidates,
     rejectedScenarios,
@@ -17328,7 +17332,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     });
   }
 
-  function evaluateFuelMaterialGain(enemyFlagAnchor){
+  function evaluateFuelMaterialGain(enemyFlagAnchor, tacticalContext = {}){
+    const FUEL_SAFETY_GAIN_DELTA_MIN = 0.12;
     const contactTargets = [
       {
         name: "enemy_base",
@@ -17362,10 +17367,24 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       });
 
     const newReachableTarget = scoredTargets.find((entry) => entry.reachableWithFuel && !entry.reachableWithoutFuel) || null;
+    const fuelSelectedCandidate = tacticalContext?.fuelTacticalPlans?.selectedCandidate || null;
+    const baseSelectedCandidate = tacticalContext?.baseTacticalPlans?.selectedCandidate || null;
+    const safetyGainOnSameObjective = Boolean(
+      fuelSelectedCandidate
+      && baseSelectedCandidate
+      && fuelSelectedCandidate.targetName === baseSelectedCandidate.targetName
+      && (fuelSelectedCandidate.returnSafetyScore - baseSelectedCandidate.returnSafetyScore) >= FUEL_SAFETY_GAIN_DELTA_MIN,
+    );
 
     return {
-      hasMaterialGain: Boolean(newReachableTarget),
+      hasMaterialGain: Boolean(newReachableTarget) || safetyGainOnSameObjective,
+      hasNewReachableTarget: Boolean(newReachableTarget),
+      hasSafetyGainOnSameObjective: safetyGainOnSameObjective,
       newReachableTarget,
+      safetyScoreDeltaForSameObjective: fuelSelectedCandidate && baseSelectedCandidate
+        && fuelSelectedCandidate.targetName === baseSelectedCandidate.targetName
+        ? Number((fuelSelectedCandidate.returnSafetyScore - baseSelectedCandidate.returnSafetyScore).toFixed(3))
+        : 0,
       scoredTargets,
     };
   }
@@ -17445,8 +17464,21 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
   if(inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0){
     const enemyFlag = context?.shouldUseFlagsMode ? getAvailableFlagsByColor("green")[0] : null;
     const enemyFlagAnchor = enemyFlag ? getFlagAnchor(enemyFlag) : null;
-    const fuelMaterialGain = evaluateFuelMaterialGain(enemyFlagAnchor);
-    const fuelTacticalPlans = evaluateFuelTacticalPlans(context, plannedMove);
+    const baseTacticalPlans = evaluateFuelTacticalPlans(context, plannedMove, { useFuel: false });
+    const fuelTacticalPlans = evaluateFuelTacticalPlans(context, plannedMove, { useFuel: true });
+    const fuelMaterialGain = evaluateFuelMaterialGain(enemyFlagAnchor, {
+      fuelTacticalPlans,
+      baseTacticalPlans,
+    });
+    const FUEL_RETURN_SAFETY_MIN_THRESHOLD = 0.55;
+    const FUEL_RETURN_SAFETY_DELTA_MIN = 0.12;
+    const selectedFuelCandidate = fuelTacticalPlans?.selectedCandidate || null;
+    const baseReturnSafetyScore = Number(baseTacticalPlans?.returnSafetyScore ?? 0);
+    const fuelReturnSafetyScore = Number(selectedFuelCandidate?.returnSafetyScore ?? fuelTacticalPlans?.returnSafetyScore ?? 0);
+    const hasFuelSafetyThreshold = Boolean(selectedFuelCandidate) && fuelReturnSafetyScore >= FUEL_RETURN_SAFETY_MIN_THRESHOLD;
+    const hasFuelSafetyDelta = Boolean(selectedFuelCandidate)
+      && (fuelReturnSafetyScore - baseReturnSafetyScore) >= FUEL_RETURN_SAFETY_DELTA_MIN;
+    const shouldTryFuelForSafety = Boolean(selectedFuelCandidate) && (hasFuelSafetyThreshold || hasFuelSafetyDelta);
     plannedMove.aiFuelTacticalDecision = {
       stage: "primary",
       selectedScenario: fuelTacticalPlans?.selectedCandidate?.scenario ?? null,
@@ -17467,6 +17499,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
           }
         : null,
       returnSafetyScore: Number(fuelTacticalPlans?.returnSafetyScore ?? 0),
+      baseReturnSafetyScore,
       rejectedScenarios: fuelTacticalPlans?.rejectedScenarios || [],
       baseFilterHasMaterialGain: fuelMaterialGain.hasMaterialGain,
       rejectionReason: null,
@@ -17486,16 +17519,20 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       || shouldUseFuelForAttackCommit
       || (riskProfile === "comeback" && moveDistance > baseFlightRange * 0.55);
     const shouldUseFuelBySoftFallback = !shouldBoostRange && softFallbackReady && moderateObjective;
-    const shouldTryFuelNow = shouldBoostRange || shouldUseFuelBySoftFallback;
+    const shouldTryFuelNow = shouldBoostRange || shouldUseFuelBySoftFallback || shouldTryFuelForSafety;
     if(shouldTryFuelNow && !fuelMaterialGain.hasMaterialGain){
-      plannedMove.aiFuelTacticalDecision.rejectionReason = "base_filter_no_material_gain";
+      plannedMove.aiFuelTacticalDecision.rejectionReason = selectedFuelCandidate
+        ? "base_filter_no_safety_gain"
+        : "base_filter_no_new_target";
       logAiDecision("fuel_saved_no_material_gain", {
         planeId: plannedMove.plane?.id ?? null,
-        reason: shouldUseFuelBySoftFallback ? "soft_fallback_without_new_contact" : "boost_without_new_contact",
+        reason: plannedMove.aiFuelTacticalDecision.rejectionReason,
         riskProfile,
         moveDistance: Number(moveDistance.toFixed(1)),
         attackGoal,
         candidateTarget: null,
+        fuelReturnSafetyScore: Number(fuelReturnSafetyScore.toFixed(3)),
+        baseReturnSafetyScore: Number(baseReturnSafetyScore.toFixed(3)),
       });
     }
 
@@ -17762,8 +17799,12 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       return true;
     }
 
-    const softFallbackFuelMaterialGain = evaluateFuelMaterialGain(null);
-    const softFallbackFuelPlan = evaluateFuelTacticalPlans(context, plannedMove);
+    const softFallbackBaseFuelPlan = evaluateFuelTacticalPlans(context, plannedMove, { useFuel: false });
+    const softFallbackFuelPlan = evaluateFuelTacticalPlans(context, plannedMove, { useFuel: true });
+    const softFallbackFuelMaterialGain = evaluateFuelMaterialGain(null, {
+      fuelTacticalPlans: softFallbackFuelPlan,
+      baseTacticalPlans: softFallbackBaseFuelPlan,
+    });
     if(inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0
       && softFallbackFuelMaterialGain.hasMaterialGain
       && softFallbackFuelPlan.selectedCandidate
@@ -17807,7 +17848,9 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         rejectedScenarios: softFallbackFuelPlan?.rejectedScenarios || [],
         baseFilterHasMaterialGain: softFallbackFuelMaterialGain.hasMaterialGain,
         rejectionReason: !softFallbackFuelMaterialGain.hasMaterialGain
-          ? "base_filter_no_material_gain"
+          ? (softFallbackFuelPlan?.selectedCandidate
+              ? "base_filter_no_safety_gain"
+              : "base_filter_no_new_target")
           : "blocked_return_unreachable_or_unsafe",
       };
       logAiDecision("fuel_saved_no_material_gain", {
