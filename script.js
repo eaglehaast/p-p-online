@@ -16930,8 +16930,21 @@ function evaluateFuelTacticalPlans(context, plannedMove){
   const priorityEnemy = getBluePriorityEnemy(context);
   const enemyFlag = context?.shouldUseFlagsMode ? getAvailableFlagsByColor("green")[0] : null;
   const enemyFlagAnchor = enemyFlag ? getFlagAnchor(enemyFlag) : null;
-  const baseFlightRange = MAX_DRAG_DISTANCE;
-  const fuelFlightRange = baseFlightRange * 2;
+  const baseRangeProfile = getAiFlightRangeProfile(plane);
+  const baseFlightRange = Number.isFinite(baseRangeProfile?.flightDistancePx) && baseRangeProfile.flightDistancePx > 0
+    ? baseRangeProfile.flightDistancePx
+    : MAX_DRAG_DISTANCE;
+  const fuelRangePlane = {
+    ...plane,
+    activeTurnBuffs: {
+      ...(plane?.activeTurnBuffs || {}),
+      fuel: true,
+    },
+  };
+  const fuelRangeProfile = getAiFlightRangeProfile(fuelRangePlane);
+  const fuelFlightRange = Number.isFinite(fuelRangeProfile?.flightDistancePx) && fuelRangeProfile.flightDistancePx > 0
+    ? fuelRangeProfile.flightDistancePx
+    : baseFlightRange;
   const effectiveCellSize = typeof CELL_SIZE === "number" && Number.isFinite(CELL_SIZE) ? CELL_SIZE : 40;
   const attackRangePx = typeof ATTACK_RANGE_PX === "number" && Number.isFinite(ATTACK_RANGE_PX) ? ATTACK_RANGE_PX : MAX_DRAG_DISTANCE * 0.58;
 
