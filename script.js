@@ -2612,6 +2612,20 @@ function getEffectiveFlightRangeCells(plane){
   return baseRange;
 }
 
+function getAiFlightRangeProfile(plane){
+  const effectiveFlightRangeCellsRaw = getEffectiveFlightRangeCells(plane);
+  const effectiveFlightRangeCells = Number.isFinite(effectiveFlightRangeCellsRaw)
+    ? Math.max(0, effectiveFlightRangeCellsRaw)
+    : 0;
+  const flightDistancePx = effectiveFlightRangeCells * CELL_SIZE;
+  const speedPxPerSec = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
+  return {
+    effectiveFlightRangeCells,
+    flightDistancePx,
+    speedPxPerSec,
+  };
+}
+
 function getPendingInventoryTargetPlaneAt(x, y){
   if(!pendingInventoryUse) return null;
   const currentColor = turnColors[turnIndex];
@@ -20969,19 +20983,25 @@ function getFallbackAiMove(context){
         classScoreBreakdown: finisherClassMeta.classScoreBreakdown,
         selectedClass: "direct",
       }, context);
+      const directFinisherRangeProfile = getAiFlightRangeProfile(directFinisherMove.plane);
       logAiDecision("direct_finisher", {
         source: "fallback",
         planeId: directFinisherMove.plane?.id ?? null,
         enemyId: directFinisherMove.enemy?.id ?? null,
+        effectiveFlightRangeCells: directFinisherRangeProfile.effectiveFlightRangeCells,
+        effectiveFlightDistancePx: Number(directFinisherRangeProfile.flightDistancePx.toFixed(1)),
         distance: Number((directFinisherMove.totalDist || 0).toFixed(1)),
         reason: "direct_finisher",
         classScoreBreakdown: finisherClassMeta.classScoreBreakdown,
       });
     }
+    const directFinisherRangeProfile = getAiFlightRangeProfile(directFinisherMove.plane);
     logAiDecision("direct_finisher_rejected_in_fallback", {
       source: "fallback",
       planeId: directFinisherMove.plane?.id ?? null,
       enemyId: directFinisherMove.enemy?.id ?? null,
+      effectiveFlightRangeCells: directFinisherRangeProfile.effectiveFlightRangeCells,
+      effectiveFlightDistancePx: Number(directFinisherRangeProfile.flightDistancePx.toFixed(1)),
       distance: Number((directFinisherMove.totalDist || 0).toFixed(1)),
       quality: Number(directFinisherQuality.toFixed(3)),
       threshold: AI_FALLBACK_DIRECT_QUALITY_MIN,
@@ -20989,8 +21009,6 @@ function getFallbackAiMove(context){
     });
   }
 
-  const flightDistancePx = settings.flightRangeCells * CELL_SIZE;
-  const speedPxPerSec = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
   let best = null;
   let bestPreparation = null;
   let bestPreparationScore = Number.POSITIVE_INFINITY;
@@ -21000,6 +21018,9 @@ function getFallbackAiMove(context){
 
   for(const plane of aiPlanes){
     if(flyingPoints.some(fp=>fp.plane===plane)) continue;
+    const planeFlightProfile = getAiFlightRangeProfile(plane);
+    const speedPxPerSec = planeFlightProfile.speedPxPerSec;
+    if(!Number.isFinite(speedPxPerSec) || speedPxPerSec <= 0) continue;
 
     for(const enemy of targetEnemies){
       if(isPathClear(plane.x, plane.y, enemy.x, enemy.y)){
@@ -21055,6 +21076,8 @@ function getFallbackAiMove(context){
               source: "fallback_direct_attack",
               planeId: plane.id,
               enemyId: enemy.id,
+              effectiveFlightRangeCells: planeFlightProfile.effectiveFlightRangeCells,
+              effectiveFlightDistancePx: Number(planeFlightProfile.flightDistancePx.toFixed(1)),
               distance: Number(directDist.toFixed(1)),
               initialDeviation: Number(dev.toFixed(4)),
               reason: "blocked_after_deviation",
@@ -21067,6 +21090,8 @@ function getFallbackAiMove(context){
               source: "fallback_direct_attack",
               planeId: plane.id,
               enemyId: enemy.id,
+              effectiveFlightRangeCells: planeFlightProfile.effectiveFlightRangeCells,
+              effectiveFlightDistancePx: Number(planeFlightProfile.flightDistancePx.toFixed(1)),
               distance: Number(directDist.toFixed(1)),
               initialDeviation: Number(dev.toFixed(4)),
               adjustedDeviation: Number(selectedDev.toFixed(4)),
@@ -21107,6 +21132,8 @@ function getFallbackAiMove(context){
           logAiDecision("fallback_direct_attack_immediate_response_penalty", {
             planeId: plane?.id ?? null,
             enemyId: enemy?.id ?? null,
+            effectiveFlightRangeCells: planeFlightProfile.effectiveFlightRangeCells,
+            effectiveFlightDistancePx: Number(planeFlightProfile.flightDistancePx.toFixed(1)),
             threatCount: immediateThreatMeta.count,
             nearestThreatDist: Number.isFinite(immediateThreatMeta.nearestDist)
               ? Number(immediateThreatMeta.nearestDist.toFixed(1))
@@ -21160,6 +21187,8 @@ function getFallbackAiMove(context){
             source: "fallback_direct_attack",
             planeId: plane.id,
             enemyId: enemy.id,
+            effectiveFlightRangeCells: planeFlightProfile.effectiveFlightRangeCells,
+            effectiveFlightDistancePx: Number(planeFlightProfile.flightDistancePx.toFixed(1)),
             riskProfile,
             targetPriority,
             distance: Number(directDist.toFixed(1)),
@@ -21167,6 +21196,10 @@ function getFallbackAiMove(context){
           });
           if(longShotPenalty >= AI_LONG_SHOT_LARGE_PENALTY_LOG_THRESHOLD){
             logAiDecision("long_shot_penalty_applied", {
+              planeId: plane.id,
+              enemyId: enemy.id,
+              effectiveFlightRangeCells: planeFlightProfile.effectiveFlightRangeCells,
+              effectiveFlightDistancePx: Number(planeFlightProfile.flightDistancePx.toFixed(1)),
               distanceToTarget: Number(directDist.toFixed(1)),
               penalty: Number(longShotPenalty.toFixed(3)),
               targetPriority,
@@ -21213,6 +21246,8 @@ function getFallbackAiMove(context){
           candidateType: "direct",
           planeId: plane.id,
           enemyId: enemy.id,
+          effectiveFlightRangeCells: planeFlightProfile.effectiveFlightRangeCells,
+          effectiveFlightDistancePx: Number(planeFlightProfile.flightDistancePx.toFixed(1)),
           secondaryEnemyId: directMultiKill.secondaryEnemyId,
           multiKillPotential: directMultiKill.multiKillPotential,
           multiKillBonusApplied: Number(directScoreMeta.multiKillBonusApplied.toFixed(3)),
@@ -21322,6 +21357,8 @@ function getFallbackAiMove(context){
             reasonCode,
             planeId: plane.id,
             enemyId: enemy.id,
+            effectiveFlightRangeCells: planeFlightProfile.effectiveFlightRangeCells,
+            effectiveFlightDistancePx: Number(planeFlightProfile.flightDistancePx.toFixed(1)),
             mirrorBonus: Number(mirrorBonus.toFixed(3)),
             blockedDirectBonus: Number(blockedDirectBonus.toFixed(3)),
             pressureBonus: Number(pressureBonus.toFixed(3)),
@@ -21372,6 +21409,8 @@ function getFallbackAiMove(context){
             candidateType: "mirror",
             planeId: plane.id,
             enemyId: enemy.id,
+            effectiveFlightRangeCells: planeFlightProfile.effectiveFlightRangeCells,
+            effectiveFlightDistancePx: Number(planeFlightProfile.flightDistancePx.toFixed(1)),
             secondaryEnemyId: mirrorMultiKill.secondaryEnemyId,
             multiKillPotential: mirrorMultiKill.multiKillPotential,
             multiKillBonusApplied: Number(mirrorScoreMeta.multiKillBonusApplied.toFixed(3)),
@@ -21590,8 +21629,6 @@ function getGuaranteedAnyLegalLaunch(modeContext){
   );
   if (!fallbackAiPlanes.length) return null;
 
-  const flightDistancePx = settings.flightRangeCells * CELL_SIZE;
-  const speedPxPerSec = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
   const strengthScales = [1, 0.78, 0.58];
   const angleSet = [
     0,
@@ -21609,6 +21646,10 @@ function getGuaranteedAnyLegalLaunch(modeContext){
   ];
 
   for (const plane of fallbackAiPlanes) {
+    const planeFlightProfile = getAiFlightRangeProfile(plane);
+    const speedPxPerSec = planeFlightProfile.speedPxPerSec;
+    if(!Number.isFinite(speedPxPerSec) || speedPxPerSec <= 0) continue;
+
     for (const scale of strengthScales) {
       for (const angle of angleSet) {
         const vx = Math.cos(angle) * scale * speedPxPerSec;
@@ -21624,6 +21665,8 @@ function getGuaranteedAnyLegalLaunch(modeContext){
           vx,
           vy,
           totalDist: Math.hypot(landingX - plane.x, landingY - plane.y),
+          effectiveFlightRangeCells: planeFlightProfile.effectiveFlightRangeCells,
+          effectiveFlightDistancePx: Number(planeFlightProfile.flightDistancePx.toFixed(1)),
           goalName: "guaranteed_any_legal_launch",
           decisionReason: "super_reserve_guaranteed_legal_launch",
         };
@@ -21680,10 +21723,6 @@ function getForcedProgressLaunchMove(modeContext){
   }
   if(safeUsefulMove) return safeUsefulMove;
 
-  const flightDistancePx = settings.flightRangeCells * CELL_SIZE;
-  const speedPxPerSec = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
-  if(!Number.isFinite(speedPxPerSec) || speedPxPerSec <= 0) return null;
-
   const preferredAngles = [
     Math.PI / 2,
     Math.PI / 3,
@@ -21695,6 +21734,10 @@ function getForcedProgressLaunchMove(modeContext){
   const safeScale = 0.22;
 
   for(const plane of fallbackAiPlanes){
+    const planeFlightProfile = getAiFlightRangeProfile(plane);
+    const speedPxPerSec = planeFlightProfile.speedPxPerSec;
+    if(!Number.isFinite(speedPxPerSec) || speedPxPerSec <= 0) continue;
+
     for(const angle of preferredAngles){
       const vx = Math.cos(angle) * safeScale * speedPxPerSec;
       const vy = Math.sin(angle) * safeScale * speedPxPerSec;
@@ -21704,6 +21747,8 @@ function getForcedProgressLaunchMove(modeContext){
         vx,
         vy,
         totalDist: Math.hypot(vx, vy) * FIELD_FLIGHT_DURATION_SEC,
+        effectiveFlightRangeCells: planeFlightProfile.effectiveFlightRangeCells,
+        effectiveFlightDistancePx: Number(planeFlightProfile.flightDistancePx.toFixed(1)),
         goalName: "forced_progress_launch",
         decisionReason: "forced_progress_launch",
       };
@@ -22403,6 +22448,8 @@ function doComputerMove(){
     });
     logAiDecision("super_reserve_move", {
       planeId: guaranteedLaunchMove.plane?.id ?? null,
+      effectiveFlightRangeCells: guaranteedLaunchMove.effectiveFlightRangeCells ?? null,
+      effectiveFlightDistancePx: guaranteedLaunchMove.effectiveFlightDistancePx ?? null,
       reason: guaranteedLaunchMove.decisionReason || "super_reserve_guaranteed_legal_launch",
     });
     issueAIMoveWithInventoryUsage(modeContext, {
@@ -22438,6 +22485,8 @@ function doComputerMove(){
     });
     logAiDecision("forced_progress_move", {
       planeId: forcedProgressMove.plane?.id ?? null,
+      effectiveFlightRangeCells: forcedProgressMove.effectiveFlightRangeCells ?? null,
+      effectiveFlightDistancePx: forcedProgressMove.effectiveFlightDistancePx ?? null,
       reason: forcedProgressMove.decisionReason || "forced_progress_launch",
     });
     issueAIMoveWithInventoryUsage(modeContext, {
@@ -22747,11 +22796,11 @@ function planPathToPoint(plane, tx, ty, options = {}){
         },
       }
     : plane;
-  const effectiveFlightRangeCells = shouldUseEffectiveRange
-    ? getEffectiveFlightRangeCells(rangePlane)
-    : baseFlightRangeCells;
-  const flightDistancePx = effectiveFlightRangeCells * CELL_SIZE;
-  const speedPxPerSec    = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
+  const rangeProfilePlane = shouldUseEffectiveRange ? rangePlane : plane;
+  const rangeProfile = getAiFlightRangeProfile(rangeProfilePlane);
+  const effectiveFlightRangeCells = rangeProfile.effectiveFlightRangeCells;
+  const flightDistancePx = rangeProfile.flightDistancePx;
+  const speedPxPerSec    = rangeProfile.speedPxPerSec;
   logAiDecision("plan_path_range_profile", {
     planeId: plane?.id ?? null,
     targetX: Number.isFinite(tx) ? Number(tx.toFixed(1)) : tx,
