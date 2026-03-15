@@ -18234,6 +18234,34 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     });
   }
 
+  if(effectiveItemUsed
+    && consumedItemType === INVENTORY_ITEM_TYPES.FUEL
+    && plannedMove?.plane
+    && Number.isFinite(plannedMove.vx)
+    && Number.isFinite(plannedMove.vy)){
+    const baseFlightRangeCells = Number.isFinite(settings?.flightRangeCells)
+      ? settings.flightRangeCells
+      : 30;
+    const boostedFlightRangeCells = getEffectiveFlightRangeCells(plannedMove.plane);
+    const fuelSpeedMultiplier = baseFlightRangeCells > 0
+      ? boostedFlightRangeCells / baseFlightRangeCells
+      : 1;
+
+    if(Number.isFinite(fuelSpeedMultiplier) && fuelSpeedMultiplier > 1){
+      plannedMove.vx *= fuelSpeedMultiplier;
+      plannedMove.vy *= fuelSpeedMultiplier;
+      plannedMove.totalDist = Math.hypot(plannedMove.vx, plannedMove.vy) * FIELD_FLIGHT_DURATION_SEC;
+
+      logAiDecision("fuel_launch_vector_scaled", {
+        planeId: plannedMove.plane?.id ?? null,
+        multiplier: Number(fuelSpeedMultiplier.toFixed(3)),
+        boostedFlightRangeCells: Number(boostedFlightRangeCells.toFixed(2)),
+        baseFlightRangeCells: Number(baseFlightRangeCells.toFixed(2)),
+        totalDist: Number(plannedMove.totalDist.toFixed(1)),
+      });
+    }
+  }
+
   registerAiInventoryUsageAfterMove(effectiveItemUsed);
 
   if(effectiveItemUsed === true){
