@@ -18551,28 +18551,69 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
           : null,
       });
     } else {
-    const baseFlightRangeCells = Number.isFinite(settings?.flightRangeCells)
-      ? settings.flightRangeCells
-      : 30;
-    const boostedFlightRangeCells = getEffectiveFlightRangeCells(plannedMove.plane);
-    const fuelSpeedMultiplier = baseFlightRangeCells > 0
-      ? boostedFlightRangeCells / baseFlightRangeCells
-      : 1;
-
-    if(Number.isFinite(fuelSpeedMultiplier) && fuelSpeedMultiplier > 1){
-      plannedMove.vx *= fuelSpeedMultiplier;
-      plannedMove.vy *= fuelSpeedMultiplier;
-      plannedMove.totalDist = Math.hypot(plannedMove.vx, plannedMove.vy) * FIELD_FLIGHT_DURATION_SEC;
-
-      logAiDecision("fuel_launch_vector_scaled", {
-        planeId: plannedMove.plane?.id ?? null,
-        fallbackUsed: true,
-        multiplier: Number(fuelSpeedMultiplier.toFixed(3)),
-        boostedFlightRangeCells: Number(boostedFlightRangeCells.toFixed(2)),
-        baseFlightRangeCells: Number(baseFlightRangeCells.toFixed(2)),
-        totalDist: Number(plannedMove.totalDist.toFixed(1)),
+      const baseFlightRangeCells = Number.isFinite(settings?.flightRangeCells)
+        ? settings.flightRangeCells
+        : 30;
+      const boostedFlightRangeCells = getEffectiveFlightRangeCells(plannedMove.plane);
+      const fuelSpeedMultiplier = baseFlightRangeCells > 0
+        ? boostedFlightRangeCells / baseFlightRangeCells
+        : 1;
+      const canBuildScaledVector = Number.isFinite(fuelSpeedMultiplier);
+      const scaledVx = canBuildScaledVector ? plannedMove.vx * fuelSpeedMultiplier : plannedMove.vx;
+      const scaledVy = canBuildScaledVector ? plannedMove.vy * fuelSpeedMultiplier : plannedMove.vy;
+      const scaledTotalDist = Math.hypot(scaledVx || 0, scaledVy || 0) * FIELD_FLIGHT_DURATION_SEC;
+      const scaledLandingPoint = getAiMoveLandingPoint({
+        plane: plannedMove.plane,
+        vx: scaledVx,
+        vy: scaledVy,
       });
-    }
+      const actualLandingPoint = getAiMoveLandingPoint({
+        plane: plannedMove.plane,
+        vx: plannedMove.vx,
+        vy: plannedMove.vy,
+      });
+
+      logAiDecision("fuel_replan_missing_scale_blocked", {
+        planeId: plannedMove.plane?.id ?? null,
+        fallbackUsed: false,
+        multiplier: Number.isFinite(fuelSpeedMultiplier) ? Number(fuelSpeedMultiplier.toFixed(3)) : null,
+        boostedFlightRangeCells: Number.isFinite(boostedFlightRangeCells)
+          ? Number(boostedFlightRangeCells.toFixed(2))
+          : null,
+        baseFlightRangeCells: Number.isFinite(baseFlightRangeCells)
+          ? Number(baseFlightRangeCells.toFixed(2))
+          : null,
+        wouldScale: canBuildScaledVector,
+        wouldBeAfterScale: {
+          vx: Number.isFinite(scaledVx) ? Number(scaledVx.toFixed(4)) : null,
+          vy: Number.isFinite(scaledVy) ? Number(scaledVy.toFixed(4)) : null,
+          totalDist: Number.isFinite(scaledTotalDist) ? Number(scaledTotalDist.toFixed(1)) : null,
+          landingPoint: scaledLandingPoint
+            ? {
+                x: Number(scaledLandingPoint.x.toFixed(1)),
+                y: Number(scaledLandingPoint.y.toFixed(1)),
+              }
+            : null,
+        },
+        executedWithoutScale: {
+          vx: Number.isFinite(plannedMove.vx) ? Number(plannedMove.vx.toFixed(4)) : null,
+          vy: Number.isFinite(plannedMove.vy) ? Number(plannedMove.vy.toFixed(4)) : null,
+          totalDist: Number.isFinite(plannedMove.totalDist)
+            ? Number(plannedMove.totalDist.toFixed(1))
+            : Number((Math.hypot(plannedMove.vx || 0, plannedMove.vy || 0) * FIELD_FLIGHT_DURATION_SEC).toFixed(1)),
+          landingPoint: actualLandingPoint
+            ? {
+                x: Number(actualLandingPoint.x.toFixed(1)),
+                y: Number(actualLandingPoint.y.toFixed(1)),
+              }
+            : null,
+        },
+      });
+
+      recoverFuelConsumptionAfterRejectedPlan({
+        reason: "fuel_replan_missing_scale_blocked",
+      });
+      effectiveItemUsed = false;
     }
   }
 
