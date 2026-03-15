@@ -4427,21 +4427,30 @@ function addItemToInventory(color, item){
   syncInventoryUI(color);
 }
 
+function getCurrentTurnOpponentColor(){
+  const currentTurnColor = turnColors?.[turnIndex] ?? "blue";
+  return getOpponentColor(currentTurnColor) ?? "green";
+}
+
 function giveItem(itemId, qty = 1, opts = { silent: false }){
   if(!itemId) return;
   const itemDef = INVENTORY_ITEMS.find((item) => item?.type === itemId) ?? null;
   if(!itemDef) return;
   const safeQty = Number.isFinite(qty) ? Math.max(0, Math.floor(qty)) : 0;
   if(safeQty === 0) return;
-  const color = turnColors?.[turnIndex] ?? "blue";
-  if(!inventoryState[color]){
-    inventoryState[color] = [];
+  const fallbackColor = turnColors?.[turnIndex] ?? "blue";
+  const targetColor = opts?.targetColor === "blue" || opts?.targetColor === "green"
+    ? opts.targetColor
+    : fallbackColor;
+  if(!inventoryState[targetColor]){
+    inventoryState[targetColor] = [];
   }
   for(let i = 0; i < safeQty; i += 1){
-    inventoryState[color].push(itemDef);
+    inventoryState[targetColor].push(itemDef);
   }
+  syncInventoryUI(targetColor);
   if(!opts?.silent){
-    syncInventoryUI(color);
+    console.log(`[debug-inventory] gave ${safeQty} x ${itemDef.type} to ${targetColor}`);
   }
 }
 
@@ -4477,6 +4486,8 @@ if (DEBUG_CHEATS && typeof window !== "undefined") {
   window.DEBUG_BANNER_NEXT_ROUND = () => showRoundBanner("NEXT ROUND");
   window.DEBUG_BANNER_CLEAR = () => clearRoundBanner();
   window.DEBUG_GIVE_ITEM = (itemId, qty = 1) => giveItem(itemId, qty);
+  window.DEBUG_GIVE_OPPONENT_FUEL = (qty = 1) =>
+    giveItem(INVENTORY_ITEM_TYPES.FUEL, qty, { targetColor: getCurrentTurnOpponentColor() });
   window.DEBUG_CLEAR_INVENTORY = () => resetInventoryState();
 }
 
