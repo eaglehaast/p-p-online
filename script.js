@@ -28088,11 +28088,6 @@ function createExplosionImageEntry(explosionState, img) {
   image.height = EXPLOSION_DRAW_SIZE;
   image.className = 'fx-explosion-img';
   image.src = resolvedSrc;
-  if (image.src.includes('gs_blue')) {
-    image.style.filter = 'contrast(1.5) saturate(1.35) brightness(0.8)';
-  } else {
-    image.style.filter = '';
-  }
 
   container.appendChild(image);
   host.appendChild(container);
@@ -28259,11 +28254,6 @@ function updateAndDrawExplosions(ctx, now) {
         const frameImg = explosion.sequenceFrames[frameIndex];
         if (frameImg?.src && explosion.domEntry.img.src !== frameImg.src) {
           explosion.domEntry.img.src = frameImg.src;
-          if (explosion.domEntry.img.src.includes('gs_blue')) {
-            explosion.domEntry.img.style.filter = 'contrast(1.5) saturate(1.35) brightness(0.8)';
-          } else {
-            explosion.domEntry.img.style.filter = '';
-          }
         }
         registerExplosionDisplayedFrame(explosion, frameIndex);
 
