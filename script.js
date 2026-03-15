@@ -17170,8 +17170,13 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
   const softFallbackReady = aiRoundState.inventoryIdleTurns >= AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD
     && aiRoundState.inventorySoftFallbackCooldown <= 0;
   const attackRangePx = typeof ATTACK_RANGE_PX === "number" && Number.isFinite(ATTACK_RANGE_PX) ? ATTACK_RANGE_PX : MAX_DRAG_DISTANCE * 0.58;
-  const baseFlightRange = MAX_DRAG_DISTANCE;
-  const fuelFlightRange = baseFlightRange * 2;
+  // Все стратегические дистанции ниже считаем в пикселях полёта (те же единицы, что у реального запуска самолёта).
+  const baseFlightRangeCells = Number.isFinite(settings?.flightRangeCells)
+    ? settings.flightRangeCells
+    : 30;
+  const baseFlightRange = baseFlightRangeCells * CELL_SIZE;
+  // Учитываем временный бафф топлива через getEffectiveFlightRangeCells(plane).
+  const fuelFlightRange = getEffectiveFlightRangeCells(plannedMove.plane) * CELL_SIZE;
   const effectiveCellSize = typeof CELL_SIZE === "number" && Number.isFinite(CELL_SIZE) ? CELL_SIZE : 40;
   const contactTargetsForUnlock = [enemyBase];
   if(context?.shouldUseFlagsMode){
@@ -17395,19 +17400,20 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       baseFilterHasMaterialGain: fuelMaterialGain.hasMaterialGain,
       rejectionReason: null,
     };
-    const farObjective = (enemyFlagAnchor && dist(plannedMove.plane, enemyFlagAnchor) > MAX_DRAG_DISTANCE * 0.75)
-      || (priorityEnemy && dist(plannedMove.plane, priorityEnemy) > MAX_DRAG_DISTANCE * 0.75)
-      || moveDistance > MAX_DRAG_DISTANCE * 0.75;
-    const moderateObjective = (enemyFlagAnchor && dist(plannedMove.plane, enemyFlagAnchor) > MAX_DRAG_DISTANCE * 0.65)
-      || (priorityEnemy && dist(plannedMove.plane, priorityEnemy) > MAX_DRAG_DISTANCE * 0.65)
-      || moveDistance > MAX_DRAG_DISTANCE * 0.65;
+    // Для решения "использовать ли топливо" сравниваем дистанции с реальной дальностью полёта, а не с длиной натяжки ручки.
+    const farObjective = (enemyFlagAnchor && dist(plannedMove.plane, enemyFlagAnchor) > baseFlightRange * 0.75)
+      || (priorityEnemy && dist(plannedMove.plane, priorityEnemy) > baseFlightRange * 0.75)
+      || moveDistance > baseFlightRange * 0.75;
+    const moderateObjective = (enemyFlagAnchor && dist(plannedMove.plane, enemyFlagAnchor) > baseFlightRange * 0.65)
+      || (priorityEnemy && dist(plannedMove.plane, priorityEnemy) > baseFlightRange * 0.65)
+      || moveDistance > baseFlightRange * 0.65;
     const attackGoal = aiRoundState?.currentGoal === "direct_finisher" || plannedMove?.goalName === "direct_finisher";
     const shouldUseFuelForAttackCommit = attackGoal
       && hasPriorityEnemyPathClear
-      && priorityEnemyDistance > MAX_DRAG_DISTANCE * 0.55;
+      && priorityEnemyDistance > baseFlightRange * 0.55;
     const shouldBoostRange = farObjective
       || shouldUseFuelForAttackCommit
-      || (riskProfile === "comeback" && moveDistance > MAX_DRAG_DISTANCE * 0.55);
+      || (riskProfile === "comeback" && moveDistance > baseFlightRange * 0.55);
     const shouldUseFuelBySoftFallback = !shouldBoostRange && softFallbackReady && moderateObjective;
     const shouldTryFuelNow = shouldBoostRange || shouldUseFuelBySoftFallback;
     if(shouldTryFuelNow && !fuelMaterialGain.hasMaterialGain){
