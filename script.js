@@ -1133,6 +1133,8 @@ const inventoryState = {
   green: [],
 };
 
+let inventoryTrainingRequestState = null;
+
 const playerInventoryEffects = {
   blue: {
     invisibilityQueued: false,
@@ -2394,6 +2396,7 @@ function removeItemFromInventory(color, type){
   if(index < 0) return;
   items.splice(index, 1);
   syncInventoryUI(color);
+  completeInventoryTrainingRequestIfMatched(color, type);
 }
 
 function queueInvisibilityEffectForPlayer(color){
@@ -4454,10 +4457,55 @@ function giveItem(itemId, qty = 1, opts = { silent: false }){
   }
 }
 
+function markInventoryTrainingRequestExpired(reason = "expired"){
+  if(!inventoryTrainingRequestState) return;
+  if(inventoryTrainingRequestState.status !== "pending") return;
+  inventoryTrainingRequestState.status = reason;
+  inventoryTrainingRequestState.resolvedAtTurnCommit = turnCommitSequence;
+}
+
+function completeInventoryTrainingRequestIfMatched(color, itemType){
+  if(!inventoryTrainingRequestState) return;
+  if(inventoryTrainingRequestState.status !== "pending") return;
+  if(inventoryTrainingRequestState.targetColor !== color) return;
+  if(inventoryTrainingRequestState.itemType !== itemType) return;
+  inventoryTrainingRequestState.status = "completed";
+  inventoryTrainingRequestState.resolvedAtTurnCommit = turnCommitSequence;
+}
+
+function expireInventoryTrainingRequestIfNeeded(){
+  if(!inventoryTrainingRequestState) return;
+  if(inventoryTrainingRequestState.status !== "pending") return;
+  if(!Number.isFinite(inventoryTrainingRequestState.expiresAtTurnCommit)) return;
+  if(turnCommitSequence < inventoryTrainingRequestState.expiresAtTurnCommit) return;
+  markInventoryTrainingRequestExpired("expired");
+}
+
+function requestOpponentCrosshairAccuracyTrainingNextTurn(){
+  const currentColor = turnColors?.[turnIndex] ?? null;
+  const targetColor = getOpponentColor(currentColor);
+  const itemType = INVENTORY_ITEM_TYPES.CROSSHAIR;
+  if(!targetColor || !itemType){
+    return null;
+  }
+
+  giveItem(itemType, 1, { targetColor });
+  inventoryTrainingRequestState = {
+    targetColor,
+    itemType,
+    expiresAtTurnCommit: turnCommitSequence + 2,
+    status: "pending",
+    requestedAtTurnCommit: turnCommitSequence,
+    resolvedAtTurnCommit: null,
+  };
+  return { ...inventoryTrainingRequestState };
+}
+
 function resetInventoryState(){
   inventoryState.blue.length = 0;
   inventoryState.green.length = 0;
   pendingInventoryUse = null;
+  inventoryTrainingRequestState = null;
   resetPlayerInventoryEffects();
   syncInventoryUI("blue");
   syncInventoryUI("green");
@@ -4486,6 +4534,7 @@ if (DEBUG_CHEATS && typeof window !== "undefined") {
   window.DEBUG_BANNER_NEXT_ROUND = () => showRoundBanner("NEXT ROUND");
   window.DEBUG_BANNER_CLEAR = () => clearRoundBanner();
   window.DEBUG_GIVE_ITEM = (itemId, qty = 1) => giveItem(itemId, qty);
+  window.DEBUG_TRAIN_ACCURACY_NEXT_TURN = () => requestOpponentCrosshairAccuracyTrainingNextTurn();
   window.DEBUG_GIVE_OPPONENT_FUEL = (qty = 1) =>
     giveItem(INVENTORY_ITEM_TYPES.FUEL, qty, { targetColor: getCurrentTurnOpponentColor() });
   window.DEBUG_CLEAR_INVENTORY = () => resetInventoryState();
@@ -25173,6 +25222,7 @@ function advanceTurn(){
     spawnCargoForTurn();
   }
   turnCommitSequence += 1;
+  expireInventoryTrainingRequestIfNeeded();
   if(previousTurnColor === "green"){
     lastPlayerMoveCommitMeta = {
       turnCommitSequence,
