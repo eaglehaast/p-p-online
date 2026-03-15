@@ -920,7 +920,7 @@ function showRoundBanner(text) {
 
 // Animated explosion sprites
 function buildBlueExplosionSequenceFramePaths() {
-  const folder = "ui_gamescreen/gs_blue_explosion_one";
+  const folder = "ui_gamescreen/gs_blue_explosion";
   return Array.from({ length: 25 }, (_unused, frameIndex) => {
     const frame = String(frameIndex + 1).padStart(2, "0");
     return `${folder}/explosion_blue_1_${frame}.png`;
