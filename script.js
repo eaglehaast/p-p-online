@@ -16951,6 +16951,20 @@ function evaluateFuelTacticalPlans(context, plannedMove, options = {}){
   const effectiveCellSize = typeof CELL_SIZE === "number" && Number.isFinite(CELL_SIZE) ? CELL_SIZE : 40;
   const attackRangePx = typeof ATTACK_RANGE_PX === "number" && Number.isFinite(ATTACK_RANGE_PX) ? ATTACK_RANGE_PX : MAX_DRAG_DISTANCE * 0.58;
 
+  function getRequiredReturnSafetyThreshold(){
+    const goalText = `${plannedMove?.goalName || context?.goalName || aiRoundState?.currentGoal || ""}`.toLowerCase();
+    const riskProfile = `${context?.aiRiskProfile?.profile || "balanced"}`.toLowerCase();
+    const isEmergencyOrCriticalGoal = goalText.includes("emergency") || goalText.includes("critical") || goalText.includes("comeback");
+    const isHighRiskMode = riskProfile === "comeback" || riskProfile === "aggressive" || isEmergencyOrCriticalGoal;
+    const isCalmMode = riskProfile === "conservative" || riskProfile === "safe" || riskProfile === "calm";
+
+    if(isHighRiskMode) return 0.38;
+    if(isCalmMode) return 0.52;
+    return 0.45;
+  }
+
+  const requiredReturnSafetyThreshold = getRequiredReturnSafetyThreshold();
+
   function getFieldWalls(){
     if(!Number.isFinite(FIELD_LEFT) || !Number.isFinite(FIELD_TOP) || !Number.isFinite(FIELD_WIDTH) || !Number.isFinite(FIELD_HEIGHT)){
       return [];
@@ -17052,9 +17066,12 @@ function evaluateFuelTacticalPlans(context, plannedMove, options = {}){
     };
   }
 
-  function evaluateReturnSafetyScore(returnLeg, remainingRange, returnPoint){
+  function evaluateReturnSafetyScore(returnLeg, remainingRange, returnPoint, options = {}){
     if(!returnLeg?.reachable) return 0;
-    const routeSafetyFactor = returnLeg.routeType === "ricochet" ? 0.78 : 1;
+    const ricochetOnlySafeRoute = options?.ricochetOnlySafeRoute === true;
+    const routeSafetyFactor = returnLeg.routeType === "ricochet"
+      ? (ricochetOnlySafeRoute ? 0.9 : 0.78)
+      : 1;
     const distanceSlack = Math.max(0, remainingRange - returnLeg.distance);
     const distanceSafetyFactor = Math.max(0, Math.min(1, distanceSlack / (baseFlightRange * 0.65)));
     const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
@@ -17105,7 +17122,12 @@ function evaluateFuelTacticalPlans(context, plannedMove, options = {}){
         returnSafetyScore: 0,
         totalScore: 0,
       };
-      rejectedScenarios.push({ scenario: candidate.scenario, reason });
+      rejectedScenarios.push({
+        scenario: candidate.scenario,
+        reason,
+        requiredReturnSafetyThreshold,
+        actualReturnSafetyScore: 0,
+      });
       return rejected;
     }
 
@@ -17119,7 +17141,12 @@ function evaluateFuelTacticalPlans(context, plannedMove, options = {}){
         returnSafetyScore: 0,
         totalScore: 0,
       };
-      rejectedScenarios.push({ scenario: candidate.scenario, reason: rejected.rejectReason });
+      rejectedScenarios.push({
+        scenario: candidate.scenario,
+        reason: rejected.rejectReason,
+        requiredReturnSafetyThreshold,
+        actualReturnSafetyScore: 0,
+      });
       return rejected;
     }
 
@@ -17135,22 +17162,33 @@ function evaluateFuelTacticalPlans(context, plannedMove, options = {}){
       },
     ].filter((entry) => Boolean(entry.point));
 
-    let bestReturnPlan = null;
+    const rawReturnPlans = [];
     for(const entry of returnCandidates){
-      const returnLeg = evaluateReachabilityWithRicochet(candidate.targetPoint, entry.point, remainingRange + effectiveCellSize * 1.2);
-      const returnSafetyScore = evaluateReturnSafetyScore(returnLeg, remainingRange, entry.point);
+      const maxReturnDistance = remainingRange + effectiveCellSize * 1.2;
+      const directReachable = dist(candidate.targetPoint, entry.point) <= maxReturnDistance
+        && isPathClear(candidate.targetPoint.x, candidate.targetPoint.y, entry.point.x, entry.point.y);
+      const returnLeg = evaluateReachabilityWithRicochet(candidate.targetPoint, entry.point, maxReturnDistance);
       const returnPlan = {
         returnName: entry.name,
         point: entry.point,
         returnLeg,
-        returnSafetyScore,
+        directReachable,
+        returnSafetyScore: 0,
       };
-      if(!bestReturnPlan || returnPlan.returnSafetyScore > bestReturnPlan.returnSafetyScore){
-        bestReturnPlan = returnPlan;
-      }
+      rawReturnPlans.push(returnPlan);
     }
 
-    const hasSafeReturn = Boolean(bestReturnPlan?.returnLeg?.reachable) && bestReturnPlan.returnSafetyScore >= 0.45;
+    const ricochetOnlySafeRoute = rawReturnPlans.some((entry) => entry.returnLeg?.reachable)
+      && rawReturnPlans.every((entry) => !entry.directReachable);
+    const scoredReturnPlans = rawReturnPlans.map((entry) => ({
+      ...entry,
+      returnSafetyScore: evaluateReturnSafetyScore(entry.returnLeg, remainingRange, entry.point, { ricochetOnlySafeRoute }),
+      ricochetOnlySafeRoute,
+    }));
+    const bestReturnPlan = scoredReturnPlans.sort((a, b) => b.returnSafetyScore - a.returnSafetyScore)[0] || null;
+
+    const actualReturnSafetyScore = Number(bestReturnPlan?.returnSafetyScore ?? 0);
+    const hasSafeReturn = Boolean(bestReturnPlan?.returnLeg?.reachable) && actualReturnSafetyScore >= requiredReturnSafetyThreshold;
     if(!hasSafeReturn){
       const rejected = {
         ...candidate,
@@ -17158,10 +17196,17 @@ function evaluateFuelTacticalPlans(context, plannedMove, options = {}){
         rejectReason: "return_unreachable_or_unsafe",
         targetLeg,
         returnPlan: bestReturnPlan,
-        returnSafetyScore: Number(bestReturnPlan?.returnSafetyScore ?? 0),
+        requiredReturnSafetyThreshold,
+        actualReturnSafetyScore,
+        returnSafetyScore: actualReturnSafetyScore,
         totalScore: 0,
       };
-      rejectedScenarios.push({ scenario: candidate.scenario, reason: rejected.rejectReason });
+      rejectedScenarios.push({
+        scenario: candidate.scenario,
+        reason: rejected.rejectReason,
+        requiredReturnSafetyThreshold,
+        actualReturnSafetyScore,
+      });
       return rejected;
     }
 
@@ -17173,6 +17218,8 @@ function evaluateFuelTacticalPlans(context, plannedMove, options = {}){
       rejectReason: null,
       targetLeg,
       returnPlan: bestReturnPlan,
+      requiredReturnSafetyThreshold,
+      actualReturnSafetyScore,
       returnSafetyScore: Number(bestReturnPlan.returnSafetyScore.toFixed(3)),
       totalScore: Number(totalScore.toFixed(3)),
     };
@@ -17187,6 +17234,8 @@ function evaluateFuelTacticalPlans(context, plannedMove, options = {}){
     selectedCandidate,
     candidates: evaluatedCandidates,
     rejectedScenarios,
+    requiredReturnSafetyThreshold,
+    actualReturnSafetyScore: selectedCandidate?.actualReturnSafetyScore ?? 0,
     returnSafetyScore: selectedCandidate?.returnSafetyScore ?? 0,
     blockedByReturnSafety: !selectedCandidate && evaluatedCandidates.some((entry) => entry.rejectReason === "return_unreachable_or_unsafe"),
   };
@@ -17499,6 +17548,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
           }
         : null,
       returnSafetyScore: Number(fuelTacticalPlans?.returnSafetyScore ?? 0),
+      requiredReturnSafetyThreshold: Number(fuelTacticalPlans?.requiredReturnSafetyThreshold ?? 0),
+      actualReturnSafetyScore: Number(fuelTacticalPlans?.actualReturnSafetyScore ?? 0),
       baseReturnSafetyScore,
       rejectedScenarios: fuelTacticalPlans?.rejectedScenarios || [],
       baseFilterHasMaterialGain: fuelMaterialGain.hasMaterialGain,
@@ -17829,6 +17880,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
             }
           : null,
         returnSafetyScore: Number(softFallbackFuelPlan.selectedCandidate.returnSafetyScore ?? 0),
+        requiredReturnSafetyThreshold: Number(softFallbackFuelPlan?.requiredReturnSafetyThreshold ?? 0),
+        actualReturnSafetyScore: Number(softFallbackFuelPlan?.actualReturnSafetyScore ?? 0),
         rejectedScenarios: softFallbackFuelPlan.rejectedScenarios || [],
         baseFilterHasMaterialGain: softFallbackFuelMaterialGain.hasMaterialGain,
         rejectionReason: null,
@@ -17845,6 +17898,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         targetContactPoint: null,
         returnPlan: null,
         returnSafetyScore: Number(softFallbackFuelPlan?.returnSafetyScore ?? 0),
+        requiredReturnSafetyThreshold: Number(softFallbackFuelPlan?.requiredReturnSafetyThreshold ?? 0),
+        actualReturnSafetyScore: Number(softFallbackFuelPlan?.actualReturnSafetyScore ?? 0),
         rejectedScenarios: softFallbackFuelPlan?.rejectedScenarios || [],
         baseFilterHasMaterialGain: softFallbackFuelMaterialGain.hasMaterialGain,
         rejectionReason: !softFallbackFuelMaterialGain.hasMaterialGain
@@ -18264,6 +18319,8 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       targetContactPoint: plannedMove.aiFuelTacticalDecision.targetContactPoint,
       returnPlan: plannedMove.aiFuelTacticalDecision.returnPlan,
       returnSafetyScore: plannedMove.aiFuelTacticalDecision.returnSafetyScore,
+      requiredReturnSafetyThreshold: plannedMove.aiFuelTacticalDecision.requiredReturnSafetyThreshold,
+      actualReturnSafetyScore: plannedMove.aiFuelTacticalDecision.actualReturnSafetyScore,
       rejectedScenarios: plannedMove.aiFuelTacticalDecision.rejectedScenarios,
       rejectionReason: plannedMove.aiFuelTacticalDecision.rejectionReason,
       baseFilterHasMaterialGain: plannedMove.aiFuelTacticalDecision.baseFilterHasMaterialGain,
@@ -18328,6 +18385,8 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       targetContactPoint: plannedMove.aiFuelTacticalDecision.targetContactPoint,
       returnPlan: plannedMove.aiFuelTacticalDecision.returnPlan,
       returnSafetyScore: plannedMove.aiFuelTacticalDecision.returnSafetyScore,
+      requiredReturnSafetyThreshold: plannedMove.aiFuelTacticalDecision.requiredReturnSafetyThreshold,
+      actualReturnSafetyScore: plannedMove.aiFuelTacticalDecision.actualReturnSafetyScore,
       rejectedScenarios: plannedMove.aiFuelTacticalDecision.rejectedScenarios,
       rejectionReason: plannedMove.aiFuelTacticalDecision.rejectionReason,
       fuelApplied: effectiveItemUsed && consumedItemType === INVENTORY_ITEM_TYPES.FUEL,
