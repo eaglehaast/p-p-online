@@ -4432,6 +4432,19 @@ function getCurrentTurnOpponentColor(){
   return getOpponentColor(currentTurnColor) ?? "green";
 }
 
+function requestAiFuelTrainingForNextTurn(source = "debug_command"){
+  if(!aiRoundState || typeof aiRoundState !== "object") return false;
+  const requestedAtTurn = Number.isFinite(turnAdvanceCount)
+    ? turnAdvanceCount
+    : (Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null);
+  aiRoundState.trainingForceFuelOnNextAiTurn = {
+    enabled: true,
+    requestedAtTurn,
+    source: source || "unknown",
+  };
+  return true;
+}
+
 function giveItem(itemId, qty = 1, opts = { silent: false }){
   if(!itemId) return;
   const itemDef = INVENTORY_ITEMS.find((item) => item?.type === itemId) ?? null;
@@ -4486,8 +4499,10 @@ if (DEBUG_CHEATS && typeof window !== "undefined") {
   window.DEBUG_BANNER_NEXT_ROUND = () => showRoundBanner("NEXT ROUND");
   window.DEBUG_BANNER_CLEAR = () => clearRoundBanner();
   window.DEBUG_GIVE_ITEM = (itemId, qty = 1) => giveItem(itemId, qty);
-  window.DEBUG_GIVE_OPPONENT_FUEL = (qty = 1) =>
+  window.DEBUG_GIVE_OPPONENT_FUEL = (qty = 1) => {
     giveItem(INVENTORY_ITEM_TYPES.FUEL, qty, { targetColor: getCurrentTurnOpponentColor() });
+    requestAiFuelTrainingForNextTurn("debug_give_opponent_fuel");
+  };
   window.DEBUG_CLEAR_INVENTORY = () => resetInventoryState();
 }
 
@@ -14488,6 +14503,11 @@ function createInitialAiRoundState(){
     lastOpeningNonTrivialStartMeta: null,
     lastFallbackMoveMeta: null,
     lossCompressionMode: false,
+    trainingForceFuelOnNextAiTurn: {
+      enabled: false,
+      requestedAtTurn: null,
+      source: null,
+    },
   };
 }
 
@@ -16830,6 +16850,61 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       newReachableTarget,
       scoredTargets,
     };
+  }
+
+  function consumeFuelTrainingFlag(reason, details = {}){
+    const trainingMeta = aiRoundState?.trainingForceFuelOnNextAiTurn || null;
+    if(!trainingMeta || !trainingMeta.enabled) return;
+    aiRoundState.trainingForceFuelOnNextAiTurn = {
+      enabled: false,
+      requestedAtTurn: trainingMeta.requestedAtTurn ?? null,
+      source: trainingMeta.source ?? null,
+    };
+    logAiDecision("fuel_training_skipped_with_reason", {
+      reason,
+      requestedAtTurn: trainingMeta.requestedAtTurn ?? null,
+      source: trainingMeta.source ?? null,
+      planeId: plannedMove?.plane?.id ?? null,
+      ...details,
+    });
+  }
+
+  const fuelTrainingMeta = aiRoundState?.trainingForceFuelOnNextAiTurn || null;
+  if(fuelTrainingMeta?.enabled){
+    logAiDecision("fuel_training_forced_attempt", {
+      requestedAtTurn: fuelTrainingMeta.requestedAtTurn ?? null,
+      source: fuelTrainingMeta.source ?? null,
+      planeId: plannedMove?.plane?.id ?? null,
+      hasFuel: inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0,
+    });
+
+    if(inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0){
+      if(tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.FUEL, "blue", plannedMove.plane)){
+        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
+        aiRoundState.trainingForceFuelOnNextAiTurn = {
+          enabled: false,
+          requestedAtTurn: fuelTrainingMeta.requestedAtTurn ?? null,
+          source: fuelTrainingMeta.source ?? null,
+        };
+        logAiDecision("fuel_training_applied", {
+          requestedAtTurn: fuelTrainingMeta.requestedAtTurn ?? null,
+          source: fuelTrainingMeta.source ?? null,
+          planeId: plannedMove?.plane?.id ?? null,
+        });
+        return true;
+      }
+
+      const skipReason = allowInventoryUsage
+        ? "apply_item_returned_false"
+        : "inventory_usage_locked";
+      consumeFuelTrainingFlag(skipReason, {
+        allowInventoryUsage,
+      });
+    } else {
+      consumeFuelTrainingFlag("no_fuel_in_inventory", {
+        availableFuel: 0,
+      });
+    }
   }
 
   if(inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0){
