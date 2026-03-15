@@ -88,6 +88,16 @@ window.RESET_CARGO()
 window.exportAiFallbackDiagnosticsReportJson()
 ```
 
+Fast one-line fuel injection for the opponent (works in any mode, no `#dev` needed):
+
+```js
+window.GIVE_OPPONENT_FUEL(1)
+```
+
+This immediately adds fuel to the current turn opponent and schedules AI fuel-training refresh for the next turn.
+
+If you are in `#dev` mode, `window.DEBUG_GIVE_OPPONENT_FUEL(1)` remains available as a debug alias.
+
 - `snapshot` prints a short current-match summary (mode, turn, counts, last decision).
 - `last-decisions` prints last `N` AI decision events in one-line compact format.
 - `status` prints current AI mode/goal/turn and `aiMoveScheduled` flag.
