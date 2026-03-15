@@ -21630,6 +21630,11 @@ function getFallbackAiMove(context){
         goalName: fallbackCandidate.goalName || null,
         moveDistance: Math.max(0, fallbackCandidate.desired || 0),
       });
+      const fallbackRangeProfile = getAiFlightRangeProfile(fallbackCandidate.plane);
+      const speedPxPerSec = fallbackRangeProfile?.speedPxPerSec;
+      if(!Number.isFinite(speedPxPerSec) || speedPxPerSec <= 0){
+        return null;
+      }
 
       best = applyLossCompressionScoreAdjustments({
         plane: fallbackCandidate.plane,
