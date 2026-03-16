@@ -11254,6 +11254,36 @@ function buildAiFallbackDiagnosticsReport(source){
     return "unknown";
   };
 
+  const hasReasonCode = (event, token) => {
+    const target = `${token || ""}`.toLowerCase();
+    if(!target) return false;
+    const reasonCodes = Array.isArray(event?.reasonCodes) ? event.reasonCodes : [];
+    return reasonCodes.some((code) => `${code || ""}`.toLowerCase() === target);
+  };
+
+  const isAiMoveExceptionEvent = (event) => {
+    const stage = `${event?.stage || ""}`.toLowerCase();
+    return stage === "ai_move_exception" || hasReasonCode(event, "ai_move_exception");
+  };
+
+  const isFailSafeTurnAdvanceEvent = (event) => {
+    const stage = `${event?.stage || ""}`.toLowerCase();
+    return stage === "ai_move_exception" || hasReasonCode(event, "fail_safe_turn_advance");
+  };
+
+  const getTurnGroupKey = (event, index) => {
+    const colorKey = event?.turnColor || "unknown_color";
+    const roundKey = Number.isFinite(event?.roundNumber) ? event.roundNumber : "unknown_round";
+    const explicitMarker = event?.turnMarker || event?.turnId || event?.turnNumber;
+    if(explicitMarker !== null && explicitMarker !== undefined){
+      return `${colorKey}:${roundKey}:${explicitMarker}`;
+    }
+    if(Number.isFinite(event?.roundNumber) && event?.turnColor){
+      return `${colorKey}:${roundKey}`;
+    }
+    return `${colorKey}:${roundKey}:fallback_turn_${index}`;
+  };
+
   for(const event of aiDecisionEvents){
     const diagnostics = event?.initialCandidateSetDiagnostics;
     const shortlist = diagnostics?.shortlistDiagnostics;
@@ -11478,6 +11508,50 @@ function buildAiFallbackDiagnosticsReport(source){
     }
   }
 
+  const aiMoveExceptionEvents = aiDecisionEvents.filter((event) => isAiMoveExceptionEvent(event));
+  const failSafeTurnAdvanceEvents = aiDecisionEvents.filter((event) => isFailSafeTurnAdvanceEvent(event));
+
+  const aiDecisionTurnKeys = new Set(aiDecisionEvents.map((event, index) => getTurnGroupKey(event, index)));
+  const failSafeTurnKeys = new Set(failSafeTurnAdvanceEvents.map((event, index) => getTurnGroupKey(event, index)));
+  const failSafeTurnShareAmongAiTurns = aiDecisionTurnKeys.size > 0
+    ? failSafeTurnKeys.size / aiDecisionTurnKeys.size
+    : 0;
+
+  const fallbackEpisodesByRound = fallbackEpisodes.reduce((map, episode) => {
+    const key = Number.isFinite(episode?.roundNumber) ? String(episode.roundNumber) : "unknown_round";
+    map[key] = (map[key] || 0) + 1;
+    return map;
+  }, {});
+
+  const failSafeEpisodeSamples = failSafeTurnAdvanceEvents.slice(-8).map((event, index) => {
+    const roundKey = Number.isFinite(event?.roundNumber) ? String(event.roundNumber) : "unknown_round";
+    return {
+      roundNumber: Number.isFinite(event?.roundNumber) ? event.roundNumber : null,
+      stage: event?.stage || null,
+      goal: event?.goal || null,
+      reasonCodes: Array.isArray(event?.reasonCodes) ? event.reasonCodes : [],
+      rejectReasons: Array.isArray(event?.rejectReasons) ? event.rejectReasons : [],
+      errorMessage: event?.errorMessage || null,
+      linkedFallbackEpisodesInRound: fallbackEpisodesByRound[roundKey] || 0,
+      turnGroupKey: getTurnGroupKey(event, index),
+    };
+  });
+
+  for(const episode of fallbackEpisodes){
+    episode.linkedFailSafeTurnAdvanceEventsInRound = failSafeTurnAdvanceEvents.filter((event) => {
+      if(Number.isFinite(event?.roundNumber) && Number.isFinite(episode?.roundNumber)){
+        return event.roundNumber === episode.roundNumber;
+      }
+      return !Number.isFinite(event?.roundNumber) && !Number.isFinite(episode?.roundNumber);
+    }).length;
+    episode.linkedAiMoveExceptionsInRound = aiMoveExceptionEvents.filter((event) => {
+      if(Number.isFinite(event?.roundNumber) && Number.isFinite(episode?.roundNumber)){
+        return event.roundNumber === episode.roundNumber;
+      }
+      return !Number.isFinite(event?.roundNumber) && !Number.isFinite(episode?.roundNumber);
+    }).length;
+  }
+
   for(const classKey of routeClasses){
     const funnel = candidateFunnelStats[classKey];
     funnel.valid_generated = Math.max(0, Math.min(funnel.raw_attempted, funnel.valid_generated));
@@ -11596,6 +11670,10 @@ function buildAiFallbackDiagnosticsReport(source){
 
   const summary = [
     `Всего fallback-эпизодов: ${totalFallbackEpisodes}.`,
+    `Эпизоды fallback логики выбора кандидатов: ${totalFallbackEpisodes}.`,
+    `Эпизоды аварийного fail-safe завершения хода: ${failSafeTurnAdvanceEvents.length}.`,
+    `Исключения ai_move_exception за матч: ${aiMoveExceptionEvents.length}.`,
+    `Доля ходов, завершённых через fail-safe: ${Number((failSafeTurnShareAmongAiTurns * 100).toFixed(1))}% (${failSafeTurnKeys.size}/${aiDecisionTurnKeys.size || 0}).`,
     `Самая частая корневая причина: ${topRootCause[0]} (${topRootCause[1]}).`,
     `Direct: raw_attempted=${candidateFunnelStats.direct.raw_attempted}, valid_generated=${candidateFunnelStats.direct.valid_generated}, shortlistPass=${candidateFunnelStats.direct.shortlistPass}, selected=${candidateFunnelStats.direct.selected}.`,
     `Gap: raw_attempted=${candidateFunnelStats.gap.raw_attempted}, valid_generated=${candidateFunnelStats.gap.valid_generated}, shortlistPass=${candidateFunnelStats.gap.shortlistPass}, selected=${candidateFunnelStats.gap.selected}.`,
@@ -11708,6 +11786,15 @@ function buildAiFallbackDiagnosticsReport(source){
     ricochetRejectDetailedStats,
     gapAfterBounceSamples: gapAfterBounceSamplesCompact,
     fallbackEpisodeSamples,
+    failSafeEpisodeSamples,
+    fallbackEpisodeDiagnostics: {
+      candidateSelectionFallbackEpisodes: totalFallbackEpisodes,
+      failSafeTurnAdvanceEpisodes: failSafeTurnAdvanceEvents.length,
+      aiMoveExceptionEvents: aiMoveExceptionEvents.length,
+      aiDecisionTurns: aiDecisionTurnKeys.size,
+      failSafeTurns: failSafeTurnKeys.size,
+      failSafeTurnShareAmongAiTurns,
+    },
     summary,
   };
 
@@ -11996,6 +12083,15 @@ function exportAiV2DecisionAuditReportJson(){
       : null,
     fallbackEpisodes: Number.isFinite(fallbackReport?.fallbackEpisodeSamples?.length)
       ? fallbackReport.fallbackEpisodeSamples.length
+      : 0,
+    aiMoveExceptionEvents: Number.isFinite(fallbackReport?.fallbackEpisodeDiagnostics?.aiMoveExceptionEvents)
+      ? fallbackReport.fallbackEpisodeDiagnostics.aiMoveExceptionEvents
+      : 0,
+    failSafeTurnAdvanceEpisodes: Number.isFinite(fallbackReport?.fallbackEpisodeDiagnostics?.failSafeTurnAdvanceEpisodes)
+      ? fallbackReport.fallbackEpisodeDiagnostics.failSafeTurnAdvanceEpisodes
+      : 0,
+    failSafeTurnShareAmongAiTurns: Number.isFinite(fallbackReport?.fallbackEpisodeDiagnostics?.failSafeTurnShareAmongAiTurns)
+      ? fallbackReport.fallbackEpisodeDiagnostics.failSafeTurnShareAmongAiTurns
       : 0,
   };
 

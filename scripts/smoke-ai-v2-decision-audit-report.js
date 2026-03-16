@@ -50,7 +50,7 @@ const context = {
     reportType: 'human_vs_ai_gap_report',
     gapMetrics: {
       aiDecisionMetrics: {
-        fallbackRate: 0.2,
+        fallbackRate: 0,
         noMoveRate: 0.1,
       },
     },
@@ -58,6 +58,11 @@ const context = {
   exportAiFallbackDiagnosticsReportJson: () => ({
     reportType: 'ai_fallback_diagnostics_report',
     fallbackEpisodeSamples: [{ id: 1 }, { id: 2 }],
+    fallbackEpisodeDiagnostics: {
+      aiMoveExceptionEvents: 3,
+      failSafeTurnAdvanceEpisodes: 2,
+      failSafeTurnShareAmongAiTurns: 0.4,
+    },
   }),
   document: undefined,
   Number,
@@ -73,6 +78,10 @@ assert(report.engineMode === 'v2', 'Must contain engine mode.');
 assert(report.summary && report.summary.status === 'ok', 'Must have ok summary status with sufficient data.');
 assert(report.summary.aiDecisionEventsCount === 5, 'Must expose aiDecisionEventsCount in summary.');
 assert(report.summary.fallbackEpisodes === 2, 'Must expose fallback episodes count in summary.');
+assert(report.summary.fallbackRate === 0, 'Fallback rate in qualityGap can be 0 for this case.');
+assert(report.summary.aiMoveExceptionEvents === 3, 'Must expose ai_move_exception count in summary.');
+assert(report.summary.failSafeTurnAdvanceEpisodes === 2, 'Must expose fail-safe episode count in summary.');
+assert(report.summary.failSafeTurnShareAmongAiTurns === 0.4, 'Must expose fail-safe turn share in summary.');
 assert(report.reports && report.reports.turns && report.reports.qualityGap && report.reports.fallbackDiagnostics, 'Must include all nested reports.');
 
 console.log('Smoke test passed: exportAiV2DecisionAuditReportJson builds unified v2 report.');
