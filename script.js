@@ -8884,6 +8884,13 @@ const MAX_ACCURACY_PERCENT = 100;
 const MAX_SPREAD_DEG       = 12;
 // Переключатель движка ИИ: legacy-ветка хранится как архив идей и эталон сравнения для поэтапного запуска v2.
 const AI_ENGINE_MODE = "legacy"; // "legacy" | "v2"
+const AI_V2_INVENTORY_PHASE = (() => {
+  const phaseFromWindow = (typeof window !== "undefined")
+    ? window.AI_V2_INVENTORY_PHASE
+    : undefined;
+  const rawValue = Number.isFinite(phaseFromWindow) ? phaseFromWindow : 3;
+  return Math.max(0, Math.min(3, Math.trunc(rawValue)));
+})();
 const AI_USE_GOAL_PRIORITY_MODEL = true;
 const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 const AI_MIRROR_FIRST_BOUNCE_MIN_DISTANCE = CARGO_SPAWN_SAFE_RADIUS * 0.75;
@@ -8896,6 +8903,7 @@ const AI_MIRROR_SCORE_BLOCKED_DIRECT_BONUS = 0.06;
 
 if(typeof window !== "undefined"){
   window.AI_ENGINE_MODE = AI_ENGINE_MODE;
+  window.AI_V2_INVENTORY_PHASE = AI_V2_INVENTORY_PHASE;
   window.AI_USE_GOAL_PRIORITY_MODEL = AI_USE_GOAL_PRIORITY_MODEL;
 }
 
@@ -14746,6 +14754,7 @@ function createInitialAiRoundState(){
       requestedAtTurn: null,
       source: null,
     },
+    inventoryPhase: AI_ENGINE_MODE === "v2" ? AI_V2_INVENTORY_PHASE : 3,
   };
 }
 
@@ -17254,6 +17263,29 @@ function evaluateFuelTacticalPlans(context, plannedMove, options = {}){
 function maybeUseInventoryBeforeLaunch(context, plannedMove){
   if(!plannedMove?.plane) return false;
 
+  const engineMode = typeof AI_ENGINE_MODE === "string" ? AI_ENGINE_MODE : "legacy";
+  const defaultV2InventoryPhase = Number.isFinite(typeof AI_V2_INVENTORY_PHASE !== "undefined" ? AI_V2_INVENTORY_PHASE : NaN)
+    ? AI_V2_INVENTORY_PHASE
+    : 3;
+  const isV2InventoryRules = engineMode === "v2";
+  const rawInventoryPhase = Number(aiRoundState?.inventoryPhase);
+  const inventoryPhase = isV2InventoryRules
+    ? Math.max(0, Math.min(3, Number.isFinite(rawInventoryPhase) ? Math.trunc(rawInventoryPhase) : defaultV2InventoryPhase))
+    : 3;
+  const allowBuffItems = !isV2InventoryRules || inventoryPhase >= 1;
+  const allowTacticalItems = !isV2InventoryRules || inventoryPhase >= 2;
+  const allowInvisibility = !isV2InventoryRules || inventoryPhase >= 3;
+
+  if(isV2InventoryRules && inventoryPhase === 0){
+    logAiDecision("inventory_phase_gated", {
+      phase: inventoryPhase,
+      reason: "inventory_disabled_by_phase",
+      planeId: plannedMove?.plane?.id ?? null,
+      goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+    });
+    return false;
+  }
+
   const explicitInventoryUnlock = plannedMove?.allowInventoryUsage === true
     && plannedMove?.inventoryUsageReason === "bad_direct_fallback";
   const strategicGoal = plannedMove?.goalName || aiRoundState?.currentGoal || "";
@@ -17473,7 +17505,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
   }
 
   const fuelTrainingMeta = aiRoundState?.trainingForceFuelOnNextAiTurn || null;
-  if(fuelTrainingMeta?.enabled){
+  if(allowBuffItems && fuelTrainingMeta?.enabled){
     logAiDecision("fuel_training_forced_attempt", {
       requestedAtTurn: fuelTrainingMeta.requestedAtTurn ?? null,
       source: fuelTrainingMeta.source ?? null,
@@ -17637,7 +17669,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     }
   }
 
-  if(inventory.counts[INVENTORY_ITEM_TYPES.CROSSHAIR] > 0){
+  if(allowBuffItems && inventory.counts[INVENTORY_ITEM_TYPES.CROSSHAIR] > 0){
     const bestCrosshairScenario = evaluateCrosshairBestUse(context, plannedMove);
     const CROSSHAIR_MIN_NOTICEABLE_VALUE = 0.74;
     const CROSSHAIR_SOFT_FALLBACK_MIN_VALUE = 0.58;
@@ -17705,7 +17737,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     }
   }
 
-  if(inventory.counts[INVENTORY_ITEM_TYPES.MINE] > 0){
+  if(allowTacticalItems && inventory.counts[INVENTORY_ITEM_TYPES.MINE] > 0){
     const directAttackWindow = evaluateDirectAttackWindow(priorityEnemy);
     const strongAttackWindow = Boolean(directAttackWindow) && directAttackWindow.total >= 0.55;
     const profitableTradeWindow = isPlannedMoveLikelyProfitableTrade(priorityEnemy);
@@ -17773,7 +17805,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     }
   }
 
-  if(inventory.counts[INVENTORY_ITEM_TYPES.DYNAMITE] > 0){
+  if(allowTacticalItems && inventory.counts[INVENTORY_ITEM_TYPES.DYNAMITE] > 0){
     const homeBase = getBaseAnchor("blue");
     const pressureEnemy = getBluePriorityEnemy(context);
     const routeAwareTarget = getDynamiteCandidateForCurrentRoute(context, plannedMove);
@@ -17835,7 +17867,13 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
 
   const hasNonInvisibilityItems = inventory.total > (inventory.counts[INVENTORY_ITEM_TYPES.INVISIBILITY] || 0);
 
-  if(inventory.counts[INVENTORY_ITEM_TYPES.INVISIBILITY] > 0){
+  if(allowInvisibility && inventory.counts[INVENTORY_ITEM_TYPES.INVISIBILITY] > 0){
+    const enemyAimingAccuracyPercentRaw = Number(settings?.aimingAmplitude);
+    const enemyAimingAccuracyPercent = Number.isFinite(enemyAimingAccuracyPercentRaw)
+      ? Math.max(0, Math.min(100, enemyAimingAccuracyPercentRaw))
+      : 80;
+    const enemyAccuracyAfterInvisibility = Math.max(0, enemyAimingAccuracyPercent - 25);
+    const enemyAccuracyPenalty = enemyAimingAccuracyPercent - enemyAccuracyAfterInvisibility;
     const nearestEnemyDistance = Array.isArray(context?.enemies) && context.enemies.length > 0
       ? Math.min(...context.enemies.map(enemy => dist(plannedMove.plane, enemy)))
       : Number.POSITIVE_INFINITY;
@@ -17843,14 +17881,24 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       || (context?.enemies?.length ?? 0) >= (context?.aiPlanes?.length ?? 0);
     const shouldUseInvisibility = (expectCounterMove
       || (riskProfile === "comeback" && moveDistance >= MAX_DRAG_DISTANCE * 0.6))
+      && enemyAccuracyPenalty >= 12
       && (!softFallbackReady || !hasNonInvisibilityItems);
+    logAiDecision("invisibility_counter_aiming_check", {
+      phase: inventoryPhase,
+      planeId: plannedMove?.plane?.id ?? null,
+      enemyAimingAccuracyPercent: Number(enemyAimingAccuracyPercent.toFixed(2)),
+      enemyAccuracyAfterInvisibility: Number(enemyAccuracyAfterInvisibility.toFixed(2)),
+      enemyAccuracyPenalty: Number(enemyAccuracyPenalty.toFixed(2)),
+      expectCounterMove,
+      shouldUseInvisibility,
+    });
     if(shouldUseInvisibility && queueInvisibilityEffectForPlayer("blue")){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.INVISIBILITY);
       return true;
     }
   }
 
-  if(softFallbackReady){
+  if(allowBuffItems && softFallbackReady){
     if(inventory.counts[INVENTORY_ITEM_TYPES.CROSSHAIR] > 0
       && tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
@@ -18332,26 +18380,52 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     selected: false,
     reason: "no_inventory_item_used",
     consumedItemType: null,
+    consumedItemTypes: [],
   };
 
   const beforeInventoryState = evaluateBlueInventoryState();
   const dynamiteStateCountBeforeUsage = Array.isArray(dynamiteState) ? dynamiteState.length : 0;
-  const itemUsed = maybeUseInventoryBeforeLaunch(context, plannedMove);
-  const afterInventoryState = itemUsed ? evaluateBlueInventoryState() : beforeInventoryState;
-  const consumedItemType = itemUsed
-    ? detectConsumedInventoryType(
-      beforeInventoryState?.counts,
-      afterInventoryState?.counts
-    )
+  const consumedItemTypes = [];
+  let itemUsed = false;
+  let afterInventoryState = beforeInventoryState;
+  const activeInventoryPhase = Number.isFinite(aiRoundState?.inventoryPhase)
+    ? Math.max(0, Math.min(3, Math.trunc(aiRoundState.inventoryPhase)))
+    : AI_V2_INVENTORY_PHASE;
+  const allowMultiUseTactical = AI_ENGINE_MODE === "v2" && activeInventoryPhase >= 2;
+
+  for(let inventoryActionStep = 0; inventoryActionStep < 12; inventoryActionStep += 1){
+    const actionBeforeState = afterInventoryState;
+    const actionUsed = maybeUseInventoryBeforeLaunch(context, plannedMove);
+    if(!actionUsed) break;
+
+    itemUsed = true;
+    afterInventoryState = evaluateBlueInventoryState();
+    const actionConsumedItemType = detectConsumedInventoryType(
+      actionBeforeState?.counts,
+      afterInventoryState?.counts,
+    );
+    if(actionConsumedItemType){
+      consumedItemTypes.push(actionConsumedItemType);
+    }
+
+    const isTacticalAction = actionConsumedItemType === INVENTORY_ITEM_TYPES.MINE
+      || actionConsumedItemType === INVENTORY_ITEM_TYPES.DYNAMITE;
+    if(!(allowMultiUseTactical && isTacticalAction)) break;
+  }
+
+  const consumedItemType = consumedItemTypes.length > 0
+    ? consumedItemTypes[consumedItemTypes.length - 1]
     : null;
   inventoryStageResult.selected = Boolean(itemUsed);
   inventoryStageResult.reason = itemUsed ? "inventory_item_applied" : "no_inventory_item_used";
   inventoryStageResult.consumedItemType = consumedItemType || null;
+  inventoryStageResult.consumedItemTypes = consumedItemTypes.slice();
   logAiDecision("inventory_decision_made", {
     stage: inventoryStageResult.stage,
     selected: inventoryStageResult.selected,
     reason: inventoryStageResult.reason,
     consumedItemType: inventoryStageResult.consumedItemType,
+    consumedItemTypes: inventoryStageResult.consumedItemTypes,
     planeId: plannedMove?.plane?.id ?? null,
     goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
   });
@@ -18372,7 +18446,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   }
 
   let effectiveItemUsed = itemUsed;
-  if(itemUsed && consumedItemType === INVENTORY_ITEM_TYPES.DYNAMITE && aiRoundState?.dynamiteIntent){
+  if(itemUsed && consumedItemTypes.includes(INVENTORY_ITEM_TYPES.DYNAMITE) && aiRoundState?.dynamiteIntent){
     const usageCheck = getAiDynamiteIntentScoreAdjustment(1, plannedMove, { plane: plannedMove?.plane });
     if(!usageCheck.usedIntent){
       const intent = aiRoundState?.dynamiteIntent;
@@ -18412,8 +18486,10 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   }
 
   if(effectiveItemUsed){
-    if(consumedItemType){
-      playInventoryConsumeFx("blue", consumedItemType);
+    if(consumedItemTypes.length > 0){
+      for(const consumedType of consumedItemTypes){
+        playInventoryConsumeFx("blue", consumedType);
+      }
     } else {
       logAiDecision("inventory_fx_played", {
         stage: "inventory_decision",
@@ -23143,6 +23219,10 @@ function doComputerMoveLegacy(runtimeOptions = {}){
 
 function runAiTurnV2(context = {}){
   if (gameMode!=="computer" || isGameOver) return;
+
+  if(aiRoundState && typeof aiRoundState === "object"){
+    aiRoundState.inventoryPhase = AI_V2_INVENTORY_PHASE;
+  }
 
   const aiPlanes = points.filter((p) => p.color === "blue" && p.isAlive && !p.burning);
   const enemies = points.filter((p) => p.color === "green" && p.isAlive && !p.burning);
