@@ -9695,6 +9695,21 @@ let roundNumber = 0;
 let roundTextTimer = 0;
 let roundTransitionTimeout = null;
 
+function getScoreGap(color = "blue"){
+  const safeBlueScore = Number.isFinite(blueScore) ? blueScore : 0;
+  const safeGreenScore = Number.isFinite(greenScore) ? greenScore : 0;
+
+  if(color === "green"){
+    return safeBlueScore - safeGreenScore;
+  }
+
+  if(color === "blue"){
+    return safeGreenScore - safeBlueScore;
+  }
+
+  return 0;
+}
+
 const FLAG_STATES = { ACTIVE: 'active', CAPTURED: 'captured' };
 let flagConfigs = [];
 let flags = [];
