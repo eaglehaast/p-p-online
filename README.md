@@ -103,6 +103,10 @@ If you are in `#dev` mode, `window.DEBUG_GIVE_OPPONENT_FUEL(1)` remains availabl
 - `status` prints current AI mode/goal/turn and `aiMoveScheduled` flag.
 - `reset-cargo` instantly clears all current cargo and (if cargo is enabled in settings) immediately spawns a fresh one.
 - `fallback-report` builds and returns/downloads a dedicated fallback diagnostics JSON report (works for both legacy and `AI_ENGINE_MODE="v2"`). For v2 turns, the report also reads `source`, `routeClass`, `selectedMove.routeClass`, `selectedMove.decisionReason`, plus `reasonCodes`/`rejectReasons` from `ai_decision` events to fill `candidateGenerationStats` and `candidateFunnelStats` even when legacy stage names are absent.
+- Which report to use by engine mode:
+  - `engineMode = legacy`: use regular fallback report metrics (`fallback-report` / `exportAiFallbackDiagnosticsReportJson()`).
+  - `engineMode = v2` + legacy fallback stages exist: fallback report is still useful (includes adapted v2 evidence in the same JSON).
+  - `engineMode = v2` + no legacy fallback stages, but v2 decision evidence exists: legacy fallback metrics are not applicable; use v2 diagnostics/adapted report instead.
 - `RESET_CARGO()` is a direct one-line alias for the same forced cargo reset (without passing command strings).
 - `exportAiFallbackDiagnosticsReportJson()` exports the same fallback diagnostics report directly, without using command strings.
 
