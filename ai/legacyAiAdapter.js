@@ -14,7 +14,7 @@
     if(typeof context.legacyRunAiTurn !== "function"){
       return null;
     }
-    return context.legacyRunAiTurn();
+    return context.legacyRunAiTurn(context);
   }
 
   function runAiTurn(context = {}){

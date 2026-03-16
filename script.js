@@ -8884,6 +8884,7 @@ const MAX_ACCURACY_PERCENT = 100;
 const MAX_SPREAD_DEG       = 12;
 // Переключатель движка ИИ: legacy-ветка хранится как архив идей и эталон сравнения для поэтапного запуска v2.
 const AI_ENGINE_MODE = "legacy"; // "legacy" | "v2"
+const AI_USE_GOAL_PRIORITY_MODEL = true;
 const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 const AI_MIRROR_FIRST_BOUNCE_MIN_DISTANCE = CARGO_SPAWN_SAFE_RADIUS * 0.75;
 const AI_MIRROR_MAX_PATH_RATIO = 1.95;
@@ -8895,6 +8896,7 @@ const AI_MIRROR_SCORE_BLOCKED_DIRECT_BONUS = 0.06;
 
 if(typeof window !== "undefined"){
   window.AI_ENGINE_MODE = AI_ENGINE_MODE;
+  window.AI_USE_GOAL_PRIORITY_MODEL = AI_USE_GOAL_PRIORITY_MODEL;
 }
 
 const AIMING_TUNING_DEFAULTS = {
@@ -18832,7 +18834,67 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   }
 }
 
-function selectAiModeForCurrentTurn(context){
+function evaluateAiGoalPriorityModel(context){
+  const model = (typeof window !== "undefined" && window.PaperWingsGoalPriorityModel)
+    ? window.PaperWingsGoalPriorityModel
+    : null;
+  if(!model || typeof model.evaluate !== "function") return null;
+
+  const shouldUseFlagsMode = Boolean(context?.shouldUseFlagsMode);
+  const aiAliveCount = Array.isArray(context?.aiPlanes) ? context.aiPlanes.length : 0;
+  const enemyAliveCount = Array.isArray(context?.enemies) ? context.enemies.length : 0;
+  const availableEnemyFlagsCount = Array.isArray(context?.availableEnemyFlags)
+    ? context.availableEnemyFlags.length
+    : 0;
+  const readyCargoCount = Array.isArray(cargoState)
+    ? cargoState.reduce((count, cargo) => count + (cargo?.state === "ready" ? 1 : 0), 0)
+    : 0;
+
+  return model.evaluate({
+    scoreGap: greenScore - blueScore,
+    aiAliveCount,
+    enemyAliveCount,
+    availableEnemyFlagsCount,
+    blueInventoryCount: Number.isFinite(context?.blueInventoryCount) ? context.blueInventoryCount : 0,
+    readyCargoCount,
+    hasStolenBlueFlagCarrier: Boolean(context?.stolenBlueFlagCarrier && context.stolenBlueFlagCarrier.color !== "blue"),
+    shouldUseFlagsMode,
+  });
+}
+
+function applyAiGoalSelection(selection, meta = {}){
+  if(!selection) return false;
+  const selectedMode = selection.selectedMode;
+  const selectedPriorities = Array.isArray(selection.selectedPriorities)
+    ? selection.selectedPriorities.slice()
+    : [];
+  if(!selectedMode || selectedPriorities.length === 0) return false;
+
+  aiRoundState.mode = selectedMode;
+  aiRoundState.targetPriorities = selectedPriorities;
+  aiRoundState.currentGoal = selectedPriorities[0] ?? null;
+
+  logAiDecision("goal_priority_model_selected", {
+    mode: selectedMode,
+    goalClass: selection.selectedGoalClass,
+    weight: selection.selectedWeight,
+    priorities: selectedPriorities,
+    useLegacyFallback: Boolean(meta.useLegacyFallback),
+    toggleEnabled: Boolean(meta.toggleEnabled),
+    evaluatedGoals: Array.isArray(selection.goalClassEvaluations)
+      ? selection.goalClassEvaluations.map((entry) => ({
+          goalClassName: entry.goalClassName,
+          active: entry.active,
+          weight: entry.weight,
+          reason: entry.reason,
+        }))
+      : [],
+  });
+
+  return true;
+}
+
+function selectAiModeForCurrentTurn(context, options = {}){
   const {
     shouldUseFlagsMode,
     aiPlanes,
@@ -18848,6 +18910,16 @@ function selectAiModeForCurrentTurn(context){
   const hasEnoughResourcesForAggression = blueInventoryCount >= AI_CARGO_SWITCH_TO_AGGRESSION_ITEMS;
   const openingAggressionBiasAllowed = isOpeningAggressionBiasAllowed(context);
   const blueBase = context?.homeBase || getBaseAnchor("blue");
+  const useLegacyFallback = Boolean(options.useLegacyFallback);
+  const goalModelEnabled = !useLegacyFallback && AI_USE_GOAL_PRIORITY_MODEL;
+  const goalSelection = goalModelEnabled ? evaluateAiGoalPriorityModel(context) : null;
+
+  if(goalSelection && applyAiGoalSelection(goalSelection, {
+    useLegacyFallback,
+    toggleEnabled: AI_USE_GOAL_PRIORITY_MODEL,
+  })){
+    return aiRoundState.mode;
+  }
 
   let mode = AI_MODES.ATTRITION;
   let targetPriorities = ["attack_enemy_plane", "close_distance"];
@@ -22203,7 +22275,7 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
   return baseCandidateStage;
 }
 
-function doComputerMoveLegacy(){
+function doComputerMoveLegacy(runtimeOptions = {}){
   if (gameMode!=="computer" || isGameOver) return;
   aiRoundState.lastInitialCandidateSetDiagnostics = null;
   aiRoundState.lastFinalComparedDiagnostics = null;
@@ -22291,7 +22363,8 @@ function doComputerMoveLegacy(){
   modeContext.aiRiskProfile = getAiRiskProfile(modeContext);
   logAiDecision("risk_profile", modeContext.aiRiskProfile);
 
-  selectAiModeForCurrentTurn(modeContext);
+  const forceLegacyModeSelection = runtimeOptions.forceLegacyModeSelection !== false;
+  selectAiModeForCurrentTurn(modeContext, { useLegacyFallback: forceLegacyModeSelection });
 
   const criticalBaseThreat = getCriticalBlueBaseThreat(modeContext);
   modeContext.criticalBaseThreat = criticalBaseThreat;
@@ -23068,20 +23141,38 @@ function doComputerMoveLegacy(){
   });
 }
 
+function runAiTurnV2(context = {}){
+  const useLegacyFallbackSelection = context.useLegacyFallbackSelection !== false;
+  return doComputerMoveLegacy({
+    forceLegacyModeSelection: useLegacyFallbackSelection,
+  });
+}
+
+if(typeof window !== "undefined"){
+  window.runAiTurnV2 = runAiTurnV2;
+}
+
 function doComputerMove(){
   const adapter = (typeof window !== "undefined" && window.PaperWingsAiAdapter) ? window.PaperWingsAiAdapter : null;
   if(!adapter || typeof adapter.runAiTurn !== "function"){
-    return doComputerMoveLegacy();
+    if(typeof doComputerMoveLegacy === "function") return doComputerMoveLegacy({ forceLegacyModeSelection: true });
+    return null;
   }
 
   return adapter.runAiTurn({
     engineMode: AI_ENGINE_MODE,
-    legacyRunAiTurn: doComputerMoveLegacy,
+    legacyRunAiTurn: (context) => doComputerMoveLegacy({
+      forceLegacyModeSelection: context?.forceLegacyModeSelection !== false,
+    }),
     runAiTurnV2: (context) => {
       if(typeof window !== "undefined" && typeof window.runAiTurnV2 === "function"){
-        return window.runAiTurnV2(context);
+        return window.runAiTurnV2({
+          ...context,
+          useLegacyFallbackSelection: false,
+        });
       }
-      return doComputerMoveLegacy();
+      if(typeof doComputerMoveLegacy === "function") return doComputerMoveLegacy({ forceLegacyModeSelection: true });
+      return null;
     },
   });
 }
