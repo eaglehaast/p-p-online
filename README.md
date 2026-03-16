@@ -84,8 +84,10 @@ window.AI_DEBUG_CMD("last-decisions", 5)
 window.AI_DEBUG_CMD("status")
 window.AI_DEBUG_CMD("reset-cargo")
 window.AI_DEBUG_CMD("fallback-report")
+window.AI_DEBUG_CMD("v2-report")
 window.RESET_CARGO()
 window.exportAiFallbackDiagnosticsReportJson()
+window.exportAiV2DecisionAuditReportJson()
 ```
 
 Fast one-line fuel injection for the opponent (works in any mode, no `#dev` needed):
@@ -103,8 +105,10 @@ If you are in `#dev` mode, `window.DEBUG_GIVE_OPPONENT_FUEL(1)` remains availabl
 - `status` prints current AI mode/goal/turn and `aiMoveScheduled` flag.
 - `reset-cargo` instantly clears all current cargo and (if cargo is enabled in settings) immediately spawns a fresh one.
 - `fallback-report` builds and returns/downloads a dedicated fallback diagnostics JSON report (works for both legacy and `AI_ENGINE_MODE="v2"`). For v2 turns, the report also reads `source`, `routeClass`, `selectedMove.routeClass`, `selectedMove.decisionReason`, plus `reasonCodes`/`rejectReasons` from `ai_decision` events to fill `candidateGenerationStats` and `candidateFunnelStats` even when legacy stage names are absent.
+- `v2-report` builds one combined JSON report for the new AI version: turn-by-turn motivation (`ai_decision`), quality metrics (`human_vs_ai_gap_report`) and fallback diagnostics in one downloadable file.
 - `RESET_CARGO()` is a direct one-line alias for the same forced cargo reset (without passing command strings).
 - `exportAiFallbackDiagnosticsReportJson()` exports the same fallback diagnostics report directly, without using command strings.
+- `exportAiV2DecisionAuditReportJson()` exports the same combined v2 decision-audit report directly.
 
 ### How to read `ai_decision` in the exported JSON
 
