@@ -18118,6 +18118,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     const stage = plannedMove?.fallbackChainStage || null;
     if(!stage) return;
     logAiDecision(event, {
+      stage: "final_validation_and_launch",
       fallbackStage: stage,
       planeId: plannedMove?.plane?.id ?? null,
       goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
@@ -18302,7 +18303,28 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     return;
   }
 
-  consumeAiDynamiteIntentIfUsed(plannedMove);
+  const preInventoryFinalValidation = revalidatePlannedMove(plannedMove);
+  if(!preInventoryFinalValidation.ok){
+    emitFallbackExecutionLog("fallback_execution_aborted", {
+      abortReason: preInventoryFinalValidation.reason || "stale_target_revalidation_failed",
+      step: "pre_inventory_final_validation",
+    });
+    if(launchFallbackIfNeeded(preInventoryFinalValidation)) return;
+    failSafeHandler("stale_target_launch_blocked", {
+      goal: aiRoundState?.currentGoal || plannedMove?.goalName || "stale_target_launch_blocked",
+      planeId: plannedMove?.plane?.id ?? null,
+      rejectReasons: [preInventoryFinalValidation.reason || "stale_target_revalidation_failed"],
+      reasonCodes: ["stale_target_revalidation_failed", "fail_safe_turn_advance"],
+    });
+    return;
+  }
+
+  const inventoryStageResult = {
+    stage: "inventory_decision",
+    selected: false,
+    reason: "no_inventory_item_used",
+    consumedItemType: null,
+  };
 
   const beforeInventoryState = evaluateBlueInventoryState();
   const dynamiteStateCountBeforeUsage = Array.isArray(dynamiteState) ? dynamiteState.length : 0;
@@ -18314,8 +18336,20 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       afterInventoryState?.counts
     )
     : null;
+  inventoryStageResult.selected = Boolean(itemUsed);
+  inventoryStageResult.reason = itemUsed ? "inventory_item_applied" : "no_inventory_item_used";
+  inventoryStageResult.consumedItemType = consumedItemType || null;
+  logAiDecision("inventory_decision_made", {
+    stage: inventoryStageResult.stage,
+    selected: inventoryStageResult.selected,
+    reason: inventoryStageResult.reason,
+    consumedItemType: inventoryStageResult.consumedItemType,
+    planeId: plannedMove?.plane?.id ?? null,
+    goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+  });
   if(plannedMove?.aiFuelTacticalDecision){
     logAiDecision("fuel_tactical_plan_evaluated", {
+      stage: "inventory_decision",
       planeId: plannedMove?.plane?.id ?? null,
       selectedScenario: plannedMove.aiFuelTacticalDecision.selectedScenario,
       targetContactPoint: plannedMove.aiFuelTacticalDecision.targetContactPoint,
@@ -18356,6 +18390,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       }
 
       logAiDecision("dynamite_plan_desync_prevented", {
+        stage: "inventory_decision",
         planeId: plannedMove?.plane?.id ?? null,
         colliderId: intent?.colliderId ?? null,
         targetX: Number.isFinite(intent?.x) ? Number(intent.x.toFixed(1)) : null,
@@ -18373,6 +18408,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       playInventoryConsumeFx("blue", consumedItemType);
     } else {
       logAiDecision("inventory_fx_played", {
+        stage: "inventory_decision",
         color: "blue",
         result: "failed",
         reason: "item_used_but_type_not_detected",
@@ -18382,6 +18418,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
 
   if(plannedMove?.aiFuelTacticalDecision){
     logAiDecision("fuel_tactical_plan_final", {
+      stage: "launch_vector_post_processing",
       planeId: plannedMove?.plane?.id ?? null,
       selectedScenario: plannedMove.aiFuelTacticalDecision.selectedScenario,
       targetContactPoint: plannedMove.aiFuelTacticalDecision.targetContactPoint,
@@ -18681,6 +18718,8 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
 
   registerAiInventoryUsageAfterMove(effectiveItemUsed);
 
+  consumeAiDynamiteIntentIfUsed(plannedMove);
+
   function recoverFuelConsumptionAfterRejectedPlan(staleCheck){
     if(!(effectiveItemUsed && consumedItemType === INVENTORY_ITEM_TYPES.FUEL)) return false;
 
@@ -18724,6 +18763,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       aiPostInventoryLaunchTimeout = null;
     }
     logAiDecision("post_inventory_delay_applied", {
+      stage: "final_validation_and_launch",
       delayMs: AI_POST_INVENTORY_LAUNCH_DELAY_MS,
       planeId: plannedMove?.plane?.id ?? null,
       goal: aiRoundState?.currentGoal || null,
@@ -22106,6 +22146,57 @@ function getLossCompressionAggressiveMove(modeContext){
   return bestCandidate;
 }
 
+
+function buildAiBaseCandidateStageResult(plannedMove, metadata = {}){
+  const validation = validateAiLaunchMoveCandidate(plannedMove);
+  if(!validation.ok){
+    return {
+      stage: "base_candidate_selection",
+      selected: false,
+      reason: validation.reason || "invalid_candidate",
+      move: plannedMove || null,
+      validation,
+      metadata,
+    };
+  }
+
+  return {
+    stage: "base_candidate_selection",
+    selected: true,
+    reason: "candidate_selected",
+    move: plannedMove,
+    validation,
+    metadata,
+  };
+}
+
+function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
+  const baseCandidateStage = buildAiBaseCandidateStageResult(plannedMove, metadata);
+  if(!baseCandidateStage.selected){
+    logAiDecision("base_candidate_rejected", {
+      stage: baseCandidateStage.stage,
+      reason: baseCandidateStage.reason,
+      planeId: plannedMove?.plane?.id ?? null,
+      goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+      decisionReason: plannedMove?.decisionReason || null,
+      source: metadata?.source || "do_computer_move",
+    });
+    return baseCandidateStage;
+  }
+
+  logAiDecision("base_candidate_selected", {
+    stage: baseCandidateStage.stage,
+    reason: baseCandidateStage.reason,
+    planeId: plannedMove?.plane?.id ?? null,
+    goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+    decisionReason: plannedMove?.decisionReason || null,
+    source: metadata?.source || "do_computer_move",
+  });
+
+  issueAIMoveWithInventoryUsage(context, baseCandidateStage.move);
+  return baseCandidateStage;
+}
+
 function doComputerMove(){
   if (gameMode!=="computer" || isGameOver) return;
   aiRoundState.lastInitialCandidateSetDiagnostics = null;
@@ -22258,7 +22349,7 @@ function doComputerMove(){
         hasCleanLineToBase: criticalBaseThreat.hasCleanLineToBase,
         goal: aiRoundState.currentGoal,
       });
-      issueAIMoveWithInventoryUsage(modeContext, emergencyMove);
+      issueAIMoveFromDoComputerMove(modeContext, emergencyMove);
       return;
     }
 
@@ -22283,7 +22374,7 @@ function doComputerMove(){
             }
           : null,
       });
-      issueAIMoveWithInventoryUsage(modeContext, holdPositionMove);
+      issueAIMoveFromDoComputerMove(modeContext, holdPositionMove);
       return;
     }
   }
@@ -22321,7 +22412,7 @@ function doComputerMove(){
         hasCleanLineToBase: carrierThreat.hasCleanLineToBase,
         goal: aiRoundState.currentGoal,
       });
-      issueAIMoveWithInventoryUsage(modeContext, carrierEmergencyMove);
+      issueAIMoveFromDoComputerMove(modeContext, carrierEmergencyMove);
       return;
     }
 
@@ -22340,7 +22431,7 @@ function doComputerMove(){
         distanceToBase: carrierThreat.distanceToBase,
         hasCleanLineToBase: carrierThreat.hasCleanLineToBase,
       });
-      issueAIMoveWithInventoryUsage(modeContext, carrierHoldMove);
+      issueAIMoveFromDoComputerMove(modeContext, carrierHoldMove);
       return;
     }
 
@@ -22359,7 +22450,7 @@ function doComputerMove(){
         planeId: carrierDefenseModeMove.plane?.id ?? null,
         goal: selectedGoal,
       });
-      issueAIMoveWithInventoryUsage(modeContext, carrierDefenseModeMove);
+      issueAIMoveFromDoComputerMove(modeContext, carrierDefenseModeMove);
       return;
     }
     aiRoundState.mode = previousMode;
@@ -22404,7 +22495,7 @@ function doComputerMove(){
         move: openingCenterMove,
         reasonCodes: openingCenterReasonCodes,
       });
-      issueAIMoveWithInventoryUsage(modeContext, openingCenterMove);
+      issueAIMoveFromDoComputerMove(modeContext, openingCenterMove);
       return;
     }
 
@@ -22477,7 +22568,7 @@ function doComputerMove(){
       distance: Number((earlyDirectFinisherMove.totalDist || 0).toFixed(1)),
       reason: "direct_finisher",
     });
-    issueAIMoveWithInventoryUsage(modeContext, earlyDirectFinisherMove);
+    issueAIMoveFromDoComputerMove(modeContext, earlyDirectFinisherMove);
     return;
   }
 
@@ -22498,7 +22589,7 @@ function doComputerMove(){
         goal: aiRoundState.currentGoal,
         planeId: roleMove.plane?.id ?? null,
       });
-      issueAIMoveWithInventoryUsage(modeContext, roleMove);
+      issueAIMoveFromDoComputerMove(modeContext, roleMove);
       return;
     }
     recordDecisionEvent("role_move_rejected", {
@@ -22530,7 +22621,7 @@ function doComputerMove(){
       logAiDecision("comeback_quick_flag", {
         planeId: quickFlagMove.plane?.id ?? null,
       });
-      issueAIMoveWithInventoryUsage(modeContext, quickFlagMove);
+      issueAIMoveFromDoComputerMove(modeContext, quickFlagMove);
       return;
     }
 
@@ -22548,7 +22639,7 @@ function doComputerMove(){
       move: earlyCargoMove,
       reasonCodes: ["cargo_priority", "safe_pickup_window", "resource_setup"],
     });
-    issueAIMoveWithInventoryUsage(modeContext, earlyCargoMove);
+    issueAIMoveFromDoComputerMove(modeContext, earlyCargoMove);
     return;
   }
 
@@ -22577,7 +22668,7 @@ function doComputerMove(){
       goal: aiRoundState.currentGoal,
       planeId: modeMove.plane?.id ?? null,
     });
-    issueAIMoveWithInventoryUsage(modeContext, modeMove);
+    issueAIMoveFromDoComputerMove(modeContext, modeMove);
     return;
   }
 
@@ -22607,7 +22698,7 @@ function doComputerMove(){
         risk: Number(preFallbackAttackRisk.toFixed(3)),
         riskThreshold: AI_CARGO_RISK_ACCEPTANCE,
       });
-      issueAIMoveWithInventoryUsage(modeContext, preFallbackAttackMove);
+      issueAIMoveFromDoComputerMove(modeContext, preFallbackAttackMove);
       return;
     }
 
@@ -22625,7 +22716,7 @@ function doComputerMove(){
         targetId: positionalExitMove.target?.id ?? null,
         targetType: positionalExitMove.group,
       });
-      issueAIMoveWithInventoryUsage(modeContext, positionalExitMove.move);
+      issueAIMoveFromDoComputerMove(modeContext, positionalExitMove.move);
       return;
     }
   }
@@ -22652,7 +22743,7 @@ function doComputerMove(){
       reason: lossCompressionAggressiveMove.decisionReason || null,
       adjustment: lossCompressionAggressiveMove.lossCompressionAdjustment || null,
     });
-    issueAIMoveWithInventoryUsage(modeContext, lossCompressionAggressiveMove);
+    issueAIMoveFromDoComputerMove(modeContext, lossCompressionAggressiveMove);
     return;
   }
 
@@ -22695,7 +22786,7 @@ function doComputerMove(){
     if(aiRoundState && typeof aiRoundState === "object"){
       aiRoundState.lastFallbackMoveMeta = getFallbackMoveSignature(fallbackMove);
     }
-    issueAIMoveWithInventoryUsage(modeContext, {
+    issueAIMoveFromDoComputerMove(modeContext, {
       ...fallbackMove,
       fallbackChainStage: "fallback_selected",
     });
@@ -22731,7 +22822,7 @@ function doComputerMove(){
       effectiveFlightDistancePx: guaranteedLaunchMove.effectiveFlightDistancePx ?? null,
       reason: guaranteedLaunchMove.decisionReason || "super_reserve_guaranteed_legal_launch",
     });
-    issueAIMoveWithInventoryUsage(modeContext, {
+    issueAIMoveFromDoComputerMove(modeContext, {
       ...guaranteedLaunchMove,
       fallbackChainStage: "super_reserve_selected",
     });
@@ -22768,7 +22859,7 @@ function doComputerMove(){
       effectiveFlightDistancePx: forcedProgressMove.effectiveFlightDistancePx ?? null,
       reason: forcedProgressMove.decisionReason || "forced_progress_launch",
     });
-    issueAIMoveWithInventoryUsage(modeContext, {
+    issueAIMoveFromDoComputerMove(modeContext, {
       ...forcedProgressMove,
       fallbackChainStage: "forced_progress_selected",
     });
@@ -22929,7 +23020,7 @@ function doComputerMove(){
         distance: Number((safeShortMove.move.totalDist || 0).toFixed(1)),
         reasonCode: "safe_short_fallback_progress",
       });
-      issueAIMoveWithInventoryUsage(modeContext, {
+      issueAIMoveFromDoComputerMove(modeContext, {
         ...safeShortMove.move,
         fallbackChainStage: "safe_short_fallback_selected",
       });
