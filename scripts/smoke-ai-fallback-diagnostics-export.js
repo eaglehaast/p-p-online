@@ -102,6 +102,15 @@ const activeMatch = {
         },
       },
     },
+    {
+      type: 'ai_decision',
+      roundNumber: 2,
+      stage: 'ai_move_exception',
+      goal: 'capture_enemy_flag',
+      reasonCodes: ['ai_move_exception', 'fail_safe_turn_advance'],
+      rejectReasons: ['do_computer_move_exception'],
+      errorMessage: 'Synthetic planner crash',
+    },
   ],
 };
 
@@ -114,6 +123,12 @@ assert(report.firstBlockingObjectStats?.gap, 'Expected firstBlockingObjectStats.
 assert(report.blockedSegmentStats?.ricochet, 'Expected blockedSegmentStats.ricochet block.');
 assert(report.specialRouteFailureStats?.gap, 'Expected specialRouteFailureStats.gap block.');
 assert(Array.isArray(report.fallbackEpisodeSamples), 'Expected fallbackEpisodeSamples array.');
+assert(Array.isArray(report.failSafeEpisodeSamples), 'Expected failSafeEpisodeSamples array.');
+assert(report.fallbackEpisodeDiagnostics && typeof report.fallbackEpisodeDiagnostics === 'object', 'Expected fallbackEpisodeDiagnostics block.');
+assert(report.fallbackEpisodeDiagnostics.aiMoveExceptionEvents >= 1, 'Expected ai_move_exception events to be counted.');
+assert(report.fallbackEpisodeDiagnostics.failSafeTurnAdvanceEpisodes >= 1, 'Expected fail-safe episodes to be counted.');
+assert(report.summary.some((line) => line.includes('ai_move_exception')), 'Expected summary line with ai_move_exception count.');
+assert(report.summary.some((line) => line.includes('fail-safe')), 'Expected summary line with fail-safe turn share/count.');
 assert(Array.isArray(report.summary) && report.summary.length > 0, 'Expected non-empty summary block.');
 const rootCauseTotal = Object.values(report.fallbackRootCauseStats).reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0);
 assert(rootCauseTotal >= 1, 'Expected at least one normalized root-cause fallback episode.');
