@@ -7,7 +7,7 @@
   function normalizeEngineMode(rawMode){
     return rawMode === AI_ENGINE_MODES.V2
       ? AI_ENGINE_MODES.V2
-      : AI_ENGINE_MODES.LEGACY;
+      : null;
   }
 
   function runLegacyAiTurn(context = {}){
@@ -20,11 +20,15 @@
   function runAiTurn(context = {}){
     const selectedMode = normalizeEngineMode(context.engineMode);
 
-    if(selectedMode === AI_ENGINE_MODES.V2 && typeof context.runAiTurnV2 === "function"){
-      return context.runAiTurnV2(context);
+    if(selectedMode !== AI_ENGINE_MODES.V2){
+      throw new Error(`[AI] Unsupported engine mode: ${String(context.engineMode)}. Expected "v2".`);
     }
 
-    return runLegacyAiTurn(context);
+    if(typeof context.runAiTurnV2 !== "function"){
+      throw new Error("[AI] V2 runner is unavailable. Legacy fallback is disabled.");
+    }
+
+    return context.runAiTurnV2(context);
   }
 
   global.PaperWingsAiAdapter = {
