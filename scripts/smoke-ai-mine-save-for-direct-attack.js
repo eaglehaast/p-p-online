@@ -36,6 +36,7 @@ const context = {
   Number,
   Boolean,
   Infinity,
+  CELL_SIZE: 10,
   MAX_DRAG_DISTANCE: 300,
   FIELD_FLIGHT_DURATION_SEC: 1,
   AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD: 2,
@@ -80,6 +81,10 @@ const context = {
   logAiDecision: (reason, details) => {
     decisionLogs.push({ reason, details });
   },
+  getPlaneEffectiveRangePx: () => 140,
+  getEffectiveFlightRangeCells: () => 30,
+  settings: { aimingAmplitude: 80, flightRangeCells: 30 },
+  ATTACK_RANGE_PX: 100,
   dist: (a, b) => Math.hypot(a.x - b.x, a.y - b.y),
   isPathClear: () => true,
   getDynamiteCandidateForCurrentRoute: () => null,
