@@ -18341,6 +18341,37 @@ function failSafeAdvanceTurn(reason, details = {}){
   aiMoveScheduled = false;
 
   if(turnColors[turnIndex] === "blue"){
+    const failSafeMinimalTargetedMove = getFailSafeMinimalTargetedMove(safeDetails?.modeContext);
+    if(
+      failSafeMinimalTargetedMove?.plane
+      && Number.isFinite(failSafeMinimalTargetedMove?.vx)
+      && Number.isFinite(failSafeMinimalTargetedMove?.vy)
+    ){
+      const selectedGoalName = failSafeMinimalTargetedMove.goalName ?? "fail_safe_minimal_targeted_move";
+      const selectedDecisionReason = failSafeMinimalTargetedMove.decisionReason ?? "fail_safe_minimal_targeted_move";
+      const selectedTarget = failSafeMinimalTargetedMove.targetEnemy || null;
+      logAiDecision("fail_safe_forced_launch_selected", {
+        goal,
+        previousReason: safeReason,
+        planeId: failSafeMinimalTargetedMove.plane?.id ?? null,
+        selectedMove: {
+          planeId: failSafeMinimalTargetedMove.plane?.id ?? null,
+          vx: Number(failSafeMinimalTargetedMove.vx.toFixed(3)),
+          vy: Number(failSafeMinimalTargetedMove.vy.toFixed(3)),
+          totalDist: Number.isFinite(failSafeMinimalTargetedMove.totalDist)
+            ? Number(failSafeMinimalTargetedMove.totalDist.toFixed(2))
+            : null,
+          goalName: selectedGoalName,
+          decisionReason: selectedDecisionReason,
+          targetEnemyId: selectedTarget?.id ?? null,
+          targetEnemyShieldActive: selectedTarget?.shieldActive === true,
+        },
+        reasonCodes: ["fail_safe_minimal_targeted_move", "fail_safe_forced_launch", "keep_turn_progress"],
+      });
+      issueAIMove(failSafeMinimalTargetedMove.plane, failSafeMinimalTargetedMove.vx, failSafeMinimalTargetedMove.vy);
+      return;
+    }
+
     const guaranteedMove = getGuaranteedAnyLegalLaunch();
     if(
       guaranteedMove?.plane
@@ -18369,6 +18400,123 @@ function failSafeAdvanceTurn(reason, details = {}){
   }
 
   advanceTurn();
+}
+
+function getFailSafeMinimalTargetedMove(modeContext){
+  const fallbackAiPlanes = points.filter((plane) => (
+    plane.color === "blue"
+    && isPlaneLaunchStateReady(plane)
+    && !flyingPoints.some((fp) => fp.plane === plane)
+  ));
+  if(!fallbackAiPlanes.length) return null;
+
+  const fallbackContext = modeContext && typeof modeContext === "object"
+    ? modeContext
+    : {
+        aiPlanes: fallbackAiPlanes,
+        enemies: points.filter((plane) => plane.color === "green" && plane.isAlive && !plane.burning),
+      };
+
+  const aliveEnemies = Array.isArray(fallbackContext.enemies)
+    ? fallbackContext.enemies.filter((enemy) => enemy?.isAlive && !enemy?.burning)
+    : [];
+
+  let targetedCandidate = null;
+  const vulnerableEnemies = aliveEnemies.filter((enemy) => enemy?.shieldActive !== true);
+  for(const plane of fallbackAiPlanes){
+    const sortedTargets = vulnerableEnemies
+      .filter((enemy) => Number.isFinite(enemy?.x) && Number.isFinite(enemy?.y))
+      .sort((left, right) => Math.hypot((left.x || 0) - plane.x, (left.y || 0) - plane.y) - Math.hypot((right.x || 0) - plane.x, (right.y || 0) - plane.y));
+    for(const enemy of sortedTargets){
+      const move = planPathWithSpecialRouteProbe(plane, enemy.x, enemy.y, {
+        goalName: "fail_safe_minimal_targeted_move",
+        decisionReason: "fail_safe_minimal_targeted_move",
+        targetEnemy: enemy,
+        context: fallbackContext,
+        specialAttemptBudget: 1,
+        compareLabel: ["fail_safe_minimal", plane?.id ?? "", enemy?.id ?? ""],
+      });
+      if(!move) continue;
+
+      const candidate = {
+        ...move,
+        plane,
+        targetEnemy: enemy,
+        goalName: "fail_safe_minimal_targeted_move",
+        decisionReason: "fail_safe_minimal_targeted_move",
+      };
+      const validation = validateAiLaunchMoveCandidate(candidate);
+      if(!validation.ok) continue;
+
+      const landing = getAiMoveLandingPoint(candidate);
+      if(!landing) continue;
+      const threatMeta = getImmediateResponseThreatMeta(fallbackContext, landing.x, landing.y, enemy);
+      if(threatMeta.count > 0) continue;
+
+      const distanceToEnemy = Math.hypot((enemy.x || 0) - plane.x, (enemy.y || 0) - plane.y);
+      if(!targetedCandidate || distanceToEnemy < targetedCandidate.distanceToEnemy){
+        targetedCandidate = {
+          ...candidate,
+          distanceToEnemy,
+        };
+      }
+      break;
+    }
+  }
+  if(targetedCandidate) return targetedCandidate;
+
+  const preferredAngles = [
+    Math.PI / 2,
+    Math.PI / 3,
+    (2 * Math.PI) / 3,
+    Math.PI / 4,
+    (3 * Math.PI) / 4,
+    Math.PI,
+  ];
+  const safeScales = [0.32, 0.24, 0.18];
+  let neutralSafeCandidate = null;
+
+  for(const plane of fallbackAiPlanes){
+    const planeFlightProfile = getAiFlightRangeProfile(plane);
+    const speedPxPerSec = planeFlightProfile.speedPxPerSec;
+    if(!Number.isFinite(speedPxPerSec) || speedPxPerSec <= 0) continue;
+
+    for(const scale of safeScales){
+      for(const angle of preferredAngles){
+        const vx = Math.cos(angle) * scale * speedPxPerSec;
+        const vy = Math.sin(angle) * scale * speedPxPerSec;
+        const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
+        const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
+        if(!isPathClear(plane.x, plane.y, landingX, landingY)) continue;
+
+        const threatMeta = getImmediateResponseThreatMeta(fallbackContext, landingX, landingY, null);
+        if(threatMeta.count > 0) continue;
+
+        const nearestEnemyDistance = aliveEnemies.reduce((best, enemy) => {
+          if(!Number.isFinite(enemy?.x) || !Number.isFinite(enemy?.y)) return best;
+          const nextDistance = Math.hypot(enemy.x - landingX, enemy.y - landingY);
+          return nextDistance < best ? nextDistance : best;
+        }, Number.POSITIVE_INFINITY);
+
+        const candidate = {
+          plane,
+          vx,
+          vy,
+          totalDist: Math.hypot(landingX - plane.x, landingY - plane.y),
+          effectiveFlightRangeCells: planeFlightProfile.effectiveFlightRangeCells,
+          effectiveFlightDistancePx: Number(planeFlightProfile.flightDistancePx.toFixed(1)),
+          goalName: "fail_safe_minimal_neutral_safe_trajectory",
+          decisionReason: "fail_safe_minimal_targeted_move",
+          nearestEnemyDistance,
+        };
+        if(!neutralSafeCandidate || candidate.nearestEnemyDistance > neutralSafeCandidate.nearestEnemyDistance){
+          neutralSafeCandidate = candidate;
+        }
+      }
+    }
+  }
+
+  return neutralSafeCandidate;
 }
 
 function validateAiLaunchMoveCandidate(move){
