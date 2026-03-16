@@ -9883,6 +9883,14 @@ function recordAiSelfAnalyzerDecision(stage, details = {}){
     reasonCodes: compactReasonCodes,
   };
 
+  if(typeof details.source === "string" && details.source.trim().length > 0){
+    event.source = details.source.trim().slice(0, 120);
+  }
+
+  if(typeof details.routeClass === "string" && details.routeClass.trim().length > 0){
+    event.routeClass = details.routeClass.trim().toLowerCase();
+  }
+
   if(compactRejectReasons.length > 0){
     event.rejectReasons = compactRejectReasons;
   }
@@ -9915,6 +9923,7 @@ function recordAiSelfAnalyzerDecision(stage, details = {}){
       totalDist: Number.isFinite(moveDistance) ? Number(moveDistance.toFixed(2)) : null,
       goalName: move.goalName || null,
       decisionReason: move.decisionReason || null,
+      routeClass: move.routeClass || details.routeClass || null,
       effectiveRangePx: Number.isFinite(moveEffectiveRangePx) ? Number(moveEffectiveRangePx.toFixed(1)) : null,
       distanceToTargetPx: Number.isFinite(moveDistance) ? Number(moveDistance.toFixed(1)) : null,
       distanceRatioToEffectiveRange: Number.isFinite(moveDistanceRatio) ? Number(moveDistanceRatio.toFixed(4)) : null,
@@ -10863,7 +10872,7 @@ function buildAiSelfAnalyzerGapReport(source){
 function buildAiFallbackDiagnosticsReport(source){
   const events = Array.isArray(source?.events) ? source.events : [];
   const aiDecisionEvents = events.filter((event) => event?.type === "ai_decision");
-  const fallbackStages = new Set(["fallback_selected", "super_reserve_selected", "forced_progress_selected", "safe_short_fallback_selected"]);
+  const fallbackStages = new Set(["fallback_selected", "super_reserve_selected", "forced_progress_selected", "safe_short_fallback_selected", "v2_shot_plan_not_found"]);
   const routeClasses = ["direct", "gap", "ricochet"];
 
   const createEmptyFunnelEntry = () => ({
@@ -11005,10 +11014,24 @@ function buildAiFallbackDiagnosticsReport(source){
   const getEventContextTokens = (event) => {
     const stage = toText(event?.stage);
     const goal = toText(event?.goal);
+    const source = toText(event?.source);
+    const routeClass = toText(event?.routeClass || event?.selectedMove?.routeClass);
+    const selectedDecisionReason = toText(event?.selectedMove?.decisionReason);
     const reasonCodes = Array.isArray(event?.reasonCodes) ? event.reasonCodes.map((code) => toText(code)) : [];
     const rejectReasons = Array.isArray(event?.rejectReasons) ? event.rejectReasons.map((code) => toText(code)) : [];
-    const combined = [...reasonCodes, ...rejectReasons, stage, goal].filter(Boolean);
-    return { stage, goal, reasonCodes, rejectReasons, combined };
+    const combined = [...reasonCodes, ...rejectReasons, stage, goal, source, routeClass, selectedDecisionReason].filter(Boolean);
+    return { stage, goal, source, routeClass, selectedDecisionReason, reasonCodes, rejectReasons, combined };
+  };
+
+  const detectRouteClassFromEvent = (event, eventTokens = null) => {
+    const tokens = eventTokens || getEventContextTokens(event);
+    const directRouteClass = `${event?.routeClass || event?.selectedMove?.routeClass || ""}`.toLowerCase();
+    if(routeClasses.includes(directRouteClass)) return directRouteClass;
+
+    const sourceText = `${event?.selectedMove?.decisionReason || ""} ${event?.selectedMove?.goalName || ""} ${event?.goal || ""} ${tokens?.combined?.join(" ") || ""}`.toLowerCase();
+    if(sourceText.includes("ricochet") || sourceText.includes("bounce")) return "ricochet";
+    if(sourceText.includes("gap")) return "gap";
+    return "direct";
   };
 
   const getShortlistMeta = (shortlist, classKey) => shortlist?.[classKey] && typeof shortlist[classKey] === "object"
@@ -11143,6 +11166,8 @@ function buildAiFallbackDiagnosticsReport(source){
     if(has("critical_base_threat") || has("emergency_base_defense")) return "defense_override";
     if(has("mode_strategy_failed") || has("mode_move_restriction")) return "mode_restriction_only";
     if(has("attempt_budget_exhausted")) return "attempt_budget_exhausted";
+    if(has("no_v2_shot_plan_move") || has("fallback_to_legacy")) return "no_candidates_generated";
+
 
     if(diagnostics && typeof diagnostics === "object"){
       const perClassStats = buildPerClassStats(diagnostics, shortlist);
@@ -11218,6 +11243,31 @@ function buildAiFallbackDiagnosticsReport(source){
     const diagnostics = event?.initialCandidateSetDiagnostics;
     const shortlist = diagnostics?.shortlistDiagnostics;
     const eventTokens = getEventContextTokens(event);
+
+    if((!diagnostics || typeof diagnostics !== "object") && event?.selectedMove){
+      const selectedClass = detectRouteClassFromEvent(event, eventTokens);
+      candidateGenerationStats[selectedClass].raw_attempted += 1;
+      candidateGenerationStats[selectedClass].valid_generated += 1;
+      candidateFunnelStats[selectedClass].raw_attempted += 1;
+      candidateFunnelStats[selectedClass].valid_generated += 1;
+      candidateFunnelStats[selectedClass].geometryPass += 1;
+      candidateFunnelStats[selectedClass].pathPass += 1;
+      candidateFunnelStats[selectedClass].safetyPass += 1;
+      candidateFunnelStats[selectedClass].shortlistPass += 1;
+      candidateFunnelStats[selectedClass].selected += 1;
+    }
+
+    if((!diagnostics || typeof diagnostics !== "object") && eventTokens.combined.some((token) => token.includes("base_candidate_rejected") || token.includes("invalid_candidate"))){
+      const rejectedClass = detectRouteClassFromEvent(event, eventTokens);
+      candidateGenerationStats[rejectedClass].raw_attempted += 1;
+      candidateGenerationStats[rejectedClass].rejected_by_geometry += 1;
+      candidateFunnelStats[rejectedClass].raw_attempted += 1;
+      if(rejectedClass === "gap"){
+        candidateGenerationStats.gap.no_gap_window += getReasonCountByTokens(Object.fromEntries((event?.rejectReasons || []).map((reason) => [reason, 1])), ["no_gap_window", "gap_window"]);
+      } else if(rejectedClass === "ricochet"){
+        candidateGenerationStats.ricochet.invalid_bounce_geometry += getReasonCountByTokens(Object.fromEntries((event?.rejectReasons || []).map((reason) => [reason, 1])), ["invalid_bounce_geometry", "missing_wall_geometry"]);
+      }
+    }
 
     if(diagnostics && typeof diagnostics === "object"){
       const gapAfterBounceDiagnostics = Array.isArray(diagnostics?.gapAfterBounceDiagnostics)
@@ -11335,8 +11385,7 @@ function buildAiFallbackDiagnosticsReport(source){
     }
 
     if(event?.selectedMove && diagnostics && typeof diagnostics === "object"){
-      const text = `${event?.selectedMove?.decisionReason || ""} ${event?.selectedMove?.goalName || ""}`.toLowerCase();
-      const selectedClass = text.includes("ricochet") ? "ricochet" : (text.includes("gap") ? "gap" : "direct");
+      const selectedClass = detectRouteClassFromEvent(event, eventTokens);
       const selectedClassGenerated = Math.max(0, Number(getShortlistMeta(shortlist, selectedClass).initialReachable) || 0);
       if(selectedClassGenerated > 0){
         candidateFunnelStats[selectedClass].selected += 1;
@@ -22364,6 +22413,8 @@ function buildAiBaseCandidateStageResult(plannedMove, metadata = {}){
 }
 
 function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
+  const source = metadata?.source || "do_computer_move";
+  const routeClass = plannedMove?.routeClass || metadata?.routeClass || null;
   const baseCandidateStage = buildAiBaseCandidateStageResult(plannedMove, metadata);
   if(!baseCandidateStage.selected){
     logAiDecision("base_candidate_rejected", {
@@ -22372,7 +22423,21 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
       planeId: plannedMove?.plane?.id ?? null,
       goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
       decisionReason: plannedMove?.decisionReason || null,
-      source: metadata?.source || "do_computer_move",
+      routeClass,
+      source,
+    });
+    recordAiSelfAnalyzerDecision(baseCandidateStage.stage, {
+      goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+      planeId: plannedMove?.plane?.id ?? null,
+      reasonCodes: [
+        "v2_base_candidate",
+        "base_candidate_rejected",
+        baseCandidateStage.reason || "invalid_candidate",
+      ],
+      rejectReasons: [baseCandidateStage.reason || "invalid_candidate"],
+      move: plannedMove || null,
+      source,
+      routeClass,
     });
     return baseCandidateStage;
   }
@@ -22383,7 +22448,20 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
     planeId: plannedMove?.plane?.id ?? null,
     goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
     decisionReason: plannedMove?.decisionReason || null,
-    source: metadata?.source || "do_computer_move",
+    routeClass,
+    source,
+  });
+  recordAiSelfAnalyzerDecision(baseCandidateStage.stage, {
+    goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+    planeId: plannedMove?.plane?.id ?? null,
+    reasonCodes: [
+      "v2_base_candidate",
+      "base_candidate_selected",
+      plannedMove?.decisionReason || "candidate_selected",
+    ],
+    move: plannedMove || null,
+    source,
+    routeClass,
   });
 
   issueAIMoveWithInventoryUsage(context, baseCandidateStage.move);
@@ -23293,8 +23371,20 @@ function runAiTurnV2(context = {}){
       source: "runAiTurnV2",
       chooseGoal: chosenGoal,
       shotPreview: shotPlan.shotPreview,
+      routeClass: shotPlan?.move?.routeClass || null,
     });
   }
+
+  recordAiSelfAnalyzerDecision("v2_shot_plan_not_found", {
+    goal: chosenGoal?.goalName || null,
+    reasonCodes: [
+      "v2_shot_plan_not_found",
+      "fallback_to_legacy",
+    ],
+    rejectReasons: ["no_v2_shot_plan_move"],
+    source: "runAiTurnV2",
+    routeClass: null,
+  });
 
   return doComputerMoveLegacy({
     forceLegacyModeSelection: context.useLegacyFallbackSelection !== false,
