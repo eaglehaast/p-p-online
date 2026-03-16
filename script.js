@@ -8882,6 +8882,8 @@ const MAX_FLIGHT_RANGE_CELLS = 50;
 const MIN_ACCURACY_PERCENT = 0;
 const MAX_ACCURACY_PERCENT = 100;
 const MAX_SPREAD_DEG       = 12;
+// Переключатель движка ИИ: legacy-ветка хранится как архив идей и эталон сравнения для поэтапного запуска v2.
+const AI_ENGINE_MODE = "legacy"; // "legacy" | "v2"
 const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 const AI_MIRROR_FIRST_BOUNCE_MIN_DISTANCE = CARGO_SPAWN_SAFE_RADIUS * 0.75;
 const AI_MIRROR_MAX_PATH_RATIO = 1.95;
@@ -8890,6 +8892,10 @@ const AI_MIRROR_PATH_PRESSURE_BONUS = 0.2;
 const AI_MIRROR_STUCK_RECOVERY_PRESSURE_BONUS = 0.08;
 const AI_MIRROR_SCORE_PRESSURE_BONUS = 0.12;
 const AI_MIRROR_SCORE_BLOCKED_DIRECT_BONUS = 0.06;
+
+if(typeof window !== "undefined"){
+  window.AI_ENGINE_MODE = AI_ENGINE_MODE;
+}
 
 const AIMING_TUNING_DEFAULTS = {
   referenceAccuracyPercent: 80,
@@ -22197,7 +22203,7 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
   return baseCandidateStage;
 }
 
-function doComputerMove(){
+function doComputerMoveLegacy(){
   if (gameMode!=="computer" || isGameOver) return;
   aiRoundState.lastInitialCandidateSetDiagnostics = null;
   aiRoundState.lastFinalComparedDiagnostics = null;
@@ -23061,6 +23067,25 @@ function doComputerMove(){
       : ["no_valid_move_found"],
   });
 }
+
+function doComputerMove(){
+  const adapter = (typeof window !== "undefined" && window.PaperWingsAiAdapter) ? window.PaperWingsAiAdapter : null;
+  if(!adapter || typeof adapter.runAiTurn !== "function"){
+    return doComputerMoveLegacy();
+  }
+
+  return adapter.runAiTurn({
+    engineMode: AI_ENGINE_MODE,
+    legacyRunAiTurn: doComputerMoveLegacy,
+    runAiTurnV2: (context) => {
+      if(typeof window !== "undefined" && typeof window.runAiTurnV2 === "function"){
+        return window.runAiTurnV2(context);
+      }
+      return doComputerMoveLegacy();
+    },
+  });
+}
+
 
 function tryGetAiTacticalMediumScale(baseScale, baseAngle, plane, speedPxPerSec){
   const normalizedBaseScale = Math.max(0, Math.min(1, Number.isFinite(baseScale) ? baseScale : 0));
