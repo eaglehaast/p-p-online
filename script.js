@@ -8889,8 +8889,10 @@ const MAX_FLIGHT_RANGE_CELLS = 50;
 const MIN_ACCURACY_PERCENT = 0;
 const MAX_ACCURACY_PERCENT = 100;
 const MAX_SPREAD_DEG       = 12;
-// Переключатель движка ИИ: legacy-ветка хранится как архив идей и эталон сравнения для поэтапного запуска v2.
-const AI_ENGINE_MODE = "legacy"; // "legacy" | "v2"
+// Переключатель движка ИИ: по умолчанию запускаем только новую схему (v2).
+// Legacy-ветка сохранена в репозитории как исторический архив и fallback для отладки,
+// но в обычной игре больше не должна быть активной по умолчанию.
+const AI_ENGINE_MODE = "v2"; // "legacy" | "v2"
 const AI_V2_INVENTORY_PHASE = (() => {
   const phaseFromWindow = (typeof window !== "undefined")
     ? window.AI_V2_INVENTORY_PHASE
