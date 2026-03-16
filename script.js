@@ -6982,6 +6982,13 @@ let menuScreenLocked = false;
 
 const GAME_MODE_STORAGE_KEY = 'settings.gameMode';
 const VALID_GAME_MODES = new Set(["hotSeat", "computer", "online"]);
+const TEMP_MENU_STARTUP_DEFAULTS = Object.freeze({
+  enabled: true,
+  mode: "computer",
+  ruleset: "advanced",
+  mapId: "clearsky",
+  mapName: "clear sky"
+});
 
 function normalizeGameMode(mode){
   return VALID_GAME_MODES.has(mode) ? mode : null;
@@ -9510,6 +9517,31 @@ function clampMapIndex(index){
   return Math.min(MAPS.length - 1, Math.max(0, numericIndex));
 }
 
+function resolveClearSkyMapIndex(){
+  const fallbackIndex = 0;
+  if(!Array.isArray(MAPS) || !MAPS.length){
+    return fallbackIndex;
+  }
+
+  const byIdOrNameIndex = MAPS.findIndex((map) => {
+    const mapId = typeof map?.id === 'string' ? map.id.trim().toLowerCase() : '';
+    const mapName = typeof map?.name === 'string' ? map.name.trim().toLowerCase() : '';
+    return mapId === TEMP_MENU_STARTUP_DEFAULTS.mapId || mapName === TEMP_MENU_STARTUP_DEFAULTS.mapName;
+  });
+
+  return byIdOrNameIndex >= 0 ? byIdOrNameIndex : fallbackIndex;
+}
+
+function applyTemporaryMenuStartupDefaults(){
+  if(!TEMP_MENU_STARTUP_DEFAULTS.enabled){
+    return;
+  }
+
+  selectedMode = TEMP_MENU_STARTUP_DEFAULTS.mode;
+  selectedRuleset = TEMP_MENU_STARTUP_DEFAULTS.ruleset;
+  settings.mapIndex = clampMapIndex(resolveClearSkyMapIndex());
+}
+
 function setStoredSetting(key, value){
   if(!storageAvailable){
     return;
@@ -9572,6 +9604,9 @@ function loadSettings(){
   settings.addCargo = storedAddCargo === null ? true : storedAddCargo === 'true';
   const mapIdx = parseInt(getStoredSetting('settings.mapIndex'), 10);
   settings.mapIndex = clampMapIndex(mapIdx);
+  if(TEMP_MENU_STARTUP_DEFAULTS.enabled){
+    settings.mapIndex = clampMapIndex(resolveClearSkyMapIndex());
+  }
   const storedFlameStyle = normalizeFlameStyleKey(getStoredSetting('settings.flameStyle'));
   settings.flameStyle = storedFlameStyle;
   settings.randomizeMapEachRound = getStoredSetting('settings.randomizeMapEachRound') === 'true';
@@ -9610,7 +9645,7 @@ function loadSettingsForRuleset(ruleset = selectedRuleset){
 }
 
 loadSettings();
-selectedMode = "hotSeat";
+applyTemporaryMenuStartupDefaults();
 syncInventoryVisibility();
 
 window.addEventListener('paperWingsSettingsChanged', (event) => {
@@ -9624,7 +9659,9 @@ window.addEventListener('paperWingsSettingsChanged', (event) => {
 });
 
 // Always keep menu defaults on first paint so startup state stays predictable.
-selectedRuleset = "classic";
+if(!TEMP_MENU_STARTUP_DEFAULTS.enabled){
+  selectedRuleset = "classic";
+}
 
 syncRulesButtonSkins(selectedRuleset);
 syncModeButtonSkins(selectedMode);
