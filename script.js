@@ -11502,7 +11502,12 @@ function buildAiFallbackDiagnosticsReport(source){
   }
 
   const totalFallbackEpisodes = fallbackEpisodes.length;
-  const topRootCause = Object.entries(fallbackRootCauseStats).sort((a, b) => b[1] - a[1])[0] || ["unknown", 0];
+  const sortedRootCauseEntries = Object.entries(fallbackRootCauseStats)
+    .map(([key, value]) => [key, Number.isFinite(value) ? Math.max(0, value) : 0])
+    .sort((a, b) => b[1] - a[1]);
+  const topRootCause = !sortedRootCauseEntries[0] || sortedRootCauseEntries[0][1] <= 0
+    ? ["unknown", 0]
+    : sortedRootCauseEntries[0];
   const getTopFailureKey = (stats, keys) => {
     const entries = keys
       .map((key) => [key, Number.isFinite(stats?.[key]) ? Math.max(0, stats[key]) : 0])
@@ -11711,6 +11716,7 @@ function buildAiFallbackDiagnosticsReport(source){
   const summaryMismatchDetected = summarySignals.some(({ prefix, stats }) => {
     const line = report.summary.find((entry) => entry.startsWith(prefix));
     if(!line) return false;
+    if(!hasPositiveStat(stats)) return false;
 
     const reasonPart = line.slice(prefix.length).trim();
     const reasonKey = reasonPart.split(" ")[0] || "";
