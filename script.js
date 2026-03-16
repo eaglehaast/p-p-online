@@ -23740,8 +23740,8 @@ function chooseGoal(modeContext = {}){
     enemyAliveCount: Array.isArray(modeContext.enemies) ? modeContext.enemies.length : 0,
     blueInventoryCount: Number.isFinite(modeContext.blueInventoryCount) ? modeContext.blueInventoryCount : 0,
     scoreGap: Number.isFinite(getScoreGap("blue")) ? getScoreGap("blue") : 0,
-    readyCargoCount: Array.isArray(cargoItems)
-      ? cargoItems.filter((cargo) => cargo?.isReady && !cargo?.picked).length
+    readyCargoCount: Array.isArray(cargoState)
+      ? cargoState.reduce((count, cargo) => count + (cargo?.state === "ready" ? 1 : 0), 0)
       : 0,
     hasStolenBlueFlagCarrier: Boolean(shouldUseFlagsMode && getFlagCarrierForColor("blue")),
   };
