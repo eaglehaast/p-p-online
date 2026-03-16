@@ -9819,10 +9819,12 @@ function saveAnalyticsHistoryToStorage(history){
 
 function startAiSelfAnalyzerMatchIfNeeded(){
   if(aiSelfAnalyzerState.activeMatch) return;
+  const engineMode = AI_ENGINE_MODE === "legacy" ? "legacy" : "v2";
   aiSelfAnalyzerState.activeMatch = {
     version: 1,
     startedAt: safeNowIso(),
     finishedAt: null,
+    engineMode,
     mode: gameMode || selectedMode || null,
     ruleset: selectedRuleset || null,
     mapIndex: settings?.mapIndex ?? null,
@@ -10872,7 +10874,9 @@ function buildAiSelfAnalyzerGapReport(source){
 function buildAiFallbackDiagnosticsReport(source){
   const events = Array.isArray(source?.events) ? source.events : [];
   const aiDecisionEvents = events.filter((event) => event?.type === "ai_decision");
+  const engineMode = source?.engineMode === "legacy" ? "legacy" : "v2";
   const fallbackStages = new Set(["fallback_selected", "super_reserve_selected", "forced_progress_selected", "safe_short_fallback_selected", "v2_shot_plan_not_found"]);
+  const legacyFallbackStages = new Set(["fallback_selected", "super_reserve_selected", "forced_progress_selected", "safe_short_fallback_selected"]);
   const routeClasses = ["direct", "gap", "ricochet"];
 
   const createEmptyFunnelEntry = () => ({
@@ -11682,6 +11686,7 @@ function buildAiFallbackDiagnosticsReport(source){
     generatedAt: safeNowIso(),
     sourceStartedAt: source?.startedAt || null,
     sourceFinishedAt: source?.finishedAt || null,
+    engineMode,
     fallbackRootCauseStats,
     candidateGenerationStats,
     candidateFunnelStats,
@@ -11695,6 +11700,31 @@ function buildAiFallbackDiagnosticsReport(source){
     fallbackEpisodeSamples,
     summary,
   };
+
+  const hasLegacyFallbackStageEvents = aiDecisionEvents.some((event) => legacyFallbackStages.has(`${event?.stage || ""}`));
+  const hasV2DecisionEvidence = aiDecisionEvents.some((event) => {
+    const stage = `${event?.stage || ""}`.toLowerCase();
+    const sourceToken = `${event?.source || ""}`.toLowerCase();
+    const routeClassToken = `${event?.routeClass || event?.selectedMove?.routeClass || ""}`.toLowerCase();
+    const decisionReasonToken = `${event?.selectedMove?.decisionReason || ""}`.toLowerCase();
+    const reasonCodes = Array.isArray(event?.reasonCodes) ? event.reasonCodes : [];
+    const rejectReasons = Array.isArray(event?.rejectReasons) ? event.rejectReasons : [];
+    const combinedReasonTokens = [...reasonCodes, ...rejectReasons].map((value) => `${value || ""}`.toLowerCase());
+
+    return (
+      sourceToken === "v2"
+      || stage.includes("v2")
+      || routeClassToken === "gap"
+      || routeClassToken === "ricochet"
+      || decisionReasonToken.includes("v2")
+      || combinedReasonTokens.some((token) => token.includes("v2") || token === "fallback_to_legacy" || token === "no_v2_shot_plan_move")
+    );
+  });
+
+  if(engineMode === "v2" && !hasLegacyFallbackStageEvents && hasV2DecisionEvidence){
+    report.status = "legacy_metrics_not_applicable_for_v2";
+    report.statusMessage = "Обнаружен режим движка v2 и признаки v2-решений, но legacy fallback-метрики не применимы: используйте v2-диагностику/адаптированный отчёт.";
+  }
 
   const gapAfterBounceDetailMismatch = (report.specialRouteFailureStats?.gap?.blocked_after_bounce || 0) > 0
     && (report.gapAfterBounceDetailedStats?.total || 0) === 0;
@@ -11763,6 +11793,7 @@ function buildAiFallbackDiagnosticsReport(source){
 function exportAiFallbackDiagnosticsReportJson(){
   const snapshot = getAiSelfAnalyzerSnapshot({ includeHistory: true });
   const source = snapshot?.activeMatch || snapshot?.latestFinishedMatch;
+  const engineMode = source?.engineMode === "legacy" ? "legacy" : "v2";
 
   if(!source){
     return {
@@ -11770,6 +11801,7 @@ function exportAiFallbackDiagnosticsReportJson(){
       generatedAt: safeNowIso(),
       sourceStartedAt: null,
       sourceFinishedAt: null,
+      engineMode,
       status: "insufficient_data",
       statusMessage: "Нет данных матча для fallback-диагностики.",
       fallbackRootCauseStats: {},

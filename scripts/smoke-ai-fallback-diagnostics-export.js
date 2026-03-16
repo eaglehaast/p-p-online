@@ -57,6 +57,7 @@ assert(
 );
 
 const activeMatch = {
+  engineMode: 'legacy',
   startedAt: '2026-01-01T00:00:00.000Z',
   finishedAt: null,
   events: [
@@ -107,6 +108,8 @@ const activeMatch = {
 
 const report = buildRuntime(source, activeMatch).exportAiFallbackDiagnosticsReportJson();
 assert(report && report.reportType === 'ai_fallback_diagnostics_report', 'Expected fallback diagnostics report type.');
+
+assert(report.engineMode === 'legacy', 'Expected report.engineMode from source match.');
 assert(report.fallbackRootCauseStats && typeof report.fallbackRootCauseStats === 'object', 'Expected fallbackRootCauseStats block.');
 assert(report.candidateGenerationStats?.direct, 'Expected candidateGenerationStats.direct block.');
 assert(report.candidateFunnelStats?.direct, 'Expected candidateFunnelStats.direct block.');
@@ -122,3 +125,30 @@ const fallbackReport = buildRuntime(source, null).exportAiFallbackDiagnosticsRep
 assert(fallbackReport && fallbackReport.status === 'insufficient_data', 'Expected insufficient_data for empty source.');
 
 console.log('Smoke test passed: exportAiFallbackDiagnosticsReportJson returns normalized fallback diagnostics report.');
+
+
+const v2OnlyMatch = {
+  engineMode: 'v2',
+  startedAt: '2026-01-01T00:00:00.000Z',
+  finishedAt: null,
+  events: [
+    {
+      type: 'ai_decision',
+      roundNumber: 1,
+      stage: 'v2_direct_candidate_selected',
+      source: 'v2',
+      routeClass: 'gap',
+      reasonCodes: ['v2_direct_candidate'],
+      rejectReasons: ['no_v2_shot_plan_move', 'fallback_to_legacy'],
+      selectedMove: { routeClass: 'gap', decisionReason: 'v2_shot_plan_selected' },
+    },
+  ],
+};
+
+const v2Report = buildRuntime(source, v2OnlyMatch).exportAiFallbackDiagnosticsReportJson();
+assert(v2Report.engineMode === 'v2', 'Expected v2 report engineMode.');
+assert(v2Report.status === 'legacy_metrics_not_applicable_for_v2', 'Expected status for v2-only evidence without legacy fallback stages.');
+assert(
+  typeof v2Report.statusMessage === 'string' && v2Report.statusMessage.includes('legacy fallback-метрики не применимы') && v2Report.statusMessage.includes('v2-диагностику/адаптированный отчёт'),
+  'Expected explicit statusMessage about v2 diagnostics.'
+);
