@@ -17302,7 +17302,7 @@ function evaluateFuelTacticalPlans(context, plannedMove, options = {}){
 function maybeUseInventoryBeforeLaunch(context, plannedMove){
   if(!plannedMove?.plane) return false;
 
-  const engineMode = typeof AI_ENGINE_MODE === "string" ? AI_ENGINE_MODE : "legacy";
+  const engineMode = typeof AI_ENGINE_MODE === "string" ? AI_ENGINE_MODE : "v2";
   const defaultV2InventoryPhase = Number.isFinite(typeof AI_V2_INVENTORY_PHASE !== "undefined" ? AI_V2_INVENTORY_PHASE : NaN)
     ? AI_V2_INVENTORY_PHASE
     : 3;
@@ -23427,15 +23427,11 @@ if(typeof window !== "undefined"){
 function doComputerMove(){
   const adapter = (typeof window !== "undefined" && window.PaperWingsAiAdapter) ? window.PaperWingsAiAdapter : null;
   if(!adapter || typeof adapter.runAiTurn !== "function"){
-    if(typeof doComputerMoveLegacy === "function") return doComputerMoveLegacy({ forceLegacyModeSelection: true });
-    return null;
+    throw new Error("[AI] Adapter is unavailable. Legacy fallback is disabled.");
   }
 
   return adapter.runAiTurn({
     engineMode: AI_ENGINE_MODE,
-    legacyRunAiTurn: (context) => doComputerMoveLegacy({
-      forceLegacyModeSelection: context?.forceLegacyModeSelection !== false,
-    }),
     runAiTurnV2: (context) => {
       if(typeof window !== "undefined" && typeof window.runAiTurnV2 === "function"){
         return window.runAiTurnV2({
@@ -23443,8 +23439,7 @@ function doComputerMove(){
           useLegacyFallbackSelection: false,
         });
       }
-      if(typeof doComputerMoveLegacy === "function") return doComputerMoveLegacy({ forceLegacyModeSelection: true });
-      return null;
+      throw new Error("[AI] V2 runtime is unavailable. Legacy fallback is disabled.");
     },
   });
 }
