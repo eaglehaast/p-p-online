@@ -11957,6 +11957,74 @@ function exportPlayerVsAiGapReportJson(){
   return report;
 }
 
+function exportAiV2DecisionAuditReportJson(){
+  const turnsReport = exportAiSelfAnalyzerTurnsJson();
+  const gapReport = exportPlayerVsAiGapReportJson();
+  const fallbackReport = exportAiFallbackDiagnosticsReportJson();
+
+  const summary = {
+    status: "ok",
+    statusMessage: "Сводный отчёт по решениям ИИ (v2) успешно собран.",
+    sourceStartedAt: turnsReport?.sourceStartedAt || gapReport?.sourceStartedAt || fallbackReport?.sourceStartedAt || null,
+    sourceFinishedAt: turnsReport?.sourceFinishedAt || gapReport?.sourceFinishedAt || fallbackReport?.sourceFinishedAt || null,
+    aiDecisionEventsCount: Number.isFinite(turnsReport?.aiDecisionEventsCount)
+      ? turnsReport.aiDecisionEventsCount
+      : 0,
+    humanDecisionEventsCount: Number.isFinite(turnsReport?.humanDecisionEventsCount)
+      ? turnsReport.humanDecisionEventsCount
+      : 0,
+    fallbackRate: Number.isFinite(gapReport?.gapMetrics?.aiDecisionMetrics?.fallbackRate)
+      ? gapReport.gapMetrics.aiDecisionMetrics.fallbackRate
+      : null,
+    noMoveRate: Number.isFinite(gapReport?.gapMetrics?.aiDecisionMetrics?.noMoveRate)
+      ? gapReport.gapMetrics.aiDecisionMetrics.noMoveRate
+      : null,
+    fallbackEpisodes: Number.isFinite(fallbackReport?.fallbackEpisodeSamples?.length)
+      ? fallbackReport.fallbackEpisodeSamples.length
+      : 0,
+  };
+
+  if(!turnsReport){
+    summary.status = "insufficient_data";
+    summary.statusMessage = "Недостаточно данных: нет активного или завершённого матча для сводного отчёта ИИ (v2).";
+  }
+
+  const report = {
+    reportType: "ai_v2_decision_audit_report",
+    generatedAt: safeNowIso(),
+    engineMode: AI_ENGINE_MODE,
+    summary,
+    reports: {
+      turns: turnsReport,
+      qualityGap: gapReport,
+      fallbackDiagnostics: fallbackReport,
+    },
+    usageHint: {
+      forTeam: "Отправьте этот JSON целиком для анализа качества решений и мотивации ИИ.",
+      command: "window.exportAiV2DecisionAuditReportJson()",
+      debugAlias: "window.AI_DEBUG_CMD(\"v2-report\")",
+    },
+  };
+
+  if(typeof document === "undefined"){
+    return report;
+  }
+
+  const payload = JSON.stringify(report, null, 2);
+  const blob = new Blob([payload], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const suffix = safeNowIso().replace(/[:.]/g, "-");
+  link.href = url;
+  link.download = `ai-v2-decision-audit-report-${suffix}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+
+  return report;
+}
+
 function getAiSelfAnalyzerSnapshot(options = {}){
   const includeHistory = Boolean(options?.includeHistory);
   const activeMatch = aiSelfAnalyzerState.activeMatch
@@ -12109,8 +12177,11 @@ function AI_DEBUG_CMD(command, arg){
   if(normalized === "gap-after-bounce-report"){
     return DEBUG_AI_GAP_AFTER_BOUNCE_REPORT();
   }
+  if(normalized === "v2-report"){
+    return exportAiV2DecisionAuditReportJson();
+  }
 
-  console.info('[AI_DEBUG] Неизвестная команда. Доступно: "snapshot", "last-decisions", "status", "reset-cargo", "fallback-report", "gap-after-bounce-report".');
+  console.info('[AI_DEBUG] Неизвестная команда. Доступно: "snapshot", "last-decisions", "status", "reset-cargo", "fallback-report", "gap-after-bounce-report", "v2-report".');
   return null;
 }
 
@@ -12119,6 +12190,7 @@ if(typeof window !== "undefined"){
   window.exportAiSelfAnalyzerTurnsJson = exportAiSelfAnalyzerTurnsJson;
   window.exportAiSelfAnalyzerGapJson = exportAiSelfAnalyzerGapJson;
   window.exportPlayerVsAiGapReportJson = exportPlayerVsAiGapReportJson;
+  window.exportAiV2DecisionAuditReportJson = exportAiV2DecisionAuditReportJson;
   window.exportAiFallbackDiagnosticsReportJson = exportAiFallbackDiagnosticsReportJson;
   window.exportAiFuelTrainingReportJson = exportAiFuelTrainingReportJson;
   window.DEBUG_AI_GAP_AFTER_BOUNCE_REPORT = DEBUG_AI_GAP_AFTER_BOUNCE_REPORT;
