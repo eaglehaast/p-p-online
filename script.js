@@ -23142,10 +23142,163 @@ function doComputerMoveLegacy(runtimeOptions = {}){
 }
 
 function runAiTurnV2(context = {}){
-  const useLegacyFallbackSelection = context.useLegacyFallbackSelection !== false;
+  if (gameMode!=="computer" || isGameOver) return;
+
+  const aiPlanes = points.filter((p) => p.color === "blue" && p.isAlive && !p.burning);
+  const enemies = points.filter((p) => p.color === "green" && p.isAlive && !p.burning);
+  if(!aiPlanes.length || !enemies.length){
+    return doComputerMoveLegacy({
+      forceLegacyModeSelection: context.useLegacyFallbackSelection !== false,
+    });
+  }
+
+  const modeContext = {
+    aiPlanes: rankAiPlanesForCurrentTurn(aiPlanes),
+    enemies,
+    shouldUseFlagsMode: isFlagsModeEnabled(),
+    availableEnemyFlags: isFlagsModeEnabled() ? getAvailableFlagsByColor("green") : [],
+    blueInventoryCount: getAvailableInventoryCount("blue"),
+  };
+  modeContext.aiRiskProfile = getAiRiskProfile(modeContext);
+
+  const chosenGoal = chooseGoal(modeContext);
+  const shotPlan = buildShotPlan(chosenGoal, modeContext);
+  if(shotPlan?.move){
+    aiRoundState.currentGoal = shotPlan.goalName || chosenGoal.goalName;
+    return issueAIMoveFromDoComputerMove(modeContext, {
+      ...shotPlan.move,
+      goalName: shotPlan.goalName || chosenGoal.goalName,
+      decisionReason: shotPlan.decisionReason || "v2_shot_plan_selected",
+      shotPreview: shotPlan.shotPreview,
+    }, {
+      source: "runAiTurnV2",
+      chooseGoal: chosenGoal,
+      shotPreview: shotPlan.shotPreview,
+    });
+  }
+
   return doComputerMoveLegacy({
-    forceLegacyModeSelection: useLegacyFallbackSelection,
+    forceLegacyModeSelection: context.useLegacyFallbackSelection !== false,
   });
+}
+
+function chooseGoal(modeContext = {}){
+  const shouldUseFlagsMode = Boolean(modeContext.shouldUseFlagsMode);
+  const availableEnemyFlagsCount = Array.isArray(modeContext.availableEnemyFlags)
+    ? modeContext.availableEnemyFlags.length
+    : 0;
+  const evaluationContext = {
+    shouldUseFlagsMode,
+    availableEnemyFlagsCount,
+    aiAliveCount: Array.isArray(modeContext.aiPlanes) ? modeContext.aiPlanes.length : 0,
+    enemyAliveCount: Array.isArray(modeContext.enemies) ? modeContext.enemies.length : 0,
+    blueInventoryCount: Number.isFinite(modeContext.blueInventoryCount) ? modeContext.blueInventoryCount : 0,
+    scoreGap: Number.isFinite(getScoreGap("blue")) ? getScoreGap("blue") : 0,
+    readyCargoCount: Array.isArray(cargoItems)
+      ? cargoItems.filter((cargo) => cargo?.isReady && !cargo?.picked).length
+      : 0,
+    hasStolenBlueFlagCarrier: Boolean(shouldUseFlagsMode && getFlagCarrierForColor("blue")),
+  };
+  const model = (typeof window !== "undefined" && window.PaperWingsGoalPriorityModel)
+    ? window.PaperWingsGoalPriorityModel
+    : null;
+  const evaluation = model && typeof model.evaluate === "function"
+    ? model.evaluate(evaluationContext)
+    : null;
+
+  const selectedPriority = Array.isArray(evaluation?.selectedPriorities)
+    ? evaluation.selectedPriorities[0]
+    : null;
+  const fallbackGoal = shouldUseFlagsMode && availableEnemyFlagsCount > 0
+    ? "capture_enemy_flag"
+    : "attack_enemy_plane";
+
+  return {
+    goalName: selectedPriority || fallbackGoal,
+    modelGoalClass: evaluation?.selectedGoalClass || null,
+    modelWeight: Number.isFinite(evaluation?.selectedWeight) ? evaluation.selectedWeight : null,
+    mode: evaluation?.selectedMode || null,
+    evaluation,
+  };
+}
+
+function buildShotPlan(goalSelection = {}, modeContext = {}){
+  const aiPlanes = Array.isArray(modeContext.aiPlanes) ? modeContext.aiPlanes : [];
+  const enemies = Array.isArray(modeContext.enemies) ? modeContext.enemies : [];
+  const launchReadyPlanes = aiPlanes.filter((plane) => (
+    isPlaneLaunchStateReady(plane)
+    && !flyingPoints.some((fp) => fp.plane === plane)
+  ));
+  if(!launchReadyPlanes.length || !enemies.length) return null;
+
+  const routeTypes = [
+    { type: "direct", routeClass: "direct", riskBias: 0.18, reason: "v2_direct_candidate" },
+    { type: "one_ricochet", routeClass: "ricochet", riskBias: 0.44, reason: "v2_single_bounce_candidate" },
+    { type: "narrow_corridor", routeClass: "gap", riskBias: 0.33, reason: "v2_narrow_corridor_candidate" },
+  ];
+
+  let bestPlan = null;
+  for(const plane of launchReadyPlanes){
+    for(const enemy of enemies){
+      if(!Number.isFinite(enemy?.x) || !Number.isFinite(enemy?.y)) continue;
+      for(const route of routeTypes){
+        let move = null;
+        if(route.type === "one_ricochet"){
+          move = findMirrorShot(plane, { x: enemy.x, y: enemy.y }, {
+            goalName: goalSelection.goalName || "attack_enemy_plane",
+            decisionReason: route.reason,
+          });
+        } else {
+          move = planPathToPoint(plane, enemy.x, enemy.y, {
+            goalName: goalSelection.goalName || "attack_enemy_plane",
+            routeClass: route.routeClass,
+            decisionReason: route.reason,
+          });
+        }
+        const validation = validateAiLaunchMoveCandidate(move);
+        if(!move || !validation.ok) continue;
+
+        const expectedEndPoint = {
+          x: Number((plane.x + move.vx * FIELD_FLIGHT_DURATION_SEC).toFixed(1)),
+          y: Number((plane.y + move.vy * FIELD_FLIGHT_DURATION_SEC).toFixed(1)),
+        };
+        const nearbyColliderCount = countRouteNearbyColliders(
+          plane.x,
+          plane.y,
+          expectedEndPoint.x,
+          expectedEndPoint.y,
+          CELL_SIZE * 0.9
+        );
+        const directLinePenalty = isPathClear(plane.x, plane.y, enemy.x, enemy.y) ? 0 : 0.16;
+        const risk = Number(Math.max(0, Math.min(1, route.riskBias + nearbyColliderCount * 0.06 + directLinePenalty)).toFixed(2));
+        const distance = Number.isFinite(move.totalDist) ? move.totalDist : Math.hypot(move.vx, move.vy);
+        const score = (route.type === "direct" ? 220 : route.type === "narrow_corridor" ? 170 : 140)
+          - distance
+          - risk * 90;
+
+        const shotPreview = {
+          trajectoryType: route.type,
+          expectedEndPoint,
+          risk,
+        };
+
+        if(!bestPlan || score > bestPlan.score){
+          bestPlan = {
+            score,
+            goalName: goalSelection.goalName || "attack_enemy_plane",
+            decisionReason: `${route.reason}__goal_${goalSelection.goalName || "attack_enemy_plane"}`,
+            move: {
+              ...move,
+              routeClass: route.routeClass,
+            },
+            shotPreview,
+          };
+        }
+      }
+    }
+  }
+
+  return bestPlan;
 }
 
 if(typeof window !== "undefined"){
