@@ -100,6 +100,18 @@ This immediately gives fuel to the opponent and, in computer mode, forces the AI
 
 If you are in `#dev` mode, `window.DEBUG_GIVE_OPPONENT_FUEL(1)` remains available as a debug alias.
 
+Explosion debug commands (browser console):
+
+```js
+window.EXPLOSION_PLAY("blue")
+window.EXPLOSION_PLAY("green")
+window.EXPLOSION_SIZE(0.7)
+window.EXPLOSION_DEBUG.getSizeScale()
+```
+
+- `EXPLOSION_PLAY("blue"|"green")` now tries to play explosion on a live plane of the same color (blue on blue, green on green); if there is no alive plane of that color, it falls back to board center.
+- `EXPLOSION_SIZE(scale)` changes explosion visual size scale (default `1`, useful smaller values: `0.7`, `0.5`).
+
 - `snapshot` prints a short current-match summary (mode, turn, counts, last decision).
 - `last-decisions` prints last `N` AI decision events in one-line compact format.
 - `status` prints current AI mode/goal/turn and `aiMoveScheduled` flag.
