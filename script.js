@@ -13853,8 +13853,148 @@ function isAimSessionActive(){
 const STICKY_AIM_HOLD_MOVE_THRESHOLD_PX = 4;
 const ENABLE_LEGACY_AI_FAST_LAUNCH = false;
 const AI_LAUNCH_SESSION_RELEASE_DELAY_MS = 220;
+const AI_LAUNCH_SESSION_ANGLE_TOLERANCE_DEG = 1.2;
+const AI_LAUNCH_SESSION_POWER_TOLERANCE = 0.025;
 
 let aiLaunchSession = null;
+
+function normalizeAngleDeltaRad(delta){
+  if(!Number.isFinite(delta)) return 0;
+  return Math.atan2(Math.sin(delta), Math.cos(delta));
+}
+
+function computeAiAimMetricsFromPullPoint(plane, pullX, pullY){
+  if(!plane || !Number.isFinite(pullX) || !Number.isFinite(pullY)){
+    return null;
+  }
+  const dx = pullX - plane.x;
+  const dy = pullY - plane.y;
+  const distance = Math.hypot(dx, dy);
+  const clampedDistance = Math.min(distance, MAX_DRAG_DISTANCE);
+  const powerRatio = MAX_DRAG_DISTANCE > 0 ? (clampedDistance / MAX_DRAG_DISTANCE) : 0;
+  const angleRad = Math.atan2(dy, dx);
+  return {
+    angleRad,
+    powerRatio,
+    pullX,
+    pullY,
+  };
+}
+
+function pickAiLaunchCandidateForRelease(session){
+  if(session?.bestCandidate?.metrics){
+    return {
+      metrics: session.bestCandidate.metrics,
+      source: "best_sample",
+    };
+  }
+  if(session?.currentMetrics){
+    return {
+      metrics: session.currentMetrics,
+      source: "current_sample",
+    };
+  }
+  if(session?.targetAim){
+    return {
+      metrics: session.targetAim,
+      source: "target_fallback",
+    };
+  }
+  return null;
+}
+
+function releaseAiLaunchSession(session, reason, now = performance.now()){
+  if(!session?.plane || !isPlaneLaunchStateReady(session.plane)){
+    logAiDecision("ai_launch_release", {
+      reason,
+      planeId: session?.plane?.id ?? null,
+      releaseCause: "emergency_release",
+      status: "skipped_invalid_plane",
+    });
+    aiLaunchSession = null;
+    cleanupHandle();
+    if(typeof failSafeAdvanceTurn === "function"){
+      failSafeAdvanceTurn("ai_launch_session_plane_lost", {
+        goal: aiRoundState?.currentGoal || "ai_launch_session_plane_lost",
+        planeId: session?.plane?.id ?? null,
+        reasonCodes: ["invalid_plane_state_for_launch", "emergency_release", "fail_safe_turn_advance"],
+        rejectReasons: ["invalid_plane_state_for_launch"],
+      });
+    }
+    return;
+  }
+
+  const candidate = pickAiLaunchCandidateForRelease(session);
+  if(!candidate?.metrics){
+    logAiDecision("ai_launch_release", {
+      reason,
+      planeId: session.plane?.id ?? null,
+      releaseCause: "emergency_release",
+      status: "failed_no_candidate",
+    });
+    aiLaunchSession = null;
+    cleanupHandle();
+    if(typeof failSafeAdvanceTurn === "function"){
+      failSafeAdvanceTurn("invalid_move_fail_safe", {
+        goal: aiRoundState?.currentGoal || "invalid_move_fail_safe",
+        planeId: session.plane?.id ?? null,
+        reasonCodes: ["invalid_plane_for_launch", "emergency_release", "fail_safe_turn_advance"],
+        rejectReasons: ["invalid_plane_for_launch"],
+      });
+    }
+    return;
+  }
+
+  const launchVector = computeLaunchVectorFromPull(session.plane, candidate.metrics.pullX, candidate.metrics.pullY);
+  if(!launchVector.ok){
+    logAiDecision("ai_launch_release", {
+      reason,
+      planeId: session.plane?.id ?? null,
+      releaseCause: "emergency_release",
+      status: "failed_bad_launch_vector",
+      candidateSource: candidate.source,
+    });
+    aiLaunchSession = null;
+    cleanupHandle();
+    if(typeof failSafeAdvanceTurn === "function"){
+      failSafeAdvanceTurn("invalid_move_fail_safe", {
+        goal: aiRoundState?.currentGoal || "invalid_move_fail_safe",
+        planeId: session.plane?.id ?? null,
+        reasonCodes: ["invalid_plane_for_launch", "emergency_release", "fail_safe_turn_advance"],
+        rejectReasons: [launchVector.reason || "invalid_plane_for_launch"],
+      });
+    }
+    return;
+  }
+
+  const releaseResult = runLaunchReleaseStage({
+    plane: session.plane,
+    vx: launchVector.vx,
+    vy: launchVector.vy,
+    actor: "computer",
+  });
+  if(releaseResult?.ok !== false){
+    applyAiLaunchPostReleaseMetrics(session.plane, launchVector.vx, launchVector.vy);
+  }
+
+  const best = session.bestCandidate;
+  logAiDecision("ai_launch_release", {
+    reason,
+    planeId: session.plane?.id ?? null,
+    releaseCause: reason === "perfect_tolerance" ? "ideal_caught" : "timeout_best_effort",
+    candidateSource: candidate.source,
+    sampledAtMs: Number.isFinite(now) ? Math.round(now - (session.stageStartedAt || now)) : null,
+    angleErrorDeg: Number.isFinite(best?.angleErrorRad)
+      ? Number((best.angleErrorRad * 180 / Math.PI).toFixed(3))
+      : null,
+    powerError: Number.isFinite(best?.powerError)
+      ? Number(best.powerError.toFixed(4))
+      : null,
+  });
+
+  aiLaunchSession = null;
+  cleanupHandle();
+}
 
 function runLaunchReleaseStage({ plane, vx, vy, actor = "human" }){
   if(!plane) return { ok: false, reason: "invalid_plane_for_launch" };
@@ -27261,6 +27401,7 @@ function destroyPlane(fp, scoringColor = null){
 function buildAiLaunchSession(plane, vx, vy){
   const now = performance.now();
   const pullPoint = buildPullPointForAiVector(plane, vx, vy);
+  const targetAim = computeAiAimMetricsFromPullPoint(plane, pullPoint.x, pullPoint.y);
   activateAimSession({
     planeRef: plane,
     controllerType: "computer",
@@ -27279,6 +27420,19 @@ function buildAiLaunchSession(plane, vx, vy){
     stageStartedAt: now,
     pullPoint,
     releaseDueAt: now + AI_LAUNCH_SESSION_RELEASE_DELAY_MS,
+    targetAim,
+    currentMetrics: targetAim,
+    bestCandidate: targetAim ? {
+      metrics: targetAim,
+      angleErrorRad: 0,
+      powerError: 0,
+      totalError: 0,
+      sampledAt: now,
+    } : null,
+    releaseTolerance: {
+      angleRad: AI_LAUNCH_SESSION_ANGLE_TOLERANCE_DEG * Math.PI / 180,
+      powerRatio: AI_LAUNCH_SESSION_POWER_TOLERANCE,
+    },
   };
 }
 
@@ -27310,43 +27464,20 @@ function runAiLaunchSessionTick(now = performance.now()){
     session.stageStartedAt = now;
     return;
   }
+  if(session.stage === "oscillate" && session.pendingReleaseReason === "perfect_tolerance"){
+    session.stage = "release";
+    session.stageStartedAt = now;
+    releaseAiLaunchSession(session, "perfect_tolerance", now);
+    return;
+  }
   if(session.stage === "oscillate" && now < session.releaseDueAt){
     return;
   }
-
-  session.stage = "release";
-  session.stageStartedAt = now;
-  const launchValidation = validateAiLaunchMoveCandidate({
-    plane: session.plane,
-    vx: session.vx,
-    vy: session.vy,
-  });
-  if(!launchValidation.ok){
-    aiLaunchSession = null;
-    cleanupHandle();
-    if(typeof failSafeAdvanceTurn === "function"){
-      failSafeAdvanceTurn("invalid_move_fail_safe", {
-        goal: aiRoundState?.currentGoal || "invalid_move_fail_safe",
-        planeId: session.plane?.id ?? null,
-        reasonCodes: ["invalid_plane_for_launch", "fail_safe_turn_advance"],
-        rejectReasons: [launchValidation.reason || "invalid_plane_for_launch"],
-        errorMessage: launchValidation.message || null,
-      });
-    }
-    return;
+  if(session.stage === "oscillate"){
+    session.stage = "release";
+    session.stageStartedAt = now;
+    releaseAiLaunchSession(session, "timeout");
   }
-
-  const releaseResult = runLaunchReleaseStage({
-    plane: session.plane,
-    vx: session.vx,
-    vy: session.vy,
-    actor: "computer",
-  });
-  if(releaseResult?.ok !== false){
-    applyAiLaunchPostReleaseMetrics(session.plane, session.vx, session.vy);
-  }
-  aiLaunchSession = null;
-  cleanupHandle();
 }
 
 function issueAIMove(plane, vx, vy){
@@ -27875,6 +28006,40 @@ function gameDraw(){
 
     aimSession.offsetX = aimSession.shakyX - aimSession.baseX;
     aimSession.offsetY = aimSession.shakyY - aimSession.baseY;
+
+    if(
+      aimSession.controllerType === "computer"
+      && aiLaunchSession
+      && aiLaunchSession.stage === "oscillate"
+      && aiLaunchSession.plane === plane
+      && aiLaunchSession.targetAim
+    ){
+      const currentMetrics = computeAiAimMetricsFromPullPoint(plane, aimSession.shakyX, aimSession.shakyY);
+      aiLaunchSession.currentMetrics = currentMetrics;
+      if(currentMetrics){
+        const angleErrorRad = Math.abs(normalizeAngleDeltaRad(currentMetrics.angleRad - aiLaunchSession.targetAim.angleRad));
+        const powerError = Math.abs(currentMetrics.powerRatio - aiLaunchSession.targetAim.powerRatio);
+        const totalError = angleErrorRad + powerError;
+        if(!aiLaunchSession.bestCandidate || totalError < aiLaunchSession.bestCandidate.totalError){
+          aiLaunchSession.bestCandidate = {
+            metrics: currentMetrics,
+            angleErrorRad,
+            powerError,
+            totalError,
+            sampledAt: now,
+          };
+        }
+
+        const tolerance = aiLaunchSession.releaseTolerance;
+        if(
+          !aiLaunchSession.pendingReleaseReason
+          && angleErrorRad <= tolerance.angleRad
+          && powerError <= tolerance.powerRatio
+        ){
+          aiLaunchSession.pendingReleaseReason = "perfect_tolerance";
+        }
+      }
+    }
 
     // ограничение видимой длины
     let vdx = aimSession.shakyX - plane.x;
