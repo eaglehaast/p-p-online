@@ -29375,6 +29375,12 @@ function spawnExplosionForPlane(plane, x = null, y = null, options = {}) {
     return null;
   }
 
+  // In arcade mode plane destruction should stay visually instant:
+  // planes disappear without burn/explosion FX.
+  if (isArcadePlaneRespawnEnabled()) {
+    return null;
+  }
+
   // Always anchor plane-destruction explosions at the destroyed plane center.
   // This keeps FX placement consistent regardless of where collision contact happened.
   const cx = Number.isFinite(plane.x)
