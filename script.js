@@ -13867,10 +13867,14 @@ function isAimSessionActive(){
 
 const STICKY_AIM_HOLD_MOVE_THRESHOLD_PX = 4;
 const ENABLE_LEGACY_AI_FAST_LAUNCH = false;
-const AI_LAUNCH_SESSION_RELEASE_DELAY_MS = 220;
+const AI_LAUNCH_TOTAL_DURATION_MIN_MS = 2000;
+const AI_LAUNCH_TOTAL_DURATION_MAX_MS = 4000;
+const AI_LAUNCH_TARGET_SELECTION_MIN_MS = 450;
+const AI_LAUNCH_TARGET_SELECTION_MAX_MS = 900;
+const AI_LAUNCH_PULL_MIN_MS = 650;
+const AI_LAUNCH_PULL_MAX_MS = 1100;
 const AI_LAUNCH_SESSION_ANGLE_TOLERANCE_DEG = 1.2;
 const AI_LAUNCH_SESSION_POWER_TOLERANCE = 0.025;
-const AI_LAUNCH_PREVIEW_DURATION_MS = 320;
 const AI_LAUNCH_PREVIEW_ARROW_PULSE_SPEED = 0.012;
 const AI_LAUNCH_PREVIEW_ARROW_PULSE_AMPLITUDE = 0.22;
 const AI_LAUNCH_PREVIEW_TARGET_MARKER_RADIUS = 8;
@@ -27425,28 +27429,40 @@ function buildAiLaunchSession(plane, vx, vy){
   const now = performance.now();
   const pullPoint = buildPullPointForAiVector(plane, vx, vy);
   const targetAim = computeAiAimMetricsFromPullPoint(plane, pullPoint.x, pullPoint.y);
+  const randomInRange = (min, max) => min + Math.random() * Math.max(0, max - min);
+  const totalDurationMs = randomInRange(AI_LAUNCH_TOTAL_DURATION_MIN_MS, AI_LAUNCH_TOTAL_DURATION_MAX_MS);
+  const targetSelectionDurationMs = randomInRange(AI_LAUNCH_TARGET_SELECTION_MIN_MS, AI_LAUNCH_TARGET_SELECTION_MAX_MS);
+  const pullDurationMs = randomInRange(AI_LAUNCH_PULL_MIN_MS, AI_LAUNCH_PULL_MAX_MS);
+  const oscillationDurationMs = Math.max(600, totalDurationMs - targetSelectionDurationMs - pullDurationMs);
+
   activateAimSession({
     planeRef: plane,
     controllerType: "computer",
-    baseX: pullPoint.x,
-    baseY: pullPoint.y,
-    shakyX: pullPoint.x,
-    shakyY: pullPoint.y,
+    baseX: plane.x,
+    baseY: plane.y,
+    shakyX: plane.x,
+    shakyY: plane.y,
     origAngle: plane?.angle ?? null,
   });
+  oscillationAngle = 0;
+  oscillationDir = 1;
 
   const telemetryEnabled = aiTelegraphyDebugState.enabled !== false;
-  const previewDurationMs = telemetryEnabled ? AI_LAUNCH_PREVIEW_DURATION_MS : 0;
+  const targetSelectionEndsAt = now + targetSelectionDurationMs;
+  const pullEndsAt = targetSelectionEndsAt + pullDurationMs;
+  const releaseDueAt = pullEndsAt + oscillationDurationMs;
 
   return {
     plane,
     vx,
     vy,
-    stage: previewDurationMs > 0 ? "preview" : "prepare",
+    stage: telemetryEnabled ? "targeting" : "oscillate",
     stageStartedAt: now,
     pullPoint,
-    releaseDueAt: now + previewDurationMs + AI_LAUNCH_SESSION_RELEASE_DELAY_MS,
-    previewEndsAt: now + previewDurationMs,
+    targetSelectionEndsAt,
+    pullEndsAt,
+    releaseDueAt,
+    previewEndsAt: targetSelectionEndsAt,
     targetAim,
     currentMetrics: targetAim,
     bestCandidate: targetAim ? {
@@ -27474,7 +27490,7 @@ function getAiLaunchPreviewProgress(session, now = performance.now()){
 
 function isAiLaunchPreviewActive(session, now = performance.now()){
   if(!session || session.telegraphyEnabled === false) return false;
-  return session.stage === "preview" && now < (session.previewEndsAt || 0);
+  return session.stage === "targeting" && now < (session.previewEndsAt || 0);
 }
 
 function runAiLaunchSessionTick(now = performance.now()){
@@ -27495,20 +27511,27 @@ function runAiLaunchSessionTick(now = performance.now()){
     return;
   }
 
-  if(session.stage === "preview"){
-    if(now < (session.previewEndsAt || 0)){
+  if(session.stage === "targeting"){
+    if(now < (session.targetSelectionEndsAt || 0)){
+      aimSession.baseX = session.plane.x;
+      aimSession.baseY = session.plane.y;
       return;
     }
-    session.stage = "prepare";
-    session.stageStartedAt = now;
-    return;
-  }
-  if(session.stage === "prepare"){
     session.stage = "pull";
     session.stageStartedAt = now;
     return;
   }
   if(session.stage === "pull"){
+    const pullStartAt = Number.isFinite(session.targetSelectionEndsAt) ? session.targetSelectionEndsAt : now;
+    const pullDuration = Math.max(1, (session.pullEndsAt || now) - pullStartAt);
+    const pullProgress = clamp((now - pullStartAt) / pullDuration, 0, 1);
+    aimSession.baseX = session.plane.x + (session.pullPoint.x - session.plane.x) * pullProgress;
+    aimSession.baseY = session.plane.y + (session.pullPoint.y - session.plane.y) * pullProgress;
+    if(now < (session.pullEndsAt || 0)){
+      return;
+    }
+    aimSession.baseX = session.pullPoint.x;
+    aimSession.baseY = session.pullPoint.y;
     session.stage = "oscillate";
     session.stageStartedAt = now;
     return;
@@ -28036,6 +28059,12 @@ function gameDraw(){
     const maxAngleDeg = getSpreadAngleDegByAccuracy(aimingAccuracyPercent) * dragOscillationMultiplier;
     const maxAngleRad = maxAngleDeg * Math.PI / 180;
 
+    const aiPreOscillationStageActive = (
+      aimSession.controllerType === "computer"
+      && aiLaunchSession
+      && aiLaunchSession.plane === plane
+      && aiLaunchSession.stage !== "oscillate"
+    );
     const aiPreviewActive = (
       aimSession.controllerType === "computer"
       && aiLaunchSession
@@ -28044,7 +28073,7 @@ function gameDraw(){
     );
 
     // обновляем текущий угол раскачивания, но в фазе preview оставляем стрелу на целевом направлении
-    if(!aiPreviewActive){
+    if(!aiPreOscillationStageActive){
       oscillationAngle += getAimingOscillationSpeed() * dragOscillationMultiplier * delta * oscillationDir;
       if(oscillationDir > 0 && oscillationAngle > maxAngleRad){
         oscillationAngle = maxAngleRad;
@@ -28056,7 +28085,7 @@ function gameDraw(){
     }
 
     const baseAngle = Math.atan2(dy, dx);
-    const angle = aiPreviewActive ? baseAngle : (baseAngle + oscillationAngle);
+    const angle = aiPreOscillationStageActive ? baseAngle : (baseAngle + oscillationAngle);
 
 
     aimSession.shakyX = plane.x + clampedDist * Math.cos(angle);
@@ -28068,7 +28097,7 @@ function gameDraw(){
     if(
       aimSession.controllerType === "computer"
       && aiLaunchSession
-      && (aiLaunchSession.stage === "oscillate" || aiLaunchSession.stage === "preview")
+      && (aiLaunchSession.stage === "oscillate" || aiLaunchSession.stage === "targeting" || aiLaunchSession.stage === "pull")
       && aiLaunchSession.plane === plane
       && aiLaunchSession.targetAim
     ){
