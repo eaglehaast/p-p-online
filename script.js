@@ -33,6 +33,7 @@ const DEBUG_INVENTORY_INPUT = false;
 const DEBUG_PLANE_GRAB = false;
 const DEBUG_CHEATS = typeof location !== "undefined" && location.hash.includes("dev");
 const DEBUG_ARCADE_SCORE_TEXT = false;
+const DEBUG_AI_FAST_LAUNCH_PIPELINE = false;
 
 if (typeof window !== 'undefined') {
   window.PINCH_ACTIVE = false;
@@ -12687,6 +12688,7 @@ function invalidateAiPlanningState(reason = "unspecified"){
   clearAiPostInventoryLaunchTimeout(`planning_invalidate:${reason}`);
   aiPlanningSnapshotCache = null;
   aiCachedTargetMemory = null;
+  aiLaunchSession = null;
 }
 
 function buildCommittedEnemySnapshot(){
@@ -13808,6 +13810,82 @@ const handleCircle={
 };
 
 const STICKY_AIM_HOLD_MOVE_THRESHOLD_PX = 4;
+const ENABLE_LEGACY_AI_FAST_LAUNCH = false;
+const AI_LAUNCH_SESSION_RELEASE_DELAY_MS = 220;
+
+let aiLaunchSession = null;
+
+function runLaunchReleaseStage({ plane, vx, vy, actor = "human" }){
+  if(!plane) return { ok: false, reason: "invalid_plane_for_launch" };
+
+  plane.angle = Math.atan2(vy, vx) + Math.PI/2;
+  markPlaneLaunchedFromBase(plane);
+  flyingPoints.push({
+    plane, vx, vy,
+    timeLeft: FIELD_FLIGHT_DURATION_SEC,
+    collisionCooldown:0,
+    lastHitPlane:null,
+    lastHitCooldown:0,
+    shieldBreakLockActive:false,
+    shieldBreakLockTarget:null
+  });
+
+  recordAiSelfAnalyzerLaunch(plane, vx, vy, actor === "computer" ? "computer" : "human");
+  if(actor === "human"){
+    recordHumanDecisionEvent(plane, vx, vy);
+  }
+
+  if(!hasShotThisRound){
+    hasShotThisRound = true;
+    renderScoreboard();
+  }
+  roundTextTimer = 0;
+  return { ok: true };
+}
+
+function computeLaunchVectorFromPull(plane, fromX, fromY){
+  let dx = fromX - plane.x;
+  let dy = fromY - plane.y;
+  let dragDistance = Math.hypot(dx, dy);
+  if(dragDistance < CELL_SIZE){
+    return { ok: false, reason: "drag_too_short" };
+  }
+  if(dragDistance > MAX_DRAG_DISTANCE){
+    dx *= MAX_DRAG_DISTANCE/dragDistance;
+    dy *= MAX_DRAG_DISTANCE/dragDistance;
+    dragDistance = MAX_DRAG_DISTANCE;
+  }
+
+  const dragAngle = Math.atan2(dy, dx);
+  const effectiveFlightRangeCells = getEffectiveFlightRangeCells(plane);
+  const flightDistancePx = effectiveFlightRangeCells * CELL_SIZE;
+  const speedPxPerSec = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
+  const scale = dragDistance / MAX_DRAG_DISTANCE;
+
+  return {
+    ok: true,
+    vx: -Math.cos(dragAngle) * scale * speedPxPerSec,
+    vy: -Math.sin(dragAngle) * scale * speedPxPerSec,
+  };
+}
+
+function buildPullPointForAiVector(plane, vx, vy){
+  const speed = Math.hypot(vx, vy);
+  const effectiveFlightRangeCells = getEffectiveFlightRangeCells(plane);
+  const flightDistancePx = effectiveFlightRangeCells * CELL_SIZE;
+  const speedPxPerSec = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
+  if(!Number.isFinite(speed) || !Number.isFinite(speedPxPerSec) || speedPxPerSec <= 0){
+    return { x: plane.x, y: plane.y };
+  }
+
+  const scale = Math.max(0, Math.min(1, speed / speedPxPerSec));
+  const dragDistance = scale * MAX_DRAG_DISTANCE;
+  const pullAngle = Math.atan2(-vy, -vx);
+  return {
+    x: plane.x + Math.cos(pullAngle) * dragDistance,
+    y: plane.y + Math.sin(pullAngle) * dragDistance,
+  };
+}
 
 function shouldUseStickyAimForPointerEvent(event){
   return event?.pointerType !== "touch";
@@ -14518,56 +14596,20 @@ function onHandleUp(){
     updateBoardCursorForHover(baseX, baseY);
     return;
   }
-  let dx= handleCircle.shakyX - plane.x;
-  let dy= handleCircle.shakyY - plane.y;
-
-  let dragDistance = Math.hypot(dx, dy);
-  // Cancel the move if released before the first tick mark
-  if(dragDistance < CELL_SIZE){
+  const launchVector = computeLaunchVectorFromPull(plane, handleCircle.shakyX, handleCircle.shakyY);
+  if(!launchVector.ok){
     plane.angle = handleCircle.origAngle;
     cleanupHandle();
     updateBoardCursorForHover(baseX, baseY);
     return;
   }
-  if(dragDistance > MAX_DRAG_DISTANCE){
-    dx *= MAX_DRAG_DISTANCE/dragDistance;
-    dy *= MAX_DRAG_DISTANCE/dragDistance;
-    dragDistance = MAX_DRAG_DISTANCE;
-  }
-
-  // угол «натяжки»
-  const dragAngle = Math.atan2(dy, dx);
-
-  // дальность в пикселях
-  const effectiveFlightRangeCells = getEffectiveFlightRangeCells(plane);
-  const flightDistancePx = effectiveFlightRangeCells * CELL_SIZE;
-  const speedPxPerSec = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
-  const scale = dragDistance / MAX_DRAG_DISTANCE;
-
-  // скорость — ПРОТИВ направления натяжки (px/sec)
-  let vx= -Math.cos(dragAngle) * scale * speedPxPerSec;
-  let vy= -Math.sin(dragAngle) * scale * speedPxPerSec;
-
-  // нос по скорости
-  plane.angle = Math.atan2(vy, vx) + Math.PI/2;
-  markPlaneLaunchedFromBase(plane);
-
-  flyingPoints.push({
-    plane, vx, vy,
-    timeLeft: FIELD_FLIGHT_DURATION_SEC,
-    collisionCooldown:0,
-    lastHitPlane:null,
-    lastHitCooldown:0,
-    shieldBreakLockActive:false,
-    shieldBreakLockTarget:null
+  runLaunchReleaseStage({
+    plane,
+    vx: launchVector.vx,
+    vy: launchVector.vy,
+    actor: "human",
   });
-  recordAiSelfAnalyzerLaunch(plane, vx, vy, "human");
-  recordHumanDecisionEvent(plane, vx, vy);
 
-  if(!hasShotThisRound){
-    hasShotThisRound = true;
-    renderScoreboard();
-  }
   cleanupHandle();
   updateBoardCursorForHover(baseX, baseY);
 }
@@ -25375,42 +25417,8 @@ function findDirectFinisherMove(aiPlanes, enemies, options = {}){
   return best;
 }
 
-function issueAIMove(plane, vx, vy){
-  const launchValidation = validateAiLaunchMoveCandidate({ plane, vx, vy });
-  if(!launchValidation.ok){
-    logAiDecision("issue_ai_move_invalid_input", {
-      planeId: plane?.id ?? null,
-      reason: launchValidation.reason || "invalid_plane_for_launch",
-      message: launchValidation.message || null,
-    });
-    if(typeof failSafeAdvanceTurn === "function"){
-      failSafeAdvanceTurn("invalid_move_fail_safe", {
-        goal: aiRoundState?.currentGoal || "invalid_move_fail_safe",
-        planeId: plane?.id ?? null,
-        reasonCodes: ["invalid_plane_for_launch", "fail_safe_turn_advance"],
-        rejectReasons: [launchValidation.reason || "invalid_plane_for_launch"],
-        errorMessage: launchValidation.message || null,
-      });
-    }
-    return {
-      ok: false,
-      reason: launchValidation.reason || "invalid_plane_for_launch",
-    };
-  }
-
-  plane.angle = Math.atan2(vy, vx) + Math.PI/2;
+function applyAiLaunchPostReleaseMetrics(plane, vx, vy){
   const launchAngleDeg = normalizeAngleDeg((Math.atan2(vy, vx) * 180 / Math.PI + 360) % 360);
-  markPlaneLaunchedFromBase(plane);
-  flyingPoints.push({
-    plane, vx, vy,
-    timeLeft: FIELD_FLIGHT_DURATION_SEC,
-    collisionCooldown:0,
-    lastHitPlane:null,
-    lastHitCooldown:0,
-    shieldBreakLockActive:false,
-    shieldBreakLockTarget:null
-  });
-  recordAiSelfAnalyzerLaunch(plane, vx, vy, "computer");
   if(plane?.id){
     if(aiRoundState.lastLaunchedPlaneId === plane.id){
       aiRoundState.consecutiveSamePlaneLaunches += 1;
@@ -27204,6 +27212,127 @@ function destroyPlane(fp, scoringColor = null){
   }
 }
 
+function buildAiLaunchSession(plane, vx, vy){
+  const now = performance.now();
+  const pullPoint = buildPullPointForAiVector(plane, vx, vy);
+  return {
+    plane,
+    vx,
+    vy,
+    stage: "prepare",
+    stageStartedAt: now,
+    pullPoint,
+    releaseDueAt: now + AI_LAUNCH_SESSION_RELEASE_DELAY_MS,
+  };
+}
+
+function runAiLaunchSessionTick(now = performance.now()){
+  if(!aiLaunchSession) return;
+  const session = aiLaunchSession;
+
+  if(!session.plane || !isPlaneLaunchStateReady(session.plane)){
+    aiLaunchSession = null;
+    if(typeof failSafeAdvanceTurn === "function"){
+      failSafeAdvanceTurn("ai_launch_session_plane_lost", {
+        goal: aiRoundState?.currentGoal || "ai_launch_session_plane_lost",
+        planeId: session?.plane?.id ?? null,
+        reasonCodes: ["invalid_plane_state_for_launch", "fail_safe_turn_advance"],
+        rejectReasons: ["invalid_plane_state_for_launch"],
+      });
+    }
+    return;
+  }
+
+  if(session.stage === "prepare"){
+    session.stage = "pull";
+    session.stageStartedAt = now;
+    return;
+  }
+  if(session.stage === "pull"){
+    session.stage = "oscillate";
+    session.stageStartedAt = now;
+    return;
+  }
+  if(session.stage === "oscillate" && now < session.releaseDueAt){
+    return;
+  }
+
+  session.stage = "release";
+  session.stageStartedAt = now;
+  const launchValidation = validateAiLaunchMoveCandidate({
+    plane: session.plane,
+    vx: session.vx,
+    vy: session.vy,
+  });
+  if(!launchValidation.ok){
+    aiLaunchSession = null;
+    if(typeof failSafeAdvanceTurn === "function"){
+      failSafeAdvanceTurn("invalid_move_fail_safe", {
+        goal: aiRoundState?.currentGoal || "invalid_move_fail_safe",
+        planeId: session.plane?.id ?? null,
+        reasonCodes: ["invalid_plane_for_launch", "fail_safe_turn_advance"],
+        rejectReasons: [launchValidation.reason || "invalid_plane_for_launch"],
+        errorMessage: launchValidation.message || null,
+      });
+    }
+    return;
+  }
+
+  const releaseResult = runLaunchReleaseStage({
+    plane: session.plane,
+    vx: session.vx,
+    vy: session.vy,
+    actor: "computer",
+  });
+  if(releaseResult?.ok !== false){
+    applyAiLaunchPostReleaseMetrics(session.plane, session.vx, session.vy);
+  }
+  aiLaunchSession = null;
+}
+
+function issueAIMove(plane, vx, vy){
+  const launchValidation = validateAiLaunchMoveCandidate({ plane, vx, vy });
+  if(!launchValidation.ok){
+    logAiDecision("issue_ai_move_invalid_input", {
+      planeId: plane?.id ?? null,
+      reason: launchValidation.reason || "invalid_plane_for_launch",
+      message: launchValidation.message || null,
+    });
+    if(typeof failSafeAdvanceTurn === "function"){
+      failSafeAdvanceTurn("invalid_move_fail_safe", {
+        goal: aiRoundState?.currentGoal || "invalid_move_fail_safe",
+        planeId: plane?.id ?? null,
+        reasonCodes: ["invalid_plane_for_launch", "fail_safe_turn_advance"],
+        rejectReasons: [launchValidation.reason || "invalid_plane_for_launch"],
+        errorMessage: launchValidation.message || null,
+      });
+    }
+    return {
+      ok: false,
+      reason: launchValidation.reason || "invalid_plane_for_launch",
+    };
+  }
+
+  if(ENABLE_LEGACY_AI_FAST_LAUNCH || DEBUG_AI_FAST_LAUNCH_PIPELINE){
+    const releaseResult = runLaunchReleaseStage({
+      plane,
+      vx,
+      vy,
+      actor: "computer",
+    });
+    if(releaseResult?.ok !== false){
+      applyAiLaunchPostReleaseMetrics(plane, vx, vy);
+    }
+    return releaseResult;
+  }
+
+  aiLaunchSession = buildAiLaunchSession(plane, vx, vy);
+  return {
+    ok: true,
+    reason: "ai_launch_session_started",
+  };
+}
+
 function destroyAllPlanesWithoutScoring(){
   points.forEach((p) => {
     if(!p || !p.isAlive) return;
@@ -27536,6 +27665,7 @@ function gameDraw(){
 
   // Планирование хода ИИ
   tryStartAiPlanningFromCommittedState("game_draw_tick");
+  runAiLaunchSessionTick(now);
 
   for(const aa of aaUnits){
     aa.sweepAngleDeg = (aa.sweepAngleDeg + aa.rotationDegPerSec * deltaSec) % 360;
@@ -30489,6 +30619,7 @@ function setMapIndexAndPersist(nextIndex){
 
 function resetPlanePositionsForCurrentMap(){
   flyingPoints = [];
+  aiLaunchSession = null;
   hasShotThisRound = false;
   awaitingFlightResolution = false;
   aaUnits = [];
