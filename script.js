@@ -12228,6 +12228,7 @@ function printAiDebugStatus(){
     turn: aiRoundState?.turnNumber ?? null,
     turnColor: turnColors[turnIndex] ?? null,
     aiMoveScheduled,
+    telegraphyEnabled: aiTelegraphyDebugState.enabled !== false,
     gameMode: gameMode || selectedMode || null,
     roundNumber,
   };
@@ -12292,8 +12293,22 @@ function AI_DEBUG_CMD(command, arg){
   if(normalized === "v2-report"){
     return exportAiV2DecisionAuditReportJson();
   }
+  if(normalized === "telegraphy"){
+    const modeRaw = typeof arg === "string" ? arg.trim().toLowerCase() : "";
+    if(modeRaw === "on" || modeRaw === "true" || modeRaw === "1"){
+      aiTelegraphyDebugState.enabled = true;
+    } else if(modeRaw === "off" || modeRaw === "false" || modeRaw === "0"){
+      aiTelegraphyDebugState.enabled = false;
+    }
+    const result = {
+      telegraphyEnabled: aiTelegraphyDebugState.enabled !== false,
+      usage: 'AI_DEBUG_CMD("telegraphy", "on|off")'
+    };
+    console.info('[AI_DEBUG] telegraphy', result);
+    return result;
+  }
 
-  console.info('[AI_DEBUG] Неизвестная команда. Доступно: "snapshot", "last-decisions", "status", "reset-cargo", "fallback-report", "gap-after-bounce-report", "v2-report".');
+  console.info('[AI_DEBUG] Неизвестная команда. Доступно: "snapshot", "last-decisions", "status", "reset-cargo", "fallback-report", "gap-after-bounce-report", "v2-report", "telegraphy".');
   return null;
 }
 
@@ -13855,6 +13870,14 @@ const ENABLE_LEGACY_AI_FAST_LAUNCH = false;
 const AI_LAUNCH_SESSION_RELEASE_DELAY_MS = 220;
 const AI_LAUNCH_SESSION_ANGLE_TOLERANCE_DEG = 1.2;
 const AI_LAUNCH_SESSION_POWER_TOLERANCE = 0.025;
+const AI_LAUNCH_PREVIEW_DURATION_MS = 320;
+const AI_LAUNCH_PREVIEW_ARROW_PULSE_SPEED = 0.012;
+const AI_LAUNCH_PREVIEW_ARROW_PULSE_AMPLITUDE = 0.22;
+const AI_LAUNCH_PREVIEW_TARGET_MARKER_RADIUS = 8;
+
+const aiTelegraphyDebugState = {
+  enabled: true,
+};
 
 let aiLaunchSession = null;
 
@@ -27412,14 +27435,18 @@ function buildAiLaunchSession(plane, vx, vy){
     origAngle: plane?.angle ?? null,
   });
 
+  const telemetryEnabled = aiTelegraphyDebugState.enabled !== false;
+  const previewDurationMs = telemetryEnabled ? AI_LAUNCH_PREVIEW_DURATION_MS : 0;
+
   return {
     plane,
     vx,
     vy,
-    stage: "prepare",
+    stage: previewDurationMs > 0 ? "preview" : "prepare",
     stageStartedAt: now,
     pullPoint,
-    releaseDueAt: now + AI_LAUNCH_SESSION_RELEASE_DELAY_MS,
+    releaseDueAt: now + previewDurationMs + AI_LAUNCH_SESSION_RELEASE_DELAY_MS,
+    previewEndsAt: now + previewDurationMs,
     targetAim,
     currentMetrics: targetAim,
     bestCandidate: targetAim ? {
@@ -27433,7 +27460,21 @@ function buildAiLaunchSession(plane, vx, vy){
       angleRad: AI_LAUNCH_SESSION_ANGLE_TOLERANCE_DEG * Math.PI / 180,
       powerRatio: AI_LAUNCH_SESSION_POWER_TOLERANCE,
     },
+    telegraphyEnabled: telemetryEnabled,
   };
+}
+
+function getAiLaunchPreviewProgress(session, now = performance.now()){
+  if(!session || session.telegraphyEnabled === false) return 1;
+  const endAt = Number.isFinite(session.previewEndsAt) ? session.previewEndsAt : session.stageStartedAt;
+  const startedAt = Number.isFinite(session.stageStartedAt) ? session.stageStartedAt : now;
+  const duration = Math.max(1, endAt - startedAt);
+  return clamp((now - startedAt) / duration, 0, 1);
+}
+
+function isAiLaunchPreviewActive(session, now = performance.now()){
+  if(!session || session.telegraphyEnabled === false) return false;
+  return session.stage === "preview" && now < (session.previewEndsAt || 0);
 }
 
 function runAiLaunchSessionTick(now = performance.now()){
@@ -27454,6 +27495,14 @@ function runAiLaunchSessionTick(now = performance.now()){
     return;
   }
 
+  if(session.stage === "preview"){
+    if(now < (session.previewEndsAt || 0)){
+      return;
+    }
+    session.stage = "prepare";
+    session.stageStartedAt = now;
+    return;
+  }
   if(session.stage === "prepare"){
     session.stage = "pull";
     session.stageStartedAt = now;
@@ -27987,18 +28036,27 @@ function gameDraw(){
     const maxAngleDeg = getSpreadAngleDegByAccuracy(aimingAccuracyPercent) * dragOscillationMultiplier;
     const maxAngleRad = maxAngleDeg * Math.PI / 180;
 
-    // обновляем текущий угол раскачивания
-    oscillationAngle += getAimingOscillationSpeed() * dragOscillationMultiplier * delta * oscillationDir;
-    if(oscillationDir > 0 && oscillationAngle > maxAngleRad){
-      oscillationAngle = maxAngleRad;
-      oscillationDir = -1;
-    } else if(oscillationDir < 0 && oscillationAngle < -maxAngleRad){
-      oscillationAngle = -maxAngleRad;
-      oscillationDir = 1;
+    const aiPreviewActive = (
+      aimSession.controllerType === "computer"
+      && aiLaunchSession
+      && aiLaunchSession.plane === plane
+      && isAiLaunchPreviewActive(aiLaunchSession, now)
+    );
+
+    // обновляем текущий угол раскачивания, но в фазе preview оставляем стрелу на целевом направлении
+    if(!aiPreviewActive){
+      oscillationAngle += getAimingOscillationSpeed() * dragOscillationMultiplier * delta * oscillationDir;
+      if(oscillationDir > 0 && oscillationAngle > maxAngleRad){
+        oscillationAngle = maxAngleRad;
+        oscillationDir = -1;
+      } else if(oscillationDir < 0 && oscillationAngle < -maxAngleRad){
+        oscillationAngle = -maxAngleRad;
+        oscillationDir = 1;
+      }
     }
 
     const baseAngle = Math.atan2(dy, dx);
-    const angle = baseAngle + oscillationAngle;
+    const angle = aiPreviewActive ? baseAngle : (baseAngle + oscillationAngle);
 
 
     aimSession.shakyX = plane.x + clampedDist * Math.cos(angle);
@@ -28010,13 +28068,13 @@ function gameDraw(){
     if(
       aimSession.controllerType === "computer"
       && aiLaunchSession
-      && aiLaunchSession.stage === "oscillate"
+      && (aiLaunchSession.stage === "oscillate" || aiLaunchSession.stage === "preview")
       && aiLaunchSession.plane === plane
       && aiLaunchSession.targetAim
     ){
       const currentMetrics = computeAiAimMetricsFromPullPoint(plane, aimSession.shakyX, aimSession.shakyY);
       aiLaunchSession.currentMetrics = currentMetrics;
-      if(currentMetrics){
+      if(currentMetrics && aiLaunchSession.stage === "oscillate"){
         const angleErrorRad = Math.abs(normalizeAngleDeltaRad(currentMetrics.angleRad - aiLaunchSession.targetAim.angleRad));
         const powerError = Math.abs(currentMetrics.powerRatio - aiLaunchSession.targetAim.powerRatio);
         const totalError = angleErrorRad + powerError;
@@ -28095,8 +28153,25 @@ function gameDraw(){
       aimOffsetX,
       aimOffsetY
     );
-    aimCtx.globalAlpha = arrowAlpha;
+    const aiPreviewProgress = aiPreviewActive ? getAiLaunchPreviewProgress(aiLaunchSession, now) : 1;
+    const aiPreviewPulse = aiPreviewActive
+      ? (0.78 + Math.sin(now * AI_LAUNCH_PREVIEW_ARROW_PULSE_SPEED) * AI_LAUNCH_PREVIEW_ARROW_PULSE_AMPLITUDE)
+      : 1;
+    aimCtx.globalAlpha = arrowAlpha * aiPreviewPulse;
     drawArrow(aimCtx, startX, startY, baseDx, baseDy);
+
+    if(aiPreviewActive && vdist > 0){
+      const markerRadius = AI_LAUNCH_PREVIEW_TARGET_MARKER_RADIUS * (0.9 + 0.25 * Math.sin(now * AI_LAUNCH_PREVIEW_ARROW_PULSE_SPEED + Math.PI / 5));
+      const markerAlpha = 0.22 + 0.3 * aiPreviewProgress;
+      aimCtx.save();
+      aimCtx.globalAlpha = markerAlpha;
+      aimCtx.strokeStyle = plane.color;
+      aimCtx.lineWidth = 1.6;
+      aimCtx.beginPath();
+      aimCtx.arc(tailX, tailY, markerRadius, 0, Math.PI * 2);
+      aimCtx.stroke();
+      aimCtx.restore();
+    }
 
     if(hasCrosshairBuff && vdist > 0){
       const predictedPath = buildPredictedPathForAim(plane, { x: vdx, y: vdy });
