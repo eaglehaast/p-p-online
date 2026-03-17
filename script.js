@@ -29487,11 +29487,12 @@ function ensureExplosionDebugApi(){
     setPlaybackRate(rate){
       return setExplosionPlaybackRate(rate);
     },
-    increasePlaybackRateByTenPercent(){
-      return setExplosionPlaybackRate(explosionPlaybackRate * (1 + EXPLOSION_PLAYBACK_RATE_STEP));
-    },
-    decreasePlaybackRateByTenPercent(){
-      return setExplosionPlaybackRate(explosionPlaybackRate * (1 - EXPLOSION_PLAYBACK_RATE_STEP));
+    scalePlaybackRate(multiplier = 1){
+      const numericMultiplier = Number(multiplier);
+      if(!Number.isFinite(numericMultiplier) || numericMultiplier <= 0){
+        return explosionPlaybackRate;
+      }
+      return setExplosionPlaybackRate(explosionPlaybackRate * numericMultiplier);
     },
     getSizeScale(){
       return explosionSizeScale;
@@ -29518,12 +29519,11 @@ function ensureExplosionDebugApi(){
   window.EXPLOSION_PLAY = (playerColor = "blue") => {
     return window.EXPLOSION_DEBUG.play(playerColor);
   };
-  window.EXPLOSION_SPEED_UP = () => window.EXPLOSION_DEBUG.increasePlaybackRateByTenPercent();
-  window.EXPLOSION_SPEED_DOWN = () => window.EXPLOSION_DEBUG.decreasePlaybackRateByTenPercent();
+  window.EXPLOSION_SPEED = (multiplier = 1) => window.EXPLOSION_DEBUG.scalePlaybackRate(multiplier);
   window.EXPLOSION_SIZE = (scale = EXPLOSION_SIZE_SCALE_DEFAULT) => window.EXPLOSION_DEBUG.setSizeScale(scale);
 
   console.info(
-    '[EXPLOSION_DEBUG] ready. Try: EXPLOSION_PLAY("blue"), EXPLOSION_PLAY("green"), EXPLOSION_SPEED_UP(), EXPLOSION_SPEED_DOWN(), EXPLOSION_SIZE(0.7), EXPLOSION_DEBUG.setPlaybackRate(1), EXPLOSION_DEBUG.getPlaybackRate(), EXPLOSION_DEBUG.getSizeScale()'
+    '[EXPLOSION_DEBUG] ready. Try: EXPLOSION_PLAY("blue"), EXPLOSION_PLAY("green"), EXPLOSION_SPEED(1.5), EXPLOSION_SPEED(0.7), EXPLOSION_SIZE(0.7), EXPLOSION_DEBUG.setPlaybackRate(1), EXPLOSION_DEBUG.getPlaybackRate(), EXPLOSION_DEBUG.getSizeScale()'
   );
 }
 

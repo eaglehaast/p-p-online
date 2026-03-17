@@ -105,11 +105,15 @@ Explosion debug commands (browser console):
 ```js
 window.EXPLOSION_PLAY("blue")
 window.EXPLOSION_PLAY("green")
+window.EXPLOSION_SPEED(1.5)
+window.EXPLOSION_SPEED(0.7)
 window.EXPLOSION_SIZE(0.7)
 window.EXPLOSION_DEBUG.getSizeScale()
+window.EXPLOSION_DEBUG.getPlaybackRate()
 ```
 
 - `EXPLOSION_PLAY("blue"|"green")` now tries to play explosion on a live plane of the same color (blue on blue, green on green); if there is no alive plane of that color, it falls back to board center.
+- `EXPLOSION_SPEED(multiplier)` changes explosion speed relative to current speed (`1.5` makes it 50% faster, `0.7` makes it 30% slower).
 - `EXPLOSION_SIZE(scale)` changes explosion visual size scale (default `1`, useful smaller values: `0.7`, `0.5`).
 
 - `snapshot` prints a short current-match summary (mode, turn, counts, last decision).
