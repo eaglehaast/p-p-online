@@ -12689,6 +12689,7 @@ function invalidateAiPlanningState(reason = "unspecified"){
   aiPlanningSnapshotCache = null;
   aiCachedTargetMemory = null;
   aiLaunchSession = null;
+  cleanupHandle();
 }
 
 function buildCommittedEnemySnapshot(){
@@ -13434,7 +13435,7 @@ function resetGame(options = {}){
     gsBoardCanvas.style.display = "block";
     mantisIndicator.style.display = "block";
     goatIndicator.style.display = "block";
-    aimCanvas.style.display = "block";
+    aimCanvas.style.display = "none";
     planeCanvas.style.display = "block";
   }
   resetCanvasState(planeCtx, planeCanvas);
@@ -13794,12 +13795,17 @@ playBtn.addEventListener("click",async ()=>{
 });
 
 /* ======= INPUT (slingshot) ======= */
-const handleCircle={
-  baseX:0, baseY:0,
-  shakyX:0, shakyY:0,
-  offsetX:0, offsetY:0,
+const aimSession = {
   active:false,
+  controllerType:null,
+  planeRef:null,
   pointRef:null,
+  baseX:0,
+  baseY:0,
+  shakyX:0,
+  shakyY:0,
+  offsetX:0,
+  offsetY:0,
   origAngle:null,
   pointerId:null,
   hasGlobalPointerListeners:false,
@@ -13808,6 +13814,26 @@ const handleCircle={
   pointerDownStartX:0,
   pointerDownStartY:0
 };
+
+const handleCircle = aimSession;
+
+function activateAimSession({ planeRef, controllerType, baseX, baseY, shakyX = baseX, shakyY = baseY, origAngle = planeRef?.angle ?? null }){
+  aimSession.active = true;
+  aimSession.controllerType = controllerType || "human";
+  aimSession.planeRef = planeRef || null;
+  aimSession.pointRef = aimSession.planeRef;
+  aimSession.baseX = baseX;
+  aimSession.baseY = baseY;
+  aimSession.shakyX = shakyX;
+  aimSession.shakyY = shakyY;
+  aimSession.offsetX = 0;
+  aimSession.offsetY = 0;
+  aimSession.origAngle = origAngle;
+}
+
+function isAimSessionActive(){
+  return Boolean(aimSession.active && aimSession.planeRef);
+}
 
 const STICKY_AIM_HOLD_MOVE_THRESHOLD_PX = 4;
 const ENABLE_LEGACY_AI_FAST_LAUNCH = false;
@@ -14013,12 +14039,15 @@ function handleStart(e) {
     return;
   }
 
-  handleCircle.baseX= mx; handleCircle.baseY= my;
-  handleCircle.shakyX= mx; handleCircle.shakyY= my;
-  handleCircle.offsetX=0; handleCircle.offsetY=0;
-  handleCircle.active= true;
-  handleCircle.pointRef= found;
-  handleCircle.origAngle = found.angle;
+  activateAimSession({
+    planeRef: found,
+    controllerType: "human",
+    baseX: mx,
+    baseY: my,
+    shakyX: mx,
+    shakyY: my,
+    origAngle: found.angle,
+  });
   oscillationAngle = 0;
   oscillationDir = 1;
   roundTextTimer = 0; // Hide round label when player starts a move
@@ -14026,7 +14055,7 @@ function handleStart(e) {
   document.body.style.cursor = 'grabbing';
 
   // Show overlay canvas for aiming arrow
-  aimCanvas.style.display = "block";
+  aimCanvas.style.display = isAimSessionActive() ? "block" : "none";
 }
 
 function finalizeStickyAimLaunchAt(boardX, boardY){
@@ -14587,18 +14616,18 @@ function drawAAPreview(){
 
 
 function onHandleUp(){
-  if(!handleCircle.active || !handleCircle.pointRef) return;
-  const { baseX, baseY } = handleCircle;
-  let plane= handleCircle.pointRef;
+  if(!isAimSessionActive()) return;
+  const { baseX, baseY } = aimSession;
+  let plane= aimSession.planeRef;
   if(isGameOver || !gameMode){
-    plane.angle = handleCircle.origAngle;
+    plane.angle = aimSession.origAngle;
     cleanupHandle();
     updateBoardCursorForHover(baseX, baseY);
     return;
   }
-  const launchVector = computeLaunchVectorFromPull(plane, handleCircle.shakyX, handleCircle.shakyY);
+  const launchVector = computeLaunchVectorFromPull(plane, aimSession.shakyX, aimSession.shakyY);
   if(!launchVector.ok){
-    plane.angle = handleCircle.origAngle;
+    plane.angle = aimSession.origAngle;
     cleanupHandle();
     updateBoardCursorForHover(baseX, baseY);
     return;
@@ -14615,6 +14644,8 @@ function onHandleUp(){
 }
 function cleanupHandle(){
   handleCircle.active= false;
+  handleCircle.controllerType = null;
+  handleCircle.planeRef = null;
   handleCircle.pointRef= null;
   handleCircle.origAngle = null;
   handleCircle.pointerId = null;
@@ -27215,6 +27246,16 @@ function destroyPlane(fp, scoringColor = null){
 function buildAiLaunchSession(plane, vx, vy){
   const now = performance.now();
   const pullPoint = buildPullPointForAiVector(plane, vx, vy);
+  activateAimSession({
+    planeRef: plane,
+    controllerType: "computer",
+    baseX: pullPoint.x,
+    baseY: pullPoint.y,
+    shakyX: pullPoint.x,
+    shakyY: pullPoint.y,
+    origAngle: plane?.angle ?? null,
+  });
+
   return {
     plane,
     vx,
@@ -27232,6 +27273,7 @@ function runAiLaunchSessionTick(now = performance.now()){
 
   if(!session.plane || !isPlaneLaunchStateReady(session.plane)){
     aiLaunchSession = null;
+    cleanupHandle();
     if(typeof failSafeAdvanceTurn === "function"){
       failSafeAdvanceTurn("ai_launch_session_plane_lost", {
         goal: aiRoundState?.currentGoal || "ai_launch_session_plane_lost",
@@ -27266,6 +27308,7 @@ function runAiLaunchSessionTick(now = performance.now()){
   });
   if(!launchValidation.ok){
     aiLaunchSession = null;
+    cleanupHandle();
     if(typeof failSafeAdvanceTurn === "function"){
       failSafeAdvanceTurn("invalid_move_fail_safe", {
         goal: aiRoundState?.currentGoal || "invalid_move_fail_safe",
@@ -27288,6 +27331,7 @@ function runAiLaunchSessionTick(now = performance.now()){
     applyAiLaunchPostReleaseMetrics(session.plane, session.vx, session.vy);
   }
   aiLaunchSession = null;
+  cleanupHandle();
 }
 
 function issueAIMove(plane, vx, vy){
@@ -27323,6 +27367,7 @@ function issueAIMove(plane, vx, vy){
     if(releaseResult?.ok !== false){
       applyAiLaunchPostReleaseMetrics(plane, vx, vy);
     }
+    cleanupHandle();
     return releaseResult;
   }
 
@@ -27775,13 +27820,13 @@ function gameDraw(){
   drawAAPreview();
 
   // "ручка" при натяжке
-  if(handleCircle.active && handleCircle.pointRef){
+  if(isAimSessionActive()){
 
-    const plane = handleCircle.pointRef;
+    const plane = aimSession.planeRef;
     const activeTurnBuffs = getPlaneActiveTurnBuffs(plane);
     const hasCrosshairBuff = activeTurnBuffs.includes(INVENTORY_ITEM_TYPES.CROSSHAIR);
-    let dx = handleCircle.baseX - plane.x;
-    let dy = handleCircle.baseY - plane.y;
+    let dx = aimSession.baseX - plane.x;
+    let dy = aimSession.baseY - plane.y;
     let distPx = Math.hypot(dx, dy);
 
     // clamp drag distance but keep a fixed wobble amplitude in degrees
@@ -27810,15 +27855,15 @@ function gameDraw(){
     const angle = baseAngle + oscillationAngle;
 
 
-    handleCircle.shakyX = plane.x + clampedDist * Math.cos(angle);
-    handleCircle.shakyY = plane.y + clampedDist * Math.sin(angle);
+    aimSession.shakyX = plane.x + clampedDist * Math.cos(angle);
+    aimSession.shakyY = plane.y + clampedDist * Math.sin(angle);
 
-    handleCircle.offsetX = handleCircle.shakyX - handleCircle.baseX;
-    handleCircle.offsetY = handleCircle.shakyY - handleCircle.baseY;
+    aimSession.offsetX = aimSession.shakyX - aimSession.baseX;
+    aimSession.offsetY = aimSession.shakyY - aimSession.baseY;
 
     // ограничение видимой длины
-    let vdx = handleCircle.shakyX - plane.x;
-    let vdy = handleCircle.shakyY - plane.y;
+    let vdx = aimSession.shakyX - plane.x;
+    let vdy = aimSession.shakyY - plane.y;
     let vdist = Math.hypot(vdx, vdy);
     if(vdist > MAX_DRAG_DISTANCE){
       vdx *= MAX_DRAG_DISTANCE/vdist;
@@ -27831,7 +27876,7 @@ function gameDraw(){
     if(vdist > DRAG_ROTATION_THRESHOLD){
       plane.angle = Math.atan2(-vdy, -vdx) + Math.PI/2;
     } else {
-      plane.angle = handleCircle.origAngle;
+      plane.angle = aimSession.origAngle;
     }
 
     // Offset arrow so the drag point grabs the middle of the tail
@@ -27922,8 +27967,12 @@ function gameDraw(){
         tailY <= FIELD_TOP + FIELD_HEIGHT
     });
 
+  }
+
+  if(isAimSessionActive()){
+    aimCanvas.style.display = "block";
   } else {
-    // Clear overlay if not aiming
+    aimCanvas.style.display = "none";
     aimCtx.setTransform(1, 0, 0, 1, 0, 0);
     aimCtx.clearRect(0, 0, aimCanvas.width, aimCanvas.height);
   }
@@ -30542,7 +30591,7 @@ function startNewRound(){
   mantisIndicator.style.display = "block";
   goatIndicator.style.display = "block";
   planeCanvas.style.display = "block";
-  aimCanvas.style.display = "block";
+  aimCanvas.style.display = "none";
 
   if (needsGameScreenSync) {
     resizeCanvasFixedForGameBoard();
