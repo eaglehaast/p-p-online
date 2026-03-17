@@ -13875,6 +13875,16 @@ const AI_LAUNCH_PULL_MIN_MS = 650;
 const AI_LAUNCH_PULL_MAX_MS = 1100;
 const AI_LAUNCH_SESSION_ANGLE_TOLERANCE_DEG = 1.2;
 const AI_LAUNCH_SESSION_POWER_TOLERANCE = 0.025;
+const AI_LAUNCH_MIN_TARGET_DISTANCE_FOR_FULL_TELEGRAPH_CELLS = 0.6;
+const AI_LAUNCH_FAST_TARGET_SELECTION_MIN_MS = 70;
+const AI_LAUNCH_FAST_TARGET_SELECTION_MAX_MS = 180;
+const AI_LAUNCH_FAST_PULL_MIN_MS = 140;
+const AI_LAUNCH_FAST_PULL_MAX_MS = 260;
+const AI_LAUNCH_MISS_ANGLE_DEG_NEAR = 0.08;
+const AI_LAUNCH_MISS_ANGLE_DEG_FAR = 0.85;
+const AI_LAUNCH_MISS_POWER_NEAR = 0.004;
+const AI_LAUNCH_MISS_POWER_FAR = 0.018;
+const AI_LAUNCH_MISS_DISTANCE_START_CELLS = 3;
 const AI_LAUNCH_PREVIEW_ARROW_PULSE_SPEED = 0.012;
 const AI_LAUNCH_PREVIEW_ARROW_PULSE_AMPLITUDE = 0.22;
 const AI_LAUNCH_PREVIEW_TARGET_MARKER_RADIUS = 8;
@@ -13905,6 +13915,52 @@ function computeAiAimMetricsFromPullPoint(plane, pullX, pullY){
     powerRatio,
     pullX,
     pullY,
+  };
+}
+
+function randomSignedOffset(maxAbs){
+  if(!Number.isFinite(maxAbs) || maxAbs <= 0) return 0;
+  return (Math.random() * 2 - 1) * maxAbs;
+}
+
+function buildHumanizedAiTargetAim(plane, targetAim){
+  if(!plane || !targetAim) return targetAim;
+
+  const effectiveRangeCells = Math.max(0.0001, getEffectiveFlightRangeCells(plane));
+  const travelDistanceCells = clamp(targetAim.powerRatio, 0, 1) * effectiveRangeCells;
+  const missScale = clamp(
+    (travelDistanceCells - AI_LAUNCH_MISS_DISTANCE_START_CELLS)
+    / Math.max(1, effectiveRangeCells - AI_LAUNCH_MISS_DISTANCE_START_CELLS),
+    0,
+    1
+  );
+
+  const maxAngleErrorRad = (
+    AI_LAUNCH_MISS_ANGLE_DEG_NEAR
+    + (AI_LAUNCH_MISS_ANGLE_DEG_FAR - AI_LAUNCH_MISS_ANGLE_DEG_NEAR) * missScale
+  ) * Math.PI / 180;
+  const maxPowerError = (
+    AI_LAUNCH_MISS_POWER_NEAR
+    + (AI_LAUNCH_MISS_POWER_FAR - AI_LAUNCH_MISS_POWER_NEAR) * missScale
+  );
+
+  const adjustedAngleRad = targetAim.angleRad + randomSignedOffset(maxAngleErrorRad);
+  const adjustedPowerRatio = clamp(
+    targetAim.powerRatio + randomSignedOffset(maxPowerError),
+    0,
+    1
+  );
+  const adjustedDistance = adjustedPowerRatio * MAX_DRAG_DISTANCE;
+  const adjustedPullX = plane.x + Math.cos(adjustedAngleRad) * adjustedDistance;
+  const adjustedPullY = plane.y + Math.sin(adjustedAngleRad) * adjustedDistance;
+
+  return {
+    angleRad: adjustedAngleRad,
+    powerRatio: adjustedPowerRatio,
+    pullX: adjustedPullX,
+    pullY: adjustedPullY,
+    humanized: true,
+    missScale,
   };
 }
 
@@ -27427,12 +27483,24 @@ function destroyPlane(fp, scoringColor = null){
 
 function buildAiLaunchSession(plane, vx, vy){
   const now = performance.now();
-  const pullPoint = buildPullPointForAiVector(plane, vx, vy);
-  const targetAim = computeAiAimMetricsFromPullPoint(plane, pullPoint.x, pullPoint.y);
+  const idealPullPoint = buildPullPointForAiVector(plane, vx, vy);
+  const idealTargetAim = computeAiAimMetricsFromPullPoint(plane, idealPullPoint.x, idealPullPoint.y);
+  const targetAim = buildHumanizedAiTargetAim(plane, idealTargetAim);
+  const pullPoint = targetAim
+    ? { x: targetAim.pullX, y: targetAim.pullY }
+    : idealPullPoint;
+  const pullDistanceCells = targetAim
+    ? (Math.hypot(targetAim.pullX - plane.x, targetAim.pullY - plane.y) / CELL_SIZE)
+    : 0;
   const randomInRange = (min, max) => min + Math.random() * Math.max(0, max - min);
   const totalDurationMs = randomInRange(AI_LAUNCH_TOTAL_DURATION_MIN_MS, AI_LAUNCH_TOTAL_DURATION_MAX_MS);
-  const targetSelectionDurationMs = randomInRange(AI_LAUNCH_TARGET_SELECTION_MIN_MS, AI_LAUNCH_TARGET_SELECTION_MAX_MS);
-  const pullDurationMs = randomInRange(AI_LAUNCH_PULL_MIN_MS, AI_LAUNCH_PULL_MAX_MS);
+  const hasVeryShortTargetDistance = pullDistanceCells <= AI_LAUNCH_MIN_TARGET_DISTANCE_FOR_FULL_TELEGRAPH_CELLS;
+  const targetSelectionDurationMs = hasVeryShortTargetDistance
+    ? randomInRange(AI_LAUNCH_FAST_TARGET_SELECTION_MIN_MS, AI_LAUNCH_FAST_TARGET_SELECTION_MAX_MS)
+    : randomInRange(AI_LAUNCH_TARGET_SELECTION_MIN_MS, AI_LAUNCH_TARGET_SELECTION_MAX_MS);
+  const pullDurationMs = hasVeryShortTargetDistance
+    ? randomInRange(AI_LAUNCH_FAST_PULL_MIN_MS, AI_LAUNCH_FAST_PULL_MAX_MS)
+    : randomInRange(AI_LAUNCH_PULL_MIN_MS, AI_LAUNCH_PULL_MAX_MS);
   const oscillationDurationMs = Math.max(600, totalDurationMs - targetSelectionDurationMs - pullDurationMs);
 
   activateAimSession({
