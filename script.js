@@ -12525,9 +12525,13 @@ const EXPLOSION_PLAYBACK_RATE_DEFAULT = 1;
 const EXPLOSION_PLAYBACK_RATE_STEP = 0.1;
 const EXPLOSION_PLAYBACK_RATE_MIN = 0.1;
 const EXPLOSION_PLAYBACK_RATE_MAX = 5;
+const EXPLOSION_SIZE_SCALE_DEFAULT = 1;
+const EXPLOSION_SIZE_SCALE_MIN = 0.2;
+const EXPLOSION_SIZE_SCALE_MAX = 2;
 // Взрыв самолёта должен длиться около 900мс без доп. множителей.
 // Для этого делим общее время поровну между кадрами последовательности.
 let explosionPlaybackRate = EXPLOSION_PLAYBACK_RATE_DEFAULT;
+let explosionSizeScale = EXPLOSION_SIZE_SCALE_DEFAULT;
 
 function buildExplosionSequenceFrameDurationsMs(frameCount, totalDurationMs = EXPLOSION_TARGET_DURATION_MS) {
   const safeFrameCount = Math.max(1, Number.isFinite(frameCount) ? Math.floor(frameCount) : 1);
@@ -12567,6 +12571,17 @@ function applyExplosionPlaybackRate(durationMs){
 function setExplosionPlaybackRate(value){
   if(!Number.isFinite(value) || value <= 0) return false;
   explosionPlaybackRate = clampExplosionPlaybackRate(value);
+  return true;
+}
+
+function clampExplosionSizeScale(value){
+  if(!Number.isFinite(value)) return EXPLOSION_SIZE_SCALE_DEFAULT;
+  return Math.max(EXPLOSION_SIZE_SCALE_MIN, Math.min(EXPLOSION_SIZE_SCALE_MAX, value));
+}
+
+function setExplosionSizeScale(value){
+  if(!Number.isFinite(value) || value <= 0) return false;
+  explosionSizeScale = clampExplosionSizeScale(value);
   return true;
 }
 
@@ -29404,6 +29419,12 @@ function normalizeExplosionDebugColor(value){
   return normalized === "green" ? "green" : "blue";
 }
 
+function getAlivePlaneByColor(color = "blue"){
+  const safeColor = normalizeExplosionDebugColor(color);
+  if(!Array.isArray(points) || points.length === 0) return null;
+  return points.find((plane) => plane?.color === safeColor && plane?.isAlive === true && !plane?.burning) || null;
+}
+
 function ensureExplosionDebugApi(){
   if(typeof window === "undefined") return;
   if(window.EXPLOSION_DEBUG) return;
@@ -29423,12 +29444,23 @@ function ensureExplosionDebugApi(){
     decreasePlaybackRateByTenPercent(){
       return setExplosionPlaybackRate(explosionPlaybackRate * (1 - EXPLOSION_PLAYBACK_RATE_STEP));
     },
+    getSizeScale(){
+      return explosionSizeScale;
+    },
+    setSizeScale(scale){
+      return setExplosionSizeScale(scale);
+    },
     play(color = "blue", x = null, y = null){
       const safeColor = normalizeExplosionDebugColor(color);
+      const colorPlane = getAlivePlaneByColor(safeColor);
       const defaultCenterX = Number.isFinite(WORLD?.width) ? WORLD.width / 2 : 0;
       const defaultCenterY = Number.isFinite(WORLD?.height) ? WORLD.height / 2 : 0;
-      const safeX = Number.isFinite(x) ? x : defaultCenterX;
-      const safeY = Number.isFinite(y) ? y : defaultCenterY;
+      const safeX = Number.isFinite(x)
+        ? x
+        : (Number.isFinite(colorPlane?.x) ? colorPlane.x : defaultCenterX);
+      const safeY = Number.isFinite(y)
+        ? y
+        : (Number.isFinite(colorPlane?.y) ? colorPlane.y : defaultCenterY);
       const mockPlane = makeMockPlane(safeColor);
       return spawnExplosionForPlane(mockPlane, safeX, safeY);
     },
@@ -29439,9 +29471,10 @@ function ensureExplosionDebugApi(){
   };
   window.EXPLOSION_SPEED_UP = () => window.EXPLOSION_DEBUG.increasePlaybackRateByTenPercent();
   window.EXPLOSION_SPEED_DOWN = () => window.EXPLOSION_DEBUG.decreasePlaybackRateByTenPercent();
+  window.EXPLOSION_SIZE = (scale = EXPLOSION_SIZE_SCALE_DEFAULT) => window.EXPLOSION_DEBUG.setSizeScale(scale);
 
   console.info(
-    '[EXPLOSION_DEBUG] ready. Try: EXPLOSION_PLAY("blue"), EXPLOSION_PLAY("green"), EXPLOSION_SPEED_UP(), EXPLOSION_SPEED_DOWN(), EXPLOSION_DEBUG.setPlaybackRate(1), EXPLOSION_DEBUG.getPlaybackRate()'
+    '[EXPLOSION_DEBUG] ready. Try: EXPLOSION_PLAY("blue"), EXPLOSION_PLAY("green"), EXPLOSION_SPEED_UP(), EXPLOSION_SPEED_DOWN(), EXPLOSION_SIZE(0.7), EXPLOSION_DEBUG.setPlaybackRate(1), EXPLOSION_DEBUG.getPlaybackRate(), EXPLOSION_DEBUG.getSizeScale()'
   );
 }
 
@@ -29512,7 +29545,7 @@ function updateAndDrawExplosions(ctx, now) {
           targetFrameIndex,
           previousFrameIndex + maxAdvance,
         );
-        const scaleFactor = 1;
+        const scaleFactor = explosionSizeScale;
 
         explosion.sequenceFrameIndex = frameIndex;
         explosion.nextFrameAtMs = explosion.startedAtMs + (frameEndsMs[frameIndex] || sequenceTotalDurationMs);
