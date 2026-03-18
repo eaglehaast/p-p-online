@@ -921,7 +921,7 @@ function showRoundBanner(text) {
 
 // Animated explosion sprites
 function buildBlueExplosionSequenceFramePaths() {
-  const folder = "ui_gamescreen/gs_blue_explosion9";
+  const folder = "ui_gamescreen/gs_blue_explosion10";
   return Array.from({ length: 25 }, (_unused, frameIndex) => {
     const frame = String(frameIndex + 1).padStart(2, "0");
     return `${folder}/explosion_blue_1_${frame}.png`;
@@ -12638,7 +12638,7 @@ function getShortExplosionDurationMs(src = "", color = "") {
   const resolvedBySrc = normalizedColor
     || (typeof src === "string" && src.includes("ui_gamescreen/gs_green_explosion_one/")
       ? "green"
-      : typeof src === "string" && src.includes("ui_gamescreen/gs_blue_explosion9/")
+      : typeof src === "string" && src.includes("ui_gamescreen/gs_blue_explosion10/")
         ? "blue"
         : "");
 
