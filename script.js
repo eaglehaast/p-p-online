@@ -4796,22 +4796,7 @@ const GAME_SCREEN_ASSETS = [
   FLAG_SPRITE_PATHS.green,
 
   // Flame sprites
-  "ui_gamescreen/flames green/flame_green_1.gif",
-  "ui_gamescreen/flames green/flame_green_2.gif",
-  "ui_gamescreen/flames green/flame_green_3.gif",
-  "ui_gamescreen/flames green/flame_green_4.gif",
-  "ui_gamescreen/flames green/flame_green_5.gif",
-  "ui_gamescreen/flames green/flame_green_6.gif",
-  "ui_gamescreen/flames green/flame_green_7.gif",
-  "ui_gamescreen/flames green/flame_green_8.gif",
-  "ui_gamescreen/flames green/flame_green_9.gif",
-  "ui_gamescreen/flames green/flame_green_10.gif",
-  "ui_gamescreen/flames blue/flame_blue_1.gif",
-  "ui_gamescreen/flames blue/flame_blue_2.gif",
-  "ui_gamescreen/flames blue/flame_blue_3.gif",
-  "ui_gamescreen/flames blue/flame_blue_4.gif",
-  "ui_gamescreen/flames blue/flame_blue_5.gif",
-  "ui_gamescreen/flames blue/flame_blue_6.gif",
+  ...BURNING_FLAME_SRCS,
 
   // Explosion sprites
   ...ALL_EXPLOSION_SPRITES
@@ -5874,32 +5859,14 @@ const BOARD_ORIGIN = { x: 0, y: 0 };
 // ---- Crash FX timing (used for delayed wreck/flame reveal) ----
 
 const CRASH_FX_DELAY_MS = 0;   // delay before showing wreck FX
-const GREEN_FLAME_SPRITES = [
-  "ui_gamescreen/flames green/flame_green_1.gif",
-  "ui_gamescreen/flames green/flame_green_2.gif",
-  "ui_gamescreen/flames green/flame_green_3.gif",
-  "ui_gamescreen/flames green/flame_green_4.gif",
-  "ui_gamescreen/flames green/flame_green_5.gif",
-  "ui_gamescreen/flames green/flame_green_6.gif",
-  "ui_gamescreen/flames green/flame_green_7.gif",
-  "ui_gamescreen/flames green/flame_green_8.gif",
-  "ui_gamescreen/flames green/flame_green_9.gif",
-  "ui_gamescreen/flames green/flame_green_10.gif",
-];
-const BLUE_FLAME_SPRITES = [
-  "ui_gamescreen/flames blue/flame_blue_1.gif",
-  "ui_gamescreen/flames blue/flame_blue_2.gif",
-  "ui_gamescreen/flames blue/flame_blue_3.gif",
-  "ui_gamescreen/flames blue/flame_blue_4.gif",
-  "ui_gamescreen/flames blue/flame_blue_5.gif",
-  "ui_gamescreen/flames blue/flame_blue_6.gif",
-];
-const BURNING_FLAME_SRCS = [...GREEN_FLAME_SPRITES, ...BLUE_FLAME_SPRITES];
-const DEFAULT_BURNING_FLAME_SRC = BURNING_FLAME_SRCS[0];
-const DEFAULT_GREEN_BURNING_FLAME_SRC = GREEN_FLAME_SPRITES[0] || DEFAULT_BURNING_FLAME_SRC;
-const DEFAULT_BLUE_BURNING_FLAME_SRC = BLUE_FLAME_SPRITES[0] || DEFAULT_BURNING_FLAME_SRC;
-
-const BURNING_FLAME_SRC_SET = new Set(BURNING_FLAME_SRCS);
+const FLAME_FRAME_DURATION_MS = 70;
+const GREEN_FLAME_SEQUENCE = {
+  framePaths: Array.from({ length: 16 }, (_, index) => `ui_gamescreen/flames/gs_flame_green_1/flame_green_1_${String(index + 1).padStart(2, '0')}.png`)
+};
+const BLUE_FLAME_SEQUENCE = {
+  framePaths: Array.from({ length: 16 }, (_, index) => `ui_gamescreen/flames/gs_flame_blue_1/flame_blue_1_${String(index + 1).padStart(2, '0')}.png`)
+};
+const BURNING_FLAME_SRCS = [...GREEN_FLAME_SEQUENCE.framePaths, ...BLUE_FLAME_SEQUENCE.framePaths];
 const BLUE_FLAME_DISPLAY_SIZE = { width: 12.5, height: 27.5 };
 const GREEN_FLAME_DISPLAY_SIZE = { width: 10, height: 55 };
 const BASE_FLAME_DISPLAY_SIZE = BLUE_FLAME_DISPLAY_SIZE;
@@ -6315,38 +6282,22 @@ function getFlameDisplaySize(plane) {
 }
 
 function getPlaneFlameSprites(plane) {
-  const pool = plane?.color === 'green' ? GREEN_FLAME_SPRITES : BLUE_FLAME_SPRITES;
-  if (Array.isArray(pool) && pool.length > 0) {
-    return pool;
-  }
-  return BURNING_FLAME_SRCS;
-}
-
-function getDefaultFlameSrcForPlane(plane) {
   if (plane?.color === 'green') {
-    return DEFAULT_GREEN_BURNING_FLAME_SRC || DEFAULT_BURNING_FLAME_SRC || '';
+    return GREEN_FLAME_SEQUENCE.framePaths;
   }
   if (plane?.color === 'blue') {
-    return DEFAULT_BLUE_BURNING_FLAME_SRC || DEFAULT_BURNING_FLAME_SRC || '';
+    return BLUE_FLAME_SEQUENCE.framePaths;
   }
-  return DEFAULT_BURNING_FLAME_SRC || '';
+  return [];
 }
 
-function resolveFlameImage(flameSrc, plane = null) {
+function resolveFlameImage(flameSrc) {
   if (!flameSrc) {
     return { src: '', img: null };
   }
   const cached = flameImages.get(flameSrc) || null;
   if (cached) {
     return { src: flameSrc, img: cached };
-  }
-  const colorSafeFallbackSrc = getDefaultFlameSrcForPlane(plane);
-  const colorSafeFallbackImg = flameImages.get(colorSafeFallbackSrc) || null;
-  if (colorSafeFallbackImg) {
-    return { src: colorSafeFallbackSrc, img: colorSafeFallbackImg };
-  }
-  if (defaultFlameImg) {
-    return { src: defaultFlameImg.src || flameSrc, img: defaultFlameImg };
   }
   return { src: flameSrc, img: null };
 }
@@ -6355,10 +6306,10 @@ function pickRandomBurningFlame(plane) {
   const pool = getPlaneFlameSprites(plane);
 
   if (!pool.length) {
-    return resolveFlameImage(getDefaultFlameSrcForPlane(plane), plane);
+    return { src: '', img: null };
   }
   const index = Math.floor(Math.random() * pool.length);
-  return resolveFlameImage(pool[index], plane);
+  return resolveFlameImage(pool[index]);
 
 }
 
@@ -6378,13 +6329,13 @@ function pickFlameSrcForStyle(styleKey, plane) {
 
   const pool = getPlaneFlameSprites(plane);
   if (!Array.isArray(pool) || pool.length === 0) {
-    return resolveFlameImage(getDefaultFlameSrcForPlane(plane), plane);
+    return { src: '', img: null };
   }
 
   if (normalized === 'cycle') {
     const index = flameCycleIndex % pool.length;
     flameCycleIndex = (flameCycleIndex + 1) % pool.length;
-    return resolveFlameImage(pool[index], plane);
+    return resolveFlameImage(pool[index]);
   }
 
   return pickRandomBurningFlame(plane);
@@ -6434,7 +6385,7 @@ function onFlameStyleChanged() {
 
 function ensurePlaneBurningFlame(plane) {
   if (!plane) {
-    return { src: DEFAULT_BURNING_FLAME_SRC || "", img: defaultFlameImg || null };
+    return { src: '', img: null };
   }
   const styleKey = getCurrentFlameStyleKey();
   if (styleKey === 'off') {
@@ -6454,9 +6405,7 @@ function ensurePlaneBurningFlame(plane) {
   plane.burningFlameStyleRevision = flameStyleRevision;
   plane.burningFlameSrc = plane.crashFlameSrc || '';
   plane.burningFlameImg = plane.crashFlameImg || null;
-  const resolvedImg = plane.burningFlameImg || defaultFlameImg || null;
-  const resolvedSrc = resolvedImg?.src || plane.burningFlameSrc || '';
-  return { src: resolvedSrc, img: resolvedImg };
+  return { src: plane.burningFlameSrc || '', img: plane.burningFlameImg || null };
 }
 
 
@@ -6497,12 +6446,14 @@ function applyFlameVisualStyle(element, styleKey) {
 }
 
 function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') {
-  const readyFlameImg = isSpriteReady(flameImg)
-    ? flameImg
-    : (isSpriteReady(defaultFlameImg) ? defaultFlameImg : null);
-  const resolvedSrc = readyFlameImg?.src || flameSrc || '';
+  const sequenceFrames = plane?.color === 'green'
+    ? flameSequenceImagesByColor.green
+    : flameSequenceImagesByColor.blue;
+  const readyFrames = (sequenceFrames || []).filter((frame) => isSpriteReady(frame));
+  const firstFrame = readyFrames[0] || (isSpriteReady(flameImg) ? flameImg : null);
+  const resolvedSrc = firstFrame?.src || flameSrc || '';
 
-  if (!readyFlameImg || !resolvedSrc) {
+  if (!firstFrame || !resolvedSrc) {
     return null;
   }
 
@@ -6516,10 +6467,12 @@ function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') 
   img.width = displaySize.width;
   img.height = displaySize.height;
   img.className = 'fx-flame-img';
-
-  let attemptedSrc = resolvedSrc;
+  img.dataset.flameSrc = resolvedSrc;
+  img.src = resolvedSrc;
 
   let readyResolved = false;
+  let animationTimer = null;
+  let frameIndex = 0;
   let resolveReady;
   const ready = new Promise((resolve) => {
     resolveReady = resolve;
@@ -6532,6 +6485,10 @@ function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') 
   };
 
   const stop = () => {
+    if (animationTimer) {
+      clearTimeout(animationTimer);
+      animationTimer = null;
+    }
     img.onerror = null;
     img.onload = null;
     if (container?.isConnected) {
@@ -6540,65 +6497,66 @@ function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') 
     resolveReadySafely();
   };
 
-  const ensureReady = () => {
-    if (readyResolved) return;
-    if (img.complete && img.naturalWidth > 0) {
-      resolveReadySafely();
+  const scheduleNextFrame = () => {
+    if (animationTimer) {
+      clearTimeout(animationTimer);
+    }
+    if (readyFrames.length <= 1) {
       return;
     }
-    if (typeof img.decode === 'function') {
-      img.decode()
-        .then(resolveReadySafely)
-        .catch(() => {
-          if (img.complete && img.naturalWidth > 0) {
-            resolveReadySafely();
-          }
-        });
-    }
+    animationTimer = setTimeout(() => {
+      frameIndex = (frameIndex + 1) % readyFrames.length;
+      const nextFrame = readyFrames[frameIndex];
+      if (!nextFrame?.src) {
+        stop();
+        planeFlameFx.delete(plane);
+        disablePlaneFlameFx(plane);
+        return;
+      }
+      img.dataset.flameSrc = nextFrame.src;
+      img.src = nextFrame.src;
+      scheduleNextFrame();
+    }, FLAME_FRAME_DURATION_MS);
   };
 
   img.onerror = () => {
-    const colorSafeFallbackSrc = getDefaultFlameSrcForPlane(plane);
-    const colorSafeFallbackImg = flameImages.get(colorSafeFallbackSrc) || null;
-    const fallbackImg = isSpriteReady(colorSafeFallbackImg)
-      ? colorSafeFallbackImg
-      : (isSpriteReady(defaultFlameImg) ? defaultFlameImg : null);
-    const fallbackSrc = fallbackImg?.src || colorSafeFallbackSrc || DEFAULT_BURNING_FLAME_SRC || '';
-    if (!fallbackSrc || attemptedSrc === fallbackSrc) {
-      stop();
-      img.remove();
-      planeFlameFx.delete(plane);
-      if (plane && plane.burningFlameSrc) {
-        delete plane.burningFlameSrc;
-      }
-      if (plane && plane.burningFlameImg) {
-        delete plane.burningFlameImg;
-      }
-      disablePlaneFlameFx(plane);
-      return;
+    stop();
+    img.remove();
+    planeFlameFx.delete(plane);
+    if (plane && plane.burningFlameSrc) {
+      delete plane.burningFlameSrc;
     }
-    attemptedSrc = fallbackSrc;
-    if (plane) {
-      plane.burningFlameSrc = fallbackSrc;
-      plane.burningFlameImg = fallbackImg;
+    if (plane && plane.burningFlameImg) {
+      delete plane.burningFlameImg;
     }
-    img.dataset.flameSrc = fallbackSrc;
-    img.src = fallbackSrc;
-    ensureReady();
+    disablePlaneFlameFx(plane);
   };
 
   img.onload = () => {
-    img.dataset.flameSrc = attemptedSrc || '';
     resolveReadySafely();
+    scheduleNextFrame();
   };
 
   installImageWatch(img, resolvedSrc, "flameFx");
-  img.dataset.flameSrc = resolvedSrc;
-  img.src = resolvedSrc;
-
-  ensureReady();
 
   container.appendChild(img);
+
+  if (img.complete && img.naturalWidth > 0) {
+    resolveReadySafely();
+    scheduleNextFrame();
+  } else if (typeof img.decode === 'function') {
+    img.decode()
+      .then(() => {
+        resolveReadySafely();
+        scheduleNextFrame();
+      })
+      .catch(() => {
+        if (img.complete && img.naturalWidth > 0) {
+          resolveReadySafely();
+          scheduleNextFrame();
+        }
+      });
+  }
 
   return { element: container, stop, ready };
 }
@@ -7318,7 +7276,10 @@ for (const src of BURNING_FLAME_SRCS) {
   const img = loadImageAsset(src, GAME_PRELOAD_LABEL, { decoding: 'async' }).img;
   flameImages.set(src, img);
 }
-const defaultFlameImg = flameImages.get(DEFAULT_BURNING_FLAME_SRC) || null;
+const flameSequenceImagesByColor = {
+  blue: BLUE_FLAME_SEQUENCE.framePaths.map((src) => flameImages.get(src) || null),
+  green: GREEN_FLAME_SEQUENCE.framePaths.map((src) => flameImages.get(src) || null)
+};
 
 const flagSprites = {
   blue: loadImageAsset(FLAG_SPRITE_PATHS.blue, GAME_PRELOAD_LABEL, { decoding: 'async' }).img,
