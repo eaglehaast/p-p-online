@@ -13867,12 +13867,12 @@ function isAimSessionActive(){
 
 const STICKY_AIM_HOLD_MOVE_THRESHOLD_PX = 4;
 const ENABLE_LEGACY_AI_FAST_LAUNCH = false;
-const AI_LAUNCH_TOTAL_DURATION_MIN_MS = 2000;
-const AI_LAUNCH_TOTAL_DURATION_MAX_MS = 4000;
 const AI_LAUNCH_TARGET_SELECTION_MIN_MS = 40;
 const AI_LAUNCH_TARGET_SELECTION_MAX_MS = 90;
 const AI_LAUNCH_PULL_MIN_MS = 450;
 const AI_LAUNCH_PULL_MAX_MS = 550;
+const AI_LAUNCH_OSCILLATION_MIN_MS = 2000;
+const AI_LAUNCH_OSCILLATION_MAX_MS = 3000;
 const AI_LAUNCH_SESSION_ANGLE_TOLERANCE_DEG = 1.2;
 const AI_LAUNCH_SESSION_POWER_TOLERANCE = 0.025;
 const AI_LAUNCH_MIN_TARGET_DISTANCE_FOR_FULL_TELEGRAPH_CELLS = 0.6;
@@ -27493,7 +27493,7 @@ function buildAiLaunchSession(plane, vx, vy){
     ? (Math.hypot(targetAim.pullX - plane.x, targetAim.pullY - plane.y) / CELL_SIZE)
     : 0;
   const randomInRange = (min, max) => min + Math.random() * Math.max(0, max - min);
-  const oscillationDurationMs = randomInRange(AI_LAUNCH_TOTAL_DURATION_MIN_MS, AI_LAUNCH_TOTAL_DURATION_MAX_MS);
+  const oscillationDurationMs = randomInRange(AI_LAUNCH_OSCILLATION_MIN_MS, AI_LAUNCH_OSCILLATION_MAX_MS);
   const hasVeryShortTargetDistance = pullDistanceCells <= AI_LAUNCH_MIN_TARGET_DISTANCE_FOR_FULL_TELEGRAPH_CELLS;
   const targetSelectionDurationMs = hasVeryShortTargetDistance
     ? randomInRange(AI_LAUNCH_FAST_TARGET_SELECTION_MIN_MS, AI_LAUNCH_FAST_TARGET_SELECTION_MAX_MS)
@@ -27604,6 +27604,10 @@ function runAiLaunchSessionTick(now = performance.now()){
     return;
   }
   if(session.stage === "oscillate" && session.pendingReleaseReason === "perfect_tolerance"){
+    const oscillationElapsedMs = now - (session.stageStartedAt || now);
+    if(oscillationElapsedMs < AI_LAUNCH_OSCILLATION_MIN_MS){
+      return;
+    }
     session.stage = "release";
     session.stageStartedAt = now;
     releaseAiLaunchSession(session, "perfect_tolerance", now);
