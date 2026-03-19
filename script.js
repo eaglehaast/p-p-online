@@ -14127,7 +14127,9 @@ function releaseAiLaunchSession(session, reason, now = performance.now()){
     planeId: session.plane?.id ?? null,
     releaseCause: reason === "perfect_tolerance" ? "ideal_caught" : "timeout_best_effort",
     candidateSource: candidate.source,
-    sampledAtMs: Number.isFinite(now) ? Math.round(now - (session.stageStartedAt || now)) : null,
+    sampledAtMs: Number.isFinite(candidate?.metrics?.sampledAt) && Number.isFinite(now)
+      ? Math.round(now - candidate.metrics.sampledAt)
+      : (Number.isFinite(now) ? Math.round(now - (session.stageStartedAt || now)) : null),
     angleErrorDeg: Number.isFinite(best?.angleErrorRad)
       ? Number((best.angleErrorRad * 180 / Math.PI).toFixed(3))
       : null,
@@ -27811,14 +27813,8 @@ function buildAiLaunchSession(plane, vx, vy){
     previewEndsAt: targetSelectionEndsAt,
     targetAim,
     targetDistancePx,
-    currentMetrics: targetAim,
-    bestCandidate: targetAim ? {
-      metrics: targetAim,
-      angleErrorRad: 0,
-      powerError: 0,
-      totalError: 0,
-      sampledAt: now,
-    } : null,
+    currentMetrics: null,
+    bestCandidate: null,
     releaseTolerance: {
       angleRad: AI_LAUNCH_SESSION_ANGLE_TOLERANCE_DEG * Math.PI / 180,
       powerRatio: AI_LAUNCH_SESSION_POWER_TOLERANCE,
@@ -28464,6 +28460,9 @@ function gameDraw(){
       && aiLaunchSession.targetAim
     ){
       const currentMetrics = computeAiAimMetricsFromPullPoint(plane, aimSession.shakyX, aimSession.shakyY);
+      if(currentMetrics){
+        currentMetrics.sampledAt = now;
+      }
       aiLaunchSession.currentMetrics = currentMetrics;
       if(currentMetrics && aiLaunchSession.stage === "oscillate"){
         const angleErrorRad = Math.abs(normalizeAngleDeltaRad(currentMetrics.angleRad - aiLaunchSession.targetAim.angleRad));
