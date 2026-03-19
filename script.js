@@ -13876,6 +13876,10 @@ const AI_LAUNCH_OSCILLATION_MIN_MS = 2000;
 const AI_LAUNCH_OSCILLATION_MAX_MS = 3000;
 const AI_LAUNCH_SESSION_ANGLE_TOLERANCE_DEG = 1.2;
 const AI_LAUNCH_SESSION_POWER_TOLERANCE = 0.025;
+const AI_LAUNCH_POWER_SWEEP_MAX_RATIO = 0.045;
+const AI_LAUNCH_POWER_SWEEP_MIN_RATIO = 0.008;
+const AI_LAUNCH_POWER_SWEEP_SPEED_MIN = 0.006;
+const AI_LAUNCH_POWER_SWEEP_SPEED_MAX = 0.011;
 const AI_LAUNCH_MIN_TARGET_DISTANCE_FOR_FULL_TELEGRAPH_CELLS = 0.6;
 const AI_LAUNCH_FAST_TARGET_SELECTION_MIN_MS = 70;
 const AI_LAUNCH_FAST_TARGET_SELECTION_MAX_MS = 180;
@@ -13963,6 +13967,33 @@ function buildHumanizedAiTargetAim(plane, targetAim){
     humanized: true,
     missScale,
   };
+}
+
+function getAiOscillatingPullDistancePx(session, fallbackDistancePx, now = performance.now()){
+  if(!session) return fallbackDistancePx;
+  const targetDistancePx = Number.isFinite(session.targetDistancePx)
+    ? session.targetDistancePx
+    : fallbackDistancePx;
+  if(session.stage !== "oscillate"){
+    return fallbackDistancePx;
+  }
+
+  const elapsedMs = Math.max(0, now - (session.oscillationStartsAt || session.stageStartedAt || now));
+  const durationMs = Math.max(1, session.releaseDueAt - (session.oscillationStartsAt || session.stageStartedAt || now));
+  const progress = clamp(elapsedMs / durationMs, 0, 1);
+  const sweepAmplitudeRatio = (
+    AI_LAUNCH_POWER_SWEEP_MAX_RATIO
+    + (AI_LAUNCH_POWER_SWEEP_MIN_RATIO - AI_LAUNCH_POWER_SWEEP_MAX_RATIO) * progress
+  );
+  const sweepAmplitudePx = MAX_DRAG_DISTANCE * sweepAmplitudeRatio;
+  const sweepSpeed = Number.isFinite(session.powerSweepSpeed)
+    ? session.powerSweepSpeed
+    : AI_LAUNCH_POWER_SWEEP_SPEED_MIN;
+  const sweepPhase = Number.isFinite(session.powerSweepPhase)
+    ? session.powerSweepPhase
+    : 0;
+  const sweepOffsetPx = Math.sin(elapsedMs * sweepSpeed + sweepPhase) * sweepAmplitudePx;
+  return clamp(targetDistancePx + sweepOffsetPx, 0, MAX_DRAG_DISTANCE);
 }
 
 function pickAiLaunchCandidateForRelease(session){
@@ -27490,9 +27521,10 @@ function buildAiLaunchSession(plane, vx, vy){
   const pullPoint = targetAim
     ? { x: targetAim.pullX, y: targetAim.pullY }
     : idealPullPoint;
-  const pullDistanceCells = targetAim
-    ? (Math.hypot(targetAim.pullX - plane.x, targetAim.pullY - plane.y) / CELL_SIZE)
-    : 0;
+  const targetDistancePx = targetAim
+    ? Math.hypot(targetAim.pullX - plane.x, targetAim.pullY - plane.y)
+    : Math.hypot(idealPullPoint.x - plane.x, idealPullPoint.y - plane.y);
+  const pullDistanceCells = targetDistancePx / CELL_SIZE;
   const randomInRange = (min, max) => min + Math.random() * Math.max(0, max - min);
   const oscillationDurationMs = randomInRange(AI_LAUNCH_OSCILLATION_MIN_MS, AI_LAUNCH_OSCILLATION_MAX_MS);
   const hasVeryShortTargetDistance = pullDistanceCells <= AI_LAUNCH_MIN_TARGET_DISTANCE_FOR_FULL_TELEGRAPH_CELLS;
@@ -27535,6 +27567,7 @@ function buildAiLaunchSession(plane, vx, vy){
     releaseDueAt,
     previewEndsAt: targetSelectionEndsAt,
     targetAim,
+    targetDistancePx,
     currentMetrics: targetAim,
     bestCandidate: targetAim ? {
       metrics: targetAim,
@@ -27548,6 +27581,8 @@ function buildAiLaunchSession(plane, vx, vy){
       powerRatio: AI_LAUNCH_SESSION_POWER_TOLERANCE,
     },
     telegraphyEnabled: telemetryEnabled,
+    powerSweepPhase: Math.random() * Math.PI * 2,
+    powerSweepSpeed: randomInRange(AI_LAUNCH_POWER_SWEEP_SPEED_MIN, AI_LAUNCH_POWER_SWEEP_SPEED_MAX),
   };
 }
 
@@ -28163,10 +28198,17 @@ function gameDraw(){
 
     const baseAngle = Math.atan2(dy, dx);
     const angle = aiPreOscillationStageActive ? baseAngle : (baseAngle + oscillationAngle);
+    const effectiveDist = (
+      aimSession.controllerType === "computer"
+      && aiLaunchSession
+      && aiLaunchSession.plane === plane
+      && aiLaunchSession.targetAim
+    )
+      ? getAiOscillatingPullDistancePx(aiLaunchSession, clampedDist, now)
+      : clampedDist;
 
-
-    aimSession.shakyX = plane.x + clampedDist * Math.cos(angle);
-    aimSession.shakyY = plane.y + clampedDist * Math.sin(angle);
+    aimSession.shakyX = plane.x + effectiveDist * Math.cos(angle);
+    aimSession.shakyY = plane.y + effectiveDist * Math.sin(angle);
 
     aimSession.offsetX = aimSession.shakyX - aimSession.baseX;
     aimSession.offsetY = aimSession.shakyY - aimSession.baseY;
