@@ -6471,6 +6471,7 @@ function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') 
 
   let readyResolved = false;
   let animationTimer = null;
+  let animationStarted = false;
   let frameIndex = 0;
   let resolveReady;
   const ready = new Promise((resolve) => {
@@ -6488,6 +6489,7 @@ function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') 
       clearTimeout(animationTimer);
       animationTimer = null;
     }
+    animationStarted = false;
     img.onerror = null;
     img.onload = null;
     if (container?.isConnected) {
@@ -6499,6 +6501,7 @@ function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') 
   const scheduleNextFrame = () => {
     if (animationTimer) {
       clearTimeout(animationTimer);
+      animationTimer = null;
     }
     if (readyFrames.length <= 1) {
       return;
@@ -6518,6 +6521,14 @@ function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') 
     }, FLAME_FRAME_DURATION_MS);
   };
 
+  const startAnimation = () => {
+    if (animationStarted) {
+      return;
+    }
+    animationStarted = true;
+    scheduleNextFrame();
+  };
+
   img.onerror = () => {
     stop();
     img.remove();
@@ -6533,7 +6544,7 @@ function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') 
 
   img.onload = () => {
     resolveReadySafely();
-    scheduleNextFrame();
+    startAnimation();
   };
 
   installImageWatch(img, resolvedSrc, "flameFx");
@@ -6542,17 +6553,17 @@ function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') 
 
   if (img.complete && img.naturalWidth > 0) {
     resolveReadySafely();
-    scheduleNextFrame();
+    startAnimation();
   } else if (typeof img.decode === 'function') {
     img.decode()
       .then(() => {
         resolveReadySafely();
-        scheduleNextFrame();
+        startAnimation();
       })
       .catch(() => {
         if (img.complete && img.naturalWidth > 0) {
           resolveReadySafely();
-          scheduleNextFrame();
+          startAnimation();
         }
       });
   }
