@@ -6811,6 +6811,13 @@ function ensurePlaneFlameFx(plane) {
     return;
   }
 
+  if (!hasCrashDelayElapsed(plane)) {
+    if (!planeFlameTimers.has(plane)) {
+      schedulePlaneFlameFx(plane);
+    }
+    return;
+  }
+
   if (!planeFlameFx.has(plane)) {
     const timer = planeFlameTimers.get(plane);
     if (timer) {
