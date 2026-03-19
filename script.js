@@ -4751,7 +4751,7 @@ const ARCADE_RESPAWN_SHIELD_PATHS = {
   green: "ui_gamescreen/gs_aracade_shield_green.png",
 };
 const CRASH_FX_DELAY_MS = 0;   // delay before showing wreck FX
-const FLAME_FRAME_DURATION_MS = 70;
+const FLAME_FRAME_DURATION_MS = 140;
 const GREEN_FLAME_SEQUENCE = {
   framePaths: Array.from({ length: 16 }, (_, index) => `ui_gamescreen/flames/gs_flame_green_1/flame_green_1_${String(index + 1).padStart(2, '0')}.png`)
 };
