@@ -6437,11 +6437,11 @@ function applyFlameElementStyles(element, size = BASE_FLAME_DISPLAY_SIZE, planeC
 
 function applyFlameVisualStyle(element, styleKey) {
   if (!element) return;
-  const config = getFlameStyleConfig(styleKey);
-  const filter = config?.filter || '';
+  getFlameStyleConfig(styleKey);
+  const filter = '';
   element.dataset.flameStyle = normalizeFlameStyleKey(styleKey);
-  element.style.filter = filter || '';
-  element.dataset.flameFilter = filter || '';
+  element.style.filter = '';
+  element.dataset.flameFilter = filter;
 }
 
 function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') {
@@ -9414,8 +9414,8 @@ function resolveMapIndexForGameplay(upcomingRoundNumber = roundNumber + 1){
 const FLAME_STYLE_OPTIONS = [
   { value: 'random', label: 'Random Mix', filter: '' },
   { value: 'cycle', label: 'Cycle (Deterministic)', filter: '' },
-  { value: 'icy', label: 'Icy Blue', filter: 'hue-rotate(200deg) saturate(1.6)' },
-  { value: 'inferno', label: 'Inferno', filter: 'hue-rotate(-30deg) saturate(1.8) brightness(1.05)' },
+  { value: 'icy', label: 'Icy Blue', filter: '' },
+  { value: 'inferno', label: 'Inferno', filter: '' },
   { value: 'off', label: 'Flames Disabled', filter: '' }
 ];
 
