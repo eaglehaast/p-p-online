@@ -24321,14 +24321,18 @@ function buildShotPlan(goalSelection = {}, modeContext = {}){
         const directLinePenalty = isPathClear(plane.x, plane.y, enemy.x, enemy.y) ? 0 : 0.16;
         const risk = Number(Math.max(0, Math.min(1, route.riskBias + nearbyColliderCount * 0.06 + directLinePenalty)).toFixed(2));
         const distance = Number.isFinite(move.totalDist) ? move.totalDist : Math.hypot(move.vx, move.vy);
+        const powerRatio = Math.max(0, Math.min(1, MAX_DRAG_DISTANCE > 0 ? distance / MAX_DRAG_DISTANCE : 0));
+        const shortLaunchPenalty = powerRatio < 0.72 ? (0.72 - powerRatio) * 110 : 0;
         const score = (route.type === "direct" ? 220 : route.type === "narrow_corridor" ? 170 : 140)
-          - distance
+          + powerRatio * 85
+          - shortLaunchPenalty
           - risk * 90;
 
         const shotPreview = {
           trajectoryType: route.type,
           expectedEndPoint,
           risk,
+          powerRatio: Number(powerRatio.toFixed(3)),
         };
 
         if(!bestPlan || score > bestPlan.score){
@@ -25473,8 +25477,12 @@ function planPathToPoint(plane, tx, ty, options = {}){
         : (Number.isFinite(candidate?.routeMetrics?.qualityScore) ? candidate.routeMetrics.qualityScore : Number.NEGATIVE_INFINITY);
       const fallbackScore = Number.isFinite(candidate?.score) ? candidate.score : Number.NEGATIVE_INFINITY;
       const candidateScore = Number.isFinite(qualityScore) ? qualityScore : fallbackScore;
+      const candidatePrefersMaximumLaunch = candidate?.preferMaximumLaunch === true;
+      const bestPrefersMaximumLaunch = bestCandidate?.preferMaximumLaunch === true;
       if(candidateScore > bestScore + 0.000001
+        || (Math.abs(candidateScore - bestScore) <= 0.000001 && candidatePrefersMaximumLaunch !== bestPrefersMaximumLaunch && candidatePrefersMaximumLaunch)
         || (Math.abs(candidateScore - bestScore) <= 0.000001
+          && candidatePrefersMaximumLaunch === bestPrefersMaximumLaunch
           && (candidate.totalDist ?? Number.POSITIVE_INFINITY) < (bestCandidate?.totalDist ?? Number.POSITIVE_INFINITY))){
         bestCandidate = candidate;
         bestScore = candidateScore;
@@ -25490,6 +25498,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
     const dist = Math.hypot(dx, dy);
     const baseScale = Math.min(dist / Math.max(1, flightDistancePx), 1);
     const baseAngle = Math.atan2(dy, dx);
+    const reasonText = `${options?.decisionReason || ""} ${options?.goalName || ""}`.toLowerCase();
 
     const finisherTarget = options?.targetEnemy || null;
     const shouldPrioritizeDirectFinisher = Boolean(options?.prioritizeDirectFinisher)
@@ -25513,7 +25522,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       targetY: ty,
     });
 
-    const reasonText = `${options?.decisionReason || ""} ${options?.goalName || ""} ${shouldPrioritizeDirectFinisher ? "direct_finisher" : ""}`
+    const directReasonText = `${reasonText} ${shouldPrioritizeDirectFinisher ? "direct_finisher" : ""}`
       .toLowerCase();
     const explicitOvershootFactor = Number(options?.overshootFactor);
     const overshootFactor = Number.isFinite(explicitOvershootFactor)
@@ -25521,8 +25530,8 @@ function planPathToPoint(plane, tx, ty, options = {}){
       : AI_FINISHER_OVERSHOOT_FACTOR;
     const canApplyAttackOvershoot = shouldPrioritizeDirectFinisher
       && dist <= Math.max(1, flightDistancePx)
-      && isAttackContext(reasonText)
-      && !isDefenseOrRetreatContext(reasonText)
+      && isAttackContext(directReasonText)
+      && !isDefenseOrRetreatContext(directReasonText)
       && Number.isFinite(overshootFactor)
       && overshootFactor > 1;
 
@@ -25576,6 +25585,35 @@ function planPathToPoint(plane, tx, ty, options = {}){
           if(shouldHardPrioritizeDirect) return finisherMove;
           registerCandidate(finisherMove);
         }
+      }
+    }
+
+    const shouldPreferMaximumLaunch = !isDefenseOrRetreatContext(reasonText)
+      && !isIntentionalShortControlContext(reasonText, baseScale)
+      && (isAttackContext(reasonText)
+        || isCombatGoal(options?.goalName || "")
+        || shouldPrioritizeDirectFinisher);
+
+    if(shouldPreferMaximumLaunch && baseScale < 0.999){
+      const aggressiveMove = buildMoveWithSafeDeviation(baseAngle, flightDistancePx, 1, {
+        moveType: "direct",
+        candidateClass: "direct",
+        decisionReason: `${options?.decisionReason || "direct"}__prefer_maximum_launch`,
+        goalName: options?.goalName || null,
+      });
+      if(aggressiveMove){
+        aggressiveMove.preferMaximumLaunch = true;
+        aggressiveMove.attackPowerRatio = 1;
+        registerCandidate(aggressiveMove);
+        logAiDecision("ai_prefer_maximum_launch_candidate", {
+          planeId: plane?.id ?? null,
+          targetX: tx,
+          targetY: ty,
+          baseScale: Number(baseScale.toFixed(3)),
+          aggressiveScale: 1,
+          goalName: options?.goalName || null,
+          decisionReason: options?.decisionReason || null,
+        });
       }
     }
 
