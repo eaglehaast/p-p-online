@@ -4759,9 +4759,9 @@ const BLUE_FLAME_SEQUENCE = {
   framePaths: Array.from({ length: 16 }, (_, index) => `ui_gamescreen/flames/gs_flame_blue_1/flame_blue_1_${String(index + 1).padStart(2, '0')}.png`)
 };
 const BURNING_FLAME_SRCS = [...GREEN_FLAME_SEQUENCE.framePaths, ...BLUE_FLAME_SEQUENCE.framePaths];
-const BLUE_FLAME_DISPLAY_SIZE = { width: 12.5, height: 27.5 };
-const GREEN_FLAME_DISPLAY_SIZE = { width: 10, height: 55 };
-const BASE_FLAME_DISPLAY_SIZE = BLUE_FLAME_DISPLAY_SIZE;
+const BLUE_FLAME_DISPLAY_SIZE = { width: 36, height: 36 };
+const GREEN_FLAME_DISPLAY_SIZE = { width: 36, height: 36 };
+const BASE_FLAME_DISPLAY_SIZE = { width: 36, height: 36 };
 const PLANE_FLAME_HOST_ID = 'planeFlameHost';
 const EXPLOSION_HOST_ID = 'explosionHost';
 const EXPLOSION_HOST_Z_INDEX = 24;
