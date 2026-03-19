@@ -13869,8 +13869,9 @@ const STICKY_AIM_HOLD_MOVE_THRESHOLD_PX = 4;
 const ENABLE_LEGACY_AI_FAST_LAUNCH = false;
 const AI_LAUNCH_TARGET_SELECTION_MIN_MS = 40;
 const AI_LAUNCH_TARGET_SELECTION_MAX_MS = 90;
-const AI_LAUNCH_PULL_MIN_MS = 450;
-const AI_LAUNCH_PULL_MAX_MS = 550;
+const AI_LAUNCH_PULL_BACK_MIN_MS = 450;
+const AI_LAUNCH_PULL_BACK_MAX_MS = 550;
+// Обязательная стадия колебания прицела перед отпусканием: всегда 2–3 секунды.
 const AI_LAUNCH_OSCILLATION_MIN_MS = 2000;
 const AI_LAUNCH_OSCILLATION_MAX_MS = 3000;
 const AI_LAUNCH_SESSION_ANGLE_TOLERANCE_DEG = 1.2;
@@ -27498,9 +27499,9 @@ function buildAiLaunchSession(plane, vx, vy){
   const targetSelectionDurationMs = hasVeryShortTargetDistance
     ? randomInRange(AI_LAUNCH_FAST_TARGET_SELECTION_MIN_MS, AI_LAUNCH_FAST_TARGET_SELECTION_MAX_MS)
     : randomInRange(AI_LAUNCH_TARGET_SELECTION_MIN_MS, AI_LAUNCH_TARGET_SELECTION_MAX_MS);
-  const pullDurationMs = hasVeryShortTargetDistance
+  const pullBackDurationMs = hasVeryShortTargetDistance
     ? randomInRange(AI_LAUNCH_FAST_PULL_MIN_MS, AI_LAUNCH_FAST_PULL_MAX_MS)
-    : randomInRange(AI_LAUNCH_PULL_MIN_MS, AI_LAUNCH_PULL_MAX_MS);
+    : randomInRange(AI_LAUNCH_PULL_BACK_MIN_MS, AI_LAUNCH_PULL_BACK_MAX_MS);
 
   activateAimSession({
     planeRef: plane,
@@ -27516,8 +27517,9 @@ function buildAiLaunchSession(plane, vx, vy){
 
   const telemetryEnabled = aiTelegraphyDebugState.enabled !== false;
   const targetSelectionEndsAt = now + targetSelectionDurationMs;
-  const pullEndsAt = targetSelectionEndsAt + pullDurationMs;
-  const releaseDueAt = pullEndsAt + oscillationDurationMs;
+  const pullBackEndsAt = targetSelectionEndsAt + pullBackDurationMs;
+  const oscillationStartsAt = pullBackEndsAt;
+  const releaseDueAt = oscillationStartsAt + oscillationDurationMs;
 
   return {
     plane,
@@ -27527,7 +27529,9 @@ function buildAiLaunchSession(plane, vx, vy){
     stageStartedAt: now,
     pullPoint,
     targetSelectionEndsAt,
-    pullEndsAt,
+    pullBackEndsAt,
+    oscillationStartsAt,
+    oscillationDurationMs,
     releaseDueAt,
     previewEndsAt: targetSelectionEndsAt,
     targetAim,
@@ -27590,21 +27594,23 @@ function runAiLaunchSessionTick(now = performance.now()){
   }
   if(session.stage === "pull"){
     const pullStartAt = Number.isFinite(session.targetSelectionEndsAt) ? session.targetSelectionEndsAt : now;
-    const pullDuration = Math.max(1, (session.pullEndsAt || now) - pullStartAt);
-    const pullProgress = clamp((now - pullStartAt) / pullDuration, 0, 1);
+    const pullBackDuration = Math.max(1, (session.pullBackEndsAt || now) - pullStartAt);
+    const pullProgress = clamp((now - pullStartAt) / pullBackDuration, 0, 1);
     aimSession.baseX = session.plane.x + (session.pullPoint.x - session.plane.x) * pullProgress;
     aimSession.baseY = session.plane.y + (session.pullPoint.y - session.plane.y) * pullProgress;
-    if(now < (session.pullEndsAt || 0)){
+    if(now < (session.pullBackEndsAt || 0)){
       return;
     }
     aimSession.baseX = session.pullPoint.x;
     aimSession.baseY = session.pullPoint.y;
     session.stage = "oscillate";
     session.stageStartedAt = now;
+    session.oscillationStartsAt = now;
+    session.releaseDueAt = now + Math.max(0, session.oscillationDurationMs || 0);
     return;
   }
   if(session.stage === "oscillate" && session.pendingReleaseReason === "perfect_tolerance"){
-    const oscillationElapsedMs = now - (session.stageStartedAt || now);
+    const oscillationElapsedMs = now - (session.oscillationStartsAt || session.stageStartedAt || now);
     if(oscillationElapsedMs < AI_LAUNCH_OSCILLATION_MIN_MS){
       return;
     }
