@@ -4752,6 +4752,8 @@ const ARCADE_RESPAWN_SHIELD_PATHS = {
 };
 const CRASH_FX_DELAY_MS = 0;   // fallback delay before showing wreck FX
 const FLAME_FRAME_DURATION_MS = 140;
+const FLAME_RHYTHM_FRAME_GROUP = 4;
+const FLAME_RHYTHM_EXTRA_DELAY_MS = 22;
 const GREEN_FLAME_SEQUENCE = {
   framePaths: Array.from({ length: 16 }, (_, index) => `ui_gamescreen/flames/gs_flame_green_1/flame_green_1_${String(index + 1).padStart(2, '0')}.png`)
 };
@@ -6301,6 +6303,19 @@ function resolveFlameImage(flameSrc) {
   return { src: flameSrc, img: null };
 }
 
+function getFlameFrameDelayMs(frameIndex, totalFrames) {
+  const safeTotalFrames = Number.isFinite(totalFrames) ? Math.max(0, Math.floor(totalFrames)) : 0;
+  if (safeTotalFrames <= 0) {
+    return FLAME_FRAME_DURATION_MS;
+  }
+  const safeFrameIndex = Number.isFinite(frameIndex) ? Math.max(0, Math.floor(frameIndex)) : 0;
+  const oneBasedFrame = ((safeFrameIndex % safeTotalFrames) + safeTotalFrames) % safeTotalFrames + 1;
+  if (oneBasedFrame % FLAME_RHYTHM_FRAME_GROUP === 0) {
+    return FLAME_FRAME_DURATION_MS + FLAME_RHYTHM_EXTRA_DELAY_MS;
+  }
+  return FLAME_FRAME_DURATION_MS;
+}
+
 function pickRandomBurningFlame(plane) {
   const pool = getPlaneFlameSprites(plane);
 
@@ -6518,7 +6533,7 @@ function createFlameImageEntry(plane, flameImg, flameSrc = flameImg?.src || '') 
       img.dataset.flameSrc = nextFrame.src;
       img.src = nextFrame.src;
       scheduleNextFrame();
-    }, FLAME_FRAME_DURATION_MS);
+    }, getFlameFrameDelayMs(frameIndex, readyFrames.length));
   };
 
   const startAnimation = () => {
