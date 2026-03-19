@@ -4750,7 +4750,7 @@ const ARCADE_RESPAWN_SHIELD_PATHS = {
   blue: "ui_gamescreen/gs_aracade_shield_blue.png",
   green: "ui_gamescreen/gs_aracade_shield_green.png",
 };
-const CRASH_FX_DELAY_MS = 0;   // delay before showing wreck FX
+const CRASH_FX_DELAY_MS = 0;   // fallback delay before showing wreck FX
 const FLAME_FRAME_DURATION_MS = 140;
 const GREEN_FLAME_SEQUENCE = {
   framePaths: Array.from({ length: 16 }, (_, index) => `ui_gamescreen/flames/gs_flame_green_1/flame_green_1_${String(index + 1).padStart(2, '0')}.png`)
@@ -6599,6 +6599,9 @@ function cleanupBurningFx() {
     if (plane && plane.crashFlameSrc) {
       delete plane.crashFlameSrc;
     }
+    if (plane && Object.prototype.hasOwnProperty.call(plane, 'crashFxDelayMs')) {
+      delete plane.crashFxDelayMs;
+    }
     if (plane && plane.burningFlameStyleKey) {
       delete plane.burningFlameStyleKey;
     }
@@ -6616,12 +6619,15 @@ function schedulePlaneFlameFx(plane) {
   if (existingTimer) {
     clearTimeout(existingTimer);
   }
+  const crashFxDelayMs = Number.isFinite(plane?.crashFxDelayMs)
+    ? Math.max(0, plane.crashFxDelayMs)
+    : CRASH_FX_DELAY_MS;
   const timer = setTimeout(() => {
     planeFlameTimers.delete(plane);
     if (plane.burning && !plane?.flameFxDisabled && hasCrashDelayElapsed(plane) && !planeFlameFx.has(plane)) {
       spawnBurningFlameFx(plane);
     }
-  }, CRASH_FX_DELAY_MS);
+  }, crashFxDelayMs);
   planeFlameTimers.set(plane, timer);
 }
 
@@ -6793,6 +6799,9 @@ function ensurePlaneFlameFx(plane) {
     }
     if (plane.crashFlameImg) {
       delete plane.crashFlameImg;
+    }
+    if (Object.prototype.hasOwnProperty.call(plane, 'crashFxDelayMs')) {
+      delete plane.crashFxDelayMs;
     }
     resetPlaneFlameFxDisabled(plane);
     return;
@@ -12623,6 +12632,23 @@ function getShortExplosionDurationMs(src = "", color = "") {
   );
 }
 
+function resolvePlaneCrashFxDelayMs(plane) {
+  if (!plane) {
+    return CRASH_FX_DELAY_MS;
+  }
+
+  const variants = getExplosionVariantsForColor(plane.color);
+  const img = variants[0] || null;
+  const baseDurationMs = resolveExplosionGifDurationMs(img, plane.color);
+  const playbackAdjustedDurationMs = applyExplosionPlaybackRate(baseDurationMs);
+
+  if (!Number.isFinite(playbackAdjustedDurationMs) || playbackAdjustedDurationMs < 0) {
+    return CRASH_FX_DELAY_MS;
+  }
+
+  return Math.max(CRASH_FX_DELAY_MS, playbackAdjustedDurationMs);
+}
+
 function getExactExplosionGifDurationMs(img) {
   const datasetDuration = Number.parseFloat(img?.dataset?.durationMs);
   const propDuration = Number.isFinite(img?.durationMs) ? img.durationMs : NaN;
@@ -13166,6 +13192,7 @@ function eliminatePlane(plane, options = {}){
     const crashTimestamp = performance.now();
     plane.crashStart = crashTimestamp;
     plane.killMarkerStart = crashTimestamp;
+    plane.crashFxDelayMs = resolvePlaneCrashFxDelayMs(plane);
   }
   if(!skipFlameFx && plane.burning){
     schedulePlaneFlameFx(plane);
@@ -29332,7 +29359,11 @@ function hasCrashDelayElapsed(p){
     return true;
   }
 
-  return performance.now() - start >= CRASH_FX_DELAY_MS;
+  const crashFxDelayMs = Number.isFinite(p?.crashFxDelayMs)
+    ? Math.max(0, p.crashFxDelayMs)
+    : CRASH_FX_DELAY_MS;
+
+  return performance.now() - start >= crashFxDelayMs;
 }
 
 function drawPlaneCounterIcon(ctx2d, x, y, color, scale = 1) {
