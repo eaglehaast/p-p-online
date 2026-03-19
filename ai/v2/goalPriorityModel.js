@@ -1,9 +1,9 @@
 (function(global){
   const GOAL_CLASS_DEFINITIONS = Object.freeze({
     score_by_flag: Object.freeze({
-      weight: 0.92,
+      weight: 0.7,
       mode: "flag_pressure",
-      priorities: Object.freeze(["capture_enemy_flag", "return_with_flag", "high_risk_attack"]),
+      priorities: Object.freeze(["return_with_flag", "capture_enemy_flag", "pickup_cargo", "attack_enemy_plane", "high_risk_attack"]),
     }),
     prevent_enemy_flag_score: Object.freeze({
       weight: 0.98,
@@ -36,6 +36,18 @@
     const readyCargoCount = Number.isFinite(context.readyCargoCount) ? context.readyCargoCount : 0;
     const hasStolenBlueFlagCarrier = Boolean(context.hasStolenBlueFlagCarrier);
     const shouldUseFlagsMode = Boolean(context.shouldUseFlagsMode);
+    const canReachEnemyFlag = Boolean(context.canReachEnemyFlag);
+    const hasReturnRouteOpportunity = Boolean(context.hasReturnRouteOpportunity);
+    const expectedRetreatChance = Number.isFinite(context.expectedRetreatChance) ? context.expectedRetreatChance : 0;
+    const returnLaneThreat = Number.isFinite(context.returnLaneThreat) ? context.returnLaneThreat : 1;
+    const flagGrabValue = Number.isFinite(context.flagGrabValue) ? context.flagGrabValue : 0;
+    const flagReturnValue = Number.isFinite(context.flagReturnValue) ? context.flagReturnValue : 0;
+    const cargoAlternativeValue = Number.isFinite(context.cargoAlternativeValue) ? context.cargoAlternativeValue : 0;
+    const attackAlternativeValue = Number.isFinite(context.attackAlternativeValue) ? context.attackAlternativeValue : 0;
+
+    const returnBeatsAlternatives = flagReturnValue >= cargoAlternativeValue
+      && flagReturnValue >= attackAlternativeValue;
+    const canOnlyGrabFlag = canReachEnemyFlag && !hasReturnRouteOpportunity;
 
     return {
       prevent_enemy_flag_score: {
@@ -45,10 +57,25 @@
       score_by_flag: {
         active: shouldUseFlagsMode
           && availableEnemyFlagsCount > 0
-          && (scoreGap > 0 || aiAliveCount >= enemyAliveCount || blueInventoryCount >= 2),
-        reason: availableEnemyFlagsCount > 0
-          ? "enemy_flags_available_with_pressure_window"
-          : "no_enemy_flags_available",
+          && hasReturnRouteOpportunity
+          && expectedRetreatChance >= 0.64
+          && returnLaneThreat <= 0.45
+          && returnBeatsAlternatives,
+        reason: !shouldUseFlagsMode
+          ? "flags_mode_disabled"
+          : availableEnemyFlagsCount <= 0
+            ? "no_enemy_flags_available"
+            : !canReachEnemyFlag
+              ? "cannot_reach_enemy_flag"
+              : canOnlyGrabFlag
+                ? "grab_without_return_plan"
+                : !hasReturnRouteOpportunity
+                  ? "return_route_not_viable"
+                  : returnLaneThreat > 0.45
+                    ? "return_lane_too_hot"
+                    : !returnBeatsAlternatives
+                      ? "alternatives_outvalue_flag_plan"
+                      : "flag_return_plan_profitable",
       },
       survival_reposition: {
         active: aiAliveCount > 0
@@ -61,15 +88,17 @@
         active: readyCargoCount > 0
           && aiAliveCount > 1
           && !hasStolenBlueFlagCarrier
-          && (scoreGap >= 0 || blueInventoryCount === 0),
+          && (scoreGap >= 0 || blueInventoryCount === 0 || cargoAlternativeValue >= flagReturnValue),
         reason: readyCargoCount > 0 ? "cargo_ready_for_swing_turn" : "no_ready_cargo",
       },
       secure_kill: {
         active: aiAliveCount > 0
           && enemyAliveCount > 0
           && !hasStolenBlueFlagCarrier
-          && (scoreGap >= 0 || aiAliveCount >= enemyAliveCount),
-        reason: "stable_board_for_direct_attack",
+          && (scoreGap >= 0 || aiAliveCount >= enemyAliveCount || attackAlternativeValue > flagReturnValue),
+        reason: attackAlternativeValue > flagReturnValue
+          ? "direct_attack_outvalues_flag_plan"
+          : "stable_board_for_direct_attack",
       },
     };
   }
