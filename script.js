@@ -734,8 +734,14 @@ const handleCircle={
   offsetX:0, offsetY:0,
   active:false,
   pointRef:null,
-  origAngle:null
+  origAngle:null,
+  controlledByAI:false
 };
+
+let aiAimState = null;
+const AI_AIM_PULL_MS = 320;
+const AI_AIM_FINE_TUNE_MS = 520;
+const AI_AIM_DISTANCE_WOBBLE_PX = CELL_SIZE * 1.15;
 
 // Поддержка мобильных устройств
 function getEventCoords(e) {
@@ -784,6 +790,7 @@ function handleStart(e) {
   handleCircle.active= true;
   handleCircle.pointRef= found;
   handleCircle.origAngle = found.angle;
+  handleCircle.controlledByAI = false;
   oscillationAngle = 0;
   oscillationDir = 1;
   roundTextTimer = 0; // Hide round label when player starts a move
@@ -1025,22 +1032,17 @@ function onHandleMove(e){
   handleCircle.baseY= (coords.clientY - rect.top) * scaleY;
 }
 
-function onHandleUp(){
-  if(!handleCircle.active || !handleCircle.pointRef) return;
+function launchPlaneFromHandle(){
+  if(!handleCircle.active || !handleCircle.pointRef) return false;
   let plane= handleCircle.pointRef;
-  if(isGameOver || !gameMode){
-    plane.angle = handleCircle.origAngle;
-    cleanupHandle(); return;
-  }
   let dx= handleCircle.shakyX - plane.x;
   let dy= handleCircle.shakyY - plane.y;
 
   let dragDistance = Math.hypot(dx, dy);
-  // Cancel the move if released before the first tick mark
   if(dragDistance < CELL_SIZE){
     plane.angle = handleCircle.origAngle;
     cleanupHandle();
-    return;
+    return false;
   }
   if(dragDistance > MAX_DRAG_DISTANCE){
     dx *= MAX_DRAG_DISTANCE/dragDistance;
@@ -1048,19 +1050,14 @@ function onHandleUp(){
     dragDistance = MAX_DRAG_DISTANCE;
   }
 
-  // угол «натяжки»
   const dragAngle = Math.atan2(dy, dx);
-
-  // дальность в пикселях
   const flightDistancePx = flightRangeCells * CELL_SIZE;
   const speedPxPerSec = flightDistancePx / FLIGHT_DURATION_SEC;
   const scale = dragDistance / MAX_DRAG_DISTANCE;
 
-  // скорость — ПРОТИВ направления натяжки (px/sec)
   let vx= -Math.cos(dragAngle) * scale * speedPxPerSec;
   let vy= -Math.sin(dragAngle) * scale * speedPxPerSec;
 
-  // нос по скорости
   plane.angle = Math.atan2(vy, vx) + Math.PI/2;
 
   flyingPoints.push({
@@ -1075,11 +1072,24 @@ function onHandleUp(){
     renderScoreboard();
   }
   cleanupHandle();
+  return true;
+}
+
+function onHandleUp(){
+  if(!handleCircle.active || !handleCircle.pointRef) return;
+  let plane= handleCircle.pointRef;
+  if(isGameOver || !gameMode){
+    plane.angle = handleCircle.origAngle;
+    cleanupHandle(); return;
+  }
+  launchPlaneFromHandle();
 }
 function cleanupHandle(){
   handleCircle.active= false;
   handleCircle.pointRef= null;
   handleCircle.origAngle = null;
+  handleCircle.controlledByAI = false;
+  aiAimState = null;
   // Hide overlay canvas when aiming ends
   aimCanvas.style.display = "none";
   aimCtx.clearRect(0,0,aimCanvas.width,aimCanvas.height);
@@ -1226,13 +1236,91 @@ function planPathToPoint(plane, tx, ty){
 }
 
 function issueAIMove(plane, vx, vy){
-  plane.angle = Math.atan2(vy, vx) + Math.PI/2;
-  flyingPoints.push({ plane, vx, vy, timeLeft: FLIGHT_DURATION_SEC, hit:false, collisionCooldown:0 });
-  if(!hasShotThisRound){
-    hasShotThisRound = true;
-    renderScoreboard();
+  beginAIAim(plane, vx, vy);
+}
+
+function beginAIAim(plane, vx, vy){
+  const speed = Math.hypot(vx, vy);
+  if(speed <= 0){
+    return;
   }
+
+  const flightDistancePx = flightRangeCells * CELL_SIZE;
+  const desiredDragDistance = Math.min((speed / (flightDistancePx / FLIGHT_DURATION_SEC)) * MAX_DRAG_DISTANCE, MAX_DRAG_DISTANCE);
+  const aimAngle = Math.atan2(-vy, -vx);
+  const coarseDistance = Math.max(
+    CELL_SIZE,
+    Math.min(
+      MAX_DRAG_DISTANCE,
+      desiredDragDistance + (Math.random() * 2 - 1) * Math.min(AI_AIM_DISTANCE_WOBBLE_PX, desiredDragDistance * 0.18)
+    )
+  );
+
+  handleCircle.active = true;
+  handleCircle.pointRef = plane;
+  handleCircle.origAngle = plane.angle;
+  handleCircle.controlledByAI = true;
+  handleCircle.baseX = plane.x + Math.cos(aimAngle) * coarseDistance;
+  handleCircle.baseY = plane.y + Math.sin(aimAngle) * coarseDistance;
+  handleCircle.shakyX = handleCircle.baseX;
+  handleCircle.shakyY = handleCircle.baseY;
+  handleCircle.offsetX = 0;
+  handleCircle.offsetY = 0;
+  oscillationAngle = 0;
+  oscillationDir = 1;
   roundTextTimer = 0;
+  aimCanvas.style.display = "block";
+
+  aiAimState = {
+    plane,
+    aimAngle,
+    desiredDragDistance,
+    coarseDistance,
+    startedAt: performance.now(),
+    pullDurationMs: AI_AIM_PULL_MS + Math.random() * 140,
+    fineTuneDurationMs: AI_AIM_FINE_TUNE_MS + Math.random() * 220,
+    distancePhase: Math.random() * Math.PI * 2,
+    distancePulseSpeed: 0.011 + Math.random() * 0.008,
+    releaseWindowMs: 90 + Math.random() * 120
+  };
+}
+
+function updateAIAim(now){
+  if(!aiAimState || !handleCircle.active || !handleCircle.pointRef || !handleCircle.controlledByAI){
+    return;
+  }
+
+  const state = aiAimState;
+  const elapsedMs = now - state.startedAt;
+  const pullProgress = Math.min(elapsedMs / state.pullDurationMs, 1);
+  let currentDistance = state.coarseDistance + (state.desiredDragDistance - state.coarseDistance) * pullProgress;
+
+  if(pullProgress >= 1){
+    const fineElapsedMs = elapsedMs - state.pullDurationMs;
+    const fineProgress = Math.min(fineElapsedMs / state.fineTuneDurationMs, 1);
+    const wobbleFade = 1 - fineProgress;
+    const wobble = Math.sin(fineElapsedMs * state.distancePulseSpeed + state.distancePhase)
+      * Math.min(AI_AIM_DISTANCE_WOBBLE_PX, state.desiredDragDistance * 0.12)
+      * wobbleFade;
+    currentDistance = state.desiredDragDistance + wobble;
+
+    if(fineElapsedMs >= state.fineTuneDurationMs - state.releaseWindowMs){
+      currentDistance = state.desiredDragDistance + wobble * 0.25;
+    }
+
+    if(fineElapsedMs >= state.fineTuneDurationMs){
+      handleCircle.baseX = state.plane.x + Math.cos(state.aimAngle) * state.desiredDragDistance;
+      handleCircle.baseY = state.plane.y + Math.sin(state.aimAngle) * state.desiredDragDistance;
+      handleCircle.shakyX = handleCircle.baseX;
+      handleCircle.shakyY = handleCircle.baseY;
+      launchPlaneFromHandle();
+      return;
+    }
+  }
+
+  currentDistance = Math.max(CELL_SIZE, Math.min(MAX_DRAG_DISTANCE, currentDistance));
+  handleCircle.baseX = state.plane.x + Math.cos(state.aimAngle) * currentDistance;
+  handleCircle.baseY = state.plane.y + Math.sin(state.aimAngle) * currentDistance;
 }
 function dist(a,b){ return Math.hypot(a.x-b.x,a.y-b.y); }
 function getRandomDeviation(distance, maxDev){
@@ -1498,6 +1586,7 @@ function angleDiffDeg(a, b){
 
 function handleAAForPlane(p, fp){
   const now = performance.now();
+
   for(const aa of aaUnits){
     if(aa.owner === p.color) continue; // no friendly fire
     const dx = p.x - aa.x;
@@ -1572,6 +1661,8 @@ function handleAAForPlane(p, fp){
   const delta = deltaSec * 60;
   lastFrameTime = now;
   globalFrame += delta;
+
+  updateAIAim(now);
 
   // фон
   gameCtx.clearRect(0,0, gameCanvas.width, gameCanvas.height);
