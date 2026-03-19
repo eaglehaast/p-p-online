@@ -4750,6 +4750,23 @@ const ARCADE_RESPAWN_SHIELD_PATHS = {
   blue: "ui_gamescreen/gs_aracade_shield_blue.png",
   green: "ui_gamescreen/gs_aracade_shield_green.png",
 };
+const CRASH_FX_DELAY_MS = 0;   // delay before showing wreck FX
+const FLAME_FRAME_DURATION_MS = 70;
+const GREEN_FLAME_SEQUENCE = {
+  framePaths: Array.from({ length: 16 }, (_, index) => `ui_gamescreen/flames/gs_flame_green_1/flame_green_1_${String(index + 1).padStart(2, '0')}.png`)
+};
+const BLUE_FLAME_SEQUENCE = {
+  framePaths: Array.from({ length: 16 }, (_, index) => `ui_gamescreen/flames/gs_flame_blue_1/flame_blue_1_${String(index + 1).padStart(2, '0')}.png`)
+};
+const BURNING_FLAME_SRCS = [...GREEN_FLAME_SEQUENCE.framePaths, ...BLUE_FLAME_SEQUENCE.framePaths];
+const BLUE_FLAME_DISPLAY_SIZE = { width: 12.5, height: 27.5 };
+const GREEN_FLAME_DISPLAY_SIZE = { width: 10, height: 55 };
+const BASE_FLAME_DISPLAY_SIZE = BLUE_FLAME_DISPLAY_SIZE;
+const PLANE_FLAME_HOST_ID = 'planeFlameHost';
+const EXPLOSION_HOST_ID = 'explosionHost';
+const EXPLOSION_HOST_Z_INDEX = 24;
+const CARGO_HOST_ID = 'cargoHost';
+const CARGO_HOST_Z_INDEX = 23;
 
 const GAME_SCREEN_ASSETS = [
   // Plane counters
@@ -5857,24 +5874,6 @@ const MOCKUP_H = 800;
 const BOARD_ORIGIN = { x: 0, y: 0 };
 
 // ---- Crash FX timing (used for delayed wreck/flame reveal) ----
-
-const CRASH_FX_DELAY_MS = 0;   // delay before showing wreck FX
-const FLAME_FRAME_DURATION_MS = 70;
-const GREEN_FLAME_SEQUENCE = {
-  framePaths: Array.from({ length: 16 }, (_, index) => `ui_gamescreen/flames/gs_flame_green_1/flame_green_1_${String(index + 1).padStart(2, '0')}.png`)
-};
-const BLUE_FLAME_SEQUENCE = {
-  framePaths: Array.from({ length: 16 }, (_, index) => `ui_gamescreen/flames/gs_flame_blue_1/flame_blue_1_${String(index + 1).padStart(2, '0')}.png`)
-};
-const BURNING_FLAME_SRCS = [...GREEN_FLAME_SEQUENCE.framePaths, ...BLUE_FLAME_SEQUENCE.framePaths];
-const BLUE_FLAME_DISPLAY_SIZE = { width: 12.5, height: 27.5 };
-const GREEN_FLAME_DISPLAY_SIZE = { width: 10, height: 55 };
-const BASE_FLAME_DISPLAY_SIZE = BLUE_FLAME_DISPLAY_SIZE;
-const PLANE_FLAME_HOST_ID = 'planeFlameHost';
-const EXPLOSION_HOST_ID = 'explosionHost';
-const EXPLOSION_HOST_Z_INDEX = 24;
-const CARGO_HOST_ID = 'cargoHost';
-const CARGO_HOST_Z_INDEX = 23;
 
 let flameCycleIndex = 0;
 let flameStyleRevision = 0;
