@@ -13880,6 +13880,8 @@ const AI_LAUNCH_POWER_SWEEP_MAX_RATIO = 0.045;
 const AI_LAUNCH_POWER_SWEEP_MIN_RATIO = 0.008;
 const AI_LAUNCH_POWER_SWEEP_SPEED_MIN = 0.006;
 const AI_LAUNCH_POWER_SWEEP_SPEED_MAX = 0.011;
+const AI_LAUNCH_COARSE_PULL_MAX_RATIO = 0.07;
+const AI_LAUNCH_COARSE_PULL_MIN_RATIO = 0.02;
 const AI_LAUNCH_MIN_TARGET_DISTANCE_FOR_FULL_TELEGRAPH_CELLS = 0.6;
 const AI_LAUNCH_FAST_TARGET_SELECTION_MIN_MS = 70;
 const AI_LAUNCH_FAST_TARGET_SELECTION_MAX_MS = 180;
@@ -13966,6 +13968,28 @@ function buildHumanizedAiTargetAim(plane, targetAim){
     pullY: adjustedPullY,
     humanized: true,
     missScale,
+  };
+}
+
+function buildAiCoarsePullPoint(plane, targetAim){
+  if(!plane || !targetAim){
+    return targetAim
+      ? { x: targetAim.pullX, y: targetAim.pullY }
+      : { x: plane?.x ?? 0, y: plane?.y ?? 0 };
+  }
+
+  const missScale = clamp(Number.isFinite(targetAim.missScale) ? targetAim.missScale : 0, 0, 1);
+  const coarsePullRatio = (
+    AI_LAUNCH_COARSE_PULL_MAX_RATIO
+    + (AI_LAUNCH_COARSE_PULL_MIN_RATIO - AI_LAUNCH_COARSE_PULL_MAX_RATIO) * missScale
+  );
+  const coarsePowerOffset = randomSignedOffset(coarsePullRatio);
+  const coarsePowerRatio = clamp(targetAim.powerRatio + coarsePowerOffset, 0, 1);
+  const coarseDistance = coarsePowerRatio * MAX_DRAG_DISTANCE;
+
+  return {
+    x: plane.x + Math.cos(targetAim.angleRad) * coarseDistance,
+    y: plane.y + Math.sin(targetAim.angleRad) * coarseDistance,
   };
 }
 
@@ -27519,7 +27543,7 @@ function buildAiLaunchSession(plane, vx, vy){
   const idealTargetAim = computeAiAimMetricsFromPullPoint(plane, idealPullPoint.x, idealPullPoint.y);
   const targetAim = buildHumanizedAiTargetAim(plane, idealTargetAim);
   const pullPoint = targetAim
-    ? { x: targetAim.pullX, y: targetAim.pullY }
+    ? buildAiCoarsePullPoint(plane, targetAim)
     : idealPullPoint;
   const targetDistancePx = targetAim
     ? Math.hypot(targetAim.pullX - plane.x, targetAim.pullY - plane.y)
