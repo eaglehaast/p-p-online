@@ -15040,7 +15040,9 @@ const AI_DIRECT_LOW_PASSABILITY_CLEARANCE_THRESHOLD_PX = CELL_SIZE * 0.32;
 const AI_DIRECT_LOW_PASSABILITY_CORRIDOR_TIGHTNESS_THRESHOLD = 0.72;
 const AI_DIRECT_LOW_PASSABILITY_SCORE_PENALTY = MAX_DRAG_DISTANCE * 0.03;
 const AI_FLAG_PRESSURE_SAFETY_WINDOW_TURN_LIMIT = 4;
-const AI_FLAG_PRESSURE_NEARBY_THREAT_DISTANCE = ATTACK_RANGE_PX * 1.55;
+const AI_FLAG_PRESSURE_RETURN_LANE_THREAT_RADIUS = ATTACK_RANGE_PX * 0.95;
+const AI_FLAG_PRESSURE_GRAB_ONLY_MAX_VALUE = 0.58;
+const AI_FLAG_PRESSURE_RETURN_MIN_VALUE = 0.64;
 const AI_ANGLE_REPEAT_HISTORY_LIMIT = 3;
 const AI_ANGLE_REPEAT_TIGHT_SPREAD_DEG = 7;
 const AI_ANGLE_SAFE_FAN_MIN_DEG = 12;
@@ -19702,6 +19704,157 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   }
 }
 
+function clamp01(value){
+  if(!Number.isFinite(value)) return 0;
+  if(value <= 0) return 0;
+  if(value >= 1) return 1;
+  return value;
+}
+
+function getDistanceToSegment(pointX, pointY, startX, startY, endX, endY){
+  const dx = endX - startX;
+  const dy = endY - startY;
+  if(dx === 0 && dy === 0) return Math.hypot(pointX - startX, pointY - startY);
+  const t = clamp01(((pointX - startX) * dx + (pointY - startY) * dy) / (dx * dx + dy * dy));
+  const projX = startX + dx * t;
+  const projY = startY + dy * t;
+  return Math.hypot(pointX - projX, pointY - projY);
+}
+
+function evaluateFlagPressureOpportunity(context = {}){
+  const aiPlanes = Array.isArray(context?.aiPlanes) ? context.aiPlanes.filter(Boolean) : [];
+  const enemies = Array.isArray(context?.enemies) ? context.enemies.filter((enemy) => enemy?.isAlive !== false) : [];
+  const availableEnemyFlags = Array.isArray(context?.availableEnemyFlags) ? context.availableEnemyFlags.filter(Boolean) : [];
+  const homeBase = context?.homeBase || getBaseAnchor("blue");
+  const blueInventoryCount = Number.isFinite(context?.blueInventoryCount) ? context.blueInventoryCount : 0;
+  const readyCargoCount = Array.isArray(cargoState)
+    ? cargoState.reduce((count, cargo) => count + (cargo?.state === "ready" ? 1 : 0), 0)
+    : 0;
+  const scoreGap = greenScore - blueScore;
+  const aiAliveCount = aiPlanes.length;
+  const enemyAliveCount = enemies.length;
+
+  const result = {
+    canReachEnemyFlag: false,
+    hasReturnRouteOpportunity: false,
+    hasDecentFlagGrab: false,
+    hasStrongFlagReturn: false,
+    expectedRetreatChance: 0,
+    returnLaneThreat: 1,
+    flagGrabValue: 0,
+    flagReturnValue: 0,
+    cargoAlternativeValue: 0,
+    attackAlternativeValue: 0,
+    bestFlagRoute: null,
+  };
+
+  if(!homeBase || !aiPlanes.length || !availableEnemyFlags.length){
+    result.cargoAlternativeValue = clamp01((readyCargoCount * 0.28) + (blueInventoryCount === 0 ? 0.08 : 0));
+    result.attackAlternativeValue = clamp01((enemyAliveCount > 0 ? 0.34 : 0) + (aiAliveCount >= enemyAliveCount ? 0.14 : 0));
+    return result;
+  }
+
+  let nearestEnemyDistance = Number.POSITIVE_INFINITY;
+  for(const plane of aiPlanes){
+    for(const enemy of enemies){
+      if(!Number.isFinite(enemy?.x) || !Number.isFinite(enemy?.y)) continue;
+      const d = Math.hypot((enemy.x || 0) - plane.x, (enemy.y || 0) - plane.y);
+      if(d < nearestEnemyDistance) nearestEnemyDistance = d;
+    }
+  }
+
+  result.cargoAlternativeValue = clamp01(
+    (readyCargoCount > 0 ? 0.44 : 0)
+    + (blueInventoryCount === 0 ? 0.12 : 0)
+    + (scoreGap <= 0 ? 0.1 : 0)
+  );
+  result.attackAlternativeValue = clamp01(
+    (enemyAliveCount > 0 ? 0.34 : 0)
+    + (aiAliveCount >= enemyAliveCount ? 0.16 : 0)
+    + (Number.isFinite(nearestEnemyDistance) && nearestEnemyDistance <= ATTACK_RANGE_PX * 1.25 ? 0.16 : 0)
+    + (scoreGap <= 0 ? 0.08 : 0)
+  );
+
+  let bestRoute = null;
+  for(const plane of aiPlanes){
+    for(const flag of availableEnemyFlags){
+      const targetAnchor = getFlagAnchor(flag);
+      if(!targetAnchor || !Number.isFinite(targetAnchor.x) || !Number.isFinite(targetAnchor.y)) continue;
+      const toFlagDistance = Math.hypot(targetAnchor.x - plane.x, targetAnchor.y - plane.y);
+      const toBaseDistance = Math.hypot(homeBase.x - targetAnchor.x, homeBase.y - targetAnchor.y);
+      const canReachFlag = isPathClear(plane.x, plane.y, targetAnchor.x, targetAnchor.y);
+      const clearReturnLane = isPathClear(targetAnchor.x, targetAnchor.y, homeBase.x, homeBase.y);
+      const threateningEnemies = enemies.filter((enemy) => {
+        if(!Number.isFinite(enemy?.x) || !Number.isFinite(enemy?.y)) return false;
+        return getDistanceToSegment(enemy.x, enemy.y, targetAnchor.x, targetAnchor.y, homeBase.x, homeBase.y) <= AI_FLAG_PRESSURE_RETURN_LANE_THREAT_RADIUS;
+      });
+      const nearestReturnThreatDistance = threateningEnemies.reduce((minDist, enemy) => {
+        const threatDist = getDistanceToSegment(enemy.x, enemy.y, targetAnchor.x, targetAnchor.y, homeBase.x, homeBase.y);
+        return Math.min(minDist, threatDist);
+      }, Number.POSITIVE_INFINITY);
+      const returnLaneThreat = clamp01(
+        threateningEnemies.length * 0.34
+        + (Number.isFinite(nearestReturnThreatDistance)
+          ? Math.max(0, 1 - (nearestReturnThreatDistance / AI_FLAG_PRESSURE_RETURN_LANE_THREAT_RADIUS)) * 0.46
+          : 0)
+      );
+      const travelBurden = clamp01((toFlagDistance + toBaseDistance) / Math.max(MAX_DRAG_DISTANCE * 3.2, 1));
+      const expectedRetreatChance = clamp01(
+        (clearReturnLane ? 0.42 : 0.16)
+        + (canReachFlag ? 0.18 : 0)
+        + (aiAliveCount > enemyAliveCount ? 0.12 : 0)
+        + (blueInventoryCount >= AI_CARGO_SWITCH_TO_AGGRESSION_ITEMS ? 0.08 : 0)
+        - returnLaneThreat * 0.62
+        - travelBurden * 0.26
+      );
+      const flagGrabValue = clamp01(
+        (canReachFlag ? 0.48 : 0)
+        + (scoreGap <= 0 ? 0.1 : 0)
+        + (1 - travelBurden) * 0.18
+        + expectedRetreatChance * 0.12
+      );
+      const flagReturnValue = clamp01(
+        (canReachFlag ? 0.18 : 0)
+        + expectedRetreatChance * 0.68
+        + (clearReturnLane ? 0.12 : 0)
+        + (scoreGap <= 0 ? 0.08 : 0)
+      );
+      const route = {
+        planeId: plane.id ?? null,
+        flagId: flag.id ?? null,
+        canReachFlag,
+        clearReturnLane,
+        toFlagDistance: Number(toFlagDistance.toFixed(1)),
+        toBaseDistance: Number(toBaseDistance.toFixed(1)),
+        threateningEnemiesOnReturn: threateningEnemies.length,
+        returnLaneThreat: Number(returnLaneThreat.toFixed(4)),
+        expectedRetreatChance: Number(expectedRetreatChance.toFixed(4)),
+        flagGrabValue: Number(flagGrabValue.toFixed(4)),
+        flagReturnValue: Number(flagReturnValue.toFixed(4)),
+      };
+      if(!bestRoute
+        || route.flagReturnValue > bestRoute.flagReturnValue
+        || (route.flagReturnValue === bestRoute.flagReturnValue && route.flagGrabValue > bestRoute.flagGrabValue)){
+        bestRoute = route;
+      }
+    }
+  }
+
+  if(bestRoute){
+    result.canReachEnemyFlag = Boolean(bestRoute.canReachFlag);
+    result.hasReturnRouteOpportunity = bestRoute.expectedRetreatChance >= AI_FLAG_PRESSURE_RETURN_MIN_VALUE;
+    result.hasDecentFlagGrab = bestRoute.flagGrabValue >= AI_FLAG_PRESSURE_GRAB_ONLY_MAX_VALUE;
+    result.hasStrongFlagReturn = bestRoute.flagReturnValue >= AI_FLAG_PRESSURE_RETURN_MIN_VALUE;
+    result.expectedRetreatChance = bestRoute.expectedRetreatChance;
+    result.returnLaneThreat = bestRoute.returnLaneThreat;
+    result.flagGrabValue = bestRoute.flagGrabValue;
+    result.flagReturnValue = bestRoute.flagReturnValue;
+    result.bestFlagRoute = bestRoute;
+  }
+
+  return result;
+}
+
 function evaluateAiGoalPriorityModel(context){
   const model = (typeof window !== "undefined" && window.PaperWingsGoalPriorityModel)
     ? window.PaperWingsGoalPriorityModel
@@ -19718,6 +19871,8 @@ function evaluateAiGoalPriorityModel(context){
     ? cargoState.reduce((count, cargo) => count + (cargo?.state === "ready" ? 1 : 0), 0)
     : 0;
 
+  const flagPressureOpportunity = context?.flagPressureOpportunity || evaluateFlagPressureOpportunity(context);
+
   return model.evaluate({
     scoreGap: greenScore - blueScore,
     aiAliveCount,
@@ -19727,6 +19882,14 @@ function evaluateAiGoalPriorityModel(context){
     readyCargoCount,
     hasStolenBlueFlagCarrier: Boolean(context?.stolenBlueFlagCarrier && context.stolenBlueFlagCarrier.color !== "blue"),
     shouldUseFlagsMode,
+    canReachEnemyFlag: flagPressureOpportunity.canReachEnemyFlag,
+    hasReturnRouteOpportunity: flagPressureOpportunity.hasReturnRouteOpportunity,
+    expectedRetreatChance: flagPressureOpportunity.expectedRetreatChance,
+    returnLaneThreat: flagPressureOpportunity.returnLaneThreat,
+    flagGrabValue: flagPressureOpportunity.flagGrabValue,
+    flagReturnValue: flagPressureOpportunity.flagReturnValue,
+    cargoAlternativeValue: flagPressureOpportunity.cargoAlternativeValue,
+    attackAlternativeValue: flagPressureOpportunity.attackAlternativeValue,
   });
 }
 
@@ -19777,10 +19940,13 @@ function selectAiModeForCurrentTurn(context, options = {}){
   const enemyAliveCount = enemies.length;
   const hasEnoughResourcesForAggression = blueInventoryCount >= AI_CARGO_SWITCH_TO_AGGRESSION_ITEMS;
   const openingAggressionBiasAllowed = isOpeningAggressionBiasAllowed(context);
-  const blueBase = context?.homeBase || getBaseAnchor("blue");
   const useLegacyFallback = Boolean(options.useLegacyFallback);
   const goalModelEnabled = !useLegacyFallback && AI_USE_GOAL_PRIORITY_MODEL;
-  const goalSelection = goalModelEnabled ? evaluateAiGoalPriorityModel(context) : null;
+  const flagPressureOpportunity = evaluateFlagPressureOpportunity(context);
+  const goalSelection = goalModelEnabled ? evaluateAiGoalPriorityModel({
+    ...context,
+    flagPressureOpportunity,
+  }) : null;
 
   if(goalSelection && applyAiGoalSelection(goalSelection, {
     useLegacyFallback,
@@ -19798,18 +19964,27 @@ function selectAiModeForCurrentTurn(context, options = {}){
   } else if(aiRiskProfile?.profile === "conservative"){
     mode = AI_MODES.ATTRITION;
     targetPriorities = ["force_trade", "attack_enemy_plane", "contest_center"];
-  } else if(aiRiskProfile?.profile === "comeback" && shouldUseFlagsMode && availableEnemyFlags.length > 0){
+  } else if(aiRiskProfile?.profile === "comeback" && shouldUseFlagsMode && availableEnemyFlags.length > 0
+      && flagPressureOpportunity.flagReturnValue >= Math.max(flagPressureOpportunity.cargoAlternativeValue, flagPressureOpportunity.attackAlternativeValue)){
     mode = AI_MODES.FLAG_PRESSURE;
-    targetPriorities = ["capture_enemy_flag", "return_with_flag", "high_risk_attack"];
-  } else if(hasEnoughResourcesForAggression && shouldUseFlagsMode && availableEnemyFlags.length > 0){
+    targetPriorities = flagPressureOpportunity.hasStrongFlagReturn
+      ? ["return_with_flag", "capture_enemy_flag", "high_risk_attack"]
+      : ["pickup_cargo", "attack_enemy_plane", "capture_enemy_flag"];
+  } else if(hasEnoughResourcesForAggression && shouldUseFlagsMode && availableEnemyFlags.length > 0
+      && flagPressureOpportunity.flagReturnValue >= Math.max(flagPressureOpportunity.cargoAlternativeValue, flagPressureOpportunity.attackAlternativeValue)){
     mode = AI_MODES.FLAG_PRESSURE;
-    targetPriorities = ["capture_enemy_flag", "return_with_flag"];
+    targetPriorities = flagPressureOpportunity.hasStrongFlagReturn
+      ? ["return_with_flag", "capture_enemy_flag"]
+      : ["attack_enemy_plane", "pickup_cargo", "capture_enemy_flag"];
   } else if(hasEnoughResourcesForAggression){
     mode = AI_MODES.ATTRITION;
     targetPriorities = ["attack_enemy_plane", "close_distance"];
-  } else if(shouldUseFlagsMode && availableEnemyFlags.length > 0){
+  } else if(shouldUseFlagsMode && availableEnemyFlags.length > 0
+      && flagPressureOpportunity.flagReturnValue >= Math.max(flagPressureOpportunity.cargoAlternativeValue, flagPressureOpportunity.attackAlternativeValue)){
     mode = AI_MODES.FLAG_PRESSURE;
-    targetPriorities = ["capture_enemy_flag", "return_with_flag"];
+    targetPriorities = flagPressureOpportunity.hasStrongFlagReturn
+      ? ["return_with_flag", "capture_enemy_flag"]
+      : ["pickup_cargo", "attack_enemy_plane", "capture_enemy_flag"];
   } else if(blueInventoryCount > 0 && aiAliveCount > 1){
     mode = AI_MODES.RESOURCE_FIRST;
     targetPriorities = ["pickup_cargo", "prepare_attack"];
@@ -19820,41 +19995,34 @@ function selectAiModeForCurrentTurn(context, options = {}){
 
   let flagPressureGatePassed = null;
   let flagPressureGateReason = "flag_pressure_not_requested";
+  let flagGrabJustified = false;
   if(mode === AI_MODES.FLAG_PRESSURE){
     const inSafetyWindow = turnAdvanceCount <= AI_FLAG_PRESSURE_SAFETY_WINDOW_TURN_LIMIT;
-    const hasNumericalAdvantage = aiAliveCount > enemyAliveCount;
-    const hasCleanRoundTrip = aiPlanes.some((plane) => {
-      if(!plane) return false;
-      return availableEnemyFlags.some((flag) => {
-        const targetAnchor = getFlagAnchor(flag);
-        if(!targetAnchor || !Number.isFinite(targetAnchor.x) || !Number.isFinite(targetAnchor.y)) return false;
-        return isPathClear(plane.x, plane.y, targetAnchor.x, targetAnchor.y)
-          && isPathClear(targetAnchor.x, targetAnchor.y, blueBase.x, blueBase.y);
-      });
-    });
-    const hasNearbyThreat = enemies.some((enemy) => {
-      if(!enemy || !Number.isFinite(enemy.x) || !Number.isFinite(enemy.y)) return false;
-      const distanceToBase = dist(enemy, blueBase);
-      if(distanceToBase > AI_FLAG_PRESSURE_NEARBY_THREAT_DISTANCE) return false;
-      return isPathClear(enemy.x, enemy.y, blueBase.x, blueBase.y);
-    });
-    const noNearbyThreat = !hasNearbyThreat;
-    const hasSafetyFactor = hasNumericalAdvantage || hasCleanRoundTrip || noNearbyThreat;
-    const explicitBenefit = (aiRiskProfile?.profile === "comeback" && availableEnemyFlags.length > 0)
-      || (hasEnoughResourcesForAggression && (hasNumericalAdvantage || hasCleanRoundTrip));
+    const strongerThanCargo = flagPressureOpportunity.flagReturnValue >= flagPressureOpportunity.cargoAlternativeValue;
+    const strongerThanAttack = flagPressureOpportunity.flagReturnValue >= flagPressureOpportunity.attackAlternativeValue;
+    const grabOnlyFallback = flagPressureOpportunity.canReachEnemyFlag
+      && flagPressureOpportunity.flagGrabValue >= AI_FLAG_PRESSURE_GRAB_ONLY_MAX_VALUE
+      && flagPressureOpportunity.flagReturnValue < AI_FLAG_PRESSURE_RETURN_MIN_VALUE;
+    flagGrabJustified = flagPressureOpportunity.hasStrongFlagReturn && strongerThanCargo && strongerThanAttack;
 
-    flagPressureGatePassed = !inSafetyWindow || hasSafetyFactor || explicitBenefit;
+    flagPressureGatePassed = !inSafetyWindow || flagGrabJustified;
     if(!inSafetyWindow){
       flagPressureGateReason = "safety_window_inactive";
-    } else if(hasSafetyFactor){
-      if(hasNumericalAdvantage) flagPressureGateReason = "safety_factor_numerical_advantage";
-      else if(hasCleanRoundTrip) flagPressureGateReason = "safety_factor_clean_round_trip";
-      else flagPressureGateReason = "safety_factor_no_nearby_threat";
-    } else if(explicitBenefit){
-      flagPressureGateReason = "soft_override_explicit_benefit";
+    } else if(flagGrabJustified){
+      flagPressureGateReason = "expected_flag_return_beats_alternatives";
+    } else if(grabOnlyFallback){
+      flagPressureGateReason = "grab_only_not_worth_commitment";
+      mode = flagPressureOpportunity.cargoAlternativeValue >= flagPressureOpportunity.attackAlternativeValue
+        ? AI_MODES.RESOURCE_FIRST
+        : AI_MODES.ATTRITION;
+      targetPriorities = mode === AI_MODES.RESOURCE_FIRST
+        ? ["pickup_cargo", "prepare_attack", "capture_enemy_flag"]
+        : ["attack_enemy_plane", "close_distance", "capture_enemy_flag"];
     } else {
-      flagPressureGateReason = "blocked_in_safety_window";
-      mode = (blueInventoryCount > 0 && aiAliveCount > 1) ? AI_MODES.RESOURCE_FIRST : AI_MODES.ATTRITION;
+      flagPressureGateReason = "expected_return_too_weak";
+      mode = flagPressureOpportunity.cargoAlternativeValue >= flagPressureOpportunity.attackAlternativeValue
+        ? AI_MODES.RESOURCE_FIRST
+        : AI_MODES.ATTRITION;
       targetPriorities = mode === AI_MODES.RESOURCE_FIRST
         ? ["pickup_cargo", "prepare_attack"]
         : ["attack_enemy_plane", "close_distance"];
@@ -19876,6 +20044,14 @@ function selectAiModeForCurrentTurn(context, options = {}){
     openingAggressionBiasAllowed,
     flagPressureGatePassed,
     flagPressureGateReason,
+    flagGrabJustified,
+    expectedRetreatChance: flagPressureOpportunity.expectedRetreatChance,
+    returnLaneThreat: flagPressureOpportunity.returnLaneThreat,
+    flagGrabValue: flagPressureOpportunity.flagGrabValue,
+    flagReturnValue: flagPressureOpportunity.flagReturnValue,
+    cargoAlternativeValue: flagPressureOpportunity.cargoAlternativeValue,
+    attackAlternativeValue: flagPressureOpportunity.attackAlternativeValue,
+    bestFlagRoute: flagPressureOpportunity.bestFlagRoute,
     riskProfile: aiRiskProfile?.profile || "balanced",
     priorities: targetPriorities,
   });
