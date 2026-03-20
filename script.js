@@ -14093,8 +14093,6 @@ const AI_LAUNCH_FAST_PULL_MIN_MS = 140;
 const AI_LAUNCH_FAST_PULL_MAX_MS = 260;
 const AI_LAUNCH_MISS_ANGLE_DEG_NEAR = 0.08;
 const AI_LAUNCH_MISS_ANGLE_DEG_FAR = 0.85;
-const AI_LAUNCH_MISS_POWER_NEAR = 0.004;
-const AI_LAUNCH_MISS_POWER_FAR = 0.018;
 const AI_LAUNCH_MISS_DISTANCE_START_CELLS = 3;
 const AI_LAUNCH_PREVIEW_ARROW_PULSE_SPEED = 0.012;
 const AI_LAUNCH_PREVIEW_ARROW_PULSE_AMPLITUDE = 0.22;
@@ -14138,7 +14136,8 @@ function buildHumanizedAiTargetAim(plane, targetAim){
   if(!plane || !targetAim) return targetAim;
 
   const effectiveRangeCells = Math.max(0.0001, getEffectiveFlightRangeCells(plane));
-  const travelDistanceCells = clamp(targetAim.powerRatio, 0, 1) * effectiveRangeCells;
+  const basePowerRatio = clamp(targetAim.powerRatio, 0, 1);
+  const travelDistanceCells = basePowerRatio * effectiveRangeCells;
   const missScale = clamp(
     (travelDistanceCells - AI_LAUNCH_MISS_DISTANCE_START_CELLS)
     / Math.max(1, effectiveRangeCells - AI_LAUNCH_MISS_DISTANCE_START_CELLS),
@@ -14150,17 +14149,16 @@ function buildHumanizedAiTargetAim(plane, targetAim){
     AI_LAUNCH_MISS_ANGLE_DEG_NEAR
     + (AI_LAUNCH_MISS_ANGLE_DEG_FAR - AI_LAUNCH_MISS_ANGLE_DEG_NEAR) * missScale
   ) * Math.PI / 180;
-  const maxPowerError = (
-    AI_LAUNCH_MISS_POWER_NEAR
-    + (AI_LAUNCH_MISS_POWER_FAR - AI_LAUNCH_MISS_POWER_NEAR) * missScale
-  );
 
   const adjustedAngleRad = targetAim.angleRad + randomSignedOffset(maxAngleErrorRad);
-  const adjustedPowerRatio = clamp(
-    targetAim.powerRatio + randomSignedOffset(maxPowerError),
-    0,
-    1
-  );
+  let adjustedPowerRatio = basePowerRatio;
+  let powerAdjustmentReason = null;
+
+  // По умолчанию оставляем исходную дальность без случайного «очеловечивания».
+  // Если позже появится редкое тактическое правило для осознанного укорачивания,
+  // оно должно явно менять adjustedPowerRatio и заполнять powerAdjustmentReason.
+
+  adjustedPowerRatio = clamp(adjustedPowerRatio, 0, 1);
   const adjustedDistance = adjustedPowerRatio * MAX_DRAG_DISTANCE;
   const adjustedPullX = plane.x + Math.cos(adjustedAngleRad) * adjustedDistance;
   const adjustedPullY = plane.y + Math.sin(adjustedAngleRad) * adjustedDistance;
@@ -14172,6 +14170,13 @@ function buildHumanizedAiTargetAim(plane, targetAim){
     pullY: adjustedPullY,
     humanized: true,
     missScale,
+    baseAngleRad: targetAim.angleRad,
+    basePowerRatio,
+    angleAdjustmentRad: adjustedAngleRad - targetAim.angleRad,
+    angleHumanizationOnly: adjustedPowerRatio === basePowerRatio,
+    powerAdjustmentReason,
+    intentionalPowerReduction: adjustedPowerRatio < basePowerRatio,
+    powerAdjustmentDelta: adjustedPowerRatio - basePowerRatio,
   };
 }
 
@@ -14321,6 +14326,14 @@ function releaseAiLaunchSession(session, reason, now = performance.now()){
   }
 
   const best = session.bestCandidate;
+  const targetAim = session.targetAim || null;
+  const targetPowerRatio = Number.isFinite(targetAim?.basePowerRatio)
+    ? targetAim.basePowerRatio
+    : (Number.isFinite(targetAim?.powerRatio) ? targetAim.powerRatio : null);
+  const targetPowerAdjustedRatio = Number.isFinite(targetAim?.powerRatio)
+    ? targetAim.powerRatio
+    : targetPowerRatio;
+  const intentionalPowerReduction = targetAim?.intentionalPowerReduction === true;
   logAiDecision("ai_launch_release", {
     reason,
     planeId: session.plane?.id ?? null,
@@ -14332,9 +14345,23 @@ function releaseAiLaunchSession(session, reason, now = performance.now()){
     angleErrorDeg: Number.isFinite(best?.angleErrorRad)
       ? Number((best.angleErrorRad * 180 / Math.PI).toFixed(3))
       : null,
+    angleHumanizationDeg: Number.isFinite(targetAim?.angleAdjustmentRad)
+      ? Number((targetAim.angleAdjustmentRad * 180 / Math.PI).toFixed(3))
+      : null,
     powerError: Number.isFinite(best?.powerError)
       ? Number(best.powerError.toFixed(4))
       : null,
+    targetPowerRatio: Number.isFinite(targetPowerRatio)
+      ? Number(targetPowerRatio.toFixed(4))
+      : null,
+    adjustedPowerRatio: Number.isFinite(targetPowerAdjustedRatio)
+      ? Number(targetPowerAdjustedRatio.toFixed(4))
+      : null,
+    intentionalPowerReduction,
+    intentionalPowerReductionDelta: Number.isFinite(targetAim?.powerAdjustmentDelta)
+      ? Number(targetAim.powerAdjustmentDelta.toFixed(4))
+      : null,
+    powerAdjustmentReason: targetAim?.powerAdjustmentReason || null,
   });
 
   aiLaunchSession = null;
