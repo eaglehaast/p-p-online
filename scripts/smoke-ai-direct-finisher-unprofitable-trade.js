@@ -36,6 +36,7 @@ function runScenario({ withCargoOnPath }){
     CELL_SIZE: 100,
     ATTACK_RANGE_PX: 300,
     MAX_DRAG_DISTANCE: 500,
+    AI_MULTI_KILL_PRIMARY_BONUS: 20,
     FIELD_FLIGHT_DURATION_SEC: 1,
     flyingPoints: [],
     aiRoundState: { currentGoal: 'direct_finisher' },
