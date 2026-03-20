@@ -30840,6 +30840,16 @@ function getHudPlaneTimerFrameImage(plane, now = performance.now()){
   return null;
 }
 
+function getHudPlaneTimerOverlayOpacity(image){
+  const isCrossImage = image === (hudPlaneTimerFrames[0] || null);
+  const isGoImage = image === hudPlaneTimerGoImage;
+  if (isCrossImage || isGoImage) {
+    return arcadePlaneTimerOpacity;
+  }
+
+  return 0.7;
+}
+
 function drawHudPlaneTimerOverlay(ctx2d, cx, cy, size, image){
   const isReady = Boolean(
     image
@@ -30854,7 +30864,7 @@ function drawHudPlaneTimerOverlay(ctx2d, cx, cy, size, image){
   ctx2d.save();
   const previousFilter = ctx2d.filter;
   ctx2d.filter = "none";
-  ctx2d.globalAlpha = arcadePlaneTimerOpacity;
+  ctx2d.globalAlpha = getHudPlaneTimerOverlayOpacity(image);
   ctx2d.drawImage(image, cx - size / 2, cy - size / 2, size, size);
   ctx2d.filter = previousFilter;
   ctx2d.restore();
