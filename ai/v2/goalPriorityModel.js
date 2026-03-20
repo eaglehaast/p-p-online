@@ -38,9 +38,11 @@
     const shouldUseFlagsMode = Boolean(context.shouldUseFlagsMode);
     const canReachEnemyFlag = Boolean(context.canReachEnemyFlag);
     const hasReturnRouteOpportunity = Boolean(context.hasReturnRouteOpportunity);
+    const hasSafePostPickupEscape = Boolean(context.hasSafePostPickupEscape);
     const expectedRetreatChance = Number.isFinite(context.expectedRetreatChance) ? context.expectedRetreatChance : 0;
     const returnLaneThreat = Number.isFinite(context.returnLaneThreat) ? context.returnLaneThreat : 1;
     const flagGrabValue = Number.isFinite(context.flagGrabValue) ? context.flagGrabValue : 0;
+    const postPickupEscapeValue = Number.isFinite(context.postPickupEscapeValue) ? context.postPickupEscapeValue : 0;
     const flagReturnValue = Number.isFinite(context.flagReturnValue) ? context.flagReturnValue : 0;
     const cargoAlternativeValue = Number.isFinite(context.cargoAlternativeValue) ? context.cargoAlternativeValue : 0;
     const attackAlternativeValue = Number.isFinite(context.attackAlternativeValue) ? context.attackAlternativeValue : 0;
@@ -57,9 +59,11 @@
       score_by_flag: {
         active: shouldUseFlagsMode
           && availableEnemyFlagsCount > 0
+          && hasSafePostPickupEscape
           && hasReturnRouteOpportunity
           && expectedRetreatChance >= 0.64
           && returnLaneThreat <= 0.45
+          && postPickupEscapeValue >= 0.45
           && returnBeatsAlternatives,
         reason: !shouldUseFlagsMode
           ? "flags_mode_disabled"
@@ -67,15 +71,19 @@
             ? "no_enemy_flags_available"
             : !canReachEnemyFlag
               ? "cannot_reach_enemy_flag"
-              : canOnlyGrabFlag
-                ? "grab_without_return_plan"
-                : !hasReturnRouteOpportunity
-                  ? "return_route_not_viable"
-                  : returnLaneThreat > 0.45
-                    ? "return_lane_too_hot"
-                    : !returnBeatsAlternatives
-                      ? "alternatives_outvalue_flag_plan"
-                      : "flag_return_plan_profitable",
+              : !hasSafePostPickupEscape
+                ? "pickup_without_safe_escape"
+                : canOnlyGrabFlag
+                  ? "grab_without_return_plan"
+                  : !hasReturnRouteOpportunity
+                    ? "return_route_not_viable"
+                    : returnLaneThreat > 0.45
+                      ? "return_lane_too_hot"
+                      : postPickupEscapeValue < 0.45
+                        ? "safe_escape_too_weak"
+                        : !returnBeatsAlternatives
+                          ? "alternatives_outvalue_flag_plan"
+                          : "flag_return_plan_profitable",
       },
       survival_reposition: {
         active: aiAliveCount > 0

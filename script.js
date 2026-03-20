@@ -20000,6 +20000,141 @@ function getDistanceToSegment(pointX, pointY, startX, startY, endX, endY){
   return Math.hypot(pointX - projX, pointY - projY);
 }
 
+
+function buildSimulatedFlagCarrierFromPickup(plane, pickupPoint){
+  if(!plane || !pickupPoint || !Number.isFinite(pickupPoint.x) || !Number.isFinite(pickupPoint.y)) return null;
+  return {
+    ...plane,
+    x: pickupPoint.x,
+    y: pickupPoint.y,
+    carriedFlagId: plane?.carriedFlagId || "simulated_enemy_flag_pickup",
+  };
+}
+
+function buildFlagContinuationStatusLabel(meta = {}){
+  if(!meta || typeof meta !== "object") return "flag_available_but_escape_unsafe";
+  if(meta.hasSafeEscape !== true) return "flag_available_but_escape_unsafe";
+  if(meta.hasReturnRoute !== true) return "flag_available_escape_exists_but_return_too_weak";
+  return "flag_available_and_safe_to_continue";
+}
+
+function evaluateFlagPickupContinuation(plane, pickupPoint, options = {}){
+  const homeBase = options?.homeBase || null;
+  const enemies = Array.isArray(options?.enemies) ? options.enemies.filter(Boolean) : [];
+  const context = options?.context || null;
+  const goalName = options?.goalName || "capture_enemy_flag";
+  const fallbackContext = context || { enemies };
+  const threatMeta = typeof getImmediateResponseThreatMeta === "function"
+    ? getImmediateResponseThreatMeta(fallbackContext, pickupPoint?.x, pickupPoint?.y, null)
+    : { count: 0, nearestDist: Number.POSITIVE_INFINITY };
+  const immediateTrap = threatMeta.count > 0 && (
+    threatMeta.count >= 2
+    || (Number.isFinite(threatMeta.nearestDist) && threatMeta.nearestDist <= AI_IMMEDIATE_RESPONSE_DANGER_RADIUS * 0.55)
+  );
+  const simulatedCarrier = buildSimulatedFlagCarrierFromPickup(plane, pickupPoint);
+  const baseMove = simulatedCarrier && homeBase
+    ? planPathToPoint(simulatedCarrier, homeBase.x, homeBase.y, {
+        goalName: `${goalName}_post_pickup_return`,
+        decisionReason: "post_pickup_return",
+        routeClass: "direct",
+        context: fallbackContext,
+      })
+    : null;
+
+  let safeRetreatMove = null;
+  let safeRetreatPoint = null;
+  if(!baseMove && simulatedCarrier){
+    const retreatDistance = Math.max(CELL_SIZE * 2, MAX_DRAG_DISTANCE * 0.42);
+    const retreatCandidates = [];
+    if(enemies.length > 0){
+      const nearestEnemy = enemies.reduce((nearest, enemy) => {
+        if(!enemy || !Number.isFinite(enemy.x) || !Number.isFinite(enemy.y)) return nearest;
+        if(!nearest) return enemy;
+        const currentDist = Math.hypot((enemy.x || 0) - pickupPoint.x, (enemy.y || 0) - pickupPoint.y);
+        const bestDist = Math.hypot((nearest.x || 0) - pickupPoint.x, (nearest.y || 0) - pickupPoint.y);
+        return currentDist < bestDist ? enemy : nearest;
+      }, null);
+      if(nearestEnemy){
+        const awayDx = pickupPoint.x - nearestEnemy.x;
+        const awayDy = pickupPoint.y - nearestEnemy.y;
+        const awayDist = Math.hypot(awayDx, awayDy);
+        const awayX = awayDist > 0 ? awayDx / awayDist : 0;
+        const awayY = awayDist > 0 ? awayDy / awayDist : -1;
+        const homeDx = homeBase ? homeBase.x - pickupPoint.x : 0;
+        const homeDy = homeBase ? homeBase.y - pickupPoint.y : -1;
+        const homeDist = Math.hypot(homeDx, homeDy);
+        const homeDirX = homeDist > 0 ? homeDx / homeDist : 0;
+        const homeDirY = homeDist > 0 ? homeDy / homeDist : -1;
+        const blends = [
+          { x: awayX, y: awayY, label: 'away_from_enemy' },
+          { x: homeDirX * 0.55 + awayX * 0.45, y: homeDirY * 0.55 + awayY * 0.45, label: 'blend_home_and_escape' },
+          { x: homeDirX * 0.35 + awayX * 0.65, y: homeDirY * 0.35 + awayY * 0.65, label: 'escape_weighted_blend' },
+        ];
+        for(const blend of blends){
+          const blendLength = Math.hypot(blend.x, blend.y);
+          if(blendLength <= 0) continue;
+          retreatCandidates.push({
+            x: pickupPoint.x + (blend.x / blendLength) * retreatDistance,
+            y: pickupPoint.y + (blend.y / blendLength) * retreatDistance,
+            label: blend.label,
+          });
+        }
+      }
+    }
+    if(homeBase){
+      const homeDx = homeBase.x - pickupPoint.x;
+      const homeDy = homeBase.y - pickupPoint.y;
+      const homeDist = Math.hypot(homeDx, homeDy);
+      if(homeDist > 0){
+        retreatCandidates.push({
+          x: pickupPoint.x + (homeDx / homeDist) * retreatDistance,
+          y: pickupPoint.y + (homeDy / homeDist) * retreatDistance,
+          label: 'toward_home_lane',
+        });
+      }
+    }
+
+    for(const retreatCandidate of retreatCandidates){
+      const move = planPathToPoint(simulatedCarrier, retreatCandidate.x, retreatCandidate.y, {
+        goalName: `${goalName}_post_pickup_escape`,
+        decisionReason: "post_pickup_escape",
+        routeClass: "direct",
+        context: fallbackContext,
+      });
+      if(move){
+        safeRetreatMove = move;
+        safeRetreatPoint = retreatCandidate;
+        break;
+      }
+    }
+  }
+
+  const hasSafeEscape = !immediateTrap && Boolean(baseMove || safeRetreatMove);
+  const hasReturnRoute = !immediateTrap && Boolean(baseMove);
+  const statusReason = immediateTrap
+    ? 'pickup_without_safe_escape'
+    : baseMove
+      ? 'flag_available_and_safe_to_continue'
+      : safeRetreatMove
+        ? 'flag_available_escape_exists_but_return_too_weak'
+        : 'pickup_without_safe_escape';
+
+  return {
+    immediateThreatCount: threatMeta.count,
+    immediateThreatNearestDist: Number.isFinite(threatMeta.nearestDist)
+      ? Number(threatMeta.nearestDist.toFixed(2))
+      : null,
+    immediateTrap,
+    hasSafeEscape,
+    hasReturnRoute,
+    baseMove,
+    safeRetreatMove,
+    safeRetreatPoint,
+    statusReason,
+    statusLabel: buildFlagContinuationStatusLabel({ hasSafeEscape, hasReturnRoute }),
+  };
+}
+
 function evaluateFlagPressureOpportunity(context = {}){
   const aiPlanes = Array.isArray(context?.aiPlanes) ? context.aiPlanes.filter(Boolean) : [];
   const enemies = Array.isArray(context?.enemies) ? context.enemies.filter((enemy) => enemy?.isAlive !== false) : [];
@@ -20016,14 +20151,18 @@ function evaluateFlagPressureOpportunity(context = {}){
   const result = {
     canReachEnemyFlag: false,
     hasReturnRouteOpportunity: false,
+    hasSafeEscapeOpportunity: false,
     hasDecentFlagGrab: false,
     hasStrongFlagReturn: false,
     expectedRetreatChance: 0,
     returnLaneThreat: 1,
     flagGrabValue: 0,
+    postPickupEscapeValue: 0,
     flagReturnValue: 0,
     cargoAlternativeValue: 0,
     attackAlternativeValue: 0,
+    flagContinuationStatus: "flag_available_but_escape_unsafe",
+    flagContinuationReason: "pickup_without_safe_escape",
     bestFlagRoute: null,
   };
 
@@ -20063,6 +20202,12 @@ function evaluateFlagPressureOpportunity(context = {}){
       const toBaseDistance = Math.hypot(homeBase.x - targetAnchor.x, homeBase.y - targetAnchor.y);
       const canReachFlag = isPathClear(plane.x, plane.y, targetAnchor.x, targetAnchor.y);
       const clearReturnLane = isPathClear(targetAnchor.x, targetAnchor.y, homeBase.x, homeBase.y);
+      const continuation = evaluateFlagPickupContinuation(plane, targetAnchor, {
+        homeBase,
+        enemies,
+        context,
+        goalName: 'flag_pressure_probe',
+      });
       const threateningEnemies = enemies.filter((enemy) => {
         if(!Number.isFinite(enemy?.x) || !Number.isFinite(enemy?.y)) return false;
         return getDistanceToSegment(enemy.x, enemy.y, targetAnchor.x, targetAnchor.y, homeBase.x, homeBase.y) <= AI_FLAG_PRESSURE_RETURN_LANE_THREAT_RADIUS;
@@ -20076,25 +20221,36 @@ function evaluateFlagPressureOpportunity(context = {}){
         + (Number.isFinite(nearestReturnThreatDistance)
           ? Math.max(0, 1 - (nearestReturnThreatDistance / AI_FLAG_PRESSURE_RETURN_LANE_THREAT_RADIUS)) * 0.46
           : 0)
+        + (continuation.immediateTrap ? 0.3 : 0)
       );
       const travelBurden = clamp01((toFlagDistance + toBaseDistance) / Math.max(MAX_DRAG_DISTANCE * 3.2, 1));
       const expectedRetreatChance = clamp01(
-        (clearReturnLane ? 0.42 : 0.16)
-        + (canReachFlag ? 0.18 : 0)
+        (continuation.hasSafeEscape ? 0.4 : 0.08)
+        + (continuation.hasReturnRoute ? 0.24 : 0)
+        + (clearReturnLane ? 0.12 : 0)
+        + (canReachFlag ? 0.16 : 0)
         + (aiAliveCount > enemyAliveCount ? 0.12 : 0)
         + (blueInventoryCount >= AI_CARGO_SWITCH_TO_AGGRESSION_ITEMS ? 0.08 : 0)
         - returnLaneThreat * 0.62
         - travelBurden * 0.26
       );
       const flagGrabValue = clamp01(
-        (canReachFlag ? 0.48 : 0)
+        (canReachFlag ? 0.42 : 0)
         + (scoreGap <= 0 ? 0.1 : 0)
         + (1 - travelBurden) * 0.18
-        + expectedRetreatChance * 0.12
+        - (continuation.hasSafeEscape ? 0 : 0.22)
+      );
+      const postPickupEscapeValue = clamp01(
+        (continuation.hasSafeEscape ? 0.46 : 0.02)
+        + (continuation.hasReturnRoute ? 0.18 : 0)
+        + expectedRetreatChance * 0.26
+        + (clearReturnLane ? 0.06 : 0)
+        - (continuation.immediateTrap ? 0.34 : 0)
       );
       const flagReturnValue = clamp01(
-        (canReachFlag ? 0.18 : 0)
-        + expectedRetreatChance * 0.68
+        (continuation.hasReturnRoute ? 0.28 : 0.08)
+        + expectedRetreatChance * 0.5
+        + postPickupEscapeValue * 0.18
         + (clearReturnLane ? 0.12 : 0)
         + (scoreGap <= 0 ? 0.08 : 0)
       );
@@ -20103,17 +20259,25 @@ function evaluateFlagPressureOpportunity(context = {}){
         flagId: flag.id ?? null,
         canReachFlag,
         clearReturnLane,
+        hasSafeEscape: continuation.hasSafeEscape,
+        hasReturnRoute: continuation.hasReturnRoute,
+        continuationStatus: continuation.statusLabel,
+        continuationReason: continuation.statusReason,
         toFlagDistance: Number(toFlagDistance.toFixed(1)),
         toBaseDistance: Number(toBaseDistance.toFixed(1)),
         threateningEnemiesOnReturn: threateningEnemies.length,
+        immediateThreatCount: continuation.immediateThreatCount,
+        immediateThreatNearestDist: continuation.immediateThreatNearestDist,
         returnLaneThreat: Number(returnLaneThreat.toFixed(4)),
         expectedRetreatChance: Number(expectedRetreatChance.toFixed(4)),
         flagGrabValue: Number(flagGrabValue.toFixed(4)),
+        postPickupEscapeValue: Number(postPickupEscapeValue.toFixed(4)),
         flagReturnValue: Number(flagReturnValue.toFixed(4)),
       };
       if(!bestRoute
         || route.flagReturnValue > bestRoute.flagReturnValue
-        || (route.flagReturnValue === bestRoute.flagReturnValue && route.flagGrabValue > bestRoute.flagGrabValue)){
+        || (route.flagReturnValue === bestRoute.flagReturnValue && route.postPickupEscapeValue > bestRoute.postPickupEscapeValue)
+        || (route.flagReturnValue === bestRoute.flagReturnValue && route.postPickupEscapeValue === bestRoute.postPickupEscapeValue && route.flagGrabValue > bestRoute.flagGrabValue)){
         bestRoute = route;
       }
     }
@@ -20121,13 +20285,17 @@ function evaluateFlagPressureOpportunity(context = {}){
 
   if(bestRoute){
     result.canReachEnemyFlag = Boolean(bestRoute.canReachFlag);
-    result.hasReturnRouteOpportunity = bestRoute.expectedRetreatChance >= AI_FLAG_PRESSURE_RETURN_MIN_VALUE;
+    result.hasReturnRouteOpportunity = bestRoute.hasReturnRoute === true && bestRoute.expectedRetreatChance >= AI_FLAG_PRESSURE_RETURN_MIN_VALUE;
+    result.hasSafeEscapeOpportunity = bestRoute.hasSafeEscape === true;
     result.hasDecentFlagGrab = bestRoute.flagGrabValue >= AI_FLAG_PRESSURE_GRAB_ONLY_MAX_VALUE;
     result.hasStrongFlagReturn = bestRoute.flagReturnValue >= AI_FLAG_PRESSURE_RETURN_MIN_VALUE;
     result.expectedRetreatChance = bestRoute.expectedRetreatChance;
     result.returnLaneThreat = bestRoute.returnLaneThreat;
     result.flagGrabValue = bestRoute.flagGrabValue;
+    result.postPickupEscapeValue = bestRoute.postPickupEscapeValue;
     result.flagReturnValue = bestRoute.flagReturnValue;
+    result.flagContinuationStatus = bestRoute.continuationStatus;
+    result.flagContinuationReason = bestRoute.continuationReason;
     result.bestFlagRoute = bestRoute;
   }
 
@@ -20163,10 +20331,15 @@ function evaluateAiGoalPriorityModel(context){
     shouldUseFlagsMode,
     canReachEnemyFlag: flagPressureOpportunity.canReachEnemyFlag,
     hasReturnRouteOpportunity: flagPressureOpportunity.hasReturnRouteOpportunity,
+    hasSafePostPickupEscape: flagPressureOpportunity.hasSafeEscapeOpportunity,
     expectedRetreatChance: flagPressureOpportunity.expectedRetreatChance,
     returnLaneThreat: flagPressureOpportunity.returnLaneThreat,
     flagGrabValue: flagPressureOpportunity.flagGrabValue,
+    postPickupEscapeValue: flagPressureOpportunity.postPickupEscapeValue,
     flagReturnValue: flagPressureOpportunity.flagReturnValue,
+    flagContinuationStatus: flagPressureOpportunity.flagContinuationStatus,
+    flagContinuationReason: flagPressureOpportunity.flagContinuationReason,
+    hasSafeEscapeOpportunity: flagPressureOpportunity.hasSafeEscapeOpportunity,
     cargoAlternativeValue: flagPressureOpportunity.cargoAlternativeValue,
     attackAlternativeValue: flagPressureOpportunity.attackAlternativeValue,
   });
@@ -20191,6 +20364,8 @@ function applyAiGoalSelection(selection, meta = {}){
     priorities: selectedPriorities,
     useLegacyFallback: Boolean(meta.useLegacyFallback),
     toggleEnabled: Boolean(meta.toggleEnabled),
+    flagContinuationStatus: meta.flagContinuationStatus || null,
+    flagContinuationReason: meta.flagContinuationReason || null,
     evaluatedGoals: Array.isArray(selection.goalClassEvaluations)
       ? selection.goalClassEvaluations.map((entry) => ({
           goalClassName: entry.goalClassName,
@@ -20230,6 +20405,8 @@ function selectAiModeForCurrentTurn(context, options = {}){
   if(goalSelection && applyAiGoalSelection(goalSelection, {
     useLegacyFallback,
     toggleEnabled: AI_USE_GOAL_PRIORITY_MODEL,
+    flagContinuationStatus: flagPressureOpportunity.flagContinuationStatus,
+    flagContinuationReason: flagPressureOpportunity.flagContinuationReason,
   })){
     return aiRoundState.mode;
   }
@@ -20282,15 +20459,24 @@ function selectAiModeForCurrentTurn(context, options = {}){
     const grabOnlyFallback = flagPressureOpportunity.canReachEnemyFlag
       && flagPressureOpportunity.flagGrabValue >= AI_FLAG_PRESSURE_GRAB_ONLY_MAX_VALUE
       && flagPressureOpportunity.flagReturnValue < AI_FLAG_PRESSURE_RETURN_MIN_VALUE;
+    const safeEscapeMissing = flagPressureOpportunity.canReachEnemyFlag && !flagPressureOpportunity.hasSafeEscapeOpportunity;
     flagGrabJustified = flagPressureOpportunity.hasStrongFlagReturn && strongerThanCargo && strongerThanAttack;
 
     flagPressureGatePassed = !inSafetyWindow || flagGrabJustified;
     if(!inSafetyWindow){
       flagPressureGateReason = "safety_window_inactive";
+    } else if(safeEscapeMissing){
+      flagPressureGateReason = "pickup_without_safe_escape";
+      mode = flagPressureOpportunity.cargoAlternativeValue >= flagPressureOpportunity.attackAlternativeValue
+        ? AI_MODES.RESOURCE_FIRST
+        : AI_MODES.ATTRITION;
+      targetPriorities = mode === AI_MODES.RESOURCE_FIRST
+        ? ["pickup_cargo", "prepare_attack", "capture_enemy_flag"]
+        : ["attack_enemy_plane", "close_distance", "capture_enemy_flag"];
     } else if(flagGrabJustified){
-      flagPressureGateReason = "expected_flag_return_beats_alternatives";
+      flagPressureGateReason = "flag_available_and_safe_to_continue";
     } else if(grabOnlyFallback){
-      flagPressureGateReason = "grab_only_not_worth_commitment";
+      flagPressureGateReason = "flag_available_escape_exists_but_return_too_weak";
       mode = flagPressureOpportunity.cargoAlternativeValue >= flagPressureOpportunity.attackAlternativeValue
         ? AI_MODES.RESOURCE_FIRST
         : AI_MODES.ATTRITION;
@@ -20298,7 +20484,7 @@ function selectAiModeForCurrentTurn(context, options = {}){
         ? ["pickup_cargo", "prepare_attack", "capture_enemy_flag"]
         : ["attack_enemy_plane", "close_distance", "capture_enemy_flag"];
     } else {
-      flagPressureGateReason = "expected_return_too_weak";
+      flagPressureGateReason = "flag_available_escape_exists_but_return_too_weak";
       mode = flagPressureOpportunity.cargoAlternativeValue >= flagPressureOpportunity.attackAlternativeValue
         ? AI_MODES.RESOURCE_FIRST
         : AI_MODES.ATTRITION;
@@ -20327,7 +20513,11 @@ function selectAiModeForCurrentTurn(context, options = {}){
     expectedRetreatChance: flagPressureOpportunity.expectedRetreatChance,
     returnLaneThreat: flagPressureOpportunity.returnLaneThreat,
     flagGrabValue: flagPressureOpportunity.flagGrabValue,
+    postPickupEscapeValue: flagPressureOpportunity.postPickupEscapeValue,
     flagReturnValue: flagPressureOpportunity.flagReturnValue,
+    flagContinuationStatus: flagPressureOpportunity.flagContinuationStatus,
+    flagContinuationReason: flagPressureOpportunity.flagContinuationReason,
+    hasSafeEscapeOpportunity: flagPressureOpportunity.hasSafeEscapeOpportunity,
     cargoAlternativeValue: flagPressureOpportunity.cargoAlternativeValue,
     attackAlternativeValue: flagPressureOpportunity.attackAlternativeValue,
     bestFlagRoute: flagPressureOpportunity.bestFlagRoute,
@@ -21573,6 +21763,41 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     return sorted.slice(0, maxCandidatesPerClass);
   }
 
+  function enrichFlagCaptureCandidate(candidate, pickupPoint){
+    const continuation = evaluateFlagPickupContinuation(candidate?.plane, pickupPoint, {
+      homeBase: options?.homeBase || getBaseAnchor("blue"),
+      enemies: Array.isArray(options?.enemies) ? options.enemies : [],
+      context: options?.context || { enemies: Array.isArray(options?.enemies) ? options.enemies : [] },
+      goalName: baseGoalName,
+    });
+    const continuationPenalty = continuation.hasSafeEscape
+      ? (continuation.hasReturnRoute ? 0 : MAX_DRAG_DISTANCE * 0.28)
+      : MAX_DRAG_DISTANCE * 4;
+    const enrichedScore = (Number.isFinite(candidate?.score) ? candidate.score : Number.POSITIVE_INFINITY) + continuationPenalty;
+    return {
+      ...candidate,
+      continuationMeta: {
+        hasSafeEscape: continuation.hasSafeEscape,
+        hasReturnRoute: continuation.hasReturnRoute,
+        immediateTrap: continuation.immediateTrap,
+        statusLabel: continuation.statusLabel,
+        statusReason: continuation.statusReason,
+        immediateThreatCount: continuation.immediateThreatCount,
+        immediateThreatNearestDist: continuation.immediateThreatNearestDist,
+        safeRetreatPoint: continuation.safeRetreatPoint
+          ? { x: Number(continuation.safeRetreatPoint.x.toFixed(1)), y: Number(continuation.safeRetreatPoint.y.toFixed(1)), label: continuation.safeRetreatPoint.label || null }
+          : null,
+      },
+      score: enrichedScore,
+      normalizedScore: enrichedScore,
+      finalScoreBreakdown: {
+        ...(candidate?.finalScoreBreakdown || {}),
+        continuationPenalty: Number(continuationPenalty.toFixed(3)),
+        total: Number(enrichedScore.toFixed(3)),
+      },
+    };
+  }
+
   const directCandidates = [];
   for(const plane of planes){
     const isFlying = flyingPoints.some((fp) => fp.plane === plane);
@@ -21617,7 +21842,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
         ? AI_DIRECT_LOW_PASSABILITY_SCORE_PENALTY
         : 0;
       const finalScore = adjustedDist + classWeightPenalty + routeQualityPenalty + lowPassabilityPenalty;
-      directCandidates.push({
+      directCandidates.push(enrichFlagCaptureCandidate({
         plane,
         flag,
         ...move,
@@ -21636,7 +21861,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
         lowPassabilityBlockedLike: directLowPassability,
         selectedClass: "direct",
         idleTurns: getAiPlaneIdleTurns(plane),
-      });
+      }, targetAnchor));
       candidateTypeDiagnostics.direct.accepted += 1;
     }
   }
@@ -21731,7 +21956,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     const classWeightPenalty = classScoreMeta.normalizedClassScore * MAX_DRAG_DISTANCE * 0.035;
     const routeQualityPenalty = (Number.isFinite(move?.routeQualityScore) ? (1 - move.routeQualityScore) : 0) * MAX_DRAG_DISTANCE * 0.04;
     const finalScore = adjustedDist + classWeightPenalty + routeQualityPenalty;
-    gapCandidates.push({
+    gapCandidates.push(enrichFlagCaptureCandidate({
       plane,
       flag,
       ...move,
@@ -21752,7 +21977,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
       lowPassabilityBlockedLike: false,
       selectedClass: "gap",
       idleTurns: getAiPlaneIdleTurns(plane),
-    });
+    }, targetAnchor));
     candidateTypeDiagnostics.gap.accepted += 1;
   }
 
@@ -21867,7 +22092,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
       const classWeightPenalty = classScoreMeta.normalizedClassScore * MAX_DRAG_DISTANCE * 0.035;
       const routeQualityPenalty = (Number.isFinite(move?.routeQualityScore) ? (1 - move.routeQualityScore) : 0) * MAX_DRAG_DISTANCE * 0.04;
       const finalScore = adjustedDist + classWeightPenalty + routeQualityPenalty;
-      bounceCandidates.push({
+      bounceCandidates.push(enrichFlagCaptureCandidate({
         plane,
         flag,
         ...move,
@@ -21889,7 +22114,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
         lowPassabilityBlockedLike: false,
         selectedClass: "ricochet",
         idleTurns: getAiPlaneIdleTurns(plane),
-      });
+      }, targetAnchor));
       candidateTypeDiagnostics.ricochet.accepted += 1;
     }
 
@@ -21962,6 +22187,16 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     ...trimmedGapCandidates,
     ...trimmedBounceCandidates,
   ];
+  const continuationDiagnostics = {
+    unsafeEscapeCount: combinedCandidates.filter((candidate) => candidate?.continuationMeta?.hasSafeEscape !== true).length,
+    safeEscapeWeakReturnCount: combinedCandidates.filter((candidate) => candidate?.continuationMeta?.hasSafeEscape === true && candidate?.continuationMeta?.hasReturnRoute !== true).length,
+    safeContinueCount: combinedCandidates.filter((candidate) => candidate?.continuationMeta?.hasSafeEscape === true && candidate?.continuationMeta?.hasReturnRoute === true).length,
+    statusCounts: {
+      flag_available_but_escape_unsafe: combinedCandidates.filter((candidate) => candidate?.continuationMeta?.statusLabel === "flag_available_but_escape_unsafe").length,
+      flag_available_escape_exists_but_return_too_weak: combinedCandidates.filter((candidate) => candidate?.continuationMeta?.statusLabel === "flag_available_escape_exists_but_return_too_weak").length,
+      flag_available_and_safe_to_continue: combinedCandidates.filter((candidate) => candidate?.continuationMeta?.statusLabel === "flag_available_and_safe_to_continue").length,
+    },
+  };
 
   aiRoundState.lastInitialCandidateSetDiagnostics = {
     source: "buildFlagCaptureBaseCandidates",
@@ -21978,6 +22213,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     specialRouteRejectDiagnostics: candidateTypeDiagnostics.specialRouteRejectDiagnostics.slice(-120),
     gapAfterBounceDiagnostics: candidateTypeDiagnostics.gap.afterBounceRejectSamples.slice(-20),
     disproportionateShortlistRejectReasons,
+    continuationDiagnostics,
     zeroCandidateReasons: {
       direct: trimmedDirectCandidates.length > 0 ? [] : [
         ...(Object.keys(candidateTypeDiagnostics.direct.preValidationReasons || {}).length > 0 ? ["filtered_before_validation"] : []),
@@ -22011,6 +22247,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     shortlistDiagnostics,
     routeClassRejectDiagnostics,
     disproportionateShortlistRejectReasons,
+    continuationDiagnostics,
     bounceAllowed: allowBounceStage,
     isEmergencyDefenseStage,
     emergencyBounceBlockedDirectOnly: isEmergencyDefenseStage,
@@ -22196,8 +22433,29 @@ function planModeDrivenAiMove(context){
     const capCandidates = buildFlagCaptureBaseCandidates(groundedAiPlanes, availableEnemyFlags, {
       goalName: "capture_enemy_flag",
       decisionReason: "mode_flag_pressure",
+      homeBase,
+      enemies,
+      context,
     });
     for(const candidate of capCandidates){
+      const candidateHasSafeEscape = candidate?.continuationMeta?.hasSafeEscape === true;
+      const bestHasSafeEscape = bestCap?.continuationMeta?.hasSafeEscape === true;
+      const candidateHasReturnRoute = candidate?.continuationMeta?.hasReturnRoute === true;
+      const bestHasReturnRoute = bestCap?.continuationMeta?.hasReturnRoute === true;
+      if(candidateHasSafeEscape !== bestHasSafeEscape){
+        if(candidateHasSafeEscape){
+          candidate.classTieBreakReason = "prefer_safe_escape_after_pickup";
+          bestCap = candidate;
+        }
+        continue;
+      }
+      if(candidateHasReturnRoute !== bestHasReturnRoute){
+        if(candidateHasReturnRoute){
+          candidate.classTieBreakReason = "prefer_confirmed_return_after_pickup";
+          bestCap = candidate;
+        }
+        continue;
+      }
       if(compareAiCandidateByScoreAndRotation(candidate, bestCap, ["mode_flag_pressure", candidate?.flag?.id ?? "", candidate?.candidateType || "direct"])){
         candidate.classTieBreakReason = compareAiCandidateByScoreAndRotation.lastClassTieBreakReason || null;
         bestCap = candidate;
