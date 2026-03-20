@@ -4746,6 +4746,7 @@ const HUD_PLANE_TIMER_FRAME_PATHS = [
   "ui_gamescreen/gs_arcade_timer/plane_timer/arcade_timer_1.png"
 ];
 const HUD_PLANE_TIMER_GO_PATH = "ui_gamescreen/gs_arcade_timer/gs_arcade_go_transperent.png";
+let arcadePlaneTimerOpacity = 1;
 const ARCADE_RESPAWN_SHIELD_PATHS = {
   blue: "ui_gamescreen/gs_aracade_shield_blue.png",
   green: "ui_gamescreen/gs_aracade_shield_green.png",
@@ -30156,6 +30157,18 @@ function ensureExplosionDebugApi(){
   window.EXPLOSION_SPEED = (multiplier = 1) => window.EXPLOSION_DEBUG.scalePlaybackRate(multiplier);
   window.EXPLOSION_SIZE = (scale = EXPLOSION_SIZE_SCALE_DEFAULT) => window.EXPLOSION_DEBUG.setSizeScale(scale);
 
+  // DevTools usage: changeArcadePlaneTimerOpacity(0.9)
+  window.changeArcadePlaneTimerOpacity = (value) => {
+    const nextOpacity = Number(value);
+    if (!Number.isFinite(nextOpacity) || nextOpacity < 0 || nextOpacity > 1) {
+      console.warn('[HUD_TIMER] changeArcadePlaneTimerOpacity(value) expects a number from 0 to 1. Current value was kept:', arcadePlaneTimerOpacity);
+      return arcadePlaneTimerOpacity;
+    }
+
+    arcadePlaneTimerOpacity = nextOpacity;
+    return arcadePlaneTimerOpacity;
+  };
+
   console.info(
     '[EXPLOSION_DEBUG] ready. Try: EXPLOSION_PLAY("blue"), EXPLOSION_PLAY("green"), EXPLOSION_SPEED(1.5), EXPLOSION_SPEED(0.7), EXPLOSION_SIZE(0.7), EXPLOSION_DEBUG.setPlaybackRate(1), EXPLOSION_DEBUG.getPlaybackRate(), EXPLOSION_DEBUG.getSizeScale()'
   );
@@ -30841,6 +30854,7 @@ function drawHudPlaneTimerOverlay(ctx2d, cx, cy, size, image){
   ctx2d.save();
   const previousFilter = ctx2d.filter;
   ctx2d.filter = "none";
+  ctx2d.globalAlpha = arcadePlaneTimerOpacity;
   ctx2d.drawImage(image, cx - size / 2, cy - size / 2, size, size);
   ctx2d.filter = previousFilter;
   ctx2d.restore();
