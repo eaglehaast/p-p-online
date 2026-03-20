@@ -4740,10 +4740,10 @@ const MAIN_MENU_ASSETS = [
 
 const HUD_PLANE_TIMER_FRAME_PATHS = [
   "ui_gamescreen/gs_aracade_timer_cross.png",
-  "ui_gamescreen/gs_arcade_timer/plane_timer/arcade_timer_4.png",
-  "ui_gamescreen/gs_arcade_timer/plane_timer/arcade_timer_3.png",
-  "ui_gamescreen/gs_arcade_timer/plane_timer/arcade_timer_2.png",
-  "ui_gamescreen/gs_arcade_timer/plane_timer/arcade_timer_1.png"
+  "ui_gamescreen/gs_arcade_timer/plane_timer_2/arcade_timer_4.png",
+  "ui_gamescreen/gs_arcade_timer/plane_timer_2/arcade_timer_3.png",
+  "ui_gamescreen/gs_arcade_timer/plane_timer_2/arcade_timer_2.png",
+  "ui_gamescreen/gs_arcade_timer/plane_timer_2/arcade_timer_1.png"
 ];
 const HUD_PLANE_TIMER_GO_PATH = "ui_gamescreen/gs_arcade_timer/gs_arcade_go_transperent.png";
 let arcadePlaneTimerOpacity = 1;
