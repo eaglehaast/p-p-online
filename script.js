@@ -23398,7 +23398,12 @@ function doComputerMoveLegacy(runtimeOptions = {}){
     });
   };
 
-  const aiPlanes = points.filter(p=> p.color==="blue" && p.isAlive && !p.burning);
+  const aiPlanes = points.filter((plane) => (
+    plane.color === "blue"
+    // Планирование и финальная проверка должны смотреть на одно и то же правило:
+    // иначе ИИ заранее выберет самолёт, который всё равно нельзя запустить.
+    && isPlaneLaunchStateReady(plane)
+  ));
   const enemies  = points.filter(p=> p.color==="green" && p.isAlive && !p.burning);
   const currentTurnCommitSequence = typeof turnCommitSequence === "number"
     ? turnCommitSequence
@@ -24230,7 +24235,12 @@ function runAiTurnV2(context = {}){
     aiRoundState.inventoryPhase = AI_V2_INVENTORY_PHASE;
   }
 
-  const aiPlanes = points.filter((p) => p.color === "blue" && p.isAlive && !p.burning);
+  const aiPlanes = points.filter((plane) => (
+    plane.color === "blue"
+    // Планирование и финальная проверка должны смотреть на одно и то же правило:
+    // иначе ИИ заранее выберет самолёт, который всё равно нельзя запустить.
+    && isPlaneLaunchStateReady(plane)
+  ));
   const enemies = points.filter((p) => p.color === "green" && p.isAlive && !p.burning);
   if(!aiPlanes.length || !enemies.length){
     return doComputerMoveLegacy({
