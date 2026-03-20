@@ -14202,31 +14202,16 @@ function buildAiCoarsePullPoint(plane, targetAim){
   };
 }
 
-function getAiOscillatingPullDistancePx(session, fallbackDistancePx, now = performance.now()){
+function getAiOscillatingPullDistancePx(session, fallbackDistancePx){
   if(!session) return fallbackDistancePx;
-  const targetDistancePx = Number.isFinite(session.targetDistancePx)
-    ? session.targetDistancePx
-    : fallbackDistancePx;
   if(session.stage !== "oscillate"){
     return fallbackDistancePx;
   }
 
-  const elapsedMs = Math.max(0, now - (session.oscillationStartsAt || session.stageStartedAt || now));
-  const durationMs = Math.max(1, session.releaseDueAt - (session.oscillationStartsAt || session.stageStartedAt || now));
-  const progress = clamp(elapsedMs / durationMs, 0, 1);
-  const sweepAmplitudeRatio = (
-    AI_LAUNCH_POWER_SWEEP_MAX_RATIO
-    + (AI_LAUNCH_POWER_SWEEP_MIN_RATIO - AI_LAUNCH_POWER_SWEEP_MAX_RATIO) * progress
-  );
-  const sweepAmplitudePx = MAX_DRAG_DISTANCE * sweepAmplitudeRatio;
-  const sweepSpeed = Number.isFinite(session.powerSweepSpeed)
-    ? session.powerSweepSpeed
-    : AI_LAUNCH_POWER_SWEEP_SPEED_MIN;
-  const sweepPhase = Number.isFinite(session.powerSweepPhase)
-    ? session.powerSweepPhase
-    : 0;
-  const sweepOffsetPx = Math.sin(elapsedMs * sweepSpeed + sweepPhase) * sweepAmplitudePx;
-  return clamp(targetDistancePx + sweepOffsetPx, 0, MAX_DRAG_DISTANCE);
+  const workingPullDistancePx = Number.isFinite(session.workingPullDistancePx)
+    ? session.workingPullDistancePx
+    : fallbackDistancePx;
+  return clamp(workingPullDistancePx, 0, MAX_DRAG_DISTANCE);
 }
 
 function pickAiLaunchCandidateForRelease(session){
@@ -14333,6 +14318,9 @@ function releaseAiLaunchSession(session, reason, now = performance.now()){
   const targetPowerAdjustedRatio = Number.isFinite(targetAim?.powerRatio)
     ? targetAim.powerRatio
     : targetPowerRatio;
+  const workingPowerRatio = Number.isFinite(session.workingPullDistancePx) && MAX_DRAG_DISTANCE > 0
+    ? (session.workingPullDistancePx / MAX_DRAG_DISTANCE)
+    : null;
   const intentionalPowerReduction = targetAim?.intentionalPowerReduction === true;
   logAiDecision("ai_launch_release", {
     reason,
@@ -14362,6 +14350,10 @@ function releaseAiLaunchSession(session, reason, now = performance.now()){
       ? Number(targetAim.powerAdjustmentDelta.toFixed(4))
       : null,
     powerAdjustmentReason: targetAim?.powerAdjustmentReason || null,
+    rangeMode: session.rangeMode || "max_default",
+    workingPowerRatio: Number.isFinite(workingPowerRatio)
+      ? Number(workingPowerRatio.toFixed(4))
+      : null,
   });
 
   aiLaunchSession = null;
@@ -28091,6 +28083,12 @@ function buildAiLaunchSession(plane, vx, vy){
   const targetDistancePx = targetAim
     ? Math.hypot(targetAim.pullX - plane.x, targetAim.pullY - plane.y)
     : Math.hypot(idealPullPoint.x - plane.x, idealPullPoint.y - plane.y);
+  const workingPullDistancePx = targetAim?.intentionalPowerReduction && Number.isFinite(targetAim?.powerRatio)
+    ? clamp(targetAim.powerRatio * MAX_DRAG_DISTANCE, 0, MAX_DRAG_DISTANCE)
+    : MAX_DRAG_DISTANCE;
+  const rangeMode = workingPullDistancePx < MAX_DRAG_DISTANCE
+    ? "reduced_for_reason"
+    : "max_default";
   const pullDistanceCells = targetDistancePx / CELL_SIZE;
   const randomInRange = (min, max) => min + Math.random() * Math.max(0, max - min);
   const oscillationDurationMs = randomInRange(AI_LAUNCH_OSCILLATION_MIN_MS, AI_LAUNCH_OSCILLATION_MAX_MS);
@@ -28135,6 +28133,8 @@ function buildAiLaunchSession(plane, vx, vy){
     previewEndsAt: targetSelectionEndsAt,
     targetAim,
     targetDistancePx,
+    workingPullDistancePx,
+    rangeMode,
     currentMetrics: null,
     bestCandidate: null,
     releaseTolerance: {
@@ -28765,7 +28765,7 @@ function gameDraw(){
       && aiLaunchSession.plane === plane
       && aiLaunchSession.targetAim
     )
-      ? getAiOscillatingPullDistancePx(aiLaunchSession, clampedDist, now)
+      ? getAiOscillatingPullDistancePx(aiLaunchSession, clampedDist)
       : clampedDist;
 
     aimSession.shakyX = plane.x + effectiveDist * Math.cos(angle);
@@ -28788,7 +28788,10 @@ function gameDraw(){
       aiLaunchSession.currentMetrics = currentMetrics;
       if(currentMetrics && aiLaunchSession.stage === "oscillate"){
         const angleErrorRad = Math.abs(normalizeAngleDeltaRad(currentMetrics.angleRad - aiLaunchSession.targetAim.angleRad));
-        const powerError = Math.abs(currentMetrics.powerRatio - aiLaunchSession.targetAim.powerRatio);
+        const targetPowerRatio = MAX_DRAG_DISTANCE > 0
+          ? (getAiOscillatingPullDistancePx(aiLaunchSession, clampedDist) / MAX_DRAG_DISTANCE)
+          : 0;
+        const powerError = Math.abs(currentMetrics.powerRatio - targetPowerRatio);
         const totalError = angleErrorRad + powerError;
         if(!aiLaunchSession.bestCandidate || totalError < aiLaunchSession.bestCandidate.totalError){
           aiLaunchSession.bestCandidate = {
