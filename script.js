@@ -8675,6 +8675,203 @@ function doesCargoIntersectPlaneBeneficialZone(cargo, plane){
     && cargoBottom > beneficialZone.top;
 }
 
+function doesCargoIntersectBeneficialZoneAlongSegment(cargo, plane, fromPoint, toPoint){
+  if(!cargo || !plane || !fromPoint || !toPoint) return false;
+  const { width, height } = getCargoSpriteSize();
+  const beneficialZone = getPlaneBeneficialGeometry(plane).hitbox;
+  const expandedLeft = cargo.x - beneficialZone.width / 2;
+  const expandedRight = cargo.x + width + beneficialZone.width / 2;
+  const expandedTop = cargo.y - beneficialZone.height / 2;
+  const expandedBottom = cargo.y + height + beneficialZone.height / 2;
+
+  const startInside = fromPoint.x >= expandedLeft && fromPoint.x <= expandedRight
+    && fromPoint.y >= expandedTop && fromPoint.y <= expandedBottom;
+  const endInside = toPoint.x >= expandedLeft && toPoint.x <= expandedRight
+    && toPoint.y >= expandedTop && toPoint.y <= expandedBottom;
+  if(startInside || endInside) return true;
+
+  const edges = [
+    { x1: expandedLeft, y1: expandedTop, x2: expandedRight, y2: expandedTop },
+    { x1: expandedRight, y1: expandedTop, x2: expandedRight, y2: expandedBottom },
+    { x1: expandedRight, y1: expandedBottom, x2: expandedLeft, y2: expandedBottom },
+    { x1: expandedLeft, y1: expandedBottom, x2: expandedLeft, y2: expandedTop },
+  ];
+  for(const edge of edges){
+    if(lineSegmentIntersection(fromPoint.x, fromPoint.y, toPoint.x, toPoint.y, edge.x1, edge.y1, edge.x2, edge.y2)){
+      return true;
+    }
+  }
+  return false;
+}
+
+function getAiCargoHomeBase(context){
+  return context?.homeBase || getBaseAnchor("blue");
+}
+
+function getAiCargoLongCarryDistance(plane, cargo, targetAnchor){
+  const directToAnchor = targetAnchor ? dist(getCargoVisualCenter(cargo), targetAnchor) : MAX_DRAG_DISTANCE;
+  const minCarry = Math.max(CELL_SIZE * 1.8, MAX_DRAG_DISTANCE * 0.5);
+  const desiredCarry = Math.min(MAX_DRAG_DISTANCE, Math.max(minCarry, directToAnchor * 0.45));
+  const planeRangeProfile = getAiFlightRangeProfile(plane);
+  const planeRange = Number.isFinite(planeRangeProfile?.flightDistancePx) && planeRangeProfile.flightDistancePx > 0
+    ? planeRangeProfile.flightDistancePx
+    : MAX_DRAG_DISTANCE;
+  return Math.max(minCarry, Math.min(planeRange, desiredCarry));
+}
+
+function buildAiCargoLongRangeTargets(plane, cargo, context){
+  const cargoCenter = getCargoVisualCenter(cargo);
+  const homeBase = getAiCargoHomeBase(context);
+  const leftWallX = FIELD_LEFT;
+  const rightWallX = FIELD_LEFT + FIELD_WIDTH;
+  const topWallY = FIELD_TOP;
+  const bottomWallY = FIELD_TOP + FIELD_HEIGHT;
+  const carryToBase = getAiCargoLongCarryDistance(plane, cargo, homeBase);
+  const targets = [];
+
+  const pushDirectionalTarget = (name, anchorPoint, options = {}) => {
+    if(!anchorPoint) return;
+    const dx = anchorPoint.x - cargoCenter.x;
+    const dy = anchorPoint.y - cargoCenter.y;
+    const len = Math.hypot(dx, dy);
+    if(len < 1e-6) return;
+    const carryDistance = Number.isFinite(options.carryDistance) ? options.carryDistance : carryToBase;
+    const targetX = clamp(cargoCenter.x + (dx / len) * carryDistance, leftWallX + CELL_SIZE * 0.45, rightWallX - CELL_SIZE * 0.45);
+    const targetY = clamp(cargoCenter.y + (dy / len) * carryDistance, topWallY + CELL_SIZE * 0.45, bottomWallY - CELL_SIZE * 0.45);
+    targets.push({
+      name,
+      targetX,
+      targetY,
+      preferredRouteClass: options.preferredRouteClass || null,
+      targetKind: options.targetKind || "long",
+      usedRicochetHint: options.usedRicochetHint === true,
+    });
+  };
+
+  pushDirectionalTarget("toward_home_base", homeBase, { targetKind: "long" });
+
+  const safeAnchors = [];
+  if(homeBase){
+    safeAnchors.push(homeBase);
+    safeAnchors.push({ x: (homeBase.x + cargoCenter.x) / 2, y: FIELD_TOP + FIELD_HEIGHT * 0.2 });
+    safeAnchors.push({ x: (homeBase.x + cargoCenter.x) / 2, y: FIELD_TOP + FIELD_HEIGHT * 0.8 });
+    safeAnchors.push({ x: homeBase.x, y: FIELD_TOP + FIELD_HEIGHT * 0.5 });
+  }
+  const enemies = Array.isArray(context?.enemies) ? context.enemies.filter((enemy) => enemy?.isAlive && !enemy?.burning) : [];
+  let safestAnchor = null;
+  let safestScore = -Infinity;
+  for(const anchor of safeAnchors){
+    if(!anchor) continue;
+    let nearestEnemyDistance = Infinity;
+    for(const enemy of enemies){
+      nearestEnemyDistance = Math.min(nearestEnemyDistance, dist(enemy, anchor));
+    }
+    const baseBias = homeBase ? dist(anchor, homeBase) * 0.35 : 0;
+    const score = nearestEnemyDistance - baseBias;
+    if(score > safestScore){
+      safestScore = score;
+      safestAnchor = anchor;
+    }
+  }
+  pushDirectionalTarget("safe_long_flight", safestAnchor || homeBase, {
+    targetKind: "long",
+    carryDistance: Math.min(MAX_DRAG_DISTANCE, carryToBase * 1.08),
+  });
+
+  if(homeBase){
+    const sideWallTargets = [
+      { wall: "left", wallX: leftWallX + CELL_SIZE * 0.6 },
+      { wall: "right", wallX: rightWallX - CELL_SIZE * 0.6 },
+    ];
+    for(const wallCandidate of sideWallTargets){
+      const bounceAnchor = {
+        x: wallCandidate.wallX,
+        y: clamp((cargoCenter.y + homeBase.y) / 2, topWallY + CELL_SIZE * 0.6, bottomWallY - CELL_SIZE * 0.6),
+      };
+      const homeGain = dist(cargoCenter, homeBase) - dist(bounceAnchor, homeBase);
+      if(homeGain <= CELL_SIZE * 0.4) continue;
+      pushDirectionalTarget(`side_wall_ricochet_${wallCandidate.wall}`, bounceAnchor, {
+        targetKind: "long",
+        preferredRouteClass: "ricochet",
+        usedRicochetHint: true,
+        carryDistance: Math.min(MAX_DRAG_DISTANCE, carryToBase * 1.12),
+      });
+    }
+  }
+
+  const seen = new Set();
+  return targets.filter((entry) => {
+    const key = `${Math.round(entry.targetX)}:${Math.round(entry.targetY)}:${entry.preferredRouteClass || "direct"}`;
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function buildAiCargoRouteCandidate(plane, cargo, context, routeTarget){
+  if(!plane || !cargo || !routeTarget) return null;
+  const move = planPathToPoint(plane, routeTarget.targetX, routeTarget.targetY, {
+    goalName: "pickup_cargo",
+    decisionReason: routeTarget.name,
+    ...(routeTarget.preferredRouteClass ? { routeClass: routeTarget.preferredRouteClass } : {}),
+  });
+  if(!move) return null;
+
+  const landingPoint = {
+    x: plane.x + (move.vx || 0) * FIELD_FLIGHT_DURATION_SEC,
+    y: plane.y + (move.vy || 0) * FIELD_FLIGHT_DURATION_SEC,
+  };
+  const cargoPickedOnPath = doesCargoIntersectBeneficialZoneAlongSegment(cargo, plane, plane, landingPoint);
+  const homeBase = getAiCargoHomeBase(context);
+  const cargoCenter = getCargoVisualCenter(cargo);
+  const cargoDistanceToBase = homeBase ? dist(cargoCenter, homeBase) : Number.POSITIVE_INFINITY;
+  const landingDistanceToBase = homeBase ? dist(landingPoint, homeBase) : Number.POSITIVE_INFINITY;
+  const usefulCarryAfterPickup = cargoPickedOnPath
+    ? Math.max(0, cargoDistanceToBase - landingDistanceToBase)
+    : 0;
+  const endsCloserToHomeBase = landingDistanceToBase + 0.5 < cargoDistanceToBase;
+  const usedRicochet = routeTarget.usedRicochetHint === true
+    || move?.candidateClass === "ricochet"
+    || move?.moveType === "mirror";
+  const riskInfo = evaluateCargoPickupRisk(plane, cargo, context);
+  const favorableInfo = evaluateFavorableCargoCandidate(plane, cargo, move, riskInfo);
+
+  return {
+    plane,
+    cargo,
+    move,
+    riskInfo,
+    favorableInfo,
+    routeTarget,
+    cargoPickedOnPath,
+    endsCloserToHomeBase,
+    usedRicochet,
+    usefulCarryAfterPickup,
+    isLongCandidate: routeTarget.targetKind === "long",
+  };
+}
+
+function collectAiCargoRouteCandidates(plane, cargo, context){
+  const longTargets = buildAiCargoLongRangeTargets(plane, cargo, context);
+  const longCandidates = longTargets
+    .map((target) => buildAiCargoRouteCandidate(plane, cargo, context, target))
+    .filter((candidate) => candidate && candidate.cargoPickedOnPath);
+
+  if(longCandidates.length > 0){
+    return longCandidates;
+  }
+
+  const fallbackCandidate = buildAiCargoRouteCandidate(plane, cargo, context, {
+    name: "direct_cargo_fallback",
+    targetX: cargo.x,
+    targetY: cargo.y,
+    targetKind: "fallback_short",
+    preferredRouteClass: null,
+    usedRicochetHint: false,
+  });
+  return fallbackCandidate ? [fallbackCandidate] : [];
+}
+
 function updateCargoState(now = performance.now()){
   if(cargoState.length === 0){
     return;
@@ -20496,16 +20693,17 @@ function tryPlanEarlyCargoPickupMove(context){
   };
   for(const plane of groundedAiPlanes){
     for(const cargo of readyCargo){
-      skipStats.considered += 1;
-      skipStats.pathChecks = (skipStats.pathChecks || 0) + 1;
-      const move = planPathToPoint(plane, cargo.x, cargo.y);
-      if(!move) continue;
-      const riskInfo = evaluateCargoPickupRisk(plane, cargo, context);
-      const favorableInfo = evaluateFavorableCargoCandidate(plane, cargo, move, riskInfo);
-      const isAcceptedByBaseRisk = riskInfo.isSafePath && riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE;
-      const isAcceptedByFavorableOverride = riskInfo.isSafePath && favorableInfo?.isFavorableCargo;
+      const routeCandidates = collectAiCargoRouteCandidates(plane, cargo, context);
+      for(const routeCandidate of routeCandidates){
+        skipStats.considered += 1;
+        skipStats.pathChecks = (skipStats.pathChecks || 0) + 1;
+        const move = routeCandidate.move;
+        const riskInfo = routeCandidate.riskInfo;
+        const favorableInfo = routeCandidate.favorableInfo;
+        const isAcceptedByBaseRisk = riskInfo.isSafePath && riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE;
+        const isAcceptedByFavorableOverride = riskInfo.isSafePath && favorableInfo?.isFavorableCargo;
 
-      if(!isAcceptedByBaseRisk && !isAcceptedByFavorableOverride){
+        if(!isAcceptedByBaseRisk && !isAcceptedByFavorableOverride){
         if(!riskInfo.isSafePath) skipStats.blockedByPath += 1;
         if(riskInfo.totalRisk > AI_CARGO_RISK_ACCEPTANCE){
           if(favorableInfo?.hasImmediateThreat) skipStats.blockedByThreat += 1;
@@ -20515,8 +20713,16 @@ function tryPlanEarlyCargoPickupMove(context){
         continue;
       }
 
-      if(!bestCandidate || riskInfo.totalRisk < bestCandidate.riskInfo.totalRisk || (riskInfo.totalRisk === bestCandidate.riskInfo.totalRisk && move.totalDist < bestCandidate.move.totalDist)){
-        bestCandidate = { plane, cargo, move, riskInfo, favorableInfo, acceptedBy: isAcceptedByBaseRisk ? "base_threshold" : "favorable_override" };
+        if(
+          !bestCandidate
+          || routeCandidate.isLongCandidate && !bestCandidate.isLongCandidate
+          || (routeCandidate.isLongCandidate === bestCandidate.isLongCandidate && routeCandidate.cargoPickedOnPath && !bestCandidate.cargoPickedOnPath)
+          || (routeCandidate.isLongCandidate === bestCandidate.isLongCandidate && routeCandidate.cargoPickedOnPath === bestCandidate.cargoPickedOnPath && routeCandidate.endsCloserToHomeBase && !bestCandidate.endsCloserToHomeBase)
+          || (routeCandidate.isLongCandidate === bestCandidate.isLongCandidate && routeCandidate.cargoPickedOnPath === bestCandidate.cargoPickedOnPath && routeCandidate.endsCloserToHomeBase === bestCandidate.endsCloserToHomeBase && routeCandidate.usefulCarryAfterPickup > bestCandidate.usefulCarryAfterPickup + 0.5)
+          || (Math.abs(routeCandidate.usefulCarryAfterPickup - (bestCandidate?.usefulCarryAfterPickup || 0)) <= 0.5 && (riskInfo.totalRisk < bestCandidate.riskInfo.totalRisk || (riskInfo.totalRisk === bestCandidate.riskInfo.totalRisk && move.totalDist < bestCandidate.move.totalDist)))
+        ){
+          bestCandidate = { ...routeCandidate, acceptedBy: isAcceptedByBaseRisk ? "base_threshold" : "favorable_override" };
+        }
       }
     }
   }
@@ -20533,6 +20739,11 @@ function tryPlanEarlyCargoPickupMove(context){
       moveTotalDist: Number(bestCandidate.move.totalDist.toFixed(1)),
       acceptedBy: bestCandidate.acceptedBy,
       favorableCargo: Boolean(bestCandidate.favorableInfo?.isFavorableCargo),
+      cargoPickedOnPath: bestCandidate.cargoPickedOnPath,
+      endsCloserToHomeBase: bestCandidate.endsCloserToHomeBase,
+      usedRicochet: bestCandidate.usedRicochet,
+      usefulCarryAfterPickup: Number(bestCandidate.usefulCarryAfterPickup.toFixed(1)),
+      routeTarget: bestCandidate.routeTarget?.name || null,
       turnAdvanceCount,
     });
     return { plane: bestCandidate.plane, ...bestCandidate.move };
@@ -20651,20 +20862,22 @@ function assignAiRolesForTurn(context){
     for(const plane of groundedAiPlanes){
       if(reservedPlaneIds.has(plane.id)) continue;
       for(const cargo of readyCargo){
-        const move = planPathToPoint(plane, cargo.x, cargo.y);
-        if(!move) continue;
-        const riskInfo = evaluateCargoPickupRisk(plane, cargo, context);
-        const favorableInfo = evaluateFavorableCargoCandidate(plane, cargo, move, riskInfo);
-        if(!riskInfo.isSafePath || riskInfo.totalRisk > AI_CARGO_RISK_ACCEPTANCE){
-          const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
-          if(favorableInfo?.isFavorableCargo && (!bestFavorableCollector || adjustedDist < bestFavorableCollector.adjustedDist || (adjustedDist === bestFavorableCollector.adjustedDist && riskInfo.totalRisk < bestFavorableCollector.riskInfo.totalRisk))){
-            bestFavorableCollector = { plane, move, cargo, riskInfo, favorableInfo, adjustedDist };
+        const routeCandidates = collectAiCargoRouteCandidates(plane, cargo, context);
+        for(const routeCandidate of routeCandidates){
+          const move = routeCandidate.move;
+          const riskInfo = routeCandidate.riskInfo;
+          const favorableInfo = routeCandidate.favorableInfo;
+          if(!riskInfo.isSafePath || riskInfo.totalRisk > AI_CARGO_RISK_ACCEPTANCE){
+            const adjustedDist = getAiPlaneAdjustedScore(move.totalDist - routeCandidate.usefulCarryAfterPickup * 0.35, plane);
+            if(favorableInfo?.isFavorableCargo && (!bestFavorableCollector || adjustedDist < bestFavorableCollector.adjustedDist || (adjustedDist === bestFavorableCollector.adjustedDist && riskInfo.totalRisk < bestFavorableCollector.riskInfo.totalRisk))){
+              bestFavorableCollector = { ...routeCandidate, adjustedDist };
+            }
+            continue;
           }
-          continue;
-        }
-        const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
-        if(!bestCollector || riskInfo.totalRisk < bestCollector.riskInfo.totalRisk || (riskInfo.totalRisk === bestCollector.riskInfo.totalRisk && adjustedDist < bestCollector.adjustedDist)){
-          bestCollector = { plane, move, cargo, riskInfo, favorableInfo, adjustedDist };
+          const adjustedDist = getAiPlaneAdjustedScore(move.totalDist - routeCandidate.usefulCarryAfterPickup * 0.35, plane);
+          if(!bestCollector || routeCandidate.isLongCandidate && !bestCollector.isLongCandidate || (riskInfo.totalRisk < bestCollector.riskInfo.totalRisk) || (riskInfo.totalRisk === bestCollector.riskInfo.totalRisk && adjustedDist < bestCollector.adjustedDist)){
+            bestCollector = { ...routeCandidate, adjustedDist };
+          }
         }
       }
     }
@@ -20826,32 +21039,34 @@ function planRoleDrivenAiMove(context, rolePack){
       blockedByThreat: 0,
     };
     for(const cargo of readyCargo){
-      const move = planPathToPoint(collector, cargo.x, cargo.y);
-      if(!move) continue;
-      const riskInfo = evaluateCargoPickupRisk(collector, cargo, context);
-      const favorableInfo = evaluateFavorableCargoCandidate(collector, cargo, move, riskInfo);
-      if(!riskInfo.isSafePath){
+      const routeCandidates = collectAiCargoRouteCandidates(collector, cargo, context);
+      for(const routeCandidate of routeCandidates){
+        const move = routeCandidate.move;
+        const riskInfo = routeCandidate.riskInfo;
+        const favorableInfo = routeCandidate.favorableInfo;
+        if(!riskInfo.isSafePath){
         collectorSkipStats.blockedByPath += 1;
         continue;
       }
-      if(riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE){
-        const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, collector);
-        if(!bestCollectorMove || riskInfo.totalRisk < bestCollectorMove.riskInfo.totalRisk || (riskInfo.totalRisk === bestCollectorMove.riskInfo.totalRisk && adjustedDist < bestCollectorMove.adjustedDist)){
-          bestCollectorMove = { cargo, move, riskInfo, favorableInfo, acceptedBy: "base_threshold", adjustedDist };
+        if(riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE){
+          const adjustedDist = getAiPlaneAdjustedScore(move.totalDist - routeCandidate.usefulCarryAfterPickup * 0.35, collector);
+          if(!bestCollectorMove || routeCandidate.isLongCandidate && !bestCollectorMove.isLongCandidate || riskInfo.totalRisk < bestCollectorMove.riskInfo.totalRisk || (riskInfo.totalRisk === bestCollectorMove.riskInfo.totalRisk && adjustedDist < bestCollectorMove.adjustedDist)){
+            bestCollectorMove = { ...routeCandidate, acceptedBy: "base_threshold", adjustedDist };
+          }
+          continue;
         }
-        continue;
-      }
-      if(favorableInfo?.isFavorableCargo){
-        const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, collector);
-        if(!bestFavorableCollectorMove || adjustedDist < bestFavorableCollectorMove.adjustedDist || (adjustedDist === bestFavorableCollectorMove.adjustedDist && riskInfo.totalRisk < bestFavorableCollectorMove.riskInfo.totalRisk)){
-          bestFavorableCollectorMove = { cargo, move, riskInfo, favorableInfo, acceptedBy: "favorable_override", adjustedDist };
+        if(favorableInfo?.isFavorableCargo){
+          const adjustedDist = getAiPlaneAdjustedScore(move.totalDist - routeCandidate.usefulCarryAfterPickup * 0.35, collector);
+          if(!bestFavorableCollectorMove || adjustedDist < bestFavorableCollectorMove.adjustedDist || (adjustedDist === bestFavorableCollectorMove.adjustedDist && riskInfo.totalRisk < bestFavorableCollectorMove.riskInfo.totalRisk)){
+            bestFavorableCollectorMove = { ...routeCandidate, acceptedBy: "favorable_override", adjustedDist };
+          }
+          continue;
         }
-        continue;
-      }
 
-      if(favorableInfo?.hasImmediateThreat) collectorSkipStats.blockedByThreat += 1;
-      else if(!favorableInfo?.isNearPlane) collectorSkipStats.blockedByDistance += 1;
-      else collectorSkipStats.blockedByRisk += 1;
+        if(favorableInfo?.hasImmediateThreat) collectorSkipStats.blockedByThreat += 1;
+        else if(!favorableInfo?.isNearPlane) collectorSkipStats.blockedByDistance += 1;
+        else collectorSkipStats.blockedByRisk += 1;
+      }
     }
     const selectedCollectorMove = bestCollectorMove || bestFavorableCollectorMove;
     if(selectedCollectorMove){
@@ -20862,6 +21077,11 @@ function planRoleDrivenAiMove(context, rolePack){
         acceptedBy: selectedCollectorMove.acceptedBy,
         risk: Number(selectedCollectorMove.riskInfo.totalRisk.toFixed(3)),
         distance: Number(selectedCollectorMove.move.totalDist.toFixed(1)),
+        cargoPickedOnPath: selectedCollectorMove.cargoPickedOnPath,
+        endsCloserToHomeBase: selectedCollectorMove.endsCloserToHomeBase,
+        usedRicochet: selectedCollectorMove.usedRicochet,
+        usefulCarryAfterPickup: Number(selectedCollectorMove.usefulCarryAfterPickup.toFixed(1)),
+        routeTarget: selectedCollectorMove.routeTarget?.name || null,
       });
       return { plane: collector, ...selectedCollectorMove.move };
     }
@@ -21931,35 +22151,37 @@ function planModeDrivenAiMove(context){
     for(const plane of groundedAiPlanes){
       for(const cargo of cargoState){
         if(cargo?.state !== "ready") continue;
-        const move = planPathToPoint(plane, cargo.x, cargo.y);
-        if(!move) continue;
-        const riskInfo = evaluateCargoPickupRisk(plane, cargo, context);
-        const favorableInfo = evaluateFavorableCargoCandidate(plane, cargo, move, riskInfo);
+        const routeCandidates = collectAiCargoRouteCandidates(plane, cargo, context);
+        for(const routeCandidate of routeCandidates){
+          const move = routeCandidate.move;
+          const riskInfo = routeCandidate.riskInfo;
+          const favorableInfo = routeCandidate.favorableInfo;
 
-        if(!riskInfo.isSafePath){
+          if(!riskInfo.isSafePath){
           cargoSkipStats.blockedByPath += 1;
           continue;
         }
 
-        if(riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE){
-          const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
-          if(!bestCargoMove || riskInfo.totalRisk < bestCargoMove.riskInfo.totalRisk || (riskInfo.totalRisk === bestCargoMove.riskInfo.totalRisk && adjustedDist < bestCargoMove.adjustedDist)){
-            bestCargoMove = { plane, move, cargo, riskInfo, favorableInfo, acceptedBy: "base_threshold", adjustedDist };
+          if(riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE){
+            const adjustedDist = getAiPlaneAdjustedScore(move.totalDist - routeCandidate.usefulCarryAfterPickup * 0.35, plane);
+            if(!bestCargoMove || routeCandidate.isLongCandidate && !bestCargoMove.isLongCandidate || riskInfo.totalRisk < bestCargoMove.riskInfo.totalRisk || (riskInfo.totalRisk === bestCargoMove.riskInfo.totalRisk && adjustedDist < bestCargoMove.adjustedDist)){
+              bestCargoMove = { ...routeCandidate, acceptedBy: "base_threshold", adjustedDist };
+            }
+            continue;
           }
-          continue;
-        }
 
-        if(favorableInfo?.isFavorableCargo){
-          const adjustedDist = getAiPlaneAdjustedScore(move.totalDist, plane);
-          if(!bestFavorableCargoMove || adjustedDist < bestFavorableCargoMove.adjustedDist || (adjustedDist === bestFavorableCargoMove.adjustedDist && riskInfo.totalRisk < bestFavorableCargoMove.riskInfo.totalRisk)){
-            bestFavorableCargoMove = { plane, move, cargo, riskInfo, favorableInfo, acceptedBy: "favorable_override", adjustedDist };
+          if(favorableInfo?.isFavorableCargo){
+            const adjustedDist = getAiPlaneAdjustedScore(move.totalDist - routeCandidate.usefulCarryAfterPickup * 0.35, plane);
+            if(!bestFavorableCargoMove || adjustedDist < bestFavorableCargoMove.adjustedDist || (adjustedDist === bestFavorableCargoMove.adjustedDist && riskInfo.totalRisk < bestFavorableCargoMove.riskInfo.totalRisk)){
+              bestFavorableCargoMove = { ...routeCandidate, acceptedBy: "favorable_override", adjustedDist };
+            }
+            continue;
           }
-          continue;
-        }
 
-        if(favorableInfo?.hasImmediateThreat) cargoSkipStats.blockedByThreat += 1;
-        else if(!favorableInfo?.isNearPlane) cargoSkipStats.blockedByDistance += 1;
-        else cargoSkipStats.blockedByRisk += 1;
+          if(favorableInfo?.hasImmediateThreat) cargoSkipStats.blockedByThreat += 1;
+          else if(!favorableInfo?.isNearPlane) cargoSkipStats.blockedByDistance += 1;
+          else cargoSkipStats.blockedByRisk += 1;
+        }
       }
     }
 
@@ -21971,6 +22193,11 @@ function planModeDrivenAiMove(context){
         acceptedBy: selectedCargoMove.acceptedBy,
         risk: Number(selectedCargoMove.riskInfo.totalRisk.toFixed(3)),
         distance: Number(selectedCargoMove.move.totalDist.toFixed(1)),
+        cargoPickedOnPath: selectedCargoMove.cargoPickedOnPath,
+        endsCloserToHomeBase: selectedCargoMove.endsCloserToHomeBase,
+        usedRicochet: selectedCargoMove.usedRicochet,
+        usefulCarryAfterPickup: Number(selectedCargoMove.usefulCarryAfterPickup.toFixed(1)),
+        routeTarget: selectedCargoMove.routeTarget?.name || null,
       });
       return { plane: selectedCargoMove.plane, ...selectedCargoMove.move };
     }
