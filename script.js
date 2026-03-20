@@ -4753,11 +4753,12 @@ const ARCADE_RESPAWN_SHIELD_PATHS = {
 };
 const CRASH_FX_DELAY_MS = 0;   // fallback delay before showing wreck FX
 const FLAME_FRAME_DURATION_MS = 140;
+const BURNING_FLAME_FRAME_COUNT = 15;
 const GREEN_FLAME_SEQUENCE = {
-  framePaths: Array.from({ length: 16 }, (_, index) => `ui_gamescreen/flames/gs_flame_green_1/flame_green_1_${String(index + 1).padStart(2, '0')}.png`)
+  framePaths: Array.from({ length: BURNING_FLAME_FRAME_COUNT }, (_, index) => `ui_gamescreen/flames/gs_flame_green_1/flame_green_1_${String(index + 1).padStart(2, '0')}.png`)
 };
 const BLUE_FLAME_SEQUENCE = {
-  framePaths: Array.from({ length: 16 }, (_, index) => `ui_gamescreen/flames/gs_flame_blue_1/flame_blue_1_${String(index + 1).padStart(2, '0')}.png`)
+  framePaths: Array.from({ length: BURNING_FLAME_FRAME_COUNT }, (_, index) => `ui_gamescreen/flames/gs_flame_blue_1/flame_blue_1_${String(index + 1).padStart(2, '0')}.png`)
 };
 const BURNING_FLAME_SRCS = [...GREEN_FLAME_SEQUENCE.framePaths, ...BLUE_FLAME_SEQUENCE.framePaths];
 const BLUE_FLAME_DISPLAY_SIZE = { width: 36, height: 36 };
