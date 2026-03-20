@@ -20141,6 +20141,47 @@ function shouldSkipDirectFinisherInOpening(context){
     });
     return false;
   }
+  if(openingExceptionFinisher?.hasObjectiveValue){
+    const landingPoint = typeof getAiMoveLandingPoint === "function"
+      ? getAiMoveLandingPoint(openingExceptionFinisher)
+      : (() => {
+          const flightDurationSec = typeof FIELD_FLIGHT_DURATION_SEC === "number"
+            ? FIELD_FLIGHT_DURATION_SEC
+            : 0;
+          return {
+            x: (openingExceptionFinisher?.plane?.x || 0) + (openingExceptionFinisher?.vx || 0) * flightDurationSec,
+            y: (openingExceptionFinisher?.plane?.y || 0) + (openingExceptionFinisher?.vy || 0) * flightDurationSec,
+          };
+        })();
+    const immediateResponseThreat = typeof getImmediateResponseThreatMeta === "function"
+      ? getImmediateResponseThreatMeta(
+          context,
+          landingPoint?.x,
+          landingPoint?.y,
+          openingExceptionFinisher?.enemy || null
+        )
+      : { count: 0, nearestDist: Number.POSITIVE_INFINITY };
+    const immediateHighThreat = immediateResponseThreat.count > 0 && (
+      immediateResponseThreat.count >= AI_OPENING_DIRECT_FINISHER_EXCEPTION_THREAT_COUNT
+      || (
+        Number.isFinite(immediateResponseThreat.nearestDist)
+        && immediateResponseThreat.nearestDist <= AI_OPENING_DIRECT_FINISHER_EXCEPTION_NEAREST_THREAT_DISTANCE
+      )
+    );
+    if(!immediateHighThreat){
+      logAiDecision("opening_direct_finisher_objective_unlocked", {
+        turnAdvanceCount,
+        scoreLead,
+        planeId: openingExceptionFinisher?.plane?.id ?? null,
+        enemyId: openingExceptionFinisher?.enemy?.id ?? null,
+        hasCargoAlongPath: Boolean(openingExceptionFinisher?.hasCargoAlongPath),
+        interceptsFlagCarrier: Boolean(openingExceptionFinisher?.interceptsFlagCarrier),
+        defendsHomeBase: Boolean(openingExceptionFinisher?.defendsHomeBase),
+        reason: "objective_value_along_route",
+      });
+      return false;
+    }
+  }
   if(openingExceptionFinisher?.totalDist <= getPlaneEffectiveRangePx(openingExceptionFinisher?.plane || null) * AI_OPENING_DIRECT_FINISHER_EXCEPTION_DISTANCE_RATIO){
     const landingPoint = typeof getAiMoveLandingPoint === "function"
       ? getAiMoveLandingPoint(openingExceptionFinisher)
@@ -25813,8 +25854,13 @@ function isDirectFinisherScenario(plane, enemy, options = {}){
 function findDirectFinisherMove(aiPlanes, enemies, options = {}){
   if(!Array.isArray(aiPlanes) || !Array.isArray(enemies)) return null;
 
-  function hasDirectFinisherObjectiveValue(plane, enemy, landingX, landingY){
-    if(!plane || !enemy) return false;
+  function getDirectFinisherObjectiveMeta(plane, enemy, landingX, landingY){
+    if(!plane || !enemy) return {
+      hasObjectiveValue: false,
+      hasCargoAlongPath: false,
+      interceptsFlagCarrier: false,
+      defendsHomeBase: false,
+    };
 
     const context = options?.context || null;
     const readyCargo = cargoState.filter((cargo) => cargo?.state === "ready");
@@ -25839,7 +25885,12 @@ function findDirectFinisherMove(aiPlanes, enemies, options = {}){
     const activeGoalName = `${options?.goalName || aiRoundState?.currentGoal || ""}`.toLowerCase();
     const defendsHomeBase = isExplicitDefensiveGoal(activeGoalName);
 
-    return hasCargoAlongPath || interceptsFlagCarrier || defendsHomeBase;
+    return {
+      hasObjectiveValue: hasCargoAlongPath || interceptsFlagCarrier || defendsHomeBase,
+      hasCargoAlongPath,
+      interceptsFlagCarrier,
+      defendsHomeBase,
+    };
   }
 
   const riskProfile = options?.context?.aiRiskProfile?.profile || "balanced";
@@ -25871,6 +25922,8 @@ function findDirectFinisherMove(aiPlanes, enemies, options = {}){
       });
       const landingX = plane.x + move.vx * FIELD_FLIGHT_DURATION_SEC;
       const landingY = plane.y + move.vy * FIELD_FLIGHT_DURATION_SEC;
+      const objectiveMeta = getDirectFinisherObjectiveMeta(plane, enemy, landingX, landingY);
+      const hasObjectiveValue = objectiveMeta.hasObjectiveValue;
 
       let biasedAdjustedDist = Math.max(0, aggressionBias.score - clusterBonus);
       const targetIsCritical = Boolean(enemy?.carriedFlagId);
@@ -25910,7 +25963,6 @@ function findDirectFinisherMove(aiPlanes, enemies, options = {}){
           });
         }
 
-        const hasObjectiveValue = hasDirectFinisherObjectiveValue(plane, enemy, landingX, landingY);
         const goalName = `${options?.goalName || aiRoundState?.currentGoal || ""}`.toLowerCase();
         const emergencyPenaltyGuard = goalName.includes("critical_threat_emergency_move")
           || goalName.includes("critical_base_threat")
@@ -25964,6 +26016,10 @@ function findDirectFinisherMove(aiPlanes, enemies, options = {}){
           adjustedDist: biasedAdjustedDist,
           nearbyEnemiesCount,
           clusterBonus,
+          hasObjectiveValue,
+          hasCargoAlongPath: objectiveMeta.hasCargoAlongPath,
+          interceptsFlagCarrier: objectiveMeta.interceptsFlagCarrier,
+          defendsHomeBase: objectiveMeta.defendsHomeBase,
           openingAggressionBiasApplied: aggressionBias.applied,
           openingAggressionBiasTarget: aggressionBias.applied ? "direct_finisher" : null,
           goalName: options.goalName || "direct_finisher",
