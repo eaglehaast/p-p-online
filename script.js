@@ -14202,6 +14202,59 @@ function buildAiCoarsePullPoint(plane, targetAim){
   };
 }
 
+function classifyAiRangeReductionReason(reason){
+  const text = `${reason || ""}`.trim().toLowerCase();
+  if(!text) return null;
+
+  if(text.includes("overshoot") || text.includes("overflight") || text.includes("pass_target") || text.includes("miss_target")){
+    return "avoid_overshoot";
+  }
+  if(text.includes("tactic") || text.includes("scenario") || text.includes("formation") || text.includes("special_plan")){
+    return "special_tactic";
+  }
+  if(text.includes("contact") || text.includes("touch") || text.includes("pickup") || text.includes("capture") || text.includes("escort") || text.includes("specific_target")){
+    return "short_contact";
+  }
+  return null;
+}
+
+function resolveAiLaunchTargetDistancePx(targetAim, fallbackDistancePx = MAX_DRAG_DISTANCE){
+  const maxDistancePx = clamp(
+    Number.isFinite(fallbackDistancePx) ? fallbackDistancePx : MAX_DRAG_DISTANCE,
+    0,
+    MAX_DRAG_DISTANCE
+  );
+  const requestedPowerRatio = Number.isFinite(targetAim?.powerRatio)
+    ? clamp(targetAim.powerRatio, 0, 1)
+    : 1;
+  const requestedDistancePx = clamp(requestedPowerRatio * MAX_DRAG_DISTANCE, 0, MAX_DRAG_DISTANCE);
+  const rawReason = targetAim?.powerAdjustmentReason || null;
+  const reductionReason = classifyAiRangeReductionReason(rawReason);
+  const hasExplicitReductionRequest = targetAim?.intentionalPowerReduction === true && requestedDistancePx < maxDistancePx;
+
+  if(!hasExplicitReductionRequest || !reductionReason){
+    return {
+      baseTargetDistancePx: maxDistancePx,
+      targetDistancePx: maxDistancePx,
+      workingPullDistancePx: maxDistancePx,
+      rangeMode: "max_default",
+      reductionReason: null,
+      reductionReasonSource: rawReason || null,
+      reductionApplied: false,
+    };
+  }
+
+  return {
+    baseTargetDistancePx: maxDistancePx,
+    targetDistancePx: requestedDistancePx,
+    workingPullDistancePx: requestedDistancePx,
+    rangeMode: "reduced_for_reason",
+    reductionReason,
+    reductionReasonSource: rawReason,
+    reductionApplied: true,
+  };
+}
+
 function getAiOscillatingPullDistancePx(session, fallbackDistancePx){
   if(!session) return fallbackDistancePx;
   if(session.stage !== "oscillate"){
@@ -14315,9 +14368,9 @@ function releaseAiLaunchSession(session, reason, now = performance.now()){
   const targetPowerRatio = Number.isFinite(targetAim?.basePowerRatio)
     ? targetAim.basePowerRatio
     : (Number.isFinite(targetAim?.powerRatio) ? targetAim.powerRatio : null);
-  const targetPowerAdjustedRatio = Number.isFinite(targetAim?.powerRatio)
-    ? targetAim.powerRatio
-    : targetPowerRatio;
+  const targetPowerAdjustedRatio = Number.isFinite(session?.targetDistancePx) && MAX_DRAG_DISTANCE > 0
+    ? (session.targetDistancePx / MAX_DRAG_DISTANCE)
+    : (Number.isFinite(targetAim?.powerRatio) ? targetAim.powerRatio : targetPowerRatio);
   const workingPowerRatio = Number.isFinite(session.workingPullDistancePx) && MAX_DRAG_DISTANCE > 0
     ? (session.workingPullDistancePx / MAX_DRAG_DISTANCE)
     : null;
@@ -14351,6 +14404,12 @@ function releaseAiLaunchSession(session, reason, now = performance.now()){
       : null,
     powerAdjustmentReason: targetAim?.powerAdjustmentReason || null,
     rangeMode: session.rangeMode || "max_default",
+    baseTargetPowerRatio: Number.isFinite(session?.baseTargetDistancePx) && MAX_DRAG_DISTANCE > 0
+      ? Number((session.baseTargetDistancePx / MAX_DRAG_DISTANCE).toFixed(4))
+      : null,
+    rangeReductionApplied: session.rangeReductionApplied === true,
+    rangeReductionReason: session.rangeReductionReason || null,
+    rangeReductionReasonSource: session.rangeReductionReasonSource || null,
     workingPowerRatio: Number.isFinite(workingPowerRatio)
       ? Number(workingPowerRatio.toFixed(4))
       : null,
@@ -14416,19 +14475,14 @@ function computeLaunchVectorFromPull(plane, fromX, fromY){
 
 function buildPullPointForAiVector(plane, vx, vy){
   const speed = Math.hypot(vx, vy);
-  const effectiveFlightRangeCells = getEffectiveFlightRangeCells(plane);
-  const flightDistancePx = effectiveFlightRangeCells * CELL_SIZE;
-  const speedPxPerSec = flightDistancePx / FIELD_FLIGHT_DURATION_SEC;
-  if(!Number.isFinite(speed) || !Number.isFinite(speedPxPerSec) || speedPxPerSec <= 0){
+  if(!Number.isFinite(speed) || speed <= 0){
     return { x: plane.x, y: plane.y };
   }
 
-  const scale = Math.max(0, Math.min(1, speed / speedPxPerSec));
-  const dragDistance = scale * MAX_DRAG_DISTANCE;
   const pullAngle = Math.atan2(-vy, -vx);
   return {
-    x: plane.x + Math.cos(pullAngle) * dragDistance,
-    y: plane.y + Math.sin(pullAngle) * dragDistance,
+    x: plane.x + Math.cos(pullAngle) * MAX_DRAG_DISTANCE,
+    y: plane.y + Math.sin(pullAngle) * MAX_DRAG_DISTANCE,
   };
 }
 
@@ -28077,18 +28131,23 @@ function buildAiLaunchSession(plane, vx, vy){
   const idealPullPoint = buildPullPointForAiVector(plane, vx, vy);
   const idealTargetAim = computeAiAimMetricsFromPullPoint(plane, idealPullPoint.x, idealPullPoint.y);
   const targetAim = buildHumanizedAiTargetAim(plane, idealTargetAim);
-  const pullPoint = targetAim
-    ? buildAiCoarsePullPoint(plane, targetAim)
+  const rangeDecision = resolveAiLaunchTargetDistancePx(targetAim, MAX_DRAG_DISTANCE);
+  const resolvedTargetAim = targetAim
+    ? {
+      ...targetAim,
+      powerRatio: MAX_DRAG_DISTANCE > 0 ? (rangeDecision.targetDistancePx / MAX_DRAG_DISTANCE) : 0,
+      pullX: plane.x + Math.cos(targetAim.angleRad) * rangeDecision.targetDistancePx,
+      pullY: plane.y + Math.sin(targetAim.angleRad) * rangeDecision.targetDistancePx,
+    }
+    : null;
+  const pullPoint = resolvedTargetAim
+    ? buildAiCoarsePullPoint(plane, resolvedTargetAim)
     : idealPullPoint;
-  const targetDistancePx = targetAim
-    ? Math.hypot(targetAim.pullX - plane.x, targetAim.pullY - plane.y)
-    : Math.hypot(idealPullPoint.x - plane.x, idealPullPoint.y - plane.y);
-  const workingPullDistancePx = targetAim?.intentionalPowerReduction && Number.isFinite(targetAim?.powerRatio)
-    ? clamp(targetAim.powerRatio * MAX_DRAG_DISTANCE, 0, MAX_DRAG_DISTANCE)
-    : MAX_DRAG_DISTANCE;
-  const rangeMode = workingPullDistancePx < MAX_DRAG_DISTANCE
-    ? "reduced_for_reason"
-    : "max_default";
+  const targetDistancePx = rangeDecision.targetDistancePx;
+  const workingPullDistancePx = rangeDecision.workingPullDistancePx;
+  const rangeMode = rangeDecision.rangeMode;
+  const rangeReductionReason = rangeDecision.reductionReason;
+  const rangeReductionReasonSource = rangeDecision.reductionReasonSource;
   const pullDistanceCells = targetDistancePx / CELL_SIZE;
   const randomInRange = (min, max) => min + Math.random() * Math.max(0, max - min);
   const oscillationDurationMs = randomInRange(AI_LAUNCH_OSCILLATION_MIN_MS, AI_LAUNCH_OSCILLATION_MAX_MS);
@@ -28131,10 +28190,14 @@ function buildAiLaunchSession(plane, vx, vy){
     oscillationDurationMs,
     releaseDueAt,
     previewEndsAt: targetSelectionEndsAt,
-    targetAim,
+    targetAim: resolvedTargetAim,
+    baseTargetDistancePx: rangeDecision.baseTargetDistancePx,
     targetDistancePx,
     workingPullDistancePx,
     rangeMode,
+    rangeReductionApplied: rangeDecision.reductionApplied,
+    rangeReductionReason,
+    rangeReductionReasonSource,
     currentMetrics: null,
     bestCandidate: null,
     releaseTolerance: {
