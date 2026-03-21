@@ -28183,6 +28183,66 @@ function planPathToPoint(plane, tx, ty, options = {}){
         Math.PI / 72,
       ];
       const narrowCorridorScaleFactors = [1, 0.92, 0.84, 0.76];
+      const narrowCorridorNoProgressRejectLimit = 4;
+      const narrowCorridorEquivalentLandingTolerancePx = Math.max(4, CELL_SIZE * 0.12);
+      const narrowCorridorEquivalentImprovementTolerancePx = Math.max(1.5, CELL_SIZE * 0.05);
+      const narrowCorridorEquivalentScaleTolerance = 0.1;
+      let narrowCorridorNoProgressRejectStreak = 0;
+      let narrowCorridorEarlyStopMeta = null;
+      let lastNarrowCorridorRejectedAttempt = null;
+
+      function getNarrowCorridorEquivalentKey(deviation, narrowedScale){
+        const normalizedDeviation = Math.abs(Number.isFinite(deviation) ? deviation : 0);
+        const normalizedScaleBucket = Math.round((Number.isFinite(narrowedScale) ? narrowedScale : 0) / narrowCorridorEquivalentScaleTolerance);
+        return `${normalizedDeviation.toFixed(6)}:${normalizedScaleBucket}`;
+      }
+
+      function buildNarrowCorridorRejectMeta(reasonCode, extra = {}){
+        return {
+          routeClass: "gap",
+          rejectCode: reasonCode,
+          rejectReason: reasonCode,
+          reason: extra.reason || reasonCode,
+          candidateSafetyRiskSummary: "narrow_corridor_rejected",
+          ...extra,
+        };
+      }
+
+      function registerNarrowCorridorNoProgressAttempt(attemptMeta){
+        const isEquivalentToPrevious = lastNarrowCorridorRejectedAttempt
+          && Math.abs((attemptMeta.landingX ?? 0) - (lastNarrowCorridorRejectedAttempt.landingX ?? Number.POSITIVE_INFINITY)) <= narrowCorridorEquivalentLandingTolerancePx
+          && Math.abs((attemptMeta.landingY ?? 0) - (lastNarrowCorridorRejectedAttempt.landingY ?? Number.POSITIVE_INFINITY)) <= narrowCorridorEquivalentLandingTolerancePx
+          && Math.abs((attemptMeta.improvement ?? 0) - (lastNarrowCorridorRejectedAttempt.improvement ?? Number.POSITIVE_INFINITY)) <= narrowCorridorEquivalentImprovementTolerancePx
+          && attemptMeta.equivalentKey === lastNarrowCorridorRejectedAttempt.equivalentKey;
+
+        narrowCorridorNoProgressRejectStreak = isEquivalentToPrevious
+          ? narrowCorridorNoProgressRejectStreak + 1
+          : 1;
+        lastNarrowCorridorRejectedAttempt = attemptMeta;
+
+        if(narrowCorridorNoProgressRejectStreak < narrowCorridorNoProgressRejectLimit){
+          return false;
+        }
+
+        narrowCorridorEarlyStopMeta = {
+          reasonCode: "narrow_corridor_early_stop__repeated_no_noticeable_progress",
+          reason: "repeated_equivalent_no_noticeable_progress",
+          rejectStreak: narrowCorridorNoProgressRejectStreak,
+          rejectLimit: narrowCorridorNoProgressRejectLimit,
+          deviation: attemptMeta.deviation,
+          narrowedScale: attemptMeta.narrowedScale,
+          landingX: Number(attemptMeta.landingX.toFixed(2)),
+          landingY: Number(attemptMeta.landingY.toFixed(2)),
+          improvement: Number(attemptMeta.improvement.toFixed(2)),
+          noticeableThreshold: Number(attemptMeta.noticeableThreshold.toFixed(2)),
+          equivalentKey: attemptMeta.equivalentKey,
+        };
+        bestRejectCode = narrowCorridorEarlyStopMeta.reasonCode;
+        bestRejectMeta = buildNarrowCorridorRejectMeta(narrowCorridorEarlyStopMeta.reasonCode, narrowCorridorEarlyStopMeta);
+        planPathToPoint.lastRejectCode = bestRejectCode;
+        planPathToPoint.lastRejectMeta = bestRejectMeta;
+        return true;
+      }
 
       for(const scaleFactor of narrowCorridorScaleFactors){
         const narrowedScale = Math.max(0.2, Math.min(1, workingScale * scaleFactor));
@@ -28242,8 +28302,21 @@ function planPathToPoint(plane, tx, ty, options = {}){
                   if(tightMove) return tightMove;
                 }
 
+                const noProgressAttemptMeta = {
+                  deviation,
+                  narrowedScale,
+                  landingX,
+                  landingY,
+                  improvement: Number.isFinite(primaryProgressMeta.improvement) ? primaryProgressMeta.improvement : 0,
+                  noticeableThreshold: Number.isFinite(primaryProgressMeta.noticeableThreshold) ? primaryProgressMeta.noticeableThreshold : 0,
+                  equivalentKey: getNarrowCorridorEquivalentKey(deviation, narrowedScale),
+                };
+                const reachedEarlyStop = registerNarrowCorridorNoProgressAttempt(noProgressAttemptMeta);
+
                 logAiDecision("narrow_corridor_rejected", {
-                  reasonCode: "no_noticeable_progress",
+                  reasonCode: reachedEarlyStop
+                    ? "narrow_corridor_early_stop__repeated_no_noticeable_progress"
+                    : "no_noticeable_progress",
                   planeId: plane?.id ?? null,
                   targetX: tx,
                   targetY: ty,
@@ -28254,13 +28327,21 @@ function planPathToPoint(plane, tx, ty, options = {}){
                   noticeableThreshold: Number(primaryProgressMeta.noticeableThreshold.toFixed(2)),
                   reserveThreshold: Number((CELL_SIZE * AI_LANE_PROGRESS_RESERVE_THRESHOLD_SCALE).toFixed(2)),
                   reservePassAllowed: !isCriticalOrEmergencyStage,
+                  equivalentLandingTolerancePx: Number(narrowCorridorEquivalentLandingTolerancePx.toFixed(2)),
+                  equivalentImprovementTolerancePx: Number(narrowCorridorEquivalentImprovementTolerancePx.toFixed(2)),
+                  equivalentKey: noProgressAttemptMeta.equivalentKey,
+                  noProgressRejectStreak: narrowCorridorNoProgressRejectStreak,
+                  noProgressRejectLimit: narrowCorridorNoProgressRejectLimit,
                   colliderCount,
                   routeNearbyColliderCount,
                   ...meta
                 });
+                if(reachedEarlyStop) break;
                 continue;
               }
 
+              narrowCorridorNoProgressRejectStreak = 0;
+              lastNarrowCorridorRejectedAttempt = null;
               considerCandidate(vx, vy, actualAngle, distance * narrowedScale, {
                 lanePassType: "lane_comfort_pass",
                 lanePassReasonCode: "lane_comfort_pass",
@@ -28285,17 +28366,22 @@ function planPathToPoint(plane, tx, ty, options = {}){
               if(comfortMove) return comfortMove;
             }
           }
+          if(narrowCorridorEarlyStopMeta) break;
         }
+        if(narrowCorridorEarlyStopMeta) break;
       }
 
       logAiDecision("narrow_corridor_rejected", {
-        reasonCode: "narrow_corridor_rejected",
+        reasonCode: narrowCorridorEarlyStopMeta?.reasonCode || "narrow_corridor_rejected",
         planeId: plane?.id ?? null,
         targetX: tx,
         targetY: ty,
         distance,
         colliderCount,
         routeNearbyColliderCount,
+        noProgressRejectStreak: narrowCorridorNoProgressRejectStreak,
+        noProgressRejectLimit: narrowCorridorNoProgressRejectLimit,
+        earlyStopReason: narrowCorridorEarlyStopMeta?.reason || null,
         ...meta
       });
     }
