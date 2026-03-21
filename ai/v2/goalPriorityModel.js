@@ -47,9 +47,15 @@
     const flagReturnValue = Number.isFinite(context.flagReturnValue) ? context.flagReturnValue : 0;
     const cargoAlternativeValue = Number.isFinite(context.cargoAlternativeValue) ? context.cargoAlternativeValue : 0;
     const attackAlternativeValue = Number.isFinite(context.attackAlternativeValue) ? context.attackAlternativeValue : 0;
+    const mineRoutePressure = Number.isFinite(context.mineRoutePressure) ? context.mineRoutePressure : 0;
+    const mineDetourValue = Number.isFinite(context.mineDetourValue) ? context.mineDetourValue : 0;
+    const mineDefensiveUrgency = Number.isFinite(context.mineDefensiveUrgency) ? context.mineDefensiveUrgency : 0;
+    const trappedByMines = Boolean(context.trappedByMines);
+    const enemyMineCoverAfterAdvance = Boolean(context.enemyMineCoverAfterAdvance);
 
     const returnBeatsAlternatives = flagReturnValue >= cargoAlternativeValue
       && flagReturnValue >= attackAlternativeValue;
+    const mineAllowsFlagPlan = mineRoutePressure <= 0.32 && !enemyMineCoverAfterAdvance;
     const canOnlyGrabFlag = canReachEnemyFlag && !hasReturnRouteOpportunity;
 
     return {
@@ -69,6 +75,7 @@
           && expectedRetreatChance >= 0.64
           && returnLaneThreat <= 0.45
           && postPickupEscapeValue >= 0.45
+          && mineAllowsFlagPlan
           && returnBeatsAlternatives,
         reason: !shouldUseFlagsMode
           ? "flags_mode_disabled"
@@ -84,24 +91,30 @@
                     ? "return_route_not_viable"
                     : returnLaneThreat > 0.45
                       ? "return_lane_too_hot"
-                      : postPickupEscapeValue < 0.45
-                        ? "safe_escape_too_weak"
-                        : !returnBeatsAlternatives
-                          ? "alternatives_outvalue_flag_plan"
-                          : "flag_return_plan_profitable",
+                      : mineRoutePressure > 0.32
+                        ? "objective_delayed_due_to_mine_control"
+                        : enemyMineCoverAfterAdvance
+                          ? "route_devalued_by_enemy_mine"
+                          : postPickupEscapeValue < 0.45
+                            ? "safe_escape_too_weak"
+                            : !returnBeatsAlternatives
+                              ? "alternatives_outvalue_flag_plan"
+                              : "flag_return_plan_profitable",
       },
       survival_reposition: {
         active: aiAliveCount > 0
-          && (aiAliveCount < enemyAliveCount || (scoreGap < 0 && aiAliveCount <= enemyAliveCount)),
-        reason: aiAliveCount < enemyAliveCount
-          ? "numerical_disadvantage"
-          : "score_lead_needs_preservation",
+          && (aiAliveCount < enemyAliveCount || (scoreGap < 0 && aiAliveCount <= enemyAliveCount) || trappedByMines || mineDefensiveUrgency >= 0.34),
+        reason: trappedByMines || mineDefensiveUrgency >= 0.34
+          ? "reposition_due_to_mine_trap"
+          : aiAliveCount < enemyAliveCount
+            ? "numerical_disadvantage"
+            : "score_lead_needs_preservation",
       },
       cargo_swing_pickup: {
         active: readyCargoCount > 0
           && aiAliveCount > 1
           && !hasStolenBlueFlagCarrier
-          && (scoreGap >= 0 || blueInventoryCount === 0 || cargoAlternativeValue >= flagReturnValue),
+          && (scoreGap >= 0 || blueInventoryCount === 0 || cargoAlternativeValue >= flagReturnValue || mineDetourValue >= 0.24),
         reason: readyCargoCount > 0 ? "cargo_ready_for_swing_turn" : "no_ready_cargo",
       },
       secure_kill: {
