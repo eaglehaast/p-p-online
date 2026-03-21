@@ -17097,7 +17097,12 @@ function getAiTargetPriority(enemy, context){
     && context.stolenBlueFlagCarrier === enemy
   );
   const isNearBlueBase = Boolean(homeBase) && dist(enemy, homeBase) <= ATTACK_RANGE_PX * 1.2;
-  return (isFlagCarrier || isNearBlueBase) ? "critical" : "normal";
+  const isImmediateBlueFlagTheftThreat = Boolean(
+    context?.criticalBlueFlagThreat
+    && context.criticalBlueFlagThreat.enemy === enemy
+    && context.criticalBlueFlagThreat.threatScore >= 0.72
+  );
+  return (isFlagCarrier || isNearBlueBase || isImmediateBlueFlagTheftThreat) ? "critical" : "normal";
 }
 
 function getBluePriorityEnemy(context){
@@ -17139,6 +17144,126 @@ function getCriticalBlueBaseThreat(context){
         distanceToBase,
         hasCleanLineToBase,
       };
+    }
+  }
+
+  return bestThreat;
+}
+
+function getCriticalBlueFlagThreat(context){
+  const enemies = Array.isArray(context?.enemies) ? context.enemies.filter((enemy) => enemy?.isAlive !== false) : [];
+  const aiPlanes = Array.isArray(context?.aiPlanes) ? context.aiPlanes.filter(Boolean) : [];
+  if(!enemies.length) return null;
+
+  const availableBlueFlags = typeof getAvailableFlagsByColor === "function"
+    ? getAvailableFlagsByColor("blue")
+    : [];
+  if(!availableBlueFlags.length) return null;
+
+  const blueFlag = availableBlueFlags[0];
+  const blueFlagAnchor = getFlagAnchor(blueFlag);
+  const greenHomeBase = getBaseAnchor("green");
+  if(!blueFlagAnchor || !greenHomeBase) return null;
+
+  let bestThreat = null;
+  for(const enemy of enemies){
+    const distanceToFlag = dist(enemy, blueFlagAnchor);
+    const hasCleanPathToFlag = isPathClear(enemy.x, enemy.y, blueFlagAnchor.x, blueFlagAnchor.y);
+    if(!hasCleanPathToFlag && distanceToFlag > ATTACK_RANGE_PX * 1.18) continue;
+
+    const continuation = evaluateFlagPickupContinuation(enemy, blueFlagAnchor, {
+      homeBase: greenHomeBase,
+      enemies: aiPlanes,
+      context: {
+        ...context,
+        enemies: aiPlanes,
+      },
+      goalName: "enemy_flag_theft_probe",
+    });
+
+    let bestIntercept = null;
+    for(const plane of aiPlanes){
+      const directIntercept = planPathToPoint(plane, enemy.x, enemy.y, {
+        goalName: "prevent_enemy_flag_pickup",
+        decisionReason: "prevent_enemy_flag_pickup",
+        context,
+      });
+      if(directIntercept){
+        const candidate = {
+          plane,
+          move: directIntercept,
+          totalDist: directIntercept.totalDist,
+          type: "direct",
+        };
+        if(!bestIntercept || candidate.totalDist < bestIntercept.totalDist){
+          bestIntercept = candidate;
+        }
+        continue;
+      }
+
+      const prepIntercept = findSafePreparationMoveForAttack(plane, enemy, {
+        context,
+        decisionReason: "prevent_enemy_flag_pickup_prepare",
+      });
+      if(prepIntercept){
+        const candidate = {
+          plane,
+          move: prepIntercept,
+          totalDist: prepIntercept.totalDist + ATTACK_RANGE_PX * 0.22,
+          type: "prepare",
+        };
+        if(!bestIntercept || candidate.totalDist < bestIntercept.totalDist){
+          bestIntercept = candidate;
+        }
+      }
+    }
+
+    const canInterceptBeforePickup = Boolean(bestIntercept)
+      && Number.isFinite(bestIntercept.totalDist)
+      && bestIntercept.totalDist <= Math.max(distanceToFlag * 0.9, ATTACK_RANGE_PX * 0.72);
+    const interceptUrgencyGap = Number.isFinite(bestIntercept?.totalDist)
+      ? Number((bestIntercept.totalDist - distanceToFlag).toFixed(1))
+      : null;
+    const distancePressure = clamp01(1 - (distanceToFlag / Math.max(ATTACK_RANGE_PX * 1.85, 1)));
+    const pathPressure = hasCleanPathToFlag ? 0.22 : 0;
+    const escapePressure = continuation.hasSafeEscape ? 0.18 : 0;
+    const returnPressure = continuation.hasReturnRoute ? 0.14 : 0;
+    const interceptPressure = canInterceptBeforePickup ? -0.42 : 0.24;
+    const threatScore = clamp01(
+      distancePressure * 0.46
+      + pathPressure
+      + escapePressure
+      + returnPressure
+      + interceptPressure
+    );
+    const isLikelyImmediatePickup = distanceToFlag <= ATTACK_RANGE_PX * 1.05 && hasCleanPathToFlag;
+    const isCritical = threatScore >= 0.72 && isLikelyImmediatePickup && continuation.hasSafeEscape;
+
+    if(!isCritical) continue;
+
+    const threat = {
+      enemy,
+      flag: blueFlag,
+      flagAnchor: blueFlagAnchor,
+      enemyHomeBase: greenHomeBase,
+      distanceToFlag,
+      hasCleanPathToFlag,
+      hasSafePostPickupEscape: continuation.hasSafeEscape,
+      hasSafePostPickupReturn: continuation.hasReturnRoute,
+      continuationStatus: continuation.statusLabel,
+      continuationReason: continuation.statusReason,
+      immediateThreatCount: continuation.immediateThreatCount,
+      immediateThreatNearestDist: continuation.immediateThreatNearestDist,
+      threatScore,
+      canInterceptBeforePickup,
+      interceptUrgencyGap,
+      bestIntercept,
+      isLikelyImmediatePickup,
+      requiresDefensivePriorityBoost: true,
+    };
+
+    if(!bestThreat || threat.threatScore > bestThreat.threatScore || (threat.threatScore === bestThreat.threatScore && threat.distanceToFlag < bestThreat.distanceToFlag)){
+      bestThreat = threat;
     }
   }
 
@@ -17275,8 +17400,9 @@ function evaluateLossCompressionMode(modeContext){
   }
 
   const criticalThreat = modeContext?.criticalBaseThreat || getCriticalBlueBaseThreat(modeContext);
-  const earlyThreat = criticalThreat ? null : getEarlyBaseWarningThreat(modeContext);
-  const forcedDefensiveIntercept = Boolean(criticalThreat || earlyThreat);
+  const criticalFlagThreat = criticalThreat ? null : (modeContext?.criticalBlueFlagThreat || getCriticalBlueFlagThreat(modeContext));
+  const earlyThreat = (criticalThreat || criticalFlagThreat) ? null : getEarlyBaseWarningThreat(modeContext);
+  const forcedDefensiveIntercept = Boolean(criticalThreat || criticalFlagThreat || earlyThreat);
   if(forcedDefensiveIntercept){
     return {
       enabled: false,
@@ -17285,6 +17411,7 @@ function evaluateLossCompressionMode(modeContext){
         aiReadyPlanes: readyAiPlanes.length,
         enemyActivePlanes: activeEnemyPlanes.length,
         hasCriticalThreat: Boolean(criticalThreat),
+        hasCriticalFlagThreat: Boolean(criticalFlagThreat),
         hasEarlyWarningThreat: Boolean(earlyThreat),
       },
     };
@@ -20328,6 +20455,7 @@ function evaluateAiGoalPriorityModel(context){
     blueInventoryCount: Number.isFinite(context?.blueInventoryCount) ? context.blueInventoryCount : 0,
     readyCargoCount,
     hasStolenBlueFlagCarrier: Boolean(context?.stolenBlueFlagCarrier && context.stolenBlueFlagCarrier.color !== "blue"),
+    hasImmediateBlueFlagTheftThreat: Boolean(context?.criticalBlueFlagThreat),
     shouldUseFlagsMode,
     canReachEnemyFlag: flagPressureOpportunity.canReachEnemyFlag,
     hasReturnRouteOpportunity: flagPressureOpportunity.hasReturnRouteOpportunity,
@@ -20366,6 +20494,7 @@ function applyAiGoalSelection(selection, meta = {}){
     toggleEnabled: Boolean(meta.toggleEnabled),
     flagContinuationStatus: meta.flagContinuationStatus || null,
     flagContinuationReason: meta.flagContinuationReason || null,
+    defensiveTriggerReason: meta.defensiveTriggerReason || null,
     evaluatedGoals: Array.isArray(selection.goalClassEvaluations)
       ? selection.goalClassEvaluations.map((entry) => ({
           goalClassName: entry.goalClassName,
@@ -20407,6 +20536,11 @@ function selectAiModeForCurrentTurn(context, options = {}){
     toggleEnabled: AI_USE_GOAL_PRIORITY_MODEL,
     flagContinuationStatus: flagPressureOpportunity.flagContinuationStatus,
     flagContinuationReason: flagPressureOpportunity.flagContinuationReason,
+    defensiveTriggerReason: context?.stolenBlueFlagCarrier && context.stolenBlueFlagCarrier.color !== "blue"
+      ? "enemy_carrying_blue_flag"
+      : context?.criticalBlueFlagThreat
+        ? "enemy_almost_guaranteed_blue_flag_pickup"
+        : null,
   })){
     return aiRoundState.mode;
   }
@@ -20417,6 +20551,9 @@ function selectAiModeForCurrentTurn(context, options = {}){
   if(stolenBlueFlagCarrier && stolenBlueFlagCarrier.color !== "blue"){
     mode = AI_MODES.DEFENSE;
     targetPriorities = ["eliminate_flag_carrier", "protect_home_flag"];
+  } else if(context?.criticalBlueFlagThreat){
+    mode = AI_MODES.DEFENSE;
+    targetPriorities = ["protect_home_flag", "eliminate_flag_carrier", "close_distance"];
   } else if(aiRiskProfile?.profile === "conservative"){
     mode = AI_MODES.ATTRITION;
     targetPriorities = ["force_trade", "attack_enemy_plane", "contest_center"];
@@ -24049,15 +24186,20 @@ function doComputerMoveLegacy(runtimeOptions = {}){
   modeContext.aiRiskProfile = getAiRiskProfile(modeContext);
   logAiDecision("risk_profile", modeContext.aiRiskProfile);
 
-  const forceLegacyModeSelection = runtimeOptions.forceLegacyModeSelection !== false;
-  selectAiModeForCurrentTurn(modeContext, { useLegacyFallback: forceLegacyModeSelection });
-
   const criticalBaseThreat = getCriticalBlueBaseThreat(modeContext);
   modeContext.criticalBaseThreat = criticalBaseThreat;
   const hasCriticalBaseThreat = Boolean(criticalBaseThreat);
-  const earlyBaseWarningThreat = hasCriticalBaseThreat ? null : getEarlyBaseWarningThreat(modeContext);
+  const criticalBlueFlagThreat = (!hasCriticalBaseThreat && shouldUseFlagsMode)
+    ? getCriticalBlueFlagThreat(modeContext)
+    : null;
+  modeContext.criticalBlueFlagThreat = criticalBlueFlagThreat;
+  const hasCriticalBlueFlagThreat = Boolean(criticalBlueFlagThreat);
+  const earlyBaseWarningThreat = (hasCriticalBaseThreat || hasCriticalBlueFlagThreat) ? null : getEarlyBaseWarningThreat(modeContext);
   const hasEarlyBaseWarningThreat = Boolean(earlyBaseWarningThreat);
   modeContext.earlyBaseWarningThreat = earlyBaseWarningThreat;
+
+  const forceLegacyModeSelection = runtimeOptions.forceLegacyModeSelection !== false;
+  selectAiModeForCurrentTurn(modeContext, { useLegacyFallback: forceLegacyModeSelection });
 
   const lossCompressionEvaluation = evaluateLossCompressionMode(modeContext);
   aiRoundState.lossCompressionMode = Boolean(lossCompressionEvaluation?.enabled);
@@ -24144,6 +24286,96 @@ function doComputerMoveLegacy(runtimeOptions = {}){
     }
   }
 
+  if(hasCriticalBlueFlagThreat){
+    const previousMode = aiRoundState.mode;
+    const previousPriorities = Array.isArray(aiRoundState.targetPriorities)
+      ? aiRoundState.targetPriorities.slice()
+      : [];
+    const previousGoal = aiRoundState.currentGoal;
+    aiRoundState.mode = AI_MODES.DEFENSE;
+    aiRoundState.targetPriorities = ["protect_home_flag", "eliminate_flag_carrier", "close_distance"];
+    aiRoundState.currentGoal = "prevent_enemy_flag_pickup";
+
+    const earlyFlagInterceptMove = getEmergencyDefenseMove(modeContext, {
+      enemy: criticalBlueFlagThreat.enemy,
+      base: criticalBlueFlagThreat.flagAnchor,
+      distanceToBase: criticalBlueFlagThreat.distanceToFlag,
+      hasCleanLineToBase: criticalBlueFlagThreat.hasCleanPathToFlag,
+    });
+    if(earlyFlagInterceptMove){
+      aiRoundState.currentGoal = earlyFlagInterceptMove.goalName || "prevent_enemy_flag_pickup";
+      recordDecisionEvent("flag_carrier_priority_emergency_move", {
+        goal: aiRoundState.currentGoal,
+        move: earlyFlagInterceptMove,
+        reasonCodes: ["flag_carrier_priority_override", "enemy_almost_guaranteed_blue_flag_pickup", "clean_intercept_available"],
+      });
+      logAiDecision("flag_carrier_priority_emergency_move", {
+        threatState: "enemy_almost_guaranteed_blue_flag_pickup",
+        enemyId: criticalBlueFlagThreat.enemy?.id ?? null,
+        planeId: earlyFlagInterceptMove.plane?.id ?? null,
+        distanceToFlag: criticalBlueFlagThreat.distanceToFlag,
+        hasCleanPathToFlag: criticalBlueFlagThreat.hasCleanPathToFlag,
+        hasSafePostPickupEscape: criticalBlueFlagThreat.hasSafePostPickupEscape,
+        canInterceptBeforePickup: criticalBlueFlagThreat.canInterceptBeforePickup,
+        threatScore: criticalBlueFlagThreat.threatScore,
+        goal: aiRoundState.currentGoal,
+      });
+      issueAIMoveFromDoComputerMove(modeContext, earlyFlagInterceptMove);
+      return;
+    }
+
+    const earlyFlagHoldMove = getEmergencyBaseHoldPositionMove(modeContext, {
+      enemy: criticalBlueFlagThreat.enemy,
+      base: criticalBlueFlagThreat.flagAnchor,
+      distanceToBase: criticalBlueFlagThreat.distanceToFlag,
+      hasCleanLineToBase: criticalBlueFlagThreat.hasCleanPathToFlag,
+    });
+    if(earlyFlagHoldMove){
+      aiRoundState.currentGoal = earlyFlagHoldMove.goalName || "prevent_enemy_flag_pickup_hold_line";
+      recordDecisionEvent("flag_carrier_priority_hold_position", {
+        goal: aiRoundState.currentGoal,
+        move: earlyFlagHoldMove,
+        reasonCodes: ["flag_carrier_priority_override", "enemy_almost_guaranteed_blue_flag_pickup", "fallback_hold_line"],
+        rejectReasons: ["direct_intercept_unavailable"],
+      });
+      logAiDecision("flag_carrier_priority_hold_position", {
+        threatState: "enemy_almost_guaranteed_blue_flag_pickup",
+        enemyId: criticalBlueFlagThreat.enemy?.id ?? null,
+        planeId: earlyFlagHoldMove.plane?.id ?? null,
+        distanceToFlag: criticalBlueFlagThreat.distanceToFlag,
+        hasCleanPathToFlag: criticalBlueFlagThreat.hasCleanPathToFlag,
+        holdPoint: earlyFlagHoldMove.holdPoint
+          ? {
+              x: Number(earlyFlagHoldMove.holdPoint.x.toFixed(1)),
+              y: Number(earlyFlagHoldMove.holdPoint.y.toFixed(1)),
+            }
+          : null,
+      });
+      issueAIMoveFromDoComputerMove(modeContext, earlyFlagHoldMove);
+      return;
+    }
+
+    recordDecisionEvent("flag_carrier_priority_rejected", {
+      goal: "prevent_enemy_flag_pickup",
+      reasonCodes: ["flag_carrier_priority_override", "enemy_almost_guaranteed_blue_flag_pickup", "search_next_plan"],
+      rejectReasons: ["threat_seen_but_intercept_unavailable"],
+    });
+    logAiDecision("flag_carrier_priority_rejected", {
+      threatState: "threat_seen_but_intercept_unavailable",
+      enemyId: criticalBlueFlagThreat.enemy?.id ?? null,
+      distanceToFlag: criticalBlueFlagThreat.distanceToFlag,
+      hasCleanPathToFlag: criticalBlueFlagThreat.hasCleanPathToFlag,
+      hasSafePostPickupEscape: criticalBlueFlagThreat.hasSafePostPickupEscape,
+      canInterceptBeforePickup: criticalBlueFlagThreat.canInterceptBeforePickup,
+      interceptUrgencyGap: criticalBlueFlagThreat.interceptUrgencyGap,
+      threatScore: criticalBlueFlagThreat.threatScore,
+      reason: "threat_seen_but_intercept_unavailable",
+    });
+    aiRoundState.mode = previousMode;
+    aiRoundState.targetPriorities = previousPriorities;
+    aiRoundState.currentGoal = previousGoal;
+  }
+
   const hasEnemyBlueFlagCarrier = Boolean(
     modeContext.stolenBlueFlagCarrier
     && modeContext.stolenBlueFlagCarrier.color !== "blue"
@@ -24171,6 +24403,7 @@ function doComputerMoveLegacy(runtimeOptions = {}){
         reasonCodes: ["flag_carrier_priority_override", "protect_home_flag", "clean_intercept_available"],
       });
       logAiDecision("flag_carrier_priority_emergency_move", {
+        threatState: "enemy_carrying_blue_flag",
         enemyId: carrierThreat.enemy?.id ?? null,
         planeId: carrierEmergencyMove.plane?.id ?? null,
         distanceToBase: carrierThreat.distanceToBase,
@@ -24191,6 +24424,7 @@ function doComputerMoveLegacy(runtimeOptions = {}){
         rejectReasons: ["direct_intercept_unavailable"],
       });
       logAiDecision("flag_carrier_priority_hold_position", {
+        threatState: "enemy_carrying_blue_flag",
         enemyId: carrierThreat.enemy?.id ?? null,
         planeId: carrierHoldMove.plane?.id ?? null,
         distanceToBase: carrierThreat.distanceToBase,
@@ -24211,6 +24445,7 @@ function doComputerMoveLegacy(runtimeOptions = {}){
         reasonCodes: ["flag_carrier_priority_override", "mode_defense", "intercept_fallback"],
       });
       logAiDecision("flag_carrier_priority_mode_defense", {
+        threatState: "enemy_carrying_blue_flag",
         enemyId: carrierThreat.enemy?.id ?? null,
         planeId: carrierDefenseModeMove.plane?.id ?? null,
         goal: selectedGoal,
@@ -24223,6 +24458,13 @@ function doComputerMoveLegacy(runtimeOptions = {}){
       goal: "eliminate_flag_carrier",
       reasonCodes: ["flag_carrier_priority_override", "defense_chain_failed", "search_next_plan"],
       rejectReasons: ["no_emergency_or_defense_move"],
+    });
+    logAiDecision("flag_carrier_priority_rejected", {
+      threatState: "threat_seen_but_intercept_unavailable",
+      enemyId: carrierThreat.enemy?.id ?? null,
+      distanceToBase: carrierThreat.distanceToBase,
+      hasCleanLineToBase: carrierThreat.hasCleanLineToBase,
+      reason: "threat_seen_but_intercept_unavailable",
     });
   }
 
