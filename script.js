@@ -27730,53 +27730,87 @@ function tryGetAiTacticalMediumScale(baseScale, baseAngle, plane, speedPxPerSec)
   return null;
 }
 
-function countRouteNearbyColliders(x1, y1, x2, y2, radiusPx){
-  if(!Array.isArray(colliders) || colliders.length === 0) return 0;
-  const safeRadius = Number.isFinite(radiusPx) ? Math.max(0, radiusPx) : 0;
-  const segmentDx = x2 - x1;
-  const segmentDy = y2 - y1;
-  const segmentLengthSq = segmentDx * segmentDx + segmentDy * segmentDy;
+function getSegmentIntersectionMeta(ax, ay, bx, by, cx, cy, dx, dy){
+  if(![ax, ay, bx, by, cx, cy, dx, dy].every(Number.isFinite)) return null;
+  const rX = bx - ax;
+  const rY = by - ay;
+  const sX = dx - cx;
+  const sY = dy - cy;
+  const cross = rX * sY - rY * sX;
+  const qpx = cx - ax;
+  const qpy = cy - ay;
+  const epsilon = 1e-6;
 
-  let nearbyCount = 0;
-  for(const collider of colliders){
-    if(!collider) continue;
-    const cx = Number.isFinite(collider.cx) ? collider.cx : null;
-    const cy = Number.isFinite(collider.cy) ? collider.cy : null;
-    if(cx === null || cy === null) continue;
-
-    const halfWidth = Number.isFinite(collider.halfWidth) ? collider.halfWidth : 0;
-    const halfHeight = Number.isFinite(collider.halfHeight) ? collider.halfHeight : 0;
-    const rotation = Number.isFinite(collider.rotation) ? collider.rotation : 0;
-    const cos = Math.cos(rotation);
-    const sin = Math.sin(rotation);
-    const aabbHalfWidth = Math.abs(halfWidth * cos) + Math.abs(halfHeight * sin);
-    const aabbHalfHeight = Math.abs(halfWidth * sin) + Math.abs(halfHeight * cos);
-
-    const expandedLeft = cx - aabbHalfWidth - safeRadius;
-    const expandedRight = cx + aabbHalfWidth + safeRadius;
-    const expandedTop = cy - aabbHalfHeight - safeRadius;
-    const expandedBottom = cy + aabbHalfHeight + safeRadius;
-
-    let closestX;
-    let closestY;
-    if(segmentLengthSq <= 0.000001){
-      closestX = x1;
-      closestY = y1;
-    } else {
-      const t = Math.max(0, Math.min(1, ((cx - x1) * segmentDx + (cy - y1) * segmentDy) / segmentLengthSq));
-      closestX = x1 + segmentDx * t;
-      closestY = y1 + segmentDy * t;
-    }
-
-    if(closestX >= expandedLeft
-      && closestX <= expandedRight
-      && closestY >= expandedTop
-      && closestY <= expandedBottom){
-      nearbyCount += 1;
-    }
+  if(Math.abs(cross) <= epsilon){
+    return null;
   }
 
-  return nearbyCount;
+  const t = (qpx * sY - qpy * sX) / cross;
+  const u = (qpx * rY - qpy * rX) / cross;
+  if(t < -epsilon || t > 1 + epsilon || u < -epsilon || u > 1 + epsilon){
+    return null;
+  }
+
+  return {
+    x: ax + rX * t,
+    y: ay + rY * t,
+    t,
+    u,
+  };
+}
+
+function getRouteColliderClearancePx(x1, y1, x2, y2, collider){
+  if(!collider || ![x1, y1, x2, y2].every(Number.isFinite)) return Number.POSITIVE_INFINITY;
+  if(isPointInsideCollider(x1, y1, collider) || isPointInsideCollider(x2, y2, collider)) return 0;
+
+  const edges = getColliderEdges(collider, 0);
+  if(!Array.isArray(edges) || edges.length === 0) return Number.POSITIVE_INFINITY;
+
+  let minClearance = Number.POSITIVE_INFINITY;
+  for(const edge of edges){
+    if(!edge) continue;
+    const intersection = getSegmentIntersectionMeta(x1, y1, x2, y2, edge.x1, edge.y1, edge.x2, edge.y2);
+    if(intersection) return 0;
+
+    const edgeToRouteA = getDistanceFromPointToSegment(edge.x1, edge.y1, x1, y1, x2, y2);
+    const edgeToRouteB = getDistanceFromPointToSegment(edge.x2, edge.y2, x1, y1, x2, y2);
+    const routeToEdgeA = getDistanceFromPointToSegment(x1, y1, edge.x1, edge.y1, edge.x2, edge.y2);
+    const routeToEdgeB = getDistanceFromPointToSegment(x2, y2, edge.x1, edge.y1, edge.x2, edge.y2);
+    const edgeClearance = Math.min(edgeToRouteA, edgeToRouteB, routeToEdgeA, routeToEdgeB);
+    if(edgeClearance < minClearance) minClearance = edgeClearance;
+  }
+
+  return minClearance;
+}
+
+function getRouteColliderStats(x1, y1, x2, y2, radiusPx){
+  if(!Array.isArray(colliders) || colliders.length === 0){
+    return {
+      nearbyCount: 0,
+      minClearancePx: Number.POSITIVE_INFINITY,
+    };
+  }
+
+  const safeRadius = Number.isFinite(radiusPx) ? Math.max(0, radiusPx) : 0;
+  let nearbyCount = 0;
+  let minClearancePx = Number.POSITIVE_INFINITY;
+
+  for(const collider of colliders){
+    if(!collider) continue;
+    const clearancePx = getRouteColliderClearancePx(x1, y1, x2, y2, collider);
+    if(!Number.isFinite(clearancePx)) continue;
+    if(clearancePx <= safeRadius) nearbyCount += 1;
+    if(clearancePx < minClearancePx) minClearancePx = clearancePx;
+  }
+
+  return {
+    nearbyCount,
+    minClearancePx,
+  };
+}
+
+function countRouteNearbyColliders(x1, y1, x2, y2, radiusPx){
+  return getRouteColliderStats(x1, y1, x2, y2, radiusPx).nearbyCount;
 }
 
 function planPathToPoint(plane, tx, ty, options = {}){
@@ -27970,19 +28004,9 @@ function planPathToPoint(plane, tx, ty, options = {}){
   }
 
   function estimateRouteClearancePx(x1, y1, x2, y2){
-    if(!Array.isArray(colliders) || colliders.length === 0) return CELL_SIZE * 2;
-    let minClearance = Number.POSITIVE_INFINITY;
-    for(const collider of colliders){
-      if(!collider || !Number.isFinite(collider.cx) || !Number.isFinite(collider.cy)) continue;
-      const toRouteDist = getDistanceFromPointToSegment(collider.cx, collider.cy, x1, y1, x2, y2);
-      const halfWidth = Number.isFinite(collider.halfWidth) ? collider.halfWidth : 0;
-      const halfHeight = Number.isFinite(collider.halfHeight) ? collider.halfHeight : 0;
-      const colliderRadius = Math.hypot(halfWidth, halfHeight);
-      const clearance = toRouteDist - colliderRadius;
-      if(clearance < minClearance) minClearance = clearance;
-    }
-    if(!Number.isFinite(minClearance)) return CELL_SIZE * 2;
-    return Math.max(0, minClearance);
+    const routeStats = getRouteColliderStats(x1, y1, x2, y2, 0);
+    if(!Number.isFinite(routeStats.minClearancePx)) return CELL_SIZE * 2;
+    return Math.max(0, routeStats.minClearancePx);
   }
 
   function isCandidateLandingSafe(landingX, landingY){
@@ -28501,15 +28525,41 @@ function planPathToPoint(plane, tx, ty, options = {}){
     }
 
     const colliderCount = Array.isArray(colliders) ? colliders.length : 0;
-    const routeNearbyColliderCount = countRouteNearbyColliders(
+    const routeColliderStats = getRouteColliderStats(
       plane.x,
       plane.y,
       tx,
       ty,
       narrowCorridorRouteProbeRadiusPx
     );
-    const shouldUseNarrowCorridorAttempt = routeNearbyColliderCount >= narrowCorridorRouteNearbyThreshold
-      || colliderCount >= narrowCorridorColliderThreshold;
+    const routeNearbyColliderCount = routeColliderStats.nearbyCount;
+    const minRouteClearancePx = Number.isFinite(routeColliderStats.minClearancePx)
+      ? Math.max(0, routeColliderStats.minClearancePx)
+      : CELL_SIZE * 2;
+    const narrowCorridorMinClearanceThresholdPx = Math.max(CELL_SIZE * 0.55, POINT_RADIUS * 2.4);
+    const narrowCorridorTriggeredBy = [];
+    if(routeNearbyColliderCount >= narrowCorridorRouteNearbyThreshold){
+      narrowCorridorTriggeredBy.push("route_nearby_colliders");
+    }
+    if(colliderCount >= narrowCorridorColliderThreshold){
+      narrowCorridorTriggeredBy.push("dense_map");
+    }
+    if(minRouteClearancePx <= narrowCorridorMinClearanceThresholdPx){
+      narrowCorridorTriggeredBy.push("min_route_clearance");
+    }
+    const shouldUseNarrowCorridorAttempt = narrowCorridorTriggeredBy.length > 0;
+    logAiDecision("narrow_corridor_evaluation", {
+      planeId: plane?.id ?? null,
+      targetX: tx,
+      targetY: ty,
+      colliderCount,
+      routeNearbyColliderCount,
+      minRouteClearancePx: Number(minRouteClearancePx.toFixed(2)),
+      narrowCorridorMinClearanceThresholdPx: Number(narrowCorridorMinClearanceThresholdPx.toFixed(2)),
+      shouldUseNarrowCorridorAttempt,
+      narrowCorridorTriggeredBy,
+      ...meta
+    });
 
     const deterministicDeviationSteps = shouldUseNarrowCorridorAttempt
       ? [
@@ -28696,6 +28746,9 @@ function planPathToPoint(plane, tx, ty, options = {}){
                     noticeableThreshold: Number(reserveProgressMeta.noticeableThreshold.toFixed(2)),
                     colliderCount,
                     routeNearbyColliderCount,
+                    minRouteClearancePx: Number(minRouteClearancePx.toFixed(2)),
+                    narrowCorridorMinClearanceThresholdPx: Number(narrowCorridorMinClearanceThresholdPx.toFixed(2)),
+                    narrowCorridorTriggeredBy,
                     ...meta
                   });
                   if(tightMove) return tightMove;
@@ -28733,6 +28786,9 @@ function planPathToPoint(plane, tx, ty, options = {}){
                   noProgressRejectLimit: narrowCorridorNoProgressRejectLimit,
                   colliderCount,
                   routeNearbyColliderCount,
+                  minRouteClearancePx: Number(minRouteClearancePx.toFixed(2)),
+                  narrowCorridorMinClearanceThresholdPx: Number(narrowCorridorMinClearanceThresholdPx.toFixed(2)),
+                  narrowCorridorTriggeredBy,
                   ...meta
                 });
                 if(reachedEarlyStop) break;
@@ -28760,6 +28816,9 @@ function planPathToPoint(plane, tx, ty, options = {}){
                 noticeableThreshold: Number(primaryProgressMeta.noticeableThreshold.toFixed(2)),
                 colliderCount,
                 routeNearbyColliderCount,
+                minRouteClearancePx: Number(minRouteClearancePx.toFixed(2)),
+                narrowCorridorMinClearanceThresholdPx: Number(narrowCorridorMinClearanceThresholdPx.toFixed(2)),
+                narrowCorridorTriggeredBy,
                 ...meta
               });
               if(comfortMove) return comfortMove;
@@ -28778,6 +28837,9 @@ function planPathToPoint(plane, tx, ty, options = {}){
         distance,
         colliderCount,
         routeNearbyColliderCount,
+        minRouteClearancePx: Number(minRouteClearancePx.toFixed(2)),
+        narrowCorridorMinClearanceThresholdPx: Number(narrowCorridorMinClearanceThresholdPx.toFixed(2)),
+        narrowCorridorTriggeredBy,
         noProgressRejectStreak: narrowCorridorNoProgressRejectStreak,
         noProgressRejectLimit: narrowCorridorNoProgressRejectLimit,
         earlyStopReason: narrowCorridorEarlyStopMeta?.reason || null,
