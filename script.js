@@ -14116,6 +14116,8 @@ const AI_LAUNCH_OSCILLATION_TARGET_WINDOW_LATE_MS = 220;
 const AI_LAUNCH_OSCILLATION_LATE_GRACE_MS = 320;
 const AI_LAUNCH_EARLY_RELEASE_ANGLE_TOLERANCE_DEG = 0.45;
 const AI_LAUNCH_EARLY_RELEASE_POWER_TOLERANCE = 0.01;
+const AI_LAUNCH_EARLY_RELEASE_ARM_DELAY_MS = 180;
+const AI_LAUNCH_OSCILLATION_CENTER_EXIT_ANGLE_DEG = 0.35;
 const AI_LAUNCH_SESSION_ANGLE_TOLERANCE_DEG = 1.2;
 const AI_LAUNCH_SESSION_POWER_TOLERANCE = 0.025;
 const AI_LAUNCH_POWER_SWEEP_MAX_RATIO = 0.045;
@@ -14500,6 +14502,12 @@ function getAiLaunchOscillationTiming(session){
     lateGraceDeadlineMs,
     hardDeadlineMs: AI_LAUNCH_OSCILLATION_MAX_MS,
   };
+}
+
+function isAiLaunchEarlyReleaseArmed(session, now = performance.now()){
+  if(!session) return false;
+  const unlockAt = Number.isFinite(session.earlyReleaseAllowedAfter) ? session.earlyReleaseAllowedAfter : 0;
+  return now >= unlockAt || session.oscillationHasExitedCenter === true;
 }
 
 function isAiLaunchVeryGoodReleaseMatch(session){
@@ -32246,6 +32254,9 @@ function buildAiLaunchSession(plane, vx, vy){
     watchdogTimerId: null,
     powerSweepPhase: Math.random() * Math.PI * 2,
     powerSweepSpeed: randomInRange(AI_LAUNCH_POWER_SWEEP_SPEED_MIN, AI_LAUNCH_POWER_SWEEP_SPEED_MAX),
+    earlyReleaseAllowedAfter: oscillationStartsAt + AI_LAUNCH_EARLY_RELEASE_ARM_DELAY_MS,
+    oscillationHasExitedCenter: false,
+    oscillationCenterExitAngleRad: AI_LAUNCH_OSCILLATION_CENTER_EXIT_ANGLE_DEG * Math.PI / 180,
   };
 }
 
@@ -32400,12 +32411,15 @@ function runAiLaunchSessionTick(now = performance.now()){
     session.stageStartedAt = now;
     session.oscillationStartsAt = now;
     session.releaseDueAt = now + Math.max(0, session.oscillationDurationMs || 0);
+    session.earlyReleaseAllowedAfter = now + AI_LAUNCH_EARLY_RELEASE_ARM_DELAY_MS;
+    session.oscillationHasExitedCenter = false;
     return;
   }
   if(session.stage === "oscillate" && session.pendingReleaseReason === "perfect_tolerance"){
     const oscillationElapsedMs = getAiLaunchOscillationElapsedMs(session, now);
     const timing = getAiLaunchOscillationTiming(session);
-    const canReleaseEarly = isAiLaunchVeryGoodReleaseMatch(session);
+    const earlyReleaseArmed = isAiLaunchEarlyReleaseArmed(session, now);
+    const canReleaseEarly = earlyReleaseArmed && isAiLaunchVeryGoodReleaseMatch(session);
 
     if(oscillationElapsedMs < timing.targetWindowStartMs && !canReleaseEarly){
       return;
@@ -33009,6 +33023,12 @@ function gameDraw(){
       }
       aiLaunchSession.currentMetrics = currentMetrics;
       if(currentMetrics && aiLaunchSession.stage === "oscillate"){
+        const oscillationCenterExitAngleRad = Number.isFinite(aiLaunchSession.oscillationCenterExitAngleRad)
+          ? aiLaunchSession.oscillationCenterExitAngleRad
+          : (AI_LAUNCH_OSCILLATION_CENTER_EXIT_ANGLE_DEG * Math.PI / 180);
+        if(Math.abs(oscillationAngle) >= oscillationCenterExitAngleRad){
+          aiLaunchSession.oscillationHasExitedCenter = true;
+        }
         const angleErrorRad = Math.abs(normalizeAngleDeltaRad(currentMetrics.angleRad - aiLaunchSession.targetAim.angleRad));
         const targetPowerRatio = MAX_DRAG_DISTANCE > 0
           ? (getAiOscillatingPullDistancePx(aiLaunchSession, clampedDist) / MAX_DRAG_DISTANCE)
@@ -33028,6 +33048,7 @@ function gameDraw(){
         const tolerance = aiLaunchSession.releaseTolerance;
         if(
           !aiLaunchSession.pendingReleaseReason
+          && isAiLaunchEarlyReleaseArmed(aiLaunchSession, now)
           && angleErrorRad <= tolerance.angleRad
           && powerError <= tolerance.powerRatio
         ){
