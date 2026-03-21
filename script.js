@@ -20303,6 +20303,99 @@ function getDistanceToSegment(pointX, pointY, startX, startY, endX, endY){
 }
 
 
+function evaluateFlagHomeDefensePressure(context = {}, overrides = {}){
+  const aiPlanes = Array.isArray(overrides?.aiPlanes) ? overrides.aiPlanes.filter(Boolean) : (Array.isArray(context?.aiPlanes) ? context.aiPlanes.filter(Boolean) : []);
+  const enemies = Array.isArray(overrides?.enemies) ? overrides.enemies.filter((enemy) => enemy?.isAlive !== false) : (Array.isArray(context?.enemies) ? context.enemies.filter((enemy) => enemy?.isAlive !== false) : []);
+  const homeBase = overrides?.homeBase || context?.homeBase || getBaseAnchor("blue");
+  const defensivePriority = overrides?.defensivePriority || context?.defensivePriority || getBlueDefensivePriority(context);
+  const immediateThreatMeta = homeBase && typeof getImmediateResponseThreatMeta === "function"
+    ? getImmediateResponseThreatMeta({ ...context, enemies }, homeBase.x, homeBase.y, null)
+    : { count: 0, nearestDist: Number.POSITIVE_INFINITY };
+  const priorityRank = AI_DEFENSIVE_PRIORITY_RANK?.[defensivePriority?.level] || 0;
+  const criticalRank = AI_DEFENSIVE_PRIORITY_RANK?.[AI_DEFENSIVE_PRIORITY_LEVELS.CRITICAL] || 0;
+  const warningRank = AI_DEFENSIVE_PRIORITY_RANK?.[AI_DEFENSIVE_PRIORITY_LEVELS.WARNING] || 0;
+
+  let nearestEnemy = null;
+  let nearestEnemyDistanceToBase = Number.POSITIVE_INFINITY;
+  for(const enemy of enemies){
+    if(!homeBase || !Number.isFinite(enemy?.x) || !Number.isFinite(enemy?.y)) continue;
+    const distanceToBase = Math.hypot(enemy.x - homeBase.x, enemy.y - homeBase.y);
+    if(distanceToBase < nearestEnemyDistanceToBase){
+      nearestEnemyDistanceToBase = distanceToBase;
+      nearestEnemy = enemy;
+    }
+  }
+
+  let bestDefender = null;
+  for(const plane of aiPlanes){
+    if(!plane || flyingPoints.some((fp) => fp.plane === plane)) continue;
+    const distanceToThreat = nearestEnemy && Number.isFinite(nearestEnemy?.x) && Number.isFinite(nearestEnemy?.y)
+      ? Math.hypot((plane.x || 0) - nearestEnemy.x, (plane.y || 0) - nearestEnemy.y)
+      : Number.POSITIVE_INFINITY;
+    const distanceToBase = homeBase ? Math.hypot((plane.x || 0) - homeBase.x, (plane.y || 0) - homeBase.y) : Number.POSITIVE_INFINITY;
+    const pathToBaseClear = homeBase ? isPathClear(plane.x, plane.y, homeBase.x, homeBase.y) : false;
+    const score = Math.min(distanceToThreat, distanceToBase) - (pathToBaseClear ? CELL_SIZE * 0.35 : 0);
+    if(!bestDefender || score < bestDefender.score){
+      bestDefender = { plane, score, distanceToThreat, distanceToBase, pathToBaseClear };
+    }
+  }
+
+  const dangerousEnemyNearBlueBase = Boolean(
+    immediateThreatMeta.count > 0
+    || (Number.isFinite(nearestEnemyDistanceToBase) && nearestEnemyDistanceToBase <= AI_IMMEDIATE_RESPONSE_DANGER_RADIUS * 1.15)
+  );
+  const baseControlLoss = clamp01(
+    (dangerousEnemyNearBlueBase ? 0.32 : 0)
+    + Math.min(0.38, immediateThreatMeta.count * 0.18)
+    + (Number.isFinite(nearestEnemyDistanceToBase)
+      ? Math.max(0, 1 - (nearestEnemyDistanceToBase / Math.max(AI_IMMEDIATE_RESPONSE_DANGER_RADIUS * 1.6, 1))) * 0.42
+      : 0)
+    + (priorityRank >= warningRank ? 0.14 : 0)
+  );
+  const interceptWindowLoss = clamp01(
+    (bestDefender ? 0 : 0.55)
+    + (dangerousEnemyNearBlueBase && !bestDefender ? 0.2 : 0)
+    + (bestDefender && Number.isFinite(bestDefender.distanceToThreat) && Number.isFinite(nearestEnemyDistanceToBase)
+      ? Math.max(0, 1 - (nearestEnemyDistanceToBase / Math.max(bestDefender.distanceToThreat, CELL_SIZE))) * 0.45
+      : 0)
+    + (priorityRank >= criticalRank ? 0.24 : 0)
+  );
+  const hasComfortableDefensiveResponse = Boolean(
+    bestDefender
+    && (bestDefender.pathToBaseClear || (Number.isFinite(bestDefender.distanceToBase) && bestDefender.distanceToBase <= MAX_DRAG_DISTANCE * 1.1))
+    && interceptWindowLoss < 0.52
+  );
+  const pressureScore = clamp01(
+    baseControlLoss * 0.42
+    + interceptWindowLoss * 0.3
+    + (dangerousEnemyNearBlueBase ? 0.16 : 0)
+    + (hasComfortableDefensiveResponse ? 0 : 0.12)
+    + Math.min(0.28, priorityRank * 0.14)
+  );
+  const criticalOrNearCritical = priorityRank >= criticalRank || pressureScore >= 0.7;
+  const pressureLevel = criticalOrNearCritical
+    ? "critical"
+    : pressureScore >= 0.5
+      ? "high"
+      : pressureScore >= 0.28
+        ? "medium"
+        : "low";
+
+  return {
+    baseControlLoss: Number(baseControlLoss.toFixed(4)),
+    dangerousEnemyNearBlueBase,
+    nearestEnemyDistanceToBase: Number.isFinite(nearestEnemyDistanceToBase) ? Number(nearestEnemyDistanceToBase.toFixed(2)) : null,
+    interceptWindowLoss: Number(interceptWindowLoss.toFixed(4)),
+    hasComfortableDefensiveResponse,
+    pressureScore: Number(pressureScore.toFixed(4)),
+    pressureLevel,
+    criticalOrNearCritical,
+    bestDefenderPlaneId: bestDefender?.plane?.id ?? null,
+    bestDefenderDistanceToThreat: Number.isFinite(bestDefender?.distanceToThreat) ? Number(bestDefender.distanceToThreat.toFixed(2)) : null,
+  };
+}
+
+
 function buildSimulatedFlagCarrierFromPickup(plane, pickupPoint){
   if(!plane || !pickupPoint || !Number.isFinite(pickupPoint.x) || !Number.isFinite(pickupPoint.y)) return null;
   return {
@@ -20476,6 +20569,13 @@ function evaluateFlagPressureOpportunity(context = {}){
   const scoreGap = greenScore - blueScore;
   const aiAliveCount = aiPlanes.length;
   const enemyAliveCount = enemies.length;
+  const defensivePriority = context?.defensivePriority || getBlueDefensivePriority(context);
+  const homeBaseThreatMeta = evaluateFlagHomeDefensePressure(context, {
+    aiPlanes,
+    enemies,
+    homeBase,
+    defensivePriority,
+  });
 
   const result = {
     canReachEnemyFlag: false,
@@ -20492,6 +20592,15 @@ function evaluateFlagPressureOpportunity(context = {}){
     attackAlternativeValue: 0,
     flagContinuationStatus: "flag_available_but_escape_unsafe",
     flagContinuationReason: "pickup_without_safe_escape",
+    baseControlLoss: homeBaseThreatMeta.baseControlLoss,
+    dangerousEnemyNearBlueBase: homeBaseThreatMeta.dangerousEnemyNearBlueBase,
+    dangerousEnemyDistanceToBlueBase: homeBaseThreatMeta.nearestEnemyDistanceToBase,
+    interceptWindowLoss: homeBaseThreatMeta.interceptWindowLoss,
+    hasComfortableDefensiveResponse: homeBaseThreatMeta.hasComfortableDefensiveResponse,
+    homeDefensePressure: homeBaseThreatMeta.pressureScore,
+    homeDefensePressureLevel: homeBaseThreatMeta.pressureLevel,
+    criticalHomeDefenseThreat: homeBaseThreatMeta.criticalOrNearCritical,
+    bestDefenderPlaneId: homeBaseThreatMeta.bestDefenderPlaneId,
     bestFlagRoute: null,
   };
 
@@ -20552,7 +20661,22 @@ function evaluateFlagPressureOpportunity(context = {}){
           : 0)
         + (continuation.immediateTrap ? 0.3 : 0)
       );
+      const planeHomeDefensePressure = evaluateFlagHomeDefensePressure(context, {
+        aiPlanes,
+        enemies,
+        homeBase,
+        defensivePriority,
+      });
+      const bestDefenderReservedForHomeBase = planeHomeDefensePressure.bestDefenderPlaneId != null
+        && planeHomeDefensePressure.bestDefenderPlaneId === (plane.id ?? null);
       const travelBurden = clamp01((toFlagDistance + toBaseDistance) / Math.max(MAX_DRAG_DISTANCE * 3.2, 1));
+      const homeDefenseValuePenalty = clamp01(
+        planeHomeDefensePressure.baseControlLoss * 0.46
+        + planeHomeDefensePressure.interceptWindowLoss * 0.32
+        + (bestDefenderReservedForHomeBase ? 0.28 : 0)
+        + (planeHomeDefensePressure.hasComfortableDefensiveResponse ? 0 : 0.14)
+      );
+      const criticalHomeDefensePenalty = planeHomeDefensePressure.criticalOrNearCritical ? 0.58 : 0;
       const expectedRetreatChance = clamp01(
         (continuation.hasSafeEscape ? 0.4 : 0.08)
         + (continuation.hasReturnRoute ? 0.24 : 0)
@@ -20562,12 +20686,15 @@ function evaluateFlagPressureOpportunity(context = {}){
         + (blueInventoryCount >= AI_CARGO_SWITCH_TO_AGGRESSION_ITEMS ? 0.08 : 0)
         - returnLaneThreat * 0.62
         - travelBurden * 0.26
+        - homeDefenseValuePenalty * 0.34
       );
       const flagGrabValue = clamp01(
         (canReachFlag ? 0.42 : 0)
         + (scoreGap <= 0 ? 0.1 : 0)
         + (1 - travelBurden) * 0.18
         - (continuation.hasSafeEscape ? 0 : 0.22)
+        - homeDefenseValuePenalty * 0.52
+        - criticalHomeDefensePenalty
       );
       const postPickupEscapeValue = clamp01(
         (continuation.hasSafeEscape ? 0.46 : 0.02)
@@ -20575,6 +20702,8 @@ function evaluateFlagPressureOpportunity(context = {}){
         + expectedRetreatChance * 0.26
         + (clearReturnLane ? 0.06 : 0)
         - (continuation.immediateTrap ? 0.34 : 0)
+        - homeDefenseValuePenalty * 0.48
+        - criticalHomeDefensePenalty * 0.75
       );
       const flagReturnValue = clamp01(
         (continuation.hasReturnRoute ? 0.28 : 0.08)
@@ -20582,7 +20711,22 @@ function evaluateFlagPressureOpportunity(context = {}){
         + postPickupEscapeValue * 0.18
         + (clearReturnLane ? 0.12 : 0)
         + (scoreGap <= 0 ? 0.08 : 0)
+        - homeDefenseValuePenalty * 0.56
+        - criticalHomeDefensePenalty
       );
+      if(homeDefenseValuePenalty > 0.12){
+        logAiDecision("flag_value_reduced_by_base_threat", {
+          planeId: plane?.id ?? null,
+          flagId: flag?.id ?? null,
+          baseControlLoss: planeHomeDefensePressure.baseControlLoss,
+          dangerousEnemyNearBlueBase: planeHomeDefensePressure.dangerousEnemyNearBlueBase,
+          interceptWindowLoss: planeHomeDefensePressure.interceptWindowLoss,
+          hasComfortableDefensiveResponse: planeHomeDefensePressure.hasComfortableDefensiveResponse,
+          homeDefensePressure: planeHomeDefensePressure.pressureScore,
+          criticalHomeDefenseThreat: planeHomeDefensePressure.criticalOrNearCritical,
+          bestDefenderReservedForHomeBase,
+        });
+      }
       const route = {
         planeId: plane.id ?? null,
         flagId: flag.id ?? null,
@@ -20599,6 +20743,13 @@ function evaluateFlagPressureOpportunity(context = {}){
         immediateThreatNearestDist: continuation.immediateThreatNearestDist,
         returnLaneThreat: Number(returnLaneThreat.toFixed(4)),
         expectedRetreatChance: Number(expectedRetreatChance.toFixed(4)),
+        baseControlLoss: planeHomeDefensePressure.baseControlLoss,
+        dangerousEnemyNearBlueBase: planeHomeDefensePressure.dangerousEnemyNearBlueBase,
+        interceptWindowLoss: planeHomeDefensePressure.interceptWindowLoss,
+        hasComfortableDefensiveResponse: planeHomeDefensePressure.hasComfortableDefensiveResponse,
+        homeDefensePressure: planeHomeDefensePressure.pressureScore,
+        criticalHomeDefenseThreat: planeHomeDefensePressure.criticalOrNearCritical,
+        bestDefenderReservedForHomeBase,
         flagGrabValue: Number(flagGrabValue.toFixed(4)),
         postPickupEscapeValue: Number(postPickupEscapeValue.toFixed(4)),
         flagReturnValue: Number(flagReturnValue.toFixed(4)),
@@ -20623,6 +20774,13 @@ function evaluateFlagPressureOpportunity(context = {}){
     result.flagGrabValue = bestRoute.flagGrabValue;
     result.postPickupEscapeValue = bestRoute.postPickupEscapeValue;
     result.flagReturnValue = bestRoute.flagReturnValue;
+    result.baseControlLoss = bestRoute.baseControlLoss;
+    result.dangerousEnemyNearBlueBase = bestRoute.dangerousEnemyNearBlueBase;
+    result.interceptWindowLoss = bestRoute.interceptWindowLoss;
+    result.hasComfortableDefensiveResponse = bestRoute.hasComfortableDefensiveResponse;
+    result.homeDefensePressure = bestRoute.homeDefensePressure;
+    result.criticalHomeDefenseThreat = bestRoute.criticalHomeDefenseThreat;
+    result.bestDefenderReservedForHomeBase = bestRoute.bestDefenderReservedForHomeBase;
     result.flagContinuationStatus = bestRoute.continuationStatus;
     result.flagContinuationReason = bestRoute.continuationReason;
     result.bestFlagRoute = bestRoute;
@@ -20674,6 +20832,12 @@ function evaluateAiGoalPriorityModel(context){
     hasSafeEscapeOpportunity: flagPressureOpportunity.hasSafeEscapeOpportunity,
     cargoAlternativeValue: flagPressureOpportunity.cargoAlternativeValue,
     attackAlternativeValue: flagPressureOpportunity.attackAlternativeValue,
+    baseControlLoss: flagPressureOpportunity.baseControlLoss,
+    dangerousEnemyNearBlueBase: flagPressureOpportunity.dangerousEnemyNearBlueBase,
+    interceptWindowLoss: flagPressureOpportunity.interceptWindowLoss,
+    hasComfortableDefensiveResponse: flagPressureOpportunity.hasComfortableDefensiveResponse,
+    homeDefensePressure: flagPressureOpportunity.homeDefensePressure,
+    criticalHomeDefenseThreat: flagPressureOpportunity.criticalHomeDefenseThreat,
   });
 }
 
@@ -20788,13 +20952,13 @@ function selectAiModeForCurrentTurn(context, options = {}){
     mode = AI_MODES.ATTRITION;
     targetPriorities = ["force_trade", "attack_enemy_plane", "contest_center"];
   } else if(aiRiskProfile?.profile === "comeback" && shouldUseFlagsMode && availableEnemyFlags.length > 0
-      && flagPressureOpportunity.flagReturnValue >= Math.max(flagPressureOpportunity.cargoAlternativeValue, flagPressureOpportunity.attackAlternativeValue)){
+      && (flagPressureOpportunity.flagReturnValue - flagPressureOpportunity.homeDefensePressure * 0.7) >= Math.max(flagPressureOpportunity.cargoAlternativeValue, flagPressureOpportunity.attackAlternativeValue)){
     mode = AI_MODES.FLAG_PRESSURE;
     targetPriorities = flagPressureOpportunity.hasStrongFlagReturn
       ? ["return_with_flag", "capture_enemy_flag", "high_risk_attack"]
       : ["pickup_cargo", "attack_enemy_plane", "capture_enemy_flag"];
   } else if(hasEnoughResourcesForAggression && shouldUseFlagsMode && availableEnemyFlags.length > 0
-      && flagPressureOpportunity.flagReturnValue >= Math.max(flagPressureOpportunity.cargoAlternativeValue, flagPressureOpportunity.attackAlternativeValue)){
+      && (flagPressureOpportunity.flagReturnValue - flagPressureOpportunity.homeDefensePressure * 0.7) >= Math.max(flagPressureOpportunity.cargoAlternativeValue, flagPressureOpportunity.attackAlternativeValue)){
     mode = AI_MODES.FLAG_PRESSURE;
     targetPriorities = flagPressureOpportunity.hasStrongFlagReturn
       ? ["return_with_flag", "capture_enemy_flag"]
@@ -20803,7 +20967,7 @@ function selectAiModeForCurrentTurn(context, options = {}){
     mode = AI_MODES.ATTRITION;
     targetPriorities = ["attack_enemy_plane", "close_distance"];
   } else if(shouldUseFlagsMode && availableEnemyFlags.length > 0
-      && flagPressureOpportunity.flagReturnValue >= Math.max(flagPressureOpportunity.cargoAlternativeValue, flagPressureOpportunity.attackAlternativeValue)){
+      && (flagPressureOpportunity.flagReturnValue - flagPressureOpportunity.homeDefensePressure * 0.7) >= Math.max(flagPressureOpportunity.cargoAlternativeValue, flagPressureOpportunity.attackAlternativeValue)){
     mode = AI_MODES.FLAG_PRESSURE;
     targetPriorities = flagPressureOpportunity.hasStrongFlagReturn
       ? ["return_with_flag", "capture_enemy_flag"]
@@ -20846,8 +21010,9 @@ function selectAiModeForCurrentTurn(context, options = {}){
   }
   if(mode === AI_MODES.FLAG_PRESSURE){
     const inSafetyWindow = turnAdvanceCount <= AI_FLAG_PRESSURE_SAFETY_WINDOW_TURN_LIMIT;
-    const strongerThanCargo = flagPressureOpportunity.flagReturnValue >= flagPressureOpportunity.cargoAlternativeValue;
-    const strongerThanAttack = flagPressureOpportunity.flagReturnValue >= flagPressureOpportunity.attackAlternativeValue;
+    const defenseAdjustedFlagValue = flagPressureOpportunity.flagReturnValue - flagPressureOpportunity.homeDefensePressure * 0.7;
+    const strongerThanCargo = defenseAdjustedFlagValue >= flagPressureOpportunity.cargoAlternativeValue;
+    const strongerThanAttack = defenseAdjustedFlagValue >= flagPressureOpportunity.attackAlternativeValue;
     const grabOnlyFallback = flagPressureOpportunity.canReachEnemyFlag
       && flagPressureOpportunity.flagGrabValue >= AI_FLAG_PRESSURE_GRAB_ONLY_MAX_VALUE
       && flagPressureOpportunity.flagReturnValue < AI_FLAG_PRESSURE_RETURN_MIN_VALUE;
@@ -20865,6 +21030,22 @@ function selectAiModeForCurrentTurn(context, options = {}){
       targetPriorities = mode === AI_MODES.RESOURCE_FIRST
         ? ["pickup_cargo", "prepare_attack", "capture_enemy_flag"]
         : ["attack_enemy_plane", "close_distance", "capture_enemy_flag"];
+    } else if(flagPressureOpportunity.homeDefensePressure >= 0.55){
+      flagPressureGateReason = "flag_pressure_blocked_by_home_defense";
+      mode = flagPressureOpportunity.cargoAlternativeValue >= flagPressureOpportunity.attackAlternativeValue
+        ? AI_MODES.RESOURCE_FIRST
+        : AI_MODES.ATTRITION;
+      targetPriorities = mode === AI_MODES.RESOURCE_FIRST
+        ? ["pickup_cargo", "prepare_attack", "protect_home_base"]
+        : ["attack_enemy_plane", "close_distance", "protect_home_base"];
+      logAiDecision("flag_pressure_blocked_by_home_defense", {
+        homeDefensePressure: flagPressureOpportunity.homeDefensePressure,
+        baseControlLoss: flagPressureOpportunity.baseControlLoss,
+        dangerousEnemyNearBlueBase: flagPressureOpportunity.dangerousEnemyNearBlueBase,
+        interceptWindowLoss: flagPressureOpportunity.interceptWindowLoss,
+        hasComfortableDefensiveResponse: flagPressureOpportunity.hasComfortableDefensiveResponse,
+        criticalHomeDefenseThreat: flagPressureOpportunity.criticalHomeDefenseThreat,
+      });
     } else if(flagGrabJustified){
       flagPressureGateReason = "flag_available_and_safe_to_continue";
     } else if(grabOnlyFallback){
@@ -20916,6 +21097,12 @@ function selectAiModeForCurrentTurn(context, options = {}){
     hasSafeEscapeOpportunity: flagPressureOpportunity.hasSafeEscapeOpportunity,
     cargoAlternativeValue: flagPressureOpportunity.cargoAlternativeValue,
     attackAlternativeValue: flagPressureOpportunity.attackAlternativeValue,
+    baseControlLoss: flagPressureOpportunity.baseControlLoss,
+    dangerousEnemyNearBlueBase: flagPressureOpportunity.dangerousEnemyNearBlueBase,
+    interceptWindowLoss: flagPressureOpportunity.interceptWindowLoss,
+    hasComfortableDefensiveResponse: flagPressureOpportunity.hasComfortableDefensiveResponse,
+    homeDefensePressure: flagPressureOpportunity.homeDefensePressure,
+    criticalHomeDefenseThreat: flagPressureOpportunity.criticalHomeDefenseThreat,
     bestFlagRoute: flagPressureOpportunity.bestFlagRoute,
     riskProfile: aiRiskProfile?.profile || "balanced",
     priorities: targetPriorities,
@@ -22145,6 +22332,47 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     };
   }
 
+  const flagCaptureDefensePressure = evaluateFlagHomeDefensePressure(options?.context || {}, {
+    aiPlanes: groundedPlanes,
+    enemies: Array.isArray(options?.enemies) ? options.enemies : (Array.isArray(options?.context?.enemies) ? options.context.enemies : []),
+    homeBase: options?.homeBase || getBaseAnchor("blue"),
+    defensivePriority: options?.context?.defensivePriority || null,
+  });
+
+  function applyHomeDefensePenaltyToCandidate(candidate){
+    if(!candidate || typeof candidate !== "object") return candidate;
+    const bestDefenderReservedForHomeBase = flagCaptureDefensePressure.bestDefenderPlaneId != null
+      && flagCaptureDefensePressure.bestDefenderPlaneId === (candidate?.plane?.id ?? null);
+    const immediateResponsePenalty = flagCaptureDefensePressure.dangerousEnemyNearBlueBase ? MAX_DRAG_DISTANCE * 0.18 : 0;
+    const defenderReservationPenalty = bestDefenderReservedForHomeBase ? MAX_DRAG_DISTANCE * 0.24 : 0;
+    const totalDefensePenalty = immediateResponsePenalty + defenderReservationPenalty;
+    if(totalDefensePenalty <= 0) return {
+      ...candidate,
+      bestDefenderReservedForHomeBase,
+      homeDefensePenalty: 0,
+    };
+    if(bestDefenderReservedForHomeBase){
+      logAiDecision("best_defender_reserved_for_home_base", {
+        planeId: candidate?.plane?.id ?? null,
+        flagId: candidate?.flag?.id ?? null,
+        candidateType: candidate?.candidateType || null,
+        homeDefensePressure: flagCaptureDefensePressure.pressureScore,
+      });
+    }
+    return {
+      ...candidate,
+      bestDefenderReservedForHomeBase,
+      homeDefensePenalty: Number(totalDefensePenalty.toFixed(3)),
+      score: (Number.isFinite(candidate?.score) ? candidate.score : Number.POSITIVE_INFINITY) + totalDefensePenalty,
+      normalizedScore: (Number.isFinite(candidate?.normalizedScore) ? candidate.normalizedScore : Number.POSITIVE_INFINITY) + totalDefensePenalty,
+      finalScoreBreakdown: {
+        ...(candidate?.finalScoreBreakdown || {}),
+        homeDefensePenalty: Number(totalDefensePenalty.toFixed(3)),
+        total: Number((((Number.isFinite(candidate?.score) ? candidate.score : Number.POSITIVE_INFINITY) + totalDefensePenalty)).toFixed(3)),
+      },
+    };
+  }
+
   function trimCandidatesByClass(candidates){
     if(!Array.isArray(candidates) || candidates.length === 0) return [];
     const sorted = candidates.slice().sort((a, b) => {
@@ -22582,7 +22810,12 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     ...trimmedDirectCandidates,
     ...trimmedGapCandidates,
     ...trimmedBounceCandidates,
-  ];
+  ].map(applyHomeDefensePenaltyToCandidate).sort((a, b) => {
+    const scoreA = Number.isFinite(a?.score) ? a.score : Number.POSITIVE_INFINITY;
+    const scoreB = Number.isFinite(b?.score) ? b.score : Number.POSITIVE_INFINITY;
+    if(Math.abs(scoreA - scoreB) > 0.000001) return scoreA - scoreB;
+    return `${a?.plane?.id || ""}`.localeCompare(`${b?.plane?.id || ""}`);
+  });
   const continuationDiagnostics = {
     unsafeEscapeCount: combinedCandidates.filter((candidate) => candidate?.continuationMeta?.hasSafeEscape !== true).length,
     safeEscapeWeakReturnCount: combinedCandidates.filter((candidate) => candidate?.continuationMeta?.hasSafeEscape === true && candidate?.continuationMeta?.hasReturnRoute !== true).length,
@@ -22610,6 +22843,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     gapAfterBounceDiagnostics: candidateTypeDiagnostics.gap.afterBounceRejectSamples.slice(-20),
     disproportionateShortlistRejectReasons,
     continuationDiagnostics,
+    flagCaptureDefensePressure,
     zeroCandidateReasons: {
       direct: trimmedDirectCandidates.length > 0 ? [] : [
         ...(Object.keys(candidateTypeDiagnostics.direct.preValidationReasons || {}).length > 0 ? ["filtered_before_validation"] : []),
@@ -22644,6 +22878,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     routeClassRejectDiagnostics,
     disproportionateShortlistRejectReasons,
     continuationDiagnostics,
+    flagCaptureDefensePressure,
     bounceAllowed: allowBounceStage,
     isEmergencyDefenseStage,
     emergencyBounceBlockedDirectOnly: isEmergencyDefenseStage,
@@ -22824,6 +23059,20 @@ function planModeDrivenAiMove(context){
   }
 
   if(aiRoundState.mode === AI_MODES.FLAG_PRESSURE && availableEnemyFlags.length > 0){
+    const flagPressureOpportunity = context?.flagPressureOpportunity || evaluateFlagPressureOpportunity(context);
+    if(flagPressureOpportunity.homeDefensePressure >= 0.55 || flagPressureOpportunity.criticalHomeDefenseThreat){
+      planModeDrivenAiMove.lastRejectReason = "flag_pressure_blocked_by_home_defense";
+      logAiDecision("flag_pressure_blocked_by_home_defense", {
+        source: "plan_mode",
+        homeDefensePressure: flagPressureOpportunity.homeDefensePressure,
+        baseControlLoss: flagPressureOpportunity.baseControlLoss,
+        dangerousEnemyNearBlueBase: flagPressureOpportunity.dangerousEnemyNearBlueBase,
+        interceptWindowLoss: flagPressureOpportunity.interceptWindowLoss,
+        hasComfortableDefensiveResponse: flagPressureOpportunity.hasComfortableDefensiveResponse,
+        criticalHomeDefenseThreat: flagPressureOpportunity.criticalHomeDefenseThreat,
+      });
+      return null;
+    }
     aiRoundState.currentGoal = "capture_enemy_flag";
     let bestCap = null;
     const capCandidates = buildFlagCaptureBaseCandidates(groundedAiPlanes, availableEnemyFlags, {
@@ -23379,6 +23628,9 @@ function getFallbackAiMove(context){
     const capCandidates = buildFlagCaptureBaseCandidates(aiPlanes, availableEnemyFlags, {
       goalName: "capture_enemy_flag",
       decisionReason: "fallback_flag_pressure",
+      homeBase: getBaseAnchor("blue"),
+      enemies,
+      context: modeContext,
     });
     for(const candidate of capCandidates){
       if(compareAiCandidateByScoreAndRotation(candidate, bestCap, ["fallback_flag_pressure", candidate?.flag?.id ?? "", candidate?.candidateType || "direct"])){
