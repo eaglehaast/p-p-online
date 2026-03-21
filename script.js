@@ -14103,12 +14103,104 @@ const AI_LAUNCH_MISS_DISTANCE_START_CELLS = 3;
 const AI_LAUNCH_PREVIEW_ARROW_PULSE_SPEED = 0.012;
 const AI_LAUNCH_PREVIEW_ARROW_PULSE_AMPLITUDE = 0.22;
 const AI_LAUNCH_PREVIEW_TARGET_MARKER_RADIUS = 8;
+const AI_LAUNCH_MAX_FRAME_GAP_MS = 1400;
+const AI_LAUNCH_SESSION_MAX_LIFETIME_MS = AI_LAUNCH_OSCILLATION_MAX_MS + AI_LAUNCH_PULL_BACK_MAX_MS + AI_LAUNCH_FAST_TARGET_SELECTION_MAX_MS + 2500;
+const AI_LAUNCH_STALL_NOTICE_HIDE_MS = 5000;
 
 const aiTelegraphyDebugState = {
   enabled: true,
 };
 
 let aiLaunchSession = null;
+const aiLaunchNoticeState = {
+  layer: null,
+  element: null,
+  hideTimerId: null,
+};
+
+function ensureAiLaunchNoticeElement(){
+  if(aiLaunchNoticeState.element instanceof HTMLElement){
+    return aiLaunchNoticeState.element;
+  }
+  const noticeHost = gsFrameLayer instanceof HTMLElement
+    ? gsFrameLayer
+    : (uiOverlay instanceof HTMLElement ? uiOverlay : overlayContainer);
+  if(!(noticeHost instanceof HTMLElement)) return null;
+
+  let layer = aiLaunchNoticeState.layer;
+  if(!(layer instanceof HTMLElement) || layer.parentElement !== noticeHost){
+    layer = document.createElement("div");
+    layer.className = "ai-launch-warning-layer";
+    Object.assign(layer.style, {
+      position: "absolute",
+      inset: "0",
+      display: "flex",
+      alignItems: "flex-start",
+      justifyContent: "center",
+      pointerEvents: "none",
+      zIndex: "45",
+      paddingTop: "18px",
+    });
+    noticeHost.appendChild(layer);
+    aiLaunchNoticeState.layer = layer;
+  }
+
+  const notice = document.createElement("div");
+  notice.className = "ai-launch-warning";
+  notice.setAttribute("role", "status");
+  notice.setAttribute("aria-live", "polite");
+  notice.setAttribute("aria-hidden", "true");
+  Object.assign(notice.style, {
+    maxWidth: "min(92%, 320px)",
+    padding: "12px 16px",
+    borderRadius: "12px",
+    border: "2px solid rgba(255, 214, 102, 0.95)",
+    background: "rgba(28, 16, 16, 0.92)",
+    color: "#fff4c2",
+    fontFamily: '"Inter", "Arial", sans-serif',
+    fontSize: "14px",
+    lineHeight: "1.35",
+    fontWeight: "700",
+    textAlign: "center",
+    boxShadow: "0 10px 28px rgba(0, 0, 0, 0.38)",
+    opacity: "0",
+    transform: "translateY(-8px)",
+    transition: "opacity 180ms ease, transform 180ms ease",
+  });
+  layer.appendChild(notice);
+  aiLaunchNoticeState.element = notice;
+  return notice;
+}
+
+function clearAiLaunchStallNotice(){
+  if(aiLaunchNoticeState.hideTimerId !== null){
+    clearTimeout(aiLaunchNoticeState.hideTimerId);
+    aiLaunchNoticeState.hideTimerId = null;
+  }
+  const notice = aiLaunchNoticeState.element;
+  if(!(notice instanceof HTMLElement)) return;
+  notice.textContent = "";
+  notice.style.opacity = "0";
+  notice.style.transform = "translateY(-8px)";
+  notice.setAttribute("aria-hidden", "true");
+}
+
+function showAiLaunchStallNotice(message = "Игра была приостановлена отладчиком или выполнение было задержано"){
+  const notice = ensureAiLaunchNoticeElement();
+  if(!(notice instanceof HTMLElement)) return;
+  clearAiLaunchStallNotice();
+  notice.textContent = String(message || "");
+  notice.style.opacity = "1";
+  notice.style.transform = "translateY(0)";
+  notice.setAttribute("aria-hidden", "false");
+  aiLaunchNoticeState.hideTimerId = setTimeout(() => {
+    clearAiLaunchStallNotice();
+  }, AI_LAUNCH_STALL_NOTICE_HIDE_MS);
+}
+
+function resetAiLaunchSessionVisualState(){
+  cleanupHandle();
+}
 
 function normalizeAngleDeltaRad(delta){
   if(!Number.isFinite(delta)) return 0;
@@ -30156,6 +30248,9 @@ function buildAiLaunchSession(plane, vx, vy){
     plane,
     vx,
     vy,
+    createdAt: now,
+    lastTickAt: now,
+    maxLifetimeMs: AI_LAUNCH_SESSION_MAX_LIFETIME_MS,
     stage: telemetryEnabled ? "targeting" : "oscillate",
     stageStartedAt: now,
     pullPoint,
@@ -30198,9 +30293,101 @@ function isAiLaunchPreviewActive(session, now = performance.now()){
   return session.stage === "targeting" && now < (session.previewEndsAt || 0);
 }
 
+function resolveAiLaunchSessionAnomaly(session, anomaly = {}){
+  if(!session) return;
+  const now = Number.isFinite(anomaly.now) ? anomaly.now : performance.now();
+  const frameGapMs = Number.isFinite(anomaly.frameGapMs) ? Math.max(0, Math.round(anomaly.frameGapMs)) : null;
+  const sessionAgeMs = Number.isFinite(anomaly.sessionAgeMs) ? Math.max(0, Math.round(anomaly.sessionAgeMs)) : null;
+  const anomalyKind = anomaly.kind || "unknown_ai_launch_anomaly";
+  const hasCandidate = Boolean(pickAiLaunchCandidateForRelease(session)?.metrics);
+  const recoveryMode = hasCandidate ? "emergency_release" : "fail_safe_turn_advance";
+  const noticeMessage = "Игра была приостановлена отладчиком или выполнение было задержано";
+
+  showAiLaunchStallNotice(noticeMessage);
+  logAiDecision("ai_launch_session_anomaly", {
+    planeId: session?.plane?.id ?? null,
+    stage: session?.stage || null,
+    aiLaunchSessionActive: aiLaunchSession === session,
+    anomalyKind,
+    frameGapMs,
+    sessionAgeMs,
+    maxLifetimeMs: Number.isFinite(session?.maxLifetimeMs) ? Math.round(session.maxLifetimeMs) : null,
+    recoveryMode,
+    noticeShown: true,
+    reasonCode: anomaly.reasonCode || anomalyKind,
+  });
+  recordAiSelfAnalyzerDecision("ai_launch_session_anomaly", {
+    goal: aiRoundState?.currentGoal || "ai_launch_session_anomaly",
+    planeId: session?.plane?.id ?? null,
+    reasonCodes: [
+      "ai_launch_session_active",
+      anomaly.reasonCode || anomalyKind,
+      recoveryMode,
+    ],
+    rejectReasons: [
+      frameGapMs !== null ? `frame_gap_${frameGapMs}ms` : anomalyKind,
+      sessionAgeMs !== null ? `session_age_${sessionAgeMs}ms` : anomalyKind,
+    ],
+    errorMessage: noticeMessage,
+  });
+
+  resetAiLaunchSessionVisualState();
+
+  if(hasCandidate && session?.plane && isPlaneLaunchStateReady(session.plane)){
+    session.stage = "release";
+    session.stageStartedAt = now;
+    session.pendingReleaseReason = anomaly.releaseReason || "external_pause_emergency_release";
+    releaseAiLaunchSession(session, anomaly.releaseReason || "external_pause_emergency_release", now);
+    return;
+  }
+
+  aiLaunchSession = null;
+  if(typeof failSafeAdvanceTurn === "function"){
+    failSafeAdvanceTurn("ai_launch_session_recovery_fail_safe", {
+      goal: aiRoundState?.currentGoal || "ai_launch_session_recovery_fail_safe",
+      planeId: session?.plane?.id ?? null,
+      reasonCodes: [
+        "ai_launch_session_active",
+        anomaly.reasonCode || anomalyKind,
+        "fail_safe_turn_advance",
+      ],
+      rejectReasons: [anomaly.reasonCode || anomalyKind],
+      errorMessage: noticeMessage,
+    });
+  }
+}
+
 function runAiLaunchSessionTick(now = performance.now()){
   if(!aiLaunchSession) return;
   const session = aiLaunchSession;
+  const previousTickAt = Number.isFinite(session.lastTickAt) ? session.lastTickAt : session.createdAt;
+  const frameGapMs = Number.isFinite(previousTickAt) ? (now - previousTickAt) : 0;
+  const sessionAgeMs = Number.isFinite(session.createdAt) ? (now - session.createdAt) : 0;
+  session.lastTickAt = now;
+
+  if(frameGapMs > AI_LAUNCH_MAX_FRAME_GAP_MS){
+    resolveAiLaunchSessionAnomaly(session, {
+      kind: "frame_gap_during_active_launch",
+      reasonCode: "external_pause_detected",
+      frameGapMs,
+      sessionAgeMs,
+      now,
+      releaseReason: "external_pause_emergency_release",
+    });
+    return;
+  }
+
+  if(Number.isFinite(session.maxLifetimeMs) && sessionAgeMs > session.maxLifetimeMs){
+    resolveAiLaunchSessionAnomaly(session, {
+      kind: "launch_session_lifetime_exceeded",
+      reasonCode: "launch_session_too_old",
+      frameGapMs,
+      sessionAgeMs,
+      now,
+      releaseReason: "lifetime_limit_emergency_release",
+    });
+    return;
+  }
 
   if(!session.plane || !isPlaneLaunchStateReady(session.plane)){
     aiLaunchSession = null;
@@ -30300,7 +30487,17 @@ function issueAIMove(plane, vx, vy){
     return releaseResult;
   }
 
+  clearAiLaunchStallNotice();
   aiLaunchSession = buildAiLaunchSession(plane, vx, vy);
+  logAiDecision("ai_launch_session_started", {
+    planeId: plane?.id ?? null,
+    aiLaunchSessionActive: true,
+    maxLifetimeMs: Number.isFinite(aiLaunchSession?.maxLifetimeMs) ? Math.round(aiLaunchSession.maxLifetimeMs) : null,
+    releaseDueAtMs: Number.isFinite(aiLaunchSession?.releaseDueAt) && Number.isFinite(aiLaunchSession?.createdAt)
+      ? Math.max(0, Math.round(aiLaunchSession.releaseDueAt - aiLaunchSession.createdAt))
+      : null,
+    telegraphyEnabled: aiLaunchSession?.telegraphyEnabled !== false,
+  });
   return {
     ok: true,
     reason: "ai_launch_session_started",
@@ -33615,6 +33812,7 @@ function startNewRound(){
   dynamiteState = [];
 
   aiMoveScheduled = false;
+  clearAiLaunchStallNotice();
   gsBoardCanvas.style.display = "block";
   mantisIndicator.style.display = "block";
   goatIndicator.style.display = "block";
