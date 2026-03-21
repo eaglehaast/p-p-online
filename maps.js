@@ -443,7 +443,7 @@ const MAPS = [
     flags: FIVE_BRICKS_FLAGS
   },
   {
-    id: 'clearSky',
+    id: 'weakBrick',
     name: 'Weak brick',
     mode: MAP_RENDER_MODES.DATA,
     tier: 'easy',

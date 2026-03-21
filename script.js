@@ -6969,12 +6969,21 @@ let menuScreenLocked = false;
 
 const GAME_MODE_STORAGE_KEY = 'settings.gameMode';
 const VALID_GAME_MODES = new Set(["hotSeat", "computer", "online"]);
+const CLEAR_SKY_MAP_ID = "clearsky";
+const CLEAR_SKY_MAP_NAME = "clear sky";
+
+function isClearSkyMapMeta(mapLike){
+  const mapId = typeof mapLike?.id === "string" ? mapLike.id.trim().toLowerCase() : "";
+  const mapName = typeof mapLike?.name === "string" ? mapLike.name.trim().toLowerCase() : "";
+  return mapId === CLEAR_SKY_MAP_ID || mapName === CLEAR_SKY_MAP_NAME;
+}
+
 const TEMP_MENU_STARTUP_DEFAULTS = Object.freeze({
   enabled: true,
   mode: "computer",
   ruleset: "advanced",
-  mapId: "clearsky",
-  mapName: "clear sky"
+  mapId: CLEAR_SKY_MAP_ID,
+  mapName: CLEAR_SKY_MAP_NAME
 });
 
 function normalizeGameMode(mode){
@@ -9732,11 +9741,7 @@ function resolveClearSkyMapIndex(){
     return fallbackIndex;
   }
 
-  const byIdOrNameIndex = MAPS.findIndex((map) => {
-    const mapId = typeof map?.id === 'string' ? map.id.trim().toLowerCase() : '';
-    const mapName = typeof map?.name === 'string' ? map.name.trim().toLowerCase() : '';
-    return mapId === TEMP_MENU_STARTUP_DEFAULTS.mapId || mapName === TEMP_MENU_STARTUP_DEFAULTS.mapName;
-  });
+  const byIdOrNameIndex = MAPS.findIndex((map) => isClearSkyMapMeta(map));
 
   return byIdOrNameIndex >= 0 ? byIdOrNameIndex : fallbackIndex;
 }
@@ -17040,7 +17045,7 @@ function getCurrentMapMetaNormalized(){
 
 function isCurrentMapClearSky(){
   const { mapId, mapName } = getCurrentMapMetaNormalized();
-  return mapId === "clearsky" || mapName === "clear sky";
+  return mapId === CLEAR_SKY_MAP_ID || mapName === CLEAR_SKY_MAP_NAME;
 }
 
 function getMirrorPathRatioLimit(options = {}){
@@ -20715,7 +20720,7 @@ function shouldSkipDirectFinisherInOpening(context){
   const mapTier = typeof currentMapMeta?.tier === "string"
     ? currentMapMeta.tier.trim().toLowerCase()
     : (typeof currentMapMeta?.difficulty === "string" ? currentMapMeta.difficulty.trim().toLowerCase() : "");
-  const isClearSkyMap = mapId === "clearsky" || mapName === "clear sky";
+  const isClearSkyMap = mapId === CLEAR_SKY_MAP_ID || mapName === CLEAR_SKY_MAP_NAME;
   const isHighObstacleMap = !isClearSkyMap && (mapTier === "middle" || mapTier === "hard");
   const openingRestrictionTurnLimit = isHighObstacleMap ? 1 : AI_OPENING_CENTER_TURN_LIMIT;
   const scoreLead = blueScore - greenScore;
@@ -32039,11 +32044,7 @@ if(mapEditorResetBtn){
 
 if(mapEditorResetMapBtn instanceof HTMLElement){
   mapEditorResetMapBtn.addEventListener("click", () => {
-    const clearSkyIndex = MAPS.findIndex((map) => {
-      const mapId = typeof map?.id === "string" ? map.id.trim().toLowerCase() : "";
-      const mapName = typeof map?.name === "string" ? map.name.trim().toLowerCase() : "";
-      return mapId === "clearsky" || mapName === "clear sky";
-    });
+    const clearSkyIndex = MAPS.findIndex((map) => isClearSkyMapMeta(map));
     const targetMapIndex = clearSkyIndex >= 0 ? clearSkyIndex : 0;
     setMapIndexAndPersist(targetMapIndex);
     applyCurrentMap();
