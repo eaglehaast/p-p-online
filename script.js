@@ -28625,25 +28625,78 @@ function planPathToPoint(plane, tx, ty, options = {}){
     }
 
     if(shouldUseNarrowCorridorAttempt){
-      const narrowCorridorDeviationSteps = [
-        0,
-        Math.PI / 120,
-        Math.PI / 90,
-        Math.PI / 72,
+      const narrowCorridorSearchPhases = [
+        {
+          phase: "direct_pass",
+          phaseLabel: "direct_pass_through_gap",
+          deviationLayers: [
+            {
+              layer: "micro",
+              steps: [
+                0,
+                Math.PI / 120,
+                Math.PI / 90,
+                Math.PI / 72,
+              ],
+            },
+            {
+              layer: "wide",
+              steps: [
+                Math.PI / 54,
+                Math.PI / 45,
+                Math.PI / 36,
+                Math.PI / 28,
+              ],
+            },
+          ],
+          scaleFactors: [1, 0.92, 0.84, 0.76, 0.68, 0.6, 0.52, 0.44],
+          intermediateDistanceMultiplier: 1,
+        },
+        {
+          phase: "alignment_setup",
+          phaseLabel: "alignment_before_next_move",
+          deviationLayers: [
+            {
+              layer: "micro",
+              steps: [
+                0,
+                Math.PI / 120,
+                Math.PI / 90,
+                Math.PI / 72,
+              ],
+            },
+            {
+              layer: "wide",
+              steps: [
+                Math.PI / 54,
+                Math.PI / 45,
+                Math.PI / 36,
+                Math.PI / 28,
+                Math.PI / 24,
+              ],
+            },
+          ],
+          scaleFactors: [0.92, 0.84, 0.76, 0.68, 0.6, 0.52, 0.44, 0.36],
+          intermediateDistanceMultiplier: 0.86,
+        },
       ];
-      const narrowCorridorScaleFactors = [1, 0.92, 0.84, 0.76];
-      const narrowCorridorNoProgressRejectLimit = 4;
+      const narrowCorridorNoProgressRejectLimit = 6;
       const narrowCorridorEquivalentLandingTolerancePx = Math.max(4, CELL_SIZE * 0.12);
       const narrowCorridorEquivalentImprovementTolerancePx = Math.max(1.5, CELL_SIZE * 0.05);
       const narrowCorridorEquivalentScaleTolerance = 0.1;
+      const narrowCorridorEquivalentPhasePenalty = 17;
       let narrowCorridorNoProgressRejectStreak = 0;
       let narrowCorridorEarlyStopMeta = null;
       let lastNarrowCorridorRejectedAttempt = null;
+      let narrowCorridorAttemptCount = 0;
+      let narrowCorridorAttemptBudgetUsed = 0;
+      let narrowCorridorLastRejectionReason = null;
 
-      function getNarrowCorridorEquivalentKey(deviation, narrowedScale){
+      function getNarrowCorridorEquivalentKey(phase, deviation, narrowedScale){
         const normalizedDeviation = Math.abs(Number.isFinite(deviation) ? deviation : 0);
         const normalizedScaleBucket = Math.round((Number.isFinite(narrowedScale) ? narrowedScale : 0) / narrowCorridorEquivalentScaleTolerance);
-        return `${normalizedDeviation.toFixed(6)}:${normalizedScaleBucket}`;
+        const phaseKey = `${phase || "direct_pass"}`;
+        return `${phaseKey}:${normalizedDeviation.toFixed(6)}:${normalizedScaleBucket}`;
       }
 
       function buildNarrowCorridorRejectMeta(reasonCode, extra = {}){
@@ -28657,19 +28710,34 @@ function planPathToPoint(plane, tx, ty, options = {}){
         };
       }
 
+      function resetNarrowCorridorNoProgressTracking(){
+        narrowCorridorNoProgressRejectStreak = 0;
+        lastNarrowCorridorRejectedAttempt = null;
+      }
+
       function registerNarrowCorridorNoProgressAttempt(attemptMeta){
-        const isEquivalentToPrevious = lastNarrowCorridorRejectedAttempt
-          && Math.abs((attemptMeta.landingX ?? 0) - (lastNarrowCorridorRejectedAttempt.landingX ?? Number.POSITIVE_INFINITY)) <= narrowCorridorEquivalentLandingTolerancePx
-          && Math.abs((attemptMeta.landingY ?? 0) - (lastNarrowCorridorRejectedAttempt.landingY ?? Number.POSITIVE_INFINITY)) <= narrowCorridorEquivalentLandingTolerancePx
-          && Math.abs((attemptMeta.improvement ?? 0) - (lastNarrowCorridorRejectedAttempt.improvement ?? Number.POSITIVE_INFINITY)) <= narrowCorridorEquivalentImprovementTolerancePx
-          && attemptMeta.equivalentKey === lastNarrowCorridorRejectedAttempt.equivalentKey;
+        const previousAttempt = lastNarrowCorridorRejectedAttempt;
+        const isEquivalentToPrevious = previousAttempt
+          && previousAttempt.phase === attemptMeta.phase
+          && previousAttempt.deviationLayer === attemptMeta.deviationLayer
+          && Math.abs((attemptMeta.landingX ?? 0) - (previousAttempt.landingX ?? Number.POSITIVE_INFINITY)) <= narrowCorridorEquivalentLandingTolerancePx
+          && Math.abs((attemptMeta.landingY ?? 0) - (previousAttempt.landingY ?? Number.POSITIVE_INFINITY)) <= narrowCorridorEquivalentLandingTolerancePx
+          && Math.abs((attemptMeta.improvement ?? 0) - (previousAttempt.improvement ?? Number.POSITIVE_INFINITY)) <= narrowCorridorEquivalentImprovementTolerancePx
+          && attemptMeta.equivalentKey === previousAttempt.equivalentKey;
 
         narrowCorridorNoProgressRejectStreak = isEquivalentToPrevious
           ? narrowCorridorNoProgressRejectStreak + 1
           : 1;
         lastNarrowCorridorRejectedAttempt = attemptMeta;
 
-        if(narrowCorridorNoProgressRejectStreak < narrowCorridorNoProgressRejectLimit){
+        const effectiveRejectLimit = attemptMeta.phase === "alignment_setup"
+          ? narrowCorridorNoProgressRejectLimit + 1
+          : narrowCorridorNoProgressRejectLimit;
+        const shouldEarlyStop = isEquivalentToPrevious
+          && narrowCorridorNoProgressRejectStreak >= effectiveRejectLimit
+          && attemptMeta.attemptIndex > narrowCorridorEquivalentPhasePenalty;
+
+        if(!shouldEarlyStop){
           return false;
         }
 
@@ -28677,7 +28745,9 @@ function planPathToPoint(plane, tx, ty, options = {}){
           reasonCode: "narrow_corridor_early_stop__repeated_no_noticeable_progress",
           reason: "repeated_equivalent_no_noticeable_progress",
           rejectStreak: narrowCorridorNoProgressRejectStreak,
-          rejectLimit: narrowCorridorNoProgressRejectLimit,
+          rejectLimit: effectiveRejectLimit,
+          phase: attemptMeta.phase,
+          deviationLayer: attemptMeta.deviationLayer,
           deviation: attemptMeta.deviation,
           narrowedScale: attemptMeta.narrowedScale,
           landingX: Number(attemptMeta.landingX.toFixed(2)),
@@ -28685,6 +28755,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
           improvement: Number(attemptMeta.improvement.toFixed(2)),
           noticeableThreshold: Number(attemptMeta.noticeableThreshold.toFixed(2)),
           equivalentKey: attemptMeta.equivalentKey,
+          attemptIndex: attemptMeta.attemptIndex,
         };
         bestRejectCode = narrowCorridorEarlyStopMeta.reasonCode;
         bestRejectMeta = buildNarrowCorridorRejectMeta(narrowCorridorEarlyStopMeta.reasonCode, narrowCorridorEarlyStopMeta);
@@ -28693,139 +28764,221 @@ function planPathToPoint(plane, tx, ty, options = {}){
         return true;
       }
 
-      for(const scaleFactor of narrowCorridorScaleFactors){
-        const narrowedScale = Math.max(0.2, Math.min(1, workingScale * scaleFactor));
-        for(const step of narrowCorridorDeviationSteps){
-          const deviationsToTry = step === 0 ? [0] : [-step, step];
-          for(const deviation of deviationsToTry){
-            const actualAngle = effectiveBaseAngle + deviation;
-            const vx = Math.cos(actualAngle) * narrowedScale * speedPxPerSec;
-            const vy = Math.sin(actualAngle) * narrowedScale * speedPxPerSec;
-            const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
-            const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
-            if(isPathClear(plane.x, plane.y, landingX, landingY)){
-              const primaryProgressMeta = getAiNoticeableProgressMeta(
-                plane.x,
-                plane.y,
-                landingX,
-                landingY,
-                tx,
-                ty,
-                { thresholdScale: AI_LANE_PROGRESS_PRIMARY_THRESHOLD_SCALE }
-              );
-              if(!primaryProgressMeta.hasNoticeableProgress){
-                const reserveProgressMeta = getAiNoticeableProgressMeta(
+      function logNarrowCorridorDecision(eventName, payload){
+        logAiDecision(eventName, {
+          planeId: plane?.id ?? null,
+          targetX: tx,
+          targetY: ty,
+          distance,
+          colliderCount,
+          routeNearbyColliderCount,
+          minRouteClearancePx: Number(minRouteClearancePx.toFixed(2)),
+          narrowCorridorMinClearanceThresholdPx: Number(narrowCorridorMinClearanceThresholdPx.toFixed(2)),
+          narrowCorridorTriggeredBy,
+          searchBudgetUsed: narrowCorridorAttemptBudgetUsed,
+          ...payload,
+          ...meta
+        });
+      }
+
+      for(const phaseConfig of narrowCorridorSearchPhases){
+        resetNarrowCorridorNoProgressTracking();
+        logNarrowCorridorDecision("narrow_corridor_phase_started", {
+          phase: phaseConfig.phase,
+          phaseLabel: phaseConfig.phaseLabel,
+          phaseReason: phaseConfig.phase === "direct_pass"
+            ? "trying_direct_pass_through_tight_gap"
+            : "trying_alignment_position_before_next_move",
+          scaleFactorCount: phaseConfig.scaleFactors.length,
+          deviationLayerCount: phaseConfig.deviationLayers.length,
+        });
+
+        for(const scaleFactor of phaseConfig.scaleFactors){
+          const narrowedScale = Math.max(0.2, Math.min(1, workingScale * scaleFactor));
+          for(const deviationLayer of phaseConfig.deviationLayers){
+            for(const step of deviationLayer.steps){
+              const deviationsToTry = step === 0 ? [0] : [-step, step];
+              for(const deviation of deviationsToTry){
+                narrowCorridorAttemptCount += 1;
+                narrowCorridorAttemptBudgetUsed = narrowCorridorAttemptCount;
+                const actualAngle = effectiveBaseAngle + deviation;
+                const vx = Math.cos(actualAngle) * narrowedScale * speedPxPerSec;
+                const vy = Math.sin(actualAngle) * narrowedScale * speedPxPerSec;
+                const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
+                const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
+                const baseCandidateDistance = distance * narrowedScale * phaseConfig.intermediateDistanceMultiplier;
+
+                if(!isPathClear(plane.x, plane.y, landingX, landingY)){
+                  narrowCorridorLastRejectionReason = "blocked_segment";
+                  logNarrowCorridorDecision("narrow_corridor_rejected", {
+                    reasonCode: "blocked_segment",
+                    rejectReason: "path_not_clear_for_candidate",
+                    phase: phaseConfig.phase,
+                    phaseLabel: phaseConfig.phaseLabel,
+                    deviationLayer: deviationLayer.layer,
+                    deviation,
+                    narrowedScale: Number(narrowedScale.toFixed(3)),
+                    landingX: Number(landingX.toFixed(2)),
+                    landingY: Number(landingY.toFixed(2)),
+                    searchAttemptIndex: narrowCorridorAttemptCount,
+                    searchBudgetPhase: phaseConfig.phase,
+                  });
+                  continue;
+                }
+
+                const primaryProgressMeta = getAiNoticeableProgressMeta(
                   plane.x,
                   plane.y,
                   landingX,
                   landingY,
                   tx,
                   ty,
-                  { thresholdScale: AI_LANE_PROGRESS_RESERVE_THRESHOLD_SCALE }
+                  { thresholdScale: AI_LANE_PROGRESS_PRIMARY_THRESHOLD_SCALE }
                 );
-                if(!isCriticalOrEmergencyStage && reserveProgressMeta.hasNoticeableProgress){
-                  const laneTightPenalty = CELL_SIZE * AI_LANE_TIGHT_PASS_SCORE_PENALTY_SCALE;
-                  considerCandidate(vx, vy, actualAngle, distance * narrowedScale + laneTightPenalty, {
-                    laneTightPassApplied: true,
-                    laneTightPenalty,
-                    lanePassType: "lane_tight_pass",
-                    lanePassReasonCode: "lane_tight_pass",
-                    candidateClass: "gap",
-                  }, reserveProgressMeta);
-                  const tightMove = bestRoute;
-                  logAiDecision("narrow_corridor_selected", {
-                    reasonCode: "narrow_corridor_selected",
-                    lanePassType: "lane_tight_pass",
-                    planeId: plane?.id ?? null,
-                    targetX: tx,
-                    targetY: ty,
-                    distance,
+                if(!primaryProgressMeta.hasNoticeableProgress){
+                  const reserveProgressMeta = getAiNoticeableProgressMeta(
+                    plane.x,
+                    plane.y,
+                    landingX,
+                    landingY,
+                    tx,
+                    ty,
+                    { thresholdScale: AI_LANE_PROGRESS_RESERVE_THRESHOLD_SCALE }
+                  );
+                  if(!isCriticalOrEmergencyStage && reserveProgressMeta.hasNoticeableProgress){
+                    const laneTightPenalty = CELL_SIZE * AI_LANE_TIGHT_PASS_SCORE_PENALTY_SCALE;
+                    considerCandidate(vx, vy, actualAngle, baseCandidateDistance + laneTightPenalty, {
+                      laneTightPassApplied: true,
+                      laneTightPenalty,
+                      lanePassType: phaseConfig.phase === "alignment_setup"
+                        ? "lane_alignment_tight_pass"
+                        : "lane_tight_pass",
+                      lanePassReasonCode: phaseConfig.phase === "alignment_setup"
+                        ? "lane_alignment_tight_pass"
+                        : "lane_tight_pass",
+                      candidateClass: "gap",
+                      narrowCorridorPhase: phaseConfig.phase,
+                      narrowCorridorDeviationLayer: deviationLayer.layer,
+                    }, reserveProgressMeta);
+                    const tightMove = bestRoute;
+                    logNarrowCorridorDecision("narrow_corridor_selected", {
+                      reasonCode: "narrow_corridor_selected",
+                      selectionReason: "reserve_progress_allows_tight_pass",
+                      lanePassType: phaseConfig.phase === "alignment_setup"
+                        ? "lane_alignment_tight_pass"
+                        : "lane_tight_pass",
+                      phase: phaseConfig.phase,
+                      phaseLabel: phaseConfig.phaseLabel,
+                      deviationLayer: deviationLayer.layer,
+                      deviation,
+                      narrowedScale: Number(narrowedScale.toFixed(3)),
+                      improvement: Number(reserveProgressMeta.improvement.toFixed(2)),
+                      noticeableThreshold: Number(reserveProgressMeta.noticeableThreshold.toFixed(2)),
+                      searchAttemptIndex: narrowCorridorAttemptCount,
+                      searchBudgetPhase: phaseConfig.phase,
+                    });
+                    if(tightMove) return tightMove;
+                  }
+
+                  const noProgressAttemptMeta = {
+                    phase: phaseConfig.phase,
+                    deviationLayer: deviationLayer.layer,
+                    deviation,
+                    narrowedScale,
+                    landingX,
+                    landingY,
+                    improvement: Number.isFinite(primaryProgressMeta.improvement) ? primaryProgressMeta.improvement : 0,
+                    noticeableThreshold: Number.isFinite(primaryProgressMeta.noticeableThreshold) ? primaryProgressMeta.noticeableThreshold : 0,
+                    equivalentKey: getNarrowCorridorEquivalentKey(phaseConfig.phase, deviation, narrowedScale),
+                    attemptIndex: narrowCorridorAttemptCount,
+                  };
+                  const reachedEarlyStop = registerNarrowCorridorNoProgressAttempt(noProgressAttemptMeta);
+                  narrowCorridorLastRejectionReason = reachedEarlyStop
+                    ? "repeated_equivalent_no_noticeable_progress"
+                    : "no_noticeable_progress";
+
+                  logNarrowCorridorDecision("narrow_corridor_rejected", {
+                    reasonCode: reachedEarlyStop
+                      ? "narrow_corridor_early_stop__repeated_no_noticeable_progress"
+                      : "no_noticeable_progress",
+                    rejectReason: reachedEarlyStop
+                      ? "search_stopped_after_many_similar_non_progress_attempts"
+                      : "candidate_did_not_improve_position_enough",
+                    phase: phaseConfig.phase,
+                    phaseLabel: phaseConfig.phaseLabel,
+                    deviationLayer: deviationLayer.layer,
                     deviation,
                     narrowedScale: Number(narrowedScale.toFixed(3)),
-                    improvement: Number(reserveProgressMeta.improvement.toFixed(2)),
-                    noticeableThreshold: Number(reserveProgressMeta.noticeableThreshold.toFixed(2)),
-                    colliderCount,
-                    routeNearbyColliderCount,
-                    minRouteClearancePx: Number(minRouteClearancePx.toFixed(2)),
-                    narrowCorridorMinClearanceThresholdPx: Number(narrowCorridorMinClearanceThresholdPx.toFixed(2)),
-                    narrowCorridorTriggeredBy,
-                    ...meta
+                    improvement: Number(primaryProgressMeta.improvement.toFixed(2)),
+                    noticeableThreshold: Number(primaryProgressMeta.noticeableThreshold.toFixed(2)),
+                    reserveThreshold: Number((CELL_SIZE * AI_LANE_PROGRESS_RESERVE_THRESHOLD_SCALE).toFixed(2)),
+                    reservePassAllowed: !isCriticalOrEmergencyStage,
+                    equivalentLandingTolerancePx: Number(narrowCorridorEquivalentLandingTolerancePx.toFixed(2)),
+                    equivalentImprovementTolerancePx: Number(narrowCorridorEquivalentImprovementTolerancePx.toFixed(2)),
+                    equivalentKey: noProgressAttemptMeta.equivalentKey,
+                    noProgressRejectStreak: narrowCorridorNoProgressRejectStreak,
+                    noProgressRejectLimit: reachedEarlyStop
+                      ? narrowCorridorEarlyStopMeta?.rejectLimit ?? narrowCorridorNoProgressRejectLimit
+                      : (phaseConfig.phase === "alignment_setup"
+                        ? narrowCorridorNoProgressRejectLimit + 1
+                        : narrowCorridorNoProgressRejectLimit),
+                    searchAttemptIndex: narrowCorridorAttemptCount,
+                    searchBudgetPhase: phaseConfig.phase,
                   });
-                  if(tightMove) return tightMove;
+                  if(reachedEarlyStop) break;
+                  continue;
                 }
 
-                const noProgressAttemptMeta = {
-                  deviation,
-                  narrowedScale,
-                  landingX,
-                  landingY,
-                  improvement: Number.isFinite(primaryProgressMeta.improvement) ? primaryProgressMeta.improvement : 0,
-                  noticeableThreshold: Number.isFinite(primaryProgressMeta.noticeableThreshold) ? primaryProgressMeta.noticeableThreshold : 0,
-                  equivalentKey: getNarrowCorridorEquivalentKey(deviation, narrowedScale),
-                };
-                const reachedEarlyStop = registerNarrowCorridorNoProgressAttempt(noProgressAttemptMeta);
-
-                logAiDecision("narrow_corridor_rejected", {
-                  reasonCode: reachedEarlyStop
-                    ? "narrow_corridor_early_stop__repeated_no_noticeable_progress"
-                    : "no_noticeable_progress",
-                  planeId: plane?.id ?? null,
-                  targetX: tx,
-                  targetY: ty,
-                  distance,
+                resetNarrowCorridorNoProgressTracking();
+                considerCandidate(vx, vy, actualAngle, baseCandidateDistance, {
+                  lanePassType: phaseConfig.phase === "alignment_setup"
+                    ? "lane_alignment_pass"
+                    : "lane_comfort_pass",
+                  lanePassReasonCode: phaseConfig.phase === "alignment_setup"
+                    ? "lane_alignment_pass"
+                    : "lane_comfort_pass",
+                  candidateClass: "gap",
+                  narrowCorridorPhase: phaseConfig.phase,
+                  narrowCorridorDeviationLayer: deviationLayer.layer,
+                }, primaryProgressMeta);
+                const comfortMove = bestRoute;
+                logNarrowCorridorDecision("narrow_corridor_selected", {
+                  reasonCode: "narrow_corridor_selected",
+                  selectionReason: phaseConfig.phase === "alignment_setup"
+                    ? "alignment_position_found"
+                    : "direct_pass_found",
+                  lanePassType: phaseConfig.phase === "alignment_setup"
+                    ? "lane_alignment_pass"
+                    : "lane_comfort_pass",
+                  phase: phaseConfig.phase,
+                  phaseLabel: phaseConfig.phaseLabel,
+                  deviationLayer: deviationLayer.layer,
                   deviation,
                   narrowedScale: Number(narrowedScale.toFixed(3)),
                   improvement: Number(primaryProgressMeta.improvement.toFixed(2)),
                   noticeableThreshold: Number(primaryProgressMeta.noticeableThreshold.toFixed(2)),
-                  reserveThreshold: Number((CELL_SIZE * AI_LANE_PROGRESS_RESERVE_THRESHOLD_SCALE).toFixed(2)),
-                  reservePassAllowed: !isCriticalOrEmergencyStage,
-                  equivalentLandingTolerancePx: Number(narrowCorridorEquivalentLandingTolerancePx.toFixed(2)),
-                  equivalentImprovementTolerancePx: Number(narrowCorridorEquivalentImprovementTolerancePx.toFixed(2)),
-                  equivalentKey: noProgressAttemptMeta.equivalentKey,
-                  noProgressRejectStreak: narrowCorridorNoProgressRejectStreak,
-                  noProgressRejectLimit: narrowCorridorNoProgressRejectLimit,
-                  colliderCount,
-                  routeNearbyColliderCount,
-                  minRouteClearancePx: Number(minRouteClearancePx.toFixed(2)),
-                  narrowCorridorMinClearanceThresholdPx: Number(narrowCorridorMinClearanceThresholdPx.toFixed(2)),
-                  narrowCorridorTriggeredBy,
-                  ...meta
+                  searchAttemptIndex: narrowCorridorAttemptCount,
+                  searchBudgetPhase: phaseConfig.phase,
                 });
-                if(reachedEarlyStop) break;
-                continue;
+                if(comfortMove) return comfortMove;
               }
-
-              narrowCorridorNoProgressRejectStreak = 0;
-              lastNarrowCorridorRejectedAttempt = null;
-              considerCandidate(vx, vy, actualAngle, distance * narrowedScale, {
-                lanePassType: "lane_comfort_pass",
-                lanePassReasonCode: "lane_comfort_pass",
-                candidateClass: "gap",
-              }, primaryProgressMeta);
-              const comfortMove = bestRoute;
-              logAiDecision("narrow_corridor_selected", {
-                reasonCode: "narrow_corridor_selected",
-                lanePassType: "lane_comfort_pass",
-                planeId: plane?.id ?? null,
-                targetX: tx,
-                targetY: ty,
-                distance,
-                deviation,
-                narrowedScale: Number(narrowedScale.toFixed(3)),
-                improvement: Number(primaryProgressMeta.improvement.toFixed(2)),
-                noticeableThreshold: Number(primaryProgressMeta.noticeableThreshold.toFixed(2)),
-                colliderCount,
-                routeNearbyColliderCount,
-                minRouteClearancePx: Number(minRouteClearancePx.toFixed(2)),
-                narrowCorridorMinClearanceThresholdPx: Number(narrowCorridorMinClearanceThresholdPx.toFixed(2)),
-                narrowCorridorTriggeredBy,
-                ...meta
-              });
-              if(comfortMove) return comfortMove;
+              if(narrowCorridorEarlyStopMeta) break;
             }
+            if(narrowCorridorEarlyStopMeta) break;
           }
           if(narrowCorridorEarlyStopMeta) break;
         }
+
+        logNarrowCorridorDecision("narrow_corridor_phase_completed", {
+          phase: phaseConfig.phase,
+          phaseLabel: phaseConfig.phaseLabel,
+          phaseOutcome: narrowCorridorEarlyStopMeta?.phase === phaseConfig.phase
+            ? "stopped_early"
+            : "exhausted_without_selection",
+          phaseRejectReason: narrowCorridorEarlyStopMeta?.phase === phaseConfig.phase
+            ? narrowCorridorEarlyStopMeta.reason
+            : narrowCorridorLastRejectionReason,
+        });
         if(narrowCorridorEarlyStopMeta) break;
       }
 
@@ -28841,8 +28994,12 @@ function planPathToPoint(plane, tx, ty, options = {}){
         narrowCorridorMinClearanceThresholdPx: Number(narrowCorridorMinClearanceThresholdPx.toFixed(2)),
         narrowCorridorTriggeredBy,
         noProgressRejectStreak: narrowCorridorNoProgressRejectStreak,
-        noProgressRejectLimit: narrowCorridorNoProgressRejectLimit,
+        noProgressRejectLimit: narrowCorridorEarlyStopMeta?.rejectLimit || narrowCorridorNoProgressRejectLimit,
         earlyStopReason: narrowCorridorEarlyStopMeta?.reason || null,
+        earlyStopPhase: narrowCorridorEarlyStopMeta?.phase || null,
+        lastRejectReason: narrowCorridorLastRejectionReason,
+        searchBudgetUsed: narrowCorridorAttemptBudgetUsed,
+        phaseCount: narrowCorridorSearchPhases.length,
         ...meta
       });
     }
