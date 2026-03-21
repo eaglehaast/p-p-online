@@ -15499,8 +15499,62 @@ function findActualPlaneById(planeId, preferredPlanes = null){
   return getActualPlanesList(preferredPlanes).find((candidate) => candidate?.id === planeId) || null;
 }
 
+const AI_DECISION_DEBUG_FLAGS = Object.freeze({
+  routePlanning: false,
+  candidateScoring: false,
+  fallbackReplan: false,
+});
+
+const AI_DECISION_DEBUG_EVENT_FLAGS = Object.freeze({
+  plan_path_range_profile: "routePlanning",
+  fallback_safe_angle_candidate_scored: "candidateScoring",
+  fallback_attack_candidate_scored: "candidateScoring",
+  final_compared: "candidateScoring",
+  fallback_replan_candidate_missing: "fallbackReplan",
+  fallback_replan_candidate_invalid: "fallbackReplan",
+  fallback_replan_execution_started: "fallbackReplan",
+  fallback_replan_execution_committed: "fallbackReplan",
+  stale_target_replanned: "fallbackReplan",
+});
+
+const AI_DECISION_ENRICHED_EVENT_SET = new Set([
+  "fallback_safe_angle_selected",
+  "fallback_safe_angle_rejected",
+  "fallback_selected_candidate_class",
+  "base_candidate_selected",
+  "flag_capture_candidate_summary",
+  "final_compared_direct_low_passability_win",
+  "fallback_move",
+  "super_reserve_move",
+  "forced_progress_move",
+  "ai_no_move_fail_safe",
+  "fallback_replan_exhausted",
+  "direct_finisher",
+  "role_move",
+  "mode_move",
+]);
+
+function shouldEmitAiDecision(reason, payload = {}){
+  const debugFlagName = AI_DECISION_DEBUG_EVENT_FLAGS[reason];
+  if(debugFlagName){
+    return AI_DECISION_DEBUG_FLAGS[debugFlagName] === true;
+  }
+
+  if(reason === "fallback_safe_angle_rejected"){
+    return payload?.reasonCode === "weak_candidates_only";
+  }
+
+  return true;
+}
+
+function shouldEnrichAiDecision(reason){
+  return AI_DECISION_ENRICHED_EVENT_SET.has(reason);
+}
+
 function logAiDecision(reason, details = {}){
   const payload = details && typeof details === "object" ? { ...details } : {};
+  if(!shouldEmitAiDecision(reason, payload)) return;
+
   const reservedHomeDefenderIds = Array.isArray(payload.reservedHomeDefenderIds)
     ? payload.reservedHomeDefenderIds.filter((id) => id != null)
     : [];
@@ -15510,18 +15564,13 @@ function logAiDecision(reason, details = {}){
 
   let adjustedScore = Number.isFinite(payload.adjustedScore) ? payload.adjustedScore : null;
   let scoringExplanation = null;
-  if(adjustedScore === null && Number.isFinite(rawDistance) && planeId){
+  if(shouldEnrichAiDecision(reason) && Number.isFinite(rawDistance) && planeId){
     const plane = payload.plane || findActualPlaneById(planeId);
     if(plane){
       scoringExplanation = scoreMoveForPlane(rawDistance, plane);
-      adjustedScore = scoringExplanation.finalScore;
-    }
-  }
-
-  if(!scoringExplanation && Number.isFinite(rawDistance) && planeId){
-    const plane = payload.plane || findActualPlaneById(planeId);
-    if(plane){
-      scoringExplanation = scoreMoveForPlane(rawDistance, plane);
+      if(adjustedScore === null && Number.isFinite(scoringExplanation?.finalScore)){
+        adjustedScore = scoringExplanation.finalScore;
+      }
     }
   }
 
