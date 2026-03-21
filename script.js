@@ -9322,6 +9322,23 @@ const MAP_SPRITE_BASE_SIZES = Object.freeze({
 });
 const MAP_RENDER_MODES = mapDataBridge.MAP_RENDER_MODES || { DATA: 'data' };
 const MAPS = Array.isArray(mapDataBridge.MAPS) ? mapDataBridge.MAPS : [];
+const MAPS_READY = mapDataBridge.MAPS_READY;
+
+async function ensureMapsDataReady(){
+  if(MAPS.length > 0){
+    return MAPS;
+  }
+
+  if(MAPS_READY && typeof MAPS_READY.then === 'function'){
+    try {
+      await MAPS_READY;
+    } catch(error){
+      console.warn('[maps] failed while waiting for map data', error);
+    }
+  }
+
+  return MAPS;
+}
 
 const MAP_RENDERERS = {
   SPRITES: 'sprites'
@@ -9603,12 +9620,14 @@ function serializeCurrentMapState(options = {}){
   };
 }
 
-const RANDOM_MAP_SENTINEL_INDEX = MAPS.findIndex(map => map?.name?.toLowerCase?.() === 'random map');
+function getRandomMapSentinelIndex(){
+  return MAPS.findIndex(map => map?.name?.toLowerCase?.() === 'random map');
+}
 
 function getPlayableMapIndices(){
   return MAPS
     .map((_, index) => index)
-    .filter(index => index !== RANDOM_MAP_SENTINEL_INDEX);
+    .filter(index => index !== getRandomMapSentinelIndex());
 }
 
 let randomMapPairSequenceNumber = null;
@@ -9644,7 +9663,7 @@ function getPlayableMapIndicesForRound(roundNumber = 1){
 
 function resolveMapIndexForGameplay(upcomingRoundNumber = roundNumber + 1){
   const clamped = clampMapIndex(settings.mapIndex);
-  if(clamped === RANDOM_MAP_SENTINEL_INDEX){
+  if(clamped === getRandomMapSentinelIndex()){
     return getRandomPlayableMapIndex(upcomingRoundNumber);
   }
   return clamped;
@@ -13625,7 +13644,7 @@ function resetGame(options = {}){
   globalFrame=0;
   flyingPoints= [];
   if(shouldAutoRandomizeMap()){
-    if(settings.mapIndex !== RANDOM_MAP_SENTINEL_INDEX){
+    if(settings.mapIndex !== getRandomMapSentinelIndex()){
       setMapIndexAndPersist(getRandomPlayableMapIndex());
     }
   }
@@ -14022,6 +14041,13 @@ async function handlePlayStart(){
     if (loadingOverlay && isPreloadVisible) {
       hideLoadingOverlay();
     }
+  }
+
+  await ensureMapsDataReady();
+  if(!MAPS.length){
+    console.error('[maps] match start aborted: no maps loaded', { manifestPath: mapDataBridge.MAPS_MANIFEST_PATH || null });
+    alert('Не удалось загрузить карты из папки ui_gamescreen/maps. Проверьте manifest.json и JSON-файлы карт.');
+    return false;
   }
 
   restoreGameBackgroundAfterMenu();
@@ -34278,7 +34304,7 @@ yesBtn.addEventListener("click", () => {
     resetInventoryState();
     resetInventoryInteractionState();
     if(shouldAutoRandomizeMap()){
-      if(settings.mapIndex !== RANDOM_MAP_SENTINEL_INDEX){
+      if(settings.mapIndex !== getRandomMapSentinelIndex()){
         setMapIndexAndPersist(getRandomPlayableMapIndex());
       }
     }
@@ -34412,7 +34438,7 @@ function startNewRound(){
   clearAiPostInventoryLaunchTimeout("start_new_round");
   const shouldRandomize = !suppressAutoRandomMapForNextRound && shouldAutoRandomizeMap() && roundNumber > 0;
   if(shouldRandomize){
-    if(settings.mapIndex !== RANDOM_MAP_SENTINEL_INDEX){
+    if(settings.mapIndex !== getRandomMapSentinelIndex()){
       setMapIndexAndPersist(getRandomPlayableMapIndex());
     }
   }
