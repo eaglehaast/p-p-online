@@ -35,6 +35,8 @@ const extracted = [
   'getPlaneActiveTurnBuffs',
   'planeHasActiveTurnBuff',
   'getPlaneDangerGeometry',
+  'getDistanceFromPointToSegment',
+  'getMineThreatMetaForSegment',
   'handleMineForPlane',
 ].map((name) => extractFunctionSource(source, name)).join('\n\n');
 
@@ -60,6 +62,7 @@ const context = {
   markPlaneKillPointAwarded: () => {},
   awardPoint: () => {},
   checkVictory: () => {},
+  dropActiveFlagFromPlane: () => {},
   eliminatePlane: (plane) => { eliminationLog.push(plane.color); plane.wasEliminated = true; },
   spawnExplosionForPlane: (_, x, y) => { explosionLog.push({ x, y }); },
   advanceTurn: () => {},

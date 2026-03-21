@@ -15969,6 +15969,73 @@ function getDistanceFromPointToSegment(pointX, pointY, x1, y1, x2, y2){
   return Math.hypot(pointX - closestX, pointY - closestY);
 }
 
+function getMineThreatMetaForSegment(startX, startY, endX, endY, plane = null){
+  if(![startX, startY, endX, endY].every(Number.isFinite)){
+    return {
+      count: 0,
+      nearestDist: Number.POSITIVE_INFINITY,
+      pathHit: false,
+      landingThreat: false,
+      reason: null,
+      triggeringMine: null,
+    };
+  }
+
+  const dangerRadius = plane ? getPlaneDangerGeometry(plane).radius : 0;
+  const mineTriggerRadius = Math.max(MINE_TRIGGER_RADIUS, dangerRadius);
+  const isLandingPointOnlyCheck = Math.hypot(endX - startX, endY - startY) <= 0.0001;
+  let count = 0;
+  let nearestDist = Number.POSITIVE_INFINITY;
+  let pathHit = false;
+  let landingThreat = false;
+  let reason = null;
+  let triggeringMine = null;
+
+  for(const mine of Array.isArray(mines) ? mines : []){
+    if(!mine || !Number.isFinite(mine.x) || !Number.isFinite(mine.y)) continue;
+
+    const pathDistance = getDistanceFromPointToSegment(mine.x, mine.y, startX, startY, endX, endY);
+    const landingDistance = Math.hypot(endX - mine.x, endY - mine.y);
+    const crossesPath = pathDistance <= mineTriggerRadius;
+    const blocksLanding = landingDistance <= mineTriggerRadius;
+
+    if(!crossesPath && !blocksLanding) continue;
+
+    count += 1;
+    const effectiveNearestDist = Math.min(pathDistance, landingDistance);
+    if(effectiveNearestDist < nearestDist) nearestDist = effectiveNearestDist;
+
+    if(!triggeringMine || effectiveNearestDist < nearestDist + 0.0001){
+      triggeringMine = mine;
+    }
+
+    if(crossesPath && !pathHit){
+      pathHit = true;
+      reason = isLandingPointOnlyCheck ? "landing_blocked_by_mine" : "path_crosses_mine";
+    }
+    if(blocksLanding){
+      landingThreat = true;
+      if(!reason || !pathHit || isLandingPointOnlyCheck){
+        reason = "landing_blocked_by_mine";
+      }
+    }
+  }
+
+  if(pathHit && landingThreat && !isLandingPointOnlyCheck){
+    reason = "path_crosses_mine";
+  }
+
+  return {
+    count,
+    nearestDist,
+    pathHit,
+    landingThreat,
+    reason,
+    triggeringMine,
+    triggerRadius: mineTriggerRadius,
+  };
+}
+
 function getAiMultiKillPotentialContext({ plane, enemy, enemies, lineEndX, lineEndY }){
   if(!plane || !enemy || !Array.isArray(enemies)){
     return {
@@ -19553,6 +19620,15 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       };
     }
 
+    const mineThreatMeta = getMineThreatMetaForSegment(plane.x, plane.y, landingPoint.x, landingPoint.y, plane);
+    if(mineThreatMeta.pathHit || mineThreatMeta.landingThreat){
+      return {
+        ok: false,
+        reason: mineThreatMeta.reason || (mineThreatMeta.landingThreat ? "landing_blocked_by_mine" : "path_crosses_mine"),
+        mineThreatMeta,
+      };
+    }
+
     return {
       ok: true,
       reason: "ok",
@@ -22901,21 +22977,40 @@ function planModeDrivenAiMove(context){
 
 function getImmediateResponseThreatMeta(context, landingX, landingY, primaryEnemy = null){
   if(!context || !Number.isFinite(landingX) || !Number.isFinite(landingY)){
-    return { count: 0, nearestDist: Number.POSITIVE_INFINITY };
+    return {
+      count: 0,
+      nearestDist: Number.POSITIVE_INFINITY,
+      enemyCount: 0,
+      mineCount: 0,
+      reasonCodes: [],
+    };
   }
 
   let count = 0;
   let nearestDist = Number.POSITIVE_INFINITY;
+  let enemyCount = 0;
   for(const enemy of context.enemies || []){
     if(!enemy?.isAlive || enemy === primaryEnemy) continue;
     const enemyDist = Math.hypot((enemy.x || 0) - landingX, (enemy.y || 0) - landingY);
     if(enemyDist > AI_IMMEDIATE_RESPONSE_DANGER_RADIUS) continue;
     if(!isPathClear(enemy.x, enemy.y, landingX, landingY)) continue;
     count += 1;
+    enemyCount += 1;
     if(enemyDist < nearestDist) nearestDist = enemyDist;
   }
 
-  return { count, nearestDist };
+  const landingMineThreat = getMineThreatMetaForSegment(landingX, landingY, landingX, landingY, context?.plane || null);
+  if(landingMineThreat.count > 0){
+    count += landingMineThreat.count;
+    if(landingMineThreat.nearestDist < nearestDist) nearestDist = landingMineThreat.nearestDist;
+  }
+
+  const mineCount = landingMineThreat.count;
+  const reasonCodes = [];
+  if(enemyCount > 0) reasonCodes.push("enemy_immediate_threat");
+  if(mineCount > 0) reasonCodes.push("post_landing_mine_threat");
+
+  return { count, nearestDist, enemyCount, mineCount, reasonCodes };
 }
 
 function findPreFallbackAttackMove(context){
@@ -25788,6 +25883,9 @@ function planPathToPoint(plane, tx, ty, options = {}){
       return Math.hypot(otherPlane.x - landingX, otherPlane.y - landingY) < POINT_RADIUS * 0.9;
     });
     if(intersectsPlane) return false;
+
+    const mineThreatMeta = getMineThreatMetaForSegment(landingX, landingY, landingX, landingY, plane);
+    if(mineThreatMeta.landingThreat) return false;
 
     return true;
   }
@@ -29242,25 +29340,8 @@ function handleMineForPlane(p, fp){
 
   const prevX = Number.isFinite(p.prevX) ? p.prevX : p.x;
   const prevY = Number.isFinite(p.prevY) ? p.prevY : p.y;
-
-  const segmentIntersectsCircle = (x1, y1, x2, y2, cx, cy, radius) => {
-    const segX = x2 - x1;
-    const segY = y2 - y1;
-    const segLenSq = segX * segX + segY * segY;
-    if(segLenSq === 0){
-      const pointDx = x1 - cx;
-      const pointDy = y1 - cy;
-      return pointDx * pointDx + pointDy * pointDy <= radius * radius;
-    }
-    const toCenterX = cx - x1;
-    const toCenterY = cy - y1;
-    const t = clamp((toCenterX * segX + toCenterY * segY) / segLenSq, 0, 1);
-    const closestX = x1 + segX * t;
-    const closestY = y1 + segY * t;
-    const missX = closestX - cx;
-    const missY = closestY - cy;
-    return missX * missX + missY * missY <= radius * radius;
-  };
+  const mineThreatMeta = getMineThreatMetaForSegment(prevX, prevY, p.x, p.y, p);
+  if(!mineThreatMeta.pathHit && !mineThreatMeta.landingThreat) return false;
 
   for(let i = 0; i < mines.length; i++){
     const mine = mines[i];
@@ -29269,16 +29350,10 @@ function handleMineForPlane(p, fp){
     const dx = p.x - mine.x;
     const dy = p.y - mine.y;
     const dist = Math.hypot(dx, dy);
-
     const dangerRadius = getPlaneDangerGeometry(p).radius;
     const mineTriggerRadius = Math.max(MINE_TRIGGER_RADIUS, dangerRadius);
-
-    const segmentHit = segmentIntersectsCircle(
-      prevX, prevY,
-      p.x, p.y,
-      mine.x, mine.y,
-      mineTriggerRadius,
-    );
+    const pathDistance = getDistanceFromPointToSegment(mine.x, mine.y, prevX, prevY, p.x, p.y);
+    const segmentHit = pathDistance <= mineTriggerRadius;
 
     if(dist > mineTriggerRadius && !segmentHit) continue;
 
