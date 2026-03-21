@@ -353,6 +353,7 @@ function isSpriteReady(img){
 
 const mapsDataBridge = window.paperWingsMapsData || {};
 const MAPS = Array.isArray(mapsDataBridge.MAPS) ? mapsDataBridge.MAPS : [];
+const MAPS_READY = mapsDataBridge.MAPS_READY;
 
 function getMapPreviewSpritePaths(){
   const source = mapsDataBridge.MAP_SPRITE_PATHS;
@@ -369,13 +370,15 @@ function getMapPreviewSpritePaths(){
   };
 }
 
-const fieldOptions = MAPS.map((map, index) => ({
-  id: index,
-  label: map?.name ?? ''
-}));
+function getFieldOptions(){
+  return MAPS.map((map, index) => ({
+    id: index,
+    label: map?.name ?? ''
+  }));
+}
 
 function getFieldLabel(fieldId){
-  return fieldOptions.find(option => option.id === fieldId)?.label ?? '';
+  return getFieldOptions().find(option => option.id === fieldId)?.label ?? '';
 }
 
 function isRandomMap(map){
@@ -4752,4 +4755,26 @@ updateUiFrameScale();
 settingsBridge.onShow = handleSettingsLayerShow;
 settingsBridge.onHide = handleSettingsLayerHide;
 settingsBridge.isActive = isSettingsActive;
+
+
+async function refreshSettingsMapDataWhenReady(){
+  if(MAPS.length === 0 && MAPS_READY && typeof MAPS_READY.then === 'function'){
+    try {
+      await MAPS_READY;
+    } catch(error){
+      console.warn('[settings] failed while waiting for map data', error);
+    }
+  }
+
+  sharedSettings.mapIndex = sanitizeMapIndex(sharedSettings.mapIndex, { allowRandom: true });
+  syncFieldSelectorLabels();
+  updateMapNameDisplay();
+  updateMapPreview();
+}
+
+window.addEventListener('paperWingsMapsReady', () => {
+  refreshSettingsMapDataWhenReady();
+});
+
+refreshSettingsMapDataWhenReady();
 })();
