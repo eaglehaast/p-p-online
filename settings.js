@@ -4767,7 +4767,7 @@ async function refreshSettingsMapDataWhenReady(){
   }
 
   sharedSettings.mapIndex = sanitizeMapIndex(sharedSettings.mapIndex, { allowRandom: true });
-  syncFieldSelectorLabels();
+  syncFieldSelectorState();
   updateMapNameDisplay();
   updateMapPreview();
 }
