@@ -10110,6 +10110,10 @@ function recordAiSelfAnalyzerDecision(stage, details = {}){
     reasonCodes: compactReasonCodes,
   };
 
+  if(typeof details.itemType === "string" && details.itemType.trim().length > 0){
+    event.itemType = details.itemType.trim().slice(0, 80);
+  }
+
   if(typeof details.source === "string" && details.source.trim().length > 0){
     event.source = details.source.trim().slice(0, 120);
   }
@@ -12385,6 +12389,7 @@ function buildAiDebugDecisionCompactLine(event){
     `stage:${event.stage ?? "-"}`,
     `goal:${event.goal ?? "-"}`,
     `plane:${planeId}`,
+    `item:${event.itemType ?? "-"}`,
     `reasons:${reasonCodes}`,
     `reject:${rejectReasons}`,
   ].join(" | ");
@@ -19987,6 +19992,30 @@ function markAiInventoryItemUsed(itemType, details = {}){
 }
 
 
+function recordInventoryAiDecision(stage, details = {}){
+  if(!stage) return;
+
+  const compactReasonCodes = Array.isArray(details.reasonCodes)
+    ? details.reasonCodes
+    : (typeof details.reasonCode === "string" && details.reasonCode.trim().length > 0
+      ? [details.reasonCode]
+      : []);
+  const compactRejectReasons = Array.isArray(details.rejectReasons)
+    ? details.rejectReasons
+    : (typeof details.rejectReason === "string" && details.rejectReason.trim().length > 0
+      ? [details.rejectReason]
+      : []);
+
+  recordAiSelfAnalyzerDecision(stage, {
+    goal: details.goal ?? aiRoundState?.currentGoal ?? null,
+    planeId: details.planeId ?? null,
+    itemType: details.itemType ?? null,
+    source: details.source ?? null,
+    reasonCodes: compactReasonCodes,
+    rejectReasons: compactRejectReasons,
+  });
+}
+
 function buildAiInventoryCandidatePlans(context, plannedMove){
   if(!plannedMove?.plane) return { selectedCandidate: null, candidates: [], rejected: [] };
 
@@ -20051,6 +20080,13 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     const payload = { itemType, reason, planeId: plannedMove?.plane?.id ?? null, goal: plannedMove?.goalName || aiRoundState?.currentGoal || null, ...details };
     rejected.push(payload);
     logAiDecision("inventory_candidate_rejected", payload);
+    recordInventoryAiDecision("inventory_candidate_rejected", {
+      planeId: payload.planeId,
+      goal: payload.goal,
+      itemType: payload.itemType,
+      reasonCodes: ["candidate_rejected"],
+      rejectReasons: [payload.reason || "candidate_rejected"],
+    });
   };
 
   if(allowBuffItems && inventory.counts?.[INVENTORY_ITEM_TYPES.FUEL] > 0 && typeof evaluateFuelTacticalPlans === "function"){
@@ -20377,6 +20413,12 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       planeId: plannedMove?.plane?.id ?? null,
       goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
     });
+    recordInventoryAiDecision("inventory_phase_gated", {
+      planeId: plannedMove?.plane?.id ?? null,
+      goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+      reasonCodes: ["inventory_phase_locked"],
+      rejectReasons: ["inventory_disabled_by_phase"],
+    });
     return false;
   }
 
@@ -20508,6 +20550,13 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         reason: "inventory_locked_for_low_confidence_move",
         goal: strategicGoal || null,
         idleTurns: aiRoundState.inventoryIdleTurns,
+      });
+      recordInventoryAiDecision("inventory_usage_locked", {
+        planeId: plannedMove?.plane?.id ?? null,
+        goal: strategicGoal || null,
+        itemType,
+        reasonCodes: ["inventory_locked"],
+        rejectReasons: ["inventory_locked_for_low_confidence_move"],
       });
       return false;
     }
@@ -20766,6 +20815,13 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         expectedBenefit: selectedInventoryCandidate.expectedBenefit ?? null,
         risk: selectedInventoryCandidate.risk ?? null,
       });
+      recordInventoryAiDecision("inventory_decision", {
+        planeId: plannedMove?.plane?.id ?? null,
+        goal: strategicGoal || null,
+        itemType: selectedType,
+        source: "selected_inventory_candidate",
+        reasonCodes: [selectedInventoryCandidate.reason || "inventory_item_applied"],
+      });
       return true;
     }
 
@@ -20774,6 +20830,13 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       reason: "selected_candidate_failed_to_execute",
       planeId: plannedMove?.plane?.id ?? null,
       goal: strategicGoal || null,
+    });
+    recordInventoryAiDecision("inventory_candidate_rejected", {
+      planeId: plannedMove?.plane?.id ?? null,
+      goal: strategicGoal || null,
+      itemType: selectedType,
+      reasonCodes: ["candidate_rejected"],
+      rejectReasons: ["selected_candidate_failed_to_execute"],
     });
   }
 
@@ -22048,6 +22111,31 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     consumedItemTypes: inventoryStageResult.consumedItemTypes,
     planeId: plannedMove?.plane?.id ?? null,
     goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+  });
+  const inventoryDecisionGoal = plannedMove?.goalName || aiRoundState?.currentGoal || null;
+  const inventoryDecisionPlaneId = plannedMove?.plane?.id ?? null;
+  const inventoryCandidatePool = Array.isArray(plannedMove?.inventoryCandidates) ? plannedMove.inventoryCandidates : [];
+  const inventoryRejectedPool = Array.isArray(plannedMove?.rejectedInventoryCandidates) ? plannedMove.rejectedInventoryCandidates : [];
+  const inventoryDecisionReasonCodes = inventoryStageResult.selected
+    ? ["inventory_item_consumed"]
+    : (beforeInventoryState?.total > 0
+      ? (inventoryCandidatePool.length > 0
+        ? ["inventory_candidates_not_used"]
+        : ["inventory_candidates_missing"])
+      : ["no_inventory_items"]);
+  const inventoryDecisionRejectReasons = inventoryStageResult.selected
+    ? []
+    : (beforeInventoryState?.total > 0
+      ? (inventoryRejectedPool.length > 0
+        ? inventoryRejectedPool.map((entry) => entry?.reason).filter((reason) => typeof reason === "string" && reason.length > 0).slice(0, 4)
+        : ["inventory_no_candidate_passed_thresholds"])
+      : ["inventory_empty"]);
+  recordInventoryAiDecision("inventory_decision_made", {
+    planeId: inventoryDecisionPlaneId,
+    goal: inventoryDecisionGoal,
+    itemType: inventoryStageResult.consumedItemType || null,
+    reasonCodes: inventoryDecisionReasonCodes,
+    rejectReasons: inventoryDecisionRejectReasons,
   });
   if(plannedMove?.aiFuelTacticalDecision){
     logAiDecision("fuel_tactical_plan_evaluated", {
@@ -27149,6 +27237,8 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
   const source = metadata?.source || "do_computer_move";
   const routeClass = plannedMove?.routeClass || metadata?.routeClass || null;
   const inventoryPlanning = buildAiInventoryCandidatePlans(context, plannedMove);
+  plannedMove.inventoryCandidates = Array.isArray(inventoryPlanning?.candidates) ? inventoryPlanning.candidates.slice() : [];
+  plannedMove.rejectedInventoryCandidates = Array.isArray(inventoryPlanning?.rejected) ? inventoryPlanning.rejected.slice() : [];
   if(inventoryPlanning?.selectedCandidate){
     plannedMove.selectedInventoryCandidate = inventoryPlanning.selectedCandidate;
     plannedMove.inventoryUsageReason = inventoryPlanning.selectedCandidate.reason || plannedMove.inventoryUsageReason || null;
@@ -27156,6 +27246,13 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
       ...inventoryPlanning.selectedCandidate,
       source,
       routeClass,
+    });
+    recordInventoryAiDecision("inventory_candidate_selected", {
+      planeId: inventoryPlanning.selectedCandidate.planeId ?? plannedMove?.plane?.id ?? null,
+      goal: inventoryPlanning.selectedCandidate.goal ?? plannedMove?.goalName ?? aiRoundState?.currentGoal ?? null,
+      itemType: inventoryPlanning.selectedCandidate.itemType,
+      source,
+      reasonCodes: [inventoryPlanning.selectedCandidate.reason || "candidate_selected"],
     });
   }
   const baseCandidateStage = buildAiBaseCandidateStageResult(plannedMove, {
