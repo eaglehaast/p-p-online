@@ -14108,9 +14108,14 @@ const AI_LAUNCH_TARGET_SELECTION_MIN_MS = 40;
 const AI_LAUNCH_TARGET_SELECTION_MAX_MS = 90;
 const AI_LAUNCH_PULL_BACK_MIN_MS = 450;
 const AI_LAUNCH_PULL_BACK_MAX_MS = 550;
-// Обязательная стадия колебания прицела перед отпусканием: всегда 2–3 секунды.
+// Стадия колебания прицела: около 2 секунд — целевой момент, но не абсолютный запрет.
 const AI_LAUNCH_OSCILLATION_MIN_MS = 2000;
 const AI_LAUNCH_OSCILLATION_MAX_MS = 3000;
+const AI_LAUNCH_OSCILLATION_TARGET_WINDOW_EARLY_MS = 180;
+const AI_LAUNCH_OSCILLATION_TARGET_WINDOW_LATE_MS = 220;
+const AI_LAUNCH_OSCILLATION_LATE_GRACE_MS = 320;
+const AI_LAUNCH_EARLY_RELEASE_ANGLE_TOLERANCE_DEG = 0.45;
+const AI_LAUNCH_EARLY_RELEASE_POWER_TOLERANCE = 0.01;
 const AI_LAUNCH_SESSION_ANGLE_TOLERANCE_DEG = 1.2;
 const AI_LAUNCH_SESSION_POWER_TOLERANCE = 0.025;
 const AI_LAUNCH_POWER_SWEEP_MAX_RATIO = 0.045;
@@ -14475,6 +14480,43 @@ function pickAiLaunchCandidateForRelease(session){
   return null;
 }
 
+function getAiLaunchOscillationElapsedMs(session, now = performance.now()){
+  if(!session) return 0;
+  return Math.max(0, now - (session.oscillationStartsAt || session.stageStartedAt || now));
+}
+
+function getAiLaunchOscillationTiming(session){
+  const targetMs = Math.max(0, AI_LAUNCH_OSCILLATION_MIN_MS);
+  const targetWindowStartMs = Math.max(0, targetMs - AI_LAUNCH_OSCILLATION_TARGET_WINDOW_EARLY_MS);
+  const targetWindowEndMs = targetMs + AI_LAUNCH_OSCILLATION_TARGET_WINDOW_LATE_MS;
+  const lateGraceDeadlineMs = Math.min(
+    AI_LAUNCH_OSCILLATION_MAX_MS,
+    targetWindowEndMs + AI_LAUNCH_OSCILLATION_LATE_GRACE_MS
+  );
+  return {
+    targetMs,
+    targetWindowStartMs,
+    targetWindowEndMs,
+    lateGraceDeadlineMs,
+    hardDeadlineMs: AI_LAUNCH_OSCILLATION_MAX_MS,
+  };
+}
+
+function isAiLaunchVeryGoodReleaseMatch(session){
+  const currentMetrics = session?.currentMetrics;
+  const targetAim = session?.targetAim;
+  if(!currentMetrics || !targetAim) return false;
+
+  const angleErrorRad = Math.abs(normalizeAngleDeltaRad(currentMetrics.angleRad - targetAim.angleRad));
+  const targetPowerRatio = MAX_DRAG_DISTANCE > 0
+    ? (getAiOscillatingPullDistancePx(session, currentMetrics.powerRatio * MAX_DRAG_DISTANCE) / MAX_DRAG_DISTANCE)
+    : 0;
+  const powerError = Math.abs(currentMetrics.powerRatio - targetPowerRatio);
+
+  return angleErrorRad <= (AI_LAUNCH_EARLY_RELEASE_ANGLE_TOLERANCE_DEG * Math.PI / 180)
+    && powerError <= AI_LAUNCH_EARLY_RELEASE_POWER_TOLERANCE;
+}
+
 function releaseAiLaunchSession(session, reason, now = performance.now()){
   if(!session?.plane || !isPlaneLaunchStateReady(session.plane)){
     logAiDecision("ai_launch_release", {
@@ -14567,7 +14609,15 @@ function releaseAiLaunchSession(session, reason, now = performance.now()){
   logAiDecision("ai_launch_release", {
     reason,
     planeId: session.plane?.id ?? null,
-    releaseCause: reason === "perfect_tolerance" ? "ideal_caught" : "timeout_best_effort",
+    releaseCause: reason === "perfect_tolerance_early"
+      ? "early_perfect_match"
+      : (reason === "perfect_tolerance_target_window"
+        ? "target_window_match"
+        : (reason === "perfect_tolerance_late_grace"
+          ? "late_grace_match"
+          : (reason === "timeout_deadline"
+            ? "deadline_emergency_release"
+            : "timeout_best_effort"))),
     candidateSource: candidate.source,
     sampledAtMs: Number.isFinite(candidate?.metrics?.sampledAt) && Number.isFinite(now)
       ? Math.round(now - candidate.metrics.sampledAt)
@@ -31976,14 +32026,37 @@ function runAiLaunchSessionTick(now = performance.now()){
     return;
   }
   if(session.stage === "oscillate" && session.pendingReleaseReason === "perfect_tolerance"){
-    const oscillationElapsedMs = now - (session.oscillationStartsAt || session.stageStartedAt || now);
-    if(oscillationElapsedMs < AI_LAUNCH_OSCILLATION_MIN_MS){
+    const oscillationElapsedMs = getAiLaunchOscillationElapsedMs(session, now);
+    const timing = getAiLaunchOscillationTiming(session);
+    const canReleaseEarly = isAiLaunchVeryGoodReleaseMatch(session);
+
+    if(oscillationElapsedMs < timing.targetWindowStartMs && !canReleaseEarly){
       return;
     }
+
+    const releaseReason = oscillationElapsedMs < timing.targetWindowStartMs
+      ? "perfect_tolerance_early"
+      : (oscillationElapsedMs <= timing.targetWindowEndMs
+        ? "perfect_tolerance_target_window"
+        : (oscillationElapsedMs <= timing.lateGraceDeadlineMs
+          ? "perfect_tolerance_late_grace"
+          : null));
+
+    if(!releaseReason){
+      return;
+    }
+
     session.stage = "release";
     session.stageStartedAt = now;
-    releaseAiLaunchSession(session, "perfect_tolerance", now);
+    releaseAiLaunchSession(session, releaseReason, now);
     return;
+  }
+  if(session.stage === "oscillate"){
+    const oscillationElapsedMs = getAiLaunchOscillationElapsedMs(session, now);
+    const timing = getAiLaunchOscillationTiming(session);
+    if(oscillationElapsedMs < timing.hardDeadlineMs){
+      return;
+    }
   }
   if(session.stage === "oscillate" && now < session.releaseDueAt){
     return;
@@ -31991,7 +32064,7 @@ function runAiLaunchSessionTick(now = performance.now()){
   if(session.stage === "oscillate"){
     session.stage = "release";
     session.stageStartedAt = now;
-    releaseAiLaunchSession(session, "timeout");
+    releaseAiLaunchSession(session, "timeout_deadline", now);
   }
 }
 
