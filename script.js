@@ -29656,7 +29656,7 @@ function getSpreadAngleDegByAccuracy(accuracyPercent){
 
 /* Зеркальный выстрел (одно отражение) */
 function findMirrorShot(plane, enemy, options = {}){
-  let best = null; // {mirrorTarget, totalDist}
+  let best = null; // {mirrorTarget, totalDist, ...qualityMetrics}
   const directDist = Math.hypot(plane.x - enemy.x, plane.y - enemy.y);
   const minBounceDistanceScale = Number.isFinite(options?.minBounceDistanceScale)
     ? Math.max(0, options.minBounceDistanceScale)
@@ -29821,6 +29821,99 @@ function findMirrorShot(plane, enemy, options = {}){
       || safeType === "top_bottom_wall";
   };
 
+  const getSegmentClearancePx = (fromX, fromY, toX, toY, pathMeta) => {
+    const ignoredColliderId = pathMeta?.collider?.id;
+    let bestClearance = Number.POSITIVE_INFINITY;
+    for(const candidateCollider of colliders){
+      if(!candidateCollider) continue;
+      if(!pathMeta?.isFieldBorder && ignoredColliderId && candidateCollider.id === ignoredColliderId) continue;
+      const clearancePx = getRouteColliderClearancePx(fromX, fromY, toX, toY, candidateCollider);
+      if(Number.isFinite(clearancePx) && clearancePx < bestClearance){
+        bestClearance = clearancePx;
+      }
+    }
+    for(const border of buildFieldBorderSurfaces()){
+      const borderClearance = Math.min(
+        getDistanceFromPointToSegment(fromX, fromY, border.p1.x, border.p1.y, border.p2.x, border.p2.y),
+        getDistanceFromPointToSegment(toX, toY, border.p1.x, border.p1.y, border.p2.x, border.p2.y),
+        getDistanceFromPointToSegment(border.p1.x, border.p1.y, fromX, fromY, toX, toY),
+        getDistanceFromPointToSegment(border.p2.x, border.p2.y, fromX, fromY, toX, toY),
+      );
+      if(Number.isFinite(borderClearance) && borderClearance < bestClearance){
+        bestClearance = borderClearance;
+      }
+    }
+    return bestClearance;
+  };
+
+  const getBouncePrecisionMetrics = (bouncePoint, edge, pathMeta) => {
+    let minDistanceToGeometry = Number.POSITIVE_INFINITY;
+    const updateMin = (value) => {
+      if(Number.isFinite(value) && value < minDistanceToGeometry){
+        minDistanceToGeometry = value;
+      }
+    };
+
+    for(const candidateCollider of colliders){
+      if(!candidateCollider) continue;
+      const edges = getColliderEdges(candidateCollider, 0);
+      for(const colliderEdge of edges){
+        if(pathMeta?.ignoreEdge
+          && pathMeta.ignoreEdge.colliderId === candidateCollider.id
+          && pathMeta.ignoreEdge.edgeIndex === colliderEdge.edgeIndex){
+          continue;
+        }
+        updateMin(getDistanceFromPointToSegment(bouncePoint.x, bouncePoint.y, colliderEdge.x1, colliderEdge.y1, colliderEdge.x2, colliderEdge.y2));
+        updateMin(Math.hypot(bouncePoint.x - colliderEdge.x1, bouncePoint.y - colliderEdge.y1));
+        updateMin(Math.hypot(bouncePoint.x - colliderEdge.x2, bouncePoint.y - colliderEdge.y2));
+      }
+    }
+
+    for(const border of buildFieldBorderSurfaces()){
+      const isSameBorder = pathMeta?.isFieldBorder
+        && ((Math.abs(edge.x1 - border.p1.x) <= 1e-6 && Math.abs(edge.y1 - border.p1.y) <= 1e-6
+            && Math.abs(edge.x2 - border.p2.x) <= 1e-6 && Math.abs(edge.y2 - border.p2.y) <= 1e-6)
+          || (Math.abs(edge.x1 - border.p2.x) <= 1e-6 && Math.abs(edge.y1 - border.p2.y) <= 1e-6
+            && Math.abs(edge.x2 - border.p1.x) <= 1e-6 && Math.abs(edge.y2 - border.p1.y) <= 1e-6));
+      if(isSameBorder) continue;
+      updateMin(getDistanceFromPointToSegment(bouncePoint.x, bouncePoint.y, border.p1.x, border.p1.y, border.p2.x, border.p2.y));
+      updateMin(Math.hypot(bouncePoint.x - border.p1.x, bouncePoint.y - border.p1.y));
+      updateMin(Math.hypot(bouncePoint.x - border.p2.x, bouncePoint.y - border.p2.y));
+    }
+
+    return minDistanceToGeometry;
+  };
+
+  const getTangentEntryPenalty = (fromPoint, bouncePoint, edge) => {
+    const inDx = bouncePoint.x - fromPoint.x;
+    const inDy = bouncePoint.y - fromPoint.y;
+    const inLen = Math.hypot(inDx, inDy);
+    const edgeDx = edge.x2 - edge.x1;
+    const edgeDy = edge.y2 - edge.y1;
+    const edgeLen = Math.hypot(edgeDx, edgeDy);
+    if(inLen <= 1e-6 || edgeLen <= 1e-6) return 0;
+    const tangentAlignment = Math.abs((inDx * edgeDx + inDy * edgeDy) / (inLen * edgeLen));
+    const normalizedRisk = Math.max(0, Math.min(1, (tangentAlignment - 0.55) / 0.45));
+    return normalizedRisk;
+  };
+
+  const buildMirrorQualityScore = (metrics) => {
+    const safeCell = Math.max(1, CELL_SIZE);
+    const firstLegClearanceNorm = Math.max(0, Math.min(1.4, metrics.firstLegClearance / (safeCell * 0.9)));
+    const secondLegClearanceNorm = Math.max(0, Math.min(1.4, metrics.secondLegClearance / (safeCell * 0.9)));
+    const bouncePrecisionNorm = Math.max(0, Math.min(1.2, metrics.bouncePointClearance / (safeCell * 0.8)));
+    const routeTightness = Math.max(0, 1 - Math.min(firstLegClearanceNorm, secondLegClearanceNorm));
+    const distancePenalty = Number.isFinite(directDist) && directDist > 1e-6
+      ? metrics.totalDist / directDist
+      : metrics.totalDist / safeCell;
+    const clearanceReward = (firstLegClearanceNorm * 0.9) + (secondLegClearanceNorm * 1.15) + (bouncePrecisionNorm * 0.95);
+    const tangentPenalty = metrics.tangentRisk * (1.1 + routeTightness * 1.7);
+    const tightMapClearancePriority = routeTightness * (2.2 - Math.min(1.2, clearanceReward * 0.35));
+    return distancePenalty + tangentPenalty + tightMapClearancePriority - clearanceReward;
+  };
+
+  let bestRejectedCandidateMeta = null;
+
   const mirrorEdges = [];
   for(const collider of colliders){
     const edges = getColliderEdges(collider, 0);
@@ -29976,6 +30069,28 @@ function findMirrorShot(plane, enemy, options = {}){
     if(!pathClearFromBounce && !allowGapLikePostBouncePositioning && !allowSoftPostBounceContinuation){
       rejectedAfterBounceSegment = true;
       const blockingMeta = afterBounceBlockingMeta || {};
+      const rejectedFirstLegClearance = getSegmentClearancePx(plane.x, plane.y, inter.x, inter.y, {
+        isFieldBorder,
+        collider,
+        ignoreEdge,
+      });
+      const rejectedSecondLegClearance = getSegmentClearancePx(inter.x, inter.y, enemy.x, enemy.y, {
+        isFieldBorder,
+        collider,
+        ignoreEdge,
+      });
+      const rejectedBouncePointClearance = getBouncePrecisionMetrics(inter, e, {
+        isFieldBorder,
+        collider,
+        ignoreEdge,
+      });
+      const rejectedMirrorQualityScore = buildMirrorQualityScore({
+        totalDist: firstLegDist + afterBounceContinuationLen,
+        firstLegClearance: rejectedFirstLegClearance,
+        secondLegClearance: rejectedSecondLegClearance,
+        bouncePointClearance: rejectedBouncePointClearance,
+        tangentRisk: getTangentEntryPenalty(plane, inter, e),
+      });
       findMirrorShot.lastRejectMeta = {
         routeClass: "gap",
         secondSegmentStart: { x: inter.x, y: inter.y },
@@ -29993,24 +30108,84 @@ function findMirrorShot(plane, enemy, options = {}){
         segmentLabel: "after_bounce",
         candidateSafetyRiskSummary: null,
         passedFirstSegment: true,
+        firstLegClearance: Number.isFinite(rejectedFirstLegClearance) ? Number(rejectedFirstLegClearance.toFixed(2)) : null,
+        secondLegClearance: Number.isFinite(rejectedSecondLegClearance) ? Number(rejectedSecondLegClearance.toFixed(2)) : null,
+        bouncePointClearance: Number.isFinite(rejectedBouncePointClearance) ? Number(rejectedBouncePointClearance.toFixed(2)) : null,
+        bouncePrecisionRisk: Number.isFinite(rejectedBouncePointClearance)
+          ? Number((1 / Math.max(1, rejectedBouncePointClearance)).toFixed(4))
+          : null,
+        mirrorQualityScore: Number.isFinite(rejectedMirrorQualityScore) ? Number(rejectedMirrorQualityScore.toFixed(4)) : null,
       };
       continue;
     }
 
     const totalDist = Math.hypot(plane.x - inter.x, plane.y - inter.y) +
                       Math.hypot(inter.x  - enemy.x, inter.y  - enemy.y);
+    const firstLegClearance = getSegmentClearancePx(plane.x, plane.y, inter.x, inter.y, {
+      isFieldBorder,
+      collider,
+      ignoreEdge,
+    });
+    const secondLegClearance = getSegmentClearancePx(inter.x, inter.y, enemy.x, enemy.y, {
+      isFieldBorder,
+      collider,
+      ignoreEdge,
+    });
+    const bouncePointClearance = getBouncePrecisionMetrics(inter, e, {
+      isFieldBorder,
+      collider,
+      ignoreEdge,
+    });
+    const tangentRisk = getTangentEntryPenalty(plane, inter, e);
+    const mirrorQualityScore = buildMirrorQualityScore({
+      totalDist,
+      firstLegClearance,
+      secondLegClearance,
+      bouncePointClearance,
+      tangentRisk,
+    });
+    const candidateMeta = {
+      bouncePoint: { x: inter.x, y: inter.y },
+      totalDist,
+      firstLegClearance,
+      secondLegClearance,
+      bouncePointClearance,
+      bouncePrecisionRisk: Number.isFinite(bouncePointClearance)
+        ? Number((1 / Math.max(1, bouncePointClearance)).toFixed(4))
+        : null,
+      tangentEntryPenalty: Number.isFinite(tangentRisk) ? Number(tangentRisk.toFixed(4)) : null,
+      mirrorQualityScore,
+      bounceWall: collider?.id || (isFieldBorder ? "field_border" : null),
+    };
     if(firstLegDist < minBounceDistance){
       rejectedTooClose = true;
+      bestRejectedCandidateMeta = !bestRejectedCandidateMeta || mirrorQualityScore < bestRejectedCandidateMeta.mirrorQualityScore
+        ? { ...candidateMeta, rejectReason: "mirror_rejected_too_close__min_bounce_distance" }
+        : bestRejectedCandidateMeta;
       continue;
     }
 
     if(directDist > 0 && totalDist > directDist * maxPathRatio){
       rejectedTooLong = true;
+      bestRejectedCandidateMeta = !bestRejectedCandidateMeta || mirrorQualityScore < bestRejectedCandidateMeta.mirrorQualityScore
+        ? { ...candidateMeta, rejectReason: "mirror_rejected_too_long__max_path_ratio" }
+        : bestRejectedCandidateMeta;
       continue;
     }
 
-    if(!best || totalDist < best.totalDist){
-      best = {mirrorTarget, totalDist};
+    if(!best
+      || mirrorQualityScore < best.mirrorQualityScore
+      || (Math.abs(mirrorQualityScore - best.mirrorQualityScore) <= 0.000001 && totalDist < best.totalDist)){
+      best = {
+        mirrorTarget,
+        totalDist,
+        firstLegClearance,
+        secondLegClearance,
+        bouncePointClearance,
+        bouncePrecisionRisk: candidateMeta.bouncePrecisionRisk,
+        tangentEntryPenalty: candidateMeta.tangentEntryPenalty,
+        mirrorQualityScore: Number.isFinite(mirrorQualityScore) ? Number(mirrorQualityScore.toFixed(4)) : null,
+      };
     }
   }
 
@@ -30033,12 +30208,27 @@ function findMirrorShot(plane, enemy, options = {}){
     findMirrorShot.lastRejectMeta = null;
   }
 
+  if(!best && bestRejectedCandidateMeta){
+    findMirrorShot.lastRejectMeta = {
+      ...(findMirrorShot.lastRejectMeta || {}),
+      ...bestRejectedCandidateMeta,
+      firstLegClearance: Number.isFinite(bestRejectedCandidateMeta.firstLegClearance) ? Number(bestRejectedCandidateMeta.firstLegClearance.toFixed(2)) : null,
+      secondLegClearance: Number.isFinite(bestRejectedCandidateMeta.secondLegClearance) ? Number(bestRejectedCandidateMeta.secondLegClearance.toFixed(2)) : null,
+      bouncePointClearance: Number.isFinite(bestRejectedCandidateMeta.bouncePointClearance) ? Number(bestRejectedCandidateMeta.bouncePointClearance.toFixed(2)) : null,
+      mirrorQualityScore: Number.isFinite(bestRejectedCandidateMeta.mirrorQualityScore) ? Number(bestRejectedCandidateMeta.mirrorQualityScore.toFixed(4)) : null,
+    };
+  }
+
   if(!best && options.logReject){
     if(rejectedAfterBounceSegment){
       logAiDecision("mirror_rejected", {
         reason: "blocked_after_bounce__from_bounce_segment_blocked",
         planeId: plane?.id ?? null,
         enemyId: enemy?.id ?? null,
+        firstLegClearance: findMirrorShot.lastRejectMeta?.firstLegClearance ?? null,
+        secondLegClearance: findMirrorShot.lastRejectMeta?.secondLegClearance ?? null,
+        bouncePrecisionRisk: findMirrorShot.lastRejectMeta?.bouncePrecisionRisk ?? null,
+        mirrorQualityScore: findMirrorShot.lastRejectMeta?.mirrorQualityScore ?? null,
       });
     } else if(rejectedTooClose){
       logAiDecision("mirror_rejected", {
@@ -30047,6 +30237,10 @@ function findMirrorShot(plane, enemy, options = {}){
         enemyId: enemy?.id ?? null,
         minBounceDistance: Number(minBounceDistance.toFixed(1)),
         stuckMirrorRelaxation,
+        firstLegClearance: findMirrorShot.lastRejectMeta?.firstLegClearance ?? null,
+        secondLegClearance: findMirrorShot.lastRejectMeta?.secondLegClearance ?? null,
+        bouncePrecisionRisk: findMirrorShot.lastRejectMeta?.bouncePrecisionRisk ?? null,
+        mirrorQualityScore: findMirrorShot.lastRejectMeta?.mirrorQualityScore ?? null,
       });
     } else if(rejectedTooLong){
       logAiDecision("mirror_rejected", {
@@ -30056,6 +30250,10 @@ function findMirrorShot(plane, enemy, options = {}){
         maxPathRatio: Number(maxPathRatio.toFixed(2)),
         clearSky: isCurrentMapClearSky(),
         stuckMirrorRelaxation,
+        firstLegClearance: findMirrorShot.lastRejectMeta?.firstLegClearance ?? null,
+        secondLegClearance: findMirrorShot.lastRejectMeta?.secondLegClearance ?? null,
+        bouncePrecisionRisk: findMirrorShot.lastRejectMeta?.bouncePrecisionRisk ?? null,
+        mirrorQualityScore: findMirrorShot.lastRejectMeta?.mirrorQualityScore ?? null,
       });
     } else if(rejectedToBounceSegment || rejectedNoMirrorIntersection){
       logAiDecision("mirror_rejected", {
@@ -30064,6 +30262,10 @@ function findMirrorShot(plane, enemy, options = {}){
           : "blocked_path__no_mirror_intersection",
         planeId: plane?.id ?? null,
         enemyId: enemy?.id ?? null,
+        firstLegClearance: findMirrorShot.lastRejectMeta?.firstLegClearance ?? null,
+        secondLegClearance: findMirrorShot.lastRejectMeta?.secondLegClearance ?? null,
+        bouncePrecisionRisk: findMirrorShot.lastRejectMeta?.bouncePrecisionRisk ?? null,
+        mirrorQualityScore: findMirrorShot.lastRejectMeta?.mirrorQualityScore ?? null,
       });
     }
   }
