@@ -17719,117 +17719,323 @@ function applyLossCompressionScoreAdjustments(candidate, modeContext){
 
 function getEmergencyDefenseMove(context, threat){
   if(!threat || !Array.isArray(context?.aiPlanes) || !context.aiPlanes.length) return null;
-
-  const { aiPlanes } = context;
-  let bestIntercept = null;
-
-  for(const plane of aiPlanes){
-    const directIntercept = planPathToPoint(plane, threat.enemy.x, threat.enemy.y);
-    if(directIntercept){
-      const rawScore = directIntercept.totalDist + dist(plane, threat.enemy) * 0.2;
-      const candidate = {
-        plane,
-        enemy: threat.enemy,
-        goalName: "emergency_base_defense_intercept",
-        ...directIntercept,
-        score: getAiPlaneAdjustedScore(rawScore, plane),
-        idleTurns: getAiPlaneIdleTurns(plane),
-      };
-      if(compareAiCandidateByScoreAndRotation(candidate, bestIntercept, ["emergency_defense", "direct"])){
-        bestIntercept = candidate;
-      }
-      continue;
-    }
-
-    const prepIntercept = findSafePreparationMoveForAttack(plane, threat.enemy);
-    if(prepIntercept){
-      const rawScore = prepIntercept.totalDist + dist(plane, threat.enemy) * 0.3;
-      const candidate = {
-        plane,
-        enemy: threat.enemy,
-        goalName: "emergency_base_defense_prepare",
-        ...prepIntercept,
-        score: getAiPlaneAdjustedScore(rawScore, plane),
-        idleTurns: getAiPlaneIdleTurns(plane),
-      };
-      if(compareAiCandidateByScoreAndRotation(candidate, bestIntercept, ["emergency_defense", "prepare"])){
-        bestIntercept = candidate;
-      }
-    }
-  }
-
-  if(bestIntercept) return bestIntercept;
-
-  let bestBlock = null;
-  for(const plane of aiPlanes){
-    const baseToEnemyDistance = Math.max(1, threat.distanceToBase);
-    const ratio = Math.min(0.6, ATTACK_RANGE_PX / baseToEnemyDistance);
-    const blockPoint = {
-      x: threat.base.x + (threat.enemy.x - threat.base.x) * ratio,
-      y: threat.base.y + (threat.enemy.y - threat.base.y) * ratio,
-    };
-    const blockMove = planPathToPoint(plane, blockPoint.x, blockPoint.y);
-    if(!blockMove) continue;
-
-    const candidate = {
-      plane,
-      enemy: threat.enemy,
-      goalName: "emergency_base_defense_block",
-      blockPoint,
-      ...blockMove,
-      score: getAiPlaneAdjustedScore(blockMove.totalDist, plane),
-      idleTurns: getAiPlaneIdleTurns(plane),
-    };
-    if(compareAiCandidateByScoreAndRotation(candidate, bestBlock, ["emergency_defense", "block"])){
-      bestBlock = candidate;
-    }
-  }
-
-  return bestBlock;
+  return getBestEmergencyDefenseCandidate(context, threat, {
+    includeDirectIntercept: true,
+    includeFutureInterceptSetup: true,
+    includeLaneBlock: true,
+    includeTrajectoryBlock: true,
+    includeCoverHold: false,
+  });
 }
 
 function getEmergencyBaseHoldPositionMove(context, threat){
   if(!threat || !Array.isArray(context?.aiPlanes) || !context.aiPlanes.length) return null;
+  return getBestEmergencyDefenseCandidate(context, threat, {
+    includeDirectIntercept: false,
+    includeFutureInterceptSetup: false,
+    includeLaneBlock: true,
+    includeTrajectoryBlock: true,
+    includeCoverHold: true,
+  });
+}
+
+function getBestEmergencyDefenseCandidate(context, threat, options = {}){
+  const candidates = collectEmergencyDefenseCandidates(context, threat, options);
+  if(!candidates.length) return null;
+
+  let bestCandidate = null;
+  for(const candidate of candidates){
+    if(compareEmergencyDefenseCandidate(candidate, bestCandidate, context, threat)){
+      bestCandidate = candidate;
+    }
+  }
+  return bestCandidate;
+}
+
+function compareEmergencyDefenseCandidate(nextCandidate, currentCandidate, context, threat){
+  if(!nextCandidate) return false;
+  if(!currentCandidate) return true;
+
+  const nextPriorityScore = getEmergencyDefensePriorityScore(nextCandidate, context, threat);
+  const currentPriorityScore = getEmergencyDefensePriorityScore(currentCandidate, context, threat);
+  const priorityGap = nextPriorityScore - currentPriorityScore;
+  if(Math.abs(priorityGap) > 0.35) return priorityGap > 0;
+
+  if(compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, [
+    "emergency_defense_priority",
+    nextCandidate?.decisionReason || nextCandidate?.goalName || "candidate",
+  ])){
+    return true;
+  }
+
+  const nextUtility = Number.isFinite(nextCandidate?.defenseUtility) ? nextCandidate.defenseUtility : 0;
+  const currentUtility = Number.isFinite(currentCandidate?.defenseUtility) ? currentCandidate.defenseUtility : 0;
+  if(Math.abs(nextUtility - currentUtility) > 0.1) return nextUtility > currentUtility;
+
+  const nextMoveDist = Number.isFinite(nextCandidate?.totalDist) ? nextCandidate.totalDist : Number.POSITIVE_INFINITY;
+  const currentMoveDist = Number.isFinite(currentCandidate?.totalDist) ? currentCandidate.totalDist : Number.POSITIVE_INFINITY;
+  return nextMoveDist < currentMoveDist;
+}
+
+function getEmergencyDefensePriorityScore(candidate, context, threat){
+  const utility = Number.isFinite(candidate?.defenseUtility) ? candidate.defenseUtility : 0;
+  const defensivePriority = context?.defensivePriority || getBlueDefensivePriority(context);
+  const levelRank = defensivePriority?.levelRank || 0;
+  const requiresImmediateIntercept = Boolean(defensivePriority?.requiresImmediateIntercept);
+  const threatDistance = Math.max(1, Number.isFinite(threat?.distanceToBase) ? threat.distanceToBase : Number.POSITIVE_INFINITY);
+  const closenessWeight = Math.max(0, 1 - Math.min(1, threatDistance / Math.max(ATTACK_RANGE_PX * 3.2, 1)));
+  const reliability = Number.isFinite(candidate?.defenseReliability) ? candidate.defenseReliability : 0;
+  const uglyPenalty = Number.isFinite(candidate?.beautyPenalty) ? candidate.beautyPenalty : 0;
+  const emergencyBias = (requiresImmediateIntercept ? 1.1 : 0.45) + levelRank * 0.18 + closenessWeight * 0.55;
+  return utility + reliability * emergencyBias - uglyPenalty * Math.max(0.15, 0.65 - emergencyBias * 0.18);
+}
+
+function collectEmergencyDefenseCandidates(context, threat, options = {}){
+  if(!threat || !Array.isArray(context?.aiPlanes) || !context.aiPlanes.length) return [];
 
   const { aiPlanes } = context;
-  const base = threat.base || getBaseAnchor("blue");
-  if(!base) return null;
-
   const enemy = threat.enemy;
-  if(!enemy) return null;
+  const base = threat.base || getBaseAnchor("blue");
+  if(!enemy || !base) return [];
 
+  const candidates = [];
+  const defensivePriority = context?.defensivePriority || getBlueDefensivePriority(context);
+  const baseDistance = Math.max(1, Number.isFinite(threat.distanceToBase) ? threat.distanceToBase : dist(enemy, base));
+  const blockRatio = Math.min(0.62, ATTACK_RANGE_PX / baseDistance);
+  const directLineBlockPoint = clampEmergencyDefensePoint({
+    x: base.x + (enemy.x - base.x) * blockRatio,
+    y: base.y + (enemy.y - base.y) * blockRatio,
+  }, base);
+  const likelyTrajectoryBlockPoint = getEmergencyTrajectoryBlockPoint(context, threat, base);
+  const coverHoldPoint = getEmergencyCoverHoldPoint(base, enemy);
+
+  for(const plane of aiPlanes){
+    if(options.includeDirectIntercept !== false){
+      const directIntercept = planPathToPoint(plane, enemy.x, enemy.y);
+      if(directIntercept){
+        const candidate = buildEmergencyDefenseCandidate(context, threat, {
+          plane,
+          move: directIntercept,
+          goalName: "emergency_base_defense_intercept",
+          decisionReason: "direct_intercept",
+          defenseCandidateType: "direct_intercept",
+          interceptPoint: { x: enemy.x, y: enemy.y },
+          baseRawScore: directIntercept.totalDist + dist(plane, enemy) * 0.2,
+          beautyPenalty: 0.08,
+          defensivePriority,
+        });
+        if(candidate) candidates.push(candidate);
+      }
+    }
+
+    if(options.includeFutureInterceptSetup){
+      const prepIntercept = findSafePreparationMoveForAttack(plane, enemy);
+      if(prepIntercept){
+        const candidate = buildEmergencyDefenseCandidate(context, threat, {
+          plane,
+          move: prepIntercept,
+          goalName: "emergency_base_defense_intercept",
+          decisionReason: "future_intercept_setup",
+          defenseCandidateType: "future_intercept_setup",
+          interceptPoint: getAiMoveLandingPoint({
+            plane,
+            ...prepIntercept,
+          }),
+          baseRawScore: prepIntercept.totalDist + dist(plane, enemy) * 0.3,
+          beautyPenalty: 0.24,
+          defensivePriority,
+        });
+        if(candidate) candidates.push(candidate);
+      }
+    }
+
+    if(options.includeLaneBlock){
+      const blockMove = planPathToPoint(plane, directLineBlockPoint.x, directLineBlockPoint.y);
+      if(blockMove){
+        const candidate = buildEmergencyDefenseCandidate(context, threat, {
+          plane,
+          move: blockMove,
+          goalName: "emergency_base_defense_block",
+          decisionReason: "lane_block",
+          defenseCandidateType: "lane_block",
+          blockPoint: directLineBlockPoint,
+          interceptPoint: directLineBlockPoint,
+          baseRawScore: blockMove.totalDist,
+          beautyPenalty: 0.14,
+          defensivePriority,
+        });
+        if(candidate) candidates.push(candidate);
+      }
+    }
+
+    if(options.includeTrajectoryBlock){
+      const trajectoryMove = planPathToPoint(plane, likelyTrajectoryBlockPoint.x, likelyTrajectoryBlockPoint.y);
+      if(trajectoryMove){
+        const candidate = buildEmergencyDefenseCandidate(context, threat, {
+          plane,
+          move: trajectoryMove,
+          goalName: options.includeCoverHold ? "emergency_base_hold_position" : "emergency_base_defense_block",
+          decisionReason: "lane_block",
+          defenseCandidateType: "trajectory_block",
+          blockPoint: likelyTrajectoryBlockPoint,
+          interceptPoint: likelyTrajectoryBlockPoint,
+          baseRawScore: trajectoryMove.totalDist + dist(likelyTrajectoryBlockPoint, base) * 0.08,
+          beautyPenalty: 0.18,
+          defensivePriority,
+        });
+        if(candidate) candidates.push(candidate);
+      }
+    }
+
+    if(options.includeCoverHold){
+      const holdMove = planPathToPoint(plane, coverHoldPoint.x, coverHoldPoint.y);
+      if(holdMove){
+        const candidate = buildEmergencyDefenseCandidate(context, threat, {
+          plane,
+          move: holdMove,
+          goalName: "emergency_base_hold_position",
+          decisionReason: "cover_hold",
+          defenseCandidateType: "cover_hold",
+          holdPoint: coverHoldPoint,
+          interceptPoint: coverHoldPoint,
+          baseRawScore: holdMove.totalDist + dist(coverHoldPoint, base) * 0.12,
+          beautyPenalty: 0.12,
+          defensivePriority,
+        });
+        if(candidate) candidates.push(candidate);
+      }
+    }
+  }
+
+  return candidates;
+}
+
+function buildEmergencyDefenseCandidate(context, threat, options = {}){
+  const plane = options.plane;
+  const move = options.move;
+  const enemy = threat?.enemy || null;
+  const base = threat?.base || getBaseAnchor("blue");
+  if(!plane || !move || !enemy || !base) return null;
+
+  const landingPoint = getAiMoveLandingPoint({ plane, ...move }) || options.interceptPoint || null;
+  const utilityMeta = evaluateEmergencyDefenseCandidateUtility({
+    context,
+    threat,
+    defensivePriority: options.defensivePriority,
+    plane,
+    enemy,
+    base,
+    landingPoint,
+    defenseCandidateType: options.defenseCandidateType || "generic",
+  });
+  const scoreDiscount = utilityMeta.total * MAX_DRAG_DISTANCE * 0.18;
+  const adjustedBaseScore = Math.max(0, (Number.isFinite(options.baseRawScore) ? options.baseRawScore : move.totalDist) - scoreDiscount);
+
+  return {
+    plane,
+    enemy,
+    goalName: options.goalName || "emergency_base_defense_intercept",
+    decisionReason: options.decisionReason || "lane_block",
+    defenseCandidateType: options.defenseCandidateType || "generic",
+    blockPoint: options.blockPoint || null,
+    holdPoint: options.holdPoint || null,
+    interceptPoint: options.interceptPoint || null,
+    defenseUtility: utilityMeta.total,
+    defenseUtilityBreakdown: utilityMeta.breakdown,
+    defenseReliability: utilityMeta.reliability,
+    beautyPenalty: Number.isFinite(options.beautyPenalty) ? options.beautyPenalty : 0,
+    ...move,
+    score: getAiPlaneAdjustedScore(adjustedBaseScore, plane),
+    idleTurns: getAiPlaneIdleTurns(plane),
+  };
+}
+
+function evaluateEmergencyDefenseCandidateUtility({ threat, plane, enemy, base, landingPoint, defenseCandidateType }){
+  const safeLanding = landingPoint || plane;
+  const startDistanceToBase = Math.max(1, Number.isFinite(threat?.distanceToBase) ? threat.distanceToBase : dist(enemy, base));
+  const remainingEnemyToBase = Math.max(1, dist(enemy, safeLanding));
+  const pathBlockReduction = Math.max(0, 1 - Math.min(1, remainingEnemyToBase / startDistanceToBase));
+  const laneCloseness = 1 - Math.min(1, distancePointToSegment(safeLanding.x, safeLanding.y, enemy.x, enemy.y, base.x, base.y) / Math.max(ATTACK_RANGE_PX * 1.35, 1));
+  const followUpDistance = Math.max(1, dist(safeLanding, enemy));
+  const followUpPotential = 1 - Math.min(1, followUpDistance / Math.max(ATTACK_RANGE_PX * 2.2, 1));
+  const homeDistance = Math.max(0, dist(safeLanding, base));
+  const homePenalty = Math.min(1, homeDistance / Math.max(ATTACK_RANGE_PX * 2.6, 1));
+
+  const typeBonus = defenseCandidateType === "direct_intercept"
+    ? 0.22
+    : defenseCandidateType === "future_intercept_setup"
+      ? 0.12
+      : defenseCandidateType === "cover_hold"
+        ? 0.1
+        : 0.16;
+
+  const total = pathBlockReduction * 0.34
+    + laneCloseness * 0.28
+    + followUpPotential * 0.23
+    + (1 - homePenalty) * 0.15
+    + typeBonus;
+
+  return {
+    total,
+    reliability: laneCloseness * 0.55 + pathBlockReduction * 0.45,
+    breakdown: {
+      reduceBaseRunChance: pathBlockReduction,
+      closeBaseLane: laneCloseness,
+      fastFollowUpIntercept: followUpPotential,
+      stayNearHome: 1 - homePenalty,
+      typeBonus,
+    },
+  };
+}
+
+function getEmergencyTrajectoryBlockPoint(context, threat, base){
+  const enemy = threat?.enemy;
+  if(!enemy) return base;
+
+  const targetFlag = Array.isArray(context?.flags)
+    ? context.flags.find((flag) => flag?.color === "blue")
+    : null;
+  const flagAnchor = getFlagAnchor(targetFlag) || null;
+  const likelyTarget = flagAnchor && dist(enemy, flagAnchor) < dist(enemy, base) * 1.08
+    ? flagAnchor
+    : base;
+  const ratio = likelyTarget === base ? 0.58 : 0.46;
+  return clampEmergencyDefensePoint({
+    x: enemy.x + (likelyTarget.x - enemy.x) * ratio,
+    y: enemy.y + (likelyTarget.y - enemy.y) * ratio,
+  }, base);
+}
+
+function getEmergencyCoverHoldPoint(base, enemy){
   const halfCenterY = FIELD_TOP + FIELD_HEIGHT / 2;
   const isTopHalf = base.y <= halfCenterY;
   const halfMinY = isTopHalf ? FIELD_TOP : halfCenterY;
   const halfMaxY = isTopHalf ? halfCenterY : FIELD_TOP + FIELD_HEIGHT;
   const ratio = 0.45;
-  const targetX = base.x + (enemy.x - base.x) * ratio;
-  const targetY = base.y + (enemy.y - base.y) * ratio;
-  const holdPoint = {
-    x: Math.max(FIELD_LEFT, Math.min(FIELD_LEFT + FIELD_WIDTH, targetX)),
-    y: Math.max(halfMinY, Math.min(halfMaxY, targetY)),
+  return {
+    x: Math.max(FIELD_LEFT, Math.min(FIELD_LEFT + FIELD_WIDTH, base.x + (enemy.x - base.x) * ratio)),
+    y: Math.max(halfMinY, Math.min(halfMaxY, base.y + (enemy.y - base.y) * ratio)),
   };
+}
 
-  let bestHoldMove = null;
-  for(const plane of aiPlanes){
-    const holdMove = planPathToPoint(plane, holdPoint.x, holdPoint.y);
-    if(!holdMove) continue;
+function clampEmergencyDefensePoint(point, base){
+  return {
+    x: Math.max(FIELD_LEFT, Math.min(FIELD_LEFT + FIELD_WIDTH, point.x)),
+    y: Math.max(FIELD_TOP, Math.min(FIELD_TOP + FIELD_HEIGHT, point.y)),
+  };
+}
 
-    const candidate = {
-      plane,
-      enemy,
-      goalName: "emergency_base_hold_position",
-      holdPoint,
-      ...holdMove,
-      score: getAiPlaneAdjustedScore(holdMove.totalDist, plane),
-      idleTurns: getAiPlaneIdleTurns(plane),
-    };
-    if(compareAiCandidateByScoreAndRotation(candidate, bestHoldMove, ["emergency_hold_position"])){
-      bestHoldMove = candidate;
-    }
-  }
-
-  return bestHoldMove;
+function distancePointToSegment(px, py, ax, ay, bx, by){
+  const abx = bx - ax;
+  const aby = by - ay;
+  const abLengthSq = abx * abx + aby * aby;
+  if(abLengthSq <= 0.0001) return Math.hypot(px - ax, py - ay);
+  const apx = px - ax;
+  const apy = py - ay;
+  const t = Math.max(0, Math.min(1, ((apx * abx) + (apy * aby)) / abLengthSq));
+  const closestX = ax + abx * t;
+  const closestY = ay + aby * t;
+  return Math.hypot(px - closestX, py - closestY);
 }
 
 function placeBlueDynamiteAt(boardX, boardY){
@@ -25259,6 +25465,9 @@ function doComputerMoveLegacy(runtimeOptions = {}){
         distanceToBase: criticalBaseThreat.distanceToBase,
         hasCleanLineToBase: criticalBaseThreat.hasCleanLineToBase,
         goal: aiRoundState.currentGoal,
+        selectedReason: emergencyMove.decisionReason || null,
+        defenseCandidateType: emergencyMove.defenseCandidateType || null,
+        defenseUtilityBreakdown: emergencyMove.defenseUtilityBreakdown || null,
       });
       issueAIMoveFromDoComputerMove(modeContext, emergencyMove);
       return;
@@ -25278,6 +25487,9 @@ function doComputerMoveLegacy(runtimeOptions = {}){
         planeId: holdPositionMove.plane?.id ?? null,
         distanceToBase: criticalBaseThreat.distanceToBase,
         hasCleanLineToBase: criticalBaseThreat.hasCleanLineToBase,
+        selectedReason: holdPositionMove.decisionReason || null,
+        defenseCandidateType: holdPositionMove.defenseCandidateType || null,
+        defenseUtilityBreakdown: holdPositionMove.defenseUtilityBreakdown || null,
         holdPoint: holdPositionMove.holdPoint
           ? {
               x: Number(holdPositionMove.holdPoint.x.toFixed(1)),
@@ -25323,6 +25535,9 @@ function doComputerMoveLegacy(runtimeOptions = {}){
         canInterceptBeforePickup: criticalBlueFlagThreat.canInterceptBeforePickup,
         threatScore: criticalBlueFlagThreat.threatScore,
         goal: aiRoundState.currentGoal,
+        selectedReason: earlyFlagInterceptMove.decisionReason || null,
+        defenseCandidateType: earlyFlagInterceptMove.defenseCandidateType || null,
+        defenseUtilityBreakdown: earlyFlagInterceptMove.defenseUtilityBreakdown || null,
       });
       issueAIMoveFromDoComputerMove(modeContext, earlyFlagInterceptMove);
       return;
@@ -25348,6 +25563,9 @@ function doComputerMoveLegacy(runtimeOptions = {}){
         planeId: earlyFlagHoldMove.plane?.id ?? null,
         distanceToFlag: criticalBlueFlagThreat.distanceToFlag,
         hasCleanPathToFlag: criticalBlueFlagThreat.hasCleanPathToFlag,
+        selectedReason: earlyFlagHoldMove.decisionReason || null,
+        defenseCandidateType: earlyFlagHoldMove.defenseCandidateType || null,
+        defenseUtilityBreakdown: earlyFlagHoldMove.defenseUtilityBreakdown || null,
         holdPoint: earlyFlagHoldMove.holdPoint
           ? {
               x: Number(earlyFlagHoldMove.holdPoint.x.toFixed(1)),
@@ -25413,6 +25631,9 @@ function doComputerMoveLegacy(runtimeOptions = {}){
         distanceToBase: carrierThreat.distanceToBase,
         hasCleanLineToBase: carrierThreat.hasCleanLineToBase,
         goal: aiRoundState.currentGoal,
+        selectedReason: carrierEmergencyMove.decisionReason || null,
+        defenseCandidateType: carrierEmergencyMove.defenseCandidateType || null,
+        defenseUtilityBreakdown: carrierEmergencyMove.defenseUtilityBreakdown || null,
       });
       issueAIMoveFromDoComputerMove(modeContext, carrierEmergencyMove);
       return;
@@ -25433,6 +25654,9 @@ function doComputerMoveLegacy(runtimeOptions = {}){
         planeId: carrierHoldMove.plane?.id ?? null,
         distanceToBase: carrierThreat.distanceToBase,
         hasCleanLineToBase: carrierThreat.hasCleanLineToBase,
+        selectedReason: carrierHoldMove.decisionReason || null,
+        defenseCandidateType: carrierHoldMove.defenseCandidateType || null,
+        defenseUtilityBreakdown: carrierHoldMove.defenseUtilityBreakdown || null,
       });
       issueAIMoveFromDoComputerMove(modeContext, carrierHoldMove);
       return;
