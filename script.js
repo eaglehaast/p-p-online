@@ -19213,6 +19213,91 @@ function getDynamiteCandidateForCurrentRoute(context, plannedMove){
   return null;
 }
 
+function countDynamiteStrategicRouteOptions(originPoint, targetGeometry, points){
+  if(!originPoint || !targetGeometry?.collider?.id || !Array.isArray(points) || points.length === 0) return 0;
+  let count = 0;
+  for(const point of points){
+    if(!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) continue;
+    const clearNow = isPathClear(originPoint.x, originPoint.y, point.x, point.y);
+    const clearAfter = isPathClearIgnoringColliderById(originPoint.x, originPoint.y, point.x, point.y, targetGeometry.collider.id);
+    if(!clearNow && clearAfter) count += 1;
+  }
+  return count;
+}
+
+function evaluateStrategicDynamiteTargets(context, plannedMove){
+  const plane = plannedMove?.plane;
+  if(!plane) return null;
+
+  const spriteEntries = Array.isArray(currentMapSprites) ? currentMapSprites : [];
+  if(spriteEntries.length === 0) return null;
+
+  const homeBase = context?.homeBase || getBaseAnchor("blue");
+  const enemyBase = getBaseAnchor("green");
+  const priorityEnemy = getBluePriorityEnemy(context);
+  const routeTarget = getAiStrategicTargetPoint(context, plannedMove);
+  const landingPoint = getAiMoveLandingPoint(plannedMove) || plane;
+  const flagAnchors = context?.shouldUseFlagsMode && Array.isArray(context?.availableEnemyFlags)
+    ? context.availableEnemyFlags.map((flag) => getFlagAnchor(flag)).filter(Boolean)
+    : [];
+  const contactPoints = [homeBase, enemyBase, priorityEnemy, routeTarget, ...flagAnchors]
+    .filter((point) => point && Number.isFinite(point.x) && Number.isFinite(point.y));
+
+  const geometries = [];
+  for(let i = 0; i < spriteEntries.length; i += 1){
+    const geometry = getMapSpriteGeometry(spriteEntries[i], i);
+    if(geometry?.collider?.id) geometries.push(geometry);
+  }
+  if(geometries.length === 0) return null;
+
+  const evaluated = [];
+  for(const geometry of geometries){
+    const opensPathToBase = Boolean(homeBase)
+      && !isPathClear(plane.x, plane.y, homeBase.x, homeBase.y)
+      && isPathClearIgnoringColliderById(plane.x, plane.y, homeBase.x, homeBase.y, geometry.collider.id);
+    const opensPathToFlag = flagAnchors.some((flagAnchor) =>
+      !isPathClear(plane.x, plane.y, flagAnchor.x, flagAnchor.y)
+      && isPathClearIgnoringColliderById(plane.x, plane.y, flagAnchor.x, flagAnchor.y, geometry.collider.id)
+    );
+    const removesBarrierToContactZone = contactPoints.some((point) =>
+      !isPathClear(plane.x, plane.y, point.x, point.y)
+      && isPathClearIgnoringColliderById(plane.x, plane.y, point.x, point.y, geometry.collider.id)
+    );
+    const nextTurnRouteGain = countDynamiteStrategicRouteOptions(landingPoint, geometry, contactPoints);
+    const currentRouteImprovement = routeTarget && Number.isFinite(routeTarget.x) && Number.isFinite(routeTarget.y)
+      && !isPathClear(plane.x, plane.y, routeTarget.x, routeTarget.y)
+      && isPathClearIgnoringColliderById(plane.x, plane.y, routeTarget.x, routeTarget.y, geometry.collider.id);
+    const distanceBias = Math.hypot(geometry.cx - plane.x, geometry.cy - plane.y);
+    const score = (opensPathToBase ? 2.8 : 0)
+      + (opensPathToFlag ? 3.1 : 0)
+      + (removesBarrierToContactZone ? 1.8 : 0)
+      + (Math.min(4, nextTurnRouteGain) * 0.95)
+      + (currentRouteImprovement ? 0.7 : 0)
+      - Math.min(1.4, distanceBias / Math.max(CELL_SIZE * 8, 1) * 0.18);
+    if(score <= 0.35) continue;
+    evaluated.push({
+      ...geometry,
+      strategicScore: Number(score.toFixed(3)),
+      opensPathToBase,
+      opensPathToFlag,
+      removesBarrierToContactZone,
+      nextTurnRouteGain,
+      currentRouteImprovement,
+    });
+  }
+
+  if(evaluated.length === 0) return null;
+  evaluated.sort((a, b) => {
+    if(b.strategicScore !== a.strategicScore) return b.strategicScore - a.strategicScore;
+    if((b.nextTurnRouteGain || 0) !== (a.nextTurnRouteGain || 0)) return (b.nextTurnRouteGain || 0) - (a.nextTurnRouteGain || 0);
+    return Math.hypot(a.cx - plane.x, a.cy - plane.y) - Math.hypot(b.cx - plane.x, b.cy - plane.y);
+  });
+  return {
+    bestTarget: evaluated[0],
+    rankedTargets: evaluated.slice(0, 5),
+  };
+}
+
 function isDynamiteTargetUsefulForCurrentRoute(targetGeometry, context, plannedMove){
   const plane = plannedMove?.plane;
   if(!plane || !targetGeometry?.collider?.id) return false;
@@ -19901,24 +19986,53 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
   }
 
   if(allowTacticalItems && inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] > 0){
-    const homeBase = typeof getBaseAnchor === "function" ? getBaseAnchor("blue") : null;
     const routeAwareTarget = typeof getDynamiteCandidateForCurrentRoute === "function" ? getDynamiteCandidateForCurrentRoute(context, plannedMove) : null;
-    const defensiveTargetRaw = typeof getNearestDynamiteTargetToPoint === "function" ? getNearestDynamiteTargetToPoint(homeBase) : null;
-    const offensiveTargetRaw = typeof getNearestDynamiteTargetToPoint === "function" ? getNearestDynamiteTargetToPoint(priorityEnemy) : null;
-    const fallbackTarget = routeAwareTarget
-      || ((typeof isDynamiteTargetUsefulForCurrentRoute === "function" && isDynamiteTargetUsefulForCurrentRoute(defensiveTargetRaw, context, plannedMove)) ? defensiveTargetRaw : null)
-      || ((typeof isDynamiteTargetUsefulForCurrentRoute === "function" && isDynamiteTargetUsefulForCurrentRoute(offensiveTargetRaw, context, plannedMove)) ? offensiveTargetRaw : null);
+    const strategicDynamite = typeof evaluateStrategicDynamiteTargets === "function"
+      ? evaluateStrategicDynamiteTargets(context, plannedMove)
+      : null;
+    const strategicTarget = routeAwareTarget ? null : (strategicDynamite?.bestTarget || null);
+    const fallbackTarget = routeAwareTarget || strategicTarget;
     if(fallbackTarget){
+      const strategicReason = strategicTarget?.nextTurnRouteGain > 0
+        ? "dynamite_used_for_future_route_gain"
+        : "dynamite_used_for_map_opening";
       pushCandidate({
         itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
         target: { x: fallbackTarget.cx, y: fallbackTarget.cy, colliderId: fallbackTarget?.collider?.id ?? null },
-        expectedBenefit: routeAwareTarget ? 0.58 : 0.34,
-        risk: routeAwareTarget ? 0.06 : 0.14,
-        reason: routeAwareTarget ? "dynamite_route_opening" : "dynamite_relaxed_opening",
-        whyBetter: "dynamite removes the obstacle before launch, so the route becomes available right now",
+        expectedBenefit: routeAwareTarget ? 0.58 : Math.max(0.34, Math.min(0.82, 0.22 + (strategicTarget?.strategicScore || 0) * 0.11)),
+        risk: routeAwareTarget ? 0.06 : 0.12,
+        reason: routeAwareTarget ? "dynamite_route_opening" : strategicReason,
+        whyBetter: routeAwareTarget
+          ? "dynamite removes the obstacle before launch, so the route becomes available right now"
+          : "dynamite opens a more useful part of the map, so the next one or two turns have more good routes",
+        dynamiteUseClass: routeAwareTarget ? "current_route" : "strategic_map_opening",
+        strategicDynamiteScore: strategicTarget?.strategicScore ?? null,
+        strategicDynamiteReasons: strategicTarget ? {
+          opensPathToBase: strategicTarget.opensPathToBase,
+          opensPathToFlag: strategicTarget.opensPathToFlag,
+          removesBarrierToContactZone: strategicTarget.removesBarrierToContactZone,
+          nextTurnRouteGain: strategicTarget.nextTurnRouteGain,
+        } : null,
+        comparedTargets: strategicDynamite?.rankedTargets?.map((target) => ({
+          colliderId: target?.collider?.id ?? null,
+          x: Number.isFinite(target?.cx) ? Number(target.cx.toFixed(1)) : null,
+          y: Number.isFinite(target?.cy) ? Number(target.cy.toFixed(1)) : null,
+          score: target?.strategicScore ?? null,
+          nextTurnRouteGain: target?.nextTurnRouteGain ?? 0,
+        })) || null,
       });
     } else {
-      rejectCandidate(INVENTORY_ITEM_TYPES.DYNAMITE, "dynamite_no_useful_target");
+      rejectCandidate(
+        INVENTORY_ITEM_TYPES.DYNAMITE,
+        routeAwareTarget === null ? "dynamite_no_current_route_target" : "dynamite_no_useful_target",
+        {
+          whyWaiting: routeAwareTarget === null
+            ? "did_not_find_a_wall_that_improves_the_route_we_want_right_now"
+            : "did_not_find_any_wall_that_improves_the_route_now_or_on_the_next_turns",
+          routeTargetMissing: routeAwareTarget === null,
+          strategicTargetsChecked: strategicDynamite?.rankedTargets?.length ?? 0,
+        }
+      );
     }
   }
 
@@ -20455,6 +20569,17 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       if(executed){
         removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
         plannedMove.inventoryUsageReason = selectedInventoryCandidate.reason || "dynamite_route_opening";
+        if(selectedInventoryCandidate.reason === "dynamite_used_for_map_opening"
+          || selectedInventoryCandidate.reason === "dynamite_used_for_future_route_gain"){
+          logAiDecision(selectedInventoryCandidate.reason, {
+            planeId: plannedMove?.plane?.id ?? null,
+            goal: strategicGoal || null,
+            target: selectedInventoryCandidate.target || null,
+            strategicDynamiteScore: selectedInventoryCandidate.strategicDynamiteScore ?? null,
+            strategicDynamiteReasons: selectedInventoryCandidate.strategicDynamiteReasons || null,
+            comparedTargets: selectedInventoryCandidate.comparedTargets || [],
+          });
+        }
       }
     }
 
@@ -20946,23 +21071,11 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
   }
 
   if(allowTacticalItems && inventory.counts[INVENTORY_ITEM_TYPES.DYNAMITE] > 0){
-    const homeBase = getBaseAnchor("blue");
-    const pressureEnemy = getBluePriorityEnemy(context);
     const routeAwareTarget = getDynamiteCandidateForCurrentRoute(context, plannedMove);
-    const defensiveTargetRaw = getNearestDynamiteTargetToPoint(homeBase);
-    const offensiveTargetRaw = getNearestDynamiteTargetToPoint(pressureEnemy);
-    const defensiveTarget = isDynamiteTargetUsefulForCurrentRoute(defensiveTargetRaw, context, plannedMove)
-      ? defensiveTargetRaw
-      : null;
-    const offensiveTarget = isDynamiteTargetUsefulForCurrentRoute(offensiveTargetRaw, context, plannedMove)
-      ? offensiveTargetRaw
-      : null;
+    const strategicDynamite = routeAwareTarget ? null : evaluateStrategicDynamiteTargets(context, plannedMove);
+    const strategicTarget = strategicDynamite?.bestTarget || null;
 
-    const planted = routeAwareTarget
-      ? placeBlueDynamiteAt(routeAwareTarget.cx, routeAwareTarget.cy)
-      : false;
-
-    function setDynamiteIntentFromTarget(targetGeometry){
+    function setDynamiteIntentFromTarget(targetGeometry, usageReason){
       if(!targetGeometry) return;
       const expiresTurn = (Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : 0) + 1;
       aiRoundState.dynamiteIntent = {
@@ -20977,31 +21090,61 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         spriteId: targetGeometry?.id ?? null,
         targetX: Number.isFinite(targetGeometry?.cx) ? Number(targetGeometry.cx.toFixed(1)) : null,
         targetY: Number.isFinite(targetGeometry?.cy) ? Number(targetGeometry.cy.toFixed(1)) : null,
+        usageReason: usageReason || null,
         expiresTurn,
         turn: aiRoundState?.turnNumber ?? null,
       });
     }
 
-    if(planted){
+    if(routeAwareTarget && placeBlueDynamiteAt(routeAwareTarget.cx, routeAwareTarget.cy)){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
       plannedMove.inventoryUsageReason = "dynamite_route_opening";
-      setDynamiteIntentFromTarget(routeAwareTarget);
+      setDynamiteIntentFromTarget(routeAwareTarget, "dynamite_route_opening");
       return true;
     }
 
-    if(!planted){
-      const relaxedTarget = defensiveTarget || offensiveTarget || defensiveTargetRaw || offensiveTargetRaw;
-      if(relaxedTarget && placeBlueDynamiteAt(relaxedTarget.cx, relaxedTarget.cy)){
+    if(strategicTarget){
+      const strategicReason = strategicTarget.nextTurnRouteGain > 0
+        ? "dynamite_used_for_future_route_gain"
+        : "dynamite_used_for_map_opening";
+      if(placeBlueDynamiteAt(strategicTarget.cx, strategicTarget.cy)){
         removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
-        plannedMove.inventoryUsageReason = "dynamite_route_opening";
-        setDynamiteIntentFromTarget(relaxedTarget);
+        plannedMove.inventoryUsageReason = strategicReason;
+        setDynamiteIntentFromTarget(strategicTarget, strategicReason);
+        logAiDecision(strategicReason, {
+          planeId: plannedMove?.plane?.id ?? null,
+          goal: strategicGoal || null,
+          colliderId: strategicTarget?.collider?.id ?? null,
+          targetX: Number.isFinite(strategicTarget?.cx) ? Number(strategicTarget.cx.toFixed(1)) : null,
+          targetY: Number.isFinite(strategicTarget?.cy) ? Number(strategicTarget.cy.toFixed(1)) : null,
+          strategicScore: strategicTarget?.strategicScore ?? null,
+          opensPathToBase: strategicTarget?.opensPathToBase ?? false,
+          opensPathToFlag: strategicTarget?.opensPathToFlag ?? false,
+          removesBarrierToContactZone: strategicTarget?.removesBarrierToContactZone ?? false,
+          nextTurnRouteGain: strategicTarget?.nextTurnRouteGain ?? 0,
+          comparedTargets: strategicDynamite?.rankedTargets?.map((target) => ({
+            colliderId: target?.collider?.id ?? null,
+            score: target?.strategicScore ?? null,
+            nextTurnRouteGain: target?.nextTurnRouteGain ?? 0,
+          })) || [],
+        });
         markSoftFallbackUse(INVENTORY_ITEM_TYPES.DYNAMITE, {
-          reason: "dynamite_soft_fallback_relaxed_target",
-          targetX: relaxedTarget.cx,
-          targetY: relaxedTarget.cy,
+          reason: strategicReason,
+          targetX: strategicTarget.cx,
+          targetY: strategicTarget.cy,
         });
         return true;
       }
+      logAiDecision("dynamite_not_used_no_benefit", {
+        planeId: plannedMove?.plane?.id ?? null,
+        reason: "strategic_target_found_but_placement_failed",
+        colliderId: strategicTarget?.collider?.id ?? null,
+      });
+    } else {
+      logAiDecision("dynamite_not_used_no_benefit", {
+        planeId: plannedMove?.plane?.id ?? null,
+        reason: routeAwareTarget ? "route_target_failed_to_place" : "no_useful_target_anywhere",
+      });
     }
   }
 
