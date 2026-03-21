@@ -12927,6 +12927,7 @@ function invalidateAiPlanningState(reason = "unspecified"){
   clearAiPostInventoryLaunchTimeout(`planning_invalidate:${reason}`);
   aiPlanningSnapshotCache = null;
   aiCachedTargetMemory = null;
+  clearAiLaunchSessionWatchdog();
   aiLaunchSession = null;
   cleanupHandle();
 }
@@ -14106,12 +14107,22 @@ const AI_LAUNCH_PREVIEW_TARGET_MARKER_RADIUS = 8;
 const AI_LAUNCH_MAX_FRAME_GAP_MS = 1400;
 const AI_LAUNCH_SESSION_MAX_LIFETIME_MS = AI_LAUNCH_OSCILLATION_MAX_MS + AI_LAUNCH_PULL_BACK_MAX_MS + AI_LAUNCH_FAST_TARGET_SELECTION_MAX_MS + 2500;
 const AI_LAUNCH_STALL_NOTICE_HIDE_MS = 5000;
+const AI_LAUNCH_WATCHDOG_GRACE_MS = 220;
+const AI_LAUNCH_WATCHDOG_MIN_RELEASE_DELAY_MS = 160;
+const AI_LAUNCH_HEAVY_DEBUG_RECENT_WINDOW_MS = 4000;
+const AI_LAUNCH_DEGRADED_FRAME_THRESHOLD_MS = 220;
 
 const aiTelegraphyDebugState = {
   enabled: true,
 };
 
 let aiLaunchSession = null;
+const aiLaunchFrameHealthState = {
+  lastFrameAt: 0,
+  lastDeltaMs: 0,
+  degradedSinceAt: 0,
+  lastDegradedAt: 0,
+};
 const aiLaunchNoticeState = {
   layer: null,
   element: null,
@@ -14200,6 +14211,65 @@ function showAiLaunchStallNotice(message = "Игра была приостано
 
 function resetAiLaunchSessionVisualState(){
   cleanupHandle();
+}
+
+function clearAiLaunchSessionWatchdog(session = aiLaunchSession){
+  const timerId = session?.watchdogTimerId;
+  if(timerId !== null && timerId !== undefined){
+    clearTimeout(timerId);
+  }
+  if(session){
+    session.watchdogTimerId = null;
+  }
+}
+
+function hasRecentAiLaunchFrameDegradation(now = performance.now()){
+  return Number.isFinite(aiLaunchFrameHealthState.lastDegradedAt)
+    && aiLaunchFrameHealthState.lastDegradedAt > 0
+    && (now - aiLaunchFrameHealthState.lastDegradedAt) <= AI_LAUNCH_HEAVY_DEBUG_RECENT_WINDOW_MS;
+}
+
+function getAiLaunchTelegraphyMode(now = performance.now()){
+  if(aiTelegraphyDebugState.enabled === false){
+    return "disabled";
+  }
+  if(DEBUG_AIM){
+    return "minimal";
+  }
+  if(hasRecentAiLaunchFrameDegradation(now)){
+    return "minimal";
+  }
+  return "full";
+}
+
+function scheduleAiLaunchSessionWatchdog(session){
+  if(!session) return;
+  clearAiLaunchSessionWatchdog(session);
+  const baseDeadlineAt = Number.isFinite(session.watchdogDeadlineAt) ? session.watchdogDeadlineAt : 0;
+  const delayMs = Math.max(0, baseDeadlineAt - performance.now());
+  session.watchdogTimerId = setTimeout(() => {
+    if(aiLaunchSession !== session) return;
+    const watchdogNow = performance.now();
+    const hasCandidate = Boolean(pickAiLaunchCandidateForRelease(session)?.metrics);
+    resetAiLaunchSessionVisualState();
+    console.warn("launch watchdog forced immediate release");
+    if(hasCandidate && session?.plane && isPlaneLaunchStateReady(session.plane)){
+      session.stage = "release";
+      session.stageStartedAt = watchdogNow;
+      session.pendingReleaseReason = "watchdog_immediate_release";
+      releaseAiLaunchSession(session, "watchdog_immediate_release", watchdogNow);
+      return;
+    }
+    aiLaunchSession = null;
+    if(typeof failSafeAdvanceTurn === "function"){
+      failSafeAdvanceTurn("ai_launch_watchdog_fail_safe", {
+        goal: aiRoundState?.currentGoal || "ai_launch_watchdog_fail_safe",
+        planeId: session?.plane?.id ?? null,
+        reasonCodes: ["ai_launch_session_active", "watchdog_no_release_candidate", "fail_safe_turn_advance"],
+        rejectReasons: ["watchdog_no_release_candidate"],
+      });
+    }
+  }, delayMs);
 }
 
 function normalizeAngleDeltaRad(delta){
@@ -14395,6 +14465,7 @@ function releaseAiLaunchSession(session, reason, now = performance.now()){
       releaseCause: "emergency_release",
       status: "skipped_invalid_plane",
     });
+    clearAiLaunchSessionWatchdog(session);
     aiLaunchSession = null;
     cleanupHandle();
     if(typeof failSafeAdvanceTurn === "function"){
@@ -14416,6 +14487,7 @@ function releaseAiLaunchSession(session, reason, now = performance.now()){
       releaseCause: "emergency_release",
       status: "failed_no_candidate",
     });
+    clearAiLaunchSessionWatchdog(session);
     aiLaunchSession = null;
     cleanupHandle();
     if(typeof failSafeAdvanceTurn === "function"){
@@ -14438,6 +14510,7 @@ function releaseAiLaunchSession(session, reason, now = performance.now()){
       status: "failed_bad_launch_vector",
       candidateSource: candidate.source,
     });
+    clearAiLaunchSessionWatchdog(session);
     aiLaunchSession = null;
     cleanupHandle();
     if(typeof failSafeAdvanceTurn === "function"){
@@ -30586,6 +30659,8 @@ function destroyPlane(fp, scoringColor = null){
 
 function buildAiLaunchSession(plane, vx, vy){
   const now = performance.now();
+  const telegraphyMode = getAiLaunchTelegraphyMode(now);
+  const minimalTelegraphy = telegraphyMode !== "full";
   const idealPullPoint = buildPullPointForAiVector(plane, vx, vy);
   const idealTargetAim = computeAiAimMetricsFromPullPoint(plane, idealPullPoint.x, idealPullPoint.y);
   const targetAim = buildHumanizedAiTargetAim(plane, idealTargetAim);
@@ -30608,14 +30683,20 @@ function buildAiLaunchSession(plane, vx, vy){
   const rangeReductionReasonSource = rangeDecision.reductionReasonSource;
   const pullDistanceCells = targetDistancePx / CELL_SIZE;
   const randomInRange = (min, max) => min + Math.random() * Math.max(0, max - min);
-  const oscillationDurationMs = randomInRange(AI_LAUNCH_OSCILLATION_MIN_MS, AI_LAUNCH_OSCILLATION_MAX_MS);
+  const oscillationDurationMs = minimalTelegraphy
+    ? 0
+    : randomInRange(AI_LAUNCH_OSCILLATION_MIN_MS, AI_LAUNCH_OSCILLATION_MAX_MS);
   const hasVeryShortTargetDistance = pullDistanceCells <= AI_LAUNCH_MIN_TARGET_DISTANCE_FOR_FULL_TELEGRAPH_CELLS;
-  const targetSelectionDurationMs = hasVeryShortTargetDistance
-    ? randomInRange(AI_LAUNCH_FAST_TARGET_SELECTION_MIN_MS, AI_LAUNCH_FAST_TARGET_SELECTION_MAX_MS)
-    : randomInRange(AI_LAUNCH_TARGET_SELECTION_MIN_MS, AI_LAUNCH_TARGET_SELECTION_MAX_MS);
-  const pullBackDurationMs = hasVeryShortTargetDistance
-    ? randomInRange(AI_LAUNCH_FAST_PULL_MIN_MS, AI_LAUNCH_FAST_PULL_MAX_MS)
-    : randomInRange(AI_LAUNCH_PULL_BACK_MIN_MS, AI_LAUNCH_PULL_BACK_MAX_MS);
+  const targetSelectionDurationMs = minimalTelegraphy
+    ? 0
+    : (hasVeryShortTargetDistance
+      ? randomInRange(AI_LAUNCH_FAST_TARGET_SELECTION_MIN_MS, AI_LAUNCH_FAST_TARGET_SELECTION_MAX_MS)
+      : randomInRange(AI_LAUNCH_TARGET_SELECTION_MIN_MS, AI_LAUNCH_TARGET_SELECTION_MAX_MS));
+  const pullBackDurationMs = minimalTelegraphy
+    ? Math.min(AI_LAUNCH_FAST_PULL_MIN_MS, AI_LAUNCH_WATCHDOG_MIN_RELEASE_DELAY_MS)
+    : (hasVeryShortTargetDistance
+      ? randomInRange(AI_LAUNCH_FAST_PULL_MIN_MS, AI_LAUNCH_FAST_PULL_MAX_MS)
+      : randomInRange(AI_LAUNCH_PULL_BACK_MIN_MS, AI_LAUNCH_PULL_BACK_MAX_MS));
 
   activateAimSession({
     planeRef: plane,
@@ -30629,11 +30710,15 @@ function buildAiLaunchSession(plane, vx, vy){
   oscillationAngle = 0;
   oscillationDir = 1;
 
-  const telemetryEnabled = aiTelegraphyDebugState.enabled !== false;
+  const telemetryEnabled = telegraphyMode !== "disabled";
   const targetSelectionEndsAt = now + targetSelectionDurationMs;
   const pullBackEndsAt = targetSelectionEndsAt + pullBackDurationMs;
   const oscillationStartsAt = pullBackEndsAt;
   const releaseDueAt = oscillationStartsAt + oscillationDurationMs;
+  const watchdogDeadlineAt = Math.min(
+    now + AI_LAUNCH_SESSION_MAX_LIFETIME_MS,
+    Math.max(now + AI_LAUNCH_WATCHDOG_MIN_RELEASE_DELAY_MS, releaseDueAt + AI_LAUNCH_WATCHDOG_GRACE_MS)
+  );
 
   return {
     plane,
@@ -30642,7 +30727,7 @@ function buildAiLaunchSession(plane, vx, vy){
     createdAt: now,
     lastTickAt: now,
     maxLifetimeMs: AI_LAUNCH_SESSION_MAX_LIFETIME_MS,
-    stage: telemetryEnabled ? "targeting" : "oscillate",
+    stage: telemetryEnabled && targetSelectionDurationMs > 0 ? "targeting" : "pull",
     stageStartedAt: now,
     pullPoint,
     targetSelectionEndsAt,
@@ -30666,6 +30751,9 @@ function buildAiLaunchSession(plane, vx, vy){
       powerRatio: AI_LAUNCH_SESSION_POWER_TOLERANCE,
     },
     telegraphyEnabled: telemetryEnabled,
+    telegraphyMode,
+    watchdogDeadlineAt,
+    watchdogTimerId: null,
     powerSweepPhase: Math.random() * Math.PI * 2,
     powerSweepSpeed: randomInRange(AI_LAUNCH_POWER_SWEEP_SPEED_MIN, AI_LAUNCH_POWER_SWEEP_SPEED_MAX),
   };
@@ -30732,6 +30820,7 @@ function resolveAiLaunchSessionAnomaly(session, anomaly = {}){
     return;
   }
 
+  clearAiLaunchSessionWatchdog(session);
   aiLaunchSession = null;
   if(typeof failSafeAdvanceTurn === "function"){
     failSafeAdvanceTurn("ai_launch_session_recovery_fail_safe", {
@@ -30757,6 +30846,7 @@ function runAiLaunchSessionTick(now = performance.now()){
   session.lastTickAt = now;
 
   if(frameGapMs > AI_LAUNCH_MAX_FRAME_GAP_MS){
+    aiLaunchFrameHealthState.lastDegradedAt = now;
     resolveAiLaunchSessionAnomaly(session, {
       kind: "frame_gap_during_active_launch",
       reasonCode: "external_pause_detected",
@@ -30781,6 +30871,7 @@ function runAiLaunchSessionTick(now = performance.now()){
   }
 
   if(!session.plane || !isPlaneLaunchStateReady(session.plane)){
+    clearAiLaunchSessionWatchdog(session);
     aiLaunchSession = null;
     cleanupHandle();
     if(typeof failSafeAdvanceTurn === "function"){
@@ -30880,6 +30971,7 @@ function issueAIMove(plane, vx, vy){
 
   clearAiLaunchStallNotice();
   aiLaunchSession = buildAiLaunchSession(plane, vx, vy);
+  scheduleAiLaunchSessionWatchdog(aiLaunchSession);
   logAiDecision("ai_launch_session_started", {
     planeId: plane?.id ?? null,
     aiLaunchSessionActive: true,
@@ -30888,6 +30980,10 @@ function issueAIMove(plane, vx, vy){
       ? Math.max(0, Math.round(aiLaunchSession.releaseDueAt - aiLaunchSession.createdAt))
       : null,
     telegraphyEnabled: aiLaunchSession?.telegraphyEnabled !== false,
+    telegraphyMode: aiLaunchSession?.telegraphyMode || null,
+    watchdogDeadlineAtMs: Number.isFinite(aiLaunchSession?.watchdogDeadlineAt) && Number.isFinite(aiLaunchSession?.createdAt)
+      ? Math.max(0, Math.round(aiLaunchSession.watchdogDeadlineAt - aiLaunchSession.createdAt))
+      : null,
   });
   return {
     ok: true,
@@ -31189,6 +31285,16 @@ function gameDraw(){
   const delta = deltaSec * 60;
   const deltaMs = deltaSec * 1000;
   lastFrameTime = now;
+  aiLaunchFrameHealthState.lastFrameAt = now;
+  aiLaunchFrameHealthState.lastDeltaMs = deltaMs;
+  if(deltaMs >= AI_LAUNCH_DEGRADED_FRAME_THRESHOLD_MS){
+    if(aiLaunchFrameHealthState.degradedSinceAt <= 0){
+      aiLaunchFrameHealthState.degradedSinceAt = now;
+    }
+    aiLaunchFrameHealthState.lastDegradedAt = now;
+  } else {
+    aiLaunchFrameHealthState.degradedSinceAt = 0;
+  }
   globalFrame += delta;
 
   // фон
@@ -34291,6 +34397,7 @@ function setMapIndexAndPersist(nextIndex){
 
 function resetPlanePositionsForCurrentMap(){
   flyingPoints = [];
+  clearAiLaunchSessionWatchdog();
   aiLaunchSession = null;
   hasShotThisRound = false;
   awaitingFlightResolution = false;
