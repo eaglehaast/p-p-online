@@ -17853,8 +17853,194 @@ function placeBlueDynamiteAt(boardX, boardY){
   return true;
 }
 
-function tryPlaceBlueMineNearEnemyBase(){
+function evaluateBlueMinePlacementImpact(context, plannedMove, placement, options = {}){
+  const plane = plannedMove?.plane;
+  const landingPoint = typeof getAiMoveLandingPoint === "function" ? getAiMoveLandingPoint(plannedMove) : null;
+  const enemies = Array.isArray(context?.enemies)
+    ? context.enemies.filter((enemy) => enemy?.isAlive !== false)
+    : [];
+  if(!plane || !landingPoint || !placement || enemies.length === 0) return null;
+
+  function clampProbePoint(x, y){
+    const minX = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
+    const maxX = FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X;
+    const minY = FIELD_TOP + FIELD_BORDER_OFFSET_Y;
+    const maxY = FIELD_TOP + FIELD_HEIGHT - FIELD_BORDER_OFFSET_Y;
+    return {
+      x: Math.max(minX, Math.min(maxX, x)),
+      y: Math.max(minY, Math.min(maxY, y)),
+    };
+  }
+
+  function normalizeVector(dx, dy){
+    const length = Math.hypot(dx, dy);
+    if(length <= 0.0001) return null;
+    return { x: dx / length, y: dy / length };
+  }
+
+  function collectUniqueTargets(rawTargets){
+    const unique = [];
+    for(const target of rawTargets){
+      if(!target || !Number.isFinite(target.x) || !Number.isFinite(target.y)) continue;
+      const duplicate = unique.some((entry) => Math.hypot(entry.x - target.x, entry.y - target.y) <= CELL_SIZE * 0.35);
+      if(!duplicate) unique.push(target);
+    }
+    return unique;
+  }
+
+  function measureEnemyOptions(enemy){
+    const friendlyThreats = Array.isArray(context?.aiPlanes)
+      ? context.aiPlanes.filter((aiPlane) => aiPlane?.isAlive !== false)
+      : [];
+    const enemyContext = {
+      ...context,
+      plane: enemy,
+      enemies: friendlyThreats,
+    };
+    const nearestThreat = friendlyThreats.reduce((best, aiPlane) => {
+      if(!aiPlane || !Number.isFinite(aiPlane.x) || !Number.isFinite(aiPlane.y)) return best;
+      const distance = Math.hypot(aiPlane.x - enemy.x, aiPlane.y - enemy.y);
+      if(!best || distance < best.distance) return { plane: aiPlane, distance };
+      return best;
+    }, null);
+    const retreatVectors = [
+      normalizeVector(1, 0),
+      normalizeVector(-1, 0),
+      normalizeVector(0, 1),
+      normalizeVector(0, -1),
+      nearestThreat ? normalizeVector(enemy.x - nearestThreat.plane.x, enemy.y - nearestThreat.plane.y) : null,
+    ].filter(Boolean);
+
+    const retreatDistance = Math.max(CELL_SIZE * 2.8, Math.min(MAX_DRAG_DISTANCE * 0.45, (getPlaneEffectiveRangePx(enemy) || MAX_DRAG_DISTANCE) * 0.9));
+    const escapeTargets = collectUniqueTargets(retreatVectors.map((vector, index) => {
+      const point = clampProbePoint(enemy.x + vector.x * retreatDistance, enemy.y + vector.y * retreatDistance);
+      return { ...point, name: `escape_${index}` };
+    }));
+
+    const enemyBase = getBaseAnchor("green");
+    const enemyFlags = typeof getAvailableFlagsByColor === "function" ? getAvailableFlagsByColor("green") : [];
+    const enemyFlagTargets = enemyFlags.map((flag, index) => {
+      const anchor = typeof getFlagAnchor === "function" ? getFlagAnchor(flag) : null;
+      return anchor ? { x: anchor.x, y: anchor.y, name: `flag_${index}` } : null;
+    }).filter(Boolean);
+    const nearbyFightTarget = nearestThreat
+      ? { x: nearestThreat.plane.x, y: nearestThreat.plane.y, name: "close_fight" }
+      : null;
+    const goalTargets = collectUniqueTargets([
+      enemyBase ? { x: enemyBase.x, y: enemyBase.y, name: "enemy_base" } : null,
+      ...enemyFlagTargets,
+      nearbyFightTarget,
+    ]).sort((a, b) => Math.hypot(a.x - enemy.x, a.y - enemy.y) - Math.hypot(b.x - enemy.x, b.y - enemy.y)).slice(0, 3);
+
+    function evaluateTarget(target, kind){
+      const move = typeof planPathToPoint === "function"
+        ? planPathToPoint(enemy, target.x, target.y, {
+            context: enemyContext,
+            goalName: `mine_route_probe_${kind}`,
+            decisionReason: `mine_route_probe_${kind}_${target.name || "target"}`,
+            routeClass: "direct",
+          })
+        : null;
+      if(!move) return { safe: false, landing: null, pathExists: false, threatMeta: null, targetName: target.name || null };
+      const landing = typeof getAiMoveLandingPoint === "function"
+        ? getAiMoveLandingPoint({ plane: enemy, ...move })
+        : null;
+      if(!landing) return { safe: false, landing: null, pathExists: false, threatMeta: null, targetName: target.name || null };
+      const threatMeta = typeof getImmediateResponseThreatMeta === "function"
+        ? getImmediateResponseThreatMeta(enemyContext, landing.x, landing.y, nearestThreat?.plane || null)
+        : { count: 0 };
+      return {
+        safe: threatMeta.count <= 0,
+        landing,
+        pathExists: true,
+        threatMeta,
+        targetName: target.name || null,
+      };
+    }
+
+    const escapeResults = escapeTargets.map((target) => evaluateTarget(target, "escape"));
+    const goalResults = goalTargets.map((target) => evaluateTarget(target, "goal"));
+    const safeEscapeCount = escapeResults.filter((entry) => entry.safe).length;
+    const safeGoalCount = goalResults.filter((entry) => entry.safe).length;
+    return {
+      safeEscapeCount,
+      safeGoalCount,
+      goodDirectionCount: safeEscapeCount + safeGoalCount,
+      bestGoalSafe: safeGoalCount > 0,
+      bestEscapeSafe: safeEscapeCount > 0,
+    };
+  }
+
+  const baselineByEnemy = enemies.map((enemy) => ({ enemy, summary: measureEnemyOptions(enemy) }));
+
+  const simulatedMine = {
+    id: `sim-mine-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    owner: "blue",
+    x: placement.x,
+    y: placement.y,
+    cellX: placement.cellX,
+    cellY: placement.cellY,
+  };
+  const mineArray = Array.isArray(mines) ? mines : null;
+  if(mineArray) mineArray.push(simulatedMine);
+  const afterByEnemy = baselineByEnemy.map(({ enemy }) => ({ enemy, summary: measureEnemyOptions(enemy) }));
+  if(mineArray && mineArray[mineArray.length - 1] === simulatedMine) mineArray.pop();
+  else if(mineArray){
+    const idx = mineArray.indexOf(simulatedMine);
+    if(idx >= 0) mineArray.splice(idx, 1);
+  }
+
+  let totalDirectionLoss = 0;
+  let blockedEscapeCount = 0;
+  let cutRouteCount = 0;
+  let trapCount = 0;
+  const enemyReports = [];
+
+  for(let i = 0; i < baselineByEnemy.length; i += 1){
+    const before = baselineByEnemy[i].summary;
+    const after = afterByEnemy[i].summary;
+    const enemy = baselineByEnemy[i].enemy;
+    const directionLoss = Math.max(0, before.goodDirectionCount - after.goodDirectionCount);
+    const blocksEscape = before.bestEscapeSafe && !after.bestEscapeSafe;
+    const cutsBestRoute = before.bestGoalSafe && !after.bestGoalSafe;
+    const createsTrap = directionLoss >= 2 && after.goodDirectionCount <= 1 && (blocksEscape || cutsBestRoute || after.safeEscapeCount === 0);
+    if(blocksEscape) blockedEscapeCount += 1;
+    if(cutsBestRoute) cutRouteCount += 1;
+    if(createsTrap) trapCount += 1;
+    totalDirectionLoss += directionLoss;
+    enemyReports.push({
+      enemyId: enemy?.id ?? null,
+      beforeGoodDirections: before.goodDirectionCount,
+      afterGoodDirections: after.goodDirectionCount,
+      directionLoss,
+      blocksEscape,
+      cutsBestRoute,
+      createsTrap,
+    });
+  }
+
+  let scenario = options?.fallbackScenario || "mine_blocks_escape_lane";
+  if(trapCount > 0) scenario = "mine_creates_trap";
+  else if(cutRouteCount > 0) scenario = "mine_cuts_best_route";
+  else if(blockedEscapeCount > 0) scenario = "mine_blocks_escape_lane";
+
+  const score = (blockedEscapeCount * 5.5) + (cutRouteCount * 4.2) + (trapCount * 7.5) + totalDirectionLoss;
+  return {
+    placement,
+    planeId: plane?.id ?? null,
+    scenario,
+    score,
+    totalDirectionLoss,
+    blockedEscapeCount,
+    cutRouteCount,
+    trapCount,
+    enemyReports,
+  };
+}
+
+function tryPlaceBlueMineNearEnemyBase(context = null, plannedMove = null, options = {}){
   const enemyBase = getBaseAnchor("green");
+  if(!enemyBase) return options?.evaluateOnly ? null : false;
   const candidates = [
     { x: enemyBase.x - CELL_SIZE * 1.2, y: enemyBase.y + CELL_SIZE * 0.8 },
     { x: enemyBase.x + CELL_SIZE * 1.2, y: enemyBase.y + CELL_SIZE * 0.8 },
@@ -17862,6 +18048,7 @@ function tryPlaceBlueMineNearEnemyBase(){
     { x: enemyBase.x, y: enemyBase.y - CELL_SIZE * 1.4 },
   ];
 
+  let bestCandidate = null;
   for(const candidate of candidates){
     const placement = {
       x: candidate.x,
@@ -17870,24 +18057,40 @@ function tryPlaceBlueMineNearEnemyBase(){
       cellY: Math.floor((candidate.y - FIELD_TOP) / CELL_SIZE),
     };
     if(!isMinePlacementValid(placement)) continue;
-    placeMine({
-      owner: "blue",
-      x: placement.x,
-      y: placement.y,
-      cellX: placement.cellX,
-      cellY: placement.cellY,
-    });
-    return true;
+    const impact = evaluateBlueMinePlacementImpact(context, plannedMove, placement, {
+      fallbackScenario: "mine_cuts_best_route",
+    }) || {
+      placement,
+      scenario: "mine_cuts_best_route",
+      score: 0.25,
+      totalDirectionLoss: 0,
+      blockedEscapeCount: 0,
+      cutRouteCount: 0,
+      trapCount: 0,
+      enemyReports: [],
+    };
+    if(!bestCandidate || impact.score > bestCandidate.score) bestCandidate = impact;
   }
 
-  return false;
+  if(options?.evaluateOnly) return bestCandidate;
+  if(!bestCandidate) return false;
+
+  placeMine({
+    owner: "blue",
+    x: bestCandidate.placement.x,
+    y: bestCandidate.placement.y,
+    cellX: bestCandidate.placement.cellX,
+    cellY: bestCandidate.placement.cellY,
+  });
+  aiRoundState.lastMinePlacementMeta = bestCandidate;
+  return true;
 }
 
-function tryPlaceBlueDefensiveMine(context, plannedMove){
+function tryPlaceBlueDefensiveMine(context, plannedMove, options = {}){
   const plane = plannedMove?.plane;
   const landingPoint = getAiMoveLandingPoint(plannedMove);
   const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
-  if(!plane || !landingPoint || enemies.length === 0) return false;
+  if(!plane || !landingPoint || enemies.length === 0) return options?.evaluateOnly ? null : false;
 
   function isPlacementSelfRisky(point){
     if(!point) return true;
@@ -17915,7 +18118,7 @@ function tryPlaceBlueDefensiveMine(context, plannedMove){
     }
   }
 
-  if(!mostDangerousEnemy) return false;
+  if(!mostDangerousEnemy) return options?.evaluateOnly ? null : false;
 
   const blockPoint = {
     x: landingPoint.x + (mostDangerousEnemy.x - landingPoint.x) * 0.42,
@@ -17929,6 +18132,7 @@ function tryPlaceBlueDefensiveMine(context, plannedMove){
   };
 
   if(isPlacementSelfRisky(placement)){
+    if(options?.evaluateOnly) return null;
     logAiDecision("mine_skipped_self_risk", {
       planeId: plane?.id ?? null,
       enemyId: mostDangerousEnemy?.id ?? null,
@@ -17939,7 +18143,23 @@ function tryPlaceBlueDefensiveMine(context, plannedMove){
     return false;
   }
 
-  if(!isMinePlacementValid(placement)) return false;
+  if(!isMinePlacementValid(placement)) return options?.evaluateOnly ? null : false;
+
+  const impact = evaluateBlueMinePlacementImpact(context, plannedMove, placement, {
+    fallbackScenario: "mine_blocks_escape_lane",
+  }) || {
+    placement,
+    scenario: "mine_blocks_escape_lane",
+    score: 0.5,
+    totalDirectionLoss: 0,
+    blockedEscapeCount: 0,
+    cutRouteCount: 0,
+    trapCount: 0,
+    enemyReports: [],
+  };
+  impact.enemyId = mostDangerousEnemy?.id ?? null;
+
+  if(options?.evaluateOnly) return impact;
 
   placeMine({
     owner: "blue",
@@ -17948,6 +18168,7 @@ function tryPlaceBlueDefensiveMine(context, plannedMove){
     cellX: placement.cellX,
     cellY: placement.cellY,
   });
+  aiRoundState.lastMinePlacementMeta = impact;
   return true;
 }
 
@@ -18966,6 +19187,29 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     const profitableTradeWindow = isPlannedMoveLikelyProfitableTrade(priorityEnemy);
     const shouldSkipMineForAttack = strongAttackWindow || profitableTradeWindow;
 
+    function pickPreferredMinePlan(){
+      const defensivePlan = tryPlaceBlueDefensiveMine(context, plannedMove, { evaluateOnly: true });
+      const basePlan = tryPlaceBlueMineNearEnemyBase(context, plannedMove, { evaluateOnly: true });
+      if(!defensivePlan && !basePlan) return null;
+      if(defensivePlan && !basePlan) return { type: "defensive", plan: defensivePlan };
+      if(basePlan && !defensivePlan) return { type: "base", plan: basePlan };
+      if((defensivePlan?.score || 0) >= (basePlan?.score || 0)) return { type: "defensive", plan: defensivePlan };
+      return { type: "base", plan: basePlan };
+    }
+
+    function executeMinePlan(selectedMinePlan){
+      if(!selectedMinePlan) return false;
+      const didPlaceMine = selectedMinePlan.type === "defensive"
+        ? tryPlaceBlueDefensiveMine(context, plannedMove)
+        : tryPlaceBlueMineNearEnemyBase(context, plannedMove);
+      if(didPlaceMine){
+        aiRoundState.lastMinePlacementMeta = selectedMinePlan.plan;
+      }
+      return didPlaceMine;
+    }
+
+    const preferredMinePlan = shouldSkipMineForAttack ? null : pickPreferredMinePlan();
+
     if(shouldSkipMineForAttack){
       logAiDecision("mine_skipped_due_to_attack_window", {
         planeId: plannedMove.plane?.id ?? null,
@@ -18987,11 +19231,17 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         carriesFlag: Boolean(priorityEnemy?.carriedFlagId),
         profitableTradeWindow,
       });
-    } else if(tryPlaceBlueDefensiveMine(context, plannedMove) || tryPlaceBlueMineNearEnemyBase()){
+    } else if(executeMinePlan(preferredMinePlan)){
       logAiDecision("mine_placed_for_cover", {
         planeId: plannedMove.plane?.id ?? null,
         enemyId: priorityEnemy?.id ?? null,
         softFallback: false,
+        scenario: preferredMinePlan?.plan?.scenario || null,
+        routeBlockScore: preferredMinePlan?.plan ? Number((preferredMinePlan.plan.score || 0).toFixed(3)) : null,
+        blockedEscapeCount: preferredMinePlan?.plan?.blockedEscapeCount ?? 0,
+        cutRouteCount: preferredMinePlan?.plan?.cutRouteCount ?? 0,
+        trapCount: preferredMinePlan?.plan?.trapCount ?? 0,
+        totalDirectionLoss: preferredMinePlan?.plan?.totalDirectionLoss ?? 0,
       });
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
       return true;
@@ -19006,16 +19256,24 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       });
 
     if(!shouldSkipMineForAttack && softFallbackReady && safeAfterPlacement){
-      const softMinePlaced = tryPlaceBlueDefensiveMine(context, plannedMove) || tryPlaceBlueMineNearEnemyBase();
+      const softMinePlan = preferredMinePlan || pickPreferredMinePlan();
+      const softMinePlaced = executeMinePlan(softMinePlan);
       if(softMinePlaced){
         removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
         logAiDecision("mine_placed_for_cover", {
           planeId: plannedMove.plane?.id ?? null,
           enemyId: priorityEnemy?.id ?? null,
           softFallback: true,
+          scenario: softMinePlan?.plan?.scenario || null,
+          routeBlockScore: softMinePlan?.plan ? Number((softMinePlan.plan.score || 0).toFixed(3)) : null,
+          blockedEscapeCount: softMinePlan?.plan?.blockedEscapeCount ?? 0,
+          cutRouteCount: softMinePlan?.plan?.cutRouteCount ?? 0,
+          trapCount: softMinePlan?.plan?.trapCount ?? 0,
+          totalDirectionLoss: softMinePlan?.plan?.totalDirectionLoss ?? 0,
         });
         markSoftFallbackUse(INVENTORY_ITEM_TYPES.MINE, {
           reason: "mine_soft_fallback",
+          scenario: softMinePlan?.plan?.scenario || null,
         });
         return true;
       }
