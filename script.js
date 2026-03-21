@@ -20611,7 +20611,6 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       planeId: plannedMove?.plane?.id ?? null,
       goal: strategicGoal || null,
     });
-    return false;
   }
 
   const fuelTrainingMeta = aiRoundState?.trainingForceFuelOnNextAiTurn || null;
@@ -20662,9 +20661,6 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     }
   }
 
-  if(!selectedInventoryCandidate){
-    return false;
-  }
 
   if(inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0){
     const enemyFlag = context?.shouldUseFlagsMode ? getAvailableFlagsByColor("green")[0] : null;
