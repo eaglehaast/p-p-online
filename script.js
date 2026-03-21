@@ -14662,13 +14662,17 @@ function getGrabRejectReason(mx, my, currentColor){
   return "plane_unavailable";
 }
 
+function isHumanAllowedToControlActiveAimSession(){
+  return !(handleCircle.active && handleCircle.controllerType === "computer");
+}
+
 function updateBoardCursorForHover(x, y) {
   if(phase === 'AA_PLACEMENT') {
     gsBoardCanvas.style.cursor = '';
     return;
   }
   if(handleCircle.active) {
-    gsBoardCanvas.style.cursor = 'grabbing';
+    gsBoardCanvas.style.cursor = handleCircle.controllerType === "computer" ? '' : 'grabbing';
     return;
   }
   gsBoardCanvas.style.cursor = isPlaneGrabbableAt(x, y) ? 'grab' : '';
@@ -14760,6 +14764,7 @@ function removeStickyAimGlobalPointerListeners(){
 
 function onGlobalStickyAimPointerDownWhileArmed(e){
   if(!handleCircle.active || phase === 'AA_PLACEMENT') return;
+  if(!isHumanAllowedToControlActiveAimSession()) return;
   if(handleCircle.pointerDown) return;
 
   const target = e.target;
@@ -14876,6 +14881,10 @@ function onCanvasPointerDown(e){
   }
   if(isNuclearStrikeActionLocked()) return;
   if(handleCircle.active && phase !== 'AA_PLACEMENT'){
+    if(!isHumanAllowedToControlActiveAimSession()){
+      e.preventDefault();
+      return;
+    }
     const { x: designX, y: designY } = getPointerDesignCoords(e);
     const { x, y } = designToBoardCoords(designX, designY);
     if(shouldUseStickyAimForPointerEvent(e)){
@@ -14918,6 +14927,12 @@ function onCanvasPointerMove(e){
   const { x, y } = designToBoardCoords(designX, designY);
 
   if(handleCircle.active && phase !== 'AA_PLACEMENT'){
+    if(!isHumanAllowedToControlActiveAimSession()){
+      gsBoardCanvas.style.cursor = '';
+      document.body.style.cursor = '';
+      return;
+    }
+
     handleCircle.baseX = x;
     handleCircle.baseY = y;
 
@@ -14958,6 +14973,10 @@ function onCanvasPointerUp(e){
 
   if(phase !== 'AA_PLACEMENT'){
     if(!handleCircle.active) return;
+    if(!isHumanAllowedToControlActiveAimSession()){
+      e.preventDefault();
+      return;
+    }
 
     if(!shouldUseStickyAimForPointerEvent(e)){
       const { x: designX, y: designY } = getPointerDesignCoords(e);
@@ -15002,6 +15021,7 @@ function onCanvasPointerUp(e){
 
 function onGlobalStickyAimPointerMove(e){
   if(!handleCircle.active || phase === 'AA_PLACEMENT') return;
+  if(!isHumanAllowedToControlActiveAimSession()) return;
 
   const trackedPointerId = handleCircle.pointerId;
   if(handleCircle.pointerDown && Number.isFinite(trackedPointerId) && Number.isFinite(e?.pointerId) && e.pointerId !== trackedPointerId){
@@ -15029,6 +15049,7 @@ function onGlobalStickyAimPointerMove(e){
 
 function onGlobalStickyAimPointerUpOrCancel(e){
   if(!handleCircle.active || phase === 'AA_PLACEMENT') return;
+  if(!isHumanAllowedToControlActiveAimSession()) return;
 
   const holdResult = endStickyAimHoldTracking(e);
   if(!holdResult.ended) return;
