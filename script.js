@@ -20262,6 +20262,33 @@ function evaluateFlagPickupContinuation(plane, pickupPoint, options = {}){
   };
 }
 
+function shouldAiBluePlanePickUpEnemyFlag(plane, flag){
+  if(gameMode !== "computer") return true;
+  if(plane?.color !== "blue") return true;
+  if(flag?.color !== "green") return true;
+  const pickupPoint = getFlagInteractionTarget(flag);
+  if(!pickupPoint || !Number.isFinite(pickupPoint.x) || !Number.isFinite(pickupPoint.y)) return true;
+  const enemies = Array.isArray(points)
+    ? points.filter((enemy) => enemy?.color === "green" && enemy?.isAlive && !enemy?.burning)
+    : [];
+  const continuation = evaluateFlagPickupContinuation(plane, pickupPoint, {
+    homeBase: getBaseAnchor("blue"),
+    enemies,
+    context: { enemies },
+    goalName: "auto_flag_pickup_guard",
+  });
+  if(continuation.hasSafeEscape === true) return true;
+  logAiDecision("auto_flag_pickup_blocked", {
+    planeId: plane?.id ?? null,
+    flagId: flag?.id ?? null,
+    statusLabel: continuation.statusLabel,
+    statusReason: continuation.statusReason,
+    immediateThreatCount: continuation.immediateThreatCount,
+    immediateThreatNearestDist: continuation.immediateThreatNearestDist,
+  });
+  return false;
+}
+
 function evaluateFlagPressureOpportunity(context = {}){
   const aiPlanes = Array.isArray(context?.aiPlanes) ? context.aiPlanes.filter(Boolean) : [];
   const enemies = Array.isArray(context?.enemies) ? context.enemies.filter((enemy) => enemy?.isAlive !== false) : [];
@@ -31291,7 +31318,9 @@ function handleFlagInteractions(plane){
       if(flag.carrier) continue;
       const target = getFlagInteractionTarget(flag);
       if(!target) continue;
-      if(doesPlaneZoneIntersectTargetZone(plane, target) && !plane.carriedFlagId){
+      if(doesPlaneZoneIntersectTargetZone(plane, target)
+        && !plane.carriedFlagId
+        && shouldAiBluePlanePickUpEnemyFlag(plane, flag)){
         assignFlagToPlane(flag, plane);
         break;
       }
