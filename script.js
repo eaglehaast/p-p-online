@@ -16587,6 +16587,9 @@ function markAiStuckSectorUsed(plane, sector){
 
 const AI_DYNAMITE_INTENT_SCORE_BONUS = 0.94;
 const AI_DYNAMITE_INTENT_LINE_TOLERANCE = CELL_SIZE * 0.9;
+const AI_MULTI_KILL_DOUBLE_BONUS = CELL_SIZE * 0.55;
+const AI_MULTI_KILL_TRIPLE_BONUS = CELL_SIZE * 0.95;
+const AI_MULTI_KILL_QUAD_BONUS = CELL_SIZE * 1.35;
 const AI_MULTI_KILL_PRIMARY_BONUS = CELL_SIZE * 0.55;
 const AI_MULTI_KILL_TIE_BREAK_BONUS = CELL_SIZE * 0.08;
 const AI_MULTI_KILL_LINE_TOLERANCE = CELL_SIZE * 0.75;
@@ -16869,26 +16872,29 @@ function getMineControlSummaryForPlane(plane, context = {}, options = {}){
 }
 
 function getAiMultiKillPotentialContext({ plane, enemy, enemies, lineEndX, lineEndY }){
+  const emptyContext = {
+    multiKillPotential: 0,
+    secondaryEnemyId: null,
+    affectedEnemyIds: [],
+    affectedEnemyDetails: [],
+    killCountOnTrajectory: 1,
+    lineDistance: null,
+    contactDistance: null,
+    opportunityReason: null,
+  };
   if(!plane || !enemy || !Array.isArray(enemies)){
-    return {
-      multiKillPotential: 0,
-      secondaryEnemyId: null,
-      lineDistance: null,
-      contactDistance: null,
-    };
+    return emptyContext;
   }
   if(![plane.x, plane.y, enemy.x, enemy.y, lineEndX, lineEndY].every(Number.isFinite)){
-    return {
-      multiKillPotential: 0,
-      secondaryEnemyId: null,
-      lineDistance: null,
-      contactDistance: null,
-    };
+    return emptyContext;
   }
 
-  let secondaryEnemy = null;
-  let bestLineDistance = Number.POSITIVE_INFINITY;
-  let bestContactDistance = Number.POSITIVE_INFINITY;
+  const affectedEnemies = [{
+    enemy,
+    lineDistance: 0,
+    contactDistance: 0,
+    isPrimaryTarget: true,
+  }];
   for(const otherEnemy of enemies){
     if(!otherEnemy || otherEnemy === enemy) continue;
     if(!Number.isFinite(otherEnemy.x) || !Number.isFinite(otherEnemy.y)) continue;
@@ -16905,19 +16911,72 @@ function getAiMultiKillPotentialContext({ plane, enemy, enemies, lineEndX, lineE
     const nearContactPoint = contactDistance <= AI_MULTI_KILL_CONTACT_TOLERANCE;
     if(!onAttackLane && !nearContactPoint) continue;
 
-    if(lineDistance < bestLineDistance || (Math.abs(lineDistance - bestLineDistance) < 0.0001 && contactDistance < bestContactDistance)){
-      secondaryEnemy = otherEnemy;
-      bestLineDistance = lineDistance;
-      bestContactDistance = contactDistance;
-    }
+    affectedEnemies.push({
+      enemy: otherEnemy,
+      lineDistance,
+      contactDistance,
+      isPrimaryTarget: false,
+    });
   }
 
+  const sortedAffectedEnemies = affectedEnemies
+    .slice()
+    .sort((a, b) => {
+      if(a.isPrimaryTarget && !b.isPrimaryTarget) return -1;
+      if(!a.isPrimaryTarget && b.isPrimaryTarget) return 1;
+      if(Math.abs(a.lineDistance - b.lineDistance) > 0.0001){
+        return a.lineDistance - b.lineDistance;
+      }
+      return a.contactDistance - b.contactDistance;
+    });
+  const secondaryEnemy = sortedAffectedEnemies.find((entry) => !entry.isPrimaryTarget) || null;
+  const killCountOnTrajectory = Math.max(1, sortedAffectedEnemies.length);
+  const extraVictimsCount = Math.max(0, killCountOnTrajectory - 1);
+  const opportunityReason = extraVictimsCount >= 3
+    ? "quadruple_kill_window"
+    : extraVictimsCount === 2
+      ? "triple_kill_priority"
+      : extraVictimsCount === 1
+        ? "double_kill_opportunity"
+        : null;
+
   return {
-    multiKillPotential: secondaryEnemy ? 1 : 0,
-    secondaryEnemyId: secondaryEnemy?.id ?? null,
-    lineDistance: Number.isFinite(bestLineDistance) ? bestLineDistance : null,
-    contactDistance: Number.isFinite(bestContactDistance) ? bestContactDistance : null,
+    multiKillPotential: extraVictimsCount,
+    secondaryEnemyId: secondaryEnemy?.enemy?.id ?? null,
+    affectedEnemyIds: sortedAffectedEnemies.map((entry) => entry?.enemy?.id).filter(Boolean),
+    affectedEnemyDetails: sortedAffectedEnemies.map((entry) => ({
+      enemyId: entry?.enemy?.id ?? null,
+      lineDistance: Number.isFinite(entry.lineDistance) ? Number(entry.lineDistance.toFixed(2)) : null,
+      contactDistance: Number.isFinite(entry.contactDistance) ? Number(entry.contactDistance.toFixed(2)) : null,
+      isPrimaryTarget: Boolean(entry.isPrimaryTarget),
+    })),
+    killCountOnTrajectory,
+    lineDistance: secondaryEnemy && Number.isFinite(secondaryEnemy.lineDistance) ? secondaryEnemy.lineDistance : null,
+    contactDistance: secondaryEnemy && Number.isFinite(secondaryEnemy.contactDistance) ? secondaryEnemy.contactDistance : null,
+    opportunityReason,
   };
+}
+
+function getAiMultiKillScoreBonus(multiKillPotential){
+  const killCountOnTrajectory = Number.isFinite(multiKillPotential?.killCountOnTrajectory)
+    ? Math.max(1, Math.floor(multiKillPotential.killCountOnTrajectory))
+    : 1;
+  if(killCountOnTrajectory >= 4) return AI_MULTI_KILL_QUAD_BONUS;
+  if(killCountOnTrajectory === 3) return AI_MULTI_KILL_TRIPLE_BONUS;
+  if(killCountOnTrajectory === 2) return AI_MULTI_KILL_DOUBLE_BONUS;
+  return 0;
+}
+
+function logAiMultiKillOpportunity(reason, details = {}){
+  if(!reason) return;
+  logAiDecision(reason, {
+    killCountOnTrajectory: Number.isFinite(details?.killCountOnTrajectory) ? details.killCountOnTrajectory : null,
+    planeId: details?.planeId ?? null,
+    enemyId: details?.enemyId ?? null,
+    candidateType: details?.candidateType ?? null,
+    affectedEnemyIds: Array.isArray(details?.affectedEnemyIds) ? details.affectedEnemyIds : [],
+    source: details?.source ?? null,
+  });
 }
 
 function getAiDynamiteIntentScoreAdjustment(score, move, context = {}){
@@ -24542,7 +24601,7 @@ function planRoleDrivenAiMove(context, rolePack){
         lineEndX: move?.moveType === "mirror" ? (move?.mirrorTarget?.x ?? enemy.x) : enemy.x,
         lineEndY: move?.moveType === "mirror" ? (move?.mirrorTarget?.y ?? enemy.y) : enemy.y,
       });
-      const multiKillBonus = multiKillMeta.multiKillPotential === 1 ? AI_MULTI_KILL_PRIMARY_BONUS : 0;
+      const multiKillBonus = getAiMultiKillScoreBonus(multiKillMeta);
       const hitChanceScore = Math.max(0, intentAdjustment.score - multiKillBonus);
       if(longShotPenalty > 1){
         logAiDecision("long_shot_penalty_observed", {
@@ -24580,7 +24639,10 @@ function planRoleDrivenAiMove(context, rolePack){
           move,
           hitChanceScore,
           multiKillPotential: multiKillMeta.multiKillPotential,
+          killCountOnTrajectory: multiKillMeta.killCountOnTrajectory,
           secondaryEnemyId: multiKillMeta.secondaryEnemyId,
+          affectedEnemyIds: multiKillMeta.affectedEnemyIds,
+          opportunityReason: multiKillMeta.opportunityReason,
           multiKillBonusApplied: multiKillBonus,
         };
       }
@@ -24591,6 +24653,9 @@ function planRoleDrivenAiMove(context, rolePack){
         enemyId: bestStrike.enemy?.id ?? null,
         secondaryEnemyId: bestStrike.secondaryEnemyId ?? null,
         multiKillPotential: bestStrike.multiKillPotential ?? 0,
+        killCountOnTrajectory: bestStrike.killCountOnTrajectory ?? 1,
+        affectedEnemyIds: Array.isArray(bestStrike.affectedEnemyIds) ? bestStrike.affectedEnemyIds : [],
+        opportunityReason: bestStrike.opportunityReason ?? null,
         multiKillBonusApplied: Number((bestStrike.multiKillBonusApplied ?? 0).toFixed(3)),
         scoreAfterBonuses: Number(bestStrike.hitChanceScore.toFixed(3)),
       });
@@ -26286,9 +26351,7 @@ function buildFallbackAttackScoreDetails({
   const bonusTotal = Math.min(0.2, bonusParts.reduce((sum, bonus) => sum + Math.max(0, bonus || 0), 0));
   const rawScore = getAiPlaneAdjustedScore(weightedDistance * (1 - bonusTotal), plane);
   const bonusAllowed = !isDefenseOrRetreatContext(safetyContext);
-  const multiKillBonusApplied = bonusAllowed && multiKillPotential?.multiKillPotential === 1
-    ? AI_MULTI_KILL_PRIMARY_BONUS
-    : 0;
+  const multiKillBonusApplied = bonusAllowed ? getAiMultiKillScoreBonus(multiKillPotential) : 0;
   const scoreAfter = Math.max(0, rawScore - multiKillBonusApplied);
   const classNormalized = Number.isFinite(classScoreMeta?.normalizedClassScore)
     ? classScoreMeta.normalizedClassScore
@@ -26670,7 +26733,11 @@ function getFallbackAiMove(context){
           effectiveFlightRangeCells: planeFlightProfile.effectiveFlightRangeCells,
           effectiveFlightDistancePx: Number(planeFlightProfile.flightDistancePx.toFixed(1)),
           secondaryEnemyId: directMultiKill.secondaryEnemyId,
+          affectedEnemyIds: directMultiKill.affectedEnemyIds,
+          affectedEnemyDetails: directMultiKill.affectedEnemyDetails,
           multiKillPotential: directMultiKill.multiKillPotential,
+          killCountOnTrajectory: directMultiKill.killCountOnTrajectory,
+          opportunityReason: directMultiKill.opportunityReason,
           multiKillBonusApplied: Number(directScoreMeta.multiKillBonusApplied.toFixed(3)),
           scoreBefore: Number(directScoreMeta.scoreBefore.toFixed(3)),
           scoreAfter: Number(directScoreMeta.scoreAfter.toFixed(3)),
@@ -26701,9 +26768,22 @@ function getFallbackAiMove(context){
           classScoreBreakdown: directScoreMeta.classScoreBreakdown,
           selectedClass: "direct",
           idleTurns: getAiPlaneIdleTurns(plane),
+          killCountOnTrajectory: directMultiKill.killCountOnTrajectory,
+          affectedEnemyIds: directMultiKill.affectedEnemyIds,
+          opportunityReason: directMultiKill.opportunityReason,
         }, context);
         if(wallLockedRicochetPreferredTargets.has(enemy?.id)){
           directCandidate.reasonCode = "wall_locked_target_prefers_ricochet";
+        }
+        if(directMultiKill.opportunityReason){
+          logAiMultiKillOpportunity(directMultiKill.opportunityReason, {
+            source: "fallback_attack",
+            candidateType: "direct",
+            planeId: plane.id,
+            enemyId: enemy.id,
+            killCountOnTrajectory: directMultiKill.killCountOnTrajectory,
+            affectedEnemyIds: directMultiKill.affectedEnemyIds,
+          });
         }
         if(compareAiCandidateByScoreAndRotation(directCandidate, best, ["fallback_attack", "direct", enemy?.id ?? ""])){
           directCandidate.classTieBreakReason = compareAiCandidateByScoreAndRotation.lastClassTieBreakReason || null;
@@ -26833,7 +26913,11 @@ function getFallbackAiMove(context){
             effectiveFlightRangeCells: planeFlightProfile.effectiveFlightRangeCells,
             effectiveFlightDistancePx: Number(planeFlightProfile.flightDistancePx.toFixed(1)),
             secondaryEnemyId: mirrorMultiKill.secondaryEnemyId,
+            affectedEnemyIds: mirrorMultiKill.affectedEnemyIds,
+            affectedEnemyDetails: mirrorMultiKill.affectedEnemyDetails,
             multiKillPotential: mirrorMultiKill.multiKillPotential,
+            killCountOnTrajectory: mirrorMultiKill.killCountOnTrajectory,
+            opportunityReason: mirrorMultiKill.opportunityReason,
             multiKillBonusApplied: Number(mirrorScoreMeta.multiKillBonusApplied.toFixed(3)),
             scoreBefore: Number(mirrorScoreMeta.scoreBefore.toFixed(3)),
             scoreAfter: Number(mirrorScoreMeta.scoreAfter.toFixed(3)),
@@ -26864,7 +26948,20 @@ function getFallbackAiMove(context){
             classScoreBreakdown: mirrorScoreMeta.classScoreBreakdown,
             selectedClass: "ricochet",
             idleTurns: getAiPlaneIdleTurns(plane),
+            killCountOnTrajectory: mirrorMultiKill.killCountOnTrajectory,
+            affectedEnemyIds: mirrorMultiKill.affectedEnemyIds,
+            opportunityReason: mirrorMultiKill.opportunityReason,
           }, context);
+          if(mirrorMultiKill.opportunityReason){
+            logAiMultiKillOpportunity(mirrorMultiKill.opportunityReason, {
+              source: "fallback_attack",
+              candidateType: "mirror",
+              planeId: plane.id,
+              enemyId: enemy.id,
+              killCountOnTrajectory: mirrorMultiKill.killCountOnTrajectory,
+              affectedEnemyIds: mirrorMultiKill.affectedEnemyIds,
+            });
+          }
           if(compareAiCandidateByScoreAndRotation(mirrorCandidate, best, ["fallback_attack", "mirror", enemy?.id ?? ""])){
             mirrorCandidate.classTieBreakReason = compareAiCandidateByScoreAndRotation.lastClassTieBreakReason || null;
             best = mirrorCandidate;
