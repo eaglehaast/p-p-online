@@ -12921,6 +12921,15 @@ let lastPlayerMoveCommitMeta = {
   finished: false,
   finishedAtMs: 0,
 };
+let aiTurnTimingState = {
+  turnStartedAt: 0,
+  visiblePreparationStartedAt: 0,
+  visiblePreparationReason: null,
+  releasedAt: 0,
+  releaseReason: null,
+  turnCommitSequence: 0,
+  turnNumber: 0,
+};
 
 function resetLastPlayerMoveCommitMeta(){
   lastPlayerMoveCommitMeta = {
@@ -12933,6 +12942,80 @@ function resetLastPlayerMoveCommitMeta(){
 const AI_MOVE_INITIAL_DELAY_MS = 300;
 const AI_MOVE_CARGO_RETRY_DELAY_MS = 200;
 const AI_MOVE_CARGO_WAIT_TIMEOUT_MS = 1800;
+const AI_TURN_MIN_RELEASE_BUDGET_MS = 2000;
+
+function resetAiTurnTimingState(){
+  aiTurnTimingState = {
+    turnStartedAt: 0,
+    visiblePreparationStartedAt: 0,
+    visiblePreparationReason: null,
+    releasedAt: 0,
+    releaseReason: null,
+    turnCommitSequence: turnCommitSequence,
+    turnNumber: turnAdvanceCount,
+  };
+}
+
+function getAiTurnTimingSnapshot(){
+  return {
+    turnStartedAt: Number.isFinite(aiTurnTimingState.turnStartedAt) && aiTurnTimingState.turnStartedAt > 0
+      ? Number(aiTurnTimingState.turnStartedAt.toFixed(2))
+      : null,
+    visiblePreparationStartedAt: Number.isFinite(aiTurnTimingState.visiblePreparationStartedAt) && aiTurnTimingState.visiblePreparationStartedAt > 0
+      ? Number(aiTurnTimingState.visiblePreparationStartedAt.toFixed(2))
+      : null,
+    releasedAt: Number.isFinite(aiTurnTimingState.releasedAt) && aiTurnTimingState.releasedAt > 0
+      ? Number(aiTurnTimingState.releasedAt.toFixed(2))
+      : null,
+    visiblePreparationReason: aiTurnTimingState.visiblePreparationReason || null,
+    releaseReason: aiTurnTimingState.releaseReason || null,
+    aiTurnCommitSequence: Number.isFinite(aiTurnTimingState.turnCommitSequence)
+      ? aiTurnTimingState.turnCommitSequence
+      : null,
+    aiTurnNumber: Number.isFinite(aiTurnTimingState.turnNumber)
+      ? aiTurnTimingState.turnNumber
+      : null,
+  };
+}
+
+function markAiTurnStarted(reason = "unspecified", now = performance.now()){
+  aiTurnTimingState = {
+    turnStartedAt: now,
+    visiblePreparationStartedAt: now,
+    visiblePreparationReason: reason,
+    releasedAt: 0,
+    releaseReason: null,
+    turnCommitSequence,
+    turnNumber: turnAdvanceCount,
+  };
+  showAiLaunchPreparationNotice("Компьютер готовится к ходу…");
+}
+
+function ensureAiVisiblePreparation(reason = "unspecified", now = performance.now(), message = "Компьютер готовится к ходу…"){
+  if(!Number.isFinite(aiTurnTimingState.turnStartedAt) || aiTurnTimingState.turnStartedAt <= 0){
+    aiTurnTimingState.turnStartedAt = now;
+  }
+  if(!Number.isFinite(aiTurnTimingState.visiblePreparationStartedAt) || aiTurnTimingState.visiblePreparationStartedAt <= 0){
+    aiTurnTimingState.visiblePreparationStartedAt = now;
+  }
+  if(!aiTurnTimingState.visiblePreparationReason){
+    aiTurnTimingState.visiblePreparationReason = reason;
+  }
+  if(message){
+    showAiLaunchPreparationNotice(message);
+  }
+}
+
+function markAiReleased(reason = "unspecified", now = performance.now()){
+  aiTurnTimingState.releasedAt = now;
+  aiTurnTimingState.releaseReason = reason;
+}
+
+function getAiTurnMinReleaseAt(){
+  const turnStartedAt = Number.isFinite(aiTurnTimingState.turnStartedAt) ? aiTurnTimingState.turnStartedAt : 0;
+  if(turnStartedAt <= 0) return 0;
+  return turnStartedAt + AI_TURN_MIN_RELEASE_BUDGET_MS;
+}
 
 function clearAiPostInventoryLaunchTimeout(reason = "unspecified"){
   if(!aiPostInventoryLaunchTimeout) return false;
@@ -12949,6 +13032,10 @@ function invalidateAiPlanningState(reason = "unspecified"){
   clearAiLaunchSessionWatchdog();
   aiLaunchSession = null;
   cleanupHandle();
+  clearAiLaunchStallNotice();
+  if(reason === "turn_advanced" || reason === "round_reset" || reason === "game_reset"){
+    resetAiTurnTimingState();
+  }
 }
 
 function buildCommittedEnemySnapshot(){
@@ -12999,6 +13086,7 @@ function tryStartAiPlanningFromCommittedState(trigger = "unspecified"){
 
   aiMoveScheduled = true;
   const plannerStartLabel = `turn_commit_${turnCommitSequence}_t${turnAdvanceCount}`;
+  ensureAiVisiblePreparation("planner_start_committed_state", snapshot.rebuiltAt, "Компьютер готовится к ходу…");
   logAiDecision("ai_planner_start_committed_state", {
     trigger,
     turnNumber: turnAdvanceCount,
@@ -13010,9 +13098,10 @@ function tryStartAiPlanningFromCommittedState(trigger = "unspecified"){
     staleCachedTargetDetected,
     playerMoveCommitFinishedBeforePlannerStart,
     enemyCommittedPositions: snapshot.enemies,
+    ...getAiTurnTimingSnapshot(),
   });
 
-  scheduleComputerMoveWithCargoGate(performance.now(), AI_MOVE_INITIAL_DELAY_MS, {
+  scheduleComputerMoveWithCargoGate(aiTurnTimingState.turnStartedAt || performance.now(), AI_MOVE_INITIAL_DELAY_MS, {
     trigger,
     turnCommitSequence,
     plannerStartLabel,
@@ -13025,14 +13114,21 @@ function hasAnimatingCargo(){
 }
 
 function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayMs = AI_MOVE_INITIAL_DELAY_MS, planningContext = null){
+  const launchGateStartedAt = Number.isFinite(startedAt) ? startedAt : performance.now();
+  ensureAiVisiblePreparation("launch_gate_scheduled", launchGateStartedAt, "Компьютер готовится к ходу…");
+
   setTimeout(() => {
     const runComputerMoveSafely = (reasonCode) => {
       try {
+        ensureAiVisiblePreparation("launch_gate_ready", performance.now(), "Компьютер прицеливается…");
         doComputerMove();
       } catch (error) {
         logAiDecision("ai_move_exception_fail_safe", {
           reasonCode,
           message: error?.message || String(error),
+          delayMs,
+          waitElapsedMs: Math.round(performance.now() - launchGateStartedAt),
+          ...getAiTurnTimingSnapshot(),
         });
         aiMoveScheduled = false;
         if (typeof failSafeAdvanceTurn === "function") {
@@ -13055,6 +13151,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       || flyingPoints.length > 0
     ) {
       aiMoveScheduled = false;
+      clearAiLaunchStallNotice();
       return;
     }
 
@@ -13067,17 +13164,22 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         plannedTurnCommitSequence: planningContext.turnCommitSequence,
         currentTurnCommitSequence: turnCommitSequence,
         plannerStartLabel: planningContext.plannerStartLabel || null,
+        ...getAiTurnTimingSnapshot(),
       });
       aiMoveScheduled = false;
+      clearAiLaunchStallNotice();
       return;
     }
 
+    const waitElapsedMs = Math.round(performance.now() - launchGateStartedAt);
     if (hasAnimatingCargo()) {
-      const waitElapsedMs = Math.round(performance.now() - startedAt);
+      ensureAiVisiblePreparation("waiting_for_cargo_animation", performance.now(), "Компьютер ждёт завершения анимации груза…");
       if (waitElapsedMs >= AI_MOVE_CARGO_WAIT_TIMEOUT_MS) {
         logAiDecision("ai_wait_timeout_reached", {
           waitElapsedMs,
           timeoutMs: AI_MOVE_CARGO_WAIT_TIMEOUT_MS,
+          delayMs,
+          ...getAiTurnTimingSnapshot(),
         });
         runComputerMoveSafely("cargo_wait_timeout");
         return;
@@ -13086,9 +13188,20 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       logAiDecision("ai_wait_for_cargo_animation", {
         waitElapsedMs,
         retryInMs: AI_MOVE_CARGO_RETRY_DELAY_MS,
+        delayMs,
+        ...getAiTurnTimingSnapshot(),
       });
-      scheduleComputerMoveWithCargoGate(startedAt, AI_MOVE_CARGO_RETRY_DELAY_MS, planningContext);
+      scheduleComputerMoveWithCargoGate(launchGateStartedAt, AI_MOVE_CARGO_RETRY_DELAY_MS, planningContext);
       return;
+    }
+
+    if(delayMs > 0){
+      ensureAiVisiblePreparation("initial_launch_delay", performance.now(), "Компьютер готовится к запуску…");
+      logAiDecision("ai_launch_gate_delay_elapsed", {
+        waitElapsedMs,
+        delayMs,
+        ...getAiTurnTimingSnapshot(),
+      });
     }
 
     runComputerMoveSafely("cargo_gate_ready");
@@ -14160,6 +14273,8 @@ const aiLaunchNoticeState = {
   layer: null,
   element: null,
   hideTimerId: null,
+  persistent: false,
+  kind: null,
 };
 
 function ensureAiLaunchNoticeElement(){
@@ -14221,6 +14336,8 @@ function clearAiLaunchStallNotice(){
     clearTimeout(aiLaunchNoticeState.hideTimerId);
     aiLaunchNoticeState.hideTimerId = null;
   }
+  aiLaunchNoticeState.persistent = false;
+  aiLaunchNoticeState.kind = null;
   const notice = aiLaunchNoticeState.element;
   if(!(notice instanceof HTMLElement)) return;
   notice.textContent = "";
@@ -14229,17 +14346,38 @@ function clearAiLaunchStallNotice(){
   notice.setAttribute("aria-hidden", "true");
 }
 
-function showAiLaunchStallNotice(message = "Игра была приостановлена отладчиком или выполнение было задержано"){
+function showAiLaunchNotice(message, options = {}){
   const notice = ensureAiLaunchNoticeElement();
   if(!(notice instanceof HTMLElement)) return;
-  clearAiLaunchStallNotice();
+  if(aiLaunchNoticeState.hideTimerId !== null){
+    clearTimeout(aiLaunchNoticeState.hideTimerId);
+    aiLaunchNoticeState.hideTimerId = null;
+  }
   notice.textContent = String(message || "");
   notice.style.opacity = "1";
   notice.style.transform = "translateY(0)";
   notice.setAttribute("aria-hidden", "false");
-  aiLaunchNoticeState.hideTimerId = setTimeout(() => {
-    clearAiLaunchStallNotice();
-  }, AI_LAUNCH_STALL_NOTICE_HIDE_MS);
+  aiLaunchNoticeState.persistent = options.persistent === true;
+  aiLaunchNoticeState.kind = options.kind || null;
+  if(options.persistent !== true){
+    aiLaunchNoticeState.hideTimerId = setTimeout(() => {
+      clearAiLaunchStallNotice();
+    }, AI_LAUNCH_STALL_NOTICE_HIDE_MS);
+  }
+}
+
+function showAiLaunchPreparationNotice(message = "Компьютер готовится к ходу…"){
+  showAiLaunchNotice(message, {
+    persistent: true,
+    kind: "preparation",
+  });
+}
+
+function showAiLaunchStallNotice(message = "Игра была приостановлена отладчиком или выполнение было задержано"){
+  showAiLaunchNotice(message, {
+    persistent: false,
+    kind: "stall",
+  });
 }
 
 function resetAiLaunchSessionVisualState(){
@@ -14526,12 +14664,32 @@ function isAiLaunchVeryGoodReleaseMatch(session){
 }
 
 function releaseAiLaunchSession(session, reason, now = performance.now()){
+  const minReleaseAt = Number.isFinite(session?.minReleaseAt) ? session.minReleaseAt : getAiTurnMinReleaseAt();
+  if(Number.isFinite(minReleaseAt) && minReleaseAt > 0 && now < minReleaseAt){
+    const remainingMs = Math.max(0, Math.ceil(minReleaseAt - now));
+    ensureAiVisiblePreparation("min_release_guard_wait", now, "Компьютер завершает подготовку…");
+    session.stage = "oscillate";
+    session.stageStartedAt = Number.isFinite(session.stageStartedAt) ? session.stageStartedAt : now;
+    session.releaseDueAt = Math.max(Number.isFinite(session.releaseDueAt) ? session.releaseDueAt : 0, minReleaseAt);
+    session.pendingReleaseReason = reason;
+    logAiDecision("ai_launch_release_blocked_min_turn_budget", {
+      reason,
+      planeId: session?.plane?.id ?? null,
+      remainingMs,
+      minReleaseAt: Number.isFinite(minReleaseAt) ? Number(minReleaseAt.toFixed(2)) : null,
+      attemptedAt: Number.isFinite(now) ? Number(now.toFixed(2)) : null,
+      ...getAiTurnTimingSnapshot(),
+    });
+    return false;
+  }
+
   if(!session?.plane || !isPlaneLaunchStateReady(session.plane)){
     logAiDecision("ai_launch_release", {
       reason,
       planeId: session?.plane?.id ?? null,
       releaseCause: "emergency_release",
       status: "skipped_invalid_plane",
+      ...getAiTurnTimingSnapshot(),
     });
     clearAiLaunchSessionWatchdog(session);
     aiLaunchSession = null;
@@ -14547,6 +14705,8 @@ function releaseAiLaunchSession(session, reason, now = performance.now()){
     return;
   }
 
+  markAiReleased(reason, now);
+
   const candidate = pickAiLaunchCandidateForRelease(session);
   if(!candidate?.metrics){
     logAiDecision("ai_launch_release", {
@@ -14554,6 +14714,7 @@ function releaseAiLaunchSession(session, reason, now = performance.now()){
       planeId: session.plane?.id ?? null,
       releaseCause: "emergency_release",
       status: "failed_no_candidate",
+      ...getAiTurnTimingSnapshot(),
     });
     clearAiLaunchSessionWatchdog(session);
     aiLaunchSession = null;
@@ -14577,6 +14738,7 @@ function releaseAiLaunchSession(session, reason, now = performance.now()){
       releaseCause: "emergency_release",
       status: "failed_bad_launch_vector",
       candidateSource: candidate.source,
+      ...getAiTurnTimingSnapshot(),
     });
     clearAiLaunchSessionWatchdog(session);
     aiLaunchSession = null;
@@ -14660,9 +14822,11 @@ function releaseAiLaunchSession(session, reason, now = performance.now()){
     workingPowerRatio: Number.isFinite(workingPowerRatio)
       ? Number(workingPowerRatio.toFixed(4))
       : null,
+    ...getAiTurnTimingSnapshot(),
   });
 
   aiLaunchSession = null;
+  clearAiLaunchStallNotice();
   cleanupHandle();
 }
 
@@ -32212,7 +32376,9 @@ function buildAiLaunchSession(plane, vx, vy){
   const targetSelectionEndsAt = now + targetSelectionDurationMs;
   const pullBackEndsAt = targetSelectionEndsAt + pullBackDurationMs;
   const oscillationStartsAt = pullBackEndsAt;
-  const releaseDueAt = oscillationStartsAt + oscillationDurationMs;
+  const plannedReleaseDueAt = oscillationStartsAt + oscillationDurationMs;
+  const minReleaseAt = Math.max(now, getAiTurnMinReleaseAt());
+  const releaseDueAt = Math.max(plannedReleaseDueAt, minReleaseAt);
   const watchdogDeadlineAt = Math.min(
     now + AI_LAUNCH_SESSION_MAX_LIFETIME_MS,
     Math.max(now + AI_LAUNCH_WATCHDOG_MIN_RELEASE_DELAY_MS, releaseDueAt + AI_LAUNCH_WATCHDOG_GRACE_MS)
@@ -32225,6 +32391,9 @@ function buildAiLaunchSession(plane, vx, vy){
     createdAt: now,
     lastTickAt: now,
     maxLifetimeMs: AI_LAUNCH_SESSION_MAX_LIFETIME_MS,
+    turnStartedAt: Number.isFinite(aiTurnTimingState.turnStartedAt) ? aiTurnTimingState.turnStartedAt : now,
+    visiblePreparationStartedAt: Number.isFinite(aiTurnTimingState.visiblePreparationStartedAt) ? aiTurnTimingState.visiblePreparationStartedAt : now,
+    minReleaseAt,
     stage: telemetryEnabled && targetSelectionDurationMs > 0 ? "targeting" : "pull",
     stageStartedAt: now,
     pullPoint,
@@ -32506,11 +32675,15 @@ function issueAIMove(plane, vx, vy){
     releaseDueAtMs: Number.isFinite(aiLaunchSession?.releaseDueAt) && Number.isFinite(aiLaunchSession?.createdAt)
       ? Math.max(0, Math.round(aiLaunchSession.releaseDueAt - aiLaunchSession.createdAt))
       : null,
+    minReleaseFromTurnStartMs: Number.isFinite(aiLaunchSession?.minReleaseAt) && Number.isFinite(aiLaunchSession?.turnStartedAt)
+      ? Math.max(0, Math.round(aiLaunchSession.minReleaseAt - aiLaunchSession.turnStartedAt))
+      : null,
     telegraphyEnabled: aiLaunchSession?.telegraphyEnabled !== false,
     telegraphyMode: aiLaunchSession?.telegraphyMode || null,
     watchdogDeadlineAtMs: Number.isFinite(aiLaunchSession?.watchdogDeadlineAt) && Number.isFinite(aiLaunchSession?.createdAt)
       ? Math.max(0, Math.round(aiLaunchSession.watchdogDeadlineAt - aiLaunchSession.createdAt))
       : null,
+    ...getAiTurnTimingSnapshot(),
   });
   return {
     ok: true,
@@ -32638,6 +32811,13 @@ function advanceTurn(){
   invalidateAiPlanningState("turn_advanced");
   if(turnColors[turnIndex] === "blue" && gameMode === "computer"){
     aiMoveScheduled = false;
+    markAiTurnStarted("advance_turn_committed", performance.now());
+    logAiDecision("ai_turn_started", {
+      trigger: "advance_turn_commit_ready",
+      previousTurnColor,
+      nextTurnColor,
+      ...getAiTurnTimingSnapshot(),
+    });
     tryStartAiPlanningFromCommittedState("advance_turn_commit_ready");
   }
 
