@@ -14355,18 +14355,10 @@ function buildAiCoarsePullPoint(plane, targetAim){
       : { x: plane?.x ?? 0, y: plane?.y ?? 0 };
   }
 
-  const missScale = clamp(Number.isFinite(targetAim.missScale) ? targetAim.missScale : 0, 0, 1);
-  const coarsePullRatio = (
-    AI_LAUNCH_COARSE_PULL_MAX_RATIO
-    + (AI_LAUNCH_COARSE_PULL_MIN_RATIO - AI_LAUNCH_COARSE_PULL_MAX_RATIO) * missScale
-  );
-  const coarsePowerOffset = randomSignedOffset(coarsePullRatio);
-  const coarsePowerRatio = clamp(targetAim.powerRatio + coarsePowerOffset, 0, 1);
-  const coarseDistance = coarsePowerRatio * MAX_DRAG_DISTANCE;
-
+  const startDistance = MAX_DRAG_DISTANCE;
   return {
-    x: plane.x + Math.cos(targetAim.angleRad) * coarseDistance,
-    y: plane.y + Math.sin(targetAim.angleRad) * coarseDistance,
+    x: plane.x + Math.cos(targetAim.angleRad) * startDistance,
+    y: plane.y + Math.sin(targetAim.angleRad) * startDistance,
   };
 }
 
