@@ -20507,7 +20507,7 @@ function failSafeAdvanceTurn(reason, details = {}){
       return;
     }
 
-    const guaranteedMove = getGuaranteedAnyLegalLaunch();
+    const guaranteedMove = getGuaranteedAnyLegalLaunch(safeDetails?.modeContext);
     if(
       guaranteedMove?.plane
       && Number.isFinite(guaranteedMove?.vx)
@@ -25862,8 +25862,9 @@ function getFallbackAiMove(context){
   return best;
 }
 
-function getGuaranteedAnyLegalLaunch(modeContext){
-  const fallbackAiPlanes = points.filter(plane =>
+function getGuaranteedAnyLegalLaunch(context){
+  const contextAiPlanes = Array.isArray(context?.aiPlanes) ? context.aiPlanes : null;
+  const fallbackAiPlanes = (contextAiPlanes || points).filter(plane =>
     plane.color === "blue"
     && isPlaneLaunchStateReady(plane)
     && !flyingPoints.some(fp => fp.plane === plane)
@@ -25918,15 +25919,16 @@ function getGuaranteedAnyLegalLaunch(modeContext){
   return null;
 }
 
-function getForcedProgressLaunchMove(modeContext){
-  const fallbackAiPlanes = points.filter(plane =>
+function getForcedProgressLaunchMove(context){
+  const contextAiPlanes = Array.isArray(context?.aiPlanes) ? context.aiPlanes : null;
+  const fallbackAiPlanes = (contextAiPlanes || points).filter(plane =>
     plane.color === "blue"
     && isPlaneLaunchStateReady(plane)
     && !flyingPoints.some(fp => fp.plane === plane)
   );
   if(!fallbackAiPlanes.length) return null;
 
-  const enemies = Array.isArray(modeContext?.enemies) ? modeContext.enemies : [];
+  const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
   let safeUsefulMove = null;
   for(const plane of fallbackAiPlanes){
     const nearestEnemy = enemies.reduce((best, enemy) => {
@@ -25940,7 +25942,7 @@ function getForcedProgressLaunchMove(modeContext){
       goalName: "forced_progress_safe_useful",
       decisionReason: "forced_progress_safe_useful",
       targetEnemy: nearestEnemy,
-      context: modeContext,
+      context,
       specialAttemptBudget: 2,
       compareLabel: ["forced_progress_safe_useful", plane?.id ?? "", nearestEnemy?.id ?? ""],
     });
@@ -25948,7 +25950,7 @@ function getForcedProgressLaunchMove(modeContext){
 
     const landing = getAiMoveLandingPoint(usefulMove);
     if(!landing) continue;
-    const threatMeta = getImmediateResponseThreatMeta(modeContext, landing.x, landing.y, nearestEnemy);
+    const threatMeta = getImmediateResponseThreatMeta(context, landing.x, landing.y, nearestEnemy);
     if(threatMeta.count > 0) continue;
 
     const candidate = {
