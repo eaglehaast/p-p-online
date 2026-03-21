@@ -9818,9 +9818,6 @@ function loadSettings(){
   settings.addCargo = storedAddCargo === null ? true : storedAddCargo === 'true';
   const mapIdx = parseInt(getStoredSetting('settings.mapIndex'), 10);
   settings.mapIndex = clampMapIndex(mapIdx);
-  if(TEMP_MENU_STARTUP_DEFAULTS.enabled){
-    settings.mapIndex = clampMapIndex(resolveClearSkyMapIndex());
-  }
   const storedFlameStyle = normalizeFlameStyleKey(getStoredSetting('settings.flameStyle'));
   settings.flameStyle = storedFlameStyle;
   settings.randomizeMapEachRound = getStoredSetting('settings.randomizeMapEachRound') === 'true';
