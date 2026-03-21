@@ -27219,19 +27219,11 @@ function buildShotPlan(goalSelection = {}, modeContext = {}){
     for(const enemy of enemies){
       if(!Number.isFinite(enemy?.x) || !Number.isFinite(enemy?.y)) continue;
       for(const route of routeTypes){
-        let move = null;
-        if(route.type === "one_ricochet"){
-          move = findMirrorShot(plane, { x: enemy.x, y: enemy.y }, {
-            goalName: goalSelection.goalName || "attack_enemy_plane",
-            decisionReason: route.reason,
-          });
-        } else {
-          move = planPathToPoint(plane, enemy.x, enemy.y, {
-            goalName: goalSelection.goalName || "attack_enemy_plane",
-            routeClass: route.routeClass,
-            decisionReason: route.reason,
-          });
-        }
+        const move = planPathToPoint(plane, enemy.x, enemy.y, {
+          goalName: goalSelection.goalName || "attack_enemy_plane",
+          routeClass: route.routeClass,
+          decisionReason: route.reason,
+        });
         const validation = validateAiLaunchMoveCandidate(move);
         if(!move || !validation.ok) continue;
 
@@ -27258,6 +27250,7 @@ function buildShotPlan(goalSelection = {}, modeContext = {}){
 
         const shotPreview = {
           trajectoryType: route.type,
+          routeClass: move.routeClass || route.routeClass,
           expectedEndPoint,
           risk,
           powerRatio: Number(powerRatio.toFixed(3)),
