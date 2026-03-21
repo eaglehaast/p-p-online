@@ -16059,6 +16059,37 @@ function applyAiMinLaunchScale(scale, details = {}){
   return adjustedScale;
 }
 
+const AI_INVENTORY_PRESSURE_CONFIG = Object.freeze({
+  [INVENTORY_ITEM_TYPES.MINE]: { idleTurnWeight: 0.024, weakChanceWeight: 0.03, staleLeaderBonus: 0.026, maxBonus: 0.18, selectionFloor: 0.19 },
+  [INVENTORY_ITEM_TYPES.DYNAMITE]: { idleTurnWeight: 0.025, weakChanceWeight: 0.031, staleLeaderBonus: 0.024, maxBonus: 0.18, selectionFloor: 0.19 },
+  [INVENTORY_ITEM_TYPES.FUEL]: { idleTurnWeight: 0.021, weakChanceWeight: 0.028, staleLeaderBonus: 0.022, maxBonus: 0.16, selectionFloor: 0.18 },
+  [INVENTORY_ITEM_TYPES.CROSSHAIR]: { idleTurnWeight: 0.018, weakChanceWeight: 0.027, staleLeaderBonus: 0.02, maxBonus: 0.14, selectionFloor: 0.17 },
+  [INVENTORY_ITEM_TYPES.WINGS]: { idleTurnWeight: 0.019, weakChanceWeight: 0.026, staleLeaderBonus: 0.02, maxBonus: 0.15, selectionFloor: 0.18 },
+  [INVENTORY_ITEM_TYPES.INVISIBILITY]: { idleTurnWeight: 0.02, weakChanceWeight: 0.027, staleLeaderBonus: 0.021, maxBonus: 0.155, selectionFloor: 0.18 },
+});
+
+function createInitialInventoryPressureState(){
+  const byItem = {};
+  for(const itemType of Object.keys(AI_INVENTORY_PRESSURE_CONFIG)){
+    byItem[itemType] = {
+      idleTurns: 0,
+      weakChanceStreak: 0,
+      lastUsedTurn: null,
+      lastAvailableTurn: null,
+      lastRejectedReason: null,
+      lastWhyWaiting: "not_evaluated_yet",
+      lastPressureBonus: 0,
+      finallyChosenBecauseOfPressure: false,
+      chosenAtTurn: null,
+    };
+  }
+  return {
+    byItem,
+    lastUpdatedTurn: null,
+    stalestItemType: null,
+  };
+}
+
 function createInitialAiRoundState(){
   return {
     mode: AI_MODES.ATTRITION,
@@ -16083,6 +16114,7 @@ function createInitialAiRoundState(){
     lastOpeningNonTrivialStartMeta: null,
     lastFallbackMoveMeta: null,
     lossCompressionMode: false,
+    inventoryPressure: createInitialInventoryPressureState(),
     trainingForceFuelOnNextAiTurn: {
       enabled: false,
       requestedAtTurn: null,
@@ -19600,6 +19632,103 @@ function evaluateFuelTacticalPlans(context, plannedMove, options = {}){
   };
 }
 
+function ensureAiInventoryPressureState(){
+  if(!aiRoundState || typeof aiRoundState !== "object") return createInitialInventoryPressureState();
+  if(!aiRoundState.inventoryPressure || typeof aiRoundState.inventoryPressure !== "object"){
+    aiRoundState.inventoryPressure = createInitialInventoryPressureState();
+  }
+  const pressureState = aiRoundState.inventoryPressure;
+  if(!pressureState.byItem || typeof pressureState.byItem !== "object"){
+    pressureState.byItem = createInitialInventoryPressureState().byItem;
+  }
+  for(const itemType of Object.keys(AI_INVENTORY_PRESSURE_CONFIG)){
+    if(!pressureState.byItem[itemType] || typeof pressureState.byItem[itemType] !== "object"){
+      pressureState.byItem[itemType] = createInitialInventoryPressureState().byItem[itemType];
+    }
+  }
+  return pressureState;
+}
+
+function isAiInventoryPressureWeakChance(reason){
+  return reason === "inventory_plan_not_better_than_plain_move"
+    || reason === "fuel_gain_too_small"
+    || reason === "crosshair_value_below_threshold"
+    || reason === "mine_impact_below_noticeable_threshold"
+    || reason === "wings_no_contact_gain"
+    || reason === "invisibility_penalty_too_small"
+    || reason === "dynamite_relaxed_opening";
+}
+
+function getAiInventoryPressureBonus(itemType, entry, isStaleLeader){
+  const config = AI_INVENTORY_PRESSURE_CONFIG[itemType];
+  if(!config || !entry) return 0;
+  const effectiveIdleTurns = Math.max(0, entry.idleTurns - 1);
+  const effectiveWeakChanceStreak = Math.max(0, entry.weakChanceStreak - 1);
+  const staleLeaderBonus = isStaleLeader && entry.idleTurns >= 3 ? config.staleLeaderBonus : 0;
+  const rawBonus = effectiveIdleTurns * config.idleTurnWeight
+    + effectiveWeakChanceStreak * config.weakChanceWeight
+    + staleLeaderBonus;
+  return Number(Math.max(0, Math.min(config.maxBonus, rawBonus)).toFixed(3));
+}
+
+function updateAiInventoryPressureForTurn(inventoryCounts, perItemEvaluation = {}){
+  const pressureState = ensureAiInventoryPressureState();
+  const currentTurn = Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null;
+  if(Number.isFinite(currentTurn) && pressureState.lastUpdatedTurn === currentTurn){
+    return pressureState;
+  }
+
+  let stalestItemType = null;
+  let stalestIdleTurns = -1;
+  for(const itemType of Object.keys(AI_INVENTORY_PRESSURE_CONFIG)){
+    const entry = pressureState.byItem[itemType];
+    const availableCount = Number(inventoryCounts?.[itemType] || 0);
+    const evaluation = perItemEvaluation[itemType] || null;
+    if(availableCount > 0){
+      entry.idleTurns += 1;
+      entry.lastAvailableTurn = currentTurn;
+      entry.lastRejectedReason = evaluation?.reason || null;
+      entry.lastWhyWaiting = evaluation?.whyWaiting || "candidate_not_ready";
+      if(evaluation?.weakChance){
+        entry.weakChanceStreak += 1;
+      } else if(evaluation?.strongCandidate){
+        entry.weakChanceStreak = 0;
+      }
+      if(entry.idleTurns > stalestIdleTurns){
+        stalestIdleTurns = entry.idleTurns;
+        stalestItemType = itemType;
+      }
+    } else {
+      entry.idleTurns = 0;
+      entry.weakChanceStreak = 0;
+      entry.lastAvailableTurn = null;
+      entry.lastRejectedReason = null;
+      entry.lastWhyWaiting = "item_not_in_inventory";
+      entry.lastPressureBonus = 0;
+      entry.finallyChosenBecauseOfPressure = false;
+      entry.chosenAtTurn = null;
+    }
+  }
+  pressureState.lastUpdatedTurn = currentTurn;
+  pressureState.stalestItemType = stalestItemType;
+  return pressureState;
+}
+
+function markAiInventoryItemUsed(itemType, details = {}){
+  if(!itemType) return;
+  const pressureState = ensureAiInventoryPressureState();
+  const entry = pressureState.byItem[itemType];
+  if(!entry) return;
+  entry.idleTurns = 0;
+  entry.weakChanceStreak = 0;
+  entry.lastUsedTurn = Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null;
+  entry.lastRejectedReason = null;
+  entry.lastWhyWaiting = details.reason || "item_used";
+  entry.lastPressureBonus = 0;
+  entry.finallyChosenBecauseOfPressure = details.chosenBecauseOfPressure === true;
+  entry.chosenAtTurn = Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null;
+}
+
 
 function buildAiInventoryCandidatePlans(context, plannedMove){
   if(!plannedMove?.plane) return { selectedCandidate: null, candidates: [], rejected: [] };
@@ -19621,6 +19750,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
 
   const candidates = [];
   const rejected = [];
+  const perItemEvaluation = {};
   const priorityEnemy = typeof getBluePriorityEnemy === "function" ? getBluePriorityEnemy(context) : null;
   const enemyBase = typeof getBaseAnchor === "function" ? getBaseAnchor("green") : null;
   const landingPoint = typeof getAiMoveLandingPoint === "function" ? getAiMoveLandingPoint(plannedMove) : null;
@@ -19638,6 +19768,12 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     const normalizedBenefit = Number.isFinite(candidate?.expectedBenefit) ? candidate.expectedBenefit : 0;
     const normalizedRisk = Number.isFinite(candidate?.risk) ? candidate.risk : 0;
     const comparableScore = Number((normalizedBenefit - normalizedRisk).toFixed(3));
+    perItemEvaluation[candidate.itemType] = {
+      reason: candidate.reason || "candidate_ready",
+      whyWaiting: candidate.whyBetter || "candidate_ready",
+      weakChance: comparableScore > 0 && comparableScore <= 0.12,
+      strongCandidate: comparableScore > 0.12,
+    };
     const enriched = {
       ...candidate,
       stage: "inventory_candidate_selection",
@@ -19649,6 +19785,12 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     logAiDecision("inventory_candidate_generated", enriched);
   };
   const rejectCandidate = (itemType, reason, details = {}) => {
+    perItemEvaluation[itemType] = {
+      reason,
+      whyWaiting: details?.whyWaiting || reason,
+      weakChance: isAiInventoryPressureWeakChance(reason),
+      strongCandidate: false,
+    };
     const payload = { itemType, reason, planeId: plannedMove?.plane?.id ?? null, goal: plannedMove?.goalName || aiRoundState?.currentGoal || null, ...details };
     rejected.push(payload);
     logAiDecision("inventory_candidate_rejected", payload);
@@ -19832,18 +19974,96 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     }
   }
 
-  let selectedCandidate = null;
+  const pressureState = updateAiInventoryPressureForTurn(inventory.counts, perItemEvaluation);
+  for(const itemType of Object.keys(AI_INVENTORY_PRESSURE_CONFIG)){
+    if(!(Number(inventory.counts?.[itemType] || 0) > 0)) continue;
+    const entry = pressureState?.byItem?.[itemType] || null;
+    const pressureBonus = getAiInventoryPressureBonus(itemType, entry, pressureState?.stalestItemType === itemType);
+    if(entry){
+      entry.lastPressureBonus = pressureBonus;
+    }
+    logAiDecision("inventory_pressure_state", {
+      itemType,
+      planeId: plannedMove?.plane?.id ?? null,
+      goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+      idleTurns: entry?.idleTurns ?? 0,
+      weakChanceStreak: entry?.weakChanceStreak ?? 0,
+      pressureBonus,
+      whyStillWaiting: entry?.lastWhyWaiting || null,
+      lastRejectedReason: entry?.lastRejectedReason || null,
+      staleLeader: pressureState?.stalestItemType === itemType,
+    });
+  }
   for(const candidate of candidates){
-    if(!selectedCandidate || candidate.comparableScore > selectedCandidate.comparableScore + 0.0001){
+    const entry = pressureState?.byItem?.[candidate.itemType] || null;
+    const pressureBonus = getAiInventoryPressureBonus(candidate.itemType, entry, pressureState?.stalestItemType === candidate.itemType);
+    candidate.pressureBonus = pressureBonus;
+    candidate.pressureMeta = entry ? {
+      idleTurns: entry.idleTurns,
+      weakChanceStreak: entry.weakChanceStreak,
+      stalestItemType: pressureState?.stalestItemType || null,
+      whyStillWaiting: entry.lastWhyWaiting || null,
+    } : null;
+    candidate.adjustedComparableScore = Number((candidate.comparableScore + pressureBonus).toFixed(3));
+    if(entry){
+      entry.lastPressureBonus = pressureBonus;
+    }
+  }
+
+  let selectedCandidate = null;
+  let rawBestCandidate = null;
+  for(const candidate of candidates){
+    if(!rawBestCandidate || candidate.comparableScore > rawBestCandidate.comparableScore + 0.0001){
+      rawBestCandidate = candidate;
+    }
+    if(!selectedCandidate || candidate.adjustedComparableScore > selectedCandidate.adjustedComparableScore + 0.0001){
       selectedCandidate = candidate;
     }
   }
-  if(selectedCandidate && selectedCandidate.comparableScore <= 0.12){
-    rejectCandidate(selectedCandidate.itemType, "inventory_plan_not_better_than_plain_move", {
-      comparableScore: selectedCandidate.comparableScore,
-      selectedReason: selectedCandidate.reason,
-    });
-    selectedCandidate = null;
+  if(selectedCandidate){
+    const selectionFloor = Number.isFinite(AI_INVENTORY_PRESSURE_CONFIG?.[selectedCandidate.itemType]?.selectionFloor)
+      ? AI_INVENTORY_PRESSURE_CONFIG[selectedCandidate.itemType].selectionFloor
+      : 0.12;
+    if(selectedCandidate.adjustedComparableScore <= selectionFloor){
+      rejectCandidate(selectedCandidate.itemType, "inventory_plan_not_better_than_plain_move", {
+        comparableScore: selectedCandidate.comparableScore,
+        adjustedComparableScore: selectedCandidate.adjustedComparableScore,
+        selectedReason: selectedCandidate.reason,
+        selectionFloor,
+        whyWaiting: "pressure_is_not_enough_yet",
+      });
+      selectedCandidate = null;
+    }
+  }
+  if(selectedCandidate){
+    const selectionFloor = Number.isFinite(AI_INVENTORY_PRESSURE_CONFIG?.[selectedCandidate.itemType]?.selectionFloor)
+      ? AI_INVENTORY_PRESSURE_CONFIG[selectedCandidate.itemType].selectionFloor
+      : 0.12;
+    const crossedOwnGateBecauseOfPressure = selectedCandidate.comparableScore <= selectionFloor
+      && selectedCandidate.adjustedComparableScore > selectionFloor;
+    const displacedAnotherCandidateBecauseOfPressure = Boolean(
+      selectedCandidate.pressureBonus > 0
+      && rawBestCandidate
+      && rawBestCandidate.itemType !== selectedCandidate.itemType
+      && selectedCandidate.adjustedComparableScore > (rawBestCandidate.comparableScore + 0.0001)
+    );
+    selectedCandidate.chosenBecauseOfPressure = crossedOwnGateBecauseOfPressure || displacedAnotherCandidateBecauseOfPressure;
+    if(selectedCandidate.chosenBecauseOfPressure){
+      logAiDecision("inventory_pressure_choice_unlocked", {
+        itemType: selectedCandidate.itemType,
+        planeId: plannedMove?.plane?.id ?? null,
+        goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+        pressureBonus: selectedCandidate.pressureBonus,
+        rawComparableScore: selectedCandidate.comparableScore,
+        adjustedComparableScore: selectedCandidate.adjustedComparableScore,
+        selectionFloor,
+        displacedRawBestItemType: rawBestCandidate?.itemType || null,
+        displacedRawBestScore: rawBestCandidate?.comparableScore ?? null,
+        whyChosenNow: crossedOwnGateBecauseOfPressure
+          ? "pressure_lifted_item_above_its_minimum_use_threshold"
+          : "pressure_accumulated_until_good_enough_plan_overtook_plainer_option",
+      });
+    }
   }
   return { selectedCandidate, candidates, rejected, inventoryPhase };
 }
@@ -21481,6 +21701,20 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     );
     if(actionConsumedItemType){
       consumedItemTypes.push(actionConsumedItemType);
+      markAiInventoryItemUsed(actionConsumedItemType, {
+        reason: plannedMove?.selectedInventoryCandidate?.reason || plannedMove?.inventoryUsageReason || "item_used",
+        chosenBecauseOfPressure: plannedMove?.selectedInventoryCandidate?.chosenBecauseOfPressure === true,
+      });
+      logAiDecision("inventory_pressure_resolution", {
+        itemType: actionConsumedItemType,
+        planeId: plannedMove?.plane?.id ?? null,
+        goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+        chosenBecauseOfPressure: plannedMove?.selectedInventoryCandidate?.chosenBecauseOfPressure === true,
+        pressureBonus: plannedMove?.selectedInventoryCandidate?.pressureBonus ?? 0,
+        whyChosenNow: plannedMove?.selectedInventoryCandidate?.chosenBecauseOfPressure === true
+          ? "pressure_pushed_item_plan_above_plain_flight"
+          : "item_was_good_enough_without_extra_pressure",
+      });
     }
 
     const isTacticalAction = actionConsumedItemType === INVENTORY_ITEM_TYPES.MINE
