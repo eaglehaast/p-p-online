@@ -29,6 +29,7 @@ const extracted = extractFunctionSource(source, 'maybeUseInventoryBeforeLaunch')
 
 let defensiveMineCalls = 0;
 let nearBaseMineCalls = 0;
+let removed = 0;
 const decisionLogs = [];
 
 const context = {
@@ -72,14 +73,16 @@ const context = {
   getFlagAnchor: () => null,
   applyItemToOwnPlane: () => false,
   removeItemFromInventory: () => {
-    throw new Error('Mine should not be removed when direct hit chance is good.');
+    removed += 1;
   },
-  tryPlaceBlueDefensiveMine: () => {
+  tryPlaceBlueDefensiveMine: (_ctx, _move, options = {}) => {
     defensiveMineCalls += 1;
+    if(options.evaluateOnly) return { scenario: 'mine_creates_trap', score: 9, blockedEscapeCount: 1, cutRouteCount: 0, trapCount: 1, totalDirectionLoss: 2 };
     return true;
   },
-  tryPlaceBlueMineNearEnemyBase: () => {
+  tryPlaceBlueMineNearEnemyBase: (_ctx, _move, options = {}) => {
     nearBaseMineCalls += 1;
+    if(options.evaluateOnly) return { scenario: 'mine_cuts_best_route', score: 5, blockedEscapeCount: 0, cutRouteCount: 1, trapCount: 0, totalDirectionLoss: 1 };
     return true;
   },
   logAiDecision: (reason, details) => {
@@ -109,15 +112,17 @@ const plannedMove = {
 
 const used = context.maybeUseInventoryBeforeLaunch({ aiRiskProfile: { profile: 'balanced' } }, plannedMove);
 
-assert(used === false, 'Direct hit chance should keep mine for launch, so inventory action must return false.');
-assert(defensiveMineCalls === 0 && nearBaseMineCalls === 0,
-  'Mine placement attempts must be skipped when direct hit chance is good.');
+assert(used === true, 'If mine has a useful placement, AI should spend it immediately even with a good direct attack window.');
+assert(defensiveMineCalls >= 2, 'AI should evaluate and then execute the defensive mine plan.');
+assert(nearBaseMineCalls >= 1, 'AI should still compare mine plans before choosing one.');
+assert(removed === 1, 'Mine should be removed from inventory after successful placement.');
+assert(!decisionLogs.some((entry) => entry.reason === 'mine_skipped_due_to_attack_window'),
+  'Old attack-window skip log must not appear when mine is successfully placed.');
+assert(!decisionLogs.some((entry) => entry.reason === 'mine_saved_for_direct_attack'),
+  'Mine must not be marked as saved for direct attack when a useful placement exists.');
 
-const skippedLog = decisionLogs.find((entry) => entry.reason === 'mine_skipped_due_to_attack_window');
-assert(Boolean(skippedLog), 'AI must log mine_skipped_due_to_attack_window when preserving mine for attack.');
+const placementLog = decisionLogs.find((entry) => entry.reason === 'mine_placed_for_cover');
+assert(Boolean(placementLog), 'AI must record the actual mine placement.');
+assert(placementLog.details.scenario === 'mine_creates_trap', 'AI should pick the stronger defensive mine plan.');
 
-const savedLog = decisionLogs.find((entry) => entry.reason === 'mine_saved_for_direct_attack');
-assert(Boolean(savedLog), 'AI must log mine_saved_for_direct_attack when skipping mine placement.');
-assert(savedLog.details.enemyShieldActive === false, 'Log should capture enemy shield state for traceability.');
-
-console.log('Smoke test passed: direct attack chance skips mine placement and logs mine_saved_for_direct_attack.');
+console.log('Smoke test passed: a useful mine is spent immediately even if direct attack also looks attractive.');
