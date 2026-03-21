@@ -19939,7 +19939,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     const directAttackWindow = evaluateDirectAttackWindow(priorityEnemy);
     const strongAttackWindow = Boolean(directAttackWindow) && directAttackWindow.total >= 0.55;
     const profitableTradeWindow = isPlannedMoveLikelyProfitableTrade(priorityEnemy);
-    const shouldSkipMineForAttack = strongAttackWindow || profitableTradeWindow;
+    const hasDirectAttackPriority = strongAttackWindow || profitableTradeWindow;
 
     function pickPreferredMinePlan(){
       const defensivePlan = tryPlaceBlueDefensiveMine(context, plannedMove, { evaluateOnly: true });
@@ -19962,7 +19962,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       return didPlaceMine;
     }
 
-    const preferredMinePlan = shouldSkipMineForAttack ? null : pickPreferredMinePlan();
+    const preferredMinePlan = pickPreferredMinePlan();
     const preservedStrategicTargetPoint = getAiStrategicTargetPoint(context, plannedMove);
     const flagTargetAnchor = context?.shouldUseFlagsMode && Array.isArray(context?.availableEnemyFlags)
       ? context.availableEnemyFlags
@@ -20058,35 +20058,23 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       }
     }
 
+    const safeAfterPlacement = !landingPoint
+      ? false
+      : !Array.isArray(context?.enemies) || context.enemies.every((enemy) => {
+        const enemyDistance = dist(landingPoint, enemy);
+        const enemyHasLane = isPathClear(enemy.x, enemy.y, landingPoint.x, landingPoint.y);
+        return !enemyHasLane || enemyDistance > plannedMoveEffectiveRangePx * 0.95;
+      });
+
     if(mineFailsToImproveCriticalEscape){
-      logAiDecision("mine_saved_for_direct_attack", {
+      logAiDecision("mine_not_used_no_benefit", {
         planeId: plannedMove.plane?.id ?? null,
         enemyId: priorityEnemy?.id ?? null,
         reason: strategicGoal === "capture_enemy_flag" ? "mine_does_not_improve_flag_escape" : "mine_does_not_improve_finisher_escape",
         goal: strategicGoal || null,
+        hasDirectAttackPriority,
       });
-    } else if(shouldSkipMineForAttack){
-      logAiDecision("mine_skipped_due_to_attack_window", {
-        planeId: plannedMove.plane?.id ?? null,
-        enemyId: priorityEnemy?.id ?? null,
-        attackWindowScore: directAttackWindow ? Number(directAttackWindow.total.toFixed(3)) : null,
-        profitableTradeWindow,
-        enemyShieldActive: Boolean(priorityEnemy?.shieldActive),
-        carriesFlag: Boolean(priorityEnemy?.carriedFlagId),
-      });
-      logAiDecision("mine_saved_for_direct_attack", {
-        planeId: plannedMove.plane?.id ?? null,
-        enemyId: priorityEnemy?.id ?? null,
-        enemyShieldActive: Boolean(priorityEnemy?.shieldActive),
-        distanceToEnemy: Number(priorityEnemyDistance.toFixed(1)),
-        inDirectRange: isPriorityEnemyInDirectRange,
-        hasClearPath: hasPriorityEnemyPathClear,
-        shieldPriorityFactor: directAttackShieldFactor,
-        attackWindowScore: directAttackWindow ? Number(directAttackWindow.total.toFixed(3)) : null,
-        carriesFlag: Boolean(priorityEnemy?.carriedFlagId),
-        profitableTradeWindow,
-      });
-    } else if(executeMinePlan(preferredMinePlan)){
+    } else if(preferredMinePlan && safeAfterPlacement && executeMinePlan(preferredMinePlan)){
       logAiDecision("mine_placed_for_cover", {
         planeId: plannedMove.plane?.id ?? null,
         enemyId: priorityEnemy?.id ?? null,
@@ -20102,41 +20090,34 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       return true;
     }
 
-    const safeAfterPlacement = !landingPoint
-      ? false
-      : !Array.isArray(context?.enemies) || context.enemies.every((enemy) => {
-        const enemyDistance = dist(landingPoint, enemy);
-        const enemyHasLane = isPathClear(enemy.x, enemy.y, landingPoint.x, landingPoint.y);
-        return !enemyHasLane || enemyDistance > plannedMoveEffectiveRangePx * 0.95;
-      });
-
-    if(!shouldSkipMineForAttack && softFallbackReady && safeAfterPlacement){
-      const softMinePlan = preferredMinePlan || pickPreferredMinePlan();
-      const softMinePlaced = executeMinePlan(softMinePlan);
-      if(softMinePlaced){
-        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
-        logAiDecision("mine_placed_for_cover", {
-          planeId: plannedMove.plane?.id ?? null,
-          enemyId: priorityEnemy?.id ?? null,
-          softFallback: true,
-          scenario: softMinePlan?.plan?.scenario || null,
-          routeBlockScore: softMinePlan?.plan ? Number((softMinePlan.plan.score || 0).toFixed(3)) : null,
-          blockedEscapeCount: softMinePlan?.plan?.blockedEscapeCount ?? 0,
-          cutRouteCount: softMinePlan?.plan?.cutRouteCount ?? 0,
-          trapCount: softMinePlan?.plan?.trapCount ?? 0,
-          totalDirectionLoss: softMinePlan?.plan?.totalDirectionLoss ?? 0,
-        });
-        markSoftFallbackUse(INVENTORY_ITEM_TYPES.MINE, {
-          reason: "mine_soft_fallback",
-          scenario: softMinePlan?.plan?.scenario || null,
-        });
-        return true;
-      }
-    } else if(!shouldSkipMineForAttack && softFallbackReady && !safeAfterPlacement){
+    if(preferredMinePlan && !safeAfterPlacement){
       logAiDecision("mine_skipped_self_risk", {
         planeId: plannedMove.plane?.id ?? null,
         enemyId: priorityEnemy?.id ?? null,
         reason: "unsafe_post_mine_position",
+        scenario: preferredMinePlan?.plan?.scenario || null,
+      });
+    } else if(!preferredMinePlan && hasDirectAttackPriority){
+      logAiDecision("mine_saved_for_direct_attack", {
+        planeId: plannedMove.plane?.id ?? null,
+        enemyId: priorityEnemy?.id ?? null,
+        reason: "no_viable_mine_plan_this_turn",
+        enemyShieldActive: Boolean(priorityEnemy?.shieldActive),
+        distanceToEnemy: Number(priorityEnemyDistance.toFixed(1)),
+        inDirectRange: isPriorityEnemyInDirectRange,
+        hasClearPath: hasPriorityEnemyPathClear,
+        shieldPriorityFactor: directAttackShieldFactor,
+        attackWindowScore: directAttackWindow ? Number(directAttackWindow.total.toFixed(3)) : null,
+        carriesFlag: Boolean(priorityEnemy?.carriedFlagId),
+        profitableTradeWindow,
+      });
+    } else if(!preferredMinePlan && softFallbackReady){
+      logAiDecision("mine_not_used_no_benefit", {
+        planeId: plannedMove.plane?.id ?? null,
+        enemyId: priorityEnemy?.id ?? null,
+        reason: "no_viable_mine_plan_this_turn",
+        goal: strategicGoal || null,
+        hasDirectAttackPriority,
       });
     }
   }
