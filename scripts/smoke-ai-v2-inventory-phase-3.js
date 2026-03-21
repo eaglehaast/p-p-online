@@ -10,7 +10,7 @@ function buildContext(aimingAmplitude){
     Math, Number, Boolean, Infinity, AI_ENGINE_MODE:'v2', AI_V2_INVENTORY_PHASE:3, MAX_DRAG_DISTANCE:300, FIELD_FLIGHT_DURATION_SEC:1, AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD:2,
     CELL_SIZE:10,
     INVENTORY_ITEM_TYPES:{FUEL:'fuel',CROSSHAIR:'crosshair',MINE:'mine',DYNAMITE:'dynamite',INVISIBILITY:'invisible',WINGS:'wings'},
-    aiRoundState:{inventoryPhase:3,lastInventorySoftFallbackUsed:false,inventoryIdleTurns:0,inventorySoftFallbackCooldown:0},
+    aiRoundState:{inventoryPhase:3,lastInventorySoftFallbackUsed:false,inventoryIdleTurns:0,inventorySoftFallbackCooldown:5},
     evaluateBlueInventoryState:()=>({total:1,counts:{fuel:0,crosshair:0,mine:0,dynamite:0,wings:0,invisible:1}}),
     getBluePriorityEnemy:()=>null, getAiMoveLandingPoint:()=>({x:0,y:0}), getBaseAnchor:()=>({x:0,y:0}), evaluateCrosshairBestUse:()=>null,
     logAiDecision:(name,data)=>logs.push({name,data}), applyItemToOwnPlane:()=>false, removeItemFromInventory:()=>{},
@@ -34,7 +34,7 @@ ctxHigh.getEffectiveFlightRangeCells = () => 30;
 ctxHigh.getAvailableFlagsByColor = () => [];
 ctxHigh.getFlagAnchor = () => null;
 const highUsed=ctxHigh.maybeUseInventoryBeforeLaunch({enemies:[{x:60,y:0}],aiPlanes:[{id:'p'}],aiRiskProfile:{profile:'balanced'}}, move);
-assert(highUsed===true,'phase3 should use invisibility when enemy counter-aim pressure is high');
+assert(highUsed===true,'phase3 should use invisibility immediately when enemy counter-aim pressure is high');
 assert(invisQueued===1,'invisibility should be queued exactly once in high-pressure case');
 assert(logs.some((entry)=>entry.name==='invisibility_counter_aiming_check'),'phase3 must log counter-aiming accuracy check');
 console.log('Smoke test passed: v2 inventory phase 3 uses invisibility with enemy aiming-accuracy check.');
