@@ -4757,24 +4757,31 @@ settingsBridge.onHide = handleSettingsLayerHide;
 settingsBridge.isActive = isSettingsActive;
 
 
-async function refreshSettingsMapDataWhenReady(){
-  if(MAPS.length === 0 && MAPS_READY && typeof MAPS_READY.then === 'function'){
-    try {
-      await MAPS_READY;
-    } catch(error){
-      console.warn('[settings] failed while waiting for map data', error);
-    }
+let lastSyncedSettingsMapsCount = -1;
+
+function refreshSettingsMapDataWhenReady(){
+  const currentMapsCount = Array.isArray(MAPS) ? MAPS.length : 0;
+  if(currentMapsCount === 0){
+    return;
   }
 
-  sharedSettings.mapIndex = sanitizeMapIndex(sharedSettings.mapIndex, { allowRandom: true });
+  const resolvedMapIndex = sanitizeMapIndex(sharedSettings.mapIndex, { allowRandom: true });
+  const mapIndexAlreadySynced = sharedSettings.mapIndex === resolvedMapIndex;
+  const mapsCountAlreadySynced = lastSyncedSettingsMapsCount === currentMapsCount;
+  if(mapIndexAlreadySynced && mapsCountAlreadySynced){
+    return;
+  }
+
+  sharedSettings.mapIndex = resolvedMapIndex;
   syncFieldSelectorState();
   updateMapNameDisplay();
   updateMapPreview();
+  lastSyncedSettingsMapsCount = currentMapsCount;
 }
 
-window.addEventListener('paperWingsMapsReady', () => {
-  refreshSettingsMapDataWhenReady();
-});
+window.addEventListener('paperWingsMapsReady', refreshSettingsMapDataWhenReady);
 
-refreshSettingsMapDataWhenReady();
+if(MAPS.length > 0){
+  refreshSettingsMapDataWhenReady();
+}
 })();
