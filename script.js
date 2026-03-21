@@ -25155,7 +25155,7 @@ function getFallbackAiMove(context){
       decisionReason: "fallback_flag_pressure",
       homeBase: getBaseAnchor("blue"),
       enemies,
-      context: modeContext,
+      context,
     });
     for(const candidate of capCandidates){
       if(compareAiCandidateByScoreAndRotation(candidate, bestCap, ["fallback_flag_pressure", candidate?.flag?.id ?? "", candidate?.candidateType || "direct"])){
