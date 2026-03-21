@@ -24,7 +24,10 @@ function assert(condition, message){
 }
 
 const source = fs.readFileSync('script.js', 'utf8');
-const extracted = extractFunctionSource(source, 'maybeUseInventoryBeforeLaunch');
+const extracted = [
+  extractFunctionSource(source, 'buildAiInventoryCandidatePlans'),
+  extractFunctionSource(source, 'maybeUseInventoryBeforeLaunch'),
+].join('\n\n');
 
 let chosenPlan = null;
 const logs = [];
@@ -91,17 +94,21 @@ const context = {
 vm.createContext(context);
 vm.runInContext(extracted, context);
 
-const used = context.maybeUseInventoryBeforeLaunch({ aiRiskProfile: { profile: 'balanced' }, enemies: [] }, {
+const plannedMove = {
   plane: { id: 'plane-1', x: 0, y: 0 },
   vx: 0,
   vy: 0,
   totalDist: 80,
-});
+};
+const planning = context.buildAiInventoryCandidatePlans({ aiRiskProfile: { profile: 'balanced' }, enemies: [] }, plannedMove);
+assert(planning.selectedCandidate, 'Mine plan should be selected during early inventory candidate generation.');
+plannedMove.selectedInventoryCandidate = planning.selectedCandidate;
+const used = context.maybeUseInventoryBeforeLaunch({ aiRiskProfile: { profile: 'balanced' }, enemies: [] }, plannedMove);
 
 assert(used === true, 'Mine should be used when trap plan is much stronger than base mine.');
 assert(chosenPlan === 'defensive', 'AI must choose the trapping defensive mine over the weaker base mine.');
-const placementLog = logs.find((entry) => entry.reason === 'mine_placed_for_cover');
-assert(Boolean(placementLog), 'Placement log must be recorded.');
-assert(placementLog.details.scenario === 'mine_creates_trap', 'Log must report the trapping scenario.');
+const placementLog = logs.find((entry) => entry.reason === 'inventory_decision');
+assert(Boolean(placementLog), 'Execution log for the preselected mine plan must be recorded.');
+assert(placementLog.details.itemType === 'mine', 'Execution log must report the mine item.');
 
 console.log('Smoke test passed: inventory logic prefers a trapping mine over a weaker base mine.');

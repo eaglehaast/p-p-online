@@ -19550,6 +19550,227 @@ function evaluateFuelTacticalPlans(context, plannedMove, options = {}){
   };
 }
 
+
+function buildAiInventoryCandidatePlans(context, plannedMove){
+  if(!plannedMove?.plane) return { selectedCandidate: null, candidates: [], rejected: [] };
+
+  const engineMode = typeof AI_ENGINE_MODE === "string" ? AI_ENGINE_MODE : "v2";
+  const defaultV2InventoryPhase = Number.isFinite(typeof AI_V2_INVENTORY_PHASE !== "undefined" ? AI_V2_INVENTORY_PHASE : NaN)
+    ? AI_V2_INVENTORY_PHASE
+    : 3;
+  const isV2InventoryRules = engineMode === "v2";
+  const rawInventoryPhase = Number(aiRoundState?.inventoryPhase);
+  const inventoryPhase = isV2InventoryRules
+    ? Math.max(0, Math.min(3, Number.isFinite(rawInventoryPhase) ? Math.trunc(rawInventoryPhase) : defaultV2InventoryPhase))
+    : 3;
+  const allowBuffItems = !isV2InventoryRules || inventoryPhase >= 1;
+  const allowTacticalItems = !isV2InventoryRules || inventoryPhase >= 2;
+  const allowInvisibility = !isV2InventoryRules || inventoryPhase >= 3;
+  const inventory = evaluateBlueInventoryState();
+  if(inventory.total <= 0) return { selectedCandidate: null, candidates: [], rejected: [] };
+
+  const candidates = [];
+  const rejected = [];
+  const priorityEnemy = typeof getBluePriorityEnemy === "function" ? getBluePriorityEnemy(context) : null;
+  const enemyBase = typeof getBaseAnchor === "function" ? getBaseAnchor("green") : null;
+  const landingPoint = typeof getAiMoveLandingPoint === "function" ? getAiMoveLandingPoint(plannedMove) : null;
+  const moveDistance = Number.isFinite(plannedMove.totalDist)
+    ? plannedMove.totalDist
+    : Math.hypot(plannedMove.vx || 0, plannedMove.vy || 0) * FIELD_FLIGHT_DURATION_SEC;
+  const plannedMoveEffectiveRangePx = typeof getPlaneEffectiveRangePx === "function"
+    ? getPlaneEffectiveRangePx(plannedMove.plane)
+    : MAX_DRAG_DISTANCE;
+  const attackRangePx = typeof ATTACK_RANGE_PX === "number" && Number.isFinite(ATTACK_RANGE_PX) ? ATTACK_RANGE_PX : MAX_DRAG_DISTANCE * 0.58;
+  const baseFlightRangeCells = Number.isFinite(settings?.flightRangeCells) ? settings.flightRangeCells : 30;
+  const baseFlightRange = baseFlightRangeCells * CELL_SIZE;
+  const effectiveCellSize = typeof CELL_SIZE === "number" && Number.isFinite(CELL_SIZE) ? CELL_SIZE : 40;
+  const pushCandidate = (candidate) => {
+    const normalizedBenefit = Number.isFinite(candidate?.expectedBenefit) ? candidate.expectedBenefit : 0;
+    const normalizedRisk = Number.isFinite(candidate?.risk) ? candidate.risk : 0;
+    const comparableScore = Number((normalizedBenefit - normalizedRisk).toFixed(3));
+    const enriched = {
+      ...candidate,
+      stage: "inventory_candidate_selection",
+      comparableScore,
+      planeId: plannedMove?.plane?.id ?? null,
+      goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+    };
+    candidates.push(enriched);
+    logAiDecision("inventory_candidate_generated", enriched);
+  };
+  const rejectCandidate = (itemType, reason, details = {}) => {
+    const payload = { itemType, reason, planeId: plannedMove?.plane?.id ?? null, goal: plannedMove?.goalName || aiRoundState?.currentGoal || null, ...details };
+    rejected.push(payload);
+    logAiDecision("inventory_candidate_rejected", payload);
+  };
+
+  if(allowBuffItems && inventory.counts?.[INVENTORY_ITEM_TYPES.FUEL] > 0 && typeof evaluateFuelTacticalPlans === "function"){
+    const enemyFlag = context?.shouldUseFlagsMode && typeof getAvailableFlagsByColor === "function" ? getAvailableFlagsByColor("green")[0] : null;
+    const enemyFlagAnchor = enemyFlag && typeof getFlagAnchor === "function" ? getFlagAnchor(enemyFlag) : null;
+    const basePlans = evaluateFuelTacticalPlans(context, plannedMove, { useFuel: false });
+    const fuelPlans = evaluateFuelTacticalPlans(context, plannedMove, { useFuel: true });
+    const selectedFuelCandidate = fuelPlans?.selectedCandidate || null;
+    const baseSelectedCandidate = basePlans?.selectedCandidate || null;
+    const safetyGain = selectedFuelCandidate && baseSelectedCandidate
+      ? Number((selectedFuelCandidate.returnSafetyScore - baseSelectedCandidate.returnSafetyScore).toFixed(3))
+      : 0;
+    const targetDistance = enemyFlagAnchor ? dist(plannedMove.plane, enemyFlagAnchor) : (priorityEnemy ? dist(plannedMove.plane, priorityEnemy) : moveDistance);
+    const newReach = targetDistance > baseFlightRange && targetDistance <= baseFlightRange * 2.05;
+    if(selectedFuelCandidate && (newReach || safetyGain >= 0.12)){
+      pushCandidate({
+        itemType: INVENTORY_ITEM_TYPES.FUEL,
+        target: selectedFuelCandidate.targetPoint || enemyFlagAnchor || priorityEnemy || enemyBase || null,
+        expectedBenefit: Math.max(0.22, Math.min(0.92, (newReach ? 0.52 : 0.28) + Math.max(0, safetyGain))),
+        risk: Math.max(0, 0.22 - Number(selectedFuelCandidate.returnSafetyScore || 0) * 0.18),
+        reason: selectedFuelCandidate.scenario || "fuel_tactical_plan",
+        whyBetter: newReach
+          ? "fuel_turns an otherwise short route into real contact with the objective"
+          : "fuel keeps the same objective but makes the return meaningfully safer",
+        targetName: selectedFuelCandidate.targetName || null,
+        fuelScenario: selectedFuelCandidate.scenario || null,
+      });
+    } else {
+      rejectCandidate(INVENTORY_ITEM_TYPES.FUEL, selectedFuelCandidate ? "fuel_gain_too_small" : "fuel_has_no_safe_candidate", {
+        safetyGain,
+        blockedByReturnSafety: fuelPlans?.blockedByReturnSafety === true,
+      });
+    }
+  }
+
+  if(allowBuffItems && inventory.counts?.[INVENTORY_ITEM_TYPES.CROSSHAIR] > 0 && typeof evaluateCrosshairBestUse === "function"){
+    const crosshairScenario = evaluateCrosshairBestUse(context, plannedMove);
+    if(crosshairScenario && crosshairScenario.totalValue >= 0.74){
+      pushCandidate({
+        itemType: INVENTORY_ITEM_TYPES.CROSSHAIR,
+        target: crosshairScenario.enemy || priorityEnemy || null,
+        expectedBenefit: Math.max(0.24, Math.min(0.88, Number(crosshairScenario.totalValue || 0))),
+        risk: crosshairScenario.enemy?.shieldActive ? 0.16 : 0.05,
+        reason: "crosshair_best_value",
+        whyBetter: "crosshair gives a cleaner hit window than flying the same route without extra accuracy",
+      });
+    } else {
+      rejectCandidate(INVENTORY_ITEM_TYPES.CROSSHAIR, crosshairScenario ? "crosshair_value_below_threshold" : "crosshair_no_target");
+    }
+  }
+
+  if(allowTacticalItems && inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] > 0){
+    const defensivePlan = typeof tryPlaceBlueDefensiveMine === "function" ? tryPlaceBlueDefensiveMine(context, plannedMove, { evaluateOnly: true }) : null;
+    const basePlan = typeof tryPlaceBlueMineNearEnemyBase === "function" ? tryPlaceBlueMineNearEnemyBase(context, plannedMove, { evaluateOnly: true }) : null;
+    const preferredMinePlan = defensivePlan && (!basePlan || (defensivePlan.score || 0) >= (basePlan.score || 0))
+      ? { plan: defensivePlan, placementMode: "defensive" }
+      : (basePlan ? { plan: basePlan, placementMode: "base" } : null);
+    const safetyMeta = preferredMinePlan && typeof evaluatePostLaunchSafetyWithMine === "function"
+      ? evaluatePostLaunchSafetyWithMine(context, plannedMove, preferredMinePlan.plan)
+      : null;
+    const safeAfterPlacement = !safetyMeta || safetyMeta.afterSafe !== false;
+    if(preferredMinePlan && safeAfterPlacement){
+      pushCandidate({
+        itemType: INVENTORY_ITEM_TYPES.MINE,
+        target: priorityEnemy || enemyBase || landingPoint || null,
+        expectedBenefit: Math.max(0.26, Math.min(0.9, Number((preferredMinePlan.plan.score || 0) / 20))),
+        risk: 0.08,
+        reason: preferredMinePlan.plan.scenario || "mine_cover_plan",
+        whyBetter: preferredMinePlan.placementMode === "defensive"
+          ? "mine can shape the enemy escape lane immediately instead of waiting for a plain flight"
+          : "mine adds board control on top of the same movement plan",
+        placementMode: preferredMinePlan.placementMode,
+        minePlan: preferredMinePlan.plan,
+      });
+    } else {
+      rejectCandidate(INVENTORY_ITEM_TYPES.MINE, preferredMinePlan ? "mine_self_risk_too_high" : "mine_no_useful_plan");
+    }
+  }
+
+  if(allowTacticalItems && inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] > 0){
+    const homeBase = typeof getBaseAnchor === "function" ? getBaseAnchor("blue") : null;
+    const routeAwareTarget = typeof getDynamiteCandidateForCurrentRoute === "function" ? getDynamiteCandidateForCurrentRoute(context, plannedMove) : null;
+    const defensiveTargetRaw = typeof getNearestDynamiteTargetToPoint === "function" ? getNearestDynamiteTargetToPoint(homeBase) : null;
+    const offensiveTargetRaw = typeof getNearestDynamiteTargetToPoint === "function" ? getNearestDynamiteTargetToPoint(priorityEnemy) : null;
+    const fallbackTarget = routeAwareTarget
+      || ((typeof isDynamiteTargetUsefulForCurrentRoute === "function" && isDynamiteTargetUsefulForCurrentRoute(defensiveTargetRaw, context, plannedMove)) ? defensiveTargetRaw : null)
+      || ((typeof isDynamiteTargetUsefulForCurrentRoute === "function" && isDynamiteTargetUsefulForCurrentRoute(offensiveTargetRaw, context, plannedMove)) ? offensiveTargetRaw : null);
+    if(fallbackTarget){
+      pushCandidate({
+        itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
+        target: { x: fallbackTarget.cx, y: fallbackTarget.cy, colliderId: fallbackTarget?.collider?.id ?? null },
+        expectedBenefit: routeAwareTarget ? 0.58 : 0.34,
+        risk: routeAwareTarget ? 0.06 : 0.14,
+        reason: routeAwareTarget ? "dynamite_route_opening" : "dynamite_relaxed_opening",
+        whyBetter: "dynamite removes the obstacle before launch, so the route becomes available right now",
+      });
+    } else {
+      rejectCandidate(INVENTORY_ITEM_TYPES.DYNAMITE, "dynamite_no_useful_target");
+    }
+  }
+
+  if(allowBuffItems && inventory.counts?.[INVENTORY_ITEM_TYPES.WINGS] > 0 && landingPoint){
+    const contactTargets = [enemyBase];
+    if(context?.shouldUseFlagsMode && typeof getFlagAnchor === "function"){
+      for(const flag of context.availableEnemyFlags || []){
+        const anchor = getFlagAnchor(flag);
+        if(anchor) contactTargets.push(anchor);
+      }
+    }
+    const reachesModerateContactZone = contactTargets.some((target) => target && dist(landingPoint, target) <= effectiveCellSize * 3.1);
+    const reachesContactNextTurn = contactTargets.some((target) => {
+      if(!target) return false;
+      const distanceFromLanding = dist(landingPoint, target);
+      return distanceFromLanding <= baseFlightRange + effectiveCellSize * 2.4 && isPathClear(landingPoint.x, landingPoint.y, target.x, target.y);
+    });
+    if(reachesModerateContactZone || reachesContactNextTurn){
+      pushCandidate({
+        itemType: INVENTORY_ITEM_TYPES.WINGS,
+        target: enemyBase || null,
+        expectedBenefit: reachesContactNextTurn ? 0.33 : 0.24,
+        risk: 0.07,
+        reason: reachesContactNextTurn ? "wings_contact_next_turn" : "wings_contact_setup",
+        whyBetter: "wings makes the same approach connect sooner instead of arriving one turn later",
+      });
+    } else {
+      rejectCandidate(INVENTORY_ITEM_TYPES.WINGS, "wings_no_contact_gain");
+    }
+  }
+
+  if(allowInvisibility && inventory.counts?.[INVENTORY_ITEM_TYPES.INVISIBILITY] > 0){
+    const enemyAimingAccuracyPercentRaw = Number(settings?.aimingAmplitude);
+    const enemyAimingAccuracyPercent = Number.isFinite(enemyAimingAccuracyPercentRaw)
+      ? Math.max(0, Math.min(100, enemyAimingAccuracyPercentRaw))
+      : 80;
+    const nearestEnemyDistance = Array.isArray(context?.enemies) && context.enemies.length > 0
+      ? Math.min(...context.enemies.map(enemy => dist(plannedMove.plane, enemy)))
+      : Number.POSITIVE_INFINITY;
+    const expectCounterMove = nearestEnemyDistance <= attackRangePx * 1.15 || (context?.enemies?.length ?? 0) >= (context?.aiPlanes?.length ?? 0);
+    const accuracyPenalty = Math.max(0, enemyAimingAccuracyPercent - Math.max(0, enemyAimingAccuracyPercent - 25));
+    if(expectCounterMove && accuracyPenalty >= 12){
+      pushCandidate({
+        itemType: INVENTORY_ITEM_TYPES.INVISIBILITY,
+        target: plannedMove.plane,
+        expectedBenefit: Math.min(0.72, 0.2 + accuracyPenalty / 100),
+        risk: 0.09,
+        reason: "invisibility_counter_aiming",
+        whyBetter: "invisibility protects the chosen plane before the enemy can answer the same route",
+      });
+    } else {
+      rejectCandidate(INVENTORY_ITEM_TYPES.INVISIBILITY, expectCounterMove ? "invisibility_penalty_too_small" : "invisibility_no_counter_pressure");
+    }
+  }
+
+  let selectedCandidate = null;
+  for(const candidate of candidates){
+    if(!selectedCandidate || candidate.comparableScore > selectedCandidate.comparableScore + 0.0001){
+      selectedCandidate = candidate;
+    }
+  }
+  if(selectedCandidate && selectedCandidate.comparableScore <= 0.12){
+    rejectCandidate(selectedCandidate.itemType, "inventory_plan_not_better_than_plain_move", {
+      comparableScore: selectedCandidate.comparableScore,
+      selectedReason: selectedCandidate.reason,
+    });
+    selectedCandidate = null;
+  }
+  return { selectedCandidate, candidates, rejected, inventoryPhase };
+}
+
 function maybeUseInventoryBeforeLaunch(context, plannedMove){
   if(!plannedMove?.plane) return false;
 
@@ -19591,6 +19812,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
 
   const inventory = evaluateBlueInventoryState();
   if(inventory.total <= 0) return false;
+
+  const selectedInventoryCandidate = plannedMove?.selectedInventoryCandidate || null;
 
   const moveDistance = Number.isFinite(plannedMove.totalDist)
     ? plannedMove.totalDist
@@ -19798,6 +20021,74 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     });
   }
 
+  if(selectedInventoryCandidate){
+    const selectedType = selectedInventoryCandidate.itemType;
+    let executed = false;
+
+    if(selectedType === INVENTORY_ITEM_TYPES.FUEL && allowBuffItems){
+      executed = tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.FUEL);
+      if(executed){
+        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
+        plannedMove.aiFuelTacticalDecision = {
+          stage: "selected_candidate",
+          selectedScenario: selectedInventoryCandidate.fuelScenario || selectedInventoryCandidate.reason || null,
+          targetContactPoint: selectedInventoryCandidate.target || null,
+          returnPlan: null,
+          returnSafetyScore: null,
+          requiredReturnSafetyThreshold: null,
+          actualReturnSafetyScore: null,
+          rejectedScenarios: [],
+          baseFilterHasMaterialGain: true,
+          rejectionReason: null,
+        };
+      }
+    } else if(selectedType === INVENTORY_ITEM_TYPES.CROSSHAIR && allowBuffItems){
+      executed = tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.CROSSHAIR);
+      if(executed) removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
+    } else if(selectedType === INVENTORY_ITEM_TYPES.WINGS){
+      executed = tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.WINGS);
+      if(executed) removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.WINGS);
+    } else if(selectedType === INVENTORY_ITEM_TYPES.INVISIBILITY && allowInvisibility){
+      executed = queueInvisibilityEffectForPlayer("blue");
+      if(executed) removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.INVISIBILITY);
+    } else if(selectedType === INVENTORY_ITEM_TYPES.MINE && allowTacticalItems){
+      const placementMode = selectedInventoryCandidate.placementMode === "defensive" ? "defensive" : "base";
+      executed = placementMode === "defensive"
+        ? tryPlaceBlueDefensiveMine(context, plannedMove)
+        : tryPlaceBlueMineNearEnemyBase(context, plannedMove);
+      if(executed) removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
+    } else if(selectedType === INVENTORY_ITEM_TYPES.DYNAMITE && allowTacticalItems){
+      const target = selectedInventoryCandidate.target || null;
+      executed = Boolean(target) && placeBlueDynamiteAt(target.x, target.y);
+      if(executed){
+        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
+        plannedMove.inventoryUsageReason = selectedInventoryCandidate.reason || "dynamite_route_opening";
+      }
+    }
+
+    if(executed){
+      logAiDecision("inventory_decision", {
+        stage: "inventory_decision",
+        source: "selected_inventory_candidate",
+        planeId: plannedMove?.plane?.id ?? null,
+        itemType: selectedType,
+        reason: selectedInventoryCandidate.reason || null,
+        target: selectedInventoryCandidate.target || null,
+        expectedBenefit: selectedInventoryCandidate.expectedBenefit ?? null,
+        risk: selectedInventoryCandidate.risk ?? null,
+      });
+      return true;
+    }
+
+    logAiDecision("inventory_candidate_rejected", {
+      itemType: selectedType,
+      reason: "selected_candidate_failed_to_execute",
+      planeId: plannedMove?.plane?.id ?? null,
+      goal: strategicGoal || null,
+    });
+    return false;
+  }
+
   const fuelTrainingMeta = aiRoundState?.trainingForceFuelOnNextAiTurn || null;
   if(allowBuffItems && fuelTrainingMeta?.enabled){
     logAiDecision("fuel_training_forced_attempt", {
@@ -19844,6 +20135,10 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         availableFuel: 0,
       });
     }
+  }
+
+  if(!selectedInventoryCandidate){
+    return false;
   }
 
   if(inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0){
@@ -26097,7 +26392,20 @@ function buildAiBaseCandidateStageResult(plannedMove, metadata = {}){
 function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
   const source = metadata?.source || "do_computer_move";
   const routeClass = plannedMove?.routeClass || metadata?.routeClass || null;
-  const baseCandidateStage = buildAiBaseCandidateStageResult(plannedMove, metadata);
+  const inventoryPlanning = buildAiInventoryCandidatePlans(context, plannedMove);
+  if(inventoryPlanning?.selectedCandidate){
+    plannedMove.selectedInventoryCandidate = inventoryPlanning.selectedCandidate;
+    plannedMove.inventoryUsageReason = inventoryPlanning.selectedCandidate.reason || plannedMove.inventoryUsageReason || null;
+    logAiDecision("inventory_candidate_selected", {
+      ...inventoryPlanning.selectedCandidate,
+      source,
+      routeClass,
+    });
+  }
+  const baseCandidateStage = buildAiBaseCandidateStageResult(plannedMove, {
+    ...metadata,
+    inventoryPlanning,
+  });
   if(!baseCandidateStage.selected){
     logAiDecision("base_candidate_rejected", {
       stage: baseCandidateStage.stage,
