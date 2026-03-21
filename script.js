@@ -9595,9 +9595,12 @@ function serializeCurrentMapState(options = {}){
 }
 
 const RANDOM_MAP_SENTINEL_INDEX = MAPS.findIndex(map => map?.name?.toLowerCase?.() === 'random map');
-const PLAYABLE_MAP_INDICES = MAPS
-  .map((_, index) => index)
-  .filter(index => index !== RANDOM_MAP_SENTINEL_INDEX);
+
+function getPlayableMapIndices(){
+  return MAPS
+    .map((_, index) => index)
+    .filter(index => index !== RANDOM_MAP_SENTINEL_INDEX);
+}
 
 let randomMapPairSequenceNumber = null;
 let randomMapPairIndex = null;
@@ -9622,11 +9625,12 @@ function getMapTierForRound(roundNumber){
 
 function getPlayableMapIndicesForRound(roundNumber = 1){
   const targetTier = getMapTierForRound(roundNumber);
-  const tierMatches = PLAYABLE_MAP_INDICES.filter(index => normalizeMapTier(MAPS[index]?.tier) === targetTier);
+  const playableMapIndices = getPlayableMapIndices();
+  const tierMatches = playableMapIndices.filter(index => normalizeMapTier(MAPS[index]?.tier) === targetTier);
   if(tierMatches.length){
     return tierMatches;
   }
-  return PLAYABLE_MAP_INDICES;
+  return playableMapIndices;
 }
 
 function resolveMapIndexForGameplay(upcomingRoundNumber = roundNumber + 1){
