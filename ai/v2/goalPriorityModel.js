@@ -35,6 +35,7 @@
     const blueInventoryCount = Number.isFinite(context.blueInventoryCount) ? context.blueInventoryCount : 0;
     const readyCargoCount = Number.isFinite(context.readyCargoCount) ? context.readyCargoCount : 0;
     const hasStolenBlueFlagCarrier = Boolean(context.hasStolenBlueFlagCarrier);
+    const hasImmediateBlueFlagTheftThreat = Boolean(context.hasImmediateBlueFlagTheftThreat);
     const shouldUseFlagsMode = Boolean(context.shouldUseFlagsMode);
     const canReachEnemyFlag = Boolean(context.canReachEnemyFlag);
     const hasReturnRouteOpportunity = Boolean(context.hasReturnRouteOpportunity);
@@ -53,8 +54,12 @@
 
     return {
       prevent_enemy_flag_score: {
-        active: shouldUseFlagsMode && hasStolenBlueFlagCarrier,
-        reason: hasStolenBlueFlagCarrier ? "enemy_carrying_blue_flag" : "no_enemy_flag_carrier",
+        active: shouldUseFlagsMode && (hasStolenBlueFlagCarrier || hasImmediateBlueFlagTheftThreat),
+        reason: hasStolenBlueFlagCarrier
+          ? "enemy_carrying_blue_flag"
+          : hasImmediateBlueFlagTheftThreat
+            ? "enemy_almost_guaranteed_blue_flag_pickup"
+            : "no_enemy_flag_carrier_or_immediate_theft_threat",
       },
       score_by_flag: {
         active: shouldUseFlagsMode
