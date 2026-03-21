@@ -14234,8 +14234,12 @@ const AI_LAUNCH_OSCILLATION_TARGET_WINDOW_LATE_MS = 220;
 const AI_LAUNCH_OSCILLATION_LATE_GRACE_MS = 320;
 const AI_LAUNCH_EARLY_RELEASE_ANGLE_TOLERANCE_DEG = 0.45;
 const AI_LAUNCH_EARLY_RELEASE_POWER_TOLERANCE = 0.01;
-const AI_LAUNCH_EARLY_RELEASE_ARM_DELAY_MS = 180;
-const AI_LAUNCH_OSCILLATION_CENTER_EXIT_ANGLE_DEG = 0.35;
+const AI_LAUNCH_EARLY_RELEASE_ARM_DELAY_MS = 420;
+const AI_LAUNCH_OSCILLATION_CENTER_EXIT_ANGLE_DEG = 1.4;
+const AI_LAUNCH_VISIBLE_OSCILLATION_MIN_MS = 650;
+const AI_LAUNCH_VISIBLE_OSCILLATION_MIN_AMPLITUDE_DEG = 2.2;
+const AI_LAUNCH_VISIBLE_OSCILLATION_DIRECTION_CHANGES_MIN = 1;
+const AI_LAUNCH_OSCILLATION_DIRECTION_EPSILON_DEG = 0.08;
 const AI_LAUNCH_SESSION_ANGLE_TOLERANCE_DEG = 1.2;
 const AI_LAUNCH_SESSION_POWER_TOLERANCE = 0.025;
 const AI_LAUNCH_POWER_SWEEP_MAX_RATIO = 0.045;
@@ -14647,16 +14651,50 @@ function getAiLaunchOscillationTiming(session){
   };
 }
 
+function getAiLaunchVisibleOscillationState(session, now = performance.now()){
+  if(!session){
+    return {
+      elapsedMs: 0,
+      visibleOscillationSatisfied: false,
+      oscillationPeakReached: false,
+      oscillationDirectionChanged: false,
+      oscillationDirectionChanges: 0,
+      oscillationHasExitedCenter: false,
+      maxObservedAngleDeg: 0,
+    };
+  }
+
+  const elapsedMs = getAiLaunchOscillationElapsedMs(session, now);
+  const maxObservedAngleRad = Number.isFinite(session.maxObservedOscillationAngleRad)
+    ? session.maxObservedOscillationAngleRad
+    : 0;
+  const oscillationDirectionChanges = Number.isFinite(session.oscillationDirectionChanges)
+    ? session.oscillationDirectionChanges
+    : 0;
+
+  return {
+    elapsedMs: Math.round(elapsedMs),
+    visibleOscillationSatisfied: session.visibleOscillationSatisfied === true,
+    oscillationPeakReached: session.oscillationPeakReached === true,
+    oscillationDirectionChanged: session.oscillationDirectionChanged === true,
+    oscillationDirectionChanges,
+    oscillationHasExitedCenter: session.oscillationHasExitedCenter === true,
+    maxObservedAngleDeg: Number((maxObservedAngleRad * 180 / Math.PI).toFixed(3)),
+  };
+}
+
 function isAiLaunchEarlyReleaseArmed(session, now = performance.now()){
   if(!session) return false;
   const unlockAt = Number.isFinite(session.earlyReleaseAllowedAfter) ? session.earlyReleaseAllowedAfter : 0;
-  return now >= unlockAt || session.oscillationHasExitedCenter === true;
+  return now >= unlockAt
+    && session.oscillationHasExitedCenter === true
+    && session.visibleOscillationSatisfied === true;
 }
 
 function isAiLaunchVeryGoodReleaseMatch(session){
   const currentMetrics = session?.currentMetrics;
   const targetAim = session?.targetAim;
-  if(!currentMetrics || !targetAim) return false;
+  if(!currentMetrics || !targetAim || session?.visibleOscillationSatisfied !== true) return false;
 
   const angleErrorRad = Math.abs(normalizeAngleDeltaRad(currentMetrics.angleRad - targetAim.angleRad));
   const targetPowerRatio = MAX_DRAG_DISTANCE > 0
@@ -14669,6 +14707,23 @@ function isAiLaunchVeryGoodReleaseMatch(session){
 }
 
 function releaseAiLaunchSession(session, reason, now = performance.now()){
+  const requiresVisibleOscillation = reason === "perfect_tolerance_early"
+    || reason === "perfect_tolerance_target_window"
+    || reason === "perfect_tolerance_late_grace"
+    || reason === "perfect_tolerance";
+  if(requiresVisibleOscillation && session?.visibleOscillationSatisfied !== true){
+    session.stage = "oscillate";
+    session.stageStartedAt = Number.isFinite(session.stageStartedAt) ? session.stageStartedAt : now;
+    session.pendingReleaseReason = "perfect_tolerance";
+    logAiDecision("ai_launch_release_blocked_visible_oscillation", {
+      reason,
+      planeId: session?.plane?.id ?? null,
+      ...getAiLaunchVisibleOscillationState(session, now),
+      ...getAiTurnTimingSnapshot(),
+    });
+    return false;
+  }
+
   const minReleaseAt = Number.isFinite(session?.minReleaseAt) ? session.minReleaseAt : getAiTurnMinReleaseAt();
   if(Number.isFinite(minReleaseAt) && minReleaseAt > 0 && now < minReleaseAt){
     const remainingMs = Math.max(0, Math.ceil(minReleaseAt - now));
@@ -14816,6 +14871,7 @@ function releaseAiLaunchSession(session, reason, now = performance.now()){
     intentionalPowerReductionDelta: Number.isFinite(targetAim?.powerAdjustmentDelta)
       ? Number(targetAim.powerAdjustmentDelta.toFixed(4))
       : null,
+    ...getAiLaunchVisibleOscillationState(session, now),
     powerAdjustmentReason: targetAim?.powerAdjustmentReason || null,
     rangeMode: session.rangeMode || "max_default",
     baseTargetPowerRatio: Number.isFinite(session?.baseTargetDistancePx) && MAX_DRAG_DISTANCE > 0
@@ -32519,6 +32575,16 @@ function buildAiLaunchSession(plane, vx, vy){
     earlyReleaseAllowedAfter: oscillationStartsAt + AI_LAUNCH_EARLY_RELEASE_ARM_DELAY_MS,
     oscillationHasExitedCenter: false,
     oscillationCenterExitAngleRad: AI_LAUNCH_OSCILLATION_CENTER_EXIT_ANGLE_DEG * Math.PI / 180,
+    visibleOscillationSatisfied: false,
+    visibleOscillationSatisfiedAt: null,
+    oscillationPeakReached: false,
+    oscillationPeakReachedAt: null,
+    maxObservedOscillationAngleRad: 0,
+    oscillationDirectionChanges: 0,
+    oscillationDirectionChanged: false,
+    oscillationDirectionChangedAt: null,
+    lastObservedOscillationAngleRad: 0,
+    lastObservedOscillationDirection: 0,
   };
 }
 
@@ -32675,13 +32741,24 @@ function runAiLaunchSessionTick(now = performance.now()){
     session.releaseDueAt = now + Math.max(0, session.oscillationDurationMs || 0);
     session.earlyReleaseAllowedAfter = now + AI_LAUNCH_EARLY_RELEASE_ARM_DELAY_MS;
     session.oscillationHasExitedCenter = false;
+    session.visibleOscillationSatisfied = false;
+    session.visibleOscillationSatisfiedAt = null;
+    session.oscillationPeakReached = false;
+    session.oscillationPeakReachedAt = null;
+    session.maxObservedOscillationAngleRad = 0;
+    session.oscillationDirectionChanges = 0;
+    session.oscillationDirectionChanged = false;
+    session.oscillationDirectionChangedAt = null;
+    session.lastObservedOscillationAngleRad = 0;
+    session.lastObservedOscillationDirection = 0;
     return;
   }
   if(session.stage === "oscillate" && session.pendingReleaseReason === "perfect_tolerance"){
     const oscillationElapsedMs = getAiLaunchOscillationElapsedMs(session, now);
     const timing = getAiLaunchOscillationTiming(session);
     const earlyReleaseArmed = isAiLaunchEarlyReleaseArmed(session, now);
-    const canReleaseEarly = earlyReleaseArmed && isAiLaunchVeryGoodReleaseMatch(session);
+    const visibleOscillationSatisfied = session.visibleOscillationSatisfied === true;
+    const canReleaseEarly = earlyReleaseArmed && visibleOscillationSatisfied && isAiLaunchVeryGoodReleaseMatch(session);
 
     if(oscillationElapsedMs < timing.targetWindowStartMs && !canReleaseEarly){
       return;
@@ -32696,6 +32773,16 @@ function runAiLaunchSessionTick(now = performance.now()){
           : null));
 
     if(!releaseReason){
+      return;
+    }
+
+    if(!visibleOscillationSatisfied){
+      logAiDecision("ai_launch_release_waiting_visible_oscillation", {
+        reason: "perfect_tolerance",
+        planeId: session?.plane?.id ?? null,
+        ...getAiLaunchVisibleOscillationState(session, now),
+        ...getAiTurnTimingSnapshot(),
+      });
       return;
     }
 
@@ -33296,11 +33383,69 @@ function gameDraw(){
       }
       aiLaunchSession.currentMetrics = currentMetrics;
       if(currentMetrics && aiLaunchSession.stage === "oscillate"){
+        const visibleOscillationAmplitudeRad = AI_LAUNCH_VISIBLE_OSCILLATION_MIN_AMPLITUDE_DEG * Math.PI / 180;
+        const oscillationDirectionEpsilonRad = AI_LAUNCH_OSCILLATION_DIRECTION_EPSILON_DEG * Math.PI / 180;
         const oscillationCenterExitAngleRad = Number.isFinite(aiLaunchSession.oscillationCenterExitAngleRad)
           ? aiLaunchSession.oscillationCenterExitAngleRad
           : (AI_LAUNCH_OSCILLATION_CENTER_EXIT_ANGLE_DEG * Math.PI / 180);
+        const oscillationElapsedMs = getAiLaunchOscillationElapsedMs(aiLaunchSession, now);
+        const oscillationAbsAngle = Math.abs(oscillationAngle);
+        aiLaunchSession.maxObservedOscillationAngleRad = Math.max(
+          Number.isFinite(aiLaunchSession.maxObservedOscillationAngleRad) ? aiLaunchSession.maxObservedOscillationAngleRad : 0,
+          oscillationAbsAngle
+        );
         if(Math.abs(oscillationAngle) >= oscillationCenterExitAngleRad){
           aiLaunchSession.oscillationHasExitedCenter = true;
+        }
+        if(
+          aiLaunchSession.oscillationPeakReached !== true
+          && aiLaunchSession.maxObservedOscillationAngleRad >= visibleOscillationAmplitudeRad
+        ){
+          aiLaunchSession.oscillationPeakReached = true;
+          aiLaunchSession.oscillationPeakReachedAt = now;
+          logAiDecision("ai_launch_oscillation_peak_reached", {
+            planeId: aiLaunchSession?.plane?.id ?? null,
+            ...getAiLaunchVisibleOscillationState(aiLaunchSession, now),
+            ...getAiTurnTimingSnapshot(),
+          });
+        }
+        const previousObservedAngle = Number.isFinite(aiLaunchSession.lastObservedOscillationAngleRad)
+          ? aiLaunchSession.lastObservedOscillationAngleRad
+          : oscillationAngle;
+        const oscillationDelta = oscillationAngle - previousObservedAngle;
+        if(Math.abs(oscillationDelta) >= oscillationDirectionEpsilonRad){
+          const nextDirection = oscillationDelta > 0 ? 1 : -1;
+          const previousDirection = Number.isFinite(aiLaunchSession.lastObservedOscillationDirection)
+            ? aiLaunchSession.lastObservedOscillationDirection
+            : 0;
+          if(previousDirection !== 0 && previousDirection !== nextDirection){
+            aiLaunchSession.oscillationDirectionChanges = (aiLaunchSession.oscillationDirectionChanges || 0) + 1;
+            aiLaunchSession.oscillationDirectionChanged = true;
+            aiLaunchSession.oscillationDirectionChangedAt = now;
+            logAiDecision("ai_launch_oscillation_direction_changed", {
+              planeId: aiLaunchSession?.plane?.id ?? null,
+              ...getAiLaunchVisibleOscillationState(aiLaunchSession, now),
+              ...getAiTurnTimingSnapshot(),
+            });
+          }
+          aiLaunchSession.lastObservedOscillationDirection = nextDirection;
+        }
+        aiLaunchSession.lastObservedOscillationAngleRad = oscillationAngle;
+        if(
+          aiLaunchSession.visibleOscillationSatisfied !== true
+          && (
+            aiLaunchSession.oscillationPeakReached === true
+            || oscillationElapsedMs >= AI_LAUNCH_VISIBLE_OSCILLATION_MIN_MS
+            || (aiLaunchSession.oscillationDirectionChanges || 0) >= AI_LAUNCH_VISIBLE_OSCILLATION_DIRECTION_CHANGES_MIN
+          )
+        ){
+          aiLaunchSession.visibleOscillationSatisfied = true;
+          aiLaunchSession.visibleOscillationSatisfiedAt = now;
+          logAiDecision("ai_launch_visible_oscillation_satisfied", {
+            planeId: aiLaunchSession?.plane?.id ?? null,
+            ...getAiLaunchVisibleOscillationState(aiLaunchSession, now),
+            ...getAiTurnTimingSnapshot(),
+          });
         }
         const angleErrorRad = Math.abs(normalizeAngleDeltaRad(currentMetrics.angleRad - aiLaunchSession.targetAim.angleRad));
         const targetPowerRatio = MAX_DRAG_DISTANCE > 0
@@ -33326,6 +33471,14 @@ function gameDraw(){
           && powerError <= tolerance.powerRatio
         ){
           aiLaunchSession.pendingReleaseReason = "perfect_tolerance";
+          logAiDecision("ai_launch_pending_release_marked", {
+            reason: "perfect_tolerance",
+            planeId: aiLaunchSession?.plane?.id ?? null,
+            angleErrorDeg: Number((angleErrorRad * 180 / Math.PI).toFixed(3)),
+            powerError: Number(powerError.toFixed(4)),
+            ...getAiLaunchVisibleOscillationState(aiLaunchSession, now),
+            ...getAiTurnTimingSnapshot(),
+          });
         }
       }
     }
