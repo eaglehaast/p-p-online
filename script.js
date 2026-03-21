@@ -16066,7 +16066,7 @@ function getDistanceFromPointToSegment(pointX, pointY, x1, y1, x2, y2){
   return Math.hypot(pointX - closestX, pointY - closestY);
 }
 
-function getMineThreatMetaForSegment(startX, startY, endX, endY, plane = null){
+function getMineThreatMetaForSegment(startX, startY, endX, endY, plane = null, options = {}){
   if(![startX, startY, endX, endY].every(Number.isFinite)){
     return {
       count: 0,
@@ -16078,6 +16078,7 @@ function getMineThreatMetaForSegment(startX, startY, endX, endY, plane = null){
     };
   }
 
+  const mineOwner = options?.mineOwner || null;
   const dangerRadius = plane ? getPlaneDangerGeometry(plane).radius : 0;
   const mineTriggerRadius = Math.max(MINE_TRIGGER_RADIUS, dangerRadius);
   const isLandingPointOnlyCheck = Math.hypot(endX - startX, endY - startY) <= 0.0001;
@@ -16090,6 +16091,7 @@ function getMineThreatMetaForSegment(startX, startY, endX, endY, plane = null){
 
   for(const mine of Array.isArray(mines) ? mines : []){
     if(!mine || !Number.isFinite(mine.x) || !Number.isFinite(mine.y)) continue;
+    if(mineOwner && mine.owner !== mineOwner) continue;
 
     const pathDistance = getDistanceFromPointToSegment(mine.x, mine.y, startX, startY, endX, endY);
     const landingDistance = Math.hypot(endX - mine.x, endY - mine.y);
@@ -16100,9 +16102,8 @@ function getMineThreatMetaForSegment(startX, startY, endX, endY, plane = null){
 
     count += 1;
     const effectiveNearestDist = Math.min(pathDistance, landingDistance);
-    if(effectiveNearestDist < nearestDist) nearestDist = effectiveNearestDist;
-
-    if(!triggeringMine || effectiveNearestDist < nearestDist + 0.0001){
+    if(effectiveNearestDist < nearestDist){
+      nearestDist = effectiveNearestDist;
       triggeringMine = mine;
     }
 
@@ -16130,6 +16131,185 @@ function getMineThreatMetaForSegment(startX, startY, endX, endY, plane = null){
     reason,
     triggeringMine,
     triggerRadius: mineTriggerRadius,
+  };
+}
+
+function getMineControlSummaryForPlane(plane, context = {}, options = {}){
+  const originPoint = options?.originPoint || plane || null;
+  if(!originPoint || !Number.isFinite(originPoint.x) || !Number.isFinite(originPoint.y)){
+    return {
+      objectiveMineCount: 0,
+      flagMineCount: 0,
+      homeMineCount: 0,
+      priorityMineCount: 0,
+      trappedZone: false,
+      safeDirectionCount: 0,
+      enemyMineCoverAfterMove: false,
+      enemyMineFinisherThreat: false,
+      detourValue: 0,
+      objectiveDelayScore: 0,
+      defensiveUrgency: 0,
+      routeDangerScore: 0,
+      routeDevalued: false,
+      recommendedDetourPoint: null,
+      reasonCodes: [],
+    };
+  }
+
+  const activePlane = plane || context?.plane || null;
+  const assumedColor = activePlane?.color || options?.planeColor || 'blue';
+  const enemyMineOwner = assumedColor === 'blue' ? 'green' : 'blue';
+  const homeBase = options?.homeBase || context?.homeBase || getBaseAnchor(assumedColor);
+  const objectivePoint = options?.objectivePoint || null;
+  const flagPoint = options?.flagPoint || null;
+  const priorityPoint = options?.priorityPoint || null;
+  const landingPoint = options?.landingPoint || null;
+  const enemies = Array.isArray(options?.enemies) ? options.enemies.filter(Boolean) : (Array.isArray(context?.enemies) ? context.enemies.filter(Boolean) : []);
+
+  function summarizeRoute(targetPoint){
+    if(!targetPoint || !Number.isFinite(targetPoint.x) || !Number.isFinite(targetPoint.y)){
+      return { mineCount: 0, dangerScore: 0, threatMeta: null };
+    }
+    const threatMeta = getMineThreatMetaForSegment(originPoint.x, originPoint.y, targetPoint.x, targetPoint.y, activePlane, {
+      mineOwner: enemyMineOwner,
+    });
+    const dangerScore = threatMeta.count * 0.34
+      + (threatMeta.pathHit ? 0.28 : 0)
+      + (threatMeta.landingThreat ? 0.18 : 0)
+      + (Number.isFinite(threatMeta.nearestDist) ? Math.max(0, 1 - (threatMeta.nearestDist / Math.max(CELL_SIZE * 2.5, 1))) * 0.2 : 0);
+    return {
+      mineCount: threatMeta.count,
+      dangerScore: Number(dangerScore.toFixed(3)),
+      threatMeta,
+    };
+  }
+
+  function sampleSafeDirections(anchorPoint){
+    if(!anchorPoint || !Number.isFinite(anchorPoint.x) || !Number.isFinite(anchorPoint.y)){
+      return { safeDirectionCount: 0, totalDirections: 0, trappedZone: false };
+    }
+    const sampleDistance = Math.max(CELL_SIZE * 2, MAX_DRAG_DISTANCE * 0.28);
+    const directions = [
+      { x: 1, y: 0 },
+      { x: -1, y: 0 },
+      { x: 0, y: 1 },
+      { x: 0, y: -1 },
+      { x: Math.SQRT1_2, y: Math.SQRT1_2 },
+      { x: -Math.SQRT1_2, y: Math.SQRT1_2 },
+      { x: Math.SQRT1_2, y: -Math.SQRT1_2 },
+      { x: -Math.SQRT1_2, y: -Math.SQRT1_2 },
+    ];
+    let safeDirectionCount = 0;
+    for(const direction of directions){
+      const targetX = anchorPoint.x + direction.x * sampleDistance;
+      const targetY = anchorPoint.y + direction.y * sampleDistance;
+      const mineMeta = getMineThreatMetaForSegment(anchorPoint.x, anchorPoint.y, targetX, targetY, activePlane, {
+        mineOwner: enemyMineOwner,
+      });
+      const enemyPressure = enemies.some((enemy) => {
+        if(!Number.isFinite(enemy?.x) || !Number.isFinite(enemy?.y)) return false;
+        const enemyDist = Math.hypot(enemy.x - targetX, enemy.y - targetY);
+        return enemyDist <= getPlaneEffectiveRangePx(enemy) * 0.92 && isPathClear(enemy.x, enemy.y, targetX, targetY);
+      });
+      if(mineMeta.count === 0 && !enemyPressure) safeDirectionCount += 1;
+    }
+    return {
+      safeDirectionCount,
+      totalDirections: directions.length,
+      trappedZone: safeDirectionCount <= 2,
+    };
+  }
+
+  function findDetourPoint(targetPoint){
+    if(!targetPoint || !Number.isFinite(targetPoint.x) || !Number.isFinite(targetPoint.y)) return null;
+    const dx = targetPoint.x - originPoint.x;
+    const dy = targetPoint.y - originPoint.y;
+    const length = Math.hypot(dx, dy);
+    if(length <= 0.001) return null;
+    const normalX = -dy / length;
+    const normalY = dx / length;
+    const lateralShift = Math.max(CELL_SIZE * 2, Math.min(MAX_DRAG_DISTANCE * 0.32, length * 0.35));
+    const probeT = 0.58;
+    const midX = originPoint.x + dx * probeT;
+    const midY = originPoint.y + dy * probeT;
+    const baseMeta = summarizeRoute(targetPoint);
+    let best = null;
+    for(const sign of [-1, 1]){
+      const candidate = { x: midX + normalX * lateralShift * sign, y: midY + normalY * lateralShift * sign };
+      const toWaypoint = summarizeRoute(candidate);
+      const fromWaypoint = getMineThreatMetaForSegment(candidate.x, candidate.y, targetPoint.x, targetPoint.y, activePlane, {
+        mineOwner: enemyMineOwner,
+      });
+      const combinedCount = toWaypoint.mineCount + fromWaypoint.count;
+      const combinedDanger = toWaypoint.dangerScore + fromWaypoint.count * 0.31 + (fromWaypoint.pathHit ? 0.22 : 0) + (fromWaypoint.landingThreat ? 0.14 : 0);
+      if(combinedCount >= baseMeta.mineCount && combinedDanger >= baseMeta.dangerScore) continue;
+      if(!best || combinedDanger < best.combinedDanger){
+        best = {
+          x: Number(candidate.x.toFixed(1)),
+          y: Number(candidate.y.toFixed(1)),
+          combinedCount,
+          combinedDanger: Number(combinedDanger.toFixed(3)),
+          improvement: Number((baseMeta.dangerScore - combinedDanger).toFixed(3)),
+        };
+      }
+    }
+    return best;
+  }
+
+  const objectiveRoute = summarizeRoute(objectivePoint);
+  const flagRoute = summarizeRoute(flagPoint);
+  const homeRoute = summarizeRoute(homeBase);
+  const priorityRoute = summarizeRoute(priorityPoint);
+  const trapSummary = sampleSafeDirections(landingPoint || originPoint);
+  const detourPoint = findDetourPoint(objectivePoint || priorityPoint || flagPoint || homeBase);
+
+  const enemyMineCoverAfterMove = Boolean(landingPoint) && enemies.some((enemy) => {
+    if(!Number.isFinite(enemy?.x) || !Number.isFinite(enemy?.y)) return false;
+    const contestDistance = Math.hypot(enemy.x - landingPoint.x, enemy.y - landingPoint.y);
+    if(contestDistance > getPlaneEffectiveRangePx(enemy) * 1.05) return false;
+    if(!isPathClear(enemy.x, enemy.y, landingPoint.x, landingPoint.y)) return false;
+    const laneMineMeta = getMineThreatMetaForSegment(enemy.x, enemy.y, landingPoint.x, landingPoint.y, activePlane, {
+      mineOwner: enemyMineOwner,
+    });
+    return laneMineMeta.count > 0;
+  });
+
+  const enemyMineFinisherThreat = enemyMineCoverAfterMove || (Boolean(landingPoint && homeBase) && getMineThreatMetaForSegment(landingPoint.x, landingPoint.y, homeBase.x, homeBase.y, activePlane, {
+    mineOwner: enemyMineOwner,
+  }).count > 0 && enemies.some((enemy) => Number.isFinite(enemy?.x) && Number.isFinite(enemy?.y) && Math.hypot(enemy.x - landingPoint.x, enemy.y - landingPoint.y) <= getPlaneEffectiveRangePx(enemy) * 1.08));
+
+  const objectiveDelayScore = Number((objectiveRoute.dangerScore + (trapSummary.trappedZone ? 0.24 : 0) + (enemyMineCoverAfterMove ? 0.18 : 0)).toFixed(3));
+  const detourValue = Number(Math.max(0, (detourPoint?.improvement || 0) + (trapSummary.trappedZone ? 0.18 : 0) + (objectiveRoute.mineCount > 0 ? 0.14 : 0)).toFixed(3));
+  const defensiveUrgency = Number((homeRoute.dangerScore + (trapSummary.trappedZone ? 0.2 : 0) + (enemyMineFinisherThreat ? 0.22 : 0)).toFixed(3));
+  const routeDangerScore = Number(Math.max(objectiveRoute.dangerScore, flagRoute.dangerScore, homeRoute.dangerScore, priorityRoute.dangerScore).toFixed(3));
+  const routeDevalued = objectiveDelayScore >= 0.34 || objectiveRoute.mineCount > 0 || enemyMineFinisherThreat;
+  const reasonCodes = [];
+  if(routeDevalued) reasonCodes.push('route_devalued_by_enemy_mine');
+  if(objectiveDelayScore >= 0.34) reasonCodes.push('objective_delayed_due_to_mine_control');
+  if(trapSummary.trappedZone || enemyMineFinisherThreat) reasonCodes.push('reposition_due_to_mine_trap');
+
+  return {
+    objectiveMineCount: objectiveRoute.mineCount,
+    flagMineCount: flagRoute.mineCount,
+    homeMineCount: homeRoute.mineCount,
+    priorityMineCount: priorityRoute.mineCount,
+    trappedZone: trapSummary.trappedZone,
+    safeDirectionCount: trapSummary.safeDirectionCount,
+    enemyMineCoverAfterMove,
+    enemyMineFinisherThreat,
+    detourValue,
+    objectiveDelayScore,
+    defensiveUrgency,
+    routeDangerScore,
+    routeDevalued,
+    recommendedDetourPoint: detourPoint,
+    reasonCodes,
+    routeThreats: {
+      objective: objectiveRoute,
+      flag: flagRoute,
+      home: homeRoute,
+      priority: priorityRoute,
+    },
   };
 }
 
@@ -17303,8 +17483,27 @@ function getBluePriorityEnemy(context){
   const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
   const blueBase = getBaseAnchor("blue");
   return enemies.reduce((best, enemy) => {
+    if(!enemy) return best;
     if(!best) return enemy;
-    return dist(enemy, blueBase) < dist(best, blueBase) ? enemy : best;
+    const enemyDistance = dist(enemy, blueBase);
+    const bestDistance = dist(best, blueBase);
+    const enemyMineSummary = getMineControlSummaryForPlane(context?.plane || null, context, {
+      originPoint: blueBase,
+      objectivePoint: enemy,
+      priorityPoint: enemy,
+      enemies: [enemy],
+      planeColor: 'blue',
+    });
+    const bestMineSummary = getMineControlSummaryForPlane(context?.plane || null, context, {
+      originPoint: blueBase,
+      objectivePoint: best,
+      priorityPoint: best,
+      enemies: [best],
+      planeColor: 'blue',
+    });
+    const enemyScore = enemyDistance + enemyMineSummary.objectiveDelayScore * CELL_SIZE * 3.2;
+    const bestScore = bestDistance + bestMineSummary.objectiveDelayScore * CELL_SIZE * 3.2;
+    return enemyScore < bestScore ? enemy : best;
   }, null);
 }
 
@@ -18583,36 +18782,55 @@ function getAiStrategicTargetPoint(context, plannedMove){
     return { x: plannedMove.targetEnemy.x, y: plannedMove.targetEnemy.y };
   }
 
+  const plane = plannedMove?.plane || null;
   const landingPoint = getAiMoveLandingPoint(plannedMove);
   const goal = aiRoundState?.currentGoal;
+  let rawTarget = null;
 
   if(goal === "capture_enemy_flag"){
     const flags = Array.isArray(context?.availableEnemyFlags) ? context.availableEnemyFlags : [];
     if(flags.length > 0){
-      const bestFlag = flags
+      rawTarget = flags
         .map((flag) => getFlagAnchor(flag))
         .filter(Boolean)
-        .sort((a, b) => dist(plannedMove.plane, a) - dist(plannedMove.plane, b))[0];
-      if(bestFlag) return bestFlag;
+        .sort((a, b) => dist(plane || plannedMove, a) - dist(plane || plannedMove, b))[0] || null;
     }
   }
 
-  if(goal === "return_with_flag" || goal === "protect_home_flag"){
-    const homeBase = context?.homeBase || getBaseAnchor("blue");
-    if(homeBase) return homeBase;
+  if(!rawTarget && (goal === "return_with_flag" || goal === "protect_home_flag")){
+    rawTarget = context?.homeBase || getBaseAnchor("blue");
   }
 
-  if(goal === "eliminate_flag_carrier"){
+  if(!rawTarget && goal === "eliminate_flag_carrier"){
     const carrier = context?.stolenBlueFlagCarrier;
-    if(carrier) return { x: carrier.x, y: carrier.y };
+    if(carrier) rawTarget = { x: carrier.x, y: carrier.y };
   }
 
-  const priorityEnemy = getBluePriorityEnemy(context);
-  if(priorityEnemy){
-    return { x: priorityEnemy.x, y: priorityEnemy.y };
+  if(!rawTarget){
+    const priorityEnemy = getBluePriorityEnemy(context);
+    if(priorityEnemy) rawTarget = { x: priorityEnemy.x, y: priorityEnemy.y };
   }
 
-  return landingPoint;
+  if(!rawTarget) return landingPoint;
+
+  const mineSummary = getMineControlSummaryForPlane(plane, context, {
+    originPoint: plane || landingPoint,
+    objectivePoint: rawTarget,
+    priorityPoint: rawTarget,
+    landingPoint,
+    enemies: context?.enemies,
+    homeBase: context?.homeBase || getBaseAnchor('blue'),
+  });
+  if(mineSummary.routeDevalued && mineSummary.recommendedDetourPoint){
+    return {
+      x: mineSummary.recommendedDetourPoint.x,
+      y: mineSummary.recommendedDetourPoint.y,
+      detourForObjective: rawTarget,
+      mineReason: mineSummary.reasonCodes[0] || 'route_devalued_by_enemy_mine',
+    };
+  }
+
+  return rawTarget;
 }
 
 function isPathClearIgnoringColliderById(x1, y1, x2, y2, ignoredColliderId){
@@ -21231,12 +21449,20 @@ function evaluateFlagPickupContinuation(plane, pickupPoint, options = {}){
   const goalName = options?.goalName || "capture_enemy_flag";
   const fallbackContext = context || { enemies };
   const threatMeta = typeof getImmediateResponseThreatMeta === "function"
-    ? getImmediateResponseThreatMeta(fallbackContext, pickupPoint?.x, pickupPoint?.y, null)
+    ? getImmediateResponseThreatMeta({ ...fallbackContext, plane }, pickupPoint?.x, pickupPoint?.y, null)
     : { count: 0, nearestDist: Number.POSITIVE_INFINITY };
-  const immediateTrap = threatMeta.count > 0 && (
+  const mineSummary = getMineControlSummaryForPlane(plane, fallbackContext, {
+    originPoint: plane,
+    objectivePoint: pickupPoint,
+    flagPoint: pickupPoint,
+    homeBase,
+    landingPoint: pickupPoint,
+    enemies,
+  });
+  const immediateTrap = (threatMeta.count > 0 && (
     threatMeta.count >= 2
     || (Number.isFinite(threatMeta.nearestDist) && threatMeta.nearestDist <= AI_IMMEDIATE_RESPONSE_DANGER_RADIUS * 0.55)
-  );
+  )) || mineSummary.enemyMineFinisherThreat;
   const simulatedCarrier = buildSimulatedFlagCarrierFromPickup(plane, pickupPoint);
   const baseMove = simulatedCarrier && homeBase
     ? planPathToPoint(simulatedCarrier, homeBase.x, homeBase.y, {
@@ -21316,9 +21542,9 @@ function evaluateFlagPickupContinuation(plane, pickupPoint, options = {}){
   }
 
   const hasSafeEscape = !immediateTrap && Boolean(baseMove || safeRetreatMove);
-  const hasReturnRoute = !immediateTrap && Boolean(baseMove);
+  const hasReturnRoute = !immediateTrap && Boolean(baseMove) && mineSummary.homeMineCount <= 0;
   const statusReason = immediateTrap
-    ? 'pickup_without_safe_escape'
+    ? (mineSummary.enemyMineFinisherThreat ? 'objective_delayed_due_to_mine_control' : 'pickup_without_safe_escape')
     : baseMove
       ? 'flag_available_and_safe_to_continue'
       : safeRetreatMove
@@ -21333,6 +21559,7 @@ function evaluateFlagPickupContinuation(plane, pickupPoint, options = {}){
     immediateTrap,
     hasSafeEscape,
     hasReturnRoute,
+    mineSummary,
     baseMove,
     safeRetreatMove,
     safeRetreatPoint,
@@ -21434,6 +21661,11 @@ function evaluateFlagPressureOpportunity(context = {}){
     criticalHomeDefenseThreat: homeBaseThreatMeta.criticalOrNearCritical,
     bestDefenderPlaneId: homeBaseThreatMeta.bestDefenderPlaneId,
     bestFlagRoute: null,
+    mineRoutePressure: 0,
+    mineDetourValue: 0,
+    mineDefensiveUrgency: 0,
+    trappedByMines: false,
+    enemyMineCoverAfterAdvance: false,
   };
 
   if(!homeBase || !aiPlanes.length || !availableEnemyFlags.length){
@@ -21472,6 +21704,14 @@ function evaluateFlagPressureOpportunity(context = {}){
       const toBaseDistance = Math.hypot(homeBase.x - targetAnchor.x, homeBase.y - targetAnchor.y);
       const canReachFlag = isPathClear(plane.x, plane.y, targetAnchor.x, targetAnchor.y);
       const clearReturnLane = isPathClear(targetAnchor.x, targetAnchor.y, homeBase.x, homeBase.y);
+      const mineSummary = getMineControlSummaryForPlane(plane, context, {
+        originPoint: plane,
+        objectivePoint: targetAnchor,
+        flagPoint: targetAnchor,
+        homeBase,
+        landingPoint: targetAnchor,
+        enemies,
+      });
       const continuation = evaluateFlagPickupContinuation(plane, targetAnchor, {
         homeBase,
         enemies,
@@ -21528,26 +21768,32 @@ function evaluateFlagPressureOpportunity(context = {}){
         + (canReachFlag ? 0.16 : 0)
         + (aiAliveCount > enemyAliveCount ? 0.12 : 0)
         + (blueInventoryCount >= AI_CARGO_SWITCH_TO_AGGRESSION_ITEMS ? 0.08 : 0)
+        + mineSummary.detourValue * 0.12
         - returnLaneThreat * 0.62
         - travelBurden * 0.26
         - homeDefenseValuePenalty * 0.34
+        - mineSummary.objectiveDelayScore * 0.32
       );
       const flagGrabValue = clamp01(
         (canReachFlag ? 0.42 : 0)
         + (scoreGap <= 0 ? 0.1 : 0)
         + (1 - travelBurden) * 0.18
+        + mineSummary.detourValue * 0.16
         - (effectiveContinuation.hasSafeEscape ? 0 : 0.22)
         - homeDefenseValuePenalty * 0.52
         - criticalHomeDefensePenalty
+        - mineSummary.objectiveDelayScore * 0.54
       );
       const postPickupEscapeValue = clamp01(
         (effectiveContinuation.hasSafeEscape ? 0.46 : 0.02)
         + (effectiveContinuation.hasReturnRoute ? 0.18 : 0)
         + expectedRetreatChance * 0.26
         + (clearReturnLane ? 0.06 : 0)
+        + mineSummary.detourValue * 0.18
         - (effectiveContinuation.immediateTrap ? 0.34 : 0)
         - homeDefenseValuePenalty * 0.48
         - criticalHomeDefensePenalty * 0.75
+        - (mineSummary.enemyMineFinisherThreat ? 0.28 : 0)
       );
       const flagReturnValue = clamp01(
         (effectiveContinuation.hasReturnRoute ? 0.28 : 0.08)
@@ -21557,6 +21803,7 @@ function evaluateFlagPressureOpportunity(context = {}){
         + (scoreGap <= 0 ? 0.08 : 0)
         - homeDefenseValuePenalty * 0.56
         - criticalHomeDefensePenalty
+        - mineSummary.defensiveUrgency * 0.34
       );
       if(homeDefenseValuePenalty > 0.12){
         logAiDecision("flag_value_reduced_by_base_threat", {
@@ -21601,6 +21848,7 @@ function evaluateFlagPressureOpportunity(context = {}){
         flagGrabValue: Number(flagGrabValue.toFixed(4)),
         postPickupEscapeValue: Number(postPickupEscapeValue.toFixed(4)),
         flagReturnValue: Number(flagReturnValue.toFixed(4)),
+        mineSummary,
       };
       if(!bestRoute
         || route.flagReturnValue > bestRoute.flagReturnValue
@@ -21632,6 +21880,11 @@ function evaluateFlagPressureOpportunity(context = {}){
     result.flagContinuationStatus = bestRoute.continuationStatus;
     result.flagContinuationReason = bestRoute.continuationReason;
     result.bestFlagRoute = bestRoute;
+    result.mineRoutePressure = bestRoute.mineSummary?.objectiveDelayScore || 0;
+    result.mineDetourValue = bestRoute.mineSummary?.detourValue || 0;
+    result.mineDefensiveUrgency = bestRoute.mineSummary?.defensiveUrgency || 0;
+    result.trappedByMines = bestRoute.mineSummary?.trappedZone === true;
+    result.enemyMineCoverAfterAdvance = bestRoute.mineSummary?.enemyMineCoverAfterMove === true;
   }
 
   return result;
@@ -21686,6 +21939,11 @@ function evaluateAiGoalPriorityModel(context){
     hasComfortableDefensiveResponse: flagPressureOpportunity.hasComfortableDefensiveResponse,
     homeDefensePressure: flagPressureOpportunity.homeDefensePressure,
     criticalHomeDefenseThreat: flagPressureOpportunity.criticalHomeDefenseThreat,
+    mineRoutePressure: flagPressureOpportunity.mineRoutePressure,
+    mineDetourValue: flagPressureOpportunity.mineDetourValue,
+    mineDefensiveUrgency: flagPressureOpportunity.mineDefensiveUrgency,
+    trappedByMines: flagPressureOpportunity.trappedByMines,
+    enemyMineCoverAfterAdvance: flagPressureOpportunity.enemyMineCoverAfterAdvance,
   });
 }
 
@@ -23333,10 +23591,20 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     const effectiveContinuation = mineEnabledContinuation?.after?.hasSafeEscape === true
       ? mineEnabledContinuation.after
       : continuation;
+    const mineSummary = effectiveContinuation?.mineSummary || getMineControlSummaryForPlane(candidate?.plane, continuationOptions.context, {
+      originPoint: candidate?.plane,
+      objectivePoint: pickupPoint,
+      flagPoint: pickupPoint,
+      homeBase: continuationOptions.homeBase,
+      landingPoint: pickupPoint,
+      enemies: continuationOptions.enemies,
+    });
     const continuationPenalty = effectiveContinuation.hasSafeEscape
       ? (effectiveContinuation.hasReturnRoute ? 0 : MAX_DRAG_DISTANCE * 0.28)
       : MAX_DRAG_DISTANCE * 4;
-    const enrichedScore = (Number.isFinite(candidate?.score) ? candidate.score : Number.POSITIVE_INFINITY) + continuationPenalty;
+    const minePenalty = MAX_DRAG_DISTANCE * Math.max(0, mineSummary.objectiveDelayScore * 0.28 + (mineSummary.enemyMineFinisherThreat ? 0.22 : 0));
+    const detourBonus = MAX_DRAG_DISTANCE * Math.max(0, mineSummary.detourValue * 0.12);
+    const enrichedScore = (Number.isFinite(candidate?.score) ? candidate.score : Number.POSITIVE_INFINITY) + continuationPenalty + minePenalty - detourBonus;
     return {
       ...candidate,
       continuationMeta: {
@@ -23347,6 +23615,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
         statusReason: mineEnabledContinuation?.after?.hasSafeEscape === true ? "mine_enables_flag_pickup" : effectiveContinuation.statusReason,
         immediateThreatCount: effectiveContinuation.immediateThreatCount,
         immediateThreatNearestDist: effectiveContinuation.immediateThreatNearestDist,
+        mineSummary,
         minePlacement: mineEnabledContinuation?.placement
           ? { x: Number(mineEnabledContinuation.placement.x.toFixed(1)), y: Number(mineEnabledContinuation.placement.y.toFixed(1)) }
           : null,
@@ -23359,6 +23628,8 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
       finalScoreBreakdown: {
         ...(candidate?.finalScoreBreakdown || {}),
         continuationPenalty: Number(continuationPenalty.toFixed(3)),
+        minePenalty: Number(minePenalty.toFixed(3)),
+        detourBonus: Number(detourBonus.toFixed(3)),
         total: Number(enrichedScore.toFixed(3)),
       },
     };
@@ -23861,6 +24132,22 @@ function planModeDrivenAiMove(context){
     return carriedFlag?.color === "green";
   }) : null;
   if(carrier){
+    const carrierMineSummary = getMineControlSummaryForPlane(carrier, context, {
+      originPoint: carrier,
+      objectivePoint: homeBase,
+      homeBase,
+      landingPoint: homeBase,
+      enemies,
+    });
+    if(carrierMineSummary.defensiveUrgency >= 0.34){
+      logAiDecision('reposition_due_to_mine_trap', {
+        planeId: carrier?.id ?? null,
+        goalName: 'return_with_flag',
+        homeMineCount: carrierMineSummary.homeMineCount,
+        safeDirectionCount: carrierMineSummary.safeDirectionCount,
+        enemyMineCoverAfterMove: carrierMineSummary.enemyMineCoverAfterMove,
+      });
+    }
     aiRoundState.currentGoal = "return_with_flag";
     const move = planPathWithSpecialRouteProbe(carrier, homeBase.x, homeBase.y, {
       goalName: "return_with_flag",
@@ -24063,6 +24350,10 @@ function planModeDrivenAiMove(context){
       homeDefenseReserve,
     });
     for(const candidate of capCandidates){
+      const mineSummary = candidate?.continuationMeta?.mineSummary || null;
+      if(mineSummary?.routeDevalued){
+        candidate.classTieBreakReason = mineSummary.reasonCodes?.[0] || 'route_devalued_by_enemy_mine';
+      }
       const candidateHasSafeEscape = candidate?.continuationMeta?.hasSafeEscape === true;
       const bestHasSafeEscape = bestCap?.continuationMeta?.hasSafeEscape === true;
       const candidateHasReturnRoute = candidate?.continuationMeta?.hasReturnRoute === true;
@@ -24081,8 +24372,26 @@ function planModeDrivenAiMove(context){
         }
         continue;
       }
+      const bestMineDelay = bestCap?.continuationMeta?.mineSummary?.objectiveDelayScore || 0;
+      const candidateMineDelay = mineSummary?.objectiveDelayScore || 0;
+      if(candidateMineDelay !== bestMineDelay){
+        if(candidateMineDelay < bestMineDelay){
+          candidate.classTieBreakReason = mineSummary?.recommendedDetourPoint ? 'objective_delayed_due_to_mine_control' : 'route_devalued_by_enemy_mine';
+          bestCap = candidate;
+        }
+        continue;
+      }
+      const bestTrapRisk = bestCap?.continuationMeta?.mineSummary?.enemyMineFinisherThreat === true;
+      const candidateTrapRisk = mineSummary?.enemyMineFinisherThreat === true;
+      if(candidateTrapRisk !== bestTrapRisk){
+        if(!candidateTrapRisk){
+          candidate.classTieBreakReason = 'reposition_due_to_mine_trap';
+          bestCap = candidate;
+        }
+        continue;
+      }
       if(compareAiCandidateByScoreAndRotation(candidate, bestCap, ["mode_flag_pressure", candidate?.flag?.id ?? "", candidate?.candidateType || "direct"])){
-        candidate.classTieBreakReason = compareAiCandidateByScoreAndRotation.lastClassTieBreakReason || null;
+        candidate.classTieBreakReason = compareAiCandidateByScoreAndRotation.lastClassTieBreakReason || candidate.classTieBreakReason || null;
         bestCap = candidate;
       }
     }
@@ -24234,12 +24543,24 @@ function getImmediateResponseThreatMeta(context, landingX, landingY, primaryEnem
     if(landingMineThreat.nearestDist < nearestDist) nearestDist = landingMineThreat.nearestDist;
   }
 
+  const mineSummary = getMineControlSummaryForPlane(context?.plane || null, context, {
+    originPoint: context?.plane || { x: landingX, y: landingY },
+    objectivePoint: { x: landingX, y: landingY },
+    landingPoint: { x: landingX, y: landingY },
+    homeBase: context?.homeBase || getBaseAnchor('blue'),
+    enemies: context?.enemies,
+    planeColor: context?.plane?.color || 'blue',
+  });
   const mineCount = landingMineThreat.count;
   const reasonCodes = [];
   if(enemyCount > 0) reasonCodes.push("enemy_immediate_threat");
   if(mineCount > 0) reasonCodes.push("post_landing_mine_threat");
+  if(mineSummary.enemyMineFinisherThreat) {
+    count += 1;
+    reasonCodes.push('reposition_due_to_mine_trap');
+  }
 
-  return { count, nearestDist, enemyCount, mineCount, reasonCodes };
+  return { count, nearestDist, enemyCount, mineCount, reasonCodes, mineSummary };
 }
 
 function findPreFallbackAttackMove(context){
