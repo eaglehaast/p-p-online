@@ -15598,6 +15598,70 @@ const AI_DECISION_ENRICHED_EVENT_SET = new Set([
   "role_move",
   "mode_move",
 ]);
+const AI_DECISION_VERBOSE_DEBUG_FLAG = false;
+const AI_DECISION_AGGREGATED_EVENT_SET = new Set([
+  "narrow_corridor_rejected",
+  "detour_not_found",
+  "blocked_after_deviation",
+  "fallback_direct_attack_blocked_after_deviation",
+]);
+let aiDecisionScopeSequence = 0;
+const aiDecisionScopeStack = [];
+
+function beginAiDecisionScope(meta = {}){
+  const scope = {
+    id: `ai_scope_${++aiDecisionScopeSequence}`,
+    meta: meta && typeof meta === "object" ? { ...meta } : {},
+    aggregatedEvents: new Map(),
+  };
+  aiDecisionScopeStack.push(scope);
+  return scope;
+}
+
+function getCurrentAiDecisionScope(){
+  if(aiDecisionScopeStack.length === 0) return null;
+  return aiDecisionScopeStack[aiDecisionScopeStack.length - 1] || null;
+}
+
+function flushAiDecisionScope(scope){
+  if(!scope || !(scope.aggregatedEvents instanceof Map) || scope.aggregatedEvents.size === 0) return;
+  for(const [reason, entry] of scope.aggregatedEvents.entries()){
+    if(!entry || !Number.isFinite(entry.count) || entry.count <= 0) continue;
+    const summaryPayload = {
+      ...(entry.lastPayload || {}),
+      suppressedRepeatCount: entry.count,
+      lastReasonCode: entry.lastReasonCode,
+      aggregatedWithin: scope.meta?.type || "ai_scope",
+      aggregatedScopeId: scope.id,
+      aggregatedPlaneId: scope.meta?.planeId ?? null,
+      aggregatedGoalName: scope.meta?.goalName ?? null,
+    };
+    console.debug(`[ai] ${reason}_summary`, summaryPayload);
+  }
+  scope.aggregatedEvents.clear();
+}
+
+function endAiDecisionScope(scope){
+  if(!scope) return;
+  const currentScope = getCurrentAiDecisionScope();
+  if(currentScope === scope){
+    flushAiDecisionScope(scope);
+    aiDecisionScopeStack.pop();
+    return;
+  }
+
+  const scopeIndex = aiDecisionScopeStack.lastIndexOf(scope);
+  if(scopeIndex >= 0){
+    flushAiDecisionScope(scope);
+    aiDecisionScopeStack.splice(scopeIndex, 1);
+  }
+}
+
+function shouldAggregateAiDecision(reason, payload = {}){
+  if(AI_DECISION_VERBOSE_DEBUG_FLAG) return false;
+  if(!AI_DECISION_AGGREGATED_EVENT_SET.has(reason)) return false;
+  return payload?.forceImmediateLog !== true;
+}
 
 function shouldEmitAiDecision(reason, payload = {}){
   const debugFlagName = AI_DECISION_DEBUG_EVENT_FLAGS[reason];
@@ -15619,6 +15683,21 @@ function shouldEnrichAiDecision(reason){
 function logAiDecision(reason, details = {}){
   const payload = details && typeof details === "object" ? { ...details } : {};
   if(!shouldEmitAiDecision(reason, payload)) return;
+  if(shouldAggregateAiDecision(reason, payload)){
+    const scope = getCurrentAiDecisionScope();
+    if(scope){
+      const currentEntry = scope.aggregatedEvents.get(reason) || {
+        count: 0,
+        lastPayload: null,
+        lastReasonCode: null,
+      };
+      currentEntry.count += 1;
+      currentEntry.lastPayload = { ...payload };
+      currentEntry.lastReasonCode = payload?.reasonCode || payload?.reason || currentEntry.lastReasonCode || null;
+      scope.aggregatedEvents.set(reason, currentEntry);
+      return;
+    }
+  }
 
   const reservedHomeDefenderIds = Array.isArray(payload.reservedHomeDefenderIds)
     ? payload.reservedHomeDefenderIds.filter((id) => id != null)
@@ -27384,9 +27463,17 @@ function countRouteNearbyColliders(x1, y1, x2, y2, radiusPx){
 }
 
 function planPathToPoint(plane, tx, ty, options = {}){
-  const baseFlightRangeCells = Number.isFinite(settings?.flightRangeCells)
-    ? settings.flightRangeCells
-    : 0;
+  const aiDecisionScope = beginAiDecisionScope({
+    type: "plan_path_to_point",
+    planeId: plane?.id ?? null,
+    goalName: options?.goalName || null,
+    targetX: Number.isFinite(tx) ? Number(tx.toFixed(1)) : tx,
+    targetY: Number.isFinite(ty) ? Number(ty.toFixed(1)) : ty,
+  });
+  try {
+    const baseFlightRangeCells = Number.isFinite(settings?.flightRangeCells)
+      ? settings.flightRangeCells
+      : 0;
   const useFuelBoostedRange = options?.useFuelBoostedRange === true;
   const hasFuelBuffActive = planeHasActiveTurnBuff(plane, INVENTORY_ITEM_TYPES.FUEL);
   const shouldUseEffectiveRange = useFuelBoostedRange || hasFuelBuffActive;
@@ -28743,6 +28830,9 @@ function planPathToPoint(plane, tx, ty, options = {}){
     planPathToPoint.lastRejectMeta = findMirrorShot.lastRejectMeta || null;
   }
   return null;
+  } finally {
+    endAiDecisionScope(aiDecisionScope);
+  }
 }
 
 function isDirectFinisherScenario(plane, enemy, options = {}){
