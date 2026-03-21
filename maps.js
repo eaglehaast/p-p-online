@@ -387,7 +387,10 @@ const JSON_MAP_SOURCES = Object.freeze([
   'ui_gamescreen/maps/gs_maps_Pebbles.json',
   'ui_gamescreen/maps/gs_maps_TwinGate.json',
   'ui_gamescreen/maps/gs_maps_arena.json',
-  'ui_gamescreen/maps/gs_maps_horserows.json'
+  'ui_gamescreen/maps/gs_maps_horserows.json',
+  'ui_gamescreen/maps/gs_maps_clearSky.json',
+  'ui_gamescreen/maps/gs_maps_fiveBricks.json',
+  'ui_gamescreen/maps/gs_maps_weakBrick.json'
 ]);
 
 async function loadMapDefinitionFromJson(path){
@@ -425,33 +428,7 @@ function loadMapsFromJsonSources(){
     .then((maps) => maps.filter(Boolean));
 }
 
-const MAPS = [
-  {
-    id: 'clearSky',
-    name: 'Clear Sky',
-    mode: MAP_RENDER_MODES.DATA,
-    sprites: CLEAR_SKY_BORDER_SPRITES,
-    tier: 'middle',
-    difficulty: 'middle'
-  },
-  {
-    id: 'fiveBricks',
-    name: 'fiveBricks',
-    mode: MAP_RENDER_MODES.DATA,
-    sprites: FIVE_BRICKS_SPRITES,
-    tier: 'easy',
-    flags: FIVE_BRICKS_FLAGS
-  },
-  {
-    id: 'weakBrick',
-    name: 'Weak brick',
-    mode: MAP_RENDER_MODES.DATA,
-    tier: 'easy',
-    difficulty: 'easy',
-    sprites: WEAK_BRICK_SPRITES,
-    flags: WEAK_BRICK_FLAGS
-  },
-];
+const MAPS = [];
 
 async function initializeImportedJsonMaps(){
   const importedMaps = await loadMapsFromJsonSources();
