@@ -24,7 +24,10 @@ function assert(condition, message){
 }
 
 const source = fs.readFileSync('script.js', 'utf8');
-const extracted = extractFunctionSource(source, 'maybeUseInventoryBeforeLaunch');
+const extracted = [
+  'buildAiInventoryCandidatePlans',
+  'maybeUseInventoryBeforeLaunch',
+].map((name) => extractFunctionSource(source, name)).join('\n\n');
 const logs = [];
 let removed = 0;
 let placed = 0;
@@ -78,6 +81,10 @@ const context = {
     logReason: 'mine_enables_flag_pickup',
   }),
   evaluatePostLaunchSafetyWithMine: () => ({ beforeSafe: false, afterSafe: false }),
+  evaluateDirectAttackWindow: () => null,
+  isPlannedMoveLikelyProfitableTrade: () => false,
+  AI_ENGINE_MODE: 'v2',
+  AI_V2_INVENTORY_PHASE: 3,
 };
 
 vm.createContext(context);
@@ -95,8 +102,10 @@ const gameContext = {
   homeBase: { x: 0, y: 0 },
   aiRiskProfile: { profile: 'balanced' },
 };
-
+const planning = context.buildAiInventoryCandidatePlans(gameContext, plannedMove);
+plannedMove.selectedInventoryCandidate = planning.selectedCandidate;
 const used = context.maybeUseInventoryBeforeLaunch(gameContext, plannedMove);
+
 assert(used === true, 'Mine should be used when it turns unsafe flag pickup into safe pickup.');
 assert(removed === 1 && placed === 1, 'Mine must be placed and removed from inventory exactly once.');
 assert(plannedMove.inventoryUsageReason === 'mine_enables_flag_pickup', 'Move should remember that mine was used to enable flag pickup.');

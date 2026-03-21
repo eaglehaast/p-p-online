@@ -19663,21 +19663,48 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       ? evaluatePostLaunchSafetyWithMine(context, plannedMove, preferredMinePlan.plan)
       : null;
     const safeAfterPlacement = !safetyMeta || safetyMeta.afterSafe !== false;
-    if(preferredMinePlan && safeAfterPlacement){
+    const mineImpactScore = preferredMinePlan?.plan ? Number(preferredMinePlan.plan.score || 0) : 0;
+    const mineBlockedEscapeCount = preferredMinePlan?.plan?.blockedEscapeCount ?? 0;
+    const mineCutRouteCount = preferredMinePlan?.plan?.cutRouteCount ?? 0;
+    const mineTrapCount = preferredMinePlan?.plan?.trapCount ?? 0;
+    const mineTotalDirectionLoss = preferredMinePlan?.plan?.totalDirectionLoss ?? 0;
+    const MINE_MIN_NOTICEABLE_IMPACT_SCORE = 4.5;
+    const MINE_MIN_NOTICEABLE_DIRECTION_LOSS = 2;
+    const mineCreatesRouteDenial = mineBlockedEscapeCount > 0 || mineCutRouteCount > 0 || mineTrapCount > 0;
+    const minePlanProvidesNoticeableImprovement = Boolean(preferredMinePlan?.plan) && (
+      mineTrapCount > 0
+      || mineCreatesRouteDenial
+      || (mineTotalDirectionLoss >= MINE_MIN_NOTICEABLE_DIRECTION_LOSS && mineImpactScore >= MINE_MIN_NOTICEABLE_IMPACT_SCORE)
+      || mineImpactScore >= (MINE_MIN_NOTICEABLE_IMPACT_SCORE + 1.5)
+    );
+    if(preferredMinePlan && minePlanProvidesNoticeableImprovement){
+      const baseMineBenefit = Math.max(0.26, Math.min(0.9, Number((preferredMinePlan.plan.score || 0) / 20)));
+      const expectedMineBenefit = mineCreatesRouteDenial
+        ? Math.max(0.34, baseMineBenefit)
+        : Math.max(0.3, baseMineBenefit);
       pushCandidate({
         itemType: INVENTORY_ITEM_TYPES.MINE,
         target: priorityEnemy || enemyBase || landingPoint || null,
-        expectedBenefit: Math.max(0.26, Math.min(0.9, Number((preferredMinePlan.plan.score || 0) / 20))),
-        risk: 0.08,
+        expectedBenefit: expectedMineBenefit,
+        risk: safeAfterPlacement ? 0.08 : 0.14,
         reason: preferredMinePlan.plan.scenario || "mine_cover_plan",
         whyBetter: preferredMinePlan.placementMode === "defensive"
           ? "mine can shape the enemy escape lane immediately instead of waiting for a plain flight"
           : "mine adds board control on top of the same movement plan",
         placementMode: preferredMinePlan.placementMode,
         minePlan: preferredMinePlan.plan,
+        safeAfterPlacement,
+        mineUseReason: mineCreatesRouteDenial ? "mine_used_for_route_denial" : "mine_used_for_position_improvement",
       });
     } else {
-      rejectCandidate(INVENTORY_ITEM_TYPES.MINE, preferredMinePlan ? "mine_self_risk_too_high" : "mine_no_useful_plan");
+      rejectCandidate(INVENTORY_ITEM_TYPES.MINE, preferredMinePlan ? "mine_impact_below_noticeable_threshold" : "mine_no_useful_plan", {
+        safeAfterPlacement,
+        routeBlockScore: preferredMinePlan?.plan ? Number((preferredMinePlan.plan.score || 0).toFixed(3)) : null,
+        blockedEscapeCount: mineBlockedEscapeCount,
+        cutRouteCount: mineCutRouteCount,
+        trapCount: mineTrapCount,
+        totalDirectionLoss: mineTotalDirectionLoss,
+      });
     }
   }
 
@@ -20053,10 +20080,105 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       if(executed) removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.INVISIBILITY);
     } else if(selectedType === INVENTORY_ITEM_TYPES.MINE && allowTacticalItems){
       const placementMode = selectedInventoryCandidate.placementMode === "defensive" ? "defensive" : "base";
+      const selectedMinePlan = selectedInventoryCandidate.minePlan || null;
+      const preservedStrategicTargetPoint = typeof getAiStrategicTargetPoint === "function"
+        ? getAiStrategicTargetPoint(context, plannedMove)
+        : null;
+      const flagTargetAnchor = context?.shouldUseFlagsMode && Array.isArray(context?.availableEnemyFlags) && typeof getFlagAnchor === "function"
+        ? context.availableEnemyFlags
+          .map((flag) => getFlagAnchor(flag))
+          .filter(Boolean)
+          .sort((a, b) => dist(plannedMove.plane, a) - dist(plannedMove.plane, b))[0] || null
+        : null;
+      const flagPickupBaseline = strategicGoal === "capture_enemy_flag" && flagTargetAnchor && typeof evaluateFlagPickupContinuation === "function"
+        ? evaluateFlagPickupContinuation(plannedMove.plane, flagTargetAnchor, {
+            homeBase: context?.homeBase || getBaseAnchor("blue"),
+            enemies: Array.isArray(context?.enemies) ? context.enemies : [],
+            context,
+            goalName: strategicGoal,
+          })
+        : null;
+      const mineEnabledFlagPickup = strategicGoal === "capture_enemy_flag"
+        && flagTargetAnchor
+        && flagPickupBaseline?.hasSafeEscape !== true
+        && typeof evaluateMineEnabledFlagPickupContinuation === "function"
+        ? evaluateMineEnabledFlagPickupContinuation(plannedMove.plane, flagTargetAnchor, {
+            homeBase: context?.homeBase || getBaseAnchor("blue"),
+            enemies: Array.isArray(context?.enemies) ? context.enemies : [],
+            context,
+            goalName: strategicGoal,
+            baselineContinuation: flagPickupBaseline,
+          })
+        : null;
+      const safeFinisherMineCoverage = selectedMinePlan && typeof evaluatePostLaunchSafetyWithMine === "function"
+        ? evaluatePostLaunchSafetyWithMine(context, plannedMove, selectedMinePlan)
+        : { beforeSafe: false, afterSafe: false };
+      const mineRequiredForFlagPickup = mineEnabledFlagPickup?.after?.hasSafeEscape === true;
+      const mineEnablesSafeFinisher = strategicGoal === "direct_finisher"
+        && safeFinisherMineCoverage.beforeSafe === false
+        && safeFinisherMineCoverage.afterSafe === true
+        && Boolean(selectedMinePlan);
+
+      if(mineRequiredForFlagPickup){
+        plannedMove.preservedStrategicTargetPoint = preservedStrategicTargetPoint
+          ? { x: preservedStrategicTargetPoint.x, y: preservedStrategicTargetPoint.y }
+          : null;
+        plannedMove.inventoryUsageReason = "mine_enables_flag_pickup";
+      } else if(mineEnablesSafeFinisher){
+        plannedMove.preservedStrategicTargetPoint = preservedStrategicTargetPoint
+          ? { x: preservedStrategicTargetPoint.x, y: preservedStrategicTargetPoint.y }
+          : null;
+        plannedMove.inventoryUsageReason = "mine_enables_safe_finisher";
+      }
+
       executed = placementMode === "defensive"
         ? tryPlaceBlueDefensiveMine(context, plannedMove)
         : tryPlaceBlueMineNearEnemyBase(context, plannedMove);
-      if(executed) removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
+      if(executed){
+        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
+        if(selectedInventoryCandidate.mineUseReason){
+          logAiDecision(selectedInventoryCandidate.mineUseReason, {
+            planeId: plannedMove?.plane?.id ?? null,
+            enemyId: priorityEnemy?.id ?? null,
+            scenario: selectedInventoryCandidate.minePlan?.scenario || null,
+            routeBlockScore: selectedInventoryCandidate.minePlan ? Number((selectedInventoryCandidate.minePlan.score || 0).toFixed(3)) : null,
+            blockedEscapeCount: selectedInventoryCandidate.minePlan?.blockedEscapeCount ?? 0,
+            cutRouteCount: selectedInventoryCandidate.minePlan?.cutRouteCount ?? 0,
+            trapCount: selectedInventoryCandidate.minePlan?.trapCount ?? 0,
+            totalDirectionLoss: selectedInventoryCandidate.minePlan?.totalDirectionLoss ?? 0,
+            safeAfterPlacement: selectedInventoryCandidate.safeAfterPlacement ?? null,
+          });
+        }
+        if(mineRequiredForFlagPickup || mineEnablesSafeFinisher){
+          logAiDecision(mineRequiredForFlagPickup ? "mine_enables_flag_pickup" : "mine_enables_safe_finisher", {
+            planeId: plannedMove.plane?.id ?? null,
+            goal: strategicGoal || null,
+            targetPoint: plannedMove.preservedStrategicTargetPoint || null,
+            beforeSafeEscape: flagPickupBaseline?.hasSafeEscape ?? safeFinisherMineCoverage.beforeSafe,
+            afterSafeEscape: mineEnabledFlagPickup?.after?.hasSafeEscape ?? safeFinisherMineCoverage.afterSafe,
+            beforeReturnRoute: flagPickupBaseline?.hasReturnRoute ?? null,
+            afterReturnRoute: mineEnabledFlagPickup?.after?.hasReturnRoute ?? null,
+            minePlacement: mineEnabledFlagPickup?.placement
+              ? { x: Number(mineEnabledFlagPickup.placement.x.toFixed(1)), y: Number(mineEnabledFlagPickup.placement.y.toFixed(1)) }
+              : (selectedMinePlan?.placement
+                  ? { x: Number(selectedMinePlan.placement.x.toFixed(1)), y: Number(selectedMinePlan.placement.y.toFixed(1)) }
+                  : null),
+            threatEnemyId: mineEnabledFlagPickup?.threatEnemyId ?? priorityEnemy?.id ?? null,
+            placementScenario: mineRequiredForFlagPickup ? "mine_between_objective_and_threat" : (selectedMinePlan?.scenario || null),
+          });
+          if(mineRequiredForFlagPickup){
+            logAiDecision("mine_between_objective_and_threat", {
+              planeId: plannedMove.plane?.id ?? null,
+              targetPoint: plannedMove.preservedStrategicTargetPoint,
+              threatEnemyId: mineEnabledFlagPickup?.threatEnemyId ?? null,
+              threatDistance: mineEnabledFlagPickup?.threatDistance ?? null,
+              minePlacement: mineEnabledFlagPickup?.placement
+                ? { x: Number(mineEnabledFlagPickup.placement.x.toFixed(1)), y: Number(mineEnabledFlagPickup.placement.y.toFixed(1)) }
+                : null,
+            });
+          }
+        }
+      }
     } else if(selectedType === INVENTORY_ITEM_TYPES.DYNAMITE && allowTacticalItems){
       const target = selectedInventoryCandidate.target || null;
       executed = Boolean(target) && placeBlueDynamiteAt(target.x, target.y);
@@ -20458,6 +20580,24 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         return !enemyHasLane || enemyDistance > plannedMoveEffectiveRangePx * 0.95;
       });
 
+    const mineImpactPlan = preferredMinePlan?.plan || null;
+    const mineImpactScore = mineImpactPlan ? Number(mineImpactPlan.score || 0) : 0;
+    const mineBlockedEscapeCount = mineImpactPlan?.blockedEscapeCount ?? 0;
+    const mineCutRouteCount = mineImpactPlan?.cutRouteCount ?? 0;
+    const mineTrapCount = mineImpactPlan?.trapCount ?? 0;
+    const mineTotalDirectionLoss = mineImpactPlan?.totalDirectionLoss ?? 0;
+    const MINE_MIN_NOTICEABLE_IMPACT_SCORE = 4.5;
+    const MINE_MIN_NOTICEABLE_DIRECTION_LOSS = 2;
+    const mineCreatesRouteDenial = mineBlockedEscapeCount > 0 || mineCutRouteCount > 0 || mineTrapCount > 0;
+    const mineCreatesPositionImprovement = mineTotalDirectionLoss >= MINE_MIN_NOTICEABLE_DIRECTION_LOSS || mineImpactScore >= MINE_MIN_NOTICEABLE_IMPACT_SCORE;
+    const minePlanProvidesNoticeableImprovement = Boolean(mineImpactPlan) && (
+      mineTrapCount > 0
+      || mineCreatesRouteDenial
+      || (mineCreatesPositionImprovement && mineImpactScore >= MINE_MIN_NOTICEABLE_IMPACT_SCORE)
+    );
+    const mineUseReason = mineCreatesRouteDenial ? "mine_used_for_route_denial"
+      : (minePlanProvidesNoticeableImprovement ? "mine_used_for_position_improvement" : null);
+
     if(mineFailsToImproveCriticalEscape){
       logAiDecision("mine_not_used_no_benefit", {
         planeId: plannedMove.plane?.id ?? null,
@@ -20466,7 +20606,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         goal: strategicGoal || null,
         hasDirectAttackPriority,
       });
-    } else if(preferredMinePlan && safeAfterPlacement && executeMinePlan(preferredMinePlan)){
+    } else if(preferredMinePlan && minePlanProvidesNoticeableImprovement && executeMinePlan(preferredMinePlan)){
       logAiDecision("mine_placed_for_cover", {
         planeId: plannedMove.plane?.id ?? null,
         enemyId: priorityEnemy?.id ?? null,
@@ -20477,17 +20617,38 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         cutRouteCount: preferredMinePlan?.plan?.cutRouteCount ?? 0,
         trapCount: preferredMinePlan?.plan?.trapCount ?? 0,
         totalDirectionLoss: preferredMinePlan?.plan?.totalDirectionLoss ?? 0,
+        safeAfterPlacement,
+        mineUseReason,
       });
+      if(mineUseReason){
+        logAiDecision(mineUseReason, {
+          planeId: plannedMove.plane?.id ?? null,
+          enemyId: priorityEnemy?.id ?? null,
+          scenario: preferredMinePlan?.plan?.scenario || null,
+          routeBlockScore: preferredMinePlan?.plan ? Number((preferredMinePlan.plan.score || 0).toFixed(3)) : null,
+          blockedEscapeCount: preferredMinePlan?.plan?.blockedEscapeCount ?? 0,
+          cutRouteCount: preferredMinePlan?.plan?.cutRouteCount ?? 0,
+          trapCount: preferredMinePlan?.plan?.trapCount ?? 0,
+          totalDirectionLoss: preferredMinePlan?.plan?.totalDirectionLoss ?? 0,
+          safeAfterPlacement,
+        });
+      }
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
       return true;
     }
 
-    if(preferredMinePlan && !safeAfterPlacement){
-      logAiDecision("mine_skipped_self_risk", {
+    if(preferredMinePlan && !minePlanProvidesNoticeableImprovement){
+      logAiDecision("mine_not_used_no_benefit", {
         planeId: plannedMove.plane?.id ?? null,
         enemyId: priorityEnemy?.id ?? null,
-        reason: "unsafe_post_mine_position",
+        reason: "mine_impact_below_noticeable_threshold",
         scenario: preferredMinePlan?.plan?.scenario || null,
+        routeBlockScore: preferredMinePlan?.plan ? Number((preferredMinePlan.plan.score || 0).toFixed(3)) : null,
+        blockedEscapeCount: preferredMinePlan?.plan?.blockedEscapeCount ?? 0,
+        cutRouteCount: preferredMinePlan?.plan?.cutRouteCount ?? 0,
+        trapCount: preferredMinePlan?.plan?.trapCount ?? 0,
+        totalDirectionLoss: preferredMinePlan?.plan?.totalDirectionLoss ?? 0,
+        safeAfterPlacement,
       });
     } else if(!preferredMinePlan && hasDirectAttackPriority){
       logAiDecision("mine_saved_for_direct_attack", {

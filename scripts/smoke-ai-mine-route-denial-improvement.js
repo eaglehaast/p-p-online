@@ -18,7 +18,10 @@ function extractFunctionSource(source, fnName){
   }
   throw new Error(`Function body end not found for: ${fnName}`);
 }
-function assert(condition, message){ if(!condition) throw new Error(message); }
+
+function assert(condition, message){
+  if(!condition) throw new Error(message);
+}
 
 const source = fs.readFileSync('script.js', 'utf8');
 const extracted = [
@@ -36,11 +39,11 @@ const context = {
   FIELD_FLIGHT_DURATION_SEC: 1,
   AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD: 99,
   INVENTORY_ITEM_TYPES: { FUEL: 'fuel', CROSSHAIR: 'crosshair', MINE: 'mine', DYNAMITE: 'dynamite', INVISIBILITY: 'invisible', WINGS: 'wings' },
-  aiRoundState: { currentGoal: 'direct_finisher', lastInventorySoftFallbackUsed: false, inventoryIdleTurns: 0, inventorySoftFallbackCooldown: 0 },
+  aiRoundState: { currentGoal: 'pressure_enemy', lastInventorySoftFallbackUsed: false, inventoryIdleTurns: 0, inventorySoftFallbackCooldown: 0 },
   evaluateBlueInventoryState: () => ({ total: 1, counts: { fuel: 0, crosshair: 0, mine: 1, dynamite: 0, invisible: 0, wings: 0 } }),
-  getBluePriorityEnemy: () => ({ id: 'enemy-1', x: 150, y: 0, shieldActive: true }),
-  getAiMoveLandingPoint: () => ({ x: 120, y: 0 }),
-  getAiStrategicTargetPoint: () => ({ x: 150, y: 0 }),
+  getBluePriorityEnemy: () => ({ id: 'enemy-1', x: 155, y: 10, shieldActive: false }),
+  getAiMoveLandingPoint: () => ({ x: 118, y: 0 }),
+  getAiStrategicTargetPoint: () => ({ x: 155, y: 10 }),
   getBaseAnchor: () => ({ x: 0, y: 0 }),
   evaluateCrosshairBestUse: () => null,
   evaluateFuelTacticalPlans: () => ({ selectedCandidate: null, rejectedScenarios: [], returnSafetyScore: 0, requiredReturnSafetyThreshold: 0, actualReturnSafetyScore: 0 }),
@@ -49,7 +52,15 @@ const context = {
   applyItemToOwnPlane: () => false,
   removeItemFromInventory: () => { removed += 1; },
   tryPlaceBlueDefensiveMine: (_ctx, _move, options = {}) => {
-    if(options.evaluateOnly) return { placement: { x: 135, y: 0 }, scenario: 'mine_blocks_escape_lane', score: 8, blockedEscapeCount: 1, cutRouteCount: 0, trapCount: 0, totalDirectionLoss: 1 };
+    if(options.evaluateOnly) return {
+      placement: { x: 136, y: 0 },
+      scenario: 'mine_cuts_best_route',
+      score: 6.2,
+      blockedEscapeCount: 1,
+      cutRouteCount: 1,
+      trapCount: 0,
+      totalDirectionLoss: 1,
+    };
     placed += 1;
     return true;
   },
@@ -60,16 +71,16 @@ const context = {
   settings: { aimingAmplitude: 80, flightRangeCells: 30 },
   ATTACK_RANGE_PX: 100,
   dist: (a, b) => Math.hypot(a.x - b.x, a.y - b.y),
-  isPathClear: () => false,
+  isPathClear: () => true,
   getDynamiteCandidateForCurrentRoute: () => null,
   getNearestDynamiteTargetToPoint: () => null,
   isDynamiteTargetUsefulForCurrentRoute: () => false,
   placeBlueDynamiteAt: () => false,
   evaluateFlagPickupContinuation: () => null,
   evaluateMineEnabledFlagPickupContinuation: () => null,
-  evaluatePostLaunchSafetyWithMine: () => ({ beforeSafe: false, afterSafe: true }),
-  evaluateDirectAttackWindow: () => null,
+  evaluatePostLaunchSafetyWithMine: () => ({ beforeSafe: false, afterSafe: false }),
   isPlannedMoveLikelyProfitableTrade: () => false,
+  evaluateDirectAttackWindow: () => null,
   AI_ENGINE_MODE: 'v2',
   AI_V2_INVENTORY_PHASE: 3,
 };
@@ -77,18 +88,22 @@ const context = {
 vm.createContext(context);
 vm.runInContext(extracted, context);
 
-const gameContext = { aiRiskProfile: { profile: 'balanced' }, enemies: [{ id: 'enemy-1', x: 150, y: 0 }] };
+const gameContext = {
+  aiRiskProfile: { profile: 'balanced' },
+  enemies: [{ id: 'enemy-1', x: 155, y: 10 }],
+};
 const plannedMove = {
   plane: { id: 'plane-1', x: 0, y: 0 },
-  totalDist: 120,
-  goalName: 'direct_finisher',
+  totalDist: 118,
+  goalName: 'pressure_enemy',
 };
 const planning = context.buildAiInventoryCandidatePlans(gameContext, plannedMove);
 plannedMove.selectedInventoryCandidate = planning.selectedCandidate;
 const used = context.maybeUseInventoryBeforeLaunch(gameContext, plannedMove);
 
-assert(used === true, 'Mine should be used when it makes a finisher landing safe enough.');
-assert(removed === 1 && placed === 1, 'Mine must be consumed for the safe finisher scenario.');
-assert(logs.some((entry) => entry.reason === 'mine_enables_safe_finisher'), 'Dedicated mine_enables_safe_finisher log is required.');
+assert(used === true, 'Mine should be used when it noticeably denies the enemy route even if landing is not fully safe.');
+assert(removed === 1 && placed === 1, 'Mine must be spent exactly once for route denial.');
+assert(logs.some((entry) => entry.reason === 'mine_used_for_route_denial'), 'Route denial usage must be logged explicitly.');
+assert(!logs.some((entry) => entry.reason === 'mine_skipped_self_risk'), 'Mine should no longer be skipped only because the position is not already safe.');
 
-console.log('Smoke test passed: mine is used to cover the landing after a finisher.');
+console.log('Smoke test passed: mine is used for route denial even when post-landing safety is still imperfect.');
