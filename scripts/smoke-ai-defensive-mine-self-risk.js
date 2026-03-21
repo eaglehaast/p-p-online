@@ -8,7 +8,17 @@ function extractFunctionSource(source, fnName){
   const signature = `function ${fnName}(`;
   const start = source.indexOf(signature);
   if(start === -1) throw new Error(`Function not found in script.js: ${fnName}`);
-  const bodyStart = source.indexOf('{', start);
+  let paramsDepth = 0;
+  let bodyStart = -1;
+  for(let i = start; i < source.length; i += 1){
+    const ch = source[i];
+    if(ch === '(') paramsDepth += 1;
+    if(ch === ')') paramsDepth -= 1;
+    if(ch === '{' && paramsDepth === 0){
+      bodyStart = i;
+      break;
+    }
+  }
   if(bodyStart === -1) throw new Error(`Function body start not found for: ${fnName}`);
   let depth = 0;
   for(let i = bodyStart; i < source.length; i += 1){
@@ -34,7 +44,9 @@ const context = {
   Math,
   Number,
   MINE_EFFECT_RADIUS: 40,
+  MINE_TRIGGER_RADIUS: 40,
   MAX_DRAG_DISTANCE: 300,
+  getPlaneEffectiveRangePx: () => 140,
   FIELD_LEFT: 0,
   FIELD_TOP: 0,
   CELL_SIZE: 40,
