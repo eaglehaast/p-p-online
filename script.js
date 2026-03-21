@@ -18059,6 +18059,104 @@ function placeBlueDynamiteAt(boardX, boardY){
   return true;
 }
 
+
+function withTemporaryBlueMine(placement, callback){
+  if(!placement || !Number.isFinite(placement.x) || !Number.isFinite(placement.y) || typeof callback !== "function") return null;
+  const mineArray = Array.isArray(mines) ? mines : null;
+  const simulatedMine = {
+    id: `sim-mine-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    owner: "blue",
+    x: placement.x,
+    y: placement.y,
+    cellX: placement.cellX,
+    cellY: placement.cellY,
+  };
+  if(mineArray) mineArray.push(simulatedMine);
+  try {
+    return callback(simulatedMine);
+  } finally {
+    if(mineArray && mineArray[mineArray.length - 1] === simulatedMine) mineArray.pop();
+    else if(mineArray){
+      const idx = mineArray.indexOf(simulatedMine);
+      if(idx >= 0) mineArray.splice(idx, 1);
+    }
+  }
+}
+
+function buildMinePlacementBetweenObjectiveAndThreat(objectivePoint, threatEnemy, options = {}){
+  if(!objectivePoint || !threatEnemy) return null;
+  const mix = Number.isFinite(options?.mix) ? options.mix : 0.42;
+  const placement = {
+    x: objectivePoint.x + (threatEnemy.x - objectivePoint.x) * mix,
+    y: objectivePoint.y + (threatEnemy.y - objectivePoint.y) * mix,
+  };
+  placement.cellX = Math.floor((placement.x - FIELD_LEFT) / CELL_SIZE);
+  placement.cellY = Math.floor((placement.y - FIELD_TOP) / CELL_SIZE);
+  return placement;
+}
+
+function evaluateMineEnabledFlagPickupContinuation(plane, pickupPoint, options = {}){
+  const baseline = options?.baselineContinuation || evaluateFlagPickupContinuation(plane, pickupPoint, options);
+  const enemies = Array.isArray(options?.enemies) ? options.enemies.filter(Boolean) : [];
+  if(!baseline || baseline.hasSafeEscape === true || enemies.length === 0) return null;
+
+  const threateningEnemies = enemies
+    .filter((enemy) => Number.isFinite(enemy?.x) && Number.isFinite(enemy?.y))
+    .map((enemy) => ({
+      enemy,
+      responseDistance: Math.hypot(enemy.x - pickupPoint.x, enemy.y - pickupPoint.y),
+    }))
+    .filter((entry) => entry.responseDistance <= getPlaneEffectiveRangePx(entry.enemy) * 1.15 && isPathClear(entry.enemy.x, entry.enemy.y, pickupPoint.x, pickupPoint.y))
+    .sort((a, b) => a.responseDistance - b.responseDistance)
+    .slice(0, 2);
+  if(threateningEnemies.length === 0) return null;
+
+  let bestScenario = null;
+  for(const threatEntry of threateningEnemies){
+    const placement = buildMinePlacementBetweenObjectiveAndThreat(pickupPoint, threatEntry.enemy);
+    if(!placement || !isMinePlacementValid(placement)) continue;
+    const mineImpact = evaluateBlueMinePlacementImpact(options?.context || { enemies }, { plane, landingPoint: pickupPoint }, placement, {
+      fallbackScenario: "mine_between_objective_and_threat",
+    }) || null;
+    const afterContinuation = withTemporaryBlueMine(placement, () => evaluateFlagPickupContinuation(plane, pickupPoint, options));
+    if(!afterContinuation) continue;
+    const improvedEscape = baseline.hasSafeEscape !== true && afterContinuation.hasSafeEscape === true;
+    const improvedReturn = baseline.hasReturnRoute !== true && afterContinuation.hasReturnRoute === true;
+    if(!improvedEscape && !improvedReturn) continue;
+    const scenario = {
+      placement,
+      threatEnemyId: threatEntry.enemy?.id ?? null,
+      threatDistance: Number(threatEntry.responseDistance.toFixed(1)),
+      before: baseline,
+      after: afterContinuation,
+      mineImpact,
+      statusReason: afterContinuation.hasReturnRoute ? "mine_enables_flag_pickup" : "mine_enables_flag_pickup",
+      logReason: "mine_enables_flag_pickup",
+    };
+    if(!bestScenario || ((scenario.after.hasReturnRoute?1:0)+(scenario.after.hasSafeEscape?1:0)+(scenario.mineImpact?.score||0)) > ((bestScenario.after.hasReturnRoute?1:0)+(bestScenario.after.hasSafeEscape?1:0)+(bestScenario.mineImpact?.score||0))){
+      bestScenario = scenario;
+    }
+  }
+  return bestScenario;
+}
+
+function evaluatePostLaunchSafetyWithMine(context, plannedMove, minePlan){
+  const landingPoint = getAiMoveLandingPoint(plannedMove);
+  if(!landingPoint || !minePlan?.placement) return { beforeSafe: false, afterSafe: false };
+  const enemies = Array.isArray(context?.enemies) ? context.enemies.filter(Boolean) : [];
+  function isLandingCovered(){
+    return enemies.every((enemy) => {
+      if(!Number.isFinite(enemy?.x) || !Number.isFinite(enemy?.y)) return true;
+      const enemyDistance = dist(landingPoint, enemy);
+      const enemyHasLane = isPathClear(enemy.x, enemy.y, landingPoint.x, landingPoint.y);
+      return !enemyHasLane || enemyDistance > getPlaneEffectiveRangePx(enemy) * 0.95;
+    });
+  }
+  const beforeSafe = isLandingCovered();
+  const afterSafe = withTemporaryBlueMine(minePlan.placement, () => isLandingCovered());
+  return { beforeSafe, afterSafe };
+}
+
 function evaluateBlueMinePlacementImpact(context, plannedMove, placement, options = {}){
   const plane = plannedMove?.plane;
   const landingPoint = typeof getAiMoveLandingPoint === "function" ? getAiMoveLandingPoint(plannedMove) : null;
@@ -18179,22 +18277,9 @@ function evaluateBlueMinePlacementImpact(context, plannedMove, placement, option
 
   const baselineByEnemy = enemies.map((enemy) => ({ enemy, summary: measureEnemyOptions(enemy) }));
 
-  const simulatedMine = {
-    id: `sim-mine-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    owner: "blue",
-    x: placement.x,
-    y: placement.y,
-    cellX: placement.cellX,
-    cellY: placement.cellY,
-  };
-  const mineArray = Array.isArray(mines) ? mines : null;
-  if(mineArray) mineArray.push(simulatedMine);
-  const afterByEnemy = baselineByEnemy.map(({ enemy }) => ({ enemy, summary: measureEnemyOptions(enemy) }));
-  if(mineArray && mineArray[mineArray.length - 1] === simulatedMine) mineArray.pop();
-  else if(mineArray){
-    const idx = mineArray.indexOf(simulatedMine);
-    if(idx >= 0) mineArray.splice(idx, 1);
-  }
+  const afterByEnemy = withTemporaryBlueMine(placement, () => (
+    baselineByEnemy.map(({ enemy }) => ({ enemy, summary: measureEnemyOptions(enemy) }))
+  )) || baselineByEnemy.map(({ enemy }) => ({ enemy, summary: measureEnemyOptions(enemy) }));
 
   let totalDirectionLoss = 0;
   let blockedEscapeCount = 0;
@@ -18397,6 +18482,11 @@ function getNearestDynamiteTargetToPoint(anchor){
 }
 
 function getAiStrategicTargetPoint(context, plannedMove){
+  const preservedIntentTarget = plannedMove?.preservedStrategicTargetPoint;
+  if(preservedIntentTarget && Number.isFinite(preservedIntentTarget.x) && Number.isFinite(preservedIntentTarget.y)){
+    return { x: preservedIntentTarget.x, y: preservedIntentTarget.y };
+  }
+
   if(plannedMove?.targetEnemy && Number.isFinite(plannedMove.targetEnemy.x) && Number.isFinite(plannedMove.targetEnemy.y)){
     return { x: plannedMove.targetEnemy.x, y: plannedMove.targetEnemy.y };
   }
@@ -19415,8 +19505,109 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     }
 
     const preferredMinePlan = shouldSkipMineForAttack ? null : pickPreferredMinePlan();
+    const preservedStrategicTargetPoint = getAiStrategicTargetPoint(context, plannedMove);
+    const flagTargetAnchor = context?.shouldUseFlagsMode && Array.isArray(context?.availableEnemyFlags)
+      ? context.availableEnemyFlags
+        .map((flag) => getFlagAnchor(flag))
+        .filter(Boolean)
+        .sort((a, b) => dist(plannedMove.plane, a) - dist(plannedMove.plane, b))[0] || null
+      : null;
+    const flagPickupBaseline = strategicGoal === "capture_enemy_flag" && flagTargetAnchor
+      ? evaluateFlagPickupContinuation(plannedMove.plane, flagTargetAnchor, {
+          homeBase: context?.homeBase || getBaseAnchor("blue"),
+          enemies: Array.isArray(context?.enemies) ? context.enemies : [],
+          context,
+          goalName: strategicGoal,
+        })
+      : null;
+    const mineEnabledFlagPickup = strategicGoal === "capture_enemy_flag"
+      && inventory.counts[INVENTORY_ITEM_TYPES.MINE] > 0
+      && flagTargetAnchor
+      && flagPickupBaseline?.hasSafeEscape !== true
+      ? evaluateMineEnabledFlagPickupContinuation(plannedMove.plane, flagTargetAnchor, {
+          homeBase: context?.homeBase || getBaseAnchor("blue"),
+          enemies: Array.isArray(context?.enemies) ? context.enemies : [],
+          context,
+          goalName: strategicGoal,
+          baselineContinuation: flagPickupBaseline,
+        })
+      : null;
+    const safeFinisherMineCoverage = preferredMinePlan
+      ? evaluatePostLaunchSafetyWithMine(context, plannedMove, preferredMinePlan.plan)
+      : { beforeSafe: false, afterSafe: false };
+    const mineEnablesSafeFinisher = strategicGoal === "direct_finisher"
+      && safeFinisherMineCoverage.beforeSafe === false
+      && safeFinisherMineCoverage.afterSafe === true
+      && Boolean(preferredMinePlan);
+    const mineRequiredForFlagPickup = mineEnabledFlagPickup?.after?.hasSafeEscape === true;
+    const mineFailsToImproveCriticalEscape = (strategicGoal === "capture_enemy_flag"
+      && flagPickupBaseline
+      && flagPickupBaseline.hasSafeEscape !== true
+      && mineRequiredForFlagPickup !== true)
+      || (strategicGoal === "direct_finisher"
+        && safeFinisherMineCoverage.beforeSafe === false
+        && safeFinisherMineCoverage.afterSafe !== true);
 
-    if(shouldSkipMineForAttack){
+    if((mineRequiredForFlagPickup || mineEnablesSafeFinisher) && preferredMinePlan){
+      plannedMove.preservedStrategicTargetPoint = preservedStrategicTargetPoint
+        ? { x: preservedStrategicTargetPoint.x, y: preservedStrategicTargetPoint.y }
+        : null;
+      plannedMove.inventoryUsageReason = mineRequiredForFlagPickup ? "mine_enables_flag_pickup" : "mine_enables_safe_finisher";
+      const forcedMinePlaced = executeMinePlan(preferredMinePlan);
+      if(forcedMinePlaced){
+        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
+        logAiDecision("mine_placed_for_cover", {
+          planeId: plannedMove.plane?.id ?? null,
+          enemyId: priorityEnemy?.id ?? null,
+          softFallback: false,
+          scenario: preferredMinePlan?.plan?.scenario || null,
+          routeBlockScore: preferredMinePlan?.plan ? Number((preferredMinePlan.plan.score || 0).toFixed(3)) : null,
+          blockedEscapeCount: preferredMinePlan?.plan?.blockedEscapeCount ?? 0,
+          cutRouteCount: preferredMinePlan?.plan?.cutRouteCount ?? 0,
+          trapCount: preferredMinePlan?.plan?.trapCount ?? 0,
+          totalDirectionLoss: preferredMinePlan?.plan?.totalDirectionLoss ?? 0,
+          forcedReason: mineRequiredForFlagPickup ? "mine_enables_flag_pickup" : "mine_enables_safe_finisher",
+          mineReason: mineRequiredForFlagPickup ? "mine_between_objective_and_threat" : (preferredMinePlan?.plan?.scenario || null),
+        });
+        logAiDecision(mineRequiredForFlagPickup ? "mine_enables_flag_pickup" : "mine_enables_safe_finisher", {
+          planeId: plannedMove.plane?.id ?? null,
+          goal: strategicGoal || null,
+          targetPoint: plannedMove.preservedStrategicTargetPoint,
+          beforeSafeEscape: flagPickupBaseline?.hasSafeEscape ?? safeFinisherMineCoverage.beforeSafe,
+          afterSafeEscape: mineEnabledFlagPickup?.after?.hasSafeEscape ?? safeFinisherMineCoverage.afterSafe,
+          beforeReturnRoute: flagPickupBaseline?.hasReturnRoute ?? null,
+          afterReturnRoute: mineEnabledFlagPickup?.after?.hasReturnRoute ?? null,
+          minePlacement: mineEnabledFlagPickup?.placement
+            ? { x: Number(mineEnabledFlagPickup.placement.x.toFixed(1)), y: Number(mineEnabledFlagPickup.placement.y.toFixed(1)) }
+            : (preferredMinePlan?.plan?.placement
+                ? { x: Number(preferredMinePlan.plan.placement.x.toFixed(1)), y: Number(preferredMinePlan.plan.placement.y.toFixed(1)) }
+                : null),
+          threatEnemyId: mineEnabledFlagPickup?.threatEnemyId ?? priorityEnemy?.id ?? null,
+          placementScenario: mineRequiredForFlagPickup ? "mine_between_objective_and_threat" : (preferredMinePlan?.plan?.scenario || null),
+        });
+        if(mineRequiredForFlagPickup){
+          logAiDecision("mine_between_objective_and_threat", {
+            planeId: plannedMove.plane?.id ?? null,
+            targetPoint: plannedMove.preservedStrategicTargetPoint,
+            threatEnemyId: mineEnabledFlagPickup?.threatEnemyId ?? null,
+            threatDistance: mineEnabledFlagPickup?.threatDistance ?? null,
+            minePlacement: mineEnabledFlagPickup?.placement
+              ? { x: Number(mineEnabledFlagPickup.placement.x.toFixed(1)), y: Number(mineEnabledFlagPickup.placement.y.toFixed(1)) }
+              : null,
+          });
+        }
+        return true;
+      }
+    }
+
+    if(mineFailsToImproveCriticalEscape){
+      logAiDecision("mine_saved_for_direct_attack", {
+        planeId: plannedMove.plane?.id ?? null,
+        enemyId: priorityEnemy?.id ?? null,
+        reason: strategicGoal === "capture_enemy_flag" ? "mine_does_not_improve_flag_escape" : "mine_does_not_improve_finisher_escape",
+        goal: strategicGoal || null,
+      });
+    } else if(shouldSkipMineForAttack){
       logAiDecision("mine_skipped_due_to_attack_window", {
         planeId: plannedMove.plane?.id ?? null,
         enemyId: priorityEnemy?.id ?? null,
@@ -21074,6 +21265,27 @@ function shouldAiBluePlanePickUpEnemyFlag(plane, flag){
     goalName: "auto_flag_pickup_guard",
   });
   if(continuation.hasSafeEscape === true) return true;
+  const mineInventory = evaluateBlueInventoryState?.()?.counts?.[INVENTORY_ITEM_TYPES.MINE] || 0;
+  const mineEnabledContinuation = mineInventory > 0
+    ? evaluateMineEnabledFlagPickupContinuation(plane, pickupPoint, {
+        homeBase: getBaseAnchor("blue"),
+        enemies,
+        context: { enemies },
+        goalName: "auto_flag_pickup_guard",
+        baselineContinuation: continuation,
+      })
+    : null;
+  if(mineEnabledContinuation?.after?.hasSafeEscape === true){
+    logAiDecision("auto_flag_pickup_allowed", {
+      planeId: plane?.id ?? null,
+      flagId: flag?.id ?? null,
+      statusLabel: mineEnabledContinuation.after.statusLabel,
+      statusReason: "mine_enables_flag_pickup",
+      mineReason: "mine_between_objective_and_threat",
+      threatEnemyId: mineEnabledContinuation.threatEnemyId,
+    });
+    return true;
+  }
   logAiDecision("auto_flag_pickup_blocked", {
     planeId: plane?.id ?? null,
     flagId: flag?.id ?? null,
@@ -21174,6 +21386,18 @@ function evaluateFlagPressureOpportunity(context = {}){
         context,
         goalName: 'flag_pressure_probe',
       });
+      const mineEnabledContinuation = blueInventoryCount > 0
+        ? evaluateMineEnabledFlagPickupContinuation(plane, targetAnchor, {
+            homeBase,
+            enemies,
+            context,
+            goalName: 'flag_pressure_probe',
+            baselineContinuation: continuation,
+          })
+        : null;
+      const effectiveContinuation = mineEnabledContinuation?.after?.hasSafeEscape === true
+        ? mineEnabledContinuation.after
+        : continuation;
       const threateningEnemies = enemies.filter((enemy) => {
         if(!Number.isFinite(enemy?.x) || !Number.isFinite(enemy?.y)) return false;
         return getDistanceToSegment(enemy.x, enemy.y, targetAnchor.x, targetAnchor.y, homeBase.x, homeBase.y) <= AI_FLAG_PRESSURE_RETURN_LANE_THREAT_RADIUS;
@@ -21187,7 +21411,7 @@ function evaluateFlagPressureOpportunity(context = {}){
         + (Number.isFinite(nearestReturnThreatDistance)
           ? Math.max(0, 1 - (nearestReturnThreatDistance / AI_FLAG_PRESSURE_RETURN_LANE_THREAT_RADIUS)) * 0.46
           : 0)
-        + (continuation.immediateTrap ? 0.3 : 0)
+        + (effectiveContinuation.immediateTrap ? 0.3 : 0)
       );
       const planeHomeDefensePressure = evaluateFlagHomeDefensePressure(context, {
         aiPlanes,
@@ -21206,8 +21430,8 @@ function evaluateFlagPressureOpportunity(context = {}){
       );
       const criticalHomeDefensePenalty = planeHomeDefensePressure.criticalOrNearCritical ? 0.58 : 0;
       const expectedRetreatChance = clamp01(
-        (continuation.hasSafeEscape ? 0.4 : 0.08)
-        + (continuation.hasReturnRoute ? 0.24 : 0)
+        (effectiveContinuation.hasSafeEscape ? 0.4 : 0.08)
+        + (effectiveContinuation.hasReturnRoute ? 0.24 : 0)
         + (clearReturnLane ? 0.12 : 0)
         + (canReachFlag ? 0.16 : 0)
         + (aiAliveCount > enemyAliveCount ? 0.12 : 0)
@@ -21220,21 +21444,21 @@ function evaluateFlagPressureOpportunity(context = {}){
         (canReachFlag ? 0.42 : 0)
         + (scoreGap <= 0 ? 0.1 : 0)
         + (1 - travelBurden) * 0.18
-        - (continuation.hasSafeEscape ? 0 : 0.22)
+        - (effectiveContinuation.hasSafeEscape ? 0 : 0.22)
         - homeDefenseValuePenalty * 0.52
         - criticalHomeDefensePenalty
       );
       const postPickupEscapeValue = clamp01(
-        (continuation.hasSafeEscape ? 0.46 : 0.02)
-        + (continuation.hasReturnRoute ? 0.18 : 0)
+        (effectiveContinuation.hasSafeEscape ? 0.46 : 0.02)
+        + (effectiveContinuation.hasReturnRoute ? 0.18 : 0)
         + expectedRetreatChance * 0.26
         + (clearReturnLane ? 0.06 : 0)
-        - (continuation.immediateTrap ? 0.34 : 0)
+        - (effectiveContinuation.immediateTrap ? 0.34 : 0)
         - homeDefenseValuePenalty * 0.48
         - criticalHomeDefensePenalty * 0.75
       );
       const flagReturnValue = clamp01(
-        (continuation.hasReturnRoute ? 0.28 : 0.08)
+        (effectiveContinuation.hasReturnRoute ? 0.28 : 0.08)
         + expectedRetreatChance * 0.5
         + postPickupEscapeValue * 0.18
         + (clearReturnLane ? 0.12 : 0)
@@ -21260,15 +21484,19 @@ function evaluateFlagPressureOpportunity(context = {}){
         flagId: flag.id ?? null,
         canReachFlag,
         clearReturnLane,
-        hasSafeEscape: continuation.hasSafeEscape,
-        hasReturnRoute: continuation.hasReturnRoute,
-        continuationStatus: continuation.statusLabel,
-        continuationReason: continuation.statusReason,
+        hasSafeEscape: effectiveContinuation.hasSafeEscape,
+        hasReturnRoute: effectiveContinuation.hasReturnRoute,
+        continuationStatus: effectiveContinuation.statusLabel,
+        continuationReason: mineEnabledContinuation?.after?.hasSafeEscape === true ? "mine_enables_flag_pickup" : effectiveContinuation.statusReason,
+        mineContinuationReason: mineEnabledContinuation?.logReason || null,
+        minePlacement: mineEnabledContinuation?.placement
+          ? { x: Number(mineEnabledContinuation.placement.x.toFixed(1)), y: Number(mineEnabledContinuation.placement.y.toFixed(1)) }
+          : null,
         toFlagDistance: Number(toFlagDistance.toFixed(1)),
         toBaseDistance: Number(toBaseDistance.toFixed(1)),
         threateningEnemiesOnReturn: threateningEnemies.length,
-        immediateThreatCount: continuation.immediateThreatCount,
-        immediateThreatNearestDist: continuation.immediateThreatNearestDist,
+        immediateThreatCount: effectiveContinuation.immediateThreatCount,
+        immediateThreatNearestDist: effectiveContinuation.immediateThreatNearestDist,
         returnLaneThreat: Number(returnLaneThreat.toFixed(4)),
         expectedRetreatChance: Number(expectedRetreatChance.toFixed(4)),
         baseControlLoss: planeHomeDefensePressure.baseControlLoss,
@@ -22994,26 +23222,42 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
   }
 
   function enrichFlagCaptureCandidate(candidate, pickupPoint){
-    const continuation = evaluateFlagPickupContinuation(candidate?.plane, pickupPoint, {
+    const continuationOptions = {
       homeBase: options?.homeBase || getBaseAnchor("blue"),
       enemies: Array.isArray(options?.enemies) ? options.enemies : [],
       context: options?.context || { enemies: Array.isArray(options?.enemies) ? options.enemies : [] },
       goalName: baseGoalName,
-    });
-    const continuationPenalty = continuation.hasSafeEscape
-      ? (continuation.hasReturnRoute ? 0 : MAX_DRAG_DISTANCE * 0.28)
+    };
+    const continuation = evaluateFlagPickupContinuation(candidate?.plane, pickupPoint, continuationOptions);
+    const mineInventoryCount = Number.isFinite(options?.context?.blueInventoryCount)
+      ? options.context.blueInventoryCount
+      : (evaluateBlueInventoryState?.()?.counts?.[INVENTORY_ITEM_TYPES.MINE] || 0);
+    const mineEnabledContinuation = mineInventoryCount > 0
+      ? evaluateMineEnabledFlagPickupContinuation(candidate?.plane, pickupPoint, {
+          ...continuationOptions,
+          baselineContinuation: continuation,
+        })
+      : null;
+    const effectiveContinuation = mineEnabledContinuation?.after?.hasSafeEscape === true
+      ? mineEnabledContinuation.after
+      : continuation;
+    const continuationPenalty = effectiveContinuation.hasSafeEscape
+      ? (effectiveContinuation.hasReturnRoute ? 0 : MAX_DRAG_DISTANCE * 0.28)
       : MAX_DRAG_DISTANCE * 4;
     const enrichedScore = (Number.isFinite(candidate?.score) ? candidate.score : Number.POSITIVE_INFINITY) + continuationPenalty;
     return {
       ...candidate,
       continuationMeta: {
-        hasSafeEscape: continuation.hasSafeEscape,
-        hasReturnRoute: continuation.hasReturnRoute,
-        immediateTrap: continuation.immediateTrap,
-        statusLabel: continuation.statusLabel,
-        statusReason: continuation.statusReason,
-        immediateThreatCount: continuation.immediateThreatCount,
-        immediateThreatNearestDist: continuation.immediateThreatNearestDist,
+        hasSafeEscape: effectiveContinuation.hasSafeEscape,
+        hasReturnRoute: effectiveContinuation.hasReturnRoute,
+        immediateTrap: effectiveContinuation.immediateTrap,
+        statusLabel: effectiveContinuation.statusLabel,
+        statusReason: mineEnabledContinuation?.after?.hasSafeEscape === true ? "mine_enables_flag_pickup" : effectiveContinuation.statusReason,
+        immediateThreatCount: effectiveContinuation.immediateThreatCount,
+        immediateThreatNearestDist: effectiveContinuation.immediateThreatNearestDist,
+        minePlacement: mineEnabledContinuation?.placement
+          ? { x: Number(mineEnabledContinuation.placement.x.toFixed(1)), y: Number(mineEnabledContinuation.placement.y.toFixed(1)) }
+          : null,
         safeRetreatPoint: continuation.safeRetreatPoint
           ? { x: Number(continuation.safeRetreatPoint.x.toFixed(1)), y: Number(continuation.safeRetreatPoint.y.toFixed(1)), label: continuation.safeRetreatPoint.label || null }
           : null,
