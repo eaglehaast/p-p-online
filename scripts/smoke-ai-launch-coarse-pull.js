@@ -27,16 +27,41 @@ const context = {
   Math,
   Number,
   MAX_DRAG_DISTANCE: 300,
+  clamp(value, min, max){
+    return Math.min(max, Math.max(min, value));
+  },
 };
 vm.createContext(context);
 vm.runInContext(extractFunctionSource(source, 'buildAiCoarsePullPoint'), context);
 
 const plane = { x: 100, y: 50 };
-const targetAim = { angleRad: Math.PI / 6, powerRatio: 0.66, pullX: 0, pullY: 0 };
-const coarse = context.buildAiCoarsePullPoint(plane, targetAim);
-const coarseDistance = Math.hypot(coarse.x - plane.x, coarse.y - plane.y);
+const angleRad = Math.PI / 6;
+const reducedDistance = 198;
+const targetAimReduced = {
+  angleRad,
+  powerRatio: reducedDistance / context.MAX_DRAG_DISTANCE,
+  pullX: plane.x + Math.cos(angleRad) * reducedDistance,
+  pullY: plane.y + Math.sin(angleRad) * reducedDistance,
+};
 
-assert(Math.abs(coarseDistance - context.MAX_DRAG_DISTANCE) < 0.0001,
-  'AI should start from maximum pull distance instead of probing intermediate distances.');
+const coarseReduced = context.buildAiCoarsePullPoint(plane, targetAimReduced, reducedDistance);
+const coarseReducedDistance = Math.hypot(coarseReduced.x - plane.x, coarseReduced.y - plane.y);
+assert(Math.abs(coarseReducedDistance - reducedDistance) < 0.0001,
+  'AI should start the visible pull from the working launch distance for reduced-range shots.');
 
-console.log('Smoke test passed: AI launch starts from maximum pull distance before any optional release-time weakening.');
+const stagePullDistance = coarseReducedDistance;
+const stageOscillateDistance = reducedDistance;
+assert(Math.abs(stagePullDistance - stageOscillateDistance) < 0.0001,
+  'Pull and oscillate stages should keep the same visible aim length to avoid a jump.');
+
+const coarseDefault = context.buildAiCoarsePullPoint(plane, {
+  angleRad,
+  powerRatio: 1,
+  pullX: plane.x + Math.cos(angleRad) * context.MAX_DRAG_DISTANCE,
+  pullY: plane.y + Math.sin(angleRad) * context.MAX_DRAG_DISTANCE,
+});
+const coarseDefaultDistance = Math.hypot(coarseDefault.x - plane.x, coarseDefault.y - plane.y);
+assert(Math.abs(coarseDefaultDistance - context.MAX_DRAG_DISTANCE) < 0.0001,
+  'Default AI launches should still use the full pull distance when no reduction is requested.');
+
+console.log('Smoke test passed: AI coarse pull uses the working distance and stays visually stable across pull/oscillate.');
