@@ -15840,6 +15840,12 @@ const AI_REPEAT_ALLOWED_REASON_TOKENS = Object.freeze([
   "pickup",
 ]);
 const AI_REPEAT_ALLOWED_REASON_STRONG_TOKEN_MATCH_MIN = 2;
+const AI_REPEAT_CRITICAL_SCORE_THRESHOLD = MAX_DRAG_DISTANCE * 0.14;
+const AI_REPEAT_CRITICAL_NORMALIZED_SCORE_THRESHOLD = MAX_DRAG_DISTANCE * 0.16;
+const AI_REPEAT_CRITICAL_ROUTE_QUALITY_THRESHOLD = 0.72;
+const AI_REPEAT_CRITICAL_DEFENSE_UTILITY_THRESHOLD = 0.62;
+const AI_REPEAT_CRITICAL_LOW_RESPONSE_RISK_THRESHOLD = 0.18;
+const AI_REPEAT_CRITICAL_UTILITY_SIGNAL_MIN = 1;
 const AI_DEFENSIVE_PRIORITY_LEVELS = Object.freeze({
   NONE: "none",
   WARNING: "warning",
@@ -17527,7 +17533,22 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
         repeatedGoalName: repeatedCandidate?.goalName ?? null,
         criticalByExactCode: repeatedCandidateCriticalMeta.criticalByExactCode,
         criticalByTokenMatch: repeatedCandidateCriticalMeta.criticalByTokenMatch,
+        criticalByScoreGap: repeatedCandidateCriticalMeta.criticalByScoreGap,
+        criticalByDefenseNeed: repeatedCandidateCriticalMeta.criticalByDefenseNeed,
+        criticalByFinisher: repeatedCandidateCriticalMeta.criticalByFinisher,
+        criticalByFlagDenial: repeatedCandidateCriticalMeta.criticalByFlagDenial,
+        criticalByRouteQuality: repeatedCandidateCriticalMeta.criticalByRouteQuality,
+        criticalByNormalizedScore: repeatedCandidateCriticalMeta.criticalByNormalizedScore,
+        criticalByNumericSignals: repeatedCandidateCriticalMeta.criticalByNumericSignals,
+        hasUtilitySupport: repeatedCandidateCriticalMeta.hasUtilitySupport,
         matchedTokens: repeatedCandidateCriticalMeta.matchedTokens,
+        utilitySignals: repeatedCandidateCriticalMeta.utilitySignals,
+        score: repeatedCandidateCriticalMeta.score,
+        normalizedScore: repeatedCandidateCriticalMeta.normalizedScore,
+        routeQualityScore: repeatedCandidateCriticalMeta.routeQualityScore,
+        defenseUtility: repeatedCandidateCriticalMeta.defenseUtility,
+        responseRisk: repeatedCandidateCriticalMeta.responseRisk,
+        defensivePriorityLevel: repeatedCandidateCriticalMeta.defensivePriorityLevel,
         strongTokenMatchMin: AI_REPEAT_ALLOWED_REASON_STRONG_TOKEN_MATCH_MIN,
       });
 
@@ -17692,41 +17713,113 @@ function evaluateAiRepeatPlaneCriticalCandidate(candidate){
     isCritical: false,
     criticalByExactCode: false,
     criticalByTokenMatch: false,
+    criticalByScoreGap: false,
+    criticalByDefenseNeed: false,
+    criticalByFinisher: false,
+    criticalByFlagDenial: false,
+    criticalByRouteQuality: false,
+    criticalByNormalizedScore: false,
+    criticalByNumericSignals: false,
+    hasUtilitySupport: false,
     matchedTokens: [],
+    utilitySignals: [],
+    score: null,
+    normalizedScore: null,
+    routeQualityScore: null,
+    defenseUtility: null,
+    responseRisk: null,
+    defensivePriorityLevel: null,
   };
   if(!candidate || typeof candidate !== "object") return defaultMeta;
+
   const reasonParts = [candidate.decisionReason, candidate.goalName]
     .filter((value) => typeof value === "string" && value.trim().length > 0)
     .map((value) => value.trim().toLowerCase());
-  if(reasonParts.length === 0) return defaultMeta;
-
-  const criticalByExactCode = reasonParts.some((value) => AI_REPEAT_ALLOWED_REASON_CODES.includes(value));
-  if(criticalByExactCode){
-    return {
-      ...defaultMeta,
-      isCritical: true,
-      criticalByExactCode: true,
-    };
-  }
-
-  const rawReason = reasonParts
-    .join(" ")
-    .toLowerCase();
-  if(!rawReason) return defaultMeta;
-
+  const rawReason = reasonParts.join(" ").toLowerCase();
   const reasonTokens = rawReason
-    .split(/[^a-z0-9]+/)
-    .filter((token) => token.length > 0);
+    ? rawReason.split(/[^a-z0-9]+/).filter((token) => token.length > 0)
+    : [];
 
   const matchedTokens = [...new Set(reasonTokens
     .filter((token) => AI_REPEAT_ALLOWED_REASON_TOKENS.includes(token)))];
+  const criticalByExactCode = reasonParts.some((value) => AI_REPEAT_ALLOWED_REASON_CODES.includes(value));
   const criticalByTokenMatch = matchedTokens.length >= AI_REPEAT_ALLOWED_REASON_STRONG_TOKEN_MATCH_MIN;
+
+  const score = Number.isFinite(candidate?.score) ? candidate.score : null;
+  const normalizedScore = Number.isFinite(candidate?.normalizedScore) ? candidate.normalizedScore : null;
+  const routeQualityScore = Number.isFinite(candidate?.routeQualityScore)
+    ? candidate.routeQualityScore
+    : (Number.isFinite(candidate?.routeMetrics?.qualityScore) ? candidate.routeMetrics.qualityScore : null);
+  const defenseUtility = Number.isFinite(candidate?.defenseUtility) ? candidate.defenseUtility : null;
+  const responseRisk = Number.isFinite(candidate?.responseRisk) ? candidate.responseRisk : null;
+  const defensivePriorityLevel = candidate?.defensivePriority?.level
+    || candidate?.defensivePriorityLevel
+    || null;
+  const defensivePriorityRank = Number.isFinite(candidate?.defensivePriority?.levelRank)
+    ? candidate.defensivePriority.levelRank
+    : (AI_DEFENSIVE_PRIORITY_RANK?.[`${defensivePriorityLevel || ""}`.toLowerCase()] || 0);
+
+  const hasEnemyTarget = Boolean(candidate?.enemy || candidate?.targetEnemy);
+  const hasDefensePositioning = Boolean(candidate?.interceptPoint || candidate?.blockPoint || candidate?.holdPoint);
+  const killCountOnTrajectory = Number.isFinite(candidate?.killCountOnTrajectory)
+    ? Math.max(1, Math.floor(candidate.killCountOnTrajectory))
+    : 0;
+  const protectsBaseImmediately = hasDefensePositioning
+    && (defensivePriorityRank >= AI_DEFENSIVE_PRIORITY_RANK.critical
+      || (Number.isFinite(defenseUtility) && defenseUtility >= AI_REPEAT_CRITICAL_DEFENSE_UTILITY_THRESHOLD));
+  const interruptsFlagThreat = hasDefensePositioning
+    && (Boolean(candidate?.defensivePriority?.hasQuickFlagPickupThreat)
+      || rawReason.includes("flag")
+      || rawReason.includes("pickup"));
+  const isReliableFinisher = hasEnemyTarget
+    && (killCountOnTrajectory >= 1 || rawReason.includes("finisher") || rawReason.includes("attack"))
+    && (responseRisk === null || responseRisk <= AI_REPEAT_CRITICAL_LOW_RESPONSE_RISK_THRESHOLD)
+    && ((score !== null && score <= AI_REPEAT_CRITICAL_SCORE_THRESHOLD)
+      || (normalizedScore !== null && normalizedScore <= AI_REPEAT_CRITICAL_NORMALIZED_SCORE_THRESHOLD));
+
+  const criticalByScoreGap = score !== null && score <= AI_REPEAT_CRITICAL_SCORE_THRESHOLD;
+  const criticalByDefenseNeed = protectsBaseImmediately;
+  const criticalByFinisher = isReliableFinisher;
+  const criticalByFlagDenial = interruptsFlagThreat;
+  const criticalByRouteQuality = routeQualityScore !== null && routeQualityScore >= AI_REPEAT_CRITICAL_ROUTE_QUALITY_THRESHOLD;
+  const criticalByNormalizedScore = normalizedScore !== null && normalizedScore <= AI_REPEAT_CRITICAL_NORMALIZED_SCORE_THRESHOLD;
+
+  const utilitySignals = [];
+  if(criticalByScoreGap) utilitySignals.push("score");
+  if(criticalByDefenseNeed) utilitySignals.push("defense");
+  if(criticalByFinisher) utilitySignals.push("finisher");
+  if(criticalByFlagDenial) utilitySignals.push("flag_denial");
+  if(criticalByRouteQuality) utilitySignals.push("route_quality");
+  if(criticalByNormalizedScore) utilitySignals.push("normalized_score");
+
+  const hasUtilitySupport = utilitySignals.length >= AI_REPEAT_CRITICAL_UTILITY_SIGNAL_MIN;
+  const hasHardNumericSignal = criticalByScoreGap || criticalByDefenseNeed || criticalByFinisher || criticalByFlagDenial;
+  const hasSoftNumericSignal = criticalByRouteQuality || criticalByNormalizedScore;
+  const criticalByNumericSignals = hasHardNumericSignal || utilitySignals.length >= 2;
+  const isCritical = criticalByNumericSignals
+    || (hasSoftNumericSignal && (criticalByExactCode || criticalByTokenMatch));
 
   return {
     ...defaultMeta,
-    isCritical: criticalByTokenMatch,
+    isCritical,
+    criticalByExactCode,
     criticalByTokenMatch,
+    criticalByScoreGap,
+    criticalByDefenseNeed,
+    criticalByFinisher,
+    criticalByFlagDenial,
+    criticalByRouteQuality,
+    criticalByNormalizedScore,
+    criticalByNumericSignals,
+    hasUtilitySupport,
     matchedTokens,
+    utilitySignals,
+    score: score !== null ? Number(score.toFixed(3)) : null,
+    normalizedScore: normalizedScore !== null ? Number(normalizedScore.toFixed(3)) : null,
+    routeQualityScore: routeQualityScore !== null ? Number(routeQualityScore.toFixed(4)) : null,
+    defenseUtility: defenseUtility !== null ? Number(defenseUtility.toFixed(4)) : null,
+    responseRisk: responseRisk !== null ? Number(responseRisk.toFixed(4)) : null,
+    defensivePriorityLevel,
   };
 }
 
