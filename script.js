@@ -16605,6 +16605,7 @@ function clearAiDynamiteIntent(reason = "cleared"){
   if(reason === "expired"){
     logAiDecision("dynamite_intent_expired", {
       reason: "turn_window_elapsed",
+      intentType: previousIntent?.intentType || null,
       colliderId: previousIntent?.colliderId ?? null,
       targetX: Number.isFinite(previousIntent?.x) ? Number(previousIntent.x.toFixed(1)) : null,
       targetY: Number.isFinite(previousIntent?.y) ? Number(previousIntent.y.toFixed(1)) : null,
@@ -16998,7 +16999,7 @@ function doesPlannedMoveMatchDynamiteExpectedRoute(plannedMove, expectedRoute){
   return Boolean(routeClassMatches && (landingMatches || directionMatches));
 }
 
-function setAiDynamiteIntentFromCandidate(targetGeometry, usageReason, plannedMove, expectedRoute = null){
+function setAiDynamiteIntentFromCandidate(targetGeometry, usageReason, plannedMove, expectedRoute = null, intentType = null){
   if(!targetGeometry) return null;
   const expiresTurn = (Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : 0) + 1;
   aiRoundState.dynamiteIntent = {
@@ -17007,6 +17008,7 @@ function setAiDynamiteIntentFromCandidate(targetGeometry, usageReason, plannedMo
     x: targetGeometry?.cx ?? null,
     y: targetGeometry?.cy ?? null,
     expectedRoute: expectedRoute || null,
+    intentType: intentType || (expectedRoute ? "current_route" : "strategic_setup"),
     expiresTurn,
   };
   logAiDecision("dynamite_intent_set", {
@@ -17018,6 +17020,7 @@ function setAiDynamiteIntentFromCandidate(targetGeometry, usageReason, plannedMo
     expiresTurn,
     turn: aiRoundState?.turnNumber ?? null,
     expectedRoute: expectedRoute || null,
+    intentType: aiRoundState?.dynamiteIntent?.intentType || null,
     planeId: plannedMove?.plane?.id ?? null,
   });
   return aiRoundState.dynamiteIntent;
@@ -17028,7 +17031,7 @@ function validateAiDynamiteIntentAgainstMove(plannedMove, options = {}){
   if(!intent || !plannedMove?.plane) return { valid: true, reason: "no_intent" };
 
   const usageCheck = getAiDynamiteIntentScoreAdjustment(1, plannedMove, { plane: plannedMove?.plane });
-  if(!usageCheck.usedIntent){
+  if(intent?.intentType === "current_route" && !usageCheck.usedIntent){
     return { valid: false, reason: "intent_lane_mismatch", usageCheck };
   }
 
@@ -17081,6 +17084,7 @@ function consumeAiDynamiteIntentIfUsed(plannedMove){
   if(!validation.valid) return false;
   logAiDecision("dynamite_intent_used", {
     planeId: plannedMove?.plane?.id ?? null,
+    intentType: intent?.intentType || null,
     colliderId: intent?.colliderId ?? null,
     targetX: Number.isFinite(intent?.x) ? Number(intent.x.toFixed(1)) : null,
     targetY: Number.isFinite(intent?.y) ? Number(intent.y.toFixed(1)) : null,
@@ -19810,28 +19814,49 @@ function classifyAiMoveForStrategicDynamite(plannedMove, context = null){
   const reachesEnemyBase = landingPoint && enemyBase && dist(landingPoint, enemyBase) <= CELL_SIZE * 3.4;
   const attackRangePx = typeof ATTACK_RANGE_PX === "number" && Number.isFinite(ATTACK_RANGE_PX) ? ATTACK_RANGE_PX : 0;
   const approachesPriorityEnemy = landingPoint && priorityEnemy && dist(landingPoint, priorityEnemy) <= Math.max(getPlaneEffectiveRangePx(plannedMove?.plane), attackRangePx) * 1.05;
-  const isAttacking = goalName.includes("attack")
+  const hasStrongAttack = moveScore >= 0.42
+    || goalName.includes("attack")
     || goalName.includes("finisher")
-    || goalName.includes("flag")
     || decisionReason.includes("attack")
-    || decisionReason.includes("flag")
+    || decisionReason.includes("finisher")
     || routeClass === "direct"
-    || reachesFlagPressure
-    || reachesEnemyBase
     || approachesPriorityEnemy;
-  const isWeakOrWaiting = moveScore <= 0.18
+  const hasFlagIntercept = goalName.includes("flag")
+    || decisionReason.includes("flag")
+    || reachesFlagPressure
+    || reachesEnemyBase;
+  const hasUsefulContact = decisionReason.includes("contact")
+    || decisionReason.includes("pickup")
+    || decisionReason.includes("capture")
+    || goalName.includes("pickup")
+    || goalName.includes("capture")
+    || goalName.includes("escort");
+  const isSurvivalOrReposition = moveScore <= 0.18
     || decisionReason.includes("fallback")
     || decisionReason.includes("wait")
+    || decisionReason.includes("defense")
+    || decisionReason.includes("defence")
+    || decisionReason.includes("survive")
+    || decisionReason.includes("regroup")
+    || decisionReason.includes("recover")
     || goalName.includes("fallback")
     || goalName.includes("prepare")
     || goalName.includes("defense")
     || goalName.includes("defence")
+    || goalName.includes("survive")
+    || goalName.includes("regroup")
+    || goalName.includes("recover")
     || routeClass === "gap";
+  const isAttacking = hasStrongAttack || hasFlagIntercept || hasUsefulContact;
 
   return {
-    isWeakOrWaiting,
+    isWeakOrWaiting: isSurvivalOrReposition,
     isAttacking,
-    classification: isAttacking ? "attacking" : (isWeakOrWaiting ? "weak_or_waiting" : "neutral"),
+    hasStrongAttack,
+    hasFlagIntercept,
+    hasUsefulContact,
+    isSurvivalOrReposition,
+    classification: isAttacking ? "attacking" : (isSurvivalOrReposition ? "weak_or_waiting" : "neutral"),
   };
 }
 
@@ -19845,6 +19870,68 @@ function countDynamiteStrategicRouteOptions(originPoint, targetGeometry, points)
     if(!clearNow && clearAfter) count += 1;
   }
   return count;
+}
+
+function describeStrategicDynamiteFollowUp(target, plannedMove, context = null){
+  if(!target) return null;
+  const planeId = plannedMove?.plane?.id ?? null;
+  const routeTarget = getAiStrategicTargetPoint(context, plannedMove);
+  const priorityEnemy = typeof getBluePriorityEnemy === "function" ? getBluePriorityEnemy(context) : null;
+  const enemyBase = typeof getBaseAnchor === "function" ? getBaseAnchor("green") : null;
+  const flagAnchors = context?.shouldUseFlagsMode && Array.isArray(context?.availableEnemyFlags)
+    ? context.availableEnemyFlags.map((flag) => ({ flagId: flag?.id ?? null, anchor: getFlagAnchor(flag) })).filter((entry) => entry.anchor)
+    : [];
+
+  let opensFor = "next_plane_action";
+  let targetKind = "next_route";
+  let targetId = null;
+
+  if(target?.opensPathToFlag && flagAnchors.length > 0){
+    opensFor = planeId;
+    targetKind = "flag";
+    targetId = flagAnchors[0]?.flagId ?? null;
+  } else if(target?.opensPathToBase && enemyBase){
+    opensFor = planeId;
+    targetKind = "enemy_base";
+    targetId = "green_base";
+  } else if(target?.removesBarrierToContactZone && priorityEnemy?.id){
+    opensFor = planeId;
+    targetKind = "priority_enemy";
+    targetId = priorityEnemy.id;
+  } else if(routeTarget){
+    opensFor = planeId;
+    targetKind = "route_target";
+    targetId = routeTarget?.id ?? routeTarget?.kind ?? null;
+  }
+
+  let opensPathLabel = "broader_future_route";
+  if(target?.opensPathToFlag) opensPathLabel = "path_to_flag";
+  else if(target?.opensPathToBase) opensPathLabel = "path_to_enemy_base";
+  else if(target?.removesBarrierToContactZone) opensPathLabel = "contact_lane";
+  else if(target?.hasLargeRouteGain) opensPathLabel = "multiple_future_routes";
+
+  return {
+    opensPathLabel,
+    opensFor,
+    targetKind,
+    targetId,
+  };
+}
+
+function shouldUseStrategicDynamiteForPlannedMove(plannedMove, context = null){
+  const moveClassification = classifyAiMoveForStrategicDynamite(plannedMove, context);
+  const hasStrongCurrentPlan = moveClassification.hasStrongAttack
+    || moveClassification.hasFlagIntercept
+    || moveClassification.hasUsefulContact;
+  return {
+    allowStrategicSetup: !hasStrongCurrentPlan || moveClassification.isSurvivalOrReposition,
+    moveClassification,
+    strongPlanReason: moveClassification.hasStrongAttack
+      ? "strong_attack"
+      : (moveClassification.hasFlagIntercept
+        ? "flag_intercept"
+        : (moveClassification.hasUsefulContact ? "useful_contact" : null)),
+  };
 }
 
 function evaluateStrategicDynamiteTargets(context, plannedMove){
@@ -19895,13 +19982,18 @@ function evaluateStrategicDynamiteTargets(context, plannedMove){
       && !isPathClear(plane.x, plane.y, routeTarget.x, routeTarget.y)
       && isPathClearIgnoringColliderById(plane.x, plane.y, routeTarget.x, routeTarget.y, geometry.collider.id);
     const distanceBias = Math.hypot(geometry.cx - plane.x, geometry.cy - plane.y);
-    const score = (opensPathToBase ? 2.8 : 0)
-      + (opensPathToFlag ? 3.1 : 0)
-      + (removesBarrierToContactZone ? 1.8 : 0)
-      + (Math.min(4, nextTurnRouteGain) * 0.95)
-      + (currentRouteImprovement ? 0.7 : 0)
-      - Math.min(1.4, distanceBias / Math.max(CELL_SIZE * 8, 1) * 0.18);
-    if(score <= 0.35) continue;
+    const opensDecisivePath = opensPathToBase || opensPathToFlag;
+    const hasLargeRouteGain = nextTurnRouteGain >= 3;
+    const hasMeaningfulStrategicUnlock = opensDecisivePath || hasLargeRouteGain;
+    const score = (opensPathToBase ? 3.4 : 0)
+      + (opensPathToFlag ? 3.8 : 0)
+      + (removesBarrierToContactZone ? 1.2 : 0)
+      + (Math.min(5, nextTurnRouteGain) * (opensDecisivePath ? 0.7 : 0.45))
+      + (currentRouteImprovement && opensDecisivePath ? 0.8 : 0)
+      + (hasLargeRouteGain ? 0.9 : 0)
+      - Math.min(1.6, distanceBias / Math.max(CELL_SIZE * 7, 1) * 0.2);
+    if(!hasMeaningfulStrategicUnlock) continue;
+    if(score <= 1.95) continue;
     evaluated.push({
       ...geometry,
       strategicScore: Number(score.toFixed(3)),
@@ -19910,6 +20002,8 @@ function evaluateStrategicDynamiteTargets(context, plannedMove){
       removesBarrierToContactZone,
       nextTurnRouteGain,
       currentRouteImprovement,
+      opensDecisivePath,
+      hasLargeRouteGain,
       moveClassification,
     });
   }
@@ -20725,7 +20819,8 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
 
   if(allowTacticalItems && inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] > 0){
     const routeAwareTarget = typeof getDynamiteCandidateForCurrentRoute === "function" ? getDynamiteCandidateForCurrentRoute(context, plannedMove) : null;
-    const strategicDynamite = typeof evaluateStrategicDynamiteTargets === "function"
+    const strategicMoveGate = shouldUseStrategicDynamiteForPlannedMove(plannedMove, context);
+    const strategicDynamite = strategicMoveGate.allowStrategicSetup && typeof evaluateStrategicDynamiteTargets === "function"
       ? evaluateStrategicDynamiteTargets(context, plannedMove)
       : null;
     const strategicTarget = routeAwareTarget ? null : (strategicDynamite?.bestTarget || null);
@@ -20757,7 +20852,10 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
           opensPathToFlag: strategicTarget.opensPathToFlag,
           removesBarrierToContactZone: strategicTarget.removesBarrierToContactZone,
           nextTurnRouteGain: strategicTarget.nextTurnRouteGain,
+          opensDecisivePath: strategicTarget.opensDecisivePath,
+          hasLargeRouteGain: strategicTarget.hasLargeRouteGain,
           moveClassification: strategicTarget.moveClassification?.classification || null,
+          currentMoveTooStrongReason: strategicMoveGate.strongPlanReason,
         } : null,
         comparedTargets: strategicDynamite?.rankedTargets?.map((target) => ({
           colliderId: target?.collider?.id ?? null,
@@ -20775,6 +20873,8 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
           whyWaiting: routeAwareTarget === null
             ? "did_not_find_a_wall_that_improves_the_route_we_want_right_now_or_the_turn_is_not_weak_enough_for_a_preparatory_blast"
             : "did_not_find_any_wall_that_improves_the_route_now_or_on_the_next_turns",
+          currentMoveTooStrongReason: strategicMoveGate.strongPlanReason,
+          strategicSetupBlockedByCurrentMove: !strategicMoveGate.allowStrategicSetup,
           routeTargetMissing: routeAwareTarget === null,
           strategicTargetsChecked: strategicDynamite?.rankedTargets?.length ?? 0,
         }
@@ -21885,7 +21985,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
 
   if(allowTacticalItems && inventory.counts[INVENTORY_ITEM_TYPES.DYNAMITE] > 0){
     const routeAwareTarget = getDynamiteCandidateForCurrentRoute(context, plannedMove);
-    const strategicDynamite = routeAwareTarget ? null : evaluateStrategicDynamiteTargets(context, plannedMove);
+    const strategicMoveGate = shouldUseStrategicDynamiteForPlannedMove(plannedMove, context);
+    const strategicDynamite = (routeAwareTarget || !strategicMoveGate.allowStrategicSetup) ? null : evaluateStrategicDynamiteTargets(context, plannedMove);
     const strategicTarget = strategicDynamite?.bestTarget || null;
 
     const routeAwareReplan = routeAwareTarget?.replanResult || null;
@@ -21897,18 +21998,19 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       && placeBlueDynamiteAt(routeAwareTarget.cx, routeAwareTarget.cy)){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
       plannedMove.inventoryUsageReason = "dynamite_route_opening";
-      setAiDynamiteIntentFromCandidate(routeAwareTarget, "dynamite_route_opening", plannedMove, routeAwareExpectedRoute);
+      setAiDynamiteIntentFromCandidate(routeAwareTarget, "dynamite_route_opening", plannedMove, routeAwareExpectedRoute, "current_route");
       return true;
     }
 
     if(strategicTarget){
-      const strategicReason = strategicTarget.nextTurnRouteGain > 0
-        ? "dynamite_used_for_future_route_gain"
-        : "dynamite_used_for_map_opening";
+      const strategicReason = strategicTarget.opensDecisivePath
+        ? "dynamite_used_for_map_opening"
+        : "dynamite_used_for_future_route_gain";
+      const strategicFollowUp = describeStrategicDynamiteFollowUp(strategicTarget, plannedMove, context);
       if(placeBlueDynamiteAt(strategicTarget.cx, strategicTarget.cy)){
         removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
         plannedMove.inventoryUsageReason = strategicReason;
-        setAiDynamiteIntentFromCandidate(strategicTarget, strategicReason, plannedMove, null);
+        setAiDynamiteIntentFromCandidate(strategicTarget, strategicReason, plannedMove, null, "strategic_setup");
         logAiDecision(strategicReason, {
           planeId: plannedMove?.plane?.id ?? null,
           goal: strategicGoal || null,
@@ -21920,6 +22022,16 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
           opensPathToFlag: strategicTarget?.opensPathToFlag ?? false,
           removesBarrierToContactZone: strategicTarget?.removesBarrierToContactZone ?? false,
           nextTurnRouteGain: strategicTarget?.nextTurnRouteGain ?? 0,
+          intentType: "strategic_setup",
+          opensPathLabel: strategicFollowUp?.opensPathLabel || null,
+          opensForPlaneId: strategicFollowUp?.opensFor || null,
+          followUpTargetKind: strategicFollowUp?.targetKind || null,
+          followUpTargetId: strategicFollowUp?.targetId || null,
+          currentMoveTooStrongReason: strategicMoveGate.strongPlanReason,
+          currentMoveStrength: strategicMoveGate.moveClassification?.classification || null,
+          currentMoveWasInsufficientBecause: strategicMoveGate.allowStrategicSetup
+            ? (strategicMoveGate.moveClassification?.isSurvivalOrReposition ? "survival_or_reposition_move" : "no_strong_attack_or_flag_intercept")
+            : "current_move_already_strong",
           comparedTargets: strategicDynamite?.rankedTargets?.map((target) => ({
             colliderId: target?.collider?.id ?? null,
             score: target?.strategicScore ?? null,
@@ -21937,11 +22049,12 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         planeId: plannedMove?.plane?.id ?? null,
         reason: "strategic_target_found_but_placement_failed",
         colliderId: strategicTarget?.collider?.id ?? null,
+        currentMoveTooStrongReason: strategicMoveGate.strongPlanReason,
       });
     } else {
       logAiDecision("dynamite_not_used_no_benefit", {
         planeId: plannedMove?.plane?.id ?? null,
-        reason: routeAwareTarget ? "route_target_failed_to_place" : "no_useful_target_anywhere",
+        reason: routeAwareTarget ? "route_target_failed_to_place" : (!strategicMoveGate.allowStrategicSetup ? "current_move_already_good_enough" : "no_useful_target_anywhere"),
       });
     }
   }
