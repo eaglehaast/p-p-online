@@ -12352,6 +12352,172 @@ function exportAiV2DecisionAuditReportJson(){
   return report;
 }
 
+function exportAiV2DecisionAuditCompactReportJson(){
+  const turnsReport = exportAiSelfAnalyzerTurnsJson();
+  const gapReport = exportPlayerVsAiGapReportJson();
+  const fallbackReport = exportAiFallbackDiagnosticsReportJson();
+  const aiDecisionEvents = Array.isArray(turnsReport?.aiMotivation?.decisionEvents)
+    ? turnsReport.aiMotivation.decisionEvents
+    : [];
+  const fallbackSamples = Array.isArray(fallbackReport?.fallbackEpisodeSamples)
+    ? fallbackReport.fallbackEpisodeSamples
+    : [];
+  const fallbackSummaryLines = Array.isArray(fallbackReport?.summary)
+    ? fallbackReport.summary.filter((line) => typeof line === "string" && line.trim().length > 0).slice(0, 6)
+    : [];
+
+  const makeTopEntries = (stats, limit = 3) => Object.entries(stats || {})
+    .filter(([, count]) => Number.isFinite(count) && count > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([code, count]) => ({ code, count }));
+
+  const frequencyBy = (items, getter, limit = 5) => {
+    const stats = {};
+    (Array.isArray(items) ? items : []).forEach((item) => {
+      const key = getter(item);
+      if(typeof key !== "string" || key.trim().length === 0) return;
+      stats[key] = (stats[key] || 0) + 1;
+    });
+    return makeTopEntries(stats, limit);
+  };
+
+  const compactDecisionTrail = aiDecisionEvents.slice(-12).map((event, index, arr) => {
+    const selectedMove = event?.selectedMove || null;
+    return {
+      sequence: index + 1,
+      reverseOffset: arr.length - index,
+      at: event?.at || null,
+      roundNumber: event?.roundNumber ?? null,
+      turnColor: event?.turnColor || null,
+      stage: event?.stage || null,
+      goal: event?.goal || null,
+      planeId: event?.planeId || null,
+      routeClass: event?.routeClass || selectedMove?.routeClass || null,
+      selectedMove: selectedMove ? {
+        decisionReason: selectedMove.decisionReason || null,
+        goalName: selectedMove.goalName || null,
+        routeClass: selectedMove.routeClass || null,
+        totalDistance: Number.isFinite(selectedMove.totalDist) ? selectedMove.totalDist : null,
+      } : null,
+      reasonCodes: Array.isArray(event?.reasonCodes) ? event.reasonCodes.slice(0, 6) : [],
+      rejectReasons: Array.isArray(event?.rejectReasons) ? event.rejectReasons.slice(0, 6) : [],
+      difficultySignals: [
+        ...(Array.isArray(event?.reasonCodes) ? event.reasonCodes : []),
+        ...(Array.isArray(event?.rejectReasons) ? event.rejectReasons : []),
+      ]
+        .filter((value, idx, arr2) => typeof value === "string" && value.trim().length > 0 && arr2.indexOf(value) === idx)
+        .slice(0, 6),
+      selected: Boolean(selectedMove),
+    };
+  });
+
+  const difficultyDigest = {
+    topReasonCodes: frequencyBy(
+      aiDecisionEvents.flatMap((event) => Array.isArray(event?.reasonCodes) ? event.reasonCodes : []),
+      (code) => code,
+      8
+    ),
+    topRejectReasons: frequencyBy(
+      aiDecisionEvents.flatMap((event) => Array.isArray(event?.rejectReasons) ? event.rejectReasons : []),
+      (code) => code,
+      8
+    ),
+    topStagesWithoutMove: frequencyBy(
+      aiDecisionEvents.filter((event) => !event?.selectedMove),
+      (event) => event?.stage || null,
+      5
+    ),
+    topSelectedDecisionReasons: frequencyBy(
+      aiDecisionEvents.filter((event) => event?.selectedMove),
+      (event) => event?.selectedMove?.decisionReason || null,
+      6
+    ),
+    topSelectedRouteClasses: frequencyBy(
+      aiDecisionEvents.filter((event) => event?.selectedMove),
+      (event) => event?.selectedMove?.routeClass || event?.routeClass || null,
+      4
+    ),
+    fallbackRootCauses: makeTopEntries(fallbackReport?.fallbackRootCauseStats, 6),
+    fallbackSummaryLines,
+  };
+
+  const fallbackEpisodesCompact = fallbackSamples.slice(-5).map((episode, index, arr) => ({
+    sequence: index + 1,
+    reverseOffset: arr.length - index,
+    at: episode?.at || null,
+    roundNumber: episode?.roundNumber ?? null,
+    turnColor: episode?.turnColor || null,
+    stage: episode?.stage || null,
+    fallbackGoal: episode?.fallbackGoal || null,
+    fallbackDecisionReason: episode?.fallbackDecisionReason || null,
+    directTopRejectReason: episode?.directSummary?.topRejectReason || null,
+    gapTopRejectReason: episode?.gapSummary?.topRejectReason || null,
+    ricochetTopRejectReason: episode?.ricochetSummary?.topRejectReason || null,
+  }));
+
+  const summary = {
+    status: turnsReport ? "ok" : "insufficient_data",
+    statusMessage: turnsReport
+      ? "Короткий отчёт по решениям ИИ успешно собран."
+      : "Недостаточно данных: нет активного или завершённого матча для короткого отчёта ИИ.",
+    sourceStartedAt: turnsReport?.sourceStartedAt || gapReport?.sourceStartedAt || fallbackReport?.sourceStartedAt || null,
+    sourceFinishedAt: turnsReport?.sourceFinishedAt || gapReport?.sourceFinishedAt || fallbackReport?.sourceFinishedAt || null,
+    aiDecisionEventsCount: Number.isFinite(turnsReport?.aiDecisionEventsCount) ? turnsReport.aiDecisionEventsCount : 0,
+    humanDecisionEventsCount: Number.isFinite(turnsReport?.humanDecisionEventsCount) ? turnsReport.humanDecisionEventsCount : 0,
+    fallbackRate: Number.isFinite(gapReport?.gapMetrics?.aiDecisionMetrics?.fallbackRate)
+      ? gapReport.gapMetrics.aiDecisionMetrics.fallbackRate
+      : null,
+    noMoveRate: Number.isFinite(gapReport?.gapMetrics?.aiDecisionMetrics?.noMoveRate)
+      ? gapReport.gapMetrics.aiDecisionMetrics.noMoveRate
+      : null,
+    fallbackEpisodes: fallbackSamples.length,
+    aiMoveExceptionEvents: Number.isFinite(fallbackReport?.fallbackEpisodeDiagnostics?.aiMoveExceptionEvents)
+      ? fallbackReport.fallbackEpisodeDiagnostics.aiMoveExceptionEvents
+      : 0,
+    failSafeTurnAdvanceEpisodes: Number.isFinite(fallbackReport?.fallbackEpisodeDiagnostics?.failSafeTurnAdvanceEpisodes)
+      ? fallbackReport.fallbackEpisodeDiagnostics.failSafeTurnAdvanceEpisodes
+      : 0,
+    failSafeTurnShareAmongAiTurns: Number.isFinite(fallbackReport?.fallbackEpisodeDiagnostics?.failSafeTurnShareAmongAiTurns)
+      ? fallbackReport.fallbackEpisodeDiagnostics.failSafeTurnShareAmongAiTurns
+      : 0,
+  };
+
+  const report = {
+    reportType: "ai_v2_decision_audit_compact_report",
+    generatedAt: safeNowIso(),
+    engineMode: AI_ENGINE_MODE,
+    summary,
+    lastAiDecisions: compactDecisionTrail,
+    difficultyDigest,
+    recentFallbackEpisodes: fallbackEpisodesCompact,
+    usageHint: {
+      forTeam: "Отправьте этот JSON, если нужен короткий и читаемый отчёт: какие ходы ИИ выбирал и где чаще всего упирался.",
+      command: "window.exportAiV2DecisionAuditCompactReportJson()",
+      debugAlias: "window.AI_DEBUG_CMD(\"v2-report-compact\")",
+      fullReportCommand: "window.exportAiV2DecisionAuditReportJson()",
+    },
+  };
+
+  if(typeof document === "undefined"){
+    return report;
+  }
+
+  const payload = JSON.stringify(report, null, 2);
+  const blob = new Blob([payload], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const suffix = safeNowIso().replace(/[:.]/g, "-");
+  link.href = url;
+  link.download = `ai-v2-decision-audit-compact-report-${suffix}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+
+  return report;
+}
+
 function getAiSelfAnalyzerSnapshot(options = {}){
   const includeHistory = Boolean(options?.includeHistory);
   const activeMatch = aiSelfAnalyzerState.activeMatch
@@ -12509,6 +12675,9 @@ function AI_DEBUG_CMD(command, arg){
   if(normalized === "v2-report"){
     return exportAiV2DecisionAuditReportJson();
   }
+  if(normalized === "v2-report-compact"){
+    return exportAiV2DecisionAuditCompactReportJson();
+  }
   if(normalized === "telegraphy"){
     const modeRaw = typeof arg === "string" ? arg.trim().toLowerCase() : "";
     if(modeRaw === "on" || modeRaw === "true" || modeRaw === "1"){
@@ -12524,7 +12693,7 @@ function AI_DEBUG_CMD(command, arg){
     return result;
   }
 
-  console.info('[AI_DEBUG] Неизвестная команда. Доступно: "snapshot", "last-decisions", "status", "reset-cargo", "fallback-report", "gap-after-bounce-report", "v2-report", "telegraphy".');
+  console.info('[AI_DEBUG] Неизвестная команда. Доступно: "snapshot", "last-decisions", "status", "reset-cargo", "fallback-report", "gap-after-bounce-report", "v2-report", "v2-report-compact", "telegraphy".');
   return null;
 }
 
@@ -12534,6 +12703,7 @@ if(typeof window !== "undefined"){
   window.exportAiSelfAnalyzerGapJson = exportAiSelfAnalyzerGapJson;
   window.exportPlayerVsAiGapReportJson = exportPlayerVsAiGapReportJson;
   window.exportAiV2DecisionAuditReportJson = exportAiV2DecisionAuditReportJson;
+  window.exportAiV2DecisionAuditCompactReportJson = exportAiV2DecisionAuditCompactReportJson;
   window.exportAiFallbackDiagnosticsReportJson = exportAiFallbackDiagnosticsReportJson;
   window.exportAiFuelTrainingReportJson = exportAiFuelTrainingReportJson;
   window.DEBUG_AI_GAP_AFTER_BOUNCE_REPORT = DEBUG_AI_GAP_AFTER_BOUNCE_REPORT;
