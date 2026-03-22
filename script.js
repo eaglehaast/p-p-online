@@ -23509,6 +23509,7 @@ function evaluateAiGoalPriorityModel(context){
     blueInventoryCount: Number.isFinite(context?.blueInventoryCount) ? context.blueInventoryCount : 0,
     readyCargoCount,
     hasStolenBlueFlagCarrier: Boolean(context?.defensivePriority?.hasFlagCarrierThreat || (context?.stolenBlueFlagCarrier && context.stolenBlueFlagCarrier.color !== "blue")),
+    hasTripleKillOpportunity: Boolean(context?.groupKillPriorityPlan?.move && context.groupKillPriorityPlan.killCountOnTrajectory >= 3),
     hasImmediateBlueFlagTheftThreat: Boolean(context?.defensivePriority?.hasQuickFlagPickupThreat || context?.criticalBlueFlagThreat),
     defensivePriorityLevel: context?.defensivePriority?.level || AI_DEFENSIVE_PRIORITY_LEVELS.NONE,
     defensivePrioritySource: context?.defensivePriority?.primarySource || null,
@@ -28609,6 +28610,27 @@ function doComputerMoveLegacy(runtimeOptions = {}){
   });
 }
 
+function shouldAllowLegacyFallbackForGroupKillException(modeContext = {}, groupKillPlan = null){
+  const defensivePriority = modeContext?.defensivePriority || null;
+  const criticalFlagThreat = modeContext?.criticalBlueFlagThreat || defensivePriority?.quickFlagPickupThreat || null;
+  if(!groupKillPlan || groupKillPlan.killCountOnTrajectory < 2) return { allowed: true, reason: "group_kill_exception_not_required" };
+  if(groupKillPlan.killCountOnTrajectory >= 3){
+    return { allowed: false, reason: "legacy_fallback_blocked_by_triple_kill_priority", criticalThreat: criticalFlagThreat };
+  }
+  const threatLooksCritical = Boolean(
+    defensivePriority?.hasQuickFlagPickupThreat
+    && criticalFlagThreat
+    && criticalFlagThreat.canInterceptBeforePickup === false
+    && criticalFlagThreat.hasSafePostPickupEscape === true
+    && Number.isFinite(criticalFlagThreat.threatScore)
+    && criticalFlagThreat.threatScore >= 0.92
+  );
+  if(threatLooksCritical){
+    return { allowed: true, reason: "flag_exception_overrides_triple_kill", criticalThreat: criticalFlagThreat };
+  }
+  return { allowed: false, reason: "double_kill_priority_preserved", criticalThreat: criticalFlagThreat };
+}
+
 function runAiTurnV2(context = {}){
   if (gameMode!=="computer" || isGameOver) return;
 
@@ -28637,6 +28659,33 @@ function runAiTurnV2(context = {}){
     blueInventoryCount: getAvailableInventoryCount("blue"),
   };
   modeContext.aiRiskProfile = getAiRiskProfile(modeContext);
+  modeContext.defensivePriority = getBlueDefensivePriority(modeContext);
+  modeContext.criticalBlueFlagThreat = modeContext.defensivePriority?.quickFlagPickupThreat || null;
+  modeContext.groupKillPriorityPlan = buildShotPlan({ goalName: "triple_kill_priority" }, modeContext, {
+    forceMinimumKillCount: 2,
+  });
+
+  if(modeContext.groupKillPriorityPlan?.move && modeContext.groupKillPriorityPlan.killCountOnTrajectory >= 3){
+    aiRoundState.currentGoal = modeContext.groupKillPriorityPlan.goalName || "triple_kill_priority";
+    logAiDecision("legacy_fallback_blocked_by_triple_kill_priority", {
+      planeId: modeContext.groupKillPriorityPlan.move?.plane?.id ?? null,
+      enemyId: modeContext.groupKillPriorityPlan.move?.enemy?.id ?? null,
+      killCountOnTrajectory: modeContext.groupKillPriorityPlan.killCountOnTrajectory,
+      affectedEnemyIds: modeContext.groupKillPriorityPlan.multiKillContext?.affectedEnemyIds || [],
+      source: "runAiTurnV2",
+    });
+    return issueAIMoveFromDoComputerMove(modeContext, {
+      ...modeContext.groupKillPriorityPlan.move,
+      goalName: modeContext.groupKillPriorityPlan.goalName || "triple_kill_priority",
+      decisionReason: modeContext.groupKillPriorityPlan.decisionReason || "triple_kill_priority",
+      shotPreview: modeContext.groupKillPriorityPlan.shotPreview,
+    }, {
+      source: "runAiTurnV2",
+      chooseGoal: { goalName: "triple_kill_priority", forced: true },
+      shotPreview: modeContext.groupKillPriorityPlan.shotPreview,
+      routeClass: modeContext.groupKillPriorityPlan?.move?.routeClass || null,
+    });
+  }
 
   const chosenGoal = chooseGoal(modeContext);
   const shotPlan = buildShotPlan(chosenGoal, modeContext);
@@ -28655,13 +28704,79 @@ function runAiTurnV2(context = {}){
     });
   }
 
+  const legacyFallbackException = shouldAllowLegacyFallbackForGroupKillException(modeContext, modeContext.groupKillPriorityPlan);
+  const rejectReasons = ["no_v2_shot_plan_move"];
+  const reasonCodes = ["v2_shot_plan_not_found"];
+
+  if(modeContext.groupKillPriorityPlan?.move && modeContext.groupKillPriorityPlan.killCountOnTrajectory >= 3){
+    reasonCodes.push("v2_shot_plan_not_found_but_triple_kill_exists");
+    rejectReasons.push("legacy_fallback_blocked_by_triple_kill_priority");
+    logAiDecision("v2_shot_plan_not_found_but_triple_kill_exists", {
+      goal: chosenGoal?.goalName || null,
+      tripleKillGoal: modeContext.groupKillPriorityPlan.goalName || "triple_kill_priority",
+      killCountOnTrajectory: modeContext.groupKillPriorityPlan.killCountOnTrajectory,
+      affectedEnemyIds: modeContext.groupKillPriorityPlan.multiKillContext?.affectedEnemyIds || [],
+      source: "runAiTurnV2",
+    });
+    aiRoundState.currentGoal = modeContext.groupKillPriorityPlan.goalName || "triple_kill_priority";
+    return issueAIMoveFromDoComputerMove(modeContext, {
+      ...modeContext.groupKillPriorityPlan.move,
+      goalName: modeContext.groupKillPriorityPlan.goalName || "triple_kill_priority",
+      decisionReason: modeContext.groupKillPriorityPlan.decisionReason || "triple_kill_priority",
+      shotPreview: modeContext.groupKillPriorityPlan.shotPreview,
+    }, {
+      source: "runAiTurnV2",
+      chooseGoal: chosenGoal,
+      shotPreview: modeContext.groupKillPriorityPlan.shotPreview,
+      routeClass: modeContext.groupKillPriorityPlan?.move?.routeClass || null,
+    });
+  }
+
+  if(modeContext.groupKillPriorityPlan?.move && modeContext.groupKillPriorityPlan.killCountOnTrajectory === 2 && !legacyFallbackException.allowed){
+    reasonCodes.push("double_kill_priority_preserved");
+    rejectReasons.push("legacy_fallback_blocked_by_double_kill_priority");
+    logAiDecision("legacy_fallback_blocked_by_triple_kill_priority", {
+      planeId: modeContext.groupKillPriorityPlan.move?.plane?.id ?? null,
+      enemyId: modeContext.groupKillPriorityPlan.move?.enemy?.id ?? null,
+      killCountOnTrajectory: modeContext.groupKillPriorityPlan.killCountOnTrajectory,
+      affectedEnemyIds: modeContext.groupKillPriorityPlan.multiKillContext?.affectedEnemyIds || [],
+      source: "runAiTurnV2",
+      fallbackReason: "double_kill_priority_preserved",
+    });
+    aiRoundState.currentGoal = modeContext.groupKillPriorityPlan.goalName || "triple_kill_priority";
+    return issueAIMoveFromDoComputerMove(modeContext, {
+      ...modeContext.groupKillPriorityPlan.move,
+      goalName: modeContext.groupKillPriorityPlan.goalName || "triple_kill_priority",
+      decisionReason: modeContext.groupKillPriorityPlan.decisionReason || "double_kill_priority_preserved",
+      shotPreview: modeContext.groupKillPriorityPlan.shotPreview,
+    }, {
+      source: "runAiTurnV2",
+      chooseGoal: chosenGoal,
+      shotPreview: modeContext.groupKillPriorityPlan.shotPreview,
+      routeClass: modeContext.groupKillPriorityPlan?.move?.routeClass || null,
+    });
+  }
+
+  if(modeContext.groupKillPriorityPlan?.move && modeContext.groupKillPriorityPlan.killCountOnTrajectory === 2 && legacyFallbackException.allowed && legacyFallbackException.reason === "flag_exception_overrides_triple_kill"){
+    logAiDecision("flag_exception_overrides_triple_kill", {
+      planeId: modeContext.groupKillPriorityPlan.move?.plane?.id ?? null,
+      enemyId: modeContext.groupKillPriorityPlan.move?.enemy?.id ?? null,
+      killCountOnTrajectory: modeContext.groupKillPriorityPlan.killCountOnTrajectory,
+      affectedEnemyIds: modeContext.groupKillPriorityPlan.multiKillContext?.affectedEnemyIds || [],
+      threatScore: legacyFallbackException.criticalThreat?.threatScore ?? null,
+      canInterceptBeforePickup: legacyFallbackException.criticalThreat?.canInterceptBeforePickup ?? null,
+      hasSafePostPickupEscape: legacyFallbackException.criticalThreat?.hasSafePostPickupEscape ?? null,
+      source: "runAiTurnV2",
+    });
+  }
+
   recordAiSelfAnalyzerDecision("v2_shot_plan_not_found", {
     goal: chosenGoal?.goalName || null,
     reasonCodes: [
-      "v2_shot_plan_not_found",
+      ...reasonCodes,
       "fallback_to_legacy",
     ],
-    rejectReasons: ["no_v2_shot_plan_move"],
+    rejectReasons,
     source: "runAiTurnV2",
     routeClass: null,
   });
@@ -28672,6 +28787,19 @@ function runAiTurnV2(context = {}){
 }
 
 function chooseGoal(modeContext = {}){
+  const groupKillPriorityPlan = modeContext?.groupKillPriorityPlan || null;
+  if(groupKillPriorityPlan?.move && groupKillPriorityPlan.killCountOnTrajectory >= 3){
+    return {
+      goalName: "triple_kill_priority",
+      modelGoalClass: "triple_kill_priority",
+      modelWeight: 1,
+      mode: "attrition",
+      forcedByGroupKillPlan: true,
+      evaluation: {
+        selectedPriorities: ["triple_kill_priority", "attack_enemy_plane", "capture_enemy_flag", "pickup_cargo"],
+      },
+    };
+  }
   const shouldUseFlagsMode = Boolean(modeContext.shouldUseFlagsMode);
   const availableEnemyFlagsCount = Array.isArray(modeContext.availableEnemyFlags)
     ? modeContext.availableEnemyFlags.length
@@ -28687,6 +28815,7 @@ function chooseGoal(modeContext = {}){
       ? cargoState.reduce((count, cargo) => count + (cargo?.state === "ready" ? 1 : 0), 0)
       : 0,
     hasStolenBlueFlagCarrier: Boolean(shouldUseFlagsMode && getFlagCarrierForColor("blue")),
+    hasTripleKillOpportunity: Boolean(groupKillPriorityPlan?.move && groupKillPriorityPlan.killCountOnTrajectory >= 3),
   };
   const model = (typeof window !== "undefined" && window.PaperWingsGoalPriorityModel)
     ? window.PaperWingsGoalPriorityModel
@@ -28711,7 +28840,7 @@ function chooseGoal(modeContext = {}){
   };
 }
 
-function buildShotPlan(goalSelection = {}, modeContext = {}){
+function buildShotPlan(goalSelection = {}, modeContext = {}, options = {}){
   const aiPlanes = Array.isArray(modeContext.aiPlanes) ? modeContext.aiPlanes : [];
   const enemies = Array.isArray(modeContext.enemies) ? modeContext.enemies : [];
   const launchReadyPlanes = aiPlanes.filter((plane) => (
@@ -28726,6 +28855,10 @@ function buildShotPlan(goalSelection = {}, modeContext = {}){
     { type: "narrow_corridor", routeClass: "gap", riskBias: 0.33, reason: "v2_narrow_corridor_candidate" },
   ];
 
+  const forceMinimumKillCount = Number.isFinite(options?.forceMinimumKillCount)
+    ? Math.max(1, Math.floor(options.forceMinimumKillCount))
+    : 1;
+  const goalName = goalSelection.goalName || "attack_enemy_plane";
   let bestPlan = null;
   for(const plane of launchReadyPlanes){
     for(const enemy of enemies){
@@ -28755,8 +28888,27 @@ function buildShotPlan(goalSelection = {}, modeContext = {}){
         const distance = Number.isFinite(move.totalDist) ? move.totalDist : Math.hypot(move.vx, move.vy);
         const powerRatio = Math.max(0, Math.min(1, MAX_DRAG_DISTANCE > 0 ? distance / MAX_DRAG_DISTANCE : 0));
         const shortLaunchPenalty = powerRatio < 0.72 ? (0.72 - powerRatio) * 110 : 0;
+        const multiKillContext = getAiMultiKillPotentialContext({
+          plane,
+          enemy,
+          enemies,
+          lineEndX: expectedEndPoint.x,
+          lineEndY: expectedEndPoint.y,
+        });
+        const killCountOnTrajectory = Math.max(1, multiKillContext.killCountOnTrajectory || 1);
+        if(killCountOnTrajectory < forceMinimumKillCount) continue;
+        const multiKillBonus = getAiMultiKillScoreBonus(multiKillContext);
+        const groupKillPriorityBoost = goalName === "triple_kill_priority"
+          ? killCountOnTrajectory >= 3
+            ? 520
+            : killCountOnTrajectory === 2
+              ? 180
+              : 0
+          : 0;
         const score = (route.type === "direct" ? 220 : route.type === "narrow_corridor" ? 170 : 140)
           + powerRatio * 85
+          + multiKillBonus
+          + groupKillPriorityBoost
           - shortLaunchPenalty
           - risk * 90;
 
@@ -28766,18 +28918,23 @@ function buildShotPlan(goalSelection = {}, modeContext = {}){
           expectedEndPoint,
           risk,
           powerRatio: Number(powerRatio.toFixed(3)),
+          killCountOnTrajectory,
+          affectedEnemyIds: multiKillContext.affectedEnemyIds || [],
         };
 
         if(!bestPlan || score > bestPlan.score){
           bestPlan = {
             score,
-            goalName: goalSelection.goalName || "attack_enemy_plane",
-            decisionReason: `${route.reason}__goal_${goalSelection.goalName || "attack_enemy_plane"}`,
+            goalName,
+            decisionReason: `${route.reason}__goal_${goalName}`,
             move: {
               ...move,
               routeClass: route.routeClass,
+              enemy,
             },
             shotPreview,
+            multiKillContext,
+            killCountOnTrajectory,
           };
         }
       }

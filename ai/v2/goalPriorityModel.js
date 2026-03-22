@@ -10,6 +10,11 @@
       mode: "defense",
       priorities: Object.freeze(["eliminate_flag_carrier", "protect_home_flag"]),
     }),
+    triple_kill_priority: Object.freeze({
+      weight: 0.96,
+      mode: "attrition",
+      priorities: Object.freeze(["triple_kill_priority", "attack_enemy_plane", "capture_enemy_flag", "pickup_cargo"]),
+    }),
     secure_kill: Object.freeze({
       weight: 0.74,
       mode: "attrition",
@@ -35,6 +40,7 @@
     const blueInventoryCount = Number.isFinite(context.blueInventoryCount) ? context.blueInventoryCount : 0;
     const readyCargoCount = Number.isFinite(context.readyCargoCount) ? context.readyCargoCount : 0;
     const hasStolenBlueFlagCarrier = Boolean(context.hasStolenBlueFlagCarrier);
+    const hasTripleKillOpportunity = Boolean(context.hasTripleKillOpportunity);
     const hasImmediateBlueFlagTheftThreat = Boolean(context.hasImmediateBlueFlagTheftThreat);
     const shouldUseFlagsMode = Boolean(context.shouldUseFlagsMode);
     const canReachEnemyFlag = Boolean(context.canReachEnemyFlag);
@@ -66,6 +72,12 @@
           : hasImmediateBlueFlagTheftThreat
             ? "enemy_almost_guaranteed_blue_flag_pickup"
             : "no_enemy_flag_carrier_or_immediate_theft_threat",
+      },
+      triple_kill_priority: {
+        active: hasTripleKillOpportunity && !hasStolenBlueFlagCarrier && !hasImmediateBlueFlagTheftThreat,
+        reason: hasTripleKillOpportunity
+          ? "triple_kill_route_available"
+          : "no_triple_kill_route",
       },
       score_by_flag: {
         active: shouldUseFlagsMode
