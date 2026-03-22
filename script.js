@@ -23483,6 +23483,105 @@ function evaluateFlagPressureOpportunity(context = {}){
   return result;
 }
 
+function evaluateAiMassAttackOpportunity(context = {}){
+  const aiPlanes = Array.isArray(context?.aiPlanes) ? context.aiPlanes : [];
+  const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
+  if(!aiPlanes.length || !enemies.length){
+    return {
+      minTargets: 0,
+      tripleTargets: 0,
+      trajectoryQuality: 0,
+      counterRisk: 1,
+      opportunityReason: null,
+      planeId: null,
+      enemyId: null,
+      routeClass: null,
+      affectedEnemyIds: [],
+    };
+  }
+
+  const routeTypes = [
+    { routeClass: "direct", routeBias: 0.18 },
+    { routeClass: "ricochet", routeBias: 0.44 },
+    { routeClass: "gap", routeBias: 0.33 },
+  ];
+
+  let bestOpportunity = null;
+  for(const plane of aiPlanes){
+    if(!plane || !Number.isFinite(plane.x) || !Number.isFinite(plane.y)) continue;
+    for(const enemy of enemies){
+      if(!enemy || !Number.isFinite(enemy.x) || !Number.isFinite(enemy.y)) continue;
+      for(const route of routeTypes){
+        const move = planPathToPoint(plane, enemy.x, enemy.y, {
+          goalName: "attack_enemy_plane",
+          routeClass: route.routeClass,
+          decisionReason: `mass_attack_probe_${route.routeClass}`,
+        });
+        const validation = validateAiLaunchMoveCandidate(move);
+        if(!move || !validation.ok) continue;
+
+        const expectedEndPoint = {
+          x: plane.x + move.vx * FIELD_FLIGHT_DURATION_SEC,
+          y: plane.y + move.vy * FIELD_FLIGHT_DURATION_SEC,
+        };
+        const multiKill = getAiMultiKillPotentialContext({
+          plane,
+          enemy,
+          enemies,
+          lineEndX: expectedEndPoint.x,
+          lineEndY: expectedEndPoint.y,
+        });
+        const killCountOnTrajectory = Number.isFinite(multiKill?.killCountOnTrajectory)
+          ? Math.max(1, Math.floor(multiKill.killCountOnTrajectory))
+          : 1;
+        const powerRatio = Math.max(0, Math.min(1, MAX_DRAG_DISTANCE > 0 ? (Number.isFinite(move.totalDist) ? move.totalDist : Math.hypot(move.vx, move.vy)) / MAX_DRAG_DISTANCE : 0));
+        const nearbyColliderCount = countRouteNearbyColliders(
+          plane.x,
+          plane.y,
+          expectedEndPoint.x,
+          expectedEndPoint.y,
+          CELL_SIZE * 0.9
+        );
+        const directLinePenalty = isPathClear(plane.x, plane.y, enemy.x, enemy.y) ? 0 : 0.16;
+        const counterRisk = Math.max(0, Math.min(1, route.routeBias + nearbyColliderCount * 0.06 + directLinePenalty));
+        const trajectoryQuality = Math.max(0, Math.min(1,
+          0.34
+          + Math.min(0.36, powerRatio * 0.36)
+          + Math.min(0.24, Math.max(0, killCountOnTrajectory - 1) * 0.12)
+          - Math.min(0.28, counterRisk * 0.28)
+        ));
+        const candidateScore = killCountOnTrajectory * 100 + trajectoryQuality * 20 - counterRisk * 15;
+        if(!bestOpportunity || candidateScore > bestOpportunity.candidateScore){
+          bestOpportunity = {
+            candidateScore,
+            minTargets: killCountOnTrajectory >= 2 ? killCountOnTrajectory : 0,
+            tripleTargets: killCountOnTrajectory >= 3 ? killCountOnTrajectory : 0,
+            trajectoryQuality: Number(trajectoryQuality.toFixed(3)),
+            counterRisk: Number(counterRisk.toFixed(3)),
+            opportunityReason: multiKill?.opportunityReason || null,
+            planeId: plane.id ?? null,
+            enemyId: enemy.id ?? null,
+            routeClass: route.routeClass,
+            affectedEnemyIds: Array.isArray(multiKill?.affectedEnemyIds) ? multiKill.affectedEnemyIds.slice() : [],
+          };
+        }
+      }
+    }
+  }
+
+  return bestOpportunity || {
+    minTargets: 0,
+    tripleTargets: 0,
+    trajectoryQuality: 0,
+    counterRisk: 1,
+    opportunityReason: null,
+    planeId: null,
+    enemyId: null,
+    routeClass: null,
+    affectedEnemyIds: [],
+  };
+}
+
 function evaluateAiGoalPriorityModel(context){
   const model = (typeof window !== "undefined" && window.PaperWingsGoalPriorityModel)
     ? window.PaperWingsGoalPriorityModel
@@ -23500,6 +23599,7 @@ function evaluateAiGoalPriorityModel(context){
     : 0;
 
   const flagPressureOpportunity = context?.flagPressureOpportunity || evaluateFlagPressureOpportunity(context);
+  const massAttackOpportunity = context?.massAttackOpportunity || evaluateAiMassAttackOpportunity(context);
 
   return model.evaluate({
     scoreGap: greenScore - blueScore,
@@ -23537,6 +23637,10 @@ function evaluateAiGoalPriorityModel(context){
     mineDefensiveUrgency: flagPressureOpportunity.mineDefensiveUrgency,
     trappedByMines: flagPressureOpportunity.trappedByMines,
     enemyMineCoverAfterAdvance: flagPressureOpportunity.enemyMineCoverAfterAdvance,
+    massAttackMinTargets: massAttackOpportunity.minTargets,
+    massAttackTripleTargets: massAttackOpportunity.tripleTargets,
+    massAttackTrajectoryQuality: massAttackOpportunity.trajectoryQuality,
+    massAttackCounterRisk: massAttackOpportunity.counterRisk,
   });
 }
 
@@ -23550,13 +23654,15 @@ function applyAiGoalSelection(selection, meta = {}){
 
   aiRoundState.mode = selectedMode;
   aiRoundState.targetPriorities = selectedPriorities;
-  aiRoundState.currentGoal = selectedPriorities[0] ?? null;
+  aiRoundState.currentGoal = selection.selectedCurrentGoal || selectedPriorities[0] || null;
 
   logAiDecision("goal_priority_model_selected", {
     mode: selectedMode,
     goalClass: selection.selectedGoalClass,
     weight: selection.selectedWeight,
     priorities: selectedPriorities,
+    currentGoal: selection.selectedCurrentGoal || selectedPriorities[0] || null,
+    executionGoal: selection.selectedExecutionGoal || selection.selectedCurrentGoal || selectedPriorities[0] || null,
     useLegacyFallback: Boolean(meta.useLegacyFallback),
     toggleEnabled: Boolean(meta.toggleEnabled),
     flagContinuationStatus: meta.flagContinuationStatus || null,
@@ -23594,10 +23700,12 @@ function selectAiModeForCurrentTurn(context, options = {}){
   const goalModelEnabled = !useLegacyFallback && AI_USE_GOAL_PRIORITY_MODEL;
   const defensivePriority = context?.defensivePriority || getBlueDefensivePriority(context);
   const flagPressureOpportunity = evaluateFlagPressureOpportunity(context);
+  const massAttackOpportunity = evaluateAiMassAttackOpportunity(context);
   const goalSelection = goalModelEnabled ? evaluateAiGoalPriorityModel({
     ...context,
     defensivePriority,
     flagPressureOpportunity,
+    massAttackOpportunity,
   }) : null;
   const goalSelectionBlockedByDefense = Boolean(
     goalSelection
@@ -28676,6 +28784,7 @@ function chooseGoal(modeContext = {}){
   const availableEnemyFlagsCount = Array.isArray(modeContext.availableEnemyFlags)
     ? modeContext.availableEnemyFlags.length
     : 0;
+  const massAttackOpportunity = evaluateAiMassAttackOpportunity(modeContext);
   const evaluationContext = {
     shouldUseFlagsMode,
     availableEnemyFlagsCount,
@@ -28687,6 +28796,10 @@ function chooseGoal(modeContext = {}){
       ? cargoState.reduce((count, cargo) => count + (cargo?.state === "ready" ? 1 : 0), 0)
       : 0,
     hasStolenBlueFlagCarrier: Boolean(shouldUseFlagsMode && getFlagCarrierForColor("blue")),
+    massAttackMinTargets: massAttackOpportunity.minTargets,
+    massAttackTripleTargets: massAttackOpportunity.tripleTargets,
+    massAttackTrajectoryQuality: massAttackOpportunity.trajectoryQuality,
+    massAttackCounterRisk: massAttackOpportunity.counterRisk,
   };
   const model = (typeof window !== "undefined" && window.PaperWingsGoalPriorityModel)
     ? window.PaperWingsGoalPriorityModel
@@ -28703,7 +28816,8 @@ function chooseGoal(modeContext = {}){
     : "attack_enemy_plane";
 
   return {
-    goalName: selectedPriority || fallbackGoal,
+    goalName: evaluation?.selectedCurrentGoal || selectedPriority || fallbackGoal,
+    executionGoalName: evaluation?.selectedExecutionGoal || selectedPriority || fallbackGoal,
     modelGoalClass: evaluation?.selectedGoalClass || null,
     modelWeight: Number.isFinite(evaluation?.selectedWeight) ? evaluation.selectedWeight : null,
     mode: evaluation?.selectedMode || null,
@@ -28732,7 +28846,7 @@ function buildShotPlan(goalSelection = {}, modeContext = {}){
       if(!Number.isFinite(enemy?.x) || !Number.isFinite(enemy?.y)) continue;
       for(const route of routeTypes){
         const move = planPathToPoint(plane, enemy.x, enemy.y, {
-          goalName: goalSelection.goalName || "attack_enemy_plane",
+          goalName: goalSelection.executionGoalName || goalSelection.goalName || "attack_enemy_plane",
           routeClass: route.routeClass,
           decisionReason: route.reason,
         });
@@ -28771,7 +28885,7 @@ function buildShotPlan(goalSelection = {}, modeContext = {}){
         if(!bestPlan || score > bestPlan.score){
           bestPlan = {
             score,
-            goalName: goalSelection.goalName || "attack_enemy_plane",
+            goalName: goalSelection.executionGoalName || goalSelection.goalName || "attack_enemy_plane",
             decisionReason: `${route.reason}__goal_${goalSelection.goalName || "attack_enemy_plane"}`,
             move: {
               ...move,

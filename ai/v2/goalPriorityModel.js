@@ -4,26 +4,50 @@
       weight: 0.7,
       mode: "flag_pressure",
       priorities: Object.freeze(["return_with_flag", "capture_enemy_flag", "pickup_cargo", "attack_enemy_plane", "high_risk_attack"]),
+      currentGoal: "return_with_flag",
+      executionGoal: "capture_enemy_flag",
     }),
     prevent_enemy_flag_score: Object.freeze({
       weight: 0.98,
       mode: "defense",
       priorities: Object.freeze(["eliminate_flag_carrier", "protect_home_flag"]),
+      currentGoal: "eliminate_flag_carrier",
+      executionGoal: "eliminate_flag_carrier",
+    }),
+    triple_kill_window: Object.freeze({
+      weight: 0.93,
+      mode: "attrition",
+      priorities: Object.freeze(["triple_kill_window", "attack_enemy_plane", "close_distance"]),
+      currentGoal: "triple_kill_window",
+      executionGoal: "attack_enemy_plane",
+    }),
+    double_kill_window: Object.freeze({
+      weight: 0.82,
+      mode: "attrition",
+      priorities: Object.freeze(["double_kill_window", "attack_enemy_plane", "close_distance"]),
+      currentGoal: "double_kill_window",
+      executionGoal: "attack_enemy_plane",
     }),
     secure_kill: Object.freeze({
       weight: 0.74,
       mode: "attrition",
       priorities: Object.freeze(["attack_enemy_plane", "close_distance"]),
+      currentGoal: "attack_enemy_plane",
+      executionGoal: "attack_enemy_plane",
     }),
     cargo_swing_pickup: Object.freeze({
       weight: 0.66,
       mode: "resource_first",
       priorities: Object.freeze(["pickup_cargo", "prepare_attack"]),
+      currentGoal: "pickup_cargo",
+      executionGoal: "pickup_cargo",
     }),
     survival_reposition: Object.freeze({
       weight: 0.88,
       mode: "defense",
       priorities: Object.freeze(["preserve_planes", "safe_attack"]),
+      currentGoal: "preserve_planes",
+      executionGoal: "preserve_planes",
     }),
   });
 
@@ -52,6 +76,12 @@
     const mineDefensiveUrgency = Number.isFinite(context.mineDefensiveUrgency) ? context.mineDefensiveUrgency : 0;
     const trappedByMines = Boolean(context.trappedByMines);
     const enemyMineCoverAfterAdvance = Boolean(context.enemyMineCoverAfterAdvance);
+    const homeDefensePressure = Number.isFinite(context.homeDefensePressure) ? context.homeDefensePressure : 0;
+    const criticalHomeDefenseThreat = Boolean(context.criticalHomeDefenseThreat);
+    const massAttackMinTargets = Number.isFinite(context.massAttackMinTargets) ? context.massAttackMinTargets : 0;
+    const massAttackTripleTargets = Number.isFinite(context.massAttackTripleTargets) ? context.massAttackTripleTargets : 0;
+    const massAttackTrajectoryQuality = Number.isFinite(context.massAttackTrajectoryQuality) ? context.massAttackTrajectoryQuality : 0;
+    const massAttackCounterRisk = Number.isFinite(context.massAttackCounterRisk) ? context.massAttackCounterRisk : 1;
 
     const returnBeatsAlternatives = flagReturnValue >= cargoAlternativeValue
       && flagReturnValue >= attackAlternativeValue;
@@ -114,8 +144,34 @@
         active: readyCargoCount > 0
           && aiAliveCount > 1
           && !hasStolenBlueFlagCarrier
+          && !(massAttackTripleTargets >= 3 && massAttackTrajectoryQuality >= 0.58 && !criticalHomeDefenseThreat)
           && (scoreGap >= 0 || blueInventoryCount === 0 || cargoAlternativeValue >= flagReturnValue || mineDetourValue >= 0.24),
-        reason: readyCargoCount > 0 ? "cargo_ready_for_swing_turn" : "no_ready_cargo",
+        reason: massAttackTripleTargets >= 3 && massAttackTrajectoryQuality >= 0.58 && !criticalHomeDefenseThreat
+          ? "cargo_rejected_due_to_mass_attack"
+          : readyCargoCount > 0 ? "cargo_ready_for_swing_turn" : "no_ready_cargo",
+      },
+      triple_kill_window: {
+        active: aiAliveCount > 0
+          && enemyAliveCount >= 3
+          && !hasStolenBlueFlagCarrier
+          && massAttackTripleTargets >= 3
+          && massAttackTrajectoryQuality >= 0.58
+          && (massAttackCounterRisk <= 0.54 || !criticalHomeDefenseThreat),
+        reason: criticalHomeDefenseThreat && massAttackCounterRisk > 0.54
+          ? "double_kill_but_flag_emergency"
+          : "triple_kill_window_open",
+      },
+      double_kill_window: {
+        active: aiAliveCount > 0
+          && enemyAliveCount >= 2
+          && !hasStolenBlueFlagCarrier
+          && massAttackMinTargets >= 2
+          && massAttackTrajectoryQuality >= 0.5
+          && (!criticalHomeDefenseThreat || homeDefensePressure < 0.86)
+          && massAttackCounterRisk <= 0.72,
+        reason: criticalHomeDefenseThreat || homeDefensePressure >= 0.86
+          ? "double_kill_but_flag_emergency"
+          : "double_kill_window_open",
       },
       secure_kill: {
         active: aiAliveCount > 0
@@ -141,6 +197,8 @@
         reason: activationEntry.reason,
         mode: goalDefinition.mode,
         priorities: goalDefinition.priorities.slice(),
+        currentGoal: activationEntry.currentGoal || goalDefinition.currentGoal || goalDefinition.priorities[0] || null,
+        executionGoal: activationEntry.executionGoal || goalDefinition.executionGoal || goalDefinition.currentGoal || goalDefinition.priorities[0] || null,
       };
     });
 
@@ -154,6 +212,8 @@
       selectedGoalClass: selectedGoal?.goalClassName || null,
       selectedMode: selectedGoal?.mode || null,
       selectedPriorities: selectedGoal ? selectedGoal.priorities.slice() : [],
+      selectedCurrentGoal: selectedGoal?.currentGoal || null,
+      selectedExecutionGoal: selectedGoal?.executionGoal || null,
       selectedWeight: selectedGoal?.weight ?? null,
       goalClassEvaluations: evaluated,
       usedModel: true,
