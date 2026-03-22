@@ -17246,6 +17246,101 @@ function scoreMoveForPlane(score, plane){
   return getAiPlaneRotationScoring(score, plane);
 }
 
+function getAiCandidateStrategicEffectScore(candidate){
+  if(!candidate || typeof candidate !== "object") return 0;
+  let strategicEffectScore = 0;
+  const goalName = `${candidate?.goalName || ""}`.toLowerCase();
+  const decisionReason = `${candidate?.decisionReason || ""}`.toLowerCase();
+  const reasonCode = `${candidate?.reasonCode || ""}`.toLowerCase();
+
+  if(Number.isFinite(candidate?.defenseUtility)){
+    strategicEffectScore += candidate.defenseUtility * 2.2;
+  }
+  if(goalName.includes("direct_finisher") || decisionReason.includes("direct_finisher")){
+    strategicEffectScore += 2.4;
+  }
+  if(goalName.includes("critical_base") || decisionReason.includes("critical_base") || reasonCode.includes("critical_base")){
+    strategicEffectScore += 2.1;
+  }
+  if(goalName.includes("flag") || decisionReason.includes("flag") || reasonCode.includes("flag")){
+    strategicEffectScore += 1.2;
+  }
+  if(goalName.includes("defense") || goalName.includes("defence") || decisionReason.includes("defense") || decisionReason.includes("defence")){
+    strategicEffectScore += 1.1;
+  }
+
+  return strategicEffectScore;
+}
+
+function getAiCandidateUtilitySnapshot(candidate){
+  if(!candidate || typeof candidate !== "object") return null;
+  const score = Number.isFinite(candidate?.score) ? candidate.score : Number.POSITIVE_INFINITY;
+  const normalizedScore = Number.isFinite(candidate?.normalizedScore) ? candidate.normalizedScore : Number.POSITIVE_INFINITY;
+  const routeQualityScore = Number.isFinite(candidate?.routeQualityScore)
+    ? candidate.routeQualityScore
+    : (Number.isFinite(candidate?.routeMetrics?.qualityScore) ? candidate.routeMetrics.qualityScore : null);
+  return {
+    score,
+    normalizedScore,
+    routeQualityScore,
+    strategicEffectScore: getAiCandidateStrategicEffectScore(candidate),
+  };
+}
+
+function compareAiCandidatesByUtility(nextCandidate, currentCandidate, epsilon = 0.0001){
+  if(!nextCandidate) return false;
+  if(!currentCandidate) return true;
+
+  const nextUtility = getAiCandidateUtilitySnapshot(nextCandidate);
+  const currentUtility = getAiCandidateUtilitySnapshot(currentCandidate);
+
+  if(nextUtility.score < currentUtility.score - epsilon) return true;
+  if(nextUtility.score > currentUtility.score + epsilon) return false;
+
+  if(Number.isFinite(nextUtility.normalizedScore) && Number.isFinite(currentUtility.normalizedScore)){
+    if(nextUtility.normalizedScore < currentUtility.normalizedScore - epsilon) return true;
+    if(nextUtility.normalizedScore > currentUtility.normalizedScore + epsilon) return false;
+  }
+
+  if(Number.isFinite(nextUtility.routeQualityScore) && Number.isFinite(currentUtility.routeQualityScore)){
+    if(nextUtility.routeQualityScore > currentUtility.routeQualityScore + epsilon) return true;
+    if(nextUtility.routeQualityScore < currentUtility.routeQualityScore - epsilon) return false;
+  }
+
+  if(nextUtility.strategicEffectScore > currentUtility.strategicEffectScore + epsilon) return true;
+  if(nextUtility.strategicEffectScore < currentUtility.strategicEffectScore - epsilon) return false;
+
+  return false;
+}
+
+function getAiCandidateUtilityGap(nextCandidate, currentCandidate){
+  const nextUtility = getAiCandidateUtilitySnapshot(nextCandidate);
+  const currentUtility = getAiCandidateUtilitySnapshot(currentCandidate);
+  if(!nextUtility || !currentUtility) return null;
+  return {
+    scoreGap: Number.isFinite(nextUtility.score) && Number.isFinite(currentUtility.score)
+      ? Math.abs(nextUtility.score - currentUtility.score)
+      : null,
+    normalizedScoreGap: Number.isFinite(nextUtility.normalizedScore) && Number.isFinite(currentUtility.normalizedScore)
+      ? Math.abs(nextUtility.normalizedScore - currentUtility.normalizedScore)
+      : null,
+    routeQualityGap: Number.isFinite(nextUtility.routeQualityScore) && Number.isFinite(currentUtility.routeQualityScore)
+      ? Math.abs(nextUtility.routeQualityScore - currentUtility.routeQualityScore)
+      : null,
+    strategicEffectGap: Math.abs(nextUtility.strategicEffectScore - currentUtility.strategicEffectScore),
+  };
+}
+
+function areAiCandidatesNearEqualByUtility(nextCandidate, currentCandidate){
+  const gap = getAiCandidateUtilityGap(nextCandidate, currentCandidate);
+  if(!gap) return false;
+  const scoreNear = !Number.isFinite(gap.scoreGap) || gap.scoreGap <= AI_REPEAT_TIE_BREAK_SCORE_MARGIN;
+  const normalizedNear = !Number.isFinite(gap.normalizedScoreGap) || gap.normalizedScoreGap <= AI_CLASS_SCORE_TIE_EPSILON;
+  const routeNear = !Number.isFinite(gap.routeQualityGap) || gap.routeQualityGap <= 0.035;
+  const strategicNear = gap.strategicEffectGap <= 0.35;
+  return scoreNear && normalizedNear && routeNear && strategicNear;
+}
+
 function getAiPlaneAdjustedScore(score, plane){
   if(!Number.isFinite(score)) return score;
   return scoreMoveForPlane(score, plane).finalScore;
@@ -17469,6 +17564,7 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
   if(!nextCandidate) return false;
   if(!currentCandidate) return true;
   compareAiCandidateByScoreAndRotation.lastClassTieBreakReason = null;
+  compareAiCandidateByScoreAndRotation.lastRotationDecisionMeta = null;
 
   const epsilon = 0.0001;
   const nextPlaneId = nextCandidate?.plane?.id ?? null;
@@ -17620,6 +17716,18 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
     }
   }
 
+  if(compareAiCandidatesByUtility(nextCandidate, currentCandidate, epsilon)){
+    return true;
+  }
+  if(compareAiCandidatesByUtility(currentCandidate, nextCandidate, epsilon)){
+    return false;
+  }
+
+  const nearEqualByUtility = areAiCandidatesNearEqualByUtility(nextCandidate, currentCandidate);
+  if(!nearEqualByUtility){
+    return false;
+  }
+
   if(nextEffectiveScore < currentEffectiveScore - epsilon){
     return true;
   }
@@ -17656,21 +17764,56 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
   const nextIdleTurns = nextCandidate.idleTurns ?? nextRotationMeta.idleTurns ?? 0;
   const currentIdleTurns = currentCandidate.idleTurns ?? currentRotationMeta.idleTurns ?? 0;
 
+  const utilityLeader = compareAiCandidatesByUtility(nextCandidate, currentCandidate, epsilon)
+    ? nextCandidate
+    : (compareAiCandidatesByUtility(currentCandidate, nextCandidate, epsilon) ? currentCandidate : null);
+  const rotationDecisionGap = getAiCandidateUtilityGap(nextCandidate, currentCandidate);
+
   const idleDiff = nextIdleTurns - currentIdleTurns;
   if(Math.abs(idleDiff) > 0){
-    return idleDiff > 0;
+    const prefersNext = idleDiff > 0;
+    const rotationWinner = prefersNext ? nextCandidate : currentCandidate;
+    if(utilityLeader && rotationWinner !== utilityLeader){
+      compareAiCandidateByScoreAndRotation.lastRotationDecisionMeta = {
+        reason: "idle_turns",
+        utilityLeaderPlaneId: utilityLeader?.plane?.id ?? null,
+        rotationWinnerPlaneId: rotationWinner?.plane?.id ?? null,
+        utilityLoss: rotationDecisionGap,
+      };
+    }
+    return prefersNext;
   }
 
   const repeatDiff = (nextCandidate.repeatInWindow ?? nextRotationMeta.repeatInWindow ?? 0)
     - (currentCandidate.repeatInWindow ?? currentRotationMeta.repeatInWindow ?? 0);
   if(Math.abs(repeatDiff) > 0){
-    return repeatDiff < 0;
+    const prefersNext = repeatDiff < 0;
+    const rotationWinner = prefersNext ? nextCandidate : currentCandidate;
+    if(utilityLeader && rotationWinner !== utilityLeader){
+      compareAiCandidateByScoreAndRotation.lastRotationDecisionMeta = {
+        reason: "repeat_in_window",
+        utilityLeaderPlaneId: utilityLeader?.plane?.id ?? null,
+        rotationWinnerPlaneId: rotationWinner?.plane?.id ?? null,
+        utilityLoss: rotationDecisionGap,
+      };
+    }
+    return prefersNext;
   }
 
   const rotationBonusDiff = (nextCandidate.rotationBonus ?? nextRotationMeta.rotationBonus ?? 0)
     - (currentCandidate.rotationBonus ?? currentRotationMeta.rotationBonus ?? 0);
   if(Math.abs(rotationBonusDiff) > epsilon){
-    return rotationBonusDiff > 0;
+    const prefersNext = rotationBonusDiff > 0;
+    const rotationWinner = prefersNext ? nextCandidate : currentCandidate;
+    if(utilityLeader && rotationWinner !== utilityLeader){
+      compareAiCandidateByScoreAndRotation.lastRotationDecisionMeta = {
+        reason: "rotation_bonus",
+        utilityLeaderPlaneId: utilityLeader?.plane?.id ?? null,
+        rotationWinnerPlaneId: rotationWinner?.plane?.id ?? null,
+        utilityLoss: rotationDecisionGap,
+      };
+    }
+    return prefersNext;
   }
 
   const canUseOpeningSoftRandom = Number.isFinite(aiRoundState?.turnNumber)
@@ -17830,44 +17973,41 @@ function isAiRepeatPlaneCriticalCandidate(candidate){
 function rankAiPlanesForCurrentTurn(aiPlanes){
   if(!Array.isArray(aiPlanes) || aiPlanes.length <= 1) return aiPlanes;
 
-  return [...aiPlanes].sort((a, b) => {
+  const rankedPlanes = [...aiPlanes].sort((a, b) => {
+    const hashA = getStableHashFromParts(["rank", aiRoundState?.turnNumber ?? 0, aiRoundState?.tieBreakerSeed ?? 0, a?.id ?? ""]);
+    const hashB = getStableHashFromParts(["rank", aiRoundState?.turnNumber ?? 0, aiRoundState?.tieBreakerSeed ?? 0, b?.id ?? ""]);
+    return hashA - hashB;
+  });
+
+  const searchOrderLeader = rankedPlanes[0] || null;
+  const rotationLeader = [...rankedPlanes].sort((a, b) => {
     const rankingScoreA = scoreMoveForPlane(1, a).finalScore;
     const rankingScoreB = scoreMoveForPlane(1, b).finalScore;
     if(Math.abs(rankingScoreA - rankingScoreB) > 0.0001){
       return rankingScoreA - rankingScoreB;
     }
+    return getStableHashFromParts(["rank_rotation", aiRoundState?.turnNumber ?? 0, aiRoundState?.tieBreakerSeed ?? 0, a?.id ?? ""])
+      - getStableHashFromParts(["rank_rotation", aiRoundState?.turnNumber ?? 0, aiRoundState?.tieBreakerSeed ?? 0, b?.id ?? ""]);
+  })[0] || null;
 
-    const scoreGap = Math.abs(rankingScoreA - rankingScoreB);
-    const canUseOpeningSoftRandom = Number.isFinite(aiRoundState?.turnNumber)
-      && aiRoundState.turnNumber <= AI_OPENING_SOFT_RANDOM_TURN_LIMIT
-      && scoreGap <= AI_OPENING_SOFT_RANDOM_SCORE_MARGIN;
-
-    if(canUseOpeningSoftRandom){
-      const softRandomA = (getStableHashFromParts([
-        "rank_opening_soft_random",
-        aiRoundState?.turnNumber ?? 0,
-        aiRoundState?.tieBreakerSeed ?? 0,
-        a?.id ?? "",
-      ]) / 0xffffffff) * AI_OPENING_SOFT_RANDOM_MAX_SHIFT;
-      const softRandomB = (getStableHashFromParts([
-        "rank_opening_soft_random",
-        aiRoundState?.turnNumber ?? 0,
-        aiRoundState?.tieBreakerSeed ?? 0,
-        b?.id ?? "",
-      ]) / 0xffffffff) * AI_OPENING_SOFT_RANDOM_MAX_SHIFT;
-      if(Math.abs(softRandomA - softRandomB) > 0.0001){
-        return softRandomA - softRandomB;
-      }
-    }
-
-    const idleA = getAiPlaneIdleTurns(a);
-    const idleB = getAiPlaneIdleTurns(b);
-    if(idleA !== idleB){
-      return idleB - idleA;
-    }
-    return getStableHashFromParts(["rank", aiRoundState?.turnNumber ?? 0, aiRoundState?.tieBreakerSeed ?? 0, a?.id ?? ""])
-      - getStableHashFromParts(["rank", aiRoundState?.turnNumber ?? 0, aiRoundState?.tieBreakerSeed ?? 0, b?.id ?? ""]);
+  logAiDecision("plane_rank_rotation_diagnostics", {
+    neutralSearchLeader: searchOrderLeader
+      ? {
+          planeId: searchOrderLeader.id,
+        }
+      : null,
+    rotationWinnerPlane: rotationLeader
+      ? {
+          planeId: rotationLeader.id,
+          idleTurns: getAiPlaneIdleTurns(rotationLeader),
+          repeatInWindow: scoreMoveForPlane(1, rotationLeader).repeatInWindow,
+          rotationBonus: Number(scoreMoveForPlane(1, rotationLeader).rotationBonus.toFixed(3)),
+        }
+      : null,
+    rotationChangedLeader: Boolean(searchOrderLeader && rotationLeader && searchOrderLeader.id !== rotationLeader.id),
   });
+
+  return rankedPlanes;
 }
 
 function getAvailableInventoryCount(color){
@@ -26690,15 +26830,22 @@ function buildAiFinalComparedSnapshot(candidate){
   const routeMetrics = candidate?.routeMetrics || null;
   const score = Number.isFinite(candidate?.score) ? Number(candidate.score.toFixed(3)) : null;
   const normalizedScore = Number.isFinite(candidate?.normalizedScore) ? Number(candidate.normalizedScore.toFixed(3)) : null;
+  const routeQualityScore = Number.isFinite(candidate?.routeQualityScore)
+    ? Number(candidate.routeQualityScore.toFixed(4))
+    : (Number.isFinite(routeMetrics?.qualityScore) ? Number(routeMetrics.qualityScore.toFixed(4)) : null);
+  const strategicEffectScore = Number(getAiCandidateStrategicEffectScore(candidate).toFixed(4));
   return {
     planeId: candidate?.plane?.id ?? null,
     enemyId: candidate?.enemy?.id ?? null,
     classLabel: getAiCandidateClassLabel(candidate),
     score,
     normalizedScore,
+    routeQualityScore,
+    strategicEffectScore,
     finalScoreBreakdown: candidate?.finalScoreBreakdown || null,
     lowPassabilityBlockedLike: candidate?.lowPassabilityBlockedLike === true,
     classTieBreakReason: candidate?.classTieBreakReason || null,
+    rotationDecisionMeta: candidate?.rotationDecisionMeta || null,
     routeMetrics: routeMetrics
       ? {
           clearance: Number.isFinite(routeMetrics?.clearance) ? Number(routeMetrics.clearance.toFixed(2)) : null,
@@ -26727,11 +26874,26 @@ function logAiFinalComparedDiagnostics(candidates, bestCandidate, meta = {}){
     && winnerClass === "direct"
     && winner?.lowPassabilityBlockedLike === true;
 
+  const bestUtilityCandidate = candidates.reduce((best, candidate) => (
+    compareAiCandidatesByUtility(candidate, best) ? candidate : best
+  ), null);
+  const bestUtilitySnapshot = buildAiFinalComparedSnapshot(bestUtilityCandidate);
+  const rotationDecisionMeta = bestCandidate?.rotationDecisionMeta || compareAiCandidateByScoreAndRotation.lastRotationDecisionMeta || null;
+
   const payload = {
     source: meta?.source || "unknown",
     goalName: meta?.goalName || null,
     comparedCount: snapshots.length,
     classPresence,
+    bestUtilityMove: bestUtilitySnapshot,
+    winnerAfterRotation: winner,
+    rotationChangedWinner: Boolean(bestUtilitySnapshot?.planeId && winner?.planeId && bestUtilitySnapshot.planeId !== winner.planeId),
+    rotationOverride: (bestUtilitySnapshot?.planeId && winner?.planeId && bestUtilitySnapshot.planeId !== winner.planeId)
+      ? {
+          reason: rotationDecisionMeta?.reason || "rotation_tie_break",
+          utilityLoss: rotationDecisionMeta?.utilityLoss || getAiCandidateUtilityGap(bestCandidate, bestUtilityCandidate),
+        }
+      : null,
     winner,
     finalCompared: snapshots,
   };
