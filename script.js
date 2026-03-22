@@ -14375,11 +14375,8 @@ function showAiLaunchNotice(message, options = {}){
   }
 }
 
-function showAiLaunchPreparationNotice(message = "Компьютер готовится к ходу…"){
-  showAiLaunchNotice(message, {
-    persistent: true,
-    kind: "preparation",
-  });
+function showAiLaunchPreparationNotice(){
+  clearAiLaunchStallNotice();
 }
 
 function showAiLaunchStallNotice(message = "Игра была приостановлена отладчиком или выполнение было задержано"){
