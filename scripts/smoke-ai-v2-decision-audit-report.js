@@ -30,11 +30,20 @@ assert(
   'window export for exportAiV2DecisionAuditReportJson must be registered in script.js.'
 );
 assert(
+  source.includes('window.exportAiV2DecisionAuditCompactReportJson = exportAiV2DecisionAuditCompactReportJson;'),
+  'window export for exportAiV2DecisionAuditCompactReportJson must be registered in script.js.'
+);
+assert(
   source.includes('if(normalized === "v2-report")'),
   'AI_DEBUG_CMD must support v2-report command.'
 );
+assert(
+  source.includes('if(normalized === "v2-report-compact")'),
+  'AI_DEBUG_CMD must support v2-report-compact command.'
+);
 
 const fnSrc = extractFunctionSource(source, 'exportAiV2DecisionAuditReportJson');
+const compactFnSrc = extractFunctionSource(source, 'exportAiV2DecisionAuditCompactReportJson');
 
 const context = {
   safeNowIso: () => '2026-03-16T00:00:00.000Z',
@@ -70,7 +79,7 @@ const context = {
 };
 
 vm.createContext(context);
-vm.runInContext(`${fnSrc}\nthis.exportAiV2DecisionAuditReportJson = exportAiV2DecisionAuditReportJson;`, context);
+vm.runInContext(`${fnSrc}\n${compactFnSrc}\nthis.exportAiV2DecisionAuditReportJson = exportAiV2DecisionAuditReportJson;\nthis.exportAiV2DecisionAuditCompactReportJson = exportAiV2DecisionAuditCompactReportJson;`, context);
 
 const report = context.exportAiV2DecisionAuditReportJson();
 assert(report && report.reportType === 'ai_v2_decision_audit_report', 'Must return ai_v2_decision_audit_report.');
@@ -84,4 +93,11 @@ assert(report.summary.failSafeTurnAdvanceEpisodes === 2, 'Must expose fail-safe 
 assert(report.summary.failSafeTurnShareAmongAiTurns === 0.4, 'Must expose fail-safe turn share in summary.');
 assert(report.reports && report.reports.turns && report.reports.qualityGap && report.reports.fallbackDiagnostics, 'Must include all nested reports.');
 
-console.log('Smoke test passed: exportAiV2DecisionAuditReportJson builds unified v2 report.');
+const compactReport = context.exportAiV2DecisionAuditCompactReportJson();
+assert(compactReport && compactReport.reportType === 'ai_v2_decision_audit_compact_report', 'Must return ai_v2_decision_audit_compact_report.');
+assert(compactReport.summary && compactReport.summary.aiDecisionEventsCount === 5, 'Compact report must expose aiDecisionEventsCount.');
+assert(Array.isArray(compactReport.lastAiDecisions), 'Compact report must expose compact decision trail.');
+assert(compactReport.difficultyDigest && Array.isArray(compactReport.difficultyDigest.fallbackSummaryLines), 'Compact report must expose fallback summary digest.');
+assert(compactReport.usageHint && compactReport.usageHint.command === 'window.exportAiV2DecisionAuditCompactReportJson()', 'Compact report must explain its direct command.');
+
+console.log('Smoke test passed: v2 full and compact AI decision audit reports are wired.');
