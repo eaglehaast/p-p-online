@@ -29679,6 +29679,7 @@ function probeInventoryPreparedShotPlan(goalSelection = {}, modeContext = {}, la
       decisionReason: candidate.decisionReason || "inventory_prepared_plan",
       move: {
         ...candidate,
+        plane: candidate.plane,
         goalName: candidate.goalName || goalName,
         selectedInventoryCandidate,
         inventoryCandidates: Array.isArray(inventoryPlanning?.candidates) ? inventoryPlanning.candidates.slice() : [],
@@ -29743,8 +29744,16 @@ function buildShotPlan(goalSelection = {}, modeContext = {}, options = {}){
           routeClass: route.routeClass,
           decisionReason: route.reason,
         });
-        const validation = validateAiLaunchMoveCandidate(move);
-        if(!move || !validation.ok) continue;
+        if(!move) continue;
+
+        const moveCandidate = {
+          ...move,
+          plane,
+          routeClass: move.routeClass || route.routeClass,
+          enemy,
+        };
+        const validation = validateAiLaunchMoveCandidate(moveCandidate);
+        if(!validation.ok) continue;
 
         const expectedEndPoint = {
           x: Number((plane.x + move.vx * FIELD_FLIGHT_DURATION_SEC).toFixed(1)),
@@ -29801,11 +29810,7 @@ function buildShotPlan(goalSelection = {}, modeContext = {}, options = {}){
             score,
             goalName,
             decisionReason: `${route.reason}__goal_${goalName}`,
-            move: {
-              ...move,
-              routeClass: route.routeClass,
-              enemy,
-            },
+            move: moveCandidate,
             shotPreview,
             multiKillContext,
             killCountOnTrajectory,
