@@ -28686,6 +28686,7 @@ function runAiTurnV2(context = {}){
 
   const chosenGoal = chooseGoal(modeContext);
   const shotPlan = buildShotPlan(chosenGoal, modeContext);
+  const shotPlanInventoryPreparationDiagnostics = shotPlan?.inventoryPreparationDiagnostics || null;
   if(shotPlan?.move){
     aiRoundState.currentGoal = shotPlan.goalName || chosenGoal.goalName;
     return issueAIMoveFromDoComputerMove(modeContext, {
@@ -28698,12 +28699,21 @@ function runAiTurnV2(context = {}){
       chooseGoal: chosenGoal,
       shotPreview: shotPlan.shotPreview,
       routeClass: shotPlan?.move?.routeClass || null,
+      inventoryPreparationDiagnostics: shotPlanInventoryPreparationDiagnostics,
     });
   }
 
   const legacyFallbackException = shouldAllowLegacyFallbackForGroupKillException(modeContext, modeContext.groupKillPriorityPlan);
   const rejectReasons = ["no_v2_shot_plan_move"];
   const reasonCodes = ["v2_shot_plan_not_found"];
+  if(shotPlanInventoryPreparationDiagnostics?.inventoryPreparationChecked){
+    reasonCodes.push("inventory_preparation_checked");
+    if(shotPlanInventoryPreparationDiagnostics?.canConvertNoShotPlanMove){
+      reasonCodes.push("inventory_could_convert_no_v2_shot_plan_move");
+    } else {
+      rejectReasons.push("inventory_could_not_convert_no_v2_shot_plan_move");
+    }
+  }
 
   if(modeContext.groupKillPriorityPlan?.move && modeContext.groupKillPriorityPlan.killCountOnTrajectory >= 3){
     reasonCodes.push("v2_shot_plan_not_found_but_triple_kill_exists");
@@ -28767,6 +28777,17 @@ function runAiTurnV2(context = {}){
     });
   }
 
+  logAiDecision("v2_shot_plan_not_found_inventory_probe", {
+    goal: chosenGoal?.goalName || null,
+    inventoryPreparationChecked: shotPlanInventoryPreparationDiagnostics?.inventoryPreparationChecked === true,
+    checkedCandidateCount: shotPlanInventoryPreparationDiagnostics?.checkedCandidateCount ?? 0,
+    convertibleCandidateCount: shotPlanInventoryPreparationDiagnostics?.convertibleCandidateCount ?? 0,
+    canConvertNoShotPlanMove: shotPlanInventoryPreparationDiagnostics?.canConvertNoShotPlanMove === true,
+    bestPreparationSource: shotPlanInventoryPreparationDiagnostics?.bestPreparationSource || null,
+    bestPlaneId: shotPlanInventoryPreparationDiagnostics?.bestPlaneId ?? null,
+    bestItemType: shotPlanInventoryPreparationDiagnostics?.bestItemType || null,
+    consideredItems: shotPlanInventoryPreparationDiagnostics?.consideredItems || null,
+  });
   recordAiSelfAnalyzerDecision("v2_shot_plan_not_found", {
     goal: chosenGoal?.goalName || null,
     reasonCodes: [
@@ -28776,6 +28797,9 @@ function runAiTurnV2(context = {}){
     rejectReasons,
     source: "runAiTurnV2",
     routeClass: null,
+    fallbackDiagnostics: {
+      inventoryPreparationDiagnostics: shotPlanInventoryPreparationDiagnostics,
+    },
   });
 
   return doComputerMoveLegacy({
@@ -28835,6 +28859,211 @@ function chooseGoal(modeContext = {}){
     mode: evaluation?.selectedMode || null,
     evaluation,
   };
+}
+
+function shouldProbeInventoryPreparedShotPlan(goalName = ""){
+  const safeGoal = `${goalName || ""}`.toLowerCase();
+  return safeGoal === "attack_enemy_plane"
+    || safeGoal === "preserve_planes"
+    || safeGoal === "opening_center_control"
+    || safeGoal === "direct_finisher"
+    || safeGoal.startsWith("emergency_base_defense_")
+    || safeGoal === "emergency_base_hold_position";
+}
+
+function buildInventoryPreparationCandidates(goalSelection = {}, modeContext = {}, launchReadyPlanes = [], enemies = []){
+  const goalName = goalSelection?.goalName || "attack_enemy_plane";
+  const goalText = `${goalName || ""}`.toLowerCase();
+  const candidates = [];
+  const seenMoveKeys = new Set();
+  const addCandidate = (candidate) => {
+    if(!candidate?.plane || !Number.isFinite(candidate?.vx) || !Number.isFinite(candidate?.vy)) return;
+    const key = [candidate.plane?.id ?? "plane", candidate.goalName || goalName, candidate.decisionReason || "prep", Number(candidate.vx).toFixed(3), Number(candidate.vy).toFixed(3)].join("|");
+    if(seenMoveKeys.has(key)) return;
+    seenMoveKeys.add(key);
+    candidates.push(candidate);
+  };
+
+  if(goalText === "attack_enemy_plane" || goalText === "direct_finisher"){
+    for(const plane of launchReadyPlanes){
+      for(const enemy of enemies){
+        const move = typeof findSafePreparationMoveForAttack === "function"
+          ? findSafePreparationMoveForAttack(plane, enemy, { goalName })
+          : null;
+        if(!move) continue;
+        addCandidate({
+          plane,
+          enemy,
+          ...move,
+          goalName,
+          decisionReason: move.decisionReason || (goalText === "direct_finisher" ? "inventory_finisher_setup" : "inventory_attack_setup"),
+          inventoryPreparationSource: goalText === "direct_finisher" ? "direct_finisher_setup" : "attack_setup",
+        });
+      }
+    }
+  }
+
+  if(goalText === "preserve_planes"){
+    for(const plane of launchReadyPlanes){
+      const nearestEnemy = enemies.reduce((best, enemy) => {
+        if(!enemy) return best;
+        if(!best) return enemy;
+        return dist(plane, enemy) < dist(plane, best) ? enemy : best;
+      }, null);
+      if(!nearestEnemy) continue;
+      const awayAngle = Math.atan2(plane.y - nearestEnemy.y, plane.x - nearestEnemy.x);
+      const targetX = plane.x + Math.cos(awayAngle) * MAX_DRAG_DISTANCE;
+      const targetY = plane.y + Math.sin(awayAngle) * MAX_DRAG_DISTANCE;
+      const move = planPathToPoint(plane, targetX, targetY, {
+        goalName: "preserve_planes",
+        decisionReason: "inventory_preserve_planes_setup",
+      });
+      if(!move) continue;
+      addCandidate({
+        plane,
+        enemy: nearestEnemy,
+        ...move,
+        goalName: "preserve_planes",
+        decisionReason: "inventory_preserve_planes_setup",
+        inventoryPreparationSource: "preserve_planes_escape_setup",
+      });
+    }
+  }
+
+  if(goalText === "opening_center_control"){
+    const center = typeof getCenterControlAnchor === "function"
+      ? getCenterControlAnchor()
+      : { x: FIELD_LEFT + FIELD_WIDTH / 2, y: FIELD_TOP + FIELD_HEIGHT / 2 };
+    const softScales = [1, 0.82, 0.68, 0.54];
+    for(const plane of launchReadyPlanes){
+      for(const scale of softScales){
+        const targetX = plane.x + (center.x - plane.x) * scale;
+        const targetY = plane.y + (center.y - plane.y) * scale;
+        const move = planPathToPoint(plane, targetX, targetY, {
+          goalName: "opening_center_control",
+          decisionReason: scale >= 0.999 ? "inventory_opening_center_setup" : "inventory_opening_center_soft_setup",
+        });
+        if(!move) continue;
+        addCandidate({
+          plane,
+          ...move,
+          goalName: "opening_center_control",
+          decisionReason: scale >= 0.999 ? "inventory_opening_center_setup" : "inventory_opening_center_soft_setup",
+          inventoryPreparationSource: scale >= 0.999 ? "opening_center_direct_setup" : "opening_center_soft_setup",
+          openingCenterScale: Number(scale.toFixed(2)),
+        });
+        break;
+      }
+    }
+  }
+
+  if(goalText.startsWith("emergency_base_defense_") || goalText === "emergency_base_hold_position"){
+    const threat = modeContext?.defensivePriority?.directBaseThreat || modeContext?.criticalBaseThreat || null;
+    if(threat && typeof collectEmergencyDefenseCandidates === "function"){
+      const defenseCandidates = collectEmergencyDefenseCandidates(modeContext, threat, {
+        includeDirectIntercept: false,
+        includeFutureInterceptSetup: true,
+        includeLaneBlock: true,
+        includeTrajectoryBlock: true,
+        includeCoverHold: true,
+      });
+      for(const candidate of defenseCandidates){
+        addCandidate({
+          ...candidate,
+          goalName: candidate.goalName || goalName,
+          decisionReason: candidate.decisionReason || "inventory_emergency_setup",
+          inventoryPreparationSource: candidate.defenseCandidateType || "emergency_setup",
+        });
+      }
+    }
+  }
+
+  return candidates;
+}
+
+function probeInventoryPreparedShotPlan(goalSelection = {}, modeContext = {}, launchReadyPlanes = [], enemies = []){
+  const goalName = goalSelection?.goalName || "attack_enemy_plane";
+  if(!shouldProbeInventoryPreparedShotPlan(goalName)){
+    return {
+      bestPlan: null,
+      diagnostics: {
+        goalName,
+        inventoryPreparationChecked: false,
+        skipReason: "goal_not_supported_for_inventory_preparation",
+      },
+    };
+  }
+
+  const preparationCandidates = buildInventoryPreparationCandidates(goalSelection, modeContext, launchReadyPlanes, enemies);
+  const diagnostics = {
+    goalName,
+    inventoryPreparationChecked: true,
+    checkedCandidateCount: preparationCandidates.length,
+    convertibleCandidateCount: 0,
+    consideredItems: {},
+    bestPreparationSource: null,
+    bestPlaneId: null,
+    bestItemType: null,
+    canConvertNoShotPlanMove: false,
+  };
+  let bestPlan = null;
+
+  for(const candidate of preparationCandidates){
+    const inventoryPlanning = buildAiInventoryCandidatePlans(modeContext, candidate);
+    const selectedInventoryCandidate = inventoryPlanning?.selectedCandidate || null;
+    const consideredTypes = Array.isArray(inventoryPlanning?.candidates)
+      ? inventoryPlanning.candidates.map((entry) => entry?.itemType).filter(Boolean)
+      : [];
+    for(const itemType of consideredTypes){
+      diagnostics.consideredItems[itemType] = (diagnostics.consideredItems[itemType] || 0) + 1;
+    }
+    if(!selectedInventoryCandidate) continue;
+
+    diagnostics.convertibleCandidateCount += 1;
+    const itemScore = Number.isFinite(selectedInventoryCandidate.adjustedComparableScore)
+      ? selectedInventoryCandidate.adjustedComparableScore
+      : (Number.isFinite(selectedInventoryCandidate.comparableScore) ? selectedInventoryCandidate.comparableScore : 0);
+    const moveDistance = Number.isFinite(candidate.totalDist) ? candidate.totalDist : Math.hypot(candidate.vx || 0, candidate.vy || 0);
+    const preparationScore = Number((itemScore * 1000 - moveDistance * 0.08).toFixed(3));
+    const enrichedPlan = {
+      score: preparationScore,
+      goalName: candidate.goalName || goalName,
+      decisionReason: candidate.decisionReason || "inventory_prepared_plan",
+      move: {
+        ...candidate,
+        goalName: candidate.goalName || goalName,
+        selectedInventoryCandidate,
+        inventoryCandidates: Array.isArray(inventoryPlanning?.candidates) ? inventoryPlanning.candidates.slice() : [],
+        rejectedInventoryCandidates: Array.isArray(inventoryPlanning?.rejected) ? inventoryPlanning.rejected.slice() : [],
+        inventoryUsageReason: selectedInventoryCandidate.reason || candidate.inventoryUsageReason || null,
+        inventoryPreparationSource: candidate.inventoryPreparationSource || null,
+      },
+      shotPreview: {
+        trajectoryType: "inventory_preparation",
+        routeClass: candidate.routeClass || null,
+        inventoryItemType: selectedInventoryCandidate.itemType,
+        inventoryReason: selectedInventoryCandidate.reason || null,
+        preparationSource: candidate.inventoryPreparationSource || null,
+      },
+      inventoryPreparationDiagnostics: {
+        planeId: candidate.plane?.id ?? null,
+        enemyId: candidate.enemy?.id ?? null,
+        itemType: selectedInventoryCandidate.itemType,
+        itemReason: selectedInventoryCandidate.reason || null,
+        adjustedComparableScore: selectedInventoryCandidate.adjustedComparableScore ?? selectedInventoryCandidate.comparableScore ?? null,
+        inventoryPreparationSource: candidate.inventoryPreparationSource || null,
+      },
+    };
+    if(!bestPlan || preparationScore > bestPlan.score + 0.0001){
+      bestPlan = enrichedPlan;
+      diagnostics.bestPreparationSource = candidate.inventoryPreparationSource || null;
+      diagnostics.bestPlaneId = candidate.plane?.id ?? null;
+      diagnostics.bestItemType = selectedInventoryCandidate.itemType;
+      diagnostics.canConvertNoShotPlanMove = true;
+    }
+  }
+
+  return { bestPlan, diagnostics };
 }
 
 function buildShotPlan(goalSelection = {}, modeContext = {}, options = {}){
@@ -28938,7 +29167,30 @@ function buildShotPlan(goalSelection = {}, modeContext = {}, options = {}){
     }
   }
 
-  return bestPlan;
+  const inventoryPreparedProbe = probeInventoryPreparedShotPlan(goalSelection, modeContext, launchReadyPlanes, enemies);
+  if(bestPlan){
+    bestPlan.inventoryPreparationDiagnostics = inventoryPreparedProbe?.diagnostics || null;
+    return bestPlan;
+  }
+
+  if(inventoryPreparedProbe?.diagnostics){
+    logAiDecision("v2_inventory_preparation_probe", {
+      goal: goalName,
+      checkedCandidateCount: inventoryPreparedProbe.diagnostics.checkedCandidateCount,
+      convertibleCandidateCount: inventoryPreparedProbe.diagnostics.convertibleCandidateCount,
+      canConvertNoShotPlanMove: inventoryPreparedProbe.diagnostics.canConvertNoShotPlanMove,
+      bestPreparationSource: inventoryPreparedProbe.diagnostics.bestPreparationSource,
+      bestPlaneId: inventoryPreparedProbe.diagnostics.bestPlaneId,
+      bestItemType: inventoryPreparedProbe.diagnostics.bestItemType,
+      consideredItems: inventoryPreparedProbe.diagnostics.consideredItems,
+    });
+  }
+
+  if(inventoryPreparedProbe?.bestPlan){
+    return inventoryPreparedProbe.bestPlan;
+  }
+
+  return null;
 }
 
 if(typeof window !== "undefined"){
