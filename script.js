@@ -16976,6 +16976,63 @@ function logAiMultiKillOpportunity(reason, details = {}){
   });
 }
 
+function doesPlannedMoveMatchDynamiteExpectedRoute(plannedMove, expectedRoute){
+  if(!plannedMove || !expectedRoute) return false;
+  if(expectedRoute.planeId != null && plannedMove?.plane?.id !== expectedRoute.planeId) return false;
+
+  const landingPoint = getAiMoveLandingPoint(plannedMove);
+  const actualDirection = getAiMoveRouteDirection(plannedMove);
+  const landingMatches = expectedRoute?.landingPoint
+    && landingPoint
+    && Math.hypot((landingPoint.x ?? Infinity) - expectedRoute.landingPoint.x, (landingPoint.y ?? Infinity) - expectedRoute.landingPoint.y) <= Math.max(CELL_SIZE * 0.75, 28);
+  const directionMatches = Number.isFinite(expectedRoute?.directionDeg)
+    && Number.isFinite(actualDirection)
+    && getAngleDeltaDeg(actualDirection, expectedRoute.directionDeg) <= 16;
+  const routeClassMatches = !expectedRoute?.routeClass || !plannedMove?.routeClass || expectedRoute.routeClass === plannedMove.routeClass;
+  return Boolean(routeClassMatches && (landingMatches || directionMatches));
+}
+
+function setAiDynamiteIntentFromCandidate(targetGeometry, usageReason, plannedMove, expectedRoute = null){
+  if(!targetGeometry) return null;
+  const expiresTurn = (Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : 0) + 1;
+  aiRoundState.dynamiteIntent = {
+    colliderId: targetGeometry?.collider?.id ?? null,
+    spriteId: targetGeometry?.id ?? null,
+    x: targetGeometry?.cx ?? null,
+    y: targetGeometry?.cy ?? null,
+    expectedRoute: expectedRoute || null,
+    expiresTurn,
+  };
+  logAiDecision("dynamite_intent_set", {
+    colliderId: targetGeometry?.collider?.id ?? null,
+    spriteId: targetGeometry?.id ?? null,
+    targetX: Number.isFinite(targetGeometry?.cx) ? Number(targetGeometry.cx.toFixed(1)) : null,
+    targetY: Number.isFinite(targetGeometry?.cy) ? Number(targetGeometry.cy.toFixed(1)) : null,
+    usageReason: usageReason || null,
+    expiresTurn,
+    turn: aiRoundState?.turnNumber ?? null,
+    expectedRoute: expectedRoute || null,
+    planeId: plannedMove?.plane?.id ?? null,
+  });
+  return aiRoundState.dynamiteIntent;
+}
+
+function validateAiDynamiteIntentAgainstMove(plannedMove, options = {}){
+  const intent = aiRoundState?.dynamiteIntent;
+  if(!intent || !plannedMove?.plane) return { valid: true, reason: "no_intent" };
+
+  const usageCheck = getAiDynamiteIntentScoreAdjustment(1, plannedMove, { plane: plannedMove?.plane });
+  if(!usageCheck.usedIntent){
+    return { valid: false, reason: "intent_lane_mismatch", usageCheck };
+  }
+
+  if(intent?.expectedRoute && !doesPlannedMoveMatchDynamiteExpectedRoute(plannedMove, intent.expectedRoute)){
+    return { valid: false, reason: "expected_route_mismatch", usageCheck };
+  }
+
+  return { valid: true, reason: "ok", usageCheck };
+}
+
 function getAiDynamiteIntentScoreAdjustment(score, move, context = {}){
   const baseScore = Number.isFinite(score) ? score : 0;
   const intent = aiRoundState?.dynamiteIntent;
@@ -16995,26 +17052,33 @@ function getAiDynamiteIntentScoreAdjustment(score, move, context = {}){
   const distanceToIntentLane = getDistanceFromPointToSegment(intent.x, intent.y, plane.x, plane.y, targetX, targetY);
   const usesIntentLane = distanceToIntentLane <= AI_DYNAMITE_INTENT_LINE_TOLERANCE;
   if(!usesIntentLane){
-    return { score: baseScore, usedIntent: false, bonusApplied: false };
+    return { score: baseScore, usedIntent: false, bonusApplied: false, routeMatched: false };
+  }
+
+  const expectedRouteMatched = !intent?.expectedRoute || doesPlannedMoveMatchDynamiteExpectedRoute(move, intent.expectedRoute);
+  if(!expectedRouteMatched){
+    return { score: baseScore, usedIntent: false, bonusApplied: false, routeMatched: false };
   }
 
   return {
     score: baseScore * AI_DYNAMITE_INTENT_SCORE_BONUS,
     usedIntent: true,
     bonusApplied: true,
+    routeMatched: true,
   };
 }
 
 function consumeAiDynamiteIntentIfUsed(plannedMove){
   const intent = aiRoundState?.dynamiteIntent;
   if(!intent) return false;
-  const usageCheck = getAiDynamiteIntentScoreAdjustment(1, plannedMove, { plane: plannedMove?.plane });
-  if(!usageCheck.usedIntent) return false;
+  const validation = validateAiDynamiteIntentAgainstMove(plannedMove);
+  if(!validation.valid) return false;
   logAiDecision("dynamite_intent_used", {
     planeId: plannedMove?.plane?.id ?? null,
     colliderId: intent?.colliderId ?? null,
     targetX: Number.isFinite(intent?.x) ? Number(intent.x.toFixed(1)) : null,
     targetY: Number.isFinite(intent?.y) ? Number(intent.y.toFixed(1)) : null,
+    expectedRoute: intent?.expectedRoute || null,
     turn: aiRoundState?.turnNumber ?? null,
   });
   clearAiDynamiteIntent("used");
@@ -19494,12 +19558,177 @@ function getDynamiteCandidateForCurrentRoute(context, plannedMove){
       routeTarget.y,
       candidate.collider?.id
     );
-    if(pathClearAfterExplosion){
-      return candidate;
-    }
+    if(!pathClearAfterExplosion) continue;
+
+    const replanResult = replanMoveForDynamiteOpening(context, plannedMove, candidate, {
+      targetPoint: routeTarget,
+      compareLabel: ["dynamite_current_route", plannedMove?.goalName || "", plane?.id || ""],
+    });
+    if(!replanResult) continue;
+    if(!replanResult.usesOpenedCorridor && !replanResult.noticeableImprovement) continue;
+
+    return {
+      ...candidate,
+      replanResult,
+    };
   }
 
   return null;
+}
+
+function withTemporarilyIgnoredDynamiteCollider(targetGeometry, callback){
+  if(!targetGeometry?.collider?.id || typeof callback !== "function") return null;
+
+  const ignoredColliderId = targetGeometry.collider.id;
+  const originalColliders = Array.isArray(colliders) ? colliders : [];
+  const filteredColliders = originalColliders.filter((collider) => collider?.id !== ignoredColliderId);
+
+  const originalMapSprites = Array.isArray(currentMapSprites) ? currentMapSprites : [];
+  const filteredMapSprites = originalMapSprites.filter((sprite, index) => {
+    const geometry = getMapSpriteGeometry(sprite, index);
+    return geometry?.collider?.id !== ignoredColliderId;
+  });
+
+  colliders = filteredColliders;
+  currentMapSprites = filteredMapSprites;
+  try {
+    return callback();
+  } finally {
+    colliders = originalColliders;
+    currentMapSprites = originalMapSprites;
+  }
+}
+
+function getAiMoveRouteDirection(move){
+  if(Number.isFinite(move?.vx) && Number.isFinite(move?.vy)){
+    const angleRad = Math.atan2(move.vy, move.vx);
+    if(Number.isFinite(angleRad)){
+      return Number((((angleRad * 180) / Math.PI) + 360) % 360).toFixed(2) * 1;
+    }
+  }
+  return null;
+}
+
+function buildAiDynamiteExpectedRouteSnapshot(move, targetPoint = null){
+  const landingPoint = getAiMoveLandingPoint(move);
+  return {
+    planeId: move?.plane?.id ?? null,
+    routeClass: move?.routeClass || null,
+    goalName: move?.goalName || aiRoundState?.currentGoal || null,
+    targetEnemyId: move?.targetEnemy?.id ?? move?.enemy?.id ?? null,
+    targetPoint: targetPoint && Number.isFinite(targetPoint.x) && Number.isFinite(targetPoint.y)
+      ? { x: Number(targetPoint.x.toFixed(1)), y: Number(targetPoint.y.toFixed(1)) }
+      : null,
+    landingPoint: landingPoint && Number.isFinite(landingPoint.x) && Number.isFinite(landingPoint.y)
+      ? { x: Number(landingPoint.x.toFixed(1)), y: Number(landingPoint.y.toFixed(1)) }
+      : null,
+    directionDeg: getAiMoveRouteDirection(move),
+    vx: Number.isFinite(move?.vx) ? Number(move.vx.toFixed(4)) : null,
+    vy: Number.isFinite(move?.vy) ? Number(move.vy.toFixed(4)) : null,
+  };
+}
+
+function doesMoveUseDynamiteCorridor(move, targetGeometry){
+  const plane = move?.plane;
+  const landingPoint = getAiMoveLandingPoint(move);
+  if(!plane || !landingPoint || !targetGeometry?.collider) return false;
+
+  if(checkLineIntersectionWithCollider(plane.x, plane.y, landingPoint.x, landingPoint.y, targetGeometry.collider)){
+    return true;
+  }
+
+  const corridorDistance = getDistanceFromPointToSegment(
+    targetGeometry.cx,
+    targetGeometry.cy,
+    plane.x,
+    plane.y,
+    landingPoint.x,
+    landingPoint.y
+  );
+  return Number.isFinite(corridorDistance) && corridorDistance <= Math.max(CELL_SIZE * 0.8, AI_DYNAMITE_INTENT_LINE_TOLERANCE);
+}
+
+function replanMoveForDynamiteOpening(context, plannedMove, targetGeometry, options = {}){
+  const plane = plannedMove?.plane;
+  if(!plane || !targetGeometry?.collider?.id || typeof planPathWithSpecialRouteProbe !== "function") return null;
+
+  const targetPoint = options?.targetPoint || getAiStrategicTargetPoint(context, plannedMove);
+  if(!targetPoint || !Number.isFinite(targetPoint.x) || !Number.isFinite(targetPoint.y)) return null;
+
+  const compareLabel = Array.isArray(options?.compareLabel) ? options.compareLabel : ["dynamite_replan", plannedMove?.goalName || "", plane?.id || ""];
+  const replannedMove = withTemporarilyIgnoredDynamiteCollider(targetGeometry, () => planPathWithSpecialRouteProbe(plane, targetPoint.x, targetPoint.y, {
+    goalName: plannedMove?.goalName || aiRoundState?.currentGoal || "dynamite_replan",
+    decisionReason: `${plannedMove?.decisionReason || "dynamite_replan"}_dynamite_replan`,
+    targetEnemy: plannedMove?.targetEnemy || null,
+    enemy: plannedMove?.enemy || plannedMove?.targetEnemy || null,
+    context,
+    routeClass: plannedMove?.routeClass,
+    compareLabel,
+  }));
+  if(!replannedMove) return null;
+
+  const currentScore = Number.isFinite(plannedMove?.score) ? plannedMove.score : 0;
+  const replannedScore = Number.isFinite(replannedMove?.score) ? replannedMove.score : currentScore;
+  const currentDistance = Number.isFinite(plannedMove?.totalDist)
+    ? plannedMove.totalDist
+    : Math.hypot(plannedMove?.vx || 0, plannedMove?.vy || 0) * FIELD_FLIGHT_DURATION_SEC;
+  const replannedDistance = Number.isFinite(replannedMove?.totalDist)
+    ? replannedMove.totalDist
+    : Math.hypot(replannedMove?.vx || 0, replannedMove?.vy || 0) * FIELD_FLIGHT_DURATION_SEC;
+  const usesOpenedCorridor = doesMoveUseDynamiteCorridor(replannedMove, targetGeometry);
+  const scoreGain = replannedScore - currentScore;
+  const distanceGain = replannedDistance - currentDistance;
+  const noticeableImprovement = scoreGain >= 0.12 || distanceGain >= Math.max(CELL_SIZE * 1.35, 48);
+
+  return {
+    move: replannedMove,
+    targetPoint,
+    usesOpenedCorridor,
+    noticeableImprovement,
+    scoreGain: Number(scoreGain.toFixed(3)),
+    distanceGain: Number(distanceGain.toFixed(1)),
+    expectedRoute: buildAiDynamiteExpectedRouteSnapshot(replannedMove, targetPoint),
+  };
+}
+
+function classifyAiMoveForStrategicDynamite(plannedMove, context = null){
+  const goalName = `${plannedMove?.goalName || aiRoundState?.currentGoal || ""}`.toLowerCase();
+  const decisionReason = `${plannedMove?.decisionReason || ""}`.toLowerCase();
+  const routeClass = `${plannedMove?.routeClass || ""}`.toLowerCase();
+  const moveScore = Number.isFinite(plannedMove?.score) ? plannedMove.score : 0;
+  const landingPoint = getAiMoveLandingPoint(plannedMove);
+  const enemyBase = typeof getBaseAnchor === "function" ? getBaseAnchor("green") : null;
+  const priorityEnemy = typeof getBluePriorityEnemy === "function" ? getBluePriorityEnemy(context) : null;
+  const flagTargets = context?.shouldUseFlagsMode && Array.isArray(context?.availableEnemyFlags)
+    ? context.availableEnemyFlags.map((flag) => getFlagAnchor(flag)).filter(Boolean)
+    : [];
+  const reachesFlagPressure = landingPoint && flagTargets.some((flagPoint) => dist(landingPoint, flagPoint) <= CELL_SIZE * 3.2);
+  const reachesEnemyBase = landingPoint && enemyBase && dist(landingPoint, enemyBase) <= CELL_SIZE * 3.4;
+  const attackRangePx = typeof ATTACK_RANGE_PX === "number" && Number.isFinite(ATTACK_RANGE_PX) ? ATTACK_RANGE_PX : 0;
+  const approachesPriorityEnemy = landingPoint && priorityEnemy && dist(landingPoint, priorityEnemy) <= Math.max(getPlaneEffectiveRangePx(plannedMove?.plane), attackRangePx) * 1.05;
+  const isAttacking = goalName.includes("attack")
+    || goalName.includes("finisher")
+    || goalName.includes("flag")
+    || decisionReason.includes("attack")
+    || decisionReason.includes("flag")
+    || routeClass === "direct"
+    || reachesFlagPressure
+    || reachesEnemyBase
+    || approachesPriorityEnemy;
+  const isWeakOrWaiting = moveScore <= 0.18
+    || decisionReason.includes("fallback")
+    || decisionReason.includes("wait")
+    || goalName.includes("fallback")
+    || goalName.includes("prepare")
+    || goalName.includes("defense")
+    || goalName.includes("defence")
+    || routeClass === "gap";
+
+  return {
+    isWeakOrWaiting,
+    isAttacking,
+    classification: isAttacking ? "attacking" : (isWeakOrWaiting ? "weak_or_waiting" : "neutral"),
+  };
 }
 
 function countDynamiteStrategicRouteOptions(originPoint, targetGeometry, points){
@@ -19517,6 +19746,11 @@ function countDynamiteStrategicRouteOptions(originPoint, targetGeometry, points)
 function evaluateStrategicDynamiteTargets(context, plannedMove){
   const plane = plannedMove?.plane;
   if(!plane) return null;
+
+  const moveClassification = classifyAiMoveForStrategicDynamite(plannedMove, context);
+  if(!moveClassification.isWeakOrWaiting || moveClassification.isAttacking){
+    return null;
+  }
 
   const spriteEntries = Array.isArray(currentMapSprites) ? currentMapSprites : [];
   if(spriteEntries.length === 0) return null;
@@ -19572,6 +19806,7 @@ function evaluateStrategicDynamiteTargets(context, plannedMove){
       removesBarrierToContactZone,
       nextTurnRouteGain,
       currentRouteImprovement,
+      moveClassification,
     });
   }
 
@@ -20397,20 +20632,28 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
         : "dynamite_used_for_map_opening";
       pushCandidate({
         itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
-        target: { x: fallbackTarget.cx, y: fallbackTarget.cy, colliderId: fallbackTarget?.collider?.id ?? null },
+        target: { x: fallbackTarget.cx, y: fallbackTarget.cy, colliderId: fallbackTarget?.collider?.id ?? null, spriteId: fallbackTarget?.id ?? null },
         expectedBenefit: routeAwareTarget ? 0.58 : Math.max(0.34, Math.min(0.82, 0.22 + (strategicTarget?.strategicScore || 0) * 0.11)),
         risk: routeAwareTarget ? 0.06 : 0.12,
         reason: routeAwareTarget ? "dynamite_route_opening" : strategicReason,
         whyBetter: routeAwareTarget
-          ? "dynamite removes the obstacle before launch, so the route becomes available right now"
-          : "dynamite opens a more useful part of the map, so the next one or two turns have more good routes",
+          ? "dynamite removes the obstacle before launch, and we already confirmed the rebuilt route really wants to use the opened corridor"
+          : "dynamite opens a more useful part of the map, but only during weak or waiting turns when no clearly stronger attack or flag route is already available",
         dynamiteUseClass: routeAwareTarget ? "current_route" : "strategic_map_opening",
+        dynamiteExpectedRoute: routeAwareTarget?.replanResult?.expectedRoute || null,
+        dynamiteRouteReplan: routeAwareTarget?.replanResult ? {
+          usesOpenedCorridor: routeAwareTarget.replanResult.usesOpenedCorridor,
+          noticeableImprovement: routeAwareTarget.replanResult.noticeableImprovement,
+          scoreGain: routeAwareTarget.replanResult.scoreGain,
+          distanceGain: routeAwareTarget.replanResult.distanceGain,
+        } : null,
         strategicDynamiteScore: strategicTarget?.strategicScore ?? null,
         strategicDynamiteReasons: strategicTarget ? {
           opensPathToBase: strategicTarget.opensPathToBase,
           opensPathToFlag: strategicTarget.opensPathToFlag,
           removesBarrierToContactZone: strategicTarget.removesBarrierToContactZone,
           nextTurnRouteGain: strategicTarget.nextTurnRouteGain,
+          moveClassification: strategicTarget.moveClassification?.classification || null,
         } : null,
         comparedTargets: strategicDynamite?.rankedTargets?.map((target) => ({
           colliderId: target?.collider?.id ?? null,
@@ -20423,10 +20666,10 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     } else {
       rejectCandidate(
         INVENTORY_ITEM_TYPES.DYNAMITE,
-        routeAwareTarget === null ? "dynamite_no_current_route_target" : "dynamite_no_useful_target",
+        strategicDynamite === null ? "dynamite_no_useful_target" : "dynamite_no_current_route_target",
         {
           whyWaiting: routeAwareTarget === null
-            ? "did_not_find_a_wall_that_improves_the_route_we_want_right_now"
+            ? "did_not_find_a_wall_that_improves_the_route_we_want_right_now_or_the_turn_is_not_weak_enough_for_a_preparatory_blast"
             : "did_not_find_any_wall_that_improves_the_route_now_or_on_the_next_turns",
           routeTargetMissing: routeAwareTarget === null,
           strategicTargetsChecked: strategicDynamite?.rankedTargets?.length ?? 0,
@@ -21013,10 +21256,18 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       }
     } else if(selectedType === INVENTORY_ITEM_TYPES.DYNAMITE && allowTacticalItems){
       const target = selectedInventoryCandidate.target || null;
-      executed = Boolean(target) && placeBlueDynamiteAt(target.x, target.y);
+      const shouldUseDynamite = selectedInventoryCandidate.reason !== "dynamite_route_opening"
+        || Boolean(selectedInventoryCandidate?.dynamiteRouteReplan?.usesOpenedCorridor || selectedInventoryCandidate?.dynamiteRouteReplan?.noticeableImprovement);
+      executed = Boolean(target) && shouldUseDynamite && placeBlueDynamiteAt(target.x, target.y);
       if(executed){
         removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
         plannedMove.inventoryUsageReason = selectedInventoryCandidate.reason || "dynamite_route_opening";
+        setAiDynamiteIntentFromCandidate({
+          id: target?.spriteId ?? null,
+          collider: { id: target?.colliderId ?? null },
+          cx: target?.x ?? null,
+          cy: target?.y ?? null,
+        }, plannedMove.inventoryUsageReason, plannedMove, selectedInventoryCandidate.dynamiteExpectedRoute || null);
         if(selectedInventoryCandidate.reason === "dynamite_used_for_map_opening"
           || selectedInventoryCandidate.reason === "dynamite_used_for_future_route_gain"){
           logAiDecision(selectedInventoryCandidate.reason, {
@@ -21533,31 +21784,16 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     const strategicDynamite = routeAwareTarget ? null : evaluateStrategicDynamiteTargets(context, plannedMove);
     const strategicTarget = strategicDynamite?.bestTarget || null;
 
-    function setDynamiteIntentFromTarget(targetGeometry, usageReason){
-      if(!targetGeometry) return;
-      const expiresTurn = (Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : 0) + 1;
-      aiRoundState.dynamiteIntent = {
-        colliderId: targetGeometry?.collider?.id ?? null,
-        spriteId: targetGeometry?.id ?? null,
-        x: targetGeometry?.cx ?? null,
-        y: targetGeometry?.cy ?? null,
-        expiresTurn,
-      };
-      logAiDecision("dynamite_intent_set", {
-        colliderId: targetGeometry?.collider?.id ?? null,
-        spriteId: targetGeometry?.id ?? null,
-        targetX: Number.isFinite(targetGeometry?.cx) ? Number(targetGeometry.cx.toFixed(1)) : null,
-        targetY: Number.isFinite(targetGeometry?.cy) ? Number(targetGeometry.cy.toFixed(1)) : null,
-        usageReason: usageReason || null,
-        expiresTurn,
-        turn: aiRoundState?.turnNumber ?? null,
-      });
-    }
+    const routeAwareReplan = routeAwareTarget?.replanResult || null;
+    const routeAwareExpectedRoute = routeAwareReplan?.expectedRoute || null;
 
-    if(routeAwareTarget && placeBlueDynamiteAt(routeAwareTarget.cx, routeAwareTarget.cy)){
+    if(routeAwareTarget
+      && routeAwareReplan
+      && (routeAwareReplan.usesOpenedCorridor || routeAwareReplan.noticeableImprovement)
+      && placeBlueDynamiteAt(routeAwareTarget.cx, routeAwareTarget.cy)){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
       plannedMove.inventoryUsageReason = "dynamite_route_opening";
-      setDynamiteIntentFromTarget(routeAwareTarget, "dynamite_route_opening");
+      setAiDynamiteIntentFromCandidate(routeAwareTarget, "dynamite_route_opening", plannedMove, routeAwareExpectedRoute);
       return true;
     }
 
@@ -21568,7 +21804,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       if(placeBlueDynamiteAt(strategicTarget.cx, strategicTarget.cy)){
         removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
         plannedMove.inventoryUsageReason = strategicReason;
-        setDynamiteIntentFromTarget(strategicTarget, strategicReason);
+        setAiDynamiteIntentFromCandidate(strategicTarget, strategicReason, plannedMove, null);
         logAiDecision(strategicReason, {
           planeId: plannedMove?.plane?.id ?? null,
           goal: strategicGoal || null,
@@ -22382,8 +22618,8 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
 
   let effectiveItemUsed = itemUsed;
   if(itemUsed && consumedItemTypes.includes(INVENTORY_ITEM_TYPES.DYNAMITE) && aiRoundState?.dynamiteIntent){
-    const usageCheck = getAiDynamiteIntentScoreAdjustment(1, plannedMove, { plane: plannedMove?.plane });
-    if(!usageCheck.usedIntent){
+    const intentValidation = validateAiDynamiteIntentAgainstMove(plannedMove, { stage: "inventory_decision" });
+    if(!intentValidation.valid){
       const intent = aiRoundState?.dynamiteIntent;
       let removedDynamitePlacement = false;
       if(Array.isArray(dynamiteState) && dynamiteState.length > dynamiteStateCountBeforeUsage){
@@ -22414,6 +22650,9 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
         targetY: Number.isFinite(intent?.y) ? Number(intent.y.toFixed(1)) : null,
         turn: aiRoundState?.turnNumber ?? null,
         removedDynamitePlacement,
+        validationReason: intentValidation.reason,
+        expectedRoute: intent?.expectedRoute || null,
+        actualRoute: buildAiDynamiteExpectedRouteSnapshot(plannedMove),
       });
       clearAiDynamiteIntent("plan_desync_prevented");
       effectiveItemUsed = false;
@@ -22433,6 +22672,26 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
         reason: "item_used_but_type_not_detected",
       });
     }
+  }
+
+  function ensureDynamiteIntentStillMatchesPlannedMove(stageLabel){
+    if(!(effectiveItemUsed && consumedItemType === INVENTORY_ITEM_TYPES.DYNAMITE && aiRoundState?.dynamiteIntent)) return true;
+    const validation = validateAiDynamiteIntentAgainstMove(plannedMove, { stage: stageLabel });
+    if(validation.valid) return true;
+    logAiDecision("dynamite_plan_desync_prevented", {
+      stage: stageLabel || "post_inventory_recheck",
+      planeId: plannedMove?.plane?.id ?? null,
+      colliderId: aiRoundState?.dynamiteIntent?.colliderId ?? null,
+      targetX: Number.isFinite(aiRoundState?.dynamiteIntent?.x) ? Number(aiRoundState.dynamiteIntent.x.toFixed(1)) : null,
+      targetY: Number.isFinite(aiRoundState?.dynamiteIntent?.y) ? Number(aiRoundState.dynamiteIntent.y.toFixed(1)) : null,
+      validationReason: validation.reason,
+      expectedRoute: aiRoundState?.dynamiteIntent?.expectedRoute || null,
+      actualRoute: buildAiDynamiteExpectedRouteSnapshot(plannedMove),
+      turn: aiRoundState?.turnNumber ?? null,
+      removedDynamitePlacement: false,
+    });
+    clearAiDynamiteIntent("post_inventory_route_changed");
+    return false;
   }
 
   if(plannedMove?.aiFuelTacticalDecision){
@@ -22654,6 +22913,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
           : null,
       });
       forceFuelMoveToMaxRange();
+      ensureDynamiteIntentStillMatchesPlannedMove("after_fuel_replan");
     } else {
       const baseFlightRangeCells = Number.isFinite(settings?.flightRangeCells)
         ? settings.flightRangeCells
@@ -22732,9 +22992,11 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       });
 
       forceFuelMoveToMaxRange();
+      ensureDynamiteIntentStillMatchesPlannedMove("after_fuel_scale_fallback");
     }
   }
 
+  ensureDynamiteIntentStillMatchesPlannedMove("before_register_inventory_usage");
   registerAiInventoryUsageAfterMove(effectiveItemUsed);
 
   consumeAiDynamiteIntentIfUsed(plannedMove);
