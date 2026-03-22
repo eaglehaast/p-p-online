@@ -14525,14 +14525,21 @@ function buildHumanizedAiTargetAim(plane, targetAim){
   };
 }
 
-function buildAiCoarsePullPoint(plane, targetAim){
+function buildAiCoarsePullPoint(plane, targetAim, startDistancePx = null){
   if(!plane || !targetAim){
     return targetAim
       ? { x: targetAim.pullX, y: targetAim.pullY }
       : { x: plane?.x ?? 0, y: plane?.y ?? 0 };
   }
 
-  const startDistance = MAX_DRAG_DISTANCE;
+  const fallbackDistance = Number.isFinite(targetAim?.pullX) && Number.isFinite(targetAim?.pullY)
+    ? Math.hypot(targetAim.pullX - plane.x, targetAim.pullY - plane.y)
+    : MAX_DRAG_DISTANCE;
+  const startDistance = clamp(
+    Number.isFinite(startDistancePx) ? startDistancePx : fallbackDistance,
+    0,
+    MAX_DRAG_DISTANCE
+  );
   return {
     x: plane.x + Math.cos(targetAim.angleRad) * startDistance,
     y: plane.y + Math.sin(targetAim.angleRad) * startDistance,
@@ -33743,11 +33750,11 @@ function buildAiLaunchSession(plane, vx, vy){
       pullY: plane.y + Math.sin(targetAim.angleRad) * rangeDecision.targetDistancePx,
     }
     : null;
-  const pullPoint = resolvedTargetAim
-    ? buildAiCoarsePullPoint(plane, resolvedTargetAim)
-    : idealPullPoint;
   const targetDistancePx = rangeDecision.targetDistancePx;
   const workingPullDistancePx = rangeDecision.workingPullDistancePx;
+  const pullPoint = resolvedTargetAim
+    ? buildAiCoarsePullPoint(plane, resolvedTargetAim, workingPullDistancePx)
+    : idealPullPoint;
   const rangeMode = rangeDecision.rangeMode;
   const rangeReductionReason = rangeDecision.reductionReason;
   const rangeReductionReasonSource = rangeDecision.reductionReasonSource;
