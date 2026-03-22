@@ -15780,12 +15780,12 @@ const AI_RECENT_PLANE_HISTORY_LIMIT = 6;
 const AI_ROTATION_BONUS_PER_IDLE_TURN = 0.05;
 const AI_ROTATION_BONUS_MAX = 0.26;
 const AI_REPEAT_WINDOW_PENALTY_STEP = 0.15;
-const AI_REPEAT_FORCE_SCORE_MARGIN = MAX_DRAG_DISTANCE * 0.08;
-const AI_REPEAT_TIE_BREAK_SCORE_MARGIN = MAX_DRAG_DISTANCE * 0.04;
+const AI_REPEAT_FORCE_SCORE_MARGIN = MAX_DRAG_DISTANCE * 0.018;
+const AI_REPEAT_TIE_BREAK_SCORE_MARGIN = MAX_DRAG_DISTANCE * 0.012;
+const AI_REPEAT_SCORE_SOFT_COMPARE_PENALTY = MAX_DRAG_DISTANCE * 0.015;
 const AI_ROTATION_TACTICAL_PRIORITY_GAP = MAX_DRAG_DISTANCE * 0.04;
 const AI_ROTATION_TACTICAL_PRIORITY_CLEAR_GAP = MAX_DRAG_DISTANCE * 0.055;
 const AI_ROTATION_TACTICAL_PRIORITY_REPEAT_CONFLICT_MARGIN = MAX_DRAG_DISTANCE * 0.065;
-const AI_REPEAT_OPENING_FORCE_TURN_LIMIT = 2;
 const AI_OPENING_SOFT_RANDOM_TURN_LIMIT = 2;
 const AI_OPENING_SOFT_RANDOM_SCORE_MARGIN = MAX_DRAG_DISTANCE * 0.035;
 const AI_OPENING_SOFT_RANDOM_MAX_SHIFT = 0.045;
@@ -15824,11 +15824,9 @@ const AI_OPENING_AGGRESSION_TARGETS = Object.freeze([
 ]);
 const AI_REPEAT_ALLOWED_REASON_CODES = Object.freeze([
   "direct_finisher",
-  "mode_flag_pressure",
-  "fallback_flag_pressure",
-  "emergency_base_defense",
-  "emergency_hold_position",
   "critical_base_threat",
+  "prevent_enemy_flag_pickup",
+  "prevent_enemy_flag_pickup_hold_line",
 ]);
 const AI_REPEAT_ALLOWED_REASON_TOKENS = Object.freeze([
   "intercept",
@@ -15838,6 +15836,8 @@ const AI_REPEAT_ALLOWED_REASON_TOKENS = Object.freeze([
   "emergency",
   "protect",
   "hold",
+  "flag",
+  "pickup",
 ]);
 const AI_REPEAT_ALLOWED_REASON_STRONG_TOKEN_MATCH_MIN = 2;
 const AI_DEFENSIVE_PRIORITY_LEVELS = Object.freeze({
@@ -17468,7 +17468,9 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
   const nextPlaneId = nextCandidate?.plane?.id ?? null;
   const currentPlaneId = currentCandidate?.plane?.id ?? null;
   const repeatedPlaneId = aiRoundState?.lastLaunchedPlaneId ?? null;
-  const scoreGap = Math.abs((nextCandidate.score ?? Number.POSITIVE_INFINITY) - (currentCandidate.score ?? Number.POSITIVE_INFINITY));
+  const rawNextScore = nextCandidate.score ?? Number.POSITIVE_INFINITY;
+  const rawCurrentScore = currentCandidate.score ?? Number.POSITIVE_INFINITY;
+  const scoreGap = Math.abs(rawNextScore - rawCurrentScore);
 
   const nextIsAttackingCandidate = Boolean(nextCandidate?.enemy) || nextCandidate?.targetType === "attack_enemy_plane";
   const currentIsAttackingCandidate = Boolean(currentCandidate?.enemy) || currentCandidate?.targetType === "attack_enemy_plane";
@@ -17507,7 +17509,8 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
     });
   }
 
-  const openingTemplateSuppressed = Boolean(aiRoundState?.openingTemplateSuppressed);
+  let nextRepeatComparePenalty = 0;
+  let currentRepeatComparePenalty = 0;
   if(!shouldBypassRotationForTacticalPriority && nextPlaneId && currentPlaneId && repeatedPlaneId && nextPlaneId !== currentPlaneId){
     const nextIsRepeat = nextPlaneId === repeatedPlaneId;
     const currentIsRepeat = currentPlaneId === repeatedPlaneId;
@@ -17528,20 +17531,23 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
         strongTokenMatchMin: AI_REPEAT_ALLOWED_REASON_STRONG_TOKEN_MATCH_MIN,
       });
 
-      if(
-        Number.isFinite(aiRoundState?.turnNumber)
-        && aiRoundState.turnNumber <= AI_REPEAT_OPENING_FORCE_TURN_LIMIT
-        && !isRepeatedCandidateCritical
-        && !openingTemplateSuppressed
-      ){
-        return !nextIsRepeat;
+      if(isRepeatedCandidateCritical && scoreGap <= AI_REPEAT_FORCE_SCORE_MARGIN){
+        return nextIsRepeat;
       }
 
-      if(scoreGap <= AI_REPEAT_FORCE_SCORE_MARGIN && !isRepeatedCandidateCritical && !openingTemplateSuppressed){
-        return !nextIsRepeat;
+      if(!isRepeatedCandidateCritical){
+        if(nextIsRepeat){
+          nextRepeatComparePenalty = AI_REPEAT_SCORE_SOFT_COMPARE_PENALTY;
+        }
+        if(currentIsRepeat){
+          currentRepeatComparePenalty = AI_REPEAT_SCORE_SOFT_COMPARE_PENALTY;
+        }
       }
     }
   }
+
+  const nextEffectiveScore = rawNextScore + nextRepeatComparePenalty;
+  const currentEffectiveScore = rawCurrentScore + currentRepeatComparePenalty;
 
   const nextNormalizedScore = nextCandidate?.normalizedScore;
   const currentNormalizedScore = currentCandidate?.normalizedScore;
@@ -17593,10 +17599,10 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
     }
   }
 
-  if((nextCandidate.score ?? Number.POSITIVE_INFINITY) < (currentCandidate.score ?? Number.POSITIVE_INFINITY) - epsilon){
+  if(nextEffectiveScore < currentEffectiveScore - epsilon){
     return true;
   }
-  if((nextCandidate.score ?? Number.POSITIVE_INFINITY) > (currentCandidate.score ?? Number.POSITIVE_INFINITY) + epsilon){
+  if(nextEffectiveScore > currentEffectiveScore + epsilon){
     return false;
   }
 
@@ -17604,6 +17610,11 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
     const nextIsRepeat = nextPlaneId === repeatedPlaneId;
     const currentIsRepeat = currentPlaneId === repeatedPlaneId;
     if(nextIsRepeat !== currentIsRepeat && scoreGap <= AI_REPEAT_TIE_BREAK_SCORE_MARGIN){
+      const repeatedCandidate = nextIsRepeat ? nextCandidate : currentCandidate;
+      const repeatedCandidateCriticalMeta = evaluateAiRepeatPlaneCriticalCandidate(repeatedCandidate);
+      if(repeatedCandidateCriticalMeta.isCritical){
+        return nextIsRepeat;
+      }
       return !nextIsRepeat;
     }
   }
