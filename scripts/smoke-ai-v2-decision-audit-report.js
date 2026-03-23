@@ -64,8 +64,8 @@ const context = {
       },
     },
   }),
-  exportAiFallbackDiagnosticsReportJson: () => ({
-    reportType: 'ai_fallback_diagnostics_report',
+  exportAiV2ReserveDiagnosticsReportJson: () => ({
+    reportType: 'ai_v2_reserve_diagnostics_report',
     fallbackEpisodeSamples: [{ id: 1 }, { id: 2 }],
     fallbackEpisodeDiagnostics: {
       aiMoveExceptionEvents: 3,
@@ -86,18 +86,18 @@ assert(report && report.reportType === 'ai_v2_decision_audit_report', 'Must retu
 assert(report.engineMode === 'v2', 'Must contain engine mode.');
 assert(report.summary && report.summary.status === 'ok', 'Must have ok summary status with sufficient data.');
 assert(report.summary.aiDecisionEventsCount === 5, 'Must expose aiDecisionEventsCount in summary.');
-assert(report.summary.fallbackEpisodes === 2, 'Must expose fallback episodes count in summary.');
+assert(report.summary.reserveEpisodes === 2, 'Must expose reserve episodes count in summary.');
 assert(report.summary.fallbackRate === 0, 'Fallback rate in qualityGap can be 0 for this case.');
 assert(report.summary.aiMoveExceptionEvents === 3, 'Must expose ai_move_exception count in summary.');
 assert(report.summary.failSafeTurnAdvanceEpisodes === 2, 'Must expose fail-safe episode count in summary.');
 assert(report.summary.failSafeTurnShareAmongAiTurns === 0.4, 'Must expose fail-safe turn share in summary.');
-assert(report.reports && report.reports.turns && report.reports.qualityGap && report.reports.fallbackDiagnostics, 'Must include all nested reports.');
+assert(report.reports && report.reports.turns && report.reports.qualityGap && report.reports.reserveDiagnostics, 'Must include all nested reports.');
 
 const compactReport = context.exportAiV2DecisionAuditCompactReportJson();
 assert(compactReport && compactReport.reportType === 'ai_v2_decision_audit_compact_report', 'Must return ai_v2_decision_audit_compact_report.');
 assert(compactReport.summary && compactReport.summary.aiDecisionEventsCount === 5, 'Compact report must expose aiDecisionEventsCount.');
 assert(Array.isArray(compactReport.lastAiDecisions), 'Compact report must expose compact decision trail.');
-assert(compactReport.difficultyDigest && Array.isArray(compactReport.difficultyDigest.fallbackSummaryLines), 'Compact report must expose fallback summary digest.');
+assert(compactReport.difficultyDigest && Array.isArray(compactReport.difficultyDigest.reserveSummaryLines), 'Compact report must expose fallback summary digest.');
 assert(compactReport.usageHint && compactReport.usageHint.command === 'window.exportAiV2DecisionAuditCompactReportJson()', 'Compact report must explain its direct command.');
 
 console.log('Smoke test passed: v2 full and compact AI decision audit reports are wired.');

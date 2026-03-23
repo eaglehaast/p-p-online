@@ -41,7 +41,7 @@ const context = {
   AI_PLANNED_MOVE_TARGET_REVALIDATION_RADIUS_PX: 90,
   INVENTORY_ITEM_TYPES: { DYNAMITE: 'dynamite' },
   INVENTORY_ITEMS: [{ type: 'dynamite' }],
-  aiRoundState: { currentGoal: 'fallback_move' },
+  aiRoundState: { currentGoal: 'safe_short_fallback_progress' },
   aiMoveScheduled: true,
   aiPostInventoryLaunchTimeout: null,
   flyingPoints: [],
@@ -91,20 +91,20 @@ context.issueAIMoveWithInventoryUsage(
     enemy: { id: 'green-1', x: 120, y: 0, isAlive: false },
     vx: 30,
     vy: 0,
-    goalName: 'fallback_move',
-    decisionReason: 'fallback_rotation',
-    fallbackChainStage: 'fallback_selected',
+    goalName: 'safe_short_fallback_progress',
+    decisionReason: 'safe_short_reposition',
+    fallbackChainStage: 'safe_short_fallback_selected',
   }
 );
 
-assert(forcedProgressCalls === 1, 'Expected forced progress fallback to be attempted as final replan stage.');
-assert(launches.length === 1, 'Expected fallback replan to launch exactly one move.');
+assert(forcedProgressCalls === 1, 'Expected forced progress reserve step to be attempted as final replan stage.');
+assert(launches.length === 1, 'Expected reserve-step replan to launch exactly one move.');
 assert(launches[0].planeId === 'blue-fp', 'Expected forced progress launch to be committed.');
 assert(logs.some((entry) => entry.event === 'fallback_replan_execution_started' && entry.payload?.stage === 'fallback_forced_progress_replan'),
-  'Expected log for fallback forced-progress execution start.');
+  'Expected log for reserve forced-progress execution start.');
 assert(logs.some((entry) => entry.event === 'fallback_replan_execution_committed' && entry.payload?.stage === 'fallback_forced_progress_replan'),
-  'Expected log for fallback forced-progress execution commit.');
-assert(logs.some((entry) => entry.event === 'fallback_execution_aborted' && entry.payload?.fallbackStage === 'fallback_selected'),
-  'Expected aborted fallback execution log with fallback stage metadata.');
+  'Expected log for reserve forced-progress execution commit.');
+assert(logs.some((entry) => entry.event === 'fallback_execution_aborted' && entry.payload?.fallbackStage === 'safe_short_fallback_selected'),
+  'Expected aborted reserve execution log with reserve stage metadata.');
 
-console.log('Smoke test passed: fallback replan chain now reaches forced progress and emits execution diagnostics.');
+console.log('Smoke test passed: v2 reserve replan chain now reaches forced progress and emits execution diagnostics.');
