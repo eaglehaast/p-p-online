@@ -16473,12 +16473,12 @@ function applyAiMinLaunchScale(scale, details = {}){
 }
 
 const AI_INVENTORY_PRESSURE_CONFIG = Object.freeze({
-  [INVENTORY_ITEM_TYPES.MINE]: { idleTurnWeight: 0.028, weakChanceWeight: 0.04, staleLeaderBonus: 0.026, maxBonus: 0.24, selectionFloor: 0.13 },
-  [INVENTORY_ITEM_TYPES.DYNAMITE]: { idleTurnWeight: 0.029, weakChanceWeight: 0.039, staleLeaderBonus: 0.024, maxBonus: 0.22, selectionFloor: 0.135 },
-  [INVENTORY_ITEM_TYPES.FUEL]: { idleTurnWeight: 0.027, weakChanceWeight: 0.038, staleLeaderBonus: 0.023, maxBonus: 0.22, selectionFloor: 0.125 },
-  [INVENTORY_ITEM_TYPES.CROSSHAIR]: { idleTurnWeight: 0.024, weakChanceWeight: 0.037, staleLeaderBonus: 0.021, maxBonus: 0.2, selectionFloor: 0.12 },
-  [INVENTORY_ITEM_TYPES.WINGS]: { idleTurnWeight: 0.026, weakChanceWeight: 0.036, staleLeaderBonus: 0.022, maxBonus: 0.21, selectionFloor: 0.123 },
-  [INVENTORY_ITEM_TYPES.INVISIBILITY]: { idleTurnWeight: 0.026, weakChanceWeight: 0.037, staleLeaderBonus: 0.023, maxBonus: 0.215, selectionFloor: 0.124 },
+  [INVENTORY_ITEM_TYPES.MINE]: { idleTurnWeight: 0.037, weakChanceWeight: 0.05, staleLeaderBonus: 0.03, maxBonus: 0.29, selectionFloor: 0.108 },
+  [INVENTORY_ITEM_TYPES.DYNAMITE]: { idleTurnWeight: 0.038, weakChanceWeight: 0.049, staleLeaderBonus: 0.028, maxBonus: 0.275, selectionFloor: 0.112 },
+  [INVENTORY_ITEM_TYPES.FUEL]: { idleTurnWeight: 0.036, weakChanceWeight: 0.048, staleLeaderBonus: 0.027, maxBonus: 0.27, selectionFloor: 0.103 },
+  [INVENTORY_ITEM_TYPES.CROSSHAIR]: { idleTurnWeight: 0.033, weakChanceWeight: 0.047, staleLeaderBonus: 0.025, maxBonus: 0.255, selectionFloor: 0.098 },
+  [INVENTORY_ITEM_TYPES.WINGS]: { idleTurnWeight: 0.035, weakChanceWeight: 0.045, staleLeaderBonus: 0.026, maxBonus: 0.262, selectionFloor: 0.1 },
+  [INVENTORY_ITEM_TYPES.INVISIBILITY]: { idleTurnWeight: 0.035, weakChanceWeight: 0.046, staleLeaderBonus: 0.027, maxBonus: 0.265, selectionFloor: 0.101 },
 });
 
 function createInitialInventoryPressureState(){
@@ -20850,12 +20850,18 @@ function getAiInventorySelectionFloor(candidate){
   }
   const idleTurns = candidate.pressureMeta?.idleTurns ?? 0;
   const weakChanceStreak = candidate.pressureMeta?.weakChanceStreak ?? 0;
-  const releaseDiscount = idleTurns >= AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD
-    ? 0.012
-    : weakChanceStreak >= 2
-      ? 0.008
-      : 0;
-  return Number(Math.max(0.1, baseSelectionFloor - releaseDiscount).toFixed(3));
+  const softReleaseReady = candidate.releaseReady === true;
+  let releaseDiscount = 0;
+  if(idleTurns >= AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD + 2){
+    releaseDiscount = 0.025;
+  } else if(idleTurns >= AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD){
+    releaseDiscount = 0.018;
+  } else if(weakChanceStreak >= 3){
+    releaseDiscount = 0.016;
+  } else if(weakChanceStreak >= 2 || softReleaseReady){
+    releaseDiscount = 0.011;
+  }
+  return Number(Math.max(0.085, baseSelectionFloor - releaseDiscount).toFixed(3));
 }
 
 function updateAiInventoryPressureForTurn(inventoryCounts, perItemEvaluation = {}){
