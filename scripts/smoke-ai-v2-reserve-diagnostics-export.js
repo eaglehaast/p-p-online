@@ -27,9 +27,9 @@ function assert(condition, message){
 function buildRuntime(source, activeMatch){
   const fnNames = [
     'safeNowIso',
-    'buildAiFallbackDiagnosticsReport',
+    'buildAiV2ReserveDiagnosticsReport',
     'getAiSelfAnalyzerSnapshot',
-    'exportAiFallbackDiagnosticsReportJson',
+    'exportAiV2ReserveDiagnosticsReportJson',
   ];
 
   const script = fnNames.map((name) => extractFunctionSource(source, name)).join('\n\n');
@@ -52,8 +52,8 @@ function buildRuntime(source, activeMatch){
 
 const source = fs.readFileSync('script.js', 'utf8');
 assert(
-  source.includes('window.exportAiFallbackDiagnosticsReportJson = exportAiFallbackDiagnosticsReportJson;'),
-  'window export for exportAiFallbackDiagnosticsReportJson must be registered in script.js.'
+  source.includes('window.exportAiV2ReserveDiagnosticsReportJson = exportAiV2ReserveDiagnosticsReportJson;'),
+  'window export for exportAiV2ReserveDiagnosticsReportJson must be registered in script.js.'
 );
 
 const activeMatch = {
@@ -81,14 +81,14 @@ const activeMatch = {
     {
       type: 'ai_decision',
       roundNumber: 1,
-      stage: 'fallback_selected',
-      goal: 'fallback_move',
-      reasonCodes: ['fallback_strategy'],
-      selectedMove: { goalName: 'fallback_move', decisionReason: 'fallback_rotation' },
+      stage: 'safe_short_fallback_selected',
+      goal: 'safe_short_fallback_progress',
+      reasonCodes: ['safe_short_reposition'],
+      selectedMove: { goalName: 'safe_short_fallback_progress', decisionReason: 'safe_short_reposition' },
       fallbackDiagnostics: {
         stageBeforeFallback: 'mode_move_rejected',
-        fallbackGoal: 'fallback_move',
-        fallbackDecisionReason: 'fallback_rotation',
+        fallbackGoal: 'safe_short_fallback_progress',
+        fallbackDecisionReason: 'safe_short_reposition',
         rootCauseHint: 'mode_strategy_failed',
       },
       initialCandidateSetDiagnostics: {
@@ -114,8 +114,8 @@ const activeMatch = {
   ],
 };
 
-const report = buildRuntime(source, activeMatch).exportAiFallbackDiagnosticsReportJson();
-assert(report && report.reportType === 'ai_fallback_diagnostics_report', 'Expected fallback diagnostics report type.');
+const report = buildRuntime(source, activeMatch).exportAiV2ReserveDiagnosticsReportJson();
+assert(report && report.reportType === 'ai_v2_reserve_diagnostics_report', 'Expected reserve diagnostics report type.');
 assert(report.fallbackRootCauseStats && typeof report.fallbackRootCauseStats === 'object', 'Expected fallbackRootCauseStats block.');
 assert(report.candidateGenerationStats?.direct, 'Expected candidateGenerationStats.direct block.');
 assert(report.candidateFunnelStats?.direct, 'Expected candidateFunnelStats.direct block.');
@@ -131,9 +131,9 @@ assert(report.summary.some((line) => line.includes('ai_move_exception')), 'Expec
 assert(report.summary.some((line) => line.includes('fail-safe')), 'Expected summary line with fail-safe turn share/count.');
 assert(Array.isArray(report.summary) && report.summary.length > 0, 'Expected non-empty summary block.');
 const rootCauseTotal = Object.values(report.fallbackRootCauseStats).reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0);
-assert(rootCauseTotal >= 1, 'Expected at least one normalized root-cause fallback episode.');
+assert(rootCauseTotal >= 1, 'Expected at least one normalized root-cause reserve episode.');
 
-const fallbackReport = buildRuntime(source, null).exportAiFallbackDiagnosticsReportJson();
-assert(fallbackReport && fallbackReport.status === 'insufficient_data', 'Expected insufficient_data for empty source.');
+const reserveReport = buildRuntime(source, null).exportAiV2ReserveDiagnosticsReportJson();
+assert(reserveReport && reserveReport.status === 'insufficient_data', 'Expected insufficient_data for empty source.');
 
-console.log('Smoke test passed: exportAiFallbackDiagnosticsReportJson returns normalized fallback diagnostics report.');
+console.log('Smoke test passed: exportAiV2ReserveDiagnosticsReportJson returns normalized reserve diagnostics report.');

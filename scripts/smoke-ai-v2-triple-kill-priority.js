@@ -73,7 +73,7 @@ const context = {
       },
     },
   },
-  shouldAllowLegacyFallbackForGroupKillException: () => ({ allowed: false, reason: 'triple_kill_priority_preserved' }),
+  shouldKeepV2GroupKillPriority: () => ({ allowed: false, reason: 'triple_kill_priority_preserved' }),
   buildShotPlan: (goalSelection) => {
     if(goalSelection.goalName === 'triple_kill_priority'){
       return {

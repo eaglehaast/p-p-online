@@ -9085,10 +9085,8 @@ const MAX_FLIGHT_RANGE_CELLS = 50;
 const MIN_ACCURACY_PERCENT = 0;
 const MAX_ACCURACY_PERCENT = 100;
 const MAX_SPREAD_DEG       = 12;
-// Переключатель движка ИИ: по умолчанию запускаем только новую схему (v2).
-// Legacy-ветка сохранена в репозитории как исторический архив и fallback для отладки,
-// но в обычной игре больше не должна быть активной по умолчанию.
-const AI_ENGINE_MODE = "v2"; // "legacy" | "v2"
+// Переключатель движка ИИ: сервисный слой работает только по схеме v2.
+const AI_ENGINE_MODE = "v2"; // Сервисный слой работает только по v2-маршруту.
 const AI_V2_INVENTORY_PHASE = (() => {
   const phaseFromWindow = (typeof window !== "undefined")
     ? window.AI_V2_INVENTORY_PHASE
@@ -11100,7 +11098,7 @@ function buildAiSelfAnalyzerGapReport(source){
   };
 }
 
-function buildAiFallbackDiagnosticsReport(source){
+function buildAiV2ReserveDiagnosticsReport(source){
   const events = Array.isArray(source?.events) ? source.events : [];
   const aiDecisionEvents = events.filter((event) => event?.type === "ai_decision");
   const fallbackStages = new Set(["fallback_selected", "super_reserve_selected", "forced_progress_selected", "safe_short_fallback_selected", "v2_shot_plan_not_found"]);
@@ -11885,8 +11883,8 @@ function buildAiFallbackDiagnosticsReport(source){
   };
 
   const summary = [
-    `Всего fallback-эпизодов: ${totalFallbackEpisodes}.`,
-    `Эпизоды fallback логики выбора кандидатов: ${totalFallbackEpisodes}.`,
+    `Всего эпизодов внутренних запасных шагов v2: ${totalFallbackEpisodes}.`,
+    `Эпизоды перехода на внутренний запасной шаг v2: ${totalFallbackEpisodes}.`,
     `Эпизоды аварийного fail-safe завершения хода: ${failSafeTurnAdvanceEvents.length}.`,
     `Исключения ai_move_exception за матч: ${aiMoveExceptionEvents.length}.`,
     `Доля ходов, завершённых через fail-safe: ${Number((failSafeTurnShareAmongAiTurns * 100).toFixed(1))}% (${failSafeTurnKeys.size}/${aiDecisionTurnKeys.size || 0}).`,
@@ -11987,7 +11985,7 @@ function buildAiFallbackDiagnosticsReport(source){
   };
 
   const report = {
-    reportType: "ai_fallback_diagnostics_report",
+    reportType: "ai_v2_reserve_diagnostics_report",
     generatedAt: safeNowIso(),
     sourceStartedAt: source?.startedAt || null,
     sourceFinishedAt: source?.finishedAt || null,
@@ -12078,18 +12076,18 @@ function buildAiFallbackDiagnosticsReport(source){
   return report;
 }
 
-function exportAiFallbackDiagnosticsReportJson(){
+function exportAiV2ReserveDiagnosticsReportJson(){
   const snapshot = getAiSelfAnalyzerSnapshot({ includeHistory: true });
   const source = snapshot?.activeMatch || snapshot?.latestFinishedMatch;
 
   if(!source){
     return {
-      reportType: "ai_fallback_diagnostics_report",
+      reportType: "ai_v2_reserve_diagnostics_report",
       generatedAt: safeNowIso(),
       sourceStartedAt: null,
       sourceFinishedAt: null,
       status: "insufficient_data",
-      statusMessage: "Нет данных матча для fallback-диагностики.",
+      statusMessage: "Нет данных матча для диагностики внутренних запасных шагов v2.",
       fallbackRootCauseStats: {},
       candidateGenerationStats: {},
       candidateFunnelStats: {},
@@ -12110,11 +12108,11 @@ function exportAiFallbackDiagnosticsReportJson(){
       },
       gapAfterBounceSamples: [],
       fallbackEpisodeSamples: [],
-      summary: ["Недостаточно данных для отчёта."],
+      summary: ["Недостаточно данных для v2-отчёта."],
     };
   }
 
-  const report = buildAiFallbackDiagnosticsReport(source);
+  const report = buildAiV2ReserveDiagnosticsReport(source);
   if(typeof document === "undefined"){
     return report;
   }
@@ -12125,7 +12123,7 @@ function exportAiFallbackDiagnosticsReportJson(){
   const link = document.createElement("a");
   const suffix = safeNowIso().replace(/[:.]/g, "-");
   link.href = url;
-  link.download = `ai-fallback-diagnostics-report-${suffix}.json`;
+  link.download = `ai-v2-reserve-diagnostics-report-${suffix}.json`;
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -12135,13 +12133,13 @@ function exportAiFallbackDiagnosticsReportJson(){
 }
 
 function DEBUG_AI_GAP_AFTER_BOUNCE_REPORT(){
-  const fallbackReport = exportAiFallbackDiagnosticsReportJson();
+  const reserveReport = exportAiV2ReserveDiagnosticsReportJson();
   const compact = {
     reportType: "ai_gap_after_bounce_report",
-    generatedAt: fallbackReport?.generatedAt || safeNowIso(),
-    sourceStartedAt: fallbackReport?.sourceStartedAt || null,
-    sourceFinishedAt: fallbackReport?.sourceFinishedAt || null,
-    gapAfterBounceDetailedStats: fallbackReport?.gapAfterBounceDetailedStats || {
+    generatedAt: reserveReport?.generatedAt || safeNowIso(),
+    sourceStartedAt: reserveReport?.sourceStartedAt || null,
+    sourceFinishedAt: reserveReport?.sourceFinishedAt || null,
+    gapAfterBounceDetailedStats: reserveReport?.gapAfterBounceDetailedStats || {
       total: 0,
       topRejectReasons: [],
       topBlockingObjectTypes: [],
@@ -12149,12 +12147,12 @@ function DEBUG_AI_GAP_AFTER_BOUNCE_REPORT(){
       samples: [],
       afterBounceSourceSamples: [],
     },
-    ricochetRejectDetailedStats: fallbackReport?.ricochetRejectDetailedStats || {
+    ricochetRejectDetailedStats: reserveReport?.ricochetRejectDetailedStats || {
       total: 0,
       samples: [],
     },
-    gapAfterBounceSamples: Array.isArray(fallbackReport?.gapAfterBounceSamples)
-      ? fallbackReport.gapAfterBounceSamples
+    gapAfterBounceSamples: Array.isArray(reserveReport?.gapAfterBounceSamples)
+      ? reserveReport.gapAfterBounceSamples
       : [],
   };
   return compact;
@@ -12278,13 +12276,13 @@ function exportPlayerVsAiGapReportJson(){
 function exportAiV2DecisionAuditReportJson(){
   const turnsReport = exportAiSelfAnalyzerTurnsJson();
   const gapReport = exportPlayerVsAiGapReportJson();
-  const fallbackReport = exportAiFallbackDiagnosticsReportJson();
+  const reserveReport = exportAiV2ReserveDiagnosticsReportJson();
 
   const summary = {
     status: "ok",
     statusMessage: "Сводный отчёт по решениям ИИ (v2) успешно собран.",
-    sourceStartedAt: turnsReport?.sourceStartedAt || gapReport?.sourceStartedAt || fallbackReport?.sourceStartedAt || null,
-    sourceFinishedAt: turnsReport?.sourceFinishedAt || gapReport?.sourceFinishedAt || fallbackReport?.sourceFinishedAt || null,
+    sourceStartedAt: turnsReport?.sourceStartedAt || gapReport?.sourceStartedAt || reserveReport?.sourceStartedAt || null,
+    sourceFinishedAt: turnsReport?.sourceFinishedAt || gapReport?.sourceFinishedAt || reserveReport?.sourceFinishedAt || null,
     aiDecisionEventsCount: Number.isFinite(turnsReport?.aiDecisionEventsCount)
       ? turnsReport.aiDecisionEventsCount
       : 0,
@@ -12297,17 +12295,17 @@ function exportAiV2DecisionAuditReportJson(){
     noMoveRate: Number.isFinite(gapReport?.gapMetrics?.aiDecisionMetrics?.noMoveRate)
       ? gapReport.gapMetrics.aiDecisionMetrics.noMoveRate
       : null,
-    fallbackEpisodes: Number.isFinite(fallbackReport?.fallbackEpisodeSamples?.length)
-      ? fallbackReport.fallbackEpisodeSamples.length
+    reserveEpisodes: Number.isFinite(reserveReport?.fallbackEpisodeSamples?.length)
+      ? reserveReport.fallbackEpisodeSamples.length
       : 0,
-    aiMoveExceptionEvents: Number.isFinite(fallbackReport?.fallbackEpisodeDiagnostics?.aiMoveExceptionEvents)
-      ? fallbackReport.fallbackEpisodeDiagnostics.aiMoveExceptionEvents
+    aiMoveExceptionEvents: Number.isFinite(reserveReport?.fallbackEpisodeDiagnostics?.aiMoveExceptionEvents)
+      ? reserveReport.fallbackEpisodeDiagnostics.aiMoveExceptionEvents
       : 0,
-    failSafeTurnAdvanceEpisodes: Number.isFinite(fallbackReport?.fallbackEpisodeDiagnostics?.failSafeTurnAdvanceEpisodes)
-      ? fallbackReport.fallbackEpisodeDiagnostics.failSafeTurnAdvanceEpisodes
+    failSafeTurnAdvanceEpisodes: Number.isFinite(reserveReport?.fallbackEpisodeDiagnostics?.failSafeTurnAdvanceEpisodes)
+      ? reserveReport.fallbackEpisodeDiagnostics.failSafeTurnAdvanceEpisodes
       : 0,
-    failSafeTurnShareAmongAiTurns: Number.isFinite(fallbackReport?.fallbackEpisodeDiagnostics?.failSafeTurnShareAmongAiTurns)
-      ? fallbackReport.fallbackEpisodeDiagnostics.failSafeTurnShareAmongAiTurns
+    failSafeTurnShareAmongAiTurns: Number.isFinite(reserveReport?.fallbackEpisodeDiagnostics?.failSafeTurnShareAmongAiTurns)
+      ? reserveReport.fallbackEpisodeDiagnostics.failSafeTurnShareAmongAiTurns
       : 0,
   };
 
@@ -12324,7 +12322,7 @@ function exportAiV2DecisionAuditReportJson(){
     reports: {
       turns: turnsReport,
       qualityGap: gapReport,
-      fallbackDiagnostics: fallbackReport,
+      reserveDiagnostics: reserveReport,
     },
     usageHint: {
       forTeam: "Отправьте этот JSON целиком для анализа качества решений и мотивации ИИ.",
@@ -12355,15 +12353,15 @@ function exportAiV2DecisionAuditReportJson(){
 function exportAiV2DecisionAuditCompactReportJson(){
   const turnsReport = exportAiSelfAnalyzerTurnsJson();
   const gapReport = exportPlayerVsAiGapReportJson();
-  const fallbackReport = exportAiFallbackDiagnosticsReportJson();
+  const reserveReport = exportAiV2ReserveDiagnosticsReportJson();
   const aiDecisionEvents = Array.isArray(turnsReport?.aiMotivation?.decisionEvents)
     ? turnsReport.aiMotivation.decisionEvents
     : [];
-  const fallbackSamples = Array.isArray(fallbackReport?.fallbackEpisodeSamples)
-    ? fallbackReport.fallbackEpisodeSamples
+  const reserveSamples = Array.isArray(reserveReport?.fallbackEpisodeSamples)
+    ? reserveReport.fallbackEpisodeSamples
     : [];
-  const fallbackSummaryLines = Array.isArray(fallbackReport?.summary)
-    ? fallbackReport.summary.filter((line) => typeof line === "string" && line.trim().length > 0).slice(0, 6)
+  const reserveSummaryLines = Array.isArray(reserveReport?.summary)
+    ? reserveReport.summary.filter((line) => typeof line === "string" && line.trim().length > 0).slice(0, 6)
     : [];
 
   const makeTopEntries = (stats, limit = 3) => Object.entries(stats || {})
@@ -12438,11 +12436,11 @@ function exportAiV2DecisionAuditCompactReportJson(){
       (event) => event?.selectedMove?.routeClass || event?.routeClass || null,
       4
     ),
-    fallbackRootCauses: makeTopEntries(fallbackReport?.fallbackRootCauseStats, 6),
-    fallbackSummaryLines,
+    reserveRootCauses: makeTopEntries(reserveReport?.fallbackRootCauseStats, 6),
+    reserveSummaryLines,
   };
 
-  const fallbackEpisodesCompact = fallbackSamples.slice(-5).map((episode, index, arr) => ({
+  const reserveEpisodesCompact = reserveSamples.slice(-5).map((episode, index, arr) => ({
     sequence: index + 1,
     reverseOffset: arr.length - index,
     at: episode?.at || null,
@@ -12461,8 +12459,8 @@ function exportAiV2DecisionAuditCompactReportJson(){
     statusMessage: turnsReport
       ? "Короткий отчёт по решениям ИИ успешно собран."
       : "Недостаточно данных: нет активного или завершённого матча для короткого отчёта ИИ.",
-    sourceStartedAt: turnsReport?.sourceStartedAt || gapReport?.sourceStartedAt || fallbackReport?.sourceStartedAt || null,
-    sourceFinishedAt: turnsReport?.sourceFinishedAt || gapReport?.sourceFinishedAt || fallbackReport?.sourceFinishedAt || null,
+    sourceStartedAt: turnsReport?.sourceStartedAt || gapReport?.sourceStartedAt || reserveReport?.sourceStartedAt || null,
+    sourceFinishedAt: turnsReport?.sourceFinishedAt || gapReport?.sourceFinishedAt || reserveReport?.sourceFinishedAt || null,
     aiDecisionEventsCount: Number.isFinite(turnsReport?.aiDecisionEventsCount) ? turnsReport.aiDecisionEventsCount : 0,
     humanDecisionEventsCount: Number.isFinite(turnsReport?.humanDecisionEventsCount) ? turnsReport.humanDecisionEventsCount : 0,
     fallbackRate: Number.isFinite(gapReport?.gapMetrics?.aiDecisionMetrics?.fallbackRate)
@@ -12471,15 +12469,15 @@ function exportAiV2DecisionAuditCompactReportJson(){
     noMoveRate: Number.isFinite(gapReport?.gapMetrics?.aiDecisionMetrics?.noMoveRate)
       ? gapReport.gapMetrics.aiDecisionMetrics.noMoveRate
       : null,
-    fallbackEpisodes: fallbackSamples.length,
-    aiMoveExceptionEvents: Number.isFinite(fallbackReport?.fallbackEpisodeDiagnostics?.aiMoveExceptionEvents)
-      ? fallbackReport.fallbackEpisodeDiagnostics.aiMoveExceptionEvents
+    reserveEpisodes: reserveSamples.length,
+    aiMoveExceptionEvents: Number.isFinite(reserveReport?.fallbackEpisodeDiagnostics?.aiMoveExceptionEvents)
+      ? reserveReport.fallbackEpisodeDiagnostics.aiMoveExceptionEvents
       : 0,
-    failSafeTurnAdvanceEpisodes: Number.isFinite(fallbackReport?.fallbackEpisodeDiagnostics?.failSafeTurnAdvanceEpisodes)
-      ? fallbackReport.fallbackEpisodeDiagnostics.failSafeTurnAdvanceEpisodes
+    failSafeTurnAdvanceEpisodes: Number.isFinite(reserveReport?.fallbackEpisodeDiagnostics?.failSafeTurnAdvanceEpisodes)
+      ? reserveReport.fallbackEpisodeDiagnostics.failSafeTurnAdvanceEpisodes
       : 0,
-    failSafeTurnShareAmongAiTurns: Number.isFinite(fallbackReport?.fallbackEpisodeDiagnostics?.failSafeTurnShareAmongAiTurns)
-      ? fallbackReport.fallbackEpisodeDiagnostics.failSafeTurnShareAmongAiTurns
+    failSafeTurnShareAmongAiTurns: Number.isFinite(reserveReport?.fallbackEpisodeDiagnostics?.failSafeTurnShareAmongAiTurns)
+      ? reserveReport.fallbackEpisodeDiagnostics.failSafeTurnShareAmongAiTurns
       : 0,
   };
 
@@ -12490,7 +12488,7 @@ function exportAiV2DecisionAuditCompactReportJson(){
     summary,
     lastAiDecisions: compactDecisionTrail,
     difficultyDigest,
-    recentFallbackEpisodes: fallbackEpisodesCompact,
+    recentReserveEpisodes: reserveEpisodesCompact,
     usageHint: {
       forTeam: "Отправьте этот JSON, если нужен короткий и читаемый отчёт: какие ходы ИИ выбирал и где чаще всего упирался.",
       command: "window.exportAiV2DecisionAuditCompactReportJson()",
@@ -12666,8 +12664,8 @@ function AI_DEBUG_CMD(command, arg){
   if(normalized === "reset-cargo"){
     return forceResetCargoNow();
   }
-  if(normalized === "fallback-report"){
-    return exportAiFallbackDiagnosticsReportJson();
+  if(normalized === "v2-reserve-report"){
+    return exportAiV2ReserveDiagnosticsReportJson();
   }
   if(normalized === "gap-after-bounce-report"){
     return DEBUG_AI_GAP_AFTER_BOUNCE_REPORT();
@@ -12693,7 +12691,7 @@ function AI_DEBUG_CMD(command, arg){
     return result;
   }
 
-  console.info('[AI_DEBUG] Неизвестная команда. Доступно: "snapshot", "last-decisions", "status", "reset-cargo", "fallback-report", "gap-after-bounce-report", "v2-report", "v2-report-compact", "telegraphy".');
+  console.info('[AI_DEBUG] Неизвестная команда. Доступно: "snapshot", "last-decisions", "status", "reset-cargo", "v2-reserve-report", "gap-after-bounce-report", "v2-report", "v2-report-compact", "telegraphy".');
   return null;
 }
 
@@ -12704,7 +12702,7 @@ if(typeof window !== "undefined"){
   window.exportPlayerVsAiGapReportJson = exportPlayerVsAiGapReportJson;
   window.exportAiV2DecisionAuditReportJson = exportAiV2DecisionAuditReportJson;
   window.exportAiV2DecisionAuditCompactReportJson = exportAiV2DecisionAuditCompactReportJson;
-  window.exportAiFallbackDiagnosticsReportJson = exportAiFallbackDiagnosticsReportJson;
+  window.exportAiV2ReserveDiagnosticsReportJson = exportAiV2ReserveDiagnosticsReportJson;
   window.exportAiFuelTrainingReportJson = exportAiFuelTrainingReportJson;
   window.DEBUG_AI_GAP_AFTER_BOUNCE_REPORT = DEBUG_AI_GAP_AFTER_BOUNCE_REPORT;
   window.getAiSelfAnalyzerSnapshot = getAiSelfAnalyzerSnapshot;
@@ -22247,7 +22245,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
             planeId: plannedMove.plane?.id ?? null,
             enemyId: priorityEnemy?.id ?? null,
             bestValue: null,
-            fallback: "legacy_clean_or_comeback",
+            fallback: "clean_or_comeback_window",
           });
           return true;
         }
@@ -28618,7 +28616,7 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
   return baseCandidateStage;
 }
 
-function shouldAllowLegacyFallbackForGroupKillException(modeContext = {}, groupKillPlan = null){
+function shouldKeepV2GroupKillPriority(modeContext = {}, groupKillPlan = null){
   const defensivePriority = modeContext?.defensivePriority || null;
   const criticalFlagThreat = modeContext?.criticalBlueFlagThreat || defensivePriority?.quickFlagPickupThreat || null;
   if(!groupKillPlan || groupKillPlan.killCountOnTrajectory < 2) return { allowed: true, reason: "group_kill_exception_not_required" };
@@ -28723,7 +28721,7 @@ function runAiTurnV2(context = {}){
     });
   }
 
-  const groupKillException = shouldAllowLegacyFallbackForGroupKillException(modeContext, modeContext.groupKillPriorityPlan);
+  const groupKillException = shouldKeepV2GroupKillPriority(modeContext, modeContext.groupKillPriorityPlan);
   const rejectReasons = ["no_v2_shot_plan_move"];
   const reasonCodes = ["v2_shot_plan_not_found"];
   if(shotPlanInventoryPreparationDiagnostics?.inventoryPreparationChecked){
