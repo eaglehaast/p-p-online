@@ -22827,7 +22827,7 @@ function failSafeAdvanceTurn(reason, details = {}){
 
   // Принудительный минимальный выстрел оставляем только для мягких сбоев: ход не найден, но сам запуск не сломан и прогресс матча можно безопасно сохранить.
   if(turnColors[turnIndex] === "blue"){
-    const failSafeMinimalTargetedMove = getFailSafeMinimalTargetedMove(safeDetails?.modeContext);
+    const failSafeMinimalTargetedMove = normalizeFailSafeLaunchCandidate(getFailSafeMinimalTargetedMove(safeDetails?.modeContext));
     if(
       failSafeMinimalTargetedMove?.plane
       && Number.isFinite(failSafeMinimalTargetedMove?.vx)
@@ -22858,7 +22858,35 @@ function failSafeAdvanceTurn(reason, details = {}){
       return;
     }
 
-    const guaranteedMove = getGuaranteedAnyLegalLaunch(safeDetails?.modeContext);
+    const forcedProgressMove = normalizeFailSafeLaunchCandidate(typeof getForcedProgressLaunchMove === "function"
+      ? getForcedProgressLaunchMove(safeDetails?.modeContext)
+      : null);
+    if(
+      forcedProgressMove?.plane
+      && Number.isFinite(forcedProgressMove?.vx)
+      && Number.isFinite(forcedProgressMove?.vy)
+    ){
+      logAiDecision("fail_safe_forced_launch_selected", {
+        goal,
+        previousReason: safeReason,
+        planeId: forcedProgressMove.plane?.id ?? null,
+        selectedMove: {
+          planeId: forcedProgressMove.plane?.id ?? null,
+          vx: Number(forcedProgressMove.vx.toFixed(3)),
+          vy: Number(forcedProgressMove.vy.toFixed(3)),
+          totalDist: Number.isFinite(forcedProgressMove.totalDist)
+            ? Number(forcedProgressMove.totalDist.toFixed(2))
+            : null,
+          goalName: forcedProgressMove.goalName ?? "forced_progress_safe_useful",
+          decisionReason: forcedProgressMove.decisionReason ?? "forced_progress_safe_useful",
+        },
+        reasonCodes: ["fail_safe_safe_reposition", "fail_safe_forced_launch", "keep_turn_progress"],
+      });
+      issueAIMove(forcedProgressMove.plane, forcedProgressMove.vx, forcedProgressMove.vy);
+      return;
+    }
+
+    const guaranteedMove = normalizeFailSafeLaunchCandidate(getGuaranteedAnyLegalLaunch(safeDetails?.modeContext));
     if(
       guaranteedMove?.plane
       && Number.isFinite(guaranteedMove?.vx)
@@ -22888,6 +22916,21 @@ function failSafeAdvanceTurn(reason, details = {}){
   advanceTurn();
 }
 
+function isFailSafeSpecialRouteCandidate(move){
+  const routeClass = `${move?.routeClass || move?.candidateClass || "direct"}`.toLowerCase();
+  return routeClass === "gap" || routeClass === "ricochet";
+}
+
+function normalizeFailSafeLaunchCandidate(move, overrides = {}){
+  if(!move || isFailSafeSpecialRouteCandidate(move)) return null;
+  return {
+    ...move,
+    ...overrides,
+    routeClass: "direct",
+    candidateClass: "direct",
+  };
+}
+
 function getFailSafeMinimalTargetedMove(modeContext){
   const fallbackAiPlanes = points.filter((plane) => (
     plane.color === "blue"
@@ -22906,102 +22949,109 @@ function getFailSafeMinimalTargetedMove(modeContext){
   const aliveEnemies = Array.isArray(fallbackContext.enemies)
     ? fallbackContext.enemies.filter((enemy) => enemy?.isAlive && !enemy?.burning)
     : [];
-
-  let targetedCandidate = null;
   const vulnerableEnemies = aliveEnemies.filter((enemy) => enemy?.shieldActive !== true);
+  let safestDirectCandidate = null;
+
   for(const plane of fallbackAiPlanes){
     const sortedTargets = vulnerableEnemies
       .filter((enemy) => Number.isFinite(enemy?.x) && Number.isFinite(enemy?.y))
       .sort((left, right) => Math.hypot((left.x || 0) - plane.x, (left.y || 0) - plane.y) - Math.hypot((right.x || 0) - plane.x, (right.y || 0) - plane.y));
-    for(const enemy of sortedTargets){
-      const move = planDirectAttackOrPreparationMove(plane, enemy, {
-        directGoalName: "fail_safe_minimal_targeted_move",
-        directDecisionReason: "fail_safe_minimal_targeted_move",
-        preparationGoalName: "prepare_clear_shot",
-        context: fallbackContext,
-        compareLabel: ["fail_safe_minimal", plane?.id ?? "", enemy?.id ?? ""],
-      });
-      if(!move) continue;
 
-      const candidate = {
-        ...move,
+    for(const enemy of sortedTargets){
+      const move = planPathWithSpecialRouteProbe(plane, enemy.x, enemy.y, {
+        goalName: "fail_safe_minimal_targeted_move",
+        decisionReason: "fail_safe_minimal_targeted_move",
+        targetEnemy: enemy,
+        enemy,
+        context: fallbackContext,
+        specialAttemptBudget: 0,
+        compareLabel: ["fail_safe_direct_only", plane?.id ?? "", enemy?.id ?? ""],
+      });
+      const candidate = normalizeFailSafeLaunchCandidate(move, {
         plane,
         targetEnemy: enemy,
         goalName: "fail_safe_minimal_targeted_move",
         decisionReason: "fail_safe_minimal_targeted_move",
-      };
+      });
+      if(!candidate) continue;
+
       const validation = validateAiLaunchMoveCandidate(candidate);
       if(!validation.ok) continue;
 
       const landing = getAiMoveLandingPoint(candidate);
       if(!landing) continue;
+
       const threatMeta = getImmediateResponseThreatMeta(fallbackContext, landing.x, landing.y, enemy);
       if(threatMeta.count > 0) continue;
 
-      const distanceToEnemy = Math.hypot((enemy.x || 0) - plane.x, (enemy.y || 0) - plane.y);
-      if(!targetedCandidate || distanceToEnemy < targetedCandidate.distanceToEnemy){
-        targetedCandidate = {
+      const progressMeta = getAiNoticeableProgressMeta(plane.x, plane.y, landing.x, landing.y, enemy.x, enemy.y, {
+        thresholdScale: 0.2,
+      });
+      if(!progressMeta.hasNoticeableProgress) continue;
+
+      const candidateRiskScore = threatMeta.count * 1000 + Math.max(0, progressMeta.afterDist) + (candidate.totalDist || 0) * 0.1;
+      if(!safestDirectCandidate || candidateRiskScore < safestDirectCandidate.candidateRiskScore){
+        safestDirectCandidate = {
           ...candidate,
-          distanceToEnemy,
+          candidateRiskScore,
+          progressMeta,
         };
       }
       break;
     }
   }
-  if(targetedCandidate) return targetedCandidate;
+  if(safestDirectCandidate) return safestDirectCandidate;
 
-  const preferredAngles = [
-    Math.PI / 2,
-    Math.PI / 3,
-    (2 * Math.PI) / 3,
-    Math.PI / 4,
-    (3 * Math.PI) / 4,
-    Math.PI,
-  ];
-  const safeScales = [0.32, 0.24, 0.18];
-  let neutralSafeCandidate = null;
-
+  let safestRepositionCandidate = null;
   for(const plane of fallbackAiPlanes){
-    const planeFlightProfile = getAiFlightRangeProfile(plane);
-    const speedPxPerSec = planeFlightProfile.speedPxPerSec;
-    if(!Number.isFinite(speedPxPerSec) || speedPxPerSec <= 0) continue;
+    const sortedTargets = aliveEnemies
+      .filter((enemy) => Number.isFinite(enemy?.x) && Number.isFinite(enemy?.y))
+      .sort((left, right) => Math.hypot((left.x || 0) - plane.x, (left.y || 0) - plane.y) - Math.hypot((right.x || 0) - plane.x, (right.y || 0) - plane.y));
 
-    for(const scale of safeScales){
-      for(const angle of preferredAngles){
-        const vx = Math.cos(angle) * scale * speedPxPerSec;
-        const vy = Math.sin(angle) * scale * speedPxPerSec;
-        const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
-        const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
-        if(!isPathClear(plane.x, plane.y, landingX, landingY)) continue;
+    for(const enemy of sortedTargets){
+      const planeFlightProfile = getAiFlightRangeProfile(plane);
+      const speedPxPerSec = planeFlightProfile.speedPxPerSec;
+      if(!Number.isFinite(speedPxPerSec) || speedPxPerSec <= 0) continue;
 
-        const threatMeta = getImmediateResponseThreatMeta(fallbackContext, landingX, landingY, null);
-        if(threatMeta.count > 0) continue;
+      const repositionMove = normalizeFailSafeLaunchCandidate(findFallbackSafeAngleRepositionMove(plane, enemy, speedPxPerSec), {
+        plane,
+        enemy,
+        targetEnemy: enemy,
+        goalName: "fail_safe_safe_reposition",
+        decisionReason: "fail_safe_safe_reposition",
+      });
+      if(!repositionMove) continue;
 
-        const nearestEnemyDistance = aliveEnemies.reduce((best, enemy) => {
-          if(!Number.isFinite(enemy?.x) || !Number.isFinite(enemy?.y)) return best;
-          const nextDistance = Math.hypot(enemy.x - landingX, enemy.y - landingY);
-          return nextDistance < best ? nextDistance : best;
-        }, Number.POSITIVE_INFINITY);
+      const validation = validateAiLaunchMoveCandidate(repositionMove);
+      if(!validation.ok) continue;
 
-        const candidate = {
-          plane,
-          vx,
-          vy,
-          totalDist: Math.hypot(landingX - plane.x, landingY - plane.y),
-          effectiveFlightRangeCells: planeFlightProfile.effectiveFlightRangeCells,
-          effectiveFlightDistancePx: Number(planeFlightProfile.flightDistancePx.toFixed(1)),
-          goalName: "fail_safe_minimal_neutral_safe_trajectory",
-          decisionReason: "fail_safe_minimal_targeted_move",
-          nearestEnemyDistance,
+      const landing = getAiMoveLandingPoint(repositionMove);
+      if(!landing) continue;
+
+      const threatMeta = getImmediateResponseThreatMeta(fallbackContext, landing.x, landing.y, enemy);
+      if(threatMeta.count > 0) continue;
+
+      const progressMeta = getAiNoticeableProgressMeta(plane.x, plane.y, landing.x, landing.y, enemy.x, enemy.y, {
+        thresholdScale: 0.18,
+      });
+      const hasLineOfSightToTarget = isPathClear(landing.x, landing.y, enemy.x, enemy.y);
+      if(!hasLineOfSightToTarget && !progressMeta.hasNoticeableProgress) continue;
+
+      const oddnessPenalty = hasLineOfSightToTarget ? 0 : 40;
+      const candidateRiskScore = threatMeta.count * 1000 + oddnessPenalty + Math.max(0, progressMeta.afterDist) + (repositionMove.totalDist || 0) * 0.1;
+      if(!safestRepositionCandidate || candidateRiskScore < safestRepositionCandidate.candidateRiskScore){
+        safestRepositionCandidate = {
+          ...repositionMove,
+          candidateRiskScore,
+          progressMeta,
+          hasLineOfSightToTarget,
         };
-        if(!neutralSafeCandidate || candidate.nearestEnemyDistance > neutralSafeCandidate.nearestEnemyDistance){
-          neutralSafeCandidate = candidate;
-        }
       }
+      break;
     }
   }
 
-  return neutralSafeCandidate;
+  return safestRepositionCandidate;
 }
 
 function validateAiLaunchMoveCandidate(move){
@@ -28225,7 +28275,7 @@ function getGuaranteedAnyLegalLaunch(context){
           continue;
         }
 
-        return {
+        return normalizeFailSafeLaunchCandidate({
           plane,
           vx,
           vy,
@@ -28234,7 +28284,7 @@ function getGuaranteedAnyLegalLaunch(context){
           effectiveFlightDistancePx: Number(planeFlightProfile.flightDistancePx.toFixed(1)),
           goalName: "guaranteed_any_legal_launch",
           decisionReason: "super_reserve_guaranteed_legal_launch",
-        };
+        });
       }
     }
   }
