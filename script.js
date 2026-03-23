@@ -34229,6 +34229,25 @@ function isAiLaunchPreviewActive(session, now = performance.now()){
   return session.stage === "targeting" && now < (session.previewEndsAt || 0);
 }
 
+function isHardAiLaunchSessionAnomaly(session, anomalyKind, frameGapMs, sessionAgeMs){
+  if(anomalyKind === "frame_gap_during_active_launch" || anomalyKind === "launch_session_lifetime_exceeded"){
+    return true;
+  }
+
+  if(Number.isFinite(frameGapMs) && frameGapMs > AI_LAUNCH_MAX_FRAME_GAP_MS){
+    return true;
+  }
+
+  const maxSessionLifetimeMs = Number.isFinite(session?.maxLifetimeMs)
+    ? session.maxLifetimeMs
+    : AI_LAUNCH_SESSION_MAX_LIFETIME_MS;
+  if(Number.isFinite(sessionAgeMs) && Number.isFinite(maxSessionLifetimeMs) && sessionAgeMs > maxSessionLifetimeMs){
+    return true;
+  }
+
+  return false;
+}
+
 function resolveAiLaunchSessionAnomaly(session, anomaly = {}){
   if(!session) return;
   const now = Number.isFinite(anomaly.now) ? anomaly.now : performance.now();
@@ -34236,7 +34255,13 @@ function resolveAiLaunchSessionAnomaly(session, anomaly = {}){
   const sessionAgeMs = Number.isFinite(anomaly.sessionAgeMs) ? Math.max(0, Math.round(anomaly.sessionAgeMs)) : null;
   const anomalyKind = anomaly.kind || "unknown_ai_launch_anomaly";
   const hasCandidate = Boolean(pickAiLaunchCandidateForRelease(session)?.metrics);
-  const recoveryMode = hasCandidate ? "emergency_release" : "fail_safe_turn_advance";
+  const isHardAnomaly = isHardAiLaunchSessionAnomaly(session, anomalyKind, frameGapMs, sessionAgeMs);
+  const releaseDiagnostic = hasCandidate
+    ? (isHardAnomaly ? "candidate existed but release forbidden because session stale" : "candidate existed and release allowed")
+    : "candidate missing";
+  const recoveryMode = hasCandidate && !isHardAnomaly
+    ? "emergency_release"
+    : "fail_safe_turn_advance";
   const noticeMessage = "Игра была приостановлена отладчиком или выполнение было задержано";
 
   showAiLaunchStallNotice(noticeMessage);
@@ -34249,6 +34274,8 @@ function resolveAiLaunchSessionAnomaly(session, anomaly = {}){
     sessionAgeMs,
     maxLifetimeMs: Number.isFinite(session?.maxLifetimeMs) ? Math.round(session.maxLifetimeMs) : null,
     recoveryMode,
+    releaseDiagnostic,
+    hardAnomaly: isHardAnomaly,
     noticeShown: true,
     reasonCode: anomaly.reasonCode || anomalyKind,
   });
@@ -34259,17 +34286,19 @@ function resolveAiLaunchSessionAnomaly(session, anomaly = {}){
       "ai_launch_session_active",
       anomaly.reasonCode || anomalyKind,
       recoveryMode,
+      ...(isHardAnomaly ? ["hard_ai_launch_session_anomaly"] : ["soft_ai_launch_session_anomaly"]),
     ],
     rejectReasons: [
       frameGapMs !== null ? `frame_gap_${frameGapMs}ms` : anomalyKind,
       sessionAgeMs !== null ? `session_age_${sessionAgeMs}ms` : anomalyKind,
+      releaseDiagnostic,
     ],
     errorMessage: noticeMessage,
   });
 
   resetAiLaunchSessionVisualState();
 
-  if(hasCandidate && session?.plane && isPlaneLaunchStateReady(session.plane)){
+  if(!isHardAnomaly && hasCandidate && session?.plane && isPlaneLaunchStateReady(session.plane)){
     session.stage = "release";
     session.stageStartedAt = now;
     session.pendingReleaseReason = anomaly.releaseReason || "external_pause_emergency_release";
@@ -34287,8 +34316,12 @@ function resolveAiLaunchSessionAnomaly(session, anomaly = {}){
         "ai_launch_session_active",
         anomaly.reasonCode || anomalyKind,
         "fail_safe_turn_advance",
+        ...(isHardAnomaly ? ["hard_ai_launch_session_anomaly"] : ["soft_ai_launch_session_anomaly"]),
       ],
-      rejectReasons: [anomaly.reasonCode || anomalyKind],
+      rejectReasons: [
+        anomaly.reasonCode || anomalyKind,
+        releaseDiagnostic,
+      ],
       errorMessage: noticeMessage,
     });
   }
