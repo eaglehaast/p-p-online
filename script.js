@@ -11397,7 +11397,7 @@ function buildAiFallbackDiagnosticsReport(source){
     if(has("critical_base_threat") || has("emergency_base_defense")) return "defense_override";
     if(has("mode_strategy_failed") || has("mode_move_restriction")) return "mode_restriction_only";
     if(has("attempt_budget_exhausted")) return "attempt_budget_exhausted";
-    if(has("no_v2_shot_plan_move") || has("fallback_to_legacy")) return "no_candidates_generated";
+    if(has("no_v2_shot_plan_move")) return "no_candidates_generated";
 
 
     if(diagnostics && typeof diagnostics === "object"){
@@ -29656,7 +29656,7 @@ function shouldAllowLegacyFallbackForGroupKillException(modeContext = {}, groupK
   const criticalFlagThreat = modeContext?.criticalBlueFlagThreat || defensivePriority?.quickFlagPickupThreat || null;
   if(!groupKillPlan || groupKillPlan.killCountOnTrajectory < 2) return { allowed: true, reason: "group_kill_exception_not_required" };
   if(groupKillPlan.killCountOnTrajectory >= 3){
-    return { allowed: false, reason: "legacy_fallback_blocked_by_triple_kill_priority", criticalThreat: criticalFlagThreat };
+    return { allowed: false, reason: "triple_kill_priority_preserved", criticalThreat: criticalFlagThreat };
   }
   const threatLooksCritical = Boolean(
     defensivePriority?.hasQuickFlagPickupThreat
@@ -29687,8 +29687,17 @@ function runAiTurnV2(context = {}){
   ));
   const enemies = points.filter((p) => p.color === "green" && p.isAlive && !p.burning);
   if(!aiPlanes.length || !enemies.length){
-    return doComputerMoveLegacy({
-      forceLegacyModeSelection: context.useLegacyFallbackSelection !== false,
+    logAiDecision("v2_safe_turn_resolution", {
+      reason: !aiPlanes.length ? "no_ready_ai_planes" : "no_alive_enemies",
+      aiPlaneCount: aiPlanes.length,
+      enemyCount: enemies.length,
+      source: "runAiTurnV2",
+    });
+    return failSafeAdvanceTurn("v2_safe_turn_resolution", {
+      goal: "v2_safe_turn_resolution",
+      reasonCodes: ["v2_safe_turn_resolution", !aiPlanes.length ? "no_ready_ai_planes" : "no_alive_enemies"],
+      rejectReasons: [!aiPlanes.length ? "no_ready_ai_planes" : "no_alive_enemies"],
+      modeContext: { aiPlanes, enemies },
     });
   }
 
@@ -29708,7 +29717,7 @@ function runAiTurnV2(context = {}){
 
   if(modeContext.groupKillPriorityPlan?.move && modeContext.groupKillPriorityPlan.killCountOnTrajectory >= 3){
     aiRoundState.currentGoal = modeContext.groupKillPriorityPlan.goalName || "triple_kill_priority";
-    logAiDecision("legacy_fallback_blocked_by_triple_kill_priority", {
+    logAiDecision("triple_kill_priority_preserved", {
       planeId: modeContext.groupKillPriorityPlan.move?.plane?.id ?? null,
       enemyId: modeContext.groupKillPriorityPlan.move?.enemy?.id ?? null,
       killCountOnTrajectory: modeContext.groupKillPriorityPlan.killCountOnTrajectory,
@@ -29747,7 +29756,7 @@ function runAiTurnV2(context = {}){
     });
   }
 
-  const legacyFallbackException = shouldAllowLegacyFallbackForGroupKillException(modeContext, modeContext.groupKillPriorityPlan);
+  const groupKillException = shouldAllowLegacyFallbackForGroupKillException(modeContext, modeContext.groupKillPriorityPlan);
   const rejectReasons = ["no_v2_shot_plan_move"];
   const reasonCodes = ["v2_shot_plan_not_found"];
   if(shotPlanInventoryPreparationDiagnostics?.inventoryPreparationChecked){
@@ -29761,7 +29770,7 @@ function runAiTurnV2(context = {}){
 
   if(modeContext.groupKillPriorityPlan?.move && modeContext.groupKillPriorityPlan.killCountOnTrajectory >= 3){
     reasonCodes.push("v2_shot_plan_not_found_but_triple_kill_exists");
-    rejectReasons.push("legacy_fallback_blocked_by_triple_kill_priority");
+    rejectReasons.push("triple_kill_priority_preserved");
     logAiDecision("v2_shot_plan_not_found_but_triple_kill_exists", {
       goal: chosenGoal?.goalName || null,
       tripleKillGoal: modeContext.groupKillPriorityPlan.goalName || "triple_kill_priority",
@@ -29783,16 +29792,16 @@ function runAiTurnV2(context = {}){
     });
   }
 
-  if(modeContext.groupKillPriorityPlan?.move && modeContext.groupKillPriorityPlan.killCountOnTrajectory === 2 && !legacyFallbackException.allowed){
+  if(modeContext.groupKillPriorityPlan?.move && modeContext.groupKillPriorityPlan.killCountOnTrajectory === 2 && !groupKillException.allowed){
     reasonCodes.push("double_kill_priority_preserved");
-    rejectReasons.push("legacy_fallback_blocked_by_double_kill_priority");
-    logAiDecision("legacy_fallback_blocked_by_triple_kill_priority", {
+    rejectReasons.push("double_kill_priority_preserved");
+    logAiDecision("double_kill_priority_preserved", {
       planeId: modeContext.groupKillPriorityPlan.move?.plane?.id ?? null,
       enemyId: modeContext.groupKillPriorityPlan.move?.enemy?.id ?? null,
       killCountOnTrajectory: modeContext.groupKillPriorityPlan.killCountOnTrajectory,
       affectedEnemyIds: modeContext.groupKillPriorityPlan.multiKillContext?.affectedEnemyIds || [],
       source: "runAiTurnV2",
-      fallbackReason: "double_kill_priority_preserved",
+      priorityReason: "double_kill_priority_preserved",
     });
     aiRoundState.currentGoal = modeContext.groupKillPriorityPlan.goalName || "triple_kill_priority";
     return issueAIMoveFromDoComputerMove(modeContext, {
@@ -29808,15 +29817,15 @@ function runAiTurnV2(context = {}){
     });
   }
 
-  if(modeContext.groupKillPriorityPlan?.move && modeContext.groupKillPriorityPlan.killCountOnTrajectory === 2 && legacyFallbackException.allowed && legacyFallbackException.reason === "flag_exception_overrides_triple_kill"){
+  if(modeContext.groupKillPriorityPlan?.move && modeContext.groupKillPriorityPlan.killCountOnTrajectory === 2 && groupKillException.allowed && groupKillException.reason === "flag_exception_overrides_triple_kill"){
     logAiDecision("flag_exception_overrides_triple_kill", {
       planeId: modeContext.groupKillPriorityPlan.move?.plane?.id ?? null,
       enemyId: modeContext.groupKillPriorityPlan.move?.enemy?.id ?? null,
       killCountOnTrajectory: modeContext.groupKillPriorityPlan.killCountOnTrajectory,
       affectedEnemyIds: modeContext.groupKillPriorityPlan.multiKillContext?.affectedEnemyIds || [],
-      threatScore: legacyFallbackException.criticalThreat?.threatScore ?? null,
-      canInterceptBeforePickup: legacyFallbackException.criticalThreat?.canInterceptBeforePickup ?? null,
-      hasSafePostPickupEscape: legacyFallbackException.criticalThreat?.hasSafePostPickupEscape ?? null,
+      threatScore: groupKillException.criticalThreat?.threatScore ?? null,
+      canInterceptBeforePickup: groupKillException.criticalThreat?.canInterceptBeforePickup ?? null,
+      hasSafePostPickupEscape: groupKillException.criticalThreat?.hasSafePostPickupEscape ?? null,
       source: "runAiTurnV2",
     });
   }
@@ -29836,7 +29845,6 @@ function runAiTurnV2(context = {}){
     goal: chosenGoal?.goalName || null,
     reasonCodes: [
       ...reasonCodes,
-      "fallback_to_legacy",
     ],
     rejectReasons,
     source: "runAiTurnV2",
@@ -29846,8 +29854,16 @@ function runAiTurnV2(context = {}){
     },
   });
 
-  return doComputerMoveLegacy({
-    forceLegacyModeSelection: context.useLegacyFallbackSelection !== false,
+  logAiDecision("v2_safe_turn_resolution", {
+    goal: chosenGoal?.goalName || null,
+    reason: "no_v2_shot_plan_move",
+    source: "runAiTurnV2",
+  });
+  return failSafeAdvanceTurn("v2_safe_turn_resolution", {
+    goal: chosenGoal?.goalName || "v2_safe_turn_resolution",
+    reasonCodes,
+    rejectReasons,
+    modeContext,
   });
 }
 
