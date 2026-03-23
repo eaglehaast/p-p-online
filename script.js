@@ -21003,7 +21003,14 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       weakChance: isAiInventoryPressureWeakChance(reason),
       strongCandidate: false,
     };
-    const payload = { itemType, reason, planeId: plannedMove?.plane?.id ?? null, goal: plannedMove?.goalName || aiRoundState?.currentGoal || null, ...details };
+    const payload = {
+      itemType,
+      reason,
+      planeId: plannedMove?.plane?.id ?? null,
+      goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+      stage: "inventory_primary_evaluation",
+      ...details,
+    };
     rejected.push(payload);
     logAiDecision("inventory_candidate_rejected", payload);
     recordInventoryAiDecision("inventory_candidate_rejected", {
@@ -21548,20 +21555,23 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
 
   function tryApplyAiInventoryItem(itemType, options = {}){
     const bypassLowConfidenceLock = options?.bypassLowConfidenceLock === true;
+    const lockReason = options?.lockReason || "inventory_locked_for_low_confidence_move";
+    const lockStage = options?.lockStage || "inventory_execution_gate";
     if(!bypassLowConfidenceLock && !allowInventoryUsage){
       logAiDecision("inventory_usage_locked", {
         itemType,
         planeId: plannedMove?.plane?.id ?? null,
-        reason: "inventory_locked_for_low_confidence_move",
+        reason: lockReason,
         goal: strategicGoal || null,
         idleTurns: aiRoundState.inventoryIdleTurns,
+        stage: lockStage,
       });
       recordInventoryAiDecision("inventory_usage_locked", {
         planeId: plannedMove?.plane?.id ?? null,
         goal: strategicGoal || null,
         itemType,
         reasonCodes: ["inventory_locked"],
-        rejectReasons: ["inventory_locked_for_low_confidence_move"],
+        rejectReasons: [lockReason],
       });
       return false;
     }
@@ -21655,6 +21665,27 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       reason: `fuel_training_skipped_with_reason:${reason}`,
       reasonSource: "logAiDecision",
       planeId: plannedMove?.plane?.id ?? null,
+    });
+  }
+
+
+  function logSelectedInventoryExecutionFailure(itemType, reason, details = {}){
+    const payload = {
+      itemType,
+      reason: reason || "selected_candidate_failed_to_execute",
+      planeId: plannedMove?.plane?.id ?? null,
+      goal: strategicGoal || null,
+      source: "selected_inventory_candidate",
+      stage: "inventory_execution",
+      ...details,
+    };
+    logAiDecision("inventory_selected_candidate_execution_failed", payload);
+    recordInventoryAiDecision("inventory_selected_candidate_execution_failed", {
+      planeId: payload.planeId,
+      goal: payload.goal,
+      itemType: payload.itemType,
+      reasonCodes: ["selected_candidate_execution_failed"],
+      rejectReasons: [payload.reason],
     });
   }
 
@@ -21879,19 +21910,9 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       return true;
     }
 
-    logAiDecision("inventory_selected_candidate_execution_failed", {
-      itemType: selectedType,
-      reason: executionFailureReason || "selected_candidate_failed_to_execute",
-      planeId: plannedMove?.plane?.id ?? null,
-      goal: strategicGoal || null,
-      source: "selected_inventory_candidate",
-    });
-    recordInventoryAiDecision("inventory_selected_candidate_execution_failed", {
-      planeId: plannedMove?.plane?.id ?? null,
-      goal: strategicGoal || null,
-      itemType: selectedType,
-      reasonCodes: ["selected_candidate_execution_failed"],
-      rejectReasons: [executionFailureReason || "selected_candidate_failed_to_execute"],
+    logSelectedInventoryExecutionFailure(selectedType, executionFailureReason, {
+      hadCommittedSelection: true,
+      inventoryLockBypassedBecauseAlreadySelected: true,
     });
   }
 
