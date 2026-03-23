@@ -22653,6 +22653,13 @@ function failSafeAdvanceTurn(reason, details = {}){
     : ["fail_safe_turn_advance"];
   const goal = safeDetails.goal || aiRoundState?.currentGoal || safeReason;
   const planeId = safeDetails.planeId ?? safeDetails?.move?.plane?.id ?? null;
+  const hardSkipReasons = new Set([
+    "ai_move_exception",
+    "ai_launch_session_recovery_fail_safe",
+    "ai_launch_session_plane_lost",
+    "invalid_move_fail_safe",
+  ]);
+  const shouldHardSkipTurn = hardSkipReasons.has(safeReason);
 
   recordAiSelfAnalyzerDecision(safeReason, {
     goal,
@@ -22664,6 +22671,20 @@ function failSafeAdvanceTurn(reason, details = {}){
 
   aiMoveScheduled = false;
 
+  if(shouldHardSkipTurn){
+    logAiDecision("fail_safe_direct_turn_advance", {
+      goal,
+      previousReason: safeReason,
+      planeId,
+      scenario: "hard_skip_direct_turn_advance",
+      reasonCodes: [...new Set(["hard_skip_direct_turn_advance", ...reasonCodes])],
+    });
+    // После исключения нельзя заново запускать аварийный выстрел, иначе цикл «прицеливание → сбой → прицеливание» может застрять навсегда.
+    advanceTurn();
+    return;
+  }
+
+  // Принудительный минимальный выстрел оставляем только для мягких сбоев: ход не найден, но сам запуск не сломан и прогресс матча можно безопасно сохранить.
   if(turnColors[turnIndex] === "blue"){
     const failSafeMinimalTargetedMove = getFailSafeMinimalTargetedMove(safeDetails?.modeContext);
     if(
