@@ -16473,12 +16473,12 @@ function applyAiMinLaunchScale(scale, details = {}){
 }
 
 const AI_INVENTORY_PRESSURE_CONFIG = Object.freeze({
-  [INVENTORY_ITEM_TYPES.MINE]: { idleTurnWeight: 0.022, weakChanceWeight: 0.032, staleLeaderBonus: 0.026, maxBonus: 0.24, selectionFloor: 0.155 },
-  [INVENTORY_ITEM_TYPES.DYNAMITE]: { idleTurnWeight: 0.024, weakChanceWeight: 0.031, staleLeaderBonus: 0.024, maxBonus: 0.22, selectionFloor: 0.165 },
-  [INVENTORY_ITEM_TYPES.FUEL]: { idleTurnWeight: 0.022, weakChanceWeight: 0.03, staleLeaderBonus: 0.023, maxBonus: 0.22, selectionFloor: 0.15 },
-  [INVENTORY_ITEM_TYPES.CROSSHAIR]: { idleTurnWeight: 0.019, weakChanceWeight: 0.03, staleLeaderBonus: 0.021, maxBonus: 0.2, selectionFloor: 0.145 },
-  [INVENTORY_ITEM_TYPES.WINGS]: { idleTurnWeight: 0.021, weakChanceWeight: 0.029, staleLeaderBonus: 0.022, maxBonus: 0.21, selectionFloor: 0.15 },
-  [INVENTORY_ITEM_TYPES.INVISIBILITY]: { idleTurnWeight: 0.021, weakChanceWeight: 0.03, staleLeaderBonus: 0.023, maxBonus: 0.215, selectionFloor: 0.15 },
+  [INVENTORY_ITEM_TYPES.MINE]: { idleTurnWeight: 0.028, weakChanceWeight: 0.04, staleLeaderBonus: 0.026, maxBonus: 0.24, selectionFloor: 0.13 },
+  [INVENTORY_ITEM_TYPES.DYNAMITE]: { idleTurnWeight: 0.029, weakChanceWeight: 0.039, staleLeaderBonus: 0.024, maxBonus: 0.22, selectionFloor: 0.135 },
+  [INVENTORY_ITEM_TYPES.FUEL]: { idleTurnWeight: 0.027, weakChanceWeight: 0.038, staleLeaderBonus: 0.023, maxBonus: 0.22, selectionFloor: 0.125 },
+  [INVENTORY_ITEM_TYPES.CROSSHAIR]: { idleTurnWeight: 0.024, weakChanceWeight: 0.037, staleLeaderBonus: 0.021, maxBonus: 0.2, selectionFloor: 0.12 },
+  [INVENTORY_ITEM_TYPES.WINGS]: { idleTurnWeight: 0.026, weakChanceWeight: 0.036, staleLeaderBonus: 0.022, maxBonus: 0.21, selectionFloor: 0.123 },
+  [INVENTORY_ITEM_TYPES.INVISIBILITY]: { idleTurnWeight: 0.026, weakChanceWeight: 0.037, staleLeaderBonus: 0.023, maxBonus: 0.215, selectionFloor: 0.124 },
 });
 
 function createInitialInventoryPressureState(){
@@ -20841,6 +20841,23 @@ function getAiInventoryPressureBonus(itemType, entry, isStaleLeader, recentSigna
   return Number(Math.max(0, Math.min(config.maxBonus, rawBonus)).toFixed(3));
 }
 
+function getAiInventorySelectionFloor(candidate){
+  const baseSelectionFloor = Number.isFinite(AI_INVENTORY_PRESSURE_CONFIG?.[candidate?.itemType]?.selectionFloor)
+    ? AI_INVENTORY_PRESSURE_CONFIG[candidate.itemType].selectionFloor
+    : 0.12;
+  if(!candidate || candidate.usageTier !== "moderate"){
+    return baseSelectionFloor;
+  }
+  const idleTurns = candidate.pressureMeta?.idleTurns ?? 0;
+  const weakChanceStreak = candidate.pressureMeta?.weakChanceStreak ?? 0;
+  const releaseDiscount = idleTurns >= AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD
+    ? 0.012
+    : weakChanceStreak >= 2
+      ? 0.008
+      : 0;
+  return Number(Math.max(0.1, baseSelectionFloor - releaseDiscount).toFixed(3));
+}
+
 function updateAiInventoryPressureForTurn(inventoryCounts, perItemEvaluation = {}){
   const pressureState = ensureAiInventoryPressureState();
   const currentTurn = Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null;
@@ -21292,7 +21309,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     candidate.pressureBonus = pressureBonus;
     const moderateReleaseReady = candidate.usageTier !== "moderate"
       || recentInventorySignals.softReleaseReady
-      || (entry?.idleTurns ?? 0) >= AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD + 1
+      || (entry?.idleTurns ?? 0) >= AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD
       || (entry?.weakChanceStreak ?? 0) >= 2;
     candidate.pressureMeta = entry ? {
       idleTurns: entry.idleTurns,
@@ -21334,9 +21351,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     }
   }
   if(selectedCandidate){
-    const selectionFloor = Number.isFinite(AI_INVENTORY_PRESSURE_CONFIG?.[selectedCandidate.itemType]?.selectionFloor)
-      ? AI_INVENTORY_PRESSURE_CONFIG[selectedCandidate.itemType].selectionFloor
-      : 0.12;
+    const selectionFloor = getAiInventorySelectionFloor(selectedCandidate);
     if(selectedCandidate.adjustedComparableScore <= selectionFloor){
       rejectCandidate(selectedCandidate.itemType, "inventory_plan_not_better_than_plain_move", {
         comparableScore: selectedCandidate.comparableScore,
@@ -21349,9 +21364,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     }
   }
   if(selectedCandidate){
-    const selectionFloor = Number.isFinite(AI_INVENTORY_PRESSURE_CONFIG?.[selectedCandidate.itemType]?.selectionFloor)
-      ? AI_INVENTORY_PRESSURE_CONFIG[selectedCandidate.itemType].selectionFloor
-      : 0.12;
+    const selectionFloor = getAiInventorySelectionFloor(selectedCandidate);
     const crossedOwnGateBecauseOfPressure = selectedCandidate.comparableScore <= selectionFloor
       && selectedCandidate.adjustedComparableScore > selectionFloor;
     const displacedAnotherCandidateBecauseOfPressure = Boolean(
