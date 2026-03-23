@@ -18368,7 +18368,7 @@ function findSafePreparationMoveForAttack(plane, enemy, options = {}){
         goalName: preparationGoalName,
         decisionReason: preparationGoalName,
         targetEnemy: enemy,
-        specialAttemptBudget: 2,
+        specialAttemptBudget: 0,
         compareLabel: [preparationGoalName, plane?.id ?? "", enemy?.id ?? ""],
       });
       if(!move) continue;
@@ -18384,6 +18384,42 @@ function findSafePreparationMoveForAttack(plane, enemy, options = {}){
   }
 
   return bestCandidate?.move || null;
+}
+
+function planDirectAttackOrPreparationMove(plane, enemy, options = {}){
+  if(!plane || !enemy) return null;
+
+  const directGoalName = typeof options?.directGoalName === "string" && options.directGoalName.trim().length > 0
+    ? options.directGoalName.trim()
+    : (typeof options?.goalName === "string" && options.goalName.trim().length > 0
+      ? options.goalName.trim()
+      : "attack_enemy_plane");
+  const directDecisionReason = typeof options?.directDecisionReason === "string" && options.directDecisionReason.trim().length > 0
+    ? options.directDecisionReason.trim()
+    : directGoalName;
+  const compareLabel = Array.isArray(options?.compareLabel)
+    ? options.compareLabel
+    : [directGoalName, plane?.id ?? "", enemy?.id ?? ""];
+  const directMove = planPathWithSpecialRouteProbe(plane, enemy.x, enemy.y, {
+    goalName: directGoalName,
+    decisionReason: directDecisionReason,
+    targetEnemy: enemy,
+    enemy,
+    context: options?.context,
+    specialAttemptBudget: 0,
+    compareLabel,
+    prioritizeDirectFinisher: options?.prioritizeDirectFinisher === true,
+    allowFinisherSafetyBypass: options?.allowFinisherSafetyBypass === true,
+  });
+  if(directMove) return directMove;
+
+  if(options?.allowPreparationFallback === false) return null;
+
+  return findSafePreparationMoveForAttack(plane, enemy, {
+    goalName: typeof options?.preparationGoalName === "string" && options.preparationGoalName.trim().length > 0
+      ? options.preparationGoalName.trim()
+      : "prepare_clear_shot",
+  });
 }
 
 function getFallbackDirectAttackQuality(plane, enemy, directDist, riskProfile = "balanced"){
@@ -18527,7 +18563,7 @@ function planPathWithSpecialRouteProbe(plane, tx, ty, options = {}){
     : (goalName || "path_probe");
   const specialRouteClasses = Array.isArray(options?.specialRouteClasses)
     ? options.specialRouteClasses.filter((classKey) => classKey === "gap" || classKey === "ricochet")
-    : ["gap", "ricochet"];
+    : [];
   const specialAttemptBudget = Number.isFinite(options?.specialAttemptBudget)
     ? Math.max(0, Math.floor(options.specialAttemptBudget))
     : 2;
@@ -22878,12 +22914,11 @@ function getFailSafeMinimalTargetedMove(modeContext){
       .filter((enemy) => Number.isFinite(enemy?.x) && Number.isFinite(enemy?.y))
       .sort((left, right) => Math.hypot((left.x || 0) - plane.x, (left.y || 0) - plane.y) - Math.hypot((right.x || 0) - plane.x, (right.y || 0) - plane.y));
     for(const enemy of sortedTargets){
-      const move = planPathWithSpecialRouteProbe(plane, enemy.x, enemy.y, {
-        goalName: "fail_safe_minimal_targeted_move",
-        decisionReason: "fail_safe_minimal_targeted_move",
-        targetEnemy: enemy,
+      const move = planDirectAttackOrPreparationMove(plane, enemy, {
+        directGoalName: "fail_safe_minimal_targeted_move",
+        directDecisionReason: "fail_safe_minimal_targeted_move",
+        preparationGoalName: "prepare_clear_shot",
         context: fallbackContext,
-        specialAttemptBudget: 1,
         compareLabel: ["fail_safe_minimal", plane?.id ?? "", enemy?.id ?? ""],
       });
       if(!move) continue;
@@ -27943,9 +27978,6 @@ function getFallbackAiMove(context){
         const directPathBlocked = true;
         const directDist = Math.hypot(enemy.x - plane.x, enemy.y - plane.y);
         const wallLockedTargetTrigger = directPathBlocked && directDist <= AI_WALL_LOCKED_TARGET_COMBAT_RADIUS;
-        const mirrorPressureTarget = isMirrorPressureTarget(enemy, context);
-        const mirrorPressureBoost = mirrorPressureTarget ? AI_MIRROR_PATH_PRESSURE_BONUS : 0;
-
         const blockedDirectQuality = getFallbackDirectAttackQuality(plane, enemy, directDist, riskProfile);
         if(blockedDirectQuality < AI_FALLBACK_DIRECT_QUALITY_MIN){
           const qualityPenalty = wallLockedTargetTrigger ? AI_WALL_LOCKED_POOR_DIRECT_QUALITY_PENALTY : 0;
@@ -27967,175 +27999,24 @@ function getFallbackAiMove(context){
           }
         }
 
-        const mirror = riskProfile === "conservative"
-          ? null
-          : findMirrorShot(plane, enemy, {
-            logReject: true,
-            pressureBoost: mirrorPressureBoost,
-            goalName: "attack_enemy_plane",
-          });
-        if(mirror){
-          const dx = mirror.mirrorTarget.x - plane.x;
-          const dy = mirror.mirrorTarget.y - plane.y;
-          const ang = Math.atan2(dy, dx) + getRandomDeviation(mirror.totalDist, AI_MAX_ANGLE_DEVIATION);
-
-          const baseScale = Math.min(mirror.totalDist / (2*MAX_DRAG_DISTANCE), 1);
-          const scale = applyAiMinLaunchScale(baseScale, {
-            source: "fallback_mirror_attack",
-            planeId: plane.id,
-            enemyId: enemy.id,
-            decisionReason: "fallback_mirror_attack",
-            goalName: "attack_enemy_plane",
-            moveDistance: mirror.totalDist,
-          });
-          const vx = Math.cos(ang) * scale * speedPxPerSec;
-          const vy = Math.sin(ang) * scale * speedPxPerSec;
-
-          const mirrorWeight = riskProfile === "comeback" ? 0.82 : 1;
-          const blockedDirectBonus = directPathBlocked ? AI_MIRROR_SCORE_BLOCKED_DIRECT_BONUS : 0;
-          const pressureBonus = mirrorPressureTarget ? AI_MIRROR_SCORE_PRESSURE_BONUS : 0;
-          const wallLockedBonus = wallLockedTargetTrigger ? AI_WALL_LOCKED_MIRROR_BONUS : 0;
-          const mirrorBonus = Math.min(0.2, blockedDirectBonus + pressureBonus + wallLockedBonus);
-          const reasonCode = wallLockedTargetTrigger
-            ? "wall_locked_target_prefers_ricochet"
-            : (directPathBlocked ? "direct_path_blocked" : "tactical_preference");
-          if(wallLockedTargetTrigger && enemy?.id){
-            wallLockedRicochetPreferredTargets.add(enemy.id);
-          }
-          logAiDecision("mirror_selected_reason", {
-            source: "fallback_attack",
-            reason: directPathBlocked ? "direct_path_blocked" : "tactical_preference",
-            reasonCode,
-            planeId: plane.id,
-            enemyId: enemy.id,
-            effectiveFlightRangeCells: planeFlightProfile.effectiveFlightRangeCells,
-            effectiveFlightDistancePx: Number(planeFlightProfile.flightDistancePx.toFixed(1)),
-            mirrorBonus: Number(mirrorBonus.toFixed(3)),
-            blockedDirectBonus: Number(blockedDirectBonus.toFixed(3)),
-            pressureBonus: Number(pressureBonus.toFixed(3)),
-            wallLockedBonus: Number(wallLockedBonus.toFixed(3)),
-            wallLockedTargetTrigger,
-            directDistance: Number(directDist.toFixed(1)),
-            combatRadius: Number(AI_WALL_LOCKED_TARGET_COMBAT_RADIUS.toFixed(1)),
-            clearSky: isCurrentMapClearSky(),
-            pathDistance: Number(mirror.totalDist.toFixed(1)),
-          });
-          const mirrorMultiKill = getAiMultiKillPotentialContext({
+        const preparationMove = findSafePreparationMoveForAttack(plane, enemy, {
+          goalName: dynamiteAvailable ? "prepare_dynamite_breach" : "prepare_clear_shot",
+        });
+        if(preparationMove){
+          const prepWeight = riskProfile === "comeback" ? 0.95 : 1;
+          const preparationScore = getAiPlaneAdjustedScore(preparationMove.totalDist * prepWeight, plane);
+          const preparationCandidate = applyLossCompressionScoreAdjustments({
             plane,
             enemy,
-            enemies: targetEnemies,
-            lineEndX: mirror.mirrorTarget.x,
-            lineEndY: mirror.mirrorTarget.y,
-          });
-          const mirrorSafetyContext = {
-            goalName: "attack_enemy_plane",
-            decisionReason: "fallback_mirror_attack",
-          };
-          const mirrorLandingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
-          const mirrorLandingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
-          const mirrorImmediateThreatMeta = getImmediateResponseThreatMeta(context, mirrorLandingX, mirrorLandingY, enemy);
-          const mirrorScoreMeta = buildFallbackAttackScoreDetails({
-            plane,
-            weightedDistance: mirror.totalDist * mirrorWeight,
-            bonusParts: [blockedDirectBonus, pressureBonus, wallLockedBonus],
-            safetyContext: mirrorSafetyContext,
-            multiKillPotential: mirrorMultiKill,
-            classScoreMeta: getAiCandidateClassComparableScore({
-              plane,
-              routeDistance: mirror.totalDist,
-              responseRisk: getFallbackCandidateResponseRisk(mirrorImmediateThreatMeta),
-              fromPoint: plane,
-              landingPoint: { x: mirrorLandingX, y: mirrorLandingY },
-              targetPoint: enemy,
-              candidateClass: "ricochet",
-              directPathBlocked: directPathBlocked,
-              goalName: mirrorSafetyContext.goalName,
-            }),
-            tieBreakPenalty: 0,
-            modeContext: context,
-          });
-          const mirrorResponseRisk = getFallbackCandidateResponseRisk(mirrorImmediateThreatMeta);
-          logAiDecision("fallback_attack_candidate_scored", {
-            source: "fallback_attack",
-            candidateType: "mirror",
-            planeId: plane.id,
-            enemyId: enemy.id,
-            effectiveFlightRangeCells: planeFlightProfile.effectiveFlightRangeCells,
-            effectiveFlightDistancePx: Number(planeFlightProfile.flightDistancePx.toFixed(1)),
-            secondaryEnemyId: mirrorMultiKill.secondaryEnemyId,
-            affectedEnemyIds: mirrorMultiKill.affectedEnemyIds,
-            affectedEnemyDetails: mirrorMultiKill.affectedEnemyDetails,
-            multiKillPotential: mirrorMultiKill.multiKillPotential,
-            killCountOnTrajectory: mirrorMultiKill.killCountOnTrajectory,
-            opportunityReason: mirrorMultiKill.opportunityReason,
-            multiKillBonusApplied: Number(mirrorScoreMeta.multiKillBonusApplied.toFixed(3)),
-            scoreBefore: Number(mirrorScoreMeta.scoreBefore.toFixed(3)),
-            scoreAfter: Number(mirrorScoreMeta.scoreAfter.toFixed(3)),
-            normalizedScore: Number(mirrorScoreMeta.normalizedScore.toFixed(3)),
-            normalizedDirectScore: null,
-            normalizedMirrorScore: Number(mirrorScoreMeta.normalizedScore.toFixed(3)),
-            mirrorBonus: Number(mirrorScoreMeta.bonusTotal.toFixed(3)),
-            responseRisk: Number(mirrorResponseRisk.toFixed(4)),
-            classScoreBreakdown: mirrorScoreMeta.classScoreBreakdown,
-            selectedClass: "ricochet",
-            classTieBreakReason: compareAiCandidateByScoreAndRotation.lastClassTieBreakReason || null,
-            lineDistance: Number.isFinite(mirrorMultiKill.lineDistance) ? Number(mirrorMultiKill.lineDistance.toFixed(2)) : null,
-            contactDistance: Number.isFinite(mirrorMultiKill.contactDistance) ? Number(mirrorMultiKill.contactDistance.toFixed(2)) : null,
-          });
-
-          const mirrorCandidate = applyLossCompressionScoreAdjustments({
-            plane,
-            enemy,
-            vx,
-            vy,
-            totalDist: mirror.totalDist,
-            directAttackScore: mirrorScoreMeta.scoreBefore,
-            score: mirrorScoreMeta.normalizedScore,
-            normalizedScore: mirrorScoreMeta.normalizedScore,
-            responseRisk: mirrorResponseRisk,
-            trajectoryType: "mirror",
-            candidateType: "ricochet",
-            classScoreBreakdown: mirrorScoreMeta.classScoreBreakdown,
-            selectedClass: "ricochet",
-            idleTurns: getAiPlaneIdleTurns(plane),
-            killCountOnTrajectory: mirrorMultiKill.killCountOnTrajectory,
-            affectedEnemyIds: mirrorMultiKill.affectedEnemyIds,
-            opportunityReason: mirrorMultiKill.opportunityReason,
-          }, context);
-          if(mirrorMultiKill.opportunityReason){
-            logAiMultiKillOpportunity(mirrorMultiKill.opportunityReason, {
-              source: "fallback_attack",
-              candidateType: "mirror",
-              planeId: plane.id,
-              enemyId: enemy.id,
-              killCountOnTrajectory: mirrorMultiKill.killCountOnTrajectory,
-              affectedEnemyIds: mirrorMultiKill.affectedEnemyIds,
-            });
-          }
-          if(compareAiCandidateByScoreAndRotation(mirrorCandidate, best, ["fallback_attack", "mirror", enemy?.id ?? ""])){
-            mirrorCandidate.classTieBreakReason = compareAiCandidateByScoreAndRotation.lastClassTieBreakReason || null;
-            best = mirrorCandidate;
-          }
-        } else {
-          const preparationMove = findSafePreparationMoveForAttack(plane, enemy, {
+            targetEnemy: enemy,
             goalName: dynamiteAvailable ? "prepare_dynamite_breach" : "prepare_clear_shot",
-          });
-          if(preparationMove){
-            const prepWeight = riskProfile === "comeback" ? 0.95 : 1;
-            const preparationScore = getAiPlaneAdjustedScore(preparationMove.totalDist * prepWeight, plane);
-            const preparationCandidate = applyLossCompressionScoreAdjustments({
-              plane,
-              enemy,
-              targetEnemy: enemy,
-              goalName: dynamiteAvailable ? "prepare_dynamite_breach" : "prepare_clear_shot",
-              ...preparationMove,
-              score: preparationScore,
-              idleTurns: getAiPlaneIdleTurns(plane),
-            }, context);
-            if(compareAiCandidateByScoreAndRotation(preparationCandidate, bestPreparation, ["fallback_attack", "prepare", enemy?.id ?? ""])){
-              bestPreparation = preparationCandidate;
-              bestPreparationScore = preparationScore;
-            }
+            ...preparationMove,
+            score: preparationScore,
+            idleTurns: getAiPlaneIdleTurns(plane),
+          }, context);
+          if(compareAiCandidateByScoreAndRotation(preparationCandidate, bestPreparation, ["fallback_attack", "prepare", enemy?.id ?? ""])){
+            bestPreparation = preparationCandidate;
+            bestPreparationScore = preparationScore;
           }
         }
       }
@@ -28380,12 +28261,11 @@ function getForcedProgressLaunchMove(context){
     }, null);
     if(!nearestEnemy) continue;
 
-    const usefulMove = planPathWithSpecialRouteProbe(plane, nearestEnemy.x, nearestEnemy.y, {
-      goalName: "forced_progress_safe_useful",
-      decisionReason: "forced_progress_safe_useful",
-      targetEnemy: nearestEnemy,
+    const usefulMove = planDirectAttackOrPreparationMove(plane, nearestEnemy, {
+      directGoalName: "forced_progress_safe_useful",
+      directDecisionReason: "forced_progress_safe_useful",
+      preparationGoalName: "prepare_clear_shot",
       context,
-      specialAttemptBudget: 2,
       compareLabel: ["forced_progress_safe_useful", plane?.id ?? "", nearestEnemy?.id ?? ""],
     });
     if(!usefulMove) continue;
@@ -28456,12 +28336,11 @@ function getLossCompressionAggressiveMove(modeContext){
 
     for(const enemy of enemies){
       if(!enemy?.isAlive) continue;
-      const move = planPathWithSpecialRouteProbe(plane, enemy.x, enemy.y, {
-        goalName: "loss_compression_intercept",
-        decisionReason: "loss_compression_intercept_attempt",
-        targetEnemy: enemy,
+      const move = planDirectAttackOrPreparationMove(plane, enemy, {
+        directGoalName: "loss_compression_intercept",
+        directDecisionReason: "loss_compression_intercept_attempt",
+        preparationGoalName: "prepare_clear_shot",
         context: modeContext,
-        specialAttemptBudget: 2,
         compareLabel: ["loss_compression", plane?.id ?? "", enemy?.id ?? ""],
       });
       if(!move) continue;
@@ -30700,7 +30579,8 @@ function planPathToPoint(plane, tx, ty, options = {}){
   const hasDirectLine = isPathClear(plane.x, plane.y, tx, ty);
   const candidateBasket = [];
   const emergencyBaseDefenseGoal = activeGoalName.includes("emergency_base_defense");
-  const allowSpecialCandidates = !activeGoalName.includes("emergency_");
+  const allowGapCandidates = requestedRouteClass === "gap";
+  const allowExperimentalRicochet = shouldForceNonDirectBranch || options?.enableExperimentalRicochet === true;
 
   function registerCandidate(move){
     if(move?.specialPromotionApplied === true && (move?.candidateClass === "gap" || move?.candidateClass === "ricochet")){
@@ -30869,7 +30749,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
     if(shouldHardPrioritizeDirect && directMove) return directMove;
     registerCandidate(directMove);
 
-    if(allowSpecialCandidates){
+    if(allowGapCandidates){
       const gapMove = buildMoveWithSafeDeviation(baseAngle, dist, scale, {
         moveType: "direct",
         candidateClass: "gap",
@@ -30879,7 +30759,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
   }
 
   let mirrorRejectCode = null;
-  if(allowSpecialCandidates || shouldForceNonDirectBranch || !hasDirectLine){
+  if(allowExperimentalRicochet){
     const mirrorPressureBoost = isMirrorPressureTarget(options?.targetEnemy || { x: tx, y: ty }, { ...options, plane })
       ? AI_MIRROR_PATH_PRESSURE_BONUS
       : 0;
@@ -30930,7 +30810,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
   }
 
   const planeStuckState = getAiStuckStateForPlane(plane?.id);
-  if(planeStuckState?.isStuck){
+  if(planeStuckState?.isStuck && allowExperimentalRicochet){
     const stuckRecoveryMirror = findMirrorShot(plane, {x:tx, y:ty}, {
       logReject: true,
       pressureBoost: AI_MIRROR_STUCK_RECOVERY_PRESSURE_BONUS,
@@ -30978,7 +30858,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
   const bestCandidate = pickBestCandidate(candidateBasket);
   if(bestCandidate) return bestCandidate;
 
-  planPathToPoint.lastRejectCode = mirrorRejectCode || findMirrorShot.lastRejectCode || "blocked_path__mirror_not_found";
+  planPathToPoint.lastRejectCode = mirrorRejectCode || (hasDirectLine ? "blocked_path__direct_candidate_rejected" : "blocked_path__direct_only");
   if(!planPathToPoint.lastRejectMeta){
     planPathToPoint.lastRejectMeta = findMirrorShot.lastRejectMeta || null;
   }
