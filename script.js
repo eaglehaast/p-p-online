@@ -21563,13 +21563,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
   const explicitInventoryUnlock = plannedMove?.allowInventoryUsage === true
     && plannedMove?.inventoryUsageReason === "bad_direct_fallback";
   const strategicGoal = plannedMove?.goalName || aiRoundState?.currentGoal || "";
-  const strategicInventoryGoals = new Set([
-    "direct_finisher",
-    "capture_enemy_flag",
-    "return_with_flag",
-    "emergency_base_defense",
-    "critical_base_hold_position",
-  ]);
+  const normalizedStrategicGoal = `${strategicGoal || ""}`.toLowerCase();
+  const allowStrategicInventoryPreparation = shouldProbeInventoryPreparedShotPlan(normalizedStrategicGoal);
 
   aiRoundState.lastInventorySoftFallbackUsed = false;
 
@@ -21642,7 +21637,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     && (priorityEnemyDistance <= plannedMoveEffectiveRangePx * 1.2 || entersContactZoneThisTurn || likelyContactOnNextTurn);
   const tacticalInventoryAdvantage = hasGoodDirectHitChance || entersContactZoneThisTurn || safeBoostOpportunity;
   const noImmediateInventoryValueWindow = !explicitInventoryUnlock
-    && !strategicInventoryGoals.has(strategicGoal)
+    && !allowStrategicInventoryPreparation
     && !tacticalInventoryAdvantage
     && !likelyContactOnNextTurn
     && !priorityEnemy
@@ -21692,6 +21687,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         goal: strategicGoal || null,
         idleTurns: aiRoundState.inventoryIdleTurns,
         stage: lockStage,
+        allowedAsPreparationMove: allowStrategicInventoryPreparation,
       });
       recordInventoryAiDecision("inventory_usage_locked", {
         planeId: plannedMove?.plane?.id ?? null,
@@ -22026,6 +22022,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         target: selectedInventoryCandidate.target || null,
         expectedBenefit: selectedInventoryCandidate.expectedBenefit ?? null,
         risk: selectedInventoryCandidate.risk ?? null,
+        allowedAsPreparationMove: allowStrategicInventoryPreparation,
       });
       recordInventoryAiDecision("inventory_decision", {
         planeId: plannedMove?.plane?.id ?? null,
@@ -23283,6 +23280,9 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     ? Math.max(0, Math.min(3, Math.trunc(aiRoundState.inventoryPhase)))
     : AI_V2_INVENTORY_PHASE;
   const allowMultiUseTactical = AI_ENGINE_MODE === "v2" && activeInventoryPhase >= 2;
+  const allowStrategicInventoryPreparation = shouldProbeInventoryPreparedShotPlan(
+    plannedMove?.goalName || aiRoundState?.currentGoal || "",
+  );
 
   for(let inventoryActionStep = 0; inventoryActionStep < 12; inventoryActionStep += 1){
     const actionBeforeState = afterInventoryState;
@@ -23333,6 +23333,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     consumedItemTypes: inventoryStageResult.consumedItemTypes,
     planeId: plannedMove?.plane?.id ?? null,
     goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+    allowedAsPreparationMove: allowStrategicInventoryPreparation,
   });
   const inventoryDecisionGoal = plannedMove?.goalName || aiRoundState?.currentGoal || null;
   const inventoryDecisionPlaneId = plannedMove?.plane?.id ?? null;
