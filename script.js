@@ -16093,6 +16093,37 @@ const AI_DECISION_ENRICHED_EVENT_SET = new Set([
   "mode_move",
 ]);
 const AI_DECISION_VERBOSE_DEBUG_FLAG = false;
+const AI_DECISION_DEEP_DEBUG_FLAG = false;
+const AI_DECISION_KEY_NUMERIC_FIELDS = Object.freeze([
+  "score",
+  "bestScore",
+  "adjustedScore",
+  "finalScore",
+  "rawDistance",
+  "distance",
+  "moveDistance",
+  "moveTotalDist",
+  "totalDist",
+  "launchScale",
+  "scale",
+  "angle",
+  "targetAngle",
+  "risk",
+  "riskScore",
+  "threatScore",
+  "value",
+  "priority",
+  "penalty",
+  "reward",
+  "expectedDamage",
+  "hitChance",
+  "waitMs",
+  "delayMs",
+  "idleTurns",
+  "repeatPenalty",
+  "repeatInWindow",
+  "rotationBonus",
+]);
 const AI_DECISION_AGGREGATED_EVENT_SET = new Set([
   "narrow_corridor_rejected",
   "detour_not_found",
@@ -16121,15 +16152,33 @@ function flushAiDecisionScope(scope){
   if(!scope || !(scope.aggregatedEvents instanceof Map) || scope.aggregatedEvents.size === 0) return;
   for(const [reason, entry] of scope.aggregatedEvents.entries()){
     if(!entry || !Number.isFinite(entry.count) || entry.count <= 0) continue;
-    const summaryPayload = {
-      ...(entry.lastPayload || {}),
-      suppressedRepeatCount: entry.count,
-      lastReasonCode: entry.lastReasonCode,
-      aggregatedWithin: scope.meta?.type || "ai_scope",
-      aggregatedScopeId: scope.id,
-      aggregatedPlaneId: scope.meta?.planeId ?? null,
-      aggregatedGoalName: scope.meta?.goalName ?? null,
+    const lastPayload = entry.lastPayload && typeof entry.lastPayload === "object" ? entry.lastPayload : {};
+    const planeId = lastPayload.planeId ?? lastPayload.plane?.id ?? scope.meta?.planeId ?? null;
+    const rawDistance = [lastPayload.rawDistance, lastPayload.moveTotalDist, lastPayload.totalDist, lastPayload.distance]
+      .find((value) => Number.isFinite(value));
+    const derived = {
+      planeId,
+      rawDistance,
+      adjustedScore: Number.isFinite(lastPayload.adjustedScore) ? lastPayload.adjustedScore : null,
+      finalScore: Number.isFinite(lastPayload.finalScore) ? lastPayload.finalScore : null,
+      rotationBonus: null,
     };
+    const summaryPayload = AI_DECISION_DEEP_DEBUG_FLAG
+      ? {
+          ...lastPayload,
+          suppressedRepeatCount: entry.count,
+          lastReasonCode: entry.lastReasonCode,
+          aggregatedWithin: scope.meta?.type || "ai_scope",
+          aggregatedScopeId: scope.id,
+          aggregatedPlaneId: scope.meta?.planeId ?? null,
+          aggregatedGoalName: scope.meta?.goalName ?? null,
+        }
+      : {
+          ...buildAiDecisionCompactPayload(lastPayload, derived),
+          suppressedRepeatCount: entry.count,
+          aggregatedWithin: scope.meta?.type || "ai_scope",
+          aggregatedPlaneId: scope.meta?.planeId ?? null,
+        };
     console.debug(`[ai] ${reason}_summary`, summaryPayload);
   }
   scope.aggregatedEvents.clear();
@@ -16152,7 +16201,7 @@ function endAiDecisionScope(scope){
 }
 
 function shouldAggregateAiDecision(reason, payload = {}){
-  if(AI_DECISION_VERBOSE_DEBUG_FLAG) return false;
+  if(AI_DECISION_DEEP_DEBUG_FLAG || AI_DECISION_VERBOSE_DEBUG_FLAG) return false;
   if(!AI_DECISION_AGGREGATED_EVENT_SET.has(reason)) return false;
   return payload?.forceImmediateLog !== true;
 }
@@ -16175,11 +16224,84 @@ function shouldEmitAiDecision(reason, payload = {}){
 }
 
 function shouldEnrichAiDecision(reason){
-  return AI_DECISION_ENRICHED_EVENT_SET.has(reason);
+  return AI_DECISION_DEEP_DEBUG_FLAG && AI_DECISION_ENRICHED_EVENT_SET.has(reason);
+}
+
+function roundAiDecisionNumber(value){
+  return Number.isFinite(value) ? Number(value.toFixed(3)) : null;
+}
+
+function collectAiDecisionKeyNumbers(payload, derived = {}){
+  const keyNumbers = {};
+  const seenKeys = new Set();
+  const addNumber = (key, value) => {
+    if(Object.keys(keyNumbers).length >= 4) return;
+    if(seenKeys.has(key) || !Number.isFinite(value)) return;
+    seenKeys.add(key);
+    keyNumbers[key] = roundAiDecisionNumber(value);
+  };
+
+  AI_DECISION_KEY_NUMERIC_FIELDS.forEach((key) => {
+    addNumber(key, payload?.[key]);
+  });
+
+  addNumber("rawDistance", derived.rawDistance);
+  addNumber("adjustedScore", derived.adjustedScore);
+  addNumber("finalScore", derived.finalScore);
+  addNumber("rotationBonus", derived.rotationBonus);
+
+  return keyNumbers;
+}
+
+function buildAiDecisionDeepPayload(reason, payload, derived = {}){
+  const reservedHomeDefenderIds = Array.isArray(payload.reservedHomeDefenderIds)
+    ? payload.reservedHomeDefenderIds.filter((id) => id != null)
+    : [];
+
+  return {
+    ...payload,
+    reservedHomeDefenderIds,
+    primaryHomeDefender: payload.primaryHomeDefender ?? null,
+    secondaryHomeDefender: payload.secondaryHomeDefender ?? null,
+    attemptedFlagPlaneId: payload.attemptedFlagPlaneId ?? null,
+    prohibitionReason: payload.prohibitionReason ?? null,
+    planeId: derived.planeId,
+    rawDistance: roundAiDecisionNumber(derived.rawDistance),
+    adjustedScore: roundAiDecisionNumber(derived.adjustedScore),
+    rotationBonus: roundAiDecisionNumber(derived.rotationBonus),
+    idleTurns: roundAiDecisionNumber(derived.idleTurns),
+    repeatInWindow: roundAiDecisionNumber(derived.repeatInWindow),
+    repeatPenalty: roundAiDecisionNumber(derived.repeatPenalty),
+    finalScore: roundAiDecisionNumber(derived.finalScore),
+    deepDiagnostics: true,
+    debugReason: reason,
+  };
+}
+
+function buildAiDecisionCompactPayload(payload, derived = {}){
+  const compactPayload = {
+    reasonCode: payload?.reasonCode ?? payload?.reason ?? null,
+    planeId: derived.planeId,
+    numbers: collectAiDecisionKeyNumbers(payload, derived),
+  };
+
+  if(Object.keys(compactPayload.numbers).length === 0){
+    delete compactPayload.numbers;
+  }
+
+  if(compactPayload.reasonCode == null){
+    delete compactPayload.reasonCode;
+  }
+
+  if(compactPayload.planeId == null){
+    delete compactPayload.planeId;
+  }
+
+  return compactPayload;
 }
 
 function logAiDecision(reason, details = {}){
-  const payload = details && typeof details === "object" ? { ...details } : {};
+  const payload = details && typeof details === "object" ? details : {};
   if(!shouldEmitAiDecision(reason, payload)) return;
   if(shouldAggregateAiDecision(reason, payload)){
     const scope = getCurrentAiDecisionScope();
@@ -16190,16 +16312,13 @@ function logAiDecision(reason, details = {}){
         lastReasonCode: null,
       };
       currentEntry.count += 1;
-      currentEntry.lastPayload = { ...payload };
+      currentEntry.lastPayload = payload;
       currentEntry.lastReasonCode = payload?.reasonCode || payload?.reason || currentEntry.lastReasonCode || null;
       scope.aggregatedEvents.set(reason, currentEntry);
       return;
     }
   }
 
-  const reservedHomeDefenderIds = Array.isArray(payload.reservedHomeDefenderIds)
-    ? payload.reservedHomeDefenderIds.filter((id) => id != null)
-    : [];
   const planeId = payload.planeId ?? payload.plane?.id ?? null;
   const rawDistance = [payload.rawDistance, payload.moveTotalDist, payload.totalDist, payload.distance]
     .find((value) => Number.isFinite(value));
@@ -16216,32 +16335,25 @@ function logAiDecision(reason, details = {}){
     }
   }
 
-  console.debug(`[ai] ${reason}`, {
-    ...payload,
-    reservedHomeDefenderIds,
-    primaryHomeDefender: payload.primaryHomeDefender ?? null,
-    secondaryHomeDefender: payload.secondaryHomeDefender ?? null,
-    attemptedFlagPlaneId: payload.attemptedFlagPlaneId ?? null,
-    prohibitionReason: payload.prohibitionReason ?? null,
+  const derived = {
     planeId,
-    rawDistance: Number.isFinite(rawDistance) ? Number(rawDistance.toFixed(3)) : null,
-    adjustedScore: Number.isFinite(adjustedScore) ? Number(adjustedScore.toFixed(3)) : null,
-    rotationBonus: Number.isFinite(scoringExplanation?.rotationBonus)
-      ? Number(scoringExplanation.rotationBonus.toFixed(3))
-      : null,
-    idleTurns: Number.isFinite(scoringExplanation?.idleTurns)
-      ? Number(scoringExplanation.idleTurns)
-      : null,
-    repeatInWindow: Number.isFinite(scoringExplanation?.repeatInWindow)
-      ? Number(scoringExplanation.repeatInWindow)
-      : null,
-    repeatPenalty: Number.isFinite(scoringExplanation?.repeatPenalty)
-      ? Number(scoringExplanation.repeatPenalty.toFixed(3))
-      : null,
+    rawDistance,
+    adjustedScore,
+    rotationBonus: scoringExplanation?.rotationBonus ?? null,
+    idleTurns: scoringExplanation?.idleTurns ?? null,
+    repeatInWindow: scoringExplanation?.repeatInWindow ?? null,
+    repeatPenalty: scoringExplanation?.repeatPenalty ?? null,
     finalScore: Number.isFinite(scoringExplanation?.finalScore)
-      ? Number(scoringExplanation.finalScore.toFixed(3))
-      : (Number.isFinite(adjustedScore) ? Number(adjustedScore.toFixed(3)) : null),
-  });
+      ? scoringExplanation.finalScore
+      : adjustedScore,
+  };
+
+  console.debug(
+    `[ai] ${reason}`,
+    AI_DECISION_DEEP_DEBUG_FLAG
+      ? buildAiDecisionDeepPayload(reason, payload, derived)
+      : buildAiDecisionCompactPayload(payload, derived)
+  );
 }
 
 function normalizeAiReasonText(reasonText = ""){
