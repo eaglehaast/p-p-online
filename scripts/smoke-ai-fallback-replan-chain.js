@@ -41,7 +41,7 @@ const context = {
   AI_PLANNED_MOVE_TARGET_REVALIDATION_RADIUS_PX: 90,
   INVENTORY_ITEM_TYPES: { DYNAMITE: 'dynamite' },
   INVENTORY_ITEMS: [{ type: 'dynamite' }],
-  aiRoundState: { currentGoal: 'fallback_legacy_logic' },
+  aiRoundState: { currentGoal: 'fallback_move' },
   aiMoveScheduled: true,
   aiPostInventoryLaunchTimeout: null,
   flyingPoints: [],
@@ -91,7 +91,7 @@ context.issueAIMoveWithInventoryUsage(
     enemy: { id: 'green-1', x: 120, y: 0, isAlive: false },
     vx: 30,
     vy: 0,
-    goalName: 'fallback_legacy_logic',
+    goalName: 'fallback_move',
     decisionReason: 'fallback_rotation',
     fallbackChainStage: 'fallback_selected',
   }

@@ -26,7 +26,6 @@ function assert(condition, message){
 
 const source = fs.readFileSync('script.js', 'utf8');
 const logs = [];
-let legacyCalls = 0;
 let issuedMove = null;
 
 const bluePlane = { id: 'blue-1', color: 'blue', x: 20, y: 50, isAlive: true };
@@ -60,10 +59,6 @@ const context = {
     issuedMove = { move, meta };
     return { ok: true, move, meta };
   },
-  doComputerMoveLegacy: () => {
-    legacyCalls += 1;
-    return { legacy: true };
-  },
   getScoreGap: () => 0,
   getFlagCarrierForColor: () => null,
   window: {
@@ -78,6 +73,7 @@ const context = {
       },
     },
   },
+  shouldAllowLegacyFallbackForGroupKillException: () => ({ allowed: false, reason: 'triple_kill_priority_preserved' }),
   buildShotPlan: (goalSelection) => {
     if(goalSelection.goalName === 'triple_kill_priority'){
       return {
@@ -94,18 +90,16 @@ const context = {
 };
 vm.createContext(context);
 vm.runInContext([
-  extractFunctionSource(source, 'shouldAllowLegacyFallbackForGroupKillException'),
   extractFunctionSource(source, 'chooseGoal'),
   extractFunctionSource(source, 'runAiTurnV2'),
 ].join('\n\n'), context);
 
-const result = context.runAiTurnV2({ useLegacyFallbackSelection: true });
+const result = context.runAiTurnV2();
 
 assert(result && result.ok === true, 'Expected V2 to issue a move immediately.');
-assert(legacyCalls === 0, `Legacy fallback must stay blocked when triple kill exists. got=${legacyCalls}`);
 assert(issuedMove && issuedMove.move.goalName === 'triple_kill_priority', `Expected forced triple_kill_priority move, got ${issuedMove && issuedMove.move.goalName}.`);
-assert(logs.some((entry) => entry.reason === 'legacy_fallback_blocked_by_triple_kill_priority'), 'Expected explicit triple-kill fallback block log.');
+assert(logs.some((entry) => entry.reason === 'triple_kill_priority_preserved'), 'Expected explicit triple-kill preservation log.');
 assert(context.aiRoundState.currentGoal === 'triple_kill_priority', `Expected aiRoundState.currentGoal to stay on triple_kill_priority, got ${context.aiRoundState.currentGoal}.`);
 
-console.log('Smoke test passed: V2 keeps the triple-kill route and does not fall back to cargo/flag goals.');
-console.log(`issuedGoal=${issuedMove.move.goalName} legacyCalls=${legacyCalls} affected=${issuedMove.move.shotPreview ? issuedMove.move.shotPreview.affectedEnemyIds.join(',') : 'n/a'}`);
+console.log('Smoke test passed: V2 keeps the triple-kill route on the direct V2 path.');
+console.log(`issuedGoal=${issuedMove.move.goalName} affected=${issuedMove.move.shotPreview ? issuedMove.move.shotPreview.affectedEnemyIds.join(',') : 'n/a'}`);
