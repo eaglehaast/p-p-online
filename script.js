@@ -33,7 +33,6 @@ const DEBUG_INVENTORY_INPUT = false;
 const DEBUG_PLANE_GRAB = false;
 const DEBUG_CHEATS = typeof location !== "undefined" && location.hash.includes("dev");
 const DEBUG_ARCADE_SCORE_TEXT = false;
-const DEBUG_AI_FAST_LAUNCH_PIPELINE = false;
 
 if (typeof window !== 'undefined') {
   window.PINCH_ACTIVE = false;
@@ -14389,7 +14388,6 @@ function isAimSessionActive(){
 }
 
 const STICKY_AIM_HOLD_MOVE_THRESHOLD_PX = 4;
-const ENABLE_LEGACY_AI_FAST_LAUNCH = false;
 const AI_LAUNCH_TARGET_SELECTION_MIN_MS = 40;
 const AI_LAUNCH_TARGET_SELECTION_MAX_MS = 90;
 const AI_LAUNCH_PULL_BACK_MIN_MS = 450;
@@ -33572,20 +33570,6 @@ function issueAIMove(plane, vx, vy){
       ok: false,
       reason: launchValidation.reason || "invalid_plane_for_launch",
     };
-  }
-
-  if(ENABLE_LEGACY_AI_FAST_LAUNCH || DEBUG_AI_FAST_LAUNCH_PIPELINE){
-    const releaseResult = runLaunchReleaseStage({
-      plane,
-      vx,
-      vy,
-      actor: "computer",
-    });
-    if(releaseResult?.ok !== false){
-      applyAiLaunchPostReleaseMetrics(plane, vx, vy);
-    }
-    cleanupHandle();
-    return releaseResult;
   }
 
   clearAiLaunchStallNotice();
