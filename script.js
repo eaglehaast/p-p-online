@@ -9636,16 +9636,16 @@ function normalizeMapTier(tier){
     return 'easy';
   }
   if(normalizedTier === 'hard'){
-    return 'middle';
+    return 'hard';
   }
-  return 'middle';
+  return 'hard';
 }
 
 function getMapTierForRound(roundNumber){
   if(roundNumber <= 4){
     return 'easy';
   }
-  return 'middle';
+  return 'hard';
 }
 
 function getPlayableMapIndicesForRound(roundNumber = 1){
