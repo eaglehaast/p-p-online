@@ -1,11 +1,11 @@
 {
   "maps": [
-    "ui_gamescreen/maps/gs_maps_Pebbles.json",
-    "ui_gamescreen/maps/gs_maps_TwinGate.json",
-    "ui_gamescreen/maps/gs_maps_arena.json",
-    "ui_gamescreen/maps/gs_maps_clearSky.json",
-    "ui_gamescreen/maps/gs_maps_fiveBricks.json",
-    "ui_gamescreen/maps/gs_maps_horserows.json",
-    "ui_gamescreen/maps/gs_maps_weakBrick.json"
+    "ui_gamescreen/maps/gs_maps_easy_Pebbles.json",
+    "ui_gamescreen/maps/gs_maps_easy_TwinGate.json",
+    "ui_gamescreen/maps/gs_maps_hard_arena.json",
+    "ui_gamescreen/maps/gs_maps_hard_clearSky.json",
+    "ui_gamescreen/maps/gs_maps_easy_fiveBricks.json",
+    "ui_gamescreen/maps/gs_maps_hard_horserows.json",
+    "ui_gamescreen/maps/gs_maps_easy_weakBrick.json"
   ]
 }
