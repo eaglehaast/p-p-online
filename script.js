@@ -22919,6 +22919,90 @@ function failSafeAdvanceTurn(reason, details = {}){
     "invalid_move_fail_safe",
   ]);
   const shouldHardSkipTurn = hardSkipReasons.has(safeReason);
+  const isBlueTurn = turnColors[turnIndex] === "blue";
+
+  const tryMandatoryEmergencyLaunch = (meta = {}) => {
+    const candidateMoveResolvers = [];
+    if(isBlueTurn){
+      candidateMoveResolvers.push(() => normalizeFailSafeLaunchCandidate(getFailSafeMinimalTargetedMove(safeDetails?.modeContext)));
+      candidateMoveResolvers.push(() => normalizeFailSafeLaunchCandidate(typeof getForcedProgressLaunchMove === "function"
+        ? getForcedProgressLaunchMove(safeDetails?.modeContext)
+        : null));
+    }
+    candidateMoveResolvers.push(() => normalizeFailSafeLaunchCandidate(getGuaranteedAnyLegalLaunch(safeDetails?.modeContext)));
+
+    for(const resolveCandidate of candidateMoveResolvers){
+      const candidateMove = resolveCandidate();
+      if(
+        candidateMove?.plane
+        && Number.isFinite(candidateMove?.vx)
+        && Number.isFinite(candidateMove?.vy)
+      ){
+        logAiDecision("mandatory_fail_safe_launch_selected", {
+          goal,
+          previousReason: safeReason,
+          planeId: candidateMove.plane?.id ?? null,
+          phase: meta.phase || "turn_advance_fallback",
+          selectedMove: {
+            planeId: candidateMove.plane?.id ?? null,
+            vx: Number(candidateMove.vx.toFixed(3)),
+            vy: Number(candidateMove.vy.toFixed(3)),
+            totalDist: Number.isFinite(candidateMove.totalDist)
+              ? Number(candidateMove.totalDist.toFixed(2))
+              : null,
+            goalName: candidateMove.goalName ?? "guaranteed_any_legal_launch",
+            decisionReason: candidateMove.decisionReason ?? "mandatory_fail_safe_launch_selected",
+          },
+          reasonCodes: [...new Set([
+            "mandatory_emergency_launch",
+            "fail_safe_forced_launch",
+            ...(Array.isArray(meta.reasonCodes) ? meta.reasonCodes : []),
+            ...reasonCodes,
+          ])],
+        });
+        issueAIMove(candidateMove.plane, candidateMove.vx, candidateMove.vy);
+        return true;
+      }
+    }
+
+    const incidentReasonCodes = [...new Set([
+      "mandatory_emergency_launch_missing",
+      "high_priority_incident",
+      ...(Array.isArray(meta.reasonCodes) ? meta.reasonCodes : []),
+      ...reasonCodes,
+    ])];
+    recordAiSelfAnalyzerDecision("mandatory_emergency_launch_missing_incident", {
+      goal,
+      planeId,
+      reasonCodes: incidentReasonCodes,
+      rejectReasons: [
+        ...new Set([
+          "mandatory_emergency_launch_missing",
+          ...rejectReasons,
+        ]),
+      ],
+      severity: "high",
+      phase: meta.phase || "turn_advance_fallback",
+      previousReason: safeReason,
+    });
+    logAiDecision("mandatory_emergency_launch_missing_incident", {
+      goal,
+      previousReason: safeReason,
+      planeId,
+      severity: "high",
+      incidentPriority: "p1",
+      phase: meta.phase || "turn_advance_fallback",
+      reasonCodes: incidentReasonCodes,
+    });
+    return false;
+  };
+
+  const completeFailSafeTurn = (meta = {}) => {
+    if(tryMandatoryEmergencyLaunch(meta)){
+      return;
+    }
+    advanceTurn();
+  };
 
   recordAiSelfAnalyzerDecision(safeReason, {
     goal,
@@ -23004,7 +23088,10 @@ function failSafeAdvanceTurn(reason, details = {}){
       issueAIMove(terminalMove.plane, terminalMove.vx, terminalMove.vy);
       return;
     }
-    advanceTurn();
+    completeFailSafeTurn({
+      phase: "fallback_retry_budget_exhausted",
+      reasonCodes: ["fallback_retry_budget_exhausted", "fail_safe_turn_advance"],
+    });
     return;
   }
 
@@ -23016,13 +23103,15 @@ function failSafeAdvanceTurn(reason, details = {}){
       scenario: "hard_skip_direct_turn_advance",
       reasonCodes: [...new Set(["hard_skip_direct_turn_advance", ...reasonCodes])],
     });
-    // После исключения нельзя заново запускать аварийный выстрел, иначе цикл «прицеливание → сбой → прицеливание» может застрять навсегда.
-    advanceTurn();
+    completeFailSafeTurn({
+      phase: "hard_skip_direct_turn_advance",
+      reasonCodes: ["hard_skip_direct_turn_advance", "fail_safe_turn_advance"],
+    });
     return;
   }
 
   // Принудительный минимальный выстрел оставляем только для мягких сбоев: ход не найден, но сам запуск не сломан и прогресс матча можно безопасно сохранить.
-  if(turnColors[turnIndex] === "blue"){
+  if(isBlueTurn){
     const failSafeMinimalTargetedMove = normalizeFailSafeLaunchCandidate(getFailSafeMinimalTargetedMove(safeDetails?.modeContext));
     if(
       failSafeMinimalTargetedMove?.plane
@@ -23127,7 +23216,10 @@ function failSafeAdvanceTurn(reason, details = {}){
     }
   }
 
-  advanceTurn();
+  completeFailSafeTurn({
+    phase: "default_turn_advance_fallback",
+    reasonCodes: ["fail_safe_turn_advance"],
+  });
 }
 
 function isFailSafeSpecialRouteCandidate(move){

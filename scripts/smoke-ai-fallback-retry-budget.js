@@ -109,9 +109,10 @@ const forcedLaunchLogs = decisionLog.filter((entry) => entry.reason === 'fail_sa
 const exhaustedDecision = decisionLog.find((entry) => entry.reason === 'fallback_retry_budget_exhausted');
 const exhaustedAnalyzer = analyzerLog.find((entry) => entry.stage === 'fallback_retry_budget_exhausted');
 
-assert(forcedLaunchCount === AI_FALLBACK_RETRY_LIMIT_PER_TURN, 'Forced launch count must match retry budget limit.');
+assert(forcedLaunchCount === AI_FALLBACK_RETRY_LIMIT_PER_TURN + 1,
+  'Forced launch count must include mandatory emergency launch attempt after retry budget exhaustion.');
 assert(forcedLaunchLogs.length === AI_FALLBACK_RETRY_LIMIT_PER_TURN, 'Expected forced launch decision logs before budget exhaustion.');
-assert(directAdvanceCount === 1, 'Expected a single direct turn advance once retry budget is exhausted.');
+assert(directAdvanceCount === 0, 'Mandatory emergency launch should prevent direct turn advance when a launch exists.');
 assert(Boolean(exhaustedDecision), 'Expected dedicated decision log for fallback_retry_budget_exhausted.');
 assert(Boolean(exhaustedAnalyzer), 'Expected self-analyzer record for fallback_retry_budget_exhausted.');
 

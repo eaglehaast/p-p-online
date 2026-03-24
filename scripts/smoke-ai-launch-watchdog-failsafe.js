@@ -76,6 +76,9 @@ function createBaseContext(){
     },
     recordAiSelfAnalyzerDecision: (stage) => { analyzerStage = stage; },
     logAiDecision: (event, payload) => { logs.push({ event, payload }); },
+    isAiFallbackRetryBudgetExhausted: () => false,
+    ensureAiFallbackRetryStateScope: () => ({ retriesUsed: 0, limit: 0, turnNumber: 0, launchSessionId: null }),
+    incrementAiFallbackRetryUsage: () => null,
     getFailSafeMinimalTargetedMove: () => ({ plane: { id: 'blue-failsafe' }, vx: 10, vy: 5, totalDist: 20 }),
     getForcedProgressLaunchMove: () => ({ plane: { id: 'blue-progress' }, vx: 8, vy: 3, totalDist: 10 }),
     getGuaranteedAnyLegalLaunch: () => ({ plane: { id: 'blue-guaranteed' }, vx: 4, vy: 2, totalDist: 5 }),
@@ -108,18 +111,18 @@ function createBaseContext(){
     rejectReasons: ['watchdog_no_release_candidate'],
   });
 
-  assert(runtime.launches.length === 0,
-    'Watchdog fail-safe must not select another forced launch in the same stuck scenario.');
-  assert(runtime.getAdvanced() === 1,
-    'Watchdog fail-safe must advance turn exactly once.');
+  assert(runtime.launches.length === 1,
+    'Watchdog fail-safe must attempt mandatory emergency launch before ending turn.');
+  assert(runtime.getAdvanced() === 0,
+    'Successful mandatory emergency launch should prevent direct turn advance.');
   assert(runtime.context.aiMoveScheduled === false,
     'Watchdog fail-safe must clear aiMoveScheduled before advancing the turn.');
   assert(runtime.getAnalyzerStage() === 'ai_launch_watchdog_fail_safe',
     'Watchdog fail-safe reason must be recorded in analyzer diagnostics.');
   assert(runtime.logs.some((entry) => entry.event === 'fail_safe_direct_turn_advance'),
     'Watchdog fail-safe must log direct turn advance path.');
-  assert(!runtime.logs.some((entry) => entry.event === 'fail_safe_forced_launch_selected'),
-    'Watchdog fail-safe must not log forced launch selection.');
+  assert(runtime.logs.some((entry) => entry.event === 'mandatory_fail_safe_launch_selected'),
+    'Watchdog fail-safe must log mandatory emergency launch selection.');
 }
 
 {
@@ -154,12 +157,12 @@ function createBaseContext(){
 
   assert(runtime.releases.length === 0,
     'Without a valid release candidate, watchdog must not attempt immediate release.');
-  assert(runtime.getAdvanced() === 1,
-    'Without a valid release candidate, watchdog must advance the turn once.');
-  assert(runtime.launches.length === 0,
-    'Stuck watchdog timeout must not fall back to another forced launch.');
+  assert(runtime.getAdvanced() === 0,
+    'Mandatory emergency launch should avoid direct turn advance when launch candidate exists.');
+  assert(runtime.launches.length === 1,
+    'Stuck watchdog timeout must emit mandatory emergency launch attempt.');
   assert(runtime.context.aiLaunchSession === null,
-    'Watchdog fallback path must clear active launch session before direct turn advance.');
+    'Watchdog fallback path must clear active launch session before mandatory recovery action.');
 }
 
-console.log('Smoke test passed: watchdog timeout keeps a single recovery action and never re-enters forced launch fail-safe.');
+console.log('Smoke test passed: watchdog timeout always attempts mandatory emergency launch before turn end.');
