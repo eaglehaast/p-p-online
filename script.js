@@ -14438,6 +14438,7 @@ const aiTelegraphyDebugState = {
 };
 
 let aiLaunchSession = null;
+let aiLaunchSessionIdCounter = 0;
 const aiLaunchFrameHealthState = {
   lastFrameAt: 0,
   lastDeltaMs: 0,
@@ -15944,6 +15945,7 @@ const AI_FALLBACK_ATTACK_SCORE_TIE_EPSILON = ATTACK_RANGE_PX * 0.015;
 const AI_FALLBACK_SAFE_ANGLE_SHORT_SCALE = 0.38;
 const AI_FALLBACK_SAFE_ANGLE_CANDIDATE_DEG = Object.freeze([28, -28, 44, -44, 62, -62, 88, -88]);
 const AI_FALLBACK_RICOCHET_PREP_SCALE = 0.66;
+const AI_FALLBACK_RETRY_LIMIT_PER_TURN = 2;
 const AI_LANE_PROGRESS_PRIMARY_THRESHOLD_SCALE = 0.12;
 const AI_LANE_PROGRESS_RESERVE_THRESHOLD_SCALE = 0.07;
 const AI_LANE_TIGHT_PASS_SCORE_PENALTY_SCALE = 0.24;
@@ -16650,8 +16652,103 @@ function createInitialAiRoundState(){
       requestedAtTurn: null,
       source: null,
     },
+    fallbackRetryState: {
+      turnNumber: null,
+      launchSessionId: null,
+      retriesUsed: 0,
+      limit: AI_FALLBACK_RETRY_LIMIT_PER_TURN,
+      exhausted: false,
+      exhaustedReason: null,
+      exhaustedAt: null,
+      lastIncrementReason: null,
+    },
     inventoryPhase: AI_ENGINE_MODE === "v2" ? AI_V2_INVENTORY_PHASE : 3,
   };
+}
+
+function getAiFallbackRetryLimit(){
+  const stateLimit = Number(aiRoundState?.fallbackRetryState?.limit);
+  if(Number.isFinite(stateLimit) && stateLimit >= 0){
+    return Math.max(0, Math.floor(stateLimit));
+  }
+  return AI_FALLBACK_RETRY_LIMIT_PER_TURN;
+}
+
+function getAiLaunchSessionScopeId(){
+  const rawId = aiLaunchSession?.id;
+  if(Number.isFinite(rawId) && rawId > 0){
+    return Math.floor(rawId);
+  }
+  return null;
+}
+
+function ensureAiFallbackRetryStateScope(){
+  if(!aiRoundState || typeof aiRoundState !== "object"){
+    return {
+      turnNumber: null,
+      launchSessionId: null,
+      retriesUsed: 0,
+      limit: AI_FALLBACK_RETRY_LIMIT_PER_TURN,
+      exhausted: false,
+      exhaustedReason: null,
+      exhaustedAt: null,
+      lastIncrementReason: null,
+    };
+  }
+  const currentTurn = Number.isFinite(aiRoundState.turnNumber)
+    ? aiRoundState.turnNumber
+    : Number.isFinite(turnAdvanceCount) ? turnAdvanceCount : null;
+  const currentLaunchSessionId = getAiLaunchSessionScopeId();
+  const previous = aiRoundState.fallbackRetryState;
+  const previousTurn = Number.isFinite(previous?.turnNumber) ? previous.turnNumber : null;
+  const previousLaunchSessionId = Number.isFinite(previous?.launchSessionId) ? previous.launchSessionId : null;
+  const scopeChanged = !previous || previousTurn !== currentTurn || previousLaunchSessionId !== currentLaunchSessionId;
+  if(scopeChanged){
+    aiRoundState.fallbackRetryState = {
+      turnNumber: currentTurn,
+      launchSessionId: currentLaunchSessionId,
+      retriesUsed: 0,
+      limit: getAiFallbackRetryLimit(),
+      exhausted: false,
+      exhaustedReason: null,
+      exhaustedAt: null,
+      lastIncrementReason: null,
+    };
+  } else if(!Number.isFinite(previous.limit) || previous.limit < 0){
+    previous.limit = getAiFallbackRetryLimit();
+  }
+  return aiRoundState.fallbackRetryState;
+}
+
+function incrementAiFallbackRetryUsage(reason, details = {}){
+  const state = ensureAiFallbackRetryStateScope();
+  const safeReason = typeof reason === "string" && reason.trim().length > 0
+    ? reason.trim()
+    : "fallback_retry_incremented";
+  state.retriesUsed = Math.max(0, Number.isFinite(state.retriesUsed) ? state.retriesUsed : 0) + 1;
+  state.limit = getAiFallbackRetryLimit();
+  state.lastIncrementReason = safeReason;
+  if(state.retriesUsed >= state.limit){
+    state.exhausted = true;
+    state.exhaustedReason = "fallback_retry_budget_exhausted";
+    if(!Number.isFinite(state.exhaustedAt)){
+      state.exhaustedAt = performance.now();
+    }
+  }
+  return {
+    retriesUsed: state.retriesUsed,
+    retryLimit: state.limit,
+    exhausted: state.exhausted === true,
+    incrementReason: safeReason,
+    turnNumber: state.turnNumber,
+    launchSessionId: state.launchSessionId,
+    context: details && typeof details === "object" ? details : {},
+  };
+}
+
+function isAiFallbackRetryBudgetExhausted(){
+  const state = ensureAiFallbackRetryStateScope();
+  return state.exhausted === true || state.retriesUsed >= state.limit;
 }
 
 function evaluateOpeningNonTrivialStartMeta(context){
@@ -18541,6 +18638,12 @@ function findFallbackSafeAngleRepositionMove(plane, enemy, speedPxPerSec){
     return null;
   }
 
+  const fallbackRetryMeta = incrementAiFallbackRetryUsage("fallback_safe_angle_selected", {
+    planeId: plane?.id ?? null,
+    enemyId: enemy?.id ?? null,
+    source: "findFallbackSafeAngleRepositionMove",
+  });
+
   logAiDecision("fallback_safe_angle_selected", {
     planeId: plane?.id ?? null,
     enemyId: enemy?.id ?? null,
@@ -18548,6 +18651,7 @@ function findFallbackSafeAngleRepositionMove(plane, enemy, speedPxPerSec){
     hasLineOfSightToTarget: bestCandidate.hasLineOfSightToTarget,
     improvement: Number((bestCandidate.progressMeta?.improvement ?? 0).toFixed(2)),
     hasNoticeableProgress: Boolean(bestCandidate.progressMeta?.hasNoticeableProgress),
+    fallbackRetryMeta,
   });
 
   return bestCandidate;
@@ -22813,6 +22917,52 @@ function failSafeAdvanceTurn(reason, details = {}){
 
   aiMoveScheduled = false;
 
+  if(isAiFallbackRetryBudgetExhausted()){
+    const fallbackRetryState = ensureAiFallbackRetryStateScope();
+    const exhaustedReason = "fallback_retry_budget_exhausted";
+    recordAiSelfAnalyzerDecision(exhaustedReason, {
+      goal,
+      planeId,
+      reasonCodes: [
+        ...new Set([
+          exhaustedReason,
+          "fail_safe_turn_advance",
+          ...reasonCodes,
+        ]),
+      ],
+      rejectReasons: [
+        ...new Set([
+          exhaustedReason,
+          ...rejectReasons,
+        ]),
+      ],
+      fallbackRetryState: {
+        retriesUsed: fallbackRetryState.retriesUsed,
+        retryLimit: fallbackRetryState.limit,
+        turnNumber: fallbackRetryState.turnNumber,
+        launchSessionId: fallbackRetryState.launchSessionId,
+      },
+    });
+    logAiDecision(exhaustedReason, {
+      goal,
+      previousReason: safeReason,
+      planeId,
+      retriesUsed: fallbackRetryState.retriesUsed,
+      retryLimit: fallbackRetryState.limit,
+      turnNumber: fallbackRetryState.turnNumber,
+      launchSessionId: fallbackRetryState.launchSessionId,
+      reasonCodes: [
+        ...new Set([
+          exhaustedReason,
+          "fail_safe_direct_turn_advance",
+          ...reasonCodes,
+        ]),
+      ],
+    });
+    advanceTurn();
+    return;
+  }
+
   if(shouldHardSkipTurn){
     logAiDecision("fail_safe_direct_turn_advance", {
       goal,
@@ -22837,6 +22987,11 @@ function failSafeAdvanceTurn(reason, details = {}){
       const selectedGoalName = failSafeMinimalTargetedMove.goalName ?? "fail_safe_minimal_targeted_move";
       const selectedDecisionReason = failSafeMinimalTargetedMove.decisionReason ?? "fail_safe_minimal_targeted_move";
       const selectedTarget = failSafeMinimalTargetedMove.targetEnemy || null;
+      const fallbackRetryMeta = incrementAiFallbackRetryUsage("fail_safe_forced_launch_selected", {
+        goal,
+        previousReason: safeReason,
+        planeId: failSafeMinimalTargetedMove.plane?.id ?? null,
+      });
       logAiDecision("fail_safe_forced_launch_selected", {
         goal,
         previousReason: safeReason,
@@ -22854,6 +23009,7 @@ function failSafeAdvanceTurn(reason, details = {}){
           targetEnemyShieldActive: selectedTarget?.shieldActive === true,
         },
         reasonCodes: ["fail_safe_minimal_targeted_move", "fail_safe_forced_launch", "keep_turn_progress"],
+        fallbackRetryMeta,
       });
       issueAIMove(failSafeMinimalTargetedMove.plane, failSafeMinimalTargetedMove.vx, failSafeMinimalTargetedMove.vy);
       return;
@@ -22867,6 +23023,11 @@ function failSafeAdvanceTurn(reason, details = {}){
       && Number.isFinite(forcedProgressMove?.vx)
       && Number.isFinite(forcedProgressMove?.vy)
     ){
+      const fallbackRetryMeta = incrementAiFallbackRetryUsage("fail_safe_forced_launch_selected", {
+        goal,
+        previousReason: safeReason,
+        planeId: forcedProgressMove.plane?.id ?? null,
+      });
       logAiDecision("fail_safe_forced_launch_selected", {
         goal,
         previousReason: safeReason,
@@ -22882,6 +23043,7 @@ function failSafeAdvanceTurn(reason, details = {}){
           decisionReason: forcedProgressMove.decisionReason ?? "forced_progress_safe_useful",
         },
         reasonCodes: ["fail_safe_safe_reposition", "fail_safe_forced_launch", "keep_turn_progress"],
+        fallbackRetryMeta,
       });
       issueAIMove(forcedProgressMove.plane, forcedProgressMove.vx, forcedProgressMove.vy);
       return;
@@ -22893,6 +23055,11 @@ function failSafeAdvanceTurn(reason, details = {}){
       && Number.isFinite(guaranteedMove?.vx)
       && Number.isFinite(guaranteedMove?.vy)
     ){
+      const fallbackRetryMeta = incrementAiFallbackRetryUsage("fail_safe_forced_launch_selected", {
+        goal,
+        previousReason: safeReason,
+        planeId: guaranteedMove.plane?.id ?? null,
+      });
       logAiDecision("fail_safe_forced_launch_selected", {
         goal,
         previousReason: safeReason,
@@ -22908,6 +23075,7 @@ function failSafeAdvanceTurn(reason, details = {}){
           decisionReason: guaranteedMove.decisionReason ?? "super_reserve_guaranteed_legal_launch",
         },
         reasonCodes: ["fail_safe_forced_launch", "keep_turn_progress"],
+        fallbackRetryMeta,
       });
       issueAIMove(guaranteedMove.plane, guaranteedMove.vx, guaranteedMove.vy);
       return;
@@ -33109,6 +33277,7 @@ function destroyPlane(fp, scoringColor = null){
 
 function buildAiLaunchSession(plane, vx, vy){
   const now = performance.now();
+  aiLaunchSessionIdCounter += 1;
   const telegraphyMode = getAiLaunchTelegraphyMode(now);
   const minimalTelegraphy = telegraphyMode !== "full";
   const idealPullPoint = buildPullPointForAiVector(plane, vx, vy);
@@ -33173,6 +33342,7 @@ function buildAiLaunchSession(plane, vx, vy){
   );
 
   return {
+    id: aiLaunchSessionIdCounter,
     plane,
     vx,
     vy,
