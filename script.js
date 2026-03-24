@@ -16701,8 +16701,7 @@ function ensureAiFallbackRetryStateScope(){
   const currentLaunchSessionId = getAiLaunchSessionScopeId();
   const previous = aiRoundState.fallbackRetryState;
   const previousTurn = Number.isFinite(previous?.turnNumber) ? previous.turnNumber : null;
-  const previousLaunchSessionId = Number.isFinite(previous?.launchSessionId) ? previous.launchSessionId : null;
-  const scopeChanged = !previous || previousTurn !== currentTurn || previousLaunchSessionId !== currentLaunchSessionId;
+  const scopeChanged = !previous || previousTurn !== currentTurn;
   if(scopeChanged){
     aiRoundState.fallbackRetryState = {
       turnNumber: currentTurn,
@@ -16716,6 +16715,10 @@ function ensureAiFallbackRetryStateScope(){
     };
   } else if(!Number.isFinite(previous.limit) || previous.limit < 0){
     previous.limit = getAiFallbackRetryLimit();
+  }
+  if(aiRoundState.fallbackRetryState && typeof aiRoundState.fallbackRetryState === "object"){
+    // launchSessionId оставляем только как справочную метку для диагностики, без влияния на сброс бюджета.
+    aiRoundState.fallbackRetryState.launchSessionId = currentLaunchSessionId;
   }
   return aiRoundState.fallbackRetryState;
 }
@@ -22941,6 +22944,7 @@ function failSafeAdvanceTurn(reason, details = {}){
         retryLimit: fallbackRetryState.limit,
         turnNumber: fallbackRetryState.turnNumber,
         launchSessionId: fallbackRetryState.launchSessionId,
+        budgetScope: "within_turn",
       },
     });
     logAiDecision(exhaustedReason, {
@@ -22951,9 +22955,11 @@ function failSafeAdvanceTurn(reason, details = {}){
       retryLimit: fallbackRetryState.limit,
       turnNumber: fallbackRetryState.turnNumber,
       launchSessionId: fallbackRetryState.launchSessionId,
+      budgetScope: "within_turn",
       reasonCodes: [
         ...new Set([
           exhaustedReason,
+          "fallback_retry_budget_within_turn_exhausted",
           "fail_safe_direct_turn_advance",
           ...reasonCodes,
         ]),
