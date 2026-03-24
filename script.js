@@ -22796,6 +22796,7 @@ function failSafeAdvanceTurn(reason, details = {}){
   const planeId = safeDetails.planeId ?? safeDetails?.move?.plane?.id ?? null;
   const hardSkipReasons = new Set([
     "ai_move_exception",
+    "ai_launch_watchdog_fail_safe",
     "ai_launch_session_recovery_fail_safe",
     "ai_launch_session_plane_lost",
     "invalid_move_fail_safe",
