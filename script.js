@@ -19983,14 +19983,44 @@ function tryPlaceBlueDefensiveMine(context, plannedMove, options = {}){
   const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
   if(!plane || !landingPoint || enemies.length === 0) return options?.evaluateOnly ? null : false;
 
-  function isPlacementSelfRisky(point){
-    if(!point) return true;
+  function getSelfRiskAssessment(point){
+    if(!point){
+      return {
+        isRisky: true,
+        isCritical: true,
+        currentToLandingDistance: Number.POSITIVE_INFINITY,
+        landingToMineDistance: Number.POSITIVE_INFINITY,
+      };
+    }
     const currentToLandingDistance = Math.hypot(point.x - plane.x, point.y - plane.y);
     const landingToMineDistance = Math.hypot(point.x - landingPoint.x, point.y - landingPoint.y);
     const mineDangerRadius = MINE_TRIGGER_RADIUS * 1.1;
     const blocksImmediateCorridor = currentToLandingDistance <= mineDangerRadius;
     const blocksLandingCorridor = landingToMineDistance <= mineDangerRadius;
-    return blocksImmediateCorridor || blocksLandingCorridor;
+    const hardImmediateRadius = MINE_TRIGGER_RADIUS * 0.78;
+    const hardLandingRadius = MINE_TRIGGER_RADIUS * 0.6;
+    const superCriticalRadius = MINE_TRIGGER_RADIUS * 0.4;
+    const criticalByImmediate = currentToLandingDistance <= hardImmediateRadius;
+    const criticalByCombined = blocksImmediateCorridor && blocksLandingCorridor && landingToMineDistance <= hardLandingRadius;
+    const criticalBySelfBlast = currentToLandingDistance <= superCriticalRadius;
+    const isCritical = criticalByImmediate || criticalByCombined || criticalBySelfBlast;
+    const isRisky = blocksImmediateCorridor || blocksLandingCorridor;
+    return {
+      isRisky,
+      isCritical,
+      currentToLandingDistance,
+      landingToMineDistance,
+    };
+  }
+
+  function getSelfRiskPenaltyMultiplier(goalName){
+    const goalText = `${goalName || ""}`.toLowerCase();
+    const allowsBolderRisk = goalText.includes("safe_finisher")
+      || goalText.includes("capture_enemy_flag")
+      || goalText.includes("return_with_flag")
+      || goalText.includes("post_pickup")
+      || goalText.includes("flag_pickup");
+    return allowsBolderRisk ? 0.4 : 1;
   }
 
   let mostDangerousEnemy = null;
@@ -20022,14 +20052,15 @@ function tryPlaceBlueDefensiveMine(context, plannedMove, options = {}){
     cellY: Math.floor((blockPoint.y - FIELD_TOP) / CELL_SIZE),
   };
 
-  if(isPlacementSelfRisky(placement)){
+  const selfRisk = getSelfRiskAssessment(placement);
+  if(selfRisk?.isCritical){
     if(options?.evaluateOnly) return null;
     logAiDecision("mine_skipped_self_risk", {
       planeId: plane?.id ?? null,
       enemyId: mostDangerousEnemy?.id ?? null,
-      reason: "defensive_mine_blocks_own_corridor",
-      distanceFromPlane: Number(Math.hypot(placement.x - plane.x, placement.y - plane.y).toFixed(1)),
-      distanceFromLanding: Number(Math.hypot(placement.x - landingPoint.x, placement.y - landingPoint.y).toFixed(1)),
+      reason: "defensive_mine_immediate_self_destruction_risk",
+      distanceFromPlane: Number(selfRisk.currentToLandingDistance.toFixed(1)),
+      distanceFromLanding: Number(selfRisk.landingToMineDistance.toFixed(1)),
     });
     return false;
   }
@@ -20049,6 +20080,13 @@ function tryPlaceBlueDefensiveMine(context, plannedMove, options = {}){
     enemyReports: [],
   };
   impact.enemyId = mostDangerousEnemy?.id ?? null;
+  if(selfRisk?.isRisky){
+    const penaltyMultiplier = getSelfRiskPenaltyMultiplier(plannedMove?.goalName || aiRoundState?.currentGoal || "");
+    const penaltyValue = Number((1.35 * penaltyMultiplier).toFixed(2));
+    impact.score = Number((impact.score - penaltyValue).toFixed(3));
+    impact.selfRiskPenalty = penaltyValue;
+    impact.selfRiskDowngraded = true;
+  }
 
   if(options?.evaluateOnly) return impact;
 

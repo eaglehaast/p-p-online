@@ -39,6 +39,7 @@ const extracted = extractFunctionSource(source, 'tryPlaceBlueDefensiveMine');
 
 const logs = [];
 let placeMineCalls = 0;
+const recordedImpacts = [];
 
 const context = {
   Math,
@@ -50,9 +51,24 @@ const context = {
   FIELD_LEFT: 0,
   FIELD_TOP: 0,
   CELL_SIZE: 40,
-  getAiMoveLandingPoint: () => ({ x: 24, y: 0 }),
+  aiRoundState: { currentGoal: 'capture_enemy_flag' },
+  getAiMoveLandingPoint: () => ({ x: 100, y: 0 }),
   isPathClear: () => true,
   isMinePlacementValid: () => true,
+  evaluateBlueMinePlacementImpact: (_ctx, _move, placement) => {
+    const impact = {
+      placement,
+      scenario: 'mine_blocks_escape_lane',
+      score: 2.6,
+      totalDirectionLoss: 0.4,
+      blockedEscapeCount: 1,
+      cutRouteCount: 0,
+      trapCount: 0,
+      enemyReports: [],
+    };
+    recordedImpacts.push(impact);
+    return impact;
+  },
   placeMine: () => { placeMineCalls += 1; },
   logAiDecision: (reason, details) => logs.push({ reason, details }),
 };
@@ -60,18 +76,30 @@ const context = {
 vm.createContext(context);
 vm.runInContext(extracted, context);
 
+const evalImpact = context.tryPlaceBlueDefensiveMine({
+  enemies: [{ id: 'enemy-1', x: 130, y: 0 }],
+}, {
+  plane: { id: 'plane-1', x: 0, y: 0 },
+  goalName: 'capture_enemy_flag',
+}, { evaluateOnly: true });
+
+assert(Boolean(evalImpact), 'Moderate self-risk defensive mine should stay available for planning.');
+assert(evalImpact.selfRiskDowngraded === true, 'Moderate self-risk case should be downgraded with a penalty.');
+assert(evalImpact.selfRiskPenalty > 0 && evalImpact.selfRiskPenalty < 1.35,
+  'Flag-focused goal should apply a lighter self-risk penalty.');
+
 const didPlace = context.tryPlaceBlueDefensiveMine({
-  enemies: [{ id: 'enemy-1', x: 30, y: 0 }],
+  enemies: [{ id: 'enemy-1', x: 130, y: 0 }],
 }, {
   plane: { id: 'plane-1', x: 0, y: 0 },
   goalName: 'capture_enemy_flag',
 });
 
-assert(didPlace === false, 'Defensive mine must still be skipped when it can instantly blow up own corridor.');
-assert(placeMineCalls === 0, 'Mine placement should not occur in self-risk corridor case.');
-assert(logs.some((entry) => entry.reason === 'mine_skipped_self_risk'),
-  'mine_skipped_self_risk log is required for traceability.');
-assert(logs.some((entry) => entry.details?.reason === 'defensive_mine_immediate_self_destruction_risk'),
-  'Critical self-destruction skip reason should be logged.');
+assert(didPlace === true, 'Mine should now be placed for moderate self-risk defensive cover case.');
+assert(placeMineCalls === 1, 'Mine placement should occur exactly once in soft-risk case.');
+assert(!logs.some((entry) => entry.reason === 'mine_skipped_self_risk'),
+  'Soft-risk case should no longer be rejected as hard self-risk skip.');
+assert(recordedImpacts[0].blockedEscapeCount >= 1,
+  'Placed mine should still represent a defensive next-turn lane protection value.');
 
-console.log('Smoke test passed: explicit self-destruction defensive mine case is blocked.');
+console.log('Smoke test passed: moderate self-risk defensive mine is downgraded, selected, and provides next-turn cover value.');
