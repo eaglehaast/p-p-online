@@ -18641,12 +18641,6 @@ function findFallbackSafeAngleRepositionMove(plane, enemy, speedPxPerSec){
     return null;
   }
 
-  const fallbackRetryMeta = incrementAiFallbackRetryUsage("fallback_safe_angle_selected", {
-    planeId: plane?.id ?? null,
-    enemyId: enemy?.id ?? null,
-    source: "findFallbackSafeAngleRepositionMove",
-  });
-
   logAiDecision("fallback_safe_angle_selected", {
     planeId: plane?.id ?? null,
     enemyId: enemy?.id ?? null,
@@ -18654,7 +18648,15 @@ function findFallbackSafeAngleRepositionMove(plane, enemy, speedPxPerSec){
     hasLineOfSightToTarget: bestCandidate.hasLineOfSightToTarget,
     improvement: Number((bestCandidate.progressMeta?.improvement ?? 0).toFixed(2)),
     hasNoticeableProgress: Boolean(bestCandidate.progressMeta?.hasNoticeableProgress),
-    fallbackRetryMeta,
+    fallbackRetryMeta: {
+      retriesUsed: Number.isFinite(aiRoundState?.fallbackRetryState?.retriesUsed)
+        ? aiRoundState.fallbackRetryState.retriesUsed
+        : null,
+      retryLimit: Number.isFinite(aiRoundState?.fallbackRetryState?.limit)
+        ? aiRoundState.fallbackRetryState.limit
+        : null,
+      source: "fallback_safe_angle_selected_not_counted_as_retry",
+    },
   });
 
   return bestCandidate;
@@ -22965,6 +22967,35 @@ function failSafeAdvanceTurn(reason, details = {}){
         ]),
       ],
     });
+    const terminalMove = normalizeFailSafeLaunchCandidate(getGuaranteedAnyLegalLaunch(safeDetails?.modeContext));
+    if(
+      terminalMove?.plane
+      && Number.isFinite(terminalMove?.vx)
+      && Number.isFinite(terminalMove?.vy)
+    ){
+      logAiDecision("fallback_budget_terminal_forced_launch", {
+        goal,
+        previousReason: safeReason,
+        planeId: terminalMove.plane?.id ?? null,
+        selectedMove: {
+          planeId: terminalMove.plane?.id ?? null,
+          vx: Number(terminalMove.vx.toFixed(3)),
+          vy: Number(terminalMove.vy.toFixed(3)),
+          totalDist: Number.isFinite(terminalMove.totalDist)
+            ? Number(terminalMove.totalDist.toFixed(2))
+            : null,
+          goalName: terminalMove.goalName ?? "guaranteed_any_legal_launch",
+          decisionReason: terminalMove.decisionReason ?? "fallback_budget_terminal_forced_launch",
+        },
+        reasonCodes: [
+          "fallback_retry_budget_exhausted",
+          "fallback_budget_terminal_forced_launch",
+          "keep_turn_progress",
+        ],
+      });
+      issueAIMove(terminalMove.plane, terminalMove.vx, terminalMove.vy);
+      return;
+    }
     advanceTurn();
     return;
   }
