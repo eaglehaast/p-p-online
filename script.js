@@ -25134,7 +25134,7 @@ function shouldSkipDirectFinisherInOpening(context){
     ? currentMapMeta.tier.trim().toLowerCase()
     : (typeof currentMapMeta?.difficulty === "string" ? currentMapMeta.difficulty.trim().toLowerCase() : "");
   const isClearSkyMap = mapId === CLEAR_SKY_MAP_ID || mapName === CLEAR_SKY_MAP_NAME;
-  const isHighObstacleMap = !isClearSkyMap && (mapTier === "middle" || mapTier === "hard");
+  const isHighObstacleMap = !isClearSkyMap && (mapTier === "hard");
   const openingRestrictionTurnLimit = isHighObstacleMap ? 1 : AI_OPENING_CENTER_TURN_LIMIT;
   const scoreLead = blueScore - greenScore;
   const isOpeningTurn = turnAdvanceCount <= openingRestrictionTurnLimit;
