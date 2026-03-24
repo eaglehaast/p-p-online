@@ -27318,6 +27318,65 @@ function getPreFlagStagingPointsNearEnemyBase(enemyBase, planeRangePx){
   });
 }
 
+function getPressureRouteMeta(context, landingPoint, flagAnchor, coverMeta, interceptionRisk){
+  const safeLanding = landingPoint && Number.isFinite(landingPoint?.x) && Number.isFinite(landingPoint?.y)
+    ? landingPoint
+    : null;
+  if(!context || !safeLanding || !flagAnchor) {
+    return {
+      bonus: 0,
+      isPressureRoute: false,
+      pressureSafetyOk: false,
+      enemyDirectResponseCount: 0,
+      blockedEnemyResponseCount: 0,
+      flagProximityFactor: 0,
+      responseDeniedFactor: 0,
+      scoreHint: 0,
+    };
+  }
+
+  const pressureSafetyOk = Number.isFinite(interceptionRisk) && interceptionRisk <= 0.62;
+  const activeEnemies = Array.isArray(context?.enemies)
+    ? context.enemies.filter((enemy) => enemy?.isAlive && Number.isFinite(enemy?.x) && Number.isFinite(enemy?.y))
+    : [];
+  const enemyDirectResponseCount = activeEnemies.reduce((count, enemy) => (
+    isPathClear(enemy.x, enemy.y, safeLanding.x, safeLanding.y) ? count + 1 : count
+  ), 0);
+  const blockedEnemyResponseCount = Math.max(0, activeEnemies.length - enemyDirectResponseCount);
+  const responseDeniedFactor = activeEnemies.length > 0
+    ? blockedEnemyResponseCount / activeEnemies.length
+    : 0;
+  const distanceToFlag = Math.hypot((flagAnchor.x || 0) - safeLanding.x, (flagAnchor.y || 0) - safeLanding.y);
+  const flagProximityFactor = Math.max(0, 1 - (distanceToFlag / Math.max(1, MAX_DRAG_DISTANCE * 0.95)));
+  const coverFactor = Math.max(0, Math.min(1, (
+    (coverMeta?.blockedEnemySightCount || 0) * 0.45
+    + (coverMeta?.nearbyColliderCount || 0) * 0.2
+  )));
+
+  const pressureRawScore = (
+    flagProximityFactor * 0.45
+    + responseDeniedFactor * 0.35
+    + coverFactor * 0.2
+  );
+  const scoreHint = Number(pressureRawScore.toFixed(4));
+  const isPressureRoute = pressureSafetyOk
+    && coverMeta?.hasCover === true
+    && flagProximityFactor >= 0.25
+    && responseDeniedFactor >= 0.2;
+  const bonus = isPressureRoute ? Math.min(0.22, pressureRawScore * 0.22) : 0;
+
+  return {
+    bonus: Number(bonus.toFixed(4)),
+    isPressureRoute,
+    pressureSafetyOk,
+    enemyDirectResponseCount,
+    blockedEnemyResponseCount,
+    flagProximityFactor: Number(flagProximityFactor.toFixed(4)),
+    responseDeniedFactor: Number(responseDeniedFactor.toFixed(4)),
+    scoreHint,
+  };
+}
+
 function findPreFlagCautiousAdvanceMove(context, fallbackAiPlanes, aliveEnemies){
   if(typeof planPathToPoint !== "function" || !fallbackAiPlanes.length) return null;
   const availableEnemyFlags = typeof getAvailableFlagsByColor === "function"
@@ -27378,7 +27437,9 @@ function findPreFlagCautiousAdvanceMove(context, fallbackAiPlanes, aliveEnemies)
       const interceptionRisk = estimateFallbackInterceptionRisk(context, plane, landing.x, landing.y, flagAnchor);
       const distancePenalty = Number.isFinite(candidate?.totalDist) ? candidate.totalDist / Math.max(1, MAX_DRAG_DISTANCE * 3) : 0;
       const openPenalty = coverMeta.blockedEnemySightCount > 0 ? 0 : 0.12;
-      const candidateScore = Number((interceptionRisk + distancePenalty + openPenalty).toFixed(4));
+      const pressureRouteMeta = getPressureRouteMeta(context, landing, flagAnchor, coverMeta, interceptionRisk);
+      const pressureRouteBonus = pressureRouteMeta.bonus;
+      const candidateScore = Number((interceptionRisk + distancePenalty + openPenalty - pressureRouteBonus).toFixed(4));
       const candidatePayload = {
         ...candidate,
         targetPoint: preFlagPoint,
@@ -27387,10 +27448,33 @@ function findPreFlagCautiousAdvanceMove(context, fallbackAiPlanes, aliveEnemies)
         progressionMeta: progressMeta,
         coverMeta,
         interceptionRisk,
+        pressureRouteMeta,
+        pressureRouteBonus,
         candidateRiskScore: candidateScore,
+        decisionReason: pressureRouteMeta.isPressureRoute
+          ? "pressure_route"
+          : (candidate?.decisionReason || "cautious_progress_to_enemy_base_preflag"),
         enemyCount: aliveEnemies.length,
       };
-      if(!bestCandidate || candidatePayload.candidateRiskScore < bestCandidate.candidateRiskScore){
+      const scoreGap = !bestCandidate
+        ? Number.POSITIVE_INFINITY
+        : (candidatePayload.candidateRiskScore - bestCandidate.candidateRiskScore);
+      const nearTie = Math.abs(scoreGap) <= 0.02;
+      const currentPressureHint = Number.isFinite(candidatePayload?.pressureRouteMeta?.scoreHint)
+        ? candidatePayload.pressureRouteMeta.scoreHint
+        : 0;
+      const bestPressureHint = Number.isFinite(bestCandidate?.pressureRouteMeta?.scoreHint)
+        ? bestCandidate.pressureRouteMeta.scoreHint
+        : 0;
+      if(
+        !bestCandidate
+        || candidatePayload.candidateRiskScore < bestCandidate.candidateRiskScore
+        || (
+          nearTie
+          && currentPressureHint > bestPressureHint
+          && candidatePayload.interceptionRisk <= bestCandidate.interceptionRisk + 0.03
+        )
+      ){
         bestCandidate = candidatePayload;
       }
     }
@@ -27403,6 +27487,14 @@ function findPreFlagCautiousAdvanceMove(context, fallbackAiPlanes, aliveEnemies)
       decisionReason: bestCandidate?.decisionReason || "cautious_progress_to_enemy_base_preflag",
       interceptionRisk: bestCandidate?.interceptionRisk ?? null,
       candidateRiskScore: bestCandidate?.candidateRiskScore ?? null,
+      pressureRouteApplied: bestCandidate?.pressureRouteMeta?.isPressureRoute === true,
+      pressureRouteBonus: bestCandidate?.pressureRouteBonus ?? 0,
+      pressureRouteSafetyOk: bestCandidate?.pressureRouteMeta?.pressureSafetyOk === true,
+      pressureRouteScoreHint: bestCandidate?.pressureRouteMeta?.scoreHint ?? 0,
+      pressureRouteBlockedEnemyResponseCount: bestCandidate?.pressureRouteMeta?.blockedEnemyResponseCount ?? 0,
+      pressureRouteDirectEnemyResponseCount: bestCandidate?.pressureRouteMeta?.enemyDirectResponseCount ?? 0,
+      pressureRouteFlagProximity: bestCandidate?.pressureRouteMeta?.flagProximityFactor ?? 0,
+      pressureRouteResponseDeniedFactor: bestCandidate?.pressureRouteMeta?.responseDeniedFactor ?? 0,
       nearbyColliderCount: bestCandidate?.coverMeta?.nearbyColliderCount ?? 0,
       blockedEnemySightCount: bestCandidate?.coverMeta?.blockedEnemySightCount ?? 0,
       nextStepToFlagDistance: Number.isFinite(bestCandidate?.targetPoint?.x)
