@@ -23240,6 +23240,172 @@ function validateAiLaunchMoveCandidate(move){
   };
 }
 
+function getFinalAiLaunchMineThreatCheck(move, options = {}){
+  const plane = move?.plane || null;
+  if(!plane || !Number.isFinite(plane.x) || !Number.isFinite(plane.y)){
+    return {
+      ok: false,
+      reason: "invalid_plane_coordinates",
+      reasonCode: "final_mine_check_invalid_plane_coordinates",
+      message: "Plane coordinates are missing for final mine check",
+      threatMeta: null,
+      landingPoint: null,
+      startPoint: null,
+    };
+  }
+
+  const fallbackLanding = getAiMoveLandingPoint(move);
+  const plannedLanding = move?.landingPoint && Number.isFinite(move.landingPoint.x) && Number.isFinite(move.landingPoint.y)
+    ? move.landingPoint
+    : fallbackLanding;
+  if(!plannedLanding || !Number.isFinite(plannedLanding.x) || !Number.isFinite(plannedLanding.y)){
+    return {
+      ok: false,
+      reason: "invalid_landing_point",
+      reasonCode: "final_mine_check_invalid_landing_point",
+      message: "Landing point is missing for final mine check",
+      threatMeta: null,
+      landingPoint: null,
+      startPoint: { x: plane.x, y: plane.y },
+    };
+  }
+
+  const threatMeta = getMineThreatMetaForSegment(
+    plane.x,
+    plane.y,
+    plannedLanding.x,
+    plannedLanding.y,
+    plane,
+    options,
+  );
+  const hasThreat = Boolean(threatMeta?.pathHit || threatMeta?.landingThreat || (threatMeta?.count || 0) > 0);
+  if(hasThreat){
+    return {
+      ok: false,
+      reason: threatMeta?.reason || (threatMeta?.pathHit ? "path_crosses_mine" : "landing_blocked_by_mine"),
+      reasonCode: "final_mine_check_rejected_stale_route",
+      message: "Final mine check rejected stale route before launch",
+      threatMeta,
+      landingPoint: plannedLanding,
+      startPoint: { x: plane.x, y: plane.y },
+    };
+  }
+
+  return {
+    ok: true,
+    reason: "ok",
+    reasonCode: "final_mine_check_passed",
+    message: "Final mine check passed",
+    threatMeta,
+    landingPoint: plannedLanding,
+    startPoint: { x: plane.x, y: plane.y },
+  };
+}
+
+function resolveFinalAiLaunchMoveWithMineGate(plannedMove, context = {}, options = {}){
+  const stage = options?.stage || "final_validation_and_launch";
+  const goal = plannedMove?.goalName || aiRoundState?.currentGoal || null;
+  const gateResult = getFinalAiLaunchMineThreatCheck(plannedMove);
+
+  const buildPoint = (point) => point
+    ? {
+        x: Number(point.x.toFixed(1)),
+        y: Number(point.y.toFixed(1)),
+      }
+    : null;
+
+  if(gateResult.ok){
+    logAiDecision("ai_final_mine_gate_passed", {
+      stage,
+      planeId: plannedMove?.plane?.id ?? null,
+      goal,
+      reasonCode: gateResult.reasonCode,
+      startPoint: buildPoint(gateResult.startPoint),
+      landingPoint: buildPoint(gateResult.landingPoint),
+    });
+    return {
+      ok: true,
+      move: plannedMove,
+      reasonCode: gateResult.reasonCode,
+      gateResult,
+      fallbackUsed: false,
+    };
+  }
+
+  logAiDecision("ai_final_mine_gate_blocked", {
+    stage,
+    planeId: plannedMove?.plane?.id ?? null,
+    goal,
+    reason: gateResult.reason || "path_crosses_mine",
+    reasonCode: gateResult.reasonCode || "final_mine_check_rejected_stale_route",
+    threatMeta: gateResult.threatMeta
+      ? {
+          count: gateResult.threatMeta.count,
+          pathHit: gateResult.threatMeta.pathHit,
+          landingThreat: gateResult.threatMeta.landingThreat,
+          nearestDist: Number.isFinite(gateResult.threatMeta.nearestDist)
+            ? Number(gateResult.threatMeta.nearestDist.toFixed(2))
+            : null,
+          triggerRadius: Number.isFinite(gateResult.threatMeta.triggerRadius)
+            ? Number(gateResult.threatMeta.triggerRadius.toFixed(2))
+            : null,
+          mineX: Number.isFinite(gateResult.threatMeta.triggeringMine?.x)
+            ? Number(gateResult.threatMeta.triggeringMine.x.toFixed(1))
+            : null,
+          mineY: Number.isFinite(gateResult.threatMeta.triggeringMine?.y)
+            ? Number(gateResult.threatMeta.triggeringMine.y.toFixed(1))
+            : null,
+        }
+      : null,
+    startPoint: buildPoint(gateResult.startPoint),
+    landingPoint: buildPoint(gateResult.landingPoint),
+  });
+
+  const safeFallbackMove = getFailSafeMinimalTargetedMove(context) || getFailSafeGuaranteedDirectMove(context);
+  if(safeFallbackMove){
+    const fallbackValidation = validateAiLaunchMoveCandidate(safeFallbackMove);
+    const fallbackMineGate = fallbackValidation.ok
+      ? getFinalAiLaunchMineThreatCheck(safeFallbackMove)
+      : null;
+    if(fallbackValidation.ok && fallbackMineGate?.ok){
+      logAiDecision("ai_final_mine_gate_fallback_selected", {
+        stage,
+        planeId: safeFallbackMove?.plane?.id ?? null,
+        previousPlaneId: plannedMove?.plane?.id ?? null,
+        goal,
+        reasonCode: "final_mine_check_safe_fallback_selected",
+        fallbackGoal: safeFallbackMove?.goalName || null,
+        fallbackReason: safeFallbackMove?.decisionReason || null,
+      });
+      return {
+        ok: true,
+        move: safeFallbackMove,
+        reasonCode: "final_mine_check_safe_fallback_selected",
+        gateResult,
+        fallbackUsed: true,
+      };
+    }
+
+    logAiDecision("ai_final_mine_gate_fallback_rejected", {
+      stage,
+      planeId: safeFallbackMove?.plane?.id ?? null,
+      goal,
+      reasonCode: "final_mine_check_fallback_rejected",
+      rejectReason: fallbackValidation?.ok === false
+        ? (fallbackValidation.reason || "invalid_fallback_move")
+        : (fallbackMineGate?.reason || "fallback_still_crosses_mine"),
+    });
+  }
+
+  return {
+    ok: false,
+    move: null,
+    reasonCode: gateResult.reasonCode || "final_mine_check_rejected_stale_route",
+    gateResult,
+    fallbackUsed: false,
+  };
+}
+
 function issueAIMoveWithInventoryUsage(context, plannedMove){
   const failSafeHandler = typeof failSafeAdvanceTurn === "function"
     ? failSafeAdvanceTurn
@@ -23485,6 +23651,26 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     });
     clearAiDynamiteIntent("post_inventory_route_changed");
     return false;
+  }
+
+  function issueMoveAfterFinalMineGate(stageLabel){
+    const finalMoveResolution = resolveFinalAiLaunchMoveWithMineGate(plannedMove, context, { stage: stageLabel });
+    if(!finalMoveResolution.ok || !finalMoveResolution.move){
+      failSafeHandler("final_mine_gate_blocked_launch", {
+        goal: plannedMove?.goalName || aiRoundState?.currentGoal || "final_mine_gate_blocked_launch",
+        planeId: plannedMove?.plane?.id ?? null,
+        reasonCodes: [
+          finalMoveResolution?.reasonCode || "final_mine_check_rejected_stale_route",
+          "final_mine_gate_blocked_launch",
+          "fail_safe_turn_advance",
+        ],
+        rejectReasons: [finalMoveResolution?.gateResult?.reason || "path_crosses_mine"],
+        errorMessage: finalMoveResolution?.gateResult?.message || "Final mine check rejected stale route before launch",
+        context,
+      });
+      return { ok: false, reason: "final_mine_gate_blocked" };
+    }
+    return issueAIMove(finalMoveResolution.move.plane, finalMoveResolution.move.vx, finalMoveResolution.move.vy);
   }
 
   if(plannedMove?.aiFuelTacticalDecision){
@@ -23807,12 +23993,12 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     });
     aiPostInventoryLaunchTimeout = setTimeout(() => {
       aiPostInventoryLaunchTimeout = null;
-      issueAIMove(plannedMove.plane, plannedMove.vx, plannedMove.vy);
+      issueMoveAfterFinalMineGate("post_inventory_delay_launch");
     }, AI_POST_INVENTORY_LAUNCH_DELAY_MS);
     return;
   }
 
-  issueAIMove(plannedMove.plane, plannedMove.vx, plannedMove.vy);
+  issueMoveAfterFinalMineGate("immediate_launch");
 }
 
 function markAiLinearLaunchEvent(event, payload = {}){
