@@ -12916,7 +12916,7 @@ function addScore(color, delta, options = {}){
   }
 
   renderScoreboard();
-  return { ok: true, mapName };
+  return { ok: true };
 }
 
 let animationFrameId = null;
