@@ -33652,10 +33652,17 @@ function runAiLaunchSessionTick(now = performance.now()){
           : null));
 
     if(!releaseReason){
-      return;
+      session.pendingReleaseReason = null;
+      logAiDecision("ai_launch_pending_release_expired_to_timeout", {
+        reason: "perfect_tolerance",
+        planeId: session?.plane?.id ?? null,
+        elapsedMs: Math.round(oscillationElapsedMs),
+        lateGraceDeadlineMs: Math.round(timing.lateGraceDeadlineMs),
+        ...getAiTurnTimingSnapshot(),
+      });
     }
 
-    if(!visibleOscillationSatisfied){
+    if(releaseReason && !visibleOscillationSatisfied){
       logAiDecision("ai_launch_release_waiting_visible_oscillation", {
         reason: "perfect_tolerance",
         planeId: session?.plane?.id ?? null,
@@ -33665,10 +33672,12 @@ function runAiLaunchSessionTick(now = performance.now()){
       return;
     }
 
-    session.stage = "release";
-    session.stageStartedAt = now;
-    releaseAiLaunchSession(session, releaseReason, now);
-    return;
+    if(releaseReason){
+      session.stage = "release";
+      session.stageStartedAt = now;
+      releaseAiLaunchSession(session, releaseReason, now);
+      return;
+    }
   }
   if(session.stage === "oscillate"){
     const oscillationElapsedMs = getAiLaunchOscillationElapsedMs(session, now);
