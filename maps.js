@@ -19,7 +19,7 @@ function normalizeImportedMapTier(rawTier){
   if(normalized === 'easy'){
     return 'easy';
   }
-  return 'middle';
+  return 'hard';
 }
 
 async function fetchJson(path){
