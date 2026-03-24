@@ -37515,7 +37515,18 @@ if (window.visualViewport) {
     await waitForStylesReady();
     await syncLayoutAndField("bootstrap");
     logLayoutMetrics("bootstrap");
-    resetGame();
+    await ensureMapsDataReady();
+
+    if(MAPS.length > 0){
+      resetGame();
+      return;
+    }
+
+    console.error('[maps] bootstrap aborted: no maps loaded', {
+      manifestPath: mapDataBridge.MAPS_MANIFEST_PATH || null
+    });
+    setMenuVisibility(true);
+    alert('Не удалось загрузить карты. Игра останется в меню без запуска раунда.');
   }
 
 bootstrapGame();
