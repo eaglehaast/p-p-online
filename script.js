@@ -22870,12 +22870,55 @@ function failSafeAdvanceTurn(reason, details = {}){
     return;
   }
 
-  logAiDecision("fail_safe_launch_finalization_only", {
+  const fallbackContext = safeDetails.context && typeof safeDetails.context === "object"
+    ? safeDetails.context
+    : null;
+  const guaranteedMove = getFailSafeMinimalTargetedMove(fallbackContext) || getFailSafeGuaranteedDirectMove(fallbackContext);
+
+  if(guaranteedMove){
+    const validation = validateAiLaunchMoveCandidate(guaranteedMove);
+    if(validation.ok){
+      const normalizedReasonCodes = [...new Set([
+        "fail_safe_guaranteed_direct_selected",
+        "fail_safe_launch_recovery_start",
+        ...reasonCodes,
+      ])];
+      logAiDecision("fail_safe_guaranteed_direct_selected", {
+        goal,
+        previousReason: safeReason,
+        planeId: guaranteedMove?.plane?.id ?? planeId,
+        reasonCodes: normalizedReasonCodes,
+        candidateClass: guaranteedMove?.candidateClass || guaranteedMove?.routeClass || "direct",
+      });
+      const launchResult = issueAIMove(guaranteedMove.plane, guaranteedMove.vx, guaranteedMove.vy);
+      if(launchResult?.ok){
+        return;
+      }
+      logAiDecision("fail_safe_guaranteed_direct_launch_retry_needed", {
+        goal,
+        previousReason: safeReason,
+        planeId: guaranteedMove?.plane?.id ?? planeId,
+        launchReason: launchResult?.reason || "unknown_launch_failure",
+        reasonCodes: [...new Set(["fail_safe_launch_retry", ...normalizedReasonCodes])],
+      });
+    } else {
+      logAiDecision("fail_safe_guaranteed_direct_invalid", {
+        goal,
+        previousReason: safeReason,
+        planeId: guaranteedMove?.plane?.id ?? planeId,
+        reasonCodes: [...new Set(["fail_safe_guaranteed_direct_invalid", ...reasonCodes])],
+        rejectReasons: [validation.reason || "invalid_guaranteed_direct_move"],
+      });
+    }
+  }
+
+  logAiDecision("fail_safe_launch_recovery_exhausted", {
     goal,
     previousReason: safeReason,
     planeId,
-    reasonCodes: [...new Set(["fail_safe_launch_finalization_only", ...reasonCodes])],
+    reasonCodes: [...new Set(["fail_safe_launch_recovery_exhausted", ...reasonCodes])],
   });
+  advanceTurn();
 }
 
 function isFailSafeSpecialRouteCandidate(move){
@@ -23014,6 +23057,77 @@ function getFailSafeMinimalTargetedMove(modeContext){
   }
 
   return safestRepositionCandidate;
+}
+
+function getFailSafeGuaranteedDirectMove(modeContext){
+  const fallbackAiPlanes = points.filter((plane) => (
+    plane.color === "blue"
+    && isPlaneLaunchStateReady(plane)
+    && !flyingPoints.some((fp) => fp.plane === plane)
+  ));
+  if(!fallbackAiPlanes.length) return null;
+
+  const fallbackContext = modeContext && typeof modeContext === "object"
+    ? modeContext
+    : {
+        aiPlanes: fallbackAiPlanes,
+        enemies: points.filter((plane) => plane.color === "green" && plane.isAlive && !plane.burning),
+      };
+
+  const aliveEnemies = Array.isArray(fallbackContext.enemies)
+    ? fallbackContext.enemies.filter((enemy) => enemy?.isAlive && !enemy?.burning && Number.isFinite(enemy?.x) && Number.isFinite(enemy?.y))
+    : [];
+
+  let fallbackPlane = fallbackAiPlanes[0] || null;
+  let fallbackEnemy = null;
+  let fallbackDistance = Number.POSITIVE_INFINITY;
+  for(const plane of fallbackAiPlanes){
+    if(!fallbackPlane) fallbackPlane = plane;
+    for(const enemy of aliveEnemies){
+      const distance = Math.hypot((enemy.x || 0) - plane.x, (enemy.y || 0) - plane.y);
+      if(distance < fallbackDistance){
+        fallbackDistance = distance;
+        fallbackEnemy = enemy;
+        fallbackPlane = plane;
+      }
+    }
+  }
+
+  if(!fallbackPlane) return null;
+
+  const profile = getAiFlightRangeProfile(fallbackPlane);
+  const speedPxPerSec = Number.isFinite(profile?.speedPxPerSec) && profile.speedPxPerSec > 0
+    ? profile.speedPxPerSec
+    : 1;
+
+  let targetX = fallbackEnemy?.x;
+  let targetY = fallbackEnemy?.y;
+  if(!Number.isFinite(targetX) || !Number.isFinite(targetY)){
+    targetX = fallbackPlane.x + 1;
+    targetY = fallbackPlane.y;
+  }
+
+  let dirX = targetX - fallbackPlane.x;
+  let dirY = targetY - fallbackPlane.y;
+  const dirLength = Math.hypot(dirX, dirY);
+  if(!Number.isFinite(dirLength) || dirLength <= 0){
+    dirX = 1;
+    dirY = 0;
+  } else {
+    dirX /= dirLength;
+    dirY /= dirLength;
+  }
+
+  return normalizeFailSafeLaunchCandidate({
+    plane: fallbackPlane,
+    targetEnemy: fallbackEnemy || null,
+    enemy: fallbackEnemy || null,
+    vx: dirX * speedPxPerSec,
+    vy: dirY * speedPxPerSec,
+    totalDist: profile?.flightDistancePx || 0,
+    goalName: "fail_safe_guaranteed_direct_move",
+    decisionReason: "fail_safe_guaranteed_direct_move",
+  });
 }
 
 function validateAiLaunchMoveCandidate(move){
