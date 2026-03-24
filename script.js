@@ -12916,6 +12916,7 @@ function addScore(color, delta, options = {}){
   }
 
   renderScoreboard();
+  return { ok: true, mapName };
 }
 
 let animationFrameId = null;
@@ -13941,7 +13942,10 @@ function resetGame(options = {}){
       setMapIndexAndPersist(getRandomPlayableMapIndex());
     }
   }
-  applyCurrentMap();
+  const mapApplyResult = applyCurrentMap();
+  if(mapApplyResult?.ok === false && mapApplyResult.error?.code === MAP_APPLY_ERROR_CODES.MAPS_NOT_LOADED_YET){
+    console.warn("[resetGame] map apply skipped: maps not loaded yet", { code: mapApplyResult.error.code });
+  }
 
   aaUnits = [];
   mines = [];
@@ -37265,7 +37269,18 @@ function normalizeMapForRendering(map){
   return normalizedMap;
 }
 
+const MAP_APPLY_ERROR_CODES = {
+  MAPS_NOT_LOADED_YET: "MAPS_NOT_LOADED_YET",
+};
+
 function applyCurrentMap(upcomingRoundNumber){
+  if(!Array.isArray(MAPS) || MAPS.length === 0){
+    const error = new Error("[MAP] maps not loaded yet");
+    error.code = MAP_APPLY_ERROR_CODES.MAPS_NOT_LOADED_YET;
+    console.error(error.message, { code: error.code, mapsLength: Array.isArray(MAPS) ? MAPS.length : null });
+    return { ok: false, error };
+  }
+
   const targetRoundNumber = Number.isInteger(upcomingRoundNumber)
     ? upcomingRoundNumber
     : roundNumber + 1;
@@ -37308,6 +37323,7 @@ function applyCurrentMap(upcomingRoundNumber){
   resyncFieldDimensions("map applied");
   resetPlanePositionsForCurrentMap();
   renderScoreboard();
+  return { ok: true, mapName };
 }
 
 function syncWrapperToVisualViewport() {
