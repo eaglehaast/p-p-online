@@ -22889,6 +22889,9 @@ function failSafeAdvanceTurn(reason, details = {}){
         planeId: guaranteedMove?.plane?.id ?? planeId,
         reasonCodes: normalizedReasonCodes,
         candidateClass: guaranteedMove?.candidateClass || guaranteedMove?.routeClass || "direct",
+        fallbackScenario: guaranteedMove?.goalName === "cautious_progress_to_enemy_base"
+          ? "cautious_progress_to_base"
+          : "emergency_safe_move",
       });
       const launchResult = issueAIMove(guaranteedMove.plane, guaranteedMove.vx, guaranteedMove.vy);
       if(launchResult?.ok){
@@ -23006,6 +23009,11 @@ function getFailSafeMinimalTargetedMove(modeContext){
     }
   }
   if(safestDirectCandidate) return safestDirectCandidate;
+
+  const cautiousBaseAdvance = findPreFlagCautiousAdvanceMove(fallbackContext, fallbackAiPlanes, aliveEnemies);
+  if(cautiousBaseAdvance){
+    return cautiousBaseAdvance;
+  }
 
   let safestRepositionCandidate = null;
   for(const plane of fallbackAiPlanes){
@@ -27223,6 +27231,191 @@ function findPreFallbackPositionalExitMove(context){
         group: bestThreatAvoidance.group,
       }
     : null;
+}
+
+function estimateFallbackInterceptionRisk(context, plane, landingX, landingY, targetPoint = null){
+  if(!context || !plane || !Number.isFinite(landingX) || !Number.isFinite(landingY)){
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const immediateThreatMeta = getImmediateResponseThreatMeta(context, landingX, landingY, null);
+  const immediateRisk = getFallbackCandidateResponseRisk(immediateThreatMeta);
+  let nearestEnemyDist = Number.POSITIVE_INFINITY;
+  let visibleThreatCount = 0;
+  const activeEnemies = Array.isArray(context?.enemies)
+    ? context.enemies.filter((enemy) => enemy?.isAlive && Number.isFinite(enemy?.x) && Number.isFinite(enemy?.y))
+    : [];
+  for(const enemy of activeEnemies){
+    const enemyDist = Math.hypot(enemy.x - landingX, enemy.y - landingY);
+    if(enemyDist < nearestEnemyDist) nearestEnemyDist = enemyDist;
+    if(enemyDist <= AI_IMMEDIATE_RESPONSE_DANGER_RADIUS && isPathClear(enemy.x, enemy.y, landingX, landingY)){
+      visibleThreatCount += 1;
+    }
+  }
+
+  const nearestEnemyRisk = Number.isFinite(nearestEnemyDist)
+    ? Math.max(0, 1 - (nearestEnemyDist / Math.max(1, AI_IMMEDIATE_RESPONSE_DANGER_RADIUS * 1.4)))
+    : 1;
+  const targetProximityPenalty = (targetPoint && Number.isFinite(targetPoint?.x) && Number.isFinite(targetPoint?.y))
+    ? Math.max(0, Math.min(0.35, Math.hypot(targetPoint.x - landingX, targetPoint.y - landingY) / Math.max(1, MAX_DRAG_DISTANCE * 3)))
+    : 0;
+
+  return Number((immediateRisk + nearestEnemyRisk * 0.55 + Math.min(0.8, visibleThreatCount * 0.22) + targetProximityPenalty).toFixed(4));
+}
+
+function getCoverMetaAtLandingPoint(context, landingX, landingY){
+  if(!context || !Number.isFinite(landingX) || !Number.isFinite(landingY)){
+    return {
+      hasCover: false,
+      nearbyColliderCount: 0,
+      blockedEnemySightCount: 0,
+    };
+  }
+
+  const nearbyColliderCount = Array.isArray(colliders)
+    ? colliders.reduce((count, collider) => {
+        if(!collider) return count;
+        const halfWidth = Number.isFinite(collider?.halfWidth) ? collider.halfWidth : 0;
+        const halfHeight = Number.isFinite(collider?.halfHeight) ? collider.halfHeight : 0;
+        const proximityRadius = Math.max(CELL_SIZE * 1.2, Math.max(halfWidth, halfHeight) + CELL_SIZE * 0.4);
+        const distanceToCenter = Math.hypot((collider.cx || 0) - landingX, (collider.cy || 0) - landingY);
+        return distanceToCenter <= proximityRadius ? count + 1 : count;
+      }, 0)
+    : 0;
+
+  const activeEnemies = Array.isArray(context?.enemies)
+    ? context.enemies.filter((enemy) => enemy?.isAlive && Number.isFinite(enemy?.x) && Number.isFinite(enemy?.y))
+    : [];
+  const blockedEnemySightCount = activeEnemies.reduce((count, enemy) => {
+    if(!isPathClear(enemy.x, enemy.y, landingX, landingY)){
+      return count + 1;
+    }
+    return count;
+  }, 0);
+
+  return {
+    hasCover: nearbyColliderCount > 0 || blockedEnemySightCount > 0,
+    nearbyColliderCount,
+    blockedEnemySightCount,
+  };
+}
+
+function getPreFlagStagingPointsNearEnemyBase(enemyBase, planeRangePx){
+  if(!enemyBase || !Number.isFinite(enemyBase?.x) || !Number.isFinite(enemyBase?.y)) return [];
+  const baseRadius = Math.max(CELL_SIZE * 1.4, Math.min(MAX_DRAG_DISTANCE * 0.46, planeRangePx * 0.58));
+  const ringAngles = [0, 45, 90, 135, 180, 225, 270, 315];
+  return ringAngles.map((deg) => {
+    const angle = deg * Math.PI / 180;
+    return {
+      x: enemyBase.x + Math.cos(angle) * baseRadius,
+      y: enemyBase.y + Math.sin(angle) * baseRadius,
+      angleDeg: deg,
+    };
+  });
+}
+
+function findPreFlagCautiousAdvanceMove(context, fallbackAiPlanes, aliveEnemies){
+  if(typeof planPathToPoint !== "function" || !fallbackAiPlanes.length) return null;
+  const availableEnemyFlags = typeof getAvailableFlagsByColor === "function"
+    ? getAvailableFlagsByColor("green")
+    : [];
+  const fallbackFlag = Array.isArray(availableEnemyFlags) && availableEnemyFlags.length > 0
+    ? availableEnemyFlags[0]
+    : null;
+  const flagAnchor = typeof getFlagAnchor === "function"
+    ? getFlagAnchor(fallbackFlag)
+    : null;
+  const enemyBase = typeof getBaseAnchor === "function" ? getBaseAnchor("green") : null;
+  if(!enemyBase || !flagAnchor || !Number.isFinite(flagAnchor?.x) || !Number.isFinite(flagAnchor?.y)) return null;
+
+  let bestCandidate = null;
+
+  for(const plane of fallbackAiPlanes){
+    const rangeProfile = getAiFlightRangeProfile(plane);
+    const planeRangePx = Number.isFinite(rangeProfile?.flightDistancePx)
+      ? rangeProfile.flightDistancePx
+      : MAX_DRAG_DISTANCE;
+    const preFlagPoints = getPreFlagStagingPointsNearEnemyBase(enemyBase, planeRangePx);
+    for(const preFlagPoint of preFlagPoints){
+      if(!Number.isFinite(preFlagPoint?.x) || !Number.isFinite(preFlagPoint?.y)) continue;
+      if(!isPathClear(preFlagPoint.x, preFlagPoint.y, flagAnchor.x, flagAnchor.y)) continue;
+
+      const nextStepToFlagDist = Math.hypot(flagAnchor.x - preFlagPoint.x, flagAnchor.y - preFlagPoint.y);
+      if(nextStepToFlagDist > planeRangePx) continue;
+
+      const move = planPathToPoint(plane, preFlagPoint.x, preFlagPoint.y, {
+        goalName: "cautious_progress_to_enemy_base",
+        decisionReason: "cautious_progress_to_enemy_base_preflag",
+      });
+      const candidate = normalizeFailSafeLaunchCandidate(move, {
+        plane,
+        goalName: "cautious_progress_to_enemy_base",
+        decisionReason: "cautious_progress_to_enemy_base_preflag",
+      });
+      if(!candidate) continue;
+
+      const validation = validateAiLaunchMoveCandidate(candidate);
+      if(!validation.ok) continue;
+
+      const landing = getAiMoveLandingPoint(candidate);
+      if(!landing) continue;
+
+      const threatMeta = getImmediateResponseThreatMeta(context, landing.x, landing.y, null);
+      if(threatMeta.count > 0) continue;
+
+      const coverMeta = getCoverMetaAtLandingPoint(context, landing.x, landing.y);
+      if(!coverMeta.hasCover) continue;
+
+      const progressMeta = getAiNoticeableProgressMeta(plane.x, plane.y, landing.x, landing.y, preFlagPoint.x, preFlagPoint.y, {
+        thresholdScale: 0.12,
+      });
+      if(!progressMeta.hasNoticeableProgress) continue;
+
+      const interceptionRisk = estimateFallbackInterceptionRisk(context, plane, landing.x, landing.y, flagAnchor);
+      const distancePenalty = Number.isFinite(candidate?.totalDist) ? candidate.totalDist / Math.max(1, MAX_DRAG_DISTANCE * 3) : 0;
+      const openPenalty = coverMeta.blockedEnemySightCount > 0 ? 0 : 0.12;
+      const candidateScore = Number((interceptionRisk + distancePenalty + openPenalty).toFixed(4));
+      const candidatePayload = {
+        ...candidate,
+        targetPoint: preFlagPoint,
+        targetEnemyBase: enemyBase,
+        flagAnchor,
+        progressionMeta: progressMeta,
+        coverMeta,
+        interceptionRisk,
+        candidateRiskScore: candidateScore,
+        enemyCount: aliveEnemies.length,
+      };
+      if(!bestCandidate || candidatePayload.candidateRiskScore < bestCandidate.candidateRiskScore){
+        bestCandidate = candidatePayload;
+      }
+    }
+  }
+
+  if(bestCandidate){
+    logAiDecision("cautious_progress_to_base_selected", {
+      planeId: bestCandidate?.plane?.id ?? null,
+      goalName: bestCandidate?.goalName || "cautious_progress_to_enemy_base",
+      decisionReason: bestCandidate?.decisionReason || "cautious_progress_to_enemy_base_preflag",
+      interceptionRisk: bestCandidate?.interceptionRisk ?? null,
+      candidateRiskScore: bestCandidate?.candidateRiskScore ?? null,
+      nearbyColliderCount: bestCandidate?.coverMeta?.nearbyColliderCount ?? 0,
+      blockedEnemySightCount: bestCandidate?.coverMeta?.blockedEnemySightCount ?? 0,
+      nextStepToFlagDistance: Number.isFinite(bestCandidate?.targetPoint?.x)
+        ? Number(Math.hypot((bestCandidate.flagAnchor?.x || 0) - bestCandidate.targetPoint.x, (bestCandidate.flagAnchor?.y || 0) - bestCandidate.targetPoint.y).toFixed(2))
+        : null,
+      stage: "cautious_progress_to_base",
+    });
+  } else {
+    logAiDecision("cautious_progress_to_base_unavailable", {
+      reason: "no_safe_preflag_staging_point",
+      stage: "cautious_progress_to_base",
+      hasEnemyBase: Boolean(enemyBase),
+      hasFlagAnchor: Boolean(flagAnchor),
+    });
+  }
+
+  return bestCandidate;
 }
 
 function isEmergencyDefenseStageGoal(goalName){
