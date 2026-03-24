@@ -9414,7 +9414,7 @@ function resolveExportMapId(){
     || "custom";
 }
 
-function downloadMapJsonFile(serializedMap, mapName = ""){
+function downloadMapJsonFile(serializedMap, mapName = "", mapDifficulty = ""){
   const jsonText = JSON.stringify(serializedMap, null, 2);
   const blob = new Blob([jsonText], { type: "application/json;charset=utf-8" });
   const objectUrl = URL.createObjectURL(blob);
@@ -9423,8 +9423,16 @@ function downloadMapJsonFile(serializedMap, mapName = ""){
   const sanitizedMapName = typeof mapName === "string"
     ? mapName.trim().replace(/[\\/:*?"<>|]/g, "_")
     : "";
+  const sanitizedMapDifficulty = typeof mapDifficulty === "string"
+    ? mapDifficulty.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "")
+    : "";
+  const resolvedDifficulty = sanitizedMapDifficulty === "easy" || sanitizedMapDifficulty === "hard"
+    ? sanitizedMapDifficulty
+    : "";
   const resolvedName = sanitizedMapName.length > 0 ? sanitizedMapName : resolveExportMapId();
-  link.download = `gs_maps_${resolvedName}.json`;
+  link.download = resolvedDifficulty.length > 0
+    ? `gs_maps_${resolvedDifficulty}_${resolvedName}.json`
+    : `gs_maps_${resolvedName}.json`;
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -9481,7 +9489,7 @@ async function saveCurrentMapFromEditor(){
   const jsonText = JSON.stringify(serializedMap, null, 2);
   const copied = await copyMapJsonToClipboard(jsonText);
 
-  downloadMapJsonFile(serializedMap, mapName);
+  downloadMapJsonFile(serializedMap, mapName, mapDifficulty);
 
   if(copied){
     showRoundBanner("Карта скопирована и скачана");
