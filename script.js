@@ -21318,30 +21318,46 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       ? evaluatePostLaunchSafetyWithMine(context, plannedMove, preferredMinePlan.plan)
       : null;
     const safeAfterPlacement = !safetyMeta || safetyMeta.afterSafe !== false;
+    const safetyImprovesAfterPlacement = Boolean(safetyMeta && safetyMeta.beforeSafe === false && safetyMeta.afterSafe === true);
     const mineImpactScore = preferredMinePlan?.plan ? Number(preferredMinePlan.plan.score || 0) : 0;
     const mineBlockedEscapeCount = preferredMinePlan?.plan?.blockedEscapeCount ?? 0;
     const mineCutRouteCount = preferredMinePlan?.plan?.cutRouteCount ?? 0;
     const mineTrapCount = preferredMinePlan?.plan?.trapCount ?? 0;
     const mineTotalDirectionLoss = preferredMinePlan?.plan?.totalDirectionLoss ?? 0;
-    const MINE_MIN_NOTICEABLE_IMPACT_SCORE = 4.5;
-    const MINE_MIN_NOTICEABLE_DIRECTION_LOSS = 2;
+    const MINE_MIN_NOTICEABLE_IMPACT_SCORE = 4.1;
+    const MINE_MIN_NOTICEABLE_DIRECTION_LOSS = 1.7;
+    const MINE_MIN_MODERATE_IMPACT_SCORE = 2.6;
+    const MINE_MIN_MODERATE_SAFE_IMPACT_SCORE = 2.25;
     const mineCreatesRouteDenial = mineBlockedEscapeCount > 0 || mineCutRouteCount > 0 || mineTrapCount > 0;
+    const aggressiveGoalName = `${plannedMove?.goalName || aiRoundState?.currentGoal || ""}`.toLowerCase();
+    const isAggressiveMineCoverScenario = aggressiveGoalName.includes("flag")
+      || aggressiveGoalName.includes("finisher")
+      || aggressiveGoalName.includes("finish")
+      || aggressiveGoalName.includes("attack");
+    const mineProtectsAfterAggressiveAction = isAggressiveMineCoverScenario && safetyImprovesAfterPlacement;
     const minePlanProvidesNoticeableImprovement = Boolean(preferredMinePlan?.plan) && (
       mineTrapCount > 0
       || mineCreatesRouteDenial
       || (mineTotalDirectionLoss >= MINE_MIN_NOTICEABLE_DIRECTION_LOSS && mineImpactScore >= MINE_MIN_NOTICEABLE_IMPACT_SCORE)
       || mineImpactScore >= (MINE_MIN_NOTICEABLE_IMPACT_SCORE + 1.5)
+      || mineProtectsAfterAggressiveAction
     );
     const mineModerateImprovement = Boolean(preferredMinePlan?.plan) && !minePlanProvidesNoticeableImprovement && (
-      mineImpactScore >= 3.2
+      mineImpactScore >= MINE_MIN_MODERATE_IMPACT_SCORE
       || mineTotalDirectionLoss >= 1
-      || (safeAfterPlacement && mineImpactScore >= 2.7)
+      || (safeAfterPlacement && mineImpactScore >= MINE_MIN_MODERATE_SAFE_IMPACT_SCORE)
     );
     if(preferredMinePlan && (minePlanProvidesNoticeableImprovement || mineModerateImprovement)){
       const baseMineBenefit = Math.max(0.22, Math.min(0.9, Number((preferredMinePlan.plan.score || 0) / 20)));
-      const expectedMineBenefit = mineCreatesRouteDenial
-        ? Math.max(0.34, baseMineBenefit)
-        : Math.max(minePlanProvidesNoticeableImprovement ? 0.3 : 0.18, baseMineBenefit);
+      const expectedMineBenefit = (() => {
+        const rawBenefit = mineCreatesRouteDenial
+          ? Math.max(0.34, baseMineBenefit)
+          : Math.max(minePlanProvidesNoticeableImprovement ? 0.3 : 0.18, baseMineBenefit);
+        const nextTurnSafetyBonus = safetyImprovesAfterPlacement
+          ? (mineProtectsAfterAggressiveAction ? 0.22 : 0.14)
+          : 0;
+        return Math.min(0.92, rawBenefit + nextTurnSafetyBonus);
+      })();
       pushCandidate({
         itemType: INVENTORY_ITEM_TYPES.MINE,
         target: priorityEnemy || enemyBase || landingPoint || null,
@@ -21349,16 +21365,20 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
         risk: safeAfterPlacement ? 0.08 : 0.14,
         reason: preferredMinePlan.plan.scenario || "mine_cover_plan",
         whyBetter: preferredMinePlan.placementMode === "defensive"
-          ? (minePlanProvidesNoticeableImprovement
-              ? "mine can shape the enemy escape lane immediately instead of waiting for a plain flight"
-              : "mine does not trap the enemy outright yet, but it still narrows their safe exits and becomes worth using after repeated empty turns")
+          ? (mineProtectsAfterAggressiveAction
+              ? "mine keeps the post-attack landing safer, so we can finish or grab objective without giving an easy response"
+              : (minePlanProvidesNoticeableImprovement
+                  ? "mine can shape the enemy escape lane immediately instead of waiting for a plain flight"
+                  : "mine does not trap the enemy outright yet, but it still narrows their safe exits and becomes worth using after repeated empty turns"))
           : (minePlanProvidesNoticeableImprovement
               ? "mine adds board control on top of the same movement plan"
               : "mine adds moderate board control, which becomes acceptable once the match keeps forcing fallback choices"),
         placementMode: preferredMinePlan.placementMode,
         minePlan: preferredMinePlan.plan,
         safeAfterPlacement,
-        mineUseReason: mineCreatesRouteDenial ? "mine_used_for_route_denial" : "mine_used_for_position_improvement",
+        mineUseReason: mineProtectsAfterAggressiveAction
+          ? "mine_used_for_safe_aggressive_follow_up"
+          : (mineCreatesRouteDenial ? "mine_used_for_route_denial" : "mine_used_for_position_improvement"),
         usageTier: minePlanProvidesNoticeableImprovement ? "strong" : "moderate",
       });
     } else {

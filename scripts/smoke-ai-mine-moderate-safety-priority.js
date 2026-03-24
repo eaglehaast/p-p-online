@@ -18,7 +18,10 @@ function extractFunctionSource(source, fnName){
   }
   throw new Error(`Function body end not found for: ${fnName}`);
 }
-function assert(condition, message){ if(!condition) throw new Error(message); }
+
+function assert(condition, message){
+  if(!condition) throw new Error(message);
+}
 
 const source = fs.readFileSync('script.js', 'utf8');
 const extracted = [
@@ -37,20 +40,28 @@ const context = {
   AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD: 99,
   AI_INVENTORY_PRESSURE_CONFIG: { mine: { selectionFloor: 0.108 } },
   INVENTORY_ITEM_TYPES: { FUEL: 'fuel', CROSSHAIR: 'crosshair', MINE: 'mine', DYNAMITE: 'dynamite', INVISIBILITY: 'invisible', WINGS: 'wings' },
-  aiRoundState: { currentGoal: 'direct_finisher', lastInventorySoftFallbackUsed: false, inventoryIdleTurns: 0, inventorySoftFallbackCooldown: 0 },
+  aiRoundState: { currentGoal: 'capture_enemy_flag', lastInventorySoftFallbackUsed: false, inventoryIdleTurns: 0, inventorySoftFallbackCooldown: 0 },
   evaluateBlueInventoryState: () => ({ total: 1, counts: { fuel: 0, crosshair: 0, mine: 1, dynamite: 0, invisible: 0, wings: 0 } }),
-  getBluePriorityEnemy: () => ({ id: 'enemy-1', x: 150, y: 0, shieldActive: true }),
-  getAiMoveLandingPoint: () => ({ x: 120, y: 0 }),
-  getAiStrategicTargetPoint: () => ({ x: 150, y: 0 }),
+  getBluePriorityEnemy: () => ({ id: 'enemy-2', x: 145, y: 18, shieldActive: false }),
+  getAiMoveLandingPoint: () => ({ x: 118, y: 4 }),
+  getAiStrategicTargetPoint: () => ({ x: 145, y: 18 }),
   getBaseAnchor: () => ({ x: 0, y: 0 }),
-  evaluateCrosshairBestUse: () => ({ totalValue: 0.74, distanceToEnemy: 90, hasCleanPath: true, hitChance: 0.61, enemy: { id: 'enemy-1', shieldActive: true } }),
+  evaluateCrosshairBestUse: () => null,
   evaluateFuelTacticalPlans: () => ({ selectedCandidate: null, rejectedScenarios: [], returnSafetyScore: 0, requiredReturnSafetyThreshold: 0, actualReturnSafetyScore: 0 }),
   getAvailableFlagsByColor: () => [],
   getFlagAnchor: () => null,
   applyItemToOwnPlane: () => false,
   removeItemFromInventory: () => { removed += 1; },
   tryPlaceBlueDefensiveMine: (_ctx, _move, options = {}) => {
-    if(options.evaluateOnly) return { placement: { x: 135, y: 0 }, scenario: 'mine_blocks_escape_lane', score: 8, blockedEscapeCount: 1, cutRouteCount: 0, trapCount: 0, totalDirectionLoss: 1 };
+    if(options.evaluateOnly) return {
+      placement: { x: 132, y: 8 },
+      scenario: 'mine_covers_post_flag_counter',
+      score: 2.3,
+      blockedEscapeCount: 0,
+      cutRouteCount: 0,
+      trapCount: 0,
+      totalDirectionLoss: 0.5,
+    };
     placed += 1;
     return true;
   },
@@ -61,7 +72,7 @@ const context = {
   settings: { aimingAmplitude: 80, flightRangeCells: 30 },
   ATTACK_RANGE_PX: 100,
   dist: (a, b) => Math.hypot(a.x - b.x, a.y - b.y),
-  isPathClear: () => false,
+  isPathClear: () => true,
   getDynamiteCandidateForCurrentRoute: () => null,
   getNearestDynamiteTargetToPoint: () => null,
   isDynamiteTargetUsefulForCurrentRoute: () => false,
@@ -69,6 +80,7 @@ const context = {
   evaluateFlagPickupContinuation: () => null,
   evaluateMineEnabledFlagPickupContinuation: () => null,
   evaluatePostLaunchSafetyWithMine: () => ({ beforeSafe: false, afterSafe: true }),
+  isPlannedMoveLikelyProfitableTrade: () => false,
   evaluateDirectAttackWindow: () => null,
   getAiInventoryRecentMatchSignals: () => ({ fallbackSelectedCount: 0, shotPlanNotFoundCount: 0, emergencyBaseDefenseCount: 0, softReleaseReady: true }),
   updateAiInventoryPressureForTurn: () => ({ byItem: {}, stalestItemType: null }),
@@ -77,7 +89,6 @@ const context = {
   isAiInventoryPressureWeakChance: () => false,
   recordInventoryAiDecision: () => {},
   shouldProbeInventoryPreparedShotPlan: () => false,
-  isPlannedMoveLikelyProfitableTrade: () => false,
   AI_ENGINE_MODE: 'v2',
   AI_V2_INVENTORY_PHASE: 3,
 };
@@ -85,20 +96,26 @@ const context = {
 vm.createContext(context);
 vm.runInContext(extracted, context);
 
-const gameContext = { aiRiskProfile: { profile: 'balanced' }, enemies: [{ id: 'enemy-1', x: 150, y: 0 }] };
+const gameContext = {
+  aiRiskProfile: { profile: 'balanced' },
+  enemies: [{ id: 'enemy-2', x: 145, y: 18 }],
+};
 const plannedMove = {
-  plane: { id: 'plane-1', x: 0, y: 0 },
-  totalDist: 120,
-  goalName: 'direct_finisher',
+  plane: { id: 'plane-2', x: 0, y: 0 },
+  totalDist: 118,
+  goalName: 'capture_enemy_flag',
 };
 const planning = context.buildAiInventoryCandidatePlans(gameContext, plannedMove);
+
 assert(planning.selectedCandidate && planning.selectedCandidate.itemType === context.INVENTORY_ITEM_TYPES.MINE,
-  'Mine must be the top candidate when it secures the response after a finisher.');
+  'Mine must become selected even for moderate impact when it makes the next turn safer.');
+
 plannedMove.selectedInventoryCandidate = planning.selectedCandidate;
 const used = context.maybeUseInventoryBeforeLaunch(gameContext, plannedMove);
 
-assert(used === true, 'Mine should be used when it makes a finisher landing safe enough.');
-assert(removed === 1 && placed === 1, 'Mine must be consumed for the safe finisher scenario.');
-assert(logs.some((entry) => entry.reason === 'mine_enables_safe_finisher'), 'Dedicated mine_enables_safe_finisher log is required.');
+assert(used === true, 'Mine should be used when it gives safety for the immediate enemy response turn.');
+assert(removed === 1 && placed === 1, 'Mine must be spent exactly once in moderate safety scenario.');
+assert(logs.some((entry) => entry.reason === 'mine_used_for_safe_aggressive_follow_up'),
+  'Safety-driven aggressive follow-up mine usage must be logged explicitly.');
 
-console.log('Smoke test passed: mine is used to cover the landing after a finisher.');
+console.log('Smoke test passed: moderate mine plan is selected when it secures the next turn after an aggressive action.');
