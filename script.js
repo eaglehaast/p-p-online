@@ -28550,21 +28550,30 @@ function getGuaranteedAnyLegalLaunch(context){
   );
   if (!fallbackAiPlanes.length) return null;
 
-  const strengthScales = [1, 0.78, 0.58];
-  const angleSet = [
-    0,
-    Math.PI / 12,
-    -Math.PI / 12,
-    Math.PI / 6,
-    -Math.PI / 6,
-    Math.PI / 4,
-    -Math.PI / 4,
-    Math.PI / 2,
-    -Math.PI / 2,
-    (3 * Math.PI) / 4,
-    (-3 * Math.PI) / 4,
-    Math.PI,
+  const strengthScales = [
+    1.00,
+    0.92,
+    0.84,
+    0.76,
+    0.68,
+    0.60,
+    0.52,
+    0.44,
+    0.36,
+    0.30,
+    0.24,
   ];
+  const angleStep = Math.PI / 72;
+  const halfTurnSteps = Math.floor(Math.PI / angleStep);
+  const angleSweep = [0];
+  for(let step = 1; step <= halfTurnSteps; step += 1){
+    const angle = step * angleStep;
+    if(angle < Math.PI){
+      angleSweep.push(angle, -angle);
+      continue;
+    }
+    angleSweep.push(Math.PI);
+  }
 
   for (const plane of fallbackAiPlanes) {
     const planeFlightProfile = getAiFlightRangeProfile(plane);
@@ -28572,7 +28581,7 @@ function getGuaranteedAnyLegalLaunch(context){
     if(!Number.isFinite(speedPxPerSec) || speedPxPerSec <= 0) continue;
 
     for (const scale of strengthScales) {
-      for (const angle of angleSet) {
+      for(const angle of angleSweep){
         const vx = Math.cos(angle) * scale * speedPxPerSec;
         const vy = Math.sin(angle) * scale * speedPxPerSec;
         const landingX = plane.x + vx * FIELD_FLIGHT_DURATION_SEC;
