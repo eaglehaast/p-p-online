@@ -4,8 +4,8 @@
     "id": "arena",
     "name": "arena",
     "mode": "data",
-    "tier": "middle",
-    "difficulty": "middle",
+    "tier": "hard",
+    "difficulty": "hard",
     "sprites": [
       {
         "spriteName": "brick_1_default",
