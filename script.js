@@ -4691,9 +4691,7 @@ function seedMapEditorInventory(){
 
 function giveOpponentFuelFromConsole(qty = 1, source = "console_give_opponent_fuel"){
   const normalizedQty = Number.isFinite(qty) ? Math.max(1, Math.floor(qty)) : 1;
-  const targetColor = gameMode === "computer"
-    ? "blue"
-    : getCurrentTurnOpponentColor();
+  const targetColor = getOpponentDebugTargetColor();
   giveItem(INVENTORY_ITEM_TYPES.FUEL, normalizedQty, {
     targetColor,
     source,
@@ -4707,8 +4705,45 @@ function giveOpponentFuelFromConsole(qty = 1, source = "console_give_opponent_fu
   };
 }
 
+function getOpponentDebugTargetColor(){
+  return gameMode === "computer"
+    ? "blue"
+    : getCurrentTurnOpponentColor();
+}
+
+function giveOpponentItemFromConsole(itemType, qty = 1, source = "console_give_opponent_item"){
+  if(!itemType) return { ok: false, reason: "missing_item_type" };
+  const normalizedQty = Number.isFinite(qty) ? Math.max(1, Math.floor(qty)) : 1;
+  const targetColor = getOpponentDebugTargetColor();
+  const normalizedItemType = String(itemType).toLowerCase();
+  const itemExists = INVENTORY_ITEMS.some((item) => item?.type === normalizedItemType);
+  if(!itemExists){
+    return { ok: false, reason: "unknown_item_type", itemType: normalizedItemType };
+  }
+  giveItem(normalizedItemType, normalizedQty, {
+    targetColor,
+    source,
+  });
+  if(normalizedItemType === INVENTORY_ITEM_TYPES.FUEL){
+    requestAiFuelTrainingForNextTurn(source);
+  }
+  return {
+    ok: true,
+    targetColor,
+    qty: normalizedQty,
+    itemType: normalizedItemType,
+    source,
+  };
+}
+
 if(typeof window !== "undefined"){
   window.GIVE_OPPONENT_FUEL = (qty = 1) => giveOpponentFuelFromConsole(qty, "console_any_mode");
+  window.GIVE_OPPONENT_ITEM = (itemType, qty = 1) => giveOpponentItemFromConsole(itemType, qty, "console_any_mode");
+  window.GIVE_OPPONENT_CROSSHAIR = (qty = 1) => giveOpponentItemFromConsole(INVENTORY_ITEM_TYPES.CROSSHAIR, qty, "console_any_mode");
+  window.GIVE_OPPONENT_WINGS = (qty = 1) => giveOpponentItemFromConsole(INVENTORY_ITEM_TYPES.WINGS, qty, "console_any_mode");
+  window.GIVE_OPPONENT_MINE = (qty = 1) => giveOpponentItemFromConsole(INVENTORY_ITEM_TYPES.MINE, qty, "console_any_mode");
+  window.GIVE_OPPONENT_DYNAMITE = (qty = 1) => giveOpponentItemFromConsole(INVENTORY_ITEM_TYPES.DYNAMITE, qty, "console_any_mode");
+  window.GIVE_OPPONENT_INVISIBILITY = (qty = 1) => giveOpponentItemFromConsole(INVENTORY_ITEM_TYPES.INVISIBILITY, qty, "console_any_mode");
 }
 
 if (DEBUG_CHEATS && typeof window !== "undefined") {
@@ -4720,6 +4755,7 @@ if (DEBUG_CHEATS && typeof window !== "undefined") {
   window.DEBUG_BANNER_CLEAR = () => clearRoundBanner();
   window.DEBUG_GIVE_ITEM = (itemId, qty = 1) => giveItem(itemId, qty);
   window.DEBUG_GIVE_OPPONENT_FUEL = (qty = 1) => giveOpponentFuelFromConsole(qty, "debug_give_opponent_fuel");
+  window.DEBUG_GIVE_OPPONENT_ITEM = (itemType, qty = 1) => giveOpponentItemFromConsole(itemType, qty, "debug_give_opponent_item");
   window.DEBUG_CLEAR_INVENTORY = () => resetInventoryState();
 }
 
