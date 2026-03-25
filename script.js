@@ -17065,8 +17065,12 @@ function getMineControlSummaryForPlane(plane, context = {}, options = {}){
       detourValue: 0,
       objectiveDelayScore: 0,
       defensiveUrgency: 0,
+      enemyRouteDangerScore: 0,
+      ownRouteDangerScore: 0,
       routeDangerScore: 0,
       routeDevalued: false,
+      routeDevaluedByOwnMines: false,
+      ownMinePathIntersectionPenalty: 0,
       recommendedDetourPoint: null,
       reasonCodes: [],
     };
@@ -17075,6 +17079,7 @@ function getMineControlSummaryForPlane(plane, context = {}, options = {}){
   const activePlane = plane || context?.plane || null;
   const assumedColor = activePlane?.color || options?.planeColor || 'blue';
   const enemyMineOwner = assumedColor === 'blue' ? 'green' : 'blue';
+  const ownMineOwner = assumedColor;
   const homeBase = options?.homeBase || context?.homeBase || getBaseAnchor(assumedColor);
   const objectivePoint = options?.objectivePoint || null;
   const flagPoint = options?.flagPoint || null;
@@ -17082,21 +17087,57 @@ function getMineControlSummaryForPlane(plane, context = {}, options = {}){
   const landingPoint = options?.landingPoint || null;
   const enemies = Array.isArray(options?.enemies) ? options.enemies.filter(Boolean) : (Array.isArray(context?.enemies) ? context.enemies.filter(Boolean) : []);
 
-  function summarizeRoute(targetPoint){
-    if(!targetPoint || !Number.isFinite(targetPoint.x) || !Number.isFinite(targetPoint.y)){
-      return { mineCount: 0, dangerScore: 0, threatMeta: null };
-    }
-    const threatMeta = getMineThreatMetaForSegment(originPoint.x, originPoint.y, targetPoint.x, targetPoint.y, activePlane, {
-      mineOwner: enemyMineOwner,
-    });
-    const dangerScore = threatMeta.count * 0.34
+  function getRouteDangerScoreByOwner(threatMeta, ownerKind = "enemy"){
+    if(!threatMeta) return 0;
+    const nearestBonus = Number.isFinite(threatMeta.nearestDist)
+      ? Math.max(0, 1 - (threatMeta.nearestDist / Math.max(CELL_SIZE * 2.5, 1))) * 0.2
+      : 0;
+    const baseScore = threatMeta.count * 0.34
       + (threatMeta.pathHit ? 0.28 : 0)
       + (threatMeta.landingThreat ? 0.18 : 0)
-      + (Number.isFinite(threatMeta.nearestDist) ? Math.max(0, 1 - (threatMeta.nearestDist / Math.max(CELL_SIZE * 2.5, 1))) * 0.2 : 0);
+      + nearestBonus;
+    if(ownerKind !== "own"){
+      return Number(baseScore.toFixed(3));
+    }
+    const selfPathPenalty = threatMeta.pathHit ? 0.62 : 0;
+    const selfLandingPenalty = threatMeta.landingThreat ? 0.26 : 0;
+    const ownWeightedScore = baseScore * 1.35 + selfPathPenalty + selfLandingPenalty;
+    return Number(ownWeightedScore.toFixed(3));
+  }
+
+  function summarizeRoute(targetPoint){
+    if(!targetPoint || !Number.isFinite(targetPoint.x) || !Number.isFinite(targetPoint.y)){
+      return {
+        mineCount: 0,
+        enemyMineCount: 0,
+        ownMineCount: 0,
+        dangerScore: 0,
+        enemyDangerScore: 0,
+        ownDangerScore: 0,
+        threatMeta: null,
+        enemyThreatMeta: null,
+        ownThreatMeta: null,
+      };
+    }
+    const enemyThreatMeta = getMineThreatMetaForSegment(originPoint.x, originPoint.y, targetPoint.x, targetPoint.y, activePlane, {
+      mineOwner: enemyMineOwner,
+    });
+    const ownThreatMeta = getMineThreatMetaForSegment(originPoint.x, originPoint.y, targetPoint.x, targetPoint.y, activePlane, {
+      mineOwner: ownMineOwner,
+    });
+    const enemyDangerScore = getRouteDangerScoreByOwner(enemyThreatMeta, "enemy");
+    const ownDangerScore = getRouteDangerScoreByOwner(ownThreatMeta, "own");
+    const dangerScore = enemyDangerScore + ownDangerScore;
     return {
-      mineCount: threatMeta.count,
+      mineCount: enemyThreatMeta.count + ownThreatMeta.count,
+      enemyMineCount: enemyThreatMeta.count,
+      ownMineCount: ownThreatMeta.count,
       dangerScore: Number(dangerScore.toFixed(3)),
-      threatMeta,
+      enemyDangerScore,
+      ownDangerScore,
+      threatMeta: enemyThreatMeta,
+      enemyThreatMeta,
+      ownThreatMeta,
     };
   }
 
@@ -17119,15 +17160,18 @@ function getMineControlSummaryForPlane(plane, context = {}, options = {}){
     for(const direction of directions){
       const targetX = anchorPoint.x + direction.x * sampleDistance;
       const targetY = anchorPoint.y + direction.y * sampleDistance;
-      const mineMeta = getMineThreatMetaForSegment(anchorPoint.x, anchorPoint.y, targetX, targetY, activePlane, {
+      const enemyMineMeta = getMineThreatMetaForSegment(anchorPoint.x, anchorPoint.y, targetX, targetY, activePlane, {
         mineOwner: enemyMineOwner,
+      });
+      const ownMineMeta = getMineThreatMetaForSegment(anchorPoint.x, anchorPoint.y, targetX, targetY, activePlane, {
+        mineOwner: ownMineOwner,
       });
       const enemyPressure = enemies.some((enemy) => {
         if(!Number.isFinite(enemy?.x) || !Number.isFinite(enemy?.y)) return false;
         const enemyDist = Math.hypot(enemy.x - targetX, enemy.y - targetY);
         return enemyDist <= getPlaneEffectiveRangePx(enemy) * 0.92 && isPathClear(enemy.x, enemy.y, targetX, targetY);
       });
-      if(mineMeta.count === 0 && !enemyPressure) safeDirectionCount += 1;
+      if(enemyMineMeta.count === 0 && ownMineMeta.count === 0 && !enemyPressure) safeDirectionCount += 1;
     }
     return {
       safeDirectionCount,
@@ -17156,8 +17200,13 @@ function getMineControlSummaryForPlane(plane, context = {}, options = {}){
       const fromWaypoint = getMineThreatMetaForSegment(candidate.x, candidate.y, targetPoint.x, targetPoint.y, activePlane, {
         mineOwner: enemyMineOwner,
       });
-      const combinedCount = toWaypoint.mineCount + fromWaypoint.count;
-      const combinedDanger = toWaypoint.dangerScore + fromWaypoint.count * 0.31 + (fromWaypoint.pathHit ? 0.22 : 0) + (fromWaypoint.landingThreat ? 0.14 : 0);
+      const ownFromWaypoint = getMineThreatMetaForSegment(candidate.x, candidate.y, targetPoint.x, targetPoint.y, activePlane, {
+        mineOwner: ownMineOwner,
+      });
+      const combinedCount = toWaypoint.mineCount + fromWaypoint.count + ownFromWaypoint.count;
+      const combinedDanger = toWaypoint.dangerScore
+        + getRouteDangerScoreByOwner(fromWaypoint, "enemy")
+        + getRouteDangerScoreByOwner(ownFromWaypoint, "own");
       if(combinedCount >= baseMeta.mineCount && combinedDanger >= baseMeta.dangerScore) continue;
       if(!best || combinedDanger < best.combinedDanger){
         best = {
@@ -17197,18 +17246,38 @@ function getMineControlSummaryForPlane(plane, context = {}, options = {}){
   const objectiveDelayScore = Number((objectiveRoute.dangerScore + (trapSummary.trappedZone ? 0.24 : 0) + (enemyMineCoverAfterMove ? 0.18 : 0)).toFixed(3));
   const detourValue = Number(Math.max(0, (detourPoint?.improvement || 0) + (trapSummary.trappedZone ? 0.18 : 0) + (objectiveRoute.mineCount > 0 ? 0.14 : 0)).toFixed(3));
   const defensiveUrgency = Number((homeRoute.dangerScore + (trapSummary.trappedZone ? 0.2 : 0) + (enemyMineFinisherThreat ? 0.22 : 0)).toFixed(3));
-  const routeDangerScore = Number(Math.max(objectiveRoute.dangerScore, flagRoute.dangerScore, homeRoute.dangerScore, priorityRoute.dangerScore).toFixed(3));
-  const routeDevalued = objectiveDelayScore >= 0.34 || objectiveRoute.mineCount > 0 || enemyMineFinisherThreat;
+  const enemyRouteDangerScore = Number(Math.max(objectiveRoute.enemyDangerScore, flagRoute.enemyDangerScore, homeRoute.enemyDangerScore, priorityRoute.enemyDangerScore).toFixed(3));
+  const ownRouteDangerScore = Number(Math.max(objectiveRoute.ownDangerScore, flagRoute.ownDangerScore, homeRoute.ownDangerScore, priorityRoute.ownDangerScore).toFixed(3));
+  const routeDangerScore = Number((enemyRouteDangerScore + ownRouteDangerScore).toFixed(3));
+  const ownMinePathIntersectionPenalty = Number(Math.max(
+    objectiveRoute.ownThreatMeta?.pathHit ? 0.62 : 0,
+    flagRoute.ownThreatMeta?.pathHit ? 0.62 : 0,
+    homeRoute.ownThreatMeta?.pathHit ? 0.62 : 0,
+    priorityRoute.ownThreatMeta?.pathHit ? 0.62 : 0
+  ).toFixed(3));
+  const routeDevaluedByOwnMines = ownRouteDangerScore >= 0.62
+    || ownMinePathIntersectionPenalty > 0
+    || objectiveRoute.ownMineCount > 0;
+  const routeDevalued = objectiveDelayScore >= 0.34 || objectiveRoute.mineCount > 0 || enemyMineFinisherThreat || routeDevaluedByOwnMines;
   const reasonCodes = [];
-  if(routeDevalued) reasonCodes.push('route_devalued_by_enemy_mine');
+  if(routeDevalued) reasonCodes.push(routeDevaluedByOwnMines ? 'route_devalued_by_own_mine_risk' : 'route_devalued_by_enemy_mine');
+  if(routeDevaluedByOwnMines) reasonCodes.push('route_devalued_by_own_mine_risk');
   if(objectiveDelayScore >= 0.34) reasonCodes.push('objective_delayed_due_to_mine_control');
   if(trapSummary.trappedZone || enemyMineFinisherThreat) reasonCodes.push('reposition_due_to_mine_trap');
 
   return {
     objectiveMineCount: objectiveRoute.mineCount,
+    objectiveEnemyMineCount: objectiveRoute.enemyMineCount,
+    objectiveOwnMineCount: objectiveRoute.ownMineCount,
     flagMineCount: flagRoute.mineCount,
+    flagEnemyMineCount: flagRoute.enemyMineCount,
+    flagOwnMineCount: flagRoute.ownMineCount,
     homeMineCount: homeRoute.mineCount,
+    homeEnemyMineCount: homeRoute.enemyMineCount,
+    homeOwnMineCount: homeRoute.ownMineCount,
     priorityMineCount: priorityRoute.mineCount,
+    priorityEnemyMineCount: priorityRoute.enemyMineCount,
+    priorityOwnMineCount: priorityRoute.ownMineCount,
     trappedZone: trapSummary.trappedZone,
     safeDirectionCount: trapSummary.safeDirectionCount,
     enemyMineCoverAfterMove,
@@ -17216,10 +17285,14 @@ function getMineControlSummaryForPlane(plane, context = {}, options = {}){
     detourValue,
     objectiveDelayScore,
     defensiveUrgency,
+    enemyRouteDangerScore,
+    ownRouteDangerScore,
     routeDangerScore,
     routeDevalued,
+    routeDevaluedByOwnMines,
+    ownMinePathIntersectionPenalty,
     recommendedDetourPoint: detourPoint,
-    reasonCodes,
+    reasonCodes: [...new Set(reasonCodes)],
     routeThreats: {
       objective: objectiveRoute,
       flag: flagRoute,
@@ -24502,10 +24575,14 @@ function evaluateFlagPressureOpportunity(context = {}){
     bestDefenderPlaneId: homeBaseThreatMeta.bestDefenderPlaneId,
     bestFlagRoute: null,
     mineRoutePressure: 0,
+    mineEnemyRoutePressure: 0,
+    mineOwnRoutePressure: 0,
+    mineOwnPathIntersectionPenalty: 0,
     mineDetourValue: 0,
     mineDefensiveUrgency: 0,
     trappedByMines: false,
     enemyMineCoverAfterAdvance: false,
+    routeDevaluedByOwnMines: false,
   };
 
   if(!homeBase || !aiPlanes.length || !availableEnemyFlags.length){
@@ -24613,6 +24690,8 @@ function evaluateFlagPressureOpportunity(context = {}){
         - travelBurden * 0.26
         - homeDefenseValuePenalty * 0.34
         - mineSummary.objectiveDelayScore * 0.32
+        - mineSummary.ownRouteDangerScore * 0.42
+        - mineSummary.ownMinePathIntersectionPenalty * 0.28
       );
       const flagGrabValue = clamp01(
         (canReachFlag ? 0.42 : 0)
@@ -24623,6 +24702,8 @@ function evaluateFlagPressureOpportunity(context = {}){
         - homeDefenseValuePenalty * 0.52
         - criticalHomeDefensePenalty
         - mineSummary.objectiveDelayScore * 0.54
+        - mineSummary.ownRouteDangerScore * 0.5
+        - mineSummary.ownMinePathIntersectionPenalty * 0.34
       );
       const postPickupEscapeValue = clamp01(
         (effectiveContinuation.hasSafeEscape ? 0.46 : 0.02)
@@ -24634,6 +24715,8 @@ function evaluateFlagPressureOpportunity(context = {}){
         - homeDefenseValuePenalty * 0.48
         - criticalHomeDefensePenalty * 0.75
         - (mineSummary.enemyMineFinisherThreat ? 0.28 : 0)
+        - mineSummary.ownRouteDangerScore * 0.58
+        - mineSummary.ownMinePathIntersectionPenalty * 0.46
       );
       const flagReturnValue = clamp01(
         (effectiveContinuation.hasReturnRoute ? 0.28 : 0.08)
@@ -24644,6 +24727,8 @@ function evaluateFlagPressureOpportunity(context = {}){
         - homeDefenseValuePenalty * 0.56
         - criticalHomeDefensePenalty
         - mineSummary.defensiveUrgency * 0.34
+        - mineSummary.ownRouteDangerScore * 0.64
+        - mineSummary.ownMinePathIntersectionPenalty * 0.5
       );
       if(homeDefenseValuePenalty > 0.12){
         logAiDecision("flag_value_reduced_by_base_threat", {
@@ -24721,6 +24806,10 @@ function evaluateFlagPressureOpportunity(context = {}){
     result.flagContinuationReason = bestRoute.continuationReason;
     result.bestFlagRoute = bestRoute;
     result.mineRoutePressure = bestRoute.mineSummary?.objectiveDelayScore || 0;
+    result.mineEnemyRoutePressure = bestRoute.mineSummary?.enemyRouteDangerScore || 0;
+    result.mineOwnRoutePressure = bestRoute.mineSummary?.ownRouteDangerScore || 0;
+    result.mineOwnPathIntersectionPenalty = bestRoute.mineSummary?.ownMinePathIntersectionPenalty || 0;
+    result.routeDevaluedByOwnMines = bestRoute.mineSummary?.routeDevaluedByOwnMines === true;
     result.mineDetourValue = bestRoute.mineSummary?.detourValue || 0;
     result.mineDefensiveUrgency = bestRoute.mineSummary?.defensiveUrgency || 0;
     result.trappedByMines = bestRoute.mineSummary?.trappedZone === true;
@@ -24781,10 +24870,14 @@ function evaluateAiGoalPriorityModel(context){
     homeDefensePressure: flagPressureOpportunity.homeDefensePressure,
     criticalHomeDefenseThreat: flagPressureOpportunity.criticalHomeDefenseThreat,
     mineRoutePressure: flagPressureOpportunity.mineRoutePressure,
+    mineEnemyRoutePressure: flagPressureOpportunity.mineEnemyRoutePressure,
+    mineOwnRoutePressure: flagPressureOpportunity.mineOwnRoutePressure,
+    mineOwnPathIntersectionPenalty: flagPressureOpportunity.mineOwnPathIntersectionPenalty,
     mineDetourValue: flagPressureOpportunity.mineDetourValue,
     mineDefensiveUrgency: flagPressureOpportunity.mineDefensiveUrgency,
     trappedByMines: flagPressureOpportunity.trappedByMines,
     enemyMineCoverAfterAdvance: flagPressureOpportunity.enemyMineCoverAfterAdvance,
+    routeDevaluedByOwnMines: flagPressureOpportunity.routeDevaluedByOwnMines,
   });
 }
 
@@ -24840,6 +24933,9 @@ function selectAiModeForCurrentTurn(context){
   const goalModelEnabled = AI_USE_GOAL_PRIORITY_MODEL;
   const defensivePriority = context?.defensivePriority || getBlueDefensivePriority(context);
   const flagPressureOpportunity = evaluateFlagPressureOpportunity(context);
+  const ownMineRiskPenalty = flagPressureOpportunity.mineOwnRoutePressure * 0.9
+    + flagPressureOpportunity.mineOwnPathIntersectionPenalty * 0.65
+    + (flagPressureOpportunity.routeDevaluedByOwnMines ? 0.22 : 0);
   const goalSelection = goalModelEnabled ? evaluateAiGoalPriorityModel({
     ...context,
     defensivePriority,
@@ -24896,13 +24992,13 @@ function selectAiModeForCurrentTurn(context){
     mode = AI_MODES.ATTRITION;
     targetPriorities = ["force_trade", "attack_enemy_plane", "contest_center"];
   } else if(aiRiskProfile?.profile === "comeback" && shouldUseFlagsMode && availableEnemyFlags.length > 0
-      && (flagPressureOpportunity.flagReturnValue - flagPressureOpportunity.homeDefensePressure * 0.7) >= Math.max(flagPressureOpportunity.cargoAlternativeValue, flagPressureOpportunity.attackAlternativeValue)){
+      && (flagPressureOpportunity.flagReturnValue - flagPressureOpportunity.homeDefensePressure * 0.7 - ownMineRiskPenalty) >= Math.max(flagPressureOpportunity.cargoAlternativeValue, flagPressureOpportunity.attackAlternativeValue)){
     mode = AI_MODES.FLAG_PRESSURE;
     targetPriorities = flagPressureOpportunity.hasStrongFlagReturn
       ? ["return_with_flag", "capture_enemy_flag", "high_risk_attack"]
       : ["pickup_cargo", "attack_enemy_plane", "capture_enemy_flag"];
   } else if(hasEnoughResourcesForAggression && shouldUseFlagsMode && availableEnemyFlags.length > 0
-      && (flagPressureOpportunity.flagReturnValue - flagPressureOpportunity.homeDefensePressure * 0.7) >= Math.max(flagPressureOpportunity.cargoAlternativeValue, flagPressureOpportunity.attackAlternativeValue)){
+      && (flagPressureOpportunity.flagReturnValue - flagPressureOpportunity.homeDefensePressure * 0.7 - ownMineRiskPenalty) >= Math.max(flagPressureOpportunity.cargoAlternativeValue, flagPressureOpportunity.attackAlternativeValue)){
     mode = AI_MODES.FLAG_PRESSURE;
     targetPriorities = flagPressureOpportunity.hasStrongFlagReturn
       ? ["return_with_flag", "capture_enemy_flag"]
@@ -24911,7 +25007,7 @@ function selectAiModeForCurrentTurn(context){
     mode = AI_MODES.ATTRITION;
     targetPriorities = ["attack_enemy_plane", "close_distance"];
   } else if(shouldUseFlagsMode && availableEnemyFlags.length > 0
-      && (flagPressureOpportunity.flagReturnValue - flagPressureOpportunity.homeDefensePressure * 0.7) >= Math.max(flagPressureOpportunity.cargoAlternativeValue, flagPressureOpportunity.attackAlternativeValue)){
+      && (flagPressureOpportunity.flagReturnValue - flagPressureOpportunity.homeDefensePressure * 0.7 - ownMineRiskPenalty) >= Math.max(flagPressureOpportunity.cargoAlternativeValue, flagPressureOpportunity.attackAlternativeValue)){
     mode = AI_MODES.FLAG_PRESSURE;
     targetPriorities = flagPressureOpportunity.hasStrongFlagReturn
       ? ["return_with_flag", "capture_enemy_flag"]
@@ -24954,18 +25050,28 @@ function selectAiModeForCurrentTurn(context){
   }
   if(mode === AI_MODES.FLAG_PRESSURE){
     const inSafetyWindow = turnAdvanceCount <= AI_FLAG_PRESSURE_SAFETY_WINDOW_TURN_LIMIT;
-    const defenseAdjustedFlagValue = flagPressureOpportunity.flagReturnValue - flagPressureOpportunity.homeDefensePressure * 0.7;
+    const defenseAdjustedFlagValue = flagPressureOpportunity.flagReturnValue - flagPressureOpportunity.homeDefensePressure * 0.7 - ownMineRiskPenalty;
     const strongerThanCargo = defenseAdjustedFlagValue >= flagPressureOpportunity.cargoAlternativeValue;
     const strongerThanAttack = defenseAdjustedFlagValue >= flagPressureOpportunity.attackAlternativeValue;
     const grabOnlyFallback = flagPressureOpportunity.canReachEnemyFlag
       && flagPressureOpportunity.flagGrabValue >= AI_FLAG_PRESSURE_GRAB_ONLY_MAX_VALUE
       && flagPressureOpportunity.flagReturnValue < AI_FLAG_PRESSURE_RETURN_MIN_VALUE;
     const safeEscapeMissing = flagPressureOpportunity.canReachEnemyFlag && !flagPressureOpportunity.hasSafeEscapeOpportunity;
+    const blockedByOwnMineRisk = flagPressureOpportunity.routeDevaluedByOwnMines
+      && flagPressureOpportunity.mineOwnPathIntersectionPenalty > 0;
     flagGrabJustified = flagPressureOpportunity.hasStrongFlagReturn && strongerThanCargo && strongerThanAttack;
 
     flagPressureGatePassed = !inSafetyWindow || flagGrabJustified;
     if(!inSafetyWindow){
       flagPressureGateReason = "safety_window_inactive";
+    } else if(blockedByOwnMineRisk){
+      flagPressureGateReason = "route_devalued_by_own_mine_risk";
+      mode = flagPressureOpportunity.cargoAlternativeValue >= flagPressureOpportunity.attackAlternativeValue
+        ? AI_MODES.RESOURCE_FIRST
+        : AI_MODES.ATTRITION;
+      targetPriorities = mode === AI_MODES.RESOURCE_FIRST
+        ? ["pickup_cargo", "prepare_attack", "capture_enemy_flag"]
+        : ["attack_enemy_plane", "close_distance", "capture_enemy_flag"];
     } else if(safeEscapeMissing){
       flagPressureGateReason = "pickup_without_safe_escape";
       mode = flagPressureOpportunity.cargoAlternativeValue >= flagPressureOpportunity.attackAlternativeValue
@@ -25048,6 +25154,10 @@ function selectAiModeForCurrentTurn(context){
     homeDefensePressure: flagPressureOpportunity.homeDefensePressure,
     criticalHomeDefenseThreat: flagPressureOpportunity.criticalHomeDefenseThreat,
     bestFlagRoute: flagPressureOpportunity.bestFlagRoute,
+    ownMineRiskPenalty: Number(ownMineRiskPenalty.toFixed(3)),
+    mineOwnRoutePressure: flagPressureOpportunity.mineOwnRoutePressure,
+    mineOwnPathIntersectionPenalty: flagPressureOpportunity.mineOwnPathIntersectionPenalty,
+    routeDevaluedByOwnMines: flagPressureOpportunity.routeDevaluedByOwnMines,
     riskProfile: aiRiskProfile?.profile || "balanced",
     priorities: targetPriorities,
   });
@@ -27220,7 +27330,9 @@ function planModeDrivenAiMove(context){
       const candidateMineDelay = mineSummary?.objectiveDelayScore || 0;
       if(candidateMineDelay !== bestMineDelay){
         if(candidateMineDelay < bestMineDelay){
-          candidate.classTieBreakReason = mineSummary?.recommendedDetourPoint ? 'objective_delayed_due_to_mine_control' : 'route_devalued_by_enemy_mine';
+          candidate.classTieBreakReason = mineSummary?.recommendedDetourPoint
+            ? 'objective_delayed_due_to_mine_control'
+            : (mineSummary?.routeDevaluedByOwnMines ? 'route_devalued_by_own_mine_risk' : 'route_devalued_by_enemy_mine');
           bestCap = candidate;
         }
         continue;
@@ -28966,6 +29078,8 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
       "v2_base_candidate",
       "base_candidate_selected",
       plannedMove?.decisionReason || "candidate_selected",
+      ...(plannedMove?.classTieBreakReason ? [plannedMove.classTieBreakReason] : []),
+      ...(Array.isArray(plannedMove?.mineSummary?.reasonCodes) ? plannedMove.mineSummary.reasonCodes : []),
     ],
     move: plannedMove || null,
     source,
