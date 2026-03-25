@@ -21824,6 +21824,15 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
   const allowBuffItems = !isV2InventoryRules || inventoryPhase >= 1;
   const allowTacticalItems = !isV2InventoryRules || inventoryPhase >= 2;
   const allowInvisibility = !isV2InventoryRules || inventoryPhase >= 3;
+  const tacticalItemsPhaseLocked = isV2InventoryRules && inventoryPhase < 2;
+
+  logAiDecision("inventory_phase_capabilities", {
+    phase: inventoryPhase,
+    tacticalItemsAllowed: allowTacticalItems,
+    invisibilityAllowed: allowInvisibility,
+    planeId: plannedMove?.plane?.id ?? null,
+    goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+  });
 
   if(isV2InventoryRules && inventoryPhase === 0){
     logAiDecision("inventory_phase_gated", {
@@ -22146,7 +22155,9 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       }
     } else if(selectedType === INVENTORY_ITEM_TYPES.MINE){
       if(!allowTacticalItems){
-        executionFailureReason = "selected_candidate_blocked_by_inventory_phase";
+        executionFailureReason = tacticalItemsPhaseLocked
+          ? "tactical items gated by phase"
+          : "selected_candidate_blocked_by_inventory_phase";
       } else {
         const placementMode = selectedInventoryCandidate.placementMode === "defensive" ? "defensive" : "base";
         const selectedMinePlan = selectedInventoryCandidate.minePlan || null;
@@ -22253,7 +22264,9 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       }
     } else if(selectedType === INVENTORY_ITEM_TYPES.DYNAMITE){
       if(!allowTacticalItems){
-        executionFailureReason = "selected_candidate_blocked_by_inventory_phase";
+        executionFailureReason = tacticalItemsPhaseLocked
+          ? "tactical items gated by phase"
+          : "selected_candidate_blocked_by_inventory_phase";
       } else {
         const target = selectedInventoryCandidate.target || null;
         const shouldUseDynamite = selectedInventoryCandidate.reason !== "dynamite_route_opening"
@@ -23651,6 +23664,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   const activeInventoryPhase = Number.isFinite(aiRoundState?.inventoryPhase)
     ? Math.max(0, Math.min(3, Math.trunc(aiRoundState.inventoryPhase)))
     : AI_V2_INVENTORY_PHASE;
+  const tacticalItemsPhaseLocked = AI_ENGINE_MODE === "v2" && activeInventoryPhase < 2;
   const allowMultiUseTactical = AI_ENGINE_MODE === "v2" && activeInventoryPhase >= 2;
   const allowStrategicInventoryPreparation = shouldProbeInventoryPreparedShotPlan(
     plannedMove?.goalName || aiRoundState?.currentGoal || "",
@@ -23706,6 +23720,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     planeId: plannedMove?.plane?.id ?? null,
     goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
     allowedAsPreparationMove: allowStrategicInventoryPreparation,
+    tacticalItemsPhaseLocked,
   });
   const inventoryDecisionGoal = plannedMove?.goalName || aiRoundState?.currentGoal || null;
   const inventoryDecisionPlaneId = plannedMove?.plane?.id ?? null;
