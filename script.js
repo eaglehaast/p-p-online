@@ -21330,14 +21330,14 @@ function recordInventoryAiDecision(stage, details = {}){
 }
 
 function buildAiInventoryCandidatePlans(context, plannedMove){
-  if(!plannedMove?.plane) return { selectedCandidate: null, candidates: [], rejected: [] };
+  if(!plannedMove?.plane) return { selectedCandidate: null, selectedSequence: [], candidates: [], rejected: [] };
 
   const inventoryPhase = 3;
   const allowBuffItems = true;
   const allowTacticalItems = true;
   const allowInvisibility = true;
   const inventory = evaluateBlueInventoryState();
-  if(inventory.total <= 0) return { selectedCandidate: null, candidates: [], rejected: [] };
+  if(inventory.total <= 0) return { selectedCandidate: null, selectedSequence: [], candidates: [], rejected: [] };
 
   const candidates = [];
   const rejected = [];
@@ -21830,7 +21830,100 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       });
     }
   }
-  return { selectedCandidate, candidates, rejected, inventoryPhase };
+
+  const sequenceItemTypes = [
+    INVENTORY_ITEM_TYPES.FUEL,
+    INVENTORY_ITEM_TYPES.CROSSHAIR,
+    INVENTORY_ITEM_TYPES.WINGS,
+  ];
+  const compatiblePairKeys = new Set([
+    `${INVENTORY_ITEM_TYPES.FUEL}|${INVENTORY_ITEM_TYPES.CROSSHAIR}`,
+    `${INVENTORY_ITEM_TYPES.FUEL}|${INVENTORY_ITEM_TYPES.WINGS}`,
+    `${INVENTORY_ITEM_TYPES.CROSSHAIR}|${INVENTORY_ITEM_TYPES.WINGS}`,
+  ]);
+  const sequenceCandidatesByType = new Map();
+  for(const candidate of candidates){
+    if(sequenceItemTypes.includes(candidate.itemType) && candidate.releaseReady !== false){
+      sequenceCandidatesByType.set(candidate.itemType, candidate);
+    }
+  }
+  const possibleSequences = [
+    [INVENTORY_ITEM_TYPES.FUEL, INVENTORY_ITEM_TYPES.CROSSHAIR],
+    [INVENTORY_ITEM_TYPES.FUEL, INVENTORY_ITEM_TYPES.WINGS],
+    [INVENTORY_ITEM_TYPES.CROSSHAIR, INVENTORY_ITEM_TYPES.WINGS],
+    [INVENTORY_ITEM_TYPES.FUEL, INVENTORY_ITEM_TYPES.CROSSHAIR, INVENTORY_ITEM_TYPES.WINGS],
+  ];
+  let selectedSequence = [];
+  let bestSequenceScore = Number.NEGATIVE_INFINITY;
+  const selectionFloorForSequence = selectedCandidate ? getAiInventorySelectionFloor(selectedCandidate) : 0;
+  for(const sequenceTypes of possibleSequences){
+    const sequenceSteps = [];
+    let rejectedReason = null;
+    for(const itemType of sequenceTypes){
+      if(!(Number(inventory.counts?.[itemType] || 0) > 0)){
+        rejectedReason = "sequence_item_missing_in_inventory";
+        break;
+      }
+      const stepCandidate = sequenceCandidatesByType.get(itemType) || null;
+      if(!stepCandidate){
+        rejectedReason = "sequence_item_has_no_single_stage_candidate";
+        break;
+      }
+      sequenceSteps.push(stepCandidate);
+    }
+    if(!rejectedReason){
+      for(let index = 0; index < sequenceTypes.length - 1; index += 1){
+        const pairKey = [sequenceTypes[index], sequenceTypes[index + 1]].sort().join("|");
+        if(!compatiblePairKeys.has(pairKey)){
+          rejectedReason = "sequence_pair_incompatible";
+          break;
+        }
+      }
+    }
+    if(rejectedReason){
+      logAiDecision("inventory_sequence_rejected", {
+        planeId: plannedMove?.plane?.id ?? null,
+        goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+        sequence: sequenceTypes,
+        reason: rejectedReason,
+      });
+      continue;
+    }
+    const totalComparable = sequenceSteps.reduce((sum, step) => sum + Number(step.comparableScore || 0), 0);
+    const totalAdjusted = sequenceSteps.reduce((sum, step) => sum + Number(step.adjustedComparableScore || step.comparableScore || 0), 0);
+    const pairSynergyBonus = sequenceTypes.length === 2 ? 0.07 : 0.16;
+    const chainScore = Number((totalAdjusted + pairSynergyBonus).toFixed(3));
+    if(chainScore <= selectionFloorForSequence){
+      logAiDecision("inventory_sequence_rejected", {
+        planeId: plannedMove?.plane?.id ?? null,
+        goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+        sequence: sequenceTypes,
+        reason: "sequence_below_selection_floor",
+        chainScore,
+        selectionFloorForSequence,
+      });
+      continue;
+    }
+    if(chainScore > bestSequenceScore + 0.0001){
+      bestSequenceScore = chainScore;
+      selectedSequence = sequenceSteps.map((step, stepIndex) => ({
+        ...step,
+        stepIndex,
+        sequenceLength: sequenceTypes.length,
+      }));
+    }
+    logAiDecision("inventory_sequence_evaluated", {
+      planeId: plannedMove?.plane?.id ?? null,
+      goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+      sequence: sequenceTypes,
+      totalComparable: Number(totalComparable.toFixed(3)),
+      totalAdjusted: Number(totalAdjusted.toFixed(3)),
+      pairSynergyBonus,
+      chainScore,
+    });
+  }
+
+  return { selectedCandidate, selectedSequence, candidates, rejected, inventoryPhase };
 }
 
 function maybeUseInventoryBeforeLaunch(context, plannedMove){
@@ -22093,7 +22186,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     });
   }
 
-  if(selectedInventoryCandidate){
+  function executeSelectedInventoryCandidate(selectedInventoryCandidate, executionSource = "selected_inventory_candidate"){
+    if(!selectedInventoryCandidate) return { executed: false, executionFailureReason: "selected_candidate_missing" };
     const selectedType = selectedInventoryCandidate.itemType;
     const hasSelectedItemInInventory = Number(inventory.counts?.[selectedType] ?? 0) > 0;
     let executed = false;
@@ -22296,7 +22390,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     if(executed){
       logAiDecision("inventory_decision", {
         stage: "inventory_decision",
-        source: "selected_inventory_candidate",
+        source: executionSource,
         planeId: plannedMove?.plane?.id ?? null,
         itemType: selectedType,
         reason: selectedInventoryCandidate.reason || null,
@@ -22309,13 +22403,60 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         planeId: plannedMove?.plane?.id ?? null,
         goal: strategicGoal || null,
         itemType: selectedType,
-        source: "selected_inventory_candidate",
+        source: executionSource,
         reasonCodes: [selectedInventoryCandidate.reason || "inventory_item_applied"],
       });
-      return true;
+      return { executed: true, executionFailureReason: null };
     }
+    return { executed: false, executionFailureReason: executionFailureReason || "selected_candidate_execution_failed" };
+  }
 
-    logSelectedInventoryExecutionFailure(selectedType, executionFailureReason, {
+  const selectedInventorySequence = Array.isArray(plannedMove?.selectedInventorySequence)
+    ? plannedMove.selectedInventorySequence
+    : [];
+  if(selectedInventorySequence.length > 0){
+    const sequenceSteps = selectedInventorySequence.filter((step) => step && step.itemType);
+    const isSequenceValid = sequenceSteps.every((step) => (
+      Number(inventory.counts?.[step.itemType] || 0) > 0
+      && (step.itemType === INVENTORY_ITEM_TYPES.FUEL
+        || step.itemType === INVENTORY_ITEM_TYPES.CROSSHAIR
+        || step.itemType === INVENTORY_ITEM_TYPES.WINGS)
+    ));
+    if(!isSequenceValid){
+      logAiDecision("inventory_sequence_rejected_before_execution", {
+        planeId: plannedMove?.plane?.id ?? null,
+        goal: strategicGoal || null,
+        sequence: sequenceSteps.map((step) => step.itemType),
+        reason: "sequence_invalid_or_missing_items",
+      });
+    } else {
+      let anyStepExecuted = false;
+      for(let index = 0; index < sequenceSteps.length; index += 1){
+        const step = sequenceSteps[index];
+        const executionResult = executeSelectedInventoryCandidate(step, "selected_inventory_sequence");
+        if(executionResult.executed){
+          anyStepExecuted = true;
+          continue;
+        }
+        logSelectedInventoryExecutionFailure(step.itemType, executionResult.executionFailureReason, {
+          source: "selected_inventory_sequence",
+          sequenceStepIndex: index,
+          sequenceLength: sequenceSteps.length,
+          hadCommittedSelection: true,
+          inventoryLockBypassedBecauseAlreadySelected: true,
+        });
+        break;
+      }
+      if(anyStepExecuted){
+        return true;
+      }
+    }
+  }
+
+  if(selectedInventoryCandidate){
+    const executionResult = executeSelectedInventoryCandidate(selectedInventoryCandidate, "selected_inventory_candidate");
+    if(executionResult.executed) return true;
+    logSelectedInventoryExecutionFailure(selectedInventoryCandidate.itemType, executionResult.executionFailureReason, {
       hadCommittedSelection: true,
       inventoryLockBypassedBecauseAlreadySelected: true,
     });
@@ -29092,6 +29233,7 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
   const inventoryPlanning = buildAiInventoryCandidatePlans(context, plannedMove);
   plannedMove.inventoryCandidates = Array.isArray(inventoryPlanning?.candidates) ? inventoryPlanning.candidates.slice() : [];
   plannedMove.rejectedInventoryCandidates = Array.isArray(inventoryPlanning?.rejected) ? inventoryPlanning.rejected.slice() : [];
+  plannedMove.selectedInventorySequence = Array.isArray(inventoryPlanning?.selectedSequence) ? inventoryPlanning.selectedSequence.slice() : [];
   if(inventoryPlanning?.selectedCandidate){
     plannedMove.selectedInventoryCandidate = inventoryPlanning.selectedCandidate;
     plannedMove.inventoryUsageReason = inventoryPlanning.selectedCandidate.reason || plannedMove.inventoryUsageReason || null;
@@ -29106,6 +29248,18 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
       itemType: inventoryPlanning.selectedCandidate.itemType,
       source,
       reasonCodes: [inventoryPlanning.selectedCandidate.reason || "candidate_selected"],
+    });
+  }
+  if(plannedMove.selectedInventorySequence.length > 0){
+    if(!plannedMove.inventoryUsageReason){
+      plannedMove.inventoryUsageReason = plannedMove.selectedInventorySequence[0]?.reason || null;
+    }
+    logAiDecision("inventory_sequence_selected", {
+      planeId: plannedMove?.plane?.id ?? null,
+      goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+      sequence: plannedMove.selectedInventorySequence.map((entry) => entry.itemType),
+      source,
+      routeClass,
     });
   }
   const baseCandidateStage = buildAiBaseCandidateStageResult(plannedMove, {
@@ -29586,18 +29740,20 @@ function probeInventoryPreparedShotPlan(goalSelection = {}, modeContext = {}, la
   for(const candidate of preparationCandidates){
     const inventoryPlanning = buildAiInventoryCandidatePlans(modeContext, candidate);
     const selectedInventoryCandidate = inventoryPlanning?.selectedCandidate || null;
+    const selectedInventorySequence = Array.isArray(inventoryPlanning?.selectedSequence) ? inventoryPlanning.selectedSequence : [];
     const consideredTypes = Array.isArray(inventoryPlanning?.candidates)
       ? inventoryPlanning.candidates.map((entry) => entry?.itemType).filter(Boolean)
       : [];
     for(const itemType of consideredTypes){
       diagnostics.consideredItems[itemType] = (diagnostics.consideredItems[itemType] || 0) + 1;
     }
-    if(!selectedInventoryCandidate) continue;
+    if(!selectedInventoryCandidate && selectedInventorySequence.length === 0) continue;
 
     diagnostics.convertibleCandidateCount += 1;
-    const itemScore = Number.isFinite(selectedInventoryCandidate.adjustedComparableScore)
-      ? selectedInventoryCandidate.adjustedComparableScore
-      : (Number.isFinite(selectedInventoryCandidate.comparableScore) ? selectedInventoryCandidate.comparableScore : 0);
+    const primaryInventoryCandidate = selectedInventoryCandidate || selectedInventorySequence[0] || null;
+    const itemScore = Number.isFinite(primaryInventoryCandidate?.adjustedComparableScore)
+      ? primaryInventoryCandidate.adjustedComparableScore
+      : (Number.isFinite(primaryInventoryCandidate?.comparableScore) ? primaryInventoryCandidate.comparableScore : 0);
     const moveDistance = Number.isFinite(candidate.totalDist) ? candidate.totalDist : Math.hypot(candidate.vx || 0, candidate.vy || 0);
     const preparationScore = Number((itemScore * 1000 - moveDistance * 0.08).toFixed(3));
     const enrichedPlan = {
@@ -29609,24 +29765,27 @@ function probeInventoryPreparedShotPlan(goalSelection = {}, modeContext = {}, la
         plane: candidate.plane,
         goalName: candidate.goalName || goalName,
         selectedInventoryCandidate,
+        selectedInventorySequence: selectedInventorySequence.slice(),
         inventoryCandidates: Array.isArray(inventoryPlanning?.candidates) ? inventoryPlanning.candidates.slice() : [],
         rejectedInventoryCandidates: Array.isArray(inventoryPlanning?.rejected) ? inventoryPlanning.rejected.slice() : [],
-        inventoryUsageReason: selectedInventoryCandidate.reason || candidate.inventoryUsageReason || null,
+        inventoryUsageReason: primaryInventoryCandidate?.reason || candidate.inventoryUsageReason || null,
         inventoryPreparationSource: candidate.inventoryPreparationSource || null,
       },
       shotPreview: {
         trajectoryType: "inventory_preparation",
         routeClass: candidate.routeClass || null,
-        inventoryItemType: selectedInventoryCandidate.itemType,
-        inventoryReason: selectedInventoryCandidate.reason || null,
+        inventoryItemType: primaryInventoryCandidate?.itemType || null,
+        inventoryReason: primaryInventoryCandidate?.reason || null,
+        inventorySequence: selectedInventorySequence.map((step) => step.itemType),
         preparationSource: candidate.inventoryPreparationSource || null,
       },
       inventoryPreparationDiagnostics: {
         planeId: candidate.plane?.id ?? null,
         enemyId: candidate.enemy?.id ?? null,
-        itemType: selectedInventoryCandidate.itemType,
-        itemReason: selectedInventoryCandidate.reason || null,
-        adjustedComparableScore: selectedInventoryCandidate.adjustedComparableScore ?? selectedInventoryCandidate.comparableScore ?? null,
+        itemType: primaryInventoryCandidate?.itemType || null,
+        itemReason: primaryInventoryCandidate?.reason || null,
+        sequence: selectedInventorySequence.map((step) => step.itemType),
+        adjustedComparableScore: primaryInventoryCandidate?.adjustedComparableScore ?? primaryInventoryCandidate?.comparableScore ?? null,
         inventoryPreparationSource: candidate.inventoryPreparationSource || null,
       },
     };
@@ -29634,7 +29793,7 @@ function probeInventoryPreparedShotPlan(goalSelection = {}, modeContext = {}, la
       bestPlan = enrichedPlan;
       diagnostics.bestPreparationSource = candidate.inventoryPreparationSource || null;
       diagnostics.bestPlaneId = candidate.plane?.id ?? null;
-      diagnostics.bestItemType = selectedInventoryCandidate.itemType;
+      diagnostics.bestItemType = primaryInventoryCandidate?.itemType || null;
       diagnostics.canConvertNoShotPlanMove = true;
     }
   }
