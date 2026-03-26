@@ -21320,18 +21320,10 @@ function recordInventoryAiDecision(stage, details = {}){
 function buildAiInventoryCandidatePlans(context, plannedMove){
   if(!plannedMove?.plane) return { selectedCandidate: null, candidates: [], rejected: [] };
 
-  const engineMode = typeof AI_ENGINE_MODE === "string" ? AI_ENGINE_MODE : "v2";
-  const defaultV2InventoryPhase = Number.isFinite(typeof AI_V2_INVENTORY_PHASE !== "undefined" ? AI_V2_INVENTORY_PHASE : NaN)
-    ? AI_V2_INVENTORY_PHASE
-    : 3;
-  const isV2InventoryRules = engineMode === "v2";
-  const rawInventoryPhase = Number(aiRoundState?.inventoryPhase);
-  const inventoryPhase = isV2InventoryRules
-    ? Math.max(0, Math.min(3, Number.isFinite(rawInventoryPhase) ? Math.trunc(rawInventoryPhase) : defaultV2InventoryPhase))
-    : 3;
-  const allowBuffItems = !isV2InventoryRules || inventoryPhase >= 1;
-  const allowTacticalItems = !isV2InventoryRules || inventoryPhase >= 2;
-  const allowInvisibility = !isV2InventoryRules || inventoryPhase >= 3;
+  const inventoryPhase = 3;
+  const allowBuffItems = true;
+  const allowTacticalItems = true;
+  const allowInvisibility = true;
   const inventory = evaluateBlueInventoryState();
   if(inventory.total <= 0) return { selectedCandidate: null, candidates: [], rejected: [] };
 
@@ -21812,34 +21804,10 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
 function maybeUseInventoryBeforeLaunch(context, plannedMove){
   if(!plannedMove?.plane) return false;
 
-  const engineMode = typeof AI_ENGINE_MODE === "string" ? AI_ENGINE_MODE : "v2";
-  const defaultV2InventoryPhase = Number.isFinite(typeof AI_V2_INVENTORY_PHASE !== "undefined" ? AI_V2_INVENTORY_PHASE : NaN)
-    ? AI_V2_INVENTORY_PHASE
-    : 3;
-  const isV2InventoryRules = engineMode === "v2";
-  const rawInventoryPhase = Number(aiRoundState?.inventoryPhase);
-  const inventoryPhase = isV2InventoryRules
-    ? Math.max(0, Math.min(3, Number.isFinite(rawInventoryPhase) ? Math.trunc(rawInventoryPhase) : defaultV2InventoryPhase))
-    : 3;
-  const allowBuffItems = !isV2InventoryRules || inventoryPhase >= 1;
-  const allowTacticalItems = !isV2InventoryRules || inventoryPhase >= 2;
-  const allowInvisibility = !isV2InventoryRules || inventoryPhase >= 3;
-
-  if(isV2InventoryRules && inventoryPhase === 0){
-    logAiDecision("inventory_phase_gated", {
-      phase: inventoryPhase,
-      reason: "inventory_disabled_by_phase",
-      planeId: plannedMove?.plane?.id ?? null,
-      goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
-    });
-    recordInventoryAiDecision("inventory_phase_gated", {
-      planeId: plannedMove?.plane?.id ?? null,
-      goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
-      reasonCodes: ["inventory_phase_locked"],
-      rejectReasons: ["inventory_disabled_by_phase"],
-    });
-    return false;
-  }
+  const inventoryPhase = 3;
+  const allowBuffItems = true;
+  const allowTacticalItems = true;
+  const allowInvisibility = true;
 
   const explicitInventoryUnlock = plannedMove?.allowInventoryUsage === true
     && plannedMove?.inventoryUsageReason === "bad_direct_fallback";
@@ -23651,7 +23619,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   const activeInventoryPhase = Number.isFinite(aiRoundState?.inventoryPhase)
     ? Math.max(0, Math.min(3, Math.trunc(aiRoundState.inventoryPhase)))
     : AI_V2_INVENTORY_PHASE;
-  const allowMultiUseTactical = AI_ENGINE_MODE === "v2" && activeInventoryPhase >= 2;
+  const allowMultiUseTactical = AI_ENGINE_MODE === "v2";
   const allowStrategicInventoryPreparation = shouldProbeInventoryPreparedShotPlan(
     plannedMove?.goalName || aiRoundState?.currentGoal || "",
   );
