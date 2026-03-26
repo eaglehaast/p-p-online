@@ -19808,6 +19808,60 @@ function withTemporaryBlueMine(placement, callback){
   }
 }
 
+function withTemporaryBlueMines(placements, callback){
+  if(typeof callback !== "function") return null;
+  if(!Array.isArray(placements) || placements.length === 0) return callback();
+  const mineArray = Array.isArray(mines) ? mines : null;
+  if(!mineArray) return callback();
+  const simulated = [];
+  for(const placement of placements){
+    if(!placement || !Number.isFinite(placement.x) || !Number.isFinite(placement.y)) continue;
+    const simulatedMine = {
+      id: `sim-mine-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      owner: "blue",
+      x: placement.x,
+      y: placement.y,
+      cellX: placement.cellX,
+      cellY: placement.cellY,
+    };
+    mineArray.push(simulatedMine);
+    simulated.push(simulatedMine);
+  }
+  try {
+    return callback();
+  } finally {
+    for(let i = simulated.length - 1; i >= 0; i -= 1){
+      const idx = mineArray.indexOf(simulated[i]);
+      if(idx >= 0) mineArray.splice(idx, 1);
+    }
+  }
+}
+
+function withTemporarilyIgnoredDynamiteColliders(targets, callback){
+  if(typeof callback !== "function") return null;
+  const targetList = Array.isArray(targets) ? targets.filter(Boolean) : [];
+  if(targetList.length === 0) return callback();
+  const colliderIds = new Set(targetList.map((target) => target?.collider?.id).filter(Boolean));
+  if(colliderIds.size === 0) return callback();
+
+  const originalColliders = Array.isArray(colliders) ? colliders : [];
+  const originalMapSprites = Array.isArray(currentMapSprites) ? currentMapSprites : [];
+  const filteredColliders = originalColliders.filter((collider) => !colliderIds.has(collider?.id));
+  const filteredMapSprites = originalMapSprites.filter((sprite, index) => {
+    const geometry = getMapSpriteGeometry(sprite, index);
+    return !colliderIds.has(geometry?.collider?.id);
+  });
+
+  colliders = filteredColliders;
+  currentMapSprites = filteredMapSprites;
+  try {
+    return callback();
+  } finally {
+    colliders = originalColliders;
+    currentMapSprites = originalMapSprites;
+  }
+}
+
 function buildMinePlacementBetweenObjectiveAndThreat(objectivePoint, threatEnemy, options = {}){
   if(!objectivePoint || !threatEnemy) return null;
   const mix = Number.isFinite(options?.mix) ? options.mix : 0.42;
@@ -20065,6 +20119,7 @@ function tryPlaceBlueMineNearEnemyBase(context = null, plannedMove = null, optio
   ];
 
   let bestCandidate = null;
+  const excludedPlacements = Array.isArray(options?.excludePlacements) ? options.excludePlacements : [];
   for(const candidate of candidates){
     const placement = {
       x: candidate.x,
@@ -20073,6 +20128,12 @@ function tryPlaceBlueMineNearEnemyBase(context = null, plannedMove = null, optio
       cellY: Math.floor((candidate.y - FIELD_TOP) / CELL_SIZE),
     };
     if(!isMinePlacementValid(placement)) continue;
+    const isExcluded = excludedPlacements.some((entry) => (
+      Number.isFinite(entry?.x)
+      && Number.isFinite(entry?.y)
+      && Math.hypot(entry.x - placement.x, entry.y - placement.y) <= Math.max(6, CELL_SIZE * 0.3)
+    ));
+    if(isExcluded) continue;
     const impact = evaluateBlueMinePlacementImpact(context, plannedMove, placement, {
       fallbackScenario: "mine_cuts_best_route",
     }) || {
@@ -20176,6 +20237,13 @@ function tryPlaceBlueDefensiveMine(context, plannedMove, options = {}){
     cellX: Math.floor((blockPoint.x - FIELD_LEFT) / CELL_SIZE),
     cellY: Math.floor((blockPoint.y - FIELD_TOP) / CELL_SIZE),
   };
+  const excludedPlacements = Array.isArray(options?.excludePlacements) ? options.excludePlacements : [];
+  const isExcluded = excludedPlacements.some((entry) => (
+    Number.isFinite(entry?.x)
+    && Number.isFinite(entry?.y)
+    && Math.hypot(entry.x - placement.x, entry.y - placement.y) <= Math.max(6, CELL_SIZE * 0.3)
+  ));
+  if(isExcluded) return options?.evaluateOnly ? null : false;
 
   const selfRisk = getSelfRiskAssessment(placement);
   if(selfRisk?.isCritical){
@@ -21329,6 +21397,192 @@ function recordInventoryAiDecision(stage, details = {}){
   });
 }
 
+function getAiInventorySeriesIntent(goalName){
+  const normalized = `${goalName || aiRoundState?.currentGoal || ""}`.toLowerCase();
+  const isFlag = normalized.includes("flag") || normalized.includes("capture");
+  const isDefense = normalized.includes("defen") || normalized.includes("protect") || normalized.includes("survive") || normalized.includes("recover");
+  const isAttack = !isDefense && (normalized.includes("attack") || normalized.includes("finish") || normalized.includes("eliminate") || normalized.includes("contact"));
+  return {
+    goal: goalName || aiRoundState?.currentGoal || null,
+    normalizedGoal: normalized,
+    isFlag,
+    isDefense,
+    isAttack,
+    primaryIntent: isDefense ? "defense" : (isFlag ? "flag" : (isAttack ? "attack" : "neutral")),
+  };
+}
+
+function buildAiMineSeriesPlan(context, plannedMove, options = {}){
+  const intent = getAiInventorySeriesIntent(plannedMove?.goalName || aiRoundState?.currentGoal || "");
+  if(!intent.isDefense && !intent.isAttack && !intent.isFlag) return null;
+  const availableCharges = Number(options?.availableCharges ?? 0);
+  if(availableCharges <= 0) return null;
+  const maxSeriesCharges = Math.max(1, Math.min(3, availableCharges));
+  const minUsefulGain = intent.isDefense ? 0.44 : 0.36;
+  const targetBenefit = intent.isDefense ? 1.05 : 0.92;
+  const selectedSteps = [];
+  const diagnostics = {
+    spentCharges: 0,
+    openedCorridors: [],
+    closedCorridors: [],
+    stopReason: null,
+    intent: intent.primaryIntent,
+  };
+  let totalBenefit = 0;
+  let stopReason = "charges_exhausted";
+  let lastSelfRisk = 0;
+
+  for(let stepIndex = 0; stepIndex < maxSeriesCharges; stepIndex += 1){
+    const excludedPlacements = selectedSteps.map((step) => step.plan?.placement).filter(Boolean);
+    const planned = withTemporaryBlueMines(excludedPlacements, () => {
+      const defensivePlan = tryPlaceBlueDefensiveMine(context, plannedMove, { evaluateOnly: true, excludePlacements });
+      const basePlan = tryPlaceBlueMineNearEnemyBase(context, plannedMove, { evaluateOnly: true, excludePlacements });
+      const preferred = defensivePlan && (!basePlan || (defensivePlan.score || 0) >= (basePlan.score || 0))
+        ? { plan: defensivePlan, placementMode: "defensive" }
+        : (basePlan ? { plan: basePlan, placementMode: "base" } : null);
+      if(!preferred?.plan) return null;
+      const safety = evaluatePostLaunchSafetyWithMine(context, plannedMove, preferred.plan);
+      const risk = safety?.afterSafe === false ? 1 : 0;
+      return { ...preferred, safety, risk };
+    });
+
+    if(!planned?.plan){
+      stopReason = selectedSteps.length > 0 ? "no_new_gain" : "no_plan";
+      break;
+    }
+
+    const stepBenefit = Math.max(0, Number((planned.plan.score || 0) / 20));
+    if(stepBenefit < minUsefulGain){
+      stopReason = selectedSteps.length > 0 ? "no_new_gain" : "benefit_below_threshold";
+      break;
+    }
+    if(planned.risk > lastSelfRisk && planned.risk > 0 && selectedSteps.length > 0){
+      stopReason = "self_block_risk_increased";
+      break;
+    }
+
+    selectedSteps.push({
+      stepIndex,
+      itemType: INVENTORY_ITEM_TYPES.MINE,
+      reason: planned.plan.scenario || "mine_cover_plan",
+      expectedBenefit: stepBenefit,
+      risk: planned.risk > 0 ? 0.16 : 0.08,
+      placementMode: planned.placementMode,
+      minePlan: planned.plan,
+      safeAfterPlacement: planned.safety?.afterSafe !== false,
+      tacticalIntent: intent.primaryIntent,
+    });
+    totalBenefit += stepBenefit;
+    diagnostics.spentCharges = selectedSteps.length;
+    diagnostics.closedCorridors.push({
+      placement: planned.plan.placement ? { x: Number(planned.plan.placement.x.toFixed(1)), y: Number(planned.plan.placement.y.toFixed(1)) } : null,
+      blockedEscapeCount: planned.plan.blockedEscapeCount ?? 0,
+      cutRouteCount: planned.plan.cutRouteCount ?? 0,
+      trapCount: planned.plan.trapCount ?? 0,
+    });
+    lastSelfRisk = planned.risk;
+
+    if(totalBenefit >= targetBenefit){
+      stopReason = "benefit_target_reached";
+      break;
+    }
+  }
+
+  diagnostics.stopReason = stopReason;
+  if(selectedSteps.length === 0) return null;
+  return {
+    itemType: INVENTORY_ITEM_TYPES.MINE,
+    intent: intent.primaryIntent,
+    steps: selectedSteps,
+    expectedBenefit: Number(totalBenefit.toFixed(3)),
+    risk: Number(selectedSteps.reduce((sum, step) => sum + Number(step.risk || 0), 0).toFixed(3)),
+    diagnostics,
+  };
+}
+
+function buildAiDynamiteSeriesPlan(context, plannedMove, options = {}){
+  const intent = getAiInventorySeriesIntent(plannedMove?.goalName || aiRoundState?.currentGoal || "");
+  if(intent.isDefense && !intent.isFlag) return null;
+  const availableCharges = Number(options?.availableCharges ?? 0);
+  if(availableCharges <= 0) return null;
+  const maxSeriesCharges = Math.max(1, Math.min(3, availableCharges));
+  const selectedSteps = [];
+  const diagnostics = {
+    spentCharges: 0,
+    openedCorridors: [],
+    closedCorridors: [],
+    stopReason: null,
+    intent: intent.primaryIntent,
+  };
+  let totalBenefit = 0;
+  let stopReason = "charges_exhausted";
+
+  for(let stepIndex = 0; stepIndex < maxSeriesCharges; stepIndex += 1){
+    const ignoredTargets = selectedSteps.map((step) => step.targetGeometry).filter(Boolean);
+    const planned = withTemporarilyIgnoredDynamiteColliders(ignoredTargets, () => {
+      const routeAwareTarget = getDynamiteCandidateForCurrentRoute(context, plannedMove);
+      const strategicGate = shouldUseStrategicDynamiteForPlannedMove(plannedMove, context);
+      const strategicDynamite = strategicGate.allowStrategicProbe ? evaluateStrategicDynamiteTargets(context, plannedMove) : null;
+      const target = routeAwareTarget || strategicDynamite?.bestTarget || null;
+      if(!target) return null;
+      const benefit = routeAwareTarget ? 0.58 : Math.max(0.24, Math.min(0.88, 0.22 + (target?.strategicScore || 0) * 0.11));
+      return {
+        target,
+        reason: routeAwareTarget ? "dynamite_route_opening" : (target?.nextTurnRouteGain > 0 ? "dynamite_used_for_future_route_gain" : "dynamite_used_for_map_opening"),
+        benefit,
+        risk: routeAwareTarget ? 0.06 : 0.1,
+      };
+    });
+
+    if(!planned?.target){
+      stopReason = selectedSteps.length > 0 ? "no_new_gain" : "no_plan";
+      break;
+    }
+    const duplicatedTarget = selectedSteps.some((step) => step.targetGeometry?.collider?.id && step.targetGeometry.collider.id === planned.target?.collider?.id);
+    if(duplicatedTarget){
+      stopReason = "no_new_gain";
+      break;
+    }
+    if(planned.benefit < 0.3){
+      stopReason = selectedSteps.length > 0 ? "no_new_gain" : "benefit_below_threshold";
+      break;
+    }
+
+    selectedSteps.push({
+      stepIndex,
+      itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
+      reason: planned.reason,
+      expectedBenefit: planned.benefit,
+      risk: planned.risk,
+      target: { x: planned.target.cx, y: planned.target.cy, colliderId: planned.target?.collider?.id ?? null, spriteId: planned.target?.id ?? null },
+      targetGeometry: planned.target,
+      tacticalIntent: intent.primaryIntent,
+    });
+    totalBenefit += planned.benefit;
+    diagnostics.spentCharges = selectedSteps.length;
+    diagnostics.openedCorridors.push({
+      colliderId: planned.target?.collider?.id ?? null,
+      spriteId: planned.target?.id ?? null,
+      point: { x: Number((planned.target?.cx || 0).toFixed(1)), y: Number((planned.target?.cy || 0).toFixed(1)) },
+    });
+    if(totalBenefit >= (intent.isAttack ? 1.08 : 0.9)){
+      stopReason = "benefit_target_reached";
+      break;
+    }
+  }
+
+  diagnostics.stopReason = stopReason;
+  if(selectedSteps.length === 0) return null;
+  return {
+    itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
+    intent: intent.primaryIntent,
+    steps: selectedSteps,
+    expectedBenefit: Number(totalBenefit.toFixed(3)),
+    risk: Number(selectedSteps.reduce((sum, step) => sum + Number(step.risk || 0), 0).toFixed(3)),
+    diagnostics,
+  };
+}
+
 function buildAiInventoryCandidatePlans(context, plannedMove){
   if(!plannedMove?.plane) return { selectedCandidate: null, selectedSequence: [], candidates: [], rejected: [] };
 
@@ -21523,6 +21777,9 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       && safeAfterPlacement === false
       && safetyImprovesAfterPlacement !== true
       && !isCriticalGoalForDefensiveMine;
+    const mineSeriesPlan = buildAiMineSeriesPlan(context, plannedMove, {
+      availableCharges: inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0,
+    });
     if(preferredMinePlan && !mineRejectedBySelfRisk && (minePlanProvidesNoticeableImprovement || mineModerateImprovement)){
       const baseMineBenefit = Math.max(0.22, Math.min(0.9, Number((preferredMinePlan.plan.score || 0) / 20)));
       const expectedMineBenefit = (() => {
@@ -21537,7 +21794,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       pushCandidate({
         itemType: INVENTORY_ITEM_TYPES.MINE,
         target: priorityEnemy || enemyBase || landingPoint || null,
-        expectedBenefit: expectedMineBenefit,
+        expectedBenefit: Math.max(expectedMineBenefit, mineSeriesPlan?.expectedBenefit || 0),
         risk: safeAfterPlacement ? 0.08 : 0.14,
         reason: preferredMinePlan.plan.scenario || "mine_cover_plan",
         whyBetter: preferredMinePlan.placementMode === "defensive"
@@ -21556,6 +21813,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
           ? "mine_used_for_safe_aggressive_follow_up"
           : (mineCreatesRouteDenial ? "mine_used_for_route_denial" : "mine_used_for_position_improvement"),
         usageTier: minePlanProvidesNoticeableImprovement ? "strong" : "moderate",
+        tacticalSeries: mineSeriesPlan,
       });
     } else {
       const mineRejectReason = !preferredMinePlan
@@ -21582,6 +21840,9 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       : null;
     const strategicTarget = routeAwareTarget ? null : (strategicDynamite?.bestTarget || null);
     const fallbackTarget = routeAwareTarget || strategicTarget;
+    const dynamiteSeriesPlan = buildAiDynamiteSeriesPlan(context, plannedMove, {
+      availableCharges: inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0,
+    });
     if(fallbackTarget){
       const strategicPressureBoost = strategicTarget
         ? ((strategicTarget.opensDecisivePath ? 0.09 : 0)
@@ -21599,9 +21860,12 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       pushCandidate({
         itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
         target: { x: fallbackTarget.cx, y: fallbackTarget.cy, colliderId: fallbackTarget?.collider?.id ?? null, spriteId: fallbackTarget?.id ?? null },
-        expectedBenefit: routeAwareTarget
+        expectedBenefit: Math.max(
+          routeAwareTarget
           ? 0.58
           : Math.max(0.34, Math.min(0.91, 0.22 + (strategicTarget?.strategicScore || 0) * 0.11 + strategicPressureBoost)),
+          dynamiteSeriesPlan?.expectedBenefit || 0,
+        ),
         risk: routeAwareTarget
           ? 0.06
           : Math.max(0.06, 0.12 - strategicRiskDiscount),
@@ -21618,6 +21882,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
           distanceGain: routeAwareTarget.replanResult.distanceGain,
         } : null,
         strategicDynamiteScore: strategicTarget?.strategicScore ?? null,
+        tacticalSeries: dynamiteSeriesPlan,
         strategicDynamiteReasons: strategicTarget ? {
           opensPathToBase: strategicTarget.opensPathToBase,
           opensPathToFlag: strategicTarget.opensPathToFlag,
@@ -22294,11 +22559,43 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
           plannedMove.inventoryUsageReason = "mine_enables_safe_finisher";
         }
 
-        executed = placementMode === "defensive"
-          ? tryPlaceBlueDefensiveMine(context, plannedMove)
-          : tryPlaceBlueMineNearEnemyBase(context, plannedMove);
+        const mineSeries = selectedInventoryCandidate?.tacticalSeries;
+        if(mineSeries?.itemType === INVENTORY_ITEM_TYPES.MINE && Array.isArray(mineSeries.steps) && mineSeries.steps.length > 0){
+          let executedCount = 0;
+          let stopReason = mineSeries?.diagnostics?.stopReason || null;
+          for(let stepIndex = 0; stepIndex < mineSeries.steps.length; stepIndex += 1){
+            if(Number(inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0) <= 0){
+              stopReason = "charges_exhausted";
+              break;
+            }
+            const step = mineSeries.steps[stepIndex];
+            const stepPlacementMode = step?.placementMode === "defensive" ? "defensive" : "base";
+            const stepResult = stepPlacementMode === "defensive"
+              ? tryPlaceBlueDefensiveMine(context, plannedMove, { excludePlacements: mineSeries.steps.slice(0, stepIndex).map((entry) => entry?.minePlan?.placement).filter(Boolean) })
+              : tryPlaceBlueMineNearEnemyBase(context, plannedMove, { excludePlacements: mineSeries.steps.slice(0, stepIndex).map((entry) => entry?.minePlan?.placement).filter(Boolean) });
+            if(!stepResult){
+              stopReason = "step_execution_failed";
+              break;
+            }
+            removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
+            inventory.counts[INVENTORY_ITEM_TYPES.MINE] = Math.max(0, Number(inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] || 0) - 1);
+            executedCount += 1;
+          }
+          executed = executedCount > 0;
+          selectedInventoryCandidate.tacticalSeriesDiagnostics = {
+            ...(mineSeries?.diagnostics || {}),
+            spentCharges: executedCount,
+            stopReason: stopReason || (executed ? "benefit_target_reached" : "step_execution_failed"),
+          };
+        } else {
+          executed = placementMode === "defensive"
+            ? tryPlaceBlueDefensiveMine(context, plannedMove)
+            : tryPlaceBlueMineNearEnemyBase(context, plannedMove);
+        }
         if(executed){
-          removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
+          if(!selectedInventoryCandidate?.tacticalSeries){
+            removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
+          }
           if(selectedInventoryCandidate.mineUseReason){
             logAiDecision(selectedInventoryCandidate.mineUseReason, {
               planeId: plannedMove?.plane?.id ?? null,
@@ -22357,9 +22654,56 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         } else if(!shouldUseDynamite){
           executionFailureReason = "selected_candidate_dynamite_replan_no_longer_valid";
         } else {
-          executed = placeBlueDynamiteAt(target.x, target.y);
+          const dynamiteSeries = selectedInventoryCandidate?.tacticalSeries;
+          if(dynamiteSeries?.itemType === INVENTORY_ITEM_TYPES.DYNAMITE && Array.isArray(dynamiteSeries.steps) && dynamiteSeries.steps.length > 0){
+            let executedCount = 0;
+            let stopReason = dynamiteSeries?.diagnostics?.stopReason || null;
+            const executedTargets = [];
+            for(let stepIndex = 0; stepIndex < dynamiteSeries.steps.length; stepIndex += 1){
+              if(Number(inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0) <= 0){
+                stopReason = "charges_exhausted";
+                break;
+              }
+              const step = dynamiteSeries.steps[stepIndex];
+              const preferredColliderId = step?.target?.colliderId || null;
+              const recalculatedTarget = withTemporarilyIgnoredDynamiteColliders(executedTargets, () => {
+                const routeAwareTarget = getDynamiteCandidateForCurrentRoute(context, plannedMove);
+                if(routeAwareTarget) return routeAwareTarget;
+                const strategicGate = shouldUseStrategicDynamiteForPlannedMove(plannedMove, context);
+                const strategicDynamite = strategicGate.allowStrategicProbe ? evaluateStrategicDynamiteTargets(context, plannedMove) : null;
+                return strategicDynamite?.bestTarget || null;
+              });
+              const stepTarget = recalculatedTarget
+                ? { x: recalculatedTarget.cx, y: recalculatedTarget.cy, colliderId: recalculatedTarget?.collider?.id ?? null, spriteId: recalculatedTarget?.id ?? null, geometry: recalculatedTarget }
+                : step?.target;
+              const hasNoFreshGain = preferredColliderId && stepTarget?.colliderId === preferredColliderId && stepIndex > 0 && !recalculatedTarget;
+              if(hasNoFreshGain){
+                stopReason = "no_new_gain";
+                break;
+              }
+              const stepExecuted = stepTarget ? placeBlueDynamiteAt(stepTarget.x, stepTarget.y) : false;
+              if(!stepExecuted){
+                stopReason = "step_execution_failed";
+                break;
+              }
+              removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
+              inventory.counts[INVENTORY_ITEM_TYPES.DYNAMITE] = Math.max(0, Number(inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] || 0) - 1);
+              if(stepTarget?.geometry) executedTargets.push(stepTarget.geometry);
+              executedCount += 1;
+            }
+            executed = executedCount > 0;
+            selectedInventoryCandidate.tacticalSeriesDiagnostics = {
+              ...(dynamiteSeries?.diagnostics || {}),
+              spentCharges: executedCount,
+              stopReason: stopReason || (executed ? "benefit_target_reached" : "step_execution_failed"),
+            };
+          } else {
+            executed = placeBlueDynamiteAt(target.x, target.y);
+          }
           if(executed){
-            removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
+            if(!selectedInventoryCandidate?.tacticalSeries){
+              removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
+            }
             plannedMove.inventoryUsageReason = selectedInventoryCandidate.reason || "dynamite_route_opening";
             setAiDynamiteIntentFromCandidate({
               id: target?.spriteId ?? null,
@@ -22376,6 +22720,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
                 strategicDynamiteScore: selectedInventoryCandidate.strategicDynamiteScore ?? null,
                 strategicDynamiteReasons: selectedInventoryCandidate.strategicDynamiteReasons || null,
                 comparedTargets: selectedInventoryCandidate.comparedTargets || [],
+                tacticalSeriesDiagnostics: selectedInventoryCandidate.tacticalSeriesDiagnostics || null,
               });
             }
           } else {
@@ -22397,6 +22742,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         target: selectedInventoryCandidate.target || null,
         expectedBenefit: selectedInventoryCandidate.expectedBenefit ?? null,
         risk: selectedInventoryCandidate.risk ?? null,
+        tacticalSeriesDiagnostics: selectedInventoryCandidate.tacticalSeriesDiagnostics || selectedInventoryCandidate?.tacticalSeries?.diagnostics || null,
         allowedAsPreparationMove: allowStrategicInventoryPreparation,
       });
       recordInventoryAiDecision("inventory_decision", {
