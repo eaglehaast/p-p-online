@@ -15948,6 +15948,9 @@ const AI_OPENING_SOFT_RANDOM_TURN_LIMIT = 2;
 const AI_OPENING_SOFT_RANDOM_SCORE_MARGIN = MAX_DRAG_DISTANCE * 0.035;
 const AI_OPENING_SOFT_RANDOM_MAX_SHIFT = 0.045;
 const AI_POST_INVENTORY_LAUNCH_DELAY_MS = 1000;
+const AI_INVENTORY_ACTION_LIMIT_PER_TURN = 12;
+const AI_INVENTORY_BUFF_CHAIN_LIMIT_PER_TURN = 4;
+const AI_INVENTORY_TACTICAL_REPEAT_LIMIT_PER_TURN = 8;
 const AI_PLANNED_MOVE_TARGET_REVALIDATION_RADIUS_PX = ATTACK_RANGE_PX * 0.45;
 const AI_OPENING_AGGRESSION_BIAS_TURN_LIMIT = 2;
 const AI_OPENING_AGGRESSION_BIAS_MAX_LEAD = 1;
@@ -23648,17 +23651,26 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   const activeInventoryPhase = Number.isFinite(aiRoundState?.inventoryPhase)
     ? Math.max(0, Math.min(3, Math.trunc(aiRoundState.inventoryPhase)))
     : AI_V2_INVENTORY_PHASE;
-  const allowMultiUseTactical = AI_ENGINE_MODE === "v2";
   const allowStrategicInventoryPreparation = shouldProbeInventoryPreparedShotPlan(
     plannedMove?.goalName || aiRoundState?.currentGoal || "",
   );
+  let totalInventoryActionsApplied = 0;
+  let buffInventoryActionsApplied = 0;
+  let tacticalInventoryActionsApplied = 0;
+  let inventoryStopReason = "inventory_no_action";
 
-  for(let inventoryActionStep = 0; inventoryActionStep < 12; inventoryActionStep += 1){
+  for(let inventoryActionStep = 0; inventoryActionStep < AI_INVENTORY_ACTION_LIMIT_PER_TURN; inventoryActionStep += 1){
     const actionBeforeState = afterInventoryState;
     const actionUsed = maybeUseInventoryBeforeLaunch(context, plannedMove);
-    if(!actionUsed) break;
+    if(!actionUsed){
+      inventoryStopReason = totalInventoryActionsApplied > 0
+        ? "inventory_use_stopped_by_selector"
+        : "inventory_no_action";
+      break;
+    }
 
     itemUsed = true;
+    totalInventoryActionsApplied += 1;
     afterInventoryState = evaluateBlueInventoryState();
     const actionConsumedItemType = detectConsumedInventoryType(
       actionBeforeState?.counts,
@@ -23684,7 +23696,24 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
 
     const isTacticalAction = actionConsumedItemType === INVENTORY_ITEM_TYPES.MINE
       || actionConsumedItemType === INVENTORY_ITEM_TYPES.DYNAMITE;
-    if(!(allowMultiUseTactical && isTacticalAction)) break;
+    if(isTacticalAction){
+      tacticalInventoryActionsApplied += 1;
+    } else {
+      buffInventoryActionsApplied += 1;
+    }
+
+    if(totalInventoryActionsApplied >= AI_INVENTORY_ACTION_LIMIT_PER_TURN){
+      inventoryStopReason = "inventory_total_action_limit_reached";
+      break;
+    }
+    if(!isTacticalAction && buffInventoryActionsApplied >= AI_INVENTORY_BUFF_CHAIN_LIMIT_PER_TURN){
+      inventoryStopReason = "inventory_buff_chain_limit_reached";
+      break;
+    }
+    if(isTacticalAction && tacticalInventoryActionsApplied >= AI_INVENTORY_TACTICAL_REPEAT_LIMIT_PER_TURN){
+      inventoryStopReason = "inventory_tactical_repeat_limit_reached";
+      break;
+    }
   }
 
   const consumedItemType = consumedItemTypes.length > 0
@@ -23694,6 +23723,20 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   inventoryStageResult.reason = itemUsed ? "inventory_item_applied" : "no_inventory_item_used";
   inventoryStageResult.consumedItemType = consumedItemType || null;
   inventoryStageResult.consumedItemTypes = consumedItemTypes.slice();
+  logAiDecision("inventory_usage_turn_summary", {
+    planeId: plannedMove?.plane?.id ?? null,
+    goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+    appliedItemsCount: totalInventoryActionsApplied,
+    appliedBuffItemsCount: buffInventoryActionsApplied,
+    appliedTacticalItemsCount: tacticalInventoryActionsApplied,
+    appliedItemTypesInOrder: consumedItemTypes.slice(),
+    stopReason: inventoryStopReason,
+    limits: {
+      total: AI_INVENTORY_ACTION_LIMIT_PER_TURN,
+      buff: AI_INVENTORY_BUFF_CHAIN_LIMIT_PER_TURN,
+      tactical: AI_INVENTORY_TACTICAL_REPEAT_LIMIT_PER_TURN,
+    },
+  });
   logAiDecision("inventory_decision_made", {
     stage: inventoryStageResult.stage,
     selected: inventoryStageResult.selected,
