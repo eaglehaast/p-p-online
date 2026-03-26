@@ -16588,7 +16588,7 @@ function applyAiMinLaunchScale(scale, details = {}){
 }
 
 const AI_INVENTORY_PRESSURE_CONFIG = Object.freeze({
-  [INVENTORY_ITEM_TYPES.MINE]: { idleTurnWeight: 0.037, weakChanceWeight: 0.05, staleLeaderBonus: 0.03, maxBonus: 0.29, selectionFloor: 0.108 },
+  [INVENTORY_ITEM_TYPES.MINE]: { idleTurnWeight: 0.037, weakChanceWeight: 0.05, staleLeaderBonus: 0.03, maxBonus: 0.29, selectionFloor: 0.092 },
   [INVENTORY_ITEM_TYPES.DYNAMITE]: { idleTurnWeight: 0.038, weakChanceWeight: 0.049, staleLeaderBonus: 0.028, maxBonus: 0.275, selectionFloor: 0.112 },
   [INVENTORY_ITEM_TYPES.FUEL]: { idleTurnWeight: 0.036, weakChanceWeight: 0.048, staleLeaderBonus: 0.027, maxBonus: 0.27, selectionFloor: 0.103 },
   [INVENTORY_ITEM_TYPES.CROSSHAIR]: { idleTurnWeight: 0.033, weakChanceWeight: 0.047, staleLeaderBonus: 0.025, maxBonus: 0.255, selectionFloor: 0.098 },
@@ -21494,13 +21494,17 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       || mineProtectsAfterAggressiveAction
     );
     const mineModerateImprovement = Boolean(preferredMinePlan?.plan) && !minePlanProvidesNoticeableImprovement && (
-      mineImpactScore >= AI_MINE_PLAN_THRESHOLDS.MIN_MODERATE_IMPACT_SCORE
-      || mineTotalDirectionLoss >= 1
-      || (safeAfterPlacement && mineImpactScore >= AI_MINE_PLAN_THRESHOLDS.MIN_MODERATE_SAFE_IMPACT_SCORE)
+      mineImpactScore >= (AI_MINE_PLAN_THRESHOLDS.MIN_MODERATE_IMPACT_SCORE - 0.12)
+      || mineTotalDirectionLoss >= 0.75
+      || mineCreatesRouteDenial
+      || mineCutRouteCount > 0
+      || mineBlockedEscapeCount > 0
+      || (safeAfterPlacement && mineImpactScore >= (AI_MINE_PLAN_THRESHOLDS.MIN_MODERATE_SAFE_IMPACT_SCORE - 0.08))
+      || (safeAfterPlacement && mineTotalDirectionLoss >= 0.6)
       || (safetyImprovesAfterPlacement
         && (
-          mineImpactScore >= AI_MINE_PLAN_THRESHOLDS.MIN_MODERATE_SAFE_IMPROVEMENT_IMPACT_SCORE
-          || mineTotalDirectionLoss >= AI_MINE_PLAN_THRESHOLDS.MIN_MODERATE_SAFE_IMPROVEMENT_DIRECTION_LOSS
+          mineImpactScore >= (AI_MINE_PLAN_THRESHOLDS.MIN_MODERATE_SAFE_IMPROVEMENT_IMPACT_SCORE - 0.08)
+          || mineTotalDirectionLoss >= Math.max(0.6, AI_MINE_PLAN_THRESHOLDS.MIN_MODERATE_SAFE_IMPROVEMENT_DIRECTION_LOSS - 0.35)
         ))
     );
     const mineRejectedBySelfRisk = Boolean(preferredMinePlan?.plan)
@@ -21511,8 +21515,8 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       const baseMineBenefit = Math.max(0.22, Math.min(0.9, Number((preferredMinePlan.plan.score || 0) / 20)));
       const expectedMineBenefit = (() => {
         const rawBenefit = mineCreatesRouteDenial
-          ? Math.max(0.34, baseMineBenefit)
-          : Math.max(minePlanProvidesNoticeableImprovement ? 0.3 : 0.18, baseMineBenefit);
+          ? Math.max(0.43, baseMineBenefit)
+          : Math.max(minePlanProvidesNoticeableImprovement ? 0.36 : 0.24, baseMineBenefit);
         const nextTurnSafetyBonus = safetyImprovesAfterPlacement
           ? (mineProtectsAfterAggressiveAction ? 0.22 : 0.14)
           : 0;
