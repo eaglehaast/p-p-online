@@ -20609,8 +20609,11 @@ function shouldUseStrategicDynamiteForPlannedMove(plannedMove, context = null){
   const hasStrongCurrentPlan = moveClassification.hasStrongAttack
     || moveClassification.hasFlagIntercept
     || moveClassification.hasUsefulContact;
+  const isMediumMove = !moveClassification.isSurvivalOrReposition && !hasStrongCurrentPlan;
   return {
     allowStrategicSetup: !hasStrongCurrentPlan || moveClassification.isSurvivalOrReposition,
+    allowStrategicProbe: !moveClassification.hasStrongAttack,
+    isMediumMove,
     moveClassification,
     strongPlanReason: moveClassification.hasStrongAttack
       ? "strong_attack"
@@ -20625,7 +20628,7 @@ function evaluateStrategicDynamiteTargets(context, plannedMove){
   if(!plane) return null;
 
   const moveClassification = classifyAiMoveForStrategicDynamite(plannedMove, context);
-  if(!moveClassification.isWeakOrWaiting || moveClassification.isAttacking){
+  if(moveClassification.hasStrongAttack){
     return null;
   }
 
@@ -20671,6 +20674,9 @@ function evaluateStrategicDynamiteTargets(context, plannedMove){
     const opensDecisivePath = opensPathToBase || opensPathToFlag;
     const hasLargeRouteGain = nextTurnRouteGain >= 3;
     const hasMeaningfulStrategicUnlock = opensDecisivePath || hasLargeRouteGain;
+    const hasNoticeableRouteGain = nextTurnRouteGain >= 2;
+    const mediumMoveStrategicUnlock = hasNoticeableRouteGain || opensDecisivePath || removesBarrierToContactZone;
+    const canUseThisTargetForCurrentMove = moveClassification.isWeakOrWaiting || mediumMoveStrategicUnlock;
     const score = (opensPathToBase ? 3.4 : 0)
       + (opensPathToFlag ? 3.8 : 0)
       + (removesBarrierToContactZone ? 1.2 : 0)
@@ -20679,6 +20685,7 @@ function evaluateStrategicDynamiteTargets(context, plannedMove){
       + (hasLargeRouteGain ? 0.9 : 0)
       - Math.min(1.6, distanceBias / Math.max(CELL_SIZE * 7, 1) * 0.2);
     if(!hasMeaningfulStrategicUnlock) continue;
+    if(!canUseThisTargetForCurrentMove) continue;
     if(score <= 1.95) continue;
     evaluated.push({
       ...geometry,
@@ -20690,6 +20697,8 @@ function evaluateStrategicDynamiteTargets(context, plannedMove){
       currentRouteImprovement,
       opensDecisivePath,
       hasLargeRouteGain,
+      hasNoticeableRouteGain,
+      mediumMoveStrategicUnlock,
       moveClassification,
     });
   }
@@ -21565,24 +21574,38 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
   if(allowTacticalItems && inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] > 0){
     const routeAwareTarget = typeof getDynamiteCandidateForCurrentRoute === "function" ? getDynamiteCandidateForCurrentRoute(context, plannedMove) : null;
     const strategicMoveGate = shouldUseStrategicDynamiteForPlannedMove(plannedMove, context);
-    const strategicDynamite = strategicMoveGate.allowStrategicSetup && typeof evaluateStrategicDynamiteTargets === "function"
+    const strategicDynamite = strategicMoveGate.allowStrategicProbe && typeof evaluateStrategicDynamiteTargets === "function"
       ? evaluateStrategicDynamiteTargets(context, plannedMove)
       : null;
     const strategicTarget = routeAwareTarget ? null : (strategicDynamite?.bestTarget || null);
     const fallbackTarget = routeAwareTarget || strategicTarget;
     if(fallbackTarget){
+      const strategicPressureBoost = strategicTarget
+        ? ((strategicTarget.opensDecisivePath ? 0.09 : 0)
+          + (strategicTarget.removesBarrierToContactZone ? 0.06 : 0)
+          + (strategicTarget.nextTurnRouteGain >= 2 ? 0.07 : 0))
+        : 0;
+      const strategicRiskDiscount = strategicTarget
+        ? ((strategicTarget.opensDecisivePath ? 0.02 : 0)
+          + (strategicTarget.removesBarrierToContactZone ? 0.015 : 0)
+          + (strategicTarget.nextTurnRouteGain >= 2 ? 0.015 : 0))
+        : 0;
       const strategicReason = strategicTarget?.nextTurnRouteGain > 0
         ? "dynamite_used_for_future_route_gain"
         : "dynamite_used_for_map_opening";
       pushCandidate({
         itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
         target: { x: fallbackTarget.cx, y: fallbackTarget.cy, colliderId: fallbackTarget?.collider?.id ?? null, spriteId: fallbackTarget?.id ?? null },
-        expectedBenefit: routeAwareTarget ? 0.58 : Math.max(0.34, Math.min(0.82, 0.22 + (strategicTarget?.strategicScore || 0) * 0.11)),
-        risk: routeAwareTarget ? 0.06 : 0.12,
+        expectedBenefit: routeAwareTarget
+          ? 0.58
+          : Math.max(0.34, Math.min(0.91, 0.22 + (strategicTarget?.strategicScore || 0) * 0.11 + strategicPressureBoost)),
+        risk: routeAwareTarget
+          ? 0.06
+          : Math.max(0.06, 0.12 - strategicRiskDiscount),
         reason: routeAwareTarget ? "dynamite_route_opening" : strategicReason,
         whyBetter: routeAwareTarget
           ? "dynamite removes the obstacle before launch, and we already confirmed the rebuilt route really wants to use the opened corridor"
-          : "dynamite opens a more useful part of the map, but only during weak or waiting turns when no clearly stronger attack or flag route is already available",
+          : "dynamite opens a more useful part of the map during weak turns, and also during medium turns when it unlocks a decisive path or a noticeable follow-up route gain",
         dynamiteUseClass: routeAwareTarget ? "current_route" : "strategic_map_opening",
         dynamiteExpectedRoute: routeAwareTarget?.replanResult?.expectedRoute || null,
         dynamiteRouteReplan: routeAwareTarget?.replanResult ? {
@@ -21599,6 +21622,8 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
           nextTurnRouteGain: strategicTarget.nextTurnRouteGain,
           opensDecisivePath: strategicTarget.opensDecisivePath,
           hasLargeRouteGain: strategicTarget.hasLargeRouteGain,
+          hasNoticeableRouteGain: strategicTarget.hasNoticeableRouteGain,
+          mediumMoveStrategicUnlock: strategicTarget.mediumMoveStrategicUnlock,
           moveClassification: strategicTarget.moveClassification?.classification || null,
           currentMoveTooStrongReason: strategicMoveGate.strongPlanReason,
         } : null,
