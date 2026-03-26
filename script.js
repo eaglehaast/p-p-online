@@ -10823,11 +10823,9 @@ function buildAiSelfAnalyzerGapReport(source){
   };
 
   const calcAiDecisionMetrics = () => {
-    const includesFallbackToken = (value) => String(value || "").toLowerCase().includes("fallback");
+    const includesFallbackToken = (value) => hasAiFallbackOrFailSafeMarker(value);
     const isFallbackStageOrReason = (event) => {
-      const stage = typeof event?.stage === "string" ? event.stage.toLowerCase() : "";
-      const reasonCodes = Array.isArray(event?.reasonCodes) ? event.reasonCodes : [];
-      return stage.includes("fallback") || reasonCodes.some((code) => includesFallbackToken(code));
+      return isAiFallbackDecisionEvent(event);
     };
 
     const getTurnGroupKey = (event, index) => {
@@ -11144,7 +11142,7 @@ function buildAiSelfAnalyzerGapReport(source){
 function buildAiV2ReserveDiagnosticsReport(source){
   const events = Array.isArray(source?.events) ? source.events : [];
   const aiDecisionEvents = events.filter((event) => event?.type === "ai_decision");
-  const fallbackStages = new Set(["fallback_selected", "super_reserve_selected", "forced_progress_selected", "safe_short_fallback_selected", "v2_shot_plan_not_found"]);
+  const fallbackStages = AI_FALLBACK_STAGES;
   const routeClasses = ["direct", "gap", "ricochet"];
 
   const createEmptyFunnelEntry = () => ({
@@ -21233,6 +21231,62 @@ function isAiInventoryPressureWeakChance(reason){
     || reason === "dynamite_relaxed_opening";
 }
 
+const AI_FALLBACK_STAGES = new Set([
+  "fallback_selected",
+  "super_reserve_selected",
+  "forced_progress_selected",
+  "safe_short_fallback_selected",
+  "v2_shot_plan_not_found",
+]);
+
+function hasAiFallbackOrFailSafeMarker(value){
+  const text = `${value || ""}`.toLowerCase();
+  return text.includes("fallback") || text.includes("fail_safe");
+}
+
+function isAiFallbackDecisionEvent(event){
+  if(!event || typeof event !== "object") return false;
+  const stage = `${event?.stage || ""}`.toLowerCase();
+  if(AI_FALLBACK_STAGES.has(stage) || hasAiFallbackOrFailSafeMarker(stage)){
+    return true;
+  }
+  const reasonCodes = Array.isArray(event?.reasonCodes) ? event.reasonCodes : [];
+  const rejectReasons = Array.isArray(event?.rejectReasons) ? event.rejectReasons : [];
+  const selectedMove = event?.selectedMove && typeof event.selectedMove === "object" ? event.selectedMove : {};
+  const reasonSources = [
+    ...reasonCodes,
+    ...rejectReasons,
+    selectedMove.decisionReason,
+    selectedMove.goalName,
+    event?.goal,
+  ];
+  return reasonSources.some((value) => {
+    const safeValue = `${value || ""}`.toLowerCase();
+    return AI_FALLBACK_STAGES.has(safeValue) || hasAiFallbackOrFailSafeMarker(safeValue);
+  });
+}
+
+function resolveAiFallbackAnalyzerStage(stage, details = {}){
+  const safeStage = `${stage || ""}`.toLowerCase();
+  if(AI_FALLBACK_STAGES.has(safeStage)) return safeStage;
+  const reasonCodes = Array.isArray(details?.reasonCodes) ? details.reasonCodes : [];
+  const rejectReasons = Array.isArray(details?.rejectReasons) ? details.rejectReasons : [];
+  const markerPool = [
+    safeStage,
+    ...reasonCodes,
+    ...rejectReasons,
+    details?.move?.decisionReason,
+    details?.plannedMove?.decisionReason,
+  ];
+  if(markerPool.some((value) => `${value || ""}`.toLowerCase().includes("fail_safe"))){
+    return "safe_short_fallback_selected";
+  }
+  if(markerPool.some((value) => `${value || ""}`.toLowerCase().includes("fallback"))){
+    return "fallback_selected";
+  }
+  return stage;
+}
+
 function getAiInventoryRecentMatchSignals(currentGoal = null){
   const snapshot = getAiSelfAnalyzerSnapshot();
   const activeEvents = Array.isArray(snapshot?.activeMatch?.events) ? snapshot.activeMatch.events : [];
@@ -21246,7 +21300,7 @@ function getAiInventoryRecentMatchSignals(currentGoal = null){
   for(const event of recentDecisions){
     const stage = `${event?.stage || ""}`;
     const goal = `${event?.goal || ""}`;
-    if(stage === "fallback_selected" || stage === "safe_short_fallback_selected" || stage === "super_reserve_selected"){
+    if(isAiFallbackDecisionEvent(event)){
       fallbackSelectedCount += 1;
     }
     if(stage === "v2_shot_plan_not_found"){
@@ -21259,6 +21313,13 @@ function getAiInventoryRecentMatchSignals(currentGoal = null){
 
   const currentGoalText = `${currentGoal || ""}`.toLowerCase();
   const currentGoalIsEmergency = currentGoalText.includes("emergency_base_defense") || currentGoalText.includes("critical_base_threat");
+  const tailFallbackChain = recentDecisions.slice(-3).reduceRight((count, event) => (
+    count === -1
+      ? -1
+      : (isAiFallbackDecisionEvent(event) ? count + 1 : -1)
+  ), 0);
+  const normalizedTailFallbackChain = tailFallbackChain < 0 ? 0 : tailFallbackChain;
+  const softReleaseReady = fallbackSelectedCount >= 2 || shotPlanNotFoundCount >= 2 || emergencyBaseDefenseCount >= 2;
   return {
     recentDecisionCount: recentDecisions.length,
     fallbackSelectedCount,
@@ -21267,7 +21328,13 @@ function getAiInventoryRecentMatchSignals(currentGoal = null){
     repeatedFallbackSelected: fallbackSelectedCount >= 2,
     repeatedShotPlanNotFound: shotPlanNotFoundCount >= 2,
     emergencyPressure: emergencyBaseDefenseCount >= 2 || currentGoalIsEmergency,
-    softReleaseReady: fallbackSelectedCount >= 2 || shotPlanNotFoundCount >= 2 || emergencyBaseDefenseCount >= 2,
+    softReleaseReady,
+    softReleaseGuardScenario: {
+      checkedRecentTurns: Math.min(3, recentDecisions.length),
+      fallbackChainTurns: normalizedTailFallbackChain,
+      expectedSoftReleaseReadyAfterFallbackChain: normalizedTailFallbackChain >= 2,
+      scenarioPassed: normalizedTailFallbackChain < 2 ? true : softReleaseReady,
+    },
   };
 }
 
@@ -22005,6 +22072,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       recentFallbackSelectedCount: recentInventorySignals.fallbackSelectedCount,
       recentShotPlanNotFoundCount: recentInventorySignals.shotPlanNotFoundCount,
       recentEmergencyBaseDefenseCount: recentInventorySignals.emergencyBaseDefenseCount,
+      softReleaseGuardScenario: recentInventorySignals.softReleaseGuardScenario || null,
     });
   }
   for(const candidate of candidates){
@@ -22023,6 +22091,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       recentFallbackSelectedCount: recentInventorySignals.fallbackSelectedCount,
       recentShotPlanNotFoundCount: recentInventorySignals.shotPlanNotFoundCount,
       recentEmergencyBaseDefenseCount: recentInventorySignals.emergencyBaseDefenseCount,
+      softReleaseGuardScenario: recentInventorySignals.softReleaseGuardScenario || null,
     } : null;
     candidate.releaseReady = moderateReleaseReady;
     candidate.adjustedComparableScore = Number((candidate.comparableScore + pressureBonus).toFixed(3));
@@ -23569,11 +23638,12 @@ function failSafeAdvanceTurn(reason, details = {}){
   const goal = safeDetails.goal || aiRoundState?.currentGoal || safeReason;
   const planeId = safeDetails.planeId ?? safeDetails?.move?.plane?.id ?? null;
 
-  recordAiSelfAnalyzerDecision(safeReason, {
+  const analyzerStage = resolveAiFallbackAnalyzerStage(safeReason, safeDetails);
+  recordAiSelfAnalyzerDecision(analyzerStage, {
     goal,
     planeId,
-    reasonCodes,
-    rejectReasons,
+    reasonCodes: [...new Set([analyzerStage, ...reasonCodes])],
+    rejectReasons: [...new Set([safeReason, ...rejectReasons])],
     errorMessage: safeDetails.errorMessage,
   });
 
@@ -24028,6 +24098,31 @@ function resolveFinalAiLaunchMoveWithMineGate(plannedMove, context = {}, options
       ? getFinalAiLaunchMineThreatCheck(safeFallbackMove)
       : null;
     if(fallbackValidation.ok && fallbackMineGate?.ok){
+      const fallbackAnalyzerStage = resolveAiFallbackAnalyzerStage("safe_short_fallback_selected", {
+        reasonCodes: [
+          "final_mine_check_safe_fallback_selected",
+          "mine_gate_fallback_selected",
+          "fail_safe_turn_advance",
+        ],
+        move: safeFallbackMove,
+      });
+      recordAiSelfAnalyzerDecision(fallbackAnalyzerStage, {
+        goal,
+        planeId: safeFallbackMove?.plane?.id ?? null,
+        reasonCodes: [
+          "final_mine_check_safe_fallback_selected",
+          "mine_gate_fallback_selected",
+          "fail_safe_turn_advance",
+          safeFallbackMove?.decisionReason || null,
+        ].filter(Boolean),
+        rejectReasons: [
+          gateResult.reason || "path_crosses_mine",
+          gateResult.reasonCode || "final_mine_check_rejected_stale_route",
+        ],
+        move: safeFallbackMove,
+        source: "resolveFinalAiLaunchMoveWithMineGate",
+        routeClass: safeFallbackMove?.routeClass || null,
+      });
       logAiDecision("ai_final_mine_gate_fallback_selected", {
         stage,
         planeId: safeFallbackMove?.plane?.id ?? null,
@@ -24055,6 +24150,28 @@ function resolveFinalAiLaunchMoveWithMineGate(plannedMove, context = {}, options
         ? (fallbackValidation.reason || "invalid_fallback_move")
         : (fallbackMineGate?.reason || "fallback_still_crosses_mine"),
     });
+    recordAiSelfAnalyzerDecision(resolveAiFallbackAnalyzerStage("safe_short_fallback_selected", {
+      reasonCodes: ["final_mine_check_fallback_rejected", "fail_safe_turn_advance"],
+      rejectReasons: [
+        fallbackValidation?.ok === false
+          ? (fallbackValidation.reason || "invalid_fallback_move")
+          : (fallbackMineGate?.reason || "fallback_still_crosses_mine"),
+      ],
+    }), {
+      goal,
+      planeId: safeFallbackMove?.plane?.id ?? null,
+      reasonCodes: [
+        "final_mine_check_fallback_rejected",
+        "fail_safe_turn_advance",
+      ],
+      rejectReasons: [
+        fallbackValidation?.ok === false
+          ? (fallbackValidation.reason || "invalid_fallback_move")
+          : (fallbackMineGate?.reason || "fallback_still_crosses_mine"),
+      ],
+      source: "resolveFinalAiLaunchMoveWithMineGate",
+      routeClass: safeFallbackMove?.routeClass || null,
+    });
   }
 
   return {
@@ -24078,11 +24195,12 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
           : ["fail_safe_turn_advance"];
         const goal = fallbackDetails.goal || aiRoundState?.currentGoal || fallbackReason;
         const planeId = fallbackDetails.planeId ?? fallbackDetails?.move?.plane?.id ?? null;
-        recordAiSelfAnalyzerDecision(fallbackReason, {
+        const analyzerStage = resolveAiFallbackAnalyzerStage(fallbackReason, fallbackDetails);
+        recordAiSelfAnalyzerDecision(analyzerStage, {
           goal,
           planeId,
-          reasonCodes,
-          rejectReasons,
+          reasonCodes: [...new Set([analyzerStage, ...reasonCodes])],
+          rejectReasons: [...new Set([fallbackReason, ...rejectReasons])],
           errorMessage: fallbackDetails.errorMessage,
         });
         aiMoveScheduled = false;
