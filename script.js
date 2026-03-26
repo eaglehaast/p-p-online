@@ -22102,6 +22102,11 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
 
   let selectedCandidate = null;
   let rawBestCandidate = null;
+  const inventoryIdleTurns = Number.isFinite(aiRoundState?.inventoryIdleTurns) ? aiRoundState.inventoryIdleTurns : 0;
+  const inventorySoftReleaseWindowActive = recentInventorySignals.softReleaseReady === true
+    || inventoryIdleTurns >= AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD;
+  const INVENTORY_SELECTION_FLOOR_SOFT_DELTA = 0.035;
+  const INVENTORY_SELECTION_FLOOR_SOFT_SAFE_RISK_MAX = 0.11;
   for(const candidate of candidates){
     if(!rawBestCandidate || candidate.comparableScore > rawBestCandidate.comparableScore + 0.0001){
       rawBestCandidate = candidate;
@@ -22125,15 +22130,54 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
   }
   if(selectedCandidate){
     const selectionFloor = getAiInventorySelectionFloor(selectedCandidate);
+    const floorGap = Number((selectionFloor - selectedCandidate.adjustedComparableScore).toFixed(3));
+    const isModerateCandidate = selectedCandidate.usageTier === "moderate";
+    const candidateRisk = Number.isFinite(selectedCandidate.risk) ? selectedCandidate.risk : 0;
+    const candidateSafeForSoftPass = candidateRisk <= INVENTORY_SELECTION_FLOOR_SOFT_SAFE_RISK_MAX;
+    const softPassAllowed = selectedCandidate.adjustedComparableScore <= selectionFloor
+      && floorGap > 0
+      && floorGap <= INVENTORY_SELECTION_FLOOR_SOFT_DELTA
+      && inventorySoftReleaseWindowActive
+      && isModerateCandidate
+      && candidateSafeForSoftPass;
     if(selectedCandidate.adjustedComparableScore <= selectionFloor){
+      if(softPassAllowed){
+        selectedCandidate.floorSoftPassAccepted = true;
+        selectedCandidate.floorSoftPassDelta = floorGap;
+        selectedCandidate.floorSoftPassReasonCode = "inventory_floor_soft_pass";
+        logAiDecision("inventory_floor_soft_pass", {
+          reasonCode: "inventory_floor_soft_pass",
+          itemType: selectedCandidate.itemType,
+          usageTier: selectedCandidate.usageTier || "strong",
+          planeId: plannedMove?.plane?.id ?? null,
+          goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+          comparableScore: selectedCandidate.comparableScore,
+          adjustedComparableScore: selectedCandidate.adjustedComparableScore,
+          selectionFloor,
+          floorGap,
+          allowedDelta: INVENTORY_SELECTION_FLOOR_SOFT_DELTA,
+          candidateRisk,
+          safeRiskMax: INVENTORY_SELECTION_FLOOR_SOFT_SAFE_RISK_MAX,
+          softReleaseReady: recentInventorySignals.softReleaseReady === true,
+          inventoryIdleTurns,
+        });
+        recordInventoryAiDecision("inventory_floor_soft_pass", {
+          planeId: selectedCandidate.planeId ?? plannedMove?.plane?.id ?? null,
+          goal: selectedCandidate.goal ?? plannedMove?.goalName ?? aiRoundState?.currentGoal ?? null,
+          itemType: selectedCandidate.itemType,
+          reasonCode: "inventory_floor_soft_pass",
+        });
+      } else {
       rejectCandidate(selectedCandidate.itemType, "inventory_plan_not_better_than_plain_move", {
         comparableScore: selectedCandidate.comparableScore,
         adjustedComparableScore: selectedCandidate.adjustedComparableScore,
         selectedReason: selectedCandidate.reason,
         selectionFloor,
+        floorGap,
         whyWaiting: "pressure_is_not_enough_yet",
       });
       selectedCandidate = null;
+      }
     }
   }
   if(selectedCandidate){
@@ -22802,12 +22846,23 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     }
 
     if(executed){
+      if(selectedInventoryCandidate.floorSoftPassAccepted === true){
+        markSoftFallbackUse(selectedType, {
+          reason: "inventory_floor_soft_pass",
+          floorGap: selectedInventoryCandidate.floorSoftPassDelta ?? null,
+        });
+      }
+      const executionReasonCodes = [selectedInventoryCandidate.reason || "inventory_item_applied"];
+      if(selectedInventoryCandidate.floorSoftPassAccepted === true){
+        executionReasonCodes.push("inventory_floor_soft_pass");
+      }
       logAiDecision("inventory_decision", {
         stage: "inventory_decision",
         source: executionSource,
         planeId: plannedMove?.plane?.id ?? null,
         itemType: selectedType,
         reason: selectedInventoryCandidate.reason || null,
+        reasonCodes: executionReasonCodes,
         target: selectedInventoryCandidate.target || null,
         expectedBenefit: selectedInventoryCandidate.expectedBenefit ?? null,
         risk: selectedInventoryCandidate.risk ?? null,
@@ -22819,7 +22874,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         goal: strategicGoal || null,
         itemType: selectedType,
         source: executionSource,
-        reasonCodes: [selectedInventoryCandidate.reason || "inventory_item_applied"],
+        reasonCodes: executionReasonCodes,
       });
       return { executed: true, executionFailureReason: null };
     }
@@ -29701,17 +29756,22 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
   if(inventoryPlanning?.selectedCandidate){
     plannedMove.selectedInventoryCandidate = inventoryPlanning.selectedCandidate;
     plannedMove.inventoryUsageReason = inventoryPlanning.selectedCandidate.reason || plannedMove.inventoryUsageReason || null;
+    const selectedCandidateReasonCodes = [inventoryPlanning.selectedCandidate.reason || "candidate_selected"];
+    if(inventoryPlanning.selectedCandidate.floorSoftPassAccepted === true){
+      selectedCandidateReasonCodes.push("inventory_floor_soft_pass");
+    }
     logAiDecision("inventory_candidate_selected", {
       ...inventoryPlanning.selectedCandidate,
       source,
       routeClass,
+      reasonCodes: selectedCandidateReasonCodes,
     });
     recordInventoryAiDecision("inventory_candidate_selected", {
       planeId: inventoryPlanning.selectedCandidate.planeId ?? plannedMove?.plane?.id ?? null,
       goal: inventoryPlanning.selectedCandidate.goal ?? plannedMove?.goalName ?? aiRoundState?.currentGoal ?? null,
       itemType: inventoryPlanning.selectedCandidate.itemType,
       source,
-      reasonCodes: [inventoryPlanning.selectedCandidate.reason || "candidate_selected"],
+      reasonCodes: selectedCandidateReasonCodes,
     });
   }
   if(plannedMove.selectedInventorySequence.length > 0){
