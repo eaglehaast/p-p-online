@@ -22491,6 +22491,39 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   const riskProfile = context?.aiRiskProfile?.profile || "balanced";
   const softFallbackReady = aiRoundState.inventoryIdleTurns >= AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD
     && aiRoundState.inventorySoftFallbackCooldown <= 0;
+  const recentInventorySignals = typeof getAiInventoryRecentMatchSignals === "function"
+    ? getAiInventoryRecentMatchSignals(plannedMove?.goalName || aiRoundState?.currentGoal || null)
+    : null;
+  const localInventoryUnlockTrendState = maybeUseInventoryBeforeLaunch.__localInventoryUnlockTrendState
+    && typeof maybeUseInventoryBeforeLaunch.__localInventoryUnlockTrendState === "object"
+    ? maybeUseInventoryBeforeLaunch.__localInventoryUnlockTrendState
+    : { lastIdleTurns: null, risingStreak: 0 };
+  const currentIdleTurns = Number.isFinite(aiRoundState?.inventoryIdleTurns) ? aiRoundState.inventoryIdleTurns : 0;
+  const idleTurnsAreRisingConsecutively = Number.isFinite(localInventoryUnlockTrendState.lastIdleTurns)
+    && currentIdleTurns > localInventoryUnlockTrendState.lastIdleTurns;
+  const inventoryIdleTrendRisingStreak = idleTurnsAreRisingConsecutively
+    ? localInventoryUnlockTrendState.risingStreak + 1
+    : 0;
+  maybeUseInventoryBeforeLaunch.__localInventoryUnlockTrendState = {
+    lastIdleTurns: currentIdleTurns,
+    risingStreak: inventoryIdleTrendRisingStreak,
+  };
+  const deadlockFromCurrentTurn = explicitInventoryUnlock
+    || `${plannedMove?.decisionReason || ""}`.toLowerCase().includes("fallback")
+    || `${plannedMove?.goalName || ""}`.toLowerCase().includes("fallback")
+    || softFallbackReady;
+  const deadlockFromIdleTrend = inventoryIdleTrendRisingStreak >= 2;
+  const deadlockFromCandidateRejectPressure = Boolean(
+    recentInventorySignals
+    && (
+      recentInventorySignals.repeatedFallbackSelected
+      || recentInventorySignals.repeatedShotPlanNotFound
+      || recentInventorySignals.softReleaseReady
+    )
+  );
+  const antiFallbackInventoryUnlock = deadlockFromCurrentTurn
+    || deadlockFromIdleTrend
+    || deadlockFromCandidateRejectPressure;
   const attackRangePx = typeof ATTACK_RANGE_PX === "number" && Number.isFinite(ATTACK_RANGE_PX) ? ATTACK_RANGE_PX : MAX_DRAG_DISTANCE * 0.58;
   // Все стратегические дистанции ниже считаем в пикселях полёта (те же единицы, что у реального запуска самолёта).
   const baseFlightRangeCells = Number.isFinite(settings?.flightRangeCells)
@@ -22538,7 +22571,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     && !tacticalInventoryAdvantage
     && !likelyContactOnNextTurn
     && !priorityEnemy
-    && !hasMeaningfulProgressThisTurn;
+    && !hasMeaningfulProgressThisTurn
+    && !antiFallbackInventoryUnlock;
   const allowInventoryUsage = !noImmediateInventoryValueWindow;
 
   function evaluateDirectAttackWindow(enemy){
@@ -22594,12 +22628,13 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         idleTurns: aiRoundState.inventoryIdleTurns,
         stage: lockStage,
         allowedAsPreparationMove: allowStrategicInventoryPreparation,
+        antiFallbackInventoryUnlock,
       });
       recordInventoryAiDecision("inventory_usage_locked", {
         planeId: plannedMove?.plane?.id ?? null,
         goal: strategicGoal || null,
         itemType,
-        reasonCodes: ["inventory_locked"],
+        reasonCodes: antiFallbackInventoryUnlock ? ["inventory_locked", "anti_fallback_measure_blocked"] : ["inventory_locked"],
         rejectReasons: [lockReason],
       });
       return false;
@@ -22713,7 +22748,9 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       planeId: payload.planeId,
       goal: payload.goal,
       itemType: payload.itemType,
-      reasonCodes: ["selected_candidate_execution_failed"],
+      reasonCodes: `${payload.reason || ""}`.includes("anti_fallback")
+        ? ["selected_candidate_execution_failed", "anti_fallback_measure_rejected"]
+        : ["selected_candidate_execution_failed"],
       rejectReasons: [payload.reason],
     });
   }
@@ -22728,10 +22765,16 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     if(!hasSelectedItemInInventory){
       executionFailureReason = "selected_candidate_item_missing_in_inventory";
     } else if(selectedType === INVENTORY_ITEM_TYPES.FUEL){
+      const confirmedFuelBenefit = Boolean(
+        selectedInventoryCandidate?.fuelScenario
+        || selectedInventoryCandidate?.target
+      ) && Number(selectedInventoryCandidate?.expectedBenefit ?? 0) > Number(selectedInventoryCandidate?.risk ?? 0);
       if(!allowBuffItems){
         executionFailureReason = "selected_candidate_blocked_by_inventory_phase";
       } else if(hasSingleUseBuffBeenSpentThisTurn(INVENTORY_ITEM_TYPES.FUEL)){
         executionFailureReason = "selected_candidate_buff_already_used_this_turn";
+      } else if(antiFallbackInventoryUnlock && !confirmedFuelBenefit){
+        executionFailureReason = "selected_candidate_fuel_rejected_anti_fallback_no_confirmed_gain";
       } else {
         executed = tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.FUEL, { bypassLowConfidenceLock: true });
         if(executed){
@@ -22937,6 +22980,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
           || Boolean(selectedInventoryCandidate?.dynamiteRouteReplan?.usesOpenedCorridor || selectedInventoryCandidate?.dynamiteRouteReplan?.noticeableImprovement);
         if(!target){
           executionFailureReason = "selected_candidate_dynamite_target_missing";
+        } else if(antiFallbackInventoryUnlock && !shouldUseDynamite){
+          executionFailureReason = "selected_candidate_dynamite_rejected_anti_fallback_no_confirmed_gain";
         } else if(!shouldUseDynamite){
           executionFailureReason = "selected_candidate_dynamite_replan_no_longer_valid";
         } else {
@@ -23041,6 +23086,9 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       if(selectedInventoryCandidate.floorSoftPassAccepted === true){
         executionReasonCodes.push("inventory_floor_soft_pass");
       }
+      if(antiFallbackInventoryUnlock){
+        executionReasonCodes.push("anti_fallback_measure_applied");
+      }
       logAiDecision("inventory_decision", {
         stage: "inventory_decision",
         source: executionSource,
@@ -23053,7 +23101,19 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         risk: selectedInventoryCandidate.risk ?? null,
         tacticalSeriesDiagnostics: selectedInventoryCandidate.tacticalSeriesDiagnostics || selectedInventoryCandidate?.tacticalSeries?.diagnostics || null,
         allowedAsPreparationMove: allowStrategicInventoryPreparation,
+        antiFallbackInventoryUnlock,
       });
+      if(antiFallbackInventoryUnlock && (selectedType === INVENTORY_ITEM_TYPES.FUEL || selectedType === INVENTORY_ITEM_TYPES.DYNAMITE)){
+        logAiDecision("inventory_anti_fallback_item_used", {
+          planeId: plannedMove?.plane?.id ?? null,
+          goal: strategicGoal || null,
+          itemType: selectedType,
+          reason: selectedInventoryCandidate.reason || "inventory_item_applied",
+          confirmedTarget: selectedInventoryCandidate.target || null,
+          confirmedBenefit: Number((selectedInventoryCandidate.expectedBenefit ?? 0).toFixed(3)),
+          confirmedRisk: Number((selectedInventoryCandidate.risk ?? 0).toFixed(3)),
+        });
+      }
       recordInventoryAiDecision("inventory_decision", {
         planeId: plannedMove?.plane?.id ?? null,
         goal: strategicGoal || null,
