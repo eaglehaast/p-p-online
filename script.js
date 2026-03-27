@@ -22918,6 +22918,12 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         break;
       }
       if(anyStepExecuted){
+        if(plannedMove && Array.isArray(plannedMove.selectedInventorySequence)){
+          plannedMove.selectedInventorySequence = [];
+        }
+        if(plannedMove && plannedMove.selectedInventoryCandidate){
+          plannedMove.selectedInventoryCandidate = null;
+        }
         return true;
       }
     }
@@ -22925,7 +22931,15 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
 
   if(selectedInventoryCandidate){
     const executionResult = executeSelectedInventoryCandidate(selectedInventoryCandidate, "selected_inventory_candidate");
-    if(executionResult.executed) return true;
+    if(executionResult.executed){
+      if(plannedMove && plannedMove.selectedInventoryCandidate){
+        plannedMove.selectedInventoryCandidate = null;
+      }
+      if(plannedMove && Array.isArray(plannedMove.selectedInventorySequence)){
+        plannedMove.selectedInventorySequence = [];
+      }
+      return true;
+    }
     logSelectedInventoryExecutionFailure(selectedInventoryCandidate.itemType, executionResult.executionFailureReason, {
       hadCommittedSelection: true,
       inventoryLockBypassedBecauseAlreadySelected: true,
