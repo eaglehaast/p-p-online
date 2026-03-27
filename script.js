@@ -19764,6 +19764,13 @@ function distancePointToSegment(px, py, ax, ay, bx, by){
 function placeBlueDynamiteAt(boardX, boardY){
   const targetBrick = findMapSpriteForDynamiteDrop({ boardX, boardY });
   if(!targetBrick) return false;
+  const hasActiveBlueDynamiteOnSameSprite = Array.isArray(dynamiteState) && dynamiteState.some((entry) => {
+    if(!entry || entry.owner !== "blue" || entry.brickRemoved) return false;
+    const sameSpriteId = targetBrick.id != null && entry.spriteId != null && entry.spriteId === targetBrick.id;
+    const sameSpriteRef = targetBrick.spriteRef != null && entry.spriteRef != null && entry.spriteRef === targetBrick.spriteRef;
+    return sameSpriteId || sameSpriteRef;
+  });
+  if(hasActiveBlueDynamiteOnSameSprite) return false;
   const dynamiteEntry = {
     id: `dynamite-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     owner: "blue",
@@ -22885,6 +22892,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
             let executedCount = 0;
             let stopReason = dynamiteSeries?.diagnostics?.stopReason || null;
             const executedTargets = [];
+            const usedSeriesTargetKeys = new Set();
             for(let stepIndex = 0; stepIndex < dynamiteSeries.steps.length; stepIndex += 1){
               if(Number(inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0) <= 0){
                 stopReason = "charges_exhausted";
@@ -22907,6 +22915,16 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
                 stopReason = "no_new_gain";
                 break;
               }
+              const stepTargetKey = (() => {
+                if(stepTarget?.colliderId != null) return `collider:${stepTarget.colliderId}`;
+                const hasNumericTarget = Number.isFinite(stepTarget?.x) && Number.isFinite(stepTarget?.y);
+                if(!hasNumericTarget) return null;
+                return `point:${Math.round(stepTarget.x)}:${Math.round(stepTarget.y)}`;
+              })();
+              if(stepTargetKey && usedSeriesTargetKeys.has(stepTargetKey)){
+                stopReason = "duplicate_target_same_turn";
+                break;
+              }
               const stepExecuted = stepTarget ? placeBlueDynamiteAt(stepTarget.x, stepTarget.y) : false;
               if(!stepExecuted){
                 stopReason = "step_execution_failed";
@@ -22914,6 +22932,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
               }
               removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
               inventory.counts[INVENTORY_ITEM_TYPES.DYNAMITE] = Math.max(0, Number(inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] || 0) - 1);
+              if(stepTargetKey) usedSeriesTargetKeys.add(stepTargetKey);
               if(stepTarget?.geometry) executedTargets.push(stepTarget.geometry);
               executedCount += 1;
             }
