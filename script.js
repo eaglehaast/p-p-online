@@ -21795,6 +21795,8 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
   }
 
   if(allowTacticalItems && inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] > 0){
+    const mineAvailableCharges = Number(inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0);
+    const mineHasSurplusCharges = mineAvailableCharges > 1;
     const defensivePlan = typeof tryPlaceBlueDefensiveMine === "function" ? tryPlaceBlueDefensiveMine(context, plannedMove, { evaluateOnly: true }) : null;
     const basePlan = typeof tryPlaceBlueMineNearEnemyBase === "function" ? tryPlaceBlueMineNearEnemyBase(context, plannedMove, { evaluateOnly: true }) : null;
     const preferredMinePlan = defensivePlan && (!basePlan || (defensivePlan.score || 0) >= (basePlan.score || 0))
@@ -21844,10 +21846,14 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       && safeAfterPlacement === false
       && safetyImprovesAfterPlacement !== true
       && !isCriticalGoalForDefensiveMine;
+    const mineForcedSpendSurplus = mineHasSurplusCharges
+      && Boolean(preferredMinePlan?.plan)
+      && !mineRejectedBySelfRisk
+      && (safeAfterPlacement !== false || safetyImprovesAfterPlacement === true);
     const mineSeriesPlan = buildAiMineSeriesPlan(context, plannedMove, {
-      availableCharges: inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0,
+      availableCharges: mineAvailableCharges,
     });
-    if(preferredMinePlan && !mineRejectedBySelfRisk && (minePlanProvidesNoticeableImprovement || mineModerateImprovement)){
+    if(preferredMinePlan && !mineRejectedBySelfRisk && (minePlanProvidesNoticeableImprovement || mineModerateImprovement || mineForcedSpendSurplus)){
       const baseMineBenefit = Math.max(0.22, Math.min(0.9, Number((preferredMinePlan.plan.score || 0) / 20)));
       const expectedMineBenefit = (() => {
         const rawBenefit = mineCreatesRouteDenial
@@ -21863,23 +21869,29 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
         target: priorityEnemy || enemyBase || landingPoint || null,
         expectedBenefit: Math.max(expectedMineBenefit, mineSeriesPlan?.expectedBenefit || 0),
         risk: safeAfterPlacement ? 0.08 : 0.14,
-        reason: preferredMinePlan.plan.scenario || "mine_cover_plan",
+        reason: mineForcedSpendSurplus ? "mine_forced_spend_surplus" : (preferredMinePlan.plan.scenario || "mine_cover_plan"),
         whyBetter: preferredMinePlan.placementMode === "defensive"
-          ? (mineProtectsAfterAggressiveAction
-              ? "mine keeps the post-attack landing safer, so we can finish or grab objective without giving an easy response"
+          ? (mineForcedSpendSurplus
+              ? "we have spare mines and this safe defensive placement keeps pressure without waiting for a perfect trap"
+              : (mineProtectsAfterAggressiveAction
+                  ? "mine keeps the post-attack landing safer, so we can finish or grab objective without giving an easy response"
+                  : (minePlanProvidesNoticeableImprovement
+                      ? "mine can shape the enemy escape lane immediately instead of waiting for a plain flight"
+                      : "mine does not trap the enemy outright yet, but it still narrows their safe exits and becomes worth using after repeated empty turns")))
+          : (mineForcedSpendSurplus
+              ? "we have spare mines, so a safe moderate placement is worth spending now instead of hoarding charges"
               : (minePlanProvidesNoticeableImprovement
-                  ? "mine can shape the enemy escape lane immediately instead of waiting for a plain flight"
-                  : "mine does not trap the enemy outright yet, but it still narrows their safe exits and becomes worth using after repeated empty turns"))
-          : (minePlanProvidesNoticeableImprovement
-              ? "mine adds board control on top of the same movement plan"
-              : "mine adds moderate board control, which becomes acceptable once the match keeps forcing fallback choices"),
+                  ? "mine adds board control on top of the same movement plan"
+                  : "mine adds moderate board control, which becomes acceptable once the match keeps forcing fallback choices")),
         placementMode: preferredMinePlan.placementMode,
         minePlan: preferredMinePlan.plan,
         safeAfterPlacement,
-        mineUseReason: mineProtectsAfterAggressiveAction
-          ? "mine_used_for_safe_aggressive_follow_up"
-          : (mineCreatesRouteDenial ? "mine_used_for_route_denial" : "mine_used_for_position_improvement"),
-        usageTier: minePlanProvidesNoticeableImprovement ? "strong" : "moderate",
+        mineUseReason: mineForcedSpendSurplus
+          ? "mine_forced_spend_surplus"
+          : (mineProtectsAfterAggressiveAction
+              ? "mine_used_for_safe_aggressive_follow_up"
+              : (mineCreatesRouteDenial ? "mine_used_for_route_denial" : "mine_used_for_position_improvement")),
+        usageTier: mineForcedSpendSurplus ? "forced_surplus" : (minePlanProvidesNoticeableImprovement ? "strong" : "moderate"),
         tacticalSeries: mineSeriesPlan,
       });
     } else {
@@ -21900,15 +21912,18 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
   }
 
   if(allowTacticalItems && inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] > 0){
+    const dynamiteAvailableCharges = Number(inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0);
+    const dynamiteHasSurplusCharges = dynamiteAvailableCharges > 1;
     const routeAwareTarget = typeof getDynamiteCandidateForCurrentRoute === "function" ? getDynamiteCandidateForCurrentRoute(context, plannedMove) : null;
     const strategicMoveGate = shouldUseStrategicDynamiteForPlannedMove(plannedMove, context);
-    const strategicDynamite = strategicMoveGate.allowStrategicProbe && typeof evaluateStrategicDynamiteTargets === "function"
+    const strategicDynamite = (strategicMoveGate.allowStrategicProbe || dynamiteHasSurplusCharges) && typeof evaluateStrategicDynamiteTargets === "function"
       ? evaluateStrategicDynamiteTargets(context, plannedMove)
       : null;
     const strategicTarget = routeAwareTarget ? null : (strategicDynamite?.bestTarget || null);
     const fallbackTarget = routeAwareTarget || strategicTarget;
+    const dynamiteForcedSpendSurplus = dynamiteHasSurplusCharges && Boolean(fallbackTarget);
     const dynamiteSeriesPlan = buildAiDynamiteSeriesPlan(context, plannedMove, {
-      availableCharges: inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0,
+      availableCharges: dynamiteAvailableCharges,
     });
     if(fallbackTarget){
       const strategicPressureBoost = strategicTarget
@@ -21936,10 +21951,16 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
         risk: routeAwareTarget
           ? 0.06
           : Math.max(0.06, 0.12 - strategicRiskDiscount),
-        reason: routeAwareTarget ? "dynamite_route_opening" : strategicReason,
+        reason: dynamiteForcedSpendSurplus
+          ? "dynamite_forced_spend_surplus"
+          : (routeAwareTarget ? "dynamite_route_opening" : strategicReason),
         whyBetter: routeAwareTarget
-          ? "dynamite removes the obstacle before launch, and we already confirmed the rebuilt route really wants to use the opened corridor"
-          : "dynamite opens a more useful part of the map during weak turns, and also during medium turns when it unlocks a decisive path or a noticeable follow-up route gain",
+          ? (dynamiteForcedSpendSurplus
+              ? "we have spare dynamite, and this route-aware blast is still useful while avoiding dead inventory"
+              : "dynamite removes the obstacle before launch, and we already confirmed the rebuilt route really wants to use the opened corridor")
+          : (dynamiteForcedSpendSurplus
+              ? "we have spare dynamite, so a valid strategic wall target is acceptable even without waiting for a huge immediate gain"
+              : "dynamite opens a more useful part of the map during weak turns, and also during medium turns when it unlocks a decisive path or a noticeable follow-up route gain"),
         dynamiteUseClass: routeAwareTarget ? "current_route" : "strategic_map_opening",
         dynamiteExpectedRoute: routeAwareTarget?.replanResult?.expectedRoute || null,
         dynamiteRouteReplan: routeAwareTarget?.replanResult ? {
