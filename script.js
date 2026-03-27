@@ -22127,7 +22127,9 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
   const inventorySoftReleaseWindowActive = recentInventorySignals.softReleaseReady === true
     || inventoryIdleTurns >= AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD;
   const INVENTORY_SELECTION_FLOOR_SOFT_DELTA = 0.035;
+  const INVENTORY_SELECTION_FLOOR_SOFT_DELTA_TACTICAL_SURPLUS = 0.072;
   const INVENTORY_SELECTION_FLOOR_SOFT_SAFE_RISK_MAX = 0.11;
+  const INVENTORY_SELECTION_FLOOR_TACTICAL_SURPLUS_LOWERING = 0.024;
   for(const candidate of candidates){
     if(!rawBestCandidate || candidate.comparableScore > rawBestCandidate.comparableScore + 0.0001){
       rawBestCandidate = candidate;
@@ -22151,23 +22153,35 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
   }
   if(selectedCandidate){
     const selectionFloor = getAiInventorySelectionFloor(selectedCandidate);
-    const floorGap = Number((selectionFloor - selectedCandidate.adjustedComparableScore).toFixed(3));
     const isModerateCandidate = selectedCandidate.usageTier === "moderate";
+    const isTacticalCandidate = selectedCandidate.itemType === INVENTORY_ITEM_TYPES.MINE
+      || selectedCandidate.itemType === INVENTORY_ITEM_TYPES.DYNAMITE;
+    const candidateInventoryCount = Number(inventory?.counts?.[selectedCandidate.itemType] ?? 0);
+    const hasTacticalSurplus = isTacticalCandidate && isModerateCandidate && candidateInventoryCount > 1;
+    const effectiveSelectionFloor = hasTacticalSurplus
+      ? Math.max(0, Number((selectionFloor - INVENTORY_SELECTION_FLOOR_TACTICAL_SURPLUS_LOWERING).toFixed(3)))
+      : selectionFloor;
+    const floorGap = Number((effectiveSelectionFloor - selectedCandidate.adjustedComparableScore).toFixed(3));
+    const allowedSoftDelta = hasTacticalSurplus
+      ? INVENTORY_SELECTION_FLOOR_SOFT_DELTA_TACTICAL_SURPLUS
+      : INVENTORY_SELECTION_FLOOR_SOFT_DELTA;
     const candidateRisk = Number.isFinite(selectedCandidate.risk) ? selectedCandidate.risk : 0;
     const candidateSafeForSoftPass = candidateRisk <= INVENTORY_SELECTION_FLOOR_SOFT_SAFE_RISK_MAX;
-    const softPassAllowed = selectedCandidate.adjustedComparableScore <= selectionFloor
+    const softPassAllowed = selectedCandidate.adjustedComparableScore <= effectiveSelectionFloor
       && floorGap > 0
-      && floorGap <= INVENTORY_SELECTION_FLOOR_SOFT_DELTA
+      && floorGap <= allowedSoftDelta
       && inventorySoftReleaseWindowActive
       && isModerateCandidate
       && candidateSafeForSoftPass;
-    if(selectedCandidate.adjustedComparableScore <= selectionFloor){
+    if(selectedCandidate.adjustedComparableScore <= effectiveSelectionFloor){
       if(softPassAllowed){
         selectedCandidate.floorSoftPassAccepted = true;
         selectedCandidate.floorSoftPassDelta = floorGap;
-        selectedCandidate.floorSoftPassReasonCode = "inventory_floor_soft_pass";
+        selectedCandidate.floorSoftPassReasonCode = hasTacticalSurplus
+          ? "inventory_floor_soft_pass_tactical_surplus"
+          : "inventory_floor_soft_pass";
         logAiDecision("inventory_floor_soft_pass", {
-          reasonCode: "inventory_floor_soft_pass",
+          reasonCode: selectedCandidate.floorSoftPassReasonCode,
           itemType: selectedCandidate.itemType,
           usageTier: selectedCandidate.usageTier || "strong",
           planeId: plannedMove?.plane?.id ?? null,
@@ -22175,10 +22189,13 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
           comparableScore: selectedCandidate.comparableScore,
           adjustedComparableScore: selectedCandidate.adjustedComparableScore,
           selectionFloor,
+          effectiveSelectionFloor,
           floorGap,
-          allowedDelta: INVENTORY_SELECTION_FLOOR_SOFT_DELTA,
+          allowedDelta: allowedSoftDelta,
           candidateRisk,
           safeRiskMax: INVENTORY_SELECTION_FLOOR_SOFT_SAFE_RISK_MAX,
+          inventoryCount: candidateInventoryCount,
+          tacticalSurplusApplied: hasTacticalSurplus,
           softReleaseReady: recentInventorySignals.softReleaseReady === true,
           inventoryIdleTurns,
         });
@@ -22186,7 +22203,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
           planeId: selectedCandidate.planeId ?? plannedMove?.plane?.id ?? null,
           goal: selectedCandidate.goal ?? plannedMove?.goalName ?? aiRoundState?.currentGoal ?? null,
           itemType: selectedCandidate.itemType,
-          reasonCode: "inventory_floor_soft_pass",
+          reasonCode: selectedCandidate.floorSoftPassReasonCode,
         });
       } else {
       rejectCandidate(selectedCandidate.itemType, "inventory_plan_not_better_than_plain_move", {
@@ -22194,6 +22211,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
         adjustedComparableScore: selectedCandidate.adjustedComparableScore,
         selectedReason: selectedCandidate.reason,
         selectionFloor,
+        effectiveSelectionFloor,
         floorGap,
         whyWaiting: "pressure_is_not_enough_yet",
       });
@@ -29867,7 +29885,9 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
     plannedMove.inventoryUsageReason = inventoryPlanning.selectedCandidate.reason || plannedMove.inventoryUsageReason || null;
     const selectedCandidateReasonCodes = [inventoryPlanning.selectedCandidate.reason || "candidate_selected"];
     if(inventoryPlanning.selectedCandidate.floorSoftPassAccepted === true){
-      selectedCandidateReasonCodes.push("inventory_floor_soft_pass");
+      selectedCandidateReasonCodes.push(
+        inventoryPlanning.selectedCandidate.floorSoftPassReasonCode || "inventory_floor_soft_pass"
+      );
     }
     logAiDecision("inventory_candidate_selected", {
       ...inventoryPlanning.selectedCandidate,
