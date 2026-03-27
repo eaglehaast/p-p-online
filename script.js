@@ -22304,13 +22304,37 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
   return { selectedCandidate, selectedSequence, candidates, rejected, inventoryPhase };
 }
 
-function maybeUseInventoryBeforeLaunch(context, plannedMove){
+function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   if(!plannedMove?.plane) return false;
 
   const inventoryPhase = 3;
   const allowBuffItems = true;
   const allowTacticalItems = true;
   const allowInvisibility = true;
+  const usedBuffTypesThisTurn = options?.usedBuffTypesThisTurn instanceof Set
+    ? options.usedBuffTypesThisTurn
+    : new Set();
+  const SINGLE_USE_BUFF_TYPES_PER_TURN = new Set([
+    INVENTORY_ITEM_TYPES.CROSSHAIR,
+    INVENTORY_ITEM_TYPES.FUEL,
+    INVENTORY_ITEM_TYPES.WINGS,
+    INVENTORY_ITEM_TYPES.INVISIBILITY,
+  ]);
+
+  function isSingleUseBuffTypePerTurn(itemType){
+    return SINGLE_USE_BUFF_TYPES_PER_TURN.has(itemType);
+  }
+
+  function hasSingleUseBuffBeenSpentThisTurn(itemType){
+    return isSingleUseBuffTypePerTurn(itemType)
+      && usedBuffTypesThisTurn.has(itemType);
+  }
+
+  function rememberSingleUseBuffSpentThisTurn(itemType){
+    if(isSingleUseBuffTypePerTurn(itemType)){
+      usedBuffTypesThisTurn.add(itemType);
+    }
+  }
 
   const explicitInventoryUnlock = plannedMove?.allowInventoryUsage === true
     && plannedMove?.inventoryUsageReason === "bad_direct_fallback";
@@ -22431,6 +22455,15 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     const bypassLowConfidenceLock = options?.bypassLowConfidenceLock === true;
     const lockReason = options?.lockReason || "inventory_locked_for_low_confidence_move";
     const lockStage = options?.lockStage || "inventory_execution_gate";
+    if(hasSingleUseBuffBeenSpentThisTurn(itemType)){
+      logAiDecision("inventory_single_use_buff_already_spent", {
+        itemType,
+        planeId: plannedMove?.plane?.id ?? null,
+        goal: strategicGoal || null,
+        stage: lockStage,
+      });
+      return false;
+    }
     if(!bypassLowConfidenceLock && !allowInventoryUsage){
       logAiDecision("inventory_usage_locked", {
         itemType,
@@ -22576,10 +22609,13 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     } else if(selectedType === INVENTORY_ITEM_TYPES.FUEL){
       if(!allowBuffItems){
         executionFailureReason = "selected_candidate_blocked_by_inventory_phase";
+      } else if(hasSingleUseBuffBeenSpentThisTurn(INVENTORY_ITEM_TYPES.FUEL)){
+        executionFailureReason = "selected_candidate_buff_already_used_this_turn";
       } else {
         executed = tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.FUEL, { bypassLowConfidenceLock: true });
         if(executed){
           removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
+          rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.FUEL);
           plannedMove.aiFuelTacticalDecision = {
             stage: "selected_candidate",
             selectedScenario: selectedInventoryCandidate.fuelScenario || selectedInventoryCandidate.reason || null,
@@ -22599,21 +22635,37 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     } else if(selectedType === INVENTORY_ITEM_TYPES.CROSSHAIR){
       if(!allowBuffItems){
         executionFailureReason = "selected_candidate_blocked_by_inventory_phase";
+      } else if(hasSingleUseBuffBeenSpentThisTurn(INVENTORY_ITEM_TYPES.CROSSHAIR)){
+        executionFailureReason = "selected_candidate_buff_already_used_this_turn";
       } else {
         executed = tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.CROSSHAIR, { bypassLowConfidenceLock: true });
-        if(executed) removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
+        if(executed){
+          removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
+          rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.CROSSHAIR);
+        }
         else executionFailureReason = "selected_candidate_apply_failed";
       }
     } else if(selectedType === INVENTORY_ITEM_TYPES.WINGS){
-      executed = tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.WINGS, { bypassLowConfidenceLock: true });
-      if(executed) removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.WINGS);
-      else executionFailureReason = "selected_candidate_apply_failed";
+      if(hasSingleUseBuffBeenSpentThisTurn(INVENTORY_ITEM_TYPES.WINGS)){
+        executionFailureReason = "selected_candidate_buff_already_used_this_turn";
+      } else {
+        executed = tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.WINGS, { bypassLowConfidenceLock: true });
+        if(executed){
+          removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.WINGS);
+          rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.WINGS);
+        } else executionFailureReason = "selected_candidate_apply_failed";
+      }
     } else if(selectedType === INVENTORY_ITEM_TYPES.INVISIBILITY){
       if(!allowInvisibility){
         executionFailureReason = "selected_candidate_invisibility_blocked_by_rules";
+      } else if(hasSingleUseBuffBeenSpentThisTurn(INVENTORY_ITEM_TYPES.INVISIBILITY)){
+        executionFailureReason = "selected_candidate_buff_already_used_this_turn";
       } else {
         executed = queueInvisibilityEffectForPlayer("blue");
-        if(executed) removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.INVISIBILITY);
+        if(executed){
+          removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.INVISIBILITY);
+          rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.INVISIBILITY);
+        }
         else executionFailureReason = "selected_candidate_apply_failed";
       }
     } else if(selectedType === INVENTORY_ITEM_TYPES.MINE){
@@ -22963,6 +23015,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       );
       if(appliedByForcedTraining){
         removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
+        rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.FUEL);
         aiRoundState.trainingForceFuelOnNextAiTurn = {
           enabled: false,
           requestedAtTurn: fuelTrainingMeta.requestedAtTurn ?? null,
@@ -23078,6 +23131,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       && fuelTacticalPlans?.selectedCandidate
       && tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.FUEL, "blue", plannedMove.plane)){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
+      rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.FUEL);
       logAiDecision("fuel_used_material_gain", {
         planeId: plannedMove.plane?.id ?? null,
         reason: shouldUseFuelBySoftFallback ? "soft_fallback_new_contact" : (shouldUseFuelForModerateObjective ? "moderate_objective_new_contact" : "boost_new_contact"),
@@ -23121,6 +23175,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     if(bestCrosshairScenario && bestCrosshairScenario.totalValue >= CROSSHAIR_MIN_NOTICEABLE_VALUE){
       if(tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
         removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
+        rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.CROSSHAIR);
         logAiDecision("crosshair_used_best_value", {
           planeId: plannedMove.plane?.id ?? null,
           enemyId: bestCrosshairScenario.enemy?.id ?? null,
@@ -23149,6 +23204,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       if(!bestCrosshairScenario && (cleanFinishingChance || comebackPressureShot)){
         if(tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
           removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
+          rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.CROSSHAIR);
           logAiDecision("crosshair_used_best_value", {
             planeId: plannedMove.plane?.id ?? null,
             enemyId: priorityEnemy?.id ?? null,
@@ -23162,6 +23218,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       if(moderateCrosshairScenario){
         if(tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
           removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
+          rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.CROSSHAIR);
           markSoftFallbackUse(INVENTORY_ITEM_TYPES.CROSSHAIR, {
             bestValue: Number(bestCrosshairScenario.totalValue.toFixed(3)),
             thresholdMain: CROSSHAIR_MIN_NOTICEABLE_VALUE,
@@ -23545,8 +23602,11 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
       expectCounterMove,
       shouldUseInvisibility,
     });
-    if(shouldUseInvisibility && queueInvisibilityEffectForPlayer("blue")){
+    if(shouldUseInvisibility
+      && !hasSingleUseBuffBeenSpentThisTurn(INVENTORY_ITEM_TYPES.INVISIBILITY)
+      && queueInvisibilityEffectForPlayer("blue")){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.INVISIBILITY);
+      rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.INVISIBILITY);
       return true;
     }
   }
@@ -23555,6 +23615,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     if(inventory.counts[INVENTORY_ITEM_TYPES.CROSSHAIR] > 0
       && tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
+      rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.CROSSHAIR);
       markSoftFallbackUse(INVENTORY_ITEM_TYPES.CROSSHAIR, {
         reason: "generic_soft_fallback_usage",
       });
@@ -23598,6 +23659,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
         rejectionReason: null,
       };
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
+      rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.FUEL);
       markSoftFallbackUse(INVENTORY_ITEM_TYPES.FUEL, {
         reason: "generic_soft_fallback_usage",
       });
@@ -23650,6 +23712,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove){
     if((reachesContactZone || likelyContactNextTurn || shouldUseWingsForApproach)
       && tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.WINGS, "blue", plannedMove.plane)){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.WINGS);
+      rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.WINGS);
       if(shouldUseWingsBySoftFallback){
         markSoftFallbackUse(INVENTORY_ITEM_TYPES.WINGS, {
           reason: "approaching_contact_zone",
@@ -24332,10 +24395,13 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   let buffInventoryActionsApplied = 0;
   let tacticalInventoryActionsApplied = 0;
   let inventoryStopReason = "inventory_no_action";
+  const usedSingleUseBuffTypesThisTurn = new Set();
 
   for(let inventoryActionStep = 0; inventoryActionStep < AI_INVENTORY_ACTION_LIMIT_PER_TURN; inventoryActionStep += 1){
     const actionBeforeState = afterInventoryState;
-    const actionUsed = maybeUseInventoryBeforeLaunch(context, plannedMove);
+    const actionUsed = maybeUseInventoryBeforeLaunch(context, plannedMove, {
+      usedBuffTypesThisTurn: usedSingleUseBuffTypesThisTurn,
+    });
     if(!actionUsed){
       inventoryStopReason = totalInventoryActionsApplied > 0
         ? "inventory_use_stopped_by_selector"
@@ -24352,6 +24418,14 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     );
     if(actionConsumedItemType){
       consumedItemTypes.push(actionConsumedItemType);
+      if(
+        actionConsumedItemType === INVENTORY_ITEM_TYPES.CROSSHAIR
+        || actionConsumedItemType === INVENTORY_ITEM_TYPES.FUEL
+        || actionConsumedItemType === INVENTORY_ITEM_TYPES.WINGS
+        || actionConsumedItemType === INVENTORY_ITEM_TYPES.INVISIBILITY
+      ){
+        usedSingleUseBuffTypesThisTurn.add(actionConsumedItemType);
+      }
       markAiInventoryItemUsed(actionConsumedItemType, {
         reason: plannedMove?.selectedInventoryCandidate?.reason || plannedMove?.inventoryUsageReason || "item_used",
         chosenBecauseOfPressure: plannedMove?.selectedInventoryCandidate?.chosenBecauseOfPressure === true,
