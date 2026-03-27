@@ -17465,7 +17465,8 @@ function doesPlannedMoveMatchDynamiteExpectedRoute(plannedMove, expectedRoute){
 
 function setAiDynamiteIntentFromCandidate(targetGeometry, usageReason, plannedMove, expectedRoute = null, intentType = null){
   if(!targetGeometry) return null;
-  const expiresTurn = (Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : 0) + 1;
+  const currentTurnNumber = Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : 0;
+  const expiresTurn = currentTurnNumber + 1;
   aiRoundState.dynamiteIntent = {
     colliderId: targetGeometry?.collider?.id ?? null,
     spriteId: targetGeometry?.id ?? null,
@@ -17473,6 +17474,9 @@ function setAiDynamiteIntentFromCandidate(targetGeometry, usageReason, plannedMo
     y: targetGeometry?.cy ?? null,
     expectedRoute: expectedRoute || null,
     intentType: intentType || (expectedRoute ? "current_route" : "strategic_setup"),
+    planeId: plannedMove?.plane?.id ?? null,
+    turnNumber: currentTurnNumber,
+    goalName: plannedMove?.goalName || aiRoundState?.currentGoal || null,
     expiresTurn,
   };
   logAiDecision("dynamite_intent_set", {
@@ -17486,6 +17490,8 @@ function setAiDynamiteIntentFromCandidate(targetGeometry, usageReason, plannedMo
     expectedRoute: expectedRoute || null,
     intentType: aiRoundState?.dynamiteIntent?.intentType || null,
     planeId: plannedMove?.plane?.id ?? null,
+    intentTurnNumber: aiRoundState?.dynamiteIntent?.turnNumber ?? null,
+    goalName: aiRoundState?.dynamiteIntent?.goalName || null,
   });
   return aiRoundState.dynamiteIntent;
 }
@@ -17494,13 +17500,56 @@ function validateAiDynamiteIntentAgainstMove(plannedMove, options = {}){
   const intent = aiRoundState?.dynamiteIntent;
   if(!intent || !plannedMove?.plane) return { valid: true, reason: "no_intent" };
 
+  const currentTurn = Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null;
+  const intentTurn = Number.isFinite(intent?.turnNumber) ? intent.turnNumber : null;
+  const allowedTurnWindow = Number.isFinite(options?.allowedTurnWindow)
+    ? Math.max(0, Math.trunc(options.allowedTurnWindow))
+    : 0;
+
+  if(intent?.planeId != null && plannedMove?.plane?.id !== intent.planeId){
+    return {
+      valid: false,
+      reason: "intent_plane_mismatch",
+      details: { expectedPlaneId: intent.planeId, actualPlaneId: plannedMove?.plane?.id ?? null },
+    };
+  }
+
+  if(intentTurn != null && currentTurn != null){
+    if(currentTurn < intentTurn){
+      return {
+        valid: false,
+        reason: "intent_turn_mismatch",
+        details: { intentTurn, currentTurn, allowedTurnWindow },
+      };
+    }
+    if(currentTurn > intentTurn + allowedTurnWindow){
+      return {
+        valid: false,
+        reason: "intent_turn_window_elapsed",
+        details: { intentTurn, currentTurn, allowedTurnWindow },
+      };
+    }
+  }
+
   const usageCheck = getAiDynamiteIntentScoreAdjustment(1, plannedMove, { plane: plannedMove?.plane });
   if(intent?.intentType === "current_route" && !usageCheck.usedIntent){
-    return { valid: false, reason: "intent_lane_mismatch", usageCheck };
+    return {
+      valid: false,
+      reason: "intent_current_route_mismatch",
+      details: { mismatchKind: "lane" },
+      usageCheck,
+    };
   }
 
   if(intent?.expectedRoute && !doesPlannedMoveMatchDynamiteExpectedRoute(plannedMove, intent.expectedRoute)){
-    return { valid: false, reason: "expected_route_mismatch", usageCheck };
+    return {
+      valid: false,
+      reason: intent?.intentType === "current_route"
+        ? "intent_current_route_mismatch"
+        : "expected_route_mismatch",
+      details: { mismatchKind: "expected_route" },
+      usageCheck,
+    };
   }
 
   return { valid: true, reason: "ok", usageCheck };
@@ -17541,10 +17590,14 @@ function getAiDynamiteIntentScoreAdjustment(score, move, context = {}){
   };
 }
 
-function consumeAiDynamiteIntentIfUsed(plannedMove){
+function consumeAiDynamiteIntentIfUsed(plannedMove, options = {}){
   const intent = aiRoundState?.dynamiteIntent;
   if(!intent) return false;
-  const validation = validateAiDynamiteIntentAgainstMove(plannedMove);
+  if(options?.dynamiteAppliedInCycle !== true) return false;
+  const validation = validateAiDynamiteIntentAgainstMove(plannedMove, {
+    stage: options?.stage || "consume",
+    allowedTurnWindow: Number.isFinite(options?.allowedTurnWindow) ? options.allowedTurnWindow : 0,
+  });
   if(!validation.valid) return false;
   logAiDecision("dynamite_intent_used", {
     planeId: plannedMove?.plane?.id ?? null,
@@ -24745,45 +24798,57 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     });
   }
 
-  let effectiveItemUsed = itemUsed;
-  if(itemUsed && consumedItemTypes.includes(INVENTORY_ITEM_TYPES.DYNAMITE) && aiRoundState?.dynamiteIntent){
-    const intentValidation = validateAiDynamiteIntentAgainstMove(plannedMove, { stage: "inventory_decision" });
-    if(!intentValidation.valid){
-      const intent = aiRoundState?.dynamiteIntent;
-      let removedDynamitePlacement = false;
-      if(Array.isArray(dynamiteState) && dynamiteState.length > dynamiteStateCountBeforeUsage){
-        for(let i = dynamiteState.length - 1; i >= dynamiteStateCountBeforeUsage; i -= 1){
-          const entry = dynamiteState[i];
-          const sameSprite = intent?.spriteId && entry?.spriteId === intent.spriteId;
-          const sameCollider = intent?.colliderId && entry?.spriteRef?.collider?.id === intent.colliderId;
-          const samePoint = Number.isFinite(intent?.x) && Number.isFinite(intent?.y)
-            && Math.hypot((entry?.x ?? Infinity) - intent.x, (entry?.y ?? Infinity) - intent.y) <= 0.6;
-          if(entry?.owner === "blue" && (sameSprite || sameCollider || samePoint || i === dynamiteState.length - 1)){
-            dynamiteState.splice(i, 1);
-            removedDynamitePlacement = true;
-            break;
-          }
+  function rollbackAiDynamiteDesync(validation, stageLabel){
+    const intent = aiRoundState?.dynamiteIntent;
+    if(!intent) return false;
+    let removedDynamitePlacement = false;
+    if(Array.isArray(dynamiteState) && dynamiteState.length > dynamiteStateCountBeforeUsage){
+      for(let i = dynamiteState.length - 1; i >= dynamiteStateCountBeforeUsage; i -= 1){
+        const entry = dynamiteState[i];
+        const sameSprite = intent?.spriteId && entry?.spriteId === intent.spriteId;
+        const sameCollider = intent?.colliderId && entry?.spriteRef?.collider?.id === intent.colliderId;
+        const samePoint = Number.isFinite(intent?.x) && Number.isFinite(intent?.y)
+          && Math.hypot((entry?.x ?? Infinity) - intent.x, (entry?.y ?? Infinity) - intent.y) <= 0.6;
+        if(entry?.owner === "blue" && (sameSprite || sameCollider || samePoint || i === dynamiteState.length - 1)){
+          dynamiteState.splice(i, 1);
+          removedDynamitePlacement = true;
+          break;
         }
       }
+    }
 
-      const dynamiteInventoryItem = INVENTORY_ITEMS.find((item) => item?.type === INVENTORY_ITEM_TYPES.DYNAMITE) ?? null;
-      if(dynamiteInventoryItem){
-        addItemToInventory("blue", dynamiteInventoryItem);
-      }
+    const dynamiteInventoryItem = INVENTORY_ITEMS.find((item) => item?.type === INVENTORY_ITEM_TYPES.DYNAMITE) ?? null;
+    if(dynamiteInventoryItem){
+      addItemToInventory("blue", dynamiteInventoryItem);
+    }
 
-      logAiDecision("dynamite_plan_desync_prevented", {
-        stage: "inventory_decision",
-        planeId: plannedMove?.plane?.id ?? null,
-        colliderId: intent?.colliderId ?? null,
-        targetX: Number.isFinite(intent?.x) ? Number(intent.x.toFixed(1)) : null,
-        targetY: Number.isFinite(intent?.y) ? Number(intent.y.toFixed(1)) : null,
-        turn: aiRoundState?.turnNumber ?? null,
-        removedDynamitePlacement,
-        validationReason: intentValidation.reason,
-        expectedRoute: intent?.expectedRoute || null,
-        actualRoute: buildAiDynamiteExpectedRouteSnapshot(plannedMove),
-      });
-      clearAiDynamiteIntent("plan_desync_prevented");
+    logAiDecision("dynamite_plan_desync_prevented", {
+      stage: stageLabel || "inventory_decision",
+      planeId: plannedMove?.plane?.id ?? null,
+      colliderId: intent?.colliderId ?? null,
+      targetX: Number.isFinite(intent?.x) ? Number(intent.x.toFixed(1)) : null,
+      targetY: Number.isFinite(intent?.y) ? Number(intent.y.toFixed(1)) : null,
+      turn: aiRoundState?.turnNumber ?? null,
+      removedDynamitePlacement,
+      validationReason: validation?.reason || "intent_validation_failed",
+      validationDetails: validation?.details || null,
+      expectedRoute: intent?.expectedRoute || null,
+      actualRoute: buildAiDynamiteExpectedRouteSnapshot(plannedMove),
+      intentTurnNumber: intent?.turnNumber ?? null,
+      intentGoalName: intent?.goalName || null,
+    });
+    clearAiDynamiteIntent("plan_desync_prevented");
+    return true;
+  }
+
+  let effectiveItemUsed = itemUsed;
+  if(itemUsed && consumedItemTypes.includes(INVENTORY_ITEM_TYPES.DYNAMITE) && aiRoundState?.dynamiteIntent){
+    const intentValidation = validateAiDynamiteIntentAgainstMove(plannedMove, {
+      stage: "inventory_decision",
+      allowedTurnWindow: 0,
+    });
+    if(!intentValidation.valid){
+      rollbackAiDynamiteDesync(intentValidation, "inventory_decision");
       effectiveItemUsed = false;
     }
   }
@@ -24803,23 +24868,15 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     }
   }
 
-  function ensureDynamiteIntentStillMatchesPlannedMove(stageLabel){
-    if(!(effectiveItemUsed && consumedItemType === INVENTORY_ITEM_TYPES.DYNAMITE && aiRoundState?.dynamiteIntent)) return true;
-    const validation = validateAiDynamiteIntentAgainstMove(plannedMove, { stage: stageLabel });
-    if(validation.valid) return true;
-    logAiDecision("dynamite_plan_desync_prevented", {
-      stage: stageLabel || "post_inventory_recheck",
-      planeId: plannedMove?.plane?.id ?? null,
-      colliderId: aiRoundState?.dynamiteIntent?.colliderId ?? null,
-      targetX: Number.isFinite(aiRoundState?.dynamiteIntent?.x) ? Number(aiRoundState.dynamiteIntent.x.toFixed(1)) : null,
-      targetY: Number.isFinite(aiRoundState?.dynamiteIntent?.y) ? Number(aiRoundState.dynamiteIntent.y.toFixed(1)) : null,
-      validationReason: validation.reason,
-      expectedRoute: aiRoundState?.dynamiteIntent?.expectedRoute || null,
-      actualRoute: buildAiDynamiteExpectedRouteSnapshot(plannedMove),
-      turn: aiRoundState?.turnNumber ?? null,
-      removedDynamitePlacement: false,
+  function ensureDynamiteIntentStillMatchesPlannedMove(stageLabel, options = {}){
+    if(!(effectiveItemUsed && consumedItemTypes.includes(INVENTORY_ITEM_TYPES.DYNAMITE) && aiRoundState?.dynamiteIntent)) return true;
+    const validation = validateAiDynamiteIntentAgainstMove(plannedMove, {
+      stage: stageLabel,
+      allowedTurnWindow: Number.isFinite(options?.allowedTurnWindow) ? options.allowedTurnWindow : 0,
     });
-    clearAiDynamiteIntent("post_inventory_route_changed");
+    if(validation.valid) return true;
+    rollbackAiDynamiteDesync(validation, stageLabel || "post_inventory_recheck");
+    effectiveItemUsed = false;
     return false;
   }
 
@@ -25145,10 +25202,14 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     }
   }
 
-  ensureDynamiteIntentStillMatchesPlannedMove("before_register_inventory_usage");
-  registerAiInventoryUsageAfterMove(effectiveItemUsed);
-
-  consumeAiDynamiteIntentIfUsed(plannedMove);
+  function registerFinalInventoryUsage(finalEffectiveItemUsed){
+    registerAiInventoryUsageAfterMove(finalEffectiveItemUsed);
+    consumeAiDynamiteIntentIfUsed(plannedMove, {
+      stage: "finalize_inventory_usage",
+      dynamiteAppliedInCycle: finalEffectiveItemUsed && consumedItemTypes.includes(INVENTORY_ITEM_TYPES.DYNAMITE),
+      allowedTurnWindow: 0,
+    });
+  }
 
   if(effectiveItemUsed === true){
     if(aiPostInventoryLaunchTimeout){
@@ -25163,11 +25224,23 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     });
     aiPostInventoryLaunchTimeout = setTimeout(() => {
       aiPostInventoryLaunchTimeout = null;
+      const intentStillValid = ensureDynamiteIntentStillMatchesPlannedMove("before_post_inventory_timeout_launch", {
+        allowedTurnWindow: 0,
+      });
+      if(!intentStillValid){
+        logAiDecision("dynamite_post_inventory_launch_blocked", {
+          planeId: plannedMove?.plane?.id ?? null,
+          goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+          reason: "intent_desync_before_timeout_launch",
+        });
+      }
+      registerFinalInventoryUsage(effectiveItemUsed);
       issueMoveAfterFinalMineGate("post_inventory_delay_launch");
     }, AI_POST_INVENTORY_LAUNCH_DELAY_MS);
     return;
   }
 
+  registerFinalInventoryUsage(effectiveItemUsed);
   issueMoveAfterFinalMineGate("immediate_launch");
 }
 
