@@ -22380,11 +22380,33 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   const strategicGoal = plannedMove?.goalName || aiRoundState?.currentGoal || "";
   const normalizedStrategicGoal = `${strategicGoal || ""}`.toLowerCase();
   const allowStrategicInventoryPreparation = shouldProbeInventoryPreparedShotPlan(normalizedStrategicGoal);
+  const tacticalSurplusPolicy = options?.tacticalSurplusPolicy && typeof options.tacticalSurplusPolicy === "object"
+    ? options.tacticalSurplusPolicy
+    : null;
+  const forcedTacticalItemType = (
+    tacticalSurplusPolicy?.forcedItemType === INVENTORY_ITEM_TYPES.MINE
+    || tacticalSurplusPolicy?.forcedItemType === INVENTORY_ITEM_TYPES.DYNAMITE
+  )
+    ? tacticalSurplusPolicy.forcedItemType
+    : null;
+  const hasForcedTacticalSpend = Boolean(forcedTacticalItemType);
+  const allowNonForcedInventoryDuringTacticalSpend = options?.allowNonForcedInventoryDuringTacticalSpend === true;
 
   aiRoundState.lastInventorySoftFallbackUsed = false;
 
   const inventory = evaluateBlueInventoryState();
   if(inventory.total <= 0) return false;
+  if(hasForcedTacticalSpend && Number(inventory.counts?.[forcedTacticalItemType] ?? 0) <= 0){
+    logAiDecision("tactical_surplus_spend_blocked", {
+      planeId: plannedMove?.plane?.id ?? null,
+      goal: strategicGoal || null,
+      itemType: forcedTacticalItemType,
+      reason: "item_not_available",
+      forcedByPolicy: true,
+      availableCount: Number(inventory.counts?.[forcedTacticalItemType] ?? 0),
+    });
+    return false;
+  }
 
   const selectedInventoryCandidate = plannedMove?.selectedInventoryCandidate || null;
 
@@ -23087,7 +23109,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   }
 
 
-  if(inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0){
+  if((!hasForcedTacticalSpend || allowNonForcedInventoryDuringTacticalSpend) && inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0){
     const enemyFlag = context?.shouldUseFlagsMode ? getAvailableFlagsByColor("green")[0] : null;
     const enemyFlagAnchor = enemyFlag ? getFlagAnchor(enemyFlag) : null;
     const baseTacticalPlans = evaluateFuelTacticalPlans(context, plannedMove, { useFuel: false });
@@ -23206,7 +23228,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     }
   }
 
-  if(allowBuffItems && inventory.counts[INVENTORY_ITEM_TYPES.CROSSHAIR] > 0){
+  if((!hasForcedTacticalSpend || allowNonForcedInventoryDuringTacticalSpend) && allowBuffItems && inventory.counts[INVENTORY_ITEM_TYPES.CROSSHAIR] > 0){
     const bestCrosshairScenario = evaluateCrosshairBestUse(context, plannedMove);
     const CROSSHAIR_MIN_NOTICEABLE_VALUE = 0.74;
     const CROSSHAIR_SOFT_FALLBACK_MIN_VALUE = 0.58;
@@ -23278,6 +23300,21 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   }
 
   if(allowTacticalItems && inventory.counts[INVENTORY_ITEM_TYPES.MINE] > 0){
+    const forcedMineSpend = forcedTacticalItemType === INVENTORY_ITEM_TYPES.MINE;
+    if(forcedMineSpend){
+      logAiDecision("tactical_surplus_spend_attempt", {
+        planeId: plannedMove?.plane?.id ?? null,
+        goal: strategicGoal || null,
+        itemType: INVENTORY_ITEM_TYPES.MINE,
+        availableCount: Number(inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0),
+        forcedByPolicy: true,
+      });
+    } else if(hasForcedTacticalSpend && !allowNonForcedInventoryDuringTacticalSpend){
+      // В текущем вызове policy-принуждение относится к другому тактическому предмету.
+    }
+    if(hasForcedTacticalSpend && forcedTacticalItemType !== INVENTORY_ITEM_TYPES.MINE && !allowNonForcedInventoryDuringTacticalSpend){
+      // Явно пропускаем мины, если policy сейчас требует динамит.
+    } else {
     const directAttackWindow = evaluateDirectAttackWindow(priorityEnemy);
     const strongAttackWindow = Boolean(directAttackWindow) && directAttackWindow.total >= 0.55;
     const profitableTradeWindow = isPlannedMoveLikelyProfitableTrade(priorityEnemy);
@@ -23397,6 +23434,15 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
               : null,
           });
         }
+        if(forcedMineSpend){
+          logAiDecision("tactical_surplus_spend_success", {
+            planeId: plannedMove?.plane?.id ?? null,
+            goal: strategicGoal || null,
+            itemType: INVENTORY_ITEM_TYPES.MINE,
+            reason: mineRequiredForFlagPickup ? "mine_enables_flag_pickup" : "mine_enables_safe_finisher",
+            forcedByPolicy: true,
+          });
+        }
         return true;
       }
     }
@@ -23483,6 +23529,15 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         });
       }
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
+      if(forcedMineSpend){
+        logAiDecision("tactical_surplus_spend_success", {
+          planeId: plannedMove?.plane?.id ?? null,
+          goal: strategicGoal || null,
+          itemType: INVENTORY_ITEM_TYPES.MINE,
+          reason: mineUseReason || "mine_placed_for_cover",
+          forcedByPolicy: true,
+        });
+      }
       return true;
     }
 
@@ -23539,9 +23594,41 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         defensivePriorityOverride: isCriticalGoalForDefensiveMine,
       });
     }
+    if(forcedMineSpend){
+      const forcedMineBlockReason = mineRejectedBySelfRisk
+        ? "critical_self_risk"
+        : (mineFailsToImproveCriticalEscape
+            ? "critical_goal_escape_not_improved"
+            : (!preferredMinePlan
+                ? "no_valid_placement_plan"
+                : "below_impact_threshold"));
+      logAiDecision("tactical_surplus_spend_blocked", {
+        planeId: plannedMove?.plane?.id ?? null,
+        goal: strategicGoal || null,
+        itemType: INVENTORY_ITEM_TYPES.MINE,
+        reason: forcedMineBlockReason,
+        forcedByPolicy: true,
+        safeAfterPlacement,
+        safetyImprovesAfterPlacement,
+      });
+    }
+    }
   }
 
   if(allowTacticalItems && inventory.counts[INVENTORY_ITEM_TYPES.DYNAMITE] > 0){
+    const forcedDynamiteSpend = forcedTacticalItemType === INVENTORY_ITEM_TYPES.DYNAMITE;
+    if(hasForcedTacticalSpend && forcedTacticalItemType !== INVENTORY_ITEM_TYPES.DYNAMITE && !allowNonForcedInventoryDuringTacticalSpend){
+      // Явно пропускаем динамит, если policy сейчас требует мины.
+    } else {
+    if(forcedDynamiteSpend){
+      logAiDecision("tactical_surplus_spend_attempt", {
+        planeId: plannedMove?.plane?.id ?? null,
+        goal: strategicGoal || null,
+        itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
+        availableCount: Number(inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0),
+        forcedByPolicy: true,
+      });
+    }
     const routeAwareTarget = getDynamiteCandidateForCurrentRoute(context, plannedMove);
     const strategicMoveGate = shouldUseStrategicDynamiteForPlannedMove(plannedMove, context);
     const strategicDynamite = (routeAwareTarget || !strategicMoveGate.allowStrategicSetup) ? null : evaluateStrategicDynamiteTargets(context, plannedMove);
@@ -23557,6 +23644,15 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
       plannedMove.inventoryUsageReason = "dynamite_route_opening";
       setAiDynamiteIntentFromCandidate(routeAwareTarget, "dynamite_route_opening", plannedMove, routeAwareExpectedRoute, "current_route");
+      if(forcedDynamiteSpend){
+        logAiDecision("tactical_surplus_spend_success", {
+          planeId: plannedMove?.plane?.id ?? null,
+          goal: strategicGoal || null,
+          itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
+          reason: "dynamite_route_opening",
+          forcedByPolicy: true,
+        });
+      }
       return true;
     }
 
@@ -23601,6 +23697,15 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
           targetX: strategicTarget.cx,
           targetY: strategicTarget.cy,
         });
+        if(forcedDynamiteSpend){
+          logAiDecision("tactical_surplus_spend_success", {
+            planeId: plannedMove?.plane?.id ?? null,
+            goal: strategicGoal || null,
+            itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
+            reason: strategicReason,
+            forcedByPolicy: true,
+          });
+        }
         return true;
       }
       logAiDecision("dynamite_not_used_no_benefit", {
@@ -23615,9 +23720,22 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         reason: routeAwareTarget ? "route_target_failed_to_place" : (!strategicMoveGate.allowStrategicSetup ? "current_move_already_good_enough" : "no_useful_target_anywhere"),
       });
     }
+    if(forcedDynamiteSpend){
+      const forcedDynamiteBlockReason = routeAwareTarget
+        ? "route_target_failed_or_no_noticeable_gain"
+        : (!strategicMoveGate.allowStrategicSetup ? "current_move_already_good_enough" : "no_valid_dynamite_target");
+      logAiDecision("tactical_surplus_spend_blocked", {
+        planeId: plannedMove?.plane?.id ?? null,
+        goal: strategicGoal || null,
+        itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
+        reason: forcedDynamiteBlockReason,
+        forcedByPolicy: true,
+      });
+    }
+    }
   }
 
-  if(allowInvisibility && inventory.counts[INVENTORY_ITEM_TYPES.INVISIBILITY] > 0){
+  if((!hasForcedTacticalSpend || allowNonForcedInventoryDuringTacticalSpend) && allowInvisibility && inventory.counts[INVENTORY_ITEM_TYPES.INVISIBILITY] > 0){
     const enemyAimingAccuracyPercentRaw = Number(settings?.aimingAmplitude);
     const enemyAimingAccuracyPercent = Number.isFinite(enemyAimingAccuracyPercentRaw)
       ? Math.max(0, Math.min(100, enemyAimingAccuracyPercentRaw))
@@ -23650,7 +23768,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     }
   }
 
-  if(allowBuffItems && softFallbackReady){
+  if((!hasForcedTacticalSpend || allowNonForcedInventoryDuringTacticalSpend) && allowBuffItems && softFallbackReady){
     if(inventory.counts[INVENTORY_ITEM_TYPES.CROSSHAIR] > 0
       && tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
@@ -23727,7 +23845,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     }
   }
 
-  if(inventory.counts[INVENTORY_ITEM_TYPES.WINGS] > 0 && landingPoint){
+  if((!hasForcedTacticalSpend || allowNonForcedInventoryDuringTacticalSpend) && inventory.counts[INVENTORY_ITEM_TYPES.WINGS] > 0 && landingPoint){
     const contactTargets = [enemyBase];
     if(context?.shouldUseFlagsMode){
       for(const flag of context.availableEnemyFlags || []){
@@ -24435,12 +24553,40 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   let tacticalInventoryActionsApplied = 0;
   let inventoryStopReason = "inventory_no_action";
   const usedSingleUseBuffTypesThisTurn = new Set();
+  const tacticalSurplusInitialCounts = {
+    [INVENTORY_ITEM_TYPES.MINE]: Number(beforeInventoryState?.counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0),
+    [INVENTORY_ITEM_TYPES.DYNAMITE]: Number(beforeInventoryState?.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0),
+  };
+  const tacticalSurplusPendingOrder = [
+    INVENTORY_ITEM_TYPES.MINE,
+    INVENTORY_ITEM_TYPES.DYNAMITE,
+  ].filter((itemType) => tacticalSurplusInitialCounts[itemType] > 1);
+  const tacticalSurplusAttemptedTypes = new Set();
+  const tacticalSurplusSucceededTypes = new Set();
 
   for(let inventoryActionStep = 0; inventoryActionStep < AI_INVENTORY_ACTION_LIMIT_PER_TURN; inventoryActionStep += 1){
     const actionBeforeState = afterInventoryState;
-    const actionUsed = maybeUseInventoryBeforeLaunch(context, plannedMove, {
-      usedBuffTypesThisTurn: usedSingleUseBuffTypesThisTurn,
-    });
+    const forcedTacticalSurplusType = tacticalInventoryActionsApplied < AI_INVENTORY_TACTICAL_REPEAT_LIMIT_PER_TURN
+      ? tacticalSurplusPendingOrder.find((itemType) => !tacticalSurplusAttemptedTypes.has(itemType)) || null
+      : null;
+    let actionUsed = false;
+    if(forcedTacticalSurplusType){
+      tacticalSurplusAttemptedTypes.add(forcedTacticalSurplusType);
+      actionUsed = maybeUseInventoryBeforeLaunch(context, plannedMove, {
+        usedBuffTypesThisTurn: usedSingleUseBuffTypesThisTurn,
+        tacticalSurplusPolicy: {
+          forcedItemType: forcedTacticalSurplusType,
+        },
+      });
+      if(actionUsed){
+        tacticalSurplusSucceededTypes.add(forcedTacticalSurplusType);
+      }
+    }
+    if(!actionUsed){
+      actionUsed = maybeUseInventoryBeforeLaunch(context, plannedMove, {
+        usedBuffTypesThisTurn: usedSingleUseBuffTypesThisTurn,
+      });
+    }
     if(!actionUsed){
       inventoryStopReason = totalInventoryActionsApplied > 0
         ? "inventory_use_stopped_by_selector"
@@ -24518,6 +24664,11 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     appliedTacticalItemsCount: tacticalInventoryActionsApplied,
     appliedItemTypesInOrder: consumedItemTypes.slice(),
     stopReason: inventoryStopReason,
+    tacticalSurplusPolicy: {
+      requiredTypes: tacticalSurplusPendingOrder.slice(),
+      attemptedTypes: Array.from(tacticalSurplusAttemptedTypes),
+      succeededTypes: Array.from(tacticalSurplusSucceededTypes),
+    },
     limits: {
       total: AI_INVENTORY_ACTION_LIMIT_PER_TURN,
       buff: AI_INVENTORY_BUFF_CHAIN_LIMIT_PER_TURN,
