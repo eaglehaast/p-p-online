@@ -16827,7 +16827,46 @@ function createInitialAiRoundState(){
       limit: 2,
     },
     finalMineGateCancelledTacticalItemCount: 0,
+    allowedMoveRisk: 0.7,
+    lastPrimaryTurnstileBlocker: null,
     inventoryPhase: AI_ENGINE_MODE === "v2" ? AI_V2_INVENTORY_PHASE : 3,
+  };
+}
+
+function clampAiAllowedMoveRisk(rawRisk){
+  if(!Number.isFinite(rawRisk)) return 0.7;
+  return Math.max(0.2, Math.min(0.95, rawRisk));
+}
+
+function getAiAllowedMoveRisk(context = null, options = {}){
+  const explicitRisk = Number(options?.allowedMoveRisk);
+  if(Number.isFinite(explicitRisk)){
+    return clampAiAllowedMoveRisk(explicitRisk);
+  }
+
+  const contextRisk = Number(context?.allowedMoveRisk);
+  if(Number.isFinite(contextRisk)){
+    return clampAiAllowedMoveRisk(contextRisk);
+  }
+
+  const stateRisk = Number(aiRoundState?.allowedMoveRisk);
+  if(Number.isFinite(stateRisk)){
+    return clampAiAllowedMoveRisk(stateRisk);
+  }
+
+  return 0.7;
+}
+
+function recordAiPrimaryTurnstileBlocker(reasonCode, details = {}){
+  if(!reasonCode || !aiRoundState || typeof aiRoundState !== "object") return;
+  aiRoundState.lastPrimaryTurnstileBlocker = {
+    reasonCode,
+    goalName: details?.goalName || aiRoundState?.currentGoal || null,
+    planeId: details?.planeId ?? null,
+    stage: details?.stage || null,
+    source: details?.source || null,
+    turnNumber: Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null,
+    details: details && typeof details === "object" ? details : {},
   };
 }
 
@@ -25106,6 +25145,7 @@ function getFailSafeMinimalTargetedMove(modeContext){
   const aliveEnemies = Array.isArray(fallbackContext.enemies)
     ? fallbackContext.enemies.filter((enemy) => enemy?.isAlive && !enemy?.burning)
     : [];
+  const allowedMoveRisk = getAiAllowedMoveRisk(fallbackContext);
   const vulnerableEnemies = aliveEnemies.filter((enemy) => enemy?.shieldActive !== true);
   let safestDirectCandidate = null;
 
@@ -25139,7 +25179,7 @@ function getFailSafeMinimalTargetedMove(modeContext){
       if(!landing) continue;
 
       const threatMeta = getImmediateResponseThreatMeta(fallbackContext, landing.x, landing.y, enemy);
-      if(threatMeta.count > 0) continue;
+      if(getFallbackCandidateResponseRisk(threatMeta) > allowedMoveRisk) continue;
 
       const progressMeta = getAiNoticeableProgressMeta(plane.x, plane.y, landing.x, landing.y, enemy.x, enemy.y, {
         thresholdScale: 0.2,
@@ -25191,7 +25231,7 @@ function getFailSafeMinimalTargetedMove(modeContext){
       if(!landing) continue;
 
       const threatMeta = getImmediateResponseThreatMeta(fallbackContext, landing.x, landing.y, enemy);
-      if(threatMeta.count > 0) continue;
+      if(getFallbackCandidateResponseRisk(threatMeta) > allowedMoveRisk) continue;
 
       const progressMeta = getAiNoticeableProgressMeta(plane.x, plane.y, landing.x, landing.y, enemy.x, enemy.y, {
         thresholdScale: 0.18,
@@ -25507,6 +25547,7 @@ function resolveFinalAiLaunchMoveWithMineGate(plannedMove, context = {}, options
   const stage = options?.stage || "final_validation_and_launch";
   const goal = plannedMove?.goalName || aiRoundState?.currentGoal || null;
   const gateResult = getFinalAiLaunchMineThreatCheck(plannedMove);
+  const allowedMoveRisk = getAiAllowedMoveRisk(context, options);
   const tacticalItemType = options?.tacticalItemType || null;
   const tacticalItemAlreadyUsed = options?.tacticalItemAlreadyUsed === true;
 
@@ -25516,6 +25557,38 @@ function resolveFinalAiLaunchMoveWithMineGate(plannedMove, context = {}, options
         y: Number(point.y.toFixed(1)),
       }
     : null;
+
+  function estimateMineGateRiskScore(result){
+    if(!result || result.ok) return 0;
+    const threatMeta = result?.threatMeta || null;
+    const triggerRadius = Number.isFinite(threatMeta?.triggerRadius) ? Math.max(1, threatMeta.triggerRadius) : Math.max(1, CELL_SIZE);
+    const nearestDist = Number.isFinite(threatMeta?.nearestDist) ? Math.max(0, threatMeta.nearestDist) : 0;
+    const proximityRisk = Math.max(0, 1 - (nearestDist / triggerRadius));
+    const pathHitRisk = threatMeta?.pathHit ? 0.38 : 0;
+    const landingRisk = threatMeta?.landingThreat ? 0.45 : 0;
+    const densityRisk = Math.min(0.35, Number(threatMeta?.count || 0) * 0.16);
+    return Number(Math.min(1, proximityRisk * 0.3 + pathHitRisk + landingRisk + densityRisk).toFixed(4));
+  }
+
+  function getProgressToStrategicTargetMeta(){
+    const target = plannedMove?.preservedStrategicTargetPoint
+      || getAiStrategicTargetPoint(context, plannedMove)
+      || null;
+    const startPoint = gateResult?.startPoint || (plannedMove?.plane ? { x: plannedMove.plane.x, y: plannedMove.plane.y } : null);
+    const landingPoint = gateResult?.landingPoint || getAiMoveLandingPoint(plannedMove);
+    if(!target || !startPoint || !landingPoint) return { hasProgress: false, progressDelta: null };
+    if(!Number.isFinite(target?.x) || !Number.isFinite(target?.y)) return { hasProgress: false, progressDelta: null };
+    const startDist = Math.hypot(target.x - startPoint.x, target.y - startPoint.y);
+    const landingDist = Math.hypot(target.x - landingPoint.x, target.y - landingPoint.y);
+    if(!Number.isFinite(startDist) || !Number.isFinite(landingDist)) return { hasProgress: false, progressDelta: null };
+    const progressDelta = startDist - landingDist;
+    return {
+      hasProgress: progressDelta > Math.max(CELL_SIZE * 0.22, 4),
+      progressDelta: Number(progressDelta.toFixed(2)),
+      startDist: Number(startDist.toFixed(2)),
+      landingDist: Number(landingDist.toFixed(2)),
+    };
+  }
 
   if(gateResult.ok){
     logAiDecision("ai_final_mine_gate_passed", {
@@ -25544,6 +25617,53 @@ function resolveFinalAiLaunchMoveWithMineGate(plannedMove, context = {}, options
     ) + 1;
   }
   const deadlockBudgetMeta = consumeFinalMineGateDeadlockBudgetIfNeeded(gateResult);
+  const mineGateRiskScore = estimateMineGateRiskScore(gateResult);
+  const progressToGoalMeta = getProgressToStrategicTargetMeta();
+  const clearlyLethalCrossing = Boolean(
+    gateResult?.threatClass === "critical_forbidden"
+    && (gateResult?.threatMeta?.enemy?.landingThreat || gateResult?.threatMeta?.landingThreat)
+    && gateResult?.threatMeta?.pathHit
+  );
+  const canSoftPassModerateRisk = !clearlyLethalCrossing
+    && gateResult?.threatClass === "critical_forbidden"
+    && mineGateRiskScore <= allowedMoveRisk
+    && progressToGoalMeta.hasProgress === true;
+
+  if(canSoftPassModerateRisk){
+    const elevatedGateResult = {
+      ...gateResult,
+      reasonCode: "final_mine_check_soft_pass_moderate_risk",
+      message: "Final mine gate allowed moderate risk due to meaningful progress",
+      threatClass: "moderate_risk_soft_pass",
+      softPassMeta: {
+        mineGateRiskScore,
+        allowedMoveRisk: Number(allowedMoveRisk.toFixed(4)),
+        progressToGoalMeta,
+      },
+    };
+    logAiDecision("ai_final_mine_gate_soft_pass", {
+      stage,
+      planeId: plannedMove?.plane?.id ?? null,
+      goal,
+      reasonCode: elevatedGateResult.reasonCode,
+      threatClass: elevatedGateResult.threatClass,
+      mineGateRiskScore,
+      allowedMoveRisk: Number(allowedMoveRisk.toFixed(4)),
+      progressToGoalMeta,
+      tacticalItemType,
+      tacticalItemAlreadyUsed,
+      startPoint: buildPoint(elevatedGateResult.startPoint),
+      landingPoint: buildPoint(elevatedGateResult.landingPoint),
+    });
+    return {
+      ok: true,
+      move: plannedMove,
+      reasonCode: elevatedGateResult.reasonCode,
+      gateResult: elevatedGateResult,
+      fallbackUsed: false,
+      elevatedRisk: true,
+    };
+  }
 
   logAiDecision("ai_final_mine_gate_blocked", {
     stage,
@@ -25577,6 +25697,18 @@ function resolveFinalAiLaunchMoveWithMineGate(plannedMove, context = {}, options
       : null,
     startPoint: buildPoint(gateResult.startPoint),
     landingPoint: buildPoint(gateResult.landingPoint),
+    mineGateRiskScore,
+    allowedMoveRisk: Number(allowedMoveRisk.toFixed(4)),
+    progressToGoalMeta,
+  });
+  recordAiPrimaryTurnstileBlocker(gateResult.reasonCode || "final_mine_check_rejected_stale_route", {
+    source: "resolveFinalAiLaunchMoveWithMineGate",
+    stage,
+    planeId: plannedMove?.plane?.id ?? null,
+    goalName: goal,
+    mineGateRiskScore,
+    allowedMoveRisk: Number(allowedMoveRisk.toFixed(4)),
+    progressToGoalMeta,
   });
 
   if(!deadlockBudgetMeta.exhausted){
@@ -29889,7 +30021,7 @@ function findPreFallbackAttackMove(context){
   const landing = getAiMoveLandingPoint(localAttackMove);
   if(!landing) return null;
   const threatMeta = getImmediateResponseThreatMeta(context, landing.x, landing.y, localAttackMove.enemy || nearestEnemy);
-  if(threatMeta.count > 0) return null;
+  if(getFallbackCandidateResponseRisk(threatMeta) > getAiAllowedMoveRisk(context)) return null;
 
   return localAttackMove;
 }
@@ -30074,10 +30206,11 @@ function getPreFlagStagingPointsNearEnemyBase(enemyBase, planeRangePx){
   });
 }
 
-function getPressureRouteMeta(context, landingPoint, flagAnchor, coverMeta, interceptionRisk){
+function getPressureRouteMeta(context, landingPoint, flagAnchor, coverMeta, interceptionRisk, options = {}){
   const safeLanding = landingPoint && Number.isFinite(landingPoint?.x) && Number.isFinite(landingPoint?.y)
     ? landingPoint
     : null;
+  const allowedMoveRisk = getAiAllowedMoveRisk(context, options);
   if(!context || !safeLanding || !flagAnchor) {
     return {
       bonus: 0,
@@ -30088,10 +30221,11 @@ function getPressureRouteMeta(context, landingPoint, flagAnchor, coverMeta, inte
       flagProximityFactor: 0,
       responseDeniedFactor: 0,
       scoreHint: 0,
+      allowedMoveRisk: Number(allowedMoveRisk.toFixed(4)),
     };
   }
 
-  const pressureSafetyOk = Number.isFinite(interceptionRisk) && interceptionRisk <= 0.62;
+  const pressureSafetyOk = Number.isFinite(interceptionRisk) && interceptionRisk <= Math.max(0.45, Math.min(0.9, allowedMoveRisk));
   const activeEnemies = Array.isArray(context?.enemies)
     ? context.enemies.filter((enemy) => enemy?.isAlive && Number.isFinite(enemy?.x) && Number.isFinite(enemy?.y))
     : [];
@@ -30130,11 +30264,13 @@ function getPressureRouteMeta(context, landingPoint, flagAnchor, coverMeta, inte
     flagProximityFactor: Number(flagProximityFactor.toFixed(4)),
     responseDeniedFactor: Number(responseDeniedFactor.toFixed(4)),
     scoreHint,
+    allowedMoveRisk: Number(allowedMoveRisk.toFixed(4)),
   };
 }
 
 function findPreFlagCautiousAdvanceMove(context, fallbackAiPlanes, aliveEnemies){
   if(typeof planPathToPoint !== "function" || !fallbackAiPlanes.length) return null;
+  const allowedMoveRisk = getAiAllowedMoveRisk(context);
   const availableEnemyFlags = typeof getAvailableFlagsByColor === "function"
     ? getAvailableFlagsByColor("green")
     : [];
@@ -30180,7 +30316,7 @@ function findPreFlagCautiousAdvanceMove(context, fallbackAiPlanes, aliveEnemies)
       if(!landing) continue;
 
       const threatMeta = getImmediateResponseThreatMeta(context, landing.x, landing.y, null);
-      if(threatMeta.count > 0) continue;
+      if(getFallbackCandidateResponseRisk(threatMeta) > allowedMoveRisk) continue;
 
       const coverMeta = getCoverMetaAtLandingPoint(context, landing.x, landing.y);
       if(!coverMeta.hasCover) continue;
@@ -30193,7 +30329,9 @@ function findPreFlagCautiousAdvanceMove(context, fallbackAiPlanes, aliveEnemies)
       const interceptionRisk = estimateFallbackInterceptionRisk(context, plane, landing.x, landing.y, flagAnchor);
       const distancePenalty = Number.isFinite(candidate?.totalDist) ? candidate.totalDist / Math.max(1, MAX_DRAG_DISTANCE * 3) : 0;
       const openPenalty = coverMeta.blockedEnemySightCount > 0 ? 0 : 0.12;
-      const pressureRouteMeta = getPressureRouteMeta(context, landing, flagAnchor, coverMeta, interceptionRisk);
+      const pressureRouteMeta = getPressureRouteMeta(context, landing, flagAnchor, coverMeta, interceptionRisk, {
+        allowedMoveRisk,
+      });
       const pressureRouteBonus = pressureRouteMeta.bonus;
       const candidateScore = Number((interceptionRisk + distancePenalty + openPenalty - pressureRouteBonus).toFixed(4));
       const candidatePayload = {
@@ -31181,6 +31319,7 @@ function getForcedProgressLaunchMove(context){
     && !flyingPoints.some(fp => fp.plane === plane)
   );
   if(!fallbackAiPlanes.length) return null;
+  const allowedMoveRisk = getAiAllowedMoveRisk(context);
 
   const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
   let safeUsefulMove = null;
@@ -31204,7 +31343,7 @@ function getForcedProgressLaunchMove(context){
     const landing = getAiMoveLandingPoint(usefulMove);
     if(!landing) continue;
     const threatMeta = getImmediateResponseThreatMeta(context, landing.x, landing.y, nearestEnemy);
-    if(threatMeta.count > 0) continue;
+    if(getFallbackCandidateResponseRisk(threatMeta) > allowedMoveRisk) continue;
 
     const candidate = {
       ...usefulMove,
@@ -32542,6 +32681,13 @@ function planPathToPoint(plane, tx, ty, options = {}){
   const relaxedEmergencyThreshold = isCriticalOrEmergencyStage
     && (typeof options?.goalName === "string")
     && (options.goalName.includes("critical_base_threat") || options.goalName.includes("emergency_base_defense"));
+  const routeStrictnessMode = (() => {
+    if(isCriticalOrEmergencyStage || strictSpecialPathRejectStage) return "critical_defense";
+    const fallbackHint = `${options?.goalName || ""} ${options?.decisionReason || ""}`.toLowerCase();
+    if(fallbackHint.includes("fallback")) return "fallback_move";
+    return "normal_move";
+  })();
+  const allowedMoveRisk = getAiAllowedMoveRisk(options?.context, options);
   const defaultRouteClass = typeof options?.routeClass === "string"
     ? options.routeClass
     : ((`${options?.decisionReason || ""}`.toLowerCase().includes("gap") || `${options?.goalName || ""}`.toLowerCase().includes("gap"))
@@ -32699,7 +32845,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
     return true;
   }
 
-  function evaluateRouteMetrics({ landingX, landingY, distance, candidateClass = defaultRouteClass, progressMeta, postGapContinuation = false, postRicochetContinuation = false, specialContinuationRouteClear = false }){
+  function evaluateRouteMetrics({ landingX, landingY, distance, candidateClass = defaultRouteClass, progressMeta, postGapContinuation = false, postRicochetContinuation = false, specialContinuationRouteClear = false, softPostPenalty = 0, softPostPenaltyReason = null }){
     const safeProgressMeta = progressMeta || getAiNoticeableProgressMeta(plane.x, plane.y, landingX, landingY, tx, ty);
     const clearancePx = estimateRouteClearancePx(plane.x, plane.y, landingX, landingY);
     const nearbyCount = countRouteNearbyColliders(plane.x, plane.y, landingX, landingY, CELL_SIZE * 0.85);
@@ -32728,7 +32874,10 @@ function planPathToPoint(plane, tx, ty, options = {}){
       : (candidateClass === "gap" && !relaxedEmergencyThreshold
         ? minProgressBase * (isNormalModeGapPostContinuation ? 0.52 : 0.85)
         : minProgressBase);
-    const maxResponseRiskBase = relaxedEmergencyThreshold ? 0.95 : 0.8;
+    const maxResponseRiskBase = Math.min(
+      0.98,
+      Math.max(relaxedEmergencyThreshold ? 0.78 : 0.7, allowedMoveRisk + (relaxedEmergencyThreshold ? 0.08 : 0))
+    );
     const maxResponseRisk = candidateClass === "ricochet"
       ? Math.min(0.98, maxResponseRiskBase + (isNormalModeRicochetPostContinuation ? 0.15 : 0.12))
       : (isNormalModeGapPostContinuation ? Math.min(0.93, maxResponseRiskBase + 0.08) : maxResponseRiskBase);
@@ -32773,12 +32922,14 @@ function planPathToPoint(plane, tx, ty, options = {}){
       && (candidateClass === "gap" || candidateClass === "ricochet"))
       ? 0.018
       : 0;
+    const penalty = Math.max(0, Math.min(0.35, Number(softPostPenalty) || 0));
     const qualityScore = Number((
       progressNorm * 0.5
       + clearanceNorm * 0.25
       + (1 - responseRisk) * 0.15
       + (1 - corridorTightness) * 0.1
       + continuationBonus
+      - penalty
     ).toFixed(6));
 
     return {
@@ -32789,6 +32940,10 @@ function planPathToPoint(plane, tx, ty, options = {}){
       qualityScore,
       rejectCode,
       postGapToleranceUsed: isNormalModeGapPostContinuation === true,
+      softPostPenalty: Number(penalty.toFixed(4)),
+      softPostPenaltyReason: softPostPenaltyReason || null,
+      routeStrictnessMode,
+      allowedMoveRisk: Number(allowedMoveRisk.toFixed(4)),
     };
   }
 
@@ -32868,6 +33023,8 @@ function planPathToPoint(plane, tx, ty, options = {}){
       let shouldUsePostGapContinuationTolerance = false;
       let shouldUsePostRicochetContinuationTolerance = false;
       let specialContinuationRouteClear = false;
+      let softPostPenalty = 0;
+      let softPostPenaltyReason = null;
       let gapEntryX = null;
       let gapEntryY = null;
       function buildLateSpecialRejectMeta(rejectCode, reason, segmentLabel, blockerType, passedSecondSegmentValidation = false, beforeFinalizePlannedMove = true){
@@ -32998,6 +33155,10 @@ function planPathToPoint(plane, tx, ty, options = {}){
               : null;
             return;
           }
+          if(!hasGapContinuationSegment && !shouldKeepStrictSpecialSecondSegmentReject){
+            softPostPenalty += routeStrictnessMode === "fallback_move" ? 0.06 : 0.08;
+            softPostPenaltyReason = "soft_post_gap_penalty";
+          }
           if(!isCandidateLandingSafe(landingX, landingY)){
             bestRejectCode = "blocked_after_bounce__invalid_gap_landing";
             bestRejectMeta = isSpecialCandidateClass
@@ -33077,6 +33238,10 @@ function planPathToPoint(plane, tx, ty, options = {}){
               : null;
             return;
           }
+          if(!hasRicochetContinuationSegment && !shouldKeepStrictSpecialSecondSegmentReject){
+            softPostPenalty += routeStrictnessMode === "fallback_move" ? 0.055 : 0.075;
+            softPostPenaltyReason = "soft_post_ricochet_penalty";
+          }
 
           shouldUsePostRicochetContinuationTolerance = true;
           specialContinuationRouteClear = true;
@@ -33104,6 +33269,8 @@ function planPathToPoint(plane, tx, ty, options = {}){
         postGapContinuation: shouldUsePostGapContinuationTolerance,
         postRicochetContinuation: shouldUsePostRicochetContinuationTolerance,
         specialContinuationRouteClear,
+        softPostPenalty,
+        softPostPenaltyReason,
       });
       const isLateSpecialBounceRejectCode = routeMetrics.rejectCode === "blocked_after_bounce__from_bounce_segment_blocked"
         || routeMetrics.rejectCode === "blocked_path_before_bounce__to_bounce_segment_blocked";
@@ -33815,6 +33982,13 @@ function planPathToPoint(plane, tx, ty, options = {}){
     });
     planPathToPoint.lastRejectCode = bestRejectCode || "blocked_path__detour_exhausted";
     planPathToPoint.lastRejectMeta = bestRejectMeta || null;
+    recordAiPrimaryTurnstileBlocker(planPathToPoint.lastRejectCode, {
+      source: "planPathToPoint",
+      stage: "detour_exhausted",
+      planeId: plane?.id ?? null,
+      goalName: options?.goalName || aiRoundState?.currentGoal || null,
+      routeStrictnessMode,
+    });
     return null;
   }
 
@@ -33936,6 +34110,13 @@ function planPathToPoint(plane, tx, ty, options = {}){
         finisherMove.routeQualityScore = finisherMove.routeMetrics.qualityScore;
         if(finisherMove.routeMetrics.rejectCode){
           planPathToPoint.lastRejectCode = finisherMove.routeMetrics.rejectCode;
+          recordAiPrimaryTurnstileBlocker(planPathToPoint.lastRejectCode, {
+            source: "planPathToPoint",
+            stage: "direct_finisher_route_metrics",
+            planeId: plane?.id ?? null,
+            goalName: options?.goalName || aiRoundState?.currentGoal || null,
+            routeStrictnessMode,
+          });
           if(allowFinisherSafetyBypass){
             logAiDecision("direct_finisher_safety_bypass", {
               planeId: plane?.id ?? null,
@@ -34104,6 +34285,13 @@ function planPathToPoint(plane, tx, ty, options = {}){
   if(!planPathToPoint.lastRejectMeta){
     planPathToPoint.lastRejectMeta = findMirrorShot.lastRejectMeta || null;
   }
+  recordAiPrimaryTurnstileBlocker(planPathToPoint.lastRejectCode, {
+    source: "planPathToPoint",
+    stage: "candidate_basket_exhausted",
+    planeId: plane?.id ?? null,
+    goalName: options?.goalName || aiRoundState?.currentGoal || null,
+    routeStrictnessMode,
+  });
   return null;
   } finally {
     endAiDecisionScope(aiDecisionScope);
