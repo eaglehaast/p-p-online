@@ -16118,9 +16118,78 @@ const AI_MINE_PLAN_THRESHOLDS = Object.freeze({
   MIN_MODERATE_SAFE_IMPROVEMENT_IMPACT_SCORE: 1.9,
   MIN_MODERATE_SAFE_IMPROVEMENT_DIRECTION_LOSS: 0.75,
 });
+const AI_MINE_SELF_RISK_CONFIG = Object.freeze({
+  SELF_RISK_ASSESSMENT: Object.freeze({
+    DANGER_RADIUS_MULTIPLIER: 1.1,
+    HARD_IMMEDIATE_RADIUS_MULTIPLIER: 0.78,
+    HARD_LANDING_RADIUS_MULTIPLIER: 0.6,
+    SUPER_CRITICAL_RADIUS_MULTIPLIER: 0.4,
+  }),
+  FRIENDLY_RISK: Object.freeze({
+    SELF_BLAST_WEIGHT: 0.7,
+    SELF_CORRIDOR_WEIGHT: 0.28,
+    NEARBY_ALLY_WEIGHT: 0.24,
+    NEARBY_ALLY_MAX: 0.55,
+    ALLY_CORRIDOR_WEIGHT: 0.2,
+    ALLY_CORRIDOR_MAX: 0.4,
+  }),
+  STYLE: Object.freeze({
+    balanced: Object.freeze({
+      HIGH_RISK_SCORE_THRESHOLD: 0.7,
+      CRITICAL_RISK_SCORE_THRESHOLD: 0.92,
+      MAX_RISK_SCORE_WHEN_ACCEPTED: 0.7,
+      SELF_RISK_PENALTY_BASE: 1.35,
+      GOAL_RISK_PENALTY_MULTIPLIER: 0.4,
+      MODERATE_SELF_RISK_PENALTY_MULTIPLIER: 1,
+      ALLOW_MODERATE_RISK_WITH_ROUTE_DENIAL: false,
+    }),
+    aggressive: Object.freeze({
+      HIGH_RISK_SCORE_THRESHOLD: 0.8,
+      CRITICAL_RISK_SCORE_THRESHOLD: 0.98,
+      MAX_RISK_SCORE_WHEN_ACCEPTED: 0.9,
+      SELF_RISK_PENALTY_BASE: 1.02,
+      GOAL_RISK_PENALTY_MULTIPLIER: 0.32,
+      MODERATE_SELF_RISK_PENALTY_MULTIPLIER: 0.72,
+      ALLOW_MODERATE_RISK_WITH_ROUTE_DENIAL: true,
+    }),
+  }),
+});
 
 function isAiCriticalMineGoal(goalName = ""){
   return goalName === "capture_enemy_flag" || goalName === "direct_finisher";
+}
+
+function getAiItemSpendStyle(context = null, plannedMove = null, options = {}){
+  const explicitStyle = `${options?.aiItemSpendStyle || plannedMove?.aiItemSpendStyle || context?.aiItemSpendStyle || aiRoundState?.aiItemSpendStyle || ""}`.trim().toLowerCase();
+  if(explicitStyle === "aggressive") return "aggressive";
+  if(explicitStyle === "balanced") return "balanced";
+  const profileStyle = `${context?.aiRiskProfile?.profile || ""}`.trim().toLowerCase();
+  if(profileStyle === "aggressive" || profileStyle === "comeback") return "aggressive";
+  return "balanced";
+}
+
+function getMineRiskStyleConfig(styleName = "balanced"){
+  const normalized = `${styleName || "balanced"}`.toLowerCase();
+  return AI_MINE_SELF_RISK_CONFIG.STYLE[normalized] || AI_MINE_SELF_RISK_CONFIG.STYLE.balanced;
+}
+
+function getMineRiskAcceptedBecause(minePlan, goalName = ""){
+  if(minePlan && (
+    (minePlan.blockedEscapeCount || 0) > 0
+    || (minePlan.cutRouteCount || 0) > 0
+    || (minePlan.trapCount || 0) > 0
+    || (minePlan.forcedBadPathCount || 0) > 0
+    || minePlan.scenario === "mine_blocks_escape_lane"
+    || minePlan.scenario === "mine_cuts_best_route"
+    || minePlan.scenario === "mine_creates_trap"
+    || minePlan.scenario === "mine_forces_bad_path"
+  )){
+    return "route_denial";
+  }
+  const goalText = `${goalName || ""}`.toLowerCase();
+  if(goalText.includes("flag")) return "flag_pressure";
+  if(goalText.includes("finisher") || goalText.includes("finish")) return "finisher_window";
+  return null;
 }
 
 
@@ -16713,6 +16782,7 @@ function createInitialInventoryPressureState(){
 function createInitialAiRoundState(){
   return {
     mode: AI_MODES.ATTRITION,
+    aiItemSpendStyle: "balanced",
     turnNumber: 0,
     targetPriorities: [],
     currentGoal: null,
@@ -20086,21 +20156,26 @@ function evaluatePostLaunchSafetyWithMine(context, plannedMove, minePlan){
   return { beforeSafe, afterSafe };
 }
 
-function evaluateMineFriendlyRisk(context, plannedMove, placement){
+function evaluateMineFriendlyRisk(context, plannedMove, placement, options = {}){
   const plane = plannedMove?.plane || null;
   const landingPoint = typeof getAiMoveLandingPoint === "function" ? getAiMoveLandingPoint(plannedMove) : null;
+  const spendStyle = getAiItemSpendStyle(context, plannedMove, options);
+  const styleConfig = getMineRiskStyleConfig(spendStyle);
+  const riskWeights = AI_MINE_SELF_RISK_CONFIG.FRIENDLY_RISK;
   if(!placement || !Number.isFinite(placement.x) || !Number.isFinite(placement.y)){
     return {
       highRisk: true,
+      criticalRisk: true,
       riskScore: 1,
       selfBlastRisk: true,
       allyBlockRisk: true,
       nearbyAllyCount: 0,
       reasons: ["invalid_placement"],
+      spendStyle,
     };
   }
 
-  const mineDangerRadius = MINE_TRIGGER_RADIUS * 1.1;
+  const mineDangerRadius = MINE_TRIGGER_RADIUS * AI_MINE_SELF_RISK_CONFIG.SELF_RISK_ASSESSMENT.DANGER_RADIUS_MULTIPLIER;
   const selfDistance = plane ? Math.hypot(placement.x - plane.x, placement.y - plane.y) : Number.POSITIVE_INFINITY;
   const landingDistance = landingPoint ? Math.hypot(placement.x - landingPoint.x, placement.y - landingPoint.y) : Number.POSITIVE_INFINITY;
   const selfBlastRisk = selfDistance <= (MINE_TRIGGER_RADIUS * 0.7) || landingDistance <= (MINE_TRIGGER_RADIUS * 0.62);
@@ -20124,12 +20199,13 @@ function evaluateMineFriendlyRisk(context, plannedMove, placement){
 
   const allyBlockRisk = nearbyAllyCount > 0 || allyCorridorBlockCount > 0;
   const riskScore = Number((
-    (selfBlastRisk ? 0.7 : 0)
-    + (selfCorridorRisk ? 0.28 : 0)
-    + Math.min(0.55, nearbyAllyCount * 0.24)
-    + Math.min(0.4, allyCorridorBlockCount * 0.2)
+    (selfBlastRisk ? riskWeights.SELF_BLAST_WEIGHT : 0)
+    + (selfCorridorRisk ? riskWeights.SELF_CORRIDOR_WEIGHT : 0)
+    + Math.min(riskWeights.NEARBY_ALLY_MAX, nearbyAllyCount * riskWeights.NEARBY_ALLY_WEIGHT)
+    + Math.min(riskWeights.ALLY_CORRIDOR_MAX, allyCorridorBlockCount * riskWeights.ALLY_CORRIDOR_WEIGHT)
   ).toFixed(3));
-  const highRisk = selfBlastRisk || riskScore >= 0.7;
+  const highRisk = selfBlastRisk || riskScore >= styleConfig.HIGH_RISK_SCORE_THRESHOLD;
+  const criticalRisk = selfBlastRisk || riskScore >= styleConfig.CRITICAL_RISK_SCORE_THRESHOLD;
   const reasons = [];
   if(selfBlastRisk) reasons.push("self_blast_risk");
   else if(selfCorridorRisk) reasons.push("self_corridor_risk");
@@ -20138,6 +20214,7 @@ function evaluateMineFriendlyRisk(context, plannedMove, placement){
 
   return {
     highRisk,
+    criticalRisk,
     riskScore,
     selfBlastRisk,
     allyBlockRisk,
@@ -20146,6 +20223,7 @@ function evaluateMineFriendlyRisk(context, plannedMove, placement){
     reasons,
     selfDistance,
     landingDistance,
+    spendStyle,
   };
 }
 
@@ -20456,6 +20534,9 @@ function evaluateBlueMinePlacementImpact(context, plannedMove, placement, option
 }
 
 function tryPlaceBlueMineNearEnemyBase(context = null, plannedMove = null, options = {}){
+  const aiItemSpendStyle = getAiItemSpendStyle(context, plannedMove, options);
+  const styleConfig = getMineRiskStyleConfig(aiItemSpendStyle);
+  const strategicGoalName = plannedMove?.goalName || aiRoundState?.currentGoal || "";
   const enemyBase = getBaseAnchor("green");
   if(!enemyBase){
     if(options?.evaluateOnly && options?.withDiagnostics){
@@ -20474,6 +20555,7 @@ function tryPlaceBlueMineNearEnemyBase(context = null, plannedMove = null, optio
   const excludedPlacements = Array.isArray(options?.excludePlacements) ? options.excludePlacements : [];
   let validWindowCount = 0;
   let blockedByFriendlyRisk = 0;
+  let acceptedHighRiskCount = 0;
   for(const candidate of candidates){
     const placement = {
       x: candidate.x,
@@ -20489,11 +20571,6 @@ function tryPlaceBlueMineNearEnemyBase(context = null, plannedMove = null, optio
     ));
     if(isExcluded) continue;
     validWindowCount += 1;
-    const friendlyRisk = evaluateMineFriendlyRisk(context, plannedMove, placement);
-    if(friendlyRisk?.highRisk){
-      blockedByFriendlyRisk += 1;
-      continue;
-    }
     const impact = evaluateBlueMinePlacementImpact(context, plannedMove, placement, {
       fallbackScenario: "mine_cuts_best_route",
     }) || {
@@ -20506,7 +20583,24 @@ function tryPlaceBlueMineNearEnemyBase(context = null, plannedMove = null, optio
       trapCount: 0,
       enemyReports: [],
     };
+    const friendlyRisk = evaluateMineFriendlyRisk(context, plannedMove, placement, { aiItemSpendStyle });
+    const riskAcceptedBecause = aiItemSpendStyle === "aggressive" && friendlyRisk?.highRisk
+      ? getMineRiskAcceptedBecause(impact, strategicGoalName)
+      : null;
+    const canAcceptHighRisk = aiItemSpendStyle === "aggressive"
+      && styleConfig.ALLOW_MODERATE_RISK_WITH_ROUTE_DENIAL
+      && friendlyRisk?.highRisk === true
+      && friendlyRisk?.criticalRisk !== true
+      && friendlyRisk?.riskScore <= styleConfig.MAX_RISK_SCORE_WHEN_ACCEPTED
+      && Boolean(riskAcceptedBecause);
+    if(friendlyRisk?.highRisk && !canAcceptHighRisk){
+      blockedByFriendlyRisk += 1;
+      continue;
+    }
+    if(canAcceptHighRisk) acceptedHighRiskCount += 1;
     impact.friendlyRisk = friendlyRisk;
+    impact.riskAcceptedBecause = canAcceptHighRisk ? riskAcceptedBecause : null;
+    impact.aiItemSpendStyle = aiItemSpendStyle;
     if(!bestCandidate || impact.score > bestCandidate.score) bestCandidate = impact;
   }
 
@@ -20523,6 +20617,8 @@ function tryPlaceBlueMineNearEnemyBase(context = null, plannedMove = null, optio
         details: {
           validWindowCount,
           blockedByFriendlyRisk,
+          acceptedHighRiskCount,
+          aiItemSpendStyle,
         },
       };
     }
@@ -20542,6 +20638,9 @@ function tryPlaceBlueMineNearEnemyBase(context = null, plannedMove = null, optio
 }
 
 function tryPlaceBlueDefensiveMine(context, plannedMove, options = {}){
+  const aiItemSpendStyle = getAiItemSpendStyle(context, plannedMove, options);
+  const styleConfig = getMineRiskStyleConfig(aiItemSpendStyle);
+  const strategicGoalName = plannedMove?.goalName || aiRoundState?.currentGoal || "";
   const plane = plannedMove?.plane;
   const landingPoint = getAiMoveLandingPoint(plannedMove);
   const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
@@ -20571,12 +20670,12 @@ function tryPlaceBlueDefensiveMine(context, plannedMove, options = {}){
     }
     const currentToLandingDistance = Math.hypot(point.x - plane.x, point.y - plane.y);
     const landingToMineDistance = Math.hypot(point.x - landingPoint.x, point.y - landingPoint.y);
-    const mineDangerRadius = MINE_TRIGGER_RADIUS * 1.1;
+    const mineDangerRadius = MINE_TRIGGER_RADIUS * AI_MINE_SELF_RISK_CONFIG.SELF_RISK_ASSESSMENT.DANGER_RADIUS_MULTIPLIER;
     const blocksImmediateCorridor = currentToLandingDistance <= mineDangerRadius;
     const blocksLandingCorridor = landingToMineDistance <= mineDangerRadius;
-    const hardImmediateRadius = MINE_TRIGGER_RADIUS * 0.78;
-    const hardLandingRadius = MINE_TRIGGER_RADIUS * 0.6;
-    const superCriticalRadius = MINE_TRIGGER_RADIUS * 0.4;
+    const hardImmediateRadius = MINE_TRIGGER_RADIUS * AI_MINE_SELF_RISK_CONFIG.SELF_RISK_ASSESSMENT.HARD_IMMEDIATE_RADIUS_MULTIPLIER;
+    const hardLandingRadius = MINE_TRIGGER_RADIUS * AI_MINE_SELF_RISK_CONFIG.SELF_RISK_ASSESSMENT.HARD_LANDING_RADIUS_MULTIPLIER;
+    const superCriticalRadius = MINE_TRIGGER_RADIUS * AI_MINE_SELF_RISK_CONFIG.SELF_RISK_ASSESSMENT.SUPER_CRITICAL_RADIUS_MULTIPLIER;
     const criticalByImmediate = currentToLandingDistance <= hardImmediateRadius;
     const criticalByCombined = blocksImmediateCorridor && blocksLandingCorridor && landingToMineDistance <= hardLandingRadius;
     const criticalBySelfBlast = currentToLandingDistance <= superCriticalRadius;
@@ -20597,7 +20696,9 @@ function tryPlaceBlueDefensiveMine(context, plannedMove, options = {}){
       || goalText.includes("return_with_flag")
       || goalText.includes("post_pickup")
       || goalText.includes("flag_pickup");
-    return allowsBolderRisk ? 0.4 : 1;
+    return allowsBolderRisk
+      ? styleConfig.GOAL_RISK_PENALTY_MULTIPLIER
+      : styleConfig.MODERATE_SELF_RISK_PENALTY_MULTIPLIER;
   }
 
   let mostDangerousEnemy = null;
@@ -20679,8 +20780,29 @@ function tryPlaceBlueDefensiveMine(context, plannedMove, options = {}){
     return options?.evaluateOnly ? null : false;
   }
 
-  const friendlyRisk = evaluateMineFriendlyRisk(context, plannedMove, placement);
-  if(friendlyRisk?.highRisk){
+  const impact = evaluateBlueMinePlacementImpact(context, plannedMove, placement, {
+    fallbackScenario: "mine_blocks_escape_lane",
+  }) || {
+    placement,
+    scenario: "mine_blocks_escape_lane",
+    score: 0.5,
+    totalDirectionLoss: 0,
+    blockedEscapeCount: 0,
+    cutRouteCount: 0,
+    trapCount: 0,
+    enemyReports: [],
+  };
+  const friendlyRisk = evaluateMineFriendlyRisk(context, plannedMove, placement, { aiItemSpendStyle });
+  const riskAcceptedBecause = aiItemSpendStyle === "aggressive" && friendlyRisk?.highRisk
+    ? getMineRiskAcceptedBecause(impact, strategicGoalName)
+    : null;
+  const canAcceptHighRisk = aiItemSpendStyle === "aggressive"
+    && styleConfig.ALLOW_MODERATE_RISK_WITH_ROUTE_DENIAL
+    && friendlyRisk?.highRisk === true
+    && friendlyRisk?.criticalRisk !== true
+    && friendlyRisk?.riskScore <= styleConfig.MAX_RISK_SCORE_WHEN_ACCEPTED
+    && Boolean(riskAcceptedBecause);
+  if(friendlyRisk?.highRisk && !canAcceptHighRisk){
     if(options?.evaluateOnly && options?.withDiagnostics){
       return { plan: null, rejectReason: "high_friendly_risk", details: { friendlyRisk } };
     }
@@ -20695,27 +20817,32 @@ function tryPlaceBlueDefensiveMine(context, plannedMove, options = {}){
       nearbyAllyCount: friendlyRisk.nearbyAllyCount,
       allyCorridorBlockCount: friendlyRisk.allyCorridorBlockCount,
       riskReasons: friendlyRisk.reasons,
+      aiItemSpendStyle,
     });
     return false;
   }
-
-  const impact = evaluateBlueMinePlacementImpact(context, plannedMove, placement, {
-    fallbackScenario: "mine_blocks_escape_lane",
-  }) || {
-    placement,
-    scenario: "mine_blocks_escape_lane",
-    score: 0.5,
-    totalDirectionLoss: 0,
-    blockedEscapeCount: 0,
-    cutRouteCount: 0,
-    trapCount: 0,
-    enemyReports: [],
-  };
+  if(canAcceptHighRisk){
+    logAiDecision("mine_risk_accepted", {
+      planeId: plane?.id ?? null,
+      enemyId: mostDangerousEnemy?.id ?? null,
+      aiItemSpendStyle,
+      riskScore: friendlyRisk?.riskScore ?? null,
+      riskAcceptedBecause,
+      scenario: impact?.scenario || null,
+      routeBlockScore: Number((impact?.score || 0).toFixed(3)),
+      blockedEscapeCount: impact?.blockedEscapeCount ?? 0,
+      cutRouteCount: impact?.cutRouteCount ?? 0,
+      trapCount: impact?.trapCount ?? 0,
+      forcedBadPathCount: impact?.forcedBadPathCount ?? 0,
+    });
+  }
   impact.enemyId = mostDangerousEnemy?.id ?? null;
   impact.friendlyRisk = friendlyRisk;
+  impact.riskAcceptedBecause = canAcceptHighRisk ? riskAcceptedBecause : null;
+  impact.aiItemSpendStyle = aiItemSpendStyle;
   if(selfRisk?.isRisky){
-    const penaltyMultiplier = getSelfRiskPenaltyMultiplier(plannedMove?.goalName || aiRoundState?.currentGoal || "");
-    const penaltyValue = Number((1.35 * penaltyMultiplier).toFixed(2));
+    const penaltyMultiplier = getSelfRiskPenaltyMultiplier(strategicGoalName);
+    const penaltyValue = Number((styleConfig.SELF_RISK_PENALTY_BASE * penaltyMultiplier).toFixed(2));
     impact.score = Number((impact.score - penaltyValue).toFixed(3));
     impact.selfRiskPenalty = penaltyValue;
     impact.selfRiskDowngraded = true;
@@ -20723,7 +20850,7 @@ function tryPlaceBlueDefensiveMine(context, plannedMove, options = {}){
 
   if(options?.evaluateOnly){
     if(options?.withDiagnostics){
-      return { plan: impact, rejectReason: null, details: { friendlyRisk } };
+      return { plan: impact, rejectReason: null, details: { friendlyRisk, riskAcceptedBecause: impact.riskAcceptedBecause || null, aiItemSpendStyle } };
     }
     return impact;
   }
@@ -22101,11 +22228,14 @@ function buildAiDynamiteSeriesPlan(context, plannedMove, options = {}){
 function evaluateAiMineTacticalPlanDecision(options = {}){
   const preferredMinePlan = options?.preferredMinePlan || null;
   const minePlan = preferredMinePlan?.plan || options?.minePlan || null;
+  const aiItemSpendStyle = getAiItemSpendStyle(options?.context || null, options?.plannedMove || null, { aiItemSpendStyle: options?.aiItemSpendStyle });
+  const styleConfig = getMineRiskStyleConfig(aiItemSpendStyle);
   const safeAfterPlacement = options?.safeAfterPlacement !== false;
   const safetyImprovesAfterPlacement = options?.safetyImprovesAfterPlacement === true;
   const isCriticalGoalForDefensiveMine = options?.isCriticalGoalForDefensiveMine === true;
   const mineHasSurplusCharges = options?.mineHasSurplusCharges === true;
   const mineProtectsAfterAggressiveAction = options?.mineProtectsAfterAggressiveAction === true;
+  const strategicGoalName = options?.strategicGoalName || options?.plannedMove?.goalName || aiRoundState?.currentGoal || "";
 
   const mineImpactScore = minePlan ? Number(minePlan.score || 0) : 0;
   const mineBlockedEscapeCount = minePlan?.blockedEscapeCount ?? 0;
@@ -22118,6 +22248,13 @@ function evaluateAiMineTacticalPlanDecision(options = {}){
     || (minePlan?.controlledTurnPointCount ?? 0) > 0
     || mineForcedBadPathCount > 0;
   const mineCreatesRouteDenial = mineBlockedEscapeCount > 0 || mineCutRouteCount > 0 || mineTrapCount > 0;
+  const routeDenialWithModerateRisk = aiItemSpendStyle === "aggressive"
+    && styleConfig.ALLOW_MODERATE_RISK_WITH_ROUTE_DENIAL
+    && safeAfterPlacement === false
+    && mineCreatesRouteDenial;
+  const riskAcceptedBecause = routeDenialWithModerateRisk
+    ? getMineRiskAcceptedBecause(minePlan, strategicGoalName)
+    : null;
 
   const minePlanProvidesNoticeableImprovement = Boolean(minePlan) && (
     mineTrapCount > 0
@@ -22147,7 +22284,8 @@ function evaluateAiMineTacticalPlanDecision(options = {}){
   const mineRejectedBySelfRisk = Boolean(minePlan)
     && safeAfterPlacement === false
     && safetyImprovesAfterPlacement !== true
-    && !isCriticalGoalForDefensiveMine;
+    && !isCriticalGoalForDefensiveMine
+    && !riskAcceptedBecause;
   const mineForcedSpendSurplus = mineHasSurplusCharges
     && Boolean(minePlan)
     && !mineRejectedBySelfRisk
@@ -22168,6 +22306,8 @@ function evaluateAiMineTacticalPlanDecision(options = {}){
     mineModerateImprovement,
     mineRejectedBySelfRisk,
     mineForcedSpendSurplus,
+    aiItemSpendStyle,
+    riskAcceptedBecause,
   };
 }
 
@@ -22347,6 +22487,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
   }
 
   if(allowTacticalItems && inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] > 0){
+    const aiItemSpendStyle = getAiItemSpendStyle(context, plannedMove);
     const mineAvailableCharges = Number(inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0);
     const mineHasSurplusCharges = mineAvailableCharges > 1;
     const defensiveProbe = typeof tryPlaceBlueDefensiveMine === "function"
@@ -22387,6 +22528,10 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       isCriticalGoalForDefensiveMine,
       mineHasSurplusCharges,
       mineProtectsAfterAggressiveAction,
+      context,
+      plannedMove,
+      aiItemSpendStyle,
+      strategicGoalName,
     });
     const mineImpactScore = mineDecisionMeta.mineImpactScore;
     const mineBlockedEscapeCount = mineDecisionMeta.mineBlockedEscapeCount;
@@ -22401,6 +22546,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     const mineModerateImprovement = mineDecisionMeta.mineModerateImprovement;
     const mineRejectedBySelfRisk = mineDecisionMeta.mineRejectedBySelfRisk;
     const mineForcedSpendSurplus = mineDecisionMeta.mineForcedSpendSurplus;
+    const riskAcceptedBecause = mineDecisionMeta.riskAcceptedBecause || null;
     const mineSeriesPlan = buildAiMineSeriesPlan(context, plannedMove, {
       availableCharges: mineAvailableCharges,
     });
@@ -22442,6 +22588,8 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
           : (mineProtectsAfterAggressiveAction
               ? "mine_used_for_safe_aggressive_follow_up"
               : (mineCreatesRouteDenial ? "mine_used_for_route_denial" : "mine_used_for_position_improvement")),
+        riskAcceptedBecause,
+        aiItemSpendStyle,
         usageTier: mineForcedSpendSurplus ? "forced_surplus" : (minePlanProvidesNoticeableImprovement ? "strong" : "moderate"),
         tacticalSeries: mineSeriesPlan,
       });
@@ -22464,6 +22612,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
         forcedBadPathCount: mineForcedBadPathCount,
         defensiveRejectReason: defensiveProbe?.rejectReason || null,
         baseRejectReason: baseProbe?.rejectReason || null,
+        aiItemSpendStyle,
       });
     }
   }
@@ -23931,6 +24080,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   }
 
   if(allowTacticalItems && inventory.counts[INVENTORY_ITEM_TYPES.MINE] > 0){
+    const aiItemSpendStyle = getAiItemSpendStyle(context, plannedMove);
     const forcedMineSpend = forcedTacticalItemType === INVENTORY_ITEM_TYPES.MINE;
     if(forcedMineSpend){
       logAiDecision("tactical_surplus_spend_attempt", {
@@ -24120,6 +24270,10 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       isCriticalGoalForDefensiveMine,
       mineHasSurplusCharges: Number(inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0) > 1,
       mineProtectsAfterAggressiveAction: strategicGoal === "direct_finisher" && safeFinisherMineCoverage.afterSafe === true,
+      context,
+      plannedMove,
+      aiItemSpendStyle,
+      strategicGoalName: strategicGoal,
     });
     const mineImpactPlan = mineDecisionMeta.minePlan || null;
     const mineImpactScore = mineDecisionMeta.mineImpactScore;
@@ -24135,6 +24289,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       && safeFinisherMineCoverage.afterSafe === true;
     const mineModerateImprovement = mineDecisionMeta.mineModerateImprovement;
     const mineRejectedBySelfRisk = mineDecisionMeta.mineRejectedBySelfRisk;
+    const riskAcceptedBecause = mineDecisionMeta.riskAcceptedBecause || null;
     const defensivePriorityOverride = isCriticalGoalForDefensiveMine && preferredMinePlan?.type === "defensive";
     const mineUseReason = mineCreatesRouteDenial ? "mine_used_for_route_denial"
       : (minePlanProvidesNoticeableImprovement ? "mine_used_for_position_improvement" : null);
@@ -24165,6 +24320,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         trapCount: preferredMinePlan?.plan?.trapCount ?? 0,
         totalDirectionLoss: preferredMinePlan?.plan?.totalDirectionLoss ?? 0,
         safeAfterPlacement,
+        riskAcceptedBecause,
+        aiItemSpendStyle,
         mineUseReason,
       });
       if(mineUseReason){
@@ -24178,6 +24335,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
           trapCount: preferredMinePlan?.plan?.trapCount ?? 0,
           totalDirectionLoss: preferredMinePlan?.plan?.totalDirectionLoss ?? 0,
           safeAfterPlacement,
+          riskAcceptedBecause,
+          aiItemSpendStyle,
         });
       }
       removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
@@ -24217,6 +24376,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         controlledBasePassCount: preferredMinePlan?.plan?.controlledBasePassCount ?? 0,
         controlledTurnPointCount: preferredMinePlan?.plan?.controlledTurnPointCount ?? 0,
         forcedBadPathCount: preferredMinePlan?.plan?.forcedBadPathCount ?? 0,
+        aiItemSpendStyle,
       });
     } else if(preferredMinePlan && !minePlanProvidesNoticeableImprovement && !mineModerateImprovement){
       mineFinalRejectReason = "mine_low_enemy_contact_probability";
