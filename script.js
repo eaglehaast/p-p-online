@@ -11935,6 +11935,12 @@ function buildAiV2ReserveDiagnosticsReport(source){
           - (Math.max(0, Number(blockedSegmentStats.ricochet.before_bounce) || 0)
             + Math.max(0, Number(candidateFunnelStats.ricochet.valid_generated) || 0)))
       ),
+      launched_selected: Math.max(0, Number(candidateFunnelStats.ricochet.selected) || 0),
+      launched_from_generated_ratio: (() => {
+        const generated = Math.max(0, Number(candidateFunnelStats.ricochet.valid_generated) || 0);
+        const launched = Math.max(0, Number(candidateFunnelStats.ricochet.selected) || 0);
+        return generated > 0 ? Number((launched / generated).toFixed(4)) : 0;
+      })(),
     },
   };
 
@@ -11957,6 +11963,7 @@ function buildAiV2ReserveDiagnosticsReport(source){
     `Ricochet special failure: ${ricochetTopSpecialFailure[0]} (count=${ricochetTopSpecialFailure[1]}).`,
     `Gap progress: before_bounce_rejected=${specialRouteProgressStats.gap.rejected_before_bounce}, reached_second_segment_validation=${specialRouteProgressStats.gap.reached_second_segment_validation}, soft_after_bounce_rejected=${specialRouteProgressStats.gap.rejected_on_soft_after_bounce_rule}, hard_after_bounce_rejected=${specialRouteProgressStats.gap.rejected_on_hard_after_bounce_rule}, valid_generated=${specialRouteProgressStats.gap.reached_valid_generated}, rejected_later=${specialRouteProgressStats.gap.rejected_after_before_bounce}.`,
     `Ricochet progress: before_bounce_rejected=${specialRouteProgressStats.ricochet.rejected_before_bounce}, reached_second_segment_validation=${specialRouteProgressStats.ricochet.reached_second_segment_validation}, soft_after_bounce_rejected=${specialRouteProgressStats.ricochet.rejected_on_soft_after_bounce_rule}, hard_after_bounce_rejected=${specialRouteProgressStats.ricochet.rejected_on_hard_after_bounce_rule}, valid_generated=${specialRouteProgressStats.ricochet.reached_valid_generated}, rejected_later=${specialRouteProgressStats.ricochet.rejected_after_before_bounce}.`,
+    `Ricochet launched ratio: launched_selected=${specialRouteProgressStats.ricochet.launched_selected} / generated_total=${candidateFunnelStats.ricochet.valid_generated} (ratio=${Number((specialRouteProgressStats.ricochet.launched_from_generated_ratio * 100).toFixed(1))}%).`,
   ];
 
   const fallbackEpisodeSamples = fallbackEpisodes.slice(-6);
@@ -18071,9 +18078,21 @@ function compareAiCandidatesByUtility(nextCandidate, currentCandidate, epsilon =
 
   const nextUtility = getAiCandidateUtilitySnapshot(nextCandidate);
   const currentUtility = getAiCandidateUtilitySnapshot(currentCandidate);
+  const nextClass = getAiCandidateClassLabel(nextCandidate);
+  const currentClass = getAiCandidateClassLabel(currentCandidate);
 
-  if(nextUtility.score < currentUtility.score - epsilon) return true;
-  if(nextUtility.score > currentUtility.score + epsilon) return false;
+  const nextDirectLowPassAgainstRicochet = nextClass === "direct"
+    && nextCandidate?.lowPassabilityBlockedLike === true
+    && currentClass === "ricochet";
+  const currentDirectLowPassAgainstRicochet = currentClass === "direct"
+    && currentCandidate?.lowPassabilityBlockedLike === true
+    && nextClass === "ricochet";
+  const lowPassTieBreakPenalty = Math.max(1, MAX_DRAG_DISTANCE * 0.028);
+  const nextEffectiveScore = nextUtility.score + (nextDirectLowPassAgainstRicochet ? lowPassTieBreakPenalty : 0);
+  const currentEffectiveScore = currentUtility.score + (currentDirectLowPassAgainstRicochet ? lowPassTieBreakPenalty : 0);
+
+  if(nextEffectiveScore < currentEffectiveScore - epsilon) return true;
+  if(nextEffectiveScore > currentEffectiveScore + epsilon) return false;
 
   if(Number.isFinite(nextUtility.normalizedScore) && Number.isFinite(currentUtility.normalizedScore)){
     if(nextUtility.normalizedScore < currentUtility.normalizedScore - epsilon) return true;
@@ -18470,6 +18489,17 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
     && Number.isFinite(currentNormalizedScore)
     && Math.abs(nextNormalizedScore - currentNormalizedScore) <= AI_CLASS_SCORE_TIE_EPSILON;
   if(isCrossClassTie){
+    const nextDirectLowPassVsRicochet = nextClass === "direct"
+      && nextCandidate?.lowPassabilityBlockedLike === true
+      && currentClass === "ricochet";
+    const currentDirectLowPassVsRicochet = currentClass === "direct"
+      && currentCandidate?.lowPassabilityBlockedLike === true
+      && nextClass === "ricochet";
+    if(nextDirectLowPassVsRicochet !== currentDirectLowPassVsRicochet){
+      compareAiCandidateByScoreAndRotation.lastClassTieBreakReason = "low_passability_direct_not_auto_win_against_ricochet";
+      return !nextDirectLowPassVsRicochet;
+    }
+
     const nextSolvesWallBlock = nextCandidate?.reasonCode === "wall_locked_target_prefers_ricochet"
       || nextCandidate?.classScoreBreakdown?.denseGeometry === true;
     const currentSolvesWallBlock = currentCandidate?.reasonCode === "wall_locked_target_prefers_ricochet"
@@ -28622,15 +28652,35 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
   const parsedGapAttemptBudget = Number(options?.gapAttemptBudget);
   const parsedRicochetAttemptBudget = Number(options?.ricochetAttemptBudget);
   const defaultSpecialRouteBudget = Math.max(2, maxCandidatesPerClass * 3);
+  const groundedPlanes = planes.filter((plane) => !flyingPoints.some((fp) => fp.plane === plane));
+  const totalGroundedFlagPairs = groundedPlanes.length * availableEnemyFlags.length;
+  let directBlockedPairs = 0;
+  if(totalGroundedFlagPairs > 0){
+    for(const plane of groundedPlanes){
+      for(const flag of availableEnemyFlags){
+        const anchor = getFlagAnchor(flag);
+        if(!isPathClear(plane.x, plane.y, anchor.x, anchor.y)){
+          directBlockedPairs += 1;
+        }
+      }
+    }
+  }
+  const directBlockedPressure = totalGroundedFlagPairs > 0
+    ? directBlockedPairs / totalGroundedFlagPairs
+    : 0;
+  const directPathBlockedScenario = directBlockedPairs > 0;
+  const specialRouteBudgetBoost = directPathBlockedScenario
+    ? Math.max(2, Math.ceil(maxCandidatesPerClass * (directBlockedPressure >= 0.5 ? 2.2 : 1.6)))
+    : 0;
   let gapAttemptBudget = Number.isFinite(parsedGapAttemptBudget)
     ? Math.max(1, Math.floor(parsedGapAttemptBudget))
-    : defaultSpecialRouteBudget;
+    : defaultSpecialRouteBudget + specialRouteBudgetBoost;
+  gapAttemptBudget += Number.isFinite(parsedGapAttemptBudget) ? specialRouteBudgetBoost : 0;
   const ricochetAttemptBudget = Number.isFinite(parsedRicochetAttemptBudget)
     ? Math.max(1, Math.floor(parsedRicochetAttemptBudget))
-    : defaultSpecialRouteBudget;
+    : (defaultSpecialRouteBudget + specialRouteBudgetBoost);
   const baseGoalName = options?.goalName || "capture_enemy_flag";
   const baseDecisionReason = options?.decisionReason || "flag_capture_direct";
-  const groundedPlanes = planes.filter((plane) => !flyingPoints.some((fp) => fp.plane === plane));
   function snapshotRouteClassRejectDiagnosticEntry(entry){
     const safeEntry = entry && typeof entry === "object" ? entry : {};
     const safeRejectCodes = {};
@@ -28979,8 +29029,12 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     };
   }
 
-  function trimCandidatesByClass(candidates){
+  function trimCandidatesByClass(candidates, classKey = "direct"){
     if(!Array.isArray(candidates) || candidates.length === 0) return [];
+    const isSpecialClass = classKey === "gap" || classKey === "ricochet";
+    const classLimit = isSpecialClass && directPathBlockedScenario
+      ? Math.max(maxCandidatesPerClass + 1, Math.ceil(maxCandidatesPerClass * (directBlockedPressure >= 0.5 ? 1.85 : 1.4)))
+      : maxCandidatesPerClass;
     const sorted = candidates.slice().sort((a, b) => {
       const scoreA = Number.isFinite(a?.score) ? a.score : Number.POSITIVE_INFINITY;
       const scoreB = Number.isFinite(b?.score) ? b.score : Number.POSITIVE_INFINITY;
@@ -28990,7 +29044,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
       if(idleA !== idleB) return idleB - idleA;
       return `${a?.plane?.id || ""}`.localeCompare(`${b?.plane?.id || ""}`);
     });
-    return sorted.slice(0, maxCandidatesPerClass);
+    return sorted.slice(0, classLimit);
   }
 
   function enrichFlagCaptureCandidate(candidate, pickupPoint){
@@ -29386,9 +29440,9 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     }
   }
 
-  const trimmedDirectCandidates = trimCandidatesByClass(directCandidates);
-  const trimmedGapCandidates = trimCandidatesByClass(gapCandidates);
-  const trimmedBounceCandidates = trimCandidatesByClass(bounceCandidates);
+  const trimmedDirectCandidates = trimCandidatesByClass(directCandidates, "direct");
+  const trimmedGapCandidates = trimCandidatesByClass(gapCandidates, "gap");
+  const trimmedBounceCandidates = trimCandidatesByClass(bounceCandidates, "ricochet");
 
   const isNormalStage = !isEmergencyDefenseStage;
   const hadSpecialInInitialSet = gapCandidates.length > 0 && bounceCandidates.length > 0;
@@ -29473,6 +29527,10 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     hasDirect: trimmedDirectCandidates.length > 0,
     hasGap: trimmedGapCandidates.length > 0,
     hasRicochet: trimmedBounceCandidates.length > 0,
+    directPathBlockedScenario,
+    directBlockedPairs,
+    totalGroundedFlagPairs,
+    directBlockedPressure: Number(directBlockedPressure.toFixed(4)),
     candidateTypeDiagnostics,
     shortlistDiagnostics,
     routeClassRejectDiagnostics,
@@ -29514,6 +29572,10 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     maxCandidatesPerClass,
     gapAttemptBudget,
     ricochetAttemptBudget,
+    directPathBlockedScenario,
+    directBlockedPairs,
+    totalGroundedFlagPairs,
+    directBlockedPressure: Number(directBlockedPressure.toFixed(4)),
     candidateTypeDiagnostics,
     shortlistDiagnostics,
     routeClassRejectDiagnostics,
@@ -30474,9 +30536,13 @@ function logAiFinalComparedDiagnostics(candidates, bestCandidate, meta = {}){
   const winner = buildAiFinalComparedSnapshot(bestCandidate);
   const winnerClass = winner?.classLabel || null;
   const hasGapOrRicochet = classPresence.gap > 0 || classPresence.ricochet > 0;
+  const hasRicochet = classPresence.ricochet > 0;
   const directLowPassabilityWin = hasGapOrRicochet
     && winnerClass === "direct"
     && winner?.lowPassabilityBlockedLike === true;
+  const directLowPassabilityVsRicochetRuleApplied = hasRicochet
+    && winnerClass === "ricochet"
+    && snapshots.some((item) => item?.classLabel === "direct" && item?.lowPassabilityBlockedLike === true);
 
   const bestUtilityCandidate = candidates.reduce((best, candidate) => (
     compareAiCandidatesByUtility(candidate, best) ? candidate : best
@@ -30491,6 +30557,7 @@ function logAiFinalComparedDiagnostics(candidates, bestCandidate, meta = {}){
     classPresence,
     bestUtilityMove: bestUtilitySnapshot,
     winnerAfterRotation: winner,
+    directLowPassabilityVsRicochetRuleApplied,
     rotationChangedWinner: Boolean(bestUtilitySnapshot?.planeId && winner?.planeId && bestUtilitySnapshot.planeId !== winner.planeId),
     rotationOverride: (bestUtilitySnapshot?.planeId && winner?.planeId && bestUtilitySnapshot.planeId !== winner.planeId)
       ? {
@@ -30561,11 +30628,26 @@ function getAiCandidateClassComparableScore({
     else if(candidateClass === "gap") antiSkewAdjustment = AI_CLASS_SCORE_ANTI_SKEW_DENSE_GAP_BONUS;
   }
 
+  const blockedDirectSpecialClass = directPathBlocked === true
+    && (candidateClass === "gap" || candidateClass === "ricochet");
+  const distanceWeight = blockedDirectSpecialClass
+    ? AI_CLASS_SCORE_LENGTH_WEIGHT * 0.42
+    : AI_CLASS_SCORE_LENGTH_WEIGHT;
+  const riskWeight = blockedDirectSpecialClass
+    ? AI_CLASS_SCORE_RESPONSE_RISK_WEIGHT * 1.45
+    : AI_CLASS_SCORE_RESPONSE_RISK_WEIGHT;
+  const progressWeight = blockedDirectSpecialClass
+    ? AI_CLASS_SCORE_PROGRESS_WEIGHT * 1.6
+    : AI_CLASS_SCORE_PROGRESS_WEIGHT;
+  const positionWeight = blockedDirectSpecialClass
+    ? AI_CLASS_SCORE_POSITION_UTILITY_WEIGHT * 1.18
+    : AI_CLASS_SCORE_POSITION_UTILITY_WEIGHT;
+
   const composite =
-    (distanceNorm * AI_CLASS_SCORE_LENGTH_WEIGHT)
-    + (riskNorm * AI_CLASS_SCORE_RESPONSE_RISK_WEIGHT)
-    + ((1 - progressNorm) * AI_CLASS_SCORE_PROGRESS_WEIGHT)
-    + ((1 - positionUtilityNorm) * AI_CLASS_SCORE_POSITION_UTILITY_WEIGHT)
+    (distanceNorm * distanceWeight)
+    + (riskNorm * riskWeight)
+    + ((1 - progressNorm) * progressWeight)
+    + ((1 - positionUtilityNorm) * positionWeight)
     + antiSkewAdjustment;
 
   return {
@@ -30576,6 +30658,13 @@ function getAiCandidateClassComparableScore({
       progressToGoal: Number(progressNorm.toFixed(4)),
       positionUtility: Number(positionUtilityNorm.toFixed(4)),
       antiSkewAdjustment: Number(antiSkewAdjustment.toFixed(4)),
+      blockedDirectSpecialClass,
+      effectiveWeights: {
+        distance: Number(distanceWeight.toFixed(4)),
+        responseRisk: Number(riskWeight.toFixed(4)),
+        progressToGoal: Number(progressWeight.toFixed(4)),
+        positionUtility: Number(positionWeight.toFixed(4)),
+      },
       denseGeometry,
       emergencyGoal,
     },
@@ -32903,6 +32992,8 @@ function planPathToPoint(plane, tx, ty, options = {}){
       && !isCriticalOrEmergencyStage;
 
     let rejectCode = null;
+    let adaptiveSoftPenalty = 0;
+    let adaptiveSoftPenaltyReason = null;
     if(!shouldSkipGapPostContinuationSoftReject && !shouldSkipRicochetPostContinuationSoftReject){
       if(progress + 0.0001 < minProgress){
         rejectCode = "insufficient_progress";
@@ -32911,6 +33002,18 @@ function planPathToPoint(plane, tx, ty, options = {}){
       } else if(candidateClass === "gap" && clearancePx < minGapClearance){
         rejectCode = "blocked_at_gap";
       }
+    }
+
+    const canDowngradeLateRejectToPenalty = !strictSpecialPathRejectStage
+      && !isCriticalOrEmergencyStage
+      && (candidateClass === "gap" || candidateClass === "ricochet")
+      && (postGapContinuation || postRicochetContinuation);
+    if(canDowngradeLateRejectToPenalty && (rejectCode === "insufficient_progress" || rejectCode === "unsafe_lane")){
+      adaptiveSoftPenalty = rejectCode === "insufficient_progress" ? 0.06 : 0.075;
+      adaptiveSoftPenaltyReason = rejectCode === "insufficient_progress"
+        ? "late_special_progress_penalty"
+        : "late_special_passability_penalty";
+      rejectCode = null;
     }
 
     recordRouteClassRejectDiagnostic(candidateClass, rejectCode);
@@ -32922,7 +33025,8 @@ function planPathToPoint(plane, tx, ty, options = {}){
       && (candidateClass === "gap" || candidateClass === "ricochet"))
       ? 0.018
       : 0;
-    const penalty = Math.max(0, Math.min(0.35, Number(softPostPenalty) || 0));
+    const penalty = Math.max(0, Math.min(0.35, (Number(softPostPenalty) || 0) + adaptiveSoftPenalty));
+    const penaltyReason = softPostPenaltyReason || adaptiveSoftPenaltyReason;
     const qualityScore = Number((
       progressNorm * 0.5
       + clearanceNorm * 0.25
@@ -32941,7 +33045,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       rejectCode,
       postGapToleranceUsed: isNormalModeGapPostContinuation === true,
       softPostPenalty: Number(penalty.toFixed(4)),
-      softPostPenaltyReason: softPostPenaltyReason || null,
+      softPostPenaltyReason: penaltyReason || null,
       routeStrictnessMode,
       allowedMoveRisk: Number(allowedMoveRisk.toFixed(4)),
     };
