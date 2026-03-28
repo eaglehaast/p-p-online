@@ -31939,49 +31939,123 @@ function buildAiBaseCandidateStageResult(plannedMove, metadata = {}){
 function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
   const source = metadata?.source || "do_computer_move";
   const routeClass = plannedMove?.routeClass || metadata?.routeClass || null;
-  const inventoryPlanning = buildAiInventoryCandidatePlans(context, plannedMove);
-  plannedMove.inventoryCandidates = Array.isArray(inventoryPlanning?.candidates) ? inventoryPlanning.candidates.slice() : [];
-  plannedMove.rejectedInventoryCandidates = Array.isArray(inventoryPlanning?.rejected) ? inventoryPlanning.rejected.slice() : [];
-  plannedMove.selectedInventorySequence = Array.isArray(inventoryPlanning?.selectedSequence) ? inventoryPlanning.selectedSequence.slice() : [];
-  if(inventoryPlanning?.selectedCandidate){
-    plannedMove.selectedInventoryCandidate = inventoryPlanning.selectedCandidate;
-    plannedMove.inventoryUsageReason = inventoryPlanning.selectedCandidate.reason || plannedMove.inventoryUsageReason || null;
-    const selectedCandidateReasonCodes = [inventoryPlanning.selectedCandidate.reason || "candidate_selected"];
-    if(inventoryPlanning.selectedCandidate.floorSoftPassAccepted === true){
-      selectedCandidateReasonCodes.push(
-        inventoryPlanning.selectedCandidate.floorSoftPassReasonCode || "inventory_floor_soft_pass"
-      );
-    }
-    logAiDecision("inventory_candidate_selected", {
-      ...inventoryPlanning.selectedCandidate,
+  const buildStageExceptionPayload = (stage, error, overrides = {}) => {
+    const selectedInventoryCandidate = plannedMove?.selectedInventoryCandidate || null;
+    const itemType = overrides?.itemType
+      ?? selectedInventoryCandidate?.itemType
+      ?? null;
+    return {
+      stage,
       source,
       routeClass,
-      reasonCodes: selectedCandidateReasonCodes,
-    });
-    recordInventoryAiDecision("inventory_candidate_selected", {
-      planeId: inventoryPlanning.selectedCandidate.planeId ?? plannedMove?.plane?.id ?? null,
-      goal: inventoryPlanning.selectedCandidate.goal ?? plannedMove?.goalName ?? aiRoundState?.currentGoal ?? null,
-      itemType: inventoryPlanning.selectedCandidate.itemType,
-      source,
-      reasonCodes: selectedCandidateReasonCodes,
-    });
-  }
-  if(plannedMove.selectedInventorySequence.length > 0){
-    if(!plannedMove.inventoryUsageReason){
-      plannedMove.inventoryUsageReason = plannedMove.selectedInventorySequence[0]?.reason || null;
-    }
-    logAiDecision("inventory_sequence_selected", {
+      message: error?.message || String(error),
+      itemType,
+      inventoryUsageReason: overrides?.inventoryUsageReason
+        ?? plannedMove?.inventoryUsageReason
+        ?? selectedInventoryCandidate?.reason
+        ?? null,
+      selectedInventoryCandidate: overrides?.selectedInventoryCandidate ?? selectedInventoryCandidate,
       planeId: plannedMove?.plane?.id ?? null,
       goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
-      sequence: plannedMove.selectedInventorySequence.map((entry) => entry.itemType),
+      decisionReason: plannedMove?.decisionReason || null,
+    };
+  };
+
+  let inventoryPlanning = null;
+  try {
+    inventoryPlanning = buildAiInventoryCandidatePlans(context, plannedMove);
+    plannedMove.inventoryCandidates = Array.isArray(inventoryPlanning?.candidates) ? inventoryPlanning.candidates.slice() : [];
+    plannedMove.rejectedInventoryCandidates = Array.isArray(inventoryPlanning?.rejected) ? inventoryPlanning.rejected.slice() : [];
+    plannedMove.selectedInventorySequence = Array.isArray(inventoryPlanning?.selectedSequence) ? inventoryPlanning.selectedSequence.slice() : [];
+    if(inventoryPlanning?.selectedCandidate){
+      plannedMove.selectedInventoryCandidate = inventoryPlanning.selectedCandidate;
+      plannedMove.inventoryUsageReason = inventoryPlanning.selectedCandidate.reason || plannedMove.inventoryUsageReason || null;
+      const selectedCandidateReasonCodes = [inventoryPlanning.selectedCandidate.reason || "candidate_selected"];
+      if(inventoryPlanning.selectedCandidate.floorSoftPassAccepted === true){
+        selectedCandidateReasonCodes.push(
+          inventoryPlanning.selectedCandidate.floorSoftPassReasonCode || "inventory_floor_soft_pass"
+        );
+      }
+      logAiDecision("inventory_candidate_selected", {
+        ...inventoryPlanning.selectedCandidate,
+        source,
+        routeClass,
+        reasonCodes: selectedCandidateReasonCodes,
+      });
+      recordInventoryAiDecision("inventory_candidate_selected", {
+        planeId: inventoryPlanning.selectedCandidate.planeId ?? plannedMove?.plane?.id ?? null,
+        goal: inventoryPlanning.selectedCandidate.goal ?? plannedMove?.goalName ?? aiRoundState?.currentGoal ?? null,
+        itemType: inventoryPlanning.selectedCandidate.itemType,
+        source,
+        reasonCodes: selectedCandidateReasonCodes,
+      });
+    }
+    if(plannedMove.selectedInventorySequence.length > 0){
+      if(!plannedMove.inventoryUsageReason){
+        plannedMove.inventoryUsageReason = plannedMove.selectedInventorySequence[0]?.reason || null;
+      }
+      logAiDecision("inventory_sequence_selected", {
+        planeId: plannedMove?.plane?.id ?? null,
+        goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+        sequence: plannedMove.selectedInventorySequence.map((entry) => entry.itemType),
+        source,
+        routeClass,
+      });
+    }
+  } catch (error) {
+    const exceptionPayload = buildStageExceptionPayload("inventory_candidate_selection", error);
+    logAiDecision("ai_move_stage_exception", {
+      ...exceptionPayload,
+      reasonCodes: ["do_computer_move_stage_exception", "inventory_candidate_selection_exception"],
+    });
+    recordAiSelfAnalyzerDecision("ai_move_exception", {
+      goal: exceptionPayload.goal || "ai_move_exception",
+      planeId: exceptionPayload.planeId,
+      reasonCodes: ["ai_move_exception", "technical_exception", "inventory_candidate_selection_exception"],
+      rejectReasons: ["inventory_candidate_selection_exception"],
       source,
       routeClass,
+      fallbackDiagnostics: {
+        stage: exceptionPayload.stage,
+        itemType: exceptionPayload.itemType,
+        inventoryUsageReason: exceptionPayload.inventoryUsageReason,
+        selectedInventoryCandidate: exceptionPayload.selectedInventoryCandidate,
+      },
+      errorMessage: exceptionPayload.message,
     });
+    throw error;
   }
-  const baseCandidateStage = buildAiBaseCandidateStageResult(plannedMove, {
-    ...metadata,
-    inventoryPlanning,
-  });
+
+  let baseCandidateStage = null;
+  try {
+    baseCandidateStage = buildAiBaseCandidateStageResult(plannedMove, {
+      ...metadata,
+      inventoryPlanning,
+    });
+  } catch (error) {
+    const exceptionPayload = buildStageExceptionPayload("base_candidate_selection", error);
+    logAiDecision("ai_move_stage_exception", {
+      ...exceptionPayload,
+      reasonCodes: ["do_computer_move_stage_exception", "base_candidate_selection_exception"],
+    });
+    recordAiSelfAnalyzerDecision("ai_move_exception", {
+      goal: exceptionPayload.goal || "ai_move_exception",
+      planeId: exceptionPayload.planeId,
+      reasonCodes: ["ai_move_exception", "technical_exception", "base_candidate_selection_exception"],
+      rejectReasons: ["base_candidate_selection_exception"],
+      source,
+      routeClass,
+      fallbackDiagnostics: {
+        stage: exceptionPayload.stage,
+        itemType: exceptionPayload.itemType,
+        inventoryUsageReason: exceptionPayload.inventoryUsageReason,
+        selectedInventoryCandidate: exceptionPayload.selectedInventoryCandidate,
+      },
+      errorMessage: exceptionPayload.message,
+    });
+    throw error;
+  }
+
   if(!baseCandidateStage.selected){
     logAiDecision("base_candidate_rejected", {
       stage: baseCandidateStage.stage,
@@ -32032,7 +32106,97 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
     routeClass,
   });
 
-  issueAIMoveWithInventoryUsage(context, baseCandidateStage.move);
+  try {
+    issueAIMoveWithInventoryUsage(context, baseCandidateStage.move);
+  } catch (error) {
+    const inventoryExceptionPayload = buildStageExceptionPayload("inventory_usage", error);
+    logAiDecision("ai_move_stage_exception", {
+      ...inventoryExceptionPayload,
+      reasonCodes: ["do_computer_move_stage_exception", "inventory_usage_exception"],
+    });
+    recordAiSelfAnalyzerDecision("ai_move_exception", {
+      goal: inventoryExceptionPayload.goal || "ai_move_exception",
+      planeId: inventoryExceptionPayload.planeId,
+      reasonCodes: ["ai_move_exception", "technical_exception", "inventory_usage_exception"],
+      rejectReasons: ["inventory_usage_exception"],
+      source,
+      routeClass,
+      fallbackDiagnostics: {
+        stage: inventoryExceptionPayload.stage,
+        itemType: inventoryExceptionPayload.itemType,
+        inventoryUsageReason: inventoryExceptionPayload.inventoryUsageReason,
+        selectedInventoryCandidate: inventoryExceptionPayload.selectedInventoryCandidate,
+      },
+      errorMessage: inventoryExceptionPayload.message,
+    });
+
+    const recoveryValidation = validateAiLaunchMoveCandidate(baseCandidateStage.move);
+    if(recoveryValidation.ok){
+      try {
+        registerAiInventoryUsageAfterMove(false);
+        const recoveryResolution = resolveFinalAiLaunchMoveWithMineGate(baseCandidateStage.move, context, {
+          stage: "inventory_exception_recovery",
+          tacticalItemType: null,
+          tacticalItemAlreadyUsed: false,
+        });
+        if(recoveryResolution?.ok && recoveryResolution?.move){
+          issueAIMove(recoveryResolution.move.plane, recoveryResolution.move.vx, recoveryResolution.move.vy);
+          logAiDecision("inventory_exception_recovered_with_base_launch", {
+            stage: "finalize_base_launch_after_inventory_exception",
+            recovered: true,
+            reasonCodes: ["inventory_exception_recovered_with_base_launch"],
+            itemType: inventoryExceptionPayload.itemType,
+            inventoryUsageReason: inventoryExceptionPayload.inventoryUsageReason,
+            selectedInventoryCandidate: inventoryExceptionPayload.selectedInventoryCandidate,
+            planeId: recoveryResolution.move?.plane?.id ?? inventoryExceptionPayload.planeId,
+            goal: inventoryExceptionPayload.goal,
+          });
+          recordAiSelfAnalyzerDecision("inventory_exception_recovered_with_base_launch", {
+            goal: inventoryExceptionPayload.goal || "inventory_exception_recovered_with_base_launch",
+            planeId: recoveryResolution.move?.plane?.id ?? inventoryExceptionPayload.planeId,
+            reasonCodes: [
+              "inventory_usage_exception",
+              "inventory_exception_recovered_with_base_launch",
+            ],
+            rejectReasons: ["inventory_usage_exception"],
+            source,
+            routeClass,
+            fallbackDiagnostics: {
+              stage: "finalize_base_launch_after_inventory_exception",
+              itemType: inventoryExceptionPayload.itemType,
+              inventoryUsageReason: inventoryExceptionPayload.inventoryUsageReason,
+              selectedInventoryCandidate: inventoryExceptionPayload.selectedInventoryCandidate,
+            },
+          });
+          baseCandidateStage.inventoryExceptionRecoveredWithBaseLaunch = true;
+          return baseCandidateStage;
+        }
+      } catch (recoveryError) {
+        const recoveryExceptionPayload = buildStageExceptionPayload("finalize_base_launch_after_inventory_exception", recoveryError);
+        logAiDecision("ai_move_stage_exception", {
+          ...recoveryExceptionPayload,
+          reasonCodes: ["do_computer_move_stage_exception", "inventory_recovery_finalize_exception"],
+        });
+        recordAiSelfAnalyzerDecision("ai_move_exception", {
+          goal: recoveryExceptionPayload.goal || "ai_move_exception",
+          planeId: recoveryExceptionPayload.planeId,
+          reasonCodes: ["ai_move_exception", "technical_exception", "inventory_recovery_finalize_exception"],
+          rejectReasons: ["inventory_recovery_finalize_exception"],
+          source,
+          routeClass,
+          fallbackDiagnostics: {
+            stage: recoveryExceptionPayload.stage,
+            itemType: recoveryExceptionPayload.itemType,
+            inventoryUsageReason: recoveryExceptionPayload.inventoryUsageReason,
+            selectedInventoryCandidate: recoveryExceptionPayload.selectedInventoryCandidate,
+          },
+          errorMessage: recoveryExceptionPayload.message,
+        });
+      }
+    }
+
+    throw error;
+  }
   return baseCandidateStage;
 }
 
