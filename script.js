@@ -23841,16 +23841,10 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     if(!hasSelectedItemInInventory){
       executionFailureReason = "selected_candidate_item_missing_in_inventory";
     } else if(selectedType === INVENTORY_ITEM_TYPES.FUEL){
-      const confirmedFuelBenefit = Boolean(
-        selectedInventoryCandidate?.fuelScenario
-        || selectedInventoryCandidate?.target
-      ) && Number(selectedInventoryCandidate?.expectedBenefit ?? 0) > Number(selectedInventoryCandidate?.risk ?? 0);
       if(!allowBuffItems){
         executionFailureReason = "selected_candidate_blocked_by_inventory_phase";
       } else if(hasSingleUseBuffBeenSpentThisTurn(INVENTORY_ITEM_TYPES.FUEL)){
         executionFailureReason = "selected_candidate_buff_already_used_this_turn";
-      } else if(antiFallbackInventoryUnlock && !confirmedFuelBenefit){
-        executionFailureReason = "selected_candidate_fuel_rejected_anti_fallback_no_confirmed_gain";
       } else {
         executed = tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.FUEL, { bypassLowConfidenceLock: true });
         if(executed){
@@ -24204,6 +24198,10 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       if(antiFallbackInventoryUnlock){
         executionReasonCodes.push("anti_fallback_measure_applied");
       }
+      if(selectedType === INVENTORY_ITEM_TYPES.FUEL
+        && (executionSource === "selected_inventory_candidate" || executionSource === "selected_inventory_sequence")){
+        executionReasonCodes.push("committed_candidate_executed_without_second_gate");
+      }
       logAiDecision("inventory_decision", {
         stage: "inventory_decision",
         source: executionSource,
@@ -24217,6 +24215,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         tacticalSeriesDiagnostics: selectedInventoryCandidate.tacticalSeriesDiagnostics || selectedInventoryCandidate?.tacticalSeries?.diagnostics || null,
         allowedAsPreparationMove: allowStrategicInventoryPreparation,
         antiFallbackInventoryUnlock,
+        committedCandidateExecutedWithoutSecondGate: selectedType === INVENTORY_ITEM_TYPES.FUEL
+          && (executionSource === "selected_inventory_candidate" || executionSource === "selected_inventory_sequence"),
       });
       if(antiFallbackInventoryUnlock && (selectedType === INVENTORY_ITEM_TYPES.FUEL || selectedType === INVENTORY_ITEM_TYPES.DYNAMITE)){
         logAiDecision("inventory_anti_fallback_item_used", {
