@@ -23982,12 +23982,16 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
             || selectedInventoryCandidate?.dynamiteRouteReplan?.moderateValidGain
             || (selectedInventoryCandidate?.dynamiteRouteReplan?.accumulatedValue2Turns ?? 0) >= 0.34
           );
+        const repeatedShotPlanNotFound = Boolean(recentInventorySignals?.repeatedShotPlanNotFound);
+        const repeatedFallbackSelected = Boolean(recentInventorySignals?.repeatedFallbackSelected);
+        const dynamiteDeadlockBreaker = Boolean(
+          deadlockFromCurrentTurn
+          || repeatedShotPlanNotFound
+          || repeatedFallbackSelected
+        );
+        const forcedDynamiteByDeadlock = target && dynamiteDeadlockBreaker && !shouldUseDynamite;
         if(!target){
           executionFailureReason = "selected_candidate_dynamite_target_missing";
-        } else if(antiFallbackInventoryUnlock && !shouldUseDynamite){
-          executionFailureReason = "selected_candidate_dynamite_rejected_anti_fallback_no_confirmed_gain";
-        } else if(!shouldUseDynamite){
-          executionFailureReason = "selected_candidate_dynamite_replan_no_longer_valid";
         } else {
           const dynamiteSeries = selectedInventoryCandidate?.tacticalSeries;
           if(dynamiteSeries?.itemType === INVENTORY_ITEM_TYPES.DYNAMITE && Array.isArray(dynamiteSeries.steps) && dynamiteSeries.steps.length > 0){
@@ -24067,6 +24071,18 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
               strategicDynamiteScore: selectedInventoryCandidate.strategicDynamiteScore ?? null,
               strategicDynamiteReasons: selectedInventoryCandidate.strategicDynamiteReasons || null,
             });
+            if(forcedDynamiteByDeadlock){
+              logAiDecision("dynamite_deadlock_breaker_used", {
+                planeId: plannedMove?.plane?.id ?? null,
+                goal: strategicGoal || null,
+                sourceReason: selectedInventoryCandidate.reason || null,
+                target: selectedInventoryCandidate.target || null,
+                routeReplan: selectedInventoryCandidate.dynamiteRouteReplan || null,
+                deadlockFromCurrentTurn,
+                repeatedShotPlanNotFound,
+                repeatedFallbackSelected,
+              });
+            }
             if(selectedInventoryCandidate.reason === "dynamite_used_for_map_opening"
               || selectedInventoryCandidate.reason === "dynamite_used_for_future_route_gain"){
               logAiDecision(selectedInventoryCandidate.reason, {
