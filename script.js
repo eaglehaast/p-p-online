@@ -11776,6 +11776,10 @@ function buildAiV2ReserveDiagnosticsReport(source){
   const technicalExceptionEvents = aiDecisionEvents.filter((event) => isTechnicalAiMoveExceptionEvent(event));
   const logicalDeadlockEvents = aiDecisionEvents.filter((event) => isLogicalDeadlockEvent(event));
   const failSafeTurnAdvanceEvents = aiDecisionEvents.filter((event) => isFailSafeTurnAdvanceEvent(event));
+  const flagDeliveryMissedOpportunityEvents = aiDecisionEvents.filter((event) => {
+    if(hasReasonCode(event, "flag_delivery_opportunity_missed")) return true;
+    return `${event?.stage || ""}`.toLowerCase() === "flag_delivery_opportunity_missed";
+  });
 
   const aiDecisionTurnKeys = new Set(aiDecisionEvents.map((event, index) => getTurnGroupKey(event, index)));
   const failSafeTurnKeys = new Set(failSafeTurnAdvanceEvents.map((event, index) => getTurnGroupKey(event, index)));
@@ -11941,6 +11945,7 @@ function buildAiV2ReserveDiagnosticsReport(source){
     `Исключения ai_move_exception за матч: ${aiMoveExceptionEvents.length}.`,
     `Технические исключения за матч: ${technicalExceptionEvents.length}.`,
     `Логические тупики (кандидаты отклонены) за матч: ${logicalDeadlockEvents.length}.`,
+    `Упущенные возможности доставки флага: ${flagDeliveryMissedOpportunityEvents.length}.`,
     `Доля ходов, завершённых через fail-safe: ${Number((failSafeTurnShareAmongAiTurns * 100).toFixed(1))}% (${failSafeTurnKeys.size}/${aiDecisionTurnKeys.size || 0}).`,
     `Самая частая корневая причина: ${topRootCause[0]} (${topRootCause[1]}).`,
     `Direct: raw_attempted=${candidateFunnelStats.direct.raw_attempted}, valid_generated=${candidateFunnelStats.direct.valid_generated}, shortlistPass=${candidateFunnelStats.direct.shortlistPass}, selected=${candidateFunnelStats.direct.selected}.`,
@@ -12061,6 +12066,7 @@ function buildAiV2ReserveDiagnosticsReport(source){
       aiMoveExceptionEvents: aiMoveExceptionEvents.length,
       technicalExceptionEvents: technicalExceptionEvents.length,
       logicalDeadlockEvents: logicalDeadlockEvents.length,
+      flagDeliveryMissedOpportunities: flagDeliveryMissedOpportunityEvents.length,
       aiDecisionTurns: aiDecisionTurnKeys.size,
       failSafeTurns: failSafeTurnKeys.size,
       failSafeTurnShareAmongAiTurns,
@@ -16727,6 +16733,7 @@ function createInitialAiRoundState(){
     openingTemplateSuppressed: false,
     lastOpeningNonTrivialStartMeta: null,
     lastFallbackMoveMeta: null,
+    flagDeliveryMissedOpportunities: 0,
     lossCompressionMode: false,
     inventoryPressure: createInitialInventoryPressureState(),
     trainingForceFuelOnNextAiTurn: {
@@ -30447,6 +30454,50 @@ function runAiTurnV2(context = {}){
     });
   }
 
+  const flagDeliveryPriority = evaluateFlagDeliveryPriorityOpportunity(modeContext);
+  if(flagDeliveryPriority?.opportunityExists){
+    if(flagDeliveryPriority?.shouldApplyPriority && flagDeliveryPriority?.recommendedMove){
+      aiRoundState.currentGoal = "return_with_flag";
+      const appliedReasonCode = "flag_delivery_priority_applied";
+      logAiDecision("flag_delivery_priority_applied", {
+        source: "runAiTurnV2",
+        goal: "return_with_flag",
+        planeId: flagDeliveryPriority.carrierId || flagDeliveryPriority.recommendedMove?.plane?.id || null,
+        reasonCodes: [appliedReasonCode],
+        safeRouteCurrentTurn: flagDeliveryPriority.safeRouteCurrentTurn === true,
+        safeRouteNextTurn: flagDeliveryPriority.safeRouteNextTurn === true,
+        expectedDeliveryBenefit: flagDeliveryPriority.expectedDeliveryBenefit,
+        expectedAttackBenefit: flagDeliveryPriority.expectedAttackBenefit,
+        expectedRouteRisk: flagDeliveryPriority.expectedRouteRisk,
+      });
+      return issueAIMoveFromDoComputerMove(modeContext, {
+        ...flagDeliveryPriority.recommendedMove,
+        goalName: "return_with_flag",
+        decisionReason: appliedReasonCode,
+      }, {
+        source: "runAiTurnV2",
+        chooseGoal: { goalName: "return_with_flag", forced: true, reasonCode: appliedReasonCode },
+        routeClass: flagDeliveryPriority.recommendedMove?.routeClass || null,
+      });
+    }
+
+    aiRoundState.flagDeliveryMissedOpportunities = Number.isFinite(aiRoundState.flagDeliveryMissedOpportunities)
+      ? aiRoundState.flagDeliveryMissedOpportunities + 1
+      : 1;
+    logAiDecision("flag_delivery_opportunity_missed", {
+      source: "runAiTurnV2",
+      goal: "return_with_flag",
+      reasonCodes: ["flag_delivery_opportunity_missed"],
+      planeId: flagDeliveryPriority.carrierId || null,
+      safeRouteCurrentTurn: flagDeliveryPriority.safeRouteCurrentTurn === true,
+      safeRouteNextTurn: flagDeliveryPriority.safeRouteNextTurn === true,
+      expectedDeliveryBenefit: flagDeliveryPriority.expectedDeliveryBenefit,
+      expectedAttackBenefit: flagDeliveryPriority.expectedAttackBenefit,
+      expectedRouteRisk: flagDeliveryPriority.expectedRouteRisk,
+      missedReason: flagDeliveryPriority?.missedReason || "delivery_benefit_not_higher_or_risk_not_acceptable",
+    });
+  }
+
   const chosenGoal = chooseGoal(modeContext);
   const shotPlan = buildShotPlan(chosenGoal, modeContext);
   aiRoundState.lastShotPlanDiagnostics = shotPlan?.shotPlanDiagnostics || null;
@@ -30647,7 +30698,139 @@ function runAiTurnV2(context = {}){
   });
 }
 
+function evaluateFlagDeliveryPriorityOpportunity(modeContext = {}){
+  const aiPlanes = Array.isArray(modeContext?.aiPlanes) ? modeContext.aiPlanes : [];
+  const groundedReadyPlanes = aiPlanes.filter((plane) => (
+    isPlaneLaunchStateReady(plane)
+    && !flyingPoints.some((fp) => fp.plane === plane)
+  ));
+  const carrier = groundedReadyPlanes.find((plane) => {
+    if(!plane?.carriedFlagId) return false;
+    const carriedFlag = getFlagById(plane.carriedFlagId);
+    return carriedFlag?.color === "green";
+  });
+  if(!carrier) return { opportunityExists: false };
+
+  const homeBase = getBaseAnchor("blue");
+  if(!homeBase || !Number.isFinite(homeBase.x) || !Number.isFinite(homeBase.y)){
+    return {
+      opportunityExists: false,
+      carrierId: carrier?.id ?? null,
+      missedReason: "home_base_not_available",
+    };
+  }
+
+  const evaluateSafeMove = (move, planeRef) => {
+    if(!move) return { safe: false, move: null, landing: null, validation: null };
+    const moveWithPlane = { ...move, plane: planeRef };
+    const validation = validateAiLaunchMoveCandidate(moveWithPlane);
+    if(!validation?.ok) return { safe: false, move: moveWithPlane, landing: null, validation };
+    const landing = getAiMoveLandingPoint(moveWithPlane);
+    if(!landing) return { safe: false, move: moveWithPlane, landing: null, validation };
+    const immediateThreat = getImmediateResponseThreatMeta(modeContext, landing.x, landing.y, null);
+    if((immediateThreat?.count || 0) > 0){
+      return { safe: false, move: moveWithPlane, landing, validation, immediateThreat };
+    }
+    return { safe: true, move: moveWithPlane, landing, validation, immediateThreat };
+  };
+
+  const directMove = planPathWithSpecialRouteProbe(carrier, homeBase.x, homeBase.y, {
+    goalName: "return_with_flag",
+    decisionReason: "flag_delivery_priority_applied",
+    specialAttemptBudget: 2,
+    compareLabel: ["return_with_flag", carrier?.id ?? "", "priority_probe"],
+  });
+  const directSafeMeta = evaluateSafeMove(directMove, carrier);
+
+  let setupSafeMeta = null;
+  let secondTurnSafeMeta = null;
+  if(!directSafeMeta.safe){
+    const directDx = homeBase.x - carrier.x;
+    const directDy = homeBase.y - carrier.y;
+    const setupScales = [0.68, 0.56, 0.44, 0.34];
+    for(const scale of setupScales){
+      const setupTargetX = carrier.x + directDx * scale;
+      const setupTargetY = carrier.y + directDy * scale;
+      const setupMove = planPathToPoint(carrier, setupTargetX, setupTargetY, {
+        goalName: "return_with_flag_setup",
+        decisionReason: "flag_delivery_setup_probe",
+      });
+      const safeSetup = evaluateSafeMove(setupMove, carrier);
+      if(!safeSetup.safe) continue;
+      const projectedCarrier = { ...carrier, x: safeSetup.landing.x, y: safeSetup.landing.y };
+      const secondTurnMove = planPathWithSpecialRouteProbe(projectedCarrier, homeBase.x, homeBase.y, {
+        goalName: "return_with_flag",
+        decisionReason: "flag_delivery_second_turn_probe",
+        specialAttemptBudget: 2,
+        compareLabel: ["return_with_flag", carrier?.id ?? "", "next_turn_probe"],
+      });
+      const safeSecondTurn = evaluateSafeMove(secondTurnMove, projectedCarrier);
+      if(!safeSecondTurn.safe) continue;
+      setupSafeMeta = safeSetup;
+      secondTurnSafeMeta = safeSecondTurn;
+      break;
+    }
+  }
+
+  const safeRouteCurrentTurn = directSafeMeta.safe === true;
+  const safeRouteNextTurn = !safeRouteCurrentTurn && setupSafeMeta?.safe === true && secondTurnSafeMeta?.safe === true;
+  const opportunityExists = safeRouteCurrentTurn || safeRouteNextTurn;
+  if(!opportunityExists){
+    return {
+      opportunityExists: false,
+      carrierId: carrier?.id ?? null,
+      missedReason: "no_safe_return_route_in_current_or_next_turn",
+    };
+  }
+
+  const expectedDeliveryBenefit = safeRouteCurrentTurn ? 1 : 0.82;
+  const expectedRouteRisk = safeRouteCurrentTurn ? 0.07 : 0.16;
+  const groupKillPlan = modeContext?.groupKillPriorityPlan || null;
+  const expectedAttackBenefit = groupKillPlan?.move
+    ? (groupKillPlan.killCountOnTrajectory >= 3 ? 0.96 : groupKillPlan.killCountOnTrajectory === 2 ? 0.78 : 0.6)
+    : 0.52;
+  const riskAcceptable = expectedRouteRisk <= 0.22;
+  const deliveryBenefitHigher = expectedDeliveryBenefit > expectedAttackBenefit;
+  const shouldApplyPriority = riskAcceptable && deliveryBenefitHigher;
+  const recommendedMove = safeRouteCurrentTurn
+    ? directSafeMeta.move
+    : (setupSafeMeta?.move || null);
+
+  return {
+    opportunityExists: true,
+    shouldApplyPriority,
+    carrierId: carrier?.id ?? null,
+    safeRouteCurrentTurn,
+    safeRouteNextTurn,
+    expectedDeliveryBenefit: Number(expectedDeliveryBenefit.toFixed(3)),
+    expectedAttackBenefit: Number(expectedAttackBenefit.toFixed(3)),
+    expectedRouteRisk: Number(expectedRouteRisk.toFixed(3)),
+    recommendedMove,
+    missedReason: shouldApplyPriority ? null : (!riskAcceptable ? "delivery_route_risk_not_acceptable" : "delivery_benefit_not_higher_than_attack"),
+  };
+}
+
 function chooseGoal(modeContext = {}){
+  const flagDeliveryPriority = evaluateFlagDeliveryPriorityOpportunity(modeContext);
+  if(flagDeliveryPriority?.opportunityExists && flagDeliveryPriority?.shouldApplyPriority){
+    return {
+      goalName: "return_with_flag",
+      modelGoalClass: "flag_delivery_priority_override",
+      modelWeight: 1,
+      mode: "flag_pressure",
+      forcedByFlagDeliveryPriority: true,
+      reasonCode: "flag_delivery_priority_applied",
+      evaluation: {
+        selectedPriorities: ["return_with_flag", "capture_enemy_flag", "attack_enemy_plane"],
+        expectedDeliveryBenefit: flagDeliveryPriority.expectedDeliveryBenefit,
+        expectedAttackBenefit: flagDeliveryPriority.expectedAttackBenefit,
+        expectedRouteRisk: flagDeliveryPriority.expectedRouteRisk,
+        safeRouteCurrentTurn: flagDeliveryPriority.safeRouteCurrentTurn === true,
+        safeRouteNextTurn: flagDeliveryPriority.safeRouteNextTurn === true,
+      },
+    };
+  }
+
   const groupKillPriorityPlan = modeContext?.groupKillPriorityPlan || null;
   if(groupKillPriorityPlan?.move && groupKillPriorityPlan.killCountOnTrajectory >= 3){
     return {
