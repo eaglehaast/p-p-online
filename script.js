@@ -16090,9 +16090,9 @@ const AI_OPENING_SOFT_RANDOM_TURN_LIMIT = 2;
 const AI_OPENING_SOFT_RANDOM_SCORE_MARGIN = MAX_DRAG_DISTANCE * 0.035;
 const AI_OPENING_SOFT_RANDOM_MAX_SHIFT = 0.045;
 const AI_POST_INVENTORY_LAUNCH_DELAY_MS = 1000;
-const AI_INVENTORY_ACTION_LIMIT_PER_TURN = 12;
+const AI_INVENTORY_LOOP_GUARD_LIMIT_PER_TURN = 12;
 const AI_INVENTORY_BUFF_CHAIN_LIMIT_PER_TURN = 4;
-const AI_INVENTORY_TACTICAL_REPEAT_LIMIT_PER_TURN = 8;
+const AI_INVENTORY_TACTICAL_REPEAT_LIMIT_PER_TURN = 24;
 const AI_PLANNED_MOVE_TARGET_REVALIDATION_RADIUS_PX = ATTACK_RANGE_PX * 0.45;
 const AI_OPENING_AGGRESSION_BIAS_TURN_LIMIT = 2;
 const AI_OPENING_AGGRESSION_BIAS_MAX_LEAD = 1;
@@ -26309,11 +26309,31 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   const FORCED_SURPLUS_AGGRESSIVE_RETRY_LIMIT = 3;
   const FORCED_SURPLUS_NON_FORCED_UNLOCK_AFTER_FAILS = 2;
   let tacticalSurplusForcedOrderIndex = 0;
+  const isAiV2Mode = `${AI_ENGINE_MODE || ""}`.toLowerCase() === "v2";
+  const inventoryDeadlockHint = (
+    plannedMove?.allowInventoryUsage === true
+    && plannedMove?.inventoryUsageReason === "bad_direct_fallback"
+  )
+    || `${plannedMove?.decisionReason || ""}`.toLowerCase().includes("fallback")
+    || `${plannedMove?.goalName || ""}`.toLowerCase().includes("fallback");
+  const tacticalSurplusTotalUnits = tacticalSurplusPendingOrder.reduce((sum, itemType) => (
+    sum + Math.max(0, Number(tacticalSurplusInitialCounts[itemType] || 0) - 1)
+  ), 0);
+  const v2DynamicTacticalRepeatBonus = (
+    isAiV2Mode
+    && inventoryDeadlockHint
+    && tacticalSurplusTotalUnits > 0
+  )
+    ? Math.min(18, tacticalSurplusTotalUnits * 3)
+    : 0;
+  const tacticalRepeatLimitForTurn = AI_INVENTORY_TACTICAL_REPEAT_LIMIT_PER_TURN + v2DynamicTacticalRepeatBonus;
+  let inventoryStopByLimit = false;
+  let inventoryStopLimitType = null;
 
-  for(let inventoryActionStep = 0; inventoryActionStep < AI_INVENTORY_ACTION_LIMIT_PER_TURN; inventoryActionStep += 1){
+  for(let inventoryActionStep = 0; inventoryActionStep < AI_INVENTORY_LOOP_GUARD_LIMIT_PER_TURN; inventoryActionStep += 1){
     const actionBeforeState = afterInventoryState;
     let forcedTacticalSurplusType = null;
-    if(tacticalInventoryActionsApplied < AI_INVENTORY_TACTICAL_REPEAT_LIMIT_PER_TURN && tacticalSurplusPendingOrder.length > 0){
+    if(tacticalInventoryActionsApplied < tacticalRepeatLimitForTurn && tacticalSurplusPendingOrder.length > 0){
       const normalizedForcedIndex = tacticalSurplusForcedOrderIndex % tacticalSurplusPendingOrder.length;
       forcedTacticalSurplusType = tacticalSurplusPendingOrder[normalizedForcedIndex] || null;
     }
@@ -26412,16 +26432,22 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       buffInventoryActionsApplied += 1;
     }
 
-    if(totalInventoryActionsApplied >= AI_INVENTORY_ACTION_LIMIT_PER_TURN){
+    if(totalInventoryActionsApplied >= AI_INVENTORY_LOOP_GUARD_LIMIT_PER_TURN){
       inventoryStopReason = "inventory_total_action_limit_reached";
+      inventoryStopByLimit = true;
+      inventoryStopLimitType = "loop_guard";
       break;
     }
     if(!isTacticalAction && buffInventoryActionsApplied >= AI_INVENTORY_BUFF_CHAIN_LIMIT_PER_TURN){
       inventoryStopReason = "inventory_buff_chain_limit_reached";
+      inventoryStopByLimit = true;
+      inventoryStopLimitType = "buff_chain";
       break;
     }
-    if(isTacticalAction && tacticalInventoryActionsApplied >= AI_INVENTORY_TACTICAL_REPEAT_LIMIT_PER_TURN){
+    if(isTacticalAction && tacticalInventoryActionsApplied >= tacticalRepeatLimitForTurn){
       inventoryStopReason = "inventory_tactical_repeat_limit_reached";
+      inventoryStopByLimit = true;
+      inventoryStopLimitType = "tactical_repeat";
       break;
     }
   }
@@ -26441,6 +26467,8 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     appliedTacticalItemsCount: tacticalInventoryActionsApplied,
     appliedItemTypesInOrder: consumedItemTypes.slice(),
     stopReason: inventoryStopReason,
+    stopByLimit: inventoryStopByLimit,
+    stopLimitType: inventoryStopLimitType,
     tacticalSurplusPolicy: {
       requiredTypes: tacticalSurplusPendingOrder.slice(),
       attemptedTypes: Array.from(tacticalSurplusAttemptedTypes.keys()),
@@ -26449,11 +26477,14 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       forcedSurplusTelemetry: { ...forcedSurplusTelemetry },
       aggressiveRetryLimit: FORCED_SURPLUS_AGGRESSIVE_RETRY_LIMIT,
       nonForcedUnlockAfterFails: FORCED_SURPLUS_NON_FORCED_UNLOCK_AFTER_FAILS,
+      inventoryDeadlockHint,
+      dynamicRepeatBonus: v2DynamicTacticalRepeatBonus,
     },
     limits: {
-      total: AI_INVENTORY_ACTION_LIMIT_PER_TURN,
+      loopGuard: AI_INVENTORY_LOOP_GUARD_LIMIT_PER_TURN,
       buff: AI_INVENTORY_BUFF_CHAIN_LIMIT_PER_TURN,
-      tactical: AI_INVENTORY_TACTICAL_REPEAT_LIMIT_PER_TURN,
+      tacticalBase: AI_INVENTORY_TACTICAL_REPEAT_LIMIT_PER_TURN,
+      tacticalForTurn: tacticalRepeatLimitForTurn,
     },
   });
   logAiDecision("inventory_decision_made", {
