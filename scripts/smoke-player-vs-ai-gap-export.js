@@ -106,8 +106,8 @@ assert(
   'Expected turn outcome noMoveRate to be lower than pipeline noMoveRate for mixed-stage turn.'
 );
 assert(
-  report.gapMetrics.aiDecisionMetrics.turnOutcomeMetrics.fallbackRate < report.gapMetrics.aiDecisionMetrics.pipelineDiagnostics.fallbackRate,
-  'Expected turn outcome fallbackRate to be lower than pipeline fallbackRate when final move is not fallback.'
+  report.gapMetrics.aiDecisionMetrics.turnOutcomeMetrics.fallbackRate <= report.gapMetrics.aiDecisionMetrics.pipelineDiagnostics.fallbackRate,
+  'Expected turn outcome fallbackRate to be less or equal pipeline fallbackRate with explicit fallback-only detection.'
 );
 
 const previousSource = require('child_process').execSync('git show HEAD:script.js', { encoding: 'utf8' });
