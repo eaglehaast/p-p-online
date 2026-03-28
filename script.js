@@ -10786,6 +10786,31 @@ function buildAiSelfAnalyzerGapReport(source){
     acc + (Number.isFinite(sourceByColor[color]) ? sourceByColor[color] : 0)
   ), 0);
 
+  const fallbackStageSet = new Set(["fallback_selected", "super_reserve_selected", "safe_short_fallback_selected"]);
+  const fallbackReasonCodeSet = new Set([
+    "fallback_selected",
+    "safe_short_fallback_selected",
+    "final_mine_check_safe_fallback_selected",
+    "mine_gate_fallback_selected",
+    "final_mine_check_aggressive_fallback_selected",
+  ]);
+  const hasStructuredFallbackDiagnostics = (event) => Boolean(event?.fallbackDiagnostics && typeof event.fallbackDiagnostics === "object");
+  const collectReasonCodes = (event) => {
+    const reasonCodes = Array.isArray(event?.reasonCodes) ? event.reasonCodes : [];
+    const singularReasonCode = typeof event?.reasonCode === "string" ? event.reasonCode : null;
+    if(!singularReasonCode || reasonCodes.includes(singularReasonCode)){
+      return reasonCodes;
+    }
+    return [...reasonCodes, singularReasonCode];
+  };
+  const isFallbackStageOrReason = (event) => {
+    if(!event || typeof event !== "object") return false;
+    const stage = `${event?.stage || ""}`.toLowerCase();
+    if(fallbackStageSet.has(stage)) return true;
+    if(hasStructuredFallbackDiagnostics(event)) return true;
+    return collectReasonCodes(event).some((code) => fallbackReasonCodeSet.has(`${code || ""}`.toLowerCase()));
+  };
+
   const calcHumanDecisionMetrics = () => {
     const riskyDecisions = humanDecisionEvents.filter((event) => Number.isFinite(event?.risk?.score) && event.risk.score >= 0.6);
     const riskyMisses = riskyDecisions.filter((event) => {
@@ -10823,11 +10848,6 @@ function buildAiSelfAnalyzerGapReport(source){
   };
 
   const calcAiDecisionMetrics = () => {
-    const includesFallbackToken = (value) => hasAiFallbackOrFailSafeMarker(value);
-    const isFallbackStageOrReason = (event) => {
-      return isAiFallbackDecisionEvent(event);
-    };
-
     const getTurnGroupKey = (event, index) => {
       const colorKey = event?.turnColor || "unknown_color";
       const roundKey = Number.isFinite(event?.roundNumber) ? event.roundNumber : "unknown_round";
@@ -10881,17 +10901,9 @@ function buildAiSelfAnalyzerGapReport(source){
       .filter((event) => Boolean(event));
 
     const finalDecisionsWithoutMove = finalTurnEvents.filter((event) => !event?.selectedMove);
-    const finalFallbackDecisions = finalTurnEvents.filter((event) => {
-      if(!event?.selectedMove) return false;
-      const move = event.selectedMove || {};
-      const stage = typeof event?.stage === "string" ? event.stage.toLowerCase() : "";
-      return (
-        stage.includes("fallback")
-        || includesFallbackToken(move.goalName)
-        || includesFallbackToken(move.decisionReason)
-        || isFallbackStageOrReason(event)
-      );
-    });
+    const finalFallbackDecisions = finalTurnEvents.filter((event) => (
+      Boolean(event?.selectedMove) && isFallbackStageOrReason(event)
+    ));
     const finalAvgMoveDistance = finalTurnEvents
       .map((event) => Number.isFinite(event?.selectedMove?.totalDist) ? event.selectedMove.totalDist : null)
       .filter((value) => Number.isFinite(value));
@@ -11174,7 +11186,9 @@ function buildAiSelfAnalyzerGapReport(source){
 function buildAiV2ReserveDiagnosticsReport(source){
   const events = Array.isArray(source?.events) ? source.events : [];
   const aiDecisionEvents = events.filter((event) => event?.type === "ai_decision");
-  const fallbackStages = AI_FALLBACK_STAGES;
+  const fallbackStages = (typeof AI_FALLBACK_STAGES !== "undefined" && AI_FALLBACK_STAGES instanceof Set)
+    ? AI_FALLBACK_STAGES
+    : new Set(["fallback_selected", "super_reserve_selected", "safe_short_fallback_selected"]);
   const routeClasses = ["direct", "gap", "ricochet"];
 
   const createEmptyFunnelEntry = () => ({
@@ -22057,55 +22071,82 @@ function isAiInventoryPressureWeakChance(reason){
 const AI_FALLBACK_STAGES = new Set([
   "fallback_selected",
   "super_reserve_selected",
-  "forced_progress_selected",
   "safe_short_fallback_selected",
-  "v2_shot_plan_not_found",
 ]);
 
-function hasAiFallbackOrFailSafeMarker(value){
-  const text = `${value || ""}`.toLowerCase();
-  return text.includes("fallback") || text.includes("fail_safe");
+const AI_RECOVERY_PROGRESS_STAGES = new Set([
+  "forced_progress_selected",
+  "v2_shot_plan_not_found",
+  "recovery_progress",
+]);
+
+const AI_TECHNICAL_FAIL_SAFE_STAGES = new Set([
+  "technical_fail_safe",
+]);
+
+const AI_FALLBACK_REASON_CODES = new Set([
+  "fallback_selected",
+  "safe_short_fallback_selected",
+  "final_mine_check_safe_fallback_selected",
+  "mine_gate_fallback_selected",
+  "final_mine_check_aggressive_fallback_selected",
+]);
+
+const AI_RECOVERY_PROGRESS_REASON_CODES = new Set([
+  "forced_progress_selected",
+  "v2_shot_plan_not_found",
+  "reserve_strategy_required",
+  "reserve_strategy_exhausted",
+  "v2_safe_turn_resolution",
+]);
+
+const AI_TECHNICAL_FAIL_SAFE_REASON_CODES = new Set([
+  "fail_safe_turn_advance",
+  "ai_move_exception",
+  "technical_exception",
+  "invalid_move_fail_safe",
+  "ai_launch_watchdog_fail_safe",
+  "invalid_plane_for_launch",
+]);
+
+function hasStructuredFallbackDiagnostics(event){
+  const diagnostics = event?.fallbackDiagnostics;
+  return Boolean(diagnostics && typeof diagnostics === "object");
+}
+
+function collectAiDecisionReasonCodes(event){
+  const reasonCodes = Array.isArray(event?.reasonCodes) ? event.reasonCodes : [];
+  const reasonCode = typeof event?.reasonCode === "string" ? event.reasonCode : null;
+  if(reasonCode && !reasonCodes.includes(reasonCode)){
+    return [...reasonCodes, reasonCode];
+  }
+  return reasonCodes;
 }
 
 function isAiFallbackDecisionEvent(event){
   if(!event || typeof event !== "object") return false;
   const stage = `${event?.stage || ""}`.toLowerCase();
-  if(AI_FALLBACK_STAGES.has(stage) || hasAiFallbackOrFailSafeMarker(stage)){
-    return true;
-  }
-  const reasonCodes = Array.isArray(event?.reasonCodes) ? event.reasonCodes : [];
-  const rejectReasons = Array.isArray(event?.rejectReasons) ? event.rejectReasons : [];
-  const selectedMove = event?.selectedMove && typeof event.selectedMove === "object" ? event.selectedMove : {};
-  const reasonSources = [
-    ...reasonCodes,
-    ...rejectReasons,
-    selectedMove.decisionReason,
-    selectedMove.goalName,
-    event?.goal,
-  ];
-  return reasonSources.some((value) => {
-    const safeValue = `${value || ""}`.toLowerCase();
-    return AI_FALLBACK_STAGES.has(safeValue) || hasAiFallbackOrFailSafeMarker(safeValue);
-  });
+  if(AI_FALLBACK_STAGES.has(stage)) return true;
+  if(hasStructuredFallbackDiagnostics(event)) return true;
+  const reasonCodes = collectAiDecisionReasonCodes(event);
+  return reasonCodes.some((code) => AI_FALLBACK_REASON_CODES.has(`${code || ""}`.toLowerCase()));
 }
 
 function resolveAiFallbackAnalyzerStage(stage, details = {}){
   const safeStage = `${stage || ""}`.toLowerCase();
   if(AI_FALLBACK_STAGES.has(safeStage)) return safeStage;
-  const reasonCodes = Array.isArray(details?.reasonCodes) ? details.reasonCodes : [];
-  const rejectReasons = Array.isArray(details?.rejectReasons) ? details.rejectReasons : [];
-  const markerPool = [
-    safeStage,
-    ...reasonCodes,
-    ...rejectReasons,
-    details?.move?.decisionReason,
-    details?.plannedMove?.decisionReason,
-  ];
-  if(markerPool.some((value) => `${value || ""}`.toLowerCase().includes("fail_safe"))){
-    return "safe_short_fallback_selected";
-  }
-  if(markerPool.some((value) => `${value || ""}`.toLowerCase().includes("fallback"))){
+  if(AI_RECOVERY_PROGRESS_STAGES.has(safeStage)) return "recovery_progress";
+  if(AI_TECHNICAL_FAIL_SAFE_STAGES.has(safeStage)) return "technical_fail_safe";
+  const reasonCodes = collectAiDecisionReasonCodes(details)
+    .map((code) => `${code || ""}`.toLowerCase());
+  if(reasonCodes.some((code) => AI_FALLBACK_REASON_CODES.has(code)) || hasStructuredFallbackDiagnostics(details)){
     return "fallback_selected";
+  }
+  if(reasonCodes.some((code) => AI_RECOVERY_PROGRESS_REASON_CODES.has(code))){
+    return "recovery_progress";
+  }
+  if(reasonCodes.some((code) => AI_TECHNICAL_FAIL_SAFE_REASON_CODES.has(code))){
+    return "technical_fail_safe";
   }
   return stage;
 }
