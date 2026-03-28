@@ -16821,6 +16821,12 @@ function createInitialAiRoundState(){
       exhaustedAt: null,
       lastIncrementReason: null,
     },
+    finalMineGateDeadlockBudget: {
+      turnNumber: null,
+      used: 0,
+      limit: 2,
+    },
+    finalMineGateCancelledTacticalItemCount: 0,
     inventoryPhase: AI_ENGINE_MODE === "v2" ? AI_V2_INVENTORY_PHASE : 3,
   };
 }
@@ -16911,6 +16917,56 @@ function incrementAiFallbackRetryUsage(reason, details = {}){
 function isAiFallbackRetryBudgetExhausted(){
   const state = ensureAiFallbackRetryStateScope();
   return state.exhausted === true || state.retriesUsed >= state.limit;
+}
+
+function ensureFinalMineGateDeadlockBudgetScope(){
+  if(!aiRoundState || typeof aiRoundState !== "object"){
+    return {
+      turnNumber: null,
+      used: 0,
+      limit: 2,
+    };
+  }
+  const currentTurn = Number.isFinite(aiRoundState.turnNumber)
+    ? aiRoundState.turnNumber
+    : Number.isFinite(turnAdvanceCount) ? turnAdvanceCount : null;
+  const previous = aiRoundState.finalMineGateDeadlockBudget;
+  const previousTurn = Number.isFinite(previous?.turnNumber) ? previous.turnNumber : null;
+  if(!previous || previousTurn !== currentTurn){
+    aiRoundState.finalMineGateDeadlockBudget = {
+      turnNumber: currentTurn,
+      used: 0,
+      limit: Number.isFinite(previous?.limit) ? Math.max(1, Math.floor(previous.limit)) : 2,
+    };
+  }
+  return aiRoundState.finalMineGateDeadlockBudget;
+}
+
+function consumeFinalMineGateDeadlockBudgetIfNeeded(gateResult){
+  const deadlockBudget = ensureFinalMineGateDeadlockBudgetScope();
+  const isTrulyDeadlock = Boolean(
+    gateResult
+    && gateResult.ok === false
+    && gateResult.threatClass === "critical_forbidden"
+    && (gateResult?.threatMeta?.enemy?.landingThreat || gateResult?.threatMeta?.landingThreat)
+    && gateResult?.threatMeta?.pathHit
+  );
+  if(!isTrulyDeadlock){
+    return {
+      isTrulyDeadlock: false,
+      exhausted: false,
+      used: deadlockBudget.used,
+      limit: deadlockBudget.limit,
+    };
+  }
+  deadlockBudget.used = Math.max(0, Number(deadlockBudget.used) || 0) + 1;
+  const exhausted = deadlockBudget.used >= deadlockBudget.limit;
+  return {
+    isTrulyDeadlock: true,
+    exhausted,
+    used: deadlockBudget.used,
+    limit: deadlockBudget.limit,
+  };
 }
 
 function evaluateOpeningNonTrivialStartMeta(context){
@@ -25301,22 +25357,62 @@ function getFinalAiLaunchMineThreatCheck(move, options = {}){
     };
   }
 
-  const threatMeta = getMineThreatMetaForSegment(
+  const planeColor = plane?.color || options?.planeColor || "blue";
+  const enemyMineOwner = planeColor === "blue" ? "green" : "blue";
+  const ownMineOwner = planeColor;
+  const enemyThreatMeta = getMineThreatMetaForSegment(
     plane.x,
     plane.y,
     plannedLanding.x,
     plannedLanding.y,
     plane,
-    options,
+    { ...options, mineOwner: enemyMineOwner },
   );
-  const hasThreat = Boolean(threatMeta?.pathHit || threatMeta?.landingThreat || (threatMeta?.count || 0) > 0);
-  if(hasThreat){
+  const ownThreatMeta = getMineThreatMetaForSegment(
+    plane.x,
+    plane.y,
+    plannedLanding.x,
+    plannedLanding.y,
+    plane,
+    { ...options, mineOwner: ownMineOwner },
+  );
+  const threatMeta = {
+    count: (enemyThreatMeta?.count || 0) + (ownThreatMeta?.count || 0),
+    nearestDist: Math.min(
+      Number.isFinite(enemyThreatMeta?.nearestDist) ? enemyThreatMeta.nearestDist : Number.POSITIVE_INFINITY,
+      Number.isFinite(ownThreatMeta?.nearestDist) ? ownThreatMeta.nearestDist : Number.POSITIVE_INFINITY
+    ),
+    pathHit: Boolean(enemyThreatMeta?.pathHit || ownThreatMeta?.pathHit),
+    landingThreat: Boolean(enemyThreatMeta?.landingThreat || ownThreatMeta?.landingThreat),
+    reason: enemyThreatMeta?.reason || ownThreatMeta?.reason || null,
+    triggeringMine: enemyThreatMeta?.triggeringMine || ownThreatMeta?.triggeringMine || null,
+    triggerRadius: Math.max(enemyThreatMeta?.triggerRadius || 0, ownThreatMeta?.triggerRadius || 0),
+    enemy: enemyThreatMeta,
+    own: ownThreatMeta,
+  };
+  const hasCriticalForbiddenThreat = Boolean(enemyThreatMeta?.pathHit || enemyThreatMeta?.landingThreat || ownThreatMeta?.landingThreat);
+  const hasAcceptableCombatRisk = !hasCriticalForbiddenThreat && Boolean(ownThreatMeta?.pathHit);
+  if(hasCriticalForbiddenThreat){
     return {
       ok: false,
-      reason: threatMeta?.reason || (threatMeta?.pathHit ? "path_crosses_mine" : "landing_blocked_by_mine"),
-      reasonCode: "final_mine_check_rejected_stale_route",
+      reason: enemyThreatMeta?.reason || ownThreatMeta?.reason || (threatMeta?.pathHit ? "path_crosses_mine" : "landing_blocked_by_mine"),
+      reasonCode: "final_mine_check_rejected_critical_forbidden_mine_threat",
       message: "Final mine check rejected stale route before launch",
       threatMeta,
+      threatClass: "critical_forbidden",
+      landingPoint: plannedLanding,
+      startPoint: { x: plane.x, y: plane.y },
+    };
+  }
+
+  if(hasAcceptableCombatRisk){
+    return {
+      ok: true,
+      reason: ownThreatMeta?.reason || "path_crosses_mine",
+      reasonCode: "final_mine_check_allowed_combat_risk",
+      message: "Final mine check allowed acceptable combat risk",
+      threatMeta,
+      threatClass: "acceptable_combat_risk",
       landingPoint: plannedLanding,
       startPoint: { x: plane.x, y: plane.y },
     };
@@ -25328,15 +25424,91 @@ function getFinalAiLaunchMineThreatCheck(move, options = {}){
     reasonCode: "final_mine_check_passed",
     message: "Final mine check passed",
     threatMeta,
+    threatClass: "clear",
     landingPoint: plannedLanding,
     startPoint: { x: plane.x, y: plane.y },
   };
+}
+
+function buildFinalMineGateAggressiveFallbackReplan(plannedMove, context = {}, options = {}){
+  const plane = plannedMove?.plane || null;
+  if(!plane) return null;
+
+  const preservedTarget = plannedMove?.preservedStrategicTargetPoint;
+  const strategicTargetPoint = (preservedTarget && Number.isFinite(preservedTarget.x) && Number.isFinite(preservedTarget.y))
+    ? { x: preservedTarget.x, y: preservedTarget.y }
+    : getAiStrategicTargetPoint(context, plannedMove);
+  const baseGoalName = plannedMove?.goalName || aiRoundState?.currentGoal || "final_mine_gate_aggressive_replan";
+  const normalizedTarget = strategicTargetPoint && Number.isFinite(strategicTargetPoint.x) && Number.isFinite(strategicTargetPoint.y)
+    ? strategicTargetPoint
+    : null;
+
+  const dynamiteCharges = Number(evaluateBlueInventoryState()?.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0);
+  if(dynamiteCharges > 0){
+    const dynamiteCandidate = getDynamiteCandidateForCurrentRoute(context, {
+      ...plannedMove,
+      preservedStrategicTargetPoint: normalizedTarget || plannedMove?.preservedStrategicTargetPoint || null,
+    });
+    const dynamiteMove = dynamiteCandidate?.replanResult?.move || null;
+    if(dynamiteMove && Number.isFinite(dynamiteMove.vx) && Number.isFinite(dynamiteMove.vy)){
+      const moved = {
+        ...dynamiteMove,
+        preservedStrategicTargetPoint: normalizedTarget || plannedMove?.preservedStrategicTargetPoint || null,
+        goalName: dynamiteMove.goalName || baseGoalName,
+        decisionReason: `${dynamiteMove.decisionReason || plannedMove?.decisionReason || "final_mine_gate_aggressive_replan"}_prioritize_dynamite`,
+      };
+      const mineGateCheck = getFinalAiLaunchMineThreatCheck(moved);
+      if(mineGateCheck.ok){
+        return {
+          move: moved,
+          reasonCode: "final_mine_check_aggressive_dynamite_replan_selected",
+          tacticalItemType: INVENTORY_ITEM_TYPES.DYNAMITE,
+          tacticalItemAlreadyUsed: options?.tacticalItemAlreadyUsed === true,
+          gateResult: mineGateCheck,
+          source: "dynamite_corridor_replan",
+        };
+      }
+    }
+  }
+
+  if(normalizedTarget && typeof planPathWithSpecialRouteProbe === "function"){
+    const genericReplan = planPathWithSpecialRouteProbe(plane, normalizedTarget.x, normalizedTarget.y, {
+      goalName: baseGoalName,
+      decisionReason: `${plannedMove?.decisionReason || "final_mine_gate_aggressive_replan"}_preserve_strategy`,
+      targetEnemy: plannedMove?.targetEnemy || null,
+      enemy: plannedMove?.enemy || plannedMove?.targetEnemy || null,
+      context,
+      routeClass: plannedMove?.routeClass || "direct",
+      compareLabel: ["final_mine_gate_aggressive_replan", baseGoalName, plane?.id || ""],
+    });
+    if(genericReplan){
+      const moved = {
+        ...genericReplan,
+        preservedStrategicTargetPoint: normalizedTarget,
+      };
+      const mineGateCheck = getFinalAiLaunchMineThreatCheck(moved);
+      if(mineGateCheck.ok){
+        return {
+          move: moved,
+          reasonCode: "final_mine_check_aggressive_strategy_replan_selected",
+          tacticalItemType: null,
+          tacticalItemAlreadyUsed: options?.tacticalItemAlreadyUsed === true,
+          gateResult: mineGateCheck,
+          source: "strategy_target_replan",
+        };
+      }
+    }
+  }
+
+  return null;
 }
 
 function resolveFinalAiLaunchMoveWithMineGate(plannedMove, context = {}, options = {}){
   const stage = options?.stage || "final_validation_and_launch";
   const goal = plannedMove?.goalName || aiRoundState?.currentGoal || null;
   const gateResult = getFinalAiLaunchMineThreatCheck(plannedMove);
+  const tacticalItemType = options?.tacticalItemType || null;
+  const tacticalItemAlreadyUsed = options?.tacticalItemAlreadyUsed === true;
 
   const buildPoint = (point) => point
     ? {
@@ -25351,6 +25523,8 @@ function resolveFinalAiLaunchMoveWithMineGate(plannedMove, context = {}, options
       planeId: plannedMove?.plane?.id ?? null,
       goal,
       reasonCode: gateResult.reasonCode,
+      threatClass: gateResult.threatClass || "clear",
+      tacticalItemType,
       startPoint: buildPoint(gateResult.startPoint),
       landingPoint: buildPoint(gateResult.landingPoint),
     });
@@ -25363,12 +25537,25 @@ function resolveFinalAiLaunchMoveWithMineGate(plannedMove, context = {}, options
     };
   }
 
+  if(tacticalItemAlreadyUsed && aiRoundState && typeof aiRoundState === "object"){
+    aiRoundState.finalMineGateCancelledTacticalItemCount = Math.max(
+      0,
+      Number(aiRoundState.finalMineGateCancelledTacticalItemCount) || 0,
+    ) + 1;
+  }
+  const deadlockBudgetMeta = consumeFinalMineGateDeadlockBudgetIfNeeded(gateResult);
+
   logAiDecision("ai_final_mine_gate_blocked", {
     stage,
     planeId: plannedMove?.plane?.id ?? null,
     goal,
     reason: gateResult.reason || "path_crosses_mine",
     reasonCode: gateResult.reasonCode || "final_mine_check_rejected_stale_route",
+    threatClass: gateResult.threatClass || "critical_forbidden",
+    tacticalItemType,
+    tacticalItemAlreadyUsed,
+    tacticalItemCancelCount: Number(aiRoundState?.finalMineGateCancelledTacticalItemCount || 0),
+    deadlockBudget: deadlockBudgetMeta,
     threatMeta: gateResult.threatMeta
       ? {
           count: gateResult.threatMeta.count,
@@ -25392,8 +25579,60 @@ function resolveFinalAiLaunchMoveWithMineGate(plannedMove, context = {}, options
     landingPoint: buildPoint(gateResult.landingPoint),
   });
 
+  if(!deadlockBudgetMeta.exhausted){
+    const aggressiveFallback = buildFinalMineGateAggressiveFallbackReplan(plannedMove, context, {
+      stage,
+      tacticalItemType,
+      tacticalItemAlreadyUsed,
+    });
+    if(aggressiveFallback?.move){
+      const aggressiveValidation = validateAiLaunchMoveCandidate(aggressiveFallback.move);
+      if(aggressiveValidation.ok){
+        logAiDecision("ai_final_mine_gate_aggressive_fallback_selected", {
+          stage,
+          planeId: aggressiveFallback.move?.plane?.id ?? null,
+          previousPlaneId: plannedMove?.plane?.id ?? null,
+          goal,
+          reasonCode: aggressiveFallback.reasonCode || "final_mine_check_aggressive_replan_selected",
+          source: aggressiveFallback.source || null,
+          tacticalItemType,
+          tacticalItemAlreadyUsed,
+          preservedStrategicTargetPoint: aggressiveFallback.move?.preservedStrategicTargetPoint || null,
+        });
+        return {
+          ok: true,
+          move: aggressiveFallback.move,
+          reasonCode: aggressiveFallback.reasonCode || "final_mine_check_aggressive_replan_selected",
+          gateResult,
+          fallbackUsed: true,
+        };
+      }
+      logAiDecision("ai_final_mine_gate_aggressive_fallback_rejected", {
+        stage,
+        planeId: aggressiveFallback.move?.plane?.id ?? null,
+        goal,
+        reasonCode: "final_mine_check_aggressive_fallback_rejected",
+        rejectReason: aggressiveValidation.reason || "invalid_aggressive_fallback_move",
+      });
+    }
+  } else {
+    logAiDecision("ai_final_mine_gate_deadlock_budget_exhausted", {
+      stage,
+      planeId: plannedMove?.plane?.id ?? null,
+      goal,
+      reasonCode: "final_mine_check_deadlock_budget_exhausted",
+      deadlockBudget: deadlockBudgetMeta,
+    });
+  }
+
   const safeFallbackMove = getFailSafeMinimalTargetedMove(context) || getFailSafeGuaranteedDirectMove(context);
   if(safeFallbackMove){
+    if(plannedMove?.preservedStrategicTargetPoint && !safeFallbackMove.preservedStrategicTargetPoint){
+      safeFallbackMove.preservedStrategicTargetPoint = {
+        x: plannedMove.preservedStrategicTargetPoint.x,
+        y: plannedMove.preservedStrategicTargetPoint.y,
+      };
+    }
     const fallbackValidation = validateAiLaunchMoveCandidate(safeFallbackMove);
     const fallbackMineGate = fallbackValidation.ok
       ? getFinalAiLaunchMineThreatCheck(safeFallbackMove)
@@ -25868,7 +26107,11 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   }
 
   function issueMoveAfterFinalMineGate(stageLabel){
-    const finalMoveResolution = resolveFinalAiLaunchMoveWithMineGate(plannedMove, context, { stage: stageLabel });
+    const finalMoveResolution = resolveFinalAiLaunchMoveWithMineGate(plannedMove, context, {
+      stage: stageLabel,
+      tacticalItemType: consumedItemType || null,
+      tacticalItemAlreadyUsed: effectiveItemUsed,
+    });
     if(!finalMoveResolution.ok || !finalMoveResolution.move){
       failSafeHandler("final_mine_gate_blocked_launch", {
         goal: plannedMove?.goalName || aiRoundState?.currentGoal || "final_mine_gate_blocked_launch",
