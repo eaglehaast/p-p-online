@@ -16929,6 +16929,17 @@ function createInitialAiRoundState(){
     allowedMoveRisk: 0.7,
     lastPrimaryTurnstileBlocker: null,
     inventoryPhase: AI_ENGINE_MODE === "v2" ? AI_V2_INVENTORY_PHASE : 3,
+    candidateFilterRelaxation: {
+      turnNumber: null,
+      applied: false,
+      filter: null,
+      amount: 0,
+      threshold: 0,
+      rejectedShare: 0,
+      helpedWithStall: false,
+      beforeCandidates: 0,
+      afterCandidates: 0,
+    },
   };
 }
 
@@ -29391,12 +29402,15 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     };
   }
 
-  function trimCandidatesByClass(candidates, classKey = "direct"){
+  function trimCandidatesByClass(candidates, classKey = "direct", extraLimit = 0){
     if(!Array.isArray(candidates) || candidates.length === 0) return [];
     const isSpecialClass = classKey === "gap" || classKey === "ricochet";
-    const classLimit = isSpecialClass && directPathBlockedScenario
+    const classLimitBase = isSpecialClass && directPathBlockedScenario
       ? Math.max(maxCandidatesPerClass + 1, Math.ceil(maxCandidatesPerClass * (directBlockedPressure >= 0.5 ? 1.85 : 1.4)))
       : maxCandidatesPerClass;
+    const extra = Number.isFinite(extraLimit) ? Math.max(0, Math.floor(extraLimit)) : 0;
+    const safeCorridorMax = classLimitBase + (isSpecialClass ? 3 : 2);
+    const classLimit = Math.max(1, Math.min(safeCorridorMax, classLimitBase + extra));
     const sorted = candidates.slice().sort((a, b) => {
       const scoreA = Number.isFinite(a?.score) ? a.score : Number.POSITIVE_INFINITY;
       const scoreB = Number.isFinite(b?.score) ? b.score : Number.POSITIVE_INFINITY;
@@ -29802,9 +29816,171 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     }
   }
 
-  const trimmedDirectCandidates = trimCandidatesByClass(directCandidates, "direct");
-  const trimmedGapCandidates = trimCandidatesByClass(gapCandidates, "gap");
-  const trimmedBounceCandidates = trimCandidatesByClass(bounceCandidates, "ricochet");
+  const ADAPTIVE_FILTER_REJECTION_SHARE_THRESHOLD = 0.72;
+  const ADAPTIVE_FILTER_RELAX_MAX = {
+    ranking: 2,
+    path: 1,
+    safety: 1,
+  };
+
+  function classifyRejectReasonForAdaptiveRelaxation(reason){
+    const text = `${reason || ""}`.toLowerCase();
+    if(!text) return null;
+    if(text.includes("ranking") || text.includes("score_cutoff") || text.includes("shortlist")) return "ranking";
+    if(text.includes("unsafe") || text.includes("threat") || text.includes("danger") || text.includes("collision_risk")) return "safety";
+    if(text.includes("path") || text.includes("blocked") || text.includes("bounce") || text.includes("gap_entry") || text.includes("gap_exit") || text.includes("before_bounce") || text.includes("after_bounce")) return "path";
+    return null;
+  }
+
+  function getAdaptiveRejectStatsByFilter(typeDiagnostics){
+    const stats = { path: 0, safety: 0, ranking: 0 };
+    const safeDiagnostics = typeDiagnostics && typeof typeDiagnostics === "object" ? typeDiagnostics : {};
+    const reasonMaps = [safeDiagnostics.preValidationReasons, safeDiagnostics.validationReasons];
+    for(const reasonMap of reasonMaps){
+      if(!reasonMap || typeof reasonMap !== "object") continue;
+      for(const [reason, count] of Object.entries(reasonMap)){
+        const filterKey = classifyRejectReasonForAdaptiveRelaxation(reason);
+        if(!filterKey) continue;
+        const safeCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+        if(safeCount <= 0) continue;
+        stats[filterKey] += safeCount;
+      }
+    }
+    return stats;
+  }
+
+  function buildCandidateStatsForAdaptiveRelaxation(trimmedByClass){
+    const safeTrimmed = trimmedByClass && typeof trimmedByClass === "object" ? trimmedByClass : {};
+    const directShortlist = Array.isArray(safeTrimmed.direct) ? safeTrimmed.direct.length : 0;
+    const gapShortlist = Array.isArray(safeTrimmed.gap) ? safeTrimmed.gap.length : 0;
+    const ricochetShortlist = Array.isArray(safeTrimmed.ricochet) ? safeTrimmed.ricochet.length : 0;
+    const generatedTotal = directCandidates.length + gapCandidates.length + bounceCandidates.length;
+    const rejectedByRanking = Math.max(0, generatedTotal - (directShortlist + gapShortlist + ricochetShortlist));
+    const directRejectStats = getAdaptiveRejectStatsByFilter(candidateTypeDiagnostics.direct);
+    const gapRejectStats = getAdaptiveRejectStatsByFilter(candidateTypeDiagnostics.gap);
+    const ricochetRejectStats = getAdaptiveRejectStatsByFilter(candidateTypeDiagnostics.ricochet);
+    const rejectByFilter = {
+      path: directRejectStats.path + gapRejectStats.path + ricochetRejectStats.path,
+      safety: directRejectStats.safety + gapRejectStats.safety + ricochetRejectStats.safety,
+      ranking: rejectedByRanking + directRejectStats.ranking + gapRejectStats.ranking + ricochetRejectStats.ranking,
+    };
+    const rejectedTotal = rejectByFilter.path + rejectByFilter.safety + rejectByFilter.ranking;
+    return {
+      generatedTotal,
+      rejectedTotal,
+      rejectByFilter,
+    };
+  }
+
+  function getAdaptiveRelaxationIntent(candidateStats){
+    const safeStats = candidateStats && typeof candidateStats === "object"
+      ? candidateStats
+      : { generatedTotal: 0, rejectedTotal: 0, rejectByFilter: { path: 0, safety: 0, ranking: 0 } };
+    const generatedTotal = Math.max(0, Number(safeStats.generatedTotal) || 0);
+    const rejectedTotal = Math.max(0, Number(safeStats.rejectedTotal) || 0);
+    const attemptsTotal = generatedTotal + rejectedTotal;
+    const rejectedShare = attemptsTotal > 0 ? rejectedTotal / attemptsTotal : 0;
+    if(attemptsTotal <= 0 || rejectedShare < ADAPTIVE_FILTER_REJECTION_SHARE_THRESHOLD){
+      return {
+        shouldRelax: false,
+        rejectedShare,
+        dominantFilter: null,
+        amount: 0,
+      };
+    }
+    const dominantEntry = Object.entries(safeStats.rejectByFilter || {})
+      .map(([filterKey, value]) => [filterKey, Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0])
+      .sort((a, b) => b[1] - a[1])[0];
+    const dominantFilter = dominantEntry && dominantEntry[1] > 0 ? dominantEntry[0] : "ranking";
+    return {
+      shouldRelax: true,
+      rejectedShare,
+      dominantFilter,
+      amount: ADAPTIVE_FILTER_RELAX_MAX[dominantFilter] || 1,
+    };
+  }
+
+  function buildShortlistedCandidates(relaxation = null){
+    const relaxFilter = relaxation?.filter || null;
+    const relaxAmount = Number.isFinite(relaxation?.amount) ? Math.max(0, Math.floor(relaxation.amount)) : 0;
+    const directBonus = relaxAmount > 0 && (relaxFilter === "ranking" || relaxFilter === "safety") ? relaxAmount : 0;
+    const specialBonus = relaxAmount > 0 && (relaxFilter === "ranking" || relaxFilter === "path") ? relaxAmount : 0;
+    return {
+      direct: trimCandidatesByClass(directCandidates, "direct", directBonus),
+      gap: trimCandidatesByClass(gapCandidates, "gap", specialBonus),
+      ricochet: trimCandidatesByClass(bounceCandidates, "ricochet", specialBonus),
+    };
+  }
+
+  let shortlistedCandidates = buildShortlistedCandidates();
+  const baselineShortlistCount = (shortlistedCandidates.direct?.length || 0)
+    + (shortlistedCandidates.gap?.length || 0)
+    + (shortlistedCandidates.ricochet?.length || 0);
+  const adaptiveIntent = getAdaptiveRelaxationIntent(
+    buildCandidateStatsForAdaptiveRelaxation(shortlistedCandidates)
+  );
+  const currentTurnNumber = Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null;
+  const canApplyRelaxationThisTurn = adaptiveIntent.shouldRelax
+    && currentTurnNumber !== null
+    && (aiRoundState?.candidateFilterRelaxation?.turnNumber !== currentTurnNumber || aiRoundState?.candidateFilterRelaxation?.applied !== true);
+  let adaptiveRelaxationMeta = null;
+  if(canApplyRelaxationThisTurn){
+    adaptiveRelaxationMeta = {
+      turnNumber: currentTurnNumber,
+      filter: adaptiveIntent.dominantFilter || "ranking",
+      amount: adaptiveIntent.amount,
+      threshold: ADAPTIVE_FILTER_REJECTION_SHARE_THRESHOLD,
+      rejectedShare: Number(adaptiveIntent.rejectedShare.toFixed(3)),
+      beforeCandidates: baselineShortlistCount,
+      afterCandidates: baselineShortlistCount,
+      helpedWithStall: false,
+    };
+    shortlistedCandidates = buildShortlistedCandidates({
+      filter: adaptiveRelaxationMeta.filter,
+      amount: adaptiveRelaxationMeta.amount,
+    });
+    adaptiveRelaxationMeta.afterCandidates = (shortlistedCandidates.direct?.length || 0)
+      + (shortlistedCandidates.gap?.length || 0)
+      + (shortlistedCandidates.ricochet?.length || 0);
+    adaptiveRelaxationMeta.helpedWithStall = baselineShortlistCount === 0 && adaptiveRelaxationMeta.afterCandidates > 0;
+    logAiDecision("adaptive_candidate_filter_relaxation", {
+      goalName: baseGoalName,
+      filter: adaptiveRelaxationMeta.filter,
+      amount: adaptiveRelaxationMeta.amount,
+      threshold: adaptiveRelaxationMeta.threshold,
+      rejectedShare: adaptiveRelaxationMeta.rejectedShare,
+      beforeCandidates: adaptiveRelaxationMeta.beforeCandidates,
+      afterCandidates: adaptiveRelaxationMeta.afterCandidates,
+      helpedWithStall: adaptiveRelaxationMeta.helpedWithStall,
+    });
+  }
+
+  if(aiRoundState && typeof aiRoundState === "object"){
+    const previousRelaxationState = aiRoundState.candidateFilterRelaxation;
+    const alreadyAppliedThisTurn = previousRelaxationState?.applied === true
+      && previousRelaxationState?.turnNumber === currentTurnNumber;
+    if(adaptiveRelaxationMeta){
+      aiRoundState.candidateFilterRelaxation = { ...adaptiveRelaxationMeta, applied: true };
+    } else if(alreadyAppliedThisTurn){
+      aiRoundState.candidateFilterRelaxation = previousRelaxationState;
+    } else {
+      aiRoundState.candidateFilterRelaxation = {
+        turnNumber: currentTurnNumber,
+        applied: false,
+        filter: null,
+        amount: 0,
+        threshold: ADAPTIVE_FILTER_REJECTION_SHARE_THRESHOLD,
+        rejectedShare: Number(adaptiveIntent.rejectedShare.toFixed(3)),
+        helpedWithStall: false,
+        beforeCandidates: baselineShortlistCount,
+        afterCandidates: baselineShortlistCount,
+      };
+    }
+  }
+
+  const trimmedDirectCandidates = shortlistedCandidates.direct;
+  const trimmedGapCandidates = shortlistedCandidates.gap;
+  const trimmedBounceCandidates = shortlistedCandidates.ricochet;
 
   const isNormalStage = !isEmergencyDefenseStage;
   const hadSpecialInInitialSet = gapCandidates.length > 0 && bounceCandidates.length > 0;
@@ -29895,6 +30071,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     directBlockedPressure: Number(directBlockedPressure.toFixed(4)),
     candidateTypeDiagnostics,
     shortlistDiagnostics,
+    adaptiveFilterRelaxation: aiRoundState?.candidateFilterRelaxation || null,
     routeClassRejectDiagnostics,
     specialRouteRejectDiagnostics: candidateTypeDiagnostics.specialRouteRejectDiagnostics.slice(-120),
     gapAfterBounceDiagnostics: candidateTypeDiagnostics.gap.afterBounceRejectSamples.slice(-20),
@@ -29940,6 +30117,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     directBlockedPressure: Number(directBlockedPressure.toFixed(4)),
     candidateTypeDiagnostics,
     shortlistDiagnostics,
+    adaptiveFilterRelaxation: aiRoundState?.candidateFilterRelaxation || null,
     routeClassRejectDiagnostics,
     disproportionateShortlistRejectReasons,
     continuationDiagnostics,
