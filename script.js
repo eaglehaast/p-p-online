@@ -32221,6 +32221,164 @@ function shouldKeepV2GroupKillPriority(modeContext = {}, groupKillPlan = null){
   return { allowed: false, reason: "double_kill_priority_preserved", criticalThreat: criticalFlagThreat };
 }
 
+
+
+function runPreFallbackExtraProbe(modeContext = {}, chosenGoal = null){
+  const launchReadyPlanes = Array.isArray(modeContext?.aiPlanes)
+    ? modeContext.aiPlanes.filter((plane) => isPlaneLaunchStateReady(plane) && !flyingPoints.some((fp) => fp.plane === plane))
+    : [];
+  const aliveEnemies = Array.isArray(modeContext?.enemies)
+    ? modeContext.enemies.filter((enemy) => enemy?.isAlive)
+    : [];
+  if(!launchReadyPlanes.length || !aliveEnemies.length){
+    return {
+      move: null,
+      used: false,
+      failReason: !launchReadyPlanes.length ? "no_launch_ready_planes" : "no_alive_enemies",
+      tried: [],
+    };
+  }
+
+  const contextForProbe = {
+    ...modeContext,
+    aiPlanes: launchReadyPlanes,
+    enemies: aliveEnemies,
+  };
+  const goalSelection = {
+    goalName: chosenGoal?.goalName || aiRoundState?.currentGoal || "attack_enemy_plane",
+  };
+
+  const tried = [];
+
+  const inventoryProbe = probeInventoryPreparedShotPlan(goalSelection, contextForProbe, launchReadyPlanes, aliveEnemies);
+  const inventoryMove = inventoryProbe?.bestPlan?.move || null;
+  if(inventoryMove){
+    const validatedInventoryMove = validateAiLaunchMoveCandidate(inventoryMove);
+    if(validatedInventoryMove?.ok){
+      return {
+        move: {
+          ...inventoryMove,
+          goalName: inventoryMove.goalName || goalSelection.goalName,
+          decisionReason: inventoryMove.decisionReason || "pre_fallback_extra_probe_tactical_item",
+        },
+        used: true,
+        probeType: "best_tactical_item",
+        probeDetails: {
+          itemType: inventoryProbe?.bestPlan?.inventoryPreparationDiagnostics?.itemType || inventoryProbe?.diagnostics?.bestItemType || null,
+          inventoryPreparationSource: inventoryProbe?.diagnostics?.bestPreparationSource || null,
+        },
+        tried,
+      };
+    }
+    tried.push(`best_tactical_item:${validatedInventoryMove?.reason || "invalid_inventory_probe_move"}`);
+  } else {
+    tried.push("best_tactical_item:no_candidate");
+  }
+
+  const nearestEnemyByDistance = aliveEnemies.reduce((best, enemy) => {
+    for(const plane of launchReadyPlanes){
+      const distance = Math.hypot((enemy?.x || 0) - plane.x, (enemy?.y || 0) - plane.y);
+      if(!best || distance < best.distance){
+        best = { enemyId: enemy?.id ?? null, distance };
+      }
+    }
+    return best;
+  }, null);
+
+  const alternativeEnemies = aliveEnemies.filter((enemy) => enemy?.id !== nearestEnemyByDistance?.enemyId);
+  if(alternativeEnemies.length > 0){
+    const alternativeMove = findDirectFinisherMove(launchReadyPlanes, alternativeEnemies, {
+      source: "pre_fallback_extra_probe_alternative_target",
+      goalName: "pre_fallback_extra_probe_alternative_target",
+      context: contextForProbe,
+    });
+    if(alternativeMove){
+      const alternativeValidation = validateAiLaunchMoveCandidate(alternativeMove);
+      if(alternativeValidation?.ok){
+        return {
+          move: {
+            ...alternativeMove,
+            goalName: alternativeMove.goalName || "pre_fallback_extra_probe_alternative_target",
+            decisionReason: alternativeMove.decisionReason || "pre_fallback_extra_probe_alternative_target",
+          },
+          used: true,
+          probeType: "alternative_target",
+          probeDetails: {
+            targetEnemyId: alternativeMove?.enemy?.id ?? null,
+            skippedNearestEnemyId: nearestEnemyByDistance?.enemyId ?? null,
+          },
+          tried,
+        };
+      }
+      tried.push(`alternative_target:${alternativeValidation?.reason || "invalid_alternative_target_move"}`);
+    } else {
+      tried.push("alternative_target:no_candidate");
+    }
+  } else {
+    tried.push("alternative_target:no_non_nearest_enemy");
+  }
+
+  const aggressiveBase = findPreFallbackAttackMove(contextForProbe)
+    || findDirectFinisherMove(launchReadyPlanes, aliveEnemies, {
+      source: "pre_fallback_extra_probe_short_aggressive",
+      goalName: "pre_fallback_extra_probe_short_aggressive",
+      context: contextForProbe,
+    });
+  if(aggressiveBase){
+    const baseDistance = Number.isFinite(aggressiveBase.totalDist)
+      ? aggressiveBase.totalDist
+      : Math.hypot(aggressiveBase.vx || 0, aggressiveBase.vy || 0) * FIELD_FLIGHT_DURATION_SEC;
+    const shortenedDistance = Math.max(CELL_SIZE * 1.4, Math.min(baseDistance * 0.76, MAX_DRAG_DISTANCE * 0.84));
+    if(Number.isFinite(baseDistance) && baseDistance > 0 && shortenedDistance < baseDistance){
+      const scale = shortenedDistance / baseDistance;
+      const aggressiveMove = {
+        ...aggressiveBase,
+        vx: (aggressiveBase.vx || 0) * scale,
+        vy: (aggressiveBase.vy || 0) * scale,
+        totalDist: shortenedDistance,
+        goalName: "pre_fallback_extra_probe_short_aggressive",
+        decisionReason: "pre_fallback_extra_probe_short_aggressive",
+      };
+      const aggressiveValidation = validateAiLaunchMoveCandidate(aggressiveMove);
+      if(aggressiveValidation?.ok){
+        const landing = getAiMoveLandingPoint(aggressiveMove);
+        const threatMeta = landing
+          ? getImmediateResponseThreatMeta(contextForProbe, landing.x, landing.y, aggressiveMove.enemy || null)
+          : null;
+        const aggressiveRisk = threatMeta ? getFallbackCandidateResponseRisk(threatMeta) : Number.POSITIVE_INFINITY;
+        const aggressiveAllowedRisk = Math.min(0.98, getAiAllowedMoveRisk(contextForProbe) + 0.14);
+        if(aggressiveRisk <= aggressiveAllowedRisk){
+          return {
+            move: aggressiveMove,
+            used: true,
+            probeType: "short_aggressive",
+            probeDetails: {
+              risk: Number.isFinite(aggressiveRisk) ? Number(aggressiveRisk.toFixed(4)) : null,
+              allowedRisk: Number.isFinite(aggressiveAllowedRisk) ? Number(aggressiveAllowedRisk.toFixed(4)) : null,
+              baseDistance: Number(baseDistance.toFixed(2)),
+              shortenedDistance: Number(shortenedDistance.toFixed(2)),
+            },
+            tried,
+          };
+        }
+        tried.push(`short_aggressive:risk_too_high:${Number.isFinite(aggressiveRisk) ? aggressiveRisk.toFixed(4) : "nan"}`);
+      } else {
+        tried.push(`short_aggressive:${aggressiveValidation?.reason || "invalid_short_aggressive_move"}`);
+      }
+    } else {
+      tried.push("short_aggressive:distance_not_shortened");
+    }
+  } else {
+    tried.push("short_aggressive:no_candidate");
+  }
+
+  return {
+    move: null,
+    used: false,
+    failReason: "all_extra_probes_failed",
+    tried,
+  };
+}
 function runAiTurnV2(context = {}){
   if (gameMode!=="computer" || isGameOver) return;
 
@@ -32480,6 +32638,43 @@ function runAiTurnV2(context = {}){
         checkedCandidates: logicalDeadlockContext.checkedCandidates,
         checkedCandidateCount: logicalDeadlockContext.checkedCandidateCount,
       },
+    });
+
+    const preFallbackExtraProbe = runPreFallbackExtraProbe(modeContext, chosenGoal);
+    if(preFallbackExtraProbe?.used && preFallbackExtraProbe?.move){
+      logAiDecision("pre_fallback_extra_probe_used", {
+        ...logicalDeadlockContext,
+        probeType: preFallbackExtraProbe.probeType || null,
+        planeId: preFallbackExtraProbe.move?.plane?.id ?? null,
+        goalName: preFallbackExtraProbe.move?.goalName || null,
+        decisionReason: preFallbackExtraProbe.move?.decisionReason || null,
+        probeDetails: preFallbackExtraProbe.probeDetails || null,
+        tried: preFallbackExtraProbe.tried || [],
+        reasonCode: "pre_fallback_extra_probe_used",
+        source: "runAiTurnV2",
+      });
+      return issueAIMoveFromDoComputerMove(modeContext, {
+        ...preFallbackExtraProbe.move,
+      }, {
+        source: "runAiTurnV2",
+        chooseGoal: chosenGoal,
+        routeClass: preFallbackExtraProbe?.move?.routeClass || "direct",
+        fallbackDiagnostics: {
+          stageBeforeFallback: "v2_shot_plan_not_found",
+          fallbackGoal: preFallbackExtraProbe?.move?.goalName || null,
+          fallbackDecisionReason: preFallbackExtraProbe?.move?.decisionReason || null,
+          rootCauseHint: "ai_logical_deadlock_pre_fallback_extra_probe",
+          preFallbackProbeType: preFallbackExtraProbe?.probeType || null,
+        },
+      });
+    }
+
+    logAiDecision("pre_fallback_extra_probe_failed", {
+      ...logicalDeadlockContext,
+      failReason: preFallbackExtraProbe?.failReason || "all_extra_probes_failed",
+      tried: preFallbackExtraProbe?.tried || [],
+      reasonCode: "pre_fallback_extra_probe_failed",
+      source: "runAiTurnV2",
     });
 
     const reserveMove = getFailSafeMinimalTargetedMove(modeContext)
