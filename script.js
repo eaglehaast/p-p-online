@@ -22854,6 +22854,13 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
   for(const candidate of candidates){
     const entry = pressureState?.byItem?.[candidate.itemType] || null;
     const pressureBonus = getAiInventoryPressureBonus(candidate.itemType, entry, pressureState?.stalestItemType === candidate.itemType, recentInventorySignals);
+    const candidateInventoryCount = Number(inventory?.counts?.[candidate.itemType] ?? 0);
+    const tacticalSurplusPriorityBonus = (
+      (candidate.itemType === INVENTORY_ITEM_TYPES.MINE || candidate.itemType === INVENTORY_ITEM_TYPES.DYNAMITE)
+      && candidateInventoryCount > 1
+    )
+      ? 0.045
+      : 0;
     candidate.pressureBonus = pressureBonus;
     const moderateReleaseReady = candidate.usageTier !== "moderate"
       || recentInventorySignals.softReleaseReady
@@ -22870,7 +22877,8 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       softReleaseGuardScenario: recentInventorySignals.softReleaseGuardScenario || null,
     } : null;
     candidate.releaseReady = moderateReleaseReady;
-    candidate.adjustedComparableScore = Number((candidate.comparableScore + pressureBonus).toFixed(3));
+    candidate.adjustedComparableScore = Number((candidate.comparableScore + pressureBonus + tacticalSurplusPriorityBonus).toFixed(3));
+    candidate.tacticalSurplusPriorityBonus = tacticalSurplusPriorityBonus;
     if(entry){
       entry.lastPressureBonus = pressureBonus;
     }
@@ -23146,6 +23154,12 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     : null;
   const hasForcedTacticalSpend = Boolean(forcedTacticalItemType);
   const allowNonForcedInventoryDuringTacticalSpend = options?.allowNonForcedInventoryDuringTacticalSpend === true;
+  const forcedSurplusAggressiveAttemptIndexRaw = Number(tacticalSurplusPolicy?.aggressiveAttemptIndex ?? 1);
+  const forcedSurplusAggressiveAttemptIndex = Number.isFinite(forcedSurplusAggressiveAttemptIndexRaw)
+    ? Math.max(1, Math.trunc(forcedSurplusAggressiveAttemptIndexRaw))
+    : 1;
+  const forcedSurplusAllowAggressiveFallback = tacticalSurplusPolicy?.forceAggressiveFallback === true
+    || forcedSurplusAggressiveAttemptIndex > 1;
 
   aiRoundState.lastInventorySoftFallbackUsed = false;
 
@@ -24487,6 +24501,28 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         baseRejectReason: minePlanningMeta.baseRejectReason || null,
       });
     }
+    if(forcedMineSpend && forcedSurplusAllowAggressiveFallback && preferredMinePlan && !mineRejectedBySelfRisk){
+      const aggressiveMinePlaced = executeMinePlan(preferredMinePlan);
+      if(aggressiveMinePlaced){
+        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
+        plannedMove.inventoryUsageReason = "mine_forced_surplus_aggressive_fallback";
+        logAiDecision("tactical_surplus_spend_success", {
+          planeId: plannedMove?.plane?.id ?? null,
+          goal: strategicGoal || null,
+          itemType: INVENTORY_ITEM_TYPES.MINE,
+          reason: "mine_forced_surplus_aggressive_fallback",
+          forcedByPolicy: true,
+          aggressiveAttemptIndex: forcedSurplusAggressiveAttemptIndex,
+        });
+        logTacticalItemFinalDecision(INVENTORY_ITEM_TYPES.MINE, {
+          planeId: plannedMove?.plane?.id ?? null,
+          goal: strategicGoal || null,
+          finalDecision: "used",
+          reason: "mine_forced_surplus_aggressive_fallback",
+        });
+        return true;
+      }
+    }
     if(forcedMineSpend){
       const forcedMineBlockReason = mineRejectedBySelfRisk
         ? "high_friendly_risk"
@@ -24665,6 +24701,28 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         planeId: plannedMove?.plane?.id ?? null,
         reason: dynamiteFinalRejectReason,
       });
+    }
+    if(forcedDynamiteSpend && forcedSurplusAllowAggressiveFallback && fallbackTarget){
+      if(placeBlueDynamiteAt(fallbackTarget.cx, fallbackTarget.cy)){
+        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
+        plannedMove.inventoryUsageReason = "dynamite_forced_surplus_aggressive_fallback";
+        setAiDynamiteIntentFromCandidate(fallbackTarget, "dynamite_forced_surplus_aggressive_fallback", plannedMove, null, "forced_surplus_aggressive");
+        logAiDecision("tactical_surplus_spend_success", {
+          planeId: plannedMove?.plane?.id ?? null,
+          goal: strategicGoal || null,
+          itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
+          reason: "dynamite_forced_surplus_aggressive_fallback",
+          forcedByPolicy: true,
+          aggressiveAttemptIndex: forcedSurplusAggressiveAttemptIndex,
+        });
+        logTacticalItemFinalDecision(INVENTORY_ITEM_TYPES.DYNAMITE, {
+          planeId: plannedMove?.plane?.id ?? null,
+          goal: strategicGoal || null,
+          finalDecision: "used",
+          reason: "dynamite_forced_surplus_aggressive_fallback",
+        });
+        return true;
+      }
     }
     if(forcedDynamiteSpend){
       const forcedDynamiteBlockReason = routeAwareTarget
@@ -25515,25 +25573,62 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     INVENTORY_ITEM_TYPES.MINE,
     INVENTORY_ITEM_TYPES.DYNAMITE,
   ].filter((itemType) => tacticalSurplusInitialCounts[itemType] > 1);
-  const tacticalSurplusAttemptedTypes = new Set();
+  const tacticalSurplusAttemptedTypes = new Map();
   const tacticalSurplusSucceededTypes = new Set();
+  const tacticalSurplusFailureStreakByType = {
+    [INVENTORY_ITEM_TYPES.MINE]: 0,
+    [INVENTORY_ITEM_TYPES.DYNAMITE]: 0,
+  };
+  const forcedSurplusTelemetry = {
+    forced_surplus_attempts: 0,
+    forced_surplus_failures: 0,
+    forced_surplus_spent: 0,
+  };
+  const FORCED_SURPLUS_AGGRESSIVE_RETRY_LIMIT = 3;
+  const FORCED_SURPLUS_NON_FORCED_UNLOCK_AFTER_FAILS = 2;
+  let tacticalSurplusForcedOrderIndex = 0;
 
   for(let inventoryActionStep = 0; inventoryActionStep < AI_INVENTORY_ACTION_LIMIT_PER_TURN; inventoryActionStep += 1){
     const actionBeforeState = afterInventoryState;
-    const forcedTacticalSurplusType = tacticalInventoryActionsApplied < AI_INVENTORY_TACTICAL_REPEAT_LIMIT_PER_TURN
-      ? tacticalSurplusPendingOrder.find((itemType) => !tacticalSurplusAttemptedTypes.has(itemType)) || null
-      : null;
+    let forcedTacticalSurplusType = null;
+    if(tacticalInventoryActionsApplied < AI_INVENTORY_TACTICAL_REPEAT_LIMIT_PER_TURN && tacticalSurplusPendingOrder.length > 0){
+      const normalizedForcedIndex = tacticalSurplusForcedOrderIndex % tacticalSurplusPendingOrder.length;
+      forcedTacticalSurplusType = tacticalSurplusPendingOrder[normalizedForcedIndex] || null;
+    }
     let actionUsed = false;
     if(forcedTacticalSurplusType){
-      tacticalSurplusAttemptedTypes.add(forcedTacticalSurplusType);
+      const currentForcedFailures = Number(tacticalSurplusFailureStreakByType[forcedTacticalSurplusType] || 0);
+      const allowNonForcedAfterFailures = currentForcedFailures >= FORCED_SURPLUS_NON_FORCED_UNLOCK_AFTER_FAILS;
+      forcedSurplusTelemetry.forced_surplus_attempts += 1;
+      tacticalSurplusAttemptedTypes.set(
+        forcedTacticalSurplusType,
+        Number(tacticalSurplusAttemptedTypes.get(forcedTacticalSurplusType) || 0) + 1,
+      );
       actionUsed = maybeUseInventoryBeforeLaunch(context, plannedMove, {
         usedBuffTypesThisTurn: usedSingleUseBuffTypesThisTurn,
         tacticalSurplusPolicy: {
           forcedItemType: forcedTacticalSurplusType,
+          aggressiveAttemptIndex: currentForcedFailures + 1,
+          forceAggressiveFallback: currentForcedFailures > 0,
         },
+        allowNonForcedInventoryDuringTacticalSpend: allowNonForcedAfterFailures,
       });
       if(actionUsed){
         tacticalSurplusSucceededTypes.add(forcedTacticalSurplusType);
+        tacticalSurplusFailureStreakByType[forcedTacticalSurplusType] = 0;
+        tacticalSurplusForcedOrderIndex = tacticalSurplusPendingOrder.length > 0
+          ? ((tacticalSurplusForcedOrderIndex + 1) % tacticalSurplusPendingOrder.length)
+          : 0;
+      } else {
+        forcedSurplusTelemetry.forced_surplus_failures += 1;
+        tacticalSurplusFailureStreakByType[forcedTacticalSurplusType] = currentForcedFailures + 1;
+        const aggressiveRetriesExhausted = tacticalSurplusFailureStreakByType[forcedTacticalSurplusType] >= FORCED_SURPLUS_AGGRESSIVE_RETRY_LIMIT;
+        if(aggressiveRetriesExhausted && tacticalSurplusPendingOrder.length > 1){
+          tacticalSurplusForcedOrderIndex = (tacticalSurplusForcedOrderIndex + 1) % tacticalSurplusPendingOrder.length;
+        }
+        if(!allowNonForcedAfterFailures){
+          continue;
+        }
       }
     }
     if(!actionUsed){
@@ -25557,6 +25652,12 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     );
     if(actionConsumedItemType){
       consumedItemTypes.push(actionConsumedItemType);
+      if(
+        forcedTacticalSurplusType
+        && actionConsumedItemType === forcedTacticalSurplusType
+      ){
+        forcedSurplusTelemetry.forced_surplus_spent += 1;
+      }
       if(
         actionConsumedItemType === INVENTORY_ITEM_TYPES.CROSSHAIR
         || actionConsumedItemType === INVENTORY_ITEM_TYPES.FUEL
@@ -25620,8 +25721,12 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     stopReason: inventoryStopReason,
     tacticalSurplusPolicy: {
       requiredTypes: tacticalSurplusPendingOrder.slice(),
-      attemptedTypes: Array.from(tacticalSurplusAttemptedTypes),
+      attemptedTypes: Array.from(tacticalSurplusAttemptedTypes.keys()),
+      attemptsByType: Object.fromEntries(tacticalSurplusAttemptedTypes),
       succeededTypes: Array.from(tacticalSurplusSucceededTypes),
+      forcedSurplusTelemetry: { ...forcedSurplusTelemetry },
+      aggressiveRetryLimit: FORCED_SURPLUS_AGGRESSIVE_RETRY_LIMIT,
+      nonForcedUnlockAfterFails: FORCED_SURPLUS_NON_FORCED_UNLOCK_AFTER_FAILS,
     },
     limits: {
       total: AI_INVENTORY_ACTION_LIMIT_PER_TURN,
