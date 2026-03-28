@@ -16190,6 +16190,10 @@ const AI_MINE_SELF_RISK_CONFIG = Object.freeze({
       GOAL_RISK_PENALTY_MULTIPLIER: 0.32,
       MODERATE_SELF_RISK_PENALTY_MULTIPLIER: 0.72,
       ALLOW_MODERATE_RISK_WITH_ROUTE_DENIAL: true,
+      AGGRESSIVE_CONTROL_MIN_BLOCKED_ESCAPE: 1,
+      AGGRESSIVE_CONTROL_MIN_CUT_ROUTE: 1,
+      AGGRESSIVE_CONTROL_MIN_TRAP: 1,
+      AGGRESSIVE_CONTROL_MIN_FORCED_BAD_PATH: 1,
     }),
   }),
 });
@@ -16229,6 +16233,35 @@ function getMineRiskAcceptedBecause(minePlan, goalName = ""){
   if(goalText.includes("flag")) return "flag_pressure";
   if(goalText.includes("finisher") || goalText.includes("finish")) return "finisher_window";
   return null;
+}
+
+function hasAggressiveMineControlSignals(minePlan, styleConfig = null){
+  if(!minePlan) return false;
+  const config = styleConfig || AI_MINE_SELF_RISK_CONFIG.STYLE.aggressive;
+  const blockedEscapeCount = minePlan.blockedEscapeCount || 0;
+  const cutRouteCount = minePlan.cutRouteCount || 0;
+  const trapCount = minePlan.trapCount || 0;
+  const forcedBadPathCount = minePlan.forcedBadPathCount || 0;
+  return blockedEscapeCount >= (config.AGGRESSIVE_CONTROL_MIN_BLOCKED_ESCAPE || 1)
+    || cutRouteCount >= (config.AGGRESSIVE_CONTROL_MIN_CUT_ROUTE || 1)
+    || trapCount >= (config.AGGRESSIVE_CONTROL_MIN_TRAP || 1)
+    || forcedBadPathCount >= (config.AGGRESSIVE_CONTROL_MIN_FORCED_BAD_PATH || 1);
+}
+
+function canAcceptMineHighRiskByAggressiveMode(params = {}){
+  const {
+    aiItemSpendStyle = "balanced",
+    styleConfig = null,
+    friendlyRisk = null,
+    minePlan = null,
+    riskAcceptedBecause = null,
+  } = params;
+  if(aiItemSpendStyle !== "aggressive") return false;
+  if(!styleConfig?.ALLOW_MODERATE_RISK_WITH_ROUTE_DENIAL) return false;
+  if(friendlyRisk?.highRisk !== true) return false;
+  if(friendlyRisk?.criticalRisk === true || friendlyRisk?.selfBlastRisk === true) return false;
+  const hasStrongControl = hasAggressiveMineControlSignals(minePlan, styleConfig);
+  return hasStrongControl || Boolean(riskAcceptedBecause);
 }
 
 
@@ -20678,14 +20711,14 @@ function evaluateBlueMinePlacementImpact(context, plannedMove, placement, option
   else if(forcedBadPathCount > 0) scenario = "mine_forces_bad_path";
   else if(blockedEscapeCount > 0) scenario = "mine_blocks_escape_lane";
 
-  const score = (blockedEscapeCount * 5.5)
-    + (cutRouteCount * 4.2)
-    + (trapCount * 7.5)
+  const score = (blockedEscapeCount * 8.2)
+    + (cutRouteCount * 6.8)
+    + (trapCount * 10.8)
     + totalDirectionLoss
     + (projectedContactDelta * 2.35)
     + (controlledBasePassCount * 3.6)
     + (controlledTurnPointCount * 2.4)
-    + (forcedBadPathCount * 3.1);
+    + (forcedBadPathCount * 5.6);
   return {
     placement,
     planeId: plane?.id ?? null,
@@ -20757,12 +20790,13 @@ function tryPlaceBlueMineNearEnemyBase(context = null, plannedMove = null, optio
     const riskAcceptedBecause = aiItemSpendStyle === "aggressive" && friendlyRisk?.highRisk
       ? getMineRiskAcceptedBecause(impact, strategicGoalName)
       : null;
-    const canAcceptHighRisk = aiItemSpendStyle === "aggressive"
-      && styleConfig.ALLOW_MODERATE_RISK_WITH_ROUTE_DENIAL
-      && friendlyRisk?.highRisk === true
-      && friendlyRisk?.criticalRisk !== true
-      && friendlyRisk?.riskScore <= styleConfig.MAX_RISK_SCORE_WHEN_ACCEPTED
-      && Boolean(riskAcceptedBecause);
+    const canAcceptHighRisk = canAcceptMineHighRiskByAggressiveMode({
+      aiItemSpendStyle,
+      styleConfig,
+      friendlyRisk,
+      minePlan: impact,
+      riskAcceptedBecause,
+    });
     if(friendlyRisk?.highRisk && !canAcceptHighRisk){
       blockedByFriendlyRisk += 1;
       continue;
@@ -20966,12 +21000,13 @@ function tryPlaceBlueDefensiveMine(context, plannedMove, options = {}){
   const riskAcceptedBecause = aiItemSpendStyle === "aggressive" && friendlyRisk?.highRisk
     ? getMineRiskAcceptedBecause(impact, strategicGoalName)
     : null;
-  const canAcceptHighRisk = aiItemSpendStyle === "aggressive"
-    && styleConfig.ALLOW_MODERATE_RISK_WITH_ROUTE_DENIAL
-    && friendlyRisk?.highRisk === true
-    && friendlyRisk?.criticalRisk !== true
-    && friendlyRisk?.riskScore <= styleConfig.MAX_RISK_SCORE_WHEN_ACCEPTED
-    && Boolean(riskAcceptedBecause);
+  const canAcceptHighRisk = canAcceptMineHighRiskByAggressiveMode({
+    aiItemSpendStyle,
+    styleConfig,
+    friendlyRisk,
+    minePlan: impact,
+    riskAcceptedBecause,
+  });
   if(friendlyRisk?.highRisk && !canAcceptHighRisk){
     if(options?.evaluateOnly && options?.withDiagnostics){
       return { plan: null, rejectReason: "high_friendly_risk", details: { friendlyRisk } };
@@ -20992,12 +21027,13 @@ function tryPlaceBlueDefensiveMine(context, plannedMove, options = {}){
     return false;
   }
   if(canAcceptHighRisk){
-    logAiDecision("mine_risk_accepted", {
+    logAiDecision("mine_risk_accepted_aggressive_mode", {
       planeId: plane?.id ?? null,
       enemyId: mostDangerousEnemy?.id ?? null,
       aiItemSpendStyle,
       riskScore: friendlyRisk?.riskScore ?? null,
       riskAcceptedBecause,
+      reasonCode: "mine_risk_accepted_aggressive_mode",
       scenario: impact?.scenario || null,
       routeBlockScore: Number((impact?.score || 0).toFixed(3)),
       blockedEscapeCount: impact?.blockedEscapeCount ?? 0,
