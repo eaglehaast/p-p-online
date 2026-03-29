@@ -17832,13 +17832,17 @@ function doesPlannedMoveMatchDynamiteExpectedRoute(plannedMove, expectedRoute){
 
 function setAiDynamiteIntentFromCandidate(targetGeometry, usageReason, plannedMove, expectedRoute = null, intentType = null){
   if(!targetGeometry) return null;
+  const normalizedColliderId = targetGeometry?.collider?.id ?? targetGeometry?.colliderId ?? null;
+  const normalizedSpriteId = targetGeometry?.id ?? targetGeometry?.spriteId ?? null;
+  const normalizedTargetX = targetGeometry?.cx ?? targetGeometry?.x ?? null;
+  const normalizedTargetY = targetGeometry?.cy ?? targetGeometry?.y ?? null;
   const currentTurnNumber = Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : 0;
   const expiresTurn = currentTurnNumber + 1;
   aiRoundState.dynamiteIntent = {
-    colliderId: targetGeometry?.collider?.id ?? null,
-    spriteId: targetGeometry?.id ?? null,
-    x: targetGeometry?.cx ?? null,
-    y: targetGeometry?.cy ?? null,
+    colliderId: normalizedColliderId,
+    spriteId: normalizedSpriteId,
+    x: normalizedTargetX,
+    y: normalizedTargetY,
     expectedRoute: expectedRoute || null,
     intentType: intentType || (expectedRoute ? "current_route" : "strategic_setup"),
     planeId: plannedMove?.plane?.id ?? null,
@@ -17847,10 +17851,10 @@ function setAiDynamiteIntentFromCandidate(targetGeometry, usageReason, plannedMo
     expiresTurn,
   };
   logAiDecision("dynamite_intent_set", {
-    colliderId: targetGeometry?.collider?.id ?? null,
-    spriteId: targetGeometry?.id ?? null,
-    targetX: Number.isFinite(targetGeometry?.cx) ? Number(targetGeometry.cx.toFixed(1)) : null,
-    targetY: Number.isFinite(targetGeometry?.cy) ? Number(targetGeometry.cy.toFixed(1)) : null,
+    colliderId: normalizedColliderId,
+    spriteId: normalizedSpriteId,
+    targetX: Number.isFinite(normalizedTargetX) ? Number(normalizedTargetX.toFixed(1)) : null,
+    targetY: Number.isFinite(normalizedTargetY) ? Number(normalizedTargetY.toFixed(1)) : null,
     usageReason: usageReason || null,
     expiresTurn,
     turn: aiRoundState?.turnNumber ?? null,
@@ -33395,6 +33399,8 @@ function chooseGoal(modeContext = {}){
 function shouldProbeInventoryPreparedShotPlan(goalName = ""){
   const safeGoal = `${goalName || ""}`.toLowerCase();
   return safeGoal === "attack_enemy_plane"
+    || safeGoal === "eliminate_flag_carrier"
+    || safeGoal === "capture_enemy_flag"
     || safeGoal === "preserve_planes"
     || safeGoal === "opening_center_control"
     || safeGoal === "direct_finisher"
@@ -33415,7 +33421,12 @@ function buildInventoryPreparationCandidates(goalSelection = {}, modeContext = {
     candidates.push(candidate);
   };
 
-  if(goalText === "attack_enemy_plane" || goalText === "direct_finisher"){
+  if(
+    goalText === "attack_enemy_plane"
+    || goalText === "eliminate_flag_carrier"
+    || goalText === "capture_enemy_flag"
+    || goalText === "direct_finisher"
+  ){
     for(const plane of launchReadyPlanes){
       for(const enemy of enemies){
         const move = typeof findSafePreparationMoveForAttack === "function"
