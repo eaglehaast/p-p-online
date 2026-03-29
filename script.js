@@ -10139,6 +10139,22 @@ function recordAiSelfAnalyzerDecision(stage, details = {}){
       .filter((code) => typeof code === "string" && code.trim().length > 0)
       .slice(0, 4)
     : [];
+  const normalizedReasonCategory = typeof details.reasonCategory === "string"
+    ? details.reasonCategory.trim().toLowerCase()
+    : "";
+  const allowedReasonCategories = new Set([
+    "move_planning_failure",
+    "inventory_selection_failure",
+    "technical_exception",
+  ]);
+  const reasonCategory = allowedReasonCategories.has(normalizedReasonCategory)
+    ? normalizedReasonCategory
+    : null;
+  const reasonCode = typeof details.reasonCode === "string" && details.reasonCode.trim().length > 0
+    ? details.reasonCode.trim().slice(0, 120)
+    : (typeof compactReasonCodes[0] === "string" && compactReasonCodes[0].trim().length > 0
+      ? compactReasonCodes[0].trim().slice(0, 120)
+      : null);
 
   const event = {
     type: "ai_decision",
@@ -10149,7 +10165,12 @@ function recordAiSelfAnalyzerDecision(stage, details = {}){
     goal: details.goal ?? aiRoundState?.currentGoal ?? null,
     planeId: details.planeId ?? null,
     reasonCodes: compactReasonCodes,
+    reasonCode,
   };
+
+  if(reasonCategory){
+    event.reasonCategory = reasonCategory;
+  }
 
   if(typeof details.itemType === "string" && details.itemType.trim().length > 0){
     event.itemType = details.itemType.trim().slice(0, 80);
@@ -11580,6 +11601,22 @@ function buildAiV2ReserveDiagnosticsReport(source){
   const isFailSafeTurnAdvanceEvent = (event) => {
     return hasReasonCode(event, "fail_safe_turn_advance");
   };
+  const getReasonCategory = (event) => {
+    const category = `${event?.reasonCategory || ""}`.toLowerCase();
+    if([
+      "move_planning_failure",
+      "inventory_selection_failure",
+      "technical_exception",
+    ].includes(category)){
+      return category;
+    }
+    if(hasReasonCode(event, "technical_exception")) return "technical_exception";
+    if(hasReasonCode(event, "inventory_selected_candidate_execution_failed") || hasReasonCode(event, "selected_candidate_execution_failed")){
+      return "inventory_selection_failure";
+    }
+    if(isLogicalDeadlockEvent(event) || isFailSafeTurnAdvanceEvent(event)) return "move_planning_failure";
+    return null;
+  };
 
   const getTurnGroupKey = (event, index) => {
     const colorKey = event?.turnColor || "unknown_color";
@@ -11832,6 +11869,29 @@ function buildAiV2ReserveDiagnosticsReport(source){
   const failSafeTurnShareAmongAiTurns = aiDecisionTurnKeys.size > 0
     ? failSafeTurnKeys.size / aiDecisionTurnKeys.size
     : 0;
+  const uniqueReasonCategoryByTurn = new Map();
+  for(const [index, event] of aiDecisionEvents.entries()){
+    const category = getReasonCategory(event);
+    if(!category) continue;
+    const turnKey = getTurnGroupKey(event, index);
+    if(!uniqueReasonCategoryByTurn.has(turnKey)){
+      uniqueReasonCategoryByTurn.set(turnKey, category);
+    }
+  }
+  const reasonCategoryStats = {
+    move_planning_failure: 0,
+    inventory_selection_failure: 0,
+    technical_exception: 0,
+  };
+  for(const category of uniqueReasonCategoryByTurn.values()){
+    reasonCategoryStats[category] += 1;
+  }
+  const aiDecisionTurnsTotal = aiDecisionTurnKeys.size || 0;
+  const reasonCategoryShares = {
+    move_planning_failure: aiDecisionTurnsTotal > 0 ? Number((reasonCategoryStats.move_planning_failure / aiDecisionTurnsTotal).toFixed(4)) : 0,
+    inventory_selection_failure: aiDecisionTurnsTotal > 0 ? Number((reasonCategoryStats.inventory_selection_failure / aiDecisionTurnsTotal).toFixed(4)) : 0,
+    technical_exception: aiDecisionTurnsTotal > 0 ? Number((reasonCategoryStats.technical_exception / aiDecisionTurnsTotal).toFixed(4)) : 0,
+  };
 
   const fallbackEpisodesByRound = fallbackEpisodes.reduce((map, episode) => {
     const key = Number.isFinite(episode?.roundNumber) ? String(episode.roundNumber) : "unknown_round";
@@ -11991,6 +12051,9 @@ function buildAiV2ReserveDiagnosticsReport(source){
   };
 
   const summary = [
+    `Категория move_planning_failure: ${reasonCategoryStats.move_planning_failure} (${Number((reasonCategoryShares.move_planning_failure * 100).toFixed(1))}% ходов ИИ).`,
+    `Категория inventory_selection_failure: ${reasonCategoryStats.inventory_selection_failure} (${Number((reasonCategoryShares.inventory_selection_failure * 100).toFixed(1))}% ходов ИИ).`,
+    `Категория technical_exception: ${reasonCategoryStats.technical_exception} (${Number((reasonCategoryShares.technical_exception * 100).toFixed(1))}% ходов ИИ).`,
     `Всего эпизодов внутренних запасных шагов v2: ${totalFallbackEpisodes}.`,
     `Эпизоды перехода на внутренний запасной шаг v2: ${totalFallbackEpisodes}.`,
     `Эпизоды аварийного fail-safe завершения хода: ${failSafeTurnAdvanceEvents.length}.`,
@@ -12114,6 +12177,8 @@ function buildAiV2ReserveDiagnosticsReport(source){
     fallbackEpisodeSamples,
     failSafeEpisodeSamples,
     fallbackEpisodeDiagnostics: {
+      reasonCategoryStats,
+      reasonCategoryShares,
       candidateSelectionFallbackEpisodes: totalFallbackEpisodes,
       failSafeTurnAdvanceEpisodes: failSafeTurnAdvanceEvents.length,
       aiMoveExceptionEvents: aiMoveExceptionEvents.length,
@@ -13472,7 +13537,9 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       } catch (error) {
         const exceptionContext = buildAiExceptionContextSnapshot(reasonCode);
         logAiDecision("ai_move_exception_fail_safe", {
-          reasonCode,
+          reasonCategory: "technical_exception",
+          reasonCode: "do_computer_move_exception",
+          triggerReasonCode: reasonCode || null,
           message: error?.message || String(error),
           roundNumber: exceptionContext.roundNumber,
           turnColor: exceptionContext.turnColor,
@@ -13489,6 +13556,8 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           failSafeAdvanceTurn("ai_move_exception", {
             goal: exceptionContext.goal || "ai_move_exception",
             reasonCodes: ["ai_move_exception", "technical_exception", "fail_safe_turn_advance"],
+            reasonCategory: "technical_exception",
+            reasonCode: "do_computer_move_exception",
             rejectReasons: ["do_computer_move_exception"],
             errorMessage: error?.message || String(error),
             roundNumber: exceptionContext.roundNumber,
@@ -16542,7 +16611,22 @@ function buildAiDecisionCompactPayload(payload, derived = {}){
 }
 
 function logAiDecision(reason, details = {}){
-  const payload = details && typeof details === "object" ? details : {};
+  const payload = details && typeof details === "object" ? { ...details } : {};
+  const normalizedReasonCategory = typeof payload.reasonCategory === "string"
+    ? payload.reasonCategory.trim().toLowerCase()
+    : "";
+  if([
+    "move_planning_failure",
+    "inventory_selection_failure",
+    "technical_exception",
+  ].includes(normalizedReasonCategory)){
+    payload.reasonCategory = normalizedReasonCategory;
+  } else if(payload.reasonCategory !== undefined){
+    delete payload.reasonCategory;
+  }
+  if(!(typeof payload.reasonCode === "string" && payload.reasonCode.trim().length > 0)){
+    payload.reasonCode = payload.reason || reason || null;
+  }
   if(!shouldEmitAiDecision(reason, payload)) return;
   if(shouldAggregateAiDecision(reason, payload)){
     const scope = getCurrentAiDecisionScope();
@@ -22432,6 +22516,8 @@ function recordInventoryAiDecision(stage, details = {}){
     planeId: details.planeId ?? null,
     itemType: details.itemType ?? null,
     source: details.source ?? null,
+    reasonCategory: details.reasonCategory || "inventory_selection_failure",
+    reasonCode: details.reasonCode || compactReasonCodes[0] || stage,
     reasonCodes: compactReasonCodes,
     rejectReasons: compactRejectReasons,
   });
@@ -23977,6 +24063,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     const payload = {
       itemType,
       reason: reason || "selected_candidate_failed_to_execute",
+      reasonCategory: "inventory_selection_failure",
+      reasonCode: "selected_candidate_execution_failed",
       planeId: plannedMove?.plane?.id ?? null,
       goal: strategicGoal || null,
       source: "selected_inventory_candidate",
@@ -23988,6 +24076,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       planeId: payload.planeId,
       goal: payload.goal,
       itemType: payload.itemType,
+      reasonCategory: "inventory_selection_failure",
+      reasonCode: "selected_candidate_execution_failed",
       reasonCodes: `${payload.reason || ""}`.includes("anti_fallback")
         ? ["selected_candidate_execution_failed", "anti_fallback_measure_rejected"]
         : ["selected_candidate_execution_failed"],
@@ -25704,6 +25794,8 @@ function failSafeAdvanceTurn(reason, details = {}){
   recordAiSelfAnalyzerDecision(analyzerStage, {
     goal,
     planeId,
+    reasonCategory: safeDetails.reasonCategory || "move_planning_failure",
+    reasonCode: safeDetails.reasonCode || safeReason || analyzerStage,
     reasonCodes: [...new Set([analyzerStage, ...reasonCodes])],
     rejectReasons: [...new Set([safeReason, ...rejectReasons])],
     errorMessage: safeDetails.errorMessage,
@@ -32491,11 +32583,15 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
     const exceptionPayload = buildStageExceptionPayload("inventory_candidate_selection", error);
     logAiDecision("ai_move_stage_exception", {
       ...exceptionPayload,
+      reasonCategory: "technical_exception",
+      reasonCode: "inventory_candidate_selection_exception",
       reasonCodes: ["do_computer_move_stage_exception", "inventory_candidate_selection_exception"],
     });
     recordAiSelfAnalyzerDecision("ai_move_exception", {
       goal: exceptionPayload.goal || "ai_move_exception",
       planeId: exceptionPayload.planeId,
+      reasonCategory: "technical_exception",
+      reasonCode: "inventory_candidate_selection_exception",
       reasonCodes: ["ai_move_exception", "technical_exception", "inventory_candidate_selection_exception"],
       rejectReasons: ["inventory_candidate_selection_exception"],
       source,
@@ -32521,11 +32617,15 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
     const exceptionPayload = buildStageExceptionPayload("base_candidate_selection", error);
     logAiDecision("ai_move_stage_exception", {
       ...exceptionPayload,
+      reasonCategory: "technical_exception",
+      reasonCode: "base_candidate_selection_exception",
       reasonCodes: ["do_computer_move_stage_exception", "base_candidate_selection_exception"],
     });
     recordAiSelfAnalyzerDecision("ai_move_exception", {
       goal: exceptionPayload.goal || "ai_move_exception",
       planeId: exceptionPayload.planeId,
+      reasonCategory: "technical_exception",
+      reasonCode: "base_candidate_selection_exception",
       reasonCodes: ["ai_move_exception", "technical_exception", "base_candidate_selection_exception"],
       rejectReasons: ["base_candidate_selection_exception"],
       source,
@@ -32545,6 +32645,8 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
     logAiDecision("base_candidate_rejected", {
       stage: baseCandidateStage.stage,
       reason: baseCandidateStage.reason,
+      reasonCategory: "move_planning_failure",
+      reasonCode: baseCandidateStage.reason || "base_candidate_rejected",
       planeId: plannedMove?.plane?.id ?? null,
       goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
       decisionReason: plannedMove?.decisionReason || null,
@@ -32554,6 +32656,8 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
     recordAiSelfAnalyzerDecision(baseCandidateStage.stage, {
       goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
       planeId: plannedMove?.plane?.id ?? null,
+      reasonCategory: "move_planning_failure",
+      reasonCode: baseCandidateStage.reason || "invalid_candidate",
       reasonCodes: [
         "v2_base_candidate",
         "base_candidate_rejected",
@@ -32597,11 +32701,15 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
     const inventoryExceptionPayload = buildStageExceptionPayload("inventory_usage", error);
     logAiDecision("ai_move_stage_exception", {
       ...inventoryExceptionPayload,
+      reasonCategory: "technical_exception",
+      reasonCode: "inventory_usage_exception",
       reasonCodes: ["do_computer_move_stage_exception", "inventory_usage_exception"],
     });
     recordAiSelfAnalyzerDecision("ai_move_exception", {
       goal: inventoryExceptionPayload.goal || "ai_move_exception",
       planeId: inventoryExceptionPayload.planeId,
+      reasonCategory: "technical_exception",
+      reasonCode: "inventory_usage_exception",
       reasonCodes: ["ai_move_exception", "technical_exception", "inventory_usage_exception"],
       rejectReasons: ["inventory_usage_exception"],
       source,
@@ -32660,11 +32768,15 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
         const recoveryExceptionPayload = buildStageExceptionPayload("finalize_base_launch_after_inventory_exception", recoveryError);
         logAiDecision("ai_move_stage_exception", {
           ...recoveryExceptionPayload,
+          reasonCategory: "technical_exception",
+          reasonCode: "inventory_recovery_finalize_exception",
           reasonCodes: ["do_computer_move_stage_exception", "inventory_recovery_finalize_exception"],
         });
         recordAiSelfAnalyzerDecision("ai_move_exception", {
           goal: recoveryExceptionPayload.goal || "ai_move_exception",
           planeId: recoveryExceptionPayload.planeId,
+          reasonCategory: "technical_exception",
+          reasonCode: "inventory_recovery_finalize_exception",
           reasonCodes: ["ai_move_exception", "technical_exception", "inventory_recovery_finalize_exception"],
           rejectReasons: ["inventory_recovery_finalize_exception"],
           source,
