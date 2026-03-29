@@ -23286,17 +23286,48 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       softReleaseGuardScenario: recentInventorySignals.softReleaseGuardScenario || null,
     });
   }
+  const INVENTORY_TACTICAL_SURPLUS_BASE_BONUS = 0.045;
+  const INVENTORY_TACTICAL_SURPLUS_REPEAT_BONUS = 0.018;
+  const INVENTORY_TACTICAL_SURPLUS_CLOSE_SCORE_BONUS = 0.022;
+  const INVENTORY_TACTICAL_SURPLUS_CLOSE_SCORE_GAP_MAX = 0.065;
+  const INVENTORY_TACTICAL_SURPLUS_RISK_MAX = 0.19;
   for(const candidate of candidates){
     const entry = pressureState?.byItem?.[candidate.itemType] || null;
     const pressureBonus = getAiInventoryPressureBonus(candidate.itemType, entry, pressureState?.stalestItemType === candidate.itemType, recentInventorySignals);
     const candidateInventoryCount = Number(inventory?.counts?.[candidate.itemType] ?? 0);
-    const tacticalSurplusPriorityBonus = (
-      (candidate.itemType === INVENTORY_ITEM_TYPES.MINE || candidate.itemType === INVENTORY_ITEM_TYPES.DYNAMITE)
-      && candidateInventoryCount > 1
-    )
-      ? 0.045
+    const candidateRisk = Number.isFinite(candidate?.risk) ? candidate.risk : 0;
+    const isTacticalCandidate = candidate.itemType === INVENTORY_ITEM_TYPES.MINE || candidate.itemType === INVENTORY_ITEM_TYPES.DYNAMITE;
+    const repeatedEmptyTurns = recentInventorySignals?.repeatedFallbackSelected || recentInventorySignals?.repeatedShotPlanNotFound;
+    const tacticalSurplusPriorityBonusBase = isTacticalCandidate && candidateInventoryCount > 1
+      ? INVENTORY_TACTICAL_SURPLUS_BASE_BONUS
+      : 0;
+    const tacticalSurplusPriorityBonusRepeat = isTacticalCandidate && repeatedEmptyTurns
+      ? INVENTORY_TACTICAL_SURPLUS_REPEAT_BONUS
       : 0;
     candidate.pressureBonus = pressureBonus;
+    const closestSoftItem = candidates
+      .filter((entryCandidate) => (
+        entryCandidate !== candidate
+        && entryCandidate.itemType !== INVENTORY_ITEM_TYPES.MINE
+        && entryCandidate.itemType !== INVENTORY_ITEM_TYPES.DYNAMITE
+      ))
+      .reduce((best, entryCandidate) => {
+        if(!best || entryCandidate.comparableScore > best.comparableScore + 0.0001) return entryCandidate;
+        return best;
+      }, null);
+    const closeSoftScoreGap = closestSoftItem
+      ? Number((closestSoftItem.comparableScore - candidate.comparableScore).toFixed(3))
+      : Number.POSITIVE_INFINITY;
+    const tacticalSurplusCloseScoreBonusAllowed = isTacticalCandidate
+      && candidateInventoryCount > 1
+      && Number.isFinite(closeSoftScoreGap)
+      && closeSoftScoreGap >= 0
+      && closeSoftScoreGap <= INVENTORY_TACTICAL_SURPLUS_CLOSE_SCORE_GAP_MAX
+      && candidateRisk <= INVENTORY_TACTICAL_SURPLUS_RISK_MAX;
+    const tacticalSurplusCloseScoreBonus = tacticalSurplusCloseScoreBonusAllowed
+      ? INVENTORY_TACTICAL_SURPLUS_CLOSE_SCORE_BONUS
+      : 0;
+    const tacticalSurplusPriorityBonus = Number((tacticalSurplusPriorityBonusBase + tacticalSurplusPriorityBonusRepeat + tacticalSurplusCloseScoreBonus).toFixed(3));
     const moderateReleaseReady = candidate.usageTier !== "moderate"
       || recentInventorySignals.softReleaseReady
       || (entry?.idleTurns ?? 0) >= AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD
@@ -23317,6 +23348,16 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     candidate.releaseReady = moderateReleaseReady;
     candidate.adjustedComparableScore = Number((candidate.comparableScore + pressureBonus + tacticalSurplusPriorityBonus).toFixed(3));
     candidate.tacticalSurplusPriorityBonus = tacticalSurplusPriorityBonus;
+    candidate.tacticalSurplusBonusMeta = tacticalSurplusPriorityBonus > 0 ? {
+      baseBonus: tacticalSurplusPriorityBonusBase,
+      repeatedEmptyTurnsBonus: tacticalSurplusPriorityBonusRepeat,
+      closeScoreBonus: tacticalSurplusCloseScoreBonus,
+      closeSoftScoreGap: Number.isFinite(closeSoftScoreGap) ? closeSoftScoreGap : null,
+      closestSoftItemType: closestSoftItem?.itemType || null,
+      riskGuardApplied: tacticalSurplusCloseScoreBonus > 0,
+      riskGuardMax: INVENTORY_TACTICAL_SURPLUS_RISK_MAX,
+      repeatedEmptyTurns,
+    } : null;
     if(entry){
       entry.lastPressureBonus = pressureBonus;
     }
@@ -23458,6 +23499,11 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     );
     selectedCandidate.chosenBecauseOfPressure = crossedOwnGateBecauseOfPressure || displacedAnotherCandidateBecauseOfPressure;
     if(selectedCandidate.chosenBecauseOfPressure){
+      const isTacticalPressureChoice = selectedCandidate.itemType === INVENTORY_ITEM_TYPES.MINE
+        || selectedCandidate.itemType === INVENTORY_ITEM_TYPES.DYNAMITE;
+      if(isTacticalPressureChoice){
+        selectedCandidate.pressureReasonCode = "tactical_pressure_choice";
+      }
       logAiDecision("inventory_pressure_choice_unlocked", {
         itemType: selectedCandidate.itemType,
         planeId: plannedMove?.plane?.id ?? null,
@@ -23468,6 +23514,9 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
         selectionFloor,
         displacedRawBestItemType: rawBestCandidate?.itemType || null,
         displacedRawBestScore: rawBestCandidate?.comparableScore ?? null,
+        tacticalSurplusPriorityBonus: selectedCandidate.tacticalSurplusPriorityBonus || 0,
+        tacticalSurplusBonusMeta: selectedCandidate.tacticalSurplusBonusMeta || null,
+        pressureReasonCode: selectedCandidate.pressureReasonCode || null,
         whyChosenNow: crossedOwnGateBecauseOfPressure
           ? "pressure_lifted_item_above_its_minimum_use_threshold"
           : "pressure_accumulated_until_good_enough_plan_overtook_plainer_option",
@@ -32301,6 +32350,9 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
         selectedCandidateReasonCodes.push(
           inventoryPlanning.selectedCandidate.floorSoftPassReasonCode || "inventory_floor_soft_pass"
         );
+      }
+      if(inventoryPlanning.selectedCandidate.pressureReasonCode){
+        selectedCandidateReasonCodes.push(inventoryPlanning.selectedCandidate.pressureReasonCode);
       }
       logAiDecision("inventory_candidate_selected", {
         ...inventoryPlanning.selectedCandidate,
