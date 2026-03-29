@@ -24401,6 +24401,99 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     return { executed: false, executionFailureReason: executionFailureReason || "selected_candidate_execution_failed" };
   }
 
+  function getTacticalCandidateTargetKey(candidate){
+    if(!candidate) return "candidate_missing";
+    if(candidate.itemType === INVENTORY_ITEM_TYPES.DYNAMITE){
+      const target = candidate?.target || null;
+      if(target?.colliderId) return `dynamite:collider:${target.colliderId}`;
+      if(target?.spriteId) return `dynamite:sprite:${target.spriteId}`;
+      if(Number.isFinite(target?.x) && Number.isFinite(target?.y)){
+        return `dynamite:point:${Number(target.x).toFixed(1)}:${Number(target.y).toFixed(1)}`;
+      }
+      return "dynamite:target_missing";
+    }
+    if(candidate.itemType === INVENTORY_ITEM_TYPES.MINE){
+      const placement = candidate?.minePlan?.placement || candidate?.target || null;
+      if(Number.isFinite(placement?.x) && Number.isFinite(placement?.y)){
+        return `mine:point:${Number(placement.x).toFixed(1)}:${Number(placement.y).toFixed(1)}`;
+      }
+      return `mine:mode:${candidate?.placementMode === "defensive" ? "defensive" : "base"}`;
+    }
+    return `${candidate.itemType || "unknown"}:non_tactical`;
+  }
+
+  function attemptTacticalSecondChance(primaryCandidate, primaryFailureReason){
+    const primaryType = primaryCandidate?.itemType;
+    const isPrimaryTactical = primaryType === INVENTORY_ITEM_TYPES.MINE
+      || primaryType === INVENTORY_ITEM_TYPES.DYNAMITE;
+    if(!isPrimaryTactical) return { used: false, executed: false };
+    const tacticalRetryLimit = 2;
+    const tacticalPool = Array.isArray(plannedMove?.inventoryCandidates)
+      ? plannedMove.inventoryCandidates.filter((candidate) => (
+        candidate
+        && (candidate.itemType === INVENTORY_ITEM_TYPES.MINE || candidate.itemType === INVENTORY_ITEM_TYPES.DYNAMITE)
+      ))
+      : [];
+    if(tacticalPool.length <= 1){
+      logAiDecision("tactical_second_chance_failed", {
+        planeId: plannedMove?.plane?.id ?? null,
+        goal: strategicGoal || null,
+        reason: "no_remaining_tactical_candidates",
+        failedItemType: primaryType || null,
+        failedTargetKey: getTacticalCandidateTargetKey(primaryCandidate),
+        failedExecutionReason: primaryFailureReason || null,
+      });
+      return { used: false, executed: false };
+    }
+    const failedTargetKeys = new Set([getTacticalCandidateTargetKey(primaryCandidate)]);
+    const remainingTacticalCandidates = tacticalPool
+      .filter((candidate) => candidate !== primaryCandidate)
+      .filter((candidate) => !failedTargetKeys.has(getTacticalCandidateTargetKey(candidate)))
+      .sort((a, b) => (
+        Number(b?.adjustedComparableScore ?? b?.comparableScore ?? Number.NEGATIVE_INFINITY)
+        - Number(a?.adjustedComparableScore ?? a?.comparableScore ?? Number.NEGATIVE_INFINITY)
+      ));
+    let attempts = 0;
+    for(const retryCandidate of remainingTacticalCandidates){
+      if(attempts >= tacticalRetryLimit) break;
+      const retryTargetKey = getTacticalCandidateTargetKey(retryCandidate);
+      if(failedTargetKeys.has(retryTargetKey)) continue;
+      attempts += 1;
+      const executionResult = executeSelectedInventoryCandidate(retryCandidate, "tactical_second_chance");
+      if(executionResult.executed){
+        logAiDecision("tactical_second_chance_used", {
+          planeId: plannedMove?.plane?.id ?? null,
+          goal: strategicGoal || null,
+          attempts,
+          retryLimit: tacticalRetryLimit,
+          failedItemType: primaryType || null,
+          failedTargetKey: getTacticalCandidateTargetKey(primaryCandidate),
+          failedExecutionReason: primaryFailureReason || null,
+          executedItemType: retryCandidate.itemType,
+          executedTargetKey: retryTargetKey,
+        });
+        return { used: true, executed: true, candidate: retryCandidate };
+      }
+      failedTargetKeys.add(retryTargetKey);
+      logSelectedInventoryExecutionFailure(retryCandidate.itemType, executionResult.executionFailureReason, {
+        source: "tactical_second_chance",
+        retryAttempt: attempts,
+        retryLimit: tacticalRetryLimit,
+      });
+    }
+    logAiDecision("tactical_second_chance_failed", {
+      planeId: plannedMove?.plane?.id ?? null,
+      goal: strategicGoal || null,
+      attempts,
+      retryLimit: tacticalRetryLimit,
+      failedItemType: primaryType || null,
+      failedTargetKey: getTacticalCandidateTargetKey(primaryCandidate),
+      failedExecutionReason: primaryFailureReason || null,
+      exhaustedCandidateKeys: Array.from(failedTargetKeys),
+    });
+    return { used: attempts > 0, executed: false };
+  }
+
   const selectedInventorySequence = Array.isArray(plannedMove?.selectedInventorySequence)
     ? plannedMove.selectedInventorySequence
     : [];
@@ -24452,6 +24545,16 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   if(selectedInventoryCandidate){
     const executionResult = executeSelectedInventoryCandidate(selectedInventoryCandidate, "selected_inventory_candidate");
     if(executionResult.executed){
+      if(plannedMove && plannedMove.selectedInventoryCandidate){
+        plannedMove.selectedInventoryCandidate = null;
+      }
+      if(plannedMove && Array.isArray(plannedMove.selectedInventorySequence)){
+        plannedMove.selectedInventorySequence = [];
+      }
+      return true;
+    }
+    const secondChanceResult = attemptTacticalSecondChance(selectedInventoryCandidate, executionResult.executionFailureReason);
+    if(secondChanceResult.executed){
       if(plannedMove && plannedMove.selectedInventoryCandidate){
         plannedMove.selectedInventoryCandidate = null;
       }
