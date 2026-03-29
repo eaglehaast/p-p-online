@@ -83,6 +83,8 @@ const activeMatch = {
       roundNumber: 1,
       stage: 'safe_short_fallback_selected',
       goal: 'safe_short_fallback_progress',
+      reasonCategory: 'move_planning_failure',
+      reasonCode: 'safe_short_reposition',
       reasonCodes: ['safe_short_reposition'],
       selectedMove: { goalName: 'safe_short_fallback_progress', decisionReason: 'safe_short_reposition' },
       fallbackDiagnostics: {
@@ -106,10 +108,22 @@ const activeMatch = {
       type: 'ai_decision',
       roundNumber: 2,
       stage: 'ai_move_exception',
+      reasonCategory: 'technical_exception',
+      reasonCode: 'do_computer_move_exception',
       goal: 'capture_enemy_flag',
-      reasonCodes: ['ai_move_exception', 'fail_safe_turn_advance'],
+      reasonCodes: ['ai_move_exception', 'technical_exception', 'fail_safe_turn_advance'],
       rejectReasons: ['do_computer_move_exception'],
       errorMessage: 'Synthetic planner crash',
+    },
+    {
+      type: 'ai_decision',
+      roundNumber: 3,
+      stage: 'inventory_selected_candidate_execution_failed',
+      reasonCategory: 'inventory_selection_failure',
+      reasonCode: 'selected_candidate_execution_failed',
+      goal: 'capture_enemy_flag',
+      reasonCodes: ['selected_candidate_execution_failed'],
+      rejectReasons: ['selected_candidate_apply_failed'],
     },
   ],
 };
@@ -127,8 +141,15 @@ assert(Array.isArray(report.failSafeEpisodeSamples), 'Expected failSafeEpisodeSa
 assert(report.fallbackEpisodeDiagnostics && typeof report.fallbackEpisodeDiagnostics === 'object', 'Expected fallbackEpisodeDiagnostics block.');
 assert(report.fallbackEpisodeDiagnostics.aiMoveExceptionEvents >= 1, 'Expected ai_move_exception events to be counted.');
 assert(report.fallbackEpisodeDiagnostics.failSafeTurnAdvanceEpisodes >= 1, 'Expected fail-safe episodes to be counted.');
+assert(report.fallbackEpisodeDiagnostics.reasonCategoryStats?.move_planning_failure >= 1, 'Expected move_planning_failure category to be counted.');
+assert(report.fallbackEpisodeDiagnostics.reasonCategoryStats?.inventory_selection_failure >= 1, 'Expected inventory_selection_failure category to be counted.');
+assert(report.fallbackEpisodeDiagnostics.reasonCategoryStats?.technical_exception >= 1, 'Expected technical_exception category to be counted.');
+const categoryTotal = Object.values(report.fallbackEpisodeDiagnostics.reasonCategoryStats || {}).reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0);
+const maxUniquePerTurn = new Set((activeMatch.events || []).map((event) => `${event.turnColor || 'unknown'}:${event.roundNumber || 'unknown'}`)).size;
+assert(categoryTotal <= maxUniquePerTurn, 'One event turn must not be counted in multiple categories.');
 assert(report.summary.some((line) => line.includes('ai_move_exception')), 'Expected summary line with ai_move_exception count.');
 assert(report.summary.some((line) => line.includes('fail-safe')), 'Expected summary line with fail-safe turn share/count.');
+assert(report.summary[0].includes('Категория move_planning_failure'), 'Expected summary to start from category counters.');
 assert(Array.isArray(report.summary) && report.summary.length > 0, 'Expected non-empty summary block.');
 const rootCauseTotal = Object.values(report.fallbackRootCauseStats).reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0);
 assert(rootCauseTotal >= 1, 'Expected at least one normalized root-cause reserve episode.');
