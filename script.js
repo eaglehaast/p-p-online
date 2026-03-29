@@ -21497,9 +21497,12 @@ function shouldUseStrategicDynamiteForPlannedMove(plannedMove, context = null){
     ? getAiInventoryRecentMatchSignals(plannedMove?.goalName || aiRoundState?.currentGoal || null)
     : null;
   const repeatedEmptyTurns = Boolean(recentSignals?.repeatedFallbackSelected || recentSignals?.repeatedShotPlanNotFound);
+  const repeatedWeakTurns = repeatedEmptyTurns
+    || Boolean(recentSignals?.softReleaseReady)
+    || Number(recentSignals?.softReleaseGuardScenario?.fallbackChainTurns || 0) >= 2;
   const availableCharges = Number(evaluateBlueInventoryState()?.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0);
   const hasSurplusDynamite = availableCharges > 1;
-  const pressureOverride = hasSurplusDynamite || repeatedEmptyTurns;
+  const pressureOverride = hasSurplusDynamite || repeatedWeakTurns;
   const hasStrongCurrentPlan = moveClassification.hasStrongAttack
     || moveClassification.hasFlagIntercept
     || moveClassification.hasUsefulContact;
@@ -21509,6 +21512,7 @@ function shouldUseStrategicDynamiteForPlannedMove(plannedMove, context = null){
     allowStrategicProbe: !moveClassification.hasStrongAttack,
     isMediumMove,
     repeatedEmptyTurns,
+    repeatedWeakTurns,
     hasSurplusDynamite,
     pressureOverride,
     moveClassification,
@@ -21571,14 +21575,6 @@ function evaluateStrategicDynamiteTargets(context, plannedMove){
       && isPathClearIgnoringColliderById(plane.x, plane.y, routeTarget.x, routeTarget.y, geometry.collider.id);
     const distanceBias = Math.hypot(geometry.cx - plane.x, geometry.cy - plane.y);
     const opensDecisivePath = opensPathToBase || opensPathToFlag;
-    const hasLargeRouteGain = nextTurnRouteGain >= 3;
-    const hasMeaningfulStrategicUnlock = opensDecisivePath || hasLargeRouteGain;
-    const hasNoticeableRouteGain = nextTurnRouteGain >= 2;
-    const mediumValidUnlock = opensDecisivePath || hasNoticeableRouteGain || nextTurnRouteGain >= 1 || removesBarrierToContactZone;
-    const mediumMoveStrategicUnlock = hasNoticeableRouteGain || opensDecisivePath || removesBarrierToContactZone;
-    const canUseThisTargetForCurrentMove = moveClassification.isWeakOrWaiting
-      || mediumMoveStrategicUnlock
-      || (aggressiveMode && mediumValidUnlock);
     const accumulatedValue2Turns = Number((
       (opensDecisivePath ? 0.9 : 0)
       + (removesBarrierToContactZone ? 0.4 : 0)
@@ -21586,6 +21582,20 @@ function evaluateStrategicDynamiteTargets(context, plannedMove){
       + (currentRouteImprovement ? 0.26 : 0)
     ).toFixed(3));
     const accumulatedValue3Turns = Number((accumulatedValue2Turns + (Math.min(4, nextTurnRouteGain) * 0.2) + (opensDecisivePath ? 0.28 : 0)).toFixed(3));
+    const hasLargeRouteGain = nextTurnRouteGain >= 3;
+    const hasNoticeableRouteGain = nextTurnRouteGain >= 2;
+    const hasFutureAdvantageSignal = opensDecisivePath
+      || hasNoticeableRouteGain
+      || removesBarrierToContactZone
+      || accumulatedValue2Turns >= 0.44
+      || (accumulatedValue2Turns >= 0.34 && accumulatedValue3Turns >= 0.6);
+    const hasMeaningfulStrategicUnlock = opensDecisivePath || hasLargeRouteGain || hasFutureAdvantageSignal;
+    const mediumValidUnlock = opensDecisivePath || hasNoticeableRouteGain || nextTurnRouteGain >= 1 || removesBarrierToContactZone;
+    const mediumMoveStrategicUnlock = hasNoticeableRouteGain || opensDecisivePath || removesBarrierToContactZone || hasFutureAdvantageSignal;
+    const canUseThisTargetForCurrentMove = moveClassification.isWeakOrWaiting
+      || mediumMoveStrategicUnlock
+      || hasFutureAdvantageSignal
+      || (aggressiveMode && mediumValidUnlock);
     const score = (opensPathToBase ? 3.4 : 0)
       + (opensPathToFlag ? 3.8 : 0)
       + (removesBarrierToContactZone ? 1.2 : 0)
@@ -21612,6 +21622,7 @@ function evaluateStrategicDynamiteTargets(context, plannedMove){
       opensDecisivePath,
       hasLargeRouteGain,
       hasNoticeableRouteGain,
+      hasFutureAdvantageSignal,
       mediumValidUnlock,
       mediumMoveStrategicUnlock,
       aggressiveMode,
@@ -21629,6 +21640,21 @@ function evaluateStrategicDynamiteTargets(context, plannedMove){
     bestTarget: evaluated[0],
     rankedTargets: evaluated.slice(0, 5),
   };
+}
+
+function doesStrategicDynamiteShowFutureAdvantage(strategicDynamite){
+  const target = strategicDynamite?.bestTarget || null;
+  if(!target) return false;
+  return Boolean(
+    target.opensDecisivePath
+    || target.opensPathToFlag
+    || target.opensPathToBase
+    || target.removesBarrierToContactZone
+    || (target.nextTurnRouteGain ?? 0) >= 2
+    || (target.accumulatedValue2Turns ?? 0) >= 0.44
+    || ((target.accumulatedValue2Turns ?? 0) >= 0.34 && (target.accumulatedValue3Turns ?? 0) >= 0.6)
+    || target.hasFutureAdvantageSignal
+  );
 }
 
 function isDynamiteTargetUsefulForCurrentRoute(targetGeometry, context, plannedMove){
@@ -22724,11 +22750,19 @@ function evaluateAiDynamiteTacticalTarget(context, plannedMove, options = {}){
     ? getDynamiteCandidateForCurrentRoute(context, plannedMove)
     : null;
   const strategicMoveGate = shouldUseStrategicDynamiteForPlannedMove(plannedMove, context);
-  const allowStrategicProbe = options?.allowStrategicProbeWhenRouteAware === true
+  const baseAllowStrategicProbe = options?.allowStrategicProbeWhenRouteAware === true
     ? (strategicMoveGate.allowStrategicProbe || Number(options?.availableCharges ?? 0) > 1)
     : (routeAwareTarget ? false : strategicMoveGate.allowStrategicSetup);
-  const strategicDynamite = allowStrategicProbe && typeof evaluateStrategicDynamiteTargets === "function"
+  const canPreCheckFutureAdvantage = !baseAllowStrategicProbe
+    && !routeAwareTarget
+    && typeof evaluateStrategicDynamiteTargets === "function";
+  const strategicDynamitePrecheck = canPreCheckFutureAdvantage
     ? evaluateStrategicDynamiteTargets(context, plannedMove)
+    : null;
+  const futureAdvantageSignal = doesStrategicDynamiteShowFutureAdvantage(strategicDynamitePrecheck);
+  const allowStrategicProbe = baseAllowStrategicProbe || futureAdvantageSignal;
+  const strategicDynamite = allowStrategicProbe && typeof evaluateStrategicDynamiteTargets === "function"
+    ? (strategicDynamitePrecheck || evaluateStrategicDynamiteTargets(context, plannedMove))
     : null;
   const strategicTarget = routeAwareTarget ? null : (strategicDynamite?.bestTarget || null);
   const fallbackTarget = routeAwareTarget || strategicTarget || null;
@@ -22739,6 +22773,7 @@ function evaluateAiDynamiteTacticalTarget(context, plannedMove, options = {}){
     strategicDynamite,
     strategicTarget,
     fallbackTarget,
+    futureAdvantageSignal: futureAdvantageSignal || doesStrategicDynamiteShowFutureAdvantage(strategicDynamite),
   };
 }
 
@@ -23056,6 +23091,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     const strategicMoveGate = dynamiteDecision.strategicMoveGate;
     const strategicDynamite = dynamiteDecision.strategicDynamite;
     const strategicTarget = dynamiteDecision.strategicTarget;
+    const futureAdvantageSignal = dynamiteDecision.futureAdvantageSignal === true;
     const fallbackTarget = dynamiteDecision.fallbackTarget;
     const dynamiteForcedSpendSurplus = dynamiteHasSurplusCharges && Boolean(fallbackTarget);
     const dynamiteSeriesPlan = buildAiDynamiteSeriesPlan(context, plannedMove, {
@@ -23075,6 +23111,13 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       const strategicReason = strategicTarget?.nextTurnRouteGain > 0
         ? "dynamite_used_for_future_route_gain"
         : "dynamite_used_for_map_opening";
+      const chosenForFutureAdvantage = strategicTarget && (
+        strategicReason === "dynamite_used_for_future_route_gain"
+        || strategicTarget.hasFutureAdvantageSignal
+        || strategicTarget.accumulatedValue2Turns >= 0.44
+        || strategicTarget.opensDecisivePath
+        || strategicTarget.removesBarrierToContactZone
+      );
       pushCandidate({
         itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
         target: { x: fallbackTarget.cx, y: fallbackTarget.cy, colliderId: fallbackTarget?.collider?.id ?? null, spriteId: fallbackTarget?.id ?? null },
@@ -23098,6 +23141,8 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
               ? "we have spare dynamite, so a valid strategic wall target is acceptable even without waiting for a huge immediate gain"
               : "dynamite opens a more useful part of the map during weak turns, and also during medium turns when it unlocks a decisive path or a noticeable follow-up route gain"),
         dynamiteUseClass: routeAwareTarget ? "current_route" : "strategic_map_opening",
+        dynamiteFutureAdvantage: Boolean(chosenForFutureAdvantage),
+        futureAdvantageSignal,
         dynamiteExpectedRoute: routeAwareTarget?.replanResult?.expectedRoute || null,
         dynamiteRouteReplan: routeAwareTarget?.replanResult ? {
           usesOpenedCorridor: routeAwareTarget.replanResult.usesOpenedCorridor,
@@ -23120,6 +23165,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
           hasNoticeableRouteGain: strategicTarget.hasNoticeableRouteGain,
           accumulatedValue2Turns: strategicTarget.accumulatedValue2Turns,
           accumulatedValue3Turns: strategicTarget.accumulatedValue3Turns,
+          hasFutureAdvantageSignal: strategicTarget.hasFutureAdvantageSignal,
           mediumMoveStrategicUnlock: strategicTarget.mediumMoveStrategicUnlock,
           moveClassification: strategicTarget.moveClassification?.classification || null,
           currentMoveTooStrongReason: strategicMoveGate.strongPlanReason,
@@ -25054,6 +25100,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     const strategicMoveGate = dynamiteDecision.strategicMoveGate;
     const strategicDynamite = dynamiteDecision.strategicDynamite;
     const strategicTarget = dynamiteDecision.strategicTarget;
+    const futureAdvantageSignal = dynamiteDecision.futureAdvantageSignal === true;
 
     const routeAwareReplan = routeAwareTarget?.replanResult || null;
     const routeAwareExpectedRoute = routeAwareReplan?.expectedRoute || null;
@@ -25102,6 +25149,11 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       const strategicReason = strategicTarget.opensDecisivePath
         ? "dynamite_used_for_map_opening"
         : "dynamite_used_for_future_route_gain";
+      const chosenForFutureAdvantage = strategicReason === "dynamite_used_for_future_route_gain"
+        || strategicTarget.hasFutureAdvantageSignal
+        || strategicTarget.accumulatedValue2Turns >= 0.44
+        || strategicTarget.opensDecisivePath
+        || strategicTarget.removesBarrierToContactZone;
       const strategicFollowUp = describeStrategicDynamiteFollowUp(strategicTarget, plannedMove, context);
       if(placeBlueDynamiteAt(strategicTarget.cx, strategicTarget.cy)){
         removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
@@ -25145,6 +25197,20 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
             nextTurnRouteGain: target?.nextTurnRouteGain ?? 0,
           })) || [],
         });
+        if(chosenForFutureAdvantage){
+          logAiDecision("dynamite_chosen_for_future_advantage", {
+            planeId: plannedMove?.plane?.id ?? null,
+            goal: strategicGoal || null,
+            colliderId: strategicTarget?.collider?.id ?? null,
+            strategicReason,
+            opensPathToBase: strategicTarget?.opensPathToBase ?? false,
+            opensPathToFlag: strategicTarget?.opensPathToFlag ?? false,
+            removesBarrierToContactZone: strategicTarget?.removesBarrierToContactZone ?? false,
+            nextTurnRouteGain: strategicTarget?.nextTurnRouteGain ?? 0,
+            accumulatedValue2Turns: strategicTarget?.accumulatedValue2Turns ?? null,
+            accumulatedValue3Turns: strategicTarget?.accumulatedValue3Turns ?? null,
+          });
+        }
         markSoftFallbackUse(INVENTORY_ITEM_TYPES.DYNAMITE, {
           reason: strategicReason,
           targetX: strategicTarget.cx,
@@ -25175,7 +25241,11 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         currentMoveTooStrongReason: strategicMoveGate.strongPlanReason,
       });
     } else {
-      dynamiteFinalRejectReason = routeAwareTarget ? "route_target_failed_to_place" : (!strategicMoveGate.allowStrategicSetup ? "current_move_already_good_enough" : "no_useful_target_anywhere");
+      dynamiteFinalRejectReason = routeAwareTarget
+        ? "route_target_failed_to_place"
+        : (!strategicMoveGate.allowStrategicSetup && !futureAdvantageSignal
+            ? "current_move_already_good_enough"
+            : "no_useful_target_anywhere");
       logAiDecision("dynamite_not_used_no_benefit", {
         planeId: plannedMove?.plane?.id ?? null,
         reason: dynamiteFinalRejectReason,
@@ -25206,7 +25276,9 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     if(forcedDynamiteSpend){
       const forcedDynamiteBlockReason = routeAwareTarget
         ? "route_target_failed_or_no_noticeable_gain"
-        : (!strategicMoveGate.allowStrategicSetup ? "current_move_already_good_enough" : "no_valid_dynamite_target");
+        : (!strategicMoveGate.allowStrategicSetup && !futureAdvantageSignal
+            ? "current_move_already_good_enough"
+            : "no_valid_dynamite_target");
       logAiDecision("tactical_surplus_spend_blocked", {
         planeId: plannedMove?.plane?.id ?? null,
         goal: strategicGoal || null,
