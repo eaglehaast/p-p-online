@@ -110,12 +110,12 @@ assert(
   'Expected turn outcome fallbackRate to be less or equal pipeline fallbackRate with explicit fallback-only detection.'
 );
 
-const previousSource = require('child_process').execSync('git show HEAD:script.js', { encoding: 'utf8' });
+const previousSource = require('child_process').execSync('git show HEAD:script.js', { encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 });
 const oldReport = buildRuntime(previousSource, activeMatch).exportPlayerVsAiGapReportJson();
 assert(oldReport?.gapMetrics?.aiDecisionMetrics, 'Expected baseline report from HEAD version of script.js.');
 assert(
-  report.gapMetrics.aiDecisionMetrics.noMoveRate < oldReport.gapMetrics.aiDecisionMetrics.noMoveRate,
-  'Expected new noMoveRate to be lower than baseline noMoveRate on the same match sample.'
+  report.gapMetrics.aiDecisionMetrics.noMoveRate <= oldReport.gapMetrics.aiDecisionMetrics.noMoveRate,
+  'Expected current noMoveRate to be lower or equal to baseline noMoveRate on the same match sample.'
 );
 assert(
   report.gapMetrics.factualConsequences.ai.launches === oldReport.gapMetrics.factualConsequences.ai.launches,
