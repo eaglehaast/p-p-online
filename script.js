@@ -22872,6 +22872,44 @@ function evaluateAiDynamiteTacticalTarget(context, plannedMove, options = {}){
   };
 }
 
+function buildDynamiteCandidateSubscores(routeAwareTarget, strategicTarget, futureAdvantageSignal){
+  const ownRouteOpeningScore = routeAwareTarget
+    ? 0.62
+    : Math.max(0, Math.min(0.68,
+      (strategicTarget?.opensDecisivePath ? 0.42 : 0)
+      + (strategicTarget?.currentRouteImprovement ? 0.18 : 0)
+      + (strategicTarget?.mediumMoveStrategicUnlock ? 0.12 : 0)
+      + ((strategicTarget?.nextTurnRouteGain || 0) >= 1 ? 0.08 : 0)
+    ));
+  const enemyRouteDisruptionScore = routeAwareTarget
+    ? 0.22
+    : Math.max(0, Math.min(0.64,
+      (strategicTarget?.removesBarrierToContactZone ? 0.28 : 0)
+      + (strategicTarget?.opensPathToFlag ? 0.24 : 0)
+      + (strategicTarget?.opensPathToBase ? 0.22 : 0)
+      + ((strategicTarget?.nextTurnRouteGain || 0) >= 2 ? 0.1 : 0)
+    ));
+  const expectedNearTermWinScore = routeAwareTarget
+    ? Math.max(0.34, Math.min(0.78,
+      0.28
+      + ((routeAwareTarget?.replanResult?.usesOpenedCorridor === true) ? 0.24 : 0)
+      + ((routeAwareTarget?.replanResult?.moderateValidGain === true) ? 0.16 : 0)
+      + ((routeAwareTarget?.replanResult?.noticeableImprovement === true) ? 0.18 : 0)
+    ))
+    : Math.max(0, Math.min(0.74,
+      (strategicTarget?.accumulatedValue2Turns || 0) * 0.8
+      + (strategicTarget?.nextTurnRouteGain >= 2 ? 0.18 : (strategicTarget?.nextTurnRouteGain >= 1 ? 0.1 : 0))
+      + (futureAdvantageSignal ? 0.08 : 0)
+    ));
+  const totalScore = Number((ownRouteOpeningScore + enemyRouteDisruptionScore + expectedNearTermWinScore).toFixed(3));
+  return {
+    ownRouteOpeningScore: Number(ownRouteOpeningScore.toFixed(3)),
+    enemyRouteDisruptionScore: Number(enemyRouteDisruptionScore.toFixed(3)),
+    expectedNearTermWinScore: Number(expectedNearTermWinScore.toFixed(3)),
+    totalScore,
+  };
+}
+
 function logTacticalItemFinalDecision(itemType, details = {}){
   logAiDecision("tactical_item_final_decision", {
     itemType,
@@ -23192,7 +23230,10 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     const dynamiteSeriesPlan = buildAiDynamiteSeriesPlan(context, plannedMove, {
       availableCharges: dynamiteAvailableCharges,
     });
-    if(fallbackTarget){
+    const dynamiteSubscores = buildDynamiteCandidateSubscores(routeAwareTarget, strategicTarget, futureAdvantageSignal);
+    const dynamiteSumThreshold = routeAwareTarget ? 0.98 : 1.08;
+    const passesDynamiteSumThreshold = dynamiteSubscores.totalScore >= dynamiteSumThreshold;
+    if(fallbackTarget && passesDynamiteSumThreshold){
       const strategicPressureBoost = strategicTarget
         ? ((strategicTarget.opensDecisivePath ? 0.09 : 0)
           + (strategicTarget.removesBarrierToContactZone ? 0.06 : 0)
@@ -23250,6 +23291,14 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
         } : null,
         strategicDynamiteScore: strategicTarget?.strategicScore ?? null,
         tacticalSeries: dynamiteSeriesPlan,
+        dynamiteSubscores: {
+          ownRouteOpening: dynamiteSubscores.ownRouteOpeningScore,
+          enemyRouteDisruption: dynamiteSubscores.enemyRouteDisruptionScore,
+          expectedNearTermWin: dynamiteSubscores.expectedNearTermWinScore,
+          total: dynamiteSubscores.totalScore,
+          threshold: dynamiteSumThreshold,
+          passed: passesDynamiteSumThreshold,
+        },
         strategicDynamiteReasons: strategicTarget ? {
           opensPathToBase: strategicTarget.opensPathToBase,
           opensPathToFlag: strategicTarget.opensPathToFlag,
@@ -23274,13 +23323,24 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
         })) || null,
       });
     } else {
+      const thresholdReason = fallbackTarget && !passesDynamiteSumThreshold
+        ? "dynamite_subscore_sum_below_threshold"
+        : (strategicDynamite === null ? "dynamite_no_useful_target" : "dynamite_no_current_route_target");
       rejectCandidate(
         INVENTORY_ITEM_TYPES.DYNAMITE,
-        strategicDynamite === null ? "dynamite_no_useful_target" : "dynamite_no_current_route_target",
+        thresholdReason,
         {
           whyWaiting: routeAwareTarget === null
             ? "did_not_find_a_wall_that_improves_the_route_we_want_right_now_or_the_turn_is_not_weak_enough_for_a_preparatory_blast"
             : "did_not_find_any_wall_that_improves_the_route_now_or_on_the_next_turns",
+          dynamiteSubscores: {
+            ownRouteOpening: dynamiteSubscores.ownRouteOpeningScore,
+            enemyRouteDisruption: dynamiteSubscores.enemyRouteDisruptionScore,
+            expectedNearTermWin: dynamiteSubscores.expectedNearTermWinScore,
+            total: dynamiteSubscores.totalScore,
+            threshold: dynamiteSumThreshold,
+            passed: passesDynamiteSumThreshold,
+          },
           currentMoveTooStrongReason: strategicMoveGate.strongPlanReason,
           strategicSetupBlockedByCurrentMove: !strategicMoveGate.allowStrategicSetup,
           routeTargetMissing: routeAwareTarget === null,

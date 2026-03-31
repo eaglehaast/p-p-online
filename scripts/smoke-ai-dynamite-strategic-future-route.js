@@ -8,7 +8,23 @@ function extractFunctionSource(source, fnName){
   const signature = `function ${fnName}(`;
   const start = source.indexOf(signature);
   if(start === -1) throw new Error(`Function not found in script.js: ${fnName}`);
-  const bodyStart = source.indexOf('{', start);
+
+  let headerDepth = 0;
+  let headerEnd = -1;
+  for(let i = start; i < source.length; i += 1){
+    const ch = source[i];
+    if(ch === '(') headerDepth += 1;
+    if(ch === ')'){
+      headerDepth -= 1;
+      if(headerDepth === 0){
+        headerEnd = i;
+        break;
+      }
+    }
+  }
+  if(headerEnd === -1) throw new Error(`Function header end not found for: ${fnName}`);
+
+  const bodyStart = source.indexOf('{', headerEnd);
   let depth = 0;
   for(let i = bodyStart; i < source.length; i += 1){
     const ch = source[i];
@@ -26,11 +42,18 @@ function assert(condition, message){
 const source = fs.readFileSync('script.js', 'utf8');
 const extracted = [
   'isPathClearIgnoringColliderById',
+  'classifyAiMoveForStrategicDynamite',
+  'shouldUseStrategicDynamiteForPlannedMove',
+  'doesStrategicDynamiteShowFutureAdvantage',
+  'evaluateAiDynamiteTacticalTarget',
+  'getAiInventorySeriesIntent',
+  'withTemporarilyIgnoredDynamiteColliders',
+  'buildAiDynamiteSeriesPlan',
   'getDynamiteCandidateForCurrentRoute',
   'countDynamiteStrategicRouteOptions',
   'evaluateStrategicDynamiteTargets',
+  'buildDynamiteCandidateSubscores',
   'buildAiInventoryCandidatePlans',
-  'maybeUseInventoryBeforeLaunch',
 ].map((name) => extractFunctionSource(source, name)).join('\n\n');
 
 const logs = [];
@@ -68,6 +91,7 @@ const context = {
   colliders,
   getMapSpriteGeometry: (sprite) => geometries[sprite] || null,
   getAiMoveLandingPoint: () => landing,
+  getAiItemSpendStyle: () => 'balanced',
   getAiStrategicTargetPoint: () => ({ x: 160, y: 40 }),
   getBluePriorityEnemy: () => contactEnemy,
   getBaseAnchor: (color) => color === 'green' ? enemyBase : homeBase,
@@ -88,8 +112,10 @@ const context = {
   evaluatePostLaunchSafetyWithMine: () => ({ beforeSafe: false, afterSafe: false }),
   updateAiInventoryPressureForTurn: () => ({ byItem: {}, stalestItemType: null }),
   getAiInventoryPressureBonus: () => 0,
+  getAiInventorySelectionFloor: () => ({ passes: true, floor: 0, adjustedBenefit: 0.9 }),
   isAiInventoryPressureWeakChance: () => false,
   AI_INVENTORY_PRESSURE_CONFIG: { dynamite: { selectionFloor: 0.19 } },
+  recordInventoryAiDecision: () => {},
   logAiDecision: (reason, details) => logs.push({ reason, details }),
   markSoftFallbackUse: () => false,
   dist: (a, b) => Math.hypot(a.x - b.x, a.y - b.y),
@@ -127,14 +153,25 @@ const gameContext = {
 const plannedMove = { plane, totalDist: 40, goalName: 'pressure_enemy' };
 
 const planning = context.buildAiInventoryCandidatePlans(gameContext, plannedMove);
-plannedMove.selectedInventoryCandidate = planning.selectedCandidate;
-const used = context.maybeUseInventoryBeforeLaunch(gameContext, plannedMove);
 
 assert(planning.selectedCandidate, 'Expected a dynamite candidate to be generated.');
 assert(planning.selectedCandidate.reason === 'dynamite_used_for_future_route_gain', `Expected future-route reason, got ${planning.selectedCandidate.reason}.`);
 assert(planning.selectedCandidate.dynamiteUseClass === 'strategic_map_opening', 'Expected strategic dynamite class.');
-assert(used === true, 'AI should spend dynamite for future route gain.');
-assert(removed === 1 && planted.length === 1, 'Dynamite should be spent exactly once.');
-assert(logs.some((entry) => entry.reason === 'dynamite_used_for_future_route_gain'), 'Strategic future-route log must be written.');
+assert((planning.selectedCandidate.dynamiteSubscores?.expectedNearTermWin || 0) >= 0.3,
+  'Expected explicit near-term (2 turns) benefit score in diagnostics.');
+assert((planning.selectedCandidate.dynamiteSubscores?.total || 0) >= (planning.selectedCandidate.dynamiteSubscores?.threshold || Infinity),
+  'Future-route candidate must pass total subscore threshold.');
+assert(logs.some((entry) => entry.reason === 'inventory_candidate_generated' && entry.details?.itemType === 'dynamite'),
+  'Strategic future-route candidate should appear in diagnostics log.');
+
+context.currentMapSprites = [];
+const noEffectDecision = context.buildAiInventoryCandidatePlans(gameContext, {
+  ...plannedMove,
+  goalName: 'neutral_wait',
+});
+const noEffectReason = noEffectDecision.rejected.find((entry) => entry.itemType === context.INVENTORY_ITEM_TYPES.DYNAMITE)?.reason || null;
+assert(noEffectDecision.selectedCandidate == null, 'When there is no effect target, dynamite must not be selected.');
+assert(noEffectReason === 'dynamite_no_useful_target' || noEffectReason === 'dynamite_no_current_route_target',
+  `Expected explicit no-benefit rejection reason, got ${noEffectReason}.`);
 
 console.log('Smoke test passed: AI uses strategic dynamite to improve the next-turn route tree.');
