@@ -12453,10 +12453,77 @@ function exportPlayerVsAiGapReportJson(){
   return report;
 }
 
+function hasMineOrDynamiteUsageInMatchEvents(events){
+  const sourceEvents = Array.isArray(events) ? events : [];
+  return sourceEvents.some((event) => {
+    if(!event || typeof event !== "object") return false;
+    if(event?.type !== "ai_decision") return false;
+    const itemType = typeof event?.itemType === "string" ? event.itemType.trim().toLowerCase() : "";
+    if(itemType === "mine" || itemType === "dynamite"){
+      return true;
+    }
+    const reasonCode = typeof event?.reasonCode === "string" ? event.reasonCode.trim().toLowerCase() : "";
+    if(reasonCode.includes("mine") || reasonCode.includes("dynamite")){
+      return true;
+    }
+    const reasonCodes = Array.isArray(event?.reasonCodes) ? event.reasonCodes : [];
+    for(const code of reasonCodes){
+      const safeCode = typeof code === "string" ? code.trim().toLowerCase() : "";
+      if(safeCode.includes("mine") || safeCode.includes("dynamite")){
+        return true;
+      }
+    }
+    const decisionReason = typeof event?.selectedMove?.decisionReason === "string"
+      ? event.selectedMove.decisionReason.trim().toLowerCase()
+      : "";
+    return decisionReason.includes("mine") || decisionReason.includes("dynamite");
+  });
+}
+
+function countShotPlanNotFoundRepeats(events){
+  const sourceEvents = Array.isArray(events) ? events : [];
+  return sourceEvents.reduce((acc, event) => {
+    if(!event || typeof event !== "object") return acc;
+    if(event?.type !== "ai_decision") return acc;
+    if(event?.stage === "v2_shot_plan_not_found") return acc + 1;
+    if(event?.reasonCode === "v2_shot_plan_not_found") return acc + 1;
+    const reasonCodes = Array.isArray(event?.reasonCodes) ? event.reasonCodes : [];
+    return reasonCodes.includes("v2_shot_plan_not_found") ? acc + 1 : acc;
+  }, 0);
+}
+
+function buildStableDiagnosticsMetricsBundle({ turnsReport, gapReport, reserveReport } = {}){
+  const noMeaningfulActionTurnShare = Number.isFinite(gapReport?.gapMetrics?.aiDecisionMetrics?.noMoveRate)
+    ? gapReport.gapMetrics.aiDecisionMetrics.noMoveRate
+    : 0;
+  const technicalExceptionsPerMatch = Number.isFinite(reserveReport?.fallbackEpisodeDiagnostics?.technicalExceptionEvents)
+    ? reserveReport.fallbackEpisodeDiagnostics.technicalExceptionEvents
+    : 0;
+  const sourceEvents = Array.isArray(turnsReport?.source?.events)
+    ? turnsReport.source.events
+    : [];
+  const matchesWithMineOrDynamiteShare = hasMineOrDynamiteUsageInMatchEvents(sourceEvents)
+    ? 1
+    : 0;
+  const shotPlanNotFoundRepeats = countShotPlanNotFoundRepeats(sourceEvents);
+
+  return {
+    technical_exceptions_per_match: technicalExceptionsPerMatch,
+    no_meaningful_action_turn_share: noMeaningfulActionTurnShare,
+    matches_with_mine_or_dynamite_share: matchesWithMineOrDynamiteShare,
+    shot_plan_not_found_repeats: shotPlanNotFoundRepeats,
+  };
+}
+
 function exportAiV2DecisionAuditReportJson(){
   const turnsReport = exportAiSelfAnalyzerTurnsJson();
   const gapReport = exportPlayerVsAiGapReportJson();
   const reserveReport = exportAiV2ReserveDiagnosticsReportJson();
+  const stableDiagnosticsMetrics = buildStableDiagnosticsMetricsBundle({
+    turnsReport,
+    gapReport,
+    reserveReport,
+  });
 
   const summary = {
     status: "ok",
@@ -12493,6 +12560,7 @@ function exportAiV2DecisionAuditReportJson(){
     failSafeTurnShareAmongAiTurns: Number.isFinite(reserveReport?.fallbackEpisodeDiagnostics?.failSafeTurnShareAmongAiTurns)
       ? reserveReport.fallbackEpisodeDiagnostics.failSafeTurnShareAmongAiTurns
       : 0,
+    stableMetrics: stableDiagnosticsMetrics,
   };
 
   if(!turnsReport){
@@ -12510,6 +12578,7 @@ function exportAiV2DecisionAuditReportJson(){
       qualityGap: gapReport,
       reserveDiagnostics: reserveReport,
     },
+    stableMetrics: stableDiagnosticsMetrics,
     usageHint: {
       forTeam: "Отправьте этот JSON целиком для анализа качества решений и мотивации ИИ.",
       command: "window.exportAiV2DecisionAuditReportJson()",
@@ -12540,6 +12609,11 @@ function exportAiV2DecisionAuditCompactReportJson(){
   const turnsReport = exportAiSelfAnalyzerTurnsJson();
   const gapReport = exportPlayerVsAiGapReportJson();
   const reserveReport = exportAiV2ReserveDiagnosticsReportJson();
+  const stableDiagnosticsMetrics = buildStableDiagnosticsMetricsBundle({
+    turnsReport,
+    gapReport,
+    reserveReport,
+  });
   const aiDecisionEvents = Array.isArray(turnsReport?.aiMotivation?.decisionEvents)
     ? turnsReport.aiMotivation.decisionEvents
     : [];
@@ -12671,6 +12745,7 @@ function exportAiV2DecisionAuditCompactReportJson(){
     failSafeTurnShareAmongAiTurns: Number.isFinite(reserveReport?.fallbackEpisodeDiagnostics?.failSafeTurnShareAmongAiTurns)
       ? reserveReport.fallbackEpisodeDiagnostics.failSafeTurnShareAmongAiTurns
       : 0,
+    stableMetrics: stableDiagnosticsMetrics,
   };
 
   const report = {
@@ -12678,6 +12753,7 @@ function exportAiV2DecisionAuditCompactReportJson(){
     generatedAt: safeNowIso(),
     engineMode: AI_ENGINE_MODE,
     summary,
+    stableMetrics: stableDiagnosticsMetrics,
     lastAiDecisions: compactDecisionTrail,
     difficultyDigest,
     recentReserveEpisodes: reserveEpisodesCompact,
