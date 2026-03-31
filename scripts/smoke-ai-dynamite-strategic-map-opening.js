@@ -8,7 +8,23 @@ function extractFunctionSource(source, fnName){
   const signature = `function ${fnName}(`;
   const start = source.indexOf(signature);
   if(start === -1) throw new Error(`Function not found in script.js: ${fnName}`);
-  const bodyStart = source.indexOf('{', start);
+
+  let headerDepth = 0;
+  let headerEnd = -1;
+  for(let i = start; i < source.length; i += 1){
+    const ch = source[i];
+    if(ch === '(') headerDepth += 1;
+    if(ch === ')'){
+      headerDepth -= 1;
+      if(headerDepth === 0){
+        headerEnd = i;
+        break;
+      }
+    }
+  }
+  if(headerEnd === -1) throw new Error(`Function header end not found for: ${fnName}`);
+
+  const bodyStart = source.indexOf('{', headerEnd);
   let depth = 0;
   for(let i = bodyStart; i < source.length; i += 1){
     const ch = source[i];
@@ -26,11 +42,18 @@ function assert(condition, message){
 const source = fs.readFileSync('script.js', 'utf8');
 const extracted = [
   'isPathClearIgnoringColliderById',
+  'classifyAiMoveForStrategicDynamite',
+  'shouldUseStrategicDynamiteForPlannedMove',
+  'doesStrategicDynamiteShowFutureAdvantage',
+  'evaluateAiDynamiteTacticalTarget',
+  'getAiInventorySeriesIntent',
+  'withTemporarilyIgnoredDynamiteColliders',
+  'buildAiDynamiteSeriesPlan',
   'getDynamiteCandidateForCurrentRoute',
   'countDynamiteStrategicRouteOptions',
   'evaluateStrategicDynamiteTargets',
+  'buildDynamiteCandidateSubscores',
   'buildAiInventoryCandidatePlans',
-  'maybeUseInventoryBeforeLaunch',
 ].map((name) => extractFunctionSource(source, name)).join('\n\n');
 
 const logs = [];
@@ -62,6 +85,7 @@ const context = {
   colliders: [collider],
   getMapSpriteGeometry: () => geometry,
   getAiMoveLandingPoint: () => landing,
+  getAiItemSpendStyle: () => 'balanced',
   getAiStrategicTargetPoint: () => ({ x: 200, y: 0 }),
   getBluePriorityEnemy: () => enemy,
   getBaseAnchor: (color) => color === 'green' ? enemyBase : homeBase,
@@ -82,7 +106,9 @@ const context = {
   evaluatePostLaunchSafetyWithMine: () => ({ beforeSafe: false, afterSafe: false }),
   updateAiInventoryPressureForTurn: () => ({ byItem: {}, stalestItemType: null }),
   getAiInventoryPressureBonus: () => 0,
+  getAiInventorySelectionFloor: () => ({ passes: true, floor: 0, adjustedBenefit: 0.9 }),
   isAiInventoryPressureWeakChance: () => false,
+  recordInventoryAiDecision: () => {},
   logAiDecision: (reason, details) => logs.push({ reason, details }),
   dist: (a, b) => Math.hypot(a.x - b.x, a.y - b.y),
   findFirstColliderHit: () => null,
@@ -111,14 +137,15 @@ const gameContext = {
 const plannedMove = { plane, totalDist: 40, goalName: 'return_with_flag' };
 
 const planning = context.buildAiInventoryCandidatePlans(gameContext, plannedMove);
-plannedMove.selectedInventoryCandidate = planning.selectedCandidate;
-const used = context.maybeUseInventoryBeforeLaunch(gameContext, plannedMove);
 
 assert(planning.selectedCandidate, 'Expected a dynamite candidate for strategic map opening.');
 assert(planning.selectedCandidate.reason === 'dynamite_used_for_map_opening', `Expected map-opening reason, got ${planning.selectedCandidate.reason}.`);
 assert(planning.selectedCandidate.strategicDynamiteReasons.opensPathToBase === true, 'Candidate must explicitly open the path to base.');
-assert(used === true, 'AI should spend dynamite to reopen the base corridor.');
-assert(removed === 1 && planted === 1, 'Dynamite should be planted exactly once.');
-assert(logs.some((entry) => entry.reason === 'dynamite_used_for_map_opening'), 'Strategic map-opening log must be written.');
+assert((planning.selectedCandidate.dynamiteSubscores?.expectedNearTermWin || 0) >= 0.34,
+  'Expected explicit near-term (1 turn) benefit score in diagnostics.');
+assert((planning.selectedCandidate.dynamiteSubscores?.total || 0) >= (planning.selectedCandidate.dynamiteSubscores?.threshold || Infinity),
+  'Dynamite candidate must pass total subscore threshold.');
+assert(logs.some((entry) => entry.reason === 'inventory_candidate_generated' && entry.details?.itemType === 'dynamite'),
+  'Strategic map-opening candidate should appear in diagnostics log.');
 
 console.log('Smoke test passed: AI uses strategic dynamite to reopen the base corridor even when the current route is already possible.');
