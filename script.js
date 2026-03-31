@@ -16129,6 +16129,7 @@ const AI_OPENING_DIRECT_FINISHER_EXCEPTION_NEAREST_THREAT_DISTANCE = ATTACK_RANG
 const AI_CENTER_CONTROL_DISTANCE = MAX_DRAG_DISTANCE * 0.35;
 const AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD = 2;
 const AI_INVENTORY_SOFT_FALLBACK_COOLDOWN_TURNS = 3;
+const AI_INVENTORY_PLAN_B_NO_SHOT_THRESHOLD = 2;
 const AI_FALLBACK_DIRECT_QUALITY_MIN = 0.4;
 const AI_WALL_LOCKED_TARGET_COMBAT_RADIUS = ATTACK_RANGE_PX;
 const AI_WALL_LOCKED_MIRROR_BONUS = 0.04;
@@ -22308,14 +22309,18 @@ function getAiInventoryRecentMatchSignals(currentGoal = null){
       : (isAiFallbackDecisionEvent(event) ? count + 1 : -1)
   ), 0);
   const normalizedTailFallbackChain = tailFallbackChain < 0 ? 0 : tailFallbackChain;
-  const softReleaseReady = fallbackSelectedCount >= 2 || shotPlanNotFoundCount >= 2 || emergencyBaseDefenseCount >= 2;
+  const softReleaseReady = fallbackSelectedCount >= 2
+    || shotPlanNotFoundCount >= AI_INVENTORY_PLAN_B_NO_SHOT_THRESHOLD
+    || emergencyBaseDefenseCount >= 2;
   return {
     recentDecisionCount: recentDecisions.length,
     fallbackSelectedCount,
     shotPlanNotFoundCount,
     emergencyBaseDefenseCount,
     repeatedFallbackSelected: fallbackSelectedCount >= 2,
-    repeatedShotPlanNotFound: shotPlanNotFoundCount >= 2,
+    repeatedShotPlanNotFound: shotPlanNotFoundCount >= AI_INVENTORY_PLAN_B_NO_SHOT_THRESHOLD,
+    planBActivationThreshold: AI_INVENTORY_PLAN_B_NO_SHOT_THRESHOLD,
+    planBForcedAfterRepeatedNoShot: shotPlanNotFoundCount >= AI_INVENTORY_PLAN_B_NO_SHOT_THRESHOLD,
     emergencyPressure: emergencyBaseDefenseCount >= 2 || currentGoalIsEmergency,
     softReleaseReady,
     softReleaseGuardScenario: {
@@ -23850,6 +23855,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   const oneTacticalTryAllowed = antiFallbackInventoryUnlock
     && (fallbackNow || (recentInventorySignals?.fallbackSelectedCount ?? 0) >= 2);
   let oneTacticalTryUsed = false;
+  const inventoryPlanBForcedAfterRepeatedNoShot = recentInventorySignals?.planBForcedAfterRepeatedNoShot === true;
+  const inventoryPlanBReasonCode = "inventory_plan_b_forced_after_repeated_no_shot";
   const attackRangePx = typeof ATTACK_RANGE_PX === "number" && Number.isFinite(ATTACK_RANGE_PX) ? ATTACK_RANGE_PX : MAX_DRAG_DISTANCE * 0.58;
   // Все стратегические дистанции ниже считаем в пикселях полёта (те же единицы, что у реального запуска самолёта).
   const baseFlightRangeCells = Number.isFinite(settings?.flightRangeCells)
@@ -24903,7 +24910,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     }
   }
 
-  if(allowTacticalItems && inventory.counts[INVENTORY_ITEM_TYPES.MINE] > 0){
+  if(allowTacticalItems && !inventoryPlanBForcedAfterRepeatedNoShot && inventory.counts[INVENTORY_ITEM_TYPES.MINE] > 0){
     const aiItemSpendStyle = getAiItemSpendStyle(context, plannedMove);
     const forcedMineSpend = forcedTacticalItemType === INVENTORY_ITEM_TYPES.MINE;
     if(forcedMineSpend){
@@ -25323,7 +25330,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     }
   }
 
-  if(allowTacticalItems && inventory.counts[INVENTORY_ITEM_TYPES.DYNAMITE] > 0){
+  if(allowTacticalItems && !inventoryPlanBForcedAfterRepeatedNoShot && inventory.counts[INVENTORY_ITEM_TYPES.DYNAMITE] > 0){
     const forcedDynamiteSpend = forcedTacticalItemType === INVENTORY_ITEM_TYPES.DYNAMITE;
     if(hasForcedTacticalSpend && forcedTacticalItemType !== INVENTORY_ITEM_TYPES.DYNAMITE && !allowNonForcedInventoryDuringTacticalSpend){
       // Явно пропускаем динамит, если policy сейчас требует мины.
@@ -25691,6 +25698,76 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       }
       return true;
     }
+  }
+
+  if((!hasForcedTacticalSpend || allowNonForcedInventoryDuringTacticalSpend) && inventoryPlanBForcedAfterRepeatedNoShot && !oneTacticalTryUsed){
+    const planBDiagnostics = {
+      planeId: plannedMove?.plane?.id ?? null,
+      goal: strategicGoal || null,
+      reasonCode: inventoryPlanBReasonCode,
+      shotPlanNotFoundCount: recentInventorySignals?.shotPlanNotFoundCount ?? 0,
+      planBActivationThreshold: recentInventorySignals?.planBActivationThreshold ?? AI_INVENTORY_PLAN_B_NO_SHOT_THRESHOLD,
+      fallbackSelectedCount: recentInventorySignals?.fallbackSelectedCount ?? 0,
+    };
+    logAiDecision("inventory_plan_b_forced_mode", {
+      ...planBDiagnostics,
+      stage: "inventory_plan_b_forced_mode",
+    });
+
+    const dynamiteDecision = inventory.counts[INVENTORY_ITEM_TYPES.DYNAMITE] > 0
+      ? evaluateAiDynamiteTacticalTarget(context, plannedMove, {
+        allowStrategicProbeWhenRouteAware: false,
+        availableCharges: Number(inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0),
+      })
+      : null;
+    const routeAwareTarget = dynamiteDecision?.routeAwareTarget || null;
+    const replan = routeAwareTarget?.replanResult || null;
+    const routeHasModerateGain = Boolean(
+      replan
+      && (replan.moderateValidGain
+        || replan.noticeableImprovement
+        || (replan.accumulatedValue2Turns ?? 0) >= 0.24)
+    );
+    if(routeAwareTarget && routeHasModerateGain && placeBlueDynamiteAt(routeAwareTarget.cx, routeAwareTarget.cy)){
+      removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
+      plannedMove.inventoryUsageReason = inventoryPlanBReasonCode;
+      setAiDynamiteIntentFromCandidate(routeAwareTarget, inventoryPlanBReasonCode, plannedMove, replan?.expectedRoute || null, "current_route");
+      oneTacticalTryUsed = true;
+      logAiDecision("inventory_plan_b_forced_item_used", {
+        ...planBDiagnostics,
+        itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
+        risk: 0.12,
+      });
+      return true;
+    }
+
+    const mineProbe = inventory.counts[INVENTORY_ITEM_TYPES.MINE] > 0
+      ? tryPlaceBlueDefensiveMine(context, plannedMove, { evaluateOnly: true, withDiagnostics: true })
+      : null;
+    if(mineProbe?.plan){
+      const mineSafety = typeof evaluatePostLaunchSafetyWithMine === "function"
+        ? evaluatePostLaunchSafetyWithMine(context, plannedMove, mineProbe.plan)
+        : { afterSafe: true };
+      const mineRisk = mineSafety?.afterSafe === false ? 0.16 : 0.09;
+      if(mineRisk <= 0.14 && tryPlaceBlueDefensiveMine(context, plannedMove)){
+        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
+        plannedMove.inventoryUsageReason = inventoryPlanBReasonCode;
+        oneTacticalTryUsed = true;
+        logAiDecision("inventory_plan_b_forced_item_used", {
+          ...planBDiagnostics,
+          itemType: INVENTORY_ITEM_TYPES.MINE,
+          risk: mineRisk,
+        });
+        return true;
+      }
+    }
+
+    logAiDecision("inventory_plan_b_forced_rejected", {
+      ...planBDiagnostics,
+      dynamiteRejected: !(routeAwareTarget && routeHasModerateGain),
+      mineRejected: !(mineProbe?.plan),
+      reason: "forced_plan_b_safe_items_rejected",
+    });
   }
 
   if((!hasForcedTacticalSpend || allowNonForcedInventoryDuringTacticalSpend) && oneTacticalTryAllowed && !oneTacticalTryUsed){
