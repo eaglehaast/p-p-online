@@ -20938,65 +20938,123 @@ function tryPlaceBlueMineNearEnemyBase(context = null, plannedMove = null, optio
     }
     return options?.evaluateOnly ? null : false;
   }
-  const candidates = [
+  const baseCandidates = [
     { x: enemyBase.x - CELL_SIZE * 1.2, y: enemyBase.y + CELL_SIZE * 0.8 },
     { x: enemyBase.x + CELL_SIZE * 1.2, y: enemyBase.y + CELL_SIZE * 0.8 },
     { x: enemyBase.x, y: enemyBase.y + CELL_SIZE * 1.6 },
     { x: enemyBase.x, y: enemyBase.y - CELL_SIZE * 1.4 },
   ];
+  const extraCandidates = [];
+  const radialStep = CELL_SIZE * 0.78;
+  const ringScales = [1.15, 1.85];
+  const ringAngles = [0.15, 0.55, 0.95, 1.35, 1.75];
+  for(const scale of ringScales){
+    const radius = radialStep * scale;
+    for(const angleFactor of ringAngles){
+      const angle = Math.PI * angleFactor;
+      extraCandidates.push({
+        x: enemyBase.x + Math.cos(angle) * radius,
+        y: enemyBase.y + Math.sin(angle) * radius,
+      });
+    }
+  }
+  const primaryCandidates = baseCandidates.concat(extraCandidates);
+
+  function buildRouteFallbackCandidates(){
+    const routeTargets = [];
+    const blueBase = getBaseAnchor("blue");
+    if(blueBase) routeTargets.push(blueBase);
+    const blueFlag = getFlagAnchor("blue");
+    if(blueFlag) routeTargets.push(blueFlag);
+    if(plannedMove?.targetX !== undefined && plannedMove?.targetY !== undefined){
+      routeTargets.push({ x: plannedMove.targetX, y: plannedMove.targetY });
+    }
+    const fallback = [];
+    const stepDistance = CELL_SIZE * 0.74;
+    for(const target of routeTargets){
+      if(!Number.isFinite(target?.x) || !Number.isFinite(target?.y)) continue;
+      const dx = target.x - enemyBase.x;
+      const dy = target.y - enemyBase.y;
+      const dist = Math.hypot(dx, dy);
+      if(dist <= CELL_SIZE * 0.35) continue;
+      const ux = dx / dist;
+      const uy = dy / dist;
+      const perpX = -uy;
+      const perpY = ux;
+      const travelRatios = [0.55, 0.95, 1.35];
+      const laneOffsets = [0, 0.68, -0.68];
+      for(const ratio of travelRatios){
+        const forward = stepDistance * ratio;
+        for(const laneOffset of laneOffsets){
+          fallback.push({
+            x: enemyBase.x + ux * forward + perpX * stepDistance * laneOffset,
+            y: enemyBase.y + uy * forward + perpY * stepDistance * laneOffset,
+          });
+        }
+      }
+    }
+    return fallback;
+  }
 
   let bestCandidate = null;
   const excludedPlacements = Array.isArray(options?.excludePlacements) ? options.excludePlacements : [];
   let validWindowCount = 0;
   let blockedByFriendlyRisk = 0;
   let acceptedHighRiskCount = 0;
-  for(const candidate of candidates){
-    const placement = {
-      x: candidate.x,
-      y: candidate.y,
-      cellX: Math.floor((candidate.x - FIELD_LEFT) / CELL_SIZE),
-      cellY: Math.floor((candidate.y - FIELD_TOP) / CELL_SIZE),
-    };
-    if(!isMinePlacementValid(placement)) continue;
-    const isExcluded = excludedPlacements.some((entry) => (
-      Number.isFinite(entry?.x)
-      && Number.isFinite(entry?.y)
-      && Math.hypot(entry.x - placement.x, entry.y - placement.y) <= Math.max(6, CELL_SIZE * 0.3)
-    ));
-    if(isExcluded) continue;
-    validWindowCount += 1;
-    const impact = evaluateBlueMinePlacementImpact(context, plannedMove, placement, {
-      fallbackScenario: "mine_cuts_best_route",
-    }) || {
-      placement,
-      scenario: "mine_cuts_best_route",
-      score: 0.25,
-      totalDirectionLoss: 0,
-      blockedEscapeCount: 0,
-      cutRouteCount: 0,
-      trapCount: 0,
-      enemyReports: [],
-    };
-    const friendlyRisk = evaluateMineFriendlyRisk(context, plannedMove, placement, { aiItemSpendStyle });
-    const riskAcceptedBecause = aiItemSpendStyle === "aggressive" && friendlyRisk?.highRisk
-      ? getMineRiskAcceptedBecause(impact, strategicGoalName)
-      : null;
-    const canAcceptHighRisk = canAcceptMineHighRiskByAggressiveMode({
-      aiItemSpendStyle,
-      styleConfig,
-      friendlyRisk,
-      minePlan: impact,
-      riskAcceptedBecause,
-    });
-    if(friendlyRisk?.highRisk && !canAcceptHighRisk){
-      blockedByFriendlyRisk += 1;
-      continue;
+  function evaluateCandidateList(candidates){
+    for(const candidate of candidates){
+      const placement = {
+        x: candidate.x,
+        y: candidate.y,
+        cellX: Math.floor((candidate.x - FIELD_LEFT) / CELL_SIZE),
+        cellY: Math.floor((candidate.y - FIELD_TOP) / CELL_SIZE),
+      };
+      if(!isMinePlacementValid(placement)) continue;
+      const isExcluded = excludedPlacements.some((entry) => (
+        Number.isFinite(entry?.x)
+        && Number.isFinite(entry?.y)
+        && Math.hypot(entry.x - placement.x, entry.y - placement.y) <= Math.max(6, CELL_SIZE * 0.3)
+      ));
+      if(isExcluded) continue;
+      validWindowCount += 1;
+      const impact = evaluateBlueMinePlacementImpact(context, plannedMove, placement, {
+        fallbackScenario: "mine_cuts_best_route",
+      }) || {
+        placement,
+        scenario: "mine_cuts_best_route",
+        score: 0.25,
+        totalDirectionLoss: 0,
+        blockedEscapeCount: 0,
+        cutRouteCount: 0,
+        trapCount: 0,
+        enemyReports: [],
+      };
+      const friendlyRisk = evaluateMineFriendlyRisk(context, plannedMove, placement, { aiItemSpendStyle });
+      const riskAcceptedBecause = aiItemSpendStyle === "aggressive" && friendlyRisk?.highRisk
+        ? getMineRiskAcceptedBecause(impact, strategicGoalName)
+        : null;
+      const canAcceptHighRisk = canAcceptMineHighRiskByAggressiveMode({
+        aiItemSpendStyle,
+        styleConfig,
+        friendlyRisk,
+        minePlan: impact,
+        riskAcceptedBecause,
+      });
+      if(friendlyRisk?.highRisk && !canAcceptHighRisk){
+        blockedByFriendlyRisk += 1;
+        continue;
+      }
+      if(canAcceptHighRisk) acceptedHighRiskCount += 1;
+      impact.friendlyRisk = friendlyRisk;
+      impact.riskAcceptedBecause = canAcceptHighRisk ? riskAcceptedBecause : null;
+      impact.aiItemSpendStyle = aiItemSpendStyle;
+      if(!bestCandidate || impact.score > bestCandidate.score) bestCandidate = impact;
     }
-    if(canAcceptHighRisk) acceptedHighRiskCount += 1;
-    impact.friendlyRisk = friendlyRisk;
-    impact.riskAcceptedBecause = canAcceptHighRisk ? riskAcceptedBecause : null;
-    impact.aiItemSpendStyle = aiItemSpendStyle;
-    if(!bestCandidate || impact.score > bestCandidate.score) bestCandidate = impact;
+  }
+
+  evaluateCandidateList(primaryCandidates);
+  if(!bestCandidate){
+    evaluateCandidateList(buildRouteFallbackCandidates());
   }
 
   if(options?.evaluateOnly){
@@ -21004,8 +21062,8 @@ function tryPlaceBlueMineNearEnemyBase(context = null, plannedMove = null, optio
       const rejectReason = bestCandidate
         ? null
         : (validWindowCount <= 0
-            ? "no_install_window"
-            : (blockedByFriendlyRisk > 0 ? "high_friendly_risk" : "low_enemy_contact_probability"));
+            ? "no_valid_points"
+            : (blockedByFriendlyRisk > 0 ? "points_filtered_by_risk" : "low_enemy_contact_probability"));
       return {
         plan: bestCandidate,
         rejectReason,
@@ -21119,159 +21177,200 @@ function tryPlaceBlueDefensiveMine(context, plannedMove, options = {}){
     return options?.evaluateOnly ? null : false;
   }
 
-  const blockPoint = {
+  const excludedPlacements = Array.isArray(options?.excludePlacements) ? options.excludePlacements : [];
+  const primaryBlockPoint = {
     x: landingPoint.x + (mostDangerousEnemy.x - landingPoint.x) * 0.42,
     y: landingPoint.y + (mostDangerousEnemy.y - landingPoint.y) * 0.42,
   };
-  const placement = {
-    x: blockPoint.x,
-    y: blockPoint.y,
-    cellX: Math.floor((blockPoint.x - FIELD_LEFT) / CELL_SIZE),
-    cellY: Math.floor((blockPoint.y - FIELD_TOP) / CELL_SIZE),
-  };
-  const excludedPlacements = Array.isArray(options?.excludePlacements) ? options.excludePlacements : [];
-  const isExcluded = excludedPlacements.some((entry) => (
-    Number.isFinite(entry?.x)
-    && Number.isFinite(entry?.y)
-    && Math.hypot(entry.x - placement.x, entry.y - placement.y) <= Math.max(6, CELL_SIZE * 0.3)
-  ));
-  if(isExcluded){
-    if(options?.evaluateOnly && options?.withDiagnostics){
-      return { plan: null, rejectReason: "no_install_window", details: { excludedPlacement: true } };
-    }
-    return options?.evaluateOnly ? null : false;
-  }
-
-  const selfRisk = getSelfRiskAssessment(placement);
-  if(selfRisk?.isCritical){
-    if(options?.evaluateOnly){
-      if(options?.withDiagnostics){
-        return {
-          plan: null,
-          rejectReason: "high_friendly_risk",
-          details: {
-            selfRisk: "critical",
-            distanceFromPlane: Number(selfRisk.currentToLandingDistance.toFixed(1)),
-            distanceFromLanding: Number(selfRisk.landingToMineDistance.toFixed(1)),
-          },
-        };
+  const primaryCandidates = [primaryBlockPoint];
+  const fallbackCandidates = [];
+  const laneDx = mostDangerousEnemy.x - landingPoint.x;
+  const laneDy = mostDangerousEnemy.y - landingPoint.y;
+  const laneDistance = Math.hypot(laneDx, laneDy);
+  if(laneDistance > CELL_SIZE * 0.2){
+    const laneUx = laneDx / laneDistance;
+    const laneUy = laneDy / laneDistance;
+    const perpX = -laneUy;
+    const perpY = laneUx;
+    const laneStep = CELL_SIZE * 0.74;
+    const forwardRatios = [0.34, 0.58, 0.82];
+    const lateralRatios = [0, 0.72, -0.72];
+    for(const forwardRatio of forwardRatios){
+      const forwardDistance = laneDistance * forwardRatio;
+      for(const lateralRatio of lateralRatios){
+        fallbackCandidates.push({
+          x: landingPoint.x + laneUx * forwardDistance + perpX * laneStep * lateralRatio,
+          y: landingPoint.y + laneUy * forwardDistance + perpY * laneStep * lateralRatio,
+        });
       }
-      return null;
     }
-    logAiDecision("mine_skipped_self_risk", {
-      planeId: plane?.id ?? null,
-      enemyId: mostDangerousEnemy?.id ?? null,
-      reason: "defensive_mine_immediate_self_destruction_risk",
-      reasonCode: "mine_hard_risk_reject",
-      distanceFromPlane: Number(selfRisk.currentToLandingDistance.toFixed(1)),
-      distanceFromLanding: Number(selfRisk.landingToMineDistance.toFixed(1)),
-    });
-    return false;
   }
 
-  if(!isMinePlacementValid(placement)){
-    if(options?.evaluateOnly && options?.withDiagnostics){
-      return { plan: null, rejectReason: "no_install_window", details: { invalidPlacement: true } };
+  let bestPlan = null;
+  let bestPlacement = null;
+  let bestSelfRisk = null;
+  let bestFriendlyRisk = null;
+  let bestRiskAcceptedBecause = null;
+  let bestCanAcceptHighRisk = false;
+  let hadValidPoints = 0;
+  let blockedByRiskPoints = 0;
+  let criticalSelfRiskPoints = 0;
+
+  function evaluateCandidateList(candidates){
+    for(const candidate of candidates){
+      const placement = {
+        x: candidate.x,
+        y: candidate.y,
+        cellX: Math.floor((candidate.x - FIELD_LEFT) / CELL_SIZE),
+        cellY: Math.floor((candidate.y - FIELD_TOP) / CELL_SIZE),
+      };
+      const isExcluded = excludedPlacements.some((entry) => (
+        Number.isFinite(entry?.x)
+        && Number.isFinite(entry?.y)
+        && Math.hypot(entry.x - placement.x, entry.y - placement.y) <= Math.max(6, CELL_SIZE * 0.3)
+      ));
+      if(isExcluded) continue;
+      if(!isMinePlacementValid(placement)) continue;
+      hadValidPoints += 1;
+      const selfRisk = getSelfRiskAssessment(placement);
+      if(selfRisk?.isCritical){
+        criticalSelfRiskPoints += 1;
+        blockedByRiskPoints += 1;
+        continue;
+      }
+      const impact = evaluateBlueMinePlacementImpact(context, plannedMove, placement, {
+        fallbackScenario: "mine_blocks_escape_lane",
+      }) || {
+        placement,
+        scenario: "mine_blocks_escape_lane",
+        score: 0.5,
+        totalDirectionLoss: 0,
+        blockedEscapeCount: 0,
+        cutRouteCount: 0,
+        trapCount: 0,
+        enemyReports: [],
+      };
+      const friendlyRisk = evaluateMineFriendlyRisk(context, plannedMove, placement, { aiItemSpendStyle });
+      const riskAcceptedBecause = aiItemSpendStyle === "aggressive" && friendlyRisk?.highRisk
+        ? getMineRiskAcceptedBecause(impact, strategicGoalName)
+        : null;
+      const canAcceptHighRisk = canAcceptMineHighRiskByAggressiveMode({
+        aiItemSpendStyle,
+        styleConfig,
+        friendlyRisk,
+        minePlan: impact,
+        riskAcceptedBecause,
+      });
+      if(friendlyRisk?.highRisk && !canAcceptHighRisk){
+        blockedByRiskPoints += 1;
+        continue;
+      }
+      impact.enemyId = mostDangerousEnemy?.id ?? null;
+      impact.friendlyRisk = friendlyRisk;
+      impact.riskAcceptedBecause = canAcceptHighRisk ? riskAcceptedBecause : null;
+      impact.aiItemSpendStyle = aiItemSpendStyle;
+      if(selfRisk?.isRisky){
+        const penaltyMultiplier = getSelfRiskPenaltyMultiplier(strategicGoalName);
+        const penaltyValue = Number((styleConfig.SELF_RISK_PENALTY_BASE * penaltyMultiplier).toFixed(2));
+        impact.score = Number((impact.score - penaltyValue).toFixed(3));
+        impact.selfRiskPenalty = penaltyValue;
+        impact.selfRiskDowngraded = true;
+      }
+      if(!bestPlan || impact.score > bestPlan.score){
+        bestPlan = impact;
+        bestPlacement = placement;
+        bestSelfRisk = selfRisk;
+        bestFriendlyRisk = friendlyRisk;
+        bestRiskAcceptedBecause = riskAcceptedBecause;
+        bestCanAcceptHighRisk = canAcceptHighRisk;
+      }
     }
-    return options?.evaluateOnly ? null : false;
   }
 
-  const impact = evaluateBlueMinePlacementImpact(context, plannedMove, placement, {
-    fallbackScenario: "mine_blocks_escape_lane",
-  }) || {
-    placement,
-    scenario: "mine_blocks_escape_lane",
-    score: 0.5,
-    totalDirectionLoss: 0,
-    blockedEscapeCount: 0,
-    cutRouteCount: 0,
-    trapCount: 0,
-    enemyReports: [],
-  };
-  const friendlyRisk = evaluateMineFriendlyRisk(context, plannedMove, placement, { aiItemSpendStyle });
-  const riskAcceptedBecause = aiItemSpendStyle === "aggressive" && friendlyRisk?.highRisk
-    ? getMineRiskAcceptedBecause(impact, strategicGoalName)
-    : null;
-  const canAcceptHighRisk = canAcceptMineHighRiskByAggressiveMode({
-    aiItemSpendStyle,
-    styleConfig,
-    friendlyRisk,
-    minePlan: impact,
-    riskAcceptedBecause,
-  });
-  if(friendlyRisk?.highRisk && !canAcceptHighRisk){
+  evaluateCandidateList(primaryCandidates);
+  if(!bestPlan){
+    evaluateCandidateList(fallbackCandidates);
+  }
+
+  if(!bestPlan){
+    const rejectReason = hadValidPoints <= 0
+      ? "no_valid_points"
+      : "points_filtered_by_risk";
     if(options?.evaluateOnly && options?.withDiagnostics){
-      return { plan: null, rejectReason: "high_friendly_risk", details: { friendlyRisk } };
+      return {
+        plan: null,
+        rejectReason,
+        details: {
+          validWindowCount: hadValidPoints,
+          blockedByRiskPoints,
+          criticalSelfRiskPoints,
+        },
+      };
     }
     if(options?.evaluateOnly) return null;
-    logAiDecision("mine_skipped_self_risk", {
-      planeId: plane?.id ?? null,
-      enemyId: mostDangerousEnemy?.id ?? null,
-      reason: "defensive_mine_high_friendly_risk",
-      reasonCode: "mine_hard_risk_reject",
-      riskScore: friendlyRisk.riskScore,
-      selfDistance: Number.isFinite(friendlyRisk.selfDistance) ? Number(friendlyRisk.selfDistance.toFixed(1)) : null,
-      landingDistance: Number.isFinite(friendlyRisk.landingDistance) ? Number(friendlyRisk.landingDistance.toFixed(1)) : null,
-      nearbyAllyCount: friendlyRisk.nearbyAllyCount,
-      allyCorridorBlockCount: friendlyRisk.allyCorridorBlockCount,
-      riskReasons: friendlyRisk.reasons,
-      aiItemSpendStyle,
-    });
+    if(rejectReason === "points_filtered_by_risk"){
+      logAiDecision("mine_skipped_self_risk", {
+        planeId: plane?.id ?? null,
+        enemyId: mostDangerousEnemy?.id ?? null,
+        reason: "defensive_mine_points_filtered_by_risk",
+        reasonCode: "mine_hard_risk_reject",
+        blockedByRiskPoints,
+        criticalSelfRiskPoints,
+      });
+    }
     return false;
   }
-  if(canAcceptHighRisk){
+
+  if(bestCanAcceptHighRisk){
     logAiDecision("mine_risk_accepted_aggressive_mode", {
       planeId: plane?.id ?? null,
       enemyId: mostDangerousEnemy?.id ?? null,
       aiItemSpendStyle,
-      riskScore: friendlyRisk?.riskScore ?? null,
-      riskAcceptedBecause,
+      riskScore: bestFriendlyRisk?.riskScore ?? null,
+      riskAcceptedBecause: bestRiskAcceptedBecause,
       reasonCode: "mine_risk_accepted_aggressive_mode",
-      scenario: impact?.scenario || null,
-      routeBlockScore: Number((impact?.score || 0).toFixed(3)),
-      blockedEscapeCount: impact?.blockedEscapeCount ?? 0,
-      cutRouteCount: impact?.cutRouteCount ?? 0,
-      trapCount: impact?.trapCount ?? 0,
-      forcedBadPathCount: impact?.forcedBadPathCount ?? 0,
+      scenario: bestPlan?.scenario || null,
+      routeBlockScore: Number((bestPlan?.score || 0).toFixed(3)),
+      blockedEscapeCount: bestPlan?.blockedEscapeCount ?? 0,
+      cutRouteCount: bestPlan?.cutRouteCount ?? 0,
+      trapCount: bestPlan?.trapCount ?? 0,
+      forcedBadPathCount: bestPlan?.forcedBadPathCount ?? 0,
     });
   }
-  impact.enemyId = mostDangerousEnemy?.id ?? null;
-  impact.friendlyRisk = friendlyRisk;
-  impact.riskAcceptedBecause = canAcceptHighRisk ? riskAcceptedBecause : null;
-  impact.aiItemSpendStyle = aiItemSpendStyle;
-  if(selfRisk?.isRisky){
-    const penaltyMultiplier = getSelfRiskPenaltyMultiplier(strategicGoalName);
-    const penaltyValue = Number((styleConfig.SELF_RISK_PENALTY_BASE * penaltyMultiplier).toFixed(2));
-    impact.score = Number((impact.score - penaltyValue).toFixed(3));
-    impact.selfRiskPenalty = penaltyValue;
-    impact.selfRiskDowngraded = true;
-    if(!options?.evaluateOnly){
-      logAiDecision("mine_soft_risk_penalty_applied", {
-        planeId: plane?.id ?? null,
-        enemyId: mostDangerousEnemy?.id ?? null,
-        reasonCode: "mine_soft_risk_penalty",
-        penaltyValue,
-        adjustedScore: Number((impact.score || 0).toFixed(3)),
-        aiItemSpendStyle,
-      });
-    }
+  if(bestSelfRisk?.isRisky && !options?.evaluateOnly){
+    logAiDecision("mine_soft_risk_penalty_applied", {
+      planeId: plane?.id ?? null,
+      enemyId: mostDangerousEnemy?.id ?? null,
+      reasonCode: "mine_soft_risk_penalty",
+      penaltyValue: bestPlan.selfRiskPenalty || 0,
+      adjustedScore: Number((bestPlan.score || 0).toFixed(3)),
+      aiItemSpendStyle,
+    });
   }
 
   if(options?.evaluateOnly){
     if(options?.withDiagnostics){
-      return { plan: impact, rejectReason: null, details: { friendlyRisk, riskAcceptedBecause: impact.riskAcceptedBecause || null, aiItemSpendStyle } };
+      return {
+        plan: bestPlan,
+        rejectReason: null,
+        details: {
+          friendlyRisk: bestFriendlyRisk,
+          riskAcceptedBecause: bestPlan.riskAcceptedBecause || null,
+          aiItemSpendStyle,
+        },
+      };
     }
-    return impact;
+    return bestPlan;
   }
 
   placeMine({
     owner: "blue",
-    x: placement.x,
-    y: placement.y,
-    cellX: placement.cellX,
-    cellY: placement.cellY,
+    x: bestPlacement.x,
+    y: bestPlacement.y,
+    cellX: bestPlacement.cellX,
+    cellY: bestPlacement.cellY,
   });
-  aiRoundState.lastMinePlacementMeta = impact;
+  aiRoundState.lastMinePlacementMeta = bestPlan;
   return true;
 }
 
@@ -23214,10 +23313,13 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       : (basePlan ? { plan: basePlan, placementMode: "base", rejectReason: baseProbe?.rejectReason || null } : null);
     const minePlanningRejectReason = !preferredMinePlan
       ? (defensiveProbe?.rejectReason === "high_friendly_risk" || baseProbe?.rejectReason === "high_friendly_risk"
+          || defensiveProbe?.rejectReason === "points_filtered_by_risk" || baseProbe?.rejectReason === "points_filtered_by_risk"
           ? "mine_high_friendly_risk"
           : (defensiveProbe?.rejectReason === "low_enemy_contact_probability" || baseProbe?.rejectReason === "low_enemy_contact_probability"
               ? "mine_low_enemy_contact_probability"
-              : "mine_no_install_window"))
+              : (defensiveProbe?.rejectReason === "no_valid_points" || baseProbe?.rejectReason === "no_valid_points"
+                  ? "mine_no_valid_points"
+                  : "mine_no_install_window")))
       : null;
     const safetyMeta = preferredMinePlan && typeof evaluatePostLaunchSafetyWithMine === "function"
       ? evaluatePostLaunchSafetyWithMine(context, plannedMove, preferredMinePlan.plan)
@@ -25147,10 +25249,13 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       const basePlan = baseProbe?.plan || null;
       const planningRejectReason = !defensivePlan && !basePlan
         ? (defensiveProbe?.rejectReason === "high_friendly_risk" || baseProbe?.rejectReason === "high_friendly_risk"
+            || defensiveProbe?.rejectReason === "points_filtered_by_risk" || baseProbe?.rejectReason === "points_filtered_by_risk"
             ? "mine_high_friendly_risk"
             : (defensiveProbe?.rejectReason === "low_enemy_contact_probability" || baseProbe?.rejectReason === "low_enemy_contact_probability"
                 ? "mine_low_enemy_contact_probability"
-                : "mine_no_install_window"))
+                : (defensiveProbe?.rejectReason === "no_valid_points" || baseProbe?.rejectReason === "no_valid_points"
+                    ? "mine_no_valid_points"
+                    : "mine_no_install_window")))
         : null;
       minePlanningMeta = {
         planningRejectReason,
