@@ -45,7 +45,17 @@ const context = {
   Number,
   MINE_EFFECT_RADIUS: 40,
   MINE_TRIGGER_RADIUS: 40,
+  AI_MINE_SELF_RISK_CONFIG: {
+    SELF_RISK_ASSESSMENT: {
+      DANGER_RADIUS_MULTIPLIER: 1.1,
+      HARD_IMMEDIATE_RADIUS_MULTIPLIER: 0.78,
+      HARD_LANDING_RADIUS_MULTIPLIER: 0.6,
+      SUPER_CRITICAL_RADIUS_MULTIPLIER: 0.4,
+    },
+  },
   MAX_DRAG_DISTANCE: 300,
+  getAiItemSpendStyle: () => 'balanced',
+  getMineRiskStyleConfig: () => ({ GOAL_RISK_PENALTY_MULTIPLIER: 0.4, MODERATE_SELF_RISK_PENALTY_MULTIPLIER: 1, SELF_RISK_PENALTY_BASE: 1.35 }),
   getPlaneEffectiveRangePx: () => 140,
   FIELD_LEFT: 0,
   FIELD_TOP: 0,
@@ -73,5 +83,7 @@ assert(logs.some((entry) => entry.reason === 'mine_skipped_self_risk'),
   'mine_skipped_self_risk log is required for traceability.');
 assert(logs.some((entry) => entry.details?.reason === 'defensive_mine_immediate_self_destruction_risk'),
   'Critical self-destruction skip reason should be logged.');
+assert(logs.some((entry) => entry.details?.reasonCode === 'mine_hard_risk_reject'),
+  'Hard-risk reject code must be present in mine logs.');
 
-console.log('Smoke test passed: explicit self-destruction defensive mine case is blocked.');
+console.log('Smoke test passed: defensive mine is rejected by hard risk with explicit decision code.');

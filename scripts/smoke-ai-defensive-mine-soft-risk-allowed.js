@@ -35,7 +35,8 @@ function assert(condition, message){
 }
 
 const source = fs.readFileSync('script.js', 'utf8');
-const extracted = extractFunctionSource(source, 'tryPlaceBlueDefensiveMine');
+const extractedTryPlace = extractFunctionSource(source, 'tryPlaceBlueDefensiveMine');
+const extractedDecision = extractFunctionSource(source, 'evaluateAiMineTacticalPlanDecision');
 
 const logs = [];
 let placeMineCalls = 0;
@@ -46,7 +47,17 @@ const context = {
   Number,
   MINE_EFFECT_RADIUS: 40,
   MINE_TRIGGER_RADIUS: 40,
+  AI_MINE_SELF_RISK_CONFIG: {
+    SELF_RISK_ASSESSMENT: {
+      DANGER_RADIUS_MULTIPLIER: 1.1,
+      HARD_IMMEDIATE_RADIUS_MULTIPLIER: 0.78,
+      HARD_LANDING_RADIUS_MULTIPLIER: 0.6,
+      SUPER_CRITICAL_RADIUS_MULTIPLIER: 0.4,
+    },
+  },
   MAX_DRAG_DISTANCE: 300,
+  getAiItemSpendStyle: () => 'balanced',
+  getMineRiskStyleConfig: () => ({ GOAL_RISK_PENALTY_MULTIPLIER: 0.4, MODERATE_SELF_RISK_PENALTY_MULTIPLIER: 1, SELF_RISK_PENALTY_BASE: 1.35 }),
   getPlaneEffectiveRangePx: () => 140,
   FIELD_LEFT: 0,
   FIELD_TOP: 0,
@@ -69,12 +80,15 @@ const context = {
     recordedImpacts.push(impact);
     return impact;
   },
+  evaluateMineFriendlyRisk: () => ({ highRisk: false, riskScore: 0.12, reasons: [] }),
+  getMineRiskAcceptedBecause: () => null,
+  canAcceptMineHighRiskByAggressiveMode: () => false,
   placeMine: () => { placeMineCalls += 1; },
   logAiDecision: (reason, details) => logs.push({ reason, details }),
 };
 
 vm.createContext(context);
-vm.runInContext(extracted, context);
+vm.runInContext(extractedTryPlace, context);
 
 const evalImpact = context.tryPlaceBlueDefensiveMine({
   enemies: [{ id: 'enemy-1', x: 130, y: 0 }],
@@ -99,7 +113,64 @@ assert(didPlace === true, 'Mine should now be placed for moderate self-risk defe
 assert(placeMineCalls === 1, 'Mine placement should occur exactly once in soft-risk case.');
 assert(!logs.some((entry) => entry.reason === 'mine_skipped_self_risk'),
   'Soft-risk case should no longer be rejected as hard self-risk skip.');
+assert(logs.some((entry) => entry.reason === 'mine_soft_risk_penalty_applied' && entry.details?.reasonCode === 'mine_soft_risk_penalty'),
+  'Soft-risk path should emit explicit soft-risk code in logs.');
 assert(recordedImpacts[0].blockedEscapeCount >= 1,
   'Placed mine should still represent a defensive next-turn lane protection value.');
 
-console.log('Smoke test passed: moderate self-risk defensive mine is downgraded, selected, and provides next-turn cover value.');
+const tacticalDecisionContext = {
+  Math,
+  Number,
+  aiRoundState: { currentGoal: 'capture_enemy_flag' },
+  AI_MINE_PLAN_THRESHOLDS: {
+    MIN_NOTICEABLE_IMPACT_SCORE: 4.1,
+    MIN_NOTICEABLE_DIRECTION_LOSS: 1.7,
+    EXTRA_NOTICEABLE_IMPACT_SCORE: 1.5,
+    MIN_MODERATE_IMPACT_SCORE: 2.6,
+    MIN_MODERATE_SAFE_IMPACT_SCORE: 2.25,
+    MIN_MODERATE_SAFE_IMPROVEMENT_IMPACT_SCORE: 1.9,
+    MIN_MODERATE_SAFE_IMPROVEMENT_DIRECTION_LOSS: 0.75,
+    MIN_SOFT_RISK_ACCEPT_BENEFIT_SCORE: 3.35,
+  },
+  getAiItemSpendStyle: () => 'balanced',
+  getMineRiskStyleConfig: () => ({ ALLOW_MODERATE_RISK_WITH_ROUTE_DENIAL: false }),
+  getMineRiskAcceptedBecause: () => null,
+};
+
+vm.createContext(tacticalDecisionContext);
+vm.runInContext(extractedDecision, tacticalDecisionContext);
+
+const decision = tacticalDecisionContext.evaluateAiMineTacticalPlanDecision({
+  preferredMinePlan: {
+    plan: {
+      score: 2.9,
+      blockedEscapeCount: 0,
+      cutRouteCount: 0,
+      trapCount: 0,
+      totalDirectionLoss: 0.5,
+      projectedContactDelta: 0.4,
+      forcedBadPathCount: 0,
+      controlledBasePassCount: 0,
+      controlledTurnPointCount: 0,
+    },
+  },
+  safeAfterPlacement: false,
+  safetyImprovesAfterPlacement: false,
+  isCriticalGoalForDefensiveMine: false,
+  mineHasSurplusCharges: false,
+  mineProtectsAfterAggressiveAction: false,
+  repeatedEmptyTurns: false,
+  context: {},
+  plannedMove: { goalName: 'capture_enemy_flag' },
+  aiItemSpendStyle: 'balanced',
+  strategicGoalName: 'capture_enemy_flag',
+});
+
+assert(decision.mineRejectedByModerateSelfRisk === false,
+  'Moderate self-risk should not auto-reject when benefit is high enough.');
+assert(decision.mineSoftRiskAcceptedByBenefit === true,
+  'Soft-risk acceptance by benefit should be explicitly marked.');
+assert(decision.mineDecisionCode === 'mine_soft_risk_accept',
+  'Decision code for accepted moderate risk should be mine_soft_risk_accept.');
+
+console.log('Smoke test passed: moderate self-risk defensive mine is accepted with explicit soft-risk code when benefit is sufficient.');

@@ -16240,6 +16240,7 @@ const AI_MINE_PLAN_THRESHOLDS = Object.freeze({
   MIN_MODERATE_SAFE_IMPACT_SCORE: 2.25,
   MIN_MODERATE_SAFE_IMPROVEMENT_IMPACT_SCORE: 1.9,
   MIN_MODERATE_SAFE_IMPROVEMENT_DIRECTION_LOSS: 0.75,
+  MIN_SOFT_RISK_ACCEPT_BENEFIT_SCORE: 3.35,
 });
 const AI_MINE_SELF_RISK_CONFIG = Object.freeze({
   SELF_RISK_ASSESSMENT: Object.freeze({
@@ -21085,6 +21086,7 @@ function tryPlaceBlueDefensiveMine(context, plannedMove, options = {}){
       planeId: plane?.id ?? null,
       enemyId: mostDangerousEnemy?.id ?? null,
       reason: "defensive_mine_immediate_self_destruction_risk",
+      reasonCode: "mine_hard_risk_reject",
       distanceFromPlane: Number(selfRisk.currentToLandingDistance.toFixed(1)),
       distanceFromLanding: Number(selfRisk.landingToMineDistance.toFixed(1)),
     });
@@ -21130,6 +21132,7 @@ function tryPlaceBlueDefensiveMine(context, plannedMove, options = {}){
       planeId: plane?.id ?? null,
       enemyId: mostDangerousEnemy?.id ?? null,
       reason: "defensive_mine_high_friendly_risk",
+      reasonCode: "mine_hard_risk_reject",
       riskScore: friendlyRisk.riskScore,
       selfDistance: Number.isFinite(friendlyRisk.selfDistance) ? Number(friendlyRisk.selfDistance.toFixed(1)) : null,
       landingDistance: Number.isFinite(friendlyRisk.landingDistance) ? Number(friendlyRisk.landingDistance.toFixed(1)) : null,
@@ -21166,6 +21169,16 @@ function tryPlaceBlueDefensiveMine(context, plannedMove, options = {}){
     impact.score = Number((impact.score - penaltyValue).toFixed(3));
     impact.selfRiskPenalty = penaltyValue;
     impact.selfRiskDowngraded = true;
+    if(!options?.evaluateOnly){
+      logAiDecision("mine_soft_risk_penalty_applied", {
+        planeId: plane?.id ?? null,
+        enemyId: mostDangerousEnemy?.id ?? null,
+        reasonCode: "mine_soft_risk_penalty",
+        penaltyValue,
+        adjustedScore: Number((impact.score || 0).toFixed(3)),
+        aiItemSpendStyle,
+      });
+    }
   }
 
   if(options?.evaluateOnly){
@@ -22799,6 +22812,25 @@ function evaluateAiMineTacticalPlanDecision(options = {}){
       || mineTotalDirectionLoss >= 0.58
       || mineRepeatedTurnThresholdRelief
     );
+  const mineSoftRiskBenefitScore = Boolean(minePlan)
+    ? Number((
+      mineImpactScore
+      + mineBlockedEscapeCount * 0.9
+      + mineCutRouteCount * 0.75
+      + mineTrapCount * 1.1
+      + mineForcedBadPathCount * 0.55
+      + (mineHasZoneControl ? 0.45 : 0)
+      + Math.min(1.2, mineTotalDirectionLoss * 0.6)
+      + Math.min(0.8, mineProjectedContactDelta * 0.9)
+    ).toFixed(3))
+    : 0;
+  const mineSoftRiskAcceptedByBenefit = Boolean(minePlan)
+    && safeAfterPlacement === false
+    && safetyImprovesAfterPlacement !== true
+    && !isCriticalGoalForDefensiveMine
+    && !riskAcceptedBecause
+    && !mineModerateRiskAcceptedByMapControl
+    && mineSoftRiskBenefitScore >= AI_MINE_PLAN_THRESHOLDS.MIN_SOFT_RISK_ACCEPT_BENEFIT_SCORE;
   const mineRejectedBySelfRisk = Boolean(minePlan)
     && mineHardDangerSignal
     && !isCriticalGoalForDefensiveMine
@@ -22809,8 +22841,18 @@ function evaluateAiMineTacticalPlanDecision(options = {}){
     && safetyImprovesAfterPlacement !== true
     && !isCriticalGoalForDefensiveMine
     && !riskAcceptedBecause
-    && !mineModerateRiskAcceptedByMapControl;
+    && !mineModerateRiskAcceptedByMapControl
+    && !mineSoftRiskAcceptedByBenefit;
   const mineRejectedByAnySelfRisk = mineRejectedBySelfRisk || mineRejectedByModerateSelfRisk;
+  const mineDecisionCode = !minePlan
+    ? null
+    : (mineRejectedBySelfRisk
+        ? "mine_hard_risk_reject"
+        : (mineRejectedByModerateSelfRisk
+            ? "mine_soft_risk_reject"
+            : ((safeAfterPlacement === false && safetyImprovesAfterPlacement !== true)
+                ? "mine_soft_risk_accept"
+                : (mineMapControlSignal ? "mine_zone_control_accept" : "mine_risk_clear_accept"))));
   const mineForcedSpendSurplus = mineHasSurplusCharges
     && Boolean(minePlan)
     && !mineRejectedByAnySelfRisk
@@ -22832,11 +22874,14 @@ function evaluateAiMineTacticalPlanDecision(options = {}){
     mineRejectedBySelfRisk: mineRejectedByAnySelfRisk,
     mineRejectedByHardSelfRisk: mineRejectedBySelfRisk,
     mineRejectedByModerateSelfRisk,
+    mineSoftRiskAcceptedByBenefit,
+    mineSoftRiskBenefitScore,
     mineForcedSpendSurplus,
     aiItemSpendStyle,
     riskAcceptedBecause,
     mineMapControlSignal,
     mineRepeatedTurnThresholdRelief,
+    mineDecisionCode,
   };
 }
 
@@ -23137,8 +23182,13 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     const minePlanProvidesNoticeableImprovement = mineDecisionMeta.minePlanProvidesNoticeableImprovement;
     const mineModerateImprovement = mineDecisionMeta.mineModerateImprovement;
     const mineRejectedBySelfRisk = mineDecisionMeta.mineRejectedBySelfRisk;
+    const mineRejectedByHardSelfRisk = mineDecisionMeta.mineRejectedByHardSelfRisk === true;
+    const mineRejectedByModerateSelfRisk = mineDecisionMeta.mineRejectedByModerateSelfRisk === true;
     const mineForcedSpendSurplus = mineDecisionMeta.mineForcedSpendSurplus;
     const riskAcceptedBecause = mineDecisionMeta.riskAcceptedBecause || null;
+    const mineDecisionCode = mineDecisionMeta.mineDecisionCode || null;
+    const mineSoftRiskAcceptedByBenefit = mineDecisionMeta.mineSoftRiskAcceptedByBenefit === true;
+    const mineSoftRiskBenefitScore = Number(mineDecisionMeta.mineSoftRiskBenefitScore || 0);
     const mineSeriesPlan = buildAiMineSeriesPlan(context, plannedMove, {
       availableCharges: mineAvailableCharges,
     });
@@ -23184,6 +23234,9 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
               ? "mine_used_for_safe_aggressive_follow_up"
               : (mineCreatesRouteDenial ? "mine_used_for_route_denial" : "mine_used_for_position_improvement")),
         mineDecisionLabel: mineMapControlSignal ? "map_control" : "standard",
+        mineDecisionCode: mineMapControlSignal ? "mine_zone_control_accept" : mineDecisionCode,
+        mineSoftRiskAcceptedByBenefit,
+        mineSoftRiskBenefitScore,
         riskAcceptedBecause,
         aiItemSpendStyle,
         usageTier: mineForcedSpendSurplus ? "forced_surplus" : (minePlanProvidesNoticeableImprovement ? "strong" : "moderate"),
@@ -23192,8 +23245,18 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     } else {
       const mineRejectReason = !preferredMinePlan
         ? minePlanningRejectReason
-        : (mineRejectedBySelfRisk ? "mine_high_friendly_risk" : "mine_low_enemy_contact_probability");
+        : (mineRejectedByHardSelfRisk || mineRejectedByModerateSelfRisk
+            ? "mine_high_friendly_risk"
+            : "mine_low_enemy_contact_probability");
+      const rejectDecisionCode = !preferredMinePlan
+        ? "mine_no_plan"
+        : (mineRejectedByHardSelfRisk
+            ? "mine_hard_risk_reject"
+            : (mineRejectedByModerateSelfRisk
+                ? "mine_soft_risk_reject"
+                : "mine_low_benefit_reject"));
       rejectCandidate(INVENTORY_ITEM_TYPES.MINE, mineRejectReason, {
+        mineDecisionCode: rejectDecisionCode,
         safeAfterPlacement,
         safetyImprovesAfterPlacement,
         goalName: strategicGoalName || null,
@@ -23206,6 +23269,8 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
         controlledBasePassCount: preferredMinePlan?.plan?.controlledBasePassCount ?? 0,
         controlledTurnPointCount: preferredMinePlan?.plan?.controlledTurnPointCount ?? 0,
         forcedBadPathCount: mineForcedBadPathCount,
+        mineSoftRiskAcceptedByBenefit,
+        mineSoftRiskBenefitScore,
         defensiveRejectReason: defensiveProbe?.rejectReason || null,
         baseRejectReason: baseProbe?.rejectReason || null,
         aiItemSpendStyle,
@@ -25184,6 +25249,11 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       && safeFinisherMineCoverage.afterSafe === true;
     const mineModerateImprovement = mineDecisionMeta.mineModerateImprovement;
     const mineRejectedBySelfRisk = mineDecisionMeta.mineRejectedBySelfRisk;
+    const mineRejectedByHardSelfRisk = mineDecisionMeta.mineRejectedByHardSelfRisk === true;
+    const mineRejectedByModerateSelfRisk = mineDecisionMeta.mineRejectedByModerateSelfRisk === true;
+    const mineSoftRiskAcceptedByBenefit = mineDecisionMeta.mineSoftRiskAcceptedByBenefit === true;
+    const mineSoftRiskBenefitScore = Number(mineDecisionMeta.mineSoftRiskBenefitScore || 0);
+    const mineDecisionCode = mineDecisionMeta.mineDecisionCode || null;
     const riskAcceptedBecause = mineDecisionMeta.riskAcceptedBecause || null;
     const defensivePriorityOverride = isCriticalGoalForDefensiveMine && preferredMinePlan?.type === "defensive";
     const mineUseReason = mineCreatesRouteDenial ? "mine_used_for_route_denial"
@@ -25219,6 +25289,9 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         aiItemSpendStyle,
         mineUseReason,
         mineDecisionLabel: mineMapControlSignal ? "map_control" : "standard",
+        mineDecisionCode: mineMapControlSignal ? "mine_zone_control_accept" : mineDecisionCode,
+        mineSoftRiskAcceptedByBenefit,
+        mineSoftRiskBenefitScore,
       });
       if(mineUseReason){
         logAiDecision(mineUseReason, {
@@ -25234,6 +25307,9 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
           riskAcceptedBecause,
           aiItemSpendStyle,
           mineDecisionLabel: mineMapControlSignal ? "map_control" : "standard",
+          mineDecisionCode: mineMapControlSignal ? "mine_zone_control_accept" : mineDecisionCode,
+          mineSoftRiskAcceptedByBenefit,
+          mineSoftRiskBenefitScore,
         });
       }
       if(mineMapControlSignal || mineHasZoneControl){
@@ -25247,6 +25323,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
           trapCount: preferredMinePlan?.plan?.trapCount ?? 0,
           totalDirectionLoss: preferredMinePlan?.plan?.totalDirectionLoss ?? 0,
           mineDecisionLabel: "map_control",
+          mineDecisionCode: "mine_zone_control_accept",
           safeAfterPlacement,
           riskAcceptedBecause,
           aiItemSpendStyle,
@@ -25289,6 +25366,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         controlledBasePassCount: preferredMinePlan?.plan?.controlledBasePassCount ?? 0,
         controlledTurnPointCount: preferredMinePlan?.plan?.controlledTurnPointCount ?? 0,
         forcedBadPathCount: preferredMinePlan?.plan?.forcedBadPathCount ?? 0,
+        mineDecisionCode: mineRejectedByHardSelfRisk ? "mine_hard_risk_reject" : "mine_soft_risk_reject",
+        mineSoftRiskBenefitScore,
         aiItemSpendStyle,
       });
     } else if(preferredMinePlan && !minePlanProvidesNoticeableImprovement && !mineModerateImprovement){
@@ -25310,6 +25389,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         safeAfterPlacement,
         safetyImprovesAfterPlacement,
         goal: strategicGoal || null,
+        mineDecisionCode: "mine_low_benefit_reject",
+        mineSoftRiskBenefitScore,
       });
     } else if(!preferredMinePlan && hasDirectAttackPriority && !isCriticalGoalForDefensiveMine){
       mineFinalRejectReason = "mine_saved_for_direct_attack";
