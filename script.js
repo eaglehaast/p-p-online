@@ -24436,6 +24436,19 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     });
   }
 
+  function markTacticalCandidateExecutionFailed(candidate, failureReason, details = {}){
+    if(!candidate || (candidate.itemType !== INVENTORY_ITEM_TYPES.MINE && candidate.itemType !== INVENTORY_ITEM_TYPES.DYNAMITE)){
+      return;
+    }
+    candidate.executionFailed = true;
+    candidate.executionFailureReason = failureReason || "tactical_execution_failed";
+    candidate.executionFailureDetails = {
+      ...(candidate.executionFailureDetails || {}),
+      ...details,
+      failedAtTurn: aiRoundState?.turnNumber ?? null,
+    };
+  }
+
   function executeSelectedInventoryCandidate(selectedInventoryCandidate, executionSource = "selected_inventory_candidate"){
     if(!selectedInventoryCandidate) return { executed: false, executionFailureReason: "selected_candidate_missing" };
     const selectedType = selectedInventoryCandidate.itemType;
@@ -24511,90 +24524,108 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       if(!allowTacticalItems){
         executionFailureReason = "selected_candidate_blocked_by_inventory_phase";
       } else {
-        const placementMode = selectedInventoryCandidate.placementMode === "defensive" ? "defensive" : "base";
-        const selectedMinePlan = selectedInventoryCandidate.minePlan || null;
-        const preservedStrategicTargetPoint = typeof getAiStrategicTargetPoint === "function"
-          ? getAiStrategicTargetPoint(context, plannedMove)
-          : null;
-        const flagTargetAnchor = context?.shouldUseFlagsMode && Array.isArray(context?.availableEnemyFlags) && typeof getFlagAnchor === "function"
-          ? context.availableEnemyFlags
-            .map((flag) => getFlagAnchor(flag))
-            .filter(Boolean)
-            .sort((a, b) => dist(plannedMove.plane, a) - dist(plannedMove.plane, b))[0] || null
-          : null;
-        const flagPickupBaseline = strategicGoal === "capture_enemy_flag" && flagTargetAnchor && typeof evaluateFlagPickupContinuation === "function"
-          ? evaluateFlagPickupContinuation(plannedMove.plane, flagTargetAnchor, {
-              homeBase: context?.homeBase || getBaseAnchor("blue"),
-              enemies: Array.isArray(context?.enemies) ? context.enemies : [],
-              context,
-              goalName: strategicGoal,
-            })
-          : null;
-        const mineEnabledFlagPickup = strategicGoal === "capture_enemy_flag"
-          && flagTargetAnchor
-          && flagPickupBaseline?.hasSafeEscape !== true
-          && typeof evaluateMineEnabledFlagPickupContinuation === "function"
-          ? evaluateMineEnabledFlagPickupContinuation(plannedMove.plane, flagTargetAnchor, {
-              homeBase: context?.homeBase || getBaseAnchor("blue"),
-              enemies: Array.isArray(context?.enemies) ? context.enemies : [],
-              context,
-              goalName: strategicGoal,
-              baselineContinuation: flagPickupBaseline,
-            })
-          : null;
-        const safeFinisherMineCoverage = selectedMinePlan && typeof evaluatePostLaunchSafetyWithMine === "function"
-          ? evaluatePostLaunchSafetyWithMine(context, plannedMove, selectedMinePlan)
-          : { beforeSafe: false, afterSafe: false };
-        const mineRequiredForFlagPickup = mineEnabledFlagPickup?.after?.hasSafeEscape === true;
-        const mineEnablesSafeFinisher = strategicGoal === "direct_finisher"
-          && safeFinisherMineCoverage.beforeSafe === false
-          && safeFinisherMineCoverage.afterSafe === true
-          && Boolean(selectedMinePlan);
-
-        if(mineRequiredForFlagPickup){
-          plannedMove.preservedStrategicTargetPoint = preservedStrategicTargetPoint
-            ? { x: preservedStrategicTargetPoint.x, y: preservedStrategicTargetPoint.y }
+        try {
+          const placementMode = selectedInventoryCandidate.placementMode === "defensive" ? "defensive" : "base";
+          const selectedMinePlan = selectedInventoryCandidate.minePlan || null;
+          const preservedStrategicTargetPoint = typeof getAiStrategicTargetPoint === "function"
+            ? getAiStrategicTargetPoint(context, plannedMove)
             : null;
-          plannedMove.inventoryUsageReason = "mine_enables_flag_pickup";
-        } else if(mineEnablesSafeFinisher){
-          plannedMove.preservedStrategicTargetPoint = preservedStrategicTargetPoint
-            ? { x: preservedStrategicTargetPoint.x, y: preservedStrategicTargetPoint.y }
+          const flagTargetAnchor = context?.shouldUseFlagsMode && Array.isArray(context?.availableEnemyFlags) && typeof getFlagAnchor === "function"
+            ? context.availableEnemyFlags
+              .map((flag) => getFlagAnchor(flag))
+              .filter(Boolean)
+              .sort((a, b) => dist(plannedMove.plane, a) - dist(plannedMove.plane, b))[0] || null
             : null;
-          plannedMove.inventoryUsageReason = "mine_enables_safe_finisher";
-        }
+          const flagPickupBaseline = strategicGoal === "capture_enemy_flag" && flagTargetAnchor && typeof evaluateFlagPickupContinuation === "function"
+            ? evaluateFlagPickupContinuation(plannedMove.plane, flagTargetAnchor, {
+                homeBase: context?.homeBase || getBaseAnchor("blue"),
+                enemies: Array.isArray(context?.enemies) ? context.enemies : [],
+                context,
+                goalName: strategicGoal,
+              })
+            : null;
+          const mineEnabledFlagPickup = strategicGoal === "capture_enemy_flag"
+            && flagTargetAnchor
+            && flagPickupBaseline?.hasSafeEscape !== true
+            && typeof evaluateMineEnabledFlagPickupContinuation === "function"
+            ? evaluateMineEnabledFlagPickupContinuation(plannedMove.plane, flagTargetAnchor, {
+                homeBase: context?.homeBase || getBaseAnchor("blue"),
+                enemies: Array.isArray(context?.enemies) ? context.enemies : [],
+                context,
+                goalName: strategicGoal,
+                baselineContinuation: flagPickupBaseline,
+              })
+            : null;
+          const safeFinisherMineCoverage = selectedMinePlan && typeof evaluatePostLaunchSafetyWithMine === "function"
+            ? evaluatePostLaunchSafetyWithMine(context, plannedMove, selectedMinePlan)
+            : { beforeSafe: false, afterSafe: false };
+          const mineRequiredForFlagPickup = mineEnabledFlagPickup?.after?.hasSafeEscape === true;
+          const mineEnablesSafeFinisher = strategicGoal === "direct_finisher"
+            && safeFinisherMineCoverage.beforeSafe === false
+            && safeFinisherMineCoverage.afterSafe === true
+            && Boolean(selectedMinePlan);
 
-        const mineSeries = selectedInventoryCandidate?.tacticalSeries;
-        if(mineSeries?.itemType === INVENTORY_ITEM_TYPES.MINE && Array.isArray(mineSeries.steps) && mineSeries.steps.length > 0){
-          let executedCount = 0;
-          let stopReason = mineSeries?.diagnostics?.stopReason || null;
-          for(let stepIndex = 0; stepIndex < mineSeries.steps.length; stepIndex += 1){
-            if(Number(inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0) <= 0){
-              stopReason = "charges_exhausted";
-              break;
-            }
-            const step = mineSeries.steps[stepIndex];
-            const stepPlacementMode = step?.placementMode === "defensive" ? "defensive" : "base";
-            const stepResult = stepPlacementMode === "defensive"
-              ? tryPlaceBlueDefensiveMine(context, plannedMove, { excludePlacements: mineSeries.steps.slice(0, stepIndex).map((entry) => entry?.minePlan?.placement).filter(Boolean) })
-              : tryPlaceBlueMineNearEnemyBase(context, plannedMove, { excludePlacements: mineSeries.steps.slice(0, stepIndex).map((entry) => entry?.minePlan?.placement).filter(Boolean) });
-            if(!stepResult){
-              stopReason = "step_execution_failed";
-              break;
-            }
-            removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
-            inventory.counts[INVENTORY_ITEM_TYPES.MINE] = Math.max(0, Number(inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] || 0) - 1);
-            executedCount += 1;
+          if(mineRequiredForFlagPickup){
+            plannedMove.preservedStrategicTargetPoint = preservedStrategicTargetPoint
+              ? { x: preservedStrategicTargetPoint.x, y: preservedStrategicTargetPoint.y }
+              : null;
+            plannedMove.inventoryUsageReason = "mine_enables_flag_pickup";
+          } else if(mineEnablesSafeFinisher){
+            plannedMove.preservedStrategicTargetPoint = preservedStrategicTargetPoint
+              ? { x: preservedStrategicTargetPoint.x, y: preservedStrategicTargetPoint.y }
+              : null;
+            plannedMove.inventoryUsageReason = "mine_enables_safe_finisher";
           }
-          executed = executedCount > 0;
-          selectedInventoryCandidate.tacticalSeriesDiagnostics = {
-            ...(mineSeries?.diagnostics || {}),
-            spentCharges: executedCount,
-            stopReason: stopReason || (executed ? "benefit_target_reached" : "step_execution_failed"),
-          };
-        } else {
-          executed = placementMode === "defensive"
-            ? tryPlaceBlueDefensiveMine(context, plannedMove)
-            : tryPlaceBlueMineNearEnemyBase(context, plannedMove);
+
+          const mineSeries = selectedInventoryCandidate?.tacticalSeries;
+          if(mineSeries?.itemType === INVENTORY_ITEM_TYPES.MINE && Array.isArray(mineSeries.steps) && mineSeries.steps.length > 0){
+            let executedCount = 0;
+            let stopReason = mineSeries?.diagnostics?.stopReason || null;
+            for(let stepIndex = 0; stepIndex < mineSeries.steps.length; stepIndex += 1){
+              if(Number(inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0) <= 0){
+                stopReason = "charges_exhausted";
+                break;
+              }
+              const step = mineSeries.steps[stepIndex];
+              const stepPlacementMode = step?.placementMode === "defensive" ? "defensive" : "base";
+              const stepResult = stepPlacementMode === "defensive"
+                ? tryPlaceBlueDefensiveMine(context, plannedMove, { excludePlacements: mineSeries.steps.slice(0, stepIndex).map((entry) => entry?.minePlan?.placement).filter(Boolean) })
+                : tryPlaceBlueMineNearEnemyBase(context, plannedMove, { excludePlacements: mineSeries.steps.slice(0, stepIndex).map((entry) => entry?.minePlan?.placement).filter(Boolean) });
+              if(!stepResult){
+                stopReason = "step_execution_failed";
+                break;
+              }
+              removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
+              inventory.counts[INVENTORY_ITEM_TYPES.MINE] = Math.max(0, Number(inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] || 0) - 1);
+              executedCount += 1;
+            }
+            executed = executedCount > 0;
+            selectedInventoryCandidate.tacticalSeriesDiagnostics = {
+              ...(mineSeries?.diagnostics || {}),
+              spentCharges: executedCount,
+              stopReason: stopReason || (executed ? "benefit_target_reached" : "step_execution_failed"),
+            };
+          } else {
+            executed = placementMode === "defensive"
+              ? tryPlaceBlueDefensiveMine(context, plannedMove)
+              : tryPlaceBlueMineNearEnemyBase(context, plannedMove);
+          }
+        } catch (tacticalExecutionError) {
+          executionFailureReason = "mine_execution_exception";
+          markTacticalCandidateExecutionFailed(selectedInventoryCandidate, executionFailureReason, {
+            stage: "mine_execution",
+          });
+          logAiDecision("inventory_tactical_execution_exception", {
+            itemType: selectedType,
+            stage: "mine_execution",
+            reasonCode: "mine_execution_exception",
+            selectedInventoryCandidateReason: selectedInventoryCandidate?.reason || null,
+            target: selectedInventoryCandidate?.target || selectedInventoryCandidate?.minePlan?.placement || null,
+            stack: tacticalExecutionError?.stack || null,
+            message: tacticalExecutionError?.message || String(tacticalExecutionError),
+            planeId: plannedMove?.plane?.id ?? null,
+            goal: strategicGoal || null,
+          });
         }
         if(executed){
           if(!selectedInventoryCandidate?.tacticalSeries){
@@ -24650,27 +24681,28 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       if(!allowTacticalItems){
         executionFailureReason = "selected_candidate_blocked_by_inventory_phase";
       } else {
-        const target = selectedInventoryCandidate.target || null;
-        const shouldUseDynamite = selectedInventoryCandidate.reason !== "dynamite_route_opening"
-          || Boolean(
-            selectedInventoryCandidate?.dynamiteRouteReplan?.usesOpenedCorridor
-            || selectedInventoryCandidate?.dynamiteRouteReplan?.noticeableImprovement
-            || selectedInventoryCandidate?.dynamiteRouteReplan?.moderateValidGain
-            || (selectedInventoryCandidate?.dynamiteRouteReplan?.accumulatedValue2Turns ?? 0) >= 0.34
+        try {
+          const target = selectedInventoryCandidate.target || null;
+          const shouldUseDynamite = selectedInventoryCandidate.reason !== "dynamite_route_opening"
+            || Boolean(
+              selectedInventoryCandidate?.dynamiteRouteReplan?.usesOpenedCorridor
+              || selectedInventoryCandidate?.dynamiteRouteReplan?.noticeableImprovement
+              || selectedInventoryCandidate?.dynamiteRouteReplan?.moderateValidGain
+              || (selectedInventoryCandidate?.dynamiteRouteReplan?.accumulatedValue2Turns ?? 0) >= 0.34
+            );
+          const repeatedShotPlanNotFound = Boolean(recentInventorySignals?.repeatedShotPlanNotFound);
+          const repeatedFallbackSelected = Boolean(recentInventorySignals?.repeatedFallbackSelected);
+          const dynamiteDeadlockBreaker = Boolean(
+            deadlockFromCurrentTurn
+            || repeatedShotPlanNotFound
+            || repeatedFallbackSelected
           );
-        const repeatedShotPlanNotFound = Boolean(recentInventorySignals?.repeatedShotPlanNotFound);
-        const repeatedFallbackSelected = Boolean(recentInventorySignals?.repeatedFallbackSelected);
-        const dynamiteDeadlockBreaker = Boolean(
-          deadlockFromCurrentTurn
-          || repeatedShotPlanNotFound
-          || repeatedFallbackSelected
-        );
-        const forcedDynamiteByDeadlock = target && dynamiteDeadlockBreaker && !shouldUseDynamite;
-        if(!target){
-          executionFailureReason = "selected_candidate_dynamite_target_missing";
-        } else {
-          const dynamiteSeries = selectedInventoryCandidate?.tacticalSeries;
-          if(dynamiteSeries?.itemType === INVENTORY_ITEM_TYPES.DYNAMITE && Array.isArray(dynamiteSeries.steps) && dynamiteSeries.steps.length > 0){
+          const forcedDynamiteByDeadlock = target && dynamiteDeadlockBreaker && !shouldUseDynamite;
+          if(!target){
+            executionFailureReason = "selected_candidate_dynamite_target_missing";
+          } else {
+            const dynamiteSeries = selectedInventoryCandidate?.tacticalSeries;
+            if(dynamiteSeries?.itemType === INVENTORY_ITEM_TYPES.DYNAMITE && Array.isArray(dynamiteSeries.steps) && dynamiteSeries.steps.length > 0){
             let executedCount = 0;
             let stopReason = dynamiteSeries?.diagnostics?.stopReason || null;
             const executedTargets = [];
@@ -24724,10 +24756,10 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
               spentCharges: executedCount,
               stopReason: stopReason || (executed ? "benefit_target_reached" : "step_execution_failed"),
             };
-          } else {
-            executed = placeBlueDynamiteAt(target.x, target.y);
-          }
-          if(executed){
+            } else {
+              executed = placeBlueDynamiteAt(target.x, target.y);
+            }
+            if(executed){
             if(!selectedInventoryCandidate?.tacticalSeries){
               removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
             }
@@ -24771,9 +24803,26 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
                 tacticalSeriesDiagnostics: selectedInventoryCandidate.tacticalSeriesDiagnostics || null,
               });
             }
-          } else {
-            executionFailureReason = "selected_candidate_dynamite_placement_failed";
+            } else {
+              executionFailureReason = "selected_candidate_dynamite_placement_failed";
+            }
           }
+        } catch (tacticalExecutionError) {
+          executionFailureReason = "dynamite_execution_exception";
+          markTacticalCandidateExecutionFailed(selectedInventoryCandidate, executionFailureReason, {
+            stage: "dynamite_execution",
+          });
+          logAiDecision("inventory_tactical_execution_exception", {
+            itemType: selectedType,
+            stage: "dynamite_execution",
+            reasonCode: "dynamite_execution_exception",
+            selectedInventoryCandidateReason: selectedInventoryCandidate?.reason || null,
+            target: selectedInventoryCandidate?.target || null,
+            stack: tacticalExecutionError?.stack || null,
+            message: tacticalExecutionError?.message || String(tacticalExecutionError),
+            planeId: plannedMove?.plane?.id ?? null,
+            goal: strategicGoal || null,
+          });
         }
       }
     } else {
@@ -24997,6 +25046,12 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         plannedMove.selectedInventorySequence = [];
       }
       return true;
+    }
+    if(executionResult.executionFailureReason === "mine_execution_exception"
+      || executionResult.executionFailureReason === "dynamite_execution_exception"){
+      markTacticalCandidateExecutionFailed(selectedInventoryCandidate, executionResult.executionFailureReason, {
+        stage: "tactical_execution_recovery",
+      });
     }
     const secondChanceResult = attemptTacticalSecondChance(selectedInventoryCandidate, executionResult.executionFailureReason);
     if(secondChanceResult.executed){
@@ -33138,20 +33193,34 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
   try {
     issueAIMoveWithInventoryUsage(context, baseCandidateStage.move);
   } catch (error) {
+    const tacticalExceptionItemType = plannedMove?.selectedInventoryCandidate?.itemType ?? null;
+    const isTacticalExecutionException = tacticalExceptionItemType === INVENTORY_ITEM_TYPES.MINE
+      || tacticalExceptionItemType === INVENTORY_ITEM_TYPES.DYNAMITE;
+    const tacticalExecutionReasonCode = tacticalExceptionItemType === INVENTORY_ITEM_TYPES.MINE
+      ? "mine_execution_exception"
+      : (tacticalExceptionItemType === INVENTORY_ITEM_TYPES.DYNAMITE
+        ? "dynamite_execution_exception"
+        : null);
+    const inventoryUsageReasonCode = isTacticalExecutionException
+      ? (tacticalExecutionReasonCode || "inventory_usage_exception")
+      : "base_launch_execution_exception";
+    const inventoryUsageReasonCodes = isTacticalExecutionException
+      ? ["do_computer_move_stage_exception", "inventory_usage_exception", inventoryUsageReasonCode]
+      : ["do_computer_move_stage_exception", "inventory_usage_exception", "base_launch_execution_exception"];
     const inventoryExceptionPayload = buildStageExceptionPayload("inventory_usage", error);
     logAiDecision("ai_move_stage_exception", {
       ...inventoryExceptionPayload,
       reasonCategory: "technical_exception",
-      reasonCode: "inventory_usage_exception",
-      reasonCodes: ["do_computer_move_stage_exception", "inventory_usage_exception"],
+      reasonCode: inventoryUsageReasonCode,
+      reasonCodes: inventoryUsageReasonCodes,
     });
     recordAiSelfAnalyzerDecision("ai_move_exception", {
       goal: inventoryExceptionPayload.goal || "ai_move_exception",
       planeId: inventoryExceptionPayload.planeId,
       reasonCategory: "technical_exception",
-      reasonCode: "inventory_usage_exception",
-      reasonCodes: ["ai_move_exception", "technical_exception", "inventory_usage_exception"],
-      rejectReasons: ["inventory_usage_exception"],
+      reasonCode: inventoryUsageReasonCode,
+      reasonCodes: ["ai_move_exception", "technical_exception", "inventory_usage_exception", ...(inventoryUsageReasonCode ? [inventoryUsageReasonCode] : [])],
+      rejectReasons: [inventoryUsageReasonCode || "inventory_usage_exception"],
       source,
       routeClass,
       fallbackDiagnostics: {
@@ -33175,9 +33244,13 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
         if(recoveryResolution?.ok && recoveryResolution?.move){
           issueAIMove(recoveryResolution.move.plane, recoveryResolution.move.vx, recoveryResolution.move.vy);
           logAiDecision("inventory_exception_recovered_with_base_launch", {
-            stage: "finalize_base_launch_after_inventory_exception",
+            stage: isTacticalExecutionException
+              ? "recover_after_tactical_execution_exception"
+              : "recover_after_base_launch_execution_exception",
             recovered: true,
-            reasonCodes: ["inventory_exception_recovered_with_base_launch"],
+            reasonCodes: isTacticalExecutionException
+              ? ["inventory_exception_recovered_with_base_launch", "recover_after_tactical_execution_exception", inventoryUsageReasonCode]
+              : ["inventory_exception_recovered_with_base_launch", "recover_after_base_launch_execution_exception", "base_launch_execution_exception"],
             itemType: inventoryExceptionPayload.itemType,
             inventoryUsageReason: inventoryExceptionPayload.inventoryUsageReason,
             selectedInventoryCandidate: inventoryExceptionPayload.selectedInventoryCandidate,
@@ -33187,15 +33260,16 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
           recordAiSelfAnalyzerDecision("inventory_exception_recovered_with_base_launch", {
             goal: inventoryExceptionPayload.goal || "inventory_exception_recovered_with_base_launch",
             planeId: recoveryResolution.move?.plane?.id ?? inventoryExceptionPayload.planeId,
-            reasonCodes: [
-              "inventory_usage_exception",
-              "inventory_exception_recovered_with_base_launch",
-            ],
-            rejectReasons: ["inventory_usage_exception"],
+            reasonCodes: isTacticalExecutionException
+              ? ["inventory_usage_exception", inventoryUsageReasonCode, "inventory_exception_recovered_with_base_launch", "recover_after_tactical_execution_exception"]
+              : ["inventory_usage_exception", "base_launch_execution_exception", "inventory_exception_recovered_with_base_launch", "recover_after_base_launch_execution_exception"],
+            rejectReasons: [inventoryUsageReasonCode || "inventory_usage_exception"],
             source,
             routeClass,
             fallbackDiagnostics: {
-              stage: "finalize_base_launch_after_inventory_exception",
+              stage: isTacticalExecutionException
+                ? "recover_after_tactical_execution_exception"
+                : "recover_after_base_launch_execution_exception",
               itemType: inventoryExceptionPayload.itemType,
               inventoryUsageReason: inventoryExceptionPayload.inventoryUsageReason,
               selectedInventoryCandidate: inventoryExceptionPayload.selectedInventoryCandidate,
