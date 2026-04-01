@@ -23474,18 +23474,48 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       availableCharges: dynamiteAvailableCharges,
     });
     const dynamiteSubscores = buildDynamiteCandidateSubscores(routeAwareTarget, strategicTarget, futureAdvantageSignal);
-    const dynamiteSumThreshold = routeAwareTarget ? 0.98 : 1.08;
-    const passesDynamiteSumThreshold = dynamiteSubscores.totalScore >= dynamiteSumThreshold;
-    if(fallbackTarget && passesDynamiteSumThreshold){
+    const dynamiteSumThresholdBase = routeAwareTarget ? 0.98 : 1.08;
+    const thresholdAdjustmentReasons = [];
+    let dynamiteRepeatedSignalAdjustment = 0;
+    if(recentInventorySignals.repeatedShotPlanNotFound && recentInventorySignals.repeatedFallbackSelected){
+      dynamiteRepeatedSignalAdjustment = 0.18;
+      thresholdAdjustmentReasons.push("repeated_shot_plan_not_found_and_fallback_selected");
+    } else if(recentInventorySignals.repeatedShotPlanNotFound){
+      dynamiteRepeatedSignalAdjustment = 0.12;
+      thresholdAdjustmentReasons.push("repeated_shot_plan_not_found");
+    } else if(recentInventorySignals.repeatedFallbackSelected){
+      dynamiteRepeatedSignalAdjustment = 0.1;
+      thresholdAdjustmentReasons.push("repeated_fallback_selected");
+    }
+    const dynamiteSurplusAdjustment = dynamiteHasSurplusCharges ? 0.05 : 0;
+    if(dynamiteSurplusAdjustment > 0){
+      thresholdAdjustmentReasons.push("surplus_charges_available");
+    }
+    const dynamiteSumThresholdAdjusted = Number(Math.max(0.72, (
+      dynamiteSumThresholdBase - dynamiteRepeatedSignalAdjustment - dynamiteSurplusAdjustment
+    )).toFixed(3));
+    const passesDynamiteSumThreshold = dynamiteSubscores.totalScore >= dynamiteSumThresholdAdjusted;
+    const strategicRiskDiscount = strategicTarget
+      ? ((strategicTarget.opensDecisivePath ? 0.02 : 0)
+        + (strategicTarget.removesBarrierToContactZone ? 0.015 : 0)
+        + (strategicTarget.nextTurnRouteGain >= 2 ? 0.015 : 0))
+      : 0;
+    const candidateRisk = routeAwareTarget
+      ? 0.06
+      : Math.max(0.06, 0.12 - strategicRiskDiscount);
+    const forcedSurplusModerateFloor = Number(Math.max(0.72, dynamiteSumThresholdAdjusted - 0.1).toFixed(3));
+    const forcedSurplusRiskCap = routeAwareTarget ? 0.12 : 0.1;
+    const passesForcedSurplusModerateGate = Boolean(
+      fallbackTarget
+      && dynamiteForcedSpendSurplus
+      && dynamiteSubscores.totalScore >= forcedSurplusModerateFloor
+      && candidateRisk <= forcedSurplusRiskCap
+    );
+    if(fallbackTarget && (passesDynamiteSumThreshold || passesForcedSurplusModerateGate)){
       const strategicPressureBoost = strategicTarget
         ? ((strategicTarget.opensDecisivePath ? 0.09 : 0)
           + (strategicTarget.removesBarrierToContactZone ? 0.06 : 0)
           + (strategicTarget.nextTurnRouteGain >= 2 ? 0.07 : 0))
-        : 0;
-      const strategicRiskDiscount = strategicTarget
-        ? ((strategicTarget.opensDecisivePath ? 0.02 : 0)
-          + (strategicTarget.removesBarrierToContactZone ? 0.015 : 0)
-          + (strategicTarget.nextTurnRouteGain >= 2 ? 0.015 : 0))
         : 0;
       const strategicReason = strategicTarget?.nextTurnRouteGain > 0
         ? "dynamite_used_for_future_route_gain"
@@ -23506,9 +23536,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
           : Math.max(0.34, Math.min(0.91, 0.22 + (strategicTarget?.strategicScore || 0) * 0.11 + strategicPressureBoost)),
           dynamiteSeriesPlan?.expectedBenefit || 0,
         ),
-        risk: routeAwareTarget
-          ? 0.06
-          : Math.max(0.06, 0.12 - strategicRiskDiscount),
+        risk: candidateRisk,
         reason: dynamiteForcedSpendSurplus
           ? "dynamite_forced_spend_surplus"
           : (routeAwareTarget ? "dynamite_route_opening" : strategicReason),
@@ -23539,8 +23567,13 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
           enemyRouteDisruption: dynamiteSubscores.enemyRouteDisruptionScore,
           expectedNearTermWin: dynamiteSubscores.expectedNearTermWinScore,
           total: dynamiteSubscores.totalScore,
-          threshold: dynamiteSumThreshold,
+          thresholdBase: dynamiteSumThresholdBase,
+          thresholdAdjusted: dynamiteSumThresholdAdjusted,
+          thresholdAdjustmentReasons,
           passed: passesDynamiteSumThreshold,
+          acceptedByForcedSurplusGate: !passesDynamiteSumThreshold && passesForcedSurplusModerateGate,
+          forcedSurplusModerateFloor,
+          forcedSurplusRiskCap,
         },
         strategicDynamiteReasons: strategicTarget ? {
           opensPathToBase: strategicTarget.opensPathToBase,
@@ -23567,7 +23600,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       });
     } else {
       const thresholdReason = fallbackTarget && !passesDynamiteSumThreshold
-        ? "dynamite_subscore_sum_below_threshold"
+        ? (dynamiteForcedSpendSurplus ? "dynamite_forced_surplus_guardrail_reject" : "dynamite_subscore_sum_below_threshold")
         : (strategicDynamite === null ? "dynamite_no_useful_target" : "dynamite_no_current_route_target");
       rejectCandidate(
         INVENTORY_ITEM_TYPES.DYNAMITE,
@@ -23581,9 +23614,17 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
             enemyRouteDisruption: dynamiteSubscores.enemyRouteDisruptionScore,
             expectedNearTermWin: dynamiteSubscores.expectedNearTermWinScore,
             total: dynamiteSubscores.totalScore,
-            threshold: dynamiteSumThreshold,
+            thresholdBase: dynamiteSumThresholdBase,
+            thresholdAdjusted: dynamiteSumThresholdAdjusted,
+            thresholdAdjustmentReasons,
             passed: passesDynamiteSumThreshold,
+            forcedSurplusModerateFloor,
+            forcedSurplusRiskCap,
+            candidateRisk,
           },
+          thresholdBase: dynamiteSumThresholdBase,
+          thresholdAdjusted: dynamiteSumThresholdAdjusted,
+          thresholdAdjustmentReasons,
           currentMoveTooStrongReason: strategicMoveGate.strongPlanReason,
           strategicSetupBlockedByCurrentMove: !strategicMoveGate.allowStrategicSetup,
           routeTargetMissing: routeAwareTarget === null,
