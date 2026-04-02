@@ -12453,31 +12453,41 @@ function exportPlayerVsAiGapReportJson(){
   return report;
 }
 
+function isActualTacticalItemConsumptionEvent(event){
+  if(!event || typeof event !== "object") return false;
+  if(event?.type !== "ai_decision") return false;
+
+  const stage = typeof event?.stage === "string" ? event.stage.trim().toLowerCase() : "";
+
+  if(stage === "inventory_decision_made"){
+    const selected = event?.selected === true;
+    const consumedItemType = typeof event?.consumedItemType === "string"
+      ? event.consumedItemType.trim().toLowerCase()
+      : "";
+    return selected && (consumedItemType === "mine" || consumedItemType === "dynamite");
+  }
+
+  if(stage === "inventory_usage_turn_summary"){
+    const appliedItemTypesInOrder = Array.isArray(event?.appliedItemTypesInOrder)
+      ? event.appliedItemTypesInOrder
+      : [];
+    return appliedItemTypesInOrder.some((itemType) => {
+      const safeItemType = typeof itemType === "string" ? itemType.trim().toLowerCase() : "";
+      return safeItemType === "mine" || safeItemType === "dynamite";
+    });
+  }
+
+  if(stage === "inventory_plan_b_forced_item_used"){
+    const itemType = typeof event?.itemType === "string" ? event.itemType.trim().toLowerCase() : "";
+    return itemType === "mine" || itemType === "dynamite";
+  }
+
+  return false;
+}
+
 function hasMineOrDynamiteUsageInMatchEvents(events){
   const sourceEvents = Array.isArray(events) ? events : [];
-  return sourceEvents.some((event) => {
-    if(!event || typeof event !== "object") return false;
-    if(event?.type !== "ai_decision") return false;
-    const itemType = typeof event?.itemType === "string" ? event.itemType.trim().toLowerCase() : "";
-    if(itemType === "mine" || itemType === "dynamite"){
-      return true;
-    }
-    const reasonCode = typeof event?.reasonCode === "string" ? event.reasonCode.trim().toLowerCase() : "";
-    if(reasonCode.includes("mine") || reasonCode.includes("dynamite")){
-      return true;
-    }
-    const reasonCodes = Array.isArray(event?.reasonCodes) ? event.reasonCodes : [];
-    for(const code of reasonCodes){
-      const safeCode = typeof code === "string" ? code.trim().toLowerCase() : "";
-      if(safeCode.includes("mine") || safeCode.includes("dynamite")){
-        return true;
-      }
-    }
-    const decisionReason = typeof event?.selectedMove?.decisionReason === "string"
-      ? event.selectedMove.decisionReason.trim().toLowerCase()
-      : "";
-    return decisionReason.includes("mine") || decisionReason.includes("dynamite");
-  });
+  return sourceEvents.some((event) => isActualTacticalItemConsumptionEvent(event));
 }
 
 function countShotPlanNotFoundRepeats(events){
@@ -12502,7 +12512,7 @@ function buildStableDiagnosticsMetricsBundle({ turnsReport, gapReport, reserveRe
   const sourceEvents = Array.isArray(turnsReport?.source?.events)
     ? turnsReport.source.events
     : [];
-  const matchesWithMineOrDynamiteShare = hasMineOrDynamiteUsageInMatchEvents(sourceEvents)
+  const matchesWithMineOrDynamiteShare = sourceEvents.some((event) => isActualTacticalItemConsumptionEvent(event))
     ? 1
     : 0;
   const shotPlanNotFoundRepeats = countShotPlanNotFoundRepeats(sourceEvents);
