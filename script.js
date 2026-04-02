@@ -16216,6 +16216,9 @@ const AI_CENTER_CONTROL_DISTANCE = MAX_DRAG_DISTANCE * 0.35;
 const AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD = 2;
 const AI_INVENTORY_SOFT_FALLBACK_COOLDOWN_TURNS = 3;
 const AI_INVENTORY_PLAN_B_NO_SHOT_THRESHOLD = 2;
+const AI_MINE_FORCED_CADENCE_IDLE_TURN_THRESHOLD = 2;
+const AI_MINE_FORCED_CADENCE_NO_SHOT_THRESHOLD = 2;
+const AI_MINE_FORCED_CADENCE_SOFT_RISK_BENEFIT_SCORE_MIN = 0.82;
 const AI_FALLBACK_DIRECT_QUALITY_MIN = 0.4;
 const AI_WALL_LOCKED_TARGET_COMBAT_RADIUS = ATTACK_RANGE_PX;
 const AI_WALL_LOCKED_MIRROR_BONUS = 0.04;
@@ -22924,6 +22927,11 @@ function evaluateAiMineTacticalPlanDecision(options = {}){
   const mineHasSurplusCharges = options?.mineHasSurplusCharges === true;
   const mineProtectsAfterAggressiveAction = options?.mineProtectsAfterAggressiveAction === true;
   const repeatedEmptyTurns = options?.repeatedEmptyTurns === true;
+  const forcedCadenceMode = options?.forcedCadenceMode === true;
+  const forcedCadenceSoftRiskBenefitScoreMinRaw = Number(options?.forcedCadenceSoftRiskBenefitScoreMin ?? AI_MINE_FORCED_CADENCE_SOFT_RISK_BENEFIT_SCORE_MIN);
+  const forcedCadenceSoftRiskBenefitScoreMin = Number.isFinite(forcedCadenceSoftRiskBenefitScoreMinRaw)
+    ? Math.max(0.55, forcedCadenceSoftRiskBenefitScoreMinRaw)
+    : AI_MINE_FORCED_CADENCE_SOFT_RISK_BENEFIT_SCORE_MIN;
   const strategicGoalName = options?.strategicGoalName || options?.plannedMove?.goalName || aiRoundState?.currentGoal || "";
 
   const mineImpactScore = minePlan ? Number(minePlan.score || 0) : 0;
@@ -23035,6 +23043,18 @@ function evaluateAiMineTacticalPlanDecision(options = {}){
     && !mineSoftRiskAcceptedByBenefit
     && !(mineHasSurplusCharges && mineMapControlSignal && mineSoftRiskBenefitScore >= 0.88);
   const mineRejectedByAnySelfRisk = mineRejectedBySelfRisk || mineRejectedByModerateSelfRisk;
+  const mineForcedCadenceSoftRiskAccepted = Boolean(minePlan)
+    && forcedCadenceMode
+    && mineRejectedByModerateSelfRisk
+    && !mineRejectedBySelfRisk
+    && (
+      mineModerateImprovement
+      || mineMapControlSignal
+      || mineSoftRiskBenefitScore >= forcedCadenceSoftRiskBenefitScoreMin
+    );
+  const mineRejectedByCadenceSafetyRedLine = mineRejectedBySelfRisk;
+  const mineRejectedBySelfRiskWithCadence = mineRejectedBySelfRisk
+    || (mineRejectedByModerateSelfRisk && !mineForcedCadenceSoftRiskAccepted);
   const mineDecisionCode = !minePlan
     ? null
     : (mineRejectedBySelfRisk
@@ -23047,7 +23067,7 @@ function evaluateAiMineTacticalPlanDecision(options = {}){
   const mineForcedSpendSurplus = mineHasSurplusCharges
     && Boolean(minePlan)
     && (
-      !mineRejectedByAnySelfRisk
+      !mineRejectedBySelfRiskWithCadence
       || (mineMapControlSignal && mineSoftRiskBenefitScore >= 0.88)
     )
     && (
@@ -23069,9 +23089,13 @@ function evaluateAiMineTacticalPlanDecision(options = {}){
     mineCreatesRouteDenial,
     minePlanProvidesNoticeableImprovement,
     mineModerateImprovement,
-    mineRejectedBySelfRisk: mineRejectedByAnySelfRisk,
+    mineRejectedBySelfRisk: mineRejectedBySelfRiskWithCadence,
     mineRejectedByHardSelfRisk: mineRejectedBySelfRisk,
     mineRejectedByModerateSelfRisk,
+    mineForcedCadenceSoftRiskAccepted,
+    mineRejectedByCadenceSafetyRedLine,
+    forcedCadenceMode,
+    forcedCadenceSoftRiskBenefitScoreMin,
     mineSoftRiskAcceptedByBenefit,
     mineSoftRiskBenefitScore,
     mineForcedSpendSurplus,
@@ -25009,6 +25033,115 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       exhaustedCandidateKeys: Array.from(failedTargetKeys),
     });
     return { used: attempts > 0, executed: false };
+  }
+
+  const mineForcedCadenceReasonCode = "mine_forced_cadence";
+  const mineForcedCadenceModeActive = (!hasForcedTacticalSpend || forcedTacticalItemType === INVENTORY_ITEM_TYPES.MINE || allowNonForcedInventoryDuringTacticalSpend)
+    && allowTacticalItems
+    && Number(inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0) > 0
+    && (
+      currentIdleTurns >= AI_MINE_FORCED_CADENCE_IDLE_TURN_THRESHOLD
+      || (recentInventorySignals?.shotPlanNotFoundCount ?? 0) >= AI_MINE_FORCED_CADENCE_NO_SHOT_THRESHOLD
+    );
+  if(mineForcedCadenceModeActive){
+    const forcedCadenceDiagnostics = {
+      planeId: plannedMove?.plane?.id ?? null,
+      goal: strategicGoal || null,
+      reasonCode: mineForcedCadenceReasonCode,
+      mineCount: Number(inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0),
+      inventoryIdleTurns: currentIdleTurns,
+      inventoryIdleTurnsThreshold: AI_MINE_FORCED_CADENCE_IDLE_TURN_THRESHOLD,
+      shotPlanNotFoundCount: recentInventorySignals?.shotPlanNotFoundCount ?? 0,
+      shotPlanNotFoundThreshold: AI_MINE_FORCED_CADENCE_NO_SHOT_THRESHOLD,
+      softRiskBenefitThreshold: AI_MINE_FORCED_CADENCE_SOFT_RISK_BENEFIT_SCORE_MIN,
+    };
+    const forcedCadenceDefensiveProbe = tryPlaceBlueDefensiveMine(context, plannedMove, { evaluateOnly: true, withDiagnostics: true });
+    const forcedCadenceBaseProbe = tryPlaceBlueMineNearEnemyBase(context, plannedMove, { evaluateOnly: true, withDiagnostics: true });
+    const forcedCadenceDefensivePlan = forcedCadenceDefensiveProbe?.plan || null;
+    const forcedCadenceBasePlan = forcedCadenceBaseProbe?.plan || null;
+    const forcedCadencePreferredMinePlan = !forcedCadenceDefensivePlan && !forcedCadenceBasePlan
+      ? null
+      : (!forcedCadenceBasePlan
+          ? { type: "defensive", plan: forcedCadenceDefensivePlan }
+          : (!forcedCadenceDefensivePlan
+              ? { type: "base", plan: forcedCadenceBasePlan }
+              : ((forcedCadenceDefensivePlan?.score || 0) >= (forcedCadenceBasePlan?.score || 0)
+                  ? { type: "defensive", plan: forcedCadenceDefensivePlan }
+                  : { type: "base", plan: forcedCadenceBasePlan })));
+    const forcedCadenceSafeAfterPlacement = !landingPoint
+      ? false
+      : !Array.isArray(context?.enemies) || context.enemies.every((enemy) => {
+        const enemyDistance = dist(landingPoint, enemy);
+        const enemyHasLane = isPathClear(enemy.x, enemy.y, landingPoint.x, landingPoint.y);
+        return !enemyHasLane || enemyDistance > plannedMoveEffectiveRangePx * 0.95;
+      });
+    const forcedCadenceSafetyCoverage = forcedCadencePreferredMinePlan
+      ? evaluatePostLaunchSafetyWithMine(context, plannedMove, forcedCadencePreferredMinePlan.plan)
+      : { beforeSafe: false, afterSafe: false };
+    const forcedCadenceMineDecisionMeta = evaluateAiMineTacticalPlanDecision({
+      preferredMinePlan: forcedCadencePreferredMinePlan,
+      safeAfterPlacement: forcedCadenceSafeAfterPlacement,
+      safetyImprovesAfterPlacement: forcedCadenceSafetyCoverage.beforeSafe === false && forcedCadenceSafetyCoverage.afterSafe === true,
+      isCriticalGoalForDefensiveMine: isAiCriticalMineGoal(strategicGoal),
+      mineHasSurplusCharges: Number(inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0) > 1,
+      mineProtectsAfterAggressiveAction: strategicGoal === "direct_finisher" && forcedCadenceSafetyCoverage.afterSafe === true,
+      repeatedEmptyTurns: currentIdleTurns >= AI_MINE_FORCED_CADENCE_IDLE_TURN_THRESHOLD,
+      context,
+      plannedMove,
+      aiItemSpendStyle: getAiItemSpendStyle(context, plannedMove),
+      strategicGoalName: strategicGoal,
+      forcedCadenceMode: true,
+      forcedCadenceSoftRiskBenefitScoreMin: AI_MINE_FORCED_CADENCE_SOFT_RISK_BENEFIT_SCORE_MIN,
+    });
+    const forcedCadenceAllowsPlacement = Boolean(forcedCadencePreferredMinePlan)
+      && !forcedCadenceMineDecisionMeta.mineRejectedBySelfRisk
+      && (
+        forcedCadenceMineDecisionMeta.minePlanProvidesNoticeableImprovement
+        || forcedCadenceMineDecisionMeta.mineModerateImprovement
+        || forcedCadenceMineDecisionMeta.mineMapControlSignal
+        || forcedCadenceMineDecisionMeta.mineForcedCadenceSoftRiskAccepted
+      );
+    const forcedCadencePlaced = forcedCadenceAllowsPlacement && (
+      forcedCadencePreferredMinePlan.type === "defensive"
+        ? tryPlaceBlueDefensiveMine(context, plannedMove)
+        : tryPlaceBlueMineNearEnemyBase(context, plannedMove)
+    );
+    if(forcedCadencePlaced){
+      removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
+      plannedMove.inventoryUsageReason = mineForcedCadenceReasonCode;
+      oneTacticalTryUsed = true;
+      logAiDecision("inventory_forced_cadence_item_used", {
+        ...forcedCadenceDiagnostics,
+        placementMode: forcedCadencePreferredMinePlan?.type || null,
+        reasonCode: mineForcedCadenceReasonCode,
+        mineDecisionCode: forcedCadenceMineDecisionMeta.mineDecisionCode || null,
+        mineSoftRiskBenefitScore: Number(forcedCadenceMineDecisionMeta.mineSoftRiskBenefitScore || 0),
+      });
+      return true;
+    }
+
+    const forcedCadenceSafetyRejectReason = forcedCadenceMineDecisionMeta.mineRejectedByCadenceSafetyRedLine
+      ? "hard_self_risk_red_line"
+      : (forcedCadenceMineDecisionMeta.mineRejectedBySelfRisk
+          ? "soft_self_risk_above_forced_threshold"
+          : ((forcedCadenceDefensiveProbe?.rejectReason === "high_friendly_risk"
+              || forcedCadenceBaseProbe?.rejectReason === "high_friendly_risk"
+              || forcedCadenceDefensiveProbe?.rejectReason === "points_filtered_by_risk"
+              || forcedCadenceBaseProbe?.rejectReason === "points_filtered_by_risk")
+              ? "mine_probe_rejected_by_risk_filters"
+              : null));
+    if(forcedCadenceSafetyRejectReason){
+      logAiDecision("inventory_forced_cadence_rejected_by_safety", {
+        ...forcedCadenceDiagnostics,
+        reason: forcedCadenceSafetyRejectReason,
+        mineDecisionCode: forcedCadenceMineDecisionMeta.mineDecisionCode || null,
+        mineSoftRiskBenefitScore: Number(forcedCadenceMineDecisionMeta.mineSoftRiskBenefitScore || 0),
+        mineRejectedByHardSelfRisk: forcedCadenceMineDecisionMeta.mineRejectedByHardSelfRisk === true,
+        mineRejectedByModerateSelfRisk: forcedCadenceMineDecisionMeta.mineRejectedByModerateSelfRisk === true,
+        defensiveProbeRejectReason: forcedCadenceDefensiveProbe?.rejectReason || null,
+        baseProbeRejectReason: forcedCadenceBaseProbe?.rejectReason || null,
+      });
+    }
   }
 
   const selectedInventorySequence = Array.isArray(plannedMove?.selectedInventorySequence)

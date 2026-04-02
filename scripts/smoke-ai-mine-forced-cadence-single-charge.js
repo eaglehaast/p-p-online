@@ -67,17 +67,19 @@ const AI_MINE_FORCED_CADENCE_SOFT_RISK_BENEFIT_SCORE_MIN = extractConstValue(sou
 const extracted = [
   extractConstBlock(source, 'AI_FALLBACK_STAGES'),
   extractConstBlock(source, 'AI_FALLBACK_REASON_CODES'),
+  extractConstBlock(source, 'AI_MINE_PLAN_THRESHOLDS'),
   extractFunctionSource(source, 'hasStructuredFallbackDiagnostics'),
   extractFunctionSource(source, 'collectAiDecisionReasonCodes'),
   extractFunctionSource(source, 'isAiFallbackDecisionEvent'),
   extractFunctionSource(source, 'getAiInventoryRecentMatchSignals'),
+  extractFunctionSource(source, 'evaluateAiMineTacticalPlanDecision'),
   extractFunctionSource(source, 'maybeUseInventoryBeforeLaunch'),
 ].join('\n\n');
 
 const logs = [];
 const removed = [];
-let dynamitePlaced = 0;
 let minePlaced = 0;
+let mineCount = 1;
 
 const context = {
   Math,
@@ -109,14 +111,7 @@ const context = {
     inventorySoftFallbackCooldown: 0,
     lastInventorySoftFallbackUsed: false,
   },
-  getAiSelfAnalyzerSnapshot: () => ({
-    activeMatch: {
-      events: [
-        { type: 'ai_decision', stage: 'v2_shot_plan_not_found', goal: 'attack_enemy_plane' },
-        { type: 'ai_decision', stage: 'v2_shot_plan_not_found', goal: 'attack_enemy_plane' },
-      ],
-    },
-  }),
+  getAiSelfAnalyzerSnapshot: () => ({ activeMatch: { events: [] } }),
   getBluePriorityEnemy: () => null,
   getBaseAnchor: () => ({ x: 300, y: 0 }),
   getAiMoveLandingPoint: () => ({ x: 60, y: 0 }),
@@ -124,75 +119,79 @@ const context = {
   getEffectiveFlightRangeCells: () => 30,
   shouldProbeInventoryPreparedShotPlan: () => false,
   getAiItemSpendStyle: () => 'balanced',
+  getMineRiskStyleConfig: () => ({ ALLOW_MODERATE_RISK_WITH_ROUTE_DENIAL: false }),
+  getMineRiskAcceptedBecause: () => null,
+  isAiCriticalMineGoal: () => false,
   getAiStrategicTargetPoint: () => null,
   getAiStrategicGoalAnchor: () => null,
   getFallbackAiMove: () => null,
   getDefensiveFallbackMove: () => null,
   evaluateBlueInventoryState: () => ({
-    total: 1,
-    counts: { fuel: 0, crosshair: 0, mine: 0, dynamite: 1, invisible: 0, wings: 0 },
+    total: mineCount,
+    counts: { fuel: 0, crosshair: 0, mine: mineCount, dynamite: 0, invisible: 0, wings: 0 },
   }),
   dist: (a, b) => Math.hypot((a.x || 0) - (b.x || 0), (a.y || 0) - (b.y || 0)),
   isPathClear: () => true,
-  evaluateAiDynamiteTacticalTarget: (_ctx, _move, options = {}) => (
-    options?.allowStrategicProbeWhenRouteAware === false
-      ? {
-        routeAwareTarget: {
-          cx: 88,
-          cy: 16,
-          collider: { id: 'c-1' },
-          replanResult: {
-            moderateValidGain: true,
-            noticeableImprovement: true,
-            accumulatedValue2Turns: 0.31,
-            expectedRoute: { id: 'r-1' },
-          },
-        },
-      }
-      : { routeAwareTarget: null }
-  ),
-  placeBlueDynamiteAt: () => {
-    dynamitePlaced += 1;
-    return true;
-  },
+  evaluateAiDynamiteTacticalTarget: () => ({ routeAwareTarget: null, strategicMoveGate: { allowStrategicProbe: false, allowStrategicSetup: false } }),
+  placeBlueDynamiteAt: () => false,
   setAiDynamiteIntentFromCandidate: () => true,
-  tryPlaceBlueDefensiveMine: () => {
+  tryPlaceBlueDefensiveMine: (_ctx, _move, options = {}) => {
+    if(options?.evaluateOnly) return { plan: { score: 2.9, blockedEscapeCount: 1, cutRouteCount: 1, trapCount: 0, totalDirectionLoss: 0.62, projectedContactDelta: 0.22, forcedBadPathCount: 0, controlledBasePassCount: 0, controlledTurnPointCount: 1, placement: { x: 42, y: 12 }, scenario: 'forced_cadence_probe' } };
     minePlaced += 1;
     return true;
   },
-  evaluatePostLaunchSafetyWithMine: () => ({ afterSafe: true }),
+  tryPlaceBlueMineNearEnemyBase: () => null,
+  evaluatePostLaunchSafetyWithMine: () => ({ beforeSafe: false, afterSafe: false }),
   buildAiMineSeriesPlan: () => null,
   buildAiDynamiteSeriesPlan: () => null,
   shouldUseStrategicDynamiteForPlannedMove: () => ({ allowStrategicProbe: false, allowStrategicSetup: false, strongPlanReason: null }),
   doesStrategicDynamiteShowFutureAdvantage: () => false,
-  removeItemFromInventory: (_color, itemType) => removed.push(itemType),
+  removeItemFromInventory: (_color, itemType) => {
+    removed.push(itemType);
+    if(itemType === 'mine') mineCount = Math.max(0, mineCount - 1);
+  },
   logAiDecision: (reason, details) => logs.push({ reason, details }),
   logTacticalItemFinalDecision: () => null,
   evaluateFuelTacticalPlans: () => ({ selectedCandidate: null, blockedByReturnSafety: false }),
   evaluateCrosshairBestUse: () => null,
-  tryPlaceBlueMineNearEnemyBase: () => null,
   getFlagAnchor: () => null,
 };
 
 vm.createContext(context);
 vm.runInContext(extracted, context);
 
-const plannedMove = {
-  plane: { id: 'blue-1', x: 0, y: 0, activeTurnBuffs: {} },
-  vx: 80,
-  vy: 0,
-  totalDist: 80,
-  goalName: 'attack_enemy_plane',
-  decisionReason: 'standard_attack',
-};
+function makePlannedMove(){
+  return {
+    plane: { id: 'blue-1', x: 0, y: 0, activeTurnBuffs: {} },
+    vx: 80,
+    vy: 0,
+    totalDist: 80,
+    goalName: 'attack_enemy_plane',
+    decisionReason: 'standard_attack',
+  };
+}
 
-const used = context.maybeUseInventoryBeforeLaunch({ shouldUseFlagsMode: false, availableEnemyFlags: [] }, plannedMove);
-assert(used === true, 'Expected forced inventory plan B to spend an item.');
-assert(dynamitePlaced === 1, 'Forced plan B must prioritize safe dynamite first.');
-assert(minePlaced === 0, 'Mine must not be attempted after successful dynamite in forced plan B mode.');
-assert(removed.includes('dynamite'), 'Dynamite should be removed from inventory.');
-assert(logs.some((entry) => entry.reason === 'inventory_plan_b_forced_mode'), 'Forced plan B activation must be logged.');
-assert(logs.some((entry) => entry.reason === 'inventory_plan_b_forced_item_used' && entry.details?.itemType === 'dynamite'), 'Forced plan B item usage must be logged for dynamite.');
-assert(logs.some((entry) => entry.details?.reasonCode === 'inventory_plan_b_forced_after_repeated_no_shot'), 'Dedicated reason_code must be present in diagnostics.');
+context.aiRoundState.inventoryIdleTurns = AI_MINE_FORCED_CADENCE_IDLE_TURN_THRESHOLD - 1;
+mineCount = 1;
+const logsBeforeThreshold = logs.length;
+context.maybeUseInventoryBeforeLaunch({ shouldUseFlagsMode: false, availableEnemyFlags: [] }, makePlannedMove());
+assert(
+  !logs.slice(logsBeforeThreshold).some((entry) => entry.reason === 'inventory_forced_cadence_item_used'),
+  'Mine forced cadence should not fire before idle threshold.',
+);
 
-console.log('Smoke test passed: two repeated v2_shot_plan_not_found signals force plan B and spend safe preparatory dynamite before fallback.');
+context.aiRoundState.inventoryIdleTurns = AI_MINE_FORCED_CADENCE_IDLE_TURN_THRESHOLD;
+mineCount = 1;
+const usedOnSecondIdleTurn = context.maybeUseInventoryBeforeLaunch({ shouldUseFlagsMode: false, availableEnemyFlags: [] }, makePlannedMove());
+assert(usedOnSecondIdleTurn === true, 'Mine forced cadence must spend single mine on 2nd empty turn.');
+
+context.aiRoundState.inventoryIdleTurns = AI_MINE_FORCED_CADENCE_IDLE_TURN_THRESHOLD + 1;
+mineCount = 1;
+const usedOnThirdIdleTurn = context.maybeUseInventoryBeforeLaunch({ shouldUseFlagsMode: false, availableEnemyFlags: [] }, makePlannedMove());
+assert(usedOnThirdIdleTurn === true, 'Mine forced cadence must spend single mine on 3rd empty turn.');
+
+const forcedCadenceUsageLogs = logs.filter((entry) => entry.reason === 'inventory_forced_cadence_item_used' && entry.details?.reasonCode === 'mine_forced_cadence');
+assert(forcedCadenceUsageLogs.length >= 2, 'Forced cadence should spend mine on both 2nd and 3rd empty turns when one mine is available.');
+assert(removed.filter((item) => item === 'mine').length >= 2, 'Single mine should be consumed on each forced cadence trigger turn.');
+
+console.log('Smoke test passed: mine_forced_cadence_mode spends a single mine on 2nd/3rd empty turns and logs reasonCode mine_forced_cadence.');
