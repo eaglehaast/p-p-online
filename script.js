@@ -16239,6 +16239,7 @@ const AI_POST_INVENTORY_LAUNCH_DELAY_MS = 1000;
 const AI_INVENTORY_LOOP_GUARD_LIMIT_PER_TURN = 12;
 const AI_INVENTORY_BUFF_CHAIN_LIMIT_PER_TURN = 4;
 const AI_INVENTORY_TACTICAL_REPEAT_LIMIT_PER_TURN = 24;
+const AI_INVENTORY_DECISION_TIME_BUDGET_MS = 60;
 const AI_PLANNED_MOVE_TARGET_REVALIDATION_RADIUS_PX = ATTACK_RANGE_PX * 0.45;
 const AI_OPENING_AGGRESSION_BIAS_TURN_LIMIT = 2;
 const AI_OPENING_AGGRESSION_BIAS_MAX_LEAD = 1;
@@ -23005,7 +23006,11 @@ function evaluateAiMineTacticalPlanDecision(options = {}){
     && !isCriticalGoalForDefensiveMine
     && !riskAcceptedBecause
     && !mineModerateRiskAcceptedByMapControl
-    && mineSoftRiskBenefitScore >= AI_MINE_PLAN_THRESHOLDS.MIN_SOFT_RISK_ACCEPT_BENEFIT_SCORE;
+    && mineSoftRiskBenefitScore >= (
+      repeatedEmptyTurns
+        ? Math.max(0.6, AI_MINE_PLAN_THRESHOLDS.MIN_SOFT_RISK_ACCEPT_BENEFIT_SCORE - 0.34)
+        : AI_MINE_PLAN_THRESHOLDS.MIN_SOFT_RISK_ACCEPT_BENEFIT_SCORE
+    );
   const mineRejectedBySelfRisk = Boolean(minePlan)
     && mineHardDangerSignal
     && !isCriticalGoalForDefensiveMine
@@ -23017,7 +23022,8 @@ function evaluateAiMineTacticalPlanDecision(options = {}){
     && !isCriticalGoalForDefensiveMine
     && !riskAcceptedBecause
     && !mineModerateRiskAcceptedByMapControl
-    && !mineSoftRiskAcceptedByBenefit;
+    && !mineSoftRiskAcceptedByBenefit
+    && !(mineHasSurplusCharges && mineMapControlSignal && mineSoftRiskBenefitScore >= 0.88);
   const mineRejectedByAnySelfRisk = mineRejectedBySelfRisk || mineRejectedByModerateSelfRisk;
   const mineDecisionCode = !minePlan
     ? null
@@ -23030,8 +23036,15 @@ function evaluateAiMineTacticalPlanDecision(options = {}){
                 : (mineMapControlSignal ? "mine_zone_control_accept" : "mine_risk_clear_accept"))));
   const mineForcedSpendSurplus = mineHasSurplusCharges
     && Boolean(minePlan)
-    && !mineRejectedByAnySelfRisk
-    && (safeAfterPlacement !== false || safetyImprovesAfterPlacement === true);
+    && (
+      !mineRejectedByAnySelfRisk
+      || (mineMapControlSignal && mineSoftRiskBenefitScore >= 0.88)
+    )
+    && (
+      safeAfterPlacement !== false
+      || safetyImprovesAfterPlacement === true
+      || (mineMapControlSignal && mineSoftRiskBenefitScore >= 0.98)
+    );
 
   return {
     minePlan,
@@ -27231,8 +27244,16 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   const tacticalRepeatLimitForTurn = AI_INVENTORY_TACTICAL_REPEAT_LIMIT_PER_TURN + v2DynamicTacticalRepeatBonus;
   let inventoryStopByLimit = false;
   let inventoryStopLimitType = null;
+  const inventoryDecisionStartedAt = performance.now();
+  const inventoryDecisionDeadlineAt = inventoryDecisionStartedAt + Math.max(12, AI_INVENTORY_DECISION_TIME_BUDGET_MS);
 
   for(let inventoryActionStep = 0; inventoryActionStep < AI_INVENTORY_LOOP_GUARD_LIMIT_PER_TURN; inventoryActionStep += 1){
+    if(performance.now() > inventoryDecisionDeadlineAt){
+      inventoryStopReason = "inventory_decision_time_budget_reached";
+      inventoryStopByLimit = true;
+      inventoryStopLimitType = "time_budget";
+      break;
+    }
     const actionBeforeState = afterInventoryState;
     let forcedTacticalSurplusType = null;
     if(tacticalInventoryActionsApplied < tacticalRepeatLimitForTurn && tacticalSurplusPendingOrder.length > 0){
@@ -27248,15 +27269,26 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
         forcedTacticalSurplusType,
         Number(tacticalSurplusAttemptedTypes.get(forcedTacticalSurplusType) || 0) + 1,
       );
-      actionUsed = maybeUseInventoryBeforeLaunch(context, plannedMove, {
-        usedBuffTypesThisTurn: usedSingleUseBuffTypesThisTurn,
-        tacticalSurplusPolicy: {
-          forcedItemType: forcedTacticalSurplusType,
-          aggressiveAttemptIndex: currentForcedFailures + 1,
-          forceAggressiveFallback: currentForcedFailures > 0,
-        },
-        allowNonForcedInventoryDuringTacticalSpend: allowNonForcedAfterFailures,
-      });
+      try {
+        actionUsed = maybeUseInventoryBeforeLaunch(context, plannedMove, {
+          usedBuffTypesThisTurn: usedSingleUseBuffTypesThisTurn,
+          tacticalSurplusPolicy: {
+            forcedItemType: forcedTacticalSurplusType,
+            aggressiveAttemptIndex: currentForcedFailures + 1,
+            forceAggressiveFallback: currentForcedFailures > 0,
+          },
+          allowNonForcedInventoryDuringTacticalSpend: allowNonForcedAfterFailures,
+        });
+      } catch (forcedSpendError) {
+        logAiDecision("inventory_forced_surplus_attempt_exception", {
+          stage: "inventory_decision",
+          itemType: forcedTacticalSurplusType,
+          planeId: plannedMove?.plane?.id ?? null,
+          goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+          message: forcedSpendError?.message || String(forcedSpendError),
+        });
+        actionUsed = false;
+      }
       if(actionUsed){
         tacticalSurplusSucceededTypes.add(forcedTacticalSurplusType);
         tacticalSurplusFailureStreakByType[forcedTacticalSurplusType] = 0;
@@ -27276,9 +27308,20 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       }
     }
     if(!actionUsed){
-      actionUsed = maybeUseInventoryBeforeLaunch(context, plannedMove, {
-        usedBuffTypesThisTurn: usedSingleUseBuffTypesThisTurn,
-      });
+      try {
+        actionUsed = maybeUseInventoryBeforeLaunch(context, plannedMove, {
+          usedBuffTypesThisTurn: usedSingleUseBuffTypesThisTurn,
+        });
+      } catch (inventorySelectorError) {
+        logAiDecision("inventory_selector_attempt_exception", {
+          stage: "inventory_decision",
+          planeId: plannedMove?.plane?.id ?? null,
+          goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+          message: inventorySelectorError?.message || String(inventorySelectorError),
+        });
+        inventoryStopReason = "inventory_selector_exception_handled";
+        break;
+      }
     }
     if(!actionUsed){
       inventoryStopReason = totalInventoryActionsApplied > 0
