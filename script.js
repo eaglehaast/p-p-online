@@ -13611,6 +13611,166 @@ function buildAiExceptionContextSnapshot(reasonCode){
   };
 }
 
+function classifyAiMoveStageException(error, details = {}){
+  const message = `${error?.message || error || ""}`.toLowerCase();
+  const stage = `${details?.stage || ""}`.toLowerCase();
+  const plannedMove = details?.plannedMove || null;
+  const hasPlaneRef = Boolean(plannedMove?.plane);
+  const hasVector = Number.isFinite(plannedMove?.vx) && Number.isFinite(plannedMove?.vy);
+  const staleIntentHint = `${details?.intentReason || ""}`.toLowerCase();
+
+  if(
+    message.includes("undefined")
+    || message.includes("null")
+    || message.includes("cannot read")
+    || message.includes("is not iterable")
+  ){
+    return "null_or_undefined_state";
+  }
+
+  if(
+    !hasPlaneRef
+    || !hasVector
+    || message.includes("invalid move")
+    || message.includes("invalid planned move")
+    || stage.includes("candidate_selection")
+  ){
+    return "invalid_move_object";
+  }
+
+  if(
+    staleIntentHint.includes("stale")
+    || message.includes("stale")
+    || message.includes("desync")
+    || message.includes("turn mismatch")
+  ){
+    return "stale_intent";
+  }
+
+  return "unknown_technical_exception";
+}
+
+function isSafeMineRecoveryCandidate(candidate){
+  if(!candidate || candidate.itemType !== INVENTORY_ITEM_TYPES.MINE) return false;
+  if(candidate.safeAfterPlacement === true) return true;
+  if(candidate.placementMode === "defensive") return true;
+  if(candidate.minePlan?.safetyImprovesAfterPlacement === true) return true;
+  if(candidate.minePlan?.scenario === "defensive") return true;
+  const reason = `${candidate.reason || ""}`.toLowerCase();
+  return reason.includes("defensive_mine")
+    || reason.includes("safe_finisher")
+    || reason.includes("flag_pickup");
+}
+
+function runAiTechnicalRecoveryWithSafeMine(context, plannedMove, options = {}){
+  const source = options?.source || "do_computer_move";
+  const routeClass = options?.routeClass || plannedMove?.routeClass || null;
+  const stage = options?.stage || "inventory_usage_exception_recovery";
+  const goal = plannedMove?.goalName || aiRoundState?.currentGoal || null;
+  const logger = typeof options?.logAiDecisionFn === "function" ? options.logAiDecisionFn : logAiDecision;
+  const advanceTurnFn = typeof options?.advanceTurnFn === "function" ? options.advanceTurnFn : advanceTurn;
+  const failSafeAdvanceTurnFn = typeof options?.failSafeAdvanceTurnFn === "function" ? options.failSafeAdvanceTurnFn : failSafeAdvanceTurn;
+  const maybeUseInventoryFn = typeof options?.maybeUseInventoryFn === "function" ? options.maybeUseInventoryFn : maybeUseInventoryBeforeLaunch;
+  const errorObj = options?.errorObj || null;
+  const errorPayload = options?.errorPayload || {};
+
+  const safeMineCandidates = [];
+  if(isSafeMineRecoveryCandidate(plannedMove?.selectedInventoryCandidate)){
+    safeMineCandidates.push(plannedMove.selectedInventoryCandidate);
+  }
+  if(Array.isArray(plannedMove?.inventoryCandidates)){
+    for(const candidate of plannedMove.inventoryCandidates){
+      if(!isSafeMineRecoveryCandidate(candidate)) continue;
+      if(safeMineCandidates.includes(candidate)) continue;
+      safeMineCandidates.push(candidate);
+    }
+  }
+  const selectedSafeMineCandidate = safeMineCandidates[0] || null;
+  if(!selectedSafeMineCandidate){
+    logger("ai_technical_recovery_safe_mine_skipped", {
+      stage,
+      source,
+      routeClass,
+      planeId: plannedMove?.plane?.id ?? null,
+      goal,
+      reasonCode: "technical_recovery_safe_mine_not_available",
+      primaryCauseType: errorPayload?.primaryCauseType || null,
+    });
+    return { recovered: false, reasonCode: "technical_recovery_safe_mine_not_available" };
+  }
+
+  const recoveryMove = {
+    ...plannedMove,
+    selectedInventoryCandidate: selectedSafeMineCandidate,
+    inventoryCandidates: [selectedSafeMineCandidate],
+    rejectedInventoryCandidates: [],
+  };
+  try {
+    const mineApplied = maybeUseInventoryFn(context, recoveryMove, {
+      tacticalSurplusPolicy: {
+        forcedItemType: INVENTORY_ITEM_TYPES.MINE,
+        aggressiveAttemptIndex: 1,
+        forceAggressiveFallback: false,
+      },
+      allowNonForcedInventoryDuringTacticalSpend: false,
+    });
+    if(!mineApplied){
+      return { recovered: false, reasonCode: "technical_recovery_safe_mine_execution_failed" };
+    }
+
+    logger("ai_technical_recovery_safe_mine_applied", {
+      stage,
+      source,
+      routeClass,
+      planeId: plannedMove?.plane?.id ?? null,
+      goal,
+      reasonCode: "technical_recovery_with_safe_mine",
+      recoveryCauseType: errorPayload?.primaryCauseType || null,
+      originalStageReasonCode: errorPayload?.reasonCode || null,
+      recoveryMode: "after_exception",
+      selectedInventoryCandidate: selectedSafeMineCandidate,
+    });
+
+    if(typeof failSafeAdvanceTurnFn === "function"){
+      failSafeAdvanceTurnFn("technical_recovery_with_safe_mine", {
+        goal: goal || "technical_recovery_with_safe_mine",
+        planeId: plannedMove?.plane?.id ?? null,
+        reasonCategory: "technical_exception",
+        reasonCode: "technical_recovery_with_safe_mine",
+        reasonCodes: [
+          "technical_exception",
+          "technical_recovery_with_safe_mine",
+          errorPayload?.reasonCode || "inventory_usage_exception",
+        ],
+        rejectReasons: [
+          errorPayload?.reasonCode || "inventory_usage_exception",
+        ],
+        errorMessage: errorObj?.message || String(errorObj),
+      });
+    } else {
+      aiMoveScheduled = false;
+      advanceTurnFn();
+    }
+
+    return { recovered: true, reasonCode: "technical_recovery_with_safe_mine" };
+  } catch (recoveryError) {
+    logger("ai_technical_recovery_safe_mine_exception", {
+      stage,
+      source,
+      routeClass,
+      planeId: plannedMove?.plane?.id ?? null,
+      goal,
+      reasonCode: "technical_recovery_safe_mine_exception",
+      primaryCauseType: classifyAiMoveStageException(recoveryError, {
+        stage: "technical_recovery_safe_mine",
+        plannedMove: recoveryMove,
+      }),
+      message: recoveryError?.message || String(recoveryError),
+    });
+    return { recovered: false, reasonCode: "technical_recovery_safe_mine_exception" };
+  }
+}
+
 function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayMs = AI_MOVE_INITIAL_DELAY_MS, planningContext = null){
   const launchGateStartedAt = Number.isFinite(startedAt) ? startedAt : performance.now();
   ensureAiVisiblePreparation("launch_gate_scheduled", launchGateStartedAt, "Компьютер готовится к ходу…");
@@ -13622,9 +13782,31 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         doComputerMove();
       } catch (error) {
         const exceptionContext = buildAiExceptionContextSnapshot(reasonCode);
+        const primaryCauseType = classifyAiMoveStageException(error, {
+          stage: "launch_gate_do_computer_move",
+          plannedMove: null,
+        });
+        logAiDecision("ai_move_stage_exception", {
+          stage: "launch_gate_do_computer_move",
+          source: "scheduleComputerMoveWithCargoGate",
+          routeClass: null,
+          message: error?.message || String(error),
+          reasonCategory: "technical_exception",
+          reasonCode: "do_computer_move_exception",
+          reasonCodes: [
+            "do_computer_move_stage_exception",
+            "do_computer_move_exception",
+            primaryCauseType,
+          ],
+          primaryCauseType,
+          planeId: null,
+          goal: exceptionContext.goal,
+          decisionReason: null,
+        });
         logAiDecision("ai_move_exception_fail_safe", {
           reasonCategory: "technical_exception",
           reasonCode: "do_computer_move_exception",
+          primaryCauseType,
           triggerReasonCode: reasonCode || null,
           message: error?.message || String(error),
           roundNumber: exceptionContext.roundNumber,
@@ -33213,8 +33395,23 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
       planeId: plannedMove?.plane?.id ?? null,
       goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
       decisionReason: plannedMove?.decisionReason || null,
+      primaryCauseType: classifyAiMoveStageException(error, {
+        stage,
+        plannedMove,
+        intentReason: overrides?.inventoryUsageReason || plannedMove?.inventoryUsageReason || null,
+      }),
     };
   };
+
+  function tryRecoverWithSafeMineAfterException(stageLabel, errorPayload, errorObj){
+    return runAiTechnicalRecoveryWithSafeMine(context, plannedMove, {
+      source,
+      routeClass,
+      stage: stageLabel,
+      errorPayload,
+      errorObj,
+    });
+  }
 
   let inventoryPlanning = null;
   try {
@@ -33266,7 +33463,7 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
       ...exceptionPayload,
       reasonCategory: "technical_exception",
       reasonCode: "inventory_candidate_selection_exception",
-      reasonCodes: ["do_computer_move_stage_exception", "inventory_candidate_selection_exception"],
+      reasonCodes: ["do_computer_move_stage_exception", "inventory_candidate_selection_exception", exceptionPayload.primaryCauseType],
     });
     recordAiSelfAnalyzerDecision("ai_move_exception", {
       goal: exceptionPayload.goal || "ai_move_exception",
@@ -33300,7 +33497,7 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
       ...exceptionPayload,
       reasonCategory: "technical_exception",
       reasonCode: "base_candidate_selection_exception",
-      reasonCodes: ["do_computer_move_stage_exception", "base_candidate_selection_exception"],
+      reasonCodes: ["do_computer_move_stage_exception", "base_candidate_selection_exception", exceptionPayload.primaryCauseType],
     });
     recordAiSelfAnalyzerDecision("ai_move_exception", {
       goal: exceptionPayload.goal || "ai_move_exception",
@@ -33398,7 +33595,7 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
       ...inventoryExceptionPayload,
       reasonCategory: "technical_exception",
       reasonCode: inventoryUsageReasonCode,
-      reasonCodes: inventoryUsageReasonCodes,
+      reasonCodes: [...inventoryUsageReasonCodes, inventoryExceptionPayload.primaryCauseType],
     });
     recordAiSelfAnalyzerDecision("ai_move_exception", {
       goal: inventoryExceptionPayload.goal || "ai_move_exception",
@@ -33417,6 +33614,20 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
       },
       errorMessage: inventoryExceptionPayload.message,
     });
+
+    const mineRecoveryResult = tryRecoverWithSafeMineAfterException(
+      "inventory_usage_exception_recovery",
+      {
+        ...inventoryExceptionPayload,
+        reasonCode: inventoryUsageReasonCode,
+      },
+      error,
+    );
+    if(mineRecoveryResult?.recovered){
+      baseCandidateStage.inventoryExceptionRecoveredWithSafeMine = true;
+      baseCandidateStage.inventoryExceptionRecoveryReasonCode = mineRecoveryResult.reasonCode || "technical_recovery_with_safe_mine";
+      return baseCandidateStage;
+    }
 
     const recoveryValidation = validateAiLaunchMoveCandidate(baseCandidateStage.move);
     if(recoveryValidation.ok){
@@ -33470,7 +33681,7 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
           ...recoveryExceptionPayload,
           reasonCategory: "technical_exception",
           reasonCode: "inventory_recovery_finalize_exception",
-          reasonCodes: ["do_computer_move_stage_exception", "inventory_recovery_finalize_exception"],
+          reasonCodes: ["do_computer_move_stage_exception", "inventory_recovery_finalize_exception", recoveryExceptionPayload.primaryCauseType],
         });
         recordAiSelfAnalyzerDecision("ai_move_exception", {
           goal: recoveryExceptionPayload.goal || "ai_move_exception",
