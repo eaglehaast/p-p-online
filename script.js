@@ -881,8 +881,12 @@ const TRANSFER_FRAME_ASSETS = Object.freeze({
 const transferFrameState = {
   host: null,
   layer: null,
+  panel: null,
   backImage: null,
   colorImage: null,
+  winText: null,
+  turnTopText: null,
+  turnBottomText: null,
   hideTimerId: null,
 };
 
@@ -932,25 +936,74 @@ function ensureTransferFrameElements() {
     transferFrameState.layer = layer;
   }
 
-  if (!(transferFrameState.backImage instanceof HTMLImageElement) || transferFrameState.backImage.parentElement !== layer) {
+  let panel = transferFrameState.panel;
+  if (!(panel instanceof HTMLElement) || panel.parentElement !== layer) {
+    panel = document.createElement("div");
+    panel.className = "transfer-frame-panel";
+    layer.appendChild(panel);
+    transferFrameState.panel = panel;
+  }
+
+  if (!(transferFrameState.backImage instanceof HTMLImageElement) || transferFrameState.backImage.parentElement !== panel) {
     const backImage = document.createElement("img");
     backImage.className = "transfer-frame transfer-frame--back";
     backImage.alt = "";
     backImage.draggable = false;
-    layer.appendChild(backImage);
+    panel.appendChild(backImage);
     transferFrameState.backImage = backImage;
   }
 
-  if (!(transferFrameState.colorImage instanceof HTMLImageElement) || transferFrameState.colorImage.parentElement !== layer) {
+  if (!(transferFrameState.colorImage instanceof HTMLImageElement) || transferFrameState.colorImage.parentElement !== panel) {
     const colorImage = document.createElement("img");
     colorImage.className = "transfer-frame transfer-frame--color";
     colorImage.alt = "";
     colorImage.draggable = false;
-    layer.appendChild(colorImage);
+    panel.appendChild(colorImage);
     transferFrameState.colorImage = colorImage;
   }
 
+  if (!(transferFrameState.winText instanceof HTMLElement) || transferFrameState.winText.parentElement !== panel) {
+    const winText = document.createElement("div");
+    winText.className = "transfer-frame-text transfer-frame-text--win";
+    winText.setAttribute("aria-hidden", "true");
+    panel.appendChild(winText);
+    transferFrameState.winText = winText;
+  }
+
+  if (!(transferFrameState.turnTopText instanceof HTMLElement) || transferFrameState.turnTopText.parentElement !== panel) {
+    const turnTopText = document.createElement("div");
+    turnTopText.className = "transfer-frame-text transfer-frame-text--turn-top";
+    turnTopText.setAttribute("aria-hidden", "true");
+    panel.appendChild(turnTopText);
+    transferFrameState.turnTopText = turnTopText;
+  }
+
+  if (!(transferFrameState.turnBottomText instanceof HTMLElement) || transferFrameState.turnBottomText.parentElement !== panel) {
+    const turnBottomText = document.createElement("div");
+    turnBottomText.className = "transfer-frame-text transfer-frame-text--turn-bottom";
+    turnBottomText.setAttribute("aria-hidden", "true");
+    panel.appendChild(turnBottomText);
+    transferFrameState.turnBottomText = turnBottomText;
+  }
+
   return transferFrameState;
+}
+
+function buildTransferWinnerText(player) {
+  const winnerName = player === "green" ? "GREEN" : "BLUE";
+  return `${winnerName} WINS`;
+}
+
+function buildTransferTurnTexts(player, roundValue) {
+  const turnName = player === "green" ? "GREEN" : "BLUE";
+  const parsedRound = Number(roundValue);
+  const safeRound = Number.isFinite(parsedRound) && parsedRound > 0
+    ? Math.floor(parsedRound)
+    : 1;
+  return {
+    topText: `ROUND ${safeRound}`,
+    bottomText: `${turnName} TURN`
+  };
 }
 
 function hideTransferFrame() {
@@ -967,6 +1020,18 @@ function hideTransferFrame() {
   if (transferFrameState.colorImage instanceof HTMLImageElement) {
     transferFrameState.colorImage.src = "";
     transferFrameState.colorImage.classList.remove("is-visible");
+  }
+  if (transferFrameState.winText instanceof HTMLElement) {
+    transferFrameState.winText.classList.remove("is-visible");
+    transferFrameState.winText.textContent = "";
+  }
+  if (transferFrameState.turnTopText instanceof HTMLElement) {
+    transferFrameState.turnTopText.classList.remove("is-visible");
+    transferFrameState.turnTopText.textContent = "";
+  }
+  if (transferFrameState.turnBottomText instanceof HTMLElement) {
+    transferFrameState.turnBottomText.classList.remove("is-visible");
+    transferFrameState.turnBottomText.textContent = "";
   }
 }
 
@@ -997,6 +1062,28 @@ function showTransferFrame(options = {}) {
       transferState.colorImage.src = "";
       transferState.colorImage.classList.remove("is-visible");
     }
+  }
+
+  if (transferState.winText instanceof HTMLElement) {
+    const winTextValue = typeof options.winText === "string" && options.winText.trim().length > 0
+      ? options.winText.trim()
+      : buildTransferWinnerText(player);
+    transferState.winText.textContent = winTextValue;
+    transferState.winText.classList.toggle("is-visible", mode === "win");
+  }
+
+  if (transferState.turnTopText instanceof HTMLElement && transferState.turnBottomText instanceof HTMLElement) {
+    const fallbackTurnText = buildTransferTurnTexts(player, options.roundNumber);
+    const topTextValue = typeof options.topText === "string" && options.topText.trim().length > 0
+      ? options.topText.trim()
+      : fallbackTurnText.topText;
+    const bottomTextValue = typeof options.bottomText === "string" && options.bottomText.trim().length > 0
+      ? options.bottomText.trim()
+      : fallbackTurnText.bottomText;
+    transferState.turnTopText.textContent = topTextValue;
+    transferState.turnBottomText.textContent = bottomTextValue;
+    transferState.turnTopText.classList.toggle("is-visible", mode === "turn");
+    transferState.turnBottomText.classList.toggle("is-visible", mode === "turn");
   }
 
   if (transferState.layer instanceof HTMLElement) {
@@ -4906,7 +4993,12 @@ if(typeof window !== "undefined"){
     isDrawGame = false;
     roundEndedByNuke = false;
     roundTextTimer = 0;
-    showTransferFrame({ mode: "win", player: winner, autoHideMs: lifeMs });
+    showTransferFrame({
+      mode: "win",
+      player: winner,
+      winText: buildTransferWinnerText(winner),
+      autoHideMs: lifeMs
+    });
     setTimeout(() => {
       isGameOver = snapshot.isGameOver;
       winnerColor = snapshot.winnerColor;
@@ -4927,7 +5019,15 @@ if(typeof window !== "undefined"){
     const previewColor = turnColors[turnIndex] ? activeTurnColor : randomTurnColor;
     roundNumber = 1 + Math.floor(Math.random() * 12);
     roundTextTimer = 0;
-    showTransferFrame({ mode: "turn", player: previewColor, autoHideMs: lifeMs });
+    const turnPreviewTexts = buildTransferTurnTexts(previewColor, roundNumber);
+    showTransferFrame({
+      mode: "turn",
+      player: previewColor,
+      roundNumber,
+      topText: turnPreviewTexts.topText,
+      bottomText: turnPreviewTexts.bottomText,
+      autoHideMs: lifeMs
+    });
     setTimeout(() => {
       roundNumber = previousRoundNumber;
       roundTextTimer = previousRoundTextTimer;
@@ -13267,7 +13367,11 @@ function lockInWinner(color, options = {}){
   awaitingFlightResolution = flyingPoints.length > 0;
 
   if(typeof options.roundTransitionDelay === "number" && Number.isFinite(options.roundTransitionDelay)){
-    showTransferFrame({ mode: "win", player: color });
+    showTransferFrame({
+      mode: "win",
+      player: color,
+      winText: buildTransferWinnerText(color)
+    });
   } else {
     hideTransferFrame();
   }
@@ -40756,9 +40860,14 @@ function startNewRound(){
   lastFirstTurn = 1 - lastFirstTurn;
   turnIndex = lastFirstTurn;
   const roundStartTurnColor = turnColors[turnIndex] === "green" ? "green" : "blue";
+  const upcomingRoundNumber = roundNumber + 1;
+  const roundStartTurnTexts = buildTransferTurnTexts(roundStartTurnColor, upcomingRoundNumber);
   showTransferFrame({
     mode: "turn",
     player: roundStartTurnColor,
+    roundNumber: upcomingRoundNumber,
+    topText: roundStartTurnTexts.topText,
+    bottomText: roundStartTurnTexts.bottomText,
     autoHideMs: TRANSFER_FRAME_AUTO_HIDE_MS
   });
   turnAdvanceCount = 0;

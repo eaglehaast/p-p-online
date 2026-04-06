@@ -537,11 +537,30 @@ body, button {
     display: flex;
   }
 
+  .transfer-frame-panel {
+    --transfer-source-width: 1053;
+    --transfer-source-height: 452;
+    --transfer-safe-left: 86;
+    --transfer-safe-right: 86;
+    --transfer-turn-top-y: 174;
+    --transfer-turn-top-height: 24;
+    --transfer-turn-bottom-y: 198;
+    --transfer-turn-bottom-height: 60;
+    --transfer-win-y: 171;
+    --transfer-win-height: 87;
+    position: relative;
+    width: min(86%, 330px);
+    aspect-ratio: calc(var(--transfer-source-width) / var(--transfer-source-height));
+    max-height: 55%;
+    pointer-events: none;
+    user-select: none;
+  }
+
   .transfer-frame {
     position: absolute;
-    width: min(86%, 330px);
-    height: auto;
-    max-height: 55%;
+    inset: 0;
+    width: 100%;
+    height: 100%;
     object-fit: contain;
     user-select: none;
     pointer-events: none;
@@ -553,6 +572,49 @@ body, button {
 
   .transfer-frame--color.is-visible {
     display: block;
+  }
+
+  .transfer-frame-text {
+    position: absolute;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    left: calc((var(--transfer-safe-left) / var(--transfer-source-width)) * 100%);
+    width: calc((1 - ((var(--transfer-safe-left) + var(--transfer-safe-right)) / var(--transfer-source-width))) * 100%);
+    text-align: center;
+    font-family: "Trebuchet MS", "Verdana", "Arial Black", sans-serif;
+    font-weight: 900;
+    letter-spacing: 0.045em;
+    text-transform: uppercase;
+    color: #f4e5b9;
+    -webkit-text-stroke: 2px #6f4923;
+    text-shadow:
+      0 2px 0 rgba(69, 43, 15, 0.95),
+      0 4px 8px rgba(16, 7, 2, 0.78);
+    line-height: 1;
+    pointer-events: none;
+  }
+
+  .transfer-frame-text.is-visible {
+    display: flex;
+  }
+
+  .transfer-frame-text--turn-top {
+    top: calc((var(--transfer-turn-top-y) / var(--transfer-source-height)) * 100%);
+    height: calc((var(--transfer-turn-top-height) / var(--transfer-source-height)) * 100%);
+    font-size: clamp(12px, 1.55vw, 15px);
+  }
+
+  .transfer-frame-text--turn-bottom {
+    top: calc((var(--transfer-turn-bottom-y) / var(--transfer-source-height)) * 100%);
+    height: calc((var(--transfer-turn-bottom-height) / var(--transfer-source-height)) * 100%);
+    font-size: clamp(19px, 2.2vw, 23px);
+  }
+
+  .transfer-frame-text--win {
+    top: calc((var(--transfer-win-y) / var(--transfer-source-height)) * 100%);
+    height: calc((var(--transfer-win-height) / var(--transfer-source-height)) * 100%);
+    font-size: clamp(24px, 2.6vw, 28px);
   }
 
   body.inventory-pointer-hidden,
