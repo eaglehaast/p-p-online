@@ -4744,6 +4744,46 @@ if(typeof window !== "undefined"){
   window.GIVE_OPPONENT_MINE = (qty = 1) => giveOpponentItemFromConsole(INVENTORY_ITEM_TYPES.MINE, qty, "console_any_mode");
   window.GIVE_OPPONENT_DYNAMITE = (qty = 1) => giveOpponentItemFromConsole(INVENTORY_ITEM_TYPES.DYNAMITE, qty, "console_any_mode");
   window.GIVE_OPPONENT_INVISIBILITY = (qty = 1) => giveOpponentItemFromConsole(INVENTORY_ITEM_TYPES.INVISIBILITY, qty, "console_any_mode");
+  window.MSG_MS = 2000;
+  window.WINMSG = () => {
+    const lifeMs = Number.isFinite(Number(window.MSG_MS)) && Number(window.MSG_MS) > 0
+      ? Number(window.MSG_MS)
+      : 2000;
+    const snapshot = {
+      isGameOver,
+      winnerColor,
+      shouldShowEndScreen,
+      isDrawGame,
+      roundEndedByNuke
+    };
+    const winner = Math.random() < 0.5 ? "blue" : "green";
+    const endOfGame = Math.random() < 0.5;
+    isGameOver = true;
+    winnerColor = winner;
+    shouldShowEndScreen = endOfGame;
+    isDrawGame = false;
+    roundEndedByNuke = false;
+    setTimeout(() => {
+      isGameOver = snapshot.isGameOver;
+      winnerColor = snapshot.winnerColor;
+      shouldShowEndScreen = snapshot.shouldShowEndScreen;
+      isDrawGame = snapshot.isDrawGame;
+      roundEndedByNuke = snapshot.roundEndedByNuke;
+    }, lifeMs);
+  };
+  window.RNDMSG = () => {
+    const lifeMs = Number.isFinite(Number(window.MSG_MS)) && Number(window.MSG_MS) > 0
+      ? Number(window.MSG_MS)
+      : 2000;
+    const previousRoundNumber = roundNumber;
+    const previousRoundTextTimer = roundTextTimer;
+    roundNumber = 1 + Math.floor(Math.random() * 12);
+    roundTextTimer = 999999;
+    setTimeout(() => {
+      roundNumber = previousRoundNumber;
+      roundTextTimer = previousRoundTextTimer;
+    }, lifeMs);
+  };
 }
 
 if (DEBUG_CHEATS && typeof window !== "undefined") {
