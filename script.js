@@ -4854,7 +4854,8 @@ if(typeof window !== "undefined"){
       winnerColor,
       shouldShowEndScreen,
       isDrawGame,
-      roundEndedByNuke
+      roundEndedByNuke,
+      roundTextTimer
     };
     const winner = Math.random() < 0.5 ? "blue" : "green";
     const endOfGame = Math.random() < 0.5;
@@ -4863,12 +4864,15 @@ if(typeof window !== "undefined"){
     shouldShowEndScreen = endOfGame;
     isDrawGame = false;
     roundEndedByNuke = false;
+    roundTextTimer = 0;
+    showTransferFrame({ mode: "win", player: winner, autoHideMs: lifeMs });
     setTimeout(() => {
       isGameOver = snapshot.isGameOver;
       winnerColor = snapshot.winnerColor;
       shouldShowEndScreen = snapshot.shouldShowEndScreen;
       isDrawGame = snapshot.isDrawGame;
       roundEndedByNuke = snapshot.roundEndedByNuke;
+      roundTextTimer = snapshot.roundTextTimer;
     }, lifeMs);
   };
   window.RNDMSG = () => {
@@ -4877,8 +4881,12 @@ if(typeof window !== "undefined"){
       : 2000;
     const previousRoundNumber = roundNumber;
     const previousRoundTextTimer = roundTextTimer;
+    const activeTurnColor = turnColors[turnIndex] === "green" ? "green" : "blue";
+    const randomTurnColor = Math.random() < 0.5 ? "blue" : "green";
+    const previewColor = turnColors[turnIndex] ? activeTurnColor : randomTurnColor;
     roundNumber = 1 + Math.floor(Math.random() * 12);
-    roundTextTimer = 999999;
+    roundTextTimer = 0;
+    showTransferFrame({ mode: "turn", player: previewColor, autoHideMs: lifeMs });
     setTimeout(() => {
       roundNumber = previousRoundNumber;
       roundTextTimer = previousRoundTextTimer;
