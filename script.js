@@ -9313,11 +9313,36 @@ function getDragOscillationMultiplier(dragScale){
 
 const AI_FALLBACK_AIM_OSCILLATION_MIN_MULTIPLIER = 0.3;
 
-function isAiFallbackLaunchInProgress(plane){
-  if(!(plane && aiLaunchSession && aiLaunchSession.plane === plane)) return false;
-  const goalText = `${aiRoundState?.currentGoal || ""}`.toLowerCase();
+function isFallbackLaunchGoalText(goalTextRaw){
+  const goalText = `${goalTextRaw || ""}`.toLowerCase();
   if(!goalText) return false;
   return goalText.includes("fallback") || goalText.includes("safe_short");
+}
+
+function resolveAiFallbackMoveFlag(plannedMove){
+  const decisionReason = `${plannedMove?.decisionReason || ""}`.toLowerCase().trim();
+  if(decisionReason){
+    return isFallbackLaunchGoalText(decisionReason);
+  }
+
+  const goalName = `${plannedMove?.goalName || ""}`.toLowerCase().trim();
+  if(goalName){
+    return isFallbackLaunchGoalText(goalName);
+  }
+
+  return (
+    plannedMove?.allowInventoryUsage === true
+    && plannedMove?.inventoryUsageReason === "bad_direct_fallback"
+  );
+}
+
+function isAiFallbackLaunchInProgress(plane){
+  if(!(plane && aiLaunchSession && aiLaunchSession.plane === plane)) return false;
+  if(typeof aiLaunchSession?.isFallbackMove === "boolean"){
+    return aiLaunchSession.isFallbackMove;
+  }
+  const goalText = `${aiRoundState?.currentGoal || ""}`.toLowerCase();
+  return isFallbackLaunchGoalText(goalText);
 }
 
 // Anti-Aircraft defaults and placement limits
@@ -15163,9 +15188,11 @@ function getAiLaunchTelegraphyMode(now = performance.now()){
 }
 
 function shouldForceVisibleFallbackLaunchTelegraphy(){
+  if(typeof aiLaunchSession?.isFallbackMove === "boolean"){
+    return aiLaunchSession.isFallbackMove;
+  }
   const goalText = `${aiRoundState?.currentGoal || ""}`.toLowerCase();
-  if(!goalText) return false;
-  return goalText.includes("fallback") || goalText.includes("safe_short");
+  return isFallbackLaunchGoalText(goalText);
 }
 
 function scheduleAiLaunchSessionWatchdog(session){
@@ -26404,7 +26431,14 @@ function failSafeAdvanceTurn(reason, details = {}){
           ? "cautious_progress_to_base"
           : "emergency_safe_move",
       });
-      const launchResult = issueAIMove(guaranteedMove.plane, guaranteedMove.vx, guaranteedMove.vy);
+      const launchResult = issueAIMove(
+        guaranteedMove.plane,
+        guaranteedMove.vx,
+        guaranteedMove.vy,
+        {
+          isFallbackMove: resolveAiFallbackMoveFlag(guaranteedMove),
+        },
+      );
       if(launchResult?.ok){
         return;
       }
@@ -27170,6 +27204,7 @@ function resolveFinalAiLaunchMoveWithMineGate(plannedMove, context = {}, options
 }
 
 function issueAIMoveWithInventoryUsage(context, plannedMove){
+  const isFallbackMove = resolveAiFallbackMoveFlag(plannedMove);
   const failSafeHandler = typeof failSafeAdvanceTurn === "function"
     ? failSafeAdvanceTurn
     : (fallbackReason, fallbackDetails = {}) => {
@@ -27644,7 +27679,14 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       });
       return { ok: false, reason: "final_mine_gate_blocked" };
     }
-    return issueAIMove(finalMoveResolution.move.plane, finalMoveResolution.move.vx, finalMoveResolution.move.vy);
+    return issueAIMove(
+      finalMoveResolution.move.plane,
+      finalMoveResolution.move.vx,
+      finalMoveResolution.move.vy,
+      {
+        isFallbackMove: resolveAiFallbackMoveFlag(finalMoveResolution.move) || isFallbackMove,
+      },
+    );
   }
 
   if(plannedMove?.aiFuelTacticalDecision){
@@ -33362,7 +33404,14 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
           tacticalItemAlreadyUsed: false,
         });
         if(recoveryResolution?.ok && recoveryResolution?.move){
-          issueAIMove(recoveryResolution.move.plane, recoveryResolution.move.vx, recoveryResolution.move.vy);
+          issueAIMove(
+            recoveryResolution.move.plane,
+            recoveryResolution.move.vx,
+            recoveryResolution.move.vy,
+            {
+              isFallbackMove: resolveAiFallbackMoveFlag(recoveryResolution.move),
+            },
+          );
           logAiDecision("inventory_exception_recovered_with_base_launch", {
             stage: isTacticalExecutionException
               ? "recover_after_tactical_execution_exception"
@@ -38841,11 +38890,12 @@ function destroyPlane(fp, scoringColor = null){
   }
 }
 
-function buildAiLaunchSession(plane, vx, vy){
+function buildAiLaunchSession(plane, vx, vy, options = {}){
   const now = performance.now();
   aiLaunchSessionIdCounter += 1;
+  const isFallbackMove = options?.isFallbackMove === true;
   const telegraphyMode = getAiLaunchTelegraphyMode(now);
-  const fallbackLaunchNeedsVisibleOscillation = shouldForceVisibleFallbackLaunchTelegraphy();
+  const fallbackLaunchNeedsVisibleOscillation = isFallbackMove || shouldForceVisibleFallbackLaunchTelegraphy();
   const minimalTelegraphy = telegraphyMode !== "full" && !fallbackLaunchNeedsVisibleOscillation;
   const idealPullPoint = buildPullPointForAiVector(plane, vx, vy);
   const idealTargetAim = computeAiAimMetricsFromPullPoint(plane, idealPullPoint.x, idealPullPoint.y);
@@ -38913,6 +38963,7 @@ function buildAiLaunchSession(plane, vx, vy){
     plane,
     vx,
     vy,
+    isFallbackMove,
     createdAt: now,
     lastTickAt: now,
     maxLifetimeMs: AI_LAUNCH_SESSION_MAX_LIFETIME_MS,
@@ -39156,7 +39207,7 @@ function runAiLaunchSessionTick(now = performance.now()){
   }
 }
 
-function issueAIMove(plane, vx, vy){
+function issueAIMove(plane, vx, vy, options = {}){
   if(aiLaunchSession){
     logAiDecision("ai_launch_session_duplicate_blocked", {
       existingSessionId: aiLaunchSession?.id ?? null,
@@ -39192,7 +39243,11 @@ function issueAIMove(plane, vx, vy){
   }
 
   clearAiLaunchStallNotice();
-  aiLaunchSession = buildAiLaunchSession(plane, vx, vy);
+  const isFallbackMove = options?.isFallbackMove === true;
+  aiLaunchSession = buildAiLaunchSession(plane, vx, vy, {
+    ...options,
+    isFallbackMove,
+  });
   scheduleAiLaunchSessionWatchdog(aiLaunchSession);
   if(aiLaunchSession?.stage === "pull"){
     markAiLinearLaunchEvent("pull_started", {
