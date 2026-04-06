@@ -35506,7 +35506,10 @@ function planPathToPoint(plane, tx, ty, options = {}){
     if(minRouteClearancePx <= narrowCorridorMinClearanceThresholdPx){
       narrowCorridorTriggeredBy.push("min_route_clearance");
     }
-    const shouldUseNarrowCorridorAttempt = narrowCorridorTriggeredBy.length > 0;
+    const denseMapOnlyTrigger = narrowCorridorTriggeredBy.length === 1
+      && narrowCorridorTriggeredBy[0] === "dense_map";
+    const shouldUseNarrowCorridorAttempt = narrowCorridorTriggeredBy.length > 0
+      && !denseMapOnlyTrigger;
     logAiDecision("narrow_corridor_evaluation", {
       planeId: plane?.id ?? null,
       targetX: tx,
@@ -35640,6 +35643,9 @@ function planPathToPoint(plane, tx, ty, options = {}){
         },
       ];
       const narrowCorridorNoProgressRejectLimit = 6;
+      const narrowCorridorAttemptBudgetLimit = colliderCount >= narrowCorridorColliderThreshold
+        ? 96
+        : 140;
       const narrowCorridorEquivalentLandingTolerancePx = Math.max(4, CELL_SIZE * 0.12);
       const narrowCorridorEquivalentImprovementTolerancePx = Math.max(1.5, CELL_SIZE * 0.05);
       const narrowCorridorEquivalentScaleTolerance = 0.1;
@@ -35844,6 +35850,22 @@ function planPathToPoint(plane, tx, ty, options = {}){
                 narrowCorridorAttemptBudgetUsed = narrowCorridorAttemptCount;
                 phaseSummary.attempts += 1;
                 narrowCorridorOverallSummary.attempts += 1;
+                if(narrowCorridorAttemptCount > narrowCorridorAttemptBudgetLimit){
+                  narrowCorridorEarlyStopMeta = {
+                    reasonCode: "narrow_corridor_early_stop__attempt_budget_exceeded",
+                    reason: "attempt_budget_exceeded",
+                    rejectStreak: narrowCorridorNoProgressRejectStreak,
+                    rejectLimit: narrowCorridorNoProgressRejectLimit,
+                    phase: phaseConfig.phase,
+                    deviationLayer: deviationLayer.layer,
+                    attemptIndex: narrowCorridorAttemptCount,
+                  };
+                  bestRejectCode = narrowCorridorEarlyStopMeta.reasonCode;
+                  bestRejectMeta = buildNarrowCorridorRejectMeta(narrowCorridorEarlyStopMeta.reasonCode, narrowCorridorEarlyStopMeta);
+                  planPathToPoint.lastRejectCode = bestRejectCode;
+                  planPathToPoint.lastRejectMeta = bestRejectMeta;
+                  break;
+                }
                 const actualAngle = effectiveBaseAngle + deviation;
                 const vx = Math.cos(actualAngle) * narrowedScale * speedPxPerSec;
                 const vy = Math.sin(actualAngle) * narrowedScale * speedPxPerSec;
@@ -35920,6 +35942,49 @@ function planPathToPoint(plane, tx, ty, options = {}){
                     if(tightMove){
                       emitNarrowCorridorPhaseCompletedSummary(phaseConfig, phaseSummary, "selected");
                       return tightMove;
+                    }
+                  }
+
+                  const alignmentSoftProgressAllowance = phaseConfig.phase === "alignment_setup"
+                    && !isCriticalOrEmergencyStage
+                    && reserveProgressMeta.improvement >= -(CELL_SIZE * 0.1);
+                  if(alignmentSoftProgressAllowance){
+                    const laneTightPenalty = CELL_SIZE * (AI_LANE_TIGHT_PASS_SCORE_PENALTY_SCALE + 0.22);
+                    considerCandidate(vx, vy, actualAngle, baseCandidateDistance + laneTightPenalty, {
+                      laneTightPassApplied: true,
+                      laneTightPenalty,
+                      lanePassType: "lane_alignment_soft_progress_pass",
+                      lanePassReasonCode: "lane_alignment_soft_progress_pass",
+                      candidateClass: "gap",
+                      narrowCorridorPhase: phaseConfig.phase,
+                      narrowCorridorDeviationLayer: deviationLayer.layer,
+                    }, reserveProgressMeta);
+                    const softAlignmentMove = bestRoute;
+                    phaseSummary.selected = true;
+                    phaseSummary.selectedAttemptIndex = narrowCorridorAttemptCount;
+                    phaseSummary.selectedReason = "alignment_soft_progress_allows_tight_pass";
+                    phaseSummary.phaseOutcome = "selected";
+                    narrowCorridorOverallSummary.routeFound = true;
+                    narrowCorridorOverallSummary.selectedPhase = phaseConfig.phase;
+                    narrowCorridorOverallSummary.selectedReason = phaseSummary.selectedReason;
+                    logNarrowCorridorDecision("narrow_corridor_selected", buildNarrowCorridorSummaryPayload(phaseSummary, {
+                      summaryOnly: true,
+                      reasonCode: "narrow_corridor_selected",
+                      selectionReason: "alignment_soft_progress_allows_tight_pass",
+                      lanePassType: "lane_alignment_soft_progress_pass",
+                      phase: phaseConfig.phase,
+                      phaseLabel: phaseConfig.phaseLabel,
+                      deviationLayer: deviationLayer.layer,
+                      deviation,
+                      narrowedScale: Number(narrowedScale.toFixed(3)),
+                      improvement: Number(reserveProgressMeta.improvement.toFixed(2)),
+                      noticeableThreshold: Number(reserveProgressMeta.noticeableThreshold.toFixed(2)),
+                      searchAttemptIndex: narrowCorridorAttemptCount,
+                      searchBudgetPhase: phaseConfig.phase,
+                    }));
+                    if(softAlignmentMove){
+                      emitNarrowCorridorPhaseCompletedSummary(phaseConfig, phaseSummary, "selected");
+                      return softAlignmentMove;
                     }
                   }
 
