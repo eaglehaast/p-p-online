@@ -869,22 +869,57 @@ const roundBannerState = {
   hideTimerId: null,
 };
 const TRANSFER_FRAME_AUTO_HIDE_MS = 2000;
+// Z-index policy: transfer/system notifications must always be above all gameplay FX hosts (cargo/explosions/nuclear).
+const TRANSFER_SYSTEM_HOST_ID = "transferSystemHost";
+const TRANSFER_SYSTEM_HOST_Z_INDEX = 320;
+const TRANSFER_FRAME_LAYER_Z_INDEX = 321;
 const TRANSFER_FRAME_ASSETS = Object.freeze({
   back: "ui_gamescreen/gs_transfer/gs_transfer_back.png",
   blue: "ui_gamescreen/gs_transfer/gs_transfer_blue.png",
   green: "ui_gamescreen/gs_transfer/gs_transfer_green.png",
 });
 const transferFrameState = {
+  host: null,
   layer: null,
   backImage: null,
   colorImage: null,
   hideTimerId: null,
 };
 
+function ensureTransferSystemHost() {
+  const hostParent = gsFrameLayer instanceof HTMLElement
+    ? gsFrameLayer
+    : document.body;
+  if (!(hostParent instanceof HTMLElement)) return null;
+
+  let host = transferFrameState.host;
+  if (!(host instanceof HTMLElement) || !host.isConnected) {
+    host = document.getElementById(TRANSFER_SYSTEM_HOST_ID);
+  }
+
+  if (!(host instanceof HTMLElement)) {
+    host = document.createElement("div");
+    host.id = TRANSFER_SYSTEM_HOST_ID;
+  }
+
+  if (host.parentElement !== hostParent) {
+    hostParent.appendChild(host);
+  }
+
+  Object.assign(host.style, {
+    position: "absolute",
+    inset: "0",
+    pointerEvents: "none",
+    overflow: "visible",
+    zIndex: String(TRANSFER_SYSTEM_HOST_Z_INDEX)
+  });
+
+  transferFrameState.host = host;
+  return host;
+}
+
 function ensureTransferFrameElements() {
-  const transferHost = overlayContainer instanceof HTMLElement
-    ? overlayContainer
-    : (gsFrameLayer instanceof HTMLElement ? gsFrameLayer : null);
+  const transferHost = ensureTransferSystemHost();
   if (!(transferHost instanceof HTMLElement)) return null;
 
   let layer = transferFrameState.layer;
@@ -892,6 +927,7 @@ function ensureTransferFrameElements() {
     layer = document.createElement("div");
     layer.className = "transfer-frame-layer";
     layer.setAttribute("aria-hidden", "true");
+    layer.style.zIndex = String(TRANSFER_FRAME_LAYER_Z_INDEX);
     transferHost.appendChild(layer);
     transferFrameState.layer = layer;
   }
@@ -4956,7 +4992,8 @@ const PLANE_FLAME_HOST_ID = 'planeFlameHost';
 const EXPLOSION_HOST_ID = 'explosionHost';
 const EXPLOSION_HOST_Z_INDEX = 24;
 const CARGO_HOST_ID = 'cargoHost';
-const CARGO_HOST_Z_INDEX = 23;
+// Z-index policy: cargo FX should stay below transfer/system notifications, so don't raise this near transfer values.
+const CARGO_HOST_Z_INDEX = 22;
 
 const GAME_SCREEN_ASSETS = [
   // Plane counters
@@ -8592,7 +8629,8 @@ function createCargoAnimationDomEntry(cargo, metrics) {
   container.classList.add('fx-cargo');
   Object.assign(container.style, {
     position: 'absolute',
-    pointerEvents: 'none'
+    pointerEvents: 'none',
+    zIndex: '0'
   });
 
   const image = new Image();
