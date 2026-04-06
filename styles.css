@@ -530,7 +530,7 @@ body, button {
     align-items: center;
     justify-content: center;
     pointer-events: none;
-    z-index: 26;
+    z-index: 321;
   }
 
   .transfer-frame-layer.is-visible {
@@ -1906,6 +1906,14 @@ body, button {
   pointer-events: none;
   overflow: visible;
   z-index: 23;
+}
+
+#transferSystemHost {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 320;
 }
 
 .nuclear-strike-layer {
