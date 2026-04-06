@@ -24390,6 +24390,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     }
   }
 
+  const allowInventorySequenceSelection = false;
   const sequenceItemTypes = [
     INVENTORY_ITEM_TYPES.FUEL,
     INVENTORY_ITEM_TYPES.CROSSHAIR,
@@ -24422,6 +24423,15 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     }).adjustedSelectionFloor
     : 0;
   for(const sequenceTypes of possibleSequences){
+    if(!allowInventorySequenceSelection){
+      logAiDecision("inventory_sequence_rejected", {
+        planeId: plannedMove?.plane?.id ?? null,
+        goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+        sequence: sequenceTypes,
+        reason: "sequence_selection_disabled_single_execution_flow",
+      });
+      continue;
+    }
     const sequenceSteps = [];
     let rejectedReason = null;
     for(const itemType of sequenceTypes){
