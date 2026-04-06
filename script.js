@@ -868,6 +868,106 @@ const roundBannerState = {
   element: null,
   hideTimerId: null,
 };
+const TRANSFER_FRAME_AUTO_HIDE_MS = 2000;
+const TRANSFER_FRAME_ASSETS = Object.freeze({
+  back: "ui_gamescreen/gs_transfer/gs_transfer_back.png",
+  blue: "ui_gamescreen/gs_transfer/gs_transfer_blue.png",
+  green: "ui_gamescreen/gs_transfer/gs_transfer_green.png",
+});
+const transferFrameState = {
+  layer: null,
+  backImage: null,
+  colorImage: null,
+  hideTimerId: null,
+};
+
+function ensureTransferFrameElements() {
+  const transferHost = overlayContainer instanceof HTMLElement
+    ? overlayContainer
+    : (gsFrameLayer instanceof HTMLElement ? gsFrameLayer : null);
+  if (!(transferHost instanceof HTMLElement)) return null;
+
+  let layer = transferFrameState.layer;
+  if (!(layer instanceof HTMLElement) || layer.parentElement !== transferHost) {
+    layer = document.createElement("div");
+    layer.className = "transfer-frame-layer";
+    layer.setAttribute("aria-hidden", "true");
+    transferHost.appendChild(layer);
+    transferFrameState.layer = layer;
+  }
+
+  if (!(transferFrameState.backImage instanceof HTMLImageElement) || transferFrameState.backImage.parentElement !== layer) {
+    const backImage = document.createElement("img");
+    backImage.className = "transfer-frame transfer-frame--back";
+    backImage.alt = "";
+    backImage.draggable = false;
+    layer.appendChild(backImage);
+    transferFrameState.backImage = backImage;
+  }
+
+  if (!(transferFrameState.colorImage instanceof HTMLImageElement) || transferFrameState.colorImage.parentElement !== layer) {
+    const colorImage = document.createElement("img");
+    colorImage.className = "transfer-frame transfer-frame--color";
+    colorImage.alt = "";
+    colorImage.draggable = false;
+    layer.appendChild(colorImage);
+    transferFrameState.colorImage = colorImage;
+  }
+
+  return transferFrameState;
+}
+
+function hideTransferFrame() {
+  if (transferFrameState.hideTimerId !== null) {
+    clearTimeout(transferFrameState.hideTimerId);
+    transferFrameState.hideTimerId = null;
+  }
+  const layer = transferFrameState.layer;
+  if (!(layer instanceof HTMLElement)) return;
+  layer.classList.remove("is-visible");
+  if (transferFrameState.backImage instanceof HTMLImageElement) {
+    transferFrameState.backImage.src = "";
+  }
+  if (transferFrameState.colorImage instanceof HTMLImageElement) {
+    transferFrameState.colorImage.src = "";
+    transferFrameState.colorImage.classList.remove("is-visible");
+  }
+}
+
+function showTransferFrame(options = {}) {
+  const mode = options.mode === "win" ? "win" : "turn";
+  const player = options.player === "green" ? "green" : "blue";
+  const transferState = ensureTransferFrameElements();
+  if (!transferState) return;
+
+  if (transferState.hideTimerId !== null) {
+    clearTimeout(transferState.hideTimerId);
+    transferState.hideTimerId = null;
+  }
+
+  if (transferState.backImage instanceof HTMLImageElement) {
+    transferState.backImage.src = TRANSFER_FRAME_ASSETS.back;
+  }
+  if (transferState.colorImage instanceof HTMLImageElement) {
+    if (mode === "turn") {
+      transferState.colorImage.src = player === "green" ? TRANSFER_FRAME_ASSETS.green : TRANSFER_FRAME_ASSETS.blue;
+      transferState.colorImage.classList.add("is-visible");
+    } else {
+      transferState.colorImage.src = "";
+      transferState.colorImage.classList.remove("is-visible");
+    }
+  }
+
+  if (transferState.layer instanceof HTMLElement) {
+    transferState.layer.classList.add("is-visible");
+  }
+
+  if (Number.isFinite(options.autoHideMs) && options.autoHideMs > 0) {
+    transferState.hideTimerId = setTimeout(() => {
+      hideTransferFrame();
+    }, options.autoHideMs);
+  }
+}
 
 function ensureRoundBannerElement() {
   if (roundBannerState.element instanceof HTMLElement) {
@@ -4882,6 +4982,9 @@ const GAME_SCREEN_ASSETS = [
   "ui_gamescreen/playagain/playagain_container.png",
   "ui_gamescreen/playagain/yes.png",
   "ui_gamescreen/playagain/no.png",
+  TRANSFER_FRAME_ASSETS.back,
+  TRANSFER_FRAME_ASSETS.blue,
+  TRANSFER_FRAME_ASSETS.green,
 
   // Flags & bases
   BASE_SPRITE_PATHS.blue,
@@ -13111,6 +13214,12 @@ function lockInWinner(color, options = {}){
 
   awaitingFlightResolution = flyingPoints.length > 0;
 
+  if(typeof options.roundTransitionDelay === "number" && Number.isFinite(options.roundTransitionDelay)){
+    showTransferFrame({ mode: "win", player: color });
+  } else {
+    hideTransferFrame();
+  }
+
   if(!awaitingFlightResolution){
     finalizePostFlightState();
   }
@@ -13143,6 +13252,7 @@ function lockInNoSurvivors(options = {}){
   }
 
   awaitingFlightResolution = flyingPoints.length > 0;
+  hideTransferFrame();
 
   if(!awaitingFlightResolution){
     finalizePostFlightState();
@@ -13179,6 +13289,7 @@ function lockInDraw(options = {}){
   }
 
   awaitingFlightResolution = flyingPoints.length > 0;
+  hideTransferFrame();
 
   if(!awaitingFlightResolution){
     finalizePostFlightState();
@@ -40512,6 +40623,12 @@ function startNewRound(){
 
   lastFirstTurn = 1 - lastFirstTurn;
   turnIndex = lastFirstTurn;
+  const roundStartTurnColor = turnColors[turnIndex] === "green" ? "green" : "blue";
+  showTransferFrame({
+    mode: "turn",
+    player: roundStartTurnColor,
+    autoHideMs: TRANSFER_FRAME_AUTO_HIDE_MS
+  });
   turnAdvanceCount = 0;
   turnCommitSequence = 0;
   resetLastPlayerMoveCommitMeta();
