@@ -24494,13 +24494,34 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
 function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   if(!plannedMove?.plane) return false;
 
-  const inventoryPhase = 3;
-  const allowBuffItems = true;
-  const allowTacticalItems = true;
-  const allowInvisibility = true;
+  const strategicGoal = plannedMove?.goalName || aiRoundState?.currentGoal || "";
   const usedBuffTypesThisTurn = options?.usedBuffTypesThisTurn instanceof Set
     ? options.usedBuffTypesThisTurn
     : new Set();
+  const inventory = evaluateBlueInventoryState();
+  if(inventory.total <= 0){
+    plannedMove.inventoryDecisionMadeMeta = {
+      selected: false,
+      reason: "inventory_empty",
+      reasonCodes: ["no_inventory_items"],
+      rejectReasons: ["inventory_empty"],
+      executionSource: null,
+      selectedItemType: null,
+      selectedReason: null,
+      selectedSequenceLength: Array.isArray(plannedMove?.selectedInventorySequence) ? plannedMove.selectedInventorySequence.length : 0,
+    };
+    return false;
+  }
+
+  const selectedInventoryCandidate = plannedMove?.selectedInventoryCandidate || null;
+  const selectedInventorySequence = Array.isArray(plannedMove?.selectedInventorySequence)
+    ? plannedMove.selectedInventorySequence.filter((step) => step && step.itemType)
+    : [];
+
+  if(plannedMove && typeof plannedMove === "object"){
+    plannedMove.lastInventorySelectionGate = null;
+  }
+
   const SINGLE_USE_BUFF_TYPES_PER_TURN = new Set([
     INVENTORY_ITEM_TYPES.CROSSHAIR,
     INVENTORY_ITEM_TYPES.FUEL,
@@ -24508,488 +24529,11 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     INVENTORY_ITEM_TYPES.INVISIBILITY,
   ]);
 
-  function isSingleUseBuffTypePerTurn(itemType){
-    return SINGLE_USE_BUFF_TYPES_PER_TURN.has(itemType);
-  }
-
-  function hasSingleUseBuffBeenSpentThisTurn(itemType){
-    return isSingleUseBuffTypePerTurn(itemType)
-      && usedBuffTypesThisTurn.has(itemType);
-  }
-
   function rememberSingleUseBuffSpentThisTurn(itemType){
-    if(isSingleUseBuffTypePerTurn(itemType)){
+    if(SINGLE_USE_BUFF_TYPES_PER_TURN.has(itemType)){
       usedBuffTypesThisTurn.add(itemType);
     }
   }
-
-  const explicitInventoryUnlock = plannedMove?.allowInventoryUsage === true
-    && plannedMove?.inventoryUsageReason === "bad_direct_fallback";
-  const strategicGoal = plannedMove?.goalName || aiRoundState?.currentGoal || "";
-  const normalizedStrategicGoal = `${strategicGoal || ""}`.toLowerCase();
-  const allowStrategicInventoryPreparation = shouldProbeInventoryPreparedShotPlan(normalizedStrategicGoal);
-  const tacticalSurplusPolicy = options?.tacticalSurplusPolicy && typeof options.tacticalSurplusPolicy === "object"
-    ? options.tacticalSurplusPolicy
-    : null;
-  const forcedTacticalItemType = (
-    tacticalSurplusPolicy?.forcedItemType === INVENTORY_ITEM_TYPES.MINE
-    || tacticalSurplusPolicy?.forcedItemType === INVENTORY_ITEM_TYPES.DYNAMITE
-  )
-    ? tacticalSurplusPolicy.forcedItemType
-    : null;
-  const hasForcedTacticalSpend = Boolean(forcedTacticalItemType);
-  const allowNonForcedInventoryDuringTacticalSpend = options?.allowNonForcedInventoryDuringTacticalSpend === true;
-  const forcedSurplusAggressiveAttemptIndexRaw = Number(tacticalSurplusPolicy?.aggressiveAttemptIndex ?? 1);
-  const forcedSurplusAggressiveAttemptIndex = Number.isFinite(forcedSurplusAggressiveAttemptIndexRaw)
-    ? Math.max(1, Math.trunc(forcedSurplusAggressiveAttemptIndexRaw))
-    : 1;
-  const forcedSurplusAllowAggressiveFallback = tacticalSurplusPolicy?.forceAggressiveFallback === true
-    || forcedSurplusAggressiveAttemptIndex > 1;
-
-  aiRoundState.lastInventorySoftFallbackUsed = false;
-
-  const inventory = evaluateBlueInventoryState();
-  if(inventory.total <= 0) return false;
-  if(hasForcedTacticalSpend && Number(inventory.counts?.[forcedTacticalItemType] ?? 0) <= 0){
-    logAiDecision("tactical_surplus_spend_blocked", {
-      planeId: plannedMove?.plane?.id ?? null,
-      goal: strategicGoal || null,
-      itemType: forcedTacticalItemType,
-      reason: "item_not_available",
-      forcedByPolicy: true,
-      availableCount: Number(inventory.counts?.[forcedTacticalItemType] ?? 0),
-    });
-    return false;
-  }
-
-  const selectedInventoryCandidate = plannedMove?.selectedInventoryCandidate || null;
-  if(plannedMove && typeof plannedMove === "object"){
-    plannedMove.lastInventorySelectionGate = null;
-  }
-
-  const moveDistance = Number.isFinite(plannedMove.totalDist)
-    ? plannedMove.totalDist
-    : Math.hypot(plannedMove.vx || 0, plannedMove.vy || 0) * FIELD_FLIGHT_DURATION_SEC;
-  const priorityEnemy = getBluePriorityEnemy(context);
-  const priorityEnemyDistance = priorityEnemy
-    ? dist(plannedMove.plane, priorityEnemy)
-    : Infinity;
-  const hasPriorityEnemyPathClear = Boolean(priorityEnemy)
-    && isPathClear(plannedMove.plane.x, plannedMove.plane.y, priorityEnemy.x, priorityEnemy.y);
-  const plannedMoveEffectiveRangePx = getPlaneEffectiveRangePx(plannedMove.plane);
-  const isPriorityEnemyInDirectRange = priorityEnemyDistance <= plannedMoveEffectiveRangePx;
-  const directAttackShieldFactor = priorityEnemy?.shieldActive ? 0.45 : 1;
-  const hasGoodDirectHitChance = Boolean(priorityEnemy)
-    && isPriorityEnemyInDirectRange
-    && hasPriorityEnemyPathClear
-    && directAttackShieldFactor >= 0.4;
-  const landingPoint = getAiMoveLandingPoint(plannedMove);
-  const enemyBase = getBaseAnchor("green");
-  const riskProfile = context?.aiRiskProfile?.profile || "balanced";
-  const softFallbackReady = aiRoundState.inventoryIdleTurns >= AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD
-    && aiRoundState.inventorySoftFallbackCooldown <= 0;
-  const recentInventorySignals = typeof getAiInventoryRecentMatchSignals === "function"
-    ? getAiInventoryRecentMatchSignals(plannedMove?.goalName || aiRoundState?.currentGoal || null)
-    : null;
-  const localInventoryUnlockTrendState = maybeUseInventoryBeforeLaunch.__localInventoryUnlockTrendState
-    && typeof maybeUseInventoryBeforeLaunch.__localInventoryUnlockTrendState === "object"
-    ? maybeUseInventoryBeforeLaunch.__localInventoryUnlockTrendState
-    : { lastIdleTurns: null, risingStreak: 0 };
-  const currentIdleTurns = Number.isFinite(aiRoundState?.inventoryIdleTurns) ? aiRoundState.inventoryIdleTurns : 0;
-  const idleTurnsAreRisingConsecutively = Number.isFinite(localInventoryUnlockTrendState.lastIdleTurns)
-    && currentIdleTurns > localInventoryUnlockTrendState.lastIdleTurns;
-  const inventoryIdleTrendRisingStreak = idleTurnsAreRisingConsecutively
-    ? localInventoryUnlockTrendState.risingStreak + 1
-    : 0;
-  maybeUseInventoryBeforeLaunch.__localInventoryUnlockTrendState = {
-    lastIdleTurns: currentIdleTurns,
-    risingStreak: inventoryIdleTrendRisingStreak,
-  };
-  const deadlockFromCurrentTurn = explicitInventoryUnlock
-    || `${plannedMove?.decisionReason || ""}`.toLowerCase().includes("fallback")
-    || `${plannedMove?.goalName || ""}`.toLowerCase().includes("fallback")
-    || softFallbackReady;
-  const deadlockFromIdleTrend = inventoryIdleTrendRisingStreak >= 2;
-  const deadlockFromCandidateRejectPressure = Boolean(
-    recentInventorySignals
-    && (
-      recentInventorySignals.repeatedFallbackSelected
-      || recentInventorySignals.repeatedShotPlanNotFound
-      || recentInventorySignals.softReleaseReady
-    )
-  );
-  const antiFallbackInventoryUnlock = deadlockFromCurrentTurn
-    || deadlockFromIdleTrend
-    || deadlockFromCandidateRejectPressure;
-  const fallbackNow = `${plannedMove?.decisionReason || ""}`.toLowerCase().includes("fallback")
-    || `${plannedMove?.goalName || ""}`.toLowerCase().includes("fallback");
-  const oneTacticalTryAllowed = antiFallbackInventoryUnlock
-    && (fallbackNow || (recentInventorySignals?.fallbackSelectedCount ?? 0) >= 2);
-  let oneTacticalTryUsed = false;
-  const inventoryPlanBForcedAfterRepeatedNoShot = recentInventorySignals?.planBForcedAfterRepeatedNoShot === true;
-  const inventoryPlanBReasonCode = "inventory_plan_b_forced_after_repeated_no_shot";
-  const attackRangePx = typeof ATTACK_RANGE_PX === "number" && Number.isFinite(ATTACK_RANGE_PX) ? ATTACK_RANGE_PX : MAX_DRAG_DISTANCE * 0.58;
-  // Все стратегические дистанции ниже считаем в пикселях полёта (те же единицы, что у реального запуска самолёта).
-  const baseFlightRangeCells = Number.isFinite(settings?.flightRangeCells)
-    ? settings.flightRangeCells
-    : 30;
-  const baseFlightRange = baseFlightRangeCells * CELL_SIZE;
-  // Для оценки выгоды топлива создаём временную копию самолёта с включённым fuel-баффом,
-  // чтобы расчёт не зависел от того, применён ли предмет к plannedMove.plane в текущий момент.
-  const rangePlane = {
-    ...plannedMove.plane,
-    activeTurnBuffs: {
-      ...(plannedMove.plane?.activeTurnBuffs || {}),
-      fuel: true,
-    },
-  };
-  const fuelFlightRangeCellsRaw = getEffectiveFlightRangeCells(rangePlane);
-  const fuelFlightRangeCells = Number.isFinite(fuelFlightRangeCellsRaw)
-    ? fuelFlightRangeCellsRaw
-    : baseFlightRangeCells * 2;
-  const fuelFlightRange = fuelFlightRangeCells * CELL_SIZE;
-  const effectiveCellSize = typeof CELL_SIZE === "number" && Number.isFinite(CELL_SIZE) ? CELL_SIZE : 40;
-  const hasMeaningfulProgressThisTurn = moveDistance >= Math.max(effectiveCellSize * 1.2, plannedMoveEffectiveRangePx * 0.2);
-  const contactTargetsForUnlock = [enemyBase];
-  if(context?.shouldUseFlagsMode){
-    for(const flag of context.availableEnemyFlags || []){
-      const anchor = getFlagAnchor(flag);
-      if(anchor) contactTargetsForUnlock.push(anchor);
-    }
-  }
-  const entersContactZoneThisTurn = Boolean(landingPoint)
-    && contactTargetsForUnlock.some((target) => target && dist(landingPoint, target) <= effectiveCellSize * 2.8);
-  const likelyContactOnNextTurn = Boolean(landingPoint)
-    && contactTargetsForUnlock.some((target) => {
-      if(!target) return false;
-      const distanceFromLanding = dist(landingPoint, target);
-      return distanceFromLanding <= baseFlightRange + effectiveCellSize * 2.4
-        && isPathClear(landingPoint.x, landingPoint.y, target.x, target.y);
-    });
-  const safeBoostOpportunity = hasPriorityEnemyPathClear
-    && moveDistance >= plannedMoveEffectiveRangePx * 0.65
-    && (priorityEnemyDistance <= plannedMoveEffectiveRangePx * 1.2 || entersContactZoneThisTurn || likelyContactOnNextTurn);
-  const tacticalInventoryAdvantage = hasGoodDirectHitChance || entersContactZoneThisTurn || safeBoostOpportunity;
-  const noImmediateInventoryValueWindow = !explicitInventoryUnlock
-    && !allowStrategicInventoryPreparation
-    && !tacticalInventoryAdvantage
-    && !likelyContactOnNextTurn
-    && !priorityEnemy
-    && !hasMeaningfulProgressThisTurn
-    && !antiFallbackInventoryUnlock;
-  const allowInventoryUsage = !noImmediateInventoryValueWindow;
-
-  function evaluateDirectAttackWindow(enemy){
-    if(!enemy) return null;
-    const carrierPriority = enemy?.carriedFlagId ? 0.45 : 0;
-    const shieldPriority = enemy?.shieldActive ? -0.25 : 0.22;
-    const directRangePriority = isPriorityEnemyInDirectRange ? 0.3 : -0.18;
-    const clearPathPriority = hasPriorityEnemyPathClear ? 0.2 : -0.25;
-    const finishingDistance = Math.max(0, 1 - (priorityEnemyDistance / (plannedMoveEffectiveRangePx * 1.15)));
-    const finishingPriority = finishingDistance * (enemy?.shieldActive ? 0.08 : 0.22);
-    const total = carrierPriority + shieldPriority + directRangePriority + clearPathPriority + finishingPriority;
-    return {
-      total,
-      carrierPriority,
-      shieldPriority,
-      directRangePriority,
-      clearPathPriority,
-      finishingPriority,
-    };
-  }
-
-  function isPlannedMoveLikelyProfitableTrade(enemy){
-    if(!enemy || !landingPoint) return false;
-    const landingDistance = dist(landingPoint, enemy);
-    const fromCurrentDistance = dist(plannedMove.plane, enemy);
-    const inFightWindow = landingDistance <= attackRangePx * 1.25 || fromCurrentDistance <= attackRangePx * 1.1;
-    const laneOpenAfterMove = isPathClear(landingPoint.x, landingPoint.y, enemy.x, enemy.y);
-    const enemyLooksVulnerable = !enemy.shieldActive || landingDistance <= attackRangePx * 0.9;
-    return inFightWindow && laneOpenAfterMove && enemyLooksVulnerable;
-  }
-
-
-
-  function tryApplyAiInventoryItem(itemType, options = {}){
-    const bypassLowConfidenceLock = options?.bypassLowConfidenceLock === true;
-    const lockReason = options?.lockReason || "inventory_locked_for_low_confidence_move";
-    const lockStage = options?.lockStage || "inventory_execution_gate";
-    if(hasSingleUseBuffBeenSpentThisTurn(itemType)){
-      logAiDecision("inventory_single_use_buff_already_spent", {
-        itemType,
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: strategicGoal || null,
-        stage: lockStage,
-      });
-      return false;
-    }
-    if(!bypassLowConfidenceLock && !allowInventoryUsage){
-      logAiDecision("inventory_usage_locked", {
-        itemType,
-        planeId: plannedMove?.plane?.id ?? null,
-        reason: lockReason,
-        goal: strategicGoal || null,
-        idleTurns: aiRoundState.inventoryIdleTurns,
-        stage: lockStage,
-        allowedAsPreparationMove: allowStrategicInventoryPreparation,
-        antiFallbackInventoryUnlock,
-      });
-      recordInventoryAiDecision("inventory_usage_locked", {
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: strategicGoal || null,
-        itemType,
-        reasonCodes: antiFallbackInventoryUnlock ? ["inventory_locked", "anti_fallback_measure_blocked"] : ["inventory_locked"],
-        rejectReasons: [lockReason],
-      });
-      return false;
-    }
-    return applyItemToOwnPlane(itemType, "blue", plannedMove.plane);
-  }
-  function markSoftFallbackUse(itemType, details = {}){
-    aiRoundState.lastInventorySoftFallbackUsed = true;
-    logAiDecision("inventory_soft_fallback_used", {
-      itemType,
-      idleTurns: aiRoundState.inventoryIdleTurns,
-      cooldown: aiRoundState.inventorySoftFallbackCooldown,
-      ...details,
-    });
-  }
-
-  function tryPlaceBlueMineForcedFallback(){
-    const candidateAnchors = [];
-    const pushAnchor = (point) => {
-      if(!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
-      candidateAnchors.push({ x: point.x, y: point.y });
-    };
-
-    pushAnchor(landingPoint);
-    pushAnchor(enemyBase);
-
-    if(Array.isArray(context?.enemies)){
-      for(const enemy of context.enemies){
-        pushAnchor(enemy);
-      }
-    }
-
-    if(plannedMove?.plane){
-      pushAnchor(plannedMove.plane);
-      if(landingPoint){
-        pushAnchor({
-          x: (plannedMove.plane.x + landingPoint.x) * 0.5,
-          y: (plannedMove.plane.y + landingPoint.y) * 0.5,
-        });
-      }
-    }
-
-    const offsetStep = Math.max(8, Number.isFinite(CELL_SIZE) ? CELL_SIZE * 0.55 : 22);
-    const offsets = [
-      { x: 0, y: 0 },
-      { x: offsetStep, y: 0 },
-      { x: -offsetStep, y: 0 },
-      { x: 0, y: offsetStep },
-      { x: 0, y: -offsetStep },
-      { x: offsetStep, y: offsetStep },
-      { x: -offsetStep, y: offsetStep },
-      { x: offsetStep, y: -offsetStep },
-      { x: -offsetStep, y: -offsetStep },
-    ];
-
-    for(const anchor of candidateAnchors){
-      for(const offset of offsets){
-        const placement = {
-          x: anchor.x + offset.x,
-          y: anchor.y + offset.y,
-          cellX: Math.floor((anchor.x + offset.x - FIELD_LEFT) / CELL_SIZE),
-          cellY: Math.floor((anchor.y + offset.y - FIELD_TOP) / CELL_SIZE),
-        };
-        if(!isMinePlacementValid(placement)) continue;
-        placeMine({
-          owner: "blue",
-          x: placement.x,
-          y: placement.y,
-          cellX: placement.cellX,
-          cellY: placement.cellY,
-        });
-        aiRoundState.lastMinePlacementMeta = {
-          scenario: "mine_forced_always_use_fallback",
-          placement,
-        };
-        return placement;
-      }
-    }
-
-    for(let cellY = 0; cellY < GRID_ROWS; cellY += 1){
-      for(let cellX = 0; cellX < GRID_COLS; cellX += 1){
-        const placement = {
-          x: FIELD_LEFT + (cellX + 0.5) * CELL_SIZE,
-          y: FIELD_TOP + (cellY + 0.5) * CELL_SIZE,
-          cellX,
-          cellY,
-        };
-        if(!isMinePlacementValid(placement)) continue;
-        placeMine({
-          owner: "blue",
-          x: placement.x,
-          y: placement.y,
-          cellX: placement.cellX,
-          cellY: placement.cellY,
-        });
-        aiRoundState.lastMinePlacementMeta = {
-          scenario: "mine_forced_always_use_grid_fallback",
-          placement,
-        };
-        return placement;
-      }
-    }
-    return null;
-  }
-
-  function tryForceUseMineIfAvailable(){
-    const mineCount = Number(inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0);
-    if(mineCount <= 0) return false;
-
-    let placementMode = null;
-    let used = false;
-    const forcedDefensive = tryPlaceBlueDefensiveMine(context, plannedMove);
-    if(forcedDefensive){
-      used = true;
-      placementMode = "defensive";
-    } else {
-      const forcedBase = tryPlaceBlueMineNearEnemyBase(context, plannedMove);
-      if(forcedBase){
-        used = true;
-        placementMode = "base";
-      }
-    }
-
-    let forcedFallbackPlacement = null;
-    if(!used){
-      forcedFallbackPlacement = tryPlaceBlueMineForcedFallback();
-      if(forcedFallbackPlacement){
-        used = true;
-        placementMode = "forced_fallback";
-      }
-    }
-
-    if(!used){
-      logAiDecision("mine_forced_always_use_blocked", {
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: strategicGoal || null,
-        reason: "no_valid_placement_found",
-      });
-      return false;
-    }
-
-    removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
-    plannedMove.inventoryUsageReason = "mine_forced_always_use";
-    logAiDecision("mine_forced_always_use", {
-      planeId: plannedMove?.plane?.id ?? null,
-      goal: strategicGoal || null,
-      reasonCode: "mine_forced_always_use",
-      placementMode,
-      fallbackPlacement: forcedFallbackPlacement
-        ? {
-            x: Number(forcedFallbackPlacement.x.toFixed(1)),
-            y: Number(forcedFallbackPlacement.y.toFixed(1)),
-            cellX: forcedFallbackPlacement.cellX,
-            cellY: forcedFallbackPlacement.cellY,
-          }
-        : null,
-    });
-    logTacticalItemFinalDecision(INVENTORY_ITEM_TYPES.MINE, {
-      planeId: plannedMove?.plane?.id ?? null,
-      goal: strategicGoal || null,
-      finalDecision: "used",
-      reason: "mine_forced_always_use",
-    });
-    return true;
-  }
-
-  if(tryForceUseMineIfAvailable()){
-    return true;
-  }
-
-  function evaluateFuelMaterialGain(enemyFlagAnchor, tacticalContext = {}){
-    const FUEL_SAFETY_GAIN_DELTA_MIN = 0.12;
-    const contactTargets = [
-      {
-        name: "enemy_base",
-        target: enemyBase,
-        contactRadius: CELL_SIZE * 2.4,
-      },
-      {
-        name: "priority_enemy",
-        target: priorityEnemy,
-        contactRadius: attackRangePx,
-      },
-      {
-        name: "enemy_flag",
-        target: enemyFlagAnchor,
-        contactRadius: CELL_SIZE * 2.4,
-      },
-    ];
-
-    const scoredTargets = contactTargets
-      .filter((entry) => Boolean(entry.target))
-      .map((entry) => {
-        const targetDistance = dist(plannedMove.plane, entry.target);
-        const reachableWithoutFuel = targetDistance <= baseFlightRange + entry.contactRadius;
-        const reachableWithFuel = targetDistance <= fuelFlightRange + entry.contactRadius;
-        return {
-          ...entry,
-          targetDistance,
-          reachableWithoutFuel,
-          reachableWithFuel,
-        };
-      });
-
-    const newReachableTarget = scoredTargets.find((entry) => entry.reachableWithFuel && !entry.reachableWithoutFuel) || null;
-    const fuelSelectedCandidate = tacticalContext?.fuelTacticalPlans?.selectedCandidate || null;
-    const baseSelectedCandidate = tacticalContext?.baseTacticalPlans?.selectedCandidate || null;
-    const safetyGainOnSameObjective = Boolean(
-      fuelSelectedCandidate
-      && baseSelectedCandidate
-      && fuelSelectedCandidate.targetName === baseSelectedCandidate.targetName
-      && (fuelSelectedCandidate.returnSafetyScore - baseSelectedCandidate.returnSafetyScore) >= FUEL_SAFETY_GAIN_DELTA_MIN,
-    );
-
-    return {
-      hasMaterialGain: Boolean(newReachableTarget) || safetyGainOnSameObjective,
-      hasNewReachableTarget: Boolean(newReachableTarget),
-      hasSafetyGainOnSameObjective: safetyGainOnSameObjective,
-      newReachableTarget,
-      safetyScoreDeltaForSameObjective: fuelSelectedCandidate && baseSelectedCandidate
-        && fuelSelectedCandidate.targetName === baseSelectedCandidate.targetName
-        ? Number((fuelSelectedCandidate.returnSafetyScore - baseSelectedCandidate.returnSafetyScore).toFixed(3))
-        : 0,
-      scoredTargets,
-    };
-  }
-
-  function consumeFuelTrainingFlag(reason, details = {}){
-    const trainingMeta = aiRoundState?.trainingForceFuelOnNextAiTurn || null;
-    if(!trainingMeta || !trainingMeta.enabled) return;
-    aiRoundState.trainingForceFuelOnNextAiTurn = {
-      enabled: false,
-      requestedAtTurn: trainingMeta.requestedAtTurn ?? null,
-      source: trainingMeta.source ?? null,
-    };
-    logAiDecision("fuel_training_skipped_with_reason", {
-      reason,
-      requestedAtTurn: trainingMeta.requestedAtTurn ?? null,
-      source: trainingMeta.source ?? null,
-      planeId: plannedMove?.plane?.id ?? null,
-      ...details,
-    });
-    updateAiFuelTrainingOutcome({
-      usedFuel: false,
-      consumedItemType: null,
-      reason: `fuel_training_skipped_with_reason:${reason}`,
-      reasonSource: "logAiDecision",
-      planeId: plannedMove?.plane?.id ?? null,
-    });
-  }
-
 
   function logSelectedInventoryExecutionFailure(itemType, reason, details = {}){
     const payload = {
@@ -25010,1812 +24554,159 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       itemType: payload.itemType,
       reasonCategory: "inventory_selection_failure",
       reasonCode: "selected_candidate_execution_failed",
-      reasonCodes: `${payload.reason || ""}`.includes("anti_fallback")
-        ? ["selected_candidate_execution_failed", "anti_fallback_measure_rejected"]
-        : ["selected_candidate_execution_failed"],
+      reasonCodes: ["selected_candidate_execution_failed"],
       rejectReasons: [payload.reason],
     });
   }
 
-  function markTacticalCandidateExecutionFailed(candidate, failureReason, details = {}){
-    if(!candidate || (candidate.itemType !== INVENTORY_ITEM_TYPES.MINE && candidate.itemType !== INVENTORY_ITEM_TYPES.DYNAMITE)){
-      return;
+  function executeCommittedInventoryAction(candidate, executionSource){
+    if(!candidate || !candidate.itemType){
+      return { executed: false, reason: "selected_candidate_missing" };
     }
-    candidate.executionFailed = true;
-    candidate.executionFailureReason = failureReason || "tactical_execution_failed";
-    candidate.executionFailureDetails = {
-      ...(candidate.executionFailureDetails || {}),
-      ...details,
-      failedAtTurn: aiRoundState?.turnNumber ?? null,
-    };
-  }
+    const itemType = candidate.itemType;
+    if(Number(inventory.counts?.[itemType] ?? 0) <= 0){
+      return { executed: false, reason: "selected_candidate_item_missing_in_inventory", itemType };
+    }
+    if(SINGLE_USE_BUFF_TYPES_PER_TURN.has(itemType) && usedBuffTypesThisTurn.has(itemType)){
+      return { executed: false, reason: "selected_candidate_buff_already_used_this_turn", itemType };
+    }
 
-  function executeSelectedInventoryCandidate(selectedInventoryCandidate, executionSource = "selected_inventory_candidate"){
-    if(!selectedInventoryCandidate) return { executed: false, executionFailureReason: "selected_candidate_missing" };
-    const selectedType = selectedInventoryCandidate.itemType;
-    const hasSelectedItemInInventory = Number(inventory.counts?.[selectedType] ?? 0) > 0;
     let executed = false;
-    let executionFailureReason = null;
-
-    if(!hasSelectedItemInInventory){
-      executionFailureReason = "selected_candidate_item_missing_in_inventory";
-    } else if(selectedType === INVENTORY_ITEM_TYPES.FUEL){
-      if(!allowBuffItems){
-        executionFailureReason = "selected_candidate_blocked_by_inventory_phase";
-      } else if(hasSingleUseBuffBeenSpentThisTurn(INVENTORY_ITEM_TYPES.FUEL)){
-        executionFailureReason = "selected_candidate_buff_already_used_this_turn";
-      } else {
-        executed = tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.FUEL, { bypassLowConfidenceLock: true });
-        if(executed){
-          removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
-          rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.FUEL);
-          plannedMove.aiFuelTacticalDecision = {
-            stage: "selected_candidate",
-            selectedScenario: selectedInventoryCandidate.fuelScenario || selectedInventoryCandidate.reason || null,
-            targetContactPoint: selectedInventoryCandidate.target || null,
-            returnPlan: null,
-            returnSafetyScore: null,
-            requiredReturnSafetyThreshold: null,
-            actualReturnSafetyScore: null,
-            rejectedScenarios: [],
-            baseFilterHasMaterialGain: true,
-            rejectionReason: null,
-          };
-        } else {
-          executionFailureReason = "selected_candidate_apply_failed";
-        }
-      }
-    } else if(selectedType === INVENTORY_ITEM_TYPES.CROSSHAIR){
-      if(!allowBuffItems){
-        executionFailureReason = "selected_candidate_blocked_by_inventory_phase";
-      } else if(hasSingleUseBuffBeenSpentThisTurn(INVENTORY_ITEM_TYPES.CROSSHAIR)){
-        executionFailureReason = "selected_candidate_buff_already_used_this_turn";
-      } else {
-        executed = tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.CROSSHAIR, { bypassLowConfidenceLock: true });
-        if(executed){
-          removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
-          rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.CROSSHAIR);
-        }
-        else executionFailureReason = "selected_candidate_apply_failed";
-      }
-    } else if(selectedType === INVENTORY_ITEM_TYPES.WINGS){
-      if(hasSingleUseBuffBeenSpentThisTurn(INVENTORY_ITEM_TYPES.WINGS)){
-        executionFailureReason = "selected_candidate_buff_already_used_this_turn";
-      } else {
-        executed = tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.WINGS, { bypassLowConfidenceLock: true });
-        if(executed){
-          removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.WINGS);
-          rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.WINGS);
-        } else executionFailureReason = "selected_candidate_apply_failed";
-      }
-    } else if(selectedType === INVENTORY_ITEM_TYPES.INVISIBILITY){
-      if(!allowInvisibility){
-        executionFailureReason = "selected_candidate_invisibility_blocked_by_rules";
-      } else if(hasSingleUseBuffBeenSpentThisTurn(INVENTORY_ITEM_TYPES.INVISIBILITY)){
-        executionFailureReason = "selected_candidate_buff_already_used_this_turn";
-      } else {
-        executed = queueInvisibilityEffectForPlayer("blue");
-        if(executed){
-          removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.INVISIBILITY);
-          rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.INVISIBILITY);
-        }
-        else executionFailureReason = "selected_candidate_apply_failed";
-      }
-    } else if(selectedType === INVENTORY_ITEM_TYPES.MINE){
-      if(!allowTacticalItems){
-        executionFailureReason = "selected_candidate_blocked_by_inventory_phase";
-      } else {
-        try {
-          const placementMode = selectedInventoryCandidate.placementMode === "defensive" ? "defensive" : "base";
-          const selectedMinePlan = selectedInventoryCandidate.minePlan || null;
-          const preservedStrategicTargetPoint = typeof getAiStrategicTargetPoint === "function"
-            ? getAiStrategicTargetPoint(context, plannedMove)
-            : null;
-          const flagTargetAnchor = context?.shouldUseFlagsMode && Array.isArray(context?.availableEnemyFlags) && typeof getFlagAnchor === "function"
-            ? context.availableEnemyFlags
-              .map((flag) => getFlagAnchor(flag))
-              .filter(Boolean)
-              .sort((a, b) => dist(plannedMove.plane, a) - dist(plannedMove.plane, b))[0] || null
-            : null;
-          const flagPickupBaseline = strategicGoal === "capture_enemy_flag" && flagTargetAnchor && typeof evaluateFlagPickupContinuation === "function"
-            ? evaluateFlagPickupContinuation(plannedMove.plane, flagTargetAnchor, {
-                homeBase: context?.homeBase || getBaseAnchor("blue"),
-                enemies: Array.isArray(context?.enemies) ? context.enemies : [],
-                context,
-                goalName: strategicGoal,
-              })
-            : null;
-          const mineEnabledFlagPickup = strategicGoal === "capture_enemy_flag"
-            && flagTargetAnchor
-            && flagPickupBaseline?.hasSafeEscape !== true
-            && typeof evaluateMineEnabledFlagPickupContinuation === "function"
-            ? evaluateMineEnabledFlagPickupContinuation(plannedMove.plane, flagTargetAnchor, {
-                homeBase: context?.homeBase || getBaseAnchor("blue"),
-                enemies: Array.isArray(context?.enemies) ? context.enemies : [],
-                context,
-                goalName: strategicGoal,
-                baselineContinuation: flagPickupBaseline,
-              })
-            : null;
-          const safeFinisherMineCoverage = selectedMinePlan && typeof evaluatePostLaunchSafetyWithMine === "function"
-            ? evaluatePostLaunchSafetyWithMine(context, plannedMove, selectedMinePlan)
-            : { beforeSafe: false, afterSafe: false };
-          const mineRequiredForFlagPickup = mineEnabledFlagPickup?.after?.hasSafeEscape === true;
-          const mineEnablesSafeFinisher = strategicGoal === "direct_finisher"
-            && safeFinisherMineCoverage.beforeSafe === false
-            && safeFinisherMineCoverage.afterSafe === true
-            && Boolean(selectedMinePlan);
-
-          if(mineRequiredForFlagPickup){
-            plannedMove.preservedStrategicTargetPoint = preservedStrategicTargetPoint
-              ? { x: preservedStrategicTargetPoint.x, y: preservedStrategicTargetPoint.y }
-              : null;
-            plannedMove.inventoryUsageReason = "mine_enables_flag_pickup";
-          } else if(mineEnablesSafeFinisher){
-            plannedMove.preservedStrategicTargetPoint = preservedStrategicTargetPoint
-              ? { x: preservedStrategicTargetPoint.x, y: preservedStrategicTargetPoint.y }
-              : null;
-            plannedMove.inventoryUsageReason = "mine_enables_safe_finisher";
-          }
-
-          const mineSeries = selectedInventoryCandidate?.tacticalSeries;
-          if(mineSeries?.itemType === INVENTORY_ITEM_TYPES.MINE && Array.isArray(mineSeries.steps) && mineSeries.steps.length > 0){
-            let executedCount = 0;
-            let stopReason = mineSeries?.diagnostics?.stopReason || null;
-            for(let stepIndex = 0; stepIndex < mineSeries.steps.length; stepIndex += 1){
-              if(Number(inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0) <= 0){
-                stopReason = "charges_exhausted";
-                break;
-              }
-              const step = mineSeries.steps[stepIndex];
-              const stepPlacementMode = step?.placementMode === "defensive" ? "defensive" : "base";
-              const stepResult = stepPlacementMode === "defensive"
-                ? tryPlaceBlueDefensiveMine(context, plannedMove, { excludePlacements: mineSeries.steps.slice(0, stepIndex).map((entry) => entry?.minePlan?.placement).filter(Boolean) })
-                : tryPlaceBlueMineNearEnemyBase(context, plannedMove, { excludePlacements: mineSeries.steps.slice(0, stepIndex).map((entry) => entry?.minePlan?.placement).filter(Boolean) });
-              if(!stepResult){
-                stopReason = "step_execution_failed";
-                break;
-              }
-              removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
-              inventory.counts[INVENTORY_ITEM_TYPES.MINE] = Math.max(0, Number(inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] || 0) - 1);
-              executedCount += 1;
-            }
-            executed = executedCount > 0;
-            selectedInventoryCandidate.tacticalSeriesDiagnostics = {
-              ...(mineSeries?.diagnostics || {}),
-              spentCharges: executedCount,
-              stopReason: stopReason || (executed ? "benefit_target_reached" : "step_execution_failed"),
-            };
-          } else {
-            executed = placementMode === "defensive"
-              ? tryPlaceBlueDefensiveMine(context, plannedMove)
-              : tryPlaceBlueMineNearEnemyBase(context, plannedMove);
-          }
-        } catch (tacticalExecutionError) {
-          executionFailureReason = "mine_execution_exception";
-          markTacticalCandidateExecutionFailed(selectedInventoryCandidate, executionFailureReason, {
-            stage: "mine_execution",
-          });
-          logAiDecision("inventory_tactical_execution_exception", {
-            itemType: selectedType,
-            stage: "mine_execution",
-            reasonCode: "mine_execution_exception",
-            selectedInventoryCandidateReason: selectedInventoryCandidate?.reason || null,
-            target: selectedInventoryCandidate?.target || selectedInventoryCandidate?.minePlan?.placement || null,
-            stack: tacticalExecutionError?.stack || null,
-            message: tacticalExecutionError?.message || String(tacticalExecutionError),
-            planeId: plannedMove?.plane?.id ?? null,
-            goal: strategicGoal || null,
-          });
-        }
-        if(executed){
-          if(!selectedInventoryCandidate?.tacticalSeries){
-            removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
-          }
-          if(selectedInventoryCandidate.mineUseReason){
-            logAiDecision(selectedInventoryCandidate.mineUseReason, {
-              planeId: plannedMove?.plane?.id ?? null,
-              enemyId: priorityEnemy?.id ?? null,
-              scenario: selectedInventoryCandidate.minePlan?.scenario || null,
-              routeBlockScore: selectedInventoryCandidate.minePlan ? Number((selectedInventoryCandidate.minePlan.score || 0).toFixed(3)) : null,
-              blockedEscapeCount: selectedInventoryCandidate.minePlan?.blockedEscapeCount ?? 0,
-              cutRouteCount: selectedInventoryCandidate.minePlan?.cutRouteCount ?? 0,
-              trapCount: selectedInventoryCandidate.minePlan?.trapCount ?? 0,
-              totalDirectionLoss: selectedInventoryCandidate.minePlan?.totalDirectionLoss ?? 0,
-              safeAfterPlacement: selectedInventoryCandidate.safeAfterPlacement ?? null,
-            });
-          }
-          if(mineRequiredForFlagPickup || mineEnablesSafeFinisher){
-            logAiDecision(mineRequiredForFlagPickup ? "mine_enables_flag_pickup" : "mine_enables_safe_finisher", {
-              planeId: plannedMove.plane?.id ?? null,
-              goal: strategicGoal || null,
-              targetPoint: plannedMove.preservedStrategicTargetPoint || null,
-              beforeSafeEscape: flagPickupBaseline?.hasSafeEscape ?? safeFinisherMineCoverage.beforeSafe,
-              afterSafeEscape: mineEnabledFlagPickup?.after?.hasSafeEscape ?? safeFinisherMineCoverage.afterSafe,
-              beforeReturnRoute: flagPickupBaseline?.hasReturnRoute ?? null,
-              afterReturnRoute: mineEnabledFlagPickup?.after?.hasReturnRoute ?? null,
-              minePlacement: mineEnabledFlagPickup?.placement
-                ? { x: Number(mineEnabledFlagPickup.placement.x.toFixed(1)), y: Number(mineEnabledFlagPickup.placement.y.toFixed(1)) }
-                : (selectedMinePlan?.placement
-                    ? { x: Number(selectedMinePlan.placement.x.toFixed(1)), y: Number(selectedMinePlan.placement.y.toFixed(1)) }
-                    : null),
-              threatEnemyId: mineEnabledFlagPickup?.threatEnemyId ?? priorityEnemy?.id ?? null,
-              placementScenario: mineRequiredForFlagPickup ? "mine_between_objective_and_threat" : (selectedMinePlan?.scenario || null),
-            });
-            if(mineRequiredForFlagPickup){
-              logAiDecision("mine_between_objective_and_threat", {
-                planeId: plannedMove.plane?.id ?? null,
-                targetPoint: plannedMove.preservedStrategicTargetPoint,
-                threatEnemyId: mineEnabledFlagPickup?.threatEnemyId ?? null,
-                threatDistance: mineEnabledFlagPickup?.threatDistance ?? null,
-                minePlacement: mineEnabledFlagPickup?.placement
-                  ? { x: Number(mineEnabledFlagPickup.placement.x.toFixed(1)), y: Number(mineEnabledFlagPickup.placement.y.toFixed(1)) }
-                  : null,
-              });
-            }
-          }
-        } else {
-          executionFailureReason = "selected_candidate_mine_placement_failed";
-        }
-      }
-    } else if(selectedType === INVENTORY_ITEM_TYPES.DYNAMITE){
-      if(!allowTacticalItems){
-        executionFailureReason = "selected_candidate_blocked_by_inventory_phase";
-      } else {
-        try {
-          const target = selectedInventoryCandidate.target || null;
-          const shouldUseDynamite = selectedInventoryCandidate.reason !== "dynamite_route_opening"
-            || Boolean(
-              selectedInventoryCandidate?.dynamiteRouteReplan?.usesOpenedCorridor
-              || selectedInventoryCandidate?.dynamiteRouteReplan?.noticeableImprovement
-              || selectedInventoryCandidate?.dynamiteRouteReplan?.moderateValidGain
-              || (selectedInventoryCandidate?.dynamiteRouteReplan?.accumulatedValue2Turns ?? 0) >= 0.34
-            );
-          const repeatedShotPlanNotFound = Boolean(recentInventorySignals?.repeatedShotPlanNotFound);
-          const repeatedFallbackSelected = Boolean(recentInventorySignals?.repeatedFallbackSelected);
-          const dynamiteDeadlockBreaker = Boolean(
-            deadlockFromCurrentTurn
-            || repeatedShotPlanNotFound
-            || repeatedFallbackSelected
-          );
-          const forcedDynamiteByDeadlock = target && dynamiteDeadlockBreaker && !shouldUseDynamite;
-          if(!target){
-            executionFailureReason = "selected_candidate_dynamite_target_missing";
-          } else {
-            const dynamiteSeries = selectedInventoryCandidate?.tacticalSeries;
-            if(dynamiteSeries?.itemType === INVENTORY_ITEM_TYPES.DYNAMITE && Array.isArray(dynamiteSeries.steps) && dynamiteSeries.steps.length > 0){
-            let executedCount = 0;
-            let stopReason = dynamiteSeries?.diagnostics?.stopReason || null;
-            const executedTargets = [];
-            const usedSeriesTargetKeys = new Set();
-            for(let stepIndex = 0; stepIndex < dynamiteSeries.steps.length; stepIndex += 1){
-              if(Number(inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0) <= 0){
-                stopReason = "charges_exhausted";
-                break;
-              }
-              const step = dynamiteSeries.steps[stepIndex];
-              const preferredColliderId = step?.target?.colliderId || null;
-              const recalculatedTarget = withTemporarilyIgnoredDynamiteColliders(executedTargets, () => {
-                const routeAwareTarget = getDynamiteCandidateForCurrentRoute(context, plannedMove);
-                if(routeAwareTarget) return routeAwareTarget;
-                const strategicGate = shouldUseStrategicDynamiteForPlannedMove(plannedMove, context);
-                const strategicDynamite = strategicGate.allowStrategicProbe ? evaluateStrategicDynamiteTargets(context, plannedMove) : null;
-                return strategicDynamite?.bestTarget || null;
-              });
-              const stepTarget = recalculatedTarget
-                ? { x: recalculatedTarget.cx, y: recalculatedTarget.cy, colliderId: recalculatedTarget?.collider?.id ?? null, spriteId: recalculatedTarget?.id ?? null, geometry: recalculatedTarget }
-                : step?.target;
-              const hasNoFreshGain = preferredColliderId && stepTarget?.colliderId === preferredColliderId && stepIndex > 0 && !recalculatedTarget;
-              if(hasNoFreshGain){
-                stopReason = "no_new_gain";
-                break;
-              }
-              const stepTargetKey = (() => {
-                if(stepTarget?.colliderId != null) return `collider:${stepTarget.colliderId}`;
-                const hasNumericTarget = Number.isFinite(stepTarget?.x) && Number.isFinite(stepTarget?.y);
-                if(!hasNumericTarget) return null;
-                return `point:${Math.round(stepTarget.x)}:${Math.round(stepTarget.y)}`;
-              })();
-              if(stepTargetKey && usedSeriesTargetKeys.has(stepTargetKey)){
-                stopReason = "duplicate_target_same_turn";
-                break;
-              }
-              const stepExecuted = stepTarget ? placeBlueDynamiteAt(stepTarget.x, stepTarget.y) : false;
-              if(!stepExecuted){
-                stopReason = "step_execution_failed";
-                break;
-              }
-              removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
-              inventory.counts[INVENTORY_ITEM_TYPES.DYNAMITE] = Math.max(0, Number(inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] || 0) - 1);
-              if(stepTargetKey) usedSeriesTargetKeys.add(stepTargetKey);
-              if(stepTarget?.geometry) executedTargets.push(stepTarget.geometry);
-              executedCount += 1;
-            }
-            executed = executedCount > 0;
-            selectedInventoryCandidate.tacticalSeriesDiagnostics = {
-              ...(dynamiteSeries?.diagnostics || {}),
-              spentCharges: executedCount,
-              stopReason: stopReason || (executed ? "benefit_target_reached" : "step_execution_failed"),
-            };
-            } else {
-              executed = placeBlueDynamiteAt(target.x, target.y);
-            }
-            if(executed){
-            if(!selectedInventoryCandidate?.tacticalSeries){
-              removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
-            }
-            plannedMove.inventoryUsageReason = "dynamite_spent_for_pressure";
-            setAiDynamiteIntentFromCandidate({
-              id: target?.spriteId ?? null,
-              collider: { id: target?.colliderId ?? null },
-              cx: target?.x ?? null,
-              cy: target?.y ?? null,
-            }, plannedMove.inventoryUsageReason, plannedMove, selectedInventoryCandidate.dynamiteExpectedRoute || null);
-            logAiDecision("dynamite_spent_for_pressure", {
-              planeId: plannedMove?.plane?.id ?? null,
-              goal: strategicGoal || null,
-              sourceReason: selectedInventoryCandidate.reason || null,
-              target: selectedInventoryCandidate.target || null,
-              routeReplan: selectedInventoryCandidate.dynamiteRouteReplan || null,
-              strategicDynamiteScore: selectedInventoryCandidate.strategicDynamiteScore ?? null,
-              strategicDynamiteReasons: selectedInventoryCandidate.strategicDynamiteReasons || null,
-            });
-            if(forcedDynamiteByDeadlock){
-              logAiDecision("dynamite_deadlock_breaker_used", {
-                planeId: plannedMove?.plane?.id ?? null,
-                goal: strategicGoal || null,
-                sourceReason: selectedInventoryCandidate.reason || null,
-                target: selectedInventoryCandidate.target || null,
-                routeReplan: selectedInventoryCandidate.dynamiteRouteReplan || null,
-                deadlockFromCurrentTurn,
-                repeatedShotPlanNotFound,
-                repeatedFallbackSelected,
-              });
-            }
-            if(selectedInventoryCandidate.reason === "dynamite_used_for_map_opening"
-              || selectedInventoryCandidate.reason === "dynamite_used_for_future_route_gain"){
-              logAiDecision(selectedInventoryCandidate.reason, {
-                planeId: plannedMove?.plane?.id ?? null,
-                goal: strategicGoal || null,
-                target: selectedInventoryCandidate.target || null,
-                strategicDynamiteScore: selectedInventoryCandidate.strategicDynamiteScore ?? null,
-                strategicDynamiteReasons: selectedInventoryCandidate.strategicDynamiteReasons || null,
-                comparedTargets: selectedInventoryCandidate.comparedTargets || [],
-                tacticalSeriesDiagnostics: selectedInventoryCandidate.tacticalSeriesDiagnostics || null,
-              });
-            }
-            } else {
-              executionFailureReason = "selected_candidate_dynamite_placement_failed";
-            }
-          }
-        } catch (tacticalExecutionError) {
-          executionFailureReason = "dynamite_execution_exception";
-          markTacticalCandidateExecutionFailed(selectedInventoryCandidate, executionFailureReason, {
-            stage: "dynamite_execution",
-          });
-          logAiDecision("inventory_tactical_execution_exception", {
-            itemType: selectedType,
-            stage: "dynamite_execution",
-            reasonCode: "dynamite_execution_exception",
-            selectedInventoryCandidateReason: selectedInventoryCandidate?.reason || null,
-            target: selectedInventoryCandidate?.target || null,
-            stack: tacticalExecutionError?.stack || null,
-            message: tacticalExecutionError?.message || String(tacticalExecutionError),
-            planeId: plannedMove?.plane?.id ?? null,
-            goal: strategicGoal || null,
-          });
-        }
-      }
-    } else {
-      executionFailureReason = "selected_candidate_item_type_not_supported";
-    }
-
-    if(executed){
-      if(selectedInventoryCandidate?.selectionFloorMeta){
-        plannedMove.lastInventorySelectionGate = {
-          originalSelectionFloor: selectedInventoryCandidate.selectionFloorMeta.baseSelectionFloor ?? null,
-          adjustedSelectionFloor: selectedInventoryCandidate.selectionFloorMeta.adjustedSelectionFloor ?? null,
-          unlockedBy: Array.isArray(selectedInventoryCandidate.selectionFloorMeta.unlockReasons)
-            ? selectedInventoryCandidate.selectionFloorMeta.unlockReasons.slice(0, 4)
-            : [],
-        };
-      }
-      if(selectedInventoryCandidate.floorSoftPassAccepted === true){
-        markSoftFallbackUse(selectedType, {
-          reason: "inventory_floor_soft_pass",
-          floorGap: selectedInventoryCandidate.floorSoftPassDelta ?? null,
-        });
-      }
-      const executionReasonCodes = [selectedInventoryCandidate.reason || "inventory_item_applied"];
-      if(selectedInventoryCandidate.floorSoftPassAccepted === true){
-        executionReasonCodes.push("inventory_floor_soft_pass");
-      }
-      if(antiFallbackInventoryUnlock){
-        executionReasonCodes.push("anti_fallback_measure_applied");
-      }
-      if(selectedType === INVENTORY_ITEM_TYPES.FUEL
-        && (executionSource === "selected_inventory_candidate" || executionSource === "selected_inventory_sequence")){
-        executionReasonCodes.push("committed_candidate_executed_without_second_gate");
-      }
-      logAiDecision("inventory_decision", {
-        stage: "inventory_decision",
-        source: executionSource,
-        planeId: plannedMove?.plane?.id ?? null,
-        itemType: selectedType,
-        reason: selectedInventoryCandidate.reason || null,
-        reasonCodes: executionReasonCodes,
-        target: selectedInventoryCandidate.target || null,
-        expectedBenefit: selectedInventoryCandidate.expectedBenefit ?? null,
-        risk: selectedInventoryCandidate.risk ?? null,
-        tacticalSeriesDiagnostics: selectedInventoryCandidate.tacticalSeriesDiagnostics || selectedInventoryCandidate?.tacticalSeries?.diagnostics || null,
-        allowedAsPreparationMove: allowStrategicInventoryPreparation,
-        antiFallbackInventoryUnlock,
-        committedCandidateExecutedWithoutSecondGate: selectedType === INVENTORY_ITEM_TYPES.FUEL
-          && (executionSource === "selected_inventory_candidate" || executionSource === "selected_inventory_sequence"),
-      });
-      if(antiFallbackInventoryUnlock && (selectedType === INVENTORY_ITEM_TYPES.FUEL || selectedType === INVENTORY_ITEM_TYPES.DYNAMITE)){
-        logAiDecision("inventory_anti_fallback_item_used", {
-          planeId: plannedMove?.plane?.id ?? null,
-          goal: strategicGoal || null,
-          itemType: selectedType,
-          reason: selectedInventoryCandidate.reason || "inventory_item_applied",
-          confirmedTarget: selectedInventoryCandidate.target || null,
-          confirmedBenefit: Number((selectedInventoryCandidate.expectedBenefit ?? 0).toFixed(3)),
-          confirmedRisk: Number((selectedInventoryCandidate.risk ?? 0).toFixed(3)),
-        });
-      }
-      recordInventoryAiDecision("inventory_decision", {
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: strategicGoal || null,
-        itemType: selectedType,
-        source: executionSource,
-        reasonCodes: executionReasonCodes,
-      });
-      return { executed: true, executionFailureReason: null };
-    }
-    return { executed: false, executionFailureReason: executionFailureReason || "selected_candidate_execution_failed" };
-  }
-
-  function getTacticalCandidateTargetKey(candidate){
-    if(!candidate) return "candidate_missing";
-    if(candidate.itemType === INVENTORY_ITEM_TYPES.DYNAMITE){
-      const target = candidate?.target || null;
-      if(target?.colliderId) return `dynamite:collider:${target.colliderId}`;
-      if(target?.spriteId) return `dynamite:sprite:${target.spriteId}`;
-      if(Number.isFinite(target?.x) && Number.isFinite(target?.y)){
-        return `dynamite:point:${Number(target.x).toFixed(1)}:${Number(target.y).toFixed(1)}`;
-      }
-      return "dynamite:target_missing";
-    }
-    if(candidate.itemType === INVENTORY_ITEM_TYPES.MINE){
-      const placement = candidate?.minePlan?.placement || candidate?.target || null;
-      if(Number.isFinite(placement?.x) && Number.isFinite(placement?.y)){
-        return `mine:point:${Number(placement.x).toFixed(1)}:${Number(placement.y).toFixed(1)}`;
-      }
-      return `mine:mode:${candidate?.placementMode === "defensive" ? "defensive" : "base"}`;
-    }
-    return `${candidate.itemType || "unknown"}:non_tactical`;
-  }
-
-  function attemptTacticalSecondChance(primaryCandidate, primaryFailureReason){
-    const primaryType = primaryCandidate?.itemType;
-    const isPrimaryTactical = primaryType === INVENTORY_ITEM_TYPES.MINE
-      || primaryType === INVENTORY_ITEM_TYPES.DYNAMITE;
-    if(!isPrimaryTactical) return { used: false, executed: false };
-    const tacticalRetryLimit = 2;
-    const tacticalPool = Array.isArray(plannedMove?.inventoryCandidates)
-      ? plannedMove.inventoryCandidates.filter((candidate) => (
-        candidate
-        && (candidate.itemType === INVENTORY_ITEM_TYPES.MINE || candidate.itemType === INVENTORY_ITEM_TYPES.DYNAMITE)
-      ))
-      : [];
-    if(tacticalPool.length <= 1){
-      logAiDecision("tactical_second_chance_failed", {
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: strategicGoal || null,
-        reason: "no_remaining_tactical_candidates",
-        failedItemType: primaryType || null,
-        failedTargetKey: getTacticalCandidateTargetKey(primaryCandidate),
-        failedExecutionReason: primaryFailureReason || null,
-      });
-      return { used: false, executed: false };
-    }
-    const failedTargetKeys = new Set([getTacticalCandidateTargetKey(primaryCandidate)]);
-    const remainingTacticalCandidates = tacticalPool
-      .filter((candidate) => candidate !== primaryCandidate)
-      .filter((candidate) => !failedTargetKeys.has(getTacticalCandidateTargetKey(candidate)))
-      .sort((a, b) => (
-        Number(b?.adjustedComparableScore ?? b?.comparableScore ?? Number.NEGATIVE_INFINITY)
-        - Number(a?.adjustedComparableScore ?? a?.comparableScore ?? Number.NEGATIVE_INFINITY)
-      ));
-    let attempts = 0;
-    for(const retryCandidate of remainingTacticalCandidates){
-      if(attempts >= tacticalRetryLimit) break;
-      const retryTargetKey = getTacticalCandidateTargetKey(retryCandidate);
-      if(failedTargetKeys.has(retryTargetKey)) continue;
-      attempts += 1;
-      const executionResult = executeSelectedInventoryCandidate(retryCandidate, "tactical_second_chance");
-      if(executionResult.executed){
-        logAiDecision("tactical_second_chance_used", {
-          planeId: plannedMove?.plane?.id ?? null,
-          goal: strategicGoal || null,
-          attempts,
-          retryLimit: tacticalRetryLimit,
-          failedItemType: primaryType || null,
-          failedTargetKey: getTacticalCandidateTargetKey(primaryCandidate),
-          failedExecutionReason: primaryFailureReason || null,
-          executedItemType: retryCandidate.itemType,
-          executedTargetKey: retryTargetKey,
-        });
-        return { used: true, executed: true, candidate: retryCandidate };
-      }
-      failedTargetKeys.add(retryTargetKey);
-      logSelectedInventoryExecutionFailure(retryCandidate.itemType, executionResult.executionFailureReason, {
-        source: "tactical_second_chance",
-        retryAttempt: attempts,
-        retryLimit: tacticalRetryLimit,
-      });
-    }
-    logAiDecision("tactical_second_chance_failed", {
-      planeId: plannedMove?.plane?.id ?? null,
-      goal: strategicGoal || null,
-      attempts,
-      retryLimit: tacticalRetryLimit,
-      failedItemType: primaryType || null,
-      failedTargetKey: getTacticalCandidateTargetKey(primaryCandidate),
-      failedExecutionReason: primaryFailureReason || null,
-      exhaustedCandidateKeys: Array.from(failedTargetKeys),
-    });
-    return { used: attempts > 0, executed: false };
-  }
-
-  const selectedInventorySequence = Array.isArray(plannedMove?.selectedInventorySequence)
-    ? plannedMove.selectedInventorySequence
-    : [];
-  if(selectedInventorySequence.length > 0){
-    const sequenceSteps = selectedInventorySequence.filter((step) => step && step.itemType);
-    const isSequenceValid = sequenceSteps.every((step) => (
-      Number(inventory.counts?.[step.itemType] || 0) > 0
-      && (step.itemType === INVENTORY_ITEM_TYPES.FUEL
-        || step.itemType === INVENTORY_ITEM_TYPES.CROSSHAIR
-        || step.itemType === INVENTORY_ITEM_TYPES.WINGS)
-    ));
-    if(!isSequenceValid){
-      logAiDecision("inventory_sequence_rejected_before_execution", {
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: strategicGoal || null,
-        sequence: sequenceSteps.map((step) => step.itemType),
-        reason: "sequence_invalid_or_missing_items",
-      });
-    } else {
-      let anyStepExecuted = false;
-      for(let index = 0; index < sequenceSteps.length; index += 1){
-        const step = sequenceSteps[index];
-        const executionResult = executeSelectedInventoryCandidate(step, "selected_inventory_sequence");
-        if(executionResult.executed){
-          anyStepExecuted = true;
-          continue;
-        }
-        logSelectedInventoryExecutionFailure(step.itemType, executionResult.executionFailureReason, {
-          source: "selected_inventory_sequence",
-          sequenceStepIndex: index,
-          sequenceLength: sequenceSteps.length,
-          hadCommittedSelection: true,
-          inventoryLockBypassedBecauseAlreadySelected: true,
-        });
-        break;
-      }
-      if(anyStepExecuted){
-        if(plannedMove && Array.isArray(plannedMove.selectedInventorySequence)){
-          plannedMove.selectedInventorySequence = [];
-        }
-        if(plannedMove && plannedMove.selectedInventoryCandidate){
-          plannedMove.selectedInventoryCandidate = null;
-        }
-        return true;
-      }
-    }
-  }
-
-  if(selectedInventoryCandidate){
-    const executionResult = executeSelectedInventoryCandidate(selectedInventoryCandidate, "selected_inventory_candidate");
-    if(executionResult.executed){
-      if(plannedMove && plannedMove.selectedInventoryCandidate){
-        plannedMove.selectedInventoryCandidate = null;
-      }
-      if(plannedMove && Array.isArray(plannedMove.selectedInventorySequence)){
-        plannedMove.selectedInventorySequence = [];
-      }
-      return true;
-    }
-    if(executionResult.executionFailureReason === "mine_execution_exception"
-      || executionResult.executionFailureReason === "dynamite_execution_exception"){
-      markTacticalCandidateExecutionFailed(selectedInventoryCandidate, executionResult.executionFailureReason, {
-        stage: "tactical_execution_recovery",
-      });
-    }
-    const secondChanceResult = attemptTacticalSecondChance(selectedInventoryCandidate, executionResult.executionFailureReason);
-    if(secondChanceResult.executed){
-      if(plannedMove && plannedMove.selectedInventoryCandidate){
-        plannedMove.selectedInventoryCandidate = null;
-      }
-      if(plannedMove && Array.isArray(plannedMove.selectedInventorySequence)){
-        plannedMove.selectedInventorySequence = [];
-      }
-      return true;
-    }
-    logSelectedInventoryExecutionFailure(selectedInventoryCandidate.itemType, executionResult.executionFailureReason, {
-      hadCommittedSelection: true,
-      inventoryLockBypassedBecauseAlreadySelected: true,
-    });
-  }
-
-  const fuelTrainingMeta = aiRoundState?.trainingForceFuelOnNextAiTurn || null;
-  if(allowBuffItems && fuelTrainingMeta?.enabled){
-    logAiDecision("fuel_training_forced_attempt", {
-      requestedAtTurn: fuelTrainingMeta.requestedAtTurn ?? null,
-      source: fuelTrainingMeta.source ?? null,
-      planeId: plannedMove?.plane?.id ?? null,
-      hasFuel: inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0,
-    });
-
-    if(inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0){
-      const appliedByForcedTraining = applyItemToOwnPlane(
-        INVENTORY_ITEM_TYPES.FUEL,
-        "blue",
-        plannedMove.plane,
-      );
-      if(appliedByForcedTraining){
+    if(itemType === INVENTORY_ITEM_TYPES.FUEL){
+      executed = applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, "blue", plannedMove.plane);
+      if(executed){
         removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
         rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.FUEL);
-        aiRoundState.trainingForceFuelOnNextAiTurn = {
-          enabled: false,
-          requestedAtTurn: fuelTrainingMeta.requestedAtTurn ?? null,
-          source: fuelTrainingMeta.source ?? null,
-        };
-        logAiDecision("fuel_training_applied", {
-          requestedAtTurn: fuelTrainingMeta.requestedAtTurn ?? null,
-          source: fuelTrainingMeta.source ?? null,
-          planeId: plannedMove?.plane?.id ?? null,
-          bypassedInventoryLock: allowInventoryUsage !== true,
-        });
-        updateAiFuelTrainingOutcome({
-          usedFuel: true,
-          consumedItemType: INVENTORY_ITEM_TYPES.FUEL,
-          reason: "fuel_training_applied",
-          reasonSource: "logAiDecision",
-          planeId: plannedMove?.plane?.id ?? null,
-        });
-        return true;
       }
-
-      consumeFuelTrainingFlag("apply_item_returned_false", {
-        allowInventoryUsage,
-      });
-    } else {
-      consumeFuelTrainingFlag("no_fuel_in_inventory", {
-        availableFuel: 0,
-      });
-    }
-  }
-
-
-  if((!hasForcedTacticalSpend || allowNonForcedInventoryDuringTacticalSpend) && inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0){
-    const enemyFlag = context?.shouldUseFlagsMode ? getAvailableFlagsByColor("green")[0] : null;
-    const enemyFlagAnchor = enemyFlag ? getFlagAnchor(enemyFlag) : null;
-    const baseTacticalPlans = evaluateFuelTacticalPlans(context, plannedMove, { useFuel: false });
-    const fuelTacticalPlans = evaluateFuelTacticalPlans(context, plannedMove, { useFuel: true });
-    const fuelMaterialGain = evaluateFuelMaterialGain(enemyFlagAnchor, {
-      fuelTacticalPlans,
-      baseTacticalPlans,
-    });
-    const FUEL_RETURN_SAFETY_MIN_THRESHOLD = 0.55;
-    const FUEL_RETURN_SAFETY_DELTA_MIN = 0.12;
-    const selectedFuelCandidate = fuelTacticalPlans?.selectedCandidate || null;
-    const baseReturnSafetyScore = Number(baseTacticalPlans?.returnSafetyScore ?? 0);
-    const fuelReturnSafetyScore = Number(selectedFuelCandidate?.returnSafetyScore ?? fuelTacticalPlans?.returnSafetyScore ?? 0);
-    const hasFuelSafetyThreshold = Boolean(selectedFuelCandidate) && fuelReturnSafetyScore >= FUEL_RETURN_SAFETY_MIN_THRESHOLD;
-    const hasFuelSafetyDelta = Boolean(selectedFuelCandidate)
-      && (fuelReturnSafetyScore - baseReturnSafetyScore) >= FUEL_RETURN_SAFETY_DELTA_MIN;
-    const shouldTryFuelForSafety = Boolean(selectedFuelCandidate) && (hasFuelSafetyThreshold || hasFuelSafetyDelta);
-    plannedMove.aiFuelTacticalDecision = {
-      stage: "primary",
-      selectedScenario: fuelTacticalPlans?.selectedCandidate?.scenario ?? null,
-      targetContactPoint: fuelTacticalPlans?.selectedCandidate?.targetPoint
-        ? {
-            x: Number(fuelTacticalPlans.selectedCandidate.targetPoint.x.toFixed(1)),
-            y: Number(fuelTacticalPlans.selectedCandidate.targetPoint.y.toFixed(1)),
-          }
-        : null,
-      returnPlan: fuelTacticalPlans?.selectedCandidate?.returnPlan
-        ? {
-            type: fuelTacticalPlans.selectedCandidate.returnPlan.returnName,
-            point: {
-              x: Number(fuelTacticalPlans.selectedCandidate.returnPlan.point.x.toFixed(1)),
-              y: Number(fuelTacticalPlans.selectedCandidate.returnPlan.point.y.toFixed(1)),
-            },
-            routeType: fuelTacticalPlans.selectedCandidate.returnPlan.returnLeg?.routeType ?? null,
-          }
-        : null,
-      returnSafetyScore: Number(fuelTacticalPlans?.returnSafetyScore ?? 0),
-      requiredReturnSafetyThreshold: Number(fuelTacticalPlans?.requiredReturnSafetyThreshold ?? 0),
-      actualReturnSafetyScore: Number(fuelTacticalPlans?.actualReturnSafetyScore ?? 0),
-      baseReturnSafetyScore,
-      rejectedScenarios: fuelTacticalPlans?.rejectedScenarios || [],
-      baseFilterHasMaterialGain: fuelMaterialGain.hasMaterialGain,
-      rejectionReason: null,
-    };
-    // Для решения "использовать ли топливо" сравниваем дистанции с реальной дальностью полёта, а не с длиной натяжки ручки.
-    const farObjective = (enemyFlagAnchor && dist(plannedMove.plane, enemyFlagAnchor) > baseFlightRange * 0.75)
-      || (priorityEnemy && dist(plannedMove.plane, priorityEnemy) > baseFlightRange * 0.75)
-      || moveDistance > baseFlightRange * 0.75;
-    const moderateObjective = (enemyFlagAnchor && dist(plannedMove.plane, enemyFlagAnchor) > baseFlightRange * 0.65)
-      || (priorityEnemy && dist(plannedMove.plane, priorityEnemy) > baseFlightRange * 0.65)
-      || moveDistance > baseFlightRange * 0.65;
-    const attackGoal = aiRoundState?.currentGoal === "direct_finisher" || plannedMove?.goalName === "direct_finisher";
-    const shouldUseFuelForAttackCommit = attackGoal
-      && hasPriorityEnemyPathClear
-      && priorityEnemyDistance > baseFlightRange * 0.55;
-    const shouldBoostRange = farObjective
-      || shouldUseFuelForAttackCommit
-      || (riskProfile === "comeback" && moveDistance > baseFlightRange * 0.55);
-    const shouldUseFuelForModerateObjective = !shouldBoostRange && moderateObjective;
-    const shouldUseFuelBySoftFallback = softFallbackReady && shouldUseFuelForModerateObjective;
-    const shouldTryFuelNow = shouldBoostRange || shouldUseFuelForModerateObjective || shouldTryFuelForSafety;
-    if(shouldTryFuelNow && !fuelMaterialGain.hasMaterialGain){
-      plannedMove.aiFuelTacticalDecision.rejectionReason = selectedFuelCandidate
-        ? "base_filter_no_safety_gain"
-        : "base_filter_no_new_target";
-      logAiDecision("fuel_saved_no_material_gain", {
-        planeId: plannedMove.plane?.id ?? null,
-        reason: plannedMove.aiFuelTacticalDecision.rejectionReason,
-        riskProfile,
-        moveDistance: Number(moveDistance.toFixed(1)),
-        attackGoal,
-        candidateTarget: null,
-        fuelReturnSafetyScore: Number(fuelReturnSafetyScore.toFixed(3)),
-        baseReturnSafetyScore: Number(baseReturnSafetyScore.toFixed(3)),
-      });
-    }
-
-    if(shouldTryFuelNow
-      && fuelMaterialGain.hasMaterialGain
-      && fuelTacticalPlans?.selectedCandidate
-      && tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.FUEL, "blue", plannedMove.plane)){
-      removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
-      rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.FUEL);
-      logAiDecision("fuel_used_material_gain", {
-        planeId: plannedMove.plane?.id ?? null,
-        reason: shouldUseFuelBySoftFallback ? "soft_fallback_new_contact" : (shouldUseFuelForModerateObjective ? "moderate_objective_new_contact" : "boost_new_contact"),
-        gainedContactTarget: fuelMaterialGain.newReachableTarget?.name || null,
-        gainedContactDistance: fuelMaterialGain.newReachableTarget
-          ? Number(fuelMaterialGain.newReachableTarget.targetDistance.toFixed(1))
-          : null,
-        fuelScenario: fuelTacticalPlans.selectedCandidate.scenario,
-        returnSafetyScore: fuelTacticalPlans.selectedCandidate.returnSafetyScore,
-        returnPoint: fuelTacticalPlans.selectedCandidate.returnPlan?.point
-          ? {
-              x: Number(fuelTacticalPlans.selectedCandidate.returnPlan.point.x.toFixed(1)),
-              y: Number(fuelTacticalPlans.selectedCandidate.returnPlan.point.y.toFixed(1)),
-            }
-          : null,
-      });
-      if(shouldUseFuelBySoftFallback){
-        markSoftFallbackUse(INVENTORY_ITEM_TYPES.FUEL, {
-          moveDistance: Number(moveDistance.toFixed(1)),
-          reason: "moderate_far_objective",
-        });
-      }
-      return true;
-    } else if(shouldTryFuelNow && fuelMaterialGain.hasMaterialGain && !fuelTacticalPlans?.selectedCandidate){
-      plannedMove.aiFuelTacticalDecision.rejectionReason = fuelTacticalPlans?.blockedByReturnSafety
-        ? "blocked_return_unreachable_or_unsafe"
-        : "no_tactical_candidate";
-      logAiDecision("fuel_saved_no_material_gain", {
-        planeId: plannedMove.plane?.id ?? null,
-        reason: plannedMove.aiFuelTacticalDecision.rejectionReason,
-        rejectedScenarios: fuelTacticalPlans?.rejectedScenarios || [],
-      });
-    }
-  }
-
-  if((!hasForcedTacticalSpend || allowNonForcedInventoryDuringTacticalSpend) && allowBuffItems && inventory.counts[INVENTORY_ITEM_TYPES.CROSSHAIR] > 0){
-    const bestCrosshairScenario = evaluateCrosshairBestUse(context, plannedMove);
-    const CROSSHAIR_MIN_NOTICEABLE_VALUE = 0.74;
-    const CROSSHAIR_SOFT_FALLBACK_MIN_VALUE = 0.58;
-
-    if(bestCrosshairScenario && bestCrosshairScenario.totalValue >= CROSSHAIR_MIN_NOTICEABLE_VALUE){
-      if(tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
+    } else if(itemType === INVENTORY_ITEM_TYPES.CROSSHAIR){
+      executed = applyItemToOwnPlane(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane);
+      if(executed){
         removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
         rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.CROSSHAIR);
-        logAiDecision("crosshair_used_best_value", {
-          planeId: plannedMove.plane?.id ?? null,
-          enemyId: bestCrosshairScenario.enemy?.id ?? null,
-          bestValue: Number(bestCrosshairScenario.totalValue.toFixed(3)),
-          hitChance: Number(bestCrosshairScenario.hitChance.toFixed(3)),
-          targetValue: Number(bestCrosshairScenario.targetValue.toFixed(3)),
-          objectiveValue: Number(bestCrosshairScenario.objectiveValue.toFixed(3)),
-          carriesBlueFlag: bestCrosshairScenario.carriesBlueFlag,
-          distanceToEnemy: Number(bestCrosshairScenario.distanceToEnemy.toFixed(1)),
-          hasCleanPath: bestCrosshairScenario.hasCleanPath,
-        });
-        return true;
       }
-    } else {
-      const moderateCrosshairScenario = bestCrosshairScenario
-        && bestCrosshairScenario.totalValue >= CROSSHAIR_SOFT_FALLBACK_MIN_VALUE
-        && bestCrosshairScenario.distanceToEnemy <= plannedMoveEffectiveRangePx * 1.1;
-      const cleanFinishingChance = priorityEnemy
-        && isPathClear(plannedMove.plane.x, plannedMove.plane.y, priorityEnemy.x, priorityEnemy.y)
-        && dist(plannedMove.plane, priorityEnemy) <= plannedMoveEffectiveRangePx
-        && !priorityEnemy.shieldActive;
-      const comebackPressureShot = priorityEnemy
-        && riskProfile === "comeback"
-        && dist(plannedMove.plane, priorityEnemy) <= plannedMoveEffectiveRangePx * 1.2;
-
-      if(!bestCrosshairScenario && (cleanFinishingChance || comebackPressureShot)){
-        if(tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
-          removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
-          rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.CROSSHAIR);
-          logAiDecision("crosshair_used_best_value", {
-            planeId: plannedMove.plane?.id ?? null,
-            enemyId: priorityEnemy?.id ?? null,
-            bestValue: null,
-            fallback: "clean_or_comeback_window",
-          });
-          return true;
-        }
+    } else if(itemType === INVENTORY_ITEM_TYPES.WINGS){
+      executed = applyItemToOwnPlane(INVENTORY_ITEM_TYPES.WINGS, "blue", plannedMove.plane);
+      if(executed){
+        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.WINGS);
+        rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.WINGS);
       }
-
-      if(moderateCrosshairScenario){
-        if(tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
-          removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
-          rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.CROSSHAIR);
-          markSoftFallbackUse(INVENTORY_ITEM_TYPES.CROSSHAIR, {
-            bestValue: Number(bestCrosshairScenario.totalValue.toFixed(3)),
-            thresholdMain: CROSSHAIR_MIN_NOTICEABLE_VALUE,
-            thresholdSoft: CROSSHAIR_SOFT_FALLBACK_MIN_VALUE,
-            enemyId: bestCrosshairScenario.enemy?.id ?? null,
-          });
-          return true;
-        }
+    } else if(itemType === INVENTORY_ITEM_TYPES.INVISIBILITY){
+      executed = queueInvisibilityEffectForPlayer("blue");
+      if(executed){
+        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.INVISIBILITY);
+        rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.INVISIBILITY);
       }
-
-      logAiDecision("crosshair_saved", {
-        planeId: plannedMove.plane?.id ?? null,
-        reason: bestCrosshairScenario ? "best_value_below_threshold" : "no_reliable_scenario",
-        bestValue: bestCrosshairScenario ? Number(bestCrosshairScenario.totalValue.toFixed(3)) : null,
-        threshold: CROSSHAIR_MIN_NOTICEABLE_VALUE,
-      });
-    }
-  }
-
-  if(allowTacticalItems && !inventoryPlanBForcedAfterRepeatedNoShot && inventory.counts[INVENTORY_ITEM_TYPES.DYNAMITE] > 0){
-    const forcedDynamiteSpend = forcedTacticalItemType === INVENTORY_ITEM_TYPES.DYNAMITE;
-    if(hasForcedTacticalSpend && forcedTacticalItemType !== INVENTORY_ITEM_TYPES.DYNAMITE && !allowNonForcedInventoryDuringTacticalSpend){
-      // Явно пропускаем динамит, если policy сейчас требует мины.
-    } else {
-    if(forcedDynamiteSpend){
-      logAiDecision("tactical_surplus_spend_attempt", {
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: strategicGoal || null,
-        itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
-        availableCount: Number(inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0),
-        forcedByPolicy: true,
-      });
-    }
-    let dynamiteFinalRejectReason = null;
-    const dynamiteDecision = evaluateAiDynamiteTacticalTarget(context, plannedMove, {
-      allowStrategicProbeWhenRouteAware: false,
-      availableCharges: Number(inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0),
-    });
-    const routeAwareTarget = dynamiteDecision.routeAwareTarget;
-    const strategicMoveGate = dynamiteDecision.strategicMoveGate;
-    const strategicDynamite = dynamiteDecision.strategicDynamite;
-    const strategicTarget = dynamiteDecision.strategicTarget;
-    const futureAdvantageSignal = dynamiteDecision.futureAdvantageSignal === true;
-
-    const routeAwareReplan = routeAwareTarget?.replanResult || null;
-    const routeAwareExpectedRoute = routeAwareReplan?.expectedRoute || null;
-
-    if(routeAwareTarget
-      && routeAwareReplan
-      && (
-        routeAwareReplan.usesOpenedCorridor
-        || routeAwareReplan.noticeableImprovement
-        || routeAwareReplan.moderateValidGain
-        || (routeAwareReplan.accumulatedValue2Turns ?? 0) >= 0.34
-      )
-      && placeBlueDynamiteAt(routeAwareTarget.cx, routeAwareTarget.cy)){
-      removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
-      plannedMove.inventoryUsageReason = "dynamite_spent_for_pressure";
-      setAiDynamiteIntentFromCandidate(routeAwareTarget, "dynamite_route_opening", plannedMove, routeAwareExpectedRoute, "current_route");
-      logAiDecision("dynamite_spent_for_pressure", {
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: strategicGoal || null,
-        pressureType: "current_route",
-        usesOpenedCorridor: routeAwareReplan.usesOpenedCorridor === true,
-        noticeableImprovement: routeAwareReplan.noticeableImprovement === true,
-        moderateValidGain: routeAwareReplan.moderateValidGain === true,
-        accumulatedValue2Turns: routeAwareReplan.accumulatedValue2Turns ?? null,
-        accumulatedValue3Turns: routeAwareReplan.accumulatedValue3Turns ?? null,
-      });
-      if(forcedDynamiteSpend){
-        logAiDecision("tactical_surplus_spend_success", {
-          planeId: plannedMove?.plane?.id ?? null,
-          goal: strategicGoal || null,
-          itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
-          reason: "dynamite_route_opening",
-          forcedByPolicy: true,
-        });
+    } else if(itemType === INVENTORY_ITEM_TYPES.MINE){
+      const selectedMinePlan = candidate?.minePlan || null;
+      const rawPlacement = selectedMinePlan?.placement || candidate?.target || null;
+      const placement = rawPlacement && Number.isFinite(rawPlacement.x) && Number.isFinite(rawPlacement.y)
+        ? {
+            x: rawPlacement.x,
+            y: rawPlacement.y,
+            cellX: Number.isFinite(rawPlacement.cellX)
+              ? rawPlacement.cellX
+              : Math.floor((rawPlacement.x - FIELD_LEFT) / CELL_SIZE),
+            cellY: Number.isFinite(rawPlacement.cellY)
+              ? rawPlacement.cellY
+              : Math.floor((rawPlacement.y - FIELD_TOP) / CELL_SIZE),
+          }
+        : null;
+      if(!placement || !isMinePlacementValid(placement)){
+        return { executed: false, reason: "selected_candidate_mine_placement_invalid", itemType };
       }
-      logTacticalItemFinalDecision(INVENTORY_ITEM_TYPES.DYNAMITE, {
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: strategicGoal || null,
-        finalDecision: "used",
-        reason: "dynamite_spent_for_pressure",
+      placeMine({
+        owner: "blue",
+        x: placement.x,
+        y: placement.y,
+        cellX: placement.cellX,
+        cellY: placement.cellY,
       });
-      return true;
-    }
-
-    if(strategicTarget){
-      const strategicReason = strategicTarget.opensDecisivePath
-        ? "dynamite_used_for_map_opening"
-        : "dynamite_used_for_future_route_gain";
-      const chosenForFutureAdvantage = strategicReason === "dynamite_used_for_future_route_gain"
-        || strategicTarget.hasFutureAdvantageSignal
-        || strategicTarget.accumulatedValue2Turns >= 0.44
-        || strategicTarget.opensDecisivePath
-        || strategicTarget.removesBarrierToContactZone;
-      const strategicFollowUp = describeStrategicDynamiteFollowUp(strategicTarget, plannedMove, context);
-      if(placeBlueDynamiteAt(strategicTarget.cx, strategicTarget.cy)){
+      removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
+      executed = true;
+    } else if(itemType === INVENTORY_ITEM_TYPES.DYNAMITE){
+      const target = candidate?.target || null;
+      if(!target || !Number.isFinite(target.x) || !Number.isFinite(target.y)){
+        return { executed: false, reason: "selected_candidate_dynamite_target_missing", itemType };
+      }
+      executed = placeBlueDynamiteAt(target.x, target.y);
+      if(executed){
         removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
-        plannedMove.inventoryUsageReason = "dynamite_spent_for_pressure";
-        setAiDynamiteIntentFromCandidate(strategicTarget, strategicReason, plannedMove, null, "strategic_setup");
-        logAiDecision("dynamite_spent_for_pressure", {
-          planeId: plannedMove?.plane?.id ?? null,
-          goal: strategicGoal || null,
-          pressureType: "strategic_setup",
-          strategicReason,
-          strategicScore: strategicTarget?.strategicScore ?? null,
-          accumulatedValue2Turns: strategicTarget?.accumulatedValue2Turns ?? null,
-          accumulatedValue3Turns: strategicTarget?.accumulatedValue3Turns ?? null,
-        });
-        logAiDecision(strategicReason, {
-          planeId: plannedMove?.plane?.id ?? null,
-          goal: strategicGoal || null,
-          colliderId: strategicTarget?.collider?.id ?? null,
-          targetX: Number.isFinite(strategicTarget?.cx) ? Number(strategicTarget.cx.toFixed(1)) : null,
-          targetY: Number.isFinite(strategicTarget?.cy) ? Number(strategicTarget.cy.toFixed(1)) : null,
-          strategicScore: strategicTarget?.strategicScore ?? null,
-          opensPathToBase: strategicTarget?.opensPathToBase ?? false,
-          opensPathToFlag: strategicTarget?.opensPathToFlag ?? false,
-          removesBarrierToContactZone: strategicTarget?.removesBarrierToContactZone ?? false,
-          nextTurnRouteGain: strategicTarget?.nextTurnRouteGain ?? 0,
-          accumulatedValue2Turns: strategicTarget?.accumulatedValue2Turns ?? null,
-          accumulatedValue3Turns: strategicTarget?.accumulatedValue3Turns ?? null,
-          intentType: "strategic_setup",
-          opensPathLabel: strategicFollowUp?.opensPathLabel || null,
-          opensForPlaneId: strategicFollowUp?.opensFor || null,
-          followUpTargetKind: strategicFollowUp?.targetKind || null,
-          followUpTargetId: strategicFollowUp?.targetId || null,
-          currentMoveTooStrongReason: strategicMoveGate.strongPlanReason,
-          currentMoveStrength: strategicMoveGate.moveClassification?.classification || null,
-          currentMoveWasInsufficientBecause: strategicMoveGate.allowStrategicSetup
-            ? (strategicMoveGate.moveClassification?.isSurvivalOrReposition ? "survival_or_reposition_move" : "no_strong_attack_or_flag_intercept")
-            : "current_move_already_strong",
-          comparedTargets: strategicDynamite?.rankedTargets?.map((target) => ({
-            colliderId: target?.collider?.id ?? null,
-            score: target?.strategicScore ?? null,
-            nextTurnRouteGain: target?.nextTurnRouteGain ?? 0,
-          })) || [],
-        });
-        if(chosenForFutureAdvantage){
-          logAiDecision("dynamite_chosen_for_future_advantage", {
-            planeId: plannedMove?.plane?.id ?? null,
-            goal: strategicGoal || null,
-            colliderId: strategicTarget?.collider?.id ?? null,
-            strategicReason,
-            opensPathToBase: strategicTarget?.opensPathToBase ?? false,
-            opensPathToFlag: strategicTarget?.opensPathToFlag ?? false,
-            removesBarrierToContactZone: strategicTarget?.removesBarrierToContactZone ?? false,
-            nextTurnRouteGain: strategicTarget?.nextTurnRouteGain ?? 0,
-            accumulatedValue2Turns: strategicTarget?.accumulatedValue2Turns ?? null,
-            accumulatedValue3Turns: strategicTarget?.accumulatedValue3Turns ?? null,
-          });
-        }
-        markSoftFallbackUse(INVENTORY_ITEM_TYPES.DYNAMITE, {
-          reason: strategicReason,
-          targetX: strategicTarget.cx,
-          targetY: strategicTarget.cy,
-        });
-        if(forcedDynamiteSpend){
-          logAiDecision("tactical_surplus_spend_success", {
-            planeId: plannedMove?.plane?.id ?? null,
-            goal: strategicGoal || null,
-            itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
-            reason: strategicReason,
-            forcedByPolicy: true,
-          });
-        }
-        logTacticalItemFinalDecision(INVENTORY_ITEM_TYPES.DYNAMITE, {
-          planeId: plannedMove?.plane?.id ?? null,
-          goal: strategicGoal || null,
-          finalDecision: "used",
-          reason: "dynamite_spent_for_pressure",
-        });
-        return true;
       }
-      dynamiteFinalRejectReason = "strategic_target_found_but_placement_failed";
-      logAiDecision("dynamite_not_used_no_benefit", {
-        planeId: plannedMove?.plane?.id ?? null,
-        reason: "strategic_target_found_but_placement_failed",
-        colliderId: strategicTarget?.collider?.id ?? null,
-        currentMoveTooStrongReason: strategicMoveGate.strongPlanReason,
-      });
     } else {
-      dynamiteFinalRejectReason = routeAwareTarget
-        ? "route_target_failed_to_place"
-        : (!strategicMoveGate.allowStrategicSetup && !futureAdvantageSignal
-            ? "current_move_already_good_enough"
-            : "no_useful_target_anywhere");
-      logAiDecision("dynamite_not_used_no_benefit", {
-        planeId: plannedMove?.plane?.id ?? null,
-        reason: dynamiteFinalRejectReason,
-      });
+      return { executed: false, reason: "selected_candidate_item_type_not_supported", itemType };
     }
-    if(forcedDynamiteSpend && forcedSurplusAllowAggressiveFallback && fallbackTarget){
-      if(placeBlueDynamiteAt(fallbackTarget.cx, fallbackTarget.cy)){
-        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
-        plannedMove.inventoryUsageReason = "dynamite_forced_surplus_aggressive_fallback";
-        setAiDynamiteIntentFromCandidate(fallbackTarget, "dynamite_forced_surplus_aggressive_fallback", plannedMove, null, "forced_surplus_aggressive");
-        logAiDecision("tactical_surplus_spend_success", {
-          planeId: plannedMove?.plane?.id ?? null,
-          goal: strategicGoal || null,
-          itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
-          reason: "dynamite_forced_surplus_aggressive_fallback",
-          forcedByPolicy: true,
-          aggressiveAttemptIndex: forcedSurplusAggressiveAttemptIndex,
-        });
-        logTacticalItemFinalDecision(INVENTORY_ITEM_TYPES.DYNAMITE, {
-          planeId: plannedMove?.plane?.id ?? null,
-          goal: strategicGoal || null,
-          finalDecision: "used",
-          reason: "dynamite_forced_surplus_aggressive_fallback",
-        });
-        return true;
-      }
-    }
-    if(forcedDynamiteSpend){
-      const forcedDynamiteBlockReason = routeAwareTarget
-        ? "route_target_failed_or_no_noticeable_gain"
-        : (!strategicMoveGate.allowStrategicSetup && !futureAdvantageSignal
-            ? "current_move_already_good_enough"
-            : "no_valid_dynamite_target");
-      logAiDecision("tactical_surplus_spend_blocked", {
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: strategicGoal || null,
-        itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
-        reason: forcedDynamiteBlockReason,
-        forcedByPolicy: true,
-      });
-    }
-    if(dynamiteFinalRejectReason){
-      logTacticalItemFinalDecision(INVENTORY_ITEM_TYPES.DYNAMITE, {
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: strategicGoal || null,
-        finalDecision: "saved",
-        reason: dynamiteFinalRejectReason,
-      });
-    }
-    }
-  }
 
-  if((!hasForcedTacticalSpend || allowNonForcedInventoryDuringTacticalSpend) && allowInvisibility && inventory.counts[INVENTORY_ITEM_TYPES.INVISIBILITY] > 0){
-    const enemyAimingAccuracyPercentRaw = Number(settings?.aimingAmplitude);
-    const enemyAimingAccuracyPercent = Number.isFinite(enemyAimingAccuracyPercentRaw)
-      ? Math.max(0, Math.min(100, enemyAimingAccuracyPercentRaw))
-      : 80;
-    const enemyAccuracyAfterInvisibility = Math.max(0, enemyAimingAccuracyPercent - 25);
-    const enemyAccuracyPenalty = enemyAimingAccuracyPercent - enemyAccuracyAfterInvisibility;
-    const nearestEnemyDistance = Array.isArray(context?.enemies) && context.enemies.length > 0
-      ? Math.min(...context.enemies.map(enemy => dist(plannedMove.plane, enemy)))
-      : Number.POSITIVE_INFINITY;
-    const expectCounterMove = nearestEnemyDistance <= ATTACK_RANGE_PX * 1.15
-      || (context?.enemies?.length ?? 0) >= (context?.aiPlanes?.length ?? 0);
-    const shouldUseInvisibility = (expectCounterMove
-      || (riskProfile === "comeback" && moveDistance >= MAX_DRAG_DISTANCE * 0.6))
-      && enemyAccuracyPenalty >= 12;
-    logAiDecision("invisibility_counter_aiming_check", {
-      phase: inventoryPhase,
+    if(!executed){
+      return { executed: false, reason: "selected_candidate_apply_failed", itemType };
+    }
+
+    plannedMove.inventoryUsageReason = candidate.reason || plannedMove.inventoryUsageReason || "inventory_item_applied";
+    logAiDecision("inventory_decision", {
+      stage: "inventory_decision",
+      source: executionSource,
       planeId: plannedMove?.plane?.id ?? null,
-      enemyAimingAccuracyPercent: Number(enemyAimingAccuracyPercent.toFixed(2)),
-      enemyAccuracyAfterInvisibility: Number(enemyAccuracyAfterInvisibility.toFixed(2)),
-      enemyAccuracyPenalty: Number(enemyAccuracyPenalty.toFixed(2)),
-      expectCounterMove,
-      shouldUseInvisibility,
+      itemType,
+      reason: candidate.reason || null,
+      target: candidate.target || null,
+      expectedBenefit: candidate.expectedBenefit ?? null,
+      risk: candidate.risk ?? null,
+      committedCandidateExecutedWithoutSecondGate: true,
     });
-    if(shouldUseInvisibility
-      && !hasSingleUseBuffBeenSpentThisTurn(INVENTORY_ITEM_TYPES.INVISIBILITY)
-      && queueInvisibilityEffectForPlayer("blue")){
-      removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.INVISIBILITY);
-      rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.INVISIBILITY);
-      return true;
-    }
+
+    return { executed: true, reason: null, itemType, executionSource };
   }
 
-  if((!hasForcedTacticalSpend || allowNonForcedInventoryDuringTacticalSpend) && allowBuffItems && softFallbackReady){
-    if(inventory.counts[INVENTORY_ITEM_TYPES.CROSSHAIR] > 0
-      && tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane)){
-      removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
-      rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.CROSSHAIR);
-      markSoftFallbackUse(INVENTORY_ITEM_TYPES.CROSSHAIR, {
-        reason: "generic_soft_fallback_usage",
-      });
-      return true;
-    }
+  const committedCandidate = selectedInventoryCandidate || selectedInventorySequence[0] || null;
+  const committedSource = selectedInventoryCandidate
+    ? "selected_inventory_candidate"
+    : (selectedInventorySequence.length > 0 ? "selected_inventory_sequence" : null);
 
-    const softFallbackBaseFuelPlan = evaluateFuelTacticalPlans(context, plannedMove, { useFuel: false });
-    const softFallbackFuelPlan = evaluateFuelTacticalPlans(context, plannedMove, { useFuel: true });
-    const softFallbackFuelMaterialGain = evaluateFuelMaterialGain(null, {
-      fuelTacticalPlans: softFallbackFuelPlan,
-      baseTacticalPlans: softFallbackBaseFuelPlan,
-    });
-    if(inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0
-      && softFallbackFuelMaterialGain.hasMaterialGain
-      && softFallbackFuelPlan.selectedCandidate
-      && tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.FUEL, "blue", plannedMove.plane)){
-      plannedMove.aiFuelTacticalDecision = {
-        stage: "soft_fallback",
-        selectedScenario: softFallbackFuelPlan.selectedCandidate.scenario,
-        targetContactPoint: softFallbackFuelPlan.selectedCandidate.targetPoint
-          ? {
-              x: Number(softFallbackFuelPlan.selectedCandidate.targetPoint.x.toFixed(1)),
-              y: Number(softFallbackFuelPlan.selectedCandidate.targetPoint.y.toFixed(1)),
-            }
-          : null,
-        returnPlan: softFallbackFuelPlan.selectedCandidate.returnPlan
-          ? {
-              type: softFallbackFuelPlan.selectedCandidate.returnPlan.returnName,
-              point: {
-                x: Number(softFallbackFuelPlan.selectedCandidate.returnPlan.point.x.toFixed(1)),
-                y: Number(softFallbackFuelPlan.selectedCandidate.returnPlan.point.y.toFixed(1)),
-              },
-              routeType: softFallbackFuelPlan.selectedCandidate.returnPlan.returnLeg?.routeType ?? null,
-            }
-          : null,
-        returnSafetyScore: Number(softFallbackFuelPlan.selectedCandidate.returnSafetyScore ?? 0),
-        requiredReturnSafetyThreshold: Number(softFallbackFuelPlan?.requiredReturnSafetyThreshold ?? 0),
-        actualReturnSafetyScore: Number(softFallbackFuelPlan?.actualReturnSafetyScore ?? 0),
-        rejectedScenarios: softFallbackFuelPlan.rejectedScenarios || [],
-        baseFilterHasMaterialGain: softFallbackFuelMaterialGain.hasMaterialGain,
-        rejectionReason: null,
-      };
-      removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
-      rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.FUEL);
-      markSoftFallbackUse(INVENTORY_ITEM_TYPES.FUEL, {
-        reason: "generic_soft_fallback_usage",
-      });
-      return true;
-    } else if(inventory.counts[INVENTORY_ITEM_TYPES.FUEL] > 0){
-      plannedMove.aiFuelTacticalDecision = {
-        stage: "soft_fallback",
-        selectedScenario: softFallbackFuelPlan?.selectedCandidate?.scenario ?? null,
-        targetContactPoint: null,
-        returnPlan: null,
-        returnSafetyScore: Number(softFallbackFuelPlan?.returnSafetyScore ?? 0),
-        requiredReturnSafetyThreshold: Number(softFallbackFuelPlan?.requiredReturnSafetyThreshold ?? 0),
-        actualReturnSafetyScore: Number(softFallbackFuelPlan?.actualReturnSafetyScore ?? 0),
-        rejectedScenarios: softFallbackFuelPlan?.rejectedScenarios || [],
-        baseFilterHasMaterialGain: softFallbackFuelMaterialGain.hasMaterialGain,
-        rejectionReason: !softFallbackFuelMaterialGain.hasMaterialGain
-          ? (softFallbackFuelPlan?.selectedCandidate
-              ? "base_filter_no_safety_gain"
-              : "base_filter_no_new_target")
-          : "blocked_return_unreachable_or_unsafe",
-      };
-      logAiDecision("fuel_saved_no_material_gain", {
-        planeId: plannedMove.plane?.id ?? null,
-        reason: plannedMove.aiFuelTacticalDecision.rejectionReason,
-      });
-    }
-  }
-
-  if((!hasForcedTacticalSpend || allowNonForcedInventoryDuringTacticalSpend) && inventory.counts[INVENTORY_ITEM_TYPES.WINGS] > 0 && landingPoint){
-    const contactTargets = [enemyBase];
-    if(context?.shouldUseFlagsMode){
-      for(const flag of context.availableEnemyFlags || []){
-        contactTargets.push(getFlagAnchor(flag));
-      }
-    }
-    const reachesContactZone = contactTargets.some((target) =>
-      target && dist(landingPoint, target) <= effectiveCellSize * 2.4
-    );
-    const reachesModerateContactZone = contactTargets.some((target) =>
-      target && dist(landingPoint, target) <= effectiveCellSize * 3.1
-    );
-    const likelyContactNextTurn = contactTargets.some((target) => {
-      if(!target) return false;
-      const distanceFromLanding = dist(landingPoint, target);
-      return distanceFromLanding <= baseFlightRange + effectiveCellSize * 2.4
-        && isPathClear(landingPoint.x, landingPoint.y, target.x, target.y);
-    });
-    const shouldUseWingsForApproach = !reachesContactZone && reachesModerateContactZone;
-    const shouldUseWingsBySoftFallback = softFallbackReady && shouldUseWingsForApproach;
-    if((reachesContactZone || likelyContactNextTurn || shouldUseWingsForApproach)
-      && tryApplyAiInventoryItem(INVENTORY_ITEM_TYPES.WINGS, "blue", plannedMove.plane)){
-      removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.WINGS);
-      rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.WINGS);
-      if(shouldUseWingsBySoftFallback){
-        markSoftFallbackUse(INVENTORY_ITEM_TYPES.WINGS, {
-          reason: "approaching_contact_zone",
-        });
-      } else if(likelyContactNextTurn && !reachesContactZone){
-        logAiDecision("wings_used_contact_likely_next_turn", {
-          planeId: plannedMove.plane?.id ?? null,
-          contactNow: reachesContactZone,
-        });
-      }
-      return true;
-    }
-  }
-
-  if((!hasForcedTacticalSpend || allowNonForcedInventoryDuringTacticalSpend) && inventoryPlanBForcedAfterRepeatedNoShot && !oneTacticalTryUsed){
-    const planBDiagnostics = {
-      planeId: plannedMove?.plane?.id ?? null,
-      goal: strategicGoal || null,
-      reasonCode: inventoryPlanBReasonCode,
-      shotPlanNotFoundCount: recentInventorySignals?.shotPlanNotFoundCount ?? 0,
-      planBActivationThreshold: recentInventorySignals?.planBActivationThreshold ?? AI_INVENTORY_PLAN_B_NO_SHOT_THRESHOLD,
-      fallbackSelectedCount: recentInventorySignals?.fallbackSelectedCount ?? 0,
+  if(!committedCandidate){
+    plannedMove.inventoryDecisionMadeMeta = {
+      selected: false,
+      reason: "no_committed_inventory_selection",
+      reasonCodes: inventory.total > 0 ? ["inventory_candidates_not_used"] : ["no_inventory_items"],
+      rejectReasons: ["no_committed_inventory_selection"],
+      executionSource: null,
+      selectedItemType: null,
+      selectedReason: null,
+      selectedSequenceLength: selectedInventorySequence.length,
     };
-    logAiDecision("inventory_plan_b_forced_mode", {
-      ...planBDiagnostics,
-      stage: "inventory_plan_b_forced_mode",
+    return false;
+  }
+
+  const executionResult = executeCommittedInventoryAction(committedCandidate, committedSource);
+  if(!executionResult.executed){
+    logSelectedInventoryExecutionFailure(committedCandidate.itemType || null, executionResult.reason, {
+      hadCommittedSelection: true,
+      inventoryLockBypassedBecauseAlreadySelected: true,
+      executionSource: committedSource,
     });
-
-    const dynamiteDecision = inventory.counts[INVENTORY_ITEM_TYPES.DYNAMITE] > 0
-      ? evaluateAiDynamiteTacticalTarget(context, plannedMove, {
-        allowStrategicProbeWhenRouteAware: false,
-        availableCharges: Number(inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0),
-      })
-      : null;
-    const routeAwareTarget = dynamiteDecision?.routeAwareTarget || null;
-    const replan = routeAwareTarget?.replanResult || null;
-    const routeHasModerateGain = Boolean(
-      replan
-      && (replan.moderateValidGain
-        || replan.noticeableImprovement
-        || (replan.accumulatedValue2Turns ?? 0) >= 0.24)
-    );
-    if(routeAwareTarget && routeHasModerateGain && placeBlueDynamiteAt(routeAwareTarget.cx, routeAwareTarget.cy)){
-      removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
-      plannedMove.inventoryUsageReason = inventoryPlanBReasonCode;
-      setAiDynamiteIntentFromCandidate(routeAwareTarget, inventoryPlanBReasonCode, plannedMove, replan?.expectedRoute || null, "current_route");
-      oneTacticalTryUsed = true;
-      logAiDecision("inventory_plan_b_forced_item_used", {
-        ...planBDiagnostics,
-        itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
-        risk: 0.12,
-      });
-      return true;
-    }
-
-    logAiDecision("inventory_plan_b_forced_rejected", {
-      ...planBDiagnostics,
-      dynamiteRejected: !(routeAwareTarget && routeHasModerateGain),
-      reason: "forced_plan_b_safe_items_rejected",
-    });
+    plannedMove.inventoryDecisionMadeMeta = {
+      selected: false,
+      reason: executionResult.reason || "selected_candidate_execution_failed",
+      reasonCodes: ["inventory_candidate_execution_failed"],
+      rejectReasons: [executionResult.reason || "selected_candidate_execution_failed"],
+      executionSource: committedSource,
+      selectedItemType: committedCandidate.itemType || null,
+      selectedReason: committedCandidate.reason || null,
+      selectedSequenceLength: selectedInventorySequence.length,
+    };
+    return false;
   }
 
-  if((!hasForcedTacticalSpend || allowNonForcedInventoryDuringTacticalSpend) && oneTacticalTryAllowed && !oneTacticalTryUsed){
-    const dynamiteDecision = inventory.counts[INVENTORY_ITEM_TYPES.DYNAMITE] > 0
-      ? evaluateAiDynamiteTacticalTarget(context, plannedMove, {
-        allowStrategicProbeWhenRouteAware: false,
-        availableCharges: Number(inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0),
-      })
-      : null;
-    const routeAwareTarget = dynamiteDecision?.routeAwareTarget || null;
-    const replan = routeAwareTarget?.replanResult || null;
-    const routeHasModerateGain = Boolean(
-      replan
-      && (replan.moderateValidGain
-        || replan.noticeableImprovement
-        || (replan.accumulatedValue2Turns ?? 0) >= 0.24)
-    );
-    if(routeAwareTarget && routeHasModerateGain && placeBlueDynamiteAt(routeAwareTarget.cx, routeAwareTarget.cy)){
-      removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
-      plannedMove.inventoryUsageReason = "one_tactical_try_fallback_chain";
-      setAiDynamiteIntentFromCandidate(routeAwareTarget, "one_tactical_try_fallback_chain", plannedMove, replan?.expectedRoute || null, "current_route");
-      oneTacticalTryUsed = true;
-      logAiDecision("inventory_one_tactical_try_used", {
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: strategicGoal || null,
-        itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
-        risk: 0.12,
-        unlockedBy: ["fallback-chain"],
-      });
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function registerAiInventoryUsageAfterMove(itemUsed){
-  if(itemUsed){
-    aiRoundState.inventoryIdleTurns = 0;
-  } else {
-    aiRoundState.inventoryIdleTurns += 1;
-  }
-
-  if(aiRoundState.inventorySoftFallbackCooldown > 0){
-    aiRoundState.inventorySoftFallbackCooldown -= 1;
-  }
-
-  if(aiRoundState.lastInventorySoftFallbackUsed){
-    aiRoundState.inventorySoftFallbackCooldown = AI_INVENTORY_SOFT_FALLBACK_COOLDOWN_TURNS;
-    aiRoundState.lastInventorySoftFallbackUsed = false;
-  }
-}
-
-function detectConsumedInventoryType(beforeCounts = {}, afterCounts = {}){
-  for(const type of Object.values(INVENTORY_ITEM_TYPES)){
-    const before = Number(beforeCounts[type] ?? 0);
-    const after = Number(afterCounts[type] ?? 0);
-    if(before > after){
-      return type;
-    }
-  }
-  return null;
-}
-
-function failSafeAdvanceTurn(reason, details = {}){
-  const safeReason = typeof reason === "string" && reason ? reason : "unspecified_fail_safe";
-  const safeDetails = details && typeof details === "object" ? details : {};
-  const rejectReasons = Array.isArray(safeDetails.rejectReasons)
-    ? safeDetails.rejectReasons
-    : [safeReason];
-  const reasonCodes = Array.isArray(safeDetails.reasonCodes)
-    ? safeDetails.reasonCodes
-    : ["fail_safe_turn_advance"];
-  const goal = safeDetails.goal || aiRoundState?.currentGoal || safeReason;
-  const planeId = safeDetails.planeId ?? safeDetails?.move?.plane?.id ?? null;
-
-  const analyzerStage = resolveAiFallbackAnalyzerStage(safeReason, safeDetails);
-  recordAiSelfAnalyzerDecision(analyzerStage, {
-    goal,
-    planeId,
-    reasonCategory: safeDetails.reasonCategory || "move_planning_failure",
-    reasonCode: safeDetails.reasonCode || safeReason || analyzerStage,
-    reasonCodes: [...new Set([analyzerStage, ...reasonCodes])],
-    rejectReasons: [...new Set([safeReason, ...rejectReasons])],
-    errorMessage: safeDetails.errorMessage,
-  });
-
-  aiMoveScheduled = false;
-  if(aiLaunchSession && aiLaunchSession === details?.session){
-    // no-op: session will be completed by active launch flow.
-    return;
-  }
-
-  if(aiLaunchSession?.plane && isPlaneLaunchStateReady(aiLaunchSession.plane)){
-    const now = performance.now();
-    aiLaunchSession.stage = "release";
-    aiLaunchSession.stageStartedAt = now;
-    aiLaunchSession.pendingReleaseReason = "fail_safe_finalize_selected_launch";
-    releaseAiLaunchSession(aiLaunchSession, "fail_safe_finalize_selected_launch", now);
-    return;
-  }
-
-  const fallbackContext = safeDetails.context && typeof safeDetails.context === "object"
-    ? safeDetails.context
-    : null;
-  const guaranteedMove = getFailSafeMinimalTargetedMove(fallbackContext) || getFailSafeGuaranteedDirectMove(fallbackContext);
-
-  if(guaranteedMove){
-    const validation = validateAiLaunchMoveCandidate(guaranteedMove);
-    if(validation.ok){
-      const normalizedReasonCodes = [...new Set([
-        "fail_safe_guaranteed_direct_selected",
-        "fail_safe_launch_recovery_start",
-        ...reasonCodes,
-      ])];
-      logAiDecision("fail_safe_guaranteed_direct_selected", {
-        goal,
-        previousReason: safeReason,
-        planeId: guaranteedMove?.plane?.id ?? planeId,
-        reasonCodes: normalizedReasonCodes,
-        candidateClass: guaranteedMove?.candidateClass || guaranteedMove?.routeClass || "direct",
-        fallbackScenario: guaranteedMove?.goalName === "cautious_progress_to_enemy_base"
-          ? "cautious_progress_to_base"
-          : "emergency_safe_move",
-      });
-      const launchResult = issueAIMove(
-        guaranteedMove.plane,
-        guaranteedMove.vx,
-        guaranteedMove.vy,
-        {
-          isFallbackMove: resolveAiFallbackMoveFlag(guaranteedMove),
-        },
-      );
-      if(launchResult?.ok){
-        return;
-      }
-      logAiDecision("fail_safe_guaranteed_direct_launch_retry_needed", {
-        goal,
-        previousReason: safeReason,
-        planeId: guaranteedMove?.plane?.id ?? planeId,
-        launchReason: launchResult?.reason || "unknown_launch_failure",
-        reasonCodes: [...new Set(["fail_safe_launch_retry", ...normalizedReasonCodes])],
-      });
-    } else {
-      logAiDecision("fail_safe_guaranteed_direct_invalid", {
-        goal,
-        previousReason: safeReason,
-        planeId: guaranteedMove?.plane?.id ?? planeId,
-        reasonCodes: [...new Set(["fail_safe_guaranteed_direct_invalid", ...reasonCodes])],
-        rejectReasons: [validation.reason || "invalid_guaranteed_direct_move"],
-      });
-    }
-  }
-
-  logAiDecision("fail_safe_launch_recovery_exhausted", {
-    goal,
-    previousReason: safeReason,
-    planeId,
-    reasonCodes: [...new Set(["fail_safe_launch_recovery_exhausted", ...reasonCodes])],
-  });
-  advanceTurn();
-}
-
-function isFailSafeSpecialRouteCandidate(move){
-  const routeClass = `${move?.routeClass || move?.candidateClass || "direct"}`.toLowerCase();
-  return routeClass === "gap" || routeClass === "ricochet";
-}
-
-function normalizeFailSafeLaunchCandidate(move, overrides = {}){
-  if(!move || isFailSafeSpecialRouteCandidate(move)) return null;
-  return {
-    ...move,
-    ...overrides,
-    routeClass: "direct",
-    candidateClass: "direct",
+  plannedMove.inventoryDecisionMadeMeta = {
+    selected: true,
+    reason: "inventory_item_applied",
+    reasonCodes: [committedCandidate.reason || "inventory_item_applied"],
+    rejectReasons: [],
+    executionSource: committedSource,
+    selectedItemType: committedCandidate.itemType || null,
+    selectedReason: committedCandidate.reason || null,
+    selectedSequenceLength: selectedInventorySequence.length,
   };
-}
 
-function getFailSafeMinimalTargetedMove(modeContext){
-  const fallbackAiPlanes = points.filter((plane) => (
-    plane.color === "blue"
-    && isPlaneLaunchStateReady(plane)
-    && !flyingPoints.some((fp) => fp.plane === plane)
-  ));
-  if(!fallbackAiPlanes.length) return null;
-
-  const fallbackContext = modeContext && typeof modeContext === "object"
-    ? modeContext
-    : {
-        aiPlanes: fallbackAiPlanes,
-        enemies: points.filter((plane) => plane.color === "green" && plane.isAlive && !plane.burning),
-      };
-
-  const aliveEnemies = Array.isArray(fallbackContext.enemies)
-    ? fallbackContext.enemies.filter((enemy) => enemy?.isAlive && !enemy?.burning)
-    : [];
-  const allowedMoveRisk = getAiAllowedMoveRisk(fallbackContext);
-  const vulnerableEnemies = aliveEnemies.filter((enemy) => enemy?.shieldActive !== true);
-  let safestDirectCandidate = null;
-
-  for(const plane of fallbackAiPlanes){
-    const sortedTargets = vulnerableEnemies
-      .filter((enemy) => Number.isFinite(enemy?.x) && Number.isFinite(enemy?.y))
-      .sort((left, right) => Math.hypot((left.x || 0) - plane.x, (left.y || 0) - plane.y) - Math.hypot((right.x || 0) - plane.x, (right.y || 0) - plane.y));
-
-    for(const enemy of sortedTargets){
-      const move = planPathWithSpecialRouteProbe(plane, enemy.x, enemy.y, {
-        goalName: "fail_safe_minimal_targeted_move",
-        decisionReason: "fail_safe_minimal_targeted_move",
-        targetEnemy: enemy,
-        enemy,
-        context: fallbackContext,
-        specialAttemptBudget: 0,
-        compareLabel: ["fail_safe_direct_only", plane?.id ?? "", enemy?.id ?? ""],
-      });
-      const candidate = normalizeFailSafeLaunchCandidate(move, {
-        plane,
-        targetEnemy: enemy,
-        goalName: "fail_safe_minimal_targeted_move",
-        decisionReason: "fail_safe_minimal_targeted_move",
-      });
-      if(!candidate) continue;
-
-      const validation = validateAiLaunchMoveCandidate(candidate);
-      if(!validation.ok) continue;
-
-      const landing = getAiMoveLandingPoint(candidate);
-      if(!landing) continue;
-
-      const threatMeta = getImmediateResponseThreatMeta(fallbackContext, landing.x, landing.y, enemy);
-      if(getFallbackCandidateResponseRisk(threatMeta) > allowedMoveRisk) continue;
-
-      const progressMeta = getAiNoticeableProgressMeta(plane.x, plane.y, landing.x, landing.y, enemy.x, enemy.y, {
-        thresholdScale: 0.2,
-      });
-      if(!progressMeta.hasNoticeableProgress) continue;
-
-      const candidateRiskScore = threatMeta.count * 1000 + Math.max(0, progressMeta.afterDist) + (candidate.totalDist || 0) * 0.1;
-      if(!safestDirectCandidate || candidateRiskScore < safestDirectCandidate.candidateRiskScore){
-        safestDirectCandidate = {
-          ...candidate,
-          candidateRiskScore,
-          progressMeta,
-        };
-      }
-      break;
-    }
-  }
-  if(safestDirectCandidate) return safestDirectCandidate;
-
-  const cautiousBaseAdvance = findPreFlagCautiousAdvanceMove(fallbackContext, fallbackAiPlanes, aliveEnemies);
-  if(cautiousBaseAdvance){
-    return cautiousBaseAdvance;
-  }
-
-  let safestRepositionCandidate = null;
-  for(const plane of fallbackAiPlanes){
-    const sortedTargets = aliveEnemies
-      .filter((enemy) => Number.isFinite(enemy?.x) && Number.isFinite(enemy?.y))
-      .sort((left, right) => Math.hypot((left.x || 0) - plane.x, (left.y || 0) - plane.y) - Math.hypot((right.x || 0) - plane.x, (right.y || 0) - plane.y));
-
-    for(const enemy of sortedTargets){
-      const planeFlightProfile = getAiFlightRangeProfile(plane);
-      const speedPxPerSec = planeFlightProfile.speedPxPerSec;
-      if(!Number.isFinite(speedPxPerSec) || speedPxPerSec <= 0) continue;
-
-      const repositionMove = normalizeFailSafeLaunchCandidate(findFallbackSafeAngleRepositionMove(plane, enemy, speedPxPerSec), {
-        plane,
-        enemy,
-        targetEnemy: enemy,
-        goalName: "fail_safe_safe_reposition",
-        decisionReason: "fail_safe_safe_reposition",
-      });
-      if(!repositionMove) continue;
-
-      const validation = validateAiLaunchMoveCandidate(repositionMove);
-      if(!validation.ok) continue;
-
-      const landing = getAiMoveLandingPoint(repositionMove);
-      if(!landing) continue;
-
-      const threatMeta = getImmediateResponseThreatMeta(fallbackContext, landing.x, landing.y, enemy);
-      if(getFallbackCandidateResponseRisk(threatMeta) > allowedMoveRisk) continue;
-
-      const progressMeta = getAiNoticeableProgressMeta(plane.x, plane.y, landing.x, landing.y, enemy.x, enemy.y, {
-        thresholdScale: 0.18,
-      });
-      const hasLineOfSightToTarget = isPathClear(landing.x, landing.y, enemy.x, enemy.y);
-      if(!hasLineOfSightToTarget && !progressMeta.hasNoticeableProgress) continue;
-
-      const oddnessPenalty = hasLineOfSightToTarget ? 0 : 40;
-      const candidateRiskScore = threatMeta.count * 1000 + oddnessPenalty + Math.max(0, progressMeta.afterDist) + (repositionMove.totalDist || 0) * 0.1;
-      if(!safestRepositionCandidate || candidateRiskScore < safestRepositionCandidate.candidateRiskScore){
-        safestRepositionCandidate = {
-          ...repositionMove,
-          candidateRiskScore,
-          progressMeta,
-          hasLineOfSightToTarget,
-        };
-      }
-      break;
-    }
-  }
-
-  return safestRepositionCandidate;
-}
-
-function getFailSafeGuaranteedDirectMove(modeContext){
-  const fallbackAiPlanes = points.filter((plane) => (
-    plane.color === "blue"
-    && isPlaneLaunchStateReady(plane)
-    && !flyingPoints.some((fp) => fp.plane === plane)
-  ));
-  if(!fallbackAiPlanes.length) return null;
-
-  const fallbackContext = modeContext && typeof modeContext === "object"
-    ? modeContext
-    : {
-        aiPlanes: fallbackAiPlanes,
-        enemies: points.filter((plane) => plane.color === "green" && plane.isAlive && !plane.burning),
-      };
-
-  const aliveEnemies = Array.isArray(fallbackContext.enemies)
-    ? fallbackContext.enemies.filter((enemy) => enemy?.isAlive && !enemy?.burning && Number.isFinite(enemy?.x) && Number.isFinite(enemy?.y))
-    : [];
-
-  let fallbackPlane = fallbackAiPlanes[0] || null;
-  let fallbackEnemy = null;
-  let fallbackDistance = Number.POSITIVE_INFINITY;
-  for(const plane of fallbackAiPlanes){
-    if(!fallbackPlane) fallbackPlane = plane;
-    for(const enemy of aliveEnemies){
-      const distance = Math.hypot((enemy.x || 0) - plane.x, (enemy.y || 0) - plane.y);
-      if(distance < fallbackDistance){
-        fallbackDistance = distance;
-        fallbackEnemy = enemy;
-        fallbackPlane = plane;
-      }
-    }
-  }
-
-  if(!fallbackPlane) return null;
-
-  const profile = getAiFlightRangeProfile(fallbackPlane);
-  const speedPxPerSec = Number.isFinite(profile?.speedPxPerSec) && profile.speedPxPerSec > 0
-    ? profile.speedPxPerSec
-    : 1;
-
-  let targetX = fallbackEnemy?.x;
-  let targetY = fallbackEnemy?.y;
-  if(!Number.isFinite(targetX) || !Number.isFinite(targetY)){
-    targetX = fallbackPlane.x + 1;
-    targetY = fallbackPlane.y;
-  }
-
-  let dirX = targetX - fallbackPlane.x;
-  let dirY = targetY - fallbackPlane.y;
-  const dirLength = Math.hypot(dirX, dirY);
-  if(!Number.isFinite(dirLength) || dirLength <= 0){
-    dirX = 1;
-    dirY = 0;
-  } else {
-    dirX /= dirLength;
-    dirY /= dirLength;
-  }
-
-  return normalizeFailSafeLaunchCandidate({
-    plane: fallbackPlane,
-    targetEnemy: fallbackEnemy || null,
-    enemy: fallbackEnemy || null,
-    vx: dirX * speedPxPerSec,
-    vy: dirY * speedPxPerSec,
-    totalDist: profile?.flightDistancePx || 0,
-    goalName: "fail_safe_guaranteed_direct_move",
-    decisionReason: "fail_safe_guaranteed_direct_move",
-  });
-}
-
-function validateAiLaunchMoveCandidate(move){
-  const plane = move?.plane;
-  if(!plane || typeof plane !== "object"){
-    return {
-      ok: false,
-      reason: "invalid_plane_for_launch",
-      message: "Plane object is missing for launch",
-    };
-  }
-
-  if(!Number.isFinite(plane.x) || !Number.isFinite(plane.y)){
-    return {
-      ok: false,
-      reason: "invalid_plane_coordinates",
-      message: "Plane coordinates are missing or not numeric",
-    };
-  }
-
-  if(!isPlaneLaunchStateReady(plane)){
-    return {
-      ok: false,
-      reason: "invalid_plane_state_for_launch",
-      message: "Plane is not in launch-ready state",
-    };
-  }
-
-  if(!Number.isFinite(move?.vx) || !Number.isFinite(move?.vy)){
-    return {
-      ok: false,
-      reason: "invalid_launch_vector",
-      message: "Launch vector is missing or not numeric",
-    };
-  }
-
-  return {
-    ok: true,
-    reason: "ok",
-  };
-}
-
-function getFinalAiLaunchMineThreatCheck(move, options = {}){
-  const plane = move?.plane || null;
-  if(!plane || !Number.isFinite(plane.x) || !Number.isFinite(plane.y)){
-    return {
-      ok: false,
-      reason: "invalid_plane_coordinates",
-      reasonCode: "final_mine_check_invalid_plane_coordinates",
-      message: "Plane coordinates are missing for final mine check",
-      threatMeta: null,
-      landingPoint: null,
-      startPoint: null,
-    };
-  }
-
-  const fallbackLanding = getAiMoveLandingPoint(move);
-  const plannedLanding = move?.landingPoint && Number.isFinite(move.landingPoint.x) && Number.isFinite(move.landingPoint.y)
-    ? move.landingPoint
-    : fallbackLanding;
-  if(!plannedLanding || !Number.isFinite(plannedLanding.x) || !Number.isFinite(plannedLanding.y)){
-    return {
-      ok: false,
-      reason: "invalid_landing_point",
-      reasonCode: "final_mine_check_invalid_landing_point",
-      message: "Landing point is missing for final mine check",
-      threatMeta: null,
-      landingPoint: null,
-      startPoint: { x: plane.x, y: plane.y },
-    };
-  }
-
-  const planeColor = plane?.color || options?.planeColor || "blue";
-  const enemyMineOwner = planeColor === "blue" ? "green" : "blue";
-  const ownMineOwner = planeColor;
-  const enemyThreatMeta = getMineThreatMetaForSegment(
-    plane.x,
-    plane.y,
-    plannedLanding.x,
-    plannedLanding.y,
-    plane,
-    { ...options, mineOwner: enemyMineOwner },
-  );
-  const ownThreatMeta = getMineThreatMetaForSegment(
-    plane.x,
-    plane.y,
-    plannedLanding.x,
-    plannedLanding.y,
-    plane,
-    { ...options, mineOwner: ownMineOwner },
-  );
-  const threatMeta = {
-    count: (enemyThreatMeta?.count || 0) + (ownThreatMeta?.count || 0),
-    nearestDist: Math.min(
-      Number.isFinite(enemyThreatMeta?.nearestDist) ? enemyThreatMeta.nearestDist : Number.POSITIVE_INFINITY,
-      Number.isFinite(ownThreatMeta?.nearestDist) ? ownThreatMeta.nearestDist : Number.POSITIVE_INFINITY
-    ),
-    pathHit: Boolean(enemyThreatMeta?.pathHit || ownThreatMeta?.pathHit),
-    landingThreat: Boolean(enemyThreatMeta?.landingThreat || ownThreatMeta?.landingThreat),
-    reason: enemyThreatMeta?.reason || ownThreatMeta?.reason || null,
-    triggeringMine: enemyThreatMeta?.triggeringMine || ownThreatMeta?.triggeringMine || null,
-    triggerRadius: Math.max(enemyThreatMeta?.triggerRadius || 0, ownThreatMeta?.triggerRadius || 0),
-    enemy: enemyThreatMeta,
-    own: ownThreatMeta,
-  };
-  const hasCriticalForbiddenThreat = Boolean(
-    enemyThreatMeta?.pathHit
-    || enemyThreatMeta?.landingThreat
-    || ownThreatMeta?.pathHit
-    || ownThreatMeta?.landingThreat
-  );
-  if(hasCriticalForbiddenThreat){
-    return {
-      ok: false,
-      reason: enemyThreatMeta?.reason || ownThreatMeta?.reason || (threatMeta?.pathHit ? "path_crosses_mine" : "landing_blocked_by_mine"),
-      reasonCode: "final_mine_check_rejected_critical_forbidden_mine_threat",
-      message: "Final mine check rejected stale route before launch",
-      threatMeta,
-      threatClass: "critical_forbidden",
-      landingPoint: plannedLanding,
-      startPoint: { x: plane.x, y: plane.y },
-    };
-  }
-
-  return {
-    ok: true,
-    reason: "ok",
-    reasonCode: "final_mine_check_passed",
-    message: "Final mine check passed",
-    threatMeta,
-    threatClass: "clear",
-    landingPoint: plannedLanding,
-    startPoint: { x: plane.x, y: plane.y },
-  };
+  return true;
 }
 
 function buildFinalMineGateAggressiveFallbackReplan(plannedMove, context = {}, options = {}){
@@ -27285,136 +25176,27 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   let tacticalInventoryActionsApplied = 0;
   let inventoryStopReason = "inventory_no_action";
   const usedSingleUseBuffTypesThisTurn = new Set();
-  const tacticalSurplusInitialCounts = {
-    [INVENTORY_ITEM_TYPES.MINE]: Number(beforeInventoryState?.counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0),
-    [INVENTORY_ITEM_TYPES.DYNAMITE]: Number(beforeInventoryState?.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0),
-  };
-  const tacticalSurplusPendingOrder = [
-    INVENTORY_ITEM_TYPES.MINE,
-    INVENTORY_ITEM_TYPES.DYNAMITE,
-  ].filter((itemType) => tacticalSurplusInitialCounts[itemType] > 1);
-  const tacticalSurplusAttemptedTypes = new Map();
-  const tacticalSurplusSucceededTypes = new Set();
-  const tacticalSurplusFailureStreakByType = {
-    [INVENTORY_ITEM_TYPES.MINE]: 0,
-    [INVENTORY_ITEM_TYPES.DYNAMITE]: 0,
-  };
-  const forcedSurplusTelemetry = {
-    forced_surplus_attempts: 0,
-    forced_surplus_failures: 0,
-    forced_surplus_spent: 0,
-  };
-  const FORCED_SURPLUS_AGGRESSIVE_RETRY_LIMIT = 3;
-  const FORCED_SURPLUS_NON_FORCED_UNLOCK_AFTER_FAILS = 2;
-  let tacticalSurplusForcedOrderIndex = 0;
-  const isAiV2Mode = `${AI_ENGINE_MODE || ""}`.toLowerCase() === "v2";
-  const inventoryDeadlockHint = (
-    plannedMove?.allowInventoryUsage === true
-    && plannedMove?.inventoryUsageReason === "bad_direct_fallback"
-  )
-    || `${plannedMove?.decisionReason || ""}`.toLowerCase().includes("fallback")
-    || `${plannedMove?.goalName || ""}`.toLowerCase().includes("fallback");
-  const tacticalSurplusTotalUnits = tacticalSurplusPendingOrder.reduce((sum, itemType) => (
-    sum + Math.max(0, Number(tacticalSurplusInitialCounts[itemType] || 0) - 1)
-  ), 0);
-  const v2DynamicTacticalRepeatBonus = (
-    isAiV2Mode
-    && inventoryDeadlockHint
-    && tacticalSurplusTotalUnits > 0
-  )
-    ? Math.min(18, tacticalSurplusTotalUnits * 3)
-    : 0;
-  const tacticalRepeatLimitForTurn = AI_INVENTORY_TACTICAL_REPEAT_LIMIT_PER_TURN + v2DynamicTacticalRepeatBonus;
-  let inventoryStopByLimit = false;
-  let inventoryStopLimitType = null;
-  const inventoryDecisionStartedAt = performance.now();
-  const inventoryDecisionDeadlineAt = inventoryDecisionStartedAt + Math.max(12, AI_INVENTORY_DECISION_TIME_BUDGET_MS);
 
-  for(let inventoryActionStep = 0; inventoryActionStep < AI_INVENTORY_LOOP_GUARD_LIMIT_PER_TURN; inventoryActionStep += 1){
-    if(performance.now() > inventoryDecisionDeadlineAt){
-      inventoryStopReason = "inventory_decision_time_budget_reached";
-      inventoryStopByLimit = true;
-      inventoryStopLimitType = "time_budget";
-      break;
-    }
-    const actionBeforeState = afterInventoryState;
-    let forcedTacticalSurplusType = null;
-    if(tacticalInventoryActionsApplied < tacticalRepeatLimitForTurn && tacticalSurplusPendingOrder.length > 0){
-      const normalizedForcedIndex = tacticalSurplusForcedOrderIndex % tacticalSurplusPendingOrder.length;
-      forcedTacticalSurplusType = tacticalSurplusPendingOrder[normalizedForcedIndex] || null;
-    }
-    let actionUsed = false;
-    if(forcedTacticalSurplusType){
-      const currentForcedFailures = Number(tacticalSurplusFailureStreakByType[forcedTacticalSurplusType] || 0);
-      const allowNonForcedAfterFailures = currentForcedFailures >= FORCED_SURPLUS_NON_FORCED_UNLOCK_AFTER_FAILS;
-      forcedSurplusTelemetry.forced_surplus_attempts += 1;
-      tacticalSurplusAttemptedTypes.set(
-        forcedTacticalSurplusType,
-        Number(tacticalSurplusAttemptedTypes.get(forcedTacticalSurplusType) || 0) + 1,
-      );
-      try {
-        actionUsed = maybeUseInventoryBeforeLaunch(context, plannedMove, {
-          usedBuffTypesThisTurn: usedSingleUseBuffTypesThisTurn,
-          tacticalSurplusPolicy: {
-            forcedItemType: forcedTacticalSurplusType,
-            aggressiveAttemptIndex: currentForcedFailures + 1,
-            forceAggressiveFallback: currentForcedFailures > 0,
-          },
-          allowNonForcedInventoryDuringTacticalSpend: allowNonForcedAfterFailures,
-        });
-      } catch (forcedSpendError) {
-        logAiDecision("inventory_forced_surplus_attempt_exception", {
-          stage: "inventory_decision",
-          itemType: forcedTacticalSurplusType,
-          planeId: plannedMove?.plane?.id ?? null,
-          goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
-          message: forcedSpendError?.message || String(forcedSpendError),
-        });
-        actionUsed = false;
-      }
-      if(actionUsed){
-        tacticalSurplusSucceededTypes.add(forcedTacticalSurplusType);
-        tacticalSurplusFailureStreakByType[forcedTacticalSurplusType] = 0;
-        tacticalSurplusForcedOrderIndex = tacticalSurplusPendingOrder.length > 0
-          ? ((tacticalSurplusForcedOrderIndex + 1) % tacticalSurplusPendingOrder.length)
-          : 0;
-      } else {
-        forcedSurplusTelemetry.forced_surplus_failures += 1;
-        tacticalSurplusFailureStreakByType[forcedTacticalSurplusType] = currentForcedFailures + 1;
-        const aggressiveRetriesExhausted = tacticalSurplusFailureStreakByType[forcedTacticalSurplusType] >= FORCED_SURPLUS_AGGRESSIVE_RETRY_LIMIT;
-        if(aggressiveRetriesExhausted && tacticalSurplusPendingOrder.length > 1){
-          tacticalSurplusForcedOrderIndex = (tacticalSurplusForcedOrderIndex + 1) % tacticalSurplusPendingOrder.length;
-        }
-        if(!allowNonForcedAfterFailures){
-          continue;
-        }
-      }
-    }
-    if(!actionUsed){
-      try {
-        actionUsed = maybeUseInventoryBeforeLaunch(context, plannedMove, {
-          usedBuffTypesThisTurn: usedSingleUseBuffTypesThisTurn,
-        });
-      } catch (inventorySelectorError) {
-        logAiDecision("inventory_selector_attempt_exception", {
-          stage: "inventory_decision",
-          planeId: plannedMove?.plane?.id ?? null,
-          goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
-          message: inventorySelectorError?.message || String(inventorySelectorError),
-        });
-        inventoryStopReason = "inventory_selector_exception_handled";
-        break;
-      }
-    }
-    if(!actionUsed){
-      inventoryStopReason = totalInventoryActionsApplied > 0
-        ? "inventory_use_stopped_by_selector"
-        : "inventory_no_action";
-      break;
-    }
+  let actionUsed = false;
+  const actionBeforeState = beforeInventoryState;
+  try {
+    actionUsed = maybeUseInventoryBeforeLaunch(context, plannedMove, {
+      usedBuffTypesThisTurn: usedSingleUseBuffTypesThisTurn,
+    });
+  } catch (inventorySelectorError) {
+    logAiDecision("inventory_selector_attempt_exception", {
+      stage: "inventory_decision",
+      planeId: plannedMove?.plane?.id ?? null,
+      goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+      message: inventorySelectorError?.message || String(inventorySelectorError),
+    });
+    actionUsed = false;
+    inventoryStopReason = "inventory_selector_exception_handled";
+  }
 
+  if(actionUsed){
     itemUsed = true;
-    totalInventoryActionsApplied += 1;
+    totalInventoryActionsApplied = 1;
     afterInventoryState = evaluateBlueInventoryState();
     const actionConsumedItemType = detectConsumedInventoryType(
       actionBeforeState?.counts,
@@ -27422,71 +25204,31 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     );
     if(actionConsumedItemType){
       consumedItemTypes.push(actionConsumedItemType);
-      if(
-        forcedTacticalSurplusType
-        && actionConsumedItemType === forcedTacticalSurplusType
-      ){
-        forcedSurplusTelemetry.forced_surplus_spent += 1;
-      }
-      if(
-        actionConsumedItemType === INVENTORY_ITEM_TYPES.CROSSHAIR
-        || actionConsumedItemType === INVENTORY_ITEM_TYPES.FUEL
-        || actionConsumedItemType === INVENTORY_ITEM_TYPES.WINGS
-        || actionConsumedItemType === INVENTORY_ITEM_TYPES.INVISIBILITY
-      ){
-        usedSingleUseBuffTypesThisTurn.add(actionConsumedItemType);
-      }
       markAiInventoryItemUsed(actionConsumedItemType, {
         reason: plannedMove?.selectedInventoryCandidate?.reason || plannedMove?.inventoryUsageReason || "item_used",
         chosenBecauseOfPressure: plannedMove?.selectedInventoryCandidate?.chosenBecauseOfPressure === true,
       });
-      logAiDecision("inventory_pressure_resolution", {
-        itemType: actionConsumedItemType,
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
-        chosenBecauseOfPressure: plannedMove?.selectedInventoryCandidate?.chosenBecauseOfPressure === true,
-        pressureBonus: plannedMove?.selectedInventoryCandidate?.pressureBonus ?? 0,
-        whyChosenNow: plannedMove?.selectedInventoryCandidate?.chosenBecauseOfPressure === true
-          ? "pressure_pushed_item_plan_above_plain_flight"
-          : "item_was_good_enough_without_extra_pressure",
-      });
+      const isTacticalAction = actionConsumedItemType === INVENTORY_ITEM_TYPES.MINE
+        || actionConsumedItemType === INVENTORY_ITEM_TYPES.DYNAMITE;
+      if(isTacticalAction){
+        tacticalInventoryActionsApplied = 1;
+      } else {
+        buffInventoryActionsApplied = 1;
+      }
     }
-
-    const isTacticalAction = actionConsumedItemType === INVENTORY_ITEM_TYPES.MINE
-      || actionConsumedItemType === INVENTORY_ITEM_TYPES.DYNAMITE;
-    if(isTacticalAction){
-      tacticalInventoryActionsApplied += 1;
-    } else {
-      buffInventoryActionsApplied += 1;
-    }
-
-    if(totalInventoryActionsApplied >= AI_INVENTORY_LOOP_GUARD_LIMIT_PER_TURN){
-      inventoryStopReason = "inventory_total_action_limit_reached";
-      inventoryStopByLimit = true;
-      inventoryStopLimitType = "loop_guard";
-      break;
-    }
-    if(!isTacticalAction && buffInventoryActionsApplied >= AI_INVENTORY_BUFF_CHAIN_LIMIT_PER_TURN){
-      inventoryStopReason = "inventory_buff_chain_limit_reached";
-      inventoryStopByLimit = true;
-      inventoryStopLimitType = "buff_chain";
-      break;
-    }
-    if(isTacticalAction && tacticalInventoryActionsApplied >= tacticalRepeatLimitForTurn){
-      inventoryStopReason = "inventory_tactical_repeat_limit_reached";
-      inventoryStopByLimit = true;
-      inventoryStopLimitType = "tactical_repeat";
-      break;
-    }
+    inventoryStopReason = "inventory_single_action_applied";
   }
 
   const consumedItemType = consumedItemTypes.length > 0
     ? consumedItemTypes[consumedItemTypes.length - 1]
     : null;
   inventoryStageResult.selected = Boolean(itemUsed);
-  inventoryStageResult.reason = itemUsed ? "inventory_item_applied" : "no_inventory_item_used";
+  inventoryStageResult.reason = itemUsed
+    ? "inventory_item_applied"
+    : (plannedMove?.inventoryDecisionMadeMeta?.reason || "no_inventory_item_used");
   inventoryStageResult.consumedItemType = consumedItemType || null;
   inventoryStageResult.consumedItemTypes = consumedItemTypes.slice();
+
   logAiDecision("inventory_usage_turn_summary", {
     planeId: plannedMove?.plane?.id ?? null,
     goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
@@ -27495,32 +25237,24 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     appliedTacticalItemsCount: tacticalInventoryActionsApplied,
     appliedItemTypesInOrder: consumedItemTypes.slice(),
     stopReason: inventoryStopReason,
-    stopByLimit: inventoryStopByLimit,
-    stopLimitType: inventoryStopLimitType,
-    tacticalSurplusPolicy: {
-      requiredTypes: tacticalSurplusPendingOrder.slice(),
-      attemptedTypes: Array.from(tacticalSurplusAttemptedTypes.keys()),
-      attemptsByType: Object.fromEntries(tacticalSurplusAttemptedTypes),
-      succeededTypes: Array.from(tacticalSurplusSucceededTypes),
-      forcedSurplusTelemetry: { ...forcedSurplusTelemetry },
-      aggressiveRetryLimit: FORCED_SURPLUS_AGGRESSIVE_RETRY_LIMIT,
-      nonForcedUnlockAfterFails: FORCED_SURPLUS_NON_FORCED_UNLOCK_AFTER_FAILS,
-      inventoryDeadlockHint,
-      dynamicRepeatBonus: v2DynamicTacticalRepeatBonus,
-    },
-    limits: {
-      loopGuard: AI_INVENTORY_LOOP_GUARD_LIMIT_PER_TURN,
-      buff: AI_INVENTORY_BUFF_CHAIN_LIMIT_PER_TURN,
-      tacticalBase: AI_INVENTORY_TACTICAL_REPEAT_LIMIT_PER_TURN,
-      tacticalForTurn: tacticalRepeatLimitForTurn,
-    },
+    flowMode: "single_candidate_single_execution",
   });
+
+  const decisionMeta = plannedMove?.inventoryDecisionMadeMeta || null;
   logAiDecision("inventory_decision_made", {
     stage: inventoryStageResult.stage,
     selected: inventoryStageResult.selected,
     reason: inventoryStageResult.reason,
+    reasonCodes: Array.isArray(decisionMeta?.reasonCodes) ? decisionMeta.reasonCodes : [],
+    rejectReasons: Array.isArray(decisionMeta?.rejectReasons) ? decisionMeta.rejectReasons : [],
     consumedItemType: inventoryStageResult.consumedItemType,
     consumedItemTypes: inventoryStageResult.consumedItemTypes,
+    selectedItemType: decisionMeta?.selectedItemType || null,
+    selectedReason: decisionMeta?.selectedReason || null,
+    executionSource: decisionMeta?.executionSource || null,
+    selectedSequenceLength: Number.isFinite(decisionMeta?.selectedSequenceLength)
+      ? decisionMeta.selectedSequenceLength
+      : (Array.isArray(plannedMove?.selectedInventorySequence) ? plannedMove.selectedInventorySequence.length : 0),
     planeId: plannedMove?.plane?.id ?? null,
     goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
     allowedAsPreparationMove: allowStrategicInventoryPreparation,
@@ -27535,24 +25269,15 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       ? plannedMove.lastInventorySelectionGate.unlockedBy
       : [],
   });
+
   const inventoryDecisionGoal = plannedMove?.goalName || aiRoundState?.currentGoal || null;
   const inventoryDecisionPlaneId = plannedMove?.plane?.id ?? null;
-  const inventoryCandidatePool = Array.isArray(plannedMove?.inventoryCandidates) ? plannedMove.inventoryCandidates : [];
-  const inventoryRejectedPool = Array.isArray(plannedMove?.rejectedInventoryCandidates) ? plannedMove.rejectedInventoryCandidates : [];
-  const inventoryDecisionReasonCodes = inventoryStageResult.selected
-    ? ["inventory_item_consumed"]
-    : (beforeInventoryState?.total > 0
-      ? (inventoryCandidatePool.length > 0
-        ? ["inventory_candidates_not_used"]
-        : ["inventory_candidates_missing"])
-      : ["no_inventory_items"]);
-  const inventoryDecisionRejectReasons = inventoryStageResult.selected
-    ? []
-    : (beforeInventoryState?.total > 0
-      ? (inventoryRejectedPool.length > 0
-        ? inventoryRejectedPool.map((entry) => entry?.reason).filter((reason) => typeof reason === "string" && reason.length > 0).slice(0, 4)
-        : ["inventory_no_candidate_passed_thresholds"])
-      : ["inventory_empty"]);
+  const inventoryDecisionReasonCodes = Array.isArray(decisionMeta?.reasonCodes)
+    ? decisionMeta.reasonCodes
+    : (inventoryStageResult.selected ? ["inventory_item_consumed"] : ["inventory_candidates_not_used"]);
+  const inventoryDecisionRejectReasons = Array.isArray(decisionMeta?.rejectReasons)
+    ? decisionMeta.rejectReasons
+    : [];
   recordInventoryAiDecision("inventory_decision_made", {
     planeId: inventoryDecisionPlaneId,
     goal: inventoryDecisionGoal,
