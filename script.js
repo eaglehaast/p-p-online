@@ -25094,28 +25094,159 @@ function resolveFinalAiLaunchMoveWithMineGate(plannedMove, context = {}, options
 
 function issueAIMoveWithInventoryUsage(context, plannedMove){
   const isFallbackMove = resolveAiFallbackMoveFlag(plannedMove);
-  const failSafeHandler = typeof failSafeAdvanceTurn === "function"
-    ? failSafeAdvanceTurn
-    : (fallbackReason, fallbackDetails = {}) => {
-        const rejectReasons = Array.isArray(fallbackDetails.rejectReasons)
-          ? fallbackDetails.rejectReasons
-          : [fallbackReason];
-        const reasonCodes = Array.isArray(fallbackDetails.reasonCodes)
-          ? fallbackDetails.reasonCodes
-          : ["fail_safe_turn_advance"];
-        const goal = fallbackDetails.goal || aiRoundState?.currentGoal || fallbackReason;
-        const planeId = fallbackDetails.planeId ?? fallbackDetails?.move?.plane?.id ?? null;
-        const analyzerStage = resolveAiFallbackAnalyzerStage(fallbackReason, fallbackDetails);
-        recordAiSelfAnalyzerDecision(analyzerStage, {
-          goal,
-          planeId,
-          reasonCodes: [...new Set([analyzerStage, ...reasonCodes])],
-          rejectReasons: [...new Set([fallbackReason, ...rejectReasons])],
-          errorMessage: fallbackDetails.errorMessage,
+  const externalFailSafeAdvanceTurn = typeof failSafeAdvanceTurn === "function" ? failSafeAdvanceTurn : null;
+
+  function pickEmergencyLaunchPlane(fallbackDetails = {}){
+    if(fallbackDetails?.move?.plane) return fallbackDetails.move.plane;
+    if(plannedMove?.plane) return plannedMove.plane;
+    if(Array.isArray(context?.aiPlanes)){
+      const alivePlane = context.aiPlanes.find((plane) => plane && plane.isAlive !== false);
+      if(alivePlane) return alivePlane;
+    }
+    if(typeof points !== "undefined" && Array.isArray(points)){
+      const standbyPlane = points.find((plane) => plane && plane.color === "blue" && plane.isAlive !== false);
+      if(standbyPlane) return standbyPlane;
+    }
+    return null;
+  }
+
+  function buildSimpleEmergencyDirectMove(fallbackDetails = {}){
+    const plane = pickEmergencyLaunchPlane(fallbackDetails);
+    if(!plane || !Number.isFinite(plane.x) || !Number.isFinite(plane.y)) return null;
+    const shortDistancePx = Math.max(10, Number.isFinite(CELL_SIZE) ? CELL_SIZE * 1.2 : 18);
+    const fallbackEnemy = Array.isArray(context?.enemies)
+      ? context.enemies.find((enemy) => enemy && Number.isFinite(enemy.x) && Number.isFinite(enemy.y))
+      : null;
+    const targetX = Number.isFinite(fallbackDetails?.targetPoint?.x)
+      ? fallbackDetails.targetPoint.x
+      : (Number.isFinite(fallbackEnemy?.x) ? fallbackEnemy.x : plane.x + shortDistancePx);
+    const targetY = Number.isFinite(fallbackDetails?.targetPoint?.y)
+      ? fallbackDetails.targetPoint.y
+      : (Number.isFinite(fallbackEnemy?.y) ? fallbackEnemy.y : plane.y);
+    const dx = targetX - plane.x;
+    const dy = targetY - plane.y;
+    const rawLength = Math.hypot(dx, dy);
+    const normX = rawLength > 0 ? dx / rawLength : 1;
+    const normY = rawLength > 0 ? dy / rawLength : 0;
+    const durationSec = FIELD_FLIGHT_DURATION_SEC > 0 ? FIELD_FLIGHT_DURATION_SEC : 1;
+    const speed = shortDistancePx / durationSec;
+
+    return {
+      plane,
+      vx: normX * speed,
+      vy: normY * speed,
+      goalName: fallbackDetails.goal || plannedMove?.goalName || aiRoundState?.currentGoal || "fail_safe_simple_direct_move",
+      decisionReason: "fail_safe_simple_direct_move",
+      routeClass: "direct",
+      isFallbackMove: true,
+    };
+  }
+
+  function attemptGuaranteedFailSafeLaunch(fallbackReason, fallbackDetails = {}){
+    const guaranteedMove = typeof getFailSafeGuaranteedDirectMove === "function"
+      ? getFailSafeGuaranteedDirectMove(context)
+      : null;
+    const guaranteedValidation = validateAiLaunchMoveCandidate(guaranteedMove);
+    if(guaranteedValidation.ok){
+      const launchResult = issueAIMove(
+        guaranteedMove.plane,
+        guaranteedMove.vx,
+        guaranteedMove.vy,
+        { isFallbackMove: true },
+      );
+      if(launchResult?.ok){
+        logAiDecision("ai_fail_safe_guaranteed_launch_started", {
+          fallbackReason,
+          planeId: guaranteedMove?.plane?.id ?? null,
+          goal: fallbackDetails.goal || aiRoundState?.currentGoal || null,
+          reasonCode: "fail_safe_guaranteed_direct_move_started",
         });
-        aiMoveScheduled = false;
-        advanceTurn();
-      };
+        return { launched: true, mode: "guaranteed_direct_move" };
+      }
+    }
+
+    const simpleEmergencyMove = buildSimpleEmergencyDirectMove(fallbackDetails);
+    const simpleValidation = validateAiLaunchMoveCandidate(simpleEmergencyMove);
+    if(simpleValidation.ok){
+      const launchResult = issueAIMove(
+        simpleEmergencyMove.plane,
+        simpleEmergencyMove.vx,
+        simpleEmergencyMove.vy,
+        { isFallbackMove: true },
+      );
+      if(launchResult?.ok){
+        logAiDecision("ai_fail_safe_simple_launch_started", {
+          fallbackReason,
+          planeId: simpleEmergencyMove?.plane?.id ?? null,
+          goal: fallbackDetails.goal || aiRoundState?.currentGoal || null,
+          reasonCode: "fail_safe_simple_direct_move_started",
+          guaranteedRejectReason: guaranteedValidation.reason || "invalid_guaranteed_direct_move",
+        });
+        return { launched: true, mode: "simple_direct_move" };
+      }
+    }
+
+    return {
+      launched: false,
+      mode: null,
+      rejectReasons: [
+        guaranteedValidation.reason || "invalid_guaranteed_direct_move",
+        simpleValidation.reason || "invalid_simple_direct_move",
+      ],
+    };
+  }
+
+  const failSafeHandler = (fallbackReason, fallbackDetails = {}) => {
+    const launchAttempt = attemptGuaranteedFailSafeLaunch(fallbackReason, fallbackDetails);
+    if(launchAttempt.launched){
+      return;
+    }
+
+    const rejectReasons = Array.isArray(fallbackDetails.rejectReasons)
+      ? fallbackDetails.rejectReasons
+      : [fallbackReason];
+    const reasonCodes = Array.isArray(fallbackDetails.reasonCodes)
+      ? fallbackDetails.reasonCodes
+      : ["fail_safe_turn_advance"];
+    const goal = fallbackDetails.goal || aiRoundState?.currentGoal || fallbackReason;
+    const planeId = fallbackDetails.planeId ?? fallbackDetails?.move?.plane?.id ?? plannedMove?.plane?.id ?? null;
+    const analyzerStage = resolveAiFallbackAnalyzerStage(fallbackReason, fallbackDetails);
+    const technicalFailure = fallbackDetails.reasonCategory === "technical_exception"
+      || fallbackReason === "ai_move_exception"
+      || fallbackReason === "inventory_usage_exception"
+      || reasonCodes.includes("technical_exception");
+
+    if(technicalFailure){
+      logAiDecision("ai_fail_safe_critical_force_launch_execution_error", {
+        reasonCode: "critical_fail_safe_force_launch_execution_error",
+        fallbackReason,
+        goal,
+        planeId,
+        rejectReasons: launchAttempt.rejectReasons,
+        message: fallbackDetails.errorMessage || null,
+      });
+    }
+
+    recordAiSelfAnalyzerDecision(analyzerStage, {
+      goal,
+      planeId,
+      reasonCodes: [...new Set([analyzerStage, ...reasonCodes])],
+      rejectReasons: [...new Set([fallbackReason, ...rejectReasons, ...(launchAttempt.rejectReasons || [])])],
+      errorMessage: fallbackDetails.errorMessage,
+    });
+    aiMoveScheduled = false;
+
+    if(externalFailSafeAdvanceTurn){
+      externalFailSafeAdvanceTurn(fallbackReason, {
+        ...fallbackDetails,
+        reasonCodes: [...new Set([...reasonCodes, "fail_safe_turn_advance"])],
+        rejectReasons: [...new Set([...rejectReasons, ...(launchAttempt.rejectReasons || [])])],
+      });
+      return;
+    }
+
+    advanceTurn();
+  };
 
   const initialTargetEnemy = plannedMove?.targetEnemy || plannedMove?.enemy || null;
   const initialTargetSnapshot = initialTargetEnemy && Number.isFinite(initialTargetEnemy.x) && Number.isFinite(initialTargetEnemy.y)
