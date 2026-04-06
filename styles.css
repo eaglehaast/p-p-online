@@ -523,6 +523,38 @@ body, button {
     display: block;
   }
 
+  .transfer-frame-layer {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 26;
+  }
+
+  .transfer-frame-layer.is-visible {
+    display: flex;
+  }
+
+  .transfer-frame {
+    position: absolute;
+    width: min(86%, 330px);
+    height: auto;
+    max-height: 55%;
+    object-fit: contain;
+    user-select: none;
+    pointer-events: none;
+  }
+
+  .transfer-frame--color {
+    display: none;
+  }
+
+  .transfer-frame--color.is-visible {
+    display: block;
+  }
+
   body.inventory-pointer-hidden,
   body.inventory-pointer-hidden * {
     cursor: none !important;
