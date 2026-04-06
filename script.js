@@ -26582,8 +26582,12 @@ function getFinalAiLaunchMineThreatCheck(move, options = {}){
     enemy: enemyThreatMeta,
     own: ownThreatMeta,
   };
-  const hasCriticalForbiddenThreat = Boolean(enemyThreatMeta?.pathHit || enemyThreatMeta?.landingThreat || ownThreatMeta?.landingThreat);
-  const hasAcceptableCombatRisk = !hasCriticalForbiddenThreat && Boolean(ownThreatMeta?.pathHit);
+  const hasCriticalForbiddenThreat = Boolean(
+    enemyThreatMeta?.pathHit
+    || enemyThreatMeta?.landingThreat
+    || ownThreatMeta?.pathHit
+    || ownThreatMeta?.landingThreat
+  );
   if(hasCriticalForbiddenThreat){
     return {
       ok: false,
@@ -26592,19 +26596,6 @@ function getFinalAiLaunchMineThreatCheck(move, options = {}){
       message: "Final mine check rejected stale route before launch",
       threatMeta,
       threatClass: "critical_forbidden",
-      landingPoint: plannedLanding,
-      startPoint: { x: plane.x, y: plane.y },
-    };
-  }
-
-  if(hasAcceptableCombatRisk){
-    return {
-      ok: true,
-      reason: ownThreatMeta?.reason || "path_crosses_mine",
-      reasonCode: "final_mine_check_allowed_combat_risk",
-      message: "Final mine check allowed acceptable combat risk",
-      threatMeta,
-      threatClass: "acceptable_combat_risk",
       landingPoint: plannedLanding,
       startPoint: { x: plane.x, y: plane.y },
     };
