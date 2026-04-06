@@ -934,6 +934,11 @@ function hideTransferFrame() {
   }
 }
 
+function isTransferFrameVisible() {
+  return transferFrameState.layer instanceof HTMLElement
+    && transferFrameState.layer.classList.contains("is-visible");
+}
+
 function showTransferFrame(options = {}) {
   const mode = options.mode === "win" ? "win" : "turn";
   const player = options.player === "green" ? "green" : "blue";
@@ -10131,6 +10136,7 @@ let greenScore = 0;
 let blueScore  = 0;
 let roundNumber = 0;
 let roundTextTimer = 0;
+let roundTextTimerStartTimeout = null;
 let roundTransitionTimeout = null;
 
 function getScoreGap(color = "blue"){
@@ -38117,7 +38123,7 @@ function gameDraw(){
     endGameDiv.style.top = "";
   }
 
-  if(roundTextTimer > 0 && selectedRuleset !== "mapeditor"){
+  if(roundTextTimer > 0 && selectedRuleset !== "mapeditor" && !isTransferFrameVisible()){
     gsBoardCtx.font="48px 'Patrick Hand', cursive";
     gsBoardCtx.fillStyle = '#B22222';
     gsBoardCtx.strokeStyle = '#FFD700';
@@ -40611,6 +40617,10 @@ function startNewRound(){
     clearTimeout(roundTransitionTimeout);
     roundTransitionTimeout = null;
   }
+  if(roundTextTimerStartTimeout){
+    clearTimeout(roundTextTimerStartTimeout);
+    roundTextTimerStartTimeout = null;
+  }
   clearAiPostInventoryLaunchTimeout("start_new_round");
   const shouldRandomize = !suppressAutoRandomMapForNextRound && shouldAutoRandomizeMap() && roundNumber > 0;
   if(shouldRandomize){
@@ -40648,7 +40658,17 @@ function startNewRound(){
   startAiSelfAnalyzerMatchIfNeeded();
   roundNumber++;
   ensureAiSelfAnalyzerRound();
-  roundTextTimer = selectedRuleset === "mapeditor" ? 0 : 120;
+  if(selectedRuleset === "mapeditor"){
+    roundTextTimer = 0;
+  } else if(isTransferFrameVisible()){
+    roundTextTimer = 0;
+    roundTextTimerStartTimeout = setTimeout(() => {
+      roundTextTimer = 120;
+      roundTextTimerStartTimeout = null;
+    }, TRANSFER_FRAME_AUTO_HIDE_MS);
+  } else {
+    roundTextTimer = 120;
+  }
   aiRoundState = createInitialAiRoundState();
   aiRoundState.tieBreakerSeed = Math.floor(Math.random() * 0x7fffffff);
 
