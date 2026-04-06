@@ -30929,6 +30929,60 @@ function getGuaranteedAnyLegalLaunch(context){
   return null;
 }
 
+function getMandatoryTurnMove(context){
+  const fromPlanning = getFailSafeMinimalTargetedMove(context)
+    || getForcedProgressLaunchMove(context)
+    || getFailSafeGuaranteedDirectMove(context)
+    || getGuaranteedAnyLegalLaunch(context);
+  if(fromPlanning) return fromPlanning;
+
+  const aiPlanes = Array.isArray(context?.aiPlanes)
+    ? context.aiPlanes
+    : points.filter((plane) => plane?.color === "blue");
+  const launchReadyPlane = aiPlanes.find((plane) => (
+    isPlaneLaunchStateReady(plane)
+    && !flyingPoints.some((fp) => fp.plane === plane)
+  ));
+  if(!launchReadyPlane) return null;
+
+  const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
+  const nearestEnemy = enemies.reduce((best, enemy) => {
+    if(!enemy?.isAlive || enemy?.burning) return best;
+    if(!best) return enemy;
+    return dist(launchReadyPlane, enemy) < dist(launchReadyPlane, best) ? enemy : best;
+  }, null);
+  const targetX = Number.isFinite(nearestEnemy?.x)
+    ? nearestEnemy.x
+    : launchReadyPlane.x;
+  const targetY = Number.isFinite(nearestEnemy?.y)
+    ? nearestEnemy.y
+    : (launchReadyPlane.color === "blue" ? FIELD_TOP + FIELD_HEIGHT : FIELD_TOP);
+  const dx = targetX - launchReadyPlane.x;
+  const dy = targetY - launchReadyPlane.y;
+  const rawDistance = Math.hypot(dx, dy);
+  const normX = rawDistance > 0.0001 ? dx / rawDistance : 0;
+  const normY = rawDistance > 0.0001 ? dy / rawDistance : 1;
+  const profile = getAiFlightRangeProfile(launchReadyPlane);
+  const speedPxPerSec = Number.isFinite(profile?.speedPxPerSec) && profile.speedPxPerSec > 0
+    ? profile.speedPxPerSec
+    : (CELL_SIZE * 6 / FIELD_FLIGHT_DURATION_SEC);
+  const mandatoryScale = 0.35;
+
+  return normalizeFailSafeLaunchCandidate({
+    plane: launchReadyPlane,
+    vx: normX * speedPxPerSec * mandatoryScale,
+    vy: normY * speedPxPerSec * mandatoryScale,
+    totalDist: speedPxPerSec * mandatoryScale * FIELD_FLIGHT_DURATION_SEC,
+    effectiveFlightRangeCells: profile?.effectiveFlightRangeCells ?? null,
+    effectiveFlightDistancePx: Number.isFinite(profile?.flightDistancePx)
+      ? Number(profile.flightDistancePx.toFixed(1))
+      : null,
+    goalName: "mandatory_turn_move",
+    decisionReason: "mandatory_turn_move",
+    routeClass: "direct",
+  });
+}
+
 function getForcedProgressLaunchMove(context){
   const contextAiPlanes = Array.isArray(context?.aiPlanes) ? context.aiPlanes : null;
   const fallbackAiPlanes = (contextAiPlanes || points).filter(plane =>
@@ -32149,34 +32203,34 @@ function runAiTurnV2(context = {}){
       });
     }
 
-    const reserveMove = getFailSafeMinimalTargetedMove(modeContext)
-      || getForcedProgressLaunchMove(modeContext)
-      || getFailSafeGuaranteedDirectMove(modeContext)
-      || getGuaranteedAnyLegalLaunch(modeContext);
-    if(reserveMove){
-      logAiDecision("ai_logical_deadlock_reserve_selected", {
-        ...logicalDeadlockContext,
-        reserveGoal: reserveMove?.goalName || null,
-        reserveDecisionReason: reserveMove?.decisionReason || null,
-        reservePlaneId: reserveMove?.plane?.id ?? null,
-        reasonCode: "ai_logical_deadlock_reserve_selected",
-      });
-      return issueAIMoveFromDoComputerMove(modeContext, {
-        ...reserveMove,
-        goalName: reserveMove.goalName || "logical_deadlock_reserve_move",
-        decisionReason: reserveMove.decisionReason || "logical_deadlock_reserve_move",
-      }, {
-        source: "runAiTurnV2",
-        chooseGoal: chosenGoal,
-        routeClass: reserveMove?.routeClass || "direct",
-        fallbackDiagnostics: {
-          stageBeforeFallback: "v2_shot_plan_not_found",
-          fallbackGoal: reserveMove?.goalName || null,
-          fallbackDecisionReason: reserveMove?.decisionReason || null,
-          rootCauseHint: "ai_logical_deadlock",
-        },
-      });
-    }
+  }
+
+  const mandatoryTurnMove = getMandatoryTurnMove(modeContext);
+  if(mandatoryTurnMove){
+    logAiDecision("v2_mandatory_turn_move_selected", {
+      goal: chosenGoal?.goalName || null,
+      selectedGoal: mandatoryTurnMove?.goalName || null,
+      selectedDecisionReason: mandatoryTurnMove?.decisionReason || null,
+      selectedPlaneId: mandatoryTurnMove?.plane?.id ?? null,
+      reasonCode: "v2_mandatory_turn_move_selected",
+      deadlockDetected: logicalDeadlockDetected === true,
+      source: "runAiTurnV2",
+    });
+    return issueAIMoveFromDoComputerMove(modeContext, {
+      ...mandatoryTurnMove,
+      goalName: mandatoryTurnMove.goalName || "mandatory_turn_move",
+      decisionReason: mandatoryTurnMove.decisionReason || "mandatory_turn_move",
+    }, {
+      source: "runAiTurnV2",
+      chooseGoal: chosenGoal,
+      routeClass: mandatoryTurnMove?.routeClass || "direct",
+      fallbackDiagnostics: {
+        stageBeforeFallback: logicalDeadlockDetected ? "ai_logical_deadlock" : "v2_shot_plan_not_found",
+        fallbackGoal: mandatoryTurnMove?.goalName || null,
+        fallbackDecisionReason: mandatoryTurnMove?.decisionReason || null,
+        rootCauseHint: "mandatory_turn_move",
+      },
+    });
   }
 
   logAiDecision("v2_safe_turn_resolution", {
