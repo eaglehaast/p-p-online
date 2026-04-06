@@ -24557,6 +24557,160 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     });
   }
 
+  function tryPlaceBlueMineForcedFallback(){
+    const candidateAnchors = [];
+    const pushAnchor = (point) => {
+      if(!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+      candidateAnchors.push({ x: point.x, y: point.y });
+    };
+
+    pushAnchor(landingPoint);
+    pushAnchor(enemyBase);
+
+    if(Array.isArray(context?.enemies)){
+      for(const enemy of context.enemies){
+        pushAnchor(enemy);
+      }
+    }
+
+    if(plannedMove?.plane){
+      pushAnchor(plannedMove.plane);
+      if(landingPoint){
+        pushAnchor({
+          x: (plannedMove.plane.x + landingPoint.x) * 0.5,
+          y: (plannedMove.plane.y + landingPoint.y) * 0.5,
+        });
+      }
+    }
+
+    const offsetStep = Math.max(8, Number.isFinite(CELL_SIZE) ? CELL_SIZE * 0.55 : 22);
+    const offsets = [
+      { x: 0, y: 0 },
+      { x: offsetStep, y: 0 },
+      { x: -offsetStep, y: 0 },
+      { x: 0, y: offsetStep },
+      { x: 0, y: -offsetStep },
+      { x: offsetStep, y: offsetStep },
+      { x: -offsetStep, y: offsetStep },
+      { x: offsetStep, y: -offsetStep },
+      { x: -offsetStep, y: -offsetStep },
+    ];
+
+    for(const anchor of candidateAnchors){
+      for(const offset of offsets){
+        const placement = {
+          x: anchor.x + offset.x,
+          y: anchor.y + offset.y,
+          cellX: Math.floor((anchor.x + offset.x - FIELD_LEFT) / CELL_SIZE),
+          cellY: Math.floor((anchor.y + offset.y - FIELD_TOP) / CELL_SIZE),
+        };
+        if(!isMinePlacementValid(placement)) continue;
+        placeMine({
+          owner: "blue",
+          x: placement.x,
+          y: placement.y,
+          cellX: placement.cellX,
+          cellY: placement.cellY,
+        });
+        aiRoundState.lastMinePlacementMeta = {
+          scenario: "mine_forced_always_use_fallback",
+          placement,
+        };
+        return placement;
+      }
+    }
+
+    for(let cellY = 0; cellY < GRID_ROWS; cellY += 1){
+      for(let cellX = 0; cellX < GRID_COLS; cellX += 1){
+        const placement = {
+          x: FIELD_LEFT + (cellX + 0.5) * CELL_SIZE,
+          y: FIELD_TOP + (cellY + 0.5) * CELL_SIZE,
+          cellX,
+          cellY,
+        };
+        if(!isMinePlacementValid(placement)) continue;
+        placeMine({
+          owner: "blue",
+          x: placement.x,
+          y: placement.y,
+          cellX: placement.cellX,
+          cellY: placement.cellY,
+        });
+        aiRoundState.lastMinePlacementMeta = {
+          scenario: "mine_forced_always_use_grid_fallback",
+          placement,
+        };
+        return placement;
+      }
+    }
+    return null;
+  }
+
+  function tryForceUseMineIfAvailable(){
+    const mineCount = Number(inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0);
+    if(mineCount <= 0) return false;
+
+    let placementMode = null;
+    let used = false;
+    const forcedDefensive = tryPlaceBlueDefensiveMine(context, plannedMove);
+    if(forcedDefensive){
+      used = true;
+      placementMode = "defensive";
+    } else {
+      const forcedBase = tryPlaceBlueMineNearEnemyBase(context, plannedMove);
+      if(forcedBase){
+        used = true;
+        placementMode = "base";
+      }
+    }
+
+    let forcedFallbackPlacement = null;
+    if(!used){
+      forcedFallbackPlacement = tryPlaceBlueMineForcedFallback();
+      if(forcedFallbackPlacement){
+        used = true;
+        placementMode = "forced_fallback";
+      }
+    }
+
+    if(!used){
+      logAiDecision("mine_forced_always_use_blocked", {
+        planeId: plannedMove?.plane?.id ?? null,
+        goal: strategicGoal || null,
+        reason: "no_valid_placement_found",
+      });
+      return false;
+    }
+
+    removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
+    plannedMove.inventoryUsageReason = "mine_forced_always_use";
+    logAiDecision("mine_forced_always_use", {
+      planeId: plannedMove?.plane?.id ?? null,
+      goal: strategicGoal || null,
+      reasonCode: "mine_forced_always_use",
+      placementMode,
+      fallbackPlacement: forcedFallbackPlacement
+        ? {
+            x: Number(forcedFallbackPlacement.x.toFixed(1)),
+            y: Number(forcedFallbackPlacement.y.toFixed(1)),
+            cellX: forcedFallbackPlacement.cellX,
+            cellY: forcedFallbackPlacement.cellY,
+          }
+        : null,
+    });
+    logTacticalItemFinalDecision(INVENTORY_ITEM_TYPES.MINE, {
+      planeId: plannedMove?.plane?.id ?? null,
+      goal: strategicGoal || null,
+      finalDecision: "used",
+      reason: "mine_forced_always_use",
+    });
+    return true;
+  }
+
+  if(tryForceUseMineIfAvailable()){
+    return true;
+  }
+
   function evaluateFuelMaterialGain(enemyFlagAnchor, tacticalContext = {}){
     const FUEL_SAFETY_GAIN_DELTA_MIN = 0.12;
     const contactTargets = [
@@ -25217,115 +25371,6 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     return { used: attempts > 0, executed: false };
   }
 
-  const mineForcedCadenceReasonCode = "mine_forced_cadence";
-  const mineForcedCadenceModeActive = (!hasForcedTacticalSpend || forcedTacticalItemType === INVENTORY_ITEM_TYPES.MINE || allowNonForcedInventoryDuringTacticalSpend)
-    && allowTacticalItems
-    && Number(inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0) > 0
-    && (
-      currentIdleTurns >= AI_MINE_FORCED_CADENCE_IDLE_TURN_THRESHOLD
-      || (recentInventorySignals?.shotPlanNotFoundCount ?? 0) >= AI_MINE_FORCED_CADENCE_NO_SHOT_THRESHOLD
-    );
-  if(mineForcedCadenceModeActive){
-    const forcedCadenceDiagnostics = {
-      planeId: plannedMove?.plane?.id ?? null,
-      goal: strategicGoal || null,
-      reasonCode: mineForcedCadenceReasonCode,
-      mineCount: Number(inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0),
-      inventoryIdleTurns: currentIdleTurns,
-      inventoryIdleTurnsThreshold: AI_MINE_FORCED_CADENCE_IDLE_TURN_THRESHOLD,
-      shotPlanNotFoundCount: recentInventorySignals?.shotPlanNotFoundCount ?? 0,
-      shotPlanNotFoundThreshold: AI_MINE_FORCED_CADENCE_NO_SHOT_THRESHOLD,
-      softRiskBenefitThreshold: AI_MINE_FORCED_CADENCE_SOFT_RISK_BENEFIT_SCORE_MIN,
-    };
-    const forcedCadenceDefensiveProbe = tryPlaceBlueDefensiveMine(context, plannedMove, { evaluateOnly: true, withDiagnostics: true });
-    const forcedCadenceBaseProbe = tryPlaceBlueMineNearEnemyBase(context, plannedMove, { evaluateOnly: true, withDiagnostics: true });
-    const forcedCadenceDefensivePlan = forcedCadenceDefensiveProbe?.plan || null;
-    const forcedCadenceBasePlan = forcedCadenceBaseProbe?.plan || null;
-    const forcedCadencePreferredMinePlan = !forcedCadenceDefensivePlan && !forcedCadenceBasePlan
-      ? null
-      : (!forcedCadenceBasePlan
-          ? { type: "defensive", plan: forcedCadenceDefensivePlan }
-          : (!forcedCadenceDefensivePlan
-              ? { type: "base", plan: forcedCadenceBasePlan }
-              : ((forcedCadenceDefensivePlan?.score || 0) >= (forcedCadenceBasePlan?.score || 0)
-                  ? { type: "defensive", plan: forcedCadenceDefensivePlan }
-                  : { type: "base", plan: forcedCadenceBasePlan })));
-    const forcedCadenceSafeAfterPlacement = !landingPoint
-      ? false
-      : !Array.isArray(context?.enemies) || context.enemies.every((enemy) => {
-        const enemyDistance = dist(landingPoint, enemy);
-        const enemyHasLane = isPathClear(enemy.x, enemy.y, landingPoint.x, landingPoint.y);
-        return !enemyHasLane || enemyDistance > plannedMoveEffectiveRangePx * 0.95;
-      });
-    const forcedCadenceSafetyCoverage = forcedCadencePreferredMinePlan
-      ? evaluatePostLaunchSafetyWithMine(context, plannedMove, forcedCadencePreferredMinePlan.plan)
-      : { beforeSafe: false, afterSafe: false };
-    const forcedCadenceMineDecisionMeta = evaluateAiMineTacticalPlanDecision({
-      preferredMinePlan: forcedCadencePreferredMinePlan,
-      safeAfterPlacement: forcedCadenceSafeAfterPlacement,
-      safetyImprovesAfterPlacement: forcedCadenceSafetyCoverage.beforeSafe === false && forcedCadenceSafetyCoverage.afterSafe === true,
-      isCriticalGoalForDefensiveMine: isAiCriticalMineGoal(strategicGoal),
-      mineHasSurplusCharges: Number(inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0) > 1,
-      mineProtectsAfterAggressiveAction: strategicGoal === "direct_finisher" && forcedCadenceSafetyCoverage.afterSafe === true,
-      repeatedEmptyTurns: currentIdleTurns >= AI_MINE_FORCED_CADENCE_IDLE_TURN_THRESHOLD,
-      context,
-      plannedMove,
-      aiItemSpendStyle: getAiItemSpendStyle(context, plannedMove),
-      strategicGoalName: strategicGoal,
-      forcedCadenceMode: true,
-      forcedCadenceSoftRiskBenefitScoreMin: AI_MINE_FORCED_CADENCE_SOFT_RISK_BENEFIT_SCORE_MIN,
-    });
-    const forcedCadenceAllowsPlacement = Boolean(forcedCadencePreferredMinePlan)
-      && !forcedCadenceMineDecisionMeta.mineRejectedBySelfRisk
-      && (
-        forcedCadenceMineDecisionMeta.minePlanProvidesNoticeableImprovement
-        || forcedCadenceMineDecisionMeta.mineModerateImprovement
-        || forcedCadenceMineDecisionMeta.mineMapControlSignal
-        || forcedCadenceMineDecisionMeta.mineForcedCadenceSoftRiskAccepted
-      );
-    const forcedCadencePlaced = forcedCadenceAllowsPlacement && (
-      forcedCadencePreferredMinePlan.type === "defensive"
-        ? tryPlaceBlueDefensiveMine(context, plannedMove)
-        : tryPlaceBlueMineNearEnemyBase(context, plannedMove)
-    );
-    if(forcedCadencePlaced){
-      removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
-      plannedMove.inventoryUsageReason = mineForcedCadenceReasonCode;
-      oneTacticalTryUsed = true;
-      logAiDecision("inventory_forced_cadence_item_used", {
-        ...forcedCadenceDiagnostics,
-        placementMode: forcedCadencePreferredMinePlan?.type || null,
-        reasonCode: mineForcedCadenceReasonCode,
-        mineDecisionCode: forcedCadenceMineDecisionMeta.mineDecisionCode || null,
-        mineSoftRiskBenefitScore: Number(forcedCadenceMineDecisionMeta.mineSoftRiskBenefitScore || 0),
-      });
-      return true;
-    }
-
-    const forcedCadenceSafetyRejectReason = forcedCadenceMineDecisionMeta.mineRejectedByCadenceSafetyRedLine
-      ? "hard_self_risk_red_line"
-      : (forcedCadenceMineDecisionMeta.mineRejectedBySelfRisk
-          ? "soft_self_risk_above_forced_threshold"
-          : ((forcedCadenceDefensiveProbe?.rejectReason === "high_friendly_risk"
-              || forcedCadenceBaseProbe?.rejectReason === "high_friendly_risk"
-              || forcedCadenceDefensiveProbe?.rejectReason === "points_filtered_by_risk"
-              || forcedCadenceBaseProbe?.rejectReason === "points_filtered_by_risk")
-              ? "mine_probe_rejected_by_risk_filters"
-              : null));
-    if(forcedCadenceSafetyRejectReason){
-      logAiDecision("inventory_forced_cadence_rejected_by_safety", {
-        ...forcedCadenceDiagnostics,
-        reason: forcedCadenceSafetyRejectReason,
-        mineDecisionCode: forcedCadenceMineDecisionMeta.mineDecisionCode || null,
-        mineSoftRiskBenefitScore: Number(forcedCadenceMineDecisionMeta.mineSoftRiskBenefitScore || 0),
-        mineRejectedByHardSelfRisk: forcedCadenceMineDecisionMeta.mineRejectedByHardSelfRisk === true,
-        mineRejectedByModerateSelfRisk: forcedCadenceMineDecisionMeta.mineRejectedByModerateSelfRisk === true,
-        defensiveProbeRejectReason: forcedCadenceDefensiveProbe?.rejectReason || null,
-        baseProbeRejectReason: forcedCadenceBaseProbe?.rejectReason || null,
-      });
-    }
-  }
-
   const selectedInventorySequence = Array.isArray(plannedMove?.selectedInventorySequence)
     ? plannedMove.selectedInventorySequence
     : [];
@@ -25644,445 +25689,6 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         bestValue: bestCrosshairScenario ? Number(bestCrosshairScenario.totalValue.toFixed(3)) : null,
         threshold: CROSSHAIR_MIN_NOTICEABLE_VALUE,
       });
-    }
-  }
-
-  if(allowTacticalItems && !inventoryPlanBForcedAfterRepeatedNoShot && inventory.counts[INVENTORY_ITEM_TYPES.MINE] > 0){
-    const aiItemSpendStyle = getAiItemSpendStyle(context, plannedMove);
-    const forcedMineSpend = forcedTacticalItemType === INVENTORY_ITEM_TYPES.MINE;
-    if(forcedMineSpend){
-      logAiDecision("tactical_surplus_spend_attempt", {
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: strategicGoal || null,
-        itemType: INVENTORY_ITEM_TYPES.MINE,
-        availableCount: Number(inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0),
-        forcedByPolicy: true,
-      });
-    } else if(hasForcedTacticalSpend && !allowNonForcedInventoryDuringTacticalSpend){
-      // В текущем вызове policy-принуждение относится к другому тактическому предмету.
-    }
-    if(hasForcedTacticalSpend && forcedTacticalItemType !== INVENTORY_ITEM_TYPES.MINE && !allowNonForcedInventoryDuringTacticalSpend){
-      // Явно пропускаем мины, если policy сейчас требует динамит.
-    } else {
-    let mineFinalRejectReason = null;
-    const directAttackWindow = evaluateDirectAttackWindow(priorityEnemy);
-    const strongAttackWindow = Boolean(directAttackWindow) && directAttackWindow.total >= 0.55;
-    const profitableTradeWindow = isPlannedMoveLikelyProfitableTrade(priorityEnemy);
-    const hasDirectAttackPriority = strongAttackWindow || profitableTradeWindow;
-
-    let minePlanningMeta = {
-      planningRejectReason: null,
-      defensiveRejectReason: null,
-      baseRejectReason: null,
-    };
-
-    function pickPreferredMinePlan(){
-      const defensiveProbe = tryPlaceBlueDefensiveMine(context, plannedMove, { evaluateOnly: true, withDiagnostics: true });
-      const baseProbe = tryPlaceBlueMineNearEnemyBase(context, plannedMove, { evaluateOnly: true, withDiagnostics: true });
-      const defensivePlan = defensiveProbe?.plan || null;
-      const basePlan = baseProbe?.plan || null;
-      const planningRejectReason = !defensivePlan && !basePlan
-        ? (defensiveProbe?.rejectReason === "high_friendly_risk" || baseProbe?.rejectReason === "high_friendly_risk"
-            || defensiveProbe?.rejectReason === "points_filtered_by_risk" || baseProbe?.rejectReason === "points_filtered_by_risk"
-            ? "mine_high_friendly_risk"
-            : (defensiveProbe?.rejectReason === "low_enemy_contact_probability" || baseProbe?.rejectReason === "low_enemy_contact_probability"
-                ? "mine_low_enemy_contact_probability"
-                : (defensiveProbe?.rejectReason === "no_valid_points" || baseProbe?.rejectReason === "no_valid_points"
-                    ? "mine_no_valid_points"
-                    : "mine_no_install_window")))
-        : null;
-      minePlanningMeta = {
-        planningRejectReason,
-        defensiveRejectReason: defensiveProbe?.rejectReason || null,
-        baseRejectReason: baseProbe?.rejectReason || null,
-      };
-      if(!defensivePlan && !basePlan) return null;
-      if(defensivePlan && !basePlan) return { type: "defensive", plan: defensivePlan };
-      if(basePlan && !defensivePlan) return { type: "base", plan: basePlan };
-      if((defensivePlan?.score || 0) >= (basePlan?.score || 0)) return { type: "defensive", plan: defensivePlan };
-      return { type: "base", plan: basePlan };
-    }
-
-    function executeMinePlan(selectedMinePlan){
-      if(!selectedMinePlan) return false;
-      const didPlaceMine = selectedMinePlan.type === "defensive"
-        ? tryPlaceBlueDefensiveMine(context, plannedMove)
-        : tryPlaceBlueMineNearEnemyBase(context, plannedMove);
-      if(didPlaceMine){
-        aiRoundState.lastMinePlacementMeta = selectedMinePlan.plan;
-      }
-      return didPlaceMine;
-    }
-
-    const preferredMinePlan = pickPreferredMinePlan();
-    const preservedStrategicTargetPoint = getAiStrategicTargetPoint(context, plannedMove);
-    const flagTargetAnchor = context?.shouldUseFlagsMode && Array.isArray(context?.availableEnemyFlags)
-      ? context.availableEnemyFlags
-        .map((flag) => getFlagAnchor(flag))
-        .filter(Boolean)
-        .sort((a, b) => dist(plannedMove.plane, a) - dist(plannedMove.plane, b))[0] || null
-      : null;
-    const flagPickupBaseline = strategicGoal === "capture_enemy_flag" && flagTargetAnchor
-      ? evaluateFlagPickupContinuation(plannedMove.plane, flagTargetAnchor, {
-          homeBase: context?.homeBase || getBaseAnchor("blue"),
-          enemies: Array.isArray(context?.enemies) ? context.enemies : [],
-          context,
-          goalName: strategicGoal,
-        })
-      : null;
-    const mineEnabledFlagPickup = strategicGoal === "capture_enemy_flag"
-      && inventory.counts[INVENTORY_ITEM_TYPES.MINE] > 0
-      && flagTargetAnchor
-      && flagPickupBaseline?.hasSafeEscape !== true
-      ? evaluateMineEnabledFlagPickupContinuation(plannedMove.plane, flagTargetAnchor, {
-          homeBase: context?.homeBase || getBaseAnchor("blue"),
-          enemies: Array.isArray(context?.enemies) ? context.enemies : [],
-          context,
-          goalName: strategicGoal,
-          baselineContinuation: flagPickupBaseline,
-        })
-      : null;
-    const safeFinisherMineCoverage = preferredMinePlan
-      ? evaluatePostLaunchSafetyWithMine(context, plannedMove, preferredMinePlan.plan)
-      : { beforeSafe: false, afterSafe: false };
-    const mineEnablesSafeFinisher = strategicGoal === "direct_finisher"
-      && safeFinisherMineCoverage.beforeSafe === false
-      && safeFinisherMineCoverage.afterSafe === true
-      && Boolean(preferredMinePlan);
-    const mineRequiredForFlagPickup = mineEnabledFlagPickup?.after?.hasSafeEscape === true;
-    const mineFailsToImproveCriticalEscape = (strategicGoal === "capture_enemy_flag"
-      && flagPickupBaseline
-      && flagPickupBaseline.hasSafeEscape !== true
-      && mineRequiredForFlagPickup !== true)
-      || (strategicGoal === "direct_finisher"
-        && safeFinisherMineCoverage.beforeSafe === false
-        && safeFinisherMineCoverage.afterSafe !== true);
-    const isCriticalGoalForDefensiveMine = isAiCriticalMineGoal(strategicGoal);
-
-    if((mineRequiredForFlagPickup || mineEnablesSafeFinisher) && preferredMinePlan){
-      plannedMove.preservedStrategicTargetPoint = preservedStrategicTargetPoint
-        ? { x: preservedStrategicTargetPoint.x, y: preservedStrategicTargetPoint.y }
-        : null;
-      plannedMove.inventoryUsageReason = mineRequiredForFlagPickup ? "mine_enables_flag_pickup" : "mine_enables_safe_finisher";
-      const forcedMinePlaced = executeMinePlan(preferredMinePlan);
-      if(forcedMinePlaced){
-        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
-        logAiDecision("mine_placed_for_cover", {
-          planeId: plannedMove.plane?.id ?? null,
-          enemyId: priorityEnemy?.id ?? null,
-          softFallback: false,
-          scenario: preferredMinePlan?.plan?.scenario || null,
-          routeBlockScore: preferredMinePlan?.plan ? Number((preferredMinePlan.plan.score || 0).toFixed(3)) : null,
-          blockedEscapeCount: preferredMinePlan?.plan?.blockedEscapeCount ?? 0,
-          cutRouteCount: preferredMinePlan?.plan?.cutRouteCount ?? 0,
-          trapCount: preferredMinePlan?.plan?.trapCount ?? 0,
-          totalDirectionLoss: preferredMinePlan?.plan?.totalDirectionLoss ?? 0,
-          forcedReason: mineRequiredForFlagPickup ? "mine_enables_flag_pickup" : "mine_enables_safe_finisher",
-          mineReason: mineRequiredForFlagPickup ? "mine_between_objective_and_threat" : (preferredMinePlan?.plan?.scenario || null),
-        });
-        logAiDecision(mineRequiredForFlagPickup ? "mine_enables_flag_pickup" : "mine_enables_safe_finisher", {
-          planeId: plannedMove.plane?.id ?? null,
-          goal: strategicGoal || null,
-          targetPoint: plannedMove.preservedStrategicTargetPoint,
-          beforeSafeEscape: flagPickupBaseline?.hasSafeEscape ?? safeFinisherMineCoverage.beforeSafe,
-          afterSafeEscape: mineEnabledFlagPickup?.after?.hasSafeEscape ?? safeFinisherMineCoverage.afterSafe,
-          beforeReturnRoute: flagPickupBaseline?.hasReturnRoute ?? null,
-          afterReturnRoute: mineEnabledFlagPickup?.after?.hasReturnRoute ?? null,
-          minePlacement: mineEnabledFlagPickup?.placement
-            ? { x: Number(mineEnabledFlagPickup.placement.x.toFixed(1)), y: Number(mineEnabledFlagPickup.placement.y.toFixed(1)) }
-            : (preferredMinePlan?.plan?.placement
-                ? { x: Number(preferredMinePlan.plan.placement.x.toFixed(1)), y: Number(preferredMinePlan.plan.placement.y.toFixed(1)) }
-                : null),
-          threatEnemyId: mineEnabledFlagPickup?.threatEnemyId ?? priorityEnemy?.id ?? null,
-          placementScenario: mineRequiredForFlagPickup ? "mine_between_objective_and_threat" : (preferredMinePlan?.plan?.scenario || null),
-        });
-        if(mineRequiredForFlagPickup){
-          logAiDecision("mine_between_objective_and_threat", {
-            planeId: plannedMove.plane?.id ?? null,
-            targetPoint: plannedMove.preservedStrategicTargetPoint,
-            threatEnemyId: mineEnabledFlagPickup?.threatEnemyId ?? null,
-            threatDistance: mineEnabledFlagPickup?.threatDistance ?? null,
-            minePlacement: mineEnabledFlagPickup?.placement
-              ? { x: Number(mineEnabledFlagPickup.placement.x.toFixed(1)), y: Number(mineEnabledFlagPickup.placement.y.toFixed(1)) }
-              : null,
-          });
-        }
-        if(forcedMineSpend){
-          logAiDecision("tactical_surplus_spend_success", {
-            planeId: plannedMove?.plane?.id ?? null,
-            goal: strategicGoal || null,
-            itemType: INVENTORY_ITEM_TYPES.MINE,
-            reason: mineRequiredForFlagPickup ? "mine_enables_flag_pickup" : "mine_enables_safe_finisher",
-            forcedByPolicy: true,
-          });
-        }
-        logTacticalItemFinalDecision(INVENTORY_ITEM_TYPES.MINE, {
-          planeId: plannedMove?.plane?.id ?? null,
-          goal: strategicGoal || null,
-          finalDecision: "used",
-          reason: plannedMove.inventoryUsageReason || "mine_placed_for_cover",
-        });
-        return true;
-      }
-    }
-
-    const safeAfterPlacement = !landingPoint
-      ? false
-      : !Array.isArray(context?.enemies) || context.enemies.every((enemy) => {
-        const enemyDistance = dist(landingPoint, enemy);
-        const enemyHasLane = isPathClear(enemy.x, enemy.y, landingPoint.x, landingPoint.y);
-        return !enemyHasLane || enemyDistance > plannedMoveEffectiveRangePx * 0.95;
-      });
-
-    const mineDecisionMeta = evaluateAiMineTacticalPlanDecision({
-      preferredMinePlan,
-      safeAfterPlacement,
-      safetyImprovesAfterPlacement: safeFinisherMineCoverage.beforeSafe === false && safeFinisherMineCoverage.afterSafe === true,
-      isCriticalGoalForDefensiveMine,
-      mineHasSurplusCharges: Number(inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0) > 1,
-      mineProtectsAfterAggressiveAction: strategicGoal === "direct_finisher" && safeFinisherMineCoverage.afterSafe === true,
-      repeatedEmptyTurns: Number.isFinite(aiRoundState?.inventoryIdleTurns)
-        && aiRoundState.inventoryIdleTurns >= AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD,
-      context,
-      plannedMove,
-      aiItemSpendStyle,
-      strategicGoalName: strategicGoal,
-    });
-    const mineImpactPlan = mineDecisionMeta.minePlan || null;
-    const mineImpactScore = mineDecisionMeta.mineImpactScore;
-    const mineBlockedEscapeCount = mineDecisionMeta.mineBlockedEscapeCount;
-    const mineCutRouteCount = mineDecisionMeta.mineCutRouteCount;
-    const mineTrapCount = mineDecisionMeta.mineTrapCount;
-    const mineTotalDirectionLoss = mineDecisionMeta.mineTotalDirectionLoss;
-    const mineProjectedContactDelta = mineDecisionMeta.mineProjectedContactDelta;
-    const mineForcedBadPathCount = mineDecisionMeta.mineForcedBadPathCount;
-    const mineCreatesRouteDenial = mineDecisionMeta.mineCreatesRouteDenial;
-    const mineHasZoneControl = mineDecisionMeta.mineHasZoneControl;
-    const mineMapControlSignal = mineDecisionMeta.mineMapControlSignal;
-    const minePlanProvidesNoticeableImprovement = mineDecisionMeta.minePlanProvidesNoticeableImprovement;
-    const safetyImprovesAfterPlacement = safeFinisherMineCoverage.beforeSafe === false
-      && safeFinisherMineCoverage.afterSafe === true;
-    const mineModerateImprovement = mineDecisionMeta.mineModerateImprovement;
-    const mineRejectedBySelfRisk = mineDecisionMeta.mineRejectedBySelfRisk;
-    const mineRejectedByHardSelfRisk = mineDecisionMeta.mineRejectedByHardSelfRisk === true;
-    const mineRejectedByModerateSelfRisk = mineDecisionMeta.mineRejectedByModerateSelfRisk === true;
-    const mineSoftRiskAcceptedByBenefit = mineDecisionMeta.mineSoftRiskAcceptedByBenefit === true;
-    const mineSoftRiskBenefitScore = Number(mineDecisionMeta.mineSoftRiskBenefitScore || 0);
-    const mineDecisionCode = mineDecisionMeta.mineDecisionCode || null;
-    const riskAcceptedBecause = mineDecisionMeta.riskAcceptedBecause || null;
-    const defensivePriorityOverride = isCriticalGoalForDefensiveMine && preferredMinePlan?.type === "defensive";
-    const mineUseReason = mineCreatesRouteDenial ? "mine_used_for_route_denial"
-      : (minePlanProvidesNoticeableImprovement ? "mine_used_for_position_improvement" : null);
-
-    if(mineFailsToImproveCriticalEscape){
-      mineFinalRejectReason = strategicGoal === "capture_enemy_flag"
-        ? "mine_does_not_improve_flag_escape"
-        : "mine_does_not_improve_finisher_escape";
-      logAiDecision("mine_not_used_no_benefit", {
-        planeId: plannedMove.plane?.id ?? null,
-        enemyId: priorityEnemy?.id ?? null,
-        reason: strategicGoal === "capture_enemy_flag" ? "mine_does_not_improve_flag_escape" : "mine_does_not_improve_finisher_escape",
-        goal: strategicGoal || null,
-        hasDirectAttackPriority,
-      });
-    } else if(preferredMinePlan
-      && !mineRejectedBySelfRisk
-      && (minePlanProvidesNoticeableImprovement || (defensivePriorityOverride && mineModerateImprovement))
-      && executeMinePlan(preferredMinePlan)){
-      logAiDecision("mine_placed_for_cover", {
-        planeId: plannedMove.plane?.id ?? null,
-        enemyId: priorityEnemy?.id ?? null,
-        softFallback: false,
-        scenario: preferredMinePlan?.plan?.scenario || null,
-        routeBlockScore: preferredMinePlan?.plan ? Number((preferredMinePlan.plan.score || 0).toFixed(3)) : null,
-        blockedEscapeCount: preferredMinePlan?.plan?.blockedEscapeCount ?? 0,
-        cutRouteCount: preferredMinePlan?.plan?.cutRouteCount ?? 0,
-        trapCount: preferredMinePlan?.plan?.trapCount ?? 0,
-        totalDirectionLoss: preferredMinePlan?.plan?.totalDirectionLoss ?? 0,
-        safeAfterPlacement,
-        riskAcceptedBecause,
-        aiItemSpendStyle,
-        mineUseReason,
-        mineDecisionLabel: mineMapControlSignal ? "map_control" : "standard",
-        mineDecisionCode: mineMapControlSignal ? "mine_zone_control_accept" : mineDecisionCode,
-        mineSoftRiskAcceptedByBenefit,
-        mineSoftRiskBenefitScore,
-      });
-      if(mineUseReason){
-        logAiDecision(mineUseReason, {
-          planeId: plannedMove.plane?.id ?? null,
-          enemyId: priorityEnemy?.id ?? null,
-          scenario: preferredMinePlan?.plan?.scenario || null,
-          routeBlockScore: preferredMinePlan?.plan ? Number((preferredMinePlan.plan.score || 0).toFixed(3)) : null,
-          blockedEscapeCount: preferredMinePlan?.plan?.blockedEscapeCount ?? 0,
-          cutRouteCount: preferredMinePlan?.plan?.cutRouteCount ?? 0,
-          trapCount: preferredMinePlan?.plan?.trapCount ?? 0,
-          totalDirectionLoss: preferredMinePlan?.plan?.totalDirectionLoss ?? 0,
-          safeAfterPlacement,
-          riskAcceptedBecause,
-          aiItemSpendStyle,
-          mineDecisionLabel: mineMapControlSignal ? "map_control" : "standard",
-          mineDecisionCode: mineMapControlSignal ? "mine_zone_control_accept" : mineDecisionCode,
-          mineSoftRiskAcceptedByBenefit,
-          mineSoftRiskBenefitScore,
-        });
-      }
-      if(mineMapControlSignal || mineHasZoneControl){
-        logAiDecision("mine_used_for_map_control", {
-          planeId: plannedMove.plane?.id ?? null,
-          enemyId: priorityEnemy?.id ?? null,
-          scenario: preferredMinePlan?.plan?.scenario || null,
-          routeBlockScore: preferredMinePlan?.plan ? Number((preferredMinePlan.plan.score || 0).toFixed(3)) : null,
-          blockedEscapeCount: preferredMinePlan?.plan?.blockedEscapeCount ?? 0,
-          cutRouteCount: preferredMinePlan?.plan?.cutRouteCount ?? 0,
-          trapCount: preferredMinePlan?.plan?.trapCount ?? 0,
-          totalDirectionLoss: preferredMinePlan?.plan?.totalDirectionLoss ?? 0,
-          mineDecisionLabel: "map_control",
-          mineDecisionCode: "mine_zone_control_accept",
-          safeAfterPlacement,
-          riskAcceptedBecause,
-          aiItemSpendStyle,
-        });
-      }
-      removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
-      if(forcedMineSpend){
-        logAiDecision("tactical_surplus_spend_success", {
-          planeId: plannedMove?.plane?.id ?? null,
-          goal: strategicGoal || null,
-          itemType: INVENTORY_ITEM_TYPES.MINE,
-          reason: mineUseReason || "mine_placed_for_cover",
-          forcedByPolicy: true,
-        });
-      }
-      logTacticalItemFinalDecision(INVENTORY_ITEM_TYPES.MINE, {
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: strategicGoal || null,
-        finalDecision: "used",
-        reason: mineUseReason || "mine_placed_for_cover",
-      });
-      return true;
-    }
-
-    if(preferredMinePlan && mineRejectedBySelfRisk){
-      mineFinalRejectReason = "mine_high_friendly_risk";
-      logAiDecision("mine_not_used_no_benefit", {
-        planeId: plannedMove.plane?.id ?? null,
-        enemyId: priorityEnemy?.id ?? null,
-        reason: "mine_high_friendly_risk",
-        goal: strategicGoal || null,
-        safeAfterPlacement,
-        safetyImprovesAfterPlacement,
-        routeBlockScore: preferredMinePlan?.plan ? Number((preferredMinePlan.plan.score || 0).toFixed(3)) : null,
-        blockedEscapeCount: preferredMinePlan?.plan?.blockedEscapeCount ?? 0,
-        cutRouteCount: preferredMinePlan?.plan?.cutRouteCount ?? 0,
-        trapCount: preferredMinePlan?.plan?.trapCount ?? 0,
-        totalDirectionLoss: preferredMinePlan?.plan?.totalDirectionLoss ?? 0,
-        projectedContactDelta: preferredMinePlan?.plan?.projectedContactDelta ?? 0,
-        controlledBasePassCount: preferredMinePlan?.plan?.controlledBasePassCount ?? 0,
-        controlledTurnPointCount: preferredMinePlan?.plan?.controlledTurnPointCount ?? 0,
-        forcedBadPathCount: preferredMinePlan?.plan?.forcedBadPathCount ?? 0,
-        mineDecisionCode: mineRejectedByHardSelfRisk ? "mine_hard_risk_reject" : "mine_soft_risk_reject",
-        mineSoftRiskBenefitScore,
-        aiItemSpendStyle,
-      });
-    } else if(preferredMinePlan && !minePlanProvidesNoticeableImprovement && !mineModerateImprovement){
-      mineFinalRejectReason = "mine_low_enemy_contact_probability";
-      logAiDecision("mine_not_used_no_benefit", {
-        planeId: plannedMove.plane?.id ?? null,
-        enemyId: priorityEnemy?.id ?? null,
-        reason: "mine_low_enemy_contact_probability",
-        scenario: preferredMinePlan?.plan?.scenario || null,
-        routeBlockScore: preferredMinePlan?.plan ? Number((preferredMinePlan.plan.score || 0).toFixed(3)) : null,
-        blockedEscapeCount: preferredMinePlan?.plan?.blockedEscapeCount ?? 0,
-        cutRouteCount: preferredMinePlan?.plan?.cutRouteCount ?? 0,
-        trapCount: preferredMinePlan?.plan?.trapCount ?? 0,
-        totalDirectionLoss: preferredMinePlan?.plan?.totalDirectionLoss ?? 0,
-        projectedContactDelta: preferredMinePlan?.plan?.projectedContactDelta ?? 0,
-        controlledBasePassCount: preferredMinePlan?.plan?.controlledBasePassCount ?? 0,
-        controlledTurnPointCount: preferredMinePlan?.plan?.controlledTurnPointCount ?? 0,
-        forcedBadPathCount: preferredMinePlan?.plan?.forcedBadPathCount ?? 0,
-        safeAfterPlacement,
-        safetyImprovesAfterPlacement,
-        goal: strategicGoal || null,
-        mineDecisionCode: "mine_low_benefit_reject",
-        mineSoftRiskBenefitScore,
-      });
-    } else if(!preferredMinePlan && hasDirectAttackPriority && !isCriticalGoalForDefensiveMine){
-      mineFinalRejectReason = "mine_saved_for_direct_attack";
-      logAiDecision("mine_saved_for_direct_attack", {
-        planeId: plannedMove.plane?.id ?? null,
-        enemyId: priorityEnemy?.id ?? null,
-        reason: "no_viable_mine_plan_this_turn",
-        enemyShieldActive: Boolean(priorityEnemy?.shieldActive),
-        distanceToEnemy: Number(priorityEnemyDistance.toFixed(1)),
-        inDirectRange: isPriorityEnemyInDirectRange,
-        hasClearPath: hasPriorityEnemyPathClear,
-        shieldPriorityFactor: directAttackShieldFactor,
-        attackWindowScore: directAttackWindow ? Number(directAttackWindow.total.toFixed(3)) : null,
-        carriesFlag: Boolean(priorityEnemy?.carriedFlagId),
-        profitableTradeWindow,
-      });
-    } else if(!preferredMinePlan){
-      mineFinalRejectReason = minePlanningMeta.planningRejectReason || "mine_no_install_window";
-      logAiDecision("mine_not_used_no_benefit", {
-        planeId: plannedMove.plane?.id ?? null,
-        enemyId: priorityEnemy?.id ?? null,
-        reason: minePlanningMeta.planningRejectReason || "mine_no_install_window",
-        goal: strategicGoal || null,
-        hasDirectAttackPriority,
-        defensivePriorityOverride: isCriticalGoalForDefensiveMine,
-        defensiveRejectReason: minePlanningMeta.defensiveRejectReason || null,
-        baseRejectReason: minePlanningMeta.baseRejectReason || null,
-      });
-    }
-    if(forcedMineSpend && forcedSurplusAllowAggressiveFallback && preferredMinePlan && !mineRejectedBySelfRisk){
-      const aggressiveMinePlaced = executeMinePlan(preferredMinePlan);
-      if(aggressiveMinePlaced){
-        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
-        plannedMove.inventoryUsageReason = "mine_forced_surplus_aggressive_fallback";
-        logAiDecision("tactical_surplus_spend_success", {
-          planeId: plannedMove?.plane?.id ?? null,
-          goal: strategicGoal || null,
-          itemType: INVENTORY_ITEM_TYPES.MINE,
-          reason: "mine_forced_surplus_aggressive_fallback",
-          forcedByPolicy: true,
-          aggressiveAttemptIndex: forcedSurplusAggressiveAttemptIndex,
-        });
-        logTacticalItemFinalDecision(INVENTORY_ITEM_TYPES.MINE, {
-          planeId: plannedMove?.plane?.id ?? null,
-          goal: strategicGoal || null,
-          finalDecision: "used",
-          reason: "mine_forced_surplus_aggressive_fallback",
-        });
-        return true;
-      }
-    }
-    if(forcedMineSpend){
-      const forcedMineBlockReason = mineRejectedBySelfRisk
-        ? "high_friendly_risk"
-        : (mineFailsToImproveCriticalEscape
-            ? "critical_goal_escape_not_improved"
-            : (!preferredMinePlan
-                ? (minePlanningMeta.planningRejectReason || "no_install_window")
-                : "low_enemy_contact_probability"));
-      logAiDecision("tactical_surplus_spend_blocked", {
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: strategicGoal || null,
-        itemType: INVENTORY_ITEM_TYPES.MINE,
-        reason: forcedMineBlockReason,
-        forcedByPolicy: true,
-        safeAfterPlacement,
-        safetyImprovesAfterPlacement,
-      });
-    }
-    if(mineFinalRejectReason){
-      logTacticalItemFinalDecision(INVENTORY_ITEM_TYPES.MINE, {
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: strategicGoal || null,
-        finalDecision: "saved",
-        reason: mineFinalRejectReason,
-      });
-    }
     }
   }
 
@@ -26497,59 +26103,14 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       return true;
     }
 
-    const mineProbe = inventory.counts[INVENTORY_ITEM_TYPES.MINE] > 0
-      ? tryPlaceBlueDefensiveMine(context, plannedMove, { evaluateOnly: true, withDiagnostics: true })
-      : null;
-    if(mineProbe?.plan){
-      const mineSafety = typeof evaluatePostLaunchSafetyWithMine === "function"
-        ? evaluatePostLaunchSafetyWithMine(context, plannedMove, mineProbe.plan)
-        : { afterSafe: true };
-      const mineRisk = mineSafety?.afterSafe === false ? 0.16 : 0.09;
-      if(mineRisk <= 0.14 && tryPlaceBlueDefensiveMine(context, plannedMove)){
-        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
-        plannedMove.inventoryUsageReason = inventoryPlanBReasonCode;
-        oneTacticalTryUsed = true;
-        logAiDecision("inventory_plan_b_forced_item_used", {
-          ...planBDiagnostics,
-          itemType: INVENTORY_ITEM_TYPES.MINE,
-          risk: mineRisk,
-        });
-        return true;
-      }
-    }
-
     logAiDecision("inventory_plan_b_forced_rejected", {
       ...planBDiagnostics,
       dynamiteRejected: !(routeAwareTarget && routeHasModerateGain),
-      mineRejected: !(mineProbe?.plan),
       reason: "forced_plan_b_safe_items_rejected",
     });
   }
 
   if((!hasForcedTacticalSpend || allowNonForcedInventoryDuringTacticalSpend) && oneTacticalTryAllowed && !oneTacticalTryUsed){
-    const ONE_TACTICAL_TRY_MAX_RISK = 0.14;
-    const mineProbe = inventory.counts[INVENTORY_ITEM_TYPES.MINE] > 0
-      ? tryPlaceBlueDefensiveMine(context, plannedMove, { evaluateOnly: true, withDiagnostics: true })
-      : null;
-    if(mineProbe?.plan){
-      const mineSafety = typeof evaluatePostLaunchSafetyWithMine === "function"
-        ? evaluatePostLaunchSafetyWithMine(context, plannedMove, mineProbe.plan)
-        : { afterSafe: true };
-      const mineRisk = mineSafety?.afterSafe === false ? 0.16 : 0.09;
-      if(mineRisk <= ONE_TACTICAL_TRY_MAX_RISK && tryPlaceBlueDefensiveMine(context, plannedMove)){
-        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
-        plannedMove.inventoryUsageReason = "one_tactical_try_fallback_chain";
-        oneTacticalTryUsed = true;
-        logAiDecision("inventory_one_tactical_try_used", {
-          planeId: plannedMove?.plane?.id ?? null,
-          goal: strategicGoal || null,
-          itemType: INVENTORY_ITEM_TYPES.MINE,
-          risk: mineRisk,
-          unlockedBy: ["fallback-chain"],
-        });
-        return true;
-      }
-    }
     const dynamiteDecision = inventory.counts[INVENTORY_ITEM_TYPES.DYNAMITE] > 0
       ? evaluateAiDynamiteTacticalTarget(context, plannedMove, {
         allowStrategicProbeWhenRouteAware: false,
@@ -27021,8 +26582,12 @@ function getFinalAiLaunchMineThreatCheck(move, options = {}){
     enemy: enemyThreatMeta,
     own: ownThreatMeta,
   };
-  const hasCriticalForbiddenThreat = Boolean(enemyThreatMeta?.pathHit || enemyThreatMeta?.landingThreat || ownThreatMeta?.landingThreat);
-  const hasAcceptableCombatRisk = !hasCriticalForbiddenThreat && Boolean(ownThreatMeta?.pathHit);
+  const hasCriticalForbiddenThreat = Boolean(
+    enemyThreatMeta?.pathHit
+    || enemyThreatMeta?.landingThreat
+    || ownThreatMeta?.pathHit
+    || ownThreatMeta?.landingThreat
+  );
   if(hasCriticalForbiddenThreat){
     return {
       ok: false,
@@ -27031,19 +26596,6 @@ function getFinalAiLaunchMineThreatCheck(move, options = {}){
       message: "Final mine check rejected stale route before launch",
       threatMeta,
       threatClass: "critical_forbidden",
-      landingPoint: plannedLanding,
-      startPoint: { x: plane.x, y: plane.y },
-    };
-  }
-
-  if(hasAcceptableCombatRisk){
-    return {
-      ok: true,
-      reason: ownThreatMeta?.reason || "path_crosses_mine",
-      reasonCode: "final_mine_check_allowed_combat_risk",
-      message: "Final mine check allowed acceptable combat risk",
-      threatMeta,
-      threatClass: "acceptable_combat_risk",
       landingPoint: plannedLanding,
       startPoint: { x: plane.x, y: plane.y },
     };
