@@ -20852,6 +20852,79 @@ function evaluateBlueMinePlacementImpact(context, plannedMove, placement, option
     return unique;
   }
 
+  function getHighPriorityFriendlyDefenseTargets(){
+    const targets = [];
+    const blueFlags = typeof getAvailableFlagsByColor === "function" ? getAvailableFlagsByColor("blue") : [];
+    for(let i = 0; i < blueFlags.length; i += 1){
+      const anchor = typeof getFlagAnchor === "function" ? getFlagAnchor(blueFlags[i]) : null;
+      if(anchor){
+        targets.push({
+          x: anchor.x,
+          y: anchor.y,
+          name: `blue_flag_${i}`,
+          weight: 1.25,
+        });
+      }
+    }
+
+    if(landingPoint){
+      targets.push({
+        x: landingPoint.x,
+        y: landingPoint.y,
+        name: "planned_landing_guard",
+        weight: 1.12,
+      });
+    }
+
+    const cargoTargets = Array.isArray(cargoState)
+      ? cargoState
+          .filter((cargo) => cargo?.state !== "collected" && Number.isFinite(cargo?.x) && Number.isFinite(cargo?.y))
+          .slice(0, 3)
+      : [];
+    for(let i = 0; i < cargoTargets.length; i += 1){
+      targets.push({
+        x: cargoTargets[i].x,
+        y: cargoTargets[i].y,
+        name: `cargo_${i}`,
+        weight: 0.94,
+      });
+    }
+
+    const vulnerableAllies = Array.isArray(context?.aiPlanes)
+      ? context.aiPlanes
+          .filter((ally) => ally && ally !== plane && ally?.isAlive !== false && Number.isFinite(ally.x) && Number.isFinite(ally.y))
+          .map((ally) => {
+            const threatScore = enemies.reduce((score, enemy) => {
+              if(!Number.isFinite(enemy?.x) || !Number.isFinite(enemy?.y)) return score;
+              const enemyToAlly = Math.hypot(enemy.x - ally.x, enemy.y - ally.y);
+              const enemyCanAttack = enemyToAlly <= getPlaneEffectiveRangePx(enemy) * 1.08 && isPathClear(enemy.x, enemy.y, ally.x, ally.y);
+              if(!enemyCanAttack) return score;
+              const pressure = Math.max(0, (getPlaneEffectiveRangePx(enemy) * 1.08) - enemyToAlly);
+              return Math.max(score, pressure);
+            }, 0);
+            return {
+              ally,
+              threatScore,
+            };
+          })
+          .filter((entry) => entry.threatScore > 0)
+          .sort((a, b) => b.threatScore - a.threatScore)
+          .slice(0, 2)
+      : [];
+    for(let i = 0; i < vulnerableAllies.length; i += 1){
+      targets.push({
+        x: vulnerableAllies[i].ally.x,
+        y: vulnerableAllies[i].ally.y,
+        name: `vulnerable_ally_${i}`,
+        weight: 1.02,
+      });
+    }
+
+    return collectUniqueTargets(targets).slice(0, 7);
+  }
+
+  const friendlyDefenseTargets = getHighPriorityFriendlyDefenseTargets();
+
   function getEnemyObjectiveTargets(enemy, nearestThreat){
     const targets = [];
     const blueBase = getBaseAnchor("blue");
@@ -20860,7 +20933,15 @@ function evaluateBlueMinePlacementImpact(context, plannedMove, placement, option
     if(nearestThreat?.plane){
       targets.push({ x: nearestThreat.plane.x, y: nearestThreat.plane.y, name: "to_nearest_fight", weight: 0.75 });
     }
-    return collectUniqueTargets(targets).slice(0, 3);
+    for(const defenseTarget of friendlyDefenseTargets){
+      targets.push({
+        x: defenseTarget.x,
+        y: defenseTarget.y,
+        name: `to_${defenseTarget.name}`,
+        weight: Number.isFinite(defenseTarget.weight) ? defenseTarget.weight : 0.8,
+      });
+    }
+    return collectUniqueTargets(targets).slice(0, 5);
   }
 
   function buildTrajectoryProjection(enemy, nearestThreat){
@@ -20989,10 +21070,16 @@ function evaluateBlueMinePlacementImpact(context, plannedMove, placement, option
     const nearbyFightTarget = nearestThreat
       ? { x: nearestThreat.plane.x, y: nearestThreat.plane.y, name: "close_fight" }
       : null;
+    const defenseTargets = friendlyDefenseTargets.map((target) => ({
+      x: target.x,
+      y: target.y,
+      name: target.name,
+    }));
     const goalTargets = collectUniqueTargets([
       enemyBase ? { x: enemyBase.x, y: enemyBase.y, name: "enemy_base" } : null,
       ...enemyFlagTargets,
       nearbyFightTarget,
+      ...defenseTargets,
     ]).sort((a, b) => Math.hypot(a.x - enemy.x, a.y - enemy.y) - Math.hypot(b.x - enemy.x, b.y - enemy.y)).slice(0, 3);
 
     function evaluateTarget(target, kind){
@@ -21025,6 +21112,7 @@ function evaluateBlueMinePlacementImpact(context, plannedMove, placement, option
     const goalResults = goalTargets.map((target) => evaluateTarget(target, "goal"));
     const safeEscapeCount = escapeResults.filter((entry) => entry.safe).length;
     const safeGoalCount = goalResults.filter((entry) => entry.safe).length;
+    const safeGoalNames = new Set(goalResults.filter((entry) => entry.safe).map((entry) => entry.targetName || ""));
     const projection = buildTrajectoryProjection(enemy, nearestThreat);
     const zoneControl = evaluateZoneControl(enemy, nearestThreat, projection);
     return {
@@ -21033,6 +21121,10 @@ function evaluateBlueMinePlacementImpact(context, plannedMove, placement, option
       goodDirectionCount: safeEscapeCount + safeGoalCount,
       bestGoalSafe: safeGoalCount > 0,
       bestEscapeSafe: safeEscapeCount > 0,
+      safeBlueFlagRoute: Array.from(safeGoalNames).some((name) => name.startsWith("blue_flag_")),
+      safeCargoRouteCount: Array.from(safeGoalNames).filter((name) => name.startsWith("cargo_")).length,
+      safeVulnerableAllyRouteCount: Array.from(safeGoalNames).filter((name) => name.startsWith("vulnerable_ally_")).length,
+      safeLandingGuardRoute: safeGoalNames.has("planned_landing_guard"),
       projectedContactScore: zoneControl.projectedContactScore,
       basePassCut: zoneControl.basePassCut,
       turnPointControlled: zoneControl.turnPointControlled,
@@ -21054,6 +21146,10 @@ function evaluateBlueMinePlacementImpact(context, plannedMove, placement, option
   let controlledBasePassCount = 0;
   let controlledTurnPointCount = 0;
   let forcedBadPathCount = 0;
+  let protectedFlagLaneCount = 0;
+  let cargoRouteCutCount = 0;
+  let protectedVulnerableAllyCount = 0;
+  let preemptiveLandingShieldCount = 0;
   const enemyReports = [];
 
   for(let i = 0; i < baselineByEnemy.length; i += 1){
@@ -21068,6 +21164,10 @@ function evaluateBlueMinePlacementImpact(context, plannedMove, placement, option
     if(blocksEscape) blockedEscapeCount += 1;
     if(cutsBestRoute) cutRouteCount += 1;
     if(createsTrap) trapCount += 1;
+    if(before.safeBlueFlagRoute && !after.safeBlueFlagRoute) protectedFlagLaneCount += 1;
+    if(before.safeCargoRouteCount > after.safeCargoRouteCount) cargoRouteCutCount += 1;
+    if(before.safeVulnerableAllyRouteCount > after.safeVulnerableAllyRouteCount) protectedVulnerableAllyCount += 1;
+    if(before.safeLandingGuardRoute && !after.safeLandingGuardRoute) preemptiveLandingShieldCount += 1;
     if(after.basePassCut && !before.basePassCut) controlledBasePassCount += 1;
     if(after.turnPointControlled && !before.turnPointControlled) controlledTurnPointCount += 1;
     if(after.forcesBadPath && !before.forcesBadPath) forcedBadPathCount += 1;
@@ -21084,6 +21184,10 @@ function evaluateBlueMinePlacementImpact(context, plannedMove, placement, option
       projectedContactBefore: Number((before.projectedContactScore || 0).toFixed(3)),
       projectedContactAfter: Number((after.projectedContactScore || 0).toFixed(3)),
       projectedContactGain: Number(contactGain.toFixed(3)),
+      protectedFlagLane: before.safeBlueFlagRoute && !after.safeBlueFlagRoute,
+      cargoRouteCut: before.safeCargoRouteCount > after.safeCargoRouteCount,
+      protectedVulnerableAlly: before.safeVulnerableAllyRouteCount > after.safeVulnerableAllyRouteCount,
+      preemptiveLandingShield: before.safeLandingGuardRoute && !after.safeLandingGuardRoute,
       basePassCut: after.basePassCut && !before.basePassCut,
       turnPointControlled: after.turnPointControlled && !before.turnPointControlled,
       forcesBadPath: after.forcesBadPath && !before.forcesBadPath,
@@ -21091,7 +21195,11 @@ function evaluateBlueMinePlacementImpact(context, plannedMove, placement, option
   }
 
   let scenario = options?.fallbackScenario || "mine_blocks_escape_lane";
-  if(trapCount > 0) scenario = "mine_creates_trap";
+  if(preemptiveLandingShieldCount > 0) scenario = "mine_preemptive_landing_cover";
+  else if(protectedFlagLaneCount > 0) scenario = "mine_protects_home_flag_lane";
+  else if(protectedVulnerableAllyCount > 0) scenario = "mine_protects_vulnerable_ally";
+  else if(cargoRouteCutCount > 0) scenario = "mine_cuts_route_to_cargo";
+  else if(trapCount > 0) scenario = "mine_creates_trap";
   else if(cutRouteCount > 0) scenario = "mine_cuts_best_route";
   else if(controlledBasePassCount > 0) scenario = "mine_controls_base_pass";
   else if(controlledTurnPointCount > 0) scenario = "mine_controls_turn_point";
@@ -21103,6 +21211,10 @@ function evaluateBlueMinePlacementImpact(context, plannedMove, placement, option
     + (trapCount * 10.8)
     + totalDirectionLoss
     + (projectedContactDelta * 2.35)
+    + (protectedFlagLaneCount * 11.2)
+    + (cargoRouteCutCount * 5.8)
+    + (protectedVulnerableAllyCount * 7.4)
+    + (preemptiveLandingShieldCount * 9.6)
     + (controlledBasePassCount * 3.6)
     + (controlledTurnPointCount * 2.4)
     + (forcedBadPathCount * 5.6);
@@ -21115,6 +21227,10 @@ function evaluateBlueMinePlacementImpact(context, plannedMove, placement, option
     blockedEscapeCount,
     cutRouteCount,
     trapCount,
+    protectedFlagLaneCount,
+    cargoRouteCutCount,
+    protectedVulnerableAllyCount,
+    preemptiveLandingShieldCount,
     projectedContactDelta: Number(projectedContactDelta.toFixed(3)),
     controlledBasePassCount,
     controlledTurnPointCount,
