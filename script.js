@@ -39511,7 +39511,7 @@ function gameDraw(){
       aimSession.controllerType === "computer"
       && aiLaunchSession
       && aiLaunchSession.plane === plane
-      && aiLaunchSession.stage !== "oscillate"
+      && aiLaunchSession.stage === "targeting"
     );
     const aiPreviewActive = (
       aimSession.controllerType === "computer"
