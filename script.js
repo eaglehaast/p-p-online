@@ -38247,7 +38247,8 @@ function gameDraw(){
   const shouldShowNoSurvivorsText = roundEndedByNuke
     && nuclearStrikeTimelineState.currentPhase === NUCLEAR_STRIKE_TIMELINE_PHASES.SHOW_NO_SURVIVORS;
 
-  if(isGameOver && (winnerColor || isDrawGame || shouldShowNoSurvivorsText)){
+  const shouldDrawWinnerRoundMessage = shouldShowEndScreen && Boolean(winnerColor);
+  if(isGameOver && (shouldDrawWinnerRoundMessage || isDrawGame || shouldShowNoSurvivorsText)){
     const endTextCtx = hudCtx && hudCanvas instanceof HTMLCanvasElement ? hudCtx : gsBoardCtx;
     const endTextCanvas = hudCtx && hudCanvas instanceof HTMLCanvasElement ? hudCanvas : gsBoardCanvas;
     const textAreaWidth = endTextCanvas.width;
@@ -38319,7 +38320,7 @@ function gameDraw(){
       endTextCtx.strokeText(text, textX, textBaselineY);
       endTextCtx.fillText(text, textX, textBaselineY);
       positionEndGamePanel(metrics);
-    } else {
+    } else if(shouldDrawWinnerRoundMessage) {
       endTextCtx.fillStyle = colorFor(winnerColor);
       const winnerName= `${winnerColor.charAt(0).toUpperCase() + winnerColor.slice(1)}`;
       const text= shouldShowEndScreen
@@ -38340,34 +38341,6 @@ function gameDraw(){
     endGameDiv.style.left = "";
     endGameDiv.style.top = "";
   }
-
-  if(roundTextTimer > 0 && selectedRuleset !== "mapeditor" && !isTransferFrameVisible()){
-    gsBoardCtx.font="48px 'Patrick Hand', cursive";
-    gsBoardCtx.fillStyle = '#B22222';
-    gsBoardCtx.strokeStyle = '#FFD700';
-    gsBoardCtx.lineWidth = 2;
-    const useArcadeRoundText = settings.arcadeMode === true && isAdvancedLikeRuleset(selectedRuleset);
-    const text = useArcadeRoundText ? "Arcade mode" : `Round ${roundNumber}`;
-    const w = gsBoardCtx.measureText(text).width;
-    const x = (WORLD.width - w) / 2;
-    const y = WORLD.height / 2;
-    gsBoardCtx.fillText(text, x, y);
-    gsBoardCtx.strokeText(text, x, y);
-
-
-    const turnColor = turnColors[turnIndex];
-    const turnText = `${turnColor.charAt(0).toUpperCase() + turnColor.slice(1)} turn`;
-    gsBoardCtx.font="32px 'Patrick Hand', cursive";
-    gsBoardCtx.fillStyle = colorFor(turnColor);
-    const w2 = gsBoardCtx.measureText(turnText).width;
-    const x2 = (WORLD.width - w2) / 2;
-    const y2 = y + 40;
-    gsBoardCtx.fillText(turnText, x2, y2);
-
-
-    roundTextTimer -= delta;
-  }
-
   if (hasActiveMatchScoreAnimations(now)){
     renderScoreboard(now);
   }
@@ -40881,17 +40854,7 @@ function startNewRound(){
   startAiSelfAnalyzerMatchIfNeeded();
   roundNumber++;
   ensureAiSelfAnalyzerRound();
-  if(selectedRuleset === "mapeditor"){
-    roundTextTimer = 0;
-  } else if(isTransferFrameVisible()){
-    roundTextTimer = 0;
-    roundTextTimerStartTimeout = setTimeout(() => {
-      roundTextTimer = 120;
-      roundTextTimerStartTimeout = null;
-    }, TRANSFER_FRAME_AUTO_HIDE_MS);
-  } else {
-    roundTextTimer = 120;
-  }
+  roundTextTimer = 0;
   aiRoundState = createInitialAiRoundState();
   aiRoundState.tieBreakerSeed = Math.floor(Math.random() * 0x7fffffff);
 
