@@ -13874,9 +13874,9 @@ function tryStartAiPlanningFromCommittedState(trigger = "unspecified"){
     && !lastPlayerMoveCommitMeta.finished
     && lastPlayerMoveCommitMeta.turnCommitSequence < turnCommitSequence
   );
-  if(!playerMoveCommitFinishedBeforePlannerStart && !initialAiTurnWithoutPlayerCommit && !staleCommitMetaRecovered){
-    return false;
-  }
+  const commitMetaMismatch = !playerMoveCommitFinishedBeforePlannerStart
+    && !initialAiTurnWithoutPlayerCommit
+    && !staleCommitMetaRecovered;
   if(staleCommitMetaRecovered){
     logAiDecision("ai_planner_recovered_from_stale_player_commit_meta", {
       trigger,
@@ -13888,6 +13888,23 @@ function tryStartAiPlanningFromCommittedState(trigger = "unspecified"){
         finished: Boolean(lastPlayerMoveCommitMeta.finished),
       },
       reasonCode: "stale_player_commit_meta",
+      ...getAiTurnTimingSnapshot(),
+    });
+  }
+  if(commitMetaMismatch){
+    // Жёсткая привязка к метаданным коммита может зациклить ход ИИ:
+    // матч уже на синем ходе, а planner молча не стартует из-за расхождения служебных метаданных.
+    // В такой ситуации безопаснее запустить планировщик и зафиксировать обход.
+    logAiDecision("ai_planner_commit_guard_bypassed", {
+      trigger,
+      turnNumber: turnAdvanceCount,
+      turnCommitSequence,
+      lastPlayerMoveCommitMeta: {
+        turnCommitSequence: lastPlayerMoveCommitMeta.turnCommitSequence,
+        turnNumber: lastPlayerMoveCommitMeta.turnNumber,
+        finished: Boolean(lastPlayerMoveCommitMeta.finished),
+      },
+      reasonCode: "commit_meta_mismatch_bypassed",
       ...getAiTurnTimingSnapshot(),
     });
   }
