@@ -13762,8 +13762,30 @@ function tryStartAiPlanningFromCommittedState(trigger = "unspecified"){
     !lastPlayerMoveCommitMeta.finished
     && turnAdvanceCount === 0,
   );
-  if(!playerMoveCommitFinishedBeforePlannerStart && !initialAiTurnWithoutPlayerCommit){
+  const staleCommitMetaRecovered = Boolean(
+    !playerMoveCommitFinishedBeforePlannerStart
+    && !initialAiTurnWithoutPlayerCommit
+    && turnAdvanceCount > 0
+    && turnCommitSequence > 0
+    && !lastPlayerMoveCommitMeta.finished
+    && lastPlayerMoveCommitMeta.turnCommitSequence < turnCommitSequence
+  );
+  if(!playerMoveCommitFinishedBeforePlannerStart && !initialAiTurnWithoutPlayerCommit && !staleCommitMetaRecovered){
     return false;
+  }
+  if(staleCommitMetaRecovered){
+    logAiDecision("ai_planner_recovered_from_stale_player_commit_meta", {
+      trigger,
+      turnNumber: turnAdvanceCount,
+      turnCommitSequence,
+      lastPlayerMoveCommitMeta: {
+        turnCommitSequence: lastPlayerMoveCommitMeta.turnCommitSequence,
+        turnNumber: lastPlayerMoveCommitMeta.turnNumber,
+        finished: Boolean(lastPlayerMoveCommitMeta.finished),
+      },
+      reasonCode: "stale_player_commit_meta",
+      ...getAiTurnTimingSnapshot(),
+    });
   }
 
   const snapshot = buildCommittedEnemySnapshot();
