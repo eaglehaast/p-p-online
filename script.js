@@ -9271,6 +9271,15 @@ function getDragOscillationMultiplier(dragScale){
   return normalizedScale;
 }
 
+const AI_FALLBACK_AIM_OSCILLATION_MIN_MULTIPLIER = 0.3;
+
+function isAiFallbackLaunchInProgress(plane){
+  if(!(plane && aiLaunchSession && aiLaunchSession.plane === plane)) return false;
+  const goalText = `${aiRoundState?.currentGoal || ""}`.toLowerCase();
+  if(!goalText) return false;
+  return goalText.includes("fallback") || goalText.includes("safe_short");
+}
+
 // Anti-Aircraft defaults and placement limits
 const AA_DEFAULTS = {
   radius: 60, // detection radius, 3x smaller than original 180
@@ -39619,7 +39628,13 @@ function gameDraw(){
       ? 100
       : settings.aimingAmplitude;
     const dragScale = MAX_DRAG_DISTANCE > 0 ? (clampedDist / MAX_DRAG_DISTANCE) : 0;
-    const dragOscillationMultiplier = getDragOscillationMultiplier(dragScale);
+    const isFallbackLaunch = (
+      aimSession.controllerType === "computer"
+      && isAiFallbackLaunchInProgress(plane)
+    );
+    const dragOscillationMultiplier = isFallbackLaunch
+      ? Math.max(getDragOscillationMultiplier(dragScale), AI_FALLBACK_AIM_OSCILLATION_MIN_MULTIPLIER)
+      : getDragOscillationMultiplier(dragScale);
     const maxAngleDeg = getSpreadAngleDegByAccuracy(aimingAccuracyPercent) * dragOscillationMultiplier;
     const maxAngleRad = maxAngleDeg * Math.PI / 180;
 
