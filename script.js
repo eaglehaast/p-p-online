@@ -15162,6 +15162,12 @@ function getAiLaunchTelegraphyMode(now = performance.now()){
   return "full";
 }
 
+function shouldForceVisibleFallbackLaunchTelegraphy(){
+  const goalText = `${aiRoundState?.currentGoal || ""}`.toLowerCase();
+  if(!goalText) return false;
+  return goalText.includes("fallback") || goalText.includes("safe_short");
+}
+
 function scheduleAiLaunchSessionWatchdog(session){
   if(!session) return;
   clearAiLaunchSessionWatchdog(session);
@@ -38839,7 +38845,8 @@ function buildAiLaunchSession(plane, vx, vy){
   const now = performance.now();
   aiLaunchSessionIdCounter += 1;
   const telegraphyMode = getAiLaunchTelegraphyMode(now);
-  const minimalTelegraphy = telegraphyMode !== "full";
+  const fallbackLaunchNeedsVisibleOscillation = shouldForceVisibleFallbackLaunchTelegraphy();
+  const minimalTelegraphy = telegraphyMode !== "full" && !fallbackLaunchNeedsVisibleOscillation;
   const idealPullPoint = buildPullPointForAiVector(plane, vx, vy);
   const idealTargetAim = computeAiAimMetricsFromPullPoint(plane, idealPullPoint.x, idealPullPoint.y);
   const targetAim = buildHumanizedAiTargetAim(plane, idealTargetAim);
@@ -38936,7 +38943,9 @@ function buildAiLaunchSession(plane, vx, vy){
       powerRatio: AI_LAUNCH_SESSION_POWER_TOLERANCE,
     },
     telegraphyEnabled: telemetryEnabled,
-    telegraphyMode,
+    telegraphyMode: fallbackLaunchNeedsVisibleOscillation && telegraphyMode !== "full"
+      ? `${telegraphyMode}_fallback_forced_visible`
+      : telegraphyMode,
     watchdogDeadlineAt,
     watchdogTimerId: null,
     powerSweepPhase: Math.random() * Math.PI * 2,
