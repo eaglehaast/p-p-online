@@ -24753,24 +24753,22 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
 
     let placementMode = null;
     let used = false;
-    const forcedDefensive = tryPlaceBlueDefensiveMine(context, plannedMove);
-    if(forcedDefensive){
+    let forcedFallbackPlacement = tryPlaceBlueMineForcedFallback();
+    if(forcedFallbackPlacement){
       used = true;
-      placementMode = "defensive";
+      placementMode = "strategic_fallback";
     } else {
-      const forcedBase = tryPlaceBlueMineNearEnemyBase(context, plannedMove);
-      if(forcedBase){
+      const forcedDefensive = tryPlaceBlueDefensiveMine(context, plannedMove);
+      if(forcedDefensive){
         used = true;
-        placementMode = "base";
+        placementMode = "defensive";
       }
-    }
-
-    let forcedFallbackPlacement = null;
-    if(!used){
-      forcedFallbackPlacement = tryPlaceBlueMineForcedFallback();
-      if(forcedFallbackPlacement){
-        used = true;
-        placementMode = "forced_fallback";
+      if(!used){
+        const forcedBase = tryPlaceBlueMineNearEnemyBase(context, plannedMove);
+        if(forcedBase){
+          used = true;
+          placementMode = "base";
+        }
       }
     }
 
