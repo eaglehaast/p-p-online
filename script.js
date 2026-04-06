@@ -33731,6 +33731,198 @@ function shouldKeepV2GroupKillPriority(modeContext = {}, groupKillPlan = null){
 
 
 
+
+function buildInventoryRouteOpeningMoveSeeds(modeContext = {}, chosenGoal = null, launchReadyPlanes = [], aliveEnemies = []){
+  const seeds = [];
+  const seen = new Set();
+  const goalName = chosenGoal?.goalName || aiRoundState?.currentGoal || "attack_enemy_plane";
+  const distanceScales = [
+    { scale: 0.72, label: "medium" },
+    { scale: 0.56, label: "short" },
+  ];
+  const maxEnemiesPerPlane = 3;
+  const maxSeeds = 24;
+
+  const addSeed = (move, metadata = {}) => {
+    if(!move?.plane || !Number.isFinite(move?.vx) || !Number.isFinite(move?.vy)) return;
+    const totalDist = Number.isFinite(move.totalDist)
+      ? move.totalDist
+      : Math.hypot(move.vx || 0, move.vy || 0) * FIELD_FLIGHT_DURATION_SEC;
+    const key = [
+      move.plane?.id ?? "plane",
+      metadata.enemyId ?? move.enemy?.id ?? "enemy",
+      Number(move.vx).toFixed(3),
+      Number(move.vy).toFixed(3),
+      metadata.seedClass || "base",
+    ].join("|");
+    if(seen.has(key)) return;
+    seen.add(key);
+    seeds.push({
+      ...move,
+      totalDist,
+      goalName: move.goalName || goalName,
+      decisionReason: move.decisionReason || "inventory_route_opening_seed",
+      inventoryPreparationSource: metadata.inventoryPreparationSource || "logical_deadlock_inventory_route_opening",
+      routeOpeningSeedClass: metadata.seedClass || "base",
+      routeOpeningSeedEnemyId: metadata.enemyId ?? move.enemy?.id ?? null,
+    });
+  };
+
+  for(const plane of launchReadyPlanes){
+    const nearestEnemies = aliveEnemies
+      .map((enemy) => ({ enemy, distance: dist(plane, enemy) }))
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, maxEnemiesPerPlane)
+      .map((entry) => entry.enemy);
+    for(const enemy of nearestEnemies){
+      const baseMove = planDirectAttackOrPreparationMove(plane, enemy, {
+        directGoalName: goalName,
+        directDecisionReason: "inventory_route_opening_probe_direct",
+        preparationGoalName: "inventory_route_opening_probe_setup",
+        context: modeContext,
+        compareLabel: ["inventory_route_opening_probe", plane?.id ?? "", enemy?.id ?? ""],
+      });
+      if(!baseMove) continue;
+      addSeed({
+        ...baseMove,
+        plane,
+        enemy,
+      }, {
+        seedClass: "base",
+        enemyId: enemy?.id ?? null,
+        inventoryPreparationSource: "logical_deadlock_inventory_route_opening_base",
+      });
+
+      const baseDistance = Number.isFinite(baseMove.totalDist)
+        ? baseMove.totalDist
+        : Math.hypot(baseMove.vx || 0, baseMove.vy || 0) * FIELD_FLIGHT_DURATION_SEC;
+      if(!(Number.isFinite(baseDistance) && baseDistance > CELL_SIZE * 1.35)) continue;
+
+      for(const scaleEntry of distanceScales){
+        const scale = scaleEntry.scale;
+        if(!(scale > 0 && scale < 1)) continue;
+        const scaledMove = {
+          ...baseMove,
+          plane,
+          enemy,
+          vx: (baseMove.vx || 0) * scale,
+          vy: (baseMove.vy || 0) * scale,
+          totalDist: baseDistance * scale,
+          decisionReason: `inventory_route_opening_probe_${scaleEntry.label}`,
+          goalName,
+        };
+        addSeed(scaledMove, {
+          seedClass: scaleEntry.label,
+          enemyId: enemy?.id ?? null,
+          inventoryPreparationSource: `logical_deadlock_inventory_route_opening_${scaleEntry.label}`,
+        });
+      }
+      if(seeds.length >= maxSeeds) break;
+    }
+    if(seeds.length >= maxSeeds) break;
+  }
+
+  return seeds.slice(0, maxSeeds);
+}
+
+function runInventoryRouteOpeningBeforeFallback(modeContext = {}, chosenGoal = null){
+  const launchReadyPlanes = Array.isArray(modeContext?.aiPlanes)
+    ? modeContext.aiPlanes.filter((plane) => isPlaneLaunchStateReady(plane) && !flyingPoints.some((fp) => fp.plane === plane))
+    : [];
+  const aliveEnemies = Array.isArray(modeContext?.enemies)
+    ? modeContext.enemies.filter((enemy) => enemy?.isAlive)
+    : [];
+  if(!launchReadyPlanes.length || !aliveEnemies.length){
+    return {
+      move: null,
+      used: false,
+      diagnostics: {
+        checkedCandidateCount: 0,
+        validAfterItemCount: 0,
+        workingItemType: null,
+        itemUsageStats: {},
+        failReason: !launchReadyPlanes.length ? "no_launch_ready_planes" : "no_alive_enemies",
+      },
+    };
+  }
+
+  const moveSeeds = buildInventoryRouteOpeningMoveSeeds(modeContext, chosenGoal, launchReadyPlanes, aliveEnemies);
+  const diagnostics = {
+    checkedCandidateCount: moveSeeds.length,
+    validAfterItemCount: 0,
+    workingItemType: null,
+    itemUsageStats: {},
+    bestSeedClass: null,
+    bestPlaneId: null,
+    bestEnemyId: null,
+  };
+
+  let bestPlan = null;
+  for(const seedMove of moveSeeds){
+    const baseValidation = validateAiLaunchMoveCandidate(seedMove);
+    const inventoryPlanning = buildAiInventoryCandidatePlans(modeContext, seedMove);
+    const selectedInventoryCandidate = inventoryPlanning?.selectedCandidate || null;
+    const selectedInventorySequence = Array.isArray(inventoryPlanning?.selectedSequence)
+      ? inventoryPlanning.selectedSequence
+      : [];
+    const primaryCandidate = selectedInventoryCandidate || selectedInventorySequence[0] || null;
+    if(!primaryCandidate?.itemType) continue;
+
+    const itemType = primaryCandidate.itemType;
+    diagnostics.itemUsageStats[itemType] = (diagnostics.itemUsageStats[itemType] || 0) + 1;
+    const candidateReasonText = `${primaryCandidate?.reason || ""}`.toLowerCase();
+    const looksLikeRouteOpening = itemType === INVENTORY_ITEM_TYPES.DYNAMITE
+      || itemType === INVENTORY_ITEM_TYPES.CROSSHAIR
+      || candidateReasonText.includes("route")
+      || candidateReasonText.includes("opening")
+      || candidateReasonText.includes("unlock");
+    const becameValidAfterItem = !baseValidation?.ok && looksLikeRouteOpening;
+    if(!becameValidAfterItem) continue;
+
+    diagnostics.validAfterItemCount += 1;
+    const itemScore = Number.isFinite(primaryCandidate?.adjustedComparableScore)
+      ? primaryCandidate.adjustedComparableScore
+      : (Number.isFinite(primaryCandidate?.comparableScore) ? primaryCandidate.comparableScore : 0);
+    const moveDistance = Number.isFinite(seedMove.totalDist)
+      ? seedMove.totalDist
+      : Math.hypot(seedMove.vx || 0, seedMove.vy || 0) * FIELD_FLIGHT_DURATION_SEC;
+    const score = Number((itemScore * 1000 - moveDistance * 0.08 + 120).toFixed(3));
+    const plannedMove = {
+      ...seedMove,
+      goalName: seedMove.goalName || chosenGoal?.goalName || "attack_enemy_plane",
+      decisionReason: "inventory_route_opening_before_fallback",
+      selectedInventoryCandidate,
+      selectedInventorySequence: selectedInventorySequence.slice(),
+      inventoryCandidates: Array.isArray(inventoryPlanning?.candidates) ? inventoryPlanning.candidates.slice() : [],
+      rejectedInventoryCandidates: Array.isArray(inventoryPlanning?.rejected) ? inventoryPlanning.rejected.slice() : [],
+      inventoryUsageReason: primaryCandidate?.reason || "inventory_route_opening_before_fallback",
+      inventoryPreparationSource: seedMove.inventoryPreparationSource || "logical_deadlock_inventory_route_opening",
+      routeOpeningValidation: {
+        baseValidationReason: baseValidation?.reason || null,
+        becameValidAfterItem,
+        itemType,
+      },
+    };
+    if(!bestPlan || score > bestPlan.score + 0.0001){
+      bestPlan = {
+        score,
+        move: plannedMove,
+        itemType,
+      };
+      diagnostics.workingItemType = itemType;
+      diagnostics.bestSeedClass = seedMove.routeOpeningSeedClass || null;
+      diagnostics.bestPlaneId = seedMove.plane?.id ?? null;
+      diagnostics.bestEnemyId = seedMove.enemy?.id ?? null;
+    }
+  }
+
+  return {
+    move: bestPlan?.move || null,
+    used: Boolean(bestPlan?.move),
+    diagnostics,
+  };
+}
+
 function runPreFallbackExtraProbe(modeContext = {}, chosenGoal = null){
   const launchReadyPlanes = Array.isArray(modeContext?.aiPlanes)
     ? modeContext.aiPlanes.filter((plane) => isPlaneLaunchStateReady(plane) && !flyingPoints.some((fp) => fp.plane === plane))
@@ -34184,6 +34376,41 @@ function runAiTurnV2(context = {}){
       reasonCode: "pre_fallback_extra_probe_failed",
       source: "runAiTurnV2",
     });
+
+    const inventoryRouteOpeningProbe = runInventoryRouteOpeningBeforeFallback(modeContext, chosenGoal);
+    logAiDecision("inventory_route_opening_before_fallback_probe", {
+      ...logicalDeadlockContext,
+      reasonCode: "inventory_route_opening_before_fallback",
+      checkedCandidateCount: inventoryRouteOpeningProbe?.diagnostics?.checkedCandidateCount ?? 0,
+      validAfterItemCount: inventoryRouteOpeningProbe?.diagnostics?.validAfterItemCount ?? 0,
+      workingItemType: inventoryRouteOpeningProbe?.diagnostics?.workingItemType || null,
+      itemUsageStats: inventoryRouteOpeningProbe?.diagnostics?.itemUsageStats || {},
+      bestSeedClass: inventoryRouteOpeningProbe?.diagnostics?.bestSeedClass || null,
+      bestPlaneId: inventoryRouteOpeningProbe?.diagnostics?.bestPlaneId ?? null,
+      bestEnemyId: inventoryRouteOpeningProbe?.diagnostics?.bestEnemyId ?? null,
+      source: "runAiTurnV2",
+    });
+    if(inventoryRouteOpeningProbe?.used && inventoryRouteOpeningProbe?.move){
+      logAiDecision("inventory_route_opening_before_fallback_selected", {
+        ...logicalDeadlockContext,
+        reasonCode: "inventory_route_opening_before_fallback",
+        planeId: inventoryRouteOpeningProbe.move?.plane?.id ?? null,
+        enemyId: inventoryRouteOpeningProbe.move?.enemy?.id ?? null,
+        goalName: inventoryRouteOpeningProbe.move?.goalName || null,
+        decisionReason: inventoryRouteOpeningProbe.move?.decisionReason || null,
+        workingItemType: inventoryRouteOpeningProbe?.diagnostics?.workingItemType || null,
+        checkedCandidateCount: inventoryRouteOpeningProbe?.diagnostics?.checkedCandidateCount ?? 0,
+        validAfterItemCount: inventoryRouteOpeningProbe?.diagnostics?.validAfterItemCount ?? 0,
+        source: "runAiTurnV2",
+      });
+      return issueAIMoveFromDoComputerMove(modeContext, {
+        ...inventoryRouteOpeningProbe.move,
+      }, {
+        source: "runAiTurnV2",
+        chooseGoal: chosenGoal,
+        routeClass: inventoryRouteOpeningProbe?.move?.routeClass || "direct",
+      });
+    }
 
     const reserveMove = getFailSafeMinimalTargetedMove(modeContext)
       || getForcedProgressLaunchMove(modeContext)
