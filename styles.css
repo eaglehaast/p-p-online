@@ -1203,6 +1203,10 @@ body, button {
       transition: transform 180ms ease-out;
     }
 
+    .settings-container #range_frame_visual .jet-flame--trail-echo {
+      opacity: 0.38;
+    }
+
   /* Визуализация индикатора дальности на тестовых страницах */
   body.test-harness #rangeIndicator.control-visual {
     position: relative;
