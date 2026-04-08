@@ -17686,6 +17686,14 @@ function createInitialAiRoundState(){
       beforeCandidates: 0,
       afterCandidates: 0,
     },
+    specialRouteBudgetState: {
+      turnNumber: null,
+      lastTurnEarlyBudgetBreak: false,
+      lastTurnExhaustedByClass: {
+        gap: false,
+        ricochet: false,
+      },
+    },
   };
 }
 
@@ -28209,6 +28217,8 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
   const parsedGapAttemptBudget = Number(options?.gapAttemptBudget);
   const parsedRicochetAttemptBudget = Number(options?.ricochetAttemptBudget);
   const defaultSpecialRouteBudget = Math.max(2, maxCandidatesPerClass * 3);
+  const SPECIAL_ROUTE_DYNAMIC_BUDGET_CAP = Math.max(6, maxCandidatesPerClass * 18);
+  const SPECIAL_ROUTE_EARLY_EXHAUST_SHARE_THRESHOLD = 0.6;
   const groundedPlanes = planes.filter((plane) => !flyingPoints.some((fp) => fp.plane === plane));
   const totalGroundedFlagPairs = groundedPlanes.length * availableEnemyFlags.length;
   let directBlockedPairs = 0;
@@ -28229,11 +28239,34 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
   const specialRouteBudgetBoost = directPathBlockedScenario
     ? Math.max(2, Math.ceil(maxCandidatesPerClass * (directBlockedPressure >= 0.5 ? 2.2 : 1.6)))
     : 0;
+  const previousSpecialRouteBudgetState = aiRoundState?.specialRouteBudgetState && typeof aiRoundState.specialRouteBudgetState === "object"
+    ? aiRoundState.specialRouteBudgetState
+    : null;
+  const hadPreviousEarlyBudgetBreak = previousSpecialRouteBudgetState?.lastTurnEarlyBudgetBreak === true;
+  const hasHighStrategicValue = isEmergencyDefenseStage
+    || directBlockedPressure >= 0.45
+    || goalText.includes("critical")
+    || goalText.includes("emergency")
+    || goalText.includes("defense");
+  const hasDenseObstacleMap = directBlockedPressure >= 0.55;
+  const dynamicBudgetSignals = {
+    highStrategicValue: hasHighStrategicValue,
+    denseObstacleMap: hasDenseObstacleMap,
+    previousEarlyBudgetBreak: hadPreviousEarlyBudgetBreak,
+  };
+  const dynamicBudgetBoostShare = (hasHighStrategicValue ? 0.35 : 0)
+    + (hasDenseObstacleMap ? 0.3 : 0)
+    + (hadPreviousEarlyBudgetBreak ? 0.25 : 0);
+  function applyDynamicSpecialRouteBudget(baseBudget){
+    const safeBase = Number.isFinite(baseBudget) ? Math.max(1, Math.floor(baseBudget)) : 1;
+    const boosted = Math.ceil(safeBase * (1 + dynamicBudgetBoostShare));
+    return Math.max(1, Math.min(SPECIAL_ROUTE_DYNAMIC_BUDGET_CAP, boosted));
+  }
   let gapAttemptBudget = Number.isFinite(parsedGapAttemptBudget)
     ? Math.max(1, Math.floor(parsedGapAttemptBudget))
     : defaultSpecialRouteBudget + specialRouteBudgetBoost;
   gapAttemptBudget += Number.isFinite(parsedGapAttemptBudget) ? specialRouteBudgetBoost : 0;
-  const ricochetAttemptBudget = Number.isFinite(parsedRicochetAttemptBudget)
+  let ricochetAttemptBudget = Number.isFinite(parsedRicochetAttemptBudget)
     ? Math.max(1, Math.floor(parsedRicochetAttemptBudget))
     : (defaultSpecialRouteBudget + specialRouteBudgetBoost);
   const baseGoalName = options?.goalName || "capture_enemy_flag";
@@ -28274,6 +28307,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
       attemptsTotal: 0,
       attemptsReachedPlanPath: 0,
       attemptsTrimmedByBudget: 0,
+      attemptBudgetBase: gapAttemptBudget,
       preValidationRejected: 0,
       preValidationReasons: {},
       validationRejected: 0,
@@ -28284,6 +28318,9 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     },
     ricochet: {
       attempted: 0,
+      attemptsTotal: 0,
+      attemptsTrimmedByBudget: 0,
+      attemptBudgetBase: ricochetAttemptBudget,
       preValidationRejected: 0,
       preValidationReasons: {},
       validationRejected: 0,
@@ -28773,6 +28810,9 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
       gapAttemptBudget = Math.max(gapBudgetMin, Math.min(gapBudgetMax, gapBudgetScaledByAttempts));
     }
   }
+  const gapOriginalBudget = Math.max(1, Math.floor(gapAttemptBudget));
+  gapAttemptBudget = applyDynamicSpecialRouteBudget(gapOriginalBudget);
+  candidateTypeDiagnostics.gap.attemptBudgetBase = gapOriginalBudget;
   candidateTypeDiagnostics.gap.attemptBudget = gapAttemptBudget;
 
   for(let index = 0; index < gapAttempts.length && candidateTypeDiagnostics.gap.attempted < gapAttemptBudget; index += 1){
@@ -28863,6 +28903,18 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     candidateTypeDiagnostics.gap.preValidationRejected += trimmedByBudget;
     addRejectReason(candidateTypeDiagnostics.gap.preValidationReasons, "attempt_budget_exhausted");
   }
+  logAiDecision("special_route_attempt_budget", {
+    routeClass: "gap",
+    originalBudget: gapOriginalBudget,
+    boostedBudget: gapAttemptBudget,
+    hardCap: SPECIAL_ROUTE_DYNAMIC_BUDGET_CAP,
+    attemptsTotal: gapAttempts.length,
+    attemptsTried: candidateTypeDiagnostics.gap.attempted,
+    foundWorkingCandidate: candidateTypeDiagnostics.gap.accepted > 0,
+    budgetExhausted: gapAttempts.length > candidateTypeDiagnostics.gap.attempted,
+    dynamicBudgetSignals,
+    dynamicBoostShare: Number(dynamicBudgetBoostShare.toFixed(3)),
+  });
 
   const bounceCandidates = [];
   const ricochetAttempts = [];
@@ -28912,6 +28964,11 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
         });
       }
     }
+    candidateTypeDiagnostics.ricochet.attemptsTotal = ricochetAttempts.length;
+    const ricochetOriginalBudget = Math.max(1, Math.floor(ricochetAttemptBudget));
+    ricochetAttemptBudget = applyDynamicSpecialRouteBudget(ricochetOriginalBudget);
+    candidateTypeDiagnostics.ricochet.attemptBudgetBase = ricochetOriginalBudget;
+    candidateTypeDiagnostics.ricochet.attemptBudget = ricochetAttemptBudget;
 
     for(let index = 0; index < ricochetAttempts.length && candidateTypeDiagnostics.ricochet.attempted < ricochetAttemptBudget; index += 1){
       const { plane, flag, targetAnchor, mirroredTarget } = ricochetAttempts[index];
@@ -28995,9 +29052,39 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
       candidateTypeDiagnostics.ricochet.preValidationRejected += 1;
       addRejectReason(candidateTypeDiagnostics.ricochet.preValidationReasons, groundedPlanes.length === 0 ? "no_grounded_planes" : "no_target_pairs");
     } else if(candidateTypeDiagnostics.ricochet.attempted < ricochetAttempts.length){
-      candidateTypeDiagnostics.ricochet.preValidationRejected += ricochetAttempts.length - candidateTypeDiagnostics.ricochet.attempted;
+      candidateTypeDiagnostics.ricochet.attemptsTrimmedByBudget = ricochetAttempts.length - candidateTypeDiagnostics.ricochet.attempted;
+      candidateTypeDiagnostics.ricochet.preValidationRejected += candidateTypeDiagnostics.ricochet.attemptsTrimmedByBudget;
       addRejectReason(candidateTypeDiagnostics.ricochet.preValidationReasons, "attempt_budget_exhausted");
     }
+    logAiDecision("special_route_attempt_budget", {
+      routeClass: "ricochet",
+      originalBudget: ricochetOriginalBudget,
+      boostedBudget: ricochetAttemptBudget,
+      hardCap: SPECIAL_ROUTE_DYNAMIC_BUDGET_CAP,
+      attemptsTotal: ricochetAttempts.length,
+      attemptsTried: candidateTypeDiagnostics.ricochet.attempted,
+      foundWorkingCandidate: candidateTypeDiagnostics.ricochet.accepted > 0,
+      budgetExhausted: ricochetAttempts.length > candidateTypeDiagnostics.ricochet.attempted,
+      dynamicBudgetSignals,
+      dynamicBoostShare: Number(dynamicBudgetBoostShare.toFixed(3)),
+    });
+  }
+
+  const gapEarlyBudgetBreak = candidateTypeDiagnostics.gap.attemptsTotal > 0
+    && candidateTypeDiagnostics.gap.attemptsTrimmedByBudget > 0
+    && (candidateTypeDiagnostics.gap.attempted / candidateTypeDiagnostics.gap.attemptsTotal) <= SPECIAL_ROUTE_EARLY_EXHAUST_SHARE_THRESHOLD;
+  const ricochetEarlyBudgetBreak = candidateTypeDiagnostics.ricochet.attemptsTotal > 0
+    && candidateTypeDiagnostics.ricochet.attemptsTrimmedByBudget > 0
+    && (candidateTypeDiagnostics.ricochet.attempted / candidateTypeDiagnostics.ricochet.attemptsTotal) <= SPECIAL_ROUTE_EARLY_EXHAUST_SHARE_THRESHOLD;
+  if(aiRoundState && typeof aiRoundState === "object"){
+    aiRoundState.specialRouteBudgetState = {
+      turnNumber: Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null,
+      lastTurnEarlyBudgetBreak: gapEarlyBudgetBreak || ricochetEarlyBudgetBreak,
+      lastTurnExhaustedByClass: {
+        gap: candidateTypeDiagnostics.gap.attemptsTrimmedByBudget > 0,
+        ricochet: candidateTypeDiagnostics.ricochet.attemptsTrimmedByBudget > 0,
+      },
+    };
   }
 
   const ADAPTIVE_FILTER_REJECTION_SHARE_THRESHOLD = 0.72;
