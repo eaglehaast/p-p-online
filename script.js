@@ -25013,6 +25013,32 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   return true;
 }
 
+function estimateAiMineGateRiskScore(gateResult){
+  if(!gateResult || gateResult.ok) return 0;
+  const threatMeta = gateResult?.threatMeta || null;
+  const triggerRadius = Number.isFinite(threatMeta?.triggerRadius) ? Math.max(1, threatMeta.triggerRadius) : Math.max(1, CELL_SIZE);
+  const nearestDist = Number.isFinite(threatMeta?.nearestDist) ? Math.max(0, threatMeta.nearestDist) : 0;
+  const proximityRisk = Math.max(0, 1 - (nearestDist / triggerRadius));
+  const pathHitRisk = threatMeta?.pathHit ? 0.38 : 0;
+  const landingRisk = threatMeta?.landingThreat ? 0.45 : 0;
+  const densityRisk = Math.min(0.35, Number(threatMeta?.count || 0) * 0.16);
+  return Number(Math.min(1, proximityRisk * 0.3 + pathHitRisk + landingRisk + densityRisk).toFixed(4));
+}
+
+function getAiMoveMineRiskSnapshot(move, context = null, options = {}){
+  if(!move || !Number.isFinite(move?.vx) || !Number.isFinite(move?.vy)) return null;
+  const gateResult = getFinalAiLaunchMineThreatCheck(move);
+  const riskScore = estimateAiMineGateRiskScore(gateResult);
+  const allowedMoveRisk = getAiAllowedMoveRisk(context, options);
+  const highRisk = gateResult?.ok !== true && riskScore > Math.max(allowedMoveRisk, 0.2);
+  return {
+    gateResult,
+    riskScore,
+    allowedMoveRisk: Number(allowedMoveRisk.toFixed(4)),
+    highRisk,
+  };
+}
+
 function buildFinalMineGateAggressiveFallbackReplan(plannedMove, context = {}, options = {}){
   const plane = plannedMove?.plane || null;
   if(!plane) return null;
@@ -25101,18 +25127,6 @@ function resolveFinalAiLaunchMoveWithMineGate(plannedMove, context = {}, options
       }
     : null;
 
-  function estimateMineGateRiskScore(result){
-    if(!result || result.ok) return 0;
-    const threatMeta = result?.threatMeta || null;
-    const triggerRadius = Number.isFinite(threatMeta?.triggerRadius) ? Math.max(1, threatMeta.triggerRadius) : Math.max(1, CELL_SIZE);
-    const nearestDist = Number.isFinite(threatMeta?.nearestDist) ? Math.max(0, threatMeta.nearestDist) : 0;
-    const proximityRisk = Math.max(0, 1 - (nearestDist / triggerRadius));
-    const pathHitRisk = threatMeta?.pathHit ? 0.38 : 0;
-    const landingRisk = threatMeta?.landingThreat ? 0.45 : 0;
-    const densityRisk = Math.min(0.35, Number(threatMeta?.count || 0) * 0.16);
-    return Number(Math.min(1, proximityRisk * 0.3 + pathHitRisk + landingRisk + densityRisk).toFixed(4));
-  }
-
   function getProgressToStrategicTargetMeta(){
     const target = plannedMove?.preservedStrategicTargetPoint
       || getAiStrategicTargetPoint(context, plannedMove)
@@ -25160,7 +25174,7 @@ function resolveFinalAiLaunchMoveWithMineGate(plannedMove, context = {}, options
     ) + 1;
   }
   const deadlockBudgetMeta = consumeFinalMineGateDeadlockBudgetIfNeeded(gateResult);
-  const mineGateRiskScore = estimateMineGateRiskScore(gateResult);
+  const mineGateRiskScore = estimateAiMineGateRiskScore(gateResult);
   const progressToGoalMeta = getProgressToStrategicTargetMeta();
   const clearlyLethalCrossing = Boolean(
     gateResult?.threatClass === "critical_forbidden"
@@ -34628,6 +34642,63 @@ function planPathToPoint(plane, tx, ty, options = {}){
     if(!Array.isArray(candidates) || candidates.length === 0) return null;
     let bestCandidate = null;
     let bestScore = Number.NEGATIVE_INFINITY;
+    const localMineRiskReplanCandidates = [];
+
+    function tryBuildLocalMineRiskReplan(candidate, mineRiskSnapshot){
+      if(!candidate || !mineRiskSnapshot?.highRisk) return null;
+      if(`${candidate?.decisionReason || ""}`.includes("early_mine_local_replan")) return null;
+      if(!Number.isFinite(candidate?.vx) || !Number.isFinite(candidate?.vy)) return null;
+      const currentAngle = Math.atan2(candidate.vy, candidate.vx);
+      if(!Number.isFinite(currentAngle)) return null;
+      const rawCurrentScale = Number.isFinite(candidate?.attackPowerRatio)
+        ? candidate.attackPowerRatio
+        : (Number.isFinite(candidate?.totalDist) && flightDistancePx > 0 ? candidate.totalDist / flightDistancePx : 1);
+      const localScale = Math.max(0.52, Math.min(1, rawCurrentScale * 0.9));
+      const variantAngles = [-0.24, 0.24, -0.38, 0.38];
+      let bestVariant = null;
+
+      for(const angleDelta of variantAngles){
+        const replannedMove = buildMoveWithSafeDeviation(currentAngle + angleDelta, flightDistancePx, localScale, {
+          moveType: candidate?.moveType || "direct",
+          candidateClass: candidate?.candidateClass || candidate?.routeClass || "direct",
+          decisionReason: `${candidate?.decisionReason || "candidate"}__early_mine_local_replan`,
+          goalName: options?.goalName || null,
+          routeClass: candidate?.routeClass || candidate?.candidateClass || "direct",
+        });
+        if(!replannedMove) continue;
+        const replannedRisk = getAiMoveMineRiskSnapshot(replannedMove, options?.context, {
+          stage: "candidate_early_mine_local_replan",
+        });
+        if(!replannedRisk) continue;
+        const riskImprovement = mineRiskSnapshot.riskScore - replannedRisk.riskScore;
+        if(!bestVariant
+          || replannedRisk.riskScore < bestVariant.riskScore - 0.0001
+          || (Math.abs(replannedRisk.riskScore - bestVariant.riskScore) <= 0.0001 && riskImprovement > bestVariant.riskImprovement)){
+          bestVariant = {
+            move: replannedMove,
+            riskScore: replannedRisk.riskScore,
+            riskImprovement,
+          };
+        }
+      }
+
+      if(!bestVariant || bestVariant.riskImprovement < 0.06) return null;
+      bestVariant.move.mineRiskProfile = {
+        ...(bestVariant.move.mineRiskProfile || {}),
+        localReplanApplied: true,
+        localReplanRiskScore: bestVariant.riskScore,
+        previousRiskScore: mineRiskSnapshot.riskScore,
+      };
+      logAiDecision("ai_candidate_early_mine_local_replan_selected", {
+        planeId: bestVariant.move?.plane?.id ?? candidate?.plane?.id ?? null,
+        goalName: options?.goalName || null,
+        reasonCode: "candidate_early_mine_local_replan_selected",
+        previousRiskScore: mineRiskSnapshot.riskScore,
+        replannedRiskScore: bestVariant.riskScore,
+        decisionReason: bestVariant.move?.decisionReason || null,
+      });
+      return bestVariant.move;
+    }
 
     for(const candidate of candidates){
       if(!candidate) continue;
@@ -34635,9 +34706,32 @@ function planPathToPoint(plane, tx, ty, options = {}){
         ? candidate.routeQualityScore
         : (Number.isFinite(candidate?.routeMetrics?.qualityScore) ? candidate.routeMetrics.qualityScore : Number.NEGATIVE_INFINITY);
       const fallbackScore = Number.isFinite(candidate?.score) ? candidate.score : Number.NEGATIVE_INFINITY;
-      const candidateScore = Number.isFinite(qualityScore) ? qualityScore : fallbackScore;
+      const baseCandidateScore = Number.isFinite(qualityScore) ? qualityScore : fallbackScore;
+      const mineRiskSnapshot = getAiMoveMineRiskSnapshot(candidate, options?.context, {
+        stage: "candidate_ranking",
+      });
+      const mineRiskPenalty = mineRiskSnapshot
+        ? (mineRiskSnapshot.gateResult?.ok === true
+          ? 0
+          : Number((Math.max(0, mineRiskSnapshot.riskScore - mineRiskSnapshot.allowedMoveRisk) * 125).toFixed(4)))
+        : 0;
+      const candidateScore = baseCandidateScore - mineRiskPenalty;
       const candidatePrefersMaximumLaunch = candidate?.preferMaximumLaunch === true;
       const bestPrefersMaximumLaunch = bestCandidate?.preferMaximumLaunch === true;
+      candidate.mineRiskProfile = mineRiskSnapshot
+        ? {
+            riskScore: mineRiskSnapshot.riskScore,
+            allowedMoveRisk: mineRiskSnapshot.allowedMoveRisk,
+            highRisk: mineRiskSnapshot.highRisk,
+            penaltyApplied: mineRiskPenalty,
+          }
+        : null;
+      if(mineRiskSnapshot?.highRisk){
+        const localReplanCandidate = tryBuildLocalMineRiskReplan(candidate, mineRiskSnapshot);
+        if(localReplanCandidate){
+          localMineRiskReplanCandidates.push(localReplanCandidate);
+        }
+      }
       if(candidateScore > bestScore + 0.000001
         || (Math.abs(candidateScore - bestScore) <= 0.000001 && candidatePrefersMaximumLaunch !== bestPrefersMaximumLaunch && candidatePrefersMaximumLaunch)
         || (Math.abs(candidateScore - bestScore) <= 0.000001
@@ -34646,6 +34740,18 @@ function planPathToPoint(plane, tx, ty, options = {}){
         bestCandidate = candidate;
         bestScore = candidateScore;
       }
+    }
+
+    if(localMineRiskReplanCandidates.length > 0){
+      const alreadyUsedEarlyReplan = candidates.some((candidate) => `${candidate?.decisionReason || ""}`.includes("early_mine_local_replan"));
+      if(alreadyUsedEarlyReplan){
+        return bestCandidate;
+      }
+      for(const replannedCandidate of localMineRiskReplanCandidates){
+        if(!replannedCandidate) continue;
+        candidates.push(replannedCandidate);
+      }
+      return pickBestCandidate(candidates.filter(Boolean).slice(0, 24));
     }
 
     return bestCandidate;
