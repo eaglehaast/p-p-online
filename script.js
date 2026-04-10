@@ -13852,10 +13852,29 @@ function tryStartAiPlanningFromCommittedState(trigger = "unspecified"){
     isGameOver
     || gameMode !== "computer"
     || turnColors[turnIndex] !== "blue"
-    || aiMoveScheduled
     || flyingPoints.length > 0
   ){
     return false;
+  }
+
+  if(aiMoveScheduled){
+    const now = performance.now();
+    const turnStartedAt = Number.isFinite(aiTurnTimingState?.turnStartedAt) ? aiTurnTimingState.turnStartedAt : 0;
+    const scheduledForMs = turnStartedAt > 0 ? Math.max(0, now - turnStartedAt) : 0;
+    const schedulerLikelyStalled = !aiLaunchSession && scheduledForMs >= (AI_MOVE_INITIAL_DELAY_MS + AI_MOVE_CARGO_WAIT_TIMEOUT_MS + 600);
+
+    if(!schedulerLikelyStalled){
+      return false;
+    }
+
+    logAiDecision("ai_scheduler_stall_recovered", {
+      trigger,
+      reasonCode: "ai_scheduler_stall_recovered",
+      scheduledForMs: Math.round(scheduledForMs),
+      aiLaunchSessionActive: Boolean(aiLaunchSession),
+      ...getAiTurnTimingSnapshot(),
+    });
+    aiMoveScheduled = false;
   }
 
   const playerMoveCommitFinishedBeforePlannerStart = Boolean(
@@ -31141,6 +31160,63 @@ function getFallbackAiMove(context){
   }
 
   return best;
+}
+
+function getFailSafeMinimalTargetedMove(context = {}){
+  const contextAiPlanes = Array.isArray(context?.aiPlanes) ? context.aiPlanes : null;
+  const aiPlanes = (contextAiPlanes || points).filter((plane) => (
+    plane?.color === "blue"
+    && isPlaneLaunchStateReady(plane)
+    && !flyingPoints.some((fp) => fp.plane === plane)
+  ));
+  if(aiPlanes.length === 0) return null;
+
+  const contextEnemies = Array.isArray(context?.enemies) ? context.enemies : null;
+  const enemies = (contextEnemies || points).filter((plane) => (
+    plane?.color === "green"
+    && isPlaneTargetable(plane)
+  ));
+  if(enemies.length === 0) return null;
+
+  let bestPair = null;
+  for(const plane of aiPlanes){
+    for(const enemy of enemies){
+      const distanceToEnemy = Math.hypot((enemy?.x || 0) - plane.x, (enemy?.y || 0) - plane.y);
+      if(!bestPair || distanceToEnemy < bestPair.distanceToEnemy){
+        bestPair = { plane, enemy, distanceToEnemy };
+      }
+    }
+  }
+  if(!bestPair?.plane || !bestPair?.enemy) return null;
+
+  const profile = getAiFlightRangeProfile(bestPair.plane);
+  const speedPxPerSec = Number.isFinite(profile?.speedPxPerSec) && profile.speedPxPerSec > 0
+    ? profile.speedPxPerSec
+    : (CELL_SIZE * 6 / FIELD_FLIGHT_DURATION_SEC);
+  if(!Number.isFinite(speedPxPerSec) || speedPxPerSec <= 0) return null;
+
+  const dx = bestPair.enemy.x - bestPair.plane.x;
+  const dy = bestPair.enemy.y - bestPair.plane.y;
+  const angle = Math.atan2(dy, dx);
+  const minimalScale = 0.42;
+  const vx = Math.cos(angle) * minimalScale * speedPxPerSec;
+  const vy = Math.sin(angle) * minimalScale * speedPxPerSec;
+
+  return normalizeFailSafeLaunchCandidate({
+    plane: bestPair.plane,
+    enemy: bestPair.enemy,
+    vx,
+    vy,
+    totalDist: Math.hypot(vx, vy) * FIELD_FLIGHT_DURATION_SEC,
+    goalName: "fail_safe_minimal_targeted_move",
+    decisionReason: "fail_safe_minimal_targeted_move",
+  });
+}
+
+function getFailSafeGuaranteedDirectMove(context = {}){
+  return getFailSafeMinimalTargetedMove(context)
+    || getForcedProgressLaunchMove(context)
+    || getGuaranteedAnyLegalLaunch(context);
 }
 
 function getGuaranteedAnyLegalLaunch(context){
