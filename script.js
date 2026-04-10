@@ -17733,6 +17733,7 @@ function createInitialAiRoundState(){
     lastOpeningNonTrivialStartMeta: null,
     lastFallbackMoveMeta: null,
     flagDeliveryMissedOpportunities: 0,
+    noReadyPlanesStreak: 0,
     lossCompressionMode: false,
     inventoryPressure: createInitialInventoryPressureState(),
     trainingForceFuelOnNextAiTurn: {
@@ -32149,6 +32150,24 @@ function runPreFallbackExtraProbe(modeContext = {}, chosenGoal = null){
     tried,
   };
 }
+const AI_NO_READY_PLANES_STALL_RECOVERY_THRESHOLD = 2;
+
+function getNoReadyAiPlanesStreak(){
+  if(!aiRoundState || typeof aiRoundState !== "object") return 0;
+  const streak = Number(aiRoundState.noReadyPlanesStreak);
+  if(!Number.isFinite(streak) || streak < 0) return 0;
+  return Math.floor(streak);
+}
+
+function setNoReadyAiPlanesStreak(value){
+  if(!aiRoundState || typeof aiRoundState !== "object") return 0;
+  const normalizedValue = Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : 0;
+  aiRoundState.noReadyPlanesStreak = normalizedValue;
+  return normalizedValue;
+}
+
 function runAiTurnV2(context = {}){
   if (gameMode!=="computer" || isGameOver) return;
 
@@ -32164,6 +32183,87 @@ function runAiTurnV2(context = {}){
   ));
   const enemies = points.filter((p) => p.color === "green" && p.isAlive && !p.burning);
   if(!aiPlanes.length || !enemies.length){
+    if(!aiPlanes.length){
+      const nextNoReadyStreak = setNoReadyAiPlanesStreak(getNoReadyAiPlanesStreak() + 1);
+      logAiDecision("ai_no_ready_planes_streak_incremented", {
+        source: "runAiTurnV2",
+        reasonCode: "no_ready_ai_planes",
+        noReadyPlanesStreak: nextNoReadyStreak,
+        threshold: AI_NO_READY_PLANES_STALL_RECOVERY_THRESHOLD,
+      });
+
+      if(nextNoReadyStreak >= AI_NO_READY_PLANES_STALL_RECOVERY_THRESHOLD){
+        const stallRecoveryAiPlanes = points.filter((plane) => (
+          plane?.color === "blue"
+          && plane?.isAlive === true
+          && plane?.burning !== true
+          && !flyingPoints.some((fp) => fp.plane === plane)
+        ));
+        const stallRecoveryContext = {
+          aiPlanes: rankAiPlanesForCurrentTurn(stallRecoveryAiPlanes),
+          enemies,
+        };
+
+        logAiDecision("ai_no_ready_planes_stall_recovery_started", {
+          source: "runAiTurnV2",
+          reasonCode: "no_ready_ai_planes_stall_recovery_started",
+          noReadyPlanesStreak: nextNoReadyStreak,
+          threshold: AI_NO_READY_PLANES_STALL_RECOVERY_THRESHOLD,
+          aiPlaneCount: stallRecoveryAiPlanes.length,
+          enemyCount: enemies.length,
+        });
+
+        const guaranteedMove = typeof getFailSafeGuaranteedDirectMove === "function"
+          ? getFailSafeGuaranteedDirectMove(stallRecoveryContext)
+          : null;
+        const guaranteedValidation = validateAiLaunchMoveCandidate(guaranteedMove);
+        if(guaranteedValidation.ok){
+          const launchResult = issueAIMove(
+            guaranteedMove.plane,
+            guaranteedMove.vx,
+            guaranteedMove.vy,
+            { isFallbackMove: true }
+          );
+          if(launchResult?.ok){
+            setNoReadyAiPlanesStreak(0);
+            logAiDecision("ai_no_ready_planes_stall_recovery_launched", {
+              source: "runAiTurnV2",
+              reasonCode: "no_ready_ai_planes_stall_recovery_launched",
+              planeId: guaranteedMove?.plane?.id ?? null,
+              noReadyPlanesStreakBeforeReset: nextNoReadyStreak,
+            });
+            showAiLaunchNotice("ИИ вышел из застоя аварийным запуском", {
+              persistent: false,
+              kind: "stall_recovery",
+            });
+            return;
+          }
+        }
+
+        logAiDecision("ai_no_ready_planes_stall_recovery_failed", {
+          source: "runAiTurnV2",
+          reasonCode: "no_ready_ai_planes_stall_recovery_failed",
+          noReadyPlanesStreak: nextNoReadyStreak,
+          validationRejectReason: guaranteedValidation?.reason || "invalid_guaranteed_direct_move",
+        });
+        return failSafeAdvanceTurn("no_ready_ai_planes_stall_recovery_failed", {
+          goal: "v2_safe_turn_resolution",
+          reasonCodes: [
+            "v2_safe_turn_resolution",
+            "no_ready_ai_planes",
+            "no_ready_ai_planes_stall_recovery_failed",
+          ],
+          rejectReasons: [
+            guaranteedValidation?.reason || "invalid_guaranteed_direct_move",
+            "no_ready_ai_planes_stall_recovery_failed",
+          ],
+          modeContext: stallRecoveryContext,
+        });
+      }
+    } else {
+      setNoReadyAiPlanesStreak(0);
+    }
+
     logAiDecision("v2_safe_turn_resolution", {
       reason: !aiPlanes.length ? "no_ready_ai_planes" : "no_alive_enemies",
       aiPlaneCount: aiPlanes.length,
@@ -32177,6 +32277,7 @@ function runAiTurnV2(context = {}){
       modeContext: { aiPlanes, enemies },
     });
   }
+  setNoReadyAiPlanesStreak(0);
 
   const modeContext = {
     aiPlanes: rankAiPlanesForCurrentTurn(aiPlanes),
