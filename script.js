@@ -37528,6 +37528,48 @@ function destroyAllPlanesWithNukeScoring(){
 
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 
+let failSafeAdvanceTurnInProgress = false;
+function failSafeAdvanceTurn(reason = "unspecified", details = {}){
+  if(failSafeAdvanceTurnInProgress) return false;
+  if(isGameOver) return false;
+
+  failSafeAdvanceTurnInProgress = true;
+  try {
+    const reasonCodes = Array.isArray(details?.reasonCodes)
+      ? details.reasonCodes.filter(Boolean)
+      : [];
+    if(reason && !reasonCodes.includes(reason)){
+      reasonCodes.push(reason);
+    }
+    if(!reasonCodes.includes("fail_safe_turn_advance")){
+      reasonCodes.push("fail_safe_turn_advance");
+    }
+
+    logAiDecision("fail_safe_turn_advance", {
+      reason,
+      reasonCode: details?.reasonCode || reason || "fail_safe_turn_advance",
+      reasonCodes,
+      reasonCategory: details?.reasonCategory || null,
+      rejectReasons: Array.isArray(details?.rejectReasons) ? details.rejectReasons : [],
+      goal: details?.goal || aiRoundState?.currentGoal || null,
+      planeId: details?.planeId ?? null,
+      message: details?.errorMessage || null,
+      source: details?.source || "failSafeAdvanceTurn",
+    });
+
+    aiMoveScheduled = false;
+    clearAiPostInventoryLaunchTimeout("fail_safe_turn_advance");
+    clearAiLaunchStallNotice();
+    clearAiLaunchSessionWatchdog();
+    aiLaunchSession = null;
+    cleanupHandle();
+    advanceTurn();
+    return true;
+  } finally {
+    failSafeAdvanceTurnInProgress = false;
+  }
+}
+
 function advanceTurn(){
   cancelPendingInventoryUse();
   cancelActiveInventoryPickup();
