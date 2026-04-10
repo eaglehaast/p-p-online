@@ -542,12 +542,12 @@ body, button {
     --transfer-source-height: 452;
     --transfer-safe-left: 86;
     --transfer-safe-right: 86;
-    --transfer-turn-top-y: 174;
-    --transfer-turn-top-height: 24;
-    --transfer-turn-bottom-y: 198;
-    --transfer-turn-bottom-height: 60;
-    --transfer-win-y: 171;
-    --transfer-win-height: 87;
+    --transfer-turn-top-y: 170;
+    --transfer-turn-top-height: 30;
+    --transfer-turn-bottom-y: 206;
+    --transfer-turn-bottom-height: 50;
+    --transfer-win-y: 174;
+    --transfer-win-height: 84;
     position: relative;
     width: min(86%, 330px);
     aspect-ratio: calc(var(--transfer-source-width) / var(--transfer-source-height));
@@ -584,14 +584,15 @@ body, button {
     text-align: center;
     font-family: "Trebuchet MS", "Verdana", "Arial Black", sans-serif;
     font-weight: 900;
-    letter-spacing: 0.045em;
+    letter-spacing: 0.03em;
     text-transform: uppercase;
-    color: #f4e5b9;
-    -webkit-text-stroke: 2px #6f4923;
-    text-shadow:
-      0 2px 0 rgba(69, 43, 15, 0.95),
-      0 4px 8px rgba(16, 7, 2, 0.78);
-    line-height: 1;
+    color: #d7c29a;
+    line-height: 1.05;
+    margin: 0;
+    padding: 0;
+    transform: none;
+    opacity: 1;
+    white-space: nowrap;
     pointer-events: none;
   }
 
@@ -602,19 +603,38 @@ body, button {
   .transfer-frame-text--turn-top {
     top: calc((var(--transfer-turn-top-y) / var(--transfer-source-height)) * 100%);
     height: calc((var(--transfer-turn-top-height) / var(--transfer-source-height)) * 100%);
-    font-size: clamp(12px, 1.55vw, 15px);
+    font-size: clamp(12px, 1.4vw, 14px);
+    font-weight: 800;
+    color: #4c3820;
+    letter-spacing: 0.08em;
+    text-shadow: 0 1px 0 rgba(255, 244, 220, 0.25);
+    -webkit-text-stroke: 0;
   }
 
   .transfer-frame-text--turn-bottom {
     top: calc((var(--transfer-turn-bottom-y) / var(--transfer-source-height)) * 100%);
     height: calc((var(--transfer-turn-bottom-height) / var(--transfer-source-height)) * 100%);
-    font-size: clamp(19px, 2.2vw, 23px);
+    font-size: clamp(19px, 2.15vw, 23px);
+    color: #d7c29a;
+    letter-spacing: 0.055em;
+    text-shadow:
+      0 1px 0 rgba(69, 43, 15, 0.9),
+      0 3px 6px rgba(16, 7, 2, 0.55);
+    -webkit-text-stroke: 1px #654221;
   }
 
   .transfer-frame-text--win {
     top: calc((var(--transfer-win-y) / var(--transfer-source-height)) * 100%);
     height: calc((var(--transfer-win-height) / var(--transfer-source-height)) * 100%);
-    font-size: clamp(24px, 2.6vw, 28px);
+    left: 0;
+    right: 0;
+    font-size: clamp(20px, 2.35vw, 24px);
+    color: #d7c29a;
+    letter-spacing: 0.05em;
+    text-shadow:
+      0 1px 0 rgba(69, 43, 15, 0.92),
+      0 3px 7px rgba(16, 7, 2, 0.62);
+    -webkit-text-stroke: 1px #654221;
   }
 
   body.inventory-pointer-hidden,
