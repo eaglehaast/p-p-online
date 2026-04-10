@@ -15940,6 +15940,90 @@ function runLaunchReleaseStage({ plane, vx, vy, actor = "human" }){
   return { ok: true };
 }
 
+function validateAiLaunchMoveCandidate(move){
+  const plane = move?.plane;
+  const vx = move?.vx;
+  const vy = move?.vy;
+
+  if(!plane || typeof plane !== "object"){
+    return {
+      ok: false,
+      reason: "invalid_plane_for_launch",
+      message: "Plane reference is missing.",
+    };
+  }
+  if(plane.isAlive !== true){
+    return {
+      ok: false,
+      reason: "plane_not_alive",
+      message: "Plane is not alive.",
+    };
+  }
+  if(plane.burning){
+    return {
+      ok: false,
+      reason: "plane_burning",
+      message: "Plane is burning and cannot be launched.",
+    };
+  }
+  if(typeof isPlaneLaunchStateReady === "function" && !isPlaneLaunchStateReady(plane)){
+    return {
+      ok: false,
+      reason: "plane_not_launch_ready",
+      message: "Plane is not ready for launch.",
+    };
+  }
+
+  const activeTurnColor = Array.isArray(turnColors) ? turnColors[turnIndex] : null;
+  if(activeTurnColor && plane.color && plane.color !== activeTurnColor){
+    return {
+      ok: false,
+      reason: "turn_color_mismatch",
+      message: `Active turn belongs to ${activeTurnColor}, but move uses ${plane.color}.`,
+    };
+  }
+
+  if(!Number.isFinite(vx) || !Number.isFinite(vy)){
+    return {
+      ok: false,
+      reason: "invalid_launch_vector",
+      message: "Launch vector is not finite.",
+    };
+  }
+
+  const speed = Math.hypot(vx, vy);
+  if(!Number.isFinite(speed) || speed <= 0.0001){
+    return {
+      ok: false,
+      reason: "zero_launch_vector",
+      message: "Launch vector is too small.",
+    };
+  }
+
+  const durationSec = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
+    ? FIELD_FLIGHT_DURATION_SEC
+    : 1;
+  const landingX = plane.x + vx * durationSec;
+  const landingY = plane.y + vy * durationSec;
+  if(!Number.isFinite(landingX) || !Number.isFinite(landingY)){
+    return {
+      ok: false,
+      reason: "invalid_landing_point",
+      message: "Landing point cannot be computed.",
+    };
+  }
+
+  return {
+    ok: true,
+    reason: "valid",
+    speed,
+    landing: {
+      x: landingX,
+      y: landingY,
+    },
+  };
+}
+
 function computeLaunchVectorFromPull(plane, fromX, fromY){
   let dx = fromX - plane.x;
   let dy = fromY - plane.y;
@@ -37527,6 +37611,48 @@ function destroyAllPlanesWithNukeScoring(){
 }
 
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+
+let failSafeAdvanceTurnInProgress = false;
+function failSafeAdvanceTurn(reason = "unspecified", details = {}){
+  if(failSafeAdvanceTurnInProgress) return false;
+  if(isGameOver) return false;
+
+  failSafeAdvanceTurnInProgress = true;
+  try {
+    const reasonCodes = Array.isArray(details?.reasonCodes)
+      ? details.reasonCodes.filter(Boolean)
+      : [];
+    if(reason && !reasonCodes.includes(reason)){
+      reasonCodes.push(reason);
+    }
+    if(!reasonCodes.includes("fail_safe_turn_advance")){
+      reasonCodes.push("fail_safe_turn_advance");
+    }
+
+    logAiDecision("fail_safe_turn_advance", {
+      reason,
+      reasonCode: details?.reasonCode || reason || "fail_safe_turn_advance",
+      reasonCodes,
+      reasonCategory: details?.reasonCategory || null,
+      rejectReasons: Array.isArray(details?.rejectReasons) ? details.rejectReasons : [],
+      goal: details?.goal || aiRoundState?.currentGoal || null,
+      planeId: details?.planeId ?? null,
+      message: details?.errorMessage || null,
+      source: details?.source || "failSafeAdvanceTurn",
+    });
+
+    aiMoveScheduled = false;
+    clearAiPostInventoryLaunchTimeout("fail_safe_turn_advance");
+    clearAiLaunchStallNotice();
+    clearAiLaunchSessionWatchdog();
+    aiLaunchSession = null;
+    cleanupHandle();
+    advanceTurn();
+    return true;
+  } finally {
+    failSafeAdvanceTurnInProgress = false;
+  }
+}
 
 function advanceTurn(){
   cancelPendingInventoryUse();
