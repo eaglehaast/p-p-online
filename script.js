@@ -33285,11 +33285,140 @@ if(typeof window !== "undefined"){
 }
 
 function doComputerMove(){
-  if(typeof window !== "undefined" && typeof window.runAiTurnV2 === "function"){
-    return window.runAiTurnV2();
+  const getFailSafeCounts = () => ({
+    aiPlanes: points.filter((plane) => plane?.color === "blue" && plane?.isAlive && !plane?.burning).length,
+    enemyPlanes: points.filter((plane) => plane?.color === "green" && plane?.isAlive && !plane?.burning).length,
+  });
+  const tryEmergencyAiLaunch = (reasonCode) => {
+    const launchReadyAiPlanes = points.filter((plane) => (
+      plane?.color === "blue"
+      && isPlaneLaunchStateReady(plane)
+      && !flyingPoints.some((fp) => fp.plane === plane)
+    ));
+    const aliveEnemies = points.filter((plane) => plane?.color === "green" && plane?.isAlive && !plane?.burning);
+    const emergencyContext = {
+      aiPlanes: typeof rankAiPlanesForCurrentTurn === "function"
+        ? rankAiPlanesForCurrentTurn(launchReadyAiPlanes)
+        : launchReadyAiPlanes,
+      enemies: aliveEnemies,
+    };
+
+    const emergencyMove = (typeof getMandatoryTurnMove === "function"
+      ? getMandatoryTurnMove(emergencyContext)
+      : null)
+      || (typeof getFailSafeGuaranteedDirectMove === "function"
+        ? getFailSafeGuaranteedDirectMove(emergencyContext)
+        : null);
+    if(!emergencyMove) return { launched: false, rejectReason: "no_emergency_move_candidate" };
+
+    const validation = typeof validateAiLaunchMoveCandidate === "function"
+      ? validateAiLaunchMoveCandidate(emergencyMove)
+      : {
+          ok: Boolean(
+            emergencyMove?.plane
+            && Number.isFinite(emergencyMove?.vx)
+            && Number.isFinite(emergencyMove?.vy)
+          ),
+          reason: "no_validation_runtime",
+        };
+    if(!validation.ok){
+      return { launched: false, rejectReason: validation?.reason || "emergency_move_validation_failed" };
+    }
+
+    if(typeof issueAIMove !== "function"){
+      return { launched: false, rejectReason: "issue_ai_move_unavailable" };
+    }
+
+    const launchResult = issueAIMove(
+      emergencyMove.plane,
+      emergencyMove.vx,
+      emergencyMove.vy,
+      { isFallbackMove: true },
+    );
+    const launchOk = launchResult?.ok !== false;
+    if(!launchOk){
+      return { launched: false, rejectReason: launchResult?.reason || "emergency_launch_failed" };
+    }
+
+    aiMoveScheduled = false;
+    logAiDecision("ai_turn_runtime_emergency_launch", {
+      source: "doComputerMove",
+      reasonCode,
+      planeId: emergencyMove?.plane?.id ?? null,
+      goal: emergencyMove?.goalName || "mandatory_turn_move",
+      decisionReason: emergencyMove?.decisionReason || "mandatory_turn_move",
+      counts: getFailSafeCounts(),
+    });
+    return { launched: true };
+  };
+  const safeAdvanceTurn = (reason, details = {}) => {
+    if(typeof failSafeAdvanceTurn === "function"){
+      return failSafeAdvanceTurn(reason, details);
+    }
+    aiMoveScheduled = false;
+    if(typeof advanceTurn === "function"){
+      advanceTurn();
+    }
+    return undefined;
+  };
+
+  const runtime = typeof runAiTurnV2 === "function"
+    ? runAiTurnV2
+    : (typeof window !== "undefined" && typeof window.runAiTurnV2 === "function"
+      ? window.runAiTurnV2
+      : null);
+
+  if(typeof runtime !== "function"){
+    logAiDecision("ai_turn_runtime_missing", {
+      source: "doComputerMove",
+      reasonCode: "ai_turn_runtime_unavailable",
+      mode: gameMode,
+      isGameOver,
+    });
+    logAiDecision("ai_no_move_fail_safe", {
+      source: "doComputerMove",
+      reasonCode: "ai_turn_runtime_unavailable",
+      counts: getFailSafeCounts(),
+    });
+    const emergencyLaunch = tryEmergencyAiLaunch("ai_turn_runtime_unavailable");
+    if(emergencyLaunch.launched){
+      return;
+    }
+    return safeAdvanceTurn("ai_turn_runtime_unavailable", {
+      goal: aiRoundState?.currentGoal || "ai_turn_runtime_unavailable",
+      reasonCodes: ["ai_turn_runtime_unavailable", "fail_safe_turn_advance"],
+      rejectReasons: ["ai_turn_runtime_unavailable", emergencyLaunch.rejectReason || "emergency_launch_failed"],
+      source: "doComputerMove",
+    });
   }
 
-  throw new Error("[AI] V2 runtime is unavailable.");
+  try {
+    return runtime();
+  } catch (error) {
+    logAiDecision("ai_turn_runtime_exception", {
+      source: "doComputerMove",
+      reasonCode: "ai_turn_runtime_exception",
+      message: error?.message || String(error),
+      stack: error?.stack || null,
+    });
+    logAiDecision("ai_no_move_fail_safe", {
+      source: "doComputerMove",
+      reasonCode: "ai_turn_runtime_exception",
+      counts: getFailSafeCounts(),
+    });
+    const emergencyLaunch = tryEmergencyAiLaunch("ai_turn_runtime_exception");
+    if(emergencyLaunch.launched){
+      return;
+    }
+    return safeAdvanceTurn("ai_turn_runtime_exception", {
+      goal: aiRoundState?.currentGoal || "ai_turn_runtime_exception",
+      reasonCategory: "technical_exception",
+      reasonCodes: ["ai_turn_runtime_exception", "technical_exception", "fail_safe_turn_advance"],
+      rejectReasons: ["ai_turn_runtime_exception", emergencyLaunch.rejectReason || "emergency_launch_failed"],
+      errorMessage: error?.message || String(error),
+      source: "doComputerMove",
+    });
+  }
 }
 
 
@@ -37897,8 +38026,38 @@ function failSafeAdvanceTurn(reason = "unspecified", details = {}){
     if(recoveredByEmergencyLaunch){
       return true;
     }
-    advanceTurn();
-    return true;
+
+    const canRetrySameTurn = (
+      gameMode === "computer"
+      && turnColors?.[turnIndex] === "blue"
+      && !isGameOver
+      && flyingPoints.length === 0
+    );
+    if(canRetrySameTurn){
+      aiMoveScheduled = true;
+      logAiDecision("fail_safe_turn_retry_scheduled", {
+        reason,
+        reasonCode: details?.reasonCode || reason || "fail_safe_turn_retry_scheduled",
+        goal: details?.goal || aiRoundState?.currentGoal || null,
+        source: details?.source || "failSafeAdvanceTurn",
+      });
+      scheduleComputerMoveWithCargoGate(performance.now(), 90, {
+        trigger: "fail_safe_turn_retry",
+        turnCommitSequence,
+        plannerStartLabel: `fail_safe_retry_t${turnAdvanceCount}`,
+      });
+      return false;
+    }
+
+    logAiDecision("fail_safe_turn_retry_impossible", {
+      reason,
+      reasonCode: details?.reasonCode || reason || "fail_safe_turn_retry_impossible",
+      goal: details?.goal || aiRoundState?.currentGoal || null,
+      source: details?.source || "failSafeAdvanceTurn",
+      turnColor: turnColors?.[turnIndex] || null,
+      hasFlyingPoints: flyingPoints.length > 0,
+    });
+    return false;
   } finally {
     failSafeAdvanceTurnInProgress = false;
   }
