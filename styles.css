@@ -538,15 +538,25 @@ body, button {
   }
 
   .transfer-frame-panel {
-    --transfer-source-width: 1053;
-    --transfer-source-height: 452;
-    --transfer-zone-turn-top-y: 18;
+    /*
+      Geometry tokens are mapped to the Figma text containers:
+      - top text zone:  x=8, y=7,  w=221, h=24
+      - main text zone: x=8, y=35, w=221, h=59
+      within a normalized frame box (237x108).
+    */
+    --transfer-frame-width: 237;
+    --transfer-frame-height: 108;
+    --transfer-content-x: 8;
+    --transfer-content-y: 7;
+    --transfer-content-width: 221;
+    --transfer-content-height: 94;
+    --transfer-zone-turn-top-y: 0;
     --transfer-zone-turn-top-height: 24;
-    --transfer-zone-main-y: 46;
-    --transfer-zone-main-height: 60;
+    --transfer-zone-main-y: 28;
+    --transfer-zone-main-height: 59;
     position: relative;
     width: min(86%, 330px);
-    aspect-ratio: calc(var(--transfer-source-width) / var(--transfer-source-height));
+    aspect-ratio: calc(1053 / 452);
     max-height: 55%;
     pointer-events: none;
     user-select: none;
@@ -573,16 +583,16 @@ body, button {
   .transfer-frame-text {
     position: absolute;
     display: none;
-    left: 0;
-    right: 0;
+    left: calc((var(--transfer-content-x) / var(--transfer-frame-width)) * 100%);
+    width: calc((var(--transfer-content-width) / var(--transfer-frame-width)) * 100%);
     align-items: center;
     justify-content: center;
     text-align: center;
-    font-family: "Trebuchet MS", "Verdana", "Arial Black", sans-serif;
-    font-weight: 500;
-    letter-spacing: 1px;
+    font-family: "Cinzel", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    font-weight: 600;
+    letter-spacing: 0.8px;
     text-transform: uppercase;
-    color: #d7c29a;
+    color: #e8d6b0;
     line-height: 1;
     margin: 0;
     padding: 0;
@@ -597,33 +607,34 @@ body, button {
   }
 
   .transfer-frame-text--turn-top {
-    top: calc((var(--transfer-zone-turn-top-y) / var(--transfer-source-height)) * 100%);
-    height: calc((var(--transfer-zone-turn-top-height) / var(--transfer-source-height)) * 100%);
-    font-size: clamp(12px, 1.35vw, 14px);
+    top: calc(((var(--transfer-content-y) + var(--transfer-zone-turn-top-y)) / var(--transfer-frame-height)) * 100%);
+    height: calc((var(--transfer-zone-turn-top-height) / var(--transfer-frame-height)) * 100%);
+    font-size: clamp(13px, 1.35vw, 14px);
     font-weight: 600;
-    color: #6b4b1f;
-    letter-spacing: 1px;
-    text-shadow: none;
+    color: #f2e4c9;
+    letter-spacing: 0.8px;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.55);
     -webkit-text-stroke: 0;
   }
 
   .transfer-frame-text--turn-bottom {
-    top: calc((var(--transfer-zone-main-y) / var(--transfer-source-height)) * 100%);
-    height: calc((var(--transfer-zone-main-height) / var(--transfer-source-height)) * 100%);
-    font-size: clamp(20px, 2.2vw, 22px);
-    color: #d7c29a;
-    letter-spacing: 1px;
-    text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+    top: calc(((var(--transfer-content-y) + var(--transfer-zone-main-y)) / var(--transfer-frame-height)) * 100%);
+    height: calc((var(--transfer-zone-main-height) / var(--transfer-frame-height)) * 100%);
+    font-size: clamp(32px, 3.2vw, 39px);
+    color: #e8d6b0;
+    letter-spacing: 1.2px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
     -webkit-text-stroke: 0;
   }
 
   .transfer-frame-text--win {
-    top: calc((var(--transfer-zone-main-y) / var(--transfer-source-height)) * 100%);
-    height: calc((var(--transfer-zone-main-height) / var(--transfer-source-height)) * 100%);
-    font-size: clamp(20px, 2.2vw, 22px);
-    color: #d7c29a;
-    letter-spacing: 1px;
-    text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+    top: calc(((var(--transfer-content-y) + var(--transfer-zone-main-y)) / var(--transfer-frame-height)) * 100%);
+    height: calc((var(--transfer-zone-main-height) / var(--transfer-frame-height)) * 100%);
+    font-size: clamp(32px, 3.2vw, 39px);
+    font-weight: 700;
+    color: #e8d6b0;
+    letter-spacing: 1.2px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
     -webkit-text-stroke: 0;
   }
 
