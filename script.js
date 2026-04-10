@@ -37790,6 +37790,72 @@ function destroyAllPlanesWithNukeScoring(){
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 
 let failSafeAdvanceTurnInProgress = false;
+function tryRecoverAiFailSafeWithEmergencyLaunch(details = {}){
+  if(isGameOver) return false;
+  if(gameMode !== "computer") return false;
+  if(turnColors?.[turnIndex] !== "blue") return false;
+  if(flyingPoints.length > 0) return false;
+
+  const aiPlanesForRecovery = points.filter((plane) => (
+    plane?.color === "blue"
+    && plane?.isAlive === true
+    && plane?.burning !== true
+    && !flyingPoints.some((fp) => fp.plane === plane)
+  ));
+  if(!aiPlanesForRecovery.length) return false;
+
+  const enemiesForRecovery = points.filter((plane) => (
+    plane?.color === "green"
+    && plane?.isAlive === true
+    && plane?.burning !== true
+  ));
+  const recoveryContext = {
+    aiPlanes: rankAiPlanesForCurrentTurn(aiPlanesForRecovery),
+    enemies: enemiesForRecovery,
+  };
+
+  const emergencyMove = getMandatoryTurnMove(recoveryContext)
+    || getFailSafeGuaranteedDirectMove(recoveryContext)
+    || getGuaranteedAnyLegalLaunch(recoveryContext);
+  if(!emergencyMove) return false;
+
+  const launchValidation = validateAiLaunchMoveCandidate(emergencyMove);
+  if(!launchValidation?.ok){
+    logAiDecision("fail_safe_emergency_recovery_rejected", {
+      reasonCode: "fail_safe_emergency_recovery_rejected",
+      failSafeReason: details?.reason || null,
+      goal: details?.goal || aiRoundState?.currentGoal || null,
+      planeId: emergencyMove?.plane?.id ?? null,
+      rejectReason: launchValidation?.reason || "invalid_plane_for_launch",
+    });
+    return false;
+  }
+
+  const launchResult = issueAIMove(
+    emergencyMove.plane,
+    emergencyMove.vx,
+    emergencyMove.vy,
+    {
+      isFallbackMove: true,
+      source: "fail_safe_emergency_recovery",
+      reasonCode: details?.reasonCode || details?.reason || "fail_safe_emergency_recovery",
+      routeClass: emergencyMove?.routeClass || "direct",
+    }
+  );
+  if(launchResult?.ok){
+    logAiDecision("fail_safe_emergency_recovery_launched", {
+      reasonCode: "fail_safe_emergency_recovery_launched",
+      failSafeReason: details?.reason || null,
+      goal: details?.goal || aiRoundState?.currentGoal || null,
+      planeId: emergencyMove?.plane?.id ?? null,
+      decisionReason: emergencyMove?.decisionReason || null,
+    });
+    return true;
+  }
+
+  return false;
+}
+
 function failSafeAdvanceTurn(reason = "unspecified", details = {}){
   if(failSafeAdvanceTurnInProgress) return false;
   if(isGameOver) return false;
@@ -37824,6 +37890,13 @@ function failSafeAdvanceTurn(reason = "unspecified", details = {}){
     clearAiLaunchSessionWatchdog();
     aiLaunchSession = null;
     cleanupHandle();
+    const recoveredByEmergencyLaunch = tryRecoverAiFailSafeWithEmergencyLaunch({
+      ...details,
+      reason,
+    });
+    if(recoveredByEmergencyLaunch){
+      return true;
+    }
     advanceTurn();
     return true;
   } finally {
@@ -37926,17 +37999,9 @@ function advanceTurn(){
     tryStartAiPlanningFromCommittedState("advance_turn_commit_ready");
   }
 
-  if(isArcadePlaneRespawnEnabled()){
-    const hasCurrentColorFlyingPlane = flyingPoints.some(fp => fp?.plane?.color === nextTurnColor);
-    const hasCurrentColorLaunchReadyPlane = points.some(plane => (
-      plane &&
-      plane.color === nextTurnColor &&
-      !isPlaneInactiveForLaunch(plane)
-    ));
-    if(!hasCurrentColorFlyingPlane && !hasCurrentColorLaunchReadyPlane){
-      advanceTurn();
-    }
-  }
+  // В этой игре пропуск хода как механика не поддерживается:
+  // даже если у стороны временно нет готового самолёта, ход не должен
+  // автоматически перескакивать на соперника.
 }
 
 
