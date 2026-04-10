@@ -549,11 +549,13 @@ body, button {
     --transfer-content-x: 8;
     --transfer-content-y: 7;
     --transfer-content-width: 221;
-    --transfer-content-height: 94;
+    --transfer-content-height: 87;
     --transfer-zone-turn-top-y: 0;
     --transfer-zone-turn-top-height: 24;
     --transfer-zone-main-y: 28;
     --transfer-zone-main-height: 59;
+    --transfer-zone-win-y: 0;
+    --transfer-zone-win-height: 87;
     position: relative;
     width: min(86%, 330px);
     aspect-ratio: calc(1053 / 452);
@@ -611,8 +613,9 @@ body, button {
     height: calc((var(--transfer-zone-turn-top-height) / var(--transfer-frame-height)) * 100%);
     font-size: clamp(13px, 1.35vw, 14px);
     font-weight: 600;
+    font-family: "Cinzel", "Palatino Linotype", "Book Antiqua", Georgia, serif;
     color: #f2e4c9;
-    letter-spacing: 0.8px;
+    letter-spacing: 1px;
     text-shadow: 0 1px 1px rgba(0, 0, 0, 0.55);
     -webkit-text-stroke: 0;
   }
@@ -628,9 +631,9 @@ body, button {
   }
 
   .transfer-frame-text--win {
-    top: calc(((var(--transfer-content-y) + var(--transfer-zone-main-y)) / var(--transfer-frame-height)) * 100%);
-    height: calc((var(--transfer-zone-main-height) / var(--transfer-frame-height)) * 100%);
-    font-size: clamp(32px, 3.2vw, 39px);
+    top: calc(((var(--transfer-content-y) + var(--transfer-zone-win-y)) / var(--transfer-frame-height)) * 100%);
+    height: calc((var(--transfer-zone-win-height) / var(--transfer-frame-height)) * 100%);
+    font-size: clamp(27px, 2.9vw, 35px);
     font-weight: 700;
     color: #e8d6b0;
     letter-spacing: 1.2px;
