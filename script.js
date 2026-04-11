@@ -17918,6 +17918,75 @@ function isAiFallbackRetryBudgetExhausted(){
   return state.exhausted === true || state.retriesUsed >= state.limit;
 }
 
+function isFailSafeSpecialRouteCandidate(move){
+  const routeClass = `${move?.routeClass || ""}`.trim().toLowerCase();
+  return routeClass === "gap" || routeClass === "ricochet";
+}
+
+function normalizeFailSafeLaunchCandidate(move, defaults = {}){
+  if(!move || typeof move !== "object"){
+    return null;
+  }
+  const plane = move?.plane || defaults?.plane || null;
+  if(!plane || typeof plane !== "object"){
+    return null;
+  }
+
+  const vx = Number(move?.vx);
+  const vy = Number(move?.vy);
+  if(!Number.isFinite(vx) || !Number.isFinite(vy)){
+    return null;
+  }
+
+  const flightDurationSec = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
+    ? FIELD_FLIGHT_DURATION_SEC
+    : 1;
+  const totalDistRaw = Number(move?.totalDist);
+  const totalDist = Number.isFinite(totalDistRaw) && totalDistRaw > 0
+    ? totalDistRaw
+    : Math.hypot(vx, vy) * flightDurationSec;
+
+  const goalName = defaults?.goalName || move?.goalName || aiRoundState?.currentGoal || "v2_safe_turn_resolution";
+  const decisionReason = defaults?.decisionReason || move?.decisionReason || "fail_safe_candidate";
+  const routeClass = `${defaults?.routeClass || move?.routeClass || "direct"}`.trim().toLowerCase() || "direct";
+  const targetEnemy = defaults?.targetEnemy || move?.targetEnemy || move?.enemy || defaults?.enemy || null;
+
+  const profile = (typeof getAiFlightRangeProfile === "function")
+    ? getAiFlightRangeProfile(plane)
+    : null;
+  const effectiveFlightRangeCells = Number.isFinite(move?.effectiveFlightRangeCells)
+    ? move.effectiveFlightRangeCells
+    : (Number.isFinite(profile?.effectiveFlightRangeCells) ? profile.effectiveFlightRangeCells : null);
+  const effectiveFlightDistancePx = Number.isFinite(move?.effectiveFlightDistancePx)
+    ? move.effectiveFlightDistancePx
+    : (Number.isFinite(profile?.flightDistancePx) ? Number(profile.flightDistancePx.toFixed(1)) : null);
+  const score = Number.isFinite(move?.score)
+    ? move.score
+    : (typeof getAiPlaneAdjustedScore === "function" ? getAiPlaneAdjustedScore(totalDist, plane) : totalDist);
+  const idleTurns = Number.isFinite(move?.idleTurns)
+    ? move.idleTurns
+    : (typeof getAiPlaneIdleTurns === "function" ? getAiPlaneIdleTurns(plane) : 0);
+
+  return {
+    ...move,
+    plane,
+    enemy: targetEnemy,
+    targetEnemy,
+    vx,
+    vy,
+    totalDist,
+    goalName,
+    decisionReason,
+    routeClass,
+    effectiveFlightRangeCells,
+    effectiveFlightDistancePx,
+    score,
+    idleTurns,
+    isFallbackMove: true,
+    failSafeRouteCandidate: isFailSafeSpecialRouteCandidate({ routeClass }),
+  };
+}
+
 function ensureFinalMineGateDeadlockBudgetScope(){
   if(!aiRoundState || typeof aiRoundState !== "object"){
     return {
@@ -38034,11 +38103,71 @@ function failSafeAdvanceTurn(reason = "unspecified", details = {}){
       && flyingPoints.length === 0
     );
     if(canRetrySameTurn){
+      const retryUsage = incrementAiFallbackRetryUsage(reason, {
+        goal: details?.goal || aiRoundState?.currentGoal || null,
+        routeClass: details?.routeClass || null,
+      });
+      const retryBudgetExhausted = isAiFallbackRetryBudgetExhausted();
+      if(retryBudgetExhausted){
+        logAiDecision("fallback_retry_budget_exhausted", {
+          reason,
+          reasonCode: "fallback_retry_budget_exhausted",
+          goal: details?.goal || aiRoundState?.currentGoal || null,
+          retriesUsed: retryUsage.retriesUsed,
+          retryLimit: retryUsage.retryLimit,
+          source: details?.source || "failSafeAdvanceTurn",
+        });
+        recordAiSelfAnalyzerDecision("fallback_retry_budget_exhausted", {
+          goal: details?.goal || aiRoundState?.currentGoal || null,
+          reasonCodes: ["fallback_retry_budget_exhausted", "fail_safe_turn_advance"],
+          rejectReasons: Array.isArray(details?.rejectReasons) ? details.rejectReasons : [reason],
+          planeId: details?.planeId ?? null,
+        });
+        const forcedLaunchMove = getMandatoryTurnMove({
+          aiPlanes: rankAiPlanesForCurrentTurn(points.filter((plane) => (
+            plane?.color === "blue"
+            && plane?.isAlive === true
+            && plane?.burning !== true
+            && !flyingPoints.some((fp) => fp.plane === plane)
+          ))),
+          enemies: points.filter((plane) => (
+            plane?.color === "green"
+            && plane?.isAlive === true
+            && plane?.burning !== true
+          )),
+        });
+        const forcedValidation = validateAiLaunchMoveCandidate(forcedLaunchMove);
+        if(forcedValidation.ok){
+          const forcedLaunchResult = issueAIMove(
+            forcedLaunchMove.plane,
+            forcedLaunchMove.vx,
+            forcedLaunchMove.vy,
+            {
+              isFallbackMove: true,
+              source: "fallback_retry_budget_exhausted",
+              reasonCode: "fallback_retry_budget_exhausted",
+              routeClass: forcedLaunchMove?.routeClass || "direct",
+            },
+          );
+          if(forcedLaunchResult?.ok){
+            logAiDecision("fail_safe_forced_launch_selected", {
+              reasonCode: "fail_safe_forced_launch_selected",
+              reason,
+              goal: details?.goal || aiRoundState?.currentGoal || null,
+              planeId: forcedLaunchMove?.plane?.id ?? null,
+              routeClass: forcedLaunchMove?.routeClass || "direct",
+            });
+            return true;
+          }
+        }
+      }
       aiMoveScheduled = true;
       logAiDecision("fail_safe_turn_retry_scheduled", {
         reason,
         reasonCode: details?.reasonCode || reason || "fail_safe_turn_retry_scheduled",
         goal: details?.goal || aiRoundState?.currentGoal || null,
+        retriesUsed: retryUsage?.retriesUsed ?? null,
+        retryLimit: retryUsage?.retryLimit ?? null,
         source: details?.source || "failSafeAdvanceTurn",
       });
       scheduleComputerMoveWithCargoGate(performance.now(), 90, {
