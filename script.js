@@ -38160,6 +38160,16 @@ function failSafeAdvanceTurn(reason = "unspecified", details = {}){
             return true;
           }
         }
+        logAiDecision("fail_safe_retry_exhausted_forced_launch_failed", {
+          reason,
+          reasonCode: "fail_safe_retry_exhausted_forced_launch_failed",
+          goal: details?.goal || aiRoundState?.currentGoal || null,
+          retriesUsed: retryUsage.retriesUsed,
+          retryLimit: retryUsage.retryLimit,
+          forcedValidationOk: forcedValidation.ok === true,
+          source: details?.source || "failSafeAdvanceTurn",
+        });
+        return false;
       }
       aiMoveScheduled = true;
       logAiDecision("fail_safe_turn_retry_scheduled", {
