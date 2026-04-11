@@ -991,7 +991,7 @@ function ensureTransferFrameElements() {
 
 function buildTransferWinnerText(player) {
   const winnerName = player === "green" ? "GREEN" : "BLUE";
-  return `${winnerName} WINS THE ROUND`;
+  return `${winnerName} WINS\nTHE ROUND`;
 }
 
 function buildTransferTurnTexts(player, roundValue) {
