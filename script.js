@@ -26022,6 +26022,33 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     );
   }
 
+  function handleFinalLaunchResult(stageLabel, launchResult){
+    const launchSucceeded = launchResult?.ok === true;
+    if(launchSucceeded) return true;
+
+    const planeId = plannedMove?.plane?.id ?? null;
+    const goal = plannedMove?.goalName || aiRoundState?.currentGoal || null;
+    const reasonCode = "final_launch_start_not_confirmed";
+    const launchReason = launchResult?.reason || null;
+    logAiDecision("ai_final_launch_start_failed", {
+      stage: stageLabel,
+      planeId,
+      goal,
+      reasonCode,
+      launchReason,
+    });
+
+    failSafeHandler("final_launch_start_not_confirmed", {
+      goal: goal || "final_launch_start_not_confirmed",
+      planeId,
+      reasonCodes: [reasonCode, "fail_safe_turn_advance"],
+      rejectReasons: [launchReason || "launch_result_missing_success_confirmation"],
+      errorMessage: launchResult?.message || null,
+      launchResultReason: launchReason,
+    });
+    return false;
+  }
+
   if(plannedMove?.aiFuelTacticalDecision){
     logAiDecision("fuel_tactical_plan_final", {
       stage: "launch_vector_post_processing",
@@ -26357,13 +26384,15 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
         });
       }
       registerFinalInventoryUsage(effectiveItemUsed);
-      issueMoveAfterFinalMineGate("post_inventory_delay_launch");
+      const delayedLaunchResult = issueMoveAfterFinalMineGate("post_inventory_delay_launch");
+      handleFinalLaunchResult("post_inventory_delay_launch", delayedLaunchResult);
     }, AI_POST_INVENTORY_LAUNCH_DELAY_MS);
     return;
   }
 
   registerFinalInventoryUsage(effectiveItemUsed);
-  issueMoveAfterFinalMineGate("immediate_launch");
+  const immediateLaunchResult = issueMoveAfterFinalMineGate("immediate_launch");
+  handleFinalLaunchResult("immediate_launch", immediateLaunchResult);
 }
 
 function markAiLinearLaunchEvent(event, payload = {}){
