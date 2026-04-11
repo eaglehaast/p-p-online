@@ -9664,6 +9664,12 @@ const cargoState = [];
 const CARGO_MAX_SPAWN_ATTEMPTS = 8;
 let turnAdvanceCount = 0;
 
+function syncAiRoundStateTurnNumber(reason = "unspecified"){
+  if(!aiRoundState || typeof aiRoundState !== "object") return false;
+  aiRoundState.turnNumber = turnAdvanceCount;
+  return true;
+}
+
 let currentPlacer = null; // 'green' | 'blue'
 
 const mapDataBridge = window.paperWingsMapsData || {};
@@ -14844,6 +14850,7 @@ function resetGame(options = {}){
   lastFirstTurn= 1 - lastFirstTurn;
   turnIndex= lastFirstTurn;
   turnAdvanceCount = 0;
+  syncAiRoundStateTurnNumber("reset_game");
   resetLastPlayerMoveCommitMeta();
   resetCargoState();
   resetInventoryState();
@@ -38294,6 +38301,11 @@ function advanceTurn(){
   }
   activateQueuedInvisibilityForEnemyTurn(nextTurnColor);
   turnAdvanceCount += 1;
+  syncAiRoundStateTurnNumber("advance_turn");
+  console.debug("[turn] advance", {
+    turnAdvanceCount,
+    aiRoundStateTurnNumber: Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null,
+  });
   if(turnAdvanceCount >= 1){
     spawnCargoForTurn();
   }
@@ -41556,6 +41568,7 @@ function startNewRound(){
     autoHideMs: TRANSFER_FRAME_AUTO_HIDE_MS
   });
   turnAdvanceCount = 0;
+  syncAiRoundStateTurnNumber("start_new_round_counter_reset");
   turnCommitSequence = 0;
   resetLastPlayerMoveCommitMeta();
   invalidateAiPlanningState("start_new_round");
@@ -41568,6 +41581,7 @@ function startNewRound(){
   ensureAiSelfAnalyzerRound();
   roundTextTimer = 0;
   aiRoundState = createInitialAiRoundState();
+  syncAiRoundStateTurnNumber("start_new_round_state_init");
   aiRoundState.tieBreakerSeed = Math.floor(Math.random() * 0x7fffffff);
 
   globalFrame=0;
