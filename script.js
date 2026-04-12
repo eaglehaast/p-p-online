@@ -18064,6 +18064,10 @@ function createInitialAiRoundState(){
       limit: 2,
     },
     finalMineGateCancelledTacticalItemCount: 0,
+    launchExceptionCascadeGuard: {
+      turnNumber: null,
+      handledByAttemptKey: {},
+    },
     allowedMoveRisk: 0.7,
     lastPrimaryTurnstileBlocker: null,
     inventoryPhase: AI_ENGINE_MODE === "v2" ? AI_V2_INVENTORY_PHASE : 3,
@@ -18132,6 +18136,48 @@ function getAiLaunchSessionScopeId(){
     return Math.floor(rawId);
   }
   return null;
+}
+
+function ensureAiLaunchExceptionCascadeGuardScope(){
+  if(!aiRoundState || typeof aiRoundState !== "object"){
+    return {
+      turnNumber: null,
+      handledByAttemptKey: {},
+    };
+  }
+  const currentTurn = Number.isFinite(aiRoundState.turnNumber)
+    ? aiRoundState.turnNumber
+    : Number.isFinite(turnAdvanceCount) ? turnAdvanceCount : null;
+  const previous = aiRoundState.launchExceptionCascadeGuard;
+  const previousTurn = Number.isFinite(previous?.turnNumber) ? previous.turnNumber : null;
+  if(!previous || previousTurn !== currentTurn){
+    aiRoundState.launchExceptionCascadeGuard = {
+      turnNumber: currentTurn,
+      handledByAttemptKey: {},
+    };
+  } else if(!previous.handledByAttemptKey || typeof previous.handledByAttemptKey !== "object"){
+    previous.handledByAttemptKey = {};
+  }
+  return aiRoundState.launchExceptionCascadeGuard;
+}
+
+function getAiLaunchExceptionCascadePrimaryReason(attemptKey){
+  if(typeof attemptKey !== "string" || attemptKey.trim().length === 0){
+    return null;
+  }
+  const guard = ensureAiLaunchExceptionCascadeGuardScope();
+  return guard.handledByAttemptKey?.[attemptKey] || null;
+}
+
+function markAiLaunchExceptionCascadePrimaryReason(attemptKey, reasonCode){
+  if(typeof attemptKey !== "string" || attemptKey.trim().length === 0){
+    return null;
+  }
+  const guard = ensureAiLaunchExceptionCascadeGuardScope();
+  if(!guard.handledByAttemptKey?.[attemptKey]){
+    guard.handledByAttemptKey[attemptKey] = reasonCode || "unknown_primary_launch_exception";
+  }
+  return guard.handledByAttemptKey[attemptKey];
 }
 
 function ensureAiFallbackRetryStateScope(){
@@ -32056,6 +32102,36 @@ function buildAiBaseCandidateStageResult(plannedMove, metadata = {}){
 function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
   const source = metadata?.source || "do_computer_move";
   const routeClass = plannedMove?.routeClass || metadata?.routeClass || null;
+  const attemptTurnNumber = Number.isFinite(aiRoundState?.turnNumber)
+    ? aiRoundState.turnNumber
+    : (Number.isFinite(turnAdvanceCount) ? turnAdvanceCount : null);
+  const attemptPlaneId = plannedMove?.plane?.id ?? null;
+  const attemptLaunchSessionId = Number.isFinite(getAiLaunchSessionScopeId())
+    ? getAiLaunchSessionScopeId()
+    : null;
+  const attemptLaunchId = Number.isFinite(metadata?.launchAttemptId)
+    ? Math.floor(metadata.launchAttemptId)
+    : (Number.isFinite(plannedMove?.launchAttemptId)
+      ? Math.floor(plannedMove.launchAttemptId)
+      : (Number.isFinite(attemptLaunchSessionId) ? attemptLaunchSessionId : 0));
+  const attemptChainId = [attemptTurnNumber ?? "na", attemptPlaneId ?? "na", attemptLaunchId].join(":");
+  const launchAttemptGuardKey = attemptChainId;
+
+  const markLaunchAsInProgressOrAborted = (reasonCode, details = {}) => {
+    baseCandidateStage.launchInProgress = true;
+    baseCandidateStage.launchInProgressReason = reasonCode || "launch_in_progress_or_aborted";
+    baseCandidateStage.launchInProgressOrAborted = true;
+    baseCandidateStage.launchInProgressOrAbortedReason = reasonCode || "launch_in_progress_or_aborted";
+    baseCandidateStage.launchAttemptChainId = attemptChainId;
+    if(details && typeof details === "object"){
+      baseCandidateStage.launchInProgressOrAbortedMeta = {
+        attemptChainId,
+        reasonCode: reasonCode || "launch_in_progress_or_aborted",
+        ...details,
+      };
+    }
+  };
+
   const buildStageExceptionPayload = (stage, error, overrides = {}) => {
     const selectedInventoryCandidate = plannedMove?.selectedInventoryCandidate || null;
     const itemType = overrides?.itemType
@@ -32075,6 +32151,7 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
       planeId: plannedMove?.plane?.id ?? null,
       goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
       decisionReason: plannedMove?.decisionReason || null,
+      attemptChainId,
       primaryCauseType: classifyAiMoveStageException(error, {
         stage,
         plannedMove,
@@ -32323,6 +32400,7 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
       },
       errorMessage: inventoryExceptionPayload.message,
     });
+    markAiLaunchExceptionCascadePrimaryReason(launchAttemptGuardKey, inventoryUsageReasonCode || "inventory_usage_exception");
 
     const mineRecoveryResult = tryRecoverWithSafeMineAfterException(
       "inventory_usage_exception_recovery",
@@ -32448,34 +32526,67 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
           baseCandidateStage.launchInProgressReason = recoveryExistingSessionReason;
           return baseCandidateStage;
         }
+        const primaryCascadeReason = getAiLaunchExceptionCascadePrimaryReason(launchAttemptGuardKey);
         const recoveryExceptionPayload = buildStageExceptionPayload("finalize_base_launch_after_inventory_exception", recoveryError);
         logAiDecision("ai_move_stage_exception", {
           ...recoveryExceptionPayload,
           reasonCategory: "technical_exception",
           reasonCode: "inventory_recovery_finalize_exception",
-          reasonCodes: ["do_computer_move_stage_exception", "inventory_recovery_finalize_exception", recoveryExceptionPayload.primaryCauseType],
+          reasonCodes: [
+            "do_computer_move_stage_exception",
+            "inventory_recovery_finalize_exception",
+            ...(primaryCascadeReason ? ["launch_exception_secondary_symptom"] : []),
+            recoveryExceptionPayload.primaryCauseType,
+          ],
+          secondaryToReasonCode: primaryCascadeReason,
         });
-        recordAiSelfAnalyzerDecision("ai_move_exception", {
-          goal: recoveryExceptionPayload.goal || "ai_move_exception",
-          planeId: recoveryExceptionPayload.planeId,
-          reasonCategory: "technical_exception",
-          reasonCode: "inventory_recovery_finalize_exception",
-          reasonCodes: ["ai_move_exception", "technical_exception", "inventory_recovery_finalize_exception"],
-          rejectReasons: ["inventory_recovery_finalize_exception"],
-          source,
-          routeClass,
-          fallbackDiagnostics: {
-            stage: recoveryExceptionPayload.stage,
-            itemType: recoveryExceptionPayload.itemType,
-            inventoryUsageReason: recoveryExceptionPayload.inventoryUsageReason,
-            selectedInventoryCandidate: recoveryExceptionPayload.selectedInventoryCandidate,
-          },
-          errorMessage: recoveryExceptionPayload.message,
+        if(primaryCascadeReason){
+          recordAiSelfAnalyzerDecision("ai_move_exception_followup", {
+            goal: recoveryExceptionPayload.goal || "ai_move_exception_followup",
+            planeId: recoveryExceptionPayload.planeId,
+            reasonCategory: "technical_exception",
+            reasonCode: primaryCascadeReason,
+            reasonCodes: ["ai_move_exception", "technical_exception", primaryCascadeReason],
+            rejectReasons: [primaryCascadeReason],
+            source,
+            routeClass,
+            fallbackDiagnostics: {
+              stageBeforeFallback: recoveryExceptionPayload.stage,
+              rootCauseHint: primaryCascadeReason,
+              fallbackValidationReason: "inventory_recovery_finalize_exception",
+            },
+            errorMessage: recoveryExceptionPayload.message,
+          });
+        } else {
+          recordAiSelfAnalyzerDecision("ai_move_exception", {
+            goal: recoveryExceptionPayload.goal || "ai_move_exception",
+            planeId: recoveryExceptionPayload.planeId,
+            reasonCategory: "technical_exception",
+            reasonCode: "inventory_recovery_finalize_exception",
+            reasonCodes: ["ai_move_exception", "technical_exception", "inventory_recovery_finalize_exception"],
+            rejectReasons: ["inventory_recovery_finalize_exception"],
+            source,
+            routeClass,
+            fallbackDiagnostics: {
+              stageBeforeFallback: recoveryExceptionPayload.stage,
+              fallbackValidationReason: "inventory_recovery_finalize_exception",
+            },
+            errorMessage: recoveryExceptionPayload.message,
+          });
+        }
+        markLaunchAsInProgressOrAborted("launch_in_progress_or_aborted", {
+          primaryReasonCode: primaryCascadeReason || inventoryUsageReasonCode || "inventory_usage_exception",
+          secondaryReasonCode: "inventory_recovery_finalize_exception",
         });
+        return baseCandidateStage;
       }
     }
 
-    throw error;
+    markLaunchAsInProgressOrAborted("launch_in_progress_or_aborted", {
+      primaryReasonCode: inventoryUsageReasonCode || "inventory_usage_exception",
+      stage: "inventory_usage",
+    });
+    return baseCandidateStage;
   }
   return baseCandidateStage;
 }
