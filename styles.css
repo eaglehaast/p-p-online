@@ -624,6 +624,9 @@ body, button {
     font-family: "Inter", "Roboto", "Arial", sans-serif;
     font-weight: 600;
     font-variant-numeric: lining-nums;
+    font-size: 1.08em;
+    line-height: 1.08;
+    transform: translateY(1px);
   }
 
   .transfer-frame-text--turn-bottom {
