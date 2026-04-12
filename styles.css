@@ -620,6 +620,12 @@ body, button {
     -webkit-text-stroke: 0;
   }
 
+  .transfer-round-label {
+    font-family: "Inter", "Roboto", "Arial", sans-serif;
+    font-weight: 600;
+    font-variant-numeric: lining-nums;
+  }
+
   .transfer-frame-text--turn-bottom {
     top: calc(((var(--transfer-content-y) + var(--transfer-zone-main-y)) / var(--transfer-frame-height)) * 100%);
     height: calc((var(--transfer-zone-main-height) / var(--transfer-frame-height)) * 100%);

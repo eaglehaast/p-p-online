@@ -868,7 +868,14 @@ const roundBannerState = {
   element: null,
   hideTimerId: null,
 };
-const TRANSFER_FRAME_AUTO_HIDE_MS = 2000;
+const TRANSFER_FRAME_TURN_AUTO_HIDE_MS = 1500;
+const TRANSFER_FRAME_SHOW_SCALE_FROM = 0.994;
+const TRANSFER_FRAME_HIDE_SCALE_TO = 0.992;
+const TRANSFER_FRAME_SHOW_EASING = "cubic-bezier(.25,.8,.25,1)";
+const TRANSFER_FRAME_HIDE_EASING = "ease-in";
+const TRANSFER_FRAME_TURN_SHOW_DURATION_MS = 140;
+const TRANSFER_FRAME_WIN_SHOW_DURATION_MS = 180;
+const TRANSFER_FRAME_HIDE_DURATION_MS = 160;
 // Z-index policy: transfer/system notifications must always be above all gameplay FX hosts (cargo/explosions/nuclear).
 const TRANSFER_SYSTEM_HOST_ID = "transferSystemHost";
 const TRANSFER_SYSTEM_HOST_Z_INDEX = 320;
@@ -888,6 +895,8 @@ const transferFrameState = {
   turnTopText: null,
   turnBottomText: null,
   hideTimerId: null,
+  hideAnimationId: 0,
+  panelAnimation: null,
 };
 
 function ensureTransferSystemHost() {
@@ -1006,14 +1015,14 @@ function buildTransferTurnTexts(player, roundValue) {
   };
 }
 
-function hideTransferFrame() {
-  if (transferFrameState.hideTimerId !== null) {
-    clearTimeout(transferFrameState.hideTimerId);
-    transferFrameState.hideTimerId = null;
+function stopTransferPanelAnimation() {
+  if (transferFrameState.panelAnimation && typeof transferFrameState.panelAnimation.cancel === "function") {
+    transferFrameState.panelAnimation.cancel();
   }
-  const layer = transferFrameState.layer;
-  if (!(layer instanceof HTMLElement)) return;
-  layer.classList.remove("is-visible");
+  transferFrameState.panelAnimation = null;
+}
+
+function clearTransferFrameContent() {
   if (transferFrameState.backImage instanceof HTMLImageElement) {
     transferFrameState.backImage.src = "";
   }
@@ -1035,6 +1044,49 @@ function hideTransferFrame() {
   }
 }
 
+function hideTransferFrame() {
+  if (transferFrameState.hideTimerId !== null) {
+    clearTimeout(transferFrameState.hideTimerId);
+    transferFrameState.hideTimerId = null;
+  }
+  const layer = transferFrameState.layer;
+  const panel = transferFrameState.panel;
+  if (!(layer instanceof HTMLElement)) return;
+
+  transferFrameState.hideAnimationId += 1;
+  const hideAnimationId = transferFrameState.hideAnimationId;
+  stopTransferPanelAnimation();
+
+  const finalizeHide = () => {
+    if (hideAnimationId !== transferFrameState.hideAnimationId) return;
+    layer.classList.remove("is-visible");
+    if (panel instanceof HTMLElement) {
+      panel.style.transform = "";
+    }
+    clearTransferFrameContent();
+  };
+
+  if (panel instanceof HTMLElement && typeof panel.animate === "function" && layer.classList.contains("is-visible")) {
+    const animation = panel.animate([
+      { transform: "scale(1)" },
+      { transform: `scale(${TRANSFER_FRAME_HIDE_SCALE_TO})` }
+    ], {
+      duration: TRANSFER_FRAME_HIDE_DURATION_MS,
+      easing: TRANSFER_FRAME_HIDE_EASING,
+      fill: "forwards"
+    });
+    transferFrameState.panelAnimation = animation;
+    animation.addEventListener("finish", finalizeHide, { once: true });
+    animation.addEventListener("cancel", () => {
+      if (hideAnimationId !== transferFrameState.hideAnimationId) return;
+      finalizeHide();
+    }, { once: true });
+    return;
+  }
+
+  finalizeHide();
+}
+
 function isTransferFrameVisible() {
   return transferFrameState.layer instanceof HTMLElement
     && transferFrameState.layer.classList.contains("is-visible");
@@ -1050,6 +1102,8 @@ function showTransferFrame(options = {}) {
     clearTimeout(transferState.hideTimerId);
     transferState.hideTimerId = null;
   }
+  transferState.hideAnimationId += 1;
+  stopTransferPanelAnimation();
 
   if (transferState.backImage instanceof HTMLImageElement) {
     transferState.backImage.src = TRANSFER_FRAME_ASSETS.back;
@@ -1080,7 +1134,11 @@ function showTransferFrame(options = {}) {
     const bottomTextValue = typeof options.bottomText === "string" && options.bottomText.trim().length > 0
       ? options.bottomText.trim()
       : fallbackTurnText.bottomText;
-    transferState.turnTopText.textContent = topTextValue;
+    transferState.turnTopText.textContent = "";
+    const roundLabel = document.createElement("span");
+    roundLabel.className = "transfer-round-label";
+    roundLabel.textContent = topTextValue;
+    transferState.turnTopText.appendChild(roundLabel);
     transferState.turnBottomText.textContent = bottomTextValue;
     transferState.turnTopText.classList.toggle("is-visible", mode === "turn");
     transferState.turnBottomText.classList.toggle("is-visible", mode === "turn");
@@ -1088,6 +1146,24 @@ function showTransferFrame(options = {}) {
 
   if (transferState.layer instanceof HTMLElement) {
     transferState.layer.classList.add("is-visible");
+  }
+  if (transferState.panel instanceof HTMLElement) {
+    const showDuration = mode === "win"
+      ? TRANSFER_FRAME_WIN_SHOW_DURATION_MS
+      : TRANSFER_FRAME_TURN_SHOW_DURATION_MS;
+    if (typeof transferState.panel.animate === "function") {
+      transferState.panel.style.transform = "";
+      transferState.panelAnimation = transferState.panel.animate([
+        { transform: `scale(${TRANSFER_FRAME_SHOW_SCALE_FROM})` },
+        { transform: "scale(1)" }
+      ], {
+        duration: showDuration,
+        easing: TRANSFER_FRAME_SHOW_EASING,
+        fill: "forwards"
+      });
+    } else {
+      transferState.panel.style.transform = "scale(1)";
+    }
   }
 
   if (Number.isFinite(options.autoHideMs) && options.autoHideMs > 0) {
@@ -42201,7 +42277,7 @@ function startNewRound(){
     roundNumber: upcomingRoundNumber,
     topText: roundStartTurnTexts.topText,
     bottomText: roundStartTurnTexts.bottomText,
-    autoHideMs: TRANSFER_FRAME_AUTO_HIDE_MS
+    autoHideMs: TRANSFER_FRAME_TURN_AUTO_HIDE_MS
   });
   turnAdvanceCount = 0;
   syncAiRoundStateTurnNumber("start_new_round_counter_reset");
