@@ -15344,6 +15344,10 @@ const AI_LAUNCH_OSCILLATION_LATE_GRACE_MS = 320;
 const AI_LAUNCH_EARLY_RELEASE_ANGLE_TOLERANCE_DEG = 0.45;
 const AI_LAUNCH_EARLY_RELEASE_POWER_TOLERANCE = 0.01;
 const AI_LAUNCH_EARLY_RELEASE_ARM_DELAY_MS = 420;
+const AI_LAUNCH_HUMAN_WINDOW_START_MIN_MS = 1800;
+const AI_LAUNCH_HUMAN_WINDOW_START_MAX_MS = 2200;
+const AI_LAUNCH_HUMAN_REACTION_LAG_MIN_MS = 80;
+const AI_LAUNCH_HUMAN_REACTION_LAG_MAX_MS = 180;
 const AI_LAUNCH_OSCILLATION_CENTER_EXIT_ANGLE_DEG = 1.4;
 const AI_LAUNCH_VISIBLE_OSCILLATION_MIN_MS = 650;
 const AI_LAUNCH_VISIBLE_OSCILLATION_MIN_AMPLITUDE_DEG = 2.2;
@@ -15820,13 +15824,37 @@ function isAiLaunchVeryGoodReleaseMatch(session){
     && powerError <= AI_LAUNCH_EARLY_RELEASE_POWER_TOLERANCE;
 }
 
+function isAiLaunchSessionStillCurrent(session){
+  if(!session || !aiLaunchSession) return false;
+  if(aiLaunchSession !== session) return false;
+  if(!Number.isFinite(session.id) || session.id !== aiLaunchSession.id) return false;
+  const activeTurnNumber = Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : turnAdvanceCount;
+  return !Number.isFinite(session.turnNumber) || session.turnNumber === activeTurnNumber;
+}
+
 function releaseAiLaunchSession(session, reason, now = performance.now()){
+  if(!isAiLaunchSessionStillCurrent(session)){
+    logAiDecision("ai_launch_release", {
+      reason,
+      planeId: session?.plane?.id ?? null,
+      releaseCause: "stale_session_release_canceled",
+      status: "skipped_stale_session",
+      releaseMode: session?.pendingReleaseMode || null,
+      sessionId: session?.id ?? null,
+      currentSessionId: aiLaunchSession?.id ?? null,
+      sessionTurnNumber: session?.turnNumber ?? null,
+      activeTurnNumber: Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : turnAdvanceCount,
+      ...getAiTurnTimingSnapshot(),
+    });
+    return;
+  }
   if(!session?.plane || !isPlaneLaunchStateReady(session.plane)){
     logAiDecision("ai_launch_release", {
       reason,
       planeId: session?.plane?.id ?? null,
       releaseCause: "emergency_release",
       status: "skipped_invalid_plane",
+      releaseMode: session?.pendingReleaseMode || null,
       ...getAiTurnTimingSnapshot(),
     });
     clearAiLaunchSessionWatchdog(session);
@@ -15890,15 +15918,12 @@ function releaseAiLaunchSession(session, reason, now = performance.now()){
   logAiDecision("ai_launch_release", {
     reason,
     planeId: session.plane?.id ?? null,
-    releaseCause: reason === "perfect_tolerance_early"
-      ? "early_perfect_match"
-      : (reason === "perfect_tolerance_target_window"
-        ? "target_window_match"
-        : (reason === "perfect_tolerance_late_grace"
-          ? "late_grace_match"
-          : (reason === "timeout_deadline"
-            ? "deadline_emergency_release"
-            : "timeout_best_effort"))),
+    releaseMode: session?.pendingReleaseMode || "human_window",
+    releaseCause: reason === "timeout_deadline"
+      ? "deadline_emergency_release"
+      : (reason === "perfect_tolerance_assist"
+        ? "assisted_window_release"
+        : "human_window_release"),
     candidateSource: candidate.source,
     sampledAtMs: Number.isFinite(candidate?.metrics?.sampledAt) && Number.isFinite(now)
       ? Math.round(now - candidate.metrics.sampledAt)
@@ -37672,6 +37697,9 @@ function buildAiLaunchSession(plane, vx, vy, options = {}){
   const plannedReleaseDueAt = oscillationStartsAt + oscillationDurationMs;
   const minReleaseAt = Math.max(now, getAiTurnMinReleaseAt());
   const releaseDueAt = Math.max(plannedReleaseDueAt, minReleaseAt);
+  const humanWindowStartAt = oscillationStartsAt + randomInRange(AI_LAUNCH_HUMAN_WINDOW_START_MIN_MS, AI_LAUNCH_HUMAN_WINDOW_START_MAX_MS);
+  const humanWindowSafeStartAt = Math.min(humanWindowStartAt, releaseDueAt);
+  const humanWindowReleaseAt = randomInRange(humanWindowSafeStartAt, releaseDueAt);
   const watchdogDeadlineAt = Math.min(
     now + AI_LAUNCH_SESSION_MAX_LIFETIME_MS,
     Math.max(now + AI_LAUNCH_WATCHDOG_MIN_RELEASE_DELAY_MS, releaseDueAt + AI_LAUNCH_WATCHDOG_GRACE_MS)
@@ -37699,6 +37727,8 @@ function buildAiLaunchSession(plane, vx, vy, options = {}){
     oscillationStartsAt,
     oscillationDurationMs,
     releaseDueAt,
+    humanWindowStartAt: humanWindowSafeStartAt,
+    humanWindowReleaseAt,
     previewEndsAt: targetSelectionEndsAt,
     targetAim: resolvedTargetAim,
     baseTargetDistancePx: rangeDecision.baseTargetDistancePx,
@@ -37735,6 +37765,12 @@ function buildAiLaunchSession(plane, vx, vy, options = {}){
     oscillationDirectionChangedAt: null,
     lastObservedOscillationAngleRad: 0,
     lastObservedOscillationDirection: 0,
+    pendingReleaseReason: null,
+    pendingReleaseMode: null,
+    pendingReleaseMarkedAt: null,
+    pendingReleaseAt: null,
+    releaseReactionLagMs: randomInRange(AI_LAUNCH_HUMAN_REACTION_LAG_MIN_MS, AI_LAUNCH_HUMAN_REACTION_LAG_MAX_MS),
+    perfectToleranceSatisfiedAt: null,
   };
 }
 
@@ -37914,6 +37950,12 @@ function runAiLaunchSessionTick(now = performance.now()){
     session.stageStartedAt = now;
     session.oscillationStartsAt = now;
     session.releaseDueAt = now + Math.max(0, session.oscillationDurationMs || 0);
+    session.humanWindowStartAt = Math.min(
+      session.releaseDueAt,
+      now + (AI_LAUNCH_HUMAN_WINDOW_START_MIN_MS + Math.random() * Math.max(0, AI_LAUNCH_HUMAN_WINDOW_START_MAX_MS - AI_LAUNCH_HUMAN_WINDOW_START_MIN_MS))
+    );
+    session.humanWindowReleaseAt = session.humanWindowStartAt + Math.random() * Math.max(0, session.releaseDueAt - session.humanWindowStartAt);
+    session.releaseReactionLagMs = AI_LAUNCH_HUMAN_REACTION_LAG_MIN_MS + Math.random() * Math.max(0, AI_LAUNCH_HUMAN_REACTION_LAG_MAX_MS - AI_LAUNCH_HUMAN_REACTION_LAG_MIN_MS);
     session.earlyReleaseAllowedAfter = now + AI_LAUNCH_EARLY_RELEASE_ARM_DELAY_MS;
     session.oscillationHasExitedCenter = false;
     session.visibleOscillationSatisfied = false;
@@ -37926,6 +37968,11 @@ function runAiLaunchSessionTick(now = performance.now()){
     session.oscillationDirectionChangedAt = null;
     session.lastObservedOscillationAngleRad = 0;
     session.lastObservedOscillationDirection = 0;
+    session.pendingReleaseReason = null;
+    session.pendingReleaseMode = null;
+    session.pendingReleaseMarkedAt = null;
+    session.pendingReleaseAt = null;
+    session.perfectToleranceSatisfiedAt = null;
     markAiLinearLaunchEvent("pull_started", {
       planeId: session?.plane?.id ?? null,
       sessionId: session?.id ?? null,
@@ -37933,12 +37980,60 @@ function runAiLaunchSessionTick(now = performance.now()){
     });
     return;
   }
-  if(session.stage === "oscillate" && now < session.releaseDueAt){
-    return;
-  }
   if(session.stage === "oscillate"){
+    if(!isAiLaunchSessionStillCurrent(session)){
+      clearAiLaunchSessionWatchdog(session);
+      aiLaunchSession = null;
+      cleanupHandle();
+      return;
+    }
+    const releaseDueAt = Number.isFinite(session.releaseDueAt) ? session.releaseDueAt : now;
+    const humanWindowStartAt = Number.isFinite(session.humanWindowStartAt)
+      ? session.humanWindowStartAt
+      : Math.min(releaseDueAt, (session.oscillationStartsAt || now) + AI_LAUNCH_HUMAN_WINDOW_START_MIN_MS);
+    const humanWindowOpen = now >= humanWindowStartAt && now < releaseDueAt;
+
+    if(
+      !session.pendingReleaseReason
+      && humanWindowOpen
+      && Number.isFinite(session.humanWindowReleaseAt)
+      && now >= session.humanWindowReleaseAt
+    ){
+      session.pendingReleaseReason = "human_window";
+      session.pendingReleaseMode = "human_window";
+      session.pendingReleaseMarkedAt = now;
+      session.pendingReleaseAt = Math.min(
+        releaseDueAt,
+        now + Math.max(0, Number.isFinite(session.releaseReactionLagMs) ? session.releaseReactionLagMs : AI_LAUNCH_HUMAN_REACTION_LAG_MIN_MS)
+      );
+      logAiDecision("ai_launch_pending_release_marked", {
+        reason: "human_window",
+        releaseMode: "human_window",
+        planeId: session?.plane?.id ?? null,
+        pendingReleaseInMs: Math.max(0, Math.round((session.pendingReleaseAt || now) - now)),
+        ...getAiLaunchVisibleOscillationState(session, now),
+        ...getAiTurnTimingSnapshot(),
+      });
+    }
+
+    if(
+      session.pendingReleaseReason
+      && humanWindowOpen
+      && Number.isFinite(session.pendingReleaseAt)
+      && now >= session.pendingReleaseAt
+    ){
+      session.stage = "release";
+      session.stageStartedAt = now;
+      releaseAiLaunchSession(session, session.pendingReleaseReason, now);
+      return;
+    }
+
+    if(now < releaseDueAt){
+      return;
+    }
     session.stage = "release";
     session.stageStartedAt = now;
+    session.pendingReleaseMode = session.pendingReleaseMode || "human_window";
     releaseAiLaunchSession(session, "timeout_deadline", now);
   }
 }
@@ -38855,20 +38950,53 @@ function gameDraw(){
 
         const tolerance = aiLaunchSession.releaseTolerance;
         if(
-          !aiLaunchSession.pendingReleaseReason
-          && isAiLaunchEarlyReleaseArmed(aiLaunchSession, now)
+          isAiLaunchEarlyReleaseArmed(aiLaunchSession, now)
           && angleErrorRad <= tolerance.angleRad
           && powerError <= tolerance.powerRatio
         ){
-          aiLaunchSession.pendingReleaseReason = "perfect_tolerance";
-          logAiDecision("ai_launch_pending_release_marked", {
-            reason: "perfect_tolerance",
-            planeId: aiLaunchSession?.plane?.id ?? null,
-            angleErrorDeg: Number((angleErrorRad * 180 / Math.PI).toFixed(3)),
-            powerError: Number(powerError.toFixed(4)),
-            ...getAiLaunchVisibleOscillationState(aiLaunchSession, now),
-            ...getAiTurnTimingSnapshot(),
-          });
+          const wasAlreadySatisfied = Number.isFinite(aiLaunchSession.perfectToleranceSatisfiedAt);
+          if(!wasAlreadySatisfied){
+            aiLaunchSession.perfectToleranceSatisfiedAt = now;
+          }
+          const releaseDueAt = Number.isFinite(aiLaunchSession.releaseDueAt) ? aiLaunchSession.releaseDueAt : now;
+          const humanWindowStartAt = Number.isFinite(aiLaunchSession.humanWindowStartAt)
+            ? aiLaunchSession.humanWindowStartAt
+            : Math.min(releaseDueAt, (aiLaunchSession.oscillationStartsAt || now) + AI_LAUNCH_HUMAN_WINDOW_START_MIN_MS);
+          const humanWindowOpen = now >= humanWindowStartAt && now < releaseDueAt;
+          if(!aiLaunchSession.pendingReleaseReason && humanWindowOpen){
+            const reactionLagMs = Math.max(
+              0,
+              Number.isFinite(aiLaunchSession.releaseReactionLagMs)
+                ? aiLaunchSession.releaseReactionLagMs
+                : AI_LAUNCH_HUMAN_REACTION_LAG_MIN_MS
+            );
+            aiLaunchSession.pendingReleaseReason = "perfect_tolerance_assist";
+            aiLaunchSession.pendingReleaseMode = "perfect_tolerance_assist";
+            aiLaunchSession.pendingReleaseMarkedAt = now;
+            aiLaunchSession.pendingReleaseAt = Math.min(releaseDueAt, now + reactionLagMs);
+            logAiDecision("ai_launch_pending_release_marked", {
+              reason: "perfect_tolerance",
+              releaseMode: "perfect_tolerance_assist",
+              planeId: aiLaunchSession?.plane?.id ?? null,
+              angleErrorDeg: Number((angleErrorRad * 180 / Math.PI).toFixed(3)),
+              powerError: Number(powerError.toFixed(4)),
+              pendingReleaseInMs: Math.max(0, Math.round(aiLaunchSession.pendingReleaseAt - now)),
+              ...getAiLaunchVisibleOscillationState(aiLaunchSession, now),
+              ...getAiTurnTimingSnapshot(),
+            });
+          }
+          if(!humanWindowOpen && !wasAlreadySatisfied){
+            logAiDecision("ai_launch_pending_release_marked", {
+              reason: "perfect_tolerance",
+              releaseMode: "human_window_wait",
+              planeId: aiLaunchSession?.plane?.id ?? null,
+              angleErrorDeg: Number((angleErrorRad * 180 / Math.PI).toFixed(3)),
+              powerError: Number(powerError.toFixed(4)),
+              pendingReleaseInMs: null,
+              ...getAiLaunchVisibleOscillationState(aiLaunchSession, now),
+              ...getAiTurnTimingSnapshot(),
+            });
+          }
         }
       }
     }
