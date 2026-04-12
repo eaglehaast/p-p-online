@@ -5008,6 +5008,16 @@ if(typeof window !== "undefined"){
       roundTextTimer = snapshot.roundTextTimer;
     }, lifeMs);
   };
+  window.REALWIN = () => {
+    if(isGameOver) return;
+    const winner = Math.random() < 0.5 ? "blue" : "green";
+    const canContinueSeries = isArcadeInfiniteScoreMode()
+      || (blueScore < POINTS_TO_WIN && greenScore < POINTS_TO_WIN);
+    const options = canContinueSeries
+      ? { roundTransitionDelay: MIN_ROUND_TRANSITION_DELAY_MS }
+      : { showEndScreen: true };
+    lockInWinner(winner, options);
+  };
   window.RNDMSG = () => {
     const lifeMs = Number.isFinite(Number(window.MSG_MS)) && Number(window.MSG_MS) > 0
       ? Number(window.MSG_MS)
