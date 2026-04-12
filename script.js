@@ -37687,6 +37687,8 @@ function buildAiLaunchSession(plane, vx, vy, options = {}){
     lastTickAt: now,
     maxLifetimeMs: AI_LAUNCH_SESSION_MAX_LIFETIME_MS,
     turnStartedAt: Number.isFinite(aiTurnTimingState.turnStartedAt) ? aiTurnTimingState.turnStartedAt : now,
+    turnNumber: Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : turnAdvanceCount,
+    turnCommitSequence: Number.isFinite(turnCommitSequence) ? turnCommitSequence : 0,
     visiblePreparationStartedAt: Number.isFinite(aiTurnTimingState.visiblePreparationStartedAt) ? aiTurnTimingState.visiblePreparationStartedAt : now,
     minReleaseAt,
     stage: telemetryEnabled && targetSelectionDurationMs > 0 ? "targeting" : "pull",
@@ -37867,6 +37869,21 @@ function runAiLaunchSessionTick(now = performance.now()){
     return;
   }
 
+  const knownStage = session.stage === "targeting"
+    || session.stage === "pull"
+    || session.stage === "oscillate";
+  if(!knownStage){
+    resolveAiLaunchSessionAnomaly(session, {
+      kind: "unknown_launch_stage",
+      reasonCode: "unknown_launch_stage",
+      frameGapMs,
+      sessionAgeMs,
+      now,
+      releaseReason: "unknown_stage_emergency_release",
+    });
+    return;
+  }
+
   if(session.stage === "targeting"){
     if(now < (session.targetSelectionEndsAt || 0)){
       aimSession.baseX = session.plane.x;
@@ -37928,10 +37945,38 @@ function runAiLaunchSessionTick(now = performance.now()){
 
 function issueAIMove(plane, vx, vy, options = {}){
   if(aiLaunchSession){
+    const requestedTurnNumber = Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : turnAdvanceCount;
+    const activeTurnNumber = Number.isFinite(aiLaunchSession?.turnNumber)
+      ? aiLaunchSession.turnNumber
+      : requestedTurnNumber;
+    const samePlane = aiLaunchSession?.plane === plane;
+    const sameTurn = activeTurnNumber === requestedTurnNumber;
+    const stage = aiLaunchSession?.stage || null;
+    const activeSessionCanProceed = stage === "targeting" || stage === "pull" || stage === "oscillate";
+
+    if(samePlane && sameTurn && activeSessionCanProceed){
+      logAiDecision("ai_launch_session_duplicate_coalesced", {
+        existingSessionId: aiLaunchSession?.id ?? null,
+        requestedPlaneId: plane?.id ?? null,
+        planeId: aiLaunchSession?.plane?.id ?? null,
+        stage,
+        turnNumber: requestedTurnNumber,
+      });
+      return {
+        ok: true,
+        reason: "ai_launch_session_already_active_same_turn",
+      };
+    }
+
     logAiDecision("ai_launch_session_duplicate_blocked", {
       existingSessionId: aiLaunchSession?.id ?? null,
       requestedPlaneId: plane?.id ?? null,
       planeId: aiLaunchSession?.plane?.id ?? null,
+      activeStage: stage,
+      samePlane,
+      sameTurn,
+      requestedTurnNumber,
+      activeTurnNumber,
     });
     return {
       ok: false,
