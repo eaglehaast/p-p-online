@@ -15494,6 +15494,65 @@ const aiTelegraphyDebugState = {
 
 let aiLaunchSession = null;
 let aiLaunchSessionIdCounter = 0;
+const AI_EXISTING_LAUNCH_SESSION_RETRY_COOLDOWN_MS = 900;
+let aiLaunchExistingSessionRetryGuard = {
+  turnNumber: null,
+  reason: null,
+  lastHandledAt: 0,
+  attempts: 0,
+};
+
+function isAiLaunchExistingSessionReason(reason){
+  return reason === "ai_launch_session_already_active_same_turn"
+    || reason === "ai_launch_session_already_active";
+}
+
+function extractAiLaunchExistingSessionReason(value){
+  if(!value) return null;
+  if(typeof value === "string"){
+    if(isAiLaunchExistingSessionReason(value)) return value;
+    const normalized = value.toLowerCase();
+    if(normalized.includes("ai_launch_session_already_active_same_turn")) return "ai_launch_session_already_active_same_turn";
+    if(normalized.includes("ai_launch_session_already_active")) return "ai_launch_session_already_active";
+    return null;
+  }
+
+  if(typeof value === "object"){
+    if(isAiLaunchExistingSessionReason(value.reason)) return value.reason;
+    if(isAiLaunchExistingSessionReason(value.reasonCode)) return value.reasonCode;
+    if(typeof value.message === "string"){
+      return extractAiLaunchExistingSessionReason(value.message);
+    }
+  }
+  return null;
+}
+
+function registerAiLaunchExistingSessionCooldown(reason){
+  const now = performance.now();
+  const turnNumber = Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : turnAdvanceCount;
+  const sameTurn = aiLaunchExistingSessionRetryGuard.turnNumber === turnNumber;
+  const withinCooldown = sameTurn
+    && (now - aiLaunchExistingSessionRetryGuard.lastHandledAt) < AI_EXISTING_LAUNCH_SESSION_RETRY_COOLDOWN_MS;
+
+  if(withinCooldown){
+    aiLaunchExistingSessionRetryGuard.lastHandledAt = now;
+    aiLaunchExistingSessionRetryGuard.reason = reason || aiLaunchExistingSessionRetryGuard.reason || null;
+    aiLaunchExistingSessionRetryGuard.attempts = (aiLaunchExistingSessionRetryGuard.attempts || 0) + 1;
+  } else {
+    aiLaunchExistingSessionRetryGuard = {
+      turnNumber,
+      reason: reason || null,
+      lastHandledAt: now,
+      attempts: 1,
+    };
+  }
+
+  return {
+    suppressedByCooldown: withinCooldown,
+    attempts: aiLaunchExistingSessionRetryGuard.attempts,
+    turnNumber,
+  };
+}
 const aiLaunchFrameHealthState = {
   lastFrameAt: 0,
   lastDeltaMs: 0,
@@ -26178,8 +26237,34 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
 
     const planeId = plannedMove?.plane?.id ?? null;
     const goal = plannedMove?.goalName || aiRoundState?.currentGoal || null;
-    const reasonCode = "final_launch_start_not_confirmed";
     const launchReason = launchResult?.reason || null;
+    if(isAiLaunchExistingSessionReason(launchReason)){
+      const waitState = registerAiLaunchExistingSessionCooldown(launchReason);
+      if(!waitState.suppressedByCooldown){
+        logAiDecision("ai_launch_waiting_existing_session", {
+          stage: stageLabel,
+          planeId,
+          goal,
+          reasonCode: launchReason,
+          attemptsThisTurn: waitState.attempts,
+          turnNumber: waitState.turnNumber,
+        });
+      }
+      recordAiSelfAnalyzerDecision("ai_launch_waiting_existing_session", {
+        goal,
+        planeId,
+        reasonCode: launchReason,
+        reasonCodes: ["ai_launch_waiting_existing_session", "launch_in_progress", launchReason],
+        rejectReasons: [launchReason],
+      });
+      return {
+        ok: true,
+        status: "launch_in_progress",
+        reason: launchReason,
+      };
+    }
+
+    const reasonCode = "final_launch_start_not_confirmed";
     logAiDecision("ai_final_launch_start_failed", {
       stage: stageLabel,
       planeId,
@@ -31964,6 +32049,35 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
   try {
     issueAIMoveWithInventoryUsage(context, baseCandidateStage.move);
   } catch (error) {
+    const inventoryExistingSessionReason = extractAiLaunchExistingSessionReason(error);
+    if(inventoryExistingSessionReason){
+      const waitState = registerAiLaunchExistingSessionCooldown(inventoryExistingSessionReason);
+      if(!waitState.suppressedByCooldown){
+        logAiDecision("ai_launch_waiting_existing_session", {
+          stage: "inventory_usage_launch_wait",
+          source,
+          routeClass,
+          planeId: plannedMove?.plane?.id ?? null,
+          goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+          reasonCode: inventoryExistingSessionReason,
+          turnNumber: waitState.turnNumber,
+          attemptsThisTurn: waitState.attempts,
+        });
+      }
+      recordAiSelfAnalyzerDecision("ai_launch_waiting_existing_session", {
+        goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+        planeId: plannedMove?.plane?.id ?? null,
+        reasonCode: inventoryExistingSessionReason,
+        reasonCodes: ["ai_launch_waiting_existing_session", "launch_in_progress", inventoryExistingSessionReason],
+        rejectReasons: [inventoryExistingSessionReason],
+        source,
+        routeClass,
+      });
+      baseCandidateStage.launchInProgress = true;
+      baseCandidateStage.launchInProgressReason = inventoryExistingSessionReason;
+      return baseCandidateStage;
+    }
+
     const tacticalExceptionItemType = plannedMove?.selectedInventoryCandidate?.itemType ?? null;
     const isTacticalExecutionException = tacticalExceptionItemType === INVENTORY_ITEM_TYPES.MINE
       || tacticalExceptionItemType === INVENTORY_ITEM_TYPES.DYNAMITE;
@@ -32027,7 +32141,7 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
           tacticalItemAlreadyUsed: false,
         });
         if(recoveryResolution?.ok && recoveryResolution?.move){
-          issueAIMove(
+          const recoveryLaunchResult = issueAIMove(
             recoveryResolution.move.plane,
             recoveryResolution.move.vx,
             recoveryResolution.move.vy,
@@ -32035,6 +32149,34 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
               isFallbackMove: resolveAiFallbackMoveFlag(recoveryResolution.move),
             },
           );
+          const recoveryLaunchReason = recoveryLaunchResult?.reason || null;
+          if(isAiLaunchExistingSessionReason(recoveryLaunchReason)){
+            const waitState = registerAiLaunchExistingSessionCooldown(recoveryLaunchReason);
+            if(!waitState.suppressedByCooldown){
+              logAiDecision("ai_launch_waiting_existing_session", {
+                stage: "inventory_exception_recovery_wait",
+                source,
+                routeClass,
+                planeId: recoveryResolution.move?.plane?.id ?? inventoryExceptionPayload.planeId,
+                goal: inventoryExceptionPayload.goal || null,
+                reasonCode: recoveryLaunchReason,
+                turnNumber: waitState.turnNumber,
+                attemptsThisTurn: waitState.attempts,
+              });
+            }
+            recordAiSelfAnalyzerDecision("ai_launch_waiting_existing_session", {
+              goal: inventoryExceptionPayload.goal || "inventory_exception_recovery_wait",
+              planeId: recoveryResolution.move?.plane?.id ?? inventoryExceptionPayload.planeId,
+              reasonCode: recoveryLaunchReason,
+              reasonCodes: ["ai_launch_waiting_existing_session", "launch_in_progress", recoveryLaunchReason],
+              rejectReasons: [recoveryLaunchReason],
+              source,
+              routeClass,
+            });
+            baseCandidateStage.launchInProgress = true;
+            baseCandidateStage.launchInProgressReason = recoveryLaunchReason;
+            return baseCandidateStage;
+          }
           logAiDecision("inventory_exception_recovered_with_base_launch", {
             stage: isTacticalExecutionException
               ? "recover_after_tactical_execution_exception"
@@ -32071,6 +32213,34 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
           return baseCandidateStage;
         }
       } catch (recoveryError) {
+        const recoveryExistingSessionReason = extractAiLaunchExistingSessionReason(recoveryError);
+        if(recoveryExistingSessionReason){
+          const waitState = registerAiLaunchExistingSessionCooldown(recoveryExistingSessionReason);
+          if(!waitState.suppressedByCooldown){
+            logAiDecision("ai_launch_waiting_existing_session", {
+              stage: "inventory_recovery_finalize_wait",
+              source,
+              routeClass,
+              planeId: baseCandidateStage.move?.plane?.id ?? null,
+              goal: baseCandidateStage.move?.goalName || aiRoundState?.currentGoal || null,
+              reasonCode: recoveryExistingSessionReason,
+              turnNumber: waitState.turnNumber,
+              attemptsThisTurn: waitState.attempts,
+            });
+          }
+          recordAiSelfAnalyzerDecision("ai_launch_waiting_existing_session", {
+            goal: baseCandidateStage.move?.goalName || aiRoundState?.currentGoal || null,
+            planeId: baseCandidateStage.move?.plane?.id ?? null,
+            reasonCode: recoveryExistingSessionReason,
+            reasonCodes: ["ai_launch_waiting_existing_session", "launch_in_progress", recoveryExistingSessionReason],
+            rejectReasons: [recoveryExistingSessionReason],
+            source,
+            routeClass,
+          });
+          baseCandidateStage.launchInProgress = true;
+          baseCandidateStage.launchInProgressReason = recoveryExistingSessionReason;
+          return baseCandidateStage;
+        }
         const recoveryExceptionPayload = buildStageExceptionPayload("finalize_base_launch_after_inventory_exception", recoveryError);
         logAiDecision("ai_move_stage_exception", {
           ...recoveryExceptionPayload,
@@ -33643,6 +33813,29 @@ function doComputerMove(){
   try {
     return runtime();
   } catch (error) {
+    const existingSessionReason = extractAiLaunchExistingSessionReason(error);
+    if(existingSessionReason){
+      const waitState = registerAiLaunchExistingSessionCooldown(existingSessionReason);
+      if(!waitState.suppressedByCooldown){
+        logAiDecision("ai_launch_waiting_existing_session", {
+          source: "doComputerMove",
+          reasonCode: existingSessionReason,
+          turnNumber: waitState.turnNumber,
+          attemptsThisTurn: waitState.attempts,
+          counts: getFailSafeCounts(),
+        });
+      }
+      recordAiSelfAnalyzerDecision("ai_launch_waiting_existing_session", {
+        goal: aiRoundState?.currentGoal || null,
+        planeId: null,
+        reasonCode: existingSessionReason,
+        reasonCodes: ["ai_launch_waiting_existing_session", "launch_in_progress", existingSessionReason],
+        rejectReasons: [existingSessionReason],
+        source: "doComputerMove",
+      });
+      return;
+    }
+
     logAiDecision("ai_turn_runtime_exception", {
       source: "doComputerMove",
       reasonCode: "ai_turn_runtime_exception",
