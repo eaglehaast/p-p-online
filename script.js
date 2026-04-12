@@ -17130,6 +17130,9 @@ const AI_ROTATION_TACTICAL_PRIORITY_REPEAT_CONFLICT_MARGIN = MAX_DRAG_DISTANCE *
 const AI_OPENING_SOFT_RANDOM_TURN_LIMIT = 2;
 const AI_OPENING_SOFT_RANDOM_SCORE_MARGIN = MAX_DRAG_DISTANCE * 0.035;
 const AI_OPENING_SOFT_RANDOM_MAX_SHIFT = 0.045;
+const AI_OPENING_SOFT_RANDOM_AIM_QUALITY_MARGIN = 0.11;
+const AI_OPENING_SOFT_RANDOM_AIM_ANGLE_TOLERANCE_DEG = 20;
+const AI_OPENING_SOFT_RANDOM_AIM_DISTANCE_TOLERANCE_SCALE = 0.2;
 const AI_POST_INVENTORY_LAUNCH_DELAY_MS = 1000;
 const AI_INVENTORY_LOOP_GUARD_LIMIT_PER_TURN = 12;
 const AI_INVENTORY_BUFF_CHAIN_LIMIT_PER_TURN = 4;
@@ -19307,6 +19310,81 @@ function getAiCandidateUtilitySnapshot(candidate){
   };
 }
 
+function getAiCandidateAimQualitySnapshot(candidate){
+  if(!candidate || typeof candidate !== "object"){
+    return {
+      quality: null,
+      angleQuality: null,
+      distanceQuality: null,
+      trajectoryQuality: null,
+      headingToTargetDeg: null,
+      travelDistanceRatio: null,
+      corridorTightness: null,
+    };
+  }
+
+  const routeMetrics = candidate?.routeMetrics || null;
+  const routeQualityScore = Number.isFinite(candidate?.routeQualityScore)
+    ? candidate.routeQualityScore
+    : (Number.isFinite(routeMetrics?.qualityScore) ? routeMetrics.qualityScore : null);
+  const corridorTightness = Number.isFinite(routeMetrics?.corridorTightness)
+    ? Math.max(0, Math.min(1, routeMetrics.corridorTightness))
+    : null;
+
+  const headingDeg = Number.isFinite(candidate?.vx) && Number.isFinite(candidate?.vy)
+    ? normalizeAngleDeg((Math.atan2(candidate.vy, candidate.vx) * 180 / Math.PI + 360) % 360)
+    : (Number.isFinite(candidate?.angleBase)
+      ? normalizeAngleDeg((candidate.angleBase * 180 / Math.PI + 360) % 360)
+      : null);
+  const targetHeadingDeg = (candidate?.plane && candidate?.enemy
+      && Number.isFinite(candidate.plane.x)
+      && Number.isFinite(candidate.plane.y)
+      && Number.isFinite(candidate.enemy.x)
+      && Number.isFinite(candidate.enemy.y))
+    ? normalizeAngleDeg((Math.atan2(candidate.enemy.y - candidate.plane.y, candidate.enemy.x - candidate.plane.x) * 180 / Math.PI + 360) % 360)
+    : null;
+  const angleDeltaDeg = Number.isFinite(headingDeg) && Number.isFinite(targetHeadingDeg)
+    ? getAngleDeltaDeg(headingDeg, targetHeadingDeg)
+    : null;
+  const angleQuality = Number.isFinite(angleDeltaDeg)
+    ? Math.max(0, 1 - (angleDeltaDeg / AI_OPENING_SOFT_RANDOM_AIM_ANGLE_TOLERANCE_DEG))
+    : null;
+
+  const moveDistance = Number.isFinite(candidate?.totalDist)
+    ? candidate.totalDist
+    : (Number.isFinite(candidate?.moveTotalDist) ? candidate.moveTotalDist : null);
+  const travelDistanceRatio = Number.isFinite(moveDistance)
+    ? Math.max(0, Math.min(1.6, moveDistance / Math.max(1, MAX_DRAG_DISTANCE)))
+    : null;
+  const distanceQuality = Number.isFinite(travelDistanceRatio)
+    ? Math.max(0, 1 - Math.abs(0.9 - travelDistanceRatio) / Math.max(0.01, AI_OPENING_SOFT_RANDOM_AIM_DISTANCE_TOLERANCE_SCALE))
+    : null;
+
+  const trajectoryQuality = Number.isFinite(routeQualityScore)
+    ? Math.max(0, Math.min(1, routeQualityScore))
+    : (Number.isFinite(corridorTightness) ? Math.max(0, 1 - corridorTightness) : null);
+
+  const weightedParts = [];
+  if(Number.isFinite(angleQuality)) weightedParts.push({ value: angleQuality, weight: 0.4 });
+  if(Number.isFinite(distanceQuality)) weightedParts.push({ value: distanceQuality, weight: 0.3 });
+  if(Number.isFinite(trajectoryQuality)) weightedParts.push({ value: trajectoryQuality, weight: 0.3 });
+
+  const quality = weightedParts.length > 0
+    ? weightedParts.reduce((acc, part) => acc + part.value * part.weight, 0)
+      / weightedParts.reduce((acc, part) => acc + part.weight, 0)
+    : null;
+
+  return {
+    quality,
+    angleQuality,
+    distanceQuality,
+    trajectoryQuality,
+    headingToTargetDeg: Number.isFinite(angleDeltaDeg) ? angleDeltaDeg : null,
+    travelDistanceRatio,
+    corridorTightness,
+  };
+}
+
 function compareAiCandidatesByUtility(nextCandidate, currentCandidate, epsilon = 0.0001){
   if(!nextCandidate) return false;
   if(!currentCandidate) return true;
@@ -19859,10 +19937,63 @@ function compareAiCandidateByScoreAndRotation(nextCandidate, currentCandidate, t
     return prefersNext;
   }
 
-  const canUseOpeningSoftRandom = Number.isFinite(aiRoundState?.turnNumber)
+  const nextAimQualitySnapshot = getAiCandidateAimQualitySnapshot(nextCandidate);
+  const currentAimQualitySnapshot = getAiCandidateAimQualitySnapshot(currentCandidate);
+  const nextAimQuality = Number.isFinite(nextAimQualitySnapshot?.quality) ? nextAimQualitySnapshot.quality : null;
+  const currentAimQuality = Number.isFinite(currentAimQualitySnapshot?.quality) ? currentAimQualitySnapshot.quality : null;
+  const aimQualityGap = Number.isFinite(nextAimQuality) && Number.isFinite(currentAimQuality)
+    ? Math.abs(nextAimQuality - currentAimQuality)
+    : null;
+  const aimQualityNearEqual = !Number.isFinite(aimQualityGap) || aimQualityGap <= AI_OPENING_SOFT_RANDOM_AIM_QUALITY_MARGIN;
+  const openingByScoreNearEqual = Number.isFinite(aiRoundState?.turnNumber)
     && aiRoundState.turnNumber <= AI_OPENING_SOFT_RANDOM_TURN_LIMIT
     && Number.isFinite(scoreGap)
     && scoreGap <= AI_OPENING_SOFT_RANDOM_SCORE_MARGIN;
+  const canUseOpeningSoftRandom = openingByScoreNearEqual && aimQualityNearEqual;
+
+  if(openingByScoreNearEqual && !aimQualityNearEqual && Number.isFinite(nextAimQuality) && Number.isFinite(currentAimQuality)){
+    const prefersNextByAimStability = nextAimQuality > currentAimQuality;
+    compareAiCandidateByScoreAndRotation.lastRotationDecisionMeta = {
+      reason: "opening_soft_random_skipped_for_aim_stability",
+      utilityLeaderPlaneId: utilityLeader?.plane?.id ?? null,
+      rotationWinnerPlaneId: prefersNextByAimStability ? (nextCandidate?.plane?.id ?? null) : (currentCandidate?.plane?.id ?? null),
+      utilityLoss: rotationDecisionGap,
+      reasonCode: "opening_soft_random_skipped_for_aim_stability",
+      aimQualityGap: Number(aimQualityGap.toFixed(4)),
+      aimQualityMargin: Number(AI_OPENING_SOFT_RANDOM_AIM_QUALITY_MARGIN.toFixed(4)),
+    };
+    logAiDecision("opening_soft_random_skipped_for_aim_stability", {
+      reasonCode: "opening_soft_random_skipped_for_aim_stability",
+      turnNumber: Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null,
+      scoreGap: Number.isFinite(scoreGap) ? Number(scoreGap.toFixed(4)) : null,
+      scoreMargin: Number(AI_OPENING_SOFT_RANDOM_SCORE_MARGIN.toFixed(4)),
+      aimQualityGap: Number(aimQualityGap.toFixed(4)),
+      aimQualityMargin: Number(AI_OPENING_SOFT_RANDOM_AIM_QUALITY_MARGIN.toFixed(4)),
+      nextPlaneId: nextCandidate?.plane?.id ?? null,
+      currentPlaneId: currentCandidate?.plane?.id ?? null,
+      preferredByAimPlaneId: prefersNextByAimStability ? (nextCandidate?.plane?.id ?? null) : (currentCandidate?.plane?.id ?? null),
+      nextAimQuality: Number(nextAimQuality.toFixed(4)),
+      currentAimQuality: Number(currentAimQuality.toFixed(4)),
+      nextAimQualitySnapshot: {
+        angleQuality: Number.isFinite(nextAimQualitySnapshot?.angleQuality) ? Number(nextAimQualitySnapshot.angleQuality.toFixed(4)) : null,
+        distanceQuality: Number.isFinite(nextAimQualitySnapshot?.distanceQuality) ? Number(nextAimQualitySnapshot.distanceQuality.toFixed(4)) : null,
+        trajectoryQuality: Number.isFinite(nextAimQualitySnapshot?.trajectoryQuality) ? Number(nextAimQualitySnapshot.trajectoryQuality.toFixed(4)) : null,
+        headingToTargetDeg: Number.isFinite(nextAimQualitySnapshot?.headingToTargetDeg) ? Number(nextAimQualitySnapshot.headingToTargetDeg.toFixed(2)) : null,
+        travelDistanceRatio: Number.isFinite(nextAimQualitySnapshot?.travelDistanceRatio) ? Number(nextAimQualitySnapshot.travelDistanceRatio.toFixed(4)) : null,
+        corridorTightness: Number.isFinite(nextAimQualitySnapshot?.corridorTightness) ? Number(nextAimQualitySnapshot.corridorTightness.toFixed(4)) : null,
+      },
+      currentAimQualitySnapshot: {
+        angleQuality: Number.isFinite(currentAimQualitySnapshot?.angleQuality) ? Number(currentAimQualitySnapshot.angleQuality.toFixed(4)) : null,
+        distanceQuality: Number.isFinite(currentAimQualitySnapshot?.distanceQuality) ? Number(currentAimQualitySnapshot.distanceQuality.toFixed(4)) : null,
+        trajectoryQuality: Number.isFinite(currentAimQualitySnapshot?.trajectoryQuality) ? Number(currentAimQualitySnapshot.trajectoryQuality.toFixed(4)) : null,
+        headingToTargetDeg: Number.isFinite(currentAimQualitySnapshot?.headingToTargetDeg) ? Number(currentAimQualitySnapshot.headingToTargetDeg.toFixed(2)) : null,
+        travelDistanceRatio: Number.isFinite(currentAimQualitySnapshot?.travelDistanceRatio) ? Number(currentAimQualitySnapshot.travelDistanceRatio.toFixed(4)) : null,
+        corridorTightness: Number.isFinite(currentAimQualitySnapshot?.corridorTightness) ? Number(currentAimQualitySnapshot.corridorTightness.toFixed(4)) : null,
+      },
+      tieSeedParts,
+    });
+    return prefersNextByAimStability;
+  }
 
   if(canUseOpeningSoftRandom){
     const seedPrefix = [
