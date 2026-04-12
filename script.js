@@ -9576,6 +9576,14 @@ function getDragOscillationMultiplier(dragScale){
 }
 
 const AI_FALLBACK_AIM_OSCILLATION_MIN_MULTIPLIER = 0.3;
+const AI_LAUNCH_STAGE_SMOOTH_TRANSITION_MIN_MS = 120;
+const AI_LAUNCH_STAGE_SMOOTH_TRANSITION_MAX_MS = 180;
+const AI_LAUNCH_STAGE_SMOOTH_TRANSITION_FALLBACK_MIN_MS = 70;
+const AI_LAUNCH_STAGE_SMOOTH_TRANSITION_FALLBACK_MAX_MS = 110;
+const AI_LAUNCH_OSCILLATION_RAMP_MIN_MS = 120;
+const AI_LAUNCH_OSCILLATION_RAMP_MAX_MS = 180;
+const AI_LAUNCH_OSCILLATION_RAMP_FALLBACK_MIN_MS = 70;
+const AI_LAUNCH_OSCILLATION_RAMP_FALLBACK_MAX_MS = 110;
 
 function isFallbackLaunchGoalText(goalTextRaw){
   const goalText = `${goalTextRaw || ""}`.toLowerCase();
@@ -9607,6 +9615,106 @@ function isAiFallbackLaunchInProgress(plane){
   }
   const goalText = `${aiRoundState?.currentGoal || ""}`.toLowerCase();
   return isFallbackLaunchGoalText(goalText);
+}
+
+function getAimSessionVisiblePoint(){
+  const visibleX = Number.isFinite(aimSession?.shakyX) ? aimSession.shakyX : aimSession?.baseX;
+  const visibleY = Number.isFinite(aimSession?.shakyY) ? aimSession.shakyY : aimSession?.baseY;
+  if(!Number.isFinite(visibleX) || !Number.isFinite(visibleY)){
+    return null;
+  }
+  return { x: visibleX, y: visibleY };
+}
+
+function getAiLaunchStageTransitionDurationMs(session){
+  const isFallback = session?.isFallbackMove === true;
+  const minMs = isFallback
+    ? AI_LAUNCH_STAGE_SMOOTH_TRANSITION_FALLBACK_MIN_MS
+    : AI_LAUNCH_STAGE_SMOOTH_TRANSITION_MIN_MS;
+  const maxMs = isFallback
+    ? AI_LAUNCH_STAGE_SMOOTH_TRANSITION_FALLBACK_MAX_MS
+    : AI_LAUNCH_STAGE_SMOOTH_TRANSITION_MAX_MS;
+  return minMs + Math.random() * Math.max(0, maxMs - minMs);
+}
+
+function getAiLaunchOscillationRampDurationMs(session){
+  const isFallback = session?.isFallbackMove === true;
+  const minMs = isFallback
+    ? AI_LAUNCH_OSCILLATION_RAMP_FALLBACK_MIN_MS
+    : AI_LAUNCH_OSCILLATION_RAMP_MIN_MS;
+  const maxMs = isFallback
+    ? AI_LAUNCH_OSCILLATION_RAMP_FALLBACK_MAX_MS
+    : AI_LAUNCH_OSCILLATION_RAMP_MAX_MS;
+  return minMs + Math.random() * Math.max(0, maxMs - minMs);
+}
+
+function getAiLaunchOscillationRampFactor(session, now = performance.now()){
+  if(!session || session.stage !== "oscillate"){
+    return 1;
+  }
+  const durationMs = Number.isFinite(session.oscillationRampDurationMs)
+    ? session.oscillationRampDurationMs
+    : 0;
+  if(durationMs <= 0){
+    return 1;
+  }
+  const startedAt = Number.isFinite(session.stageStartedAt) ? session.stageStartedAt : now;
+  const elapsedMs = Math.max(0, now - startedAt);
+  return clamp(elapsedMs / durationMs, 0, 1);
+}
+
+function beginAiLaunchStageTransition(session, fromStage, toStage, now = performance.now()){
+  if(!session) return;
+  const previousVisiblePoint = getAimSessionVisiblePoint();
+  const planeX = Number.isFinite(session?.plane?.x) ? session.plane.x : 0;
+  const planeY = Number.isFinite(session?.plane?.y) ? session.plane.y : 0;
+  const durationMs = getAiLaunchStageTransitionDurationMs(session);
+  session.stageTransition = {
+    fromStage: fromStage || null,
+    toStage: toStage || null,
+    startedAt: now,
+    durationMs,
+    fromX: Number.isFinite(previousVisiblePoint?.x) ? previousVisiblePoint.x : planeX,
+    fromY: Number.isFinite(previousVisiblePoint?.y) ? previousVisiblePoint.y : planeY,
+  };
+  logAiDecision("ai_launch_stage_transition_smoothed", {
+    planeId: session?.plane?.id ?? null,
+    sessionId: session?.id ?? null,
+    fromStage: fromStage || null,
+    toStage: toStage || null,
+    durationMs: Math.max(0, Math.round(durationMs)),
+    isFallbackMove: session?.isFallbackMove === true,
+  });
+}
+
+function applyAiLaunchStageBaseSmoothing(session, now, targetX, targetY){
+  if(!session || !Number.isFinite(targetX) || !Number.isFinite(targetY)){
+    return {
+      x: Number.isFinite(targetX) ? targetX : 0,
+      y: Number.isFinite(targetY) ? targetY : 0,
+    };
+  }
+  const transition = session.stageTransition;
+  if(
+    !transition
+    || transition.toStage !== session.stage
+    || !Number.isFinite(transition.startedAt)
+    || !Number.isFinite(transition.durationMs)
+    || transition.durationMs <= 0
+  ){
+    return { x: targetX, y: targetY };
+  }
+  const progress = clamp((now - transition.startedAt) / transition.durationMs, 0, 1);
+  const fromX = Number.isFinite(transition.fromX) ? transition.fromX : targetX;
+  const fromY = Number.isFinite(transition.fromY) ? transition.fromY : targetY;
+  if(progress >= 1){
+    session.stageTransition = null;
+    return { x: targetX, y: targetY };
+  }
+  return {
+    x: fromX + (targetX - fromX) * progress,
+    y: fromY + (targetY - fromY) * progress,
+  };
 }
 
 // Anti-Aircraft defaults and placement limits
@@ -37687,8 +37795,7 @@ function buildAiLaunchSession(plane, vx, vy, options = {}){
     shakyY: plane.y,
     origAngle: plane?.angle ?? null,
   });
-  oscillationAngle = 0;
-  oscillationDir = 1;
+  oscillationDir = oscillationDir >= 0 ? 1 : -1;
 
   const telemetryEnabled = telegraphyMode !== "disabled";
   const targetSelectionEndsAt = now + targetSelectionDurationMs;
@@ -37721,6 +37828,7 @@ function buildAiLaunchSession(plane, vx, vy, options = {}){
     minReleaseAt,
     stage: telemetryEnabled && targetSelectionDurationMs > 0 ? "targeting" : "pull",
     stageStartedAt: now,
+    stageTransition: null,
     pullPoint,
     targetSelectionEndsAt,
     pullBackEndsAt,
@@ -37753,6 +37861,7 @@ function buildAiLaunchSession(plane, vx, vy, options = {}){
     powerSweepPhase: Math.random() * Math.PI * 2,
     powerSweepSpeed: randomInRange(AI_LAUNCH_POWER_SWEEP_SPEED_MIN, AI_LAUNCH_POWER_SWEEP_SPEED_MAX),
     earlyReleaseAllowedAfter: oscillationStartsAt + AI_LAUNCH_EARLY_RELEASE_ARM_DELAY_MS,
+    oscillationRampDurationMs: getAiLaunchOscillationRampDurationMs({ isFallbackMove }),
     oscillationHasExitedCenter: false,
     oscillationCenterExitAngleRad: AI_LAUNCH_OSCILLATION_CENTER_EXIT_ANGLE_DEG * Math.PI / 180,
     visibleOscillationSatisfied: false,
@@ -37922,10 +38031,12 @@ function runAiLaunchSessionTick(now = performance.now()){
 
   if(session.stage === "targeting"){
     if(now < (session.targetSelectionEndsAt || 0)){
-      aimSession.baseX = session.plane.x;
-      aimSession.baseY = session.plane.y;
+      const smoothedPoint = applyAiLaunchStageBaseSmoothing(session, now, session.plane.x, session.plane.y);
+      aimSession.baseX = smoothedPoint.x;
+      aimSession.baseY = smoothedPoint.y;
       return;
     }
+    beginAiLaunchStageTransition(session, "targeting", "pull", now);
     session.stage = "pull";
     session.stageStartedAt = now;
     markAiLinearLaunchEvent("pull_started", {
@@ -37939,16 +38050,22 @@ function runAiLaunchSessionTick(now = performance.now()){
     const pullStartAt = Number.isFinite(session.targetSelectionEndsAt) ? session.targetSelectionEndsAt : now;
     const pullBackDuration = Math.max(1, (session.pullBackEndsAt || now) - pullStartAt);
     const pullProgress = clamp((now - pullStartAt) / pullBackDuration, 0, 1);
-    aimSession.baseX = session.plane.x + (session.pullPoint.x - session.plane.x) * pullProgress;
-    aimSession.baseY = session.plane.y + (session.pullPoint.y - session.plane.y) * pullProgress;
+    const rawBaseX = session.plane.x + (session.pullPoint.x - session.plane.x) * pullProgress;
+    const rawBaseY = session.plane.y + (session.pullPoint.y - session.plane.y) * pullProgress;
+    const smoothedPoint = applyAiLaunchStageBaseSmoothing(session, now, rawBaseX, rawBaseY);
+    aimSession.baseX = smoothedPoint.x;
+    aimSession.baseY = smoothedPoint.y;
     if(now < (session.pullBackEndsAt || 0)){
       return;
     }
-    aimSession.baseX = session.pullPoint.x;
-    aimSession.baseY = session.pullPoint.y;
+    beginAiLaunchStageTransition(session, "pull", "oscillate", now);
+    const pullEndPoint = applyAiLaunchStageBaseSmoothing(session, now, session.pullPoint.x, session.pullPoint.y);
+    aimSession.baseX = pullEndPoint.x;
+    aimSession.baseY = pullEndPoint.y;
     session.stage = "oscillate";
     session.stageStartedAt = now;
     session.oscillationStartsAt = now;
+    session.oscillationRampDurationMs = getAiLaunchOscillationRampDurationMs(session);
     session.releaseDueAt = now + Math.max(0, session.oscillationDurationMs || 0);
     session.humanWindowStartAt = Math.min(
       session.releaseDueAt,
@@ -37981,6 +38098,9 @@ function runAiLaunchSessionTick(now = performance.now()){
     return;
   }
   if(session.stage === "oscillate"){
+    const smoothedPoint = applyAiLaunchStageBaseSmoothing(session, now, session.pullPoint.x, session.pullPoint.y);
+    aimSession.baseX = smoothedPoint.x;
+    aimSession.baseY = smoothedPoint.y;
     if(!isAiLaunchSessionStillCurrent(session)){
       clearAiLaunchSessionWatchdog(session);
       aiLaunchSession = null;
@@ -38109,6 +38229,7 @@ function issueAIMove(plane, vx, vy, options = {}){
   });
   scheduleAiLaunchSessionWatchdog(aiLaunchSession);
   if(aiLaunchSession?.stage === "pull"){
+    beginAiLaunchStageTransition(aiLaunchSession, "targeting_skipped", "pull", performance.now());
     markAiLinearLaunchEvent("pull_started", {
       planeId: plane?.id ?? null,
       sessionId: aiLaunchSession?.id ?? null,
@@ -38839,7 +38960,15 @@ function gameDraw(){
     }
 
     const baseAngle = Math.atan2(dy, dx);
-    const angle = aiPreOscillationStageActive ? baseAngle : (baseAngle + oscillationAngle);
+    const aiOscillationRampFactor = (
+      aimSession.controllerType === "computer"
+      && aiLaunchSession
+      && aiLaunchSession.plane === plane
+    )
+      ? getAiLaunchOscillationRampFactor(aiLaunchSession, now)
+      : 1;
+    const visibleOscillationAngle = oscillationAngle * aiOscillationRampFactor;
+    const angle = aiPreOscillationStageActive ? baseAngle : (baseAngle + visibleOscillationAngle);
     const effectiveDist = (
       aimSession.controllerType === "computer"
       && aiLaunchSession
@@ -38874,12 +39003,12 @@ function gameDraw(){
           ? aiLaunchSession.oscillationCenterExitAngleRad
           : (AI_LAUNCH_OSCILLATION_CENTER_EXIT_ANGLE_DEG * Math.PI / 180);
         const oscillationElapsedMs = getAiLaunchOscillationElapsedMs(aiLaunchSession, now);
-        const oscillationAbsAngle = Math.abs(oscillationAngle);
+        const oscillationAbsAngle = Math.abs(visibleOscillationAngle);
         aiLaunchSession.maxObservedOscillationAngleRad = Math.max(
           Number.isFinite(aiLaunchSession.maxObservedOscillationAngleRad) ? aiLaunchSession.maxObservedOscillationAngleRad : 0,
           oscillationAbsAngle
         );
-        if(Math.abs(oscillationAngle) >= oscillationCenterExitAngleRad){
+        if(Math.abs(visibleOscillationAngle) >= oscillationCenterExitAngleRad){
           aiLaunchSession.oscillationHasExitedCenter = true;
         }
         if(
@@ -38896,8 +39025,8 @@ function gameDraw(){
         }
         const previousObservedAngle = Number.isFinite(aiLaunchSession.lastObservedOscillationAngleRad)
           ? aiLaunchSession.lastObservedOscillationAngleRad
-          : oscillationAngle;
-        const oscillationDelta = oscillationAngle - previousObservedAngle;
+          : visibleOscillationAngle;
+        const oscillationDelta = visibleOscillationAngle - previousObservedAngle;
         if(Math.abs(oscillationDelta) >= oscillationDirectionEpsilonRad){
           const nextDirection = oscillationDelta > 0 ? 1 : -1;
           const previousDirection = Number.isFinite(aiLaunchSession.lastObservedOscillationDirection)
@@ -38915,7 +39044,7 @@ function gameDraw(){
           }
           aiLaunchSession.lastObservedOscillationDirection = nextDirection;
         }
-        aiLaunchSession.lastObservedOscillationAngleRad = oscillationAngle;
+        aiLaunchSession.lastObservedOscillationAngleRad = visibleOscillationAngle;
         if(
           aiLaunchSession.visibleOscillationSatisfied !== true
           && (
