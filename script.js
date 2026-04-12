@@ -15557,6 +15557,7 @@ const AI_LAUNCH_PREVIEW_ARROW_PULSE_SPEED = 0.012;
 const AI_LAUNCH_PREVIEW_ARROW_PULSE_AMPLITUDE = 0.22;
 const AI_LAUNCH_PREVIEW_TARGET_MARKER_RADIUS = 8;
 const AI_LAUNCH_MAX_FRAME_GAP_MS = 1400;
+const AI_LAUNCH_CONSECUTIVE_FRAME_GAP_HARD_LIMIT = 2;
 const AI_LAUNCH_SESSION_MAX_LIFETIME_MS = AI_LAUNCH_OSCILLATION_MAX_MS + AI_LAUNCH_PULL_BACK_MAX_MS + AI_LAUNCH_FAST_TARGET_SELECTION_MAX_MS + 2500;
 const AI_LAUNCH_STALL_NOTICE_HIDE_MS = 5000;
 const AI_LAUNCH_WATCHDOG_GRACE_MS = 220;
@@ -38391,6 +38392,8 @@ function buildAiLaunchSession(plane, vx, vy, options = {}){
     pendingReleaseAt: null,
     releaseReactionLagMs: randomInRange(AI_LAUNCH_HUMAN_REACTION_LAG_MIN_MS, AI_LAUNCH_HUMAN_REACTION_LAG_MAX_MS),
     perfectToleranceSatisfiedAt: null,
+    consecutiveFrameGaps: 0,
+    anomalyEscalationLevel: "none",
   };
 }
 
@@ -38407,23 +38410,53 @@ function isAiLaunchPreviewActive(session, now = performance.now()){
   return session.stage === "targeting" && now < (session.previewEndsAt || 0);
 }
 
-function isHardAiLaunchSessionAnomaly(session, anomalyKind, frameGapMs, sessionAgeMs){
-  if(anomalyKind === "frame_gap_during_active_launch" || anomalyKind === "launch_session_lifetime_exceeded"){
-    return true;
+function getAiLaunchAnomalyEscalationLevel(session, anomalyKind, frameGapMs, sessionAgeMs){
+  const consecutiveFrameGaps = Number.isFinite(session?.consecutiveFrameGaps)
+    ? session.consecutiveFrameGaps
+    : 0;
+  if(anomalyKind === "unknown_launch_stage"){
+    return "hard";
   }
-
+  if(anomalyKind === "launch_session_lifetime_exceeded"){
+    return "hard";
+  }
+  if(anomalyKind === "frame_gap_during_active_launch"){
+    return consecutiveFrameGaps >= AI_LAUNCH_CONSECUTIVE_FRAME_GAP_HARD_LIMIT
+      ? "hard"
+      : "soft";
+  }
   if(Number.isFinite(frameGapMs) && frameGapMs > AI_LAUNCH_MAX_FRAME_GAP_MS){
-    return true;
+    return consecutiveFrameGaps >= AI_LAUNCH_CONSECUTIVE_FRAME_GAP_HARD_LIMIT
+      ? "hard"
+      : "soft";
   }
-
   const maxSessionLifetimeMs = Number.isFinite(session?.maxLifetimeMs)
     ? session.maxLifetimeMs
     : AI_LAUNCH_SESSION_MAX_LIFETIME_MS;
   if(Number.isFinite(sessionAgeMs) && Number.isFinite(maxSessionLifetimeMs) && sessionAgeMs > maxSessionLifetimeMs){
-    return true;
+    return "hard";
   }
+  return "soft";
+}
 
-  return false;
+function scheduleAiLaunchSafeWindowReleaseFromAnomaly(session, now){
+  if(!session || session.stage !== "oscillate") return false;
+  const releaseDueAt = Number.isFinite(session.releaseDueAt) ? session.releaseDueAt : now;
+  const humanWindowStartAt = Number.isFinite(session.humanWindowStartAt)
+    ? session.humanWindowStartAt
+    : Math.min(releaseDueAt, (session.oscillationStartsAt || now) + AI_LAUNCH_HUMAN_WINDOW_START_MIN_MS);
+  const safeWindowStartAt = Math.max(now, humanWindowStartAt);
+  if(safeWindowStartAt >= releaseDueAt){
+    return false;
+  }
+  session.pendingReleaseReason = "anomaly_safe_window";
+  session.pendingReleaseMode = "anomaly_recovery_safe_window";
+  session.pendingReleaseMarkedAt = now;
+  session.pendingReleaseAt = Math.min(
+    releaseDueAt,
+    safeWindowStartAt + Math.max(0, Number.isFinite(session.releaseReactionLagMs) ? session.releaseReactionLagMs : AI_LAUNCH_HUMAN_REACTION_LAG_MIN_MS)
+  );
+  return true;
 }
 
 function resolveAiLaunchSessionAnomaly(session, anomaly = {}){
@@ -38433,12 +38466,23 @@ function resolveAiLaunchSessionAnomaly(session, anomaly = {}){
   const sessionAgeMs = Number.isFinite(anomaly.sessionAgeMs) ? Math.max(0, Math.round(anomaly.sessionAgeMs)) : null;
   const anomalyKind = anomaly.kind || "unknown_ai_launch_anomaly";
   const hasCandidate = Boolean(pickAiLaunchCandidateForRelease(session)?.metrics);
-  const isHardAnomaly = isHardAiLaunchSessionAnomaly(session, anomalyKind, frameGapMs, sessionAgeMs);
+  const anomalyEscalationLevel = getAiLaunchAnomalyEscalationLevel(session, anomalyKind, frameGapMs, sessionAgeMs);
+  const isHardAnomaly = anomalyEscalationLevel === "hard";
+  const consecutiveFrameGaps = Number.isFinite(session?.consecutiveFrameGaps)
+    ? session.consecutiveFrameGaps
+    : 0;
   const releaseDiagnostic = hasCandidate ? "candidate_exists" : "candidate_missing";
-  const recoveryMode = "emergency_release";
+  const canScheduleSafeWindowRelease = hasCandidate
+    && scheduleAiLaunchSafeWindowReleaseFromAnomaly(session, now);
+  const recoveryMode = isHardAnomaly
+    ? (canScheduleSafeWindowRelease ? "safe_window_release" : "emergency_release")
+    : "soft_degradation_continue";
   const noticeMessage = "Игра была приостановлена отладчиком или выполнение было задержано";
 
-  showAiLaunchStallNotice(noticeMessage);
+  if(isHardAnomaly){
+    showAiLaunchStallNotice(noticeMessage);
+  }
+  session.anomalyEscalationLevel = anomalyEscalationLevel;
   logAiDecision("ai_launch_session_anomaly", {
     planeId: session?.plane?.id ?? null,
     stage: session?.stage || null,
@@ -38450,7 +38494,10 @@ function resolveAiLaunchSessionAnomaly(session, anomaly = {}){
     recoveryMode,
     releaseDiagnostic,
     hardAnomaly: isHardAnomaly,
-    noticeShown: true,
+    consecutiveFrameGaps,
+    anomalyEscalationLevel,
+    safeWindowReleaseArmed: canScheduleSafeWindowRelease,
+    noticeShown: isHardAnomaly,
     reasonCode: anomaly.reasonCode || anomalyKind,
   });
   recordAiSelfAnalyzerDecision("ai_launch_session_anomaly", {
@@ -38466,9 +38513,27 @@ function resolveAiLaunchSessionAnomaly(session, anomaly = {}){
       frameGapMs !== null ? `frame_gap_${frameGapMs}ms` : anomalyKind,
       sessionAgeMs !== null ? `session_age_${sessionAgeMs}ms` : anomalyKind,
       releaseDiagnostic,
+      `consecutive_frame_gaps_${consecutiveFrameGaps}`,
+      `anomaly_escalation_${anomalyEscalationLevel}`,
     ],
-    errorMessage: noticeMessage,
+    errorMessage: isHardAnomaly ? noticeMessage : null,
   });
+
+  if(!isHardAnomaly){
+    return;
+  }
+
+  if(canScheduleSafeWindowRelease){
+    logAiDecision("ai_launch_session_anomaly_safe_window_armed", {
+      planeId: session?.plane?.id ?? null,
+      anomalyKind,
+      pendingReleaseAt: Number.isFinite(session.pendingReleaseAt) ? Math.round(session.pendingReleaseAt - now) : null,
+      consecutiveFrameGaps,
+      anomalyEscalationLevel,
+      ...getAiTurnTimingSnapshot(),
+    });
+    return;
+  }
 
   resetAiLaunchSessionVisualState();
 
@@ -38494,6 +38559,7 @@ function runAiLaunchSessionTick(now = performance.now()){
   session.lastTickAt = now;
 
   if(frameGapMs > AI_LAUNCH_MAX_FRAME_GAP_MS){
+    session.consecutiveFrameGaps = (Number.isFinite(session.consecutiveFrameGaps) ? session.consecutiveFrameGaps : 0) + 1;
     aiLaunchFrameHealthState.lastDegradedAt = now;
     resolveAiLaunchSessionAnomaly(session, {
       kind: "frame_gap_during_active_launch",
@@ -38505,6 +38571,7 @@ function runAiLaunchSessionTick(now = performance.now()){
     });
     return;
   }
+  session.consecutiveFrameGaps = 0;
 
   if(Number.isFinite(session.maxLifetimeMs) && sessionAgeMs > session.maxLifetimeMs){
     resolveAiLaunchSessionAnomaly(session, {
