@@ -37266,103 +37266,16 @@ function runAiLaunchSessionTick(now = performance.now()){
 }
 
 function issueAIMove(plane, vx, vy, options = {}){
-  if(aiLaunchSession){
-    const requestedTurnNumber = Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : turnAdvanceCount;
-    const activeTurnNumber = Number.isFinite(aiLaunchSession?.turnNumber)
-      ? aiLaunchSession.turnNumber
-      : requestedTurnNumber;
-    const samePlane = aiLaunchSession?.plane === plane;
-    const sameTurn = activeTurnNumber === requestedTurnNumber;
-    const stage = aiLaunchSession?.stage || null;
-    const activeSessionCanProceed = stage === "targeting" || stage === "pull" || stage === "oscillate";
-
-    if(samePlane && sameTurn && activeSessionCanProceed){
-      logAiDecision("ai_launch_session_duplicate_coalesced", {
-        existingSessionId: aiLaunchSession?.id ?? null,
-        requestedPlaneId: plane?.id ?? null,
-        planeId: aiLaunchSession?.plane?.id ?? null,
-        stage,
-        turnNumber: requestedTurnNumber,
-      });
-      return {
-        ok: true,
-        reason: "ai_launch_session_already_active_same_turn",
-      };
-    }
-
-    logAiDecision("ai_launch_session_duplicate_blocked", {
-      existingSessionId: aiLaunchSession?.id ?? null,
-      requestedPlaneId: plane?.id ?? null,
-      planeId: aiLaunchSession?.plane?.id ?? null,
-      activeStage: stage,
-      samePlane,
-      sameTurn,
-      requestedTurnNumber,
-      activeTurnNumber,
-    });
-    return {
-      ok: false,
-      reason: "ai_launch_session_already_active",
-    };
-  }
-
-  const launchValidation = validateAiLaunchMoveCandidate({ plane, vx, vy });
-  if(!launchValidation.ok){
-    logAiDecision("issue_ai_move_invalid_input", {
-      planeId: plane?.id ?? null,
-      reason: launchValidation.reason || "invalid_plane_for_launch",
-      message: launchValidation.message || null,
-    });
-    if(typeof failSafeAdvanceTurn === "function"){
-      failSafeAdvanceTurn("invalid_move_fail_safe", {
-        goal: aiRoundState?.currentGoal || "invalid_move_fail_safe",
-        planeId: plane?.id ?? null,
-        reasonCodes: ["invalid_plane_for_launch", "fail_safe_turn_advance"],
-        rejectReasons: [launchValidation.reason || "invalid_plane_for_launch"],
-        errorMessage: launchValidation.message || null,
-      });
-    }
-    return {
-      ok: false,
-      reason: launchValidation.reason || "invalid_plane_for_launch",
-    };
-  }
-
-  clearAiLaunchStallNotice();
-  const isFallbackMove = options?.isFallbackMove === true;
-  aiLaunchSession = buildAiLaunchSession(plane, vx, vy, {
-    ...options,
-    isFallbackMove,
-  });
-  scheduleAiLaunchSessionWatchdog(aiLaunchSession);
-  if(aiLaunchSession?.stage === "pull"){
-    beginAiLaunchStageTransition(aiLaunchSession, "targeting_skipped", "pull", performance.now());
-    markAiLinearLaunchEvent("pull_started", {
-      planeId: plane?.id ?? null,
-      sessionId: aiLaunchSession?.id ?? null,
-      goal: aiRoundState?.currentGoal || null,
-    });
-  }
-  logAiDecision("ai_launch_session_started", {
+  logAiDecision("issue_ai_move_removed_hard_fail", {
     planeId: plane?.id ?? null,
-    aiLaunchSessionActive: true,
-    maxLifetimeMs: Number.isFinite(aiLaunchSession?.maxLifetimeMs) ? Math.round(aiLaunchSession.maxLifetimeMs) : null,
-    releaseDueAtMs: Number.isFinite(aiLaunchSession?.releaseDueAt) && Number.isFinite(aiLaunchSession?.createdAt)
-      ? Math.max(0, Math.round(aiLaunchSession.releaseDueAt - aiLaunchSession.createdAt))
-      : null,
-    minReleaseFromTurnStartMs: Number.isFinite(aiLaunchSession?.minReleaseAt) && Number.isFinite(aiLaunchSession?.turnStartedAt)
-      ? Math.max(0, Math.round(aiLaunchSession.minReleaseAt - aiLaunchSession.turnStartedAt))
-      : null,
-    telegraphyEnabled: aiLaunchSession?.telegraphyEnabled !== false,
-    telegraphyMode: aiLaunchSession?.telegraphyMode || null,
-    watchdogDeadlineAtMs: Number.isFinite(aiLaunchSession?.watchdogDeadlineAt) && Number.isFinite(aiLaunchSession?.createdAt)
-      ? Math.max(0, Math.round(aiLaunchSession.watchdogDeadlineAt - aiLaunchSession.createdAt))
-      : null,
-    ...getAiTurnTimingSnapshot(),
+    reasonCode: "issue_ai_move_removed_hard_fail",
+    source: options?.source || null,
+    goal: aiRoundState?.currentGoal || null,
   });
+  triggerComputerAiRemovedHardFail("issue_ai_move_removed_hard_fail");
   return {
-    ok: true,
-    reason: "ai_launch_session_started",
+    ok: false,
+    reason: "issue_ai_move_removed_hard_fail",
   };
 }
 
@@ -37403,68 +37316,11 @@ function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 
 let failSafeAdvanceTurnInProgress = false;
 function tryRecoverAiFailSafeWithEmergencyLaunch(details = {}){
-  if(isGameOver) return false;
-  if(gameMode !== "computer") return false;
-  if(turnColors?.[turnIndex] !== "blue") return false;
-  if(flyingPoints.length > 0) return false;
-
-  const aiPlanesForRecovery = points.filter((plane) => (
-    plane?.color === "blue"
-    && plane?.isAlive === true
-    && plane?.burning !== true
-    && !flyingPoints.some((fp) => fp.plane === plane)
-  ));
-  if(!aiPlanesForRecovery.length) return false;
-
-  const enemiesForRecovery = points.filter((plane) => (
-    plane?.color === "green"
-    && plane?.isAlive === true
-    && plane?.burning !== true
-  ));
-  const recoveryContext = {
-    aiPlanes: rankAiPlanesForCurrentTurn(aiPlanesForRecovery),
-    enemies: enemiesForRecovery,
-  };
-
-  const emergencyMove = getMandatoryTurnMove(recoveryContext)
-    || getFailSafeGuaranteedDirectMove(recoveryContext)
-    || getGuaranteedAnyLegalLaunch(recoveryContext);
-  if(!emergencyMove) return false;
-
-  const launchValidation = validateAiLaunchMoveCandidate(emergencyMove);
-  if(!launchValidation?.ok){
-    logAiDecision("fail_safe_emergency_recovery_rejected", {
-      reasonCode: "fail_safe_emergency_recovery_rejected",
-      failSafeReason: details?.reason || null,
-      goal: details?.goal || aiRoundState?.currentGoal || null,
-      planeId: emergencyMove?.plane?.id ?? null,
-      rejectReason: launchValidation?.reason || "invalid_plane_for_launch",
-    });
-    return false;
-  }
-
-  const launchResult = issueAIMove(
-    emergencyMove.plane,
-    emergencyMove.vx,
-    emergencyMove.vy,
-    {
-      isFallbackMove: true,
-      source: "fail_safe_emergency_recovery",
-      reasonCode: details?.reasonCode || details?.reason || "fail_safe_emergency_recovery",
-      routeClass: emergencyMove?.routeClass || "direct",
-    }
-  );
-  if(launchResult?.ok){
-    logAiDecision("fail_safe_emergency_recovery_launched", {
-      reasonCode: "fail_safe_emergency_recovery_launched",
-      failSafeReason: details?.reason || null,
-      goal: details?.goal || aiRoundState?.currentGoal || null,
-      planeId: emergencyMove?.plane?.id ?? null,
-      decisionReason: emergencyMove?.decisionReason || null,
-    });
-    return true;
-  }
-
+  logAiDecision("fail_safe_emergency_recovery_disabled", {
+    reasonCode: "fail_safe_emergency_recovery_disabled",
+    failSafeReason: details?.reason || null,
+    goal: details?.goal || aiRoundState?.currentGoal || null,
+  });
   return false;
 }
 
@@ -37502,110 +37358,11 @@ function failSafeAdvanceTurn(reason = "unspecified", details = {}){
     clearAiLaunchSessionWatchdog();
     aiLaunchSession = null;
     cleanupHandle();
-    const recoveredByEmergencyLaunch = tryRecoverAiFailSafeWithEmergencyLaunch({
+    tryRecoverAiFailSafeWithEmergencyLaunch({
       ...details,
       reason,
     });
-    if(recoveredByEmergencyLaunch){
-      return true;
-    }
-
-    const canRetrySameTurn = (
-      gameMode === "computer"
-      && turnColors?.[turnIndex] === "blue"
-      && !isGameOver
-      && flyingPoints.length === 0
-    );
-    if(canRetrySameTurn){
-      const retryUsage = incrementAiFallbackRetryUsage(reason, {
-        goal: details?.goal || aiRoundState?.currentGoal || null,
-        routeClass: details?.routeClass || null,
-      });
-      const retryBudgetExhausted = isAiFallbackRetryBudgetExhausted();
-      if(retryBudgetExhausted){
-        logAiDecision("fallback_retry_budget_exhausted", {
-          reason,
-          reasonCode: "fallback_retry_budget_exhausted",
-          goal: details?.goal || aiRoundState?.currentGoal || null,
-          retriesUsed: retryUsage.retriesUsed,
-          retryLimit: retryUsage.retryLimit,
-          source: details?.source || "failSafeAdvanceTurn",
-        });
-        recordAiSelfAnalyzerDecision("fallback_retry_budget_exhausted", {
-          goal: details?.goal || aiRoundState?.currentGoal || null,
-          reasonCodes: ["fallback_retry_budget_exhausted", "fail_safe_turn_advance"],
-          rejectReasons: Array.isArray(details?.rejectReasons) ? details.rejectReasons : [reason],
-          planeId: details?.planeId ?? null,
-        });
-        const forcedLaunchMove = getMandatoryTurnMove({
-          aiPlanes: rankAiPlanesForCurrentTurn(points.filter((plane) => (
-            plane?.color === "blue"
-            && plane?.isAlive === true
-            && plane?.burning !== true
-            && !flyingPoints.some((fp) => fp.plane === plane)
-          ))),
-          enemies: points.filter((plane) => (
-            plane?.color === "green"
-            && plane?.isAlive === true
-            && plane?.burning !== true
-          )),
-        });
-        const forcedValidation = validateAiLaunchMoveCandidate(forcedLaunchMove);
-        if(forcedValidation.ok){
-          const forcedLaunchResult = issueAIMove(
-            forcedLaunchMove.plane,
-            forcedLaunchMove.vx,
-            forcedLaunchMove.vy,
-            {
-              isFallbackMove: true,
-              source: "fallback_retry_budget_exhausted",
-              reasonCode: "fallback_retry_budget_exhausted",
-              routeClass: forcedLaunchMove?.routeClass || "direct",
-            },
-          );
-          if(forcedLaunchResult?.ok){
-            logAiDecision("fail_safe_forced_launch_selected", {
-              reasonCode: "fail_safe_forced_launch_selected",
-              reason,
-              goal: details?.goal || aiRoundState?.currentGoal || null,
-              planeId: forcedLaunchMove?.plane?.id ?? null,
-              routeClass: forcedLaunchMove?.routeClass || "direct",
-            });
-            return true;
-          }
-        }
-        logAiDecision("fail_safe_retry_exhausted_forced_launch_failed", {
-          reason,
-          reasonCode: "fail_safe_retry_exhausted_forced_launch_failed",
-          goal: details?.goal || aiRoundState?.currentGoal || null,
-          retriesUsed: retryUsage.retriesUsed,
-          retryLimit: retryUsage.retryLimit,
-          forcedValidationOk: forcedValidation.ok === true,
-          source: details?.source || "failSafeAdvanceTurn",
-        });
-        return false;
-      }
-      aiMoveScheduled = false;
-      logAiDecision("fail_safe_turn_retry_replaced_with_neutral_advance", {
-        reason,
-        reasonCode: details?.reasonCode || reason || "fail_safe_turn_retry_replaced_with_neutral_advance",
-        goal: details?.goal || aiRoundState?.currentGoal || null,
-        retriesUsed: retryUsage?.retriesUsed ?? null,
-        retryLimit: retryUsage?.retryLimit ?? null,
-        source: details?.source || "failSafeAdvanceTurn",
-      });
-      triggerComputerAiRemovedHardFail("fail_safe_turn_retry");
-      return false;
-    }
-
-    logAiDecision("fail_safe_turn_retry_impossible", {
-      reason,
-      reasonCode: details?.reasonCode || reason || "fail_safe_turn_retry_impossible",
-      goal: details?.goal || aiRoundState?.currentGoal || null,
-      source: details?.source || "failSafeAdvanceTurn",
-      turnColor: turnColors?.[turnIndex] || null,
-      hasFlyingPoints: flyingPoints.length > 0,
-    });
+    triggerComputerAiRemovedHardFail("fail_safe_turn_hard_fail");
     return false;
   } finally {
     failSafeAdvanceTurnInProgress = false;
