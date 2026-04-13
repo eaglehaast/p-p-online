@@ -15801,7 +15801,7 @@ function scheduleAiLaunchSessionWatchdog(session){
       releaseAiLaunchSession(session, "watchdog_immediate_release", watchdogNow);
       return;
     }
-    const reasonCode = "launch_watchdog_invalid_plane";
+    const reasonCode = "launch_abort_watchdog_plane_not_ready";
     console.warn("launch watchdog stopped: plane is not launch-ready; forcing emergency exit", {
       reasonCode,
       planeId: session?.plane?.id ?? null,
@@ -16007,12 +16007,30 @@ function pickAiLaunchCandidateForRelease(session){
   return null;
 }
 
-function resolveInvalidAiLaunchSessionWithEmergencyExit(session, options = {}){
+function abortAiLaunchAndFinalizeTurn(session, options = {}){
   const source = options?.source || "ai_launch_session";
   const reason = options?.reason || "invalid_launch_session_state";
-  const reasonCode = options?.reasonCode || "launch_release_invalid_plane";
+  const reasonCode = options?.reasonCode || "launch_abort_invalid_plane";
   const logChannel = options?.logChannel || "ai_launch_release";
   const planeId = session?.plane?.id ?? null;
+  const idempotencyToken = options?.idempotencyToken || reasonCode;
+
+  if(session?.abortFinalizeMeta?.token === idempotencyToken){
+    return {
+      recovered: false,
+      finalized: false,
+      skipped: true,
+      duplicate: true,
+    };
+  }
+  if(session){
+    session.abortFinalizeMeta = {
+      token: idempotencyToken,
+      source,
+      reasonCode,
+      at: performance.now(),
+    };
+  }
 
   clearAiLaunchSessionWatchdog(session);
   aiMoveScheduled = false;
@@ -16076,7 +16094,15 @@ function resolveInvalidAiLaunchSessionWithEmergencyExit(session, options = {}){
     source,
     ...getAiTurnTimingSnapshot(),
   });
-  return false;
+  return {
+    recovered: false,
+    finalized: true,
+    skipped: false,
+  };
+}
+
+function resolveInvalidAiLaunchSessionWithEmergencyExit(session, options = {}){
+  return abortAiLaunchAndFinalizeTurn(session, options);
 }
 
 function getAiLaunchOscillationElapsedMs(session, now = performance.now()){
@@ -16181,7 +16207,7 @@ function releaseAiLaunchSession(session, reason, now = performance.now()){
     return;
   }
   if(!session?.plane || !isPlaneLaunchStateReady(session.plane)){
-    const reasonCode = "launch_release_invalid_plane";
+    const reasonCode = "launch_abort_invalid_plane";
     logAiDecision("ai_launch_release", {
       reason,
       reasonCode,
@@ -16224,9 +16250,13 @@ function releaseAiLaunchSession(session, reason, now = performance.now()){
     };
   }
   if(!launchVector.ok){
-    clearAiLaunchSessionWatchdog(session);
-    aiLaunchSession = null;
-    cleanupHandle();
+    abortAiLaunchAndFinalizeTurn(session, {
+      source: "releaseAiLaunchSession",
+      reason,
+      reasonCode: "launch_abort_invalid_plane",
+      logChannel: "ai_launch_release",
+      idempotencyToken: `release_invalid_vector_${session?.id ?? "unknown"}`,
+    });
     return;
   }
 
@@ -38638,9 +38668,16 @@ function resolveAiLaunchSessionAnomaly(session, anomaly = {}){
     return;
   }
 
-  clearAiLaunchSessionWatchdog(session);
-  aiLaunchSession = null;
-  cleanupHandle();
+  const anomalyAbortReasonCode = hasCandidate
+    ? "launch_abort_invalid_plane"
+    : "launch_abort_anomaly_no_candidate";
+  abortAiLaunchAndFinalizeTurn(session, {
+    source: "resolveAiLaunchSessionAnomaly",
+    reason: hasCandidate ? "anomaly_invalid_plane" : "anomaly_no_candidate",
+    reasonCode: anomalyAbortReasonCode,
+    logChannel: "ai_launch_session_anomaly",
+    idempotencyToken: `anomaly_abort_${session?.id ?? "unknown"}_${anomalyAbortReasonCode}`,
+  });
 }
 
 function runAiLaunchSessionTick(now = performance.now()){
@@ -38679,9 +38716,13 @@ function runAiLaunchSessionTick(now = performance.now()){
   }
 
   if(!session.plane || !isPlaneLaunchStateReady(session.plane)){
-    clearAiLaunchSessionWatchdog(session);
-    aiLaunchSession = null;
-    cleanupHandle();
+    abortAiLaunchAndFinalizeTurn(session, {
+      source: "runAiLaunchSessionTick",
+      reason: "tick_invalid_plane_not_ready",
+      reasonCode: "launch_abort_invalid_plane",
+      logChannel: "ai_launch_session_tick",
+      idempotencyToken: `tick_invalid_plane_${session?.id ?? "unknown"}`,
+    });
     return;
   }
 
