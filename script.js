@@ -33141,6 +33141,7 @@ function setNoReadyAiPlanesStreak(value){
   return normalizedValue;
 }
 
+// AI CONTRACT: before changing turn-level AI behavior, align with docs/AI_BEHAVIOR_CONTRACT.md
 function runAiTurnV2(context = {}){
   if (gameMode!=="computer" || isGameOver) return;
 
@@ -34181,6 +34182,7 @@ if(typeof window !== "undefined"){
   window.runAiTurnV2 = runAiTurnV2;
 }
 
+// AI CONTRACT: dispatcher behavior should remain consistent with docs/AI_BEHAVIOR_CONTRACT.md
 function doComputerMove(){
   const getFailSafeCounts = () => ({
     aiPlanes: points.filter((plane) => plane?.color === "blue" && plane?.isAlive && !plane?.burning).length,
