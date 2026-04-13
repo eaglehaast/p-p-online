@@ -879,6 +879,7 @@ const TRANSFER_FRAME_HIDE_DURATION_MS = 160;
 // Z-index policy: transfer/system notifications must always be above all gameplay FX hosts (cargo/explosions/nuclear).
 const TRANSFER_SYSTEM_HOST_ID = "transferSystemHost";
 const TRANSFER_SYSTEM_HOST_Z_INDEX = 320;
+const TRANSFER_GLOW_LAYER_Z_INDEX = 320;
 const TRANSFER_FRAME_LAYER_Z_INDEX = 321;
 const TRANSFER_FRAME_ASSETS = Object.freeze({
   back: "ui_gamescreen/gs_transfer/gs_transfer_back.png",
@@ -887,6 +888,7 @@ const TRANSFER_FRAME_ASSETS = Object.freeze({
 });
 const transferFrameState = {
   host: null,
+  glowLayer: null,
   layer: null,
   panel: null,
   backImage: null,
@@ -898,6 +900,28 @@ const transferFrameState = {
   hideAnimationId: 0,
   panelAnimation: null,
 };
+
+function stopTransferTurnGlow() {
+  const glowLayer = transferFrameState.glowLayer;
+  if (!(glowLayer instanceof HTMLElement)) return;
+  glowLayer.classList.remove(
+    "is-visible",
+    "is-pulsing",
+    "transfer-turn-glow-layer--blue",
+    "transfer-turn-glow-layer--green"
+  );
+}
+
+function playTransferTurnGlow(player) {
+  const glowLayer = transferFrameState.glowLayer;
+  if (!(glowLayer instanceof HTMLElement)) return;
+  const isGreen = player === "green";
+  glowLayer.classList.remove("transfer-turn-glow-layer--blue", "transfer-turn-glow-layer--green", "is-pulsing");
+  glowLayer.classList.add("is-visible");
+  glowLayer.classList.add(isGreen ? "transfer-turn-glow-layer--green" : "transfer-turn-glow-layer--blue");
+  void glowLayer.offsetWidth;
+  glowLayer.classList.add("is-pulsing");
+}
 
 function ensureTransferSystemHost() {
   const hostParent = gsFrameLayer instanceof HTMLElement
@@ -936,6 +960,16 @@ function ensureTransferFrameElements() {
   if (!(transferHost instanceof HTMLElement)) return null;
 
   let layer = transferFrameState.layer;
+  let glowLayer = transferFrameState.glowLayer;
+  if (!(glowLayer instanceof HTMLElement) || glowLayer.parentElement !== transferHost) {
+    glowLayer = document.createElement("div");
+    glowLayer.className = "transfer-turn-glow-layer";
+    glowLayer.setAttribute("aria-hidden", "true");
+    glowLayer.style.zIndex = String(TRANSFER_GLOW_LAYER_Z_INDEX);
+    transferHost.appendChild(glowLayer);
+    transferFrameState.glowLayer = glowLayer;
+  }
+
   if (!(layer instanceof HTMLElement) || layer.parentElement !== transferHost) {
     layer = document.createElement("div");
     layer.className = "transfer-frame-layer";
@@ -1023,6 +1057,7 @@ function stopTransferPanelAnimation() {
 }
 
 function clearTransferFrameContent() {
+  stopTransferTurnGlow();
   if (transferFrameState.backImage instanceof HTMLImageElement) {
     transferFrameState.backImage.src = "";
   }
@@ -1112,9 +1147,11 @@ function showTransferFrame(options = {}) {
     if (mode === "turn") {
       transferState.colorImage.src = player === "green" ? TRANSFER_FRAME_ASSETS.green : TRANSFER_FRAME_ASSETS.blue;
       transferState.colorImage.classList.add("is-visible");
+      playTransferTurnGlow(player);
     } else {
       transferState.colorImage.src = "";
       transferState.colorImage.classList.remove("is-visible");
+      stopTransferTurnGlow();
     }
   }
 
