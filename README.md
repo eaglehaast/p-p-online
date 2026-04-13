@@ -48,131 +48,32 @@ Current cargo icons used by the game are stored only in:
 
 The obsolete prototype folder `ui_gamescreen/gamescreen_outside/gs_icon_prototypes/` is removed and must not be used as a runtime source.
 
-## AI self-analyzer (match JSON)
+## Old AI removal status
 
-For **Computer** mode, the game now records each finished match in browser storage:
+Old AI (v1 and v2) has been fully disabled in runtime.
 
-- launches (speed, direction, power ratio),
-- AI decision snapshots (`ai_decision`: stage, goal, chosen plane, compact reasons/reject reasons, selected move details),
-- turn switches,
-- per-round eliminations,
-- auto-generated behavior patterns,
-- simple AI adjustment recommendations.
-
-To export the latest report as JSON, open browser console and run:
+What this means now:
+- Computer mode is temporarily running with a neutral fallback (`AI disabled`): the game loop stays alive, but old decision logic is not used.
+- Legacy AI debug/diagnostic APIs are disabled and return a clear message: `Old AI removed`.
+- Cargo reset debug helper remains available:
 
 ```js
-window.exportLatestAiSelfAnalyzerJson()
-```
-
-This downloads a file like `ai-self-analyzer-<timestamp>.json`.
-
-To export AI turn-by-turn report (works even before match is finished), run:
-
-```js
-window.exportAiSelfAnalyzerTurnsJson()
-```
-
-This downloads a file like `ai-self-analyzer-turns-<timestamp>.json`.
-The file includes full active match state (or latest finished match if no active one) plus `aiMotivation.decisionEvents` — an easy-to-filter sequence of AI decisions with selected move vectors and compact reasons.
-
-For quick live diagnostics during an active match, use compact AI debug commands:
-
-```js
-window.AI_DEBUG_CMD("snapshot")
-window.AI_DEBUG_CMD("last-decisions", 5)
-window.AI_DEBUG_CMD("status")
 window.AI_DEBUG_CMD("reset-cargo")
-window.AI_DEBUG_CMD("v2-reserve-report")
-window.AI_DEBUG_CMD("v2-report")
-window.AI_DEBUG_CMD("v2-report-compact")
 window.RESET_CARGO()
-window.exportAiV2ReserveDiagnosticsReportJson()
-window.exportAiV2DecisionAuditReportJson()
-window.exportAiV2DecisionAuditCompactReportJson()
 ```
 
-Fast one-line fuel injection for the opponent (works in any mode, no `#dev` needed):
-
-```js
-window.GIVE_OPPONENT_FUEL(1)
-```
-
-This immediately gives fuel to the opponent and, in computer mode, forces the AI to spend fuel on its very next turn (training override ignores normal inventory lock heuristics).
-
-If you are in `#dev` mode, `window.DEBUG_GIVE_OPPONENT_FUEL(1)` remains available as a debug alias.
-
-Explosion debug commands (browser console):
-
-```js
-window.EXPLOSION_PLAY("blue")
-window.EXPLOSION_PLAY("green")
-window.EXPLOSION_SPEED(1.5)
-window.EXPLOSION_SPEED(0.7)
-window.EXPLOSION_SIZE(0.7)
-window.EXPLOSION_DEBUG.getSizeScale()
-window.EXPLOSION_DEBUG.getPlaybackRate()
-```
-
-- `EXPLOSION_PLAY("blue"|"green")` now tries to play explosion on a live plane of the same color (blue on blue, green on green); if there is no alive plane of that color, it falls back to board center.
-- `EXPLOSION_SPEED(multiplier)` changes explosion speed relative to current speed (`1.5` makes it 50% faster, `0.7` makes it 30% slower).
-- `EXPLOSION_SIZE(scale)` changes explosion visual size scale (default `1`, useful smaller values: `0.7`, `0.5`).
-
-- `snapshot` prints a short current-match summary (mode, turn, counts, last decision).
-- `last-decisions` prints last `N` AI decision events in one-line compact format.
-- `status` prints current AI mode/goal/turn and `aiMoveScheduled` flag.
-- `reset-cargo` instantly clears all current cargo and (if cargo is enabled in settings) immediately spawns a fresh one.
-- `v2-reserve-report` builds and returns/downloads a dedicated JSON report about the internal reserve steps of the v2 planner. It reads `source`, `routeClass`, `selectedMove.routeClass`, `selectedMove.decisionReason`, plus `reasonCodes`/`rejectReasons` from `ai_decision` events to fill `candidateGenerationStats` and `candidateFunnelStats`.
-- `v2-report` builds one combined JSON report for the current AI path: turn-by-turn motivation (`ai_decision`), quality metrics (`human_vs_ai_gap_report`) and reserve-step diagnostics in one downloadable file.
-- `v2-report-compact` builds a shorter combined JSON report for quick sharing: summary counters, the last AI decisions, the most frequent difficulty signals (`reasonCodes` / `rejectReasons`) and a few recent reserve-step episodes.
-- `RESET_CARGO()` is a direct one-line alias for the same forced cargo reset (without passing command strings).
-- `exportAiV2ReserveDiagnosticsReportJson()` exports the same reserve-step diagnostics report directly, without using command strings.
-- `exportAiV2DecisionAuditReportJson()` exports the same combined v2 decision-audit report directly.
-- `exportAiV2DecisionAuditCompactReportJson()` exports the same short v2 decision-audit report directly.
-
-### How to read `ai_decision` in the exported JSON
-
-Look at `events` and filter entries with `type: "ai_decision"`.
-
-Example fragment:
-
-```json
-{
-  "type": "ai_decision",
-  "stage": "direct_finisher_rejected",
-  "goal": "direct_finisher",
-  "planeId": null,
-  "reasonCodes": ["direct_finisher_skipped", "opening_safety_priority"],
-  "rejectReasons": ["opening_phase_restriction"]
-}
-```
-
-How to interpret:
-
-- `stage`: where in the AI turn this happened,
-- `goal`: what AI wanted to do at that step,
-- `planeId`: which plane was selected (or `null` if no candidate was chosen),
-- `reasonCodes`: short “why selected / why switched” explanation,
-- `rejectReasons`: compact “why candidate was rejected” notes.
-- `selectedMove`: what AI finally launched (`vx`, `vy`, `totalDist`, `goalName`, `decisionReason`).
-
-Decision events are capped (last N entries kept) to prevent JSON from growing too much during long sessions.
-
-
-## AI behavior contract
-
-The canonical AI behavior profile is documented in:
-
+The target behavior reference remains here (as a future implementation target only):
 - `docs/AI_BEHAVIOR_CONTRACT.md`
 
-Before changing AI goal selection, inventory usage, fallback logic, or launch planning, read this contract first and keep behavior aligned with it.
+For a detailed “after demolition” list, see:
+- `docs/OLD_AI_REMOVAL_NOTE.md`
+- `docs/OLD_AI_REMOVAL_MANIFEST.md`
 
-If a PR intentionally changes AI style, update the contract in the same PR.
 
 ## Game modes
 
 - **Hot Seat** – two players share the same computer.
-- **Computer** – fight against a simple AI.
+- **Computer** – temporary safe mode (`AI disabled`) while new AI is being prepared.
 - **Online** – currently disabled in this build.
 
 ## Basic rules
