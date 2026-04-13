@@ -905,6 +905,7 @@ const turnFlashDebugState = {
   enabled: false,
   unsubscribe: null,
   layer: null,
+  host: null,
 };
 
 function subscribeTurnAdvance(listener) {
@@ -930,17 +931,40 @@ function normalizeTurnFlashSide(side) {
   return side === "green" ? "green" : "blue";
 }
 
+function resolveTurnFlashDebugHost() {
+  if (turnFlashDebugState.host instanceof HTMLElement && turnFlashDebugState.host.isConnected) {
+    return turnFlashDebugState.host;
+  }
+  const hostCandidates = [
+    overlayContainer,
+    document.getElementById("overlayContainer"),
+    gsFrameEl,
+    document.getElementById("gameContainer"),
+    gsFrameLayer,
+    document.getElementById("gsFrame"),
+  ];
+  const host = hostCandidates.find((candidate) => candidate instanceof HTMLElement) || null;
+  if (!(host instanceof HTMLElement)) {
+    console.warn("[turn-flash-debug] host not found; expected #overlayContainer or #gameContainer.");
+    turnFlashDebugState.host = null;
+    return null;
+  }
+  turnFlashDebugState.host = host;
+  return host;
+}
+
 function ensureTurnFlashDebugLayer() {
   if (turnFlashDebugState.layer instanceof HTMLElement && turnFlashDebugState.layer.isConnected) {
     return turnFlashDebugState.layer;
   }
-  if (!(gameContainer instanceof HTMLElement)) return null;
-  let layer = gameContainer.querySelector(".turn-flash-debug-layer");
+  const host = resolveTurnFlashDebugHost();
+  if (!(host instanceof HTMLElement)) return null;
+  let layer = host.querySelector(".turn-flash-debug-layer");
   if (!(layer instanceof HTMLElement)) {
     layer = document.createElement("div");
     layer.className = "turn-flash-debug-layer";
     layer.setAttribute("aria-hidden", "true");
-    gameContainer.appendChild(layer);
+    host.appendChild(layer);
   }
   turnFlashDebugState.layer = layer;
   return layer;
@@ -958,14 +982,22 @@ function triggerTurnFlashDebugPulse(side) {
 }
 
 function enableTurnFlashDebug() {
-  if (turnFlashDebugState.enabled) {
+  const layer = ensureTurnFlashDebugLayer();
+  if (!(layer instanceof HTMLElement)) {
+    turnFlashDebugState.enabled = false;
+    if (typeof turnFlashDebugState.unsubscribe === "function") {
+      turnFlashDebugState.unsubscribe();
+    }
+    turnFlashDebugState.unsubscribe = null;
     return turnFlashDebugApiState();
   }
-  const unsubscribe = subscribeTurnAdvance(({ nextTurnColor }) => {
-    triggerTurnFlashDebugPulse(nextTurnColor);
-  });
-  turnFlashDebugState.unsubscribe = unsubscribe;
-  turnFlashDebugState.enabled = true;
+  if (!turnFlashDebugState.enabled) {
+    const unsubscribe = subscribeTurnAdvance(({ nextTurnColor }) => {
+      triggerTurnFlashDebugPulse(nextTurnColor);
+    });
+    turnFlashDebugState.unsubscribe = unsubscribe;
+    turnFlashDebugState.enabled = true;
+  }
   return turnFlashDebugApiState();
 }
 
@@ -986,9 +1018,10 @@ function disableTurnFlashDebug() {
 }
 
 function turnFlashDebugApiState() {
+  const hasLayer = turnFlashDebugState.layer instanceof HTMLElement && turnFlashDebugState.layer.isConnected;
   return {
     enabled: turnFlashDebugState.enabled === true,
-    hasLayer: turnFlashDebugState.layer instanceof HTMLElement,
+    hasLayer,
   };
 }
 
