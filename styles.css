@@ -570,6 +570,41 @@ body, button {
     background: linear-gradient(to bottom, rgba(80,200,120,0) 0 50%, rgba(80,200,120,.48) 50% 100%);
   }
 
+  .turn-flash-debug-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 24;
+    opacity: 0;
+  }
+
+  .turn-flash-debug-layer::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0;
+    background: transparent;
+  }
+
+  .turn-flash-debug-layer.turn-flash-debug-layer--blue::before {
+    background: linear-gradient(to bottom, rgba(80,140,255,.16) 0 50%, rgba(80,140,255,0) 50% 100%);
+  }
+
+  .turn-flash-debug-layer.turn-flash-debug-layer--green::before {
+    background: linear-gradient(to bottom, rgba(80,200,120,0) 0 50%, rgba(80,200,120,.16) 50% 100%);
+  }
+
+  .turn-flash-debug-layer.is-pulsing::before {
+    animation: turnFlashDebugPulse 680ms ease-in-out 1;
+  }
+
+  @keyframes turnFlashDebugPulse {
+    0%   { opacity: 0; }
+    50%  { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
   @keyframes tgPulse2 {
     0%   { opacity: 0; }
     14%  { opacity: .24; }
