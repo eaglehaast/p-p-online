@@ -39280,10 +39280,22 @@ function drawPlanesAndTrajectories(){
     const isPlaneFullyHiddenByInvisibility = invisibilityAlpha <= 0.01;
     if(p.flagColor && !isPlaneFullyHiddenByInvisibility){
       targetCtx.save();
-      targetCtx.strokeStyle = colorFor(p.flagColor);
-      targetCtx.lineWidth = 3;
+      const ringColor = colorFor(p.flagColor);
+      const ringRadius = POINT_RADIUS + 6;
+      const ringGapAngle = Math.PI / 18;
+      const ringStart = -Math.PI / 2 + ringGapAngle * 0.5;
+      const ringEnd = (Math.PI * 3) / 2 - ringGapAngle * 0.5;
+
+      targetCtx.strokeStyle = "rgba(14, 18, 28, 0.7)";
+      targetCtx.lineWidth = 1.2;
       targetCtx.beginPath();
-      targetCtx.arc(p.x, p.y, POINT_RADIUS + 5, 0, Math.PI*2);
+      targetCtx.arc(p.x, p.y, ringRadius + 0.6, ringStart, ringEnd, false);
+      targetCtx.stroke();
+
+      targetCtx.strokeStyle = ringColor;
+      targetCtx.lineWidth = 2.2;
+      targetCtx.beginPath();
+      targetCtx.arc(p.x, p.y, ringRadius, ringStart, ringEnd, false);
       targetCtx.stroke();
       targetCtx.restore();
     }
