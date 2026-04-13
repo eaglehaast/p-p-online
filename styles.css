@@ -537,6 +537,49 @@ body, button {
     display: flex;
   }
 
+  .transfer-turn-glow-layer {
+    position: absolute;
+    inset: 0;
+    display: none;
+    pointer-events: none;
+    z-index: 320;
+  }
+
+  .transfer-turn-glow-layer::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+    background: transparent;
+  }
+
+  .transfer-turn-glow-layer.is-visible {
+    display: block;
+  }
+
+  .transfer-turn-glow-layer.is-pulsing::before {
+    animation: tgPulse2 1.7s ease-in-out 1;
+  }
+
+  .transfer-turn-glow-layer.transfer-turn-glow-layer--blue::before {
+    background: linear-gradient(to bottom, rgba(80,140,255,.48) 0 50%, rgba(80,140,255,0) 50% 100%);
+  }
+
+  .transfer-turn-glow-layer.transfer-turn-glow-layer--green::before {
+    background: linear-gradient(to bottom, rgba(80,200,120,0) 0 50%, rgba(80,200,120,.48) 50% 100%);
+  }
+
+  @keyframes tgPulse2 {
+    0%   { opacity: 0; }
+    14%  { opacity: .24; }
+    32%  { opacity: .42; }
+    50%  { opacity: .24; }
+    68%  { opacity: .42; }
+    86%  { opacity: .24; }
+    100% { opacity: 0; }
+  }
+
   .transfer-frame-panel {
     /*
       Geometry tokens are mapped to the Figma text containers:
