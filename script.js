@@ -13895,7 +13895,9 @@ function buildCommittedEnemySnapshot(){
 }
 
 function tryStartAiPlanningFromCommittedState(trigger = "unspecified"){
-  return triggerComputerAiRemovedHardFail(`tryStartAiPlanningFromCommittedState:${trigger}`);
+  return scheduleComputerMoveWithCargoGate(performance.now(), AI_MOVE_INITIAL_DELAY_MS, {
+    trigger: `tryStartAiPlanningFromCommittedState:${trigger}`,
+  });
 }
 
 
@@ -14110,7 +14112,114 @@ function runAiTechnicalRecoveryWithSafeMine(context, plannedMove, options = {}){
 }
 
 function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayMs = AI_MOVE_INITIAL_DELAY_MS, planningContext = null){
-  return triggerComputerAiRemovedHardFail("scheduleComputerMoveWithCargoGate");
+  if(
+    isGameOver
+    || gameMode !== "computer"
+    || turnColors?.[turnIndex] !== "blue"
+  ){
+    return { ok: false, reasonCode: "ai_not_applicable_for_current_turn" };
+  }
+  if(aiMoveScheduled){
+    return { ok: false, reasonCode: "ai_move_already_scheduled" };
+  }
+
+  const safeDelayMs = Number.isFinite(delayMs) ? Math.max(0, delayMs) : AI_MOVE_INITIAL_DELAY_MS;
+  aiMoveScheduled = true;
+  markAiTurnStarted("simple_center_launch", startedAt);
+
+  setTimeout(() => {
+    if(
+      isGameOver
+      || gameMode !== "computer"
+      || turnColors?.[turnIndex] !== "blue"
+    ){
+      aiMoveScheduled = false;
+      return;
+    }
+
+    if(hasAnimatingCargo()){
+      aiMoveScheduled = false;
+      scheduleComputerMoveWithCargoGate(startedAt, AI_MOVE_CARGO_RETRY_DELAY_MS, {
+        ...(planningContext || {}),
+        trigger: "simple_center_launch_waiting_cargo",
+      });
+      return;
+    }
+
+    const launchReadyPlane = points.find((plane) => {
+      if(!plane || plane.color !== "blue") return false;
+      if(!isPlaneLaunchStateReady(plane)) return false;
+      return !flyingPoints.some((fp) => fp.plane === plane);
+    });
+
+    if(!launchReadyPlane){
+      aiMoveScheduled = false;
+      advanceTurn();
+      return;
+    }
+
+    const fieldCenter = {
+      x: FIELD_LEFT + FIELD_WIDTH * 0.5,
+      y: FIELD_TOP + FIELD_HEIGHT * 0.5,
+    };
+    const toCenterDx = fieldCenter.x - launchReadyPlane.x;
+    const toCenterDy = fieldCenter.y - launchReadyPlane.y;
+    let centerTarget = fieldCenter;
+    if(!isPathClear(launchReadyPlane.x, launchReadyPlane.y, fieldCenter.x, fieldCenter.y)){
+      centerTarget = null;
+      const fractions = [0.9, 0.75, 0.6, 0.45, 0.3, 0.2, 0.12];
+      for(const fraction of fractions){
+        const candidate = {
+          x: launchReadyPlane.x + toCenterDx * fraction,
+          y: launchReadyPlane.y + toCenterDy * fraction,
+        };
+        if(isPathClear(launchReadyPlane.x, launchReadyPlane.y, candidate.x, candidate.y)){
+          centerTarget = candidate;
+          break;
+        }
+      }
+    }
+
+    if(!centerTarget){
+      aiMoveScheduled = false;
+      advanceTurn();
+      return;
+    }
+
+    const effectiveFlightRangeCells = getEffectiveFlightRangeCells(launchReadyPlane);
+    const maxFlightDistancePx = Math.max(1, effectiveFlightRangeCells * CELL_SIZE);
+    const desiredDistancePx = Math.hypot(centerTarget.x - launchReadyPlane.x, centerTarget.y - launchReadyPlane.y);
+    if(!Number.isFinite(desiredDistancePx) || desiredDistancePx <= 0.0001){
+      aiMoveScheduled = false;
+      advanceTurn();
+      return;
+    }
+    const scaledDistancePx = Math.min(maxFlightDistancePx, desiredDistancePx);
+    const scale = scaledDistancePx / desiredDistancePx;
+    const landingX = launchReadyPlane.x + (centerTarget.x - launchReadyPlane.x) * scale;
+    const landingY = launchReadyPlane.y + (centerTarget.y - launchReadyPlane.y) * scale;
+    const durationSec = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
+      ? FIELD_FLIGHT_DURATION_SEC
+      : 1;
+    const vx = (landingX - launchReadyPlane.x) / durationSec;
+    const vy = (landingY - launchReadyPlane.y) / durationSec;
+
+    const launchResult = issueAIMove(launchReadyPlane, vx, vy, {
+      source: "simple_center_launch",
+      goalName: "simple_center_launch",
+    });
+
+    aiMoveScheduled = false;
+    if(!launchResult?.ok){
+      advanceTurn();
+    }
+  }, safeDelayMs);
+
+  return {
+    ok: true,
+    reasonCode: "ai_move_scheduled",
+    delayMs: safeDelayMs,
+  };
 }
 
 
@@ -32644,11 +32753,16 @@ function runPreFallbackExtraProbe(modeContext = {}, chosenGoal = null){
 }
 // AI CONTRACT: before changing turn-level AI behavior, align with docs/AI_BEHAVIOR_CONTRACT.md
 function runAiTurnV2(context = {}){
-  return triggerComputerAiRemovedHardFail("runAiTurnV2");
+  return scheduleComputerMoveWithCargoGate(performance.now(), AI_MOVE_INITIAL_DELAY_MS, {
+    source: "runAiTurnV2",
+    context,
+  });
 }
 
 function doComputerMove(){
-  return triggerComputerAiRemovedHardFail("doComputerMove");
+  return scheduleComputerMoveWithCargoGate(performance.now(), AI_MOVE_INITIAL_DELAY_MS, {
+    source: "doComputerMove",
+  });
 }
 
 
@@ -37220,17 +37334,15 @@ function runAiLaunchSessionTick(now = performance.now()){
 }
 
 function issueAIMove(plane, vx, vy, options = {}){
-  logAiDecision("issue_ai_move_removed_hard_fail", {
-    planeId: plane?.id ?? null,
-    reasonCode: "issue_ai_move_removed_hard_fail",
-    source: options?.source || null,
-    goal: aiRoundState?.currentGoal || null,
-  });
-  triggerComputerAiRemovedHardFail("issue_ai_move_removed_hard_fail");
-  return {
-    ok: false,
-    reason: "issue_ai_move_removed_hard_fail",
-  };
+  const validation = validateAiLaunchMoveCandidate({ plane, vx, vy });
+  if(!validation.ok){
+    return {
+      ok: false,
+      reason: validation.reason || "invalid_move",
+      message: validation.message || null,
+    };
+  }
+  return runLaunchReleaseStage({ plane, vx, vy, actor: "computer" });
 }
 
 function destroyAllPlanesWithoutScoring(){
@@ -37418,7 +37530,9 @@ function advanceTurn(){
   invalidateAiPlanningState("turn_advanced");
   if(turnColors[turnIndex] === "blue" && gameMode === "computer"){
     aiMoveScheduled = false;
-    triggerComputerAiRemovedHardFail("advance_turn_hard_fail");
+    scheduleComputerMoveWithCargoGate(performance.now(), AI_MOVE_INITIAL_DELAY_MS, {
+      trigger: "advance_turn",
+    });
   }
 
   // В этой игре пропуск хода как механика не поддерживается:
@@ -37607,9 +37721,15 @@ function gameDraw(){
 
   updateNukeTimeline(now);
 
-  // Старый runtime ИИ удалён: при ходе компьютера показываем явный hard-fail сигнал.
-  if(gameMode === "computer" && turnColors?.[turnIndex] === "blue" && flyingPoints.length === 0){
-    triggerComputerAiRemovedHardFail("game_draw_tick");
+  if(
+    gameMode === "computer"
+    && turnColors?.[turnIndex] === "blue"
+    && flyingPoints.length === 0
+    && !aiMoveScheduled
+  ){
+    scheduleComputerMoveWithCargoGate(performance.now(), AI_MOVE_CARGO_RETRY_DELAY_MS, {
+      trigger: "game_draw_tick_recovery",
+    });
   }
 
   for(const aa of aaUnits){
