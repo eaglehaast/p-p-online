@@ -9639,15 +9639,7 @@ const MAX_FLIGHT_RANGE_CELLS = 50;
 const MIN_ACCURACY_PERCENT = 0;
 const MAX_ACCURACY_PERCENT = 100;
 const MAX_SPREAD_DEG       = 12;
-// Переключатель движка ИИ: сервисный слой работает только по схеме v2.
-const AI_ENGINE_MODE = "v2"; // Сервисный слой работает только по v2-маршруту.
-const AI_V2_INVENTORY_PHASE = (() => {
-  const phaseFromWindow = (typeof window !== "undefined")
-    ? window.AI_V2_INVENTORY_PHASE
-    : undefined;
-  const rawValue = Number.isFinite(phaseFromWindow) ? phaseFromWindow : 3;
-  return Math.max(0, Math.min(3, Math.trunc(rawValue)));
-})();
+const AI_INVENTORY_PHASE_DEFAULT = 3;
 const AI_USE_GOAL_PRIORITY_MODEL = true;
 const AI_MAX_ANGLE_DEVIATION = 0.25; // ~14.3°
 const AI_MIRROR_FIRST_BOUNCE_MIN_DISTANCE = CARGO_SPAWN_SAFE_RADIUS * 0.75;
@@ -9659,8 +9651,6 @@ const AI_MIRROR_SCORE_PRESSURE_BONUS = 0.12;
 const AI_MIRROR_SCORE_BLOCKED_DIRECT_BONUS = 0.06;
 
 if(typeof window !== "undefined"){
-  window.AI_ENGINE_MODE = AI_ENGINE_MODE;
-  window.AI_V2_INVENTORY_PHASE = AI_V2_INVENTORY_PHASE;
   window.AI_USE_GOAL_PRIORITY_MODEL = AI_USE_GOAL_PRIORITY_MODEL;
 }
 
@@ -12924,87 +12914,24 @@ function buildAiV2ReserveDiagnosticsReport(source){
   return report;
 }
 
-function exportAiV2ReserveDiagnosticsReportJson(){
-  const snapshot = getAiSelfAnalyzerSnapshot({ includeHistory: true });
-  const source = snapshot?.activeMatch || snapshot?.latestFinishedMatch;
-
-  if(!source){
-    return {
-      reportType: "ai_v2_reserve_diagnostics_report",
-      generatedAt: safeNowIso(),
-      sourceStartedAt: null,
-      sourceFinishedAt: null,
-      status: "insufficient_data",
-      statusMessage: "Нет данных матча для диагностики внутренних запасных шагов v2.",
-      fallbackRootCauseStats: {},
-      candidateGenerationStats: {},
-      candidateFunnelStats: {},
-      firstBlockingObjectStats: {},
-      blockedSegmentStats: {},
-      specialRouteFailureStats: {},
-      gapAfterBounceDetailedStats: {
-        total: 0,
-        topRejectReasons: [],
-        topBlockingObjectTypes: [],
-        segmentLabelDistribution: { after_bounce: 0, final_approach: 0, post_gap_positioning: 0, unknown: 0 },
-        samples: [],
-        afterBounceSourceSamples: [],
-      },
-      ricochetRejectDetailedStats: {
-        total: 0,
-        samples: [],
-      },
-      gapAfterBounceSamples: [],
-      fallbackEpisodeSamples: [],
-      summary: ["Недостаточно данных для v2-отчёта."],
-    };
-  }
-
-  const report = buildAiV2ReserveDiagnosticsReport(source);
-  if(typeof document === "undefined"){
-    return report;
-  }
-
-  const payload = JSON.stringify(report, null, 2);
-  const blob = new Blob([payload], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  const suffix = safeNowIso().replace(/[:.]/g, "-");
-  link.href = url;
-  link.download = `ai-v2-reserve-diagnostics-report-${suffix}.json`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-
-  return report;
+function oldAiDebugApiRemoved(apiName){
+  return {
+    ok: false,
+    api: apiName || null,
+    reasonCode: "old_ai_debug_api_removed",
+    message: "Old AI debug/export API removed. New AI debug API is not available yet.",
+  };
 }
+
+function exportAiV2ReserveDiagnosticsReportJson(){
+  return oldAiDebugApiRemoved("exportAiV2ReserveDiagnosticsReportJson");
+}
+
 
 function DEBUG_AI_GAP_AFTER_BOUNCE_REPORT(){
-  const reserveReport = exportAiV2ReserveDiagnosticsReportJson();
-  const compact = {
-    reportType: "ai_gap_after_bounce_report",
-    generatedAt: reserveReport?.generatedAt || safeNowIso(),
-    sourceStartedAt: reserveReport?.sourceStartedAt || null,
-    sourceFinishedAt: reserveReport?.sourceFinishedAt || null,
-    gapAfterBounceDetailedStats: reserveReport?.gapAfterBounceDetailedStats || {
-      total: 0,
-      topRejectReasons: [],
-      topBlockingObjectTypes: [],
-      segmentLabelDistribution: { after_bounce: 0, final_approach: 0, post_gap_positioning: 0, unknown: 0 },
-      samples: [],
-      afterBounceSourceSamples: [],
-    },
-    ricochetRejectDetailedStats: reserveReport?.ricochetRejectDetailedStats || {
-      total: 0,
-      samples: [],
-    },
-    gapAfterBounceSamples: Array.isArray(reserveReport?.gapAfterBounceSamples)
-      ? reserveReport.gapAfterBounceSamples
-      : [],
-  };
-  return compact;
+  return oldAiDebugApiRemoved("DEBUG_AI_GAP_AFTER_BOUNCE_REPORT");
 }
+
 
 function exportAiSelfAnalyzerGapJson(){
   const snapshot = getAiSelfAnalyzerSnapshot({ includeHistory: true });
@@ -13194,273 +13121,14 @@ function buildStableDiagnosticsMetricsBundle({ turnsReport, gapReport, reserveRe
 }
 
 function exportAiV2DecisionAuditReportJson(){
-  const turnsReport = exportAiSelfAnalyzerTurnsJson();
-  const gapReport = exportPlayerVsAiGapReportJson();
-  const reserveReport = exportAiV2ReserveDiagnosticsReportJson();
-  const stableDiagnosticsMetrics = buildStableDiagnosticsMetricsBundle({
-    turnsReport,
-    gapReport,
-    reserveReport,
-  });
-
-  const summary = {
-    status: "ok",
-    statusMessage: "Сводный отчёт по решениям ИИ (v2) успешно собран.",
-    sourceStartedAt: turnsReport?.sourceStartedAt || gapReport?.sourceStartedAt || reserveReport?.sourceStartedAt || null,
-    sourceFinishedAt: turnsReport?.sourceFinishedAt || gapReport?.sourceFinishedAt || reserveReport?.sourceFinishedAt || null,
-    aiDecisionEventsCount: Number.isFinite(turnsReport?.aiDecisionEventsCount)
-      ? turnsReport.aiDecisionEventsCount
-      : 0,
-    humanDecisionEventsCount: Number.isFinite(turnsReport?.humanDecisionEventsCount)
-      ? turnsReport.humanDecisionEventsCount
-      : 0,
-    fallbackRate: Number.isFinite(gapReport?.gapMetrics?.aiDecisionMetrics?.fallbackRate)
-      ? gapReport.gapMetrics.aiDecisionMetrics.fallbackRate
-      : null,
-    noMoveRate: Number.isFinite(gapReport?.gapMetrics?.aiDecisionMetrics?.noMoveRate)
-      ? gapReport.gapMetrics.aiDecisionMetrics.noMoveRate
-      : null,
-    reserveEpisodes: Number.isFinite(reserveReport?.fallbackEpisodeSamples?.length)
-      ? reserveReport.fallbackEpisodeSamples.length
-      : 0,
-    aiMoveExceptionEvents: Number.isFinite(reserveReport?.fallbackEpisodeDiagnostics?.aiMoveExceptionEvents)
-      ? reserveReport.fallbackEpisodeDiagnostics.aiMoveExceptionEvents
-      : 0,
-    technicalExceptionEvents: Number.isFinite(reserveReport?.fallbackEpisodeDiagnostics?.technicalExceptionEvents)
-      ? reserveReport.fallbackEpisodeDiagnostics.technicalExceptionEvents
-      : 0,
-    logicalDeadlockEvents: Number.isFinite(reserveReport?.fallbackEpisodeDiagnostics?.logicalDeadlockEvents)
-      ? reserveReport.fallbackEpisodeDiagnostics.logicalDeadlockEvents
-      : 0,
-    failSafeTurnAdvanceEpisodes: Number.isFinite(reserveReport?.fallbackEpisodeDiagnostics?.failSafeTurnAdvanceEpisodes)
-      ? reserveReport.fallbackEpisodeDiagnostics.failSafeTurnAdvanceEpisodes
-      : 0,
-    failSafeTurnShareAmongAiTurns: Number.isFinite(reserveReport?.fallbackEpisodeDiagnostics?.failSafeTurnShareAmongAiTurns)
-      ? reserveReport.fallbackEpisodeDiagnostics.failSafeTurnShareAmongAiTurns
-      : 0,
-    stableMetrics: stableDiagnosticsMetrics,
-  };
-
-  if(!turnsReport){
-    summary.status = "insufficient_data";
-    summary.statusMessage = "Недостаточно данных: нет активного или завершённого матча для сводного отчёта ИИ (v2).";
-  }
-
-  const report = {
-    reportType: "ai_v2_decision_audit_report",
-    generatedAt: safeNowIso(),
-    engineMode: AI_ENGINE_MODE,
-    summary,
-    reports: {
-      turns: turnsReport,
-      qualityGap: gapReport,
-      reserveDiagnostics: reserveReport,
-    },
-    stableMetrics: stableDiagnosticsMetrics,
-    usageHint: {
-      forTeam: "Отправьте этот JSON целиком для анализа качества решений и мотивации ИИ.",
-      command: "window.exportAiV2DecisionAuditReportJson()",
-      debugAlias: "window.AI_DEBUG_CMD(\"v2-report\")",
-    },
-  };
-
-  if(typeof document === "undefined"){
-    return report;
-  }
-
-  const payload = JSON.stringify(report, null, 2);
-  const blob = new Blob([payload], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  const suffix = safeNowIso().replace(/[:.]/g, "-");
-  link.href = url;
-  link.download = `ai-v2-decision-audit-report-${suffix}.json`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-
-  return report;
+  return oldAiDebugApiRemoved("exportAiV2DecisionAuditReportJson");
 }
+
 
 function exportAiV2DecisionAuditCompactReportJson(){
-  const turnsReport = exportAiSelfAnalyzerTurnsJson();
-  const gapReport = exportPlayerVsAiGapReportJson();
-  const reserveReport = exportAiV2ReserveDiagnosticsReportJson();
-  const stableDiagnosticsMetrics = buildStableDiagnosticsMetricsBundle({
-    turnsReport,
-    gapReport,
-    reserveReport,
-  });
-  const aiDecisionEvents = Array.isArray(turnsReport?.aiMotivation?.decisionEvents)
-    ? turnsReport.aiMotivation.decisionEvents
-    : [];
-  const reserveSamples = Array.isArray(reserveReport?.fallbackEpisodeSamples)
-    ? reserveReport.fallbackEpisodeSamples
-    : [];
-  const reserveSummaryLines = Array.isArray(reserveReport?.summary)
-    ? reserveReport.summary.filter((line) => typeof line === "string" && line.trim().length > 0).slice(0, 6)
-    : [];
-
-  const makeTopEntries = (stats, limit = 3) => Object.entries(stats || {})
-    .filter(([, count]) => Number.isFinite(count) && count > 0)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, limit)
-    .map(([code, count]) => ({ code, count }));
-
-  const frequencyBy = (items, getter, limit = 5) => {
-    const stats = {};
-    (Array.isArray(items) ? items : []).forEach((item) => {
-      const key = getter(item);
-      if(typeof key !== "string" || key.trim().length === 0) return;
-      stats[key] = (stats[key] || 0) + 1;
-    });
-    return makeTopEntries(stats, limit);
-  };
-
-  const compactDecisionTrail = aiDecisionEvents.slice(-12).map((event, index, arr) => {
-    const selectedMove = event?.selectedMove || null;
-    return {
-      sequence: index + 1,
-      reverseOffset: arr.length - index,
-      at: event?.at || null,
-      roundNumber: event?.roundNumber ?? null,
-      turnColor: event?.turnColor || null,
-      stage: event?.stage || null,
-      goal: event?.goal || null,
-      planeId: event?.planeId || null,
-      routeClass: event?.routeClass || selectedMove?.routeClass || null,
-      selectedMove: selectedMove ? {
-        decisionReason: selectedMove.decisionReason || null,
-        goalName: selectedMove.goalName || null,
-        routeClass: selectedMove.routeClass || null,
-        totalDistance: Number.isFinite(selectedMove.totalDist) ? selectedMove.totalDist : null,
-      } : null,
-      reasonCodes: Array.isArray(event?.reasonCodes) ? event.reasonCodes.slice(0, 6) : [],
-      rejectReasons: Array.isArray(event?.rejectReasons) ? event.rejectReasons.slice(0, 6) : [],
-      difficultySignals: [
-        ...(Array.isArray(event?.reasonCodes) ? event.reasonCodes : []),
-        ...(Array.isArray(event?.rejectReasons) ? event.rejectReasons : []),
-      ]
-        .filter((value, idx, arr2) => typeof value === "string" && value.trim().length > 0 && arr2.indexOf(value) === idx)
-        .slice(0, 6),
-      selected: Boolean(selectedMove),
-    };
-  });
-
-  const difficultyDigest = {
-    topReasonCodes: frequencyBy(
-      aiDecisionEvents.flatMap((event) => Array.isArray(event?.reasonCodes) ? event.reasonCodes : []),
-      (code) => code,
-      8
-    ),
-    topRejectReasons: frequencyBy(
-      aiDecisionEvents.flatMap((event) => Array.isArray(event?.rejectReasons) ? event.rejectReasons : []),
-      (code) => code,
-      8
-    ),
-    topStagesWithoutMove: frequencyBy(
-      aiDecisionEvents.filter((event) => !event?.selectedMove),
-      (event) => event?.stage || null,
-      5
-    ),
-    topSelectedDecisionReasons: frequencyBy(
-      aiDecisionEvents.filter((event) => event?.selectedMove),
-      (event) => event?.selectedMove?.decisionReason || null,
-      6
-    ),
-    topSelectedRouteClasses: frequencyBy(
-      aiDecisionEvents.filter((event) => event?.selectedMove),
-      (event) => event?.selectedMove?.routeClass || event?.routeClass || null,
-      4
-    ),
-    reserveRootCauses: makeTopEntries(reserveReport?.fallbackRootCauseStats, 6),
-    reserveSummaryLines,
-  };
-
-  const reserveEpisodesCompact = reserveSamples.slice(-5).map((episode, index, arr) => ({
-    sequence: index + 1,
-    reverseOffset: arr.length - index,
-    at: episode?.at || null,
-    roundNumber: episode?.roundNumber ?? null,
-    turnColor: episode?.turnColor || null,
-    stage: episode?.stage || null,
-    fallbackGoal: episode?.fallbackGoal || null,
-    fallbackDecisionReason: episode?.fallbackDecisionReason || null,
-    directTopRejectReason: episode?.directSummary?.topRejectReason || null,
-    gapTopRejectReason: episode?.gapSummary?.topRejectReason || null,
-    ricochetTopRejectReason: episode?.ricochetSummary?.topRejectReason || null,
-  }));
-
-  const summary = {
-    status: turnsReport ? "ok" : "insufficient_data",
-    statusMessage: turnsReport
-      ? "Короткий отчёт по решениям ИИ успешно собран."
-      : "Недостаточно данных: нет активного или завершённого матча для короткого отчёта ИИ.",
-    sourceStartedAt: turnsReport?.sourceStartedAt || gapReport?.sourceStartedAt || reserveReport?.sourceStartedAt || null,
-    sourceFinishedAt: turnsReport?.sourceFinishedAt || gapReport?.sourceFinishedAt || reserveReport?.sourceFinishedAt || null,
-    aiDecisionEventsCount: Number.isFinite(turnsReport?.aiDecisionEventsCount) ? turnsReport.aiDecisionEventsCount : 0,
-    humanDecisionEventsCount: Number.isFinite(turnsReport?.humanDecisionEventsCount) ? turnsReport.humanDecisionEventsCount : 0,
-    fallbackRate: Number.isFinite(gapReport?.gapMetrics?.aiDecisionMetrics?.fallbackRate)
-      ? gapReport.gapMetrics.aiDecisionMetrics.fallbackRate
-      : null,
-    noMoveRate: Number.isFinite(gapReport?.gapMetrics?.aiDecisionMetrics?.noMoveRate)
-      ? gapReport.gapMetrics.aiDecisionMetrics.noMoveRate
-      : null,
-    reserveEpisodes: reserveSamples.length,
-    aiMoveExceptionEvents: Number.isFinite(reserveReport?.fallbackEpisodeDiagnostics?.aiMoveExceptionEvents)
-      ? reserveReport.fallbackEpisodeDiagnostics.aiMoveExceptionEvents
-      : 0,
-    technicalExceptionEvents: Number.isFinite(reserveReport?.fallbackEpisodeDiagnostics?.technicalExceptionEvents)
-      ? reserveReport.fallbackEpisodeDiagnostics.technicalExceptionEvents
-      : 0,
-    logicalDeadlockEvents: Number.isFinite(reserveReport?.fallbackEpisodeDiagnostics?.logicalDeadlockEvents)
-      ? reserveReport.fallbackEpisodeDiagnostics.logicalDeadlockEvents
-      : 0,
-    failSafeTurnAdvanceEpisodes: Number.isFinite(reserveReport?.fallbackEpisodeDiagnostics?.failSafeTurnAdvanceEpisodes)
-      ? reserveReport.fallbackEpisodeDiagnostics.failSafeTurnAdvanceEpisodes
-      : 0,
-    failSafeTurnShareAmongAiTurns: Number.isFinite(reserveReport?.fallbackEpisodeDiagnostics?.failSafeTurnShareAmongAiTurns)
-      ? reserveReport.fallbackEpisodeDiagnostics.failSafeTurnShareAmongAiTurns
-      : 0,
-    stableMetrics: stableDiagnosticsMetrics,
-  };
-
-  const report = {
-    reportType: "ai_v2_decision_audit_compact_report",
-    generatedAt: safeNowIso(),
-    engineMode: AI_ENGINE_MODE,
-    summary,
-    stableMetrics: stableDiagnosticsMetrics,
-    lastAiDecisions: compactDecisionTrail,
-    difficultyDigest,
-    recentReserveEpisodes: reserveEpisodesCompact,
-    usageHint: {
-      forTeam: "Отправьте этот JSON, если нужен короткий и читаемый отчёт: какие ходы ИИ выбирал и где чаще всего упирался.",
-      command: "window.exportAiV2DecisionAuditCompactReportJson()",
-      debugAlias: "window.AI_DEBUG_CMD(\"v2-report-compact\")",
-      fullReportCommand: "window.exportAiV2DecisionAuditReportJson()",
-    },
-  };
-
-  if(typeof document === "undefined"){
-    return report;
-  }
-
-  const payload = JSON.stringify(report, null, 2);
-  const blob = new Blob([payload], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  const suffix = safeNowIso().replace(/[:.]/g, "-");
-  link.href = url;
-  link.download = `ai-v2-decision-audit-compact-report-${suffix}.json`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-
-  return report;
+  return oldAiDebugApiRemoved("exportAiV2DecisionAuditCompactReportJson");
 }
+
 
 function getAiSelfAnalyzerSnapshot(options = {}){
   const includeHistory = Boolean(options?.includeHistory);
@@ -13596,37 +13264,7 @@ function forceResetCargoNow(){
   return result;
 }
 
-function AI_DEBUG_CMD(command, arg){
-  const normalized = typeof command === "string" ? command.trim().toLowerCase() : "";
-  if(normalized === "reset-cargo"){
-    return forceResetCargoNow();
-  }
-  const response = {
-    ok: false,
-    command: normalized || null,
-    message: "Old AI removed. AI debug commands are disabled.",
-  };
-  console.info('[AI_DEBUG]', response.message, response);
-  return response;
-}
-
-
 if(typeof window !== "undefined"){
-  const oldAiRemovedStub = () => ({
-    ok: false,
-    message: "Old AI removed. This API is disabled.",
-  });
-  window.exportLatestAiSelfAnalyzerJson = oldAiRemovedStub;
-  window.exportAiSelfAnalyzerTurnsJson = oldAiRemovedStub;
-  window.exportAiSelfAnalyzerGapJson = oldAiRemovedStub;
-  window.exportPlayerVsAiGapReportJson = oldAiRemovedStub;
-  window.exportAiV2DecisionAuditReportJson = oldAiRemovedStub;
-  window.exportAiV2DecisionAuditCompactReportJson = oldAiRemovedStub;
-  window.exportAiV2ReserveDiagnosticsReportJson = oldAiRemovedStub;
-  window.exportAiFuelTrainingReportJson = oldAiRemovedStub;
-  window.DEBUG_AI_GAP_AFTER_BOUNCE_REPORT = oldAiRemovedStub;
-  window.getAiSelfAnalyzerSnapshot = oldAiRemovedStub;
-  window.AI_DEBUG_CMD = AI_DEBUG_CMD;
   window.RESET_CARGO = forceResetCargoNow;
 }
 
@@ -14050,6 +13688,46 @@ const AI_MOVE_INITIAL_DELAY_MS = 300;
 const AI_MOVE_CARGO_RETRY_DELAY_MS = 200;
 const AI_MOVE_CARGO_WAIT_TIMEOUT_MS = 1800;
 const AI_TURN_MIN_RELEASE_BUDGET_MS = 2000;
+let aiRemovalHardFailState = {
+  notifiedTurnCommitSequence: null,
+};
+
+function triggerComputerAiRemovedHardFail(reason = "unspecified"){
+  if(
+    isGameOver
+    || gameMode !== "computer"
+    || turnColors?.[turnIndex] !== "blue"
+  ){
+    return { ok: false, reasonCode: "ai_removed_hard_fail_not_applicable" };
+  }
+
+  aiMoveScheduled = false;
+  clearAiPostInventoryLaunchTimeout(`ai_removed_hard_fail:${reason}`);
+  clearAiLaunchSessionWatchdog();
+  aiLaunchSession = null;
+  cleanupHandle();
+
+  if(aiRemovalHardFailState.notifiedTurnCommitSequence !== turnCommitSequence){
+    aiRemovalHardFailState.notifiedTurnCommitSequence = turnCommitSequence;
+    showAiLaunchNotice("Старый AI удалён. Новый AI ещё не внедрён: компьютерный ход недоступен.", {
+      persistent: true,
+      kind: "ai_removed_hard_fail",
+    });
+    console.error("[AI_REMOVED_HARD_FAIL]", {
+      reason,
+      turnCommitSequence,
+      turnNumber: turnAdvanceCount,
+      gameMode,
+      turnColor: turnColors?.[turnIndex] || null,
+    });
+  }
+
+  return {
+    ok: false,
+    reasonCode: "ai_removed_hard_fail",
+    message: "Old AI removed. New AI is not implemented yet.",
+  };
+}
 
 function resetAiTurnTimingState(){
   aiTurnTimingState = {
@@ -14140,6 +13818,7 @@ function invalidateAiPlanningState(reason = "unspecified"){
   aiLaunchSession = null;
   cleanupHandle();
   clearAiLaunchStallNotice();
+  aiRemovalHardFailState.notifiedTurnCommitSequence = null;
   if(reason === "turn_advanced" || reason === "round_reset" || reason === "game_reset"){
     resetAiTurnTimingState();
   }
@@ -14162,117 +13841,9 @@ function buildCommittedEnemySnapshot(){
 }
 
 function tryStartAiPlanningFromCommittedState(trigger = "unspecified"){
-  if(
-    isGameOver
-    || gameMode !== "computer"
-    || turnColors[turnIndex] !== "blue"
-    || flyingPoints.length > 0
-  ){
-    return false;
-  }
-
-  if(aiMoveScheduled){
-    const now = performance.now();
-    const turnStartedAt = Number.isFinite(aiTurnTimingState?.turnStartedAt) ? aiTurnTimingState.turnStartedAt : 0;
-    const scheduledForMs = turnStartedAt > 0 ? Math.max(0, now - turnStartedAt) : 0;
-    const schedulerLikelyStalled = !aiLaunchSession && scheduledForMs >= (AI_MOVE_INITIAL_DELAY_MS + AI_MOVE_CARGO_WAIT_TIMEOUT_MS + 600);
-
-    if(!schedulerLikelyStalled){
-      return false;
-    }
-
-    logAiDecision("ai_scheduler_stall_recovered", {
-      trigger,
-      reasonCode: "ai_scheduler_stall_recovered",
-      scheduledForMs: Math.round(scheduledForMs),
-      aiLaunchSessionActive: Boolean(aiLaunchSession),
-      ...getAiTurnTimingSnapshot(),
-    });
-    aiMoveScheduled = false;
-  }
-
-  const playerMoveCommitFinishedBeforePlannerStart = Boolean(
-    lastPlayerMoveCommitMeta.finished
-    && lastPlayerMoveCommitMeta.turnCommitSequence === turnCommitSequence,
-  );
-  const initialAiTurnWithoutPlayerCommit = Boolean(
-    !lastPlayerMoveCommitMeta.finished
-    && turnAdvanceCount === 0,
-  );
-  const staleCommitMetaRecovered = Boolean(
-    !playerMoveCommitFinishedBeforePlannerStart
-    && !initialAiTurnWithoutPlayerCommit
-    && turnAdvanceCount > 0
-    && turnCommitSequence > 0
-    && !lastPlayerMoveCommitMeta.finished
-    && lastPlayerMoveCommitMeta.turnCommitSequence < turnCommitSequence
-  );
-  const commitMetaMismatch = !playerMoveCommitFinishedBeforePlannerStart
-    && !initialAiTurnWithoutPlayerCommit
-    && !staleCommitMetaRecovered;
-  if(staleCommitMetaRecovered){
-    logAiDecision("ai_planner_recovered_from_stale_player_commit_meta", {
-      trigger,
-      turnNumber: turnAdvanceCount,
-      turnCommitSequence,
-      lastPlayerMoveCommitMeta: {
-        turnCommitSequence: lastPlayerMoveCommitMeta.turnCommitSequence,
-        turnNumber: lastPlayerMoveCommitMeta.turnNumber,
-        finished: Boolean(lastPlayerMoveCommitMeta.finished),
-      },
-      reasonCode: "stale_player_commit_meta",
-      ...getAiTurnTimingSnapshot(),
-    });
-  }
-  if(commitMetaMismatch){
-    // Жёсткая привязка к метаданным коммита может зациклить ход ИИ:
-    // матч уже на синем ходе, а planner молча не стартует из-за расхождения служебных метаданных.
-    // В такой ситуации безопаснее запустить планировщик и зафиксировать обход.
-    logAiDecision("ai_planner_commit_guard_bypassed", {
-      trigger,
-      turnNumber: turnAdvanceCount,
-      turnCommitSequence,
-      lastPlayerMoveCommitMeta: {
-        turnCommitSequence: lastPlayerMoveCommitMeta.turnCommitSequence,
-        turnNumber: lastPlayerMoveCommitMeta.turnNumber,
-        finished: Boolean(lastPlayerMoveCommitMeta.finished),
-      },
-      reasonCode: "commit_meta_mismatch_bypassed",
-      ...getAiTurnTimingSnapshot(),
-    });
-  }
-
-  const snapshot = buildCommittedEnemySnapshot();
-  aiPlanningSnapshotCache = snapshot;
-  const snapshotRebuiltThisTurn = true;
-  const staleCachedTargetDetected = Boolean(aiCachedTargetMemory);
-  aiCachedTargetMemory = null;
-  const cachedTargetReused = false;
-
-  aiMoveScheduled = true;
-  const plannerStartLabel = `turn_commit_${turnCommitSequence}_t${turnAdvanceCount}`;
-  ensureAiVisiblePreparation("planner_start_committed_state", snapshot.rebuiltAt, "Компьютер готовится к ходу…");
-  logAiDecision("ai_planner_start_committed_state", {
-    trigger,
-    turnNumber: turnAdvanceCount,
-    turnCommitSequence,
-    plannerStartLabel,
-    plannerStartAtMs: Number(snapshot.rebuiltAt.toFixed(2)),
-    snapshotRebuiltThisTurn,
-    cachedTargetReused,
-    staleCachedTargetDetected,
-    playerMoveCommitFinishedBeforePlannerStart,
-    enemyCommittedPositions: snapshot.enemies,
-    ...getAiTurnTimingSnapshot(),
-  });
-
-  scheduleComputerMoveWithCargoGate(aiTurnTimingState.turnStartedAt || performance.now(), AI_MOVE_INITIAL_DELAY_MS, {
-    trigger,
-    turnCommitSequence,
-    plannerStartLabel,
-  });
-  return true;
+  return triggerComputerAiRemovedHardFail(`tryStartAiPlanningFromCommittedState:${trigger}`);
 }
+
 
 function hasAnimatingCargo(){
   return cargoState.some(cargo => cargo?.state === "animating");
@@ -14485,137 +14056,9 @@ function runAiTechnicalRecoveryWithSafeMine(context, plannedMove, options = {}){
 }
 
 function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayMs = AI_MOVE_INITIAL_DELAY_MS, planningContext = null){
-  const launchGateStartedAt = Number.isFinite(startedAt) ? startedAt : performance.now();
-  ensureAiVisiblePreparation("launch_gate_scheduled", launchGateStartedAt, "Компьютер готовится к ходу…");
-
-  setTimeout(() => {
-    const runComputerMoveSafely = (reasonCode) => {
-      try {
-        ensureAiVisiblePreparation("launch_gate_ready", performance.now(), "Компьютер прицеливается…");
-        doComputerMove();
-      } catch (error) {
-        const exceptionContext = buildAiExceptionContextSnapshot(reasonCode);
-        const primaryCauseType = classifyAiMoveStageException(error, {
-          stage: "launch_gate_do_computer_move",
-          plannedMove: null,
-        });
-        logAiDecision("ai_move_stage_exception", {
-          stage: "launch_gate_do_computer_move",
-          source: "scheduleComputerMoveWithCargoGate",
-          routeClass: null,
-          message: error?.message || String(error),
-          reasonCategory: "technical_exception",
-          reasonCode: "do_computer_move_exception",
-          reasonCodes: [
-            "do_computer_move_stage_exception",
-            "do_computer_move_exception",
-            primaryCauseType,
-          ],
-          primaryCauseType,
-          planeId: null,
-          goal: exceptionContext.goal,
-          decisionReason: null,
-        });
-        logAiDecision("ai_move_exception_fail_safe", {
-          reasonCategory: "technical_exception",
-          reasonCode: "do_computer_move_exception",
-          primaryCauseType,
-          triggerReasonCode: reasonCode || null,
-          message: error?.message || String(error),
-          roundNumber: exceptionContext.roundNumber,
-          turnColor: exceptionContext.turnColor,
-          goal: exceptionContext.goal,
-          checkedCandidateCount: exceptionContext.checkedCandidateCount,
-          checkedCandidates: exceptionContext.checkedCandidates,
-          lastRejectedCandidateReason: exceptionContext.lastRejectedCandidateReason,
-          delayMs,
-          waitElapsedMs: Math.round(performance.now() - launchGateStartedAt),
-          ...getAiTurnTimingSnapshot(),
-        });
-        aiMoveScheduled = false;
-        if (typeof failSafeAdvanceTurn === "function") {
-          failSafeAdvanceTurn("ai_move_exception", {
-            goal: exceptionContext.goal || "ai_move_exception",
-            reasonCodes: ["ai_move_exception", "technical_exception", "fail_safe_turn_advance"],
-            reasonCategory: "technical_exception",
-            reasonCode: "do_computer_move_exception",
-            rejectReasons: ["do_computer_move_exception"],
-            errorMessage: error?.message || String(error),
-            roundNumber: exceptionContext.roundNumber,
-            turnColor: exceptionContext.turnColor,
-            checkedCandidates: exceptionContext.checkedCandidates,
-            checkedCandidateCount: exceptionContext.checkedCandidateCount,
-            lastRejectedCandidateReason: exceptionContext.lastRejectedCandidateReason,
-          });
-          return;
-        }
-        advanceTurn();
-      }
-    };
-
-    if (
-      isGameOver
-      || gameMode !== "computer"
-      || turnColors[turnIndex] !== "blue"
-      || flyingPoints.length > 0
-    ) {
-      aiMoveScheduled = false;
-      clearAiLaunchStallNotice();
-      return;
-    }
-
-    if(
-      planningContext
-      && Number.isFinite(planningContext.turnCommitSequence)
-      && planningContext.turnCommitSequence !== turnCommitSequence
-    ){
-      logAiDecision("ai_planner_start_dropped_stale_commit", {
-        plannedTurnCommitSequence: planningContext.turnCommitSequence,
-        currentTurnCommitSequence: turnCommitSequence,
-        plannerStartLabel: planningContext.plannerStartLabel || null,
-        ...getAiTurnTimingSnapshot(),
-      });
-      aiMoveScheduled = false;
-      clearAiLaunchStallNotice();
-      return;
-    }
-
-    const waitElapsedMs = Math.round(performance.now() - launchGateStartedAt);
-    if (hasAnimatingCargo()) {
-      ensureAiVisiblePreparation("waiting_for_cargo_animation", performance.now(), "Компьютер ждёт завершения анимации груза…");
-      if (waitElapsedMs >= AI_MOVE_CARGO_WAIT_TIMEOUT_MS) {
-        logAiDecision("ai_wait_timeout_reached", {
-          waitElapsedMs,
-          timeoutMs: AI_MOVE_CARGO_WAIT_TIMEOUT_MS,
-          delayMs,
-          ...getAiTurnTimingSnapshot(),
-        });
-        runComputerMoveSafely("cargo_wait_timeout");
-        return;
-      }
-
-      logAiDecision("ai_wait_for_cargo_animation", {
-        waitElapsedMs,
-        retryInMs: AI_MOVE_CARGO_RETRY_DELAY_MS,
-        delayMs,
-        ...getAiTurnTimingSnapshot(),
-      });
-      scheduleComputerMoveWithCargoGate(launchGateStartedAt, AI_MOVE_CARGO_RETRY_DELAY_MS, planningContext);
-      return;
-    }
-
-    if(delayMs > 0){
-      ensureAiVisiblePreparation("initial_launch_delay", performance.now(), "Компьютер готовится к запуску…");
-      logAiDecision("ai_launch_gate_delay_elapsed", {
-        waitElapsedMs,
-        delayMs,
-        ...getAiTurnTimingSnapshot(),
-      });
-    }
-
-    runComputerMoveSafely("cargo_gate_ready");
-  }, delayMs);
+  return triggerComputerAiRemovedHardFail("scheduleComputerMoveWithCargoGate");
 }
+
 
 /* ======= INIT ======= */
 function colorAngleOffset(color){
@@ -18308,7 +17751,7 @@ function createInitialAiRoundState(){
     },
     allowedMoveRisk: 0.7,
     lastPrimaryTurnstileBlocker: null,
-    inventoryPhase: AI_ENGINE_MODE === "v2" ? AI_V2_INVENTORY_PHASE : 3,
+    inventoryPhase: AI_INVENTORY_PHASE_DEFAULT,
     candidateFilterRelaxation: {
       turnNumber: null,
       applied: false,
@@ -26475,7 +25918,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   let afterInventoryState = beforeInventoryState;
   const activeInventoryPhase = Number.isFinite(aiRoundState?.inventoryPhase)
     ? Math.max(0, Math.min(3, Math.trunc(aiRoundState.inventoryPhase)))
-    : AI_V2_INVENTORY_PHASE;
+    : AI_INVENTORY_PHASE_DEFAULT;
   const allowStrategicInventoryPreparation = shouldProbeInventoryPreparedShotPlan(
     plannedMove?.goalName || aiRoundState?.currentGoal || "",
   );
@@ -33200,1094 +32643,15 @@ function runPreFallbackExtraProbe(modeContext = {}, chosenGoal = null){
     tried,
   };
 }
-const AI_NO_READY_PLANES_STALL_RECOVERY_THRESHOLD = 2;
-
-function getNoReadyAiPlanesStreak(){
-  if(!aiRoundState || typeof aiRoundState !== "object") return 0;
-  const streak = Number(aiRoundState.noReadyPlanesStreak);
-  if(!Number.isFinite(streak) || streak < 0) return 0;
-  return Math.floor(streak);
-}
-
-function setNoReadyAiPlanesStreak(value){
-  if(!aiRoundState || typeof aiRoundState !== "object") return 0;
-  const normalizedValue = Number.isFinite(value) && value > 0
-    ? Math.floor(value)
-    : 0;
-  aiRoundState.noReadyPlanesStreak = normalizedValue;
-  return normalizedValue;
-}
-
 // AI CONTRACT: before changing turn-level AI behavior, align with docs/AI_BEHAVIOR_CONTRACT.md
 function runAiTurnV2(context = {}){
-  if (gameMode!=="computer" || isGameOver) return;
-
-  if(aiRoundState && typeof aiRoundState === "object"){
-    aiRoundState.inventoryPhase = AI_V2_INVENTORY_PHASE;
-  }
-
-  const aiPlanes = points.filter((plane) => (
-    plane.color === "blue"
-    // Планирование и финальная проверка должны смотреть на одно и то же правило:
-    // иначе ИИ заранее выберет самолёт, который всё равно нельзя запустить.
-    && isPlaneLaunchStateReady(plane)
-  ));
-  const enemies = points.filter((p) => p.color === "green" && p.isAlive && !p.burning);
-  if(!aiPlanes.length || !enemies.length){
-    if(!aiPlanes.length){
-      const nextNoReadyStreak = setNoReadyAiPlanesStreak(getNoReadyAiPlanesStreak() + 1);
-      logAiDecision("ai_no_ready_planes_streak_incremented", {
-        source: "runAiTurnV2",
-        reasonCode: "no_ready_ai_planes",
-        noReadyPlanesStreak: nextNoReadyStreak,
-        threshold: AI_NO_READY_PLANES_STALL_RECOVERY_THRESHOLD,
-      });
-
-      if(nextNoReadyStreak >= AI_NO_READY_PLANES_STALL_RECOVERY_THRESHOLD){
-        const stallRecoveryAiPlanes = points.filter((plane) => (
-          plane?.color === "blue"
-          && plane?.isAlive === true
-          && plane?.burning !== true
-          && !flyingPoints.some((fp) => fp.plane === plane)
-        ));
-        const stallRecoveryContext = {
-          aiPlanes: rankAiPlanesForCurrentTurn(stallRecoveryAiPlanes),
-          enemies,
-        };
-
-        logAiDecision("ai_no_ready_planes_stall_recovery_started", {
-          source: "runAiTurnV2",
-          reasonCode: "no_ready_ai_planes_stall_recovery_started",
-          noReadyPlanesStreak: nextNoReadyStreak,
-          threshold: AI_NO_READY_PLANES_STALL_RECOVERY_THRESHOLD,
-          aiPlaneCount: stallRecoveryAiPlanes.length,
-          enemyCount: enemies.length,
-        });
-
-        const guaranteedMove = typeof getFailSafeGuaranteedDirectMove === "function"
-          ? getFailSafeGuaranteedDirectMove(stallRecoveryContext)
-          : null;
-        const guaranteedValidation = validateAiLaunchMoveCandidate(guaranteedMove);
-        if(guaranteedValidation.ok){
-          const launchResult = issueAIMove(
-            guaranteedMove.plane,
-            guaranteedMove.vx,
-            guaranteedMove.vy,
-            { isFallbackMove: true }
-          );
-          if(launchResult?.ok){
-            setNoReadyAiPlanesStreak(0);
-            logAiDecision("ai_no_ready_planes_stall_recovery_launched", {
-              source: "runAiTurnV2",
-              reasonCode: "no_ready_ai_planes_stall_recovery_launched",
-              planeId: guaranteedMove?.plane?.id ?? null,
-              noReadyPlanesStreakBeforeReset: nextNoReadyStreak,
-            });
-            showAiLaunchNotice("ИИ вышел из застоя аварийным запуском", {
-              persistent: false,
-              kind: "stall_recovery",
-            });
-            return;
-          }
-        }
-
-        logAiDecision("ai_no_ready_planes_stall_recovery_failed", {
-          source: "runAiTurnV2",
-          reasonCode: "no_ready_ai_planes_stall_recovery_failed",
-          noReadyPlanesStreak: nextNoReadyStreak,
-          validationRejectReason: guaranteedValidation?.reason || "invalid_guaranteed_direct_move",
-        });
-        return failSafeAdvanceTurn("no_ready_ai_planes_stall_recovery_failed", {
-          goal: "v2_safe_turn_resolution",
-          reasonCodes: [
-            "v2_safe_turn_resolution",
-            "no_ready_ai_planes",
-            "no_ready_ai_planes_stall_recovery_failed",
-          ],
-          rejectReasons: [
-            guaranteedValidation?.reason || "invalid_guaranteed_direct_move",
-            "no_ready_ai_planes_stall_recovery_failed",
-          ],
-          modeContext: stallRecoveryContext,
-        });
-      }
-    } else {
-      setNoReadyAiPlanesStreak(0);
-    }
-
-    logAiDecision("v2_safe_turn_resolution", {
-      reason: !aiPlanes.length ? "no_ready_ai_planes" : "no_alive_enemies",
-      aiPlaneCount: aiPlanes.length,
-      enemyCount: enemies.length,
-      source: "runAiTurnV2",
-    });
-    return failSafeAdvanceTurn("v2_safe_turn_resolution", {
-      goal: "v2_safe_turn_resolution",
-      reasonCodes: ["v2_safe_turn_resolution", !aiPlanes.length ? "no_ready_ai_planes" : "no_alive_enemies"],
-      rejectReasons: [!aiPlanes.length ? "no_ready_ai_planes" : "no_alive_enemies"],
-      modeContext: { aiPlanes, enemies },
-    });
-  }
-  setNoReadyAiPlanesStreak(0);
-
-  const modeContext = {
-    aiPlanes: rankAiPlanesForCurrentTurn(aiPlanes),
-    enemies,
-    shouldUseFlagsMode: isFlagsModeEnabled(),
-    availableEnemyFlags: isFlagsModeEnabled() ? getAvailableFlagsByColor("green") : [],
-    blueInventoryCount: getAvailableInventoryCount("blue"),
-  };
-  modeContext.aiRiskProfile = getAiRiskProfile(modeContext);
-  modeContext.defensivePriority = getBlueDefensivePriority(modeContext);
-  modeContext.criticalBlueFlagThreat = modeContext.defensivePriority?.quickFlagPickupThreat || null;
-  modeContext.groupKillPriorityPlan = buildShotPlan({ goalName: "triple_kill_priority" }, modeContext, {
-    forceMinimumKillCount: 2,
-  });
-
-  if(modeContext.groupKillPriorityPlan?.move && modeContext.groupKillPriorityPlan.killCountOnTrajectory >= 3){
-    aiRoundState.currentGoal = modeContext.groupKillPriorityPlan.goalName || "triple_kill_priority";
-    logAiDecision("triple_kill_priority_preserved", {
-      planeId: modeContext.groupKillPriorityPlan.move?.plane?.id ?? null,
-      enemyId: modeContext.groupKillPriorityPlan.move?.enemy?.id ?? null,
-      killCountOnTrajectory: modeContext.groupKillPriorityPlan.killCountOnTrajectory,
-      affectedEnemyIds: modeContext.groupKillPriorityPlan.multiKillContext?.affectedEnemyIds || [],
-      source: "runAiTurnV2",
-    });
-    return issueAIMoveFromDoComputerMove(modeContext, {
-      ...modeContext.groupKillPriorityPlan.move,
-      goalName: modeContext.groupKillPriorityPlan.goalName || "triple_kill_priority",
-      decisionReason: modeContext.groupKillPriorityPlan.decisionReason || "triple_kill_priority",
-      shotPreview: modeContext.groupKillPriorityPlan.shotPreview,
-    }, {
-      source: "runAiTurnV2",
-      chooseGoal: { goalName: "triple_kill_priority", forced: true },
-      shotPreview: modeContext.groupKillPriorityPlan.shotPreview,
-      routeClass: modeContext.groupKillPriorityPlan?.move?.routeClass || null,
-    });
-  }
-
-  const flagDeliveryPriority = evaluateFlagDeliveryPriorityOpportunity(modeContext);
-  if(flagDeliveryPriority?.opportunityExists){
-    if(flagDeliveryPriority?.shouldApplyPriority && flagDeliveryPriority?.recommendedMove){
-      aiRoundState.currentGoal = "return_with_flag";
-      const appliedReasonCode = "flag_delivery_priority_applied";
-      logAiDecision("flag_delivery_priority_applied", {
-        source: "runAiTurnV2",
-        goal: "return_with_flag",
-        planeId: flagDeliveryPriority.carrierId || flagDeliveryPriority.recommendedMove?.plane?.id || null,
-        reasonCodes: [appliedReasonCode],
-        safeRouteCurrentTurn: flagDeliveryPriority.safeRouteCurrentTurn === true,
-        safeRouteNextTurn: flagDeliveryPriority.safeRouteNextTurn === true,
-        expectedDeliveryBenefit: flagDeliveryPriority.expectedDeliveryBenefit,
-        expectedAttackBenefit: flagDeliveryPriority.expectedAttackBenefit,
-        expectedRouteRisk: flagDeliveryPriority.expectedRouteRisk,
-      });
-      return issueAIMoveFromDoComputerMove(modeContext, {
-        ...flagDeliveryPriority.recommendedMove,
-        goalName: "return_with_flag",
-        decisionReason: appliedReasonCode,
-      }, {
-        source: "runAiTurnV2",
-        chooseGoal: { goalName: "return_with_flag", forced: true, reasonCode: appliedReasonCode },
-        routeClass: flagDeliveryPriority.recommendedMove?.routeClass || null,
-      });
-    }
-
-    aiRoundState.flagDeliveryMissedOpportunities = Number.isFinite(aiRoundState.flagDeliveryMissedOpportunities)
-      ? aiRoundState.flagDeliveryMissedOpportunities + 1
-      : 1;
-    logAiDecision("flag_delivery_opportunity_missed", {
-      source: "runAiTurnV2",
-      goal: "return_with_flag",
-      reasonCodes: ["flag_delivery_opportunity_missed"],
-      planeId: flagDeliveryPriority.carrierId || null,
-      safeRouteCurrentTurn: flagDeliveryPriority.safeRouteCurrentTurn === true,
-      safeRouteNextTurn: flagDeliveryPriority.safeRouteNextTurn === true,
-      expectedDeliveryBenefit: flagDeliveryPriority.expectedDeliveryBenefit,
-      expectedAttackBenefit: flagDeliveryPriority.expectedAttackBenefit,
-      expectedRouteRisk: flagDeliveryPriority.expectedRouteRisk,
-      missedReason: flagDeliveryPriority?.missedReason || "delivery_benefit_not_higher_or_risk_not_acceptable",
-    });
-  }
-
-  const chosenGoal = chooseGoal(modeContext);
-  const shotPlan = buildShotPlan(chosenGoal, modeContext);
-  aiRoundState.lastShotPlanDiagnostics = shotPlan?.shotPlanDiagnostics || null;
-  const shotPlanInventoryPreparationDiagnostics = shotPlan?.inventoryPreparationDiagnostics || null;
-  if(shotPlan?.move){
-    aiRoundState.currentGoal = shotPlan.goalName || chosenGoal.goalName;
-    return issueAIMoveFromDoComputerMove(modeContext, {
-      ...shotPlan.move,
-      goalName: shotPlan.goalName || chosenGoal.goalName,
-      decisionReason: shotPlan.decisionReason || "v2_shot_plan_selected",
-      shotPreview: shotPlan.shotPreview,
-    }, {
-      source: "runAiTurnV2",
-      chooseGoal: chosenGoal,
-      shotPreview: shotPlan.shotPreview,
-      routeClass: shotPlan?.move?.routeClass || null,
-      inventoryPreparationDiagnostics: shotPlanInventoryPreparationDiagnostics,
-    });
-  }
-
-  const groupKillException = shouldKeepV2GroupKillPriority(modeContext, modeContext.groupKillPriorityPlan);
-  const rejectReasons = ["no_v2_shot_plan_move"];
-  const reasonCodes = ["v2_shot_plan_not_found"];
-  if(shotPlanInventoryPreparationDiagnostics?.inventoryPreparationChecked){
-    reasonCodes.push("inventory_preparation_checked");
-    if(shotPlanInventoryPreparationDiagnostics?.canConvertNoShotPlanMove){
-      reasonCodes.push("inventory_could_convert_no_v2_shot_plan_move");
-    } else {
-      rejectReasons.push("inventory_could_not_convert_no_v2_shot_plan_move");
-    }
-  }
-
-  if(modeContext.groupKillPriorityPlan?.move && modeContext.groupKillPriorityPlan.killCountOnTrajectory >= 3){
-    reasonCodes.push("v2_shot_plan_not_found_but_triple_kill_exists");
-    rejectReasons.push("triple_kill_priority_preserved");
-    logAiDecision("v2_shot_plan_not_found_but_triple_kill_exists", {
-      goal: chosenGoal?.goalName || null,
-      tripleKillGoal: modeContext.groupKillPriorityPlan.goalName || "triple_kill_priority",
-      killCountOnTrajectory: modeContext.groupKillPriorityPlan.killCountOnTrajectory,
-      affectedEnemyIds: modeContext.groupKillPriorityPlan.multiKillContext?.affectedEnemyIds || [],
-      source: "runAiTurnV2",
-    });
-    aiRoundState.currentGoal = modeContext.groupKillPriorityPlan.goalName || "triple_kill_priority";
-    return issueAIMoveFromDoComputerMove(modeContext, {
-      ...modeContext.groupKillPriorityPlan.move,
-      goalName: modeContext.groupKillPriorityPlan.goalName || "triple_kill_priority",
-      decisionReason: modeContext.groupKillPriorityPlan.decisionReason || "triple_kill_priority",
-      shotPreview: modeContext.groupKillPriorityPlan.shotPreview,
-    }, {
-      source: "runAiTurnV2",
-      chooseGoal: chosenGoal,
-      shotPreview: modeContext.groupKillPriorityPlan.shotPreview,
-      routeClass: modeContext.groupKillPriorityPlan?.move?.routeClass || null,
-    });
-  }
-
-  if(modeContext.groupKillPriorityPlan?.move && modeContext.groupKillPriorityPlan.killCountOnTrajectory === 2 && !groupKillException.allowed){
-    reasonCodes.push("double_kill_priority_preserved");
-    rejectReasons.push("double_kill_priority_preserved");
-    logAiDecision("double_kill_priority_preserved", {
-      planeId: modeContext.groupKillPriorityPlan.move?.plane?.id ?? null,
-      enemyId: modeContext.groupKillPriorityPlan.move?.enemy?.id ?? null,
-      killCountOnTrajectory: modeContext.groupKillPriorityPlan.killCountOnTrajectory,
-      affectedEnemyIds: modeContext.groupKillPriorityPlan.multiKillContext?.affectedEnemyIds || [],
-      source: "runAiTurnV2",
-      priorityReason: "double_kill_priority_preserved",
-    });
-    aiRoundState.currentGoal = modeContext.groupKillPriorityPlan.goalName || "triple_kill_priority";
-    return issueAIMoveFromDoComputerMove(modeContext, {
-      ...modeContext.groupKillPriorityPlan.move,
-      goalName: modeContext.groupKillPriorityPlan.goalName || "triple_kill_priority",
-      decisionReason: modeContext.groupKillPriorityPlan.decisionReason || "double_kill_priority_preserved",
-      shotPreview: modeContext.groupKillPriorityPlan.shotPreview,
-    }, {
-      source: "runAiTurnV2",
-      chooseGoal: chosenGoal,
-      shotPreview: modeContext.groupKillPriorityPlan.shotPreview,
-      routeClass: modeContext.groupKillPriorityPlan?.move?.routeClass || null,
-    });
-  }
-
-  if(modeContext.groupKillPriorityPlan?.move && modeContext.groupKillPriorityPlan.killCountOnTrajectory === 2 && groupKillException.allowed && groupKillException.reason === "flag_exception_overrides_triple_kill"){
-    logAiDecision("flag_exception_overrides_triple_kill", {
-      planeId: modeContext.groupKillPriorityPlan.move?.plane?.id ?? null,
-      enemyId: modeContext.groupKillPriorityPlan.move?.enemy?.id ?? null,
-      killCountOnTrajectory: modeContext.groupKillPriorityPlan.killCountOnTrajectory,
-      affectedEnemyIds: modeContext.groupKillPriorityPlan.multiKillContext?.affectedEnemyIds || [],
-      threatScore: groupKillException.criticalThreat?.threatScore ?? null,
-      canInterceptBeforePickup: groupKillException.criticalThreat?.canInterceptBeforePickup ?? null,
-      hasSafePostPickupEscape: groupKillException.criticalThreat?.hasSafePostPickupEscape ?? null,
-      source: "runAiTurnV2",
-    });
-  }
-
-  logAiDecision("v2_shot_plan_not_found_inventory_probe", {
-    goal: chosenGoal?.goalName || null,
-    inventoryPreparationChecked: shotPlanInventoryPreparationDiagnostics?.inventoryPreparationChecked === true,
-    checkedCandidateCount: shotPlanInventoryPreparationDiagnostics?.checkedCandidateCount ?? 0,
-    convertibleCandidateCount: shotPlanInventoryPreparationDiagnostics?.convertibleCandidateCount ?? 0,
-    canConvertNoShotPlanMove: shotPlanInventoryPreparationDiagnostics?.canConvertNoShotPlanMove === true,
-    bestPreparationSource: shotPlanInventoryPreparationDiagnostics?.bestPreparationSource || null,
-    bestPlaneId: shotPlanInventoryPreparationDiagnostics?.bestPlaneId ?? null,
-    bestItemType: shotPlanInventoryPreparationDiagnostics?.bestItemType || null,
-    consideredItems: shotPlanInventoryPreparationDiagnostics?.consideredItems || null,
-  });
-  recordAiSelfAnalyzerDecision("v2_shot_plan_not_found", {
-    goal: chosenGoal?.goalName || null,
-    reasonCodes: [
-      ...reasonCodes,
-    ],
-    rejectReasons,
-    source: "runAiTurnV2",
-    routeClass: null,
-    fallbackDiagnostics: {
-      inventoryPreparationDiagnostics: shotPlanInventoryPreparationDiagnostics,
-    },
-  });
-
-  const logicalDeadlockDetected = Boolean(
-    shotPlan?.shotPlanDiagnostics
-    && Number.isFinite(shotPlan.shotPlanDiagnostics.totalCandidatesChecked)
-    && shotPlan.shotPlanDiagnostics.totalCandidatesChecked > 0
-    && Number.isFinite(shotPlan.shotPlanDiagnostics.rejectedCandidatesCount)
-    && shotPlan.shotPlanDiagnostics.rejectedCandidatesCount >= shotPlan.shotPlanDiagnostics.totalCandidatesChecked
-  );
-  const logicalDeadlockContext = {
-    roundNumber: Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : (Number.isFinite(turnAdvanceCount) ? turnAdvanceCount : null),
-    turnColor: turnColors?.[turnIndex] || null,
-    goal: chosenGoal?.goalName || aiRoundState?.currentGoal || null,
-    checkedCandidates: Array.isArray(shotPlan?.shotPlanDiagnostics?.checkedCandidates)
-      ? shotPlan.shotPlanDiagnostics.checkedCandidates.slice(0, 12)
-      : [],
-    checkedCandidateCount: shotPlan?.shotPlanDiagnostics?.totalCandidatesChecked ?? 0,
-    lastRejectedCandidateReason: shotPlan?.shotPlanDiagnostics?.lastRejectedCandidateReason || null,
-  };
-  if(logicalDeadlockDetected){
-    logAiDecision("ai_logical_deadlock_detected", {
-      ...logicalDeadlockContext,
-      reasonCode: "ai_logical_deadlock",
-      source: "runAiTurnV2",
-    });
-    recordAiSelfAnalyzerDecision("ai_logical_deadlock", {
-      goal: logicalDeadlockContext.goal || "ai_logical_deadlock",
-      reasonCodes: ["ai_logical_deadlock", "all_candidates_rejected", "reserve_strategy_required"],
-      rejectReasons: [logicalDeadlockContext.lastRejectedCandidateReason || "all_candidates_rejected"],
-      source: "runAiTurnV2",
-      fallbackDiagnostics: {
-        checkedCandidates: logicalDeadlockContext.checkedCandidates,
-        checkedCandidateCount: logicalDeadlockContext.checkedCandidateCount,
-      },
-    });
-
-    const preFallbackExtraProbe = runPreFallbackExtraProbe(modeContext, chosenGoal);
-    if(preFallbackExtraProbe?.used && preFallbackExtraProbe?.move){
-      logAiDecision("pre_fallback_extra_probe_used", {
-        ...logicalDeadlockContext,
-        probeType: preFallbackExtraProbe.probeType || null,
-        planeId: preFallbackExtraProbe.move?.plane?.id ?? null,
-        goalName: preFallbackExtraProbe.move?.goalName || null,
-        decisionReason: preFallbackExtraProbe.move?.decisionReason || null,
-        probeDetails: preFallbackExtraProbe.probeDetails || null,
-        tried: preFallbackExtraProbe.tried || [],
-        reasonCode: "pre_fallback_extra_probe_used",
-        source: "runAiTurnV2",
-      });
-      return issueAIMoveFromDoComputerMove(modeContext, {
-        ...preFallbackExtraProbe.move,
-      }, {
-        source: "runAiTurnV2",
-        chooseGoal: chosenGoal,
-        routeClass: preFallbackExtraProbe?.move?.routeClass || "direct",
-        fallbackDiagnostics: {
-          stageBeforeFallback: "v2_shot_plan_not_found",
-          fallbackGoal: preFallbackExtraProbe?.move?.goalName || null,
-          fallbackDecisionReason: preFallbackExtraProbe?.move?.decisionReason || null,
-          rootCauseHint: "ai_logical_deadlock_pre_fallback_extra_probe",
-          preFallbackProbeType: preFallbackExtraProbe?.probeType || null,
-        },
-      });
-    }
-
-    logAiDecision("pre_fallback_extra_probe_failed", {
-      ...logicalDeadlockContext,
-      failReason: preFallbackExtraProbe?.failReason || "all_extra_probes_failed",
-      tried: preFallbackExtraProbe?.tried || [],
-      reasonCode: "pre_fallback_extra_probe_failed",
-      source: "runAiTurnV2",
-    });
-
-    const inventoryRouteOpeningProbe = runInventoryRouteOpeningBeforeFallback(modeContext, chosenGoal);
-    logAiDecision("inventory_route_opening_before_fallback_probe", {
-      ...logicalDeadlockContext,
-      reasonCode: "inventory_route_opening_before_fallback",
-      checkedCandidateCount: inventoryRouteOpeningProbe?.diagnostics?.checkedCandidateCount ?? 0,
-      validAfterItemCount: inventoryRouteOpeningProbe?.diagnostics?.validAfterItemCount ?? 0,
-      workingItemType: inventoryRouteOpeningProbe?.diagnostics?.workingItemType || null,
-      itemUsageStats: inventoryRouteOpeningProbe?.diagnostics?.itemUsageStats || {},
-      bestSeedClass: inventoryRouteOpeningProbe?.diagnostics?.bestSeedClass || null,
-      bestPlaneId: inventoryRouteOpeningProbe?.diagnostics?.bestPlaneId ?? null,
-      bestEnemyId: inventoryRouteOpeningProbe?.diagnostics?.bestEnemyId ?? null,
-      source: "runAiTurnV2",
-    });
-    if(inventoryRouteOpeningProbe?.used && inventoryRouteOpeningProbe?.move){
-      logAiDecision("inventory_route_opening_before_fallback_selected", {
-        ...logicalDeadlockContext,
-        reasonCode: "inventory_route_opening_before_fallback",
-        planeId: inventoryRouteOpeningProbe.move?.plane?.id ?? null,
-        enemyId: inventoryRouteOpeningProbe.move?.enemy?.id ?? null,
-        goalName: inventoryRouteOpeningProbe.move?.goalName || null,
-        decisionReason: inventoryRouteOpeningProbe.move?.decisionReason || null,
-        workingItemType: inventoryRouteOpeningProbe?.diagnostics?.workingItemType || null,
-        checkedCandidateCount: inventoryRouteOpeningProbe?.diagnostics?.checkedCandidateCount ?? 0,
-        validAfterItemCount: inventoryRouteOpeningProbe?.diagnostics?.validAfterItemCount ?? 0,
-        source: "runAiTurnV2",
-      });
-      return issueAIMoveFromDoComputerMove(modeContext, {
-        ...inventoryRouteOpeningProbe.move,
-      }, {
-        source: "runAiTurnV2",
-        chooseGoal: chosenGoal,
-        routeClass: inventoryRouteOpeningProbe?.move?.routeClass || "direct",
-      });
-    }
-
-  }
-
-  const mandatoryTurnMove = getMandatoryTurnMove(modeContext);
-  if(mandatoryTurnMove){
-    logAiDecision("v2_mandatory_turn_move_selected", {
-      goal: chosenGoal?.goalName || null,
-      selectedGoal: mandatoryTurnMove?.goalName || null,
-      selectedDecisionReason: mandatoryTurnMove?.decisionReason || null,
-      selectedPlaneId: mandatoryTurnMove?.plane?.id ?? null,
-      reasonCode: "v2_mandatory_turn_move_selected",
-      deadlockDetected: logicalDeadlockDetected === true,
-      source: "runAiTurnV2",
-    });
-    return issueAIMoveFromDoComputerMove(modeContext, {
-      ...mandatoryTurnMove,
-      goalName: mandatoryTurnMove.goalName || "mandatory_turn_move",
-      decisionReason: mandatoryTurnMove.decisionReason || "mandatory_turn_move",
-    }, {
-      source: "runAiTurnV2",
-      chooseGoal: chosenGoal,
-      routeClass: mandatoryTurnMove?.routeClass || "direct",
-      fallbackDiagnostics: {
-        stageBeforeFallback: logicalDeadlockDetected ? "ai_logical_deadlock" : "v2_shot_plan_not_found",
-        fallbackGoal: mandatoryTurnMove?.goalName || null,
-        fallbackDecisionReason: mandatoryTurnMove?.decisionReason || null,
-        rootCauseHint: "mandatory_turn_move",
-      },
-    });
-  }
-
-  logAiDecision("v2_safe_turn_resolution", {
-    goal: chosenGoal?.goalName || null,
-    reason: "no_v2_shot_plan_move",
-    source: "runAiTurnV2",
-  });
-  return failSafeAdvanceTurn("v2_safe_turn_resolution", {
-    goal: chosenGoal?.goalName || "v2_safe_turn_resolution",
-    reasonCodes: logicalDeadlockDetected
-      ? [...reasonCodes, "ai_logical_deadlock", "reserve_strategy_exhausted", "fail_safe_turn_advance"]
-      : reasonCodes,
-    rejectReasons,
-    checkedCandidates: logicalDeadlockContext.checkedCandidates,
-    checkedCandidateCount: logicalDeadlockContext.checkedCandidateCount,
-    lastRejectedCandidateReason: logicalDeadlockContext.lastRejectedCandidateReason,
-    modeContext,
-  });
+  return triggerComputerAiRemovedHardFail("runAiTurnV2");
 }
 
-function evaluateFlagDeliveryPriorityOpportunity(modeContext = {}){
-  const aiPlanes = Array.isArray(modeContext?.aiPlanes) ? modeContext.aiPlanes : [];
-  const groundedReadyPlanes = aiPlanes.filter((plane) => (
-    isPlaneLaunchStateReady(plane)
-    && !flyingPoints.some((fp) => fp.plane === plane)
-  ));
-  const carrier = groundedReadyPlanes.find((plane) => {
-    if(!plane?.carriedFlagId) return false;
-    const carriedFlag = getFlagById(plane.carriedFlagId);
-    return carriedFlag?.color === "green";
-  });
-  if(!carrier) return { opportunityExists: false };
-
-  const homeBase = getBaseAnchor("blue");
-  if(!homeBase || !Number.isFinite(homeBase.x) || !Number.isFinite(homeBase.y)){
-    return {
-      opportunityExists: false,
-      carrierId: carrier?.id ?? null,
-      missedReason: "home_base_not_available",
-    };
-  }
-
-  const evaluateSafeMove = (move, planeRef) => {
-    if(!move) return { safe: false, move: null, landing: null, validation: null };
-    const moveWithPlane = { ...move, plane: planeRef };
-    const validation = validateAiLaunchMoveCandidate(moveWithPlane);
-    if(!validation?.ok) return { safe: false, move: moveWithPlane, landing: null, validation };
-    const landing = getAiMoveLandingPoint(moveWithPlane);
-    if(!landing) return { safe: false, move: moveWithPlane, landing: null, validation };
-    const immediateThreat = getImmediateResponseThreatMeta(modeContext, landing.x, landing.y, null);
-    if((immediateThreat?.count || 0) > 0){
-      return { safe: false, move: moveWithPlane, landing, validation, immediateThreat };
-    }
-    return { safe: true, move: moveWithPlane, landing, validation, immediateThreat };
-  };
-
-  const directMove = planPathWithSpecialRouteProbe(carrier, homeBase.x, homeBase.y, {
-    goalName: "return_with_flag",
-    decisionReason: "flag_delivery_priority_applied",
-    specialAttemptBudget: 2,
-    compareLabel: ["return_with_flag", carrier?.id ?? "", "priority_probe"],
-  });
-  const directSafeMeta = evaluateSafeMove(directMove, carrier);
-
-  let setupSafeMeta = null;
-  let secondTurnSafeMeta = null;
-  if(!directSafeMeta.safe){
-    const directDx = homeBase.x - carrier.x;
-    const directDy = homeBase.y - carrier.y;
-    const setupScales = [0.68, 0.56, 0.44, 0.34];
-    for(const scale of setupScales){
-      const setupTargetX = carrier.x + directDx * scale;
-      const setupTargetY = carrier.y + directDy * scale;
-      const setupMove = planPathToPoint(carrier, setupTargetX, setupTargetY, {
-        goalName: "return_with_flag_setup",
-        decisionReason: "flag_delivery_setup_probe",
-      });
-      const safeSetup = evaluateSafeMove(setupMove, carrier);
-      if(!safeSetup.safe) continue;
-      const projectedCarrier = { ...carrier, x: safeSetup.landing.x, y: safeSetup.landing.y };
-      const secondTurnMove = planPathWithSpecialRouteProbe(projectedCarrier, homeBase.x, homeBase.y, {
-        goalName: "return_with_flag",
-        decisionReason: "flag_delivery_second_turn_probe",
-        specialAttemptBudget: 2,
-        compareLabel: ["return_with_flag", carrier?.id ?? "", "next_turn_probe"],
-      });
-      const safeSecondTurn = evaluateSafeMove(secondTurnMove, projectedCarrier);
-      if(!safeSecondTurn.safe) continue;
-      setupSafeMeta = safeSetup;
-      secondTurnSafeMeta = safeSecondTurn;
-      break;
-    }
-  }
-
-  const safeRouteCurrentTurn = directSafeMeta.safe === true;
-  const safeRouteNextTurn = !safeRouteCurrentTurn && setupSafeMeta?.safe === true && secondTurnSafeMeta?.safe === true;
-  const opportunityExists = safeRouteCurrentTurn || safeRouteNextTurn;
-  if(!opportunityExists){
-    return {
-      opportunityExists: false,
-      carrierId: carrier?.id ?? null,
-      missedReason: "no_safe_return_route_in_current_or_next_turn",
-    };
-  }
-
-  const expectedDeliveryBenefit = safeRouteCurrentTurn ? 1 : 0.82;
-  const expectedRouteRisk = safeRouteCurrentTurn ? 0.07 : 0.16;
-  const groupKillPlan = modeContext?.groupKillPriorityPlan || null;
-  const expectedAttackBenefit = groupKillPlan?.move
-    ? (groupKillPlan.killCountOnTrajectory >= 3 ? 0.96 : groupKillPlan.killCountOnTrajectory === 2 ? 0.78 : 0.6)
-    : 0.52;
-  const riskAcceptable = expectedRouteRisk <= 0.22;
-  const deliveryBenefitHigher = expectedDeliveryBenefit > expectedAttackBenefit;
-  const shouldApplyPriority = riskAcceptable && deliveryBenefitHigher;
-  const recommendedMove = safeRouteCurrentTurn
-    ? directSafeMeta.move
-    : (setupSafeMeta?.move || null);
-
-  return {
-    opportunityExists: true,
-    shouldApplyPriority,
-    carrierId: carrier?.id ?? null,
-    safeRouteCurrentTurn,
-    safeRouteNextTurn,
-    expectedDeliveryBenefit: Number(expectedDeliveryBenefit.toFixed(3)),
-    expectedAttackBenefit: Number(expectedAttackBenefit.toFixed(3)),
-    expectedRouteRisk: Number(expectedRouteRisk.toFixed(3)),
-    recommendedMove,
-    missedReason: shouldApplyPriority ? null : (!riskAcceptable ? "delivery_route_risk_not_acceptable" : "delivery_benefit_not_higher_than_attack"),
-  };
-}
-
-function chooseGoal(modeContext = {}){
-  const flagDeliveryPriority = evaluateFlagDeliveryPriorityOpportunity(modeContext);
-  if(flagDeliveryPriority?.opportunityExists && flagDeliveryPriority?.shouldApplyPriority){
-    return {
-      goalName: "return_with_flag",
-      modelGoalClass: "flag_delivery_priority_override",
-      modelWeight: 1,
-      mode: "flag_pressure",
-      forcedByFlagDeliveryPriority: true,
-      reasonCode: "flag_delivery_priority_applied",
-      evaluation: {
-        selectedPriorities: ["return_with_flag", "capture_enemy_flag", "attack_enemy_plane"],
-        expectedDeliveryBenefit: flagDeliveryPriority.expectedDeliveryBenefit,
-        expectedAttackBenefit: flagDeliveryPriority.expectedAttackBenefit,
-        expectedRouteRisk: flagDeliveryPriority.expectedRouteRisk,
-        safeRouteCurrentTurn: flagDeliveryPriority.safeRouteCurrentTurn === true,
-        safeRouteNextTurn: flagDeliveryPriority.safeRouteNextTurn === true,
-      },
-    };
-  }
-
-  const groupKillPriorityPlan = modeContext?.groupKillPriorityPlan || null;
-  if(groupKillPriorityPlan?.move && groupKillPriorityPlan.killCountOnTrajectory >= 3){
-    return {
-      goalName: "triple_kill_priority",
-      modelGoalClass: "triple_kill_priority",
-      modelWeight: 1,
-      mode: "attrition",
-      forcedByGroupKillPlan: true,
-      evaluation: {
-        selectedPriorities: ["triple_kill_priority", "attack_enemy_plane", "capture_enemy_flag", "pickup_cargo"],
-      },
-    };
-  }
-  const shouldUseFlagsMode = Boolean(modeContext.shouldUseFlagsMode);
-  const availableEnemyFlagsCount = Array.isArray(modeContext.availableEnemyFlags)
-    ? modeContext.availableEnemyFlags.length
-    : 0;
-  const evaluationContext = {
-    shouldUseFlagsMode,
-    availableEnemyFlagsCount,
-    aiAliveCount: Array.isArray(modeContext.aiPlanes) ? modeContext.aiPlanes.length : 0,
-    enemyAliveCount: Array.isArray(modeContext.enemies) ? modeContext.enemies.length : 0,
-    blueInventoryCount: Number.isFinite(modeContext.blueInventoryCount) ? modeContext.blueInventoryCount : 0,
-    scoreGap: Number.isFinite(getScoreGap("blue")) ? getScoreGap("blue") : 0,
-    readyCargoCount: Array.isArray(cargoState)
-      ? cargoState.reduce((count, cargo) => count + (cargo?.state === "ready" ? 1 : 0), 0)
-      : 0,
-    hasStolenBlueFlagCarrier: Boolean(shouldUseFlagsMode && getFlagCarrierForColor("blue")),
-    hasTripleKillOpportunity: Boolean(groupKillPriorityPlan?.move && groupKillPriorityPlan.killCountOnTrajectory >= 3),
-  };
-  const model = (typeof window !== "undefined" && window.PaperWingsGoalPriorityModel)
-    ? window.PaperWingsGoalPriorityModel
-    : null;
-  const evaluation = model && typeof model.evaluate === "function"
-    ? model.evaluate(evaluationContext)
-    : null;
-
-  const selectedPriority = Array.isArray(evaluation?.selectedPriorities)
-    ? evaluation.selectedPriorities[0]
-    : null;
-  const fallbackGoal = shouldUseFlagsMode && availableEnemyFlagsCount > 0
-    ? "capture_enemy_flag"
-    : "attack_enemy_plane";
-
-  return {
-    goalName: selectedPriority || fallbackGoal,
-    modelGoalClass: evaluation?.selectedGoalClass || null,
-    modelWeight: Number.isFinite(evaluation?.selectedWeight) ? evaluation.selectedWeight : null,
-    mode: evaluation?.selectedMode || null,
-    evaluation,
-  };
-}
-
-function shouldProbeInventoryPreparedShotPlan(goalName = ""){
-  const safeGoal = `${goalName || ""}`.toLowerCase();
-  return safeGoal === "attack_enemy_plane"
-    || safeGoal === "eliminate_flag_carrier"
-    || safeGoal === "capture_enemy_flag"
-    || safeGoal === "preserve_planes"
-    || safeGoal === "opening_center_control"
-    || safeGoal === "direct_finisher"
-    || safeGoal.startsWith("emergency_base_defense_")
-    || safeGoal === "emergency_base_hold_position";
-}
-
-function buildInventoryPreparationCandidates(goalSelection = {}, modeContext = {}, launchReadyPlanes = [], enemies = []){
-  const goalName = goalSelection?.goalName || "attack_enemy_plane";
-  const goalText = `${goalName || ""}`.toLowerCase();
-  const candidates = [];
-  const seenMoveKeys = new Set();
-  const addCandidate = (candidate) => {
-    if(!candidate?.plane || !Number.isFinite(candidate?.vx) || !Number.isFinite(candidate?.vy)) return;
-    const key = [candidate.plane?.id ?? "plane", candidate.goalName || goalName, candidate.decisionReason || "prep", Number(candidate.vx).toFixed(3), Number(candidate.vy).toFixed(3)].join("|");
-    if(seenMoveKeys.has(key)) return;
-    seenMoveKeys.add(key);
-    candidates.push(candidate);
-  };
-
-  if(
-    goalText === "attack_enemy_plane"
-    || goalText === "eliminate_flag_carrier"
-    || goalText === "capture_enemy_flag"
-    || goalText === "direct_finisher"
-  ){
-    for(const plane of launchReadyPlanes){
-      for(const enemy of enemies){
-        const move = typeof findSafePreparationMoveForAttack === "function"
-          ? findSafePreparationMoveForAttack(plane, enemy, { goalName })
-          : null;
-        if(!move) continue;
-        addCandidate({
-          plane,
-          enemy,
-          ...move,
-          goalName,
-          decisionReason: move.decisionReason || (goalText === "direct_finisher" ? "inventory_finisher_setup" : "inventory_attack_setup"),
-          inventoryPreparationSource: goalText === "direct_finisher" ? "direct_finisher_setup" : "attack_setup",
-        });
-      }
-    }
-  }
-
-  if(goalText === "preserve_planes"){
-    for(const plane of launchReadyPlanes){
-      const nearestEnemy = enemies.reduce((best, enemy) => {
-        if(!enemy) return best;
-        if(!best) return enemy;
-        return dist(plane, enemy) < dist(plane, best) ? enemy : best;
-      }, null);
-      if(!nearestEnemy) continue;
-      const awayAngle = Math.atan2(plane.y - nearestEnemy.y, plane.x - nearestEnemy.x);
-      const targetX = plane.x + Math.cos(awayAngle) * MAX_DRAG_DISTANCE;
-      const targetY = plane.y + Math.sin(awayAngle) * MAX_DRAG_DISTANCE;
-      const move = planPathToPoint(plane, targetX, targetY, {
-        goalName: "preserve_planes",
-        decisionReason: "inventory_preserve_planes_setup",
-      });
-      if(!move) continue;
-      addCandidate({
-        plane,
-        enemy: nearestEnemy,
-        ...move,
-        goalName: "preserve_planes",
-        decisionReason: "inventory_preserve_planes_setup",
-        inventoryPreparationSource: "preserve_planes_escape_setup",
-      });
-    }
-  }
-
-  if(goalText === "opening_center_control"){
-    const center = typeof getCenterControlAnchor === "function"
-      ? getCenterControlAnchor()
-      : { x: FIELD_LEFT + FIELD_WIDTH / 2, y: FIELD_TOP + FIELD_HEIGHT / 2 };
-    const softScales = [1, 0.82, 0.68, 0.54];
-    for(const plane of launchReadyPlanes){
-      for(const scale of softScales){
-        const targetX = plane.x + (center.x - plane.x) * scale;
-        const targetY = plane.y + (center.y - plane.y) * scale;
-        const move = planPathToPoint(plane, targetX, targetY, {
-          goalName: "opening_center_control",
-          decisionReason: scale >= 0.999 ? "inventory_opening_center_setup" : "inventory_opening_center_soft_setup",
-        });
-        if(!move) continue;
-        addCandidate({
-          plane,
-          ...move,
-          goalName: "opening_center_control",
-          decisionReason: scale >= 0.999 ? "inventory_opening_center_setup" : "inventory_opening_center_soft_setup",
-          inventoryPreparationSource: scale >= 0.999 ? "opening_center_direct_setup" : "opening_center_soft_setup",
-          openingCenterScale: Number(scale.toFixed(2)),
-        });
-        break;
-      }
-    }
-  }
-
-  if(goalText.startsWith("emergency_base_defense_") || goalText === "emergency_base_hold_position"){
-    const threat = modeContext?.defensivePriority?.directBaseThreat || modeContext?.criticalBaseThreat || null;
-    if(threat && typeof collectEmergencyDefenseCandidates === "function"){
-      const defenseCandidates = collectEmergencyDefenseCandidates(modeContext, threat, {
-        includeDirectIntercept: false,
-        includeFutureInterceptSetup: true,
-        includeLaneBlock: true,
-        includeTrajectoryBlock: true,
-        includeCoverHold: true,
-      });
-      for(const candidate of defenseCandidates){
-        addCandidate({
-          ...candidate,
-          goalName: candidate.goalName || goalName,
-          decisionReason: candidate.decisionReason || "inventory_emergency_setup",
-          inventoryPreparationSource: candidate.defenseCandidateType || "emergency_setup",
-        });
-      }
-    }
-  }
-
-  return candidates;
-}
-
-function probeInventoryPreparedShotPlan(goalSelection = {}, modeContext = {}, launchReadyPlanes = [], enemies = []){
-  const goalName = goalSelection?.goalName || "attack_enemy_plane";
-  if(!shouldProbeInventoryPreparedShotPlan(goalName)){
-    return {
-      bestPlan: null,
-      diagnostics: {
-        goalName,
-        inventoryPreparationChecked: false,
-        skipReason: "goal_not_supported_for_inventory_preparation",
-      },
-    };
-  }
-
-  const preparationCandidates = buildInventoryPreparationCandidates(goalSelection, modeContext, launchReadyPlanes, enemies);
-  const diagnostics = {
-    goalName,
-    inventoryPreparationChecked: true,
-    checkedCandidateCount: preparationCandidates.length,
-    convertibleCandidateCount: 0,
-    consideredItems: {},
-    bestPreparationSource: null,
-    bestPlaneId: null,
-    bestItemType: null,
-    canConvertNoShotPlanMove: false,
-  };
-  let bestPlan = null;
-
-  for(const candidate of preparationCandidates){
-    const inventoryPlanning = buildAiInventoryCandidatePlans(modeContext, candidate);
-    const selectedInventoryCandidate = inventoryPlanning?.selectedCandidate || null;
-    const selectedInventorySequence = Array.isArray(inventoryPlanning?.selectedSequence) ? inventoryPlanning.selectedSequence : [];
-    const consideredTypes = Array.isArray(inventoryPlanning?.candidates)
-      ? inventoryPlanning.candidates.map((entry) => entry?.itemType).filter(Boolean)
-      : [];
-    for(const itemType of consideredTypes){
-      diagnostics.consideredItems[itemType] = (diagnostics.consideredItems[itemType] || 0) + 1;
-    }
-    if(!selectedInventoryCandidate && selectedInventorySequence.length === 0) continue;
-
-    diagnostics.convertibleCandidateCount += 1;
-    const primaryInventoryCandidate = selectedInventoryCandidate || selectedInventorySequence[0] || null;
-    const itemScore = Number.isFinite(primaryInventoryCandidate?.adjustedComparableScore)
-      ? primaryInventoryCandidate.adjustedComparableScore
-      : (Number.isFinite(primaryInventoryCandidate?.comparableScore) ? primaryInventoryCandidate.comparableScore : 0);
-    const moveDistance = Number.isFinite(candidate.totalDist) ? candidate.totalDist : Math.hypot(candidate.vx || 0, candidate.vy || 0);
-    const preparationScore = Number((itemScore * 1000 - moveDistance * 0.08).toFixed(3));
-    const enrichedPlan = {
-      score: preparationScore,
-      goalName: candidate.goalName || goalName,
-      decisionReason: candidate.decisionReason || "inventory_prepared_plan",
-      move: {
-        ...candidate,
-        plane: candidate.plane,
-        goalName: candidate.goalName || goalName,
-        selectedInventoryCandidate,
-        selectedInventorySequence: selectedInventorySequence.slice(),
-        inventoryCandidates: Array.isArray(inventoryPlanning?.candidates) ? inventoryPlanning.candidates.slice() : [],
-        rejectedInventoryCandidates: Array.isArray(inventoryPlanning?.rejected) ? inventoryPlanning.rejected.slice() : [],
-        inventoryUsageReason: primaryInventoryCandidate?.reason || candidate.inventoryUsageReason || null,
-        inventoryPreparationSource: candidate.inventoryPreparationSource || null,
-      },
-      shotPreview: {
-        trajectoryType: "inventory_preparation",
-        routeClass: candidate.routeClass || null,
-        inventoryItemType: primaryInventoryCandidate?.itemType || null,
-        inventoryReason: primaryInventoryCandidate?.reason || null,
-        inventorySequence: selectedInventorySequence.map((step) => step.itemType),
-        preparationSource: candidate.inventoryPreparationSource || null,
-      },
-      inventoryPreparationDiagnostics: {
-        planeId: candidate.plane?.id ?? null,
-        enemyId: candidate.enemy?.id ?? null,
-        itemType: primaryInventoryCandidate?.itemType || null,
-        itemReason: primaryInventoryCandidate?.reason || null,
-        sequence: selectedInventorySequence.map((step) => step.itemType),
-        adjustedComparableScore: primaryInventoryCandidate?.adjustedComparableScore ?? primaryInventoryCandidate?.comparableScore ?? null,
-        inventoryPreparationSource: candidate.inventoryPreparationSource || null,
-      },
-    };
-    if(!bestPlan || preparationScore > bestPlan.score + 0.0001){
-      bestPlan = enrichedPlan;
-      diagnostics.bestPreparationSource = candidate.inventoryPreparationSource || null;
-      diagnostics.bestPlaneId = candidate.plane?.id ?? null;
-      diagnostics.bestItemType = primaryInventoryCandidate?.itemType || null;
-      diagnostics.canConvertNoShotPlanMove = true;
-    }
-  }
-
-  return { bestPlan, diagnostics };
-}
-
-function buildShotPlan(goalSelection = {}, modeContext = {}, options = {}){
-  const aiPlanes = Array.isArray(modeContext.aiPlanes) ? modeContext.aiPlanes : [];
-  const enemies = Array.isArray(modeContext.enemies) ? modeContext.enemies : [];
-  const launchReadyPlanes = aiPlanes.filter((plane) => (
-    isPlaneLaunchStateReady(plane)
-    && !flyingPoints.some((fp) => fp.plane === plane)
-  ));
-  if(!launchReadyPlanes.length || !enemies.length) return null;
-
-  const routeTypes = [
-    { type: "direct", routeClass: "direct", riskBias: 0.18, reason: "v2_direct_candidate" },
-    { type: "one_ricochet", routeClass: "ricochet", riskBias: 0.44, reason: "v2_single_bounce_candidate" },
-    { type: "narrow_corridor", routeClass: "gap", riskBias: 0.33, reason: "v2_narrow_corridor_candidate" },
-  ];
-
-  const forceMinimumKillCount = Number.isFinite(options?.forceMinimumKillCount)
-    ? Math.max(1, Math.floor(options.forceMinimumKillCount))
-    : 1;
-  const goalName = goalSelection.goalName || "attack_enemy_plane";
-  const shotPlanDiagnostics = {
-    goalName,
-    totalCandidatesChecked: 0,
-    rejectedCandidatesCount: 0,
-    checkedCandidates: [],
-    lastRejectedCandidateReason: null,
-  };
-  const pushCheckedCandidate = (candidateMeta) => {
-    if(!candidateMeta || typeof candidateMeta !== "object") return;
-    shotPlanDiagnostics.totalCandidatesChecked += 1;
-    if(shotPlanDiagnostics.checkedCandidates.length < 24){
-      shotPlanDiagnostics.checkedCandidates.push(candidateMeta);
-    }
-  };
-  const markRejectedCandidate = (reasonCode) => {
-    shotPlanDiagnostics.rejectedCandidatesCount += 1;
-    shotPlanDiagnostics.lastRejectedCandidateReason = reasonCode || shotPlanDiagnostics.lastRejectedCandidateReason || "unknown_reject_reason";
-  };
-  let bestPlan = null;
-  for(const plane of launchReadyPlanes){
-    for(const enemy of enemies){
-      if(!Number.isFinite(enemy?.x) || !Number.isFinite(enemy?.y)) continue;
-      for(const route of routeTypes){
-        const move = planPathToPoint(plane, enemy.x, enemy.y, {
-          goalName: goalSelection.goalName || "attack_enemy_plane",
-          routeClass: route.routeClass,
-          decisionReason: route.reason,
-        });
-        if(!move) continue;
-
-        const moveCandidate = {
-          ...move,
-          plane,
-          routeClass: move.routeClass || route.routeClass,
-          enemy,
-        };
-        pushCheckedCandidate({
-          planeId: plane?.id ?? null,
-          enemyId: enemy?.id ?? null,
-          routeClass: moveCandidate.routeClass || null,
-          decisionReason: route.reason,
-        });
-        const validation = validateAiLaunchMoveCandidate(moveCandidate);
-        if(!validation.ok){
-          markRejectedCandidate(validation.reason || "candidate_validation_failed");
-          continue;
-        }
-
-        const expectedEndPoint = {
-          x: Number((plane.x + move.vx * FIELD_FLIGHT_DURATION_SEC).toFixed(1)),
-          y: Number((plane.y + move.vy * FIELD_FLIGHT_DURATION_SEC).toFixed(1)),
-        };
-        const nearbyColliderCount = countRouteNearbyColliders(
-          plane.x,
-          plane.y,
-          expectedEndPoint.x,
-          expectedEndPoint.y,
-          CELL_SIZE * 0.9
-        );
-        const directLinePenalty = isPathClear(plane.x, plane.y, enemy.x, enemy.y) ? 0 : 0.16;
-        const risk = Number(Math.max(0, Math.min(1, route.riskBias + nearbyColliderCount * 0.06 + directLinePenalty)).toFixed(2));
-        const distance = Number.isFinite(move.totalDist) ? move.totalDist : Math.hypot(move.vx, move.vy);
-        const powerRatio = Math.max(0, Math.min(1, MAX_DRAG_DISTANCE > 0 ? distance / MAX_DRAG_DISTANCE : 0));
-        const shortLaunchPenalty = powerRatio < 0.72 ? (0.72 - powerRatio) * 110 : 0;
-        const multiKillContext = getAiMultiKillPotentialContext({
-          plane,
-          enemy,
-          enemies,
-          lineEndX: expectedEndPoint.x,
-          lineEndY: expectedEndPoint.y,
-        });
-        const killCountOnTrajectory = Math.max(1, multiKillContext.killCountOnTrajectory || 1);
-        if(killCountOnTrajectory < forceMinimumKillCount){
-          markRejectedCandidate("below_force_minimum_kill_count");
-          continue;
-        }
-        const multiKillBonus = getAiMultiKillScoreBonus(multiKillContext);
-        const groupKillPriorityBoost = goalName === "triple_kill_priority"
-          ? killCountOnTrajectory >= 3
-            ? 520
-            : killCountOnTrajectory === 2
-              ? 180
-              : 0
-          : 0;
-        const score = (route.type === "direct" ? 220 : route.type === "narrow_corridor" ? 170 : 140)
-          + powerRatio * 85
-          + multiKillBonus
-          + groupKillPriorityBoost
-          - shortLaunchPenalty
-          - risk * 90;
-
-        const shotPreview = {
-          trajectoryType: route.type,
-          routeClass: move.routeClass || route.routeClass,
-          expectedEndPoint,
-          risk,
-          powerRatio: Number(powerRatio.toFixed(3)),
-          killCountOnTrajectory,
-          affectedEnemyIds: multiKillContext.affectedEnemyIds || [],
-        };
-
-        if(!bestPlan || score > bestPlan.score){
-          bestPlan = {
-            score,
-            goalName,
-            decisionReason: `${route.reason}__goal_${goalName}`,
-            move: moveCandidate,
-            shotPreview,
-            multiKillContext,
-            killCountOnTrajectory,
-          };
-        }
-      }
-    }
-  }
-
-  const inventoryPreparedProbe = probeInventoryPreparedShotPlan(goalSelection, modeContext, launchReadyPlanes, enemies);
-  if(bestPlan){
-    bestPlan.shotPlanDiagnostics = shotPlanDiagnostics;
-    bestPlan.inventoryPreparationDiagnostics = inventoryPreparedProbe?.diagnostics || null;
-    return bestPlan;
-  }
-
-  if(inventoryPreparedProbe?.diagnostics){
-    logAiDecision("v2_inventory_preparation_probe", {
-      goal: goalName,
-      checkedCandidateCount: inventoryPreparedProbe.diagnostics.checkedCandidateCount,
-      convertibleCandidateCount: inventoryPreparedProbe.diagnostics.convertibleCandidateCount,
-      canConvertNoShotPlanMove: inventoryPreparedProbe.diagnostics.canConvertNoShotPlanMove,
-      bestPreparationSource: inventoryPreparedProbe.diagnostics.bestPreparationSource,
-      bestPlaneId: inventoryPreparedProbe.diagnostics.bestPlaneId,
-      bestItemType: inventoryPreparedProbe.diagnostics.bestItemType,
-      consideredItems: inventoryPreparedProbe.diagnostics.consideredItems,
-    });
-  }
-
-  if(inventoryPreparedProbe?.bestPlan){
-    inventoryPreparedProbe.bestPlan.shotPlanDiagnostics = shotPlanDiagnostics;
-    return inventoryPreparedProbe.bestPlan;
-  }
-
-  return {
-    move: null,
-    goalName,
-    decisionReason: "v2_shot_plan_not_found",
-    shotPlanDiagnostics,
-    inventoryPreparationDiagnostics: inventoryPreparedProbe?.diagnostics || null,
-  };
-}
-
-if(typeof window !== "undefined"){
-  window.runAiTurnV2 = undefined;
-}
-
-// AI CONTRACT: docs/AI_BEHAVIOR_CONTRACT.md stays as future target, but old runtime is removed.
 function doComputerMove(){
-  aiMoveScheduled = false;
-  clearAiPostInventoryLaunchTimeout("old_ai_removed");
-
-  logAiDecision("old_ai_removed", {
-    source: "doComputerMove",
-    reasonCode: "old_ai_removed",
-    message: "Old AI runtime removed. Turn is advanced with neutral fallback.",
-    mode: gameMode,
-  });
-
-  const payload = {
-    goal: "ai_disabled",
-    reasonCategory: "ai_disabled",
-    reasonCode: "old_ai_removed",
-    reasonCodes: ["old_ai_removed", "ai_disabled", "fail_safe_turn_advance"],
-    rejectReasons: ["old_ai_removed"],
-    source: "doComputerMove",
-  };
-
-  if(typeof failSafeAdvanceTurn === "function"){
-    return failSafeAdvanceTurn("old_ai_removed", payload);
-  }
-  if(typeof advanceTurn === "function"){
-    return advanceTurn();
-  }
-  return { ok: false, message: "Old AI removed. advanceTurn is unavailable." };
+  return triggerComputerAiRemovedHardFail("doComputerMove");
 }
+
 
 
 
@@ -39176,20 +37540,16 @@ function failSafeAdvanceTurn(reason = "unspecified", details = {}){
         });
         return false;
       }
-      aiMoveScheduled = true;
-      logAiDecision("fail_safe_turn_retry_scheduled", {
+      aiMoveScheduled = false;
+      logAiDecision("fail_safe_turn_retry_replaced_with_neutral_advance", {
         reason,
-        reasonCode: details?.reasonCode || reason || "fail_safe_turn_retry_scheduled",
+        reasonCode: details?.reasonCode || reason || "fail_safe_turn_retry_replaced_with_neutral_advance",
         goal: details?.goal || aiRoundState?.currentGoal || null,
         retriesUsed: retryUsage?.retriesUsed ?? null,
         retryLimit: retryUsage?.retryLimit ?? null,
         source: details?.source || "failSafeAdvanceTurn",
       });
-      scheduleComputerMoveWithCargoGate(performance.now(), 90, {
-        trigger: "fail_safe_turn_retry",
-        turnCommitSequence,
-        plannerStartLabel: `fail_safe_retry_t${turnAdvanceCount}`,
-      });
+      triggerComputerAiRemovedHardFail("fail_safe_turn_retry");
       return false;
     }
 
@@ -39302,14 +37662,7 @@ function advanceTurn(){
   invalidateAiPlanningState("turn_advanced");
   if(turnColors[turnIndex] === "blue" && gameMode === "computer"){
     aiMoveScheduled = false;
-    markAiTurnStarted("advance_turn_committed", performance.now());
-    logAiDecision("ai_turn_started", {
-      trigger: "advance_turn_commit_ready",
-      previousTurnColor,
-      nextTurnColor,
-      ...getAiTurnTimingSnapshot(),
-    });
-    tryStartAiPlanningFromCommittedState("advance_turn_commit_ready");
+    triggerComputerAiRemovedHardFail("advance_turn_hard_fail");
   }
 
   // В этой игре пропуск хода как механика не поддерживается:
@@ -39498,9 +37851,10 @@ function gameDraw(){
 
   updateNukeTimeline(now);
 
-  // Планирование хода ИИ
-  tryStartAiPlanningFromCommittedState("game_draw_tick");
-  runAiLaunchSessionTick(now);
+  // Старый runtime ИИ удалён: при ходе компьютера показываем явный hard-fail сигнал.
+  if(gameMode === "computer" && turnColors?.[turnIndex] === "blue" && flyingPoints.length === 0){
+    triggerComputerAiRemovedHardFail("game_draw_tick");
+  }
 
   for(const aa of aaUnits){
     aa.sweepAngleDeg = (aa.sweepAngleDeg + aa.rotationDegPerSec * deltaSec) % 360;

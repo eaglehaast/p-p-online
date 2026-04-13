@@ -53,12 +53,11 @@ The obsolete prototype folder `ui_gamescreen/gamescreen_outside/gs_icon_prototyp
 Old AI (v1 and v2) has been fully disabled in runtime.
 
 What this means now:
-- Computer mode is temporarily running with a neutral fallback (`AI disabled`): the game loop stays alive, but old decision logic is not used.
-- Legacy AI debug/diagnostic APIs are disabled and return a clear message: `Old AI removed`.
+- Computer mode now shows an explicit hard-fail signal when computer turn begins: old AI is removed, new AI is not implemented yet.
+- Legacy AI debug/diagnostic APIs are no longer exported into runtime.
 - Cargo reset debug helper remains available:
 
 ```js
-window.AI_DEBUG_CMD("reset-cargo")
 window.RESET_CARGO()
 ```
 
@@ -73,7 +72,7 @@ For a detailed “after demolition” list, see:
 ## Game modes
 
 - **Hot Seat** – two players share the same computer.
-- **Computer** – temporary safe mode (`AI disabled`) while new AI is being prepared.
+- **Computer** – hard-fail placeholder while new AI is being prepared (old AI fully removed).
 - **Online** – currently disabled in this build.
 
 ## Basic rules
