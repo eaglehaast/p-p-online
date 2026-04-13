@@ -38983,21 +38983,21 @@ function drawPlanesAndTrajectories(){
     if(p.flagColor && !isPlaneFullyHiddenByInvisibility){
       targetCtx.save();
       const ringColor = colorFor(p.flagColor);
-      const ringRadius = POINT_RADIUS + 6;
-      const ringGapAngle = Math.PI / 18;
-      const ringStart = -Math.PI / 2 + ringGapAngle * 0.5;
-      const ringEnd = (Math.PI * 3) / 2 - ringGapAngle * 0.5;
 
-      targetCtx.strokeStyle = "rgba(14, 18, 28, 0.7)";
-      targetCtx.lineWidth = 1.2;
+      // Captured-flag ring: fully closed and visibly double-stroked.
+      const innerRingRadius = POINT_RADIUS + 7;
+      const outerRingRadius = innerRingRadius + 1;
+
+      targetCtx.strokeStyle = "rgba(14, 18, 28, 0.82)";
+      targetCtx.lineWidth = 1;
       targetCtx.beginPath();
-      targetCtx.arc(p.x, p.y, ringRadius + 0.6, ringStart, ringEnd, false);
+      targetCtx.arc(p.x, p.y, outerRingRadius, 0, Math.PI * 2, false);
       targetCtx.stroke();
 
       targetCtx.strokeStyle = ringColor;
-      targetCtx.lineWidth = 2.2;
+      targetCtx.lineWidth = 2.6;
       targetCtx.beginPath();
-      targetCtx.arc(p.x, p.y, ringRadius, ringStart, ringEnd, false);
+      targetCtx.arc(p.x, p.y, innerRingRadius, 0, Math.PI * 2, false);
       targetCtx.stroke();
       targetCtx.restore();
     }
