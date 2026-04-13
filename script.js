@@ -953,44 +953,55 @@ function resolveTurnFlashDebugHost() {
   return host;
 }
 
-function ensureTurnFlashDebugLayer() {
-  if (turnFlashDebugState.layer instanceof HTMLElement && turnFlashDebugState.layer.isConnected) {
-    return turnFlashDebugState.layer;
-  }
-  const host = resolveTurnFlashDebugHost();
-  if (!(host instanceof HTMLElement)) return null;
-  let layer = host.querySelector(".turn-flash-debug-layer");
-  if (!(layer instanceof HTMLElement)) {
-    layer = document.createElement("div");
-    layer.className = "turn-flash-debug-layer";
-    layer.setAttribute("aria-hidden", "true");
-    host.appendChild(layer);
-  }
-  turnFlashDebugState.layer = layer;
-  return layer;
-}
-
 function triggerTurnFlashDebugPulse(side) {
   const safeSide = normalizeTurnFlashSide(side);
-  const layer = ensureTurnFlashDebugLayer();
-  if (!(layer instanceof HTMLElement)) return false;
-  layer.classList.remove("turn-flash-debug-layer--blue", "turn-flash-debug-layer--green", "is-pulsing");
-  layer.classList.add(safeSide === "green" ? "turn-flash-debug-layer--green" : "turn-flash-debug-layer--blue");
-  void layer.offsetWidth;
-  layer.classList.add("is-pulsing");
+  const host = resolveTurnFlashDebugHost();
+  if (!(host instanceof HTMLElement)) {
+    console.warn("[turn-flash-debug] trigger aborted: host/container not found.");
+    return false;
+  }
+  const layer = document.createElement("div");
+  layer.className = "turn-flash-debug-layer";
+  layer.setAttribute("aria-hidden", "true");
+  Object.assign(layer.style, {
+    position: "absolute",
+    inset: "0",
+    pointerEvents: "none",
+    zIndex: "24",
+    opacity: "0",
+    background: safeSide === "green"
+      ? "linear-gradient(to bottom, rgba(80,200,120,0) 0 50%, rgba(80,200,120,.55) 50% 100%)"
+      : "linear-gradient(to bottom, rgba(80,140,255,.55) 0 50%, rgba(80,140,255,0) 50% 100%)",
+  });
+  host.appendChild(layer);
+  turnFlashDebugState.layer = layer;
+  const animation = layer.animate(
+    [
+      { opacity: 0 },
+      { opacity: .24 },
+      { opacity: .42 },
+      { opacity: .24 },
+      { opacity: .42 },
+      { opacity: .24 },
+      { opacity: 0 }
+    ],
+    {
+      duration: 1700,
+      easing: "ease-in-out"
+    }
+  );
+  const cleanup = () => {
+    if (layer.isConnected) layer.remove();
+    if (turnFlashDebugState.layer === layer) {
+      turnFlashDebugState.layer = null;
+    }
+  };
+  animation.onfinish = cleanup;
+  animation.oncancel = cleanup;
   return true;
 }
 
 function enableTurnFlashDebug() {
-  const layer = ensureTurnFlashDebugLayer();
-  if (!(layer instanceof HTMLElement)) {
-    turnFlashDebugState.enabled = false;
-    if (typeof turnFlashDebugState.unsubscribe === "function") {
-      turnFlashDebugState.unsubscribe();
-    }
-    turnFlashDebugState.unsubscribe = null;
-    return turnFlashDebugApiState();
-  }
   if (!turnFlashDebugState.enabled) {
     const unsubscribe = subscribeTurnAdvance(({ nextTurnColor }) => {
       triggerTurnFlashDebugPulse(nextTurnColor);
@@ -1007,18 +1018,19 @@ function disableTurnFlashDebug() {
   }
   turnFlashDebugState.unsubscribe = null;
   turnFlashDebugState.enabled = false;
-  if (turnFlashDebugState.layer instanceof HTMLElement) {
-    turnFlashDebugState.layer.classList.remove(
-      "turn-flash-debug-layer--blue",
-      "turn-flash-debug-layer--green",
-      "is-pulsing"
-    );
+  if (turnFlashDebugState.host instanceof HTMLElement) {
+    turnFlashDebugState.host.querySelectorAll(".turn-flash-debug-layer").forEach((layer) => {
+      if (layer instanceof HTMLElement) layer.remove();
+    });
   }
+  turnFlashDebugState.layer = null;
   return turnFlashDebugApiState();
 }
 
 function turnFlashDebugApiState() {
-  const hasLayer = turnFlashDebugState.layer instanceof HTMLElement && turnFlashDebugState.layer.isConnected;
+  const hasLayer =
+    turnFlashDebugState.layer instanceof HTMLElement
+    && turnFlashDebugState.layer.isConnected;
   return {
     enabled: turnFlashDebugState.enabled === true,
     hasLayer,
