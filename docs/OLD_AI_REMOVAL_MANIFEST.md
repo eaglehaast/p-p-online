@@ -4,25 +4,20 @@
 This manifest tracks entities related to legacy AI v1/v2 that were removed or explicitly disabled in this PR.
 
 ## Entry points and runtime dispatch
-- `doComputerMove` old v1/v2 runtime path — **disabled** (neutral fallback with turn advance).
-- `window.runAiTurnV2` — **disabled** (`undefined` in runtime export).
+- `doComputerMove` old runtime path — **hard-fail stub** (`old AI removed`).
+- `runAiTurnV2` old runtime path — **hard-fail stub** (`old AI removed`).
+- `tryStartAiPlanningFromCommittedState` — **hard-fail stub**.
+- `scheduleComputerMoveWithCargoGate` — **hard-fail stub**.
 
 ## Public/debug APIs
-Disabled with explicit response `Old AI removed. This API is disabled.`:
-- `window.exportLatestAiSelfAnalyzerJson`
-- `window.exportAiSelfAnalyzerTurnsJson`
-- `window.exportAiSelfAnalyzerGapJson`
-- `window.exportPlayerVsAiGapReportJson`
-- `window.exportAiV2DecisionAuditReportJson`
-- `window.exportAiV2DecisionAuditCompactReportJson`
-- `window.exportAiV2ReserveDiagnosticsReportJson`
-- `window.exportAiFuelTrainingReportJson`
-- `window.DEBUG_AI_GAP_AFTER_BOUNCE_REPORT`
-- `window.getAiSelfAnalyzerSnapshot`
+Old decision debug/export APIs are reduced to hard-fail responses via `old_ai_debug_api_removed`:
+- `exportAiV2DecisionAuditReportJson`
+- `exportAiV2DecisionAuditCompactReportJson`
+- `exportAiV2ReserveDiagnosticsReportJson`
+- `DEBUG_AI_GAP_AFTER_BOUNCE_REPORT`
 
-`window.AI_DEBUG_CMD` behavior:
-- all old AI commands — **disabled** with `Old AI removed. AI debug commands are disabled.`
-- `reset-cargo` — preserved as neutral utility.
+Runtime `window` surface keeps only neutral helper:
+- `window.RESET_CARGO`
 
 ## Deleted AI automation scripts
 Deleted all `scripts/smoke-ai-*.js` files and AI compare scripts:
@@ -35,11 +30,5 @@ Deleted all `scripts/smoke-ai-*.js` files and AI compare scripts:
 - `docs/ai-cargo-before-after.md`
 - `docs/ai-wall-locked-before-after.md`
 
-## Suspicious tails (left intentionally, non-functional for old AI runtime)
-These pieces can still mention AI internals, but old runtime entry is disabled:
-- timer/scheduler helpers around planner timing (`aiMoveScheduled`, cargo gate scheduling)
-- fail-safe turn-advance plumbing
-- decision logging helpers (`logAiDecision` and related event helpers)
-- self-analyzer internals retained as non-active legacy code paths
-
-They are tracked for follow-up cleanup once new AI integration branch is ready.
+## Hard-pass follow-up
+- See `docs/BEHAVIOR_REMOVAL_HARD_PASS_2026-04-13.md` for explicit hard-fail behavior and acceptance checks.
