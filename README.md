@@ -48,13 +48,13 @@ Current cargo icons used by the game are stored only in:
 
 The obsolete prototype folder `ui_gamescreen/gamescreen_outside/gs_icon_prototypes/` is removed and must not be used as a runtime source.
 
-## Old AI removal status
+## Legacy goal-priority module removal status
 
-Old AI (v1 and v2) has been fully disabled in runtime.
+Legacy browser-loaded goal-priority model (`ai/v2/goalPriorityModel.js`) is no longer connected in `index.html`.
 
 What this means now:
-- Computer mode now shows an explicit hard-fail signal when computer turn begins: old AI is removed, new AI is not implemented yet.
-- Legacy AI debug/diagnostic APIs are no longer exported into runtime.
+- Computer mode continues to use the main built-in heuristic logic from `script.js`.
+- Legacy `window.PaperWingsGoalPriorityModel` global is no longer used in the active computer-turn path.
 - Cargo reset debug helper remains available:
 
 ```js
@@ -72,7 +72,7 @@ For a detailed “after demolition” list, see:
 ## Game modes
 
 - **Hot Seat** – two players share the same computer.
-- **Computer** – hard-fail placeholder while new AI is being prepared (old AI fully removed).
+- **Computer** – available and driven by the current in-file heuristic logic.
 - **Online** – currently disabled in this build.
 
 ## Basic rules
