@@ -13496,63 +13496,38 @@ function forceResetCargoNow(){
 
 function AI_DEBUG_CMD(command, arg){
   const normalized = typeof command === "string" ? command.trim().toLowerCase() : "";
-  if(normalized === "snapshot"){
-    return printAiDebugSnapshot();
-  }
-  if(normalized === "last-decisions"){
-    return printAiDebugLastDecisions(arg);
-  }
-  if(normalized === "status"){
-    return printAiDebugStatus();
-  }
   if(normalized === "reset-cargo"){
     return forceResetCargoNow();
   }
-  if(normalized === "v2-reserve-report"){
-    return exportAiV2ReserveDiagnosticsReportJson();
-  }
-  if(normalized === "gap-after-bounce-report"){
-    return DEBUG_AI_GAP_AFTER_BOUNCE_REPORT();
-  }
-  if(normalized === "v2-report"){
-    return exportAiV2DecisionAuditReportJson();
-  }
-  if(normalized === "v2-report-compact"){
-    return exportAiV2DecisionAuditCompactReportJson();
-  }
-  if(normalized === "telegraphy"){
-    const modeRaw = typeof arg === "string" ? arg.trim().toLowerCase() : "";
-    if(modeRaw === "on" || modeRaw === "true" || modeRaw === "1"){
-      aiTelegraphyDebugState.enabled = true;
-    } else if(modeRaw === "off" || modeRaw === "false" || modeRaw === "0"){
-      aiTelegraphyDebugState.enabled = false;
-    }
-    const result = {
-      telegraphyEnabled: aiTelegraphyDebugState.enabled !== false,
-      usage: 'AI_DEBUG_CMD("telegraphy", "on|off")'
-    };
-    console.info('[AI_DEBUG] telegraphy', result);
-    return result;
-  }
-
-  console.info('[AI_DEBUG] Неизвестная команда. Доступно: "snapshot", "last-decisions", "status", "reset-cargo", "v2-reserve-report", "gap-after-bounce-report", "v2-report", "v2-report-compact", "telegraphy".');
-  return null;
+  const response = {
+    ok: false,
+    command: normalized || null,
+    message: "Old AI removed. AI debug commands are disabled.",
+  };
+  console.info('[AI_DEBUG]', response.message, response);
+  return response;
 }
 
+
 if(typeof window !== "undefined"){
-  window.exportLatestAiSelfAnalyzerJson = exportLatestAiSelfAnalyzerJson;
-  window.exportAiSelfAnalyzerTurnsJson = exportAiSelfAnalyzerTurnsJson;
-  window.exportAiSelfAnalyzerGapJson = exportAiSelfAnalyzerGapJson;
-  window.exportPlayerVsAiGapReportJson = exportPlayerVsAiGapReportJson;
-  window.exportAiV2DecisionAuditReportJson = exportAiV2DecisionAuditReportJson;
-  window.exportAiV2DecisionAuditCompactReportJson = exportAiV2DecisionAuditCompactReportJson;
-  window.exportAiV2ReserveDiagnosticsReportJson = exportAiV2ReserveDiagnosticsReportJson;
-  window.exportAiFuelTrainingReportJson = exportAiFuelTrainingReportJson;
-  window.DEBUG_AI_GAP_AFTER_BOUNCE_REPORT = DEBUG_AI_GAP_AFTER_BOUNCE_REPORT;
-  window.getAiSelfAnalyzerSnapshot = getAiSelfAnalyzerSnapshot;
+  const oldAiRemovedStub = () => ({
+    ok: false,
+    message: "Old AI removed. This API is disabled.",
+  });
+  window.exportLatestAiSelfAnalyzerJson = oldAiRemovedStub;
+  window.exportAiSelfAnalyzerTurnsJson = oldAiRemovedStub;
+  window.exportAiSelfAnalyzerGapJson = oldAiRemovedStub;
+  window.exportPlayerVsAiGapReportJson = oldAiRemovedStub;
+  window.exportAiV2DecisionAuditReportJson = oldAiRemovedStub;
+  window.exportAiV2DecisionAuditCompactReportJson = oldAiRemovedStub;
+  window.exportAiV2ReserveDiagnosticsReportJson = oldAiRemovedStub;
+  window.exportAiFuelTrainingReportJson = oldAiRemovedStub;
+  window.DEBUG_AI_GAP_AFTER_BOUNCE_REPORT = oldAiRemovedStub;
+  window.getAiSelfAnalyzerSnapshot = oldAiRemovedStub;
   window.AI_DEBUG_CMD = AI_DEBUG_CMD;
   window.RESET_CARGO = forceResetCargoNow;
 }
+
 
 let matchScoreImagesRequested = false;
 function loadMatchScoreImagesIfNeeded(){
@@ -34179,169 +34154,39 @@ function buildShotPlan(goalSelection = {}, modeContext = {}, options = {}){
 }
 
 if(typeof window !== "undefined"){
-  window.runAiTurnV2 = runAiTurnV2;
+  window.runAiTurnV2 = undefined;
 }
 
-// AI CONTRACT: dispatcher behavior should remain consistent with docs/AI_BEHAVIOR_CONTRACT.md
+// AI CONTRACT: docs/AI_BEHAVIOR_CONTRACT.md stays as future target, but old runtime is removed.
 function doComputerMove(){
-  const getFailSafeCounts = () => ({
-    aiPlanes: points.filter((plane) => plane?.color === "blue" && plane?.isAlive && !plane?.burning).length,
-    enemyPlanes: points.filter((plane) => plane?.color === "green" && plane?.isAlive && !plane?.burning).length,
+  aiMoveScheduled = false;
+  clearAiPostInventoryLaunchTimeout("old_ai_removed");
+
+  logAiDecision("old_ai_removed", {
+    source: "doComputerMove",
+    reasonCode: "old_ai_removed",
+    message: "Old AI runtime removed. Turn is advanced with neutral fallback.",
+    mode: gameMode,
   });
-  const tryEmergencyAiLaunch = (reasonCode) => {
-    const launchReadyAiPlanes = points.filter((plane) => (
-      plane?.color === "blue"
-      && isPlaneLaunchStateReady(plane)
-      && !flyingPoints.some((fp) => fp.plane === plane)
-    ));
-    const aliveEnemies = points.filter((plane) => plane?.color === "green" && plane?.isAlive && !plane?.burning);
-    const emergencyContext = {
-      aiPlanes: typeof rankAiPlanesForCurrentTurn === "function"
-        ? rankAiPlanesForCurrentTurn(launchReadyAiPlanes)
-        : launchReadyAiPlanes,
-      enemies: aliveEnemies,
-    };
 
-    const emergencyMove = (typeof getMandatoryTurnMove === "function"
-      ? getMandatoryTurnMove(emergencyContext)
-      : null)
-      || (typeof getFailSafeGuaranteedDirectMove === "function"
-        ? getFailSafeGuaranteedDirectMove(emergencyContext)
-        : null);
-    if(!emergencyMove) return { launched: false, rejectReason: "no_emergency_move_candidate" };
-
-    const validation = typeof validateAiLaunchMoveCandidate === "function"
-      ? validateAiLaunchMoveCandidate(emergencyMove)
-      : {
-          ok: Boolean(
-            emergencyMove?.plane
-            && Number.isFinite(emergencyMove?.vx)
-            && Number.isFinite(emergencyMove?.vy)
-          ),
-          reason: "no_validation_runtime",
-        };
-    if(!validation.ok){
-      return { launched: false, rejectReason: validation?.reason || "emergency_move_validation_failed" };
-    }
-
-    if(typeof issueAIMove !== "function"){
-      return { launched: false, rejectReason: "issue_ai_move_unavailable" };
-    }
-
-    const launchResult = issueAIMove(
-      emergencyMove.plane,
-      emergencyMove.vx,
-      emergencyMove.vy,
-      { isFallbackMove: true },
-    );
-    const launchOk = launchResult?.ok !== false;
-    if(!launchOk){
-      return { launched: false, rejectReason: launchResult?.reason || "emergency_launch_failed" };
-    }
-
-    aiMoveScheduled = false;
-    logAiDecision("ai_turn_runtime_emergency_launch", {
-      source: "doComputerMove",
-      reasonCode,
-      planeId: emergencyMove?.plane?.id ?? null,
-      goal: emergencyMove?.goalName || "mandatory_turn_move",
-      decisionReason: emergencyMove?.decisionReason || "mandatory_turn_move",
-      counts: getFailSafeCounts(),
-    });
-    return { launched: true };
-  };
-  const safeAdvanceTurn = (reason, details = {}) => {
-    if(typeof failSafeAdvanceTurn === "function"){
-      return failSafeAdvanceTurn(reason, details);
-    }
-    aiMoveScheduled = false;
-    if(typeof advanceTurn === "function"){
-      advanceTurn();
-    }
-    return undefined;
+  const payload = {
+    goal: "ai_disabled",
+    reasonCategory: "ai_disabled",
+    reasonCode: "old_ai_removed",
+    reasonCodes: ["old_ai_removed", "ai_disabled", "fail_safe_turn_advance"],
+    rejectReasons: ["old_ai_removed"],
+    source: "doComputerMove",
   };
 
-  const runtime = typeof runAiTurnV2 === "function"
-    ? runAiTurnV2
-    : (typeof window !== "undefined" && typeof window.runAiTurnV2 === "function"
-      ? window.runAiTurnV2
-      : null);
-
-  if(typeof runtime !== "function"){
-    logAiDecision("ai_turn_runtime_missing", {
-      source: "doComputerMove",
-      reasonCode: "ai_turn_runtime_unavailable",
-      mode: gameMode,
-      isGameOver,
-    });
-    logAiDecision("ai_no_move_fail_safe", {
-      source: "doComputerMove",
-      reasonCode: "ai_turn_runtime_unavailable",
-      counts: getFailSafeCounts(),
-    });
-    const emergencyLaunch = tryEmergencyAiLaunch("ai_turn_runtime_unavailable");
-    if(emergencyLaunch.launched){
-      return;
-    }
-    return safeAdvanceTurn("ai_turn_runtime_unavailable", {
-      goal: aiRoundState?.currentGoal || "ai_turn_runtime_unavailable",
-      reasonCodes: ["ai_turn_runtime_unavailable", "fail_safe_turn_advance"],
-      rejectReasons: ["ai_turn_runtime_unavailable", emergencyLaunch.rejectReason || "emergency_launch_failed"],
-      source: "doComputerMove",
-    });
+  if(typeof failSafeAdvanceTurn === "function"){
+    return failSafeAdvanceTurn("old_ai_removed", payload);
   }
-
-  try {
-    return runtime();
-  } catch (error) {
-    const existingSessionReason = extractAiLaunchExistingSessionReason(error);
-    if(existingSessionReason){
-      const waitState = registerAiLaunchExistingSessionCooldown(existingSessionReason);
-      if(!waitState.suppressedByCooldown){
-        logAiDecision("ai_launch_waiting_existing_session", {
-          source: "doComputerMove",
-          reasonCode: existingSessionReason,
-          turnNumber: waitState.turnNumber,
-          attemptsThisTurn: waitState.attempts,
-          counts: getFailSafeCounts(),
-        });
-      }
-      recordAiSelfAnalyzerDecision("ai_launch_waiting_existing_session", {
-        goal: aiRoundState?.currentGoal || null,
-        planeId: null,
-        reasonCode: existingSessionReason,
-        reasonCodes: ["ai_launch_waiting_existing_session", "launch_in_progress", existingSessionReason],
-        rejectReasons: [existingSessionReason],
-        source: "doComputerMove",
-      });
-      return;
-    }
-
-    logAiDecision("ai_turn_runtime_exception", {
-      source: "doComputerMove",
-      reasonCode: "ai_turn_runtime_exception",
-      message: error?.message || String(error),
-      stack: error?.stack || null,
-    });
-    logAiDecision("ai_no_move_fail_safe", {
-      source: "doComputerMove",
-      reasonCode: "ai_turn_runtime_exception",
-      counts: getFailSafeCounts(),
-    });
-    const emergencyLaunch = tryEmergencyAiLaunch("ai_turn_runtime_exception");
-    if(emergencyLaunch.launched){
-      return;
-    }
-    return safeAdvanceTurn("ai_turn_runtime_exception", {
-      goal: aiRoundState?.currentGoal || "ai_turn_runtime_exception",
-      reasonCategory: "technical_exception",
-      reasonCodes: ["ai_turn_runtime_exception", "technical_exception", "fail_safe_turn_advance"],
-      rejectReasons: ["ai_turn_runtime_exception", emergencyLaunch.rejectReason || "emergency_launch_failed"],
-      errorMessage: error?.message || String(error),
-      source: "doComputerMove",
-    });
+  if(typeof advanceTurn === "function"){
+    return advanceTurn();
   }
+  return { ok: false, message: "Old AI removed. advanceTurn is unavailable." };
 }
+
 
 
 function tryGetAiTacticalMediumScale(baseScale, baseAngle, plane, speedPxPerSec){
