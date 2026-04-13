@@ -27291,65 +27291,10 @@ function evaluateFlagPressureOpportunity(context = {}){
 }
 
 function evaluateAiGoalPriorityModel(context){
-  const model = (typeof window !== "undefined" && window.PaperWingsGoalPriorityModel)
-    ? window.PaperWingsGoalPriorityModel
-    : null;
-  if(!model || typeof model.evaluate !== "function") return null;
-
-  const shouldUseFlagsMode = Boolean(context?.shouldUseFlagsMode);
-  const aiAliveCount = Array.isArray(context?.aiPlanes) ? context.aiPlanes.length : 0;
-  const enemyAliveCount = Array.isArray(context?.enemies) ? context.enemies.length : 0;
-  const availableEnemyFlagsCount = Array.isArray(context?.availableEnemyFlags)
-    ? context.availableEnemyFlags.length
-    : 0;
-  const readyCargoCount = Array.isArray(cargoState)
-    ? cargoState.reduce((count, cargo) => count + (cargo?.state === "ready" ? 1 : 0), 0)
-    : 0;
-
-  const flagPressureOpportunity = context?.flagPressureOpportunity || evaluateFlagPressureOpportunity(context);
-
-  return model.evaluate({
-    scoreGap: greenScore - blueScore,
-    aiAliveCount,
-    enemyAliveCount,
-    availableEnemyFlagsCount,
-    blueInventoryCount: Number.isFinite(context?.blueInventoryCount) ? context.blueInventoryCount : 0,
-    readyCargoCount,
-    hasStolenBlueFlagCarrier: Boolean(context?.defensivePriority?.hasFlagCarrierThreat || (context?.stolenBlueFlagCarrier && context.stolenBlueFlagCarrier.color !== "blue")),
-    hasTripleKillOpportunity: Boolean(context?.groupKillPriorityPlan?.move && context.groupKillPriorityPlan.killCountOnTrajectory >= 3),
-    hasImmediateBlueFlagTheftThreat: Boolean(context?.defensivePriority?.hasQuickFlagPickupThreat || context?.criticalBlueFlagThreat),
-    defensivePriorityLevel: context?.defensivePriority?.level || AI_DEFENSIVE_PRIORITY_LEVELS.NONE,
-    defensivePrioritySource: context?.defensivePriority?.primarySource || null,
-    shouldUseFlagsMode,
-    canReachEnemyFlag: flagPressureOpportunity.canReachEnemyFlag,
-    hasReturnRouteOpportunity: flagPressureOpportunity.hasReturnRouteOpportunity,
-    hasSafePostPickupEscape: flagPressureOpportunity.hasSafeEscapeOpportunity,
-    expectedRetreatChance: flagPressureOpportunity.expectedRetreatChance,
-    returnLaneThreat: flagPressureOpportunity.returnLaneThreat,
-    flagGrabValue: flagPressureOpportunity.flagGrabValue,
-    postPickupEscapeValue: flagPressureOpportunity.postPickupEscapeValue,
-    flagReturnValue: flagPressureOpportunity.flagReturnValue,
-    flagContinuationStatus: flagPressureOpportunity.flagContinuationStatus,
-    flagContinuationReason: flagPressureOpportunity.flagContinuationReason,
-    hasSafeEscapeOpportunity: flagPressureOpportunity.hasSafeEscapeOpportunity,
-    cargoAlternativeValue: flagPressureOpportunity.cargoAlternativeValue,
-    attackAlternativeValue: flagPressureOpportunity.attackAlternativeValue,
-    baseControlLoss: flagPressureOpportunity.baseControlLoss,
-    dangerousEnemyNearBlueBase: flagPressureOpportunity.dangerousEnemyNearBlueBase,
-    interceptWindowLoss: flagPressureOpportunity.interceptWindowLoss,
-    hasComfortableDefensiveResponse: flagPressureOpportunity.hasComfortableDefensiveResponse,
-    homeDefensePressure: flagPressureOpportunity.homeDefensePressure,
-    criticalHomeDefenseThreat: flagPressureOpportunity.criticalHomeDefenseThreat,
-    mineRoutePressure: flagPressureOpportunity.mineRoutePressure,
-    mineEnemyRoutePressure: flagPressureOpportunity.mineEnemyRoutePressure,
-    mineOwnRoutePressure: flagPressureOpportunity.mineOwnRoutePressure,
-    mineOwnPathIntersectionPenalty: flagPressureOpportunity.mineOwnPathIntersectionPenalty,
-    mineDetourValue: flagPressureOpportunity.mineDetourValue,
-    mineDefensiveUrgency: flagPressureOpportunity.mineDefensiveUrgency,
-    trappedByMines: flagPressureOpportunity.trappedByMines,
-    enemyMineCoverAfterAdvance: flagPressureOpportunity.enemyMineCoverAfterAdvance,
-    routeDevaluedByOwnMines: flagPressureOpportunity.routeDevaluedByOwnMines,
-  });
+  // Legacy goal priority model has been removed from runtime loading.
+  // Keep this function as a no-op fallback so AI goal selection continues
+  // via the built-in heuristic branch below without hard failures.
+  return null;
 }
 
 function applyAiGoalSelection(selection, meta = {}){
