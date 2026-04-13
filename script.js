@@ -882,9 +882,9 @@ const TRANSFER_SYSTEM_HOST_Z_INDEX = 320;
 const TRANSFER_GLOW_LAYER_Z_INDEX = 320;
 const TRANSFER_FRAME_LAYER_Z_INDEX = 321;
 const TRANSFER_FRAME_ASSETS = Object.freeze({
-  back: "ui_gamescreen/gs_transfer/gs_transfer_back.png",
-  blue: "ui_gamescreen/gs_transfer/gs_transfer_blue.png",
-  green: "ui_gamescreen/gs_transfer/gs_transfer_green.png",
+  back: "ui_gamescreen/gs_transfer_2/gs_transfer_back.png",
+  blue: "ui_gamescreen/gs_transfer_2/gs_transfer_blue.png",
+  green: "ui_gamescreen/gs_transfer_2/gs_transfer_green.png",
 });
 const transferFrameState = {
   host: null,
