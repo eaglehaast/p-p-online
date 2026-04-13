@@ -8476,6 +8476,15 @@ function colorWithAlpha(color, alpha){
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
+const CAPTURED_FLAG_RING_STYLE = {
+  innerRadiusOffset: 7,
+  outerRadiusOffset: 0.9,
+  outerStrokeColor: "rgba(10, 14, 22, 0.9)",
+  outerStrokeWidth: 0.8,
+  innerStrokeWidth: 2.4,
+  innerStrokeAlpha: 0.98
+};
+
 let brickFrameBorderPxX = FIELD_BORDER_THICKNESS;
   let brickFrameBorderPxY = FIELD_BORDER_THICKNESS;
 function processBrickFrameImage() {
@@ -38982,20 +38991,20 @@ function drawPlanesAndTrajectories(){
     const isPlaneFullyHiddenByInvisibility = invisibilityAlpha <= 0.01;
     if(p.flagColor && !isPlaneFullyHiddenByInvisibility){
       targetCtx.save();
-      const ringColor = colorFor(p.flagColor);
+      const ringColor = colorWithAlpha(p.flagColor, CAPTURED_FLAG_RING_STYLE.innerStrokeAlpha);
 
       // Captured-flag ring: fully closed and visibly double-stroked.
-      const innerRingRadius = POINT_RADIUS + 7;
-      const outerRingRadius = innerRingRadius + 1;
+      const innerRingRadius = POINT_RADIUS + CAPTURED_FLAG_RING_STYLE.innerRadiusOffset;
+      const outerRingRadius = innerRingRadius + CAPTURED_FLAG_RING_STYLE.outerRadiusOffset;
 
-      targetCtx.strokeStyle = "rgba(14, 18, 28, 0.82)";
-      targetCtx.lineWidth = 1;
+      targetCtx.strokeStyle = CAPTURED_FLAG_RING_STYLE.outerStrokeColor;
+      targetCtx.lineWidth = CAPTURED_FLAG_RING_STYLE.outerStrokeWidth;
       targetCtx.beginPath();
       targetCtx.arc(p.x, p.y, outerRingRadius, 0, Math.PI * 2, false);
       targetCtx.stroke();
 
       targetCtx.strokeStyle = ringColor;
-      targetCtx.lineWidth = 2.6;
+      targetCtx.lineWidth = CAPTURED_FLAG_RING_STYLE.innerStrokeWidth;
       targetCtx.beginPath();
       targetCtx.arc(p.x, p.y, innerRingRadius, 0, Math.PI * 2, false);
       targetCtx.stroke();
