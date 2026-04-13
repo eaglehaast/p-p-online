@@ -15801,9 +15801,25 @@ function scheduleAiLaunchSessionWatchdog(session){
       releaseAiLaunchSession(session, "watchdog_immediate_release", watchdogNow);
       return;
     }
-    console.warn("launch watchdog stopped: plane is not launch-ready");
-    aiLaunchSession = null;
-    cleanupHandle();
+    const reasonCode = "launch_watchdog_invalid_plane";
+    console.warn("launch watchdog stopped: plane is not launch-ready; forcing emergency exit", {
+      reasonCode,
+      planeId: session?.plane?.id ?? null,
+    });
+    logAiDecision("ai_launch_watchdog", {
+      reason: "watchdog_plane_not_launch_ready",
+      reasonCode,
+      planeId: session?.plane?.id ?? null,
+      status: "watchdog_invalid_plane_fail_safe",
+      source: "scheduleAiLaunchSessionWatchdog",
+      ...getAiTurnTimingSnapshot(),
+    });
+    resolveInvalidAiLaunchSessionWithEmergencyExit(session, {
+      source: "scheduleAiLaunchSessionWatchdog",
+      reason: "watchdog_plane_not_launch_ready",
+      reasonCode,
+      logChannel: "ai_launch_watchdog",
+    });
   }, delayMs);
 }
 
@@ -15991,6 +16007,78 @@ function pickAiLaunchCandidateForRelease(session){
   return null;
 }
 
+function resolveInvalidAiLaunchSessionWithEmergencyExit(session, options = {}){
+  const source = options?.source || "ai_launch_session";
+  const reason = options?.reason || "invalid_launch_session_state";
+  const reasonCode = options?.reasonCode || "launch_release_invalid_plane";
+  const logChannel = options?.logChannel || "ai_launch_release";
+  const planeId = session?.plane?.id ?? null;
+
+  clearAiLaunchSessionWatchdog(session);
+  aiMoveScheduled = false;
+  aiLaunchSession = null;
+  cleanupHandle();
+
+  const emergencyLaunchRecovered = typeof tryRecoverAiFailSafeWithEmergencyLaunch === "function"
+    ? tryRecoverAiFailSafeWithEmergencyLaunch({
+        reason,
+        reasonCode,
+        source,
+        goal: aiRoundState?.currentGoal || reasonCode,
+        planeId,
+        rejectReasons: ["invalid_plane_not_launch_ready"],
+      })
+    : false;
+
+  if(emergencyLaunchRecovered){
+    logAiDecision(logChannel, {
+      reason,
+      reasonCode,
+      planeId,
+      status: "emergency_launch_recovered",
+      finalAction: "emergency_launch",
+      source,
+      ...getAiTurnTimingSnapshot(),
+    });
+    return true;
+  }
+
+  if(typeof failSafeAdvanceTurn === "function"){
+    failSafeAdvanceTurn(reasonCode, {
+      reasonCode,
+      reasonCodes: [reasonCode, "fail_safe_turn_advance"],
+      rejectReasons: ["invalid_plane_not_launch_ready", "emergency_launch_unavailable"],
+      goal: aiRoundState?.currentGoal || reasonCode,
+      planeId,
+      source,
+    });
+    logAiDecision(logChannel, {
+      reason,
+      reasonCode,
+      planeId,
+      status: "fail_safe_turn_advanced",
+      finalAction: "fail_safe_advance_turn",
+      source,
+      ...getAiTurnTimingSnapshot(),
+    });
+    return false;
+  }
+
+  if(typeof advanceTurn === "function"){
+    advanceTurn();
+  }
+  logAiDecision(logChannel, {
+    reason,
+    reasonCode,
+    planeId,
+    status: "advance_turn_without_fail_safe",
+    finalAction: "advance_turn_fallback",
+    source,
+    ...getAiTurnTimingSnapshot(),
+  });
+  return false;
+}
+
 function getAiLaunchOscillationElapsedMs(session, now = performance.now()){
   if(!session) return 0;
   return Math.max(0, now - (session.oscillationStartsAt || session.stageStartedAt || now));
@@ -16093,17 +16181,22 @@ function releaseAiLaunchSession(session, reason, now = performance.now()){
     return;
   }
   if(!session?.plane || !isPlaneLaunchStateReady(session.plane)){
+    const reasonCode = "launch_release_invalid_plane";
     logAiDecision("ai_launch_release", {
       reason,
+      reasonCode,
       planeId: session?.plane?.id ?? null,
       releaseCause: "emergency_release",
-      status: "skipped_invalid_plane",
+      status: "skipped_invalid_plane_fail_safe",
       releaseMode: session?.pendingReleaseMode || null,
       ...getAiTurnTimingSnapshot(),
     });
-    clearAiLaunchSessionWatchdog(session);
-    aiLaunchSession = null;
-    cleanupHandle();
+    resolveInvalidAiLaunchSessionWithEmergencyExit(session, {
+      source: "releaseAiLaunchSession",
+      reason,
+      reasonCode,
+      logChannel: "ai_launch_release",
+    });
     return;
   }
 
