@@ -900,6 +900,108 @@ const transferFrameState = {
   hideAnimationId: 0,
   panelAnimation: null,
 };
+const turnAdvanceListeners = new Set();
+const turnFlashDebugState = {
+  enabled: false,
+  unsubscribe: null,
+  layer: null,
+};
+
+function subscribeTurnAdvance(listener) {
+  if (typeof listener !== "function") return () => {};
+  turnAdvanceListeners.add(listener);
+  return () => {
+    turnAdvanceListeners.delete(listener);
+  };
+}
+
+function notifyTurnAdvanced(payload) {
+  if (!turnAdvanceListeners.size) return;
+  turnAdvanceListeners.forEach((listener) => {
+    try {
+      listener(payload);
+    } catch (error) {
+      console.warn("[turn-flash-debug] listener failed", error);
+    }
+  });
+}
+
+function normalizeTurnFlashSide(side) {
+  return side === "green" ? "green" : "blue";
+}
+
+function ensureTurnFlashDebugLayer() {
+  if (turnFlashDebugState.layer instanceof HTMLElement && turnFlashDebugState.layer.isConnected) {
+    return turnFlashDebugState.layer;
+  }
+  if (!(gameContainer instanceof HTMLElement)) return null;
+  let layer = gameContainer.querySelector(".turn-flash-debug-layer");
+  if (!(layer instanceof HTMLElement)) {
+    layer = document.createElement("div");
+    layer.className = "turn-flash-debug-layer";
+    layer.setAttribute("aria-hidden", "true");
+    gameContainer.appendChild(layer);
+  }
+  turnFlashDebugState.layer = layer;
+  return layer;
+}
+
+function triggerTurnFlashDebugPulse(side) {
+  const safeSide = normalizeTurnFlashSide(side);
+  const layer = ensureTurnFlashDebugLayer();
+  if (!(layer instanceof HTMLElement)) return false;
+  layer.classList.remove("turn-flash-debug-layer--blue", "turn-flash-debug-layer--green", "is-pulsing");
+  layer.classList.add(safeSide === "green" ? "turn-flash-debug-layer--green" : "turn-flash-debug-layer--blue");
+  void layer.offsetWidth;
+  layer.classList.add("is-pulsing");
+  return true;
+}
+
+function enableTurnFlashDebug() {
+  if (turnFlashDebugState.enabled) {
+    return turnFlashDebugApiState();
+  }
+  const unsubscribe = subscribeTurnAdvance(({ nextTurnColor }) => {
+    triggerTurnFlashDebugPulse(nextTurnColor);
+  });
+  turnFlashDebugState.unsubscribe = unsubscribe;
+  turnFlashDebugState.enabled = true;
+  return turnFlashDebugApiState();
+}
+
+function disableTurnFlashDebug() {
+  if (typeof turnFlashDebugState.unsubscribe === "function") {
+    turnFlashDebugState.unsubscribe();
+  }
+  turnFlashDebugState.unsubscribe = null;
+  turnFlashDebugState.enabled = false;
+  if (turnFlashDebugState.layer instanceof HTMLElement) {
+    turnFlashDebugState.layer.classList.remove(
+      "turn-flash-debug-layer--blue",
+      "turn-flash-debug-layer--green",
+      "is-pulsing"
+    );
+  }
+  return turnFlashDebugApiState();
+}
+
+function turnFlashDebugApiState() {
+  return {
+    enabled: turnFlashDebugState.enabled === true,
+    hasLayer: turnFlashDebugState.layer instanceof HTMLElement,
+  };
+}
+
+function installTurnFlashDebugApi() {
+  if (typeof window === "undefined") return;
+  window.TURN_FLASH_DEBUG = {
+    enable: enableTurnFlashDebug,
+    disable: disableTurnFlashDebug,
+    trigger: (side) => triggerTurnFlashDebugPulse(side),
+    state: turnFlashDebugApiState,
+  };
+}
+installTurnFlashDebugApi();
 
 function stopTransferTurnGlow() {
   const glowLayer = transferFrameState.glowLayer;
@@ -39117,6 +39219,11 @@ function advanceTurn(){
   });
   turnIndex = (turnIndex + 1) % turnColors.length;
   const nextTurnColor = turnColors[turnIndex];
+  notifyTurnAdvanced({
+    previousTurnColor,
+    nextTurnColor,
+    turnNumber: turnAdvanceCount + 1,
+  });
   recordAiSelfAnalyzerTurnAdvance(previousTurnColor, nextTurnColor);
   if(isArcadePlaneRespawnEnabled()){
     // Штраф за респаун тикает по полуходам и длится минимум 5 переключений хода.
