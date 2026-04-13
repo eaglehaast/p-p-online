@@ -1,11 +1,12 @@
 # After demolition note (old AI)
 
-Status after this PR:
-- old AI v1/v2 runtime no longer executes;
-- Computer mode now shows explicit hard-fail when old AI launch is attempted;
-- old AI debug/export surface is deactivated with explicit message;
-- AI smoke/compare scripts tied to old behavior were removed;
-- behavior contract file is preserved as target reference only (`docs/AI_BEHAVIOR_CONTRACT.md`).
+Status after this cleanup:
+- Active computer AI behavior is intentionally blocked by an explicit hard-fail stop contour.
+- Legacy AI v2 decision/diagnostics code is archived in `archive/legacy-ai-v2.js` and not executed.
+- `script.js` keeps only neutral compatibility stubs for old AI decision logging/scope APIs.
+- No new AI implementation is introduced in this change.
 
-This PR is intentionally limited to demolition/cleanup only.
-No new AI implementation is introduced here.
+What is considered fully removed from active runtime:
+- goal-priority decision model execution;
+- mode selection via legacy AI decision branches;
+- deep/aggregated legacy AI diagnostics pipeline.
