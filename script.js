@@ -8478,11 +8478,11 @@ function colorWithAlpha(color, alpha){
 
 const CAPTURED_FLAG_RING_STYLE = {
   innerRadiusOffset: 7,
-  outerRadiusOffset: 0.9,
-  outerStrokeColor: "rgba(10, 14, 22, 0.9)",
-  outerStrokeWidth: 0.8,
-  innerStrokeWidth: 2.4,
-  innerStrokeAlpha: 0.98
+  outerRadiusOffset: 1.1,
+  outerStrokeColor: "rgba(24, 29, 38, 0.84)",
+  outerStrokeWidth: 1.05,
+  innerStrokeWidth: 2.2,
+  innerStrokeAlpha: 1
 };
 
 let brickFrameBorderPxX = FIELD_BORDER_THICKNESS;
