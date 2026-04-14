@@ -14176,44 +14176,36 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       return;
     }
 
-    const launchReadyPlane = points.find((plane) => {
+    const launchReadyPlanes = points.filter((plane) => {
       if(!plane || plane.color !== "blue") return false;
       if(!isPlaneLaunchStateReady(plane)) return false;
       return !flyingPoints.some((fp) => fp.plane === plane);
     });
 
-    if(!launchReadyPlane){
+    if(!launchReadyPlanes.length){
       aiMoveScheduled = false;
       advanceTurn();
       return;
     }
-
-    const effectiveFlightRangeCells = getEffectiveFlightRangeCells(launchReadyPlane);
-    const maxFlightDistancePx = Math.max(1, effectiveFlightRangeCells * CELL_SIZE);
     const enemyPlanes = points.filter((plane) => plane?.color === "green" && isPlaneTargetable(plane));
-    const readyCargo = cargoState
-      .filter((cargo) => cargo?.state === "ready")
-      .sort((a, b) => {
-        const da = dist(launchReadyPlane, getCargoVisualCenter(a));
-        const db = dist(launchReadyPlane, getCargoVisualCenter(b));
-        return da - db;
-      });
+    const readyCargo = cargoState.filter((cargo) => cargo?.state === "ready");
 
-    const buildMoveTowardTarget = (targetPoint, options = {}) => {
+    const buildMoveTowardTarget = (plane, targetPoint, maxFlightDistancePx, options = {}) => {
       if(!targetPoint) return null;
-      const desiredDistancePx = Math.hypot(targetPoint.x - launchReadyPlane.x, targetPoint.y - launchReadyPlane.y);
+      const desiredDistancePx = Math.hypot(targetPoint.x - plane.x, targetPoint.y - plane.y);
       if(!Number.isFinite(desiredDistancePx) || desiredDistancePx <= 0.0001){
         return null;
       }
       const scaledDistancePx = Math.min(maxFlightDistancePx, desiredDistancePx);
       const scale = scaledDistancePx / desiredDistancePx;
-      const landingX = launchReadyPlane.x + (targetPoint.x - launchReadyPlane.x) * scale;
-      const landingY = launchReadyPlane.y + (targetPoint.y - launchReadyPlane.y) * scale;
-      const pathClear = isPathClear(launchReadyPlane.x, launchReadyPlane.y, landingX, landingY);
+      const landingX = plane.x + (targetPoint.x - plane.x) * scale;
+      const landingY = plane.y + (targetPoint.y - plane.y) * scale;
+      const pathClear = isPathClear(plane.x, plane.y, landingX, landingY);
       if(pathClear !== true){
         return null;
       }
       return {
+        plane,
         landingX,
         landingY,
         targetPoint,
@@ -14223,31 +14215,42 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       };
     };
 
-    const directEnemyCandidate = enemyPlanes
-      .map((enemy) => {
-        const enemyDistance = dist(launchReadyPlane, enemy);
-        const inRange = enemyDistance <= maxFlightDistancePx * 1.05;
-        const directPath = isPathClear(launchReadyPlane.x, launchReadyPlane.y, enemy.x, enemy.y);
-        if(!inRange || directPath !== true) return null;
-        const move = buildMoveTowardTarget(enemy, {
-          decisionReason: "simple_step2_direct_enemy",
-          goalName: "simple_step2_attack_enemy",
-          whyChosen: `direct_enemy_hit_enemy_id_${enemy.id || "unknown"}`,
+    const buildGuaranteedAdvanceMove = (plane) => {
+      const profile = getAiFlightRangeProfile(plane);
+      const maxFlightDistancePx = Math.max(1, Number.isFinite(profile?.flightDistancePx) ? profile.flightDistancePx : (CELL_SIZE * 6));
+      const preferredTarget = {
+        x: plane.x,
+        y: FIELD_TOP + FIELD_HEIGHT,
+      };
+      const fractions = [1, 0.85, 0.7, 0.55, 0.4, 0.3, 0.2];
+      for(const fraction of fractions){
+        const candidateTarget = {
+          x: plane.x + (preferredTarget.x - plane.x) * fraction,
+          y: plane.y + (preferredTarget.y - plane.y) * fraction,
+        };
+        const candidateMove = buildMoveTowardTarget(plane, candidateTarget, maxFlightDistancePx, {
+          decisionReason: "simple_step2_guaranteed_advance",
+          goalName: "simple_step2_guaranteed_advance",
+          whyChosen: "no_good_plan_available_force_non_skip_move",
         });
-        if(!move) return null;
-        return { enemy, move, enemyDistance };
-      })
-      .filter(Boolean)
-      .sort((a, b) => a.enemyDistance - b.enemyDistance)[0] || null;
+        if(candidateMove) return candidateMove;
+      }
+      return null;
+    };
 
-    let selectedPlan = directEnemyCandidate?.move || null;
+    const scoredPlans = [];
+    for(const launchReadyPlane of launchReadyPlanes){
+      const effectiveFlightRangeCells = getEffectiveFlightRangeCells(launchReadyPlane);
+      const maxFlightDistancePx = Math.max(1, effectiveFlightRangeCells * CELL_SIZE);
+      const nearestCargo = readyCargo
+        .map((cargo) => ({ cargo, center: getCargoVisualCenter(cargo), d: dist(launchReadyPlane, getCargoVisualCenter(cargo)) }))
+        .sort((a, b) => a.d - b.d)[0] || null;
 
-    if(!selectedPlan){
       const centerZoneNearest = getNearestPointInCenterControlZone(launchReadyPlane);
       const centerDx = centerZoneNearest.x - launchReadyPlane.x;
       const centerDy = centerZoneNearest.y - launchReadyPlane.y;
       let centerTarget = centerZoneNearest;
-      if(!isPathClear(launchReadyPlane.x, launchReadyPlane.y, centerZoneNearest.x, centerZoneNearest.y)){
+      if(!isPathClear(launchReadyPlane.x, launchReadyPlane.y, centerZoneNearest.x, centerZoneNearest.y)) {
         centerTarget = null;
         const fractions = [0.9, 0.75, 0.6, 0.45, 0.3, 0.2, 0.12];
         for(const fraction of fractions){
@@ -14265,36 +14268,130 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         }
       }
 
-      selectedPlan = buildMoveTowardTarget(centerTarget, {
-        decisionReason: "simple_step2_center_control",
-        goalName: "simple_step2_center",
-        whyChosen: "no_realistic_direct_enemy_hit_center_preferred",
-      });
-    }
+      const directEnemyCandidate = enemyPlanes
+        .map((enemy) => {
+          const enemyDistance = dist(launchReadyPlane, enemy);
+          const inRange = enemyDistance <= maxFlightDistancePx * 1.05;
+          const directPath = isPathClear(launchReadyPlane.x, launchReadyPlane.y, enemy.x, enemy.y);
+          if(!inRange || directPath !== true) return null;
+          const move = buildMoveTowardTarget(launchReadyPlane, enemy, maxFlightDistancePx, {
+            decisionReason: "simple_step2_direct_enemy",
+            goalName: "simple_step2_attack_enemy",
+            whyChosen: `direct_enemy_hit_enemy_id_${enemy.id || "unknown"}`,
+          });
+          if(!move) return null;
+          return { enemy, move, enemyDistance };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.enemyDistance - b.enemyDistance)[0] || null;
 
-    if(selectedPlan && readyCargo.length > 0 && !directEnemyCandidate){
-      const nearestCargo = readyCargo[0];
-      const cargoCenter = getCargoVisualCenter(nearestCargo);
-      const cargoDistance = dist(launchReadyPlane, cargoCenter);
-      const cargoMove = buildMoveTowardTarget(cargoCenter, {
-        decisionReason: "simple_step2_pickup_cargo",
-        goalName: "simple_step2_cargo",
-        whyChosen: "safe_nearby_cargo_beats_empty_move",
-      });
-      if(cargoMove){
-        const nearestEnemyToCargoLanding = enemyPlanes.reduce((best, enemy) => {
-          const d = dist(enemy, { x: cargoMove.landingX, y: cargoMove.landingY });
-          return Math.min(best, d);
-        }, Number.POSITIVE_INFINITY);
-        const safeCargoPath = nearestEnemyToCargoLanding >= CELL_SIZE * 3.5;
-        const nearbyCargo = cargoDistance <= maxFlightDistancePx * 0.9;
-        if(safeCargoPath && nearbyCargo){
-          selectedPlan = cargoMove;
+      let selectedPlan = directEnemyCandidate?.move || null;
+      let planTier = 1;
+      let planDistance = Number.isFinite(directEnemyCandidate?.enemyDistance) ? directEnemyCandidate.enemyDistance : Number.POSITIVE_INFINITY;
+
+      if(!selectedPlan){
+        selectedPlan = buildMoveTowardTarget(launchReadyPlane, centerTarget, maxFlightDistancePx, {
+          decisionReason: "simple_step2_center_control",
+          goalName: "simple_step2_center",
+          whyChosen: "no_realistic_direct_enemy_hit_center_preferred",
+        });
+        planTier = 3;
+        planDistance = selectedPlan ? Math.hypot(selectedPlan.landingX - launchReadyPlane.x, selectedPlan.landingY - launchReadyPlane.y) : Number.POSITIVE_INFINITY;
+      }
+
+      if(selectedPlan && nearestCargo && !directEnemyCandidate){
+        const cargoMove = buildMoveTowardTarget(launchReadyPlane, nearestCargo.center, maxFlightDistancePx, {
+          decisionReason: "simple_step2_pickup_cargo",
+          goalName: "simple_step2_cargo",
+          whyChosen: "safe_nearby_cargo_beats_empty_move",
+        });
+        if(cargoMove){
+          const nearestEnemyToCargoLanding = enemyPlanes.reduce((best, enemy) => {
+            const d = dist(enemy, { x: cargoMove.landingX, y: cargoMove.landingY });
+            return Math.min(best, d);
+          }, Number.POSITIVE_INFINITY);
+          const safeCargoPath = nearestEnemyToCargoLanding >= CELL_SIZE * 3.5;
+          const nearbyCargo = nearestCargo.d <= maxFlightDistancePx * 0.9;
+          if(safeCargoPath && nearbyCargo){
+            selectedPlan = cargoMove;
+            planTier = 2;
+            planDistance = nearestCargo.d;
+          }
         }
+      }
+
+      if(selectedPlan){
+        scoredPlans.push({
+          ...selectedPlan,
+          planTier,
+          planDistance,
+          hasDirectEnemy: Boolean(directEnemyCandidate),
+          readyCargoCount: readyCargo.length,
+        });
       }
     }
 
+    let selectedPlan = scoredPlans
+      .sort((a, b) => {
+        if(a.planTier !== b.planTier) return a.planTier - b.planTier;
+        return a.planDistance - b.planDistance;
+      })[0] || null;
+
     if(!selectedPlan){
+      const guaranteedAdvance = launchReadyPlanes
+        .map((plane) => buildGuaranteedAdvanceMove(plane))
+        .find(Boolean);
+      selectedPlan = guaranteedAdvance || null;
+    }
+
+    if(!selectedPlan){
+      const mandatoryMove = getMandatoryTurnMove({
+        aiPlanes: launchReadyPlanes,
+        enemies: enemyPlanes,
+      });
+      if(mandatoryMove && mandatoryMove.plane && Number.isFinite(mandatoryMove.vx) && Number.isFinite(mandatoryMove.vy)){
+        const emergencyLaunchResult = issueAIMove(mandatoryMove.plane, mandatoryMove.vx, mandatoryMove.vy, {
+          source: "simple_step2_selector",
+          goalName: mandatoryMove.goalName || "simple_step2_mandatory_move",
+          decisionReason: mandatoryMove.decisionReason || "simple_step2_mandatory_move",
+          whyChosen: "mandatory_non_skip_fallback",
+        });
+        aiMoveScheduled = false;
+        if(!emergencyLaunchResult?.ok){
+          advanceTurn();
+        }
+        return;
+      }
+      aiMoveScheduled = false;
+      advanceTurn();
+      return;
+    }
+
+    const launchReadyPlane = selectedPlan.plane;
+    if(!launchReadyPlane){
+      aiMoveScheduled = false;
+      advanceTurn();
+      return;
+    }
+
+    if(!selectedPlan.goalName){
+      selectedPlan.goalName = "simple_step2_center";
+    }
+    if(!selectedPlan.decisionReason){
+      selectedPlan.decisionReason = "simple_step2_center_control";
+    }
+    if(!selectedPlan.whyChosen){
+      selectedPlan.whyChosen = "multi_plane_best_effort_selection";
+    }
+
+    if(!Number.isFinite(selectedPlan.landingX) || !Number.isFinite(selectedPlan.landingY)){
+      const emergencyGuaranteedMove = buildGuaranteedAdvanceMove(launchReadyPlane);
+      if(emergencyGuaranteedMove){
+        selectedPlan = emergencyGuaranteedMove;
+      }
+    }
+
+    if(!selectedPlan || !Number.isFinite(selectedPlan.landingX) || !Number.isFinite(selectedPlan.landingY)){
       aiMoveScheduled = false;
       advanceTurn();
       return;
@@ -14308,6 +14405,8 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
 
     logAiDecision("simple_step2_action_selected", {
       planeId: launchReadyPlane?.id ?? null,
+      evaluatedPlaneIds: launchReadyPlanes.map((plane) => plane?.id ?? null),
+      selectedPlanTier: selectedPlan.planTier ?? null,
       goalName: selectedPlan.goalName,
       decisionReason: selectedPlan.decisionReason,
       whyChosen: selectedPlan.whyChosen,
@@ -14315,21 +14414,42 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         x: Number(selectedPlan.landingX.toFixed(2)),
         y: Number(selectedPlan.landingY.toFixed(2)),
       },
-      directEnemyCandidate: Boolean(directEnemyCandidate),
-      readyCargoCount: readyCargo.length,
+      directEnemyCandidate: Boolean(selectedPlan.hasDirectEnemy),
+      readyCargoCount: selectedPlan.readyCargoCount ?? readyCargo.length,
     });
 
-    const launchResult = issueAIMove(launchReadyPlane, vx, vy, {
+    let launchResult = issueAIMove(launchReadyPlane, vx, vy, {
       source: "simple_step2_selector",
       goalName: selectedPlan.goalName,
       decisionReason: selectedPlan.decisionReason,
       whyChosen: selectedPlan.whyChosen,
     });
 
+    if(!launchResult?.ok){
+      const failoverPlanes = launchReadyPlanes.filter((plane) => plane !== launchReadyPlane);
+      const failoverMove = failoverPlanes
+        .map((plane) => buildGuaranteedAdvanceMove(plane))
+        .find(Boolean);
+      if(failoverMove){
+        const failoverDurationSec = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
+          ? FIELD_FLIGHT_DURATION_SEC
+          : 1;
+        const failoverVx = (failoverMove.landingX - failoverMove.plane.x) / failoverDurationSec;
+        const failoverVy = (failoverMove.landingY - failoverMove.plane.y) / failoverDurationSec;
+        launchResult = issueAIMove(failoverMove.plane, failoverVx, failoverVy, {
+          source: "simple_step2_selector",
+          goalName: failoverMove.goalName,
+          decisionReason: "simple_step2_failover_after_launch_reject",
+          whyChosen: "primary_plane_launch_failed_switch_to_next_plane",
+        });
+      }
+    }
+
     aiMoveScheduled = false;
     if(!launchResult?.ok){
       advanceTurn();
     }
+    return;
   }, safeDelayMs);
 
   return {
