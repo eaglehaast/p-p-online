@@ -8482,8 +8482,38 @@ const CAPTURED_FLAG_RING_STYLE = {
   outerStrokeColor: "rgba(24, 29, 38, 0.84)",
   outerStrokeWidth: 1.05,
   innerStrokeWidth: 2.2,
-  innerStrokeAlpha: 1
+  innerStrokeAlpha: 1,
+  shadowColor: "rgba(17, 22, 30, 0.2)",
+  shadowBlur: 1.6,
+  shadowOffsetX: 0,
+  shadowOffsetY: 0.8
 };
+
+function drawCapturedFlagRing(ctx2d, plane){
+  if(!ctx2d || !plane?.flagColor) return;
+  const ringColor = colorWithAlpha(plane.flagColor, CAPTURED_FLAG_RING_STYLE.innerStrokeAlpha);
+  const innerRingRadius = POINT_RADIUS + CAPTURED_FLAG_RING_STYLE.innerRadiusOffset;
+  const outerRingRadius = innerRingRadius + CAPTURED_FLAG_RING_STYLE.outerRadiusOffset;
+
+  ctx2d.save();
+  ctx2d.shadowColor = CAPTURED_FLAG_RING_STYLE.shadowColor;
+  ctx2d.shadowBlur = CAPTURED_FLAG_RING_STYLE.shadowBlur;
+  ctx2d.shadowOffsetX = CAPTURED_FLAG_RING_STYLE.shadowOffsetX;
+  ctx2d.shadowOffsetY = CAPTURED_FLAG_RING_STYLE.shadowOffsetY;
+
+  ctx2d.strokeStyle = CAPTURED_FLAG_RING_STYLE.outerStrokeColor;
+  ctx2d.lineWidth = CAPTURED_FLAG_RING_STYLE.outerStrokeWidth;
+  ctx2d.beginPath();
+  ctx2d.arc(plane.x, plane.y, outerRingRadius, 0, Math.PI * 2, false);
+  ctx2d.stroke();
+
+  ctx2d.strokeStyle = ringColor;
+  ctx2d.lineWidth = CAPTURED_FLAG_RING_STYLE.innerStrokeWidth;
+  ctx2d.beginPath();
+  ctx2d.arc(plane.x, plane.y, innerRingRadius, 0, Math.PI * 2, false);
+  ctx2d.stroke();
+  ctx2d.restore();
+}
 
 let brickFrameBorderPxX = FIELD_BORDER_THICKNESS;
   let brickFrameBorderPxY = FIELD_BORDER_THICKNESS;
@@ -39162,6 +39192,11 @@ function drawPlanesAndTrajectories(){
 
     targetCtx.save();
 
+    const isPlaneFullyHiddenByInvisibility = invisibilityAlpha <= 0.01;
+    if(p.flagColor && !isPlaneFullyHiddenByInvisibility){
+      drawCapturedFlagRing(targetCtx, p);
+    }
+
     // Allow wreck sprites to render after crash delay instead of exiting early.
     drawPlaneSegments(targetCtx, p);
     const glowTarget = showGlow && p.color === activeColor && p.isAlive && !p.burning ? 1 : 0;
@@ -39193,29 +39228,6 @@ function drawPlanesAndTrajectories(){
         activeEffectTypes: getPlaneActiveTurnBuffs(p),
         planeColor: p.color
       };
-    }
-
-    const isPlaneFullyHiddenByInvisibility = invisibilityAlpha <= 0.01;
-    if(p.flagColor && !isPlaneFullyHiddenByInvisibility){
-      targetCtx.save();
-      const ringColor = colorWithAlpha(p.flagColor, CAPTURED_FLAG_RING_STYLE.innerStrokeAlpha);
-
-      // Captured-flag ring: fully closed and visibly double-stroked.
-      const innerRingRadius = POINT_RADIUS + CAPTURED_FLAG_RING_STYLE.innerRadiusOffset;
-      const outerRingRadius = innerRingRadius + CAPTURED_FLAG_RING_STYLE.outerRadiusOffset;
-
-      targetCtx.strokeStyle = CAPTURED_FLAG_RING_STYLE.outerStrokeColor;
-      targetCtx.lineWidth = CAPTURED_FLAG_RING_STYLE.outerStrokeWidth;
-      targetCtx.beginPath();
-      targetCtx.arc(p.x, p.y, outerRingRadius, 0, Math.PI * 2, false);
-      targetCtx.stroke();
-
-      targetCtx.strokeStyle = ringColor;
-      targetCtx.lineWidth = CAPTURED_FLAG_RING_STYLE.innerStrokeWidth;
-      targetCtx.beginPath();
-      targetCtx.arc(p.x, p.y, innerRingRadius, 0, Math.PI * 2, false);
-      targetCtx.stroke();
-      targetCtx.restore();
     }
 
     if(
