@@ -24587,6 +24587,98 @@ function logTacticalItemFinalDecision(itemType, details = {}){
   });
 }
 
+function buildAiItemUnlockMoveMetrics(context, plannedMove, options = {}){
+  const plane = plannedMove?.plane || null;
+  if(!plane) return null;
+  const useFuel = options?.useFuel === true;
+  const useWings = options?.useWings === true;
+  const virtualPlane = {
+    ...plane,
+    activeTurnBuffs: {
+      ...(plane?.activeTurnBuffs || {}),
+      ...(useFuel ? { fuel: true } : {}),
+      ...(useWings ? { wings: true } : {}),
+    },
+  };
+  const baseRangeProfile = getAiFlightRangeProfile(plane);
+  const buffedRangeProfile = getAiFlightRangeProfile(virtualPlane);
+  const baseRangePx = Number.isFinite(baseRangeProfile?.flightDistancePx) ? baseRangeProfile.flightDistancePx : MAX_DRAG_DISTANCE;
+  const buffedRangePx = Number.isFinite(buffedRangeProfile?.flightDistancePx) ? buffedRangeProfile.flightDistancePx : baseRangePx;
+  const moveDistance = Number.isFinite(plannedMove?.totalDist)
+    ? plannedMove.totalDist
+    : Math.hypot(plannedMove?.vx || 0, plannedMove?.vy || 0) * FIELD_FLIGHT_DURATION_SEC;
+  const landingPoint = getAiMoveLandingPoint(plannedMove);
+  const enemies = Array.isArray(context?.enemies) ? context.enemies.filter((enemy) => enemy?.isAlive && !enemy?.burning) : [];
+  const beneficialWidth = useWings
+    ? PLANE_GEOMETRY_TRUTH.BENEFICIAL_HITBOX_WIDTH_WITH_WINGS
+    : PLANE_GEOMETRY_TRUTH.BENEFICIAL_HITBOX_WIDTH;
+  const beneficialRadius = Math.max(8, beneficialWidth * 0.5);
+  let trajectoryEnemyTouches = 0;
+  for(const enemy of enemies){
+    const d = getDistanceFromPointToSegment(enemy.x, enemy.y, plane.x, plane.y, landingPoint.x, landingPoint.y);
+    if(d <= beneficialRadius){
+      trajectoryEnemyTouches += 1;
+    }
+  }
+  let trajectoryCargoTouches = 0;
+  if(Array.isArray(cargoState)){
+    for(const cargo of cargoState){
+      if(cargo?.state !== "ready") continue;
+      if(doesCargoIntersectBeneficialZoneAlongSegment(cargo, virtualPlane, virtualPlane, landingPoint)){
+        trajectoryCargoTouches += 1;
+      }
+    }
+  }
+  const threatMeta = getImmediateResponseThreatMeta(context, landingPoint.x, landingPoint.y, plannedMove?.enemy || null);
+  const riskValue = threatMeta ? getFallbackCandidateResponseRisk(threatMeta) : 1;
+  const safetyScore = Number((1 - Math.max(0, Math.min(1, Number.isFinite(riskValue) ? riskValue : 1))).toFixed(3));
+  return {
+    useFuel,
+    useWings,
+    moveDistance,
+    baseRangePx,
+    buffedRangePx,
+    unlocksNewDistanceZone: moveDistance > baseRangePx + CELL_SIZE * 0.2 && moveDistance <= buffedRangePx + CELL_SIZE * 0.2,
+    trajectoryEnemyTouches,
+    trajectoryCargoTouches,
+    safetyScore,
+  };
+}
+
+function compareAiItemUnlockMoveClass(baseMetrics, variantMetrics){
+  if(!baseMetrics || !variantMetrics){
+    return {
+      unlocked: false,
+      reasons: [],
+      unlockScore: 0,
+    };
+  }
+  const reasons = [];
+  if(variantMetrics.unlocksNewDistanceZone && !baseMetrics.unlocksNewDistanceZone){
+    reasons.push("new_distance_zone_reached");
+  }
+  if((variantMetrics.trajectoryCargoTouches || 0) > (baseMetrics.trajectoryCargoTouches || 0)){
+    reasons.push("more_cargo_on_trajectory");
+  }
+  if((variantMetrics.trajectoryEnemyTouches || 0) > (baseMetrics.trajectoryEnemyTouches || 0)){
+    reasons.push("more_targets_on_trajectory");
+  }
+  if((variantMetrics.safetyScore || 0) >= (baseMetrics.safetyScore || 0) + 0.08){
+    reasons.push("safer_post_hit_position");
+  }
+  const unlockScore = (
+    (reasons.includes("new_distance_zone_reached") ? 1.3 : 0)
+    + (reasons.includes("more_cargo_on_trajectory") ? 1 : 0)
+    + (reasons.includes("more_targets_on_trajectory") ? 1 : 0)
+    + (reasons.includes("safer_post_hit_position") ? 0.8 : 0)
+  );
+  return {
+    unlocked: reasons.length > 0,
+    reasons,
+    unlockScore: Number(unlockScore.toFixed(3)),
+  };
+}
+
 function buildAiInventoryCandidatePlans(context, plannedMove){
   if(!plannedMove?.plane) return { selectedCandidate: null, selectedSequence: [], candidates: [], rejected: [] };
 
@@ -24628,6 +24720,13 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
   const baseFlightRangeCells = Number.isFinite(settings?.flightRangeCells) ? settings.flightRangeCells : 30;
   const baseFlightRange = baseFlightRangeCells * CELL_SIZE;
   const effectiveCellSize = typeof CELL_SIZE === "number" && Number.isFinite(CELL_SIZE) ? CELL_SIZE : 40;
+  const baseUnlockMetrics = buildAiItemUnlockMoveMetrics(context, plannedMove, { useFuel: false, useWings: false });
+  const fuelUnlockMetrics = buildAiItemUnlockMoveMetrics(context, plannedMove, { useFuel: true, useWings: false });
+  const wingsUnlockMetrics = buildAiItemUnlockMoveMetrics(context, plannedMove, { useFuel: false, useWings: true });
+  const fuelAndWingsUnlockMetrics = buildAiItemUnlockMoveMetrics(context, plannedMove, { useFuel: true, useWings: true });
+  const fuelUnlockMeta = compareAiItemUnlockMoveClass(baseUnlockMetrics, fuelUnlockMetrics);
+  const wingsUnlockMeta = compareAiItemUnlockMoveClass(baseUnlockMetrics, wingsUnlockMetrics);
+  const fuelAndWingsUnlockMeta = compareAiItemUnlockMoveClass(baseUnlockMetrics, fuelAndWingsUnlockMetrics);
   const pushCandidate = (candidate) => {
     const normalizedBenefit = Number.isFinite(candidate?.expectedBenefit) ? candidate.expectedBenefit : 0;
     const normalizedRisk = Number.isFinite(candidate?.risk) ? candidate.risk : 0;
@@ -24691,7 +24790,9 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       || (targetDistance > baseFlightRange * 0.88 && targetDistance <= baseFlightRange * 2.15)
       || fuelPlans?.blockedByReturnSafety === true
     );
-    if(selectedFuelCandidate && (newReach || safetyGain >= 0.12 || moderateFuelOpportunity)){
+    const unlockedStrongerMove = fuelUnlockMeta.unlocked
+      || fuelAndWingsUnlockMeta.unlocked;
+    if(selectedFuelCandidate && unlockedStrongerMove && (newReach || safetyGain >= 0.08 || moderateFuelOpportunity)){
       pushCandidate({
         itemType: INVENTORY_ITEM_TYPES.FUEL,
         target: selectedFuelCandidate.targetPoint || enemyFlagAnchor || priorityEnemy || enemyBase || null,
@@ -24709,41 +24810,28 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
         targetName: selectedFuelCandidate.targetName || null,
         fuelScenario: selectedFuelCandidate.scenario || null,
         usageTier: newReach || safetyGain >= 0.12 ? "strong" : "moderate",
+        unlockClassMeta: {
+          source: "two_pass_unlock_check",
+          unlocked: unlockedStrongerMove,
+          reasons: fuelUnlockMeta.reasons,
+          unlockScore: fuelUnlockMeta.unlockScore,
+          comboUnlockReasons: fuelAndWingsUnlockMeta.reasons,
+        },
+        reasonCode: "item_unlocked_stronger_move",
       });
     } else {
-      rejectCandidate(INVENTORY_ITEM_TYPES.FUEL, selectedFuelCandidate ? "fuel_gain_too_small" : "fuel_has_no_safe_candidate", {
+      rejectCandidate(INVENTORY_ITEM_TYPES.FUEL, selectedFuelCandidate ? "fuel_unlock_class_not_found" : "fuel_has_no_safe_candidate", {
         safetyGain,
         blockedByReturnSafety: fuelPlans?.blockedByReturnSafety === true,
+        unlockReasons: fuelUnlockMeta.reasons,
+        comboUnlockReasons: fuelAndWingsUnlockMeta.reasons,
       });
     }
   }
 
-  if(allowBuffItems && inventory.counts?.[INVENTORY_ITEM_TYPES.CROSSHAIR] > 0 && typeof evaluateCrosshairBestUse === "function"){
-    const crosshairScenario = evaluateCrosshairBestUse(context, plannedMove);
-    const strongCrosshairUse = crosshairScenario && crosshairScenario.totalValue >= 0.7;
-    const moderateCrosshairUse = crosshairScenario
-      && crosshairScenario.totalValue >= 0.58
-      && crosshairScenario.distanceToEnemy <= plannedMoveEffectiveRangePx * 1.12
-      && (crosshairScenario.hasCleanPath || crosshairScenario.hitChance >= 0.52);
-    if(strongCrosshairUse || moderateCrosshairUse){
-      pushCandidate({
-        itemType: INVENTORY_ITEM_TYPES.CROSSHAIR,
-        target: crosshairScenario.enemy || priorityEnemy || null,
-        expectedBenefit: Math.max(
-          strongCrosshairUse ? 0.24 : 0.18,
-          Math.min(0.88, Number(crosshairScenario.totalValue || 0))
-        ),
-        risk: crosshairScenario.enemy?.shieldActive ? 0.16 : 0.05,
-        reason: "crosshair_best_value",
-        whyBetter: strongCrosshairUse
-          ? "crosshair gives a clearly better hit window than flying the same route without extra accuracy"
-          : "crosshair gives a decent shot window, so after repeated stalled turns it can be worth converting a middling chance into a cleaner attack",
-        usageTier: strongCrosshairUse ? "strong" : "moderate",
-      });
-    } else {
-      rejectCandidate(INVENTORY_ITEM_TYPES.CROSSHAIR, crosshairScenario ? "crosshair_value_below_threshold" : "crosshair_no_target");
-    }
-  }
+  rejectCandidate(INVENTORY_ITEM_TYPES.CROSSHAIR, "crosshair_ignored_in_step6_unlock_planning", {
+    whyWaiting: "step6_focuses_on_fuel_and_wings_unlock_logic_only",
+  });
 
   if(allowTacticalItems && inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] > 0){
     const aiItemSpendStyle = getAiItemSpendStyle(context, plannedMove);
@@ -25099,7 +25187,8 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     });
     const wingsStrongUse = reachesContactNextTurn;
     const wingsModerateUse = !wingsStrongUse && reachesModerateContactZone;
-    if(wingsStrongUse || wingsModerateUse){
+    const wingsUnlockAllowed = wingsUnlockMeta.unlocked || fuelAndWingsUnlockMeta.unlocked;
+    if((wingsStrongUse || wingsModerateUse) && wingsUnlockAllowed){
       pushCandidate({
         itemType: INVENTORY_ITEM_TYPES.WINGS,
         target: enemyBase || null,
@@ -25110,9 +25199,20 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
           ? "wings makes the same approach connect sooner instead of arriving one turn later"
           : "wings does not create contact immediately, but it shortens the approach enough to justify use after repeated stalled inventory turns",
         usageTier: wingsStrongUse ? "strong" : "moderate",
+        unlockClassMeta: {
+          source: "two_pass_unlock_check",
+          unlocked: wingsUnlockAllowed,
+          reasons: wingsUnlockMeta.reasons,
+          unlockScore: wingsUnlockMeta.unlockScore,
+          comboUnlockReasons: fuelAndWingsUnlockMeta.reasons,
+        },
+        reasonCode: "item_unlocked_stronger_move",
       });
     } else {
-      rejectCandidate(INVENTORY_ITEM_TYPES.WINGS, "wings_no_contact_gain");
+      rejectCandidate(INVENTORY_ITEM_TYPES.WINGS, "wings_unlock_class_not_found", {
+        unlockReasons: wingsUnlockMeta.reasons,
+        comboUnlockReasons: fuelAndWingsUnlockMeta.reasons,
+      });
     }
   }
 
@@ -25412,16 +25512,13 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     }
   }
 
-  const allowInventorySequenceSelection = false;
+  const allowInventorySequenceSelection = true;
   const sequenceItemTypes = [
     INVENTORY_ITEM_TYPES.FUEL,
-    INVENTORY_ITEM_TYPES.CROSSHAIR,
     INVENTORY_ITEM_TYPES.WINGS,
   ];
   const compatiblePairKeys = new Set([
-    `${INVENTORY_ITEM_TYPES.FUEL}|${INVENTORY_ITEM_TYPES.CROSSHAIR}`,
     `${INVENTORY_ITEM_TYPES.FUEL}|${INVENTORY_ITEM_TYPES.WINGS}`,
-    `${INVENTORY_ITEM_TYPES.CROSSHAIR}|${INVENTORY_ITEM_TYPES.WINGS}`,
   ]);
   const sequenceCandidatesByType = new Map();
   for(const candidate of candidates){
@@ -25430,10 +25527,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     }
   }
   const possibleSequences = [
-    [INVENTORY_ITEM_TYPES.FUEL, INVENTORY_ITEM_TYPES.CROSSHAIR],
     [INVENTORY_ITEM_TYPES.FUEL, INVENTORY_ITEM_TYPES.WINGS],
-    [INVENTORY_ITEM_TYPES.CROSSHAIR, INVENTORY_ITEM_TYPES.WINGS],
-    [INVENTORY_ITEM_TYPES.FUEL, INVENTORY_ITEM_TYPES.CROSSHAIR, INVENTORY_ITEM_TYPES.WINGS],
   ];
   let selectedSequence = [];
   let bestSequenceScore = Number.NEGATIVE_INFINITY;
@@ -25488,8 +25582,19 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     }
     const totalComparable = sequenceSteps.reduce((sum, step) => sum + Number(step.comparableScore || 0), 0);
     const totalAdjusted = sequenceSteps.reduce((sum, step) => sum + Number(step.adjustedComparableScore || step.comparableScore || 0), 0);
-    const pairSynergyBonus = sequenceTypes.length === 2 ? 0.07 : 0.16;
-    const chainScore = Number((totalAdjusted + pairSynergyBonus).toFixed(3));
+    const pairSynergyBonus = sequenceTypes.length === 2 ? 0.07 : 0;
+    const unlockBonus = fuelAndWingsUnlockMeta.unlocked ? 0.48 : 0;
+    const chainScore = Number((totalAdjusted + pairSynergyBonus + unlockBonus).toFixed(3));
+    if(!fuelAndWingsUnlockMeta.unlocked){
+      logAiDecision("inventory_sequence_rejected", {
+        planeId: plannedMove?.plane?.id ?? null,
+        goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+        sequence: sequenceTypes,
+        reason: "sequence_no_unlock_class_gain",
+        unlockReasons: fuelAndWingsUnlockMeta.reasons,
+      });
+      continue;
+    }
     if(chainScore <= selectionFloorForSequence){
       logAiDecision("inventory_sequence_rejected", {
         planeId: plannedMove?.plane?.id ?? null,
@@ -25556,13 +25661,11 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   }
 
   const PRE_LAUNCH_ALLOWED_ITEM_TYPES = new Set([
-    INVENTORY_ITEM_TYPES.CROSSHAIR,
     INVENTORY_ITEM_TYPES.FUEL,
     INVENTORY_ITEM_TYPES.WINGS,
   ]);
 
   const SINGLE_USE_BUFF_TYPES_PER_TURN = new Set([
-    INVENTORY_ITEM_TYPES.CROSSHAIR,
     INVENTORY_ITEM_TYPES.FUEL,
     INVENTORY_ITEM_TYPES.WINGS,
     INVENTORY_ITEM_TYPES.INVISIBILITY,
@@ -25617,12 +25720,6 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
         rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.FUEL);
       }
-    } else if(itemType === INVENTORY_ITEM_TYPES.CROSSHAIR){
-      executed = applyItemToOwnPlane(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane);
-      if(executed){
-        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
-        rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.CROSSHAIR);
-      }
     } else if(itemType === INVENTORY_ITEM_TYPES.WINGS){
       executed = applyItemToOwnPlane(INVENTORY_ITEM_TYPES.WINGS, "blue", plannedMove.plane);
       if(executed){
@@ -25668,7 +25765,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     plannedMove.inventoryDecisionMadeMeta = {
       selected: false,
       reason: "no_prelaunch_scope_item_selected",
-      reasonCodes: ["inventory_candidates_not_used", "step5_only_crosshair_fuel_wings"],
+      reasonCodes: ["inventory_candidates_not_used", "step6_only_fuel_wings_unlock"],
       rejectReasons: ["no_prelaunch_scope_item_selected"],
       executionSource: null,
       selectedItemType: null,
@@ -25702,7 +25799,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     plannedMove.inventoryDecisionMadeMeta = {
       selected: false,
       reason: "prelaunch_items_skipped",
-      reasonCodes: ["inventory_candidate_execution_failed", "step5_only_crosshair_fuel_wings"],
+      reasonCodes: ["inventory_candidate_execution_failed", "step6_only_fuel_wings_unlock"],
       rejectReasons: skippedItems.map((entry) => entry.reason),
       executionSource: filteredCandidates[0]?.executionSource || null,
       selectedItemType: filteredCandidates[0]?.itemType || null,
@@ -25716,7 +25813,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   plannedMove.inventoryDecisionMadeMeta = {
     selected: true,
     reason: "inventory_item_applied",
-    reasonCodes: ["inventory_item_applied", "step5_only_crosshair_fuel_wings"],
+    reasonCodes: ["inventory_item_applied", "step6_only_fuel_wings_unlock", "item_unlocked_stronger_move"],
     rejectReasons: skippedItems.map((entry) => entry.reason),
     executionSource: appliedItemTypes.length > 1 ? "selected_inventory_sequence" : (filteredCandidates[0]?.executionSource || null),
     selectedItemType: appliedItemTypes[appliedItemTypes.length - 1] || null,
