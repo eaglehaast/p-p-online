@@ -14190,10 +14190,6 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
 
     const effectiveFlightRangeCells = getEffectiveFlightRangeCells(launchReadyPlane);
     const maxFlightDistancePx = Math.max(1, effectiveFlightRangeCells * CELL_SIZE);
-    const fieldCenter = {
-      x: FIELD_LEFT + FIELD_WIDTH * 0.5,
-      y: FIELD_TOP + FIELD_HEIGHT * 0.5,
-    };
     const enemyPlanes = points.filter((plane) => plane?.color === "green" && isPlaneTargetable(plane));
     const readyCargo = cargoState
       .filter((cargo) => cargo?.state === "ready")
@@ -14247,10 +14243,11 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     let selectedPlan = directEnemyCandidate?.move || null;
 
     if(!selectedPlan){
-      const centerDx = fieldCenter.x - launchReadyPlane.x;
-      const centerDy = fieldCenter.y - launchReadyPlane.y;
-      let centerTarget = fieldCenter;
-      if(!isPathClear(launchReadyPlane.x, launchReadyPlane.y, fieldCenter.x, fieldCenter.y)){
+      const centerZoneNearest = getNearestPointInCenterControlZone(launchReadyPlane);
+      const centerDx = centerZoneNearest.x - launchReadyPlane.x;
+      const centerDy = centerZoneNearest.y - launchReadyPlane.y;
+      let centerTarget = centerZoneNearest;
+      if(!isPathClear(launchReadyPlane.x, launchReadyPlane.y, centerZoneNearest.x, centerZoneNearest.y)){
         centerTarget = null;
         const fractions = [0.9, 0.75, 0.6, 0.45, 0.3, 0.2, 0.12];
         for(const fraction of fractions){
@@ -14262,6 +14259,9 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
             centerTarget = candidate;
             break;
           }
+        }
+        if(!centerTarget){
+          centerTarget = getNearestReachableCenterControlPoint(launchReadyPlane);
         }
       }
 
@@ -27815,11 +27815,49 @@ function selectAiModeForCurrentTurn(context){
   return mode;
 }
 
-function getCenterControlAnchor(){
+function getCenterControlZone(){
+  // Placeholder geometry: middle third of the field by vertical axis.
+  // Keep center-zone geometry in one place for easy future replacement from layout.
+  const verticalThird = FIELD_HEIGHT / 3;
   return {
-    x: FIELD_LEFT + FIELD_WIDTH / 2,
-    y: FIELD_TOP + FIELD_HEIGHT / 2,
+    x: FIELD_LEFT,
+    y: FIELD_TOP + verticalThird,
+    width: FIELD_WIDTH,
+    height: verticalThird,
   };
+}
+
+function getCenterControlAnchor(){
+  const zone = getCenterControlZone();
+  return {
+    x: zone.x + zone.width / 2,
+    y: zone.y + zone.height / 2,
+  };
+}
+
+function getNearestPointInCenterControlZone(point){
+  const zone = getCenterControlZone();
+  const x = Number.isFinite(point?.x) ? point.x : zone.x + zone.width / 2;
+  const y = Number.isFinite(point?.y) ? point.y : zone.y + zone.height / 2;
+  return {
+    x: clamp(x, zone.x, zone.x + zone.width),
+    y: clamp(y, zone.y, zone.y + zone.height),
+  };
+}
+
+function getNearestReachableCenterControlPoint(plane){
+  if(!plane || !Number.isFinite(plane.x) || !Number.isFinite(plane.y)){
+    return getCenterControlAnchor();
+  }
+  const nearestPoint = getNearestPointInCenterControlZone(plane);
+  if(isPathClear(plane.x, plane.y, nearestPoint.x, nearestPoint.y) === true){
+    return nearestPoint;
+  }
+  const fallbackCenter = getCenterControlAnchor();
+  if(isPathClear(plane.x, plane.y, fallbackCenter.x, fallbackCenter.y) === true){
+    return fallbackCenter;
+  }
+  return null;
 }
 
 function shouldSkipDirectFinisherInOpening(context){
@@ -27982,7 +28020,6 @@ function tryPlanOpeningCenterControlMove(context){
     return { move: null, rejectReason: "no_grounded_plane" };
   }
 
-  const center = getCenterControlAnchor();
   const readyCargo = cargoState.filter((cargo) => cargo?.state === "ready");
   const softPathPenaltyBase = Math.max(CELL_SIZE * 0.45, ATTACK_RANGE_PX * 0.1);
   const softPathScaleSteps = [0.82, 0.68, 0.54];
@@ -28080,6 +28117,8 @@ function tryPlanOpeningCenterControlMove(context){
 
   let bestCenterMove = null;
   for(const plane of groundedAiPlanes){
+    const center = getNearestReachableCenterControlPoint(plane);
+    if(!center) continue;
     if(dist(plane, center) <= AI_CENTER_CONTROL_DISTANCE) continue;
     pathCheckPerformed = true;
     const directMove = planPathWithSpecialRouteProbe(plane, center.x, center.y, {
