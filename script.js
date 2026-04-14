@@ -14125,7 +14125,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
 
   const safeDelayMs = Number.isFinite(delayMs) ? Math.max(0, delayMs) : AI_MOVE_INITIAL_DELAY_MS;
   aiMoveScheduled = true;
-  markAiTurnStarted("simple_center_launch", startedAt);
+  markAiTurnStarted("simple_step2_selector", startedAt);
 
   setTimeout(() => {
     if(
@@ -14141,7 +14141,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       aiMoveScheduled = false;
       scheduleComputerMoveWithCargoGate(startedAt, AI_MOVE_CARGO_RETRY_DELAY_MS, {
         ...(planningContext || {}),
-        trigger: "simple_center_launch_waiting_cargo",
+        trigger: "simple_step2_selector_waiting_cargo",
       });
       return;
     }
@@ -14158,55 +14158,142 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       return;
     }
 
+    const effectiveFlightRangeCells = getEffectiveFlightRangeCells(launchReadyPlane);
+    const maxFlightDistancePx = Math.max(1, effectiveFlightRangeCells * CELL_SIZE);
     const fieldCenter = {
       x: FIELD_LEFT + FIELD_WIDTH * 0.5,
       y: FIELD_TOP + FIELD_HEIGHT * 0.5,
     };
-    const toCenterDx = fieldCenter.x - launchReadyPlane.x;
-    const toCenterDy = fieldCenter.y - launchReadyPlane.y;
-    let centerTarget = fieldCenter;
-    if(!isPathClear(launchReadyPlane.x, launchReadyPlane.y, fieldCenter.x, fieldCenter.y)){
-      centerTarget = null;
-      const fractions = [0.9, 0.75, 0.6, 0.45, 0.3, 0.2, 0.12];
-      for(const fraction of fractions){
-        const candidate = {
-          x: launchReadyPlane.x + toCenterDx * fraction,
-          y: launchReadyPlane.y + toCenterDy * fraction,
-        };
-        if(isPathClear(launchReadyPlane.x, launchReadyPlane.y, candidate.x, candidate.y)){
-          centerTarget = candidate;
-          break;
+    const enemyPlanes = points.filter((plane) => plane?.color === "green" && isPlaneTargetable(plane));
+    const readyCargo = cargoState
+      .filter((cargo) => cargo?.state === "ready")
+      .sort((a, b) => {
+        const da = dist(launchReadyPlane, getCargoVisualCenter(a));
+        const db = dist(launchReadyPlane, getCargoVisualCenter(b));
+        return da - db;
+      });
+
+    const buildMoveTowardTarget = (targetPoint, options = {}) => {
+      if(!targetPoint) return null;
+      const desiredDistancePx = Math.hypot(targetPoint.x - launchReadyPlane.x, targetPoint.y - launchReadyPlane.y);
+      if(!Number.isFinite(desiredDistancePx) || desiredDistancePx <= 0.0001){
+        return null;
+      }
+      const scaledDistancePx = Math.min(maxFlightDistancePx, desiredDistancePx);
+      const scale = scaledDistancePx / desiredDistancePx;
+      const landingX = launchReadyPlane.x + (targetPoint.x - launchReadyPlane.x) * scale;
+      const landingY = launchReadyPlane.y + (targetPoint.y - launchReadyPlane.y) * scale;
+      const pathClear = isPathClear(launchReadyPlane.x, launchReadyPlane.y, landingX, landingY);
+      if(pathClear !== true){
+        return null;
+      }
+      return {
+        landingX,
+        landingY,
+        targetPoint,
+        decisionReason: options.decisionReason || "simple_step2_unknown",
+        goalName: options.goalName || "simple_step2_unknown",
+        whyChosen: options.whyChosen || "simple_step2_default_reason",
+      };
+    };
+
+    const directEnemyCandidate = enemyPlanes
+      .map((enemy) => {
+        const enemyDistance = dist(launchReadyPlane, enemy);
+        const inRange = enemyDistance <= maxFlightDistancePx * 1.05;
+        const directPath = isPathClear(launchReadyPlane.x, launchReadyPlane.y, enemy.x, enemy.y);
+        if(!inRange || directPath !== true) return null;
+        const move = buildMoveTowardTarget(enemy, {
+          decisionReason: "simple_step2_direct_enemy",
+          goalName: "simple_step2_attack_enemy",
+          whyChosen: `direct_enemy_hit_enemy_id_${enemy.id || "unknown"}`,
+        });
+        if(!move) return null;
+        return { enemy, move, enemyDistance };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.enemyDistance - b.enemyDistance)[0] || null;
+
+    let selectedPlan = directEnemyCandidate?.move || null;
+
+    if(!selectedPlan){
+      const centerDx = fieldCenter.x - launchReadyPlane.x;
+      const centerDy = fieldCenter.y - launchReadyPlane.y;
+      let centerTarget = fieldCenter;
+      if(!isPathClear(launchReadyPlane.x, launchReadyPlane.y, fieldCenter.x, fieldCenter.y)){
+        centerTarget = null;
+        const fractions = [0.9, 0.75, 0.6, 0.45, 0.3, 0.2, 0.12];
+        for(const fraction of fractions){
+          const candidate = {
+            x: launchReadyPlane.x + centerDx * fraction,
+            y: launchReadyPlane.y + centerDy * fraction,
+          };
+          if(isPathClear(launchReadyPlane.x, launchReadyPlane.y, candidate.x, candidate.y)){
+            centerTarget = candidate;
+            break;
+          }
+        }
+      }
+
+      selectedPlan = buildMoveTowardTarget(centerTarget, {
+        decisionReason: "simple_step2_center_control",
+        goalName: "simple_step2_center",
+        whyChosen: "no_realistic_direct_enemy_hit_center_preferred",
+      });
+    }
+
+    if(selectedPlan && readyCargo.length > 0 && !directEnemyCandidate){
+      const nearestCargo = readyCargo[0];
+      const cargoCenter = getCargoVisualCenter(nearestCargo);
+      const cargoDistance = dist(launchReadyPlane, cargoCenter);
+      const cargoMove = buildMoveTowardTarget(cargoCenter, {
+        decisionReason: "simple_step2_pickup_cargo",
+        goalName: "simple_step2_cargo",
+        whyChosen: "safe_nearby_cargo_beats_empty_move",
+      });
+      if(cargoMove){
+        const nearestEnemyToCargoLanding = enemyPlanes.reduce((best, enemy) => {
+          const d = dist(enemy, { x: cargoMove.landingX, y: cargoMove.landingY });
+          return Math.min(best, d);
+        }, Number.POSITIVE_INFINITY);
+        const safeCargoPath = nearestEnemyToCargoLanding >= CELL_SIZE * 3.5;
+        const nearbyCargo = cargoDistance <= maxFlightDistancePx * 0.9;
+        if(safeCargoPath && nearbyCargo){
+          selectedPlan = cargoMove;
         }
       }
     }
 
-    if(!centerTarget){
+    if(!selectedPlan){
       aiMoveScheduled = false;
       advanceTurn();
       return;
     }
 
-    const effectiveFlightRangeCells = getEffectiveFlightRangeCells(launchReadyPlane);
-    const maxFlightDistancePx = Math.max(1, effectiveFlightRangeCells * CELL_SIZE);
-    const desiredDistancePx = Math.hypot(centerTarget.x - launchReadyPlane.x, centerTarget.y - launchReadyPlane.y);
-    if(!Number.isFinite(desiredDistancePx) || desiredDistancePx <= 0.0001){
-      aiMoveScheduled = false;
-      advanceTurn();
-      return;
-    }
-    const scaledDistancePx = Math.min(maxFlightDistancePx, desiredDistancePx);
-    const scale = scaledDistancePx / desiredDistancePx;
-    const landingX = launchReadyPlane.x + (centerTarget.x - launchReadyPlane.x) * scale;
-    const landingY = launchReadyPlane.y + (centerTarget.y - launchReadyPlane.y) * scale;
     const durationSec = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
       ? FIELD_FLIGHT_DURATION_SEC
       : 1;
-    const vx = (landingX - launchReadyPlane.x) / durationSec;
-    const vy = (landingY - launchReadyPlane.y) / durationSec;
+    const vx = (selectedPlan.landingX - launchReadyPlane.x) / durationSec;
+    const vy = (selectedPlan.landingY - launchReadyPlane.y) / durationSec;
+
+    logAiDecision("simple_step2_action_selected", {
+      planeId: launchReadyPlane?.id ?? null,
+      goalName: selectedPlan.goalName,
+      decisionReason: selectedPlan.decisionReason,
+      whyChosen: selectedPlan.whyChosen,
+      landingPoint: {
+        x: Number(selectedPlan.landingX.toFixed(2)),
+        y: Number(selectedPlan.landingY.toFixed(2)),
+      },
+      directEnemyCandidate: Boolean(directEnemyCandidate),
+      readyCargoCount: readyCargo.length,
+    });
 
     const launchResult = issueAIMove(launchReadyPlane, vx, vy, {
-      source: "simple_center_launch",
-      goalName: "simple_center_launch",
+      source: "simple_step2_selector",
+      goalName: selectedPlan.goalName,
+      decisionReason: selectedPlan.decisionReason,
+      whyChosen: selectedPlan.whyChosen,
     });
 
     aiMoveScheduled = false;
