@@ -25541,6 +25541,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       selectedItemType: null,
       selectedReason: null,
       selectedSequenceLength: Array.isArray(plannedMove?.selectedInventorySequence) ? plannedMove.selectedInventorySequence.length : 0,
+      selectedItemTypes: [],
     };
     return false;
   }
@@ -25553,6 +25554,12 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   if(plannedMove && typeof plannedMove === "object"){
     plannedMove.lastInventorySelectionGate = null;
   }
+
+  const PRE_LAUNCH_ALLOWED_ITEM_TYPES = new Set([
+    INVENTORY_ITEM_TYPES.CROSSHAIR,
+    INVENTORY_ITEM_TYPES.FUEL,
+    INVENTORY_ITEM_TYPES.WINGS,
+  ]);
 
   const SINGLE_USE_BUFF_TYPES_PER_TURN = new Set([
     INVENTORY_ITEM_TYPES.CROSSHAIR,
@@ -25567,27 +25574,21 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     }
   }
 
-  function logSelectedInventoryExecutionFailure(itemType, reason, details = {}){
-    const payload = {
-      itemType,
-      reason: reason || "selected_candidate_failed_to_execute",
-      reasonCategory: "inventory_selection_failure",
-      reasonCode: "selected_candidate_execution_failed",
+  function hasCandidateGain(candidate){
+    if(!candidate) return false;
+    const score = Number.isFinite(candidate.adjustedComparableScore)
+      ? candidate.adjustedComparableScore
+      : (Number.isFinite(candidate.comparableScore) ? candidate.comparableScore : null);
+    if(score === null) return true;
+    return score > 0;
+  }
+
+  function logPreLaunchItemDecision(event, details = {}){
+    logAiDecision(event, {
+      stage: "inventory_prelaunch_gate",
       planeId: plannedMove?.plane?.id ?? null,
       goal: strategicGoal || null,
-      source: "selected_inventory_candidate",
-      stage: "inventory_execution",
       ...details,
-    };
-    logAiDecision("inventory_selected_candidate_execution_failed", payload);
-    recordInventoryAiDecision("inventory_selected_candidate_execution_failed", {
-      planeId: payload.planeId,
-      goal: payload.goal,
-      itemType: payload.itemType,
-      reasonCategory: "inventory_selection_failure",
-      reasonCode: "selected_candidate_execution_failed",
-      reasonCodes: ["selected_candidate_execution_failed"],
-      rejectReasons: [payload.reason],
     });
   }
 
@@ -25596,11 +25597,17 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       return { executed: false, reason: "selected_candidate_missing" };
     }
     const itemType = candidate.itemType;
-    if(Number(inventory.counts?.[itemType] ?? 0) <= 0){
+    if(!PRE_LAUNCH_ALLOWED_ITEM_TYPES.has(itemType)){
+      return { executed: false, reason: "selected_candidate_item_not_in_step5_scope", itemType };
+    }
+    if(Number(evaluateBlueInventoryState()?.counts?.[itemType] ?? 0) <= 0){
       return { executed: false, reason: "selected_candidate_item_missing_in_inventory", itemType };
     }
     if(SINGLE_USE_BUFF_TYPES_PER_TURN.has(itemType) && usedBuffTypesThisTurn.has(itemType)){
       return { executed: false, reason: "selected_candidate_buff_already_used_this_turn", itemType };
+    }
+    if(!hasCandidateGain(candidate)){
+      return { executed: false, reason: "selected_candidate_has_no_gain", itemType };
     }
 
     let executed = false;
@@ -25622,38 +25629,6 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.WINGS);
         rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.WINGS);
       }
-    } else if(itemType === INVENTORY_ITEM_TYPES.INVISIBILITY){
-      executed = queueInvisibilityEffectForPlayer("blue");
-      if(executed){
-        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.INVISIBILITY);
-        rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.INVISIBILITY);
-      }
-    } else if(itemType === INVENTORY_ITEM_TYPES.MINE){
-      const selectedMinePlan = candidate?.minePlan || null;
-      const placement = selectedMinePlan?.placement || candidate?.target || null;
-      if(!placement || !isMinePlacementValid(placement)){
-        return { executed: false, reason: "selected_candidate_mine_placement_invalid", itemType };
-      }
-      placeMine({
-        owner: "blue",
-        x: placement.x,
-        y: placement.y,
-        cellX: placement.cellX,
-        cellY: placement.cellY,
-      });
-      removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
-      executed = true;
-    } else if(itemType === INVENTORY_ITEM_TYPES.DYNAMITE){
-      const target = candidate?.target || null;
-      if(!target || !Number.isFinite(target.x) || !Number.isFinite(target.y)){
-        return { executed: false, reason: "selected_candidate_dynamite_target_missing", itemType };
-      }
-      executed = placeBlueDynamiteAt(target.x, target.y);
-      if(executed){
-        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
-      }
-    } else {
-      return { executed: false, reason: "selected_candidate_item_type_not_supported", itemType };
     }
 
     if(!executed){
@@ -25661,56 +25636,79 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     }
 
     plannedMove.inventoryUsageReason = candidate.reason || plannedMove.inventoryUsageReason || "inventory_item_applied";
-    logAiDecision("inventory_decision", {
-      stage: "inventory_decision",
+    logPreLaunchItemDecision("inventory_prelaunch_item_applied", {
       source: executionSource,
-      planeId: plannedMove?.plane?.id ?? null,
       itemType,
       reason: candidate.reason || null,
-      target: candidate.target || null,
       expectedBenefit: candidate.expectedBenefit ?? null,
-      risk: candidate.risk ?? null,
-      committedCandidateExecutedWithoutSecondGate: true,
+      adjustedComparableScore: Number.isFinite(candidate.adjustedComparableScore) ? candidate.adjustedComparableScore : null,
+      comparableScore: Number.isFinite(candidate.comparableScore) ? candidate.comparableScore : null,
+      target: candidate.target || null,
     });
 
     return { executed: true, reason: null, itemType, executionSource };
   }
 
-  const committedCandidate = selectedInventoryCandidate || selectedInventorySequence[0] || null;
-  const committedSource = selectedInventoryCandidate
-    ? "selected_inventory_candidate"
-    : (selectedInventorySequence.length > 0 ? "selected_inventory_sequence" : null);
+  const orderedCandidates = [];
+  if(selectedInventoryCandidate){
+    orderedCandidates.push({ ...selectedInventoryCandidate, executionSource: "selected_inventory_candidate" });
+  }
+  for(const entry of selectedInventorySequence){
+    orderedCandidates.push({ ...entry, executionSource: "selected_inventory_sequence" });
+  }
 
-  if(!committedCandidate){
+  const filteredCandidates = orderedCandidates.filter((candidate) => PRE_LAUNCH_ALLOWED_ITEM_TYPES.has(candidate.itemType));
+
+  if(filteredCandidates.length === 0){
+    logPreLaunchItemDecision("inventory_prelaunch_no_allowed_items", {
+      reason: "no_step5_items_selected",
+      selectedCandidateType: selectedInventoryCandidate?.itemType || null,
+      selectedSequence: selectedInventorySequence.map((entry) => entry.itemType),
+    });
     plannedMove.inventoryDecisionMadeMeta = {
       selected: false,
-      reason: "no_committed_inventory_selection",
-      reasonCodes: inventory.total > 0 ? ["inventory_candidates_not_used"] : ["no_inventory_items"],
-      rejectReasons: ["no_committed_inventory_selection"],
+      reason: "no_prelaunch_scope_item_selected",
+      reasonCodes: ["inventory_candidates_not_used", "step5_only_crosshair_fuel_wings"],
+      rejectReasons: ["no_prelaunch_scope_item_selected"],
       executionSource: null,
       selectedItemType: null,
       selectedReason: null,
       selectedSequenceLength: selectedInventorySequence.length,
+      selectedItemTypes: [],
     };
     return false;
   }
 
-  const executionResult = executeCommittedInventoryAction(committedCandidate, committedSource);
-  if(!executionResult.executed){
-    logSelectedInventoryExecutionFailure(committedCandidate.itemType || null, executionResult.reason, {
-      hadCommittedSelection: true,
-      inventoryLockBypassedBecauseAlreadySelected: true,
-      executionSource: committedSource,
-    });
+  const appliedItemTypes = [];
+  const skippedItems = [];
+  for(const candidate of filteredCandidates){
+    const executionResult = executeCommittedInventoryAction(candidate, candidate.executionSource || "selected_inventory_sequence");
+    if(!executionResult.executed){
+      skippedItems.push({
+        itemType: candidate.itemType || null,
+        reason: executionResult.reason || "selected_candidate_execution_failed",
+      });
+      logPreLaunchItemDecision("inventory_prelaunch_item_skipped", {
+        itemType: candidate.itemType || null,
+        reason: executionResult.reason || "selected_candidate_execution_failed",
+        source: candidate.executionSource || "selected_inventory_sequence",
+      });
+      continue;
+    }
+    appliedItemTypes.push(executionResult.itemType);
+  }
+
+  if(appliedItemTypes.length === 0){
     plannedMove.inventoryDecisionMadeMeta = {
       selected: false,
-      reason: executionResult.reason || "selected_candidate_execution_failed",
-      reasonCodes: ["inventory_candidate_execution_failed"],
-      rejectReasons: [executionResult.reason || "selected_candidate_execution_failed"],
-      executionSource: committedSource,
-      selectedItemType: committedCandidate.itemType || null,
-      selectedReason: committedCandidate.reason || null,
+      reason: "prelaunch_items_skipped",
+      reasonCodes: ["inventory_candidate_execution_failed", "step5_only_crosshair_fuel_wings"],
+      rejectReasons: skippedItems.map((entry) => entry.reason),
+      executionSource: filteredCandidates[0]?.executionSource || null,
+      selectedItemType: filteredCandidates[0]?.itemType || null,
+      selectedReason: filteredCandidates[0]?.reason || null,
       selectedSequenceLength: selectedInventorySequence.length,
+      selectedItemTypes: [],
     };
     return false;
   }
@@ -25718,13 +25716,20 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   plannedMove.inventoryDecisionMadeMeta = {
     selected: true,
     reason: "inventory_item_applied",
-    reasonCodes: [committedCandidate.reason || "inventory_item_applied"],
-    rejectReasons: [],
-    executionSource: committedSource,
-    selectedItemType: committedCandidate.itemType || null,
-    selectedReason: committedCandidate.reason || null,
+    reasonCodes: ["inventory_item_applied", "step5_only_crosshair_fuel_wings"],
+    rejectReasons: skippedItems.map((entry) => entry.reason),
+    executionSource: appliedItemTypes.length > 1 ? "selected_inventory_sequence" : (filteredCandidates[0]?.executionSource || null),
+    selectedItemType: appliedItemTypes[appliedItemTypes.length - 1] || null,
+    selectedReason: plannedMove.inventoryUsageReason || null,
     selectedSequenceLength: selectedInventorySequence.length,
+    selectedItemTypes: appliedItemTypes.slice(),
   };
+
+  logPreLaunchItemDecision("inventory_prelaunch_gate_summary", {
+    appliedItemTypes,
+    skippedItems,
+    selectedSequenceLength: selectedInventorySequence.length,
+  });
 
   return true;
 }
@@ -26347,27 +26352,38 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
 
   if(actionUsed){
     itemUsed = true;
-    totalInventoryActionsApplied = 1;
     afterInventoryState = evaluateBlueInventoryState();
-    const actionConsumedItemType = detectConsumedInventoryType(
-      actionBeforeState?.counts,
-      afterInventoryState?.counts,
-    );
-    if(actionConsumedItemType){
-      consumedItemTypes.push(actionConsumedItemType);
-      markAiInventoryItemUsed(actionConsumedItemType, {
+    const beforeCounts = actionBeforeState?.counts || {};
+    const afterCounts = afterInventoryState?.counts || {};
+    const allTrackedItemTypes = Object.values(INVENTORY_ITEM_TYPES);
+    for(const itemType of allTrackedItemTypes){
+      const beforeCount = Number(beforeCounts?.[itemType] ?? 0);
+      const afterCount = Number(afterCounts?.[itemType] ?? 0);
+      const spentCount = Math.max(0, beforeCount - afterCount);
+      if(spentCount <= 0) continue;
+      for(let i = 0; i < spentCount; i += 1){
+        consumedItemTypes.push(itemType);
+      }
+    }
+
+    totalInventoryActionsApplied = consumedItemTypes.length;
+    for(const consumedType of consumedItemTypes){
+      markAiInventoryItemUsed(consumedType, {
         reason: plannedMove?.selectedInventoryCandidate?.reason || plannedMove?.inventoryUsageReason || "item_used",
         chosenBecauseOfPressure: plannedMove?.selectedInventoryCandidate?.chosenBecauseOfPressure === true,
       });
-      const isTacticalAction = actionConsumedItemType === INVENTORY_ITEM_TYPES.MINE
-        || actionConsumedItemType === INVENTORY_ITEM_TYPES.DYNAMITE;
+      const isTacticalAction = consumedType === INVENTORY_ITEM_TYPES.MINE
+        || consumedType === INVENTORY_ITEM_TYPES.DYNAMITE;
       if(isTacticalAction){
-        tacticalInventoryActionsApplied = 1;
+        tacticalInventoryActionsApplied += 1;
       } else {
-        buffInventoryActionsApplied = 1;
+        buffInventoryActionsApplied += 1;
       }
     }
-    inventoryStopReason = "inventory_single_action_applied";
+
+    inventoryStopReason = consumedItemTypes.length > 1
+      ? "inventory_multiple_actions_applied"
+      : "inventory_single_action_applied";
   }
 
   const consumedItemType = consumedItemTypes.length > 0
@@ -26388,7 +26404,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     appliedTacticalItemsCount: tacticalInventoryActionsApplied,
     appliedItemTypesInOrder: consumedItemTypes.slice(),
     stopReason: inventoryStopReason,
-    flowMode: "single_candidate_single_execution",
+    flowMode: totalInventoryActionsApplied > 1 ? "multi_item_prelaunch_sequence" : "single_candidate_single_execution",
   });
 
   const decisionMeta = plannedMove?.inventoryDecisionMadeMeta || null;
