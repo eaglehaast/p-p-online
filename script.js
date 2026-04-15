@@ -124,6 +124,12 @@ function setEndGamePanelVisible(isVisible){
   endGameDiv.setAttribute("aria-hidden", visible ? "false" : "true");
 }
 
+function clearPendingEndScreenRevealTimeout(){
+  if(!endScreenRevealTimeout) return;
+  clearTimeout(endScreenRevealTimeout);
+  endScreenRevealTimeout = null;
+}
+
 let endGamePanelPreviewEnabled = false;
 
 function placeEndGamePanelAtBoardCenter(){
@@ -869,6 +875,7 @@ const roundBannerState = {
   hideTimerId: null,
 };
 const TRANSFER_FRAME_TURN_AUTO_HIDE_MS = 1500;
+const TRANSFER_FRAME_GAME_WIN_AUTO_HIDE_MS = 1500;
 const TRANSFER_FRAME_SHOW_SCALE_FROM = 0.994;
 const TRANSFER_FRAME_HIDE_SCALE_TO = 0.992;
 const TRANSFER_FRAME_SHOW_EASING = "cubic-bezier(.25,.8,.25,1)";
@@ -1296,8 +1303,8 @@ function showTransferFrame(options = {}) {
     transferState.backImage.src = TRANSFER_FRAME_ASSETS.back;
   }
   if (transferState.colorImage instanceof HTMLImageElement) {
-    if (mode === "turn" || mode === "win") {
-      const isGameWin = mode === "win" && options.isGameWin === true;
+    const isGameWin = mode === "win" && options.isGameWin === true;
+    if (mode === "turn" || isGameWin) {
       if (isGameWin) {
         transferState.colorImage.src = player === "green"
           ? TRANSFER_FRAME_ASSETS.winGameGreen
@@ -10052,6 +10059,7 @@ let awaitingFlightResolution = false;
 let pendingRoundTransitionDelay = null;
 let pendingRoundTransitionStart = 0;
 let shouldShowEndScreen = false;
+let endScreenRevealTimeout = null;
 let suppressAutoRandomMapForNextRound = false;
 let gameMode     = null;
 
@@ -13389,6 +13397,7 @@ function loadMatchScoreImagesIfNeeded(){
 
 function lockInWinner(color, options = {}){
   if(isGameOver) return;
+  clearPendingEndScreenRevealTimeout();
 
   isGameOver = true;
   winnerColor = color;
@@ -13426,7 +13435,8 @@ function lockInWinner(color, options = {}){
     mode: "win",
     player: color,
     isGameWin,
-    winText: buildTransferWinnerText(color, { isGameWin })
+    winText: buildTransferWinnerText(color, { isGameWin }),
+    autoHideMs: isGameWin ? TRANSFER_FRAME_GAME_WIN_AUTO_HIDE_MS : null
   });
 
   if(!awaitingFlightResolution){
@@ -13436,6 +13446,7 @@ function lockInWinner(color, options = {}){
 
 function lockInNoSurvivors(options = {}){
   if(isGameOver) return;
+  clearPendingEndScreenRevealTimeout();
 
   isGameOver = true;
   winnerColor = null;
@@ -13470,6 +13481,7 @@ function lockInNoSurvivors(options = {}){
 
 function lockInDraw(options = {}){
   if(isGameOver) return;
+  clearPendingEndScreenRevealTimeout();
 
   isGameOver = true;
   winnerColor = null;
@@ -13542,6 +13554,21 @@ function finalizePostFlightState(){
   }
 
   if(shouldShowEndScreen && !roundEndedByNuke && endGameDiv){
+    if(isTransferFrameVisible()){
+      setEndGamePanelVisible(false);
+      if(endScreenRevealTimeout){
+        clearTimeout(endScreenRevealTimeout);
+      }
+      endScreenRevealTimeout = setTimeout(() => {
+        endScreenRevealTimeout = null;
+        finalizePostFlightState();
+      }, TRANSFER_FRAME_GAME_WIN_AUTO_HIDE_MS + TRANSFER_FRAME_HIDE_DURATION_MS);
+      return;
+    }
+    if(endScreenRevealTimeout){
+      clearTimeout(endScreenRevealTimeout);
+      endScreenRevealTimeout = null;
+    }
     setEndGamePanelVisible(true);
   }
 }
@@ -41181,6 +41208,7 @@ function startNewRound(){
   applyCurrentMap();
   suppressAutoRandomMapForNextRound = false;
   cleanupGreenCrashFx();
+  clearPendingEndScreenRevealTimeout();
   setEndGamePanelVisible(false);
   isGameOver=false; winnerColor=null; isDrawGame = false; roundEndedByNuke = false;
   awaitingFlightResolution = false;
