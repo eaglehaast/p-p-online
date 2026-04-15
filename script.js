@@ -23867,14 +23867,9 @@ function ensureAiInventoryPressureState(){
 }
 
 function isAiInventoryPressureWeakChance(reason){
-  return reason === "inventory_plan_not_better_than_plain_move"
-    || reason === "fuel_gain_too_small"
-    || reason === "crosshair_value_below_threshold"
-    || reason === "mine_impact_below_noticeable_threshold"
+  return reason === "mine_impact_below_noticeable_threshold"
     || reason === "mine_plan_rejected_threshold"
     || reason === "mine_low_enemy_contact_probability"
-    || reason === "wings_no_contact_gain"
-    || reason === "invisibility_penalty_too_small"
     || reason === "dynamite_relaxed_opening";
 }
 
@@ -24670,6 +24665,7 @@ function logTacticalItemFinalDecision(itemType, details = {}){
 function buildAiInventoryCandidatePlans(context, plannedMove){
   if(!plannedMove?.plane) return { selectedCandidate: null, selectedSequence: [], candidates: [], rejected: [] };
 
+  const FORCE_SPEND_ALL_INVENTORY = true;
   const inventoryPhase = 3;
   const allowBuffItems = true;
   const allowTacticalItems = true;
@@ -24771,27 +24767,29 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       || (targetDistance > baseFlightRange * 0.88 && targetDistance <= baseFlightRange * 2.15)
       || fuelPlans?.blockedByReturnSafety === true
     );
-    if(selectedFuelCandidate && (newReach || safetyGain >= 0.12 || moderateFuelOpportunity)){
+    if(selectedFuelCandidate){
+      const fuelStrongUse = newReach || safetyGain >= 0.12;
+      const fuelModerateUse = !fuelStrongUse && moderateFuelOpportunity;
       pushCandidate({
         itemType: INVENTORY_ITEM_TYPES.FUEL,
         target: selectedFuelCandidate.targetPoint || enemyFlagAnchor || priorityEnemy || enemyBase || null,
         expectedBenefit: Math.max(
-          moderateFuelOpportunity && !newReach && safetyGain < 0.12 ? 0.18 : 0.22,
-          Math.min(0.92, (newReach ? 0.52 : (moderateFuelOpportunity ? 0.22 : 0.28)) + Math.max(0, safetyGain))
+          fuelModerateUse ? 0.18 : 0.12,
+          Math.min(0.92, (fuelStrongUse ? 0.52 : (fuelModerateUse ? 0.22 : 0.14)) + Math.max(0, safetyGain))
         ),
         risk: Math.max(0, 0.22 - Number(selectedFuelCandidate.returnSafetyScore || 0) * 0.18),
         reason: selectedFuelCandidate.scenario || "fuel_tactical_plan",
-        whyBetter: newReach
+        whyBetter: fuelStrongUse
           ? "fuel_turns an otherwise short route into real contact with the objective"
-          : (moderateFuelOpportunity
+          : (fuelModerateUse
               ? "fuel does not create a huge swing yet, but it noticeably improves reach or makes the retreat less fragile"
-              : "fuel keeps the same objective but makes the return meaningfully safer"),
+              : "fuel keeps momentum even when gain is modest, so we spend available buffs instead of stalling"),
         targetName: selectedFuelCandidate.targetName || null,
         fuelScenario: selectedFuelCandidate.scenario || null,
-        usageTier: newReach || safetyGain >= 0.12 ? "strong" : "moderate",
+        usageTier: fuelStrongUse ? "strong" : "moderate",
       });
     } else {
-      rejectCandidate(INVENTORY_ITEM_TYPES.FUEL, selectedFuelCandidate ? "fuel_gain_too_small" : "fuel_has_no_safe_candidate", {
+      rejectCandidate(INVENTORY_ITEM_TYPES.FUEL, "fuel_has_no_safe_candidate", {
         safetyGain,
         blockedByReturnSafety: fuelPlans?.blockedByReturnSafety === true,
       });
@@ -24805,23 +24803,25 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       && crosshairScenario.totalValue >= 0.58
       && crosshairScenario.distanceToEnemy <= plannedMoveEffectiveRangePx * 1.12
       && (crosshairScenario.hasCleanPath || crosshairScenario.hitChance >= 0.52);
-    if(strongCrosshairUse || moderateCrosshairUse){
+    if(crosshairScenario){
       pushCandidate({
         itemType: INVENTORY_ITEM_TYPES.CROSSHAIR,
         target: crosshairScenario.enemy || priorityEnemy || null,
         expectedBenefit: Math.max(
-          strongCrosshairUse ? 0.24 : 0.18,
+          strongCrosshairUse ? 0.24 : (moderateCrosshairUse ? 0.18 : 0.12),
           Math.min(0.88, Number(crosshairScenario.totalValue || 0))
         ),
         risk: crosshairScenario.enemy?.shieldActive ? 0.16 : 0.05,
-        reason: "crosshair_best_value",
+        reason: strongCrosshairUse || moderateCrosshairUse ? "crosshair_best_value" : "crosshair_spend_all_moderate",
         whyBetter: strongCrosshairUse
           ? "crosshair gives a clearly better hit window than flying the same route without extra accuracy"
-          : "crosshair gives a decent shot window, so after repeated stalled turns it can be worth converting a middling chance into a cleaner attack",
+          : (moderateCrosshairUse
+              ? "crosshair gives a decent shot window, so after repeated stalled turns it can be worth converting a middling chance into a cleaner attack"
+              : "crosshair does not spike value yet, but still provides immediate aiming utility and should be spent in this mode"),
         usageTier: strongCrosshairUse ? "strong" : "moderate",
       });
     } else {
-      rejectCandidate(INVENTORY_ITEM_TYPES.CROSSHAIR, crosshairScenario ? "crosshair_value_below_threshold" : "crosshair_no_target");
+      rejectCandidate(INVENTORY_ITEM_TYPES.CROSSHAIR, "crosshair_no_target");
     }
   }
 
@@ -25179,21 +25179,21 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     });
     const wingsStrongUse = reachesContactNextTurn;
     const wingsModerateUse = !wingsStrongUse && reachesModerateContactZone;
-    if(wingsStrongUse || wingsModerateUse){
-      pushCandidate({
-        itemType: INVENTORY_ITEM_TYPES.WINGS,
-        target: enemyBase || null,
-        expectedBenefit: wingsStrongUse ? 0.33 : 0.19,
-        risk: 0.07,
-        reason: wingsStrongUse ? "wings_contact_next_turn" : "wings_contact_setup",
-        whyBetter: wingsStrongUse
-          ? "wings makes the same approach connect sooner instead of arriving one turn later"
-          : "wings does not create contact immediately, but it shortens the approach enough to justify use after repeated stalled inventory turns",
-        usageTier: wingsStrongUse ? "strong" : "moderate",
-      });
-    } else {
-      rejectCandidate(INVENTORY_ITEM_TYPES.WINGS, "wings_no_contact_gain");
-    }
+    pushCandidate({
+      itemType: INVENTORY_ITEM_TYPES.WINGS,
+      target: enemyBase || null,
+      expectedBenefit: wingsStrongUse ? 0.33 : (wingsModerateUse ? 0.19 : 0.11),
+      risk: 0.07,
+      reason: wingsStrongUse
+        ? "wings_contact_next_turn"
+        : (wingsModerateUse ? "wings_contact_setup" : "wings_spend_all_progress_setup"),
+      whyBetter: wingsStrongUse
+        ? "wings makes the same approach connect sooner instead of arriving one turn later"
+        : (wingsModerateUse
+            ? "wings does not create contact immediately, but it shortens the approach enough to justify use after repeated stalled inventory turns"
+            : "wings still improves approach tempo, so we spend available buffs instead of hoarding"),
+      usageTier: wingsStrongUse ? "strong" : "moderate",
+    });
   }
 
   if(allowInvisibility && inventory.counts?.[INVENTORY_ITEM_TYPES.INVISIBILITY] > 0){
@@ -25210,21 +25210,19 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     const invisibilityModerateUse = !invisibilityStrongUse
       && (expectCounterMove || moveDistance >= MAX_DRAG_DISTANCE * 0.62)
       && accuracyPenalty >= 10;
-    if(invisibilityStrongUse || invisibilityModerateUse){
-      pushCandidate({
-        itemType: INVENTORY_ITEM_TYPES.INVISIBILITY,
-        target: plannedMove.plane,
-        expectedBenefit: Math.min(0.72, (invisibilityStrongUse ? 0.2 : 0.16) + accuracyPenalty / 100),
-        risk: 0.09,
-        reason: "invisibility_counter_aiming",
-        whyBetter: invisibilityStrongUse
-          ? "invisibility protects the chosen plane before the enemy can answer the same route"
-          : "invisibility gives moderate protection, so it becomes acceptable after repeated fallback turns or when the same route keeps failing to find a shot",
-        usageTier: invisibilityStrongUse ? "strong" : "moderate",
-      });
-    } else {
-      rejectCandidate(INVENTORY_ITEM_TYPES.INVISIBILITY, expectCounterMove ? "invisibility_penalty_too_small" : "invisibility_no_counter_pressure");
-    }
+    pushCandidate({
+      itemType: INVENTORY_ITEM_TYPES.INVISIBILITY,
+      target: plannedMove.plane,
+      expectedBenefit: Math.min(0.72, (invisibilityStrongUse ? 0.2 : (invisibilityModerateUse ? 0.16 : 0.1)) + accuracyPenalty / 100),
+      risk: 0.09,
+      reason: invisibilityStrongUse || invisibilityModerateUse ? "invisibility_counter_aiming" : "invisibility_spend_all_cover",
+      whyBetter: invisibilityStrongUse
+        ? "invisibility protects the chosen plane before the enemy can answer the same route"
+        : (invisibilityModerateUse
+            ? "invisibility gives moderate protection, so it becomes acceptable after repeated fallback turns or when the same route keeps failing to find a shot"
+            : "invisibility still reduces response quality enough to justify spend-all behavior"),
+      usageTier: invisibilityStrongUse ? "strong" : "moderate",
+    });
   }
 
   const pressureState = updateAiInventoryPressureForTurn(inventory.counts, perItemEvaluation);
@@ -25296,10 +25294,6 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       ? INVENTORY_TACTICAL_SURPLUS_CLOSE_SCORE_BONUS
       : 0;
     const tacticalSurplusPriorityBonus = Number((tacticalSurplusPriorityBonusBase + tacticalSurplusPriorityBonusRepeat + tacticalSurplusCloseScoreBonus).toFixed(3));
-    const moderateReleaseReady = candidate.usageTier !== "moderate"
-      || recentInventorySignals.softReleaseReady
-      || (entry?.idleTurns ?? 0) >= AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD
-      || (entry?.weakChanceStreak ?? 0) >= 2;
     candidate.pressureMeta = entry ? {
       idleTurns: entry.idleTurns,
       weakChanceStreak: entry.weakChanceStreak,
@@ -25313,7 +25307,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       recentEmergencyBaseDefenseCount: recentInventorySignals.emergencyBaseDefenseCount,
       softReleaseGuardScenario: recentInventorySignals.softReleaseGuardScenario || null,
     } : null;
-    candidate.releaseReady = moderateReleaseReady;
+    candidate.releaseReady = true;
     candidate.adjustedComparableScore = Number((candidate.comparableScore + pressureBonus + tacticalSurplusPriorityBonus).toFixed(3));
     candidate.tacticalSurplusPriorityBonus = tacticalSurplusPriorityBonus;
     candidate.tacticalSurplusBonusMeta = tacticalSurplusPriorityBonus > 0 ? {
@@ -25333,121 +25327,12 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
 
   let selectedCandidate = null;
   let rawBestCandidate = null;
-  const inventoryIdleTurns = Number.isFinite(aiRoundState?.inventoryIdleTurns) ? aiRoundState.inventoryIdleTurns : 0;
-  const inventorySoftReleaseWindowActive = recentInventorySignals.softReleaseReady === true
-    || inventoryIdleTurns >= AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD;
-  const INVENTORY_SELECTION_FLOOR_SOFT_DELTA = 0.035;
-  const INVENTORY_SELECTION_FLOOR_SOFT_DELTA_TACTICAL_SURPLUS = 0.072;
-  const INVENTORY_SELECTION_FLOOR_SOFT_DELTA_MINE_REPEAT_RELIEF = 0.028;
-  const INVENTORY_SELECTION_FLOOR_SOFT_SAFE_RISK_MAX = 0.11;
-  const INVENTORY_SELECTION_FLOOR_TACTICAL_SURPLUS_LOWERING = 0.024;
   for(const candidate of candidates){
     if(!rawBestCandidate || candidate.comparableScore > rawBestCandidate.comparableScore + 0.0001){
       rawBestCandidate = candidate;
     }
-    if(candidate.releaseReady === false){
-      logAiDecision("inventory_candidate_waiting_for_release_window", {
-        itemType: candidate.itemType,
-        usageTier: candidate.usageTier || "strong",
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
-        comparableScore: candidate.comparableScore,
-        adjustedComparableScore: candidate.adjustedComparableScore,
-        pressureBonus: candidate.pressureBonus,
-        pressureMeta: candidate.pressureMeta || null,
-      });
-      continue;
-    }
     if(!selectedCandidate || candidate.adjustedComparableScore > selectedCandidate.adjustedComparableScore + 0.0001){
       selectedCandidate = candidate;
-    }
-  }
-  if(selectedCandidate){
-    const selectionFloorMeta = getAiInventorySelectionFloor(selectedCandidate, {
-      recentSignals: recentInventorySignals,
-      inventoryCounts: inventory.counts,
-      hasAttackPasses,
-    });
-    const selectionFloor = selectionFloorMeta.baseSelectionFloor;
-    const isModerateCandidate = selectedCandidate.usageTier === "moderate";
-    const isTacticalCandidate = selectedCandidate.itemType === INVENTORY_ITEM_TYPES.MINE
-      || selectedCandidate.itemType === INVENTORY_ITEM_TYPES.DYNAMITE;
-    const candidateInventoryCount = Number(inventory?.counts?.[selectedCandidate.itemType] ?? 0);
-    const hasTacticalSurplus = isTacticalCandidate && isModerateCandidate && candidateInventoryCount > 1;
-    const floorFromContext = selectionFloorMeta.adjustedSelectionFloor;
-    const effectiveSelectionFloor = hasTacticalSurplus
-      ? Math.max(0, Number((floorFromContext - INVENTORY_SELECTION_FLOOR_TACTICAL_SURPLUS_LOWERING).toFixed(3)))
-      : floorFromContext;
-    selectedCandidate.selectionFloorMeta = {
-      ...selectionFloorMeta,
-      adjustedSelectionFloor: effectiveSelectionFloor,
-      unlockReasons: hasTacticalSurplus
-        ? [...new Set([...(selectionFloorMeta.unlockReasons || []), "surplus"])]
-        : (selectionFloorMeta.unlockReasons || []),
-    };
-    const floorGap = Number((effectiveSelectionFloor - selectedCandidate.adjustedComparableScore).toFixed(3));
-    const mineRepeatReliefActive = selectedCandidate.itemType === INVENTORY_ITEM_TYPES.MINE
-      && isModerateCandidate
-      && (recentInventorySignals.repeatedFallbackSelected || recentInventorySignals.repeatedShotPlanNotFound);
-    const allowedSoftDeltaBase = hasTacticalSurplus
-      ? INVENTORY_SELECTION_FLOOR_SOFT_DELTA_TACTICAL_SURPLUS
-      : INVENTORY_SELECTION_FLOOR_SOFT_DELTA;
-    const allowedSoftDelta = mineRepeatReliefActive
-      ? Number((allowedSoftDeltaBase + INVENTORY_SELECTION_FLOOR_SOFT_DELTA_MINE_REPEAT_RELIEF).toFixed(3))
-      : allowedSoftDeltaBase;
-    const candidateRisk = Number.isFinite(selectedCandidate.risk) ? selectedCandidate.risk : 0;
-    const candidateSafeForSoftPass = candidateRisk <= INVENTORY_SELECTION_FLOOR_SOFT_SAFE_RISK_MAX;
-    const softPassAllowed = selectedCandidate.adjustedComparableScore <= effectiveSelectionFloor
-      && floorGap > 0
-      && floorGap <= allowedSoftDelta
-      && inventorySoftReleaseWindowActive
-      && isModerateCandidate
-      && candidateSafeForSoftPass;
-    if(selectedCandidate.adjustedComparableScore <= effectiveSelectionFloor){
-      if(softPassAllowed){
-        selectedCandidate.floorSoftPassAccepted = true;
-        selectedCandidate.floorSoftPassDelta = floorGap;
-        selectedCandidate.floorSoftPassReasonCode = hasTacticalSurplus
-          ? "inventory_floor_soft_pass_tactical_surplus"
-          : "inventory_floor_soft_pass";
-        logAiDecision("inventory_floor_soft_pass", {
-          reasonCode: selectedCandidate.floorSoftPassReasonCode,
-          itemType: selectedCandidate.itemType,
-          usageTier: selectedCandidate.usageTier || "strong",
-          planeId: plannedMove?.plane?.id ?? null,
-          goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
-          comparableScore: selectedCandidate.comparableScore,
-          adjustedComparableScore: selectedCandidate.adjustedComparableScore,
-          selectionFloor,
-          effectiveSelectionFloor,
-          floorGap,
-          allowedDelta: allowedSoftDelta,
-          candidateRisk,
-          safeRiskMax: INVENTORY_SELECTION_FLOOR_SOFT_SAFE_RISK_MAX,
-          inventoryCount: candidateInventoryCount,
-          tacticalSurplusApplied: hasTacticalSurplus,
-          mineRepeatReliefActive,
-          softReleaseReady: recentInventorySignals.softReleaseReady === true,
-          inventoryIdleTurns,
-        });
-        recordInventoryAiDecision("inventory_floor_soft_pass", {
-          planeId: selectedCandidate.planeId ?? plannedMove?.plane?.id ?? null,
-          goal: selectedCandidate.goal ?? plannedMove?.goalName ?? aiRoundState?.currentGoal ?? null,
-          itemType: selectedCandidate.itemType,
-          reasonCode: selectedCandidate.floorSoftPassReasonCode,
-        });
-      } else {
-      rejectCandidate(selectedCandidate.itemType, "inventory_plan_not_better_than_plain_move", {
-        comparableScore: selectedCandidate.comparableScore,
-        adjustedComparableScore: selectedCandidate.adjustedComparableScore,
-        selectedReason: selectedCandidate.reason,
-        selectionFloor,
-        effectiveSelectionFloor,
-        floorGap,
-        whyWaiting: "pressure_is_not_enough_yet",
-      });
-      selectedCandidate = null;
-      }
     }
   }
   if(selectedCandidate){
@@ -25492,7 +25377,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     }
   }
 
-  const allowInventorySequenceSelection = false;
+  const allowInventorySequenceSelection = true;
   const sequenceItemTypes = [
     INVENTORY_ITEM_TYPES.FUEL,
     INVENTORY_ITEM_TYPES.CROSSHAIR,
@@ -25505,7 +25390,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
   ]);
   const sequenceCandidatesByType = new Map();
   for(const candidate of candidates){
-    if(sequenceItemTypes.includes(candidate.itemType) && candidate.releaseReady !== false){
+    if(sequenceItemTypes.includes(candidate.itemType)){
       sequenceCandidatesByType.set(candidate.itemType, candidate);
     }
   }
@@ -25517,13 +25402,6 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
   ];
   let selectedSequence = [];
   let bestSequenceScore = Number.NEGATIVE_INFINITY;
-  const selectionFloorForSequence = selectedCandidate
-    ? getAiInventorySelectionFloor(selectedCandidate, {
-      recentSignals: recentInventorySignals,
-      inventoryCounts: inventory.counts,
-      hasAttackPasses,
-    }).adjustedSelectionFloor
-    : 0;
   for(const sequenceTypes of possibleSequences){
     if(!allowInventorySequenceSelection){
       logAiDecision("inventory_sequence_rejected", {
@@ -25570,17 +25448,6 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     const totalAdjusted = sequenceSteps.reduce((sum, step) => sum + Number(step.adjustedComparableScore || step.comparableScore || 0), 0);
     const pairSynergyBonus = sequenceTypes.length === 2 ? 0.07 : 0.16;
     const chainScore = Number((totalAdjusted + pairSynergyBonus).toFixed(3));
-    if(chainScore <= selectionFloorForSequence){
-      logAiDecision("inventory_sequence_rejected", {
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
-        sequence: sequenceTypes,
-        reason: "sequence_below_selection_floor",
-        chainScore,
-        selectionFloorForSequence,
-      });
-      continue;
-    }
     if(chainScore > bestSequenceScore + 0.0001){
       bestSequenceScore = chainScore;
       selectedSequence = sequenceSteps.map((step, stepIndex) => ({
@@ -25756,12 +25623,15 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     return { executed: true, reason: null, itemType, executionSource };
   }
 
-  const committedCandidate = selectedInventoryCandidate || selectedInventorySequence[0] || null;
-  const committedSource = selectedInventoryCandidate
-    ? "selected_inventory_candidate"
-    : (selectedInventorySequence.length > 0 ? "selected_inventory_sequence" : null);
+  const shouldPreferSequence = selectedInventorySequence.length > 0;
+  const committedCandidate = shouldPreferSequence
+    ? null
+    : (selectedInventoryCandidate || null);
+  const committedSource = shouldPreferSequence
+    ? "selected_inventory_sequence"
+    : (selectedInventoryCandidate ? "selected_inventory_candidate" : null);
 
-  if(!committedCandidate){
+  if(!committedCandidate && !shouldPreferSequence){
     plannedMove.inventoryDecisionMadeMeta = {
       selected: false,
       reason: "no_committed_inventory_selection",
@@ -25773,6 +25643,41 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       selectedSequenceLength: selectedInventorySequence.length,
     };
     return false;
+  }
+
+  if(shouldPreferSequence){
+    let executedCount = 0;
+    let lastFailureReason = null;
+    for(const sequenceCandidate of selectedInventorySequence){
+      const stepResult = executeCommittedInventoryAction(sequenceCandidate, committedSource);
+      if(stepResult.executed){
+        executedCount += 1;
+        continue;
+      }
+      lastFailureReason = stepResult.reason || "selected_candidate_execution_failed";
+      logSelectedInventoryExecutionFailure(sequenceCandidate?.itemType || null, lastFailureReason, {
+        hadCommittedSelection: true,
+        inventoryLockBypassedBecauseAlreadySelected: true,
+        executionSource: committedSource,
+      });
+    }
+    plannedMove.inventoryDecisionMadeMeta = {
+      selected: executedCount > 0,
+      reason: executedCount > 0
+        ? "inventory_sequence_applied"
+        : (lastFailureReason || "selected_candidate_execution_failed"),
+      reasonCodes: executedCount > 0
+        ? ["inventory_sequence_applied"]
+        : ["inventory_candidate_execution_failed"],
+      rejectReasons: executedCount > 0
+        ? []
+        : [lastFailureReason || "selected_candidate_execution_failed"],
+      executionSource: committedSource,
+      selectedItemType: selectedInventorySequence[0]?.itemType || null,
+      selectedReason: selectedInventorySequence[0]?.reason || null,
+      selectedSequenceLength: selectedInventorySequence.length,
+    };
+    return executedCount > 0;
   }
 
   const executionResult = executeCommittedInventoryAction(committedCandidate, committedSource);
@@ -33141,6 +33046,7 @@ function setNoReadyAiPlanesStreak(value){
   return normalizedValue;
 }
 
+// AI CONTRACT: before changing turn-level AI behavior, align with docs/AI_BEHAVIOR_CONTRACT.md
 function runAiTurnV2(context = {}){
   if (gameMode!=="computer" || isGameOver) return;
 
@@ -34181,6 +34087,7 @@ if(typeof window !== "undefined"){
   window.runAiTurnV2 = runAiTurnV2;
 }
 
+// AI CONTRACT: dispatcher behavior should remain consistent with docs/AI_BEHAVIOR_CONTRACT.md
 function doComputerMove(){
   const getFailSafeCounts = () => ({
     aiPlanes: points.filter((plane) => plane?.color === "blue" && plane?.isAlive && !plane?.burning).length,
