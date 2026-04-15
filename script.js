@@ -24728,10 +24728,6 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
   const allowBuffItems = true;
   const allowTacticalItems = false;
   const allowInvisibility = false;
-  const spendFirstFuelWingsItems = new Set([
-    INVENTORY_ITEM_TYPES.FUEL,
-    INVENTORY_ITEM_TYPES.WINGS,
-  ]);
   const inventory = evaluateBlueInventoryState();
   if(inventory.total <= 0) return { selectedCandidate: null, selectedSequence: [], candidates: [], rejected: [] };
 
@@ -24759,9 +24755,6 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
   const plannedMoveEffectiveRangePx = typeof getPlaneEffectiveRangePx === "function"
     ? getPlaneEffectiveRangePx(plannedMove.plane)
     : MAX_DRAG_DISTANCE;
-  const hasAttackPasses = Boolean(priorityEnemy)
-    && dist(plannedMove.plane, priorityEnemy) <= plannedMoveEffectiveRangePx * 1.15
-    && isPathClear(plannedMove.plane.x, plannedMove.plane.y, priorityEnemy.x, priorityEnemy.y);
   const attackRangePx = typeof ATTACK_RANGE_PX === "number" && Number.isFinite(ATTACK_RANGE_PX) ? ATTACK_RANGE_PX : MAX_DRAG_DISTANCE * 0.58;
   const baseFlightRangeCells = Number.isFinite(settings?.flightRangeCells) ? settings.flightRangeCells : 30;
   const baseFlightRange = baseFlightRangeCells * CELL_SIZE;
@@ -25284,394 +25277,81 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     }
   }
 
-  const pressureState = updateAiInventoryPressureForTurn(inventory.counts, perItemEvaluation);
-  for(const itemType of Object.keys(AI_INVENTORY_PRESSURE_CONFIG)){
-    if(!(Number(inventory.counts?.[itemType] || 0) > 0)) continue;
-    const entry = pressureState?.byItem?.[itemType] || null;
-    const pressureBonus = getAiInventoryPressureBonus(itemType, entry, pressureState?.stalestItemType === itemType, recentInventorySignals);
-    if(entry){
-      entry.lastPressureBonus = pressureBonus;
-    }
-    logAiDecision("inventory_pressure_state", {
-      itemType,
-      planeId: plannedMove?.plane?.id ?? null,
-      goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
-      idleTurns: entry?.idleTurns ?? 0,
-      weakChanceStreak: entry?.weakChanceStreak ?? 0,
-      pressureBonus,
-      actionDebtDiscount: entry?.actionDebtDiscount ?? 0,
-      tooSmallRejectStreak: entry?.tooSmallRejectStreak ?? 0,
-      actionDebtSourceReason: entry?.actionDebtSourceReason ?? null,
-      whyStillWaiting: entry?.lastWhyWaiting || null,
-      lastRejectedReason: entry?.lastRejectedReason || null,
-      staleLeader: pressureState?.stalestItemType === itemType,
-      recentFallbackSelectedCount: recentInventorySignals.fallbackSelectedCount,
-      recentShotPlanNotFoundCount: recentInventorySignals.shotPlanNotFoundCount,
-      recentEmergencyBaseDefenseCount: recentInventorySignals.emergencyBaseDefenseCount,
-      softReleaseGuardScenario: recentInventorySignals.softReleaseGuardScenario || null,
-    });
-  }
-  const INVENTORY_TACTICAL_SURPLUS_BASE_BONUS = 0.045;
-  const INVENTORY_TACTICAL_SURPLUS_REPEAT_BONUS = 0.018;
-  const INVENTORY_TACTICAL_SURPLUS_CLOSE_SCORE_BONUS = 0.022;
-  const INVENTORY_TACTICAL_SURPLUS_CLOSE_SCORE_GAP_MAX = 0.065;
-  const INVENTORY_TACTICAL_SURPLUS_RISK_MAX = 0.19;
   for(const candidate of candidates){
-    const entry = pressureState?.byItem?.[candidate.itemType] || null;
-    const pressureBonus = getAiInventoryPressureBonus(candidate.itemType, entry, pressureState?.stalestItemType === candidate.itemType, recentInventorySignals);
-    const candidateInventoryCount = Number(inventory?.counts?.[candidate.itemType] ?? 0);
-    const candidateRisk = Number.isFinite(candidate?.risk) ? candidate.risk : 0;
-    const isTacticalCandidate = candidate.itemType === INVENTORY_ITEM_TYPES.MINE || candidate.itemType === INVENTORY_ITEM_TYPES.DYNAMITE;
-    const repeatedEmptyTurns = recentInventorySignals?.repeatedFallbackSelected || recentInventorySignals?.repeatedShotPlanNotFound;
-    const tacticalSurplusPriorityBonusBase = isTacticalCandidate && candidateInventoryCount > 1
-      ? INVENTORY_TACTICAL_SURPLUS_BASE_BONUS
-      : 0;
-    const tacticalSurplusPriorityBonusRepeat = isTacticalCandidate && repeatedEmptyTurns
-      ? INVENTORY_TACTICAL_SURPLUS_REPEAT_BONUS
-      : 0;
-    candidate.pressureBonus = pressureBonus;
-    const closestSoftItem = candidates
-      .filter((entryCandidate) => (
-        entryCandidate !== candidate
-        && entryCandidate.itemType !== INVENTORY_ITEM_TYPES.MINE
-        && entryCandidate.itemType !== INVENTORY_ITEM_TYPES.DYNAMITE
-      ))
-      .reduce((best, entryCandidate) => {
-        if(!best || entryCandidate.comparableScore > best.comparableScore + 0.0001) return entryCandidate;
-        return best;
-      }, null);
-    const closeSoftScoreGap = closestSoftItem
-      ? Number((closestSoftItem.comparableScore - candidate.comparableScore).toFixed(3))
-      : Number.POSITIVE_INFINITY;
-    const tacticalSurplusCloseScoreBonusAllowed = isTacticalCandidate
-      && candidateInventoryCount > 1
-      && Number.isFinite(closeSoftScoreGap)
-      && closeSoftScoreGap >= 0
-      && closeSoftScoreGap <= INVENTORY_TACTICAL_SURPLUS_CLOSE_SCORE_GAP_MAX
-      && candidateRisk <= INVENTORY_TACTICAL_SURPLUS_RISK_MAX;
-    const tacticalSurplusCloseScoreBonus = tacticalSurplusCloseScoreBonusAllowed
-      ? INVENTORY_TACTICAL_SURPLUS_CLOSE_SCORE_BONUS
-      : 0;
-    const tacticalSurplusPriorityBonus = Number((tacticalSurplusPriorityBonusBase + tacticalSurplusPriorityBonusRepeat + tacticalSurplusCloseScoreBonus).toFixed(3));
-    const moderateReleaseReady = spendFirstFuelWingsItems.has(candidate.itemType)
-      || candidate.usageTier !== "moderate"
-      || recentInventorySignals.softReleaseReady
-      || (entry?.idleTurns ?? 0) >= AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD
-      || (entry?.weakChanceStreak ?? 0) >= 2;
-    candidate.pressureMeta = entry ? {
-      idleTurns: entry.idleTurns,
-      weakChanceStreak: entry.weakChanceStreak,
-      actionDebtDiscount: entry.actionDebtDiscount ?? 0,
-      tooSmallRejectStreak: entry.tooSmallRejectStreak ?? 0,
-      actionDebtSourceReason: entry.actionDebtSourceReason ?? null,
-      stalestItemType: pressureState?.stalestItemType || null,
-      whyStillWaiting: entry.lastWhyWaiting || null,
-      recentFallbackSelectedCount: recentInventorySignals.fallbackSelectedCount,
-      recentShotPlanNotFoundCount: recentInventorySignals.shotPlanNotFoundCount,
-      recentEmergencyBaseDefenseCount: recentInventorySignals.emergencyBaseDefenseCount,
-      softReleaseGuardScenario: recentInventorySignals.softReleaseGuardScenario || null,
-    } : null;
-    candidate.releaseReady = moderateReleaseReady;
-    candidate.adjustedComparableScore = Number((candidate.comparableScore + pressureBonus + tacticalSurplusPriorityBonus).toFixed(3));
-    candidate.tacticalSurplusPriorityBonus = tacticalSurplusPriorityBonus;
-    candidate.tacticalSurplusBonusMeta = tacticalSurplusPriorityBonus > 0 ? {
-      baseBonus: tacticalSurplusPriorityBonusBase,
-      repeatedEmptyTurnsBonus: tacticalSurplusPriorityBonusRepeat,
-      closeScoreBonus: tacticalSurplusCloseScoreBonus,
-      closeSoftScoreGap: Number.isFinite(closeSoftScoreGap) ? closeSoftScoreGap : null,
-      closestSoftItemType: closestSoftItem?.itemType || null,
-      riskGuardApplied: tacticalSurplusCloseScoreBonus > 0,
-      riskGuardMax: INVENTORY_TACTICAL_SURPLUS_RISK_MAX,
-      repeatedEmptyTurns,
-    } : null;
-    if(entry){
-      entry.lastPressureBonus = pressureBonus;
-    }
+    const directUtility = Number.isFinite(candidate?.comparableScore)
+      ? candidate.comparableScore
+      : Number((Number(candidate?.expectedBenefit || 0) - Number(candidate?.risk || 0)).toFixed(3));
+    candidate.directUtility = Number(directUtility.toFixed(3));
+    candidate.adjustedComparableScore = candidate.directUtility;
+    candidate.releaseReady = true;
   }
 
   let selectedCandidate = null;
-  let rawBestCandidate = null;
-  const inventoryIdleTurns = Number.isFinite(aiRoundState?.inventoryIdleTurns) ? aiRoundState.inventoryIdleTurns : 0;
-  const inventorySoftReleaseWindowActive = recentInventorySignals.softReleaseReady === true
-    || inventoryIdleTurns >= AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD;
-  const INVENTORY_SELECTION_FLOOR_SOFT_DELTA = 0.035;
-  const INVENTORY_SELECTION_FLOOR_SOFT_DELTA_TACTICAL_SURPLUS = 0.072;
-  const INVENTORY_SELECTION_FLOOR_SOFT_DELTA_MINE_REPEAT_RELIEF = 0.028;
-  const INVENTORY_SELECTION_FLOOR_SOFT_SAFE_RISK_MAX = 0.11;
-  const INVENTORY_SELECTION_FLOOR_TACTICAL_SURPLUS_LOWERING = 0.024;
   for(const candidate of candidates){
-    if(!rawBestCandidate || candidate.comparableScore > rawBestCandidate.comparableScore + 0.0001){
-      rawBestCandidate = candidate;
-    }
-    if(candidate.releaseReady === false){
-      logAiDecision("inventory_candidate_waiting_for_release_window", {
-        itemType: candidate.itemType,
-        usageTier: candidate.usageTier || "strong",
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
-        comparableScore: candidate.comparableScore,
-        adjustedComparableScore: candidate.adjustedComparableScore,
-        pressureBonus: candidate.pressureBonus,
-        pressureMeta: candidate.pressureMeta || null,
-      });
-      continue;
-    }
-    if(!selectedCandidate || candidate.adjustedComparableScore > selectedCandidate.adjustedComparableScore + 0.0001){
+    if(!selectedCandidate || candidate.directUtility > selectedCandidate.directUtility + 0.0001){
       selectedCandidate = candidate;
     }
   }
-  if(selectedCandidate){
-    const selectionFloorMeta = getAiInventorySelectionFloor(selectedCandidate, {
-      recentSignals: recentInventorySignals,
-      inventoryCounts: inventory.counts,
-      hasAttackPasses,
+
+  if(selectedCandidate && selectedCandidate.directUtility <= 0){
+    rejectCandidate(selectedCandidate.itemType, "inventory_zero_gain_guard", {
+      comparableScore: selectedCandidate.comparableScore,
+      directUtility: selectedCandidate.directUtility,
+      selectedReason: selectedCandidate.reason,
+      whyWaiting: "item_does_not_change_result",
     });
-    const selectionFloor = selectionFloorMeta.baseSelectionFloor;
-    const isModerateCandidate = selectedCandidate.usageTier === "moderate";
-    const isTacticalCandidate = selectedCandidate.itemType === INVENTORY_ITEM_TYPES.MINE
-      || selectedCandidate.itemType === INVENTORY_ITEM_TYPES.DYNAMITE;
-    const candidateInventoryCount = Number(inventory?.counts?.[selectedCandidate.itemType] ?? 0);
-    const hasTacticalSurplus = isTacticalCandidate && isModerateCandidate && candidateInventoryCount > 1;
-    const floorFromContext = selectionFloorMeta.adjustedSelectionFloor;
-    const effectiveSelectionFloor = hasTacticalSurplus
-      ? Math.max(0, Number((floorFromContext - INVENTORY_SELECTION_FLOOR_TACTICAL_SURPLUS_LOWERING).toFixed(3)))
-      : floorFromContext;
-    selectedCandidate.selectionFloorMeta = {
-      ...selectionFloorMeta,
-      adjustedSelectionFloor: effectiveSelectionFloor,
-      unlockReasons: hasTacticalSurplus
-        ? [...new Set([...(selectionFloorMeta.unlockReasons || []), "surplus"])]
-        : (selectionFloorMeta.unlockReasons || []),
-    };
-    const floorGap = Number((effectiveSelectionFloor - selectedCandidate.adjustedComparableScore).toFixed(3));
-    const mineRepeatReliefActive = selectedCandidate.itemType === INVENTORY_ITEM_TYPES.MINE
-      && isModerateCandidate
-      && (recentInventorySignals.repeatedFallbackSelected || recentInventorySignals.repeatedShotPlanNotFound);
-    const allowedSoftDeltaBase = hasTacticalSurplus
-      ? INVENTORY_SELECTION_FLOOR_SOFT_DELTA_TACTICAL_SURPLUS
-      : INVENTORY_SELECTION_FLOOR_SOFT_DELTA;
-    const allowedSoftDelta = mineRepeatReliefActive
-      ? Number((allowedSoftDeltaBase + INVENTORY_SELECTION_FLOOR_SOFT_DELTA_MINE_REPEAT_RELIEF).toFixed(3))
-      : allowedSoftDeltaBase;
-    const candidateRisk = Number.isFinite(selectedCandidate.risk) ? selectedCandidate.risk : 0;
-    const candidateSafeForSoftPass = candidateRisk <= INVENTORY_SELECTION_FLOOR_SOFT_SAFE_RISK_MAX;
-    const softPassAllowed = selectedCandidate.adjustedComparableScore <= effectiveSelectionFloor
-      && floorGap > 0
-      && floorGap <= allowedSoftDelta
-      && inventorySoftReleaseWindowActive
-      && isModerateCandidate
-      && candidateSafeForSoftPass;
-    const ignoreSelectionFloorForSpendFirst = spendFirstFuelWingsItems.has(selectedCandidate.itemType);
-    if(!ignoreSelectionFloorForSpendFirst && selectedCandidate.adjustedComparableScore <= effectiveSelectionFloor){
-      if(softPassAllowed){
-        selectedCandidate.floorSoftPassAccepted = true;
-        selectedCandidate.floorSoftPassDelta = floorGap;
-        selectedCandidate.floorSoftPassReasonCode = hasTacticalSurplus
-          ? "inventory_floor_soft_pass_tactical_surplus"
-          : "inventory_floor_soft_pass";
-        logAiDecision("inventory_floor_soft_pass", {
-          reasonCode: selectedCandidate.floorSoftPassReasonCode,
-          itemType: selectedCandidate.itemType,
-          usageTier: selectedCandidate.usageTier || "strong",
-          planeId: plannedMove?.plane?.id ?? null,
-          goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
-          comparableScore: selectedCandidate.comparableScore,
-          adjustedComparableScore: selectedCandidate.adjustedComparableScore,
-          selectionFloor,
-          effectiveSelectionFloor,
-          floorGap,
-          allowedDelta: allowedSoftDelta,
-          candidateRisk,
-          safeRiskMax: INVENTORY_SELECTION_FLOOR_SOFT_SAFE_RISK_MAX,
-          inventoryCount: candidateInventoryCount,
-          tacticalSurplusApplied: hasTacticalSurplus,
-          mineRepeatReliefActive,
-          softReleaseReady: recentInventorySignals.softReleaseReady === true,
-          inventoryIdleTurns,
-        });
-        recordInventoryAiDecision("inventory_floor_soft_pass", {
-          planeId: selectedCandidate.planeId ?? plannedMove?.plane?.id ?? null,
-          goal: selectedCandidate.goal ?? plannedMove?.goalName ?? aiRoundState?.currentGoal ?? null,
-          itemType: selectedCandidate.itemType,
-          reasonCode: selectedCandidate.floorSoftPassReasonCode,
-        });
-      } else {
-      rejectCandidate(selectedCandidate.itemType, "inventory_plan_not_better_than_plain_move", {
-        comparableScore: selectedCandidate.comparableScore,
-        adjustedComparableScore: selectedCandidate.adjustedComparableScore,
-        selectedReason: selectedCandidate.reason,
-        selectionFloor,
-        effectiveSelectionFloor,
-        floorGap,
-        whyWaiting: "pressure_is_not_enough_yet",
-      });
-      selectedCandidate = null;
-      }
-    }
-  }
-  if(selectedCandidate){
-    const selectionFloorMeta = getAiInventorySelectionFloor(selectedCandidate, {
-      recentSignals: recentInventorySignals,
-      inventoryCounts: inventory.counts,
-      hasAttackPasses,
-    });
-    const selectionFloor = spendFirstFuelWingsItems.has(selectedCandidate.itemType)
-      ? Number.NEGATIVE_INFINITY
-      : selectionFloorMeta.adjustedSelectionFloor;
-    const crossedOwnGateBecauseOfPressure = selectedCandidate.comparableScore <= selectionFloor
-      && selectedCandidate.adjustedComparableScore > selectionFloor;
-    const displacedAnotherCandidateBecauseOfPressure = Boolean(
-      selectedCandidate.pressureBonus > 0
-      && rawBestCandidate
-      && rawBestCandidate.itemType !== selectedCandidate.itemType
-      && selectedCandidate.adjustedComparableScore > (rawBestCandidate.comparableScore + 0.0001)
-    );
-    selectedCandidate.chosenBecauseOfPressure = crossedOwnGateBecauseOfPressure || displacedAnotherCandidateBecauseOfPressure;
-    if(selectedCandidate.chosenBecauseOfPressure){
-      const isTacticalPressureChoice = selectedCandidate.itemType === INVENTORY_ITEM_TYPES.MINE
-        || selectedCandidate.itemType === INVENTORY_ITEM_TYPES.DYNAMITE;
-      if(isTacticalPressureChoice){
-        selectedCandidate.pressureReasonCode = "tactical_pressure_choice";
-      }
-      logAiDecision("inventory_pressure_choice_unlocked", {
-        itemType: selectedCandidate.itemType,
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
-        pressureBonus: selectedCandidate.pressureBonus,
-        rawComparableScore: selectedCandidate.comparableScore,
-        adjustedComparableScore: selectedCandidate.adjustedComparableScore,
-        selectionFloor,
-        displacedRawBestItemType: rawBestCandidate?.itemType || null,
-        displacedRawBestScore: rawBestCandidate?.comparableScore ?? null,
-        tacticalSurplusPriorityBonus: selectedCandidate.tacticalSurplusPriorityBonus || 0,
-        tacticalSurplusBonusMeta: selectedCandidate.tacticalSurplusBonusMeta || null,
-        pressureReasonCode: selectedCandidate.pressureReasonCode || null,
-        whyChosenNow: crossedOwnGateBecauseOfPressure
-          ? "pressure_lifted_item_above_its_minimum_use_threshold"
-          : "pressure_accumulated_until_good_enough_plan_overtook_plainer_option",
-      });
-    }
+    selectedCandidate = null;
   }
 
-  const allowInventorySequenceSelection = true;
-  const sequenceItemTypes = [
-    INVENTORY_ITEM_TYPES.FUEL,
-    INVENTORY_ITEM_TYPES.WINGS,
-  ];
-  const compatiblePairKeys = new Set([
-    `${INVENTORY_ITEM_TYPES.FUEL}|${INVENTORY_ITEM_TYPES.WINGS}`,
-  ]);
-  const sequenceCandidatesByType = new Map();
-  for(const candidate of candidates){
-    if(sequenceItemTypes.includes(candidate.itemType) && candidate.releaseReady !== false){
-      sequenceCandidatesByType.set(candidate.itemType, candidate);
-    }
-  }
-  const possibleSequences = [
-    [INVENTORY_ITEM_TYPES.FUEL, INVENTORY_ITEM_TYPES.WINGS],
-  ];
   let selectedSequence = [];
-  let bestSequenceScore = Number.NEGATIVE_INFINITY;
-  const selectionFloorForSequence = selectedCandidate
-    ? getAiInventorySelectionFloor(selectedCandidate, {
-      recentSignals: recentInventorySignals,
-      inventoryCounts: inventory.counts,
-      hasAttackPasses,
-    }).adjustedSelectionFloor
-    : 0;
-  for(const sequenceTypes of possibleSequences){
-    if(!allowInventorySequenceSelection){
-      logAiDecision("inventory_sequence_rejected", {
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
-        sequence: sequenceTypes,
-        reason: "sequence_selection_disabled_single_execution_flow",
-      });
-      continue;
-    }
-    const sequenceSteps = [];
-    let rejectedReason = null;
-    for(const itemType of sequenceTypes){
-      if(!(Number(inventory.counts?.[itemType] || 0) > 0)){
-        rejectedReason = "sequence_item_missing_in_inventory";
-        break;
-      }
-      const stepCandidate = sequenceCandidatesByType.get(itemType) || null;
-      if(!stepCandidate){
-        rejectedReason = "sequence_item_has_no_single_stage_candidate";
-        break;
-      }
-      sequenceSteps.push(stepCandidate);
-    }
-    if(!rejectedReason){
-      for(let index = 0; index < sequenceTypes.length - 1; index += 1){
-        const pairKey = [sequenceTypes[index], sequenceTypes[index + 1]].sort().join("|");
-        if(!compatiblePairKeys.has(pairKey)){
-          rejectedReason = "sequence_pair_incompatible";
-          break;
-        }
-      }
-    }
-    if(rejectedReason){
-      logAiDecision("inventory_sequence_rejected", {
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
-        sequence: sequenceTypes,
-        reason: rejectedReason,
-      });
-      continue;
-    }
-    const totalComparable = sequenceSteps.reduce((sum, step) => sum + Number(step.comparableScore || 0), 0);
-    const totalAdjusted = sequenceSteps.reduce((sum, step) => sum + Number(step.adjustedComparableScore || step.comparableScore || 0), 0);
-    const pairSynergyBonus = sequenceTypes.length === 2 ? 0.07 : 0;
-    const unlockBonus = fuelAndWingsUnlockMeta.unlocked ? 0.48 : 0;
-    const chainScore = Number((totalAdjusted + pairSynergyBonus + unlockBonus).toFixed(3));
-    if(!fuelAndWingsUnlockMeta.unlocked){
-      logAiDecision("inventory_sequence_rejected", {
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
-        sequence: sequenceTypes,
-        reason: "sequence_no_unlock_class_gain",
-        unlockReasons: fuelAndWingsUnlockMeta.reasons,
-      });
-      continue;
-    }
-    const sequenceUsesOnlySpendFirstItems = sequenceSteps.every((step) => spendFirstFuelWingsItems.has(step.itemType));
-    if(!sequenceUsesOnlySpendFirstItems && chainScore <= selectionFloorForSequence){
-      logAiDecision("inventory_sequence_rejected", {
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
-        sequence: sequenceTypes,
-        reason: "sequence_below_selection_floor",
-        chainScore,
-        selectionFloorForSequence,
-      });
-      continue;
-    }
-    if(chainScore > bestSequenceScore + 0.0001){
-      bestSequenceScore = chainScore;
-      selectedSequence = sequenceSteps.map((step, stepIndex) => ({
-        ...step,
-        stepIndex,
-        sequenceLength: sequenceTypes.length,
-        reasonCode: step.reasonCode || `${step.itemType}_spend_first_applied`,
-      }));
-    }
+  const fuelCandidate = candidates.find((candidate) => candidate.itemType === INVENTORY_ITEM_TYPES.FUEL) || null;
+  const wingsCandidate = candidates.find((candidate) => candidate.itemType === INVENTORY_ITEM_TYPES.WINGS) || null;
+  const hasFuel = Number(inventory.counts?.[INVENTORY_ITEM_TYPES.FUEL] || 0) > 0;
+  const hasWings = Number(inventory.counts?.[INVENTORY_ITEM_TYPES.WINGS] || 0) > 0;
+
+  if(hasFuel && hasWings && fuelCandidate && wingsCandidate){
+    const comboSynergyBonus = fuelAndWingsUnlockMeta.unlocked ? 0.07 : 0.03;
+    const comboUtility = Number((fuelCandidate.directUtility + wingsCandidate.directUtility + comboSynergyBonus).toFixed(3));
+    const bestSingleUtility = selectedCandidate ? Number(selectedCandidate.directUtility || 0) : Number.NEGATIVE_INFINITY;
+
     logAiDecision("inventory_sequence_evaluated", {
       planeId: plannedMove?.plane?.id ?? null,
       goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
-      sequence: sequenceTypes,
-      totalComparable: Number(totalComparable.toFixed(3)),
-      totalAdjusted: Number(totalAdjusted.toFixed(3)),
-      pairSynergyBonus,
-      chainScore,
+      sequence: [INVENTORY_ITEM_TYPES.FUEL, INVENTORY_ITEM_TYPES.WINGS],
+      fuelUtility: fuelCandidate.directUtility,
+      wingsUtility: wingsCandidate.directUtility,
+      comboSynergyBonus,
+      comboUtility,
+      bestSingleUtility,
     });
-  }
-  if(selectedSequence.length > 1 && selectedSequence.every((step) => spendFirstFuelWingsItems.has(step.itemType))){
-    selectedSequence = selectedSequence.map((step) => ({
-      ...step,
-      comboReasonCode: "fuel_wings_combo_applied",
-    }));
+
+    if(comboUtility > 0 && comboUtility > bestSingleUtility + 0.0001){
+      selectedSequence = [fuelCandidate, wingsCandidate].map((step, stepIndex) => ({
+        ...step,
+        stepIndex,
+        sequenceLength: 2,
+        comboReasonCode: "fuel_wings_combo_applied",
+        reasonCode: step.reasonCode || `${step.itemType}_combo_applied`,
+      }));
+      selectedCandidate = fuelCandidate;
+    } else if(comboUtility <= 0){
+      logAiDecision("inventory_sequence_rejected", {
+        planeId: plannedMove?.plane?.id ?? null,
+        goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+        sequence: [INVENTORY_ITEM_TYPES.FUEL, INVENTORY_ITEM_TYPES.WINGS],
+        reason: "sequence_zero_gain_guard",
+        comboUtility,
+      });
+    } else {
+      logAiDecision("inventory_sequence_rejected", {
+        planeId: plannedMove?.plane?.id ?? null,
+        goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+        sequence: [INVENTORY_ITEM_TYPES.FUEL, INVENTORY_ITEM_TYPES.WINGS],
+        reason: "sequence_not_better_than_best_single",
+        comboUtility,
+        bestSingleUtility,
+      });
+    }
   }
 
   return { selectedCandidate, selectedSequence, candidates, rejected, inventoryPhase };
