@@ -158,17 +158,6 @@ How to interpret:
 
 Decision events are capped (last N entries kept) to prevent JSON from growing too much during long sessions.
 
-
-## AI behavior contract
-
-The canonical AI behavior profile is documented in:
-
-- `docs/AI_BEHAVIOR_CONTRACT.md`
-
-Before changing AI goal selection, inventory usage, fallback logic, or launch planning, read this contract first and keep behavior aligned with it.
-
-If a PR intentionally changes AI style, update the contract in the same PR.
-
 ## Game modes
 
 - **Hot Seat** – two players share the same computer.
