@@ -885,6 +885,8 @@ const TRANSFER_FRAME_ASSETS = Object.freeze({
   back: "ui_gamescreen/gs_transfer_2/gs_transfer_back.png",
   blue: "ui_gamescreen/gs_transfer_2/gs_transfer_blue.png",
   green: "ui_gamescreen/gs_transfer_2/gs_transfer_green.png",
+  winGameBlue: "ui_gamescreen/gs_transfer_2/gs_bluewingame.png",
+  winGameGreen: "ui_gamescreen/gs_transfer_2/gs_greenwingame.png",
 });
 const transferFrameState = {
   host: null,
@@ -1179,9 +1181,12 @@ function ensureTransferFrameElements() {
   return transferFrameState;
 }
 
-function buildTransferWinnerText(player) {
+function buildTransferWinnerText(player, options = {}) {
   const winnerName = player === "green" ? "GREEN" : "BLUE";
-  return `${winnerName} WINS\nTHE ROUND`;
+  const isGameWin = options.isGameWin === true;
+  return isGameWin
+    ? `${winnerName} WINS\nTHE GAME`
+    : `${winnerName} WINS\nTHE ROUND`;
 }
 
 function buildTransferTurnTexts(player, roundValue) {
@@ -1291,10 +1296,21 @@ function showTransferFrame(options = {}) {
     transferState.backImage.src = TRANSFER_FRAME_ASSETS.back;
   }
   if (transferState.colorImage instanceof HTMLImageElement) {
-    if (mode === "turn") {
-      transferState.colorImage.src = player === "green" ? TRANSFER_FRAME_ASSETS.green : TRANSFER_FRAME_ASSETS.blue;
+    if (mode === "turn" || mode === "win") {
+      const isGameWin = mode === "win" && options.isGameWin === true;
+      if (isGameWin) {
+        transferState.colorImage.src = player === "green"
+          ? TRANSFER_FRAME_ASSETS.winGameGreen
+          : TRANSFER_FRAME_ASSETS.winGameBlue;
+      } else {
+        transferState.colorImage.src = player === "green" ? TRANSFER_FRAME_ASSETS.green : TRANSFER_FRAME_ASSETS.blue;
+      }
       transferState.colorImage.classList.add("is-visible");
-      playTransferTurnGlow(player);
+      if (mode === "turn") {
+        playTransferTurnGlow(player);
+      } else {
+        stopTransferTurnGlow();
+      }
     } else {
       transferState.colorImage.src = "";
       transferState.colorImage.classList.remove("is-visible");
@@ -1303,9 +1319,10 @@ function showTransferFrame(options = {}) {
   }
 
   if (transferState.winText instanceof HTMLElement) {
+    const isGameWin = mode === "win" && options.isGameWin === true;
     const winTextValue = typeof options.winText === "string" && options.winText.trim().length > 0
       ? options.winText.trim()
-      : buildTransferWinnerText(player);
+      : buildTransferWinnerText(player, { isGameWin });
     transferState.winText.textContent = winTextValue;
     transferState.winText.classList.toggle("is-visible", mode === "win");
   }
@@ -13392,7 +13409,10 @@ function lockInWinner(color, options = {}){
     setEndGamePanelVisible(false);
   }
 
-  if(typeof options.roundTransitionDelay === "number" && Number.isFinite(options.roundTransitionDelay)){
+  const isRoundWin = typeof options.roundTransitionDelay === "number" && Number.isFinite(options.roundTransitionDelay);
+  const isGameWin = !isRoundWin && shouldShowEndScreen;
+
+  if(isRoundWin){
     pendingRoundTransitionDelay = options.roundTransitionDelay;
     pendingRoundTransitionStart = performance.now();
   } else {
@@ -13402,15 +13422,12 @@ function lockInWinner(color, options = {}){
 
   awaitingFlightResolution = flyingPoints.length > 0;
 
-  if(typeof options.roundTransitionDelay === "number" && Number.isFinite(options.roundTransitionDelay)){
-    showTransferFrame({
-      mode: "win",
-      player: color,
-      winText: buildTransferWinnerText(color)
-    });
-  } else {
-    hideTransferFrame();
-  }
+  showTransferFrame({
+    mode: "win",
+    player: color,
+    isGameWin,
+    winText: buildTransferWinnerText(color, { isGameWin })
+  });
 
   if(!awaitingFlightResolution){
     finalizePostFlightState();
@@ -38679,17 +38696,7 @@ function gameDraw(){
       endTextCtx.fillText(text, textX, textBaselineY);
       positionEndGamePanel(metrics);
     } else if(shouldDrawWinnerRoundMessage) {
-      endTextCtx.fillStyle = colorFor(winnerColor);
-      const winnerName= `${winnerColor.charAt(0).toUpperCase() + winnerColor.slice(1)}`;
-      const text= shouldShowEndScreen
-        ? `${winnerName} wins the game!`
-        : `${winnerName} wins the round!`;
-      const metrics = endTextCtx.measureText(text);
-      const w = metrics.width;
-      const textX = (textAreaWidth - w) / 2;
-      endTextCtx.strokeText(text, textX, textBaselineY);
-      endTextCtx.fillText(text, textX, textBaselineY);
-      positionEndGamePanel(metrics);
+      placeEndGamePanelAtBoardCenter();
     }
     endTextCtx.restore();
   }
