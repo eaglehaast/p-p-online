@@ -24728,8 +24728,8 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
 
   const inventoryPhase = 3;
   const allowBuffItems = true;
-  const allowTacticalItems = false;
-  const allowInvisibility = false;
+  const allowTacticalItems = true;
+  const allowInvisibility = true;
   const inventory = evaluateBlueInventoryState();
   if(inventory.total <= 0) return { selectedCandidate: null, selectedSequence: [], candidates: [], rejected: [] };
 
@@ -24828,7 +24828,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     const newReach = targetDistance > baseFlightRange && targetDistance <= baseFlightRange * 2.05;
     const unlockedStrongerMove = fuelUnlockMeta.unlocked
       || fuelAndWingsUnlockMeta.unlocked;
-    if(selectedFuelCandidate && unlockedStrongerMove){
+    if(selectedFuelCandidate){
       const moderateFuelOpportunity = (
         safetyGain >= 0.05
         || (targetDistance > baseFlightRange * 0.88 && targetDistance <= baseFlightRange * 2.15)
@@ -24857,13 +24857,26 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
         reasonCode: "fuel_spend_first_applied",
       });
     } else {
-      rejectCandidate(INVENTORY_ITEM_TYPES.FUEL, selectedFuelCandidate ? "fuel_spend_first_no_meaningful_change" : "fuel_has_no_safe_candidate", {
+      rejectCandidate(INVENTORY_ITEM_TYPES.FUEL, "fuel_has_no_safe_candidate", {
         safetyGain,
         blockedByReturnSafety: fuelPlans?.blockedByReturnSafety === true,
         unlockReasons: fuelUnlockMeta.reasons,
         comboUnlockReasons: fuelAndWingsUnlockMeta.reasons,
       });
     }
+  }
+
+  if(allowBuffItems && inventory.counts?.[INVENTORY_ITEM_TYPES.CROSSHAIR] > 0){
+    pushCandidate({
+      itemType: INVENTORY_ITEM_TYPES.CROSSHAIR,
+      target: priorityEnemy || enemyBase || landingPoint || null,
+      expectedBenefit: 0.28,
+      risk: 0.04,
+      reason: "crosshair_prelaunch_applied",
+      whyBetter: "crosshair gives a direct hit-quality boost this turn, so holding it back provides little value",
+      usageTier: "strong",
+      reasonCode: "crosshair_prelaunch_applied",
+    });
   }
 
   if(allowTacticalItems && inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] > 0){
@@ -24940,7 +24953,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     const mineSeriesPlan = buildAiMineSeriesPlan(context, plannedMove, {
       availableCharges: mineAvailableCharges,
     });
-    if(preferredMinePlan && !mineRejectedBySelfRisk && (minePlanProvidesNoticeableImprovement || mineModerateImprovement || mineForcedSpendSurplus)){
+    if(preferredMinePlan){
       const baseMineBenefit = Math.max(0.22, Math.min(0.9, Number((preferredMinePlan.plan.score || 0) / 20)));
       const expectedMineBenefit = (() => {
         const rawBenefit = mineCreatesRouteDenial
@@ -25081,7 +25094,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       && dynamiteSubscores.totalScore >= forcedSurplusModerateFloor
       && candidateRisk <= forcedSurplusRiskCap
     );
-    if(fallbackTarget && (passesDynamiteSumThreshold || passesForcedSurplusModerateGate)){
+    if(fallbackTarget){
       const strategicPressureBoost = strategicTarget
         ? ((strategicTarget.opensDecisivePath ? 0.09 : 0)
           + (strategicTarget.removesBarrierToContactZone ? 0.06 : 0)
@@ -25219,16 +25232,16 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       return distanceFromLanding <= baseFlightRange + effectiveCellSize * 2.4 && isPathClear(landingPoint.x, landingPoint.y, target.x, target.y);
     });
     const wingsUnlockAllowed = wingsUnlockMeta.unlocked || fuelAndWingsUnlockMeta.unlocked;
-    if(wingsUnlockAllowed){
+    if(reachesModerateContactZone || reachesContactNextTurn || landingPoint){
       const wingsStrongUse = reachesContactNextTurn;
       pushCandidate({
         itemType: INVENTORY_ITEM_TYPES.WINGS,
         target: enemyBase || null,
-        expectedBenefit: wingsStrongUse ? 0.33 : 0.22,
+        expectedBenefit: wingsStrongUse ? 0.33 : (wingsUnlockAllowed ? 0.22 : 0.18),
         risk: 0.07,
         reason: "wings_spend_first_applied",
         whyBetter: "wings gives immediate tactical pressure by improving useful trajectory/contacts/landing position now instead of waiting for perfect contact timing",
-        usageTier: "strong",
+        usageTier: wingsStrongUse || wingsUnlockAllowed ? "strong" : "moderate",
         unlockClassMeta: {
           source: "two_pass_unlock_check",
           unlocked: wingsUnlockAllowed,
@@ -25239,7 +25252,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
         reasonCode: "wings_spend_first_applied",
       });
     } else {
-      rejectCandidate(INVENTORY_ITEM_TYPES.WINGS, "wings_spend_first_no_meaningful_change", {
+      rejectCandidate(INVENTORY_ITEM_TYPES.WINGS, "wings_has_no_contact_context", {
         unlockReasons: wingsUnlockMeta.reasons,
         comboUnlockReasons: fuelAndWingsUnlockMeta.reasons,
         reachesModerateContactZone,
@@ -25262,21 +25275,17 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     const invisibilityModerateUse = !invisibilityStrongUse
       && (expectCounterMove || moveDistance >= MAX_DRAG_DISTANCE * 0.62)
       && accuracyPenalty >= 10;
-    if(invisibilityStrongUse || invisibilityModerateUse){
-      pushCandidate({
-        itemType: INVENTORY_ITEM_TYPES.INVISIBILITY,
-        target: plannedMove.plane,
-        expectedBenefit: Math.min(0.72, (invisibilityStrongUse ? 0.2 : 0.16) + accuracyPenalty / 100),
-        risk: 0.09,
-        reason: "invisibility_counter_aiming",
-        whyBetter: invisibilityStrongUse
-          ? "invisibility protects the chosen plane before the enemy can answer the same route"
-          : "invisibility gives moderate protection, so it becomes acceptable after repeated fallback turns or when the same route keeps failing to find a shot",
-        usageTier: invisibilityStrongUse ? "strong" : "moderate",
-      });
-    } else {
-      rejectCandidate(INVENTORY_ITEM_TYPES.INVISIBILITY, expectCounterMove ? "invisibility_penalty_too_small" : "invisibility_no_counter_pressure");
-    }
+    pushCandidate({
+      itemType: INVENTORY_ITEM_TYPES.INVISIBILITY,
+      target: plannedMove.plane,
+      expectedBenefit: Math.min(0.72, (invisibilityStrongUse ? 0.2 : (invisibilityModerateUse ? 0.16 : 0.13)) + accuracyPenalty / 100),
+      risk: 0.09,
+      reason: "invisibility_counter_aiming",
+      whyBetter: invisibilityStrongUse
+        ? "invisibility protects the chosen plane before the enemy can answer the same route"
+        : "invisibility gives moderate protection, so it becomes acceptable after repeated fallback turns or when the same route keeps failing to find a shot",
+      usageTier: invisibilityStrongUse ? "strong" : "moderate",
+    });
   }
 
   for(const candidate of candidates){
@@ -25293,16 +25302,6 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     if(!selectedCandidate || candidate.directUtility > selectedCandidate.directUtility + 0.0001){
       selectedCandidate = candidate;
     }
-  }
-
-  if(selectedCandidate && selectedCandidate.directUtility <= 0){
-    rejectCandidate(selectedCandidate.itemType, "inventory_zero_gain_guard", {
-      comparableScore: selectedCandidate.comparableScore,
-      directUtility: selectedCandidate.directUtility,
-      selectedReason: selectedCandidate.reason,
-      whyWaiting: "item_does_not_change_result",
-    });
-    selectedCandidate = null;
   }
 
   let selectedSequence = [];
@@ -25327,7 +25326,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       bestSingleUtility,
     });
 
-    if(comboUtility > 0 && comboUtility > bestSingleUtility + 0.0001){
+    if(comboUtility > 0){
       selectedSequence = [fuelCandidate, wingsCandidate].map((step, stepIndex) => ({
         ...step,
         stepIndex,
@@ -25392,11 +25391,16 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   }
 
   const PRE_LAUNCH_ALLOWED_ITEM_TYPES = new Set([
+    INVENTORY_ITEM_TYPES.CROSSHAIR,
     INVENTORY_ITEM_TYPES.FUEL,
     INVENTORY_ITEM_TYPES.WINGS,
+    INVENTORY_ITEM_TYPES.MINE,
+    INVENTORY_ITEM_TYPES.DYNAMITE,
+    INVENTORY_ITEM_TYPES.INVISIBILITY,
   ]);
 
   const SINGLE_USE_BUFF_TYPES_PER_TURN = new Set([
+    INVENTORY_ITEM_TYPES.CROSSHAIR,
     INVENTORY_ITEM_TYPES.FUEL,
     INVENTORY_ITEM_TYPES.WINGS,
     INVENTORY_ITEM_TYPES.INVISIBILITY,
@@ -25406,15 +25410,6 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     if(SINGLE_USE_BUFF_TYPES_PER_TURN.has(itemType)){
       usedBuffTypesThisTurn.add(itemType);
     }
-  }
-
-  function hasCandidateGain(candidate){
-    if(!candidate) return false;
-    const score = Number.isFinite(candidate.adjustedComparableScore)
-      ? candidate.adjustedComparableScore
-      : (Number.isFinite(candidate.comparableScore) ? candidate.comparableScore : null);
-    if(score === null) return true;
-    return score > 0;
   }
 
   function logPreLaunchItemDecision(event, details = {}){
@@ -25440,12 +25435,14 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     if(SINGLE_USE_BUFF_TYPES_PER_TURN.has(itemType) && usedBuffTypesThisTurn.has(itemType)){
       return { executed: false, reason: "selected_candidate_buff_already_used_this_turn", itemType };
     }
-    if(!hasCandidateGain(candidate)){
-      return { executed: false, reason: "selected_candidate_has_no_gain", itemType };
-    }
-
     let executed = false;
-    if(itemType === INVENTORY_ITEM_TYPES.FUEL){
+    if(itemType === INVENTORY_ITEM_TYPES.CROSSHAIR){
+      executed = applyItemToOwnPlane(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane);
+      if(executed){
+        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
+        rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.CROSSHAIR);
+      }
+    } else if(itemType === INVENTORY_ITEM_TYPES.FUEL){
       executed = applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, "blue", plannedMove.plane);
       if(executed){
         removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
@@ -25456,6 +25453,51 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       if(executed){
         removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.WINGS);
         rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.WINGS);
+      }
+    } else if(itemType === INVENTORY_ITEM_TYPES.MINE){
+      const placement = candidate?.minePlan?.placement || null;
+      if(placement && isMinePlacementValid(placement)){
+        placeMine({
+          owner: "blue",
+          x: placement.x,
+          y: placement.y,
+          cellX: placement.cellX,
+          cellY: placement.cellY,
+        });
+        executed = true;
+      }
+      if(executed){
+        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
+      }
+    } else if(itemType === INVENTORY_ITEM_TYPES.DYNAMITE){
+      const target = candidate?.target || null;
+      const targetX = Number.isFinite(target?.x) ? target.x : null;
+      const targetY = Number.isFinite(target?.y) ? target.y : null;
+      if(targetX != null && targetY != null){
+        executed = placeBlueDynamiteAt(targetX, targetY);
+        if(executed){
+          setAiDynamiteIntentFromCandidate(
+            {
+              colliderId: target?.colliderId ?? null,
+              spriteId: target?.spriteId ?? null,
+              x: targetX,
+              y: targetY,
+            },
+            candidate?.reason || "dynamite_route_opening",
+            plannedMove,
+            candidate?.dynamiteExpectedRoute || null,
+            candidate?.dynamiteUseClass || null,
+          );
+        }
+      }
+      if(executed){
+        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
+      }
+    } else if(itemType === INVENTORY_ITEM_TYPES.INVISIBILITY){
+      executed = queueInvisibilityEffectForPlayer("blue");
+      if(executed){
+        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.INVISIBILITY);
+        rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.INVISIBILITY);
       }
     }
 
@@ -25484,8 +25526,23 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   for(const entry of selectedInventorySequence){
     orderedCandidates.push({ ...entry, executionSource: "selected_inventory_sequence" });
   }
+  if(Array.isArray(plannedMove?.inventoryCandidates)){
+    for(const entry of plannedMove.inventoryCandidates){
+      if(!entry || !entry.itemType) continue;
+      orderedCandidates.push({ ...entry, executionSource: "all_inventory_candidates_fallback" });
+    }
+  }
 
-  const filteredCandidates = orderedCandidates.filter((candidate) => PRE_LAUNCH_ALLOWED_ITEM_TYPES.has(candidate.itemType));
+  const uniqueCandidates = [];
+  const seenCandidateKeys = new Set();
+  for(const candidate of orderedCandidates){
+    const key = `${candidate?.itemType || "unknown"}:${candidate?.executionSource || "unknown"}`;
+    if(seenCandidateKeys.has(key)) continue;
+    seenCandidateKeys.add(key);
+    uniqueCandidates.push(candidate);
+  }
+
+  const filteredCandidates = uniqueCandidates.filter((candidate) => PRE_LAUNCH_ALLOWED_ITEM_TYPES.has(candidate.itemType));
 
   if(filteredCandidates.length === 0){
     logPreLaunchItemDecision("inventory_prelaunch_no_allowed_items", {
@@ -25496,7 +25553,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     plannedMove.inventoryDecisionMadeMeta = {
       selected: false,
       reason: "no_prelaunch_scope_item_selected",
-      reasonCodes: ["inventory_candidates_not_used", "step6_only_fuel_wings_unlock"],
+      reasonCodes: ["inventory_candidates_not_used", "prelaunch_inventory_scope_unlocked"],
       rejectReasons: ["no_prelaunch_scope_item_selected"],
       executionSource: null,
       selectedItemType: null,
@@ -25537,7 +25594,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     plannedMove.inventoryDecisionMadeMeta = {
       selected: false,
       reason: "prelaunch_items_skipped",
-      reasonCodes: ["inventory_candidate_execution_failed", "step6_only_fuel_wings_unlock"],
+      reasonCodes: ["inventory_candidate_execution_failed", "prelaunch_inventory_scope_unlocked"],
       rejectReasons: skippedItems.map((entry) => entry.reason),
       executionSource: filteredCandidates[0]?.executionSource || null,
       selectedItemType: filteredCandidates[0]?.itemType || null,
@@ -25551,7 +25608,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   plannedMove.inventoryDecisionMadeMeta = {
     selected: true,
     reason: "inventory_item_applied",
-    reasonCodes: ["inventory_item_applied", "step6_only_fuel_wings_unlock", ...new Set(appliedReasonCodes)],
+    reasonCodes: ["inventory_item_applied", "prelaunch_inventory_scope_unlocked", ...new Set(appliedReasonCodes)],
     rejectReasons: skippedItems.map((entry) => entry.reason),
     executionSource: appliedItemTypes.length > 1 ? "selected_inventory_sequence" : (filteredCandidates[0]?.executionSource || null),
     selectedItemType: appliedItemTypes[appliedItemTypes.length - 1] || null,
