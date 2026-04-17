@@ -25623,6 +25623,37 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     return { executed: true, reason: null, itemType, executionSource };
   }
 
+  function buildFallbackInventoryCandidates(excludedItemTypes = new Set()){
+    const allCandidates = Array.isArray(plannedMove?.inventoryCandidates)
+      ? plannedMove.inventoryCandidates
+      : [];
+    return allCandidates
+      .filter((candidate) => candidate && candidate.itemType && !excludedItemTypes.has(candidate.itemType))
+      .sort((a, b) => Number(b?.adjustedComparableScore || b?.comparableScore || 0) - Number(a?.adjustedComparableScore || a?.comparableScore || 0));
+  }
+
+  function tryExecuteFallbackInventoryCandidates(excludedItemTypes = new Set(), executionSource = "fallback_inventory_candidate"){
+    const fallbackCandidates = buildFallbackInventoryCandidates(excludedItemTypes);
+    for(const fallbackCandidate of fallbackCandidates){
+      const fallbackResult = executeCommittedInventoryAction(fallbackCandidate, executionSource);
+      if(fallbackResult.executed){
+        return {
+          executed: true,
+          itemType: fallbackResult.itemType || fallbackCandidate.itemType,
+          selectedItemType: fallbackCandidate.itemType || null,
+          selectedReason: fallbackCandidate.reason || null,
+          executionSource,
+        };
+      }
+      logSelectedInventoryExecutionFailure(fallbackCandidate?.itemType || null, fallbackResult.reason || "fallback_candidate_execution_failed", {
+        hadCommittedSelection: true,
+        inventoryLockBypassedBecauseAlreadySelected: true,
+        executionSource,
+      });
+    }
+    return { executed: false };
+  }
+
   const shouldPreferSequence = selectedInventorySequence.length > 0;
   const committedCandidate = shouldPreferSequence
     ? null
@@ -25648,7 +25679,11 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   if(shouldPreferSequence){
     let executedCount = 0;
     let lastFailureReason = null;
+    const attemptedItemTypes = new Set();
     for(const sequenceCandidate of selectedInventorySequence){
+      if(sequenceCandidate?.itemType){
+        attemptedItemTypes.add(sequenceCandidate.itemType);
+      }
       const stepResult = executeCommittedInventoryAction(sequenceCandidate, committedSource);
       if(stepResult.executed){
         executedCount += 1;
@@ -25660,6 +25695,22 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         inventoryLockBypassedBecauseAlreadySelected: true,
         executionSource: committedSource,
       });
+    }
+    if(executedCount === 0){
+      const fallbackResult = tryExecuteFallbackInventoryCandidates(attemptedItemTypes, "sequence_fallback_inventory_candidate");
+      if(fallbackResult.executed){
+        plannedMove.inventoryDecisionMadeMeta = {
+          selected: true,
+          reason: "inventory_fallback_candidate_applied",
+          reasonCodes: ["inventory_fallback_candidate_applied"],
+          rejectReasons: [],
+          executionSource: fallbackResult.executionSource,
+          selectedItemType: fallbackResult.selectedItemType,
+          selectedReason: fallbackResult.selectedReason,
+          selectedSequenceLength: selectedInventorySequence.length,
+        };
+        return true;
+      }
     }
     plannedMove.inventoryDecisionMadeMeta = {
       selected: executedCount > 0,
@@ -25687,6 +25738,21 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       inventoryLockBypassedBecauseAlreadySelected: true,
       executionSource: committedSource,
     });
+    const fallbackExcludedItemTypes = new Set([committedCandidate.itemType].filter(Boolean));
+    const fallbackResult = tryExecuteFallbackInventoryCandidates(fallbackExcludedItemTypes, "single_candidate_fallback_inventory_candidate");
+    if(fallbackResult.executed){
+      plannedMove.inventoryDecisionMadeMeta = {
+        selected: true,
+        reason: "inventory_fallback_candidate_applied",
+        reasonCodes: ["inventory_fallback_candidate_applied"],
+        rejectReasons: [],
+        executionSource: fallbackResult.executionSource,
+        selectedItemType: fallbackResult.selectedItemType,
+        selectedReason: fallbackResult.selectedReason,
+        selectedSequenceLength: selectedInventorySequence.length,
+      };
+      return true;
+    }
     plannedMove.inventoryDecisionMadeMeta = {
       selected: false,
       reason: executionResult.reason || "selected_candidate_execution_failed",
