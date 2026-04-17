@@ -26663,6 +26663,41 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       tacticalItemAlreadyUsed: effectiveItemUsed,
     });
     if(!finalMoveResolution.ok || !finalMoveResolution.move){
+      if(effectiveItemUsed){
+        const postItemLaunch = issueAIMove(
+          plannedMove?.plane,
+          plannedMove?.vx,
+          plannedMove?.vy,
+          {
+            isFallbackMove: true,
+          },
+        );
+        if(postItemLaunch?.ok){
+          logAiDecision("ai_post_item_launch_primary_vector_applied", {
+            stage: stageLabel,
+            planeId: plannedMove?.plane?.id ?? null,
+            goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+            reasonCode: "post_item_launch_primary_vector_applied",
+            gateReasonCode: finalMoveResolution?.reasonCode || null,
+            gateRejectReason: finalMoveResolution?.gateResult?.reason || null,
+            consumedItemType: consumedItemType || null,
+            consumedItemTypes: consumedItemTypes.slice(),
+          });
+        } else {
+          logAiDecision("ai_post_item_launch_primary_vector_failed", {
+            stage: stageLabel,
+            planeId: plannedMove?.plane?.id ?? null,
+            goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+            reasonCode: "post_item_launch_primary_vector_failed",
+            launchReason: postItemLaunch?.reason || null,
+            gateReasonCode: finalMoveResolution?.reasonCode || null,
+            gateRejectReason: finalMoveResolution?.gateResult?.reason || null,
+            consumedItemType: consumedItemType || null,
+            consumedItemTypes: consumedItemTypes.slice(),
+          });
+        }
+        return postItemLaunch || { ok: false, reason: "post_item_launch_primary_vector_failed" };
+      }
       failSafeHandler("final_mine_gate_blocked_launch", {
         goal: plannedMove?.goalName || aiRoundState?.currentGoal || "final_mine_gate_blocked_launch",
         planeId: plannedMove?.plane?.id ?? null,
