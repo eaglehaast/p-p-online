@@ -14235,6 +14235,58 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     }
     const enemyPlanes = points.filter((plane) => plane?.color === "green" && isPlaneTargetable(plane));
     const readyCargo = cargoState.filter((cargo) => cargo?.state === "ready");
+    const aiExecutionContext = {
+      aiPlanes: launchReadyPlanes,
+      enemies: enemyPlanes,
+      homeBase: getBaseAnchor("blue"),
+      availableEnemyFlags: typeof getAvailableFlagsByColor === "function" ? getAvailableFlagsByColor("green") : [],
+      shouldUseFlagsMode: Boolean(settings?.flagsMode),
+    };
+
+    function tryIssueAiMoveWithInventory(plan, source = "simple_step2_selector"){
+      if(!plan?.plane || !Number.isFinite(plan?.landingX) || !Number.isFinite(plan?.landingY)){
+        return { ok: false, reasonCode: "simple_step2_invalid_plan_for_inventory_flow" };
+      }
+      const durationSec = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
+        ? FIELD_FLIGHT_DURATION_SEC
+        : 1;
+      const vx = (plan.landingX - plan.plane.x) / durationSec;
+      const vy = (plan.landingY - plan.plane.y) / durationSec;
+      const totalDist = Math.hypot(vx || 0, vy || 0) * FIELD_FLIGHT_DURATION_SEC;
+      const plannedMove = {
+        plane: plan.plane,
+        vx,
+        vy,
+        totalDist,
+        goalName: plan.goalName || "simple_step2_center",
+        decisionReason: plan.decisionReason || "simple_step2_center_control",
+        whyChosen: plan.whyChosen || "multi_plane_best_effort_selection",
+        routeClass: plan.routeClass || "direct",
+      };
+
+      try {
+        const stageResult = issueAIMoveFromDoComputerMove(aiExecutionContext, plannedMove, {
+          source,
+          routeClass: plannedMove.routeClass,
+        });
+        const stageSelected = stageResult?.selected !== false;
+        const launchInProgress = stageResult?.launchInProgressOrAborted === true || stageResult?.launchInProgress === true;
+        return {
+          ok: stageSelected || launchInProgress,
+          reasonCode: stageResult?.reason || (launchInProgress ? "launch_in_progress_or_aborted" : "stage_not_selected"),
+          stageResult,
+        };
+      } catch (error) {
+        logAiDecision("simple_step2_inventory_flow_exception", {
+          source,
+          reasonCode: "simple_step2_inventory_flow_exception",
+          planeId: plan?.plane?.id ?? null,
+          goal: plan?.goalName || null,
+          message: error?.message || String(error),
+        });
+        return { ok: false, reasonCode: "simple_step2_inventory_flow_exception" };
+      }
+    }
 
     const buildMoveTowardTarget = (plane, targetPoint, maxFlightDistancePx, options = {}) => {
       if(!targetPoint) return null;
@@ -14396,12 +14448,18 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         enemies: enemyPlanes,
       });
       if(mandatoryMove && mandatoryMove.plane && Number.isFinite(mandatoryMove.vx) && Number.isFinite(mandatoryMove.vy)){
-        const emergencyLaunchResult = issueAIMove(mandatoryMove.plane, mandatoryMove.vx, mandatoryMove.vy, {
-          source: "simple_step2_selector",
+        const emergencyDurationSec = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
+          ? FIELD_FLIGHT_DURATION_SEC
+          : 1;
+        const emergencyLaunchResult = tryIssueAiMoveWithInventory({
+          plane: mandatoryMove.plane,
+          landingX: mandatoryMove.plane.x + mandatoryMove.vx * emergencyDurationSec,
+          landingY: mandatoryMove.plane.y + mandatoryMove.vy * emergencyDurationSec,
           goalName: mandatoryMove.goalName || "simple_step2_mandatory_move",
           decisionReason: mandatoryMove.decisionReason || "simple_step2_mandatory_move",
           whyChosen: "mandatory_non_skip_fallback",
-        });
+          routeClass: mandatoryMove.routeClass || "direct",
+        }, "simple_step2_selector_mandatory");
         aiMoveScheduled = false;
         if(!emergencyLaunchResult?.ok){
           advanceTurn();
@@ -14443,12 +14501,6 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       return;
     }
 
-    const durationSec = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
-      ? FIELD_FLIGHT_DURATION_SEC
-      : 1;
-    const vx = (selectedPlan.landingX - launchReadyPlane.x) / durationSec;
-    const vy = (selectedPlan.landingY - launchReadyPlane.y) / durationSec;
-
     logAiDecision("simple_step2_action_selected", {
       planeId: launchReadyPlane?.id ?? null,
       evaluatedPlaneIds: launchReadyPlanes.map((plane) => plane?.id ?? null),
@@ -14464,12 +14516,15 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       readyCargoCount: selectedPlan.readyCargoCount ?? readyCargo.length,
     });
 
-    let launchResult = issueAIMove(launchReadyPlane, vx, vy, {
-      source: "simple_step2_selector",
+    let launchResult = tryIssueAiMoveWithInventory({
+      plane: launchReadyPlane,
+      landingX: selectedPlan.landingX,
+      landingY: selectedPlan.landingY,
       goalName: selectedPlan.goalName,
       decisionReason: selectedPlan.decisionReason,
       whyChosen: selectedPlan.whyChosen,
-    });
+      routeClass: selectedPlan.routeClass || "direct",
+    }, "simple_step2_selector");
 
     if(!launchResult?.ok){
       const failoverPlanes = launchReadyPlanes.filter((plane) => plane !== launchReadyPlane);
@@ -14477,17 +14532,15 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         .map((plane) => buildGuaranteedAdvanceMove(plane))
         .find(Boolean);
       if(failoverMove){
-        const failoverDurationSec = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
-          ? FIELD_FLIGHT_DURATION_SEC
-          : 1;
-        const failoverVx = (failoverMove.landingX - failoverMove.plane.x) / failoverDurationSec;
-        const failoverVy = (failoverMove.landingY - failoverMove.plane.y) / failoverDurationSec;
-        launchResult = issueAIMove(failoverMove.plane, failoverVx, failoverVy, {
-          source: "simple_step2_selector",
+        launchResult = tryIssueAiMoveWithInventory({
+          plane: failoverMove.plane,
+          landingX: failoverMove.landingX,
+          landingY: failoverMove.landingY,
           goalName: failoverMove.goalName,
           decisionReason: "simple_step2_failover_after_launch_reject",
           whyChosen: "primary_plane_launch_failed_switch_to_next_plane",
-        });
+          routeClass: failoverMove.routeClass || "direct",
+        }, "simple_step2_selector_failover");
       }
     }
 
