@@ -25704,12 +25704,14 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     }
   }
 
+  const allowForcedInventorySpend = options?.allowForcedInventorySpend === true;
+
   if(filteredCandidates.length === 0){
     logPreLaunchItemDecision("inventory_prelaunch_no_allowed_items", {
       reason: "no_step5_items_selected",
       selectedCandidateType: selectedInventoryCandidate?.itemType || null,
       selectedSequence: selectedInventorySequence.map((entry) => entry.itemType),
-      fallbackMode: "forced_inventory_spend_enabled",
+      fallbackMode: allowForcedInventorySpend ? "forced_inventory_spend_enabled" : "forced_inventory_spend_disabled",
     });
   }
 
@@ -25718,10 +25720,10 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   const skippedItems = [];
   const primaryCandidates = filteredCandidates.length > 0
     ? filteredCandidates
-    : buildForcedInventoryFallbackCandidates(new Set());
+    : (allowForcedInventorySpend ? buildForcedInventoryFallbackCandidates(new Set()) : []);
   tryApplyCandidates(primaryCandidates, appliedItemTypes, appliedReasonCodes, skippedItems);
 
-  if(appliedItemTypes.length === 0){
+  if(appliedItemTypes.length === 0 && allowForcedInventorySpend){
     const excludedItemTypes = new Set(primaryCandidates.map((candidate) => candidate?.itemType).filter(Boolean));
     const forcedFallbackCandidates = buildForcedInventoryFallbackCandidates(excludedItemTypes);
     if(forcedFallbackCandidates.length > 0){
@@ -26370,6 +26372,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
 
   let actionUsed = false;
   const actionBeforeState = beforeInventoryState;
+  const allowHardForceInventorySpend = false;
   function forceUseAnyInventoryItemNow(){
     const counts = evaluateBlueInventoryState()?.counts || {};
     const plane = plannedMove?.plane || null;
@@ -26447,7 +26450,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     inventoryStopReason = "inventory_selector_exception_handled";
   }
 
-  if(!actionUsed && Number(actionBeforeState?.total ?? 0) > 0){
+  if(allowHardForceInventorySpend && !actionUsed && Number(actionBeforeState?.total ?? 0) > 0){
     const hardForceResult = forceUseAnyInventoryItemNow();
     if(hardForceResult.used){
       actionUsed = true;
