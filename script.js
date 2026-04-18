@@ -26741,18 +26741,37 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
           turnNumber: waitState.turnNumber,
         });
       }
+
+      clearAiLaunchSessionWatchdog();
+      aiLaunchSession = null;
+      cleanupHandle();
+
+      const retryLaunch = issueAIMove(
+        plannedMove?.plane,
+        plannedMove?.vx,
+        plannedMove?.vy,
+        {
+          isFallbackMove: true,
+        },
+      );
+      if(retryLaunch?.ok){
+        logAiDecision("ai_launch_session_recovered_with_retry", {
+          stage: stageLabel,
+          planeId,
+          goal,
+          reasonCode: "launch_existing_session_recovered_with_retry",
+          initialReason: launchReason,
+        });
+        return true;
+      }
+
       recordAiSelfAnalyzerDecision("ai_launch_waiting_existing_session", {
         goal,
         planeId,
         reasonCode: launchReason,
         reasonCodes: ["ai_launch_waiting_existing_session", "launch_in_progress", launchReason],
-        rejectReasons: [launchReason],
+        rejectReasons: [launchReason, retryLaunch?.reason || "retry_launch_failed"],
       });
-      return {
-        ok: true,
-        status: "launch_in_progress",
-        reason: launchReason,
-      };
     }
 
     const reasonCode = "final_launch_start_not_confirmed";
