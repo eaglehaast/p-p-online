@@ -26132,6 +26132,30 @@ function resolveFinalAiLaunchMoveWithMineGate(plannedMove, context = {}, options
   };
 }
 
+function normalizeAiPlannedMoveInventoryState(plannedMove, reason = "inventory_not_evaluated_yet", options = {}){
+  if(!plannedMove || typeof plannedMove !== "object") return;
+  plannedMove.selectedInventoryCandidate = null;
+  plannedMove.selectedInventorySequence = [];
+  plannedMove.inventoryCandidates = [];
+  plannedMove.rejectedInventoryCandidates = [];
+  plannedMove.inventoryUsageReason = null;
+  const reasonCodes = Array.isArray(options?.reasonCodes) && options.reasonCodes.length > 0
+    ? options.reasonCodes
+    : [reason];
+  const rejectReasons = Array.isArray(options?.rejectReasons) ? options.rejectReasons : [];
+  plannedMove.inventoryDecisionMadeMeta = {
+    selected: false,
+    reason,
+    reasonCodes,
+    rejectReasons,
+    executionSource: null,
+    selectedItemType: null,
+    selectedReason: null,
+    selectedSequenceLength: 0,
+    selectedItemTypes: [],
+  };
+}
+
 function issueAIMoveWithInventoryUsage(context, plannedMove){
   const isFallbackMove = resolveAiFallbackMoveFlag(plannedMove);
   const externalFailSafeAdvanceTurn = typeof failSafeAdvanceTurn === "function" ? failSafeAdvanceTurn : null;
@@ -26330,23 +26354,10 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   };
 
   const beforeInventoryState = evaluateBlueInventoryState();
-  if(Number(beforeInventoryState?.total ?? 0) <= 0 && plannedMove && typeof plannedMove === "object"){
-    plannedMove.selectedInventoryCandidate = null;
-    plannedMove.selectedInventorySequence = [];
-    plannedMove.inventoryCandidates = [];
-    plannedMove.rejectedInventoryCandidates = [];
-    plannedMove.inventoryUsageReason = null;
-    plannedMove.inventoryDecisionMadeMeta = {
-      selected: false,
-      reason: "inventory_empty",
-      reasonCodes: ["inventory_empty"],
+  if(Number(beforeInventoryState?.total ?? 0) <= 0){
+    normalizeAiPlannedMoveInventoryState(plannedMove, "inventory_empty", {
       rejectReasons: ["inventory_empty"],
-      executionSource: null,
-      selectedItemType: null,
-      selectedReason: null,
-      selectedSequenceLength: 0,
-      selectedItemTypes: [],
-    };
+    });
   }
   const dynamiteStateCountBeforeUsage = Array.isArray(dynamiteState) ? dynamiteState.length : 0;
   const consumedItemTypes = [];
@@ -32376,24 +32387,7 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
   const attemptChainId = [attemptTurnNumber ?? "na", attemptPlaneId ?? "na", attemptLaunchId].join(":");
   const launchAttemptGuardKey = attemptChainId;
 
-  if(plannedMove && typeof plannedMove === "object"){
-    plannedMove.selectedInventoryCandidate = null;
-    plannedMove.selectedInventorySequence = [];
-    plannedMove.inventoryCandidates = [];
-    plannedMove.rejectedInventoryCandidates = [];
-    plannedMove.inventoryUsageReason = null;
-    plannedMove.inventoryDecisionMadeMeta = {
-      selected: false,
-      reason: "inventory_not_evaluated_yet",
-      reasonCodes: ["inventory_not_evaluated_yet"],
-      rejectReasons: [],
-      executionSource: null,
-      selectedItemType: null,
-      selectedReason: null,
-      selectedSequenceLength: 0,
-      selectedItemTypes: [],
-    };
-  }
+  normalizeAiPlannedMoveInventoryState(plannedMove, "inventory_not_evaluated_yet");
 
   const markLaunchAsInProgressOrAborted = (reasonCode, details = {}) => {
     baseCandidateStage.launchInProgress = true;
