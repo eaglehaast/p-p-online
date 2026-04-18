@@ -15609,6 +15609,13 @@ const AI_LAUNCH_FAST_PULL_MAX_MS = 260;
 const AI_LAUNCH_MISS_ANGLE_DEG_NEAR = 0.08;
 const AI_LAUNCH_MISS_ANGLE_DEG_FAR = 0.85;
 const AI_LAUNCH_MISS_DISTANCE_START_CELLS = 3;
+const AI_LAUNCH_MISS_POWER_RATIO_NEAR = 0.003;
+const AI_LAUNCH_MISS_POWER_RATIO_FAR = 0.03;
+const AI_LAUNCH_ROUTE_MISS_MULTIPLIER = Object.freeze({
+  direct: 1,
+  gap: 1.18,
+  ricochet: 1.34,
+});
 const AI_LAUNCH_PREVIEW_ARROW_PULSE_SPEED = 0.012;
 const AI_LAUNCH_PREVIEW_ARROW_PULSE_AMPLITUDE = 0.22;
 const AI_LAUNCH_PREVIEW_TARGET_MARKER_RADIUS = 8;
@@ -15907,12 +15914,20 @@ function randomSignedOffset(maxAbs){
   return (Math.random() * 2 - 1) * maxAbs;
 }
 
-function buildHumanizedAiTargetAim(plane, targetAim){
+function getAiRouteMissMultiplier(routeClassRaw){
+  const routeClass = `${routeClassRaw || "direct"}`.toLowerCase();
+  if(routeClass.includes("ricochet")) return AI_LAUNCH_ROUTE_MISS_MULTIPLIER.ricochet;
+  if(routeClass.includes("gap")) return AI_LAUNCH_ROUTE_MISS_MULTIPLIER.gap;
+  return AI_LAUNCH_ROUTE_MISS_MULTIPLIER.direct;
+}
+
+function buildHumanizedAiTargetAim(plane, targetAim, options = {}){
   if(!plane || !targetAim) return targetAim;
 
   const effectiveRangeCells = Math.max(0.0001, getEffectiveFlightRangeCells(plane));
   const basePowerRatio = clamp(targetAim.powerRatio, 0, 1);
   const travelDistanceCells = basePowerRatio * effectiveRangeCells;
+  const routeMissMultiplier = getAiRouteMissMultiplier(options?.routeClass);
   const missScale = clamp(
     (travelDistanceCells - AI_LAUNCH_MISS_DISTANCE_START_CELLS)
     / Math.max(1, effectiveRangeCells - AI_LAUNCH_MISS_DISTANCE_START_CELLS),
@@ -15923,15 +15938,21 @@ function buildHumanizedAiTargetAim(plane, targetAim){
   const maxAngleErrorRad = (
     AI_LAUNCH_MISS_ANGLE_DEG_NEAR
     + (AI_LAUNCH_MISS_ANGLE_DEG_FAR - AI_LAUNCH_MISS_ANGLE_DEG_NEAR) * missScale
-  ) * Math.PI / 180;
+  ) * Math.PI / 180 * routeMissMultiplier;
 
-  const adjustedAngleRad = targetAim.angleRad + randomSignedOffset(maxAngleErrorRad);
-  let adjustedPowerRatio = basePowerRatio;
+  const angledNoiseRad = randomSignedOffset(maxAngleErrorRad * 0.7) + randomSignedOffset(maxAngleErrorRad * 0.3);
+  const adjustedAngleRad = targetAim.angleRad + angledNoiseRad;
+  const maxPowerErrorRatio = (
+    AI_LAUNCH_MISS_POWER_RATIO_NEAR
+    + (AI_LAUNCH_MISS_POWER_RATIO_FAR - AI_LAUNCH_MISS_POWER_RATIO_NEAR) * missScale
+  ) * routeMissMultiplier;
+  const basePowerNoise = randomSignedOffset(maxPowerErrorRatio * 0.65) + randomSignedOffset(maxPowerErrorRatio * 0.35);
+  let adjustedPowerRatio = basePowerRatio + basePowerNoise;
   let powerAdjustmentReason = null;
 
-  // По умолчанию оставляем исходную дальность без случайного «очеловечивания».
-  // Если позже появится редкое тактическое правило для осознанного укорачивания,
-  // оно должно явно менять adjustedPowerRatio и заполнять powerAdjustmentReason.
+  if(Math.abs(basePowerNoise) > 0.0006){
+    powerAdjustmentReason = `humanized_release_jitter_${Math.sign(basePowerNoise) >= 0 ? "long" : "short"}`;
+  }
 
   adjustedPowerRatio = clamp(adjustedPowerRatio, 0, 1);
   const adjustedDistance = adjustedPowerRatio * MAX_DRAG_DISTANCE;
@@ -15944,6 +15965,7 @@ function buildHumanizedAiTargetAim(plane, targetAim){
     pullX: adjustedPullX,
     pullY: adjustedPullY,
     humanized: true,
+    routeMissMultiplier,
     missScale,
     baseAngleRad: targetAim.angleRad,
     basePowerRatio,
@@ -26670,6 +26692,9 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
           plannedMove?.vy,
           {
             isFallbackMove: true,
+            launchMeta: {
+              routeClass: plannedMove?.routeClass || null,
+            },
           },
         );
         if(postItemLaunch?.ok){
@@ -26718,6 +26743,9 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       finalMoveResolution.move.vy,
       {
         isFallbackMove: resolveAiFallbackMoveFlag(finalMoveResolution.move) || isFallbackMove,
+        launchMeta: {
+          routeClass: finalMoveResolution.move?.routeClass || null,
+        },
       },
     );
   }
@@ -26752,6 +26780,9 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
         plannedMove?.vy,
         {
           isFallbackMove: true,
+          launchMeta: {
+            routeClass: plannedMove?.routeClass || null,
+          },
         },
       );
       if(retryLaunch?.ok){
@@ -37301,7 +37332,9 @@ function buildAiLaunchSession(plane, vx, vy, options = {}){
   const minimalTelegraphy = telegraphyMode !== "full" && !fallbackLaunchNeedsVisibleOscillation;
   const idealPullPoint = buildPullPointForAiVector(plane, vx, vy);
   const idealTargetAim = computeAiAimMetricsFromPullPoint(plane, idealPullPoint.x, idealPullPoint.y);
-  const targetAim = buildHumanizedAiTargetAim(plane, idealTargetAim);
+  const targetAim = buildHumanizedAiTargetAim(plane, idealTargetAim, {
+    routeClass: options?.launchMeta?.routeClass || options?.routeClass || null,
+  });
   const rangeDecision = resolveAiLaunchTargetDistancePx(targetAim, MAX_DRAG_DISTANCE);
   const resolvedTargetAim = targetAim
     ? {
@@ -37794,7 +37827,39 @@ function issueAIMove(plane, vx, vy, options = {}){
       message: validation.message || null,
     };
   }
-  return runLaunchReleaseStage({ plane, vx, vy, actor: "computer" });
+
+  if(aiLaunchSession){
+    const sameTurn = Number.isFinite(aiLaunchSession.turnNumber)
+      && Number.isFinite(aiRoundState?.turnNumber)
+      && aiLaunchSession.turnNumber === aiRoundState.turnNumber;
+    return {
+      ok: false,
+      reason: sameTurn
+        ? "ai_launch_session_already_active_same_turn"
+        : "ai_launch_session_already_active",
+      sessionId: aiLaunchSession.id,
+      sameTurn,
+    };
+  }
+
+  const session = buildAiLaunchSession(plane, vx, vy, options || {});
+  aiLaunchSession = session;
+  scheduleAiLaunchSessionWatchdog(session);
+
+  logAiDecision("ai_launch_session_started", {
+    planeId: plane?.id ?? null,
+    sessionId: session?.id ?? null,
+    routeClass: options?.launchMeta?.routeClass || options?.routeClass || null,
+    isFallbackMove: options?.isFallbackMove === true,
+    telegraphyMode: session?.telegraphyMode || null,
+    ...getAiTurnTimingSnapshot(),
+  });
+
+  return {
+    ok: true,
+    launchInProgress: true,
+    sessionId: session?.id ?? null,
+  };
 }
 
 function destroyAllPlanesWithoutScoring(){
@@ -38183,6 +38248,7 @@ function gameDraw(){
       trigger: "game_draw_tick_recovery",
     });
   }
+  runAiLaunchSessionTick(now);
 
   for(const aa of aaUnits){
     aa.sweepAngleDeg = (aa.sweepAngleDeg + aa.rotationDegPerSec * deltaSec) % 360;
