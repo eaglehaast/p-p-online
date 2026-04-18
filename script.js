@@ -13817,7 +13817,7 @@ function resetLastPlayerMoveCommitMeta(){
 const AI_MOVE_INITIAL_DELAY_MS = 300;
 const AI_MOVE_CARGO_RETRY_DELAY_MS = 200;
 const AI_MOVE_CARGO_WAIT_TIMEOUT_MS = 1800;
-const AI_TURN_MIN_RELEASE_BUDGET_MS = 2000;
+const AI_TURN_MIN_RELEASE_BUDGET_MS = 900;
 let aiRemovalHardFailState = {
   notifiedTurnCommitSequence: null,
 };
@@ -17411,7 +17411,8 @@ const AI_OPENING_SOFT_RANDOM_MAX_SHIFT = 0.045;
 const AI_OPENING_SOFT_RANDOM_AIM_QUALITY_MARGIN = 0.11;
 const AI_OPENING_SOFT_RANDOM_AIM_ANGLE_TOLERANCE_DEG = 20;
 const AI_OPENING_SOFT_RANDOM_AIM_DISTANCE_TOLERANCE_SCALE = 0.2;
-const AI_POST_INVENTORY_LAUNCH_DELAY_MS = 1000;
+const AI_POST_INVENTORY_LAUNCH_DELAY_MS = 260;
+const AI_POST_TACTICAL_INVENTORY_LAUNCH_DELAY_MS = 120;
 const AI_INVENTORY_LOOP_GUARD_LIMIT_PER_TURN = 12;
 const AI_INVENTORY_BUFF_CHAIN_LIMIT_PER_TURN = 4;
 const AI_INVENTORY_TACTICAL_REPEAT_LIMIT_PER_TURN = 24;
@@ -27140,13 +27141,19 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   }
 
   if(effectiveItemUsed === true){
+    const usedTacticalInventoryItem = consumedItemTypes.includes(INVENTORY_ITEM_TYPES.MINE)
+      || consumedItemTypes.includes(INVENTORY_ITEM_TYPES.DYNAMITE);
+    const postInventoryLaunchDelayMs = usedTacticalInventoryItem
+      ? AI_POST_TACTICAL_INVENTORY_LAUNCH_DELAY_MS
+      : AI_POST_INVENTORY_LAUNCH_DELAY_MS;
     if(aiPostInventoryLaunchTimeout){
       clearTimeout(aiPostInventoryLaunchTimeout);
       aiPostInventoryLaunchTimeout = null;
     }
     logAiDecision("post_inventory_delay_applied", {
       stage: "final_validation_and_launch",
-      delayMs: AI_POST_INVENTORY_LAUNCH_DELAY_MS,
+      delayMs: postInventoryLaunchDelayMs,
+      usedTacticalInventoryItem,
       planeId: plannedMove?.plane?.id ?? null,
       goal: aiRoundState?.currentGoal || null,
     });
@@ -27165,7 +27172,7 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       registerFinalInventoryUsage(effectiveItemUsed);
       const delayedLaunchResult = issueMoveAfterFinalMineGate("post_inventory_delay_launch");
       handleFinalLaunchResult("post_inventory_delay_launch", delayedLaunchResult);
-    }, AI_POST_INVENTORY_LAUNCH_DELAY_MS);
+    }, postInventoryLaunchDelayMs);
     return;
   }
 
@@ -37944,11 +37951,33 @@ function failSafeAdvanceTurn(reason = "unspecified", details = {}){
     clearAiLaunchSessionWatchdog();
     aiLaunchSession = null;
     cleanupHandle();
-    tryRecoverAiFailSafeWithEmergencyLaunch({
+    const emergencyRecovered = tryRecoverAiFailSafeWithEmergencyLaunch({
       ...details,
       reason,
     });
-    triggerComputerAiRemovedHardFail("fail_safe_turn_hard_fail");
+    if(emergencyRecovered){
+      return true;
+    }
+
+    if(turnColors?.[turnIndex] === "blue"){
+      logAiDecision("fail_safe_turn_advance_committed", {
+        reason,
+        reasonCode: details?.reasonCode || reason || "fail_safe_turn_advance_committed",
+        goal: details?.goal || aiRoundState?.currentGoal || null,
+        planeId: details?.planeId ?? null,
+        source: "failSafeAdvanceTurn",
+      });
+      advanceTurn();
+      return true;
+    }
+
+    logAiDecision("fail_safe_turn_advance_skipped_not_blue_turn", {
+      reason,
+      reasonCode: details?.reasonCode || reason || "fail_safe_turn_advance_skipped_not_blue_turn",
+      goal: details?.goal || aiRoundState?.currentGoal || null,
+      planeId: details?.planeId ?? null,
+      source: "failSafeAdvanceTurn",
+    });
     return false;
   } finally {
     failSafeAdvanceTurnInProgress = false;
