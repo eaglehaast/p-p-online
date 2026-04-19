@@ -26812,7 +26812,9 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
         const gateRejectReason = finalMoveResolution?.gateResult?.reason || null;
         const gateReasonCode = finalMoveResolution?.reasonCode || null;
         const blockedByMineAfterInventory = gateRejectReason === "path_crosses_mine"
-          || gateReasonCode === "final_mine_check_rejected_stale_route";
+          || gateRejectReason === "path_crosses_own_mine"
+          || gateReasonCode === "final_mine_check_rejected_stale_route"
+          || gateReasonCode === "final_mine_check_rejected_own_mine";
 
         if(blockedByMineAfterInventory){
           const safeAlternatives = [
