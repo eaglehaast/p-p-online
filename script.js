@@ -25433,6 +25433,45 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     }
   }
 
+  const mineCandidate = candidates.find((candidate) => candidate.itemType === INVENTORY_ITEM_TYPES.MINE) || null;
+  const nonMineCandidatesByUtility = candidates
+    .filter((candidate) => candidate.itemType !== INVENTORY_ITEM_TYPES.MINE)
+    .sort((a, b) => Number(b?.directUtility || 0) - Number(a?.directUtility || 0));
+  const bestNonMineCandidate = nonMineCandidatesByUtility[0] || null;
+  const mineUtility = Number(mineCandidate?.directUtility || Number.NEGATIVE_INFINITY);
+  const bestNonMineUtility = Number(bestNonMineCandidate?.directUtility || Number.NEGATIVE_INFINITY);
+  const nonMineCloseToMine = bestNonMineCandidate
+    && mineCandidate
+    && bestNonMineUtility >= (mineUtility - 0.12);
+
+  if(nonMineCloseToMine){
+    selectedCandidate = bestNonMineCandidate;
+    if(selectedSequence.length === 0){
+      selectedSequence = [bestNonMineCandidate];
+      if(mineCandidate && mineUtility > 0.18){
+        selectedSequence.push({
+          ...mineCandidate,
+          stepIndex: 1,
+          sequenceLength: 2,
+          comboReasonCode: "non_mine_then_mine_sequence",
+          reasonCode: mineCandidate.reasonCode || "non_mine_then_mine_sequence",
+        });
+      }
+    }
+    logAiDecision("inventory_non_mine_priority_applied", {
+      planeId: plannedMove?.plane?.id ?? null,
+      goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+      selectedItemType: selectedCandidate?.itemType || null,
+      selectedUtility: selectedCandidate?.directUtility ?? null,
+      mineUtility: Number.isFinite(mineUtility) ? mineUtility : null,
+      utilityGapToMine: Number.isFinite(mineUtility) && Number.isFinite(bestNonMineUtility)
+        ? Number((mineUtility - bestNonMineUtility).toFixed(3))
+        : null,
+      threshold: 0.12,
+      selectedSequence: selectedSequence.map((entry) => entry?.itemType || null),
+    });
+  }
+
   return { selectedCandidate, selectedSequence, candidates, rejected, inventoryPhase };
 }
 
