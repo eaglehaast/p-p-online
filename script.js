@@ -18288,6 +18288,29 @@ function createInitialAiRoundState(){
   };
 }
 
+function registerAiInventoryUsageAfterMove(itemWasUsed){
+  if(!aiRoundState || typeof aiRoundState !== "object"){
+    return;
+  }
+
+  const usedInventoryItem = itemWasUsed === true;
+  const nextIdleTurns = usedInventoryItem
+    ? 0
+    : Math.max(0, Number.isFinite(aiRoundState.inventoryIdleTurns)
+      ? Math.trunc(aiRoundState.inventoryIdleTurns) + 1
+      : 1);
+
+  aiRoundState.inventoryIdleTurns = nextIdleTurns;
+  aiRoundState.lastInventorySoftFallbackUsed = usedInventoryItem;
+  aiRoundState.inventorySoftFallbackCooldown = usedInventoryItem
+    ? Math.max(0, Number.isFinite(aiRoundState.inventorySoftFallbackCooldown)
+      ? Math.trunc(aiRoundState.inventorySoftFallbackCooldown)
+      : 0)
+    : Math.max(0, (Number.isFinite(aiRoundState.inventorySoftFallbackCooldown)
+      ? Math.trunc(aiRoundState.inventorySoftFallbackCooldown)
+      : 0) - 1);
+}
+
 function clampAiAllowedMoveRisk(rawRisk){
   if(!Number.isFinite(rawRisk)) return 0.7;
   return Math.max(0.2, Math.min(0.95, rawRisk));
