@@ -14084,10 +14084,7 @@ function runAiTechnicalRecoveryWithSafeMine(context, plannedMove, options = {}){
   const stage = options?.stage || "inventory_usage_exception_recovery";
   const goal = plannedMove?.goalName || aiRoundState?.currentGoal || null;
   const logger = typeof options?.logAiDecisionFn === "function" ? options.logAiDecisionFn : logAiDecision;
-  const advanceTurnFn = typeof options?.advanceTurnFn === "function" ? options.advanceTurnFn : advanceTurn;
-  const failSafeAdvanceTurnFn = typeof options?.failSafeAdvanceTurnFn === "function" ? options.failSafeAdvanceTurnFn : failSafeAdvanceTurn;
   const maybeUseInventoryFn = typeof options?.maybeUseInventoryFn === "function" ? options.maybeUseInventoryFn : maybeUseInventoryBeforeLaunch;
-  const errorObj = options?.errorObj || null;
   const errorPayload = options?.errorPayload || {};
 
   const safeMineCandidates = [];
@@ -14146,27 +14143,6 @@ function runAiTechnicalRecoveryWithSafeMine(context, plannedMove, options = {}){
       recoveryMode: "after_exception",
       selectedInventoryCandidate: selectedSafeMineCandidate,
     });
-
-    if(typeof failSafeAdvanceTurnFn === "function"){
-      failSafeAdvanceTurnFn("technical_recovery_with_safe_mine", {
-        goal: goal || "technical_recovery_with_safe_mine",
-        planeId: plannedMove?.plane?.id ?? null,
-        reasonCategory: "technical_exception",
-        reasonCode: "technical_recovery_with_safe_mine",
-        reasonCodes: [
-          "technical_exception",
-          "technical_recovery_with_safe_mine",
-          errorPayload?.reasonCode || "inventory_usage_exception",
-        ],
-        rejectReasons: [
-          errorPayload?.reasonCode || "inventory_usage_exception",
-        ],
-        errorMessage: errorObj?.message || String(errorObj),
-      });
-    } else {
-      aiMoveScheduled = false;
-      advanceTurnFn();
-    }
 
     return { recovered: true, reasonCode: "technical_recovery_with_safe_mine" };
   } catch (recoveryError) {
@@ -32741,7 +32717,14 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
     if(mineRecoveryResult?.recovered){
       baseCandidateStage.inventoryExceptionRecoveredWithSafeMine = true;
       baseCandidateStage.inventoryExceptionRecoveryReasonCode = mineRecoveryResult.reasonCode || "technical_recovery_with_safe_mine";
-      return baseCandidateStage;
+      logAiDecision("inventory_exception_recovered_with_safe_mine_launch_continues", {
+        stage: "inventory_usage_exception_recovery",
+        source,
+        routeClass,
+        planeId: baseCandidateStage.move?.plane?.id ?? inventoryExceptionPayload.planeId,
+        goal: inventoryExceptionPayload.goal || null,
+        reasonCode: baseCandidateStage.inventoryExceptionRecoveryReasonCode,
+      });
     }
 
     const recoveryValidation = validateAiLaunchMoveCandidate(baseCandidateStage.move);
