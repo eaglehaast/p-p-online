@@ -25958,6 +25958,33 @@ function getFinalAiLaunchMineThreatCheck(plannedMove){
     landingPoint.y,
     plane,
   );
+  const ownMineThreatMeta = plane?.color
+    ? getMineThreatMetaForSegment(
+        startPoint.x,
+        startPoint.y,
+        landingPoint.x,
+        landingPoint.y,
+        plane,
+        { mineOwner: plane.color },
+      )
+    : null;
+  const blockedByOwnMine = Boolean(ownMineThreatMeta?.pathHit || ownMineThreatMeta?.landingThreat);
+  if(blockedByOwnMine){
+    return {
+      ok: false,
+      reason: "path_crosses_own_mine",
+      reasonCode: "final_mine_check_rejected_own_mine",
+      threatClass: "critical_self_mine",
+      ownMineThreat: true,
+      threatMeta: {
+        ...(threatMeta || {}),
+        ownMineThreatMeta,
+      },
+      startPoint,
+      landingPoint,
+      message: "Launch path intersects own mine danger zone.",
+    };
+  }
   const blocked = Boolean(threatMeta?.pathHit || threatMeta?.landingThreat);
   if(blocked){
     return {
@@ -25965,6 +25992,7 @@ function getFinalAiLaunchMineThreatCheck(plannedMove){
       reason: "path_crosses_mine",
       reasonCode: "final_mine_check_rejected_stale_route",
       threatClass: "critical_forbidden",
+      ownMineThreat: false,
       threatMeta,
       startPoint,
       landingPoint,
@@ -25976,6 +26004,7 @@ function getFinalAiLaunchMineThreatCheck(plannedMove){
     ok: true,
     reasonCode: "final_mine_check_clear",
     threatClass: "clear",
+    ownMineThreat: false,
     threatMeta,
     startPoint,
     landingPoint,
@@ -26065,6 +26094,7 @@ function resolveFinalAiLaunchMoveWithMineGate(plannedMove, context = {}, options
     && gateResult?.threatMeta?.pathHit
   );
   const canSoftPassModerateRisk = !clearlyLethalCrossing
+    && gateResult?.ownMineThreat !== true
     && gateResult?.threatClass === "critical_forbidden"
     && mineGateRiskScore <= allowedMoveRisk
     && progressToGoalMeta.hasProgress === true;
