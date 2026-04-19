@@ -18288,6 +18288,29 @@ function createInitialAiRoundState(){
   };
 }
 
+function registerAiInventoryUsageAfterMove(itemWasUsed){
+  if(!aiRoundState || typeof aiRoundState !== "object"){
+    return;
+  }
+
+  const usedInventoryItem = itemWasUsed === true;
+  const nextIdleTurns = usedInventoryItem
+    ? 0
+    : Math.max(0, Number.isFinite(aiRoundState.inventoryIdleTurns)
+      ? Math.trunc(aiRoundState.inventoryIdleTurns) + 1
+      : 1);
+
+  aiRoundState.inventoryIdleTurns = nextIdleTurns;
+  aiRoundState.lastInventorySoftFallbackUsed = usedInventoryItem;
+  aiRoundState.inventorySoftFallbackCooldown = usedInventoryItem
+    ? Math.max(0, Number.isFinite(aiRoundState.inventorySoftFallbackCooldown)
+      ? Math.trunc(aiRoundState.inventorySoftFallbackCooldown)
+      : 0)
+    : Math.max(0, (Number.isFinite(aiRoundState.inventorySoftFallbackCooldown)
+      ? Math.trunc(aiRoundState.inventorySoftFallbackCooldown)
+      : 0) - 1);
+}
+
 function clampAiAllowedMoveRisk(rawRisk){
   if(!Number.isFinite(rawRisk)) return 0.7;
   return Math.max(0.2, Math.min(0.95, rawRisk));
@@ -25843,6 +25866,99 @@ function buildFinalMineGateAggressiveFallbackReplan(plannedMove, context = {}, o
   }
 
   return null;
+}
+
+function getFinalAiLaunchMineThreatCheck(plannedMove){
+  const plane = plannedMove?.plane || null;
+  const durationSec = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
+    ? FIELD_FLIGHT_DURATION_SEC
+    : 1;
+  const startPoint = (
+    plane
+    && Number.isFinite(plane.x)
+    && Number.isFinite(plane.y)
+  )
+    ? { x: plane.x, y: plane.y }
+    : null;
+
+  const landingPointRaw = getAiMoveLandingPoint(plannedMove);
+  const fallbackLandingPoint = (
+    startPoint
+    && Number.isFinite(plannedMove?.vx)
+    && Number.isFinite(plannedMove?.vy)
+  )
+    ? {
+        x: startPoint.x + plannedMove.vx * durationSec,
+        y: startPoint.y + plannedMove.vy * durationSec,
+      }
+    : null;
+  const landingPoint = (
+    landingPointRaw
+    && Number.isFinite(landingPointRaw.x)
+    && Number.isFinite(landingPointRaw.y)
+  )
+    ? landingPointRaw
+    : fallbackLandingPoint;
+
+  if(!startPoint || !landingPoint){
+    return {
+      ok: false,
+      reason: "invalid_path_for_mine_gate",
+      reasonCode: "final_mine_check_invalid_path",
+      threatClass: "critical_forbidden",
+      threatMeta: null,
+      startPoint,
+      landingPoint,
+      message: "Mine gate check failed because launch path points are invalid.",
+    };
+  }
+
+  if(!Array.isArray(mines) || mines.length === 0){
+    return {
+      ok: true,
+      reasonCode: "final_mine_check_clear_no_mines",
+      threatClass: "clear",
+      threatMeta: {
+        count: 0,
+        pathHit: false,
+        landingThreat: false,
+      },
+      startPoint,
+      landingPoint,
+      message: "No mines on the field.",
+    };
+  }
+
+  const threatMeta = getMineThreatMetaForSegment(
+    startPoint.x,
+    startPoint.y,
+    landingPoint.x,
+    landingPoint.y,
+    plane,
+  );
+  const blocked = Boolean(threatMeta?.pathHit || threatMeta?.landingThreat);
+  if(blocked){
+    return {
+      ok: false,
+      reason: "path_crosses_mine",
+      reasonCode: "final_mine_check_rejected_stale_route",
+      threatClass: "critical_forbidden",
+      threatMeta,
+      startPoint,
+      landingPoint,
+      message: "Launch path intersects a mine danger zone.",
+    };
+  }
+
+  return {
+    ok: true,
+    reasonCode: "final_mine_check_clear",
+    threatClass: "clear",
+    threatMeta,
+    startPoint,
+    landingPoint,
+    message: "Launch path is clear of mine danger zones.",
+  };
 }
 
 function resolveFinalAiLaunchMoveWithMineGate(plannedMove, context = {}, options = {}){
