@@ -38120,10 +38120,160 @@ function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 
 let failSafeAdvanceTurnInProgress = false;
 function tryRecoverAiFailSafeWithEmergencyLaunch(details = {}){
-  logAiDecision("fail_safe_emergency_recovery_disabled", {
-    reasonCode: "fail_safe_emergency_recovery_disabled",
-    failSafeReason: details?.reason || null,
-    goal: details?.goal || aiRoundState?.currentGoal || null,
+  const failSafeReason = details?.reason || "unspecified";
+  const upstreamReasonCode = details?.reasonCode || failSafeReason || "fail_safe_emergency_launch_attempt";
+  const goal = details?.goal || aiRoundState?.currentGoal || null;
+  const durationSec = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
+    ? FIELD_FLIGHT_DURATION_SEC
+    : 1;
+  const shortDistancePx = Math.max(10, Number.isFinite(CELL_SIZE) ? CELL_SIZE * 1.2 : 18);
+  const emergencySpeed = shortDistancePx / durationSec;
+
+  logAiDecision("fail_safe_emergency_launch_started", {
+    reasonCode: "fail_safe_emergency_launch_started",
+    failSafeReason,
+    upstreamReasonCode,
+    goal,
+    source: details?.source || "tryRecoverAiFailSafeWithEmergencyLaunch",
+    planeId: details?.planeId ?? details?.move?.plane?.id ?? null,
+  });
+
+  if(typeof issueAIMove !== "function"){
+    logAiDecision("fail_safe_emergency_launch_failed", {
+      reasonCode: "fail_safe_emergency_launch_failed_no_issue_ai_move",
+      failSafeReason,
+      upstreamReasonCode,
+      goal,
+      rejectReasons: ["issue_ai_move_unavailable"],
+    });
+    return false;
+  }
+
+  const candidatePlanes = [];
+  const pushPlaneCandidate = (plane) => {
+    if(!plane || typeof plane !== "object") return;
+    if(candidatePlanes.includes(plane)) return;
+    candidatePlanes.push(plane);
+  };
+
+  if(details?.move?.plane) pushPlaneCandidate(details.move.plane);
+
+  if(Number.isFinite(details?.planeId) && Array.isArray(points)){
+    const planeById = points.find((plane) => plane && plane.id === details.planeId);
+    if(planeById) pushPlaneCandidate(planeById);
+  }
+
+  if(Array.isArray(points)){
+    points
+      .filter((plane) => plane && plane.color === "blue" && plane.isAlive === true && !plane.burning)
+      .forEach(pushPlaneCandidate);
+  }
+
+  const fallbackRejectReasons = [];
+  const enemies = Array.isArray(points)
+    ? points.filter((plane) => plane && plane.color === "green" && plane.isAlive === true && !plane.burning)
+    : [];
+
+  const directionSeeds = [
+    { x: 1, y: 0, key: "east" },
+    { x: -1, y: 0, key: "west" },
+    { x: 0, y: 1, key: "south" },
+    { x: 0, y: -1, key: "north" },
+    { x: Math.SQRT1_2, y: Math.SQRT1_2, key: "south_east" },
+    { x: Math.SQRT1_2, y: -Math.SQRT1_2, key: "north_east" },
+    { x: -Math.SQRT1_2, y: Math.SQRT1_2, key: "south_west" },
+    { x: -Math.SQRT1_2, y: -Math.SQRT1_2, key: "north_west" },
+  ];
+
+  for(const plane of candidatePlanes){
+    if(!plane) continue;
+
+    const nearestEnemy = enemies.reduce((best, enemy) => {
+      if(!enemy || !Number.isFinite(enemy.x) || !Number.isFinite(enemy.y)) return best;
+      const dist = Math.hypot(enemy.x - plane.x, enemy.y - plane.y);
+      if(!best || dist < best.dist){
+        return { enemy, dist };
+      }
+      return best;
+    }, null)?.enemy || null;
+
+    const dynamicDirection = (() => {
+      if(!nearestEnemy || !Number.isFinite(plane.x) || !Number.isFinite(plane.y)){
+        return null;
+      }
+      const dx = nearestEnemy.x - plane.x;
+      const dy = nearestEnemy.y - plane.y;
+      const len = Math.hypot(dx, dy);
+      if(!Number.isFinite(len) || len <= 0.0001){
+        return null;
+      }
+      return {
+        x: dx / len,
+        y: dy / len,
+        key: "towards_nearest_enemy",
+      };
+    })();
+
+    const planeDirections = dynamicDirection
+      ? [dynamicDirection, ...directionSeeds]
+      : directionSeeds;
+
+    for(const direction of planeDirections){
+      const move = {
+        plane,
+        vx: direction.x * emergencySpeed,
+        vy: direction.y * emergencySpeed,
+      };
+
+      const validation = validateAiLaunchMoveCandidate(move);
+      if(!validation?.ok){
+        fallbackRejectReasons.push(validation?.reason || "invalid_emergency_move");
+        continue;
+      }
+
+      const launchResult = issueAIMove(
+        move.plane,
+        move.vx,
+        move.vy,
+        {
+          isFallbackMove: true,
+          launchMeta: {
+            routeClass: "emergency_fail_safe",
+            reasonCode: "fail_safe_emergency_launch_started",
+          },
+        },
+      );
+
+      if(launchResult?.ok){
+        logAiDecision("fail_safe_emergency_launch_succeeded", {
+          reasonCode: "fail_safe_emergency_launch_succeeded",
+          failSafeReason,
+          upstreamReasonCode,
+          goal,
+          planeId: plane?.id ?? null,
+          launchDirection: direction.key,
+          sessionId: launchResult?.sessionId ?? null,
+          rescuedTurn: true,
+        });
+        return true;
+      }
+
+      fallbackRejectReasons.push(launchResult?.reason || "emergency_launch_rejected");
+    }
+  }
+
+  logAiDecision("fail_safe_emergency_launch_failed", {
+    reasonCode: candidatePlanes.length === 0
+      ? "fail_safe_emergency_launch_failed_no_plane"
+      : "fail_safe_emergency_launch_failed_no_valid_move",
+    failSafeReason,
+    upstreamReasonCode,
+    goal,
+    planeId: details?.planeId ?? details?.move?.plane?.id ?? null,
+    rejectReasons: fallbackRejectReasons.length > 0
+      ? [...new Set(fallbackRejectReasons)]
+      : ["emergency_launch_unavailable"],
+    rescuedTurn: false,
   });
   return false;
 }
@@ -38167,6 +38317,14 @@ function failSafeAdvanceTurn(reason = "unspecified", details = {}){
       reason,
     });
     if(emergencyRecovered){
+      logAiDecision("fail_safe_turn_advance_skipped_emergency_recovered", {
+        reason,
+        reasonCode: "fail_safe_turn_rescued_by_emergency_launch",
+        upstreamReasonCode: details?.reasonCode || reason || "fail_safe_turn_advance",
+        goal: details?.goal || aiRoundState?.currentGoal || null,
+        planeId: details?.planeId ?? null,
+        source: "failSafeAdvanceTurn",
+      });
       return true;
     }
 
@@ -38174,6 +38332,8 @@ function failSafeAdvanceTurn(reason = "unspecified", details = {}){
       logAiDecision("fail_safe_turn_advance_committed", {
         reason,
         reasonCode: details?.reasonCode || reason || "fail_safe_turn_advance_committed",
+        emergencyLaunchStatus: "failed",
+        emergencyLaunchReasonCode: "fail_safe_emergency_launch_failed",
         goal: details?.goal || aiRoundState?.currentGoal || null,
         planeId: details?.planeId ?? null,
         source: "failSafeAdvanceTurn",
