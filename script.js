@@ -14195,6 +14195,9 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
   ){
     return { ok: false, reasonCode: "ai_not_applicable_for_current_turn" };
   }
+  if(aiLaunchSession){
+    return { ok: false, reasonCode: "ai_launch_session_active" };
+  }
   if(aiMoveScheduled){
     return { ok: false, reasonCode: "ai_move_already_scheduled" };
   }
@@ -38320,6 +38323,7 @@ function gameDraw(){
     gameMode === "computer"
     && turnColors?.[turnIndex] === "blue"
     && flyingPoints.length === 0
+    && !aiLaunchSession
     && !aiMoveScheduled
   ){
     scheduleComputerMoveWithCargoGate(performance.now(), AI_MOVE_CARGO_RETRY_DELAY_MS, {
