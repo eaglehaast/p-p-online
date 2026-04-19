@@ -26373,72 +26373,11 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
 
   let actionUsed = false;
   const actionBeforeState = beforeInventoryState;
-  const allowHardForceInventorySpend = false;
-  function forceUseAnyInventoryItemNow(){
-    const counts = evaluateBlueInventoryState()?.counts || {};
-    const plane = plannedMove?.plane || null;
-    if(!plane) return { used: false, reason: "force_spend_plane_missing", itemType: null };
-
-    const trySpendBuff = (itemType) => {
-      const available = Number(counts?.[itemType] ?? 0);
-      if(available <= 0) return false;
-      const applied = applyItemToOwnPlane(itemType, "blue", plane);
-      if(!applied) return false;
-      removeItemFromInventory("blue", itemType);
-      return true;
-    };
-
-    if(trySpendBuff(INVENTORY_ITEM_TYPES.CROSSHAIR)){
-      plannedMove.inventoryUsageReason = plannedMove.inventoryUsageReason || "hard_force_crosshair";
-      return { used: true, reason: "hard_force_crosshair", itemType: INVENTORY_ITEM_TYPES.CROSSHAIR };
-    }
-    if(trySpendBuff(INVENTORY_ITEM_TYPES.FUEL)){
-      plannedMove.inventoryUsageReason = plannedMove.inventoryUsageReason || "hard_force_fuel";
-      return { used: true, reason: "hard_force_fuel", itemType: INVENTORY_ITEM_TYPES.FUEL };
-    }
-    if(trySpendBuff(INVENTORY_ITEM_TYPES.WINGS)){
-      plannedMove.inventoryUsageReason = plannedMove.inventoryUsageReason || "hard_force_wings";
-      return { used: true, reason: "hard_force_wings", itemType: INVENTORY_ITEM_TYPES.WINGS };
-    }
-
-    if(Number(counts?.[INVENTORY_ITEM_TYPES.INVISIBILITY] ?? 0) > 0){
-      const queued = queueInvisibilityEffectForPlayer("blue");
-      if(queued){
-        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.INVISIBILITY);
-        plannedMove.inventoryUsageReason = plannedMove.inventoryUsageReason || "hard_force_invisibility";
-        return { used: true, reason: "hard_force_invisibility", itemType: INVENTORY_ITEM_TYPES.INVISIBILITY };
-      }
-    }
-
-    if(Number(counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0) > 0){
-      const mineApplied = (typeof tryPlaceBlueDefensiveMine === "function" && tryPlaceBlueDefensiveMine(context, plannedMove) === true)
-        || (typeof tryPlaceBlueMineNearEnemyBase === "function" && tryPlaceBlueMineNearEnemyBase(context, plannedMove) === true);
-      if(mineApplied){
-        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
-        plannedMove.inventoryUsageReason = plannedMove.inventoryUsageReason || "hard_force_mine";
-        return { used: true, reason: "hard_force_mine", itemType: INVENTORY_ITEM_TYPES.MINE };
-      }
-    }
-
-    if(Number(counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0) > 0 && typeof evaluateAiDynamiteTacticalTarget === "function"){
-      const dynamiteDecision = evaluateAiDynamiteTacticalTarget(context, plannedMove, { allowStrategicProbeWhenRouteAware: true });
-      const fallbackTarget = dynamiteDecision?.fallbackTarget || null;
-      if(Number.isFinite(fallbackTarget?.cx) && Number.isFinite(fallbackTarget?.cy)){
-        const placed = placeBlueDynamiteAt(fallbackTarget.cx, fallbackTarget.cy);
-        if(placed){
-          removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
-          plannedMove.inventoryUsageReason = plannedMove.inventoryUsageReason || "hard_force_dynamite";
-          return { used: true, reason: "hard_force_dynamite", itemType: INVENTORY_ITEM_TYPES.DYNAMITE };
-        }
-      }
-    }
-
-    return { used: false, reason: "hard_force_no_applicable_item", itemType: null };
-  }
 
   try {
     actionUsed = maybeUseInventoryBeforeLaunch(context, plannedMove, {
       usedBuffTypesThisTurn: usedSingleUseBuffTypesThisTurn,
+      allowForcedInventorySpend: true,
     });
   } catch (inventorySelectorError) {
     logAiDecision("inventory_selector_attempt_exception", {
@@ -26449,37 +26388,6 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     });
     actionUsed = false;
     inventoryStopReason = "inventory_selector_exception_handled";
-  }
-
-  if(allowHardForceInventorySpend && !actionUsed && Number(actionBeforeState?.total ?? 0) > 0){
-    const hardForceResult = forceUseAnyInventoryItemNow();
-    if(hardForceResult.used){
-      actionUsed = true;
-      inventoryStopReason = "inventory_hard_force_spend_applied";
-      logAiDecision("inventory_hard_force_spend_applied", {
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
-        reason: hardForceResult.reason,
-        itemType: hardForceResult.itemType,
-      });
-      plannedMove.inventoryDecisionMadeMeta = {
-        selected: true,
-        reason: "inventory_hard_force_spend_applied",
-        reasonCodes: ["inventory_hard_force_spend_applied", hardForceResult.reason],
-        rejectReasons: [],
-        executionSource: "hard_force_spend_fallback",
-        selectedItemType: hardForceResult.itemType,
-        selectedReason: hardForceResult.reason,
-        selectedSequenceLength: 1,
-        selectedItemTypes: hardForceResult.itemType ? [hardForceResult.itemType] : [],
-      };
-    } else {
-      logAiDecision("inventory_hard_force_spend_skipped", {
-        planeId: plannedMove?.plane?.id ?? null,
-        goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
-        reason: hardForceResult.reason,
-      });
-    }
   }
 
   if(actionUsed){
@@ -27159,19 +27067,41 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     });
     aiPostInventoryLaunchTimeout = setTimeout(() => {
       aiPostInventoryLaunchTimeout = null;
-      const intentStillValid = ensureDynamiteIntentStillMatchesPlannedMove("before_post_inventory_timeout_launch", {
-        allowedTurnWindow: 0,
-      });
-      if(!intentStillValid){
-        logAiDecision("dynamite_post_inventory_launch_blocked", {
+      try {
+        const intentStillValid = ensureDynamiteIntentStillMatchesPlannedMove("before_post_inventory_timeout_launch", {
+          allowedTurnWindow: 0,
+        });
+        if(!intentStillValid){
+          logAiDecision("dynamite_post_inventory_launch_blocked", {
+            planeId: plannedMove?.plane?.id ?? null,
+            goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+            reason: "intent_desync_before_timeout_launch",
+          });
+        }
+        registerFinalInventoryUsage(effectiveItemUsed);
+        const delayedLaunchResult = issueMoveAfterFinalMineGate("post_inventory_delay_launch");
+        handleFinalLaunchResult("post_inventory_delay_launch", delayedLaunchResult);
+      } catch (delayedLaunchError) {
+        logAiDecision("post_inventory_delayed_launch_exception", {
+          stage: "post_inventory_delay_launch",
           planeId: plannedMove?.plane?.id ?? null,
           goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
-          reason: "intent_desync_before_timeout_launch",
+          reasonCode: "post_inventory_delayed_launch_exception",
+          message: delayedLaunchError?.message || String(delayedLaunchError),
+        });
+        failSafeHandler("post_inventory_delayed_launch_exception", {
+          goal: plannedMove?.goalName || aiRoundState?.currentGoal || "post_inventory_delayed_launch_exception",
+          planeId: plannedMove?.plane?.id ?? null,
+          reasonCategory: "technical_exception",
+          reasonCodes: [
+            "post_inventory_delayed_launch_exception",
+            "technical_exception",
+            "fail_safe_turn_advance",
+          ],
+          rejectReasons: ["post_inventory_delayed_launch_exception"],
+          errorMessage: delayedLaunchError?.message || String(delayedLaunchError),
         });
       }
-      registerFinalInventoryUsage(effectiveItemUsed);
-      const delayedLaunchResult = issueMoveAfterFinalMineGate("post_inventory_delay_launch");
-      handleFinalLaunchResult("post_inventory_delay_launch", delayedLaunchResult);
     }, postInventoryLaunchDelayMs);
     return;
   }
