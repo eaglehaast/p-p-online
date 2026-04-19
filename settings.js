@@ -110,7 +110,7 @@ window.addEventListener('gesturestart', () => {
   window.PINCH_ACTIVE = true;
 }, { capture: true });
 
-window.addEventListener('gestureend', () => resetPinchState(), { capture: true });
+window.addEventListener('gestureend', () => schedulePinchReset(), { capture: true });
 
 window.addEventListener('wheel', (event) => {
   if (pinchActive && event.ctrlKey !== true) {
@@ -130,6 +130,7 @@ function isZoomExitTarget(target) {
 function installPinchExitOnGameplayInput() {
   const exitZoom = (event) => {
     if (!isPinchActive()) return;
+    if ((event.touches?.length || 0) >= 2) return;
     if (!isZoomExitTarget(event.target)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -142,6 +143,80 @@ function installPinchExitOnGameplayInput() {
 }
 
 installPinchExitOnGameplayInput();
+
+const touchPinchState = {
+  active: false,
+  startDistance: 0,
+  startScale: 1
+};
+
+function getTouchDistance(touchA, touchB) {
+  return Math.hypot((touchB.clientX - touchA.clientX), (touchB.clientY - touchA.clientY));
+}
+
+function getTouchCenterInPercents(touchA, touchB, rect) {
+  const centerX = (touchA.clientX + touchB.clientX) / 2;
+  const centerY = (touchA.clientY + touchB.clientY) / 2;
+  let originX = 50;
+  let originY = 50;
+  if (rect.width > 0 && rect.height > 0) {
+    originX = clamp(((centerX - rect.left) / rect.width) * 100, 0, 100);
+    originY = clamp(((centerY - rect.top) / rect.height) * 100, 0, 100);
+  }
+  return { originX, originY };
+}
+
+function installTouchPinchZoom() {
+  const onTouchStart = (event) => {
+    if (!(uiFrameEl instanceof HTMLElement) || !(uiFrameInner instanceof HTMLElement)) return;
+    if (!isZoomExitTarget(event.target)) return;
+    if (event.touches.length < 2) return;
+    const touchA = event.touches[0];
+    const touchB = event.touches[1];
+    const startDistance = getTouchDistance(touchA, touchB);
+    if (!(startDistance > 0)) return;
+    touchPinchState.active = true;
+    touchPinchState.startDistance = startDistance;
+    touchPinchState.startScale = pinchScale;
+    pinchActive = true;
+    window.PINCH_ACTIVE = true;
+  };
+
+  const onTouchMove = (event) => {
+    if (!(uiFrameEl instanceof HTMLElement) || !(uiFrameInner instanceof HTMLElement)) return;
+    if (!touchPinchState.active) return;
+    if (event.touches.length < 2) return;
+    const touchA = event.touches[0];
+    const touchB = event.touches[1];
+    const distance = getTouchDistance(touchA, touchB);
+    if (!(distance > 0) || !(touchPinchState.startDistance > 0)) return;
+    const rect = uiFrameEl.getBoundingClientRect();
+    const { originX, originY } = getTouchCenterInPercents(touchA, touchB, rect);
+    uiFrameInner.style.transformOrigin = `${originX}% ${originY}%`;
+    const ratio = distance / touchPinchState.startDistance;
+    pinchScale = clamp(touchPinchState.startScale * ratio, PINCH_MIN, PINCH_MAX);
+    uiFrameInner.style.transform = `scale(${pinchScale})`;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+
+  const onTouchEnd = (event) => {
+    if (event.touches.length >= 2) return;
+    touchPinchState.active = false;
+    touchPinchState.startDistance = 0;
+    touchPinchState.startScale = pinchScale;
+    if (isPinchActive()) {
+      schedulePinchReset();
+    }
+  };
+
+  window.addEventListener('touchstart', onTouchStart, { passive: false, capture: true });
+  window.addEventListener('touchmove', onTouchMove, { passive: false, capture: true });
+  window.addEventListener('touchend', onTouchEnd, { passive: false, capture: true });
+  window.addEventListener('touchcancel', onTouchEnd, { passive: false, capture: true });
+}
+
+installTouchPinchZoom();
 
 window.addEventListener('wheel', (event) => {
   if (event.ctrlKey !== true) return;
