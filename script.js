@@ -42262,7 +42262,7 @@ let pinchScale = 1;
 let pinchResetTimer = null;
 const PINCH_RESET_MS = 4000;
 const PINCH_MIN = 1;
-const PINCH_MAX = 2.2;
+const PINCH_MAX = 8;
 if (typeof window !== 'undefined') {
   window.PINCH_ACTIVE = pinchActive;
 }
@@ -42315,6 +42315,31 @@ window.addEventListener('wheel', (event) => {
     resetPinchState();
   }
 }, { capture: true });
+
+
+function isZoomExitTarget(target) {
+  if (!(target instanceof Element)) return false;
+  if (uiFrameEl instanceof HTMLElement && uiFrameEl.contains(target)) return true;
+  if (uiFrameInner instanceof HTMLElement && uiFrameInner.contains(target)) return true;
+  if (target.closest?.('#gameCanvas, #aimCanvas, #planeCanvas, #hudCanvas, #uiFrame')) return true;
+  return false;
+}
+
+function installPinchExitOnGameplayInput() {
+  const exitZoom = (event) => {
+    if (!isPinchActive()) return;
+    if (!isZoomExitTarget(event.target)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    resetPinchState();
+  };
+
+  window.addEventListener('pointerdown', exitZoom, { capture: true, passive: false });
+  window.addEventListener('touchstart', exitZoom, { capture: true, passive: false });
+  window.addEventListener('mousedown', exitZoom, { capture: true, passive: false });
+}
+
+installPinchExitOnGameplayInput();
 
 window.addEventListener('wheel', (event) => {
   if (event.ctrlKey !== true) return;
