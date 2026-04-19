@@ -14206,13 +14206,8 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       if(!isPlaneLaunchStateReady(plane)) return false;
       return !flyingPoints.some((fp) => fp.plane === plane);
     });
-
-    if(!launchReadyPlanes.length){
-      aiMoveScheduled = false;
-      advanceTurn();
-      return;
-    }
     const enemyPlanes = points.filter((plane) => plane?.color === "green" && isPlaneTargetable(plane));
+
     const readyCargo = cargoState.filter((cargo) => cargo?.state === "ready");
     const aiExecutionContext = {
       aiPlanes: launchReadyPlanes,
@@ -14314,6 +14309,78 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       }
       return null;
     };
+
+    const runForcedNonSkipLastChance = (reasonSuffix, options = {}) => {
+      const reasonCode = `forced_non_skip_last_chance_${reasonSuffix || "unknown"}`;
+      const candidatePlanes = Array.isArray(options?.candidatePlanes)
+        ? options.candidatePlanes.filter(Boolean)
+        : launchReadyPlanes.filter(Boolean);
+      const guaranteedMove = candidatePlanes
+        .map((plane) => buildGuaranteedAdvanceMove(plane))
+        .find(Boolean);
+
+      if(guaranteedMove){
+        const guaranteedLaunchResult = tryIssueAiMoveWithInventory({
+          plane: guaranteedMove.plane,
+          landingX: guaranteedMove.landingX,
+          landingY: guaranteedMove.landingY,
+          goalName: guaranteedMove.goalName || "simple_step2_guaranteed_advance",
+          decisionReason: guaranteedMove.decisionReason || "simple_step2_guaranteed_advance",
+          whyChosen: guaranteedMove.whyChosen || "forced_non_skip_last_chance_guaranteed_move",
+          routeClass: guaranteedMove.routeClass || "direct",
+        }, "simple_step2_selector_forced_non_skip_last_chance");
+        if(guaranteedLaunchResult?.ok){
+          aiMoveScheduled = false;
+          logAiDecision("simple_step2_forced_non_skip_last_chance_success", {
+            reasonCode,
+            strategy: "guaranteed_advance",
+            planeId: guaranteedMove?.plane?.id ?? null,
+          });
+          return { ok: true, reasonCode };
+        }
+      }
+
+      const mandatoryMove = getMandatoryTurnMove({
+        aiPlanes: candidatePlanes,
+        enemies: enemyPlanes,
+      });
+      if(mandatoryMove && mandatoryMove.plane && Number.isFinite(mandatoryMove.vx) && Number.isFinite(mandatoryMove.vy)){
+        const mandatoryDurationSec = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
+          ? FIELD_FLIGHT_DURATION_SEC
+          : 1;
+        const mandatoryLaunchResult = tryIssueAiMoveWithInventory({
+          plane: mandatoryMove.plane,
+          landingX: mandatoryMove.plane.x + mandatoryMove.vx * mandatoryDurationSec,
+          landingY: mandatoryMove.plane.y + mandatoryMove.vy * mandatoryDurationSec,
+          goalName: mandatoryMove.goalName || "simple_step2_mandatory_move",
+          decisionReason: mandatoryMove.decisionReason || "simple_step2_mandatory_move",
+          whyChosen: "forced_non_skip_last_chance_mandatory_move",
+          routeClass: mandatoryMove.routeClass || "direct",
+        }, "simple_step2_selector_forced_non_skip_last_chance_mandatory");
+        if(mandatoryLaunchResult?.ok){
+          aiMoveScheduled = false;
+          logAiDecision("simple_step2_forced_non_skip_last_chance_success", {
+            reasonCode,
+            strategy: "mandatory_turn_move",
+            planeId: mandatoryMove?.plane?.id ?? null,
+          });
+          return { ok: true, reasonCode };
+        }
+      }
+
+      aiMoveScheduled = false;
+      logAiDecision("simple_step2_forced_non_skip_last_chance_failed", {
+        reasonCode,
+        candidatePlaneIds: candidatePlanes.map((plane) => plane?.id ?? null),
+      });
+      advanceTurn();
+      return { ok: false, reasonCode };
+    };
+
+    if(!launchReadyPlanes.length){
+      runForcedNonSkipLastChance("no_launch_ready_planes", { candidatePlanes: launchReadyPlanes });
+      return;
+    }
 
     const scoredPlans = [];
     for(const launchReadyPlane of launchReadyPlanes){
@@ -14422,38 +14489,13 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     }
 
     if(!selectedPlan){
-      const mandatoryMove = getMandatoryTurnMove({
-        aiPlanes: launchReadyPlanes,
-        enemies: enemyPlanes,
-      });
-      if(mandatoryMove && mandatoryMove.plane && Number.isFinite(mandatoryMove.vx) && Number.isFinite(mandatoryMove.vy)){
-        const emergencyDurationSec = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
-          ? FIELD_FLIGHT_DURATION_SEC
-          : 1;
-        const emergencyLaunchResult = tryIssueAiMoveWithInventory({
-          plane: mandatoryMove.plane,
-          landingX: mandatoryMove.plane.x + mandatoryMove.vx * emergencyDurationSec,
-          landingY: mandatoryMove.plane.y + mandatoryMove.vy * emergencyDurationSec,
-          goalName: mandatoryMove.goalName || "simple_step2_mandatory_move",
-          decisionReason: mandatoryMove.decisionReason || "simple_step2_mandatory_move",
-          whyChosen: "mandatory_non_skip_fallback",
-          routeClass: mandatoryMove.routeClass || "direct",
-        }, "simple_step2_selector_mandatory");
-        aiMoveScheduled = false;
-        if(!emergencyLaunchResult?.ok){
-          advanceTurn();
-        }
-        return;
-      }
-      aiMoveScheduled = false;
-      advanceTurn();
+      runForcedNonSkipLastChance("no_selected_plan");
       return;
     }
 
     const launchReadyPlane = selectedPlan.plane;
     if(!launchReadyPlane){
-      aiMoveScheduled = false;
-      advanceTurn();
+      runForcedNonSkipLastChance("selected_plan_without_plane");
       return;
     }
 
@@ -14475,8 +14517,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     }
 
     if(!selectedPlan || !Number.isFinite(selectedPlan.landingX) || !Number.isFinite(selectedPlan.landingY)){
-      aiMoveScheduled = false;
-      advanceTurn();
+      runForcedNonSkipLastChance("selected_plan_invalid_coordinates");
       return;
     }
 
@@ -14525,7 +14566,9 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
 
     aiMoveScheduled = false;
     if(!launchResult?.ok){
-      advanceTurn();
+      runForcedNonSkipLastChance("launch_result_not_ok", {
+        candidatePlanes: launchReadyPlanes,
+      });
     }
     return;
   }, safeDelayMs);
