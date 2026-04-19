@@ -17610,11 +17610,15 @@ const AI_DECISION_DEBUG_EVENT_FLAGS = Object.freeze({
   fallback_safe_angle_candidate_scored: "candidateScoring",
   fallback_attack_candidate_scored: "candidateScoring",
   final_compared: "candidateScoring",
+  inventory_candidate_generated: "candidateScoring",
+  inventory_candidate_rejected: "candidateScoring",
   fallback_replan_candidate_missing: "fallbackReplan",
   fallback_replan_candidate_invalid: "fallbackReplan",
   fallback_replan_execution_started: "fallbackReplan",
   fallback_replan_execution_committed: "fallbackReplan",
   stale_target_replanned: "fallbackReplan",
+  narrow_corridor_evaluation: "narrowCorridor",
+  detour_angle_selected: "narrowCorridor",
   narrow_corridor_phase_started: "narrowCorridor",
   narrow_corridor_rejected: "narrowCorridor",
   narrow_corridor_selected: "narrowCorridor",
@@ -33156,6 +33160,9 @@ function runInventoryRouteOpeningBeforeFallback(modeContext = {}, chosenGoal = n
   let bestPlan = null;
   for(const seedMove of moveSeeds){
     const baseValidation = validateAiLaunchMoveCandidate(seedMove);
+    if(baseValidation?.ok){
+      continue;
+    }
     const inventoryPlanning = buildAiInventoryCandidatePlans(modeContext, seedMove);
     const selectedInventoryCandidate = inventoryPlanning?.selectedCandidate || null;
     const selectedInventorySequence = Array.isArray(inventoryPlanning?.selectedSequence)
