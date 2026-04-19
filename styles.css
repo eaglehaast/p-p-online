@@ -102,8 +102,8 @@ body, button {
 
 #uiFrame {
   position: relative;
-  left: 50vw;
-  top: 50vh;
+  left: 50%;
+  top: 50%;
   margin: 0;
   transform: translate(-50%, -50%) scale(var(--ui-scale));
   transform-origin: 50% 50%;
