@@ -153,17 +153,17 @@ window.addEventListener('wheel', (event) => {
     if (typeof window !== 'undefined') {
       window.PINCH_ACTIVE = true;
     }
-    const rect = uiFrameEl.getBoundingClientRect();
-    let originX = 50;
-    let originY = 50;
-    if (rect.width > 0 && rect.height > 0) {
-      originX = ((event.clientX - rect.left) / rect.width) * 100;
-      originY = ((event.clientY - rect.top) / rect.height) * 100;
-      originX = clamp(originX, 0, 100);
-      originY = clamp(originY, 0, 100);
-    }
-    uiFrameInner.style.transformOrigin = `${originX}% ${originY}%`;
   }
+  const rect = uiFrameEl.getBoundingClientRect();
+  let originX = 50;
+  let originY = 50;
+  if (rect.width > 0 && rect.height > 0) {
+    originX = ((event.clientX - rect.left) / rect.width) * 100;
+    originY = ((event.clientY - rect.top) / rect.height) * 100;
+    originX = clamp(originX, 0, 100);
+    originY = clamp(originY, 0, 100);
+  }
+  uiFrameInner.style.transformOrigin = `${originX}% ${originY}%`;
   const step = Math.exp(-event.deltaY * 0.01);
   pinchScale = clamp(pinchScale * step, PINCH_MIN, PINCH_MAX);
   uiFrameInner.style.transform = `scale(${pinchScale})`;
