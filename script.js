@@ -14084,10 +14084,7 @@ function runAiTechnicalRecoveryWithSafeMine(context, plannedMove, options = {}){
   const stage = options?.stage || "inventory_usage_exception_recovery";
   const goal = plannedMove?.goalName || aiRoundState?.currentGoal || null;
   const logger = typeof options?.logAiDecisionFn === "function" ? options.logAiDecisionFn : logAiDecision;
-  const advanceTurnFn = typeof options?.advanceTurnFn === "function" ? options.advanceTurnFn : advanceTurn;
-  const failSafeAdvanceTurnFn = typeof options?.failSafeAdvanceTurnFn === "function" ? options.failSafeAdvanceTurnFn : failSafeAdvanceTurn;
   const maybeUseInventoryFn = typeof options?.maybeUseInventoryFn === "function" ? options.maybeUseInventoryFn : maybeUseInventoryBeforeLaunch;
-  const errorObj = options?.errorObj || null;
   const errorPayload = options?.errorPayload || {};
 
   const safeMineCandidates = [];
@@ -14146,27 +14143,6 @@ function runAiTechnicalRecoveryWithSafeMine(context, plannedMove, options = {}){
       recoveryMode: "after_exception",
       selectedInventoryCandidate: selectedSafeMineCandidate,
     });
-
-    if(typeof failSafeAdvanceTurnFn === "function"){
-      failSafeAdvanceTurnFn("technical_recovery_with_safe_mine", {
-        goal: goal || "technical_recovery_with_safe_mine",
-        planeId: plannedMove?.plane?.id ?? null,
-        reasonCategory: "technical_exception",
-        reasonCode: "technical_recovery_with_safe_mine",
-        reasonCodes: [
-          "technical_exception",
-          "technical_recovery_with_safe_mine",
-          errorPayload?.reasonCode || "inventory_usage_exception",
-        ],
-        rejectReasons: [
-          errorPayload?.reasonCode || "inventory_usage_exception",
-        ],
-        errorMessage: errorObj?.message || String(errorObj),
-      });
-    } else {
-      aiMoveScheduled = false;
-      advanceTurnFn();
-    }
 
     return { recovered: true, reasonCode: "technical_recovery_with_safe_mine" };
   } catch (recoveryError) {
@@ -18286,6 +18262,29 @@ function createInitialAiRoundState(){
       afterCandidates: 0,
     },
   };
+}
+
+function registerAiInventoryUsageAfterMove(itemWasUsed){
+  if(!aiRoundState || typeof aiRoundState !== "object"){
+    return;
+  }
+
+  const usedInventoryItem = itemWasUsed === true;
+  const nextIdleTurns = usedInventoryItem
+    ? 0
+    : Math.max(0, Number.isFinite(aiRoundState.inventoryIdleTurns)
+      ? Math.trunc(aiRoundState.inventoryIdleTurns) + 1
+      : 1);
+
+  aiRoundState.inventoryIdleTurns = nextIdleTurns;
+  aiRoundState.lastInventorySoftFallbackUsed = usedInventoryItem;
+  aiRoundState.inventorySoftFallbackCooldown = usedInventoryItem
+    ? Math.max(0, Number.isFinite(aiRoundState.inventorySoftFallbackCooldown)
+      ? Math.trunc(aiRoundState.inventorySoftFallbackCooldown)
+      : 0)
+    : Math.max(0, (Number.isFinite(aiRoundState.inventorySoftFallbackCooldown)
+      ? Math.trunc(aiRoundState.inventorySoftFallbackCooldown)
+      : 0) - 1);
 }
 
 function clampAiAllowedMoveRisk(rawRisk){
@@ -25431,6 +25430,45 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     }
   }
 
+  const mineCandidate = candidates.find((candidate) => candidate.itemType === INVENTORY_ITEM_TYPES.MINE) || null;
+  const nonMineCandidatesByUtility = candidates
+    .filter((candidate) => candidate.itemType !== INVENTORY_ITEM_TYPES.MINE)
+    .sort((a, b) => Number(b?.directUtility || 0) - Number(a?.directUtility || 0));
+  const bestNonMineCandidate = nonMineCandidatesByUtility[0] || null;
+  const mineUtility = Number(mineCandidate?.directUtility || Number.NEGATIVE_INFINITY);
+  const bestNonMineUtility = Number(bestNonMineCandidate?.directUtility || Number.NEGATIVE_INFINITY);
+  const nonMineCloseToMine = bestNonMineCandidate
+    && mineCandidate
+    && bestNonMineUtility >= (mineUtility - 0.12);
+
+  if(nonMineCloseToMine){
+    selectedCandidate = bestNonMineCandidate;
+    if(selectedSequence.length === 0){
+      selectedSequence = [bestNonMineCandidate];
+      if(mineCandidate && mineUtility > 0.18){
+        selectedSequence.push({
+          ...mineCandidate,
+          stepIndex: 1,
+          sequenceLength: 2,
+          comboReasonCode: "non_mine_then_mine_sequence",
+          reasonCode: mineCandidate.reasonCode || "non_mine_then_mine_sequence",
+        });
+      }
+    }
+    logAiDecision("inventory_non_mine_priority_applied", {
+      planeId: plannedMove?.plane?.id ?? null,
+      goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+      selectedItemType: selectedCandidate?.itemType || null,
+      selectedUtility: selectedCandidate?.directUtility ?? null,
+      mineUtility: Number.isFinite(mineUtility) ? mineUtility : null,
+      utilityGapToMine: Number.isFinite(mineUtility) && Number.isFinite(bestNonMineUtility)
+        ? Number((mineUtility - bestNonMineUtility).toFixed(3))
+        : null,
+      threshold: 0.12,
+      selectedSequence: selectedSequence.map((entry) => entry?.itemType || null),
+    });
+  }
+
   return { selectedCandidate, selectedSequence, candidates, rejected, inventoryPhase };
 }
 
@@ -25843,6 +25881,99 @@ function buildFinalMineGateAggressiveFallbackReplan(plannedMove, context = {}, o
   }
 
   return null;
+}
+
+function getFinalAiLaunchMineThreatCheck(plannedMove){
+  const plane = plannedMove?.plane || null;
+  const durationSec = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
+    ? FIELD_FLIGHT_DURATION_SEC
+    : 1;
+  const startPoint = (
+    plane
+    && Number.isFinite(plane.x)
+    && Number.isFinite(plane.y)
+  )
+    ? { x: plane.x, y: plane.y }
+    : null;
+
+  const landingPointRaw = getAiMoveLandingPoint(plannedMove);
+  const fallbackLandingPoint = (
+    startPoint
+    && Number.isFinite(plannedMove?.vx)
+    && Number.isFinite(plannedMove?.vy)
+  )
+    ? {
+        x: startPoint.x + plannedMove.vx * durationSec,
+        y: startPoint.y + plannedMove.vy * durationSec,
+      }
+    : null;
+  const landingPoint = (
+    landingPointRaw
+    && Number.isFinite(landingPointRaw.x)
+    && Number.isFinite(landingPointRaw.y)
+  )
+    ? landingPointRaw
+    : fallbackLandingPoint;
+
+  if(!startPoint || !landingPoint){
+    return {
+      ok: false,
+      reason: "invalid_path_for_mine_gate",
+      reasonCode: "final_mine_check_invalid_path",
+      threatClass: "critical_forbidden",
+      threatMeta: null,
+      startPoint,
+      landingPoint,
+      message: "Mine gate check failed because launch path points are invalid.",
+    };
+  }
+
+  if(!Array.isArray(mines) || mines.length === 0){
+    return {
+      ok: true,
+      reasonCode: "final_mine_check_clear_no_mines",
+      threatClass: "clear",
+      threatMeta: {
+        count: 0,
+        pathHit: false,
+        landingThreat: false,
+      },
+      startPoint,
+      landingPoint,
+      message: "No mines on the field.",
+    };
+  }
+
+  const threatMeta = getMineThreatMetaForSegment(
+    startPoint.x,
+    startPoint.y,
+    landingPoint.x,
+    landingPoint.y,
+    plane,
+  );
+  const blocked = Boolean(threatMeta?.pathHit || threatMeta?.landingThreat);
+  if(blocked){
+    return {
+      ok: false,
+      reason: "path_crosses_mine",
+      reasonCode: "final_mine_check_rejected_stale_route",
+      threatClass: "critical_forbidden",
+      threatMeta,
+      startPoint,
+      landingPoint,
+      message: "Launch path intersects a mine danger zone.",
+    };
+  }
+
+  return {
+    ok: true,
+    reasonCode: "final_mine_check_clear",
+    threatClass: "clear",
+    threatMeta,
+    startPoint,
+    landingPoint,
+    message: "Launch path is clear of mine danger zones.",
+  };
 }
 
 function resolveFinalAiLaunchMoveWithMineGate(plannedMove, context = {}, options = {}){
@@ -26598,6 +26729,66 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     });
     if(!finalMoveResolution.ok || !finalMoveResolution.move){
       if(effectiveItemUsed){
+        const gateRejectReason = finalMoveResolution?.gateResult?.reason || null;
+        const gateReasonCode = finalMoveResolution?.reasonCode || null;
+        const blockedByMineAfterInventory = gateRejectReason === "path_crosses_mine"
+          || gateReasonCode === "final_mine_check_rejected_stale_route";
+
+        if(blockedByMineAfterInventory){
+          const safeAlternatives = [
+            typeof getFailSafeMinimalTargetedMove === "function" ? getFailSafeMinimalTargetedMove(context) : null,
+            typeof getFailSafeGuaranteedDirectMove === "function" ? getFailSafeGuaranteedDirectMove(context) : null,
+          ].filter(Boolean);
+
+          for(const alternativeMove of safeAlternatives){
+            const alternativeValidation = validateAiLaunchMoveCandidate(alternativeMove);
+            if(!alternativeValidation.ok) continue;
+            const alternativeMineGate = getFinalAiLaunchMineThreatCheck(alternativeMove);
+            if(!alternativeMineGate?.ok) continue;
+            const alternativeLaunch = issueAIMove(
+              alternativeMove.plane,
+              alternativeMove.vx,
+              alternativeMove.vy,
+              {
+                isFallbackMove: true,
+                launchMeta: {
+                  routeClass: alternativeMove?.routeClass || plannedMove?.routeClass || null,
+                },
+              },
+            );
+            if(alternativeLaunch?.ok){
+              logAiDecision("ai_post_item_launch_safe_alternative_applied", {
+                stage: stageLabel,
+                planeId: alternativeMove?.plane?.id ?? plannedMove?.plane?.id ?? null,
+                goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+                reasonCode: "post_item_launch_safe_alternative_applied",
+                gateReasonCode,
+                gateRejectReason,
+                consumedItemType: consumedItemType || null,
+                consumedItemTypes: consumedItemTypes.slice(),
+                alternativeDecisionReason: alternativeMove?.decisionReason || null,
+              });
+              return alternativeLaunch;
+            }
+          }
+
+          logAiDecision("ai_post_item_launch_blocked_by_mine_guard", {
+            stage: stageLabel,
+            planeId: plannedMove?.plane?.id ?? null,
+            goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+            reasonCode: "post_item_launch_blocked_by_mine_guard",
+            gateReasonCode,
+            gateRejectReason,
+            consumedItemType: consumedItemType || null,
+            consumedItemTypes: consumedItemTypes.slice(),
+          });
+          return {
+            ok: false,
+            reason: "post_item_launch_blocked_by_mine_guard",
+            message: finalMoveResolution?.gateResult?.message || "Post-inventory launch path crosses mine danger zone.",
+          };
+        }
+
         const postItemLaunch = issueAIMove(
           plannedMove?.plane,
           plannedMove?.vx,
@@ -32625,7 +32816,14 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
     if(mineRecoveryResult?.recovered){
       baseCandidateStage.inventoryExceptionRecoveredWithSafeMine = true;
       baseCandidateStage.inventoryExceptionRecoveryReasonCode = mineRecoveryResult.reasonCode || "technical_recovery_with_safe_mine";
-      return baseCandidateStage;
+      logAiDecision("inventory_exception_recovered_with_safe_mine_launch_continues", {
+        stage: "inventory_usage_exception_recovery",
+        source,
+        routeClass,
+        planeId: baseCandidateStage.move?.plane?.id ?? inventoryExceptionPayload.planeId,
+        goal: inventoryExceptionPayload.goal || null,
+        reasonCode: baseCandidateStage.inventoryExceptionRecoveryReasonCode,
+      });
     }
 
     const recoveryValidation = validateAiLaunchMoveCandidate(baseCandidateStage.move);
