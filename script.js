@@ -26732,6 +26732,66 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
     });
     if(!finalMoveResolution.ok || !finalMoveResolution.move){
       if(effectiveItemUsed){
+        const gateRejectReason = finalMoveResolution?.gateResult?.reason || null;
+        const gateReasonCode = finalMoveResolution?.reasonCode || null;
+        const blockedByMineAfterInventory = gateRejectReason === "path_crosses_mine"
+          || gateReasonCode === "final_mine_check_rejected_stale_route";
+
+        if(blockedByMineAfterInventory){
+          const safeAlternatives = [
+            typeof getFailSafeMinimalTargetedMove === "function" ? getFailSafeMinimalTargetedMove(context) : null,
+            typeof getFailSafeGuaranteedDirectMove === "function" ? getFailSafeGuaranteedDirectMove(context) : null,
+          ].filter(Boolean);
+
+          for(const alternativeMove of safeAlternatives){
+            const alternativeValidation = validateAiLaunchMoveCandidate(alternativeMove);
+            if(!alternativeValidation.ok) continue;
+            const alternativeMineGate = getFinalAiLaunchMineThreatCheck(alternativeMove);
+            if(!alternativeMineGate?.ok) continue;
+            const alternativeLaunch = issueAIMove(
+              alternativeMove.plane,
+              alternativeMove.vx,
+              alternativeMove.vy,
+              {
+                isFallbackMove: true,
+                launchMeta: {
+                  routeClass: alternativeMove?.routeClass || plannedMove?.routeClass || null,
+                },
+              },
+            );
+            if(alternativeLaunch?.ok){
+              logAiDecision("ai_post_item_launch_safe_alternative_applied", {
+                stage: stageLabel,
+                planeId: alternativeMove?.plane?.id ?? plannedMove?.plane?.id ?? null,
+                goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+                reasonCode: "post_item_launch_safe_alternative_applied",
+                gateReasonCode,
+                gateRejectReason,
+                consumedItemType: consumedItemType || null,
+                consumedItemTypes: consumedItemTypes.slice(),
+                alternativeDecisionReason: alternativeMove?.decisionReason || null,
+              });
+              return alternativeLaunch;
+            }
+          }
+
+          logAiDecision("ai_post_item_launch_blocked_by_mine_guard", {
+            stage: stageLabel,
+            planeId: plannedMove?.plane?.id ?? null,
+            goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+            reasonCode: "post_item_launch_blocked_by_mine_guard",
+            gateReasonCode,
+            gateRejectReason,
+            consumedItemType: consumedItemType || null,
+            consumedItemTypes: consumedItemTypes.slice(),
+          });
+          return {
+            ok: false,
+            reason: "post_item_launch_blocked_by_mine_guard",
+            message: finalMoveResolution?.gateResult?.message || "Post-inventory launch path crosses mine danger zone.",
+          };
+        }
+
         const postItemLaunch = issueAIMove(
           plannedMove?.plane,
           plannedMove?.vx,
