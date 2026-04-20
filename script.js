@@ -42490,7 +42490,7 @@ function resizeCanvasFixedForGameBoard() {
   }
 }
 
-let lastResizeMetrics = {
+var lastResizeMetrics = {
   cssW: 0,
   cssH: 0,
   scale: 0,
