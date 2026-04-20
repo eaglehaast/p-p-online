@@ -20648,7 +20648,8 @@ function findSafePreparationMoveForAttack(plane, enemy, options = {}){
         goalName: preparationGoalName,
         decisionReason: preparationGoalName,
         targetEnemy: enemy,
-        specialAttemptBudget: 0,
+        specialRouteClasses: ["ricochet", "gap"],
+        specialAttemptBudget: 2,
         compareLabel: [preparationGoalName, plane?.id ?? "", enemy?.id ?? ""],
       });
       if(!move) continue;
@@ -20686,7 +20687,8 @@ function planDirectAttackOrPreparationMove(plane, enemy, options = {}){
     targetEnemy: enemy,
     enemy,
     context: options?.context,
-    specialAttemptBudget: 0,
+    specialRouteClasses: ["ricochet", "gap"],
+    specialAttemptBudget: 2,
     compareLabel,
     prioritizeDirectFinisher: options?.prioritizeDirectFinisher === true,
     allowFinisherSafetyBypass: options?.allowFinisherSafetyBypass === true,
