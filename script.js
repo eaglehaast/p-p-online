@@ -9481,12 +9481,15 @@ function buildAiCargoLongRangeTargets(plane, cargo, context){
   });
 }
 
-function buildAiCargoRouteCandidate(plane, cargo, context, routeTarget){
+function buildAiCargoRouteCandidate(plane, cargo, context, routeTarget, routeClassOverride = null){
   if(!plane || !cargo || !routeTarget) return null;
+  const requestedRouteClass = routeClassOverride === "gap" || routeClassOverride === "ricochet"
+    ? routeClassOverride
+    : null;
   const move = planPathToPoint(plane, routeTarget.targetX, routeTarget.targetY, {
     goalName: "pickup_cargo",
     decisionReason: routeTarget.name,
-    ...(routeTarget.preferredRouteClass ? { routeClass: routeTarget.preferredRouteClass } : {}),
+    ...(requestedRouteClass ? { routeClass: requestedRouteClass } : {}),
   });
   if(!move) return null;
 
@@ -9503,7 +9506,8 @@ function buildAiCargoRouteCandidate(plane, cargo, context, routeTarget){
     ? Math.max(0, cargoDistanceToBase - landingDistanceToBase)
     : 0;
   const endsCloserToHomeBase = landingDistanceToBase + 0.5 < cargoDistanceToBase;
-  const usedRicochet = routeTarget.usedRicochetHint === true
+  const usedRicochet = requestedRouteClass === "ricochet"
+    || routeTarget.usedRicochetHint === true
     || move?.candidateClass === "ricochet"
     || move?.moveType === "mirror";
   const riskInfo = evaluateCargoPickupRisk(plane, cargo, context);
@@ -9516,6 +9520,7 @@ function buildAiCargoRouteCandidate(plane, cargo, context, routeTarget){
     riskInfo,
     favorableInfo,
     routeTarget,
+    requestedRouteClass,
     cargoPickedOnPath,
     endsCloserToHomeBase,
     usedRicochet,
@@ -9524,25 +9529,47 @@ function buildAiCargoRouteCandidate(plane, cargo, context, routeTarget){
   };
 }
 
+function getAiCargoRouteClassOrder(routeTarget){
+  const preferred = routeTarget?.preferredRouteClass;
+  if(preferred === "ricochet") return ["ricochet", "gap", null];
+  if(preferred === "gap") return ["gap", "ricochet", null];
+  return [null, "gap", "ricochet"];
+}
+
 function collectAiCargoRouteCandidates(plane, cargo, context){
   const longTargets = buildAiCargoLongRangeTargets(plane, cargo, context);
-  const longCandidates = longTargets
-    .map((target) => buildAiCargoRouteCandidate(plane, cargo, context, target))
-    .filter((candidate) => candidate && candidate.cargoPickedOnPath);
+  const longCandidates = [];
+  for(const target of longTargets){
+    const routeClassOrder = getAiCargoRouteClassOrder(target);
+    for(const routeClass of routeClassOrder){
+      const candidate = buildAiCargoRouteCandidate(plane, cargo, context, target, routeClass);
+      if(candidate && candidate.cargoPickedOnPath){
+        longCandidates.push(candidate);
+      }
+    }
+  }
 
   if(longCandidates.length > 0){
     return longCandidates;
   }
 
-  const fallbackCandidate = buildAiCargoRouteCandidate(plane, cargo, context, {
+  const fallbackTarget = {
     name: "direct_cargo_fallback",
     targetX: cargo.x,
     targetY: cargo.y,
     targetKind: "fallback_short",
     preferredRouteClass: null,
     usedRicochetHint: false,
-  });
-  return fallbackCandidate ? [fallbackCandidate] : [];
+  };
+  const fallbackCandidates = getAiCargoRouteClassOrder(fallbackTarget)
+    .map((routeClass) => buildAiCargoRouteCandidate(plane, cargo, context, fallbackTarget, routeClass))
+    .filter((candidate) => candidate && candidate.cargoPickedOnPath);
+  if(fallbackCandidates.length > 0){
+    return fallbackCandidates;
+  }
+
+  const directFallback = buildAiCargoRouteCandidate(plane, cargo, context, fallbackTarget, null);
+  return directFallback ? [directFallback] : [];
 }
 
 function updateCargoState(now = performance.now()){
@@ -30173,7 +30200,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
     for(const plane of planes){
       const isFlying = flyingPoints.some((fp) => fp.plane === plane);
       if(isFlying){
-        candidateTypeDiagnostics.ricochet.preValidationRejected += availableEnemyFlags.length * 2;
+        candidateTypeDiagnostics.ricochet.preValidationRejected += availableEnemyFlags.length;
         addRejectReason(candidateTypeDiagnostics.ricochet.preValidationReasons, "plane_not_grounded");
         continue;
       }
@@ -30181,7 +30208,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
         const targetAnchor = getFlagAnchor(flag);
         const isDirectPathBlockedForTarget = !isPathClear(plane.x, plane.y, targetAnchor.x, targetAnchor.y);
         if(isEmergencyDefenseStage && !isDirectPathBlockedForTarget){
-          candidateTypeDiagnostics.ricochet.preValidationRejected += 2;
+          candidateTypeDiagnostics.ricochet.preValidationRejected += 1;
           addRejectReason(candidateTypeDiagnostics.ricochet.preValidationReasons, "emergency_stage_direct_open_lane");
           continue;
         }
@@ -30189,31 +30216,15 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
           plane,
           flag,
           targetAnchor,
-          mirroredTarget: {
-            wall: "left",
-            wallX: leftWallX,
-            targetX: 2 * leftWallX - targetAnchor.x,
-            targetY: targetAnchor.y,
-          },
-        });
-        ricochetAttempts.push({
-          plane,
-          flag,
-          targetAnchor,
-          mirroredTarget: {
-            wall: "right",
-            wallX: rightWallX,
-            targetX: 2 * rightWallX - targetAnchor.x,
-            targetY: targetAnchor.y,
-          },
+          mirroredTarget: null,
         });
       }
     }
 
     for(let index = 0; index < ricochetAttempts.length && candidateTypeDiagnostics.ricochet.attempted < ricochetAttemptBudget; index += 1){
-      const { plane, flag, targetAnchor, mirroredTarget } = ricochetAttempts[index];
+      const { plane, flag, targetAnchor } = ricochetAttempts[index];
       candidateTypeDiagnostics.ricochet.attempted += 1;
-      const move = planPathToPoint(plane, mirroredTarget.targetX, mirroredTarget.targetY, {
+      const move = planPathToPoint(plane, targetAnchor.x, targetAnchor.y, {
         goalName: baseGoalName,
         decisionReason: "flag_capture_bounce_candidate",
         routeClass: "ricochet",
@@ -30238,7 +30249,7 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
           specialContinuationRouteClear: planPathToPoint.lastRejectMeta?.specialContinuationRouteClear === true,
           strictSpecialPathRejectStage: planPathToPoint.lastRejectMeta?.strictSpecialPathRejectStage === true,
           isCriticalOrEmergencyStage: planPathToPoint.lastRejectMeta?.isCriticalOrEmergencyStage === true,
-          bounceWall: mirroredTarget?.wall || null,
+          bounceWall: planPathToPoint.lastRejectMeta?.bounceWall || null,
           secondSegmentLength: planPathToPoint.lastRejectMeta?.secondSegmentLength,
           landingInsideObstacle: planPathToPoint.lastRejectMeta?.landingInsideObstacle === true,
           rejectedByHardCollision: planPathToPoint.lastRejectMeta?.rejectedByHardCollision === true,
@@ -30268,8 +30279,11 @@ function buildFlagCaptureBaseCandidates(planes, availableEnemyFlags, options = {
         ...move,
         candidateType: "bounce",
         bounceCandidateUsed: true,
-        bounceSourceWall: mirroredTarget.wall,
-        bounceSourceWallX: mirroredTarget.wallX,
+        bounceSourceWall: move?.routeMetrics?.pathMeta?.bounceWall
+          || move?.routeMetrics?.bounceWall
+          || move?.routeMeta?.bounceWall
+          || "dynamic_surface",
+        bounceSourceWallX: null,
         adjustedDist,
         score: finalScore,
         normalizedScore: finalScore,
