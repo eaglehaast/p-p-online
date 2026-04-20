@@ -15376,28 +15376,23 @@ function updateModePlanesPosition(activeButton){
   const btnRect = resolvedButton.getBoundingClientRect();
   const rootRect = modeMenuDiv.getBoundingClientRect();
   if(!btnRect || !rootRect) return;
-
-  const btnLeftD = toDesignCoords(btnRect.left, btnRect.top).x;
-  const btnTopD = toDesignCoords(btnRect.left, btnRect.top).y;
-  const rootLeftD = toDesignCoords(rootRect.left, rootRect.top).x;
-  const rootTopD = toDesignCoords(rootRect.left, rootRect.top).y;
-  const designOrigin = toDesignCoords(rootRect.left, rootRect.top);
-  const uiScale = Number.isFinite(designOrigin.uiScale) ? designOrigin.uiScale : 1;
-  if(!hasValidMenuPlaneGeometry(btnRect, rootRect, uiScale)){
+  const fallbackUiScale = Number.isFinite(lastResizeMetrics?.scale) && lastResizeMetrics.scale > 0
+    ? lastResizeMetrics.scale
+    : 1;
+  if(!hasValidMenuPlaneGeometry(btnRect, rootRect, fallbackUiScale)){
     leftModePlane.style.opacity = "0";
     rightModePlane.style.opacity = "0";
     return;
   }
-  const btnW_D = btnRect.width / uiScale;
-  const btnH_D = btnRect.height / uiScale;
-  const rootX_D = btnLeftD - rootLeftD;
-  const rootY_D = btnTopD - rootTopD;
+  const btnW_D = resolvedButton.offsetWidth || 0;
+  const btnH_D = resolvedButton.offsetHeight || 0;
+  const rootX_D = resolvedButton.offsetLeft || 0;
+  const rootY_D = resolvedButton.offsetTop || 0;
   const leftOffset = 36 + 12;
   const rightOffset = 12;
 
   const updatePlane = (plane, targetX_D) => {
-    const planeRect = plane.getBoundingClientRect();
-    const planeHeight_D = (planeRect.height || plane.offsetHeight || 0) / uiScale;
+    const planeHeight_D = plane.offsetHeight || plane.clientHeight || 0;
     const targetY_D = rootY_D + btnH_D / 2 - planeHeight_D / 2;
     plane.style.transform = `translate(${targetX_D}px, ${targetY_D}px)`;
     return targetY_D;
@@ -15447,28 +15442,23 @@ function updateRulesPlanesPosition(activeButton){
   const btnRect = resolvedButton.getBoundingClientRect();
   const rootRect = modeMenuDiv.getBoundingClientRect();
   if(!btnRect || !rootRect) return;
-
-  const btnLeftD = toDesignCoords(btnRect.left, btnRect.top).x;
-  const btnTopD = toDesignCoords(btnRect.left, btnRect.top).y;
-  const rootLeftD = toDesignCoords(rootRect.left, rootRect.top).x;
-  const rootTopD = toDesignCoords(rootRect.left, rootRect.top).y;
-  const designOrigin = toDesignCoords(rootRect.left, rootRect.top);
-  const uiScale = Number.isFinite(designOrigin.uiScale) ? designOrigin.uiScale : 1;
-  if(!hasValidMenuPlaneGeometry(btnRect, rootRect, uiScale)){
+  const fallbackUiScale = Number.isFinite(lastResizeMetrics?.scale) && lastResizeMetrics.scale > 0
+    ? lastResizeMetrics.scale
+    : 1;
+  if(!hasValidMenuPlaneGeometry(btnRect, rootRect, fallbackUiScale)){
     leftRulesPlane.style.opacity = "0";
     rightRulesPlane.style.opacity = "0";
     return;
   }
-  const btnW_D = btnRect.width / uiScale;
-  const btnH_D = btnRect.height / uiScale;
-  const rootX_D = btnLeftD - rootLeftD;
-  const rootY_D = btnTopD - rootTopD;
+  const btnW_D = resolvedButton.offsetWidth || 0;
+  const btnH_D = resolvedButton.offsetHeight || 0;
+  const rootX_D = resolvedButton.offsetLeft || 0;
+  const rootY_D = resolvedButton.offsetTop || 0;
   const leftOffset = 36 + 12;
   const rightOffset = 12;
 
   const updatePlane = (plane, targetX_D) => {
-    const planeRect = plane.getBoundingClientRect();
-    const planeHeight_D = (planeRect.height || plane.offsetHeight || 0) / uiScale;
+    const planeHeight_D = plane.offsetHeight || plane.clientHeight || 0;
     const targetY_D = rootY_D + btnH_D / 2 - planeHeight_D / 2;
     plane.style.transform = `translate(${targetX_D}px, ${targetY_D}px)`;
     return targetY_D;
@@ -42450,6 +42440,12 @@ let lastResizeMetrics = {
 
 async function syncLayoutAndField(reason = "sync") {
   if (typeof window !== 'undefined' && window.PINCH_ACTIVE) {
+    const wasNeutralPinch = reconcileNeutralPinchState();
+    if (!wasNeutralPinch && isPinchTransformEffectivelyActive()) {
+      return;
+    }
+  }
+  if (isPinchTransformEffectivelyActive()) {
     return;
   }
   logResizeDebug('resizeCanvas');
@@ -42608,6 +42604,22 @@ function clamp(value, min, max) {
 function applyPinchTransform() {
   if (!(uiFrameInner instanceof HTMLElement)) return;
   uiFrameInner.style.transform = `translate(${pinchPanX}px, ${pinchPanY}px) scale(${pinchScale})`;
+}
+
+function isPinchTransformEffectivelyActive() {
+  const resolvedScale = getEffectivePinchScale();
+  const runtimeScale = Number.isFinite(pinchScale) ? pinchScale : 1;
+  const maxScale = Math.max(resolvedScale, runtimeScale);
+  const hasZoom = maxScale > (PINCH_MIN + 0.001);
+  const hasPan = Math.abs(pinchPanX) > 0.1 || Math.abs(pinchPanY) > 0.1;
+  return hasZoom || hasPan;
+}
+
+function reconcileNeutralPinchState() {
+  if (typeof window === 'undefined' || window.PINCH_ACTIVE !== true) return false;
+  if (isPinchTransformEffectivelyActive()) return false;
+  resetPinchState({ animated: false });
+  return true;
 }
 
 function clearPinchResetAnimation() {
