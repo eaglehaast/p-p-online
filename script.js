@@ -39623,17 +39623,45 @@ function drawPlaneSpriteGlow(ctx2d, plane, glowStrength = 0, alphaMultiplier = 1
     return;
   }
 
-  ctx2d.globalCompositeOperation = "lighter";
-  ctx2d.globalAlpha *= (0.3 + 0.45 * blend) * visibilityAlpha;
-  ctx2d.filter = `blur(${(2 + 4 * blend).toFixed(2)}px)`;
+  const nav = typeof navigator !== "undefined" ? navigator : null;
+  const ua = (nav?.userAgent || "").toLowerCase();
+  const hasTouchPoints = Boolean(nav && Number.isFinite(nav.maxTouchPoints) && nav.maxTouchPoints > 0);
+  const isAppleMobileLike = ua.includes("iphone")
+    || ua.includes("ipad")
+    || ua.includes("ipod")
+    || (ua.includes("macintosh") && hasTouchPoints);
+  const isWebKitBrowser = ua.includes("applewebkit")
+    && !ua.includes("crios")
+    && !ua.includes("fxios")
+    && !ua.includes("edgios");
+  const shouldUseSoftShadowFallback = isAppleMobileLike && isWebKitBrowser && hasCoarsePointerPreference();
 
   const baseSize = PLANE_DRAW_W;
-  const scale = 1 + 0.18 * blend;
-  const drawSize = baseSize * scale;
+  const drawSize = baseSize;
   const offset = -drawSize / 2;
 
   ctx2d.imageSmoothingEnabled = true;
-  ctx2d.drawImage(spriteImg, offset, offset, drawSize, drawSize);
+  if (shouldUseSoftShadowFallback) {
+    ctx2d.globalCompositeOperation = "source-over";
+    ctx2d.globalAlpha *= (0.2 + 0.32 * blend) * visibilityAlpha;
+    ctx2d.shadowColor = color === "blue"
+      ? "rgba(46, 141, 255, 0.85)"
+      : "rgba(146, 199, 62, 0.85)";
+    ctx2d.shadowBlur = 8 + 8 * blend;
+    ctx2d.shadowOffsetX = 0;
+    ctx2d.shadowOffsetY = 0;
+    ctx2d.filter = "none";
+    ctx2d.drawImage(spriteImg, offset, offset, drawSize, drawSize);
+  } else {
+    ctx2d.globalCompositeOperation = "lighter";
+    ctx2d.globalAlpha *= (0.3 + 0.45 * blend) * visibilityAlpha;
+    ctx2d.filter = `blur(${(2 + 4 * blend).toFixed(2)}px)`;
+
+    const scale = 1 + 0.18 * blend;
+    const scaledDrawSize = baseSize * scale;
+    const scaledOffset = -scaledDrawSize / 2;
+    ctx2d.drawImage(spriteImg, scaledOffset, scaledOffset, scaledDrawSize, scaledDrawSize);
+  }
 
   ctx2d.restore();
 }
