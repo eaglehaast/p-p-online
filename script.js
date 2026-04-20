@@ -5402,7 +5402,7 @@ const GAME_SCREEN_ASSETS = [
   ARCADE_RESPAWN_SHIELD_PATHS.green,
 
   // Game field background
-  "ui_gamescreen/paperwithred.png",
+  "ui_gamescreen/paperwithred2.png",
   "ui_gamescreen/gamescreen_outside/gs_background.png",
   "ui_gamescreen/gamescreen_outside/goat and sparrow.png",
 
@@ -8202,7 +8202,7 @@ function isSpriteReady(img) {
     img.naturalHeight > 0
   );
 }
-const { img: backgroundImg } = loadImageAsset("ui_gamescreen/paperwithred.png", GAME_PRELOAD_LABEL);
+const { img: backgroundImg } = loadImageAsset("ui_gamescreen/paperwithred2.png", GAME_PRELOAD_LABEL);
 backgroundImg?.addEventListener("load", () => {
   console.log("[IMG] load", { label: "backgroundImg", url: backgroundImg.src });
 });
@@ -15158,7 +15158,7 @@ function resetGame(options = {}){
 
   if (shouldShowMenu) {
     menuScreenLocked = false;
-    setBackgroundImage('ui_gamescreen/paperwithred.png');
+    setBackgroundImage('ui_gamescreen/paperwithred2.png');
     hideGameBackgroundForMenu();
   } else {
     restoreGameBackgroundAfterMenu();
