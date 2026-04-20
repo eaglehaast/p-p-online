@@ -42417,6 +42417,8 @@ function logLayoutMetrics(reason) {
 
 let pinchActive = false;
 let pinchScale = 1;
+let pinchPanX = 0;
+let pinchPanY = 0;
 let pinchResetTimer = null;
 const PINCH_RESET_MS = 4000;
 const PINCH_MIN = 1;
@@ -42436,6 +42438,11 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function applyPinchTransform() {
+  if (!(uiFrameInner instanceof HTMLElement)) return;
+  uiFrameInner.style.transform = `translate(${pinchPanX}px, ${pinchPanY}px) scale(${pinchScale})`;
+}
+
 function resetPinchState() {
   if (typeof window !== 'undefined') {
     window.PINCH_ACTIVE = false;
@@ -42446,8 +42453,10 @@ function resetPinchState() {
     pinchResetTimer = null;
   }
   pinchScale = 1;
+  pinchPanX = 0;
+  pinchPanY = 0;
   if (uiFrameInner instanceof HTMLElement) {
-    uiFrameInner.style.transform = "scale(1)";
+    applyPinchTransform();
     uiFrameInner.style.transformOrigin = "50% 50%";
   }
 }
@@ -42470,6 +42479,14 @@ window.addEventListener('gestureend', () => schedulePinchReset(), { capture: tru
 
 window.addEventListener('wheel', (event) => {
   if (pinchActive && event.ctrlKey !== true) {
+    if (pinchScale > PINCH_MIN) {
+      pinchPanX = pinchPanX - event.deltaX;
+      pinchPanY = pinchPanY - event.deltaY;
+      applyPinchTransform();
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
     resetPinchState();
   }
 }, { capture: true });
@@ -42503,7 +42520,11 @@ installPinchExitOnGameplayInput();
 const touchPinchState = {
   active: false,
   startDistance: 0,
-  startScale: 1
+  startScale: 1,
+  startCenterX: 0,
+  startCenterY: 0,
+  startPanX: 0,
+  startPanY: 0
 };
 
 function getTouchDistance(touchA, touchB) {
@@ -42522,6 +42543,13 @@ function getTouchCenterInPercents(touchA, touchB, rect) {
   return { originX, originY };
 }
 
+function getTouchCenterClient(touchA, touchB) {
+  return {
+    x: (touchA.clientX + touchB.clientX) / 2,
+    y: (touchA.clientY + touchB.clientY) / 2
+  };
+}
+
 function installTouchPinchZoom() {
   const onTouchStart = (event) => {
     if (!(uiFrameEl instanceof HTMLElement) || !(uiFrameInner instanceof HTMLElement)) return;
@@ -42534,6 +42562,11 @@ function installTouchPinchZoom() {
     touchPinchState.active = true;
     touchPinchState.startDistance = startDistance;
     touchPinchState.startScale = pinchScale;
+    const center = getTouchCenterClient(touchA, touchB);
+    touchPinchState.startCenterX = center.x;
+    touchPinchState.startCenterY = center.y;
+    touchPinchState.startPanX = pinchPanX;
+    touchPinchState.startPanY = pinchPanY;
     pinchActive = true;
     window.PINCH_ACTIVE = true;
   };
@@ -42551,7 +42584,15 @@ function installTouchPinchZoom() {
     uiFrameInner.style.transformOrigin = `${originX}% ${originY}%`;
     const ratio = distance / touchPinchState.startDistance;
     pinchScale = clamp(touchPinchState.startScale * ratio, PINCH_MIN, PINCH_MAX);
-    uiFrameInner.style.transform = `scale(${pinchScale})`;
+    const center = getTouchCenterClient(touchA, touchB);
+    if (pinchScale > PINCH_MIN) {
+      pinchPanX = touchPinchState.startPanX + (center.x - touchPinchState.startCenterX);
+      pinchPanY = touchPinchState.startPanY + (center.y - touchPinchState.startCenterY);
+    } else {
+      pinchPanX = 0;
+      pinchPanY = 0;
+    }
+    applyPinchTransform();
     event.preventDefault();
     event.stopImmediatePropagation();
   };
@@ -42597,7 +42638,11 @@ window.addEventListener('wheel', (event) => {
   uiFrameInner.style.transformOrigin = `${originX}% ${originY}%`;
   const step = Math.exp(-event.deltaY * 0.01);
   pinchScale = clamp(pinchScale * step, PINCH_MIN, PINCH_MAX);
-  uiFrameInner.style.transform = `scale(${pinchScale})`;
+  if (pinchScale <= PINCH_MIN) {
+    pinchPanX = 0;
+    pinchPanY = 0;
+  }
+  applyPinchTransform();
 }, { passive: false, capture: true });
 
 window.addEventListener('resize', async () => {
