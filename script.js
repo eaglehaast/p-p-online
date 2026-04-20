@@ -42570,8 +42570,12 @@ let pinchScale = 1;
 let pinchPanX = 0;
 let pinchPanY = 0;
 let pinchResetTimer = null;
+let pinchResetAnimationFrame = null;
+let pinchResetAnimationToken = 0;
 const PINCH_MIN = 1;
 const PINCH_MAX = 8;
+const PINCH_RESET_ANIMATION_MS = 460;
+const PINCH_RESET_OVERSHOOT = 1.1;
 if (typeof window !== 'undefined') {
   window.PINCH_ACTIVE = pinchActive;
 }
@@ -42592,26 +42596,80 @@ function applyPinchTransform() {
   uiFrameInner.style.transform = `translate(${pinchPanX}px, ${pinchPanY}px) scale(${pinchScale})`;
 }
 
-function resetPinchState() {
+function clearPinchResetAnimation() {
+  pinchResetAnimationToken += 1;
+  if (pinchResetAnimationFrame) {
+    cancelAnimationFrame(pinchResetAnimationFrame);
+    pinchResetAnimationFrame = null;
+  }
+}
+
+function pinchResetEaseOutBack(t, overshoot = PINCH_RESET_OVERSHOOT) {
+  const clamped = clamp(t, 0, 1);
+  const inv = clamped - 1;
+  return 1 + (overshoot + 1) * inv * inv * inv + overshoot * inv * inv;
+}
+
+function resetPinchState({ animated = true } = {}) {
   if (typeof window !== 'undefined') {
     window.PINCH_ACTIVE = false;
   }
   pinchActive = false;
+  clearPinchResetAnimation();
   if (pinchResetTimer) {
     clearTimeout(pinchResetTimer);
     pinchResetTimer = null;
   }
-  pinchScale = 1;
-  pinchPanX = 0;
-  pinchPanY = 0;
-  if (uiFrameInner instanceof HTMLElement) {
+  const startScale = pinchScale;
+  const startPanX = pinchPanX;
+  const startPanY = pinchPanY;
+  const isNearNeutral = Math.abs(startScale - 1) < 0.001
+    && Math.abs(startPanX) < 0.1
+    && Math.abs(startPanY) < 0.1;
+  if (!animated || isNearNeutral || !(uiFrameInner instanceof HTMLElement)) {
+    pinchScale = 1;
+    pinchPanX = 0;
+    pinchPanY = 0;
     applyPinchTransform();
-    uiFrameInner.style.transformOrigin = "50% 50%";
+    if (uiFrameInner instanceof HTMLElement) {
+      uiFrameInner.style.transformOrigin = "50% 50%";
+    }
+    return;
   }
+
+  const token = ++pinchResetAnimationToken;
+  const startTime = performance.now();
+  const animateStep = (now) => {
+    if (token !== pinchResetAnimationToken) {
+      return;
+    }
+    const elapsed = now - startTime;
+    const t = clamp(elapsed / PINCH_RESET_ANIMATION_MS, 0, 1);
+    const eased = pinchResetEaseOutBack(t);
+    pinchScale = startScale + (1 - startScale) * eased;
+    pinchPanX = startPanX + (0 - startPanX) * eased;
+    pinchPanY = startPanY + (0 - startPanY) * eased;
+    applyPinchTransform();
+
+    if (t >= 1) {
+      pinchScale = 1;
+      pinchPanX = 0;
+      pinchPanY = 0;
+      applyPinchTransform();
+      if (uiFrameInner instanceof HTMLElement) {
+        uiFrameInner.style.transformOrigin = "50% 50%";
+      }
+      pinchResetAnimationFrame = null;
+      return;
+    }
+    pinchResetAnimationFrame = requestAnimationFrame(animateStep);
+  };
+  pinchResetAnimationFrame = requestAnimationFrame(animateStep);
 }
 
 
 window.addEventListener('gesturestart', () => {
+  clearPinchResetAnimation();
   pinchActive = true;
   window.PINCH_ACTIVE = true;
 }, { capture: true });
@@ -42628,6 +42686,7 @@ window.addEventListener('gestureend', () => {
 window.addEventListener('wheel', (event) => {
   if (pinchActive && event.ctrlKey !== true) {
     if (pinchScale > PINCH_MIN) {
+      clearPinchResetAnimation();
       pinchPanX = pinchPanX - event.deltaX;
       pinchPanY = pinchPanY - event.deltaY;
       applyPinchTransform();
@@ -42721,6 +42780,7 @@ function installTouchPinchZoom() {
       clearTimeout(pinchResetTimer);
       pinchResetTimer = null;
     }
+    clearPinchResetAnimation();
 
     if (event.touches.length >= 2) {
       const touchA = event.touches[0];
@@ -42851,6 +42911,7 @@ window.addEventListener('wheel', (event) => {
   }
   uiFrameInner.style.transformOrigin = `${originX}% ${originY}%`;
   const step = Math.exp(-event.deltaY * 0.01);
+  clearPinchResetAnimation();
   pinchScale = clamp(pinchScale * step, PINCH_MIN, PINCH_MAX);
   if (pinchScale <= PINCH_MIN) {
     pinchPanX = 0;
