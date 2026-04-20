@@ -32315,7 +32315,35 @@ function getFallbackAiMove(context){
       }
 
       if(Number.isFinite(fallbackCandidate.vx) && Number.isFinite(fallbackCandidate.vy)){
-        return fallbackCandidate;
+        const existingLandingX = fallbackCandidate.plane.x + fallbackCandidate.vx * FIELD_FLIGHT_DURATION_SEC;
+        const existingLandingY = fallbackCandidate.plane.y + fallbackCandidate.vy * FIELD_FLIGHT_DURATION_SEC;
+        if(!isPathClear(fallbackCandidate.plane.x, fallbackCandidate.plane.y, existingLandingX, existingLandingY)){
+          const reroutedMove = planPathToPoint(
+            fallbackCandidate.plane,
+            Number.isFinite(fallbackCandidate?.fallbackTarget?.x) ? fallbackCandidate.fallbackTarget.x : fallbackCandidate.enemy?.x,
+            Number.isFinite(fallbackCandidate?.fallbackTarget?.y) ? fallbackCandidate.fallbackTarget.y : fallbackCandidate.enemy?.y,
+            {
+              goalName: fallbackCandidate.goalName || "fallback_rotation",
+              decisionReason: fallbackCandidate.decisionReason || "fallback_rotation",
+            }
+          );
+          if(reroutedMove){
+            return applyLossCompressionScoreAdjustments({
+              ...fallbackCandidate,
+              ...reroutedMove,
+              totalDist: Number.isFinite(reroutedMove.totalDist)
+                ? reroutedMove.totalDist
+                : Math.hypot(reroutedMove.vx || 0, reroutedMove.vy || 0) * FIELD_FLIGHT_DURATION_SEC,
+            }, context);
+          }
+          logAiDecision("fallback_rotation_blocked_path_skipped", {
+            planeId: fallbackCandidate.plane?.id ?? null,
+            enemyId: fallbackCandidate.enemy?.id ?? null,
+            reason: "existing_vector_blocked_and_no_reroute",
+          });
+        } else {
+          return fallbackCandidate;
+        }
       }
 
       const ang = fallbackCandidate.angleBase
@@ -32335,14 +32363,45 @@ function getFallbackAiMove(context){
         return null;
       }
 
-      best = applyLossCompressionScoreAdjustments({
+      const fallbackMove = {
         plane: fallbackCandidate.plane,
         enemy: fallbackCandidate.enemy,
         decisionReason: "fallback_rotation",
         vx: Math.cos(ang)*scale*speedPxPerSec,
         vy: Math.sin(ang)*scale*speedPxPerSec,
         totalDist: fallbackCandidate.desired,
-      }, context);
+      };
+      const fallbackLandingX = fallbackMove.plane.x + fallbackMove.vx * FIELD_FLIGHT_DURATION_SEC;
+      const fallbackLandingY = fallbackMove.plane.y + fallbackMove.vy * FIELD_FLIGHT_DURATION_SEC;
+      if(!isPathClear(fallbackMove.plane.x, fallbackMove.plane.y, fallbackLandingX, fallbackLandingY)){
+        const reroutedMove = planPathToPoint(
+          fallbackMove.plane,
+          Number.isFinite(fallbackCandidate?.fallbackTarget?.x) ? fallbackCandidate.fallbackTarget.x : fallbackCandidate.enemy?.x,
+          Number.isFinite(fallbackCandidate?.fallbackTarget?.y) ? fallbackCandidate.fallbackTarget.y : fallbackCandidate.enemy?.y,
+          {
+            goalName: fallbackCandidate.goalName || "fallback_rotation",
+            decisionReason: fallbackCandidate.decisionReason || "fallback_rotation",
+          }
+        );
+        if(reroutedMove){
+          best = applyLossCompressionScoreAdjustments({
+            ...fallbackCandidate,
+            ...reroutedMove,
+            totalDist: Number.isFinite(reroutedMove.totalDist)
+              ? reroutedMove.totalDist
+              : Math.hypot(reroutedMove.vx || 0, reroutedMove.vy || 0) * FIELD_FLIGHT_DURATION_SEC,
+          }, context);
+        } else {
+          logAiDecision("fallback_rotation_blocked_path_skipped", {
+            planeId: fallbackMove.plane?.id ?? null,
+            enemyId: fallbackMove.enemy?.id ?? null,
+            reason: "randomized_vector_blocked_and_no_reroute",
+          });
+          best = null;
+        }
+      } else {
+        best = applyLossCompressionScoreAdjustments(fallbackMove, context);
+      }
     }
   }
 
