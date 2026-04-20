@@ -9533,7 +9533,20 @@ function getAiCargoRouteClassOrder(routeTarget){
   const preferred = routeTarget?.preferredRouteClass;
   if(preferred === "ricochet") return ["ricochet", "gap", null];
   if(preferred === "gap") return ["gap", "ricochet", null];
-  return [null, "gap", "ricochet"];
+  return ["ricochet", "gap", null];
+}
+
+function getAiCargoRicochetPreferenceBonus(routeCandidate){
+  if(!routeCandidate || typeof routeCandidate !== "object") return 0;
+  const routeName = `${routeCandidate?.routeTarget?.name || ""}`.toLowerCase();
+  const prefersRicochetClass = routeCandidate?.usedRicochet === true
+    || routeCandidate?.requestedRouteClass === "ricochet";
+  if(!prefersRicochetClass) return 0;
+  const baseBonus = Math.max(4, CELL_SIZE * 0.22);
+  const sideWallBonus = routeName.includes("side_wall_ricochet_")
+    ? Math.max(2, CELL_SIZE * 0.16)
+    : 0;
+  return baseBonus + sideWallBonus;
 }
 
 function collectAiCargoRouteCandidates(plane, cargo, context){
@@ -28988,7 +29001,19 @@ function tryPlanEarlyCargoPickupMove(context){
           || (routeCandidate.isLongCandidate === bestCandidate.isLongCandidate && routeCandidate.cargoPickedOnPath && !bestCandidate.cargoPickedOnPath)
           || (routeCandidate.isLongCandidate === bestCandidate.isLongCandidate && routeCandidate.cargoPickedOnPath === bestCandidate.cargoPickedOnPath && routeCandidate.endsCloserToHomeBase && !bestCandidate.endsCloserToHomeBase)
           || (routeCandidate.isLongCandidate === bestCandidate.isLongCandidate && routeCandidate.cargoPickedOnPath === bestCandidate.cargoPickedOnPath && routeCandidate.endsCloserToHomeBase === bestCandidate.endsCloserToHomeBase && routeCandidate.usefulCarryAfterPickup > bestCandidate.usefulCarryAfterPickup + 0.5)
-          || (Math.abs(routeCandidate.usefulCarryAfterPickup - (bestCandidate?.usefulCarryAfterPickup || 0)) <= 0.5 && (riskInfo.totalRisk < bestCandidate.riskInfo.totalRisk || (riskInfo.totalRisk === bestCandidate.riskInfo.totalRisk && move.totalDist < bestCandidate.move.totalDist)))
+          || (
+            Math.abs(routeCandidate.usefulCarryAfterPickup - (bestCandidate?.usefulCarryAfterPickup || 0)) <= 0.5
+            && (
+              riskInfo.totalRisk < bestCandidate.riskInfo.totalRisk
+              || (
+                riskInfo.totalRisk === bestCandidate.riskInfo.totalRisk
+                && (
+                  move.totalDist - getAiCargoRicochetPreferenceBonus(routeCandidate)
+                  < bestCandidate.move.totalDist - getAiCargoRicochetPreferenceBonus(bestCandidate)
+                )
+              )
+            )
+          )
         ){
           bestCandidate = { ...routeCandidate, acceptedBy: isAcceptedByBaseRisk ? "base_threshold" : "favorable_override" };
         }
@@ -29155,13 +29180,19 @@ function assignAiRolesForTurn(context){
           const riskInfo = routeCandidate.riskInfo;
           const favorableInfo = routeCandidate.favorableInfo;
           if(!riskInfo.isSafePath || riskInfo.totalRisk > AI_CARGO_RISK_ACCEPTANCE){
-            const adjustedDist = getAiPlaneAdjustedScore(move.totalDist - routeCandidate.usefulCarryAfterPickup * 0.35, plane);
+            const adjustedDist = getAiPlaneAdjustedScore(
+              move.totalDist - routeCandidate.usefulCarryAfterPickup * 0.35 - getAiCargoRicochetPreferenceBonus(routeCandidate),
+              plane,
+            );
             if(favorableInfo?.isFavorableCargo && (!bestFavorableCollector || adjustedDist < bestFavorableCollector.adjustedDist || (adjustedDist === bestFavorableCollector.adjustedDist && riskInfo.totalRisk < bestFavorableCollector.riskInfo.totalRisk))){
               bestFavorableCollector = { ...routeCandidate, adjustedDist };
             }
             continue;
           }
-          const adjustedDist = getAiPlaneAdjustedScore(move.totalDist - routeCandidate.usefulCarryAfterPickup * 0.35, plane);
+          const adjustedDist = getAiPlaneAdjustedScore(
+            move.totalDist - routeCandidate.usefulCarryAfterPickup * 0.35 - getAiCargoRicochetPreferenceBonus(routeCandidate),
+            plane,
+          );
           if(!bestCollector || routeCandidate.isLongCandidate && !bestCollector.isLongCandidate || (riskInfo.totalRisk < bestCollector.riskInfo.totalRisk) || (riskInfo.totalRisk === bestCollector.riskInfo.totalRisk && adjustedDist < bestCollector.adjustedDist)){
             bestCollector = { ...routeCandidate, adjustedDist };
           }
@@ -29361,14 +29392,20 @@ function planRoleDrivenAiMove(context, rolePack){
         continue;
       }
         if(riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE){
-          const adjustedDist = getAiPlaneAdjustedScore(move.totalDist - routeCandidate.usefulCarryAfterPickup * 0.35, collector);
+          const adjustedDist = getAiPlaneAdjustedScore(
+            move.totalDist - routeCandidate.usefulCarryAfterPickup * 0.35 - getAiCargoRicochetPreferenceBonus(routeCandidate),
+            collector,
+          );
           if(!bestCollectorMove || routeCandidate.isLongCandidate && !bestCollectorMove.isLongCandidate || riskInfo.totalRisk < bestCollectorMove.riskInfo.totalRisk || (riskInfo.totalRisk === bestCollectorMove.riskInfo.totalRisk && adjustedDist < bestCollectorMove.adjustedDist)){
             bestCollectorMove = { ...routeCandidate, acceptedBy: "base_threshold", adjustedDist };
           }
           continue;
         }
         if(favorableInfo?.isFavorableCargo){
-          const adjustedDist = getAiPlaneAdjustedScore(move.totalDist - routeCandidate.usefulCarryAfterPickup * 0.35, collector);
+          const adjustedDist = getAiPlaneAdjustedScore(
+            move.totalDist - routeCandidate.usefulCarryAfterPickup * 0.35 - getAiCargoRicochetPreferenceBonus(routeCandidate),
+            collector,
+          );
           if(!bestFavorableCollectorMove || adjustedDist < bestFavorableCollectorMove.adjustedDist || (adjustedDist === bestFavorableCollectorMove.adjustedDist && riskInfo.totalRisk < bestFavorableCollectorMove.riskInfo.totalRisk)){
             bestFavorableCollectorMove = { ...routeCandidate, acceptedBy: "favorable_override", adjustedDist };
           }
@@ -30939,7 +30976,10 @@ function planModeDrivenAiMove(context){
         }
 
           if(riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE){
-            const adjustedDist = getAiPlaneAdjustedScore(move.totalDist - routeCandidate.usefulCarryAfterPickup * 0.35, plane);
+            const adjustedDist = getAiPlaneAdjustedScore(
+              move.totalDist - routeCandidate.usefulCarryAfterPickup * 0.35 - getAiCargoRicochetPreferenceBonus(routeCandidate),
+              plane,
+            );
             if(!bestCargoMove || routeCandidate.isLongCandidate && !bestCargoMove.isLongCandidate || riskInfo.totalRisk < bestCargoMove.riskInfo.totalRisk || (riskInfo.totalRisk === bestCargoMove.riskInfo.totalRisk && adjustedDist < bestCargoMove.adjustedDist)){
               bestCargoMove = { ...routeCandidate, acceptedBy: "base_threshold", adjustedDist };
             }
@@ -30947,7 +30987,10 @@ function planModeDrivenAiMove(context){
           }
 
           if(favorableInfo?.isFavorableCargo){
-            const adjustedDist = getAiPlaneAdjustedScore(move.totalDist - routeCandidate.usefulCarryAfterPickup * 0.35, plane);
+            const adjustedDist = getAiPlaneAdjustedScore(
+              move.totalDist - routeCandidate.usefulCarryAfterPickup * 0.35 - getAiCargoRicochetPreferenceBonus(routeCandidate),
+              plane,
+            );
             if(!bestFavorableCargoMove || adjustedDist < bestFavorableCargoMove.adjustedDist || (adjustedDist === bestFavorableCargoMove.adjustedDist && riskInfo.totalRisk < bestFavorableCargoMove.riskInfo.totalRisk)){
               bestFavorableCargoMove = { ...routeCandidate, acceptedBy: "favorable_override", adjustedDist };
             }
