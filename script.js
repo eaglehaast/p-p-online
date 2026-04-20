@@ -35286,7 +35286,25 @@ function planPathToPoint(plane, tx, ty, options = {}){
   const candidateBasket = [];
   const emergencyBaseDefenseGoal = activeGoalName.includes("emergency_base_defense");
   const allowGapCandidates = requestedRouteClass === "gap";
-  const allowExperimentalRicochet = shouldForceNonDirectBranch || options?.enableExperimentalRicochet === true;
+  const explicitRicochetProbeRequested = shouldForceNonDirectBranch || options?.enableExperimentalRicochet === true;
+  const routeBehaviorHint = `${options?.goalName || ""} ${options?.decisionReason || ""}`.toLowerCase();
+  const isAttackOrPressureBehavior = isAttackContext(routeBehaviorHint) || routeBehaviorHint.includes("pressure");
+  const allowAutoRicochetFallback = !explicitRicochetProbeRequested
+    && !strictSpecialPathRejectStage
+    && !isCriticalOrEmergencyStage
+    && !emergencyBaseDefenseGoal
+    && isAttackOrPressureBehavior;
+  let autoRicochetProbeReason = null;
+  if(allowAutoRicochetFallback && !hasDirectLine){
+    autoRicochetProbeReason = "direct_blocked_auto_ricochet_probe";
+    logAiDecision("auto_ricochet_probe_enabled", {
+      planeId: plane?.id ?? null,
+      goalName: options?.goalName || null,
+      reason: autoRicochetProbeReason,
+      hasDirectLine,
+    });
+  }
+  let allowExperimentalRicochet = explicitRicochetProbeRequested || Boolean(autoRicochetProbeReason);
 
   function registerCandidate(move){
     if(move?.specialPromotionApplied === true && (move?.candidateClass === "gap" || move?.candidateClass === "ricochet")){
@@ -35471,6 +35489,23 @@ function planPathToPoint(plane, tx, ty, options = {}){
     }
   }
 
+  if(!allowExperimentalRicochet
+    && allowAutoRicochetFallback
+    && hasDirectLine
+    && !shouldForceNonDirectBranch){
+    const hasValidDirectCandidate = candidateBasket.some(candidate => candidate?.candidateClass === "direct");
+    if(!hasValidDirectCandidate){
+      autoRicochetProbeReason = "direct_candidates_rejected_auto_ricochet_probe";
+      allowExperimentalRicochet = true;
+      logAiDecision("auto_ricochet_probe_enabled", {
+        planeId: plane?.id ?? null,
+        goalName: options?.goalName || null,
+        reason: autoRicochetProbeReason,
+        hasDirectLine,
+      });
+    }
+  }
+
   let mirrorRejectCode = null;
   if(allowExperimentalRicochet){
     const mirrorPressureBoost = isMirrorPressureTarget(options?.targetEnemy || { x: tx, y: ty }, { ...options, plane })
@@ -35503,7 +35538,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       });
       logAiDecision("mirror_selected_reason", {
         source: "plan_path_to_point",
-        reason: hasDirectLine ? "mirror_competing_with_direct" : "direct_path_blocked",
+        reason: autoRicochetProbeReason || (hasDirectLine ? "mirror_competing_with_direct" : "direct_path_blocked"),
         planeId: plane?.id ?? null,
         targetEnemyId: options?.targetEnemy?.id ?? options?.targetEnemyId ?? null,
         pressureBoost: Number(mirrorPressureBoost.toFixed(2)),
@@ -35581,6 +35616,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
     planeId: plane?.id ?? null,
     goalName: options?.goalName || aiRoundState?.currentGoal || null,
     routeStrictnessMode,
+    ricochetProbeReason: autoRicochetProbeReason || null,
   });
   return null;
   } finally {
