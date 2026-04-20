@@ -23564,6 +23564,39 @@ function evaluateCrosshairBestUse(context, plannedMove){
   const availableEnemyFlags = Array.isArray(context?.availableEnemyFlags) ? context.availableEnemyFlags : [];
   const readyCargo = cargoState.filter((cargo) => cargo?.state === "ready");
   const priorityEnemy = getBluePriorityEnemy(context);
+  const routeMetrics = plannedMove?.routeMetrics || null;
+  const routeCorridorTightness = Number.isFinite(routeMetrics?.corridorTightness)
+    ? Math.max(0, Math.min(1, routeMetrics.corridorTightness))
+    : null;
+  const routeQualityScore = Number.isFinite(plannedMove?.routeQualityScore)
+    ? Math.max(0, Math.min(1, plannedMove.routeQualityScore))
+    : null;
+
+  const planeRangeProfile = getAiFlightRangeProfile(plane);
+  const effectiveFlightDistancePx = Number.isFinite(planeRangeProfile?.flightDistancePx) && planeRangeProfile.flightDistancePx > 0
+    ? planeRangeProfile.flightDistancePx
+    : MAX_DRAG_DISTANCE;
+  const plannedSpeed = Math.hypot(plannedMove?.vx || 0, plannedMove?.vy || 0);
+  const maxSpeed = effectiveFlightDistancePx / Math.max(FIELD_FLIGHT_DURATION_SEC, 0.001);
+  const speedRatio = maxSpeed > 0 ? Math.max(0, Math.min(1, plannedSpeed / maxSpeed)) : 0;
+  const pullPoint = buildPullPointForAiVector(plane, plannedMove?.vx || 0, plannedMove?.vy || 0);
+  const dragVector = {
+    x: (pullPoint.x - plane.x) * speedRatio,
+    y: (pullPoint.y - plane.y) * speedRatio,
+  };
+  const predictedPath = buildPredictedPathForAim(plane, dragVector);
+  const predictedPathDistance = (() => {
+    if(!Array.isArray(predictedPath) || predictedPath.length < 2) return 0;
+    let total = 0;
+    for(let i = 1; i < predictedPath.length; i += 1){
+      total += dist(predictedPath[i - 1], predictedPath[i]);
+    }
+    return total;
+  })();
+  const ricochetCount = Math.max(0, predictedPath.length - 2);
+  const hasPathProjection = predictedPath.length >= 2;
+  const enemyDangerRadius = getPlaneDangerGeometry(plane).radius;
+  const trajectoryContactRadius = Math.max(8, enemyDangerRadius * 0.9);
 
   let bestScenario = null;
 
@@ -23578,7 +23611,25 @@ function evaluateCrosshairBestUse(context, plannedMove){
     const rangeFactor = Math.max(0, 1 - (distanceToEnemy / (MAX_DRAG_DISTANCE * 1.2)));
     const baseHitChance = hasCleanPath ? 0.75 : 0.35;
     const shieldFactor = enemy.shieldActive ? 0.2 : 1;
-    const hitChance = Math.max(0, Math.min(1, baseHitChance * rangeFactor * shieldFactor));
+    const directHitChance = Math.max(0, Math.min(1, baseHitChance * rangeFactor * shieldFactor));
+
+    let bestPathDistanceToEnemy = Infinity;
+    let trajectoryContactProbability = 0;
+    if(hasPathProjection){
+      for(let i = 1; i < predictedPath.length; i += 1){
+        const from = predictedPath[i - 1];
+        const to = predictedPath[i];
+        const segmentDistance = getDistanceFromPointToSegment(enemy.x, enemy.y, from.x, from.y, to.x, to.y);
+        if(segmentDistance < bestPathDistanceToEnemy){
+          bestPathDistanceToEnemy = segmentDistance;
+        }
+      }
+      const safePathDistance = Number.isFinite(bestPathDistanceToEnemy) ? bestPathDistanceToEnemy : Infinity;
+      if(Number.isFinite(safePathDistance)){
+        const normalizedContact = Math.max(0, 1 - safePathDistance / Math.max(trajectoryContactRadius, 1));
+        trajectoryContactProbability = Math.max(0, Math.min(1, normalizedContact));
+      }
+    }
 
     const carriesBlueFlag = Boolean(context?.stolenBlueFlagCarrier && context.stolenBlueFlagCarrier.id === enemy.id);
     const targetValue = 1
@@ -23597,12 +23648,32 @@ function evaluateCrosshairBestUse(context, plannedMove){
       : 0;
 
     const objectiveValue = (cargoPickupChance * 0.6) + (flagCaptureChance * 1.1) + (flagReturnChance * 1.4);
-    const totalValue = hitChance * (targetValue + objectiveValue) * teamPressureFactor;
+    const corridorPrecisionNeed = routeCorridorTightness === null
+      ? 0
+      : Math.max(0, Math.min(1, routeCorridorTightness));
+    const routePrecisionNeed = routeQualityScore === null
+      ? 0
+      : Math.max(0, Math.min(1, 1 - routeQualityScore));
+    const precisionNeed = Math.max(
+      corridorPrecisionNeed,
+      routePrecisionNeed * 0.9,
+      Math.max(0, Math.min(1, ricochetCount / 3))
+    );
+    const projectedHitChance = Math.max(directHitChance, trajectoryContactProbability * (hasCleanPath ? 0.9 : 0.78));
+    const crosshairHitGain = Math.max(0, projectedHitChance - directHitChance);
+    const pathCoverageRatio = predictedPathDistance > 0
+      ? Math.max(0, Math.min(1.2, distanceToEnemy / predictedPathDistance))
+      : 0;
+    const tacticalValue = projectedHitChance * (targetValue + objectiveValue);
+    const totalValue = tacticalValue * (0.8 + precisionNeed * 0.4) * teamPressureFactor * (0.9 + pathCoverageRatio * 0.15);
 
     const scenario = {
       enemy,
       totalValue,
-      hitChance,
+      hitChance: projectedHitChance,
+      directHitChance,
+      crosshairHitGain,
+      trajectoryContactProbability,
       targetValue,
       objectiveValue,
       carriesBlueFlag,
@@ -23612,6 +23683,12 @@ function evaluateCrosshairBestUse(context, plannedMove){
       flagCaptureChance,
       flagReturnChance,
       teamPressureFactor,
+      precisionNeed,
+      ricochetCount,
+      pathCoverageRatio,
+      routeCorridorTightness,
+      routeQualityScore,
+      predictedPathPoints: predictedPath.length,
     };
 
     if(!bestScenario || scenario.totalValue > bestScenario.totalValue){
@@ -24992,16 +25069,61 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
   }
 
   if(allowBuffItems && inventory.counts?.[INVENTORY_ITEM_TYPES.CROSSHAIR] > 0){
-    pushCandidate({
-      itemType: INVENTORY_ITEM_TYPES.CROSSHAIR,
-      target: priorityEnemy || enemyBase || landingPoint || null,
-      expectedBenefit: 0.28,
-      risk: 0.04,
-      reason: "crosshair_prelaunch_applied",
-      whyBetter: "crosshair gives a direct hit-quality boost this turn, so holding it back provides little value",
-      usageTier: "strong",
-      reasonCode: "crosshair_prelaunch_applied",
-    });
+    const crosshairScenario = evaluateCrosshairBestUse(context, plannedMove);
+    const crosshairScenarioValue = Number.isFinite(crosshairScenario?.totalValue)
+      ? crosshairScenario.totalValue
+      : 0;
+    const crosshairHitGain = Number.isFinite(crosshairScenario?.crosshairHitGain)
+      ? crosshairScenario.crosshairHitGain
+      : 0;
+    const crosshairPrecisionNeed = Number.isFinite(crosshairScenario?.precisionNeed)
+      ? crosshairScenario.precisionNeed
+      : 0;
+    const crosshairProjectedHitChance = Number.isFinite(crosshairScenario?.hitChance)
+      ? crosshairScenario.hitChance
+      : 0;
+    const crosshairExpectedBenefit = Math.max(
+      0,
+      Math.min(0.93, (crosshairScenarioValue * 0.36) + (crosshairHitGain * 0.74) + (crosshairPrecisionNeed * 0.24))
+    );
+    const crosshairRisk = Math.max(0.02, 0.1 - crosshairPrecisionNeed * 0.04);
+    const crosshairComparableScore = crosshairExpectedBenefit - crosshairRisk;
+    const shouldSpendCrosshair = crosshairComparableScore >= 0.16
+      || (crosshairHitGain >= 0.14 && crosshairPrecisionNeed >= 0.34)
+      || (crosshairProjectedHitChance >= 0.62 && crosshairPrecisionNeed >= 0.28);
+
+    if(shouldSpendCrosshair){
+      pushCandidate({
+        itemType: INVENTORY_ITEM_TYPES.CROSSHAIR,
+        target: crosshairScenario?.enemy || priorityEnemy || enemyBase || landingPoint || null,
+        expectedBenefit: Number(crosshairExpectedBenefit.toFixed(3)),
+        risk: Number(crosshairRisk.toFixed(3)),
+        reason: "crosshair_precision_route_applied",
+        whyBetter: "crosshair is spent when this route has a precise high-value line (tight corridor/ricochet/long projection), so better accuracy directly improves real tactical outcome now",
+        usageTier: crosshairComparableScore >= 0.25 ? "strong" : "moderate",
+        reasonCode: "crosshair_precision_route_applied",
+        crosshairScenario: crosshairScenario
+          ? {
+              totalValue: Number((crosshairScenario.totalValue || 0).toFixed(3)),
+              directHitChance: Number((crosshairScenario.directHitChance || 0).toFixed(3)),
+              projectedHitChance: Number((crosshairScenario.hitChance || 0).toFixed(3)),
+              hitGain: Number((crosshairScenario.crosshairHitGain || 0).toFixed(3)),
+              precisionNeed: Number((crosshairScenario.precisionNeed || 0).toFixed(3)),
+              ricochetCount: crosshairScenario.ricochetCount || 0,
+            }
+          : null,
+      });
+    } else {
+      rejectCandidate(INVENTORY_ITEM_TYPES.CROSSHAIR, "crosshair_value_below_threshold", {
+        expectedBenefit: Number(crosshairExpectedBenefit.toFixed(3)),
+        risk: Number(crosshairRisk.toFixed(3)),
+        comparableScore: Number(crosshairComparableScore.toFixed(3)),
+        hitGain: Number(crosshairHitGain.toFixed(3)),
+        precisionNeed: Number(crosshairPrecisionNeed.toFixed(3)),
+        projectedHitChance: Number(crosshairProjectedHitChance.toFixed(3)),
+        whyWaiting: "current route has no strong precision payoff, so keeping crosshair for a tighter or higher-value trajectory is better",
+      });
+    }
   }
 
   if(allowTacticalItems && inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] > 0){
