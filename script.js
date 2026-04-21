@@ -33381,6 +33381,11 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
       decisionReason: plannedMove?.decisionReason || null,
       routeClass,
       source,
+      candidatePassport: {
+        killedAtStage: baseCandidateStage.stage || "base_candidate_selection",
+        killedByReason: baseCandidateStage.reason || "base_candidate_rejected",
+        selected: false,
+      },
     });
     recordAiSelfAnalyzerDecision(baseCandidateStage.stage, {
       goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
@@ -33408,6 +33413,11 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
     decisionReason: plannedMove?.decisionReason || null,
     routeClass,
     source,
+    candidatePassport: {
+      selected: true,
+      stage: baseCandidateStage.stage || "base_candidate_selection",
+      reason: baseCandidateStage.reason || "base_candidate_selected",
+    },
   });
   recordAiSelfAnalyzerDecision(baseCandidateStage.stage, {
     goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
@@ -35677,6 +35687,54 @@ function planPathToPoint(plane, tx, ty, options = {}){
 
   const hasDirectLine = isPathClear(plane.x, plane.y, tx, ty);
   const candidateBasket = [];
+  const pathCandidatePassportEntries = [];
+  let pathCandidatePassportSeq = 0;
+
+  function toSafePassportNumber(value, digits = 3){
+    if(!Number.isFinite(value)) return null;
+    return Number(value.toFixed(digits));
+  }
+
+  function pushPathCandidatePassportEntry(entry = {}){
+    if(!entry || typeof entry !== "object") return;
+    const safeEntry = {
+      seq: Number.isFinite(entry.seq) ? entry.seq : (++pathCandidatePassportSeq),
+      event: entry.event || "candidate_event",
+      stage: entry.stage || null,
+      candidateClass: entry.candidateClass || null,
+      moveType: entry.moveType || null,
+      decisionReason: entry.decisionReason || null,
+      goalName: entry.goalName || null,
+      routeQualityScore: toSafePassportNumber(entry.routeQualityScore, 6),
+      totalDist: toSafePassportNumber(entry.totalDist, 2),
+      killedAtStage: entry.killedAtStage || null,
+      killedByReason: entry.killedByReason || null,
+      selected: entry.selected === true,
+      source: "planPathToPoint",
+    };
+    pathCandidatePassportEntries.push(safeEntry);
+    if(pathCandidatePassportEntries.length > 120){
+      pathCandidatePassportEntries.shift();
+    }
+  }
+
+  function flushPathCandidatePassportSummary(extra = {}){
+    if(pathCandidatePassportEntries.length === 0){
+      return;
+    }
+    logAiDecision("path_candidate_passport", {
+      planeId: plane?.id ?? null,
+      targetX: Number.isFinite(tx) ? Number(tx.toFixed(2)) : null,
+      targetY: Number.isFinite(ty) ? Number(ty.toFixed(2)) : null,
+      goalName: options?.goalName || aiRoundState?.currentGoal || null,
+      decisionReason: options?.decisionReason || null,
+      requestedRouteClass,
+      hasDirectLine,
+      routeStrictnessMode,
+      entries: pathCandidatePassportEntries.slice(-60),
+      ...extra,
+    });
+  }
   const emergencyBaseDefenseGoal = activeGoalName.includes("emergency_base_defense");
   const allowGapCandidates = requestedRouteClass === "gap";
   const explicitRicochetProbeRequested = shouldForceNonDirectBranch || options?.enableExperimentalRicochet === true;
@@ -35704,7 +35762,21 @@ function planPathToPoint(plane, tx, ty, options = {}){
       if(!canUseSpecialPromotionForClass(move.candidateClass)) return;
       markSpecialPromotionUsed(move.candidateClass);
     }
-    if(move) candidateBasket.push(move);
+    if(move){
+      candidateBasket.push(move);
+      pushPathCandidatePassportEntry({
+        event: "candidate_registered",
+        stage: "candidate_basket",
+        candidateClass: move?.candidateClass || move?.routeClass || "direct",
+        moveType: move?.moveType || "direct",
+        decisionReason: move?.decisionReason || options?.decisionReason || null,
+        goalName: move?.goalName || options?.goalName || aiRoundState?.currentGoal || null,
+        routeQualityScore: Number.isFinite(move?.routeQualityScore)
+          ? move.routeQualityScore
+          : move?.routeMetrics?.qualityScore,
+        totalDist: move?.totalDist,
+      });
+    }
   }
 
   function pickBestCandidate(candidates){
@@ -36007,12 +36079,87 @@ function planPathToPoint(plane, tx, ty, options = {}){
   }
 
   const bestCandidate = pickBestCandidate(candidateBasket);
-  if(bestCandidate) return bestCandidate;
+  if(bestCandidate){
+    const bestQualityScore = Number.isFinite(bestCandidate?.routeQualityScore)
+      ? bestCandidate.routeQualityScore
+      : bestCandidate?.routeMetrics?.qualityScore;
+    pushPathCandidatePassportEntry({
+      event: "candidate_selected",
+      stage: "final_ranking",
+      candidateClass: bestCandidate?.candidateClass || bestCandidate?.routeClass || "direct",
+      moveType: bestCandidate?.moveType || "direct",
+      decisionReason: bestCandidate?.decisionReason || options?.decisionReason || null,
+      goalName: bestCandidate?.goalName || options?.goalName || aiRoundState?.currentGoal || null,
+      routeQualityScore: bestQualityScore,
+      totalDist: bestCandidate?.totalDist,
+      selected: true,
+    });
+    for(const candidate of candidateBasket){
+      if(!candidate || candidate === bestCandidate) continue;
+      const candidateQualityScore = Number.isFinite(candidate?.routeQualityScore)
+        ? candidate.routeQualityScore
+        : candidate?.routeMetrics?.qualityScore;
+      pushPathCandidatePassportEntry({
+        event: "candidate_rejected",
+        stage: "final_ranking",
+        candidateClass: candidate?.candidateClass || candidate?.routeClass || "direct",
+        moveType: candidate?.moveType || "direct",
+        decisionReason: candidate?.decisionReason || options?.decisionReason || null,
+        goalName: candidate?.goalName || options?.goalName || aiRoundState?.currentGoal || null,
+        routeQualityScore: candidateQualityScore,
+        totalDist: candidate?.totalDist,
+        killedAtStage: "final_ranking",
+        killedByReason: "lower_ranked_than_selected",
+      });
+    }
+    flushPathCandidatePassportSummary({
+      finalStatus: "selected",
+      selectedCandidateClass: bestCandidate?.candidateClass || bestCandidate?.routeClass || "direct",
+      selectedMoveType: bestCandidate?.moveType || "direct",
+    });
+    return bestCandidate;
+  }
 
   planPathToPoint.lastRejectCode = mirrorRejectCode || (hasDirectLine ? "blocked_path__direct_candidate_rejected" : "blocked_path__direct_only");
   if(!planPathToPoint.lastRejectMeta){
     planPathToPoint.lastRejectMeta = findMirrorShot.lastRejectMeta || null;
   }
+  if(candidateBasket.length > 0){
+    for(const candidate of candidateBasket){
+      if(!candidate) continue;
+      const candidateQualityScore = Number.isFinite(candidate?.routeQualityScore)
+        ? candidate.routeQualityScore
+        : candidate?.routeMetrics?.qualityScore;
+      pushPathCandidatePassportEntry({
+        event: "candidate_rejected",
+        stage: "candidate_basket_exhausted",
+        candidateClass: candidate?.candidateClass || candidate?.routeClass || "direct",
+        moveType: candidate?.moveType || "direct",
+        decisionReason: candidate?.decisionReason || options?.decisionReason || null,
+        goalName: candidate?.goalName || options?.goalName || aiRoundState?.currentGoal || null,
+        routeQualityScore: candidateQualityScore,
+        totalDist: candidate?.totalDist,
+        killedAtStage: "candidate_basket_exhausted",
+        killedByReason: planPathToPoint.lastRejectCode || "candidate_basket_exhausted",
+      });
+    }
+  } else {
+    pushPathCandidatePassportEntry({
+      event: "candidate_rejected",
+      stage: "candidate_generation",
+      candidateClass: requestedRouteClass || "direct",
+      moveType: requestedRouteClass === "ricochet" ? "mirror" : "direct",
+      decisionReason: options?.decisionReason || null,
+      goalName: options?.goalName || aiRoundState?.currentGoal || null,
+      killedAtStage: "candidate_generation",
+      killedByReason: planPathToPoint.lastRejectCode || "no_candidates_generated",
+    });
+  }
+  flushPathCandidatePassportSummary({
+    finalStatus: "rejected",
+    rejectCode: planPathToPoint.lastRejectCode || null,
+    candidateCount: candidateBasket.length,
+  });
   recordAiPrimaryTurnstileBlocker(planPathToPoint.lastRejectCode, {
     source: "planPathToPoint",
     stage: "candidate_basket_exhausted",
