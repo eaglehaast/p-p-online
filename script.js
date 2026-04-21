@@ -13577,6 +13577,83 @@ function exportPathCandidatePassportLogs(limit = 20){
   return json;
 }
 
+function getAiFallbackReportEntries(limit = 400){
+  const safeLimit = Math.max(1, Math.min(1200, Math.floor(Number(limit) || 400)));
+  const events = getBufferedAiDecisionEvents(1200);
+  const filtered = events.filter((entry) => {
+    const reason = `${entry?.reason || ""}`.toLowerCase();
+    const payload = entry?.payload && typeof entry.payload === "object" ? entry.payload : {};
+    const reasonCode = `${payload?.reasonCode || ""}`.toLowerCase();
+    const decisionReason = `${payload?.decisionReason || ""}`.toLowerCase();
+    const goalName = `${payload?.goalName || ""}`.toLowerCase();
+    if(reason.includes("fallback_")) return true;
+    if(reason === "path_candidate_passport") return true;
+    if(reasonCode.includes("fallback")) return true;
+    if(decisionReason.includes("fallback")) return true;
+    return goalName.includes("fallback");
+  });
+  return filtered.slice(-safeLimit);
+}
+
+function exportAiFallbackReport(limit = 400){
+  const logs = getAiFallbackReportEntries(limit);
+  const json = JSON.stringify(logs, null, 2);
+  console.info("[AI_DEBUG] fallback-report-json", json);
+  return json;
+}
+
+function downloadTextAsFile(content, fileName){
+  const safeText = typeof content === "string" ? content : `${content ?? ""}`;
+  const safeFileName = typeof fileName === "string" && fileName.trim().length > 0
+    ? fileName.trim()
+    : `ai-report-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
+  if(typeof window === "undefined" || typeof document === "undefined"){
+    return {
+      ok: false,
+      reason: "dom_unavailable",
+      fileName: safeFileName,
+      bytes: safeText.length,
+      content: safeText,
+    };
+  }
+
+  const blob = new Blob([safeText], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = safeFileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+
+  return {
+    ok: true,
+    fileName: safeFileName,
+    bytes: safeText.length,
+  };
+}
+
+function downloadPathCandidatePassportLogs(limit = 200, fileName = ""){
+  const json = exportPathCandidatePassportLogs(limit);
+  const normalizedFileName = (typeof fileName === "string" && fileName.trim().length > 0)
+    ? fileName.trim()
+    : `ai-path-passport-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  const result = downloadTextAsFile(json, normalizedFileName);
+  console.info("[AI_DEBUG] path-candidate-passport-download", result);
+  return result;
+}
+
+function downloadAiFallbackReport(limit = 400, fileName = ""){
+  const json = exportAiFallbackReport(limit);
+  const normalizedFileName = (typeof fileName === "string" && fileName.trim().length > 0)
+    ? fileName.trim()
+    : `ai-fallback-report-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  const result = downloadTextAsFile(json, normalizedFileName);
+  console.info("[AI_DEBUG] fallback-report-download", result);
+  return result;
+}
+
 function forceResetCargoNow(){
   const beforeCount = Array.isArray(cargoState) ? cargoState.length : 0;
   const cargoEnabled = Boolean(settings?.addCargo);
@@ -13602,6 +13679,9 @@ if(typeof window !== "undefined"){
   window.RESET_CARGO = forceResetCargoNow;
   window.AI_PRINT_PATH_PASSPORT_LOGS = printPathCandidatePassportLogs;
   window.AI_EXPORT_PATH_PASSPORT_LOGS = exportPathCandidatePassportLogs;
+  window.AI_DOWNLOAD_PATH_PASSPORT_LOGS = downloadPathCandidatePassportLogs;
+  window.AI_EXPORT_FALLBACK_REPORT = exportAiFallbackReport;
+  window.AI_DOWNLOAD_FALLBACK_REPORT = downloadAiFallbackReport;
 }
 
 
