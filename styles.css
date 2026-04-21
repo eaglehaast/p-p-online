@@ -919,6 +919,40 @@ body, button {
     cursor: grabbing;
   }
 
+  .map-editor-entity-sidebar {
+    position: absolute;
+    inset: 0;
+    z-index: 23;
+    pointer-events: none;
+  }
+
+  .map-editor-entity-sidebar__asset {
+    position: absolute;
+    width: auto;
+    height: auto;
+    max-width: none;
+    max-height: none;
+    object-fit: contain;
+    image-rendering: auto;
+    pointer-events: auto;
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .map-editor-entity-sidebar__asset--plane {
+    width: 32px;
+    height: 32px;
+  }
+
+  .map-editor-entity-sidebar__asset--cargo {
+    width: 22px;
+    height: 22px;
+  }
+
+  .map-editor-entity-sidebar__asset:active {
+    cursor: grabbing;
+  }
+
   .score-container {
     position: absolute;
     pointer-events: none;

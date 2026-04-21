@@ -853,6 +853,7 @@ const mapEditorModeControls = document.getElementById("mapEditorModeControls");
 const mapEditorModeBricksBtn = document.getElementById("mapEditorModeBricksBtn");
 const mapEditorModePlanesBtn = document.getElementById("mapEditorModePlanesBtn");
 const mapEditorBrickSidebar = document.getElementById("mapEditorBrickSidebar");
+const mapEditorEntitySidebar = document.getElementById("mapEditorEntitySidebar");
 const blueInventoryHost = document.getElementById("gs_inventory_blue");
 const greenInventoryHost = document.getElementById("gs_inventory_green");
 const inventoryLayer = document.getElementById("inventoryLayer");
@@ -2385,6 +2386,16 @@ const mapEditorBrickInteractionState = {
   previewCellOccupied: false,
 };
 
+const mapEditorEntityInteractionState = {
+  mode: "idle",
+  source: null,
+  entityType: null,
+  entityIndex: null,
+  pointerId: null,
+  offsetX: 0,
+  offsetY: 0,
+};
+
 function scheduleInventoryUiSync(){
   if(inventoryPickupUiSyncRafId !== null) return;
   inventoryPickupUiSyncRafId = requestAnimationFrame(() => {
@@ -3661,6 +3672,282 @@ function onCanvasMapEditorBrickPointerDown(event){
       : (Number.isFinite(sprite.scale) ? sprite.scale : 1),
   }, pointerId, clientX, clientY);
   return true;
+}
+
+function resetMapEditorEntityInteraction(){
+  mapEditorEntityInteractionState.mode = "idle";
+  mapEditorEntityInteractionState.source = null;
+  mapEditorEntityInteractionState.entityType = null;
+  mapEditorEntityInteractionState.entityIndex = null;
+  mapEditorEntityInteractionState.pointerId = null;
+  mapEditorEntityInteractionState.offsetX = 0;
+  mapEditorEntityInteractionState.offsetY = 0;
+}
+
+function clampMapEditorPlanePoint(x, y){
+  const minX = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
+  const maxX = FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X;
+  const minY = FIELD_TOP + FIELD_BORDER_OFFSET_Y;
+  const maxY = FIELD_TOP + FIELD_HEIGHT - FIELD_BORDER_OFFSET_Y;
+  return {
+    x: clamp(x, minX, maxX),
+    y: clamp(y, minY, maxY),
+  };
+}
+
+function clampMapEditorCargoPoint(x, y){
+  const { width, height } = getCargoSpriteSize();
+  const minX = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
+  const maxX = FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X - width;
+  const minY = FIELD_TOP + FIELD_BORDER_OFFSET_Y;
+  const maxY = FIELD_TOP + FIELD_HEIGHT - FIELD_BORDER_OFFSET_Y - height;
+  return {
+    x: clamp(x, minX, maxX),
+    y: clamp(y, minY, maxY),
+  };
+}
+
+function findMapEditorEntityAtBoardPoint(boardX, boardY){
+  if(!isMapEditorBricksModeActive()) return null;
+
+  if(Array.isArray(cargoState) && cargoState.length > 0){
+    const { width, height } = getCargoSpriteSize();
+    for(let index = cargoState.length - 1; index >= 0; index -= 1){
+      const cargo = cargoState[index];
+      if(!cargo || !Number.isFinite(cargo.x) || !Number.isFinite(cargo.y)) continue;
+      if(cargo.state === "collected") continue;
+      const withinX = boardX >= cargo.x && boardX <= cargo.x + width;
+      const withinY = boardY >= cargo.y && boardY <= cargo.y + height;
+      if(withinX && withinY){
+        return {
+          type: "cargo",
+          index,
+          offsetX: boardX - cargo.x,
+          offsetY: boardY - cargo.y,
+        };
+      }
+    }
+  }
+
+  if(Array.isArray(points) && points.length > 0){
+    for(let index = points.length - 1; index >= 0; index -= 1){
+      const plane = points[index];
+      if(!plane || !Number.isFinite(plane.x) || !Number.isFinite(plane.y)) continue;
+      if(Math.hypot(plane.x - boardX, plane.y - boardY) <= PLANE_TOUCH_RADIUS){
+        return {
+          type: "plane",
+          index,
+          offsetX: boardX - plane.x,
+          offsetY: boardY - plane.y,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+function beginMapEditorEntityInteraction(entity, pointerId){
+  if(!entity || !entity.type || !Number.isInteger(entity.index)) return false;
+  mapEditorEntityInteractionState.mode = "holding";
+  mapEditorEntityInteractionState.source = "field";
+  mapEditorEntityInteractionState.entityType = entity.type;
+  mapEditorEntityInteractionState.entityIndex = entity.index;
+  mapEditorEntityInteractionState.pointerId = pointerId;
+  mapEditorEntityInteractionState.offsetX = Number.isFinite(entity.offsetX) ? entity.offsetX : 0;
+  mapEditorEntityInteractionState.offsetY = Number.isFinite(entity.offsetY) ? entity.offsetY : 0;
+  return true;
+}
+
+function applyMapEditorEntityMoveFromPointerEvent(event){
+  if(mapEditorEntityInteractionState.mode !== "holding") return false;
+  if(mapEditorEntityInteractionState.source !== "field") return false;
+  const { x: designX, y: designY } = getPointerDesignCoords(event);
+  const { x: boardX, y: boardY } = designToBoardCoords(designX, designY);
+  const targetType = mapEditorEntityInteractionState.entityType;
+  const targetIndex = mapEditorEntityInteractionState.entityIndex;
+  const offsetX = mapEditorEntityInteractionState.offsetX;
+  const offsetY = mapEditorEntityInteractionState.offsetY;
+
+  if(targetType === "plane"){
+    const plane = points?.[targetIndex];
+    if(!plane) return false;
+    const nextPoint = clampMapEditorPlanePoint(boardX - offsetX, boardY - offsetY);
+    plane.x = nextPoint.x;
+    plane.y = nextPoint.y;
+    return true;
+  }
+
+  if(targetType === "cargo"){
+    const cargo = cargoState?.[targetIndex];
+    if(!cargo) return false;
+    const nextPoint = clampMapEditorCargoPoint(boardX - offsetX, boardY - offsetY);
+    cargo.x = nextPoint.x;
+    cargo.y = nextPoint.y;
+    if(cargo.state === "animating"){
+      cargo.state = "ready";
+      cargo.landingSettledAt = performance.now();
+    }
+    return true;
+  }
+
+  return false;
+}
+
+function onCanvasMapEditorEntityPointerDown(event){
+  if(!isMapEditorBricksModeActive()) return false;
+  const { x: designX, y: designY } = getPointerDesignCoords(event);
+  const { x: boardX, y: boardY } = designToBoardCoords(designX, designY);
+  const entity = findMapEditorEntityAtBoardPoint(boardX, boardY);
+  if(!entity) return false;
+  const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
+  return beginMapEditorEntityInteraction(entity, pointerId);
+}
+
+function beginMapEditorEntitySidebarInteraction(entityType, pointerId){
+  const safeEntityType = entityType === "plane_blue" || entityType === "plane_green" || entityType === "cargo"
+    ? entityType
+    : null;
+  if(!safeEntityType) return false;
+  mapEditorEntityInteractionState.mode = "holding";
+  mapEditorEntityInteractionState.source = "sidebar";
+  mapEditorEntityInteractionState.entityType = safeEntityType;
+  mapEditorEntityInteractionState.entityIndex = null;
+  mapEditorEntityInteractionState.pointerId = pointerId;
+  mapEditorEntityInteractionState.offsetX = 0;
+  mapEditorEntityInteractionState.offsetY = 0;
+  return true;
+}
+
+function removeMapEditorEntityAtIndex(entityType, entityIndex){
+  if(entityType === "plane" && Number.isInteger(entityIndex) && Array.isArray(points) && points[entityIndex]){
+    points.splice(entityIndex, 1);
+    return true;
+  }
+  if(entityType === "cargo" && Number.isInteger(entityIndex) && Array.isArray(cargoState) && cargoState[entityIndex]){
+    const removed = cargoState.splice(entityIndex, 1)[0] || null;
+    if(removed){
+      removeCargoAnimationDomEntry(removed);
+    }
+    return true;
+  }
+  return false;
+}
+
+function createMapEditorEntityFromSidebarType(entityType, boardX, boardY){
+  if(entityType === "cargo"){
+    const nextPoint = clampMapEditorCargoPoint(boardX, boardY);
+    cargoState.push({
+      x: nextPoint.x,
+      y: nextPoint.y,
+      state: "ready",
+      animStartedAt: performance.now(),
+      animDurationMs: resolveCargoAnimLifetimeMs(),
+      pickedAt: null,
+      landingSettledAt: performance.now(),
+    });
+    return true;
+  }
+
+  if(entityType === "plane_blue" || entityType === "plane_green"){
+    const color = entityType === "plane_blue" ? "blue" : "green";
+    const baseAngle = color === "blue" ? Math.PI + colorAngleOffset("blue") : colorAngleOffset("green");
+    const nextPoint = clampMapEditorPlanePoint(boardX, boardY);
+    points.push(makePlane(nextPoint.x, nextPoint.y, color, baseAngle));
+    return true;
+  }
+  return false;
+}
+
+function commitMapEditorEntityDrop(event){
+  if(mapEditorEntityInteractionState.mode !== "holding") return false;
+  if(!isMapEditorBricksModeActive()) return false;
+
+  const { clientX, clientY } = getPointerClientCoords(event);
+  const overBoard = isClientPointOverBoard(clientX, clientY);
+  const { x: designX, y: designY } = getPointerDesignCoords(event);
+  const { x: boardX, y: boardY } = designToBoardCoords(designX, designY);
+  const overPlayableField = isPointInsideFieldBounds(boardX, boardY);
+  const source = mapEditorEntityInteractionState.source;
+  const entityType = mapEditorEntityInteractionState.entityType;
+  const entityIndex = mapEditorEntityInteractionState.entityIndex;
+
+  if(source === "field"){
+    if(!overBoard || !overPlayableField){
+      return removeMapEditorEntityAtIndex(entityType, entityIndex);
+    }
+    return applyMapEditorEntityMoveFromPointerEvent(event);
+  }
+
+  if(source === "sidebar"){
+    if(!overBoard || !overPlayableField) return false;
+    return createMapEditorEntityFromSidebarType(entityType, boardX, boardY);
+  }
+
+  return false;
+}
+
+function getMapEditorEntityFromEventTarget(target){
+  if(!(target instanceof Element)) return null;
+  const entityNode = target.closest?.("[data-map-editor-entity]");
+  if(!(entityNode instanceof HTMLElement)) return null;
+  const entityType = entityNode.dataset.mapEditorEntity;
+  if(entityType === "plane_blue" || entityType === "plane_green" || entityType === "cargo"){
+    return entityType;
+  }
+  return null;
+}
+
+function onMapEditorEntitySidebarPointerDown(event){
+  if(!isMapEditorBricksModeActive()) return;
+  const entityType = getMapEditorEntityFromEventTarget(event.currentTarget);
+  if(!entityType) return;
+  event.preventDefault();
+  const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
+  beginMapEditorEntitySidebarInteraction(entityType, pointerId);
+}
+
+function onMapEditorEntitySidebarDragStart(event){
+  if(!isMapEditorBricksModeActive()){
+    event.preventDefault();
+    return;
+  }
+  const entityType = getMapEditorEntityFromEventTarget(event.currentTarget);
+  if(!entityType){
+    event.preventDefault();
+    return;
+  }
+  const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
+  beginMapEditorEntitySidebarInteraction(entityType, pointerId);
+  if(event.dataTransfer){
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData("text/plain", entityType);
+  }
+}
+
+function onMapEditorEntitySidebarDragEnd(){
+  resetMapEditorEntityInteraction();
+  document.body.style.cursor = "";
+}
+
+function onMapEditorEntityPointerFinish(event){
+  if(mapEditorEntityInteractionState.mode !== "holding") return;
+  const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
+  if(
+    mapEditorEntityInteractionState.pointerId !== null
+    && pointerId !== null
+    && pointerId !== mapEditorEntityInteractionState.pointerId
+  ){
+    return;
+  }
+  if(event.type !== "pointercancel"){
+    commitMapEditorEntityDrop(event);
+  }
+  resetMapEditorEntityInteraction();
+  document.body.style.cursor = "";
+  if(gsBoardCanvas instanceof HTMLElement){
+    gsBoardCanvas.style.cursor = "";
+  }
 }
 
 function getMapEditorBrickPreviewSprite(){
@@ -16907,9 +17194,14 @@ function onCanvasPointerDown(e){
         return;
       }
     }
-    if(onCanvasMapEditorBrickPointerDown(e)){
+    const hasHandledBrickPointerDown = onCanvasMapEditorBrickPointerDown(e);
+    if(hasHandledBrickPointerDown){
       e.preventDefault();
+      return;
     }
+  }
+  if(onCanvasMapEditorEntityPointerDown(e)){
+    e.preventDefault();
     return;
   }
   if(onBoardInventoryStickyApply(e)){
@@ -16953,8 +17245,33 @@ function onCanvasPointerMove(e){
     const { x: boardX, y: boardY } = designToBoardCoords(designX, designY);
     const spriteIndex = findMapEditorBrickSpriteIndexAtBoardPoint(boardX, boardY);
     const isBrickDraggingActive = mapEditorBrickInteractionState.mode === "holding";
-    gsBoardCanvas.style.cursor = spriteIndex >= 0 && !isBrickDraggingActive ? "grab" : "";
+    if(isBrickDraggingActive){
+      gsBoardCanvas.style.cursor = spriteIndex >= 0 ? "grab" : "";
+      return;
+    }
+  }
+  if(mapEditorEntityInteractionState.mode === "holding"){
+    const pointerId = Number.isFinite(e.pointerId) ? e.pointerId : null;
+    if(
+      mapEditorEntityInteractionState.pointerId !== null
+      && pointerId !== null
+      && pointerId !== mapEditorEntityInteractionState.pointerId
+    ){
+      return;
+    }
+    applyMapEditorEntityMoveFromPointerEvent(e);
+    gsBoardCanvas.style.cursor = "grabbing";
+    document.body.style.cursor = "grabbing";
     return;
+  }
+  if(isMapEditorBricksModeActive()){
+    const { x: designX, y: designY } = getPointerDesignCoords(e);
+    const { x: boardX, y: boardY } = designToBoardCoords(designX, designY);
+    const hoverEntity = findMapEditorEntityAtBoardPoint(boardX, boardY);
+    if(hoverEntity){
+      gsBoardCanvas.style.cursor = "grab";
+      return;
+    }
   }
   if(isNuclearStrikeActionLocked()) {
     gsBoardCanvas.style.cursor = '';
@@ -17000,7 +17317,25 @@ function onCanvasPointerMove(e){
 
 function onCanvasPointerUp(e){
   logPointerDebugEvent(e);
-  if(isMapEditorBricksModeActive()) return;
+  if(isMapEditorBricksModeActive() && mapEditorBrickInteractionState.mode !== "idle") return;
+  if(mapEditorEntityInteractionState.mode === "holding"){
+    const pointerId = Number.isFinite(e.pointerId) ? e.pointerId : null;
+    if(
+      mapEditorEntityInteractionState.pointerId !== null
+      && pointerId !== null
+      && pointerId !== mapEditorEntityInteractionState.pointerId
+    ){
+      return;
+    }
+    commitMapEditorEntityDrop(e);
+    resetMapEditorEntityInteraction();
+    document.body.style.cursor = "";
+    if(gsBoardCanvas instanceof HTMLElement){
+      gsBoardCanvas.style.cursor = "";
+    }
+    e.preventDefault();
+    return;
+  }
   if(isNuclearStrikeActionLocked()){
     aaPointerDown = false;
     aaPlacementPreview = null;
@@ -17194,8 +17529,10 @@ window.addEventListener("pointerdown", onInventoryTooltipPreviewPointerDown);
 window.addEventListener("pointerdown", onGlobalPointerDownMapEditorBrickCancel);
 window.addEventListener("pointerup", onInventoryPickupPointerFinish);
 window.addEventListener("pointerup", onMapEditorBrickPointerFinish);
+window.addEventListener("pointerup", onMapEditorEntityPointerFinish);
 window.addEventListener("pointercancel", onInventoryPickupPointerFinish);
 window.addEventListener("pointercancel", onMapEditorBrickPointerFinish);
+window.addEventListener("pointercancel", onMapEditorEntityPointerFinish);
 window.addEventListener("keydown", (event) => {
   if(event.key === "Escape"){
     cancelPendingInventoryUse();
@@ -41945,6 +42282,15 @@ if(mapEditorBrickSidebar instanceof HTMLElement){
   });
 }
 
+if(mapEditorEntitySidebar instanceof HTMLElement){
+  const entityAssets = mapEditorEntitySidebar.querySelectorAll(".map-editor-entity-sidebar__asset");
+  entityAssets.forEach((asset) => {
+    asset.addEventListener("pointerdown", onMapEditorEntitySidebarPointerDown);
+    asset.addEventListener("dragstart", onMapEditorEntitySidebarDragStart);
+    asset.addEventListener("dragend", onMapEditorEntitySidebarDragEnd);
+  });
+}
+
 function startNewRound(){
   logBootStep("startNewRound");
   console.log('[mode] startNewRound effective gameMode', { gameMode, selectedMode, selectedRuleset, phase });
@@ -42212,8 +42558,15 @@ function syncMapEditorResetButtonVisibility(){
     mapEditorBrickSidebar.style.pointerEvents = "none";
   }
 
+  if(mapEditorEntitySidebar instanceof HTMLElement){
+    mapEditorEntitySidebar.hidden = !bricksModeActive;
+    mapEditorEntitySidebar.setAttribute("aria-hidden", bricksModeActive ? "false" : "true");
+    mapEditorEntitySidebar.style.pointerEvents = "none";
+  }
+
   if(!bricksModeActive){
     resetMapEditorBrickInteraction();
+    resetMapEditorEntityInteraction();
   }
 }
 
