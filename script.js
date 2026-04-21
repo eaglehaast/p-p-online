@@ -32055,6 +32055,82 @@ function getFallbackAiMove(context){
     return applyLossCompressionScoreAdjustments(adjusted, context);
   }
 
+  function getFallbackRouteClass(move){
+    const routeClass = `${move?.routeClass || ""}`.toLowerCase();
+    if(routeClass === "ricochet" || routeClass === "gap" || routeClass === "direct"){
+      return routeClass;
+    }
+    if(`${move?.moveType || ""}`.toLowerCase() === "mirror"){
+      return "ricochet";
+    }
+    return "direct";
+  }
+
+  function buildFallbackCandidateFromRouteMove(plane, enemy, routeMove, details = {}){
+    if(!plane || !enemy || !routeMove) return null;
+    const candidateClass = getFallbackRouteClass(routeMove);
+    const landingPoint = getAiMoveLandingPoint({ plane, ...routeMove });
+    if(!landingPoint) return null;
+    const responseThreatMeta = getImmediateResponseThreatMeta(context, landingPoint.x, landingPoint.y, enemy);
+    const responseRisk = getFallbackCandidateResponseRisk(responseThreatMeta);
+    const routeDistance = Number.isFinite(routeMove?.totalDist)
+      ? routeMove.totalDist
+      : Math.hypot(routeMove?.vx || 0, routeMove?.vy || 0) * FIELD_FLIGHT_DURATION_SEC;
+    const classScoreMeta = getAiCandidateClassComparableScore({
+      plane,
+      routeDistance,
+      responseRisk,
+      fromPoint: plane,
+      landingPoint,
+      targetPoint: enemy,
+      candidateClass,
+      directPathBlocked: details?.directPathBlocked === true,
+      goalName: "attack_enemy_plane",
+    });
+    const tieBreakPenalty = candidateClass === "direct" && details?.applyDirectTieBreakPenalty
+      ? AI_WALL_LOCKED_DIRECT_TIE_BREAK_PENALTY
+      : 0;
+    const scoreDetails = buildFallbackAttackScoreDetails({
+      plane,
+      weightedDistance: routeDistance,
+      bonusParts: [],
+      safetyContext: {
+        goalName: "attack_enemy_plane",
+        decisionReason: details?.decisionReason || "fallback_route_probe",
+      },
+      multiKillPotential: getAiMultiKillPotentialContext({
+        plane,
+        enemy,
+        enemies: targetEnemies,
+        lineEndX: candidateClass === "ricochet"
+          ? (routeMove?.mirrorTarget?.x ?? enemy.x)
+          : enemy.x,
+        lineEndY: candidateClass === "ricochet"
+          ? (routeMove?.mirrorTarget?.y ?? enemy.y)
+          : enemy.y,
+      }),
+      classScoreMeta,
+      tieBreakPenalty,
+      modeContext: context,
+    });
+    return applyLossCompressionScoreAdjustments({
+      ...routeMove,
+      plane,
+      enemy,
+      targetEnemy: enemy,
+      trajectoryType: candidateClass,
+      candidateType: candidateClass,
+      selectedClass: candidateClass,
+      routeClass: candidateClass,
+      responseRisk,
+      score: scoreDetails.normalizedScore,
+      normalizedScore: scoreDetails.normalizedScore,
+      classScoreBreakdown: scoreDetails.classScoreBreakdown,
+      idleTurns: getAiPlaneIdleTurns(plane),
+      reasonCode: details?.reasonCode || null,
+    }, context);
+  }
+
   const carrier = shouldUseFlagsMode ? aiPlanes.find(p => {
     if(!p.carriedFlagId) return false;
     const carriedFlag = getFlagById(p.carriedFlagId);
@@ -32171,7 +32247,49 @@ function getFallbackAiMove(context){
     if(!Number.isFinite(speedPxPerSec) || speedPxPerSec <= 0) continue;
 
     for(const enemy of targetEnemies){
-      if(isPathClear(plane.x, plane.y, enemy.x, enemy.y)){
+      const directPathClear = isPathClear(plane.x, plane.y, enemy.x, enemy.y);
+      const routeProbeMove = planPathWithSpecialRouteProbe(plane, enemy.x, enemy.y, {
+        goalName: "attack_enemy_plane",
+        decisionReason: directPathClear ? "fallback_attack_competitive_route_probe" : "fallback_attack_blocked_route_probe",
+        targetEnemy: enemy,
+        enemy,
+        context,
+        specialRouteClasses: ["ricochet", "gap"],
+        specialAttemptBudget: 2,
+        compareLabel: ["fallback_attack_route_probe", plane?.id ?? "", enemy?.id ?? ""],
+      });
+      const routeProbeClass = getFallbackRouteClass(routeProbeMove);
+      const routeProbeIsSpecial = routeProbeClass === "ricochet" || routeProbeClass === "gap";
+      if(routeProbeMove && routeProbeIsSpecial){
+        const routeProbeCandidate = buildFallbackCandidateFromRouteMove(plane, enemy, routeProbeMove, {
+          directPathBlocked: !directPathClear,
+          decisionReason: "fallback_attack_competitive_route_probe",
+          applyDirectTieBreakPenalty: false,
+          reasonCode: "competitive_special_route_selected",
+        });
+        if(routeProbeCandidate){
+          if(routeProbeClass === "ricochet"){
+            wallLockedRicochetPreferredTargets.add(enemy?.id);
+          }
+          logAiDecision("fallback_competitive_route_candidate_scored", {
+            source: "fallback_attack",
+            planeId: plane?.id ?? null,
+            enemyId: enemy?.id ?? null,
+            routeClass: routeProbeClass,
+            directPathClear,
+            score: Number.isFinite(routeProbeCandidate?.score) ? Number(routeProbeCandidate.score.toFixed(3)) : null,
+            normalizedScore: Number.isFinite(routeProbeCandidate?.normalizedScore) ? Number(routeProbeCandidate.normalizedScore.toFixed(3)) : null,
+            responseRisk: Number.isFinite(routeProbeCandidate?.responseRisk) ? Number(routeProbeCandidate.responseRisk.toFixed(4)) : null,
+            routeQualityScore: Number.isFinite(routeProbeMove?.routeQualityScore) ? Number(routeProbeMove.routeQualityScore.toFixed(4)) : null,
+          });
+          if(compareAiCandidateByScoreAndRotation(routeProbeCandidate, best, ["fallback_attack", "competitive_route_probe", routeProbeClass, enemy?.id ?? ""])){
+            routeProbeCandidate.classTieBreakReason = compareAiCandidateByScoreAndRotation.lastClassTieBreakReason || null;
+            best = routeProbeCandidate;
+          }
+        }
+      }
+
+      if(directPathClear){
         let dx= enemy.x - plane.x;
         let dy= enemy.y - plane.y;
         let baseAngle= Math.atan2(dy, dx);
