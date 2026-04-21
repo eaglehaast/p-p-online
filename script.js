@@ -8462,6 +8462,7 @@ setScreenMode('MENU');
 
 let brickFrameImg = null;
 let brickFrameData = null;
+let aiNavigationMask = null;
 const MAP_SPRITE_ASSETS = Object.create(null);
 
 function handleBrickFrameLoad() {
@@ -8489,6 +8490,7 @@ function setBrickFrameImage(img) {
 function clearBrickFrameImage(){
   brickFrameImg = null;
   brickFrameData = null;
+  aiNavigationMask = null;
   brickFrameBorderPxX = FIELD_BORDER_THICKNESS;
   brickFrameBorderPxY = FIELD_BORDER_THICKNESS;
 }
@@ -8730,6 +8732,7 @@ function processBrickFrameImage() {
     ? horizontalRuns[Math.floor(horizontalRuns.length / 2)]
     : FIELD_BORDER_THICKNESS;
 
+  buildAiNavigationMaskFromBrickFrame();
 
   resyncFieldDimensions("brick frame loaded");
   if(points.length) initPoints();
@@ -35780,52 +35783,62 @@ function planPathToPoint(plane, tx, ty, options = {}){
 
   let mirrorRejectCode = null;
   if(allowExperimentalRicochet){
-    const mirrorPressureBoost = isMirrorPressureTarget(options?.targetEnemy || { x: tx, y: ty }, { ...options, plane })
-      ? AI_MIRROR_PATH_PRESSURE_BONUS
-      : 0;
-    const mirror = findMirrorShot(plane, {x:tx, y:ty}, {
-      logReject: true,
-      pressureBoost: mirrorPressureBoost,
-      diagnostics: true,
-      goalName: options?.goalName || "",
-      allowNormalModeFirstSegmentRelaxation: !strictSpecialPathRejectStage,
-      allowRicochetBeforeBounceBorderline: requestedRouteClass === "ricochet" && !strictSpecialPathRejectStage,
-      allowGapBeforeBounceGrace: requestedRouteClass === "gap" && !strictSpecialPathRejectStage,
-      allowGapAfterBounceGrace: requestedRouteClass === "gap" && !strictSpecialPathRejectStage,
-      allowGapFinalLegRelaxation: requestedRouteClass === "gap" && !strictSpecialPathRejectStage,
+    const simulated = findBestSimulatedShot(plane, { x: tx, y: ty }, {
+      maxBounces: AI_SIM_MAX_BOUNCES_DEFAULT,
     });
-    if(mirror){
-      const dx = mirror.mirrorTarget.x - plane.x;
-      const dy = mirror.mirrorTarget.y - plane.y;
-      const baseAngle = Math.atan2(dy, dx);
-      const baseScale = Math.min(mirror.totalDist / (2*MAX_DRAG_DISTANCE), 1);
-      const scale = applyAiMinLaunchScale(baseScale, {
-        source: "plan_path_mirror",
+    if(simulated?.sim){
+      const launchDx = simulated.sim.launchVector.dx;
+      const launchDy = simulated.sim.launchVector.dy;
+      const baseAngle = Math.atan2(launchDy, launchDx);
+      const simDist = Number.isFinite(simulated.sim.travelDistance) ? simulated.sim.travelDistance : Math.hypot(tx - plane.x, ty - plane.y);
+      const scale = applyAiMinLaunchScale(simulated.scale, {
+        source: "plan_path_simulated",
         planeId: plane?.id ?? null,
         goalName: options?.goalName || null,
         decisionReason: options?.decisionReason || null,
-        moveDistance: mirror.totalDist,
+        moveDistance: simDist,
         targetX: tx,
         targetY: ty,
       });
-      logAiDecision("mirror_selected_reason", {
-        source: "plan_path_to_point",
-        reason: autoRicochetProbeReason || (hasDirectLine ? "mirror_competing_with_direct" : "direct_path_blocked"),
-        planeId: plane?.id ?? null,
-        targetEnemyId: options?.targetEnemy?.id ?? options?.targetEnemyId ?? null,
-        pressureBoost: Number(mirrorPressureBoost.toFixed(2)),
-        clearSky: isCurrentMapClearSky(),
-        pathDistance: Number(mirror.totalDist.toFixed(1)),
-        stuckMirrorRelaxation: false,
+      const moveType = simulated.sim.bounceCount > 0 ? "mirror" : "direct";
+      const candidateClass = simulated.sim.bounceCount > 0 ? "ricochet" : "direct";
+      const simMove = buildMoveWithSafeDeviation(baseAngle, simDist, scale, {
+        moveType,
+        candidateClass,
       });
-      const mirrorMove = buildMoveWithSafeDeviation(baseAngle, mirror.totalDist, scale, {
-        moveType: "mirror",
-        candidateClass: "ricochet",
-      });
-      registerCandidate(mirrorMove);
+      if(simMove){
+        simMove.aiTrajectory = simulated.sim.predictedPath;
+        simMove.bounceCount = simulated.sim.bounceCount;
+        simMove.predictedOutcome = simulated.sim.predictedOutcome;
+        simMove.routeQualityScore = simulated.score;
+        if(typeof window !== "undefined"){
+          window.AI_DEBUG_RICOCHET = window.AI_DEBUG_RICOCHET || {};
+          window.AI_DEBUG_RICOCHET.lastSelectedCandidate = {
+            planeId: plane?.id ?? null,
+            targetX: Number.isFinite(tx) ? Number(tx.toFixed(2)) : null,
+            targetY: Number.isFinite(ty) ? Number(ty.toFixed(2)) : null,
+            bounceCount: simulated.sim.bounceCount,
+            predictedOutcome: simulated.sim.predictedOutcome,
+            score: Number.isFinite(simulated.score) ? Number(simulated.score.toFixed(2)) : null,
+            predictedPathLength: Array.isArray(simulated.sim.predictedPath) ? simulated.sim.predictedPath.length : 0,
+          };
+        }
+        logAiDecision("simulated_shot_selected_reason", {
+          source: "plan_path_to_point",
+          reason: autoRicochetProbeReason || (hasDirectLine ? "simulated_competing_with_direct" : "direct_path_blocked"),
+          planeId: plane?.id ?? null,
+          targetEnemyId: options?.targetEnemy?.id ?? options?.targetEnemyId ?? null,
+          clearSky: isCurrentMapClearSky(),
+          pathDistance: Number(simDist.toFixed(1)),
+          bounceCount: simulated.sim.bounceCount,
+          predictedOutcome: simulated.sim.predictedOutcome,
+          score: Number(simulated.score.toFixed(2)),
+        });
+        registerCandidate(simMove);
+      }
     } else {
-      mirrorRejectCode = findMirrorShot.lastRejectCode || "blocked_path__mirror_not_found";
-      planPathToPoint.lastRejectMeta = findMirrorShot.lastRejectMeta || null;
+      mirrorRejectCode = "v2_simulation_candidate_not_found";
+      planPathToPoint.lastRejectMeta = null;
     }
   }
 
@@ -37767,6 +37780,220 @@ function buildPredictedPathForAim(plane, dragVector){
   }
 
   return points;
+}
+
+const AI_SIM_MAX_BOUNCES_DEFAULT = 2;
+const AI_SIM_COARSE_ANGLE_STEP_DEG = 6;
+const AI_SIM_FINE_ANGLE_STEP_DEG = 2;
+const AI_SIM_COARSE_SCALE_STEP = 0.08;
+const AI_SIM_FINE_SCALE_STEP = 0.03;
+
+function buildAiNavigationMaskFromBrickFrame(){
+  if(!brickFrameData?.data || !Number.isFinite(brickFrameData.width) || !Number.isFinite(brickFrameData.height)){
+    aiNavigationMask = null;
+    return null;
+  }
+  const width = brickFrameData.width;
+  const height = brickFrameData.height;
+  const alphaData = brickFrameData.data;
+  const solid = new Uint8Array(width * height);
+  const normalsX = new Float32Array(width * height);
+  const normalsY = new Float32Array(width * height);
+  const ricochetZones = [];
+  const alphaAt = (x, y) => alphaData[(y * width + x) * 4 + 3];
+  const isSolidPx = (x, y) => x >= 0 && y >= 0 && x < width && y < height && alphaAt(x, y) > 0;
+
+  for(let y = 0; y < height; y += 1){
+    for(let x = 0; x < width; x += 1){
+      const idx = y * width + x;
+      if(!isSolidPx(x, y)) continue;
+      solid[idx] = 1;
+      const gx = (isSolidPx(x + 1, y) ? 1 : 0) - (isSolidPx(x - 1, y) ? 1 : 0);
+      const gy = (isSolidPx(x, y + 1) ? 1 : 0) - (isSolidPx(x, y - 1) ? 1 : 0);
+      const len = Math.hypot(gx, gy);
+      if(len > 0){
+        normalsX[idx] = -(gx / len);
+        normalsY[idx] = -(gy / len);
+      } else {
+        normalsX[idx] = 0;
+        normalsY[idx] = 0;
+      }
+      const exposedSides = (isSolidPx(x + 1, y) ? 0 : 1)
+        + (isSolidPx(x - 1, y) ? 0 : 1)
+        + (isSolidPx(x, y + 1) ? 0 : 1)
+        + (isSolidPx(x, y - 1) ? 0 : 1);
+      if(exposedSides > 0){
+        ricochetZones.push({ x, y, nx: normalsX[idx], ny: normalsY[idx], exposedSides });
+      }
+    }
+  }
+
+  aiNavigationMask = {
+    width,
+    height,
+    solid,
+    normalsX,
+    normalsY,
+    ricochetZones,
+    builtAt: performance.now(),
+  };
+  if(typeof window !== "undefined"){
+    window.AI_DEBUG_RICOCHET = window.AI_DEBUG_RICOCHET || {};
+    window.AI_DEBUG_RICOCHET.navMask = {
+      width,
+      height,
+      ricochetZoneCount: ricochetZones.length,
+      builtAt: aiNavigationMask.builtAt,
+    };
+  }
+  return aiNavigationMask;
+}
+
+function simulateAIShot(plane, launchVector, options = {}){
+  if(!plane || !launchVector) return null;
+  const maxBounces = Number.isFinite(options.maxBounces) ? Math.max(0, Math.floor(options.maxBounces)) : AI_SIM_MAX_BOUNCES_DEFAULT;
+  const target = options.target || null;
+  const hitRadius = Number.isFinite(options.hitRadius) ? options.hitRadius : POINT_RADIUS;
+  const scale = Number.isFinite(launchVector.scale) ? Math.max(0.02, Math.min(1, launchVector.scale)) : 1;
+  const maxDistance = getPlaneEffectiveRangePx(plane) * scale;
+  let remainingDistance = maxDistance;
+  let curr = { x: plane.x, y: plane.y };
+  let dirX = launchVector.dx;
+  let dirY = launchVector.dy;
+  const dirLen = Math.hypot(dirX, dirY);
+  if(dirLen <= 1e-6) return null;
+  dirX /= dirLen;
+  dirY /= dirLen;
+  const predictedPath = [{ x: curr.x, y: curr.y }];
+  const bounces = [];
+  let bounceCount = 0;
+  let outcomeType = "range_end";
+  let impactPoint = { x: curr.x, y: curr.y };
+  let hitTarget = false;
+  const EPS_PUSH = 0.5;
+  while(remainingDistance > 1e-3){
+    const end = { x: curr.x + dirX * remainingDistance, y: curr.y + dirY * remainingDistance };
+    const hit = findFirstSurfaceHit(curr, end, POINT_RADIUS);
+    const segmentEnd = hit
+      ? { x: curr.x + (end.x - curr.x) * hit.t, y: curr.y + (end.y - curr.y) * hit.t }
+      : end;
+    predictedPath.push({ x: segmentEnd.x, y: segmentEnd.y });
+    if(target){
+      const d = getDistanceFromPointToSegment(target.x, target.y, curr.x, curr.y, segmentEnd.x, segmentEnd.y);
+      if(d <= hitRadius){
+        outcomeType = bounceCount > 0 ? "target_hit_after_ricochet" : "target_hit_direct";
+        hitTarget = true;
+        impactPoint = { x: target.x, y: target.y };
+        break;
+      }
+    }
+    if(!hit){
+      outcomeType = "range_end";
+      impactPoint = { x: segmentEnd.x, y: segmentEnd.y };
+      break;
+    }
+    const usedDistance = remainingDistance * hit.t;
+    remainingDistance = Math.max(0, remainingDistance - usedDistance);
+    if(bounceCount >= maxBounces){
+      outcomeType = "bounce_limit_reached";
+      impactPoint = { x: segmentEnd.x, y: segmentEnd.y };
+      break;
+    }
+    const dot = dirX * hit.normal.x + dirY * hit.normal.y;
+    const absDot = Math.abs(dot);
+    if(absDot < SLIDE_THRESHOLD){
+      dirX = dirX - dot * hit.normal.x;
+      dirY = dirY - dot * hit.normal.y;
+    } else {
+      dirX = dirX - 2 * dot * hit.normal.x;
+      dirY = dirY - 2 * dot * hit.normal.y;
+    }
+    const newLen = Math.hypot(dirX, dirY);
+    if(newLen <= 1e-6){
+      outcomeType = "stalled_after_bounce";
+      impactPoint = { x: segmentEnd.x, y: segmentEnd.y };
+      break;
+    }
+    dirX /= newLen;
+    dirY /= newLen;
+    bounceCount += 1;
+    bounces.push({ x: segmentEnd.x, y: segmentEnd.y, nx: hit.normal.x, ny: hit.normal.y, surfaceType: hit.surface?.type || "unknown" });
+    curr = { x: segmentEnd.x + hit.normal.x * EPS_PUSH, y: segmentEnd.y + hit.normal.y * EPS_PUSH };
+  }
+
+  return {
+    launchVector: { dx: launchVector.dx, dy: launchVector.dy, scale },
+    predictedPath,
+    predictedOutcome: outcomeType,
+    bounceCount,
+    impactPoint,
+    travelDistance: maxDistance - remainingDistance,
+    hitTarget,
+    bounces,
+  };
+}
+
+function scoreAISimulatedCandidate(simResult, options = {}){
+  if(!simResult) return Number.NEGATIVE_INFINITY;
+  const targetDistance = Number.isFinite(options.targetDistance) ? Math.max(1, options.targetDistance) : 1;
+  let score = 0;
+  if(simResult.hitTarget){
+    score += 1200;
+  }
+  score -= simResult.travelDistance * 0.18;
+  score -= simResult.bounceCount * 12;
+  const impactPenalty = options.target && simResult.impactPoint
+    ? Math.hypot(options.target.x - simResult.impactPoint.x, options.target.y - simResult.impactPoint.y)
+    : targetDistance;
+  score -= impactPenalty * 1.35;
+  return score;
+}
+
+function enumerateAIShotCandidates(plane, target, options = {}){
+  const coarseAngleStep = (Number.isFinite(options.coarseAngleStepDeg) ? options.coarseAngleStepDeg : AI_SIM_COARSE_ANGLE_STEP_DEG) * Math.PI / 180;
+  const fineAngleStep = (Number.isFinite(options.fineAngleStepDeg) ? options.fineAngleStepDeg : AI_SIM_FINE_ANGLE_STEP_DEG) * Math.PI / 180;
+  const coarseScaleStep = Number.isFinite(options.coarseScaleStep) ? options.coarseScaleStep : AI_SIM_COARSE_SCALE_STEP;
+  const fineScaleStep = Number.isFinite(options.fineScaleStep) ? options.fineScaleStep : AI_SIM_FINE_SCALE_STEP;
+  const targetAngle = Math.atan2(target.y - plane.y, target.x - plane.x);
+  const targetDistance = Math.hypot(target.x - plane.x, target.y - plane.y);
+  const scaleCenter = Math.max(0.1, Math.min(1, targetDistance / Math.max(1, getPlaneEffectiveRangePx(plane))));
+  const coarse = [];
+
+  for(let a = targetAngle - Math.PI; a <= targetAngle + Math.PI + 1e-6; a += coarseAngleStep){
+    for(let s = 0.2; s <= 1.0001; s += coarseScaleStep){
+      const sim = simulateAIShot(plane, { dx: Math.cos(a), dy: Math.sin(a), scale: s }, { target, maxBounces: options.maxBounces });
+      if(!sim) continue;
+      const score = scoreAISimulatedCandidate(sim, { target, targetDistance });
+      coarse.push({ sim, score, angle: a, scale: s });
+    }
+  }
+  coarse.sort((a, b) => b.score - a.score);
+  const seeds = coarse.slice(0, 8);
+  const refined = [];
+  for(const seed of seeds){
+    for(let da = -coarseAngleStep; da <= coarseAngleStep + 1e-6; da += fineAngleStep){
+      for(let ds = -0.12; ds <= 0.12 + 1e-6; ds += fineScaleStep){
+        const a = seed.angle + da;
+        const s = Math.max(0.1, Math.min(1, seed.scale + ds));
+        const sim = simulateAIShot(plane, { dx: Math.cos(a), dy: Math.sin(a), scale: s }, { target, maxBounces: options.maxBounces });
+        if(!sim) continue;
+        refined.push({ sim, score: scoreAISimulatedCandidate(sim, { target, targetDistance }), angle: a, scale: s });
+      }
+    }
+  }
+  const pool = [...coarse.slice(0, 20), ...refined];
+  pool.sort((a, b) => b.score - a.score);
+  return pool;
+}
+
+function selectBestAICandidate(candidates){
+  if(!Array.isArray(candidates) || candidates.length === 0) return null;
+  return candidates[0] || null;
+}
+
+function findBestSimulatedShot(plane, target, options = {}){
+  const candidates = enumerateAIShotCandidates(plane, target, { maxBounces: options.maxBounces ?? AI_SIM_MAX_BOUNCES_DEFAULT });
+  return selectBestAICandidate(candidates);
 }
 
 function resolveSpriteCollision(fp){
