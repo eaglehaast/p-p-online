@@ -13533,6 +13533,50 @@ function printAiDebugLastDecisions(limit = 5){
   return lines;
 }
 
+function getBufferedAiDecisionEvents(limit = 200){
+  if(typeof window === "undefined") return [];
+  const safeLimit = Math.max(1, Math.min(2000, Math.floor(Number(limit) || 200)));
+  const buffer = Array.isArray(window.__AI_DECISION_LOG_BUFFER)
+    ? window.__AI_DECISION_LOG_BUFFER
+    : [];
+  return buffer.slice(-safeLimit);
+}
+
+function getPathCandidatePassportLogs(limit = 30){
+  const safeLimit = Math.max(1, Math.min(200, Math.floor(Number(limit) || 30)));
+  const events = getBufferedAiDecisionEvents(1200);
+  const filtered = events.filter((entry) => entry?.reason === "path_candidate_passport");
+  return filtered.slice(-safeLimit);
+}
+
+function printPathCandidatePassportLogs(limit = 10){
+  const logs = getPathCandidatePassportLogs(limit);
+  if(logs.length === 0){
+    console.info("[AI_DEBUG] path-candidate-passport: пока записей нет.");
+    return [];
+  }
+
+  const lines = logs.map((entry, index) => {
+    const payload = entry?.payload && typeof entry.payload === "object" ? entry.payload : {};
+    const status = payload.finalStatus || "unknown";
+    const className = payload.selectedCandidateClass || payload.requestedRouteClass || "-";
+    const rejectCode = payload.rejectCode || "-";
+    const entriesCount = Array.isArray(payload.entries) ? payload.entries.length : 0;
+    return `${index + 1}. ${entry.at} | status:${status} | selected:${className} | reject:${rejectCode} | entries:${entriesCount}`;
+  });
+
+  console.info(`[AI_DEBUG] path-candidate-passport (${logs.length}):`);
+  lines.forEach((line) => console.info(line));
+  return logs;
+}
+
+function exportPathCandidatePassportLogs(limit = 20){
+  const logs = getPathCandidatePassportLogs(limit);
+  const json = JSON.stringify(logs, null, 2);
+  console.info("[AI_DEBUG] path-candidate-passport-json", json);
+  return json;
+}
+
 function forceResetCargoNow(){
   const beforeCount = Array.isArray(cargoState) ? cargoState.length : 0;
   const cargoEnabled = Boolean(settings?.addCargo);
@@ -13556,6 +13600,8 @@ function forceResetCargoNow(){
 
 if(typeof window !== "undefined"){
   window.RESET_CARGO = forceResetCargoNow;
+  window.AI_PRINT_PATH_PASSPORT_LOGS = printPathCandidatePassportLogs;
+  window.AI_EXPORT_PATH_PASSPORT_LOGS = exportPathCandidatePassportLogs;
 }
 
 
@@ -18178,12 +18224,29 @@ function logAiDecision(reason, details = {}){
       : adjustedScore,
   };
 
-  console.debug(
-    `[ai] ${reason}`,
-    AI_DECISION_DEEP_DEBUG_FLAG
-      ? buildAiDecisionDeepPayload(reason, payload, derived)
-      : buildAiDecisionCompactPayload(payload, derived)
-  );
+  const debugPayload = AI_DECISION_DEEP_DEBUG_FLAG
+    ? buildAiDecisionDeepPayload(reason, payload, derived)
+    : buildAiDecisionCompactPayload(payload, derived);
+
+  console.debug(`[ai] ${reason}`, debugPayload);
+
+  if(typeof window !== "undefined"){
+    const nowIso = new Date().toISOString();
+    window.__AI_DECISION_LOG_BUFFER = Array.isArray(window.__AI_DECISION_LOG_BUFFER)
+      ? window.__AI_DECISION_LOG_BUFFER
+      : [];
+    window.__AI_DECISION_LOG_BUFFER.push({
+      at: nowIso,
+      reason,
+      payload: debugPayload,
+      planeId: planeId ?? null,
+      turn: Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null,
+      round: Number.isFinite(roundNumber) ? roundNumber : null,
+    });
+    if(window.__AI_DECISION_LOG_BUFFER.length > 1200){
+      window.__AI_DECISION_LOG_BUFFER.splice(0, window.__AI_DECISION_LOG_BUFFER.length - 1200);
+    }
+  }
 }
 
 function normalizeAiReasonText(reasonText = ""){
