@@ -25893,6 +25893,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   const selectedInventorySequence = Array.isArray(plannedMove?.selectedInventorySequence)
     ? plannedMove.selectedInventorySequence.filter((step) => step && step.itemType)
     : [];
+  const plannedRouteClass = `${plannedMove?.routeClass || "direct"}`.toLowerCase();
 
   if(plannedMove && typeof plannedMove === "object"){
     plannedMove.lastInventorySelectionGate = null;
@@ -26041,6 +26042,63 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     }
   }
 
+  const routeAwareBoosters = [];
+  const availableCounts = evaluateBlueInventoryState()?.counts || {};
+  const alreadySelectedTypes = new Set(
+    orderedCandidates
+      .map((entry) => entry?.itemType)
+      .filter(Boolean)
+  );
+  const canAddBoosterType = (itemType) => {
+    if(!itemType) return false;
+    if(alreadySelectedTypes.has(itemType)) return false;
+    return Number(availableCounts?.[itemType] ?? 0) > 0;
+  };
+  if((plannedRouteClass === "gap" || plannedRouteClass === "ricochet") && canAddBoosterType(INVENTORY_ITEM_TYPES.CROSSHAIR)){
+    routeAwareBoosters.push({
+      itemType: INVENTORY_ITEM_TYPES.CROSSHAIR,
+      reason: "route_aware_precision_booster",
+      reasonCode: "route_aware_precision_booster",
+      executionSource: "route_aware_booster",
+      expectedBenefit: 0.11,
+      risk: 0.01,
+      usageTier: "route_aware_booster",
+    });
+    alreadySelectedTypes.add(INVENTORY_ITEM_TYPES.CROSSHAIR);
+  }
+  if((plannedRouteClass === "gap" || plannedRouteClass === "ricochet") && canAddBoosterType(INVENTORY_ITEM_TYPES.WINGS)){
+    routeAwareBoosters.push({
+      itemType: INVENTORY_ITEM_TYPES.WINGS,
+      reason: "route_aware_maneuver_booster",
+      reasonCode: "route_aware_maneuver_booster",
+      executionSource: "route_aware_booster",
+      expectedBenefit: 0.1,
+      risk: 0.012,
+      usageTier: "route_aware_booster",
+    });
+    alreadySelectedTypes.add(INVENTORY_ITEM_TYPES.WINGS);
+  }
+  if(plannedRouteClass === "direct" && canAddBoosterType(INVENTORY_ITEM_TYPES.FUEL)){
+    routeAwareBoosters.push({
+      itemType: INVENTORY_ITEM_TYPES.FUEL,
+      reason: "route_aware_direct_range_booster",
+      reasonCode: "route_aware_direct_range_booster",
+      executionSource: "route_aware_booster",
+      expectedBenefit: 0.08,
+      risk: 0.01,
+      usageTier: "route_aware_booster",
+    });
+    alreadySelectedTypes.add(INVENTORY_ITEM_TYPES.FUEL);
+  }
+  if(routeAwareBoosters.length > 0){
+    logPreLaunchItemDecision("inventory_route_aware_boosters_added", {
+      routeClass: plannedRouteClass,
+      boosterItemTypes: routeAwareBoosters.map((entry) => entry.itemType),
+      boosterReasonCodes: routeAwareBoosters.map((entry) => entry.reasonCode),
+    });
+    orderedCandidates.unshift(...routeAwareBoosters);
+  }
+
   const uniqueCandidates = [];
   const seenCandidateKeys = new Set();
   for(const candidate of orderedCandidates){
@@ -26053,14 +26111,24 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   const filteredCandidates = uniqueCandidates.filter((candidate) => PRE_LAUNCH_ALLOWED_ITEM_TYPES.has(candidate.itemType));
 
   function buildForcedInventoryFallbackCandidates(excludedItemTypes = new Set()){
-    const fallbackOrder = [
-      INVENTORY_ITEM_TYPES.CROSSHAIR,
-      INVENTORY_ITEM_TYPES.FUEL,
-      INVENTORY_ITEM_TYPES.WINGS,
-      INVENTORY_ITEM_TYPES.INVISIBILITY,
-      INVENTORY_ITEM_TYPES.MINE,
-      INVENTORY_ITEM_TYPES.DYNAMITE,
-    ];
+    const routeAwareFallbackOrder = plannedRouteClass === "gap" || plannedRouteClass === "ricochet"
+      ? [
+        INVENTORY_ITEM_TYPES.CROSSHAIR,
+        INVENTORY_ITEM_TYPES.WINGS,
+        INVENTORY_ITEM_TYPES.DYNAMITE,
+        INVENTORY_ITEM_TYPES.FUEL,
+        INVENTORY_ITEM_TYPES.INVISIBILITY,
+        INVENTORY_ITEM_TYPES.MINE,
+      ]
+      : [
+        INVENTORY_ITEM_TYPES.CROSSHAIR,
+        INVENTORY_ITEM_TYPES.FUEL,
+        INVENTORY_ITEM_TYPES.WINGS,
+        INVENTORY_ITEM_TYPES.INVISIBILITY,
+        INVENTORY_ITEM_TYPES.MINE,
+        INVENTORY_ITEM_TYPES.DYNAMITE,
+      ];
+    const fallbackOrder = routeAwareFallbackOrder;
     const forcedCandidates = [];
     for(const itemType of fallbackOrder){
       if(excludedItemTypes.has(itemType)) continue;
@@ -34929,10 +34997,21 @@ function planPathToPoint(plane, tx, ty, options = {}){
           intermediateDistanceMultiplier: 0.86,
         },
       ];
-      const narrowCorridorNoProgressRejectLimit = 6;
-      const narrowCorridorAttemptBudgetLimit = colliderCount >= narrowCorridorColliderThreshold
-        ? 96
-        : 140;
+      const goalNameForNarrowCorridor = `${meta?.goalName || meta?.decisionReason || ""}`.toLowerCase();
+      const isHighValueNarrowCorridorGoal = goalNameForNarrowCorridor.includes("attack")
+        || goalNameForNarrowCorridor.includes("eliminate")
+        || goalNameForNarrowCorridor.includes("flag")
+        || goalNameForNarrowCorridor.includes("cargo");
+      const narrowCorridorDensityBoost = Math.max(0, Math.min(52, Math.round(routeNearbyColliderCount * 1.7)));
+      const narrowCorridorGoalBoost = isHighValueNarrowCorridorGoal ? 26 : 0;
+      const narrowCorridorNoProgressRejectLimit = isHighValueNarrowCorridorGoal ? 8 : 6;
+      const narrowCorridorAttemptBudgetBase = colliderCount >= narrowCorridorColliderThreshold
+        ? 104
+        : 146;
+      const narrowCorridorAttemptBudgetLimit = Math.max(
+        96,
+        Math.min(236, narrowCorridorAttemptBudgetBase + narrowCorridorDensityBoost + narrowCorridorGoalBoost)
+      );
       const narrowCorridorEquivalentLandingTolerancePx = Math.max(4, CELL_SIZE * 0.12);
       const narrowCorridorEquivalentImprovementTolerancePx = Math.max(1.5, CELL_SIZE * 0.05);
       const narrowCorridorEquivalentScaleTolerance = 0.1;
@@ -35028,6 +35107,9 @@ function planPathToPoint(plane, tx, ty, options = {}){
           narrowCorridorMinClearanceThresholdPx: Number(narrowCorridorMinClearanceThresholdPx.toFixed(2)),
           narrowCorridorTriggeredBy,
           searchBudgetUsed: narrowCorridorAttemptBudgetUsed,
+          narrowCorridorAttemptBudgetLimit,
+          narrowCorridorNoProgressRejectLimit,
+          isHighValueNarrowCorridorGoal,
           ...payload,
           ...meta
         });
