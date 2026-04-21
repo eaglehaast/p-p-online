@@ -35560,12 +35560,12 @@ function planPathToPoint(plane, tx, ty, options = {}){
   const allowGapCandidates = requestedRouteClass === "gap";
   const explicitRicochetProbeRequested = shouldForceNonDirectBranch || options?.enableExperimentalRicochet === true;
   const routeBehaviorHint = `${options?.goalName || ""} ${options?.decisionReason || ""}`.toLowerCase();
-  const isAttackOrPressureBehavior = isAttackContext(routeBehaviorHint) || routeBehaviorHint.includes("pressure");
+  const isDefenseOrRetreatBehavior = isDefenseOrRetreatContext(routeBehaviorHint);
   const allowAutoRicochetFallback = !explicitRicochetProbeRequested
     && !strictSpecialPathRejectStage
     && !isCriticalOrEmergencyStage
     && !emergencyBaseDefenseGoal
-    && isAttackOrPressureBehavior;
+    && !isDefenseOrRetreatBehavior;
   let autoRicochetProbeReason = null;
   if(allowAutoRicochetFallback && !hasDirectLine){
     autoRicochetProbeReason = "direct_blocked_auto_ricochet_probe";
