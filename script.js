@@ -32311,13 +32311,32 @@ function getFallbackAiMove(context){
 
     for(const enemy of targetEnemies){
       const directPathClear = isPathClear(plane.x, plane.y, enemy.x, enemy.y);
+      const fallbackGoalText = `${aiRoundState?.currentGoal || ""}`.toLowerCase();
+      const isEmergencyGoal = fallbackGoalText.includes("critical_base_threat")
+        || fallbackGoalText.includes("emergency_base_defense");
+      const blockedDirectSpecialPriorityActive = !directPathClear && !isEmergencyGoal;
+      const specialRouteClasses = blockedDirectSpecialPriorityActive
+        ? ["ricochet", "gap"]
+        : ["gap", "ricochet"];
+      if(blockedDirectSpecialPriorityActive){
+        logAiDecision("fallback_blocked_direct_special_priority_enabled", {
+          source: "fallback_attack",
+          planeId: plane?.id ?? null,
+          enemyId: enemy?.id ?? null,
+          directPathClear,
+          emergencyGoal: isEmergencyGoal,
+          priorityOrder: specialRouteClasses,
+        });
+      }
       const routeProbeMove = planPathWithSpecialRouteProbe(plane, enemy.x, enemy.y, {
         goalName: "attack_enemy_plane",
-        decisionReason: directPathClear ? "fallback_attack_competitive_route_probe" : "fallback_attack_blocked_route_probe",
+        decisionReason: blockedDirectSpecialPriorityActive
+          ? "fallback_attack_blocked_route_probe_special_first"
+          : (directPathClear ? "fallback_attack_competitive_route_probe" : "fallback_attack_blocked_route_probe"),
         targetEnemy: enemy,
         enemy,
         context,
-        specialRouteClasses: ["ricochet", "gap"],
+        specialRouteClasses,
         specialAttemptBudget: 2,
         compareLabel: ["fallback_attack_route_probe", plane?.id ?? "", enemy?.id ?? ""],
       });
