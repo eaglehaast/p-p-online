@@ -32136,14 +32136,13 @@ function getAiCandidateClassComparableScore({
     || isEmergencyDefenseStageGoal(roundGoalText)
     || roundGoalText.includes("critical_base_threat");
   let antiSkewAdjustment = 0;
-  if(denseGeometry && !emergencyGoal){
+  if(denseGeometry){
     if(candidateClass === "direct") antiSkewAdjustment = AI_CLASS_SCORE_ANTI_SKEW_DENSE_DIRECT_PENALTY;
     else if(candidateClass === "ricochet") antiSkewAdjustment = AI_CLASS_SCORE_ANTI_SKEW_DENSE_RICOCHET_BONUS;
     else if(candidateClass === "gap") antiSkewAdjustment = AI_CLASS_SCORE_ANTI_SKEW_DENSE_GAP_BONUS;
   }
 
-  const blockedDirectSpecialClass = directPathBlocked === true
-    && (candidateClass === "gap" || candidateClass === "ricochet");
+  const blockedDirectSpecialClass = candidateClass === "gap" || candidateClass === "ricochet";
   const distanceWeight = blockedDirectSpecialClass
     ? AI_CLASS_SCORE_LENGTH_WEIGHT * 0.42
     : AI_CLASS_SCORE_LENGTH_WEIGHT;
@@ -34466,10 +34465,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
   const isCriticalOrEmergencyStage = isEmergencyDefenseStageGoal(options?.goalName || aiRoundState?.currentGoal);
   const strictGapPathRejectStage = activeGoalName.includes("critical_base_threat")
     || activeGoalName.includes("emergency_");
-  const strictSpecialPathRejectStage = strictGapPathRejectStage
-    || activeGoalName.includes("defense")
-    || activeGoalName.includes("defence")
-    || activeGoalName.includes("override");
+  const strictSpecialPathRejectStage = strictGapPathRejectStage;
   const isUrgentInterceptStage = activeGoalName.includes("intercept");
   const isCarryingEnemyFlag = Boolean(plane?.carriedFlagId && getFlagById(plane.carriedFlagId)?.color === "green");
   const shouldKeepStrictSpecialSecondSegmentReject = strictSpecialPathRejectStage
@@ -35940,13 +35936,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
   const emergencyBaseDefenseGoal = activeGoalName.includes("emergency_base_defense");
   const allowGapCandidates = requestedRouteClass === "gap";
   const explicitRicochetProbeRequested = shouldForceNonDirectBranch || options?.enableExperimentalRicochet === true;
-  const routeBehaviorHint = `${options?.goalName || ""} ${options?.decisionReason || ""}`.toLowerCase();
-  const isDefenseOrRetreatBehavior = isDefenseOrRetreatContext(routeBehaviorHint);
-  const allowAutoRicochetFallback = !explicitRicochetProbeRequested
-    && !strictSpecialPathRejectStage
-    && !isCriticalOrEmergencyStage
-    && !emergencyBaseDefenseGoal
-    && !isDefenseOrRetreatBehavior;
+  const allowAutoRicochetFallback = !explicitRicochetProbeRequested;
   let autoRicochetProbeReason = null;
   if(allowAutoRicochetFallback && !hasDirectLine){
     autoRicochetProbeReason = "direct_blocked_auto_ricochet_probe";
@@ -35956,6 +35946,24 @@ function planPathToPoint(plane, tx, ty, options = {}){
       reason: autoRicochetProbeReason,
       hasDirectLine,
     });
+  }
+  if(!autoRicochetProbeReason
+      && allowAutoRicochetFallback
+      && hasDirectLine
+      && !shouldForceNonDirectBranch){
+    const parallelHint = `${options?.goalName || ""} ${options?.decisionReason || ""}`.toLowerCase();
+    const isAttackCall = isAttackContext(parallelHint)
+      || isCombatGoal(options?.goalName || aiRoundState?.currentGoal || "")
+      || options?.enableParallelRicochetProbe === true;
+    if(isAttackCall){
+      autoRicochetProbeReason = "attack_parallel_ricochet_probe";
+      logAiDecision("auto_ricochet_probe_enabled", {
+        planeId: plane?.id ?? null,
+        goalName: options?.goalName || null,
+        reason: autoRicochetProbeReason,
+        hasDirectLine,
+      });
+    }
   }
   let allowExperimentalRicochet = explicitRicochetProbeRequested || Boolean(autoRicochetProbeReason);
 
