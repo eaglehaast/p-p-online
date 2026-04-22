@@ -13703,7 +13703,29 @@ function explainLatestFallbackDecision(offset = 0){
 }
 
 function downloadLastFivePathMotivations(fileName = ""){
-  const logs = getPathCandidatePassportLogs(5);
+  let logs = getPathCandidatePassportLogs(5);
+  let source = "path_candidate_passport";
+  if(logs.length === 0){
+    const fallbackLogs = getAiFallbackReportEntries(120)
+      .filter((entry) => {
+        const reason = `${entry?.reason || ""}`.toLowerCase();
+        const payload = entry?.payload && typeof entry.payload === "object" ? entry.payload : {};
+        const decisionReason = `${payload?.decisionReason || ""}`.toLowerCase();
+        const goalName = `${payload?.goalName || ""}`.toLowerCase();
+        if(reason === "path_candidate_passport") return true;
+        if(reason.includes("fallback")) return true;
+        if(decisionReason.includes("fallback")) return true;
+        if(goalName.includes("fallback")) return true;
+        return reason.includes("candidate")
+          || reason.includes("launch")
+          || reason.includes("no_move");
+      })
+      .slice(-5);
+    if(fallbackLogs.length > 0){
+      logs = fallbackLogs;
+      source = "fallback_report_entries";
+    }
+  }
   const motivations = logs.map((entry) => {
     const payload = entry?.payload && typeof entry.payload === "object" ? entry.payload : {};
     return {
@@ -13726,6 +13748,11 @@ function downloadLastFivePathMotivations(fileName = ""){
     generatedAt: new Date().toISOString(),
     count: motivations.length,
     type: "last_five_path_motivations",
+    source,
+    diagnostics: {
+      passportLogsAvailable: getPathCandidatePassportLogs(120).length,
+      fallbackLogsAvailable: getAiFallbackReportEntries(120).length,
+    },
     motivations,
   }, null, 2);
   const normalizedFileName = (typeof fileName === "string" && fileName.trim().length > 0)
