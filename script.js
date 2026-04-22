@@ -13602,6 +13602,148 @@ function exportAiFallbackReport(limit = 400){
   return json;
 }
 
+function buildPathDecisionExplanation(logEntry){
+  if(!logEntry || typeof logEntry !== "object"){
+    return {
+      ok: false,
+      reason: "invalid_log_entry",
+    };
+  }
+
+  const payload = logEntry?.payload && typeof logEntry.payload === "object"
+    ? logEntry.payload
+    : {};
+  const entries = Array.isArray(payload.entries) ? payload.entries : [];
+  const selectedCandidate = entries.find((entry) => entry?.event === "candidate_selected") || null;
+  const registeredCandidates = entries.filter((entry) => entry?.event === "candidate_registered");
+  const rejectedCandidates = entries.filter((entry) => entry?.event === "candidate_rejected");
+  const rejectedReasonCounts = {};
+  const rejectedByClass = {};
+  const rejectedRicochetReasons = {};
+  const rejectedGapReasons = {};
+
+  for(const entry of rejectedCandidates){
+    const reason = entry?.killedByReason || "unknown";
+    const cls = entry?.candidateClass || "unknown";
+    rejectedReasonCounts[reason] = (rejectedReasonCounts[reason] || 0) + 1;
+    rejectedByClass[cls] = (rejectedByClass[cls] || 0) + 1;
+    if(cls === "ricochet"){
+      rejectedRicochetReasons[reason] = (rejectedRicochetReasons[reason] || 0) + 1;
+    }
+    if(cls === "gap"){
+      rejectedGapReasons[reason] = (rejectedGapReasons[reason] || 0) + 1;
+    }
+  }
+
+  const summary = {
+    ok: true,
+    at: logEntry.at || null,
+    goalName: payload.goalName || null,
+    decisionReason: payload.decisionReason || null,
+    routeStrictnessMode: payload.routeStrictnessMode || null,
+    requestedRouteClass: payload.requestedRouteClass || null,
+    hasDirectLine: payload.hasDirectLine === true,
+    finalStatus: payload.finalStatus || null,
+    selectedCandidateClass: selectedCandidate?.candidateClass || payload.selectedCandidateClass || null,
+    selectedMoveType: selectedCandidate?.moveType || payload.selectedMoveType || null,
+    finalRejectCode: payload.rejectCode || null,
+    candidateCount: registeredCandidates.length,
+    rejectedCount: rejectedCandidates.length,
+    rejectedReasonCounts,
+    rejectedByClass,
+    rejectedRicochetReasons,
+    rejectedGapReasons,
+  };
+
+  return summary;
+}
+
+function explainLatestPathDecision(offset = 0){
+  const safeOffset = Math.max(0, Math.min(50, Math.floor(Number(offset) || 0)));
+  const logs = getPathCandidatePassportLogs(60);
+  if(logs.length === 0){
+    console.info("[AI_DEBUG] explain-last-path-decision: path-candidate-passport пока пуст.");
+    return null;
+  }
+  const selectedIndex = logs.length - 1 - safeOffset;
+  if(selectedIndex < 0){
+    console.info("[AI_DEBUG] explain-last-path-decision: offset больше числа записей.");
+    return null;
+  }
+  const targetLog = logs[selectedIndex];
+  const explanation = buildPathDecisionExplanation(targetLog);
+  console.info("[AI_DEBUG] explain-last-path-decision", explanation);
+  return explanation;
+}
+
+function explainLatestFallbackDecision(offset = 0){
+  const safeOffset = Math.max(0, Math.min(50, Math.floor(Number(offset) || 0)));
+  const logs = getPathCandidatePassportLogs(120)
+    .filter((entry) => {
+      const payload = entry?.payload && typeof entry.payload === "object" ? entry.payload : {};
+      const finalStatus = `${payload?.finalStatus || ""}`.toLowerCase();
+      const decisionReason = `${payload?.decisionReason || ""}`.toLowerCase();
+      const goalName = `${payload?.goalName || ""}`.toLowerCase();
+      const hasFallbackKeyword = decisionReason.includes("fallback") || goalName.includes("fallback");
+      return finalStatus === "rejected" || hasFallbackKeyword;
+    });
+  if(logs.length === 0){
+    console.info("[AI_DEBUG] explain-last-fallback-decision: fallback/rejected записей пока нет.");
+    return null;
+  }
+  const selectedIndex = logs.length - 1 - safeOffset;
+  if(selectedIndex < 0){
+    console.info("[AI_DEBUG] explain-last-fallback-decision: offset больше числа записей.");
+    return null;
+  }
+  const targetLog = logs[selectedIndex];
+  const explanation = buildPathDecisionExplanation(targetLog);
+  console.info("[AI_DEBUG] explain-last-fallback-decision", explanation);
+  return explanation;
+}
+
+function downloadLastFivePathMotivations(fileName = ""){
+  const logs = getPathCandidatePassportLogs(5);
+  const motivations = logs.map((entry) => {
+    const payload = entry?.payload && typeof entry.payload === "object" ? entry.payload : {};
+    return {
+      at: entry?.at || null,
+      reason: entry?.reason || null,
+      goalName: payload?.goalName || null,
+      decisionReason: payload?.decisionReason || null,
+      finalStatus: payload?.finalStatus || null,
+      selectedCandidateClass: payload?.selectedCandidateClass || null,
+      selectedMoveType: payload?.selectedMoveType || null,
+      rejectCode: payload?.rejectCode || null,
+      routeStrictnessMode: payload?.routeStrictnessMode || null,
+      requestedRouteClass: payload?.requestedRouteClass || null,
+      hasDirectLine: payload?.hasDirectLine === true,
+      entries: Array.isArray(payload?.entries) ? payload.entries : [],
+      explanation: buildPathDecisionExplanation(entry),
+    };
+  });
+  const json = JSON.stringify({
+    generatedAt: new Date().toISOString(),
+    count: motivations.length,
+    type: "last_five_path_motivations",
+    motivations,
+  }, null, 2);
+  const normalizedFileName = (typeof fileName === "string" && fileName.trim().length > 0)
+    ? fileName.trim()
+    : `ai-last-five-motivations-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  const result = downloadTextAsFile(json, normalizedFileName);
+  console.info("[AI_DEBUG] last-five-motivations-download", {
+    ...result,
+    count: motivations.length,
+    fileName: normalizedFileName,
+  });
+  return {
+    ...result,
+    count: motivations.length,
+    fileName: normalizedFileName,
+  };
+}
+
 function downloadTextAsFile(content, fileName){
   const safeText = typeof content === "string" ? content : `${content ?? ""}`;
   const safeFileName = typeof fileName === "string" && fileName.trim().length > 0
@@ -13682,6 +13824,9 @@ if(typeof window !== "undefined"){
   window.AI_DOWNLOAD_PATH_PASSPORT_LOGS = downloadPathCandidatePassportLogs;
   window.AI_EXPORT_FALLBACK_REPORT = exportAiFallbackReport;
   window.AI_DOWNLOAD_FALLBACK_REPORT = downloadAiFallbackReport;
+  window.AI_EXPLAIN_LAST_PATH_DECISION = explainLatestPathDecision;
+  window.AI_EXPLAIN_LAST_FALLBACK_DECISION = explainLatestFallbackDecision;
+  window.AI_DOWNLOAD_LAST_FIVE_MOTIVATIONS = downloadLastFivePathMotivations;
 }
 
 
@@ -32136,14 +32281,13 @@ function getAiCandidateClassComparableScore({
     || isEmergencyDefenseStageGoal(roundGoalText)
     || roundGoalText.includes("critical_base_threat");
   let antiSkewAdjustment = 0;
-  if(denseGeometry && !emergencyGoal){
+  if(denseGeometry){
     if(candidateClass === "direct") antiSkewAdjustment = AI_CLASS_SCORE_ANTI_SKEW_DENSE_DIRECT_PENALTY;
     else if(candidateClass === "ricochet") antiSkewAdjustment = AI_CLASS_SCORE_ANTI_SKEW_DENSE_RICOCHET_BONUS;
     else if(candidateClass === "gap") antiSkewAdjustment = AI_CLASS_SCORE_ANTI_SKEW_DENSE_GAP_BONUS;
   }
 
-  const blockedDirectSpecialClass = directPathBlocked === true
-    && (candidateClass === "gap" || candidateClass === "ricochet");
+  const blockedDirectSpecialClass = candidateClass === "gap" || candidateClass === "ricochet";
   const distanceWeight = blockedDirectSpecialClass
     ? AI_CLASS_SCORE_LENGTH_WEIGHT * 0.42
     : AI_CLASS_SCORE_LENGTH_WEIGHT;
@@ -34466,10 +34610,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
   const isCriticalOrEmergencyStage = isEmergencyDefenseStageGoal(options?.goalName || aiRoundState?.currentGoal);
   const strictGapPathRejectStage = activeGoalName.includes("critical_base_threat")
     || activeGoalName.includes("emergency_");
-  const strictSpecialPathRejectStage = strictGapPathRejectStage
-    || activeGoalName.includes("defense")
-    || activeGoalName.includes("defence")
-    || activeGoalName.includes("override");
+  const strictSpecialPathRejectStage = strictGapPathRejectStage;
   const isUrgentInterceptStage = activeGoalName.includes("intercept");
   const isCarryingEnemyFlag = Boolean(plane?.carriedFlagId && getFlagById(plane.carriedFlagId)?.color === "green");
   const shouldKeepStrictSpecialSecondSegmentReject = strictSpecialPathRejectStage
@@ -35940,13 +36081,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
   const emergencyBaseDefenseGoal = activeGoalName.includes("emergency_base_defense");
   const allowGapCandidates = requestedRouteClass === "gap";
   const explicitRicochetProbeRequested = shouldForceNonDirectBranch || options?.enableExperimentalRicochet === true;
-  const routeBehaviorHint = `${options?.goalName || ""} ${options?.decisionReason || ""}`.toLowerCase();
-  const isDefenseOrRetreatBehavior = isDefenseOrRetreatContext(routeBehaviorHint);
-  const allowAutoRicochetFallback = !explicitRicochetProbeRequested
-    && !strictSpecialPathRejectStage
-    && !isCriticalOrEmergencyStage
-    && !emergencyBaseDefenseGoal
-    && !isDefenseOrRetreatBehavior;
+  const allowAutoRicochetFallback = !explicitRicochetProbeRequested;
   let autoRicochetProbeReason = null;
   if(allowAutoRicochetFallback && !hasDirectLine){
     autoRicochetProbeReason = "direct_blocked_auto_ricochet_probe";
@@ -35956,6 +36091,24 @@ function planPathToPoint(plane, tx, ty, options = {}){
       reason: autoRicochetProbeReason,
       hasDirectLine,
     });
+  }
+  if(!autoRicochetProbeReason
+      && allowAutoRicochetFallback
+      && hasDirectLine
+      && !shouldForceNonDirectBranch){
+    const parallelHint = `${options?.goalName || ""} ${options?.decisionReason || ""}`.toLowerCase();
+    const isAttackCall = isAttackContext(parallelHint)
+      || isCombatGoal(options?.goalName || aiRoundState?.currentGoal || "")
+      || options?.enableParallelRicochetProbe === true;
+    if(isAttackCall){
+      autoRicochetProbeReason = "attack_parallel_ricochet_probe";
+      logAiDecision("auto_ricochet_probe_enabled", {
+        planeId: plane?.id ?? null,
+        goalName: options?.goalName || null,
+        reason: autoRicochetProbeReason,
+        hasDirectLine,
+      });
+    }
   }
   let allowExperimentalRicochet = explicitRicochetProbeRequested || Boolean(autoRicochetProbeReason);
 
