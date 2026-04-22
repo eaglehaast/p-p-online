@@ -13703,6 +13703,7 @@ function explainLatestFallbackDecision(offset = 0){
 }
 
 function downloadLastFivePathMotivations(fileName = ""){
+  const allRecentEvents = getBufferedAiDecisionEvents(1200);
   const logs = getPathCandidatePassportLogs(5);
   const motivations = logs.map((entry) => {
     const payload = entry?.payload && typeof entry.payload === "object" ? entry.payload : {};
@@ -13722,11 +13723,16 @@ function downloadLastFivePathMotivations(fileName = ""){
       explanation: buildPathDecisionExplanation(entry),
     };
   });
+  const diagnostics = buildLastFivePathMotivationsDiagnostics({
+    allRecentEvents,
+    passportLogs: logs,
+  });
   const json = JSON.stringify({
     generatedAt: new Date().toISOString(),
     count: motivations.length,
     type: "last_five_path_motivations",
     motivations,
+    diagnostics,
   }, null, 2);
   const normalizedFileName = (typeof fileName === "string" && fileName.trim().length > 0)
     ? fileName.trim()
@@ -13741,6 +13747,71 @@ function downloadLastFivePathMotivations(fileName = ""){
     ...result,
     count: motivations.length,
     fileName: normalizedFileName,
+  };
+}
+
+function buildLastFivePathMotivationsDiagnostics({ allRecentEvents = [], passportLogs = [] } = {}){
+  const recentEvents = Array.isArray(allRecentEvents) ? allRecentEvents : [];
+  const safePassportLogs = Array.isArray(passportLogs) ? passportLogs : [];
+  const reasonCounts = {};
+  const blockerKeywords = ["reject", "blocked", "fallback", "detour_not_found", "stuck", "fail_safe"];
+  const blockerEvents = [];
+
+  for(const event of recentEvents){
+    const reason = `${event?.reason || "unknown"}`;
+    reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
+    const normalizedReason = reason.toLowerCase();
+    const payload = event?.payload && typeof event.payload === "object" ? event.payload : {};
+    const reasonCode = `${payload?.reasonCode || ""}`.toLowerCase();
+    const rejectCode = `${payload?.rejectCode || ""}`.toLowerCase();
+    const isBlocker = blockerKeywords.some((keyword) =>
+      normalizedReason.includes(keyword)
+      || reasonCode.includes(keyword)
+      || rejectCode.includes(keyword)
+    );
+    if(isBlocker){
+      blockerEvents.push({
+        at: event?.at || null,
+        reason: event?.reason || null,
+        reasonCode: payload?.reasonCode || null,
+        rejectCode: payload?.rejectCode || null,
+        goalName: payload?.goalName || null,
+        decisionReason: payload?.decisionReason || null,
+      });
+    }
+  }
+
+  const topReasons = Object.entries(reasonCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 12)
+    .map(([reason, count]) => ({ reason, count }));
+
+  const hasAnyPathCandidatePassportEvents = (reasonCounts.path_candidate_passport || 0) > 0;
+  const noMotivationsReason = safePassportLogs.length > 0
+    ? null
+    : (!hasAnyPathCandidatePassportEvents
+      ? "path_candidate_passport_events_absent_in_buffer"
+      : "passport_events_exist_but_filtered_out");
+
+  const explanation = safePassportLogs.length > 0
+    ? "Найдены записи path_candidate_passport — motivations построены по последним 5 записям."
+    : "В буфере нет записей path_candidate_passport, поэтому motivations пустой. Это обычно означает: либо AI ещё не сделал ход в текущей сессии, либо страница была перезагружена и буфер очищен.";
+
+  return {
+    eventsBuffered: recentEvents.length,
+    pathCandidatePassportEvents: reasonCounts.path_candidate_passport || 0,
+    exportedPassportEvents: safePassportLogs.length,
+    noMotivationsReason,
+    explanation,
+    topReasons,
+    possibleBlockers: blockerEvents.slice(-10),
+    sampledRecentEvents: recentEvents.slice(-10).map((event) => ({
+      at: event?.at || null,
+      reason: event?.reason || null,
+      goalName: event?.payload?.goalName || null,
+      decisionReason: event?.payload?.decisionReason || null,
+      rejectCode: event?.payload?.rejectCode || null,
+    })),
   };
 }
 
