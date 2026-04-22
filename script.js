@@ -14717,26 +14717,76 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         }
       }
 
-      const directEnemyCandidate = enemyPlanes
+      const buildSimulatedEnemyCandidate = (enemy) => {
+        if(!enemy) return null;
+        const simulated = findBestSimulatedShot(launchReadyPlane, enemy, {
+          maxBounces: 3,
+          // hitRadius: допуск «плоскость пути до центра врага». В реальной физике столкновение
+          // происходит когда плоскость (радиус POINT_RADIUS) касается врага (радиус POINT_RADIUS),
+          // то есть на расстоянии ~2·POINT_RADIUS между центрами. Дефолтный POINT_RADIUS слишком строг.
+          hitRadius: POINT_RADIUS * 2,
+        });
+        const sim = simulated?.sim;
+        if(typeof window !== "undefined"){
+          window.__AI_RICOCHET_PROBE_LAST = {
+            planeId: launchReadyPlane?.id ?? null,
+            enemyId: enemy?.id ?? null,
+            hitTarget: Boolean(sim?.hitTarget),
+            bounceCount: sim?.bounceCount ?? null,
+            predictedOutcome: sim?.predictedOutcome ?? null,
+            score: Number.isFinite(simulated?.score) ? Number(simulated.score.toFixed(2)) : null,
+            sampledAt: performance.now(),
+          };
+        }
+        if(!sim || !sim.hitTarget) return null;
+        const launchScale = Math.max(0.1, Math.min(1, Number.isFinite(sim.launchVector?.scale) ? sim.launchVector.scale : 1));
+        const launchDx = Number(sim.launchVector?.dx);
+        const launchDy = Number(sim.launchVector?.dy);
+        if(!Number.isFinite(launchDx) || !Number.isFinite(launchDy)) return null;
+        const dirLen = Math.hypot(launchDx, launchDy);
+        if(!(dirLen > 0)) return null;
+        const normDx = launchDx / dirLen;
+        const normDy = launchDy / dirLen;
+        const effectiveRangePx = getPlaneEffectiveRangePx(launchReadyPlane);
+        const travelPx = Math.max(1, effectiveRangePx * launchScale);
+        const landingX = launchReadyPlane.x + normDx * travelPx;
+        const landingY = launchReadyPlane.y + normDy * travelPx;
+        if(!Number.isFinite(landingX) || !Number.isFinite(landingY)) return null;
+        const bouncedShot = sim.bounceCount > 0;
+        return {
+          plane: launchReadyPlane,
+          landingX,
+          landingY,
+          targetPoint: { x: enemy.x, y: enemy.y },
+          decisionReason: bouncedShot ? "simple_step2_ricochet_enemy" : "simple_step2_direct_enemy",
+          goalName: "simple_step2_attack_enemy",
+          whyChosen: `simulated_hit_enemy_id_${enemy.id || "unknown"}_bounces_${sim.bounceCount}`,
+          routeClass: bouncedShot ? "ricochet" : "direct",
+          bounceCount: sim.bounceCount,
+          simulatedScore: simulated.score,
+          predictedOutcome: sim.predictedOutcome,
+        };
+      };
+
+      const attackCandidates = enemyPlanes
         .map((enemy) => {
           const enemyDistance = dist(launchReadyPlane, enemy);
-          const inRange = enemyDistance <= maxFlightDistancePx * 1.05;
-          const directPath = isPathClear(launchReadyPlane.x, launchReadyPlane.y, enemy.x, enemy.y);
-          if(!inRange || directPath !== true) return null;
-          const move = buildMoveTowardTarget(launchReadyPlane, enemy, maxFlightDistancePx, {
-            decisionReason: "simple_step2_direct_enemy",
-            goalName: "simple_step2_attack_enemy",
-            whyChosen: `direct_enemy_hit_enemy_id_${enemy.id || "unknown"}`,
-          });
+          // Симулятор сам ограничивает дальность scale-ом; здесь — sanity-лимит, ослабленный для рикошета.
+          if(!(enemyDistance <= maxFlightDistancePx * 1.8)) return null;
+          const move = buildSimulatedEnemyCandidate(enemy);
           if(!move) return null;
-          return { enemy, move, enemyDistance };
+          return { enemy, move, enemyDistance, score: move.simulatedScore };
         })
         .filter(Boolean)
-        .sort((a, b) => a.enemyDistance - b.enemyDistance)[0] || null;
+        .sort((a, b) => {
+          if(Math.abs((a.score ?? 0) - (b.score ?? 0)) > 0.0001) return (b.score ?? 0) - (a.score ?? 0);
+          return a.enemyDistance - b.enemyDistance;
+        });
+      const bestAttackCandidate = attackCandidates[0] || null;
 
-      let selectedPlan = directEnemyCandidate?.move || null;
+      let selectedPlan = bestAttackCandidate?.move || null;
       let planTier = 1;
-      let planDistance = Number.isFinite(directEnemyCandidate?.enemyDistance) ? directEnemyCandidate.enemyDistance : Number.POSITIVE_INFINITY;
+      let planDistance = Number.isFinite(bestAttackCandidate?.enemyDistance) ? bestAttackCandidate.enemyDistance : Number.POSITIVE_INFINITY;
 
       if(!selectedPlan){
         selectedPlan = buildMoveTowardTarget(launchReadyPlane, centerTarget, maxFlightDistancePx, {
@@ -14748,7 +14798,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         planDistance = selectedPlan ? Math.hypot(selectedPlan.landingX - launchReadyPlane.x, selectedPlan.landingY - launchReadyPlane.y) : Number.POSITIVE_INFINITY;
       }
 
-      if(selectedPlan && nearestCargo && !directEnemyCandidate){
+      if(selectedPlan && nearestCargo && !bestAttackCandidate){
         const cargoMove = buildMoveTowardTarget(launchReadyPlane, nearestCargo.center, maxFlightDistancePx, {
           decisionReason: "simple_step2_pickup_cargo",
           goalName: "simple_step2_cargo",
@@ -14774,7 +14824,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           ...selectedPlan,
           planTier,
           planDistance,
-          hasDirectEnemy: Boolean(directEnemyCandidate),
+          hasDirectEnemy: Boolean(bestAttackCandidate),
           readyCargoCount: readyCargo.length,
         });
       }
@@ -14839,6 +14889,10 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       },
       directEnemyCandidate: Boolean(selectedPlan.hasDirectEnemy),
       readyCargoCount: selectedPlan.readyCargoCount ?? readyCargo.length,
+      routeClass: selectedPlan.routeClass || "direct",
+      bounceCount: Number.isFinite(selectedPlan.bounceCount) ? selectedPlan.bounceCount : 0,
+      simulatedScore: Number.isFinite(selectedPlan.simulatedScore) ? Number(selectedPlan.simulatedScore.toFixed(2)) : null,
+      predictedOutcome: selectedPlan.predictedOutcome || null,
     });
 
     let launchResult = tryIssueAiMoveWithInventory({
@@ -38388,7 +38442,7 @@ function enumerateAIShotCandidates(plane, target, options = {}){
 
   for(let a = targetAngle - Math.PI; a <= targetAngle + Math.PI + 1e-6; a += coarseAngleStep){
     for(let s = 0.2; s <= 1.0001; s += coarseScaleStep){
-      const sim = simulateAIShot(plane, { dx: Math.cos(a), dy: Math.sin(a), scale: s }, { target, maxBounces: options.maxBounces });
+      const sim = simulateAIShot(plane, { dx: Math.cos(a), dy: Math.sin(a), scale: s }, { target, maxBounces: options.maxBounces, hitRadius: options.hitRadius });
       if(!sim) continue;
       const score = scoreAISimulatedCandidate(sim, { target, targetDistance });
       coarse.push({ sim, score, angle: a, scale: s });
@@ -38402,7 +38456,7 @@ function enumerateAIShotCandidates(plane, target, options = {}){
       for(let ds = -0.12; ds <= 0.12 + 1e-6; ds += fineScaleStep){
         const a = seed.angle + da;
         const s = Math.max(0.1, Math.min(1, seed.scale + ds));
-        const sim = simulateAIShot(plane, { dx: Math.cos(a), dy: Math.sin(a), scale: s }, { target, maxBounces: options.maxBounces });
+        const sim = simulateAIShot(plane, { dx: Math.cos(a), dy: Math.sin(a), scale: s }, { target, maxBounces: options.maxBounces, hitRadius: options.hitRadius });
         if(!sim) continue;
         refined.push({ sim, score: scoreAISimulatedCandidate(sim, { target, targetDistance }), angle: a, scale: s });
       }
@@ -38419,7 +38473,10 @@ function selectBestAICandidate(candidates){
 }
 
 function findBestSimulatedShot(plane, target, options = {}){
-  const candidates = enumerateAIShotCandidates(plane, target, { maxBounces: options.maxBounces ?? AI_SIM_MAX_BOUNCES_DEFAULT });
+  const candidates = enumerateAIShotCandidates(plane, target, {
+    maxBounces: options.maxBounces ?? AI_SIM_MAX_BOUNCES_DEFAULT,
+    hitRadius: options.hitRadius,
+  });
   return selectBestAICandidate(candidates);
 }
 
