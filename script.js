@@ -14933,9 +14933,10 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         }
       }
 
-      const buildSimulatedEnemyCandidate = (enemy) => {
-        if(!enemy) return null;
-        const simulated = findBestSimulatedShot(launchReadyPlane, enemy, { maxBounces: 3 });
+      const buildSimulatedEnemyCandidate = (plane, enemy, maxFlightDistancePx) => {
+        if(!plane || !enemy) return null;
+        if(!Number.isFinite(maxFlightDistancePx) || maxFlightDistancePx <= 0) return null;
+        const simulated = findBestSimulatedShot(plane, enemy, { maxBounces: 3 });
         const sim = simulated?.sim;
         if(!sim || !sim.hitTarget) return null;
         const launchScale = Math.max(0.1, Math.min(1, Number.isFinite(sim.launchVector?.scale) ? sim.launchVector.scale : 1));
@@ -14946,14 +14947,14 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         if(!(dirLen > 0)) return null;
         const normDx = launchDx / dirLen;
         const normDy = launchDy / dirLen;
-        const effectiveRangePx = getPlaneEffectiveRangePx(launchReadyPlane);
+        const effectiveRangePx = getPlaneEffectiveRangePx(plane);
         const travelPx = Math.max(1, effectiveRangePx * launchScale);
-        const landingX = launchReadyPlane.x + normDx * travelPx;
-        const landingY = launchReadyPlane.y + normDy * travelPx;
+        const landingX = plane.x + normDx * travelPx;
+        const landingY = plane.y + normDy * travelPx;
         if(!Number.isFinite(landingX) || !Number.isFinite(landingY)) return null;
         const bouncedShot = sim.bounceCount > 0;
         return {
-          plane: launchReadyPlane,
+          plane,
           landingX,
           landingY,
           targetPoint: { x: enemy.x, y: enemy.y },
@@ -14962,7 +14963,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           whyChosen: `simulated_hit_enemy_id_${enemy.id || "unknown"}_bounces_${sim.bounceCount}`,
           routeClass: bouncedShot ? "ricochet" : "direct",
           bounceCount: sim.bounceCount,
-          simulatedScore: simulated.score,
+          score: simulated.score,
           predictedOutcome: sim.predictedOutcome,
         };
       };
@@ -14970,14 +14971,11 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       const attackCandidates = enemyPlanes
         .map((enemy) => {
           const enemyDistance = dist(launchReadyPlane, enemy);
-          const inRange = enemyDistance <= maxFlightDistancePx * 1.05;
-          const directPath = isPathClear(launchReadyPlane.x, launchReadyPlane.y, enemy.x, enemy.y);
-          if(!inRange || directPath !== true) return null;
           // Симулятор сам ограничивает дальность scale-ом; здесь — sanity-лимит, ослабленный для рикошета.
           if(!(enemyDistance <= maxFlightDistancePx * 1.8)) return null;
-          const move = buildSimulatedEnemyCandidate(enemy);
+          const move = buildSimulatedEnemyCandidate(launchReadyPlane, enemy, maxFlightDistancePx);
           if(!move) return null;
-          return { enemy, move, enemyDistance, score: move.simulatedScore };
+          return { enemy, move, enemyDistance, score: move.score };
         })
         .filter(Boolean)
         .sort((a, b) => {
@@ -15093,7 +15091,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       readyCargoCount: selectedPlan.readyCargoCount ?? readyCargo.length,
       routeClass: selectedPlan.routeClass || "direct",
       bounceCount: Number.isFinite(selectedPlan.bounceCount) ? selectedPlan.bounceCount : 0,
-      simulatedScore: Number.isFinite(selectedPlan.simulatedScore) ? Number(selectedPlan.simulatedScore.toFixed(2)) : null,
+      simulatedScore: Number.isFinite(selectedPlan.score) ? Number(selectedPlan.score.toFixed(2)) : null,
       predictedOutcome: selectedPlan.predictedOutcome || null,
     });
 
