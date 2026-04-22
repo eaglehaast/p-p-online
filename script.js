@@ -14737,6 +14737,26 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       availableEnemyFlags: typeof getAvailableFlagsByColor === "function" ? getAvailableFlagsByColor("green") : [],
       shouldUseFlagsMode: Boolean(settings?.flagsMode),
     };
+    const shotSimulationQuality = typeof buildAiShotSimulationQualityProfile === "function"
+      ? buildAiShotSimulationQualityProfile(launchReadyPlanes.length, enemyPlanes.length, {
+          hasReadyCargo: readyCargo.length > 0,
+        })
+      : {
+          coarseAngleStepDeg: 6,
+          fineAngleStepDeg: 2,
+          coarseScaleStep: 0.08,
+          fineScaleStep: 0.03,
+          seedCount: 8,
+          coarsePoolSize: 20,
+          maxEnemyCandidatesPerPlane: 3,
+          profileName: "default_fallback",
+        };
+    logAiDecision("simple_step2_shot_sim_quality_profile", {
+      profileName: shotSimulationQuality.profileName,
+      planeCount: launchReadyPlanes.length,
+      enemyCount: enemyPlanes.length,
+      maxEnemyCandidatesPerPlane: shotSimulationQuality.maxEnemyCandidatesPerPlane,
+    });
 
     function tryIssueAiMoveWithInventory(plan, source = "simple_step2_selector"){
       if(!plan?.plane || !Number.isFinite(plan?.landingX) || !Number.isFinite(plan?.landingY)){
@@ -14933,10 +14953,19 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         }
       }
 
-      const buildSimulatedEnemyCandidate = (plane, enemy, maxFlightDistancePx) => {
+      const buildSimulatedEnemyCandidate = (plane, enemy, maxFlightDistancePx, simulationOptions = {}) => {
         if(!plane || !enemy) return null;
         if(!Number.isFinite(maxFlightDistancePx) || maxFlightDistancePx <= 0) return null;
-        const simulated = findBestSimulatedShot(plane, enemy, { maxBounces: 3 });
+        const simulated = findBestSimulatedShot(plane, enemy, {
+          maxBounces: 3,
+          coarseAngleStepDeg: simulationOptions.coarseAngleStepDeg,
+          fineAngleStepDeg: simulationOptions.fineAngleStepDeg,
+          coarseScaleStep: simulationOptions.coarseScaleStep,
+          fineScaleStep: simulationOptions.fineScaleStep,
+          seedCount: simulationOptions.seedCount,
+          coarsePoolSize: simulationOptions.coarsePoolSize,
+          refineScaleWindow: simulationOptions.refineScaleWindow,
+        });
         const sim = simulated?.sim;
         if(!sim || !sim.hitTarget) return null;
         const launchScale = Math.max(0.1, Math.min(1, Number.isFinite(sim.launchVector?.scale) ? sim.launchVector.scale : 1));
@@ -14968,14 +14997,17 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         };
       };
 
-      const attackCandidates = enemyPlanes
-        .map((enemy) => {
-          const enemyDistance = dist(launchReadyPlane, enemy);
-          // Симулятор сам ограничивает дальность scale-ом; здесь — sanity-лимит, ослабленный для рикошета.
-          if(!(enemyDistance <= maxFlightDistancePx * 1.8)) return null;
-          const move = buildSimulatedEnemyCandidate(launchReadyPlane, enemy, maxFlightDistancePx);
+      const prioritizedEnemiesForPlane = enemyPlanes
+        .map((enemy) => ({ enemy, enemyDistance: dist(launchReadyPlane, enemy) }))
+        .filter((entry) => entry.enemyDistance <= maxFlightDistancePx * 1.8)
+        .sort((a, b) => a.enemyDistance - b.enemyDistance)
+        .slice(0, shotSimulationQuality.maxEnemyCandidatesPerPlane);
+
+      const attackCandidates = prioritizedEnemiesForPlane
+        .map((entry) => {
+          const move = buildSimulatedEnemyCandidate(launchReadyPlane, entry.enemy, maxFlightDistancePx, shotSimulationQuality);
           if(!move) return null;
-          return { enemy, move, enemyDistance, score: move.score };
+          return { enemy: entry.enemy, move, enemyDistance: entry.enemyDistance, score: move.score };
         })
         .filter(Boolean)
         .sort((a, b) => {
@@ -38643,6 +38675,53 @@ const AI_SIM_COARSE_ANGLE_STEP_DEG = 6;
 const AI_SIM_FINE_ANGLE_STEP_DEG = 2;
 const AI_SIM_COARSE_SCALE_STEP = 0.08;
 const AI_SIM_FINE_SCALE_STEP = 0.03;
+const AI_SIM_SEED_COUNT_DEFAULT = 8;
+const AI_SIM_COARSE_POOL_DEFAULT = 20;
+const AI_SIM_MAX_ENEMIES_PER_PLANE_DEFAULT = 3;
+const AI_SIM_COMPLEXITY_SOFT_CAP = 24;
+const AI_SIM_COMPLEXITY_HARD_CAP = 48;
+
+function buildAiShotSimulationQualityProfile(planeCount, enemyCount, options = {}){
+  const normalizedPlaneCount = Number.isFinite(planeCount) ? Math.max(1, planeCount) : 1;
+  const normalizedEnemyCount = Number.isFinite(enemyCount) ? Math.max(1, enemyCount) : 1;
+  const complexity = normalizedPlaneCount * normalizedEnemyCount;
+  const hasReadyCargo = options.hasReadyCargo === true;
+
+  if(complexity >= AI_SIM_COMPLEXITY_HARD_CAP){
+    return {
+      coarseAngleStepDeg: 16,
+      fineAngleStepDeg: 6,
+      coarseScaleStep: 0.2,
+      fineScaleStep: 0.1,
+      seedCount: 3,
+      coarsePoolSize: 8,
+      maxEnemyCandidatesPerPlane: 1,
+      profileName: "hard_cap",
+    };
+  }
+  if(complexity >= AI_SIM_COMPLEXITY_SOFT_CAP || hasReadyCargo){
+    return {
+      coarseAngleStepDeg: 12,
+      fineAngleStepDeg: 4,
+      coarseScaleStep: 0.16,
+      fineScaleStep: 0.08,
+      seedCount: 4,
+      coarsePoolSize: 10,
+      maxEnemyCandidatesPerPlane: 2,
+      profileName: hasReadyCargo ? "cargo_soft_cap" : "soft_cap",
+    };
+  }
+  return {
+    coarseAngleStepDeg: AI_SIM_COARSE_ANGLE_STEP_DEG,
+    fineAngleStepDeg: AI_SIM_FINE_ANGLE_STEP_DEG,
+    coarseScaleStep: AI_SIM_COARSE_SCALE_STEP,
+    fineScaleStep: AI_SIM_FINE_SCALE_STEP,
+    seedCount: AI_SIM_SEED_COUNT_DEFAULT,
+    coarsePoolSize: AI_SIM_COARSE_POOL_DEFAULT,
+    maxEnemyCandidatesPerPlane: AI_SIM_MAX_ENEMIES_PER_PLANE_DEFAULT,
+    profileName: "default",
+  };
+}
 
 function buildAiNavigationMaskFromBrickFrame(){
   if(!brickFrameData?.data || !Number.isFinite(brickFrameData.width) || !Number.isFinite(brickFrameData.height)){
@@ -38810,9 +38889,11 @@ function enumerateAIShotCandidates(plane, target, options = {}){
   const fineAngleStep = (Number.isFinite(options.fineAngleStepDeg) ? options.fineAngleStepDeg : AI_SIM_FINE_ANGLE_STEP_DEG) * Math.PI / 180;
   const coarseScaleStep = Number.isFinite(options.coarseScaleStep) ? options.coarseScaleStep : AI_SIM_COARSE_SCALE_STEP;
   const fineScaleStep = Number.isFinite(options.fineScaleStep) ? options.fineScaleStep : AI_SIM_FINE_SCALE_STEP;
+  const seedCount = Number.isFinite(options.seedCount) ? Math.max(1, Math.floor(options.seedCount)) : AI_SIM_SEED_COUNT_DEFAULT;
+  const coarsePoolSize = Number.isFinite(options.coarsePoolSize) ? Math.max(1, Math.floor(options.coarsePoolSize)) : AI_SIM_COARSE_POOL_DEFAULT;
+  const refineScaleWindow = Number.isFinite(options.refineScaleWindow) ? Math.max(0.02, options.refineScaleWindow) : 0.12;
   const targetAngle = Math.atan2(target.y - plane.y, target.x - plane.x);
   const targetDistance = Math.hypot(target.x - plane.x, target.y - plane.y);
-  const scaleCenter = Math.max(0.1, Math.min(1, targetDistance / Math.max(1, getPlaneEffectiveRangePx(plane))));
   const coarse = [];
 
   for(let a = targetAngle - Math.PI; a <= targetAngle + Math.PI + 1e-6; a += coarseAngleStep){
@@ -38824,11 +38905,11 @@ function enumerateAIShotCandidates(plane, target, options = {}){
     }
   }
   coarse.sort((a, b) => b.score - a.score);
-  const seeds = coarse.slice(0, 8);
+  const seeds = coarse.slice(0, seedCount);
   const refined = [];
   for(const seed of seeds){
     for(let da = -coarseAngleStep; da <= coarseAngleStep + 1e-6; da += fineAngleStep){
-      for(let ds = -0.12; ds <= 0.12 + 1e-6; ds += fineScaleStep){
+      for(let ds = -refineScaleWindow; ds <= refineScaleWindow + 1e-6; ds += fineScaleStep){
         const a = seed.angle + da;
         const s = Math.max(0.1, Math.min(1, seed.scale + ds));
         const sim = simulateAIShot(plane, { dx: Math.cos(a), dy: Math.sin(a), scale: s }, { target, maxBounces: options.maxBounces });
@@ -38837,7 +38918,7 @@ function enumerateAIShotCandidates(plane, target, options = {}){
       }
     }
   }
-  const pool = [...coarse.slice(0, 20), ...refined];
+  const pool = [...coarse.slice(0, coarsePoolSize), ...refined];
   pool.sort((a, b) => b.score - a.score);
   return pool;
 }
@@ -38848,7 +38929,16 @@ function selectBestAICandidate(candidates){
 }
 
 function findBestSimulatedShot(plane, target, options = {}){
-  const candidates = enumerateAIShotCandidates(plane, target, { maxBounces: options.maxBounces ?? AI_SIM_MAX_BOUNCES_DEFAULT });
+  const candidates = enumerateAIShotCandidates(plane, target, {
+    maxBounces: options.maxBounces ?? AI_SIM_MAX_BOUNCES_DEFAULT,
+    coarseAngleStepDeg: options.coarseAngleStepDeg,
+    fineAngleStepDeg: options.fineAngleStepDeg,
+    coarseScaleStep: options.coarseScaleStep,
+    fineScaleStep: options.fineScaleStep,
+    seedCount: options.seedCount,
+    coarsePoolSize: options.coarsePoolSize,
+    refineScaleWindow: options.refineScaleWindow,
+  });
   return selectBestAICandidate(candidates);
 }
 
