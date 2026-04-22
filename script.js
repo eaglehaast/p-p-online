@@ -36063,7 +36063,16 @@ function planPathToPoint(plane, tx, ty, options = {}){
 
   function flushPathCandidatePassportSummary(extra = {}){
     if(pathCandidatePassportEntries.length === 0){
-      return;
+      pushPathCandidatePassportEntry({
+        event: "candidate_rejected",
+        stage: "candidate_generation",
+        candidateClass: requestedRouteClass || "direct",
+        moveType: requestedRouteClass === "ricochet" ? "mirror" : "direct",
+        decisionReason: options?.decisionReason || null,
+        goalName: options?.goalName || aiRoundState?.currentGoal || null,
+        killedAtStage: "candidate_generation",
+        killedByReason: planPathToPoint.lastRejectCode || "no_candidates_generated",
+      });
     }
     logAiDecision("path_candidate_passport", {
       planeId: plane?.id ?? null,
@@ -36384,6 +36393,62 @@ function planPathToPoint(plane, tx, ty, options = {}){
     } else {
       mirrorRejectCode = "v2_simulation_candidate_not_found";
       planPathToPoint.lastRejectMeta = null;
+    }
+  }
+
+  if(allowExperimentalRicochet){
+    const hasRicochetCandidate = candidateBasket.some((candidate) => candidate?.candidateClass === "ricochet");
+    if(!hasRicochetCandidate){
+      const fallbackMirror = findMirrorShot(plane, { x: tx, y: ty }, {
+        logReject: true,
+        pressureBoost: hasDirectLine ? 0 : AI_MIRROR_STUCK_RECOVERY_PRESSURE_BONUS * 0.35,
+        minBounceDistanceScale: hasDirectLine ? 1 : 0.88,
+        maxPathRatioBonus: hasDirectLine ? 0.02 : 0.08,
+        goalName: options?.goalName || "",
+        allowNormalModeFirstSegmentRelaxation: !strictSpecialPathRejectStage,
+        allowGapBeforeBounceGrace: !hasDirectLine,
+        allowGapAfterBounceGrace: !hasDirectLine,
+        allowGapFinalLegRelaxation: !hasDirectLine,
+        allowRicochetBeforeBounceBorderline: !hasDirectLine,
+      });
+      if(fallbackMirror){
+        const dx = fallbackMirror.mirrorTarget.x - plane.x;
+        const dy = fallbackMirror.mirrorTarget.y - plane.y;
+        const baseAngle = Math.atan2(dy, dx);
+        const baseScale = Math.min(fallbackMirror.totalDist / Math.max(1, flightDistancePx), 1);
+        const scale = applyAiMinLaunchScale(baseScale, {
+          source: "plan_path_mirror_fallback_probe",
+          planeId: plane?.id ?? null,
+          goalName: options?.goalName || null,
+          decisionReason: options?.decisionReason || null,
+          moveDistance: fallbackMirror.totalDist,
+          targetX: tx,
+          targetY: ty,
+        });
+        const mirrorMove = buildMoveWithSafeDeviation(baseAngle, fallbackMirror.totalDist, scale, {
+          moveType: "mirror",
+          candidateClass: "ricochet",
+        });
+        if(mirrorMove){
+          mirrorMove.routeQualityScore = Number.isFinite(fallbackMirror.mirrorQualityScore)
+            ? fallbackMirror.mirrorQualityScore
+            : mirrorMove.routeQualityScore;
+          logAiDecision("mirror_selected_reason", {
+            source: "plan_path_to_point",
+            reason: hasDirectLine ? "parallel_ricochet_probe" : "direct_blocked_mirror_fallback_probe",
+            planeId: plane?.id ?? null,
+            targetEnemyId: options?.targetEnemy?.id ?? options?.targetEnemyId ?? null,
+            clearSky: isCurrentMapClearSky(),
+            pathDistance: Number(fallbackMirror.totalDist.toFixed(1)),
+          });
+          registerCandidate(mirrorMove);
+        }
+      } else {
+        mirrorRejectCode = mirrorRejectCode || findMirrorShot.lastRejectCode || "mirror_fallback_probe_not_found";
+        if(!planPathToPoint.lastRejectMeta){
+          planPathToPoint.lastRejectMeta = findMirrorShot.lastRejectMeta || null;
+        }
+      }
     }
   }
 
