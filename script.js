@@ -13703,7 +13703,29 @@ function explainLatestFallbackDecision(offset = 0){
 }
 
 function downloadLastFivePathMotivations(fileName = ""){
-  const logs = getPathCandidatePassportLogs(5);
+  let logs = getPathCandidatePassportLogs(5);
+  let source = "path_candidate_passport";
+  if(logs.length === 0){
+    const fallbackLogs = getAiFallbackReportEntries(120)
+      .filter((entry) => {
+        const reason = `${entry?.reason || ""}`.toLowerCase();
+        const payload = entry?.payload && typeof entry.payload === "object" ? entry.payload : {};
+        const decisionReason = `${payload?.decisionReason || ""}`.toLowerCase();
+        const goalName = `${payload?.goalName || ""}`.toLowerCase();
+        if(reason === "path_candidate_passport") return true;
+        if(reason.includes("fallback")) return true;
+        if(decisionReason.includes("fallback")) return true;
+        if(goalName.includes("fallback")) return true;
+        return reason.includes("candidate")
+          || reason.includes("launch")
+          || reason.includes("no_move");
+      })
+      .slice(-5);
+    if(fallbackLogs.length > 0){
+      logs = fallbackLogs;
+      source = "fallback_report_entries";
+    }
+  }
   const motivations = logs.map((entry) => {
     const payload = entry?.payload && typeof entry.payload === "object" ? entry.payload : {};
     return {
@@ -13726,6 +13748,11 @@ function downloadLastFivePathMotivations(fileName = ""){
     generatedAt: new Date().toISOString(),
     count: motivations.length,
     type: "last_five_path_motivations",
+    source,
+    diagnostics: {
+      passportLogsAvailable: getPathCandidatePassportLogs(120).length,
+      fallbackLogsAvailable: getAiFallbackReportEntries(120).length,
+    },
     motivations,
   }, null, 2);
   const normalizedFileName = (typeof fileName === "string" && fileName.trim().length > 0)
@@ -35903,6 +35930,32 @@ function planPathToPoint(plane, tx, ty, options = {}){
                 }));
                 if(comfortMove){
                   emitNarrowCorridorPhaseCompletedSummary(phaseConfig, phaseSummary, "selected");
+                  logAiDecision("path_candidate_passport", {
+                    planeId: plane?.id ?? null,
+                    targetX: Number.isFinite(tx) ? Number(tx.toFixed(2)) : null,
+                    targetY: Number.isFinite(ty) ? Number(ty.toFixed(2)) : null,
+                    goalName: options?.goalName || aiRoundState?.currentGoal || null,
+                    decisionReason: options?.decisionReason || null,
+                    requestedRouteClass: null,
+                    hasDirectLine: isPathClear(plane.x, plane.y, tx, ty),
+                    routeStrictnessMode,
+                    entries: [{
+                      seq: 1,
+                      event: "candidate_selected",
+                      stage: "narrow_corridor",
+                      candidateClass: comfortMove?.candidateClass || comfortMove?.routeClass || "direct",
+                      moveType: comfortMove?.moveType || "direct",
+                      decisionReason: comfortMove?.decisionReason || options?.decisionReason || null,
+                      goalName: comfortMove?.goalName || options?.goalName || aiRoundState?.currentGoal || null,
+                      routeQualityScore: Number.isFinite(comfortMove?.routeQualityScore) ? Number(comfortMove.routeQualityScore.toFixed(6)) : null,
+                      totalDist: Number.isFinite(comfortMove?.totalDist) ? Number(comfortMove.totalDist.toFixed(2)) : null,
+                      selected: true,
+                      source: "planPathToPoint",
+                    }],
+                    finalStatus: "selected",
+                    selectedCandidateClass: comfortMove?.candidateClass || comfortMove?.routeClass || "direct",
+                    selectedMoveType: comfortMove?.moveType || "direct",
+                  });
                   return comfortMove;
                 }
               }
@@ -35992,6 +36045,32 @@ function planPathToPoint(plane, tx, ty, options = {}){
     }
 
     if(bestRoute){
+      logAiDecision("path_candidate_passport", {
+        planeId: plane?.id ?? null,
+        targetX: Number.isFinite(tx) ? Number(tx.toFixed(2)) : null,
+        targetY: Number.isFinite(ty) ? Number(ty.toFixed(2)) : null,
+        goalName: options?.goalName || aiRoundState?.currentGoal || null,
+        decisionReason: options?.decisionReason || null,
+        requestedRouteClass: null,
+        hasDirectLine: isPathClear(plane.x, plane.y, tx, ty),
+        routeStrictnessMode,
+        entries: [{
+          seq: 1,
+          event: "candidate_selected",
+          stage: "detour_pass",
+          candidateClass: bestRoute?.candidateClass || bestRoute?.routeClass || "direct",
+          moveType: bestRoute?.moveType || "direct",
+          decisionReason: bestRoute?.decisionReason || options?.decisionReason || null,
+          goalName: bestRoute?.goalName || options?.goalName || aiRoundState?.currentGoal || null,
+          routeQualityScore: Number.isFinite(bestRoute?.routeQualityScore) ? Number(bestRoute.routeQualityScore.toFixed(6)) : null,
+          totalDist: Number.isFinite(bestRoute?.totalDist) ? Number(bestRoute.totalDist.toFixed(2)) : null,
+          selected: true,
+          source: "planPathToPoint",
+        }],
+        finalStatus: "selected",
+        selectedCandidateClass: bestRoute?.candidateClass || bestRoute?.routeClass || "direct",
+        selectedMoveType: bestRoute?.moveType || "direct",
+      });
       return bestRoute;
     }
 
@@ -36024,6 +36103,32 @@ function planPathToPoint(plane, tx, ty, options = {}){
       planeId: plane?.id ?? null,
       goalName: options?.goalName || aiRoundState?.currentGoal || null,
       routeStrictnessMode,
+    });
+    logAiDecision("path_candidate_passport", {
+      planeId: plane?.id ?? null,
+      targetX: Number.isFinite(tx) ? Number(tx.toFixed(2)) : null,
+      targetY: Number.isFinite(ty) ? Number(ty.toFixed(2)) : null,
+      goalName: options?.goalName || aiRoundState?.currentGoal || null,
+      decisionReason: options?.decisionReason || null,
+      requestedRouteClass: null,
+      hasDirectLine: isPathClear(plane.x, plane.y, tx, ty),
+      routeStrictnessMode,
+      entries: [{
+        seq: 1,
+        event: "candidate_rejected",
+        stage: "detour_exhausted",
+        candidateClass: options?.requestedRouteClass || "direct",
+        moveType: "direct",
+        decisionReason: options?.decisionReason || null,
+        goalName: options?.goalName || aiRoundState?.currentGoal || null,
+        killedAtStage: "detour_exhausted",
+        killedByReason: planPathToPoint.lastRejectCode || "blocked_path__detour_exhausted",
+        selected: false,
+        source: "planPathToPoint",
+      }],
+      finalStatus: "rejected",
+      rejectCode: planPathToPoint.lastRejectCode || null,
+      candidateCount: 0,
     });
     return null;
   }
@@ -36063,7 +36168,16 @@ function planPathToPoint(plane, tx, ty, options = {}){
 
   function flushPathCandidatePassportSummary(extra = {}){
     if(pathCandidatePassportEntries.length === 0){
-      return;
+      pushPathCandidatePassportEntry({
+        event: "candidate_rejected",
+        stage: "candidate_generation",
+        candidateClass: requestedRouteClass || "direct",
+        moveType: requestedRouteClass === "ricochet" ? "mirror" : "direct",
+        decisionReason: options?.decisionReason || null,
+        goalName: options?.goalName || aiRoundState?.currentGoal || null,
+        killedAtStage: "candidate_generation",
+        killedByReason: planPathToPoint.lastRejectCode || "no_candidates_generated",
+      });
     }
     logAiDecision("path_candidate_passport", {
       planeId: plane?.id ?? null,
@@ -36077,6 +36191,30 @@ function planPathToPoint(plane, tx, ty, options = {}){
       entries: pathCandidatePassportEntries.slice(-60),
       ...extra,
     });
+  }
+
+  function finalizeImmediatePathSelection(move, stage = "immediate_selection"){
+    if(!move) return null;
+    const qualityScore = Number.isFinite(move?.routeQualityScore)
+      ? move.routeQualityScore
+      : move?.routeMetrics?.qualityScore;
+    pushPathCandidatePassportEntry({
+      event: "candidate_selected",
+      stage,
+      candidateClass: move?.candidateClass || move?.routeClass || "direct",
+      moveType: move?.moveType || "direct",
+      decisionReason: move?.decisionReason || options?.decisionReason || null,
+      goalName: move?.goalName || options?.goalName || aiRoundState?.currentGoal || null,
+      routeQualityScore: qualityScore,
+      totalDist: move?.totalDist,
+      selected: true,
+    });
+    flushPathCandidatePassportSummary({
+      finalStatus: "selected",
+      selectedCandidateClass: move?.candidateClass || move?.routeClass || "direct",
+      selectedMoveType: move?.moveType || "direct",
+    });
+    return move;
   }
   const emergencyBaseDefenseGoal = activeGoalName.includes("emergency_base_defense");
   const allowGapCandidates = requestedRouteClass === "gap";
@@ -36252,13 +36390,13 @@ function planPathToPoint(plane, tx, ty, options = {}){
               rejectCode: finisherMove.routeMetrics.rejectCode,
               targetEnemyId: finisherTarget?.id ?? options?.targetEnemyId ?? null,
             });
-            if(shouldHardPrioritizeDirect) return finisherMove;
+            if(shouldHardPrioritizeDirect) return finalizeImmediatePathSelection(finisherMove, "direct_finisher_priority");
             registerCandidate(finisherMove);
           } else if(!emergencyBaseDefenseGoal){
             registerCandidate(finisherMove);
           }
         } else {
-          if(shouldHardPrioritizeDirect) return finisherMove;
+          if(shouldHardPrioritizeDirect) return finalizeImmediatePathSelection(finisherMove, "direct_finisher_priority");
           registerCandidate(finisherMove);
         }
       }
@@ -36297,7 +36435,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
       moveType: "direct",
       candidateClass: "direct",
     });
-    if(shouldHardPrioritizeDirect && directMove) return directMove;
+    if(shouldHardPrioritizeDirect && directMove) return finalizeImmediatePathSelection(directMove, "direct_priority");
     registerCandidate(directMove);
 
     if(allowGapCandidates){
@@ -36384,6 +36522,62 @@ function planPathToPoint(plane, tx, ty, options = {}){
     } else {
       mirrorRejectCode = "v2_simulation_candidate_not_found";
       planPathToPoint.lastRejectMeta = null;
+    }
+  }
+
+  if(allowExperimentalRicochet){
+    const hasRicochetCandidate = candidateBasket.some((candidate) => candidate?.candidateClass === "ricochet");
+    if(!hasRicochetCandidate){
+      const fallbackMirror = findMirrorShot(plane, { x: tx, y: ty }, {
+        logReject: true,
+        pressureBoost: hasDirectLine ? 0 : AI_MIRROR_STUCK_RECOVERY_PRESSURE_BONUS * 0.35,
+        minBounceDistanceScale: hasDirectLine ? 1 : 0.88,
+        maxPathRatioBonus: hasDirectLine ? 0.02 : 0.08,
+        goalName: options?.goalName || "",
+        allowNormalModeFirstSegmentRelaxation: !strictSpecialPathRejectStage,
+        allowGapBeforeBounceGrace: !hasDirectLine,
+        allowGapAfterBounceGrace: !hasDirectLine,
+        allowGapFinalLegRelaxation: !hasDirectLine,
+        allowRicochetBeforeBounceBorderline: !hasDirectLine,
+      });
+      if(fallbackMirror){
+        const dx = fallbackMirror.mirrorTarget.x - plane.x;
+        const dy = fallbackMirror.mirrorTarget.y - plane.y;
+        const baseAngle = Math.atan2(dy, dx);
+        const baseScale = Math.min(fallbackMirror.totalDist / Math.max(1, flightDistancePx), 1);
+        const scale = applyAiMinLaunchScale(baseScale, {
+          source: "plan_path_mirror_fallback_probe",
+          planeId: plane?.id ?? null,
+          goalName: options?.goalName || null,
+          decisionReason: options?.decisionReason || null,
+          moveDistance: fallbackMirror.totalDist,
+          targetX: tx,
+          targetY: ty,
+        });
+        const mirrorMove = buildMoveWithSafeDeviation(baseAngle, fallbackMirror.totalDist, scale, {
+          moveType: "mirror",
+          candidateClass: "ricochet",
+        });
+        if(mirrorMove){
+          mirrorMove.routeQualityScore = Number.isFinite(fallbackMirror.mirrorQualityScore)
+            ? fallbackMirror.mirrorQualityScore
+            : mirrorMove.routeQualityScore;
+          logAiDecision("mirror_selected_reason", {
+            source: "plan_path_to_point",
+            reason: hasDirectLine ? "parallel_ricochet_probe" : "direct_blocked_mirror_fallback_probe",
+            planeId: plane?.id ?? null,
+            targetEnemyId: options?.targetEnemy?.id ?? options?.targetEnemyId ?? null,
+            clearSky: isCurrentMapClearSky(),
+            pathDistance: Number(fallbackMirror.totalDist.toFixed(1)),
+          });
+          registerCandidate(mirrorMove);
+        }
+      } else {
+        mirrorRejectCode = mirrorRejectCode || findMirrorShot.lastRejectCode || "mirror_fallback_probe_not_found";
+        if(!planPathToPoint.lastRejectMeta){
+          planPathToPoint.lastRejectMeta = findMirrorShot.lastRejectMeta || null;
+        }
+      }
     }
   }
 
