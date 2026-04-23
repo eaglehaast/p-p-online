@@ -16149,6 +16149,7 @@ const aimSession = {
   hasGlobalPointerListeners:false,
   pointerDown:false,
   movedWhilePointerDown:false,
+  allowShortTapCancel:false,
   pointerDownStartX:0,
   pointerDownStartY:0
 };
@@ -17369,13 +17370,14 @@ function onGlobalStickyAimPointerDownWhileArmed(e){
   e.stopPropagation();
 }
 
-function beginStickyAimHoldTracking(e, boardX, boardY){
+function beginStickyAimHoldTracking(e, boardX, boardY, allowShortTapCancel = false){
   if(!handleCircle.active) return;
   if(!Number.isFinite(e?.pointerId)) return;
 
   handleCircle.pointerId = e.pointerId;
   handleCircle.pointerDown = true;
   handleCircle.movedWhilePointerDown = false;
+  handleCircle.allowShortTapCancel = allowShortTapCancel;
   handleCircle.pointerDownStartX = boardX;
   handleCircle.pointerDownStartY = boardY;
   addStickyAimGlobalPointerListeners();
@@ -17409,15 +17411,18 @@ function endStickyAimHoldTracking(e){
 
   const wasHolding = handleCircle.pointerDown;
   const movedWhileHolding = handleCircle.movedWhilePointerDown;
+  const allowShortTapCancel = handleCircle.allowShortTapCancel;
 
   handleCircle.pointerId = null;
   handleCircle.pointerDown = false;
   handleCircle.movedWhilePointerDown = false;
+  handleCircle.allowShortTapCancel = false;
 
   if(!wasHolding) return { ended: false, moved: false };
   return {
     ended: true,
     moved: movedWhileHolding,
+    allowShortTapCancel,
   };
 }
 
@@ -17481,7 +17486,7 @@ function onCanvasPointerDown(e){
     const { x: designX, y: designY } = getPointerDesignCoords(e);
     const { x, y } = designToBoardCoords(designX, designY);
     if(shouldUseStickyAimForPointerEvent(e)){
-      beginStickyAimHoldTracking(e, x, y);
+      beginStickyAimHoldTracking(e, x, y, true);
     }
     e.preventDefault();
     return;
@@ -17497,7 +17502,7 @@ function onCanvasPointerDown(e){
     const { x, y } = designToBoardCoords(designX, designY);
     handleStart(e);
     if(shouldUseStickyAimForPointerEvent(e)){
-      beginStickyAimHoldTracking(e, x, y);
+      beginStickyAimHoldTracking(e, x, y, false);
     }
   }
 }
@@ -17637,7 +17642,8 @@ function onCanvasPointerUp(e){
     const launchX = holdResult.moved ? x : handleCircle.pointerDownStartX;
     const launchY = holdResult.moved ? y : handleCircle.pointerDownStartY;
     const tapDistanceFromPlane = Math.hypot(launchX - plane.x, launchY - plane.y);
-    if(!holdResult.moved && tapDistanceFromPlane < CELL_SIZE){
+    if(holdResult.allowShortTapCancel && !holdResult.moved && tapDistanceFromPlane < CELL_SIZE){
+      cancelAimSessionWithoutLaunch();
       e.preventDefault();
       return;
     }
@@ -17698,7 +17704,8 @@ function onGlobalStickyAimPointerUpOrCancel(e){
   const launchX = holdResult.moved ? x : handleCircle.pointerDownStartX;
   const launchY = holdResult.moved ? y : handleCircle.pointerDownStartY;
   const tapDistanceFromPlane = Math.hypot(launchX - plane.x, launchY - plane.y);
-  if(!holdResult.moved && tapDistanceFromPlane < CELL_SIZE){
+  if(holdResult.allowShortTapCancel && !holdResult.moved && tapDistanceFromPlane < CELL_SIZE){
+    cancelAimSessionWithoutLaunch();
     return;
   }
 
@@ -17976,6 +17983,18 @@ function onHandleUp(){
   cleanupHandle();
   updateBoardCursorForHover(baseX, baseY);
 }
+
+function cancelAimSessionWithoutLaunch(){
+  if(!isAimSessionActive()) return;
+  const { baseX, baseY } = aimSession;
+  const plane = aimSession.planeRef;
+  if(plane){
+    plane.angle = aimSession.origAngle;
+  }
+  cleanupHandle();
+  updateBoardCursorForHover(baseX, baseY);
+}
+
 function cleanupHandle(){
   handleCircle.active= false;
   handleCircle.controllerType = null;
@@ -17985,6 +18004,7 @@ function cleanupHandle(){
   handleCircle.pointerId = null;
   handleCircle.pointerDown = false;
   handleCircle.movedWhilePointerDown = false;
+  handleCircle.allowShortTapCancel = false;
   // Hide overlay canvas when aiming ends
   aimCanvas.style.display = "none";
   aimCtx.clearRect(0,0,aimCanvas.width,aimCanvas.height);
