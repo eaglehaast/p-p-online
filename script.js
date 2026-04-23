@@ -17638,6 +17638,7 @@ function onCanvasPointerUp(e){
     const launchY = holdResult.moved ? y : handleCircle.pointerDownStartY;
     const tapDistanceFromPlane = Math.hypot(launchX - plane.x, launchY - plane.y);
     if(!holdResult.moved && tapDistanceFromPlane < CELL_SIZE){
+      cancelAimSessionWithoutLaunch();
       e.preventDefault();
       return;
     }
@@ -17699,6 +17700,7 @@ function onGlobalStickyAimPointerUpOrCancel(e){
   const launchY = holdResult.moved ? y : handleCircle.pointerDownStartY;
   const tapDistanceFromPlane = Math.hypot(launchX - plane.x, launchY - plane.y);
   if(!holdResult.moved && tapDistanceFromPlane < CELL_SIZE){
+    cancelAimSessionWithoutLaunch();
     return;
   }
 
@@ -17976,6 +17978,18 @@ function onHandleUp(){
   cleanupHandle();
   updateBoardCursorForHover(baseX, baseY);
 }
+
+function cancelAimSessionWithoutLaunch(){
+  if(!isAimSessionActive()) return;
+  const { baseX, baseY } = aimSession;
+  const plane = aimSession.planeRef;
+  if(plane){
+    plane.angle = aimSession.origAngle;
+  }
+  cleanupHandle();
+  updateBoardCursorForHover(baseX, baseY);
+}
+
 function cleanupHandle(){
   handleCircle.active= false;
   handleCircle.controllerType = null;
