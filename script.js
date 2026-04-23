@@ -25606,18 +25606,6 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
   const candidates = [];
   const rejected = [];
   const perItemEvaluation = {};
-  const recentInventorySignals = typeof getAiInventoryRecentMatchSignals === "function"
-    ? getAiInventoryRecentMatchSignals(plannedMove?.goalName || aiRoundState?.currentGoal || null)
-    : {
-      fallbackSelectedCount: 0,
-      shotPlanNotFoundCount: 0,
-      emergencyBaseDefenseCount: 0,
-      repeatedFallbackSelected: false,
-      repeatedShotPlanNotFound: false,
-      emergencyPressure: false,
-      softReleaseReady: false,
-      softReleaseGuardScenario: { fallbackChainTurns: 0 },
-    };
   const priorityEnemy = typeof getBluePriorityEnemy === "function" ? getBluePriorityEnemy(context) : null;
   const enemyBase = typeof getBaseAnchor === "function" ? getBaseAnchor("green") : null;
   const landingPoint = typeof getAiMoveLandingPoint === "function" ? getAiMoveLandingPoint(plannedMove) : null;
@@ -25684,451 +25672,107 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     });
   };
 
-  if(allowBuffItems && inventory.counts?.[INVENTORY_ITEM_TYPES.FUEL] > 0 && typeof evaluateFuelTacticalPlans === "function"){
-    const enemyFlag = context?.shouldUseFlagsMode && typeof getAvailableFlagsByColor === "function" ? getAvailableFlagsByColor("green")[0] : null;
-    const enemyFlagAnchor = enemyFlag && typeof getFlagAnchor === "function" ? getFlagAnchor(enemyFlag) : null;
-    const basePlans = evaluateFuelTacticalPlans(context, plannedMove, { useFuel: false });
-    const fuelPlans = evaluateFuelTacticalPlans(context, plannedMove, { useFuel: true });
-    const selectedFuelCandidate = fuelPlans?.selectedCandidate || null;
-    const baseSelectedCandidate = basePlans?.selectedCandidate || null;
-    const safetyGain = selectedFuelCandidate && baseSelectedCandidate
-      ? Number((selectedFuelCandidate.returnSafetyScore - baseSelectedCandidate.returnSafetyScore).toFixed(3))
-      : 0;
-    const targetDistance = enemyFlagAnchor ? dist(plannedMove.plane, enemyFlagAnchor) : (priorityEnemy ? dist(plannedMove.plane, priorityEnemy) : moveDistance);
-    const newReach = targetDistance > baseFlightRange && targetDistance <= baseFlightRange * 2.05;
-    const unlockedStrongerMove = fuelUnlockMeta.unlocked
-      || fuelAndWingsUnlockMeta.unlocked;
-    if(selectedFuelCandidate){
-      const moderateFuelOpportunity = (
-        safetyGain >= 0.05
-        || (targetDistance > baseFlightRange * 0.88 && targetDistance <= baseFlightRange * 2.15)
-        || fuelPlans?.blockedByReturnSafety === true
-      );
-      pushCandidate({
-        itemType: INVENTORY_ITEM_TYPES.FUEL,
-        target: selectedFuelCandidate.targetPoint || enemyFlagAnchor || priorityEnemy || enemyBase || null,
-        expectedBenefit: Math.max(
-          0.2,
-          Math.min(0.92, (newReach ? 0.52 : (moderateFuelOpportunity ? 0.26 : 0.22)) + Math.max(0, safetyGain))
-        ),
-        risk: Math.max(0, 0.22 - Number(selectedFuelCandidate.returnSafetyScore || 0) * 0.18),
-        reason: "fuel_spend_first_applied",
-        whyBetter: "fuel gives immediate tactical pressure by opening a meaningfully better route class now instead of waiting for an ideal setup",
-        targetName: selectedFuelCandidate.targetName || null,
-        fuelScenario: selectedFuelCandidate.scenario || null,
-        usageTier: "strong",
-        unlockClassMeta: {
-          source: "two_pass_unlock_check",
-          unlocked: unlockedStrongerMove,
-          reasons: fuelUnlockMeta.reasons,
-          unlockScore: fuelUnlockMeta.unlockScore,
-          comboUnlockReasons: fuelAndWingsUnlockMeta.reasons,
-        },
-        reasonCode: "fuel_spend_first_applied",
-      });
-    } else {
-      rejectCandidate(INVENTORY_ITEM_TYPES.FUEL, "fuel_has_no_safe_candidate", {
-        safetyGain,
-        blockedByReturnSafety: fuelPlans?.blockedByReturnSafety === true,
-        unlockReasons: fuelUnlockMeta.reasons,
+  if(allowBuffItems && inventory.counts?.[INVENTORY_ITEM_TYPES.FUEL] > 0){
+    const flightNeedRatio = moveDistance / Math.max(1, plannedMoveEffectiveRangePx);
+    const needsRangeBoostNow = flightNeedRatio >= 0.78;
+    const unlockedStrongerMove = fuelUnlockMeta.unlocked || fuelAndWingsUnlockMeta.unlocked;
+    const fuelBenefit = needsRangeBoostNow ? 0.48 : (unlockedStrongerMove ? 0.32 : 0.24);
+
+    pushCandidate({
+      itemType: INVENTORY_ITEM_TYPES.FUEL,
+      target: priorityEnemy || enemyBase || landingPoint || null,
+      expectedBenefit: Number(fuelBenefit.toFixed(3)),
+      risk: needsRangeBoostNow ? 0.08 : 0.06,
+      reason: needsRangeBoostNow ? "fuel_range_pressure_now" : "fuel_general_pressure",
+      whyBetter: needsRangeBoostNow
+        ? "current move is close to range limit, so fuel gives immediate practical value on this turn"
+        : "fuel is cheap enough to spend for steady pressure instead of over-waiting for ideal conditions",
+      usageTier: needsRangeBoostNow || unlockedStrongerMove ? "strong" : "moderate",
+      unlockClassMeta: {
+        source: "two_pass_unlock_check",
+        unlocked: unlockedStrongerMove,
+        reasons: fuelUnlockMeta.reasons,
+        unlockScore: fuelUnlockMeta.unlockScore,
         comboUnlockReasons: fuelAndWingsUnlockMeta.reasons,
-      });
-    }
+      },
+      reasonCode: needsRangeBoostNow ? "fuel_range_pressure_now" : "fuel_general_pressure",
+    });
   }
 
   if(allowBuffItems && inventory.counts?.[INVENTORY_ITEM_TYPES.CROSSHAIR] > 0){
-    const crosshairScenario = evaluateCrosshairBestUse(context, plannedMove);
-    const crosshairScenarioValue = Number.isFinite(crosshairScenario?.totalValue)
-      ? crosshairScenario.totalValue
-      : 0;
-    const crosshairHitGain = Number.isFinite(crosshairScenario?.crosshairHitGain)
-      ? crosshairScenario.crosshairHitGain
-      : 0;
-    const crosshairPrecisionNeed = Number.isFinite(crosshairScenario?.precisionNeed)
-      ? crosshairScenario.precisionNeed
-      : 0;
-    const crosshairProjectedHitChance = Number.isFinite(crosshairScenario?.hitChance)
-      ? crosshairScenario.hitChance
-      : 0;
-    const crosshairExpectedBenefit = Math.max(
-      0,
-      Math.min(0.93, (crosshairScenarioValue * 0.36) + (crosshairHitGain * 0.74) + (crosshairPrecisionNeed * 0.24))
-    );
-    const crosshairRisk = Math.max(0.02, 0.1 - crosshairPrecisionNeed * 0.04);
-    const crosshairComparableScore = crosshairExpectedBenefit - crosshairRisk;
-    const shouldSpendCrosshair = crosshairComparableScore >= 0.16
-      || (crosshairHitGain >= 0.14 && crosshairPrecisionNeed >= 0.34)
-      || (crosshairProjectedHitChance >= 0.62 && crosshairPrecisionNeed >= 0.28);
+    const nearestEnemyDistance = Array.isArray(context?.enemies) && context.enemies.length > 0
+      ? Math.min(...context.enemies.map((enemy) => dist(plannedMove.plane, enemy)))
+      : Number.POSITIVE_INFINITY;
+    const likelyPrecisionShot = plannedMove?.routeClass === "ricochet" || nearestEnemyDistance >= CELL_SIZE * 6;
+    const crosshairBenefit = likelyPrecisionShot ? 0.38 : 0.22;
 
-    if(shouldSpendCrosshair){
-      pushCandidate({
-        itemType: INVENTORY_ITEM_TYPES.CROSSHAIR,
-        target: crosshairScenario?.enemy || priorityEnemy || enemyBase || landingPoint || null,
-        expectedBenefit: Number(crosshairExpectedBenefit.toFixed(3)),
-        risk: Number(crosshairRisk.toFixed(3)),
-        reason: "crosshair_precision_route_applied",
-        whyBetter: "crosshair is spent when this route has a precise high-value line (tight corridor/ricochet/long projection), so better accuracy directly improves real tactical outcome now",
-        usageTier: crosshairComparableScore >= 0.25 ? "strong" : "moderate",
-        reasonCode: "crosshair_precision_route_applied",
-        crosshairScenario: crosshairScenario
-          ? {
-              totalValue: Number((crosshairScenario.totalValue || 0).toFixed(3)),
-              directHitChance: Number((crosshairScenario.directHitChance || 0).toFixed(3)),
-              projectedHitChance: Number((crosshairScenario.hitChance || 0).toFixed(3)),
-              hitGain: Number((crosshairScenario.crosshairHitGain || 0).toFixed(3)),
-              precisionNeed: Number((crosshairScenario.precisionNeed || 0).toFixed(3)),
-              ricochetCount: crosshairScenario.ricochetCount || 0,
-            }
-          : null,
-      });
-    } else {
-      rejectCandidate(INVENTORY_ITEM_TYPES.CROSSHAIR, "crosshair_value_below_threshold", {
-        expectedBenefit: Number(crosshairExpectedBenefit.toFixed(3)),
-        risk: Number(crosshairRisk.toFixed(3)),
-        comparableScore: Number(crosshairComparableScore.toFixed(3)),
-        hitGain: Number(crosshairHitGain.toFixed(3)),
-        precisionNeed: Number(crosshairPrecisionNeed.toFixed(3)),
-        projectedHitChance: Number(crosshairProjectedHitChance.toFixed(3)),
-        whyWaiting: "current route has no strong precision payoff, so keeping crosshair for a tighter or higher-value trajectory is better",
-      });
-    }
+    pushCandidate({
+      itemType: INVENTORY_ITEM_TYPES.CROSSHAIR,
+      target: priorityEnemy || enemyBase || landingPoint || null,
+      expectedBenefit: Number(crosshairBenefit.toFixed(3)),
+      risk: likelyPrecisionShot ? 0.05 : 0.04,
+      reason: likelyPrecisionShot ? "crosshair_precision_now" : "crosshair_safe_spend",
+      whyBetter: likelyPrecisionShot
+        ? "this shot shape needs better precision now, so crosshair has direct value without deep forecasting"
+        : "crosshair is not critical here, but spending it is still acceptable to keep pressure and avoid hoarding",
+      usageTier: likelyPrecisionShot ? "strong" : "moderate",
+      reasonCode: likelyPrecisionShot ? "crosshair_precision_now" : "crosshair_safe_spend",
+    });
   }
 
   if(allowTacticalItems && inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] > 0){
-    const aiItemSpendStyle = getAiItemSpendStyle(context, plannedMove);
-    const mineAvailableCharges = Number(inventory.counts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0);
-    const mineHasSurplusCharges = mineAvailableCharges > 1;
-    const defensiveProbe = typeof tryPlaceBlueDefensiveMine === "function"
-      ? tryPlaceBlueDefensiveMine(context, plannedMove, { evaluateOnly: true, withDiagnostics: true })
-      : { plan: null, rejectReason: "no_install_window" };
-    const baseProbe = typeof tryPlaceBlueMineNearEnemyBase === "function"
-      ? tryPlaceBlueMineNearEnemyBase(context, plannedMove, { evaluateOnly: true, withDiagnostics: true })
-      : { plan: null, rejectReason: "no_install_window" };
-    const defensivePlan = defensiveProbe?.plan || null;
-    const basePlan = baseProbe?.plan || null;
-    const preferredMinePlan = defensivePlan && (!basePlan || (defensivePlan.score || 0) >= (basePlan.score || 0))
-      ? { plan: defensivePlan, placementMode: "defensive", rejectReason: defensiveProbe?.rejectReason || null }
-      : (basePlan ? { plan: basePlan, placementMode: "base", rejectReason: baseProbe?.rejectReason || null } : null);
-    const minePlanningRejectReason = !preferredMinePlan
-      ? (defensiveProbe?.rejectReason === "high_friendly_risk" || baseProbe?.rejectReason === "high_friendly_risk"
-          || defensiveProbe?.rejectReason === "points_filtered_by_risk" || baseProbe?.rejectReason === "points_filtered_by_risk"
-          ? "mine_high_friendly_risk"
-          : (defensiveProbe?.rejectReason === "low_enemy_contact_probability" || baseProbe?.rejectReason === "low_enemy_contact_probability"
-              ? "mine_low_enemy_contact_probability"
-              : (defensiveProbe?.rejectReason === "no_valid_points" || baseProbe?.rejectReason === "no_valid_points"
-                  ? "mine_no_valid_points"
-                  : "mine_no_install_window")))
-      : null;
-    const safetyMeta = preferredMinePlan && typeof evaluatePostLaunchSafetyWithMine === "function"
-      ? evaluatePostLaunchSafetyWithMine(context, plannedMove, preferredMinePlan.plan)
-      : null;
-    const safeAfterPlacement = !safetyMeta || safetyMeta.afterSafe !== false;
-    const safetyImprovesAfterPlacement = Boolean(safetyMeta && safetyMeta.beforeSafe === false && safetyMeta.afterSafe === true);
-    const aggressiveGoalName = `${plannedMove?.goalName || aiRoundState?.currentGoal || ""}`.toLowerCase();
-    const strategicGoalName = plannedMove?.goalName || aiRoundState?.currentGoal || "";
-    const isCriticalGoalForDefensiveMine = isAiCriticalMineGoal(strategicGoalName);
-    const isAggressiveMineCoverScenario = aggressiveGoalName.includes("flag")
-      || aggressiveGoalName.includes("finisher")
-      || aggressiveGoalName.includes("finish")
-      || aggressiveGoalName.includes("attack");
-    const mineProtectsAfterAggressiveAction = isAggressiveMineCoverScenario && safetyImprovesAfterPlacement;
-    const mineDecisionMeta = evaluateAiMineTacticalPlanDecision({
-      preferredMinePlan,
-      safeAfterPlacement,
-      safetyImprovesAfterPlacement,
-      isCriticalGoalForDefensiveMine,
-      mineHasSurplusCharges,
-      mineProtectsAfterAggressiveAction,
-      repeatedEmptyTurns: recentInventorySignals.repeatedFallbackSelected || recentInventorySignals.repeatedShotPlanNotFound,
-      context,
-      plannedMove,
-      aiItemSpendStyle,
-      strategicGoalName,
+    const nearestEnemyDistance = Array.isArray(context?.enemies) && context.enemies.length > 0
+      ? Math.min(...context.enemies.map((enemy) => dist(plannedMove.plane, enemy)))
+      : Number.POSITIVE_INFINITY;
+    const hasEnemyPressure = Number.isFinite(nearestEnemyDistance) && nearestEnemyDistance <= CELL_SIZE * 9;
+    const mineExpectedBenefit = hasEnemyPressure ? 0.42 : 0.27;
+    const mineRisk = hasEnemyPressure ? 0.1 : 0.08;
+
+    pushCandidate({
+      itemType: INVENTORY_ITEM_TYPES.MINE,
+      target: priorityEnemy || enemyBase || landingPoint || null,
+      expectedBenefit: mineExpectedBenefit,
+      risk: mineRisk,
+      reason: hasEnemyPressure ? "mine_pressure_control" : "mine_area_control",
+      whyBetter: hasEnemyPressure
+        ? "enemy is already close, so a mine now quickly creates denial space and makes the immediate response harder"
+        : "even without a perfect trap, an early mine gives stable area control and is cheap enough to spend",
+      usageTier: hasEnemyPressure ? "strong" : "moderate",
+      mineDecisionLabel: hasEnemyPressure ? "pressure_control" : "area_control",
+      reasonCode: hasEnemyPressure ? "mine_pressure_control" : "mine_area_control",
     });
-    const mineImpactScore = mineDecisionMeta.mineImpactScore;
-    const mineBlockedEscapeCount = mineDecisionMeta.mineBlockedEscapeCount;
-    const mineCutRouteCount = mineDecisionMeta.mineCutRouteCount;
-    const mineTrapCount = mineDecisionMeta.mineTrapCount;
-    const mineTotalDirectionLoss = mineDecisionMeta.mineTotalDirectionLoss;
-    const mineProjectedContactDelta = mineDecisionMeta.mineProjectedContactDelta;
-    const mineForcedBadPathCount = mineDecisionMeta.mineForcedBadPathCount;
-    const mineCreatesRouteDenial = mineDecisionMeta.mineCreatesRouteDenial;
-    const mineHasZoneControl = mineDecisionMeta.mineHasZoneControl;
-    const mineMapControlSignal = mineDecisionMeta.mineMapControlSignal;
-    const minePlanProvidesNoticeableImprovement = mineDecisionMeta.minePlanProvidesNoticeableImprovement;
-    const mineModerateImprovement = mineDecisionMeta.mineModerateImprovement;
-    const mineRejectedBySelfRisk = mineDecisionMeta.mineRejectedBySelfRisk;
-    const mineRejectedByHardSelfRisk = mineDecisionMeta.mineRejectedByHardSelfRisk === true;
-    const mineRejectedByModerateSelfRisk = mineDecisionMeta.mineRejectedByModerateSelfRisk === true;
-    const mineForcedSpendSurplus = mineDecisionMeta.mineForcedSpendSurplus;
-    const riskAcceptedBecause = mineDecisionMeta.riskAcceptedBecause || null;
-    const mineDecisionCode = mineDecisionMeta.mineDecisionCode || null;
-    const mineSoftRiskAcceptedByBenefit = mineDecisionMeta.mineSoftRiskAcceptedByBenefit === true;
-    const mineSoftRiskBenefitScore = Number(mineDecisionMeta.mineSoftRiskBenefitScore || 0);
-    const mineSeriesPlan = buildAiMineSeriesPlan(context, plannedMove, {
-      availableCharges: mineAvailableCharges,
-    });
-    if(preferredMinePlan){
-      const baseMineBenefit = Math.max(0.22, Math.min(0.9, Number((preferredMinePlan.plan.score || 0) / 20)));
-      const expectedMineBenefit = (() => {
-        const rawBenefit = mineCreatesRouteDenial
-          ? Math.max(0.43, baseMineBenefit)
-          : Math.max(minePlanProvidesNoticeableImprovement ? 0.36 : 0.24, baseMineBenefit);
-        const mapControlBonus = mineCreatesRouteDenial
-          ? 0.08
-          : (mineHasZoneControl ? 0.06 : 0);
-        const nextTurnSafetyBonus = safetyImprovesAfterPlacement
-          ? (mineProtectsAfterAggressiveAction ? 0.22 : 0.14)
-          : 0;
-        return Math.min(0.92, rawBenefit + mapControlBonus + nextTurnSafetyBonus);
-      })();
-      pushCandidate({
-        itemType: INVENTORY_ITEM_TYPES.MINE,
-        target: priorityEnemy || enemyBase || landingPoint || null,
-        expectedBenefit: Math.max(expectedMineBenefit, mineSeriesPlan?.expectedBenefit || 0),
-        risk: safeAfterPlacement ? 0.08 : 0.14,
-        reason: mineForcedSpendSurplus ? "mine_forced_spend_surplus" : (preferredMinePlan.plan.scenario || "mine_cover_plan"),
-        whyBetter: preferredMinePlan.placementMode === "defensive"
-          ? (mineForcedSpendSurplus
-              ? "we have spare mines and this safe defensive placement keeps pressure without waiting for a perfect trap"
-              : (mineProtectsAfterAggressiveAction
-                  ? "mine keeps the post-attack landing safer, so we can finish or grab objective without giving an easy response"
-                  : (minePlanProvidesNoticeableImprovement
-                      ? "mine can shape the enemy escape lane immediately instead of waiting for a plain flight"
-                      : "mine does not trap the enemy outright yet, but it still narrows their safe exits and becomes worth using after repeated empty turns")))
-          : (mineForcedSpendSurplus
-              ? "we have spare mines, so a safe moderate placement is worth spending now instead of hoarding charges"
-              : (minePlanProvidesNoticeableImprovement
-                  ? "mine adds board control on top of the same movement plan"
-                  : "mine adds moderate board control, which becomes acceptable once the match keeps forcing fallback choices")),
-        placementMode: preferredMinePlan.placementMode,
-        minePlan: preferredMinePlan.plan,
-        safeAfterPlacement,
-        mineUseReason: mineForcedSpendSurplus
-          ? "mine_forced_spend_surplus"
-          : (mineProtectsAfterAggressiveAction
-              ? "mine_used_for_safe_aggressive_follow_up"
-              : (mineCreatesRouteDenial ? "mine_used_for_route_denial" : "mine_used_for_position_improvement")),
-        mineDecisionLabel: mineMapControlSignal ? "map_control" : "standard",
-        mineDecisionCode: mineMapControlSignal ? "mine_zone_control_accept" : mineDecisionCode,
-        mineSoftRiskAcceptedByBenefit,
-        mineSoftRiskBenefitScore,
-        riskAcceptedBecause,
-        aiItemSpendStyle,
-        usageTier: mineForcedSpendSurplus ? "forced_surplus" : (minePlanProvidesNoticeableImprovement ? "strong" : "moderate"),
-        tacticalSeries: mineSeriesPlan,
-      });
-    } else {
-      const mineRejectReason = !preferredMinePlan
-        ? minePlanningRejectReason
-        : (mineRejectedByHardSelfRisk || mineRejectedByModerateSelfRisk
-            ? "mine_high_friendly_risk"
-            : "mine_low_enemy_contact_probability");
-      const rejectDecisionCode = !preferredMinePlan
-        ? "mine_no_plan"
-        : (mineRejectedByHardSelfRisk
-            ? "mine_hard_risk_reject"
-            : (mineRejectedByModerateSelfRisk
-                ? "mine_soft_risk_reject"
-                : "mine_low_benefit_reject"));
-      rejectCandidate(INVENTORY_ITEM_TYPES.MINE, mineRejectReason, {
-        mineDecisionCode: rejectDecisionCode,
-        safeAfterPlacement,
-        safetyImprovesAfterPlacement,
-        goalName: strategicGoalName || null,
-        routeBlockScore: preferredMinePlan?.plan ? Number((preferredMinePlan.plan.score || 0).toFixed(3)) : null,
-        blockedEscapeCount: mineBlockedEscapeCount,
-        cutRouteCount: mineCutRouteCount,
-        trapCount: mineTrapCount,
-        totalDirectionLoss: mineTotalDirectionLoss,
-        projectedContactDelta: mineProjectedContactDelta,
-        controlledBasePassCount: preferredMinePlan?.plan?.controlledBasePassCount ?? 0,
-        controlledTurnPointCount: preferredMinePlan?.plan?.controlledTurnPointCount ?? 0,
-        forcedBadPathCount: mineForcedBadPathCount,
-        mineSoftRiskAcceptedByBenefit,
-        mineSoftRiskBenefitScore,
-        defensiveRejectReason: defensiveProbe?.rejectReason || null,
-        baseRejectReason: baseProbe?.rejectReason || null,
-        aiItemSpendStyle,
-      });
-    }
   }
 
   if(allowTacticalItems && inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] > 0){
-    const dynamiteAvailableCharges = Number(inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0);
-    const dynamiteHasSurplusCharges = dynamiteAvailableCharges > 1;
-    const dynamiteDecision = evaluateAiDynamiteTacticalTarget(context, plannedMove, {
-      allowStrategicProbeWhenRouteAware: true,
-      availableCharges: dynamiteAvailableCharges,
-    });
-    const routeAwareTarget = dynamiteDecision.routeAwareTarget;
-    const strategicMoveGate = dynamiteDecision.strategicMoveGate;
-    const strategicDynamite = dynamiteDecision.strategicDynamite;
-    const strategicTarget = dynamiteDecision.strategicTarget;
-    const futureAdvantageSignal = dynamiteDecision.futureAdvantageSignal === true;
-    const fallbackTarget = dynamiteDecision.fallbackTarget;
-    const dynamiteForcedSpendSurplus = dynamiteHasSurplusCharges && Boolean(fallbackTarget);
-    const dynamiteSeriesPlan = buildAiDynamiteSeriesPlan(context, plannedMove, {
-      availableCharges: dynamiteAvailableCharges,
-    });
-    const dynamiteSubscores = buildDynamiteCandidateSubscores(routeAwareTarget, strategicTarget, futureAdvantageSignal);
-    const dynamiteSumThresholdBase = routeAwareTarget ? 0.98 : 1.08;
-    const thresholdAdjustmentReasons = [];
-    let dynamiteRepeatedSignalAdjustment = 0;
-    if(recentInventorySignals.repeatedShotPlanNotFound && recentInventorySignals.repeatedFallbackSelected){
-      dynamiteRepeatedSignalAdjustment = 0.18;
-      thresholdAdjustmentReasons.push("repeated_shot_plan_not_found_and_fallback_selected");
-    } else if(recentInventorySignals.repeatedShotPlanNotFound){
-      dynamiteRepeatedSignalAdjustment = 0.12;
-      thresholdAdjustmentReasons.push("repeated_shot_plan_not_found");
-    } else if(recentInventorySignals.repeatedFallbackSelected){
-      dynamiteRepeatedSignalAdjustment = 0.1;
-      thresholdAdjustmentReasons.push("repeated_fallback_selected");
-    }
-    const dynamiteSurplusAdjustment = dynamiteHasSurplusCharges ? 0.05 : 0;
-    if(dynamiteSurplusAdjustment > 0){
-      thresholdAdjustmentReasons.push("surplus_charges_available");
-    }
-    const dynamiteSumThresholdAdjusted = Number(Math.max(0.72, (
-      dynamiteSumThresholdBase - dynamiteRepeatedSignalAdjustment - dynamiteSurplusAdjustment
-    )).toFixed(3));
-    const passesDynamiteSumThreshold = dynamiteSubscores.totalScore >= dynamiteSumThresholdAdjusted;
-    const strategicRiskDiscount = strategicTarget
-      ? ((strategicTarget.opensDecisivePath ? 0.02 : 0)
-        + (strategicTarget.removesBarrierToContactZone ? 0.015 : 0)
-        + (strategicTarget.nextTurnRouteGain >= 2 ? 0.015 : 0))
-      : 0;
-    const candidateRisk = routeAwareTarget
-      ? 0.06
-      : Math.max(0.06, 0.12 - strategicRiskDiscount);
-    const forcedSurplusModerateFloor = Number(Math.max(0.72, dynamiteSumThresholdAdjusted - 0.1).toFixed(3));
-    const forcedSurplusRiskCap = routeAwareTarget ? 0.12 : 0.1;
-    const passesForcedSurplusModerateGate = Boolean(
-      fallbackTarget
-      && dynamiteForcedSpendSurplus
-      && dynamiteSubscores.totalScore >= forcedSurplusModerateFloor
-      && candidateRisk <= forcedSurplusRiskCap
-    );
-    if(fallbackTarget){
-      const strategicPressureBoost = strategicTarget
-        ? ((strategicTarget.opensDecisivePath ? 0.09 : 0)
-          + (strategicTarget.removesBarrierToContactZone ? 0.06 : 0)
-          + (strategicTarget.nextTurnRouteGain >= 2 ? 0.07 : 0))
-        : 0;
-      const strategicReason = strategicTarget?.nextTurnRouteGain > 0
-        ? "dynamite_used_for_future_route_gain"
-        : "dynamite_used_for_map_opening";
-      const chosenForFutureAdvantage = strategicTarget && (
-        strategicReason === "dynamite_used_for_future_route_gain"
-        || strategicTarget.hasFutureAdvantageSignal
-        || strategicTarget.accumulatedValue2Turns >= 0.44
-        || strategicTarget.opensDecisivePath
-        || strategicTarget.removesBarrierToContactZone
-      );
+    const simpleDynamiteTarget = Array.isArray(colliders)
+      ? colliders
+          .filter((collider) => Number.isFinite(collider?.cx) && Number.isFinite(collider?.cy))
+          .map((collider) => ({ collider, d: dist(plannedMove.plane, { x: collider.cx, y: collider.cy }) }))
+          .sort((a, b) => a.d - b.d)[0] || null
+      : null;
+
+    if(simpleDynamiteTarget){
+      const isNearObstacle = simpleDynamiteTarget.d <= CELL_SIZE * 10;
       pushCandidate({
         itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
-        target: { x: fallbackTarget.cx, y: fallbackTarget.cy, colliderId: fallbackTarget?.collider?.id ?? null, spriteId: fallbackTarget?.id ?? null },
-        expectedBenefit: Math.max(
-          routeAwareTarget
-          ? 0.58
-          : Math.max(0.34, Math.min(0.91, 0.22 + (strategicTarget?.strategicScore || 0) * 0.11 + strategicPressureBoost)),
-          dynamiteSeriesPlan?.expectedBenefit || 0,
-        ),
-        risk: candidateRisk,
-        reason: dynamiteForcedSpendSurplus
-          ? "dynamite_forced_spend_surplus"
-          : (routeAwareTarget ? "dynamite_route_opening" : strategicReason),
-        whyBetter: routeAwareTarget
-          ? (dynamiteForcedSpendSurplus
-              ? "we have spare dynamite, and this route-aware blast is still useful while avoiding dead inventory"
-              : "dynamite removes the obstacle before launch, and we already confirmed the rebuilt route really wants to use the opened corridor")
-          : (dynamiteForcedSpendSurplus
-              ? "we have spare dynamite, so a valid strategic wall target is acceptable even without waiting for a huge immediate gain"
-              : "dynamite opens a more useful part of the map during weak turns, and also during medium turns when it unlocks a decisive path or a noticeable follow-up route gain"),
-        dynamiteUseClass: routeAwareTarget ? "current_route" : "strategic_map_opening",
-        dynamiteFutureAdvantage: Boolean(chosenForFutureAdvantage),
-        futureAdvantageSignal,
-        dynamiteExpectedRoute: routeAwareTarget?.replanResult?.expectedRoute || null,
-        dynamiteRouteReplan: routeAwareTarget?.replanResult ? {
-          usesOpenedCorridor: routeAwareTarget.replanResult.usesOpenedCorridor,
-          noticeableImprovement: routeAwareTarget.replanResult.noticeableImprovement,
-          moderateValidGain: routeAwareTarget.replanResult.moderateValidGain,
-          scoreGain: routeAwareTarget.replanResult.scoreGain,
-          distanceGain: routeAwareTarget.replanResult.distanceGain,
-          accumulatedValue2Turns: routeAwareTarget.replanResult.accumulatedValue2Turns,
-          accumulatedValue3Turns: routeAwareTarget.replanResult.accumulatedValue3Turns,
-        } : null,
-        strategicDynamiteScore: strategicTarget?.strategicScore ?? null,
-        tacticalSeries: dynamiteSeriesPlan,
-        dynamiteSubscores: {
-          ownRouteOpening: dynamiteSubscores.ownRouteOpeningScore,
-          enemyRouteDisruption: dynamiteSubscores.enemyRouteDisruptionScore,
-          expectedNearTermWin: dynamiteSubscores.expectedNearTermWinScore,
-          total: dynamiteSubscores.totalScore,
-          thresholdBase: dynamiteSumThresholdBase,
-          thresholdAdjusted: dynamiteSumThresholdAdjusted,
-          thresholdAdjustmentReasons,
-          passed: passesDynamiteSumThreshold,
-          acceptedByForcedSurplusGate: !passesDynamiteSumThreshold && passesForcedSurplusModerateGate,
-          forcedSurplusModerateFloor,
-          forcedSurplusRiskCap,
+        target: {
+          x: simpleDynamiteTarget.collider.cx,
+          y: simpleDynamiteTarget.collider.cy,
+          colliderId: simpleDynamiteTarget.collider?.id ?? null,
         },
-        strategicDynamiteReasons: strategicTarget ? {
-          opensPathToBase: strategicTarget.opensPathToBase,
-          opensPathToFlag: strategicTarget.opensPathToFlag,
-          removesBarrierToContactZone: strategicTarget.removesBarrierToContactZone,
-          nextTurnRouteGain: strategicTarget.nextTurnRouteGain,
-          opensDecisivePath: strategicTarget.opensDecisivePath,
-          hasLargeRouteGain: strategicTarget.hasLargeRouteGain,
-          hasNoticeableRouteGain: strategicTarget.hasNoticeableRouteGain,
-          accumulatedValue2Turns: strategicTarget.accumulatedValue2Turns,
-          accumulatedValue3Turns: strategicTarget.accumulatedValue3Turns,
-          hasFutureAdvantageSignal: strategicTarget.hasFutureAdvantageSignal,
-          mediumMoveStrategicUnlock: strategicTarget.mediumMoveStrategicUnlock,
-          moveClassification: strategicTarget.moveClassification?.classification || null,
-          currentMoveTooStrongReason: strategicMoveGate.strongPlanReason,
-        } : null,
-        comparedTargets: strategicDynamite?.rankedTargets?.map((target) => ({
-          colliderId: target?.collider?.id ?? null,
-          x: Number.isFinite(target?.cx) ? Number(target.cx.toFixed(1)) : null,
-          y: Number.isFinite(target?.cy) ? Number(target.cy.toFixed(1)) : null,
-          score: target?.strategicScore ?? null,
-          nextTurnRouteGain: target?.nextTurnRouteGain ?? 0,
-        })) || null,
+        expectedBenefit: isNearObstacle ? 0.36 : 0.24,
+        risk: isNearObstacle ? 0.09 : 0.07,
+        reason: isNearObstacle ? "dynamite_open_near_obstacle" : "dynamite_open_map",
+        whyBetter: isNearObstacle
+          ? "a nearby obstacle can be removed immediately, which often improves route quality without deep search"
+          : "using dynamite early keeps map flow open and avoids waiting for a rare perfect wall",
+        usageTier: isNearObstacle ? "strong" : "moderate",
+        reasonCode: isNearObstacle ? "dynamite_open_near_obstacle" : "dynamite_open_map",
       });
     } else {
-      const thresholdReason = fallbackTarget && !passesDynamiteSumThreshold
-        ? (dynamiteForcedSpendSurplus ? "dynamite_forced_surplus_guardrail_reject" : "dynamite_subscore_sum_below_threshold")
-        : (strategicDynamite === null ? "dynamite_no_useful_target" : "dynamite_no_current_route_target");
-      rejectCandidate(
-        INVENTORY_ITEM_TYPES.DYNAMITE,
-        thresholdReason,
-        {
-          whyWaiting: routeAwareTarget === null
-            ? "did_not_find_a_wall_that_improves_the_route_we_want_right_now_or_the_turn_is_not_weak_enough_for_a_preparatory_blast"
-            : "did_not_find_any_wall_that_improves_the_route_now_or_on_the_next_turns",
-          dynamiteSubscores: {
-            ownRouteOpening: dynamiteSubscores.ownRouteOpeningScore,
-            enemyRouteDisruption: dynamiteSubscores.enemyRouteDisruptionScore,
-            expectedNearTermWin: dynamiteSubscores.expectedNearTermWinScore,
-            total: dynamiteSubscores.totalScore,
-            thresholdBase: dynamiteSumThresholdBase,
-            thresholdAdjusted: dynamiteSumThresholdAdjusted,
-            thresholdAdjustmentReasons,
-            passed: passesDynamiteSumThreshold,
-            forcedSurplusModerateFloor,
-            forcedSurplusRiskCap,
-            candidateRisk,
-          },
-          thresholdBase: dynamiteSumThresholdBase,
-          thresholdAdjusted: dynamiteSumThresholdAdjusted,
-          thresholdAdjustmentReasons,
-          currentMoveTooStrongReason: strategicMoveGate.strongPlanReason,
-          strategicSetupBlockedByCurrentMove: !strategicMoveGate.allowStrategicSetup,
-          routeTargetMissing: routeAwareTarget === null,
-          strategicTargetsChecked: strategicDynamite?.rankedTargets?.length ?? 0,
-        }
-      );
+      rejectCandidate(INVENTORY_ITEM_TYPES.DYNAMITE, "dynamite_no_simple_target", {
+        whyWaiting: "no reachable obstacle center found for a quick tactical spend",
+      });
     }
   }
 
