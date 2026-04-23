@@ -34082,6 +34082,64 @@ function runInventoryRouteOpeningBeforeFallback(modeContext = {}, chosenGoal = n
   };
 }
 
+function findPreFallbackCargoPickupMove(context = {}, launchReadyPlanes = []){
+  if(!Array.isArray(launchReadyPlanes) || launchReadyPlanes.length === 0) return null;
+  const readyCargo = Array.isArray(cargoState)
+    ? cargoState.filter((cargo) => cargo?.state === "ready")
+    : [];
+  if(readyCargo.length === 0) return null;
+
+  const allowedRisk = getAiAllowedMoveRisk(context);
+  let bestCargoProbe = null;
+
+  for(const plane of launchReadyPlanes){
+    for(const cargo of readyCargo){
+      const routeCandidates = collectAiCargoRouteCandidates(plane, cargo, context);
+      for(const routeCandidate of routeCandidates){
+        const move = routeCandidate?.move || null;
+        const riskInfo = routeCandidate?.riskInfo || null;
+        if(!move || !riskInfo || riskInfo.isSafePath !== true) continue;
+        if(routeCandidate.cargoPickedOnPath !== true) continue;
+        if(!Number.isFinite(riskInfo.totalRisk) || riskInfo.totalRisk > allowedRisk) continue;
+
+        const riskScore = Math.max(0, riskInfo.totalRisk);
+        const distanceScore = Number.isFinite(move.totalDist)
+          ? move.totalDist / Math.max(1, MAX_DRAG_DISTANCE * 1.2)
+          : 1;
+        const usefulCarryScore = Number.isFinite(routeCandidate.usefulCarryAfterPickup)
+          ? routeCandidate.usefulCarryAfterPickup / Math.max(1, MAX_DRAG_DISTANCE)
+          : 0;
+        const ricochetBonus = routeCandidate.usedRicochet ? 0.08 : 0;
+        const score = Number((riskScore + distanceScore - usefulCarryScore - ricochetBonus).toFixed(4));
+        if(!bestCargoProbe || score < bestCargoProbe.score){
+          bestCargoProbe = {
+            score,
+            plane,
+            cargo,
+            routeCandidate,
+          };
+        }
+      }
+    }
+  }
+
+  if(!bestCargoProbe) return null;
+  const selectedMove = bestCargoProbe.routeCandidate.move;
+  return {
+    ...selectedMove,
+    plane: bestCargoProbe.plane,
+    goalName: selectedMove.goalName || "pre_fallback_cargo_pickup",
+    decisionReason: selectedMove.decisionReason || "pre_fallback_cargo_pickup",
+    cargoTargetId: bestCargoProbe.cargo?.id ?? null,
+    cargoPickedOnPath: true,
+    usedRicochet: bestCargoProbe.routeCandidate.usedRicochet === true,
+    preFallbackCargoScore: bestCargoProbe.score,
+    preFallbackCargoRisk: Number.isFinite(bestCargoProbe.routeCandidate?.riskInfo?.totalRisk)
+      ? Number(bestCargoProbe.routeCandidate.riskInfo.totalRisk.toFixed(4))
+      : null,
+  };
+}
+
 function runPreFallbackExtraProbe(modeContext = {}, chosenGoal = null){
   const launchReadyPlanes = Array.isArray(modeContext?.aiPlanes)
     ? modeContext.aiPlanes.filter((plane) => isPlaneLaunchStateReady(plane) && !flyingPoints.some((fp) => fp.plane === plane))
@@ -34132,6 +34190,28 @@ function runPreFallbackExtraProbe(modeContext = {}, chosenGoal = null){
     tried.push(`best_tactical_item:${validatedInventoryMove?.reason || "invalid_inventory_probe_move"}`);
   } else {
     tried.push("best_tactical_item:no_candidate");
+  }
+
+  const cargoPickupMove = findPreFallbackCargoPickupMove(contextForProbe, launchReadyPlanes);
+  if(cargoPickupMove){
+    const cargoMoveValidation = validateAiLaunchMoveCandidate(cargoPickupMove);
+    if(cargoMoveValidation?.ok){
+      return {
+        move: cargoPickupMove,
+        used: true,
+        probeType: "cargo_pickup",
+        probeDetails: {
+          cargoTargetId: cargoPickupMove.cargoTargetId ?? null,
+          usedRicochet: cargoPickupMove.usedRicochet === true,
+          cargoRisk: cargoPickupMove.preFallbackCargoRisk,
+          cargoScore: cargoPickupMove.preFallbackCargoScore,
+        },
+        tried,
+      };
+    }
+    tried.push(`cargo_pickup:${cargoMoveValidation?.reason || "invalid_cargo_pickup_move"}`);
+  } else {
+    tried.push("cargo_pickup:no_candidate");
   }
 
   const nearestEnemyByDistance = aliveEnemies.reduce((best, enemy) => {
