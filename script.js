@@ -9649,7 +9649,7 @@ function buildAiCargoRouteCandidate(plane, cargo, context, routeTarget, routeCla
     || routeTarget.usedRicochetHint === true
     || move?.candidateClass === "ricochet"
     || move?.moveType === "mirror";
-  const riskInfo = evaluateCargoPickupRisk(plane, cargo, context);
+  const riskInfo = evaluateCargoPickupRisk(plane, cargo, context, move);
   const favorableInfo = evaluateFavorableCargoCandidate(plane, cargo, move, riskInfo);
 
   return {
@@ -29154,7 +29154,7 @@ function tryPlanOpeningCenterControlMove(context){
         markPathRejectCode(planPathToPoint.lastRejectCode);
         continue;
       }
-      const riskInfo = evaluateCargoPickupRisk(plane, cargo, context);
+      const riskInfo = evaluateCargoPickupRisk(plane, cargo, context, move);
       const favorableInfo = evaluateFavorableCargoCandidate(plane, cargo, move, riskInfo);
       const canTakeCargo = riskInfo.isSafePath
         && (riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE || favorableInfo?.isFavorableCargo);
@@ -29285,14 +29285,18 @@ function estimateCargoInterceptionChance(plane, cargoCenter, enemies){
   return Math.min(1, threateningEnemies / Math.max(1, enemies.length));
 }
 
-function evaluateCargoPickupRisk(plane, cargo, context){
+function evaluateCargoPickupRisk(plane, cargo, context, move = null){
   const cargoCenter = getCargoVisualCenter(cargo);
   const nearestEnemyDistance = Array.isArray(context?.enemies) && context.enemies.length > 0
     ? Math.min(...context.enemies.map((enemy) => dist(enemy, cargoCenter)))
     : Number.POSITIVE_INFINITY;
   const interceptionChance = estimateCargoInterceptionChance(plane, cargoCenter, context?.enemies || []);
   const carryingEnemyFlag = Boolean(plane?.carriedFlagId && getFlagById(plane.carriedFlagId)?.color === "green");
-  const isSafePath = isPathClear(plane.x, plane.y, cargoCenter.x, cargoCenter.y);
+  const isSpecialRouteMove = move?.candidateClass === "ricochet"
+    || move?.candidateClass === "gap"
+    || move?.moveType === "mirror";
+  const isDirectPathSafe = isPathClear(plane.x, plane.y, cargoCenter.x, cargoCenter.y);
+  const isSafePath = isSpecialRouteMove ? true : isDirectPathSafe;
 
   let risk = 0;
   risk += nearestEnemyDistance < ATTACK_RANGE_PX ? 0.55 : nearestEnemyDistance < ATTACK_RANGE_PX * 1.5 ? 0.3 : 0.1;
@@ -29306,6 +29310,8 @@ function evaluateCargoPickupRisk(plane, cargo, context){
     interceptionChance,
     carryingEnemyFlag,
     isSafePath,
+    isDirectPathSafe,
+    isSpecialRouteMove,
     cargoCenter,
   };
 }
