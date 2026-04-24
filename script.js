@@ -15030,23 +15030,66 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         planDistance = selectedPlan ? Math.hypot(selectedPlan.landingX - launchReadyPlane.x, selectedPlan.landingY - launchReadyPlane.y) : Number.POSITIVE_INFINITY;
       }
 
-      if(selectedPlan && nearestCargo && !bestAttackCandidate){
-        const cargoMove = buildMoveTowardTarget(launchReadyPlane, nearestCargo.center, maxFlightDistancePx, {
-          decisionReason: "simple_step2_pickup_cargo",
-          goalName: "simple_step2_cargo",
-          whyChosen: "safe_nearby_cargo_beats_empty_move",
-        });
-        if(cargoMove){
-          const nearestEnemyToCargoLanding = enemyPlanes.reduce((best, enemy) => {
-            const d = dist(enemy, { x: cargoMove.landingX, y: cargoMove.landingY });
-            return Math.min(best, d);
-          }, Number.POSITIVE_INFINITY);
-          const safeCargoPath = nearestEnemyToCargoLanding >= CELL_SIZE * 3.5;
-          const nearbyCargo = nearestCargo.d <= maxFlightDistancePx * 0.9;
-          if(safeCargoPath && nearbyCargo){
+      if(nearestCargo){
+        const cargoContext = {
+          enemies: enemyPlanes,
+          homeBase: getBaseAnchor(launchReadyPlane.color),
+        };
+        const cargoRouteCandidates = collectAiCargoRouteCandidates(launchReadyPlane, nearestCargo.cargo, cargoContext);
+        const bestCargoCandidate = cargoRouteCandidates
+          .filter((candidate) => {
+            const riskInfo = candidate?.riskInfo;
+            const favorableInfo = candidate?.favorableInfo;
+            const acceptedByBaseRisk = Boolean(riskInfo?.isSafePath) && Number.isFinite(riskInfo?.totalRisk) && riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE;
+            const acceptedByFavorableOverride = Boolean(riskInfo?.isSafePath) && favorableInfo?.isFavorableCargo === true;
+            return acceptedByBaseRisk || acceptedByFavorableOverride;
+          })
+          .sort((a, b) => {
+            const aCargoScore = (
+              (a?.favorableInfo?.isFavorableCargo ? 1.5 : 0)
+              + Math.min(2.5, Math.max(0, (a?.usefulCarryAfterPickup || 0) / Math.max(1, CELL_SIZE * 0.7)))
+              + Math.min(1.2, Math.max(0, getAiCargoRicochetPreferenceBonus(a) / Math.max(1, CELL_SIZE * 0.18)))
+              - Math.min(2.2, Math.max(0, a?.riskInfo?.totalRisk || 0) * 2.2)
+            );
+            const bCargoScore = (
+              (b?.favorableInfo?.isFavorableCargo ? 1.5 : 0)
+              + Math.min(2.5, Math.max(0, (b?.usefulCarryAfterPickup || 0) / Math.max(1, CELL_SIZE * 0.7)))
+              + Math.min(1.2, Math.max(0, getAiCargoRicochetPreferenceBonus(b) / Math.max(1, CELL_SIZE * 0.18)))
+              - Math.min(2.2, Math.max(0, b?.riskInfo?.totalRisk || 0) * 2.2)
+            );
+            if(Math.abs(aCargoScore - bCargoScore) > 1e-6){
+              return bCargoScore - aCargoScore;
+            }
+            return (a?.move?.totalDist || Number.POSITIVE_INFINITY) - (b?.move?.totalDist || Number.POSITIVE_INFINITY);
+          })[0] || null;
+
+        if(bestCargoCandidate?.move){
+          const cargoMove = {
+            plane: launchReadyPlane,
+            landingX: launchReadyPlane.x + (bestCargoCandidate.move.vx || 0) * FIELD_FLIGHT_DURATION_SEC,
+            landingY: launchReadyPlane.y + (bestCargoCandidate.move.vy || 0) * FIELD_FLIGHT_DURATION_SEC,
+            targetPoint: nearestCargo.center,
+            decisionReason: "simple_step2_pickup_cargo",
+            goalName: "simple_step2_cargo",
+            whyChosen: bestCargoCandidate.usedRicochet
+              ? "cargo_priority_equal_to_enemy_attack_with_ricochet_lane"
+              : "cargo_priority_equal_to_enemy_attack",
+            routeClass: bestCargoCandidate.move.routeClass || bestCargoCandidate.move.candidateClass || "direct",
+            bounceCount: Number.isFinite(bestCargoCandidate.move.bounceCount) ? bestCargoCandidate.move.bounceCount : 0,
+            cargoEvalScore: Number.isFinite(bestCargoCandidate.riskInfo?.totalRisk)
+              ? Number((1 - bestCargoCandidate.riskInfo.totalRisk).toFixed(3))
+              : null,
+          };
+
+          const cargoPlanDistance = Number.isFinite(bestCargoCandidate.move.totalDist)
+            ? bestCargoCandidate.move.totalDist
+            : nearestCargo.d;
+          const shouldPreferCargoOverAttack = !bestAttackCandidate || cargoPlanDistance <= planDistance + CELL_SIZE * 0.25;
+
+          if(shouldPreferCargoOverAttack){
             selectedPlan = cargoMove;
-            planTier = 2;
-            planDistance = nearestCargo.d;
+            planTier = 1;
+            planDistance = cargoPlanDistance;
           }
         }
       }
