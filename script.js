@@ -17493,12 +17493,7 @@ function onCanvasPointerDown(e){
   } else if(pendingInventoryUse) {
     handleStart(e);
   } else {
-    const { x: designX, y: designY } = getPointerDesignCoords(e);
-    const { x, y } = designToBoardCoords(designX, designY);
     handleStart(e);
-    if(shouldUseStickyAimForPointerEvent(e)){
-      beginStickyAimHoldTracking(e, x, y);
-    }
   }
 }
 
