@@ -25723,19 +25723,35 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     const mineExpectedBenefit = hasEnemyPressure ? 0.42 : 0.27;
     const mineRisk = hasEnemyPressure ? 0.1 : 0.08;
 
-    pushCandidate({
-      itemType: INVENTORY_ITEM_TYPES.MINE,
-      target: priorityEnemy || enemyBase || landingPoint || null,
-      expectedBenefit: mineExpectedBenefit,
-      risk: mineRisk,
-      reason: hasEnemyPressure ? "mine_pressure_control" : "mine_area_control",
-      whyBetter: hasEnemyPressure
-        ? "enemy is already close, so a mine now quickly creates denial space and makes the immediate response harder"
-        : "even without a perfect trap, an early mine gives stable area control and is cheap enough to spend",
-      usageTier: hasEnemyPressure ? "strong" : "moderate",
-      mineDecisionLabel: hasEnemyPressure ? "pressure_control" : "area_control",
-      reasonCode: hasEnemyPressure ? "mine_pressure_control" : "mine_area_control",
-    });
+    const defensiveMineProbe = typeof tryPlaceBlueDefensiveMine === "function"
+      ? tryPlaceBlueDefensiveMine(context, plannedMove, { evaluateOnly: true })
+      : null;
+    const baseMineProbe = typeof tryPlaceBlueMineNearEnemyBase === "function"
+      ? tryPlaceBlueMineNearEnemyBase(context, plannedMove, { evaluateOnly: true })
+      : null;
+    const minePlan = defensiveMineProbe || baseMineProbe || null;
+
+    if(minePlan?.placement){
+      pushCandidate({
+        itemType: INVENTORY_ITEM_TYPES.MINE,
+        target: priorityEnemy || enemyBase || landingPoint || null,
+        expectedBenefit: mineExpectedBenefit,
+        risk: mineRisk,
+        reason: hasEnemyPressure ? "mine_pressure_control" : "mine_area_control",
+        whyBetter: hasEnemyPressure
+          ? "enemy is already close, so a mine now quickly creates denial space and makes the immediate response harder"
+          : "even without a perfect trap, an early mine gives stable area control and is cheap enough to spend",
+        usageTier: hasEnemyPressure ? "strong" : "moderate",
+        mineDecisionLabel: hasEnemyPressure ? "pressure_control" : "area_control",
+        reasonCode: hasEnemyPressure ? "mine_pressure_control" : "mine_area_control",
+        minePlan,
+        placementMode: minePlan?.scenario?.includes("defensive") ? "defensive" : "base",
+      });
+    } else {
+      rejectCandidate(INVENTORY_ITEM_TYPES.MINE, "mine_no_fast_placement", {
+        whyWaiting: "no quick safe mine placement found for current route context",
+      });
+    }
   }
 
   if(allowTacticalItems && inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] > 0){
@@ -25746,15 +25762,31 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
           .sort((a, b) => a.d - b.d)[0] || null
       : null;
 
-    if(simpleDynamiteTarget){
-      const isNearObstacle = simpleDynamiteTarget.d <= CELL_SIZE * 10;
+    const tacticalDynamiteDecision = typeof evaluateAiDynamiteTacticalTarget === "function"
+      ? evaluateAiDynamiteTacticalTarget(context, plannedMove, { allowStrategicProbeWhenRouteAware: true })
+      : null;
+    const tacticalFallbackTarget = tacticalDynamiteDecision?.fallbackTarget || null;
+    const resolvedDynamiteTarget = simpleDynamiteTarget
+      ? {
+        x: simpleDynamiteTarget.collider.cx,
+        y: simpleDynamiteTarget.collider.cy,
+        colliderId: simpleDynamiteTarget.collider?.id ?? null,
+      }
+      : (Number.isFinite(tacticalFallbackTarget?.cx) && Number.isFinite(tacticalFallbackTarget?.cy)
+        ? {
+          x: tacticalFallbackTarget.cx,
+          y: tacticalFallbackTarget.cy,
+          colliderId: tacticalFallbackTarget?.collider?.id ?? null,
+          spriteId: tacticalFallbackTarget?.id ?? null,
+        }
+        : null);
+
+    if(resolvedDynamiteTarget){
+      const resolvedDist = dist(plannedMove.plane, resolvedDynamiteTarget);
+      const isNearObstacle = resolvedDist <= CELL_SIZE * 10;
       pushCandidate({
         itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
-        target: {
-          x: simpleDynamiteTarget.collider.cx,
-          y: simpleDynamiteTarget.collider.cy,
-          colliderId: simpleDynamiteTarget.collider?.id ?? null,
-        },
+        target: resolvedDynamiteTarget,
         expectedBenefit: isNearObstacle ? 0.36 : 0.24,
         risk: isNearObstacle ? 0.09 : 0.07,
         reason: isNearObstacle ? "dynamite_open_near_obstacle" : "dynamite_open_map",
@@ -25849,6 +25881,13 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     candidate.directUtility = Number(directUtility.toFixed(3));
     candidate.adjustedComparableScore = candidate.directUtility;
     candidate.releaseReady = true;
+    if(candidate.itemType === INVENTORY_ITEM_TYPES.FUEL
+      || candidate.itemType === INVENTORY_ITEM_TYPES.CROSSHAIR
+      || candidate.itemType === INVENTORY_ITEM_TYPES.WINGS
+      || candidate.itemType === INVENTORY_ITEM_TYPES.INVISIBILITY){
+      candidate.directUtility = Number((candidate.directUtility + 0.035).toFixed(3));
+      candidate.adjustedComparableScore = candidate.directUtility;
+    }
   }
 
   let selectedCandidate = null;
