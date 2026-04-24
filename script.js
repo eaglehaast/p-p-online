@@ -16148,6 +16148,7 @@ const aimSession = {
   pointerId:null,
   hasGlobalPointerListeners:false,
   pointerDown:false,
+  pointerDownOrigin:null,
   movedWhilePointerDown:false,
   pointerDownStartX:0,
   pointerDownStartY:0
@@ -17316,6 +17317,9 @@ function handleStart(e) {
   roundTextTimer = 0; // Hide round label when player starts a move
   gsBoardCanvas.style.cursor = 'grabbing';
   document.body.style.cursor = 'grabbing';
+  if(shouldUseStickyAimForPointerEvent(e)){
+    beginStickyAimHoldTracking(e, mx, my, { origin: "initial_grab" });
+  }
 
   // Show overlay canvas for aiming arrow
   aimCanvas.style.display = isAimSessionActive() ? "block" : "none";
@@ -17369,12 +17373,14 @@ function onGlobalStickyAimPointerDownWhileArmed(e){
   e.stopPropagation();
 }
 
-function beginStickyAimHoldTracking(e, boardX, boardY){
+function beginStickyAimHoldTracking(e, boardX, boardY, options = {}){
   if(!handleCircle.active) return;
   if(!Number.isFinite(e?.pointerId)) return;
+  const origin = options.origin === "initial_grab" ? "initial_grab" : "armed_rehold";
 
   handleCircle.pointerId = e.pointerId;
   handleCircle.pointerDown = true;
+  handleCircle.pointerDownOrigin = origin;
   handleCircle.movedWhilePointerDown = false;
   handleCircle.pointerDownStartX = boardX;
   handleCircle.pointerDownStartY = boardY;
@@ -17408,15 +17414,18 @@ function endStickyAimHoldTracking(e){
   }
 
   const wasHolding = handleCircle.pointerDown;
+  const holdOrigin = handleCircle.pointerDownOrigin;
   const movedWhileHolding = handleCircle.movedWhilePointerDown;
 
   handleCircle.pointerId = null;
   handleCircle.pointerDown = false;
+  handleCircle.pointerDownOrigin = null;
   handleCircle.movedWhilePointerDown = false;
 
-  if(!wasHolding) return { ended: false, moved: false };
+  if(!wasHolding) return { ended: false, moved: false, origin: null };
   return {
     ended: true,
+    origin: holdOrigin,
     moved: movedWhileHolding,
   };
 }
@@ -17481,7 +17490,7 @@ function onCanvasPointerDown(e){
     const { x: designX, y: designY } = getPointerDesignCoords(e);
     const { x, y } = designToBoardCoords(designX, designY);
     if(shouldUseStickyAimForPointerEvent(e)){
-      beginStickyAimHoldTracking(e, x, y);
+      beginStickyAimHoldTracking(e, x, y, { origin: "armed_rehold" });
     }
     e.preventDefault();
     return;
@@ -17633,6 +17642,10 @@ function onCanvasPointerUp(e){
     const launchY = holdResult.moved ? y : handleCircle.pointerDownStartY;
     const tapDistanceFromPlane = Math.hypot(launchX - plane.x, launchY - plane.y);
     if(!holdResult.moved && tapDistanceFromPlane < CELL_SIZE){
+      if(holdResult.origin === "initial_grab"){
+        e.preventDefault();
+        return;
+      }
       cancelAimSessionWithoutLaunch();
       e.preventDefault();
       return;
@@ -17695,6 +17708,9 @@ function onGlobalStickyAimPointerUpOrCancel(e){
   const launchY = holdResult.moved ? y : handleCircle.pointerDownStartY;
   const tapDistanceFromPlane = Math.hypot(launchX - plane.x, launchY - plane.y);
   if(!holdResult.moved && tapDistanceFromPlane < CELL_SIZE){
+    if(holdResult.origin === "initial_grab"){
+      return;
+    }
     cancelAimSessionWithoutLaunch();
     return;
   }
@@ -17993,6 +18009,7 @@ function cleanupHandle(){
   handleCircle.origAngle = null;
   handleCircle.pointerId = null;
   handleCircle.pointerDown = false;
+  handleCircle.pointerDownOrigin = null;
   handleCircle.movedWhilePointerDown = false;
   // Hide overlay canvas when aiming ends
   aimCanvas.style.display = "none";
