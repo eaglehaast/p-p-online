@@ -25698,6 +25698,13 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       { ox: 0.8, oy: -0.4 },
       { ox: -0.8, oy: -0.4 },
       { ox: 0, oy: 0.95 },
+      { ox: 1.2, oy: 0 },
+      { ox: -1.2, oy: 0 },
+      { ox: 0, oy: -0.95 },
+      { ox: 1.5, oy: 0.65 },
+      { ox: -1.5, oy: 0.65 },
+      { ox: 1.5, oy: -0.65 },
+      { ox: -1.5, oy: -0.65 },
     ];
     const safeRadius = Math.max(12, MINE_TRIGGER_RADIUS * 1.2);
     for(const target of mineTargets){
@@ -25718,6 +25725,25 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
           placement,
           scenario: "fast_inventory_mine",
           score: 0.34,
+        };
+      }
+    }
+    const fallbackScanStep = Math.max(10, CELL_SIZE * 0.75);
+    for(let y = FIELD_TOP + CELL_SIZE * 0.5; y <= FIELD_BOTTOM - CELL_SIZE * 0.5; y += fallbackScanStep){
+      for(let x = FIELD_LEFT + CELL_SIZE * 0.5; x <= FIELD_RIGHT - CELL_SIZE * 0.5; x += fallbackScanStep){
+        const placement = {
+          x,
+          y,
+          cellX: Math.floor((x - FIELD_LEFT) / CELL_SIZE),
+          cellY: Math.floor((y - FIELD_TOP) / CELL_SIZE),
+        };
+        if(!isMinePlacementValid(placement)) continue;
+        if(localLandingPoint && dist(localLandingPoint, placement) <= safeRadius) continue;
+        if(dist(plane, placement) <= safeRadius) continue;
+        return {
+          placement,
+          scenario: "fast_inventory_mine_fallback_scan",
+          score: 0.26,
         };
       }
     }
@@ -25854,7 +25880,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     let resolvedDynamiteTarget = null;
     if(Array.isArray(colliders) && colliders.length > 0){
       let nearestDist = Number.POSITIVE_INFINITY;
-      const maxColliderChecks = Math.min(colliders.length, 140);
+      const maxColliderChecks = colliders.length;
       for(let i = 0; i < maxColliderChecks; i += 1){
         const collider = colliders[i];
         if(!Number.isFinite(collider?.cx) || !Number.isFinite(collider?.cy)) continue;
@@ -26341,6 +26367,14 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         { ox: -0.9, oy: 0.35 },
         { ox: 0.9, oy: -0.35 },
         { ox: -0.9, oy: -0.35 },
+        { ox: 1.3, oy: 0 },
+        { ox: -1.3, oy: 0 },
+        { ox: 0, oy: 0.9 },
+        { ox: 0, oy: -0.9 },
+        { ox: 1.7, oy: 0.7 },
+        { ox: -1.7, oy: 0.7 },
+        { ox: 1.7, oy: -0.7 },
+        { ox: -1.7, oy: -0.7 },
       ];
       const safeRadius = Math.max(12, MINE_TRIGGER_RADIUS * 1.15);
       for(const target of candidateTargets){
@@ -26364,13 +26398,32 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
           };
         }
       }
+      const fallbackScanStep = Math.max(10, CELL_SIZE * 0.75);
+      for(let y = FIELD_TOP + CELL_SIZE * 0.5; y <= FIELD_BOTTOM - CELL_SIZE * 0.5; y += fallbackScanStep){
+        for(let x = FIELD_LEFT + CELL_SIZE * 0.5; x <= FIELD_RIGHT - CELL_SIZE * 0.5; x += fallbackScanStep){
+          const placement = {
+            x,
+            y,
+            cellX: Math.floor((x - FIELD_LEFT) / CELL_SIZE),
+            cellY: Math.floor((y - FIELD_TOP) / CELL_SIZE),
+          };
+          if(!isMinePlacementValid(placement)) continue;
+          if(localLandingPoint && dist(localLandingPoint, placement) <= safeRadius) continue;
+          if(dist(plane, placement) <= safeRadius) continue;
+          return {
+            placement,
+            scenario: "forced_fast_inventory_mine_fallback_scan",
+            score: 0.18,
+          };
+        }
+      }
       return null;
     })();
     const quickForcedDynamiteTarget = (() => {
       if(!Array.isArray(colliders) || colliders.length === 0) return null;
       let best = null;
       let bestDist = Number.POSITIVE_INFINITY;
-      const maxChecks = Math.min(colliders.length, 110);
+      const maxChecks = colliders.length;
       for(let i = 0; i < maxChecks; i += 1){
         const collider = colliders[i];
         if(!Number.isFinite(collider?.cx) || !Number.isFinite(collider?.cy)) continue;
