@@ -25621,6 +25621,48 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
   const fuelUnlockMeta = compareAiItemUnlockMoveClass(baseUnlockMetrics, fuelUnlockMetrics);
   const wingsUnlockMeta = compareAiItemUnlockMoveClass(baseUnlockMetrics, wingsUnlockMetrics);
   const fuelAndWingsUnlockMeta = compareAiItemUnlockMoveClass(baseUnlockMetrics, fuelAndWingsUnlockMetrics);
+  const quickMinePlacement = (() => {
+    const plane = plannedMove?.plane || null;
+    if(!plane) return null;
+    const localLandingPoint = landingPoint || getAiMoveLandingPoint(plannedMove) || null;
+    const nearestEnemy = Array.isArray(context?.enemies) && context.enemies.length > 0
+      ? context.enemies
+          .map((enemy) => ({ enemy, d: dist(plane, enemy) }))
+          .sort((a, b) => a.d - b.d)[0]?.enemy || null
+      : null;
+    const mineTargets = [priorityEnemy, nearestEnemy, enemyBase, localLandingPoint].filter(Boolean);
+    const pointOffsets = [
+      { ox: 0, oy: 0 },
+      { ox: 0.8, oy: 0.4 },
+      { ox: -0.8, oy: 0.4 },
+      { ox: 0.8, oy: -0.4 },
+      { ox: -0.8, oy: -0.4 },
+      { ox: 0, oy: 0.95 },
+    ];
+    const safeRadius = Math.max(12, MINE_TRIGGER_RADIUS * 1.2);
+    for(const target of mineTargets){
+      if(!Number.isFinite(target?.x) || !Number.isFinite(target?.y)) continue;
+      for(const offset of pointOffsets){
+        const px = target.x + offset.ox * CELL_SIZE;
+        const py = target.y + offset.oy * CELL_SIZE;
+        const placement = {
+          x: px,
+          y: py,
+          cellX: Math.floor((px - FIELD_LEFT) / CELL_SIZE),
+          cellY: Math.floor((py - FIELD_TOP) / CELL_SIZE),
+        };
+        if(!isMinePlacementValid(placement)) continue;
+        if(localLandingPoint && dist(localLandingPoint, placement) <= safeRadius) continue;
+        if(dist(plane, placement) <= safeRadius) continue;
+        return {
+          placement,
+          scenario: "fast_inventory_mine",
+          score: 0.34,
+        };
+      }
+    }
+    return null;
+  })();
   const pushCandidate = (candidate) => {
     const normalizedBenefit = Number.isFinite(candidate?.expectedBenefit) ? candidate.expectedBenefit : 0;
     const normalizedRisk = Number.isFinite(candidate?.risk) ? candidate.risk : 0;
@@ -25723,13 +25765,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     const mineExpectedBenefit = hasEnemyPressure ? 0.42 : 0.27;
     const mineRisk = hasEnemyPressure ? 0.1 : 0.08;
 
-    const defensiveMineProbe = typeof tryPlaceBlueDefensiveMine === "function"
-      ? tryPlaceBlueDefensiveMine(context, plannedMove, { evaluateOnly: true })
-      : null;
-    const baseMineProbe = typeof tryPlaceBlueMineNearEnemyBase === "function"
-      ? tryPlaceBlueMineNearEnemyBase(context, plannedMove, { evaluateOnly: true })
-      : null;
-    const minePlan = defensiveMineProbe || baseMineProbe || null;
+    const minePlan = quickMinePlacement;
 
     if(minePlan?.placement){
       pushCandidate({
@@ -25755,31 +25791,24 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
   }
 
   if(allowTacticalItems && inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] > 0){
-    const simpleDynamiteTarget = Array.isArray(colliders)
-      ? colliders
-          .filter((collider) => Number.isFinite(collider?.cx) && Number.isFinite(collider?.cy))
-          .map((collider) => ({ collider, d: dist(plannedMove.plane, { x: collider.cx, y: collider.cy }) }))
-          .sort((a, b) => a.d - b.d)[0] || null
-      : null;
-
-    const tacticalDynamiteDecision = typeof evaluateAiDynamiteTacticalTarget === "function"
-      ? evaluateAiDynamiteTacticalTarget(context, plannedMove, { allowStrategicProbeWhenRouteAware: true })
-      : null;
-    const tacticalFallbackTarget = tacticalDynamiteDecision?.fallbackTarget || null;
-    const resolvedDynamiteTarget = simpleDynamiteTarget
-      ? {
-        x: simpleDynamiteTarget.collider.cx,
-        y: simpleDynamiteTarget.collider.cy,
-        colliderId: simpleDynamiteTarget.collider?.id ?? null,
-      }
-      : (Number.isFinite(tacticalFallbackTarget?.cx) && Number.isFinite(tacticalFallbackTarget?.cy)
-        ? {
-          x: tacticalFallbackTarget.cx,
-          y: tacticalFallbackTarget.cy,
-          colliderId: tacticalFallbackTarget?.collider?.id ?? null,
-          spriteId: tacticalFallbackTarget?.id ?? null,
+    let resolvedDynamiteTarget = null;
+    if(Array.isArray(colliders) && colliders.length > 0){
+      let nearestDist = Number.POSITIVE_INFINITY;
+      const maxColliderChecks = Math.min(colliders.length, 140);
+      for(let i = 0; i < maxColliderChecks; i += 1){
+        const collider = colliders[i];
+        if(!Number.isFinite(collider?.cx) || !Number.isFinite(collider?.cy)) continue;
+        const d = dist(plannedMove.plane, { x: collider.cx, y: collider.cy });
+        if(d < nearestDist){
+          nearestDist = d;
+          resolvedDynamiteTarget = {
+            x: collider.cx,
+            y: collider.cy,
+            colliderId: collider?.id ?? null,
+          };
         }
-        : null);
+      }
+    }
 
     if(resolvedDynamiteTarget){
       const resolvedDist = dist(plannedMove.plane, resolvedDynamiteTarget);
@@ -26235,6 +26264,69 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   const filteredCandidates = uniqueCandidates.filter((candidate) => PRE_LAUNCH_ALLOWED_ITEM_TYPES.has(candidate.itemType));
 
   function buildForcedInventoryFallbackCandidates(excludedItemTypes = new Set()){
+    const quickForcedMinePlan = (() => {
+      const plane = plannedMove?.plane || null;
+      if(!plane) return null;
+      const localLandingPoint = getAiMoveLandingPoint(plannedMove) || null;
+      const enemyBaseAnchor = typeof getBaseAnchor === "function" ? getBaseAnchor("green") : null;
+      const nearestEnemy = Array.isArray(context?.enemies) && context.enemies.length > 0
+        ? context.enemies
+            .map((enemy) => ({ enemy, d: dist(plane, enemy) }))
+            .sort((a, b) => a.d - b.d)[0]?.enemy || null
+        : null;
+      const candidateTargets = [nearestEnemy, enemyBaseAnchor, localLandingPoint].filter(Boolean);
+      const offsetList = [
+        { ox: 0, oy: 0 },
+        { ox: 0.9, oy: 0.35 },
+        { ox: -0.9, oy: 0.35 },
+        { ox: 0.9, oy: -0.35 },
+        { ox: -0.9, oy: -0.35 },
+      ];
+      const safeRadius = Math.max(12, MINE_TRIGGER_RADIUS * 1.15);
+      for(const target of candidateTargets){
+        if(!Number.isFinite(target?.x) || !Number.isFinite(target?.y)) continue;
+        for(const offset of offsetList){
+          const px = target.x + offset.ox * CELL_SIZE;
+          const py = target.y + offset.oy * CELL_SIZE;
+          const placement = {
+            x: px,
+            y: py,
+            cellX: Math.floor((px - FIELD_LEFT) / CELL_SIZE),
+            cellY: Math.floor((py - FIELD_TOP) / CELL_SIZE),
+          };
+          if(!isMinePlacementValid(placement)) continue;
+          if(localLandingPoint && dist(localLandingPoint, placement) <= safeRadius) continue;
+          if(dist(plane, placement) <= safeRadius) continue;
+          return {
+            placement,
+            scenario: "forced_fast_inventory_mine",
+            score: 0.22,
+          };
+        }
+      }
+      return null;
+    })();
+    const quickForcedDynamiteTarget = (() => {
+      if(!Array.isArray(colliders) || colliders.length === 0) return null;
+      let best = null;
+      let bestDist = Number.POSITIVE_INFINITY;
+      const maxChecks = Math.min(colliders.length, 110);
+      for(let i = 0; i < maxChecks; i += 1){
+        const collider = colliders[i];
+        if(!Number.isFinite(collider?.cx) || !Number.isFinite(collider?.cy)) continue;
+        const d = dist(plannedMove.plane, { x: collider.cx, y: collider.cy });
+        if(d < bestDist){
+          bestDist = d;
+          best = collider;
+        }
+      }
+      if(!best) return null;
+      return {
+        x: best.cx,
+        y: best.cy,
+        colliderId: best?.id ?? null,
+      };
+    })();
     const routeAwareFallbackOrder = plannedRouteClass === "gap" || plannedRouteClass === "ricochet"
       ? [
         INVENTORY_ITEM_TYPES.CROSSHAIR,
@@ -26269,13 +26361,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       };
 
       if(itemType === INVENTORY_ITEM_TYPES.MINE){
-        const defensiveProbe = typeof tryPlaceBlueDefensiveMine === "function"
-          ? tryPlaceBlueDefensiveMine(context, plannedMove, { evaluateOnly: true })
-          : null;
-        const baseProbe = typeof tryPlaceBlueMineNearEnemyBase === "function"
-          ? tryPlaceBlueMineNearEnemyBase(context, plannedMove, { evaluateOnly: true })
-          : null;
-        const minePlan = defensiveProbe || baseProbe || null;
+        const minePlan = quickForcedMinePlan;
         if(!minePlan?.placement){
           continue;
         }
@@ -26284,18 +26370,14 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       }
 
       if(itemType === INVENTORY_ITEM_TYPES.DYNAMITE){
-        const dynamiteDecision = typeof evaluateAiDynamiteTacticalTarget === "function"
-          ? evaluateAiDynamiteTacticalTarget(context, plannedMove, { allowStrategicProbeWhenRouteAware: true })
-          : null;
-        const fallbackTarget = dynamiteDecision?.fallbackTarget || null;
-        if(!(Number.isFinite(fallbackTarget?.cx) && Number.isFinite(fallbackTarget?.cy))){
+        if(!(Number.isFinite(quickForcedDynamiteTarget?.x) && Number.isFinite(quickForcedDynamiteTarget?.y))){
           continue;
         }
         forcedCandidate.target = {
-          x: fallbackTarget.cx,
-          y: fallbackTarget.cy,
-          colliderId: fallbackTarget?.collider?.id ?? null,
-          spriteId: fallbackTarget?.id ?? null,
+          x: quickForcedDynamiteTarget.x,
+          y: quickForcedDynamiteTarget.y,
+          colliderId: quickForcedDynamiteTarget?.colliderId ?? null,
+          spriteId: quickForcedDynamiteTarget?.spriteId ?? null,
         };
       }
 
