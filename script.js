@@ -22592,6 +22592,47 @@ function placeBlueDynamiteAt(boardX, boardY){
   return true;
 }
 
+function getNearestAIDynamiteTargetForPlane(plane, options = {}){
+  if(!plane || !Number.isFinite(plane.x) || !Number.isFinite(plane.y)) return null;
+  const requireFreeBlueSlot = options?.requireFreeBlueSlot !== false;
+  const spriteEntries = Array.isArray(currentMapSprites) ? currentMapSprites : [];
+  if(spriteEntries.length === 0) return null;
+
+  let best = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for(let i = 0; i < spriteEntries.length; i += 1){
+    const geometry = getMapSpriteGeometry(spriteEntries[i], i);
+    if(!geometry || !Number.isFinite(geometry.cx) || !Number.isFinite(geometry.cy)) continue;
+
+    if(requireFreeBlueSlot){
+      const hasActiveBlueDynamiteOnSameSprite = Array.isArray(dynamiteState) && dynamiteState.some((entry) => {
+        if(!entry || entry.owner !== "blue" || entry.brickRemoved) return false;
+        const sameSpriteId = geometry.id != null && entry.spriteId != null && entry.spriteId === geometry.id;
+        const sameSpriteRef = geometry.spriteRef != null && entry.spriteRef != null && entry.spriteRef === geometry.spriteRef;
+        return sameSpriteId || sameSpriteRef;
+      });
+      if(hasActiveBlueDynamiteOnSameSprite) continue;
+    }
+
+    const distanceToPlane = Math.hypot(plane.x - geometry.cx, plane.y - geometry.cy);
+    if(distanceToPlane < bestDistance){
+      bestDistance = distanceToPlane;
+      best = geometry;
+    }
+  }
+
+  if(!best) return null;
+  return {
+    x: best.cx,
+    y: best.cy,
+    colliderId: best?.collider?.id ?? null,
+    spriteId: best?.id ?? null,
+    spriteRef: best?.spriteRef ?? null,
+    distanceToPlane: Number.isFinite(bestDistance) ? Number(bestDistance.toFixed(2)) : null,
+    source: "map_sprite_geometry",
+  };
+}
+
 
 function withTemporaryBlueMine(placement, callback){
   if(!placement || !Number.isFinite(placement.x) || !Number.isFinite(placement.y) || typeof callback !== "function") return null;
@@ -25698,6 +25739,13 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
       { ox: 0.8, oy: -0.4 },
       { ox: -0.8, oy: -0.4 },
       { ox: 0, oy: 0.95 },
+      { ox: 1.2, oy: 0 },
+      { ox: -1.2, oy: 0 },
+      { ox: 0, oy: -0.95 },
+      { ox: 1.5, oy: 0.65 },
+      { ox: -1.5, oy: 0.65 },
+      { ox: 1.5, oy: -0.65 },
+      { ox: -1.5, oy: -0.65 },
     ];
     const safeRadius = Math.max(12, MINE_TRIGGER_RADIUS * 1.2);
     for(const target of mineTargets){
@@ -25718,6 +25766,25 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
           placement,
           scenario: "fast_inventory_mine",
           score: 0.34,
+        };
+      }
+    }
+    const fallbackScanStep = Math.max(10, CELL_SIZE * 0.75);
+    for(let y = FIELD_TOP + CELL_SIZE * 0.5; y <= FIELD_BOTTOM - CELL_SIZE * 0.5; y += fallbackScanStep){
+      for(let x = FIELD_LEFT + CELL_SIZE * 0.5; x <= FIELD_RIGHT - CELL_SIZE * 0.5; x += fallbackScanStep){
+        const placement = {
+          x,
+          y,
+          cellX: Math.floor((x - FIELD_LEFT) / CELL_SIZE),
+          cellY: Math.floor((y - FIELD_TOP) / CELL_SIZE),
+        };
+        if(!isMinePlacementValid(placement)) continue;
+        if(localLandingPoint && dist(localLandingPoint, placement) <= safeRadius) continue;
+        if(dist(plane, placement) <= safeRadius) continue;
+        return {
+          placement,
+          scenario: "fast_inventory_mine_fallback_scan",
+          score: 0.26,
         };
       }
     }
@@ -25851,24 +25918,7 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
   }
 
   if(allowTacticalItems && inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] > 0){
-    let resolvedDynamiteTarget = null;
-    if(Array.isArray(colliders) && colliders.length > 0){
-      let nearestDist = Number.POSITIVE_INFINITY;
-      const maxColliderChecks = Math.min(colliders.length, 140);
-      for(let i = 0; i < maxColliderChecks; i += 1){
-        const collider = colliders[i];
-        if(!Number.isFinite(collider?.cx) || !Number.isFinite(collider?.cy)) continue;
-        const d = dist(plannedMove.plane, { x: collider.cx, y: collider.cy });
-        if(d < nearestDist){
-          nearestDist = d;
-          resolvedDynamiteTarget = {
-            x: collider.cx,
-            y: collider.cy,
-            colliderId: collider?.id ?? null,
-          };
-        }
-      }
-    }
+    const resolvedDynamiteTarget = getNearestAIDynamiteTargetForPlane(plannedMove.plane);
 
     if(resolvedDynamiteTarget){
       const resolvedDist = dist(plannedMove.plane, resolvedDynamiteTarget);
@@ -26341,6 +26391,14 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         { ox: -0.9, oy: 0.35 },
         { ox: 0.9, oy: -0.35 },
         { ox: -0.9, oy: -0.35 },
+        { ox: 1.3, oy: 0 },
+        { ox: -1.3, oy: 0 },
+        { ox: 0, oy: 0.9 },
+        { ox: 0, oy: -0.9 },
+        { ox: 1.7, oy: 0.7 },
+        { ox: -1.7, oy: 0.7 },
+        { ox: 1.7, oy: -0.7 },
+        { ox: -1.7, oy: -0.7 },
       ];
       const safeRadius = Math.max(12, MINE_TRIGGER_RADIUS * 1.15);
       for(const target of candidateTargets){
@@ -26364,29 +26422,28 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
           };
         }
       }
-      return null;
-    })();
-    const quickForcedDynamiteTarget = (() => {
-      if(!Array.isArray(colliders) || colliders.length === 0) return null;
-      let best = null;
-      let bestDist = Number.POSITIVE_INFINITY;
-      const maxChecks = Math.min(colliders.length, 110);
-      for(let i = 0; i < maxChecks; i += 1){
-        const collider = colliders[i];
-        if(!Number.isFinite(collider?.cx) || !Number.isFinite(collider?.cy)) continue;
-        const d = dist(plannedMove.plane, { x: collider.cx, y: collider.cy });
-        if(d < bestDist){
-          bestDist = d;
-          best = collider;
+      const fallbackScanStep = Math.max(10, CELL_SIZE * 0.75);
+      for(let y = FIELD_TOP + CELL_SIZE * 0.5; y <= FIELD_BOTTOM - CELL_SIZE * 0.5; y += fallbackScanStep){
+        for(let x = FIELD_LEFT + CELL_SIZE * 0.5; x <= FIELD_RIGHT - CELL_SIZE * 0.5; x += fallbackScanStep){
+          const placement = {
+            x,
+            y,
+            cellX: Math.floor((x - FIELD_LEFT) / CELL_SIZE),
+            cellY: Math.floor((y - FIELD_TOP) / CELL_SIZE),
+          };
+          if(!isMinePlacementValid(placement)) continue;
+          if(localLandingPoint && dist(localLandingPoint, placement) <= safeRadius) continue;
+          if(dist(plane, placement) <= safeRadius) continue;
+          return {
+            placement,
+            scenario: "forced_fast_inventory_mine_fallback_scan",
+            score: 0.18,
+          };
         }
       }
-      if(!best) return null;
-      return {
-        x: best.cx,
-        y: best.cy,
-        colliderId: best?.id ?? null,
-      };
+      return null;
     })();
+    const quickForcedDynamiteTarget = getNearestAIDynamiteTargetForPlane(plannedMove?.plane || null);
     const routeAwareFallbackOrder = plannedRouteClass === "gap" || plannedRouteClass === "ricochet"
       ? [
         INVENTORY_ITEM_TYPES.CROSSHAIR,
