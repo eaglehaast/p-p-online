@@ -18470,7 +18470,7 @@ function flushAiDecisionScope(scope){
           aggregatedGoalName: scope.meta?.goalName ?? null,
         }
       : {
-          ...buildAiDecisionCompactPayload(lastPayload, derived),
+          ...buildAiDecisionCompactPayload(reason, lastPayload, derived),
           suppressedRepeatCount: entry.count,
           aggregatedWithin: scope.meta?.type || "ai_scope",
           aggregatedPlaneId: scope.meta?.planeId ?? null,
@@ -18574,12 +18574,50 @@ function buildAiDecisionDeepPayload(reason, payload, derived = {}){
   };
 }
 
-function buildAiDecisionCompactPayload(payload, derived = {}){
+function buildAiDecisionCompactPayload(reason, payload, derived = {}){
   const compactPayload = {
     reasonCode: payload?.reasonCode ?? payload?.reason ?? null,
     planeId: derived.planeId,
     numbers: collectAiDecisionKeyNumbers(payload, derived),
   };
+
+  if(reason === "path_candidate_passport"){
+    compactPayload.goalName = payload?.goalName || null;
+    compactPayload.decisionReason = payload?.decisionReason || null;
+    compactPayload.finalStatus = payload?.finalStatus || null;
+    compactPayload.selectedCandidateClass = payload?.selectedCandidateClass || null;
+    compactPayload.selectedMoveType = payload?.selectedMoveType || null;
+    compactPayload.rejectCode = payload?.rejectCode || null;
+    compactPayload.routeStrictnessMode = payload?.routeStrictnessMode || null;
+    compactPayload.requestedRouteClass = payload?.requestedRouteClass || null;
+    compactPayload.hasDirectLine = payload?.hasDirectLine === true;
+    compactPayload.candidateCount = Number.isFinite(payload?.candidateCount)
+      ? payload.candidateCount
+      : null;
+
+    if(Array.isArray(payload?.entries) && payload.entries.length > 0){
+      compactPayload.entries = payload.entries.slice(-60).map((entry) => ({
+        seq: Number.isFinite(entry?.seq) ? entry.seq : null,
+        event: entry?.event || null,
+        stage: entry?.stage || null,
+        candidateClass: entry?.candidateClass || null,
+        moveType: entry?.moveType || null,
+        decisionReason: entry?.decisionReason || null,
+        goalName: entry?.goalName || null,
+        routeQualityScore: Number.isFinite(entry?.routeQualityScore)
+          ? Number(entry.routeQualityScore.toFixed(6))
+          : null,
+        totalDist: Number.isFinite(entry?.totalDist)
+          ? Number(entry.totalDist.toFixed(2))
+          : null,
+        killedAtStage: entry?.killedAtStage || null,
+        killedByReason: entry?.killedByReason || null,
+        selected: entry?.selected === true,
+      }));
+    } else {
+      compactPayload.entries = [];
+    }
+  }
 
   if(Object.keys(compactPayload.numbers).length === 0){
     delete compactPayload.numbers;
@@ -18661,7 +18699,7 @@ function logAiDecision(reason, details = {}){
 
   const debugPayload = AI_DECISION_DEEP_DEBUG_FLAG
     ? buildAiDecisionDeepPayload(reason, payload, derived)
-    : buildAiDecisionCompactPayload(payload, derived);
+    : buildAiDecisionCompactPayload(reason, payload, derived);
 
   console.debug(`[ai] ${reason}`, debugPayload);
 
