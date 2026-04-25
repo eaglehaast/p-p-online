@@ -25916,21 +25916,67 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
 
   if(allowTacticalItems && inventory.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] > 0){
     let resolvedDynamiteTarget = null;
+    const triedDynamiteTargetKeys = new Set();
+    const noteDynamiteProbe = (x, y, extra = {}) => {
+      if(!Number.isFinite(x) || !Number.isFinite(y)) return;
+      const key = `${Math.round(x)}:${Math.round(y)}`;
+      if(triedDynamiteTargetKeys.has(key)) return;
+      triedDynamiteTargetKeys.add(key);
+      const matchedSprite = typeof findMapSpriteForDynamiteDrop === "function"
+        ? findMapSpriteForDynamiteDrop({ boardX: x, boardY: y })
+        : null;
+      if(!matchedSprite || !Number.isFinite(matchedSprite?.cx) || !Number.isFinite(matchedSprite?.cy)) return;
+      const candidate = {
+        x: matchedSprite.cx,
+        y: matchedSprite.cy,
+        colliderId: extra?.colliderId ?? matchedSprite?.colliderId ?? null,
+        spriteId: matchedSprite?.id ?? null,
+      };
+      const candidateDist = dist(plannedMove.plane, candidate);
+      const currentBestDist = resolvedDynamiteTarget ? dist(plannedMove.plane, resolvedDynamiteTarget) : Number.POSITIVE_INFINITY;
+      if(candidateDist < currentBestDist){
+        resolvedDynamiteTarget = candidate;
+      }
+    };
+
     if(Array.isArray(colliders) && colliders.length > 0){
-      let nearestDist = Number.POSITIVE_INFINITY;
-      const maxColliderChecks = colliders.length;
-      for(let i = 0; i < maxColliderChecks; i += 1){
-        const collider = colliders[i];
-        if(!Number.isFinite(collider?.cx) || !Number.isFinite(collider?.cy)) continue;
-        const d = dist(plannedMove.plane, { x: collider.cx, y: collider.cy });
-        if(d < nearestDist){
-          nearestDist = d;
-          resolvedDynamiteTarget = {
-            x: collider.cx,
-            y: collider.cy,
-            colliderId: collider?.id ?? null,
-          };
-        }
+      const sortedColliders = colliders
+        .filter((collider) => Number.isFinite(collider?.cx) && Number.isFinite(collider?.cy))
+        .map((collider) => ({
+          collider,
+          d: dist(plannedMove.plane, { x: collider.cx, y: collider.cy }),
+        }))
+        .sort((a, b) => a.d - b.d)
+        .slice(0, 18);
+      for(const entry of sortedColliders){
+        const collider = entry.collider;
+        noteDynamiteProbe(collider.cx, collider.cy, { colliderId: collider?.id ?? null });
+      }
+    }
+
+    const dynamiteProbeAnchors = [
+      enemyBase,
+      priorityEnemy,
+      landingPoint,
+      plannedMove?.plane || null,
+    ].filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y));
+    const probeOffsets = [
+      { ox: 0, oy: 0 },
+      { ox: 0.9, oy: 0.4 },
+      { ox: -0.9, oy: 0.4 },
+      { ox: 0.9, oy: -0.4 },
+      { ox: -0.9, oy: -0.4 },
+      { ox: 1.4, oy: 0 },
+      { ox: -1.4, oy: 0 },
+      { ox: 0, oy: 1.2 },
+      { ox: 0, oy: -1.2 },
+    ];
+    for(const anchor of dynamiteProbeAnchors){
+      for(const offset of probeOffsets){
+        noteDynamiteProbe(
+          anchor.x + offset.ox * CELL_SIZE,
+          anchor.y + offset.oy * CELL_SIZE,
+        );
       }
     }
 
@@ -26034,6 +26080,20 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
     candidate.directUtility = Number(directUtility.toFixed(3));
     candidate.adjustedComparableScore = candidate.directUtility;
     candidate.releaseReady = true;
+    const baselineOrderBonusByType = {
+      [INVENTORY_ITEM_TYPES.CROSSHAIR]: 0.024,
+      [INVENTORY_ITEM_TYPES.FUEL]: 0.02,
+      [INVENTORY_ITEM_TYPES.WINGS]: 0.016,
+      [INVENTORY_ITEM_TYPES.DYNAMITE]: 0.012,
+      [INVENTORY_ITEM_TYPES.MINE]: 0.008,
+      [INVENTORY_ITEM_TYPES.INVISIBILITY]: 0.004,
+    };
+    const baselineOrderBonus = Number(baselineOrderBonusByType[candidate.itemType] || 0);
+    if(baselineOrderBonus > 0){
+      candidate.directUtility = Number((candidate.directUtility + baselineOrderBonus).toFixed(3));
+      candidate.adjustedComparableScore = candidate.directUtility;
+      candidate.baselineOrderBonus = baselineOrderBonus;
+    }
     if(candidate.itemType === INVENTORY_ITEM_TYPES.FUEL
       || candidate.itemType === INVENTORY_ITEM_TYPES.CROSSHAIR
       || candidate.itemType === INVENTORY_ITEM_TYPES.WINGS
