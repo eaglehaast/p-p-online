@@ -9631,6 +9631,27 @@ function buildAiCargoLongRangeTargets(plane, cargo, context){
     carryDistance: Math.min(MAX_DRAG_DISTANCE, carryToBase * 1.08),
   });
 
+  if(homeBase){
+    const sideWallTargets = [
+      { wall: "left", wallX: leftWallX + CELL_SIZE * 0.6 },
+      { wall: "right", wallX: rightWallX - CELL_SIZE * 0.6 },
+    ];
+    for(const wallCandidate of sideWallTargets){
+      const bounceAnchor = {
+        x: wallCandidate.wallX,
+        y: clamp((cargoCenter.y + homeBase.y) / 2, topWallY + CELL_SIZE * 0.6, bottomWallY - CELL_SIZE * 0.6),
+      };
+      const homeGain = dist(cargoCenter, homeBase) - dist(bounceAnchor, homeBase);
+      if(homeGain <= CELL_SIZE * 0.4) continue;
+      pushDirectionalTarget(`side_wall_ricochet_${wallCandidate.wall}`, bounceAnchor, {
+        targetKind: "long",
+        preferredRouteClass: "ricochet",
+        usedRicochetHint: true,
+        carryDistance: Math.min(MAX_DRAG_DISTANCE, carryToBase * 1.12),
+      });
+    }
+  }
+
   const seen = new Set();
   return targets.filter((entry) => {
     const key = `${Math.round(entry.targetX)}:${Math.round(entry.targetY)}:${entry.preferredRouteClass || "direct"}`;
@@ -9702,10 +9723,15 @@ function getAiCargoRouteClassOrder(routeTarget){
 
 function getAiCargoRicochetPreferenceBonus(routeCandidate){
   if(!routeCandidate || typeof routeCandidate !== "object") return 0;
+  const routeName = `${routeCandidate?.routeTarget?.name || ""}`.toLowerCase();
   const prefersRicochetClass = routeCandidate?.usedRicochet === true
     || routeCandidate?.requestedRouteClass === "ricochet";
   if(!prefersRicochetClass) return 0;
-  return Math.max(4, CELL_SIZE * 0.22);
+  const baseBonus = Math.max(4, CELL_SIZE * 0.22);
+  const sideWallBonus = routeName.includes("side_wall_ricochet_")
+    ? Math.max(2, CELL_SIZE * 0.16)
+    : 0;
+  return baseBonus + sideWallBonus;
 }
 
 function collectAiCargoRouteCandidates(plane, cargo, context){
@@ -14839,74 +14865,22 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     };
 
     const buildGuaranteedAdvanceMove = (plane) => {
-      if(!plane) return null;
       const profile = getAiFlightRangeProfile(plane);
       const maxFlightDistancePx = Math.max(1, Number.isFinite(profile?.flightDistancePx) ? profile.flightDistancePx : (CELL_SIZE * 6));
       const preferredTarget = {
         x: plane.x,
         y: FIELD_TOP + FIELD_HEIGHT,
       };
-      const advanceY = FIELD_TOP + FIELD_HEIGHT;
-      const centerAnchor = (() => {
-        try {
-          return typeof getNearestPointInCenterControlZone === "function"
-            ? getNearestPointInCenterControlZone(plane)
-            : null;
-        } catch(_) { return null; }
-      })();
-      const homeBase = getBaseAnchor(plane.color) || null;
-      const positionalTargets = [];
-      if(centerAnchor && Number.isFinite(centerAnchor.x) && Number.isFinite(centerAnchor.y)){
-        positionalTargets.push({ name: "guaranteed_center_control", target: centerAnchor });
-      }
-      positionalTargets.push({ name: "guaranteed_forward_advance", target: { x: plane.x, y: advanceY } });
-      if(homeBase && Number.isFinite(homeBase.x) && Number.isFinite(homeBase.y)){
-        positionalTargets.push({ name: "guaranteed_home_pullback", target: homeBase });
-      }
-
-      const tryTargetWithRouteClasses = (decisionReason, target) => {
-        for(const routeClass of [null, "ricochet"]){
-          const move = planPathToPoint(plane, target.x, target.y, {
-            goalName: decisionReason,
-            decisionReason,
-            ...(routeClass ? { routeClass } : {}),
-          });
-          if(!move) continue;
-          const durationSec = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
-            ? FIELD_FLIGHT_DURATION_SEC : 1;
-          const landingX = plane.x + (move.vx || 0) * durationSec;
-          const landingY = plane.y + (move.vy || 0) * durationSec;
-          if(!Number.isFinite(landingX) || !Number.isFinite(landingY)) continue;
-          return {
-            plane,
-            landingX,
-            landingY,
-            targetPoint: target,
-            decisionReason,
-            goalName: decisionReason,
-            whyChosen: "no_primary_plan_use_positional_or_ricochet",
-            routeClass: move?.candidateClass || move?.routeClass || (routeClass || "direct"),
-            bounceCount: Number.isFinite(move?.bounceCount) ? move.bounceCount : 0,
-          };
-        }
-        return null;
-      };
-
-      for(const entry of positionalTargets){
-        const move = tryTargetWithRouteClasses(entry.name, entry.target);
-        if(move) return move;
-      }
-
       const fractions = [1, 0.85, 0.7, 0.55, 0.4, 0.3, 0.2];
       for(const fraction of fractions){
         const candidateTarget = {
           x: plane.x + (preferredTarget.x - plane.x) * fraction,
-          y: plane.y + (advanceY - plane.y) * fraction,
+          y: plane.y + (preferredTarget.y - plane.y) * fraction,
         };
         const candidateMove = buildMoveTowardTarget(plane, candidateTarget, maxFlightDistancePx, {
-          decisionReason: "guaranteed_short_advance",
-          goalName: "guaranteed_short_advance",
-          whyChosen: "no_path_to_positional_targets_short_clear_step",
+          decisionReason: "simple_step2_guaranteed_advance",
+          goalName: "simple_step2_guaranteed_advance",
+          whyChosen: "no_good_plan_available_force_non_skip_move",
         });
         if(candidateMove) return candidateMove;
       }
@@ -36676,14 +36650,7 @@ function planPathToPoint(plane, tx, ty, options = {}){
     const simulated = findBestSimulatedShot(plane, { x: tx, y: ty }, {
       maxBounces: AI_SIM_MAX_BOUNCES_DEFAULT,
     });
-    const simulatedBounceCount = Number(simulated?.sim?.bounceCount) || 0;
-    const simulatedDirectHitButRicochetRequested = shouldForceNonDirectBranch
-      && simulated?.sim
-      && simulatedBounceCount === 0;
-    if(simulatedDirectHitButRicochetRequested){
-      mirrorRejectCode = "requested_ricochet_but_simulated_direct_hit";
-    }
-    if(simulated?.sim && !simulatedDirectHitButRicochetRequested){
+    if(simulated?.sim){
       const launchDx = simulated.sim.launchVector.dx;
       const launchDy = simulated.sim.launchVector.dy;
       const baseAngle = Math.atan2(launchDy, launchDx);
@@ -36697,8 +36664,8 @@ function planPathToPoint(plane, tx, ty, options = {}){
         targetX: tx,
         targetY: ty,
       });
-      const moveType = simulatedBounceCount > 0 ? "mirror" : "direct";
-      const candidateClass = simulatedBounceCount > 0 ? "ricochet" : "direct";
+      const moveType = simulated.sim.bounceCount > 0 ? "mirror" : "direct";
+      const candidateClass = simulated.sim.bounceCount > 0 ? "ricochet" : "direct";
       const simMove = buildMoveWithSafeDeviation(baseAngle, simDist, scale, {
         moveType,
         candidateClass,
