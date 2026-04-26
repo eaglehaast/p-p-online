@@ -5290,7 +5290,9 @@ function giveItem(itemId, qty = 1, opts = { silent: false }){
   if(!itemDef) return;
   const safeQty = Number.isFinite(qty) ? Math.max(0, Math.floor(qty)) : 0;
   if(safeQty === 0) return;
-  const fallbackColor = turnColors?.[turnIndex] ?? "blue";
+  const fallbackColor = gameMode === "computer"
+    ? "blue"
+    : (turnColors?.[turnIndex] ?? "blue");
   const targetColor = opts?.targetColor === "blue" || opts?.targetColor === "green"
     ? opts.targetColor
     : fallbackColor;
@@ -14375,47 +14377,6 @@ const AI_MOVE_INITIAL_DELAY_MS = 300;
 const AI_MOVE_CARGO_RETRY_DELAY_MS = 200;
 const AI_MOVE_CARGO_WAIT_TIMEOUT_MS = 1800;
 const AI_TURN_MIN_RELEASE_BUDGET_MS = 900;
-let aiRemovalHardFailState = {
-  notifiedTurnCommitSequence: null,
-};
-
-function triggerComputerAiRemovedHardFail(reason = "unspecified"){
-  if(
-    isGameOver
-    || gameMode !== "computer"
-    || turnColors?.[turnIndex] !== "blue"
-  ){
-    return { ok: false, reasonCode: "ai_removed_hard_fail_not_applicable" };
-  }
-
-  aiMoveScheduled = false;
-  clearAiPostInventoryLaunchTimeout(`ai_removed_hard_fail:${reason}`);
-  clearAiLaunchSessionWatchdog();
-  aiLaunchSession = null;
-  cleanupHandle();
-
-  if(aiRemovalHardFailState.notifiedTurnCommitSequence !== turnCommitSequence){
-    aiRemovalHardFailState.notifiedTurnCommitSequence = turnCommitSequence;
-    showAiLaunchNotice("Старый AI удалён. Новый AI ещё не внедрён: компьютерный ход недоступен.", {
-      persistent: true,
-      kind: "ai_removed_hard_fail",
-    });
-    console.error("[AI_REMOVED_HARD_FAIL]", {
-      reason,
-      turnCommitSequence,
-      turnNumber: turnAdvanceCount,
-      gameMode,
-      turnColor: turnColors?.[turnIndex] || null,
-    });
-  }
-
-  return {
-    ok: false,
-    reasonCode: "ai_removed_hard_fail",
-    message: "Old AI removed. New AI is not implemented yet.",
-  };
-}
-
 function resetAiTurnTimingState(){
   aiTurnTimingState = {
     turnStartedAt: 0,
@@ -14505,7 +14466,6 @@ function invalidateAiPlanningState(reason = "unspecified"){
   aiLaunchSession = null;
   cleanupHandle();
   clearAiLaunchStallNotice();
-  aiRemovalHardFailState.notifiedTurnCommitSequence = null;
   if(reason === "turn_advanced" || reason === "round_reset" || reason === "game_reset"){
     resetAiTurnTimingState();
   }
@@ -21359,8 +21319,9 @@ function getAvailableInventoryCount(color){
   return items.length;
 }
 
-function evaluateBlueInventoryState(){
-  const items = Array.isArray(inventoryState.blue) ? inventoryState.blue : [];
+function evaluateInventoryStateByColor(color = "blue"){
+  const safeColor = color === "green" ? "green" : "blue";
+  const items = Array.isArray(inventoryState[safeColor]) ? inventoryState[safeColor] : [];
   const counts = {
     [INVENTORY_ITEM_TYPES.FUEL]: 0,
     [INVENTORY_ITEM_TYPES.CROSSHAIR]: 0,
@@ -21381,6 +21342,10 @@ function evaluateBlueInventoryState(){
     total: items.length,
     counts,
   };
+}
+
+function evaluateBlueInventoryState(){
+  return evaluateInventoryStateByColor("blue");
 }
 
 function hasBlueDynamiteAvailable(){
@@ -25725,18 +25690,24 @@ function compareAiItemUnlockMoveClass(baseMetrics, variantMetrics){
 function buildAiInventoryCandidatePlans(context, plannedMove){
   if(!plannedMove?.plane) return { selectedCandidate: null, selectedSequence: [], candidates: [], rejected: [] };
 
+  const aiColor = plannedMove?.plane?.color === "green" ? "green" : "blue";
+  const enemyColor = aiColor === "blue" ? "green" : "blue";
   const inventoryPhase = 3;
   const allowBuffItems = true;
   const allowTacticalItems = true;
   const allowInvisibility = true;
-  const inventory = evaluateBlueInventoryState();
+  const inventory = evaluateInventoryStateByColor(aiColor);
   if(inventory.total <= 0) return { selectedCandidate: null, selectedSequence: [], candidates: [], rejected: [] };
 
   const candidates = [];
   const rejected = [];
   const perItemEvaluation = {};
-  const priorityEnemy = typeof getBluePriorityEnemy === "function" ? getBluePriorityEnemy(context) : null;
-  const enemyBase = typeof getBaseAnchor === "function" ? getBaseAnchor("green") : null;
+  const priorityEnemy = Array.isArray(context?.enemies) && context.enemies.length > 0
+    ? context.enemies
+        .map((enemy) => ({ enemy, d: dist(plannedMove.plane, enemy) }))
+        .sort((a, b) => a.d - b.d)[0]?.enemy || null
+    : null;
+  const enemyBase = typeof getBaseAnchor === "function" ? getBaseAnchor(enemyColor) : null;
   const landingPoint = typeof getAiMoveLandingPoint === "function" ? getAiMoveLandingPoint(plannedMove) : null;
   const moveDistance = Number.isFinite(plannedMove.totalDist)
     ? plannedMove.totalDist
@@ -26241,12 +26212,13 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
 
 function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   if(!plannedMove?.plane) return false;
+  const aiColor = plannedMove?.plane?.color === "green" ? "green" : "blue";
 
   const strategicGoal = plannedMove?.goalName || aiRoundState?.currentGoal || "";
   const usedBuffTypesThisTurn = options?.usedBuffTypesThisTurn instanceof Set
     ? options.usedBuffTypesThisTurn
     : new Set();
-  const inventory = evaluateBlueInventoryState();
+  const inventory = evaluateInventoryStateByColor(aiColor);
   if(inventory.total <= 0){
     plannedMove.inventoryDecisionMadeMeta = {
       selected: false,
@@ -26311,76 +26283,85 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     if(!PRE_LAUNCH_ALLOWED_ITEM_TYPES.has(itemType)){
       return { executed: false, reason: "selected_candidate_item_not_in_step5_scope", itemType };
     }
-    if(Number(evaluateBlueInventoryState()?.counts?.[itemType] ?? 0) <= 0){
+    if(Number(evaluateInventoryStateByColor(aiColor)?.counts?.[itemType] ?? 0) <= 0){
       return { executed: false, reason: "selected_candidate_item_missing_in_inventory", itemType };
     }
     if(SINGLE_USE_BUFF_TYPES_PER_TURN.has(itemType) && usedBuffTypesThisTurn.has(itemType)){
       return { executed: false, reason: "selected_candidate_buff_already_used_this_turn", itemType };
     }
     let executed = false;
-    if(itemType === INVENTORY_ITEM_TYPES.CROSSHAIR){
-      executed = applyItemToOwnPlane(INVENTORY_ITEM_TYPES.CROSSHAIR, "blue", plannedMove.plane);
-      if(executed){
-        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.CROSSHAIR);
-        rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.CROSSHAIR);
-      }
-    } else if(itemType === INVENTORY_ITEM_TYPES.FUEL){
-      executed = applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, "blue", plannedMove.plane);
-      if(executed){
-        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.FUEL);
-        rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.FUEL);
-      }
-    } else if(itemType === INVENTORY_ITEM_TYPES.WINGS){
-      executed = applyItemToOwnPlane(INVENTORY_ITEM_TYPES.WINGS, "blue", plannedMove.plane);
-      if(executed){
-        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.WINGS);
-        rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.WINGS);
-      }
-    } else if(itemType === INVENTORY_ITEM_TYPES.MINE){
-      const placement = candidate?.minePlan?.placement || null;
-      if(placement && isMinePlacementValid(placement)){
-        placeMine({
-          owner: "blue",
-          x: placement.x,
-          y: placement.y,
-          cellX: placement.cellX,
-          cellY: placement.cellY,
-        });
-        executed = true;
-      }
-      if(executed){
-        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
-      }
-    } else if(itemType === INVENTORY_ITEM_TYPES.DYNAMITE){
-      const target = candidate?.target || null;
-      const targetX = Number.isFinite(target?.x) ? target.x : null;
-      const targetY = Number.isFinite(target?.y) ? target.y : null;
-      if(targetX != null && targetY != null){
-        executed = placeBlueDynamiteAt(targetX, targetY);
+    try {
+      if(itemType === INVENTORY_ITEM_TYPES.CROSSHAIR){
+        executed = applyItemToOwnPlane(INVENTORY_ITEM_TYPES.CROSSHAIR, aiColor, plannedMove.plane);
         if(executed){
-          setAiDynamiteIntentFromCandidate(
-            {
-              colliderId: target?.colliderId ?? null,
-              spriteId: target?.spriteId ?? null,
-              x: targetX,
-              y: targetY,
-            },
-            candidate?.reason || "dynamite_route_opening",
-            plannedMove,
-            candidate?.dynamiteExpectedRoute || null,
-            candidate?.dynamiteUseClass || null,
-          );
+          removeItemFromInventory(aiColor, INVENTORY_ITEM_TYPES.CROSSHAIR);
+          rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.CROSSHAIR);
+        }
+      } else if(itemType === INVENTORY_ITEM_TYPES.FUEL){
+        executed = applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, aiColor, plannedMove.plane);
+        if(executed){
+          removeItemFromInventory(aiColor, INVENTORY_ITEM_TYPES.FUEL);
+          rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.FUEL);
+        }
+      } else if(itemType === INVENTORY_ITEM_TYPES.WINGS){
+        executed = applyItemToOwnPlane(INVENTORY_ITEM_TYPES.WINGS, aiColor, plannedMove.plane);
+        if(executed){
+          removeItemFromInventory(aiColor, INVENTORY_ITEM_TYPES.WINGS);
+          rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.WINGS);
+        }
+      } else if(itemType === INVENTORY_ITEM_TYPES.MINE){
+        const placement = candidate?.minePlan?.placement || null;
+        if(placement && isMinePlacementValid(placement)){
+          placeMine({
+            owner: aiColor,
+            x: placement.x,
+            y: placement.y,
+            cellX: placement.cellX,
+            cellY: placement.cellY,
+          });
+          executed = true;
+        }
+        if(executed){
+          removeItemFromInventory(aiColor, INVENTORY_ITEM_TYPES.MINE);
+        }
+      } else if(itemType === INVENTORY_ITEM_TYPES.DYNAMITE){
+        const target = candidate?.target || null;
+        const targetX = Number.isFinite(target?.x) ? target.x : null;
+        const targetY = Number.isFinite(target?.y) ? target.y : null;
+        if(targetX != null && targetY != null){
+          executed = aiColor === "blue" ? placeBlueDynamiteAt(targetX, targetY) : false;
+          if(executed){
+            setAiDynamiteIntentFromCandidate(
+              {
+                colliderId: target?.colliderId ?? null,
+                spriteId: target?.spriteId ?? null,
+                x: targetX,
+                y: targetY,
+              },
+              candidate?.reason || "dynamite_route_opening",
+              plannedMove,
+              candidate?.dynamiteExpectedRoute || null,
+              candidate?.dynamiteUseClass || null,
+            );
+          }
+        }
+        if(executed){
+          removeItemFromInventory(aiColor, INVENTORY_ITEM_TYPES.DYNAMITE);
+        }
+      } else if(itemType === INVENTORY_ITEM_TYPES.INVISIBILITY){
+        executed = queueInvisibilityEffectForPlayer(aiColor);
+        if(executed){
+          removeItemFromInventory(aiColor, INVENTORY_ITEM_TYPES.INVISIBILITY);
+          rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.INVISIBILITY);
         }
       }
-      if(executed){
-        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
-      }
-    } else if(itemType === INVENTORY_ITEM_TYPES.INVISIBILITY){
-      executed = queueInvisibilityEffectForPlayer("blue");
-      if(executed){
-        removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.INVISIBILITY);
-        rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.INVISIBILITY);
-      }
+    } catch (applyError) {
+      return {
+        executed: false,
+        reason: "selected_candidate_apply_exception",
+        itemType,
+        message: applyError?.message || String(applyError),
+      };
     }
 
     if(!executed){
@@ -26416,7 +26397,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   }
 
   const routeAwareBoosters = [];
-  const availableCounts = evaluateBlueInventoryState()?.counts || {};
+  const availableCounts = evaluateInventoryStateByColor(aiColor)?.counts || {};
   const alreadySelectedTypes = new Set(
     orderedCandidates
       .map((entry) => entry?.itemType)
@@ -26595,7 +26576,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     const forcedCandidates = [];
     for(const itemType of fallbackOrder){
       if(excludedItemTypes.has(itemType)) continue;
-      const availableCount = Number(evaluateBlueInventoryState()?.counts?.[itemType] ?? 0);
+      const availableCount = Number(evaluateInventoryStateByColor(aiColor)?.counts?.[itemType] ?? 0);
       if(availableCount <= 0) continue;
       const forcedCandidate = {
         itemType,
@@ -26633,6 +26614,40 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     return forcedCandidates;
   }
 
+  function buildBaselineInventoryPolicyCandidates(excludedItemTypes = new Set()){
+    const baselineOrder = [
+      INVENTORY_ITEM_TYPES.CROSSHAIR,
+      INVENTORY_ITEM_TYPES.FUEL,
+      INVENTORY_ITEM_TYPES.WINGS,
+      INVENTORY_ITEM_TYPES.INVISIBILITY,
+      INVENTORY_ITEM_TYPES.MINE,
+      INVENTORY_ITEM_TYPES.DYNAMITE,
+    ];
+    const candidates = [];
+    for(const itemType of baselineOrder){
+      if(excludedItemTypes.has(itemType)) continue;
+      const availableCount = Number(evaluateInventoryStateByColor(aiColor)?.counts?.[itemType] ?? 0);
+      if(availableCount <= 0) continue;
+      const candidate = {
+        itemType,
+        reason: "baseline_inventory_policy_spend",
+        reasonCode: "baseline_inventory_policy_spend",
+        usageTier: "baseline",
+        executionSource: "baseline_inventory_policy_spend",
+        expectedBenefit: 0.04,
+        risk: 0.01,
+      };
+
+      if(itemType === INVENTORY_ITEM_TYPES.MINE || itemType === INVENTORY_ITEM_TYPES.DYNAMITE){
+        // Базовая политика не делает «слепые» тактические постановки без валидной геометрии.
+        continue;
+      }
+
+      candidates.push(candidate);
+    }
+    return candidates;
+  }
+
   function tryApplyCandidates(candidateList, appliedItemTypes, appliedReasonCodes, skippedItems){
     for(const candidate of candidateList){
       const executionResult = executeCommittedInventoryAction(candidate, candidate.executionSource || "selected_inventory_sequence");
@@ -26640,10 +26655,12 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         skippedItems.push({
           itemType: candidate.itemType || null,
           reason: executionResult.reason || "selected_candidate_execution_failed",
+          message: executionResult.message || null,
         });
         logPreLaunchItemDecision("inventory_prelaunch_item_skipped", {
           itemType: candidate.itemType || null,
           reason: executionResult.reason || "selected_candidate_execution_failed",
+          message: executionResult.message || null,
           source: candidate.executionSource || "selected_inventory_sequence",
         });
         continue;
@@ -26686,6 +26703,22 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         forcedItems: forcedFallbackCandidates.map((candidate) => candidate.itemType),
       });
       tryApplyCandidates(forcedFallbackCandidates, appliedItemTypes, appliedReasonCodes, skippedItems);
+    }
+  }
+
+  if(appliedItemTypes.length === 0){
+    const excludedItemTypes = new Set(
+      [
+        ...primaryCandidates.map((candidate) => candidate?.itemType),
+      ].filter(Boolean)
+    );
+    const baselinePolicyCandidates = buildBaselineInventoryPolicyCandidates(excludedItemTypes);
+    if(baselinePolicyCandidates.length > 0){
+      logPreLaunchItemDecision("inventory_prelaunch_baseline_policy", {
+        reason: "normal_pipeline_baseline_policy_spend",
+        baselineItems: baselinePolicyCandidates.map((candidate) => candidate.itemType),
+      });
+      tryApplyCandidates(baselinePolicyCandidates, appliedItemTypes, appliedReasonCodes, skippedItems);
     }
   }
 
