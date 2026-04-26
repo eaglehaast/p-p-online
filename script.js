@@ -14375,47 +14375,6 @@ const AI_MOVE_INITIAL_DELAY_MS = 300;
 const AI_MOVE_CARGO_RETRY_DELAY_MS = 200;
 const AI_MOVE_CARGO_WAIT_TIMEOUT_MS = 1800;
 const AI_TURN_MIN_RELEASE_BUDGET_MS = 900;
-let aiRemovalHardFailState = {
-  notifiedTurnCommitSequence: null,
-};
-
-function triggerComputerAiRemovedHardFail(reason = "unspecified"){
-  if(
-    isGameOver
-    || gameMode !== "computer"
-    || turnColors?.[turnIndex] !== "blue"
-  ){
-    return { ok: false, reasonCode: "ai_removed_hard_fail_not_applicable" };
-  }
-
-  aiMoveScheduled = false;
-  clearAiPostInventoryLaunchTimeout(`ai_removed_hard_fail:${reason}`);
-  clearAiLaunchSessionWatchdog();
-  aiLaunchSession = null;
-  cleanupHandle();
-
-  if(aiRemovalHardFailState.notifiedTurnCommitSequence !== turnCommitSequence){
-    aiRemovalHardFailState.notifiedTurnCommitSequence = turnCommitSequence;
-    showAiLaunchNotice("Старый AI удалён. Новый AI ещё не внедрён: компьютерный ход недоступен.", {
-      persistent: true,
-      kind: "ai_removed_hard_fail",
-    });
-    console.error("[AI_REMOVED_HARD_FAIL]", {
-      reason,
-      turnCommitSequence,
-      turnNumber: turnAdvanceCount,
-      gameMode,
-      turnColor: turnColors?.[turnIndex] || null,
-    });
-  }
-
-  return {
-    ok: false,
-    reasonCode: "ai_removed_hard_fail",
-    message: "Old AI removed. New AI is not implemented yet.",
-  };
-}
-
 function resetAiTurnTimingState(){
   aiTurnTimingState = {
     turnStartedAt: 0,
@@ -14505,7 +14464,6 @@ function invalidateAiPlanningState(reason = "unspecified"){
   aiLaunchSession = null;
   cleanupHandle();
   clearAiLaunchStallNotice();
-  aiRemovalHardFailState.notifiedTurnCommitSequence = null;
   if(reason === "turn_advanced" || reason === "round_reset" || reason === "game_reset"){
     resetAiTurnTimingState();
   }
