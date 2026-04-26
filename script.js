@@ -9516,6 +9516,47 @@ function doesCargoIntersectBeneficialZoneAlongSegment(cargo, plane, fromPoint, t
   return false;
 }
 
+function getAiPlannedMovePredictedPath(plane, move){
+  if(!plane || !move) return null;
+  if(Array.isArray(move.aiTrajectory) && move.aiTrajectory.length >= 2){
+    return move.aiTrajectory;
+  }
+  const vx = Number(move.vx) || 0;
+  const vy = Number(move.vy) || 0;
+  const speed = Math.hypot(vx, vy);
+  if(speed <= 1e-6){
+    return [{ x: plane.x, y: plane.y }];
+  }
+  const effectiveRangePx = getPlaneEffectiveRangePx(plane);
+  const speedPxPerSec = effectiveRangePx > 0 && Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
+    ? effectiveRangePx / FIELD_FLIGHT_DURATION_SEC
+    : speed;
+  const launchScale = speedPxPerSec > 0 ? Math.min(1, speed / speedPxPerSec) : 1;
+  if(typeof simulateAIShot === "function"){
+    const sim = simulateAIShot(plane, { dx: vx / speed, dy: vy / speed, scale: launchScale });
+    if(sim && Array.isArray(sim.predictedPath) && sim.predictedPath.length >= 2){
+      return sim.predictedPath;
+    }
+  }
+  return [
+    { x: plane.x, y: plane.y },
+    {
+      x: plane.x + vx * FIELD_FLIGHT_DURATION_SEC,
+      y: plane.y + vy * FIELD_FLIGHT_DURATION_SEC,
+    },
+  ];
+}
+
+function doesCargoIntersectBeneficialZoneAlongPath(cargo, plane, path){
+  if(!cargo || !plane || !Array.isArray(path) || path.length < 2) return false;
+  for(let i = 0; i < path.length - 1; i += 1){
+    if(doesCargoIntersectBeneficialZoneAlongSegment(cargo, plane, path[i], path[i + 1])){
+      return true;
+    }
+  }
+  return false;
+}
+
 function getAiCargoHomeBase(context){
   return context?.homeBase || getBaseAnchor("blue");
 }
@@ -9632,11 +9673,16 @@ function buildAiCargoRouteCandidate(plane, cargo, context, routeTarget, routeCla
   });
   if(!move) return null;
 
-  const landingPoint = {
-    x: plane.x + (move.vx || 0) * FIELD_FLIGHT_DURATION_SEC,
-    y: plane.y + (move.vy || 0) * FIELD_FLIGHT_DURATION_SEC,
-  };
-  const cargoPickedOnPath = doesCargoIntersectBeneficialZoneAlongSegment(cargo, plane, plane, landingPoint);
+  const predictedPath = getAiPlannedMovePredictedPath(plane, move);
+  const landingPoint = Array.isArray(predictedPath) && predictedPath.length >= 2
+    ? predictedPath[predictedPath.length - 1]
+    : {
+        x: plane.x + (move.vx || 0) * FIELD_FLIGHT_DURATION_SEC,
+        y: plane.y + (move.vy || 0) * FIELD_FLIGHT_DURATION_SEC,
+      };
+  const cargoPickedOnPath = Array.isArray(predictedPath) && predictedPath.length >= 2
+    ? doesCargoIntersectBeneficialZoneAlongPath(cargo, plane, predictedPath)
+    : doesCargoIntersectBeneficialZoneAlongSegment(cargo, plane, plane, landingPoint);
   const homeBase = getAiCargoHomeBase(context);
   const cargoCenter = getCargoVisualCenter(cargo);
   const cargoDistanceToBase = homeBase ? dist(cargoCenter, homeBase) : Number.POSITIVE_INFINITY;
@@ -9689,39 +9735,29 @@ function getAiCargoRicochetPreferenceBonus(routeCandidate){
 }
 
 function collectAiCargoRouteCandidates(plane, cargo, context){
-  const longTargets = buildAiCargoLongRangeTargets(plane, cargo, context);
-  const longCandidates = [];
-  for(const target of longTargets){
+  const cargoCenter = getCargoVisualCenter(cargo);
+  const directCargoTarget = {
+    name: "pickup_cargo_direct",
+    targetX: cargoCenter.x,
+    targetY: cargoCenter.y,
+    targetKind: "short",
+    preferredRouteClass: null,
+    usedRicochetHint: false,
+  };
+  const allTargets = [directCargoTarget, ...buildAiCargoLongRangeTargets(plane, cargo, context)];
+
+  const candidates = [];
+  for(const target of allTargets){
     const routeClassOrder = getAiCargoRouteClassOrder(target);
     for(const routeClass of routeClassOrder){
       const candidate = buildAiCargoRouteCandidate(plane, cargo, context, target, routeClass);
       if(candidate && candidate.cargoPickedOnPath){
-        longCandidates.push(candidate);
+        candidates.push(candidate);
       }
     }
   }
 
-  if(longCandidates.length > 0){
-    return longCandidates;
-  }
-
-  const fallbackTarget = {
-    name: "direct_cargo_fallback",
-    targetX: cargo.x,
-    targetY: cargo.y,
-    targetKind: "fallback_short",
-    preferredRouteClass: null,
-    usedRicochetHint: false,
-  };
-  const fallbackCandidates = getAiCargoRouteClassOrder(fallbackTarget)
-    .map((routeClass) => buildAiCargoRouteCandidate(plane, cargo, context, fallbackTarget, routeClass))
-    .filter((candidate) => candidate && candidate.cargoPickedOnPath);
-  if(fallbackCandidates.length > 0){
-    return fallbackCandidates;
-  }
-
-  const directFallback = buildAiCargoRouteCandidate(plane, cargo, context, fallbackTarget, null);
-  return directFallback ? [directFallback] : [];
+  return candidates;
 }
 
 function updateCargoState(now = performance.now()){
