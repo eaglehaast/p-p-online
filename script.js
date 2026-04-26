@@ -26602,6 +26602,40 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     return forcedCandidates;
   }
 
+  function buildBaselineInventoryPolicyCandidates(excludedItemTypes = new Set()){
+    const baselineOrder = [
+      INVENTORY_ITEM_TYPES.CROSSHAIR,
+      INVENTORY_ITEM_TYPES.FUEL,
+      INVENTORY_ITEM_TYPES.WINGS,
+      INVENTORY_ITEM_TYPES.INVISIBILITY,
+      INVENTORY_ITEM_TYPES.MINE,
+      INVENTORY_ITEM_TYPES.DYNAMITE,
+    ];
+    const candidates = [];
+    for(const itemType of baselineOrder){
+      if(excludedItemTypes.has(itemType)) continue;
+      const availableCount = Number(evaluateBlueInventoryState()?.counts?.[itemType] ?? 0);
+      if(availableCount <= 0) continue;
+      const candidate = {
+        itemType,
+        reason: "baseline_inventory_policy_spend",
+        reasonCode: "baseline_inventory_policy_spend",
+        usageTier: "baseline",
+        executionSource: "baseline_inventory_policy_spend",
+        expectedBenefit: 0.04,
+        risk: 0.01,
+      };
+
+      if(itemType === INVENTORY_ITEM_TYPES.MINE || itemType === INVENTORY_ITEM_TYPES.DYNAMITE){
+        // Базовая политика не делает «слепые» тактические постановки без валидной геометрии.
+        continue;
+      }
+
+      candidates.push(candidate);
+    }
+    return candidates;
+  }
+
   function tryApplyCandidates(candidateList, appliedItemTypes, appliedReasonCodes, skippedItems){
     for(const candidate of candidateList){
       const executionResult = executeCommittedInventoryAction(candidate, candidate.executionSource || "selected_inventory_sequence");
@@ -26657,6 +26691,22 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         forcedItems: forcedFallbackCandidates.map((candidate) => candidate.itemType),
       });
       tryApplyCandidates(forcedFallbackCandidates, appliedItemTypes, appliedReasonCodes, skippedItems);
+    }
+  }
+
+  if(appliedItemTypes.length === 0){
+    const excludedItemTypes = new Set(
+      [
+        ...primaryCandidates.map((candidate) => candidate?.itemType),
+      ].filter(Boolean)
+    );
+    const baselinePolicyCandidates = buildBaselineInventoryPolicyCandidates(excludedItemTypes);
+    if(baselinePolicyCandidates.length > 0){
+      logPreLaunchItemDecision("inventory_prelaunch_baseline_policy", {
+        reason: "normal_pipeline_baseline_policy_spend",
+        baselineItems: baselinePolicyCandidates.map((candidate) => candidate.itemType),
+      });
+      tryApplyCandidates(baselinePolicyCandidates, appliedItemTypes, appliedReasonCodes, skippedItems);
     }
   }
 
