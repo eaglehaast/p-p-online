@@ -48,7 +48,6 @@ const context = {
     { id: 'blue-1', color: 'blue', active: true, x: 0, y: 0, activeTurnBuffs: {} },
     { id: 'blue-2', color: 'blue', active: true, x: 20, y: 0, activeTurnBuffs: {} },
   ],
-  aiScores: { blue: 10, green: 8 },
   colliders: [],
   INVENTORY_ITEM_TYPES: {
     FUEL: 'fuel',
@@ -157,5 +156,39 @@ const lowValuePlan = {
 };
 const lowValueSequence = context.buildAiSelectedPlanInventoryEnhancements({ color: 'blue', enemies: [] }, lowValuePlan);
 assert(!lowValueSequence.some((entry) => entry.itemType === 'mine' || entry.itemType === 'dynamite'), 'Expected no blind mine/dynamite spending in selected-plan enhancement sequence.');
+
+const survivabilityPlanWithoutScoreState = {
+  plane: { ...basePlane, hasCargo: true },
+  color: 'blue',
+  landingX: 12,
+  landingY: 0,
+  planDistance: 12,
+  goalName: 'simple_step2_pickup_cargo',
+  decisionReason: 'carry_objective',
+  routeClass: 'direct',
+};
+const noScoreStateSequence = context.buildAiSelectedPlanInventoryEnhancements(
+  { color: 'blue', enemies: [] },
+  survivabilityPlanWithoutScoreState,
+);
+assert(
+  noScoreStateSequence.some((entry) => entry.itemType === 'invisibility'),
+  'Expected no crash and invisibility support when score state is absent but objective pressure exists.',
+);
+
+const survivabilityPlanWithScoreState = {
+  ...survivabilityPlanWithoutScoreState,
+  plane: { ...basePlane, hasCargo: false },
+  goalName: 'simple_step2_center',
+  decisionReason: 'score_lead_hold',
+};
+const scoreStateSequence = context.buildAiSelectedPlanInventoryEnhancements(
+  { color: 'blue', enemies: [], scoreState: { blue: 9, green: 6 } },
+  survivabilityPlanWithScoreState,
+);
+assert(
+  scoreStateSequence.some((entry) => entry.itemType === 'invisibility'),
+  'Expected invisibility to use optional scoreState when provided.',
+);
 
 console.log('Smoke test passed: selected-plan inventory enhancements are deterministic and avoid heavy candidate rebuilds.');

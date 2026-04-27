@@ -26319,8 +26319,9 @@ function shouldAiUseWingsForSelectedPlan(context, selectedPlan){
   if(Array.isArray(context?.availableEnemyFlags)){
     pointsOfInterest.push(...context.availableEnemyFlags.filter((flag) => Number.isFinite(flag?.x) && Number.isFinite(flag?.y)).map((flag) => ({ x: flag.x, y: flag.y })));
   }
-  if(Array.isArray(colliders)){
-    pointsOfInterest.push(...colliders.filter((item) => Number.isFinite(item?.cx) && Number.isFinite(item?.cy)).slice(0, 32).map((item) => ({ x: item.cx, y: item.cy })));
+  const runtimeColliders = typeof colliders !== "undefined" ? colliders : null;
+  if(Array.isArray(runtimeColliders)){
+    pointsOfInterest.push(...runtimeColliders.filter((item) => Number.isFinite(item?.cx) && Number.isFinite(item?.cy)).slice(0, 32).map((item) => ({ x: item.cx, y: item.cy })));
   }
 
   const nearestDistance = pointsOfInterest
@@ -26334,12 +26335,15 @@ function shouldAiUseWingsForSelectedPlan(context, selectedPlan){
 
 function shouldAiUseInvisibilityForSelectedPlan(context, selectedPlan){
   const plane = selectedPlan?.plane || null;
-  const aiColor = selectedPlan?.color || plane?.color || context?.color || turnColors?.[turnIndex] || "blue";
+  const runtimeTurnColors = typeof turnColors !== "undefined" ? turnColors : null;
+  const runtimeTurnIndex = typeof turnIndex !== "undefined" ? turnIndex : 0;
+  const aiColor = selectedPlan?.color || plane?.color || context?.color || runtimeTurnColors?.[runtimeTurnIndex] || "blue";
   if(!plane || !aiColor) return false;
-  if(isPlayerInvisibilityActive(aiColor)) return false;
+  if(typeof isPlayerInvisibilityActive === "function" && isPlayerInvisibilityActive(aiColor)) return false;
 
-  const allyPlanes = Array.isArray(points)
-    ? points.filter((entry) => entry?.color === aiColor)
+  const runtimePoints = typeof points !== "undefined" ? points : null;
+  const allyPlanes = Array.isArray(runtimePoints)
+    ? runtimePoints.filter((entry) => entry?.color === aiColor)
     : [];
   const survivingAllies = allyPlanes.filter((entry) => entry?.active !== false).length;
   if(survivingAllies <= 0) return false;
@@ -26348,7 +26352,11 @@ function shouldAiUseInvisibilityForSelectedPlan(context, selectedPlan){
     ? context.enemies.some((enemy) => Number.isFinite(enemy?.x) && Number.isFinite(enemy?.y) && dist(plane, enemy) <= CELL_SIZE * 4.5)
     : false;
   const carryingObjective = Boolean(plane?.hasCargo || plane?.hasFlag || plane?.carryingCargo || plane?.carryingFlag);
-  const isAheadByScore = Number(aiScores?.[aiColor] ?? 0) > Number(aiScores?.[aiColor === "blue" ? "green" : "blue"] ?? 0);
+  const scoreState = context?.scoreState || context?.scores || null;
+  const enemyColor = aiColor === "blue" ? "green" : "blue";
+  const isAheadByScore = scoreState
+    ? Number(scoreState?.[aiColor] ?? 0) > Number(scoreState?.[enemyColor] ?? 0)
+    : false;
 
   return survivingAllies >= 2 && (carryingObjective || nearbyEnemyThreat || isAheadByScore);
 }
@@ -26357,7 +26365,9 @@ function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options
   const plane = selectedPlan?.plane || null;
   if(!plane) return [];
 
-  const color = selectedPlan?.color || plane?.color || context?.color || turnColors?.[turnIndex] || "blue";
+  const runtimeTurnColors = typeof turnColors !== "undefined" ? turnColors : null;
+  const runtimeTurnIndex = typeof turnIndex !== "undefined" ? turnIndex : 0;
+  const color = selectedPlan?.color || plane?.color || context?.color || runtimeTurnColors?.[runtimeTurnIndex] || "blue";
   const availableCounts = evaluateInventoryState(color)?.counts || {};
   const maxItems = Number.isFinite(options?.maxItems)
     ? Math.max(0, Math.min(2, Math.trunc(options.maxItems)))
