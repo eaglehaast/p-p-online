@@ -14786,7 +14786,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       const totalDist = Math.hypot(vx || 0, vy || 0) * FIELD_FLIGHT_DURATION_SEC;
       const plannedMove = {
         plane: plan.plane,
-        color: plan.color || plan?.plane?.color || turnColors?.[turnIndex] || "blue",
+        color: plan?.plane?.color || plan.color || turnColors?.[turnIndex] || "blue",
         vx,
         vy,
         totalDist,
@@ -15216,7 +15216,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
 
     let launchResult = tryIssueAiMoveWithInventory({
       plane: selectedPlan.plane || launchReadyPlane,
-      color: selectedPlan.color || selectedPlan?.plane?.color || launchReadyPlane?.color || turnColors?.[turnIndex] || "blue",
+      color: selectedPlan?.plane?.color || selectedPlan.color || launchReadyPlane?.color || turnColors?.[turnIndex] || "blue",
       landingX: selectedPlan.landingX,
       landingY: selectedPlan.landingY,
       planDistance: selectedPlan.planDistance,
@@ -26380,7 +26380,7 @@ function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options
 
   const runtimeTurnColors = typeof turnColors !== "undefined" ? turnColors : null;
   const runtimeTurnIndex = typeof turnIndex !== "undefined" ? turnIndex : 0;
-  const color = selectedPlan?.color || plane?.color || context?.color || runtimeTurnColors?.[runtimeTurnIndex] || "blue";
+  const color = plane?.color || selectedPlan?.color || context?.color || runtimeTurnColors?.[runtimeTurnIndex] || "blue";
   const availableCounts = evaluateInventoryState(color)?.counts || {};
   const maxItems = Number.isFinite(options?.maxItems)
     ? Math.max(0, Math.min(2, Math.trunc(options.maxItems)))
@@ -26402,7 +26402,7 @@ function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options
     ? selectedPlan.planDistance
     : Math.hypot((selectedPlan?.landingX || 0) - (plane?.x || 0), (selectedPlan?.landingY || 0) - (plane?.y || 0));
   const moveRangeRatio = moveDistance / baseRangePx;
-  const goalText = `${selectedPlan?.goalName || ""} ${selectedPlan?.decisionReason || ""}`.toLowerCase();
+  const goalText = `${selectedPlan?.goalName || ""} ${selectedPlan?.decisionReason || ""} ${selectedPlan?.whyChosen || ""}`.toLowerCase();
   const planIsStrategic = ["attack", "cargo", "flag", "center"].some((entry) => goalText.includes(entry));
 
   let fuelIncreasesRange = false;
@@ -26440,7 +26440,7 @@ function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options
 function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   if(!plannedMove?.plane) return false;
 
-  const aiColor = plannedMove?.color || plannedMove?.plane?.color || turnColors?.[turnIndex] || "blue";
+  const aiColor = plannedMove?.plane?.color || plannedMove?.color || turnColors?.[turnIndex] || "blue";
   const evaluateInventoryStateForAi = () => evaluateInventoryState(aiColor);
   const strategicGoal = plannedMove?.goalName || aiRoundState?.currentGoal || "";
   const usedBuffTypesThisTurn = options?.usedBuffTypesThisTurn instanceof Set
