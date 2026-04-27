@@ -2994,6 +2994,45 @@ function useInventoryItemOnPlane(color, type, plane, options = {}){
   return true;
 }
 
+const AI_USABLE_ITEM_TYPES = new Set([
+  INVENTORY_ITEM_TYPES.FUEL,
+  INVENTORY_ITEM_TYPES.WINGS,
+  INVENTORY_ITEM_TYPES.CROSSHAIR,
+]);
+
+function getAiUsableInventoryItems(color){
+  const items = Array.isArray(inventoryState?.[color]) ? inventoryState[color] : [];
+  const seenTypes = new Set();
+  const usable = [];
+  for(const item of items){
+    const type = item?.type;
+    if(!type || !AI_USABLE_ITEM_TYPES.has(type) || seenTypes.has(type)) continue;
+    seenTypes.add(type);
+    usable.push(item);
+  }
+  return usable;
+}
+
+function evaluateAiCandidateWithTemporaryItem(color, plane, itemType, buildCandidate){
+  if(!plane || !itemType || typeof buildCandidate !== "function") return null;
+  const previousBuffs = {
+    ...(plane.activeTurnBuffs && typeof plane.activeTurnBuffs === "object" ? plane.activeTurnBuffs : {}),
+  };
+  const applied = applyItemToOwnPlane(itemType, color, plane);
+  if(!applied){
+    plane.activeTurnBuffs = previousBuffs;
+    return null;
+  }
+
+  const candidate = buildCandidate();
+  plane.activeTurnBuffs = previousBuffs;
+
+  if(!candidate) return null;
+  candidate.color = color;
+  candidate.itemType = itemType;
+  return candidate;
+}
+
 function getPlaneActiveTurnBuffs(plane){
   const activeEffectTypes = [];
 
@@ -14786,6 +14825,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       const totalDist = Math.hypot(vx || 0, vy || 0) * FIELD_FLIGHT_DURATION_SEC;
       const plannedMove = {
         plane: plan.plane,
+        color: plan.color || plan?.plane?.color || turnColors?.[turnIndex] || "blue",
         vx,
         vy,
         totalDist,
@@ -14793,6 +14833,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         decisionReason: plan.decisionReason || "simple_step2_center_control",
         whyChosen: plan.whyChosen || "multi_plane_best_effort_selection",
         routeClass: plan.routeClass || "direct",
+        preAppliedInventoryItemType: plan.preAppliedInventoryItemType || null,
       };
 
       try {
@@ -14940,36 +14981,10 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     }
 
     const scoredPlans = [];
-    for(const launchReadyPlane of launchReadyPlanes){
-      const effectiveFlightRangeCells = getEffectiveFlightRangeCells(launchReadyPlane);
-      const maxFlightDistancePx = Math.max(1, effectiveFlightRangeCells * CELL_SIZE);
-      const nearestCargo = readyCargo
-        .map((cargo) => ({ cargo, center: getCargoVisualCenter(cargo), d: dist(launchReadyPlane, getCargoVisualCenter(cargo)) }))
-        .sort((a, b) => a.d - b.d)[0] || null;
+    const aiColor = turnColors?.[turnIndex] || "blue";
+    const usableInventoryItems = getAiUsableInventoryItems(aiColor);
 
-      const centerZoneNearest = getNearestPointInCenterControlZone(launchReadyPlane);
-      const centerDx = centerZoneNearest.x - launchReadyPlane.x;
-      const centerDy = centerZoneNearest.y - launchReadyPlane.y;
-      let centerTarget = centerZoneNearest;
-      if(!isPathClear(launchReadyPlane.x, launchReadyPlane.y, centerZoneNearest.x, centerZoneNearest.y)) {
-        centerTarget = null;
-        const fractions = [0.9, 0.75, 0.6, 0.45, 0.3, 0.2, 0.12];
-        for(const fraction of fractions){
-          const candidate = {
-            x: launchReadyPlane.x + centerDx * fraction,
-            y: launchReadyPlane.y + centerDy * fraction,
-          };
-          if(isPathClear(launchReadyPlane.x, launchReadyPlane.y, candidate.x, candidate.y)){
-            centerTarget = candidate;
-            break;
-          }
-        }
-        if(!centerTarget){
-          centerTarget = getNearestReachableCenterControlPoint(launchReadyPlane);
-        }
-      }
-
-      const buildSimulatedEnemyCandidate = (plane, enemy, maxFlightDistancePx, simulationOptions = {}) => {
+    const buildSimulatedEnemyCandidate = (plane, enemy, maxFlightDistancePx, simulationOptions = {}) => {
         if(!plane || !enemy) return null;
         if(!Number.isFinite(maxFlightDistancePx) || maxFlightDistancePx <= 0) return null;
         const simulated = findBestSimulatedShot(plane, enemy, {
@@ -15012,6 +15027,35 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           predictedOutcome: sim.predictedOutcome,
         };
       };
+
+    const buildBestPlanForPlane = (launchReadyPlane) => {
+      const effectiveFlightRangeCells = getEffectiveFlightRangeCells(launchReadyPlane);
+      const maxFlightDistancePx = Math.max(1, effectiveFlightRangeCells * CELL_SIZE);
+      const nearestCargo = readyCargo
+        .map((cargo) => ({ cargo, center: getCargoVisualCenter(cargo), d: dist(launchReadyPlane, getCargoVisualCenter(cargo)) }))
+        .sort((a, b) => a.d - b.d)[0] || null;
+
+      const centerZoneNearest = getNearestPointInCenterControlZone(launchReadyPlane);
+      const centerDx = centerZoneNearest.x - launchReadyPlane.x;
+      const centerDy = centerZoneNearest.y - launchReadyPlane.y;
+      let centerTarget = centerZoneNearest;
+      if(!isPathClear(launchReadyPlane.x, launchReadyPlane.y, centerZoneNearest.x, centerZoneNearest.y)) {
+        centerTarget = null;
+        const fractions = [0.9, 0.75, 0.6, 0.45, 0.3, 0.2, 0.12];
+        for(const fraction of fractions){
+          const candidate = {
+            x: launchReadyPlane.x + centerDx * fraction,
+            y: launchReadyPlane.y + centerDy * fraction,
+          };
+          if(isPathClear(launchReadyPlane.x, launchReadyPlane.y, candidate.x, candidate.y)){
+            centerTarget = candidate;
+            break;
+          }
+        }
+        if(!centerTarget){
+          centerTarget = getNearestReachableCenterControlPoint(launchReadyPlane);
+        }
+      }
 
       const prioritizedEnemiesForPlane = enemyPlanes
         .map((enemy) => ({ enemy, enemyDistance: dist(launchReadyPlane, enemy) }))
@@ -15110,14 +15154,36 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         }
       }
 
-      if(selectedPlan){
-        scoredPlans.push({
-          ...selectedPlan,
-          planTier,
-          planDistance,
-          hasDirectEnemy: Boolean(bestAttackCandidate),
-          readyCargoCount: readyCargo.length,
-        });
+      if(!selectedPlan) return null;
+      return {
+        ...selectedPlan,
+        planTier,
+        planDistance,
+        hasDirectEnemy: Boolean(bestAttackCandidate),
+        readyCargoCount: readyCargo.length,
+      };
+    };
+
+    for(const launchReadyPlane of launchReadyPlanes){
+      const baseCandidate = buildBestPlanForPlane(launchReadyPlane);
+      if(baseCandidate){
+        baseCandidate.color = aiColor;
+        baseCandidate.itemType = null;
+        scoredPlans.push(baseCandidate);
+      }
+
+      for(const item of usableInventoryItems){
+        const itemType = item?.type;
+        if(!itemType) continue;
+        const itemCandidate = evaluateAiCandidateWithTemporaryItem(
+          aiColor,
+          launchReadyPlane,
+          itemType,
+          () => buildBestPlanForPlane(launchReadyPlane),
+        );
+        if(itemCandidate){
+          scoredPlans.push(itemCandidate);
+        }
       }
     }
 
@@ -15184,16 +15250,41 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       bounceCount: Number.isFinite(selectedPlan.bounceCount) ? selectedPlan.bounceCount : 0,
       simulatedScore: Number.isFinite(selectedPlan.score) ? Number(selectedPlan.score.toFixed(2)) : null,
       predictedOutcome: selectedPlan.predictedOutcome || null,
+      selectedItemType: selectedPlan.itemType || null,
     });
+
+    if(selectedPlan?.itemType){
+      const planColor = selectedPlan.color || selectedPlan?.plane?.color || turnColors?.[turnIndex] || "blue";
+      const applied = useInventoryItemOnPlane(
+        planColor,
+        selectedPlan.itemType,
+        selectedPlan.plane,
+      );
+      if(!applied){
+        runForcedNonSkipLastChance("selected_inventory_item_application_failed", {
+          candidatePlanes: launchReadyPlanes,
+        });
+        return;
+      }
+      selectedPlan.preAppliedInventoryItemType = selectedPlan.itemType;
+      selectedPlan.color = planColor;
+      logAiDecision("simple_step2_inventory_item_applied_from_scored_plan", {
+        planeId: selectedPlan?.plane?.id ?? null,
+        itemType: selectedPlan.itemType,
+        color: planColor,
+      });
+    }
 
     let launchResult = tryIssueAiMoveWithInventory({
       plane: launchReadyPlane,
+      color: selectedPlan.color || launchReadyPlane?.color || turnColors?.[turnIndex] || "blue",
       landingX: selectedPlan.landingX,
       landingY: selectedPlan.landingY,
       goalName: selectedPlan.goalName,
       decisionReason: selectedPlan.decisionReason,
       whyChosen: selectedPlan.whyChosen,
       routeClass: selectedPlan.routeClass || "direct",
+      preAppliedInventoryItemType: selectedPlan.preAppliedInventoryItemType || null,
     }, "simple_step2_selector");
 
     if(!launchResult?.ok){
@@ -21339,8 +21430,8 @@ function getAvailableInventoryCount(color){
   return items.length;
 }
 
-function evaluateBlueInventoryState(){
-  const items = Array.isArray(inventoryState.blue) ? inventoryState.blue : [];
+function evaluateInventoryState(color){
+  const items = Array.isArray(inventoryState?.[color]) ? inventoryState[color] : [];
   const counts = {
     [INVENTORY_ITEM_TYPES.FUEL]: 0,
     [INVENTORY_ITEM_TYPES.CROSSHAIR]: 0,
@@ -21361,6 +21452,10 @@ function evaluateBlueInventoryState(){
     total: items.length,
     counts,
   };
+}
+
+function evaluateBlueInventoryState(){
+  return evaluateInventoryState("blue");
 }
 
 function hasBlueDynamiteAvailable(){
@@ -26243,11 +26338,13 @@ function buildAiInventoryCandidatePlans(context, plannedMove){
 function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   if(!plannedMove?.plane) return false;
 
+  const aiColor = plannedMove?.color || plannedMove?.plane?.color || turnColors?.[turnIndex] || "blue";
+  const evaluateInventoryStateForAi = () => evaluateInventoryState(aiColor);
   const strategicGoal = plannedMove?.goalName || aiRoundState?.currentGoal || "";
   const usedBuffTypesThisTurn = options?.usedBuffTypesThisTurn instanceof Set
     ? options.usedBuffTypesThisTurn
     : new Set();
-  const inventory = evaluateBlueInventoryState();
+  const inventory = evaluateInventoryStateForAi();
   if(inventory.total <= 0){
     plannedMove.inventoryDecisionMadeMeta = {
       selected: false,
@@ -26259,6 +26356,21 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       selectedReason: null,
       selectedSequenceLength: Array.isArray(plannedMove?.selectedInventorySequence) ? plannedMove.selectedInventorySequence.length : 0,
       selectedItemTypes: [],
+    };
+    return false;
+  }
+
+  if(plannedMove?.preAppliedInventoryItemType){
+    plannedMove.inventoryDecisionMadeMeta = {
+      selected: false,
+      reason: "inventory_preapplied_by_scored_plan",
+      reasonCodes: ["inventory_preapplied_by_scored_plan"],
+      rejectReasons: [],
+      executionSource: "scored_plan_prelaunch_apply",
+      selectedItemType: plannedMove.preAppliedInventoryItemType,
+      selectedReason: "scored_plan_prelaunch_apply",
+      selectedSequenceLength: 0,
+      selectedItemTypes: [plannedMove.preAppliedInventoryItemType],
     };
     return false;
   }
@@ -26312,7 +26424,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     if(!PRE_LAUNCH_ALLOWED_ITEM_TYPES.has(itemType)){
       return { executed: false, reason: "selected_candidate_item_not_in_step5_scope", itemType };
     }
-    if(Number(evaluateBlueInventoryState()?.counts?.[itemType] ?? 0) <= 0){
+    if(Number(evaluateInventoryStateForAi()?.counts?.[itemType] ?? 0) <= 0){
       return { executed: false, reason: "selected_candidate_item_missing_in_inventory", itemType };
     }
     if(SINGLE_USE_BUFF_TYPES_PER_TURN.has(itemType) && usedBuffTypesThisTurn.has(itemType)){
@@ -26321,17 +26433,17 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     let executed = false;
     try {
       if(itemType === INVENTORY_ITEM_TYPES.CROSSHAIR){
-        executed = useInventoryItemOnPlane("blue", INVENTORY_ITEM_TYPES.CROSSHAIR, plannedMove.plane);
+        executed = useInventoryItemOnPlane(aiColor, INVENTORY_ITEM_TYPES.CROSSHAIR, plannedMove.plane);
         if(executed){
           rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.CROSSHAIR);
         }
       } else if(itemType === INVENTORY_ITEM_TYPES.FUEL){
-        executed = useInventoryItemOnPlane("blue", INVENTORY_ITEM_TYPES.FUEL, plannedMove.plane);
+        executed = useInventoryItemOnPlane(aiColor, INVENTORY_ITEM_TYPES.FUEL, plannedMove.plane);
         if(executed){
           rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.FUEL);
         }
       } else if(itemType === INVENTORY_ITEM_TYPES.WINGS){
-        executed = useInventoryItemOnPlane("blue", INVENTORY_ITEM_TYPES.WINGS, plannedMove.plane);
+        executed = useInventoryItemOnPlane(aiColor, INVENTORY_ITEM_TYPES.WINGS, plannedMove.plane);
         if(executed){
           rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.WINGS);
         }
@@ -26339,7 +26451,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         const placement = candidate?.minePlan?.placement || null;
         if(placement && isMinePlacementValid(placement)){
           placeMine({
-            owner: "blue",
+            owner: aiColor,
             x: placement.x,
             y: placement.y,
             cellX: placement.cellX,
@@ -26348,7 +26460,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
           executed = true;
         }
         if(executed){
-          removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.MINE);
+          removeItemFromInventory(aiColor, INVENTORY_ITEM_TYPES.MINE);
         }
       } else if(itemType === INVENTORY_ITEM_TYPES.DYNAMITE){
         const target = candidate?.target || null;
@@ -26372,12 +26484,12 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
           }
         }
         if(executed){
-          removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.DYNAMITE);
+          removeItemFromInventory(aiColor, INVENTORY_ITEM_TYPES.DYNAMITE);
         }
       } else if(itemType === INVENTORY_ITEM_TYPES.INVISIBILITY){
-        executed = queueInvisibilityEffectForPlayer("blue");
+        executed = queueInvisibilityEffectForPlayer(aiColor);
         if(executed){
-          removeItemFromInventory("blue", INVENTORY_ITEM_TYPES.INVISIBILITY);
+          removeItemFromInventory(aiColor, INVENTORY_ITEM_TYPES.INVISIBILITY);
           rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.INVISIBILITY);
         }
       }
@@ -26423,7 +26535,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   }
 
   const routeAwareBoosters = [];
-  const availableCounts = evaluateBlueInventoryState()?.counts || {};
+  const availableCounts = evaluateInventoryStateForAi()?.counts || {};
   const alreadySelectedTypes = new Set(
     orderedCandidates
       .map((entry) => entry?.itemType)
@@ -26602,7 +26714,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     const forcedCandidates = [];
     for(const itemType of fallbackOrder){
       if(excludedItemTypes.has(itemType)) continue;
-      const availableCount = Number(evaluateBlueInventoryState()?.counts?.[itemType] ?? 0);
+      const availableCount = Number(evaluateInventoryStateForAi()?.counts?.[itemType] ?? 0);
       if(availableCount <= 0) continue;
       const forcedCandidate = {
         itemType,
@@ -26652,7 +26764,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     const candidates = [];
     for(const itemType of baselineOrder){
       if(excludedItemTypes.has(itemType)) continue;
-      const availableCount = Number(evaluateBlueInventoryState()?.counts?.[itemType] ?? 0);
+      const availableCount = Number(evaluateInventoryStateForAi()?.counts?.[itemType] ?? 0);
       if(availableCount <= 0) continue;
       const candidate = {
         itemType,
