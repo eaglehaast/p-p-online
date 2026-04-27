@@ -106,6 +106,23 @@ const nearMaxRangePlan = {
 const nearMaxRangeSequence = context.buildAiSelectedPlanInventoryEnhancements({ color: 'blue', enemies: [] }, nearMaxRangePlan);
 assert(nearMaxRangeSequence.some((entry) => entry.itemType === 'fuel'), 'Expected fuel for near-max-range selected plan.');
 
+const strategicWhyChosenPlan = {
+  plane: basePlane,
+  color: 'blue',
+  landingX: 28,
+  landingY: 0,
+  planDistance: 28,
+  goalName: 'simple_step2_move',
+  decisionReason: 'plain_move',
+  whyChosen: 'attack_opportunity_after_reposition',
+  routeClass: 'direct',
+};
+const strategicWhyChosenSequence = context.buildAiSelectedPlanInventoryEnhancements({ color: 'blue', enemies: [] }, strategicWhyChosenPlan);
+assert(
+  strategicWhyChosenSequence.some((entry) => entry.itemType === 'fuel'),
+  'Expected fuel when only whyChosen carries strategic intent and fuel improves range.',
+);
+
 const precisionPlan = {
   plane: basePlane,
   color: 'blue',
