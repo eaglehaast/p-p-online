@@ -15210,15 +15210,28 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       : [];
     selectedPlan.selectedInventorySequence = selectedPlanEnhancementSequence;
 
+    const selectedInventorySequence = Array.isArray(selectedPlan.selectedInventorySequence)
+      ? selectedPlan.selectedInventorySequence.map((entry) => ({ ...entry }))
+      : [];
+
     let launchResult = tryIssueAiMoveWithInventory({
-      plane: launchReadyPlane,
-      color: selectedPlan.color || launchReadyPlane?.color || turnColors?.[turnIndex] || "blue",
+      plane: selectedPlan.plane || launchReadyPlane,
+      color: selectedPlan.color || selectedPlan?.plane?.color || launchReadyPlane?.color || turnColors?.[turnIndex] || "blue",
       landingX: selectedPlan.landingX,
       landingY: selectedPlan.landingY,
+      planDistance: selectedPlan.planDistance,
+      totalDist: selectedPlan.planDistance,
+      bounceCount: selectedPlan.bounceCount,
+      score: selectedPlan.score,
+      targetPoint: selectedPlan.targetPoint || null,
+      predictedOutcome: selectedPlan.predictedOutcome || null,
+      hasDirectEnemy: Boolean(selectedPlan.hasDirectEnemy),
+      readyCargoCount: selectedPlan.readyCargoCount,
       goalName: selectedPlan.goalName,
       decisionReason: selectedPlan.decisionReason,
       whyChosen: selectedPlan.whyChosen,
       routeClass: selectedPlan.routeClass || "direct",
+      selectedInventorySequence,
       preAppliedInventoryItemType: selectedPlan.preAppliedInventoryItemType || null,
     }, "simple_step2_selector");
 
@@ -26610,12 +26623,26 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   }
 
   const orderedCandidates = [];
-  const deterministicEnhancements = buildAiSelectedPlanInventoryEnhancements(context, {
-    ...plannedMove,
-    color: aiColor,
-  }, {
-    maxItems: 2,
-  });
+  const deterministicEnhancements = selectedInventorySequence.length > 0
+    ? []
+    : buildAiSelectedPlanInventoryEnhancements(context, {
+        ...plannedMove,
+        color: aiColor,
+      }, {
+        maxItems: 2,
+      });
+
+  for(const step of selectedInventorySequence){
+    orderedCandidates.push({
+      ...step,
+      reasonCode: step.reason || "selected_plan_enhancement",
+      executionSource: "selected_plan_enhancement",
+      usageTier: "selected_plan_enhancement",
+      expectedBenefit: 0.1,
+      risk: 0.01,
+    });
+  }
+
   for(const enhancement of deterministicEnhancements){
     orderedCandidates.push({
       ...enhancement,
@@ -26629,9 +26656,6 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
 
   if(selectedInventoryCandidate){
     orderedCandidates.push({ ...selectedInventoryCandidate, executionSource: "selected_inventory_candidate" });
-  }
-  for(const entry of selectedInventorySequence){
-    orderedCandidates.push({ ...entry, executionSource: "selected_inventory_sequence" });
   }
   if(Array.isArray(plannedMove?.inventoryCandidates)){
     for(const entry of plannedMove.inventoryCandidates){
