@@ -33,6 +33,7 @@ assert(maybeUseSource.includes('INVENTORY_ITEM_TYPES.WINGS'), 'PRE_LAUNCH_ALLOWE
 assert(maybeUseSource.includes('INVENTORY_ITEM_TYPES.INVISIBILITY'), 'PRE_LAUNCH_ALLOWED_ITEM_TYPES must include INVISIBILITY.');
 
 const useCalls = [];
+let remainingFuel = 1;
 
 const context = {
   Math,
@@ -56,9 +57,9 @@ const context = {
   evaluateInventoryState(color){
     if(color === 'green'){
       return {
-        total: 1,
+        total: remainingFuel,
         counts: {
-          fuel: 1,
+          fuel: remainingFuel,
           crosshair: 0,
           wings: 0,
           mine: 0,
@@ -81,9 +82,13 @@ const context = {
   },
   useInventoryItemOnPlane(color, type, plane){
     useCalls.push({ color, type, planeId: plane?.id || null });
+    if(!plane.activeTurnBuffs || typeof plane.activeTurnBuffs !== 'object') plane.activeTurnBuffs = {};
+    plane.activeTurnBuffs[type] = true;
+    if(color === 'green' && type === 'fuel' && remainingFuel > 0) remainingFuel -= 1;
     return true;
   },
-  removeItemFromInventory(){
+  removeItemFromInventory(_color, type){
+    if(type === 'fuel' && remainingFuel > 0) remainingFuel -= 1;
     return true;
   },
   queueInvisibilityEffectForPlayer(){
@@ -117,7 +122,7 @@ vm.createContext(context);
 vm.runInContext(maybeUseSource, context);
 
 const plannedMove = {
-  plane: { id: 'green-plane', color: 'green', x: 10, y: 10 },
+  plane: { id: 'green-plane', color: 'green', x: 10, y: 10, activeTurnBuffs: {} },
   color: 'green',
   goalName: 'simple_step2_attack_enemy',
   decisionReason: 'integration_smoke',
@@ -138,5 +143,7 @@ assert(useCalls[0].color === 'green', 'Expected inventory usage to target AI col
 assert(useCalls[0].type === 'fuel', 'Expected fuel item usage from selectedInventorySequence.');
 assert(useCalls[0].planeId === 'green-plane', 'Expected selected sequence fuel to apply to plannedMove.plane.');
 assert(plannedMove?.inventoryDecisionMadeMeta?.selected === true, 'Expected inventoryDecisionMadeMeta.selected === true.');
+assert(plannedMove?.plane?.activeTurnBuffs?.fuel === true, 'Expected selected fuel usage to set activeTurnBuffs.fuel on plane.');
+assert(context.evaluateInventoryState('green').counts.fuel === 0, 'Expected selected sequence execution to consume fuel inventory.');
 
 console.log('Smoke test passed: selected sequence prelaunch execution uses real AI color inventory and applies fuel.');
