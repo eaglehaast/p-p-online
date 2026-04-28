@@ -26287,19 +26287,25 @@ function shouldAiUseCrosshairForSelectedPlan(context, selectedPlan){
   const plane = selectedPlan?.plane || null;
   if(!plane) return false;
   const routeClass = `${selectedPlan?.routeClass || "direct"}`.toLowerCase();
-  const goalText = `${selectedPlan?.goalName || ""} ${selectedPlan?.decisionReason || ""} ${selectedPlan?.whyChosen || ""}`.toLowerCase();
-  const hasPrecisionRoute = ["ricochet", "bounce", "bank", "gap"].some((route) => routeClass.includes(route));
+  const goalText = getAiSelectedPlanIntentText(selectedPlan);
+  const usefulIntent = [
+    "attack", "enemy", "cargo", "pickup", "flag", "center",
+    "advance", "approach", "pressure", "direct", "ricochet",
+    "gap", "safe", "reposition", "best_effort", "fallback",
+  ].some((word) => goalText.includes(word));
+  const hasPrecisionRoute = ["ricochet", "bounce", "bank", "gap"].some((route) =>
+    routeClass.includes(route) || goalText.includes(route)
+  );
   const bounceCount = Number.isFinite(selectedPlan?.bounceCount) ? selectedPlan.bounceCount : 0;
   const moveDistance = Number.isFinite(selectedPlan?.planDistance)
     ? selectedPlan.planDistance
     : Math.hypot((selectedPlan?.landingX || 0) - (plane?.x || 0), (selectedPlan?.landingY || 0) - (plane?.y || 0));
   const effectiveRangePx = Math.max(1, getEffectiveFlightRangeCells(plane) * CELL_SIZE);
   const distanceRatio = moveDistance / effectiveRangePx;
-  const mediumOrLongShot = distanceRatio >= 0.55;
-  const hasAttackIntent = goalText.includes("attack") || goalText.includes("enemy") || goalText.includes("flag") || goalText.includes("cargo");
+  const mediumOrLongShot = distanceRatio >= 0.45;
   const predictedHitValue = Number.isFinite(selectedPlan?.score) && selectedPlan.score >= 0.25;
   const hasTargetPoint = Number.isFinite(selectedPlan?.targetPoint?.x) && Number.isFinite(selectedPlan?.targetPoint?.y);
-  return hasPrecisionRoute || bounceCount > 0 || ((mediumOrLongShot && hasAttackIntent) || (hasTargetPoint && predictedHitValue));
+  return hasPrecisionRoute || bounceCount > 0 || ((mediumOrLongShot && usefulIntent) || (hasTargetPoint && predictedHitValue));
 }
 
 function shouldAiUseWingsForSelectedPlan(context, selectedPlan){
@@ -26312,10 +26318,11 @@ function shouldAiUseWingsForSelectedPlan(context, selectedPlan){
   if(!Number.isFinite(landingPoint.x) || !Number.isFinite(landingPoint.y)) return false;
 
   const routeClass = `${selectedPlan?.routeClass || "direct"}`.toLowerCase();
-  const goalText = `${selectedPlan?.goalName || ""} ${selectedPlan?.decisionReason || ""} ${selectedPlan?.whyChosen || ""}`.toLowerCase();
-  const intentHints = ["attack", "enemy", "cargo", "pickup", "flag", "center"];
-  const hasRelevantIntent = intentHints.some((hint) => goalText.includes(hint))
-    || ["ricochet", "bounce", "bank", "gap"].some((hint) => routeClass.includes(hint));
+  const goalText = getAiSelectedPlanIntentText(selectedPlan);
+  const contactIntent = [
+    "attack", "enemy", "cargo", "pickup", "flag",
+    "gap", "ricochet", "bounce", "bank",
+  ].some((word) => goalText.includes(word) || routeClass.includes(word));
 
   const pointsOfInterest = [];
   if(Array.isArray(context?.enemies)){
@@ -26343,7 +26350,8 @@ function shouldAiUseWingsForSelectedPlan(context, selectedPlan){
     .sort((a, b) => a - b)[0] ?? Number.POSITIVE_INFINITY;
 
   const nearContactThresholdPx = CELL_SIZE * 2.3;
-  return hasRelevantIntent && nearestDistance <= nearContactThresholdPx;
+  const nearContact = nearestDistance <= nearContactThresholdPx;
+  return nearContact || contactIntent;
 }
 
 function shouldAiUseInvisibilityForSelectedPlan(context, selectedPlan){
@@ -26402,8 +26410,20 @@ function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options
     ? selectedPlan.planDistance
     : Math.hypot((selectedPlan?.landingX || 0) - (plane?.x || 0), (selectedPlan?.landingY || 0) - (plane?.y || 0));
   const moveRangeRatio = moveDistance / baseRangePx;
-  const goalText = `${selectedPlan?.goalName || ""} ${selectedPlan?.decisionReason || ""} ${selectedPlan?.whyChosen || ""}`.toLowerCase();
-  const planIsStrategic = ["attack", "cargo", "flag", "center"].some((entry) => goalText.includes(entry));
+  const goalText = getAiSelectedPlanIntentText(selectedPlan);
+  const routeClass = `${selectedPlan?.routeClass || "direct"}`.toLowerCase();
+  const usefulIntent = [
+    "attack", "enemy", "cargo", "pickup", "flag", "center",
+    "advance", "approach", "pressure", "direct", "ricochet",
+    "gap", "safe", "reposition", "best_effort", "fallback",
+  ].some((word) => goalText.includes(word));
+  const precisionRoute = ["ricochet", "gap", "bank", "bounce"].some((word) =>
+    routeClass.includes(word) || goalText.includes(word)
+  );
+  const contactIntent = [
+    "attack", "enemy", "cargo", "pickup", "flag",
+    "gap", "ricochet", "bounce", "bank",
+  ].some((word) => goalText.includes(word) || routeClass.includes(word));
 
   let fuelIncreasesRange = false;
   if(Number(availableCounts?.[INVENTORY_ITEM_TYPES.FUEL] ?? 0) > 0){
@@ -26418,16 +26438,28 @@ function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options
     plane.activeTurnBuffs = previousBuffs;
   }
 
-  if(moveRangeRatio >= 0.75 || (fuelIncreasesRange && planIsStrategic)){
-    pushIfAvailable(INVENTORY_ITEM_TYPES.FUEL, "selected_plan_range_pressure");
+  if(
+    Number(availableCounts?.[INVENTORY_ITEM_TYPES.FUEL] ?? 0) > 0
+    && !plane.activeTurnBuffs?.[INVENTORY_ITEM_TYPES.FUEL]
+    && (
+      moveRangeRatio >= 0.55
+      || (fuelIncreasesRange && usefulIntent)
+    )
+  ){
+    pushIfAvailable(INVENTORY_ITEM_TYPES.FUEL, "selected_plan_range_support");
   }
 
-  if(shouldAiUseCrosshairForSelectedPlan(context, selectedPlan)){
-    pushIfAvailable(INVENTORY_ITEM_TYPES.CROSSHAIR, "selected_plan_precision_shot");
+  if(precisionRoute){
+    pushIfAvailable(INVENTORY_ITEM_TYPES.CROSSHAIR, "selected_plan_route_precision");
+    pushIfAvailable(INVENTORY_ITEM_TYPES.WINGS, "selected_plan_route_contact_margin");
   }
 
-  if(shouldAiUseWingsForSelectedPlan(context, selectedPlan)){
-    pushIfAvailable(INVENTORY_ITEM_TYPES.WINGS, "selected_plan_close_contact_path");
+  if(precisionRoute || shouldAiUseCrosshairForSelectedPlan(context, selectedPlan)){
+    pushIfAvailable(INVENTORY_ITEM_TYPES.CROSSHAIR, "selected_plan_precision_support");
+  }
+
+  if(contactIntent || shouldAiUseWingsForSelectedPlan(context, selectedPlan)){
+    pushIfAvailable(INVENTORY_ITEM_TYPES.WINGS, "selected_plan_contact_margin");
   }
 
   if(shouldAiUseInvisibilityForSelectedPlan(context, selectedPlan)){
@@ -26435,6 +26467,18 @@ function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options
   }
 
   return selected;
+}
+
+function getAiSelectedPlanIntentText(selectedPlan){
+  return [
+    selectedPlan?.goalName,
+    selectedPlan?.decisionReason,
+    selectedPlan?.whyChosen,
+    selectedPlan?.routeClass,
+    selectedPlan?.planTier,
+    selectedPlan?.goalType,
+    selectedPlan?.targetType,
+  ].filter(Boolean).join(" ").toLowerCase();
 }
 
 function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){

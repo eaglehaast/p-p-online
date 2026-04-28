@@ -29,6 +29,7 @@ const buildFnSource = extractFunctionSource(source, 'buildAiSelectedPlanInventor
 assert(!buildFnSource.includes('buildBestPlanForPlane('), 'buildAiSelectedPlanInventoryEnhancements must not call buildBestPlanForPlane.');
 
 const snippets = [
+  extractFunctionSource(source, 'getAiSelectedPlanIntentText'),
   extractFunctionSource(source, 'shouldAiUseCrosshairForSelectedPlan'),
   extractFunctionSource(source, 'shouldAiUseWingsForSelectedPlan'),
   extractFunctionSource(source, 'shouldAiUseInvisibilityForSelectedPlan'),
@@ -123,6 +124,23 @@ assert(
   'Expected fuel when only whyChosen carries strategic intent and fuel improves range.',
 );
 
+const realisticForwardPlan = {
+  plane: basePlane,
+  color: 'blue',
+  landingX: 45,
+  landingY: 0,
+  planDistance: 45,
+  routeClass: 'direct',
+  goalName: 'simple_step2_selector',
+  decisionReason: 'multi_plane_best_effort_selection',
+  whyChosen: 'best_effort_forward_advance',
+};
+const realisticForwardSequence = context.buildAiSelectedPlanInventoryEnhancements({ color: 'blue', enemies: [] }, realisticForwardPlan);
+assert(
+  realisticForwardSequence.some((entry) => entry.itemType === 'fuel' || entry.itemType === 'crosshair'),
+  'Expected at least fuel or crosshair for real-plan-like best_effort forward selected plan.',
+);
+
 const precisionPlan = {
   plane: basePlane,
   color: 'blue',
@@ -139,6 +157,20 @@ const precisionPlan = {
 const precisionSequence = context.buildAiSelectedPlanInventoryEnhancements({ color: 'blue', enemies: [{ x: 70, y: 0 }] }, precisionPlan);
 assert(precisionSequence.some((entry) => entry.itemType === 'crosshair'), 'Expected crosshair for precision ricochet/bounce selected plan.');
 
+const vagueRicochetPlan = {
+  plane: basePlane,
+  color: 'blue',
+  landingX: 36,
+  landingY: 8,
+  planDistance: 40,
+  routeClass: 'ricochet',
+  goalName: 'simple_step2_selector',
+  decisionReason: 'best_effort',
+  whyChosen: '',
+};
+const vagueRicochetSequence = context.buildAiSelectedPlanInventoryEnhancements({ color: 'blue', enemies: [{ x: 42, y: 12 }] }, vagueRicochetPlan);
+assert(vagueRicochetSequence.some((entry) => entry.itemType === 'crosshair'), 'Expected crosshair for realistic vague ricochet metadata.');
+
 const closeContactPlan = {
   plane: basePlane,
   color: 'blue',
@@ -151,6 +183,23 @@ const closeContactPlan = {
 };
 const closeContactSequence = context.buildAiSelectedPlanInventoryEnhancements({ color: 'blue', enemies: [{ x: 24, y: 12 }], readyCargo: [{ x: 22, y: 9 }] }, closeContactPlan);
 assert(closeContactSequence.some((entry) => entry.itemType === 'wings'), 'Expected wings for close-contact cargo/attack selected plan.');
+
+const cargoIntentPlan = {
+  plane: basePlane,
+  color: 'blue',
+  landingX: 30,
+  landingY: 10,
+  planDistance: 32,
+  routeClass: 'direct',
+  goalName: 'cargo_route',
+  decisionReason: 'multi_plane_best_effort_selection',
+  whyChosen: 'cargo_pickup_forward',
+};
+const cargoIntentSequence = context.buildAiSelectedPlanInventoryEnhancements({ color: 'blue', enemies: [], readyCargo: [{ x: 32, y: 12 }] }, cargoIntentPlan);
+assert(
+  cargoIntentSequence.some((entry) => entry.itemType === 'wings' || entry.itemType === 'fuel'),
+  'Expected wings or fuel for cargo-intent selected plan.',
+);
 
 const comboSequence = context.buildAiSelectedPlanInventoryEnhancements({ color: 'blue', enemies: [{ x: 70, y: 0 }] }, {
   ...precisionPlan,
@@ -177,12 +226,12 @@ assert(!lowValueSequence.some((entry) => entry.itemType === 'mine' || entry.item
 const survivabilityPlanWithoutScoreState = {
   plane: { ...basePlane, hasCargo: true },
   color: 'blue',
-  landingX: 12,
+  landingX: 6,
   landingY: 0,
-  planDistance: 12,
-  goalName: 'simple_step2_pickup_cargo',
+  planDistance: 6,
+  goalName: 'simple_step2_hold',
   decisionReason: 'carry_objective',
-  routeClass: 'direct',
+  routeClass: 'safe',
 };
 const noScoreStateSequence = context.buildAiSelectedPlanInventoryEnhancements(
   { color: 'blue', enemies: [] },
