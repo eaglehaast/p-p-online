@@ -27988,10 +27988,13 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
           };
         }
 
+        const launchPlane = finalMoveResolution?.move?.plane || plannedMove?.plane;
+        const launchVx = Number.isFinite(finalMoveResolution?.move?.vx) ? finalMoveResolution.move.vx : plannedMove?.vx;
+        const launchVy = Number.isFinite(finalMoveResolution?.move?.vy) ? finalMoveResolution.move.vy : plannedMove?.vy;
         const postItemLaunch = issueAIMove(
-          plannedMove?.plane,
-          plannedMove?.vx,
-          plannedMove?.vy,
+          launchPlane,
+          launchVx,
+          launchVy,
           {
             isFallbackMove: true,
             launchMeta: {
@@ -28039,10 +28042,13 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       });
       return { ok: false, reason: "final_mine_gate_blocked" };
     }
+    const launchPlane = finalMoveResolution?.move?.plane || plannedMove?.plane;
+    const launchVx = Number.isFinite(finalMoveResolution?.move?.vx) ? finalMoveResolution.move.vx : plannedMove?.vx;
+    const launchVy = Number.isFinite(finalMoveResolution?.move?.vy) ? finalMoveResolution.move.vy : plannedMove?.vy;
     return issueAIMove(
-      finalMoveResolution.move.plane,
-      finalMoveResolution.move.vx,
-      finalMoveResolution.move.vy,
+      launchPlane,
+      launchVx,
+      launchVy,
       {
         isFallbackMove: resolveAiFallbackMoveFlag(finalMoveResolution.move) || isFallbackMove,
         launchMeta: {
