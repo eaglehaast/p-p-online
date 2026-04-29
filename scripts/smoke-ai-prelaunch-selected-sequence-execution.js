@@ -54,6 +54,11 @@ const context = {
     DYNAMITE: 'dynamite',
     INVISIBILITY: 'invisibility',
   },
+
+  normalizeInventoryItemType(type){
+    const raw = String(type || '').toLowerCase();
+    return raw || null;
+  },
   evaluateInventoryState(color){
     if(color === 'green'){
       return {

@@ -2907,11 +2907,30 @@ function playNuclearStrikeFx(){
   showNuclearStrikeCinematicLayer();
 }
 
+
+function normalizeInventoryItemType(type){
+  const raw = String(type || "").trim().toLowerCase();
+  if(!raw) return null;
+  if(raw === "fuel") return INVENTORY_ITEM_TYPES.FUEL;
+  if(raw === "crosshair" || raw === "accuracy" || raw === "aim") return INVENTORY_ITEM_TYPES.CROSSHAIR;
+  if(raw === "wings" || raw === "wing" || raw === "broad_wing" || raw === "broadwing") return INVENTORY_ITEM_TYPES.WINGS;
+  if(raw === "invisibility" || raw === "invisible") return INVENTORY_ITEM_TYPES.INVISIBILITY;
+  if(raw === "mine") return INVENTORY_ITEM_TYPES.MINE;
+  if(raw === "dynamite") return INVENTORY_ITEM_TYPES.DYNAMITE;
+  return raw;
+}
+
+function getInventoryItemType(item){
+  if(typeof item === "string") return normalizeInventoryItemType(item);
+  return normalizeInventoryItemType(item?.type || item?.itemType || item?.kind || null);
+}
+
 function removeItemFromInventory(color, type){
-  if(!color || !type) return;
+  const normalizedType = normalizeInventoryItemType(type);
+  if(!color || !normalizedType) return;
   const items = inventoryState[color];
   if(!Array.isArray(items) || items.length === 0) return;
-  const index = items.findIndex((item) => item?.type === type);
+  const index = items.findIndex((item) => getInventoryItemType(item) === normalizedType);
   if(index < 0) return;
   items.splice(index, 1);
   syncInventoryUI(color);
@@ -2954,23 +2973,24 @@ function getPlaneAtBoardPoint(color, x, y){
 }
 
 function applyItemToOwnPlane(type, color, plane){
-  if(!plane) return false;
+  const normalizedType = normalizeInventoryItemType(type);
+  if(!plane || !normalizedType) return false;
   if(
-    type === INVENTORY_ITEM_TYPES.CROSSHAIR
-    || type === INVENTORY_ITEM_TYPES.FUEL
-    || type === INVENTORY_ITEM_TYPES.WINGS
+    normalizedType === INVENTORY_ITEM_TYPES.CROSSHAIR
+    || normalizedType === INVENTORY_ITEM_TYPES.FUEL
+    || normalizedType === INVENTORY_ITEM_TYPES.WINGS
   ){
     if(!plane.activeTurnBuffs || typeof plane.activeTurnBuffs !== "object"){
       plane.activeTurnBuffs = {};
     }
 
-    if(type === INVENTORY_ITEM_TYPES.WINGS && plane.activeTurnBuffs[type] === true){
+    if(normalizedType === INVENTORY_ITEM_TYPES.WINGS && plane.activeTurnBuffs[normalizedType] === true){
       // Повторное применение обновляет эффект до 1 хода (текущая модель баффов = флаг на ход).
-      plane.activeTurnBuffs[type] = true;
+      plane.activeTurnBuffs[normalizedType] = true;
       return true;
     }
 
-    plane.activeTurnBuffs[type] = true;
+    plane.activeTurnBuffs[normalizedType] = true;
     return true;
   }
 
@@ -2978,13 +2998,14 @@ function applyItemToOwnPlane(type, color, plane){
 }
 
 function useInventoryItemOnPlane(color, type, plane, options = {}){
-  if(!color || !type || !plane) return false;
+  const normalizedType = normalizeInventoryItemType(type);
+  if(!color || !normalizedType || !plane) return false;
   const items = inventoryState?.[color];
   if(!Array.isArray(items)) return false;
-  const itemIndex = items.findIndex((item) => item?.type === type);
+  const itemIndex = items.findIndex((item) => getInventoryItemType(item) === normalizedType);
   if(itemIndex < 0) return false;
 
-  const applied = applyItemToOwnPlane(type, color, plane);
+  const applied = applyItemToOwnPlane(normalizedType, color, plane);
   if(!applied) return false;
 
   items.splice(itemIndex, 1);
@@ -5113,11 +5134,17 @@ function drawInventoryHintOnHud(ctx) {
 }
 
 function addItemToInventory(color, item){
-  if(!color || !item) return;
+  if(!color || item == null) return;
+  const normalizedType = getInventoryItemType(item);
+  if(!normalizedType) return;
   if(!inventoryState[color]){
     inventoryState[color] = [];
   }
-  inventoryState[color].push(item);
+  if(typeof item === "object" && item !== null){
+    inventoryState[color].push({ ...item, type: normalizedType });
+  } else {
+    inventoryState[color].push(normalizedType);
+  }
   syncInventoryUI(color);
 }
 
@@ -5306,7 +5333,9 @@ function requestAiFuelTrainingForNextTurn(source = "debug_command"){
 
 function giveItem(itemId, qty = 1, opts = { silent: false }){
   if(!itemId) return;
-  const itemDef = INVENTORY_ITEMS.find((item) => item?.type === itemId) ?? null;
+  const normalizedItemId = normalizeInventoryItemType(itemId);
+  if(!normalizedItemId) return;
+  const itemDef = INVENTORY_ITEMS.find((item) => normalizeInventoryItemType(item?.type) === normalizedItemId) ?? null;
   if(!itemDef) return;
   const safeQty = Number.isFinite(qty) ? Math.max(0, Math.floor(qty)) : 0;
   if(safeQty === 0) return;
@@ -5385,8 +5414,8 @@ function giveOpponentItemFromConsole(itemType, qty = 1, source = "console_give_o
   if(!itemType) return { ok: false, reason: "missing_item_type" };
   const normalizedQty = Number.isFinite(qty) ? Math.max(1, Math.floor(qty)) : 1;
   const targetColor = getOpponentDebugTargetColor();
-  const normalizedItemType = String(itemType).toLowerCase();
-  const itemExists = INVENTORY_ITEMS.some((item) => item?.type === normalizedItemType);
+  const normalizedItemType = normalizeInventoryItemType(itemType);
+  const itemExists = INVENTORY_ITEMS.some((item) => normalizeInventoryItemType(item?.type) === normalizedItemType);
   if(!itemExists){
     return { ok: false, reason: "unknown_item_type", itemType: normalizedItemType };
   }
@@ -21390,8 +21419,8 @@ function evaluateInventoryState(color){
   };
 
   for(const item of items){
-    const type = item?.type;
-    if(type in counts){
+    const type = getInventoryItemType(item);
+    if(type && type in counts){
       counts[type] += 1;
     }
   }
@@ -26566,7 +26595,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     if(!candidate || !candidate.itemType){
       return { executed: false, reason: "selected_candidate_missing" };
     }
-    const itemType = candidate.itemType;
+    const itemType = normalizeInventoryItemType(candidate.itemType);
     if(!PRE_LAUNCH_ALLOWED_ITEM_TYPES.has(itemType)){
       return { executed: false, reason: "selected_candidate_item_not_in_step5_scope", itemType };
     }
