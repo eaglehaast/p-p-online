@@ -14813,12 +14813,24 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       const vx = (plan.landingX - plan.plane.x) / durationSec;
       const vy = (plan.landingY - plan.plane.y) / durationSec;
       const totalDist = Math.hypot(vx || 0, vy || 0) * FIELD_FLIGHT_DURATION_SEC;
+      const propagatedPlanDistance = Number.isFinite(plan.planDistance)
+        ? plan.planDistance
+        : (Number.isFinite(plan.totalDist) ? plan.totalDist : totalDist);
       const plannedMove = {
         plane: plan.plane,
         color: plan?.plane?.color || plan.color || turnColors?.[turnIndex] || "blue",
         vx,
         vy,
         totalDist,
+        landingX: plan.landingX,
+        landingY: plan.landingY,
+        planDistance: propagatedPlanDistance,
+        score: Number.isFinite(plan.score) ? plan.score : null,
+        targetPoint: plan.targetPoint || null,
+        predictedOutcome: plan.predictedOutcome || null,
+        bounceCount: Number.isFinite(plan.bounceCount) ? plan.bounceCount : 0,
+        hasDirectEnemy: Boolean(plan.hasDirectEnemy),
+        readyCargoCount: plan.readyCargoCount,
         goalName: plan.goalName || "simple_step2_center",
         decisionReason: plan.decisionReason || "simple_step2_center_control",
         whyChosen: plan.whyChosen || "multi_plane_best_effort_selection",
@@ -34001,7 +34013,15 @@ function issueAIMoveFromDoComputerMove(context, plannedMove, metadata = {}){
     inventoryPlanning = buildAiInventoryCandidatePlans(context, plannedMove);
     plannedMove.inventoryCandidates = Array.isArray(inventoryPlanning?.candidates) ? inventoryPlanning.candidates.slice() : [];
     plannedMove.rejectedInventoryCandidates = Array.isArray(inventoryPlanning?.rejected) ? inventoryPlanning.rejected.slice() : [];
-    plannedMove.selectedInventorySequence = Array.isArray(inventoryPlanning?.selectedSequence) ? inventoryPlanning.selectedSequence.slice() : [];
+    const heavySelectedInventorySequence = Array.isArray(inventoryPlanning?.selectedSequence)
+      ? inventoryPlanning.selectedSequence.slice()
+      : [];
+    const upstreamSelectedInventorySequence = Array.isArray(plannedMove.selectedInventorySequence)
+      ? plannedMove.selectedInventorySequence.slice()
+      : [];
+    plannedMove.selectedInventorySequence = heavySelectedInventorySequence.length > 0
+      ? heavySelectedInventorySequence
+      : upstreamSelectedInventorySequence;
     if(inventoryPlanning?.selectedCandidate){
       plannedMove.selectedInventoryCandidate = inventoryPlanning.selectedCandidate;
       plannedMove.inventoryUsageReason = inventoryPlanning.selectedCandidate.reason || plannedMove.inventoryUsageReason || null;
