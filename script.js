@@ -25240,18 +25240,52 @@ function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options
     ? Math.max(0, Math.min(2, Math.trunc(options.maxItems)))
     : 2;
 
-  const result = [];
+  const landingX = Number.isFinite(selectedPlan?.landingX) ? selectedPlan.landingX : plane.x;
+  const landingY = Number.isFinite(selectedPlan?.landingY) ? selectedPlan.landingY : plane.y;
+  const flightDur = typeof FIELD_FLIGHT_DURATION_SEC !== "undefined" ? Math.max(FIELD_FLIGHT_DURATION_SEC, 0.001) : 1;
+  const plannedMoveLike = {
+    plane,
+    color,
+    goalName: selectedPlan?.goalName ?? "",
+    vx: (landingX - plane.x) / flightDur,
+    vy: (landingY - plane.y) / flightDur,
+    landingX,
+    landingY,
+  };
 
+  // Resolve tactical slot: DYNAMITE xor MINE (prefer dynamite when plan-aligned)
   const dynamiteCharges = Number(availableCounts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0);
-  if(dynamiteCharges > 0){
-    const dynamiteOpportunity = findAiDynamitePathOpeningOpportunity(plane, color, context);
-    if(dynamiteOpportunity){
-      result.push({
-        itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
-        reason: dynamiteOpportunity.reason,
-        target: dynamiteOpportunity.target,
-      });
-    }
+  const mineCharges = Number(availableCounts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0);
+
+  const dyn = dynamiteCharges > 0 ? findAiDynamitePathOpeningOpportunity(plane, color, context) : null;
+
+  let mine = null;
+  if(mineCharges > 0 && typeof tryPlaceBlueDefensiveMine === "function"){
+    mine = tryPlaceBlueDefensiveMine(context, plannedMoveLike, { evaluateOnly: true }) || null;
+  }
+
+  const targetPoint = selectedPlan?.targetPoint;
+  const dynAlignsWithPlanTarget = !dyn ? false
+    : !Number.isFinite(targetPoint?.x) ? true
+    : Math.hypot(dyn.target.x - targetPoint.x, dyn.target.y - targetPoint.y) <= CELL_SIZE * 3;
+
+  const minePassesGates = !!mine && Number(mine.score ?? 0) >= 6
+    && typeof evaluatePostLaunchSafetyWithMine === "function"
+    && evaluatePostLaunchSafetyWithMine(context, plannedMoveLike, mine)?.beforeSafe === false;
+
+  let tactical = null;
+  if(dyn && dynAlignsWithPlanTarget){
+    tactical = { itemType: INVENTORY_ITEM_TYPES.DYNAMITE, reason: dyn.reason, target: dyn.target };
+  } else if(minePassesGates){
+    tactical = {
+      itemType: INVENTORY_ITEM_TYPES.MINE,
+      reason: "selected_plan_landing_defense",
+      minePlan: mine,
+      expectedBenefit: mine.score / 20,
+      risk: 0.05,
+    };
+  } else if(dyn){
+    tactical = { itemType: INVENTORY_ITEM_TYPES.DYNAMITE, reason: dyn.reason, target: dyn.target };
   }
 
   const buffCandidate = pickAiSingleBuffForSelectedPlan({
@@ -25261,11 +25295,8 @@ function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options
     selectedPlan,
     availableCounts,
   });
-  if(buffCandidate){
-    result.push(buffCandidate);
-  }
 
-  return result.slice(0, maxItems);
+  return [tactical, buffCandidate].filter(Boolean).slice(0, maxItems);
 }
 
 function pickAiSingleBuffForSelectedPlan({ plane, color, context, selectedPlan, availableCounts }){
@@ -25312,6 +25343,51 @@ function pickAiSingleBuffForSelectedPlan({ plane, color, context, selectedPlan, 
     plane.activeTurnBuffs = previousBuffs;
     return unlocks;
   })();
+
+  // Harpy-strike: AI flies to its planned landing (attack/flag), then returns to home base in same turn
+  const harpyHome = fuelAvailable && typeof getBaseAnchor === "function"
+    ? getBaseAnchor(color)
+    : null;
+  const harpyStrikeOpportunity = fuelAvailable
+    && Number.isFinite(harpyHome?.x) && Number.isFinite(harpyHome?.y)
+    && Number.isFinite(selectedPlan?.landingX) && Number.isFinite(selectedPlan?.landingY)
+    && (() => {
+      const tgtX = selectedPlan.landingX;
+      const tgtY = selectedPlan.landingY;
+      const legOut = Math.hypot(tgtX - plane.x, tgtY - plane.y);
+      const legBack = Math.hypot(harpyHome.x - tgtX, harpyHome.y - tgtY);
+      const roundTrip = legOut + legBack;
+      const directHomeDist = Math.hypot(harpyHome.x - plane.x, harpyHome.y - plane.y);
+      // Collinearity gate: target must be roughly between plane and home (not a detour sideways)
+      if(roundTrip - directHomeDist > baseRangePx * 0.25) return false;
+      const previousBuffs = plane.activeTurnBuffs && typeof plane.activeTurnBuffs === "object"
+        ? { ...plane.activeTurnBuffs }
+        : {};
+      let boostedRangePx = baseRangePx;
+      if(applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, color, plane)){
+        boostedRangePx = getEffectiveFlightRangeCells(plane) * CELL_SIZE;
+      }
+      plane.activeTurnBuffs = previousBuffs;
+      const fitsWithFuel = roundTrip <= boostedRangePx * 1.02;
+      const fitsWithoutFuel = roundTrip <= baseRangePx * 1.02;
+      if(!fitsWithFuel || fitsWithoutFuel) return false;
+      const flagPickupIntent = goalText.includes("flag") || goalText.includes("pickup") || goalText.includes("cargo");
+      if(contactIntent || flagPickupIntent) return true;
+      if(typeof getImmediateResponseThreatMeta === "function"){
+        const baseThreat = getImmediateResponseThreatMeta(context, tgtX, tgtY, null);
+        const homeThreat = getImmediateResponseThreatMeta(context, harpyHome.x, harpyHome.y, null);
+        return (baseThreat?.count > 0) && ((homeThreat?.count ?? 0) < (baseThreat?.count ?? 0));
+      }
+      return false;
+    })();
+
+  if(harpyStrikeOpportunity){
+    return {
+      itemType: INVENTORY_ITEM_TYPES.FUEL,
+      reason: "harpy_strike_return",
+      harpyReturnTarget: { x: harpyHome.x, y: harpyHome.y, label: "harpy_return_home" },
+    };
+  }
 
   if(fuelNeededForRange){
     return { itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "selected_plan_range_critical" };
@@ -25555,6 +25631,9 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         executed = useInventoryItemOnPlane(aiColor, INVENTORY_ITEM_TYPES.FUEL, plannedMove.plane);
         if(executed){
           rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.FUEL);
+          if(candidate.harpyReturnTarget && Number.isFinite(candidate.harpyReturnTarget.x)){
+            plannedMove.aiFuelHarpyReturnTarget = { ...candidate.harpyReturnTarget };
+          }
         }
       } else if(itemType === INVENTORY_ITEM_TYPES.WINGS){
         executed = useInventoryItemOnPlane(aiColor, INVENTORY_ITEM_TYPES.WINGS, plannedMove.plane);
@@ -27172,6 +27251,15 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
         : plannedMove?.targetEnemy || null;
       const fallbackLandingPoint = getAiMoveLandingPoint(plannedMove);
       const candidateTargets = [];
+
+      const harpyReturnTarget = plannedMove?.aiFuelHarpyReturnTarget;
+      if(Number.isFinite(harpyReturnTarget?.x) && Number.isFinite(harpyReturnTarget?.y)){
+        candidateTargets.push({
+          label: harpyReturnTarget.label || "harpy_return_home",
+          x: harpyReturnTarget.x,
+          y: harpyReturnTarget.y,
+        });
+      }
 
       const tacticalFuelPoint = plannedMove?.aiFuelTacticalDecision?.targetContactPoint;
       if(Number.isFinite(tacticalFuelPoint?.x) && Number.isFinite(tacticalFuelPoint?.y)){
