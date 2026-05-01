@@ -25269,9 +25269,10 @@ function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options
     : !Number.isFinite(targetPoint?.x) ? true
     : Math.hypot(dyn.target.x - targetPoint.x, dyn.target.y - targetPoint.y) <= CELL_SIZE * 3;
 
-  const minePassesGates = !!mine && Number(mine.score ?? 0) >= 6
-    && typeof evaluatePostLaunchSafetyWithMine === "function"
-    && evaluatePostLaunchSafetyWithMine(context, plannedMoveLike, mine)?.beforeSafe === false;
+  // tryPlaceBlueDefensiveMine already requires a contesting enemy with clear lane to landing,
+  // so a returned plan implies the landing is meaningfully threatened. Score>=3 filters out the 0.5
+  // fallback case while accepting single-scenario placements (forcedBadPath=5.6, cutRoute=6.8, etc.).
+  const minePassesGates = !!mine && Number(mine.score ?? 0) >= 3;
 
   let tactical = null;
   if(dyn && dynAlignsWithPlanTarget){
@@ -25344,7 +25345,10 @@ function pickAiSingleBuffForSelectedPlan({ plane, color, context, selectedPlan, 
     return unlocks;
   })();
 
-  // Harpy-strike: AI flies to its planned landing (attack/flag), then returns to home base in same turn
+  // Harpy-strike: AI flies to its planned landing (attack/flag), then returns to home base in same turn.
+  // The fuel range constraint (round trip fits with fuel, not without) is the primary gate; we don't
+  // require strict collinearity because for at-home planes "roundTrip == 2*legOut" is the normal case
+  // and the U-turn is exactly the harpy concept.
   const harpyHome = fuelAvailable && typeof getBaseAnchor === "function"
     ? getBaseAnchor(color)
     : null;
@@ -25357,9 +25361,8 @@ function pickAiSingleBuffForSelectedPlan({ plane, color, context, selectedPlan, 
       const legOut = Math.hypot(tgtX - plane.x, tgtY - plane.y);
       const legBack = Math.hypot(harpyHome.x - tgtX, harpyHome.y - tgtY);
       const roundTrip = legOut + legBack;
-      const directHomeDist = Math.hypot(harpyHome.x - plane.x, harpyHome.y - plane.y);
-      // Collinearity gate: target must be roughly between plane and home (not a detour sideways)
-      if(roundTrip - directHomeDist > baseRangePx * 0.25) return false;
+      // Strike must be meaningful (not a tiny hop that would already fit without fuel)
+      if(legOut < baseRangePx * 0.3) return false;
       const previousBuffs = plane.activeTurnBuffs && typeof plane.activeTurnBuffs === "object"
         ? { ...plane.activeTurnBuffs }
         : {};
@@ -25401,7 +25404,7 @@ function pickAiSingleBuffForSelectedPlan({ plane, color, context, selectedPlan, 
     return { itemType: INVENTORY_ITEM_TYPES.WINGS, reason: "selected_plan_contact_margin" };
   }
 
-  if(fuelAvailable && fuelUnlocksBetterMove && usefulIntent && moveRangeRatio >= 0.55){
+  if(fuelAvailable && fuelUnlocksBetterMove && usefulIntent && moveRangeRatio >= 0.35){
     return { itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "selected_plan_range_support" };
   }
 
