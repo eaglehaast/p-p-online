@@ -37431,7 +37431,9 @@ function rebuildCollisionSurfaces(){
 // including the try/finally temporary-filter blocks at script.js:22704/22709 and 23893/23898).
 let pathClearCache = new Map();
 let pathClearCacheColliderRef = null;
-const PATH_CLEAR_CACHE_MAX_ENTRIES = 8000;
+// Per-turn AI work touches ~30k+ unique (x1,y1,x2,y2) pairs in worst case (mine evaluation +
+// trajectory simulation). At 8000 the cache cleared mid-turn and lost most of the benefit.
+const PATH_CLEAR_CACHE_MAX_ENTRIES = 32000;
 
 function isPathClear(x1,y1,x2,y2){
   if(pathClearCacheColliderRef !== colliders){
@@ -38097,15 +38099,22 @@ function buildPredictedPathForAim(plane, dragVector){
 }
 
 const AI_SIM_MAX_BOUNCES_DEFAULT = 2;
-const AI_SIM_COARSE_ANGLE_STEP_DEG = 6;
-const AI_SIM_FINE_ANGLE_STEP_DEG = 2;
-const AI_SIM_COARSE_SCALE_STEP = 0.08;
-const AI_SIM_FINE_SCALE_STEP = 0.03;
-const AI_SIM_SEED_COUNT_DEFAULT = 8;
-const AI_SIM_COARSE_POOL_DEFAULT = 20;
-const AI_SIM_MAX_ENEMIES_PER_PLANE_DEFAULT = 3;
-const AI_SIM_COMPLEXITY_SOFT_CAP = 24;
-const AI_SIM_COMPLEXITY_HARD_CAP = 48;
+// Coarsened from the previous tight defaults (6°/0.08/8 seeds): per the freeze diagnosis the AI
+// was running ~4100 trajectory simulations per (plane,enemy) pair, totalling 30k+ sims per turn
+// and stalling the main thread for hundreds of ms (sometimes seconds). Doubling the coarse step
+// cuts the coarse phase ~4x; halving seeds cuts the refinement phase ~2x. Combined ~8x speedup
+// at the cost of slightly less precise shot aiming — acceptable since the AI still has the
+// refinement pass for top candidates.
+const AI_SIM_COARSE_ANGLE_STEP_DEG = 12;
+const AI_SIM_FINE_ANGLE_STEP_DEG = 3;
+const AI_SIM_COARSE_SCALE_STEP = 0.16;
+const AI_SIM_FINE_SCALE_STEP = 0.05;
+const AI_SIM_SEED_COUNT_DEFAULT = 4;
+const AI_SIM_COARSE_POOL_DEFAULT = 12;
+const AI_SIM_MAX_ENEMIES_PER_PLANE_DEFAULT = 2;
+// Soft/hard caps now trigger earlier so multi-plane turns get aggressive throttling.
+const AI_SIM_COMPLEXITY_SOFT_CAP = 9;
+const AI_SIM_COMPLEXITY_HARD_CAP = 16;
 
 function buildAiShotSimulationQualityProfile(planeCount, enemyCount, options = {}){
   const normalizedPlaneCount = Number.isFinite(planeCount) ? Math.max(1, planeCount) : 1;
