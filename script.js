@@ -2984,13 +2984,26 @@ function applyItemToOwnPlane(type, color, plane){
       plane.activeTurnBuffs = {};
     }
 
+    // Per-plane visual feedback timestamp. Read by drawPlaneBuffAppliedFx in renderPlane.
+    // Inlined (not factored out) so tools that vm-extract this single function still work
+    // (see scripts/smoke-ai-prelaunch-*.js, which load applyItemToOwnPlane in isolation).
+    const nowForFx = (typeof performance !== "undefined" && typeof performance.now === "function")
+      ? performance.now()
+      : Date.now();
+
     if(normalizedType === INVENTORY_ITEM_TYPES.WINGS && plane.activeTurnBuffs[normalizedType] === true){
       // Повторное применение обновляет эффект до 1 хода (текущая модель баффов = флаг на ход).
       plane.activeTurnBuffs[normalizedType] = true;
+      plane.buffAppliedAtMs = nowForFx;
+      plane.buffAppliedType = normalizedType;
+      plane.buffAppliedDurationMs = 600;
       return true;
     }
 
     plane.activeTurnBuffs[normalizedType] = true;
+    plane.buffAppliedAtMs = nowForFx;
+    plane.buffAppliedType = normalizedType;
+    plane.buffAppliedDurationMs = 600;
     return true;
   }
 
@@ -3161,6 +3174,8 @@ function getPlaneHitContactPoint(attackerPlane, targetPlane){
 function clearPlaneActiveTurnBuffs(plane){
   if(!plane) return;
   plane.activeTurnBuffs = {};
+  plane.buffAppliedAtMs = null;
+  plane.buffAppliedType = null;
 }
 
 function getEffectiveFlightRangeCells(plane){
@@ -14394,6 +14409,11 @@ function resolveExplosionGifDurationMs(img, color) {
 
 /* Планирование хода ИИ */
 let aiMoveScheduled = false;
+// Set when issueAIMove fires; the gameDraw recovery branch (script.js around 39713-39723) uses
+// it to suppress immediate re-scheduling after a launch so we don't accidentally fire a second
+// move on a different plane while the first is still resolving.
+let aiMoveCooldownUntilMs = 0;
+const AI_MOVE_COOLDOWN_MS = 800;
 let aiPostInventoryLaunchTimeout = null;
 let turnCommitSequence = 0;
 let aiPlanningSnapshotCache = null;
@@ -14632,6 +14652,18 @@ function classifyAiMoveStageException(error, details = {}){
   return "unknown_technical_exception";
 }
 
+// Yield helper: lets one RAF pass so the render loop can paint between AI thinking phases.
+// Without these yields the AI's setTimeout callback runs in one synchronous block long enough
+// to freeze the idle plane sway. See plan §2 for the rationale.
+function aiYieldToNextFrame(){
+  if(typeof requestAnimationFrame !== "function") return Promise.resolve();
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+function isAiTurnStillApplicable(){
+  return !isGameOver && gameMode === "computer" && turnColors?.[turnIndex] === "blue";
+}
+
 function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayMs = AI_MOVE_INITIAL_DELAY_MS, planningContext = null){
   if(
     isGameOver
@@ -14651,7 +14683,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
   aiMoveScheduled = true;
   markAiTurnStarted("simple_step2_selector", startedAt);
 
-  setTimeout(() => {
+  setTimeout(async () => { try {
     if(
       isGameOver
       || gameMode !== "computer"
@@ -15144,6 +15176,10 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       selectedItemType: selectedPlan.itemType || null,
     });
 
+    // Yield 1: let one frame paint between plan selection and inventory enhancement.
+    await aiYieldToNextFrame();
+    if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
+
     const selectedPlanEnhancementSequence = typeof buildAiSelectedPlanInventoryEnhancements === "function"
       ? buildAiSelectedPlanInventoryEnhancements({
           ...aiExecutionContext,
@@ -15157,6 +15193,12 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     const selectedInventorySequence = Array.isArray(selectedPlan.selectedInventorySequence)
       ? selectedPlan.selectedInventorySequence.map((entry) => ({ ...entry }))
       : [];
+
+    // Yield 2: let one frame paint between enhancement and the actual launch (where dynamite/mine
+    // placements + buff applications + flight all happen). Combined with the post-inventory delay
+    // (issueAIMoveWithInventoryUsage), this gives the inventory consume FX a chance to play.
+    await aiYieldToNextFrame();
+    if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
 
     let launchResult = tryIssueAiMoveWithInventory({
       plane: selectedPlan.plane || launchReadyPlane,
@@ -15204,7 +15246,12 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       });
     }
     return;
-  }, safeDelayMs);
+  } catch(err){
+    aiMoveScheduled = false;
+    if(typeof console !== "undefined" && typeof console.warn === "function"){
+      console.warn("[ai] scheduler async error", err);
+    }
+  } }, safeDelayMs);
 
   return {
     ok: true,
@@ -23510,7 +23557,7 @@ function tryPlaceBlueDefensiveMine(context, plannedMove, options = {}){
   for(const enemy of enemies){
     const enemyToLanding = Math.hypot(enemy.x - landingPoint.x, enemy.y - landingPoint.y);
     const enemyEffectiveRangePx = getPlaneEffectiveRangePx(enemy);
-    const canContestSoon = enemyToLanding <= enemyEffectiveRangePx * 1.05;
+    const canContestSoon = enemyToLanding <= enemyEffectiveRangePx * 1.20;
     const hasClearLane = isPathClear(enemy.x, enemy.y, landingPoint.x, landingPoint.y);
     if(!canContestSoon || !hasClearLane) continue;
 
@@ -25272,7 +25319,7 @@ function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options
   // tryPlaceBlueDefensiveMine already requires a contesting enemy with clear lane to landing,
   // so a returned plan implies the landing is meaningfully threatened. Score>=3 filters out the 0.5
   // fallback case while accepting single-scenario placements (forcedBadPath=5.6, cutRoute=6.8, etc.).
-  const minePassesGates = !!mine && Number(mine.score ?? 0) >= 3;
+  const minePassesGates = !!mine && Number(mine.score ?? 0) >= 2;
 
   let tactical = null;
   if(dyn && dynAlignsWithPlanTarget){
@@ -37378,11 +37425,34 @@ function rebuildCollisionSurfaces(){
   ];
 }
 
+// isPathClear is on the AI hot path (called ~1500-2000 times per AI turn before this cache).
+// We memoize results keyed on integer-quantized coords. Cache auto-invalidates when the
+// `colliders` array reference changes (every callsite that mutates the list reassigns it,
+// including the try/finally temporary-filter blocks at script.js:22704/22709 and 23893/23898).
+let pathClearCache = new Map();
+let pathClearCacheColliderRef = null;
+const PATH_CLEAR_CACHE_MAX_ENTRIES = 8000;
+
 function isPathClear(x1,y1,x2,y2){
-  for(const collider of colliders){
-    if(checkLineIntersectionWithCollider(x1,y1,x2,y2,collider)) return false;
+  if(pathClearCacheColliderRef !== colliders){
+    pathClearCacheColliderRef = colliders;
+    pathClearCache.clear();
   }
-  return true;
+  const key = `${x1|0}_${y1|0}_${x2|0}_${y2|0}`;
+  const cached = pathClearCache.get(key);
+  if(cached !== undefined) return cached;
+  let result = true;
+  for(const collider of colliders){
+    if(checkLineIntersectionWithCollider(x1,y1,x2,y2,collider)){
+      result = false;
+      break;
+    }
+  }
+  if(pathClearCache.size >= PATH_CLEAR_CACHE_MAX_ENTRIES){
+    pathClearCache.clear();
+  }
+  pathClearCache.set(key, result);
+  return result;
 }
 function isPathClearExceptEdge(x1,y1,x2,y2, collider, edge){
   for(const entry of colliders){
@@ -39118,6 +39188,13 @@ function issueAIMove(plane, vx, vy, options = {}){
     };
   }
 
+  // Set the recovery-suppression cooldown right when a launch attempt enters the gate. Even if
+  // this attempt rejects (existing session, invalid, etc.), the cooldown is harmless — at worst
+  // the gameDraw recovery branch waits 800ms before re-scheduling, instead of immediately.
+  aiMoveCooldownUntilMs = ((typeof performance !== "undefined" && typeof performance.now === "function")
+    ? performance.now()
+    : Date.now()) + AI_MOVE_COOLDOWN_MS;
+
   if(aiLaunchSession){
     const sameTurn = Number.isFinite(aiLaunchSession.turnNumber)
       && Number.isFinite(aiRoundState?.turnNumber)
@@ -39716,6 +39793,7 @@ function gameDraw(){
     && flyingPoints.length === 0
     && !aiLaunchSession
     && !aiMoveScheduled
+    && performance.now() >= aiMoveCooldownUntilMs
   ){
     scheduleComputerMoveWithCargoGate(performance.now(), AI_MOVE_CARGO_RETRY_DELAY_MS, {
       trigger: "game_draw_tick_recovery",
@@ -40920,6 +40998,47 @@ function drawThinPlane(ctx2d, plane, glow = 0, invisibilityAlpha = null) {
   ctx2d.restore();
 }
 
+// Visual feedback when a buff is applied to a specific plane (crosshair / fuel / wings).
+// Mirrors the inventory consume FX (styles.css:386-406, 340ms scale-fade) on the plane itself,
+// so the player can see WHICH plane received the buff. Color-coded per buff type.
+const PLANE_BUFF_FX_COLORS = {
+  crosshair: "#ff5757",
+  fuel: "#ffaa33",
+  wings: "#33d2ff",
+  invisibility: "#9a7bff",
+};
+
+function drawPlaneBuffAppliedFx(ctx2d, plane, nowMs){
+  if(!ctx2d || !plane) return;
+  const startMs = plane.buffAppliedAtMs;
+  if(!Number.isFinite(startMs)) return;
+  const durationMs = Number.isFinite(plane.buffAppliedDurationMs) ? plane.buffAppliedDurationMs : 600;
+  const elapsed = nowMs - startMs;
+  if(elapsed < 0 || elapsed >= durationMs) return;
+  const progress = elapsed / durationMs;
+  const fade = Math.pow(1 - progress, 1.6);
+  const baseRadius = Math.max(PLANE_DRAW_W, PLANE_DRAW_H) * 0.55;
+  const radius = baseRadius * (1 + progress * 1.0);
+  const color = PLANE_BUFF_FX_COLORS[plane.buffAppliedType] || "#ffffff";
+  ctx2d.save();
+  ctx2d.lineWidth = 2.5;
+  ctx2d.strokeStyle = (typeof colorWithAlpha === "function")
+    ? colorWithAlpha(color, fade)
+    : color;
+  ctx2d.beginPath();
+  ctx2d.arc(plane.x, plane.y, radius, 0, Math.PI * 2);
+  ctx2d.stroke();
+  // Inner softer ring
+  ctx2d.lineWidth = 1.5;
+  ctx2d.strokeStyle = (typeof colorWithAlpha === "function")
+    ? colorWithAlpha(color, fade * 0.55)
+    : color;
+  ctx2d.beginPath();
+  ctx2d.arc(plane.x, plane.y, radius * 0.65, 0, Math.PI * 2);
+  ctx2d.stroke();
+  ctx2d.restore();
+}
+
 function drawArcadeRespawnShield(ctx2d, plane){
   if(!ctx2d || !plane) return;
   if(!isArcadePlaneRespawnEnabled()) return;
@@ -41101,6 +41220,7 @@ function drawPlanesAndTrajectories(){
     const renderGlow = (isArcadeModeActive || !p.isAlive || p.burning) ? 0 : p.glow;
     drawThinPlane(targetCtx, p, renderGlow, invisibilityAlpha);
     drawArcadeRespawnShield(targetCtx, p);
+    drawPlaneBuffAppliedFx(targetCtx, p, (typeof performance !== "undefined" && typeof performance.now === "function") ? performance.now() : Date.now());
 
     if(allowRangeLabel && handleCircle.active && handleCircle.pointRef === p){
       let vdx = handleCircle.shakyX - p.x;
