@@ -25387,11 +25387,6 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
     && !plane.activeTurnBuffs?.[INVENTORY_ITEM_TYPES.WINGS];
   const invisibilityAvailable = Number(availableCounts?.[INVENTORY_ITEM_TYPES.INVISIBILITY] ?? 0) > 0;
 
-  // Invisibility is exclusive — used only for repositioning, not combined with offensive buffs.
-  if(invisibilityAvailable && shouldAiUseInvisibilityForSelectedPlan(context, selectedPlan)){
-    return [{ itemType: INVENTORY_ITEM_TYPES.INVISIBILITY, reason: "selected_plan_tactical_survivability" }];
-  }
-
   const candidates = [];
 
   const fuelNeededForRange = fuelAvailable && moveRangeRatio >= 0.85;
@@ -25466,6 +25461,10 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
 
   if(wingsAvailable && (contactIntent || shouldAiUseWingsForSelectedPlan(context, selectedPlan))){
     candidates.push({ itemType: INVENTORY_ITEM_TYPES.WINGS, reason: "selected_plan_contact_margin" });
+  }
+
+  if(invisibilityAvailable && shouldAiUseInvisibilityForSelectedPlan(context, selectedPlan)){
+    candidates.push({ itemType: INVENTORY_ITEM_TYPES.INVISIBILITY, reason: "selected_plan_tactical_survivability" });
   }
 
   return candidates;
