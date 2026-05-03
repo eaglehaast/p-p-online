@@ -41186,11 +41186,11 @@ function drawPlanesAndTrajectories(){
     }
   }
 
-  const drawPlaneSegments = (ctx, plane) => {
+  const drawPlaneSegments = (ctx, plane, invisibilityAlpha = 1) => {
     ctx.save();
     for (const seg of plane.segments) {
       ctx.beginPath();
-      ctx.strokeStyle = colorWithAlpha(plane.color, PLANE_TRAIL_ALPHA);
+      ctx.strokeStyle = colorWithAlpha(plane.color, PLANE_TRAIL_ALPHA * invisibilityAlpha);
       ctx.lineWidth = seg.lineWidth || PLANE_TRAIL_LINE_WIDTH;
       ctx.moveTo(seg.x1, seg.y1);
       ctx.lineTo(seg.x2, seg.y2);
@@ -41221,7 +41221,7 @@ function drawPlanesAndTrajectories(){
     }
 
     // Allow wreck sprites to render after crash delay instead of exiting early.
-    drawPlaneSegments(targetCtx, p);
+    drawPlaneSegments(targetCtx, p, invisibilityAlpha);
     const glowTarget = showGlow && p.color === activeColor && p.isAlive && !p.burning ? 1 : 0;
     if(p.glow === undefined) p.glow = glowTarget;
     if(!p.isAlive || p.burning){
