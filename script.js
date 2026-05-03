@@ -1652,7 +1652,7 @@ const playerInventoryEffects = {
     invisibilityActive: false,
     invisibilityFeedbackActive: false,
     invisibilityFeedbackStartAtMs: 0,
-    invisibilityFeedbackStepDurationMs: 250,
+    invisibilityFeedbackStepDurationMs: 500,
     invisibilityQueuedAlpha: 1,
   },
   green: {
@@ -1661,7 +1661,7 @@ const playerInventoryEffects = {
     invisibilityActive: false,
     invisibilityFeedbackActive: false,
     invisibilityFeedbackStartAtMs: 0,
-    invisibilityFeedbackStepDurationMs: 250,
+    invisibilityFeedbackStepDurationMs: 500,
     invisibilityQueuedAlpha: 1,
   },
 };
