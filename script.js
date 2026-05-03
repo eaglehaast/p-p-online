@@ -25292,8 +25292,8 @@ function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options
   const color = plane?.color || selectedPlan?.color || context?.color || runtimeTurnColors?.[runtimeTurnIndex] || "blue";
   const availableCounts = evaluateInventoryState(color)?.counts || {};
   const maxItems = Number.isFinite(options?.maxItems)
-    ? Math.max(0, Math.min(2, Math.trunc(options.maxItems)))
-    : 2;
+    ? Math.max(0, Math.min(3, Math.trunc(options.maxItems)))
+    : 3;
 
   const landingX = Number.isFinite(selectedPlan?.landingX) ? selectedPlan.landingX : plane.x;
   const landingY = Number.isFinite(selectedPlan?.landingY) ? selectedPlan.landingY : plane.y;
@@ -25344,7 +25344,7 @@ function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options
     tactical = { itemType: INVENTORY_ITEM_TYPES.DYNAMITE, reason: dyn.reason, target: dyn.target };
   }
 
-  const buffCandidate = pickAiSingleBuffForSelectedPlan({
+  const buffCandidates = pickAiBuffsForSelectedPlan({
     plane,
     color,
     context,
@@ -25352,11 +25352,11 @@ function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options
     availableCounts,
   });
 
-  return [tactical, buffCandidate].filter(Boolean).slice(0, maxItems);
+  return [tactical, ...buffCandidates].filter(Boolean).slice(0, maxItems);
 }
 
-function pickAiSingleBuffForSelectedPlan({ plane, color, context, selectedPlan, availableCounts }){
-  if(!plane) return null;
+function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, availableCounts }){
+  if(!plane) return [];
 
   const baseRangeCells = getEffectiveFlightRangeCells(plane);
   const baseRangePx = Math.max(1, baseRangeCells * CELL_SIZE);
@@ -25386,6 +25386,13 @@ function pickAiSingleBuffForSelectedPlan({ plane, color, context, selectedPlan, 
   const wingsAvailable = Number(availableCounts?.[INVENTORY_ITEM_TYPES.WINGS] ?? 0) > 0
     && !plane.activeTurnBuffs?.[INVENTORY_ITEM_TYPES.WINGS];
   const invisibilityAvailable = Number(availableCounts?.[INVENTORY_ITEM_TYPES.INVISIBILITY] ?? 0) > 0;
+
+  // Invisibility is exclusive — used only for repositioning, not combined with offensive buffs.
+  if(invisibilityAvailable && shouldAiUseInvisibilityForSelectedPlan(context, selectedPlan)){
+    return [{ itemType: INVENTORY_ITEM_TYPES.INVISIBILITY, reason: "selected_plan_tactical_survivability" }];
+  }
+
+  const candidates = [];
 
   const fuelNeededForRange = fuelAvailable && moveRangeRatio >= 0.85;
   const fuelUnlocksBetterMove = fuelAvailable && (() => {
@@ -25439,35 +25446,33 @@ function pickAiSingleBuffForSelectedPlan({ plane, color, context, selectedPlan, 
       return false;
     })();
 
+  // Fuel is evaluated independently — it can stack with crosshair and/or wings.
   if(harpyStrikeOpportunity){
-    return {
+    candidates.push({
       itemType: INVENTORY_ITEM_TYPES.FUEL,
       reason: "harpy_strike_return",
       harpyReturnTarget: { x: harpyHome.x, y: harpyHome.y, label: "harpy_return_home" },
-    };
+    });
+  } else if(fuelNeededForRange){
+    candidates.push({ itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "selected_plan_range_critical" });
+  } else if(fuelAvailable && fuelUnlocksBetterMove && usefulIntent && moveRangeRatio >= 0.35){
+    candidates.push({ itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "selected_plan_range_support" });
   }
 
-  if(fuelNeededForRange){
-    return { itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "selected_plan_range_critical" };
-  }
-
+  // Crosshair and wings are evaluated independently and can combine with each other and with fuel.
   if(crosshairAvailable && (precisionRoute || shouldAiUseCrosshairForSelectedPlan(context, selectedPlan))){
-    return { itemType: INVENTORY_ITEM_TYPES.CROSSHAIR, reason: "selected_plan_precision_support" };
+    candidates.push({ itemType: INVENTORY_ITEM_TYPES.CROSSHAIR, reason: "selected_plan_precision_support" });
   }
 
   if(wingsAvailable && (contactIntent || shouldAiUseWingsForSelectedPlan(context, selectedPlan))){
-    return { itemType: INVENTORY_ITEM_TYPES.WINGS, reason: "selected_plan_contact_margin" };
+    candidates.push({ itemType: INVENTORY_ITEM_TYPES.WINGS, reason: "selected_plan_contact_margin" });
   }
 
-  if(fuelAvailable && fuelUnlocksBetterMove && usefulIntent && moveRangeRatio >= 0.35){
-    return { itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "selected_plan_range_support" };
-  }
+  return candidates;
+}
 
-  if(invisibilityAvailable && shouldAiUseInvisibilityForSelectedPlan(context, selectedPlan)){
-    return { itemType: INVENTORY_ITEM_TYPES.INVISIBILITY, reason: "selected_plan_tactical_survivability" };
-  }
-
-  return null;
+function pickAiSingleBuffForSelectedPlan(params){
+  return pickAiBuffsForSelectedPlan(params)[0] || null;
 }
 
 function findAiDynamitePathOpeningOpportunity(plane, color, context){
@@ -25635,14 +25640,6 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     INVENTORY_ITEM_TYPES.INVISIBILITY,
   ]);
 
-  function SINGLE_USE_BUFF_TYPES_PER_TURN_HAS_ANY(set){
-    if(!(set instanceof Set)) return false;
-    for(const buffType of SINGLE_USE_BUFF_TYPES_PER_TURN){
-      if(set.has(buffType)) return true;
-    }
-    return false;
-  }
-
   function rememberSingleUseBuffSpentThisTurn(itemType){
     if(SINGLE_USE_BUFF_TYPES_PER_TURN.has(itemType)){
       usedBuffTypesThisTurn.add(itemType);
@@ -25672,10 +25669,6 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     if(SINGLE_USE_BUFF_TYPES_PER_TURN.has(itemType)){
       if(usedBuffTypesThisTurn.has(itemType)){
         return { executed: false, reason: "selected_candidate_buff_already_used_this_turn", itemType };
-      }
-      const anyBuffSpent = SINGLE_USE_BUFF_TYPES_PER_TURN_HAS_ANY(usedBuffTypesThisTurn);
-      if(anyBuffSpent){
-        return { executed: false, reason: "selected_candidate_buff_limit_one_per_turn", itemType };
       }
     }
     let executed = false;
@@ -25778,7 +25771,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         ...plannedMove,
         color: aiColor,
       }, {
-        maxItems: 2,
+        maxItems: 3,
       });
 
   for(const step of selectedInventorySequence){
