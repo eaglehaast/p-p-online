@@ -2949,6 +2949,14 @@ function queueInvisibilityEffectForPlayer(color){
   state.invisibilityActive = false;
   state.invisibilityQueuedAlpha = 0.5;
   startPlayerInvisibilityFeedback(color);
+  const nowForFx = (typeof performance !== "undefined" && typeof performance.now === "function") ? performance.now() : Date.now();
+  points.forEach((plane) => {
+    if(plane?.color === color && plane.isAlive && !plane.burning){
+      plane.buffAppliedAtMs = nowForFx;
+      plane.buffAppliedType = "invisibility";
+      plane.buffAppliedDurationMs = 500;
+    }
+  });
   return true;
 }
 
@@ -41005,7 +41013,7 @@ const PLANE_BUFF_FX_COLORS = {
   crosshair: "#ff5757",
   fuel: "#ffaa33",
   wings: "#33d2ff",
-  invisibility: "#9a7bff",
+  invisibility: "#aaaaaa",
 };
 
 function drawPlaneBuffAppliedFx(ctx2d, plane, nowMs){
@@ -41020,8 +41028,12 @@ function drawPlaneBuffAppliedFx(ctx2d, plane, nowMs){
   const baseRadius = Math.max(PLANE_DRAW_W, PLANE_DRAW_H) * 0.55;
   const radius = baseRadius * (1 + progress * 1.0);
   const color = PLANE_BUFF_FX_COLORS[plane.buffAppliedType] || "#ffffff";
+  const isInvisibility = plane.buffAppliedType === "invisibility";
+  const outerWidth = isInvisibility ? 1.5 : 2.5;
+  const innerWidth = isInvisibility ? 1.0 : 1.5;
+  const innerAlphaScale = isInvisibility ? 0.4 : 0.55;
   ctx2d.save();
-  ctx2d.lineWidth = 2.5;
+  ctx2d.lineWidth = outerWidth;
   ctx2d.strokeStyle = (typeof colorWithAlpha === "function")
     ? colorWithAlpha(color, fade)
     : color;
@@ -41029,9 +41041,9 @@ function drawPlaneBuffAppliedFx(ctx2d, plane, nowMs){
   ctx2d.arc(plane.x, plane.y, radius, 0, Math.PI * 2);
   ctx2d.stroke();
   // Inner softer ring
-  ctx2d.lineWidth = 1.5;
+  ctx2d.lineWidth = innerWidth;
   ctx2d.strokeStyle = (typeof colorWithAlpha === "function")
-    ? colorWithAlpha(color, fade * 0.55)
+    ? colorWithAlpha(color, fade * innerAlphaScale)
     : color;
   ctx2d.beginPath();
   ctx2d.arc(plane.x, plane.y, radius * 0.65, 0, Math.PI * 2);
