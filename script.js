@@ -1652,7 +1652,7 @@ const playerInventoryEffects = {
     invisibilityActive: false,
     invisibilityFeedbackActive: false,
     invisibilityFeedbackStartAtMs: 0,
-    invisibilityFeedbackStepDurationMs: 320,
+    invisibilityFeedbackStepDurationMs: 250,
     invisibilityQueuedAlpha: 1,
   },
   green: {
@@ -1661,12 +1661,12 @@ const playerInventoryEffects = {
     invisibilityActive: false,
     invisibilityFeedbackActive: false,
     invisibilityFeedbackStartAtMs: 0,
-    invisibilityFeedbackStepDurationMs: 320,
+    invisibilityFeedbackStepDurationMs: 250,
     invisibilityQueuedAlpha: 1,
   },
 };
 
-const INVISIBILITY_FEEDBACK_ALPHA_PHASES = Object.freeze([0.5, 0.9, 0.5, 0.9]);
+const INVISIBILITY_FEEDBACK_ALPHA_PHASES = Object.freeze([0.5, 0.9]);
 const INVISIBILITY_FADE_DURATION_MS = 1000;
 const INVISIBILITY_MIN_ALPHA = 0;
 
