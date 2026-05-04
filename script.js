@@ -18212,6 +18212,11 @@ const AI_CLASS_SCORE_ANTI_SKEW_DENSE_DIRECT_PENALTY = 0.035;
 const AI_CLASS_SCORE_ANTI_SKEW_DENSE_RICOCHET_BONUS = -0.03;
 const AI_CLASS_SCORE_ANTI_SKEW_DENSE_GAP_BONUS = -0.015;
 const AI_CLASS_SCORE_TIE_EPSILON = 0.025;
+// Soft subsidy для aggressive-кандидата с preferMaximumLaunch=true в pickBestCandidate.
+// 0 — ИИ выбирает дальность сам; высокая дальность остаётся мягким предпочтением через
+// scale-floors в applyAiMinLaunchScale и через scoring длины в getAiCandidateClassComparableScore.
+// 0.000001 — восстанавливает прежний epsilon-bias принудительного максимума.
+const AI_PREFER_MAX_LAUNCH_BIAS = 0;
 const AI_DIRECT_LOW_PASSABILITY_CLEARANCE_THRESHOLD_PX = CELL_SIZE * 0.32;
 const AI_DIRECT_LOW_PASSABILITY_CORRIDOR_TIGHTNESS_THRESHOLD = 0.72;
 const AI_DIRECT_LOW_PASSABILITY_SCORE_PENALTY = MAX_DRAG_DISTANCE * 0.03;
@@ -35763,11 +35768,12 @@ function planPathToPoint(plane, tx, ty, options = {}){
       const candidateScore = Number.isFinite(qualityScore) ? qualityScore : fallbackScore;
       const candidatePrefersMaximumLaunch = candidate?.preferMaximumLaunch === true;
       const bestPrefersMaximumLaunch = bestCandidate?.preferMaximumLaunch === true;
-      if(candidateScore > bestScore + 0.000001
-        || (Math.abs(candidateScore - bestScore) <= 0.000001 && candidatePrefersMaximumLaunch !== bestPrefersMaximumLaunch && candidatePrefersMaximumLaunch)
-        || (Math.abs(candidateScore - bestScore) <= 0.000001
-          && candidatePrefersMaximumLaunch === bestPrefersMaximumLaunch
-          && (candidate.totalDist ?? Number.POSITIVE_INFINITY) < (bestCandidate?.totalDist ?? Number.POSITIVE_INFINITY))){
+      const candidateEff = candidatePrefersMaximumLaunch ? candidateScore + AI_PREFER_MAX_LAUNCH_BIAS : candidateScore;
+      const bestEff = bestPrefersMaximumLaunch ? bestScore + AI_PREFER_MAX_LAUNCH_BIAS : bestScore;
+      const strictlyBetter = candidateEff > bestEff + 0.000001;
+      const closeAndShorter = Math.abs(candidateEff - bestEff) <= 0.000001
+        && (candidate.totalDist ?? Number.POSITIVE_INFINITY) < (bestCandidate?.totalDist ?? Number.POSITIVE_INFINITY);
+      if(strictlyBetter || closeAndShorter){
         bestCandidate = candidate;
         bestScore = candidateScore;
       }
@@ -35894,7 +35900,6 @@ function planPathToPoint(plane, tx, ty, options = {}){
       });
       if(aggressiveMove){
         aggressiveMove.preferMaximumLaunch = true;
-        aggressiveMove.attackPowerRatio = 1;
         registerCandidate(aggressiveMove);
         logAiDecision("ai_prefer_maximum_launch_candidate", {
           planeId: plane?.id ?? null,
