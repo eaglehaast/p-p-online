@@ -16727,28 +16727,32 @@ function resolveAiLaunchTargetDistancePx(targetAim, fallbackDistancePx = MAX_DRA
   const requestedDistancePx = clamp(requestedPowerRatio * MAX_DRAG_DISTANCE, 0, MAX_DRAG_DISTANCE);
   const rawReason = targetAim?.powerAdjustmentReason || null;
   const reductionReason = classifyAiRangeReductionReason(rawReason);
-  const hasExplicitReductionRequest = targetAim?.intentionalPowerReduction === true && requestedDistancePx < maxDistancePx;
+  // Уважаем запрос планировщика — если AI явно хочет короче max, не затирать.
+  // Раньше требовался флаг intentionalPowerReduction, но он почти никогда
+  // не выставляется (только humanizer-шумом в одну сторону), поэтому AI
+  // фактически летел всегда на максимум.
+  const plannerRequestsShorter = requestedDistancePx < maxDistancePx - 0.5;
 
-  if(!hasExplicitReductionRequest || !reductionReason){
+  if(plannerRequestsShorter){
     return {
       baseTargetDistancePx: maxDistancePx,
-      targetDistancePx: maxDistancePx,
-      workingPullDistancePx: maxDistancePx,
-      rangeMode: "max_default",
-      reductionReason: null,
+      targetDistancePx: requestedDistancePx,
+      workingPullDistancePx: requestedDistancePx,
+      rangeMode: reductionReason ? "reduced_for_reason" : "respect_planner_request",
+      reductionReason: reductionReason || "respect_planner_request",
       reductionReasonSource: rawReason || null,
-      reductionApplied: false,
+      reductionApplied: true,
     };
   }
 
   return {
     baseTargetDistancePx: maxDistancePx,
-    targetDistancePx: requestedDistancePx,
-    workingPullDistancePx: requestedDistancePx,
-    rangeMode: "reduced_for_reason",
-    reductionReason,
-    reductionReasonSource: rawReason,
-    reductionApplied: true,
+    targetDistancePx: maxDistancePx,
+    workingPullDistancePx: maxDistancePx,
+    rangeMode: "max_default",
+    reductionReason: null,
+    reductionReasonSource: rawReason || null,
+    reductionApplied: false,
   };
 }
 
