@@ -20549,7 +20549,7 @@ function getAiCandidateAimQualitySnapshot(candidate){
     ? Math.max(0, Math.min(1.6, moveDistance / Math.max(1, MAX_DRAG_DISTANCE)))
     : null;
   const distanceQuality = Number.isFinite(travelDistanceRatio)
-    ? Math.max(0, 1 - Math.abs(0.9 - travelDistanceRatio) / Math.max(0.01, AI_OPENING_SOFT_RANDOM_AIM_DISTANCE_TOLERANCE_SCALE))
+    ? Math.max(0, 1 - Math.abs(0.6 - travelDistanceRatio) / Math.max(0.01, AI_OPENING_SOFT_RANDOM_AIM_DISTANCE_TOLERANCE_SCALE * 1.75))
     : null;
 
   const trajectoryQuality = Number.isFinite(routeQualityScore)
@@ -38306,7 +38306,7 @@ function scoreAISimulatedCandidate(simResult, options = {}){
   if(simResult.hitTarget){
     score += 1200;
   }
-  score -= simResult.travelDistance * 0.18;
+  score -= simResult.travelDistance * 0.3;
   score -= simResult.bounceCount * 12;
   const impactPenalty = options.target && simResult.impactPoint
     ? Math.hypot(options.target.x - simResult.impactPoint.x, options.target.y - simResult.impactPoint.y)
@@ -38335,7 +38335,10 @@ function enumerateAIShotCandidates(plane, target, options = {}){
       coarse.push({ sim, score, angle: a, scale: s });
     }
   }
-  coarse.sort((a, b) => b.score - a.score);
+  coarse.sort((a, b) => {
+    if(Math.abs(a.score - b.score) > 0.5) return b.score - a.score;
+    return a.scale - b.scale;
+  });
   const seeds = coarse.slice(0, seedCount);
   const refined = [];
   for(const seed of seeds){
@@ -38350,7 +38353,10 @@ function enumerateAIShotCandidates(plane, target, options = {}){
     }
   }
   const pool = [...coarse.slice(0, coarsePoolSize), ...refined];
-  pool.sort((a, b) => b.score - a.score);
+  pool.sort((a, b) => {
+    if(Math.abs(a.score - b.score) > 0.5) return b.score - a.score;
+    return a.scale - b.scale;
+  });
   return pool;
 }
 
