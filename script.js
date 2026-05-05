@@ -5542,6 +5542,12 @@ if (DEBUG_CHEATS && typeof window !== "undefined") {
   window.DEBUG_GIVE_OPPONENT_FUEL = (qty = 1) => giveOpponentFuelFromConsole(qty, "debug_give_opponent_fuel");
   window.DEBUG_GIVE_OPPONENT_ITEM = (itemType, qty = 1) => giveOpponentItemFromConsole(itemType, qty, "debug_give_opponent_item");
   window.DEBUG_CLEAR_INVENTORY = () => resetInventoryState();
+  window.DEBUG_GIVE_CURRENT_MINES = (qty = 10) => {
+    const color = turnColors[turnIndex];
+    if(!color){ console.warn("DEBUG_GIVE_CURRENT_MINES: no active turn color"); return; }
+    for(let i = 0; i < qty; i++) addItemToInventory(color, INVENTORY_ITEM_TYPES.MINE);
+    console.log(`DEBUG_GIVE_CURRENT_MINES: gave ${qty} mines to ${color}`);
+  };
 }
 
 const MAIN_MENU_ASSETS = [
