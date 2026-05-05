@@ -26327,8 +26327,7 @@ function resolveFinalAiLaunchMoveWithMineGate(plannedMove, context = {}, options
   const progressToGoalMeta = getProgressToStrategicTargetMeta();
   const clearlyLethalCrossing = Boolean(
     gateResult?.threatClass === "critical_forbidden"
-    && (gateResult?.threatMeta?.enemy?.landingThreat || gateResult?.threatMeta?.landingThreat)
-    && gateResult?.threatMeta?.pathHit
+    && (gateResult?.threatMeta?.pathHit || gateResult?.threatMeta?.landingThreat)
   );
   const canSoftPassModerateRisk = !clearlyLethalCrossing
     && gateResult?.ownMineThreat !== true
