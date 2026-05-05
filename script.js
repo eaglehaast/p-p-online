@@ -1652,7 +1652,7 @@ const playerInventoryEffects = {
     invisibilityActive: false,
     invisibilityFeedbackActive: false,
     invisibilityFeedbackStartAtMs: 0,
-    invisibilityFeedbackStepDurationMs: 320,
+    invisibilityFeedbackStepDurationMs: 500,
     invisibilityQueuedAlpha: 1,
   },
   green: {
@@ -1661,12 +1661,12 @@ const playerInventoryEffects = {
     invisibilityActive: false,
     invisibilityFeedbackActive: false,
     invisibilityFeedbackStartAtMs: 0,
-    invisibilityFeedbackStepDurationMs: 320,
+    invisibilityFeedbackStepDurationMs: 500,
     invisibilityQueuedAlpha: 1,
   },
 };
 
-const INVISIBILITY_FEEDBACK_ALPHA_PHASES = Object.freeze([0.5, 0.9, 0.5, 0.9]);
+const INVISIBILITY_FEEDBACK_ALPHA_PHASES = Object.freeze([0.5, 0.5]);
 const INVISIBILITY_FADE_DURATION_MS = 1000;
 const INVISIBILITY_MIN_ALPHA = 0;
 
@@ -2949,6 +2949,14 @@ function queueInvisibilityEffectForPlayer(color){
   state.invisibilityActive = false;
   state.invisibilityQueuedAlpha = 0.5;
   startPlayerInvisibilityFeedback(color);
+  const nowForFx = (typeof performance !== "undefined" && typeof performance.now === "function") ? performance.now() : Date.now();
+  points.forEach((plane) => {
+    if(plane?.color === color && plane.isAlive && !plane.burning){
+      plane.buffAppliedAtMs = nowForFx;
+      plane.buffAppliedType = "invisibility";
+      plane.buffAppliedDurationMs = 500;
+    }
+  });
   return true;
 }
 
@@ -16725,28 +16733,32 @@ function resolveAiLaunchTargetDistancePx(targetAim, fallbackDistancePx = MAX_DRA
   const requestedDistancePx = clamp(requestedPowerRatio * MAX_DRAG_DISTANCE, 0, MAX_DRAG_DISTANCE);
   const rawReason = targetAim?.powerAdjustmentReason || null;
   const reductionReason = classifyAiRangeReductionReason(rawReason);
-  const hasExplicitReductionRequest = targetAim?.intentionalPowerReduction === true && requestedDistancePx < maxDistancePx;
+  // Уважаем запрос планировщика — если AI явно хочет короче max, не затирать.
+  // Раньше требовался флаг intentionalPowerReduction, но он почти никогда
+  // не выставляется (только humanizer-шумом в одну сторону), поэтому AI
+  // фактически летел всегда на максимум.
+  const plannerRequestsShorter = requestedDistancePx < maxDistancePx - 0.5;
 
-  if(!hasExplicitReductionRequest || !reductionReason){
+  if(plannerRequestsShorter){
     return {
       baseTargetDistancePx: maxDistancePx,
-      targetDistancePx: maxDistancePx,
-      workingPullDistancePx: maxDistancePx,
-      rangeMode: "max_default",
-      reductionReason: null,
+      targetDistancePx: requestedDistancePx,
+      workingPullDistancePx: requestedDistancePx,
+      rangeMode: reductionReason ? "reduced_for_reason" : "respect_planner_request",
+      reductionReason: reductionReason || "respect_planner_request",
       reductionReasonSource: rawReason || null,
-      reductionApplied: false,
+      reductionApplied: true,
     };
   }
 
   return {
     baseTargetDistancePx: maxDistancePx,
-    targetDistancePx: requestedDistancePx,
-    workingPullDistancePx: requestedDistancePx,
-    rangeMode: "reduced_for_reason",
-    reductionReason,
-    reductionReasonSource: rawReason,
-    reductionApplied: true,
+    targetDistancePx: maxDistancePx,
+    workingPullDistancePx: maxDistancePx,
+    rangeMode: "max_default",
+    reductionReason: null,
+    reductionReasonSource: rawReason || null,
+    reductionApplied: false,
   };
 }
 
@@ -18210,6 +18222,11 @@ const AI_CLASS_SCORE_ANTI_SKEW_DENSE_DIRECT_PENALTY = 0.035;
 const AI_CLASS_SCORE_ANTI_SKEW_DENSE_RICOCHET_BONUS = -0.03;
 const AI_CLASS_SCORE_ANTI_SKEW_DENSE_GAP_BONUS = -0.015;
 const AI_CLASS_SCORE_TIE_EPSILON = 0.025;
+// Soft subsidy для aggressive-кандидата с preferMaximumLaunch=true в pickBestCandidate.
+// 0 — ИИ выбирает дальность сам; высокая дальность остаётся мягким предпочтением через
+// scale-floors в applyAiMinLaunchScale и через scoring длины в getAiCandidateClassComparableScore.
+// 0.000001 — восстанавливает прежний epsilon-bias принудительного максимума.
+const AI_PREFER_MAX_LAUNCH_BIAS = 0;
 const AI_DIRECT_LOW_PASSABILITY_CLEARANCE_THRESHOLD_PX = CELL_SIZE * 0.32;
 const AI_DIRECT_LOW_PASSABILITY_CORRIDOR_TIGHTNESS_THRESHOLD = 0.72;
 const AI_DIRECT_LOW_PASSABILITY_SCORE_PENALTY = MAX_DRAG_DISTANCE * 0.03;
@@ -20542,7 +20559,7 @@ function getAiCandidateAimQualitySnapshot(candidate){
     ? Math.max(0, Math.min(1.6, moveDistance / Math.max(1, MAX_DRAG_DISTANCE)))
     : null;
   const distanceQuality = Number.isFinite(travelDistanceRatio)
-    ? Math.max(0, 1 - Math.abs(0.9 - travelDistanceRatio) / Math.max(0.01, AI_OPENING_SOFT_RANDOM_AIM_DISTANCE_TOLERANCE_SCALE))
+    ? Math.max(0, 1 - Math.abs(0.6 - travelDistanceRatio) / Math.max(0.01, AI_OPENING_SOFT_RANDOM_AIM_DISTANCE_TOLERANCE_SCALE * 1.75))
     : null;
 
   const trajectoryQuality = Number.isFinite(routeQualityScore)
@@ -25290,8 +25307,8 @@ function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options
   const color = plane?.color || selectedPlan?.color || context?.color || runtimeTurnColors?.[runtimeTurnIndex] || "blue";
   const availableCounts = evaluateInventoryState(color)?.counts || {};
   const maxItems = Number.isFinite(options?.maxItems)
-    ? Math.max(0, Math.min(2, Math.trunc(options.maxItems)))
-    : 2;
+    ? Math.max(0, Math.min(3, Math.trunc(options.maxItems)))
+    : 3;
 
   const landingX = Number.isFinite(selectedPlan?.landingX) ? selectedPlan.landingX : plane.x;
   const landingY = Number.isFinite(selectedPlan?.landingY) ? selectedPlan.landingY : plane.y;
@@ -25342,7 +25359,7 @@ function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options
     tactical = { itemType: INVENTORY_ITEM_TYPES.DYNAMITE, reason: dyn.reason, target: dyn.target };
   }
 
-  const buffCandidate = pickAiSingleBuffForSelectedPlan({
+  const buffCandidates = pickAiBuffsForSelectedPlan({
     plane,
     color,
     context,
@@ -25350,11 +25367,11 @@ function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options
     availableCounts,
   });
 
-  return [tactical, buffCandidate].filter(Boolean).slice(0, maxItems);
+  return [tactical, ...buffCandidates].filter(Boolean).slice(0, maxItems);
 }
 
-function pickAiSingleBuffForSelectedPlan({ plane, color, context, selectedPlan, availableCounts }){
-  if(!plane) return null;
+function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, availableCounts }){
+  if(!plane) return [];
 
   const baseRangeCells = getEffectiveFlightRangeCells(plane);
   const baseRangePx = Math.max(1, baseRangeCells * CELL_SIZE);
@@ -25384,6 +25401,8 @@ function pickAiSingleBuffForSelectedPlan({ plane, color, context, selectedPlan, 
   const wingsAvailable = Number(availableCounts?.[INVENTORY_ITEM_TYPES.WINGS] ?? 0) > 0
     && !plane.activeTurnBuffs?.[INVENTORY_ITEM_TYPES.WINGS];
   const invisibilityAvailable = Number(availableCounts?.[INVENTORY_ITEM_TYPES.INVISIBILITY] ?? 0) > 0;
+
+  const candidates = [];
 
   const fuelNeededForRange = fuelAvailable && moveRangeRatio >= 0.85;
   const fuelUnlocksBetterMove = fuelAvailable && (() => {
@@ -25437,35 +25456,37 @@ function pickAiSingleBuffForSelectedPlan({ plane, color, context, selectedPlan, 
       return false;
     })();
 
+  // Fuel is evaluated independently — it can stack with crosshair and/or wings.
   if(harpyStrikeOpportunity){
-    return {
+    candidates.push({
       itemType: INVENTORY_ITEM_TYPES.FUEL,
       reason: "harpy_strike_return",
       harpyReturnTarget: { x: harpyHome.x, y: harpyHome.y, label: "harpy_return_home" },
-    };
+    });
+  } else if(fuelNeededForRange){
+    candidates.push({ itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "selected_plan_range_critical" });
+  } else if(fuelAvailable && fuelUnlocksBetterMove && usefulIntent && moveRangeRatio >= 0.35){
+    candidates.push({ itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "selected_plan_range_support" });
   }
 
-  if(fuelNeededForRange){
-    return { itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "selected_plan_range_critical" };
-  }
-
+  // Crosshair and wings are evaluated independently and can combine with each other and with fuel.
   if(crosshairAvailable && (precisionRoute || shouldAiUseCrosshairForSelectedPlan(context, selectedPlan))){
-    return { itemType: INVENTORY_ITEM_TYPES.CROSSHAIR, reason: "selected_plan_precision_support" };
+    candidates.push({ itemType: INVENTORY_ITEM_TYPES.CROSSHAIR, reason: "selected_plan_precision_support" });
   }
 
   if(wingsAvailable && (contactIntent || shouldAiUseWingsForSelectedPlan(context, selectedPlan))){
-    return { itemType: INVENTORY_ITEM_TYPES.WINGS, reason: "selected_plan_contact_margin" };
-  }
-
-  if(fuelAvailable && fuelUnlocksBetterMove && usefulIntent && moveRangeRatio >= 0.35){
-    return { itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "selected_plan_range_support" };
+    candidates.push({ itemType: INVENTORY_ITEM_TYPES.WINGS, reason: "selected_plan_contact_margin" });
   }
 
   if(invisibilityAvailable && shouldAiUseInvisibilityForSelectedPlan(context, selectedPlan)){
-    return { itemType: INVENTORY_ITEM_TYPES.INVISIBILITY, reason: "selected_plan_tactical_survivability" };
+    candidates.push({ itemType: INVENTORY_ITEM_TYPES.INVISIBILITY, reason: "selected_plan_tactical_survivability" });
   }
 
-  return null;
+  return candidates;
+}
+
+function pickAiSingleBuffForSelectedPlan(params){
+  return pickAiBuffsForSelectedPlan(params)[0] || null;
 }
 
 function findAiDynamitePathOpeningOpportunity(plane, color, context){
@@ -25633,14 +25654,6 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     INVENTORY_ITEM_TYPES.INVISIBILITY,
   ]);
 
-  function SINGLE_USE_BUFF_TYPES_PER_TURN_HAS_ANY(set){
-    if(!(set instanceof Set)) return false;
-    for(const buffType of SINGLE_USE_BUFF_TYPES_PER_TURN){
-      if(set.has(buffType)) return true;
-    }
-    return false;
-  }
-
   function rememberSingleUseBuffSpentThisTurn(itemType){
     if(SINGLE_USE_BUFF_TYPES_PER_TURN.has(itemType)){
       usedBuffTypesThisTurn.add(itemType);
@@ -25670,10 +25683,6 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
     if(SINGLE_USE_BUFF_TYPES_PER_TURN.has(itemType)){
       if(usedBuffTypesThisTurn.has(itemType)){
         return { executed: false, reason: "selected_candidate_buff_already_used_this_turn", itemType };
-      }
-      const anyBuffSpent = SINGLE_USE_BUFF_TYPES_PER_TURN_HAS_ANY(usedBuffTypesThisTurn);
-      if(anyBuffSpent){
-        return { executed: false, reason: "selected_candidate_buff_limit_one_per_turn", itemType };
       }
     }
     let executed = false;
@@ -25776,7 +25785,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         ...plannedMove,
         color: aiColor,
       }, {
-        maxItems: 2,
+        maxItems: 3,
       });
 
   for(const step of selectedInventorySequence){
@@ -26324,8 +26333,7 @@ function resolveFinalAiLaunchMoveWithMineGate(plannedMove, context = {}, options
   const progressToGoalMeta = getProgressToStrategicTargetMeta();
   const clearlyLethalCrossing = Boolean(
     gateResult?.threatClass === "critical_forbidden"
-    && (gateResult?.threatMeta?.enemy?.landingThreat || gateResult?.threatMeta?.landingThreat)
-    && gateResult?.threatMeta?.pathHit
+    && (gateResult?.threatMeta?.pathHit || gateResult?.threatMeta?.landingThreat)
   );
   const canSoftPassModerateRisk = !clearlyLethalCrossing
     && gateResult?.ownMineThreat !== true
@@ -35769,11 +35777,12 @@ function planPathToPoint(plane, tx, ty, options = {}){
       const candidateScore = Number.isFinite(qualityScore) ? qualityScore : fallbackScore;
       const candidatePrefersMaximumLaunch = candidate?.preferMaximumLaunch === true;
       const bestPrefersMaximumLaunch = bestCandidate?.preferMaximumLaunch === true;
-      if(candidateScore > bestScore + 0.000001
-        || (Math.abs(candidateScore - bestScore) <= 0.000001 && candidatePrefersMaximumLaunch !== bestPrefersMaximumLaunch && candidatePrefersMaximumLaunch)
-        || (Math.abs(candidateScore - bestScore) <= 0.000001
-          && candidatePrefersMaximumLaunch === bestPrefersMaximumLaunch
-          && (candidate.totalDist ?? Number.POSITIVE_INFINITY) < (bestCandidate?.totalDist ?? Number.POSITIVE_INFINITY))){
+      const candidateEff = candidatePrefersMaximumLaunch ? candidateScore + AI_PREFER_MAX_LAUNCH_BIAS : candidateScore;
+      const bestEff = bestPrefersMaximumLaunch ? bestScore + AI_PREFER_MAX_LAUNCH_BIAS : bestScore;
+      const strictlyBetter = candidateEff > bestEff + 0.000001;
+      const closeAndShorter = Math.abs(candidateEff - bestEff) <= 0.000001
+        && (candidate.totalDist ?? Number.POSITIVE_INFINITY) < (bestCandidate?.totalDist ?? Number.POSITIVE_INFINITY);
+      if(strictlyBetter || closeAndShorter){
         bestCandidate = candidate;
         bestScore = candidateScore;
       }
@@ -35900,7 +35909,6 @@ function planPathToPoint(plane, tx, ty, options = {}){
       });
       if(aggressiveMove){
         aggressiveMove.preferMaximumLaunch = true;
-        aggressiveMove.attackPowerRatio = 1;
         registerCandidate(aggressiveMove);
         logAiDecision("ai_prefer_maximum_launch_candidate", {
           planeId: plane?.id ?? null,
@@ -38307,7 +38315,7 @@ function scoreAISimulatedCandidate(simResult, options = {}){
   if(simResult.hitTarget){
     score += 1200;
   }
-  score -= simResult.travelDistance * 0.18;
+  score -= simResult.travelDistance * 0.3;
   score -= simResult.bounceCount * 12;
   const impactPenalty = options.target && simResult.impactPoint
     ? Math.hypot(options.target.x - simResult.impactPoint.x, options.target.y - simResult.impactPoint.y)
@@ -38336,7 +38344,10 @@ function enumerateAIShotCandidates(plane, target, options = {}){
       coarse.push({ sim, score, angle: a, scale: s });
     }
   }
-  coarse.sort((a, b) => b.score - a.score);
+  coarse.sort((a, b) => {
+    if(Math.abs(a.score - b.score) > 0.5) return b.score - a.score;
+    return a.scale - b.scale;
+  });
   const seeds = coarse.slice(0, seedCount);
   const refined = [];
   for(const seed of seeds){
@@ -38351,7 +38362,10 @@ function enumerateAIShotCandidates(plane, target, options = {}){
     }
   }
   const pool = [...coarse.slice(0, coarsePoolSize), ...refined];
-  pool.sort((a, b) => b.score - a.score);
+  pool.sort((a, b) => {
+    if(Math.abs(a.score - b.score) > 0.5) return b.score - a.score;
+    return a.scale - b.scale;
+  });
   return pool;
 }
 
@@ -41011,7 +41025,7 @@ const PLANE_BUFF_FX_COLORS = {
   crosshair: "#ff5757",
   fuel: "#ffaa33",
   wings: "#33d2ff",
-  invisibility: "#9a7bff",
+  invisibility: "#aaaaaa",
 };
 
 function drawPlaneBuffAppliedFx(ctx2d, plane, nowMs){
@@ -41026,8 +41040,12 @@ function drawPlaneBuffAppliedFx(ctx2d, plane, nowMs){
   const baseRadius = Math.max(PLANE_DRAW_W, PLANE_DRAW_H) * 0.55;
   const radius = baseRadius * (1 + progress * 1.0);
   const color = PLANE_BUFF_FX_COLORS[plane.buffAppliedType] || "#ffffff";
+  const isInvisibility = plane.buffAppliedType === "invisibility";
+  const outerWidth = isInvisibility ? 1.5 : 2.5;
+  const innerWidth = isInvisibility ? 1.0 : 1.5;
+  const innerAlphaScale = isInvisibility ? 0.4 : 0.55;
   ctx2d.save();
-  ctx2d.lineWidth = 2.5;
+  ctx2d.lineWidth = outerWidth;
   ctx2d.strokeStyle = (typeof colorWithAlpha === "function")
     ? colorWithAlpha(color, fade)
     : color;
@@ -41035,9 +41053,9 @@ function drawPlaneBuffAppliedFx(ctx2d, plane, nowMs){
   ctx2d.arc(plane.x, plane.y, radius, 0, Math.PI * 2);
   ctx2d.stroke();
   // Inner softer ring
-  ctx2d.lineWidth = 1.5;
+  ctx2d.lineWidth = innerWidth;
   ctx2d.strokeStyle = (typeof colorWithAlpha === "function")
-    ? colorWithAlpha(color, fade * 0.55)
+    ? colorWithAlpha(color, fade * innerAlphaScale)
     : color;
   ctx2d.beginPath();
   ctx2d.arc(plane.x, plane.y, radius * 0.65, 0, Math.PI * 2);
@@ -41180,11 +41198,11 @@ function drawPlanesAndTrajectories(){
     }
   }
 
-  const drawPlaneSegments = (ctx, plane) => {
+  const drawPlaneSegments = (ctx, plane, invisibilityAlpha = 1) => {
     ctx.save();
     for (const seg of plane.segments) {
       ctx.beginPath();
-      ctx.strokeStyle = colorWithAlpha(plane.color, PLANE_TRAIL_ALPHA);
+      ctx.strokeStyle = colorWithAlpha(plane.color, PLANE_TRAIL_ALPHA * invisibilityAlpha);
       ctx.lineWidth = seg.lineWidth || PLANE_TRAIL_LINE_WIDTH;
       ctx.moveTo(seg.x1, seg.y1);
       ctx.lineTo(seg.x2, seg.y2);
@@ -41215,7 +41233,7 @@ function drawPlanesAndTrajectories(){
     }
 
     // Allow wreck sprites to render after crash delay instead of exiting early.
-    drawPlaneSegments(targetCtx, p);
+    drawPlaneSegments(targetCtx, p, invisibilityAlpha);
     const glowTarget = showGlow && p.color === activeColor && p.isAlive && !p.burning ? 1 : 0;
     if(p.glow === undefined) p.glow = glowTarget;
     if(!p.isAlive || p.burning){
