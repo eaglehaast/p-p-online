@@ -14814,10 +14814,27 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       if(!Number.isFinite(desiredDistancePx) || desiredDistancePx <= 0.0001){
         return null;
       }
-      const scaledDistancePx = Math.min(maxFlightDistancePx, desiredDistancePx);
-      const scale = scaledDistancePx / desiredDistancePx;
-      const landingX = plane.x + (targetPoint.x - plane.x) * scale;
-      const landingY = plane.y + (targetPoint.y - plane.y) * scale;
+      let scaledDistancePx = Math.min(maxFlightDistancePx, desiredDistancePx);
+      let scale = scaledDistancePx / desiredDistancePx;
+      let landingX = plane.x + (targetPoint.x - plane.x) * scale;
+      let landingY = plane.y + (targetPoint.y - plane.y) * scale;
+      // Mine-aware clamp: isPathClear не учитывает мины. Если на пути мина —
+      // обрезать landing до безопасной точки перед миной.
+      if(typeof getMineThreatMetaForSegment === "function"){
+        const mineThreat = getMineThreatMetaForSegment(plane.x, plane.y, landingX, landingY, plane);
+        if(mineThreat?.pathHit && mineThreat.triggeringMine){
+          const m = mineThreat.triggeringMine;
+          const mineDistFromPlane = Math.hypot(m.x - plane.x, m.y - plane.y);
+          const triggerRadius = Number.isFinite(mineThreat.triggerRadius) ? mineThreat.triggerRadius : 0;
+          const safeDist = Math.max(0, mineDistFromPlane - triggerRadius - CELL_SIZE * 0.3);
+          if(safeDist > 0.0001 && safeDist < scaledDistancePx){
+            scaledDistancePx = safeDist;
+            scale = scaledDistancePx / desiredDistancePx;
+            landingX = plane.x + (targetPoint.x - plane.x) * scale;
+            landingY = plane.y + (targetPoint.y - plane.y) * scale;
+          }
+        }
+      }
       const pathClear = isPathClear(plane.x, plane.y, landingX, landingY);
       if(pathClear !== true){
         return null;
@@ -35889,33 +35906,12 @@ function planPathToPoint(plane, tx, ty, options = {}){
       }
     }
 
-    const shouldPreferMaximumLaunch = !isDefenseOrRetreatContext(reasonText)
-      && !isIntentionalShortControlContext(reasonText, baseScale)
-      && (isAttackContext(reasonText)
-        || isCombatGoal(options?.goalName || "")
-        || shouldPrioritizeDirectFinisher);
-
-    if(shouldPreferMaximumLaunch && baseScale < 0.999){
-      const aggressiveMove = buildMoveWithSafeDeviation(baseAngle, flightDistancePx, 1, {
-        moveType: "direct",
-        candidateClass: "direct",
-        decisionReason: `${options?.decisionReason || "direct"}__prefer_maximum_launch`,
-        goalName: options?.goalName || null,
-      });
-      if(aggressiveMove){
-        aggressiveMove.preferMaximumLaunch = true;
-        registerCandidate(aggressiveMove);
-        logAiDecision("ai_prefer_maximum_launch_candidate", {
-          planeId: plane?.id ?? null,
-          targetX: tx,
-          targetY: ty,
-          baseScale: Number(baseScale.toFixed(3)),
-          aggressiveScale: 1,
-          goalName: options?.goalName || null,
-          decisionReason: options?.decisionReason || null,
-        });
-      }
-    }
+    // Аггрессивный «scale=1» кандидат удалён: artifact в evaluateRouteMetrics
+    // (progressNorm = progress / distance, где distance = flightDistancePx)
+    // давал ему синтетический progressNorm = 1.0, и он почти всегда побеждал
+    // natural directMove по routeQualityScore. Теперь directMove с baseScale
+    // конкурирует честно. Если AI реально хочет полный max — baseScale сам
+    // даст это (когда target дальше maxFlight).
 
     const directMove = buildMoveWithSafeDeviation(baseAngle, dist, scale, {
       moveType: "direct",
