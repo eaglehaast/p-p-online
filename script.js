@@ -5545,7 +5545,7 @@ if (DEBUG_CHEATS && typeof window !== "undefined") {
   window.DEBUG_GIVE_CURRENT_MINES = (qty = 10) => {
     const color = turnColors[turnIndex];
     if(!color){ console.warn("DEBUG_GIVE_CURRENT_MINES: no active turn color"); return; }
-    for(let i = 0; i < qty; i++) addItemToInventory(color, INVENTORY_ITEM_TYPES.MINE);
+    giveItem(INVENTORY_ITEM_TYPES.MINE, qty, { silent: true, targetColor: color });
     console.log(`DEBUG_GIVE_CURRENT_MINES: gave ${qty} mines to ${color}`);
   };
 }
