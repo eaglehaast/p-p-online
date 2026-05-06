@@ -14819,7 +14819,8 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       let landingX = plane.x + (targetPoint.x - plane.x) * scale;
       let landingY = plane.y + (targetPoint.y - plane.y) * scale;
       // Mine-aware clamp: isPathClear не учитывает мины. Если на пути мина —
-      // обрезать landing до безопасной точки перед миной.
+      // либо обрезать до safeDist (если он полезен), либо попытаться
+      // объехать сбоку угловым перебором; иначе оставить direct (desperate).
       if(typeof getMineThreatMetaForSegment === "function"){
         const mineThreat = getMineThreatMetaForSegment(plane.x, plane.y, landingX, landingY, plane);
         if(mineThreat?.pathHit && mineThreat.triggeringMine){
@@ -14827,11 +14828,57 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           const mineDistFromPlane = Math.hypot(m.x - plane.x, m.y - plane.y);
           const triggerRadius = Number.isFinite(mineThreat.triggerRadius) ? mineThreat.triggerRadius : 0;
           const safeDist = Math.max(0, mineDistFromPlane - triggerRadius - CELL_SIZE * 0.3);
-          if(safeDist > 0.0001 && safeDist < scaledDistancePx){
+          // Полезный прогресс: ≥ 4 клеток или ≥ 40% желаемого. Иначе AI
+          // топчется на 1-2 клетки и противник собирает поле.
+          const minUsefulDist = Math.max(CELL_SIZE * 4, scaledDistancePx * 0.4);
+
+          if(safeDist >= minUsefulDist && safeDist < scaledDistancePx){
             scaledDistancePx = safeDist;
             scale = scaledDistancePx / desiredDistancePx;
             landingX = plane.x + (targetPoint.x - plane.x) * scale;
             landingY = plane.y + (targetPoint.y - plane.y) * scale;
+          } else if(safeDist < minUsefulDist){
+            // Clamp дал бы крошечный ход — попробовать угол выхода сбоку,
+            // прежде чем рисковать direct hit.
+            const baseDx = targetPoint.x - plane.x;
+            const baseDy = targetPoint.y - plane.y;
+            const escapeAnglesDeg = [15, -15, 30, -30, 45, -45, 60, -60];
+            let escape = null;
+            for(const deg of escapeAnglesDeg){
+              const rad = deg * Math.PI / 180;
+              const cosA = Math.cos(rad);
+              const sinA = Math.sin(rad);
+              const rdx = baseDx * cosA - baseDy * sinA;
+              const rdy = baseDx * sinA + baseDy * cosA;
+              const rmag = Math.hypot(rdx, rdy);
+              if(rmag <= 0.0001) continue;
+              const nx = rdx / rmag;
+              const ny = rdy / rmag;
+              const tryLandingX = plane.x + nx * scaledDistancePx;
+              const tryLandingY = plane.y + ny * scaledDistancePx;
+              if(isPathClear(plane.x, plane.y, tryLandingX, tryLandingY) !== true) continue;
+              const mt = getMineThreatMetaForSegment(plane.x, plane.y, tryLandingX, tryLandingY, plane);
+              if(!mt?.pathHit){
+                escape = { x: tryLandingX, y: tryLandingY };
+                break;
+              }
+              if(mt.triggeringMine){
+                const em = mt.triggeringMine;
+                const emDist = Math.hypot(em.x - plane.x, em.y - plane.y);
+                const emRadius = Number.isFinite(mt.triggerRadius) ? mt.triggerRadius : 0;
+                const emSafeDist = Math.max(0, emDist - emRadius - CELL_SIZE * 0.3);
+                if(emSafeDist >= minUsefulDist){
+                  escape = { x: plane.x + nx * emSafeDist, y: plane.y + ny * emSafeDist };
+                  break;
+                }
+              }
+            }
+            if(escape){
+              landingX = escape.x;
+              landingY = escape.y;
+            }
+            // Иначе — оставить original landing (desperate direct через
+            // мину). Лучше чем топтание на 1-2 клетки.
           }
         }
       }
