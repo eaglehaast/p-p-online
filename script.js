@@ -17273,10 +17273,25 @@ function buildPullPointForAiVector(plane, vx, vy){
     return { x: plane.x, y: plane.y };
   }
 
+  // Pull-distance должен быть пропорционален желаемой мощности — это обратная
+  // операция к computeLaunchVectorFromPull, где scale = dragDistance / MAX_DRAG_DISTANCE.
+  // Раньше здесь был хардкод MAX_DRAG_DISTANCE, из-за чего любые vx/vy от планировщика
+  // (даже короткие) преобразовывались в pull на полную дальность → powerRatio = 1.0
+  // → AI всегда летел на максимум, игнорируя выбор планировщика.
+  const effectiveRangePx = typeof getPlaneEffectiveRangePx === "function"
+    ? getPlaneEffectiveRangePx(plane)
+    : MAX_DRAG_DISTANCE;
+  const maxSpeed = Number.isFinite(effectiveRangePx) && effectiveRangePx > 0
+    && Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
+    ? effectiveRangePx / FIELD_FLIGHT_DURATION_SEC
+    : speed;
+  const powerRatio = maxSpeed > 0 ? Math.max(0, Math.min(1, speed / maxSpeed)) : 1;
+  const pullDistance = MAX_DRAG_DISTANCE * powerRatio;
+
   const pullAngle = Math.atan2(-vy, -vx);
   return {
-    x: plane.x + Math.cos(pullAngle) * MAX_DRAG_DISTANCE,
-    y: plane.y + Math.sin(pullAngle) * MAX_DRAG_DISTANCE,
+    x: plane.x + Math.cos(pullAngle) * pullDistance,
+    y: plane.y + Math.sin(pullAngle) * pullDistance,
   };
 }
 
