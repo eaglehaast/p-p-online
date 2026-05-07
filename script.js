@@ -14828,9 +14828,10 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           const mineDistFromPlane = Math.hypot(m.x - plane.x, m.y - plane.y);
           const triggerRadius = Number.isFinite(mineThreat.triggerRadius) ? mineThreat.triggerRadius : 0;
           const safeDist = Math.max(0, mineDistFromPlane - triggerRadius - CELL_SIZE * 0.3);
-          // Полезный прогресс: ≥ 4 клеток или ≥ 40% желаемого. Иначе AI
-          // топчется на 1-2 клетки и противник собирает поле.
-          const minUsefulDist = Math.max(CELL_SIZE * 4, scaledDistancePx * 0.4);
+          // Полезный прогресс: ≥ 5 клеток или ≥ 22% желаемого. Согласовано
+          // с финальным min-launch гейтом (CELL_SIZE * 5) и
+          // AI_MIN_LAUNCH_SCALE_DEFAULT (0.22).
+          const minUsefulDist = Math.max(CELL_SIZE * 5, scaledDistancePx * 0.22);
 
           if(safeDist >= minUsefulDist && safeDist < scaledDistancePx){
             scaledDistancePx = safeDist;
@@ -14842,7 +14843,13 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
             // прежде чем рисковать direct hit.
             const baseDx = targetPoint.x - plane.x;
             const baseDy = targetPoint.y - plane.y;
-            const escapeAnglesDeg = [15, -15, 30, -30, 45, -45, 60, -60];
+            // Полный круг: близкие к target идут первыми, чтобы не
+            // отклоняться сильно когда не нужно. Если впереди мины, но
+            // в противоположной стороне пусто — найдётся в ±90..±180°.
+            const escapeAnglesDeg = [
+              15, -15, 30, -30, 45, -45, 60, -60,
+              90, -90, 120, -120, 150, -150, 180,
+            ];
             let escape = null;
             for(const deg of escapeAnglesDeg){
               const rad = deg * Math.PI / 180;
@@ -14876,14 +14883,26 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
             if(escape){
               landingX = escape.x;
               landingY = escape.y;
+            } else {
+              // Полный 360° escape не нашёл выход. Не коммитим desperate
+              // direct через мину — пусть caller перейдёт к следующему
+              // плану. В конце цепочки getGuaranteedAnyLegalLaunch
+              // (script.js:32787) даст 360° сканер на максимальной scale.
+              return null;
             }
-            // Иначе — оставить original landing (desperate direct через
-            // мину). Лучше чем топтание на 1-2 клетки.
           }
         }
       }
       const pathClear = isPathClear(plane.x, plane.y, landingX, landingY);
       if(pathClear !== true){
+        return null;
+      }
+      // Минимум хода: AI не должен коммитить ходы короче 5 клеток (аналог
+      // player'ского `dragDistance < CELL_SIZE` гейта на script.js:17306).
+      // 5 клеток ≈ 17% от стандартного max range 30. Маленькие ходы =
+      // топтание, противник собирает поле быстрее.
+      const finalDistPx = Math.hypot(landingX - plane.x, landingY - plane.y);
+      if(finalDistPx < CELL_SIZE * 5){
         return null;
       }
       return {
