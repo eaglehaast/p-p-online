@@ -39270,22 +39270,26 @@ function issueAIMove(plane, vx, vy, options = {}){
   // Минимум хода: AI не должен коммитить ходы короче 5 клеток (аналог
   // player'ского `dragDistance < CELL_SIZE` гейта на script.js:17306).
   // Чокпойнт через который проходят ВСЕ источники AI launch — атаки,
-  // груз, центр, fallback'и. Caller (cascade fallback'ов) попробует
-  // следующий candidate. Mandatory fallback (`mandatoryScale = 0.35` в
-  // getMandatoryTurnMove) гарантирует ход ≥ 5 клеток как последний резерв.
+  // груз, центр, fallback'и. Реджектить здесь нельзя:
+  // runForcedNonSkipLastChance (script.js:14942-15007) не делает retry
+  // для ok:false и вызывает advanceTurn() — пропуск хода в игре не
+  // предусмотрен. Поэтому масштабируем vx/vy в том же направлении до
+  // 5 клеток. Это согласовано с mandatoryScale=0.35 fallback'ом
+  // (script.js:32890), который тоже коммитит без isPathClear.
   const candidateDistPx = Math.hypot(vx, vy) * FIELD_FLIGHT_DURATION_SEC;
-  if(candidateDistPx < CELL_SIZE * 5){
-    logAiDecision("ai_launch_below_min_distance_gate", {
+  const minDistPx = CELL_SIZE * 5;
+  if(candidateDistPx > 0.0001 && candidateDistPx < minDistPx){
+    const scaleFactor = minDistPx / candidateDistPx;
+    logAiDecision("ai_launch_min_distance_scaled_up", {
       planeId: plane?.id ?? null,
-      candidateDistPx: Number(candidateDistPx.toFixed(1)),
-      minDistancePx: CELL_SIZE * 5,
+      originalDistPx: Number(candidateDistPx.toFixed(1)),
+      scaledDistPx: Number(minDistPx.toFixed(1)),
+      scaleFactor: Number(scaleFactor.toFixed(3)),
       routeClass: options?.launchMeta?.routeClass || options?.routeClass || null,
       isFallbackMove: options?.isFallbackMove === true,
     });
-    return {
-      ok: false,
-      reason: "ai_launch_below_min_distance_gate",
-    };
+    vx *= scaleFactor;
+    vy *= scaleFactor;
   }
 
   // Set the recovery-suppression cooldown right when a launch attempt enters the gate. Even if
