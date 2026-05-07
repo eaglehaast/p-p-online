@@ -32832,6 +32832,9 @@ function getGuaranteedAnyLegalLaunch(context){
   );
   if (!fallbackAiPlanes.length) return null;
 
+  // Минимум 0.30 согласован с гейтом issueAIMove (CELL_SIZE * 5).
+  // 0.30 × 1200 px/s × 0.5s = 180px = 9 клеток (запас). При меньшей
+  // speedPxPerSec mandatory fallback (mandatoryScale = 0.35) подхватит.
   const strengthScales = [
     1.00,
     0.92,
@@ -32843,7 +32846,6 @@ function getGuaranteedAnyLegalLaunch(context){
     0.44,
     0.36,
     0.30,
-    0.24,
   ];
   const angleStep = Math.PI / 72;
   const halfTurnSteps = Math.floor(Math.PI / angleStep);
@@ -39282,6 +39284,27 @@ function issueAIMove(plane, vx, vy, options = {}){
       ok: false,
       reason: validation.reason || "invalid_move",
       message: validation.message || null,
+    };
+  }
+
+  // Минимум хода: AI не должен коммитить ходы короче 5 клеток (аналог
+  // player'ского `dragDistance < CELL_SIZE` гейта на script.js:17306).
+  // Чокпойнт через который проходят ВСЕ источники AI launch — атаки,
+  // груз, центр, fallback'и. Caller (cascade fallback'ов) попробует
+  // следующий candidate. Mandatory fallback (`mandatoryScale = 0.35` в
+  // getMandatoryTurnMove) гарантирует ход ≥ 5 клеток как последний резерв.
+  const candidateDistPx = Math.hypot(vx, vy) * FIELD_FLIGHT_DURATION_SEC;
+  if(candidateDistPx < CELL_SIZE * 5){
+    logAiDecision("ai_launch_below_min_distance_gate", {
+      planeId: plane?.id ?? null,
+      candidateDistPx: Number(candidateDistPx.toFixed(1)),
+      minDistancePx: CELL_SIZE * 5,
+      routeClass: options?.launchMeta?.routeClass || options?.routeClass || null,
+      isFallbackMove: options?.isFallbackMove === true,
+    });
+    return {
+      ok: false,
+      reason: "ai_launch_below_min_distance_gate",
     };
   }
 
