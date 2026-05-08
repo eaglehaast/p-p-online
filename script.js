@@ -14674,6 +14674,29 @@ function aiYieldToNextFrame(){
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
 
+// Cooperative budgeted yield: hot AI loops (shot simulation, per-plane / per-enemy iteration)
+// call this between work units. If we've been computing for longer than the frame budget,
+// pause for one RAF so the renderer can paint. Otherwise it's a near-zero-cost no-op that
+// resolves on the microtask queue without surrendering the frame. The budget is reset when
+// the AI scheduler enters its async block and after every forced RAF wait.
+const AI_COOP_FRAME_BUDGET_MS = 6;
+let aiCoopBudgetStartedAt = 0;
+function aiCoopResetBudget(){
+  aiCoopBudgetStartedAt = (typeof performance !== "undefined" && typeof performance.now === "function")
+    ? performance.now()
+    : Date.now();
+}
+async function aiCoopMaybeYield(){
+  const nowMs = (typeof performance !== "undefined" && typeof performance.now === "function")
+    ? performance.now()
+    : Date.now();
+  if(nowMs - aiCoopBudgetStartedAt < AI_COOP_FRAME_BUDGET_MS) return;
+  await aiYieldToNextFrame();
+  aiCoopBudgetStartedAt = (typeof performance !== "undefined" && typeof performance.now === "function")
+    ? performance.now()
+    : Date.now();
+}
+
 function isAiTurnStillApplicable(){
   return !isGameOver && gameMode === "computer" && turnColors?.[turnIndex] === "blue";
 }
@@ -14715,6 +14738,8 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       });
       return;
     }
+
+    aiCoopResetBudget();
 
     const launchReadyPlanes = points.filter((plane) => {
       if(!plane || plane.color !== "blue") return false;
@@ -15020,10 +15045,10 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     const scoredPlans = [];
     const aiColor = turnColors?.[turnIndex] || "blue";
 
-    const buildSimulatedEnemyCandidate = (plane, enemy, maxFlightDistancePx, simulationOptions = {}) => {
+    const buildSimulatedEnemyCandidate = async (plane, enemy, maxFlightDistancePx, simulationOptions = {}) => {
         if(!plane || !enemy) return null;
         if(!Number.isFinite(maxFlightDistancePx) || maxFlightDistancePx <= 0) return null;
-        const simulated = findBestSimulatedShot(plane, enemy, {
+        const simulated = await findBestSimulatedShotAsync(plane, enemy, {
           maxBounces: 3,
           coarseAngleStepDeg: simulationOptions.coarseAngleStepDeg,
           fineAngleStepDeg: simulationOptions.fineAngleStepDeg,
@@ -15032,7 +15057,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           seedCount: simulationOptions.seedCount,
           coarsePoolSize: simulationOptions.coarsePoolSize,
           refineScaleWindow: simulationOptions.refineScaleWindow,
-        });
+        }, aiCoopMaybeYield);
         const sim = simulated?.sim;
         if(!sim || !sim.hitTarget) return null;
         const launchScale = Math.max(0.1, Math.min(1, Number.isFinite(sim.launchVector?.scale) ? sim.launchVector.scale : 1));
@@ -15064,7 +15089,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         };
       };
 
-    const buildBestPlanForPlane = (launchReadyPlane) => {
+    const buildBestPlanForPlane = async (launchReadyPlane) => {
       const effectiveFlightRangeCells = getEffectiveFlightRangeCells(launchReadyPlane);
       const maxFlightDistancePx = Math.max(1, effectiveFlightRangeCells * CELL_SIZE);
       const nearestCargo = readyCargo
@@ -15099,17 +15124,18 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         .sort((a, b) => a.enemyDistance - b.enemyDistance)
         .slice(0, shotSimulationQuality.maxEnemyCandidatesPerPlane);
 
-      const attackCandidates = prioritizedEnemiesForPlane
-        .map((entry) => {
-          const move = buildSimulatedEnemyCandidate(launchReadyPlane, entry.enemy, maxFlightDistancePx, shotSimulationQuality);
-          if(!move) return null;
-          return { enemy: entry.enemy, move, enemyDistance: entry.enemyDistance, score: move.score };
-        })
-        .filter(Boolean)
-        .sort((a, b) => {
-          if(Math.abs((a.score ?? 0) - (b.score ?? 0)) > 0.0001) return (b.score ?? 0) - (a.score ?? 0);
-          return a.enemyDistance - b.enemyDistance;
-        });
+      const attackCandidates = [];
+      for(const entry of prioritizedEnemiesForPlane){
+        await aiCoopMaybeYield();
+        if(!isAiTurnStillApplicable()) return null;
+        const move = await buildSimulatedEnemyCandidate(launchReadyPlane, entry.enemy, maxFlightDistancePx, shotSimulationQuality);
+        if(!move) continue;
+        attackCandidates.push({ enemy: entry.enemy, move, enemyDistance: entry.enemyDistance, score: move.score });
+      }
+      attackCandidates.sort((a, b) => {
+        if(Math.abs((a.score ?? 0) - (b.score ?? 0)) > 0.0001) return (b.score ?? 0) - (a.score ?? 0);
+        return a.enemyDistance - b.enemyDistance;
+      });
       const bestAttackCandidate = attackCandidates[0] || null;
 
       let selectedPlan = bestAttackCandidate?.move || null;
@@ -15201,7 +15227,9 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     };
 
     for(const launchReadyPlane of launchReadyPlanes){
-      const baseCandidate = buildBestPlanForPlane(launchReadyPlane);
+      await aiCoopMaybeYield();
+      if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
+      const baseCandidate = await buildBestPlanForPlane(launchReadyPlane);
       if(!baseCandidate) continue;
       baseCandidate.color = aiColor;
       scoredPlans.push(baseCandidate);
@@ -15276,6 +15304,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     // Yield 1: let one frame paint between plan selection and inventory enhancement.
     await aiYieldToNextFrame();
     if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
+    aiCoopResetBudget();
 
     const selectedPlanEnhancementSequence = typeof buildAiSelectedPlanInventoryEnhancements === "function"
       ? buildAiSelectedPlanInventoryEnhancements({
@@ -15296,6 +15325,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     // (issueAIMoveWithInventoryUsage), this gives the inventory consume FX a chance to play.
     await aiYieldToNextFrame();
     if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
+    aiCoopResetBudget();
 
     let launchResult = tryIssueAiMoveWithInventory({
       plane: selectedPlan.plane || launchReadyPlane,
@@ -38464,6 +38494,72 @@ function findBestSimulatedShot(plane, target, options = {}){
     coarsePoolSize: options.coarsePoolSize,
     refineScaleWindow: options.refineScaleWindow,
   });
+  return selectBestAICandidate(candidates);
+}
+
+// Async-yielding twin of enumerateAIShotCandidates. Same logic and same numerical result;
+// only differs by awaiting `yieldHook` between the angle rows of the coarse pass and between
+// seeds of the refine pass. Used by the AI scheduler so the ~1000+ trajectory simulations
+// don't block a frame. The sync version above is preserved verbatim for legacy callers
+// (planPathToPoint chain) so we don't have to cascade async through ~20 sync call sites.
+async function enumerateAIShotCandidatesAsync(plane, target, options = {}, yieldHook = null){
+  const coarseAngleStep = (Number.isFinite(options.coarseAngleStepDeg) ? options.coarseAngleStepDeg : AI_SIM_COARSE_ANGLE_STEP_DEG) * Math.PI / 180;
+  const fineAngleStep = (Number.isFinite(options.fineAngleStepDeg) ? options.fineAngleStepDeg : AI_SIM_FINE_ANGLE_STEP_DEG) * Math.PI / 180;
+  const coarseScaleStep = Number.isFinite(options.coarseScaleStep) ? options.coarseScaleStep : AI_SIM_COARSE_SCALE_STEP;
+  const fineScaleStep = Number.isFinite(options.fineScaleStep) ? options.fineScaleStep : AI_SIM_FINE_SCALE_STEP;
+  const seedCount = Number.isFinite(options.seedCount) ? Math.max(1, Math.floor(options.seedCount)) : AI_SIM_SEED_COUNT_DEFAULT;
+  const coarsePoolSize = Number.isFinite(options.coarsePoolSize) ? Math.max(1, Math.floor(options.coarsePoolSize)) : AI_SIM_COARSE_POOL_DEFAULT;
+  const refineScaleWindow = Number.isFinite(options.refineScaleWindow) ? Math.max(0.02, options.refineScaleWindow) : 0.12;
+  const targetAngle = Math.atan2(target.y - plane.y, target.x - plane.x);
+  const targetDistance = Math.hypot(target.x - plane.x, target.y - plane.y);
+  const coarse = [];
+
+  for(let a = targetAngle - Math.PI; a <= targetAngle + Math.PI + 1e-6; a += coarseAngleStep){
+    for(let s = 0.2; s <= 1.0001; s += coarseScaleStep){
+      const sim = simulateAIShot(plane, { dx: Math.cos(a), dy: Math.sin(a), scale: s }, { target, maxBounces: options.maxBounces });
+      if(!sim) continue;
+      const score = scoreAISimulatedCandidate(sim, { target, targetDistance });
+      coarse.push({ sim, score, angle: a, scale: s });
+    }
+    if(yieldHook) await yieldHook();
+  }
+  coarse.sort((a, b) => {
+    if(Math.abs(a.score - b.score) > 0.5) return b.score - a.score;
+    return a.scale - b.scale;
+  });
+  const seeds = coarse.slice(0, seedCount);
+  const refined = [];
+  for(const seed of seeds){
+    for(let da = -coarseAngleStep; da <= coarseAngleStep + 1e-6; da += fineAngleStep){
+      for(let ds = -refineScaleWindow; ds <= refineScaleWindow + 1e-6; ds += fineScaleStep){
+        const a = seed.angle + da;
+        const s = Math.max(0.1, Math.min(1, seed.scale + ds));
+        const sim = simulateAIShot(plane, { dx: Math.cos(a), dy: Math.sin(a), scale: s }, { target, maxBounces: options.maxBounces });
+        if(!sim) continue;
+        refined.push({ sim, score: scoreAISimulatedCandidate(sim, { target, targetDistance }), angle: a, scale: s });
+      }
+    }
+    if(yieldHook) await yieldHook();
+  }
+  const pool = [...coarse.slice(0, coarsePoolSize), ...refined];
+  pool.sort((a, b) => {
+    if(Math.abs(a.score - b.score) > 0.5) return b.score - a.score;
+    return a.scale - b.scale;
+  });
+  return pool;
+}
+
+async function findBestSimulatedShotAsync(plane, target, options = {}, yieldHook = null){
+  const candidates = await enumerateAIShotCandidatesAsync(plane, target, {
+    maxBounces: options.maxBounces ?? AI_SIM_MAX_BOUNCES_DEFAULT,
+    coarseAngleStepDeg: options.coarseAngleStepDeg,
+    fineAngleStepDeg: options.fineAngleStepDeg,
+    coarseScaleStep: options.coarseScaleStep,
+    fineScaleStep: options.fineScaleStep,
+    seedCount: options.seedCount,
+    coarsePoolSize: options.coarsePoolSize,
+    refineScaleWindow: options.refineScaleWindow,
+  }, yieldHook);
   return selectBestAICandidate(candidates);
 }
 
