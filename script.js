@@ -14813,6 +14813,15 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         selectedInventorySequence: Array.isArray(plan.selectedInventorySequence)
           ? plan.selectedInventorySequence.map((entry) => ({ ...entry }))
           : [],
+        // Fuel-replan metadata propagated from scheduler-side async replan (see ~15330 below).
+        // When set, issueAIMoveWithInventoryUsage's FUEL replan section skips its sync work and
+        // only runs the post-replan invariants (forceFuelMoveToMaxRange, dynamite intent check).
+        fuelReplanned: plan.fuelReplanned === true,
+        fuelReplannedTarget: plan.fuelReplannedTarget || null,
+        aiFuelReplanMeta: plan.aiFuelReplanMeta || null,
+        routeMetrics: plan.routeMetrics || null,
+        ricochetMeta: plan.ricochetMeta || null,
+        specialPromotionMeta: plan.specialPromotionMeta || null,
       };
 
       try {
@@ -15327,6 +15336,95 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       ? selectedPlan.selectedInventorySequence.map((entry) => ({ ...entry }))
       : [];
 
+    // Scheduler-side FUEL replan: when the chosen inventory sequence applies FUEL, the existing
+    // logic inside issueAIMoveWithInventoryUsage (script.js:~27761-28033) would synchronously
+    // call buildFuelReplannedMove() — up to 5 targets × 3 route classes via planPathToPoint, each
+    // potentially triggering a heavy findBestSimulatedShot — right before the aim animation
+    // starts. That ~500ms sync block is the dominant freeze when AI uses inventory. We move the
+    // replan here so it runs async with cooperative yields between targets, and mark the result
+    // so the sync section becomes a no-op (it still runs forceFuelMoveToMaxRange and the dynamite
+    // intent check; we let it do that after fuel is actually applied).
+    const willApplyFuel = selectedInventorySequence.some((entry) => (
+      entry?.itemType === INVENTORY_ITEM_TYPES.FUEL
+    ));
+    if(willApplyFuel
+      && typeof buildFuelReplannedMoveAsync === "function"
+      && selectedPlan.plane
+      && Number.isFinite(selectedPlan.landingX)
+      && Number.isFinite(selectedPlan.landingY)){
+      const fuelReplanDurationSec = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
+        ? FIELD_FLIGHT_DURATION_SEC
+        : 1;
+      const fuelReplanInitialVx = (selectedPlan.landingX - selectedPlan.plane.x) / fuelReplanDurationSec;
+      const fuelReplanInitialVy = (selectedPlan.landingY - selectedPlan.plane.y) / fuelReplanDurationSec;
+      const fuelReplanPlannedMoveLike = {
+        plane: selectedPlan.plane,
+        vx: fuelReplanInitialVx,
+        vy: fuelReplanInitialVy,
+        goalName: selectedPlan.goalName || aiRoundState?.currentGoal || "fuel_replan",
+        decisionReason: selectedPlan.decisionReason || "fuel_replan",
+        routeClass: selectedPlan.routeClass || "direct",
+        targetEnemy: selectedPlan.targetEnemy || null,
+        targetEnemySnapshot: selectedPlan.targetEnemySnapshot || null,
+        aiFuelHarpyReturnTarget: selectedPlan.aiFuelHarpyReturnTarget
+          || selectedInventorySequence.find((entry) => entry?.harpyReturnTarget)?.harpyReturnTarget
+          || null,
+        aiFuelTacticalDecision: selectedPlan.aiFuelTacticalDecision || null,
+      };
+      const fuelReplanResult = await buildFuelReplannedMoveAsync(
+        selectedPlan.plane,
+        fuelReplanPlannedMoveLike,
+        aiExecutionContext,
+      );
+      if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
+      if(fuelReplanResult?.move){
+        const replannedMove = fuelReplanResult.move;
+        const replannedTotalDist = Number.isFinite(replannedMove.totalDist)
+          ? replannedMove.totalDist
+          : Math.hypot(replannedMove.vx || 0, replannedMove.vy || 0) * fuelReplanDurationSec;
+        const originalDist = Number.isFinite(selectedPlan.planDistance)
+          ? selectedPlan.planDistance
+          : Math.hypot(fuelReplanInitialVx, fuelReplanInitialVy) * fuelReplanDurationSec;
+        // Critical: tryIssueAiMoveWithInventory recomputes vx/vy from (landingX - plane.x)/dur,
+        // so we must overwrite landingX/landingY (not just vx/vy) for the replan to take effect.
+        selectedPlan.landingX = selectedPlan.plane.x + replannedMove.vx * fuelReplanDurationSec;
+        selectedPlan.landingY = selectedPlan.plane.y + replannedMove.vy * fuelReplanDurationSec;
+        selectedPlan.planDistance = replannedTotalDist;
+        selectedPlan.score = Number.isFinite(replannedMove.score) ? replannedMove.score : selectedPlan.score;
+        selectedPlan.routeClass = replannedMove.routeClass || selectedPlan.routeClass;
+        selectedPlan.routeMetrics = replannedMove.routeMetrics || selectedPlan.routeMetrics || null;
+        selectedPlan.ricochetMeta = replannedMove.ricochetMeta || selectedPlan.ricochetMeta || null;
+        selectedPlan.specialPromotionMeta = replannedMove.specialPromotionMeta || selectedPlan.specialPromotionMeta || null;
+        selectedPlan.bounceCount = Number.isFinite(replannedMove.bounceCount)
+          ? replannedMove.bounceCount
+          : selectedPlan.bounceCount;
+        selectedPlan.predictedOutcome = replannedMove.predictedOutcome || selectedPlan.predictedOutcome;
+        selectedPlan.fuelReplanned = true;
+        selectedPlan.fuelReplannedTarget = {
+          source: fuelReplanResult.target?.label || null,
+          x: Number.isFinite(fuelReplanResult.target?.x) ? Number(fuelReplanResult.target.x.toFixed(1)) : null,
+          y: Number.isFinite(fuelReplanResult.target?.y) ? Number(fuelReplanResult.target.y.toFixed(1)) : null,
+        };
+        selectedPlan.aiFuelReplanMeta = {
+          originalDist: Number.isFinite(originalDist) ? Number(originalDist.toFixed(1)) : null,
+          replannedDist: Number.isFinite(replannedTotalDist) ? Number(replannedTotalDist.toFixed(1)) : null,
+          targetSource: fuelReplanResult.target?.label || null,
+        };
+        logAiDecision("fuel_launch_replanned", {
+          planeId: selectedPlan.plane?.id ?? null,
+          sourceTarget: fuelReplanResult.target?.label || null,
+          originalDist: Number.isFinite(originalDist) ? Number(originalDist.toFixed(1)) : null,
+          replannedDist: Number.isFinite(replannedTotalDist) ? Number(replannedTotalDist.toFixed(1)) : null,
+          landingPoint: {
+            x: Number(selectedPlan.landingX.toFixed(1)),
+            y: Number(selectedPlan.landingY.toFixed(1)),
+          },
+          source: "scheduler_fuel_replan",
+        });
+        aiCoopResetBudget();
+      }
+    }
+
     // Yield 2: let one frame paint between enhancement and the actual launch (where dynamite/mine
     // placements + buff applications + flight all happen). Combined with the post-inventory delay
     // (issueAIMoveWithInventoryUsage), this gives the inventory consume FX a chance to play.
@@ -15353,6 +15451,12 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       routeClass: selectedPlan.routeClass || "direct",
       selectedInventorySequence,
       preAppliedInventoryItemType: selectedPlan.preAppliedInventoryItemType || null,
+      fuelReplanned: selectedPlan.fuelReplanned === true,
+      fuelReplannedTarget: selectedPlan.fuelReplannedTarget || null,
+      aiFuelReplanMeta: selectedPlan.aiFuelReplanMeta || null,
+      routeMetrics: selectedPlan.routeMetrics || null,
+      ricochetMeta: selectedPlan.ricochetMeta || null,
+      specialPromotionMeta: selectedPlan.specialPromotionMeta || null,
     }, "simple_step2_selector");
 
     if(!launchResult?.ok){
@@ -21834,6 +21938,166 @@ function planPathWithSpecialRouteProbe(plane, tx, ty, options = {}){
   return bestCandidate;
 }
 
+// Async-yielding twin of planPathWithSpecialRouteProbe. Identical logic; the only difference is
+// `await aiCoopMaybeYield()` before each planPathToPoint call so the renderer can paint between
+// route-class evaluations. Used by the scheduler-side fuel replan path; the sync version above
+// stays for the ~20 sync callsites of the underlying planPathToPoint chain.
+// KEEP IN SYNC with planPathWithSpecialRouteProbe when route-class scoring rules change.
+async function planPathWithSpecialRouteProbeAsync(plane, tx, ty, options = {}){
+  if(!plane || !Number.isFinite(tx) || !Number.isFinite(ty)) return null;
+
+  const goalName = typeof options?.goalName === "string" ? options.goalName : "";
+  const isEmergencyGoal = isEmergencyDefenseStageGoal(goalName || aiRoundState?.currentGoal);
+  const decisionReasonBase = typeof options?.decisionReason === "string" && options.decisionReason.trim().length > 0
+    ? options.decisionReason.trim()
+    : (goalName || "path_probe");
+  const specialRouteClasses = Array.isArray(options?.specialRouteClasses)
+    ? options.specialRouteClasses.filter((classKey) => classKey === "gap" || classKey === "ricochet")
+    : [];
+  const specialAttemptBudget = Number.isFinite(options?.specialAttemptBudget)
+    ? Math.max(0, Math.floor(options.specialAttemptBudget))
+    : 2;
+  const compareLabel = Array.isArray(options?.compareLabel) ? options.compareLabel : [goalName || "route_probe"];
+  const passThroughOptions = {
+    ...options,
+  };
+  delete passThroughOptions.specialRouteClasses;
+  delete passThroughOptions.specialAttemptBudget;
+  delete passThroughOptions.compareLabel;
+
+  const attemptRouteClasses = isEmergencyGoal
+    ? ["direct"]
+    : ["direct", ...specialRouteClasses.slice(0, specialAttemptBudget)];
+
+  let bestCandidate = null;
+  for(const routeClass of attemptRouteClasses){
+    await aiCoopMaybeYield();
+    if(!isAiTurnStillApplicable()) return bestCandidate;
+    const move = planPathToPoint(plane, tx, ty, {
+      ...passThroughOptions,
+      goalName,
+      decisionReason: routeClass === "direct"
+        ? decisionReasonBase
+        : `${decisionReasonBase}_${routeClass}`,
+      routeClass,
+    });
+    if(!move) continue;
+
+    const candidate = applyLossCompressionScoreAdjustments({
+      plane,
+      ...move,
+      routeClass,
+      score: getAiPlaneAdjustedScore(move.totalDist, plane),
+      idleTurns: getAiPlaneIdleTurns(plane),
+    }, options?.context || null);
+    if(compareAiCandidateByScoreAndRotation(candidate, bestCandidate, [...compareLabel, routeClass])){
+      bestCandidate = candidate;
+    }
+  }
+
+  return bestCandidate;
+}
+
+// Async-yielding twin of the nested buildFuelReplannedMove() inside issueAIMoveWithInventoryUsage
+// (script.js:~27871). Used by the scheduler before launch to compute the FUEL-boosted replan
+// asynchronously so the renderer can paint between target-route evaluations. Identical target
+// enumeration and selection rules; only difference is `await aiCoopMaybeYield()` between targets,
+// plus calls planPathWithSpecialRouteProbeAsync (which yields between route classes).
+// Caller passes `plannedMoveLike` carrying plane/vx/vy/goalName/decisionReason/routeClass/
+// targetEnemy/targetEnemySnapshot/aiFuelHarpyReturnTarget/aiFuelTacticalDecision.
+// KEEP IN SYNC with the nested sync buildFuelReplannedMove when target priority rules change.
+async function buildFuelReplannedMoveAsync(plane, plannedMoveLike, context){
+  if(!plane) return null;
+  if(typeof planPathWithSpecialRouteProbeAsync !== "function") return null;
+
+  const latestTargetEnemy = plannedMoveLike?.targetEnemy?.id
+    ? findActualPlaneById(plannedMoveLike.targetEnemy.id) || plannedMoveLike.targetEnemy
+    : plannedMoveLike?.targetEnemy || null;
+  const fallbackLandingPoint = getAiMoveLandingPoint(plannedMoveLike);
+  const candidateTargets = [];
+
+  const harpyReturnTarget = plannedMoveLike?.aiFuelHarpyReturnTarget;
+  if(Number.isFinite(harpyReturnTarget?.x) && Number.isFinite(harpyReturnTarget?.y)){
+    candidateTargets.push({
+      label: harpyReturnTarget.label || "harpy_return_home",
+      x: harpyReturnTarget.x,
+      y: harpyReturnTarget.y,
+    });
+  }
+
+  const tacticalFuelPoint = plannedMoveLike?.aiFuelTacticalDecision?.targetContactPoint;
+  if(Number.isFinite(tacticalFuelPoint?.x) && Number.isFinite(tacticalFuelPoint?.y)){
+    candidateTargets.push({
+      label: "fuel_tactical_contact",
+      x: tacticalFuelPoint.x,
+      y: tacticalFuelPoint.y,
+    });
+  }
+
+  if(Number.isFinite(latestTargetEnemy?.x) && Number.isFinite(latestTargetEnemy?.y)){
+    candidateTargets.push({
+      label: "target_enemy",
+      x: latestTargetEnemy.x,
+      y: latestTargetEnemy.y,
+    });
+  }
+
+  const targetSnapshot = plannedMoveLike?.targetEnemySnapshot;
+  if(Number.isFinite(targetSnapshot?.x) && Number.isFinite(targetSnapshot?.y)){
+    candidateTargets.push({
+      label: "target_snapshot",
+      x: targetSnapshot.x,
+      y: targetSnapshot.y,
+    });
+  }
+
+  if(Number.isFinite(fallbackLandingPoint?.x) && Number.isFinite(fallbackLandingPoint?.y)){
+    candidateTargets.push({
+      label: "original_landing",
+      x: fallbackLandingPoint.x,
+      y: fallbackLandingPoint.y,
+    });
+  }
+
+  const uniqueTargets = [];
+  const seenTargetKeys = new Set();
+  for(const target of candidateTargets){
+    const key = `${Math.round(target.x)}:${Math.round(target.y)}`;
+    if(seenTargetKeys.has(key)) continue;
+    seenTargetKeys.add(key);
+    uniqueTargets.push(target);
+  }
+
+  for(const target of uniqueTargets){
+    await aiCoopMaybeYield();
+    if(!isAiTurnStillApplicable()) return null;
+    const replanned = await planPathWithSpecialRouteProbeAsync(plane, target.x, target.y, {
+      goalName: plannedMoveLike?.goalName || aiRoundState?.currentGoal || "fuel_replan",
+      decisionReason: `${plannedMoveLike?.decisionReason || "fuel_replan"}_fuel_replan`,
+      targetEnemy: latestTargetEnemy,
+      enemy: plannedMoveLike?.enemy || latestTargetEnemy,
+      context,
+      routeClass: plannedMoveLike?.routeClass,
+      compareLabel: [
+        "fuel_replan",
+        plannedMoveLike?.goalName || "",
+        plannedMoveLike?.plane?.id || "",
+        target.label,
+      ],
+      useFuelBoostedRange: true,
+    });
+
+    if(replanned && Number.isFinite(replanned.vx) && Number.isFinite(replanned.vy)){
+      return {
+        move: replanned,
+        target,
+      };
+    }
+  }
+
+  return null;
+}
+
 function findFallbackRicochetPreparationMove(plane, enemy){
   if(!plane || !enemy) return null;
   const preparationMove = findSafePreparationMoveForAttack(plane, enemy);
@@ -27900,8 +28164,21 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       return null;
     }
 
-    const fuelReplanResult = buildFuelReplannedMove();
-    if(fuelReplanResult?.move){
+    // If the scheduler already ran an async-yielded fuel replan (script.js:~15338, see
+    // buildFuelReplannedMoveAsync), plannedMove.fuelReplanned is true and vx/vy/landingPoint
+    // already reflect the boosted-range plan. Skip the heavy sync replan and the else-branch
+    // fallback scaling — only run the post-replan invariants below.
+    const fuelReplanAlreadyDone = plannedMove.fuelReplanned === true;
+    const fuelReplanResult = fuelReplanAlreadyDone ? null : buildFuelReplannedMove();
+    if(fuelReplanAlreadyDone){
+      logAiDecision("fuel_launch_replan_skip_already_done", {
+        planeId: plannedMove?.plane?.id ?? null,
+        replannedTarget: plannedMove.fuelReplannedTarget?.source || null,
+        source: "scheduler_fuel_replan_propagated",
+      });
+      forceFuelMoveToMaxRange();
+      ensureDynamiteIntentStillMatchesPlannedMove("after_scheduler_fuel_replan");
+    } else if(fuelReplanResult?.move){
       const originalDist = Number.isFinite(plannedMove.totalDist)
         ? plannedMove.totalDist
         : Math.hypot(plannedMove.vx || 0, plannedMove.vy || 0) * FIELD_FLIGHT_DURATION_SEC;
