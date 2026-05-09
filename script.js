@@ -23192,49 +23192,15 @@ function buildMinePlacementBetweenObjectiveAndThreat(objectivePoint, threatEnemy
   return placement;
 }
 
-function evaluateMineEnabledFlagPickupContinuation(plane, pickupPoint, options = {}){
-  const baseline = options?.baselineContinuation || evaluateFlagPickupContinuation(plane, pickupPoint, options);
-  const enemies = Array.isArray(options?.enemies) ? options.enemies.filter(Boolean) : [];
-  if(!baseline || baseline.hasSafeEscape === true || enemies.length === 0) return null;
-
-  const threateningEnemies = enemies
-    .filter((enemy) => Number.isFinite(enemy?.x) && Number.isFinite(enemy?.y))
-    .map((enemy) => ({
-      enemy,
-      responseDistance: Math.hypot(enemy.x - pickupPoint.x, enemy.y - pickupPoint.y),
-    }))
-    .filter((entry) => entry.responseDistance <= getPlaneEffectiveRangePx(entry.enemy) * 1.15 && isPathClear(entry.enemy.x, entry.enemy.y, pickupPoint.x, pickupPoint.y))
-    .sort((a, b) => a.responseDistance - b.responseDistance)
-    .slice(0, 2);
-  if(threateningEnemies.length === 0) return null;
-
-  let bestScenario = null;
-  for(const threatEntry of threateningEnemies){
-    const placement = buildMinePlacementBetweenObjectiveAndThreat(pickupPoint, threatEntry.enemy);
-    if(!placement || !isMinePlacementValid(placement)) continue;
-    const mineImpact = evaluateBlueMinePlacementImpact(options?.context || { enemies }, { plane, landingPoint: pickupPoint }, placement, {
-      fallbackScenario: "mine_between_objective_and_threat",
-    }) || null;
-    const afterContinuation = withTemporaryBlueMine(placement, () => evaluateFlagPickupContinuation(plane, pickupPoint, options));
-    if(!afterContinuation) continue;
-    const improvedEscape = baseline.hasSafeEscape !== true && afterContinuation.hasSafeEscape === true;
-    const improvedReturn = baseline.hasReturnRoute !== true && afterContinuation.hasReturnRoute === true;
-    if(!improvedEscape && !improvedReturn) continue;
-    const scenario = {
-      placement,
-      threatEnemyId: threatEntry.enemy?.id ?? null,
-      threatDistance: Number(threatEntry.responseDistance.toFixed(1)),
-      before: baseline,
-      after: afterContinuation,
-      mineImpact,
-      statusReason: afterContinuation.hasReturnRoute ? "mine_enables_flag_pickup" : "mine_enables_flag_pickup",
-      logReason: "mine_enables_flag_pickup",
-    };
-    if(!bestScenario || ((scenario.after.hasReturnRoute?1:0)+(scenario.after.hasSafeEscape?1:0)+(scenario.mineImpact?.score||0)) > ((bestScenario.after.hasReturnRoute?1:0)+(bestScenario.after.hasSafeEscape?1:0)+(bestScenario.mineImpact?.score||0))){
-      bestScenario = scenario;
-    }
-  }
-  return bestScenario;
+function evaluateMineEnabledFlagPickupContinuation(/* plane, pickupPoint, options */){
+  // DISABLED: AI mine placement decision is intentionally turned off (see the
+  // note in buildAiSelectedPlanInventoryEnhancements). This helper used to call
+  // the heavy evaluateBlueMinePlacementImpact on every threat-enemy candidate
+  // during flag-pickup analysis, which contributed to the per-turn freeze when
+  // AI had a mine in inventory. With AI mine usage off, returning null is
+  // equivalent to "no mine help available" — the calling flag-pickup logic
+  // already has a non-mine fallback path.
+  return null;
 }
 
 function evaluatePostLaunchSafetyWithMine(context, plannedMove, minePlan){
@@ -23325,6 +23291,13 @@ function evaluateMineFriendlyRisk(context, plannedMove, placement, options = {})
   };
 }
 
+// DORMANT: AI mine placement decision is currently disabled. This evaluator and the helpers that
+// call it (tryPlaceBlueDefensiveMine, tryPlaceBlueDefensiveMineAsync, tryPlaceBlueMineNearEnemyBase,
+// buildAiMineSeriesPlan, evaluatePostLaunchSafetyWithMine, buildMinePlacementBetweenObjectiveAndThreat,
+// evaluateMineFriendlyRisk) are kept in source for future reference but have no live caller. The
+// per-candidate cost (~50-200ms × ~10 candidates = the dominant per-turn freeze when AI had a mine
+// in inventory, even though AI's score gate almost always rejected the result) is what motivated
+// switching off the mechanic. See note in buildAiSelectedPlanInventoryEnhancements.
 function evaluateBlueMinePlacementImpact(context, plannedMove, placement, options = {}){
   const plane = plannedMove?.plane;
   const landingPoint = typeof getAiMoveLandingPoint === "function" ? getAiMoveLandingPoint(plannedMove) : null;
@@ -23747,6 +23720,7 @@ function evaluateBlueMinePlacementImpact(context, plannedMove, placement, option
   };
 }
 
+// DORMANT — see note above evaluateBlueMinePlacementImpact.
 function tryPlaceBlueMineNearEnemyBase(context = null, plannedMove = null, options = {}){
   const aiItemSpendStyle = getAiItemSpendStyle(context, plannedMove, options);
   const styleConfig = getMineRiskStyleConfig(aiItemSpendStyle);
@@ -23910,6 +23884,7 @@ function tryPlaceBlueMineNearEnemyBase(context = null, plannedMove = null, optio
   return true;
 }
 
+// DORMANT — see note above evaluateBlueMinePlacementImpact.
 function tryPlaceBlueDefensiveMine(context, plannedMove, options = {}){
   const aiItemSpendStyle = getAiItemSpendStyle(context, plannedMove, options);
   const styleConfig = getMineRiskStyleConfig(aiItemSpendStyle);
@@ -24200,6 +24175,7 @@ function tryPlaceBlueDefensiveMine(context, plannedMove, options = {}){
 // pre-launch inventory enhancement plan; the sync version above is preserved for `maybeUseInventory
 // BeforeLaunch`'s rare fallback path and for any other sync callers (smoke tests rely on the sync
 // signature). KEEP THE TWO BODIES IN SYNC when the underlying scoring rules change.
+// DORMANT — see note above evaluateBlueMinePlacementImpact.
 async function tryPlaceBlueDefensiveMineAsync(context, plannedMove, options = {}){
   const aiItemSpendStyle = getAiItemSpendStyle(context, plannedMove, options);
   const styleConfig = getMineRiskStyleConfig(aiItemSpendStyle);
@@ -25453,6 +25429,7 @@ function getAiInventorySeriesIntent(goalName){
   };
 }
 
+// DORMANT — see note above evaluateBlueMinePlacementImpact.
 function buildAiMineSeriesPlan(context, plannedMove, options = {}){
   const intent = getAiInventorySeriesIntent(plannedMove?.goalName || aiRoundState?.currentGoal || "");
   if(!intent.isDefense && !intent.isAttack && !intent.isFlag) return null;
@@ -26019,39 +25996,31 @@ function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options
 
   // Resolve tactical slot: DYNAMITE xor MINE (prefer dynamite when plan-aligned)
   const dynamiteCharges = Number(availableCounts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0);
-  const mineCharges = Number(availableCounts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0);
+  // NOTE: AI mine placement decision is intentionally disabled. The evaluator
+  // (tryPlaceBlueDefensiveMine → evaluateBlueMinePlacementImpact) was the dominant
+  // sync freeze every turn AI had a mine in inventory, but in practice its score
+  // gate almost always rejects, so AI never actually placed mines. Disabling the
+  // call eliminates the freeze without changing observable behavior. Mine entity
+  // physics (placeMine, mine triggers, drawMines) remain untouched. The placement
+  // mechanic will be re-implemented separately. Helpers are left in place for now
+  // (see "DORMANT" markers near tryPlaceBlueDefensiveMine and friends).
 
   const dyn = dynamiteCharges > 0 ? findAiDynamitePathOpeningOpportunity(plane, color, context) : null;
-
-  let mine = null;
-  if(mineCharges > 0 && typeof tryPlaceBlueDefensiveMine === "function"){
-    mine = tryPlaceBlueDefensiveMine(context, plannedMoveLike, { evaluateOnly: true }) || null;
-  }
 
   const targetPoint = selectedPlan?.targetPoint;
   const dynAlignsWithPlanTarget = !dyn ? false
     : !Number.isFinite(targetPoint?.x) ? true
     : Math.hypot(dyn.target.x - targetPoint.x, dyn.target.y - targetPoint.y) <= CELL_SIZE * 3;
 
-  // tryPlaceBlueDefensiveMine already requires a contesting enemy with clear lane to landing,
-  // so a returned plan implies the landing is meaningfully threatened. Score>=3 filters out the 0.5
-  // fallback case while accepting single-scenario placements (forcedBadPath=5.6, cutRoute=6.8, etc.).
-  const minePassesGates = !!mine && Number(mine.score ?? 0) >= 2;
-
   let tactical = null;
-  if(dyn && dynAlignsWithPlanTarget){
-    tactical = { itemType: INVENTORY_ITEM_TYPES.DYNAMITE, reason: dyn.reason, target: dyn.target };
-  } else if(minePassesGates){
-    tactical = {
-      itemType: INVENTORY_ITEM_TYPES.MINE,
-      reason: "selected_plan_landing_defense",
-      minePlan: mine,
-      expectedBenefit: mine.score / 20,
-      risk: 0.05,
-    };
-  } else if(dyn){
+  if(dyn){
     tactical = { itemType: INVENTORY_ITEM_TYPES.DYNAMITE, reason: dyn.reason, target: dyn.target };
   }
+  // (Was: else-if minePassesGates → MINE tactical. Removed — AI no longer evaluates
+  // mine placement. See note above.) The dynAlignsWithPlanTarget split is preserved
+  // for code clarity; both branches now produce the same DYNAMITE entry, matching
+  // the previous fallthrough to "else if(dyn)".
+  void dynAlignsWithPlanTarget;
 
   const buffCandidates = pickAiBuffsForSelectedPlan({
     plane,
@@ -26096,36 +26065,20 @@ async function buildAiSelectedPlanInventoryEnhancementsAsync(context, selectedPl
   };
 
   const dynamiteCharges = Number(availableCounts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0);
-  const mineCharges = Number(availableCounts?.[INVENTORY_ITEM_TYPES.MINE] ?? 0);
+  // AI mine placement intentionally disabled — see note in the sync twin above.
 
   const dyn = dynamiteCharges > 0 ? findAiDynamitePathOpeningOpportunity(plane, color, context) : null;
-
-  let mine = null;
-  if(mineCharges > 0 && typeof tryPlaceBlueDefensiveMineAsync === "function"){
-    mine = (await tryPlaceBlueDefensiveMineAsync(context, plannedMoveLike, { evaluateOnly: true })) || null;
-  }
 
   const targetPoint = selectedPlan?.targetPoint;
   const dynAlignsWithPlanTarget = !dyn ? false
     : !Number.isFinite(targetPoint?.x) ? true
     : Math.hypot(dyn.target.x - targetPoint.x, dyn.target.y - targetPoint.y) <= CELL_SIZE * 3;
 
-  const minePassesGates = !!mine && Number(mine.score ?? 0) >= 2;
-
   let tactical = null;
-  if(dyn && dynAlignsWithPlanTarget){
-    tactical = { itemType: INVENTORY_ITEM_TYPES.DYNAMITE, reason: dyn.reason, target: dyn.target };
-  } else if(minePassesGates){
-    tactical = {
-      itemType: INVENTORY_ITEM_TYPES.MINE,
-      reason: "selected_plan_landing_defense",
-      minePlan: mine,
-      expectedBenefit: mine.score / 20,
-      risk: 0.05,
-    };
-  } else if(dyn){
+  if(dyn){
     tactical = { itemType: INVENTORY_ITEM_TYPES.DYNAMITE, reason: dyn.reason, target: dyn.target };
   }
+  void dynAlignsWithPlanTarget;
 
   const buffCandidates = pickAiBuffsForSelectedPlan({
     plane,
