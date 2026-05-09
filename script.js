@@ -40613,12 +40613,23 @@ function gameDraw(){
 
   updateNukeTimeline(now);
 
+  // The !aiPostInventoryLaunchTimeout gate prevents a visible "double aim" race when AI uses an
+  // inventory item. After applying an item, issueAIMoveWithInventoryUsage schedules the actual
+  // launch via setTimeout(AI_POST_INVENTORY_LAUNCH_DELAY_MS=260ms) so the consume FX can play.
+  // The scheduler returns immediately and clears aiMoveScheduled, but aiLaunchSession isn't
+  // created until the timeout fires. Without this gate, the next frame's recovery would see
+  // !aiLaunchSession && !aiMoveScheduled and start a SECOND full AI turn — which creates its own
+  // aim session before the original setTimeout fires; the original launch then collides with the
+  // existing session, hits the existing-session retry path (handleFinalLaunchResult), nulls the
+  // session, and creates a third one. Visible result: AI aims, then re-aims (sometimes a different
+  // target). Triggered with ANY inventory item, since the 260ms delay always applies.
   if(
     gameMode === "computer"
     && turnColors?.[turnIndex] === "blue"
     && flyingPoints.length === 0
     && !aiLaunchSession
     && !aiMoveScheduled
+    && !aiPostInventoryLaunchTimeout
     && performance.now() >= aiMoveCooldownUntilMs
   ){
     scheduleComputerMoveWithCargoGate(performance.now(), AI_MOVE_CARGO_RETRY_DELAY_MS, {
