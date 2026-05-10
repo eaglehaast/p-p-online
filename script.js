@@ -28483,25 +28483,38 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   handleFinalLaunchResult("immediate_launch", immediateLaunchResult);
   } // end continueAfterInventoryApplied
 
-  // Kick off the inventory-application phase. Deferred mode hands the queue to
-  // aiInventorySequenceState; runAiInventorySequenceTick advances it across frames with
-  // FX-tied per-item delays, and triggers continueAfterInventoryApplied as onSequenceComplete
-  // after the last item. If the queue is empty (no items to apply), maybeUseInventoryBeforeLaunch
-  // calls onSequenceComplete([]) inline before returning false — control flows through
-  // continueAfterInventoryApplied → mine gate → launch setTimeout, just like before, with
-  // empty consumedItemTypes.
+  // One-shot guard: maybeUseInventoryBeforeLaunch has THREE classes of return paths and we
+  // need continueAfterInventoryApplied to fire exactly once regardless of which path is taken:
+  //   (a) Deferred mode with non-empty queue → returns true; state machine calls onSequenceComplete
+  //       from runAiInventorySequenceTick after the last item. Caller must NOT call again.
+  //   (b) Deferred mode with empty queue (initialCandidates.length === 0) → calls
+  //       onSequenceComplete([]) INLINE, then returns false. Caller must NOT call again.
+  //   (c) Early bail-outs that predate the deferred block — `!plannedMove?.plane`,
+  //       `inventory.total <= 0` (empty inventory!), `preAppliedInventoryItemType` → return
+  //       false WITHOUT calling onSequenceComplete. Caller MUST call continueAfterInventoryApplied([])
+  //       or else the AI never launches. The empty-inventory bail caused the regression where
+  //       AI stopped moving when its inventory was empty.
+  let inventoryContinuationCalled = false;
+  const onInventorySequenceComplete = (consumedItemTypes) => {
+    if(inventoryContinuationCalled) return;
+    inventoryContinuationCalled = true;
+    continueAfterInventoryApplied(consumedItemTypes);
+  };
+
   try {
     const sequenceStarted = maybeUseInventoryBeforeLaunch(context, plannedMove, {
       usedBuffTypesThisTurn: usedSingleUseBuffTypesThisTurn,
       allowForcedInventorySpend: false,
       applyImmediately: false,
-      onSequenceComplete: continueAfterInventoryApplied,
+      onSequenceComplete: onInventorySequenceComplete,
     });
-    // sequenceStarted === true: state machine drives application; continueAfterInventoryApplied
-    //   will be called from runAiInventorySequenceTick when the last item lands.
-    // sequenceStarted === false: maybeUseInventoryBeforeLaunch called continueAfterInventoryApplied
-    //   inline (empty queue path) — launch is already scheduled.
-    void sequenceStarted;
+    // If maybeUseInventoryBeforeLaunch returned false WITHOUT calling onSequenceComplete inline
+    // (early bail paths above the deferred block), the guard ensures we still trigger the
+    // launch path with an empty consumed-items list. The guard makes this idempotent: if the
+    // function already called onSequenceComplete inline, this no-ops.
+    if(!sequenceStarted){
+      onInventorySequenceComplete([]);
+    }
   } catch (inventorySelectorError) {
     logAiDecision("inventory_selector_attempt_exception", {
       stage: "inventory_decision",
@@ -28510,9 +28523,8 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
       message: inventorySelectorError?.message || String(inventorySelectorError),
     });
     inventoryStopReason = "inventory_selector_exception_handled";
-    // Ensure the launch path still runs even if the inventory selector blew up before
-    // any item could be queued.
-    continueAfterInventoryApplied([]);
+    // Idempotent — if the exception was thrown after onSequenceComplete already fired, this no-ops.
+    onInventorySequenceComplete([]);
   }
 }
 
