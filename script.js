@@ -14429,6 +14429,11 @@ let aiMoveScheduled = false;
 let aiMoveCooldownUntilMs = 0;
 const AI_MOVE_COOLDOWN_MS = 800;
 let aiPostInventoryLaunchTimeout = null;
+// State machine for sequencing AI inventory item application across frames. When non-null,
+// gameDraw's runAiInventorySequenceTick advances one item at a time with FX-tied delays.
+// Shape: { pending, index, nextItemAtMs, applyFn, consumedItemTypes, onComplete } — see
+// startAiInventorySequence for canonical shape and runAiInventorySequenceTick for advance.
+let aiInventorySequenceState = null;
 let turnCommitSequence = 0;
 let aiPlanningSnapshotCache = null;
 let aiCachedTargetMemory = null;
@@ -14543,6 +14548,7 @@ function clearAiPostInventoryLaunchTimeout(reason = "unspecified"){
 
 function invalidateAiPlanningState(reason = "unspecified"){
   clearAiPostInventoryLaunchTimeout(`planning_invalidate:${reason}`);
+  aiInventorySequenceState = null;
   aiPlanningSnapshotCache = null;
   aiCachedTargetMemory = null;
   clearAiLaunchSessionWatchdog();
@@ -15127,6 +15133,15 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         }
       }
 
+      // Cooperative yield BEFORE the heavy sync sections (buildMoveTowardTarget when no
+      // enemies, and collectAiCargoRouteCandidates when there's cargo). The internal yield
+      // at the enemy loop below only fires when prioritizedEnemiesForPlane is non-empty;
+      // when it's empty, we'd otherwise go straight from cheap prep into heavy sync
+      // pathfinding without giving the world a chance to render. aiCoopMaybeYield is a
+      // near-zero-cost microtask unless the 6ms frame budget is exceeded.
+      await aiCoopMaybeYield();
+      if(!isAiTurnStillApplicable()) return null;
+
       const prioritizedEnemiesForPlane = enemyPlanes
         .map((enemy) => ({ enemy, enemyDistance: dist(launchReadyPlane, enemy) }))
         .filter((entry) => entry.enemyDistance <= maxFlightDistancePx * 1.8)
@@ -15162,6 +15177,11 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       }
 
       if(nearestCargo){
+        // Yield before the cargo-route enumeration (collectAiCargoRouteCandidates calls sync
+        // planPathToPoint multiple times and is the second heavy sync chunk per plane).
+        await aiCoopMaybeYield();
+        if(!isAiTurnStillApplicable()) return null;
+
         const cargoContext = {
           enemies: enemyPlanes,
           homeBase: getBaseAnchor(launchReadyPlane.color),
@@ -18442,6 +18462,13 @@ const AI_OPENING_SOFT_RANDOM_AIM_ANGLE_TOLERANCE_DEG = 20;
 const AI_OPENING_SOFT_RANDOM_AIM_DISTANCE_TOLERANCE_SCALE = 0.2;
 const AI_POST_INVENTORY_LAUNCH_DELAY_MS = 260;
 const AI_POST_TACTICAL_INVENTORY_LAUNCH_DELAY_MS = 120;
+// Per-item delays for the AI inventory sequence state machine. Items are now applied one at
+// a time per gameDraw tick, with a delay tied to each item's visible FX so the player can
+// register each effect before the next one starts. See runAiInventorySequenceTick.
+const AI_INVENTORY_SEQUENCE_DELAY_DYNAMITE_MS = 900; // взрыв ~840мс + начало fade
+const AI_INVENTORY_SEQUENCE_DELAY_MINE_MS = 150;     // нет FX, минимальный gap
+const AI_INVENTORY_SEQUENCE_DELAY_BUFF_MS = 400;     // середина 600мс кольца — buff виден
+const AI_INVENTORY_SEQUENCE_FINAL_DELAY_MS = 200;    // от последнего предмета до launch'а
 const AI_INVENTORY_LOOP_GUARD_LIMIT_PER_TURN = 12;
 const AI_INVENTORY_BUFF_CHAIN_LIMIT_PER_TURN = 4;
 const AI_INVENTORY_TACTICAL_REPEAT_LIMIT_PER_TURN = 24;
@@ -26715,6 +26742,13 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
   }
 
   const allowForcedInventorySpend = options?.allowForcedInventorySpend === true;
+  // applyImmediately === true (default): existing sync flow — applies all items in one pass before
+  // returning. Smoke tests rely on this for synchronous assertions on plannedMove state.
+  // applyImmediately === false: deferred flow — sorts TACTICAL→BUFF, hands the queue to the
+  // per-frame aiInventorySequenceState machine. Items are applied across multiple frames with
+  // FX-tied delays. Caller passes onSequenceComplete to be invoked when the queue drains.
+  const applyImmediately = options?.applyImmediately !== false;
+  const onSequenceComplete = typeof options?.onSequenceComplete === "function" ? options.onSequenceComplete : null;
 
   if(filteredCandidates.length === 0){
     logPreLaunchItemDecision("inventory_prelaunch_no_allowed_items", {
@@ -26723,6 +26757,135 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
       selectedSequence: selectedInventorySequence.map((entry) => entry.itemType),
       fallbackMode: allowForcedInventorySpend ? "forced_inventory_spend_enabled" : "forced_inventory_spend_disabled",
     });
+  }
+
+  if(!applyImmediately){
+    // Deferred mode: prepare the queue and let runAiInventorySequenceTick advance it across frames.
+    // NOTE: the "primary apply yields zero → try forced fallback" branch (used only when
+    // allowForcedInventorySpend is true) is not implemented in deferred mode because live AI
+    // flow always passes allowForcedInventorySpend=false. If that ever changes we'd need to
+    // handle "all skipped" inside onComplete by kicking off a secondary forced sequence.
+    const initialCandidates = filteredCandidates.length > 0
+      ? filteredCandidates
+      : (allowForcedInventorySpend ? buildForcedInventoryFallbackCandidates(new Set()) : []);
+
+    if(initialCandidates.length === 0){
+      plannedMove.inventoryDecisionMadeMeta = {
+        selected: false,
+        reason: "no_inventory_items_for_sequence",
+        reasonCodes: ["no_step5_items_selected"],
+        rejectReasons: [],
+        executionSource: null,
+        selectedItemType: null,
+        selectedReason: null,
+        selectedSequenceLength: selectedInventorySequence.length,
+        selectedItemTypes: [],
+      };
+      if(onSequenceComplete){
+        try { onSequenceComplete([]); } catch (e) {
+          if(typeof console !== "undefined" && typeof console.warn === "function"){
+            console.warn("[ai] inventory onSequenceComplete error (empty)", e);
+          }
+        }
+      }
+      return false;
+    }
+
+    // TACTICAL (DYNAMITE/MINE) первыми, BUFFS (CROSSHAIR/FUEL/WINGS/INVISIBILITY) — после.
+    // Внутри групп — порядок планировщика (стабильная сортировка через индекс).
+    const sortedCandidates = initialCandidates
+      .map((candidate, idx) => ({ candidate, idx }))
+      .sort((a, b) => {
+        const aTactical = a.candidate.itemType === INVENTORY_ITEM_TYPES.DYNAMITE
+          || a.candidate.itemType === INVENTORY_ITEM_TYPES.MINE;
+        const bTactical = b.candidate.itemType === INVENTORY_ITEM_TYPES.DYNAMITE
+          || b.candidate.itemType === INVENTORY_ITEM_TYPES.MINE;
+        if(aTactical !== bTactical) return aTactical ? -1 : 1;
+        return a.idx - b.idx;
+      })
+      .map((entry) => entry.candidate);
+
+    const stateAppliedItemTypes = [];
+    const stateAppliedReasonCodes = [];
+    const stateSkippedItems = [];
+    const sequenceStartedAt = (typeof performance !== "undefined" && typeof performance.now === "function")
+      ? performance.now()
+      : Date.now();
+
+    aiInventorySequenceState = {
+      pending: sortedCandidates,
+      index: 0,
+      // First item applies on the very next tick; subsequent items wait perItemDelayFn(prevType).
+      nextItemAtMs: sequenceStartedAt,
+      consumedItemTypes: stateAppliedItemTypes,
+      skippedItems: stateSkippedItems,
+      applyFn: (candidate) => {
+        const result = executeCommittedInventoryAction(
+          candidate,
+          candidate.executionSource || "selected_inventory_sequence",
+        );
+        if(result.executed){
+          if(candidate?.reasonCode){ stateAppliedReasonCodes.push(candidate.reasonCode); }
+          if(candidate?.comboReasonCode){ stateAppliedReasonCodes.push(candidate.comboReasonCode); }
+        } else {
+          logPreLaunchItemDecision("inventory_prelaunch_item_skipped", {
+            itemType: candidate.itemType || null,
+            reason: result.reason || "selected_candidate_execution_failed",
+            message: result.message || null,
+            source: candidate.executionSource || "selected_inventory_sequence",
+          });
+        }
+        return result;
+      },
+      perItemDelayFn: getAiInventorySequencePerItemDelay,
+      onComplete: (consumedItemTypes) => {
+        // Set decision meta now (post-application), log summary, then trigger caller's
+        // onSequenceComplete continuation. Mirrors the sync-mode meta blocks below.
+        if(stateAppliedItemTypes.length === 0){
+          plannedMove.inventoryDecisionMadeMeta = {
+            selected: false,
+            reason: "prelaunch_items_skipped_in_sequence",
+            reasonCodes: ["inventory_candidate_execution_failed", "prelaunch_inventory_scope_unlocked"],
+            rejectReasons: stateSkippedItems.map((entry) => entry.reason),
+            executionSource: sortedCandidates[0]?.executionSource || null,
+            selectedItemType: sortedCandidates[0]?.itemType || null,
+            selectedReason: sortedCandidates[0]?.reason || null,
+            selectedSequenceLength: selectedInventorySequence.length,
+            selectedItemTypes: [],
+          };
+        } else {
+          plannedMove.inventoryDecisionMadeMeta = {
+            selected: true,
+            reason: "inventory_item_applied",
+            reasonCodes: ["inventory_item_applied", "prelaunch_inventory_scope_unlocked", ...new Set(stateAppliedReasonCodes)],
+            rejectReasons: stateSkippedItems.map((entry) => entry.reason),
+            executionSource: stateAppliedItemTypes.length > 1
+              ? "selected_inventory_sequence"
+              : (sortedCandidates[0]?.executionSource || null),
+            selectedItemType: stateAppliedItemTypes[stateAppliedItemTypes.length - 1] || null,
+            selectedReason: plannedMove.inventoryUsageReason || null,
+            selectedSequenceLength: selectedInventorySequence.length,
+            selectedItemTypes: stateAppliedItemTypes.slice(),
+          };
+        }
+        logPreLaunchItemDecision("inventory_prelaunch_gate_summary", {
+          appliedItemTypes: stateAppliedItemTypes.slice(),
+          skippedItems: stateSkippedItems.slice(),
+          selectedSequenceLength: selectedInventorySequence.length,
+        });
+        if(onSequenceComplete){
+          try {
+            onSequenceComplete(consumedItemTypes);
+          } catch (e) {
+            if(typeof console !== "undefined" && typeof console.warn === "function"){
+              console.warn("[ai] inventory onSequenceComplete error (deferred)", e);
+            }
+          }
+        }
+      },
+    };
+
+    return true;
   }
 
   const appliedItemTypes = [];
@@ -27506,60 +27669,45 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   let inventoryStopReason = "inventory_no_action";
   const usedSingleUseBuffTypesThisTurn = new Set();
 
-  let actionUsed = false;
-  const actionBeforeState = beforeInventoryState;
-
-  try {
-    actionUsed = maybeUseInventoryBeforeLaunch(context, plannedMove, {
-      usedBuffTypesThisTurn: usedSingleUseBuffTypesThisTurn,
-      allowForcedInventorySpend: false,
-    });
-  } catch (inventorySelectorError) {
-    logAiDecision("inventory_selector_attempt_exception", {
-      stage: "inventory_decision",
-      planeId: plannedMove?.plane?.id ?? null,
-      goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
-      message: inventorySelectorError?.message || String(inventorySelectorError),
-    });
-    actionUsed = false;
-    inventoryStopReason = "inventory_selector_exception_handled";
-  }
-
-  if(actionUsed){
-    itemUsed = true;
-    afterInventoryState = evaluateBlueInventoryState();
-    const beforeCounts = actionBeforeState?.counts || {};
-    const afterCounts = afterInventoryState?.counts || {};
-    const allTrackedItemTypes = Object.values(INVENTORY_ITEM_TYPES);
-    for(const itemType of allTrackedItemTypes){
-      const beforeCount = Number(beforeCounts?.[itemType] ?? 0);
-      const afterCount = Number(afterCounts?.[itemType] ?? 0);
-      const spentCount = Math.max(0, beforeCount - afterCount);
-      if(spentCount <= 0) continue;
-      for(let i = 0; i < spentCount; i += 1){
-        consumedItemTypes.push(itemType);
+  // The post-inventory logic below is wrapped in a nested function so that the AI inventory
+  // sequence state machine (runAiInventorySequenceTick) can call it AFTER applying items
+  // across multiple frames. The closing `}` of continueAfterInventoryApplied + the actual
+  // call to maybeUseInventoryBeforeLaunch are placed at the very end of this function.
+  // Items are now applied per-frame with FX-tied delays; the consumed-item list is tracked
+  // by the state machine and handed to us as `externallyConsumed`, replacing the old
+  // before/after count-diff (which would be wrong now since multiple frames may have
+  // elapsed between sequence start and finalization).
+  function continueAfterInventoryApplied(externallyConsumed){
+    if(Array.isArray(externallyConsumed)){
+      consumedItemTypes.length = 0;
+      for(const t of externallyConsumed){
+        if(t) consumedItemTypes.push(t);
       }
     }
 
-    totalInventoryActionsApplied = consumedItemTypes.length;
-    for(const consumedType of consumedItemTypes){
-      markAiInventoryItemUsed(consumedType, {
-        reason: plannedMove?.selectedInventoryCandidate?.reason || plannedMove?.inventoryUsageReason || "item_used",
-        chosenBecauseOfPressure: plannedMove?.selectedInventoryCandidate?.chosenBecauseOfPressure === true,
-      });
-      const isTacticalAction = consumedType === INVENTORY_ITEM_TYPES.MINE
-        || consumedType === INVENTORY_ITEM_TYPES.DYNAMITE;
-      if(isTacticalAction){
-        tacticalInventoryActionsApplied += 1;
-      } else {
-        buffInventoryActionsApplied += 1;
-      }
-    }
+    if(consumedItemTypes.length > 0){
+      itemUsed = true;
+      afterInventoryState = evaluateBlueInventoryState();
 
-    inventoryStopReason = consumedItemTypes.length > 1
-      ? "inventory_multiple_actions_applied"
-      : "inventory_single_action_applied";
-  }
+      totalInventoryActionsApplied = consumedItemTypes.length;
+      for(const consumedType of consumedItemTypes){
+        markAiInventoryItemUsed(consumedType, {
+          reason: plannedMove?.selectedInventoryCandidate?.reason || plannedMove?.inventoryUsageReason || "item_used",
+          chosenBecauseOfPressure: plannedMove?.selectedInventoryCandidate?.chosenBecauseOfPressure === true,
+        });
+        const isTacticalAction = consumedType === INVENTORY_ITEM_TYPES.MINE
+          || consumedType === INVENTORY_ITEM_TYPES.DYNAMITE;
+        if(isTacticalAction){
+          tacticalInventoryActionsApplied += 1;
+        } else {
+          buffInventoryActionsApplied += 1;
+        }
+      }
+
+      inventoryStopReason = consumedItemTypes.length > 1
+        ? "inventory_multiple_actions_applied"
+        : "inventory_single_action_applied";
+    }
 
   const consumedItemType = consumedItemTypes.length > 0
     ? consumedItemTypes[consumedItemTypes.length - 1]
@@ -28333,6 +28481,39 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   registerFinalInventoryUsage(effectiveItemUsed);
   const immediateLaunchResult = issueMoveAfterFinalMineGate("immediate_launch");
   handleFinalLaunchResult("immediate_launch", immediateLaunchResult);
+  } // end continueAfterInventoryApplied
+
+  // Kick off the inventory-application phase. Deferred mode hands the queue to
+  // aiInventorySequenceState; runAiInventorySequenceTick advances it across frames with
+  // FX-tied per-item delays, and triggers continueAfterInventoryApplied as onSequenceComplete
+  // after the last item. If the queue is empty (no items to apply), maybeUseInventoryBeforeLaunch
+  // calls onSequenceComplete([]) inline before returning false — control flows through
+  // continueAfterInventoryApplied → mine gate → launch setTimeout, just like before, with
+  // empty consumedItemTypes.
+  try {
+    const sequenceStarted = maybeUseInventoryBeforeLaunch(context, plannedMove, {
+      usedBuffTypesThisTurn: usedSingleUseBuffTypesThisTurn,
+      allowForcedInventorySpend: false,
+      applyImmediately: false,
+      onSequenceComplete: continueAfterInventoryApplied,
+    });
+    // sequenceStarted === true: state machine drives application; continueAfterInventoryApplied
+    //   will be called from runAiInventorySequenceTick when the last item lands.
+    // sequenceStarted === false: maybeUseInventoryBeforeLaunch called continueAfterInventoryApplied
+    //   inline (empty queue path) — launch is already scheduled.
+    void sequenceStarted;
+  } catch (inventorySelectorError) {
+    logAiDecision("inventory_selector_attempt_exception", {
+      stage: "inventory_decision",
+      planeId: plannedMove?.plane?.id ?? null,
+      goal: plannedMove?.goalName || aiRoundState?.currentGoal || null,
+      message: inventorySelectorError?.message || String(inventorySelectorError),
+    });
+    inventoryStopReason = "inventory_selector_exception_handled";
+    // Ensure the launch path still runs even if the inventory selector blew up before
+    // any item could be queued.
+    continueAfterInventoryApplied([]);
+  }
 }
 
 function markAiLinearLaunchEvent(event, payload = {}){
@@ -39789,6 +39970,67 @@ function resolveAiLaunchSessionAnomaly(session, anomaly = {}){
   });
 }
 
+// Per-frame advance for the AI inventory sequence state machine. When AI's pre-launch
+// inventory has multiple items, they are queued in aiInventorySequenceState and applied
+// one at a time per tick with FX-tied delays, so the player visually registers each item's
+// effect (dynamite explosion → buff ring → next buff ring → ... → launch) instead of all
+// of them firing simultaneously. This is invoked from gameDraw next to runAiLaunchSessionTick.
+//
+// The recovery gate in gameDraw also checks !aiInventorySequenceState to prevent the same
+// race that PR #2748 fixed for aiPostInventoryLaunchTimeout — if the gate didn't include
+// us, recovery would re-schedule a fresh AI turn between items, leading to double-aim.
+function runAiInventorySequenceTick(now = performance.now()){
+  const state = aiInventorySequenceState;
+  if(!state) return;
+  if(now < state.nextItemAtMs) return;
+
+  const candidate = state.pending[state.index];
+  if(candidate){
+    let result = null;
+    try {
+      result = state.applyFn(candidate);
+    } catch (applyError){
+      result = { executed: false, reason: "selected_candidate_apply_exception", message: applyError?.message || String(applyError) };
+      if(typeof console !== "undefined" && typeof console.warn === "function"){
+        console.warn("[ai] inventory sequence item apply error", applyError);
+      }
+    }
+    if(result?.executed){
+      state.consumedItemTypes.push(result.itemType);
+      try { playInventoryConsumeFx("blue", result.itemType); } catch (e) { /* UI fx is best-effort */ }
+      // Per-item delay tied to that item's FX so the next application doesn't visually
+      // overlap. perItemDelayFn returns ms based on itemType.
+      state.nextItemAtMs = now + state.perItemDelayFn(result.itemType);
+    } else {
+      state.skippedItems.push({ itemType: candidate?.itemType || null, reason: result?.reason || "skip" });
+      // Failed apply: don't wait the long FX delay, skip to next quickly.
+      state.nextItemAtMs = now + 30;
+    }
+  }
+  state.index += 1;
+
+  if(state.index >= state.pending.length){
+    const onComplete = state.onComplete;
+    const consumedItemTypes = state.consumedItemTypes.slice();
+    aiInventorySequenceState = null;
+    if(typeof onComplete === "function"){
+      try {
+        onComplete(consumedItemTypes);
+      } catch (completeError){
+        if(typeof console !== "undefined" && typeof console.warn === "function"){
+          console.warn("[ai] inventory sequence onComplete error", completeError);
+        }
+      }
+    }
+  }
+}
+
+function getAiInventorySequencePerItemDelay(itemType){
+  if(itemType === INVENTORY_ITEM_TYPES.DYNAMITE) return AI_INVENTORY_SEQUENCE_DELAY_DYNAMITE_MS;
+  if(itemType === INVENTORY_ITEM_TYPES.MINE) return AI_INVENTORY_SEQUENCE_DELAY_MINE_MS;
+  return AI_INVENTORY_SEQUENCE_DELAY_BUFF_MS;
+}
+
 function runAiLaunchSessionTick(now = performance.now()){
   if(!aiLaunchSession) return;
   const session = aiLaunchSession;
@@ -40630,12 +40872,14 @@ function gameDraw(){
     && !aiLaunchSession
     && !aiMoveScheduled
     && !aiPostInventoryLaunchTimeout
+    && !aiInventorySequenceState
     && performance.now() >= aiMoveCooldownUntilMs
   ){
     scheduleComputerMoveWithCargoGate(performance.now(), AI_MOVE_CARGO_RETRY_DELAY_MS, {
       trigger: "game_draw_tick_recovery",
     });
   }
+  runAiInventorySequenceTick(now);
   runAiLaunchSessionTick(now);
 
   for(const aa of aaUnits){
