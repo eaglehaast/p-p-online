@@ -15584,9 +15584,8 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           // refuse anyway.
           rejectDynamite("dynamite_replan_failed_slot_occupied", null);
         } else if(dynResult.rejected === "no_corridor_usage"){
-          // Pathfinder found a route, but it bypasses the collider — keep the
-          // entry, let strategic_setup behavior take over (open the corridor
-          // for next turn).
+          // Legacy guard (kept for compatibility if some producer still emits
+          // this code). Do not force movement here.
           softSkipDynamite("dynamite_replan_skipped_no_corridor_usage", {
             corridorDistance: Number.isFinite(dynResult.corridorDistance) ? Number(dynResult.corridorDistance.toFixed(1)) : null,
           });
@@ -15628,6 +15627,8 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
               colliderId: dynEntry.target?.colliderId ?? null,
               spriteId: dynEntry.target?.spriteId ?? null,
               finalDestinationKind: finalDest.kind,
+              corridorUsed: dynResult.corridorUsed === true,
+              corridorDistance: Number.isFinite(dynResult.corridorDistance) ? Number(dynResult.corridorDistance.toFixed(1)) : null,
               scoreImproves,
               closerToDest,
               originalLanding: { x: Number(oldLandingX.toFixed(1)), y: Number(oldLandingY.toFixed(1)) },
@@ -22534,19 +22535,17 @@ async function buildDynamiteReplannedMoveAsync(plane, plannedMoveLike, context, 
       return null;
     }
 
-    // Verify the planned trajectory actually passes through the collider point
-    // (i.e. the plane will fly over the dynamite). If not, the replan picked
-    // a route that bypasses the cleared corridor — reject it.
+    // Measure whether the planned trajectory passes near the targeted collider
+    // point (i.e. the plane likely flies through the opened lane). This is a
+    // quality signal, not a hard gate: the move itself is still valid and is
+    // compared by score/distance in the regular planner pipeline.
     const landingX = plane.x + replanned.vx * flightDur;
     const landingY = plane.y + replanned.vy * flightDur;
     const corridorDistance = (typeof distancePointToSegment === "function")
       ? distancePointToSegment(opportunity.target.x, opportunity.target.y, plane.x, plane.y, landingX, landingY)
       : Number.POSITIVE_INFINITY;
-    if(!(Number.isFinite(corridorDistance) && corridorDistance <= corridorTolerance)){
-      return { rejected: "no_corridor_usage", corridorDistance };
-    }
-
-    return { move: replanned, target, opportunity };
+    const corridorUsed = Number.isFinite(corridorDistance) && corridorDistance <= corridorTolerance;
+    return { move: replanned, target, opportunity, corridorDistance, corridorUsed };
   });
 }
 
