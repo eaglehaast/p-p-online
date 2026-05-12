@@ -26381,7 +26381,21 @@ function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options
   // mechanic will be re-implemented separately. Helpers are left in place for now
   // (see "DORMANT" markers near tryPlaceBlueDefensiveMine and friends).
 
-  const dyn = dynamiteCharges > 0 ? findAiDynamitePathOpeningOpportunity(plane, color, context) : null;
+  // Build the plan's intended final destination (where THIS plane is going).
+  // findAiDynamitePathOpeningOpportunity will look for a blocker on the
+  // direct line from plane to this target — i.e. dynamite only opens a
+  // corridor to where the plane is heading, never to some unrelated target.
+  // Prefer targetEnemy (live coords) over targetPoint (snapshot) over
+  // landingX/Y (might be a ricochet landing, not the real destination).
+  const planTargetSource = (selectedPlan?.targetEnemy && Number.isFinite(selectedPlan.targetEnemy.x))
+    ? { x: selectedPlan.targetEnemy.x, y: selectedPlan.targetEnemy.y, kind: "enemy" }
+    : (selectedPlan?.targetPoint && Number.isFinite(selectedPlan.targetPoint.x))
+      ? { x: selectedPlan.targetPoint.x, y: selectedPlan.targetPoint.y, kind: selectedPlan.targetPoint.kind || "point" }
+      : (Number.isFinite(selectedPlan?.landingX) && Number.isFinite(selectedPlan?.landingY))
+        ? { x: selectedPlan.landingX, y: selectedPlan.landingY, kind: "landing" }
+        : null;
+
+  const dyn = dynamiteCharges > 0 ? findAiDynamitePathOpeningOpportunity(plane, color, context, { planTarget: planTargetSource }) : null;
 
   const targetPoint = selectedPlan?.targetPoint;
   const dynAlignsWithPlanTarget = !dyn ? false
@@ -26443,7 +26457,21 @@ async function buildAiSelectedPlanInventoryEnhancementsAsync(context, selectedPl
   const dynamiteCharges = Number(availableCounts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0);
   // AI mine placement intentionally disabled — see note in the sync twin above.
 
-  const dyn = dynamiteCharges > 0 ? findAiDynamitePathOpeningOpportunity(plane, color, context) : null;
+  // Build the plan's intended final destination (where THIS plane is going).
+  // findAiDynamitePathOpeningOpportunity will look for a blocker on the
+  // direct line from plane to this target — i.e. dynamite only opens a
+  // corridor to where the plane is heading, never to some unrelated target.
+  // Prefer targetEnemy (live coords) over targetPoint (snapshot) over
+  // landingX/Y (might be a ricochet landing, not the real destination).
+  const planTargetSource = (selectedPlan?.targetEnemy && Number.isFinite(selectedPlan.targetEnemy.x))
+    ? { x: selectedPlan.targetEnemy.x, y: selectedPlan.targetEnemy.y, kind: "enemy" }
+    : (selectedPlan?.targetPoint && Number.isFinite(selectedPlan.targetPoint.x))
+      ? { x: selectedPlan.targetPoint.x, y: selectedPlan.targetPoint.y, kind: selectedPlan.targetPoint.kind || "point" }
+      : (Number.isFinite(selectedPlan?.landingX) && Number.isFinite(selectedPlan?.landingY))
+        ? { x: selectedPlan.landingX, y: selectedPlan.landingY, kind: "landing" }
+        : null;
+
+  const dyn = dynamiteCharges > 0 ? findAiDynamitePathOpeningOpportunity(plane, color, context, { planTarget: planTargetSource }) : null;
 
   const targetPoint = selectedPlan?.targetPoint;
   const dynAlignsWithPlanTarget = !dyn ? false
@@ -26905,52 +26933,67 @@ function pickAiSingleBuffForSelectedPlan(params){
   return pickAiBuffsForSelectedPlan(params)[0] || null;
 }
 
-function findAiDynamitePathOpeningOpportunity(plane, color, context){
+function findAiDynamitePathOpeningOpportunity(plane, color, context, options = {}){
   if(!plane || !Number.isFinite(plane.x) || !Number.isFinite(plane.y)) return null;
   if(typeof isPathClear !== "function" || typeof findFirstColliderHit !== "function") return null;
   if(typeof isPathClearIgnoringColliderById !== "function") return null;
 
+  // CRITICAL: when the caller passes the actual plan target (where THIS plane
+  // is currently planning to fly), restrict opportunity to that single target.
+  // Without this, the function used to iterate ALL alive enemies / cargo /
+  // flags / base, find the first BLOCKED one, and propose dynamite for IT —
+  // which often had nothing to do with the plane's plan. Result: dynamite
+  // placed to clear path to one target while plane ricocheted toward a
+  // different target. Always prefer planTarget when provided.
+  const planTarget = options?.planTarget && Number.isFinite(options.planTarget.x) && Number.isFinite(options.planTarget.y)
+    ? { x: options.planTarget.x, y: options.planTarget.y, kind: options.planTarget.kind || "plan_target", priority: 99 }
+    : null;
+
   const candidateTargets = [];
 
-  const aliveEnemies = Array.isArray(context?.enemies) ? context.enemies : [];
-  for(const enemy of aliveEnemies){
-    if(!enemy || enemy.isAlive === false) continue;
-    if(!Number.isFinite(enemy.x) || !Number.isFinite(enemy.y)) continue;
-    candidateTargets.push({ x: enemy.x, y: enemy.y, kind: "enemy", priority: 5 });
-  }
-
-  if(typeof cargoState !== "undefined" && Array.isArray(cargoState)){
-    for(const cargo of cargoState){
-      if(!cargo || cargo.state !== "ready") continue;
-      const center = typeof getCargoVisualCenter === "function"
-        ? getCargoVisualCenter(cargo)
-        : { x: cargo.x, y: cargo.y };
-      if(!Number.isFinite(center?.x) || !Number.isFinite(center?.y)) continue;
-      candidateTargets.push({ x: center.x, y: center.y, kind: "cargo", priority: 4 });
+  if(planTarget){
+    candidateTargets.push(planTarget);
+  } else {
+    const aliveEnemies = Array.isArray(context?.enemies) ? context.enemies : [];
+    for(const enemy of aliveEnemies){
+      if(!enemy || enemy.isAlive === false) continue;
+      if(!Number.isFinite(enemy.x) || !Number.isFinite(enemy.y)) continue;
+      candidateTargets.push({ x: enemy.x, y: enemy.y, kind: "enemy", priority: 5 });
     }
-  }
 
-  const enemyColor = color === "green" ? "blue" : "green";
-  const enemyFlags = Array.isArray(context?.availableEnemyFlags)
-    ? context.availableEnemyFlags
-    : (typeof getAvailableFlagsByColor === "function" ? getAvailableFlagsByColor(enemyColor) : []);
-  for(const flag of enemyFlags || []){
-    const anchor = typeof getFlagAnchor === "function" ? getFlagAnchor(flag) : null;
-    const ax = Number.isFinite(anchor?.x) ? anchor.x : flag?.x;
-    const ay = Number.isFinite(anchor?.y) ? anchor.y : flag?.y;
-    if(!Number.isFinite(ax) || !Number.isFinite(ay)) continue;
-    candidateTargets.push({ x: ax, y: ay, kind: "flag", priority: 4 });
-  }
+    if(typeof cargoState !== "undefined" && Array.isArray(cargoState)){
+      for(const cargo of cargoState){
+        if(!cargo || cargo.state !== "ready") continue;
+        const center = typeof getCargoVisualCenter === "function"
+          ? getCargoVisualCenter(cargo)
+          : { x: cargo.x, y: cargo.y };
+        if(!Number.isFinite(center?.x) || !Number.isFinite(center?.y)) continue;
+        candidateTargets.push({ x: center.x, y: center.y, kind: "cargo", priority: 4 });
+      }
+    }
 
-  const enemyBase = typeof getBaseAnchor === "function" ? getBaseAnchor(enemyColor) : null;
-  if(enemyBase && Number.isFinite(enemyBase.x) && Number.isFinite(enemyBase.y)){
-    candidateTargets.push({ x: enemyBase.x, y: enemyBase.y, kind: "base", priority: 2 });
-  }
+    const enemyColor = color === "green" ? "blue" : "green";
+    const enemyFlags = Array.isArray(context?.availableEnemyFlags)
+      ? context.availableEnemyFlags
+      : (typeof getAvailableFlagsByColor === "function" ? getAvailableFlagsByColor(enemyColor) : []);
+    for(const flag of enemyFlags || []){
+      const anchor = typeof getFlagAnchor === "function" ? getFlagAnchor(flag) : null;
+      const ax = Number.isFinite(anchor?.x) ? anchor.x : flag?.x;
+      const ay = Number.isFinite(anchor?.y) ? anchor.y : flag?.y;
+      if(!Number.isFinite(ax) || !Number.isFinite(ay)) continue;
+      candidateTargets.push({ x: ax, y: ay, kind: "flag", priority: 4 });
+    }
 
-  candidateTargets.sort((a, b) => {
-    if(a.priority !== b.priority) return b.priority - a.priority;
-    return Math.hypot(a.x - plane.x, a.y - plane.y) - Math.hypot(b.x - plane.x, b.y - plane.y);
-  });
+    const enemyBase = typeof getBaseAnchor === "function" ? getBaseAnchor(enemyColor) : null;
+    if(enemyBase && Number.isFinite(enemyBase.x) && Number.isFinite(enemyBase.y)){
+      candidateTargets.push({ x: enemyBase.x, y: enemyBase.y, kind: "base", priority: 2 });
+    }
+
+    candidateTargets.sort((a, b) => {
+      if(a.priority !== b.priority) return b.priority - a.priority;
+      return Math.hypot(a.x - plane.x, a.y - plane.y) - Math.hypot(b.x - plane.x, b.y - plane.y);
+    });
+  }
 
   const baseRangePx = Math.max(1, getEffectiveFlightRangeCells(plane) * CELL_SIZE);
   const reachLimit = baseRangePx * 1.6;
