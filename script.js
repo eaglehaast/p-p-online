@@ -14825,6 +14825,12 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         fuelReplanned: plan.fuelReplanned === true,
         fuelReplannedTarget: plan.fuelReplannedTarget || null,
         aiFuelReplanMeta: plan.aiFuelReplanMeta || null,
+        // Dynamite-replan metadata propagated from scheduler-side async replan
+        // (see buildDynamiteReplannedMoveAsync + ~15390). Used only as telemetry;
+        // issueAIMoveWithInventoryUsage has no sync dynamite-replan to suppress.
+        dynamiteReplanned: plan.dynamiteReplanned === true,
+        dynamiteReplannedTarget: plan.dynamiteReplannedTarget || null,
+        aiDynamiteReplanMeta: plan.aiDynamiteReplanMeta || null,
         routeMetrics: plan.routeMetrics || null,
         ricochetMeta: plan.ricochetMeta || null,
         specialPromotionMeta: plan.specialPromotionMeta || null,
@@ -15378,6 +15384,136 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       aiCoopResetBudget();
     }
 
+    // Scheduler-side DYNAMITE replan. When the inventory sequence contains a
+    // DYNAMITE candidate with a finalDestination (the real point behind the
+    // collider — enemy / cargo / flag / base), re-plan landing/vx/vy so the
+    // plane flies through the cleared opening toward that destination instead
+    // of staying on the original blocked route. Done BEFORE the FUEL block so
+    // FUEL replan sees the updated landing.
+    // If the replan doesn't beat the original plan, the DYNAMITE entry is
+    // removed from the sequence (so the charge is not spent) and a
+    // "dynamite_replan_failed_*" event is logged.
+    if(typeof buildDynamiteReplannedMoveAsync === "function"){
+      if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
+      const dynIndex = selectedPlan.selectedInventorySequence.findIndex((entry) => (
+        entry
+        && entry.itemType === INVENTORY_ITEM_TYPES.DYNAMITE
+        && Number.isFinite(entry.finalDestination?.x)
+        && Number.isFinite(entry.finalDestination?.y)
+        && entry.target?.colliderId != null
+      ));
+      if(dynIndex >= 0){
+        const dynEntry = selectedPlan.selectedInventorySequence[dynIndex];
+        const flightDur = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
+          ? FIELD_FLIGHT_DURATION_SEC
+          : 1;
+        const dynReplanPlannedMoveLike = {
+          plane: selectedPlan.plane,
+          vx: (selectedPlan.landingX - selectedPlan.plane.x) / flightDur,
+          vy: (selectedPlan.landingY - selectedPlan.plane.y) / flightDur,
+          goalName: selectedPlan.goalName || aiRoundState?.currentGoal || "dynamite_replan",
+          decisionReason: selectedPlan.decisionReason || "dynamite_replan",
+          routeClass: selectedPlan.routeClass || "direct",
+          targetEnemy: selectedPlan.targetEnemy || null,
+          targetEnemySnapshot: selectedPlan.targetEnemySnapshot || null,
+        };
+        let dynResult = null;
+        try {
+          dynResult = await buildDynamiteReplannedMoveAsync(
+            selectedPlan.plane,
+            dynReplanPlannedMoveLike,
+            aiExecutionContext,
+            { target: dynEntry.target, finalDestination: dynEntry.finalDestination, reason: dynEntry.reason },
+          );
+        } catch(err){
+          logAiDecision("dynamite_replan_exception", {
+            planeId: selectedPlan.plane?.id ?? null,
+            colliderId: dynEntry.target?.colliderId ?? null,
+            message: err?.message || String(err),
+          });
+        }
+        if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
+
+        const rejectDynamite = (eventName, extra) => {
+          selectedPlan.selectedInventorySequence.splice(dynIndex, 1);
+          logAiDecision(eventName, {
+            planeId: selectedPlan.plane?.id ?? null,
+            colliderId: dynEntry.target?.colliderId ?? null,
+            finalDestination: dynEntry.finalDestination || null,
+            source: "scheduler_dynamite_replan",
+            ...(extra || {}),
+          });
+        };
+
+        if(!dynResult){
+          rejectDynamite("dynamite_replan_failed_unreachable", null);
+        } else if(dynResult.rejected === "multiple_blockers"){
+          rejectDynamite("dynamite_replan_failed_multiple_blockers", null);
+        } else if(dynResult.rejected === "slot_occupied"){
+          rejectDynamite("dynamite_replan_failed_slot_occupied", null);
+        } else {
+          const replannedMove = dynResult.move;
+          const newLandingX = selectedPlan.plane.x + replannedMove.vx * flightDur;
+          const newLandingY = selectedPlan.plane.y + replannedMove.vy * flightDur;
+          const newDist = Math.hypot(replannedMove.vx, replannedMove.vy) * flightDur;
+          const finalDest = dynEntry.finalDestination;
+          const distOldToDest = Math.hypot(selectedPlan.landingX - finalDest.x, selectedPlan.landingY - finalDest.y);
+          const distNewToDest = Math.hypot(newLandingX - finalDest.x, newLandingY - finalDest.y);
+          const scoreImproves = Number.isFinite(replannedMove.score)
+            && Number.isFinite(selectedPlan.score)
+            && replannedMove.score > selectedPlan.score * 1.02;
+          const closerToDest = distNewToDest < distOldToDest - CELL_SIZE;
+          if(scoreImproves || closerToDest){
+            const oldLandingX = selectedPlan.landingX;
+            const oldLandingY = selectedPlan.landingY;
+            selectedPlan.landingX = newLandingX;
+            selectedPlan.landingY = newLandingY;
+            selectedPlan.planDistance = newDist;
+            if(Number.isFinite(replannedMove.score)) selectedPlan.score = replannedMove.score;
+            selectedPlan.routeClass = replannedMove.routeClass || selectedPlan.routeClass;
+            selectedPlan.routeMetrics = replannedMove.routeMetrics || selectedPlan.routeMetrics || null;
+            selectedPlan.ricochetMeta = replannedMove.ricochetMeta || selectedPlan.ricochetMeta || null;
+            selectedPlan.specialPromotionMeta = replannedMove.specialPromotionMeta || selectedPlan.specialPromotionMeta || null;
+            selectedPlan.bounceCount = Number.isFinite(replannedMove.bounceCount)
+              ? replannedMove.bounceCount
+              : selectedPlan.bounceCount;
+            selectedPlan.predictedOutcome = replannedMove.predictedOutcome || selectedPlan.predictedOutcome;
+            selectedPlan.dynamiteReplanned = true;
+            selectedPlan.dynamiteReplannedTarget = {
+              x: Number(finalDest.x.toFixed(1)),
+              y: Number(finalDest.y.toFixed(1)),
+              kind: finalDest.kind,
+              source: dynResult.target?.label || null,
+            };
+            selectedPlan.aiDynamiteReplanMeta = {
+              colliderId: dynEntry.target?.colliderId ?? null,
+              spriteId: dynEntry.target?.spriteId ?? null,
+              finalDestinationKind: finalDest.kind,
+              scoreImproves,
+              closerToDest,
+              originalLanding: { x: Number(oldLandingX.toFixed(1)), y: Number(oldLandingY.toFixed(1)) },
+              replannedLanding: { x: Number(newLandingX.toFixed(1)), y: Number(newLandingY.toFixed(1)) },
+              originalDistToDest: Number(distOldToDest.toFixed(1)),
+              replannedDistToDest: Number(distNewToDest.toFixed(1)),
+            };
+            logAiDecision("dynamite_launch_replanned", {
+              planeId: selectedPlan.plane?.id ?? null,
+              source: "scheduler_dynamite_replan",
+              ...selectedPlan.aiDynamiteReplanMeta,
+            });
+            aiCoopResetBudget();
+          } else {
+            rejectDynamite("dynamite_replan_failed_no_improvement", {
+              originalScore: Number.isFinite(selectedPlan.score) ? Number(selectedPlan.score.toFixed(2)) : null,
+              replannedScore: Number.isFinite(replannedMove.score) ? Number(replannedMove.score.toFixed(2)) : null,
+              originalDistToDest: Number(distOldToDest.toFixed(1)),
+              replannedDistToDest: Number(distNewToDest.toFixed(1)),
+            });
+          }
+        }
+      }
+    }
+
     const selectedInventorySequence = Array.isArray(selectedPlan.selectedInventorySequence)
       ? selectedPlan.selectedInventorySequence.map((entry) => ({ ...entry }))
       : [];
@@ -15500,6 +15636,9 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       fuelReplanned: selectedPlan.fuelReplanned === true,
       fuelReplannedTarget: selectedPlan.fuelReplannedTarget || null,
       aiFuelReplanMeta: selectedPlan.aiFuelReplanMeta || null,
+      dynamiteReplanned: selectedPlan.dynamiteReplanned === true,
+      dynamiteReplannedTarget: selectedPlan.dynamiteReplannedTarget || null,
+      aiDynamiteReplanMeta: selectedPlan.aiDynamiteReplanMeta || null,
       routeMetrics: selectedPlan.routeMetrics || null,
       ricochetMeta: selectedPlan.ricochetMeta || null,
       specialPromotionMeta: selectedPlan.specialPromotionMeta || null,
@@ -22151,6 +22290,105 @@ async function buildFuelReplannedMoveAsync(plane, plannedMoveLike, context){
   return null;
 }
 
+// Async DYNAMITE-aware replan. Mirrors buildFuelReplannedMoveAsync but plans
+// through a world where the targeted collider is temporarily removed (the
+// dynamite blast will destroy it before the plane flies). Returns one of:
+//   - { move, target, opportunity }          — best plan found through opening
+//   - { rejected: "multiple_blockers" }      — still blocked after ignoring the
+//                                              collider (defensive recheck)
+//   - { rejected: "slot_occupied" }          — blue dynamite already placed on
+//                                              the same map sprite
+//   - null                                   — no candidate target reachable
+// Caller decides whether the planned move is an improvement worth spending the
+// dynamite charge (see scheduler integration).
+async function buildDynamiteReplannedMoveAsync(plane, plannedMoveLike, context, opportunity){
+  if(!plane) return null;
+  if(typeof planPathWithSpecialRouteProbeAsync !== "function") return null;
+  const colliderId = opportunity?.target?.colliderId;
+  const finalDest = opportunity?.finalDestination;
+  if(colliderId == null) return null;
+  if(!Number.isFinite(finalDest?.x) || !Number.isFinite(finalDest?.y)) return null;
+
+  // Defensive 1: the world may have changed between candidate selection and now
+  // (e.g. a mine was placed). If, even with this collider ignored, the path to
+  // the final destination is still blocked, dynamite alone won't open the lane.
+  if(typeof isPathClearIgnoringColliderById === "function"
+    && !isPathClearIgnoringColliderById(plane.x, plane.y, finalDest.x, finalDest.y, colliderId)){
+    return { rejected: "multiple_blockers" };
+  }
+
+  // Defensive 2: avoid stacking a second blue dynamite on the same sprite —
+  // placeBlueDynamiteAt would refuse, so the candidate would silently be a
+  // no-op. Mirror the guard from placeBlueDynamiteAt (script.js: same file).
+  const targetBrick = (typeof findMapSpriteForDynamiteDrop === "function" && Number.isFinite(opportunity?.target?.x) && Number.isFinite(opportunity?.target?.y))
+    ? findMapSpriteForDynamiteDrop({ boardX: opportunity.target.x, boardY: opportunity.target.y })
+    : null;
+  if(targetBrick && Array.isArray(dynamiteState)){
+    const slotTaken = dynamiteState.some((entry) => {
+      if(!entry || entry.owner !== "blue" || entry.brickRemoved) return false;
+      const sameSpriteId = targetBrick.id != null && entry.spriteId != null && entry.spriteId === targetBrick.id;
+      const sameSpriteRef = targetBrick.spriteRef != null && entry.spriteRef != null && entry.spriteRef === targetBrick.spriteRef;
+      return sameSpriteId || sameSpriteRef;
+    });
+    if(slotTaken) return { rejected: "slot_occupied" };
+  }
+
+  const latestTargetEnemy = plannedMoveLike?.targetEnemy?.id
+    ? findActualPlaneById(plannedMoveLike.targetEnemy.id) || plannedMoveLike.targetEnemy
+    : plannedMoveLike?.targetEnemy || null;
+  const fallbackLandingPoint = getAiMoveLandingPoint(plannedMoveLike);
+
+  // Priority: finalDestination is the WHY we placed dynamite. Other candidates
+  // are safety net in case the lane to finalDestination is still suboptimal.
+  const candidateTargets = [
+    { label: `dynamite_final_${finalDest.kind || "destination"}`, x: finalDest.x, y: finalDest.y },
+  ];
+  if(Number.isFinite(latestTargetEnemy?.x) && Number.isFinite(latestTargetEnemy?.y)){
+    candidateTargets.push({ label: "target_enemy", x: latestTargetEnemy.x, y: latestTargetEnemy.y });
+  }
+  const targetSnapshot = plannedMoveLike?.targetEnemySnapshot;
+  if(Number.isFinite(targetSnapshot?.x) && Number.isFinite(targetSnapshot?.y)){
+    candidateTargets.push({ label: "target_snapshot", x: targetSnapshot.x, y: targetSnapshot.y });
+  }
+  if(Number.isFinite(fallbackLandingPoint?.x) && Number.isFinite(fallbackLandingPoint?.y)){
+    candidateTargets.push({ label: "original_landing", x: fallbackLandingPoint.x, y: fallbackLandingPoint.y });
+  }
+
+  const uniqueTargets = [];
+  const seenTargetKeys = new Set();
+  for(const target of candidateTargets){
+    const key = `${Math.round(target.x)}:${Math.round(target.y)}`;
+    if(seenTargetKeys.has(key)) continue;
+    seenTargetKeys.add(key);
+    uniqueTargets.push(target);
+  }
+
+  return await withTemporarilyIgnoredColliderIdsAsync([colliderId], async () => {
+    for(const target of uniqueTargets){
+      await aiCoopMaybeYield();
+      if(!isAiTurnStillApplicable()) return null;
+      const replanned = await planPathWithSpecialRouteProbeAsync(plane, target.x, target.y, {
+        goalName: plannedMoveLike?.goalName || aiRoundState?.currentGoal || "dynamite_replan",
+        decisionReason: `${plannedMoveLike?.decisionReason || "dynamite_replan"}_dynamite_replan`,
+        targetEnemy: latestTargetEnemy,
+        enemy: plannedMoveLike?.enemy || latestTargetEnemy,
+        context,
+        routeClass: plannedMoveLike?.routeClass,
+        compareLabel: [
+          "dynamite_replan",
+          plannedMoveLike?.goalName || "",
+          plannedMoveLike?.plane?.id || "",
+          target.label,
+        ],
+      });
+      if(replanned && Number.isFinite(replanned.vx) && Number.isFinite(replanned.vy)){
+        return { move: replanned, target, opportunity };
+      }
+    }
+    return null;
+  });
+}
+
 function findFallbackRicochetPreparationMove(plane, enemy){
   if(!plane || !enemy) return null;
   const preparationMove = findSafePreparationMoveForAttack(plane, enemy);
@@ -23227,6 +23465,39 @@ function withTemporarilyIgnoredDynamiteColliders(targets, callback){
   currentMapSprites = filteredMapSprites;
   try {
     return callback();
+  } finally {
+    colliders = originalColliders;
+    currentMapSprites = originalMapSprites;
+  }
+}
+
+// Async-safe twin of withTemporarilyIgnoredDynamiteColliders. The sync version
+// would restore the world BEFORE an async callback's promise resolves, because
+// try/finally treats the returned promise as the "result" and runs finally
+// synchronously. This helper awaits the async callback inside try so finally
+// runs only after the promise resolves. Visual artifact: world misses the
+// collider during the await window (~< 1-2 frames) — accepted, since this is
+// invoked during the AI's pre-launch inventory phase where focus is on UI.
+async function withTemporarilyIgnoredColliderIdsAsync(colliderIds, asyncCallback){
+  if(typeof asyncCallback !== "function") return null;
+  const idSet = new Set(
+    (Array.isArray(colliderIds) ? colliderIds : [])
+      .filter((id) => id != null)
+  );
+  if(idSet.size === 0) return await asyncCallback();
+
+  const originalColliders = Array.isArray(colliders) ? colliders : [];
+  const originalMapSprites = Array.isArray(currentMapSprites) ? currentMapSprites : [];
+  const filteredColliders = originalColliders.filter((collider) => !idSet.has(collider?.id));
+  const filteredMapSprites = originalMapSprites.filter((sprite, index) => {
+    const geometry = getMapSpriteGeometry(sprite, index);
+    return !idSet.has(geometry?.collider?.id);
+  });
+
+  colliders = filteredColliders;
+  currentMapSprites = filteredMapSprites;
+  try {
+    return await asyncCallback();
   } finally {
     colliders = originalColliders;
     currentMapSprites = originalMapSprites;
@@ -26067,7 +26338,7 @@ function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options
 
   let tactical = null;
   if(dyn){
-    tactical = { itemType: INVENTORY_ITEM_TYPES.DYNAMITE, reason: dyn.reason, target: dyn.target };
+    tactical = { itemType: INVENTORY_ITEM_TYPES.DYNAMITE, reason: dyn.reason, target: dyn.target, finalDestination: dyn.finalDestination || null };
   }
   // (Was: else-if minePassesGates → MINE tactical. Removed — AI no longer evaluates
   // mine placement. See note above.) The dynAlignsWithPlanTarget split is preserved
@@ -26129,7 +26400,7 @@ async function buildAiSelectedPlanInventoryEnhancementsAsync(context, selectedPl
 
   let tactical = null;
   if(dyn){
-    tactical = { itemType: INVENTORY_ITEM_TYPES.DYNAMITE, reason: dyn.reason, target: dyn.target };
+    tactical = { itemType: INVENTORY_ITEM_TYPES.DYNAMITE, reason: dyn.reason, target: dyn.target, finalDestination: dyn.finalDestination || null };
   }
   void dynAlignsWithPlanTarget;
 
@@ -26658,6 +26929,14 @@ function findAiDynamitePathOpeningOpportunity(plane, color, context){
         y: cy,
         colliderId,
         spriteId: collider?.spriteId ?? collider?.id ?? null,
+      },
+      // finalDestination = реальная цель ЗА коллайдером (enemy / cargo / flag / base),
+      // не центр коллайдера. Используется в scheduler для DYNAMITE-replan чтобы знать,
+      // КУДА лететь после расчистки прохода.
+      finalDestination: {
+        x: target.x,
+        y: target.y,
+        kind: target.kind,
       },
       reason: target.kind === "enemy" ? "dynamite_clear_path_to_enemy"
         : target.kind === "cargo" ? "dynamite_clear_path_to_cargo"
