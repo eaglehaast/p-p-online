@@ -18631,6 +18631,18 @@ const AI_OPENING_SOFT_RANDOM_AIM_ANGLE_TOLERANCE_DEG = 20;
 const AI_OPENING_SOFT_RANDOM_AIM_DISTANCE_TOLERANCE_SCALE = 0.2;
 const AI_POST_INVENTORY_LAUNCH_DELAY_MS = 260;
 const AI_POST_TACTICAL_INVENTORY_LAUNCH_DELAY_MS = 120;
+// When DYNAMITE was applied, the targeted brick stays inside `colliders` until
+// the explosion animation reaches DYNAMITE_BRICK_REMOVAL_FRAME_INDEX and the
+// subsequent DYNAMITE_BRICK_FADE_OUT_DURATION_MS fade completes (see
+// updateAndDrawDynamiteExplosions / removeBrickSpriteForDynamite). Launching the
+// plane before that window means the plane hits the still-alive brick and
+// ricochets off — visually "AI explodes the wall but flies a different route".
+// Use a delay that exceeds the full anim + fade window with a small safety
+// buffer. MINE has no destruction animation, so it keeps the short 120 ms gap.
+const AI_POST_DYNAMITE_LAUNCH_DELAY_MS = Math.max(
+  AI_POST_TACTICAL_INVENTORY_LAUNCH_DELAY_MS,
+  DYNAMITE_EXPLOSION_TOTAL_DURATION_MS + DYNAMITE_BRICK_FADE_OUT_DURATION_MS + 120
+);
 // Per-item delays for the AI inventory sequence state machine. Items are now applied one at
 // a time per gameDraw tick, with a delay tied to each item's visible FX so the player can
 // register each effect before the next one starts. See runAiInventorySequenceTick.
@@ -29059,11 +29071,13 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
   }
 
   if(effectiveItemUsed === true){
-    const usedTacticalInventoryItem = consumedItemTypes.includes(INVENTORY_ITEM_TYPES.MINE)
-      || consumedItemTypes.includes(INVENTORY_ITEM_TYPES.DYNAMITE);
-    const postInventoryLaunchDelayMs = usedTacticalInventoryItem
-      ? AI_POST_TACTICAL_INVENTORY_LAUNCH_DELAY_MS
-      : AI_POST_INVENTORY_LAUNCH_DELAY_MS;
+    const usedDynamite = consumedItemTypes.includes(INVENTORY_ITEM_TYPES.DYNAMITE);
+    const usedTacticalInventoryItem = consumedItemTypes.includes(INVENTORY_ITEM_TYPES.MINE) || usedDynamite;
+    const postInventoryLaunchDelayMs = usedDynamite
+      ? AI_POST_DYNAMITE_LAUNCH_DELAY_MS
+      : (usedTacticalInventoryItem
+        ? AI_POST_TACTICAL_INVENTORY_LAUNCH_DELAY_MS
+        : AI_POST_INVENTORY_LAUNCH_DELAY_MS);
     if(aiPostInventoryLaunchTimeout){
       clearTimeout(aiPostInventoryLaunchTimeout);
       aiPostInventoryLaunchTimeout = null;
