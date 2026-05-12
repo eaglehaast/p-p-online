@@ -27120,21 +27120,123 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
         const target = candidate?.target || null;
         const targetX = Number.isFinite(target?.x) ? target.x : null;
         const targetY = Number.isFinite(target?.y) ? target.y : null;
+        // Hard corridor-usage guard: do NOT place dynamite unless the current
+        // planned flight actually passes through the targeted collider. If it
+        // doesn't, try a sync inline replan via the existing
+        // replanMoveForDynamiteOpening helper (which uses
+        // withTemporarilyIgnoredDynamiteCollider + planPathWithSpecialRouteProbe
+        // — and verifies usesOpenedCorridor internally). If neither the current
+        // plan nor an inline replan flies through the corridor, refuse to place
+        // dynamite (charge stays in inventory). This is a catch-all for any
+        // path that gets a DYNAMITE candidate into the sequence without going
+        // through the scheduler-side replan (PR #2752–#2754).
         if(targetX != null && targetY != null){
-          executed = placeBlueDynamiteAt(targetX, targetY);
-          if(executed){
-            setAiDynamiteIntentFromCandidate(
-              {
-                colliderId: target?.colliderId ?? null,
-                spriteId: target?.spriteId ?? null,
-                x: targetX,
-                y: targetY,
-              },
-              candidate?.reason || "dynamite_route_opening",
-              plannedMove,
-              candidate?.dynamiteExpectedRoute || null,
-              candidate?.dynamiteUseClass || null,
-            );
+          const inlineDur = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
+            ? FIELD_FLIGHT_DURATION_SEC
+            : 1;
+          const planePtX = plannedMove.plane.x;
+          const planePtY = plannedMove.plane.y;
+          const currentLandingX = Number.isFinite(plannedMove.landingX)
+            ? plannedMove.landingX
+            : planePtX + (plannedMove.vx || 0) * inlineDur;
+          const currentLandingY = Number.isFinite(plannedMove.landingY)
+            ? plannedMove.landingY
+            : planePtY + (plannedMove.vy || 0) * inlineDur;
+          const inlineCorridorTolerance = Math.max(
+            CELL_SIZE * 0.8,
+            typeof AI_DYNAMITE_INTENT_LINE_TOLERANCE === "number" ? AI_DYNAMITE_INTENT_LINE_TOLERANCE : 0
+          );
+          const currentCorridorDistance = (typeof distancePointToSegment === "function")
+            ? distancePointToSegment(targetX, targetY, planePtX, planePtY, currentLandingX, currentLandingY)
+            : Number.POSITIVE_INFINITY;
+          const currentPlanUsesCorridor = Number.isFinite(currentCorridorDistance) && currentCorridorDistance <= inlineCorridorTolerance;
+
+          let inlineReplanApplied = false;
+          if(!currentPlanUsesCorridor){
+            // Locate the live targetGeometry by colliderId so we can call
+            // replanMoveForDynamiteOpening. Fall back to spriteId match if
+            // colliderId is missing on the candidate.
+            const lookupColliderId = target?.colliderId ?? null;
+            const lookupSpriteId = target?.spriteId ?? null;
+            let targetGeometry = null;
+            if(Array.isArray(currentMapSprites)){
+              for(let i = 0; i < currentMapSprites.length; i += 1){
+                const geom = getMapSpriteGeometry(currentMapSprites[i], i);
+                if(!geom?.collider) continue;
+                if(lookupColliderId != null && geom.collider.id === lookupColliderId){
+                  targetGeometry = geom;
+                  break;
+                }
+                if(lookupColliderId == null && lookupSpriteId != null && geom.id === lookupSpriteId){
+                  targetGeometry = geom;
+                  break;
+                }
+              }
+            }
+            if(targetGeometry && typeof replanMoveForDynamiteOpening === "function"){
+              const inlineReplan = replanMoveForDynamiteOpening(context, plannedMove, targetGeometry, {
+                compareLabel: ["dynamite_inline_guard", plannedMove.goalName || "", plannedMove.plane?.id || ""],
+              });
+              const inlineMove = inlineReplan?.move || null;
+              const inlineUsesCorridor = inlineReplan?.usesOpenedCorridor === true
+                || (inlineMove && typeof doesMoveUseDynamiteCorridor === "function"
+                  && doesMoveUseDynamiteCorridor({ ...inlineMove, plane: plannedMove.plane }, targetGeometry));
+              if(inlineMove && Number.isFinite(inlineMove.vx) && Number.isFinite(inlineMove.vy) && inlineUsesCorridor){
+                const newLx = planePtX + inlineMove.vx * inlineDur;
+                const newLy = planePtY + inlineMove.vy * inlineDur;
+                plannedMove.vx = inlineMove.vx;
+                plannedMove.vy = inlineMove.vy;
+                plannedMove.landingX = newLx;
+                plannedMove.landingY = newLy;
+                plannedMove.totalDist = Math.hypot(inlineMove.vx, inlineMove.vy) * inlineDur;
+                if(Number.isFinite(inlineMove.score)) plannedMove.score = inlineMove.score;
+                plannedMove.routeClass = inlineMove.routeClass || plannedMove.routeClass;
+                plannedMove.dynamiteReplanned = true;
+                plannedMove.aiDynamiteReplanMeta = {
+                  ...(plannedMove.aiDynamiteReplanMeta || {}),
+                  colliderId: target?.colliderId ?? null,
+                  spriteId: target?.spriteId ?? null,
+                  source: "executeCommittedInventoryAction_inline_guard",
+                  inlineReplanLanding: { x: Number(newLx.toFixed(1)), y: Number(newLy.toFixed(1)) },
+                };
+                inlineReplanApplied = true;
+                logAiDecision("dynamite_inline_replan_applied", {
+                  planeId: plannedMove.plane?.id ?? null,
+                  colliderId: target?.colliderId ?? null,
+                  replannedLanding: { x: Number(newLx.toFixed(1)), y: Number(newLy.toFixed(1)) },
+                  previousLanding: { x: Number(currentLandingX.toFixed(1)), y: Number(currentLandingY.toFixed(1)) },
+                  source: "executeCommittedInventoryAction_inline_guard",
+                });
+              }
+            }
+          }
+
+          if(currentPlanUsesCorridor || inlineReplanApplied){
+            executed = placeBlueDynamiteAt(targetX, targetY);
+            if(executed){
+              setAiDynamiteIntentFromCandidate(
+                {
+                  colliderId: target?.colliderId ?? null,
+                  spriteId: target?.spriteId ?? null,
+                  x: targetX,
+                  y: targetY,
+                },
+                candidate?.reason || "dynamite_route_opening",
+                plannedMove,
+                candidate?.dynamiteExpectedRoute || null,
+                candidate?.dynamiteUseClass || null,
+              );
+            }
+          } else {
+            logAiDecision("dynamite_inline_guard_blocked", {
+              planeId: plannedMove.plane?.id ?? null,
+              colliderId: target?.colliderId ?? null,
+              spriteId: target?.spriteId ?? null,
+              currentCorridorDistance: Number.isFinite(currentCorridorDistance) ? Number(currentCorridorDistance.toFixed(1)) : null,
+              tolerance: Number(inlineCorridorTolerance.toFixed(1)),
+              currentLanding: { x: Number(currentLandingX.toFixed(1)), y: Number(currentLandingY.toFixed(1)) },
+              reason: "current_plan_does_not_use_corridor_and_inline_replan_failed",
+            });
           }
         }
         if(executed){
