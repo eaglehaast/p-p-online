@@ -15584,54 +15584,11 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           // refuse anyway.
           rejectDynamite("dynamite_replan_failed_slot_occupied", null);
         } else if(dynResult.rejected === "no_corridor_usage"){
-          // We still want to USE dynamite (not silently skip it) but also align
-          // the immediate move with the intended opened lane. If strict replan
-          // missed corridor usage, force a direct vector toward finalDestination
-          // (clamped to this plane's effective range) and keep DYNAMITE entry.
-          const finalDest = dynEntry.finalDestination;
-          const dx = finalDest.x - selectedPlan.plane.x;
-          const dy = finalDest.y - selectedPlan.plane.y;
-          const distToDest = Math.hypot(dx, dy);
-          const maxRange = typeof getPlaneEffectiveRangePx === "function"
-            ? Number(getPlaneEffectiveRangePx(selectedPlan.plane) || 0)
-            : 0;
-          if(Number.isFinite(distToDest) && distToDest > 1e-6 && Number.isFinite(maxRange) && maxRange > 1){
-            const travelDist = Math.min(maxRange, distToDest);
-            const ux = dx / distToDest;
-            const uy = dy / distToDest;
-            const forcedLandingX = selectedPlan.plane.x + ux * travelDist;
-            const forcedLandingY = selectedPlan.plane.y + uy * travelDist;
-            selectedPlan.landingX = forcedLandingX;
-            selectedPlan.landingY = forcedLandingY;
-            selectedPlan.planDistance = travelDist;
-            selectedPlan.routeClass = "direct";
-            selectedPlan.dynamiteReplanned = true;
-            selectedPlan.dynamiteReplannedTarget = {
-              x: Number(finalDest.x.toFixed(1)),
-              y: Number(finalDest.y.toFixed(1)),
-              kind: finalDest.kind || "destination",
-              colliderId: dynEntry.target?.colliderId ?? null,
-              forcedCorridorAlignment: true,
-            };
-            logAiDecision("dynamite_launch_forced_corridor_alignment", {
-              planeId: selectedPlan.plane?.id ?? null,
-              colliderId: dynEntry.target?.colliderId ?? null,
-              finalDestination: finalDest || null,
-              source: "scheduler_dynamite_replan",
-              corridorDistance: Number.isFinite(dynResult.corridorDistance) ? Number(dynResult.corridorDistance.toFixed(1)) : null,
-              forcedLanding: {
-                x: Number(forcedLandingX.toFixed(1)),
-                y: Number(forcedLandingY.toFixed(1)),
-              },
-              planDistance: Number(travelDist.toFixed(1)),
-            });
-          } else {
-            // Fallback: keep as strategic setup when vector can't be safely built.
-            softSkipDynamite("dynamite_replan_skipped_no_corridor_usage", {
-              corridorDistance: Number.isFinite(dynResult.corridorDistance) ? Number(dynResult.corridorDistance.toFixed(1)) : null,
-              forcedAlignment: "unavailable",
-            });
-          }
+          // Legacy guard (kept for compatibility if some producer still emits
+          // this code). Do not force movement here.
+          softSkipDynamite("dynamite_replan_skipped_no_corridor_usage", {
+            corridorDistance: Number.isFinite(dynResult.corridorDistance) ? Number(dynResult.corridorDistance.toFixed(1)) : null,
+          });
         } else {
           const replannedMove = dynResult.move;
           const newLandingX = selectedPlan.plane.x + replannedMove.vx * flightDur;
@@ -15670,6 +15627,8 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
               colliderId: dynEntry.target?.colliderId ?? null,
               spriteId: dynEntry.target?.spriteId ?? null,
               finalDestinationKind: finalDest.kind,
+              corridorUsed: dynResult.corridorUsed === true,
+              corridorDistance: Number.isFinite(dynResult.corridorDistance) ? Number(dynResult.corridorDistance.toFixed(1)) : null,
               scoreImproves,
               closerToDest,
               originalLanding: { x: Number(oldLandingX.toFixed(1)), y: Number(oldLandingY.toFixed(1)) },
@@ -22576,19 +22535,17 @@ async function buildDynamiteReplannedMoveAsync(plane, plannedMoveLike, context, 
       return null;
     }
 
-    // Verify the planned trajectory actually passes through the collider point
-    // (i.e. the plane will fly over the dynamite). If not, the replan picked
-    // a route that bypasses the cleared corridor — reject it.
+    // Measure whether the planned trajectory passes near the targeted collider
+    // point (i.e. the plane likely flies through the opened lane). This is a
+    // quality signal, not a hard gate: the move itself is still valid and is
+    // compared by score/distance in the regular planner pipeline.
     const landingX = plane.x + replanned.vx * flightDur;
     const landingY = plane.y + replanned.vy * flightDur;
     const corridorDistance = (typeof distancePointToSegment === "function")
       ? distancePointToSegment(opportunity.target.x, opportunity.target.y, plane.x, plane.y, landingX, landingY)
       : Number.POSITIVE_INFINITY;
-    if(!(Number.isFinite(corridorDistance) && corridorDistance <= corridorTolerance)){
-      return { rejected: "no_corridor_usage", corridorDistance };
-    }
-
-    return { move: replanned, target, opportunity };
+    const corridorUsed = Number.isFinite(corridorDistance) && corridorDistance <= corridorTolerance;
+    return { move: replanned, target, opportunity, corridorDistance, corridorUsed };
   });
 }
 
