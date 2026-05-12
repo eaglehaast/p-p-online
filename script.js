@@ -15451,6 +15451,10 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           rejectDynamite("dynamite_replan_failed_multiple_blockers", null);
         } else if(dynResult.rejected === "slot_occupied"){
           rejectDynamite("dynamite_replan_failed_slot_occupied", null);
+        } else if(dynResult.rejected === "no_corridor_usage"){
+          rejectDynamite("dynamite_replan_failed_no_corridor_usage", {
+            corridorDistance: Number.isFinite(dynResult.corridorDistance) ? Number(dynResult.corridorDistance.toFixed(1)) : null,
+          });
         } else {
           const replannedMove = dynResult.move;
           const newLandingX = selectedPlan.plane.x + replannedMove.vx * flightDur;
@@ -22336,56 +22340,64 @@ async function buildDynamiteReplannedMoveAsync(plane, plannedMoveLike, context, 
   const latestTargetEnemy = plannedMoveLike?.targetEnemy?.id
     ? findActualPlaneById(plannedMoveLike.targetEnemy.id) || plannedMoveLike.targetEnemy
     : plannedMoveLike?.targetEnemy || null;
-  const fallbackLandingPoint = getAiMoveLandingPoint(plannedMoveLike);
 
-  // Priority: finalDestination is the WHY we placed dynamite. Other candidates
-  // are safety net in case the lane to finalDestination is still suboptimal.
-  const candidateTargets = [
-    { label: `dynamite_final_${finalDest.kind || "destination"}`, x: finalDest.x, y: finalDest.y },
-  ];
-  if(Number.isFinite(latestTargetEnemy?.x) && Number.isFinite(latestTargetEnemy?.y)){
-    candidateTargets.push({ label: "target_enemy", x: latestTargetEnemy.x, y: latestTargetEnemy.y });
-  }
-  const targetSnapshot = plannedMoveLike?.targetEnemySnapshot;
-  if(Number.isFinite(targetSnapshot?.x) && Number.isFinite(targetSnapshot?.y)){
-    candidateTargets.push({ label: "target_snapshot", x: targetSnapshot.x, y: targetSnapshot.y });
-  }
-  if(Number.isFinite(fallbackLandingPoint?.x) && Number.isFinite(fallbackLandingPoint?.y)){
-    candidateTargets.push({ label: "original_landing", x: fallbackLandingPoint.x, y: fallbackLandingPoint.y });
-  }
+  // Only finalDestination as candidate. Earlier we also tried targetEnemy /
+  // snapshot / original_landing as a "safety net", but those caused the
+  // pathfinder to pick ricochet/gap routes that fly AROUND the collider
+  // instead of through it — visually "dynamite goes one way, plane flies
+  // another". The whole point of dynamite is to fly through the cleared
+  // corridor toward the destination behind it; if that destination is
+  // unreachable even with the collider gone, dynamite shouldn't be spent.
+  const target = { label: `dynamite_final_${finalDest.kind || "destination"}`, x: finalDest.x, y: finalDest.y };
 
-  const uniqueTargets = [];
-  const seenTargetKeys = new Set();
-  for(const target of candidateTargets){
-    const key = `${Math.round(target.x)}:${Math.round(target.y)}`;
-    if(seenTargetKeys.has(key)) continue;
-    seenTargetKeys.add(key);
-    uniqueTargets.push(target);
-  }
+  const flightDur = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
+    ? FIELD_FLIGHT_DURATION_SEC
+    : 1;
+  // Corridor-usage tolerance: the collider center should sit on (or very near)
+  // the segment plane → landing. Mirrors doesMoveUseDynamiteCorridor (script.js
+  // ~25005) which uses the same threshold for the dormant tactical planner.
+  const corridorTolerance = Math.max(
+    CELL_SIZE * 0.8,
+    typeof AI_DYNAMITE_INTENT_LINE_TOLERANCE === "number" ? AI_DYNAMITE_INTENT_LINE_TOLERANCE : 0
+  );
 
   return await withTemporarilyIgnoredColliderIdsAsync([colliderId], async () => {
-    for(const target of uniqueTargets){
-      await aiCoopMaybeYield();
-      if(!isAiTurnStillApplicable()) return null;
-      const replanned = await planPathWithSpecialRouteProbeAsync(plane, target.x, target.y, {
-        goalName: plannedMoveLike?.goalName || aiRoundState?.currentGoal || "dynamite_replan",
-        decisionReason: `${plannedMoveLike?.decisionReason || "dynamite_replan"}_dynamite_replan`,
-        targetEnemy: latestTargetEnemy,
-        enemy: plannedMoveLike?.enemy || latestTargetEnemy,
-        context,
-        routeClass: plannedMoveLike?.routeClass,
-        compareLabel: [
-          "dynamite_replan",
-          plannedMoveLike?.goalName || "",
-          plannedMoveLike?.plane?.id || "",
-          target.label,
-        ],
-      });
-      if(replanned && Number.isFinite(replanned.vx) && Number.isFinite(replanned.vy)){
-        return { move: replanned, target, opportunity };
-      }
+    await aiCoopMaybeYield();
+    if(!isAiTurnStillApplicable()) return null;
+    const replanned = await planPathWithSpecialRouteProbeAsync(plane, target.x, target.y, {
+      goalName: plannedMoveLike?.goalName || aiRoundState?.currentGoal || "dynamite_replan",
+      decisionReason: `${plannedMoveLike?.decisionReason || "dynamite_replan"}_dynamite_replan`,
+      targetEnemy: latestTargetEnemy,
+      enemy: plannedMoveLike?.enemy || latestTargetEnemy,
+      context,
+      // Force "direct" route class so the probe doesn't return a ricochet/gap
+      // path that bypasses the cleared collider. With colliders filtered, a
+      // direct line through the (now-absent) collider is the natural best.
+      routeClass: "direct",
+      compareLabel: [
+        "dynamite_replan",
+        plannedMoveLike?.goalName || "",
+        plannedMoveLike?.plane?.id || "",
+        target.label,
+      ],
+    });
+    if(!replanned || !Number.isFinite(replanned.vx) || !Number.isFinite(replanned.vy)){
+      return null;
     }
-    return null;
+
+    // Verify the planned trajectory actually passes through the collider point
+    // (i.e. the plane will fly over the dynamite). If not, the replan picked
+    // a route that bypasses the cleared corridor — reject it.
+    const landingX = plane.x + replanned.vx * flightDur;
+    const landingY = plane.y + replanned.vy * flightDur;
+    const corridorDistance = (typeof distancePointToSegment === "function")
+      ? distancePointToSegment(opportunity.target.x, opportunity.target.y, plane.x, plane.y, landingX, landingY)
+      : Number.POSITIVE_INFINITY;
+    if(!(Number.isFinite(corridorDistance) && corridorDistance <= corridorTolerance)){
+      return { rejected: "no_corridor_usage", corridorDistance };
+    }
+
+    return { move: replanned, target, opportunity };
   });
 }
 
