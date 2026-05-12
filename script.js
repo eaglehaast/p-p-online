@@ -15384,6 +15384,115 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       aiCoopResetBudget();
     }
 
+    // Dynamite-AUGMENTED alternative plan. Asks: "given 1..3 dynamites,
+    // can we reach a BETTER target (more cargo / deeper enemy / flag /
+    // base) by clearing one or more colliders?" — instead of "can we
+    // apply dynamite to the currently chosen target?". If a meaningfully
+    // better alt-plan exists, REWRITES selectedPlan (landing, score,
+    // routeClass) and REPLACES any DYNAMITE entries in the sequence with
+    // one entry per blocker to be destroyed. Inline guard and existing
+    // DYNAMITE replan below then operate on the already-aligned plan.
+    if(typeof findAiDynamiteAugmentedAlternativePlanAsync === "function"){
+      if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
+      const augmentedDynamiteCharges = Number(evaluateInventoryState(aiColor)?.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] || 0);
+      if(augmentedDynamiteCharges > 0){
+        let altPlan = null;
+        try {
+          altPlan = await findAiDynamiteAugmentedAlternativePlanAsync(
+            selectedPlan.plane,
+            aiColor,
+            aiExecutionContext,
+            selectedPlan,
+            augmentedDynamiteCharges,
+          );
+        } catch(err){
+          logAiDecision("dynamite_augmented_plan_exception", {
+            planeId: selectedPlan.plane?.id ?? null,
+            message: err?.message || String(err),
+          });
+        }
+        if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
+        if(altPlan && altPlan.plan && altPlan.target && Array.isArray(altPlan.blockers) && altPlan.blockers.length > 0){
+          const augFlightDur = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
+            ? FIELD_FLIGHT_DURATION_SEC
+            : 1;
+          const augNewLandingX = selectedPlan.plane.x + altPlan.plan.vx * augFlightDur;
+          const augNewLandingY = selectedPlan.plane.y + altPlan.plan.vy * augFlightDur;
+          const augOldLandingX = selectedPlan.landingX;
+          const augOldLandingY = selectedPlan.landingY;
+          const augOldScore = Number.isFinite(selectedPlan.score) ? selectedPlan.score : 0;
+
+          selectedPlan.landingX = augNewLandingX;
+          selectedPlan.landingY = augNewLandingY;
+          selectedPlan.planDistance = Math.hypot(altPlan.plan.vx, altPlan.plan.vy) * augFlightDur;
+          if(Number.isFinite(altPlan.plan.score)) selectedPlan.score = altPlan.plan.score;
+          selectedPlan.routeClass = altPlan.plan.routeClass || "direct";
+          selectedPlan.routeMetrics = altPlan.plan.routeMetrics || selectedPlan.routeMetrics || null;
+          selectedPlan.ricochetMeta = altPlan.plan.ricochetMeta || null;
+          selectedPlan.specialPromotionMeta = altPlan.plan.specialPromotionMeta || null;
+          selectedPlan.bounceCount = Number.isFinite(altPlan.plan.bounceCount) ? altPlan.plan.bounceCount : 0;
+          selectedPlan.predictedOutcome = altPlan.plan.predictedOutcome || null;
+          // Update plan's logical target so downstream (dynamite-replan,
+          // inline guard, telemetry, FUEL replan) sees the new destination.
+          selectedPlan.targetPoint = { x: altPlan.target.x, y: altPlan.target.y, kind: altPlan.target.kind };
+          if(altPlan.target.kind === "enemy"){
+            selectedPlan.targetEnemy = altPlan.target.ref || selectedPlan.targetEnemy;
+            selectedPlan.targetEnemySnapshot = { x: altPlan.target.x, y: altPlan.target.y };
+          }
+          selectedPlan.dynamiteAugmentedPlan = true;
+          selectedPlan.aiDynamiteAugmentedPlanMeta = {
+            targetKind: altPlan.target.kind,
+            targetPoint: { x: Number(altPlan.target.x.toFixed(1)), y: Number(altPlan.target.y.toFixed(1)) },
+            nDynamites: altPlan.nDynamites,
+            adjustedScore: Number(altPlan.adjustedScore.toFixed(3)),
+            colliderIds: altPlan.blockers.map((b) => b.id ?? null),
+            originalLanding: { x: Number(augOldLandingX.toFixed(1)), y: Number(augOldLandingY.toFixed(1)) },
+            replannedLanding: { x: Number(augNewLandingX.toFixed(1)), y: Number(augNewLandingY.toFixed(1)) },
+            originalScore: Number(augOldScore.toFixed(3)),
+          };
+
+          // Replace any existing DYNAMITE entries in the sequence with one
+          // entry per blocker required by this plan. The inline guard +
+          // executeCommittedInventoryAction will place them in order.
+          if(Array.isArray(selectedPlan.selectedInventorySequence)){
+            selectedPlan.selectedInventorySequence = selectedPlan.selectedInventorySequence.filter((entry) => (
+              entry && entry.itemType !== INVENTORY_ITEM_TYPES.DYNAMITE
+            ));
+            for(let bi = 0; bi < altPlan.blockers.length; bi += 1){
+              const blocker = altPlan.blockers[bi];
+              const bx = Number.isFinite(blocker?.cx)
+                ? blocker.cx
+                : (Number.isFinite(blocker?.centerX) ? blocker.centerX : null);
+              const by = Number.isFinite(blocker?.cy)
+                ? blocker.cy
+                : (Number.isFinite(blocker?.centerY) ? blocker.centerY : null);
+              if(!Number.isFinite(bx) || !Number.isFinite(by)) continue;
+              selectedPlan.selectedInventorySequence.push({
+                itemType: INVENTORY_ITEM_TYPES.DYNAMITE,
+                reason: `dynamite_augmented_${altPlan.target.kind}`,
+                target: {
+                  x: bx,
+                  y: by,
+                  colliderId: blocker?.id ?? null,
+                  spriteId: blocker?.spriteId ?? blocker?.id ?? null,
+                },
+                finalDestination: { x: altPlan.target.x, y: altPlan.target.y, kind: altPlan.target.kind },
+                executionSource: `dynamite_augmented_plan_${bi}`,
+              });
+            }
+          }
+
+          logAiDecision("dynamite_augmented_plan_selected", {
+            planeId: selectedPlan.plane?.id ?? null,
+            source: "scheduler_dynamite_augmented_plan",
+            ...selectedPlan.aiDynamiteAugmentedPlanMeta,
+          });
+          aiCoopResetBudget();
+        }
+      }
+      if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
+    }
+
     // Scheduler-side DYNAMITE replan. When the inventory sequence contains a
     // DYNAMITE candidate with a finalDestination (the real point behind the
     // collider — enemy / cargo / flag / base), re-plan landing/vx/vy so the
@@ -22439,6 +22548,134 @@ async function buildDynamiteReplannedMoveAsync(plane, plannedMoveLike, context, 
 
     return { move: replanned, target, opportunity };
   });
+}
+
+// Dynamite-augmented alternative plan finder. Iterates ALL viable targets
+// (enemies / cargo / flags / base), and for each target identifies which
+// colliders block the direct line. If 1..maxDynamites colliders block the
+// path and removing them opens a clear direct route, score this hypothetical
+// plan. Returns the BEST such alternative (by adjusted score), or null if
+// the current plan is comparable or better.
+//
+// Key insight: this answers "can we get to a BETTER target if we spend N
+// dynamites?" — instead of the previous question "can we apply dynamite to
+// the currently chosen target?". This lets the AI fundamentally rewrite its
+// plan when dynamite unlocks more valuable destinations (more cargo, deeper
+// enemies, flag pickup, etc.).
+async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context, currentPlan, dynamiteCharges){
+  if(!plane || !Number.isFinite(plane.x) || !Number.isFinite(plane.y)) return null;
+  if(!Number.isFinite(dynamiteCharges) || dynamiteCharges <= 0) return null;
+  if(typeof withTemporarilyIgnoredColliderIdsAsync !== "function") return null;
+  if(typeof planPathToPoint !== "function") return null;
+  if(typeof checkLineIntersectionWithCollider !== "function") return null;
+
+  const maxDynamites = Math.min(3, Math.trunc(dynamiteCharges));
+  const baseRangePx = Math.max(1, getEffectiveFlightRangeCells(plane) * CELL_SIZE);
+  const reachLimit = baseRangePx * 1.6;
+  const enemyColor = color === "green" ? "blue" : "green";
+
+  // Build target list with rough "value" weights. Higher = more important.
+  const targets = [];
+  const aliveEnemies = Array.isArray(context?.enemies) ? context.enemies : [];
+  for(const enemy of aliveEnemies){
+    if(!enemy || enemy.isAlive === false) continue;
+    if(!Number.isFinite(enemy.x) || !Number.isFinite(enemy.y)) continue;
+    targets.push({ x: enemy.x, y: enemy.y, kind: "enemy", value: 1.0, ref: enemy });
+  }
+  if(typeof cargoState !== "undefined" && Array.isArray(cargoState)){
+    for(const cargo of cargoState){
+      if(!cargo || cargo.state !== "ready") continue;
+      const center = (typeof getCargoVisualCenter === "function")
+        ? getCargoVisualCenter(cargo)
+        : { x: cargo.x, y: cargo.y };
+      if(!Number.isFinite(center?.x) || !Number.isFinite(center?.y)) continue;
+      targets.push({ x: center.x, y: center.y, kind: "cargo", value: 0.7, ref: cargo });
+    }
+  }
+  const enemyFlags = Array.isArray(context?.availableEnemyFlags)
+    ? context.availableEnemyFlags
+    : (typeof getAvailableFlagsByColor === "function" ? getAvailableFlagsByColor(enemyColor) : []);
+  for(const flag of enemyFlags || []){
+    const anchor = (typeof getFlagAnchor === "function") ? getFlagAnchor(flag) : null;
+    const ax = Number.isFinite(anchor?.x) ? anchor.x : flag?.x;
+    const ay = Number.isFinite(anchor?.y) ? anchor.y : flag?.y;
+    if(!Number.isFinite(ax) || !Number.isFinite(ay)) continue;
+    targets.push({ x: ax, y: ay, kind: "flag", value: 0.85, ref: flag });
+  }
+  const enemyBase = (typeof getBaseAnchor === "function") ? getBaseAnchor(enemyColor) : null;
+  if(enemyBase && Number.isFinite(enemyBase.x) && Number.isFinite(enemyBase.y)){
+    targets.push({ x: enemyBase.x, y: enemyBase.y, kind: "base", value: 0.3, ref: null });
+  }
+  if(targets.length === 0) return null;
+
+  const liveColliders = Array.isArray(colliders) ? colliders : [];
+  if(liveColliders.length === 0) return null;
+
+  let bestAlt = null;
+
+  for(const target of targets){
+    if(typeof aiCoopMaybeYield === "function") await aiCoopMaybeYield();
+    if(typeof isAiTurnStillApplicable === "function" && !isAiTurnStillApplicable()) return null;
+
+    const dist = Math.hypot(target.x - plane.x, target.y - plane.y);
+    if(dist > reachLimit) continue;
+
+    // If the direct path is already clear, dynamite isn't needed for this target.
+    // The main planner would have considered it naturally; skip here.
+    if(typeof isPathClear === "function" && isPathClear(plane.x, plane.y, target.x, target.y)) continue;
+
+    // Identify colliders that the direct line plane → target intersects.
+    const blockers = [];
+    for(const c of liveColliders){
+      if(!c || c.id == null) continue;
+      if(checkLineIntersectionWithCollider(plane.x, plane.y, target.x, target.y, c)){
+        blockers.push(c);
+      }
+    }
+    if(blockers.length === 0 || blockers.length > maxDynamites) continue;
+
+    const blockerIds = blockers.map((b) => b.id);
+
+    // Plan a direct path with these blockers temporarily removed from the world.
+    let planAfter = null;
+    try {
+      planAfter = await withTemporarilyIgnoredColliderIdsAsync(blockerIds, async () => {
+        if(typeof isPathClear === "function" && !isPathClear(plane.x, plane.y, target.x, target.y)){
+          return null; // still blocked by something else (cannot fix with these N)
+        }
+        try {
+          return planPathToPoint(plane, target.x, target.y, {
+            routeClass: "direct",
+            goalName: "dynamite_augmented_plan",
+            decisionReason: `dynamite_augmented_${target.kind}`,
+          });
+        } catch(_innerErr){
+          return null;
+        }
+      });
+    } catch(_outerErr){
+      planAfter = null;
+    }
+    if(!planAfter || !Number.isFinite(planAfter.vx) || !Number.isFinite(planAfter.vy)) continue;
+
+    const baseScore = Number.isFinite(planAfter.score) ? planAfter.score : 0;
+    const dynamiteCost = blockerIds.length * 0.05; // 5% penalty per charge spent
+    const adjustedScore = baseScore * target.value - dynamiteCost;
+
+    if(!bestAlt || adjustedScore > bestAlt.adjustedScore){
+      bestAlt = { target, blockers, plan: planAfter, adjustedScore, nDynamites: blockerIds.length };
+    }
+  }
+
+  if(!bestAlt) return null;
+
+  // Only switch to the alternative if it's meaningfully better than the
+  // current plan. Threshold 10% prevents marginal swaps that aren't worth
+  // the dynamite cost.
+  const currentScore = Number.isFinite(currentPlan?.score) ? currentPlan.score : 0;
+  if(bestAlt.adjustedScore <= currentScore * 1.10) return null;
+
+  return bestAlt;
 }
 
 function findFallbackRicochetPreparationMove(plane, enemy){
