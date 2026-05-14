@@ -22673,7 +22673,17 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
     }
     if(!planAfter || !Number.isFinite(planAfter.vx) || !Number.isFinite(planAfter.vy)) continue;
 
-    const baseScore = Number.isFinite(planAfter.score) ? planAfter.score : 0;
+    // Use getAiPlaneAdjustedScore on totalDist to get a score that's on the
+    // SAME scale as selectedPlan.score (which is also computed via
+    // getAiPlaneAdjustedScore(totalDist, plane)). Browser logs from prior
+    // runs showed planAfter.score on a completely different scale (-0.1 vs
+    // currentScore 1200), so the planner was never accepting alternatives.
+    const totalDist = Number.isFinite(planAfter.totalDist)
+      ? planAfter.totalDist
+      : Math.hypot(planAfter.vx, planAfter.vy) * FIELD_FLIGHT_DURATION_SEC;
+    const baseScore = (typeof getAiPlaneAdjustedScore === "function")
+      ? getAiPlaneAdjustedScore(totalDist, plane)
+      : (Number.isFinite(planAfter.score) ? planAfter.score : 0);
     const dynamiteCost = blockerIds.length * 0.05; // 5% penalty per charge spent
     const adjustedScore = baseScore * target.value - dynamiteCost;
 
@@ -27607,20 +27617,41 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
             candidateReason: candidate?.reason || null,
           });
 
-          executed = placeBlueDynamiteAt(targetX, targetY);
-          if(executed){
-            setAiDynamiteIntentFromCandidate(
-              {
-                colliderId: target?.colliderId ?? null,
-                spriteId: target?.spriteId ?? null,
-                x: targetX,
-                y: targetY,
-              },
-              candidate?.reason || "dynamite_route_opening",
-              plannedMove,
-              candidate?.dynamiteExpectedRoute || null,
-              candidate?.dynamiteUseClass || null,
-            );
+          // HARD REJECT: only place dynamite if the planned flight actually
+          // uses the corridor through this collider. If corridorCheckRightNow
+          // is false here, neither scheduler-replan nor inline guard nor the
+          // augmented planner managed to align the plan with the dynamite —
+          // placing the charge anyway would produce the exact user-reported
+          // bug ("dynamite one way, plane the other"). Skip placement, keep
+          // the charge in inventory.
+          if(diagCurrentCorridor === true){
+            executed = placeBlueDynamiteAt(targetX, targetY);
+            if(executed){
+              setAiDynamiteIntentFromCandidate(
+                {
+                  colliderId: target?.colliderId ?? null,
+                  spriteId: target?.spriteId ?? null,
+                  x: targetX,
+                  y: targetY,
+                },
+                candidate?.reason || "dynamite_route_opening",
+                plannedMove,
+                candidate?.dynamiteExpectedRoute || null,
+                candidate?.dynamiteUseClass || null,
+              );
+            }
+          } else {
+            logDynamiteDebug("dynamite_hard_reject_no_corridor", {
+              planeId: plannedMove.plane?.id ?? null,
+              colliderId: target?.colliderId ?? null,
+              spriteId: target?.spriteId ?? null,
+              dynamiteTarget: { x: Number(targetX.toFixed(1)), y: Number(targetY.toFixed(1)) },
+              plannedLanding: diagLanding,
+              routeClass: plannedMove.routeClass || null,
+              reason: "plan_does_not_use_corridor_through_collider",
+            });
+            // executed stays false ⇒ removeItemFromInventory below is skipped ⇒
+            // dynamite charge remains in the AI's inventory for later use.
           }
         }
         if(executed){
