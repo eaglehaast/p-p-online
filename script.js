@@ -22667,13 +22667,32 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
     }
   }
 
-  if(!bestAlt) return null;
+  if(!bestAlt){
+    logAiDecision("dynamite_augmented_plan_no_alternative", {
+      planeId: plane?.id ?? null,
+      dynamiteCharges,
+      targetsConsidered: targets.length,
+      currentScore: Number.isFinite(currentPlan?.score) ? Number(currentPlan.score.toFixed(3)) : null,
+    });
+    return null;
+  }
 
-  // Only switch to the alternative if it's meaningfully better than the
-  // current plan. Threshold 10% prevents marginal swaps that aren't worth
-  // the dynamite cost.
+  // Lower threshold (was 1.10) — user wants "use dynamite more actively, even
+  // for small improvements". Switch when adjusted score is just slightly better.
   const currentScore = Number.isFinite(currentPlan?.score) ? currentPlan.score : 0;
-  if(bestAlt.adjustedScore <= currentScore * 1.10) return null;
+  const acceptanceThreshold = 1.01;
+  const accepted = bestAlt.adjustedScore > currentScore * acceptanceThreshold;
+  logAiDecision("dynamite_augmented_plan_evaluation", {
+    planeId: plane?.id ?? null,
+    bestTargetKind: bestAlt.target.kind,
+    bestAdjustedScore: Number(bestAlt.adjustedScore.toFixed(3)),
+    currentScore: Number(currentScore.toFixed(3)),
+    threshold: acceptanceThreshold,
+    accepted,
+    nDynamites: bestAlt.nDynamites,
+    colliderIds: bestAlt.blockers.map((b) => b?.id ?? null),
+  });
+  if(!accepted) return null;
 
   return bestAlt;
 }
@@ -27533,6 +27552,45 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
               });
             }
           }
+
+          // Diagnostic snapshot RIGHT before placeBlueDynamiteAt. Captures the
+          // actual plannedMove state in flight: landingX/Y, vx/vy, target of
+          // the dynamite, augmented-plan flags, and corridor-check verdict.
+          // If user reports "dynamite goes one way, plane flies another",
+          // this is the ground truth to diff against.
+          const diagLanding = {
+            x: Number.isFinite(plannedMove.landingX) ? Number(plannedMove.landingX.toFixed(1)) : null,
+            y: Number.isFinite(plannedMove.landingY) ? Number(plannedMove.landingY.toFixed(1)) : null,
+          };
+          const diagVxVy = {
+            vx: Number.isFinite(plannedMove.vx) ? Number(plannedMove.vx.toFixed(4)) : null,
+            vy: Number.isFinite(plannedMove.vy) ? Number(plannedMove.vy.toFixed(4)) : null,
+          };
+          const diagCurrentCorridor = (targetGeometry && typeof doesMoveUseDynamiteCorridor === "function")
+            ? doesMoveUseDynamiteCorridor({
+                plane: plannedMove.plane,
+                vx: plannedMove.vx,
+                vy: plannedMove.vy,
+              }, targetGeometry)
+            : null;
+          logAiDecision("dynamite_about_to_place", {
+            planeId: plannedMove.plane?.id ?? null,
+            colliderId: target?.colliderId ?? null,
+            spriteId: target?.spriteId ?? null,
+            dynamiteTarget: { x: Number(targetX.toFixed(1)), y: Number(targetY.toFixed(1)) },
+            plannedLanding: diagLanding,
+            planeVxVy: diagVxVy,
+            planeStart: {
+              x: Number(plannedMove.plane.x.toFixed(1)),
+              y: Number(plannedMove.plane.y.toFixed(1)),
+            },
+            routeClass: plannedMove.routeClass || null,
+            dynamiteReplanned: plannedMove.dynamiteReplanned === true,
+            dynamiteAugmentedPlan: plannedMove.dynamiteAugmentedPlan === true,
+            corridorCheckRightNow: diagCurrentCorridor,
+            executionSource,
+            candidateReason: candidate?.reason || null,
+          });
 
           executed = placeBlueDynamiteAt(targetX, targetY);
           if(executed){
