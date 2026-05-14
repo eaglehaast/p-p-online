@@ -22577,6 +22577,60 @@ async function buildDynamiteReplannedMoveAsync(plane, plannedMoveLike, context, 
 // the currently chosen target?". This lets the AI fundamentally rewrite its
 // plan when dynamite unlocks more valuable destinations (more cargo, deeper
 // enemies, flag pickup, etc.).
+// Path-collection + landing-safety counter used by the dynamite-augmented
+// planner. Treats the plane→landing segment as the trajectory (works exactly
+// for direct routes; for ricochets it's an approximation that under-counts —
+// acceptable since alt-plans we generate are always direct).
+//   totalPickups        — alive enemies + ready cargo whose center sits within
+//                         POINT_RADIUS * 1.5 of the segment.
+//   threatsNearLanding  — alive enemies within enemy's effective range of the
+//                         landing point (lower = safer landing).
+function countTargetsAndSafetyOnSegment(plane, landingX, landingY, color, context, aliveEnemiesArg){
+  const stats = { totalPickups: 0, enemyHits: 0, cargoPickups: 0, threatsNearLanding: 0 };
+  if(!plane || !Number.isFinite(landingX) || !Number.isFinite(landingY)) return stats;
+  const aliveEnemies = Array.isArray(aliveEnemiesArg) ? aliveEnemiesArg
+    : (Array.isArray(context?.enemies) ? context.enemies : []);
+  const segHitTol = typeof POINT_RADIUS === "number" ? POINT_RADIUS * 1.5 : 22;
+  const dpts = typeof distancePointToSegment === "function" ? distancePointToSegment : null;
+
+  for(const enemy of aliveEnemies){
+    if(!enemy || enemy.isAlive === false) continue;
+    if(!Number.isFinite(enemy.x) || !Number.isFinite(enemy.y)) continue;
+    if(dpts){
+      const d = dpts(enemy.x, enemy.y, plane.x, plane.y, landingX, landingY);
+      if(Number.isFinite(d) && d <= segHitTol){
+        stats.enemyHits += 1;
+        stats.totalPickups += 1;
+      }
+    }
+    // Threats near landing — enemy able to retaliate if it has a clear lane.
+    const enemyRange = (typeof getPlaneEffectiveRangePx === "function")
+      ? getPlaneEffectiveRangePx(enemy)
+      : (typeof CELL_SIZE === "number" ? CELL_SIZE * 8 : 160);
+    const dToLanding = Math.hypot(enemy.x - landingX, enemy.y - landingY);
+    if(dToLanding <= enemyRange){
+      stats.threatsNearLanding += 1;
+    }
+  }
+
+  if(typeof cargoState !== "undefined" && Array.isArray(cargoState) && dpts){
+    for(const cargo of cargoState){
+      if(!cargo || cargo.state !== "ready") continue;
+      const center = (typeof getCargoVisualCenter === "function")
+        ? getCargoVisualCenter(cargo) : { x: cargo.x, y: cargo.y };
+      if(!Number.isFinite(center?.x) || !Number.isFinite(center?.y)) continue;
+      const d = dpts(center.x, center.y, plane.x, plane.y, landingX, landingY);
+      const cargoTol = typeof POINT_RADIUS === "number" ? POINT_RADIUS * 2 : 30;
+      if(Number.isFinite(d) && d <= cargoTol){
+        stats.cargoPickups += 1;
+        stats.totalPickups += 1;
+      }
+    }
+  }
+
+  return stats;
+}
+
 async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context, currentPlan, dynamiteCharges){
   if(!plane || !Number.isFinite(plane.x) || !Number.isFinite(plane.y)) return null;
   if(!Number.isFinite(dynamiteCharges) || dynamiteCharges <= 0) return null;
@@ -22673,22 +22727,26 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
     }
     if(!planAfter || !Number.isFinite(planAfter.vx) || !Number.isFinite(planAfter.vy)) continue;
 
-    // Use getAiPlaneAdjustedScore on totalDist to get a score that's on the
-    // SAME scale as selectedPlan.score (which is also computed via
-    // getAiPlaneAdjustedScore(totalDist, plane)). Browser logs from prior
-    // runs showed planAfter.score on a completely different scale (-0.1 vs
-    // currentScore 1200), so the planner was never accepting alternatives.
     const totalDist = Number.isFinite(planAfter.totalDist)
       ? planAfter.totalDist
       : Math.hypot(planAfter.vx, planAfter.vy) * FIELD_FLIGHT_DURATION_SEC;
     const baseScore = (typeof getAiPlaneAdjustedScore === "function")
       ? getAiPlaneAdjustedScore(totalDist, plane)
       : (Number.isFinite(planAfter.score) ? planAfter.score : 0);
-    const dynamiteCost = blockerIds.length * 0.05; // 5% penalty per charge spent
+    const dynamiteCost = blockerIds.length * 0.05;
     const adjustedScore = baseScore * target.value - dynamiteCost;
 
+    // Path collection / safety stats for alt route — counts what the plane
+    // would visibly touch on a direct segment plane → altLanding. Compared
+    // against the current plan's segment below in accept logic.
+    const altDur = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
+      ? FIELD_FLIGHT_DURATION_SEC : 1;
+    const altLandingX = plane.x + planAfter.vx * altDur;
+    const altLandingY = plane.y + planAfter.vy * altDur;
+    const altStats = countTargetsAndSafetyOnSegment(plane, altLandingX, altLandingY, color, context, aliveEnemies);
+
     if(!bestAlt || adjustedScore > bestAlt.adjustedScore){
-      bestAlt = { target, blockers, plan: planAfter, adjustedScore, nDynamites: blockerIds.length };
+      bestAlt = { target, blockers, plan: planAfter, adjustedScore, nDynamites: blockerIds.length, altLandingX, altLandingY, altStats };
     }
   }
 
@@ -22702,11 +22760,26 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
     return null;
   }
 
-  // Lower threshold (was 1.10) — user wants "use dynamite more actively, even
-  // for small improvements". Switch when adjusted score is just slightly better.
+  // Multi-criteria acceptance. In this game, getAiPlaneAdjustedScore is
+  // distance-weighted — a ricochet path that bounces is longer and thus
+  // scores higher than a short direct line through a brick. Score alone
+  // would never prefer direct-through-dynamite. Instead, accept alt-plan
+  // when it gives a CLEAR tactical advantage:
+  //   (A) Collects more enemies/cargo along its segment than the current plan.
+  //   (B) Lands somewhere safer (fewer enemies within retaliation range).
+  //   (C) Score-wise meaningfully better.
   const currentScore = Number.isFinite(currentPlan?.score) ? currentPlan.score : 0;
+  const currentLandingX = Number.isFinite(currentPlan?.landingX) ? currentPlan.landingX : plane.x;
+  const currentLandingY = Number.isFinite(currentPlan?.landingY) ? currentPlan.landingY : plane.y;
+  const currentStats = countTargetsAndSafetyOnSegment(plane, currentLandingX, currentLandingY, color, context, aliveEnemies);
+
   const acceptanceThreshold = 1.01;
-  const accepted = bestAlt.adjustedScore > currentScore * acceptanceThreshold;
+  const collectsMore = bestAlt.altStats.totalPickups > currentStats.totalPickups;
+  const sameCollectsButSafer = bestAlt.altStats.totalPickups === currentStats.totalPickups
+    && bestAlt.altStats.threatsNearLanding < currentStats.threatsNearLanding;
+  const scoreSignificantlyBetter = bestAlt.adjustedScore > currentScore * acceptanceThreshold;
+  const accepted = collectsMore || sameCollectsButSafer || scoreSignificantlyBetter;
+
   logDynamiteDebug("dynamite_augmented_plan_evaluation", {
     planeId: plane?.id ?? null,
     bestTargetKind: bestAlt.target.kind,
@@ -22716,6 +22789,13 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
     accepted,
     nDynamites: bestAlt.nDynamites,
     colliderIds: bestAlt.blockers.map((b) => b?.id ?? null),
+    altStats: bestAlt.altStats,
+    currentStats,
+    decision: {
+      collectsMore,
+      sameCollectsButSafer,
+      scoreSignificantlyBetter,
+    },
   });
   if(!accepted) return null;
 
