@@ -15482,7 +15482,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
             }
           }
 
-          logAiDecision("dynamite_augmented_plan_selected", {
+          logDynamiteDebug("dynamite_augmented_plan_selected", {
             planeId: selectedPlan.plane?.id ?? null,
             source: "scheduler_dynamite_augmented_plan",
             ...selectedPlan.aiDynamiteAugmentedPlanMeta,
@@ -15560,7 +15560,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         // executeCommittedInventoryAction will run a final sync replan
         // attempt and align the plan when possible.
         const softSkipDynamite = (eventName, extra) => {
-          logAiDecision(eventName, {
+          logDynamiteDebug(eventName, {
             planeId: selectedPlan.plane?.id ?? null,
             colliderId: dynEntry.target?.colliderId ?? null,
             finalDestination: dynEntry.finalDestination || null,
@@ -15635,7 +15635,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
               originalDistToDest: Number(distOldToDest.toFixed(1)),
               replannedDistToDest: Number(distNewToDest.toFixed(1)),
             };
-            logAiDecision("dynamite_launch_replanned", {
+            logDynamiteDebug("dynamite_launch_replanned", {
               planeId: selectedPlan.plane?.id ?? null,
               source: "scheduler_dynamite_replan",
               ...selectedPlan.aiDynamiteReplanMeta,
@@ -19375,6 +19375,21 @@ function logAiDecision(reason, details = {}){
   }
 }
 
+// Force-detailed logger for DYNAMITE diagnostics. logAiDecision uses a
+// compact payload by default (filters fields), so user-facing console
+// only shows reasonCode. This helper emits the RAW details next to it
+// so diagnostic snapshots (dynamite_about_to_place, augmented plan
+// evaluation, etc.) are inspectable without flipping the global debug
+// flag. Browser filter: search "dynamite" in DevTools console.
+function logDynamiteDebug(reason, details = {}){
+  try { logAiDecision(reason, details); } catch(_logErr) {}
+  try {
+    if(typeof console !== "undefined" && typeof console.log === "function"){
+      console.log(`[dynamite-debug] ${reason}`, details);
+    }
+  } catch(_consoleErr) {}
+}
+
 function normalizeAiReasonText(reasonText = ""){
   if(typeof reasonText === "string") return reasonText.toLowerCase();
   if(reasonText && typeof reasonText === "object"){
@@ -22668,7 +22683,7 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
   }
 
   if(!bestAlt){
-    logAiDecision("dynamite_augmented_plan_no_alternative", {
+    logDynamiteDebug("dynamite_augmented_plan_no_alternative", {
       planeId: plane?.id ?? null,
       dynamiteCharges,
       targetsConsidered: targets.length,
@@ -22682,7 +22697,7 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
   const currentScore = Number.isFinite(currentPlan?.score) ? currentPlan.score : 0;
   const acceptanceThreshold = 1.01;
   const accepted = bestAlt.adjustedScore > currentScore * acceptanceThreshold;
-  logAiDecision("dynamite_augmented_plan_evaluation", {
+  logDynamiteDebug("dynamite_augmented_plan_evaluation", {
     planeId: plane?.id ?? null,
     bestTargetKind: bestAlt.target.kind,
     bestAdjustedScore: Number(bestAlt.adjustedScore.toFixed(3)),
@@ -27533,7 +27548,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
                 source: "executeCommittedInventoryAction_inline_sync",
                 inlineReplanLanding: { x: Number(newLx.toFixed(1)), y: Number(newLy.toFixed(1)) },
               };
-              logAiDecision("dynamite_inline_replan_applied", {
+              logDynamiteDebug("dynamite_inline_replan_applied", {
                 planeId: plannedMove.plane?.id ?? null,
                 colliderId: target?.colliderId ?? null,
                 replannedLanding: { x: Number(newLx.toFixed(1)), y: Number(newLy.toFixed(1)) },
@@ -27543,7 +27558,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
             } else {
               // Replan didn't find a corridor-aligned path. Keep current plan,
               // place dynamite anyway (strategic_setup intent).
-              logAiDecision("dynamite_inline_replan_skipped_strategic_setup", {
+              logDynamiteDebug("dynamite_inline_replan_skipped_strategic_setup", {
                 planeId: plannedMove.plane?.id ?? null,
                 colliderId: target?.colliderId ?? null,
                 spriteId: target?.spriteId ?? null,
@@ -27573,7 +27588,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
                 vy: plannedMove.vy,
               }, targetGeometry)
             : null;
-          logAiDecision("dynamite_about_to_place", {
+          logDynamiteDebug("dynamite_about_to_place", {
             planeId: plannedMove.plane?.id ?? null,
             colliderId: target?.colliderId ?? null,
             spriteId: target?.spriteId ?? null,
