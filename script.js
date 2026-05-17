@@ -22742,20 +22742,57 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
     const totalDist = Number.isFinite(planAfter.totalDist)
       ? planAfter.totalDist
       : Math.hypot(planAfter.vx, planAfter.vy) * FIELD_FLIGHT_DURATION_SEC;
-    const baseScore = (typeof getAiPlaneAdjustedScore === "function")
-      ? getAiPlaneAdjustedScore(totalDist, plane)
-      : (Number.isFinite(planAfter.score) ? planAfter.score : 0);
-    const dynamiteCost = blockerIds.length * 0.05;
-    const adjustedScore = baseScore * target.value - dynamiteCost;
 
-    // Path collection / safety stats for alt route — counts what the plane
-    // would visibly touch on a direct segment plane → altLanding. Compared
-    // against the current plan's segment below in accept logic.
+    // Compute landing FIRST, then stats, then score — scoring reads altStats
+    // for the mass-pickup bonus, and flag-safety guard reads altLanding.
     const altDur = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
       ? FIELD_FLIGHT_DURATION_SEC : 1;
     const altLandingX = plane.x + planAfter.vx * altDur;
     const altLandingY = plane.y + planAfter.vy * altDur;
     const altStats = countTargetsAndSafetyOnSegment(plane, altLandingX, altLandingY, color, context, aliveEnemies);
+
+    // Flag-safety guard. Flag-grab into enemy retaliation range loses the
+    // plane next turn for one pickup. Allow only if landing is clear, OR
+    // if AI has FUEL in inventory (return-trip plausible). "continue" pops
+    // just this flag-target from the bestAlt race; other targets remain,
+    // so the function still returns a non-null alt if any safe target
+    // exists — no desync (legacy null-return was the previous desync source).
+    if(target.kind === "flag" && typeof getImmediateResponseThreatMeta === "function"){
+      const respondThreats = getImmediateResponseThreatMeta(context, altLandingX, altLandingY, null);
+      const threatCount = Number.isFinite(respondThreats?.count) ? respondThreats.count : 0;
+      if(threatCount > 0){
+        const inv = (typeof evaluateInventoryState === "function") ? evaluateInventoryState(color) : null;
+        const fuelCount = Number(inv?.counts?.[INVENTORY_ITEM_TYPES.FUEL] ?? 0);
+        if(fuelCount <= 0){
+          logDynamiteDebug("dynamite_augmented_plan_flag_target_skipped", {
+            planeId: plane?.id ?? null,
+            flagAnchorX: target.x,
+            flagAnchorY: target.y,
+            altLandingX,
+            altLandingY,
+            threatCount,
+            reason: "no_fuel_for_safe_return",
+          });
+          continue;
+        }
+      }
+    }
+
+    const baseScore = (typeof getAiPlaneAdjustedScore === "function")
+      ? getAiPlaneAdjustedScore(totalDist, plane)
+      : (Number.isFinite(planAfter.score) ? planAfter.score : 0);
+
+    // Mass-target bonus: each pickup beyond the first adds 20% of baseScore,
+    // capped at 3 extra. Flags are NOT in totalPickups — flag plans get this
+    // bonus only if they happen to graze enemies/cargo on the way (combo).
+    const extraPickups = Math.min(Math.max(0, altStats.totalPickups - 1), 3);
+    const massPickupBonus = extraPickups * baseScore * 0.20;
+
+    // Scale dynamite cost with baseScore so extra blockers stay meaningful
+    // at distance — was 0.05/blocker (negligible vs baseScore in hundreds).
+    const dynamiteCost = blockerIds.length * baseScore * 0.04;
+
+    const adjustedScore = baseScore * target.value + massPickupBonus - dynamiteCost;
 
     if(!bestAlt || adjustedScore > bestAlt.adjustedScore){
       bestAlt = { target, blockers, plan: planAfter, adjustedScore, nDynamites: blockerIds.length, altLandingX, altLandingY, altStats };
