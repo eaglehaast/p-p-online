@@ -22792,31 +22792,13 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
   const scoreSignificantlyBetter = bestAlt.adjustedScore > currentScore * acceptanceThreshold;
   const accepted = collectsMore || sameCollectsButSafer || scoreSignificantlyBetter;
 
-  // Suicide guard for flag-targets: a flag-grab whose landing point sits in
-  // enemy retaliation range loses the plane on the next turn for a single
-  // pickup — not a good trade. Scoped to flag only; enemy/cargo targets pay
-  // off even if the plane dies. FUEL round-trip integration is a follow-up.
-  let suicideRejectReason = null;
-  if(accepted && bestAlt.target.kind === "flag"
-      && typeof getImmediateResponseThreatMeta === "function"){
-    const respondThreats = getImmediateResponseThreatMeta(
-      context, bestAlt.altLandingX, bestAlt.altLandingY, null
-    );
-    const threatCount = Number.isFinite(respondThreats?.count) ? respondThreats.count : 0;
-    if(threatCount > 0){
-      suicideRejectReason = `flag_landing_in_response_range_threats_${threatCount}`;
-    }
-  }
-  const finalAccepted = accepted && !suicideRejectReason;
-
   logDynamiteDebug("dynamite_augmented_plan_evaluation", {
     planeId: plane?.id ?? null,
     bestTargetKind: bestAlt.target.kind,
     bestAdjustedScore: Number(bestAlt.adjustedScore.toFixed(3)),
     currentScore: Number(currentScore.toFixed(3)),
     threshold: acceptanceThreshold,
-    accepted: finalAccepted,
-    suicideRejectReason,
+    accepted,
     nDynamites: bestAlt.nDynamites,
     colliderIds: bestAlt.blockers.map((b) => b?.id ?? null),
     altStats: bestAlt.altStats,
@@ -22827,7 +22809,7 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
       scoreSignificantlyBetter,
     },
   });
-  if(!finalAccepted) return null;
+  if(!accepted) return null;
 
   return bestAlt;
 }
