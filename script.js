@@ -22715,6 +22715,16 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
     }
     if(blockers.length === 0 || blockers.length > maxDynamites) continue;
 
+    // All blockers must have finite center coords — sequence builder at
+    // script.js:15469 silently drops blockers with NaN cx/cy, leaving the
+    // trajectory believing N walls were removed while only <N dynamites fire.
+    const allBlockersHaveValidCenters = blockers.every((b) => {
+      const bx = Number.isFinite(b?.cx) ? b.cx : (Number.isFinite(b?.centerX) ? b.centerX : null);
+      const by = Number.isFinite(b?.cy) ? b.cy : (Number.isFinite(b?.centerY) ? b.centerY : null);
+      return Number.isFinite(bx) && Number.isFinite(by);
+    });
+    if(!allBlockersHaveValidCenters) continue;
+
     const blockerIds = blockers.map((b) => b.id);
 
     // Plan a direct path with these blockers temporarily removed from the world.
@@ -22738,6 +22748,13 @@ async function findAiDynamiteAugmentedAlternativePlanAsync(plane, color, context
       planAfter = null;
     }
     if(!planAfter || !Number.isFinite(planAfter.vx) || !Number.isFinite(planAfter.vy)) continue;
+
+    // Reject ricochet trajectories: blockers were collected on the straight
+    // plane→target line, but planPathToPoint can return a ricochet path
+    // (routeClass:"direct" is just a label — attack_parallel auto-ricochet
+    // probe at script.js:37805-37822 still fires). Sequence entries would
+    // aim at straight-line blockers while flight bounces past other walls.
+    if(Number.isFinite(planAfter.bounceCount) && planAfter.bounceCount > 0) continue;
 
     const totalDist = Number.isFinite(planAfter.totalDist)
       ? planAfter.totalDist
