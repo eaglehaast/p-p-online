@@ -15078,6 +15078,13 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           seedCount: simulationOptions.seedCount,
           coarsePoolSize: simulationOptions.coarsePoolSize,
           refineScaleWindow: simulationOptions.refineScaleWindow,
+          // Soft tiebreaker on landing safety; closure captures enemyPlanes
+          // from outer scheduler scope (script.js:14755).
+          landingPreference: (pool) => pickSaferLanding(pool, {
+            plane,
+            primaryEnemy: enemy,
+            context: { enemies: enemyPlanes },
+          }),
         }, aiCoopMaybeYield);
         const sim = simulated?.sim;
         if(!sim || !sim.hitTarget) return null;
@@ -40195,6 +40202,20 @@ const AI_SIM_FINE_SCALE_STEP = 0.03;
 const AI_SIM_SEED_COUNT_DEFAULT = 8;
 const AI_SIM_COARSE_POOL_DEFAULT = 20;
 const AI_SIM_MAX_ENEMIES_PER_PLANE_DEFAULT = 3;
+
+// Post-shot landing safety tiebreaker. Among attack candidates that hit the
+// same enemy with roughly equal score, prefer the one whose landing point
+// is safer (behind cover / fewer enemies in response range). Tolerance is
+// small enough that a meaningfully better primary attack always wins —
+// retreat is a bonus when free, never a sacrifice.
+const AI_LANDING_SAFETY_ENABLED = true;
+const AI_LANDING_TIEBREAK_TOLERANCE_ABS = 18;
+const AI_LANDING_TIEBREAK_TOLERANCE_REL = 0.025;
+const AI_LANDING_TIEBREAK_SURVIVORS_CAP = 8;
+const AI_LANDING_SAFETY_BLOCKED_SIGHT_WEIGHT = 6;
+const AI_LANDING_SAFETY_NEARBY_COLLIDER_WEIGHT = 3;
+const AI_LANDING_SAFETY_EXPOSED_ENEMY_WEIGHT = 9;
+const AI_LANDING_SAFETY_MINE_PENALTY = 14;
 const AI_SIM_COMPLEXITY_SOFT_CAP = 24;
 const AI_SIM_COMPLEXITY_HARD_CAP = 48;
 
@@ -40451,6 +40472,74 @@ function selectBestAICandidate(candidates){
   return candidates[0] || null;
 }
 
+// Soft tiebreaker among attack candidates that all hit the same enemy.
+// Pool comes already sorted by primary score. We keep candidates within
+// a small tolerance of the best (so an objectively better attack always
+// wins) and within that band prefer the one whose landing point is safer
+// (cover, fewer enemies in response radius, no mine on landing).
+function pickSaferLanding(pool, ctx){
+  if(!AI_LANDING_SAFETY_ENABLED) return null;
+  if(!Array.isArray(pool) || pool.length < 2) return null;
+
+  const bestScore = pool[0].score;
+  const tolerance = Math.max(
+    AI_LANDING_TIEBREAK_TOLERANCE_ABS,
+    Math.abs(bestScore) * AI_LANDING_TIEBREAK_TOLERANCE_REL,
+  );
+  const threshold = bestScore - tolerance;
+  const survivors = pool.filter((c) => Number.isFinite(c?.score) && c.score >= threshold)
+    .slice(0, AI_LANDING_TIEBREAK_SURVIVORS_CAP);
+  if(survivors.length < 2) return pool[0];
+
+  const scoreSurvivor = (c) => {
+    const ix = c?.sim?.impactPoint?.x;
+    const iy = c?.sim?.impactPoint?.y;
+    if(!Number.isFinite(ix) || !Number.isFinite(iy)){
+      return { combined: c.score, cover: null, threat: null };
+    }
+    const cover = (typeof getCoverMetaAtLandingPoint === "function")
+      ? getCoverMetaAtLandingPoint(ctx?.context, ix, iy) : null;
+    const threat = (typeof getImmediateResponseThreatMeta === "function")
+      ? getImmediateResponseThreatMeta(ctx?.context, ix, iy, ctx?.primaryEnemy || null) : null;
+    const landingBonus = (cover?.blockedEnemySightCount || 0) * AI_LANDING_SAFETY_BLOCKED_SIGHT_WEIGHT
+      + (cover?.nearbyColliderCount || 0) * AI_LANDING_SAFETY_NEARBY_COLLIDER_WEIGHT
+      - (threat?.enemyCount || 0) * AI_LANDING_SAFETY_EXPOSED_ENEMY_WEIGHT
+      - (threat?.mineCount > 0 ? AI_LANDING_SAFETY_MINE_PENALTY : 0);
+    return { combined: c.score + landingBonus, cover, threat };
+  };
+
+  const primaryEval = scoreSurvivor(survivors[0]);
+  let best = survivors[0];
+  let bestCombined = primaryEval.combined;
+
+  for(let i = 1; i < survivors.length; i++){
+    const evalC = scoreSurvivor(survivors[i]);
+    if(evalC.combined > bestCombined){
+      bestCombined = evalC.combined;
+      best = survivors[i];
+    }
+  }
+
+  if(best !== pool[0] && typeof logAiDecision === "function"){
+    const pickedEval = scoreSurvivor(best);
+    logAiDecision("attack_landing_safety_swap", {
+      planeId: ctx?.plane?.id ?? null,
+      enemyId: ctx?.primaryEnemy?.id ?? null,
+      primaryScore: pool[0].score,
+      pickedScore: best.score,
+      thresholdUsed: Number(threshold.toFixed(2)),
+      primaryLanding: { x: pool[0].sim?.impactPoint?.x, y: pool[0].sim?.impactPoint?.y },
+      pickedLanding: { x: best.sim?.impactPoint?.x, y: best.sim?.impactPoint?.y },
+      primaryCover: primaryEval.cover,
+      primaryThreat: primaryEval.threat,
+      pickedCover: pickedEval.cover,
+      pickedThreat: pickedEval.threat,
+    });
+  }
+
+  return best;
+}
+
 function findBestSimulatedShot(plane, target, options = {}){
   const candidates = enumerateAIShotCandidates(plane, target, {
     maxBounces: options.maxBounces ?? AI_SIM_MAX_BOUNCES_DEFAULT,
@@ -40528,6 +40617,10 @@ async function findBestSimulatedShotAsync(plane, target, options = {}, yieldHook
     coarsePoolSize: options.coarsePoolSize,
     refineScaleWindow: options.refineScaleWindow,
   }, yieldHook);
+  if(typeof options.landingPreference === "function" && Array.isArray(candidates) && candidates.length > 0){
+    const preferred = options.landingPreference(candidates);
+    if(preferred) return preferred;
+  }
   return selectBestAICandidate(candidates);
 }
 
