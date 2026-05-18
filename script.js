@@ -3855,6 +3855,7 @@ function applyMapEditorEntityMoveFromPointerEvent(event){
 
 function onCanvasMapEditorEntityPointerDown(event){
   if(selectedRuleset !== "mapeditor") return false;
+  if(mapEditorControlMode !== "bricks") return false;
   const { x: designX, y: designY } = getPointerDesignCoords(event);
   const { x: boardX, y: boardY } = designToBoardCoords(designX, designY);
   const entity = findMapEditorEntityAtBoardPoint(boardX, boardY);
@@ -18218,7 +18219,7 @@ function onCanvasPointerMove(e){
     document.body.style.cursor = "grabbing";
     return;
   }
-  if(selectedRuleset === "mapeditor"){
+  if(selectedRuleset === "mapeditor" && mapEditorControlMode === "bricks"){
     const { x: designX, y: designY } = getPointerDesignCoords(e);
     const { x: boardX, y: boardY } = designToBoardCoords(designX, designY);
     const hoverEntity = findMapEditorEntityAtBoardPoint(boardX, boardY);
