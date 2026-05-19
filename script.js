@@ -3091,6 +3091,14 @@ function getPlaneDangerGeometry(plane){
   };
 }
 
+function getMineEffectiveTriggerRadius(plane){
+  const hasWings = plane && planeHasActiveTurnBuff(plane, INVENTORY_ITEM_TYPES.WINGS);
+  const halfSpan = hasWings
+    ? PLANE_GEOMETRY_TRUTH.BENEFICIAL_HITBOX_WIDTH_WITH_WINGS / 2
+    : PLANE_DRAW_W / 2;
+  return MINE_VISUAL_RADIUS + halfSpan;
+}
+
 function getPlaneBeneficialGeometry(plane){
   const hasWingsBuff = planeHasActiveTurnBuff(plane, INVENTORY_ITEM_TYPES.WINGS);
   const width = hasWingsBuff
@@ -4824,7 +4832,16 @@ function isMinePlacementValid(placement){
   });
   if(tooCloseToAnotherMine) return false;
 
-  if(isBrickPixel(placement.x, placement.y)) return false;
+  const mineR = Math.ceil(MINE_VISUAL_RADIUS);
+  let tooCloseToBrick = false;
+  for(let dy = -mineR; dy <= mineR && !tooCloseToBrick; dy++){
+    for(let dx = -mineR; dx <= mineR && !tooCloseToBrick; dx++){
+      if(dx*dx + dy*dy <= mineR*mineR && isBrickPixel(placement.x + dx, placement.y + dy)){
+        tooCloseToBrick = true;
+      }
+    }
+  }
+  if(tooCloseToBrick) return false;
 
   const intersectsCollider = colliders.some(collider =>
     isPointInsideCollider(placement.x, placement.y, collider)
@@ -4843,7 +4860,7 @@ function isMinePlacementValid(placement){
 
   const tooCloseToPlane = points.some(plane => {
     if(!plane?.isAlive || plane?.burning) return false;
-    return Math.hypot(plane.x - placement.x, plane.y - placement.y) < POINT_RADIUS;
+    return Math.hypot(plane.x - placement.x, plane.y - placement.y) < getMineEffectiveTriggerRadius(plane);
   });
   if(tooCloseToPlane) return false;
 
@@ -8847,6 +8864,7 @@ const MINE_SIZE_DEFAULTS = Object.freeze({
   LOGICAL_PX: 30,
   SCREEN_PX: 30,
 });
+const MINE_VISUAL_RADIUS = MINE_SIZE_DEFAULTS.LOGICAL_PX / 2;
 
 const mineSizeRuntime = {
   LOGICAL_PX: MINE_SIZE_DEFAULTS.LOGICAL_PX,
@@ -8907,8 +8925,8 @@ const SLIDE_THRESHOLD      = 0.1;
 // Larger hit area for selecting planes with touch/mouse
 const PLANE_TOUCH_RADIUS   = 20;                   // px
 const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit Anti-Aircraft center
-const MINE_TRIGGER_RADIUS  = POINT_RADIUS;
-const MINE_PLACEMENT_MIN_DISTANCE = 16; // px, минимальная дистанция между центрами мин при установке
+const MINE_TRIGGER_RADIUS  = MINE_VISUAL_RADIUS + PLANE_DRAW_W / 2; // 15+18=33 px: крыло касается края спрайта
+const MINE_PLACEMENT_MIN_DISTANCE = MINE_SIZE_DEFAULTS.LOGICAL_PX; // 30 px — спрайты мин не перекрываются
 const BOUNCE_FRAMES        = 68;
 // Duration of a full-speed flight on the field (measured in frames)
 // (Restored to the original pre-change speed used for gameplay physics)
@@ -20346,8 +20364,7 @@ function getMineThreatMetaForSegment(startX, startY, endX, endY, plane = null, o
   }
 
   const mineOwner = options?.mineOwner || null;
-  const dangerRadius = plane ? getPlaneDangerGeometry(plane).radius : 0;
-  const mineTriggerRadius = Math.max(MINE_TRIGGER_RADIUS, dangerRadius);
+  const mineTriggerRadius = plane ? getMineEffectiveTriggerRadius(plane) : MINE_TRIGGER_RADIUS;
   const isLandingPointOnlyCheck = Math.hypot(endX - startX, endY - startY) <= 0.0001;
   let count = 0;
   let nearestDist = Number.POSITIVE_INFINITY;
@@ -26918,7 +26935,7 @@ async function buildAiSelectedPlanInventoryEnhancementsAsync(context, selectedPl
 // =========================================================================
 const AI_PROACTIVE_MINE_MAX_PER_TURN = 3;
 const AI_PROACTIVE_MINE_LANDING_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 1.2;
-const AI_PROACTIVE_MINE_OWN_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 2.5;
+const AI_PROACTIVE_MINE_OWN_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 2.0;
 const AI_PROACTIVE_MINE_TRAJECTORY_BUFFER = MINE_TRIGGER_RADIUS * 1.5;
 const AI_PROACTIVE_MINE_OFFSETS = Object.freeze([
   { ox: 0, oy: 0 },
@@ -41919,8 +41936,7 @@ function handleMineForPlane(p, fp){
     const dx = p.x - mine.x;
     const dy = p.y - mine.y;
     const dist = Math.hypot(dx, dy);
-    const dangerRadius = getPlaneDangerGeometry(p).radius;
-    const mineTriggerRadius = Math.max(MINE_TRIGGER_RADIUS, dangerRadius);
+    const mineTriggerRadius = getMineEffectiveTriggerRadius(p);
     const pathDistance = getDistanceFromPointToSegment(mine.x, mine.y, prevX, prevY, p.x, p.y);
     const segmentHit = pathDistance <= mineTriggerRadius;
 
