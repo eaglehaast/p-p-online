@@ -41904,8 +41904,8 @@ function handleMineForPlane(p, fp){
 
     if(dist > mineTriggerRadius && !segmentHit) continue;
 
-    const contactX = dist === 0 ? p.x : p.x - dx / dist * dangerRadius;
-    const contactY = dist === 0 ? p.y : p.y - dy / dist * dangerRadius;
+    const contactX = dist === 0 ? p.x : p.x - dx / dist * mineTriggerRadius;
+    const contactY = dist === 0 ? p.y : p.y - dy / dist * mineTriggerRadius;
 
     dropActiveFlagFromPlane(p, { x: contactX, y: contactY });
     eliminatePlane(p);
