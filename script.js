@@ -40537,7 +40537,14 @@ function pickSaferLanding(pool, ctx){
     });
   }
 
-  return best;
+  // Preserve primary's score in the returned candidate so cross-enemy
+  // attack ranking (script.js:15165-15168) and attack-vs-cargo comparisons
+  // don't shift — this is a strict tiebreaker on landing, not on score.
+  // Without this, returning best.score (which can be ~5-25 below primary's)
+  // makes downstream switch to a different enemy or to a cargo plan, since
+  // attackCandidates.sort uses move.score.
+  if(best === pool[0]) return pool[0];
+  return { ...best, score: pool[0].score };
 }
 
 function findBestSimulatedShot(plane, target, options = {}){
