@@ -26937,6 +26937,13 @@ const AI_PROACTIVE_MINE_MAX_PER_TURN = 3;
 const AI_PROACTIVE_MINE_LANDING_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 1.2;
 const AI_PROACTIVE_MINE_OWN_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 2.0;
 const AI_PROACTIVE_MINE_TRAJECTORY_BUFFER = MINE_TRIGGER_RADIUS * 1.5;
+const AI_MINE_PROJECTION_ENABLED = true;
+const AI_MINE_PROJECTION_WEIGHT = 0.45;
+const AI_MINE_SCENARIO_PRIOR_WEIGHT = 1.0;
+const AI_MINE_PROJECTION_MAX_ENEMIES = 3;
+const AI_MINE_PROJECTION_BUDGET_MS = 20;
+const AI_OWN_MINE_PATH_PENALTY = 900;
+const AI_OWN_MINE_LANDING_PENALTY = 1100;
 const AI_PROACTIVE_MINE_OFFSETS = Object.freeze([
   { ox: 0, oy: 0 },
   { ox: 1, oy: 0 },
@@ -27172,6 +27179,184 @@ function scenarioProactiveMineDefendOwnFlag(selectedPlan, ctx, acceptedPlacement
   return out;
 }
 
+function clampMineProbePoint(x, y){
+  const minX = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
+  const maxX = FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X;
+  const minY = FIELD_TOP + FIELD_BORDER_OFFSET_Y;
+  const maxY = FIELD_TOP + FIELD_HEIGHT - FIELD_BORDER_OFFSET_Y;
+  return {
+    x: Math.max(minX, Math.min(maxX, x)),
+    y: Math.max(minY, Math.min(maxY, y)),
+  };
+}
+
+function normalizeMineVector(dx, dy){
+  const length = Math.hypot(dx, dy);
+  if(length <= 0.0001) return null;
+  return { x: dx / length, y: dy / length };
+}
+
+function collectUniqueMineProbePoints(rawTargets){
+  const unique = [];
+  for(const target of rawTargets){
+    if(!target || !Number.isFinite(target.x) || !Number.isFinite(target.y)) continue;
+    const duplicate = unique.some((entry) => Math.hypot(entry.x - target.x, entry.y - target.y) <= CELL_SIZE * 0.35);
+    if(!duplicate) unique.push(target);
+  }
+  return unique;
+}
+
+function getEnemyObjectiveTargetsForMineProjection(enemy, aiColor, ctx){
+  const targets = [];
+  const aiBase = (typeof getBaseAnchor === "function") ? getBaseAnchor(aiColor) : null;
+  if(aiBase) targets.push({ x: aiBase.x, y: aiBase.y, name: "to_ai_base", weight: 1.20 });
+  if(ctx?.landing && Number.isFinite(ctx.landing.x) && Number.isFinite(ctx.landing.y)){
+    targets.push({ x: ctx.landing.x, y: ctx.landing.y, name: "to_current_landing", weight: 1.00 });
+  }
+  const allies = Array.isArray(ctx?.ownPlanesToAvoid) ? ctx.ownPlanesToAvoid : [];
+  for(let i = 0; i < allies.length && i < 3; i += 1){
+    const ally = allies[i];
+    if(!ally || !Number.isFinite(ally.x) || !Number.isFinite(ally.y)) continue;
+    targets.push({ x: ally.x, y: ally.y, name: `to_ally_${i}`, weight: 0.95 });
+  }
+  if(typeof cargoState !== "undefined" && Array.isArray(cargoState)){
+    const cargos = cargoState
+      .filter((cargo) => cargo && cargo.state === "ready" && Number.isFinite(cargo.x) && Number.isFinite(cargo.y))
+      .slice(0, 3);
+    for(let i = 0; i < cargos.length; i += 1){
+      const center = (typeof getCargoVisualCenter === "function")
+        ? getCargoVisualCenter(cargos[i])
+        : { x: cargos[i].x, y: cargos[i].y };
+      if(!Number.isFinite(center?.x) || !Number.isFinite(center?.y)) continue;
+      targets.push({ x: center.x, y: center.y, name: `to_cargo_${i}`, weight: 0.88 });
+    }
+  }
+  if(typeof flags !== "undefined" && Array.isArray(flags)){
+    const aiFlag = flags.find((f) => f && f.color === aiColor && f.state === FLAG_STATES.ACTIVE);
+    if(aiFlag){
+      const anchor = (typeof getFlagAnchor === "function") ? getFlagAnchor(aiFlag) : { x: aiFlag.x, y: aiFlag.y };
+      if(anchor && Number.isFinite(anchor.x) && Number.isFinite(anchor.y)){
+        targets.push({ x: anchor.x, y: anchor.y, name: "to_ai_flag", weight: 1.05 });
+      }
+    }
+  }
+  return collectUniqueMineProbePoints(targets).slice(0, 5);
+}
+
+function buildEnemyTrajectoryProjectionFree(enemy, aiColor, ctx){
+  if(!enemy || !Number.isFinite(enemy.x) || !Number.isFinite(enemy.y)) return [];
+  const currentVelocity = normalizeMineVector(Number(enemy?.vx) || 0, Number(enemy?.vy) || 0);
+  const objectives = getEnemyObjectiveTargetsForMineProjection(enemy, aiColor, ctx);
+  const rangePx = (typeof getPlaneEffectiveRangePx === "function") ? getPlaneEffectiveRangePx(enemy) : MAX_DRAG_DISTANCE;
+  const probeStep = Math.max(CELL_SIZE * 2.1, Math.min(MAX_DRAG_DISTANCE * 0.42, (rangePx || MAX_DRAG_DISTANCE) * 0.82));
+  const probes = [];
+  if(currentVelocity){
+    probes.push({
+      ...clampMineProbePoint(enemy.x + currentVelocity.x * probeStep, enemy.y + currentVelocity.y * probeStep),
+      step: 1, weight: 0.90, targetName: "velocity_1",
+    });
+    probes.push({
+      ...clampMineProbePoint(enemy.x + currentVelocity.x * probeStep * 1.8, enemy.y + currentVelocity.y * probeStep * 1.8),
+      step: 2, weight: 0.65, targetName: "velocity_2",
+    });
+  }
+  for(const objective of objectives){
+    const direction = normalizeMineVector(objective.x - enemy.x, objective.y - enemy.y);
+    if(!direction) continue;
+    const oneTurn = clampMineProbePoint(enemy.x + direction.x * probeStep, enemy.y + direction.y * probeStep);
+    const twoTurn = clampMineProbePoint(enemy.x + direction.x * probeStep * 1.9, enemy.y + direction.y * probeStep * 1.9);
+    probes.push({ ...oneTurn, targetName: objective.name, step: 1, weight: objective.weight });
+    probes.push({ ...twoTurn, targetName: objective.name, step: 2, weight: Math.max(0.45, objective.weight * 0.75) });
+  }
+  return collectUniqueMineProbePoints(probes).map((point) => ({
+    ...point,
+    step: Number(point?.step) || 1,
+    weight: Number(point?.weight) || 0.75,
+  }));
+}
+
+function evaluateMineZoneControlFree(enemy, mineX, mineY, projection, aiColor){
+  const controlRadius = MINE_TRIGGER_RADIUS * 1.35;
+  const highControlRadius = MINE_TRIGGER_RADIUS * 0.95;
+  let projectedContactScore = 0;
+  let basePassCut = false;
+  let turnPointControlled = false;
+
+  for(let i = 0; i < projection.length; i += 1){
+    const probe = projection[i];
+    const distanceToMine = Math.hypot(probe.x - mineX, probe.y - mineY);
+    const contactWeight = probe.step === 1 ? 1 : 0.72;
+    if(distanceToMine <= controlRadius){
+      const proximityBoost = distanceToMine <= highControlRadius ? 1.15 : 0.86;
+      projectedContactScore += probe.weight * contactWeight * proximityBoost;
+    }
+    if(i > 0){
+      const prev = projection[i - 1];
+      const turnAngle = Math.abs(Math.atan2(probe.y - prev.y, probe.x - prev.x) - Math.atan2(prev.y - enemy.y, prev.x - enemy.x));
+      const normalizedTurn = Math.min(Math.PI, turnAngle > Math.PI ? (Math.PI * 2 - turnAngle) : turnAngle);
+      const turnSeverity = normalizedTurn / Math.PI;
+      if(turnSeverity >= 0.28 && distanceToMine <= controlRadius){
+        turnPointControlled = true;
+        projectedContactScore += 0.42 * turnSeverity;
+      }
+    }
+  }
+
+  const aiBase = (typeof getBaseAnchor === "function") ? getBaseAnchor(aiColor) : null;
+  if(aiBase){
+    const baseLaneDistance = distancePointToSegment(mineX, mineY, enemy.x, enemy.y, aiBase.x, aiBase.y);
+    const baseLaneIsClear = (typeof isPathClear === "function") ? isPathClear(enemy.x, enemy.y, aiBase.x, aiBase.y) : true;
+    if(baseLaneIsClear && baseLaneDistance <= controlRadius){
+      basePassCut = true;
+      projectedContactScore += 1.25;
+    }
+  }
+
+  return {
+    projectedContactScore: Number(projectedContactScore.toFixed(3)),
+    basePassCut,
+    turnPointControlled,
+    forcesBadPath: projectedContactScore >= 1.55 || (basePassCut && projectedContactScore >= 1.1),
+  };
+}
+
+function scoreMinePlacementByProjection(placement, ctx, aiColor, projectionCache){
+  if(!placement || !ctx?.enemies?.length) return { score: 0, details: null };
+  const enemiesByDist = ctx.enemies
+    .filter((e) => e && Number.isFinite(e.x) && Number.isFinite(e.y))
+    .map((enemy) => ({ enemy, d: Math.hypot(enemy.x - placement.x, enemy.y - placement.y) }))
+    .sort((a, b) => a.d - b.d)
+    .slice(0, AI_MINE_PROJECTION_MAX_ENEMIES);
+  if(enemiesByDist.length === 0) return { score: 0, details: null };
+  const nearestEnemy = enemiesByDist[0].enemy;
+  const reachLimit = ((typeof getPlaneEffectiveRangePx === "function" ? getPlaneEffectiveRangePx(nearestEnemy) : MAX_DRAG_DISTANCE) || MAX_DRAG_DISTANCE) * 2;
+  if(enemiesByDist[0].d > reachLimit) return { score: 0, details: { reason: "all_enemies_out_of_reach" } };
+  let sum = 0;
+  const perEnemy = [];
+  for(const { enemy } of enemiesByDist){
+    let projection = projectionCache.get(enemy);
+    if(!projection){
+      projection = buildEnemyTrajectoryProjectionFree(enemy, aiColor, ctx);
+      projectionCache.set(enemy, projection);
+    }
+    const zc = evaluateMineZoneControlFree(enemy, placement.x, placement.y, projection, aiColor);
+    const enemyScore = 1.40 * zc.projectedContactScore
+                     + 1.10 * (zc.basePassCut ? 1 : 0)
+                     + 0.55 * (zc.turnPointControlled ? 1 : 0)
+                     + 0.90 * (zc.forcesBadPath ? 1 : 0);
+    sum += enemyScore;
+    perEnemy.push({
+      contact: zc.projectedContactScore,
+      basePassCut: zc.basePassCut,
+      turnPointControlled: zc.turnPointControlled,
+      forcesBadPath: zc.forcesBadPath,
+      enemyScore: Number(enemyScore.toFixed(3)),
+    });
+  }
+  const capped = Math.min(2.5, sum);
+  return { score: capped, details: { perEnemy, enemyCount: perEnemy.length } };
+}
+
 async function buildAiProactiveMineCandidatesAsync(selectedPlan, context){
   if(typeof isAiTurnStillApplicable === "function" && !isAiTurnStillApplicable()) return [];
   const plane = selectedPlan?.plane || null;
@@ -27196,19 +27381,22 @@ async function buildAiProactiveMineCandidatesAsync(selectedPlan, context){
   const cap = Math.min(AI_PROACTIVE_MINE_MAX_PER_TURN, mineCount);
   const out = [];
   const acceptedPlacements = [];
+  const harvested = [];
 
   const scenarios = [
     (sp, c, ex) => scenarioProactiveMineSelfLanding(sp, c, ex),
     (sp, c, ex, rem) => scenarioProactiveMineDefendOwnPlanes(sp, c, ex, rem),
     (sp, c, ex) => scenarioProactiveMineBlockCargo(sp, c, ex),
-    (sp, c, ex) => scenarioProactiveMineZoneControl(sp, c, ex, out.length),
+    (sp, c, ex) => scenarioProactiveMineZoneControl(sp, c, ex, harvested.length),
     (sp, c, ex) => scenarioProactiveMineDefendOwnFlag(sp, c, ex),
   ];
 
+  // Phase 1: harvest all scenario proposals (no hard cap — projection re-rank picks top-N).
+  const scenarioCap = Math.min(AI_PROACTIVE_MINE_MAX_PER_TURN * 2, mineCount * 2 + 1);
   for(const fn of scenarios){
-    if(typeof isAiTurnStillApplicable === "function" && !isAiTurnStillApplicable()) return out;
-    if(out.length >= cap) break;
-    const remaining = cap - out.length;
+    if(typeof isAiTurnStillApplicable === "function" && !isAiTurnStillApplicable()) return [];
+    if(harvested.length >= scenarioCap) break;
+    const remaining = scenarioCap - harvested.length;
     let produced = [];
     try {
       produced = fn(selectedPlan, ctx, acceptedPlacements, remaining) || [];
@@ -27219,24 +27407,95 @@ async function buildAiProactiveMineCandidatesAsync(selectedPlan, context){
       produced = [];
     }
     for(const entry of produced){
-      if(out.length >= cap) break;
+      if(harvested.length >= scenarioCap) break;
       acceptedPlacements.push(entry.placement);
-      out.push(buildProactiveMineCandidate(entry));
-      logAiDecision("proactive_mine_candidate_queued", {
-        scenario: entry.scenario,
-        executionSource: entry.executionSource,
-        score: entry.score,
-        placement: {
-          x: Number(entry.placement.x.toFixed(1)),
-          y: Number(entry.placement.y.toFixed(1)),
-          cellX: entry.placement.cellX,
-          cellY: entry.placement.cellY,
-        },
-        remainingMineInventory: mineCount - out.length,
-        selectedPlanGoal: selectedPlan?.goalName || null,
-      });
+      harvested.push(entry);
     }
     if(typeof aiCoopMaybeYield === "function") await aiCoopMaybeYield();
+  }
+
+  if(harvested.length === 0) return out;
+
+  // Phase 2: projection re-rank.
+  const projectionEnabled = AI_MINE_PROJECTION_ENABLED && enemies.length > 0;
+  const projectionCache = new Map();
+  let budgetExceeded = false;
+  let evaluatedCount = 0;
+  const budgetStart = (typeof performance !== "undefined" && typeof performance.now === "function") ? performance.now() : Date.now();
+  for(let i = 0; i < harvested.length; i += 1){
+    const entry = harvested[i];
+    entry.scenarioPrior = entry.score;
+    entry.projectionScore = 0;
+    entry.projectionDetails = null;
+    if(!projectionEnabled){ continue; }
+    if(budgetExceeded){ continue; }
+    const now = (typeof performance !== "undefined" && typeof performance.now === "function") ? performance.now() : Date.now();
+    if(now - budgetStart > AI_MINE_PROJECTION_BUDGET_MS){
+      budgetExceeded = true;
+      logAiDecision("proactive_mine_projection_budget_exceeded", {
+        budgetMs: AI_MINE_PROJECTION_BUDGET_MS,
+        elapsedMs: Number((now - budgetStart).toFixed(2)),
+        evaluatedCount,
+        skippedCount: harvested.length - i,
+        selectedPlanGoal: selectedPlan?.goalName || null,
+      });
+      continue;
+    }
+    const res = scoreMinePlacementByProjection(entry.placement, ctx, aiColor, projectionCache);
+    entry.projectionScore = res.score;
+    entry.projectionDetails = res.details;
+    evaluatedCount += 1;
+    if(typeof aiCoopMaybeYield === "function" && (evaluatedCount % 2 === 0)){
+      await aiCoopMaybeYield();
+      if(typeof isAiTurnStillApplicable === "function" && !isAiTurnStillApplicable()) return [];
+    }
+  }
+
+  for(const entry of harvested){
+    entry.finalScore = Number((AI_MINE_SCENARIO_PRIOR_WEIGHT * entry.scenarioPrior
+                            + AI_MINE_PROJECTION_WEIGHT * entry.projectionScore).toFixed(3));
+  }
+  harvested.sort((a, b) => b.finalScore - a.finalScore);
+
+  for(const entry of harvested){
+    if(out.length >= cap) break;
+    const candidate = buildProactiveMineCandidate({
+      ...entry,
+      score: entry.finalScore,
+    });
+    candidate.expectedBenefit = entry.finalScore;
+    out.push(candidate);
+    logAiDecision("proactive_mine_candidate_queued", {
+      scenario: entry.scenario,
+      executionSource: entry.executionSource,
+      scenarioPrior: entry.scenarioPrior,
+      projectionScore: Number(entry.projectionScore.toFixed(3)),
+      finalScore: entry.finalScore,
+      projectionDetails: entry.projectionDetails,
+      placement: {
+        x: Number(entry.placement.x.toFixed(1)),
+        y: Number(entry.placement.y.toFixed(1)),
+        cellX: entry.placement.cellX,
+        cellY: entry.placement.cellY,
+      },
+      remainingMineInventory: mineCount - out.length,
+      selectedPlanGoal: selectedPlan?.goalName || null,
+    });
+  }
+
+  if(projectionEnabled && harvested.length > 1){
+    logAiDecision("proactive_mine_reranked", {
+      enemyCount: enemies.length,
+      candidateCount: harvested.length,
+      acceptedCount: out.length,
+      budgetExceeded,
+      order: harvested.slice(0, AI_PROACTIVE_MINE_MAX_PER_TURN).map((entry) => ({
+        scenario: entry.scenario,
+        scenarioPrior: entry.scenarioPrior,
+        projectionScore: Number(entry.projectionScore.toFixed(3)),
+        finalScore: entry.finalScore,
+      })),
+    });
   }
 
   return out;
@@ -40374,6 +40633,19 @@ function simulateAIShot(plane, launchVector, options = {}){
     curr = { x: segmentEnd.x + hit.normal.x * EPS_PUSH, y: segmentEnd.y + hit.normal.y * EPS_PUSH };
   }
 
+  let ownMinePathHit = false;
+  let ownMineLandingThreat = false;
+  if(plane?.color && typeof getMineThreatMetaForSegment === "function" && predictedPath.length >= 2){
+    for(let i = 1; i < predictedPath.length; i += 1){
+      const segStart = predictedPath[i - 1];
+      const segEnd = predictedPath[i];
+      const meta = getMineThreatMetaForSegment(segStart.x, segStart.y, segEnd.x, segEnd.y, plane, { mineOwner: plane.color });
+      if(meta?.pathHit) ownMinePathHit = true;
+      if(meta?.landingThreat && i === predictedPath.length - 1) ownMineLandingThreat = true;
+      if(ownMinePathHit && (ownMineLandingThreat || i < predictedPath.length - 1)) break;
+    }
+  }
+
   return {
     launchVector: { dx: launchVector.dx, dy: launchVector.dy, scale },
     predictedPath,
@@ -40383,6 +40655,8 @@ function simulateAIShot(plane, launchVector, options = {}){
     travelDistance: maxDistance - remainingDistance,
     hitTarget,
     bounces,
+    ownMinePathHit,
+    ownMineLandingThreat,
   };
 }
 
@@ -40399,6 +40673,8 @@ function scoreAISimulatedCandidate(simResult, options = {}){
     ? Math.hypot(options.target.x - simResult.impactPoint.x, options.target.y - simResult.impactPoint.y)
     : targetDistance;
   score -= impactPenalty * 1.35;
+  if(simResult.ownMinePathHit) score -= AI_OWN_MINE_PATH_PENALTY;
+  if(simResult.ownMineLandingThreat) score -= AI_OWN_MINE_LANDING_PENALTY;
   return score;
 }
 
