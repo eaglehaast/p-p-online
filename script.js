@@ -24568,6 +24568,7 @@ const AI_DEFENSIVE_MINE_OWN_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 2.0;
 const AI_DEFENSIVE_MINE_OWN_TRAJ_BUFFER = MINE_TRIGGER_RADIUS * 1.5;
 const AI_DEFENSIVE_MINE_OWN_BASE_EXCLUSION = MINE_TRIGGER_RADIUS * 3.5;
 const AI_DEFENSIVE_MINE_OWN_FUTURE_TRAJ_BUFFER = MINE_TRIGGER_RADIUS * 1.5;
+const AI_DEFENSIVE_MINE_CROSS_TURN_CLUSTER_RADIUS = MINE_TRIGGER_RADIUS * 3.0;
 const AI_MINE_PROJECTION_MAX_ENEMIES = 3;
 const AI_OWN_MINE_PATH_PENALTY = 900;
 const AI_OWN_MINE_LANDING_PENALTY = 1100;
@@ -24958,6 +24959,22 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
           if(d < AI_DEFENSIVE_MINE_OWN_FUTURE_TRAJ_BUFFER){ blocksFutureTraj = true; break; }
         }
         if(blocksFutureTraj) continue;
+        // Cross-turn anti-cluster: per-turn anti-cluster (below in Phase 3)
+        // only spaces the 1st and 2nd placement within THIS turn. Across
+        // turns the best projection-probe geometry is often stable, so
+        // without this gate the AI stacks 2-3 mines in the same spot over
+        // consecutive turns (3 mines at one point cancel each other —
+        // wasted on first trigger). Reject candidates near any existing
+        // own mine on field.
+        let clusteredWithExisting = false;
+        for(const existing of liveMines){
+          if(!existing || existing.owner !== aiColor) continue;
+          if(!Number.isFinite(existing.x) || !Number.isFinite(existing.y)) continue;
+          if(Math.hypot(px - existing.x, py - existing.y) < AI_DEFENSIVE_MINE_CROSS_TURN_CLUSTER_RADIUS){
+            clusteredWithExisting = true; break;
+          }
+        }
+        if(clusteredWithExisting) continue;
         const probeHitDist = Math.hypot(px - probe.x, py - probe.y);
         if(probeHitDist > MINE_TRIGGER_RADIUS * 0.9) continue;
         const scoreRes = scoreMinePlacementByProjection(placement, ctx, aiColor, projectionCache);
