@@ -24558,13 +24558,16 @@ async function buildAiSelectedPlanInventoryEnhancementsAsync(context, selectedPl
 // =========================================================================
 const AI_DEFENSIVE_MINE_ENABLED = true;
 const AI_DEFENSIVE_MINE_MAX_PER_TURN = 2;
-const AI_DEFENSIVE_MINE_MIN_SCORE = 1.2;
-const AI_DEFENSIVE_MINE_SECOND_SCORE = 1.4;
+const AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD = 3;
+const AI_DEFENSIVE_MINE_MIN_SCORE = 1.6;
+const AI_DEFENSIVE_MINE_SECOND_SCORE = 1.8;
 const AI_DEFENSIVE_MINE_TOP_THREATS = 3;
 const AI_DEFENSIVE_MINE_BUDGET_MS = 20;
 const AI_DEFENSIVE_MINE_LANDING_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 1.2;
 const AI_DEFENSIVE_MINE_OWN_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 2.0;
 const AI_DEFENSIVE_MINE_OWN_TRAJ_BUFFER = MINE_TRIGGER_RADIUS * 1.5;
+const AI_DEFENSIVE_MINE_OWN_BASE_EXCLUSION = MINE_TRIGGER_RADIUS * 3.5;
+const AI_DEFENSIVE_MINE_OWN_FUTURE_TRAJ_BUFFER = MINE_TRIGGER_RADIUS * 1.5;
 const AI_MINE_PROJECTION_MAX_ENEMIES = 3;
 const AI_OWN_MINE_PATH_PENALTY = 900;
 const AI_OWN_MINE_LANDING_PENALTY = 1100;
@@ -24773,6 +24776,19 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
   const mineCount = Number(evaluateInventoryState(aiColor)?.counts?.[INVENTORY_ITEM_TYPES.MINE] || 0);
   if(mineCount <= 0) return null;
 
+  // Cumulative cap. Prevents the prior-PR symptom where 1-2 per turn × many
+  // turns saturated the launch corridor and downstream path planning froze.
+  const liveMines = Array.isArray(mines) ? mines : [];
+  const ownMinesOnField = liveMines.reduce((n, m) => (m && m.owner === aiColor ? n + 1 : n), 0);
+  if(ownMinesOnField >= AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD){
+    logAiDecision("defensive_mine_planner_reject", {
+      reason: "max_own_mines_on_field",
+      ownMinesOnField,
+      cap: AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD,
+    });
+    return null;
+  }
+
   const enemyColor = aiColor === "blue" ? "green" : "blue";
   const livePoints = Array.isArray(points) ? points : [];
   const allOwnAlive = livePoints.filter((p) => p && p.color === aiColor && p.isAlive && !p.burning);
@@ -24856,6 +24872,36 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
     });
   }
 
+  // Pre-compute likely-future-trajectory segments for OTHER own planes. Each
+  // unmoved own plane will likely fly toward its nearest enemy (combat) or
+  // nearest ready cargo (collect) this round; mines on those segments would
+  // block the next launch. One segment per (plane, target-kind) pair.
+  const ownFutureSegments = [];
+  for(const ownPlane of ctx.ownPlanesToAvoid){
+    if(!ownPlane || !Number.isFinite(ownPlane.x) || !Number.isFinite(ownPlane.y)) continue;
+    let nearestEnemy = null;
+    let nearestEnemyD = Number.POSITIVE_INFINITY;
+    for(const e of enemies){
+      const d = Math.hypot(e.x - ownPlane.x, e.y - ownPlane.y);
+      if(d < nearestEnemyD){ nearestEnemyD = d; nearestEnemy = e; }
+    }
+    if(nearestEnemy){
+      ownFutureSegments.push({ sx: ownPlane.x, sy: ownPlane.y, ex: nearestEnemy.x, ey: nearestEnemy.y });
+    }
+    let nearestCargo = null;
+    let nearestCargoD = Number.POSITIVE_INFINITY;
+    for(const cargo of readyCargos){
+      const center = (typeof getCargoVisualCenter === "function")
+        ? getCargoVisualCenter(cargo) : { x: cargo.x, y: cargo.y };
+      if(!Number.isFinite(center?.x)) continue;
+      const d = Math.hypot(center.x - ownPlane.x, center.y - ownPlane.y);
+      if(d < nearestCargoD){ nearestCargoD = d; nearestCargo = center; }
+    }
+    if(nearestCargo){
+      ownFutureSegments.push({ sx: ownPlane.x, sy: ownPlane.y, ex: nearestCargo.x, ey: nearestCargo.y });
+    }
+  }
+
   // Phase 2 — per-threat candidate generation with multi-criteria gates.
   const projectionCache = new Map();
   const allCandidates = [];
@@ -24889,6 +24935,11 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
         if(!isMinePlacementValid(placement)) continue;
         const landingDist = Math.hypot(px - ctx.landing.x, py - ctx.landing.y);
         if(landingDist < AI_DEFENSIVE_MINE_LANDING_SAFE_RADIUS) continue;
+        // Own-base exclusion: keeps the launch corridor free regardless of
+        // which plane is currently selected. Without this, projection probes
+        // along enemy → AI base land right where future planes need to fly out.
+        if(aiBase && Number.isFinite(aiBase.x)
+           && Math.hypot(px - aiBase.x, py - aiBase.y) < AI_DEFENSIVE_MINE_OWN_BASE_EXCLUSION) continue;
         const trajDist = distancePointToSegment(px, py, plane.x, plane.y, ctx.landing.x, ctx.landing.y);
         if(trajDist < AI_DEFENSIVE_MINE_OWN_TRAJ_BUFFER) continue;
         let blocksOwn = false;
@@ -24898,6 +24949,15 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
           }
         }
         if(blocksOwn) continue;
+        // Future-trajectory check: each other own plane has not moved yet but
+        // will likely fly toward its nearest enemy or ready cargo this round.
+        // Reject candidates that sit on those likely segments.
+        let blocksFutureTraj = false;
+        for(const segment of ownFutureSegments){
+          const d = distancePointToSegment(px, py, segment.sx, segment.sy, segment.ex, segment.ey);
+          if(d < AI_DEFENSIVE_MINE_OWN_FUTURE_TRAJ_BUFFER){ blocksFutureTraj = true; break; }
+        }
+        if(blocksFutureTraj) continue;
         const probeHitDist = Math.hypot(px - probe.x, py - probe.y);
         if(probeHitDist > MINE_TRIGGER_RADIUS * 0.9) continue;
         const scoreRes = scoreMinePlacementByProjection(placement, ctx, aiColor, projectionCache);
