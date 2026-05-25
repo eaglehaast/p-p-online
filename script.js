@@ -24561,7 +24561,7 @@ const AI_DEFENSIVE_MINE_MAX_PER_TURN = 2;
 const AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD = 3;
 const AI_DEFENSIVE_MINE_MIN_SCORE = 1.6;
 const AI_DEFENSIVE_MINE_SECOND_SCORE = 1.8;
-const AI_DEFENSIVE_MINE_TOP_THREATS = 3;
+const AI_DEFENSIVE_MINE_TOP_THREATS = 2;
 const AI_DEFENSIVE_MINE_BUDGET_MS = 20;
 const AI_DEFENSIVE_MINE_LANDING_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 1.2;
 const AI_DEFENSIVE_MINE_OWN_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 2.0;
@@ -24569,6 +24569,8 @@ const AI_DEFENSIVE_MINE_OWN_TRAJ_BUFFER = MINE_TRIGGER_RADIUS * 1.5;
 const AI_DEFENSIVE_MINE_OWN_BASE_EXCLUSION = MINE_TRIGGER_RADIUS * 3.5;
 const AI_DEFENSIVE_MINE_OWN_FUTURE_TRAJ_BUFFER = MINE_TRIGGER_RADIUS * 1.5;
 const AI_DEFENSIVE_MINE_CROSS_TURN_CLUSTER_RADIUS = MINE_TRIGGER_RADIUS * 3.0;
+const AI_DEFENSIVE_MINE_YIELD_EVERY_N_CANDIDATES = 30;
+const AI_DEFENSIVE_MINE_EARLY_BREAK_CANDIDATES = 6;
 const AI_MINE_PROJECTION_MAX_ENEMIES = 3;
 const AI_OWN_MINE_PATH_PENALTY = 900;
 const AI_OWN_MINE_LANDING_PENALTY = 1100;
@@ -24578,10 +24580,6 @@ const AI_DEFENSIVE_MINE_OFFSETS = Object.freeze([
   { ox: -1, oy: 0 },
   { ox: 0, oy: 1 },
   { ox: 0, oy: -1 },
-  { ox: 0.7, oy: 0.7 },
-  { ox: -0.7, oy: 0.7 },
-  { ox: 0.7, oy: -0.7 },
-  { ox: -0.7, oy: -0.7 },
 ]);
 
 
@@ -24903,10 +24901,17 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
     }
   }
 
+  // Pre-filter own mines once. Reused below in the cross-turn anti-cluster
+  // gate — without this we iterate global `mines` (incl. enemy) per candidate.
+  const ownMinesOnFieldArr = liveMines.filter((m) => (
+    m && m.owner === aiColor && Number.isFinite(m.x) && Number.isFinite(m.y)
+  ));
+
   // Phase 2 — per-threat candidate generation with multi-criteria gates.
   const projectionCache = new Map();
   const allCandidates = [];
   let budgetHit = false;
+  let candidatesSinceYield = 0;
 
   outer:
   for(const threat of threats){
@@ -24926,6 +24931,16 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
     for(const probe of projection){
       if(elapsed() > AI_DEFENSIVE_MINE_BUDGET_MS){ budgetHit = true; break outer; }
       for(const off of AI_DEFENSIVE_MINE_OFFSETS){
+        // Yield + budget check inside the hottest loop. Previously the only
+        // yield was once per threat, leaving 270+ candidates running without
+        // any pause. Now we check both budget and yield every N candidates.
+        candidatesSinceYield += 1;
+        if(candidatesSinceYield >= AI_DEFENSIVE_MINE_YIELD_EVERY_N_CANDIDATES){
+          candidatesSinceYield = 0;
+          if(elapsed() > AI_DEFENSIVE_MINE_BUDGET_MS){ budgetHit = true; break outer; }
+          if(typeof aiCoopMaybeYield === "function") await aiCoopMaybeYield();
+          if(typeof isAiTurnStillApplicable === "function" && !isAiTurnStillApplicable()) return null;
+        }
         const px = probe.x + off.ox * CELL_SIZE * 0.55;
         const py = probe.y + off.oy * CELL_SIZE * 0.55;
         const placement = {
@@ -24967,9 +24982,7 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
         // wasted on first trigger). Reject candidates near any existing
         // own mine on field.
         let clusteredWithExisting = false;
-        for(const existing of liveMines){
-          if(!existing || existing.owner !== aiColor) continue;
-          if(!Number.isFinite(existing.x) || !Number.isFinite(existing.y)) continue;
+        for(const existing of ownMinesOnFieldArr){
           if(Math.hypot(px - existing.x, py - existing.y) < AI_DEFENSIVE_MINE_CROSS_TURN_CLUSTER_RADIUS){
             clusteredWithExisting = true; break;
           }
@@ -24985,9 +24998,12 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
           details: scoreRes.details,
           threat,
         });
+        // Early break: Phase 3 takes at most 2 candidates with anti-cluster.
+        // Once we have a small pool of qualifying candidates, more would not
+        // change the outcome.
+        if(allCandidates.length >= AI_DEFENSIVE_MINE_EARLY_BREAK_CANDIDATES) break outer;
       }
     }
-    if(typeof aiCoopMaybeYield === "function") await aiCoopMaybeYield();
   }
 
   if(budgetHit){
