@@ -15377,27 +15377,42 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         : []);
     selectedPlan.selectedInventorySequence = selectedPlanEnhancementSequence;
 
-    // Proactive mine placement: cheap arithmetic heuristic that appends 0..N MINE
-    // candidates (capped by AI_PROACTIVE_MINE_MAX_PER_TURN) to the enhancement
-    // sequence. Each candidate has its own executionSource so the dedup below
-    // does not collapse multiples. Threats are anchored on the current positions
-    // of enemy planes, not the static enemy base.
-    if(typeof buildAiProactiveMineCandidatesAsync === "function"){
+    // Defensive mine planner (Layer A). One async call returns 0..2 placements
+    // chosen by projection-driven scoring with strict gates (min score, own-
+    // path safety, anti-cluster, cumulative cap). Layer B sequence gate below
+    // validates each MINE entry against selectedPlan.defensiveMinePlan; Layer C
+    // executor places blind. Feature-flagged via AI_DEFENSIVE_MINE_ENABLED.
+    if(AI_DEFENSIVE_MINE_ENABLED && typeof findAiDefensiveMineOpportunityAsync === "function"){
       if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
+      let opportunity = null;
       try {
-        const proactiveMineCandidates = await buildAiProactiveMineCandidatesAsync(selectedPlan, {
+        opportunity = await findAiDefensiveMineOpportunityAsync(selectedPlan, {
           ...aiExecutionContext,
           color: aiColor,
           availableEnemyFlags: aiExecutionContext.availableEnemyFlags,
           readyCargo,
         });
-        if(Array.isArray(proactiveMineCandidates) && proactiveMineCandidates.length > 0){
-          selectedPlan.selectedInventorySequence.push(...proactiveMineCandidates);
-        }
       } catch(err){
-        logAiDecision("proactive_mine_builder_exception", {
+        logAiDecision("defensive_mine_planner_exception", {
           message: err?.message || String(err),
         });
+      }
+      if(opportunity && Array.isArray(opportunity.placements) && opportunity.placements.length > 0){
+        selectedPlan.defensiveMinePlan = true;
+        selectedPlan.defensiveMinePlacements = opportunity.placements;
+        selectedPlan.defensiveMineMetrics = opportunity.metrics || null;
+        for(const placement of opportunity.placements){
+          selectedPlan.selectedInventorySequence.push({
+            itemType: INVENTORY_ITEM_TYPES.MINE,
+            reason: opportunity.rationale,
+            reasonCode: opportunity.rationale,
+            executionSource: "defensive_mine_v1",
+            usageTier: "defensive_mine",
+            expectedBenefit: Number(opportunity.metrics?.topScore || 0),
+            risk: 0.02,
+            minePlan: { placement },
+          });
+        }
       }
       if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
       aiCoopResetBudget();
@@ -15683,6 +15698,53 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
               ...selectedPlan.aiDynamiteReplanMeta,
             });
             aiCoopResetBudget();
+          }
+        }
+      }
+    }
+
+    // Sequence gate (Layer B) for defensive mines. Mirror of the DYNAMITE gate
+    // above: every MINE entry that survives must be backed by Layer A's
+    // selectedPlan.defensiveMinePlan flag AND have its placement registered in
+    // selectedPlan.defensiveMinePlacements. Unbacked MINE entries are spliced
+    // here so the executor (Layer C) can place blind. Hard cap = max per turn.
+    if(Array.isArray(selectedPlan.selectedInventorySequence)){
+      const mineEntriesIdx = [];
+      for(let i = 0; i < selectedPlan.selectedInventorySequence.length; i += 1){
+        const e = selectedPlan.selectedInventorySequence[i];
+        if(e && e.itemType === INVENTORY_ITEM_TYPES.MINE) mineEntriesIdx.push(i);
+      }
+      if(mineEntriesIdx.length > 0){
+        const layerAPlacements = Array.isArray(selectedPlan.defensiveMinePlacements)
+          ? selectedPlan.defensiveMinePlacements
+          : [];
+        const layerAPassed = selectedPlan.defensiveMinePlan === true
+          && layerAPlacements.length === mineEntriesIdx.length
+          && mineEntriesIdx.length <= AI_DEFENSIVE_MINE_MAX_PER_TURN;
+        if(layerAPassed){
+          logAiDecision("defensive_mine_sequence_gate_pass", {
+            planeId: selectedPlan.plane?.id ?? null,
+            entries: mineEntriesIdx.length,
+          });
+        } else {
+          for(let k = mineEntriesIdx.length - 1; k >= 0; k -= 1){
+            const idx = mineEntriesIdx[k];
+            const entry = selectedPlan.selectedInventorySequence[idx];
+            const placement = entry?.minePlan?.placement || null;
+            const matchesLayerA = placement
+              && layerAPlacements.some((p) => p
+                && Number.isFinite(p.x) && Number.isFinite(p.y)
+                && Math.abs(p.x - placement.x) < 0.5
+                && Math.abs(p.y - placement.y) < 0.5);
+            const validPlacement = placement && isMinePlacementValid(placement);
+            if(!matchesLayerA || !validPlacement){
+              selectedPlan.selectedInventorySequence.splice(idx, 1);
+              logAiDecision("defensive_mine_sequence_gate_reject", {
+                planeId: selectedPlan.plane?.id ?? null,
+                reason: !matchesLayerA ? "not_layer_a_backed" : "placement_invalid",
+                executionSource: entry?.executionSource || null,
+              });
+            }
           }
         }
       }
@@ -26233,95 +26295,6 @@ function getAiInventorySeriesIntent(goalName){
   };
 }
 
-// DORMANT — see note above evaluateBlueMinePlacementImpact.
-function buildAiMineSeriesPlan(context, plannedMove, options = {}){
-  const intent = getAiInventorySeriesIntent(plannedMove?.goalName || aiRoundState?.currentGoal || "");
-  if(!intent.isDefense && !intent.isAttack && !intent.isFlag) return null;
-  const availableCharges = Number(options?.availableCharges ?? 0);
-  if(availableCharges <= 0) return null;
-  const maxSeriesCharges = Math.max(1, Math.min(3, availableCharges));
-  const minUsefulGain = intent.isDefense ? 0.44 : 0.36;
-  const targetBenefit = intent.isDefense ? 1.05 : 0.92;
-  const selectedSteps = [];
-  const diagnostics = {
-    spentCharges: 0,
-    openedCorridors: [],
-    closedCorridors: [],
-    stopReason: null,
-    intent: intent.primaryIntent,
-  };
-  let totalBenefit = 0;
-  let stopReason = "charges_exhausted";
-  let lastSelfRisk = 0;
-
-  for(let stepIndex = 0; stepIndex < maxSeriesCharges; stepIndex += 1){
-    const excludedPlacements = selectedSteps.map((step) => step.plan?.placement).filter(Boolean);
-    const planned = withTemporaryBlueMines(excludedPlacements, () => {
-      const defensivePlan = tryPlaceBlueDefensiveMine(context, plannedMove, { evaluateOnly: true, excludePlacements });
-      const basePlan = tryPlaceBlueMineNearEnemyBase(context, plannedMove, { evaluateOnly: true, excludePlacements });
-      const preferred = defensivePlan && (!basePlan || (defensivePlan.score || 0) >= (basePlan.score || 0))
-        ? { plan: defensivePlan, placementMode: "defensive" }
-        : (basePlan ? { plan: basePlan, placementMode: "base" } : null);
-      if(!preferred?.plan) return null;
-      const safety = evaluatePostLaunchSafetyWithMine(context, plannedMove, preferred.plan);
-      const risk = safety?.afterSafe === false ? 1 : 0;
-      return { ...preferred, safety, risk };
-    });
-
-    if(!planned?.plan){
-      stopReason = selectedSteps.length > 0 ? "no_new_gain" : "no_plan";
-      break;
-    }
-
-    const stepBenefit = Math.max(0, Number((planned.plan.score || 0) / 20));
-    if(stepBenefit < minUsefulGain){
-      stopReason = selectedSteps.length > 0 ? "no_new_gain" : "benefit_below_threshold";
-      break;
-    }
-    if(planned.risk > lastSelfRisk && planned.risk > 0 && selectedSteps.length > 0){
-      stopReason = "self_block_risk_increased";
-      break;
-    }
-
-    selectedSteps.push({
-      stepIndex,
-      itemType: INVENTORY_ITEM_TYPES.MINE,
-      reason: planned.plan.scenario || "mine_cover_plan",
-      expectedBenefit: stepBenefit,
-      risk: planned.risk > 0 ? 0.16 : 0.08,
-      placementMode: planned.placementMode,
-      minePlan: planned.plan,
-      safeAfterPlacement: planned.safety?.afterSafe !== false,
-      tacticalIntent: intent.primaryIntent,
-    });
-    totalBenefit += stepBenefit;
-    diagnostics.spentCharges = selectedSteps.length;
-    diagnostics.closedCorridors.push({
-      placement: planned.plan.placement ? { x: Number(planned.plan.placement.x.toFixed(1)), y: Number(planned.plan.placement.y.toFixed(1)) } : null,
-      blockedEscapeCount: planned.plan.blockedEscapeCount ?? 0,
-      cutRouteCount: planned.plan.cutRouteCount ?? 0,
-      trapCount: planned.plan.trapCount ?? 0,
-    });
-    lastSelfRisk = planned.risk;
-
-    if(totalBenefit >= targetBenefit){
-      stopReason = "benefit_target_reached";
-      break;
-    }
-  }
-
-  diagnostics.stopReason = stopReason;
-  if(selectedSteps.length === 0) return null;
-  return {
-    itemType: INVENTORY_ITEM_TYPES.MINE,
-    intent: intent.primaryIntent,
-    steps: selectedSteps,
-    expectedBenefit: Number(totalBenefit.toFixed(3)),
-    risk: Number(selectedSteps.reduce((sum, step) => sum + Number(step.risk || 0), 0).toFixed(3)),
-    diagnostics,
-  };
-}
-
 function buildAiDynamiteSeriesPlan(context, plannedMove, options = {}){
   const intent = getAiInventorySeriesIntent(plannedMove?.goalName || aiRoundState?.currentGoal || "");
   if(intent.isDefense && !intent.isFlag) return null;
@@ -26926,25 +26899,35 @@ async function buildAiSelectedPlanInventoryEnhancementsAsync(context, selectedPl
 // =========================================================================
 // PROACTIVE MINE PLACEMENT
 // -----------------------------------------------------------------------
-// Re-enables AI mine usage after the freeze fix dormantized
-// tryPlaceBlueDefensiveMine{,Async}. Cheap arithmetic: each scenario picks
-// an anchor point from CURRENT positions of enemy planes (the actual
-// threats), not from the static enemy base. Up to AI_PROACTIVE_MINE_MAX_PER_TURN
-// mine candidates are appended to selectedInventorySequence; they execute
-// through the existing MINE branch in executeCommittedInventoryAction.
 // =========================================================================
-const AI_PROACTIVE_MINE_MAX_PER_TURN = 3;
-const AI_PROACTIVE_MINE_LANDING_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 1.2;
-const AI_PROACTIVE_MINE_OWN_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 2.0;
-const AI_PROACTIVE_MINE_TRAJECTORY_BUFFER = MINE_TRIGGER_RADIUS * 1.5;
-const AI_MINE_PROJECTION_ENABLED = true;
-const AI_MINE_PROJECTION_WEIGHT = 0.45;
-const AI_MINE_SCENARIO_PRIOR_WEIGHT = 1.0;
+// AI DEFENSIVE MINE PLANNER (Layer A)
+// -----------------------------------------------------------------------
+// Single async entry per turn returns 0, 1 or 2 placements driven by
+// projected enemy trajectories. Strict per-candidate gates: structural
+// validity, own-landing/trajectory/plane safety, hit-on-probe guarantee,
+// projection score >= AI_DEFENSIVE_MINE_MIN_SCORE. Layer B sequence gate
+// in the scheduler validates each MINE entry against
+// selectedPlan.defensiveMinePlan flag. Layer C executor places blind.
+// Hard cumulative cap AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD prevents the
+// "mines saturate launch corridor → AI freezes" regression.
+// =========================================================================
+const AI_DEFENSIVE_MINE_ENABLED = true;
+const AI_DEFENSIVE_MINE_MAX_PER_TURN = 2;
+const AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD = 3;
+const AI_DEFENSIVE_MINE_MIN_SCORE = 1.6;
+const AI_DEFENSIVE_MINE_SECOND_SCORE = 1.8;
+const AI_DEFENSIVE_MINE_TOP_THREATS = 3;
+const AI_DEFENSIVE_MINE_BUDGET_MS = 20;
+const AI_DEFENSIVE_MINE_LANDING_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 1.2;
+const AI_DEFENSIVE_MINE_OWN_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 2.0;
+const AI_DEFENSIVE_MINE_OWN_TRAJ_BUFFER = MINE_TRIGGER_RADIUS * 1.5;
+const AI_DEFENSIVE_MINE_OWN_BASE_EXCLUSION = MINE_TRIGGER_RADIUS * 3.5;
+const AI_DEFENSIVE_MINE_OWN_FUTURE_TRAJ_BUFFER = MINE_TRIGGER_RADIUS * 1.5;
+const AI_DEFENSIVE_MINE_CROSS_TURN_CLUSTER_RADIUS = MINE_TRIGGER_RADIUS * 3.0;
 const AI_MINE_PROJECTION_MAX_ENEMIES = 3;
-const AI_MINE_PROJECTION_BUDGET_MS = 20;
 const AI_OWN_MINE_PATH_PENALTY = 900;
 const AI_OWN_MINE_LANDING_PENALTY = 1100;
-const AI_PROACTIVE_MINE_OFFSETS = Object.freeze([
+const AI_DEFENSIVE_MINE_OFFSETS = Object.freeze([
   { ox: 0, oy: 0 },
   { ox: 1, oy: 0 },
   { ox: -1, oy: 0 },
@@ -26956,228 +26939,6 @@ const AI_PROACTIVE_MINE_OFFSETS = Object.freeze([
   { ox: -0.7, oy: -0.7 },
 ]);
 
-function tryAcceptProactiveMinePlacement(rawX, rawY, ctx, acceptedPlacements){
-  if(!Number.isFinite(rawX) || !Number.isFinite(rawY)) return null;
-  for(const off of AI_PROACTIVE_MINE_OFFSETS){
-    const px = rawX + off.ox * CELL_SIZE * 0.55;
-    const py = rawY + off.oy * CELL_SIZE * 0.55;
-    const placement = {
-      x: px,
-      y: py,
-      cellX: Math.floor((px - FIELD_LEFT) / CELL_SIZE),
-      cellY: Math.floor((py - FIELD_TOP) / CELL_SIZE),
-    };
-    if(!isMinePlacementValid(placement)) continue;
-    const landingDist = Math.hypot(px - ctx.landing.x, py - ctx.landing.y);
-    if(landingDist < AI_PROACTIVE_MINE_LANDING_SAFE_RADIUS) continue;
-    const trajDist = distancePointToSegment(px, py, ctx.plane.x, ctx.plane.y, ctx.landing.x, ctx.landing.y);
-    if(trajDist < AI_PROACTIVE_MINE_TRAJECTORY_BUFFER) continue;
-    let blocksOwn = false;
-    for(const own of ctx.ownPlanesToAvoid){
-      if(Math.hypot(own.x - px, own.y - py) < AI_PROACTIVE_MINE_OWN_SAFE_RADIUS){
-        blocksOwn = true;
-        break;
-      }
-    }
-    if(blocksOwn) continue;
-    let collidesWithAccepted = false;
-    for(const accepted of acceptedPlacements){
-      if(Math.hypot(accepted.x - px, accepted.y - py) < MINE_PLACEMENT_MIN_DISTANCE){
-        collidesWithAccepted = true;
-        break;
-      }
-    }
-    if(collidesWithAccepted) continue;
-    return placement;
-  }
-  return null;
-}
-
-function buildProactiveMineCandidate(entry){
-  return {
-    itemType: INVENTORY_ITEM_TYPES.MINE,
-    reason: entry.reason || entry.scenario,
-    reasonCode: entry.scenario,
-    executionSource: entry.executionSource,
-    usageTier: "proactive_mine",
-    expectedBenefit: entry.score,
-    risk: 0.02,
-    minePlan: {
-      placement: entry.placement,
-      scenario: entry.scenario,
-      score: entry.score,
-    },
-  };
-}
-
-function scenarioProactiveMineSelfLanding(selectedPlan, ctx, acceptedPlacements){
-  const out = [];
-  if(!ctx.enemies || ctx.enemies.length === 0) return out;
-  let nearest = null;
-  let nearestD = Infinity;
-  for(const enemy of ctx.enemies){
-    const d = Math.hypot(enemy.x - ctx.landing.x, enemy.y - ctx.landing.y);
-    if(d < nearestD){ nearestD = d; nearest = enemy; }
-  }
-  if(!nearest) return out;
-  const dx = nearest.x - ctx.landing.x;
-  const dy = nearest.y - ctx.landing.y;
-  const L = Math.hypot(dx, dy);
-  if(L < 0.001) return out;
-  const advance = Math.max(POINT_RADIUS * 2, L * 0.75);
-  const rawX = ctx.landing.x + (dx / L) * advance;
-  const rawY = ctx.landing.y + (dy / L) * advance;
-  const placement = tryAcceptProactiveMinePlacement(rawX, rawY, ctx, acceptedPlacements);
-  if(!placement) return out;
-  out.push({
-    scenario: "self_landing",
-    executionSource: "proactive_mine_self_landing",
-    placement,
-    score: 0.24,
-    reason: "proactive_mine_self_landing",
-  });
-  return out;
-}
-
-function scenarioProactiveMineDefendOwnPlanes(selectedPlan, ctx, acceptedPlacements, remaining){
-  const out = [];
-  if(remaining <= 0) return out;
-  if(!ctx.ownPlanesToAvoid.length || !ctx.enemies.length) return out;
-  const pairs = ctx.ownPlanesToAvoid
-    .map((own) => {
-      let bestEnemy = null;
-      let bestD = Infinity;
-      for(const enemy of ctx.enemies){
-        const d = Math.hypot(enemy.x - own.x, enemy.y - own.y);
-        if(d < bestD){ bestD = d; bestEnemy = enemy; }
-      }
-      return { own, enemy: bestEnemy, d: bestD };
-    })
-    .filter((pair) => pair.enemy)
-    .sort((a, b) => a.d - b.d);
-  let emitted = 0;
-  for(const pair of pairs){
-    if(emitted >= remaining) break;
-    const dx = pair.own.x - pair.enemy.x;
-    const dy = pair.own.y - pair.enemy.y;
-    const L = Math.hypot(dx, dy);
-    if(L < 0.001) continue;
-    const rawX = pair.enemy.x + dx * 0.35;
-    const rawY = pair.enemy.y + dy * 0.35;
-    const localAccepted = acceptedPlacements.concat(out.map((entry) => entry.placement));
-    const placement = tryAcceptProactiveMinePlacement(rawX, rawY, ctx, localAccepted);
-    if(!placement) continue;
-    out.push({
-      scenario: "defend_other_plane",
-      executionSource: `proactive_mine_defend_plane_${pair.own?.id ?? emitted}`,
-      placement,
-      score: 0.20,
-      reason: "proactive_mine_defend_other_plane",
-    });
-    emitted += 1;
-  }
-  return out;
-}
-
-function scenarioProactiveMineBlockCargo(selectedPlan, ctx, acceptedPlacements){
-  const out = [];
-  if(typeof cargoState === "undefined" || !Array.isArray(cargoState)) return out;
-  if(!ctx.enemies.length) return out;
-  const cargosOnField = cargoState.filter((cargo) => cargo && cargo.state === "ready");
-  if(cargosOnField.length === 0) return out;
-  const pairs = [];
-  for(const cargo of cargosOnField){
-    const center = (typeof getCargoVisualCenter === "function")
-      ? getCargoVisualCenter(cargo)
-      : { x: cargo.x, y: cargo.y };
-    if(!Number.isFinite(center?.x) || !Number.isFinite(center?.y)) continue;
-    let bestEnemy = null;
-    let bestD = Infinity;
-    for(const enemy of ctx.enemies){
-      const d = Math.hypot(enemy.x - center.x, enemy.y - center.y);
-      if(d < bestD){ bestD = d; bestEnemy = enemy; }
-    }
-    if(bestEnemy) pairs.push({ cargo, center, enemy: bestEnemy, d: bestD });
-  }
-  if(pairs.length === 0) return out;
-  pairs.sort((a, b) => a.d - b.d);
-  const { center, enemy } = pairs[0];
-  const dx = enemy.x - center.x;
-  const dy = enemy.y - center.y;
-  const L = Math.hypot(dx, dy);
-  if(L < 0.001) return out;
-  const advance = Math.max(POINT_RADIUS * 2, L * 0.65);
-  const rawX = center.x + (dx / L) * advance;
-  const rawY = center.y + (dy / L) * advance;
-  const placement = tryAcceptProactiveMinePlacement(rawX, rawY, ctx, acceptedPlacements);
-  if(!placement) return out;
-  out.push({
-    scenario: "block_cargo",
-    executionSource: "proactive_mine_block_cargo_0",
-    placement,
-    score: 0.18,
-    reason: "proactive_mine_block_cargo",
-  });
-  return out;
-}
-
-function scenarioProactiveMineZoneControl(selectedPlan, ctx, acceptedPlacements, emittedSoFar){
-  const out = [];
-  const midX = FIELD_LEFT + FIELD_WIDTH / 2;
-  const midY = FIELD_TOP + FIELD_HEIGHT / 2;
-  let anchor = { x: midX, y: midY };
-  if(typeof getNearestPointInCenterControlZone === "function"){
-    const adjusted = getNearestPointInCenterControlZone(anchor);
-    if(adjusted && Number.isFinite(adjusted.x) && Number.isFinite(adjusted.y)){
-      anchor = adjusted;
-    }
-  }
-  const sign = (emittedSoFar % 2 === 0) ? 1 : -1;
-  const rawX = anchor.x + sign * CELL_SIZE * 1.2;
-  const rawY = anchor.y;
-  const placement = tryAcceptProactiveMinePlacement(rawX, rawY, ctx, acceptedPlacements);
-  if(!placement) return out;
-  out.push({
-    scenario: "zone_control",
-    executionSource: `proactive_mine_zone_control_${emittedSoFar}`,
-    placement,
-    score: 0.14,
-    reason: "proactive_mine_zone_control",
-  });
-  return out;
-}
-
-function scenarioProactiveMineDefendOwnFlag(selectedPlan, ctx, acceptedPlacements){
-  const out = [];
-  if(typeof flags === "undefined" || !Array.isArray(flags)) return out;
-  if(!ctx.enemies.length) return out;
-  const ownFlag = flags.find((f) => f && f.color === "blue" && f.state === FLAG_STATES.ACTIVE);
-  if(!ownFlag || !Number.isFinite(ownFlag.x) || !Number.isFinite(ownFlag.y)) return out;
-  let nearest = null;
-  let nearestD = Infinity;
-  for(const enemy of ctx.enemies){
-    const d = Math.hypot(enemy.x - ownFlag.x, enemy.y - ownFlag.y);
-    if(d < nearestD){ nearestD = d; nearest = enemy; }
-  }
-  if(!nearest) return out;
-  const dx = nearest.x - ownFlag.x;
-  const dy = nearest.y - ownFlag.y;
-  const L = Math.hypot(dx, dy);
-  if(L < 0.001) return out;
-  const advance = Math.max(POINT_RADIUS * 2, L * 0.70);
-  const rawX = ownFlag.x + (dx / L) * advance;
-  const rawY = ownFlag.y + (dy / L) * advance;
-  const placement = tryAcceptProactiveMinePlacement(rawX, rawY, ctx, acceptedPlacements);
-  if(!placement) return out;
-  out.push({
-    scenario: "defend_own_flag",
-    executionSource: "proactive_mine_defend_flag",
-    placement,
-    score: 0.16,
-    reason: "proactive_mine_defend_own_flag",
-  });
-  return out;
-}
 
 function clampMineProbePoint(x, y){
   const minX = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
@@ -27357,19 +27118,42 @@ function scoreMinePlacementByProjection(placement, ctx, aiColor, projectionCache
   return { score: capped, details: { perEnemy, enemyCount: perEnemy.length } };
 }
 
-async function buildAiProactiveMineCandidatesAsync(selectedPlan, context){
-  if(typeof isAiTurnStillApplicable === "function" && !isAiTurnStillApplicable()) return [];
+// Layer A — defensive mine planner. Returns:
+//   { placements: [...0..2], rationale, metrics, defensiveMinePlan: true } or null.
+// Hard caps: max 2 per turn, max AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD on field
+// total, 20ms budget, 3 top threats. Strict per-candidate gates prevent the
+// "mines saturate launch corridor" regression that froze the AI in earlier
+// iterations.
+async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
+  if(typeof isAiTurnStillApplicable === "function" && !isAiTurnStillApplicable()) return null;
   const plane = selectedPlan?.plane || null;
-  if(!plane) return [];
-  if(!Number.isFinite(selectedPlan?.landingX) || !Number.isFinite(selectedPlan?.landingY)) return [];
+  if(!plane) return null;
+  if(!Number.isFinite(selectedPlan?.landingX) || !Number.isFinite(selectedPlan?.landingY)) return null;
   const aiColor = plane?.color || context?.color || "blue";
   const mineCount = Number(evaluateInventoryState(aiColor)?.counts?.[INVENTORY_ITEM_TYPES.MINE] || 0);
-  if(mineCount <= 0) return [];
+  if(mineCount <= 0) return null;
+
+  // Cumulative cap prevents the "1-2 per turn × many turns saturates launch
+  // corridor" regression that downstream-froze planning.
+  const liveMines = Array.isArray(mines) ? mines : [];
+  const ownMinesOnField = liveMines.reduce((n, m) => (m && m.owner === aiColor ? n + 1 : n), 0);
+  if(ownMinesOnField >= AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD){
+    logAiDecision("defensive_mine_planner_reject", {
+      reason: "max_own_mines_on_field",
+      ownMinesOnField,
+      cap: AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD,
+    });
+    return null;
+  }
 
   const enemyColor = aiColor === "blue" ? "green" : "blue";
   const livePoints = Array.isArray(points) ? points : [];
   const allOwnAlive = livePoints.filter((p) => p && p.color === aiColor && p.isAlive && !p.burning);
   const enemies = livePoints.filter((p) => p && p.color === enemyColor && p.isAlive && !p.burning);
+  if(enemies.length === 0){
+    logAiDecision("defensive_mine_planner_reject", { reason: "no_enemies" });
+    return null;
+  }
 
   const ctx = {
     plane,
@@ -27378,127 +27162,232 @@ async function buildAiProactiveMineCandidatesAsync(selectedPlan, context){
     enemies,
   };
 
-  const cap = Math.min(AI_PROACTIVE_MINE_MAX_PER_TURN, mineCount);
-  const out = [];
-  const acceptedPlacements = [];
-  const harvested = [];
+  logAiDecision("defensive_mine_planner_invoked", {
+    mineCount,
+    enemyCount: enemies.length,
+    ownMinesOnField,
+    goal: selectedPlan?.goalName || null,
+  });
 
-  const scenarios = [
-    (sp, c, ex) => scenarioProactiveMineSelfLanding(sp, c, ex),
-    (sp, c, ex, rem) => scenarioProactiveMineDefendOwnPlanes(sp, c, ex, rem),
-    (sp, c, ex) => scenarioProactiveMineBlockCargo(sp, c, ex),
-    (sp, c, ex) => scenarioProactiveMineZoneControl(sp, c, ex, harvested.length),
-    (sp, c, ex) => scenarioProactiveMineDefendOwnFlag(sp, c, ex),
-  ];
+  const budgetStart = (typeof performance !== "undefined" && typeof performance.now === "function")
+    ? performance.now() : Date.now();
+  const elapsed = () => {
+    const now = (typeof performance !== "undefined" && typeof performance.now === "function")
+      ? performance.now() : Date.now();
+    return now - budgetStart;
+  };
 
-  // Phase 1: harvest all scenario proposals (no hard cap — projection re-rank picks top-N).
-  const scenarioCap = Math.min(AI_PROACTIVE_MINE_MAX_PER_TURN * 2, mineCount * 2 + 1);
-  for(const fn of scenarios){
-    if(typeof isAiTurnStillApplicable === "function" && !isAiTurnStillApplicable()) return [];
-    if(harvested.length >= scenarioCap) break;
-    const remaining = scenarioCap - harvested.length;
-    let produced = [];
-    try {
-      produced = fn(selectedPlan, ctx, acceptedPlacements, remaining) || [];
-    } catch(err){
-      logAiDecision("proactive_mine_scenario_exception", {
-        message: err?.message || String(err),
-      });
-      produced = [];
+  // Phase 1 — harvest top-N threats by min distance from each enemy to our
+  // high-value objectives (landing, base, flag, ready cargos).
+  const aiBase = (typeof getBaseAnchor === "function") ? getBaseAnchor(aiColor) : null;
+  const readyCargos = (typeof cargoState !== "undefined" && Array.isArray(cargoState))
+    ? cargoState.filter((c) => c && c.state === "ready" && Number.isFinite(c.x) && Number.isFinite(c.y))
+    : [];
+  const aiFlagEntity = (typeof flags !== "undefined" && Array.isArray(flags))
+    ? (flags.find((f) => f && f.color === aiColor && f.state === FLAG_STATES.ACTIVE) || null)
+    : null;
+  const aiFlagPos = aiFlagEntity
+    ? ((typeof getFlagAnchor === "function") ? getFlagAnchor(aiFlagEntity) : { x: aiFlagEntity.x, y: aiFlagEntity.y })
+    : null;
+
+  const computeThreat = (enemy) => {
+    const candidates = [];
+    if(Number.isFinite(ctx.landing.x)) candidates.push({ x: ctx.landing.x, y: ctx.landing.y, kind: "landing" });
+    if(aiBase && Number.isFinite(aiBase.x)) candidates.push({ x: aiBase.x, y: aiBase.y, kind: "base" });
+    if(aiFlagPos && Number.isFinite(aiFlagPos.x)) candidates.push({ x: aiFlagPos.x, y: aiFlagPos.y, kind: "flag" });
+    for(const cargo of readyCargos){
+      const center = (typeof getCargoVisualCenter === "function")
+        ? getCargoVisualCenter(cargo) : { x: cargo.x, y: cargo.y };
+      if(!Number.isFinite(center?.x)) continue;
+      candidates.push({ x: center.x, y: center.y, kind: "cargo" });
     }
-    for(const entry of produced){
-      if(harvested.length >= scenarioCap) break;
-      acceptedPlacements.push(entry.placement);
-      harvested.push(entry);
+    let best = Number.POSITIVE_INFINITY;
+    let bestKind = "landing";
+    let bestTarget = ctx.landing;
+    for(const c of candidates){
+      const d = Math.hypot(enemy.x - c.x, enemy.y - c.y);
+      if(d < best){ best = d; bestKind = c.kind; bestTarget = c; }
+    }
+    return { enemy, distance: best, kind: bestKind, target: bestTarget };
+  };
+
+  const threats = enemies
+    .map(computeThreat)
+    .filter((t) => Number.isFinite(t.distance))
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, AI_DEFENSIVE_MINE_TOP_THREATS);
+
+  if(threats.length === 0){
+    logAiDecision("defensive_mine_planner_reject", { reason: "no_threats_with_valid_target" });
+    return null;
+  }
+
+  for(const t of threats){
+    logAiDecision("defensive_mine_threat_harvested", {
+      enemyId: t.enemy?.id ?? null,
+      kind: t.kind,
+      distance: Number(t.distance.toFixed(1)),
+    });
+  }
+
+  // Precompute likely future trajectories for OTHER own planes — each unmoved
+  // plane will likely fly toward its nearest enemy or ready cargo this round,
+  // mines on those segments would block the next launch.
+  const ownFutureSegments = [];
+  for(const ownPlane of ctx.ownPlanesToAvoid){
+    if(!ownPlane || !Number.isFinite(ownPlane.x) || !Number.isFinite(ownPlane.y)) continue;
+    let nearestEnemy = null;
+    let nearestEnemyD = Number.POSITIVE_INFINITY;
+    for(const e of enemies){
+      const d = Math.hypot(e.x - ownPlane.x, e.y - ownPlane.y);
+      if(d < nearestEnemyD){ nearestEnemyD = d; nearestEnemy = e; }
+    }
+    if(nearestEnemy){
+      ownFutureSegments.push({ sx: ownPlane.x, sy: ownPlane.y, ex: nearestEnemy.x, ey: nearestEnemy.y });
+    }
+    let nearestCargo = null;
+    let nearestCargoD = Number.POSITIVE_INFINITY;
+    for(const cargo of readyCargos){
+      const center = (typeof getCargoVisualCenter === "function")
+        ? getCargoVisualCenter(cargo) : { x: cargo.x, y: cargo.y };
+      if(!Number.isFinite(center?.x)) continue;
+      const d = Math.hypot(center.x - ownPlane.x, center.y - ownPlane.y);
+      if(d < nearestCargoD){ nearestCargoD = d; nearestCargo = center; }
+    }
+    if(nearestCargo){
+      ownFutureSegments.push({ sx: ownPlane.x, sy: ownPlane.y, ex: nearestCargo.x, ey: nearestCargo.y });
+    }
+  }
+
+  // Phase 2 — per-threat candidate generation with multi-criteria gates.
+  const projectionCache = new Map();
+  const allCandidates = [];
+  let budgetHit = false;
+
+  outer:
+  for(const threat of threats){
+    if(elapsed() > AI_DEFENSIVE_MINE_BUDGET_MS){
+      budgetHit = true;
+      break;
+    }
+    if(typeof isAiTurnStillApplicable === "function" && !isAiTurnStillApplicable()) return null;
+
+    let projection = projectionCache.get(threat.enemy);
+    if(!projection){
+      projection = buildEnemyTrajectoryProjectionFree(threat.enemy, aiColor, ctx);
+      projectionCache.set(threat.enemy, projection);
+    }
+    if(!projection || projection.length === 0) continue;
+
+    for(const probe of projection){
+      if(elapsed() > AI_DEFENSIVE_MINE_BUDGET_MS){ budgetHit = true; break outer; }
+      for(const off of AI_DEFENSIVE_MINE_OFFSETS){
+        const px = probe.x + off.ox * CELL_SIZE * 0.55;
+        const py = probe.y + off.oy * CELL_SIZE * 0.55;
+        const placement = {
+          x: px, y: py,
+          cellX: Math.floor((px - FIELD_LEFT) / CELL_SIZE),
+          cellY: Math.floor((py - FIELD_TOP) / CELL_SIZE),
+        };
+        if(!isMinePlacementValid(placement)) continue;
+        const landingDist = Math.hypot(px - ctx.landing.x, py - ctx.landing.y);
+        if(landingDist < AI_DEFENSIVE_MINE_LANDING_SAFE_RADIUS) continue;
+        if(aiBase && Number.isFinite(aiBase.x)
+           && Math.hypot(px - aiBase.x, py - aiBase.y) < AI_DEFENSIVE_MINE_OWN_BASE_EXCLUSION) continue;
+        const trajDist = distancePointToSegment(px, py, plane.x, plane.y, ctx.landing.x, ctx.landing.y);
+        if(trajDist < AI_DEFENSIVE_MINE_OWN_TRAJ_BUFFER) continue;
+        let blocksOwn = false;
+        for(const own of ctx.ownPlanesToAvoid){
+          if(Math.hypot(own.x - px, own.y - py) < AI_DEFENSIVE_MINE_OWN_SAFE_RADIUS){
+            blocksOwn = true; break;
+          }
+        }
+        if(blocksOwn) continue;
+        let blocksFutureTraj = false;
+        for(const segment of ownFutureSegments){
+          const d = distancePointToSegment(px, py, segment.sx, segment.sy, segment.ex, segment.ey);
+          if(d < AI_DEFENSIVE_MINE_OWN_FUTURE_TRAJ_BUFFER){ blocksFutureTraj = true; break; }
+        }
+        if(blocksFutureTraj) continue;
+        // Cross-turn anti-cluster: per-turn anti-cluster (below in Phase 3)
+        // only spaces 1st and 2nd within this turn. Reject if too close to
+        // any existing own mine on field.
+        let clusteredWithExisting = false;
+        for(const existing of liveMines){
+          if(!existing || existing.owner !== aiColor) continue;
+          if(!Number.isFinite(existing.x) || !Number.isFinite(existing.y)) continue;
+          if(Math.hypot(px - existing.x, py - existing.y) < AI_DEFENSIVE_MINE_CROSS_TURN_CLUSTER_RADIUS){
+            clusteredWithExisting = true; break;
+          }
+        }
+        if(clusteredWithExisting) continue;
+        const probeHitDist = Math.hypot(px - probe.x, py - probe.y);
+        if(probeHitDist > MINE_TRIGGER_RADIUS * 0.9) continue;
+        const scoreRes = scoreMinePlacementByProjection(placement, ctx, aiColor, projectionCache);
+        if(!Number.isFinite(scoreRes?.score) || scoreRes.score < AI_DEFENSIVE_MINE_MIN_SCORE) continue;
+        allCandidates.push({
+          placement,
+          score: scoreRes.score,
+          details: scoreRes.details,
+          threat,
+        });
+      }
     }
     if(typeof aiCoopMaybeYield === "function") await aiCoopMaybeYield();
   }
 
-  if(harvested.length === 0) return out;
+  if(budgetHit){
+    logAiDecision("defensive_mine_budget_exceeded", {
+      elapsedMs: Number(elapsed().toFixed(1)),
+      candidatesCollected: allCandidates.length,
+    });
+  }
 
-  // Phase 2: projection re-rank.
-  const projectionEnabled = AI_MINE_PROJECTION_ENABLED && enemies.length > 0;
-  const projectionCache = new Map();
-  let budgetExceeded = false;
-  let evaluatedCount = 0;
-  const budgetStart = (typeof performance !== "undefined" && typeof performance.now === "function") ? performance.now() : Date.now();
-  for(let i = 0; i < harvested.length; i += 1){
-    const entry = harvested[i];
-    entry.scenarioPrior = entry.score;
-    entry.projectionScore = 0;
-    entry.projectionDetails = null;
-    if(!projectionEnabled){ continue; }
-    if(budgetExceeded){ continue; }
-    const now = (typeof performance !== "undefined" && typeof performance.now === "function") ? performance.now() : Date.now();
-    if(now - budgetStart > AI_MINE_PROJECTION_BUDGET_MS){
-      budgetExceeded = true;
-      logAiDecision("proactive_mine_projection_budget_exceeded", {
-        budgetMs: AI_MINE_PROJECTION_BUDGET_MS,
-        elapsedMs: Number((now - budgetStart).toFixed(2)),
-        evaluatedCount,
-        skippedCount: harvested.length - i,
-        selectedPlanGoal: selectedPlan?.goalName || null,
-      });
-      continue;
+  if(allCandidates.length === 0){
+    logAiDecision("defensive_mine_planner_reject", {
+      reason: "no_acceptable_placements",
+      threatsConsidered: threats.length,
+    });
+    return null;
+  }
+
+  // Phase 3 — pick top score; optionally add a second with anti-cluster.
+  allCandidates.sort((a, b) => b.score - a.score);
+  const accepted = [allCandidates[0]];
+  if(mineCount >= 2 && AI_DEFENSIVE_MINE_MAX_PER_TURN >= 2
+     && (ownMinesOnField + 1) < AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD){
+    for(let i = 1; i < allCandidates.length; i += 1){
+      const cand = allCandidates[i];
+      if(cand.score < AI_DEFENSIVE_MINE_SECOND_SCORE) break;
+      const sameThreat = cand.threat.enemy?.id != null
+        && accepted[0].threat.enemy?.id != null
+        && cand.threat.enemy.id === accepted[0].threat.enemy.id
+        && cand.threat.kind === accepted[0].threat.kind;
+      if(sameThreat) continue;
+      const gap = Math.hypot(cand.placement.x - accepted[0].placement.x,
+                             cand.placement.y - accepted[0].placement.y);
+      if(gap < MINE_PLACEMENT_MIN_DISTANCE) continue;
+      accepted.push(cand);
+      break;
     }
-    const res = scoreMinePlacementByProjection(entry.placement, ctx, aiColor, projectionCache);
-    entry.projectionScore = res.score;
-    entry.projectionDetails = res.details;
-    evaluatedCount += 1;
-    if(typeof aiCoopMaybeYield === "function" && (evaluatedCount % 2 === 0)){
-      await aiCoopMaybeYield();
-      if(typeof isAiTurnStillApplicable === "function" && !isAiTurnStillApplicable()) return [];
-    }
   }
 
-  for(const entry of harvested){
-    entry.finalScore = Number((AI_MINE_SCENARIO_PRIOR_WEIGHT * entry.scenarioPrior
-                            + AI_MINE_PROJECTION_WEIGHT * entry.projectionScore).toFixed(3));
-  }
-  harvested.sort((a, b) => b.finalScore - a.finalScore);
-
-  for(const entry of harvested){
-    if(out.length >= cap) break;
-    const candidate = buildProactiveMineCandidate({
-      ...entry,
-      score: entry.finalScore,
-    });
-    candidate.expectedBenefit = entry.finalScore;
-    out.push(candidate);
-    logAiDecision("proactive_mine_candidate_queued", {
-      scenario: entry.scenario,
-      executionSource: entry.executionSource,
-      scenarioPrior: entry.scenarioPrior,
-      projectionScore: Number(entry.projectionScore.toFixed(3)),
-      finalScore: entry.finalScore,
-      projectionDetails: entry.projectionDetails,
-      placement: {
-        x: Number(entry.placement.x.toFixed(1)),
-        y: Number(entry.placement.y.toFixed(1)),
-        cellX: entry.placement.cellX,
-        cellY: entry.placement.cellY,
-      },
-      remainingMineInventory: mineCount - out.length,
-      selectedPlanGoal: selectedPlan?.goalName || null,
-    });
-  }
-
-  if(projectionEnabled && harvested.length > 1){
-    logAiDecision("proactive_mine_reranked", {
-      enemyCount: enemies.length,
-      candidateCount: harvested.length,
-      acceptedCount: out.length,
-      budgetExceeded,
-      order: harvested.slice(0, AI_PROACTIVE_MINE_MAX_PER_TURN).map((entry) => ({
-        scenario: entry.scenario,
-        scenarioPrior: entry.scenarioPrior,
-        projectionScore: Number(entry.projectionScore.toFixed(3)),
-        finalScore: entry.finalScore,
-      })),
-    });
-  }
-
-  return out;
+  const placements = accepted.map((a) => a.placement);
+  const metrics = {
+    threatCount: threats.length,
+    candidateCount: allCandidates.length,
+    acceptedCount: accepted.length,
+    topScore: Number(accepted[0].score.toFixed(2)),
+    secondScore: accepted[1] ? Number(accepted[1].score.toFixed(2)) : null,
+    elapsedMs: Number(elapsed().toFixed(1)),
+  };
+  logAiDecision("defensive_mine_planner_accept", metrics);
+  return {
+    placements,
+    rationale: "defensive_mine_projection_v1",
+    metrics,
+    defensiveMinePlan: true,
+  };
 }
 
 function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, availableCounts }){
@@ -27860,8 +27749,16 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
           rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.WINGS);
         }
       } else if(itemType === INVENTORY_ITEM_TYPES.MINE){
+        // Layer C — pure executor. Sequence gate (Layer B above) already
+        // validated this MINE entry is backed by Layer A's defensiveMinePlan
+        // flag. isMinePlacementValid stays as defense-in-depth.
         const placement = candidate?.minePlan?.placement || null;
         if(placement && isMinePlacementValid(placement)){
+          logAiDecision("defensive_mine_about_to_place", {
+            planeId: plannedMove.plane?.id ?? null,
+            placement: { x: Number(placement.x.toFixed(1)), y: Number(placement.y.toFixed(1)) },
+            executionSource,
+          });
           placeMine({
             owner: aiColor,
             x: placement.x,
