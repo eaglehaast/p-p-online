@@ -24566,8 +24566,9 @@ const AI_DEFENSIVE_MINE_BUDGET_MS = 20;
 const AI_DEFENSIVE_MINE_LANDING_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 1.2;
 const AI_DEFENSIVE_MINE_OWN_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 2.0;
 const AI_DEFENSIVE_MINE_OWN_TRAJ_BUFFER = MINE_TRIGGER_RADIUS * 1.5;
-const AI_DEFENSIVE_MINE_OWN_BASE_EXCLUSION = MINE_TRIGGER_RADIUS * 3.5;
+const AI_DEFENSIVE_MINE_OWN_BASE_EXCLUSION = MINE_TRIGGER_RADIUS * 5.0;
 const AI_DEFENSIVE_MINE_OWN_FUTURE_TRAJ_BUFFER = MINE_TRIGGER_RADIUS * 1.5;
+const AI_DEFENSIVE_MINE_OWN_LAUNCH_CORRIDOR_BUFFER = MINE_TRIGGER_RADIUS * 2.0;
 const AI_DEFENSIVE_MINE_CROSS_TURN_CLUSTER_RADIUS = MINE_TRIGGER_RADIUS * 3.0;
 const AI_MINE_PROJECTION_MAX_ENEMIES = 3;
 const AI_OWN_MINE_PATH_PENALTY = 900;
@@ -24901,6 +24902,13 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
     if(nearestCargo){
       ownFutureSegments.push({ sx: ownPlane.x, sy: ownPlane.y, ex: nearestCargo.x, ey: nearestCargo.y });
     }
+    // Launch corridor segment: from each own plane back to its home base.
+    // Planes at base launch FROM base in any direction; planes in air return
+    // TO base after landing. Mines on this segment trip the final-mine-gate
+    // even when individual gates above (OWN_TRAJ, OWN_BASE_EXCLUSION) miss.
+    if(aiBase && Number.isFinite(aiBase.x)){
+      ownFutureSegments.push({ sx: ownPlane.x, sy: ownPlane.y, ex: aiBase.x, ey: aiBase.y });
+    }
   }
 
   // Phase 2 — per-threat candidate generation with multi-criteria gates.
@@ -24951,12 +24959,15 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
         }
         if(blocksOwn) continue;
         // Future-trajectory check: each other own plane has not moved yet but
-        // will likely fly toward its nearest enemy or ready cargo this round.
-        // Reject candidates that sit on those likely segments.
+        // will likely fly toward its nearest enemy / ready cargo / back to
+        // base this round. Reject candidates that sit on those likely
+        // segments. The base segment is the critical one — without it mines
+        // sat on the launch column outside OWN_BASE_EXCLUSION radius and
+        // tripped the final-mine-gate on next-turn launches.
         let blocksFutureTraj = false;
         for(const segment of ownFutureSegments){
           const d = distancePointToSegment(px, py, segment.sx, segment.sy, segment.ex, segment.ey);
-          if(d < AI_DEFENSIVE_MINE_OWN_FUTURE_TRAJ_BUFFER){ blocksFutureTraj = true; break; }
+          if(d < AI_DEFENSIVE_MINE_OWN_LAUNCH_CORRIDOR_BUFFER){ blocksFutureTraj = true; break; }
         }
         if(blocksFutureTraj) continue;
         // Cross-turn anti-cluster: per-turn anti-cluster (below in Phase 3)
