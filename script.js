@@ -26918,11 +26918,11 @@ const AI_DEFENSIVE_MINE_MIN_SCORE = 1.6;
 const AI_DEFENSIVE_MINE_SECOND_SCORE = 1.8;
 const AI_DEFENSIVE_MINE_TOP_THREATS = 3;
 const AI_DEFENSIVE_MINE_BUDGET_MS = 20;
-const AI_DEFENSIVE_MINE_LANDING_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 1.2;
-const AI_DEFENSIVE_MINE_OWN_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 2.0;
-const AI_DEFENSIVE_MINE_OWN_TRAJ_BUFFER = MINE_TRIGGER_RADIUS * 1.5;
+const AI_DEFENSIVE_MINE_LANDING_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 2.0;
+const AI_DEFENSIVE_MINE_OWN_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 2.5;
+const AI_DEFENSIVE_MINE_OWN_TRAJ_BUFFER = MINE_TRIGGER_RADIUS * 2.5;
 const AI_DEFENSIVE_MINE_OWN_BASE_EXCLUSION = MINE_TRIGGER_RADIUS * 3.5;
-const AI_DEFENSIVE_MINE_OWN_FUTURE_TRAJ_BUFFER = MINE_TRIGGER_RADIUS * 1.5;
+const AI_DEFENSIVE_MINE_OWN_FUTURE_TRAJ_BUFFER = MINE_TRIGGER_RADIUS * 2.5;
 const AI_DEFENSIVE_MINE_CROSS_TURN_CLUSTER_RADIUS = MINE_TRIGGER_RADIUS * 3.0;
 const AI_MINE_PROJECTION_MAX_ENEMIES = 3;
 const AI_OWN_MINE_PATH_PENALTY = 900;
@@ -27290,15 +27290,24 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
           cellY: Math.floor((py - FIELD_TOP) / CELL_SIZE),
         };
         if(!isMinePlacementValid(placement)) continue;
+        // Use plane's *effective* trigger radius (accounts for WINGS buff
+        // increasing physical hitbox). Constant buffers above were under-
+        // sizing the safe zone for buffed planes → self-detonation.
+        const effRadius = (typeof getMineEffectiveTriggerRadius === "function")
+          ? getMineEffectiveTriggerRadius(plane) : MINE_TRIGGER_RADIUS;
+        const landingSafe = Math.max(AI_DEFENSIVE_MINE_LANDING_SAFE_RADIUS, effRadius * 2.0);
+        const trajBuf = Math.max(AI_DEFENSIVE_MINE_OWN_TRAJ_BUFFER, effRadius * 2.5);
+        const ownSafe = Math.max(AI_DEFENSIVE_MINE_OWN_SAFE_RADIUS, effRadius * 2.5);
+        const futureTrajBuf = Math.max(AI_DEFENSIVE_MINE_OWN_FUTURE_TRAJ_BUFFER, effRadius * 2.5);
         const landingDist = Math.hypot(px - ctx.landing.x, py - ctx.landing.y);
-        if(landingDist < AI_DEFENSIVE_MINE_LANDING_SAFE_RADIUS) continue;
+        if(landingDist < landingSafe) continue;
         if(aiBase && Number.isFinite(aiBase.x)
            && Math.hypot(px - aiBase.x, py - aiBase.y) < AI_DEFENSIVE_MINE_OWN_BASE_EXCLUSION) continue;
         const trajDist = distancePointToSegment(px, py, plane.x, plane.y, ctx.landing.x, ctx.landing.y);
-        if(trajDist < AI_DEFENSIVE_MINE_OWN_TRAJ_BUFFER) continue;
+        if(trajDist < trajBuf) continue;
         let blocksOwn = false;
         for(const own of ctx.ownPlanesToAvoid){
-          if(Math.hypot(own.x - px, own.y - py) < AI_DEFENSIVE_MINE_OWN_SAFE_RADIUS){
+          if(Math.hypot(own.x - px, own.y - py) < ownSafe){
             blocksOwn = true; break;
           }
         }
@@ -27306,9 +27315,44 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
         let blocksFutureTraj = false;
         for(const segment of ownFutureSegments){
           const d = distancePointToSegment(px, py, segment.sx, segment.sy, segment.ex, segment.ey);
-          if(d < AI_DEFENSIVE_MINE_OWN_FUTURE_TRAJ_BUFFER){ blocksFutureTraj = true; break; }
+          if(d < futureTrajBuf){ blocksFutureTraj = true; break; }
         }
         if(blocksFutureTraj) continue;
+        // Final simulation gate using runtime physics. Temporarily push
+        // candidate into live `mines`, call the same getMineThreatMetaForSegment
+        // that the launch gate uses post-hoc. If our self-trajectory or any
+        // own-plane would be hit/landing-threatened — reject. This catches
+        // edge cases the geometric buffers above miss (e.g. plane not flying
+        // strictly straight to landing).
+        const liveMinesArr = Array.isArray(mines) ? mines : null;
+        if(liveMinesArr){
+          const simMine = {
+            x: placement.x, y: placement.y,
+            cellX: placement.cellX, cellY: placement.cellY,
+            owner: aiColor, armed: true,
+          };
+          liveMinesArr.push(simMine);
+          let simHit = false;
+          try {
+            const selfMeta = (typeof getMineThreatMetaForSegment === "function")
+              ? getMineThreatMetaForSegment(plane.x, plane.y, ctx.landing.x, ctx.landing.y, plane, { mineOwner: aiColor })
+              : null;
+            if(selfMeta && (selfMeta.pathHit || selfMeta.landingThreat)){
+              simHit = true;
+            } else {
+              for(const own of ctx.ownPlanesToAvoid){
+                if(!own || !Number.isFinite(own.x) || !Number.isFinite(own.y)) continue;
+                const ownMeta = (typeof getMineThreatMetaForSegment === "function")
+                  ? getMineThreatMetaForSegment(own.x, own.y, own.x, own.y, own, { mineOwner: aiColor })
+                  : null;
+                if(ownMeta && (ownMeta.pathHit || ownMeta.landingThreat)){ simHit = true; break; }
+              }
+            }
+          } finally {
+            liveMinesArr.pop();
+          }
+          if(simHit) continue;
+        }
         // Cross-turn anti-cluster: per-turn anti-cluster (below in Phase 3)
         // only spaces 1st and 2nd within this turn. Reject if too close to
         // any existing own mine on field.
