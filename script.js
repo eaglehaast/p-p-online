@@ -15377,42 +15377,27 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         : []);
     selectedPlan.selectedInventorySequence = selectedPlanEnhancementSequence;
 
-    // Defensive mine planner (Layer A). One async call returns 0..2 placements
-    // chosen by projection-driven scoring with strict gates (min score, own-
-    // path safety, anti-cluster). Layer B sequence gate validates each MINE
-    // entry against selectedPlan.defensiveMinePlan; Layer C executor places
-    // blind. Feature-flagged via AI_DEFENSIVE_MINE_ENABLED.
-    if(AI_DEFENSIVE_MINE_ENABLED && typeof findAiDefensiveMineOpportunityAsync === "function"){
+    // Proactive mine placement: cheap arithmetic heuristic that appends 0..N MINE
+    // candidates (capped by AI_PROACTIVE_MINE_MAX_PER_TURN) to the enhancement
+    // sequence. Each candidate has its own executionSource so the dedup below
+    // does not collapse multiples. Threats are anchored on the current positions
+    // of enemy planes, not the static enemy base.
+    if(typeof buildAiProactiveMineCandidatesAsync === "function"){
       if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
-      let opportunity = null;
       try {
-        opportunity = await findAiDefensiveMineOpportunityAsync(selectedPlan, {
+        const proactiveMineCandidates = await buildAiProactiveMineCandidatesAsync(selectedPlan, {
           ...aiExecutionContext,
           color: aiColor,
           availableEnemyFlags: aiExecutionContext.availableEnemyFlags,
           readyCargo,
         });
+        if(Array.isArray(proactiveMineCandidates) && proactiveMineCandidates.length > 0){
+          selectedPlan.selectedInventorySequence.push(...proactiveMineCandidates);
+        }
       } catch(err){
-        logAiDecision("defensive_mine_planner_exception", {
+        logAiDecision("proactive_mine_builder_exception", {
           message: err?.message || String(err),
         });
-      }
-      if(opportunity && Array.isArray(opportunity.placements) && opportunity.placements.length > 0){
-        selectedPlan.defensiveMinePlan = true;
-        selectedPlan.defensiveMinePlacements = opportunity.placements;
-        selectedPlan.defensiveMineMetrics = opportunity.metrics || null;
-        for(const placement of opportunity.placements){
-          selectedPlan.selectedInventorySequence.push({
-            itemType: INVENTORY_ITEM_TYPES.MINE,
-            reason: opportunity.rationale,
-            reasonCode: opportunity.rationale,
-            executionSource: "defensive_mine_v1",
-            usageTier: "defensive_mine",
-            expectedBenefit: Number(opportunity.metrics?.topScore || 0),
-            risk: 0.02,
-            minePlan: { placement },
-          });
-        }
       }
       if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
       aiCoopResetBudget();
@@ -15698,54 +15683,6 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
               ...selectedPlan.aiDynamiteReplanMeta,
             });
             aiCoopResetBudget();
-          }
-        }
-      }
-    }
-
-    // Sequence gate (Layer B) for defensive mines. Mirror of the DYNAMITE gate
-    // above: every MINE entry that survives into the executor must be backed
-    // by a Layer A flag (selectedPlan.defensiveMinePlan === true) AND have its
-    // placement registered in selectedPlan.defensiveMinePlacements. Any unbacked
-    // MINE entry is hard-rejected (spliced) here so the executor can place
-    // blind. The list is bounded by AI_DEFENSIVE_MINE_MAX_PER_TURN (= 2).
-    if(Array.isArray(selectedPlan.selectedInventorySequence)){
-      const mineEntriesIdx = [];
-      for(let i = 0; i < selectedPlan.selectedInventorySequence.length; i += 1){
-        const e = selectedPlan.selectedInventorySequence[i];
-        if(e && e.itemType === INVENTORY_ITEM_TYPES.MINE) mineEntriesIdx.push(i);
-      }
-      if(mineEntriesIdx.length > 0){
-        const layerAPlacements = Array.isArray(selectedPlan.defensiveMinePlacements)
-          ? selectedPlan.defensiveMinePlacements
-          : [];
-        const layerAPassed = selectedPlan.defensiveMinePlan === true
-          && layerAPlacements.length === mineEntriesIdx.length
-          && mineEntriesIdx.length <= AI_DEFENSIVE_MINE_MAX_PER_TURN;
-        if(layerAPassed){
-          logAiDecision("defensive_mine_sequence_gate_pass", {
-            planeId: selectedPlan.plane?.id ?? null,
-            entries: mineEntriesIdx.length,
-          });
-        } else {
-          for(let k = mineEntriesIdx.length - 1; k >= 0; k -= 1){
-            const idx = mineEntriesIdx[k];
-            const entry = selectedPlan.selectedInventorySequence[idx];
-            const placement = entry?.minePlan?.placement || null;
-            const matchesLayerA = placement
-              && layerAPlacements.some((p) => p
-                && Number.isFinite(p.x) && Number.isFinite(p.y)
-                && Math.abs(p.x - placement.x) < 0.5
-                && Math.abs(p.y - placement.y) < 0.5);
-            const validPlacement = placement && isMinePlacementValid(placement);
-            if(!matchesLayerA || !validPlacement){
-              selectedPlan.selectedInventorySequence.splice(idx, 1);
-              logAiDecision("defensive_mine_sequence_gate_reject", {
-                planeId: selectedPlan.plane?.id ?? null,
-                reason: !matchesLayerA ? "not_layer_a_backed" : "placement_invalid",
-                executionSource: entry?.executionSource || null,
-              });
-            }
           }
         }
       }
@@ -23937,6 +23874,2350 @@ function placeBlueDynamiteAt(boardX, boardY){
 }
 
 
+function withTemporaryBlueMine(placement, callback){
+  if(!placement || !Number.isFinite(placement.x) || !Number.isFinite(placement.y) || typeof callback !== "function") return null;
+  const mineArray = Array.isArray(mines) ? mines : null;
+  const simulatedMine = {
+    id: `sim-mine-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    owner: "blue",
+    x: placement.x,
+    y: placement.y,
+    cellX: placement.cellX,
+    cellY: placement.cellY,
+  };
+  if(mineArray) mineArray.push(simulatedMine);
+  try {
+    return callback(simulatedMine);
+  } finally {
+    if(mineArray && mineArray[mineArray.length - 1] === simulatedMine) mineArray.pop();
+    else if(mineArray){
+      const idx = mineArray.indexOf(simulatedMine);
+      if(idx >= 0) mineArray.splice(idx, 1);
+    }
+  }
+}
+
+function withTemporaryBlueMines(placements, callback){
+  if(typeof callback !== "function") return null;
+  if(!Array.isArray(placements) || placements.length === 0) return callback();
+  const mineArray = Array.isArray(mines) ? mines : null;
+  if(!mineArray) return callback();
+  const simulated = [];
+  for(const placement of placements){
+    if(!placement || !Number.isFinite(placement.x) || !Number.isFinite(placement.y)) continue;
+    const simulatedMine = {
+      id: `sim-mine-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      owner: "blue",
+      x: placement.x,
+      y: placement.y,
+      cellX: placement.cellX,
+      cellY: placement.cellY,
+    };
+    mineArray.push(simulatedMine);
+    simulated.push(simulatedMine);
+  }
+  try {
+    return callback();
+  } finally {
+    for(let i = simulated.length - 1; i >= 0; i -= 1){
+      const idx = mineArray.indexOf(simulated[i]);
+      if(idx >= 0) mineArray.splice(idx, 1);
+    }
+  }
+}
+
+function withTemporarilyIgnoredDynamiteColliders(targets, callback){
+  if(typeof callback !== "function") return null;
+  const targetList = Array.isArray(targets) ? targets.filter(Boolean) : [];
+  if(targetList.length === 0) return callback();
+  const colliderIds = new Set(targetList.map((target) => target?.collider?.id).filter(Boolean));
+  if(colliderIds.size === 0) return callback();
+
+  const originalColliders = Array.isArray(colliders) ? colliders : [];
+  const originalMapSprites = Array.isArray(currentMapSprites) ? currentMapSprites : [];
+  const filteredColliders = originalColliders.filter((collider) => !colliderIds.has(collider?.id));
+  const filteredMapSprites = originalMapSprites.filter((sprite, index) => {
+    const geometry = getMapSpriteGeometry(sprite, index);
+    return !colliderIds.has(geometry?.collider?.id);
+  });
+
+  colliders = filteredColliders;
+  currentMapSprites = filteredMapSprites;
+  try {
+    return callback();
+  } finally {
+    colliders = originalColliders;
+    currentMapSprites = originalMapSprites;
+  }
+}
+
+// Async-safe twin of withTemporarilyIgnoredDynamiteColliders. The sync version
+// would restore the world BEFORE an async callback's promise resolves, because
+// try/finally treats the returned promise as the "result" and runs finally
+// synchronously. This helper awaits the async callback inside try so finally
+// runs only after the promise resolves. Visual artifact: world misses the
+// collider during the await window (~< 1-2 frames) — accepted, since this is
+// invoked during the AI's pre-launch inventory phase where focus is on UI.
+async function withTemporarilyIgnoredColliderIdsAsync(colliderIds, asyncCallback){
+  if(typeof asyncCallback !== "function") return null;
+  const idSet = new Set(
+    (Array.isArray(colliderIds) ? colliderIds : [])
+      .filter((id) => id != null)
+  );
+  if(idSet.size === 0) return await asyncCallback();
+
+  const originalColliders = Array.isArray(colliders) ? colliders : [];
+  const originalMapSprites = Array.isArray(currentMapSprites) ? currentMapSprites : [];
+  const filteredColliders = originalColliders.filter((collider) => !idSet.has(collider?.id));
+  const filteredMapSprites = originalMapSprites.filter((sprite, index) => {
+    const geometry = getMapSpriteGeometry(sprite, index);
+    return !idSet.has(geometry?.collider?.id);
+  });
+
+  colliders = filteredColliders;
+  currentMapSprites = filteredMapSprites;
+  try {
+    return await asyncCallback();
+  } finally {
+    colliders = originalColliders;
+    currentMapSprites = originalMapSprites;
+  }
+}
+
+function buildMinePlacementBetweenObjectiveAndThreat(objectivePoint, threatEnemy, options = {}){
+  if(!objectivePoint || !threatEnemy) return null;
+  const mix = Number.isFinite(options?.mix) ? options.mix : 0.42;
+  const placement = {
+    x: objectivePoint.x + (threatEnemy.x - objectivePoint.x) * mix,
+    y: objectivePoint.y + (threatEnemy.y - objectivePoint.y) * mix,
+  };
+  placement.cellX = Math.floor((placement.x - FIELD_LEFT) / CELL_SIZE);
+  placement.cellY = Math.floor((placement.y - FIELD_TOP) / CELL_SIZE);
+  return placement;
+}
+
+function evaluateMineEnabledFlagPickupContinuation(/* plane, pickupPoint, options */){
+  // DISABLED: AI mine placement decision is intentionally turned off (see the
+  // note in buildAiSelectedPlanInventoryEnhancements). This helper used to call
+  // the heavy evaluateBlueMinePlacementImpact on every threat-enemy candidate
+  // during flag-pickup analysis, which contributed to the per-turn freeze when
+  // AI had a mine in inventory. With AI mine usage off, returning null is
+  // equivalent to "no mine help available" — the calling flag-pickup logic
+  // already has a non-mine fallback path.
+  return null;
+}
+
+function evaluatePostLaunchSafetyWithMine(context, plannedMove, minePlan){
+  const landingPoint = getAiMoveLandingPoint(plannedMove);
+  if(!landingPoint || !minePlan?.placement) return { beforeSafe: false, afterSafe: false };
+  const enemies = Array.isArray(context?.enemies) ? context.enemies.filter(Boolean) : [];
+  function isLandingCovered(){
+    return enemies.every((enemy) => {
+      if(!Number.isFinite(enemy?.x) || !Number.isFinite(enemy?.y)) return true;
+      const enemyDistance = dist(landingPoint, enemy);
+      const enemyHasLane = isPathClear(enemy.x, enemy.y, landingPoint.x, landingPoint.y);
+      return !enemyHasLane || enemyDistance > getPlaneEffectiveRangePx(enemy) * 0.95;
+    });
+  }
+  const beforeSafe = isLandingCovered();
+  const afterSafe = withTemporaryBlueMine(minePlan.placement, () => isLandingCovered());
+  return { beforeSafe, afterSafe };
+}
+
+function evaluateMineFriendlyRisk(context, plannedMove, placement, options = {}){
+  const plane = plannedMove?.plane || null;
+  const landingPoint = typeof getAiMoveLandingPoint === "function" ? getAiMoveLandingPoint(plannedMove) : null;
+  const spendStyle = getAiItemSpendStyle(context, plannedMove, options);
+  const styleConfig = getMineRiskStyleConfig(spendStyle);
+  const riskWeights = AI_MINE_SELF_RISK_CONFIG.FRIENDLY_RISK;
+  if(!placement || !Number.isFinite(placement.x) || !Number.isFinite(placement.y)){
+    return {
+      highRisk: true,
+      criticalRisk: true,
+      riskScore: 1,
+      selfBlastRisk: true,
+      allyBlockRisk: true,
+      nearbyAllyCount: 0,
+      reasons: ["invalid_placement"],
+      spendStyle,
+    };
+  }
+
+  const mineDangerRadius = MINE_TRIGGER_RADIUS * AI_MINE_SELF_RISK_CONFIG.SELF_RISK_ASSESSMENT.DANGER_RADIUS_MULTIPLIER;
+  const selfDistance = plane ? Math.hypot(placement.x - plane.x, placement.y - plane.y) : Number.POSITIVE_INFINITY;
+  const landingDistance = landingPoint ? Math.hypot(placement.x - landingPoint.x, placement.y - landingPoint.y) : Number.POSITIVE_INFINITY;
+  const selfBlastRisk = selfDistance <= (MINE_TRIGGER_RADIUS * 0.7) || landingDistance <= (MINE_TRIGGER_RADIUS * 0.62);
+  const selfCorridorRisk = selfDistance <= mineDangerRadius || landingDistance <= mineDangerRadius;
+
+  const alliedPlanes = Array.isArray(context?.aiPlanes)
+    ? context.aiPlanes.filter((ally) => ally && ally !== plane && ally?.isAlive !== false)
+    : [];
+  let nearbyAllyCount = 0;
+  let allyCorridorBlockCount = 0;
+  for(const ally of alliedPlanes){
+    if(!Number.isFinite(ally.x) || !Number.isFinite(ally.y)) continue;
+    const allyDistance = Math.hypot(placement.x - ally.x, placement.y - ally.y);
+    if(allyDistance <= mineDangerRadius) nearbyAllyCount += 1;
+    const allyTarget = getBaseAnchor("blue") || landingPoint || null;
+    if(allyTarget && isPathClear(ally.x, ally.y, allyTarget.x, allyTarget.y)){
+      const lineDistance = distancePointToSegment(placement.x, placement.y, ally.x, ally.y, allyTarget.x, allyTarget.y);
+      if(lineDistance <= MINE_TRIGGER_RADIUS * 0.85) allyCorridorBlockCount += 1;
+    }
+  }
+
+  const allyBlockRisk = nearbyAllyCount > 0 || allyCorridorBlockCount > 0;
+  const riskScore = Number((
+    (selfBlastRisk ? riskWeights.SELF_BLAST_WEIGHT : 0)
+    + (selfCorridorRisk ? riskWeights.SELF_CORRIDOR_WEIGHT : 0)
+    + Math.min(riskWeights.NEARBY_ALLY_MAX, nearbyAllyCount * riskWeights.NEARBY_ALLY_WEIGHT)
+    + Math.min(riskWeights.ALLY_CORRIDOR_MAX, allyCorridorBlockCount * riskWeights.ALLY_CORRIDOR_WEIGHT)
+  ).toFixed(3));
+  const highRisk = selfBlastRisk || riskScore >= styleConfig.HIGH_RISK_SCORE_THRESHOLD;
+  const criticalRisk = selfBlastRisk || riskScore >= styleConfig.CRITICAL_RISK_SCORE_THRESHOLD;
+  const reasons = [];
+  if(selfBlastRisk) reasons.push("self_blast_risk");
+  else if(selfCorridorRisk) reasons.push("self_corridor_risk");
+  if(nearbyAllyCount > 0) reasons.push("nearby_allies");
+  if(allyCorridorBlockCount > 0) reasons.push("ally_corridor_block");
+
+  return {
+    highRisk,
+    criticalRisk,
+    riskScore,
+    selfBlastRisk,
+    allyBlockRisk,
+    nearbyAllyCount,
+    allyCorridorBlockCount,
+    reasons,
+    selfDistance,
+    landingDistance,
+    spendStyle,
+  };
+}
+
+// DORMANT: AI mine placement decision is currently disabled. This evaluator and the helpers that
+// call it (tryPlaceBlueDefensiveMine, tryPlaceBlueDefensiveMineAsync, tryPlaceBlueMineNearEnemyBase,
+// buildAiMineSeriesPlan, evaluatePostLaunchSafetyWithMine, buildMinePlacementBetweenObjectiveAndThreat,
+// evaluateMineFriendlyRisk) are kept in source for future reference but have no live caller. The
+// per-candidate cost (~50-200ms × ~10 candidates = the dominant per-turn freeze when AI had a mine
+// in inventory, even though AI's score gate almost always rejected the result) is what motivated
+// switching off the mechanic. See note in buildAiSelectedPlanInventoryEnhancements.
+function evaluateBlueMinePlacementImpact(context, plannedMove, placement, options = {}){
+  const plane = plannedMove?.plane;
+  const landingPoint = typeof getAiMoveLandingPoint === "function" ? getAiMoveLandingPoint(plannedMove) : null;
+  const enemies = Array.isArray(context?.enemies)
+    ? context.enemies.filter((enemy) => enemy?.isAlive !== false)
+    : [];
+  if(!plane || !landingPoint || !placement || enemies.length === 0) return null;
+
+  function clampProbePoint(x, y){
+    const minX = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
+    const maxX = FIELD_LEFT + FIELD_WIDTH - FIELD_BORDER_OFFSET_X;
+    const minY = FIELD_TOP + FIELD_BORDER_OFFSET_Y;
+    const maxY = FIELD_TOP + FIELD_HEIGHT - FIELD_BORDER_OFFSET_Y;
+    return {
+      x: Math.max(minX, Math.min(maxX, x)),
+      y: Math.max(minY, Math.min(maxY, y)),
+    };
+  }
+
+  function normalizeVector(dx, dy){
+    const length = Math.hypot(dx, dy);
+    if(length <= 0.0001) return null;
+    return { x: dx / length, y: dy / length };
+  }
+
+  function collectUniqueTargets(rawTargets){
+    const unique = [];
+    for(const target of rawTargets){
+      if(!target || !Number.isFinite(target.x) || !Number.isFinite(target.y)) continue;
+      const duplicate = unique.some((entry) => Math.hypot(entry.x - target.x, entry.y - target.y) <= CELL_SIZE * 0.35);
+      if(!duplicate) unique.push(target);
+    }
+    return unique;
+  }
+
+  function getHighPriorityFriendlyDefenseTargets(){
+    const targets = [];
+    const blueFlags = typeof getAvailableFlagsByColor === "function" ? getAvailableFlagsByColor("blue") : [];
+    for(let i = 0; i < blueFlags.length; i += 1){
+      const anchor = typeof getFlagAnchor === "function" ? getFlagAnchor(blueFlags[i]) : null;
+      if(anchor){
+        targets.push({
+          x: anchor.x,
+          y: anchor.y,
+          name: `blue_flag_${i}`,
+          weight: 1.25,
+        });
+      }
+    }
+
+    if(landingPoint){
+      targets.push({
+        x: landingPoint.x,
+        y: landingPoint.y,
+        name: "planned_landing_guard",
+        weight: 1.12,
+      });
+    }
+
+    const cargoTargets = Array.isArray(cargoState)
+      ? cargoState
+          .filter((cargo) => cargo?.state !== "collected" && Number.isFinite(cargo?.x) && Number.isFinite(cargo?.y))
+          .slice(0, 3)
+      : [];
+    for(let i = 0; i < cargoTargets.length; i += 1){
+      targets.push({
+        x: cargoTargets[i].x,
+        y: cargoTargets[i].y,
+        name: `cargo_${i}`,
+        weight: 0.94,
+      });
+    }
+
+    const vulnerableAllies = Array.isArray(context?.aiPlanes)
+      ? context.aiPlanes
+          .filter((ally) => ally && ally !== plane && ally?.isAlive !== false && Number.isFinite(ally.x) && Number.isFinite(ally.y))
+          .map((ally) => {
+            const threatScore = enemies.reduce((score, enemy) => {
+              if(!Number.isFinite(enemy?.x) || !Number.isFinite(enemy?.y)) return score;
+              const enemyToAlly = Math.hypot(enemy.x - ally.x, enemy.y - ally.y);
+              const enemyCanAttack = enemyToAlly <= getPlaneEffectiveRangePx(enemy) * 1.08 && isPathClear(enemy.x, enemy.y, ally.x, ally.y);
+              if(!enemyCanAttack) return score;
+              const pressure = Math.max(0, (getPlaneEffectiveRangePx(enemy) * 1.08) - enemyToAlly);
+              return Math.max(score, pressure);
+            }, 0);
+            return {
+              ally,
+              threatScore,
+            };
+          })
+          .filter((entry) => entry.threatScore > 0)
+          .sort((a, b) => b.threatScore - a.threatScore)
+          .slice(0, 2)
+      : [];
+    for(let i = 0; i < vulnerableAllies.length; i += 1){
+      targets.push({
+        x: vulnerableAllies[i].ally.x,
+        y: vulnerableAllies[i].ally.y,
+        name: `vulnerable_ally_${i}`,
+        weight: 1.02,
+      });
+    }
+
+    return collectUniqueTargets(targets).slice(0, 7);
+  }
+
+  const friendlyDefenseTargets = getHighPriorityFriendlyDefenseTargets();
+
+  function getEnemyObjectiveTargets(enemy, nearestThreat){
+    const targets = [];
+    const blueBase = getBaseAnchor("blue");
+    if(blueBase) targets.push({ x: blueBase.x, y: blueBase.y, name: "to_blue_base", weight: 1.2 });
+    if(landingPoint) targets.push({ x: landingPoint.x, y: landingPoint.y, name: "to_current_landing", weight: 1 });
+    if(nearestThreat?.plane){
+      targets.push({ x: nearestThreat.plane.x, y: nearestThreat.plane.y, name: "to_nearest_fight", weight: 0.75 });
+    }
+    for(const defenseTarget of friendlyDefenseTargets){
+      targets.push({
+        x: defenseTarget.x,
+        y: defenseTarget.y,
+        name: `to_${defenseTarget.name}`,
+        weight: Number.isFinite(defenseTarget.weight) ? defenseTarget.weight : 0.8,
+      });
+    }
+    return collectUniqueTargets(targets).slice(0, 5);
+  }
+
+  function buildTrajectoryProjection(enemy, nearestThreat){
+    const currentVelocity = normalizeVector(Number(enemy?.vx) || 0, Number(enemy?.vy) || 0);
+    const objectives = getEnemyObjectiveTargets(enemy, nearestThreat);
+    const probeStep = Math.max(CELL_SIZE * 2.1, Math.min(MAX_DRAG_DISTANCE * 0.42, (getPlaneEffectiveRangePx(enemy) || MAX_DRAG_DISTANCE) * 0.82));
+    const points = [];
+    if(currentVelocity){
+      points.push(clampProbePoint(enemy.x + currentVelocity.x * probeStep, enemy.y + currentVelocity.y * probeStep));
+      points.push(clampProbePoint(enemy.x + currentVelocity.x * probeStep * 1.8, enemy.y + currentVelocity.y * probeStep * 1.8));
+    }
+    for(const objective of objectives){
+      const direction = normalizeVector(objective.x - enemy.x, objective.y - enemy.y);
+      if(!direction) continue;
+      const oneTurn = clampProbePoint(enemy.x + direction.x * probeStep, enemy.y + direction.y * probeStep);
+      const twoTurn = clampProbePoint(enemy.x + direction.x * probeStep * 1.9, enemy.y + direction.y * probeStep * 1.9);
+      points.push({
+        ...oneTurn,
+        targetName: objective.name,
+        step: 1,
+        weight: objective.weight,
+      });
+      points.push({
+        ...twoTurn,
+        targetName: objective.name,
+        step: 2,
+        weight: Math.max(0.45, objective.weight * 0.75),
+      });
+    }
+    return collectUniqueTargets(points).map((point) => ({
+      ...point,
+      step: Number(point?.step) || 1,
+      weight: Number(point?.weight) || 0.75,
+    }));
+  }
+
+  function evaluateZoneControl(enemy, nearestThreat, projection){
+    const mineX = placement.x;
+    const mineY = placement.y;
+    const controlRadius = MINE_TRIGGER_RADIUS * 1.35;
+    const highControlRadius = MINE_TRIGGER_RADIUS * 0.95;
+    let projectedContactScore = 0;
+    let basePassCut = false;
+    let turnPointControlled = false;
+
+    for(let i = 0; i < projection.length; i += 1){
+      const probe = projection[i];
+      const distanceToMine = Math.hypot(probe.x - mineX, probe.y - mineY);
+      const contactWeight = probe.step === 1 ? 1 : 0.72;
+      if(distanceToMine <= controlRadius){
+        const proximityBoost = distanceToMine <= highControlRadius ? 1.15 : 0.86;
+        projectedContactScore += probe.weight * contactWeight * proximityBoost;
+      }
+      if(i > 0){
+        const prev = projection[i - 1];
+        const turnAngle = Math.abs(Math.atan2(probe.y - prev.y, probe.x - prev.x) - Math.atan2(prev.y - enemy.y, prev.x - enemy.x));
+        const normalizedTurn = Math.min(Math.PI, turnAngle > Math.PI ? (Math.PI * 2 - turnAngle) : turnAngle);
+        const turnSeverity = normalizedTurn / Math.PI;
+        if(turnSeverity >= 0.28 && distanceToMine <= controlRadius){
+          turnPointControlled = true;
+          projectedContactScore += 0.42 * turnSeverity;
+        }
+      }
+    }
+
+    const blueBase = getBaseAnchor("blue");
+    if(blueBase){
+      const baseLaneDistance = distancePointToSegment(mineX, mineY, enemy.x, enemy.y, blueBase.x, blueBase.y);
+      const baseLaneIsClear = isPathClear(enemy.x, enemy.y, blueBase.x, blueBase.y);
+      if(baseLaneIsClear && baseLaneDistance <= controlRadius){
+        basePassCut = true;
+        projectedContactScore += 1.25;
+      }
+    }
+
+    if(nearestThreat?.plane){
+      const fightLaneDistance = distancePointToSegment(mineX, mineY, enemy.x, enemy.y, nearestThreat.plane.x, nearestThreat.plane.y);
+      if(fightLaneDistance <= MINE_TRIGGER_RADIUS * 1.1){
+        projectedContactScore += 0.45;
+      }
+    }
+
+    return {
+      projectedContactScore: Number(projectedContactScore.toFixed(3)),
+      basePassCut,
+      turnPointControlled,
+      forcesBadPath: projectedContactScore >= 1.55 || (basePassCut && projectedContactScore >= 1.1),
+    };
+  }
+
+  function measureEnemyOptions(enemy){
+    const friendlyThreats = Array.isArray(context?.aiPlanes)
+      ? context.aiPlanes.filter((aiPlane) => aiPlane?.isAlive !== false)
+      : [];
+    const enemyContext = {
+      ...context,
+      plane: enemy,
+      enemies: friendlyThreats,
+    };
+    const nearestThreat = friendlyThreats.reduce((best, aiPlane) => {
+      if(!aiPlane || !Number.isFinite(aiPlane.x) || !Number.isFinite(aiPlane.y)) return best;
+      const distance = Math.hypot(aiPlane.x - enemy.x, aiPlane.y - enemy.y);
+      if(!best || distance < best.distance) return { plane: aiPlane, distance };
+      return best;
+    }, null);
+    const retreatVectors = [
+      normalizeVector(1, 0),
+      normalizeVector(-1, 0),
+      normalizeVector(0, 1),
+      normalizeVector(0, -1),
+      nearestThreat ? normalizeVector(enemy.x - nearestThreat.plane.x, enemy.y - nearestThreat.plane.y) : null,
+    ].filter(Boolean);
+
+    const retreatDistance = Math.max(CELL_SIZE * 2.8, Math.min(MAX_DRAG_DISTANCE * 0.45, (getPlaneEffectiveRangePx(enemy) || MAX_DRAG_DISTANCE) * 0.9));
+    const escapeTargets = collectUniqueTargets(retreatVectors.map((vector, index) => {
+      const point = clampProbePoint(enemy.x + vector.x * retreatDistance, enemy.y + vector.y * retreatDistance);
+      return { ...point, name: `escape_${index}` };
+    }));
+
+    const enemyBase = getBaseAnchor("green");
+    const enemyFlags = typeof getAvailableFlagsByColor === "function" ? getAvailableFlagsByColor("green") : [];
+    const enemyFlagTargets = enemyFlags.map((flag, index) => {
+      const anchor = typeof getFlagAnchor === "function" ? getFlagAnchor(flag) : null;
+      return anchor ? { x: anchor.x, y: anchor.y, name: `flag_${index}` } : null;
+    }).filter(Boolean);
+    const nearbyFightTarget = nearestThreat
+      ? { x: nearestThreat.plane.x, y: nearestThreat.plane.y, name: "close_fight" }
+      : null;
+    const defenseTargets = friendlyDefenseTargets.map((target) => ({
+      x: target.x,
+      y: target.y,
+      name: target.name,
+    }));
+    const goalTargets = collectUniqueTargets([
+      enemyBase ? { x: enemyBase.x, y: enemyBase.y, name: "enemy_base" } : null,
+      ...enemyFlagTargets,
+      nearbyFightTarget,
+      ...defenseTargets,
+    ]).sort((a, b) => Math.hypot(a.x - enemy.x, a.y - enemy.y) - Math.hypot(b.x - enemy.x, b.y - enemy.y)).slice(0, 3);
+
+    function evaluateTarget(target, kind){
+      const move = typeof planPathToPoint === "function"
+        ? planPathToPoint(enemy, target.x, target.y, {
+            context: enemyContext,
+            goalName: `mine_route_probe_${kind}`,
+            decisionReason: `mine_route_probe_${kind}_${target.name || "target"}`,
+            routeClass: "direct",
+          })
+        : null;
+      if(!move) return { safe: false, landing: null, pathExists: false, threatMeta: null, targetName: target.name || null };
+      const landing = typeof getAiMoveLandingPoint === "function"
+        ? getAiMoveLandingPoint({ plane: enemy, ...move })
+        : null;
+      if(!landing) return { safe: false, landing: null, pathExists: false, threatMeta: null, targetName: target.name || null };
+      const threatMeta = typeof getImmediateResponseThreatMeta === "function"
+        ? getImmediateResponseThreatMeta(enemyContext, landing.x, landing.y, nearestThreat?.plane || null)
+        : { count: 0 };
+      return {
+        safe: threatMeta.count <= 0,
+        landing,
+        pathExists: true,
+        threatMeta,
+        targetName: target.name || null,
+      };
+    }
+
+    const escapeResults = escapeTargets.map((target) => evaluateTarget(target, "escape"));
+    const goalResults = goalTargets.map((target) => evaluateTarget(target, "goal"));
+    const safeEscapeCount = escapeResults.filter((entry) => entry.safe).length;
+    const safeGoalCount = goalResults.filter((entry) => entry.safe).length;
+    const safeGoalNames = new Set(goalResults.filter((entry) => entry.safe).map((entry) => entry.targetName || ""));
+    const projection = buildTrajectoryProjection(enemy, nearestThreat);
+    const zoneControl = evaluateZoneControl(enemy, nearestThreat, projection);
+    return {
+      safeEscapeCount,
+      safeGoalCount,
+      goodDirectionCount: safeEscapeCount + safeGoalCount,
+      bestGoalSafe: safeGoalCount > 0,
+      bestEscapeSafe: safeEscapeCount > 0,
+      safeBlueFlagRoute: Array.from(safeGoalNames).some((name) => name.startsWith("blue_flag_")),
+      safeCargoRouteCount: Array.from(safeGoalNames).filter((name) => name.startsWith("cargo_")).length,
+      safeVulnerableAllyRouteCount: Array.from(safeGoalNames).filter((name) => name.startsWith("vulnerable_ally_")).length,
+      safeLandingGuardRoute: safeGoalNames.has("planned_landing_guard"),
+      projectedContactScore: zoneControl.projectedContactScore,
+      basePassCut: zoneControl.basePassCut,
+      turnPointControlled: zoneControl.turnPointControlled,
+      forcesBadPath: zoneControl.forcesBadPath,
+    };
+  }
+
+  const baselineByEnemy = enemies.map((enemy) => ({ enemy, summary: measureEnemyOptions(enemy) }));
+
+  const afterByEnemy = withTemporaryBlueMine(placement, () => (
+    baselineByEnemy.map(({ enemy }) => ({ enemy, summary: measureEnemyOptions(enemy) }))
+  )) || baselineByEnemy.map(({ enemy }) => ({ enemy, summary: measureEnemyOptions(enemy) }));
+
+  let totalDirectionLoss = 0;
+  let blockedEscapeCount = 0;
+  let cutRouteCount = 0;
+  let trapCount = 0;
+  let projectedContactDelta = 0;
+  let controlledBasePassCount = 0;
+  let controlledTurnPointCount = 0;
+  let forcedBadPathCount = 0;
+  let protectedFlagLaneCount = 0;
+  let cargoRouteCutCount = 0;
+  let protectedVulnerableAllyCount = 0;
+  let preemptiveLandingShieldCount = 0;
+  const enemyReports = [];
+
+  for(let i = 0; i < baselineByEnemy.length; i += 1){
+    const before = baselineByEnemy[i].summary;
+    const after = afterByEnemy[i].summary;
+    const enemy = baselineByEnemy[i].enemy;
+    const directionLoss = Math.max(0, before.goodDirectionCount - after.goodDirectionCount);
+    const blocksEscape = before.bestEscapeSafe && !after.bestEscapeSafe;
+    const cutsBestRoute = before.bestGoalSafe && !after.bestGoalSafe;
+    const createsTrap = directionLoss >= 2 && after.goodDirectionCount <= 1 && (blocksEscape || cutsBestRoute || after.safeEscapeCount === 0);
+    const contactGain = Math.max(0, (after.projectedContactScore || 0) - (before.projectedContactScore || 0));
+    if(blocksEscape) blockedEscapeCount += 1;
+    if(cutsBestRoute) cutRouteCount += 1;
+    if(createsTrap) trapCount += 1;
+    if(before.safeBlueFlagRoute && !after.safeBlueFlagRoute) protectedFlagLaneCount += 1;
+    if(before.safeCargoRouteCount > after.safeCargoRouteCount) cargoRouteCutCount += 1;
+    if(before.safeVulnerableAllyRouteCount > after.safeVulnerableAllyRouteCount) protectedVulnerableAllyCount += 1;
+    if(before.safeLandingGuardRoute && !after.safeLandingGuardRoute) preemptiveLandingShieldCount += 1;
+    if(after.basePassCut && !before.basePassCut) controlledBasePassCount += 1;
+    if(after.turnPointControlled && !before.turnPointControlled) controlledTurnPointCount += 1;
+    if(after.forcesBadPath && !before.forcesBadPath) forcedBadPathCount += 1;
+    projectedContactDelta += contactGain;
+    totalDirectionLoss += directionLoss;
+    enemyReports.push({
+      enemyId: enemy?.id ?? null,
+      beforeGoodDirections: before.goodDirectionCount,
+      afterGoodDirections: after.goodDirectionCount,
+      directionLoss,
+      blocksEscape,
+      cutsBestRoute,
+      createsTrap,
+      projectedContactBefore: Number((before.projectedContactScore || 0).toFixed(3)),
+      projectedContactAfter: Number((after.projectedContactScore || 0).toFixed(3)),
+      projectedContactGain: Number(contactGain.toFixed(3)),
+      protectedFlagLane: before.safeBlueFlagRoute && !after.safeBlueFlagRoute,
+      cargoRouteCut: before.safeCargoRouteCount > after.safeCargoRouteCount,
+      protectedVulnerableAlly: before.safeVulnerableAllyRouteCount > after.safeVulnerableAllyRouteCount,
+      preemptiveLandingShield: before.safeLandingGuardRoute && !after.safeLandingGuardRoute,
+      basePassCut: after.basePassCut && !before.basePassCut,
+      turnPointControlled: after.turnPointControlled && !before.turnPointControlled,
+      forcesBadPath: after.forcesBadPath && !before.forcesBadPath,
+    });
+  }
+
+  let scenario = options?.fallbackScenario || "mine_blocks_escape_lane";
+  if(preemptiveLandingShieldCount > 0) scenario = "mine_preemptive_landing_cover";
+  else if(protectedFlagLaneCount > 0) scenario = "mine_protects_home_flag_lane";
+  else if(protectedVulnerableAllyCount > 0) scenario = "mine_protects_vulnerable_ally";
+  else if(cargoRouteCutCount > 0) scenario = "mine_cuts_route_to_cargo";
+  else if(trapCount > 0) scenario = "mine_creates_trap";
+  else if(cutRouteCount > 0) scenario = "mine_cuts_best_route";
+  else if(controlledBasePassCount > 0) scenario = "mine_controls_base_pass";
+  else if(controlledTurnPointCount > 0) scenario = "mine_controls_turn_point";
+  else if(forcedBadPathCount > 0) scenario = "mine_forces_bad_path";
+  else if(blockedEscapeCount > 0) scenario = "mine_blocks_escape_lane";
+
+  const score = (blockedEscapeCount * 8.2)
+    + (cutRouteCount * 6.8)
+    + (trapCount * 10.8)
+    + totalDirectionLoss
+    + (projectedContactDelta * 2.35)
+    + (protectedFlagLaneCount * 11.2)
+    + (cargoRouteCutCount * 5.8)
+    + (protectedVulnerableAllyCount * 7.4)
+    + (preemptiveLandingShieldCount * 9.6)
+    + (controlledBasePassCount * 3.6)
+    + (controlledTurnPointCount * 2.4)
+    + (forcedBadPathCount * 5.6);
+  return {
+    placement,
+    planeId: plane?.id ?? null,
+    scenario,
+    score,
+    totalDirectionLoss,
+    blockedEscapeCount,
+    cutRouteCount,
+    trapCount,
+    protectedFlagLaneCount,
+    cargoRouteCutCount,
+    protectedVulnerableAllyCount,
+    preemptiveLandingShieldCount,
+    projectedContactDelta: Number(projectedContactDelta.toFixed(3)),
+    controlledBasePassCount,
+    controlledTurnPointCount,
+    forcedBadPathCount,
+    enemyReports,
+  };
+}
+
+// DORMANT — see note above evaluateBlueMinePlacementImpact.
+function tryPlaceBlueMineNearEnemyBase(context = null, plannedMove = null, options = {}){
+  const aiItemSpendStyle = getAiItemSpendStyle(context, plannedMove, options);
+  const styleConfig = getMineRiskStyleConfig(aiItemSpendStyle);
+  const strategicGoalName = plannedMove?.goalName || aiRoundState?.currentGoal || "";
+  const enemyBase = getBaseAnchor("green");
+  if(!enemyBase){
+    if(options?.evaluateOnly && options?.withDiagnostics){
+      return { plan: null, rejectReason: "no_install_window", details: { missingEnemyBase: true } };
+    }
+    return options?.evaluateOnly ? null : false;
+  }
+  const baseCandidates = [
+    { x: enemyBase.x - CELL_SIZE * 1.2, y: enemyBase.y + CELL_SIZE * 0.8 },
+    { x: enemyBase.x + CELL_SIZE * 1.2, y: enemyBase.y + CELL_SIZE * 0.8 },
+    { x: enemyBase.x, y: enemyBase.y + CELL_SIZE * 1.6 },
+    { x: enemyBase.x, y: enemyBase.y - CELL_SIZE * 1.4 },
+  ];
+  const extraCandidates = [];
+  const radialStep = CELL_SIZE * 0.78;
+  const ringScales = [1.15, 1.85];
+  const ringAngles = [0.15, 0.55, 0.95, 1.35, 1.75];
+  for(const scale of ringScales){
+    const radius = radialStep * scale;
+    for(const angleFactor of ringAngles){
+      const angle = Math.PI * angleFactor;
+      extraCandidates.push({
+        x: enemyBase.x + Math.cos(angle) * radius,
+        y: enemyBase.y + Math.sin(angle) * radius,
+      });
+    }
+  }
+  const primaryCandidates = baseCandidates.concat(extraCandidates);
+
+  function buildRouteFallbackCandidates(){
+    const routeTargets = [];
+    const blueBase = getBaseAnchor("blue");
+    if(blueBase) routeTargets.push(blueBase);
+    const blueFlag = getFlagAnchor("blue");
+    if(blueFlag) routeTargets.push(blueFlag);
+    if(plannedMove?.targetX !== undefined && plannedMove?.targetY !== undefined){
+      routeTargets.push({ x: plannedMove.targetX, y: plannedMove.targetY });
+    }
+    const fallback = [];
+    const stepDistance = CELL_SIZE * 0.74;
+    for(const target of routeTargets){
+      if(!Number.isFinite(target?.x) || !Number.isFinite(target?.y)) continue;
+      const dx = target.x - enemyBase.x;
+      const dy = target.y - enemyBase.y;
+      const dist = Math.hypot(dx, dy);
+      if(dist <= CELL_SIZE * 0.35) continue;
+      const ux = dx / dist;
+      const uy = dy / dist;
+      const perpX = -uy;
+      const perpY = ux;
+      const travelRatios = [0.55, 0.95, 1.35];
+      const laneOffsets = [0, 0.68, -0.68];
+      for(const ratio of travelRatios){
+        const forward = stepDistance * ratio;
+        for(const laneOffset of laneOffsets){
+          fallback.push({
+            x: enemyBase.x + ux * forward + perpX * stepDistance * laneOffset,
+            y: enemyBase.y + uy * forward + perpY * stepDistance * laneOffset,
+          });
+        }
+      }
+    }
+    return fallback;
+  }
+
+  let bestCandidate = null;
+  const excludedPlacements = Array.isArray(options?.excludePlacements) ? options.excludePlacements : [];
+  let validWindowCount = 0;
+  let blockedByFriendlyRisk = 0;
+  let acceptedHighRiskCount = 0;
+  function evaluateCandidateList(candidates){
+    for(const candidate of candidates){
+      const placement = {
+        x: candidate.x,
+        y: candidate.y,
+        cellX: Math.floor((candidate.x - FIELD_LEFT) / CELL_SIZE),
+        cellY: Math.floor((candidate.y - FIELD_TOP) / CELL_SIZE),
+      };
+      if(!isMinePlacementValid(placement)) continue;
+      const isExcluded = excludedPlacements.some((entry) => (
+        Number.isFinite(entry?.x)
+        && Number.isFinite(entry?.y)
+        && Math.hypot(entry.x - placement.x, entry.y - placement.y) <= Math.max(6, CELL_SIZE * 0.3)
+      ));
+      if(isExcluded) continue;
+      validWindowCount += 1;
+      const impact = evaluateBlueMinePlacementImpact(context, plannedMove, placement, {
+        fallbackScenario: "mine_cuts_best_route",
+      }) || {
+        placement,
+        scenario: "mine_cuts_best_route",
+        score: 0.25,
+        totalDirectionLoss: 0,
+        blockedEscapeCount: 0,
+        cutRouteCount: 0,
+        trapCount: 0,
+        enemyReports: [],
+      };
+      const friendlyRisk = evaluateMineFriendlyRisk(context, plannedMove, placement, { aiItemSpendStyle });
+      const riskAcceptedBecause = aiItemSpendStyle === "aggressive" && friendlyRisk?.highRisk
+        ? getMineRiskAcceptedBecause(impact, strategicGoalName)
+        : null;
+      const canAcceptHighRisk = canAcceptMineHighRiskByAggressiveMode({
+        aiItemSpendStyle,
+        styleConfig,
+        friendlyRisk,
+        minePlan: impact,
+        riskAcceptedBecause,
+      });
+      if(friendlyRisk?.highRisk && !canAcceptHighRisk){
+        blockedByFriendlyRisk += 1;
+        continue;
+      }
+      if(canAcceptHighRisk) acceptedHighRiskCount += 1;
+      impact.friendlyRisk = friendlyRisk;
+      impact.riskAcceptedBecause = canAcceptHighRisk ? riskAcceptedBecause : null;
+      impact.aiItemSpendStyle = aiItemSpendStyle;
+      if(!bestCandidate || impact.score > bestCandidate.score) bestCandidate = impact;
+    }
+  }
+
+  evaluateCandidateList(primaryCandidates);
+  if(!bestCandidate){
+    evaluateCandidateList(buildRouteFallbackCandidates());
+  }
+
+  if(options?.evaluateOnly){
+    if(options?.withDiagnostics){
+      const rejectReason = bestCandidate
+        ? null
+        : (validWindowCount <= 0
+            ? "no_valid_points"
+            : (blockedByFriendlyRisk > 0 ? "points_filtered_by_risk" : "low_enemy_contact_probability"));
+      return {
+        plan: bestCandidate,
+        rejectReason,
+        details: {
+          validWindowCount,
+          blockedByFriendlyRisk,
+          acceptedHighRiskCount,
+          aiItemSpendStyle,
+        },
+      };
+    }
+    return bestCandidate;
+  }
+  if(!bestCandidate) return false;
+
+  placeMine({
+    owner: "blue",
+    x: bestCandidate.placement.x,
+    y: bestCandidate.placement.y,
+    cellX: bestCandidate.placement.cellX,
+    cellY: bestCandidate.placement.cellY,
+  });
+  aiRoundState.lastMinePlacementMeta = bestCandidate;
+  return true;
+}
+
+// DORMANT — see note above evaluateBlueMinePlacementImpact.
+function tryPlaceBlueDefensiveMine(context, plannedMove, options = {}){
+  const aiItemSpendStyle = getAiItemSpendStyle(context, plannedMove, options);
+  const styleConfig = getMineRiskStyleConfig(aiItemSpendStyle);
+  const strategicGoalName = plannedMove?.goalName || aiRoundState?.currentGoal || "";
+  const plane = plannedMove?.plane;
+  const landingPoint = getAiMoveLandingPoint(plannedMove);
+  const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
+  if(!plane || !landingPoint || enemies.length === 0){
+    if(options?.evaluateOnly && options?.withDiagnostics){
+      return {
+        plan: null,
+        rejectReason: "no_install_window",
+        details: {
+          missingPlane: !plane,
+          missingLandingPoint: !landingPoint,
+          hasEnemies: enemies.length > 0,
+        },
+      };
+    }
+    return options?.evaluateOnly ? null : false;
+  }
+
+  function getSelfRiskAssessment(point){
+    if(!point){
+      return {
+        isRisky: true,
+        isCritical: true,
+        currentToLandingDistance: Number.POSITIVE_INFINITY,
+        landingToMineDistance: Number.POSITIVE_INFINITY,
+      };
+    }
+    const currentToLandingDistance = Math.hypot(point.x - plane.x, point.y - plane.y);
+    const landingToMineDistance = Math.hypot(point.x - landingPoint.x, point.y - landingPoint.y);
+    const mineDangerRadius = MINE_TRIGGER_RADIUS * AI_MINE_SELF_RISK_CONFIG.SELF_RISK_ASSESSMENT.DANGER_RADIUS_MULTIPLIER;
+    const blocksImmediateCorridor = currentToLandingDistance <= mineDangerRadius;
+    const blocksLandingCorridor = landingToMineDistance <= mineDangerRadius;
+    const hardImmediateRadius = MINE_TRIGGER_RADIUS * AI_MINE_SELF_RISK_CONFIG.SELF_RISK_ASSESSMENT.HARD_IMMEDIATE_RADIUS_MULTIPLIER;
+    const hardLandingRadius = MINE_TRIGGER_RADIUS * AI_MINE_SELF_RISK_CONFIG.SELF_RISK_ASSESSMENT.HARD_LANDING_RADIUS_MULTIPLIER;
+    const superCriticalRadius = MINE_TRIGGER_RADIUS * AI_MINE_SELF_RISK_CONFIG.SELF_RISK_ASSESSMENT.SUPER_CRITICAL_RADIUS_MULTIPLIER;
+    const criticalByImmediate = currentToLandingDistance <= hardImmediateRadius;
+    const criticalByCombined = blocksImmediateCorridor && blocksLandingCorridor && landingToMineDistance <= hardLandingRadius;
+    const criticalBySelfBlast = currentToLandingDistance <= superCriticalRadius;
+    const isCritical = criticalByImmediate || criticalByCombined || criticalBySelfBlast;
+    const isRisky = blocksImmediateCorridor || blocksLandingCorridor;
+    return {
+      isRisky,
+      isCritical,
+      currentToLandingDistance,
+      landingToMineDistance,
+    };
+  }
+
+  function getSelfRiskPenaltyMultiplier(goalName){
+    const goalText = `${goalName || ""}`.toLowerCase();
+    const allowsBolderRisk = goalText.includes("safe_finisher")
+      || goalText.includes("capture_enemy_flag")
+      || goalText.includes("return_with_flag")
+      || goalText.includes("post_pickup")
+      || goalText.includes("flag_pickup");
+    return allowsBolderRisk
+      ? styleConfig.GOAL_RISK_PENALTY_MULTIPLIER
+      : styleConfig.MODERATE_SELF_RISK_PENALTY_MULTIPLIER;
+  }
+
+  let mostDangerousEnemy = null;
+  let bestThreatScore = Number.NEGATIVE_INFINITY;
+  for(const enemy of enemies){
+    const enemyToLanding = Math.hypot(enemy.x - landingPoint.x, enemy.y - landingPoint.y);
+    const enemyEffectiveRangePx = getPlaneEffectiveRangePx(enemy);
+    const canContestSoon = enemyToLanding <= enemyEffectiveRangePx * 1.20;
+    const hasClearLane = isPathClear(enemy.x, enemy.y, landingPoint.x, landingPoint.y);
+    if(!canContestSoon || !hasClearLane) continue;
+
+    const threatScore = getPlaneEffectiveRangePx(enemy) - enemyToLanding;
+    if(threatScore > bestThreatScore){
+      bestThreatScore = threatScore;
+      mostDangerousEnemy = enemy;
+    }
+  }
+
+  if(!mostDangerousEnemy){
+    if(options?.evaluateOnly && options?.withDiagnostics){
+      return { plan: null, rejectReason: "low_enemy_contact_probability", details: { noImmediateThreat: true } };
+    }
+    return options?.evaluateOnly ? null : false;
+  }
+
+  const excludedPlacements = Array.isArray(options?.excludePlacements) ? options.excludePlacements : [];
+  const primaryBlockPoint = {
+    x: landingPoint.x + (mostDangerousEnemy.x - landingPoint.x) * 0.42,
+    y: landingPoint.y + (mostDangerousEnemy.y - landingPoint.y) * 0.42,
+  };
+  const primaryCandidates = [primaryBlockPoint];
+  const fallbackCandidates = [];
+  const laneDx = mostDangerousEnemy.x - landingPoint.x;
+  const laneDy = mostDangerousEnemy.y - landingPoint.y;
+  const laneDistance = Math.hypot(laneDx, laneDy);
+  if(laneDistance > CELL_SIZE * 0.2){
+    const laneUx = laneDx / laneDistance;
+    const laneUy = laneDy / laneDistance;
+    const perpX = -laneUy;
+    const perpY = laneUx;
+    const laneStep = CELL_SIZE * 0.74;
+    const forwardRatios = [0.34, 0.58, 0.82];
+    const lateralRatios = [0, 0.72, -0.72];
+    for(const forwardRatio of forwardRatios){
+      const forwardDistance = laneDistance * forwardRatio;
+      for(const lateralRatio of lateralRatios){
+        fallbackCandidates.push({
+          x: landingPoint.x + laneUx * forwardDistance + perpX * laneStep * lateralRatio,
+          y: landingPoint.y + laneUy * forwardDistance + perpY * laneStep * lateralRatio,
+        });
+      }
+    }
+  }
+
+  let bestPlan = null;
+  let bestPlacement = null;
+  let bestSelfRisk = null;
+  let bestFriendlyRisk = null;
+  let bestRiskAcceptedBecause = null;
+  let bestCanAcceptHighRisk = false;
+  let hadValidPoints = 0;
+  let blockedByRiskPoints = 0;
+  let criticalSelfRiskPoints = 0;
+
+  function evaluateCandidateList(candidates){
+    for(const candidate of candidates){
+      const placement = {
+        x: candidate.x,
+        y: candidate.y,
+        cellX: Math.floor((candidate.x - FIELD_LEFT) / CELL_SIZE),
+        cellY: Math.floor((candidate.y - FIELD_TOP) / CELL_SIZE),
+      };
+      const isExcluded = excludedPlacements.some((entry) => (
+        Number.isFinite(entry?.x)
+        && Number.isFinite(entry?.y)
+        && Math.hypot(entry.x - placement.x, entry.y - placement.y) <= Math.max(6, CELL_SIZE * 0.3)
+      ));
+      if(isExcluded) continue;
+      if(!isMinePlacementValid(placement)) continue;
+      hadValidPoints += 1;
+      const selfRisk = getSelfRiskAssessment(placement);
+      if(selfRisk?.isCritical){
+        criticalSelfRiskPoints += 1;
+        blockedByRiskPoints += 1;
+        continue;
+      }
+      const impact = evaluateBlueMinePlacementImpact(context, plannedMove, placement, {
+        fallbackScenario: "mine_blocks_escape_lane",
+      }) || {
+        placement,
+        scenario: "mine_blocks_escape_lane",
+        score: 0.5,
+        totalDirectionLoss: 0,
+        blockedEscapeCount: 0,
+        cutRouteCount: 0,
+        trapCount: 0,
+        enemyReports: [],
+      };
+      const friendlyRisk = evaluateMineFriendlyRisk(context, plannedMove, placement, { aiItemSpendStyle });
+      const riskAcceptedBecause = aiItemSpendStyle === "aggressive" && friendlyRisk?.highRisk
+        ? getMineRiskAcceptedBecause(impact, strategicGoalName)
+        : null;
+      const canAcceptHighRisk = canAcceptMineHighRiskByAggressiveMode({
+        aiItemSpendStyle,
+        styleConfig,
+        friendlyRisk,
+        minePlan: impact,
+        riskAcceptedBecause,
+      });
+      if(friendlyRisk?.highRisk && !canAcceptHighRisk){
+        blockedByRiskPoints += 1;
+        continue;
+      }
+      impact.enemyId = mostDangerousEnemy?.id ?? null;
+      impact.friendlyRisk = friendlyRisk;
+      impact.riskAcceptedBecause = canAcceptHighRisk ? riskAcceptedBecause : null;
+      impact.aiItemSpendStyle = aiItemSpendStyle;
+      if(selfRisk?.isRisky){
+        const penaltyMultiplier = getSelfRiskPenaltyMultiplier(strategicGoalName);
+        const penaltyValue = Number((styleConfig.SELF_RISK_PENALTY_BASE * penaltyMultiplier).toFixed(2));
+        impact.score = Number((impact.score - penaltyValue).toFixed(3));
+        impact.selfRiskPenalty = penaltyValue;
+        impact.selfRiskDowngraded = true;
+      }
+      if(!bestPlan || impact.score > bestPlan.score){
+        bestPlan = impact;
+        bestPlacement = placement;
+        bestSelfRisk = selfRisk;
+        bestFriendlyRisk = friendlyRisk;
+        bestRiskAcceptedBecause = riskAcceptedBecause;
+        bestCanAcceptHighRisk = canAcceptHighRisk;
+      }
+    }
+  }
+
+  evaluateCandidateList(primaryCandidates);
+  if(!bestPlan){
+    evaluateCandidateList(fallbackCandidates);
+  }
+
+  if(!bestPlan){
+    const rejectReason = hadValidPoints <= 0
+      ? "no_valid_points"
+      : "points_filtered_by_risk";
+    if(options?.evaluateOnly && options?.withDiagnostics){
+      return {
+        plan: null,
+        rejectReason,
+        details: {
+          validWindowCount: hadValidPoints,
+          blockedByRiskPoints,
+          criticalSelfRiskPoints,
+        },
+      };
+    }
+    if(options?.evaluateOnly) return null;
+    if(rejectReason === "points_filtered_by_risk"){
+      logAiDecision("mine_skipped_self_risk", {
+        planeId: plane?.id ?? null,
+        enemyId: mostDangerousEnemy?.id ?? null,
+        reason: "defensive_mine_points_filtered_by_risk",
+        reasonCode: "mine_hard_risk_reject",
+        blockedByRiskPoints,
+        criticalSelfRiskPoints,
+      });
+    }
+    return false;
+  }
+
+  if(bestCanAcceptHighRisk){
+    logAiDecision("mine_risk_accepted_aggressive_mode", {
+      planeId: plane?.id ?? null,
+      enemyId: mostDangerousEnemy?.id ?? null,
+      aiItemSpendStyle,
+      riskScore: bestFriendlyRisk?.riskScore ?? null,
+      riskAcceptedBecause: bestRiskAcceptedBecause,
+      reasonCode: "mine_risk_accepted_aggressive_mode",
+      scenario: bestPlan?.scenario || null,
+      routeBlockScore: Number((bestPlan?.score || 0).toFixed(3)),
+      blockedEscapeCount: bestPlan?.blockedEscapeCount ?? 0,
+      cutRouteCount: bestPlan?.cutRouteCount ?? 0,
+      trapCount: bestPlan?.trapCount ?? 0,
+      forcedBadPathCount: bestPlan?.forcedBadPathCount ?? 0,
+    });
+  }
+  if(bestSelfRisk?.isRisky && !options?.evaluateOnly){
+    logAiDecision("mine_soft_risk_penalty_applied", {
+      planeId: plane?.id ?? null,
+      enemyId: mostDangerousEnemy?.id ?? null,
+      reasonCode: "mine_soft_risk_penalty",
+      penaltyValue: bestPlan.selfRiskPenalty || 0,
+      adjustedScore: Number((bestPlan.score || 0).toFixed(3)),
+      aiItemSpendStyle,
+    });
+  }
+
+  if(options?.evaluateOnly){
+    if(options?.withDiagnostics){
+      return {
+        plan: bestPlan,
+        rejectReason: null,
+        details: {
+          friendlyRisk: bestFriendlyRisk,
+          riskAcceptedBecause: bestPlan.riskAcceptedBecause || null,
+          aiItemSpendStyle,
+        },
+      };
+    }
+    return bestPlan;
+  }
+
+  placeMine({
+    owner: "blue",
+    x: bestPlacement.x,
+    y: bestPlacement.y,
+    cellX: bestPlacement.cellX,
+    cellY: bestPlacement.cellY,
+  });
+  aiRoundState.lastMinePlacementMeta = bestPlan;
+  return true;
+}
+
+// Async-yielding twin of tryPlaceBlueDefensiveMine. Identical scoring/selection logic — the only
+// difference is `await aiCoopMaybeYield()` once per candidate so the renderer can paint between
+// the (heavy) evaluateBlueMinePlacementImpact calls. Used by the AI scheduler when computing the
+// pre-launch inventory enhancement plan; the sync version above is preserved for `maybeUseInventory
+// BeforeLaunch`'s rare fallback path and for any other sync callers (smoke tests rely on the sync
+// signature). KEEP THE TWO BODIES IN SYNC when the underlying scoring rules change.
+// DORMANT — see note above evaluateBlueMinePlacementImpact.
+async function tryPlaceBlueDefensiveMineAsync(context, plannedMove, options = {}){
+  const aiItemSpendStyle = getAiItemSpendStyle(context, plannedMove, options);
+  const styleConfig = getMineRiskStyleConfig(aiItemSpendStyle);
+  const strategicGoalName = plannedMove?.goalName || aiRoundState?.currentGoal || "";
+  const plane = plannedMove?.plane;
+  const landingPoint = getAiMoveLandingPoint(plannedMove);
+  const enemies = Array.isArray(context?.enemies) ? context.enemies : [];
+  if(!plane || !landingPoint || enemies.length === 0){
+    if(options?.evaluateOnly && options?.withDiagnostics){
+      return {
+        plan: null,
+        rejectReason: "no_install_window",
+        details: {
+          missingPlane: !plane,
+          missingLandingPoint: !landingPoint,
+          hasEnemies: enemies.length > 0,
+        },
+      };
+    }
+    return options?.evaluateOnly ? null : false;
+  }
+
+  function getSelfRiskAssessment(point){
+    if(!point){
+      return {
+        isRisky: true,
+        isCritical: true,
+        currentToLandingDistance: Number.POSITIVE_INFINITY,
+        landingToMineDistance: Number.POSITIVE_INFINITY,
+      };
+    }
+    const currentToLandingDistance = Math.hypot(point.x - plane.x, point.y - plane.y);
+    const landingToMineDistance = Math.hypot(point.x - landingPoint.x, point.y - landingPoint.y);
+    const mineDangerRadius = MINE_TRIGGER_RADIUS * AI_MINE_SELF_RISK_CONFIG.SELF_RISK_ASSESSMENT.DANGER_RADIUS_MULTIPLIER;
+    const blocksImmediateCorridor = currentToLandingDistance <= mineDangerRadius;
+    const blocksLandingCorridor = landingToMineDistance <= mineDangerRadius;
+    const hardImmediateRadius = MINE_TRIGGER_RADIUS * AI_MINE_SELF_RISK_CONFIG.SELF_RISK_ASSESSMENT.HARD_IMMEDIATE_RADIUS_MULTIPLIER;
+    const hardLandingRadius = MINE_TRIGGER_RADIUS * AI_MINE_SELF_RISK_CONFIG.SELF_RISK_ASSESSMENT.HARD_LANDING_RADIUS_MULTIPLIER;
+    const superCriticalRadius = MINE_TRIGGER_RADIUS * AI_MINE_SELF_RISK_CONFIG.SELF_RISK_ASSESSMENT.SUPER_CRITICAL_RADIUS_MULTIPLIER;
+    const criticalByImmediate = currentToLandingDistance <= hardImmediateRadius;
+    const criticalByCombined = blocksImmediateCorridor && blocksLandingCorridor && landingToMineDistance <= hardLandingRadius;
+    const criticalBySelfBlast = currentToLandingDistance <= superCriticalRadius;
+    const isCritical = criticalByImmediate || criticalByCombined || criticalBySelfBlast;
+    const isRisky = blocksImmediateCorridor || blocksLandingCorridor;
+    return {
+      isRisky,
+      isCritical,
+      currentToLandingDistance,
+      landingToMineDistance,
+    };
+  }
+
+  function getSelfRiskPenaltyMultiplier(goalName){
+    const goalText = `${goalName || ""}`.toLowerCase();
+    const allowsBolderRisk = goalText.includes("safe_finisher")
+      || goalText.includes("capture_enemy_flag")
+      || goalText.includes("return_with_flag")
+      || goalText.includes("post_pickup")
+      || goalText.includes("flag_pickup");
+    return allowsBolderRisk
+      ? styleConfig.GOAL_RISK_PENALTY_MULTIPLIER
+      : styleConfig.MODERATE_SELF_RISK_PENALTY_MULTIPLIER;
+  }
+
+  let mostDangerousEnemy = null;
+  let bestThreatScore = Number.NEGATIVE_INFINITY;
+  for(const enemy of enemies){
+    const enemyToLanding = Math.hypot(enemy.x - landingPoint.x, enemy.y - landingPoint.y);
+    const enemyEffectiveRangePx = getPlaneEffectiveRangePx(enemy);
+    const canContestSoon = enemyToLanding <= enemyEffectiveRangePx * 1.20;
+    const hasClearLane = isPathClear(enemy.x, enemy.y, landingPoint.x, landingPoint.y);
+    if(!canContestSoon || !hasClearLane) continue;
+
+    const threatScore = getPlaneEffectiveRangePx(enemy) - enemyToLanding;
+    if(threatScore > bestThreatScore){
+      bestThreatScore = threatScore;
+      mostDangerousEnemy = enemy;
+    }
+  }
+
+  if(!mostDangerousEnemy){
+    if(options?.evaluateOnly && options?.withDiagnostics){
+      return { plan: null, rejectReason: "low_enemy_contact_probability", details: { noImmediateThreat: true } };
+    }
+    return options?.evaluateOnly ? null : false;
+  }
+
+  const excludedPlacements = Array.isArray(options?.excludePlacements) ? options.excludePlacements : [];
+  const primaryBlockPoint = {
+    x: landingPoint.x + (mostDangerousEnemy.x - landingPoint.x) * 0.42,
+    y: landingPoint.y + (mostDangerousEnemy.y - landingPoint.y) * 0.42,
+  };
+  const primaryCandidates = [primaryBlockPoint];
+  const fallbackCandidates = [];
+  const laneDx = mostDangerousEnemy.x - landingPoint.x;
+  const laneDy = mostDangerousEnemy.y - landingPoint.y;
+  const laneDistance = Math.hypot(laneDx, laneDy);
+  if(laneDistance > CELL_SIZE * 0.2){
+    const laneUx = laneDx / laneDistance;
+    const laneUy = laneDy / laneDistance;
+    const perpX = -laneUy;
+    const perpY = laneUx;
+    const laneStep = CELL_SIZE * 0.74;
+    const forwardRatios = [0.34, 0.58, 0.82];
+    const lateralRatios = [0, 0.72, -0.72];
+    for(const forwardRatio of forwardRatios){
+      const forwardDistance = laneDistance * forwardRatio;
+      for(const lateralRatio of lateralRatios){
+        fallbackCandidates.push({
+          x: landingPoint.x + laneUx * forwardDistance + perpX * laneStep * lateralRatio,
+          y: landingPoint.y + laneUy * forwardDistance + perpY * laneStep * lateralRatio,
+        });
+      }
+    }
+  }
+
+  let bestPlan = null;
+  let bestPlacement = null;
+  let bestSelfRisk = null;
+  let bestFriendlyRisk = null;
+  let bestRiskAcceptedBecause = null;
+  let bestCanAcceptHighRisk = false;
+  let hadValidPoints = 0;
+  let blockedByRiskPoints = 0;
+  let criticalSelfRiskPoints = 0;
+
+  async function evaluateCandidateListAsync(candidates){
+    for(const candidate of candidates){
+      // Yield between candidates so the renderer can paint between heavy
+      // evaluateBlueMinePlacementImpact calls. The cooperative budget keeps
+      // this near-zero-cost when total work fits within one frame.
+      await aiCoopMaybeYield();
+      if(!isAiTurnStillApplicable()) return;
+      const placement = {
+        x: candidate.x,
+        y: candidate.y,
+        cellX: Math.floor((candidate.x - FIELD_LEFT) / CELL_SIZE),
+        cellY: Math.floor((candidate.y - FIELD_TOP) / CELL_SIZE),
+      };
+      const isExcluded = excludedPlacements.some((entry) => (
+        Number.isFinite(entry?.x)
+        && Number.isFinite(entry?.y)
+        && Math.hypot(entry.x - placement.x, entry.y - placement.y) <= Math.max(6, CELL_SIZE * 0.3)
+      ));
+      if(isExcluded) continue;
+      if(!isMinePlacementValid(placement)) continue;
+      hadValidPoints += 1;
+      const selfRisk = getSelfRiskAssessment(placement);
+      if(selfRisk?.isCritical){
+        criticalSelfRiskPoints += 1;
+        blockedByRiskPoints += 1;
+        continue;
+      }
+      const impact = evaluateBlueMinePlacementImpact(context, plannedMove, placement, {
+        fallbackScenario: "mine_blocks_escape_lane",
+      }) || {
+        placement,
+        scenario: "mine_blocks_escape_lane",
+        score: 0.5,
+        totalDirectionLoss: 0,
+        blockedEscapeCount: 0,
+        cutRouteCount: 0,
+        trapCount: 0,
+        enemyReports: [],
+      };
+      const friendlyRisk = evaluateMineFriendlyRisk(context, plannedMove, placement, { aiItemSpendStyle });
+      const riskAcceptedBecause = aiItemSpendStyle === "aggressive" && friendlyRisk?.highRisk
+        ? getMineRiskAcceptedBecause(impact, strategicGoalName)
+        : null;
+      const canAcceptHighRisk = canAcceptMineHighRiskByAggressiveMode({
+        aiItemSpendStyle,
+        styleConfig,
+        friendlyRisk,
+        minePlan: impact,
+        riskAcceptedBecause,
+      });
+      if(friendlyRisk?.highRisk && !canAcceptHighRisk){
+        blockedByRiskPoints += 1;
+        continue;
+      }
+      impact.enemyId = mostDangerousEnemy?.id ?? null;
+      impact.friendlyRisk = friendlyRisk;
+      impact.riskAcceptedBecause = canAcceptHighRisk ? riskAcceptedBecause : null;
+      impact.aiItemSpendStyle = aiItemSpendStyle;
+      if(selfRisk?.isRisky){
+        const penaltyMultiplier = getSelfRiskPenaltyMultiplier(strategicGoalName);
+        const penaltyValue = Number((styleConfig.SELF_RISK_PENALTY_BASE * penaltyMultiplier).toFixed(2));
+        impact.score = Number((impact.score - penaltyValue).toFixed(3));
+        impact.selfRiskPenalty = penaltyValue;
+        impact.selfRiskDowngraded = true;
+      }
+      if(!bestPlan || impact.score > bestPlan.score){
+        bestPlan = impact;
+        bestPlacement = placement;
+        bestSelfRisk = selfRisk;
+        bestFriendlyRisk = friendlyRisk;
+        bestRiskAcceptedBecause = riskAcceptedBecause;
+        bestCanAcceptHighRisk = canAcceptHighRisk;
+      }
+    }
+  }
+
+  await evaluateCandidateListAsync(primaryCandidates);
+  if(!bestPlan){
+    await evaluateCandidateListAsync(fallbackCandidates);
+  }
+
+  if(!bestPlan){
+    const rejectReason = hadValidPoints <= 0
+      ? "no_valid_points"
+      : "points_filtered_by_risk";
+    if(options?.evaluateOnly && options?.withDiagnostics){
+      return {
+        plan: null,
+        rejectReason,
+        details: {
+          validWindowCount: hadValidPoints,
+          blockedByRiskPoints,
+          criticalSelfRiskPoints,
+        },
+      };
+    }
+    if(options?.evaluateOnly) return null;
+    if(rejectReason === "points_filtered_by_risk"){
+      logAiDecision("mine_skipped_self_risk", {
+        planeId: plane?.id ?? null,
+        enemyId: mostDangerousEnemy?.id ?? null,
+        reason: "defensive_mine_points_filtered_by_risk",
+        reasonCode: "mine_hard_risk_reject",
+        blockedByRiskPoints,
+        criticalSelfRiskPoints,
+      });
+    }
+    return false;
+  }
+
+  if(bestCanAcceptHighRisk){
+    logAiDecision("mine_risk_accepted_aggressive_mode", {
+      planeId: plane?.id ?? null,
+      enemyId: mostDangerousEnemy?.id ?? null,
+      aiItemSpendStyle,
+      riskScore: bestFriendlyRisk?.riskScore ?? null,
+      riskAcceptedBecause: bestRiskAcceptedBecause,
+      reasonCode: "mine_risk_accepted_aggressive_mode",
+      scenario: bestPlan?.scenario || null,
+      routeBlockScore: Number((bestPlan?.score || 0).toFixed(3)),
+      blockedEscapeCount: bestPlan?.blockedEscapeCount ?? 0,
+      cutRouteCount: bestPlan?.cutRouteCount ?? 0,
+      trapCount: bestPlan?.trapCount ?? 0,
+      forcedBadPathCount: bestPlan?.forcedBadPathCount ?? 0,
+    });
+  }
+  if(bestSelfRisk?.isRisky && !options?.evaluateOnly){
+    logAiDecision("mine_soft_risk_penalty_applied", {
+      planeId: plane?.id ?? null,
+      enemyId: mostDangerousEnemy?.id ?? null,
+      reasonCode: "mine_soft_risk_penalty",
+      penaltyValue: bestPlan.selfRiskPenalty || 0,
+      adjustedScore: Number((bestPlan.score || 0).toFixed(3)),
+      aiItemSpendStyle,
+    });
+  }
+
+  if(options?.evaluateOnly){
+    if(options?.withDiagnostics){
+      return {
+        plan: bestPlan,
+        rejectReason: null,
+        details: {
+          friendlyRisk: bestFriendlyRisk,
+          riskAcceptedBecause: bestPlan.riskAcceptedBecause || null,
+          aiItemSpendStyle,
+        },
+      };
+    }
+    return bestPlan;
+  }
+
+  placeMine({
+    owner: "blue",
+    x: bestPlacement.x,
+    y: bestPlacement.y,
+    cellX: bestPlacement.cellX,
+    cellY: bestPlacement.cellY,
+  });
+  aiRoundState.lastMinePlacementMeta = bestPlan;
+  return true;
+}
+
+function getNearestDynamiteTargetToPoint(anchor){
+  if(!anchor || !Number.isFinite(anchor.x) || !Number.isFinite(anchor.y)) return null;
+
+  const spriteEntries = Array.isArray(currentMapSprites) ? currentMapSprites : [];
+  let nearest = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for(let i = 0; i < spriteEntries.length; i += 1){
+    const geometry = getMapSpriteGeometry(spriteEntries[i], i);
+    if(!geometry) continue;
+    const distance = Math.hypot(geometry.cx - anchor.x, geometry.cy - anchor.y);
+    if(distance < nearestDistance){
+      nearest = geometry;
+      nearestDistance = distance;
+    }
+  }
+  return nearest;
+}
+
+function getAiStrategicTargetPoint(context, plannedMove){
+  const preservedIntentTarget = plannedMove?.preservedStrategicTargetPoint;
+  if(preservedIntentTarget && Number.isFinite(preservedIntentTarget.x) && Number.isFinite(preservedIntentTarget.y)){
+    return { x: preservedIntentTarget.x, y: preservedIntentTarget.y };
+  }
+
+  if(plannedMove?.targetEnemy && Number.isFinite(plannedMove.targetEnemy.x) && Number.isFinite(plannedMove.targetEnemy.y)){
+    return { x: plannedMove.targetEnemy.x, y: plannedMove.targetEnemy.y };
+  }
+
+  const plane = plannedMove?.plane || null;
+  const landingPoint = getAiMoveLandingPoint(plannedMove);
+  const goal = aiRoundState?.currentGoal;
+  let rawTarget = null;
+
+  if(goal === "capture_enemy_flag"){
+    const flags = Array.isArray(context?.availableEnemyFlags) ? context.availableEnemyFlags : [];
+    if(flags.length > 0){
+      rawTarget = flags
+        .map((flag) => getFlagAnchor(flag))
+        .filter(Boolean)
+        .sort((a, b) => dist(plane || plannedMove, a) - dist(plane || plannedMove, b))[0] || null;
+    }
+  }
+
+  if(!rawTarget && (goal === "return_with_flag" || goal === "protect_home_flag")){
+    rawTarget = context?.homeBase || getBaseAnchor("blue");
+  }
+
+  if(!rawTarget && goal === "eliminate_flag_carrier"){
+    const carrier = context?.stolenBlueFlagCarrier;
+    if(carrier) rawTarget = { x: carrier.x, y: carrier.y };
+  }
+
+  if(!rawTarget){
+    const priorityEnemy = getBluePriorityEnemy(context);
+    if(priorityEnemy) rawTarget = { x: priorityEnemy.x, y: priorityEnemy.y };
+  }
+
+  if(!rawTarget) return landingPoint;
+
+  const mineSummary = getMineControlSummaryForPlane(plane, context, {
+    originPoint: plane || landingPoint,
+    objectivePoint: rawTarget,
+    priorityPoint: rawTarget,
+    landingPoint,
+    enemies: context?.enemies,
+    homeBase: context?.homeBase || getBaseAnchor('blue'),
+  });
+  if(mineSummary.routeDevalued && mineSummary.recommendedDetourPoint){
+    return {
+      x: mineSummary.recommendedDetourPoint.x,
+      y: mineSummary.recommendedDetourPoint.y,
+      detourForObjective: rawTarget,
+      mineReason: mineSummary.reasonCodes[0] || 'route_devalued_by_enemy_mine',
+    };
+  }
+
+  return rawTarget;
+}
+
+function isPathClearIgnoringColliderById(x1, y1, x2, y2, ignoredColliderId){
+  for(const collider of colliders){
+    if(collider?.id === ignoredColliderId) continue;
+    if(checkLineIntersectionWithCollider(x1, y1, x2, y2, collider)) return false;
+  }
+  return true;
+}
+
+function getDynamiteCandidateForCurrentRoute(context, plannedMove){
+  const plane = plannedMove?.plane;
+  if(!plane) return null;
+  const aiItemSpendStyle = getAiItemSpendStyle(context, plannedMove);
+  const aggressiveMode = aiItemSpendStyle === "aggressive";
+
+  const routeTarget = getAiStrategicTargetPoint(context, plannedMove);
+  if(!routeTarget || !Number.isFinite(routeTarget.x) || !Number.isFinite(routeTarget.y)) return null;
+
+  const routeBlockedNow = !isPathClear(plane.x, plane.y, routeTarget.x, routeTarget.y);
+  if(!routeBlockedNow) return null;
+
+  const spriteEntries = Array.isArray(currentMapSprites) ? currentMapSprites : [];
+  const geometries = [];
+  for(let i = 0; i < spriteEntries.length; i += 1){
+    const geometry = getMapSpriteGeometry(spriteEntries[i], i);
+    if(geometry) geometries.push(geometry);
+  }
+
+  const lineCandidates = geometries.filter((geometry) =>
+    checkLineIntersectionWithCollider(plane.x, plane.y, routeTarget.x, routeTarget.y, geometry.collider)
+  );
+
+  const firstBlock = findFirstColliderHit(plane.x, plane.y, routeTarget.x, routeTarget.y);
+  const nearestBlockCandidate = firstBlock
+    ? geometries.find((geometry) => geometry.collider?.id === firstBlock.collider?.id) || null
+    : null;
+
+  const orderedCandidates = [];
+  if(nearestBlockCandidate) orderedCandidates.push(nearestBlockCandidate);
+  for(const candidate of lineCandidates){
+    if(!orderedCandidates.some((entry) => entry.id === candidate.id)){
+      orderedCandidates.push(candidate);
+    }
+  }
+
+  for(const candidate of orderedCandidates){
+    const pathClearAfterExplosion = isPathClearIgnoringColliderById(
+      plane.x,
+      plane.y,
+      routeTarget.x,
+      routeTarget.y,
+      candidate.collider?.id
+    );
+    if(!pathClearAfterExplosion) continue;
+
+    const replanResult = replanMoveForDynamiteOpening(context, plannedMove, candidate, {
+      targetPoint: routeTarget,
+      compareLabel: ["dynamite_current_route", plannedMove?.goalName || "", plane?.id || ""],
+    });
+    if(!replanResult) continue;
+    const validStrategicGain = replanResult.usesOpenedCorridor
+      || replanResult.noticeableImprovement
+      || (aggressiveMode && replanResult.moderateValidGain);
+    if(!validStrategicGain) continue;
+
+    return {
+      ...candidate,
+      replanResult,
+    };
+  }
+
+  return null;
+}
+
+function withTemporarilyIgnoredDynamiteCollider(targetGeometry, callback){
+  if(!targetGeometry?.collider?.id || typeof callback !== "function") return null;
+
+  const ignoredColliderId = targetGeometry.collider.id;
+  const originalColliders = Array.isArray(colliders) ? colliders : [];
+  const filteredColliders = originalColliders.filter((collider) => collider?.id !== ignoredColliderId);
+
+  const originalMapSprites = Array.isArray(currentMapSprites) ? currentMapSprites : [];
+  const filteredMapSprites = originalMapSprites.filter((sprite, index) => {
+    const geometry = getMapSpriteGeometry(sprite, index);
+    return geometry?.collider?.id !== ignoredColliderId;
+  });
+
+  colliders = filteredColliders;
+  currentMapSprites = filteredMapSprites;
+  try {
+    return callback();
+  } finally {
+    colliders = originalColliders;
+    currentMapSprites = originalMapSprites;
+  }
+}
+
+function getAiMoveRouteDirection(move){
+  if(Number.isFinite(move?.vx) && Number.isFinite(move?.vy)){
+    const angleRad = Math.atan2(move.vy, move.vx);
+    if(Number.isFinite(angleRad)){
+      return Number((((angleRad * 180) / Math.PI) + 360) % 360).toFixed(2) * 1;
+    }
+  }
+  return null;
+}
+
+function buildAiDynamiteExpectedRouteSnapshot(move, targetPoint = null){
+  const landingPoint = getAiMoveLandingPoint(move);
+  return {
+    planeId: move?.plane?.id ?? null,
+    routeClass: move?.routeClass || null,
+    goalName: move?.goalName || aiRoundState?.currentGoal || null,
+    targetEnemyId: move?.targetEnemy?.id ?? move?.enemy?.id ?? null,
+    targetPoint: targetPoint && Number.isFinite(targetPoint.x) && Number.isFinite(targetPoint.y)
+      ? { x: Number(targetPoint.x.toFixed(1)), y: Number(targetPoint.y.toFixed(1)) }
+      : null,
+    landingPoint: landingPoint && Number.isFinite(landingPoint.x) && Number.isFinite(landingPoint.y)
+      ? { x: Number(landingPoint.x.toFixed(1)), y: Number(landingPoint.y.toFixed(1)) }
+      : null,
+    directionDeg: getAiMoveRouteDirection(move),
+    vx: Number.isFinite(move?.vx) ? Number(move.vx.toFixed(4)) : null,
+    vy: Number.isFinite(move?.vy) ? Number(move.vy.toFixed(4)) : null,
+  };
+}
+
+function doesMoveUseDynamiteCorridor(move, targetGeometry){
+  const plane = move?.plane;
+  const landingPoint = getAiMoveLandingPoint(move);
+  if(!plane || !landingPoint || !targetGeometry?.collider) return false;
+
+  if(checkLineIntersectionWithCollider(plane.x, plane.y, landingPoint.x, landingPoint.y, targetGeometry.collider)){
+    return true;
+  }
+
+  const corridorDistance = getDistanceFromPointToSegment(
+    targetGeometry.cx,
+    targetGeometry.cy,
+    plane.x,
+    plane.y,
+    landingPoint.x,
+    landingPoint.y
+  );
+  return Number.isFinite(corridorDistance) && corridorDistance <= Math.max(CELL_SIZE * 0.8, AI_DYNAMITE_INTENT_LINE_TOLERANCE);
+}
+
+function replanMoveForDynamiteOpening(context, plannedMove, targetGeometry, options = {}){
+  const plane = plannedMove?.plane;
+  if(!plane || !targetGeometry?.collider?.id || typeof planPathWithSpecialRouteProbe !== "function") return null;
+
+  const targetPoint = options?.targetPoint || getAiStrategicTargetPoint(context, plannedMove);
+  if(!targetPoint || !Number.isFinite(targetPoint.x) || !Number.isFinite(targetPoint.y)) return null;
+
+  const compareLabel = Array.isArray(options?.compareLabel) ? options.compareLabel : ["dynamite_replan", plannedMove?.goalName || "", plane?.id || ""];
+  const replannedMove = withTemporarilyIgnoredDynamiteCollider(targetGeometry, () => planPathWithSpecialRouteProbe(plane, targetPoint.x, targetPoint.y, {
+    goalName: plannedMove?.goalName || aiRoundState?.currentGoal || "dynamite_replan",
+    decisionReason: `${plannedMove?.decisionReason || "dynamite_replan"}_dynamite_replan`,
+    targetEnemy: plannedMove?.targetEnemy || null,
+    enemy: plannedMove?.enemy || plannedMove?.targetEnemy || null,
+    context,
+    routeClass: plannedMove?.routeClass,
+    compareLabel,
+  }));
+  if(!replannedMove) return null;
+
+  const currentScore = Number.isFinite(plannedMove?.score) ? plannedMove.score : 0;
+  const replannedScore = Number.isFinite(replannedMove?.score) ? replannedMove.score : currentScore;
+  const currentDistance = Number.isFinite(plannedMove?.totalDist)
+    ? plannedMove.totalDist
+    : Math.hypot(plannedMove?.vx || 0, plannedMove?.vy || 0) * FIELD_FLIGHT_DURATION_SEC;
+  const replannedDistance = Number.isFinite(replannedMove?.totalDist)
+    ? replannedMove.totalDist
+    : Math.hypot(replannedMove?.vx || 0, replannedMove?.vy || 0) * FIELD_FLIGHT_DURATION_SEC;
+  const usesOpenedCorridor = doesMoveUseDynamiteCorridor(replannedMove, targetGeometry);
+  const scoreGain = replannedScore - currentScore;
+  const distanceGain = replannedDistance - currentDistance;
+  const noticeableImprovement = scoreGain >= 0.12 || distanceGain >= Math.max(CELL_SIZE * 1.35, 48);
+  const moderateValidGain = scoreGain >= 0.055 || distanceGain >= Math.max(CELL_SIZE * 0.8, 30);
+  const immediateValue = (scoreGain * 0.9) + (distanceGain / Math.max(CELL_SIZE * 7, 1));
+  const futureRouteUnlock = usesOpenedCorridor ? 0.36 : (moderateValidGain ? 0.2 : 0);
+  const accumulatedValue2Turns = Number((Math.max(0, immediateValue) + futureRouteUnlock).toFixed(3));
+  const accumulatedValue3Turns = Number((accumulatedValue2Turns + (futureRouteUnlock * 0.55) + (Math.max(0, scoreGain) * 0.35)).toFixed(3));
+
+  return {
+    move: replannedMove,
+    targetPoint,
+    usesOpenedCorridor,
+    noticeableImprovement,
+    moderateValidGain,
+    scoreGain: Number(scoreGain.toFixed(3)),
+    distanceGain: Number(distanceGain.toFixed(1)),
+    accumulatedValue2Turns,
+    accumulatedValue3Turns,
+    expectedRoute: buildAiDynamiteExpectedRouteSnapshot(replannedMove, targetPoint),
+  };
+}
+
+function classifyAiMoveForStrategicDynamite(plannedMove, context = null){
+  const goalName = `${plannedMove?.goalName || aiRoundState?.currentGoal || ""}`.toLowerCase();
+  const decisionReason = `${plannedMove?.decisionReason || ""}`.toLowerCase();
+  const routeClass = `${plannedMove?.routeClass || ""}`.toLowerCase();
+  const moveScore = Number.isFinite(plannedMove?.score) ? plannedMove.score : 0;
+  const landingPoint = getAiMoveLandingPoint(plannedMove);
+  const enemyBase = typeof getBaseAnchor === "function" ? getBaseAnchor("green") : null;
+  const priorityEnemy = typeof getBluePriorityEnemy === "function" ? getBluePriorityEnemy(context) : null;
+  const flagTargets = context?.shouldUseFlagsMode && Array.isArray(context?.availableEnemyFlags)
+    ? context.availableEnemyFlags.map((flag) => getFlagAnchor(flag)).filter(Boolean)
+    : [];
+  const reachesFlagPressure = landingPoint && flagTargets.some((flagPoint) => dist(landingPoint, flagPoint) <= CELL_SIZE * 3.2);
+  const reachesEnemyBase = landingPoint && enemyBase && dist(landingPoint, enemyBase) <= CELL_SIZE * 3.4;
+  const attackRangePx = typeof ATTACK_RANGE_PX === "number" && Number.isFinite(ATTACK_RANGE_PX) ? ATTACK_RANGE_PX : 0;
+  const approachesPriorityEnemy = landingPoint && priorityEnemy && dist(landingPoint, priorityEnemy) <= Math.max(getPlaneEffectiveRangePx(plannedMove?.plane), attackRangePx) * 1.05;
+  const hasStrongAttack = moveScore >= 0.42
+    || goalName.includes("attack")
+    || goalName.includes("finisher")
+    || decisionReason.includes("attack")
+    || decisionReason.includes("finisher")
+    || routeClass === "direct"
+    || approachesPriorityEnemy;
+  const hasFlagIntercept = goalName.includes("flag")
+    || decisionReason.includes("flag")
+    || reachesFlagPressure
+    || reachesEnemyBase;
+  const hasUsefulContact = decisionReason.includes("contact")
+    || decisionReason.includes("pickup")
+    || decisionReason.includes("capture")
+    || goalName.includes("pickup")
+    || goalName.includes("capture")
+    || goalName.includes("escort");
+  const isSurvivalOrReposition = moveScore <= 0.18
+    || decisionReason.includes("fallback")
+    || decisionReason.includes("wait")
+    || decisionReason.includes("defense")
+    || decisionReason.includes("defence")
+    || decisionReason.includes("survive")
+    || decisionReason.includes("regroup")
+    || decisionReason.includes("recover")
+    || goalName.includes("fallback")
+    || goalName.includes("prepare")
+    || goalName.includes("defense")
+    || goalName.includes("defence")
+    || goalName.includes("survive")
+    || goalName.includes("regroup")
+    || goalName.includes("recover")
+    || routeClass === "gap";
+  const isAttacking = hasStrongAttack || hasFlagIntercept || hasUsefulContact;
+
+  return {
+    isWeakOrWaiting: isSurvivalOrReposition,
+    isAttacking,
+    hasStrongAttack,
+    hasFlagIntercept,
+    hasUsefulContact,
+    isSurvivalOrReposition,
+    classification: isAttacking ? "attacking" : (isSurvivalOrReposition ? "weak_or_waiting" : "neutral"),
+  };
+}
+
+function countDynamiteStrategicRouteOptions(originPoint, targetGeometry, points){
+  if(!originPoint || !targetGeometry?.collider?.id || !Array.isArray(points) || points.length === 0) return 0;
+  let count = 0;
+  for(const point of points){
+    if(!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) continue;
+    const clearNow = isPathClear(originPoint.x, originPoint.y, point.x, point.y);
+    const clearAfter = isPathClearIgnoringColliderById(originPoint.x, originPoint.y, point.x, point.y, targetGeometry.collider.id);
+    if(!clearNow && clearAfter) count += 1;
+  }
+  return count;
+}
+
+function describeStrategicDynamiteFollowUp(target, plannedMove, context = null){
+  if(!target) return null;
+  const planeId = plannedMove?.plane?.id ?? null;
+  const routeTarget = getAiStrategicTargetPoint(context, plannedMove);
+  const priorityEnemy = typeof getBluePriorityEnemy === "function" ? getBluePriorityEnemy(context) : null;
+  const enemyBase = typeof getBaseAnchor === "function" ? getBaseAnchor("green") : null;
+  const flagAnchors = context?.shouldUseFlagsMode && Array.isArray(context?.availableEnemyFlags)
+    ? context.availableEnemyFlags.map((flag) => ({ flagId: flag?.id ?? null, anchor: getFlagAnchor(flag) })).filter((entry) => entry.anchor)
+    : [];
+
+  let opensFor = "next_plane_action";
+  let targetKind = "next_route";
+  let targetId = null;
+
+  if(target?.opensPathToFlag && flagAnchors.length > 0){
+    opensFor = planeId;
+    targetKind = "flag";
+    targetId = flagAnchors[0]?.flagId ?? null;
+  } else if(target?.opensPathToBase && enemyBase){
+    opensFor = planeId;
+    targetKind = "enemy_base";
+    targetId = "green_base";
+  } else if(target?.removesBarrierToContactZone && priorityEnemy?.id){
+    opensFor = planeId;
+    targetKind = "priority_enemy";
+    targetId = priorityEnemy.id;
+  } else if(routeTarget){
+    opensFor = planeId;
+    targetKind = "route_target";
+    targetId = routeTarget?.id ?? routeTarget?.kind ?? null;
+  }
+
+  let opensPathLabel = "broader_future_route";
+  if(target?.opensPathToFlag) opensPathLabel = "path_to_flag";
+  else if(target?.opensPathToBase) opensPathLabel = "path_to_enemy_base";
+  else if(target?.removesBarrierToContactZone) opensPathLabel = "contact_lane";
+  else if(target?.hasLargeRouteGain) opensPathLabel = "multiple_future_routes";
+
+  return {
+    opensPathLabel,
+    opensFor,
+    targetKind,
+    targetId,
+  };
+}
+
+function shouldUseStrategicDynamiteForPlannedMove(plannedMove, context = null){
+  const moveClassification = classifyAiMoveForStrategicDynamite(plannedMove, context);
+  const recentSignals = typeof getAiInventoryRecentMatchSignals === "function"
+    ? getAiInventoryRecentMatchSignals(plannedMove?.goalName || aiRoundState?.currentGoal || null)
+    : null;
+  const repeatedEmptyTurns = Boolean(recentSignals?.repeatedFallbackSelected || recentSignals?.repeatedShotPlanNotFound);
+  const repeatedWeakTurns = repeatedEmptyTurns
+    || Boolean(recentSignals?.softReleaseReady)
+    || Number(recentSignals?.softReleaseGuardScenario?.fallbackChainTurns || 0) >= 2;
+  const availableCharges = Number(evaluateBlueInventoryState()?.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0);
+  const hasSurplusDynamite = availableCharges > 1;
+  const pressureOverride = hasSurplusDynamite || repeatedWeakTurns;
+  const hasStrongCurrentPlan = moveClassification.hasStrongAttack
+    || moveClassification.hasFlagIntercept
+    || moveClassification.hasUsefulContact;
+  const isMediumMove = !moveClassification.isSurvivalOrReposition && !hasStrongCurrentPlan;
+  return {
+    allowStrategicSetup: !hasStrongCurrentPlan || moveClassification.isSurvivalOrReposition || pressureOverride,
+    allowStrategicProbe: !moveClassification.hasStrongAttack,
+    isMediumMove,
+    repeatedEmptyTurns,
+    repeatedWeakTurns,
+    hasSurplusDynamite,
+    pressureOverride,
+    moveClassification,
+    strongPlanReason: moveClassification.hasStrongAttack
+      ? "strong_attack"
+      : (moveClassification.hasFlagIntercept
+        ? "flag_intercept"
+        : (moveClassification.hasUsefulContact ? "useful_contact" : null)),
+  };
+}
+
+function evaluateStrategicDynamiteTargets(context, plannedMove){
+  const plane = plannedMove?.plane;
+  if(!plane) return null;
+  const aiItemSpendStyle = getAiItemSpendStyle(context, plannedMove);
+  const aggressiveMode = aiItemSpendStyle === "aggressive";
+
+  const moveClassification = classifyAiMoveForStrategicDynamite(plannedMove, context);
+  if(moveClassification.hasStrongAttack && !aggressiveMode){
+    return null;
+  }
+
+  const spriteEntries = Array.isArray(currentMapSprites) ? currentMapSprites : [];
+  if(spriteEntries.length === 0) return null;
+
+  const homeBase = context?.homeBase || getBaseAnchor("blue");
+  const enemyBase = getBaseAnchor("green");
+  const priorityEnemy = getBluePriorityEnemy(context);
+  const routeTarget = getAiStrategicTargetPoint(context, plannedMove);
+  const landingPoint = getAiMoveLandingPoint(plannedMove) || plane;
+  const flagAnchors = context?.shouldUseFlagsMode && Array.isArray(context?.availableEnemyFlags)
+    ? context.availableEnemyFlags.map((flag) => getFlagAnchor(flag)).filter(Boolean)
+    : [];
+  const contactPoints = [homeBase, enemyBase, priorityEnemy, routeTarget, ...flagAnchors]
+    .filter((point) => point && Number.isFinite(point.x) && Number.isFinite(point.y));
+
+  const geometries = [];
+  for(let i = 0; i < spriteEntries.length; i += 1){
+    const geometry = getMapSpriteGeometry(spriteEntries[i], i);
+    if(geometry?.collider?.id) geometries.push(geometry);
+  }
+  if(geometries.length === 0) return null;
+
+  const evaluated = [];
+  for(const geometry of geometries){
+    const opensPathToBase = Boolean(homeBase)
+      && !isPathClear(plane.x, plane.y, homeBase.x, homeBase.y)
+      && isPathClearIgnoringColliderById(plane.x, plane.y, homeBase.x, homeBase.y, geometry.collider.id);
+    const opensPathToFlag = flagAnchors.some((flagAnchor) =>
+      !isPathClear(plane.x, plane.y, flagAnchor.x, flagAnchor.y)
+      && isPathClearIgnoringColliderById(plane.x, plane.y, flagAnchor.x, flagAnchor.y, geometry.collider.id)
+    );
+    const removesBarrierToContactZone = contactPoints.some((point) =>
+      !isPathClear(plane.x, plane.y, point.x, point.y)
+      && isPathClearIgnoringColliderById(plane.x, plane.y, point.x, point.y, geometry.collider.id)
+    );
+    const nextTurnRouteGain = countDynamiteStrategicRouteOptions(landingPoint, geometry, contactPoints);
+    const currentRouteImprovement = routeTarget && Number.isFinite(routeTarget.x) && Number.isFinite(routeTarget.y)
+      && !isPathClear(plane.x, plane.y, routeTarget.x, routeTarget.y)
+      && isPathClearIgnoringColliderById(plane.x, plane.y, routeTarget.x, routeTarget.y, geometry.collider.id);
+    const distanceBias = Math.hypot(geometry.cx - plane.x, geometry.cy - plane.y);
+    const opensDecisivePath = opensPathToBase || opensPathToFlag;
+    const accumulatedValue2Turns = Number((
+      (opensDecisivePath ? 0.9 : 0)
+      + (removesBarrierToContactZone ? 0.4 : 0)
+      + Math.min(3, nextTurnRouteGain) * 0.31
+      + (currentRouteImprovement ? 0.26 : 0)
+    ).toFixed(3));
+    const accumulatedValue3Turns = Number((accumulatedValue2Turns + (Math.min(4, nextTurnRouteGain) * 0.2) + (opensDecisivePath ? 0.28 : 0)).toFixed(3));
+    const hasLargeRouteGain = nextTurnRouteGain >= 3;
+    const hasNoticeableRouteGain = nextTurnRouteGain >= 2;
+    const hasFutureAdvantageSignal = opensDecisivePath
+      || hasNoticeableRouteGain
+      || removesBarrierToContactZone
+      || accumulatedValue2Turns >= 0.44
+      || (accumulatedValue2Turns >= 0.34 && accumulatedValue3Turns >= 0.6);
+    const hasMeaningfulStrategicUnlock = opensDecisivePath || hasLargeRouteGain || hasFutureAdvantageSignal;
+    const mediumValidUnlock = opensDecisivePath || hasNoticeableRouteGain || nextTurnRouteGain >= 1 || removesBarrierToContactZone;
+    const mediumMoveStrategicUnlock = hasNoticeableRouteGain || opensDecisivePath || removesBarrierToContactZone || hasFutureAdvantageSignal;
+    const canUseThisTargetForCurrentMove = moveClassification.isWeakOrWaiting
+      || mediumMoveStrategicUnlock
+      || hasFutureAdvantageSignal
+      || (aggressiveMode && mediumValidUnlock);
+    const score = (opensPathToBase ? 3.4 : 0)
+      + (opensPathToFlag ? 3.8 : 0)
+      + (removesBarrierToContactZone ? 1.2 : 0)
+      + (Math.min(5, nextTurnRouteGain) * (opensDecisivePath ? 0.7 : 0.45))
+      + (currentRouteImprovement && opensDecisivePath ? 0.8 : 0)
+      + (hasLargeRouteGain ? 0.9 : 0)
+      + (accumulatedValue2Turns * 0.35)
+      + (accumulatedValue3Turns * 0.18)
+      - Math.min(1.6, distanceBias / Math.max(CELL_SIZE * 7, 1) * 0.2);
+    if(!hasMeaningfulStrategicUnlock && !(aggressiveMode && mediumValidUnlock)) continue;
+    if(!canUseThisTargetForCurrentMove) continue;
+    const minStrategicScore = aggressiveMode ? 1.45 : 1.95;
+    if(score <= minStrategicScore) continue;
+    evaluated.push({
+      ...geometry,
+      strategicScore: Number(score.toFixed(3)),
+      accumulatedValue2Turns,
+      accumulatedValue3Turns,
+      opensPathToBase,
+      opensPathToFlag,
+      removesBarrierToContactZone,
+      nextTurnRouteGain,
+      currentRouteImprovement,
+      opensDecisivePath,
+      hasLargeRouteGain,
+      hasNoticeableRouteGain,
+      hasFutureAdvantageSignal,
+      mediumValidUnlock,
+      mediumMoveStrategicUnlock,
+      aggressiveMode,
+      moveClassification,
+    });
+  }
+
+  if(evaluated.length === 0) return null;
+  evaluated.sort((a, b) => {
+    if(b.strategicScore !== a.strategicScore) return b.strategicScore - a.strategicScore;
+    if((b.nextTurnRouteGain || 0) !== (a.nextTurnRouteGain || 0)) return (b.nextTurnRouteGain || 0) - (a.nextTurnRouteGain || 0);
+    return Math.hypot(a.cx - plane.x, a.cy - plane.y) - Math.hypot(b.cx - plane.x, b.cy - plane.y);
+  });
+  return {
+    bestTarget: evaluated[0],
+    rankedTargets: evaluated.slice(0, 5),
+  };
+}
+
+function doesStrategicDynamiteShowFutureAdvantage(strategicDynamite){
+  const target = strategicDynamite?.bestTarget || null;
+  if(!target) return false;
+  return Boolean(
+    target.opensDecisivePath
+    || target.opensPathToFlag
+    || target.opensPathToBase
+    || target.removesBarrierToContactZone
+    || (target.nextTurnRouteGain ?? 0) >= 2
+    || (target.accumulatedValue2Turns ?? 0) >= 0.44
+    || ((target.accumulatedValue2Turns ?? 0) >= 0.34 && (target.accumulatedValue3Turns ?? 0) >= 0.6)
+    || target.hasFutureAdvantageSignal
+  );
+}
+
+function isDynamiteTargetUsefulForCurrentRoute(targetGeometry, context, plannedMove){
+  const plane = plannedMove?.plane;
+  if(!plane || !targetGeometry?.collider?.id) return false;
+
+  const routeTarget = getAiStrategicTargetPoint(context, plannedMove);
+  if(!routeTarget || !Number.isFinite(routeTarget.x) || !Number.isFinite(routeTarget.y)) return false;
+
+  const intersectsRoute = checkLineIntersectionWithCollider(
+    plane.x,
+    plane.y,
+    routeTarget.x,
+    routeTarget.y,
+    targetGeometry.collider
+  );
+  if(!intersectsRoute) return false;
+
+  const routeBlockedNow = !isPathClear(plane.x, plane.y, routeTarget.x, routeTarget.y);
+  if(!routeBlockedNow) return false;
+
+  return isPathClearIgnoringColliderById(
+    plane.x,
+    plane.y,
+    routeTarget.x,
+    routeTarget.y,
+    targetGeometry.collider.id
+  );
+}
+
+function ensureAiInventoryPressureState(){
+  if(!aiRoundState || typeof aiRoundState !== "object") return createInitialInventoryPressureState();
+  if(!aiRoundState.inventoryPressure || typeof aiRoundState.inventoryPressure !== "object"){
+    aiRoundState.inventoryPressure = createInitialInventoryPressureState();
+  }
+  const pressureState = aiRoundState.inventoryPressure;
+  if(!pressureState.byItem || typeof pressureState.byItem !== "object"){
+    pressureState.byItem = createInitialInventoryPressureState().byItem;
+  }
+  for(const itemType of Object.keys(AI_INVENTORY_PRESSURE_CONFIG)){
+    if(!pressureState.byItem[itemType] || typeof pressureState.byItem[itemType] !== "object"){
+      pressureState.byItem[itemType] = createInitialInventoryPressureState().byItem[itemType];
+    }
+  }
+  return pressureState;
+}
+
+function isAiInventoryPressureWeakChance(reason){
+  return reason === "inventory_plan_not_better_than_plain_move"
+    || reason === "crosshair_value_below_threshold"
+    || reason === "mine_impact_below_noticeable_threshold"
+    || reason === "mine_plan_rejected_threshold"
+    || reason === "mine_low_enemy_contact_probability"
+    || reason === "invisibility_penalty_too_small"
+    || reason === "dynamite_relaxed_opening";
+}
+
+const AI_FALLBACK_STAGES = new Set([
+  "fallback_selected",
+  "super_reserve_selected",
+  "safe_short_fallback_selected",
+]);
+
+const AI_RECOVERY_PROGRESS_STAGES = new Set([
+  "forced_progress_selected",
+  "v2_shot_plan_not_found",
+  "recovery_progress",
+]);
+
+const AI_TECHNICAL_FAIL_SAFE_STAGES = new Set([
+  "technical_fail_safe",
+]);
+
+const AI_FALLBACK_REASON_CODES = new Set([
+  "fallback_selected",
+  "safe_short_fallback_selected",
+  "final_mine_check_safe_fallback_selected",
+  "mine_gate_fallback_selected",
+  "final_mine_check_aggressive_fallback_selected",
+]);
+
+const AI_RECOVERY_PROGRESS_REASON_CODES = new Set([
+  "forced_progress_selected",
+  "v2_shot_plan_not_found",
+  "reserve_strategy_required",
+  "reserve_strategy_exhausted",
+  "v2_safe_turn_resolution",
+]);
+
+const AI_TECHNICAL_FAIL_SAFE_REASON_CODES = new Set([
+  "fail_safe_turn_advance",
+  "ai_move_exception",
+  "technical_exception",
+  "invalid_move_fail_safe",
+  "ai_launch_watchdog_fail_safe",
+  "invalid_plane_for_launch",
+]);
+
+function hasStructuredFallbackDiagnostics(event){
+  const diagnostics = event?.fallbackDiagnostics;
+  return Boolean(diagnostics && typeof diagnostics === "object");
+}
+
+function collectAiDecisionReasonCodes(event){
+  const reasonCodes = Array.isArray(event?.reasonCodes) ? event.reasonCodes : [];
+  const reasonCode = typeof event?.reasonCode === "string" ? event.reasonCode : null;
+  if(reasonCode && !reasonCodes.includes(reasonCode)){
+    return [...reasonCodes, reasonCode];
+  }
+  return reasonCodes;
+}
+
+function isAiFallbackDecisionEvent(event){
+  if(!event || typeof event !== "object") return false;
+  const stage = `${event?.stage || ""}`.toLowerCase();
+  if(AI_FALLBACK_STAGES.has(stage)) return true;
+  if(hasStructuredFallbackDiagnostics(event)) return true;
+  const reasonCodes = collectAiDecisionReasonCodes(event);
+  return reasonCodes.some((code) => AI_FALLBACK_REASON_CODES.has(`${code || ""}`.toLowerCase()));
+}
+
+function resolveAiFallbackAnalyzerStage(stage, details = {}){
+  const safeStage = `${stage || ""}`.toLowerCase();
+  if(AI_FALLBACK_STAGES.has(safeStage)) return safeStage;
+  if(AI_RECOVERY_PROGRESS_STAGES.has(safeStage)) return "recovery_progress";
+  if(AI_TECHNICAL_FAIL_SAFE_STAGES.has(safeStage)) return "technical_fail_safe";
+  const reasonCodes = collectAiDecisionReasonCodes(details)
+    .map((code) => `${code || ""}`.toLowerCase());
+  if(reasonCodes.some((code) => AI_FALLBACK_REASON_CODES.has(code)) || hasStructuredFallbackDiagnostics(details)){
+    return "fallback_selected";
+  }
+  if(reasonCodes.some((code) => AI_RECOVERY_PROGRESS_REASON_CODES.has(code))){
+    return "recovery_progress";
+  }
+  if(reasonCodes.some((code) => AI_TECHNICAL_FAIL_SAFE_REASON_CODES.has(code))){
+    return "technical_fail_safe";
+  }
+  return stage;
+}
+
+function getAiInventoryRecentMatchSignals(currentGoal = null){
+  const snapshot = getAiSelfAnalyzerSnapshot();
+  const activeEvents = Array.isArray(snapshot?.activeMatch?.events) ? snapshot.activeMatch.events : [];
+  const recentDecisions = activeEvents
+    .filter((event) => event?.type === "ai_decision")
+    .slice(-18);
+
+  let fallbackSelectedCount = 0;
+  let shotPlanNotFoundCount = 0;
+  let emergencyBaseDefenseCount = 0;
+  for(const event of recentDecisions){
+    const stage = `${event?.stage || ""}`;
+    const goal = `${event?.goal || ""}`;
+    if(isAiFallbackDecisionEvent(event)){
+      fallbackSelectedCount += 1;
+    }
+    if(stage === "v2_shot_plan_not_found"){
+      shotPlanNotFoundCount += 1;
+    }
+    if(stage.startsWith("emergency_base_defense_") || goal.includes("emergency_base_defense") || goal.includes("critical_base_threat")){
+      emergencyBaseDefenseCount += 1;
+    }
+  }
+
+  const currentGoalText = `${currentGoal || ""}`.toLowerCase();
+  const currentGoalIsEmergency = currentGoalText.includes("emergency_base_defense") || currentGoalText.includes("critical_base_threat");
+  const tailFallbackChain = recentDecisions.slice(-3).reduceRight((count, event) => (
+    count === -1
+      ? -1
+      : (isAiFallbackDecisionEvent(event) ? count + 1 : -1)
+  ), 0);
+  const normalizedTailFallbackChain = tailFallbackChain < 0 ? 0 : tailFallbackChain;
+  const softReleaseReady = fallbackSelectedCount >= 2
+    || shotPlanNotFoundCount >= AI_INVENTORY_PLAN_B_NO_SHOT_THRESHOLD
+    || emergencyBaseDefenseCount >= 2;
+  return {
+    recentDecisionCount: recentDecisions.length,
+    fallbackSelectedCount,
+    shotPlanNotFoundCount,
+    emergencyBaseDefenseCount,
+    repeatedFallbackSelected: fallbackSelectedCount >= 2,
+    repeatedShotPlanNotFound: shotPlanNotFoundCount >= AI_INVENTORY_PLAN_B_NO_SHOT_THRESHOLD,
+    planBActivationThreshold: AI_INVENTORY_PLAN_B_NO_SHOT_THRESHOLD,
+    planBForcedAfterRepeatedNoShot: shotPlanNotFoundCount >= AI_INVENTORY_PLAN_B_NO_SHOT_THRESHOLD,
+    emergencyPressure: emergencyBaseDefenseCount >= 2 || currentGoalIsEmergency,
+    softReleaseReady,
+    softReleaseGuardScenario: {
+      checkedRecentTurns: Math.min(3, recentDecisions.length),
+      fallbackChainTurns: normalizedTailFallbackChain,
+      expectedSoftReleaseReadyAfterFallbackChain: normalizedTailFallbackChain >= 2,
+      scenarioPassed: normalizedTailFallbackChain < 2 ? true : softReleaseReady,
+    },
+  };
+}
+
+function getAiInventoryPressureBonus(itemType, entry, isStaleLeader, recentSignals = null){
+  const config = AI_INVENTORY_PRESSURE_CONFIG[itemType];
+  if(!config || !entry) return 0;
+  const effectiveIdleTurns = Math.max(0, entry.idleTurns - 1);
+  const effectiveWeakChanceStreak = Math.max(0, entry.weakChanceStreak - 1);
+  const staleLeaderBonus = isStaleLeader && entry.idleTurns >= 3 ? config.staleLeaderBonus : 0;
+  const fallbackPressureBonus = recentSignals?.repeatedFallbackSelected ? 0.03 : 0;
+  const shotPlanPressureBonus = recentSignals?.repeatedShotPlanNotFound ? 0.026 : 0;
+  const emergencyPressureBonus = recentSignals?.emergencyPressure ? 0.022 : 0;
+  const longIdleBonus = entry.idleTurns >= 5 ? 0.02 : 0;
+  const rawBonus = effectiveIdleTurns * config.idleTurnWeight
+    + effectiveWeakChanceStreak * config.weakChanceWeight
+    + staleLeaderBonus
+    + fallbackPressureBonus
+    + shotPlanPressureBonus
+    + emergencyPressureBonus
+    + longIdleBonus;
+  return Number(Math.max(0, Math.min(config.maxBonus, rawBonus)).toFixed(3));
+}
+
+function getAiInventorySelectionFloor(candidate, options = {}){
+  const baseSelectionFloor = Number.isFinite(AI_INVENTORY_PRESSURE_CONFIG?.[candidate?.itemType]?.selectionFloor)
+    ? AI_INVENTORY_PRESSURE_CONFIG[candidate.itemType].selectionFloor
+    : 0.12;
+  if(!candidate){
+    return baseSelectionFloor;
+  }
+  const unlockReasons = [];
+  const pressureActionDebtDiscount = Number(candidate.pressureMeta?.actionDebtDiscount || 0);
+  const recentSignals = options?.recentSignals || null;
+  const inventoryCounts = options?.inventoryCounts || null;
+  const hasAttackPasses = options?.hasAttackPasses !== false;
+  const isTacticalCandidate = candidate.itemType === INVENTORY_ITEM_TYPES.MINE
+    || candidate.itemType === INVENTORY_ITEM_TYPES.DYNAMITE;
+  if(pressureActionDebtDiscount > 0){
+    unlockReasons.push("idleTurns");
+  }
+  if(candidate.usageTier !== "moderate"){
+    return {
+      baseSelectionFloor,
+      adjustedSelectionFloor: baseSelectionFloor,
+      releaseDiscount: 0,
+      contextualDiscount: 0,
+      actionDebtDiscount: pressureActionDebtDiscount,
+      unlockReasons,
+    };
+  }
+  const idleTurns = candidate.pressureMeta?.idleTurns ?? 0;
+  const weakChanceStreak = candidate.pressureMeta?.weakChanceStreak ?? 0;
+  const softReleaseReady = candidate.releaseReady === true;
+  let releaseDiscount = 0;
+  if(idleTurns >= AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD + 2){
+    releaseDiscount = 0.025;
+  } else if(idleTurns >= AI_INVENTORY_SOFT_FALLBACK_IDLE_TURN_THRESHOLD){
+    releaseDiscount = 0.018;
+  } else if(weakChanceStreak >= 3){
+    releaseDiscount = 0.016;
+  } else if(weakChanceStreak >= 2 || softReleaseReady){
+    releaseDiscount = 0.011;
+  }
+  let contextualDiscount = 0;
+  if(recentSignals?.softReleaseGuardScenario?.fallbackChainTurns >= 2){
+    contextualDiscount += 0.013;
+    unlockReasons.push("fallback-chain");
+  } else if(recentSignals?.repeatedFallbackSelected){
+    contextualDiscount += 0.009;
+    unlockReasons.push("fallback-chain");
+  }
+  if(!hasAttackPasses){
+    contextualDiscount += 0.01;
+    unlockReasons.push("no-attack-passes");
+  }
+  const tacticalCount = Number(inventoryCounts?.[candidate.itemType] ?? 0);
+  const tacticalSurplus = isTacticalCandidate && tacticalCount > 1;
+  if(tacticalSurplus){
+    contextualDiscount += 0.012;
+    unlockReasons.push("surplus");
+  }
+  const adjustedSelectionFloor = Number(Math.max(0.07, baseSelectionFloor - releaseDiscount - contextualDiscount - pressureActionDebtDiscount).toFixed(3));
+  return {
+    baseSelectionFloor,
+    adjustedSelectionFloor,
+    releaseDiscount: Number(releaseDiscount.toFixed(3)),
+    contextualDiscount: Number(contextualDiscount.toFixed(3)),
+    actionDebtDiscount: Number(pressureActionDebtDiscount.toFixed(3)),
+    unlockReasons: [...new Set(unlockReasons)],
+  };
+}
+
+function updateAiInventoryPressureForTurn(inventoryCounts, perItemEvaluation = {}){
+  const pressureState = ensureAiInventoryPressureState();
+  const currentTurn = Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null;
+  if(Number.isFinite(currentTurn) && pressureState.lastUpdatedTurn === currentTurn){
+    return pressureState;
+  }
+
+  let stalestItemType = null;
+  let stalestIdleTurns = -1;
+  for(const itemType of Object.keys(AI_INVENTORY_PRESSURE_CONFIG)){
+    const entry = pressureState.byItem[itemType];
+    const availableCount = Number(inventoryCounts?.[itemType] || 0);
+    const evaluation = perItemEvaluation[itemType] || null;
+    if(availableCount > 0){
+      entry.idleTurns += 1;
+      entry.lastAvailableTurn = currentTurn;
+      entry.lastRejectedReason = evaluation?.reason || null;
+      entry.lastWhyWaiting = evaluation?.whyWaiting || "candidate_not_ready";
+      if(isAiInventoryTooSmallRejectReason(evaluation?.reason)){
+        entry.tooSmallRejectStreak = (Number(entry.tooSmallRejectStreak) || 0) + 1;
+      } else if(evaluation?.strongCandidate || !evaluation?.reason){
+        entry.tooSmallRejectStreak = 0;
+      }
+      if(entry.tooSmallRejectStreak >= AI_INVENTORY_ACTION_DEBT_CONFIG.triggerStreak){
+        const extraSteps = entry.tooSmallRejectStreak - AI_INVENTORY_ACTION_DEBT_CONFIG.triggerStreak + 1;
+        entry.actionDebtDiscount = Number(Math.min(
+          AI_INVENTORY_ACTION_DEBT_CONFIG.maxDiscount,
+          extraSteps * AI_INVENTORY_ACTION_DEBT_CONFIG.stepDiscount
+        ).toFixed(3));
+        entry.actionDebtSourceReason = evaluation?.reason || entry.actionDebtSourceReason || null;
+      } else {
+        entry.actionDebtDiscount = 0;
+        entry.actionDebtSourceReason = null;
+      }
+      if(evaluation?.weakChance){
+        entry.weakChanceStreak += 1;
+      } else if(evaluation?.strongCandidate){
+        entry.weakChanceStreak = 0;
+      }
+      if(entry.idleTurns > stalestIdleTurns){
+        stalestIdleTurns = entry.idleTurns;
+        stalestItemType = itemType;
+      }
+    } else {
+      entry.idleTurns = 0;
+      entry.weakChanceStreak = 0;
+      entry.lastAvailableTurn = null;
+      entry.lastRejectedReason = null;
+      entry.lastWhyWaiting = "item_not_in_inventory";
+      entry.lastPressureBonus = 0;
+      entry.tooSmallRejectStreak = 0;
+      entry.actionDebtDiscount = 0;
+      entry.actionDebtSourceReason = null;
+      entry.finallyChosenBecauseOfPressure = false;
+      entry.chosenAtTurn = null;
+    }
+  }
+  pressureState.lastUpdatedTurn = currentTurn;
+  pressureState.stalestItemType = stalestItemType;
+  return pressureState;
+}
+
+function markAiInventoryItemUsed(itemType, details = {}){
+  if(!itemType) return;
+  const pressureState = ensureAiInventoryPressureState();
+  const entry = pressureState.byItem[itemType];
+  if(!entry) return;
+  entry.idleTurns = 0;
+  entry.weakChanceStreak = 0;
+  entry.lastUsedTurn = Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null;
+  entry.lastRejectedReason = null;
+  entry.lastWhyWaiting = details.reason || "item_used";
+  entry.lastPressureBonus = 0;
+  entry.tooSmallRejectStreak = 0;
+  entry.actionDebtDiscount = 0;
+  entry.actionDebtSourceReason = null;
+  entry.finallyChosenBecauseOfPressure = details.chosenBecauseOfPressure === true;
+  entry.chosenAtTurn = Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null;
+}
+
+
+function recordInventoryAiDecision(stage, details = {}){
+  if(!stage) return;
+
+  const compactReasonCodes = Array.isArray(details.reasonCodes)
+    ? details.reasonCodes
+    : (typeof details.reasonCode === "string" && details.reasonCode.trim().length > 0
+      ? [details.reasonCode]
+      : []);
+  const compactRejectReasons = Array.isArray(details.rejectReasons)
+    ? details.rejectReasons
+    : (typeof details.rejectReason === "string" && details.rejectReason.trim().length > 0
+      ? [details.rejectReason]
+      : []);
+
+  recordAiSelfAnalyzerDecision(stage, {
+    goal: details.goal ?? aiRoundState?.currentGoal ?? null,
+    planeId: details.planeId ?? null,
+    itemType: details.itemType ?? null,
+    source: details.source ?? null,
+    reasonCategory: details.reasonCategory || "inventory_selection_failure",
+    reasonCode: details.reasonCode || compactReasonCodes[0] || stage,
+    reasonCodes: compactReasonCodes,
+    rejectReasons: compactRejectReasons,
+  });
+}
+
 function getAiInventorySeriesIntent(goalName){
   const normalized = `${goalName || aiRoundState?.currentGoal || ""}`.toLowerCase();
   const isFlag = normalized.includes("flag") || normalized.includes("capture");
@@ -23949,6 +26230,95 @@ function getAiInventorySeriesIntent(goalName){
     isDefense,
     isAttack,
     primaryIntent: isDefense ? "defense" : (isFlag ? "flag" : (isAttack ? "attack" : "neutral")),
+  };
+}
+
+// DORMANT — see note above evaluateBlueMinePlacementImpact.
+function buildAiMineSeriesPlan(context, plannedMove, options = {}){
+  const intent = getAiInventorySeriesIntent(plannedMove?.goalName || aiRoundState?.currentGoal || "");
+  if(!intent.isDefense && !intent.isAttack && !intent.isFlag) return null;
+  const availableCharges = Number(options?.availableCharges ?? 0);
+  if(availableCharges <= 0) return null;
+  const maxSeriesCharges = Math.max(1, Math.min(3, availableCharges));
+  const minUsefulGain = intent.isDefense ? 0.44 : 0.36;
+  const targetBenefit = intent.isDefense ? 1.05 : 0.92;
+  const selectedSteps = [];
+  const diagnostics = {
+    spentCharges: 0,
+    openedCorridors: [],
+    closedCorridors: [],
+    stopReason: null,
+    intent: intent.primaryIntent,
+  };
+  let totalBenefit = 0;
+  let stopReason = "charges_exhausted";
+  let lastSelfRisk = 0;
+
+  for(let stepIndex = 0; stepIndex < maxSeriesCharges; stepIndex += 1){
+    const excludedPlacements = selectedSteps.map((step) => step.plan?.placement).filter(Boolean);
+    const planned = withTemporaryBlueMines(excludedPlacements, () => {
+      const defensivePlan = tryPlaceBlueDefensiveMine(context, plannedMove, { evaluateOnly: true, excludePlacements });
+      const basePlan = tryPlaceBlueMineNearEnemyBase(context, plannedMove, { evaluateOnly: true, excludePlacements });
+      const preferred = defensivePlan && (!basePlan || (defensivePlan.score || 0) >= (basePlan.score || 0))
+        ? { plan: defensivePlan, placementMode: "defensive" }
+        : (basePlan ? { plan: basePlan, placementMode: "base" } : null);
+      if(!preferred?.plan) return null;
+      const safety = evaluatePostLaunchSafetyWithMine(context, plannedMove, preferred.plan);
+      const risk = safety?.afterSafe === false ? 1 : 0;
+      return { ...preferred, safety, risk };
+    });
+
+    if(!planned?.plan){
+      stopReason = selectedSteps.length > 0 ? "no_new_gain" : "no_plan";
+      break;
+    }
+
+    const stepBenefit = Math.max(0, Number((planned.plan.score || 0) / 20));
+    if(stepBenefit < minUsefulGain){
+      stopReason = selectedSteps.length > 0 ? "no_new_gain" : "benefit_below_threshold";
+      break;
+    }
+    if(planned.risk > lastSelfRisk && planned.risk > 0 && selectedSteps.length > 0){
+      stopReason = "self_block_risk_increased";
+      break;
+    }
+
+    selectedSteps.push({
+      stepIndex,
+      itemType: INVENTORY_ITEM_TYPES.MINE,
+      reason: planned.plan.scenario || "mine_cover_plan",
+      expectedBenefit: stepBenefit,
+      risk: planned.risk > 0 ? 0.16 : 0.08,
+      placementMode: planned.placementMode,
+      minePlan: planned.plan,
+      safeAfterPlacement: planned.safety?.afterSafe !== false,
+      tacticalIntent: intent.primaryIntent,
+    });
+    totalBenefit += stepBenefit;
+    diagnostics.spentCharges = selectedSteps.length;
+    diagnostics.closedCorridors.push({
+      placement: planned.plan.placement ? { x: Number(planned.plan.placement.x.toFixed(1)), y: Number(planned.plan.placement.y.toFixed(1)) } : null,
+      blockedEscapeCount: planned.plan.blockedEscapeCount ?? 0,
+      cutRouteCount: planned.plan.cutRouteCount ?? 0,
+      trapCount: planned.plan.trapCount ?? 0,
+    });
+    lastSelfRisk = planned.risk;
+
+    if(totalBenefit >= targetBenefit){
+      stopReason = "benefit_target_reached";
+      break;
+    }
+  }
+
+  diagnostics.stopReason = stopReason;
+  if(selectedSteps.length === 0) return null;
+  return {
+    itemType: INVENTORY_ITEM_TYPES.MINE,
+    intent: intent.primaryIntent,
+    steps: selectedSteps,
+    expectedBenefit: Number(totalBenefit.toFixed(3)),
+    risk: Number(selectedSteps.reduce((sum, step) => sum + Number(step.risk || 0), 0).toFixed(3)),
+    diagnostics,
   };
 }
 
@@ -24428,10 +26798,16 @@ function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options
     landingY,
   };
 
-  // Resolve tactical slot: DYNAMITE only here. MINE is handled by the separate
-  // defensive mine planner (Layer A — findAiDefensiveMineOpportunityAsync,
-  // called from the scheduler) and not from this tactical-slot path.
+  // Resolve tactical slot: DYNAMITE xor MINE (prefer dynamite when plan-aligned)
   const dynamiteCharges = Number(availableCounts?.[INVENTORY_ITEM_TYPES.DYNAMITE] ?? 0);
+  // NOTE: AI mine placement decision is intentionally disabled. The evaluator
+  // (tryPlaceBlueDefensiveMine → evaluateBlueMinePlacementImpact) was the dominant
+  // sync freeze every turn AI had a mine in inventory, but in practice its score
+  // gate almost always rejects, so AI never actually placed mines. Disabling the
+  // call eliminates the freeze without changing observable behavior. Mine entity
+  // physics (placeMine, mine triggers, drawMines) remain untouched. The placement
+  // mechanic will be re-implemented separately. Helpers are left in place for now
+  // (see "DORMANT" markers near tryPlaceBlueDefensiveMine and friends).
 
   // Build the plan's intended final destination (where THIS plane is going).
   // findAiDynamitePathOpeningOpportunity will look for a blocker on the
@@ -24475,11 +26851,12 @@ function buildAiSelectedPlanInventoryEnhancements(context, selectedPlan, options
   return [tactical, ...buffCandidates].filter(Boolean).slice(0, maxItems);
 }
 
-// Async-yielding twin of buildAiSelectedPlanInventoryEnhancements. Same logic
-// with cooperative yields. Used by the AI scheduler at pre-launch decision
+// Async-yielding twin of buildAiSelectedPlanInventoryEnhancements. Same logic, but uses
+// tryPlaceBlueDefensiveMineAsync so the heavy mine-placement evaluation can yield between
+// candidates instead of freezing the frame. Used by the AI scheduler at pre-launch decision
 // time. The sync version above is kept for the rare fallback path inside
-// maybeUseInventoryBeforeLaunch (when the scheduler did not pre-populate the
-// sequence) and for smoke-test source extraction. KEEP THE BODIES IN SYNC.
+// maybeUseInventoryBeforeLaunch (when the scheduler did not pre-populate the sequence) and
+// for smoke-test source extraction. KEEP THE BODIES IN SYNC.
 async function buildAiSelectedPlanInventoryEnhancementsAsync(context, selectedPlan, options = {}){
   const plane = selectedPlan?.plane || null;
   if(!plane) return [];
@@ -24547,28 +26924,27 @@ async function buildAiSelectedPlanInventoryEnhancementsAsync(context, selectedPl
 }
 
 // =========================================================================
-// AI DEFENSIVE MINE PLANNER (Layer A)
+// PROACTIVE MINE PLACEMENT
 // -----------------------------------------------------------------------
-// Single async entry per turn that returns 0, 1 or 2 placements driven by
-// projected enemy trajectories. Strict per-candidate gates: structural
-// validity, own-landing/trajectory/plane safety, hit-on-probe guarantee,
-// projection score >= AI_DEFENSIVE_MINE_MIN_SCORE. Layer B sequence gate in
-// the scheduler validates each MINE entry against selectedPlan.defensiveMine
-// Plan flag; Layer C executor (executeCommittedInventoryAction) places blind.
+// Re-enables AI mine usage after the freeze fix dormantized
+// tryPlaceBlueDefensiveMine{,Async}. Cheap arithmetic: each scenario picks
+// an anchor point from CURRENT positions of enemy planes (the actual
+// threats), not from the static enemy base. Up to AI_PROACTIVE_MINE_MAX_PER_TURN
+// mine candidates are appended to selectedInventorySequence; they execute
+// through the existing MINE branch in executeCommittedInventoryAction.
 // =========================================================================
-const AI_DEFENSIVE_MINE_ENABLED = true;
-const AI_DEFENSIVE_MINE_MAX_PER_TURN = 2;
-const AI_DEFENSIVE_MINE_MIN_SCORE = 1.2;
-const AI_DEFENSIVE_MINE_SECOND_SCORE = 1.4;
-const AI_DEFENSIVE_MINE_TOP_THREATS = 3;
-const AI_DEFENSIVE_MINE_BUDGET_MS = 20;
-const AI_DEFENSIVE_MINE_LANDING_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 1.2;
-const AI_DEFENSIVE_MINE_OWN_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 2.0;
-const AI_DEFENSIVE_MINE_OWN_TRAJ_BUFFER = MINE_TRIGGER_RADIUS * 1.5;
+const AI_PROACTIVE_MINE_MAX_PER_TURN = 3;
+const AI_PROACTIVE_MINE_LANDING_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 1.2;
+const AI_PROACTIVE_MINE_OWN_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 2.0;
+const AI_PROACTIVE_MINE_TRAJECTORY_BUFFER = MINE_TRIGGER_RADIUS * 1.5;
+const AI_MINE_PROJECTION_ENABLED = true;
+const AI_MINE_PROJECTION_WEIGHT = 0.45;
+const AI_MINE_SCENARIO_PRIOR_WEIGHT = 1.0;
 const AI_MINE_PROJECTION_MAX_ENEMIES = 3;
+const AI_MINE_PROJECTION_BUDGET_MS = 20;
 const AI_OWN_MINE_PATH_PENALTY = 900;
 const AI_OWN_MINE_LANDING_PENALTY = 1100;
-const AI_DEFENSIVE_MINE_OFFSETS = Object.freeze([
+const AI_PROACTIVE_MINE_OFFSETS = Object.freeze([
   { ox: 0, oy: 0 },
   { ox: 1, oy: 0 },
   { ox: -1, oy: 0 },
@@ -24580,6 +26956,228 @@ const AI_DEFENSIVE_MINE_OFFSETS = Object.freeze([
   { ox: -0.7, oy: -0.7 },
 ]);
 
+function tryAcceptProactiveMinePlacement(rawX, rawY, ctx, acceptedPlacements){
+  if(!Number.isFinite(rawX) || !Number.isFinite(rawY)) return null;
+  for(const off of AI_PROACTIVE_MINE_OFFSETS){
+    const px = rawX + off.ox * CELL_SIZE * 0.55;
+    const py = rawY + off.oy * CELL_SIZE * 0.55;
+    const placement = {
+      x: px,
+      y: py,
+      cellX: Math.floor((px - FIELD_LEFT) / CELL_SIZE),
+      cellY: Math.floor((py - FIELD_TOP) / CELL_SIZE),
+    };
+    if(!isMinePlacementValid(placement)) continue;
+    const landingDist = Math.hypot(px - ctx.landing.x, py - ctx.landing.y);
+    if(landingDist < AI_PROACTIVE_MINE_LANDING_SAFE_RADIUS) continue;
+    const trajDist = distancePointToSegment(px, py, ctx.plane.x, ctx.plane.y, ctx.landing.x, ctx.landing.y);
+    if(trajDist < AI_PROACTIVE_MINE_TRAJECTORY_BUFFER) continue;
+    let blocksOwn = false;
+    for(const own of ctx.ownPlanesToAvoid){
+      if(Math.hypot(own.x - px, own.y - py) < AI_PROACTIVE_MINE_OWN_SAFE_RADIUS){
+        blocksOwn = true;
+        break;
+      }
+    }
+    if(blocksOwn) continue;
+    let collidesWithAccepted = false;
+    for(const accepted of acceptedPlacements){
+      if(Math.hypot(accepted.x - px, accepted.y - py) < MINE_PLACEMENT_MIN_DISTANCE){
+        collidesWithAccepted = true;
+        break;
+      }
+    }
+    if(collidesWithAccepted) continue;
+    return placement;
+  }
+  return null;
+}
+
+function buildProactiveMineCandidate(entry){
+  return {
+    itemType: INVENTORY_ITEM_TYPES.MINE,
+    reason: entry.reason || entry.scenario,
+    reasonCode: entry.scenario,
+    executionSource: entry.executionSource,
+    usageTier: "proactive_mine",
+    expectedBenefit: entry.score,
+    risk: 0.02,
+    minePlan: {
+      placement: entry.placement,
+      scenario: entry.scenario,
+      score: entry.score,
+    },
+  };
+}
+
+function scenarioProactiveMineSelfLanding(selectedPlan, ctx, acceptedPlacements){
+  const out = [];
+  if(!ctx.enemies || ctx.enemies.length === 0) return out;
+  let nearest = null;
+  let nearestD = Infinity;
+  for(const enemy of ctx.enemies){
+    const d = Math.hypot(enemy.x - ctx.landing.x, enemy.y - ctx.landing.y);
+    if(d < nearestD){ nearestD = d; nearest = enemy; }
+  }
+  if(!nearest) return out;
+  const dx = nearest.x - ctx.landing.x;
+  const dy = nearest.y - ctx.landing.y;
+  const L = Math.hypot(dx, dy);
+  if(L < 0.001) return out;
+  const advance = Math.max(POINT_RADIUS * 2, L * 0.75);
+  const rawX = ctx.landing.x + (dx / L) * advance;
+  const rawY = ctx.landing.y + (dy / L) * advance;
+  const placement = tryAcceptProactiveMinePlacement(rawX, rawY, ctx, acceptedPlacements);
+  if(!placement) return out;
+  out.push({
+    scenario: "self_landing",
+    executionSource: "proactive_mine_self_landing",
+    placement,
+    score: 0.24,
+    reason: "proactive_mine_self_landing",
+  });
+  return out;
+}
+
+function scenarioProactiveMineDefendOwnPlanes(selectedPlan, ctx, acceptedPlacements, remaining){
+  const out = [];
+  if(remaining <= 0) return out;
+  if(!ctx.ownPlanesToAvoid.length || !ctx.enemies.length) return out;
+  const pairs = ctx.ownPlanesToAvoid
+    .map((own) => {
+      let bestEnemy = null;
+      let bestD = Infinity;
+      for(const enemy of ctx.enemies){
+        const d = Math.hypot(enemy.x - own.x, enemy.y - own.y);
+        if(d < bestD){ bestD = d; bestEnemy = enemy; }
+      }
+      return { own, enemy: bestEnemy, d: bestD };
+    })
+    .filter((pair) => pair.enemy)
+    .sort((a, b) => a.d - b.d);
+  let emitted = 0;
+  for(const pair of pairs){
+    if(emitted >= remaining) break;
+    const dx = pair.own.x - pair.enemy.x;
+    const dy = pair.own.y - pair.enemy.y;
+    const L = Math.hypot(dx, dy);
+    if(L < 0.001) continue;
+    const rawX = pair.enemy.x + dx * 0.35;
+    const rawY = pair.enemy.y + dy * 0.35;
+    const localAccepted = acceptedPlacements.concat(out.map((entry) => entry.placement));
+    const placement = tryAcceptProactiveMinePlacement(rawX, rawY, ctx, localAccepted);
+    if(!placement) continue;
+    out.push({
+      scenario: "defend_other_plane",
+      executionSource: `proactive_mine_defend_plane_${pair.own?.id ?? emitted}`,
+      placement,
+      score: 0.20,
+      reason: "proactive_mine_defend_other_plane",
+    });
+    emitted += 1;
+  }
+  return out;
+}
+
+function scenarioProactiveMineBlockCargo(selectedPlan, ctx, acceptedPlacements){
+  const out = [];
+  if(typeof cargoState === "undefined" || !Array.isArray(cargoState)) return out;
+  if(!ctx.enemies.length) return out;
+  const cargosOnField = cargoState.filter((cargo) => cargo && cargo.state === "ready");
+  if(cargosOnField.length === 0) return out;
+  const pairs = [];
+  for(const cargo of cargosOnField){
+    const center = (typeof getCargoVisualCenter === "function")
+      ? getCargoVisualCenter(cargo)
+      : { x: cargo.x, y: cargo.y };
+    if(!Number.isFinite(center?.x) || !Number.isFinite(center?.y)) continue;
+    let bestEnemy = null;
+    let bestD = Infinity;
+    for(const enemy of ctx.enemies){
+      const d = Math.hypot(enemy.x - center.x, enemy.y - center.y);
+      if(d < bestD){ bestD = d; bestEnemy = enemy; }
+    }
+    if(bestEnemy) pairs.push({ cargo, center, enemy: bestEnemy, d: bestD });
+  }
+  if(pairs.length === 0) return out;
+  pairs.sort((a, b) => a.d - b.d);
+  const { center, enemy } = pairs[0];
+  const dx = enemy.x - center.x;
+  const dy = enemy.y - center.y;
+  const L = Math.hypot(dx, dy);
+  if(L < 0.001) return out;
+  const advance = Math.max(POINT_RADIUS * 2, L * 0.65);
+  const rawX = center.x + (dx / L) * advance;
+  const rawY = center.y + (dy / L) * advance;
+  const placement = tryAcceptProactiveMinePlacement(rawX, rawY, ctx, acceptedPlacements);
+  if(!placement) return out;
+  out.push({
+    scenario: "block_cargo",
+    executionSource: "proactive_mine_block_cargo_0",
+    placement,
+    score: 0.18,
+    reason: "proactive_mine_block_cargo",
+  });
+  return out;
+}
+
+function scenarioProactiveMineZoneControl(selectedPlan, ctx, acceptedPlacements, emittedSoFar){
+  const out = [];
+  const midX = FIELD_LEFT + FIELD_WIDTH / 2;
+  const midY = FIELD_TOP + FIELD_HEIGHT / 2;
+  let anchor = { x: midX, y: midY };
+  if(typeof getNearestPointInCenterControlZone === "function"){
+    const adjusted = getNearestPointInCenterControlZone(anchor);
+    if(adjusted && Number.isFinite(adjusted.x) && Number.isFinite(adjusted.y)){
+      anchor = adjusted;
+    }
+  }
+  const sign = (emittedSoFar % 2 === 0) ? 1 : -1;
+  const rawX = anchor.x + sign * CELL_SIZE * 1.2;
+  const rawY = anchor.y;
+  const placement = tryAcceptProactiveMinePlacement(rawX, rawY, ctx, acceptedPlacements);
+  if(!placement) return out;
+  out.push({
+    scenario: "zone_control",
+    executionSource: `proactive_mine_zone_control_${emittedSoFar}`,
+    placement,
+    score: 0.14,
+    reason: "proactive_mine_zone_control",
+  });
+  return out;
+}
+
+function scenarioProactiveMineDefendOwnFlag(selectedPlan, ctx, acceptedPlacements){
+  const out = [];
+  if(typeof flags === "undefined" || !Array.isArray(flags)) return out;
+  if(!ctx.enemies.length) return out;
+  const ownFlag = flags.find((f) => f && f.color === "blue" && f.state === FLAG_STATES.ACTIVE);
+  if(!ownFlag || !Number.isFinite(ownFlag.x) || !Number.isFinite(ownFlag.y)) return out;
+  let nearest = null;
+  let nearestD = Infinity;
+  for(const enemy of ctx.enemies){
+    const d = Math.hypot(enemy.x - ownFlag.x, enemy.y - ownFlag.y);
+    if(d < nearestD){ nearestD = d; nearest = enemy; }
+  }
+  if(!nearest) return out;
+  const dx = nearest.x - ownFlag.x;
+  const dy = nearest.y - ownFlag.y;
+  const L = Math.hypot(dx, dy);
+  if(L < 0.001) return out;
+  const advance = Math.max(POINT_RADIUS * 2, L * 0.70);
+  const rawX = ownFlag.x + (dx / L) * advance;
+  const rawY = ownFlag.y + (dy / L) * advance;
+  const placement = tryAcceptProactiveMinePlacement(rawX, rawY, ctx, acceptedPlacements);
+  if(!placement) return out;
+  out.push({
+    scenario: "defend_own_flag",
+    executionSource: "proactive_mine_defend_flag",
+    placement,
+    score: 0.16,
+    reason: "proactive_mine_defend_own_flag",
+  });
+  return out;
+}
 
 function clampMineProbePoint(x, y){
   const minX = FIELD_LEFT + FIELD_BORDER_OFFSET_X;
@@ -24759,28 +27357,19 @@ function scoreMinePlacementByProjection(placement, ctx, aiColor, projectionCache
   return { score: capped, details: { perEnemy, enemyCount: perEnemy.length } };
 }
 
-// Layer A — defensive mine planner. Returns:
-//   { placements: [...0..2], rationale, metrics, defensiveMinePlan: true }
-//   or null when no acceptable placement exists.
-// Hard caps: max 2 placements (second only with anti-cluster + min score),
-// 20ms budget, 3 top threats.
-async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
-  if(typeof isAiTurnStillApplicable === "function" && !isAiTurnStillApplicable()) return null;
+async function buildAiProactiveMineCandidatesAsync(selectedPlan, context){
+  if(typeof isAiTurnStillApplicable === "function" && !isAiTurnStillApplicable()) return [];
   const plane = selectedPlan?.plane || null;
-  if(!plane) return null;
-  if(!Number.isFinite(selectedPlan?.landingX) || !Number.isFinite(selectedPlan?.landingY)) return null;
+  if(!plane) return [];
+  if(!Number.isFinite(selectedPlan?.landingX) || !Number.isFinite(selectedPlan?.landingY)) return [];
   const aiColor = plane?.color || context?.color || "blue";
   const mineCount = Number(evaluateInventoryState(aiColor)?.counts?.[INVENTORY_ITEM_TYPES.MINE] || 0);
-  if(mineCount <= 0) return null;
+  if(mineCount <= 0) return [];
 
   const enemyColor = aiColor === "blue" ? "green" : "blue";
   const livePoints = Array.isArray(points) ? points : [];
   const allOwnAlive = livePoints.filter((p) => p && p.color === aiColor && p.isAlive && !p.burning);
   const enemies = livePoints.filter((p) => p && p.color === enemyColor && p.isAlive && !p.burning);
-  if(enemies.length === 0){
-    logAiDecision("defensive_mine_planner_reject", { reason: "no_enemies" });
-    return null;
-  }
 
   const ctx = {
     plane,
@@ -24789,181 +27378,127 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
     enemies,
   };
 
-  logAiDecision("defensive_mine_planner_invoked", {
-    mineCount,
-    enemyCount: enemies.length,
-    goal: selectedPlan?.goalName || null,
-  });
+  const cap = Math.min(AI_PROACTIVE_MINE_MAX_PER_TURN, mineCount);
+  const out = [];
+  const acceptedPlacements = [];
+  const harvested = [];
 
-  const budgetStart = (typeof performance !== "undefined" && typeof performance.now === "function")
-    ? performance.now() : Date.now();
-  const elapsed = () => {
-    const now = (typeof performance !== "undefined" && typeof performance.now === "function")
-      ? performance.now() : Date.now();
-    return now - budgetStart;
-  };
+  const scenarios = [
+    (sp, c, ex) => scenarioProactiveMineSelfLanding(sp, c, ex),
+    (sp, c, ex, rem) => scenarioProactiveMineDefendOwnPlanes(sp, c, ex, rem),
+    (sp, c, ex) => scenarioProactiveMineBlockCargo(sp, c, ex),
+    (sp, c, ex) => scenarioProactiveMineZoneControl(sp, c, ex, harvested.length),
+    (sp, c, ex) => scenarioProactiveMineDefendOwnFlag(sp, c, ex),
+  ];
 
-  // Phase 1 — harvest top-N threats by min distance from each enemy to our
-  // high-value objectives (landing, base, flag, ready cargos).
-  const aiBase = (typeof getBaseAnchor === "function") ? getBaseAnchor(aiColor) : null;
-  const readyCargos = (typeof cargoState !== "undefined" && Array.isArray(cargoState))
-    ? cargoState.filter((c) => c && c.state === "ready" && Number.isFinite(c.x) && Number.isFinite(c.y))
-    : [];
-  const aiFlagEntity = (typeof flags !== "undefined" && Array.isArray(flags))
-    ? (flags.find((f) => f && f.color === aiColor && f.state === FLAG_STATES.ACTIVE) || null)
-    : null;
-  const aiFlagPos = aiFlagEntity
-    ? ((typeof getFlagAnchor === "function") ? getFlagAnchor(aiFlagEntity) : { x: aiFlagEntity.x, y: aiFlagEntity.y })
-    : null;
-
-  const computeThreat = (enemy) => {
-    const candidates = [];
-    if(Number.isFinite(ctx.landing.x)) candidates.push({ x: ctx.landing.x, y: ctx.landing.y, kind: "landing" });
-    if(aiBase && Number.isFinite(aiBase.x)) candidates.push({ x: aiBase.x, y: aiBase.y, kind: "base" });
-    if(aiFlagPos && Number.isFinite(aiFlagPos.x)) candidates.push({ x: aiFlagPos.x, y: aiFlagPos.y, kind: "flag" });
-    for(const cargo of readyCargos){
-      const center = (typeof getCargoVisualCenter === "function")
-        ? getCargoVisualCenter(cargo) : { x: cargo.x, y: cargo.y };
-      if(!Number.isFinite(center?.x)) continue;
-      candidates.push({ x: center.x, y: center.y, kind: "cargo" });
+  // Phase 1: harvest all scenario proposals (no hard cap — projection re-rank picks top-N).
+  const scenarioCap = Math.min(AI_PROACTIVE_MINE_MAX_PER_TURN * 2, mineCount * 2 + 1);
+  for(const fn of scenarios){
+    if(typeof isAiTurnStillApplicable === "function" && !isAiTurnStillApplicable()) return [];
+    if(harvested.length >= scenarioCap) break;
+    const remaining = scenarioCap - harvested.length;
+    let produced = [];
+    try {
+      produced = fn(selectedPlan, ctx, acceptedPlacements, remaining) || [];
+    } catch(err){
+      logAiDecision("proactive_mine_scenario_exception", {
+        message: err?.message || String(err),
+      });
+      produced = [];
     }
-    let best = Number.POSITIVE_INFINITY;
-    let bestKind = "landing";
-    let bestTarget = ctx.landing;
-    for(const c of candidates){
-      const d = Math.hypot(enemy.x - c.x, enemy.y - c.y);
-      if(d < best){ best = d; bestKind = c.kind; bestTarget = c; }
-    }
-    return { enemy, distance: best, kind: bestKind, target: bestTarget };
-  };
-
-  const threats = enemies
-    .map(computeThreat)
-    .filter((t) => Number.isFinite(t.distance))
-    .sort((a, b) => a.distance - b.distance)
-    .slice(0, AI_DEFENSIVE_MINE_TOP_THREATS);
-
-  if(threats.length === 0){
-    logAiDecision("defensive_mine_planner_reject", { reason: "no_threats_with_valid_target" });
-    return null;
-  }
-
-  for(const t of threats){
-    logAiDecision("defensive_mine_threat_harvested", {
-      enemyId: t.enemy?.id ?? null,
-      kind: t.kind,
-      distance: Number(t.distance.toFixed(1)),
-    });
-  }
-
-  // Phase 2 — per-threat candidate generation with multi-criteria gates.
-  const projectionCache = new Map();
-  const allCandidates = [];
-  let budgetHit = false;
-
-  outer:
-  for(const threat of threats){
-    if(elapsed() > AI_DEFENSIVE_MINE_BUDGET_MS){
-      budgetHit = true;
-      break;
-    }
-    if(typeof isAiTurnStillApplicable === "function" && !isAiTurnStillApplicable()) return null;
-
-    let projection = projectionCache.get(threat.enemy);
-    if(!projection){
-      projection = buildEnemyTrajectoryProjectionFree(threat.enemy, aiColor, ctx);
-      projectionCache.set(threat.enemy, projection);
-    }
-    if(!projection || projection.length === 0) continue;
-
-    for(const probe of projection){
-      if(elapsed() > AI_DEFENSIVE_MINE_BUDGET_MS){ budgetHit = true; break outer; }
-      for(const off of AI_DEFENSIVE_MINE_OFFSETS){
-        const px = probe.x + off.ox * CELL_SIZE * 0.55;
-        const py = probe.y + off.oy * CELL_SIZE * 0.55;
-        const placement = {
-          x: px, y: py,
-          cellX: Math.floor((px - FIELD_LEFT) / CELL_SIZE),
-          cellY: Math.floor((py - FIELD_TOP) / CELL_SIZE),
-        };
-        if(!isMinePlacementValid(placement)) continue;
-        const landingDist = Math.hypot(px - ctx.landing.x, py - ctx.landing.y);
-        if(landingDist < AI_DEFENSIVE_MINE_LANDING_SAFE_RADIUS) continue;
-        const trajDist = distancePointToSegment(px, py, plane.x, plane.y, ctx.landing.x, ctx.landing.y);
-        if(trajDist < AI_DEFENSIVE_MINE_OWN_TRAJ_BUFFER) continue;
-        let blocksOwn = false;
-        for(const own of ctx.ownPlanesToAvoid){
-          if(Math.hypot(own.x - px, own.y - py) < AI_DEFENSIVE_MINE_OWN_SAFE_RADIUS){
-            blocksOwn = true; break;
-          }
-        }
-        if(blocksOwn) continue;
-        const probeHitDist = Math.hypot(px - probe.x, py - probe.y);
-        if(probeHitDist > MINE_TRIGGER_RADIUS * 0.9) continue;
-        const scoreRes = scoreMinePlacementByProjection(placement, ctx, aiColor, projectionCache);
-        if(!Number.isFinite(scoreRes?.score) || scoreRes.score < AI_DEFENSIVE_MINE_MIN_SCORE) continue;
-        allCandidates.push({
-          placement,
-          score: scoreRes.score,
-          details: scoreRes.details,
-          threat,
-        });
-      }
+    for(const entry of produced){
+      if(harvested.length >= scenarioCap) break;
+      acceptedPlacements.push(entry.placement);
+      harvested.push(entry);
     }
     if(typeof aiCoopMaybeYield === "function") await aiCoopMaybeYield();
   }
 
-  if(budgetHit){
-    logAiDecision("defensive_mine_budget_exceeded", {
-      elapsedMs: Number(elapsed().toFixed(1)),
-      candidatesCollected: allCandidates.length,
-    });
-  }
+  if(harvested.length === 0) return out;
 
-  if(allCandidates.length === 0){
-    logAiDecision("defensive_mine_planner_reject", {
-      reason: "no_acceptable_placements",
-      threatsConsidered: threats.length,
-    });
-    return null;
-  }
-
-  // Phase 3 — pick top score; optionally add a second with anti-cluster.
-  allCandidates.sort((a, b) => b.score - a.score);
-  const accepted = [allCandidates[0]];
-  if(mineCount >= 2 && AI_DEFENSIVE_MINE_MAX_PER_TURN >= 2){
-    for(let i = 1; i < allCandidates.length; i += 1){
-      const cand = allCandidates[i];
-      if(cand.score < AI_DEFENSIVE_MINE_SECOND_SCORE) break;
-      const sameThreat = cand.threat.enemy?.id != null
-        && accepted[0].threat.enemy?.id != null
-        && cand.threat.enemy.id === accepted[0].threat.enemy.id
-        && cand.threat.kind === accepted[0].threat.kind;
-      if(sameThreat) continue;
-      const gap = Math.hypot(cand.placement.x - accepted[0].placement.x,
-                             cand.placement.y - accepted[0].placement.y);
-      if(gap < MINE_PLACEMENT_MIN_DISTANCE) continue;
-      accepted.push(cand);
-      break;
+  // Phase 2: projection re-rank.
+  const projectionEnabled = AI_MINE_PROJECTION_ENABLED && enemies.length > 0;
+  const projectionCache = new Map();
+  let budgetExceeded = false;
+  let evaluatedCount = 0;
+  const budgetStart = (typeof performance !== "undefined" && typeof performance.now === "function") ? performance.now() : Date.now();
+  for(let i = 0; i < harvested.length; i += 1){
+    const entry = harvested[i];
+    entry.scenarioPrior = entry.score;
+    entry.projectionScore = 0;
+    entry.projectionDetails = null;
+    if(!projectionEnabled){ continue; }
+    if(budgetExceeded){ continue; }
+    const now = (typeof performance !== "undefined" && typeof performance.now === "function") ? performance.now() : Date.now();
+    if(now - budgetStart > AI_MINE_PROJECTION_BUDGET_MS){
+      budgetExceeded = true;
+      logAiDecision("proactive_mine_projection_budget_exceeded", {
+        budgetMs: AI_MINE_PROJECTION_BUDGET_MS,
+        elapsedMs: Number((now - budgetStart).toFixed(2)),
+        evaluatedCount,
+        skippedCount: harvested.length - i,
+        selectedPlanGoal: selectedPlan?.goalName || null,
+      });
+      continue;
+    }
+    const res = scoreMinePlacementByProjection(entry.placement, ctx, aiColor, projectionCache);
+    entry.projectionScore = res.score;
+    entry.projectionDetails = res.details;
+    evaluatedCount += 1;
+    if(typeof aiCoopMaybeYield === "function" && (evaluatedCount % 2 === 0)){
+      await aiCoopMaybeYield();
+      if(typeof isAiTurnStillApplicable === "function" && !isAiTurnStillApplicable()) return [];
     }
   }
 
-  const placements = accepted.map((a) => a.placement);
-  const metrics = {
-    threatCount: threats.length,
-    candidateCount: allCandidates.length,
-    acceptedCount: accepted.length,
-    topScore: Number(accepted[0].score.toFixed(2)),
-    secondScore: accepted[1] ? Number(accepted[1].score.toFixed(2)) : null,
-    elapsedMs: Number(elapsed().toFixed(1)),
-  };
-  logAiDecision("defensive_mine_planner_accept", metrics);
-  return {
-    placements,
-    rationale: "defensive_mine_projection_v1",
-    metrics,
-    defensiveMinePlan: true,
-  };
+  for(const entry of harvested){
+    entry.finalScore = Number((AI_MINE_SCENARIO_PRIOR_WEIGHT * entry.scenarioPrior
+                            + AI_MINE_PROJECTION_WEIGHT * entry.projectionScore).toFixed(3));
+  }
+  harvested.sort((a, b) => b.finalScore - a.finalScore);
+
+  for(const entry of harvested){
+    if(out.length >= cap) break;
+    const candidate = buildProactiveMineCandidate({
+      ...entry,
+      score: entry.finalScore,
+    });
+    candidate.expectedBenefit = entry.finalScore;
+    out.push(candidate);
+    logAiDecision("proactive_mine_candidate_queued", {
+      scenario: entry.scenario,
+      executionSource: entry.executionSource,
+      scenarioPrior: entry.scenarioPrior,
+      projectionScore: Number(entry.projectionScore.toFixed(3)),
+      finalScore: entry.finalScore,
+      projectionDetails: entry.projectionDetails,
+      placement: {
+        x: Number(entry.placement.x.toFixed(1)),
+        y: Number(entry.placement.y.toFixed(1)),
+        cellX: entry.placement.cellX,
+        cellY: entry.placement.cellY,
+      },
+      remainingMineInventory: mineCount - out.length,
+      selectedPlanGoal: selectedPlan?.goalName || null,
+    });
+  }
+
+  if(projectionEnabled && harvested.length > 1){
+    logAiDecision("proactive_mine_reranked", {
+      enemyCount: enemies.length,
+      candidateCount: harvested.length,
+      acceptedCount: out.length,
+      budgetExceeded,
+      order: harvested.slice(0, AI_PROACTIVE_MINE_MAX_PER_TURN).map((entry) => ({
+        scenario: entry.scenario,
+        scenarioPrior: entry.scenarioPrior,
+        projectionScore: Number(entry.projectionScore.toFixed(3)),
+        finalScore: entry.finalScore,
+      })),
+    });
+  }
+
+  return out;
 }
 
 function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, availableCounts }){
@@ -25325,17 +27860,8 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
           rememberSingleUseBuffSpentThisTurn(INVENTORY_ITEM_TYPES.WINGS);
         }
       } else if(itemType === INVENTORY_ITEM_TYPES.MINE){
-        // Layer C — pure executor. By the time we get here, the Sequence Gate
-        // for defensive mines (script.js scheduler section) has already validated
-        // that this MINE entry is backed by Layer A (selectedPlan.defensiveMine
-        // Plan === true). isMinePlacementValid stays as defense-in-depth.
         const placement = candidate?.minePlan?.placement || null;
         if(placement && isMinePlacementValid(placement)){
-          logAiDecision("defensive_mine_about_to_place", {
-            planeId: plannedMove.plane?.id ?? null,
-            placement: { x: Number(placement.x.toFixed(1)), y: Number(placement.y.toFixed(1)) },
-            executionSource,
-          });
           placeMine({
             owner: aiColor,
             x: placement.x,
@@ -25437,7 +27963,7 @@ function maybeUseInventoryBeforeLaunch(context, plannedMove, options = {}){
 
   for(const step of selectedInventorySequence){
     // Preserve per-step executionSource/usageTier/scoring when the source provided them
-    // (e.g. defensive_mine_v1 entries need unique executionSource so the
+    // (e.g. proactive_mine_* candidates need unique executionSource so the
     // itemType:executionSource dedup below does not collapse multiple mines into one).
     const merged = { ...step };
     merged.reasonCode = step.reasonCode || step.reason || "selected_plan_enhancement";
