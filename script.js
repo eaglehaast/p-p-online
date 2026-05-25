@@ -24561,17 +24561,14 @@ const AI_DEFENSIVE_MINE_MAX_PER_TURN = 2;
 const AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD = 3;
 const AI_DEFENSIVE_MINE_MIN_SCORE = 1.6;
 const AI_DEFENSIVE_MINE_SECOND_SCORE = 1.8;
-const AI_DEFENSIVE_MINE_TOP_THREATS = 2;
+const AI_DEFENSIVE_MINE_TOP_THREATS = 3;
 const AI_DEFENSIVE_MINE_BUDGET_MS = 20;
 const AI_DEFENSIVE_MINE_LANDING_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 1.2;
 const AI_DEFENSIVE_MINE_OWN_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 2.0;
 const AI_DEFENSIVE_MINE_OWN_TRAJ_BUFFER = MINE_TRIGGER_RADIUS * 1.5;
-const AI_DEFENSIVE_MINE_OWN_BASE_EXCLUSION = MINE_TRIGGER_RADIUS * 5.0;
-const AI_DEFENSIVE_MINE_OWN_LAUNCH_CORRIDOR_BUFFER = MINE_TRIGGER_RADIUS * 2.0;
+const AI_DEFENSIVE_MINE_OWN_BASE_EXCLUSION = MINE_TRIGGER_RADIUS * 3.5;
 const AI_DEFENSIVE_MINE_OWN_FUTURE_TRAJ_BUFFER = MINE_TRIGGER_RADIUS * 1.5;
 const AI_DEFENSIVE_MINE_CROSS_TURN_CLUSTER_RADIUS = MINE_TRIGGER_RADIUS * 3.0;
-const AI_DEFENSIVE_MINE_YIELD_EVERY_N_CANDIDATES = 30;
-const AI_DEFENSIVE_MINE_EARLY_BREAK_CANDIDATES = 6;
 const AI_MINE_PROJECTION_MAX_ENEMIES = 3;
 const AI_OWN_MINE_PATH_PENALTY = 900;
 const AI_OWN_MINE_LANDING_PENALTY = 1100;
@@ -24581,6 +24578,10 @@ const AI_DEFENSIVE_MINE_OFFSETS = Object.freeze([
   { ox: -1, oy: 0 },
   { ox: 0, oy: 1 },
   { ox: 0, oy: -1 },
+  { ox: 0.7, oy: 0.7 },
+  { ox: -0.7, oy: 0.7 },
+  { ox: 0.7, oy: -0.7 },
+  { ox: -0.7, oy: -0.7 },
 ]);
 
 
@@ -24900,28 +24901,12 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
     if(nearestCargo){
       ownFutureSegments.push({ sx: ownPlane.x, sy: ownPlane.y, ex: nearestCargo.x, ey: nearestCargo.y });
     }
-    // Launch corridor segment: from own plane's current position back to its
-    // home base. Planes at base will leave from base in any direction; planes
-    // in air typically return to base after landing. Mines on this segment
-    // block both inbound and outbound traffic. Covers the symptom where
-    // mines sat on the launch column even outside OWN_BASE_EXCLUSION radius.
-    if(aiBase && Number.isFinite(aiBase.x)){
-      ownFutureSegments.push({ sx: ownPlane.x, sy: ownPlane.y, ex: aiBase.x, ey: aiBase.y });
-    }
   }
-
-  // Pre-filter own mines once. Used by cross-turn anti-cluster gate per
-  // candidate — without this we re-iterate all global mines (including
-  // enemy mines) on every candidate × every turn.
-  const ownMinesOnFieldArr = liveMines.filter((m) => (
-    m && m.owner === aiColor && Number.isFinite(m.x) && Number.isFinite(m.y)
-  ));
 
   // Phase 2 — per-threat candidate generation with multi-criteria gates.
   const projectionCache = new Map();
   const allCandidates = [];
   let budgetHit = false;
-  let candidatesSinceYield = 0;
 
   outer:
   for(const threat of threats){
@@ -24941,17 +24926,6 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
     for(const probe of projection){
       if(elapsed() > AI_DEFENSIVE_MINE_BUDGET_MS){ budgetHit = true; break outer; }
       for(const off of AI_DEFENSIVE_MINE_OFFSETS){
-        // Yield + budget check inside the hottest loop. With 5 offsets per
-        // probe × ~10 probes × 2 threats = 100 candidates max, one yield
-        // every 30 candidates is ~3 per turn — enough to keep the page
-        // responsive without flooding the scheduler.
-        candidatesSinceYield += 1;
-        if(candidatesSinceYield >= AI_DEFENSIVE_MINE_YIELD_EVERY_N_CANDIDATES){
-          candidatesSinceYield = 0;
-          if(elapsed() > AI_DEFENSIVE_MINE_BUDGET_MS){ budgetHit = true; break outer; }
-          if(typeof aiCoopMaybeYield === "function") await aiCoopMaybeYield();
-          if(typeof isAiTurnStillApplicable === "function" && !isAiTurnStillApplicable()) return null;
-        }
         const px = probe.x + off.ox * CELL_SIZE * 0.55;
         const py = probe.y + off.oy * CELL_SIZE * 0.55;
         const placement = {
@@ -24962,11 +24936,9 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
         if(!isMinePlacementValid(placement)) continue;
         const landingDist = Math.hypot(px - ctx.landing.x, py - ctx.landing.y);
         if(landingDist < AI_DEFENSIVE_MINE_LANDING_SAFE_RADIUS) continue;
-        // Own-base exclusion (widened to 5x). Keeps the launch corridor free
-        // regardless of which plane is currently selected. Without this,
-        // projection probes along enemy → AI base land right where future
-        // planes need to fly out, and over multiple turns mines accumulate
-        // and trip the final-mine-gate on subsequent launches.
+        // Own-base exclusion: keeps the launch corridor free regardless of
+        // which plane is currently selected. Without this, projection probes
+        // along enemy → AI base land right where future planes need to fly out.
         if(aiBase && Number.isFinite(aiBase.x)
            && Math.hypot(px - aiBase.x, py - aiBase.y) < AI_DEFENSIVE_MINE_OWN_BASE_EXCLUSION) continue;
         const trajDist = distancePointToSegment(px, py, plane.x, plane.y, ctx.landing.x, ctx.landing.y);
@@ -24979,14 +24951,12 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
         }
         if(blocksOwn) continue;
         // Future-trajectory check: each other own plane has not moved yet but
-        // will likely fly toward its nearest enemy / ready cargo / back to
-        // base this round. Reject candidates that sit on those likely
-        // segments. The base segment (added above) is the critical one for
-        // launch corridor — it tripped the final-mine-gate symptom.
+        // will likely fly toward its nearest enemy or ready cargo this round.
+        // Reject candidates that sit on those likely segments.
         let blocksFutureTraj = false;
         for(const segment of ownFutureSegments){
           const d = distancePointToSegment(px, py, segment.sx, segment.sy, segment.ex, segment.ey);
-          if(d < AI_DEFENSIVE_MINE_OWN_LAUNCH_CORRIDOR_BUFFER){ blocksFutureTraj = true; break; }
+          if(d < AI_DEFENSIVE_MINE_OWN_FUTURE_TRAJ_BUFFER){ blocksFutureTraj = true; break; }
         }
         if(blocksFutureTraj) continue;
         // Cross-turn anti-cluster: per-turn anti-cluster (below in Phase 3)
@@ -24994,9 +24964,12 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
         // turns the best projection-probe geometry is often stable, so
         // without this gate the AI stacks 2-3 mines in the same spot over
         // consecutive turns (3 mines at one point cancel each other —
-        // wasted on first trigger).
+        // wasted on first trigger). Reject candidates near any existing
+        // own mine on field.
         let clusteredWithExisting = false;
-        for(const existing of ownMinesOnFieldArr){
+        for(const existing of liveMines){
+          if(!existing || existing.owner !== aiColor) continue;
+          if(!Number.isFinite(existing.x) || !Number.isFinite(existing.y)) continue;
           if(Math.hypot(px - existing.x, py - existing.y) < AI_DEFENSIVE_MINE_CROSS_TURN_CLUSTER_RADIUS){
             clusteredWithExisting = true; break;
           }
@@ -25012,10 +24985,6 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
           details: scoreRes.details,
           threat,
         });
-        // Early break: Phase 3 takes at most 2 candidates with anti-cluster.
-        // Once we have a small pool of qualifying candidates from each top
-        // threat, more candidates wouldn't change the outcome.
-        if(allCandidates.length >= AI_DEFENSIVE_MINE_EARLY_BREAK_CANDIDATES) break outer;
       }
     }
     if(typeof aiCoopMaybeYield === "function") await aiCoopMaybeYield();
@@ -26562,101 +26531,6 @@ function issueAIMoveWithInventoryUsage(context, plannedMove){
         });
         return { launched: true, mode: "simple_direct_move" };
       }
-    }
-
-    // Last resort BEFORE advanceTurn(): the guaranteed and simple direct-move
-    // builders pick ONE plane and fail when its short-distance trajectory hits
-    // an own mine. If that happens (likely after AI placed mines that now
-    // cover the launch column), try every other alive own plane with a short
-    // forward vector that does NOT pass through an own mine. Without this, AI
-    // skips the whole turn the moment any own mine sits near any plane's nose.
-    const aiColorForRescue = plannedMove?.plane?.color
-      || (Array.isArray(context?.aiPlanes) && context.aiPlanes[0]?.color)
-      || null;
-    if(aiColorForRescue){
-      const ownPlanes = Array.isArray(points)
-        ? points.filter((p) => (
-          p && p.color === aiColorForRescue
-          && p.isAlive && !p.burning
-          && Number.isFinite(p.x) && Number.isFinite(p.y)
-        ))
-        : [];
-      const shortDistancePx = Math.max(10, Number.isFinite(CELL_SIZE) ? CELL_SIZE * 1.2 : 18);
-      const durationSec = FIELD_FLIGHT_DURATION_SEC > 0 ? FIELD_FLIGHT_DURATION_SEC : 1;
-      const rescueEnemies = Array.isArray(context?.enemies) ? context.enemies : [];
-      // Probe 8 cardinal+diagonal directions per plane. Keep the first that
-      // (a) yields a valid candidate AND (b) survives the mine-threat check
-      // against the plane's OWN mines.
-      const dirs = [
-        { x: 0, y: -1 }, { x: 1, y: -1 }, { x: 1, y: 0 }, { x: 1, y: 1 },
-        { x: 0, y: 1 }, { x: -1, y: 1 }, { x: -1, y: 0 }, { x: -1, y: -1 },
-      ];
-      // Prefer aim toward the nearest enemy: sort dirs by alignment with that
-      // direction so the rescue launch makes some tactical sense, not random.
-      let preferredAim = null;
-      for(const plane of ownPlanes){
-        let nearestEnemy = null;
-        let nearestD = Number.POSITIVE_INFINITY;
-        for(const enemy of rescueEnemies){
-          if(!enemy || !Number.isFinite(enemy.x) || !Number.isFinite(enemy.y)) continue;
-          const d = Math.hypot(enemy.x - plane.x, enemy.y - plane.y);
-          if(d < nearestD){ nearestD = d; nearestEnemy = enemy; }
-        }
-        if(nearestEnemy){
-          preferredAim = { x: nearestEnemy.x - plane.x, y: nearestEnemy.y - plane.y };
-        }
-        const sortedDirs = preferredAim
-          ? dirs.slice().sort((a, b) => {
-              const aDot = a.x * preferredAim.x + a.y * preferredAim.y;
-              const bDot = b.x * preferredAim.x + b.y * preferredAim.y;
-              return bDot - aDot;
-            })
-          : dirs;
-        for(const dir of sortedDirs){
-          const dirLen = Math.hypot(dir.x, dir.y);
-          if(dirLen <= 0) continue;
-          const ndx = dir.x / dirLen;
-          const ndy = dir.y / dirLen;
-          const landingX = plane.x + ndx * shortDistancePx;
-          const landingY = plane.y + ndy * shortDistancePx;
-          // Skip if this segment crosses any of our own mines (the very
-          // condition that blocked the original launch).
-          const mineMeta = (typeof getMineThreatMetaForSegment === "function")
-            ? getMineThreatMetaForSegment(plane.x, plane.y, landingX, landingY, plane, { mineOwner: plane.color })
-            : null;
-          if(mineMeta && (mineMeta.pathHit || mineMeta.landingThreat)) continue;
-          const rescueMove = {
-            plane,
-            vx: (landingX - plane.x) / durationSec,
-            vy: (landingY - plane.y) / durationSec,
-            goalName: fallbackDetails.goal || plannedMove?.goalName || aiRoundState?.currentGoal || "fail_safe_rescue_avoid_own_mine",
-            decisionReason: "fail_safe_rescue_avoid_own_mine",
-            routeClass: "direct",
-            isFallbackMove: true,
-          };
-          const rescueValidation = validateAiLaunchMoveCandidate(rescueMove);
-          if(!rescueValidation.ok) continue;
-          const launchResult = issueAIMove(rescueMove.plane, rescueMove.vx, rescueMove.vy, { isFallbackMove: true });
-          if(launchResult?.ok){
-            logAiDecision("ai_fail_safe_rescue_avoid_own_mine_started", {
-              fallbackReason,
-              planeId: plane.id ?? null,
-              goal: fallbackDetails.goal || aiRoundState?.currentGoal || null,
-              reasonCode: "fail_safe_rescue_avoid_own_mine_started",
-              dir: { x: Number(ndx.toFixed(2)), y: Number(ndy.toFixed(2)) },
-              guaranteedRejectReason: guaranteedValidation.reason || "invalid_guaranteed_direct_move",
-              simpleRejectReason: simpleValidation.reason || "invalid_simple_direct_move",
-            });
-            return { launched: true, mode: "rescue_avoid_own_mine" };
-          }
-        }
-      }
-      logAiDecision("ai_failsafe_skipped_turn_due_to_own_mines", {
-        fallbackReason,
-        ownPlanesConsidered: ownPlanes.length,
-        guaranteedRejectReason: guaranteedValidation.reason || "invalid_guaranteed_direct_move",
-        simpleRejectReason: simpleValidation.reason || "invalid_simple_direct_move",
-      });
     }
 
     return {
