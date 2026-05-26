@@ -27203,6 +27203,23 @@ function scoreMinePlacementByProjection(placement, ctx, aiColor, projectionCache
   return { score: capped, details: { perEnemy, enemyCount: perEnemy.length } };
 }
 
+// On-demand diagnostic buffer for the defensive-mine planner. Each invocation
+// pushes one summary entry (ring buffer, max 100). Inspect from the browser
+// console with `aiMineDebug()` — returns a JSON string of recent entries.
+// `aiMineDebug({ clear: true })` empties the buffer.
+const AI_MINE_DEBUG_BUFFER = [];
+const AI_MINE_DEBUG_MAX = 100;
+function aiMineDebugRecord(entry){
+  AI_MINE_DEBUG_BUFFER.push({ t: Date.now(), ...entry });
+  if(AI_MINE_DEBUG_BUFFER.length > AI_MINE_DEBUG_MAX) AI_MINE_DEBUG_BUFFER.shift();
+}
+if(typeof window !== "undefined"){
+  window.aiMineDebug = function(opts){
+    if(opts && opts.clear){ AI_MINE_DEBUG_BUFFER.length = 0; return "cleared"; }
+    return JSON.stringify(AI_MINE_DEBUG_BUFFER, null, 2);
+  };
+}
+
 // Layer A — defensive mine planner. Returns:
 //   { placements: [...0..2], rationale, metrics, defensiveMinePlan: true } or null.
 // Hard caps: max 2 per turn, max AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD on field
@@ -27228,7 +27245,7 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
       ownMinesOnField,
       cap: AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD,
     });
-    try { console.log("[AI-MINE-DEBUG]", JSON.stringify({ color: aiColor, inv: mineCount, onField: ownMinesOnField, cap: AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD, earlyReject: "max_field_cap" })); } catch (_) {}
+    aiMineDebugRecord({ color: aiColor, inv: mineCount, onField: ownMinesOnField, cap: AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD, earlyReject: "max_field_cap" });
     return null;
   }
 
@@ -27238,7 +27255,7 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
   const enemies = livePoints.filter((p) => p && p.color === enemyColor && p.isAlive && !p.burning);
   if(enemies.length === 0){
     logAiDecision("defensive_mine_planner_reject", { reason: "no_enemies" });
-    try { console.log("[AI-MINE-DEBUG]", JSON.stringify({ color: aiColor, inv: mineCount, earlyReject: "no_enemies" })); } catch (_) {}
+    aiMineDebugRecord({ color: aiColor, inv: mineCount, earlyReject: "no_enemies" });
     return null;
   }
 
@@ -27306,7 +27323,7 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
 
   if(threats.length === 0){
     logAiDecision("defensive_mine_planner_reject", { reason: "no_threats_with_valid_target" });
-    try { console.log("[AI-MINE-DEBUG]", JSON.stringify({ color: aiColor, inv: mineCount, earlyReject: "no_threats" })); } catch (_) {}
+    aiMineDebugRecord({ color: aiColor, inv: mineCount, earlyReject: "no_threats" });
     return null;
   }
 
@@ -27552,22 +27569,18 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
     });
   }
 
-  // v3.2-debug: one-line summary so the user can see which gate dominated.
-  // Floor used for context (strategic prior may boost above raw projection).
-  try {
-    console.log("[AI-MINE-DEBUG]", JSON.stringify({
-      color: aiColor,
-      inv: mineCount,
-      onField: ownMinesOnField,
-      cap: AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD,
-      threats: threats.length,
-      probesExamined,
-      accepted: allCandidates.length,
-      floor: AI_DEFENSIVE_MINE_MIN_SCORE,
-      budgetHit,
-      rejects,
-    }));
-  } catch (_) { /* console may be absent */ }
+  aiMineDebugRecord({
+    color: aiColor,
+    inv: mineCount,
+    onField: ownMinesOnField,
+    cap: AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD,
+    threats: threats.length,
+    probesExamined,
+    accepted: allCandidates.length,
+    floor: AI_DEFENSIVE_MINE_MIN_SCORE,
+    budgetHit,
+    rejects,
+  });
 
   if(allCandidates.length === 0){
     logAiDecision("defensive_mine_planner_reject", {
