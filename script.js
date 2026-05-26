@@ -26914,10 +26914,14 @@ async function buildAiSelectedPlanInventoryEnhancementsAsync(context, selectedPl
 const AI_DEFENSIVE_MINE_ENABLED = true;
 const AI_DEFENSIVE_MINE_MAX_PER_TURN = 2;
 const AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD = 3;
-const AI_DEFENSIVE_MINE_MIN_SCORE = 1.6;
-const AI_DEFENSIVE_MINE_SECOND_SCORE = 1.8;
+// strategic-v3: raised to compensate for prior multiplier (≤ ×1.35).
+// A placement with no strategic value (multiplier ≈ 1.0) now needs raw ≥ 1.85;
+// a placement on a strategic vector (multiplier ≈ 1.30) passes at raw ≈ 1.42.
+const AI_DEFENSIVE_MINE_MIN_SCORE = 1.85;
+const AI_DEFENSIVE_MINE_SECOND_SCORE = 2.05;
 const AI_DEFENSIVE_MINE_TOP_THREATS = 3;
 const AI_DEFENSIVE_MINE_BUDGET_MS = 20;
+const AI_DEFENSIVE_MINE_PRIOR_MAX_BOOST = 1.35;
 const AI_DEFENSIVE_MINE_LANDING_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 2.0;
 const AI_DEFENSIVE_MINE_OWN_SAFE_RADIUS = MINE_TRIGGER_RADIUS * 2.5;
 const AI_DEFENSIVE_MINE_OWN_TRAJ_BUFFER = MINE_TRIGGER_RADIUS * 2.5;
@@ -26972,7 +26976,10 @@ function getEnemyObjectiveTargetsForMineProjection(enemy, aiColor, ctx){
   const aiBase = (typeof getBaseAnchor === "function") ? getBaseAnchor(aiColor) : null;
   if(aiBase) targets.push({ x: aiBase.x, y: aiBase.y, name: "to_ai_base", weight: 1.20 });
   if(ctx?.landing && Number.isFinite(ctx.landing.x) && Number.isFinite(ctx.landing.y)){
-    targets.push({ x: ctx.landing.x, y: ctx.landing.y, name: "to_current_landing", weight: 1.00 });
+    // strategic-v3: AI's own landing point is the #1 thing we want to defend.
+    // Boosted above to_ai_base (1.20) so the route enemy→ourLanding wins probe
+    // weight when an enemy is positioned to intercept our freshly-landed plane.
+    targets.push({ x: ctx.landing.x, y: ctx.landing.y, name: "to_current_landing", weight: 1.40 });
   }
   const allies = Array.isArray(ctx?.ownPlanesToAvoid) ? ctx.ownPlanesToAvoid : [];
   for(let i = 0; i < allies.length && i < 3; i += 1){
@@ -27011,23 +27018,55 @@ function buildEnemyTrajectoryProjectionFree(enemy, aiColor, ctx){
   const rangePx = (typeof getPlaneEffectiveRangePx === "function") ? getPlaneEffectiveRangePx(enemy) : MAX_DRAG_DISTANCE;
   const probeStep = Math.max(CELL_SIZE * 2.1, Math.min(MAX_DRAG_DISTANCE * 0.42, (rangePx || MAX_DRAG_DISTANCE) * 0.82));
   const probes = [];
+  // strategic-v3: probes pulled close to the enemy (was ×1.0/×1.8 → ×0.4/×1.0,
+  // and objective probes at ×0.25/×0.55 of segment length). Intent: pressure
+  // the enemy at the start of motion, before it commits. Two upsides:
+  // (1) mines don't collide with our own approach to the same objective
+  // (we fly to base / cargo / flag too); (2) catches the enemy at first move,
+  // not after it's already past the chokepoint.
   if(currentVelocity){
     probes.push({
-      ...clampMineProbePoint(enemy.x + currentVelocity.x * probeStep, enemy.y + currentVelocity.y * probeStep),
-      step: 1, weight: 0.90, targetName: "velocity_1",
+      ...clampMineProbePoint(enemy.x + currentVelocity.x * probeStep * 0.4, enemy.y + currentVelocity.y * probeStep * 0.4),
+      step: 1, weight: 0.95, targetName: "velocity_near",
     });
     probes.push({
-      ...clampMineProbePoint(enemy.x + currentVelocity.x * probeStep * 1.8, enemy.y + currentVelocity.y * probeStep * 1.8),
-      step: 2, weight: 0.65, targetName: "velocity_2",
+      ...clampMineProbePoint(enemy.x + currentVelocity.x * probeStep, enemy.y + currentVelocity.y * probeStep),
+      step: 2, weight: 0.70, targetName: "velocity_far",
     });
   }
   for(const objective of objectives){
     const direction = normalizeMineVector(objective.x - enemy.x, objective.y - enemy.y);
     if(!direction) continue;
-    const oneTurn = clampMineProbePoint(enemy.x + direction.x * probeStep, enemy.y + direction.y * probeStep);
-    const twoTurn = clampMineProbePoint(enemy.x + direction.x * probeStep * 1.9, enemy.y + direction.y * probeStep * 1.9);
-    probes.push({ ...oneTurn, targetName: objective.name, step: 1, weight: objective.weight });
-    probes.push({ ...twoTurn, targetName: objective.name, step: 2, weight: Math.max(0.45, objective.weight * 0.75) });
+    const segLen = Math.hypot(objective.x - enemy.x, objective.y - enemy.y);
+    const dNear = Math.min(probeStep * 0.45, segLen * 0.30);
+    const dMid  = Math.min(probeStep * 1.00, segLen * 0.55);
+    const nearProbe = clampMineProbePoint(enemy.x + direction.x * dNear, enemy.y + direction.y * dNear);
+    const midProbe  = clampMineProbePoint(enemy.x + direction.x * dMid,  enemy.y + direction.y * dMid);
+    probes.push({ ...nearProbe, targetName: `${objective.name}_near`, step: 1, weight: objective.weight });
+    probes.push({ ...midProbe,  targetName: `${objective.name}_mid`,  step: 2, weight: Math.max(0.45, objective.weight * 0.70) });
+  }
+  // strategic-v3: flag-carrier return interception. If the enemy carries our
+  // flag, its return path to its own base is highly predictable. Generate
+  // high-weight probes near the carrier on that segment (30%/55%) to pressure
+  // the start of the return move.
+  if(enemy.carriedFlagId && typeof getFlagById === "function"){
+    const carriedFlag = getFlagById(enemy.carriedFlagId);
+    if(carriedFlag && carriedFlag.color === aiColor){
+      const enemyColor = aiColor === "blue" ? "green" : "blue";
+      const enemyBase = (typeof getBaseAnchor === "function") ? getBaseAnchor(enemyColor) : null;
+      if(enemyBase && Number.isFinite(enemyBase.x) && Number.isFinite(enemyBase.y)){
+        const carrierSegLen = Math.hypot(enemyBase.x - enemy.x, enemyBase.y - enemy.y);
+        if(carrierSegLen > 0.0001){
+          for(const frac of [0.30, 0.55]){
+            const p = clampMineProbePoint(
+              enemy.x + (enemyBase.x - enemy.x) * frac,
+              enemy.y + (enemyBase.y - enemy.y) * frac);
+            probes.push({ ...p, targetName: `carrier_return_${Math.round(frac * 100)}`,
+                          step: frac < 0.4 ? 1 : 2, weight: 1.55 });
+          }
+        }
+      }
+    }
   }
   return collectUniqueMineProbePoints(probes).map((point) => ({
     ...point,
@@ -27259,6 +27298,56 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
     }
   }
 
+  // strategic-v3: collect strategic priors for per-candidate score multiplier.
+  // Priors reflect *spatial value* of a placement independent of hit-probability:
+  //   - carrier-return segments (highest weight): if any enemy carries our flag,
+  //     placing on the carrier→enemyBase line is strategic gold.
+  //   - approach to our current landing (enemy → ourLanding): defends the plane
+  //     we're about to land this turn from the enemy's response.
+  //   - vicinity of our base, our flag, our planes.
+  // Combined boost is capped at AI_DEFENSIVE_MINE_PRIOR_MAX_BOOST (1.35) so the
+  // raw score still dominates and the 2.5 final cap is hard to saturate.
+  const carrierReturnSegments = [];
+  for(const e of enemies){
+    if(!e?.carriedFlagId || typeof getFlagById !== "function") continue;
+    const carriedFlag = getFlagById(e.carriedFlagId);
+    if(!carriedFlag || carriedFlag.color !== aiColor) continue;
+    const enemyBase = (typeof getBaseAnchor === "function") ? getBaseAnchor(enemyColor) : null;
+    if(!enemyBase || !Number.isFinite(enemyBase.x)) continue;
+    carrierReturnSegments.push({ sx: e.x, sy: e.y, ex: enemyBase.x, ey: enemyBase.y });
+  }
+  const nearestEnemyToLanding = enemies.reduce((acc, e) => {
+    const d = Math.hypot(e.x - ctx.landing.x, e.y - ctx.landing.y);
+    return (!acc || d < acc.d) ? { e, d } : acc;
+  }, null);
+  const PRIOR_RADIUS = MINE_TRIGGER_RADIUS * 3.0;
+  const proxScore = (d) => (Number.isFinite(d) ? Math.max(0, 1 - d / PRIOR_RADIUS) : 0);
+  const computeStrategicPrior = (px, py) => {
+    let boost = 1.0;
+    if(carrierReturnSegments.length){
+      let best = 0;
+      for(const s of carrierReturnSegments){
+        const d = distancePointToSegment(px, py, s.sx, s.sy, s.ex, s.ey);
+        const p = proxScore(d);
+        if(p > best) best = p;
+      }
+      boost += 0.30 * best;
+    }
+    if(nearestEnemyToLanding){
+      const dSeg = distancePointToSegment(px, py,
+        nearestEnemyToLanding.e.x, nearestEnemyToLanding.e.y,
+        ctx.landing.x, ctx.landing.y);
+      boost += 0.30 * proxScore(dSeg);
+    }
+    if(aiBase && Number.isFinite(aiBase.x)){
+      boost += 0.15 * proxScore(Math.hypot(px - aiBase.x, py - aiBase.y));
+    }
+    if(aiFlagPos && Number.isFinite(aiFlagPos.x)){
+      boost += 0.10 * proxScore(Math.hypot(px - aiFlagPos.x, py - aiFlagPos.y));
+    }
+    return Math.min(AI_DEFENSIVE_MINE_PRIOR_MAX_BOOST, boost);
+  };
+
   // Phase 2 — per-threat candidate generation with multi-criteria gates.
   const projectionCache = new Map();
   const allCandidates = [];
@@ -27368,10 +27457,20 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
         const probeHitDist = Math.hypot(px - probe.x, py - probe.y);
         if(probeHitDist > MINE_TRIGGER_RADIUS * 0.9) continue;
         const scoreRes = scoreMinePlacementByProjection(placement, ctx, aiColor, projectionCache);
-        if(!Number.isFinite(scoreRes?.score) || scoreRes.score < AI_DEFENSIVE_MINE_MIN_SCORE) continue;
+        if(!Number.isFinite(scoreRes?.score)) continue;
+        // strategic-v3: multiply by strategic prior, re-cap at 2.5 (same as
+        // scoreMinePlacementByProjection's internal cap). Threshold is applied
+        // AFTER the multiplier so placements with no strategic value are
+        // stricter than before, while placements on key vectors pass slightly
+        // more easily.
+        const prior = computeStrategicPrior(placement.x, placement.y);
+        const finalScore = Math.min(2.5, scoreRes.score * prior);
+        if(finalScore < AI_DEFENSIVE_MINE_MIN_SCORE) continue;
         allCandidates.push({
           placement,
-          score: scoreRes.score,
+          score: finalScore,
+          rawScore: scoreRes.score,
+          prior,
           details: scoreRes.details,
           threat,
         });
@@ -27422,13 +27521,16 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
     candidateCount: allCandidates.length,
     acceptedCount: accepted.length,
     topScore: Number(accepted[0].score.toFixed(2)),
+    topRawScore: Number((accepted[0].rawScore ?? accepted[0].score).toFixed(2)),
+    topPrior: Number((accepted[0].prior ?? 1).toFixed(2)),
     secondScore: accepted[1] ? Number(accepted[1].score.toFixed(2)) : null,
+    carrierReturnActive: carrierReturnSegments.length > 0,
     elapsedMs: Number(elapsed().toFixed(1)),
   };
   logAiDecision("defensive_mine_planner_accept", metrics);
   return {
     placements,
-    rationale: "defensive_mine_projection_v1",
+    rationale: "defensive_mine_projection_strategic_v3",
     metrics,
     defensiveMinePlan: true,
   };
