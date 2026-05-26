@@ -27228,6 +27228,7 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
       ownMinesOnField,
       cap: AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD,
     });
+    try { console.log("[AI-MINE-DEBUG]", JSON.stringify({ color: aiColor, inv: mineCount, onField: ownMinesOnField, cap: AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD, earlyReject: "max_field_cap" })); } catch (_) {}
     return null;
   }
 
@@ -27237,6 +27238,7 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
   const enemies = livePoints.filter((p) => p && p.color === enemyColor && p.isAlive && !p.burning);
   if(enemies.length === 0){
     logAiDecision("defensive_mine_planner_reject", { reason: "no_enemies" });
+    try { console.log("[AI-MINE-DEBUG]", JSON.stringify({ color: aiColor, inv: mineCount, earlyReject: "no_enemies" })); } catch (_) {}
     return null;
   }
 
@@ -27304,6 +27306,7 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
 
   if(threats.length === 0){
     logAiDecision("defensive_mine_planner_reject", { reason: "no_threats_with_valid_target" });
+    try { console.log("[AI-MINE-DEBUG]", JSON.stringify({ color: aiColor, inv: mineCount, earlyReject: "no_threats" })); } catch (_) {}
     return null;
   }
 
@@ -27398,6 +27401,22 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
   const projectionCache = new Map();
   const allCandidates = [];
   let budgetHit = false;
+  // v3.2-debug: per-gate rejection counters. Logged once at end so we can see
+  // which gate is dominating from a single browser-console line.
+  const rejects = {
+    placement_invalid: 0,
+    landing_too_close: 0,
+    own_base_too_close: 0,
+    own_traj_too_close: 0,
+    other_own_too_close: 0,
+    future_traj_too_close: 0,
+    sim_self_hit: 0,
+    cluster_with_existing: 0,
+    too_far_from_probe: 0,
+    score_invalid: 0,
+    score_below_floor: 0,
+  };
+  let probesExamined = 0;
 
   outer:
   for(const threat of threats){
@@ -27417,6 +27436,7 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
     for(const probe of projection){
       if(elapsed() > AI_DEFENSIVE_MINE_BUDGET_MS){ budgetHit = true; break outer; }
       for(const off of AI_DEFENSIVE_MINE_OFFSETS){
+        probesExamined += 1;
         const px = probe.x + off.ox * CELL_SIZE * 0.55;
         const py = probe.y + off.oy * CELL_SIZE * 0.55;
         const placement = {
@@ -27424,7 +27444,7 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
           cellX: Math.floor((px - FIELD_LEFT) / CELL_SIZE),
           cellY: Math.floor((py - FIELD_TOP) / CELL_SIZE),
         };
-        if(!isMinePlacementValid(placement)) continue;
+        if(!isMinePlacementValid(placement)) { rejects.placement_invalid += 1; continue; }
         // Use plane's *effective* trigger radius (accounts for WINGS buff
         // increasing physical hitbox). Constant buffers above were under-
         // sizing the safe zone for buffed planes → self-detonation.
@@ -27435,24 +27455,24 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
         const ownSafe = Math.max(AI_DEFENSIVE_MINE_OWN_SAFE_RADIUS, effRadius * 2.5);
         const futureTrajBuf = Math.max(AI_DEFENSIVE_MINE_OWN_FUTURE_TRAJ_BUFFER, effRadius * 2.5);
         const landingDist = Math.hypot(px - ctx.landing.x, py - ctx.landing.y);
-        if(landingDist < landingSafe) continue;
+        if(landingDist < landingSafe) { rejects.landing_too_close += 1; continue; }
         if(aiBase && Number.isFinite(aiBase.x)
-           && Math.hypot(px - aiBase.x, py - aiBase.y) < AI_DEFENSIVE_MINE_OWN_BASE_EXCLUSION) continue;
+           && Math.hypot(px - aiBase.x, py - aiBase.y) < AI_DEFENSIVE_MINE_OWN_BASE_EXCLUSION) { rejects.own_base_too_close += 1; continue; }
         const trajDist = distancePointToSegment(px, py, plane.x, plane.y, ctx.landing.x, ctx.landing.y);
-        if(trajDist < trajBuf) continue;
+        if(trajDist < trajBuf) { rejects.own_traj_too_close += 1; continue; }
         let blocksOwn = false;
         for(const own of ctx.ownPlanesToAvoid){
           if(Math.hypot(own.x - px, own.y - py) < ownSafe){
             blocksOwn = true; break;
           }
         }
-        if(blocksOwn) continue;
+        if(blocksOwn) { rejects.other_own_too_close += 1; continue; }
         let blocksFutureTraj = false;
         for(const segment of ownFutureSegments){
           const d = distancePointToSegment(px, py, segment.sx, segment.sy, segment.ex, segment.ey);
           if(d < futureTrajBuf){ blocksFutureTraj = true; break; }
         }
-        if(blocksFutureTraj) continue;
+        if(blocksFutureTraj) { rejects.future_traj_too_close += 1; continue; }
         // Final simulation gate using runtime physics. Temporarily push
         // candidate into live `mines`, call the same getMineThreatMetaForSegment
         // that the launch gate uses post-hoc. If our self-trajectory or any
@@ -27486,7 +27506,7 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
           } finally {
             liveMinesArr.pop();
           }
-          if(simHit) continue;
+          if(simHit) { rejects.sim_self_hit += 1; continue; }
         }
         // Cross-turn anti-cluster: per-turn anti-cluster (below in Phase 3)
         // only spaces 1st and 2nd within this turn. Reject if too close to
@@ -27499,11 +27519,11 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
             clusteredWithExisting = true; break;
           }
         }
-        if(clusteredWithExisting) continue;
+        if(clusteredWithExisting) { rejects.cluster_with_existing += 1; continue; }
         const probeHitDist = Math.hypot(px - probe.x, py - probe.y);
-        if(probeHitDist > MINE_TRIGGER_RADIUS * 0.9) continue;
+        if(probeHitDist > MINE_TRIGGER_RADIUS * 0.9) { rejects.too_far_from_probe += 1; continue; }
         const scoreRes = scoreMinePlacementByProjection(placement, ctx, aiColor, projectionCache);
-        if(!Number.isFinite(scoreRes?.score)) continue;
+        if(!Number.isFinite(scoreRes?.score)) { rejects.score_invalid += 1; continue; }
         // strategic-v3: multiply by strategic prior, re-cap at 2.5 (same as
         // scoreMinePlacementByProjection's internal cap). Threshold is applied
         // AFTER the multiplier so placements with no strategic value are
@@ -27511,7 +27531,7 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
         // more easily.
         const prior = computeStrategicPrior(placement.x, placement.y);
         const finalScore = Math.min(2.5, scoreRes.score * prior);
-        if(finalScore < AI_DEFENSIVE_MINE_MIN_SCORE) continue;
+        if(finalScore < AI_DEFENSIVE_MINE_MIN_SCORE) { rejects.score_below_floor += 1; continue; }
         allCandidates.push({
           placement,
           score: finalScore,
@@ -27531,6 +27551,23 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
       candidatesCollected: allCandidates.length,
     });
   }
+
+  // v3.2-debug: one-line summary so the user can see which gate dominated.
+  // Floor used for context (strategic prior may boost above raw projection).
+  try {
+    console.log("[AI-MINE-DEBUG]", JSON.stringify({
+      color: aiColor,
+      inv: mineCount,
+      onField: ownMinesOnField,
+      cap: AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD,
+      threats: threats.length,
+      probesExamined,
+      accepted: allCandidates.length,
+      floor: AI_DEFENSIVE_MINE_MIN_SCORE,
+      budgetHit,
+      rejects,
+    }));
+  } catch (_) { /* console may be absent */ }
 
   if(allCandidates.length === 0){
     logAiDecision("defensive_mine_planner_reject", {
