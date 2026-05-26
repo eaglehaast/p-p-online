@@ -8925,8 +8925,8 @@ const SLIDE_THRESHOLD      = 0.1;
 // Larger hit area for selecting planes with touch/mouse
 const PLANE_TOUCH_RADIUS   = 20;                   // px
 const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit Anti-Aircraft center
-const MINE_TRIGGER_RADIUS  = MINE_VISUAL_RADIUS + PLANE_DRAW_W / 2; // 15+18=33 px: крыло касается края спрайта
-const MINE_PLACEMENT_MIN_DISTANCE = MINE_SIZE_DEFAULTS.LOGICAL_PX; // 30 px — спрайты мин не перекрываются
+const MINE_TRIGGER_RADIUS  = 28; // v3.2: decoupled from VISUAL_RADIUS+PLANE_DRAW_W/2 (=33). Trigger < hangar-spacing/2 (59/2=29.5) so a mine placed between two parked planes doesn't auto-trigger on neighbors.
+const MINE_PLACEMENT_MIN_DISTANCE = 24; // v3.2: was MINE_SIZE_DEFAULTS.LOGICAL_PX (30). Lowered so 2×24=48 < 59px hangar-gap → mine fits between adjacent parked planes.
 const BOUNCE_FRAMES        = 68;
 // Duration of a full-speed flight on the field (measured in frames)
 // (Restored to the original pre-change speed used for gameplay physics)
@@ -27011,22 +27011,23 @@ function getEnemyObjectiveTargetsForMineProjection(enemy, aiColor, ctx){
   return collectUniqueMineProbePoints(targets).slice(0, 5);
 }
 
-// strategic-v3.1: wall-aware path reach.
-// Returns { passable, ex, ey, blocked } where ex/ey is clipped to the first
-// destructible collider on the segment if the enemy has enough dynamite to
-// break through. Returns { passable: false } when the path is blocked and the
-// enemy cannot dynamite it open — the planner must NOT generate probes for
-// that objective, otherwise we get the "dumb mine on a wall the enemy can't
-// reach anyway" behavior reported by the user.
+// strategic-v3.2: wall-aware soft penalty (was hard-skip in v3.1, which killed
+// early-game mines because enemies start with 0 dynamite). Now always returns
+// passable:true; the caller scales probe weights by reach.weightScale.
+//   - free path:                    weightScale 1.00, target as-is
+//   - brick on path, dynamite ≥ need: weightScale 0.85, target clipped to brick
+//   - brick on path, dynamite < need: weightScale 0.45, target clipped to brick
+//     (enemy may still drift this way, pick up dynamite, or stall in front of
+//      the brick — a mine in the [enemy → brick] band is still useful)
 //
-// dynamiteNeeded is a lower bound (1 or "≥2") — we don't iterate every collider
-// on the line, only check whether removing the first one frees the path.
+// dynamiteNeeded is a lower bound (1 or "≥2"): we only check whether removing
+// the first collider unblocks the line, not every collider on it.
 function getEnemyEffectivePathReach(sx, sy, ex, ey, enemy){
-  if(typeof isPathClear !== "function") return { passable: true, ex, ey, blocked: false };
-  if(isPathClear(sx, sy, ex, ey)) return { passable: true, ex, ey, blocked: false };
-  if(typeof findFirstColliderHit !== "function") return { passable: true, ex, ey, blocked: false };
+  if(typeof isPathClear !== "function") return { ex, ey, blocked: false, weightScale: 1.00 };
+  if(isPathClear(sx, sy, ex, ey)) return { ex, ey, blocked: false, weightScale: 1.00 };
+  if(typeof findFirstColliderHit !== "function") return { ex, ey, blocked: false, weightScale: 1.00 };
   const firstHit = findFirstColliderHit(sx, sy, ex, ey);
-  if(!firstHit?.collider?.id || !firstHit?.hitPoint) return { passable: false };
+  if(!firstHit?.collider?.id || !firstHit?.hitPoint) return { ex, ey, blocked: false, weightScale: 0.45 };
   let dynamiteNeeded = 1;
   if(typeof isPathClearIgnoringColliderById === "function"
      && !isPathClearIgnoringColliderById(sx, sy, ex, ey, firstHit.collider.id)){
@@ -27035,8 +27036,8 @@ function getEnemyEffectivePathReach(sx, sy, ex, ey, enemy){
   const enemyDynamite = (enemy && typeof evaluateInventoryState === "function")
     ? Number(evaluateInventoryState(enemy.color)?.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] || 0)
     : 0;
-  if(enemyDynamite < dynamiteNeeded) return { passable: false };
-  return { passable: true, ex: firstHit.hitPoint.x, ey: firstHit.hitPoint.y, blocked: true };
+  const weightScale = enemyDynamite >= dynamiteNeeded ? 0.85 : 0.45;
+  return { ex: firstHit.hitPoint.x, ey: firstHit.hitPoint.y, blocked: true, weightScale };
 }
 
 function buildEnemyTrajectoryProjectionFree(enemy, aiColor, ctx){
@@ -27063,12 +27064,11 @@ function buildEnemyTrajectoryProjectionFree(enemy, aiColor, ctx){
     });
   }
   for(const objective of objectives){
-    // strategic-v3.1: wall-aware. Skip objectives blocked by destructible walls
-    // the enemy can't (or has insufficient dynamite to) break through. If the
-    // path is blocked but reachable via dynamite — clip target to the brick,
-    // because the enemy will stop in front of it to detonate.
+    // strategic-v3.2: wall-aware soft penalty. Always generate probes; clip
+    // target to the first brick on the line and scale weight down when the
+    // enemy is unlikely to break through. Never hard-skip — that killed early-
+    // game mines (enemies start with 0 dynamite).
     const reach = getEnemyEffectivePathReach(enemy.x, enemy.y, objective.x, objective.y, enemy);
-    if(!reach || !reach.passable) continue;
     const tx = reach.ex;
     const ty = reach.ey;
     const direction = normalizeMineVector(tx - enemy.x, ty - enemy.y);
@@ -27080,8 +27080,10 @@ function buildEnemyTrajectoryProjectionFree(enemy, aiColor, ctx){
     const nearProbe = clampMineProbePoint(enemy.x + direction.x * dNear, enemy.y + direction.y * dNear);
     const midProbe  = clampMineProbePoint(enemy.x + direction.x * dMid,  enemy.y + direction.y * dMid);
     const nameSuffix = reach.blocked ? "_clipped" : "";
-    probes.push({ ...nearProbe, targetName: `${objective.name}_near${nameSuffix}`, step: 1, weight: objective.weight });
-    probes.push({ ...midProbe,  targetName: `${objective.name}_mid${nameSuffix}`,  step: 2, weight: Math.max(0.45, objective.weight * 0.70) });
+    const scaledNear = objective.weight * reach.weightScale;
+    const scaledMid  = Math.max(0.45, objective.weight * 0.70) * reach.weightScale;
+    probes.push({ ...nearProbe, targetName: `${objective.name}_near${nameSuffix}`, step: 1, weight: scaledNear });
+    probes.push({ ...midProbe,  targetName: `${objective.name}_mid${nameSuffix}`,  step: 2, weight: scaledMid });
   }
   // strategic-v3: flag-carrier return interception. If the enemy carries our
   // flag, its return path to its own base is highly predictable. Generate
@@ -27093,21 +27095,20 @@ function buildEnemyTrajectoryProjectionFree(enemy, aiColor, ctx){
       const enemyColor = aiColor === "blue" ? "green" : "blue";
       const enemyBase = (typeof getBaseAnchor === "function") ? getBaseAnchor(enemyColor) : null;
       if(enemyBase && Number.isFinite(enemyBase.x) && Number.isFinite(enemyBase.y)){
-        // strategic-v3.1: same wall-aware check for the return path.
+        // strategic-v3.2: soft wall-aware (see helper).
         const carrierReach = getEnemyEffectivePathReach(enemy.x, enemy.y, enemyBase.x, enemyBase.y, enemy);
-        if(carrierReach?.passable){
-          const tx = carrierReach.ex;
-          const ty = carrierReach.ey;
-          const carrierSegLen = Math.hypot(tx - enemy.x, ty - enemy.y);
-          if(carrierSegLen > 0.0001){
-            const nameSuffix = carrierReach.blocked ? "_clipped" : "";
-            for(const frac of [0.30, 0.55]){
-              const p = clampMineProbePoint(
-                enemy.x + (tx - enemy.x) * frac,
-                enemy.y + (ty - enemy.y) * frac);
-              probes.push({ ...p, targetName: `carrier_return_${Math.round(frac * 100)}${nameSuffix}`,
-                            step: frac < 0.4 ? 1 : 2, weight: 1.55 });
-            }
+        const tx = carrierReach.ex;
+        const ty = carrierReach.ey;
+        const carrierSegLen = Math.hypot(tx - enemy.x, ty - enemy.y);
+        if(carrierSegLen > 0.0001){
+          const nameSuffix = carrierReach.blocked ? "_clipped" : "";
+          const scaledWeight = 1.55 * carrierReach.weightScale;
+          for(const frac of [0.30, 0.55]){
+            const p = clampMineProbePoint(
+              enemy.x + (tx - enemy.x) * frac,
+              enemy.y + (ty - enemy.y) * frac);
+            probes.push({ ...p, targetName: `carrier_return_${Math.round(frac * 100)}${nameSuffix}`,
+                          step: frac < 0.4 ? 1 : 2, weight: scaledWeight });
           }
         }
       }
