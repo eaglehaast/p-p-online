@@ -4818,53 +4818,45 @@ function getBasePlacementRects(){
     .filter(Boolean);
 }
 
-function isMinePlacementValid(placement){
-  if(!placement) return false;
-  if(!Number.isFinite(placement.x) || !Number.isFinite(placement.y)) return false;
-  if(!isPointInsideFieldBounds(placement.x, placement.y)) return false;
+// Returns a string identifying which gate rejected the placement, or null if
+// the placement is valid. Used both by isMinePlacementValid (for boolean
+// validity) and by the defensive-mine diagnostic which needs the specific
+// sub-reason for `placement_invalid` rejections.
+function whyMinePlacementInvalid(placement){
+  if(!placement) return "no_placement";
+  if(!Number.isFinite(placement.x) || !Number.isFinite(placement.y)) return "non_finite";
+  if(!isPointInsideFieldBounds(placement.x, placement.y)) return "out_of_field";
 
-  // «установка мины — в свободную точку, не в центр клетки»:
-  // проверяем фактическую дистанцию между минами в мировых пикселях,
-  // а не совпадение координат вычисленной клетки.
   const tooCloseToAnotherMine = mines.some(mine => {
     if(!Number.isFinite(mine?.x) || !Number.isFinite(mine?.y)) return false;
     return Math.hypot(mine.x - placement.x, mine.y - placement.y) < MINE_PLACEMENT_MIN_DISTANCE;
   });
-  if(tooCloseToAnotherMine) return false;
+  if(tooCloseToAnotherMine) return "close_to_mine";
 
   const mineR = Math.ceil(MINE_VISUAL_RADIUS);
-  let tooCloseToBrick = false;
-  for(let dy = -mineR; dy <= mineR && !tooCloseToBrick; dy++){
-    for(let dx = -mineR; dx <= mineR && !tooCloseToBrick; dx++){
+  for(let dy = -mineR; dy <= mineR; dy++){
+    for(let dx = -mineR; dx <= mineR; dx++){
       if(dx*dx + dy*dy <= mineR*mineR && isBrickPixel(placement.x + dx, placement.y + dy)){
-        tooCloseToBrick = true;
+        return "close_to_brick";
       }
     }
   }
-  if(tooCloseToBrick) return false;
 
-  const intersectsCollider = colliders.some(collider =>
-    isPointInsideCollider(placement.x, placement.y, collider)
-  );
-  if(intersectsCollider) return false;
-
-  const intersectsBase = getBasePlacementRects().some(rect =>
-    isPointInAxisAlignedRect(placement.x, placement.y, rect)
-  );
-  if(intersectsBase) return false;
-
-  const intersectsFlag = getFlagPlacementRects().some(rect =>
-    isPointInAxisAlignedRect(placement.x, placement.y, rect)
-  );
-  if(intersectsFlag) return false;
+  if(colliders.some(collider => isPointInsideCollider(placement.x, placement.y, collider))) return "collider";
+  if(getBasePlacementRects().some(rect => isPointInAxisAlignedRect(placement.x, placement.y, rect))) return "base_rect";
+  if(getFlagPlacementRects().some(rect => isPointInAxisAlignedRect(placement.x, placement.y, rect))) return "flag_rect";
 
   const tooCloseToPlane = points.some(plane => {
     if(!plane?.isAlive || plane?.burning) return false;
     return Math.hypot(plane.x - placement.x, plane.y - placement.y) < getMineEffectiveTriggerRadius(plane);
   });
-  if(tooCloseToPlane) return false;
+  if(tooCloseToPlane) return "close_to_plane";
 
-  return true;
+  return null;
+}
+
+function isMinePlacementValid(placement){
+  return whyMinePlacementInvalid(placement) === null;
 }
 
 function placeMine({ owner, x, y, cellX, cellY }){
@@ -27418,10 +27410,22 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
   const projectionCache = new Map();
   const allCandidates = [];
   let budgetHit = false;
-  // v3.2-debug: per-gate rejection counters. Logged once at end so we can see
-  // which gate is dominating from a single browser-console line.
+  // Per-gate rejection counters. placement_invalid is broken into 7 sub-
+  // categories matching the gates in whyMinePlacementInvalid() so we can see
+  // exactly which placement constraint dominates.
   const rejects = {
-    placement_invalid: 0,
+    placement_invalid: {
+      _total: 0,
+      out_of_field: 0,
+      close_to_mine: 0,
+      close_to_brick: 0,
+      collider: 0,
+      base_rect: 0,
+      flag_rect: 0,
+      close_to_plane: 0,
+      no_placement: 0,
+      non_finite: 0,
+    },
     landing_too_close: 0,
     own_base_too_close: 0,
     own_traj_too_close: 0,
@@ -27461,7 +27465,12 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
           cellX: Math.floor((px - FIELD_LEFT) / CELL_SIZE),
           cellY: Math.floor((py - FIELD_TOP) / CELL_SIZE),
         };
-        if(!isMinePlacementValid(placement)) { rejects.placement_invalid += 1; continue; }
+        const piReason = whyMinePlacementInvalid(placement);
+        if(piReason !== null){
+          rejects.placement_invalid._total += 1;
+          if(piReason in rejects.placement_invalid) rejects.placement_invalid[piReason] += 1;
+          continue;
+        }
         // Use plane's *effective* trigger radius (accounts for WINGS buff
         // increasing physical hitbox). Constant buffers above were under-
         // sizing the safe zone for buffed planes → self-detonation.
