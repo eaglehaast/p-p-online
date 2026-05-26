@@ -27011,6 +27011,34 @@ function getEnemyObjectiveTargetsForMineProjection(enemy, aiColor, ctx){
   return collectUniqueMineProbePoints(targets).slice(0, 5);
 }
 
+// strategic-v3.1: wall-aware path reach.
+// Returns { passable, ex, ey, blocked } where ex/ey is clipped to the first
+// destructible collider on the segment if the enemy has enough dynamite to
+// break through. Returns { passable: false } when the path is blocked and the
+// enemy cannot dynamite it open — the planner must NOT generate probes for
+// that objective, otherwise we get the "dumb mine on a wall the enemy can't
+// reach anyway" behavior reported by the user.
+//
+// dynamiteNeeded is a lower bound (1 or "≥2") — we don't iterate every collider
+// on the line, only check whether removing the first one frees the path.
+function getEnemyEffectivePathReach(sx, sy, ex, ey, enemy){
+  if(typeof isPathClear !== "function") return { passable: true, ex, ey, blocked: false };
+  if(isPathClear(sx, sy, ex, ey)) return { passable: true, ex, ey, blocked: false };
+  if(typeof findFirstColliderHit !== "function") return { passable: true, ex, ey, blocked: false };
+  const firstHit = findFirstColliderHit(sx, sy, ex, ey);
+  if(!firstHit?.collider?.id || !firstHit?.hitPoint) return { passable: false };
+  let dynamiteNeeded = 1;
+  if(typeof isPathClearIgnoringColliderById === "function"
+     && !isPathClearIgnoringColliderById(sx, sy, ex, ey, firstHit.collider.id)){
+    dynamiteNeeded = 2;
+  }
+  const enemyDynamite = (enemy && typeof evaluateInventoryState === "function")
+    ? Number(evaluateInventoryState(enemy.color)?.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] || 0)
+    : 0;
+  if(enemyDynamite < dynamiteNeeded) return { passable: false };
+  return { passable: true, ex: firstHit.hitPoint.x, ey: firstHit.hitPoint.y, blocked: true };
+}
+
 function buildEnemyTrajectoryProjectionFree(enemy, aiColor, ctx){
   if(!enemy || !Number.isFinite(enemy.x) || !Number.isFinite(enemy.y)) return [];
   const currentVelocity = normalizeMineVector(Number(enemy?.vx) || 0, Number(enemy?.vy) || 0);
@@ -27035,15 +27063,25 @@ function buildEnemyTrajectoryProjectionFree(enemy, aiColor, ctx){
     });
   }
   for(const objective of objectives){
-    const direction = normalizeMineVector(objective.x - enemy.x, objective.y - enemy.y);
+    // strategic-v3.1: wall-aware. Skip objectives blocked by destructible walls
+    // the enemy can't (or has insufficient dynamite to) break through. If the
+    // path is blocked but reachable via dynamite — clip target to the brick,
+    // because the enemy will stop in front of it to detonate.
+    const reach = getEnemyEffectivePathReach(enemy.x, enemy.y, objective.x, objective.y, enemy);
+    if(!reach || !reach.passable) continue;
+    const tx = reach.ex;
+    const ty = reach.ey;
+    const direction = normalizeMineVector(tx - enemy.x, ty - enemy.y);
     if(!direction) continue;
-    const segLen = Math.hypot(objective.x - enemy.x, objective.y - enemy.y);
+    const segLen = Math.hypot(tx - enemy.x, ty - enemy.y);
+    if(segLen <= 0.0001) continue;
     const dNear = Math.min(probeStep * 0.45, segLen * 0.30);
     const dMid  = Math.min(probeStep * 1.00, segLen * 0.55);
     const nearProbe = clampMineProbePoint(enemy.x + direction.x * dNear, enemy.y + direction.y * dNear);
     const midProbe  = clampMineProbePoint(enemy.x + direction.x * dMid,  enemy.y + direction.y * dMid);
-    probes.push({ ...nearProbe, targetName: `${objective.name}_near`, step: 1, weight: objective.weight });
-    probes.push({ ...midProbe,  targetName: `${objective.name}_mid`,  step: 2, weight: Math.max(0.45, objective.weight * 0.70) });
+    const nameSuffix = reach.blocked ? "_clipped" : "";
+    probes.push({ ...nearProbe, targetName: `${objective.name}_near${nameSuffix}`, step: 1, weight: objective.weight });
+    probes.push({ ...midProbe,  targetName: `${objective.name}_mid${nameSuffix}`,  step: 2, weight: Math.max(0.45, objective.weight * 0.70) });
   }
   // strategic-v3: flag-carrier return interception. If the enemy carries our
   // flag, its return path to its own base is highly predictable. Generate
@@ -27055,14 +27093,21 @@ function buildEnemyTrajectoryProjectionFree(enemy, aiColor, ctx){
       const enemyColor = aiColor === "blue" ? "green" : "blue";
       const enemyBase = (typeof getBaseAnchor === "function") ? getBaseAnchor(enemyColor) : null;
       if(enemyBase && Number.isFinite(enemyBase.x) && Number.isFinite(enemyBase.y)){
-        const carrierSegLen = Math.hypot(enemyBase.x - enemy.x, enemyBase.y - enemy.y);
-        if(carrierSegLen > 0.0001){
-          for(const frac of [0.30, 0.55]){
-            const p = clampMineProbePoint(
-              enemy.x + (enemyBase.x - enemy.x) * frac,
-              enemy.y + (enemyBase.y - enemy.y) * frac);
-            probes.push({ ...p, targetName: `carrier_return_${Math.round(frac * 100)}`,
-                          step: frac < 0.4 ? 1 : 2, weight: 1.55 });
+        // strategic-v3.1: same wall-aware check for the return path.
+        const carrierReach = getEnemyEffectivePathReach(enemy.x, enemy.y, enemyBase.x, enemyBase.y, enemy);
+        if(carrierReach?.passable){
+          const tx = carrierReach.ex;
+          const ty = carrierReach.ey;
+          const carrierSegLen = Math.hypot(tx - enemy.x, ty - enemy.y);
+          if(carrierSegLen > 0.0001){
+            const nameSuffix = carrierReach.blocked ? "_clipped" : "";
+            for(const frac of [0.30, 0.55]){
+              const p = clampMineProbePoint(
+                enemy.x + (tx - enemy.x) * frac,
+                enemy.y + (ty - enemy.y) * frac);
+              probes.push({ ...p, targetName: `carrier_return_${Math.round(frac * 100)}${nameSuffix}`,
+                            step: frac < 0.4 ? 1 : 2, weight: 1.55 });
+            }
           }
         }
       }
