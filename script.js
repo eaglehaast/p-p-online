@@ -27040,6 +27040,83 @@ function getEnemyEffectivePathReach(sx, sy, ex, ey, enemy){
   return { ex: firstHit.hitPoint.x, ey: firstHit.hitPoint.y, blocked: true, weightScale };
 }
 
+// Simulates a hypothetical straight-line shot from (startX, startY) toward
+// (targetX, targetY), reflecting off surfaces using the same geometry that
+// `findFirstSurfaceHit` reports during real flight. Pure read-only — does not
+// modify any state. Returns the polyline of corner points
+// [start, bounce1, bounce2, ..., end] capped by maxTravelPx total path length
+// and maxBounces. Used by the defensive-mine projection to generate probes
+// along the *actual* path an enemy would fly, not just the straight line.
+function simulateEnemyRicochetTrajectory(startX, startY, targetX, targetY, opts){
+  const maxTravelPx = Number.isFinite(opts?.maxTravelPx) ? opts.maxTravelPx : Math.hypot(targetX - startX, targetY - startY);
+  const maxBounces = Number.isFinite(opts?.maxBounces) ? opts.maxBounces : 2;
+  const radius = Number.isFinite(opts?.radius) ? opts.radius : CELL_SIZE * 0.3;
+  const trajectory = [{ x: startX, y: startY }];
+  let cx = startX, cy = startY;
+  let dirX = targetX - startX;
+  let dirY = targetY - startY;
+  let dirLen = Math.hypot(dirX, dirY);
+  if(dirLen < 1e-6) return trajectory;
+  let ux = dirX / dirLen, uy = dirY / dirLen;
+  let remaining = maxTravelPx;
+  for(let bounce = 0; bounce <= maxBounces && remaining > 0.5; bounce += 1){
+    const nx = cx + ux * remaining;
+    const ny = cy + uy * remaining;
+    let hit = null;
+    try { hit = findFirstSurfaceHit({ x: cx, y: cy }, { x: nx, y: ny }, radius); }
+    catch (_) { hit = null; }
+    if(!hit || !Number.isFinite(hit.t) || hit.t >= 1){
+      trajectory.push({ x: nx, y: ny });
+      break;
+    }
+    const hitX = cx + (nx - cx) * hit.t;
+    const hitY = cy + (ny - cy) * hit.t;
+    trajectory.push({ x: hitX, y: hitY });
+    const travelled = Math.hypot(hitX - cx, hitY - cy);
+    remaining -= travelled;
+    if(remaining <= 0.5) break;
+    const dot = ux * hit.normal.x + uy * hit.normal.y;
+    ux = ux - 2 * dot * hit.normal.x;
+    uy = uy - 2 * dot * hit.normal.y;
+    const newLen = Math.hypot(ux, uy);
+    if(newLen < 1e-6) break;
+    ux /= newLen; uy /= newLen;
+    cx = hitX + hit.normal.x * 0.5;
+    cy = hitY + hit.normal.y * 0.5;
+  }
+  return trajectory;
+}
+
+// Walks a polyline trajectory and emits points at the given fractions of total
+// path length. fractions in [0,1]. Returns [{x,y,fraction,segmentIndex}].
+function sampleProbesAlongTrajectory(trajectory, fractions){
+  if(!Array.isArray(trajectory) || trajectory.length < 2) return [];
+  const segments = [];
+  let totalLen = 0;
+  for(let i = 0; i < trajectory.length - 1; i += 1){
+    const a = trajectory[i], b = trajectory[i + 1];
+    const l = Math.hypot(b.x - a.x, b.y - a.y);
+    if(l < 1e-6) continue;
+    segments.push({ ax: a.x, ay: a.y, bx: b.x, by: b.y, l });
+    totalLen += l;
+  }
+  if(totalLen < 1e-6) return [];
+  const out = [];
+  for(const f of fractions){
+    let target = Math.max(0, Math.min(1, f)) * totalLen;
+    for(let i = 0; i < segments.length; i += 1){
+      const seg = segments[i];
+      if(target <= seg.l || i === segments.length - 1){
+        const t = seg.l > 0 ? Math.min(1, target / seg.l) : 0;
+        out.push({ x: seg.ax + (seg.bx - seg.ax) * t, y: seg.ay + (seg.by - seg.ay) * t, fraction: f, segmentIndex: i });
+        break;
+      }
+      target -= seg.l;
+    }
+  }
+  return out;
+}
+
 function buildEnemyTrajectoryProjectionFree(enemy, aiColor, ctx){
   if(!enemy || !Number.isFinite(enemy.x) || !Number.isFinite(enemy.y)) return [];
   const currentVelocity = normalizeMineVector(Number(enemy?.vx) || 0, Number(enemy?.vy) || 0);
@@ -27084,6 +27161,27 @@ function buildEnemyTrajectoryProjectionFree(enemy, aiColor, ctx){
     const scaledMid  = Math.max(0.45, objective.weight * 0.70) * reach.weightScale;
     probes.push({ ...nearProbe, targetName: `${objective.name}_near${nameSuffix}`, step: 1, weight: scaledNear });
     probes.push({ ...midProbe,  targetName: `${objective.name}_mid${nameSuffix}`,  step: 2, weight: scaledMid });
+    // Ricochet probes: enemies in this game commonly fly diagonally and bounce
+    // off side walls / brick edges. Straight-line probes above miss the actual
+    // path after the first reflection. Simulate up to 2 bounces in the direction
+    // of this objective and sample probes at 30%/60%/85% of the bent polyline
+    // length — these often fall *after* the first bounce, catching the enemy
+    // mid-corridor.
+    const ricochetTraj = simulateEnemyRicochetTrajectory(
+      enemy.x, enemy.y, tx, ty,
+      { maxTravelPx: segLen, maxBounces: 2, radius: CELL_SIZE * 0.3 }
+    );
+    if(ricochetTraj.length >= 3){ // at least one bounce occurred
+      const ricochetSamples = sampleProbesAlongTrajectory(ricochetTraj, [0.30, 0.60, 0.85]);
+      for(const s of ricochetSamples){
+        const clamped = clampMineProbePoint(s.x, s.y);
+        // Weight: a touch lower than mid-probe — ricochet path is still a
+        // prediction, give straight-line probes priority when they apply.
+        const ricochetWeight = Math.max(0.40, objective.weight * 0.65) * reach.weightScale;
+        probes.push({ ...clamped, targetName: `${objective.name}_ricochet_${Math.round(s.fraction * 100)}`,
+                       step: 2, weight: ricochetWeight });
+      }
+    }
   }
   // strategic-v3: flag-carrier return interception. If the enemy carries our
   // flag, its return path to its own base is highly predictable. Generate
