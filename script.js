@@ -26913,7 +26913,11 @@ async function buildAiSelectedPlanInventoryEnhancementsAsync(context, selectedPl
 // =========================================================================
 const AI_DEFENSIVE_MINE_ENABLED = true;
 const AI_DEFENSIVE_MINE_MAX_PER_TURN = 2;
-const AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD = 3;
+// Raised 3 → 6 after live diagnostic showed that with 7-10 mines in inventory
+// the planner was hitting `earlyReject: max_field_cap` on most turns —
+// effectively freezing 70%+ of the inventory. 20ms budget + per-candidate
+// gates already protect against the original "saturation" regression.
+const AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD = 6;
 // strategic-v3: raised to compensate for prior multiplier (≤ ×1.35).
 // A placement with no strategic value (multiplier ≈ 1.0) now needs raw ≥ 1.85;
 // a placement on a strategic vector (multiplier ≈ 1.30) passes at raw ≈ 1.42.
