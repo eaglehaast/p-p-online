@@ -27466,6 +27466,57 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
     }
   }
 
+  // Own approach corridors — the *symmetric* problem: enemy objectives in
+  // getEnemyObjectiveTargetsForMineProjection (our cargo / base / flag /
+  // allies) are also where *our own* planes will fly. Placing a mine on
+  // "enemy → cargo" puts it on "us → cargo" too. Build the explicit corridor
+  // list once per planner call and use it as a placement gate below.
+  // Includes: every alive own plane (including selectedPlan.plane) → each
+  // in-range objective (cargo, own flag anchor, enemy base for offensive runs,
+  // nearest enemy). 1.10× range slack so we don't aggressively prune when an
+  // objective is just barely out of reach.
+  const enemyBaseAnchor = (typeof getBaseAnchor === "function") ? getBaseAnchor(enemyColor) : null;
+  const ownFlagEntity = (typeof flags !== "undefined" && Array.isArray(flags))
+    ? (flags.find((f) => f && f.color === aiColor && f.state === FLAG_STATES.ACTIVE) || null)
+    : null;
+  const ownFlagPos = ownFlagEntity
+    ? ((typeof getFlagAnchor === "function") ? getFlagAnchor(ownFlagEntity) : { x: ownFlagEntity.x, y: ownFlagEntity.y })
+    : null;
+  const ownApproachCorridors = [];
+  const corridorAddIfInRange = (planeRef, planeRangePx, tx, ty, kind) => {
+    if(!Number.isFinite(tx) || !Number.isFinite(ty)) return;
+    const d = Math.hypot(tx - planeRef.x, ty - planeRef.y);
+    if(d > planeRangePx * 1.10) return;
+    ownApproachCorridors.push({ sx: planeRef.x, sy: planeRef.y, ex: tx, ey: ty, plane: planeRef, kind });
+  };
+  const allOwnForCorridors = [plane, ...ctx.ownPlanesToAvoid];
+  for(const op of allOwnForCorridors){
+    if(!op || !Number.isFinite(op.x) || !Number.isFinite(op.y)) continue;
+    const rangePx = (typeof getPlaneEffectiveRangePx === "function")
+      ? Math.max(CELL_SIZE * 4, getPlaneEffectiveRangePx(op)) : MAX_DRAG_DISTANCE;
+    if(enemyBaseAnchor) corridorAddIfInRange(op, rangePx, enemyBaseAnchor.x, enemyBaseAnchor.y, "enemy_base");
+    if(ownFlagPos) corridorAddIfInRange(op, rangePx, ownFlagPos.x, ownFlagPos.y, "own_flag");
+    if(aiBase) corridorAddIfInRange(op, rangePx, aiBase.x, aiBase.y, "own_base");
+    for(const cargo of readyCargos){
+      const center = (typeof getCargoVisualCenter === "function") ? getCargoVisualCenter(cargo) : { x: cargo.x, y: cargo.y };
+      if(!Number.isFinite(center?.x)) continue;
+      corridorAddIfInRange(op, rangePx, center.x, center.y, "cargo");
+    }
+    for(const e of enemies){
+      if(!e || !Number.isFinite(e.x) || !Number.isFinite(e.y)) continue;
+      corridorAddIfInRange(op, rangePx, e.x, e.y, "enemy");
+    }
+  }
+  // Committed corridor for the launching plane this turn — adds a strict
+  // duplicate of own_traj_too_close, but parametrised the same way so the
+  // counter shows it consistently if anything else changes.
+  if(Number.isFinite(ctx.landing.x) && Number.isFinite(ctx.landing.y)){
+    ownApproachCorridors.push({
+      sx: plane.x, sy: plane.y, ex: ctx.landing.x, ey: ctx.landing.y,
+      plane, kind: "committed_landing",
+    });
+  }
+
   // strategic-v3: collect strategic priors for per-candidate score multiplier.
   // Priors reflect *spatial value* of a placement independent of hit-probability:
   //   - carrier-return segments (highest weight): if any enemy carries our flag,
@@ -27529,7 +27580,9 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
     own_traj_too_close: 0,
     other_own_too_close: 0,
     future_traj_too_close: 0,
+    own_approach_corridor: 0,
     sim_self_hit: 0,
+    sim_self_hit_other_plane: 0,
     cluster_with_existing: 0,
     too_far_from_probe: 0,
     score_invalid: 0,
@@ -27592,6 +27645,18 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
           if(d < futureTrajBuf){ blocksFutureTraj = true; break; }
         }
         if(blocksFutureTraj) { rejects.future_traj_too_close += 1; continue; }
+        // Own approach-corridor gate: defensive-mine projection's objectives
+        // (cargo / our base / our flag / our allies) are symmetric — *we*
+        // also fly to them. If this placement lies within trigger-radius of
+        // any of our in-range corridors to those objectives, we'd be putting
+        // a mine on our own approach line for the next turn.
+        let blocksOwnCorridor = false;
+        const approachBuf = MINE_TRIGGER_RADIUS * 2.0;
+        for(const c of ownApproachCorridors){
+          const d = distancePointToSegment(px, py, c.sx, c.sy, c.ex, c.ey);
+          if(d < approachBuf){ blocksOwnCorridor = true; break; }
+        }
+        if(blocksOwnCorridor) { rejects.own_approach_corridor += 1; continue; }
         // Final simulation gate using runtime physics. Temporarily push
         // candidate into live `mines`, call the same getMineThreatMetaForSegment
         // that the launch gate uses post-hoc. If our self-trajectory or any
@@ -27607,6 +27672,7 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
           };
           liveMinesArr.push(simMine);
           let simHit = false;
+          let simHitOtherPlane = false;
           try {
             const selfMeta = (typeof getMineThreatMetaForSegment === "function")
               ? getMineThreatMetaForSegment(plane.x, plane.y, ctx.landing.x, ctx.landing.y, plane, { mineOwner: aiColor })
@@ -27614,18 +27680,36 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
             if(selfMeta && (selfMeta.pathHit || selfMeta.landingThreat)){
               simHit = true;
             } else {
+              // For each other own plane, simulate its likely approach segment
+              // using the corridor we already computed above. A 0-length
+              // self-segment (the old `own.x,own.y → own.x,own.y` form) only
+              // detects mines already at the plane's exact position — useless.
               for(const own of ctx.ownPlanesToAvoid){
                 if(!own || !Number.isFinite(own.x) || !Number.isFinite(own.y)) continue;
+                // Find the first corridor anchored at this plane (corridors are
+                // ordered by objective preference: enemy_base, own_flag,
+                // own_base, cargo, enemy). Falls back to plane-position if none.
+                const corridor = ownApproachCorridors.find((c) => c.plane === own);
+                const segEx = corridor ? corridor.ex : own.x;
+                const segEy = corridor ? corridor.ey : own.y;
                 const ownMeta = (typeof getMineThreatMetaForSegment === "function")
-                  ? getMineThreatMetaForSegment(own.x, own.y, own.x, own.y, own, { mineOwner: aiColor })
+                  ? getMineThreatMetaForSegment(own.x, own.y, segEx, segEy, own, { mineOwner: aiColor })
                   : null;
-                if(ownMeta && (ownMeta.pathHit || ownMeta.landingThreat)){ simHit = true; break; }
+                if(ownMeta && (ownMeta.pathHit || ownMeta.landingThreat)){
+                  simHit = true;
+                  simHitOtherPlane = true;
+                  break;
+                }
               }
             }
           } finally {
             liveMinesArr.pop();
           }
-          if(simHit) { rejects.sim_self_hit += 1; continue; }
+          if(simHit){
+            if(simHitOtherPlane) rejects.sim_self_hit_other_plane += 1;
+            else rejects.sim_self_hit += 1;
+            continue;
+          }
         }
         // Cross-turn anti-cluster: per-turn anti-cluster (below in Phase 3)
         // only spaces 1st and 2nd within this turn. Reject if too close to
@@ -27677,6 +27761,7 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
     onField: ownMinesOnField,
     cap: AI_DEFENSIVE_MINE_MAX_TOTAL_ON_FIELD,
     threats: threats.length,
+    corridorCount: ownApproachCorridors.length,
     probesExamined,
     accepted: allCandidates.length,
     floor: AI_DEFENSIVE_MINE_MIN_SCORE,
@@ -35371,6 +35456,18 @@ function getGuaranteedAnyLegalLaunch(context){
         const landingY = plane.y + vy * FIELD_FLIGHT_DURATION_SEC;
         if (!isPathClear(plane.x, plane.y, landingX, landingY)) {
           continue;
+        }
+        // isPathClear ignores mines. Refuse this candidate if the path or
+        // landing intersects *our own* mine — otherwise the timeout-fallback
+        // happily launches the AI through its own defensive mine and detonates.
+        // Enemy mines remain acceptable (this is a "any legal launch" reserve).
+        if(typeof getMineThreatMetaForSegment === "function" && plane.color){
+          const ownMineMeta = getMineThreatMetaForSegment(
+            plane.x, plane.y, landingX, landingY, plane, { mineOwner: plane.color }
+          );
+          if(ownMineMeta && (ownMineMeta.pathHit || ownMineMeta.landingThreat)){
+            continue;
+          }
         }
 
         return normalizeFailSafeLaunchCandidate({
