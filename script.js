@@ -27684,7 +27684,15 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
         // 3.0× trigger-radius of any in-range own objective anchor — this is
         // the zone where both sides physically converge.
         let nearOwnObjective = false;
-        const anchorBuf = MINE_TRIGGER_RADIUS * 3.0;
+        // Anchor radius tightened from 3.0× to 1.5×. At 3.0× the gate rejected
+        // *every* non-invalid probe in live telemetry (59/85 = 100% of survivors
+        // were inside the anchor zone), because enemy projection probes
+        // naturally cluster near their target objective. 1.5× (~45 px at
+        // MINE_TRIGGER_RADIUS=30) blocks only mines literally on top of an
+        // objective — where our landing point would actually be — while
+        // letting mid-corridor probes survive. own_approach_corridor handles
+        // the wider zone of overlap separately.
+        const anchorBuf = MINE_TRIGGER_RADIUS * 1.5;
         for(const a of ownObjectiveAnchors){
           if(Math.hypot(px - a.x, py - a.y) < anchorBuf){ nearOwnObjective = true; break; }
         }
