@@ -27483,11 +27483,21 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
     ? ((typeof getFlagAnchor === "function") ? getFlagAnchor(ownFlagEntity) : { x: ownFlagEntity.x, y: ownFlagEntity.y })
     : null;
   const ownApproachCorridors = [];
+  // Parallel set of *objective anchor points* — centres of our in-range targets
+  // (cargo / our base / our flag / enemy base / enemy planes). Used by the
+  // own_objective_vicinity gate below: probes from the enemy-side projection
+  // converge near these anchors, and so does our own approach. The previous
+  // PR's `own_approach_corridor` gate compared *segments* (enemy probes lie on
+  // the enemy→cargo line, our corridors on the plane→cargo line — they only
+  // touch at the endpoint, so buf=2× missed almost everything). This anchor
+  // gate catches the actual overlap zone.
+  const ownObjectiveAnchorsRaw = [];
   const corridorAddIfInRange = (planeRef, planeRangePx, tx, ty, kind) => {
     if(!Number.isFinite(tx) || !Number.isFinite(ty)) return;
     const d = Math.hypot(tx - planeRef.x, ty - planeRef.y);
     if(d > planeRangePx * 1.10) return;
     ownApproachCorridors.push({ sx: planeRef.x, sy: planeRef.y, ex: tx, ey: ty, plane: planeRef, kind });
+    ownObjectiveAnchorsRaw.push({ x: tx, y: ty, kind });
   };
   const allOwnForCorridors = [plane, ...ctx.ownPlanesToAvoid];
   for(const op of allOwnForCorridors){
@@ -27506,6 +27516,12 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
       if(!e || !Number.isFinite(e.x) || !Number.isFinite(e.y)) continue;
       corridorAddIfInRange(op, rangePx, e.x, e.y, "enemy");
     }
+  }
+  // Dedupe anchors (same cargo/base referenced by multiple planes → 1 anchor).
+  const ownObjectiveAnchors = [];
+  for(const a of ownObjectiveAnchorsRaw){
+    const dup = ownObjectiveAnchors.find((b) => Math.hypot(b.x - a.x, b.y - a.y) < 1);
+    if(!dup) ownObjectiveAnchors.push(a);
   }
   // Committed corridor for the launching plane this turn — adds a strict
   // duplicate of own_traj_too_close, but parametrised the same way so the
@@ -27581,6 +27597,7 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
     other_own_too_close: 0,
     future_traj_too_close: 0,
     own_approach_corridor: 0,
+    own_objective_vicinity: 0,
     sim_self_hit: 0,
     sim_self_hit_other_plane: 0,
     cluster_with_existing: 0,
@@ -27651,12 +27668,27 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
         // any of our in-range corridors to those objectives, we'd be putting
         // a mine on our own approach line for the next turn.
         let blocksOwnCorridor = false;
-        const approachBuf = MINE_TRIGGER_RADIUS * 2.0;
+        const approachBuf = MINE_TRIGGER_RADIUS * 3.5; // was 2.0× — diagnostics showed
+        // the corridor gate never fired with 2.0× because enemy probes (on
+        // enemy→objective line) and our corridors (plane→objective line) only
+        // touch at the endpoint. 3.5× widens the corridor enough to catch the
+        // convergence zone near the shared objective.
         for(const c of ownApproachCorridors){
           const d = distancePointToSegment(px, py, c.sx, c.sy, c.ex, c.ey);
           if(d < approachBuf){ blocksOwnCorridor = true; break; }
         }
         if(blocksOwnCorridor) { rejects.own_approach_corridor += 1; continue; }
+        // Own objective vicinity gate: probes from the enemy projection cluster
+        // *near our objectives* (cargo, our base, our flag, enemy base when we
+        // raid). Our own planes also converge there. Block any placement within
+        // 3.0× trigger-radius of any in-range own objective anchor — this is
+        // the zone where both sides physically converge.
+        let nearOwnObjective = false;
+        const anchorBuf = MINE_TRIGGER_RADIUS * 3.0;
+        for(const a of ownObjectiveAnchors){
+          if(Math.hypot(px - a.x, py - a.y) < anchorBuf){ nearOwnObjective = true; break; }
+        }
+        if(nearOwnObjective) { rejects.own_objective_vicinity += 1; continue; }
         // Final simulation gate using runtime physics. Temporarily push
         // candidate into live `mines`, call the same getMineThreatMetaForSegment
         // that the launch gate uses post-hoc. If our self-trajectory or any
@@ -27684,21 +27716,25 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
               // using the corridor we already computed above. A 0-length
               // self-segment (the old `own.x,own.y → own.x,own.y` form) only
               // detects mines already at the plane's exact position — useless.
+              outerOther:
               for(const own of ctx.ownPlanesToAvoid){
                 if(!own || !Number.isFinite(own.x) || !Number.isFinite(own.y)) continue;
-                // Find the first corridor anchored at this plane (corridors are
-                // ordered by objective preference: enemy_base, own_flag,
-                // own_base, cargo, enemy). Falls back to plane-position if none.
-                const corridor = ownApproachCorridors.find((c) => c.plane === own);
-                const segEx = corridor ? corridor.ex : own.x;
-                const segEy = corridor ? corridor.ey : own.y;
-                const ownMeta = (typeof getMineThreatMetaForSegment === "function")
-                  ? getMineThreatMetaForSegment(own.x, own.y, segEx, segEy, own, { mineOwner: aiColor })
-                  : null;
-                if(ownMeta && (ownMeta.pathHit || ownMeta.landingThreat)){
-                  simHit = true;
-                  simHitOtherPlane = true;
-                  break;
+                // Test *every* corridor for this plane, not just the first. The
+                // previous version (`.find`) only checked the first objective
+                // (usually enemy_base) which is irrelevant for planes that
+                // would actually fly to cargo or flag — most placements were
+                // silently passing this gate.
+                const planeCorridors = ownApproachCorridors.filter((c) => c.plane === own);
+                if(planeCorridors.length === 0) continue;
+                for(const corridor of planeCorridors){
+                  const ownMeta = (typeof getMineThreatMetaForSegment === "function")
+                    ? getMineThreatMetaForSegment(own.x, own.y, corridor.ex, corridor.ey, own, { mineOwner: aiColor })
+                    : null;
+                  if(ownMeta && (ownMeta.pathHit || ownMeta.landingThreat)){
+                    simHit = true;
+                    simHitOtherPlane = true;
+                    break outerOther;
+                  }
                 }
               }
             }
