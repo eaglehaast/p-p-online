@@ -27727,13 +27727,20 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
               outerOther:
               for(const own of ctx.ownPlanesToAvoid){
                 if(!own || !Number.isFinite(own.x) || !Number.isFinite(own.y)) continue;
-                // Test *every* corridor for this plane, not just the first. The
-                // previous version (`.find`) only checked the first objective
-                // (usually enemy_base) which is irrelevant for planes that
-                // would actually fly to cargo or flag — most placements were
-                // silently passing this gate.
-                const planeCorridors = ownApproachCorridors.filter((c) => c.plane === own);
-                if(planeCorridors.length === 0) continue;
+                // Test up to the 2 *nearest* corridors for this plane. The
+                // previous version tested all (5-8 per plane × 4-5 planes ≈
+                // 20-36 segment checks) which over-pruned — a plane realistically
+                // flies to one objective per turn, not all of them. future_traj_
+                // too_close already covers the most-likely next move (to nearest
+                // cargo/enemy); top-2 by distance here adds a safety margin for
+                // the second-likely objective without flagging every probe.
+                const planeCorridorsAll = ownApproachCorridors.filter((c) => c.plane === own);
+                if(planeCorridorsAll.length === 0) continue;
+                const planeCorridors = planeCorridorsAll
+                  .map((c) => ({ c, d: Math.hypot(c.ex - own.x, c.ey - own.y) }))
+                  .sort((a, b) => a.d - b.d)
+                  .slice(0, 2)
+                  .map((entry) => entry.c);
                 for(const corridor of planeCorridors){
                   const ownMeta = (typeof getMineThreatMetaForSegment === "function")
                     ? getMineThreatMetaForSegment(own.x, own.y, corridor.ex, corridor.ey, own, { mineOwner: aiColor })
