@@ -8925,7 +8925,14 @@ const SLIDE_THRESHOLD      = 0.1;
 // Larger hit area for selecting planes with touch/mouse
 const PLANE_TOUCH_RADIUS   = 20;                   // px
 const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit Anti-Aircraft center
-const MINE_TRIGGER_RADIUS  = 28; // v3.2: decoupled from VISUAL_RADIUS+PLANE_DRAW_W/2 (=33). Trigger < hangar-spacing/2 (59/2=29.5) so a mine placed between two parked planes doesn't auto-trigger on neighbors.
+const MINE_TRIGGER_RADIUS  = 24; // v3.3: reduced 28→24 after live-tester feedback —
+// mines too bulky to fit between planes parked on a base; AI also occasionally
+// self-detonated on its own defensive mines. All downstream AI buffers
+// (landing_safe_radius, cluster_radius, anchor_buf, approachBuf) scale from
+// MINE_TRIGGER_RADIUS automatically, so one number recalibrates the whole
+// defensive-mine system. Trade-off: enemies pass slightly closer to mines
+// without detonating. Still < hangar-spacing/2 (59/2=29.5) so a mine between
+// two parked planes does not auto-trigger on neighbors.
 const MINE_PLACEMENT_MIN_DISTANCE = 24; // v3.2: was MINE_SIZE_DEFAULTS.LOGICAL_PX (30). Lowered so 2×24=48 < 59px hangar-gap → mine fits between adjacent parked planes.
 const BOUNCE_FRAMES        = 68;
 // Duration of a full-speed flight on the field (measured in frames)
