@@ -27646,10 +27646,15 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
         // sizing the safe zone for buffed planes → self-detonation.
         const effRadius = (typeof getMineEffectiveTriggerRadius === "function")
           ? getMineEffectiveTriggerRadius(plane) : MINE_TRIGGER_RADIUS;
-        const landingSafe = Math.max(AI_DEFENSIVE_MINE_LANDING_SAFE_RADIUS, effRadius * 2.0);
-        const trajBuf = Math.max(AI_DEFENSIVE_MINE_OWN_TRAJ_BUFFER, effRadius * 2.5);
-        const ownSafe = Math.max(AI_DEFENSIVE_MINE_OWN_SAFE_RADIUS, effRadius * 2.5);
-        const futureTrajBuf = Math.max(AI_DEFENSIVE_MINE_OWN_FUTURE_TRAJ_BUFFER, effRadius * 2.5);
+        // v3.3 multi-turn safety: buffers raised because self-detonation still
+        // observed after PR #2795/#2797/#2798/#2799. Cause: AI plane that's
+        // *not yet flying* this turn lands within trigger radius of a
+        // freshly-placed mine on a later turn. Wider exclusion now reserves
+        // landing-zone slack for the next 1-2 turns.
+        const landingSafe = Math.max(AI_DEFENSIVE_MINE_LANDING_SAFE_RADIUS, effRadius * 3.0); // was 2.0×
+        const trajBuf = Math.max(AI_DEFENSIVE_MINE_OWN_TRAJ_BUFFER, effRadius * 3.0); // was 2.5×
+        const ownSafe = Math.max(AI_DEFENSIVE_MINE_OWN_SAFE_RADIUS, effRadius * 3.5); // was 2.5×
+        const futureTrajBuf = Math.max(AI_DEFENSIVE_MINE_OWN_FUTURE_TRAJ_BUFFER, effRadius * 3.0); // was 2.5×
         const landingDist = Math.hypot(px - ctx.landing.x, py - ctx.landing.y);
         if(landingDist < landingSafe) { rejects.landing_too_close += 1; continue; }
         if(aiBase && Number.isFinite(aiBase.x)
