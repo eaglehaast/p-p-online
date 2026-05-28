@@ -27540,6 +27540,29 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
     });
   }
 
+  // Self ricochet path — the launching plane rarely flies straight to landing:
+  // it bounces off side walls / bricks and keeps going after killing an enemy
+  // mid-flight. own_traj_too_close only checks the straight start→landing
+  // segment, so a mine on the *bent* part of the path was never caught — this
+  // is the tester's "конец маршрута после сбития пришёлся на мину" case.
+  // Simulate the real bounced path (reusing the enemy-projection helper) and
+  // gate placements against all its segments below.
+  const selfRicochetSegments = [];
+  if(typeof simulateEnemyRicochetTrajectory === "function"
+     && Number.isFinite(ctx.landing.x) && Number.isFinite(ctx.landing.y)){
+    const selfTraj = simulateEnemyRicochetTrajectory(plane.x, plane.y, ctx.landing.x, ctx.landing.y, {
+      maxBounces: 3,
+      radius: (typeof getPlaneDangerGeometry === "function")
+        ? (getPlaneDangerGeometry(plane)?.radius || CELL_SIZE * 0.3) : CELL_SIZE * 0.3,
+    });
+    for(let i = 0; i < selfTraj.length - 1; i += 1){
+      selfRicochetSegments.push({
+        sx: selfTraj[i].x, sy: selfTraj[i].y,
+        ex: selfTraj[i + 1].x, ey: selfTraj[i + 1].y,
+      });
+    }
+  }
+
   // strategic-v3: collect strategic priors for per-candidate score multiplier.
   // Priors reflect *spatial value* of a placement independent of hit-probability:
   //   - carrier-return segments (highest weight): if any enemy carries our flag,
@@ -27601,6 +27624,7 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
     landing_too_close: 0,
     own_base_too_close: 0,
     own_traj_too_close: 0,
+    own_ricochet_path: 0,
     other_own_too_close: 0,
     future_traj_too_close: 0,
     own_approach_corridor: 0,
@@ -27661,6 +27685,16 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
            && Math.hypot(px - aiBase.x, py - aiBase.y) < AI_DEFENSIVE_MINE_OWN_BASE_EXCLUSION) { rejects.own_base_too_close += 1; continue; }
         const trajDist = distancePointToSegment(px, py, plane.x, plane.y, ctx.landing.x, ctx.landing.y);
         if(trajDist < trajBuf) { rejects.own_traj_too_close += 1; continue; }
+        // Bounced-path guard: reject if placement is near any segment of the
+        // launching plane's real ricochet trajectory (it keeps flying after
+        // killing an enemy and the end of the bounced path may land on a mine).
+        let onSelfRicochet = false;
+        for(const seg of selfRicochetSegments){
+          if(distancePointToSegment(px, py, seg.sx, seg.sy, seg.ex, seg.ey) < trajBuf){
+            onSelfRicochet = true; break;
+          }
+        }
+        if(onSelfRicochet) { rejects.own_ricochet_path += 1; continue; }
         let blocksOwn = false;
         for(const own of ctx.ownPlanesToAvoid){
           if(Math.hypot(own.x - px, own.y - py) < ownSafe){
