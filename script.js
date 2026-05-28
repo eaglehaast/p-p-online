@@ -38997,6 +38997,35 @@ function isDirectFinisherScenario(plane, enemy, options = {}){
   return Math.hypot(enemy.x - plane.x, enemy.y - plane.y) <= effectiveRangePx;
 }
 
+// When the AI attacks an enemy that has one of *our own* defensive mines right
+// next to it, aiming dead-center makes the attacker skim the mine and self-
+// detonate. The enemy hitbox is ~36px wide (±18 from center), so we can aim at
+// the edge of the enemy *furthest from the mine* and still score the kill while
+// keeping the flight path away from our own mine. Returns the aim point.
+function computeMineAwareAimPoint(plane, enemy){
+  const fallback = { x: enemy.x, y: enemy.y };
+  const ownColor = plane?.color;
+  if(!ownColor || !Array.isArray(mines) || !Number.isFinite(enemy?.x)) return fallback;
+  let nearestMine = null;
+  let nearestD = Number.POSITIVE_INFINITY;
+  for(const m of mines){
+    if(!m || m.owner !== ownColor) continue;
+    if(!Number.isFinite(m.x) || !Number.isFinite(m.y)) continue;
+    const d = Math.hypot(m.x - enemy.x, m.y - enemy.y);
+    if(d < nearestD){ nearestD = d; nearestMine = m; }
+  }
+  // Only nudge when the mine is in the danger band around the enemy: close
+  // enough that a center-aimed pass would clip its trigger radius.
+  const riskBand = MINE_TRIGGER_RADIUS + 18 + 6;
+  if(!nearestMine || nearestD > riskBand) return fallback;
+  const away = normalizeMineVector(enemy.x - nearestMine.x, enemy.y - nearestMine.y);
+  if(!away) return fallback;
+  // 12px < half-hitbox (18), so the attacker still overlaps the enemy center
+  // on the pass, but the aim point (and thus the path) leans away from the mine.
+  const AIM_EDGE_OFFSET = 12;
+  return { x: enemy.x + away.x * AIM_EDGE_OFFSET, y: enemy.y + away.y * AIM_EDGE_OFFSET };
+}
+
 function findDirectFinisherMove(aiPlanes, enemies, options = {}){
   if(!Array.isArray(aiPlanes) || !Array.isArray(enemies)) return null;
 
@@ -39047,7 +39076,8 @@ function findDirectFinisherMove(aiPlanes, enemies, options = {}){
     for(const enemy of enemies){
       if(!isDirectFinisherScenario(plane, enemy)) continue;
 
-      const move = planPathToPoint(plane, enemy.x, enemy.y, {
+      const aim = computeMineAwareAimPoint(plane, enemy);
+      const move = planPathToPoint(plane, aim.x, aim.y, {
         prioritizeDirectFinisher: true,
         targetEnemy: enemy,
       });
