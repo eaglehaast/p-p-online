@@ -28867,6 +28867,35 @@ function buildFinalMineGateAggressiveFallbackReplan(plannedMove, context = {}, o
   return null;
 }
 
+// Launch-time ricochet-aware own-mine check. The straight start→landing segment
+// used by getMineThreatMetaForSegment ignores that the plane actually flies a
+// bounced path (resolveFlightSurfaceCollision reflects off walls/bricks). A mine
+// on the *bent* part of the real path passes the straight check yet detonates
+// mid-flight on our own mine — this is the persistent self-detonation the
+// placement-side gates couldn't fix. Simulate the real ricochet path (same
+// helper the defensive-mine planner uses) and report whether any own mine sits
+// within the plane's trigger radius of any segment.
+function launchPathHitsOwnMineRicochet(plane, startX, startY, endX, endY){
+  if(!plane?.color || typeof simulateEnemyRicochetTrajectory !== "function") return false;
+  if(!Array.isArray(mines) || mines.length === 0) return false;
+  if(![startX, startY, endX, endY].every(Number.isFinite)) return false;
+  const ownMines = mines.filter((m) => m && m.owner === plane.color && Number.isFinite(m.x) && Number.isFinite(m.y));
+  if(ownMines.length === 0) return false;
+  const triggerR = (typeof getMineEffectiveTriggerRadius === "function")
+    ? getMineEffectiveTriggerRadius(plane) : MINE_TRIGGER_RADIUS;
+  const flightRadius = (typeof getPlaneDangerGeometry === "function")
+    ? (getPlaneDangerGeometry(plane)?.radius || CELL_SIZE * 0.3) : CELL_SIZE * 0.3;
+  const traj = simulateEnemyRicochetTrajectory(startX, startY, endX, endY, { maxBounces: 4, radius: flightRadius });
+  if(!Array.isArray(traj) || traj.length < 2) return false;
+  for(let i = 0; i < traj.length - 1; i += 1){
+    for(const m of ownMines){
+      const d = getDistanceFromPointToSegment(m.x, m.y, traj[i].x, traj[i].y, traj[i + 1].x, traj[i + 1].y);
+      if(d <= triggerR) return true;
+    }
+  }
+  return false;
+}
+
 function getFinalAiLaunchMineThreatCheck(plannedMove){
   const plane = plannedMove?.plane || null;
   const durationSec = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
@@ -28945,12 +28974,15 @@ function getFinalAiLaunchMineThreatCheck(plannedMove){
         { mineOwner: plane.color },
       )
     : null;
-  const blockedByOwnMine = Boolean(ownMineThreatMeta?.pathHit || ownMineThreatMeta?.landingThreat);
+  const ownMineRicochetHit = launchPathHitsOwnMineRicochet(
+    plane, startPoint.x, startPoint.y, landingPoint.x, landingPoint.y
+  );
+  const blockedByOwnMine = Boolean(ownMineThreatMeta?.pathHit || ownMineThreatMeta?.landingThreat) || ownMineRicochetHit;
   if(blockedByOwnMine){
     return {
       ok: false,
       reason: "path_crosses_own_mine",
-      reasonCode: "final_mine_check_rejected_own_mine",
+      reasonCode: ownMineRicochetHit ? "final_mine_check_rejected_own_mine_ricochet" : "final_mine_check_rejected_own_mine",
       threatClass: "critical_self_mine",
       ownMineThreat: true,
       threatMeta: {
@@ -35565,6 +35597,11 @@ function getGuaranteedAnyLegalLaunch(context){
           if(ownMineMeta && (ownMineMeta.pathHit || ownMineMeta.landingThreat)){
             continue;
           }
+        }
+        // Same ricochet blind-spot as the main launch gate: the straight check
+        // above misses mines on the bounced part of the real flight path.
+        if(launchPathHitsOwnMineRicochet(plane, plane.x, plane.y, landingX, landingY)){
+          continue;
         }
 
         return normalizeFailSafeLaunchCandidate({
