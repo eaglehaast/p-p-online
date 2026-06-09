@@ -11231,6 +11231,48 @@ const AI_FAIL_FAST_SOFT_REASON_CODES = new Set([
   "ai_launch_min_distance_scaled_up",  // tried to commit <5-cell move
 ]);
 
+// Behavioral fallback detector — fires when the AI commits a "good-looking"
+// move (no canonical fallback reasonCode, no isFallbackMove flag, normal
+// human_window release) but the actual landing is obviously bad: too short,
+// or directly into a wall. This catches the class of fallback the live tester
+// describes as "пустой ход" / "лечу в стенку" — AI thinks the plan is fine,
+// outcome says otherwise. Only invoked from inside aiFailFastShouldCapture
+// (i.e. only when window.aiFailFast === true).
+let AI_FAIL_FAST_LAST_BEHAVIORAL_REASON = null;
+function aiFailFastIsBehavioralFallback(reasonCode){
+  AI_FAIL_FAST_LAST_BEHAVIORAL_REASON = null;
+  if(reasonCode !== "ai_launch_release") return false;
+  if(typeof aiLaunchSession === "undefined" || !aiLaunchSession || !aiLaunchSession.plane) return false;
+  const plane = aiLaunchSession.plane;
+  const vx = Number(aiLaunchSession.vx);
+  const vy = Number(aiLaunchSession.vy);
+  if(!Number.isFinite(plane.x) || !Number.isFinite(plane.y)) return false;
+  if(!Number.isFinite(vx) || !Number.isFinite(vy)) return false;
+  const T = (typeof FIELD_FLIGHT_DURATION_SEC === "number" && FIELD_FLIGHT_DURATION_SEC > 0)
+    ? FIELD_FLIGHT_DURATION_SEC : 1;
+  const lx = plane.x + vx * T;
+  const ly = plane.y + vy * T;
+  const dist = Math.hypot(vx, vy) * T;
+  if(typeof CELL_SIZE === "number" && dist < CELL_SIZE * 6){
+    AI_FAIL_FAST_LAST_BEHAVIORAL_REASON = "behavioral_short_move";
+    return true;
+  }
+  if(typeof findFirstSurfaceHit === "function" && typeof CELL_SIZE === "number"){
+    try {
+      const hit = findFirstSurfaceHit(
+        { x: plane.x, y: plane.y },
+        { x: lx, y: ly },
+        CELL_SIZE * 0.3
+      );
+      if(hit && Number.isFinite(hit.t) && hit.t < 0.7){
+        AI_FAIL_FAST_LAST_BEHAVIORAL_REASON = "behavioral_wall_strike";
+        return true;
+      }
+    } catch (_) { /* surface lookup must never throw the detector */ }
+  }
+  return false;
+}
+
 function aiFailFastIsFallbackEvent(stage, reasonCode, payload){
   // Explicit caller-marked fallback move (8 callers in script.js set this).
   if(payload && payload.isFallbackMove === true) return true;
@@ -11250,6 +11292,9 @@ function aiFailFastIsFallbackEvent(stage, reasonCode, payload){
     if(typeof AI_TECHNICAL_FAIL_SAFE_REASON_CODES !== "undefined" && AI_TECHNICAL_FAIL_SAFE_REASON_CODES.has(c)) return true;
     if(AI_FAIL_FAST_SOFT_REASON_CODES.has(c)) return true;
   }
+  // Behavioral check — last resort. AI committed a normal-looking plan but
+  // the resulting flight is bad (short / into wall).
+  if(aiFailFastIsBehavioralFallback(c || reasonCode)) return true;
   return false;
 }
 
@@ -11417,6 +11462,8 @@ function aiFailFastCaptureSnapshot(source, details, stage){
         reasonCode,
         rejectReasons: Array.isArray(details?.rejectReasons) ? details.rejectReasons : null,
         reasonCategory: details?.reasonCategory || null,
+        behavioralReason: AI_FAIL_FAST_LAST_BEHAVIORAL_REASON,
+        isFallbackMoveFlag: details?.isFallbackMove === true,
       },
       goalAttempts,
       decisionsLog,
