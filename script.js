@@ -11223,7 +11223,20 @@ function aiFailFastIsArmed(){
   return typeof window !== "undefined" && window.aiFailFast === true;
 }
 
-function aiFailFastIsFallbackEvent(stage, reasonCode){
+// Additional "soft" reason codes that are not formal fallbacks but reliably
+// indicate the AI failed to find a good plan and committed to a desperate
+// move. Discovered from live telemetry where the AI "flew into a wall" but
+// none of the canonical AI_FALLBACK_REASON_CODES fired.
+const AI_FAIL_FAST_SOFT_REASON_CODES = new Set([
+  "ai_launch_min_distance_scaled_up",  // tried to commit <5-cell move
+]);
+
+function aiFailFastIsFallbackEvent(stage, reasonCode, payload){
+  // Explicit caller-marked fallback move (8 callers in script.js set this).
+  if(payload && payload.isFallbackMove === true) return true;
+  // Timeout-driven emergency release (launch window deadline expired).
+  if(payload && (payload.releaseCause === "deadline_emergency_release"
+                 || payload.reason === "timeout_deadline")) return true;
   const s = `${stage || ""}`.toLowerCase();
   if(s){
     if(typeof AI_FALLBACK_STAGES !== "undefined" && AI_FALLBACK_STAGES.has(s)) return true;
@@ -11235,13 +11248,14 @@ function aiFailFastIsFallbackEvent(stage, reasonCode){
     if(typeof AI_FALLBACK_REASON_CODES !== "undefined" && AI_FALLBACK_REASON_CODES.has(c)) return true;
     if(typeof AI_RECOVERY_PROGRESS_REASON_CODES !== "undefined" && AI_RECOVERY_PROGRESS_REASON_CODES.has(c)) return true;
     if(typeof AI_TECHNICAL_FAIL_SAFE_REASON_CODES !== "undefined" && AI_TECHNICAL_FAIL_SAFE_REASON_CODES.has(c)) return true;
+    if(AI_FAIL_FAST_SOFT_REASON_CODES.has(c)) return true;
   }
   return false;
 }
 
-function aiFailFastShouldCapture(stage, reasonCode){
+function aiFailFastShouldCapture(stage, reasonCode, payload){
   if(!aiFailFastIsArmed()) return false;
-  if(!aiFailFastIsFallbackEvent(stage, reasonCode)) return false;
+  if(!aiFailFastIsFallbackEvent(stage, reasonCode, payload)) return false;
   const turn = (typeof aiRoundState !== "undefined" && Number.isFinite(aiRoundState?.turnNumber))
     ? aiRoundState.turnNumber : -1;
   const round = (typeof roundNumber !== "undefined" && Number.isFinite(roundNumber)) ? roundNumber : -1;
@@ -11436,7 +11450,7 @@ function recordAiSelfAnalyzerDecision(stage, details = {}){
   if(aiFailFastIsArmed()){
     const rc = details?.reasonCode
       || (Array.isArray(details?.reasonCodes) ? details.reasonCodes[0] : null);
-    if(aiFailFastShouldCapture(stage, rc)){
+    if(aiFailFastShouldCapture(stage, rc, details)){
       aiFailFastCaptureSnapshot("self_analyzer", details, stage);
     }
   }
@@ -19630,7 +19644,7 @@ function logAiDecision(reason, details = {}){
   if(!(typeof payload.reasonCode === "string" && payload.reasonCode.trim().length > 0)){
     payload.reasonCode = payload.reason || reason || null;
   }
-  if(aiFailFastIsArmed() && aiFailFastShouldCapture(reason, payload.reasonCode)){
+  if(aiFailFastIsArmed() && aiFailFastShouldCapture(reason, payload.reasonCode, payload)){
     aiFailFastCaptureSnapshot("log_ai_decision", payload, reason);
   }
   if(!shouldEmitAiDecision(reason, payload)) return;
