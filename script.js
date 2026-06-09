@@ -11198,6 +11198,217 @@ function startAiSelfAnalyzerMatchIfNeeded(){
   };
 }
 
+// =========================================================================
+// aiFailFast — diagnostic capture of the first fallback event per turn.
+// Behaviour-neutral: when window.aiFailFast !== true, the only cost is a
+// single property read. When true, the first fallback-class event in a turn
+// triggers a full snapshot (decisions log tail, self-analyzer events tail,
+// compact field state), prints it to console, and pauses the game loop so
+// the snapshot can be studied. Inspect:
+//   window.aiFailFast = true;          // arm
+//   aiFallbackDebug();                 // last snapshot as JSON
+//   aiFallbackDebug({ limit: 5 });     // last N
+//   aiFallbackDebug({ clear: true });  // drop buffer
+//   aiFallbackResume();                // restart game loop
+// =========================================================================
+const AI_FAIL_FAST_BUFFER = [];
+const AI_FAIL_FAST_MAX = 20;
+const AI_FAIL_FAST_DECISION_TAIL = 40;
+const AI_FAIL_FAST_FB_REPORT_TAIL = 15;
+const AI_FAIL_FAST_SA_EVENTS_TAIL = 30;
+let aiFailFastLastCapturedTurn = -1;
+let aiFailFastLastCapturedRound = -1;
+
+function aiFailFastIsArmed(){
+  return typeof window !== "undefined" && window.aiFailFast === true;
+}
+
+function aiFailFastIsFallbackEvent(stage, reasonCode){
+  const s = `${stage || ""}`.toLowerCase();
+  if(s){
+    if(typeof AI_FALLBACK_STAGES !== "undefined" && AI_FALLBACK_STAGES.has(s)) return true;
+    if(typeof AI_RECOVERY_PROGRESS_STAGES !== "undefined" && AI_RECOVERY_PROGRESS_STAGES.has(s)) return true;
+    if(typeof AI_TECHNICAL_FAIL_SAFE_STAGES !== "undefined" && AI_TECHNICAL_FAIL_SAFE_STAGES.has(s)) return true;
+  }
+  const c = `${reasonCode || ""}`.toLowerCase();
+  if(c){
+    if(typeof AI_FALLBACK_REASON_CODES !== "undefined" && AI_FALLBACK_REASON_CODES.has(c)) return true;
+    if(typeof AI_RECOVERY_PROGRESS_REASON_CODES !== "undefined" && AI_RECOVERY_PROGRESS_REASON_CODES.has(c)) return true;
+    if(typeof AI_TECHNICAL_FAIL_SAFE_REASON_CODES !== "undefined" && AI_TECHNICAL_FAIL_SAFE_REASON_CODES.has(c)) return true;
+  }
+  return false;
+}
+
+function aiFailFastShouldCapture(stage, reasonCode){
+  if(!aiFailFastIsArmed()) return false;
+  if(!aiFailFastIsFallbackEvent(stage, reasonCode)) return false;
+  const turn = (typeof aiRoundState !== "undefined" && Number.isFinite(aiRoundState?.turnNumber))
+    ? aiRoundState.turnNumber : -1;
+  const round = (typeof roundNumber !== "undefined" && Number.isFinite(roundNumber)) ? roundNumber : -1;
+  if(turn === aiFailFastLastCapturedTurn && round === aiFailFastLastCapturedRound){
+    return false;
+  }
+  return true;
+}
+
+function aiFailFastBuildFieldSnapshot(focusPlane){
+  const out = {
+    ai: { color: null, planesAlive: 0, launchReady: [], flying: [] },
+    enemy: { color: null, planesAlive: 0, flying: [], carriers: [] },
+    cargo: { onField: [], heldBy: null },
+    mines: { own: 0, enemy: 0, recentOwnPositions: [] },
+    flags: { mode: null, ownCarried: false, enemyCarried: false },
+    turnFlags: { goalChangedThisTurn: null, openingActive: null },
+  };
+  try {
+    const aiColor = focusPlane?.color || "blue";
+    const enemyColor = aiColor === "blue" ? "green" : "blue";
+    out.ai.color = aiColor;
+    out.enemy.color = enemyColor;
+    const livePoints = Array.isArray(points) ? points : [];
+    const isFlying = (p) => Array.isArray(flyingPoints) && flyingPoints.some((fp) => fp.plane === p);
+    for(const p of livePoints){
+      if(!p || !p.isAlive || p.burning) continue;
+      if(p.color === aiColor){
+        out.ai.planesAlive += 1;
+        if(isFlying(p)) out.ai.flying.push(p.id || null);
+        else if(typeof isPlaneLaunchStateReady === "function" && isPlaneLaunchStateReady(p)) out.ai.launchReady.push(p.id || null);
+      } else if(p.color === enemyColor){
+        out.enemy.planesAlive += 1;
+        if(isFlying(p)) out.enemy.flying.push(p.id || null);
+        if(p.carriedFlagId) out.enemy.carriers.push(p.id || null);
+      }
+    }
+    if(typeof cargoState !== "undefined" && Array.isArray(cargoState)){
+      for(const c of cargoState){
+        if(!c) continue;
+        if(c.state === "ready" && Number.isFinite(c.x) && Number.isFinite(c.y)){
+          out.cargo.onField.push({ id: c.id || null, x: Math.round(c.x), y: Math.round(c.y) });
+        }
+        if(c.heldBy != null) out.cargo.heldBy = c.heldBy;
+      }
+    }
+    if(Array.isArray(mines)){
+      const recentOwn = [];
+      for(const m of mines){
+        if(!m) continue;
+        if(m.owner === aiColor){
+          out.mines.own += 1;
+          if(recentOwn.length < 3 && Number.isFinite(m.x) && Number.isFinite(m.y)){
+            recentOwn.push({ x: Math.round(m.x), y: Math.round(m.y) });
+          }
+        } else if(m.owner === enemyColor){
+          out.mines.enemy += 1;
+        }
+      }
+      out.mines.recentOwnPositions = recentOwn;
+    }
+    if(typeof flags !== "undefined" && Array.isArray(flags)){
+      out.flags.ownCarried = flags.some((f) => f && f.color === aiColor && f.state !== "active");
+      out.flags.enemyCarried = flags.some((f) => f && f.color === enemyColor && f.state !== "active");
+    }
+    if(typeof aiRoundState !== "undefined"){
+      out.turnFlags.openingActive = aiRoundState?.openingActive ?? null;
+      out.turnFlags.goalChangedThisTurn = aiRoundState?.goalChangedThisTurn ?? null;
+    }
+  } catch (_) { /* keep partial snapshot */ }
+  return out;
+}
+
+function aiFailFastCaptureSnapshot(source, details, stage){
+  try {
+    const reasonCode = details?.reasonCode
+      || (Array.isArray(details?.reasonCodes) ? details.reasonCodes[0] : null)
+      || null;
+    const focusPlane = details?.plane
+      || (details?.planeId != null && Array.isArray(points)
+            ? points.find((p) => p && p.id === details.planeId)
+            : null)
+      || null;
+    const decisionsLog = (typeof getBufferedAiDecisionEvents === "function")
+      ? getBufferedAiDecisionEvents(AI_FAIL_FAST_DECISION_TAIL) : [];
+    const fallbackReport = (typeof getAiFallbackReportEntries === "function")
+      ? getAiFallbackReportEntries(AI_FAIL_FAST_FB_REPORT_TAIL) : [];
+    const active = (typeof aiSelfAnalyzerState !== "undefined") ? aiSelfAnalyzerState?.activeMatch : null;
+    const saEvents = Array.isArray(active?.events) ? active.events.slice(-AI_FAIL_FAST_SA_EVENTS_TAIL) : [];
+    const goalChain = [];
+    const seenGoals = new Set();
+    for(const ev of saEvents){
+      const g = ev?.goal;
+      if(g && typeof g === "string" && !seenGoals.has(g)){
+        seenGoals.add(g);
+        goalChain.push(g);
+      }
+    }
+    const rejectedPlans = saEvents
+      .filter((ev) => ev && (Array.isArray(ev.rejectReasons) ? ev.rejectReasons.length > 0 : false))
+      .slice(-10)
+      .map((ev) => ({
+        stage: ev.stage || null,
+        reasonCode: ev.reasonCode || null,
+        rejectReasons: ev.rejectReasons || [],
+        goal: ev.goal || null,
+      }));
+    const snapshot = {
+      t: Date.now(),
+      at: (typeof safeNowIso === "function") ? safeNowIso() : new Date().toISOString(),
+      turn: (typeof aiRoundState !== "undefined" && Number.isFinite(aiRoundState?.turnNumber))
+        ? aiRoundState.turnNumber : null,
+      round: (typeof roundNumber !== "undefined" && Number.isFinite(roundNumber)) ? roundNumber : null,
+      goal: (typeof aiRoundState !== "undefined") ? (aiRoundState?.currentGoal ?? null) : null,
+      goalChain,
+      plane: focusPlane ? {
+        id: focusPlane.id || null,
+        color: focusPlane.color || null,
+        x: Number.isFinite(focusPlane.x) ? Math.round(focusPlane.x) : null,
+        y: Number.isFinite(focusPlane.y) ? Math.round(focusPlane.y) : null,
+        rangePx: (typeof getPlaneEffectiveRangePx === "function") ? getPlaneEffectiveRangePx(focusPlane) : null,
+        launchReady: (typeof isPlaneLaunchStateReady === "function") ? isPlaneLaunchStateReady(focusPlane) : null,
+      } : null,
+      triggerEvent: {
+        source,
+        stage: stage || null,
+        reasonCode,
+        rejectReasons: Array.isArray(details?.rejectReasons) ? details.rejectReasons : null,
+        reasonCategory: details?.reasonCategory || null,
+      },
+      decisionsLog,
+      fallbackReport,
+      selfAnalyzerEvents: saEvents,
+      rejectedPlans,
+      fieldSnapshot: aiFailFastBuildFieldSnapshot(focusPlane),
+    };
+    AI_FAIL_FAST_BUFFER.push(snapshot);
+    if(AI_FAIL_FAST_BUFFER.length > AI_FAIL_FAST_MAX) AI_FAIL_FAST_BUFFER.shift();
+    aiFailFastLastCapturedTurn = snapshot.turn;
+    aiFailFastLastCapturedRound = snapshot.round;
+    try {
+      console.log("[AI-FALLBACK-TRACE]", JSON.stringify(snapshot, null, 2));
+      console.log("[AI-FALLBACK-TRACE] Game paused. Call aiFallbackResume() to continue, aiFallbackDebug() to re-read.");
+    } catch (_) {}
+    if(typeof stopGameLoop === "function") stopGameLoop();
+  } catch (_err) { /* diagnostics must never break AI */ }
+}
+
+if(typeof window !== "undefined"){
+  if(window.aiFailFast !== true) window.aiFailFast = false;
+  window.aiFallbackDebug = function(opts){
+    if(opts && opts.clear){
+      AI_FAIL_FAST_BUFFER.length = 0;
+      aiFailFastLastCapturedTurn = -1;
+      aiFailFastLastCapturedRound = -1;
+      return "cleared";
+    }
+    const limit = Number.isFinite(opts?.limit) ? Math.max(1, Math.floor(opts.limit)) : 1;
+    const tail = AI_FAIL_FAST_BUFFER.slice(-limit);
+    return JSON.stringify(limit === 1 ? (tail[0] ?? null) : tail, null, 2);
+  };
+  window.aiFallbackResume = function(){
+    if(typeof startGameLoop === "function"){ startGameLoop(); return "resumed"; }
+    return "startGameLoop unavailable";
+  };
+}
+
 function recordAiSelfAnalyzerEvent(event){
   const active = aiSelfAnalyzerState.activeMatch;
   if(!active || !event || typeof event !== "object") return;
@@ -11222,6 +11433,13 @@ function recordAiSelfAnalyzerEvent(event){
 }
 
 function recordAiSelfAnalyzerDecision(stage, details = {}){
+  if(aiFailFastIsArmed()){
+    const rc = details?.reasonCode
+      || (Array.isArray(details?.reasonCodes) ? details.reasonCodes[0] : null);
+    if(aiFailFastShouldCapture(stage, rc)){
+      aiFailFastCaptureSnapshot("self_analyzer", details, stage);
+    }
+  }
   const active = aiSelfAnalyzerState.activeMatch;
   if(!active || !stage) return;
 
@@ -19411,6 +19629,9 @@ function logAiDecision(reason, details = {}){
   }
   if(!(typeof payload.reasonCode === "string" && payload.reasonCode.trim().length > 0)){
     payload.reasonCode = payload.reason || reason || null;
+  }
+  if(aiFailFastIsArmed() && aiFailFastShouldCapture(reason, payload.reasonCode)){
+    aiFailFastCaptureSnapshot("log_ai_decision", payload, reason);
   }
   if(!shouldEmitAiDecision(reason, payload)) return;
   if(shouldAggregateAiDecision(reason, payload)){
