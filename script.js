@@ -11213,9 +11213,9 @@ function startAiSelfAnalyzerMatchIfNeeded(){
 // =========================================================================
 const AI_FAIL_FAST_BUFFER = [];
 const AI_FAIL_FAST_MAX = 20;
-const AI_FAIL_FAST_DECISION_TAIL = 40;
-const AI_FAIL_FAST_FB_REPORT_TAIL = 15;
-const AI_FAIL_FAST_SA_EVENTS_TAIL = 30;
+const AI_FAIL_FAST_DECISION_TAIL = 80;
+const AI_FAIL_FAST_FB_REPORT_TAIL = 30;
+const AI_FAIL_FAST_SA_EVENTS_TAIL = 60;
 let aiFailFastLastCapturedTurn = -1;
 let aiFailFastLastCapturedRound = -1;
 
@@ -11334,11 +11334,21 @@ function aiFailFastCaptureSnapshot(source, details, stage){
     const reasonCode = details?.reasonCode
       || (Array.isArray(details?.reasonCodes) ? details.reasonCodes[0] : null)
       || null;
-    const focusPlane = details?.plane
-      || (details?.planeId != null && Array.isArray(points)
-            ? points.find((p) => p && p.id === details.planeId)
-            : null)
-      || null;
+    // Plane lookup ladder: explicit plane → planeId → live launch session →
+    // first flying AI plane. ai_launch_release sometimes logs with planeId=null
+    // even though aiLaunchSession is active — without this fallback "plane" was
+    // null in the snapshot, killing the analysis.
+    let focusPlane = details?.plane || null;
+    if(!focusPlane && details?.planeId != null && Array.isArray(points)){
+      focusPlane = points.find((p) => p && p.id === details.planeId) || null;
+    }
+    if(!focusPlane && typeof aiLaunchSession !== "undefined" && aiLaunchSession?.plane){
+      focusPlane = aiLaunchSession.plane;
+    }
+    if(!focusPlane && Array.isArray(flyingPoints) && flyingPoints.length > 0){
+      const aiFlying = flyingPoints.find((fp) => fp?.plane?.color === "blue");
+      if(aiFlying?.plane) focusPlane = aiFlying.plane;
+    }
     const decisionsLog = (typeof getBufferedAiDecisionEvents === "function")
       ? getBufferedAiDecisionEvents(AI_FAIL_FAST_DECISION_TAIL) : [];
     const fallbackReport = (typeof getAiFallbackReportEntries === "function")
@@ -11356,13 +11366,35 @@ function aiFailFastCaptureSnapshot(source, details, stage){
     }
     const rejectedPlans = saEvents
       .filter((ev) => ev && (Array.isArray(ev.rejectReasons) ? ev.rejectReasons.length > 0 : false))
-      .slice(-10)
+      .slice(-20)
       .map((ev) => ({
         stage: ev.stage || null,
         reasonCode: ev.reasonCode || null,
         rejectReasons: ev.rejectReasons || [],
         goal: ev.goal || null,
       }));
+    // Per-goal summary: for each goal seen this turn, collect *why* it failed
+    // — the reasonCodes from sa events and rejectReasons. This is the field
+    // we actually want to read: "goal X tried, rejected because Y".
+    const goalAttempts = [];
+    for(const g of goalChain){
+      const events = saEvents.filter((ev) => ev?.goal === g);
+      const reasonCodes = [];
+      const rejectReasonsAgg = [];
+      for(const ev of events){
+        if(ev?.reasonCode) reasonCodes.push(ev.reasonCode);
+        if(Array.isArray(ev?.reasonCodes)) reasonCodes.push(...ev.reasonCodes);
+        if(Array.isArray(ev?.rejectReasons)) rejectReasonsAgg.push(...ev.rejectReasons);
+      }
+      goalAttempts.push({
+        goal: g,
+        eventCount: events.length,
+        lastStage: events[events.length - 1]?.stage || null,
+        lastReasonCode: events[events.length - 1]?.reasonCode || null,
+        uniqueReasonCodes: Array.from(new Set(reasonCodes)).slice(0, 12),
+        uniqueRejectReasons: Array.from(new Set(rejectReasonsAgg)).slice(0, 12),
+      });
+    }
     const snapshot = {
       t: Date.now(),
       at: (typeof safeNowIso === "function") ? safeNowIso() : new Date().toISOString(),
@@ -11386,6 +11418,7 @@ function aiFailFastCaptureSnapshot(source, details, stage){
         rejectReasons: Array.isArray(details?.rejectReasons) ? details.rejectReasons : null,
         reasonCategory: details?.reasonCategory || null,
       },
+      goalAttempts,
       decisionsLog,
       fallbackReport,
       selfAnalyzerEvents: saEvents,
