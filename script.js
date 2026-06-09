@@ -8925,14 +8925,20 @@ const SLIDE_THRESHOLD      = 0.1;
 // Larger hit area for selecting planes with touch/mouse
 const PLANE_TOUCH_RADIUS   = 20;                   // px
 const AA_HIT_RADIUS        = POINT_RADIUS + 5; // slightly larger zone to hit Anti-Aircraft center
-const MINE_TRIGGER_RADIUS  = 24; // v3.3: reduced 28→24 after live-tester feedback —
-// mines too bulky to fit between planes parked on a base; AI also occasionally
-// self-detonated on its own defensive mines. All downstream AI buffers
-// (landing_safe_radius, cluster_radius, anchor_buf, approachBuf) scale from
-// MINE_TRIGGER_RADIUS automatically, so one number recalibrates the whole
-// defensive-mine system. Trade-off: enemies pass slightly closer to mines
-// without detonating. Still < hangar-spacing/2 (59/2=29.5) so a mine between
-// two parked planes does not auto-trigger on neighbors.
+const MINE_TRIGGER_RADIUS  = 28; // v3.4: restored 24→28 after diagnosing the
+// "AI corrected its route around a mine, but not enough" symptom. Root cause:
+// runtime detonation uses getMineEffectiveTriggerRadius(plane) which returns
+// MINE_VISUAL_RADIUS + halfSpan ≈ 31.5 px — completely independent of this
+// constant. Lowering MINE_TRIGGER_RADIUS to 24 (PR #2799) didn't make mines
+// physically smaller, it just shrank the AI's *safety margin*: AI thought 24+9=
+// 33 px was safe, but actual trigger fires at 31.5 → margin only 1.5 px,
+// literally a wingtip away from self-detonation. With 28 the margin is 28+9=37
+// vs 31.5 → 5.5 px of slack, a much more forgiving buffer for ricochet drift.
+// "Mines between parked planes" wish from PR #2799 was never affected by this
+// constant anyway: isMinePlacementValid's tooCloseToPlane check uses the
+// *effective* trigger, not this constant — so parked-plane spacing stays the
+// same. All downstream AI buffers (landing_safe, cluster, approach, anchor)
+// scale from this constant and now leave proper slack around the real trigger.
 const MINE_PLACEMENT_MIN_DISTANCE = 24; // v3.2: was MINE_SIZE_DEFAULTS.LOGICAL_PX (30). Lowered so 2×24=48 < 59px hangar-gap → mine fits between adjacent parked planes.
 const BOUNCE_FRAMES        = 68;
 // Duration of a full-speed flight on the field (measured in frames)
