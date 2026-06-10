@@ -11439,15 +11439,15 @@ function aiFailFastBuildFieldSnapshot(focusPlane){
   return out;
 }
 
-function aiFailFastCaptureSnapshot(source, details, stage){
+// Builds the rich snapshot used by both the aiFailFast capture (pauses the
+// game) and the always-on aiLastMoveDebug recorder. Returns the snapshot
+// object or null if construction failed at any step (caller decides how to
+// react). Pure: no buffer mutation, no console output, no game-loop control.
+function aiFailFastBuildSnapshot(source, details, stage){
   try {
     const reasonCode = details?.reasonCode
       || (Array.isArray(details?.reasonCodes) ? details.reasonCodes[0] : null)
       || null;
-    // Plane lookup ladder: explicit plane → planeId → live launch session →
-    // first flying AI plane. ai_launch_release sometimes logs with planeId=null
-    // even though aiLaunchSession is active — without this fallback "plane" was
-    // null in the snapshot, killing the analysis.
     let focusPlane = details?.plane || null;
     if(!focusPlane && details?.planeId != null && Array.isArray(points)){
       focusPlane = points.find((p) => p && p.id === details.planeId) || null;
@@ -11483,9 +11483,6 @@ function aiFailFastCaptureSnapshot(source, details, stage){
         rejectReasons: ev.rejectReasons || [],
         goal: ev.goal || null,
       }));
-    // Per-goal summary: for each goal seen this turn, collect *why* it failed
-    // — the reasonCodes from sa events and rejectReasons. This is the field
-    // we actually want to read: "goal X tried, rejected because Y".
     const goalAttempts = [];
     for(const g of goalChain){
       const events = saEvents.filter((ev) => ev?.goal === g);
@@ -11505,7 +11502,7 @@ function aiFailFastCaptureSnapshot(source, details, stage){
         uniqueRejectReasons: Array.from(new Set(rejectReasonsAgg)).slice(0, 12),
       });
     }
-    const snapshot = {
+    return {
       t: Date.now(),
       at: (typeof safeNowIso === "function") ? safeNowIso() : new Date().toISOString(),
       turn: (typeof aiRoundState !== "undefined" && Number.isFinite(aiRoundState?.turnNumber))
@@ -11521,6 +11518,15 @@ function aiFailFastCaptureSnapshot(source, details, stage){
         rangePx: (typeof getPlaneEffectiveRangePx === "function") ? getPlaneEffectiveRangePx(focusPlane) : null,
         launchReady: (typeof isPlaneLaunchStateReady === "function") ? isPlaneLaunchStateReady(focusPlane) : null,
       } : null,
+      launchVector: (typeof aiLaunchSession !== "undefined" && aiLaunchSession?.plane === focusPlane && Number.isFinite(aiLaunchSession?.vx))
+        ? {
+            vx: Number(aiLaunchSession.vx.toFixed(2)),
+            vy: Number(aiLaunchSession.vy.toFixed(2)),
+            landingX: Math.round(focusPlane.x + aiLaunchSession.vx * FIELD_FLIGHT_DURATION_SEC),
+            landingY: Math.round(focusPlane.y + aiLaunchSession.vy * FIELD_FLIGHT_DURATION_SEC),
+            distancePx: Math.round(Math.hypot(aiLaunchSession.vx, aiLaunchSession.vy) * FIELD_FLIGHT_DURATION_SEC),
+          }
+        : null,
       triggerEvent: {
         source,
         stage: stage || null,
@@ -11537,6 +11543,32 @@ function aiFailFastCaptureSnapshot(source, details, stage){
       rejectedPlans,
       fieldSnapshot: aiFailFastBuildFieldSnapshot(focusPlane),
     };
+  } catch (_err) {
+    return null;
+  }
+}
+
+// Always-on ring buffer of recent AI moves. Recorded on every ai_launch_release
+// regardless of window.aiFailFast — the tester wanted a way to inspect a bad
+// move *after the fact* without having to predict it. Inspect via:
+//   aiLastMoveDebug();              // last move JSON
+//   aiLastMoveDebug({ limit: 5 });  // last N moves
+//   aiLastMoveDebug({ clear: true });
+const AI_LAST_MOVES_BUFFER = [];
+const AI_LAST_MOVES_MAX = 10;
+function aiFailFastRecordLastMove(source, details, stage){
+  try {
+    const snapshot = aiFailFastBuildSnapshot(source, details, stage);
+    if(!snapshot) return;
+    AI_LAST_MOVES_BUFFER.push(snapshot);
+    if(AI_LAST_MOVES_BUFFER.length > AI_LAST_MOVES_MAX) AI_LAST_MOVES_BUFFER.shift();
+  } catch (_) { /* must never break AI */ }
+}
+
+function aiFailFastCaptureSnapshot(source, details, stage){
+  try {
+    const snapshot = aiFailFastBuildSnapshot(source, details, stage);
+    if(!snapshot) return;
     AI_FAIL_FAST_BUFFER.push(snapshot);
     if(AI_FAIL_FAST_BUFFER.length > AI_FAIL_FAST_MAX) AI_FAIL_FAST_BUFFER.shift();
     aiFailFastLastCapturedTurn = snapshot.turn;
@@ -11565,6 +11597,12 @@ if(typeof window !== "undefined"){
   window.aiFallbackResume = function(){
     if(typeof startGameLoop === "function"){ startGameLoop(); return "resumed"; }
     return "startGameLoop unavailable";
+  };
+  window.aiLastMoveDebug = function(opts){
+    if(opts && opts.clear){ AI_LAST_MOVES_BUFFER.length = 0; return "cleared"; }
+    const limit = Number.isFinite(opts?.limit) ? Math.max(1, Math.floor(opts.limit)) : 1;
+    const tail = AI_LAST_MOVES_BUFFER.slice(-limit);
+    return JSON.stringify(limit === 1 ? (tail[0] ?? null) : tail, null, 2);
   };
 }
 
@@ -19791,6 +19829,11 @@ function logAiDecision(reason, details = {}){
   }
   if(aiFailFastIsArmed() && aiFailFastShouldCapture(reason, payload.reasonCode, payload)){
     aiFailFastCaptureSnapshot("log_ai_decision", payload, reason);
+  }
+  // Always-on: record every ai_launch_release as the "last AI move" so
+  // aiLastMoveDebug() can show motivation of any move after the fact.
+  if(reason === "ai_launch_release"){
+    aiFailFastRecordLastMove("log_ai_decision", payload, reason);
   }
   if(!shouldEmitAiDecision(reason, payload)) return;
   if(shouldAggregateAiDecision(reason, payload)){
