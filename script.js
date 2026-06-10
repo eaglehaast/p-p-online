@@ -11270,6 +11270,71 @@ function aiFailFastIsBehavioralFallback(reasonCode){
       }
     } catch (_) { /* surface lookup must never throw the detector */ }
   }
+  // Purposeless-move check: does this flight bring the plane meaningfully
+  // closer to ANY valid AI objective (ready cargo / enemy plane / enemy base /
+  // own captured flag)? If neither the landing point nor the straight path
+  // gets within pickup range of *any* objective, the AI committed a flight
+  // that achieves nothing — the tester's "нахуй он туда полетел" class. This
+  // is the fallback class the canonical detectors miss because the AI scored
+  // the plan highly under its own metric (e.g. perfect_tolerance_assist),
+  // even though, semantically, the plane goes nowhere useful.
+  try {
+    const objectives = [];
+    const aiColor = plane.color || "blue";
+    const enemyColor = aiColor === "blue" ? "green" : "blue";
+    if(typeof cargoState !== "undefined" && Array.isArray(cargoState)){
+      for(const c of cargoState){
+        if(!c || c.state !== "ready") continue;
+        const cx = Number.isFinite(c.x) ? c.x : null;
+        const cy = Number.isFinite(c.y) ? c.y : null;
+        if(cx == null || cy == null) continue;
+        objectives.push({ x: cx, y: cy, kind: "cargo" });
+      }
+    }
+    if(Array.isArray(points)){
+      for(const p of points){
+        if(!p || p === plane) continue;
+        if(p.color === enemyColor && p.isAlive && !p.burning){
+          objectives.push({ x: p.x, y: p.y, kind: "enemy_plane" });
+        }
+      }
+    }
+    if(typeof getBaseAnchor === "function"){
+      const enemyBase = getBaseAnchor(enemyColor);
+      if(enemyBase && Number.isFinite(enemyBase.x)) objectives.push({ x: enemyBase.x, y: enemyBase.y, kind: "enemy_base" });
+    }
+    if(typeof flags !== "undefined" && Array.isArray(flags)){
+      for(const f of flags){
+        if(!f || f.color !== aiColor) continue;
+        // Carried by enemy → recovering it is a valid objective.
+        if(f.state && f.state !== "active" && Number.isFinite(f.x)){
+          objectives.push({ x: f.x, y: f.y, kind: "own_flag_captured" });
+        }
+      }
+    }
+    if(objectives.length > 0){
+      const startMin = objectives.reduce((m, o) => Math.min(m, Math.hypot(o.x - plane.x, o.y - plane.y)), Infinity);
+      const landMin  = objectives.reduce((m, o) => Math.min(m, Math.hypot(o.x - lx, o.y - ly)), Infinity);
+      // Closest distance the straight path approaches any objective.
+      let pathMin = Infinity;
+      if(typeof getDistanceFromPointToSegment === "function"){
+        for(const o of objectives){
+          const d = getDistanceFromPointToSegment(o.x, o.y, plane.x, plane.y, lx, ly);
+          if(d < pathMin) pathMin = d;
+        }
+      } else {
+        pathMin = Math.min(startMin, landMin);
+      }
+      const pickupRange = (typeof CELL_SIZE === "number") ? CELL_SIZE * 1.5 : 45;
+      const meaningfulProgress = (typeof CELL_SIZE === "number") ? CELL_SIZE * 1.5 : 45;
+      const passesNear = pathMin <= pickupRange;
+      const landsCloser = (startMin - landMin) >= meaningfulProgress;
+      if(!passesNear && !landsCloser){
+        AI_FAIL_FAST_LAST_BEHAVIORAL_REASON = "behavioral_purposeless_move";
+        return true;
+      }
+    }
+  } catch (_) { /* objective lookup must never throw the detector */ }
   return false;
 }
 
