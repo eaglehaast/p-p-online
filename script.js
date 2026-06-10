@@ -38253,7 +38253,19 @@ function planPathToPoint(plane, tx, ty, options = {}){
       const isHighValueNarrowCorridorGoal = goalNameForNarrowCorridor.includes("attack")
         || goalNameForNarrowCorridor.includes("eliminate")
         || goalNameForNarrowCorridor.includes("flag")
-        || goalNameForNarrowCorridor.includes("cargo");
+        || goalNameForNarrowCorridor.includes("cargo")
+        || goalNameForNarrowCorridor.includes("enemy")
+        || goalNameForNarrowCorridor.includes("base")
+        || goalNameForNarrowCorridor.includes("center")
+        || goalNameForNarrowCorridor.includes("direct")
+        || goalNameForNarrowCorridor.includes("finisher")
+        || goalNameForNarrowCorridor.includes("intercept")
+        || goalNameForNarrowCorridor.includes("advance")
+        || goalNameForNarrowCorridor.includes("opening")
+        || goalNameForNarrowCorridor.includes("defense")
+        || goalNameForNarrowCorridor.includes("ricochet")
+        || goalNameForNarrowCorridor.includes("pickup")
+        || goalNameForNarrowCorridor.includes("progress");
       const narrowCorridorDensityBoost = Math.max(0, Math.min(52, Math.round(routeNearbyColliderCount * 1.7)));
       const narrowCorridorGoalBoost = isHighValueNarrowCorridorGoal ? 26 : 0;
       const narrowCorridorNoProgressRejectLimit = isHighValueNarrowCorridorGoal ? 8 : 6;
