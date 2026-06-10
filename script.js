@@ -15560,9 +15560,11 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     const buildBestPlanForPlane = async (launchReadyPlane) => {
       const effectiveFlightRangeCells = getEffectiveFlightRangeCells(launchReadyPlane);
       const maxFlightDistancePx = Math.max(1, effectiveFlightRangeCells * CELL_SIZE);
-      const nearestCargo = readyCargo
+      const sortedCargos = readyCargo
         .map((cargo) => ({ cargo, center: getCargoVisualCenter(cargo), d: dist(launchReadyPlane, getCargoVisualCenter(cargo)) }))
-        .sort((a, b) => a.d - b.d)[0] || null;
+        .sort((a, b) => a.d - b.d)
+        .slice(0, 3);
+      const nearestCargo = sortedCargos[0] || null;
 
       const centerZoneNearest = getNearestPointInCenterControlZone(launchReadyPlane);
       const centerDx = centerZoneNearest.x - launchReadyPlane.x;
@@ -15629,7 +15631,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         planDistance = selectedPlan ? Math.hypot(selectedPlan.landingX - launchReadyPlane.x, selectedPlan.landingY - launchReadyPlane.y) : Number.POSITIVE_INFINITY;
       }
 
-      if(nearestCargo){
+      if(sortedCargos.length > 0){
         // Yield before the cargo-route enumeration (collectAiCargoRouteCandidates calls sync
         // planPathToPoint multiple times and is the second heavy sync chunk per plane).
         await aiCoopMaybeYield();
@@ -15639,40 +15641,53 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           enemies: enemyPlanes,
           homeBase: getBaseAnchor(launchReadyPlane.color),
         };
-        const cargoRouteCandidates = collectAiCargoRouteCandidates(launchReadyPlane, nearestCargo.cargo, cargoContext);
-        const bestCargoCandidate = cargoRouteCandidates
-          .filter((candidate) => {
-            const riskInfo = candidate?.riskInfo;
-            const favorableInfo = candidate?.favorableInfo;
-            const acceptedByBaseRisk = Boolean(riskInfo?.isSafePath) && Number.isFinite(riskInfo?.totalRisk) && riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE;
-            const acceptedByFavorableOverride = Boolean(riskInfo?.isSafePath) && favorableInfo?.isFavorableCargo === true;
-            return acceptedByBaseRisk || acceptedByFavorableOverride;
-          })
-          .sort((a, b) => {
-            const aCargoScore = (
-              (a?.favorableInfo?.isFavorableCargo ? 1.5 : 0)
-              + Math.min(2.5, Math.max(0, (a?.usefulCarryAfterPickup || 0) / Math.max(1, CELL_SIZE * 0.7)))
-              + Math.min(1.2, Math.max(0, getAiCargoRicochetPreferenceBonus(a) / Math.max(1, CELL_SIZE * 0.18)))
-              - Math.min(2.2, Math.max(0, a?.riskInfo?.totalRisk || 0) * 2.2)
-            );
-            const bCargoScore = (
-              (b?.favorableInfo?.isFavorableCargo ? 1.5 : 0)
-              + Math.min(2.5, Math.max(0, (b?.usefulCarryAfterPickup || 0) / Math.max(1, CELL_SIZE * 0.7)))
-              + Math.min(1.2, Math.max(0, getAiCargoRicochetPreferenceBonus(b) / Math.max(1, CELL_SIZE * 0.18)))
-              - Math.min(2.2, Math.max(0, b?.riskInfo?.totalRisk || 0) * 2.2)
-            );
-            if(Math.abs(aCargoScore - bCargoScore) > 1e-6){
-              return bCargoScore - aCargoScore;
-            }
-            return (a?.move?.totalDist || Number.POSITIVE_INFINITY) - (b?.move?.totalDist || Number.POSITIVE_INFINITY);
-          })[0] || null;
 
-        if(bestCargoCandidate?.move){
+        let bestCargoCandidate = null;
+        let bestCargoEntry = null;
+        for(const cargoEntry of sortedCargos){
+          await aiCoopMaybeYield();
+          if(!isAiTurnStillApplicable()) return null;
+          const cargoRouteCandidates = collectAiCargoRouteCandidates(launchReadyPlane, cargoEntry.cargo, cargoContext);
+          const candidate = cargoRouteCandidates
+            .filter((c) => {
+              const riskInfo = c?.riskInfo;
+              const favorableInfo = c?.favorableInfo;
+              const acceptedByBaseRisk = Boolean(riskInfo?.isSafePath) && Number.isFinite(riskInfo?.totalRisk) && riskInfo.totalRisk <= AI_CARGO_RISK_ACCEPTANCE;
+              const acceptedByFavorableOverride = Boolean(riskInfo?.isSafePath) && favorableInfo?.isFavorableCargo === true;
+              return acceptedByBaseRisk || acceptedByFavorableOverride;
+            })
+            .sort((a, b) => {
+              const aCargoScore = (
+                (a?.favorableInfo?.isFavorableCargo ? 1.5 : 0)
+                + Math.min(2.5, Math.max(0, (a?.usefulCarryAfterPickup || 0) / Math.max(1, CELL_SIZE * 0.7)))
+                + Math.min(1.2, Math.max(0, getAiCargoRicochetPreferenceBonus(a) / Math.max(1, CELL_SIZE * 0.18)))
+                - Math.min(2.2, Math.max(0, a?.riskInfo?.totalRisk || 0) * 2.2)
+              );
+              const bCargoScore = (
+                (b?.favorableInfo?.isFavorableCargo ? 1.5 : 0)
+                + Math.min(2.5, Math.max(0, (b?.usefulCarryAfterPickup || 0) / Math.max(1, CELL_SIZE * 0.7)))
+                + Math.min(1.2, Math.max(0, getAiCargoRicochetPreferenceBonus(b) / Math.max(1, CELL_SIZE * 0.18)))
+                - Math.min(2.2, Math.max(0, b?.riskInfo?.totalRisk || 0) * 2.2)
+              );
+              if(Math.abs(aCargoScore - bCargoScore) > 1e-6){
+                return bCargoScore - aCargoScore;
+              }
+              return (a?.move?.totalDist || Number.POSITIVE_INFINITY) - (b?.move?.totalDist || Number.POSITIVE_INFINITY);
+            })[0] || null;
+
+          if(candidate?.move){
+            bestCargoCandidate = candidate;
+            bestCargoEntry = cargoEntry;
+            break;
+          }
+        }
+
+        if(bestCargoCandidate?.move && bestCargoEntry){
           const cargoMove = {
             plane: launchReadyPlane,
             landingX: launchReadyPlane.x + (bestCargoCandidate.move.vx || 0) * FIELD_FLIGHT_DURATION_SEC,
             landingY: launchReadyPlane.y + (bestCargoCandidate.move.vy || 0) * FIELD_FLIGHT_DURATION_SEC,
-            targetPoint: nearestCargo.center,
+            targetPoint: bestCargoEntry.center,
             decisionReason: "simple_step2_pickup_cargo",
             goalName: "simple_step2_cargo",
             whyChosen: bestCargoCandidate.usedRicochet
@@ -15687,7 +15702,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
 
           const cargoPlanDistance = Number.isFinite(bestCargoCandidate.move.totalDist)
             ? bestCargoCandidate.move.totalDist
-            : nearestCargo.d;
+            : bestCargoEntry.d;
           const shouldPreferCargoOverAttack = !bestAttackCandidate || cargoPlanDistance <= planDistance + CELL_SIZE * 0.25;
 
           if(shouldPreferCargoOverAttack){
