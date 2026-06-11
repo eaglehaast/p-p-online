@@ -11556,6 +11556,111 @@ function aiFailFastBuildSnapshot(source, details, stage){
 //   aiLastMoveDebug({ clear: true });
 const AI_LAST_MOVES_BUFFER = [];
 const AI_LAST_MOVES_MAX = 10;
+
+// ===== AI thinking-time diagnostics =====
+// Цель: измерить сколько времени AI "думает" между турном-старт и launch-release,
+// и где конкретно он зависает (sync-chunk'и между cooperative yield'ами).
+// Чанк > AI_COOP_FRAME_BUDGET_MS (6мс) = пропущенный кадр = визуальный фриз.
+// Вызов в консоли: aiThinkingDebug() / aiThinkingDebug({limit:5}) / aiThinkingDebug({clear:true})
+const AI_THINKING_TIMING_BUFFER = [];
+const AI_THINKING_TIMING_MAX = 20;
+const AI_THINKING_SYNC_CHUNK_REPORT_MS = 5;
+let aiThinkingTimingCurrent = null;
+let aiThinkingCheckpointAt = 0;
+
+function aiThinkingTimingStartTurn(reason, now){
+  try {
+    aiThinkingTimingCurrent = {
+      t: Date.now(),
+      at: new Date().toISOString(),
+      turn: Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null,
+      round: Number.isFinite(roundNumber) ? roundNumber : null,
+      startReason: reason || null,
+      turnStartedAt: now,
+      releasedAt: null,
+      totalMs: null,
+      syncChunks: [],
+      longestSyncChunkMs: 0,
+      longestSyncChunkLabel: null,
+      yieldCount: 0,
+      stages: [],
+      _activeStages: [],
+    };
+    aiThinkingCheckpointAt = now;
+  } catch (_) {}
+}
+
+function aiThinkingTimingStageStart(label){
+  try {
+    if(!aiThinkingTimingCurrent) return;
+    aiThinkingTimingCurrent._activeStages.push({ label, startedAt: performance.now() });
+  } catch (_) {}
+}
+
+function aiThinkingTimingStageEnd(label){
+  try {
+    if(!aiThinkingTimingCurrent) return;
+    const stack = aiThinkingTimingCurrent._activeStages;
+    for(let i = stack.length - 1; i >= 0; i--){
+      if(stack[i].label === label){
+        const stage = stack.splice(i, 1)[0];
+        aiThinkingTimingCurrent.stages.push({
+          label: stage.label,
+          durationMs: Number((performance.now() - stage.startedAt).toFixed(2)),
+        });
+        return;
+      }
+    }
+  } catch (_) {}
+}
+
+function aiThinkingTimingNoteYieldOrCheckpoint(now, didYield){
+  try {
+    if(!aiThinkingTimingCurrent) return;
+    const dur = now - aiThinkingCheckpointAt;
+    if(dur > AI_THINKING_SYNC_CHUNK_REPORT_MS){
+      const stack = aiThinkingTimingCurrent._activeStages;
+      const stageLabel = stack.length > 0 ? stack[stack.length - 1].label : "unstaged";
+      const entry = {
+        label: stageLabel,
+        durationMs: Number(dur.toFixed(2)),
+        yielded: didYield === true,
+      };
+      aiThinkingTimingCurrent.syncChunks.push(entry);
+      if(dur > aiThinkingTimingCurrent.longestSyncChunkMs){
+        aiThinkingTimingCurrent.longestSyncChunkMs = Number(dur.toFixed(2));
+        aiThinkingTimingCurrent.longestSyncChunkLabel = stageLabel;
+      }
+    }
+    if(didYield) aiThinkingTimingCurrent.yieldCount += 1;
+    aiThinkingCheckpointAt = now;
+  } catch (_) {}
+}
+
+function aiThinkingTimingFinishTurn(now){
+  try {
+    if(!aiThinkingTimingCurrent) return;
+    aiThinkingTimingCurrent.releasedAt = now;
+    aiThinkingTimingCurrent.totalMs = Number((now - aiThinkingTimingCurrent.turnStartedAt).toFixed(2));
+    const stack = aiThinkingTimingCurrent._activeStages;
+    while(stack.length > 0){
+      const stage = stack.pop();
+      aiThinkingTimingCurrent.stages.push({
+        label: stage.label + "_unfinished",
+        durationMs: Number((now - stage.startedAt).toFixed(2)),
+      });
+    }
+    delete aiThinkingTimingCurrent._activeStages;
+    // Топ-чанков по длительности, для удобства чтения отчёта
+    aiThinkingTimingCurrent.topSyncChunks = aiThinkingTimingCurrent.syncChunks
+      .slice()
+      .sort((a, b) => b.durationMs - a.durationMs)
+      .slice(0, 5);
+    AI_THINKING_TIMING_BUFFER.push(aiThinkingTimingCurrent);
+    if(AI_THINKING_TIMING_BUFFER.length > AI_THINKING_TIMING_MAX) AI_THINKING_TIMING_BUFFER.shift();
+    aiThinkingTimingCurrent = null;
+  } catch (_) {}
+}
 function aiFailFastRecordLastMove(source, details, stage){
   try {
     const snapshot = aiFailFastBuildSnapshot(source, details, stage);
@@ -11602,6 +11707,12 @@ if(typeof window !== "undefined"){
     if(opts && opts.clear){ AI_LAST_MOVES_BUFFER.length = 0; return "cleared"; }
     const limit = Number.isFinite(opts?.limit) ? Math.max(1, Math.floor(opts.limit)) : 1;
     const tail = AI_LAST_MOVES_BUFFER.slice(-limit);
+    return JSON.stringify(limit === 1 ? (tail[0] ?? null) : tail, null, 2);
+  };
+  window.aiThinkingDebug = function(opts){
+    if(opts && opts.clear){ AI_THINKING_TIMING_BUFFER.length = 0; return "cleared"; }
+    const limit = Number.isFinite(opts?.limit) ? Math.max(1, Math.floor(opts.limit)) : 1;
+    const tail = AI_THINKING_TIMING_BUFFER.slice(-limit);
     return JSON.stringify(limit === 1 ? (tail[0] ?? null) : tail, null, 2);
   };
 }
@@ -14956,6 +15067,7 @@ function markAiTurnStarted(reason = "unspecified", now = performance.now()){
     turnCommitSequence,
     turnNumber: turnAdvanceCount,
   };
+  aiThinkingTimingStartTurn(reason, now);
   showAiLaunchPreparationNotice("Компьютер готовится к ходу…");
 }
 
@@ -14977,6 +15089,7 @@ function ensureAiVisiblePreparation(reason = "unspecified", now = performance.no
 function markAiReleased(reason = "unspecified", now = performance.now()){
   aiTurnTimingState.releasedAt = now;
   aiTurnTimingState.releaseReason = reason;
+  aiThinkingTimingFinishTurn(now);
 }
 
 function getAiTurnMinReleaseAt(){
@@ -15143,11 +15256,16 @@ async function aiCoopMaybeYield(){
   const nowMs = (typeof performance !== "undefined" && typeof performance.now === "function")
     ? performance.now()
     : Date.now();
-  if(nowMs - aiCoopBudgetStartedAt < AI_COOP_FRAME_BUDGET_MS) return;
+  if(nowMs - aiCoopBudgetStartedAt < AI_COOP_FRAME_BUDGET_MS){
+    aiThinkingTimingNoteYieldOrCheckpoint(nowMs, false);
+    return;
+  }
+  aiThinkingTimingNoteYieldOrCheckpoint(nowMs, true);
   await aiYieldToNextFrame();
   aiCoopBudgetStartedAt = (typeof performance !== "undefined" && typeof performance.now === "function")
     ? performance.now()
     : Date.now();
+  aiThinkingCheckpointAt = aiCoopBudgetStartedAt;
 }
 
 function isAiTurnStillApplicable(){
@@ -15604,13 +15722,15 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         .slice(0, shotSimulationQuality.maxEnemyCandidatesPerPlane);
 
       const attackCandidates = [];
+      aiThinkingTimingStageStart("attack_sim");
       for(const entry of prioritizedEnemiesForPlane){
         await aiCoopMaybeYield();
-        if(!isAiTurnStillApplicable()) return null;
+        if(!isAiTurnStillApplicable()){ aiThinkingTimingStageEnd("attack_sim"); return null; }
         const move = await buildSimulatedEnemyCandidate(launchReadyPlane, entry.enemy, maxFlightDistancePx, shotSimulationQuality);
         if(!move) continue;
         attackCandidates.push({ enemy: entry.enemy, move, enemyDistance: entry.enemyDistance, score: move.score });
       }
+      aiThinkingTimingStageEnd("attack_sim");
       attackCandidates.sort((a, b) => {
         if(Math.abs((a.score ?? 0) - (b.score ?? 0)) > 0.0001) return (b.score ?? 0) - (a.score ?? 0);
         return a.enemyDistance - b.enemyDistance;
@@ -15644,9 +15764,10 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
 
         let bestCargoCandidate = null;
         let bestCargoEntry = null;
+        aiThinkingTimingStageStart("cargo_routes");
         for(const cargoEntry of sortedCargos){
           await aiCoopMaybeYield();
-          if(!isAiTurnStillApplicable()) return null;
+          if(!isAiTurnStillApplicable()){ aiThinkingTimingStageEnd("cargo_routes"); return null; }
           const cargoRouteCandidates = collectAiCargoRouteCandidates(launchReadyPlane, cargoEntry.cargo, cargoContext);
           const candidate = cargoRouteCandidates
             .filter((c) => {
@@ -15681,6 +15802,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
             break;
           }
         }
+        aiThinkingTimingStageEnd("cargo_routes");
 
         if(bestCargoCandidate?.move && bestCargoEntry){
           const cargoMove = {
@@ -15726,7 +15848,9 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     for(const launchReadyPlane of launchReadyPlanes){
       await aiCoopMaybeYield();
       if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
+      aiThinkingTimingStageStart("plan_per_plane");
       const baseCandidate = await buildBestPlanForPlane(launchReadyPlane);
+      aiThinkingTimingStageEnd("plan_per_plane");
       if(!baseCandidate) continue;
       baseCandidate.color = aiColor;
       scoredPlans.push(baseCandidate);
