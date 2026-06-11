@@ -17387,6 +17387,11 @@ const AI_LAUNCH_OSCILLATION_CENTER_EXIT_ANGLE_DEG = 1.4;
 const AI_LAUNCH_VISIBLE_OSCILLATION_MIN_MS = 650;
 const AI_LAUNCH_VISIBLE_OSCILLATION_MIN_AMPLITUDE_DEG = 2.2;
 const AI_LAUNCH_VISIBLE_OSCILLATION_DIRECTION_CHANGES_MIN = 1;
+const AI_LAUNCH_LOW_AMPLITUDE_OSCILLATION_MIN_MS = 400;
+const AI_LAUNCH_LOW_AMPLITUDE_OSCILLATION_MAX_MS = 550;
+const AI_LAUNCH_LOW_AMPLITUDE_HUMAN_WINDOW_START_MIN_MS = 250;
+const AI_LAUNCH_LOW_AMPLITUDE_HUMAN_WINDOW_START_MAX_MS = 350;
+const AI_LAUNCH_LOW_AMPLITUDE_EARLY_RELEASE_ARM_DELAY_MS = 200;
 const AI_LAUNCH_OSCILLATION_DIRECTION_EPSILON_DEG = 0.08;
 const AI_LAUNCH_SESSION_ANGLE_TOLERANCE_DEG = 1.2;
 const AI_LAUNCH_SESSION_POWER_TOLERANCE = 0.025;
@@ -42113,9 +42118,28 @@ function buildAiLaunchSession(plane, vx, vy, options = {}){
   const rangeReductionReasonSource = rangeDecision.reductionReasonSource;
   const pullDistanceCells = targetDistancePx / CELL_SIZE;
   const randomInRange = (min, max) => min + Math.random() * Math.max(0, max - min);
+  // Predict visible wobble amplitude (mirrors gameDraw lines 43412-43433 exactly).
+  // When predicted amplitude is below the visibility threshold (2.2°), the
+  // standard 2000-3000ms oscillation + 1800-2200ms human window reads as a
+  // freeze (no wobble visible, but AI just stands). Shorten timings so release
+  // feels like a deliberate 400-550ms aim beat instead of a hang.
+  const predictedDragScale = MAX_DRAG_DISTANCE > 0
+    ? Math.min(1, targetDistancePx / MAX_DRAG_DISTANCE)
+    : 0;
+  const predictedHasCrosshair = getPlaneActiveTurnBuffs(plane).includes(INVENTORY_ITEM_TYPES.CROSSHAIR);
+  const predictedAccuracyPercent = predictedHasCrosshair
+    ? 100
+    : (Number.isFinite(settings?.aimingAmplitude) ? settings.aimingAmplitude : 80);
+  const predictedVisibleAmplitudeDeg =
+    getSpreadAngleDegByAccuracy(predictedAccuracyPercent) * predictedDragScale;
+  const shouldShortenForLowAmplitude =
+    !minimalTelegraphy
+    && predictedVisibleAmplitudeDeg < AI_LAUNCH_VISIBLE_OSCILLATION_MIN_AMPLITUDE_DEG;
   const oscillationDurationMs = minimalTelegraphy
     ? 0
-    : randomInRange(AI_LAUNCH_OSCILLATION_MIN_MS, AI_LAUNCH_OSCILLATION_MAX_MS);
+    : (shouldShortenForLowAmplitude
+      ? randomInRange(AI_LAUNCH_LOW_AMPLITUDE_OSCILLATION_MIN_MS, AI_LAUNCH_LOW_AMPLITUDE_OSCILLATION_MAX_MS)
+      : randomInRange(AI_LAUNCH_OSCILLATION_MIN_MS, AI_LAUNCH_OSCILLATION_MAX_MS));
   const hasVeryShortTargetDistance = pullDistanceCells <= AI_LAUNCH_MIN_TARGET_DISTANCE_FOR_FULL_TELEGRAPH_CELLS;
   const targetSelectionDurationMs = minimalTelegraphy
     ? 0
@@ -42146,7 +42170,9 @@ function buildAiLaunchSession(plane, vx, vy, options = {}){
   const plannedReleaseDueAt = oscillationStartsAt + oscillationDurationMs;
   const minReleaseAt = Math.max(now, getAiTurnMinReleaseAt());
   const releaseDueAt = Math.max(plannedReleaseDueAt, minReleaseAt);
-  const humanWindowStartAt = oscillationStartsAt + randomInRange(AI_LAUNCH_HUMAN_WINDOW_START_MIN_MS, AI_LAUNCH_HUMAN_WINDOW_START_MAX_MS);
+  const humanWindowStartAt = oscillationStartsAt + (shouldShortenForLowAmplitude
+    ? randomInRange(AI_LAUNCH_LOW_AMPLITUDE_HUMAN_WINDOW_START_MIN_MS, AI_LAUNCH_LOW_AMPLITUDE_HUMAN_WINDOW_START_MAX_MS)
+    : randomInRange(AI_LAUNCH_HUMAN_WINDOW_START_MIN_MS, AI_LAUNCH_HUMAN_WINDOW_START_MAX_MS));
   const humanWindowSafeStartAt = Math.min(humanWindowStartAt, releaseDueAt);
   const humanWindowReleaseAt = randomInRange(humanWindowSafeStartAt, releaseDueAt);
   const watchdogDeadlineAt = Math.min(
@@ -42202,7 +42228,11 @@ function buildAiLaunchSession(plane, vx, vy, options = {}){
     watchdogTimerId: null,
     powerSweepPhase: Math.random() * Math.PI * 2,
     powerSweepSpeed: randomInRange(AI_LAUNCH_POWER_SWEEP_SPEED_MIN, AI_LAUNCH_POWER_SWEEP_SPEED_MAX),
-    earlyReleaseAllowedAfter: oscillationStartsAt + AI_LAUNCH_EARLY_RELEASE_ARM_DELAY_MS,
+    earlyReleaseAllowedAfter: oscillationStartsAt + (shouldShortenForLowAmplitude
+      ? AI_LAUNCH_LOW_AMPLITUDE_EARLY_RELEASE_ARM_DELAY_MS
+      : AI_LAUNCH_EARLY_RELEASE_ARM_DELAY_MS),
+    lowAmplitudeShortening: shouldShortenForLowAmplitude,
+    predictedVisibleAmplitudeDeg: Number(predictedVisibleAmplitudeDeg.toFixed(3)),
     oscillationRampDurationMs: getAiLaunchOscillationRampDurationMs({ isFallbackMove }),
     oscillationHasExitedCenter: false,
     oscillationCenterExitAngleRad: AI_LAUNCH_OSCILLATION_CENTER_EXIT_ANGLE_DEG * Math.PI / 180,
@@ -42547,13 +42577,17 @@ function runAiLaunchSessionTick(now = performance.now()){
     session.oscillationStartsAt = now;
     session.oscillationRampDurationMs = getAiLaunchOscillationRampDurationMs(session);
     session.releaseDueAt = now + Math.max(0, session.oscillationDurationMs || 0);
+    const lowAmp = session.lowAmplitudeShortening === true;
+    const humanWinStartMin = lowAmp ? AI_LAUNCH_LOW_AMPLITUDE_HUMAN_WINDOW_START_MIN_MS : AI_LAUNCH_HUMAN_WINDOW_START_MIN_MS;
+    const humanWinStartMax = lowAmp ? AI_LAUNCH_LOW_AMPLITUDE_HUMAN_WINDOW_START_MAX_MS : AI_LAUNCH_HUMAN_WINDOW_START_MAX_MS;
+    const earlyArmDelay = lowAmp ? AI_LAUNCH_LOW_AMPLITUDE_EARLY_RELEASE_ARM_DELAY_MS : AI_LAUNCH_EARLY_RELEASE_ARM_DELAY_MS;
     session.humanWindowStartAt = Math.min(
       session.releaseDueAt,
-      now + (AI_LAUNCH_HUMAN_WINDOW_START_MIN_MS + Math.random() * Math.max(0, AI_LAUNCH_HUMAN_WINDOW_START_MAX_MS - AI_LAUNCH_HUMAN_WINDOW_START_MIN_MS))
+      now + (humanWinStartMin + Math.random() * Math.max(0, humanWinStartMax - humanWinStartMin))
     );
     session.humanWindowReleaseAt = session.humanWindowStartAt + Math.random() * Math.max(0, session.releaseDueAt - session.humanWindowStartAt);
     session.releaseReactionLagMs = AI_LAUNCH_HUMAN_REACTION_LAG_MIN_MS + Math.random() * Math.max(0, AI_LAUNCH_HUMAN_REACTION_LAG_MAX_MS - AI_LAUNCH_HUMAN_REACTION_LAG_MIN_MS);
-    session.earlyReleaseAllowedAfter = now + AI_LAUNCH_EARLY_RELEASE_ARM_DELAY_MS;
+    session.earlyReleaseAllowedAfter = now + earlyArmDelay;
     session.oscillationHasExitedCenter = false;
     session.visibleOscillationSatisfied = false;
     session.visibleOscillationSatisfiedAt = null;
@@ -42704,6 +42738,9 @@ function issueAIMove(plane, vx, vy, options = {}){
     routeClass: options?.launchMeta?.routeClass || options?.routeClass || null,
     isFallbackMove: options?.isFallbackMove === true,
     telegraphyMode: session?.telegraphyMode || null,
+    lowAmplitudeShortening: session?.lowAmplitudeShortening === true,
+    predictedVisibleAmplitudeDeg: session?.predictedVisibleAmplitudeDeg ?? null,
+    oscillationDurationMs: Math.round(session?.oscillationDurationMs || 0),
     ...getAiTurnTimingSnapshot(),
   });
 
