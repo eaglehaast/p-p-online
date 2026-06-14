@@ -9872,6 +9872,37 @@ function collectAiCargoRouteCandidates(plane, cargo, context){
   return candidates;
 }
 
+// Async-вариант для hot-path в buildBestPlanForPlane. Yield'ит между route
+// targets (5+ steps), чтобы single-cargo enumeration не блокировала кадр
+// на 400-500мс. Каждый buildAiCargoRouteCandidate сам по себе ~80-150мс,
+// поэтому yield BETWEEN targets разбивает на куски в пределах frame budget.
+async function collectAiCargoRouteCandidatesAsync(plane, cargo, context){
+  const cargoCenter = getCargoVisualCenter(cargo);
+  const directCargoTarget = {
+    name: "pickup_cargo_direct",
+    targetX: cargoCenter.x,
+    targetY: cargoCenter.y,
+    targetKind: "short",
+    preferredRouteClass: null,
+    usedRicochetHint: false,
+  };
+  const allTargets = [directCargoTarget, ...buildAiCargoLongRangeTargets(plane, cargo, context)];
+
+  const candidates = [];
+  for(const target of allTargets){
+    await aiCoopMaybeYield();
+    const routeClassOrder = getAiCargoRouteClassOrder(target);
+    for(const routeClass of routeClassOrder){
+      const candidate = buildAiCargoRouteCandidate(plane, cargo, context, target, routeClass);
+      if(candidate && candidate.cargoPickedOnPath){
+        candidates.push(candidate);
+      }
+    }
+  }
+
+  return candidates;
+}
+
 function updateCargoState(now = performance.now()){
   if(cargoState.length === 0){
     return;
@@ -15251,6 +15282,10 @@ function aiCoopResetBudget(){
   aiCoopBudgetStartedAt = (typeof performance !== "undefined" && typeof performance.now === "function")
     ? performance.now()
     : Date.now();
+  // Diagnostic accuracy: aiThinkingCheckpointAt должен ехать вместе с budget,
+  // иначе sync-chunk measurement включает время setTimeout/await до reset'а
+  // и репортит фейковый "freeze" размером с искусственную задержку.
+  aiThinkingCheckpointAt = aiCoopBudgetStartedAt;
 }
 async function aiCoopMaybeYield(){
   const nowMs = (typeof performance !== "undefined" && typeof performance.now === "function")
@@ -15768,7 +15803,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         for(const cargoEntry of sortedCargos){
           await aiCoopMaybeYield();
           if(!isAiTurnStillApplicable()){ aiThinkingTimingStageEnd("cargo_routes"); return null; }
-          const cargoRouteCandidates = collectAiCargoRouteCandidates(launchReadyPlane, cargoEntry.cargo, cargoContext);
+          const cargoRouteCandidates = await collectAiCargoRouteCandidatesAsync(launchReadyPlane, cargoEntry.cargo, cargoContext);
           const candidate = cargoRouteCandidates
             .filter((c) => {
               const riskInfo = c?.riskInfo;
