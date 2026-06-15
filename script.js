@@ -11746,6 +11746,26 @@ if(typeof window !== "undefined"){
     const tail = AI_THINKING_TIMING_BUFFER.slice(-limit);
     return JSON.stringify(limit === 1 ? (tail[0] ?? null) : tail, null, 2);
   };
+  // По умолчанию подробное AI-логирование ВЫКЛ — за ход AI делает
+  // ~3000 logAiDecision вызовов (path_candidate_passport, narrow_corridor*,
+  // mirror_*, simulated_*, ...) с тяжёлым clone payload + buffer push.
+  // Если нужно разобраться в конкретном решении AI — включай командой
+  // aiLogOn(), играй ход, потом aiLastMoveDebug() / aiFallbackDebug()
+  // покажут детальный decisionsLog. aiLogOff() — обратно выкл.
+  if(typeof window.aiDebugLoggingEnabled === "undefined"){
+    window.aiDebugLoggingEnabled = false;
+  }
+  window.aiLogOn = function(){
+    window.aiDebugLoggingEnabled = true;
+    return "AI debug logging ENABLED (~3000 events/turn buffered for aiLastMoveDebug / aiFallbackDebug)";
+  };
+  window.aiLogOff = function(){
+    window.aiDebugLoggingEnabled = false;
+    return "AI debug logging DISABLED (default). decisionsLog в aiLastMoveDebug будет пустым.";
+  };
+  window.aiLogStatus = function(){
+    return window.aiDebugLoggingEnabled === true ? "enabled" : "disabled";
+  };
 }
 
 function recordAiSelfAnalyzerEvent(event){
@@ -19990,6 +20010,17 @@ function buildAiDecisionCompactPayload(reason, payload, derived = {}){
 }
 
 function logAiDecision(reason, details = {}){
+  // Opt-in общее логирование: за ход AI делает ~3000 logAiDecision
+  // вызовов. Полный путь (spread payload, normalize, build compact, buffer
+  // push) включается командой aiLogOn(). Без неё работают только two всегда-on
+  // ветки: aiFailFast capture (когда armed) и aiFailFastRecordLastMove
+  // для ai_launch_release (нужно для aiLastMoveDebug).
+  const loggingEnabled = typeof window !== "undefined" && window.aiDebugLoggingEnabled === true;
+  const failFastArmed = aiFailFastIsArmed();
+  const isLaunchRelease = reason === "ai_launch_release";
+  if(!loggingEnabled && !failFastArmed && !isLaunchRelease){
+    return;
+  }
   const payload = details && typeof details === "object" ? { ...details } : {};
   const normalizedReasonCategory = typeof payload.reasonCategory === "string"
     ? payload.reasonCategory.trim().toLowerCase()
@@ -20006,14 +20037,16 @@ function logAiDecision(reason, details = {}){
   if(!(typeof payload.reasonCode === "string" && payload.reasonCode.trim().length > 0)){
     payload.reasonCode = payload.reason || reason || null;
   }
-  if(aiFailFastIsArmed() && aiFailFastShouldCapture(reason, payload.reasonCode, payload)){
+  if(failFastArmed && aiFailFastShouldCapture(reason, payload.reasonCode, payload)){
     aiFailFastCaptureSnapshot("log_ai_decision", payload, reason);
   }
   // Always-on: record every ai_launch_release as the "last AI move" so
   // aiLastMoveDebug() can show motivation of any move after the fact.
-  if(reason === "ai_launch_release"){
+  // (decisionsLog в snapshot'е будет пустой если logging выключен.)
+  if(isLaunchRelease){
     aiFailFastRecordLastMove("log_ai_decision", payload, reason);
   }
+  if(!loggingEnabled) return;
   if(!shouldEmitAiDecision(reason, payload)) return;
   if(shouldAggregateAiDecision(reason, payload)){
     const scope = getCurrentAiDecisionScope();
@@ -20064,7 +20097,14 @@ function logAiDecision(reason, details = {}){
     ? buildAiDecisionDeepPayload(reason, payload, derived)
     : buildAiDecisionCompactPayload(reason, payload, derived);
 
-  console.debug(`[ai] ${reason}`, debugPayload);
+  // console.debug стоит за флагом: за ход AI делает ~3000 logAiDecision
+  // вызовов. console.debug удерживает ссылки на payload (мешает GC),
+  // проходит через console-инфраструктуру движка даже когда DevTools
+  // фильтрует verbose. Никто этот вывод не читает — буфер ниже хранит
+  // те же события для aiLastMoveDebug/aiFallbackDebug.
+  if(AI_DECISION_VERBOSE_DEBUG_FLAG){
+    console.debug(`[ai] ${reason}`, debugPayload);
+  }
 
   if(typeof window !== "undefined"){
     const nowIso = new Date().toISOString();
@@ -20079,7 +20119,10 @@ function logAiDecision(reason, details = {}){
       turn: Number.isFinite(aiRoundState?.turnNumber) ? aiRoundState.turnNumber : null,
       round: Number.isFinite(roundNumber) ? roundNumber : null,
     });
-    if(window.__AI_DECISION_LOG_BUFFER.length > 1200){
+    // Bulk trim вместо splice(0, 1) на каждом push'е после переполнения.
+    // splice O(n) сдвиг 1199 элементов на каждый push был ~108мс/ход.
+    // Триггер на 1.5× capacity => trim в 5 раз реже, total work снижается.
+    if(window.__AI_DECISION_LOG_BUFFER.length > 1800){
       window.__AI_DECISION_LOG_BUFFER.splice(0, window.__AI_DECISION_LOG_BUFFER.length - 1200);
     }
   }
