@@ -11746,6 +11746,26 @@ if(typeof window !== "undefined"){
     const tail = AI_THINKING_TIMING_BUFFER.slice(-limit);
     return JSON.stringify(limit === 1 ? (tail[0] ?? null) : tail, null, 2);
   };
+  // По умолчанию подробное AI-логирование ВЫКЛ — за ход AI делает
+  // ~3000 logAiDecision вызовов (path_candidate_passport, narrow_corridor*,
+  // mirror_*, simulated_*, ...) с тяжёлым clone payload + buffer push.
+  // Если нужно разобраться в конкретном решении AI — включай командой
+  // aiLogOn(), играй ход, потом aiLastMoveDebug() / aiFallbackDebug()
+  // покажут детальный decisionsLog. aiLogOff() — обратно выкл.
+  if(typeof window.aiDebugLoggingEnabled === "undefined"){
+    window.aiDebugLoggingEnabled = false;
+  }
+  window.aiLogOn = function(){
+    window.aiDebugLoggingEnabled = true;
+    return "AI debug logging ENABLED (~3000 events/turn buffered for aiLastMoveDebug / aiFallbackDebug)";
+  };
+  window.aiLogOff = function(){
+    window.aiDebugLoggingEnabled = false;
+    return "AI debug logging DISABLED (default). decisionsLog в aiLastMoveDebug будет пустым.";
+  };
+  window.aiLogStatus = function(){
+    return window.aiDebugLoggingEnabled === true ? "enabled" : "disabled";
+  };
 }
 
 function recordAiSelfAnalyzerEvent(event){
@@ -19990,6 +20010,17 @@ function buildAiDecisionCompactPayload(reason, payload, derived = {}){
 }
 
 function logAiDecision(reason, details = {}){
+  // Opt-in общее логирование: за ход AI делает ~3000 logAiDecision
+  // вызовов. Полный путь (spread payload, normalize, build compact, buffer
+  // push) включается командой aiLogOn(). Без неё работают только two всегда-on
+  // ветки: aiFailFast capture (когда armed) и aiFailFastRecordLastMove
+  // для ai_launch_release (нужно для aiLastMoveDebug).
+  const loggingEnabled = typeof window !== "undefined" && window.aiDebugLoggingEnabled === true;
+  const failFastArmed = aiFailFastIsArmed();
+  const isLaunchRelease = reason === "ai_launch_release";
+  if(!loggingEnabled && !failFastArmed && !isLaunchRelease){
+    return;
+  }
   const payload = details && typeof details === "object" ? { ...details } : {};
   const normalizedReasonCategory = typeof payload.reasonCategory === "string"
     ? payload.reasonCategory.trim().toLowerCase()
@@ -20006,14 +20037,16 @@ function logAiDecision(reason, details = {}){
   if(!(typeof payload.reasonCode === "string" && payload.reasonCode.trim().length > 0)){
     payload.reasonCode = payload.reason || reason || null;
   }
-  if(aiFailFastIsArmed() && aiFailFastShouldCapture(reason, payload.reasonCode, payload)){
+  if(failFastArmed && aiFailFastShouldCapture(reason, payload.reasonCode, payload)){
     aiFailFastCaptureSnapshot("log_ai_decision", payload, reason);
   }
   // Always-on: record every ai_launch_release as the "last AI move" so
   // aiLastMoveDebug() can show motivation of any move after the fact.
-  if(reason === "ai_launch_release"){
+  // (decisionsLog в snapshot'е будет пустой если logging выключен.)
+  if(isLaunchRelease){
     aiFailFastRecordLastMove("log_ai_decision", payload, reason);
   }
+  if(!loggingEnabled) return;
   if(!shouldEmitAiDecision(reason, payload)) return;
   if(shouldAggregateAiDecision(reason, payload)){
     const scope = getCurrentAiDecisionScope();
