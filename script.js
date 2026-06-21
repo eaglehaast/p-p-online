@@ -15356,15 +15356,6 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       return;
     }
 
-    if(hasAnimatingCargo()){
-      aiMoveScheduled = false;
-      scheduleComputerMoveWithCargoGate(startedAt, AI_MOVE_CARGO_RETRY_DELAY_MS, {
-        ...(planningContext || {}),
-        trigger: "simple_step2_selector_waiting_cargo",
-      });
-      return;
-    }
-
     aiCoopResetBudget();
 
     const launchReadyPlanes = points.filter((plane) => {
@@ -15374,7 +15365,10 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     });
     const enemyPlanes = points.filter((plane) => plane?.color === "green" && isPlaneTargetable(plane));
 
-    const readyCargo = cargoState.filter((cargo) => cargo?.state === "ready");
+    // Включаем animating cargo: cargo.x/y — уже финальные координаты с момента создания
+    // (спавн через spawnCargoForTurn задаёт x: candidate.x, y: candidate.targetY).
+    // state "animating" — только визуальный флаг, ждать его завершения незачем.
+    const readyCargo = cargoState.filter((cargo) => cargo?.state === "ready" || cargo?.state === "animating");
     const aiExecutionContext = {
       aiPlanes: launchReadyPlanes,
       enemies: enemyPlanes,
@@ -15982,6 +15976,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
     aiCoopResetBudget();
 
+    aiThinkingTimingStageStart("inventory_enhance");
     const selectedPlanEnhancementSequence = typeof buildAiSelectedPlanInventoryEnhancementsAsync === "function"
       ? await buildAiSelectedPlanInventoryEnhancementsAsync({
           ...aiExecutionContext,
@@ -15998,14 +15993,16 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           }, selectedPlan)
         : []);
     selectedPlan.selectedInventorySequence = selectedPlanEnhancementSequence;
+    aiThinkingTimingStageEnd("inventory_enhance");
 
     // Defensive mine planner (Layer A). One async call returns 0..2 placements
     // chosen by projection-driven scoring with strict gates (min score, own-
     // path safety, anti-cluster, cumulative cap). Layer B sequence gate below
     // validates each MINE entry against selectedPlan.defensiveMinePlan; Layer C
     // executor places blind. Feature-flagged via AI_DEFENSIVE_MINE_ENABLED.
+    aiThinkingTimingStageStart("def_mines");
     if(AI_DEFENSIVE_MINE_ENABLED && typeof findAiDefensiveMineOpportunityAsync === "function"){
-      if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
+      if(!isAiTurnStillApplicable()){ aiThinkingTimingStageEnd("def_mines"); aiMoveScheduled = false; return; }
       let opportunity = null;
       try {
         opportunity = await findAiDefensiveMineOpportunityAsync(selectedPlan, {
@@ -16036,9 +16033,10 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           });
         }
       }
-      if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
+      if(!isAiTurnStillApplicable()){ aiThinkingTimingStageEnd("def_mines"); aiMoveScheduled = false; return; }
       aiCoopResetBudget();
     }
+    aiThinkingTimingStageEnd("def_mines");
 
     // Dynamite-AUGMENTED alternative plan. Asks: "given 1..3 dynamites,
     // can we reach a BETTER target (more cargo / deeper enemy / flag /
@@ -16048,8 +16046,9 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     // routeClass) and REPLACES any DYNAMITE entries in the sequence with
     // one entry per blocker to be destroyed. Inline guard and existing
     // DYNAMITE replan below then operate on the already-aligned plan.
+    aiThinkingTimingStageStart("dynamite_aug");
     if(typeof findAiDynamiteAugmentedAlternativePlanAsync === "function"){
-      if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
+      if(!isAiTurnStillApplicable()){ aiThinkingTimingStageEnd("dynamite_aug"); aiMoveScheduled = false; return; }
       const augmentedDynamiteCharges = Number(evaluateInventoryState(aiColor)?.counts?.[INVENTORY_ITEM_TYPES.DYNAMITE] || 0);
       if(augmentedDynamiteCharges > 0){
         let altPlan = null;
@@ -16067,7 +16066,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
             message: err?.message || String(err),
           });
         }
-        if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
+        if(!isAiTurnStillApplicable()){ aiThinkingTimingStageEnd("dynamite_aug"); aiMoveScheduled = false; return; }
         if(altPlan && altPlan.plan && altPlan.target && Array.isArray(altPlan.blockers) && altPlan.blockers.length > 0){
           const augFlightDur = Number.isFinite(FIELD_FLIGHT_DURATION_SEC) && FIELD_FLIGHT_DURATION_SEC > 0
             ? FIELD_FLIGHT_DURATION_SEC
@@ -16146,9 +16145,11 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           aiCoopResetBudget();
         }
       }
-      if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
+      if(!isAiTurnStillApplicable()){ aiThinkingTimingStageEnd("dynamite_aug"); aiMoveScheduled = false; return; }
     }
+    aiThinkingTimingStageEnd("dynamite_aug");
 
+    aiThinkingTimingStageStart("dynamite_gate");
     // Sequence gate (Layer B). After Layer A planners ran (augmented planner
     // + builder enhancements), enforce a clean invariant: every DYNAMITE entry
     // that survives into the executor must be backed by a Layer A flag —
@@ -16371,6 +16372,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         }
       }
     }
+    aiThinkingTimingStageEnd("dynamite_gate");
 
     const selectedInventorySequence = Array.isArray(selectedPlan.selectedInventorySequence)
       ? selectedPlan.selectedInventorySequence.map((entry) => ({ ...entry }))
@@ -16384,6 +16386,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     // replan here so it runs async with cooperative yields between targets, and mark the result
     // so the sync section becomes a no-op (it still runs forceFuelMoveToMaxRange and the dynamite
     // intent check; we let it do that after fuel is actually applied).
+    aiThinkingTimingStageStart("fuel_replan");
     const willApplyFuel = selectedInventorySequence.some((entry) => (
       entry?.itemType === INVENTORY_ITEM_TYPES.FUEL
     ));
@@ -16416,7 +16419,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         fuelReplanPlannedMoveLike,
         aiExecutionContext,
       );
-      if(!isAiTurnStillApplicable()){ aiMoveScheduled = false; return; }
+      if(!isAiTurnStillApplicable()){ aiThinkingTimingStageEnd("fuel_replan"); aiMoveScheduled = false; return; }
       if(fuelReplanResult?.move){
         const replannedMove = fuelReplanResult.move;
         const replannedTotalDist = Number.isFinite(replannedMove.totalDist)
@@ -16464,6 +16467,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         aiCoopResetBudget();
       }
     }
+    aiThinkingTimingStageEnd("fuel_replan");
 
     // Yield 2: let one frame paint between enhancement and the actual launch (where dynamite/mine
     // placements + buff applications + flight all happen). Combined with the post-inventory delay
