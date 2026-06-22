@@ -15162,6 +15162,7 @@ function invalidateAiPlanningState(reason = "unspecified"){
   aiInventorySequenceState = null;
   aiPlanningSnapshotCache = null;
   aiCachedTargetMemory = null;
+  _speculativeAiCompute = null;
   clearAiLaunchSessionWatchdog();
   aiLaunchSession = null;
   cleanupHandle();
@@ -15325,6 +15326,40 @@ async function aiCoopMaybeYield(){
 
 function isAiTurnStillApplicable(){
   return !isGameOver && gameMode === "computer" && turnColors?.[turnIndex] === "blue";
+}
+
+let _speculativeAiCompute = null;
+
+async function startSpeculativeAiCompute(){
+  if(gameMode !== "computer" || isGameOver) return;
+  if(_speculativeAiCompute) return;
+
+  const readyCargo = cargoState.filter(c => c?.state === "ready" || c?.state === "animating");
+  if(readyCargo.length === 0) return;
+
+  const bluePlanes = points.filter(p =>
+    p?.color === "blue" && isPlaneLaunchStateReady(p) && !flyingPoints.some(fp => fp.plane === p)
+  );
+  if(bluePlanes.length === 0) return;
+
+  const enemies = points.filter(p => p?.color === "green" && isPlaneTargetable(p));
+  const context = { enemies, homeBase: getBaseAnchor("blue") };
+
+  const cargoRefs = readyCargo.slice();
+  const routeResults = new Map();
+
+  const promise = (async () => {
+    for(const plane of bluePlanes){
+      const planeRoutes = new Map();
+      for(const cargo of readyCargo){
+        const candidates = await collectAiCargoRouteCandidatesAsync(plane, cargo, context);
+        planeRoutes.set(cargo, candidates);
+      }
+      routeResults.set(plane, planeRoutes);
+    }
+  })();
+
+  _speculativeAiCompute = { promise, cargoRefs, routeResults };
 }
 
 function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayMs = AI_MOVE_INITIAL_DELAY_MS, planningContext = null){
@@ -15814,10 +15849,20 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         let bestCargoCandidate = null;
         let bestCargoEntry = null;
         aiThinkingTimingStageStart("cargo_routes");
+        let _specCache = null;
+        if(_speculativeAiCompute){
+          try{ await _speculativeAiCompute.promise; } catch(e){}
+          const snapValid = _speculativeAiCompute.cargoRefs.every(
+            c => cargoState.includes(c) && (c.state === "ready" || c.state === "animating")
+          );
+          if(snapValid) _specCache = _speculativeAiCompute.routeResults;
+        }
         for(const cargoEntry of sortedCargos){
           await aiCoopMaybeYield();
           if(!isAiTurnStillApplicable()){ aiThinkingTimingStageEnd("cargo_routes"); return null; }
-          const cargoRouteCandidates = await collectAiCargoRouteCandidatesAsync(launchReadyPlane, cargoEntry.cargo, cargoContext);
+          const cargoRouteCandidates =
+            _specCache?.get(launchReadyPlane)?.get(cargoEntry.cargo)
+            ?? await collectAiCargoRouteCandidatesAsync(launchReadyPlane, cargoEntry.cargo, cargoContext);
           const candidate = cargoRouteCandidates
             .filter((c) => {
               const riskInfo = c?.riskInfo;
@@ -18419,6 +18464,8 @@ function runLaunchReleaseStage({ plane, vx, vy, actor = "human" }){
     shieldBreakLockActive:false,
     shieldBreakLockTarget:null
   });
+
+  if(actor === "human") startSpeculativeAiCompute();
 
   recordAiSelfAnalyzerLaunch(plane, vx, vy, actor === "computer" ? "computer" : "human");
   if(actor === "human"){
