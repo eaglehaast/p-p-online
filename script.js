@@ -9540,8 +9540,24 @@ function findCargoSpawnTarget(){
 
 function spawnCargoForTurn(){
   if(!settings.addCargo){
+    _pendingSpawnedCargo = null;
     return;
   }
+
+  // Pre-roll: если позиция следующего cargo была зафиксирована при отпуске самолёта игрока
+  // (startSpeculativeAiCompute), используем тот же объект — его identity совпадает со спекулятивным
+  // кэшем маршрутов AI. Анимацию запускаем сейчас.
+  if(_pendingSpawnedCargo){
+    const pending = _pendingSpawnedCargo;
+    _pendingSpawnedCargo = null;
+    pending.state = "animating";
+    pending.animStartedAt = performance.now();
+    pending.animDurationMs = resolveCargoAnimLifetimeMs();
+    pending.pickedAt = null;
+    cargoState.push(pending);
+    return;
+  }
+
   const candidate = findCargoSpawnTarget();
   if(!candidate){
     return;
@@ -15166,6 +15182,12 @@ function invalidateAiPlanningState(reason = "unspecified"){
   aiLaunchSession = null;
   cleanupHandle();
   clearAiLaunchStallNotice();
+  // Спекулятивный кэш НЕ сбрасываем на turn_advanced: advanceTurn вызывает invalidate ДО старта
+  // хода AI, а кэш потребляется one-shot уже внутри хода. Чистим только на полных сбросах.
+  if(reason === "round_reset" || reason === "game_reset"){
+    _speculativeAiCompute = null;
+    _pendingSpawnedCargo = null;
+  }
   if(reason === "turn_advanced" || reason === "round_reset" || reason === "game_reset"){
     resetAiTurnTimingState();
   }
@@ -15327,6 +15349,184 @@ function isAiTurnStillApplicable(){
   return !isGameOver && gameMode === "computer" && turnColors?.[turnIndex] === "blue";
 }
 
+// === Спекулятивное вычисление хода AI во время полёта самолёта игрока ===
+//
+// Полёт самолёта детерминирован (resolveFlightSurfaceCollision / findFirstSurfaceHit не используют
+// случайность). Поэтому в момент отпуска самолёта игроком мы можем предсказать БУДУЩЕЕ состояние
+// поля к началу хода AI: куда приземлится игрок, какое cargo он подберёт, какие самолёты собьёт —
+// и сразу запустить вычисление cargo-маршрутов AI против этого предсказанного состояния, пока
+// самолёт ещё летит (~1.51с). К ходу AI результат готов → стадия cargo_routes ≈ 0мс.
+//
+// Единственный random в ходе AI — позиция нового cargo (findCargoSpawnTarget). Её мы pre-roll'им
+// здесь и отдаём тот же объект в spawnCargoForTurn, чтобы предсказание совпало с реальностью.
+//
+// Корректность гарантирует hybrid-проверка isSpeculativePredictionValid: если игрок приземлился
+// не туда, куда предсказано (мина/ПВО/столкновение изменили траекторию, либо sharpEdges-смерть на
+// границе) — кэш отбрасывается и AI считает заново как обычно.
+let _speculativeAiCompute = null;
+let _pendingSpawnedCargo = null;
+
+// Пересечение отрезка [from→to] с AABB box, расширенным на (padX,padY) с каждой стороны.
+// Зеркалит логику doesCargoIntersectBeneficialZoneAlongSegment, но для произвольного box (самолёт).
+function doesSegmentIntersectExpandedBox(from, to, box, padX, padY){
+  const left = box.left - padX;
+  const right = box.right + padX;
+  const top = box.top - padY;
+  const bottom = box.bottom + padY;
+
+  const startInside = from.x >= left && from.x <= right && from.y >= top && from.y <= bottom;
+  const endInside = to.x >= left && to.x <= right && to.y >= top && to.y <= bottom;
+  if(startInside || endInside) return true;
+
+  const edges = [
+    [left, top, right, top],
+    [right, top, right, bottom],
+    [right, bottom, left, bottom],
+    [left, bottom, left, top],
+  ];
+  for(const [x1, y1, x2, y2] of edges){
+    if(lineSegmentIntersection(from.x, from.y, to.x, to.y, x1, y1, x2, y2)) return true;
+  }
+  return false;
+}
+
+// Предсказывает исход полёта самолёта игрока по начальной скорости (vx,vy).
+// Возвращает { landingX, landingY, pickedCargo:Set, killedPlanes:Set } или null, если предсказать
+// нельзя. Чистая функция: работает на полилинии walkRicochetPath, ничего глобального не мутирует.
+function predictPlayerFlightOutcome(plane, vx, vy){
+  if(!plane || !Number.isFinite(vx) || !Number.isFinite(vy)) return null;
+  const speed = Math.hypot(vx, vy);
+  if(speed <= 1e-4) return null;
+  if(!Number.isFinite(FIELD_FLIGHT_DURATION_SEC) || FIELD_FLIGHT_DURATION_SEC <= 0) return null;
+
+  // Длина пути полёта = скорость * длительность (отскоки сохраняют скорость).
+  const path = walkRicochetPath(plane.x, plane.y, vx / speed, vy / speed, speed * FIELD_FLIGHT_DURATION_SEC);
+  if(!path || path.length === 0) return null;
+  const landing = path[path.length - 1];
+
+  const pickedCargo = new Set();
+  const killedPlanes = new Set();
+  const enemyColor = plane.color === "green" ? "blue" : "green";
+  const beneficial = getPlaneBeneficialGeometry(plane).hitbox;
+  const beneficialHalfW = beneficial.width / 2;
+  const beneficialHalfH = beneficial.height / 2;
+
+  for(let i = 1; i < path.length; i++){
+    const from = path[i - 1];
+    const to = path[i];
+
+    // Cargo, которое самолёт заденет полезной зоной по пути (тот же helper, что в реальном полёте).
+    for(const cargo of cargoState){
+      if(pickedCargo.has(cargo)) continue;
+      if(cargo.state !== "ready" && cargo.state !== "animating") continue;
+      if(doesCargoIntersectBeneficialZoneAlongSegment(cargo, plane, from, to)){
+        pickedCargo.add(cargo);
+      }
+    }
+
+    // Вражеские самолёты, которые игрок собьёт (зелёный сбивает синих) — чистая геометрия.
+    for(const other of points){
+      if(other === plane || killedPlanes.has(other)) continue;
+      if(other.color !== enemyColor || !isPlaneTargetable(other)) continue;
+      const box = getPlaneBeneficialGeometry(other).hitbox;
+      if(doesSegmentIntersectExpandedBox(from, to, box, beneficialHalfW, beneficialHalfH)){
+        killedPlanes.add(other);
+      }
+    }
+  }
+
+  return { landingX: landing.x, landingY: landing.y, pickedCargo, killedPlanes };
+}
+
+// Запускается в момент отпуска самолёта игроком (runLaunchReleaseStage, actor === "human").
+// Предсказывает будущее состояние и стартует вычисление cargo-маршрутов AI в фоне.
+async function startSpeculativeAiCompute(launchedPlane, launchVx, launchVy){
+  if(gameMode !== "computer" || isGameOver) return;
+
+  // Свежий релиз игрока: сбрасываем прошлый pre-roll, чтобы устаревшая позиция не утекла в спавн.
+  _pendingSpawnedCargo = null;
+
+  const prediction = predictPlayerFlightOutcome(launchedPlane, launchVx, launchVy);
+  if(!prediction) return;
+
+  // Самолёты AI, для которых считаем маршруты — без тех, кого игрок предсказуемо собьёт.
+  const bluePlanes = points.filter(p =>
+    p?.color === "blue"
+    && isPlaneLaunchStateReady(p)
+    && !flyingPoints.some(fp => fp.plane === p)
+    && !prediction.killedPlanes.has(p)
+  );
+  if(bluePlanes.length === 0) return;
+
+  // Контекст врагов (зелёные) с самолётом игрока, перенесённым в предсказанную точку приземления.
+  const enemies = points
+    .filter(p => p?.color === "green" && isPlaneTargetable(p))
+    .map(p => p === launchedPlane
+      ? { ...p, x: prediction.landingX, y: prediction.landingY }
+      : p);
+  const context = { enemies, homeBase: getBaseAnchor("blue") };
+
+  // Cargo, которое AI увидит на своём ходу: текущее ready/animating минус подобранное игроком.
+  const survivingCargo = cargoState.filter(c =>
+    (c.state === "ready" || c.state === "animating") && !prediction.pickedCargo.has(c)
+  );
+
+  // Pre-roll следующего cargo: позиция фиксируется сейчас, тот же объект уйдёт в spawnCargoForTurn,
+  // чтобы identity совпала и кэш сработал.
+  let pendingCargo = null;
+  if(settings.addCargo){
+    const spawn = findCargoSpawnTarget();
+    if(spawn){
+      pendingCargo = {
+        x: spawn.x,
+        y: spawn.targetY,
+        state: "animating",
+        animStartedAt: null,
+        animDurationMs: resolveCargoAnimLifetimeMs(),
+        pickedAt: null,
+      };
+    }
+  }
+  _pendingSpawnedCargo = pendingCargo;
+
+  const speculativeCargo = pendingCargo ? [...survivingCargo, pendingCargo] : survivingCargo;
+  if(speculativeCargo.length === 0) return;
+
+  const routeResults = new Map();
+  const promise = (async () => {
+    for(const aiPlane of bluePlanes){
+      const planeRoutes = new Map();
+      for(const cargo of speculativeCargo){
+        const candidates = await collectAiCargoRouteCandidatesAsync(aiPlane, cargo, context);
+        planeRoutes.set(cargo, candidates);
+      }
+      routeResults.set(aiPlane, planeRoutes);
+    }
+  })();
+
+  // Перезаписываем безусловно: всегда отражает самый свежий полёт игрока.
+  _speculativeAiCompute = {
+    promise,
+    routeResults,
+    launchedPlane,
+    predictedLandingX: prediction.landingX,
+    predictedLandingY: prediction.landingY,
+  };
+}
+
+// Кэш валиден, если самолёт игрока реально приземлился туда, куда предсказала симуляция (в пределах
+// допуска). От позиции игрока зависит оценка риска маршрутов; cargo не двигается, остальные враги
+// статичны — поэтому проверки точки приземления достаточно.
+function isSpeculativePredictionValid(spec){
+  const p = spec?.launchedPlane;
+  if(!p || !p.isAlive || p.burning) return false;
+  if(flyingPoints.some(fp => fp.plane === p)) return false;
+  const dx = p.x - spec.predictedLandingX;
+  const dy = p.y - spec.predictedLandingY;
+  const eps = CELL_SIZE * 1.5;
+  return (dx * dx + dy * dy) <= eps * eps;
+}
+
 function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayMs = AI_MOVE_INITIAL_DELAY_MS, planningContext = null){
   if(
     isGameOver
@@ -15369,6 +15569,19 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     // (спавн через spawnCargoForTurn задаёт x: candidate.x, y: candidate.targetY).
     // state "animating" — только визуальный флаг, ждать его завершения незачем.
     const readyCargo = cargoState.filter((cargo) => cargo?.state === "ready" || cargo?.state === "animating");
+
+    // Забираем спекулятивный кэш one-shot (вычислен во время полёта игрока) и валидируем предсказание.
+    // Await почти мгновенный, если вычисление успело за время полёта; иначе ждём остаток.
+    const _turnSpeculative = _speculativeAiCompute;
+    _speculativeAiCompute = null;
+    let _turnSpecCache = null;
+    if(_turnSpeculative){
+      try{ await _turnSpeculative.promise; } catch(e){ /* при ошибке считаем заново */ }
+      if(isSpeculativePredictionValid(_turnSpeculative)){
+        _turnSpecCache = _turnSpeculative.routeResults;
+      }
+    }
+
     const aiExecutionContext = {
       aiPlanes: launchReadyPlanes,
       enemies: enemyPlanes,
@@ -15817,7 +16030,9 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         for(const cargoEntry of sortedCargos){
           await aiCoopMaybeYield();
           if(!isAiTurnStillApplicable()){ aiThinkingTimingStageEnd("cargo_routes"); return null; }
-          const cargoRouteCandidates = await collectAiCargoRouteCandidatesAsync(launchReadyPlane, cargoEntry.cargo, cargoContext);
+          const cargoRouteCandidates =
+            _turnSpecCache?.get(launchReadyPlane)?.get(cargoEntry.cargo)
+            ?? await collectAiCargoRouteCandidatesAsync(launchReadyPlane, cargoEntry.cargo, cargoContext);
           const candidate = cargoRouteCandidates
             .filter((c) => {
               const riskInfo = c?.riskInfo;
@@ -18419,6 +18634,12 @@ function runLaunchReleaseStage({ plane, vx, vy, actor = "human" }){
     shieldBreakLockActive:false,
     shieldBreakLockTarget:null
   });
+
+  // Игрок отпустил самолёт: пока он летит (~1.51с), запускаем ход AI спекулятивно против
+  // предсказанного будущего состояния поля (см. startSpeculativeAiCompute).
+  if(actor === "human"){
+    startSpeculativeAiCompute(plane, vx, vy);
+  }
 
   recordAiSelfAnalyzerLaunch(plane, vx, vy, actor === "computer" ? "computer" : "human");
   if(actor === "human"){
@@ -41540,24 +41761,26 @@ function clampSegmentToFieldBounds(start, end){
   };
 }
 
-function buildPredictedPathForAim(plane, dragVector){
-  const dragDistance = Math.hypot(dragVector.x, dragVector.y);
-  const maxRange = getEffectiveFlightRangeCells(plane) * CELL_SIZE;
-  const rangeScale = MAX_DRAG_DISTANCE > 0 ? Math.min(1, dragDistance / MAX_DRAG_DISTANCE) : 0;
-  let remainingDistance = maxRange * rangeScale;
-  const points = [{ x: plane.x, y: plane.y }];
+// Чистый трассировщик рикошетной траектории: из стартовой точки в направлении (dirX,dirY)
+// на дистанцию distance, с отскоками от colliderSurfaces (reflect/slide как в реальном полёте).
+// Возвращает полилинию [{x,y}, ...]. Без side-effects — используется и для линии прицела
+// (buildPredictedPathForAim), и для спекулятивного предсказания полёта (predictPlayerFlightOutcome).
+function walkRicochetPath(startX, startY, dirX, dirY, distance){
+  const points = [{ x: startX, y: startY }];
   const MAX_RICOCHETS = 12;
   const TINY_EPSILON = 1e-4;
   const EPS_PUSH = 0.5;
 
-  if(remainingDistance <= TINY_EPSILON || dragDistance <= TINY_EPSILON){
+  let remainingDistance = distance;
+  const dirLen0 = Math.hypot(dirX, dirY);
+  if(remainingDistance <= TINY_EPSILON || dirLen0 <= TINY_EPSILON){
     return points;
   }
+  dirX /= dirLen0;
+  dirY /= dirLen0;
 
-  let dirX = -dragVector.x / dragDistance;
-  let dirY = -dragVector.y / dragDistance;
-  let currX = plane.x;
-  let currY = plane.y;
+  let currX = startX;
+  let currY = startY;
   let ricochets = 0;
 
   while(remainingDistance > TINY_EPSILON && ricochets <= MAX_RICOCHETS){
@@ -41615,6 +41838,24 @@ function buildPredictedPathForAim(plane, dragVector){
   }
 
   return points;
+}
+
+function buildPredictedPathForAim(plane, dragVector){
+  const dragDistance = Math.hypot(dragVector.x, dragVector.y);
+  const maxRange = getEffectiveFlightRangeCells(plane) * CELL_SIZE;
+  const rangeScale = MAX_DRAG_DISTANCE > 0 ? Math.min(1, dragDistance / MAX_DRAG_DISTANCE) : 0;
+  const remainingDistance = maxRange * rangeScale;
+
+  if(remainingDistance <= 1e-4 || dragDistance <= 1e-4){
+    return [{ x: plane.x, y: plane.y }];
+  }
+
+  return walkRicochetPath(
+    plane.x, plane.y,
+    -dragVector.x / dragDistance,
+    -dragVector.y / dragDistance,
+    remainingDistance
+  );
 }
 
 const AI_SIM_MAX_BOUNCES_DEFAULT = 2;
