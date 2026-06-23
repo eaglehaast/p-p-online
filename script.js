@@ -9909,6 +9909,7 @@ async function collectAiCargoRouteCandidatesAsync(plane, cargo, context){
     await aiCoopMaybeYield();
     const routeClassOrder = getAiCargoRouteClassOrder(target);
     for(const routeClass of routeClassOrder){
+      await aiCoopMaybeYield();
       const candidate = buildAiCargoRouteCandidate(plane, cargo, context, target, routeClass);
       if(candidate && candidate.cargoPickedOnPath){
         candidates.push(candidate);
@@ -15187,6 +15188,7 @@ function invalidateAiPlanningState(reason = "unspecified"){
   if(reason === "round_reset" || reason === "game_reset"){
     _speculativeAiCompute = null;
     _pendingSpawnedCargo = null;
+    _speculativeComputeActive = false;
   }
   if(reason === "turn_advanced" || reason === "round_reset" || reason === "game_reset"){
     resetAiTurnTimingState();
@@ -15333,7 +15335,7 @@ async function aiCoopMaybeYield(){
   const nowMs = (typeof performance !== "undefined" && typeof performance.now === "function")
     ? performance.now()
     : Date.now();
-  if(nowMs - aiCoopBudgetStartedAt < AI_COOP_FRAME_BUDGET_MS){
+  if(!_speculativeComputeActive && nowMs - aiCoopBudgetStartedAt < AI_COOP_FRAME_BUDGET_MS){
     aiThinkingTimingNoteYieldOrCheckpoint(nowMs, false);
     return;
   }
@@ -15365,6 +15367,9 @@ function isAiTurnStillApplicable(){
 // границе) — кэш отбрасывается и AI считает заново как обычно.
 let _speculativeAiCompute = null;
 let _pendingSpawnedCargo = null;
+// true while the speculative promise is running; makes aiCoopMaybeYield always yield so that
+// rAF-based animation can paint between every computation unit during player flight.
+let _speculativeComputeActive = false;
 
 // Пересечение отрезка [from→to] с AABB box, расширенным на (padX,padY) с каждой стороны.
 // Зеркалит логику doesCargoIntersectBeneficialZoneAlongSegment, но для произвольного box (самолёт).
@@ -15494,13 +15499,18 @@ async function startSpeculativeAiCompute(launchedPlane, launchVx, launchVy){
 
   const routeResults = new Map();
   const promise = (async () => {
-    for(const aiPlane of bluePlanes){
-      const planeRoutes = new Map();
-      for(const cargo of speculativeCargo){
-        const candidates = await collectAiCargoRouteCandidatesAsync(aiPlane, cargo, context);
-        planeRoutes.set(cargo, candidates);
+    _speculativeComputeActive = true;
+    try {
+      for(const aiPlane of bluePlanes){
+        const planeRoutes = new Map();
+        for(const cargo of speculativeCargo){
+          const candidates = await collectAiCargoRouteCandidatesAsync(aiPlane, cargo, context);
+          planeRoutes.set(cargo, candidates);
+        }
+        routeResults.set(aiPlane, planeRoutes);
       }
-      routeResults.set(aiPlane, planeRoutes);
+    } finally {
+      _speculativeComputeActive = false;
     }
   })();
 
@@ -15572,8 +15582,11 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
 
     // Забираем спекулятивный кэш one-shot (вычислен во время полёта игрока) и валидируем предсказание.
     // Await почти мгновенный, если вычисление успело за время полёта; иначе ждём остаток.
+    // Сбрасываем _speculativeComputeActive ДО await: если спекуляция не успела, остаток считается
+    // с нормальным (6мс) бюджетом, а не forced-yield — иначе he-бюджетный yield замедлит AI-ход.
     const _turnSpeculative = _speculativeAiCompute;
     _speculativeAiCompute = null;
+    _speculativeComputeActive = false;
     let _turnSpecCache = null;
     if(_turnSpeculative){
       try{ await _turnSpeculative.promise; } catch(e){ /* при ошибке считаем заново */ }
