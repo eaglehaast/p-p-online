@@ -15070,10 +15070,16 @@ function resetLastPlayerMoveCommitMeta(){
     finishedAtMs: 0,
   };
 }
-const AI_MOVE_INITIAL_DELAY_MS = 300;
+// Без искусственной паузы перед стартом планирования: ход AI занимает ровно столько,
+// сколько считает. setTimeout(0) сохраняет async-границу (тяжёлый compute не блокирует
+// кадр gameDraw, в котором сел самолёт игрока), но не добавляет видимого ожидания.
+const AI_MOVE_INITIAL_DELAY_MS = 0;
 const AI_MOVE_CARGO_RETRY_DELAY_MS = 200;
 const AI_MOVE_CARGO_WAIT_TIMEOUT_MS = 1800;
-const AI_TURN_MIN_RELEASE_BUDGET_MS = 900;
+// Без минимального пола на момент релиза: AI отпускает самолёт, как только готов план
+// и доиграла аим-анимация (telegraphy). minReleaseAt=0 → releaseDueAt = естественная
+// длина прицеливания (см. Math.max(plannedReleaseDueAt, minReleaseAt) в createAiLaunchSession).
+const AI_TURN_MIN_RELEASE_BUDGET_MS = 0;
 function resetAiTurnTimingState(){
   aiTurnTimingState = {
     turnStartedAt: 0,
