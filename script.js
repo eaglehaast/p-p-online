@@ -9893,6 +9893,9 @@ function collectAiCargoRouteCandidates(plane, cargo, context){
 // на 400-500мс. Каждый buildAiCargoRouteCandidate сам по себе ~80-150мс,
 // поэтому yield BETWEEN targets разбивает на куски в пределах frame budget.
 async function collectAiCargoRouteCandidatesAsync(plane, cargo, context){
+  // Первый yield — попадает в паузу aiCoopMaybeYield, если самолёт игрока летит.
+  // Так синхронная buildAiCargoLongRangeTargets (line ~9905) тоже откладывается до посадки.
+  await aiCoopMaybeYield();
   const cargoCenter = getCargoVisualCenter(cargo);
   const directCargoTarget = {
     name: "pickup_cargo_direct",
@@ -15332,6 +15335,14 @@ function aiCoopResetBudget(){
   aiThinkingCheckpointAt = aiCoopBudgetStartedAt;
 }
 async function aiCoopMaybeYield(){
+  // Спекулятивная фаза: пока самолёт игрока летит — ждём без выполнения тяжёлых чанков.
+  // Полёт delta-time (gameDraw ~43840/43867): любой блок >16.7мс телепортирует самолёт.
+  // planPathToPoint (~30мс) неделим → единственный выход — переждать полёт.
+  // Цикл завершается гарантированно: flyingPoints опустеет за ≤1.51с, либо
+  // _speculativeComputeActive=false (ход AI начался / reset).
+  while(_speculativeComputeActive && flyingPoints.length > 0){
+    await aiYieldToNextFrame();
+  }
   const nowMs = (typeof performance !== "undefined" && typeof performance.now === "function")
     ? performance.now()
     : Date.now();
