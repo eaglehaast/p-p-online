@@ -15070,10 +15070,11 @@ function resetLastPlayerMoveCommitMeta(){
     finishedAtMs: 0,
   };
 }
-// Без искусственной паузы перед стартом планирования: ход AI занимает ровно столько,
-// сколько считает. setTimeout(0) сохраняет async-границу (тяжёлый compute не блокирует
-// кадр gameDraw, в котором сел самолёт игрока), но не добавляет видимого ожидания.
-const AI_MOVE_INITIAL_DELAY_MS = 0;
+// 300мс даёт анимации приземления груза завершиться до старта тяжёлого вычисления AI.
+// setTimeout(0) сохраняет async-границу, но без задержки compute конкурирует с кадром
+// gameDraw, в котором груз ещё приземляется. 900мс-пол (AI_TURN_MIN_RELEASE_BUDGET_MS)
+// убран отдельно — он не связан с анимацией груза.
+const AI_MOVE_INITIAL_DELAY_MS = 300;
 const AI_MOVE_CARGO_RETRY_DELAY_MS = 200;
 const AI_MOVE_CARGO_WAIT_TIMEOUT_MS = 1800;
 // Без минимального пола на момент релиза: AI отпускает самолёт, как только готов план
