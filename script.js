@@ -9890,9 +9890,9 @@ async function collectAiCargoRouteCandidatesAsync(plane, cargo, context){
 
   const candidates = [];
   for(const target of allTargets){
-    await aiCoopMaybeYield();
     const routeClassOrder = getAiCargoRouteClassOrder(target);
     for(const routeClass of routeClassOrder){
+      await aiCoopMaybeYield();
       const candidate = buildAiCargoRouteCandidate(plane, cargo, context, target, routeClass);
       if(candidate && candidate.cargoPickedOnPath){
         candidates.push(candidate);
@@ -41938,12 +41938,12 @@ async function enumerateAIShotCandidatesAsync(plane, target, options = {}, yield
 
   for(let a = targetAngle - Math.PI; a <= targetAngle + Math.PI + 1e-6; a += coarseAngleStep){
     for(let s = 0.2; s <= 1.0001; s += coarseScaleStep){
+      if(yieldHook) await yieldHook();
       const sim = simulateAIShot(plane, { dx: Math.cos(a), dy: Math.sin(a), scale: s }, { target, maxBounces: options.maxBounces });
       if(!sim) continue;
       const score = scoreAISimulatedCandidate(sim, { target, targetDistance });
       coarse.push({ sim, score, angle: a, scale: s });
     }
-    if(yieldHook) await yieldHook();
   }
   coarse.sort((a, b) => {
     if(Math.abs(a.score - b.score) > 0.5) return b.score - a.score;
@@ -41954,6 +41954,7 @@ async function enumerateAIShotCandidatesAsync(plane, target, options = {}, yield
   for(const seed of seeds){
     for(let da = -coarseAngleStep; da <= coarseAngleStep + 1e-6; da += fineAngleStep){
       for(let ds = -refineScaleWindow; ds <= refineScaleWindow + 1e-6; ds += fineScaleStep){
+        if(yieldHook) await yieldHook();
         const a = seed.angle + da;
         const s = Math.max(0.1, Math.min(1, seed.scale + ds));
         const sim = simulateAIShot(plane, { dx: Math.cos(a), dy: Math.sin(a), scale: s }, { target, maxBounces: options.maxBounces });
@@ -41961,7 +41962,6 @@ async function enumerateAIShotCandidatesAsync(plane, target, options = {}, yield
         refined.push({ sim, score: scoreAISimulatedCandidate(sim, { target, targetDistance }), angle: a, scale: s });
       }
     }
-    if(yieldHook) await yieldHook();
   }
   const pool = [...coarse.slice(0, coarsePoolSize), ...refined];
   pool.sort((a, b) => {
