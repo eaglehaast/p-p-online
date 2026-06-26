@@ -15589,6 +15589,58 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       };
     };
 
+    // Center-control move that doesn't just nose a short stub into the wall.
+    // Tries the direct hop (existing behaviour) AND ricochet/gap routes toward
+    // the true center anchor — planPathToPoint returns only wall-safe routes, so
+    // a bounce that actually reaches the center beats a stub that stops at the
+    // wall face. Picks whichever lands closest to the center anchor.
+    const buildCenterApproachMove = (plane, directCenterTarget, maxFlightDistancePx) => {
+      const anchor = getCenterControlAnchor();
+      const candidates = [];
+      const directMove = buildMoveTowardTarget(plane, directCenterTarget, maxFlightDistancePx, {
+        decisionReason: "simple_step2_center_control",
+        goalName: "simple_step2_center",
+        whyChosen: "no_realistic_direct_enemy_hit_center_preferred",
+      });
+      if(directMove) candidates.push({ ...directMove, routeClass: "direct", bounceCount: 0 });
+      if(Number.isFinite(anchor?.x) && Number.isFinite(anchor?.y)){
+        for(const rc of ["ricochet", "gap"]){
+          const m = planPathToPoint(plane, anchor.x, anchor.y, {
+            goalName: "simple_step2_center",
+            decisionReason: `simple_step2_center_control_${rc}`,
+            routeClass: rc,
+          });
+          const landing = m ? getAiMoveLandingPoint({ plane, ...m }) : null;
+          if(!m || !landing) continue;
+          const finalDistPx = Math.hypot(landing.x - plane.x, landing.y - plane.y);
+          // Same min-move gate as buildMoveTowardTarget (no sub-5-cell stutter).
+          if(finalDistPx < CELL_SIZE * 5) continue;
+          candidates.push({
+            plane,
+            landingX: landing.x,
+            landingY: landing.y,
+            targetPoint: anchor,
+            decisionReason: `simple_step2_center_control_${rc}`,
+            goalName: "simple_step2_center",
+            whyChosen: `center_control_via_${rc}_avoids_wall`,
+            routeClass: rc,
+            bounceCount: Number.isFinite(m.bounceCount) ? m.bounceCount : 0,
+          });
+        }
+      }
+      if(!candidates.length) return null;
+      // Best center control = lands closest to the center anchor; tie-break by
+      // fewer bounces, then by more ground covered.
+      candidates.sort((a, b) => {
+        const da = Math.hypot(a.landingX - anchor.x, a.landingY - anchor.y);
+        const db = Math.hypot(b.landingX - anchor.x, b.landingY - anchor.y);
+        if(Math.abs(da - db) > CELL_SIZE * 0.5) return da - db;
+        if((a.bounceCount || 0) !== (b.bounceCount || 0)) return (a.bounceCount || 0) - (b.bounceCount || 0);
+        return Math.hypot(b.landingX - plane.x, b.landingY - plane.y) - Math.hypot(a.landingX - plane.x, a.landingY - plane.y);
+      });
+      return candidates[0];
+    };
+
     const buildGuaranteedAdvanceMove = (plane) => {
       const profile = getAiFlightRangeProfile(plane);
       const maxFlightDistancePx = Math.max(1, Number.isFinite(profile?.flightDistancePx) ? profile.flightDistancePx : (CELL_SIZE * 6));
@@ -15847,11 +15899,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       }
 
       if(!selectedPlan){
-        selectedPlan = buildMoveTowardTarget(launchReadyPlane, centerTarget, maxFlightDistancePx, {
-          decisionReason: "simple_step2_center_control",
-          goalName: "simple_step2_center",
-          whyChosen: "no_realistic_direct_enemy_hit_center_preferred",
-        });
+        selectedPlan = buildCenterApproachMove(launchReadyPlane, centerTarget, maxFlightDistancePx);
         planTier = 3;
         planDistance = selectedPlan ? Math.hypot(selectedPlan.landingX - launchReadyPlane.x, selectedPlan.landingY - launchReadyPlane.y) : Number.POSITIVE_INFINITY;
       }
@@ -15869,11 +15917,16 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
 
         let bestCargoCandidate = null;
         let bestCargoEntry = null;
+        // Per-cargo candidates kept for the relaxed cargo-reach fallback below.
+        // Only fully populated when no SAFE cargo broke the loop early (i.e. the
+        // exact situation where the fallback is needed) — no extra pathfinding.
+        const cachedCargoCandidates = [];
         aiThinkingTimingStageStart("cargo_routes");
         for(const cargoEntry of sortedCargos){
           await aiCoopMaybeYield();
           if(!isAiTurnStillApplicable()){ aiThinkingTimingStageEnd("cargo_routes"); return null; }
           const cargoRouteCandidates = await collectAiCargoRouteCandidatesAsync(launchReadyPlane, cargoEntry.cargo, cargoContext);
+          cachedCargoCandidates.push({ entry: cargoEntry, candidates: cargoRouteCandidates });
           const candidate = cargoRouteCandidates
             .filter((c) => {
               const riskInfo = c?.riskInfo;
@@ -15936,6 +15989,46 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
             selectedPlan = cargoMove;
             planTier = 1;
             planDistance = cargoPlanDistance;
+          }
+        }
+
+        // Relaxed cargo-reach: no enemy shot (normal or last-resort) AND no SAFE
+        // cargo accepted -> lean toward the nearest NAVIGABLE cargo route anyway
+        // instead of holding center ("если врага нет — хотя бы к грузу тянется").
+        if(!bestCargoCandidate && !bestAttackCandidate && !lastResortAttackFound){
+          let reachCandidate = null;
+          let reachEntry = null;
+          for(const { entry, candidates } of cachedCargoCandidates){
+            const best = candidates
+              .filter((c) => c?.move
+                && Boolean(c?.riskInfo?.isSafePath)
+                && (!Number.isFinite(c?.riskInfo?.totalRisk) || c.riskInfo.totalRisk <= AI_CARGO_REACH_RISK_ACCEPTANCE))
+              .sort((a, b) => (a?.move?.totalDist || Number.POSITIVE_INFINITY) - (b?.move?.totalDist || Number.POSITIVE_INFINITY))[0] || null;
+            if(best?.move){
+              reachCandidate = best;
+              reachEntry = entry;
+              break; // sortedCargos is nearest-first
+            }
+          }
+          if(reachCandidate?.move && reachEntry){
+            selectedPlan = {
+              plane: launchReadyPlane,
+              landingX: launchReadyPlane.x + (reachCandidate.move.vx || 0) * FIELD_FLIGHT_DURATION_SEC,
+              landingY: launchReadyPlane.y + (reachCandidate.move.vy || 0) * FIELD_FLIGHT_DURATION_SEC,
+              targetPoint: reachEntry.center,
+              decisionReason: "simple_step2_cargo_reach",
+              goalName: "simple_step2_cargo",
+              whyChosen: "no_enemy_shot_lean_toward_cargo",
+              routeClass: reachCandidate.move.routeClass || reachCandidate.move.candidateClass || "direct",
+              bounceCount: Number.isFinite(reachCandidate.move.bounceCount) ? reachCandidate.move.bounceCount : 0,
+            };
+            planTier = 2; // last-resort attack(2) > cargo-reach(2, mutually exclusive) > center(3)
+            planDistance = Number.isFinite(reachCandidate.move.totalDist) ? reachCandidate.move.totalDist : reachEntry.d;
+            logAiDecision("simple_step2_cargo_reach", {
+              planeId: launchReadyPlane?.id ?? null,
+              routeClass: selectedPlan.routeClass,
+              totalRisk: Number.isFinite(reachCandidate.riskInfo?.totalRisk) ? Number(reachCandidate.riskInfo.totalRisk.toFixed(2)) : null,
+            });
           }
         }
       }
@@ -19482,6 +19575,12 @@ const AI_MODES = Object.freeze({
 
 const AI_EARLY_GAME_TURN_LIMIT = 6;
 const AI_CARGO_RISK_ACCEPTANCE = 0.42;
+// Relaxed acceptance used ONLY as a last resort: when the AI found no enemy shot
+// and no "safe" cargo route, it still leans toward the nearest NAVIGABLE cargo
+// route ("хотя бы к грузу тянется") instead of holding center. 1 = ignore the
+// soft enemy-response risk cap entirely (path must still be navigable). Dial to
+// ~0.7 to only chase cargo when interception risk is moderate.
+const AI_CARGO_REACH_RISK_ACCEPTANCE = 1;
 const AI_CARGO_RISK_YELLOW_ZONE_MARGIN = 0.12;
 const AI_CARGO_FAVORABLE_DISTANCE = MAX_DRAG_DISTANCE * 0.72;
 const AI_CARGO_IMMEDIATE_THREAT_DISTANCE = ATTACK_RANGE_PX * 0.9;
