@@ -15691,7 +15691,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         if(!plane || !enemy) return null;
         if(!Number.isFinite(maxFlightDistancePx) || maxFlightDistancePx <= 0) return null;
         const simulated = await findBestSimulatedShotAsync(plane, enemy, {
-          maxBounces: 3,
+          maxBounces: Number.isFinite(simulationOptions.maxBounces) ? simulationOptions.maxBounces : 3,
           coarseAngleStepDeg: simulationOptions.coarseAngleStepDeg,
           fineAngleStepDeg: simulationOptions.fineAngleStepDeg,
           coarseScaleStep: simulationOptions.coarseScaleStep,
@@ -15797,6 +15797,55 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       let planTier = 1;
       let planDistance = Number.isFinite(bestAttackCandidate?.enemyDistance) ? bestAttackCandidate.enemyDistance : Number.POSITIVE_INFINITY;
 
+      let lastResortAttackFound = false;
+      if(!selectedPlan && prioritizedEnemiesForPlane.length){
+        // No normal (<=3 bounce) shot connected. Before degrading to a dumb straight
+        // "center control" hop, try HARDER for a ricochet on the nearest enemy:
+        // more bounces + finer angle/scale sampling. Cheap because this only runs
+        // when the standard pass found nothing (typically the last plane or two),
+        // and it is capped to the single nearest enemy.
+        const nearestEnemyEntry = prioritizedEnemiesForPlane[0];
+        aiThinkingTimingStageStart("attack_sim_last_resort");
+        await aiCoopMaybeYield();
+        if(!isAiTurnStillApplicable()){ aiThinkingTimingStageEnd("attack_sim_last_resort"); return null; }
+        const lastResortMove = await buildSimulatedEnemyCandidate(
+          launchReadyPlane,
+          nearestEnemyEntry.enemy,
+          maxFlightDistancePx,
+          {
+            maxBounces: 5,
+            coarseAngleStepDeg: 6,
+            fineAngleStepDeg: 2,
+            coarseScaleStep: 0.05,
+            fineScaleStep: 0.02,
+            seedCount: 12,
+            coarsePoolSize: 28,
+          }
+        );
+        aiThinkingTimingStageEnd("attack_sim_last_resort");
+        if(lastResortMove){
+          // Retag for telemetry so the self-analyzer report distinguishes this from a
+          // normal first-pass hit.
+          lastResortMove.decisionReason = lastResortMove.routeClass === "ricochet"
+            ? "simple_step2_ricochet_enemy_last_resort"
+            : "simple_step2_direct_enemy_last_resort";
+          lastResortMove.whyChosen = "last_resort_deep_ricochet_before_center_control";
+          selectedPlan = lastResortMove;
+          planTier = 2; // attack(1) > last-resort attack(2) > center(3); cargo stays 1
+          planDistance = Number.isFinite(nearestEnemyEntry.enemyDistance)
+            ? nearestEnemyEntry.enemyDistance
+            : Number.POSITIVE_INFINITY;
+          lastResortAttackFound = true;
+          logAiDecision("simple_step2_last_resort_attack", {
+            reasonCode: lastResortMove.decisionReason,
+            planeId: launchReadyPlane?.id ?? null,
+            enemyId: nearestEnemyEntry.enemy?.id ?? null,
+            routeClass: lastResortMove.routeClass,
+            bounceCount: lastResortMove.bounceCount ?? null,
+          });
+        }
+      }
+
       if(!selectedPlan){
         selectedPlan = buildMoveTowardTarget(launchReadyPlane, centerTarget, maxFlightDistancePx, {
           decisionReason: "simple_step2_center_control",
@@ -15896,7 +15945,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         ...selectedPlan,
         planTier,
         planDistance,
-        hasDirectEnemy: Boolean(bestAttackCandidate),
+        hasDirectEnemy: Boolean(bestAttackCandidate) || lastResortAttackFound,
         readyCargoCount: readyCargo.length,
       };
     };
