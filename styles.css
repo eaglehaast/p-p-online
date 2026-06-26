@@ -1985,6 +1985,94 @@ body, button {
   filter: grayscale(0) drop-shadow(0 0 6px rgba(127, 142, 64, 0.6));
 }
 
+/* --- "AI is thinking" goat hoof -----------------------------------------
+   Lives in the #gameContainer 460x800 world (sibling of the goat indicator,
+   so it scales with the board). Resting spot is the asset's final position:
+   x = -15 (15px stays off the left edge so it only half-peeks), y = 85
+   measured from the top of the goat region (goat indicator sits at top:400),
+   i.e. world top: 400 + 85 = 485px. Tweak left/top here to re-aim it; tweak
+   the threshold in script.js (AI_THINK_HOOF_THRESHOLD_MS) to change how long
+   the AI must deliberate before the hoof bothers to appear. */
+#aiThinkHoof {
+  position: absolute;
+  left: -15px;
+  top: 485px;
+  width: 47px;
+  height: 49px;
+  z-index: 36; /* just above the goat indicator (35) */
+  pointer-events: none;
+  visibility: hidden;
+  transform: translateX(-44px); /* parked fully off-screen to the left */
+  will-change: transform;
+}
+
+#aiThinkHoof .ai-think-hoof__frame {
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 47px 49px;
+}
+
+#aiThinkHoof .ai-think-hoof__frame--close {
+  background-image: url("ui_gamescreen/gamescreen_outside/goat_close.png");
+  opacity: 1;
+}
+
+#aiThinkHoof .ai-think-hoof__frame--open {
+  background-image: url("ui_gamescreen/gamescreen_outside/goat_open.png");
+  opacity: 0;
+}
+
+/* Entering: stepped slide-in (deliberately jerky, old-school). */
+#aiThinkHoof.is-entering {
+  visibility: visible;
+  animation: aiHoofSlideIn 0.45s steps(1, end) forwards;
+}
+
+@keyframes aiHoofSlideIn {
+  0%   { transform: translateX(-44px); }
+  25%  { transform: translateX(-30px); }
+  50%  { transform: translateX(-18px); }
+  75%  { transform: translateX(-8px); }
+  100% { transform: translateX(0); }
+}
+
+/* Fidgeting: parked at rest, alternating closed/open frames = lateral squeeze
+   (reads as a hoof teasing a beard, not an in-out pump). Opacity animation so
+   it composites and survives the AI's heavy sync chunks. */
+#aiThinkHoof.is-fidgeting {
+  visibility: visible;
+  transform: translateX(0);
+}
+
+#aiThinkHoof.is-fidgeting .ai-think-hoof__frame--open {
+  animation: aiHoofFidget 0.5s steps(1, end) infinite;
+}
+
+@keyframes aiHoofFidget {
+  0%   { opacity: 0; }
+  50%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Leaving: stepped slide-out, retracts showing the closed hoof. */
+#aiThinkHoof.is-leaving {
+  visibility: visible;
+  animation: aiHoofSlideOut 0.4s steps(1, end) forwards;
+}
+
+@keyframes aiHoofSlideOut {
+  0%   { transform: translateX(0); }
+  33%  { transform: translateX(-12px); }
+  66%  { transform: translateX(-28px); }
+  100% { transform: translateX(-44px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #aiThinkHoof { display: none; }
+}
+
 
 /* Aiming overlay (full 460x800 frame) */
 #aimCanvas {

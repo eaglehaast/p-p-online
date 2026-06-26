@@ -126,6 +126,14 @@
             <div id="mantisIndicator" class="turn-indicator" style="display:none;"></div>
             <div id="goatIndicator" class="turn-indicator" style="display:none;"></div>
 
+            <!-- "AI is thinking" goat hoof: peeks in from the left only while the
+                 AI deliberates past a threshold, fidgets (stroking-its-beard
+                 squeeze), then jerks back out the moment the move is ready. -->
+            <div id="aiThinkHoof" aria-hidden="true">
+              <div class="ai-think-hoof__frame ai-think-hoof__frame--close"></div>
+              <div class="ai-think-hoof__frame ai-think-hoof__frame--open"></div>
+            </div>
+
             <!-- End Game Window -->
             <div id="endGameButtons" role="dialog" aria-labelledby="endGamePrompt">
               <p id="endGamePrompt" class="visually-hidden">Play Again?</p>
