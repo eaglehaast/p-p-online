@@ -15768,6 +15768,12 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         const landingY = plane.y + normDy * travelPx;
         if(!Number.isFinite(landingX) || !Number.isFinite(landingY)) return null;
         const bouncedShot = sim.bounceCount > 0;
+        // How exposed is THIS landing? Reuse the same risk mechanic the cargo /
+        // center / finisher paths already use; the target enemy is excluded (we
+        // are killing it, so it's not a post-landing threat).
+        const landingRisk = (typeof getImmediateResponseThreatMeta === "function" && typeof getFallbackCandidateResponseRisk === "function")
+          ? getFallbackCandidateResponseRisk(getImmediateResponseThreatMeta({ ...aiExecutionContext, plane }, landingX, landingY, enemy))
+          : 0;
         return {
           plane,
           landingX,
@@ -15779,6 +15785,7 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
           routeClass: bouncedShot ? "ricochet" : "direct",
           bounceCount: sim.bounceCount,
           score: simulated.score,
+          landingRisk,
           predictedOutcome: sim.predictedOutcome,
         };
       };
@@ -15840,7 +15847,11 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       }
       aiThinkingTimingStageEnd("attack_sim");
       attackCandidates.sort((a, b) => {
-        if(Math.abs((a.score ?? 0) - (b.score ?? 0)) > 0.0001) return (b.score ?? 0) - (a.score ?? 0);
+        const scoreDiff = (b.score ?? 0) - (a.score ?? 0);
+        // Comparable hit quality -> prefer the less-exposed landing, then closer enemy.
+        if(Math.abs(scoreDiff) > AI_ATTACK_SCORE_TOLERANCE) return scoreDiff;
+        const riskDiff = (a.move?.landingRisk ?? 0) - (b.move?.landingRisk ?? 0);
+        if(Math.abs(riskDiff) > 1e-6) return riskDiff;
         return a.enemyDistance - b.enemyDistance;
       });
       const bestAttackCandidate = attackCandidates[0] || null;
@@ -15848,6 +15859,31 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       let selectedPlan = bestAttackCandidate?.move || null;
       let planTier = 1;
       let planDistance = Number.isFinite(bestAttackCandidate?.enemyDistance) ? bestAttackCandidate.enemyDistance : Number.POSITIVE_INFINITY;
+
+      if(bestAttackCandidate?.move){
+        const attackLandingRisk = Number.isFinite(bestAttackCandidate.move.landingRisk) ? bestAttackCandidate.move.landingRisk : 0;
+        // Soft: a more exposed landing makes the attack "effectively farther", so a
+        // comparable SAFE cargo (also tier 1) can win the distance comparison below.
+        if(attackLandingRisk > 0 && Number.isFinite(planDistance)){
+          planDistance += attackLandingRisk * AI_LANDING_RISK_DISTANCE_PENALTY;
+        }
+        // Death-trap guard: a weak (non-ricochet) shot whose landing is near-certain
+        // death is demoted out of tier 1 so a safe cargo / smart-center can win.
+        // If no safer option exists the attack still fires (tier 2 > center) — this
+        // is a demotion, not a veto, so aggression is preserved.
+        const allowedRisk = getAiAllowedMoveRisk(aiExecutionContext);
+        const isInvestedShot = (bestAttackCandidate.move.bounceCount || 0) > 0;
+        if(attackLandingRisk > Math.max(allowedRisk, AI_ATTACK_LANDING_RISK_DEMOTE) && !isInvestedShot){
+          planTier = 2;
+          logAiDecision("attack_landing_exposed_demoted", {
+            planeId: launchReadyPlane?.id ?? null,
+            enemyId: bestAttackCandidate.enemy?.id ?? null,
+            landingRisk: Number(attackLandingRisk.toFixed(3)),
+            allowedRisk: Number(allowedRisk.toFixed(3)),
+            score: Number((bestAttackCandidate.score ?? 0).toFixed(1)),
+          });
+        }
+      }
 
       let lastResortAttackFound = false;
       if(!selectedPlan && prioritizedEnemiesForPlane.length){
@@ -19581,6 +19617,19 @@ const AI_CARGO_RISK_ACCEPTANCE = 0.42;
 // soft enemy-response risk cap entirely (path must still be navigable). Dial to
 // ~0.7 to only chase cargo when interception risk is moderate.
 const AI_CARGO_REACH_RISK_ACCEPTANCE = 1;
+// Step 1 (attack landing-point safety). The simple_step2 attack picker now
+// factors how EXPOSED the landing is, reusing getImmediateResponseThreatMeta +
+// getFallbackCandidateResponseRisk (0..1 response risk).
+//   - SCORE_TOLERANCE: sim-score band treated as "comparable hit quality"; within
+//     it, the safer landing wins (scoreAISimulatedCandidate ~1200 for a clean hit).
+//   - LANDING_RISK_DISTANCE_PENALTY: soft px added to a risky attack's effective
+//     distance so a comparable SAFE cargo can win the tier-1 distance comparison.
+//   - LANDING_RISK_DEMOTE: a near-certain-death landing (and below this, weak)
+//     demotes the attack out of tier 1 so a safe alternative is preferred; when
+//     none exists the attack still fires (demotion, not veto -> aggression kept).
+const AI_ATTACK_SCORE_TOLERANCE = 80;
+const AI_LANDING_RISK_DISTANCE_PENALTY = CELL_SIZE * 8;
+const AI_ATTACK_LANDING_RISK_DEMOTE = 0.8;
 const AI_CARGO_RISK_YELLOW_ZONE_MARGIN = 0.12;
 const AI_CARGO_FAVORABLE_DISTANCE = MAX_DRAG_DISTANCE * 0.72;
 const AI_CARGO_IMMEDIATE_THREAT_DISTANCE = ATTACK_RANGE_PX * 0.9;

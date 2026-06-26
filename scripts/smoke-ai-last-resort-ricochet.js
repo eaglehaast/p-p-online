@@ -9,6 +9,10 @@
 //   B. nothing connects, no cargo, no ricochet to center     -> direct center-control
 //   C. no shot, only a navigable-but-risky cargo route        -> cargo_reach
 //   D. no shot, no cargo, a ricochet reaches center closer    -> smart center (ricochet)
+// Plus Step 1 (attack landing-point safety):
+//   E. exposed attack landing + safe cargo  -> safe cargo wins (attack demoted)
+//   F. exposed attack landing, no safer option -> attack still fires (aggression kept)
+//   G. safe attack landing -> attack chosen, not demoted (no false positives)
 //
 // The selector is the nested closure buildBestPlanForPlane inside
 // scheduleComputerMoveWithCargoGate, so we run the whole scheduler against a
@@ -49,10 +53,14 @@ const cargoItem = { id: 'cargo-1', state: 'ready', x: 20, y: 60 };
 
 const capturedMoves = [];
 const simCalls = [];
+const loggedReasons = [];
 let pendingPromise = null;
 let deepPassHits = true;            // toggled per scenario below
 let centerRicochetAvailable = false; // planPathToPoint ricochet route toward center
 let unsafeCargoAvailable = false;    // a navigable cargo route that exceeds the safe risk cap
+let normalPassHits = false;          // normal (<=3 bounce) shot connects -> bestAttackCandidate
+let safeCargoAvailable = false;      // a SAFE cargo route (under the risk cap), placed far
+let currentAttackLandingRisk = 0;    // 0..1 exposure of the attack landing (Step 1)
 
 const context = {
   Math,
@@ -91,7 +99,16 @@ const context = {
   aiThinkingTimingStageStart: () => {},
   aiThinkingTimingStageEnd: () => {},
   aiYieldToNextFrame: async () => {},
-  logAiDecision: () => {},
+  logAiDecision: (reason) => { loggedReasons.push(reason); },
+
+  // Step 1: landing-point safety constants + risk fns (module-scope in script.js,
+  // so they must be supplied to the extracted-function VM context).
+  AI_ATTACK_SCORE_TOLERANCE: 80,
+  AI_LANDING_RISK_DISTANCE_PENALTY: 160,
+  AI_ATTACK_LANDING_RISK_DEMOTE: 0.8,
+  getImmediateResponseThreatMeta: () => ({ __risk: currentAttackLandingRisk }),
+  getFallbackCandidateResponseRisk: (meta) => (meta && Number.isFinite(meta.__risk) ? meta.__risk : 0),
+  getAiAllowedMoveRisk: () => 0.7,
 
   // world helpers
   hasAnimatingCargo: () => false,
@@ -129,15 +146,29 @@ const context = {
   AI_CARGO_RISK_ACCEPTANCE: 0.42,
   AI_CARGO_REACH_RISK_ACCEPTANCE: 1,
   getAiCargoRicochetPreferenceBonus: () => 0,
-  collectAiCargoRouteCandidatesAsync: async () => (unsafeCargoAvailable
-    ? [{
+  collectAiCargoRouteCandidatesAsync: async () => {
+    if(safeCargoAvailable){
+      // SAFE but FARTHER (totalDist 200 > the attack's 80) so it only wins once
+      // an exposed-landing attack is penalised/demoted (Step 1).
+      return [{
+        move: { vx: 0, vy: 100, totalDist: 200, routeClass: 'direct', bounceCount: 0 },
+        riskInfo: { isSafePath: true, totalRisk: 0.1 },
+        favorableInfo: { isFavorableCargo: false },
+        usefulCarryAfterPickup: 0,
+        usedRicochet: false,
+      }];
+    }
+    if(unsafeCargoAvailable){
+      return [{
         move: { vx: -30, vy: 50, totalDist: 58.3, routeClass: 'ricochet', bounceCount: 1 },
         riskInfo: { isSafePath: true, totalRisk: 0.9 }, // navigable but exceeds the 0.42 safe cap
         favorableInfo: { isFavorableCargo: false },
         usefulCarryAfterPickup: 0,
         usedRicochet: true,
-      }]
-    : []),
+      }];
+    }
+    return [];
+  },
 
   buildAiShotSimulationQualityProfile: () => ({
     coarseAngleStepDeg: 6,
@@ -154,6 +185,19 @@ const context = {
   // via a ricochet.
   findBestSimulatedShotAsync: async (plane, target, options) => {
     simCalls.push(options?.maxBounces);
+    if(options?.maxBounces === 3 && normalPassHits){
+      // direct (no-bounce) hit -> bestAttackCandidate exists; landing exposure is
+      // driven by currentAttackLandingRisk via the threat-meta mock.
+      return {
+        score: 1150,
+        sim: {
+          hitTarget: true,
+          bounceCount: 0,
+          predictedOutcome: 'target_hit_direct',
+          launchVector: { dx: 0, dy: 1, scale: 0.5 },
+        },
+      };
+    }
     if(options?.maxBounces === 5 && deepPassHits){
       return {
         score: 0.9,
@@ -185,13 +229,24 @@ const context = {
 vm.createContext(context);
 vm.runInContext(scheduleSrc, context);
 
-async function runScenario({ deep = false, ricochetCenter = false, unsafeCargo = false } = {}){
+async function runScenario({
+  deep = false,
+  ricochetCenter = false,
+  unsafeCargo = false,
+  normalHit = false,
+  safeCargo = false,
+  attackLandingRisk = 0,
+} = {}){
   deepPassHits = deep;
   centerRicochetAvailable = ricochetCenter;
   unsafeCargoAvailable = unsafeCargo;
-  context.cargoState = unsafeCargo ? [cargoItem] : [];
+  normalPassHits = normalHit;
+  safeCargoAvailable = safeCargo;
+  currentAttackLandingRisk = attackLandingRisk;
+  context.cargoState = (unsafeCargo || safeCargo) ? [cargoItem] : [];
   capturedMoves.length = 0;
   simCalls.length = 0;
+  loggedReasons.length = 0;
   pendingPromise = null;
   context.aiMoveScheduled = false;
   context.aiLaunchSession = null;
@@ -245,7 +300,48 @@ async function runScenario({ deep = false, ricochetCenter = false, unsafeCargo =
   );
   assert(centerRicochet.routeClass === 'ricochet', `D: expected ricochet routeClass, got "${centerRicochet.routeClass}".`);
 
-  console.log('Smoke test passed: last-resort ricochet + cargo-reach + smart center; center-control fallback intact.');
+  // Step 1 — attack landing-point safety.
+  // Scenario E: a normal hit whose landing is near-certain death (risk 0.95),
+  // with a SAFE (but farther) cargo available -> the exposed attack is penalised/
+  // demoted and the safe cargo wins.
+  const exposedWithCargo = await runScenario({ normalHit: true, attackLandingRisk: 0.95, safeCargo: true });
+  assert(exposedWithCargo, 'E: expected a launch.');
+  assert(
+    exposedWithCargo.decisionReason === 'simple_step2_pickup_cargo',
+    `E: expected the safe cargo to win over an exposed attack, got "${exposedWithCargo.decisionReason}".`
+  );
+  assert(
+    loggedReasons.includes('attack_landing_exposed_demoted'),
+    'E: expected the exposed attack to be demoted (logged).'
+  );
+
+  // Scenario F: same death-trap attack but NO safer option -> the attack STILL
+  // fires (demotion is not a veto; aggression preserved).
+  const exposedNoAlt = await runScenario({ normalHit: true, attackLandingRisk: 0.95 });
+  assert(exposedNoAlt, 'F: expected a launch.');
+  assert(
+    exposedNoAlt.decisionReason === 'simple_step2_direct_enemy',
+    `F: expected the attack to still fire when no safer option exists, got "${exposedNoAlt.decisionReason}".`
+  );
+  assert(
+    loggedReasons.includes('attack_landing_exposed_demoted'),
+    'F: expected the exposed attack to be demoted (logged) even though it still fires.'
+  );
+
+  // Scenario G: a normal hit with a SAFE landing (risk 0.1) -> attack chosen
+  // normally, NOT demoted (no false positives).
+  const safeAttack = await runScenario({ normalHit: true, attackLandingRisk: 0.1 });
+  assert(safeAttack, 'G: expected a launch.');
+  assert(
+    safeAttack.decisionReason === 'simple_step2_direct_enemy',
+    `G: expected the safe attack to be chosen, got "${safeAttack.decisionReason}".`
+  );
+  assert(
+    !loggedReasons.includes('attack_landing_exposed_demoted'),
+    'G: a safe-landing attack must NOT be demoted.'
+  );
+
+  console.log('Smoke test passed: fallback chain + cargo-reach + smart center + attack landing-safety.');
 })().catch((err) => {
   console.error(err);
   process.exit(1);
