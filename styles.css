@@ -2027,7 +2027,7 @@ body, button {
 /* Entering: stepped slide-in (deliberately jerky, old-school). */
 #aiThinkHoof.is-entering {
   visibility: visible;
-  animation: aiHoofSlideIn 0.45s steps(1, end) forwards;
+  animation: aiHoofSlideIn 0.8s steps(1, end) forwards;
 }
 
 @keyframes aiHoofSlideIn {
@@ -2046,14 +2046,26 @@ body, button {
   transform: translateX(0);
 }
 
-#aiThinkHoof.is-fidgeting .ai-think-hoof__frame--open {
-  animation: aiHoofFidget 0.5s steps(1, end) infinite;
+/* Both frames run in counter-phase so exactly one is ever visible — otherwise
+   the narrower closed hoof shows through from behind the spread-open one.
+   Slow, calm rhythm: the closed (rest) frame is held longer than the open
+   squeeze, so it reads as unhurried beard-stroking, not a nervous twitch. */
+#aiThinkHoof.is-fidgeting .ai-think-hoof__frame--close {
+  animation: aiHoofFidgetClose 1.5s steps(1, end) infinite;
 }
 
-@keyframes aiHoofFidget {
-  0%   { opacity: 0; }
-  50%  { opacity: 1; }
-  100% { opacity: 0; }
+#aiThinkHoof.is-fidgeting .ai-think-hoof__frame--open {
+  animation: aiHoofFidgetOpen 1.5s steps(1, end) infinite;
+}
+
+@keyframes aiHoofFidgetClose {
+  0%, 64.9% { opacity: 1; }
+  65%, 100% { opacity: 0; }
+}
+
+@keyframes aiHoofFidgetOpen {
+  0%, 64.9% { opacity: 0; }
+  65%, 100% { opacity: 1; }
 }
 
 /* Leaving: stepped slide-out, retracts showing the closed hoof. */

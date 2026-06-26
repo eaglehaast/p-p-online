@@ -15120,7 +15120,7 @@ function getAiTurnTimingSnapshot(){
 // AI_THINK_HOOF_THRESHOLD_MS, so quick moves never summon it. release() clears
 // the timer or retracts the hoof the moment the move is ready. Pure class
 // toggling — the slide/fidget keyframes live in styles.css.
-const AI_THINK_HOOF_THRESHOLD_MS = 1500;
+const AI_THINK_HOOF_THRESHOLD_MS = 3500;
 const aiThinkHoof = (() => {
   let el = null;
   let armTimer = 0;
