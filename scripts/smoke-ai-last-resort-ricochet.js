@@ -50,6 +50,9 @@ const bluePlane = { id: 'blue-1', color: 'blue', x: 50, y: 10 };
 const greenEnemy = { id: 'green-1', color: 'green', x: 50, y: 90 };
 
 const cargoItem = { id: 'cargo-1', state: 'ready', x: 20, y: 60 };
+const cargoA = { id: 'cargo-a', state: 'ready', x: 30, y: 40 };
+const cargoB = { id: 'cargo-b', state: 'ready', x: 30, y: 60 };
+const cargoC = { id: 'cargo-c', state: 'ready', x: 30, y: 80 };
 
 const capturedMoves = [];
 const simCalls = [];
@@ -60,7 +63,11 @@ let centerRicochetAvailable = false; // planPathToPoint ricochet route toward ce
 let unsafeCargoAvailable = false;    // a navigable cargo route that exceeds the safe risk cap
 let normalPassHits = false;          // normal (<=3 bounce) shot connects -> bestAttackCandidate
 let safeCargoAvailable = false;      // a SAFE cargo route (under the risk cap), placed far
-let currentAttackLandingRisk = 0;    // 0..1 exposure of the attack landing (Step 1)
+let currentAttackLandingRisk = 0;    // 0..1 exposure of the attack/sweep landing
+// Step 2 (multi-target sweep) flags:
+let cargoOnPath = false;             // doesCargoIntersectBeneficialZoneAlongPath result
+let enemyOnPath = false;             // enemy within sweep tolerance of the path
+let sweepBounce = false;             // simulated trajectory has a wall ricochet
 
 const context = {
   Math,
@@ -109,6 +116,21 @@ const context = {
   getImmediateResponseThreatMeta: () => ({ __risk: currentAttackLandingRisk }),
   getFallbackCandidateResponseRisk: (meta) => (meta && Number.isFinite(meta.__risk) ? meta.__risk : 0),
   getAiAllowedMoveRisk: () => 0.7,
+
+  // Step 2: multi-target sweep constants + reused geometry/sim fns (module-scope).
+  AI_MULTI_TARGET_DOMINATE_MIN: 3,
+  AI_MULTI_TARGET_PAIR_MIN: 2,
+  AI_SWEEP_ANGLE_STEP_DEG: 90,        // coarse (fewer sims) for the test
+  AI_SWEEP_MAX_BOUNCES: 2,
+  AI_SWEEP_ANCHOR_SCALES: [1],
+  AI_SWEEP_ENEMY_HIT_TOLERANCE_PX: 20,
+  simulateAIShot: (plane, lv) => ({
+    predictedPath: [{ x: plane.x, y: plane.y }, { x: plane.x + (lv.dx || 0) * 10, y: plane.y + (lv.dy || 0) * 10 }],
+    travelDistance: 50,
+    bounceCount: sweepBounce ? 1 : 0,
+  }),
+  doesCargoIntersectBeneficialZoneAlongPath: () => cargoOnPath,
+  getDistanceFromPointToSegment: () => (enemyOnPath ? 5 : 9999),
 
   // world helpers
   hasAnimatingCargo: () => false,
@@ -236,6 +258,10 @@ async function runScenario({
   normalHit = false,
   safeCargo = false,
   attackLandingRisk = 0,
+  cargos = null,
+  sweepCargoOnPath = false,
+  sweepEnemyOnPath = false,
+  sweepRicochet = false,
 } = {}){
   deepPassHits = deep;
   centerRicochetAvailable = ricochetCenter;
@@ -243,7 +269,12 @@ async function runScenario({
   normalPassHits = normalHit;
   safeCargoAvailable = safeCargo;
   currentAttackLandingRisk = attackLandingRisk;
-  context.cargoState = (unsafeCargo || safeCargo) ? [cargoItem] : [];
+  cargoOnPath = sweepCargoOnPath;
+  enemyOnPath = sweepEnemyOnPath;
+  sweepBounce = sweepRicochet;
+  context.cargoState = cargos
+    ? cargos
+    : ((unsafeCargo || safeCargo) ? [cargoItem] : []);
   capturedMoves.length = 0;
   simCalls.length = 0;
   loggedReasons.length = 0;
@@ -341,7 +372,54 @@ async function runScenario({
     'G: a safe-landing attack must NOT be demoted.'
   );
 
-  console.log('Smoke test passed: fallback chain + cargo-reach + smart center + attack landing-safety.');
+  // Step 2 — maximize targets on a route.
+  // Scenario H: 3 cargos swept by one direct route -> DOMINATE (top priority),
+  // landing safety ignored.
+  const dominate = await runScenario({ cargos: [cargoA, cargoB, cargoC], sweepCargoOnPath: true, attackLandingRisk: 0.95 });
+  assert(dominate, 'H: expected a launch.');
+  assert(
+    dominate.decisionReason === 'simple_step2_multi_target_direct',
+    `H: expected a dominate multi-target route, got "${dominate.decisionReason}".`
+  );
+  assert(dominate.goalName === 'simple_step2_multi_target', `H: expected multi-target goal, got "${dominate.goalName}".`);
+  assert(loggedReasons.includes('multi_target_dominate_route'), 'H: expected dominate route logged.');
+
+  // Scenario H2: same but the route ricochets -> labelled as a ricochet sweep.
+  const dominateRic = await runScenario({ cargos: [cargoA, cargoB, cargoC], sweepCargoOnPath: true, sweepRicochet: true });
+  assert(dominateRic, 'H2: expected a launch.');
+  assert(
+    dominateRic.decisionReason === 'simple_step2_multi_target_ricochet',
+    `H2: expected a ricochet sweep, got "${dominateRic.decisionReason}".`
+  );
+  assert(dominateRic.routeClass === 'ricochet', `H2: expected ricochet routeClass, got "${dominateRic.routeClass}".`);
+
+  // Scenario J: 2 cargos + 1 enemy on the path = 3 targets -> DOMINATE (enemies
+  // count toward the total just like cargo).
+  const dominateMixed = await runScenario({ cargos: [cargoA, cargoB], sweepCargoOnPath: true, sweepEnemyOnPath: true });
+  assert(dominateMixed, 'J: expected a launch.');
+  assert(loggedReasons.includes('multi_target_dominate_route'), 'J: expected enemy+cargo to reach the dominate threshold.');
+
+  // Scenario I: exactly 2 cargos, safe landing -> PAIR route preferred over a
+  // single-target plan.
+  const pair = await runScenario({ cargos: [cargoA, cargoB], sweepCargoOnPath: true, attackLandingRisk: 0 });
+  assert(pair, 'I: expected a launch.');
+  assert(loggedReasons.includes('multi_target_pair_route'), 'I: expected a safe 2-target pair route.');
+  assert(
+    pair.goalName === 'simple_step2_multi_target',
+    `I: expected multi-target goal for the pair route, got "${pair.goalName}".`
+  );
+
+  // Scenario I2: a 2-target sweep whose landing is exposed (risk 0.9) -> NOT
+  // chased (pairs stay safety-aware; only >=3 ignores exposure).
+  const pairExposed = await runScenario({ cargos: [cargoA, cargoB], sweepCargoOnPath: true, attackLandingRisk: 0.9 });
+  assert(pairExposed, 'I2: expected a launch.');
+  assert(!loggedReasons.includes('multi_target_pair_route'), 'I2: an exposed 2-target sweep must not be chosen.');
+  assert(
+    pairExposed.goalName !== 'simple_step2_multi_target',
+    'I2: exposed pair must fall back to the existing logic, not a multi-target route.'
+  );
+
+  console.log('Smoke test passed: fallback chain + cargo-reach + smart center + landing-safety + multi-target sweep.');
 })().catch((err) => {
   console.error(err);
   process.exit(1);
