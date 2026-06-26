@@ -15790,6 +15790,104 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
         };
       };
 
+    // Is `enemy` swept by the flown path (perpendicular within the danger width)?
+    const isEnemyOnPredictedPath = (enemy, path) => {
+      if(!enemy || !Array.isArray(path) || path.length < 2) return false;
+      for(let i = 0; i < path.length - 1; i += 1){
+        const d = getDistanceFromPointToSegment(enemy.x, enemy.y, path[i].x, path[i].y, path[i + 1].x, path[i + 1].y);
+        if(d <= AI_SWEEP_ENEMY_HIT_TOLERANCE_PX) return true;
+      }
+      return false;
+    };
+
+    // Priority "dominate" route: simulate real trajectories (incl. wall ricochets)
+    // and pick the launch that sweeps the MOST targets (cargo + enemy planes,
+    // combined). Returns a move whose landingX/landingY encode the LAUNCH vector
+    // (dir × power) — physics then flies the bounces — plus multiTargetCount.
+    const buildBestMultiTargetSweepCandidate = async (plane, maxFlightDistancePx) => {
+      const effRange = getPlaneEffectiveRangePx(plane);
+      if(!(effRange > 0)) return null;
+      const sweepCargos = readyCargo
+        .filter(Boolean)
+        .map((cargo) => ({ cargo, center: getCargoVisualCenter(cargo), d: dist(plane, getCargoVisualCenter(cargo)) }))
+        .sort((a, b) => a.d - b.d)
+        .slice(0, 8);
+      const sweepEnemies = enemyPlanes
+        .filter((e) => e && e.isAlive !== false)
+        .map((enemy) => ({ enemy, d: dist(plane, enemy) }))
+        .sort((a, b) => a.d - b.d)
+        .slice(0, 4);
+      if(sweepCargos.length + sweepEnemies.length < AI_MULTI_TARGET_PAIR_MIN) return null;
+
+      const directions = [];
+      const pushDir = (tx, ty) => {
+        const dx = tx - plane.x, dy = ty - plane.y;
+        const len = Math.hypot(dx, dy);
+        if(len <= 1e-6) return;
+        directions.push({ nx: dx / len, ny: dy / len, anchor: true });
+      };
+      for(const c of sweepCargos) pushDir(c.center.x, c.center.y);
+      for(const e of sweepEnemies) pushDir(e.enemy.x, e.enemy.y);
+      // Coarse angle sweep for ricochet-only routes that bounce into a cluster.
+      for(let deg = 0; deg < 360; deg += AI_SWEEP_ANGLE_STEP_DEG){
+        const rad = deg * Math.PI / 180;
+        directions.push({ nx: Math.cos(rad), ny: Math.sin(rad), anchor: false });
+      }
+
+      let best = null;
+      let simBudget = 0;
+      for(const dir of directions){
+        const scales = dir.anchor ? AI_SWEEP_ANCHOR_SCALES : [1];
+        for(const scale of scales){
+          if((simBudget++ & 7) === 7){
+            await aiCoopMaybeYield();
+            if(!isAiTurnStillApplicable()) return null;
+          }
+          const sim = simulateAIShot(plane, { dx: dir.nx, dy: dir.ny, scale }, { maxBounces: AI_SWEEP_MAX_BOUNCES });
+          if(!sim || !Array.isArray(sim.predictedPath) || sim.predictedPath.length < 2) continue;
+          let cargoHit = 0, enemyHit = 0;
+          for(const c of sweepCargos){ if(doesCargoIntersectBeneficialZoneAlongPath(c.cargo, plane, sim.predictedPath)) cargoHit += 1; }
+          for(const e of sweepEnemies){ if(isEnemyOnPredictedPath(e.enemy, sim.predictedPath)) enemyHit += 1; }
+          const count = cargoHit + enemyHit;
+          if(count < AI_MULTI_TARGET_PAIR_MIN) continue;
+          const travel = Number.isFinite(sim.travelDistance) ? sim.travelDistance : Number.POSITIVE_INFINITY;
+          const better = !best
+            || count > best.count
+            || (count === best.count && sim.bounceCount < best.bounceCount)
+            || (count === best.count && sim.bounceCount === best.bounceCount && travel < best.travel);
+          if(better){
+            best = { nx: dir.nx, ny: dir.ny, scale, count, cargoHit, enemyHit, bounceCount: sim.bounceCount, travel, end: sim.predictedPath[sim.predictedPath.length - 1] };
+          }
+        }
+      }
+      if(!best) return null;
+
+      const travelPx = Math.max(1, effRange * best.scale);
+      const landingX = plane.x + best.nx * travelPx;
+      const landingY = plane.y + best.ny * travelPx;
+      const end = best.end || { x: landingX, y: landingY };
+      const landingRisk = (typeof getImmediateResponseThreatMeta === "function" && typeof getFallbackCandidateResponseRisk === "function")
+        ? getFallbackCandidateResponseRisk(getImmediateResponseThreatMeta({ ...aiExecutionContext, plane }, end.x, end.y, null))
+        : 0;
+      const ricochet = best.bounceCount > 0;
+      return {
+        plane,
+        landingX,
+        landingY,
+        targetPoint: { x: end.x, y: end.y },
+        decisionReason: ricochet ? "simple_step2_multi_target_ricochet" : "simple_step2_multi_target_direct",
+        goalName: "simple_step2_multi_target",
+        whyChosen: `sweep_${best.count}_targets_${best.cargoHit}c_${best.enemyHit}e_bounces_${best.bounceCount}`,
+        routeClass: ricochet ? "ricochet" : "direct",
+        bounceCount: best.bounceCount,
+        multiTargetCount: best.count,
+        multiTargetCargo: best.cargoHit,
+        multiTargetEnemy: best.enemyHit,
+        landingRisk,
+        travel: best.travel,
+      };
+    };
+
     const buildBestPlanForPlane = async (launchReadyPlane) => {
       const effectiveFlightRangeCells = getEffectiveFlightRangeCells(launchReadyPlane);
       const maxFlightDistancePx = Math.max(1, effectiveFlightRangeCells * CELL_SIZE);
@@ -15829,6 +15927,33 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
       // near-zero-cost microtask unless the 6ms frame budget is exceeded.
       await aiCoopMaybeYield();
       if(!isAiTurnStillApplicable()) return null;
+
+      // === Priority layer: dominate multi-target route (cargo + enemies, incl.
+      // ricochets). Additive — only fires when a fat route exists; otherwise the
+      // existing attack/cargo/center logic below runs unchanged. ===
+      aiThinkingTimingStageStart("multi_target_sweep");
+      const sweepCandidate = await buildBestMultiTargetSweepCandidate(launchReadyPlane, maxFlightDistancePx);
+      aiThinkingTimingStageEnd("multi_target_sweep");
+      if(!isAiTurnStillApplicable()) return null;
+      if(sweepCandidate && sweepCandidate.multiTargetCount >= AI_MULTI_TARGET_DOMINATE_MIN){
+        // >=3 targets: TOP priority, landing safety intentionally ignored.
+        logAiDecision("multi_target_dominate_route", {
+          planeId: launchReadyPlane?.id ?? null,
+          targetCount: sweepCandidate.multiTargetCount,
+          cargo: sweepCandidate.multiTargetCargo,
+          enemy: sweepCandidate.multiTargetEnemy,
+          routeClass: sweepCandidate.routeClass,
+          bounceCount: sweepCandidate.bounceCount,
+          landingRisk: Number((sweepCandidate.landingRisk ?? 0).toFixed(3)),
+        });
+        return {
+          ...sweepCandidate,
+          planTier: 0,
+          planDistance: Number.isFinite(sweepCandidate.travel) ? sweepCandidate.travel : 0,
+          hasDirectEnemy: (sweepCandidate.multiTargetEnemy || 0) > 0,
+          readyCargoCount: readyCargo.length,
+        };
+      }
 
       const prioritizedEnemiesForPlane = enemyPlanes
         .map((enemy) => ({ enemy, enemyDistance: dist(launchReadyPlane, enemy) }))
@@ -16067,6 +16192,26 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
             });
           }
         }
+      }
+
+      // 2-target sweep: prefer it over any single-target plan, but stay
+      // safety-aware (only >=3 ignores landing exposure). Subsumes the old
+      // "extend a cargo line to the 3rd" idea — the sweep already maximises
+      // targets (cargo + enemy) on the chosen line, including ricochets.
+      if(sweepCandidate
+        && sweepCandidate.multiTargetCount >= AI_MULTI_TARGET_PAIR_MIN
+        && sweepCandidate.multiTargetCount < AI_MULTI_TARGET_DOMINATE_MIN
+        && (sweepCandidate.landingRisk ?? 0) <= getAiAllowedMoveRisk(aiExecutionContext)){
+        selectedPlan = { ...sweepCandidate };
+        planTier = Math.min(Number.isFinite(planTier) ? planTier : 1, 1);
+        planDistance = Number.isFinite(sweepCandidate.travel) ? sweepCandidate.travel : planDistance;
+        logAiDecision("multi_target_pair_route", {
+          planeId: launchReadyPlane?.id ?? null,
+          cargo: sweepCandidate.multiTargetCargo,
+          enemy: sweepCandidate.multiTargetEnemy,
+          routeClass: sweepCandidate.routeClass,
+          landingRisk: Number((sweepCandidate.landingRisk ?? 0).toFixed(3)),
+        });
       }
 
       if(!selectedPlan) return null;
@@ -19630,6 +19775,23 @@ const AI_CARGO_REACH_RISK_ACCEPTANCE = 1;
 const AI_ATTACK_SCORE_TOLERANCE = 80;
 const AI_LANDING_RISK_DISTANCE_PENALTY = CELL_SIZE * 8;
 const AI_ATTACK_LANDING_RISK_DEMOTE = 0.8;
+// Step 2 (maximize targets on a route). A "dominate" candidate simulates real
+// trajectories (incl. wall ricochets via simulateAIShot) and counts how many
+// targets (cargo + enemy planes, combined) the flown path sweeps. The densest
+// route is the AI's TOP priority — collecting a cargo is +1 to us AND -1 denied
+// to the enemy. This is an ADDITIVE priority layer; when no fat route exists the
+// existing attack/cargo/center logic runs unchanged.
+//   - DOMINATE_MIN: >= this many targets -> top priority, landing safety IGNORED.
+//   - PAIR_MIN: >= this many -> preferred over a single-target plan, safety-aware.
+//   - SWEEP_*: enumeration budget (anchor dirs + a coarse ricochet angle sweep).
+//   - ENEMY_HIT_TOLERANCE_PX: perpendicular distance for "plane sweeps this enemy"
+//     (danger hitbox is 36px wide).
+const AI_MULTI_TARGET_DOMINATE_MIN = 3;
+const AI_MULTI_TARGET_PAIR_MIN = 2;
+const AI_SWEEP_ANGLE_STEP_DEG = 20;
+const AI_SWEEP_MAX_BOUNCES = 2;
+const AI_SWEEP_ANCHOR_SCALES = [1, 0.7];
+const AI_SWEEP_ENEMY_HIT_TOLERANCE_PX = CELL_SIZE; // ~ danger half-width (18) + margin
 const AI_CARGO_RISK_YELLOW_ZONE_MARGIN = 0.12;
 const AI_CARGO_FAVORABLE_DISTANCE = MAX_DRAG_DISTANCE * 0.72;
 const AI_CARGO_IMMEDIATE_THREAT_DISTANCE = ATTACK_RANGE_PX * 0.9;
