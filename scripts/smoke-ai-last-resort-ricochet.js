@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 'use strict';
 
-// Smoke test: AI's last-resort deeper ricochet search.
+// Smoke test: AI last-plane fallback chain.
 //
-// Verifies that when the normal shot simulation (<=3 bounces) finds NO hit on
-// the enemy, the per-plane planner does NOT immediately fall back to the dumb
-// straight "center control" hop. Instead it runs one deeper ricochet search
-// (maxBounces 5, finer sampling) and, if that connects, launches that attack.
+// Covers, in priority order, what the per-plane planner does when the normal
+// shot simulation (<=3 bounces) finds NO hit on the enemy:
+//   A. deeper ricochet search (maxBounces 5) connects        -> attack
+//   B. nothing connects, no cargo, no ricochet to center     -> direct center-control
+//   C. no shot, only a navigable-but-risky cargo route        -> cargo_reach
+//   D. no shot, no cargo, a ricochet reaches center closer    -> smart center (ricochet)
 //
 // The selector is the nested closure buildBestPlanForPlane inside
 // scheduleComputerMoveWithCargoGate, so we run the whole scheduler against a
@@ -43,10 +45,14 @@ const scheduleSrc = extractFunctionSource(source, 'scheduleComputerMoveWithCargo
 const bluePlane = { id: 'blue-1', color: 'blue', x: 50, y: 10 };
 const greenEnemy = { id: 'green-1', color: 'green', x: 50, y: 90 };
 
+const cargoItem = { id: 'cargo-1', state: 'ready', x: 20, y: 60 };
+
 const capturedMoves = [];
 const simCalls = [];
 let pendingPromise = null;
-let deepPassHits = true; // toggled per scenario below
+let deepPassHits = true;            // toggled per scenario below
+let centerRicochetAvailable = false; // planPathToPoint ricochet route toward center
+let unsafeCargoAvailable = false;    // a navigable cargo route that exceeds the safe risk cap
 
 const context = {
   Math,
@@ -104,6 +110,35 @@ const context = {
   getNearestReachableCenterControlPoint: () => ({ x: 50, y: 75 }),
   isPathClear: () => true,
   getMineThreatMetaForSegment: () => null,
+
+  // smart-center approach reuse
+  getCenterControlAnchor: () => ({ x: 50, y: 50 }),
+  getAiMoveLandingPoint: (move) => (move && move.plane && Number.isFinite(move.vx) && Number.isFinite(move.vy)
+    ? { x: move.plane.x + move.vx * 1, y: move.plane.y + move.vy * 1 }
+    : null),
+  planPathToPoint: (plane, tx, ty, opts) => {
+    if(opts?.routeClass === 'ricochet' && centerRicochetAvailable){
+      // lands at (50, 62): 52px travel (passes the >=5-cell gate) and closer to
+      // the center anchor (50,50) than the direct stub at (50,75).
+      return { vx: 0, vy: 52, bounceCount: 1, routeClass: 'ricochet' };
+    }
+    return null;
+  },
+
+  // cargo-route reuse
+  AI_CARGO_RISK_ACCEPTANCE: 0.42,
+  AI_CARGO_REACH_RISK_ACCEPTANCE: 1,
+  getAiCargoRicochetPreferenceBonus: () => 0,
+  collectAiCargoRouteCandidatesAsync: async () => (unsafeCargoAvailable
+    ? [{
+        move: { vx: -30, vy: 50, totalDist: 58.3, routeClass: 'ricochet', bounceCount: 1 },
+        riskInfo: { isSafePath: true, totalRisk: 0.9 }, // navigable but exceeds the 0.42 safe cap
+        favorableInfo: { isFavorableCargo: false },
+        usefulCarryAfterPickup: 0,
+        usedRicochet: true,
+      }]
+    : []),
+
   buildAiShotSimulationQualityProfile: () => ({
     coarseAngleStepDeg: 6,
     fineAngleStepDeg: 2,
@@ -150,7 +185,11 @@ const context = {
 vm.createContext(context);
 vm.runInContext(scheduleSrc, context);
 
-async function runScenario(){
+async function runScenario({ deep = false, ricochetCenter = false, unsafeCargo = false } = {}){
+  deepPassHits = deep;
+  centerRicochetAvailable = ricochetCenter;
+  unsafeCargoAvailable = unsafeCargo;
+  context.cargoState = unsafeCargo ? [cargoItem] : [];
   capturedMoves.length = 0;
   simCalls.length = 0;
   pendingPromise = null;
@@ -162,39 +201,51 @@ async function runScenario(){
 }
 
 (async () => {
-  // Scenario 1: deep ricochet pass connects -> attack instead of center hop.
-  deepPassHits = true;
-  const hitMove = await runScenario();
-
-  assert(simCalls.includes(3), 'Expected a normal shot-sim pass with maxBounces 3.');
-  assert(simCalls.includes(5), 'Expected a last-resort deep shot-sim pass with maxBounces 5.');
-
-  assert(hitMove, 'Expected exactly one simple_step2_selector launch attempt.');
-  assert(hitMove.plane === bluePlane, 'Expected the blue plane to be the launching plane.');
+  // Scenario A: deep ricochet pass connects -> attack instead of center hop.
+  const hitMove = await runScenario({ deep: true });
+  assert(simCalls.includes(3), 'A: expected a normal shot-sim pass with maxBounces 3.');
+  assert(simCalls.includes(5), 'A: expected a last-resort deep shot-sim pass with maxBounces 5.');
+  assert(hitMove, 'A: expected exactly one simple_step2_selector launch attempt.');
+  assert(hitMove.plane === bluePlane, 'A: expected the blue plane to be the launching plane.');
   assert(
     hitMove.decisionReason === 'simple_step2_ricochet_enemy_last_resort',
-    `Expected last-resort ricochet decisionReason, got "${hitMove.decisionReason}".`
+    `A: expected last-resort ricochet decisionReason, got "${hitMove.decisionReason}".`
   );
+  assert(hitMove.goalName === 'simple_step2_attack_enemy', `A: expected attack goal, got "${hitMove.goalName}".`);
+  assert(hitMove.routeClass === 'ricochet', `A: expected ricochet routeClass, got "${hitMove.routeClass}".`);
+  assert(hitMove.hasDirectEnemy === true, 'A: expected hasDirectEnemy to be true.');
+
+  // Scenario B: no shot, no cargo, no ricochet route to center -> direct
+  // center-control fallback (chain intact, not regressed).
+  const centerDirect = await runScenario({ deep: false });
+  assert(simCalls.includes(5), 'B: expected the deep pass to still be attempted.');
+  assert(centerDirect, 'B: expected a center-control launch when no shot connects.');
   assert(
-    hitMove.goalName === 'simple_step2_attack_enemy',
-    `Expected attack goal, got "${hitMove.goalName}".`
+    centerDirect.decisionReason === 'simple_step2_center_control',
+    `B: expected direct center-control fallback, got "${centerDirect.decisionReason}".`
   );
-  assert(hitMove.routeClass === 'ricochet', `Expected ricochet routeClass, got "${hitMove.routeClass}".`);
-  assert(hitMove.hasDirectEnemy === true, 'Expected hasDirectEnemy to be true for the last-resort attack.');
 
-  // Scenario 2: deep pass also misses -> the AI must still fall back to the
-  // center-control move (fallback chain intact, not regressed).
-  deepPassHits = false;
-  const fallbackMove = await runScenario();
-
-  assert(simCalls.includes(5), 'Expected the deep pass to still be attempted when it ultimately misses.');
-  assert(fallbackMove, 'Expected a center-control launch when no shot connects.');
+  // Scenario C: no enemy shot, cargo route exists but exceeds the SAFE risk cap
+  // -> lean toward cargo ("cargo_reach") instead of holding center.
+  const cargoReach = await runScenario({ deep: false, unsafeCargo: true });
+  assert(cargoReach, 'C: expected a launch when an unsafe cargo route exists.');
   assert(
-    fallbackMove.decisionReason === 'simple_step2_center_control',
-    `Expected center-control fallback when no shot connects, got "${fallbackMove.decisionReason}".`
+    cargoReach.decisionReason === 'simple_step2_cargo_reach',
+    `C: expected cargo_reach when no shot and only an unsafe cargo route, got "${cargoReach.decisionReason}".`
   );
+  assert(cargoReach.goalName === 'simple_step2_cargo', `C: expected cargo goal, got "${cargoReach.goalName}".`);
 
-  console.log('Smoke test passed: last-resort ricochet preferred over center hop; center-control fallback intact.');
+  // Scenario D: no shot, no cargo, a ricochet route lands closer to center than
+  // the direct stub -> smart center prefers the ricochet.
+  const centerRicochet = await runScenario({ deep: false, ricochetCenter: true });
+  assert(centerRicochet, 'D: expected a center-control launch.');
+  assert(
+    centerRicochet.decisionReason === 'simple_step2_center_control_ricochet',
+    `D: expected smart center to pick the ricochet route, got "${centerRicochet.decisionReason}".`
+  );
+  assert(centerRicochet.routeClass === 'ricochet', `D: expected ricochet routeClass, got "${centerRicochet.routeClass}".`);
+
+  console.log('Smoke test passed: last-resort ricochet + cargo-reach + smart center; center-control fallback intact.');
 })().catch((err) => {
   console.error(err);
   process.exit(1);
