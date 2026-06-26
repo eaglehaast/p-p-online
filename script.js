@@ -27675,6 +27675,12 @@ function logTacticalItemFinalDecision(itemType, details = {}){
   });
 }
 
+// Step 3: below this fraction of flight range a shot is "very short". Crosshair
+// removes angular spread, which barely deflects a short flight, so it is wasted
+// on a short non-precision shot that would land on target anyway. A genuine
+// bounce/ricochet/gap still needs precision even when short, and is exempt.
+const AI_CROSSHAIR_MIN_DISTANCE_RATIO = 0.3;
+
 function shouldAiUseCrosshairForSelectedPlan(context, selectedPlan){
   const plane = selectedPlan?.plane || null;
   if(!plane) return false;
@@ -27694,6 +27700,11 @@ function shouldAiUseCrosshairForSelectedPlan(context, selectedPlan){
     : Math.hypot((selectedPlan?.landingX || 0) - (plane?.x || 0), (selectedPlan?.landingY || 0) - (plane?.y || 0));
   const effectiveRangePx = Math.max(1, getEffectiveFlightRangeCells(plane) * CELL_SIZE);
   const distanceRatio = moveDistance / effectiveRangePx;
+  // Negative guard: don't burn a guaranteed-hit crosshair on a very short,
+  // non-precision shot — the spread can't deflect it enough to matter.
+  if(distanceRatio < AI_CROSSHAIR_MIN_DISTANCE_RATIO && !hasPrecisionRoute && bounceCount <= 0){
+    return false;
+  }
   const mediumOrLongShot = distanceRatio >= 0.45;
   const predictedHitValue = Number.isFinite(selectedPlan?.score) && selectedPlan.score >= 0.25;
   const hasTargetPoint = Number.isFinite(selectedPlan?.targetPoint?.x) && Number.isFinite(selectedPlan?.targetPoint?.y);
