@@ -1986,17 +1986,17 @@ body, button {
 }
 
 /* --- "AI is thinking" goat hoof -----------------------------------------
-   Lives in the #gameContainer 460x800 world (sibling of the goat indicator,
-   so it scales with the board). Resting spot is the asset's final position:
-   x = -15 (15px stays off the left edge so it only half-peeks), y = 85
-   measured from the top of the goat region (goat indicator sits at top:400),
-   i.e. world top: 400 + 85 = 485px. Tweak left/top here to re-aim it; tweak
-   the threshold in script.js (AI_THINK_HOOF_THRESHOLD_MS) to change how long
-   the AI must deliberate before the hoof bothers to appear. */
+   Lives in the #gameContainer 460x800 world (scales with the board). The goat
+   is the TOP-LEFT (blue) player, so the hoof peeks in near the top-left corner.
+   Resting spot is the asset's final position: x = -15 (15px stays off the left
+   edge so it only half-peeks), y = 85 from the top of the frame. Tweak left/top
+   here to re-aim it; tweak the threshold in script.js
+   (AI_THINK_HOOF_THRESHOLD_MS) to change how long the AI must deliberate before
+   the hoof bothers to appear. */
 #aiThinkHoof {
   position: absolute;
   left: -15px;
-  top: 485px;
+  top: 85px;
   width: 47px;
   height: 49px;
   z-index: 36; /* just above the goat indicator (35) */

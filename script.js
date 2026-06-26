@@ -15169,11 +15169,17 @@ const aiThinkHoof = (() => {
     endHandler = () => onSlideOutEnd(node);
     node.addEventListener("animationend", endHandler);
   }
+  function isGoatTurn(){
+    // The goat is the top-left (blue) player; the sparrow is green. Only the
+    // goat gets the hoof, so skip arming on the sparrow's (green) AI turns.
+    try { return turnColors[turnIndex] === "blue"; } catch (_) { return false; }
+  }
   function arm(){
     const node = getEl();
     if(!node) return;
     if(armTimer){ clearTimeout(armTimer); armTimer = 0; }
     if(phase !== "idle"){ detachEnd(node); setPhaseClass(node, null); phase = "idle"; }
+    if(!isGoatTurn()) return;
     phase = "armed";
     armTimer = setTimeout(() => { armTimer = 0; enter(); }, AI_THINK_HOOF_THRESHOLD_MS);
   }
