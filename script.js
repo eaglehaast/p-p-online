@@ -15115,14 +15115,17 @@ function getAiTurnTimingSnapshot(){
   };
 }
 
-// "AI is thinking" goat hoof controller. arm() starts a timer on every goat
-// (blue) AI turn. If the AI is STILL deliberating after AI_THINK_HOOF_THRESHOLD_MS
-// (i.e. aiming hasn't started yet), the hoof commits to a FIXED, self-contained
-// gesture — slide in -> exactly 3 squeezes -> slide out — and always plays it to
-// the end. A short move (released before the threshold) is the only thing that
-// cancels it, so the hoof never appears just to retract immediately as a
-// half-read stub. Phases hand off via animationend; keyframes live in styles.css.
-const AI_THINK_HOOF_THRESHOLD_MS = 3500;
+// "AI is thinking" goat hoof controller. arm() starts a timer at the start of
+// every goat (blue) AI turn; onAimingStarted() fires the instant the AI begins
+// to aim (the slingshot pull), which marks the END of the deliberation window.
+// The timer therefore measures pure thinking time only — NOT the aiming/flight
+// animation. If the AI is still thinking past AI_THINK_HOOF_THRESHOLD_MS the
+// hoof commits to a FIXED, self-contained gesture — slide in -> exactly 3
+// squeezes -> slide out — and always plays it to the end. A quick decision
+// (aiming starts before the threshold) cancels the still-armed timer, so the
+// hoof only ever appears on genuinely long thinks, never on a snap move.
+// Phases hand off via animationend; keyframes live in styles.css.
+const AI_THINK_HOOF_THRESHOLD_MS = 2500;
 const aiThinkHoof = (() => {
   let el = null;
   let armTimer = 0;
@@ -15188,15 +15191,17 @@ const aiThinkHoof = (() => {
     phase = "armed";
     armTimer = setTimeout(() => { armTimer = 0; enter(); }, AI_THINK_HOOF_THRESHOLD_MS);
   }
-  function release(){
-    // Only a short move (released before the threshold) cancels the hoof. Once
-    // the gesture has committed it always completes on its own — never a stub.
+  function onAimingStarted(){
+    // The thinking window ends the instant the AI starts to aim. If the hoof
+    // hasn't committed yet (still just armed), cancel it — a quick decision
+    // never extracts the hoof. If it already committed (a genuinely long
+    // think), let the full gesture finish on its own.
     if(phase === "armed"){
       if(armTimer){ clearTimeout(armTimer); armTimer = 0; }
       phase = "idle";
     }
   }
-  return { arm, release };
+  return { arm, onAimingStarted };
 })();
 
 function markAiTurnStarted(reason = "unspecified", now = performance.now()){
@@ -15233,7 +15238,6 @@ function markAiReleased(reason = "unspecified", now = performance.now()){
   aiTurnTimingState.releasedAt = now;
   aiTurnTimingState.releaseReason = reason;
   aiThinkingTimingFinishTurn(now);
-  aiThinkHoof.release();
 }
 
 function getAiTurnMinReleaseAt(){
@@ -43399,6 +43403,9 @@ function issueAIMove(plane, vx, vy, options = {}){
 
   const session = buildAiLaunchSession(plane, vx, vy, options || {});
   aiLaunchSession = session;
+  // Aiming has begun: the deliberation window is over. Cancel the hoof if it
+  // hasn't committed yet (snap move), or let an in-progress gesture finish.
+  aiThinkHoof.onAimingStarted();
   scheduleAiLaunchSessionWatchdog(session);
 
   logAiDecision("ai_launch_session_started", {
