@@ -40,7 +40,7 @@ const context = {
   Math,
   Number,
   CELL_SIZE: 20,
-  AI_CROSSHAIR_MIN_DISTANCE_RATIO: 0.8, // module-scope const in script.js
+  AI_CROSSHAIR_MIN_DISTANCE_RATIO: 0.6, // module-scope const in script.js
   INVENTORY_ITEM_TYPES,
   getEffectiveFlightRangeCells: () => 30, // effectiveRangePx = 600
   getAiSelectedPlanIntentText: (plan) =>
@@ -85,16 +85,24 @@ assert(usesCrosshair({
   bounceCount: 1, planDistance: 540, targetPoint: { x: 100, y: 500 }, score: 0.5,
 }) === true, '4: near-max ricochet should use crosshair.');
 
-// 5. Mid-range DIRECT attack (ratio 0.5) -> NO crosshair (below the 0.8 floor).
+// 5. Short DIRECT attack (ratio 0.3) -> NO crosshair (below the 0.6 floor).
 assert(usesCrosshair({
   plane, routeClass: 'direct', goalName: 'attack', decisionReason: 'simple_step2_direct_enemy',
-  bounceCount: 0, planDistance: 300, targetPoint: { x: 0, y: 300 }, score: 0.5,
-}) === false, '5: mid-range attack below 0.8 must NOT use crosshair.');
+  bounceCount: 0, planDistance: 180, targetPoint: { x: 0, y: 180 }, score: 0.5,
+}) === false, '5: short attack below 0.6 must NOT use crosshair.');
 
-// 6. Near-max aimless CENTER drift (ratio 0.9, no attack/pickup intent) -> NO crosshair.
+// 6. Near-max aimless CENTER drift (no attack/pickup intent) -> NO crosshair.
 assert(usesCrosshair({
   plane, routeClass: 'direct', goalName: 'simple_step2_center', decisionReason: 'simple_step2_center_control',
   bounceCount: 0, planDistance: 540, targetPoint: { x: 0, y: 540 }, score: 0.1,
 }) === false, '6: a near-max aimless center drift must NOT use crosshair.');
 
-console.log('Smoke test passed: crosshair only on near-max meaningful shots; short/ricochet/mid suppressed.');
+// 7. LONG ricochet whose straight-line planDistance is short (100) but whose
+//    actual launch travel is long (landing far) -> crosshair, via the launch-
+//    travel metric (these long bouncy shots were under-measured before).
+assert(usesCrosshair({
+  plane, routeClass: 'ricochet', goalName: 'attack', decisionReason: 'simple_step2_ricochet_enemy',
+  bounceCount: 2, planDistance: 100, landingX: 0, landingY: 420, targetPoint: { x: 60, y: 90 }, score: 0.5,
+}) === true, '7: a long-travel ricochet should use crosshair even if the straight-line distance is short.');
+
+console.log('Smoke test passed: crosshair on long shots (incl. long ricochets), suppressed on short/mid/aimless.');
