@@ -27765,25 +27765,31 @@ function logTacticalItemFinalDecision(itemType, details = {}){
   });
 }
 
-// Step 3: crosshair (guaranteed hit) only matters near MAX range, where the
-// launch's angular spread actually deflects the flight enough to miss. Below
-// this fraction of flight range the spread is too small to matter, so a
-// crosshair is wasted there — including on short ricochets/gaps. Per design:
-// "only on maximal shots, or 80-90% of max when needed; everything else is
-// pointless." 0.8 = lowest acceptable; raise toward 0.9 for max-only.
-const AI_CROSSHAIR_MIN_DISTANCE_RATIO = 0.8;
+// Step 3: crosshair (guaranteed hit) only matters on a LONG launch, where the
+// launch's angular spread deflects the flight enough to miss; on short shots the
+// spread is too small to matter, so it's wasted (including short ricochets/gaps).
+// Measured against how FAR the shot actually flies. NOTE: the gate is a fraction
+// of theoretical max range (~600px), which exceeds most board shots and the AI
+// often under-powers its launches — so 0.8 fired almost never. 0.6 = a genuinely
+// long shot; tune up toward 0.8 for max-only, down for more frequent use.
+const AI_CROSSHAIR_MIN_DISTANCE_RATIO = 0.6;
 
 function shouldAiUseCrosshairForSelectedPlan(context, selectedPlan){
   const plane = selectedPlan?.plane || null;
   if(!plane) return false;
   const routeClass = `${selectedPlan?.routeClass || "direct"}`.toLowerCase();
   const goalText = getAiSelectedPlanIntentText(selectedPlan);
-  const moveDistance = Number.isFinite(selectedPlan?.planDistance)
-    ? selectedPlan.planDistance
-    : Math.hypot((selectedPlan?.landingX || 0) - (plane?.x || 0), (selectedPlan?.landingY || 0) - (plane?.y || 0));
+  // Use the longer of: straight-line distance to the target, and the actual
+  // launch travel (landingX/landingY encode the launch vector). The latter
+  // matters for ricochets/sweeps whose bouncy flight is far longer than the
+  // straight line to the target — those are exactly the long shots that want a
+  // crosshair but were under-measured before.
+  const planDistance = Number.isFinite(selectedPlan?.planDistance) ? selectedPlan.planDistance : 0;
+  const launchTravel = Math.hypot((selectedPlan?.landingX ?? plane.x) - plane.x, (selectedPlan?.landingY ?? plane.y) - plane.y);
+  const moveDistance = Math.max(planDistance, launchTravel);
   const effectiveRangePx = Math.max(1, getEffectiveFlightRangeCells(plane) * CELL_SIZE);
   const distanceRatio = moveDistance / effectiveRangePx;
-  // Hard distance gate: nothing below ~80% of range justifies a crosshair.
+  // Distance gate: nothing below a genuinely long shot justifies a crosshair.
   if(distanceRatio < AI_CROSSHAIR_MIN_DISTANCE_RATIO) return false;
   // Near-max shot: use it only for a meaningful aimed shot (attack / pickup /
   // flag / precision route), not an aimless long drift to center.
