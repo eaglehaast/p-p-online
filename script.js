@@ -15115,59 +15115,63 @@ function getAiTurnTimingSnapshot(){
   };
 }
 
-// "AI is thinking" goat hoof controller. Self-gating: arm() starts a timer on
-// every AI turn; the hoof only slides in if the AI is STILL deliberating after
-// AI_THINK_HOOF_THRESHOLD_MS, so quick moves never summon it. release() clears
-// the timer or retracts the hoof the moment the move is ready. Pure class
-// toggling — the slide/fidget keyframes live in styles.css.
+// "AI is thinking" goat hoof controller. arm() starts a timer on every goat
+// (blue) AI turn. If the AI is STILL deliberating after AI_THINK_HOOF_THRESHOLD_MS
+// (i.e. aiming hasn't started yet), the hoof commits to a FIXED, self-contained
+// gesture — slide in -> exactly 3 squeezes -> slide out — and always plays it to
+// the end. A short move (released before the threshold) is the only thing that
+// cancels it, so the hoof never appears just to retract immediately as a
+// half-read stub. Phases hand off via animationend; keyframes live in styles.css.
 const AI_THINK_HOOF_THRESHOLD_MS = 3500;
 const aiThinkHoof = (() => {
   let el = null;
   let armTimer = 0;
   let phase = "idle"; // idle | armed | entering | fidgeting | leaving
-  let endHandler = null;
+  let wired = false;
 
   function getEl(){
     if(el === null) el = document.getElementById("aiThinkHoof") || false;
     return el || null;
   }
-  function detachEnd(node){
-    if(endHandler && node) node.removeEventListener("animationend", endHandler);
-    endHandler = null;
-  }
   function setPhaseClass(node, cls){
     node.classList.remove("is-entering", "is-fidgeting", "is-leaving");
     if(cls) node.classList.add(cls);
   }
-  function onSlideInEnd(node){
-    detachEnd(node);
-    if(phase !== "entering") return;
-    phase = "fidgeting";
-    setPhaseClass(node, "is-fidgeting");
-  }
-  function onSlideOutEnd(node){
-    detachEnd(node);
-    if(phase !== "leaving") return;
-    phase = "idle";
-    setPhaseClass(node, null); // back to hidden parked state
+  function wire(node){
+    if(wired) return;
+    wired = true;
+    // One persistent router: each phase's animation hands off to the next.
+    node.addEventListener("animationend", (e) => {
+      switch(e.animationName){
+        case "aiHoofSlideIn":
+          if(phase !== "entering") return;
+          phase = "fidgeting";
+          setPhaseClass(node, "is-fidgeting"); // CSS iteration count = 3 squeezes
+          break;
+        case "aiHoofFidgetOpen": // fires once, after the 3rd squeeze completes
+          if(phase !== "fidgeting") return;
+          leave();
+          break;
+        case "aiHoofSlideOut":
+          if(phase !== "leaving") return;
+          phase = "idle";
+          setPhaseClass(node, null); // back to hidden parked state
+          break;
+      }
+    });
   }
   function enter(){
     const node = getEl();
     if(!node) return;
+    wire(node);
     phase = "entering";
     setPhaseClass(node, "is-entering");
-    detachEnd(node);
-    endHandler = () => onSlideInEnd(node);
-    node.addEventListener("animationend", endHandler);
   }
   function leave(){
     const node = getEl();
     if(!node) return;
     phase = "leaving";
     setPhaseClass(node, "is-leaving");
-    detachEnd(node);
-    endHandler = () => onSlideOutEnd(node);
-    node.addEventListener("animationend", endHandler);
   }
   function isGoatTurn(){
     // The goat is the top-left (blue) player; the sparrow is green. Only the
@@ -15178,15 +15182,19 @@ const aiThinkHoof = (() => {
     const node = getEl();
     if(!node) return;
     if(armTimer){ clearTimeout(armTimer); armTimer = 0; }
-    if(phase !== "idle"){ detachEnd(node); setPhaseClass(node, null); phase = "idle"; }
+    // A new AI turn supersedes any leftover gesture still on screen.
+    if(phase !== "idle"){ setPhaseClass(node, null); phase = "idle"; }
     if(!isGoatTurn()) return;
     phase = "armed";
     armTimer = setTimeout(() => { armTimer = 0; enter(); }, AI_THINK_HOOF_THRESHOLD_MS);
   }
   function release(){
-    if(armTimer){ clearTimeout(armTimer); armTimer = 0; }
-    if(phase === "entering" || phase === "fidgeting") leave();
-    else if(phase === "armed") phase = "idle"; // never crossed the threshold
+    // Only a short move (released before the threshold) cancels the hoof. Once
+    // the gesture has committed it always completes on its own — never a stub.
+    if(phase === "armed"){
+      if(armTimer){ clearTimeout(armTimer); armTimer = 0; }
+      phase = "idle";
+    }
   }
   return { arm, release };
 })();

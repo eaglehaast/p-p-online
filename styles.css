@@ -2051,11 +2051,11 @@ body, button {
    Slow, calm rhythm: the closed (rest) frame is held longer than the open
    squeeze, so it reads as unhurried beard-stroking, not a nervous twitch. */
 #aiThinkHoof.is-fidgeting .ai-think-hoof__frame--close {
-  animation: aiHoofFidgetClose 1.5s steps(1, end) infinite;
+  animation: aiHoofFidgetClose 1.5s steps(1, end) 3;
 }
 
 #aiThinkHoof.is-fidgeting .ai-think-hoof__frame--open {
-  animation: aiHoofFidgetOpen 1.5s steps(1, end) infinite;
+  animation: aiHoofFidgetOpen 1.5s steps(1, end) 3;
 }
 
 @keyframes aiHoofFidgetClose {
@@ -2071,7 +2071,7 @@ body, button {
 /* Leaving: stepped slide-out, retracts showing the closed hoof. */
 #aiThinkHoof.is-leaving {
   visibility: visible;
-  animation: aiHoofSlideOut 0.4s steps(1, end) forwards;
+  animation: aiHoofSlideOut 0.75s steps(1, end) forwards;
 }
 
 @keyframes aiHoofSlideOut {
