@@ -15195,13 +15195,26 @@ const aiThinkHoof = (() => {
     // The thinking window ends the instant the AI starts to aim. If the hoof
     // hasn't committed yet (still just armed), cancel it — a quick decision
     // never extracts the hoof. If it already committed (a genuinely long
-    // think), let the full gesture finish on its own.
+    // think), let the gesture keep playing through aiming.
     if(phase === "armed"){
       if(armTimer){ clearTimeout(armTimer); armTimer = 0; }
       phase = "idle";
     }
   }
-  return { arm, onAimingStarted };
+  function onTurnEnded(){
+    // The goat's turn is fully over (handed to the opponent, goat goes gray).
+    // Retract any hoof still on screen so it never keeps fidgeting into the
+    // idle turn. On a long think the 3 squeezes have usually finished by now;
+    // on a shorter move this trims the gesture to a clean slide-out instead of
+    // letting it bleed past the end of the turn.
+    if(phase === "armed"){
+      if(armTimer){ clearTimeout(armTimer); armTimer = 0; }
+      phase = "idle";
+    } else if(phase === "entering" || phase === "fidgeting"){
+      leave();
+    }
+  }
+  return { arm, onAimingStarted, onTurnEnded };
 })();
 
 function markAiTurnStarted(reason = "unspecified", now = performance.now()){
@@ -43700,6 +43713,11 @@ function advanceTurn(){
   });
   turnIndex = (turnIndex + 1) % turnColors.length;
   const nextTurnColor = turnColors[turnIndex];
+  if(previousTurnColor === "blue"){
+    // Goat's (blue) turn just ended — retract its thinking hoof now instead of
+    // letting it fidget on into the opponent's turn while the goat is gray.
+    aiThinkHoof.onTurnEnded();
+  }
   notifyTurnAdvanced({
     previousTurnColor,
     nextTurnColor,
