@@ -27765,40 +27765,33 @@ function logTacticalItemFinalDecision(itemType, details = {}){
   });
 }
 
-// Step 3: below this fraction of flight range a shot is "very short". Crosshair
-// removes angular spread, which barely deflects a short flight, so it is wasted
-// on a short non-precision shot that would land on target anyway. A genuine
-// bounce/ricochet/gap still needs precision even when short, and is exempt.
-const AI_CROSSHAIR_MIN_DISTANCE_RATIO = 0.3;
+// Step 3: crosshair (guaranteed hit) only matters near MAX range, where the
+// launch's angular spread actually deflects the flight enough to miss. Below
+// this fraction of flight range the spread is too small to matter, so a
+// crosshair is wasted there — including on short ricochets/gaps. Per design:
+// "only on maximal shots, or 80-90% of max when needed; everything else is
+// pointless." 0.8 = lowest acceptable; raise toward 0.9 for max-only.
+const AI_CROSSHAIR_MIN_DISTANCE_RATIO = 0.8;
 
 function shouldAiUseCrosshairForSelectedPlan(context, selectedPlan){
   const plane = selectedPlan?.plane || null;
   if(!plane) return false;
   const routeClass = `${selectedPlan?.routeClass || "direct"}`.toLowerCase();
   const goalText = getAiSelectedPlanIntentText(selectedPlan);
-  const usefulIntent = [
-    "attack", "enemy", "cargo", "pickup", "flag", "center",
-    "advance", "approach", "pressure", "direct", "ricochet",
-    "gap", "safe", "reposition", "best_effort", "fallback",
-  ].some((word) => goalText.includes(word));
-  const hasPrecisionRoute = ["ricochet", "bounce", "bank", "gap"].some((route) =>
-    routeClass.includes(route) || goalText.includes(route)
-  );
-  const bounceCount = Number.isFinite(selectedPlan?.bounceCount) ? selectedPlan.bounceCount : 0;
   const moveDistance = Number.isFinite(selectedPlan?.planDistance)
     ? selectedPlan.planDistance
     : Math.hypot((selectedPlan?.landingX || 0) - (plane?.x || 0), (selectedPlan?.landingY || 0) - (plane?.y || 0));
   const effectiveRangePx = Math.max(1, getEffectiveFlightRangeCells(plane) * CELL_SIZE);
   const distanceRatio = moveDistance / effectiveRangePx;
-  // Negative guard: don't burn a guaranteed-hit crosshair on a very short,
-  // non-precision shot — the spread can't deflect it enough to matter.
-  if(distanceRatio < AI_CROSSHAIR_MIN_DISTANCE_RATIO && !hasPrecisionRoute && bounceCount <= 0){
-    return false;
-  }
-  const mediumOrLongShot = distanceRatio >= 0.45;
-  const predictedHitValue = Number.isFinite(selectedPlan?.score) && selectedPlan.score >= 0.25;
-  const hasTargetPoint = Number.isFinite(selectedPlan?.targetPoint?.x) && Number.isFinite(selectedPlan?.targetPoint?.y);
-  return hasPrecisionRoute || bounceCount > 0 || ((mediumOrLongShot && usefulIntent) || (hasTargetPoint && predictedHitValue));
+  // Hard distance gate: nothing below ~80% of range justifies a crosshair.
+  if(distanceRatio < AI_CROSSHAIR_MIN_DISTANCE_RATIO) return false;
+  // Near-max shot: use it only for a meaningful aimed shot (attack / pickup /
+  // flag / precision route), not an aimless long drift to center.
+  const precisionIntent = [
+    "attack", "enemy", "cargo", "pickup", "flag",
+    "ricochet", "gap", "bounce", "bank", "multi_target",
+  ].some((word) => goalText.includes(word) || routeClass.includes(word));
+  return precisionIntent;
 }
 
 function shouldAiUseWingsForSelectedPlan(context, selectedPlan){
@@ -29049,9 +29042,6 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
   const moveRangeRatio = baseRangePx > 0 ? moveDistance / baseRangePx : 0;
   const goalText = getAiSelectedPlanIntentText(selectedPlan);
   const routeClass = `${selectedPlan?.routeClass || "direct"}`.toLowerCase();
-  const precisionRoute = ["ricochet", "gap", "bank", "bounce"].some((word) =>
-    routeClass.includes(word) || goalText.includes(word)
-  );
   const contactIntent = [
     "attack", "enemy", "cargo", "pickup", "flag",
     "gap", "ricochet", "bounce", "bank",
@@ -29138,7 +29128,10 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
   }
 
   // Crosshair and wings are evaluated independently and can combine with each other and with fuel.
-  if(crosshairAvailable && (precisionRoute || shouldAiUseCrosshairForSelectedPlan(context, selectedPlan))){
+  // The distance gate now lives entirely in shouldAiUseCrosshairForSelectedPlan
+  // (crosshair only near max range). No precision-route bypass — a short
+  // ricochet/gap must clear the distance gate too.
+  if(crosshairAvailable && shouldAiUseCrosshairForSelectedPlan(context, selectedPlan)){
     candidates.push({ itemType: INVENTORY_ITEM_TYPES.CROSSHAIR, reason: "selected_plan_precision_support" });
   }
 

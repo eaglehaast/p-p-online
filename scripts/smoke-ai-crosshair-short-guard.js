@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 'use strict';
 
-// Smoke test: Step 3 — crosshair short-shot negative guard.
+// Smoke test: Step 3 — crosshair only on near-max-range shots.
 //
-// shouldAiUseCrosshairForSelectedPlan must NOT request a guaranteed-hit crosshair
-// on a very short, non-precision shot (spread barely deflects it), but must still
-// use it on long shots and on genuine bounce/gap/ricochet routes (precision
-// matters there even when short).
+// Exercises the real caller (pickAiBuffsForSelectedPlan), since the bug was its
+// `precisionRoute ||` bypass that handed a crosshair to ANY ricochet/gap route
+// regardless of distance. Crosshair (guaranteed hit) only matters near max
+// range; below ~80% of range it's pointless — including short ricochets.
 
 const fs = require('fs');
 const vm = require('vm');
@@ -32,52 +32,69 @@ function assert(condition, message){
 }
 
 const source = fs.readFileSync('script.js', 'utf8');
-const fnSrc = extractFunctionSource(source, 'shouldAiUseCrosshairForSelectedPlan');
 
-const plane = { x: 0, y: 0 };
+const plane = { x: 0, y: 0, activeTurnBuffs: {} };
+const INVENTORY_ITEM_TYPES = { FUEL: 'fuel', CROSSHAIR: 'crosshair', WINGS: 'wings', INVISIBILITY: 'invisible', MINE: 'mine', DYNAMITE: 'dynamite' };
+
 const context = {
   Math,
   Number,
   CELL_SIZE: 20,
-  AI_CROSSHAIR_MIN_DISTANCE_RATIO: 0.3, // module-scope const in script.js
+  AI_CROSSHAIR_MIN_DISTANCE_RATIO: 0.8, // module-scope const in script.js
+  INVENTORY_ITEM_TYPES,
   getEffectiveFlightRangeCells: () => 30, // effectiveRangePx = 600
   getAiSelectedPlanIntentText: (plan) =>
     `${plan?.goalName || ''} ${plan?.decisionReason || ''} ${plan?.routeClass || ''}`.toLowerCase(),
 };
 vm.createContext(context);
-vm.runInContext(fnSrc, context);
+// Both functions share the VM context (pickAiBuffs calls shouldAiUseCrosshair).
+vm.runInContext(extractFunctionSource(source, 'shouldAiUseCrosshairForSelectedPlan'), context);
+vm.runInContext(extractFunctionSource(source, 'pickAiBuffsForSelectedPlan'), context);
 
-const callFor = (plan) => context.shouldAiUseCrosshairForSelectedPlan(context, plan);
+// Only crosshair is in inventory, so only the crosshair branch can fire.
+const usesCrosshair = (selectedPlan) => context.pickAiBuffsForSelectedPlan({
+  plane: selectedPlan.plane,
+  color: 'blue',
+  context: {},
+  selectedPlan,
+  availableCounts: { crosshair: 1 },
+}).some((c) => c.itemType === 'crosshair');
 
-// 1. Very short DIRECT shot at a target with a decent score -> NO crosshair.
-assert(callFor({
+// 1. Near-max DIRECT attack (ratio 0.85) -> crosshair.
+assert(usesCrosshair({
   plane, routeClass: 'direct', goalName: 'attack', decisionReason: 'simple_step2_direct_enemy',
-  bounceCount: 0, planDistance: 100, targetPoint: { x: 0, y: 100 }, score: 0.5,
-}) === false, '1: very short direct shot must NOT use crosshair.');
+  bounceCount: 0, planDistance: 510, targetPoint: { x: 0, y: 510 }, score: 0.5,
+}) === true, '1: near-max direct attack should use crosshair.');
 
-// 2. Long DIRECT shot at a target -> crosshair.
-assert(callFor({
+// 2. Short DIRECT attack (ratio 0.2) -> NO crosshair.
+assert(usesCrosshair({
   plane, routeClass: 'direct', goalName: 'attack', decisionReason: 'simple_step2_direct_enemy',
-  bounceCount: 0, planDistance: 350, targetPoint: { x: 0, y: 350 }, score: 0.5,
-}) === true, '2: long direct shot should use crosshair.');
+  bounceCount: 0, planDistance: 120, targetPoint: { x: 0, y: 120 }, score: 0.5,
+}) === false, '2: short direct attack must NOT use crosshair.');
 
-// 3. Very short RICOCHET (bounce) -> crosshair (precision needed even when short).
-assert(callFor({
+// 3. Short RICOCHET (ratio 0.2) -> NO crosshair (the reported bug: the
+//    precisionRoute bypass used to grant it regardless of distance).
+assert(usesCrosshair({
   plane, routeClass: 'ricochet', goalName: 'attack', decisionReason: 'simple_step2_ricochet_enemy',
-  bounceCount: 1, planDistance: 100, targetPoint: { x: 50, y: 80 }, score: 0.5,
-}) === true, '3: short ricochet must still use crosshair.');
+  bounceCount: 1, planDistance: 120, targetPoint: { x: 40, y: 90 }, score: 0.5,
+}) === false, '3: short ricochet must NOT use crosshair (bypass removed).');
 
-// 4. Very short GAP route (no bounce, but a precision route) -> crosshair.
-assert(callFor({
-  plane, routeClass: 'gap', goalName: 'pickup_cargo', decisionReason: 'simple_step2_pickup_cargo',
-  bounceCount: 0, planDistance: 100, targetPoint: { x: 30, y: 90 }, score: 0.4,
-}) === true, '4: short gap (precision) route must still use crosshair.');
+// 4. Near-max RICOCHET (ratio 0.9) -> crosshair.
+assert(usesCrosshair({
+  plane, routeClass: 'ricochet', goalName: 'attack', decisionReason: 'simple_step2_ricochet_enemy',
+  bounceCount: 1, planDistance: 540, targetPoint: { x: 100, y: 500 }, score: 0.5,
+}) === true, '4: near-max ricochet should use crosshair.');
 
-// 5. Medium shot (ratio 0.35, between the short floor and 0.45) at a target ->
-//    still crosshair via target+score (only < floor is suppressed).
-assert(callFor({
+// 5. Mid-range DIRECT attack (ratio 0.5) -> NO crosshair (below the 0.8 floor).
+assert(usesCrosshair({
   plane, routeClass: 'direct', goalName: 'attack', decisionReason: 'simple_step2_direct_enemy',
-  bounceCount: 0, planDistance: 210, targetPoint: { x: 0, y: 210 }, score: 0.5,
-}) === true, '5: a medium (>= floor) targeted shot keeps crosshair.');
+  bounceCount: 0, planDistance: 300, targetPoint: { x: 0, y: 300 }, score: 0.5,
+}) === false, '5: mid-range attack below 0.8 must NOT use crosshair.');
 
-console.log('Smoke test passed: crosshair short-shot guard suppresses waste, keeps long + precision shots.');
+// 6. Near-max aimless CENTER drift (ratio 0.9, no attack/pickup intent) -> NO crosshair.
+assert(usesCrosshair({
+  plane, routeClass: 'direct', goalName: 'simple_step2_center', decisionReason: 'simple_step2_center_control',
+  bounceCount: 0, planDistance: 540, targetPoint: { x: 0, y: 540 }, score: 0.1,
+}) === false, '6: a near-max aimless center drift must NOT use crosshair.');
+
+console.log('Smoke test passed: crosshair only on near-max meaningful shots; short/ricochet/mid suppressed.');
