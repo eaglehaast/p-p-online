@@ -29142,15 +29142,15 @@ async function findAiDefensiveMineOpportunityAsync(selectedPlan, context){
   };
 }
 
+// Step 5: fuel is only spent when the move's target is past this fraction of the
+// BASE range (so the base move falls short and the fuel reach is actually used).
+const AI_FUEL_MIN_REACH_RATIO = 1.0;
+
 function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, availableCounts }){
   if(!plane) return [];
 
   const baseRangeCells = getEffectiveFlightRangeCells(plane);
   const baseRangePx = Math.max(1, baseRangeCells * CELL_SIZE);
-  const moveDistance = Number.isFinite(selectedPlan?.planDistance)
-    ? selectedPlan.planDistance
-    : Math.hypot((selectedPlan?.landingX || 0) - (plane?.x || 0), (selectedPlan?.landingY || 0) - (plane?.y || 0));
-  const moveRangeRatio = baseRangePx > 0 ? moveDistance / baseRangePx : 0;
   const goalText = getAiSelectedPlanIntentText(selectedPlan);
   const routeClass = `${selectedPlan?.routeClass || "direct"}`.toLowerCase();
   const contactIntent = [
@@ -29173,18 +29173,31 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
 
   const candidates = [];
 
-  const fuelNeededForRange = fuelAvailable && moveRangeRatio >= 0.85;
-  const fuelUnlocksBetterMove = fuelAvailable && (() => {
+  // Step 5: fuel doubles range, so it is only worth spending when the move
+  // ACTUALLY uses more than the base range — either a harpy strike+retreat
+  // (below) or reaching/passing a target that is BEYOND base range (the base
+  // move falls short of it). Applying fuel to a move that already fits in base
+  // range is pure waste (the reported "fuel + 30-cell move").
+  const fuelBoostedRangePx = (() => {
+    if(!fuelAvailable) return baseRangePx;
     const previousBuffs = plane.activeTurnBuffs && typeof plane.activeTurnBuffs === "object"
       ? { ...plane.activeTurnBuffs }
       : {};
-    let unlocks = false;
+    let boosted = baseRangePx;
     if(applyItemToOwnPlane(INVENTORY_ITEM_TYPES.FUEL, color, plane)){
-      unlocks = getEffectiveFlightRangeCells(plane) > baseRangeCells;
+      boosted = getEffectiveFlightRangeCells(plane) * CELL_SIZE;
     }
     plane.activeTurnBuffs = previousBuffs;
-    return unlocks;
+    return boosted;
   })();
+  const fuelTargetPoint = selectedPlan?.targetPoint;
+  const fuelTargetDist = (Number.isFinite(fuelTargetPoint?.x) && Number.isFinite(fuelTargetPoint?.y))
+    ? Math.hypot(fuelTargetPoint.x - plane.x, fuelTargetPoint.y - plane.y)
+    : 0;
+  // Target is past base range (base move falls short) yet within fuel range.
+  const fuelReachesDistantTarget = fuelAvailable
+    && fuelTargetDist > baseRangePx * AI_FUEL_MIN_REACH_RATIO
+    && fuelTargetDist <= fuelBoostedRangePx * 1.05;
 
   // Harpy-strike: AI flies to its planned landing (attack/flag), then returns to home base in same turn.
   // The fuel range constraint (round trip fits with fuel, not without) is the primary gate; we don't
@@ -29226,16 +29239,16 @@ function pickAiBuffsForSelectedPlan({ plane, color, context, selectedPlan, avail
     })();
 
   // Fuel is evaluated independently — it can stack with crosshair and/or wings.
+  // Only spend it when it buys real extra reach (advantage over not using it):
+  // an attack-then-retreat, or reaching a target the base move can't.
   if(harpyStrikeOpportunity){
     candidates.push({
       itemType: INVENTORY_ITEM_TYPES.FUEL,
       reason: "harpy_strike_return",
       harpyReturnTarget: { x: harpyHome.x, y: harpyHome.y, label: "harpy_return_home" },
     });
-  } else if(fuelNeededForRange){
-    candidates.push({ itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "selected_plan_range_critical" });
-  } else if(fuelAvailable && fuelUnlocksBetterMove && usefulIntent && moveRangeRatio >= 0.35){
-    candidates.push({ itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "selected_plan_range_support" });
+  } else if(fuelReachesDistantTarget && usefulIntent){
+    candidates.push({ itemType: INVENTORY_ITEM_TYPES.FUEL, reason: "selected_plan_reach_distant_target" });
   }
 
   // Crosshair and wings are evaluated independently and can combine with each other and with fuel.
