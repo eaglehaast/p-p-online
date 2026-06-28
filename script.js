@@ -16999,7 +16999,15 @@ function scheduleComputerMoveWithCargoGate(startedAt = performance.now(), delayM
     }, "simple_step2_selector");
 
     if(!launchResult?.ok){
-      const failoverPlanes = launchReadyPlanes.filter((plane) => plane !== launchReadyPlane);
+      // The primary plane may already carry a consumed buff (wings/crosshair)
+      // that maybeUseInventoryBeforeLaunch applied before the launch was
+      // rejected. Try IT first on a guaranteed-advance move so the buff isn't
+      // stranded on a non-moving plane while a DIFFERENT plane launches; only
+      // then fall back to the other planes.
+      const failoverPlanes = [
+        launchReadyPlane,
+        ...launchReadyPlanes.filter((plane) => plane !== launchReadyPlane),
+      ];
       const failoverMove = failoverPlanes
         .map((plane) => buildGuaranteedAdvanceMove(plane))
         .find(Boolean);
