@@ -43,7 +43,8 @@ const context = {
   Array,
   CELL_SIZE: 20,
   FIELD_FLIGHT_DURATION_SEC: 1,
-  AI_WINGS_MIN_PICKUPS: 2, // module-scope const in script.js
+  AI_WINGS_MIN_PICKUPS: 2,    // module-scope consts in script.js
+  AI_WINGS_LONG_SHOT_RATIO: 0.6,
   INVENTORY_ITEM_TYPES,
   getEffectiveFlightRangeCells: () => 30,
   getAiSelectedPlanIntentText: (plan) =>
@@ -72,43 +73,44 @@ const cargo = (reach) => ({ id: `c-${reach}-${Math.random()}`, state: 'ready', r
 // 20 -> within either span; 50 -> only the wide span; 200 -> neither.
 const enemyDist = { both: 20, wide: 50, none: 200 };
 const enemy = (reach) => ({ id: `e-${reach}-${Math.random()}`, isAlive: true, x: enemyDist[reach], y: 0 });
-const usesWings = (cargos = [], enemies = []) => context.pickAiBuffsForSelectedPlan({
-  plane,
-  color: 'blue',
-  context: { readyCargo: cargos, enemies },
-  selectedPlan: {
-    plane, routeClass: 'direct', goalName: 'cargo', decisionReason: 'simple_step2_pickup_cargo',
-    landingX: 0, landingY: 400, planDistance: 400,
-  },
-  availableCounts: { wings: 1 },
-}).some((c) => c.itemType === 'wings');
+// long shot: travel 400/600 = 0.67 >= 0.6 ; short shot: 120/600 = 0.2.
+const usesWings = (cargos = [], enemies = [], { long = true } = {}) => {
+  const d = long ? 400 : 120;
+  return context.pickAiBuffsForSelectedPlan({
+    plane,
+    color: 'blue',
+    context: { readyCargo: cargos, enemies },
+    selectedPlan: {
+      plane, routeClass: 'direct', goalName: 'cargo', decisionReason: 'simple_step2_pickup_cargo',
+      landingX: 0, landingY: d, planDistance: d,
+    },
+    availableCounts: { wings: 1 },
+  }).some((c) => c.itemType === 'wings');
+};
 
-// A: 1 cargo on a normal span + 1 cargo only reachable with the wide span ->
-//    wings turn it into a 2-pickup -> USE.
-assert(usesWings([cargo('both'), cargo('wide')]) === true, 'A: wings should be used when they enable a 2nd cargo.');
+// (1) Wings ENABLE extra targets — used at any distance.
+// A: 1 cargo on a normal span + 1 only the wide span reaches -> USE.
+assert(usesWings([cargo('both'), cargo('wide')]) === true, 'A: enable a 2nd cargo -> use.');
+// A-short: same but a short shot -> still USE (wings genuinely enable the 2nd).
+assert(usesWings([cargo('both'), cargo('wide')], [], { long: false }) === true, 'A-short: enabling an extra works even short.');
+// E: 2 cargo only the wide span reaches -> USE.
+assert(usesWings([cargo('wide'), cargo('wide')]) === true, 'E: enable two cargo -> use.');
+// F: enemies count — wide span enables a 2nd kill -> USE.
+assert(usesWings([], [enemy('both'), enemy('wide')]) === true, 'F: enable a 2nd enemy kill -> use.');
+// G: mixed cargo+enemy, both wide-only -> USE.
+assert(usesWings([cargo('wide')], [enemy('wide')]) === true, 'G: wide-span cargo+enemy run -> use.');
 
-// B: 2 cargo already reachable on a normal span -> wings add nothing -> NO.
-assert(usesWings([cargo('both'), cargo('both')]) === false, 'B: wings add nothing when both are already reachable.');
+// (2) LONG-shot insurance — wide span sweeps >= 2 targets even if the normal
+// span would also reach them.
+// B-long: 2 cargo both reachable, but a LONG shot -> USE (widen the kill zone).
+assert(usesWings([cargo('both'), cargo('both')]) === true, 'B-long: long shot over 2 targets -> use (mass zone).');
+// B-short: same 2 reachable cargo but a SHORT shot -> NO (no miss-risk, wings add nothing).
+assert(usesWings([cargo('both'), cargo('both')], [], { long: false }) === false, 'B-short: short shot, nothing extra -> no wings.');
 
-// C: a single reachable cargo -> not a multi-target -> NO (the "short, one target" waste).
-assert(usesWings([cargo('both')]) === false, 'C: a single target must NOT use wings.');
+// Never on a single target.
+assert(usesWings([cargo('both')]) === false, 'C: single cargo -> no wings.');
+assert(usesWings([], [enemy('both')]) === false, 'H: single enemy -> no wings.');
+// Long shot but only ONE target on the path -> NO (nothing to mass-capture).
+assert(usesWings([cargo('both')], []) === false, 'I: long shot, single target -> no wings.');
 
-// D: a single cargo that only the wide span reaches -> still only 1 -> NO.
-assert(usesWings([cargo('wide')]) === false, 'D: one wings-only target is not enough.');
-
-// E: 2 cargo that ONLY the wide span reaches -> wings enable a 2-pickup -> USE.
-assert(usesWings([cargo('wide'), cargo('wide')]) === true, 'E: wings should be used when they enable two cargo.');
-
-// F: ENEMIES count too. 1 enemy in either span + 1 enemy only the wide span
-//    kills -> wings enable a 2nd kill -> USE.
-assert(usesWings([], [enemy('both'), enemy('wide')]) === true, 'F: wings should be used when the wide span enables a 2nd enemy kill.');
-
-// G: MIXED — 1 cargo (wide-only) + 1 enemy (wide-only) -> wings enable a
-//    2-target run (1 cargo + 1 kill) -> USE.
-assert(usesWings([cargo('wide')], [enemy('wide')]) === true, 'G: wings should be used for a wide-span cargo+enemy run.');
-
-// H: a single enemy already killable on the normal span -> NO (single target,
-//    wings add nothing).
-assert(usesWings([], [enemy('both')]) === false, 'H: a single normal-span enemy must NOT use wings.');
-
-console.log('Smoke test passed: wings only when the wide span enables a multi-target run (cargo AND enemies).');
+console.log('Smoke test passed: wings enable extra targets (any distance) OR widen a long multi-target run; never single-target.');
